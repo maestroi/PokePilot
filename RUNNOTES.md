@@ -1,41 +1,38 @@
-# RUNNOTES — FIX-3 verified movement ground truth (DONE)
+# RUNNOTES — S2-0 player facing decoder fix (DONE, commit a846097)
 
 ## What I changed
-- `skill/move_test.go` only (move.go untouched, as required). Rewrote the
-  four existing tests with values measured against the real ROM and added
-  `TestStepOnceEveryOpenDirection`:
-  1. `TestStepOnceMoves`: start asserted (3,6); StepLeft -> (2,6), no err.
-  2. `TestStepOnceIntoWallIsBlocked`: StepUp -> *ErrBlocked via errors.As,
-     coords still exactly (3,6) (asserts the move did NOT happen — this is
-     what catches a "everything is blocked" StepOnce).
-  3. `TestWalkPathTwoSteps`: [Left, Left] -> exactly (1,6).
-  4. `TestWalkPathIsDeterministic`: two fresh fixture loads, same path,
-     both end at exactly (1,6) (not just equal to each other).
-  5. `TestStepOnceEveryOpenDirection`: DOWN -> (3,7), LEFT -> (2,6),
-     RIGHT -> (4,6), each on a freshly loaded fixture.
-- Removed the old guessed collision-grid comment; replaced with a note
-  that expectations are ROM-measured ground truth.
+- `red/sym/addresses.go`: added `SpritePlayerFacing uint16 = 0xC109`
+  (wSpritePlayerStateData1 + 9) in the Player/world const block.
+- `red/state/player.go`: `DecodePlayer` now reads Facing from
+  `sym.SpritePlayerFacing` instead of `sym.PlayerDirection`.
+  FacingDown/Up/Left/Right constants (0/4/8/12) unchanged — they were
+  always correct; only the address was wrong.
+- `red/state/player_test.go`: TestDecodePlayer pokes
+  `sym.SpritePlayerFacing` (value 4) instead of `sym.PlayerDirection`.
+- `red/sym/addresses_test.go`: asserts `SpritePlayerFacing ==
+  sym["wSpritePlayerStateData1"] + 9`. The .sym file has no plain
+  "facing" symbol the pairs table can use at +9, so this is a dedicated
+  base+9 check (the pairs table asserts exact symbol==constant equality).
 
 ## Why
-The original PP-13 "walk DOWN twice" expectation was a guess and wrong:
-y=7 is the bottom walkable row, so the second DOWN is blocked. All four
-old tests were rewritten from ROM-measured values, not grid guesses.
+0xD52A (wPlayerDirection) is a BITMASK (RIGHT=1 LEFT=2 DOWN=4 UP=8);
+0xC109 holds SPRITE_FACING_* (DOWN=0 UP=4 LEFT=8 RIGHT=12). Phase 1
+compared the bitmask against 0/4/8/12, so e.g. facing right (bitmask 1)
+decoded as "unknown(1)".
 
 ## Verification
-- `go test -count=1 ./...` (POKEMON_RED_ROM set) passes twice in a row.
-- Verbose: all 5 movement tests PASS, ~0.01-0.05s each on the cached
-  v2 fixture. First vertical slice complete: load ROM -> controllable
-  overworld -> read map/position from RAM -> path -> move -> verify.
+- `go build ./...`, `go vet ./...` clean.
+- `POKEMON_RED_ROM=/home/maestro/Documents/projects/gomeboy/roms/pokemon_red.gb go test -count=1 ./...` all pass (emu, red/rom, red/state, red/sym, skill, skill/fixture, world).
+- TestAddressesMatchSymbolFile and TestDecodePlayer* confirmed PASS in verbose (not skipped; /home/maestro/.cache/pokered/pokered.sym present).
 
 ## Notes for next task
-- Run tests with an ABSOLUTE POKEMON_RED_ROM path: `go test` runs from
-  each package dir, so `roms/pokemon_red.gb` relative to repo root fails
-  with "no such file or directory" for packages under skill/ and world/.
-- Fixture cache lives at `skill/testdata/fixtures/reds_bedroom.v2.state`
-  (gitignored). A stale fixture now self-heals (validated on load); if a
-  movement test still says "blocked at (3,6)", delete
-  `skill/testdata/fixtures/*` and re-run.
-- Offsets unchanged: XCoord 0xD362, YCoord 0xD361, CurMap 0xD35E,
-  CurMapWidth 0xD369, CurMapHeight 0xD368, WalkCounter 0xCFC5.
-- Ground truth from (3,6) on map 0x26: UP blocked; DOWN (3,7); LEFT (2,6);
-  RIGHT (4,6); second DOWN blocked at (3,7); LEFT,LEFT -> (1,6).
+- .sym file: `00:c100 wSpritePlayerStateData1`; the facing byte also has
+  its own symbol `00:c109 wSpritePlayerStateData1FacingDirection` if a
+  later task wants an exact-name lookup.
+- wPlayerDirection (0xD52A) and wPlayerMovingDirection (0xD528) remain
+  defined in sym for the bitmask use case; nothing else in the repo reads
+  PlayerDirection now (only docs mention it).
+- emu/, skill/, world/ untouched, per task scope.
+- ROM path for tests: /home/maestro/Documents/projects/gomeboy/roms/pokemon_red.gb
+  (absolute; relative paths fail from subpackage dirs).
+- Fixture cache at skill/testdata/fixtures/ (gitignored) still valid.
