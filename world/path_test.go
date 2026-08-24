@@ -146,3 +146,188 @@ func TestFindPathOutOfBounds(t *testing.T) {
 		t.Fatalf("err = %v, want ErrNoPath", err)
 	}
 }
+
+func TestFindPathFromSolidStart(t *testing.T) {
+	tests := []struct {
+		name      string
+		solid     [][2]int
+		sx, sy    int
+		dx, dy    int
+		wantFirst Step // zero value means any step that leaves the start
+	}{
+		{
+			name:  "solid corner start",
+			solid: [][2]int{{0, 0}},
+			sx:    0,
+			sy:    0,
+			dx:    4,
+			dy:    4,
+		},
+		{
+			name:      "solid start with one open side",
+			solid:     [][2]int{{2, 2}, {2, 1}, {1, 2}, {3, 2}},
+			sx:        2,
+			sy:        2,
+			dx:        4,
+			dy:        4,
+			wantFirst: StepDown,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := testGrid(5, 5)
+			for _, p := range tt.solid {
+				g.Set(p[0], p[1], false)
+			}
+
+			steps, err := FindPath(g, tt.sx, tt.sy, tt.dx, tt.dy, nil)
+			if err != nil {
+				t.Fatalf("FindPath from solid start: %v", err)
+			}
+			if len(steps) == 0 {
+				t.Fatal("no steps returned from a solid start")
+			}
+			if tt.wantFirst != (Step{}) && steps[0] != tt.wantFirst {
+				t.Errorf("first step = %s, want %s", steps[0], tt.wantFirst)
+			}
+			// replayPath fails if any landing tile is solid, so the path
+			// must leave the solid start and never return to it.
+			if x, y := replayPath(t, g, tt.sx, tt.sy, nil, steps); x != tt.dx || y != tt.dy {
+				t.Fatalf("replay ended at (%d,%d), want (%d,%d)", x, y, tt.dx, tt.dy)
+			}
+			for _, p := range tt.solid {
+				if g.Walkable(p[0], p[1]) {
+					t.Errorf("tile (%d,%d) became walkable after FindPath", p[0], p[1])
+				}
+			}
+		})
+	}
+}
+
+func TestFindPathAdjacent(t *testing.T) {
+	tests := []struct {
+		name     string
+		solid    [][2]int
+		sx, sy   int
+		tx, ty   int
+		wantErr  bool
+		wantEnd  [2]int // final path position: the neighbour of the target
+		wantPush Step
+		wantLen  int
+	}{
+		{
+			name:     "push into solid warp",
+			solid:    [][2]int{{2, 2}},
+			sx:       0,
+			sy:       0,
+			tx:       2,
+			ty:       2,
+			wantEnd:  [2]int{2, 1},
+			wantPush: StepDown,
+			wantLen:  3,
+		},
+		{
+			name:     "walkable target still works",
+			sx:       0,
+			sy:       0,
+			tx:       2,
+			ty:       2,
+			wantEnd:  [2]int{2, 1},
+			wantPush: StepDown,
+			wantLen:  3,
+		},
+		{
+			name:     "start already next to the warp",
+			solid:    [][2]int{{2, 2}},
+			sx:       1,
+			sy:       2,
+			tx:       2,
+			ty:       2,
+			wantEnd:  [2]int{1, 2},
+			wantPush: StepRight,
+			wantLen:  0,
+		},
+		{
+			name:     "solid start next to a solid warp",
+			solid:    [][2]int{{1, 1}, {3, 3}},
+			sx:       1,
+			sy:       1,
+			tx:       3,
+			ty:       3,
+			wantEnd:  [2]int{3, 2},
+			wantPush: StepDown,
+			wantLen:  3,
+		},
+		{
+			name:    "all neighbours solid",
+			solid:   [][2]int{{2, 2}, {2, 1}, {1, 2}, {3, 2}, {2, 3}},
+			sx:      0,
+			sy:      0,
+			tx:      2,
+			ty:      2,
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := testGrid(5, 5)
+			for _, p := range tt.solid {
+				g.Set(p[0], p[1], false)
+			}
+
+			steps, push, err := FindPathAdjacent(g, tt.sx, tt.sy, tt.tx, tt.ty, nil)
+			if tt.wantErr {
+				if !errors.Is(err, ErrNoPath) {
+					t.Fatalf("err = %v, want ErrNoPath", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("FindPathAdjacent: %v", err)
+			}
+			if len(steps) != tt.wantLen {
+				t.Fatalf("len(steps) = %d, want %d: %v", len(steps), tt.wantLen, steps)
+			}
+			if push != tt.wantPush {
+				t.Errorf("push = %s, want %s", push, tt.wantPush)
+			}
+			// The path must end exactly on the chosen neighbour, through
+			// walkable tiles only.
+			if x, y := replayPath(t, g, tt.sx, tt.sy, nil, steps); x != tt.wantEnd[0] || y != tt.wantEnd[1] {
+				t.Fatalf("replay ended at (%d,%d), want neighbour (%d,%d)", x, y, tt.wantEnd[0], tt.wantEnd[1])
+			}
+			// The push step must move from the neighbour into the target.
+			if nx, ny := tt.wantEnd[0]+push.DX, tt.wantEnd[1]+push.DY; nx != tt.tx || ny != tt.ty {
+				t.Fatalf("push from (%d,%d) lands at (%d,%d), want target (%d,%d)", tt.wantEnd[0], tt.wantEnd[1], nx, ny, tt.tx, tt.ty)
+			}
+			for _, p := range tt.solid {
+				if g.Walkable(p[0], p[1]) {
+					t.Errorf("tile (%d,%d) became walkable after FindPathAdjacent", p[0], p[1])
+				}
+			}
+		})
+	}
+}
+
+func TestPathCallsDoNotMutateGrid(t *testing.T) {
+	g := testGrid(5, 5)
+	g.Set(0, 0, false) // solid start tile
+	g.Set(2, 2, false) // solid warp tile
+
+	if _, err := FindPath(g, 0, 0, 4, 4, nil); err != nil {
+		t.Fatalf("FindPath: %v", err)
+	}
+	if _, _, err := FindPathAdjacent(g, 0, 0, 2, 2, nil); err != nil {
+		t.Fatalf("FindPathAdjacent: %v", err)
+	}
+
+	if g.Walkable(0, 0) {
+		t.Error("solid start tile (0,0) became walkable")
+	}
+	if g.Walkable(2, 2) {
+		t.Error("solid warp tile (2,2) became walkable")
+	}
+	if !g.Walkable(4, 4) {
+		t.Error("walkable tile (4,4) became solid")
+	}
+}

@@ -56,8 +56,8 @@ func (o astarOpen) Less(i, j int) bool {
 	return o[i].g > o[j].g
 }
 
-func (o astarOpen) Swap(i, j int)       { o[i], o[j] = o[j], o[i] }
-func (o *astarOpen) Push(v any)         { *o = append(*o, v.(*astarNode)) }
+func (o astarOpen) Swap(i, j int) { o[i], o[j] = o[j], o[i] }
+func (o *astarOpen) Push(v any)   { *o = append(*o, v.(*astarNode)) }
 func (o *astarOpen) Pop() any {
 	old := *o
 	n := len(old)
@@ -70,6 +70,10 @@ func (o *astarOpen) Pop() any {
 // FindPath returns the sequence of steps from (sx,sy) to (dx,dy), avoiding
 // tiles that are not walkable and any tile in blocked. blocked may be nil;
 // it carries dynamic obstacles such as NPC positions.
+//
+// The start tile is treated as walkable regardless of the grid: a player
+// that arrived through a warp stands on a solid tile, and the path simply
+// leaves it. This is a local special case — the Grid is never mutated.
 func FindPath(g *Grid, sx, sy, dx, dy int, blocked map[[2]int]bool) ([]Step, error) {
 	if !g.InBounds(dx, dy) || !g.Walkable(dx, dy) || blocked[[2]int{dx, dy}] {
 		return nil, ErrNoPath
@@ -77,7 +81,7 @@ func FindPath(g *Grid, sx, sy, dx, dy int, blocked map[[2]int]bool) ([]Step, err
 	if sx == dx && sy == dy {
 		return []Step{}, nil
 	}
-	if !g.InBounds(sx, sy) || !g.Walkable(sx, sy) || blocked[[2]int{sx, sy}] {
+	if !g.InBounds(sx, sy) || blocked[[2]int{sx, sy}] {
 		return nil, ErrNoPath
 	}
 
@@ -114,6 +118,78 @@ func FindPath(g *Grid, sx, sy, dx, dy int, blocked map[[2]int]bool) ([]Step, err
 		}
 	}
 	return nil, ErrNoPath
+}
+
+// FindPathAdjacent returns the steps from (sx,sy) to a walkable tile
+// orthogonally adjacent to (tx,ty), plus the final Step that pushes from
+// that neighbour into (tx,ty). The target tile itself does not need to be
+// walkable: warps and stairs are solid, and the player takes one by
+// standing on the adjacent walkable tile and pushing toward it.
+//
+// As in FindPath, the start tile is walkable regardless of the grid and
+// the Grid is never mutated. If several neighbours are reachable, the one
+// with the shortest path wins; ties break toward the lowest y, then the
+// lowest x, so the result is reproducible. ErrNoPath is returned when no
+// neighbour is reachable.
+func FindPathAdjacent(g *Grid, sx, sy, tx, ty int, blocked map[[2]int]bool) ([]Step, Step, error) {
+	if !g.InBounds(sx, sy) || !g.InBounds(tx, ty) || blocked[[2]int{sx, sy}] {
+		return nil, Step{}, ErrNoPath
+	}
+
+	// Breadth-first search from the start: every reached tile carries its
+	// shortest distance, which is all the neighbour comparison needs. The
+	// start is enqueued even though the grid may call it solid; because
+	// expansion only enters walkable tiles, a solid start can never be
+	// re-entered later in the path.
+	start := [2]int{sx, sy}
+	dist := map[[2]int]int{start: 0}
+	parent := map[[2]int][2]int{}
+	queue := [][2]int{start}
+	for len(queue) > 0 {
+		cur := queue[0]
+		queue = queue[1:]
+		for _, s := range stepDirs {
+			n := [2]int{cur[0] + s.DX, cur[1] + s.DY}
+			if !g.InBounds(n[0], n[1]) || !g.Walkable(n[0], n[1]) || blocked[n] {
+				continue
+			}
+			if _, seen := dist[n]; seen {
+				continue
+			}
+			dist[n] = dist[cur] + 1
+			parent[n] = cur
+			queue = append(queue, n)
+		}
+	}
+
+	// The neighbour list is ordered by (y, x) ascending, so requiring a
+	// strictly shorter distance keeps the lowest-y, then lowest-x tile on
+	// ties.
+	var best [2]int
+	bestDist := -1
+	for _, n := range [][2]int{{tx, ty - 1}, {tx - 1, ty}, {tx + 1, ty}, {tx, ty + 1}} {
+		if !g.InBounds(n[0], n[1]) || !g.Walkable(n[0], n[1]) || blocked[n] {
+			continue
+		}
+		d, seen := dist[n]
+		if !seen {
+			continue
+		}
+		if bestDist >= 0 && d >= bestDist {
+			continue
+		}
+		best, bestDist = n, d
+	}
+	if bestDist < 0 {
+		return nil, Step{}, ErrNoPath
+	}
+
+	steps := stepsBetween(parent, start, best)
+	if steps == nil {
+		steps = []Step{}
+	}
+	push := Step{DX: tx - best[0], DY: ty - best[1]}
+	return steps, push, nil
 }
 
 // manhattan is the 4-way movement distance estimate.

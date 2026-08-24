@@ -1,38 +1,39 @@
-# RUNNOTES — S2-0 player facing decoder fix (DONE, commit a846097)
+# RUNNOTES — S2-1 pathfinder solid tiles (DONE, this commit)
 
 ## What I changed
-- `red/sym/addresses.go`: added `SpritePlayerFacing uint16 = 0xC109`
-  (wSpritePlayerStateData1 + 9) in the Player/world const block.
-- `red/state/player.go`: `DecodePlayer` now reads Facing from
-  `sym.SpritePlayerFacing` instead of `sym.PlayerDirection`.
-  FacingDown/Up/Left/Right constants (0/4/8/12) unchanged — they were
-  always correct; only the address was wrong.
-- `red/state/player_test.go`: TestDecodePlayer pokes
-  `sym.SpritePlayerFacing` (value 4) instead of `sym.PlayerDirection`.
-- `red/sym/addresses_test.go`: asserts `SpritePlayerFacing ==
-  sym["wSpritePlayerStateData1"] + 9`. The .sym file has no plain
-  "facing" symbol the pairs table can use at +9, so this is a dedicated
-  base+9 check (the pairs table asserts exact symbol==constant equality).
+- `world/path.go`:
+  - `FindPath`: start tile treated as walkable regardless of the grid
+    (local special case inside FindPath; Grid never mutated). A solid
+    start means the first step leaves it; A* expansion still requires
+    walkable neighbours, so a solid start can never be re-entered.
+    Destination check unchanged; signature unchanged.
+  - New `FindPathAdjacent(g *Grid, sx, sy, tx, ty int, blocked map[[2]int]bool)
+    ([]Step, Step, error)`: BFS from the start (same solid-start case),
+    then picks the reachable walkable unblocked orthogonally-adjacent
+    neighbour of (tx,ty) with the shortest path; ties break lowest y,
+    then lowest x. Returns path + final push Step into (tx,ty). Target
+    need not be walkable. ErrNoPath if no neighbour reachable (also if
+    start/target out of bounds or start blocked).
+- `world/path_test.go`: table tests on hand-built Grids (no ROM):
+  - TestFindPathFromSolidStart (2 cases; first step leaves solid start,
+    one case forces a specific first step).
+  - TestFindPathAdjacent (5 cases: solid warp push, walkable target,
+    start already adjacent -> empty path + push, solid start, all
+    neighbours solid -> ErrNoPath).
+  - TestPathCallsDoNotMutateGrid: solid tiles still solid after both.
 
 ## Why
-0xD52A (wPlayerDirection) is a BITMASK (RIGHT=1 LEFT=2 DOWN=4 UP=8);
-0xC109 holds SPRITE_FACING_* (DOWN=0 UP=4 LEFT=8 RIGHT=12). Phase 1
-compared the bitmask against 0/4/8/12, so e.g. facing right (bitmask 1)
-decoded as "unknown(1)".
+Measured: warp tiles are solid (Red's House warps (7,1)/(2,7)/(3,7) all Walkable==false)
+and the player stands on a solid tile after arriving (1F (7,1)); old FindPath returned ErrNoPath.
 
 ## Verification
-- `go build ./...`, `go vet ./...` clean.
-- `POKEMON_RED_ROM=/home/maestro/Documents/projects/gomeboy/roms/pokemon_red.gb go test -count=1 ./...` all pass (emu, red/rom, red/state, red/sym, skill, skill/fixture, world).
-- TestAddressesMatchSymbolFile and TestDecodePlayer* confirmed PASS in verbose (not skipped; /home/maestro/.cache/pokered/pokered.sym present).
+- `go build ./...`, `go vet ./...` clean; full `go test -count=1 ./...`
+  passes with POKEMON_RED_ROM=/home/maestro/Documents/projects/gomeboy/roms/pokemon_red.gb.
+- `go test -count=1 ./world` passes WITHOUT POKEMON_RED_ROM.
+- Gotcha: go vet composites rejects multi-name struct literal keys (`sx, sy: 0, 0`); use explicit per-field keys.
 
 ## Notes for next task
-- .sym file: `00:c100 wSpritePlayerStateData1`; the facing byte also has
-  its own symbol `00:c109 wSpritePlayerStateData1FacingDirection` if a
-  later task wants an exact-name lookup.
-- wPlayerDirection (0xD52A) and wPlayerMovingDirection (0xD528) remain
-  defined in sym for the bitmask use case; nothing else in the repo reads
-  PlayerDirection now (only docs mention it).
-- emu/, skill/, world/ untouched, per task scope.
-- ROM path for tests: /home/maestro/Documents/projects/gomeboy/roms/pokemon_red.gb
-  (absolute; relative paths fail from subpackage dirs).
-- Fixture cache at skill/testdata/fixtures/ (gitignored) still valid.
+- skill/ still only calls FindPath; FindPathAdjacent is new API awaiting
+  its consumer. Push model: path to neighbour + one Step into the warp;
+  after the push the player is ON the solid warp tile (next call starts
+  solid). blocked honoured for start and neighbours, not the target.
