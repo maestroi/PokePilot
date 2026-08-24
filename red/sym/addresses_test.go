@@ -88,6 +88,13 @@ func TestAddressesMatchSymbolFile(t *testing.T) {
 		}
 	}
 
+	spriteBase, ok := sym["wSpritePlayerStateData1"]
+	if !ok {
+		t.Errorf("label wSpritePlayerStateData1 not found in %s", symFile)
+	} else if SpritePlayerFacing != spriteBase+9 {
+		t.Errorf("SpritePlayerFacing = 0x%04X, want 0x%04X (wSpritePlayerStateData1 + 9)", SpritePlayerFacing, spriteBase+9)
+	}
+
 	mon1, ok := sym["wPartyMon1"]
 	if !ok {
 		t.Fatal("wPartyMon1 not found in symbol file")

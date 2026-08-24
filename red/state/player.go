@@ -54,7 +54,7 @@ func DecodePlayer(m *Mem) PlayerState {
 		MapID:   m.U8(sym.CurMap),
 		X:       m.U8(sym.XCoord),
 		Y:       m.U8(sym.YCoord),
-		Facing:  Facing(m.U8(sym.PlayerDirection)),
+		Facing:  Facing(m.U8(sym.SpritePlayerFacing)),
 		Walking: m.U8(sym.WalkCounter) != 0,
 	}
 }

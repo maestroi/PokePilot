@@ -18,7 +18,7 @@ func TestDecodePlayer(t *testing.T) {
 	m[sym.CurMap] = 0x26
 	m[sym.XCoord] = 3
 	m[sym.YCoord] = 6
-	m[sym.PlayerDirection] = 4
+	m[sym.SpritePlayerFacing] = 4
 	m[sym.WalkCounter] = 0
 
 	got := DecodePlayer(m)
