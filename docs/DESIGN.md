@@ -330,6 +330,36 @@ Two consequences shape the whole design:
    never replay it in a test again. This is the highest-leverage use of GomeBoy's
    save states.
 
+### 3.2b Predicate design rule (learned the hard way)
+
+Phase 1 shipped a `Controllable()` predicate built entirely from the *absence*
+of obstacles: no font loaded, no ignored input, not mid-step. Every one of those
+is also true during Professor Oak's intro speech, because `wCurMap`, `wXCoord`
+and `wYCoord` are written during new-game initialisation long before the map is
+loaded. The boot skill's wait loop therefore exited on its first check, having
+made no progress, and every downstream movement test failed with "blocked".
+It cost four task attempts to find.
+
+**The rule: a state predicate must assert something positive about the state you
+want, not merely the absence of things you don't.**
+
+For "we are in the overworld", the positive fact is that a map is actually
+loaded — `wCurMapWidth != 0 && wCurMapHeight != 0`. Red's bedroom is 4x4 blocks.
+Absence-only conditions belong in a predicate as extra guards, never as the
+whole of it.
+
+Two corollaries worth applying to every skill built from here on:
+
+1. **A "blocked/failed" assertion must also assert that nothing changed.**
+   A test like "walking into a wall returns ErrBlocked" passes just as happily
+   when the executor reports *everything* as blocked. That is precisely how the
+   above bug stayed hidden. Assert the coordinates too.
+2. **A cache that can store an invalid state will eventually poison itself.**
+   The save-state fixture cached the intro screen and kept serving it after the
+   boot code was fixed. Fixtures validate on load *and* before write, and carry
+   a `fixtureVersion` in the filename so a definition change invalidates all of
+   them at once.
+
 ### 3.3 Architecture
 
 ```
