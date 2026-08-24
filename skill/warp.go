@@ -19,6 +19,15 @@ import (
 const (
 	crossBudget  = 180
 	arriveBudget = 600
+
+	// positionStableBudget / positionStableFrames: after a map flip the tile
+	// position passes through transient states (the source warp tile, then the
+	// destination door tile, then the standing position) before settling. On
+	// the 25->00 warp the transients last ~32 and ~21 frames, so wait for the
+	// position to be unchanged for positionStableFrames consecutive frames
+	// (longer than any transient) within positionStableBudget total frames.
+	positionStableBudget  = 500
+	positionStableFrames  = 50
 )
 
 // Traverse executes one graph edge and returns once the destination map is
@@ -101,7 +110,38 @@ func Traverse(m *emu.Emu, romData []byte, e world.Edge) error {
 	if got := m.Peek8(sym.CurMap); got != e.To {
 		return fmt.Errorf("skill: Traverse: %s: arrived on map %02x, want %02x", edgeName(e), got, e.To)
 	}
+
+	// After a map flip the tile position is transient: it carries the source
+	// map's warp tile, then the destination's door tile, then the standing
+	// position. Controllable passes before that settles, so wait until the
+	// position has been unchanged for a few consecutive frames.
+	if err := waitForPositionStable(m, positionStableBudget, positionStableFrames); err != nil {
+		return fmt.Errorf("skill: Traverse: %s: %w", edgeName(e), err)
+	}
 	return nil
+}
+
+// waitForPositionStable steps frames until the player's tile position has been
+// unchanged for stableFrames consecutive frames, or the budget is exhausted.
+func waitForPositionStable(m *emu.Emu, budget, stableFrames int) error {
+	lastX, lastY := playerXY(m)
+	stable := 0
+	for i := 0; i < budget; i++ {
+		m.StepFrame()
+		x, y := playerXY(m)
+		if x == lastX && y == lastY {
+			stable++
+			if stable >= stableFrames {
+				return nil
+			}
+		} else {
+			stable = 0
+		}
+		lastX, lastY = x, y
+	}
+	x, y := playerXY(m)
+	return fmt.Errorf("position not stable within %d frames on map %02x at (%d,%d)",
+		budget, m.Peek8(sym.CurMap), x, y)
 }
 
 // edgeTarget picks the walkable tile on the map's connection edge with the
