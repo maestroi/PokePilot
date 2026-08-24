@@ -1,1 +1,7 @@
 roms/
+*.gb
+*.gbc
+*.sav
+*.state
+testdata/fixtures/
+failure/
