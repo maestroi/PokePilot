@@ -1,7 +1,6 @@
 # Slice 2 draft plan — interaction + cross-map navigation
 
-Status: **draft, not yet in agent-runner.** Read, adjust, then I can create the
-plan and tasks from this.
+Status: **measured and published to agent-runner.**
 
 Goal: `go_to("Viridian Pokémon Center")` then talk to the nurse, entirely
 deterministically. Route: Red's bedroom -> Red's House 1F -> Pallet Town ->
@@ -33,6 +32,31 @@ text id 1. Counter is between her and the player, so the interaction is
 **Player start** (from the `reds_bedroom` fixture): map `0x26`, (3,6). `UP` is
 blocked; `DOWN`/`LEFT`/`RIGHT` open; `y=7` is the bottom row.
 
+### Measured by driving the real ROM (2026-08-24)
+
+Probe route: boot -> walk 2F (3,6) to (6,1) -> push RIGHT -> arrive 1F (7,1) ->
+walk to (3,2) -> face UP -> A on the TV sign. All of this works today with
+Phase 1 primitives only.
+
+1. **Warp tiles are not walkable.** Tileset collision marks every door and
+   staircase solid: 2F (7,1) and 1F (2,7)/(3,7) all come back solid from
+   `world.Build`. You take a warp by walking *into* the warp tile from an
+   adjacent walkable tile. A* must route to the neighbour, then push.
+2. **After a warp the player stands on a solid tile.** Arrival on 1F is (7,1),
+   which that map's own grid calls solid, so `FindPath` from there returns
+   `ErrNoPath`. The pathfinder must always force the start tile walkable.
+3. **`wPlayerDirection` (0xD52A) is a bitmask, not a sprite facing.**
+   `PLAYER_DIR_RIGHT=1, LEFT=2, DOWN=4, UP=8`. The `SPRITE_FACING_*` values
+   (0/4/8/12) that `red/state.Facing` uses live at **0xC109**
+   (`wSpritePlayerStateData1 + 9`). Phase 1 decodes the wrong address; see S2-0.
+4. **`wTextBoxID` is useless as an open/closed signal.** It read `0x01` before,
+   during and after the dialogue. `wFontLoaded` is the signal.
+5. **A-press count to close a dialogue is timing-dependent**: the same TV sign
+   took 10 presses at a 40-frame cadence and 6 at a 100-frame cadence. `Talk`
+   must be a bounded poll on `wFontLoaded`, and no test may assert a count.
+
+---
+
 Two facts that shape the design:
 
 1. **`DestMap == 0xFF` means "the map you came from"**, not map 255. Every
@@ -45,6 +69,22 @@ Two facts that shape the design:
 ---
 
 ## Tasks
+
+### S2-0 — Fix the facing decoder
+
+Goal: `red/state.Facing` reports the real sprite facing.
+
+First edit: Modify `red/sym/addresses.go` to add
+`SpritePlayerFacing uint16 = 0xC109`.
+
+Then change `DecodePlayer` to read facing from that address, and add
+`PlayerDirection`-bitmask constants only if something needs them. Verified
+values while walking: down=0, up=4, left=8, right=12.
+
+Tests: from the `reds_bedroom` fixture, tap each direction and assert the
+decoded `Facing`. This currently fails, which is the point.
+
+Depends on: nothing.
 
 ### S2-1 — Warp and connection graph
 
@@ -62,6 +102,10 @@ First edit: Create `world/graph.go`.
   Read `/home/maestro/.cache/pokered/macros/data.asm` (the `connection` macro)
   for the field layout rather than guessing.
 
+Warp tiles are solid (see measurement 1), so an edge is "stand on the
+walkable neighbour of the warp tile, push into it". Model the edge that way,
+not as "walk onto the warp tile".
+
 Tests: `0x26` reaches `0x25` via (7,1); `0x25` reaches `0x00`; `0x00` reaches
 `0x0C` by connection; `0x01` reaches `0x29`. Graph builds for all ~248 maps
 without error. ROM-gated, skip without `POKEMON_RED_ROM`.
@@ -74,6 +118,9 @@ Goal: `FindRoute(g *Graph, from, to Node) ([]Leg, error)` where a `Leg` is
 either "walk this path on this map" or "take this warp/connection".
 
 First edit: Create `world/route.go`.
+
+Force the start tile walkable before every within-map search (measurement 2)
+and target the warp tile's neighbour, not the warp tile.
 
 Reuse the existing per-map A* for within-map legs; search the map graph for the
 sequence of edges. Do not write a second pathfinder.
@@ -91,21 +138,21 @@ Goal: face a target tile and talk to it, advancing dialogue to completion.
 First edit: Create `skill/interact.go`.
 
 - `func Face(m *emu.Emu, tx, ty uint8) error` — turn toward an adjacent tile,
-  verify `wPlayerDirection`. Note from Phase 1: pressing a direction you are
-  not facing turns without moving, which is exactly what we want here.
-- `func Talk(m *emu.Emu) (int, error)` — press A, verify a text box opened
-  (`DecodeDialogue` non-nil), then advance with A until it closes, returning
-  how many boxes were advanced. Bounded by a frame budget; never a fixed count.
+  verify the decoded `Facing` from S2-0. Pressing a direction you are not
+  facing turns without moving, which is exactly what we want here.
+- `func Talk(m *emu.Emu) (int, error)` — press A, verify `wFontLoaded != 0`,
+  then keep pressing A while it stays non-zero, until it clears or the budget
+  runs out. Returns the number of presses spent.
 
-Tests: from the `reds_bedroom` fixture, face each direction and assert
-`wPlayerDirection`. Then a fixture in front of the nurse: `Talk` opens and
-closes a text box and returns >= 1.
+Ground truth is measured (see above): use `wFontLoaded`, never `wTextBoxID`,
+and never assert a press count — it is timing-dependent.
 
-**Measure before writing the test:** stand in front of the nurse and record how
-many A presses close the dialogue, and what `wTextBoxID` is while it is open.
-Do not guess these.
+Tests: from the `reds_bedroom` fixture, face each direction and assert the
+decoded facing. Then the TV sign on Red's House 1F, tile (3,1), reachable from
+(3,2) facing up: `Talk` opens a box, closes it within budget, and the player is
+`Controllable` again afterwards with unchanged coordinates.
 
-Depends on: S2-2 (to get there), or a hand-made fixture.
+Depends on: S2-0.
 
 ### S2-4 — Warp execution
 
@@ -114,15 +161,16 @@ confirm `wCurMap` changed.
 
 First edit: Create `skill/warp.go`.
 
-Doorways are entered by walking into them; some need a final step in the facing
-direction after arriving on the tile. Verify by `wCurMap` change with a frame
+Measured: you stand on the walkable neighbour and push the direction of the
+warp tile; the map changes mid-push. No separate "step again" is needed for
+the 2F staircase. Do not path onto the warp tile itself — it is solid. Verify by `wCurMap` change with a frame
 budget, then wait for the new map's dimensions to be non-zero — the same
 positive-fact rule that fixed Phase 1 (see DESIGN.md 3.2b).
 
-Tests: from `reds_bedroom`, route to (7,1) and take the stairs; assert
-`wCurMap == 0x25` and that the new map's dimensions are non-zero.
+Tests: from `reds_bedroom`, route to (6,1), take the stairs, assert
+`wCurMap == 0x25`, position (7,1), dimensions non-zero, and `Controllable`.
 
-Depends on: S2-3, Phase 1 movement.
+Depends on: S2-2.
 
 ### S2-5 — go_to
 
@@ -170,12 +218,8 @@ Depends on: S2-5.
   six file directives, verification command pre-seeded with
   `POKEMON_RED_ROM=/home/maestro/Documents/projects/gomeboy/roms/pokemon_red.gb`.
 
-## Open questions for you
+## Decisions
 
-1. Should `GoTo` be allowed to fight? Right now a wild battle on Route 1 aborts
-   the route. Slice 3 adds battle execution; until then the honest behaviour is
-   to return a typed error. Route 1 has no grass on the direct path, so this may
-   not bite immediately.
-2. Do you want the named-destination table in Go, or loaded from a small data
-   file so it can be edited without a rebuild? I lean Go — it is a handful of
-   entries and a data file is a dependency to maintain.
+1. `GoTo` does **not** fight. A wild battle aborts the route with a typed
+   error; slice 3 adds battle execution and `GoTo` will then retry.
+2. Named destinations live in a Go table, not a data file.
