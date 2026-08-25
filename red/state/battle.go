@@ -29,6 +29,33 @@ type BattleState struct {
 	ActiveLevel   uint8
 	ActiveMaxHP   uint16
 	Moves         [4]Move
+
+	// Stat stages, biased the way the game stores them: 7 is neutral, lower
+	// is worse for us. An opponent spamming GROWL shows up only here.
+	ActiveAttackMod  uint8 // wPlayerMonAttackMod
+	ActiveDefenseMod uint8 // wPlayerMonDefenseMod
+	EnemyAttackMod   uint8 // wEnemyMonAttackMod
+	EnemyDefenseMod  uint8 // wEnemyMonDefenseMod
+}
+
+// StatStageNeutral is the value both stat mods hold when nothing has raised
+// or lowered them.
+const StatStageNeutral uint8 = 7
+
+// OffenceStage reports how much better or worse our physical damage is than
+// at the start of the battle: our Attack stage minus the enemy's Defense
+// stage. Negative means we are being ground down. Lowering the enemy's
+// Defense by a stage cancels a stage lost from our Attack exactly, because
+// Gen 1 damage scales on the ratio of the two.
+func (b BattleState) OffenceStage() int {
+	return int(b.ActiveAttackMod) - int(b.EnemyDefenseMod)
+}
+
+// DefenceStage is the mirror of OffenceStage, for the damage coming at us:
+// the enemy's Attack stage minus our Defense stage. Positive means they are
+// hitting harder than they did at the start.
+func (b BattleState) DefenceStage() int {
+	return int(b.EnemyAttackMod) - int(b.ActiveDefenseMod)
 }
 
 // Usable returns the indices of move slots with ID != 0 and PP > 0, in
@@ -55,15 +82,19 @@ func DecodeBattle(m *Mem) *BattleState {
 		return nil
 	}
 	s := &BattleState{
-		Kind:          kind,
-		EnemySpecies:  m.U8(sym.EnemyMonSpecies),
-		EnemyHP:       m.U16BE(sym.EnemyMonHP),
-		EnemyMaxHP:    m.U16BE(sym.EnemyMonMaxHP),
-		EnemyLevel:    m.U8(sym.EnemyMonLevel),
-		ActiveSpecies: m.U8(sym.BattleMonSpecies),
-		ActiveHP:      m.U16BE(sym.BattleMonHP),
-		ActiveLevel:   m.U8(sym.BattleMonLevel),
-		ActiveMaxHP:   m.U16BE(sym.BattleMonMaxHP),
+		Kind:             kind,
+		EnemySpecies:     m.U8(sym.EnemyMonSpecies),
+		EnemyHP:          m.U16BE(sym.EnemyMonHP),
+		EnemyMaxHP:       m.U16BE(sym.EnemyMonMaxHP),
+		EnemyLevel:       m.U8(sym.EnemyMonLevel),
+		ActiveSpecies:    m.U8(sym.BattleMonSpecies),
+		ActiveHP:         m.U16BE(sym.BattleMonHP),
+		ActiveLevel:      m.U8(sym.BattleMonLevel),
+		ActiveMaxHP:      m.U16BE(sym.BattleMonMaxHP),
+		ActiveAttackMod:  m.U8(sym.PlayerMonAttackMod),
+		ActiveDefenseMod: m.U8(sym.PlayerMonDefenseMod),
+		EnemyAttackMod:   m.U8(sym.EnemyMonAttackMod),
+		EnemyDefenseMod:  m.U8(sym.EnemyMonDefenseMod),
 	}
 	for i := 0; i < len(s.Moves); i++ {
 		s.Moves[i].ID = m.U8(sym.BattleMonMoves + uint16(i))

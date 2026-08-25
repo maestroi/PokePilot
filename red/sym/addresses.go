@@ -62,13 +62,22 @@ const (
 	BattleMonHP     uint16 = 0xD015
 	BattleMonLevel  uint16 = 0xD022
 
-	BattleResult     uint16 = 0xCF0B // wBattleResult
-	BattleMonSpecies uint16 = 0xD014 // wBattleMonSpecies
-	BattleMonMoves   uint16 = 0xD01C // wBattleMonMoves: 4 bytes, move ids, 0 = empty slot
-	BattleMonMaxHP   uint16 = 0xD023 // wBattleMonMaxHP
-	BattleMonPP      uint16 = 0xD02D // wBattleMonPP: 4 bytes, parallel to wBattleMonMoves
-	EnemyMonLevel    uint16 = 0xCFF3 // wEnemyMonLevel
-	EnemyMonMaxHP    uint16 = 0xCFF4 // wEnemyMonMaxHP
+	BattleResult uint16 = 0xCF0B // wBattleResult
+
+	// Stat stages. Gen 1 stores them biased: 7 is neutral, 1 is -6 and 13 is
+	// +6. A move like GROWL that lowers our Attack shows up here and nowhere
+	// else, so a move policy that ignores these cannot tell it is being
+	// ground down.
+	PlayerMonAttackMod  uint16 = 0xCD1A // wPlayerMonAttackMod
+	PlayerMonDefenseMod uint16 = 0xCD1B // wPlayerMonDefenseMod
+	EnemyMonAttackMod   uint16 = 0xCD2E // wEnemyMonAttackMod
+	EnemyMonDefenseMod  uint16 = 0xCD2F // wEnemyMonDefenseMod
+	BattleMonSpecies    uint16 = 0xD014 // wBattleMonSpecies
+	BattleMonMoves      uint16 = 0xD01C // wBattleMonMoves: 4 bytes, move ids, 0 = empty slot
+	BattleMonMaxHP      uint16 = 0xD023 // wBattleMonMaxHP
+	BattleMonPP         uint16 = 0xD02D // wBattleMonPP: 4 bytes, parallel to wBattleMonMoves
+	EnemyMonLevel       uint16 = 0xCFF3 // wEnemyMonLevel
+	EnemyMonMaxHP       uint16 = 0xCFF4 // wEnemyMonMaxHP
 )
 
 // Menus, text and input state

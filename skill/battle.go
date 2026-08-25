@@ -3,6 +3,8 @@ package skill
 import (
 	"errors"
 	"fmt"
+	"os"
+	"strings"
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
@@ -85,7 +87,19 @@ func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
 		}
 
 		state.Snapshot(m, &mem)
+		if os.Getenv("ZBAT") != "" {
+			if bs := state.DecodeBattle(&mem); bs != nil {
+				fmt.Printf("zbat f=%6d max=%d cur=%d me=%d/%d enemy=%d/%d moves=%v | %s\n",
+					m.FrameCount(), m.Peek8(sym.MaxMenuItem), m.Peek8(sym.CurrentMenuItem),
+					bs.ActiveHP, bs.ActiveMaxHP, bs.EnemyHP, bs.EnemyMaxHP, bs.Moves,
+					strings.Join(strings.Fields(state.ScreenText(&mem)), " "))
+			}
+		}
 		if state.DecodeBattle(&mem) == nil {
+			if os.Getenv("ZBAT") != "" {
+				fmt.Printf("zbat EXIT f=%d inBattle=%#02x rawResult=%#02x\n",
+					m.FrameCount(), m.Peek8(sym.IsInBattle), m.Peek8(sym.BattleResult))
+			}
 			// The battle ended. Settle any end-of-battle text and wait
 			// until the player is controllable, then report the result.
 			if err := settleAfterBattle(m, &mem); err != nil {
@@ -95,23 +109,15 @@ func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
 			return state.DecodeBattleResult(&mem), nil
 		}
 
-		if mainMenuUp(m) {
-			// Select FIGHT (the main menu cursor starts on FIGHT, index 0).
-			if err := SelectMenuItem(m, 0); err != nil {
-				return menuError(m, "select FIGHT", err)
-			}
-			// Wait for the move menu to come up.
-			if _, err := m.StepUntil(moveMenuBudget, func(m *emu.Emu) bool {
-				return moveMenuUp(m)
-			}); err != nil {
-				return stuckError(m, "move menu did not appear after FIGHT")
-			}
-			// Choose the move slot.
-			state.Snapshot(m, &mem)
+		// One decision per iteration, and every branch re-reads the screen
+		// next time round. Waiting inside a branch for the next menu to
+		// appear is what made this brittle: a single missed transition
+		// turned into a hard error mid-fight instead of another look.
+		switch {
+		case moveMenuUp(m):
 			bs := state.DecodeBattle(&mem)
 			if bs == nil {
-				// The battle ended while choosing; loop back to detect it.
-				continue
+				continue // the battle ended while the menu was up
 			}
 			usable := bs.Usable()
 			if len(usable) == 0 {
@@ -125,35 +131,63 @@ func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
 				return 0, fmt.Errorf("skill: Battle: map %02x at (%d,%d) battle %+v: policy returned slot %d, usable %v",
 					m.Peek8(sym.CurMap), x, y, bs, slot, usable)
 			}
-			// The move menu is 1-indexed: slot i sits at cursor i+1.
+			// The move menu is 1-indexed: MoveSelectionMenu stores
+			// wPlayerMoveListIndex+1 into wCurrentMenuItem, so slot i sits
+			// at cursor i+1.
 			if err := SelectMenuItem(m, slot+1); err != nil {
 				return menuError(m, "select move", err)
 			}
-			// Wait for the move menu to close. The move animation that
-			// follows has no text up, so FontLoaded drops to 0; this keeps
-			// the loop from pressing A on a menu that is still up.
-			if _, err := m.StepUntil(moveCloseBudget, func(m *emu.Emu) bool {
-				return m.Peek8(sym.FontLoaded) == 0
-			}); err != nil {
-				return stuckError(m, "move menu did not close after move selection")
-			}
-			continue
-		}
+			// Give the menu a chance to go away. If it has not, the next
+			// iteration simply looks again rather than failing.
+			_, _ = m.StepUntil(moveCloseBudget, func(m *emu.Emu) bool {
+				return !moveMenuUp(m)
+			})
 
-		// A text box or animation is up (stale wMaxMenuItem). Advance it
-		// with A and let the next iteration re-evaluate.
-		m.Tap(emu.A, 3, 7)
+		case mainMenuUp(m):
+			// Choose FIGHT. The move menu is picked up on a later pass.
+			if err := SelectMenuItem(m, 0); err != nil {
+				return menuError(m, "select FIGHT", err)
+			}
+
+		default:
+			// Text or an animation. Advance it and look again.
+			m.Tap(emu.A, 3, 7)
+		}
 	}
 }
 
+// Battle menus are identified by what the game has drawn into wTileMap,
+// because wFontLoaded — which every overworld skill relies on — is MEASURED
+// to stay 0 for the whole of a battle. Battle text does not go through the
+// overworld text engine. Gating on it made this whole state machine dead
+// code: the policy was never consulted and Battle degenerated into mashing A.
+//
+// wTileMap is RAM, not the framebuffer, so reading it is not screen-scraping;
+// it is the same source the dialogue tracer already decodes.
+//
+// wMaxMenuItem alone cannot do this job: it holds the move menu's value
+// (numMoves+1) while the "used TACKLE!" text that follows is on screen.
+const (
+	mainMenuMarker = "FIGHT" // only on the FIGHT/ITEM/PKMN/RUN menu
+	moveMenuMarker = "TYPE/" // only on the move-selection menu
+)
+
 // mainMenuUp reports whether the FIGHT/ITEM/PKMN/RUN menu is up.
 func mainMenuUp(m *emu.Emu) bool {
-	return m.Peek8(sym.FontLoaded) != 0 && m.Peek8(sym.MaxMenuItem) == mainMenuMax
+	return battleScreenHas(m, mainMenuMarker)
 }
 
 // moveMenuUp reports whether the move-selection menu is up.
 func moveMenuUp(m *emu.Emu) bool {
-	return m.Peek8(sym.FontLoaded) != 0 && int(m.Peek8(sym.MaxMenuItem)) >= 2
+	return battleScreenHas(m, moveMenuMarker)
+}
+
+// battleScreenHas reports whether marker appears in the text the game has
+// drawn into wTileMap.
+func battleScreenHas(m *emu.Emu, marker string) bool {
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	return strings.Contains(state.ScreenText(&mem), marker)
 }
 
 // settleAfterBattle advances any end-of-battle text boxes and waits until
