@@ -52,13 +52,18 @@ const watchPage = `<!doctype html>
 <style>
   html,body { margin:0; height:100%; background:#111; color:#ddd;
               font:14px system-ui,sans-serif; }
-  body { display:flex; }
-  #screen { flex:0 0 auto; display:flex; align-items:center; justify-content:center;
-            width:640px; height:576px; }
-  #f { display:none; width:640px; height:576px; max-width:100vw;
-       max-height:100vh; object-fit:contain; image-rendering:pixelated; }
+  body { display:flex; overflow:hidden; }
+  /* The screen column shrinks; the image scales to whatever fits and keeps
+     the Game Boy's 160x144 ratio, so a short window scales it down rather
+     than cropping it. min-width/min-height:0 is what lets a flex child
+     actually shrink below its content size. */
+  #screen { flex:1 1 auto; min-width:0; min-height:0; padding:8px;
+            display:flex; align-items:center; justify-content:center; }
+  #f { display:none; width:640px; height:auto; aspect-ratio:160/144;
+       max-width:100%; max-height:100%; image-rendering:pixelated; }
   #w { color:#888; }
-  #trace { flex:1 1 auto; height:100vh; overflow-y:auto; box-sizing:border-box;
+  #trace { flex:0 0 clamp(280px, 32%, 460px); min-height:0; height:100vh;
+           overflow-y:auto; box-sizing:border-box;
            padding:8px 12px; border-left:1px solid #333; }
   #trace div { padding:2px 0; border-bottom:1px solid #222; white-space:pre-wrap; }
   .frame { color:#888; margin-right:8px; }
