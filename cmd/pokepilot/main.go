@@ -76,8 +76,14 @@ func main() {
 		fmt.Println("\narrived.")
 	}
 
+	// Keep stepping while serving. Sleeping here instead would freeze the
+	// emulator, and the browser would show a still frame that looks like a
+	// hang rather than a game waiting for input nobody is pressing.
 	fmt.Printf("\nstill serving http://%s for %s, ctrl-c to quit\n", served, *hold)
-	time.Sleep(*hold)
+	m.Pace(60)
+	for deadline := time.Now().Add(*hold); time.Now().Before(deadline); {
+		m.StepFrames(4)
+	}
 }
 
 // report prints the state PokePilot actually reasons about: decoded RAM,

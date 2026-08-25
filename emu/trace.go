@@ -1,6 +1,8 @@
 package emu
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -13,6 +15,10 @@ import (
 // The trace is derived entirely from RAM state changes observed by
 // sampleTrace; nothing in skill/ is instrumented.
 type TraceEntry struct {
+	// Seq is monotonic for the life of the process. Consumers must page on
+	// it, never on a slice index: the buffer is a ring, so once it wraps the
+	// length stops changing while entries keep arriving.
+	Seq   uint64 `json:"seq"`
 	Frame uint64 `json:"frame"`
 	Kind  string `json:"kind"` // "map", "dialogue", "control", "battle"
 	Text  string `json:"text"`
@@ -26,16 +32,29 @@ const traceCapacity = 256
 type traceBuf struct {
 	mu      sync.Mutex
 	entries []TraceEntry
+	nextSeq uint64
+
+	// run identifies this process's trace. A consumer that sees a different
+	// run must discard what it has: sequence numbers restart from scratch,
+	// so without this a reconnecting page replays the whole trace again.
+	run string
 }
 
 func newTraceBuf() *traceBuf {
-	return &traceBuf{entries: make([]TraceEntry, 0, traceCapacity)}
+	var b [8]byte
+	_, _ = rand.Read(b[:])
+	return &traceBuf{
+		entries: make([]TraceEntry, 0, traceCapacity),
+		run:     hex.EncodeToString(b[:]),
+	}
 }
 
 // add appends e, dropping the oldest entry once the buffer is full.
 func (t *traceBuf) add(e TraceEntry) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	t.nextSeq++
+	e.Seq = t.nextSeq
 	t.entries = append(t.entries, e)
 	if len(t.entries) > traceCapacity {
 		t.entries = t.entries[len(t.entries)-traceCapacity:]
@@ -52,9 +71,19 @@ func (t *traceBuf) snapshot() []TraceEntry {
 	return out
 }
 
+// tracePayload is what /trace.json returns. Entries are wrapped rather than
+// sent bare so a consumer can tell one process's trace from another's.
+type tracePayload struct {
+	Run     string       `json:"run"`
+	Entries []TraceEntry `json:"entries"`
+}
+
 func (t *traceBuf) serveHTTP(w http.ResponseWriter, r *http.Request) {
+	t.mu.Lock()
+	run := t.run
+	t.mu.Unlock()
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(t.snapshot())
+	_ = json.NewEncoder(w).Encode(tracePayload{Run: run, Entries: t.snapshot()})
 }
 
 // diffChanged is the change-detection primitive: it reports whether cur

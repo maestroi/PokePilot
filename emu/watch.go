@@ -97,21 +97,29 @@ async function tickFrame() {
   finally { inFlight = false; }
 }
 
-let shown = 0;
+// Page on seq, not on array length: the buffer is a ring, so once it wraps
+// the length stops growing while entries keep arriving. Reset on a new run,
+// because seq restarts and the old lines belong to a dead process.
+let lastSeq = 0, run = null;
 async function tickTrace() {
   try {
     const r = await fetch('/trace.json', { cache: 'no-store' });
     if (!r.ok) return;
-    const entries = await r.json();
-    for (let i = shown; i < entries.length; i++) {
-      const e = entries[i];
+    const payload = await r.json();
+    if (payload.run !== run) {
+      run = payload.run;
+      lastSeq = 0;
+      trace.replaceChildren();
+    }
+    for (const e of payload.entries) {
+      if (e.seq <= lastSeq) continue;
+      lastSeq = e.seq;
       const line = document.createElement('div');
       line.innerHTML = '<span class="frame">#' + e.frame + '</span>' +
                         '<span class="kind">' + e.kind + '</span>' +
                         e.text.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
       trace.appendChild(line);
     }
-    shown = entries.length;
     trace.scrollTop = trace.scrollHeight;
   } catch (e) { /* server gone */ }
 }

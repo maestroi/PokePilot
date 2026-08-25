@@ -83,3 +83,42 @@ func TestDiffChangedEmitsOneOnChange(t *testing.T) {
 		t.Fatal("diffChanged reported a change on a repeated value")
 	}
 }
+
+func TestAddAssignsMonotonicSeq(t *testing.T) {
+	b := newTraceBuf()
+	for i := 0; i < 5; i++ {
+		b.add(TraceEntry{Kind: "map"})
+	}
+	got := b.snapshot()
+	for i, e := range got {
+		if want := uint64(i + 1); e.Seq != want {
+			t.Fatalf("entry %d Seq = %d, want %d", i, e.Seq, want)
+		}
+	}
+}
+
+// Once the ring wraps, length stops growing but Seq must keep climbing —
+// that is the whole reason consumers page on Seq instead of an index.
+func TestSeqKeepsClimbingAfterWrap(t *testing.T) {
+	b := newTraceBuf()
+	for i := 0; i < traceCapacity+10; i++ {
+		b.add(TraceEntry{Kind: "map"})
+	}
+	got := b.snapshot()
+	if len(got) != traceCapacity {
+		t.Fatalf("len = %d, want %d", len(got), traceCapacity)
+	}
+	if first, last := got[0].Seq, got[len(got)-1].Seq; first != 11 || last != uint64(traceCapacity+10) {
+		t.Fatalf("Seq range = %d..%d, want 11..%d", first, last, traceCapacity+10)
+	}
+}
+
+func TestEachBufHasItsOwnRun(t *testing.T) {
+	a, b := newTraceBuf(), newTraceBuf()
+	if a.run == "" {
+		t.Fatal("run is empty")
+	}
+	if a.run == b.run {
+		t.Fatalf("two buffers share run %q", a.run)
+	}
+}
