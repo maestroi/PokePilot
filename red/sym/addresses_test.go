@@ -7,13 +7,13 @@ import (
 	"testing"
 )
 
-const symFile = "/home/maestro/.cache/pokered/pokered.sym"
+const symFile = "testdata/pokered.sym"
 
 func loadSym(t *testing.T) map[string]uint16 {
 	t.Helper()
 	data, err := os.ReadFile(symFile)
 	if err != nil {
-		t.Skip("pokered.sym not available: ", err)
+		t.Fatal("reading vendored symbol file: ", err)
 	}
 	sym := make(map[string]uint16)
 	for _, line := range strings.Split(string(data), "\n") {
