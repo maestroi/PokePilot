@@ -7,6 +7,11 @@ import (
 // Emu is a headless Pokemon Red emulator session.
 type Emu struct {
 	e *gomeboy.Emulator
+
+	// Set by Watch. Nil unless a human is watching; see emu/watch.go.
+	spec        *gomeboy.Spectator
+	specEvery   int
+	lastCapture uint64
 }
 
 // Open loads a ROM from disk. It performs no other disk I/O.
@@ -26,11 +31,13 @@ func (m *Emu) Close() error {
 // StepFrame advances the emulator by exactly one frame.
 func (m *Emu) StepFrame() {
 	m.e.StepFrame()
+	m.capture()
 }
 
 // StepFrames advances the emulator by n frames.
 func (m *Emu) StepFrames(n int) {
 	m.e.StepFrames(n)
+	m.capture()
 }
 
 // Peek8 reads a byte without any hardware side effects.
