@@ -177,3 +177,106 @@ Two things went wrong in slice 2 that this plan has to account for.
 
 And the rule that held: measure before writing task text. It is why S2-0 through
 S2-5 landed clean on first attempt. This document is not measured yet.
+
+---
+
+## Addendum — S3-6 measured, 2026-08-25
+
+S3-6 failed twice. Neither failure was a test failure: both agent-runner runs hit
+the 45-minute runtime cap (`runtime stalled or exceeded max runtime`) with no
+output captured, peaking at 107k/118k of a 131k context. Attempt 1 wrote a
+complete `skill/story.go` and never got to commit it; attempt 2 discarded that and
+started writing probe programs.
+
+Running attempt 1's code by hand takes **2.6 seconds** and fails cleanly:
+
+    GetStarter returned  map=0x28 (5,3) ctrl=true followedOak=true
+      GoTo below the ball: no path on map 28 from (5,3) to (7,4): world: no path
+
+The task was not too slow. It was built on four wrong facts, three of which this
+plan asserted as ground truth and told the worker not to re-derive.
+
+### 1. `world.Build` samples the wrong tile of each block
+
+A block is 4x4 tiles; a game coordinate ("step") is 2x2 tiles. `world/grid.go`
+took the step's **top-left** tile:
+
+    tile := romData[tilesOff+(2*sy)*4+2*sx]
+
+The game's collision uses the tile at the player's feet — the step's
+**bottom-left**, `2*sy+1`. The effect is an extra blocked row beneath every tall
+object, on every map. In Oak's Lab it makes (6..8, 4) — the tile this plan tells
+you to stand on — unwalkable, so `FindPath` correctly reports no path to a
+destination that is fine in the real game.
+
+Measured by walking the lab exhaustively with save states (`o` = the game let the
+player stand there, `S` = where the entry cutscene leaves them):
+
+          0123456789          Build, top-left      Build, bottom-left
+       0  ##########          ##########           ##########
+       1  ####oo####          ####..####           ####..####
+       2  ooooo#oooo          ####......           ..........
+       3  oooo#S###o          ......###.           ......###.
+       4  oooooooooo          ......###.           ..........
+       5  oooooooooo          ..........           ..........
+
+With `2*sy+1` the grid matches the walked result exactly. The two remaining
+differences are sprites, which `Grid` does not model: Oak stands at (5,2) and the
+rival at (4,3).
+
+This also confirms the decomp, which asks `cp 4 ; is the player standing below the
+table?` — y == 4 is a real standing position.
+
+### 2. `EVENT_FOLLOWED_OAK_INTO_LAB` does not mean the player may move
+
+`OaksLabFollowedOakScript` sets it, and the very next script re-seizes control:
+
+    OaksLabOakChooseMonSpeechScript:
+        ld a, PAD_SELECT | PAD_START | PAD_CTRL_PAD
+        ld [wJoyIgnore], a
+        ... four text boxes ...
+        SetEvent EVENT_OAK_ASKED_TO_CHOOSE_MON
+        xor a
+        ld [wJoyIgnore], a
+
+Measured: at `EVENT_FOLLOWED_OAK_INTO_LAB` the player is at (5,3) with
+`joyIgnore=0`, `font=0`, `Controllable=true`, and **all four directions blocked**.
+The predicate that means "you may move" is `EVENT_OAK_ASKED_TO_CHOOSE_MON`.
+
+### 3. `EVENT_GOT_STARTER` is not set when you take the ball
+
+Taking the ball sets `BIT_GOT_STARTER` in `wStatusFlags4` (0xD72E, bit 3) and adds
+the party mon. `EVENT_GOT_STARTER` is set later, in
+`OaksLabRivalChoosesStarterScript`, after the rival has taken his. Asserting it
+immediately after the yes/no menu is too early.
+
+### 4. `wYCoord == 6` has two meanings in the lab
+
+`OaksLabPlayerDontGoAwayScript` also fires on y == 6 and force-walks the player
+back up. Which script runs depends on `wOaksLabCurScript`. The rival challenge on
+y == 6 is only reachable once `EVENT_GOT_STARTER` is set.
+
+### 5. S3-1's bit index for `EVENT_OAK_APPEARED_IN_PALLET` is wrong
+
+This plan's derived table omitted two constants. Recounted from
+`constants/event_constants.asm`:
+
+    EVENT_FOLLOWED_OAK_INTO_LAB_2          32
+    EVENT_OAK_ASKED_TO_CHOOSE_MON          33
+    EVENT_GOT_STARTER                      34
+    EVENT_BATTLED_RIVAL_IN_OAKS_LAB        35
+    EVENT_GOT_POKEBALLS_FROM_OAK           36
+    EVENT_GOT_POKEDEX                      37
+    EVENT_PALLET_AFTER_GETTING_POKEBALLS_2 38
+    EVENT_OAK_APPEARED_IN_PALLET           39
+
+`red/state/progress.go` shipped 38. The five indices S3-2..S3-5 actually exercise
+are correct.
+
+### What this changes about writing tasks
+
+The instruction "do not re-derive, this is ground truth" left the worker no
+sanctioned move when reality disagreed. It spent 45 minutes not allowed to
+conclude the plan was wrong. Ground truth stated in a task must be labelled with
+how it was established — read from the decomp, or measured on the ROM — and a task
+must always be permitted to report that a stated fact is false.
