@@ -348,3 +348,34 @@ GROWL there is no line that wins. Fixtures use Squirtle. If the slice 4
 random-starter experiment ever rolls Bulbasaur, it will lose the lab battle
 until the policy gets something better than a stage heuristic — that is a real
 finding about the game, worth keeping rather than tuning away.
+
+### Correction — losing the rival battle is survivable
+
+Addendum 2 above assumed a lost rival battle meant a blackout and an
+unrecoverable run. MEASURED, and wrong. Losing it leaves:
+
+    map=0x28 at (5,6)  controllable=true  party=1
+    followedOak=true   gotStarter=true    rival=true
+    Route 1 (map 0x0C) reachable
+
+There is no blackout. `OaksLabRivalEndBattleScript` runs whichever way the
+battle went: it calls `predef HealParty` and sets
+EVENT_BATTLED_RIVAL_IN_OAKS_LAB unconditionally.
+
+More to the point, the north exit was never gated on the battle at all.
+`PalletTownDefaultScript` opens with
+
+    CheckEvent EVENT_FOLLOWED_OAK_INTO_LAB
+    ret nz
+
+so the gate lifts the moment Oak walks the player into the lab — before the
+starter is taken, and long before the rival fight.
+
+So GetStarter must NOT require ResultWon. Its postcondition is
+EVENT_BATTLED_RIVAL_IN_OAKS_LAB set, the player controllable, and a party of
+at least one — all of which hold after a loss. `StatAwareMove` stays the
+default because winning is still better (the starter keeps the experience),
+but a loss is a result, not an error.
+
+This also un-blocks the slice 4 random-starter experiment: Bulbasaur cannot
+win this fight, and now it does not have to.
