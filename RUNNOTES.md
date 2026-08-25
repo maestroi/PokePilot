@@ -1,31 +1,37 @@
-# RUNNOTES — S3-1 (done)
+# RUNNOTES — S3-2 (done)
 
 ## What changed
-Commit d552219 "state: read named story event flags from wEventFlags".
+Commit "skill: endure a scripted cutscene without fighting the game".
 
-- `red/state/progress.go`: added `Event` (uint16 bit index into wEventFlags),
-  the six named constants (indices 0, 33, 34, 35, 36, 38), `HasEvent(m, e)`
-  which reads `sym.EventFlags + uint16(e)/8` and tests bit `e%8`, and
-  `Event.String()` (named constants; `unknown(N)` otherwise).
-- `red/state/progress_test.go` (new): synthetic-Mem table tests, no ROM.
-  Explicit byte/bit arithmetic asserts for EventGotStarter (34 -> 0xD74B bit 2)
-  and EventFollowedOakIntoLab (0 -> 0xD747 bit 0).
+- `skill/cutscene.go` (new): `Cutscene(m, budgetFrames, done func(*state.Mem) bool)`.
+  Loops until `done()` AND `state.Controllable` hold, or the frame budget is spent.
+  Each iteration: if `sym.FontLoaded != 0` tap A (hold 3, gap 7 = 10 frames) to
+  advance the box; otherwise step one frame and wait. NEVER presses a direction.
+  On timeout returns an error wrapping `ErrCutsceneTimeout` that names the map,
+  (x,y), wJoyIgnore and wFontLoaded — diagnosable without a screenshot.
+- `skill/cutscene_test.go` (new, ROM-gated): boots, GoTo Pallet Town, walks the
+  verified path [R R R U U U U R R U] to (10,1), waits for wJoyIgnore != 0,
+  confirms the up step is blocked, runs Cutscene with done=HasEvent(
+  EventFollowedOakIntoLab), then asserts the flag flipped, wJoyIgnore back to 0,
+  and Controllable.
 
-## Why
-Slice 3 drives the story past the Pallet gate; every skill in the slice
-terminates on one of these flags. Indices are DERIVED from
-`const/const_skip` in pokered `event_constants.asm`, not measured on the ROM —
-if a later task sees a flag misbehave, suspect the index first (one-line fix).
-
-## Verification
-`go build ./...`, `go vet ./...` clean; `go test -count=1 -skip
-TestGoToViridianPokecenter ./...` all green. The skip is the known red test
-that stays red until the last task in this plan.
+## Why / measured result
+This is the measurement that confirms S3-1's derived bit index 0 for
+EVENT_FOLLOWED_OAK_INTO_LAB. On the real ROM: gate fired at (10,1) with
+wJoyIgnore=0xFC (SELECT|START|dpad), the step into the exit was blocked, and
+after the cutscene the flag flipped, wJoyIgnore returned to 0, and the player is
+controllable (in Oak's lab, map 0x28). Bit index 0 is CONFIRMED.
 
 ## Must know for next task
-- `HasEvent` is in package `state`, exported; no Cutscene helper was added
-  (out of scope for S3-1). skill/, world/, emu/ untouched.
-- The Pallet gate is `EVENT_FOLLOWED_OAK_INTO_LAB` (bit 0) — the flag a
-  story-driving task will check first.
-- ROM path (if a task needs one):
-  /home/maestro/Documents/projects/gomeboy/roms/pokemon_red.gb
+- The Oak cutscene is long: "HEY WAIT!" box -> Oak walks over -> "not safe" box ->
+  player is DRAGGED across the map boundary into the lab -> walks up 8 tiles ->
+  OaksLabFollowedOakScript sets EVENT_FOLLOWED_OAK_INTO_LAB (+ _2) -> Oak's
+  choose-mon speech. Cutscene returns only after that speech closes (Controllable).
+  A 30000-frame budget is plenty; the drag is a simulated joypad walk the game
+  drives, so no direction input is needed (or allowed).
+- Pallet Town is 20x18 tiles; the north exit (to Route 1, map 0x0c) is at
+  (10,1)/(11,1) — the only walkable tiles on row y=1. The gate script
+  (PalletTownDefaultScript) fires at y==1.
+- world/, red/, emu/ untouched. TestGoToViridianPokecenter still red (by design,
+  until S3-7); verify with `-skip TestGoToViridianPokecenter`.
+- ROM: /home/maestro/Documents/projects/gomeboy/roms/pokemon_red.gb
