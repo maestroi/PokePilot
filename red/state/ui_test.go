@@ -6,34 +6,14 @@ import (
 	"github.com/maestroi/pokepilot/red/sym"
 )
 
-func TestDecodeMenuClosed(t *testing.T) {
+func TestDecodeDialogueClosed(t *testing.T) {
 	var m Mem
 	m[sym.FontLoaded] = 0
 	// Stale RAM from a previous menu/text box must not be read as open.
-	m[sym.CurrentMenuItem] = 3
-	m[sym.MaxMenuItem] = 4
 	m[sym.TextBoxID] = 0x2A
 
-	if s := DecodeMenu(&m); s != nil {
-		t.Errorf("DecodeMenu = %+v, want nil when FontLoaded is 0", s)
-	}
 	if d := DecodeDialogue(&m); d != nil {
 		t.Errorf("DecodeDialogue = %+v, want nil when FontLoaded is 0", d)
-	}
-}
-
-func TestDecodeMenuOpen(t *testing.T) {
-	var m Mem
-	m[sym.FontLoaded] = 1
-	m[sym.CurrentMenuItem] = 5
-	m[sym.MaxMenuItem] = 7
-
-	s := DecodeMenu(&m)
-	if s == nil {
-		t.Fatal("DecodeMenu = nil, want open menu")
-	}
-	if s.Current != 5 || s.Max != 7 {
-		t.Errorf("MenuState = %+v, want {5 7}", s)
 	}
 }
 

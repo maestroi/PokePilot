@@ -51,3 +51,39 @@ func DecodeProgress(m *Mem) ProgressState {
 	badges := m.U8(sym.ObtainedBadges)
 	return ProgressState{Badges: badges, BadgeCount: bits.OnesCount8(badges)}
 }
+
+// Event identifies a story flag by its bit index in wEventFlags.
+type Event uint16
+
+const (
+	EventFollowedOakIntoLab    Event = 0
+	EventOakAskedToChooseMon   Event = 33
+	EventGotStarter            Event = 34
+	EventBattledRivalInOaksLab Event = 35
+	EventGotPokeballsFromOak   Event = 36
+	EventOakAppearedInPallet   Event = 38
+)
+
+var eventNames = map[Event]string{
+	EventFollowedOakIntoLab:    "FollowedOakIntoLab",
+	EventOakAskedToChooseMon:   "OakAskedToChooseMon",
+	EventGotStarter:            "GotStarter",
+	EventBattledRivalInOaksLab: "BattledRivalInOaksLab",
+	EventGotPokeballsFromOak:   "GotPokeballsFromOak",
+	EventOakAppearedInPallet:   "OakAppearedInPallet",
+}
+
+// String renders the event name; unnamed indices render as "unknown(N)".
+func (e Event) String() string {
+	if name, ok := eventNames[e]; ok {
+		return name
+	}
+	return fmt.Sprintf("unknown(%d)", uint16(e))
+}
+
+// HasEvent reports whether the story event flag is set. Bit N of wEventFlags
+// lives in byte 0xD747+N/8 at bit N%8.
+func HasEvent(m *Mem, e Event) bool {
+	b := m.U8(sym.EventFlags + uint16(e)/8)
+	return b&(1<<(uint16(e)%8)) != 0
+}

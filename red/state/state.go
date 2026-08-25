@@ -8,7 +8,7 @@ type GameState struct {
 	Inventory InventoryState
 	Progress  ProgressState
 	Battle    *BattleState
-	Menu      *MenuState
+	Menu      MenuState
 	Dialogue  *DialogueState
 }
 

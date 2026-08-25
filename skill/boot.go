@@ -52,7 +52,7 @@ func BootToOverworld(m *emu.Emu) (state.GameState, error) {
 	state.Snapshot(m, &mem)
 	last := state.Decode(&mem)
 	menuOpen := "no"
-	if last.Menu != nil {
+	if mem.U8(sym.FontLoaded) != 0 {
 		menuOpen = fmt.Sprintf("yes (cur=%d max=%d)", last.Menu.Current, last.Menu.Max)
 	}
 	return state.GameState{}, fmt.Errorf(
