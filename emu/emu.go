@@ -15,6 +15,12 @@ type Emu struct {
 	specEvery   int
 	lastCapture uint64
 
+	// Set by Watch alongside spec. trace is nil unless watching; traceSt
+	// holds the previous sample for change detection. See emu/trace.go.
+	onSample func(*Emu)
+	trace    *traceBuf
+	traceSt  traceState
+
 	// Set by Pace. Zero means run flat out; see emu/watch.go.
 	frameDur  time.Duration
 	nextFrame time.Time

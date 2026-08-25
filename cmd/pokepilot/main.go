@@ -43,6 +43,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("serve screen: %v", err)
 	}
+	m.OnSample(newDialogueTracer().sample)
 	fmt.Printf("%s\nwatch: http://%s\n\n", version, served)
 
 	// Boot runs unthrottled: it is three thousand frames of Oak's intro

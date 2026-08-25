@@ -1,6 +1,7 @@
 package emu
 
 import (
+	"fmt"
 	"net"
 	"net/http"
 	"time"
@@ -25,9 +26,99 @@ func (m *Emu) Watch(addr string, everyFrames int) (string, error) {
 	}
 	m.spec = gomeboy.NewSpectator()
 	m.specEvery = everyFrames
-	go http.Serve(ln, m.spec.Handler()) //nolint:errcheck // serves until the process exits
+	m.trace = newTraceBuf()
+
+	specHandler := m.spec.Handler()
+	mux := http.NewServeMux()
+	mux.HandleFunc("/frame.png", specHandler.ServeHTTP)
+	mux.HandleFunc("/trace.json", m.trace.serveHTTP)
+	mux.HandleFunc("/", serveWatchPage)
+	go http.Serve(ln, mux) //nolint:errcheck // serves until the process exits
 	return ln.Addr().String(), nil
 }
+
+// serveWatchPage serves PokePilot's own spectator page: the screen on the
+// left at the same 4x scale as gomeboy's own page, and a scrolling trace
+// panel on the right polling /trace.json.
+func serveWatchPage(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprint(w, watchPage)
+}
+
+const watchPage = `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>PokePilot</title>
+<style>
+  html,body { margin:0; height:100%; background:#111; color:#ddd;
+              font:14px system-ui,sans-serif; }
+  body { display:flex; }
+  #screen { flex:0 0 auto; display:flex; align-items:center; justify-content:center;
+            width:640px; height:576px; }
+  #f { display:none; width:640px; height:576px; max-width:100vw;
+       max-height:100vh; object-fit:contain; image-rendering:pixelated; }
+  #w { color:#888; }
+  #trace { flex:1 1 auto; height:100vh; overflow-y:auto; box-sizing:border-box;
+           padding:8px 12px; border-left:1px solid #333; }
+  #trace div { padding:2px 0; border-bottom:1px solid #222; white-space:pre-wrap; }
+  .frame { color:#888; margin-right:8px; }
+  .kind { color:#6cf; margin-right:8px; }
+</style>
+</head>
+<body>
+<div id="screen">
+  <p id="w">waiting for the first frame...</p>
+  <img id="f" alt="">
+</div>
+<div id="trace"></div>
+<script>
+const img = document.getElementById('f'), wait = document.getElementById('w');
+const trace = document.getElementById('trace');
+let inFlight = false;
+async function tickFrame() {
+  if (inFlight) return;
+  inFlight = true;
+  try {
+    const r = await fetch('/frame.png', { cache: 'no-store' });
+    if (r.ok) {
+      const url = URL.createObjectURL(await r.blob());
+      const old = img.src;
+      img.src = url;
+      if (old.startsWith('blob:')) URL.revokeObjectURL(old);
+      img.style.display = 'block';
+      wait.style.display = 'none';
+    }
+  } catch (e) { /* server gone; keep showing the last frame */ }
+  finally { inFlight = false; }
+}
+
+let shown = 0;
+async function tickTrace() {
+  try {
+    const r = await fetch('/trace.json', { cache: 'no-store' });
+    if (!r.ok) return;
+    const entries = await r.json();
+    for (let i = shown; i < entries.length; i++) {
+      const e = entries[i];
+      const line = document.createElement('div');
+      line.innerHTML = '<span class="frame">#' + e.frame + '</span>' +
+                        '<span class="kind">' + e.kind + '</span>' +
+                        e.text.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+      trace.appendChild(line);
+    }
+    shown = entries.length;
+    trace.scrollTop = trace.scrollHeight;
+  } catch (e) { /* server gone */ }
+}
+
+setInterval(tickFrame, 100);
+setInterval(tickTrace, 500);
+tickFrame();
+tickTrace();
+</script>
+</body>
+</html>
+`
 
 // capture refreshes what Watch serves, if watching is on and enough frames
 // have passed. Errors are ignored: a dropped preview frame must never affect
@@ -41,6 +132,7 @@ func (m *Emu) capture() {
 	}
 	m.lastCapture = m.e.FrameCount()
 	_ = m.spec.Capture(m.e)
+	m.sampleTrace()
 }
 
 // Pace throttles emulation to about fps frames per second, so a human can

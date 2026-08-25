@@ -10,7 +10,13 @@ type MenuState struct {
 
 // DialogueState is the decoded text-box context.
 type DialogueState struct {
+	// TextBoxID is wTextBoxID. Measured on the real ROM as useless for
+	// detecting an open box (it read 0x01 before, during and after
+	// dialogue); kept only because a few scripts branch on it.
 	TextBoxID uint8
+
+	// Text is what the box actually says, decoded from the tilemap.
+	Text string
 }
 
 // DecodeMenu returns nil when no menu is open.
@@ -29,7 +35,10 @@ func DecodeDialogue(m *Mem) *DialogueState {
 	if m.U8(sym.FontLoaded) == 0 {
 		return nil
 	}
-	return &DialogueState{TextBoxID: m.U8(sym.TextBoxID)}
+	return &DialogueState{
+		TextBoxID: m.U8(sym.TextBoxID),
+		Text:      ScreenText(m),
+	}
 }
 
 // Controllable reports whether the game is accepting free overworld input.

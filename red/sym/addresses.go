@@ -67,8 +67,13 @@ const (
 	MaxMenuItem     uint16 = 0xCC28
 	MenuWatchedKeys uint16 = 0xCC29
 	TextBoxID       uint16 = 0xD125
-	FontLoaded      uint16 = 0xCFC4
-	JoyIgnore       uint16 = 0xCD6B
+	// TileMap is wTileMap, the WRAM shadow of the background tilemap
+	// (pokered.sym: 00:c3a0). 20x18 tiles; while a text box is up its rows
+	// hold font tile IDs, which are the same values charmap.asm uses.
+	TileMap    uint16 = 0xC3A0
+	TileMapLen        = 20 * 18
+	FontLoaded uint16 = 0xCFC4
+	JoyIgnore  uint16 = 0xCD6B
 )
 
 // HRAM joypad mirrors, in Gen 1 bit order:
