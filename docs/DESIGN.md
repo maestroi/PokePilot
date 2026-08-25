@@ -571,6 +571,61 @@ thousands of planner calls; none of that fits in a context window, and an agent
 whose competence depends on a long conversation degrades as it fills and dies on
 restart. Call #4000 must be as well-informed as call #4.
 
+#### The journal is a decision record, and its context is a save state
+
+A journal line does not serialize the prompt or the rendered state. It references
+a **save state**, because the emulator already has one and it is strictly better:
+`emu.SaveState` captures every RAM byte, the RNG, the party and the flags, and a
+Red's-bedroom state is 294 KB raw and 37 KB gzipped. Two hundred decision points
+in a run is about 7 MB. A serialized context goes stale the moment the prompt
+format changes; a save state never does.
+
+```
+DecisionRecord {
+    ID        string     // stable, referenced by the outcome when it resolves
+    Kind      Tactical | Strategic
+    State     string     // path/hash of the save state at the decision point
+    Options   []string   // what the planner was actually offered
+    Choice    int        // index into Options
+    Rationale string     // one line, the planner's own reason
+    Outcome   *Outcome   // nil until resolved; filled in from RAM
+}
+```
+
+`Outcome` is derived, never rated: the battle ended `ResultWon`, the event flag
+flipped, HP went from X to Y. The label is a byte in memory rather than a human
+or model judgement, which is what makes this corpus unusual.
+
+**Record the two kinds separately.** A `Tactical` decision (which move) has a
+short horizon and a clean label. A `Strategic` one (grind now or push on) resolves
+thousands of frames later, tangled with everything since. Credit assignment is
+honest for the first and speculative for the second; do not pretend otherwise by
+storing them in one undifferentiated pile.
+
+**First use is replay, not training.** Because a stored state is loadable, any
+position can be re-run against a different model, prompt, or policy. That gives a
+regression benchmark that works at twenty positions: change something, replay,
+compare outcomes. Training needs a corpus that does not exist yet; evaluation pays
+off immediately, and there is currently no other way to tell whether a change to
+the planner helped.
+
+**Counterfactuals are what make this corpus able to beat its own author.** Load a
+position, take a different option, run it out. A log of what the planner chose can
+only ever distil the planner. A record of what actually *worked* comes from the
+emulator, so it can exceed the policy that generated it. This is only possible
+because the emulator is deterministic, resettable, and runs at ~36x realtime.
+
+Two limits to respect. Gen 1 is random — damage rolls, criticals, the 1/256 miss —
+so a single rollout of an alternative is an anecdote, not evidence; counterfactuals
+need N rollouts per branch. And most decisions are trivial: real branch points are
+dozens per run, not thousands, so a useful corpus needs many cheap unattended runs
+rather than one careful one.
+
+Storage follows the existing rule without exception: save states are derived from
+a commercial ROM, so the corpus is generated on demand and gitignored, exactly like
+`testdata/fixtures`. No `.state` file is ever committed, and a decision corpus is
+not a reason to relax that.
+
 #### Readiness gating, and why the journal prevents an infinite loop
 
 Tactical skill does not rescue an under-levelled team. From
