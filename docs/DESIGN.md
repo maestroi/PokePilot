@@ -503,6 +503,134 @@ available actions — and returns one high-level action. It never sees raw RAM, 
 screenshot, or a button. Knowledge is queried through narrow functions
 (`knowledge.Matchup`, `knowledge.Learnset`), never dumped wholesale into context.
 
+### 3.8b Knowledge, memory, and readiness
+
+Three questions that decide whether the agent can finish the game rather than
+just play the opening well. Settled here so no task has to invent an answer.
+
+#### Knowledge comes from the ROM, never from a wiki
+
+Everything a strategy wiki would tell the planner is already in the cartridge,
+and §3.5 already routes it through the parsers: base stats, moves, learnsets,
+type chart, trainer parties, encounter tables. A scraped or embedded wiki adds
+nothing and costs correctness.
+
+It costs correctness because Gen 1 disagrees with every wiki on points where a
+language model's prior is strongest. From `data/types/type_matchups.asm`:
+
+```asm
+db GHOST,        PSYCHIC_TYPE,  NO_EFFECT
+```
+
+Ghost does **nothing** to Psychic in Red/Blue. Every type chart, every wiki, and
+every instinct trained on later generations says super-effective. Send a Gastly
+at Sabrina's Alakazam on that advice and it deals zero damage. Focus Energy
+halves the critical rate instead of quadrupling it; every move misses 1/256 of
+the time. In each case the wiki is confidently wrong and the ROM is authoritative.
+
+So: `knowledge.Matchup`, `knowledge.Learnset`, `knowledge.TrainerParty` — narrow
+functions over parsed ROM data. Never a context dump, for four reasons:
+
+1. It does not fit. 151 base-stat blocks and 165 moves are mostly irrelevant to
+   any single decision.
+2. A function is testable; recalled prose is not, and drifts silently.
+3. Precompute the answer, not the inputs. The planner does not need the type
+   chart, it needs "your Water move is 2x against this target".
+4. Scraped text is untrusted input entering the agent's context. A self-contained
+   parser has no such surface.
+
+#### Fog of war is a switch, not a default
+
+The ROM knows what the player does not: every trainer's exact party, encounter
+rates, enemy movesets. Exposing that to the planner is a decision about what is
+being demonstrated, not a technical one.
+
+`knowledge.Fog` gates enemy internals. Own party, inventory, and world structure
+are always readable. With fog off the agent counter-builds against Lance; with
+fog on it must over-level like a blind human playthrough. Both are legitimate;
+running both and comparing is more interesting than either. Default: fog **on**.
+
+#### Memory has three tiers, and only one of them persists
+
+| Tier | Lives in | Lifetime |
+|---|---|---|
+| ROM-parsed statics (type chart, base stats, parties) | Go memory, parsed once at startup | the process |
+| Game state (party, levels, items, badges, event flags) | the cartridge's RAM, decoded per call | re-derived every time |
+| The journal (intent, failures, rationale) | an append-only log | the run |
+
+The planner is stateless between calls. It does not remember the type chart, it
+queries it. It does not remember its party, it reads it — `GameState` already
+carries party, inventory, badges and story flags, which is why §3.9 detects
+milestones from state rather than tracking them in a script. Kill the process at
+Victory Road and restart from a save state: nothing is lost, because nothing was
+being held.
+
+That makes the journal small and load-bearing. It records only what RAM cannot:
+what was attempted, what failed, and why a choice was made. A full playthrough is
+thousands of planner calls; none of that fits in a context window, and an agent
+whose competence depends on a long conversation degrades as it fills and dies on
+restart. Call #4000 must be as well-informed as call #4.
+
+#### Readiness gating, and why the journal prevents an infinite loop
+
+Tactical skill does not rescue an under-levelled team. From
+`data/trainers/parties.asm`:
+
+```asm
+LoreleiData:  db $FF, 54, DEWGONG, 53, CLOYSTER, 54, SLOWBRO, 56, JYNX, 56, LAPRAS, 0
+LanceData:    db $FF, 58, GYARADOS, 56, DRAGONAIR, 56, DRAGONAIR, 60, AERODACTYL, 62, DRAGONITE, 0
+```
+
+Levels 53-62, then the Champion at 61-65. Arrive at level 35 and every move
+choice in the world loses. So:
+
+- **Training and catching are first-class objectives**, not side effects.
+  `Train(party, minLevel)` and `Catch(type)` sit in the objective graph beside
+  `Challenge(gym)`.
+- **Readiness is computed, not judged.** The opposing party is in the ROM (fog
+  permitting), so a deterministic estimator returns a number from level delta and
+  a coverage matrix over `Matchup`. The planner decides what to do with the
+  number; it does not eyeball whether it feels ready.
+- **Planning runs backward from gates.** "Beating Lance needs ~level 55, so the
+  team I build at Cerulean must be one that scales" is a different computation
+  from greedily satisfying the next objective, and it is the one that matters.
+
+Losing to the Elite Four is survivable: it costs half your money and returns you
+to the last Pokemon Center. That makes attempt-fail-retry a legitimate strategy
+and creates the failure mode this section exists to prevent.
+
+Without a record of the last attempt, the agent loops forever: attempt, lose,
+re-derive state, reason identically from identical inputs, attempt again. Two
+guards, both cheap:
+
+1. **The readiness threshold is monotonic.** Every loss raises it, so no identical
+   retry is possible.
+2. **Attempts per gate are capped.** On exhaustion it escalates to a human rather
+   than burning a week of tokens.
+
+The symmetric failure — grinding forever and never attempting — is why the
+threshold must be a concrete satisfiable number rather than a confidence.
+
+#### The Elite Four is a gauntlet, and provisioning is an objective
+
+Five trainers back to back with no healing between them. Confirmed in the ROM:
+
+- `IndigoPlateauLobby` holds the last nurse and the last shop clerk.
+- `LoreleisRoom` warps south to the lobby and north to `BrunosRoom`, and
+  `LoreleiShowOrHideExitBlock` keeps the north exit blocked until she is beaten.
+- Entering sets `BIT_STARTED_ELITE_4` in `wElite4Flags` (0xD734) — the gauntlet is
+  observable from RAM, so a skill can assert it rather than infer it.
+
+The consequence is that HP and consumables are a resource to be planned across
+five battles, not per battle. Buying Full Restores and Revives in the lobby is an
+objective with a precondition on money, and entering with a hurt party is a
+losing move no move policy can undo.
+
+`LoreleiScriptWalkIntoRoom` also drives the player with
+`StartSimulatingJoypadStates` (`wSimulatedJoypadStatesIndex`, 0xCD38). That is a
+second way the game takes control, distinct from `wJoyIgnore`, and the `Cutscene`
+skill must tolerate both: when the game is driving, stop pressing directions.
+
 ### 3.9 Progression
 
 ```
