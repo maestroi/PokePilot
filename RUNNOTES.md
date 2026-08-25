@@ -1,36 +1,30 @@
-# RUNNOTES — S3-3 (done)
+# RUNNOTES — S3-4 (done)
 
 ## What changed
-Commit "skill: cursor-driven menu selection".
+Commit "state: decode moves, PP and battle result; fix EnemyMaxHP address".
 
-- `red/state/menu.go` (new): `MenuState{Current int, Max int}`, `DecodeMenu(m *Mem) MenuState`
-  (value, reads wCurrentMenuItem/wMaxMenuItem, no gating).
-- `skill/menu.go` (new): `ErrMenuStuck`, `SelectMenuItem(m, index)`. Step-and-verify: tap toward
-  target, re-read wCurrentMenuItem, repeat until asserted == index, then tap A. Range check
-  `index < 0 || index >= menu.Max`. 5 consecutive stalled taps -> ErrMenuStuck.
-- `red/state/menu_test.go` (new, synthetic Mem), `skill/menu_test.go` (new, ROM-gated Start menu).
-- Reconciled the pre-existing conflicting `MenuState`/`DecodeMenu` in `red/state/ui.go` (was
-  uint8, returned *MenuState, gated on FontLoaded): removed it; `state.go` `Menu *MenuState` ->
-  value; `boot.go` menu-open check now uses `FontLoaded != 0`; `ui_test.go` menu tests dropped.
-- `red/sym/addresses.go`: added `ListMenuID` (0xCF94).
-
-## Why / measured ground truth (verified on the ROM — corrects the task spec)
-- `wMaxMenuItem` is the item COUNT, not an inclusive max: Start menu (no pokedex) = 6, valid
-  indices 0..5. The cursor WRAPS (5->0 on Down), contrary to the "does not wrap" assumption.
-  Hence the range check is `index >= Max` (chasing index==Max would loop forever: it wraps and
-  never reads as stuck).
-- A on Start-menu index 1 (ITEM) opens the bag, identified by `wListMenuID == 3` (ITEMLISTMENU);
-  index 0 (POKéMON) opens the party submenu, which is NOT a list menu (listID stays 0).
-- The fixture bag is EMPTY: it reports `{Current:0 Max:0}` (list max = count when <2), not `{Max:1}`.
-- Menu RAM holds stale values from boot (cur=5, max=7). FontLoaded fires BEFORE DrawStartMenu
-  writes the cursor, so "menu fully drawn" = `wMaxMenuItem == 6` (the last write in DrawStartMenu).
-- The list menu's input path needs the joypad to settle after the A press: close with B using a
-  20-frame settle + hold 8 (a plain hold-3 tap right after A is missed).
+- `red/sym/addresses.go`: added `BattleResult` (0xCF0B), `BattleMonSpecies` (0xD014),
+  `BattleMonMoves` (0xD01C), `BattleMonMaxHP` (0xD023), `BattleMonPP` (0xD02D),
+  `EnemyMonLevel` (0xCFF3), `EnemyMonMaxHP` (0xCFF4), `PartyMon1HP` (0xD16C).
+- `red/sym/addresses_test.go`: all new labels added to the pokered.sym cross-check table.
+- `red/state/battle.go`:
+  - BUG FIX: `EnemyMaxHP` now reads `sym.EnemyMonMaxHP` (0xCFF4), was `sym.EnemyMonHP + 2`
+    (0xCFE8 — the enemy HP pair's trailing bytes, wrong). Stale comment deleted.
+  - `BattleState` gained `ActiveSpecies`, `ActiveMaxHP`, `EnemyLevel`, `Moves [4]Move`.
+  - New `Move{ID, PP}`; `Usable() []int` = slot indices with ID != 0 and PP > 0, slot order.
+  - New `BattleResult` (ResultWon=0, ResultLost=1, ResultDraw=2) + `DecodeBattleResult(m)`.
+- `red/state/battle_test.go`: synthetic-Mem tests — all 4 move slots decode with PP;
+  Usable() excludes empty (ID 0) and PP-0 slots; EnemyMaxHP regression test writes
+  17 to 0xCFE8 and 50 to 0xCFF4 and asserts 50 (verified it FAILS if the address is
+  reverted to EnemyMonHP+2); DecodeBattleResult table test.
 
 ## Must know for next task
-- Start-menu open predicate: tap Start, wait `FontLoaded != 0` AND `wMaxMenuItem == 6`.
-- Select index i: `skill.SelectMenuItem(e, i)`; it asserts the cursor reached i before A.
-- Distinguish submenus by wListMenuID (3 = bag), not by wMaxMenuItem alone (party also reads 0).
-- world/, emu/, battle code untouched. TestGoToViridianPokecenter still red (by design, until
-  S3-7); verify with `-skip TestGoToViridianPokecenter`.
+- `DecodeBattle` still returns nil when IsInBattle != 1/2 (contract unchanged).
+- Move slots: wBattleMonMoves 0xD01C / wBattleMonPP 0xD02D, 4 bytes each, ID 0 = empty.
+- wBattleResult 0xCF0B: 0 won / 1 lost / 2 draw (matches pokered BATTLE_WON/LOST/DREW).
+- wPartyMon1HP 0xD16C is PartyMon1+1, handy for post-battle party HP checks.
+- No battle skill implemented (out of scope here); skill/move.go already probes
+  DecodeBattle for in-battle detection.
+- skill/, world/, emu/ untouched. TestGoToViridianPokecenter still red by design;
+  verify with `-skip TestGoToViridianPokecenter`.
 - ROM: /home/maestro/Documents/projects/gomeboy/roms/pokemon_red.gb
