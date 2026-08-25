@@ -26,6 +26,7 @@ func main() {
 	dest := flag.String("goto", "viridian pokemon center", "named destination to walk to")
 	fps := flag.Int("fps", 60, "pace the walk to this many frames per second so it is watchable; 0 runs flat out")
 	hold := flag.Duration("hold", 30*time.Second, "how long to keep serving after the run finishes")
+	starter := flag.String("starter", "squirtle", "starter to take: charmander, squirtle or bulbasaur (bulbasaur loses the rival battle)")
 	flag.Parse()
 
 	romPath := os.Getenv("POKEMON_RED_ROM")
@@ -60,6 +61,27 @@ func main() {
 		fmt.Printf("paced to %d fps — open the page now\n", *fps)
 	}
 
+	// The north exit of Pallet Town is gated on the opening story: walking to
+	// y==1 without a Pokemon triggers Oak's "Don't go out!" cutscene and sets
+	// wJoyIgnore, which no amount of walking gets past.
+	var which skill.Starter
+	switch *starter {
+	case "charmander":
+		which = skill.StarterCharmander
+	case "squirtle":
+		which = skill.StarterSquirtle
+	case "bulbasaur":
+		which = skill.StarterBulbasaur
+	default:
+		log.Fatalf("unknown starter %q: want charmander, squirtle or bulbasaur", *starter)
+	}
+
+	fmt.Printf("getting the %s starter (this includes the rival battle)...\n", *starter)
+	if err := skill.GetStarter(m, m.ROM(), which, skill.StatAwareMove(m.ROM())); err != nil {
+		log.Fatalf("get starter: %v", err)
+	}
+	report(m, "got starter")
+
 	target, ok := skill.Place(*dest)
 	if !ok {
 		log.Fatalf("unknown destination %q", *dest)
@@ -71,7 +93,6 @@ func main() {
 	report(m, fmt.Sprintf("after GoTo (%s)", time.Since(start).Round(time.Millisecond)))
 	if err != nil {
 		fmt.Printf("\nGoTo failed: %v\n", err)
-		fmt.Println("(this is expected until slice 3 opens the Pallet Town story gate)")
 	} else {
 		fmt.Println("\narrived.")
 	}
