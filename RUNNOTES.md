@@ -1,30 +1,36 @@
-# RUNNOTES — S3-4 (done)
+# RUNNOTES — S3-5 (done)
 
 ## What changed
-Commit "state: decode moves, PP and battle result; fix EnemyMaxHP address".
+Commit "skill: fight a battle to a decision with a pluggable move policy".
 
-- `red/sym/addresses.go`: added `BattleResult` (0xCF0B), `BattleMonSpecies` (0xD014),
-  `BattleMonMoves` (0xD01C), `BattleMonMaxHP` (0xD023), `BattleMonPP` (0xD02D),
-  `EnemyMonLevel` (0xCFF3), `EnemyMonMaxHP` (0xCFF4), `PartyMon1HP` (0xD16C).
-- `red/sym/addresses_test.go`: all new labels added to the pokered.sym cross-check table.
-- `red/state/battle.go`:
-  - BUG FIX: `EnemyMaxHP` now reads `sym.EnemyMonMaxHP` (0xCFF4), was `sym.EnemyMonHP + 2`
-    (0xCFE8 — the enemy HP pair's trailing bytes, wrong). Stale comment deleted.
-  - `BattleState` gained `ActiveSpecies`, `ActiveMaxHP`, `EnemyLevel`, `Moves [4]Move`.
-  - New `Move{ID, PP}`; `Usable() []int` = slot indices with ID != 0 and PP > 0, slot order.
-  - New `BattleResult` (ResultWon=0, ResultLost=1, ResultDraw=2) + `DecodeBattleResult(m)`.
-- `red/state/battle_test.go`: synthetic-Mem tests — all 4 move slots decode with PP;
-  Usable() excludes empty (ID 0) and PP-0 slots; EnemyMaxHP regression test writes
-  17 to 0xCFE8 and 50 to 0xCFF4 and asserts 50 (verified it FAILS if the address is
-  reverted to EnemyMonHP+2); DecodeBattleResult table test.
+- `skill/battle.go` (new):
+  - `MovePolicy func(state.BattleState) int` — the seam for a learned policy.
+  - `FirstUsableMove` default policy: lowest slot with ID != 0 and PP > 0, else -1.
+  - `ErrNoUsableMove`; `Battle(m, policy) (state.BattleResult, error)`.
+  - State machine: main menu (`FontLoaded != 0 && MaxMenuItem == 1`) → `SelectMenuItem(m, 0)`
+    (FIGHT) → wait for move menu (`MaxMenuItem >= 2`) → `SelectMenuItem(m, slot+1)`
+    (move menu is 1-indexed: slot i sits at cursor i+1) → wait for `FontLoaded == 0`
+    (menu closed) → loop. Anything else (text box/animation, stale wMaxMenuItem) → Tap A.
+  - Battle ends when `DecodeBattle == nil` (IsInBattle 0): `settleAfterBattle` advances
+    end text (Tap A while `FontLoaded != 0`), waits for `Controllable`, returns
+    `DecodeBattleResult`. Losing = ResultLost, nil error.
+  - Frame budgets: 60000 total (cap trips → loud error), 500 for move-menu appear/close,
+    3000 for post-battle settle. Every error carries map, coords, decoded battle state.
+  - No item/switch handling: party menu after a faint is not handled → frame cap fails loudly.
+- `skill/battle_test.go` (new): `TestFirstUsableMove` (unit, 4 cases, no ROM);
+  `TestBattleNoBattleInProgress` (ROM-gated: error + player controllable + coords unchanged).
 
-## Must know for next task
-- `DecodeBattle` still returns nil when IsInBattle != 1/2 (contract unchanged).
-- Move slots: wBattleMonMoves 0xD01C / wBattleMonPP 0xD02D, 4 bytes each, ID 0 = empty.
-- wBattleResult 0xCF0B: 0 won / 1 lost / 2 draw (matches pokered BATTLE_WON/LOST/DREW).
-- wPartyMon1HP 0xD16C is PartyMon1+1, handy for post-battle party HP checks.
-- No battle skill implemented (out of scope here); skill/move.go already probes
-  DecodeBattle for in-battle detection.
-- skill/, world/, emu/ untouched. TestGoToViridianPokecenter still red by design;
+## Must know for next task (S3-6 rival fight)
+- `Battle` is the only new skill; drive the trainer encounter first (GoTo/Talk/Cutscene),
+  then call `Battle(e, skill.FirstUsableMove)` (or any MovePolicy).
+- Main-battle-menu discriminator is `wMaxMenuItem == 1`; move menu `>= 2`. Text boxes carry
+  a stale wMaxMenuItem — never use it alone.
+- Move menu cursor is 1-indexed; `SelectMenuItem(m, i+1)` presses move slot i.
+- `wIsInBattle` (0xD057) clears in EndOfBattle AFTER the win/EXP text; `wBattleResult`
+  (0xCF0B) is set before that. Don't read the result until IsInBattle == 0.
+- If the player's mon faints, Battle does NOT switch: it will hit the frame cap and fail
+  loudly. S3-6's rival fight must use a mon that wins (or extend Battle — not done here).
+- skill/, world/, emu/, red/ untouched. TestGoToViridianPokecenter still red by design;
   verify with `-skip TestGoToViridianPokecenter`.
 - ROM: /home/maestro/Documents/projects/gomeboy/roms/pokemon_red.gb
+  (also works: /home/maestro/Downloads/Pokemon - Red Version (USA, Europe) (SGB Enhanced).gb)
