@@ -1,6 +1,7 @@
 package state
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/maestroi/pokepilot/red/sym"
@@ -56,5 +57,91 @@ func TestDecodeBattleTrainer(t *testing.T) {
 	}
 	if s.Kind != BattleTrainer {
 		t.Errorf("Kind = %d, want BattleTrainer", s.Kind)
+	}
+}
+
+func TestDecodeBattleMoves(t *testing.T) {
+	var m Mem
+	m[sym.IsInBattle] = 1
+	ids := [4]byte{1, 2, 3, 4}
+	powers := [4]byte{10, 20, 30, 40}
+	for i := 0; i < 4; i++ {
+		m[sym.BattleMonMoves+uint16(i)] = ids[i]
+		m[sym.BattleMonPP+uint16(i)] = powers[i]
+	}
+
+	s := DecodeBattle(&m)
+	if s == nil {
+		t.Fatal("DecodeBattle = nil, want battle")
+	}
+	for i := 0; i < 4; i++ {
+		if s.Moves[i].ID != ids[i] {
+			t.Errorf("Moves[%d].ID = %d, want %d", i, s.Moves[i].ID, ids[i])
+		}
+		if s.Moves[i].PP != powers[i] {
+			t.Errorf("Moves[%d].PP = %d, want %d", i, s.Moves[i].PP, powers[i])
+		}
+	}
+	if got, want := s.Usable(), []int{0, 1, 2, 3}; !reflect.DeepEqual(got, want) {
+		t.Errorf("Usable() = %v, want %v", got, want)
+	}
+}
+
+func TestUsableExcludesEmptyAndExhausted(t *testing.T) {
+	var m Mem
+	m[sym.IsInBattle] = 1
+	// Slot 0 is usable; slot 1 is empty (ID 0) but has stale PP;
+	// slot 2 has a move but no PP; slot 3 is usable.
+	m[sym.BattleMonMoves] = 1
+	m[sym.BattleMonPP] = 5
+	m[sym.BattleMonPP+1] = 15
+	m[sym.BattleMonMoves+2] = 3
+	m[sym.BattleMonPP+3] = 1
+	m[sym.BattleMonMoves+3] = 4
+
+	s := DecodeBattle(&m)
+	if s == nil {
+		t.Fatal("DecodeBattle = nil, want battle")
+	}
+	if got, want := s.Usable(), []int{0, 3}; !reflect.DeepEqual(got, want) {
+		t.Errorf("Usable() = %v, want %v", got, want)
+	}
+}
+
+func TestDecodeBattleEnemyMaxHPAddress(t *testing.T) {
+	var m Mem
+	m[sym.IsInBattle] = 1
+	// The stale address (wEnemyMonHP + 2 = 0xCFE8) and the real
+	// wEnemyMonMaxHP (0xCFF4) hold different values; the decoder must
+	// read the real one.
+	m[sym.EnemyMonHP+2] = 0x00
+	m[sym.EnemyMonHP+2+1] = 0x11 // 17 at the stale address
+	m[sym.EnemyMonMaxHP] = 0x00
+	m[sym.EnemyMonMaxHP+1] = 0x32 // 50 at wEnemyMonMaxHP
+
+	s := DecodeBattle(&m)
+	if s == nil {
+		t.Fatal("DecodeBattle = nil, want battle")
+	}
+	if s.EnemyMaxHP != 50 {
+		t.Errorf("EnemyMaxHP = %d, want 50 (read from wEnemyMonMaxHP 0xCFF4, not 0xCFE8)", s.EnemyMaxHP)
+	}
+}
+
+func TestDecodeBattleResult(t *testing.T) {
+	cases := []struct {
+		raw  uint8
+		want BattleResult
+	}{
+		{0, ResultWon},
+		{1, ResultLost},
+		{2, ResultDraw},
+	}
+	for _, c := range cases {
+		var m Mem
+		m[sym.BattleResult] = c.raw
+		if got := DecodeBattleResult(&m); got != c.want {
+			t.Errorf("DecodeBattleResult = %d for raw %d, want %d", got, c.raw, c.want)
+		}
 	}
 }

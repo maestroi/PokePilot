@@ -11,14 +11,36 @@ const (
 	BattleTrainer BattleKind = 2
 )
 
+// Move is one battle move slot.
+type Move struct {
+	ID uint8 // 0 means the slot is empty
+	PP uint8
+}
+
 // BattleState is the decoded battle context.
 type BattleState struct {
-	Kind         BattleKind
-	EnemySpecies uint8
-	EnemyHP      uint16
-	EnemyMaxHP   uint16
-	ActiveHP     uint16 // the player's active mon
-	ActiveLevel  uint8
+	Kind          BattleKind
+	EnemySpecies  uint8
+	EnemyHP       uint16
+	EnemyMaxHP    uint16
+	EnemyLevel    uint8
+	ActiveSpecies uint8
+	ActiveHP      uint16 // the player's active mon
+	ActiveLevel   uint8
+	ActiveMaxHP   uint16
+	Moves         [4]Move
+}
+
+// Usable returns the indices of move slots with ID != 0 and PP > 0, in
+// slot order. This is what a move policy picks from.
+func (b BattleState) Usable() []int {
+	var out []int
+	for i, mv := range b.Moves {
+		if mv.ID != 0 && mv.PP > 0 {
+			out = append(out, i)
+		}
+	}
+	return out
 }
 
 // DecodeBattle returns nil when no battle is in progress.
@@ -32,15 +54,34 @@ func DecodeBattle(m *Mem) *BattleState {
 	default:
 		return nil
 	}
-	return &BattleState{
-		Kind:         kind,
-		EnemySpecies: m.U8(sym.EnemyMonSpecies),
-		EnemyHP:      m.U16BE(sym.EnemyMonHP),
-		// EnemyMaxHP sits two bytes after the EnemyHP pair. If this ever
-		// looks wrong, confirm it against pokered.sym's wEnemyMonMaxHP
-		// label in a later task.
-		EnemyMaxHP:  m.U16BE(sym.EnemyMonHP + 2),
-		ActiveHP:    m.U16BE(sym.BattleMonHP),
-		ActiveLevel: m.U8(sym.BattleMonLevel),
+	s := &BattleState{
+		Kind:          kind,
+		EnemySpecies:  m.U8(sym.EnemyMonSpecies),
+		EnemyHP:       m.U16BE(sym.EnemyMonHP),
+		EnemyMaxHP:    m.U16BE(sym.EnemyMonMaxHP),
+		EnemyLevel:    m.U8(sym.EnemyMonLevel),
+		ActiveSpecies: m.U8(sym.BattleMonSpecies),
+		ActiveHP:      m.U16BE(sym.BattleMonHP),
+		ActiveLevel:   m.U8(sym.BattleMonLevel),
+		ActiveMaxHP:   m.U16BE(sym.BattleMonMaxHP),
 	}
+	for i := 0; i < len(s.Moves); i++ {
+		s.Moves[i].ID = m.U8(sym.BattleMonMoves + uint16(i))
+		s.Moves[i].PP = m.U8(sym.BattleMonPP + uint16(i))
+	}
+	return s
+}
+
+// BattleResult reports how a finished battle ended.
+type BattleResult uint8
+
+const (
+	ResultWon BattleResult = iota
+	ResultLost
+	ResultDraw
+)
+
+// DecodeBattleResult decodes wBattleResult.
+func DecodeBattleResult(m *Mem) BattleResult {
+	return BattleResult(m.U8(sym.BattleResult))
 }

@@ -29,7 +29,8 @@ const (
 	PartyCount   uint16 = 0xD163
 	PartySpecies uint16 = 0xD164
 	PartyMon1    uint16 = 0xD16B
-	PartyMonSize uint16 = 0x2C // 44 bytes; wPartyMon2 is at 0xD197
+	PartyMon1HP  uint16 = 0xD16C // wPartyMon1HP
+	PartyMonSize uint16 = 0x2C   // 44 bytes; wPartyMon2 is at 0xD197
 )
 
 // Offsets within one party mon struct.
@@ -59,6 +60,14 @@ const (
 	EnemyMonHP      uint16 = 0xCFE6
 	BattleMonHP     uint16 = 0xD015
 	BattleMonLevel  uint16 = 0xD022
+
+	BattleResult     uint16 = 0xCF0B // wBattleResult
+	BattleMonSpecies uint16 = 0xD014 // wBattleMonSpecies
+	BattleMonMoves   uint16 = 0xD01C // wBattleMonMoves: 4 bytes, move ids, 0 = empty slot
+	BattleMonMaxHP   uint16 = 0xD023 // wBattleMonMaxHP
+	BattleMonPP      uint16 = 0xD02D // wBattleMonPP: 4 bytes, parallel to wBattleMonMoves
+	EnemyMonLevel    uint16 = 0xCFF3 // wEnemyMonLevel
+	EnemyMonMaxHP    uint16 = 0xCFF4 // wEnemyMonMaxHP
 )
 
 // Menus, text and input state
