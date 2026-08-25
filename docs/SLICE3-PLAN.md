@@ -131,16 +131,27 @@ as you walk back toward the exit. Any route out of the lab walks into it.
 
 ## Tasks
 
+Published to agent-runner as plan `64867bf8-7ad1-4cd7-888b-7ee327f2c12f`
+(**draft** — see Process notes before publishing).
+
 | | Task | First edit | Depends |
 |---|---|---|---|
-| S3-0 | Drive the ROM through Oak → starter → rival; record what is actually true | `docs/SLICE3-PLAN.md` | — |
-| S3-1 | `Cutscene` — endure scripted control loss | `skill/cutscene.go` | S3-0 |
-| S3-2 | Menu state + `SelectMenuItem` cursor loop | `red/state/menu.go` | S3-0 |
-| S3-3 | Battle state worth acting on: moves, PP, max HP, result | `red/state/battle.go` | S3-0 |
-| S3-4 | `Battle` — fight to a decision, pluggable move policy | `skill/battle.go` | S3-2, S3-3 |
-| S3-5 | Event-flag gating: `Progress` reads the story bits | `red/state/progress.go` | S3-0 |
-| S3-6 | `GetStarter` — the composite: cutscene, ball, yes/no, rival | `skill/story.go` | S3-1, S3-4 |
-| S3-7 | Milestone: fresh boot → starter → Viridian nurse; slice 2's fixtures | `skill/fixture/fixture.go` | S3-6 |
+| S3-1 | Story event flags — read `wEventFlags` by name | `red/state/progress.go` | — |
+| S3-2 | `Cutscene` — endure scripted control loss | `skill/cutscene.go` | S3-1 |
+| S3-3 | Menu state + `SelectMenuItem` cursor loop | `red/state/menu.go` | — |
+| S3-4 | Battle state: moves, PP, max HP, result | `red/state/battle.go` | — |
+| S3-5 | `Battle` — fight to a decision, pluggable policy | `skill/battle.go` | S3-3, S3-4 |
+| S3-6 | `GetStarter` — the composite that opens the gate | `skill/story.go` | S3-2, S3-5 |
+| S3-7 | Close slice 2: milestone test + the S2-7 fixtures | `skill/fixture/fixture.go` | S3-6 |
+
+The probe that measures this slice's ground truth is not a task. Slice 2's
+measurement was done by hand before any task text was written, and that is why
+S2-0 through S2-5 landed clean on first attempt. Handing measurement to a
+worker is how the "gomeboy emulator bug" conclusion happened.
+
+Tasks S3-1 through S3-6 verify with `-skip TestGoToViridianPokecenter`, because
+that test stays red until S3-7 by design. S3-7 runs the full suite with nothing
+skipped — that is how the slice proves it closed slice 2.
 
 S3-7 is where slice 2 finally closes. `TestGoToViridianPokecenter` starts
 passing without `skill/goto.go` changing at all, and the three fixtures S2-7
