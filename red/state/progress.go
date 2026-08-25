@@ -55,13 +55,19 @@ func DecodeProgress(m *Mem) ProgressState {
 // Event identifies a story flag by its bit index in wEventFlags.
 type Event uint16
 
+// Event indices are counted from the const/const_skip sequence in
+// constants/event_constants.asm, where const_def starts at 0. A missed
+// const_skip in the original count dropped two entries (EVENT_GOT_POKEDEX
+// and EVENT_PALLET_AFTER_GETTING_POKEBALLS_2), shifting every later index
+// by two.
 const (
 	EventFollowedOakIntoLab    Event = 0
 	EventOakAskedToChooseMon   Event = 33
 	EventGotStarter            Event = 34
 	EventBattledRivalInOaksLab Event = 35
 	EventGotPokeballsFromOak   Event = 36
-	EventOakAppearedInPallet   Event = 38
+	EventGotPokedex            Event = 37
+	EventOakAppearedInPallet   Event = 39
 )
 
 var eventNames = map[Event]string{
@@ -70,6 +76,7 @@ var eventNames = map[Event]string{
 	EventGotStarter:            "GotStarter",
 	EventBattledRivalInOaksLab: "BattledRivalInOaksLab",
 	EventGotPokeballsFromOak:   "GotPokeballsFromOak",
+	EventGotPokedex:            "GotPokedex",
 	EventOakAppearedInPallet:   "OakAppearedInPallet",
 }
 
@@ -86,4 +93,12 @@ func (e Event) String() string {
 func HasEvent(m *Mem, e Event) bool {
 	b := m.U8(sym.EventFlags + uint16(e)/8)
 	return b&(1<<(uint16(e)%8)) != 0
+}
+
+// TookStarterBall reports whether the player has taken a Poke Ball from
+// Oak's table. This is wStatusFlags4 bit 3, set the moment the mon is added
+// to the party — NOT EventGotStarter, which the game only sets once the
+// rival has taken his.
+func TookStarterBall(m *Mem) bool {
+	return m.U8(sym.StatusFlags4)&(1<<3) != 0
 }

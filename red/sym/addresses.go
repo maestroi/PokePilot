@@ -51,6 +51,7 @@ const (
 	PlayerMoney    uint16 = 0xD347 // 3 bytes, binary-coded decimal
 	ObtainedBadges uint16 = 0xD356
 	EventFlags     uint16 = 0xD747
+	StatusFlags4   uint16 = 0xD72E // wStatusFlags4
 )
 
 // Battle

@@ -12,6 +12,7 @@ var namedEvents = []Event{
 	EventGotStarter,
 	EventBattledRivalInOaksLab,
 	EventGotPokeballsFromOak,
+	EventGotPokedex,
 	EventOakAppearedInPallet,
 }
 
@@ -75,6 +76,7 @@ func TestHasEvent(t *testing.T) {
 				EventGotStarter:            true,
 				EventBattledRivalInOaksLab: true,
 				EventGotPokeballsFromOak:   true,
+				EventGotPokedex:            true,
 				EventOakAppearedInPallet:   true,
 			},
 		},
@@ -99,5 +101,59 @@ func TestEventString(t *testing.T) {
 	}
 	if got, want := Event(999).String(), "unknown(999)"; got != want {
 		t.Errorf("String(999) = %q, want %q", got, want)
+	}
+}
+
+func TestOakAppearedInPalletIndex(t *testing.T) {
+	// EventOakAppearedInPallet is bit 39 of wEventFlags: byte 0xD747+39/8 =
+	// 0xD74B, bit 39%8 = 7. The shipped build had it at 38 (bit 6 of the
+	// same byte) because the original count dropped two entries.
+	m := &Mem{}
+	m[0xD747+4] = 1 << 7
+	if !HasEvent(m, EventOakAppearedInPallet) {
+		t.Error("bit 7 of 0xD747+4 should set EventOakAppearedInPallet")
+	}
+	m = &Mem{}
+	m[0xD747+4] = 1 << 6
+	if HasEvent(m, EventOakAppearedInPallet) {
+		t.Error("bit 6 of 0xD747+4 must not set EventOakAppearedInPallet (the off-by-one that shipped)")
+	}
+	// EventGotPokedex is bit 37: byte 0xD74B, bit 5 — the same byte.
+	m = &Mem{}
+	m[0xD747+4] = 1 << 5
+	if !HasEvent(m, EventGotPokedex) {
+		t.Error("bit 5 of 0xD747+4 should set EventGotPokedex")
+	}
+	if HasEvent(m, EventOakAppearedInPallet) {
+		t.Error("bit 5 of 0xD747+4 must not set EventOakAppearedInPallet")
+	}
+}
+
+func TestTookStarterBall(t *testing.T) {
+	// TookStarterBall is wStatusFlags4 (0xD72E) bit 3, set the moment the
+	// ball is taken. EventGotStarter is wEventFlags bit 34 (byte 0xD74B,
+	// bit 2), set only later when the rival takes his mon.
+	m := &Mem{}
+	m[sym.StatusFlags4] = 1 << 3
+	if !TookStarterBall(m) {
+		t.Error("bit 3 of 0xD72E should report TookStarterBall")
+	}
+	// EventGotStarter set must not flip TookStarterBall.
+	m = &Mem{}
+	m[0xD74B] = 1 << 2
+	if !HasEvent(m, EventGotStarter) {
+		t.Fatal("sanity: bit 2 of 0xD74B should set EventGotStarter")
+	}
+	if TookStarterBall(m) {
+		t.Error("EventGotStarter must not set TookStarterBall")
+	}
+	// And TookStarterBall must not flip EventGotStarter.
+	m = &Mem{}
+	m[sym.StatusFlags4] = 1 << 3
+	if !TookStarterBall(m) {
+		t.Fatal("sanity: bit 3 of 0xD72E should report TookStarterBall")
+	}
+	if HasEvent(m, EventGotStarter) {
+		t.Error("TookStarterBall must not set EventGotStarter")
 	}
 }

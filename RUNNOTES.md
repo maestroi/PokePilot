@@ -1,39 +1,39 @@
-# RUNNOTES — R1 collision fix (done)
+# RUNNOTES — R2 story flags (done)
 
 ## What changed
-Commit "world: collide on the tile the player stands on" (7d2bdec).
+Commit "state: fix the event index count, and read the ball's status flag".
 
-- `world/grid.go`: Build now samples the step's BOTTOM-LEFT tile
-  (`romData[tilesOff+(2*sy+1)*4+2*sx]`) instead of top-left (`2*sy`).
-  The game collides on the tile under the player's feet. Comment updated
-  to say this was measured against Oak's Lab, not assumed.
-- `world/grid_test.go`: new `TestBuildOaksLabCollision` (ROM-gated,
-  skips without POKEMON_RED_ROM). Builds map 0x28, asserts 22 measured
-  coordinates incl. the regression pair (6,4) walkable / (6,3) not
-  walkable (the table with the three Poke Balls).
+- `red/state/progress.go`: EventOakAppearedInPallet 38 -> 39 (the count
+  dropped EVENT_GOT_POKEDEX and EVENT_PALLET_AFTER_GETTING_POKEBALLS_2).
+  Added EventGotPokedex = 37. Const block now documents the
+  const/const_skip counting rule. Added `TookStarterBall(m *Mem) bool`
+  = wStatusFlags4 bit 3.
+- `red/sym/addresses.go`: StatusFlags4 = 0xD72E (pokered symbol
+  wStatusFlags4).
+- `red/sym/addresses_test.go`: wStatusFlags4 added to the pokered.sym
+  table — it passes, so 0xD72E is confirmed against the symbol file.
+- `red/state/progress_test.go`: new tests — bit 7 of 0xD74B sets
+  EventOakAppearedInPallet (bit 6 does not; that was the shipped
+  off-by-one), EventGotPokedex is bit 5 of the same byte, and
+  TookStarterBall (0xD72E bit 3) is independent of EventGotStarter
+  (0xD74B bit 2) in both directions.
 
 ## Verified
-- Full suite green with `POKEMON_RED_ROM=... go test ./... -skip
-  TestGoToViridianPokecenter` (that test stays red until the plan's last
-  task by design).
-- Regression check done: with the index flipped back to `2*sy`, the new
-  test fails at exactly (0..3,2) and (6..8,4) — the measured disagreement.
-  Flipped forward again; green.
-- FindPath, Grid shape, tileset table layout untouched. skill/, red/,
-  emu/ untouched.
+- Build, vet, full suite green with `go test ./... -skip
+  TestGoToViridianPokecenter` (stays red until the plan's last task).
+- Re-counted event_constants.asm by hand: 32..39 matches the task's
+  table. Five indices S3-2..S3-5 use (0, 33, 34, 35, 36) unchanged.
 
-## Must know for next task
-- The collision grid now matches the game on Oak's Lab; S3-6's pathfinding
-  blocker is fixed. If a route still fails, it is NOT a Build indexing bug —
-  check NPC sprites (Grid does not model them) or the pathfinding input.
-- `TestBuildOaksLabCollision` is the guard: any change to Build's tile
-  indexing must keep it green.
-- `world/grid.go` and `world/graph.go` have a pre-existing gofmt misalignment
-  (tilesetEntryLen const / graph.go); left as-is to keep diffs surgical.
-- Battle skill from S3-5 still applies for S3-6: `Battle(e,
-  skill.FirstUsableMove)` after driving the encounter; main menu
-  `wMaxMenuItem==1`, move menu `>=2` (1-indexed cursor); no faint/switch
-  handling — use a mon that wins.
-- ROM: /home/maestro/Documents/projects/gomeboy/roms/pokemon_red.gb
-  (also: /home/maestro/Downloads/Pokemon - Red Version (USA, Europe)
-  (SGB Enhanced).gb). Export POKEMON_RED_ROM to run ROM-gated tests.
+## Must know for next task (R3)
+- TWO flags mean "got a starter": TookStarterBall (wStatusFlags4 bit 3,
+  0xD72E) is set the moment the player takes a ball (OaksLabMonChoiceMenu,
+  right after AddPartyMon). EventGotStarter (wEventFlags bit 34, byte
+  0xD74B bit 2) is set later in OaksLabRivalChoosesStarterScript, after
+  the RIVAL takes his mon. R3 must use TookStarterBall for the player's
+  choice and EventGotStarter for the rival's.
+- wStatusFlags4 other bits (ram_constants.asm): 0 GOT_LAPRAS, 2
+  USED_POKECENTER, 4 NO_BATTLES, 5 BATTLE_OVER_OR_BLACKOUT, 6
+  LINK_CONNECTED.
+- Event 38 (EVENT_PALLET_AFTER_GETTING_POKEBALLS_2) is deliberately
+  unnamed; it renders as unknown(38).
+- skill/, world/, emu/ untouched.
