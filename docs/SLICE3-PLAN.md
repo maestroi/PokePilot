@@ -280,3 +280,71 @@ sanctioned move when reality disagreed. It spent 45 minutes not allowed to
 conclude the plan was wrong. Ground truth stated in a task must be labelled with
 how it was established — read from the decomp, or measured on the ROM — and a task
 must always be permitted to report that a stated fact is false.
+
+---
+
+## Addendum 2 — the rival battle, measured 2026-08-25
+
+R3 reached the rival battle and lost it every time. The reported cause was the
+rival's counter-pick. That is real — take Squirtle and he takes Bulbasaur — but
+it is not the cause: at level 5 Squirtle knows TACKLE/TAIL_WHIP and Bulbasaur
+knows TACKLE/GROWL. Neither has a Water or Grass move, so type matching cannot
+apply. Two other things were wrong.
+
+### 1. wFontLoaded is never set during a battle
+
+`skill/battle.go` gated `mainMenuUp` and `moveMenuUp` on `wFontLoaded != 0`.
+MEASURED: `wFontLoaded` stays 0 for the entire battle — battle text does not go
+through the overworld text engine. So neither predicate was ever true across a
+whole fight, the `MovePolicy` was never called once, and `Battle` fell through
+to its "advance a text box" fallback and mashed A from start to finish.
+
+`wMaxMenuItem` cannot replace it either: it keeps the move menu's value
+(`wNumMovesMinusOne + 2`) while the "used TACKLE!" text that follows is on
+screen. The menus are now identified from `wTileMap` instead, which is RAM and
+already decoded for the dialogue trace:
+
+    main menu   wMaxMenuItem 1, cursor 0, screen contains "FIGHT"
+    move menu   wMaxMenuItem numMoves+1, cursor 1..numMoves, screen has "TYPE/"
+
+The move menu really is 1-indexed, as `MoveSelectionMenu` stores
+`wPlayerMoveListIndex + 1` into `wCurrentMenuItem`. S3-5 had that right.
+
+### 2. Always attacking loses on purpose, not by chance
+
+The rival's Bulbasaur opens with GROWL — four times in one observed fight. Each
+one costs a stage of Attack, and `FirstUsableMove` has no reply:
+
+    Enemy BULBASAUR used GROWL!  x4
+    player Tackle damage:  3 -> 2 -> 2 -> 2 -> 1 -> 1
+    enemy  Tackle damage:  3 -> 3 -> 3
+
+Bulbasaur is also faster (45 to 43), so even an undisturbed Tackle race is lost
+by a turn. The answer is a Defense-lowering move: Gen 1 damage scales on the
+ratio of Attack stage to Defense stage, so -1 to theirs cancels -1 from ours
+exactly. `skill.StatAwareMove` reads `wPlayerMonAttackMod` (0xCD1A) and
+`wEnemyMonDefenseMod` (0xCD2F) and spends a turn on TAIL WHIP while behind and
+above half HP, otherwise hits with the highest-power move it has. Move power
+and effect come from the ROM's move table (bank 0x0E:0x4000, six bytes an
+entry), so nothing hardcodes a move id.
+
+Lowering the opponent's ATTACK was tried and removed: it cost Charmander three
+extra turns and did not save Bulbasaur, because **Gen 1 critical hits ignore
+stat stages entirely** — a -3 Attack Charmander still took Bulbasaur from 7 HP
+to 1 in one turn.
+
+### Result, and one honest limitation
+
+Deterministic across repeated runs:
+
+    charmander   won in 6 policy turns
+    squirtle     won in 9 policy turns
+    bulbasaur    LOSES
+
+Bulbasaur losing is a matchup, not a policy bug. Its TACKLE (35) into
+Charmander's Defense 43 does about 3; Charmander's SCRATCH (40) into Defense 49
+does about 4; and Charmander is much faster (65 to 45). With only TACKLE and
+GROWL there is no line that wins. Fixtures use Squirtle. If the slice 4
+random-starter experiment ever rolls Bulbasaur, it will lose the lab battle
+until the policy gets something better than a stage heuristic — that is a real
+finding about the game, worth keeping rather than tuning away.

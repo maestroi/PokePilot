@@ -108,3 +108,56 @@ func TestBuildPalletTown(t *testing.T) {
 	}
 	t.Logf("Pallet Town grid: %dx%d, %d walkable, %d solid", g.Width, g.Height, walkableCount, solidCount)
 }
+
+func TestBuildOaksLabCollision(t *testing.T) {
+	path := os.Getenv("POKEMON_RED_ROM")
+	if path == "" {
+		t.Skip("POKEMON_RED_ROM not set")
+	}
+	romData, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading ROM: %v", err)
+	}
+
+	const mapID = 0x28 // Oak's Lab
+	h, err := rom.ParseMap(romData, mapID)
+	if err != nil {
+		t.Fatalf("ParseMap(%d): %v", mapID, err)
+	}
+	g, err := Build(romData, h)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+
+	// Measured against the game by walking Oak's Lab exhaustively with save
+	// states (2026-08-25). The collision tile is the one the player stands
+	// on, the step's bottom-left tile, not the tile above it.
+	cases := []struct {
+		x, y int
+		walk bool
+	}{
+		{0, 2, true}, {1, 2, true}, {2, 2, true}, {3, 2, true}, {4, 2, true},
+		{6, 2, true}, {7, 2, true}, {8, 2, true}, {9, 2, true},
+		{0, 3, true}, {1, 3, true}, {2, 3, true}, {3, 3, true}, {4, 3, true},
+		{5, 3, true}, {9, 3, true},
+		{6, 4, true}, {7, 4, true}, {8, 4, true},
+		// The table with the three Poke Balls on it.
+		{6, 3, false}, {7, 3, false}, {8, 3, false},
+		// The top wall.
+		{0, 0, false}, {9, 0, false},
+	}
+	for _, c := range cases {
+		if got := g.Walkable(c.x, c.y); got != c.walk {
+			t.Errorf("Walkable(%d,%d) = %v, want %v", c.x, c.y, got, c.walk)
+		}
+	}
+
+	// The regression pair: fails under the old top-left indexing (2*sy),
+	// passes under the bottom-left indexing (2*sy+1).
+	if !g.Walkable(6, 4) {
+		t.Error("Walkable(6,4) = false, want true: collision must use the tile the player stands on (the step's bottom-left), not the tile above it")
+	}
+	if g.Walkable(6, 3) {
+		t.Error("Walkable(6,3) = true, want false: collision must use the tile the player stands on (the step's bottom-left), not the tile above it")
+	}
+}

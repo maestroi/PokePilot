@@ -145,3 +145,27 @@ func TestDecodeBattleResult(t *testing.T) {
 		}
 	}
 }
+
+func TestDecodeBattleReadsStatStages(t *testing.T) {
+	var m Mem
+	m[sym.IsInBattle] = 2
+	m[sym.PlayerMonAttackMod] = 5
+	m[sym.PlayerMonDefenseMod] = 7
+	m[sym.EnemyMonAttackMod] = 7
+	m[sym.EnemyMonDefenseMod] = 6
+
+	b := DecodeBattle(&m)
+	if b == nil {
+		t.Fatal("DecodeBattle returned nil during a trainer battle")
+	}
+	if b.ActiveAttackMod != 5 || b.EnemyDefenseMod != 6 {
+		t.Fatalf("stat mods = atk %d, enemy def %d; want 5 and 6", b.ActiveAttackMod, b.EnemyDefenseMod)
+	}
+	// Two stages lost from Attack, one taken off their Defense: net -1.
+	if got := b.OffenceStage(); got != -1 {
+		t.Fatalf("OffenceStage = %d, want -1", got)
+	}
+	if got := b.DefenceStage(); got != 0 {
+		t.Fatalf("DefenceStage = %d, want 0", got)
+	}
+}

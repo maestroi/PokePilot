@@ -1,36 +1,39 @@
-# RUNNOTES — S3-5 (done)
+# RUNNOTES — R2 story flags (done)
 
 ## What changed
-Commit "skill: fight a battle to a decision with a pluggable move policy".
+Commit "state: fix the event index count, and read the ball's status flag".
 
-- `skill/battle.go` (new):
-  - `MovePolicy func(state.BattleState) int` — the seam for a learned policy.
-  - `FirstUsableMove` default policy: lowest slot with ID != 0 and PP > 0, else -1.
-  - `ErrNoUsableMove`; `Battle(m, policy) (state.BattleResult, error)`.
-  - State machine: main menu (`FontLoaded != 0 && MaxMenuItem == 1`) → `SelectMenuItem(m, 0)`
-    (FIGHT) → wait for move menu (`MaxMenuItem >= 2`) → `SelectMenuItem(m, slot+1)`
-    (move menu is 1-indexed: slot i sits at cursor i+1) → wait for `FontLoaded == 0`
-    (menu closed) → loop. Anything else (text box/animation, stale wMaxMenuItem) → Tap A.
-  - Battle ends when `DecodeBattle == nil` (IsInBattle 0): `settleAfterBattle` advances
-    end text (Tap A while `FontLoaded != 0`), waits for `Controllable`, returns
-    `DecodeBattleResult`. Losing = ResultLost, nil error.
-  - Frame budgets: 60000 total (cap trips → loud error), 500 for move-menu appear/close,
-    3000 for post-battle settle. Every error carries map, coords, decoded battle state.
-  - No item/switch handling: party menu after a faint is not handled → frame cap fails loudly.
-- `skill/battle_test.go` (new): `TestFirstUsableMove` (unit, 4 cases, no ROM);
-  `TestBattleNoBattleInProgress` (ROM-gated: error + player controllable + coords unchanged).
+- `red/state/progress.go`: EventOakAppearedInPallet 38 -> 39 (the count
+  dropped EVENT_GOT_POKEDEX and EVENT_PALLET_AFTER_GETTING_POKEBALLS_2).
+  Added EventGotPokedex = 37. Const block now documents the
+  const/const_skip counting rule. Added `TookStarterBall(m *Mem) bool`
+  = wStatusFlags4 bit 3.
+- `red/sym/addresses.go`: StatusFlags4 = 0xD72E (pokered symbol
+  wStatusFlags4).
+- `red/sym/addresses_test.go`: wStatusFlags4 added to the pokered.sym
+  table — it passes, so 0xD72E is confirmed against the symbol file.
+- `red/state/progress_test.go`: new tests — bit 7 of 0xD74B sets
+  EventOakAppearedInPallet (bit 6 does not; that was the shipped
+  off-by-one), EventGotPokedex is bit 5 of the same byte, and
+  TookStarterBall (0xD72E bit 3) is independent of EventGotStarter
+  (0xD74B bit 2) in both directions.
 
-## Must know for next task (S3-6 rival fight)
-- `Battle` is the only new skill; drive the trainer encounter first (GoTo/Talk/Cutscene),
-  then call `Battle(e, skill.FirstUsableMove)` (or any MovePolicy).
-- Main-battle-menu discriminator is `wMaxMenuItem == 1`; move menu `>= 2`. Text boxes carry
-  a stale wMaxMenuItem — never use it alone.
-- Move menu cursor is 1-indexed; `SelectMenuItem(m, i+1)` presses move slot i.
-- `wIsInBattle` (0xD057) clears in EndOfBattle AFTER the win/EXP text; `wBattleResult`
-  (0xCF0B) is set before that. Don't read the result until IsInBattle == 0.
-- If the player's mon faints, Battle does NOT switch: it will hit the frame cap and fail
-  loudly. S3-6's rival fight must use a mon that wins (or extend Battle — not done here).
-- skill/, world/, emu/, red/ untouched. TestGoToViridianPokecenter still red by design;
-  verify with `-skip TestGoToViridianPokecenter`.
-- ROM: /home/maestro/Documents/projects/gomeboy/roms/pokemon_red.gb
-  (also works: /home/maestro/Downloads/Pokemon - Red Version (USA, Europe) (SGB Enhanced).gb)
+## Verified
+- Build, vet, full suite green with `go test ./... -skip
+  TestGoToViridianPokecenter` (stays red until the plan's last task).
+- Re-counted event_constants.asm by hand: 32..39 matches the task's
+  table. Five indices S3-2..S3-5 use (0, 33, 34, 35, 36) unchanged.
+
+## Must know for next task (R3)
+- TWO flags mean "got a starter": TookStarterBall (wStatusFlags4 bit 3,
+  0xD72E) is set the moment the player takes a ball (OaksLabMonChoiceMenu,
+  right after AddPartyMon). EventGotStarter (wEventFlags bit 34, byte
+  0xD74B bit 2) is set later in OaksLabRivalChoosesStarterScript, after
+  the RIVAL takes his mon. R3 must use TookStarterBall for the player's
+  choice and EventGotStarter for the rival's.
+- wStatusFlags4 other bits (ram_constants.asm): 0 GOT_LAPRAS, 2
+  USED_POKECENTER, 4 NO_BATTLES, 5 BATTLE_OVER_OR_BLACKOUT, 6
+  LINK_CONNECTED.
+- Event 38 (EVENT_PALLET_AFTER_GETTING_POKEBALLS_2) is deliberately
+  unnamed; it renders as unknown(38).
+- skill/, world/, emu/ untouched.

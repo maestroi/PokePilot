@@ -133,12 +133,13 @@ func Build(romData []byte, h rom.MapHeader) (*Grid, error) {
 				return nil, fmt.Errorf("map %d: block %d data at offset %d exceeds ROM of %d bytes", h.ID, blockID, tilesOff, len(romData))
 			}
 			// Each block is 4x4 tiles; the game's coordinates are 2x2-tile
-			// steps, so a block covers 2x2 grid cells. A step is walkable
-			// when its top-left tile (block tile 2*sx, 2*sy) is in the
-			// tileset's walkable list.
+			// steps, so a block covers 2x2 grid cells. The collision tile
+			// is the one the player stands on: the step's bottom-left
+			// (block tile row 2*sy+1, column 2*sx). Measured against
+			// Oak's Lab (map 0x28), not assumed.
 			for sy := 0; sy < 2; sy++ {
 				for sx := 0; sx < 2; sx++ {
-					tile := romData[tilesOff+(2*sy)*4+2*sx]
+					tile := romData[tilesOff+(2*sy+1)*4+2*sx]
 					g.walkable[(by*2+sy)*width+(bx*2+sx)] = walkableTiles[tile]
 				}
 			}
