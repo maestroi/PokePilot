@@ -1,6 +1,8 @@
 package emu
 
 import (
+	"time"
+
 	"github.com/thelolagemann/gomeboy/pkg/gomeboy"
 )
 
@@ -12,6 +14,10 @@ type Emu struct {
 	spec        *gomeboy.Spectator
 	specEvery   int
 	lastCapture uint64
+
+	// Set by Pace. Zero means run flat out; see emu/watch.go.
+	frameDur  time.Duration
+	nextFrame time.Time
 }
 
 // Open loads a ROM from disk. It performs no other disk I/O.
@@ -32,12 +38,14 @@ func (m *Emu) Close() error {
 func (m *Emu) StepFrame() {
 	m.e.StepFrame()
 	m.capture()
+	m.throttle(1)
 }
 
 // StepFrames advances the emulator by n frames.
 func (m *Emu) StepFrames(n int) {
 	m.e.StepFrames(n)
 	m.capture()
+	m.throttle(n)
 }
 
 // Peek8 reads a byte without any hardware side effects.

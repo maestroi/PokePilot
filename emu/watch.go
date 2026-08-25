@@ -3,6 +3,7 @@ package emu
 import (
 	"net"
 	"net/http"
+	"time"
 
 	"github.com/thelolagemann/gomeboy/pkg/gomeboy"
 )
@@ -40,4 +41,40 @@ func (m *Emu) capture() {
 	}
 	m.lastCapture = m.e.FrameCount()
 	_ = m.spec.Capture(m.e)
+}
+
+// Pace throttles emulation to about fps frames per second, so a human can
+// follow what the agent is doing. Zero or negative runs as fast as the CPU
+// allows, which is the default and what tests use.
+//
+// Pacing is wall-clock only. It cannot change what the game does, because
+// every skill waits on RAM predicates rather than on elapsed time.
+func (m *Emu) Pace(fps int) {
+	if fps <= 0 {
+		m.frameDur = 0
+		return
+	}
+	m.frameDur = time.Second / time.Duration(fps)
+	m.nextFrame = time.Time{}
+}
+
+// throttle sleeps until n frames' worth of wall clock has passed.
+func (m *Emu) throttle(n int) {
+	if m.frameDur <= 0 {
+		return
+	}
+	if m.nextFrame.IsZero() {
+		m.nextFrame = time.Now()
+	}
+	m.nextFrame = m.nextFrame.Add(time.Duration(n) * m.frameDur)
+	d := time.Until(m.nextFrame)
+	switch {
+	case d > 0:
+		time.Sleep(d)
+	case d < -time.Second:
+		// ponytail: fell more than a second behind (a slow capture, a
+		// descheduled process). Resync instead of sprinting to catch up,
+		// which would look worse than the hitch we already took.
+		m.nextFrame = time.Now()
+	}
 }

@@ -24,6 +24,7 @@ func main() {
 	addr := flag.String("http", "localhost:8099", "address to serve the screen on")
 	every := flag.Int("capture-every", 4, "capture a frame for the browser every N frames")
 	dest := flag.String("goto", "viridian pokemon center", "named destination to walk to")
+	fps := flag.Int("fps", 60, "pace the walk to this many frames per second so it is watchable; 0 runs flat out")
 	hold := flag.Duration("hold", 30*time.Second, "how long to keep serving after the run finishes")
 	flag.Parse()
 
@@ -44,11 +45,19 @@ func main() {
 	}
 	fmt.Printf("%s\nwatch: http://%s\n\n", version, served)
 
-	fmt.Println("booting to the overworld...")
+	// Boot runs unthrottled: it is three thousand frames of Oak's intro
+	// speech and nobody wants to watch that in real time. Pacing starts
+	// once there is something to see.
+	fmt.Println("booting to the overworld (unthrottled)...")
 	if _, err := skill.BootToOverworld(m); err != nil {
 		log.Fatalf("boot: %v", err)
 	}
 	report(m, "booted")
+
+	m.Pace(*fps)
+	if *fps > 0 {
+		fmt.Printf("paced to %d fps — open the page now\n", *fps)
+	}
 
 	target, ok := skill.Place(*dest)
 	if !ok {
