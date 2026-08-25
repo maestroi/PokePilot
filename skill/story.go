@@ -201,11 +201,14 @@ func GetStarter(m *emu.Emu, romData []byte, which Starter, policy MovePolicy) er
 			mem.U8(sym.JoyIgnore), state.HasEvent(&mem, state.EventBattledRivalInOaksLab))
 	}
 
-	// 10. The EVENT_BATTLED_RIVAL_IN_OAKS_LAB flag is set by the end of the
-	//     battle script; wait it out with the text-advancing loop, then
-	//     assert the positive facts.
+	// 10. The EVENT_BATTLED_RIVAL_IN_OAKS_LAB flag is set by the battle-end
+	//     script BEFORE that script finishes unwinding: measured on the real
+	//     ROM, wJoyIgnore is still 0x00f0 the frame the flag lands, and the
+	//     post-battle dialogue is still ahead. So wait for the flag AND for
+	//     control to come back (wJoyIgnore == 0, no text box), advancing the
+	//     text with A as it appears, then assert the positive facts.
 	mem = advanceUntil(m, battleWaitBudget, func(mm *state.Mem) bool {
-		return state.HasEvent(mm, state.EventBattledRivalInOaksLab)
+		return state.HasEvent(mm, state.EventBattledRivalInOaksLab) && state.Controllable(mm)
 	})
 	state.Snapshot(m, &mem)
 	if !state.HasEvent(&mem, state.EventBattledRivalInOaksLab) {
