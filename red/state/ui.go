@@ -2,26 +2,9 @@ package state
 
 import "github.com/maestroi/pokepilot/red/sym"
 
-// MenuState is the decoded menu context.
-type MenuState struct {
-	Current uint8 // cursor index
-	Max     uint8 // highest selectable index
-}
-
 // DialogueState is the decoded text-box context.
 type DialogueState struct {
 	TextBoxID uint8
-}
-
-// DecodeMenu returns nil when no menu is open.
-func DecodeMenu(m *Mem) *MenuState {
-	if m.U8(sym.FontLoaded) == 0 {
-		return nil
-	}
-	return &MenuState{
-		Current: m.U8(sym.CurrentMenuItem),
-		Max:     m.U8(sym.MaxMenuItem),
-	}
 }
 
 // DecodeDialogue returns nil when no text box is up.

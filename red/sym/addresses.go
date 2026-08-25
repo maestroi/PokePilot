@@ -66,6 +66,7 @@ const (
 	CurrentMenuItem uint16 = 0xCC26
 	MaxMenuItem     uint16 = 0xCC28
 	MenuWatchedKeys uint16 = 0xCC29
+	ListMenuID      uint16 = 0xCF94
 	TextBoxID       uint16 = 0xD125
 	FontLoaded      uint16 = 0xCFC4
 	JoyIgnore       uint16 = 0xCD6B

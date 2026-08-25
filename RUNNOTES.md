@@ -1,37 +1,36 @@
-# RUNNOTES — S3-2 (done)
+# RUNNOTES — S3-3 (done)
 
 ## What changed
-Commit "skill: endure a scripted cutscene without fighting the game".
+Commit "skill: cursor-driven menu selection".
 
-- `skill/cutscene.go` (new): `Cutscene(m, budgetFrames, done func(*state.Mem) bool)`.
-  Loops until `done()` AND `state.Controllable` hold, or the frame budget is spent.
-  Each iteration: if `sym.FontLoaded != 0` tap A (hold 3, gap 7 = 10 frames) to
-  advance the box; otherwise step one frame and wait. NEVER presses a direction.
-  On timeout returns an error wrapping `ErrCutsceneTimeout` that names the map,
-  (x,y), wJoyIgnore and wFontLoaded — diagnosable without a screenshot.
-- `skill/cutscene_test.go` (new, ROM-gated): boots, GoTo Pallet Town, walks the
-  verified path [R R R U U U U R R U] to (10,1), waits for wJoyIgnore != 0,
-  confirms the up step is blocked, runs Cutscene with done=HasEvent(
-  EventFollowedOakIntoLab), then asserts the flag flipped, wJoyIgnore back to 0,
-  and Controllable.
+- `red/state/menu.go` (new): `MenuState{Current int, Max int}`, `DecodeMenu(m *Mem) MenuState`
+  (value, reads wCurrentMenuItem/wMaxMenuItem, no gating).
+- `skill/menu.go` (new): `ErrMenuStuck`, `SelectMenuItem(m, index)`. Step-and-verify: tap toward
+  target, re-read wCurrentMenuItem, repeat until asserted == index, then tap A. Range check
+  `index < 0 || index >= menu.Max`. 5 consecutive stalled taps -> ErrMenuStuck.
+- `red/state/menu_test.go` (new, synthetic Mem), `skill/menu_test.go` (new, ROM-gated Start menu).
+- Reconciled the pre-existing conflicting `MenuState`/`DecodeMenu` in `red/state/ui.go` (was
+  uint8, returned *MenuState, gated on FontLoaded): removed it; `state.go` `Menu *MenuState` ->
+  value; `boot.go` menu-open check now uses `FontLoaded != 0`; `ui_test.go` menu tests dropped.
+- `red/sym/addresses.go`: added `ListMenuID` (0xCF94).
 
-## Why / measured result
-This is the measurement that confirms S3-1's derived bit index 0 for
-EVENT_FOLLOWED_OAK_INTO_LAB. On the real ROM: gate fired at (10,1) with
-wJoyIgnore=0xFC (SELECT|START|dpad), the step into the exit was blocked, and
-after the cutscene the flag flipped, wJoyIgnore returned to 0, and the player is
-controllable (in Oak's lab, map 0x28). Bit index 0 is CONFIRMED.
+## Why / measured ground truth (verified on the ROM — corrects the task spec)
+- `wMaxMenuItem` is the item COUNT, not an inclusive max: Start menu (no pokedex) = 6, valid
+  indices 0..5. The cursor WRAPS (5->0 on Down), contrary to the "does not wrap" assumption.
+  Hence the range check is `index >= Max` (chasing index==Max would loop forever: it wraps and
+  never reads as stuck).
+- A on Start-menu index 1 (ITEM) opens the bag, identified by `wListMenuID == 3` (ITEMLISTMENU);
+  index 0 (POKéMON) opens the party submenu, which is NOT a list menu (listID stays 0).
+- The fixture bag is EMPTY: it reports `{Current:0 Max:0}` (list max = count when <2), not `{Max:1}`.
+- Menu RAM holds stale values from boot (cur=5, max=7). FontLoaded fires BEFORE DrawStartMenu
+  writes the cursor, so "menu fully drawn" = `wMaxMenuItem == 6` (the last write in DrawStartMenu).
+- The list menu's input path needs the joypad to settle after the A press: close with B using a
+  20-frame settle + hold 8 (a plain hold-3 tap right after A is missed).
 
 ## Must know for next task
-- The Oak cutscene is long: "HEY WAIT!" box -> Oak walks over -> "not safe" box ->
-  player is DRAGGED across the map boundary into the lab -> walks up 8 tiles ->
-  OaksLabFollowedOakScript sets EVENT_FOLLOWED_OAK_INTO_LAB (+ _2) -> Oak's
-  choose-mon speech. Cutscene returns only after that speech closes (Controllable).
-  A 30000-frame budget is plenty; the drag is a simulated joypad walk the game
-  drives, so no direction input is needed (or allowed).
-- Pallet Town is 20x18 tiles; the north exit (to Route 1, map 0x0c) is at
-  (10,1)/(11,1) — the only walkable tiles on row y=1. The gate script
-  (PalletTownDefaultScript) fires at y==1.
-- world/, red/, emu/ untouched. TestGoToViridianPokecenter still red (by design,
-  until S3-7); verify with `-skip TestGoToViridianPokecenter`.
+- Start-menu open predicate: tap Start, wait `FontLoaded != 0` AND `wMaxMenuItem == 6`.
+- Select index i: `skill.SelectMenuItem(e, i)`; it asserts the cursor reached i before A.
+- Distinguish submenus by wListMenuID (3 = bag), not by wMaxMenuItem alone (party also reads 0).
+- world/, emu/, battle code untouched. TestGoToViridianPokecenter still red (by design, until
+  S3-7); verify with `-skip TestGoToViridianPokecenter`.
 - ROM: /home/maestro/Documents/projects/gomeboy/roms/pokemon_red.gb
