@@ -102,15 +102,23 @@ func StepOnce(m *emu.Emu, s world.Step) error {
 func WalkPath(m *emu.Emu, path []world.Step) error {
 	var mem state.Mem
 	for _, step := range path {
-		if err := StepOnce(m, step); err != nil {
-			return err
-		}
+		stepErr := StepOnce(m, step)
+
+		// Check for an interruption BEFORE trusting stepErr. A wild
+		// encounter fires mid-step: the battle freezes the player, so
+		// StepOnce times out and reports the tile as blocked. Reporting
+		// that as collision sent a Route 1 investigation chasing a
+		// pathfinding bug that did not exist — the tile was walkable and
+		// a Pidgey was on the screen.
 		state.Snapshot(m, &mem)
 		if state.DecodeBattle(&mem) != nil {
 			return ErrBattleInterrupted
 		}
 		if state.DecodeDialogue(&mem) != nil {
 			return ErrDialogueInterrupted
+		}
+		if stepErr != nil {
+			return stepErr
 		}
 	}
 	return nil

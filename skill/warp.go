@@ -1,6 +1,7 @@
 package skill
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
@@ -26,8 +27,8 @@ const (
 	// the 25->00 warp the transients last ~32 and ~21 frames, so wait for the
 	// position to be unchanged for positionStableFrames consecutive frames
 	// (longer than any transient) within positionStableBudget total frames.
-	positionStableBudget  = 500
-	positionStableFrames  = 50
+	positionStableBudget = 500
+	positionStableFrames = 50
 )
 
 // Traverse executes one graph edge and returns once the destination map is
@@ -76,6 +77,12 @@ func Traverse(m *emu.Emu, romData []byte, e world.Edge) error {
 				tx, ty, e.From, err)
 		}
 		if err := WalkPath(m, steps); err != nil {
+			// Normalize to ErrBattle like walkWithinMap does, so a caller
+			// can test one sentinel no matter which layer was walking.
+			if errors.Is(err, ErrBattleInterrupted) {
+				x, y := playerXY(m)
+				return fmt.Errorf("skill: Traverse: battle on map %02x at (%d,%d): %w", e.From, x, y, ErrBattle)
+			}
 			return fmt.Errorf("skill: Traverse: walk to edge on map %02x: %w", e.From, err)
 		}
 		push = edgeDirStep(e.Dir)
