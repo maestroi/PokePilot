@@ -5,7 +5,7 @@ export POKEMON_RED_ROM
 # Extra flags, e.g. make run ARGS='-goto "pallet town"'
 ARGS ?=
 
-.PHONY: run run-60 run-0 test
+.PHONY: run run-60 run-0 run-llm test
 
 require-rom = @test -f "$(POKEMON_RED_ROM)" || { \
 	echo "POKEMON_RED_ROM not found: $(POKEMON_RED_ROM)"; \
@@ -22,6 +22,10 @@ run-60:
 run-0:
 	$(require-rom)
 	go run ./cmd/pokepilot -fps 0 $(ARGS)
+
+run-llm:
+	$(require-rom)
+	go run ./cmd/pokepilot -planner llm -fps 60 $(ARGS)
 
 test:
 	go test ./... $(ARGS)

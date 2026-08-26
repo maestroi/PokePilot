@@ -12,6 +12,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/maestroi/pokepilot/agent"
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
@@ -20,6 +21,13 @@ import (
 
 const version = "pokepilot v0.1.0-dev"
 
+// llmMaxRounds and llmMaxFrames are guardrails for an unattended run, not
+// goals: a healthy run stops well before either, on stuck or error.
+const (
+	llmMaxRounds = 32
+	llmMaxFrames = 8 * 60 * 60 * 60 // eight hours of emulated frames at 60 fps
+)
+
 func main() {
 	addr := flag.String("http", "localhost:8099", "address to serve the screen on")
 	every := flag.Int("capture-every", 4, "capture a frame for the browser every N frames")
@@ -27,6 +35,7 @@ func main() {
 	fps := flag.Int("fps", 60, "pace the walk to this many frames per second so it is watchable; 0 runs flat out")
 	hold := flag.Duration("hold", 30*time.Second, "how long to keep serving after the run finishes")
 	starter := flag.String("starter", "squirtle", "starter to take: charmander, squirtle or bulbasaur (bulbasaur loses the rival battle)")
+	planner := flag.String("planner", "scripted", "how to choose objectives: scripted or llm")
 	flag.Parse()
 
 	romPath := os.Getenv("POKEMON_RED_ROM")
@@ -61,11 +70,24 @@ func main() {
 		fmt.Printf("paced to %d fps — open the page now\n", *fps)
 	}
 
+	switch *planner {
+	case "scripted":
+		runScripted(m, *starter, *dest, *hold, served)
+	case "llm":
+		runLLM(m)
+	default:
+		log.Fatalf("unknown planner %q: want scripted or llm", *planner)
+	}
+}
+
+// runScripted is the original flow, unchanged: take the starter, walk to the
+// destination, then keep serving so the screen stays live.
+func runScripted(m *emu.Emu, starter, dest string, hold time.Duration, served string) {
 	// The north exit of Pallet Town is gated on the opening story: walking to
 	// y==1 without a Pokemon triggers Oak's "Don't go out!" cutscene and sets
 	// wJoyIgnore, which no amount of walking gets past.
 	var which skill.Starter
-	switch *starter {
+	switch starter {
 	case "charmander":
 		which = skill.StarterCharmander
 	case "squirtle":
@@ -73,23 +95,23 @@ func main() {
 	case "bulbasaur":
 		which = skill.StarterBulbasaur
 	default:
-		log.Fatalf("unknown starter %q: want charmander, squirtle or bulbasaur", *starter)
+		log.Fatalf("unknown starter %q: want charmander, squirtle or bulbasaur", starter)
 	}
 
-	fmt.Printf("getting the %s starter (this includes the rival battle)...\n", *starter)
+	fmt.Printf("getting the %s starter (this includes the rival battle)...\n", starter)
 	if err := skill.GetStarter(m, m.ROM(), which, skill.StatAwareMove(m.ROM())); err != nil {
 		log.Fatalf("get starter: %v", err)
 	}
 	report(m, "got starter")
 
-	target, ok := skill.Place(*dest)
+	target, ok := skill.Place(dest)
 	if !ok {
-		log.Fatalf("unknown destination %q", *dest)
+		log.Fatalf("unknown destination %q", dest)
 	}
 
-	fmt.Printf("walking to %q (map %02x, %d,%d)...\n", *dest, target.Map, target.X, target.Y)
+	fmt.Printf("walking to %q (map %02x, %d,%d)...\n", dest, target.Map, target.X, target.Y)
 	start := time.Now()
-	err = skill.GoTo(m, m.ROM(), target)
+	err := skill.GoTo(m, m.ROM(), target)
 	report(m, fmt.Sprintf("after GoTo (%s)", time.Since(start).Round(time.Millisecond)))
 	if err != nil {
 		fmt.Printf("\nGoTo failed: %v\n", err)
@@ -100,11 +122,58 @@ func main() {
 	// Keep stepping while serving. Sleeping here instead would freeze the
 	// emulator, and the browser would show a still frame that looks like a
 	// hang rather than a game waiting for input nobody is pressing.
-	fmt.Printf("\nstill serving http://%s for %s, ctrl-c to quit\n", served, *hold)
+	fmt.Printf("\nstill serving http://%s for %s, ctrl-c to quit\n", served, hold)
 	m.Pace(60)
-	for deadline := time.Now().Add(*hold); time.Now().Before(deadline); {
+	for deadline := time.Now().Add(hold); time.Now().Before(deadline); {
 		m.StepFrames(4)
 	}
+}
+
+// runLLM drives the objective loop: the model picks the next objective from
+// the offered list each round, and every round is printed to stdout so an
+// unattended run leaves something a human can read in the morning.
+func runLLM(m *emu.Emu) {
+	offered := []agent.Objective{{Kind: agent.KindStarter}}
+	for _, name := range skill.PlaceNames() {
+		offered = append(offered, agent.Objective{Kind: agent.KindGoTo, Place: name})
+	}
+	fmt.Printf("planner: llm — the model picks from %d offered objectives\n", len(offered))
+
+	res := agent.Run(m, m.ROM(), agent.NewLLMPlanner(), offered, agent.Budget{
+		MaxRounds: llmMaxRounds,
+		MaxFrames: llmMaxFrames,
+		Log:       os.Stdout,
+	})
+
+	fmt.Printf("\nrun stopped: %s after %d round(s)\n", stopName(res.Stop), res.Rounds)
+	for i, o := range res.Completed {
+		fmt.Printf("  completed %d: %s\n", i+1, o)
+	}
+	if res.Err != nil {
+		fmt.Printf("  error: %v\n", res.Err)
+	}
+
+	// A run that stops on error or stuck has not done what it was told to
+	// do; exiting zero would make an overnight failure invisible.
+	if res.Stop == agent.StopError || res.Stop == agent.StopStuck {
+		os.Exit(1)
+	}
+}
+
+// stopName renders an agent.Stop for the final line. The type has no
+// String() of its own, so the mapping lives next to where it is shown.
+func stopName(s agent.Stop) string {
+	switch s {
+	case agent.StopDone:
+		return "done"
+	case agent.StopStuck:
+		return "stuck"
+	case agent.StopBudget:
+		return "budget"
+	case agent.StopError:
+		return "error"
+	}
+	return fmt.Sprintf("unknown stop %d", int(s))
 }
 
 // report prints the state PokePilot actually reasons about: decoded RAM,

@@ -1,39 +1,42 @@
-# RUNNOTES — R5 GetStarter (done, ROM-gated test skipped locally)
+# RUNNOTES — S4-6 wire agent loop into cmd/pokepilot (done, verified)
 
 ## What changed
-Commit "skill: follow Oak, take a starter, beat the rival".
+Commit ab70d3d "cmd: run the objective loop behind -planner" (4 files).
 
-- `skill/story.go` (new): `GetStarter(m, romData, which Starter, policy
-  MovePolicy) error`. Flow: GoTo Pallet Town -> WalkPath right3/up4/right2/up
-  to (10,1) (gate fires, wJoyIgnore != 0) -> Cutscene on
-  EventOakAskedToChooseMon -> controllable at lab (5,3) -> walkLab to the
-  approach tile below the chosen ball -> Face(ball) -> A -> wait for the
-  YesNoChoice shape (FontLoaded != 0 && DecodeMenu().Max == 1) ->
-  SelectMenuItem(0) YES -> wait TookStarterBall && party >= 1 -> Cutscene on
-  EventGotStarter -> walkLab to row 6 (challenge text = expected
-  ErrDialogueInterrupted) -> advanceUntil DecodeBattle != nil ->
-  Battle(m, policy), require ResultWon -> wait EventBattledRivalInOaksLab,
-  assert Controllable. Idempotent: nil if that event is already set.
-- `skill/story_test.go` (new): ROM-gated. GetStarter with StarterSquirtle +
-  StatAwareMove, second call for idempotency, then GoTo Pallet Town ->
-  gatePath -> HoldUntil(Up, 300, CurMap != 0x00) -> assert CurMap == 0x0C.
+- `cmd/pokepilot/main.go`: new `-planner` flag (default `scripted`).
+  - `scripted`: original flow verbatim, moved into `runScripted`
+    (boot -> GetStarter -> one GoTo -> hold serving); `report` reused.
+  - `llm`: `runLLM` offers KindStarter + one KindGoTo per
+    `skill.PlaceNames()`, runs `agent.Run` with `agent.NewLLMPlanner()`
+    and Budget{MaxRounds: 32, MaxFrames: 8h@60fps, Log: os.Stdout},
+    prints stop reason / rounds / completed / error; StopError or
+    StopStuck -> os.Exit(1). `stopName` helper (agent.Stop has no
+    String()).
+- `skill/goto.go`: hoisted function-local `places` map to package var;
+  added exported `PlaceNames() []string` (sorted) — skill had no way to
+  enumerate place names, so the list is not duplicated in cmd.
+- `Makefile`: `run-llm` target (require-rom, `-planner llm -fps 60`).
+- `docs/AGENT.md`: new (repo has no README.md; task allowed this).
 
 ## Verified
-- Build, vet, `go test ./... -skip TestGoToViridianPokecenter` all green;
-  TestGetStarter SKIPs here (POKEMON_RED_ROM not set).
-- world/, red/, emu/, skill/battle.go, skill/policy.go untouched.
+- `go build ./...`, `go vet ./...` clean; my files gofmt-clean (4
+  pre-existing files are not — left alone).
+- `env -u POKEMON_RED_ROM go test -skip TestGoToViridianPokecenter
+  ./... -count=1` -> all ok.
+- Scripted (ROM from /home/maestro/Documents/projects/PokePilot/roms/
+  pokemon_red.gb): `make run ARGS='-goto "pallet town"'` -> full flow,
+  prints "arrived.", exit 0. No model called in this path.
+- LLM, unreachable: `POKEPILOT_LLM_URL=http://127.0.0.1:9 make run-llm`
+  -> "planner: llm — the model picks from 6 offered objectives", then
+  "run stopped: error after 0 round(s)" + "error: agent: llm planner:
+  POST http://127.0.0.1:9/chat/completions: ... connection refused";
+  binary exits 1 (make: Error 1). No real inference server called.
 
-## Gotchas baked in (measured facts, do not re-derive)
-- Yes/no menu shape is Max == 1 (highest valid index, inclusive); Start
-  menu Max == 6. SelectMenuItem(0) = YES under either reading.
-  wMaxMenuItem is stale-0 at boot, so Max == 1 identifies the choice box.
-- During any battle wFontLoaded == 0. Controllable = CurMapWidth/Height !=
-  0, FontLoaded == 0, JoyIgnore == 0, WalkCounter == 0.
-- Lab dynamic obstacles (rival (4,3), Oak (5,2), balls (6,3)-(8,3)) are not
-  in the static grid; walkLab re-plans around ErrBlocked. Challenge text
-  opens on row 6; accept ErrDialogueInterrupted at any row-6 tile.
-- Budgets (frames): gate 60, cutscene 30000, choice 3000, starter 10000,
-  battle 10000. Whole story ~8 s of game time.
-
-## Next task
-- Call skill.GetStarter from a fresh fixture; Route 1 is the north edge at (10,0).
+## Gotchas / next
+- Work only in this worktree, NOT /home/maestro/Documents/projects/PokePilot.
+- llm-mode starter is always Squirtle (agent.Execute hardcodes it);
+  -starter is scripted-only (documented in docs/AGENT.md).
+- llm run ends on budget (LLMPlanner never returns ErrDone) unless it
+  errors/sticks; StopBudget exits 0.
+- Route 1 still broken (plan fdc1544f): full-suite runs need
+  `-skip TestGoToViridianPokecenter`.
