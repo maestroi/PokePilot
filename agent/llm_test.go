@@ -107,7 +107,7 @@ func TestLLMPlannerPicksOfferedObjective(t *testing.T) {
 }
 
 // TestLLMPlannerStripsProse: the model wraps the number in prose; the
-// first integer still wins.
+// answer still wins.
 func TestLLMPlannerStripsProse(t *testing.T) {
 	srv := startModelServer(t, `{"choices":[{"message":{"content":"I choose 2 because it is closer."}}]}`, nil)
 	offered := llmOffered()
@@ -118,6 +118,53 @@ func TestLLMPlannerStripsProse(t *testing.T) {
 	}
 	if got != offered[1] {
 		t.Fatalf("Next = %s, want %s", got, offered[1])
+	}
+}
+
+// TestLLMPlannerAnswerWinsOverScratchWork: a model that reasons out loud
+// mentions numbers it then rejects. The ANSWER is the last integer, not
+// the first — taking the first silently picks a rejected option, which is
+// a legal objective and therefore an invisible wrong choice.
+func TestLLMPlannerAnswerWinsOverScratchWork(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		reply string
+		want  int // index into offered
+	}{
+		{"weighs two options", "Option 1 is tempting, but 3 is better.", 2},
+		{"thinks out loud first", "<think>maybe 1? no, 2 is closer</think>\n3", 2},
+		{"bare number", "2", 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := fmt.Sprintf(`{"choices":[{"message":{"content":%q}}]}`, tc.reply)
+			srv := startModelServer(t, body, nil)
+			offered := llmOffered()
+
+			got, err := llmPlanner(srv).Next(llmObs(), offered)
+			if err != nil {
+				t.Fatalf("Next: %v", err)
+			}
+			if got != offered[tc.want] {
+				t.Fatalf("Next = %s, want %s", got, offered[tc.want])
+			}
+		})
+	}
+}
+
+// TestLLMPlannerTruncatedThoughtIsError: an unclosed reasoning block
+// means the reply was cut off before the answer. Every number in it is
+// scratch work, so there is nothing to pick, and picking one anyway is
+// precisely the silent wrong choice this parsing exists to prevent.
+func TestLLMPlannerTruncatedThoughtIsError(t *testing.T) {
+	srv := startModelServer(t, `{"choices":[{"message":{"content":"<think>1 looks wrong, 3 it is"}}]}`, nil)
+	offered := llmOffered()
+
+	got, err := llmPlanner(srv).Next(llmObs(), offered)
+	if err == nil {
+		t.Fatalf("Next = %s, want an error for a truncated reply", got)
+	}
+	if got == offered[0] {
+		t.Fatalf("Next = %s, must not fall back to the first offered", got)
 	}
 }
 
