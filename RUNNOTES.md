@@ -1,39 +1,41 @@
-# RUNNOTES — R5 GetStarter (done, ROM-gated test skipped locally)
+# RUNNOTES — Travel: fight wild encounters, resume the route (done)
 
 ## What changed
-Commit "skill: follow Oak, take a starter, beat the rival".
+Commit "skill: fight through wild encounters and resume the route".
 
-- `skill/story.go` (new): `GetStarter(m, romData, which Starter, policy
-  MovePolicy) error`. Flow: GoTo Pallet Town -> WalkPath right3/up4/right2/up
-  to (10,1) (gate fires, wJoyIgnore != 0) -> Cutscene on
-  EventOakAskedToChooseMon -> controllable at lab (5,3) -> walkLab to the
-  approach tile below the chosen ball -> Face(ball) -> A -> wait for the
-  YesNoChoice shape (FontLoaded != 0 && DecodeMenu().Max == 1) ->
-  SelectMenuItem(0) YES -> wait TookStarterBall && party >= 1 -> Cutscene on
-  EventGotStarter -> walkLab to row 6 (challenge text = expected
-  ErrDialogueInterrupted) -> advanceUntil DecodeBattle != nil ->
-  Battle(m, policy), require ResultWon -> wait EventBattledRivalInOaksLab,
-  assert Controllable. Idempotent: nil if that event is already set.
-- `skill/story_test.go` (new): ROM-gated. GetStarter with StarterSquirtle +
-  StatAwareMove, second call for idempotency, then GoTo Pallet Town ->
-  gatePath -> HoldUntil(Up, 300, CurMap != 0x00) -> assert CurMap == 0x0C.
+- `skill/travel.go` (new): `Travel(m, romData, dest, policy, maxBattles)
+  (TravelResult, error)`. Loop: GoTo -> on nil, done; on non-ErrBattle,
+  return unchanged; on ErrBattle, Battle(m, policy) and continue.
+  ResultLost sets BlackedOut and continues (GoTo re-plans from the Center);
+  it is not an error. Battle error is returned wrapped with the battle
+  count. maxBattles <= 0 is an error before anything walks; after
+  maxBattles battles the loop returns an error plus the result so far.
+- `skill/travel_test.go` (new): ROM-gated (skips without POKEMON_RED_ROM).
+  Pallet Town grass-free: Battles 0, BlackedOut false. maxBattles 0: error
+  mentioning the bound, position unchanged. Nonsense dest (map 0xFF, above
+  maxMapID 0xF7 so never a graph node): error comes back unchanged,
+  errors.Is(err, world.ErrNoRoute) true, NOT ErrBattle. Pallet -> Viridian
+  (maxBattles 20): wCurMap == 0x01 and Battles >= 1.
 
 ## Verified
-- Build, vet, `go test ./... -skip TestGoToViridianPokecenter` all green;
-  TestGetStarter SKIPs here (POKEMON_RED_ROM not set).
-- world/, red/, emu/, skill/battle.go, skill/policy.go untouched.
+- Build, vet, `go test ./... -skip TestGoToViridianPokecenter` green with
+  POKEMON_RED_ROM set; all four Travel tests SKIP cleanly without it.
+- goto.go, move.go, warp.go, battle.go untouched (empty diff).
+- Viridian result, verbatim: "reached Viridian City after 1 battles
+  (BlackedOut=false)" — PASS in ~9.4 s. The measured GoTo stall
+  ("battle on map 0c at (14,7)") is fought and the route finishes.
 
-## Gotchas baked in (measured facts, do not re-derive)
-- Yes/no menu shape is Max == 1 (highest valid index, inclusive); Start
-  menu Max == 6. SelectMenuItem(0) = YES under either reading.
-  wMaxMenuItem is stale-0 at boot, so Max == 1 identifies the choice box.
-- During any battle wFontLoaded == 0. Controllable = CurMapWidth/Height !=
-  0, FontLoaded == 0, JoyIgnore == 0, WalkCounter == 0.
-- Lab dynamic obstacles (rival (4,3), Oak (5,2), balls (6,3)-(8,3)) are not
-  in the static grid; walkLab re-plans around ErrBlocked. Challenge text
-  opens on row 6; accept ErrDialogueInterrupted at any row-6 tile.
-- Budgets (frames): gate 60, cutscene 30000, choice 3000, starter 10000,
-  battle 10000. Whole story ~8 s of game time.
+## Gotchas baked in (do not re-derive)
+- errors.Is(err, ErrBattle) is the single battle check: 41e0cca normalized
+  both walkWithinMap and Traverse to wrap ErrBattle. Travel must NOT
+  re-wrap or convert non-battle errors; the nonsense-dest test guards that.
+- Map 0xFF is a safe "no route" destination: BuildGraph only parses
+  0..0xF7, so it is never a node and no edge ever has To == 0xFF.
+- The battle at (14,7) on Route 1 is the only one on this route in a
+  measured run (Battles = 1); the 20 bound is headroom, not expectation.
+- Squirtle + StatAwareMove wins every Route 1 wild (Pidgey/Rattata lvl 2-3).
 
 ## Next task
-- Call skill.GetStarter from a fresh fixture; Route 1 is the north edge at (10,0).
+- R6 (plan ff1c6b79) can now resume: its TestGoToViridianPokecenter crosses
+  Route 1's grass and needs this plus its fixture work. Still skipped here.
+- Do not point Travel at "viridian pokemon center" yet; that is R6's call.
