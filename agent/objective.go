@@ -34,8 +34,18 @@ func Execute(m *emu.Emu, romData []byte, o Objective) error {
 		if !ok {
 			return fmt.Errorf("agent: %s: unknown place %q", o, o.Place)
 		}
-		if err := skill.GoTo(m, romData, dest); err != nil {
+		// Travel, not GoTo: GoTo aborts on the first wild battle by
+		// design, which on any route through grass means the run stops at
+		// the first Pidgey. maxBattles bounds it; 20 is the cap the
+		// fixtures use for the Pallet -> Viridian legs, which measured 1.
+		res, err := skill.Travel(m, romData, dest, skill.StatAwareMove(romData), 20)
+		if err != nil {
 			return fmt.Errorf("agent: %s: %w", o, err)
+		}
+		if res.BlackedOut {
+			// Losing is a typed outcome, not an error — but an unattended
+			// run log must say it happened.
+			fmt.Printf("  blacked out on the way (%d battles), resumed from a Pokemon Center\n", res.Battles)
 		}
 		return nil
 	case KindTalk:

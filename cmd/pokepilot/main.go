@@ -139,7 +139,9 @@ func runLLM(m *emu.Emu) {
 	}
 	fmt.Printf("planner: llm — the model picks from %d offered objectives\n", len(offered))
 
-	res := agent.Run(m, m.ROM(), agent.NewLLMPlanner(), offered, agent.Budget{
+	planner := agent.NewLLMPlanner()
+	planner.Log = os.Stdout // one line per model call, above its round line
+	res := agent.Run(m, m.ROM(), planner, offered, agent.Budget{
 		MaxRounds: llmMaxRounds,
 		MaxFrames: llmMaxFrames,
 		Log:       os.Stdout,
