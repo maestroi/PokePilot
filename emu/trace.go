@@ -20,7 +20,7 @@ type TraceEntry struct {
 	// length stops changing while entries keep arriving.
 	Seq   uint64 `json:"seq"`
 	Frame uint64 `json:"frame"`
-	Kind  string `json:"kind"` // "map", "dialogue", "control", "battle"
+	Kind  string `json:"kind"` // "map", "dialogue", "control", "battle", "llm", "round"
 	Text  string `json:"text"`
 }
 
