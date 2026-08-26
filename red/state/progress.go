@@ -68,6 +68,7 @@ const (
 	EventGotPokeballsFromOak   Event = 36
 	EventGotPokedex            Event = 37
 	EventOakAppearedInPallet   Event = 39
+	EventGotOaksParcel         Event = 57
 )
 
 var eventNames = map[Event]string{
@@ -78,6 +79,7 @@ var eventNames = map[Event]string{
 	EventGotPokeballsFromOak:   "GotPokeballsFromOak",
 	EventGotPokedex:            "GotPokedex",
 	EventOakAppearedInPallet:   "OakAppearedInPallet",
+	EventGotOaksParcel:         "GotOaksParcel",
 }
 
 // String renders the event name; unnamed indices render as "unknown(N)".

@@ -80,6 +80,13 @@ var places = map[string]Destination{
 	// 0x29 the nurse stands at (3,1) and (3,2) is a counter tile, which the
 	// player can never stand on. Talking works across the counter.
 	"viridian pokemon center": {Map: 0x29, X: 3, Y: 3},
+	// 0x2A is the Viridian Mart. (2,5) is the open floor in front of the
+	// counter: the clerk stands at (0,5) and (1,5) is a counter tile, which
+	// the player can never stand on. (2,5) is also exactly where the entry
+	// cutscene leaves the player: the city door warp lands at (3,7) and the
+	// map script force-walks left 1, up 2, and the parcel box is shown from
+	// that tile.
+	"viridian mart": {Map: 0x2A, X: 2, Y: 5},
 	// (8,71) sits in the open band of Route 2's south edge (x7-9), the
 	// landing zone of the crossing from Viridian City's north edge (x17-19).
 	"route 2": {Map: 0x0D, X: 8, Y: 71},
