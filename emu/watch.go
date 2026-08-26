@@ -62,9 +62,12 @@ const watchPage = `<!doctype html>
   #f { display:none; width:640px; height:auto; aspect-ratio:160/144;
        max-width:100%; max-height:100%; image-rendering:pixelated; }
   #w { color:#888; }
-  #trace { flex:0 0 clamp(280px, 32%, 460px); min-height:0; height:100vh;
-           overflow-y:auto; box-sizing:border-box;
-           padding:8px 12px; border-left:1px solid #333; }
+  #side { flex:0 0 clamp(280px, 32%, 460px); min-height:0; height:100vh;
+          display:flex; flex-direction:column; border-left:1px solid #333; }
+  #head { flex:0 0 auto; padding:8px 12px; border-bottom:1px solid #333;
+          color:#6cf; background:#181818; white-space:pre-wrap; }
+  #trace { flex:1 1 auto; min-height:0; overflow-y:auto; box-sizing:border-box;
+           padding:8px 12px; }
   #trace div { padding:2px 0; border-bottom:1px solid #222; white-space:pre-wrap; }
   .frame { color:#888; margin-right:8px; }
   .kind { color:#6cf; margin-right:8px; }
@@ -75,10 +78,14 @@ const watchPage = `<!doctype html>
   <p id="w">waiting for the first frame...</p>
   <img id="f" alt="">
 </div>
-<div id="trace"></div>
+<div id="side">
+  <div id="head"></div>
+  <div id="trace"></div>
+</div>
 <script>
 const img = document.getElementById('f'), wait = document.getElementById('w');
 const trace = document.getElementById('trace');
+const head = document.getElementById('head');
 let inFlight = false;
 async function tickFrame() {
   if (inFlight) return;
@@ -106,6 +113,7 @@ async function tickTrace() {
     const r = await fetch('/trace.json', { cache: 'no-store' });
     if (!r.ok) return;
     const payload = await r.json();
+    head.textContent = payload.header || '';
     if (payload.run !== run) {
       run = payload.run;
       lastSeq = 0;

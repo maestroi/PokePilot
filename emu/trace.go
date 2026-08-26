@@ -34,6 +34,11 @@ type traceBuf struct {
 	entries []TraceEntry
 	nextSeq uint64
 
+	// header is a one-line description of the run, pinned above the trace
+	// so it survives scrolling. emu does not compose it: the layer that
+	// knows what this run is sets it.
+	header string
+
 	// run identifies this process's trace. A consumer that sees a different
 	// run must discard what it has: sequence numbers restart from scratch,
 	// so without this a reconnecting page replays the whole trace again.
@@ -75,15 +80,16 @@ func (t *traceBuf) snapshot() []TraceEntry {
 // sent bare so a consumer can tell one process's trace from another's.
 type tracePayload struct {
 	Run     string       `json:"run"`
+	Header  string       `json:"header"`
 	Entries []TraceEntry `json:"entries"`
 }
 
 func (t *traceBuf) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	t.mu.Lock()
-	run := t.run
+	run, header := t.run, t.header
 	t.mu.Unlock()
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(tracePayload{Run: run, Entries: t.snapshot()})
+	_ = json.NewEncoder(w).Encode(tracePayload{Run: run, Header: header, Entries: t.snapshot()})
 }
 
 // diffChanged is the change-detection primitive: it reports whether cur
@@ -177,6 +183,18 @@ func (m *Emu) TraceNote(kind, text string) {
 		return
 	}
 	m.trace.add(TraceEntry{Frame: m.e.FrameCount(), Kind: kind, Text: text})
+}
+
+// TraceHeader pins a one-line description of this run above the trace
+// panel — what is driving it, and the seed, which is the only thing that
+// makes one run differ from another. Safe to call at any time.
+func (m *Emu) TraceHeader(text string) {
+	if m.trace == nil {
+		return
+	}
+	m.trace.mu.Lock()
+	m.trace.header = text
+	m.trace.mu.Unlock()
 }
 
 // OnSample registers fn to run on every trace sample, on the goroutine that
