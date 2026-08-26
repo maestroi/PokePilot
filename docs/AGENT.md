@@ -29,8 +29,15 @@ evidence. Branch both arms from one save state for that.
 Environment (llm mode only):
 
 - `POKEPILOT_LLM_URL` — OpenAI-compatible base URL, default
-  `http://192.168.50.81:8002/v1`
-- `POKEPILOT_LLM_MODEL` — model name, default `qwen3.8-27b`
+  `http://192.168.50.204:8000/v1`
+- `POKEPILOT_LLM_MODEL` — model name, default `qwen3.5-4b`
+- `llm_token` — bearer token for that server, read from `.env`, which
+  `make run-llm` sources. Empty means no `Authorization` header is sent.
+
+Every model call logs one line: how many objectives were offered, how long
+it took, the raw reply, and what that reply resolved to.
+
+    llm: 6 offered, 260ms, reply "1" -> take a starter
 
 The run stops on budget exhaustion (rounds or frames), on a planner reply
 that names no offered objective, or on a failed objective. The final line
@@ -42,3 +49,6 @@ Note: in llm mode the starter objective is always Squirtle
 Worked example:
 
     POKEPILOT_LLM_URL=http://localhost:8002/v1 make run-llm
+
+Note: in llm mode a "go to" objective uses skill.Travel, so a wild
+encounter on the way is fought and the route resumes.
