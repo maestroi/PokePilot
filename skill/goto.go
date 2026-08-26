@@ -3,6 +3,7 @@ package skill
 import (
 	"errors"
 	"fmt"
+	"sort"
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/rom"
@@ -58,17 +59,30 @@ func GoTo(m *emu.Emu, romData []byte, dest Destination) error {
 	}
 }
 
+// places is the single source of truth for the names Place accepts.
+var places = map[string]Destination{
+	"reds bedroom":            {Map: 0x26, X: 3, Y: 6},
+	"reds house":              {Map: 0x25, X: 3, Y: 2},
+	"pallet town":             {Map: 0x00, X: 5, Y: 6},
+	"viridian city":           {Map: 0x01, X: 23, Y: 26},
+	"viridian pokemon center": {Map: 0x29, X: 3, Y: 2},
+}
+
 // Place maps a friendly name to a Destination.
 func Place(name string) (Destination, bool) {
-	places := map[string]Destination{
-		"reds bedroom":            {Map: 0x26, X: 3, Y: 6},
-		"reds house":              {Map: 0x25, X: 3, Y: 2},
-		"pallet town":             {Map: 0x00, X: 5, Y: 6},
-		"viridian city":           {Map: 0x01, X: 23, Y: 26},
-		"viridian pokemon center": {Map: 0x29, X: 3, Y: 2},
-	}
 	d, ok := places[name]
 	return d, ok
+}
+
+// PlaceNames returns every name Place accepts, sorted, so a caller can offer
+// one objective per place without duplicating the list.
+func PlaceNames() []string {
+	names := make([]string, 0, len(places))
+	for name := range places {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // abortIfBattle returns an error wrapping ErrBattle when a battle is active,
