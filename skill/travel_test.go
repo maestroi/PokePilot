@@ -7,17 +7,17 @@ import (
 
 	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/skill"
+	"github.com/maestroi/pokepilot/skill/fixture"
 	"github.com/maestroi/pokepilot/world"
 )
 
-// TestTravelPalletTownFightsNothing: from a fresh boot, GetStarter ends in
-// Pallet Town; a grass-free walk inside the town must finish with no
-// battles and no blackout.
+// TestTravelPalletTownFightsNothing: from the post_starter checkpoint
+// (Oak's lab, the state GetStarter leaves), the walk to Pallet Town crosses
+// no grass and must finish with no battles and no blackout. The
+// post_starter fixture is the start point, not pallet_town: loading
+// pallet_town would make the destination the start and the walk vacuous.
 func TestTravelPalletTownFightsNothing(t *testing.T) {
-	e := loadFixture(t)
-	if err := skill.GetStarter(e, e.ROM(), skill.StarterSquirtle, skill.StatAwareMove(e.ROM())); err != nil {
-		t.Fatalf("GetStarter: %v", err)
-	}
+	e := fixture.Load(t, "post_starter")
 	dest, ok := skill.Place("pallet town")
 	if !ok {
 		t.Fatal(`Place: "pallet town" not found`)
@@ -79,16 +79,19 @@ func TestTravelNonsenseDestination(t *testing.T) {
 	}
 }
 
-// TestTravelPalletToViridian is the milestone: from Pallet Town, Travel
-// crosses Route 1's tall grass, fights the wild encounters, and reaches
-// Viridian City. A plain GoTo on this route MEASURED stops with
-// "Traverse: battle on map 0c at (14,7): battle interrupted the route"
-// roughly 760 frames into Route 1; Travel must get past it.
+// TestTravelPalletToViridian is the milestone: from the post-story state,
+// Travel walks through Pallet Town, crosses Route 1's tall grass, fights
+// the wild encounters, and reaches Viridian City. A plain GoTo on this
+// route MEASURED stops with "Traverse: battle on map 0c at (14,7): battle
+// interrupted the route" roughly 760 frames into Route 1; Travel must get
+// past it. Setup is the cached post_starter checkpoint: the battles >= 1
+// assertion is tied to the wRandom phase of this exact walk, and the
+// post_starter fixture is the state GetStarter left (in Oak's lab). The
+// pallet_town checkpoint is NOT a drop-in start here: from the town entry
+// the same grass throws zero encounters, deterministically (MEASURED), and
+// the assertion could not hold.
 func TestTravelPalletToViridian(t *testing.T) {
-	e := loadFixture(t)
-	if err := skill.GetStarter(e, e.ROM(), skill.StarterSquirtle, skill.StatAwareMove(e.ROM())); err != nil {
-		t.Fatalf("GetStarter: %v", err)
-	}
+	e := fixture.Load(t, "post_starter")
 	dest, ok := skill.Place("viridian city")
 	if !ok {
 		t.Fatal(`Place: "viridian city" not found`)
