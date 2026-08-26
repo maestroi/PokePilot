@@ -1,38 +1,37 @@
-# RUNNOTES — S4-5a LLM planner (done, verified)
+# RUNNOTES — S4-5b LLM planner tests (done, verified)
 
 ## What changed
-Commit "agent: an OpenAI-compatible LLM planner that can only pick what was offered".
+Commit 938e829 "agent: LLM planner tests — happy path and prose stripping (httptest, no ROM)".
 
-- `agent/llm.go` (new): `LLMPlanner{BaseURL, Model, Client}`,
-  `NewLLMPlanner()` (defaults http://192.168.50.81:8002/v1, model
-  qwen3.8-27b; env POKEPILOT_LLM_URL / POKEPILOT_LLM_MODEL override).
-- `Next` implements the Planner seam: one POST to
-  {BaseURL}/chat/completions, parse choices[0].message.content, then
-  `Chosen`. Reply handling: trim, take first integer (prose/fences fine);
-  no integer -> error with raw reply; otherwise pass the integer string
-  to Chosen, whose error is returned as-is. Never guesses, no retry, no
-  fallback to offered[0].
-- temperature always 0; nil Client -> 60s timeout.
-- Errors name what happened: transport, non-200 (with trimmed body
-  snippet), unparseable JSON, empty choices (with snippet).
-- System prompt: "You are choosing the next objective for a Pokemon Red
-  player. Reply with ONLY the number of your choice. Do not explain."
-- User prompt: "Observation:\n" + MarshalIndent JSON + "\n\nOffered
-  objectives:\n" + "N: <String()>\n" lines (1-based index, not sentence).
-- Stdlib only; go.mod/go.sum byte-identical (verified via git status).
+- `agent/llm_test.go` (new, package agent_test): shared helpers + 2 tests.
+  - `llmObs()` fixture: Map 0x28, OAKS_LAB, (5,6) down, Party 1 (Species 1,
+    Lv 5, 20/20 HP), Money 3000, Events ["got a starter"].
+  - `llmOffered()`: {KindGoTo "pallet town"}, {KindStarter}, {KindTalk (3,1)}.
+    Deliberately NOT starting with bare KindStarter (zero Objective ==
+    {Kind: KindStarter}; out-of-range test must distinguish "none" from offered[0]).
+  - `startModelServer(t, reply, *capture)`: httptest OpenAI endpoint; fails on
+    wrong path (/chat/completions) or Content-Type (application/json); captures
+    raw request body when non-nil. `llmPlanner(srv)` -> LLMPlanner{BaseURL: srv.URL, Model: "qwen3.8-27b"}.
+  - `TestLLMPlannerPicksOfferedObjective`: reply "2" -> offered[1]; asserts body
+    contains model/temperature/roles + "1: go to pallet town", "2: take a starter",
+    "3: talk at (3,1)".
+  - `TestLLMPlannerStripsProse`: reply "I choose 2 because it is closer." -> offered[1].
+- llm.go untouched.
 
 ## Verified
-- `go build ./...`, `go vet ./...` clean.
-- `env -u POKEMON_RED_ROM go test ./agent/` -> ok (ROM-gated tests skip).
-- Only agent/llm.go staged/committed; no HANDOFF.md present.
+- `env -u POKEMON_RED_ROM go build ./...`, `go vet ./agent/` clean.
+- `env -u POKEMON_RED_ROM go test ./agent/ -count=1` -> ok (all tests, no ROM,
+  no inference server; everything goes to httptest on loopback).
+- Exact request body captured via a temp dump test (deleted after; not committed);
+  matches the contract body in the S4-5b brief byte-for-byte.
 
 ## Gotchas / next
 - Work only in this worktree, NOT /home/maestro/Documents/projects/PokePilot
-  (that checkout is on main, has no agent/; a prior attempt lost work there).
-- No llm_test.go exists yet; the "8/8 tests" from the task brief refer to
-  the prior attempt's external tests. A next task may add
-  agent/llm_test.go (httptest server, no ROM needed).
+  (that checkout is on main, has no agent/).
+- Next task (S4-5c?) adds the remaining llm tests (out-of-range, no-number,
+  non-200, empty choices, wrong path/Content-Type, etc.) to the SAME file —
+  reuse llmObs/llmOffered/startModelServer/llmPlanner as-is.
 - Full-suite runs: still `go test -skip TestGoToViridianPokecenter ./...`
   until plan fdc1544f lands.
-- S4-5b likely wires LLMPlanner into Run/cmd with offered lists; LLMPlanner
-  is already a Planner (Next signature matches), so no seam changes needed.
+- S4-5b follow-up: wire LLMPlanner into Run/cmd with offered lists; LLMPlanner
+  already satisfies the Planner seam (Next signature matches).
