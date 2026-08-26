@@ -8,8 +8,8 @@
 //	{
 //	  printf '; RAM and HRAM symbols from the pokered decompilation, RGBDS .sym format.\n'
 //	  printf '; Filtered to addresses >= 0xC000; see doc.go for the regeneration command.\n'
-//	  printf '; pokered commit: %s\n' "$(git -C ~/.cache/pokered rev-parse HEAD)"
-//	  grep -E '^[0-9a-fA-F]{2}:[C-Fc-f]' ~/.cache/pokered/pokered.sym
+//	  printf '; pokered commit: %s\n' "$(sed -n 's/.*commit `\(.*\)`.*/\1/p' pokered/UPSTREAM.md)"
+//	  grep -E '^[0-9a-fA-F]{2}:[C-Fc-f]' pokered/pokered.sym
 //	} > red/sym/testdata/pokered.sym
 //
 // Prefer deriving struct sizes and field offsets from symbol differences

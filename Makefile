@@ -5,7 +5,7 @@ export POKEMON_RED_ROM
 # Extra flags, e.g. make run ARGS='-goto "pallet town"'
 ARGS ?=
 
-.PHONY: run run-60 run-0 run-llm test pokered
+.PHONY: run run-60 run-0 run-llm test
 
 require-rom = @test -f "$(POKEMON_RED_ROM)" || { \
 	echo "POKEMON_RED_ROM not found: $(POKEMON_RED_ROM)"; \
@@ -32,13 +32,3 @@ run-llm:
 test:
 	go test ./... $(ARGS)
 
-# The pokered disassembly, as `pokered/` at the repo root. See docs/POKERED.md.
-POKERED ?= $(HOME)/.cache/pokered
-
-pokered:
-	@test -d "$(POKERED)" || { \
-		echo "pokered checkout not found: $(POKERED)"; \
-		echo "git clone https://github.com/pret/pokered $(POKERED)"; \
-		exit 1; \
-	}
-	@ln -sfn "$(POKERED)" pokered && echo "pokered -> $(POKERED)"
