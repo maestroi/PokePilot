@@ -5,21 +5,20 @@ import (
 
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/skill"
+	"github.com/maestroi/pokepilot/skill/fixture"
 )
 
-// TestGoToViridianPokecenter is the slice-2 milestone: from Red's bedroom,
-// the player walks to the Viridian Pokémon Center, crossing Red's house,
-// Pallet Town, Route 1 and Viridian City, then the player faces the nurse and
-// talks. The name keeps "GoTo" as the milestone's identity even though the
-// walk now uses Travel: the route crosses Route 1's tall grass, GoTo aborts
-// on a wild battle by design (MEASURED ~1 encounter on the Pallet ->
-// Viridian leg), and Travel fights it and resumes, so the test is
-// deterministic.
+// TestGoToViridianPokecenter is the slice-2 milestone: from Pallet Town,
+// the player walks to the Viridian Pokémon Center, crossing Route 1 and
+// Viridian City, then the player faces the nurse and talks. The name keeps
+// "GoTo" as the milestone's identity even though the walk uses Travel: the
+// route crosses Route 1's tall grass, GoTo aborts on a wild battle by
+// design (MEASURED ~1 encounter on the Pallet -> Viridian leg), and Travel
+// fights it and resumes, so the test is deterministic. Setup is the cached
+// pallet_town checkpoint instead of replaying GetStarter; post_starter is
+// NOT the start point: it ends in Oak's lab, not Pallet Town.
 func TestGoToViridianPokecenter(t *testing.T) {
-	e := loadFixture(t)
-	if err := skill.GetStarter(e, e.ROM(), skill.StarterSquirtle, skill.StatAwareMove(e.ROM())); err != nil {
-		t.Fatalf("GetStarter: %v", err)
-	}
+	e := fixture.Load(t, "pallet_town")
 
 	dest, ok := skill.Place("viridian pokemon center")
 	if !ok {
