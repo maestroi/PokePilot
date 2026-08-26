@@ -32,6 +32,13 @@ func GoTo(m *emu.Emu, romData []byte, dest Destination) error {
 		return err
 	}
 
+	// Edges the map graph offers but the tile-level pathfinder cannot
+	// walk. Route 2 is the case that forced this: it connects Viridian to
+	// Pewter in one hop, but the map is split across its full width, so
+	// the real route leaves through Viridian Forest. Only walking finds
+	// that out, so a failed leg is banned here and the route re-planned.
+	blocked := map[world.Edge]bool{}
+
 	for {
 		if err := abortIfBattle(m); err != nil {
 			return err
@@ -43,7 +50,7 @@ func GoTo(m *emu.Emu, romData []byte, dest Destination) error {
 			return walkWithinMap(m, romData, dest)
 		}
 
-		route, err := world.FindRoute(g, cur, dest.Map)
+		route, err := world.FindRouteAvoiding(g, cur, dest.Map, blocked)
 		if err != nil {
 			return fmt.Errorf("skill: GoTo: no route from map %02x at (%d,%d) to map %02x at (%d,%d): %w",
 				cur, x, y, dest.Map, dest.X, dest.Y, err)
@@ -54,6 +61,10 @@ func GoTo(m *emu.Emu, romData []byte, dest Destination) error {
 
 		e := route[0]
 		if err := Traverse(m, romData, e); err != nil {
+			if errors.Is(err, ErrLegUnwalkable) && !blocked[e] {
+				blocked[e] = true
+				continue // re-plan without this leg
+			}
 			return fmt.Errorf("skill: GoTo: %w", err)
 		}
 	}

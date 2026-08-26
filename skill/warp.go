@@ -38,6 +38,13 @@ const (
 // orthogonally adjacent to the edge tile, then the push direction is held
 // until wCurMap changes. The button is released the frame the map flips, so
 // the player never re-walks on the destination map.
+// ErrLegUnwalkable reports that a leg the map graph offered cannot be
+// walked from where the player is standing: the warp tile or the map edge
+// it leads to is unreachable on this map. The graph knows which maps
+// touch, not which are walkable between, so this is a normal discovery
+// rather than a defect — the caller bans the edge and re-plans.
+var ErrLegUnwalkable = errors.New("skill: leg is not walkable from here")
+
 func Traverse(m *emu.Emu, romData []byte, e world.Edge) error {
 	cur := m.Peek8(sym.CurMap)
 	if cur != e.From {
@@ -59,8 +66,8 @@ func Traverse(m *emu.Emu, romData []byte, e world.Edge) error {
 	case world.EdgeWarp:
 		steps, p, err := world.FindPathAdjacent(grid, int(x), int(y), int(e.WarpX), int(e.WarpY), nil)
 		if err != nil {
-			return fmt.Errorf("skill: Traverse: no route to warp (%d,%d) on map %02x: %w",
-				e.WarpX, e.WarpY, e.From, err)
+			return fmt.Errorf("skill: Traverse: no route to warp (%d,%d) on map %02x: %v: %w",
+				e.WarpX, e.WarpY, e.From, err, ErrLegUnwalkable)
 		}
 		if err := WalkPath(m, steps); err != nil {
 			return fmt.Errorf("skill: Traverse: walk to warp on map %02x: %w", e.From, err)
@@ -73,8 +80,8 @@ func Traverse(m *emu.Emu, romData []byte, e world.Edge) error {
 		}
 		steps, err := world.FindPath(grid, int(x), int(y), tx, ty, nil)
 		if err != nil {
-			return fmt.Errorf("skill: Traverse: no route to edge tile (%d,%d) on map %02x: %w",
-				tx, ty, e.From, err)
+			return fmt.Errorf("skill: Traverse: no route to edge tile (%d,%d) on map %02x: %v: %w",
+				tx, ty, e.From, err, ErrLegUnwalkable)
 		}
 		if err := WalkPath(m, steps); err != nil {
 			// Normalize to ErrBattle like walkWithinMap does, so a caller
