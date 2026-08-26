@@ -172,12 +172,14 @@ func runLLM(m *emu.Emu) {
 	}
 	fmt.Printf("planner: llm — the model picks from %d offered objectives\n", len(offered))
 
+	// Tee llm/round lines to the watch panel as well as stdout.
+	log := &agentTraceLog{w: os.Stdout, note: m.TraceNote}
 	planner := agent.NewLLMPlanner()
-	planner.Log = os.Stdout // one line per model call, above its round line
+	planner.Log = log // one line per model call, above its round line
 	res := agent.Run(m, m.ROM(), planner, offered, agent.Budget{
 		MaxRounds: llmMaxRounds,
 		MaxFrames: llmMaxFrames,
-		Log:       os.Stdout,
+		Log:       log,
 	})
 
 	fmt.Printf("\nrun stopped: %s after %d round(s)\n", stopName(res.Stop), res.Rounds)

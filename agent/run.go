@@ -73,7 +73,20 @@ func Run(m *emu.Emu, romData []byte, p Planner, offered []Objective, budget Budg
 			break
 		}
 
-		obj, err := p.Next(last, offered)
+		// Rebuilt every round: what is possible depends on where the
+		// player is and what they already have. A nil offered list means
+		// the planner does not use a menu (ScriptedPlanner), so there is
+		// nothing to narrow and nothing to run out of.
+		now := offered
+		if len(offered) > 0 {
+			if now = Offer(last, offered); len(now) == 0 {
+				res.Stop = StopError
+				res.Err = errors.New("agent: Run: nothing is possible from here")
+				break
+			}
+		}
+
+		obj, err := p.Next(last, now)
 		if errors.Is(err, ErrDone) {
 			res.Stop = StopDone
 			break
