@@ -68,7 +68,7 @@ func (p *LLMPlanner) Next(obs Observation, offered []Objective) (Objective, erro
 				len(offered), took.Round(10*time.Millisecond), snippet([]byte(reply)), picked)
 		}
 	}()
-	n, ok := firstInt(reply)
+	n, ok := answerInt(reply)
 	if !ok {
 		picked = "no number in the reply"
 		return Objective{}, fmt.Errorf("agent: llm planner: no number in reply %q", reply)
@@ -174,13 +174,32 @@ func (p *LLMPlanner) ask(obs Observation, offered []Objective) (string, error) {
 	return cr.Choices[0].Message.Content, nil
 }
 
-var firstIntRe = regexp.MustCompile(`-?\d+`)
+var (
+	intRe = regexp.MustCompile(`-?\d+`)
+	// A reasoning model emits its scratch work before the answer, and an
+	// unclosed block means the reply was cut off mid-thought.
+	thinkRe = regexp.MustCompile(`(?is)<(think|thinking|reasoning)>.*?(</(think|thinking|reasoning)>|$)`)
+)
 
-// firstInt returns the first integer that appears in s, as a string.
-// Prose, code fences, and trailing punctuation around it do not matter.
-func firstInt(s string) (string, bool) {
-	m := firstIntRe.FindString(s)
-	return m, m != ""
+// answerInt returns the model's chosen index from s, as a string.
+//
+// The LAST integer wins, not the first, and reasoning blocks are dropped
+// before looking. A small model answers "2" and either rule works; a
+// larger or reasoning model says "3 is tempting, but 6 is better", or
+// thinks out loud first, and taking the first integer silently picks the
+// number it rejected. That failure is invisible — a legal objective, the
+// wrong one — and it would show up as a planning failure when comparing
+// models, which is exactly the comparison this has to survive.
+//
+// A reply whose index is out of range is still an error, never a guess,
+// so the worst case here is a clean stop rather than a wrong action.
+func answerInt(s string) (string, bool) {
+	s = thinkRe.ReplaceAllString(s, " ")
+	m := intRe.FindAllString(s, -1)
+	if len(m) == 0 {
+		return "", false
+	}
+	return m[len(m)-1], true
 }
 
 // snippet renders a reply body for an error message, trimmed and capped.
