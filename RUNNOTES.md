@@ -1,34 +1,36 @@
-# RUNNOTES — S4-3a Planner seam (done, verified)
+# RUNNOTES — S4-3b Planner tests (done, verified)
 
 ## What changed
-Commit "agent: the planner seam and a deterministic scripted planner".
+Commit 74a0ace "agent: planner tests, pure logic, no ROM needed".
 
-- `agent/planner.go` (new, exact content per task spec):
-  - `Planner` interface: `Next(obs Observation, offered []Objective) (Objective, error)`.
-    Contract: a planner MUST return one of `offered`.
-  - `ErrDone` = "agent: nothing left to do" — sentinel for "no more objectives".
-  - `ScriptedPlanner` (unexported fields objs/next) + `NewScriptedPlanner(objs...)`.
-    `Next` ignores obs and offered BY DESIGN (list IS the plan); returns ErrDone
-    when exhausted. This is the default planner; tests never call a model.
-  - `Chosen(offered, s)`: exact-match only. Trimmed, case-insensitive
-    `Objective.String()` match, OR a bare 1-based index ("3"). Index 0 and
-    out-of-range are errors. NO fuzzy/prefix/edit-distance — deliberately.
-  - `offeredList`: numbered one-liner ("1: go to Pallet Town, 2: ...") used in
-    EVERY error message. S4-5's safety property depends on errors naming the
-    offered list.
+- `agent/planner_test.go` (new, exact content per task spec), package
+  `agent_test` (external test package). No ROM, no fixture, no emulator,
+  no `loadFixture` reuse.
+- `TestScriptedPlannerOrder`: feeds deliberately wrong obs/offered into
+  `NewScriptedPlanner(...).Next`, asserts objectives come back in order,
+  then ErrDone, and that ErrDone is sticky (list does not reset).
+- `TestChosenMatches`: exact String(), different case, trimmed input, and
+  bare 1-based indices "1"/"2"/"3".
+- `TestChosenRejects`: empty, whitespace-only, unknown name, index 0,
+  out-of-range index, one-char near miss — every case must error AND the
+  error must contain the offered objective's sentence (S4-5 safety
+  property: errors name the offered list).
 
-## Verified
-- `go build ./...` exit 0, `go vet ./agent/...` exit 0 (worktree, not the stale
-  /home/maestro/Documents/projects/PokePilot checkout).
-- `go test ./agent/...` ok (fixture tests skip without ROM; no ROM here).
+## Verified (worktree, NOT the stale PokePilot checkout)
+- `env -u POKEMON_RED_ROM go test -v ./agent/ -run 'TestScriptedPlannerOrder|TestChosenMatches|TestChosenRejects'`
+  → all three `--- PASS`, `ok github.com/maestroi/pokepilot/agent`.
+- ROM set (`POKEMON_RED_ROM=/home/maestro/Documents/projects/PokePilot/roms/pokemon_red.gb`,
+  file referenced only, no commands run there):
+  `go test -skip TestGoToViridianPokecenter ./...` → all packages ok.
+  TestGoToViridianPokecenter is the known red (plan fdc1544f); it has NO
+  built-in skip, so "skipped deliberately" = pass `-skip` to `go test`.
 
 ## Gotchas / next
-- Work ONLY in this worktree. The PokePilot checkout at
-  /home/maestro/Documents/projects/PokePilot is on an older commit without
-  agent/ — that is why the previous attempt's verification failed.
-- S4-3b+: anything that consumes Planner must handle ErrDone explicitly.
-- S4-5: model-backed planner will call Chosen with model output; keep the
-  exact-match + index behavior, and keep offeredList in every error.
-- Objective.String() forms: "go to <place>", "talk at (x,y)", "take a starter".
-- TestGoToViridianPokecenter still red on Route 1 (plan fdc1544f); skip it in
-  full-suite runs.
+- Work ONLY in this worktree. /home/maestro/Documents/projects/PokePilot
+  is on an older commit without agent/ — commands there fail.
+- The ROM lives at /home/maestro/Documents/projects/PokePilot/roms/pokemon_red.gb;
+  the worktree has no roms/ dir. Point POKEMON_RED_ROM at that file for ROM runs.
+- S4-3c+/S4-5: anything consuming Planner must handle ErrDone explicitly;
+  Chosen stays exact-match + bare index, offeredList in every error.
+- Full-suite runs: use `go test -skip TestGoToViridianPokecenter ./...`
+  until plan fdc1544f lands.
