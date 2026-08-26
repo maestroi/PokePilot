@@ -120,3 +120,90 @@ func TestLLMPlannerStripsProse(t *testing.T) {
 		t.Fatalf("Next = %s, want %s", got, offered[1])
 	}
 }
+
+// TestLLMPlannerOutOfRangeIsError: "7" with three offered is an error,
+// and the result is NOT offered[0] — no silent fallback.
+func TestLLMPlannerOutOfRangeIsError(t *testing.T) {
+	srv := startModelServer(t, `{"choices":[{"message":{"content":"7"}}]}`, nil)
+	offered := llmOffered()
+
+	got, err := llmPlanner(srv).Next(llmObs(), offered)
+	if err == nil {
+		t.Fatalf("Next = %s, want error for index 7 of 3", got)
+	}
+	if got == offered[0] {
+		t.Fatalf("Next = %s, must not fall back to the first offered", got)
+	}
+}
+
+// TestLLMPlannerHallucinationIsError: an objective name that was never
+// offered is an error carrying the raw reply, not a guess.
+func TestLLMPlannerHallucinationIsError(t *testing.T) {
+	srv := startModelServer(t, `{"choices":[{"message":{"content":"go to viridian city"}}]}`, nil)
+
+	_, err := llmPlanner(srv).Next(llmObs(), llmOffered())
+	if err == nil {
+		t.Fatal("Next = objective, want error for a hallucinated objective")
+	}
+	if !strings.Contains(err.Error(), "go to viridian city") {
+		t.Errorf("error does not carry the raw reply: %v", err)
+	}
+}
+
+// TestLLMPlannerHTTPError: a non-200 response is an error naming the
+// status.
+func TestLLMPlannerHTTPError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+	}))
+	t.Cleanup(srv.Close)
+
+	_, err := llmPlanner(srv).Next(llmObs(), llmOffered())
+	if err == nil {
+		t.Fatal("Next = objective, want error for HTTP 500")
+	}
+	if !strings.Contains(err.Error(), "500") {
+		t.Errorf("error does not mention the status: %v", err)
+	}
+}
+
+// TestLLMPlannerBadJSON: a body that will not parse is an error.
+func TestLLMPlannerBadJSON(t *testing.T) {
+	srv := startModelServer(t, `{"choices": [`, nil)
+
+	_, err := llmPlanner(srv).Next(llmObs(), llmOffered())
+	if err == nil {
+		t.Fatal("Next = objective, want error for malformed JSON")
+	}
+	if !strings.Contains(strings.ToLower(err.Error()), "json") {
+		t.Errorf("error does not name the JSON failure: %v", err)
+	}
+}
+
+// TestLLMPlannerEmptyChoices: an empty choices array is an error.
+func TestLLMPlannerEmptyChoices(t *testing.T) {
+	srv := startModelServer(t, `{"choices":[]}`, nil)
+
+	_, err := llmPlanner(srv).Next(llmObs(), llmOffered())
+	if err == nil {
+		t.Fatal("Next = objective, want error for an empty choices array")
+	}
+	if !strings.Contains(err.Error(), "choices") {
+		t.Errorf("error does not name the empty choices: %v", err)
+	}
+}
+
+// TestNewLLMPlannerEnv: POKEPILOT_LLM_URL and POKEPILOT_LLM_MODEL
+// override the defaults.
+func TestNewLLMPlannerEnv(t *testing.T) {
+	t.Setenv("POKEPILOT_LLM_URL", "http://example.com/v1")
+	t.Setenv("POKEPILOT_LLM_MODEL", "some-model")
+
+	p := agent.NewLLMPlanner()
+	if p.BaseURL != "http://example.com/v1" {
+		t.Errorf("BaseURL = %q, want the POKEPILOT_LLM_URL value", p.BaseURL)
+	}
+	if p.Model != "some-model" {
+		t.Errorf("Model = %q, want the POKEPILOT_LLM_MODEL value", p.Model)
+	}
+}
