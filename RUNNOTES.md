@@ -1,42 +1,41 @@
-# RUNNOTES — S4-6 wire agent loop into cmd/pokepilot (done, verified)
+# RUNNOTES — Travel: fight wild encounters, resume the route (done)
 
 ## What changed
-Commit ab70d3d "cmd: run the objective loop behind -planner" (4 files).
+Commit "skill: fight through wild encounters and resume the route".
 
-- `cmd/pokepilot/main.go`: new `-planner` flag (default `scripted`).
-  - `scripted`: original flow verbatim, moved into `runScripted`
-    (boot -> GetStarter -> one GoTo -> hold serving); `report` reused.
-  - `llm`: `runLLM` offers KindStarter + one KindGoTo per
-    `skill.PlaceNames()`, runs `agent.Run` with `agent.NewLLMPlanner()`
-    and Budget{MaxRounds: 32, MaxFrames: 8h@60fps, Log: os.Stdout},
-    prints stop reason / rounds / completed / error; StopError or
-    StopStuck -> os.Exit(1). `stopName` helper (agent.Stop has no
-    String()).
-- `skill/goto.go`: hoisted function-local `places` map to package var;
-  added exported `PlaceNames() []string` (sorted) — skill had no way to
-  enumerate place names, so the list is not duplicated in cmd.
-- `Makefile`: `run-llm` target (require-rom, `-planner llm -fps 60`).
-- `docs/AGENT.md`: new (repo has no README.md; task allowed this).
+- `skill/travel.go` (new): `Travel(m, romData, dest, policy, maxBattles)
+  (TravelResult, error)`. Loop: GoTo -> on nil, done; on non-ErrBattle,
+  return unchanged; on ErrBattle, Battle(m, policy) and continue.
+  ResultLost sets BlackedOut and continues (GoTo re-plans from the Center);
+  it is not an error. Battle error is returned wrapped with the battle
+  count. maxBattles <= 0 is an error before anything walks; after
+  maxBattles battles the loop returns an error plus the result so far.
+- `skill/travel_test.go` (new): ROM-gated (skips without POKEMON_RED_ROM).
+  Pallet Town grass-free: Battles 0, BlackedOut false. maxBattles 0: error
+  mentioning the bound, position unchanged. Nonsense dest (map 0xFF, above
+  maxMapID 0xF7 so never a graph node): error comes back unchanged,
+  errors.Is(err, world.ErrNoRoute) true, NOT ErrBattle. Pallet -> Viridian
+  (maxBattles 20): wCurMap == 0x01 and Battles >= 1.
 
 ## Verified
-- `go build ./...`, `go vet ./...` clean; my files gofmt-clean (4
-  pre-existing files are not — left alone).
-- `env -u POKEMON_RED_ROM go test -skip TestGoToViridianPokecenter
-  ./... -count=1` -> all ok.
-- Scripted (ROM from /home/maestro/Documents/projects/PokePilot/roms/
-  pokemon_red.gb): `make run ARGS='-goto "pallet town"'` -> full flow,
-  prints "arrived.", exit 0. No model called in this path.
-- LLM, unreachable: `POKEPILOT_LLM_URL=http://127.0.0.1:9 make run-llm`
-  -> "planner: llm — the model picks from 6 offered objectives", then
-  "run stopped: error after 0 round(s)" + "error: agent: llm planner:
-  POST http://127.0.0.1:9/chat/completions: ... connection refused";
-  binary exits 1 (make: Error 1). No real inference server called.
+- Build, vet, `go test ./... -skip TestGoToViridianPokecenter` green with
+  POKEMON_RED_ROM set; all four Travel tests SKIP cleanly without it.
+- goto.go, move.go, warp.go, battle.go untouched (empty diff).
+- Viridian result, verbatim: "reached Viridian City after 1 battles
+  (BlackedOut=false)" — PASS in ~9.4 s. The measured GoTo stall
+  ("battle on map 0c at (14,7)") is fought and the route finishes.
 
-## Gotchas / next
-- Work only in this worktree, NOT /home/maestro/Documents/projects/PokePilot.
-- llm-mode starter is always Squirtle (agent.Execute hardcodes it);
-  -starter is scripted-only (documented in docs/AGENT.md).
-- llm run ends on budget (LLMPlanner never returns ErrDone) unless it
-  errors/sticks; StopBudget exits 0.
-- Route 1 still broken (plan fdc1544f): full-suite runs need
-  `-skip TestGoToViridianPokecenter`.
+## Gotchas baked in (do not re-derive)
+- errors.Is(err, ErrBattle) is the single battle check: 41e0cca normalized
+  both walkWithinMap and Traverse to wrap ErrBattle. Travel must NOT
+  re-wrap or convert non-battle errors; the nonsense-dest test guards that.
+- Map 0xFF is a safe "no route" destination: BuildGraph only parses
+  0..0xF7, so it is never a node and no edge ever has To == 0xFF.
+- The battle at (14,7) on Route 1 is the only one on this route in a
+  measured run (Battles = 1); the 20 bound is headroom, not expectation.
+- Squirtle + StatAwareMove wins every Route 1 wild (Pidgey/Rattata lvl 2-3).
+
+## Next task
+- R6 (plan ff1c6b79) can now resume: its TestGoToViridianPokecenter crosses
+  Route 1's grass and needs this plus its fixture work. Still skipped here.
+- Do not point Travel at "viridian pokemon center" yet; that is R6's call.
