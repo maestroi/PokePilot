@@ -75,6 +75,13 @@ var places = map[string]Destination{
 	"reds bedroom":  {Map: 0x26, X: 3, Y: 6},
 	"reds house":    {Map: 0x25, X: 3, Y: 2},
 	"pallet town":   {Map: 0x00, X: 5, Y: 6},
+	// 0x28 is Oak's lab. (5,3) is the open floor tile directly below Oak
+	// (5,2); it is where GetStarter's cutscene leaves the player and it is
+	// no NPC's home tile. The Pallet door into the lab is not a plain
+	// warp: the lab's entry script force-walks the player on entry, so a
+	// Travel that fails while on the lab is the normal entry and must be
+	// resumed with Cutscene (OaksParcel in errand.go does this).
+	"oak's lab":     {Map: 0x28, X: 5, Y: 3},
 	"viridian city": {Map: 0x01, X: 23, Y: 26},
 	// (3,3) is the tile BELOW the counter, not the counter itself: on map
 	// 0x29 the nurse stands at (3,1) and (3,2) is a counter tile, which the

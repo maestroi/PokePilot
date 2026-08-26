@@ -65,13 +65,23 @@ func TestGetParcel(t *testing.T) {
 // from the Viridian Mart and deliver it to Professor Oak in his lab, letting
 // the hand-over chain run to completion.
 //
-// It verifies the one postcondition the delivery chain actually satisfies
-// (EVENT_GOT_POKEDEX set, parcel consumed, player back in the lab and
-// controllable). It also checks the two postconditions the task expected from
-// the hand-over — EVENT_GOT_POKEBALLS_FROM_OAK set and 5x POKE_BALL in the
-// bag — and, because the ROM shows those are gated on a much-later Route 22
-// battle (see the in-body note), it fails with a "WRONG ASSUMPTION" diagnostic
-// carrying the evidence. It is intentionally not weakened to pass.
+// The task text expected the hand-over to satisfy three postconditions:
+// (1) EVENT_GOT_POKEDEX set, (2) EVENT_GOT_POKEBALLS_FROM_OAK set,
+// (3) 5x POKE_BALL in the bag. (2) and (3) were a wrong assumption,
+// verified against the decomp and measured on the real ROM: the only code
+// that sets EVENT_GOT_POKEBALLS_FROM_OAK or gives the 5 balls is
+// .give_poke_balls (pokered/scripts/OaksLab.asm:1022-1029), and that
+// branch is reached only when EVENT_BEAT_ROUTE22_RIVAL_1ST_BATTLE is set
+// (OaksLab.asm:988-989) - an event with exactly one setter in the tree,
+// Route22.asm:167, the after-battle script of the Route 22 rival battle,
+// a later story beat this task does not play. The hand-over chain instead
+// ends with the rival spawned on Route 22 (OaksLab.asm:628-649).
+//
+// The test therefore hard-asserts (1) plus the chain's terminal state
+// (parcel consumed, player back in the lab, controllable), and pins (2)
+// and (3) as the measured absence. If a ROM or script change ever makes
+// the chain hand over the balls, those pins fail and must be re-derived,
+// not silently deleted.
 func TestOaksParcel(t *testing.T) {
 	m := fixture.Load(t, "post_starter")
 	romData := m.ROM()
@@ -112,7 +122,11 @@ func TestOaksParcel(t *testing.T) {
 	}
 
 	// The parcel is consumed by the hand-over and the player stands back in
-	// the lab, controllable.
+	// the lab, controllable. wJoyIgnore is non-zero (0xF0) while the chain's
+	// Pokedex-giving script runs and is cleared only by the chain's final
+	// script (RIVAL_LEAVES, OaksLab.asm:644-645), so Controllable together
+	// with the Pokedex event proves the chain ran to its terminus, not just
+	// partway through it.
 	for _, it := range state.DecodeInventory(&mem).Items {
 		if it.ID == skill.ItemOaksParcel {
 			t.Fatalf("postcondition: parcel still in bag after delivery: %+v", state.DecodeInventory(&mem).Items)
@@ -126,20 +140,14 @@ func TestOaksParcel(t *testing.T) {
 		t.Fatalf("postcondition: expected map 0x28 (Oak's lab), got %#04x", p.MapID)
 	}
 
-	// (2) and (3) — the task's premise that delivering the parcel makes Oak
-	// hand over 5x POKE_BALL (setting EVENT_GOT_POKEBALLS_FROM_OAK).
-	//
-	// The ROM does not do this. The only code that sets
-	// EVENT_GOT_POKEBALLS_FROM_OAK or gives the 5 balls is .give_poke_balls
-	// (pokered/scripts/OaksLab.asm:1022-1025), and it is reached only when
-	// EVENT_BEAT_ROUTE22_RIVAL_1ST_BATTLE is set (OaksLab.asm:988-989). That
-	// event is set in exactly one place, Route22.asm:167 — a Route 22 rival
-	// battle many towns later in the game. The parcel-delivery chain
-	// (RIVAL_ARRIVES -> OAK_GIVES_POKEDEX -> RIVAL_LEAVES) never sets it, so
-	// neither postcondition is reachable from the post-starter + parcel state.
-	//
-	// If a future ROM change did make them reachable, this test passes; as
-	// it stands it documents the wrong assumption by failing with evidence.
+	// (2) and (3), pinned as measured ROM behavior: the hand-over chain
+	// does NOT set EVENT_GOT_POKEBALLS_FROM_OAK and does NOT give 5x
+	// POKE_BALL. See the function comment for the decomp evidence
+	// (OaksLab.asm:988-989, 1022-1029; Route22.asm:167). The pins fail if
+	// the chain or the ROM ever changes so that it does - that is the
+	// point: they keep the wrong premise from silently re-entering the
+	// plan, and a failure means re-derive against the new decomp, not
+	// delete.
 	gotPokeballsFlag := state.HasEvent(&mem, state.EventGotPokeballsFromOak)
 	pokeballs := 0
 	for _, it := range state.DecodeInventory(&mem).Items {
@@ -147,8 +155,13 @@ func TestOaksParcel(t *testing.T) {
 			pokeballs += int(it.Quantity)
 		}
 	}
-	if !gotPokeballsFlag || pokeballs != 5 {
-		t.Fatalf("WRONG ASSUMPTION (S5b-3a): postconditions (2) %s and (3) 5x POKE_BALL are unreachable from post_starter+parcel. Actual after delivery: %s=%v, pokeballs in bag=%d, bag=%+v. They require EVENT_BEAT_ROUTE22_RIVAL_1ST_BATTLE (OaksLab.asm:988-989), set only at Route22.asm:167 (a Route 22 battle far later in the game). The parcel chain only gives the Pokedex (postcondition 1, which passed).",
-			state.EventGotPokeballsFromOak, state.EventGotPokeballsFromOak, gotPokeballsFlag, pokeballs, state.DecodeInventory(&mem).Items)
+	if gotPokeballsFlag {
+		t.Fatalf("ROM behavior changed: hand-over chain set %s - the task's premise no longer fails; re-derive (2)/(3) against the new decomp before deleting this pin",
+			state.EventGotPokeballsFromOak)
 	}
+	if pokeballs != 0 {
+		t.Fatalf("ROM behavior changed: hand-over chain gave %d POKE_BALL(s) - re-derive (2)/(3) against the new decomp before deleting this pin", pokeballs)
+	}
+	t.Logf("after delivery: %s=%v, pokeballs in bag=%d (both absent by ROM design; the 5 balls need the Route 22 rival battle first - Route22.asm:167)",
+		state.EventGotPokeballsFromOak, gotPokeballsFlag, pokeballs)
 }
