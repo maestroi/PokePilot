@@ -69,6 +69,23 @@ var places = map[string]Destination{
 	// 0x29 the nurse stands at (3,1) and (3,2) is a counter tile, which the
 	// player can never stand on. Talking works across the counter.
 	"viridian pokemon center": {Map: 0x29, X: 3, Y: 3},
+	// (8,71) sits in the open band of Route 2's south edge (x7-9), the
+	// landing zone of the crossing from Viridian City's north edge (x17-19).
+	"route 2": {Map: 0x0D, X: 8, Y: 71},
+	// (14,8) is open plaza directly below the center door warp at (14,7).
+	"pewter city": {Map: 0x02, X: 14, Y: 8},
+	// 0x34 is the Pewter center: both of Pewter City's center door warps
+	// (14,7) and (19,5) target it. The nurse (sprite 11) stands at (1,4) and
+	// (2,4) is the open floor tile beside her, the same stand-beside pattern
+	// as the Viridian center's (3,3).
+	"pewter pokemon center": {Map: 0x34, X: 2, Y: 4},
+	// 0x36 is the gym, reached from Pewter City's door warp at (16,17).
+	// Brock (sprite 12) stands at (4,1) in the top room and (4,2) is the
+	// open floor tile directly below him.
+	"pewter gym": {Map: 0x36, X: 4, Y: 2},
+	// (17,43) is open floor in the forest's south. (16,43) is occupied by a
+	// standing NPC, which the player can never walk onto.
+	"viridian forest": {Map: 0x33, X: 17, Y: 43},
 }
 
 // Place maps a friendly name to a Destination.

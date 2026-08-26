@@ -1,45 +1,39 @@
-# RUNNOTES — skill tests: load checkpoint fixtures instead of replaying the story
+# RUNNOTES — S5-2: five named places (Route 2, Forest, Pewter x3)
 
-## What changed (S5-1)
-- skill/goto_test.go: TestGoToViridianPokecenter now starts from the
-  pallet_town fixture (fixture.Load) instead of reds_bedroom + GetStarter.
-  The Travel leg to the pokecenter, all postcondition assertions, Face(3,2)
-  and the nurse Talk are unchanged.
-- skill/travel_test.go: TestTravelPalletTownFightsNothing starts from the
-  post_starter fixture (the state GetStarter leaves, in Oak's lab); using
-  pallet_town would make destination == start and the walk vacuous.
-  TestTravelPalletToViridian ALSO starts from post_starter, not
-  pallet_town (see gotcha below). TestTravelMaxBattlesZero and
-  TestTravelNonsenseDestination untouched: they never replay the story.
-- skill/interact_test.go, skill/menu_test.go: NO changes needed. Every test
-  in them already uses the cheap reds_bedroom fixture and never calls
-  GetStarter/Travel; they run in 0.0-0.4s.
-- No non-test file touched, fixtureVersion unchanged, no new fixtures.
+## What changed
+- skill/goto.go: added to `places` (each verified InBounds+Walkable, none on
+  an object's home tile): "route 2" 0x0D (8,71) — south-edge open band
+  (x7-9), landing zone of the crossing from Viridian's north edge (x17-19).
+  "pewter city" 0x02 (14,8) — plaza directly below the center door warp
+  (14,7). "pewter pokemon center" 0x34 (2,4) — 0x34 derived from 0x02's
+  warps (center doors (14,7)+(19,5) -> 0x34; gym door (16,17) -> 0x36,
+  matching the measured gym id); nurse sprite 11 at (1,4), stand is the
+  open floor beside her, mirroring the live-verified 0x29 pattern. "pewter
+  gym" 0x36 (4,2) — Brock sprite 12 at (4,1), stand directly below him.
+  "viridian forest" 0x33 (17,43) — open southern floor; (16,43) is a
+  standing NPC's home tile, so the stand is one tile east of it.
+- skill/goto_test.go: TestPlaceDestinationsStandable iterates
+  skill.PlaceNames() (no hand-written list); per name: rom.ParseMap +
+  world.Build, assert InBounds && Walkable, and that the destination is not
+  an object's home tile. Skips only when POKEMON_RED_ROM is unset.
 
-## Measured (POKEMON_RED_ROM = /home/maestro/Documents/projects/gomeboy/roms/pokemon_red.gb, -count=1)
-- BEFORE: go test ./skill/ -count=1 = 41.8s (hot cache; cold 43.3s).
-- AFTER:  go test ./skill/ -count=1 = 18.0s. ~2.3x faster, not "a few
-  seconds": the remaining cost is in files this task may not touch —
-  TestGetStarter 7.7s (story_test.go, replays the story by design),
-  TestBootIsRepeatable 3.2s + TestBootToOverworld 1.6s (boot_test.go),
-  TestCutsceneEnduresOakGate 1.0s (cutscene_test.go).
-- Full suite go test ./... -count=1: exit 0, all ok, ZERO skips, zero
-  failures (skill/fixture 1.7s hot after its one-time build).
-- No POKEMON_RED_ROM: all 19 ROM-gated tests --- SKIP cleanly, exit 0.
+## Measured (POKEMON_RED_ROM = /home/maestro/Documents/projects/gomeboy/roms/pokemon_red.gb)
+- go test ./... -count=1: exit 0, all ok; -v: 164 PASS, 0 FAIL, 0 SKIP.
+- Center/gym stand tiles could NOT be live-walked this slice (Pewter is
+  unreachable, below); they rest on grid + object geometry matching the
+  live-verified 0x29 (nurse) pattern exactly.
 
-## Gotchas for the next task
-- Wild encounters are DETERMINISTIC per loaded state: gomeboy preserves the
-  Z80/wRandom LCG phase across SaveState/LoadState. The route a test walks
-  must start from the same state to fight the same battles.
-- pallet_town is NOT a drop-in start for TestTravelPalletToViridian: from
-  the town entry (5,6) Route 1's grass throws ZERO encounters,
-  deterministically (measured 3x), so Battles >= 1 can never hold there.
-  post_starter (lab) reproduces the original walk: exactly 1 battle.
-- A one-time all-failure blip (every test FAIL 0.00s, ~6ms) appeared once
-  between otherwise green runs; a straight re-run was green. If you see it,
-  re-run before debugging the code.
-
-## Next task
-- The 18s floor is now in story_test.go/boot_test.go/cutscene_test.go.
-  post_starter already exists as a fixture for anything that needs the
-  post-story state without replaying GetStarter.
+## Findings for the next task
+- PEWTER IS UNREACHABLE in the current game state (post-starter). 0x0D is
+  adjacent only to 0x01/0x02; 0x02 only to 0x0D/0x0E (0x0E->0x0F->0x03 is
+  the far side). The 0x01->0x0D crossing (city north corridor x17-19) is
+  blocked: stepping north from (19,10) fires "You can't go through here!"
+  (sprites 72 at (18,9) and 13 at (17,9); not trainers, text ids 4/5); the
+  box re-fires on every retry. Detour rooms 0x2c/0x2d (warps (21,9),
+  (32,7)) and the west chain 0x01->0x21->0x22->0x09 are dead ends. Measured
+  live 3x.
+- So the badge route to Pewter needs the story event that lifts the
+  corridor first (candidate: an NPC or house in Viridian's south half);
+  until then Travel/GoTo to 0x0D/0x02 fails with ErrDialogueInterrupted.
+- Forest 0x33 has no boundary edges; reachable only via houses 0x2f (warp
+  0x0D (3,11)) and 0x32 (0x0D (3,43)), which exit into the forest by warp.
