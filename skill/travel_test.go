@@ -79,6 +79,52 @@ func TestTravelNonsenseDestination(t *testing.T) {
 	}
 }
 
+// TestTravelReplansFromTheWorldAfterEachBattle is the regression test for
+// the stale-plan bug: after a battle, Travel must re-read the world from
+// RAM and plan the remainder from what it reads there, not resume the plan
+// that was being walked when the encounter fired. The post_starter
+// checkpoint (Oak's lab, Pallet Town) is the start: from the pallet_town
+// checkpoint's frame phase the same grass throws zero encounters
+// deterministically (MEASURED, see TestTravelPalletToViridian), so no
+// battle — and no re-plan — could be observed. On this walk the battle
+// fires at (14,7) on Route 1 and a win leaves the player on that tile, so
+// each recorded re-read must name exactly that world, and the journey must
+// still arrive.
+func TestTravelReplansFromTheWorldAfterEachBattle(t *testing.T) {
+	e := fixture.Load(t, "post_starter")
+	dest, ok := skill.Place("viridian city")
+	if !ok {
+		t.Fatal(`Place: "viridian city" not found`)
+	}
+	res, err := skill.Travel(e, e.ROM(), dest, skill.StatAwareMove(e.ROM()), 20)
+	if err != nil {
+		t.Fatalf("Travel: %v; stopped on map %#04x at (%d,%d) after %d battles",
+			err, e.Peek8(sym.CurMap), e.Peek8(sym.XCoord), e.Peek8(sym.YCoord), res.Battles)
+	}
+	if res.Battles < 1 {
+		t.Fatalf("premise: Battles = %d, want >= 1 (the walk crosses Route 1's grass)", res.Battles)
+	}
+	if len(res.Replans) != res.Battles {
+		t.Fatalf("Replans = %d, want %d (one re-read after each battle)", len(res.Replans), res.Battles)
+	}
+	for i, rp := range res.Replans {
+		// Every wild battle on this route is on Route 1; a re-read that
+		// named any other map would be planning from a stale world.
+		if rp.Map != 0x0C {
+			t.Errorf("Replans[%d].Map = %#04x, want 0x0C (Route 1)", i, rp.Map)
+		}
+	}
+	// The first battle fires at (14,7) and a win leaves the player there,
+	// so the first re-read is exact: the world at that moment.
+	if rp := res.Replans[0]; rp.X != 14 || rp.Y != 7 {
+		t.Errorf("Replans[0] = (map %#04x, %d, %d), want (0x0C, 14, 7)", rp.Map, rp.X, rp.Y)
+	}
+	if got := e.Peek8(sym.CurMap); got != 0x01 {
+		t.Fatalf("wCurMap = %#04x after the journey, want Viridian City (0x01), at (%d,%d)",
+			got, e.Peek8(sym.XCoord), e.Peek8(sym.YCoord))
+	}
+}
+
 // TestTravelPalletToViridian is the milestone: from the post-story state,
 // Travel walks through Pallet Town, crosses Route 1's tall grass, fights
 // the wild encounters, and reaches Viridian City. A plain GoTo on this

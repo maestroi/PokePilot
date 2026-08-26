@@ -1,3 +1,43 @@
+# RUNNOTES — Travel re-reads the settled world after every battle (2026-08-26)
+
+## What changed
+- skill/travel.go: `Travel` now settles the world after every battle before
+  the next leg is planned: `settleWorld` steps frames until
+  (wCurMap, XCoord, YCoord) has been unchanged for 100 consecutive frames
+  (budget 1200), and after a loss first waits for wCurMap to change. The
+  map-change wait is the point: a blackout lands the position on the
+  center's spawn tile while wCurMap still holds the old map, and that
+  pre-flip window is itself stable, so a plain stability wait settles on
+  the stale map (the measured "step down blocked at (5,6)" that walked a
+  0x0C plan while on 0x00). `TravelResult` gains `Replans []Replan` (map +
+  tile re-read after each battle, in order) so the re-plan is observable
+  from outside the package.
+- skill/travel_test.go: TestTravelReplansFromTheWorldAfterEachBattle —
+  post_starter -> viridian city; asserts the battle happened (>= 1), one
+  Replans entry per battle, every re-read on 0x0C, the first re-read
+  exactly (0x0C, 14, 7) (the encounter tile a win leaves the player on,
+  measured: battle fires stepping from (14,7) into (14,6), win leaves the
+  player on (14,7)), and arrival on 0x01. Uses post_starter, not the
+  literal pallet_town fixture: from the pallet_town checkpoint's frame
+  phase (18257) Route 1's grass throws zero encounters deterministically,
+  while post_starter's phase (18121) fights one at (14,7) — so the
+  pallet_town start cannot produce the battle this test observes (the task
+  text's "it reliably does" is measured the other way; both checkpoints
+  are Pallet Town, post_starter being Oak's lab).
+
+## Red/green verification (done)
+- Reverted skill/travel.go to HEAD with the new test in place:
+  `go test ./skill/ -run TestTravelReplansFromTheWorldAfterEachBattle`
+  FAILED to build — "res.Replans undefined (type skill.TravelResult has no
+  field or method Replans)". Red: the broken code has no observable
+  re-plan, so the observation cannot even be expressed against it.
+- Restored the fix: same command PASSES (2.0s). TestTravelPalletToViridian
+  still passes (1 battle, arrives 0x01); TestGoToViridianPokecenter still
+  passes (0 battles from the pallet_town phase — no settle path hit, so
+  its timing is unchanged).
+- Full gate: `go build ./... && go vet ./... && go test ./... -count=1`
+  with POKEMON_RED_ROM set -> all packages ok, 0 failures, 0 skips.
+
 # RUNNOTES — S5-2: five named places (Route 2, Forest, Pewter x3)
 
 ## What changed
