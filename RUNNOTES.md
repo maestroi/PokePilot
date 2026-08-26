@@ -1,39 +1,42 @@
-# RUNNOTES — S4-5c LLM planner error-path + env tests (done, verified)
+# RUNNOTES — S4-6 wire agent loop into cmd/pokepilot (done, verified)
 
 ## What changed
-Commit e32daab "agent: LLM planner tests — error paths and env override".
+Commit ab70d3d "cmd: run the objective loop behind -planner" (4 files).
 
-- `agent/llm_test.go`: appended 6 tests below the S4-5b content; helpers and
-  existing 2 tests untouched.
-  - `TestLLMPlannerOutOfRangeIsError`: reply "7" with 3 offered -> error, and
-    result is NOT offered[0] (guards the no-silent-fallback contract).
-  - `TestLLMPlannerHallucinationIsError`: reply "go to viridian city" -> error
-    that carries the raw reply (no fuzzy match).
-  - `TestLLMPlannerHTTPError`: raw httptest server returning 500 -> error
-    mentions "500".
-  - `TestLLMPlannerBadJSON`: body `{"choices": [` -> error names the JSON
-    failure (checked case-insensitively).
-  - `TestLLMPlannerEmptyChoices`: body `{"choices":[]}` -> error names
-    "choices".
-  - `TestNewLLMPlannerEnv`: t.Setenv POKEPILOT_LLM_URL / POKEPILOT_LLM_MODEL
-    -> NewLLMPlanner picks them up.
+- `cmd/pokepilot/main.go`: new `-planner` flag (default `scripted`).
+  - `scripted`: original flow verbatim, moved into `runScripted`
+    (boot -> GetStarter -> one GoTo -> hold serving); `report` reused.
+  - `llm`: `runLLM` offers KindStarter + one KindGoTo per
+    `skill.PlaceNames()`, runs `agent.Run` with `agent.NewLLMPlanner()`
+    and Budget{MaxRounds: 32, MaxFrames: 8h@60fps, Log: os.Stdout},
+    prints stop reason / rounds / completed / error; StopError or
+    StopStuck -> os.Exit(1). `stopName` helper (agent.Stop has no
+    String()).
+- `skill/goto.go`: hoisted function-local `places` map to package var;
+  added exported `PlaceNames() []string` (sorted) — skill had no way to
+  enumerate place names, so the list is not duplicated in cmd.
+- `Makefile`: `run-llm` target (require-rom, `-planner llm -fps 60`).
+- `docs/AGENT.md`: new (repo has no README.md; task allowed this).
 
 ## Verified
-- `env -u POKEMON_RED_ROM go build ./...`, `go vet ./agent/` clean.
-- `env -u POKEMON_RED_ROM go test ./agent/ -count=1` -> all 8 LLM tests pass,
-  no ROM, no inference server (httptest on loopback only).
-- Full suite: `env -u POKEMON_RED_ROM go test -skip TestGoToViridianPokecenter
-  ./... -count=1` -> ok.
-- `git diff go.mod go.sum` empty; only agent/llm_test.go staged/committed.
+- `go build ./...`, `go vet ./...` clean; my files gofmt-clean (4
+  pre-existing files are not — left alone).
+- `env -u POKEMON_RED_ROM go test -skip TestGoToViridianPokecenter
+  ./... -count=1` -> all ok.
+- Scripted (ROM from /home/maestro/Documents/projects/PokePilot/roms/
+  pokemon_red.gb): `make run ARGS='-goto "pallet town"'` -> full flow,
+  prints "arrived.", exit 0. No model called in this path.
+- LLM, unreachable: `POKEPILOT_LLM_URL=http://127.0.0.1:9 make run-llm`
+  -> "planner: llm — the model picks from 6 offered objectives", then
+  "run stopped: error after 0 round(s)" + "error: agent: llm planner:
+  POST http://127.0.0.1:9/chat/completions: ... connection refused";
+  binary exits 1 (make: Error 1). No real inference server called.
 
 ## Gotchas / next
-- Work only in this worktree, NOT /home/maestro/Documents/projects/PokePilot
-  (that checkout is on main, has no agent/; a previous attempt lost work there).
-- Error-message contracts in llm.go: HTTP error embeds resp.Status; JSON
-  error says "reply is not valid JSON"; empty choices says "reply has no
-  choices"; no-number says `no number in reply %q`; Chosen says "index %d out
-  of range" / "is not one of the offered objectives".
-- Next: wire LLMPlanner into Run/cmd with offered lists (S4-5b follow-up);
-  LLMPlanner already satisfies the Planner seam (Next signature matches).
-- Full-suite runs: still `go test -skip TestGoToViridianPokecenter ./...`
-  until plan fdc1544f lands.
+- Work only in this worktree, NOT /home/maestro/Documents/projects/PokePilot.
+- llm-mode starter is always Squirtle (agent.Execute hardcodes it);
+  -starter is scripted-only (documented in docs/AGENT.md).
+- llm run ends on budget (LLMPlanner never returns ErrDone) unless it
+  errors/sticks; StopBudget exits 0.
+- Route 1 still broken (plan fdc1544f): full-suite runs need
+  `-skip TestGoToViridianPokecenter`.
