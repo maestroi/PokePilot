@@ -13,21 +13,24 @@ import (
 )
 
 const (
-	defaultLLMBaseURL = "http://192.168.50.81:8002/v1"
-	defaultLLMModel   = "qwen3.8-27b"
+	defaultLLMBaseURL = "http://192.168.50.204:8000/v1"
+	defaultLLMModel   = "qwen3.5-4b"
 )
 
 // LLMPlanner asks an OpenAI-compatible chat endpoint to choose one of
 // the offered objectives. It can only ever return an objective that was
 // offered — see Chosen.
 type LLMPlanner struct {
-	BaseURL string       // default http://192.168.50.81:8002/v1
-	Model   string       // default qwen3.8-27b
+	BaseURL string       // default http://192.168.50.204:8000/v1
+	Model   string       // default qwen3.5-4b
+	Token   string       // bearer token; empty means no Authorization header
 	Client  *http.Client // nil means a client with a sane timeout
+	Log     io.Writer    // one line per call; nil means no logging
 }
 
 // NewLLMPlanner returns an LLMPlanner with the defaults, overridden by
-// POKEPILOT_LLM_URL and POKEPILOT_LLM_MODEL when set.
+// POKEPILOT_LLM_URL and POKEPILOT_LLM_MODEL when set. The bearer
+// token comes from llm_token (the name used in .env).
 func NewLLMPlanner() *LLMPlanner {
 	p := &LLMPlanner{BaseURL: defaultLLMBaseURL, Model: defaultLLMModel}
 	if v := os.Getenv("POKEPILOT_LLM_URL"); v != "" {
@@ -36,6 +39,7 @@ func NewLLMPlanner() *LLMPlanner {
 	if v := os.Getenv("POKEPILOT_LLM_MODEL"); v != "" {
 		p.Model = v
 	}
+	p.Token = os.Getenv("llm_token")
 	return p
 }
 
@@ -48,16 +52,34 @@ func (p *LLMPlanner) Next(obs Observation, offered []Objective) (Objective, erro
 	if len(offered) == 0 {
 		return Objective{}, fmt.Errorf("agent: llm planner: nothing was offered")
 	}
+	picked := "" // filled in below; the deferred log line reports it
+	start := time.Now()
 	reply, err := p.ask(obs, offered)
+	took := time.Since(start)
 	if err != nil {
 		return Objective{}, err
 	}
 	reply = strings.TrimSpace(reply)
+	defer func() {
+		// Logged after Chosen has run, so the line reports what the reply
+		// actually resolved to rather than what it looked like.
+		if p.Log != nil {
+			fmt.Fprintf(p.Log, "  llm: %d offered, %s, reply %q -> %s\n",
+				len(offered), took.Round(10*time.Millisecond), snippet([]byte(reply)), picked)
+		}
+	}()
 	n, ok := firstInt(reply)
 	if !ok {
+		picked = "no number in the reply"
 		return Objective{}, fmt.Errorf("agent: llm planner: no number in reply %q", reply)
 	}
-	return Chosen(offered, n)
+	o, err := Chosen(offered, n)
+	if err != nil {
+		picked = "not an offered objective"
+		return Objective{}, err
+	}
+	picked = o.String()
+	return o, nil
 }
 
 const llmSystemPrompt = "You are choosing the next objective for a Pokemon Red player. Reply with ONLY the number of your choice. Do not explain."
@@ -127,6 +149,9 @@ func (p *LLMPlanner) ask(obs Observation, offered []Objective) (string, error) {
 		return "", fmt.Errorf("agent: llm planner: build request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if p.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+p.Token)
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("agent: llm planner: POST %s: %w", url, err)
