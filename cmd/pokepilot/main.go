@@ -9,6 +9,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math/rand/v2"
 	"os"
 	"time"
 
@@ -36,6 +37,7 @@ func main() {
 	hold := flag.Duration("hold", 30*time.Second, "how long to keep serving after the run finishes")
 	starter := flag.String("starter", "squirtle", "starter to take: charmander, squirtle or bulbasaur (bulbasaur loses the rival battle)")
 	planner := flag.String("planner", "scripted", "how to choose objectives: scripted or llm")
+	seed := flag.Int64("seed", 0, "diverge this run's luck by burning seed-derived idle frames after boot; 0 replays bit-identically")
 	flag.Parse()
 
 	romPath := os.Getenv("POKEMON_RED_ROM")
@@ -64,6 +66,18 @@ func main() {
 		log.Fatalf("boot: %v", err)
 	}
 	report(m, "booted")
+
+	// Gen 1 has no seed to set. Its RNG is hRandomAdd/hRandomSub ($FFD3,
+	// $FFD4), reseeded from DIV, which counts CPU cycles — so the run is
+	// bit-identical every time unless the cycle count before the first
+	// decision differs. Idle frames in the overworld are the cheapest way
+	// to shift it: they do nothing to the game state and reroute every
+	// encounter that follows.
+	if *seed != 0 {
+		n := rand.New(rand.NewPCG(uint64(*seed), 0)).IntN(600) // up to ten seconds of game time
+		m.StepFrames(n)
+		fmt.Printf("seed %d: burned %d idle frames, so this run's luck differs\n", *seed, n)
+	}
 
 	m.Pace(*fps)
 	if *fps > 0 {
