@@ -1,6 +1,7 @@
 package world
 
 import (
+	"errors"
 	"testing"
 )
 
@@ -87,5 +88,52 @@ func TestFindRouteNoRoute(t *testing.T) {
 	}
 	if _, err := FindRoute(g, 0x26, target); err != ErrNoRoute {
 		t.Errorf("FindRoute(0x26, %02X) err = %v, want ErrNoRoute", target, err)
+	}
+}
+
+// TestFindRouteAvoiding: the map graph knows which maps touch, not which
+// are walkable between. When a leg turns out to be unwalkable the caller
+// bans it and asks again, and the search must find the longer way round
+// rather than insisting on the short impossible one.
+func TestFindRouteAvoiding(t *testing.T) {
+	// 1 --conn--> 2 --conn--> 3   (short, and the 2->3 leg is unwalkable)
+	// 2 --warp--> 4 --warp--> 3   (longer, and real)
+	short := Edge{Kind: EdgeConnection, From: 2, To: 3}
+	g := &Graph{Edges: map[uint8][]Edge{
+		1: {{Kind: EdgeConnection, From: 1, To: 2}},
+		2: {short, {Kind: EdgeWarp, From: 2, To: 4, WarpX: 5, WarpY: 5}},
+		4: {{Kind: EdgeWarp, From: 4, To: 3, WarpX: 1, WarpY: 1}},
+		3: nil,
+	}}
+
+	route, err := FindRoute(g, 1, 3)
+	if err != nil {
+		t.Fatalf("FindRoute: %v", err)
+	}
+	if len(route) != 2 || route[1] != short {
+		t.Fatalf("unblocked route = %v, want it to take the short 2->3 leg", route)
+	}
+
+	route, err = FindRouteAvoiding(g, 1, 3, map[Edge]bool{short: true})
+	if err != nil {
+		t.Fatalf("FindRouteAvoiding: %v", err)
+	}
+	if len(route) != 3 {
+		t.Fatalf("route avoiding the blocked leg = %v, want the 3-hop way round", route)
+	}
+	for _, e := range route {
+		if e == short {
+			t.Fatalf("route %v still uses the blocked leg", route)
+		}
+	}
+
+	// Banning every way through leaves no route, and that is an error
+	// rather than a route that cannot be walked.
+	_, err = FindRouteAvoiding(g, 1, 3, map[Edge]bool{
+		short: true,
+		{Kind: EdgeWarp, From: 2, To: 4, WarpX: 5, WarpY: 5}: true,
+	})
+	if !errors.Is(err, ErrNoRoute) {
+		t.Fatalf("err = %v, want ErrNoRoute when every leg is banned", err)
 	}
 }
