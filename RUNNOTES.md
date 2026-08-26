@@ -1,41 +1,50 @@
-# RUNNOTES — Travel: fight wild encounters, resume the route (done)
+# RUNNOTES — fixture: cache the post-story checkpoints (done)
 
 ## What changed
-Commit "skill: fight through wild encounters and resume the route".
+Commit 6c5d63c "fixture: cache the post-story checkpoints" (on top of 00ef569).
 
-- `skill/travel.go` (new): `Travel(m, romData, dest, policy, maxBattles)
-  (TravelResult, error)`. Loop: GoTo -> on nil, done; on non-ErrBattle,
-  return unchanged; on ErrBattle, Battle(m, policy) and continue.
-  ResultLost sets BlackedOut and continues (GoTo re-plans from the Center);
-  it is not an error. Battle error is returned wrapped with the battle
-  count. maxBattles <= 0 is an error before anything walks; after
-  maxBattles battles the loop returns an error plus the result so far.
-- `skill/travel_test.go` (new): ROM-gated (skips without POKEMON_RED_ROM).
-  Pallet Town grass-free: Battles 0, BlackedOut false. maxBattles 0: error
-  mentioning the bound, position unchanged. Nonsense dest (map 0xFF, above
-  maxMapID 0xF7 so never a graph node): error comes back unchanged,
-  errors.Is(err, world.ErrNoRoute) true, NOT ErrBattle. Pallet -> Viridian
-  (maxBattles 20): wCurMap == 0x01 and Battles >= 1.
+- `skill/fixture/fixture.go`: fixtureVersion 2 -> 3 (invalidates stale v2
+  caches: collision, facing decode, and the story-before-checkpoint all
+  changed since v2). Registered four builders:
+  - post_starter: GetStarter only (ends in Oak's lab, map 0x28).
+  - pallet_town: GetStarter + GoTo Place("pallet town") (no grass, safe).
+  - viridian_city / viridian_pokecenter: GetStarter + Travel
+    Place("viridian city") / Place("viridian pokemon center"),
+    StatAwareMove, maxBattles 20 (measured: 1 battle, no blackout).
+  All destinations come from skill.Place — no coordinate literals.
+  ROM bytes come from e.ROM() (emu.Open read the file once); GetStarter is
+  idempotent so it runs first in every builder. Validation unchanged: a
+  non-Controllable generated/cached state is still rejected and regenerated.
+- `skill/fixture/fixture_test.go`: TestCheckpointFixturesAtPlace asserts
+  each of the three place-built fixtures lands exactly on its Place entry
+  and is Controllable; TestPostStarterFixture asserts
+  EventBattledRivalInOaksLab + Controllable (no Place entry for the lab).
 
-## Verified
-- Build, vet, `go test ./... -skip TestGoToViridianPokecenter` green with
-  POKEMON_RED_ROM set; all four Travel tests SKIP cleanly without it.
-- goto.go, move.go, warp.go, battle.go untouched (empty diff).
-- Viridian result, verbatim: "reached Viridian City after 1 battles
-  (BlackedOut=false)" — PASS in ~9.4 s. The measured GoTo stall
-  ("battle on map 0c at (14,7)") is fought and the route finishes.
+## Verified (POKEMON_RED_ROM = /home/maestro/Documents/projects/gomeboy/roms/pokemon_red.gb)
+- `go test ./... -count=1` twice, both fully green, ZERO skips.
+  - Cold (fixtures built by walking the story): 45.4s total;
+    skill/fixture package 45.1s.
+  - Hot (fixtures cached): 42.8s total; skill/fixture package 1.7s —
+    ~26x faster, caching works. Full-suite delta is small because the
+    skill package (42.5s) now dominates and its tests still replay the
+    story from reds_bedroom; pointing them at the new checkpoints is the
+    follow-up, not this task (file scope was the two fixture files).
+- git status clean; no .state files tracked (testdata/fixtures gitignored).
+- goto.go, travel.go, battle.go, policy.go untouched.
 
-## Gotchas baked in (do not re-derive)
-- errors.Is(err, ErrBattle) is the single battle check: 41e0cca normalized
-  both walkWithinMap and Traverse to wrap ErrBattle. Travel must NOT
-  re-wrap or convert non-battle errors; the nonsense-dest test guards that.
-- Map 0xFF is a safe "no route" destination: BuildGraph only parses
-  0..0xF7, so it is never a node and no edge ever has To == 0xFF.
-- The battle at (14,7) on Route 1 is the only one on this route in a
-  measured run (Battles = 1); the 20 bound is headroom, not expectation.
-- Squirtle + StatAwareMove wins every Route 1 wild (Pidgey/Rattata lvl 2-3).
+## Gotchas for the next task
+- Run with POKEMON_RED_ROM set or every ROM-gated test skips; the ROM lives
+  at /home/maestro/Documents/projects/gomeboy/roms/pokemon_red.gb
+  (sha1 ea9bcae617fdf159b045185467ae58b2e4a48b9a, matches DESIGN.md).
+- Use -count=1 when comparing run durations: Go's test cache otherwise
+  makes the second run instant for a different reason.
+- post_starter ends in Oak's lab (0x28), NOT Pallet Town; pallet_town is
+  the fixture to use for route tests. Travel is mandatory for anything
+  crossing Route 1 (GoTo aborts on the first wild battle by design).
 
 ## Next task
-- R6 (plan ff1c6b79) can now resume: its TestGoToViridianPokecenter crosses
-  Route 1's grass and needs this plus its fixture work. Still skipped here.
-- Do not point Travel at "viridian pokemon center" yet; that is R6's call.
+- The skill package tests can now load post_starter/pallet_town/
+  viridian_city/viridian_pokecenter via fixture.Load instead of replaying
+  GetStarter/Travel in each test (e.g. TestGoToViridianPokecenter from the
+  old handoff). Expect the skill package to drop from ~42s toward the
+  fixture package's ~2s.
