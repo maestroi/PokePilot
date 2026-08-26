@@ -10,6 +10,22 @@
   name `skill.Place` accepts. Every round is printed to stdout, so an
   unattended run leaves a log a human can read in the morning.
 
+Every run is bit-identical unless you ask for otherwise. Gen 1 has no seed:
+its RNG is `hRandomAdd`/`hRandomSub` ($FFD3, $FFD4) reseeded from DIV, which
+counts CPU cycles, and nothing in the loop reads a wall clock — so the same
+ROM and the same inputs meet the same Pidgey on the same tile. `-seed N`
+burns N-derived idle frames after boot, which shifts the cycle count and
+reroutes every encounter that follows. Measured, walking to Viridian:
+
+    -seed 0   first wild battle at (14,7)    frame 18956
+    -seed 1   first wild battle at (12,22)   frame 17721
+    -seed 2   first wild battle at (10,32)   frame 16020
+    -seed 1   first wild battle at (12,22)   frame 17721   (identical, as intended)
+
+A seed is for run diversity, not for a fair comparison: two policies under
+different seeds have different luck, so a difference in outcome is not
+evidence. Branch both arms from one save state for that.
+
 Environment (llm mode only):
 
 - `POKEPILOT_LLM_URL` — OpenAI-compatible base URL, default
