@@ -1,41 +1,38 @@
-# RUNNOTES — S4-4 Run loop (done, verified)
+# RUNNOTES — S4-5a LLM planner (done, verified)
 
 ## What changed
-Commit "agent: the bounded observe-plan-execute loop".
+Commit "agent: an OpenAI-compatible LLM planner that can only pick what was offered".
 
-- `agent/run.go` (new): `Stop` (StopDone/StopStuck/StopBudget/StopError),
-  `Result{Stop, Rounds, Completed, Err, Final}`, `Budget{MaxRounds,
-  MaxFrames, StuckAfter, Log}`, and `Run(m, romData, p, offered, budget)`.
-- Loop: observe -> p.Next -> Execute -> observe, per round.
-  - ErrDone -> StopDone (success). Planner's other errors -> StopError.
-  - Objective error -> StopError, Err kept, no retry, no next objective.
-  - Stuck: map/x/y/party count/event list compared before/after each
-    objective; StuckAfter consecutive unchanged (default 3, field on
-    Budget, not hardcoded) -> StopStuck.
-  - Zero MaxRounds or MaxFrames -> StopError with an error, not unlimited.
-  - Frame budget checked after each round via m.FrameCount() delta.
-  - Completed appended only after a successful objective.
-  - One log line per round when Budget.Log != nil:
-    `round N: <objective String()> -> map %02x at (x,y)`.
-- `agent/run_test.go` (new, package agent_test, ROM-gated via the existing
-  loadFixture): TestRunDone, TestRunRoundBudget, TestRunError, TestRunStuck.
+- `agent/llm.go` (new): `LLMPlanner{BaseURL, Model, Client}`,
+  `NewLLMPlanner()` (defaults http://192.168.50.81:8002/v1, model
+  qwen3.8-27b; env POKEPILOT_LLM_URL / POKEPILOT_LLM_MODEL override).
+- `Next` implements the Planner seam: one POST to
+  {BaseURL}/chat/completions, parse choices[0].message.content, then
+  `Chosen`. Reply handling: trim, take first integer (prose/fences fine);
+  no integer -> error with raw reply; otherwise pass the integer string
+  to Chosen, whose error is returned as-is. Never guesses, no retry, no
+  fallback to offered[0].
+- temperature always 0; nil Client -> 60s timeout.
+- Errors name what happened: transport, non-200 (with trimmed body
+  snippet), unparseable JSON, empty choices (with snippet).
+- System prompt: "You are choosing the next objective for a Pokemon Red
+  player. Reply with ONLY the number of your choice. Do not explain."
+- User prompt: "Observation:\n" + MarshalIndent JSON + "\n\nOffered
+  objectives:\n" + "N: <String()>\n" lines (1-based index, not sentence).
+- Stdlib only; go.mod/go.sum byte-identical (verified via git status).
 
 ## Verified
-- No ROM: `env -u POKEMON_RED_ROM go test ./agent/ -run TestRun` -> all 4 SKIP.
-- With ROM (POKEMON_RED_ROM=/home/maestro/Documents/projects/PokePilot/roms/pokemon_red.gb):
-  all 4 PASS. TestRunDone log lines, verbatim:
-    round 1: take a starter -> map 28 at (5,6)
-    round 2: go to pallet town -> map 00 at (5,6)
-  (map 28 = Oak's lab after the starter; 00 = Pallet Town.)
-- `go test -skip TestGoToViridianPokecenter ./...` -> all packages ok.
+- `go build ./...`, `go vet ./...` clean.
+- `env -u POKEMON_RED_ROM go test ./agent/` -> ok (ROM-gated tests skip).
+- Only agent/llm.go staged/committed; no HANDOFF.md present.
 
 ## Gotchas / next
-- TestRunStuck asserts Rounds == 4: round 1 walks bedroom -> Pallet Town
-  (a change), then 3 unchanged repeats trip default StuckAfter (3). If the
-  fixture start position or default changes, update that assertion.
-- Stuck test works directly from the reds_bedroom fixture: the walk to
-  Pallet Town needs no starter first (bedroom -> house -> town is connected).
-- S4-5 (model planner): wire a real Planner into Run with offered lists and
-  a Log writer; handle ErrDone explicitly. Keep Chosen's exact-match rule.
+- Work only in this worktree, NOT /home/maestro/Documents/projects/PokePilot
+  (that checkout is on main, has no agent/; a prior attempt lost work there).
+- No llm_test.go exists yet; the "8/8 tests" from the task brief refer to
+  the prior attempt's external tests. A next task may add
+  agent/llm_test.go (httptest server, no ROM needed).
 - Full-suite runs: still `go test -skip TestGoToViridianPokecenter ./...`
-  until plan fdc1544f lands. Work only in this worktree.
+  until plan fdc1544f lands.
+- S4-5b likely wires LLMPlanner into Run/cmd with offered lists; LLMPlanner
+  is already a Planner (Next signature matches), so no seam changes needed.
