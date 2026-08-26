@@ -58,6 +58,18 @@ func main() {
 	m.OnSample(newDialogueTracer().sample)
 	fmt.Printf("%s\nwatch: http://%s\n\n", version, served)
 
+	// Gen 1 has no seed to set. Its RNG is hRandomAdd/hRandomSub ($FFD3,
+	// $FFD4), reseeded from DIV, which counts CPU cycles — so the run is
+	// bit-identical every time unless the cycle count before the first
+	// decision differs. Idle frames in the overworld are the cheapest way
+	// to shift it: they do nothing to game state and reroute every
+	// encounter that follows. Decided here, burned after boot.
+	burn := 0
+	if *seed != 0 {
+		burn = rand.New(rand.NewPCG(uint64(*seed), 0)).IntN(600) // up to ten seconds of game time
+	}
+	m.TraceHeader(runHeader(*planner, *starter, *dest, *seed, burn))
+
 	// Boot runs unthrottled: it is three thousand frames of Oak's intro
 	// speech and nobody wants to watch that in real time. Pacing starts
 	// once there is something to see.
@@ -67,16 +79,9 @@ func main() {
 	}
 	report(m, "booted")
 
-	// Gen 1 has no seed to set. Its RNG is hRandomAdd/hRandomSub ($FFD3,
-	// $FFD4), reseeded from DIV, which counts CPU cycles — so the run is
-	// bit-identical every time unless the cycle count before the first
-	// decision differs. Idle frames in the overworld are the cheapest way
-	// to shift it: they do nothing to the game state and reroute every
-	// encounter that follows.
-	if *seed != 0 {
-		n := rand.New(rand.NewPCG(uint64(*seed), 0)).IntN(600) // up to ten seconds of game time
-		m.StepFrames(n)
-		fmt.Printf("seed %d: burned %d idle frames, so this run's luck differs\n", *seed, n)
+	if burn > 0 {
+		m.StepFrames(burn)
+		fmt.Printf("seed %d: burned %d idle frames, so this run's luck differs\n", *seed, burn)
 	}
 
 	m.Pace(*fps)
@@ -92,6 +97,20 @@ func main() {
 	default:
 		log.Fatalf("unknown planner %q: want scripted or llm", *planner)
 	}
+}
+
+// runHeader is the one line pinned above the watch page's trace: what is
+// driving this run, and the seed, which is the only thing that makes one
+// run differ from another.
+func runHeader(planner, starter, dest string, seed int64, burn int) string {
+	what := "planner " + planner
+	if planner == "scripted" {
+		what += " · " + starter + " → " + dest
+	}
+	if seed == 0 {
+		return what + " · seed 0 (replays identically)"
+	}
+	return fmt.Sprintf("%s · seed %d (+%d idle frames)", what, seed, burn)
 }
 
 // runScripted is the original flow, unchanged: take the starter, walk to the
