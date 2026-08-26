@@ -1,36 +1,41 @@
-# RUNNOTES — S4-3b Planner tests (done, verified)
+# RUNNOTES — S4-4 Run loop (done, verified)
 
 ## What changed
-Commit 74a0ace "agent: planner tests, pure logic, no ROM needed".
+Commit "agent: the bounded observe-plan-execute loop".
 
-- `agent/planner_test.go` (new, exact content per task spec), package
-  `agent_test` (external test package). No ROM, no fixture, no emulator,
-  no `loadFixture` reuse.
-- `TestScriptedPlannerOrder`: feeds deliberately wrong obs/offered into
-  `NewScriptedPlanner(...).Next`, asserts objectives come back in order,
-  then ErrDone, and that ErrDone is sticky (list does not reset).
-- `TestChosenMatches`: exact String(), different case, trimmed input, and
-  bare 1-based indices "1"/"2"/"3".
-- `TestChosenRejects`: empty, whitespace-only, unknown name, index 0,
-  out-of-range index, one-char near miss — every case must error AND the
-  error must contain the offered objective's sentence (S4-5 safety
-  property: errors name the offered list).
+- `agent/run.go` (new): `Stop` (StopDone/StopStuck/StopBudget/StopError),
+  `Result{Stop, Rounds, Completed, Err, Final}`, `Budget{MaxRounds,
+  MaxFrames, StuckAfter, Log}`, and `Run(m, romData, p, offered, budget)`.
+- Loop: observe -> p.Next -> Execute -> observe, per round.
+  - ErrDone -> StopDone (success). Planner's other errors -> StopError.
+  - Objective error -> StopError, Err kept, no retry, no next objective.
+  - Stuck: map/x/y/party count/event list compared before/after each
+    objective; StuckAfter consecutive unchanged (default 3, field on
+    Budget, not hardcoded) -> StopStuck.
+  - Zero MaxRounds or MaxFrames -> StopError with an error, not unlimited.
+  - Frame budget checked after each round via m.FrameCount() delta.
+  - Completed appended only after a successful objective.
+  - One log line per round when Budget.Log != nil:
+    `round N: <objective String()> -> map %02x at (x,y)`.
+- `agent/run_test.go` (new, package agent_test, ROM-gated via the existing
+  loadFixture): TestRunDone, TestRunRoundBudget, TestRunError, TestRunStuck.
 
-## Verified (worktree, NOT the stale PokePilot checkout)
-- `env -u POKEMON_RED_ROM go test -v ./agent/ -run 'TestScriptedPlannerOrder|TestChosenMatches|TestChosenRejects'`
-  → all three `--- PASS`, `ok github.com/maestroi/pokepilot/agent`.
-- ROM set (`POKEMON_RED_ROM=/home/maestro/Documents/projects/PokePilot/roms/pokemon_red.gb`,
-  file referenced only, no commands run there):
-  `go test -skip TestGoToViridianPokecenter ./...` → all packages ok.
-  TestGoToViridianPokecenter is the known red (plan fdc1544f); it has NO
-  built-in skip, so "skipped deliberately" = pass `-skip` to `go test`.
+## Verified
+- No ROM: `env -u POKEMON_RED_ROM go test ./agent/ -run TestRun` -> all 4 SKIP.
+- With ROM (POKEMON_RED_ROM=/home/maestro/Documents/projects/PokePilot/roms/pokemon_red.gb):
+  all 4 PASS. TestRunDone log lines, verbatim:
+    round 1: take a starter -> map 28 at (5,6)
+    round 2: go to pallet town -> map 00 at (5,6)
+  (map 28 = Oak's lab after the starter; 00 = Pallet Town.)
+- `go test -skip TestGoToViridianPokecenter ./...` -> all packages ok.
 
 ## Gotchas / next
-- Work ONLY in this worktree. /home/maestro/Documents/projects/PokePilot
-  is on an older commit without agent/ — commands there fail.
-- The ROM lives at /home/maestro/Documents/projects/PokePilot/roms/pokemon_red.gb;
-  the worktree has no roms/ dir. Point POKEMON_RED_ROM at that file for ROM runs.
-- S4-3c+/S4-5: anything consuming Planner must handle ErrDone explicitly;
-  Chosen stays exact-match + bare index, offeredList in every error.
-- Full-suite runs: use `go test -skip TestGoToViridianPokecenter ./...`
-  until plan fdc1544f lands.
+- TestRunStuck asserts Rounds == 4: round 1 walks bedroom -> Pallet Town
+  (a change), then 3 unchanged repeats trip default StuckAfter (3). If the
+  fixture start position or default changes, update that assertion.
+- Stuck test works directly from the reds_bedroom fixture: the walk to
+  Pallet Town needs no starter first (bedroom -> house -> town is connected).
+- S4-5 (model planner): wire a real Planner into Run with offered lists and
+  a Log writer; handle ErrDone explicitly. Keep Chosen's exact-match rule.
+- Full-suite runs: still `go test -skip TestGoToViridianPokecenter ./...`
+  until plan fdc1544f lands. Work only in this worktree.
