@@ -14,7 +14,7 @@ import (
 
 // Destination is a concrete place: a map and a standing position on it.
 type Destination struct {
-	Map uint8
+	Map  uint8
 	X, Y uint8
 }
 
@@ -61,11 +61,14 @@ func GoTo(m *emu.Emu, romData []byte, dest Destination) error {
 
 // places is the single source of truth for the names Place accepts.
 var places = map[string]Destination{
-	"reds bedroom":            {Map: 0x26, X: 3, Y: 6},
-	"reds house":              {Map: 0x25, X: 3, Y: 2},
-	"pallet town":             {Map: 0x00, X: 5, Y: 6},
-	"viridian city":           {Map: 0x01, X: 23, Y: 26},
-	"viridian pokemon center": {Map: 0x29, X: 3, Y: 2},
+	"reds bedroom":  {Map: 0x26, X: 3, Y: 6},
+	"reds house":    {Map: 0x25, X: 3, Y: 2},
+	"pallet town":   {Map: 0x00, X: 5, Y: 6},
+	"viridian city": {Map: 0x01, X: 23, Y: 26},
+	// (3,3) is the tile BELOW the counter, not the counter itself: on map
+	// 0x29 the nurse stands at (3,1) and (3,2) is a counter tile, which the
+	// player can never stand on. Talking works across the counter.
+	"viridian pokemon center": {Map: 0x29, X: 3, Y: 3},
 }
 
 // Place maps a friendly name to a Destination.
