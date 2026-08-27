@@ -18,9 +18,9 @@
 - Approach Travel onto Route 1 (0x0C): 0 battles.
 - TestTrainGrindsOnRoute1 (target L+2, budget 12): 7 battles, L6->L8,
   ended in a blackout on battle 7, player back at (16,6) on 0x0C —
-  8.80s wall. Deterministic: three runs gave identical values.
+   8.61s wall. Deterministic: three runs gave identical values.
 - TestTrainBudgetIsAResult (target L+8, budget 1): 1 battle, L6->6,
-  nil error, no battle left — 1.57s wall.
+   nil error, no battle left — 1.58s wall.
 - Route 1 grass rate 25/256: ~1 battle per 6 legs / 24 steps; the grace
   counter (wNumberOfNoRandomBattleStepsLeft) slows encounters right after
   one. Pallet Town grass has no wild entry in the ROM: zero encounters.
@@ -33,9 +33,11 @@
   the aftermath either way.
 - The fixture's L6 Squirtle already carries Water Gun (0x21) and Bubble
   (0x27); S5b-7's "learns BUBBLE at level 8" does not match this
-  fixture, so measure the Brock-fight level requirement rather than
-  assuming it. XP curve (medium-slow): L6=179, L7=236, L8=314, so
-  6->7 needs ~2-3 wins and 7->8 ~3-4.
+   fixture, so measure the Brock-fight level requirement rather than
+   assuming it. XP curve (medium-slow): L6=179, L7=236, L8=314, so
+   6->7 needs ~2-3 wins and 7->8 ~3-4.
+- Re-verified 2026-08-27: full suite 9 packages ok, zero skips, skill
+  package 53.05s.
 
 ## For the next task (S5b-6: survive trainer ambushes, reach Pewter)
 - Measure FIRST whether Travel already copes with an ambush (trainer
