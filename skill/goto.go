@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/rom"
@@ -29,6 +30,58 @@ var ErrBattle = errors.New("skill: battle interrupted the route")
 // ErrReplanExhausted is the unambiguous "stop retrying" signal.
 var ErrReplanExhausted = errors.New("skill: route re-plan budget exhausted")
 
+// ErrNavigationStalled reports that GoTo is cycling through an already-seen
+// player state or has crossed an unreasonable number of maps without reaching
+// its destination. It aborts only the current navigation call.
+var ErrNavigationStalled = errors.New("skill: navigation made no progress")
+
+const maxNavigationTransitions = 64
+
+type navigationState struct {
+	Map  uint8
+	X, Y uint8
+}
+
+type navigationGuard struct {
+	dest        Destination
+	seen        map[navigationState]bool
+	trace       []navigationState
+	transitions int
+}
+
+func newNavigationGuard(dest Destination, start navigationState) *navigationGuard {
+	return &navigationGuard{
+		dest:  dest,
+		seen:  map[navigationState]bool{start: true},
+		trace: []navigationState{start},
+	}
+}
+
+func (g *navigationGuard) observe(now navigationState) error {
+	g.transitions++
+	g.trace = append(g.trace, now)
+	if g.seen[now] {
+		return fmt.Errorf("%w: repeated map %02x at (%d,%d) after %d transitions toward map %02x at (%d,%d); trace: %s",
+			ErrNavigationStalled, now.Map, now.X, now.Y, g.transitions,
+			g.dest.Map, g.dest.X, g.dest.Y, formatNavigationTrace(g.trace))
+	}
+	if g.transitions > maxNavigationTransitions {
+		return fmt.Errorf("%w: exceeded %d successful map transitions at map %02x (%d,%d) toward map %02x at (%d,%d); trace: %s",
+			ErrNavigationStalled, maxNavigationTransitions, now.Map, now.X, now.Y,
+			g.dest.Map, g.dest.X, g.dest.Y, formatNavigationTrace(g.trace))
+	}
+	g.seen[now] = true
+	return nil
+}
+
+func formatNavigationTrace(trace []navigationState) string {
+	parts := make([]string, len(trace))
+	for i, s := range trace {
+		parts[i] = fmt.Sprintf("%02x(%d,%d)", s.Map, s.X, s.Y)
+	}
+	return strings.Join(parts, " -> ")
+}
+
 func newReplanExhaustedError(max int, cur, x, y uint8, dest Destination, last error) error {
 	return fmt.Errorf("%w: %d re-plans from map %02x at (%d,%d) toward map %02x at (%d,%d), last leg: %w",
 		ErrReplanExhausted, max, cur, x, y, dest.Map, dest.X, dest.Y, last)
@@ -43,6 +96,10 @@ func GoTo(m *emu.Emu, romData []byte, dest Destination) error {
 	if err != nil {
 		return err
 	}
+	startX, startY := playerXY(m)
+	guard := newNavigationGuard(dest, navigationState{
+		Map: m.Peek8(sym.CurMap), X: startX, Y: startY,
+	})
 
 	// Legs the map graph offers but the tile-level pathfinder cannot walk
 	// FROM A GIVEN TILE. Route 2 is the case that forced this: it connects
@@ -104,6 +161,12 @@ func GoTo(m *emu.Emu, romData []byte, dest Destination) error {
 				failed[k] = true
 				continue // re-plan without this leg, from this tile
 			}
+			return fmt.Errorf("skill: GoTo: %w", err)
+		}
+		nowX, nowY := playerXY(m)
+		if err := guard.observe(navigationState{
+			Map: m.Peek8(sym.CurMap), X: nowX, Y: nowY,
+		}); err != nil {
 			return fmt.Errorf("skill: GoTo: %w", err)
 		}
 	}
