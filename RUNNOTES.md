@@ -1,39 +1,38 @@
-# RUNNOTES — S5b-3a redo: parcel delivery (OaksParcel)
+# RUNNOTES — S5b-3b: open the Viridian north gate (post_errand fixture)
 
-## Verdict: the task's ball premise is a wrong assumption (third time)
-The hand-over chain (OaksLab.asm .got_parcel 1011 -> RIVAL_ARRIVES 510 ->
-OAK_GIVES_POKEDEX 554 -> RIVAL_LEAVES 628 -> Noop) ends with the Pokedex
-handed over and the rival spawned on Route 22 (both R22 events set, 636-638).
-It does NOT give 5x POKE_BALL or set EVENT_GOT_POKEBALLS_FROM_OAK:
-.give_poke_balls (1022-1029) is a separate, later talk with Oak, gated on
-EVENT_BEAT_ROUTE22_RIVAL_1ST_BATTLE (988-989), whose only setter is
-Route22.asm:167 (the R22 rival after-battle script). The prior run measured
-the same on the real ROM; no RAM writes or forced flags made the premise
-look like it held.
+## Verdict: gate open; fixture post_errand registered and cached at v4.
+TestOaksParcelOpensViridianNorthGate: the errand (OaksParcel) sets
+EVENT_GOT_POKEDEX; Travel to (23,26) on 0x01; GoTo (19,10), the tile
+south of the gate line; StepOnce up to (19,9) — free even with the gate
+closed, so not the assertion; StepOnce up to (19,8) — the step the
+closed gate refuses (box "You can't go through here!", push back to
+(19,10)). Crossing 10.6s from the warm post_starter fixture.
+TestPostErrandFixture forces the new fixture's build and pins the
+resulting state: (19,8) on 0x01, Pokedex held, parcel consumed,
+controllable. Loaded from cache in 0.00s on later runs.
 
 ## What changed
-- skill/errand.go: kept the previously-measured body (GetParcel, Travel back,
-  Face Oak, tap A, advanceUntil on GOT_POKEDEX&&Controllable); fixed the doc
-  comment (true chain terminus, ball-gate evidence); destination now goes
-  through Place("oak's lab").
-- skill/goto.go: new place "oak's lab" 0x28 (5,3) — the open floor below Oak
-  (5,2); the tile GetStarter's cutscene leaves; no NPC home tile.
-  TestPlaceDestinationsStandable covers it automatically.
-- skill/errand_test.go: TestOaksParcel now passes: hard-asserts (1) Pokedex
-  set + parcel consumed + chain terminus (lab, controllable — wJoyIgnore is
-  cleared only by RIVAL_LEAVES), and pins (2) flag unset and (3) 0 balls as
-  measured ROM behavior; the prior version failed deliberately and left the
-  suite red, which triggered this recovery — a finding should be pinned.
+- skill/errand_test.go: +TestOaksParcelOpensViridianNorthGate (both
+  crossing legs asserted, since reaching (19,9) alone proves nothing),
+  +TestPostErrandFixture (builds the fixture, pins its postconditions).
+- skill/fixture/fixture.go: +Register("post_errand"): starter ->
+  OaksParcel -> Travel "viridian city" (23,26) -> GoTo (19,10) ->
+  StepOnce up x2 -> (19,8). fixtureVersion 3 -> 4, per the S5b-3a
+  handoff: every v3 cache invalidated and rebuilt on this run.
 
 ## Measured
-TestOaksParcel 8.61s; TestGetParcel 2.50s; skill package 31.7s; whole suite
-~72s; zero skips. After delivery: GOT_POKEDEX set, GOT_POKEBALLS_FROM_OAK
-unset, no parcel and no balls in the bag, player at (5,3) on 0x28 controllable.
+Whole suite: 9 packages ok, zero skips, ~54s wall on the warm v4 cache
+(skill 42s, agent 38s, fixture 1.8s). Gate tiles verified against the
+static grid in a scratch program first: (19,8)/(19,9)/(19,10) all
+walkable, no warps; the approach (23,26)->(19,10) is 20 monotone steps
+that stay south of the gate, and the default map script is inert with
+the flag set (gym check only fires at (32,8)).
 
-## For the next task (S5b-3b: walk the Viridian gate, register fixture)
-- GOT_POKEDEX is set, so the sleeping-old-man gate at Viridian (19,9) is open — that is the walk.
-- The rival is now waiting on Route 22 (both R22 events set). Do not route
-  any test through Route 22: the forced second battle aborts Travel.
-  Viridian->Pewter does not cross it.
-- The fixture you register is captured after the gate walk; bump
-  fixtureVersion when adding it (skill/fixture/fixture.go, currently 3).
+## For the next task
+- Load fixture "post_errand": (19,8) on 0x01, Pokedex held, no parcel.
+- The Route 2 exit is the city's north edge (row 0, x17-19); the
+  landing on Route 2 (0x0D) is (8,71), Place("route 2").
+- Do not route through Route 22 (rival stands there; the forced
+  battle aborts Travel) — the city's WEST edge is the R22 edge.
+- fixtureVersion is 4; bump it only if the definition of a valid
+  state changes again.

@@ -7,6 +7,7 @@ import (
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/skill"
 	"github.com/maestroi/pokepilot/skill/fixture"
+	"github.com/maestroi/pokepilot/world"
 )
 
 // TestGetParcel is S5b-2: from the post-starter state, collect Oak's parcel
@@ -164,4 +165,134 @@ func TestOaksParcel(t *testing.T) {
 	}
 	t.Logf("after delivery: %s=%v, pokeballs in bag=%d (both absent by ROM design; the 5 balls need the Route 22 rival battle first - Route22.asm:167)",
 		state.EventGotPokeballsFromOak, gotPokeballsFlag, pokeballs)
+}
+
+// TestOaksParcelOpensViridianNorthGate is S5b-3b: the parcel errand's
+// hand-over sets EVENT_GOT_POKEDEX, and that flag is exactly what disables
+// Viridian City's north gate. The map's default script checks it on every
+// step (ViridianCityCheckGotPokedexScript, pokered/scripts/ViridianCity.asm)
+// and, while it is unset, shows "You can't go through here! This is private
+// property!" and pushes the player south.
+//
+// The gate is a step trigger, not a tile (measured on the real ROM, S5-3):
+// stepping onto (19,9) completes freely even with the gate closed; what is
+// refused is the northward step from (19,9) to (19,8) (box, then push back
+// to (19,10)). A test that only reached (19,9) would pass with the gate
+// closed, so this test walks the crossing itself and asserts both legs:
+//
+//	post_starter -> OaksParcel (sets the flag)
+//	-> Travel to Viridian City (23,26) -> GoTo (19,10), south of the gate
+//	-> StepOnce up to (19,9) -> StepOnce up to (19,8).
+//
+// The last step succeeds only because the errand set the flag. It ends the
+// player on (19,8), the state the post_errand fixture checkpoints for
+// later tasks so they do not replay the errand.
+func TestOaksParcelOpensViridianNorthGate(t *testing.T) {
+	m := fixture.Load(t, "post_starter")
+	romData := m.ROM()
+	policy := skill.StatAwareMove(romData)
+
+	// Precondition: the post-starter state has the gate shut.
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	if state.HasEvent(&mem, state.EventGotPokedex) {
+		t.Fatal("precondition: Pokedex flag already set in post_starter fixture")
+	}
+
+	start := time.Now()
+	if err := skill.OaksParcel(m, romData, policy); err != nil {
+		t.Fatalf("OaksParcel: %v", err)
+	}
+	state.Snapshot(m, &mem)
+	if !state.HasEvent(&mem, state.EventGotPokedex) {
+		t.Fatalf("postcondition: %s not set after delivery", state.EventGotPokedex)
+	}
+
+	// Walk to the gate's approach tile. The leg from the lab crosses Route
+	// 1's tall grass, so Travel (not GoTo) with the fixture package's
+	// measured battle headroom.
+	city, ok := skill.Place("viridian city")
+	if !ok {
+		t.Fatal(`Place: "viridian city" not found`)
+	}
+	if _, err := skill.Travel(m, romData, city, policy, 20); err != nil {
+		t.Fatalf("Travel to Viridian City: %v", err)
+	}
+	state.Snapshot(m, &mem)
+	p := state.DecodePlayer(&mem)
+	if p.MapID != 0x01 || p.X != 23 || p.Y != 26 {
+		t.Fatalf("Travel: expected (23,26) on 0x01, got (%d,%d) on %#04x", p.X, p.Y, p.MapID)
+	}
+
+	// (19,10) is the tile directly south of the gate line. The approach
+	// from (23,26) stays south of the gate, so this walk is valid whether
+	// the gate is open or not; the crossing below is the assertion.
+	if err := skill.GoTo(m, romData, skill.Destination{Map: 0x01, X: 19, Y: 10}); err != nil {
+		t.Fatalf("GoTo to the gate approach (19,10): %v", err)
+	}
+	state.Snapshot(m, &mem)
+	p = state.DecodePlayer(&mem)
+	if p.MapID != 0x01 || p.X != 19 || p.Y != 10 {
+		t.Fatalf("approach: expected (19,10) on 0x01, got (%d,%d) on %#04x", p.X, p.Y, p.MapID)
+	}
+	if !state.Controllable(&mem) {
+		t.Fatalf("approach: player not controllable: %+v", p)
+	}
+
+	// First crossing step: (19,10) -> (19,9). Free even with the gate
+	// closed, so it only proves the approach was reached cleanly.
+	if err := skill.StepOnce(m, world.StepUp); err != nil {
+		t.Fatalf("step (19,10)->(19,9): %v", err)
+	}
+	state.Snapshot(m, &mem)
+	p = state.DecodePlayer(&mem)
+	if p.MapID != 0x01 || p.X != 19 || p.Y != 9 {
+		t.Fatalf("after first step: expected (19,9) on 0x01, got (%d,%d) on %#04x", p.X, p.Y, p.MapID)
+	}
+
+	// Second crossing step: (19,9) -> (19,8). The closed gate refuses this
+	// one (box, push back to (19,10)); it succeeds only because the errand
+	// set EVENT_GOT_POKEDEX. This is the gate assertion.
+	if err := skill.StepOnce(m, world.StepUp); err != nil {
+		t.Fatalf("gate crossing step (19,9)->(19,8): %v", err)
+	}
+	state.Snapshot(m, &mem)
+	p = state.DecodePlayer(&mem)
+	if p.MapID != 0x01 || p.X != 19 || p.Y != 8 {
+		t.Fatalf("after crossing: expected (19,8) on 0x01, got (%d,%d) on %#04x", p.X, p.Y, p.MapID)
+	}
+	if !state.Controllable(&mem) {
+		t.Fatalf("after crossing: player not controllable: %+v", p)
+	}
+
+	t.Logf("gate crossed: %v since test start", time.Since(start))
+}
+
+// TestPostErrandFixture is the S5b-3b fixture check: loading post_errand
+// must hand back the state captured at the end of the gate crossing —
+// (19,8) on 0x01, one tile north of the gate line — with the Pokedex
+// held, the parcel consumed, and the player controllable. The build itself
+// is the full errand (starter -> OaksParcel -> Travel -> crossing), so the
+// test also proves the builder runs end to end. It is the standing state
+// later tasks (S5b-4 onward) load instead of replaying the errand.
+func TestPostErrandFixture(t *testing.T) {
+	m := fixture.Load(t, "post_errand")
+
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	if !state.HasEvent(&mem, state.EventGotPokedex) {
+		t.Fatalf("fixture post_errand: %s not set", state.EventGotPokedex)
+	}
+	for _, it := range state.DecodeInventory(&mem).Items {
+		if it.ID == skill.ItemOaksParcel {
+			t.Fatalf("fixture post_errand: parcel still in bag: %+v", state.DecodeInventory(&mem).Items)
+		}
+	}
+	if !state.Controllable(&mem) {
+		t.Fatalf("fixture post_errand: player not controllable: %+v", state.DecodePlayer(&mem))
+	}
+	p := state.DecodePlayer(&mem)
+	if p.MapID != 0x01 || p.X != 19 || p.Y != 8 {
+		t.Fatalf("fixture post_errand: expected (19,8) on 0x01, got (%d,%d) on %#04x", p.X, p.Y, p.MapID)
+	}
 }

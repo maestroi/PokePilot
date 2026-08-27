@@ -19,6 +19,7 @@ import (
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/skill"
+	"github.com/maestroi/pokepilot/world"
 )
 
 // Dir is where generated fixtures are cached. It is gitignored.
@@ -27,7 +28,7 @@ const Dir = "testdata/fixtures"
 // fixtureVersion is embedded in fixture filenames. Bump it whenever the boot
 // sequence or the definition of a valid state changes: a new version
 // invalidates every stale fixture at once.
-const fixtureVersion = 3
+const fixtureVersion = 4
 
 // builders maps a fixture name to the function that produces it from a
 // freshly booted emulator.
@@ -75,6 +76,43 @@ func init() {
 	})
 	Register("viridian_pokecenter", func(e *emu.Emu) error {
 		return travelTo(e, "viridian pokemon center")
+	})
+
+	// post_errand: post-starter plus the completed Oak's parcel errand:
+	// parcel delivered, Pokedex received, and Viridian City's north gate
+	// crossed. Captured after the gate walk, so the fixture ends at (19,8)
+	// on map 0x01 — one tile north of the gate line (19,9), south of the
+	// Route 2 exit at the map's north edge. Later tasks (S5b-4 onward,
+	// e.g. Travel to Pewter) load it instead of replaying the errand.
+	Register("post_errand", func(e *emu.Emu) error {
+		if err := starter(e); err != nil {
+			return err
+		}
+		romData := e.ROM()
+		policy := skill.StatAwareMove(romData)
+		if err := skill.OaksParcel(e, romData, policy); err != nil {
+			return err
+		}
+		dest, err := place("viridian city")
+		if err != nil {
+			return err
+		}
+		if _, err := skill.Travel(e, romData, dest, policy, maxBattles); err != nil {
+			return err
+		}
+		// (19,10) is the tile directly south of the gate line; the
+		// approach from (23,26) stays south of the gate.
+		if err := skill.GoTo(e, romData, skill.Destination{Map: 0x01, X: 19, Y: 10}); err != nil {
+			return err
+		}
+		// The crossing itself: two northward steps, ending on (19,8).
+		if err := skill.StepOnce(e, world.StepUp); err != nil {
+			return fmt.Errorf("fixture post_errand: step (19,10)->(19,9): %w", err)
+		}
+		if err := skill.StepOnce(e, world.StepUp); err != nil {
+			return fmt.Errorf("fixture post_errand: gate step (19,9)->(19,8): %w", err)
+		}
+		return nil
 	})
 }
 
