@@ -1,37 +1,36 @@
-# RUNNOTES — S5c-4: Decode live sprite positions from sprite RAM
+# RUNNOTES — S5c-5a: walkAround plans from fresh RAM instead of remembering guesses
 
 ## What changed
-- `red/state/sprite.go` (NEW): `SpriteState{Slot int; X,Y int; PictureID uint8}` and
-  `DecodeSprites(m *Mem) []SpriteState`. Returns live map objects in slots 1..15, in slot
-  order. Slot 0 (the player) is never returned. Layout constants are unexported/local.
-- `red/state/sprite_test.go` (NEW): synthetic, package-internal. Proves slot 0 excluded when
-  active, data1[0]==0 skipped, data1[0x02]==0xff skipped, slot 15 included (upper bound), and
-  a live slot with the data2+0x0d scratch byte zeroed is still included (regression guard).
-- `skill/sprite_fixture_test.go` (NEW): real-ROM anchor. Loads viridian_pokecenter (map 0x29),
-  snapshots RAM, ParseMap(0x29), and compares decoded slot 1 (the nurse) against
-  header.Objects[0]. ParseMap already strips the +4 bias, so they must agree exactly.
+- `skill/blockers.go` (NEW): `spriteBlockers(m *emu.Emu) map[[2]int]bool` — snapshots RAM
+  (`state.Snapshot`), runs `state.DecodeSprites`, keys `[2]int{X, Y}` (same order as
+  walkAround/FindPath). `mergeBlockers(live, fixed)` returns the union as a new map.
+  spriteBlockers is not called anywhere yet — S5c-5b wires it.
+- `skill/move.go`: `walkAround(readBlocked, plan, walk, wait)` — readBlocked is called
+  EXACTLY ONCE at the top of every attempt; that fresh map goes straight to plan. Plan
+  error with live blockers: wait + retry (≤ maxWalkRetries). Plan error with none: return
+  the static error unchanged. *ErrBlocked: wait + retry from a new snapshot. Other walk
+  errors: return immediately. `hit` and `blocked` maps deleted (grep `hit` in move.go: gone).
+  maxWalkRetries=6 / npcWaitFrames=48 untouched. Verbatim invariant comment + the two known
+  races (IMAGEINDEX overlay is screen-local; TryWalking writes the destination tile at the
+  start of the 16-frame animation, so a sprite can straddle two tiles) sit above walkAround.
+- `skill/walkaround_test.go`: deleted the three twice-before-ban tests (WaitsOutAWanderingSprite,
+  BansATileBlockedTwice, DropsItsOwnBansWhenPlanningFails). Added
+  TestWalkAroundRereadsBlockersAfterCollision (read1 {(14,13)} → collision → read2 {(15,13)} →
+  success; both snapshots reach plan in order) and TestWalkAroundForgetsVacatedSpriteTile
+  (read1 {(14,13)} → collision → read2 empty; plan 2 gets NO (14,13) — the anti-cache proof).
+  GivesUpAfterMaxRetries and DoesNotRetryOtherFailures kept byte-identical. Probe gained a
+  `reads` list served by an injected readBlocked (past the end → empty map).
 
-## The liveness predicate (the part an earlier draft got wrong)
-Liveness comes from **wSpritePlayerStateData1 (0xC100)**, NOT wSpriteStateData2+0x0d (that
-byte is scratch; map_sprites.asm zeroes every slot after tile patterns load, so reading it
-returns nothing):
-    data1 = 0xC100 + slot*0x10 ; data2 = 0xC200 + slot*0x10
-    live  = data1[0x00] != 0 && data1[0x02] != 0xff
-    Y = data2[0x04] - 4 ; X = data2[0x05] - 4
-data1[0x00]=PICTUREID (0 = unused slot, zeroed at map load); data1[0x02]=IMAGEINDEX
-($ff = hidden/removed, e.g. a picked-up item ball keeps a non-zero picture ID). The -4 is the
-ROM's +4 bias (home/overworld.asm copies map-object Y/X straight into data2[4]/[5]).
-wNumSprites is not needed: unused slots are zeroed at map load.
+## For S5c-5b (wiring the callers)
+- The walkAround signature change forced a mechanical compile fix in goto.go (walkWithinMap)
+  and warp.go (both Traverse cases): a stub `func() map[[2]int]bool { return map[[2]int]bool{} }`
+  first arg, marked `// S5c-5b wires this to spriteBlockers(m)`. Replace each stub with
+  `func() map[[2]int]bool { return spriteBlockers(m) }` — that is the whole wiring; no
+  planning-logic changes were made to those files.
+- A nil/empty read is safe: FindPath documents `blocked may be nil`.
 
 ## Verified
-- go test ./... -skip TestGymBoulderBadge (POKEMON_RED_ROM set): all pass, 0 fail. Only skip is
-  TestProbe's permanent PROBE_MAP gate.
-- Anchor genuinely runs: on the committed fixture, decoded slot 1 = pic 0x29 (3,1) == header
-  Objects[0]. Only 2 of the pokecenter's 4 header objects are live (the other two are IMAGEINDEX
-  $ff / not rendered), so the predicate genuinely discriminates.
-
-## For S5c-5a/b (wiring into pathfinding)
-- Decoder only; NOT wired into walkAround/GoTo/warp/story yet. Rebuild blockers from a fresh
-  DecodeSprites snapshot each plan — no blocker cache (see AGENTS.md: bans that outlive a plan are bugs).
-- Coordinates are tile coords on the current map, same space as skill.Place / FindPath.
-- TestGymBoulderBadge stays excluded from the gate (S5c-6 owns it; rDIV-seeded battles).
+- `go test ./... -skip TestGymBoulderBadge` (POKEMON_RED_ROM set to the main checkout's
+  roms/pokemon_red.gb; this worktree has no roms/ — it is gitignored, and a symlink shows
+  as untracked, so do not create one): 163 pass, 0 fail. Only skip is TestProbe's permanent
+  PROBE_MAP env gate. TestGymBoulderBadge stays out of the gate (S5c-6, rDIV-seeded).

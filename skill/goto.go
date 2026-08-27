@@ -200,7 +200,9 @@ func walkWithinMap(m *emu.Emu, romData []byte, dest Destination) error {
 	// planErr is the "no path at all" case: already described in full, so
 	// it is returned as-is rather than re-wrapped as a walk failure.
 	var planErr error
-	err = walkAround(func(blocked map[[2]int]bool) ([]world.Step, error) {
+	// S5c-5b wires this to spriteBlockers(m); until then no live blockers.
+	err = walkAround(func() map[[2]int]bool { return map[[2]int]bool{} },
+		func(blocked map[[2]int]bool) ([]world.Step, error) {
 		x, y := playerXY(m)
 		steps, err := world.FindPath(grid, int(x), int(y), int(dest.X), int(dest.Y), blocked)
 		if err != nil {
