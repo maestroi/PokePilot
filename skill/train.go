@@ -46,10 +46,10 @@ type TrainResult struct {
 // blackout ends the session and is reported: with no healthy mon left,
 // grinding is over. A blackout is a legitimate ending, not a failure —
 // cumulative damage across several battles can faint even a lead that
-// beats the local wilds one at a time — and it does not visibly transport
-// the player to a center in the fixture ROM, so the reported position is
-// wherever the last leg's post-battle re-plan left the player, and
-// resuming a grind means healing first.
+// beats the local wilds one at a time. A blackout teleports the player to
+// a Pokemon Center, so the session returns (res, nil) rather than the
+// walk-back error a continued Travel would produce, and resuming a grind
+// means healing first.
 //
 // Grass cells come from the ROM: the tileset table names the map's grass
 // tile and the map's blocks say which cells stand on it, and only
@@ -89,9 +89,10 @@ func Train(m *emu.Emu, romData []byte, targetLevel int, policy MovePolicy, maxBa
 	}
 
 	// maxLegs bounds the session when encounters come sparser than the
-	// budget assumes (Route 1 fights about one per six legs, measured):
-	// tripping it means the map's grass has no wild rate at all.
-	maxLegs := 20*maxBattles + 60
+	// budget assumes (Route 1 fights about one per six legs, Viridian
+	// Forest about one per thirty-eight, both measured): tripping it
+	// means the map's grass has no wild rate at all.
+	maxLegs := 40*maxBattles + 60
 	next := b
 	legs := 0
 	for {
@@ -101,10 +102,19 @@ func Train(m *emu.Emu, romData []byte, targetLevel int, policy MovePolicy, maxBa
 			res.BlackedOut = true
 		}
 		if err != nil && !battleInFlight(m) {
-			// A non-battle failure: nothing is left in progress, so the
-			// error is reported as-is.
 			res.EndLevel = leadLevel(m)
 			res.Reached = res.EndLevel >= targetLevel
+			// A blackout teleports the player to a Pokemon Center; Travel
+			// then re-plans from there and walks the whole route back
+			// toward the grind cells, failing somewhere along it. That
+			// walk error would hide the real ending, so a blacked-out
+			// party ends the session cleanly: Reached says whether the
+			// level was made, and resuming a grind means healing first.
+			if res.BlackedOut {
+				return res, nil
+			}
+			// A non-battle failure: nothing is left in progress, so the
+			// error is reported as-is.
 			return res, err
 		}
 		if err != nil {

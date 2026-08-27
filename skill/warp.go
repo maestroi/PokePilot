@@ -107,8 +107,13 @@ func Traverse(m *emu.Emu, romData []byte, e world.Edge) error {
 			x, y := playerXY(m)
 			tx, ty, err := edgeTarget(grid, e.Dir, int(x), int(y), blocked)
 			if err != nil {
-				unwalkable = err
-				return nil, err
+				// Type it as ErrLegUnwalkable like the FindPath failure below:
+				// Route 2's ledge makes the north edge unreachable from the
+				// southern landing tile, and GoTo's per-tile ban is what
+				// re-routes around it through the forest. Unwrapped, the
+				// error is terminal and the only real route to Pewter dies.
+				unwalkable = fmt.Errorf("skill: Traverse: map %02x: %v: %w", e.From, err, ErrLegUnwalkable)
+				return nil, unwalkable
 			}
 			steps, err := world.FindPath(grid, int(x), int(y), tx, ty, blocked)
 			if err != nil {

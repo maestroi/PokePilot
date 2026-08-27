@@ -1,7 +1,10 @@
 package skill_test
 
 import (
+	"errors"
 	"fmt"
+	"sort"
+	"strings"
 	"testing"
 
 	"github.com/maestroi/pokepilot/emu"
@@ -11,11 +14,14 @@ import (
 	"github.com/maestroi/pokepilot/skill/fixture"
 )
 
-// gymLeadLevel is the level the lead must reach before Brock, whose team
-// is a level 12 Geodude and a level 14 Onix. A level 8 Squirtle with
-// BUBBLE is derived to win that matchup; if that is wrong the battle
-// below fails and this constant is the knob.
-const gymLeadLevel = 8
+// gymLeadLevel is the level the lead must reach before Pewter. Two fights
+// stand in the way: the rival's forced cutscene battle on the forest leg
+// (the player blacked out at level 8) and Brock himself, whose team is a
+// level 12 Geodude and a level 14 Onix. The forest grass is sparse (about
+// one battle per thirty steps), so the target stays within reach of a
+// single training loop; a water lead at 12 is super-effective against the
+// rock team and clears both. If a battle still loses, this is the knob.
+const gymLeadLevel = 12
 
 // travelFightsThrough is Travel plus the one case Travel misses: a wild
 // battle that interrupts the walk inside a Traverse warp leg is not
@@ -35,11 +41,11 @@ func travelFightsThrough(t *testing.T, e *emu.Emu, romData []byte, dest skill.De
 		switch {
 		case state.DecodeBattle(&mem) != nil:
 			if i >= 10 {
-				t.Fatalf("Travel to (%#04x,%d,%d): still interrupted by battles after %d: %v", dest.Map, dest.X, dest.Y, i, err)
+				diagFatalf(t, e, err, "Travel to (%#04x,%d,%d): still interrupted by battles after %d: %v", dest.Map, dest.X, dest.Y, i, err)
 			}
 			outcome, berr := skill.Battle(e, policy)
 			if berr != nil {
-				t.Fatalf("wild battle on the way to (%#04x,%d,%d): %v", dest.Map, dest.X, dest.Y, berr)
+				diagFatalf(t, e, berr, "wild battle on the way to (%#04x,%d,%d): %v", dest.Map, dest.X, dest.Y, berr)
 			}
 			if outcome == state.ResultLost {
 				t.Logf("wild battle on the way to (%#04x,%d,%d) ended in a blackout", dest.Map, dest.X, dest.Y)
@@ -50,29 +56,87 @@ func travelFightsThrough(t *testing.T, e *emu.Emu, romData []byte, dest skill.De
 			// (it only re-plans around hard blocks). Page the box closed and let
 			// Travel re-plan from where the walk stopped.
 			if i >= 10 {
-				t.Fatalf("Travel to (%#04x,%d,%d): still interrupted by a text box after %d retries at %s: %v", dest.Map, dest.X, dest.Y, i, pos, err)
+				diagFatalf(t, e, err, "Travel to (%#04x,%d,%d): still interrupted by a text box after %d retries at %s: %v", dest.Map, dest.X, dest.Y, i, pos, err)
 			}
 			ds := state.DecodeDialogue(&mem)
 			t.Logf("text box at %s: fontLoaded=%#04x joyIgnore=%#04x walkCounter=%#04x battle=%v text=%q", pos,
 				mem.U8(sym.FontLoaded), mem.U8(sym.JoyIgnore), mem.U8(sym.WalkCounter), state.DecodeBattle(&mem) != nil, ds.Text)
 			dismissDialogue(t, e)
 		default:
-			t.Fatalf("Travel to (%#04x,%d,%d): %v", dest.Map, dest.X, dest.Y, err)
+			diagFatalf(t, e, err, "Travel to (%#04x,%d,%d): %v", dest.Map, dest.X, dest.Y, err)
 		}
 	}
 }
 
-// dismissDialogue holds A until no dialogue is active, paging through
-// multi-line NPC text and closing the box.
+// dismissDialogue lets an open text box run to its end. A plain NPC line
+// pages closed under a held A; the rival's "hey, wait up" cutscene is forced
+// and plays out on its own, so step frames (holding A, which is harmless for
+// both) until either the box is gone and the player is controllable, or a
+// battle the box led into is in progress — the caller then handles it.
 func dismissDialogue(t *testing.T, e *emu.Emu) {
 	t.Helper()
-	if _, err := e.HoldUntil(emu.A, 600, func(m *emu.Emu) bool {
+	for i := 0; i < 400; i++ {
+		// Text pages on a button press, not a hold, so tap A rather than
+		// holding it. The tap is harmless for a forced cutscene and required
+		// for an NPC line.
+		e.Tap(emu.A, 3, 7)
 		var mem state.Mem
-		state.Snapshot(m, &mem)
-		return state.DecodeDialogue(&mem) == nil
-	}); err != nil {
-		t.Fatalf("dismissDialogue: text box did not close: %v", err)
+		state.Snapshot(e, &mem)
+		if state.DecodeBattle(&mem) != nil {
+			return
+		}
+		if state.DecodeDialogue(&mem) == nil && state.Controllable(&mem) {
+			return
+		}
 	}
+	var mem state.Mem
+	state.Snapshot(e, &mem)
+	diagFatalf(t, e, nil, "dismissDialogue: text box did not settle: fontLoaded=%#04x joyIgnore=%#04x battle=%v text=%q",
+		mem.U8(sym.FontLoaded), mem.U8(sym.JoyIgnore), state.DecodeBattle(&mem) != nil, state.DecodeDialogue(&mem).Text)
+}
+
+// diagFatalf fails the test with the failure diagnostic bundle appended to
+// the message: map id, player tile, controllable, in battle, the decoded
+// sprite slots and their tiles, the blocker set the planner derives from
+// that same snapshot, and the typed error chain. Sprite timing is
+// nondeterministic, so a bare "blocked at (x,y)" cannot be diagnosed after
+// the fact — the sprite that caused it has moved by the time anyone reads
+// the log — and this bundle is the evidence a failed run leaves behind.
+func diagFatalf(t *testing.T, e *emu.Emu, err error, format string, args ...any) {
+	t.Helper()
+	t.Fatalf(format+"\n%s", append(args, diagnosticBundle(e, err))...)
+}
+
+// diagnosticBundle snapshots the emulator once and renders the diagnostic
+// block. The sprite dump and the blocker set come from the same snapshot,
+// so the block is self-consistent: every blocked tile names the sprite slot
+// that stands on it, the same derivation the planner's walkAround snapshot
+// uses.
+func diagnosticBundle(e *emu.Emu, err error) string {
+	var mem state.Mem
+	state.Snapshot(e, &mem)
+	var b strings.Builder
+	fmt.Fprintf(&b, "  map=%#04x player=(%d,%d) controllable=%v battle=%v\n",
+		mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord),
+		state.Controllable(&mem), state.DecodeBattle(&mem) != nil)
+	sprites := state.DecodeSprites(&mem)
+	if len(sprites) == 0 {
+		b.WriteString("  sprites: (none live)\n")
+	}
+	var blocked []string
+	for _, s := range sprites {
+		fmt.Fprintf(&b, "  sprite slot %2d: tile (%2d,%2d) pic=%#02x\n", s.Slot, s.X, s.Y, s.PictureID)
+		blocked = append(blocked, fmt.Sprintf("(%d,%d)", s.X, s.Y))
+	}
+	sort.Strings(blocked)
+	fmt.Fprintf(&b, "  blockers: %s\n", strings.Join(blocked, " "))
+	if err == nil {
+		b.WriteString("  error: (none)\n")
+	}
+	for i, link := 0, err; link != nil; i, link = i+1, errors.Unwrap(link) {
+		fmt.Fprintf(&b, "  error[%d]: %T: %s\n", i, link, link.Error())
+	}
+	return b.String()
 }
 
 // TestGymBoulderBadge is the journey milestone: from the fresh post_errand
@@ -107,7 +171,7 @@ func TestGymBoulderBadge(t *testing.T) {
 	// already took.
 	forest, ok := skill.Place("viridian forest")
 	if !ok {
-		t.Fatalf(`Place "viridian forest" not found`)
+		diagFatalf(t, e, nil, `Place "viridian forest" not found`)
 	}
 	travelFightsThrough(t, e, romData, forest, policy, 10)
 
@@ -119,11 +183,11 @@ func TestGymBoulderBadge(t *testing.T) {
 	if lead := state.DecodeParty(&mem).Mons[0].Level; int(lead) < gymLeadLevel {
 		res, err := skill.Train(e, romData, gymLeadLevel, policy, 20)
 		if err != nil {
-			t.Fatalf("Train: %v (battles=%d, reached=%v, blackedOut=%v)", err, res.Battles, res.Reached, res.BlackedOut)
+			diagFatalf(t, e, err, "Train: %v (battles=%d, reached=%v, blackedOut=%v)", err, res.Battles, res.Reached, res.BlackedOut)
 		}
 		state.Snapshot(e, &mem)
 		if lead := state.DecodeParty(&mem).Mons[0].Level; int(lead) < gymLeadLevel {
-			t.Fatalf("the lead is level %d after %d battles, want >= %d to face Brock (blackedOut=%v)",
+			diagFatalf(t, e, nil, "the lead is level %d after %d battles, want >= %d to face Brock (blackedOut=%v)",
 				lead, res.Battles, gymLeadLevel, res.BlackedOut)
 		}
 		t.Logf("trained the lead to level %d in %d battles", state.DecodeParty(&mem).Mons[0].Level, res.Battles)
@@ -138,16 +202,16 @@ func TestGymBoulderBadge(t *testing.T) {
 	// ordinary leg: Traverse picks the reachable (5,0) warp tile itself.
 	gym, ok := skill.Place("pewter gym")
 	if !ok {
-		t.Fatalf("Place \"pewter gym\" not found")
+		diagFatalf(t, e, nil, "Place \"pewter gym\" not found")
 	}
 	travelFightsThrough(t, e, romData, gym, policy, 10)
 
 	outcome, err := skill.Gym(e, romData, policy)
 	if err != nil {
-		t.Fatalf("Gym: %v", err)
+		diagFatalf(t, e, err, "Gym: %v", err)
 	}
 	if outcome != state.ResultWon {
-		t.Fatalf("Gym outcome = %d, want ResultWon", int(outcome))
+		diagFatalf(t, e, nil, "Gym outcome = %d, want ResultWon", int(outcome))
 	}
 
 	// Gym's postcondition is the badge itself, so this poll is expected to
@@ -162,12 +226,12 @@ func TestGymBoulderBadge(t *testing.T) {
 	}
 	state.Snapshot(e, &mem)
 	if mem.U8(sym.ObtainedBadges)&0x01 == 0 {
-		t.Fatalf("wObtainedBadges = %#02x after the gym, want bit 0 (Boulder) set: map=%#04x at (%d,%d) wJoyIgnore=%#04x wFontLoaded=%#04x",
+		diagFatalf(t, e, nil, "wObtainedBadges = %#02x after the gym, want bit 0 (Boulder) set: map=%#04x at (%d,%d) wJoyIgnore=%#04x wFontLoaded=%#04x",
 			mem.U8(sym.ObtainedBadges), mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord),
 			mem.U8(sym.JoyIgnore), mem.U8(sym.FontLoaded))
 	}
 	if !state.Controllable(&mem) {
-		t.Fatalf("player not controllable after the gym: map=%#04x at (%d,%d) wJoyIgnore=%#04x wFontLoaded=%#04x",
+		diagFatalf(t, e, nil, "player not controllable after the gym: map=%#04x at (%d,%d) wJoyIgnore=%#04x wFontLoaded=%#04x",
 			mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord),
 			mem.U8(sym.JoyIgnore), mem.U8(sym.FontLoaded))
 	}
