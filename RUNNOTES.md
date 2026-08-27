@@ -1,32 +1,37 @@
-# RUNNOTES — S5c-3: Traverse reaches the warp tile the pathfinder can actually reach
+# RUNNOTES — S5c-4: Decode live sprite positions from sprite RAM
 
-## What changed (for S5c-6: prove the badge)
-- skill/warp.go: Traverse's warp leg no longer walks to the graph edge's tile. `warpTarget` (new, unexported) considers EVERY warp tile on the current map that leads to the edge's destination (0xFF/LAST_MAP resolved via the edge the graph already resolved) and picks the first whose FindPathAdjacent route from the player's CURRENT position steps on no other warp tile — entering a warp fires it mid-walk. Re-derived per re-plan; nothing cached as a map/warp property.
-- skill/gym_test.go: crossGate DELETED. Its two call sites are ordinary travel legs: leg 2 travels to Place("viridian forest") (0x33 17,43), leg 4 travels straight to the gym (0x2F -> 0x0D -> 0x02 -> 0x36 in one Travel). travelFightsThrough and dismissDialogue stay (dialogue is slice 6).
-- New tests: skill/warp_internal_test.go (package skill; asserts the chosen tile: (5,1)->(5,0) and (4,2)->(4,0) on BOTH gates, proving per-position consultation) and TestTraverseGateWarp in skill/warp_test.go (ROM-backed: Traverse on the (4,0) edge crosses and lands at (17,47) — the (5,0) warp's landing; (16,47) would mean (4,0) fired).
-- Verified: go test ./... -skip TestGymBoulderBadge with POKEMON_RED_ROM: 162 pass, 0 fail; only skip is TestProbe's permanent PROBE_MAP gate.
+## What changed
+- `red/state/sprite.go` (NEW): `SpriteState{Slot int; X,Y int; PictureID uint8}` and
+  `DecodeSprites(m *Mem) []SpriteState`. Returns live map objects in slots 1..15, in slot
+  order. Slot 0 (the player) is never returned. Layout constants are unexported/local.
+- `red/state/sprite_test.go` (NEW): synthetic, package-internal. Proves slot 0 excluded when
+  active, data1[0]==0 skipped, data1[0x02]==0xff skipped, slot 15 included (upper bound), and
+  a live slot with the data2+0x0d scratch byte zeroed is still included (regression guard).
+- `skill/sprite_fixture_test.go` (NEW): real-ROM anchor. Loads viridian_pokecenter (map 0x29),
+  snapshots RAM, ParseMap(0x29), and compares decoded slot 1 (the nurse) against
+  header.Objects[0]. ParseMap already strips the +4 bias, so they must agree exactly.
 
-## TestGymBoulderBadge status (S5c-6's job)
-Gates are no longer the blocker: legs 1-2 now cross the south gate automatically and forest training ran ("trained the lead to level 8 in 2 battles"). It now fails exactly where slice 5 left it: leg 3's forest walk opens the "Hey, wait up!" box at 0x33 (1,18) and `dismissDialogue: text box did not close` (600 frames of A). Dialogue recovery is slice 6's scope.
+## The liveness predicate (the part an earlier draft got wrong)
+Liveness comes from **wSpritePlayerStateData1 (0xC100)**, NOT wSpriteStateData2+0x0d (that
+byte is scratch; map_sprites.asm zeroes every slot after tile patterns load, so reading it
+returns nothing):
+    data1 = 0xC100 + slot*0x10 ; data2 = 0xC200 + slot*0x10
+    live  = data1[0x00] != 0 && data1[0x02] != 0xff
+    Y = data2[0x04] - 4 ; X = data2[0x05] - 4
+data1[0x00]=PICTUREID (0 = unused slot, zeroed at map load); data1[0x02]=IMAGEINDEX
+($ff = hidden/removed, e.g. a picked-up item ball keeps a non-zero picture ID). The -4 is the
+ROM's +4 bias (home/overworld.asm copies map-object Y/X straight into data2[4]/[5]).
+wNumSprites is not needed: unused slots are zeroed at map load.
 
-## Probe output (paste into commit message)
-```
-$ POKEMON_RED_ROM=... PROBE_MAP=0x32 PROBE_AT=5,1 go test ./skill -run '^TestProbe$' -v
-    map 0x0032: 10x8, standing (5,1) walkable=true, 0 tile(s) treated as occupied
-    north edge: nearest reachable tile (5,0)
-    grid window (@ = you, # = wall, x = occupied):
-        y=  0    #####.####
-        y=  1    .....@....
-        y=  7    #........#
-$ POKEMON_RED_ROM=... PROBE_MAP=0x2F PROBE_AT=5,1 go test ./skill -run '^TestProbe$' -v
-    map 0x002f: 10x8, standing (5,1) walkable=true, 0 tile(s) treated as occupied
-    north edge: nearest reachable tile (5,0)
-    grid window (@ = you, # = wall, x = occupied):
-        y=  0    #####.####
-        y=  1    .....@....
-        y=  7    #........#
-```
-(4,0) is a wall on both gates; (5,0) is the only walkable exit. Warp tables: 0x32 (4,0),(5,0)->0x33; 0x2F (4,0),(5,0)->LAST_MAP=0x0D.
+## Verified
+- go test ./... -skip TestGymBoulderBadge (POKEMON_RED_ROM set): all pass, 0 fail. Only skip is
+  TestProbe's permanent PROBE_MAP gate.
+- Anchor genuinely runs: on the committed fixture, decoded slot 1 = pic 0x29 (3,1) == header
+  Objects[0]. Only 2 of the pokecenter's 4 header objects are live (the other two are IMAGEINDEX
+  $ff / not rendered), so the predicate genuinely discriminates.
 
-## Carried over
-The verbatim preserved TestTravelToPewter (S5b-6, still blocked by the Route 2 ledge split in world/) is in `git show 723fa6d:RUNNOTES.md` if a future task needs it.
+## For S5c-5a/b (wiring into pathfinding)
+- Decoder only; NOT wired into walkAround/GoTo/warp/story yet. Rebuild blockers from a fresh
+  DecodeSprites snapshot each plan — no blocker cache (see AGENTS.md: bans that outlive a plan are bugs).
+- Coordinates are tile coords on the current map, same space as skill.Place / FindPath.
+- TestGymBoulderBadge stays excluded from the gate (S5c-6 owns it; rDIV-seeded battles).
