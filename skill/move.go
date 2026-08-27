@@ -99,6 +99,10 @@ func StepOnce(m *emu.Emu, s world.Step) error {
 // WalkPath executes each step in order, re-reading state after every step.
 // It stops and returns an error if a step cannot be completed, if a battle
 // starts, or if a text box opens.
+//
+// Movement never advances dialogue. After dialogue has interrupted
+// movement, the recovery layer may press A only while ordinary text is
+// active. It never answers a choice.
 func WalkPath(m *emu.Emu, path []world.Step) error {
 	var mem state.Mem
 	for _, step := range path {

@@ -1,36 +1,39 @@
-# RUNNOTES — S5c-5a: walkAround plans from fresh RAM instead of remembering guesses
+# RUNNOTES — S5c-5b: every path planner now plans from a live sprite snapshot
 
 ## What changed
-- `skill/blockers.go` (NEW): `spriteBlockers(m *emu.Emu) map[[2]int]bool` — snapshots RAM
-  (`state.Snapshot`), runs `state.DecodeSprites`, keys `[2]int{X, Y}` (same order as
-  walkAround/FindPath). `mergeBlockers(live, fixed)` returns the union as a new map.
-  spriteBlockers is not called anywhere yet — S5c-5b wires it.
-- `skill/move.go`: `walkAround(readBlocked, plan, walk, wait)` — readBlocked is called
-  EXACTLY ONCE at the top of every attempt; that fresh map goes straight to plan. Plan
-  error with live blockers: wait + retry (≤ maxWalkRetries). Plan error with none: return
-  the static error unchanged. *ErrBlocked: wait + retry from a new snapshot. Other walk
-  errors: return immediately. `hit` and `blocked` maps deleted (grep `hit` in move.go: gone).
-  maxWalkRetries=6 / npcWaitFrames=48 untouched. Verbatim invariant comment + the two known
-  races (IMAGEINDEX overlay is screen-local; TryWalking writes the destination tile at the
-  start of the 16-frame animation, so a sprite can straddle two tiles) sit above walkAround.
-- `skill/walkaround_test.go`: deleted the three twice-before-ban tests (WaitsOutAWanderingSprite,
-  BansATileBlockedTwice, DropsItsOwnBansWhenPlanningFails). Added
-  TestWalkAroundRereadsBlockersAfterCollision (read1 {(14,13)} → collision → read2 {(15,13)} →
-  success; both snapshots reach plan in order) and TestWalkAroundForgetsVacatedSpriteTile
-  (read1 {(14,13)} → collision → read2 empty; plan 2 gets NO (14,13) — the anti-cache proof).
-  GivesUpAfterMaxRetries and DoesNotRetryOtherFailures kept byte-identical. Probe gained a
-  `reads` list served by an injected readBlocked (past the end → empty map).
+- `skill/goto.go` (walkWithinMap), `skill/warp.go` (both Traverse cases):
+  replaced the S5c-5a stubs with `func() map[[2]int]bool { return spriteBlockers(m) }`.
+  That is the whole wiring — no planning-logic changes.
+- `skill/story.go` (walkLab): deleted its own retry loop (local maxRetries=4,
+  collision-ban map) and refactored onto walkAround. readBlocked is
+  `mergeBlockers(spriteBlockers(m), blocked)` — the lab's static exclusions
+  (rival (4,3), Oak (5,2), ball tiles (6..8,3)) are merged into every FRESH
+  snapshot; mergeBlockers returns a new map, so no collision can ever mutate
+  the fixed set. `labBlockedSet()` unchanged; callers unchanged.
+- `skill/move.go`: the verbatim contract comment now sits above WalkPath
+  ("Movement never advances dialogue... never answers a choice"). It is the
+  contract half of slice 6's recovery layer; no code in move.go changed.
 
-## For S5c-5b (wiring the callers)
-- The walkAround signature change forced a mechanical compile fix in goto.go (walkWithinMap)
-  and warp.go (both Traverse cases): a stub `func() map[[2]int]bool { return map[[2]int]bool{} }`
-  first arg, marked `// S5c-5b wires this to spriteBlockers(m)`. Replace each stub with
-  `func() map[[2]int]bool { return spriteBlockers(m) }` — that is the whole wiring; no
-  planning-logic changes were made to those files.
-- A nil/empty read is safe: FindPath documents `blocked may be nil`.
+## Behaviour notes for S5c-6
+- walkLab retry count is now walkAround's maxWalkRetries=6 (was 4), waits
+  npcWaitFrames=48 between attempts.
+- walkLab plan errors: the merged set is never empty, so walkAround retries
+  up to 6x before returning the plan error AS-IS (GoTo planErr passthrough).
+  Error wraps preserved: "no path on map 0x28...", "blocked ... after %d
+  retries", "walk on map 0x28 ...". ErrDialogueInterrupted still passes
+  through immediately (GetStarter step 8 relies on errors.Is).
+- Pre-existing gofmt deviation in goto.go/warp.go (closure-body indent from
+  S5c-5a) left alone to keep the diff minimal.
 
 ## Verified
-- `go test ./... -skip TestGymBoulderBadge` (POKEMON_RED_ROM set to the main checkout's
-  roms/pokemon_red.gb; this worktree has no roms/ — it is gitignored, and a symlink shows
-  as untracked, so do not create one): 163 pass, 0 fail. Only skip is TestProbe's permanent
-  PROBE_MAP env gate. TestGymBoulderBadge stays out of the gate (S5c-6, rDIV-seeded).
+- `POKEMON_RED_ROM=/home/maestro/Documents/projects/PokePilot/roms/pokemon_red.gb
+  go test ./... -skip TestGymBoulderBadge`: all ok, 163 pass, 1 skip (TestProbe's
+  permanent PROBE_MAP env gate). TestGetStarter (ROM-backed, both walkLab calls)
+  PASS — the static ball-tile exclusions survived the refactor.
+- TestGymBoulderBadge stays OUT of the gate: rDIV-seeded battles, S5c-6 owns the
+  badge proof. Do not re-add it or "fix" it in wiring tasks.
+
+## For the next task
+- ROM: /home/maestro/Documents/projects/PokePilot/roms/pokemon_red.gb (main
+  checkout). No roms/ in this worktree (gitignored) — use the env var, no symlink.
+- Do not commit; leave edits uncommitted for the runner.
