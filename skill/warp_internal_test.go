@@ -91,15 +91,12 @@ func TestWarpTargetTargetsReachableTile(t *testing.T) {
 	}
 }
 
-// TestWarpTargetConsultsPathfinderPerPosition proves there is no cache: the
-// selection is a fact about where the player stands RIGHT NOW. Two
-// selections from different positions each consult the pathfinder afresh and
-// come out different — (4,0) is unreachable from (5,1) because the only
-// route to it crosses the (5,0) warp, but from (4,2) the corridor tile (4,1)
-// is a clean approach, so (4,0) IS the chosen tile there. A selection cached
-// as a property of the map or the warp (the 871f9d4 / 56a1b22 mistake) would
-// return the same tile for both positions.
-func TestWarpTargetConsultsPathfinderPerPosition(t *testing.T) {
+// TestWarpTargetSkipsSolidWarpFromAdjacentTile pins the saved failure state:
+// after the south-gate loop the player was controllable at (4,1), directly
+// below (4,0). FindPathAdjacent can approach that tile with zero walking
+// steps, but (4,0) is a wall and holding Up cannot enter it. Selection must
+// therefore skip it and use the walkable (5,0) warp instead.
+func TestWarpTargetSkipsSolidWarpFromAdjacentTile(t *testing.T) {
 	for _, tc := range []struct {
 		from, to uint8
 	}{
@@ -109,30 +106,40 @@ func TestWarpTargetConsultsPathfinderPerPosition(t *testing.T) {
 		h, g := gateFixture(t, tc.from)
 		e := gateEdge(t, h, tc.from, tc.to)
 
-		// Same map, same edge, three player positions: the result must
-		// follow the position, not the map, and be stable across calls so
-		// that no earlier selection leaks into a later one.
-		first, err := selectWarp(t, h, e, g, 5, 1)
+		wx, wy, _, _, err := warpTarget(h, e, g, 4, 1, nil)
 		if err != nil {
-			t.Fatalf("map %#04x: selection from (5,1): %v", tc.from, err)
+			t.Fatalf("map %#04x: warpTarget from saved-state tile (4,1): %v", tc.from, err)
 		}
-		second, err := selectWarp(t, h, e, g, 4, 2)
-		if err != nil {
-			t.Fatalf("map %#04x: selection from (4,2): %v", tc.from, err)
+		if wx != 5 || wy != 0 {
+			t.Errorf("map %#04x: chosen warp tile = (%d,%d), want walkable (5,0); (4,0) is solid", tc.from, wx, wy)
 		}
-		third, err := selectWarp(t, h, e, g, 5, 1)
-		if err != nil {
-			t.Fatalf("map %#04x: selection from (5,1) again: %v", tc.from, err)
-		}
+	}
+}
 
-		if first != [2]int{5, 0} {
-			t.Errorf("map %#04x: from (5,1) chose %v, want (5,0): (4,0)'s only route crosses the (5,0) warp", tc.from, first)
+// TestWarpTargetConsultsCurrentBlockers proves there is no cached selection:
+// the only usable exit is (5,0), approached through (5,1). Blocking that
+// approach must make the selection fail, and removing the fresh blocker must
+// immediately make the same warp usable again.
+func TestWarpTargetConsultsCurrentBlockers(t *testing.T) {
+	for _, tc := range []struct {
+		from, to uint8
+	}{
+		{0x32, 0x33},
+		{0x2F, 0x0D},
+	} {
+		h, g := gateFixture(t, tc.from)
+		e := gateEdge(t, h, tc.from, tc.to)
+
+		blocked := map[[2]int]bool{{5, 1}: true}
+		if _, _, _, _, err := warpTarget(h, e, g, 4, 2, blocked); err == nil {
+			t.Errorf("map %#04x: selection succeeded with the only approach (5,1) blocked", tc.from)
 		}
-		if second != [2]int{4, 0} {
-			t.Errorf("map %#04x: from (4,2) chose %v, want (4,0): (4,1) is a clean approach, so the pathfinder reaches it afresh", tc.from, second)
+		got, err := selectWarp(t, h, e, g, 4, 2)
+		if err != nil {
+			t.Fatalf("map %#04x: selection after blocker moved: %v", tc.from, err)
 		}
-		if third != first {
-			t.Errorf("map %#04x: from (5,1) chose %v then %v: the selection depends on call history, not just position", tc.from, first, third)
+		if got != [2]int{5, 0} {
+			t.Errorf("map %#04x: after blocker moved chose %v, want walkable (5,0)", tc.from, got)
 		}
 	}
 }

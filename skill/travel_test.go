@@ -126,6 +126,54 @@ func TestTravelReplansFromTheWorldAfterEachBattle(t *testing.T) {
 	}
 }
 
+// TestTravelRecoversFromBattleOnWalkToWarp is the regression test for the
+// llm-run failure "go to pewter city: ... Traverse: walk to warp on map 0d:
+// battle interrupted movement". The route to Pewter leaves Route 2's south
+// band by WARP (the (3,43) tile to the forest's south gate), because the
+// direct north connection is unwalkable from that band. A wild encounter on
+// that walk-TO-A-WARP used to surface as a bare ErrBattleInterrupted, which
+// Travel does not recognize as a battle, so the whole run died. The warp leg
+// now normalizes to ErrBattle exactly as the connection leg does, so Travel
+// fights the encounter and re-plans from where the walk stopped.
+//
+// The destination is the south gate room (0x32), not Pewter: it is the first
+// leg of the Pewter route (the walk to the (3,43) warp, through Route 2's
+// grass) and it stops before the forest, whose forced dialogue is a separate
+// slice-6 issue (see TestTravelToPewter). From the post_errand checkpoint's
+// frame phase the encounter fires at (7,48) on Route 2 (MEASURED), so the
+// Battles >= 1 premise holds for this exact walk.
+func TestTravelRecoversFromBattleOnWalkToWarp(t *testing.T) {
+	e := fixture.Load(t, "post_errand")
+	// The south gate room: the (3,43) Route 2 warp lands at (4,7); (5,4) is
+	// open floor in the middle of the room, four steps from the landing.
+	dest := skill.Destination{Map: 0x32, X: 5, Y: 4}
+	res, err := skill.Travel(e, e.ROM(), dest, skill.StatAwareMove(e.ROM()), 20)
+	if err != nil {
+		t.Fatalf("Travel to the south gate: %v; stopped on map %#04x at (%d,%d) after %d battles",
+			err, e.Peek8(sym.CurMap), e.Peek8(sym.XCoord), e.Peek8(sym.YCoord), res.Battles)
+	}
+	if res.Battles < 1 {
+		t.Fatalf("premise: Battles = %d, want >= 1 (the walk to the gate crosses Route 2's grass)", res.Battles)
+	}
+	// The battle fired on the walk to the (3,43) warp, on Route 2: every
+	// re-read must name Route 2, not the gate or the forest.
+	for i, rp := range res.Replans {
+		if rp.Map != 0x0D {
+			t.Errorf("Replans[%d].Map = %#04x, want 0x0D (Route 2)", i, rp.Map)
+		}
+	}
+	var mem state.Mem
+	state.Snapshot(e, &mem)
+	if p := state.DecodePlayer(&mem); p.MapID != dest.Map || p.X != dest.X || p.Y != dest.Y {
+		t.Fatalf("player at (map %#04x, %d, %d), want the south gate (%#04x, %d, %d); Battles=%d",
+			p.MapID, p.X, p.Y, dest.Map, dest.X, dest.Y, res.Battles)
+	}
+	if !state.Controllable(&mem) {
+		t.Fatalf("player not controllable at the south gate; Battles=%d BlackedOut=%v", res.Battles, res.BlackedOut)
+	}
+	t.Logf("reached the south gate after %d battle(s) on the walk to its warp (BlackedOut=%v)", res.Battles, res.BlackedOut)
+}
+
 // TestTravelToPewter is the S5b-6 milestone: from the post_errand
 // checkpoint (the Oak's-parcel errand is done, so the sleepy old man at
 // (19,9) no longer blocks Viridian's north exit, and the player stands
