@@ -3,6 +3,7 @@ package skill
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/rom"
@@ -34,10 +35,17 @@ const (
 // Traverse executes one graph edge and returns once the destination map is
 // loaded and the player is controllable on it.
 //
-// Warps and stairs are solid tiles: the player is walked to a walkable tile
-// orthogonally adjacent to the edge tile, then the push direction is held
-// until wCurMap changes. The button is released the frame the map flips, so
-// the player never re-walks on the destination map.
+// The player is walked to a walkable tile orthogonally adjacent to the
+// crossing tile, then the push direction is held until wCurMap changes.
+// The button is released the frame the map flips, so the player never
+// re-walks on the destination map.
+//
+// For a warp edge the crossing tile is not the one the graph edge carries:
+// a map can expose several warp tiles to the same destination (the forest
+// gates both have (4,0) and (5,0)), and the graph does not know which of
+// them the tile pathfinder can reach from where the player stands. Warp
+// tiles are considered in ROM warp-table order and the first one with an
+// actually walkable route is used (warpTarget).
 // ErrLegUnwalkable reports that a leg the map graph offered cannot be
 // walked from where the player is standing: the warp tile or the map edge
 // it leads to is unreachable on this map. The graph knows which maps
@@ -66,12 +74,17 @@ func Traverse(m *emu.Emu, romData []byte, e world.Edge) error {
 	switch e.Kind {
 	case world.EdgeWarp:
 		var unwalkable error
-		err := walkAround(func(blocked map[[2]int]bool) ([]world.Step, error) {
+		err := walkAround(func() map[[2]int]bool { return spriteBlockers(m) },
+			func(blocked map[[2]int]bool) ([]world.Step, error) {
+			// The tile is re-chosen on every re-plan, from wherever the
+			// interrupted walk stopped: which warp tile is reachable is a
+			// fact about where the player stands right now, never a property
+			// of the map or the warp, so it is never cached.
 			x, y := playerXY(m)
-			steps, p, err := world.FindPathAdjacent(grid, int(x), int(y), int(e.WarpX), int(e.WarpY), blocked)
+			_, _, steps, p, err := warpTarget(h, e, grid, int(x), int(y), blocked)
 			if err != nil {
-				unwalkable = fmt.Errorf("skill: Traverse: no route to warp (%d,%d) on map %02x: %v: %w",
-					e.WarpX, e.WarpY, e.From, err, ErrLegUnwalkable)
+				unwalkable = fmt.Errorf("skill: Traverse: no reachable warp to %02x from (%d,%d) on map %02x (edge tile %d,%d): %v: %w",
+					e.To, x, y, e.From, e.WarpX, e.WarpY, err, ErrLegUnwalkable)
 				return nil, unwalkable
 			}
 			push = p // the last plan's push direction is the one walked
@@ -89,12 +102,18 @@ func Traverse(m *emu.Emu, romData []byte, e world.Edge) error {
 		// it: an NPC standing in a one-tile gap can make the nearest edge
 		// tile unreachable while another one on the same edge is fine.
 		var unwalkable error
-		err := walkAround(func(blocked map[[2]int]bool) ([]world.Step, error) {
+		err := walkAround(func() map[[2]int]bool { return spriteBlockers(m) },
+			func(blocked map[[2]int]bool) ([]world.Step, error) {
 			x, y := playerXY(m)
 			tx, ty, err := edgeTarget(grid, e.Dir, int(x), int(y), blocked)
 			if err != nil {
-				unwalkable = err
-				return nil, err
+				// Type it as ErrLegUnwalkable like the FindPath failure below:
+				// Route 2's ledge makes the north edge unreachable from the
+				// southern landing tile, and GoTo's per-tile ban is what
+				// re-routes around it through the forest. Unwrapped, the
+				// error is terminal and the only real route to Pewter dies.
+				unwalkable = fmt.Errorf("skill: Traverse: map %02x: %v: %w", e.From, err, ErrLegUnwalkable)
+				return nil, unwalkable
 			}
 			steps, err := world.FindPath(grid, int(x), int(y), tx, ty, blocked)
 			if err != nil {
@@ -181,6 +200,87 @@ func waitForPositionStable(m *emu.Emu, budget, stableFrames int) error {
 	x, y := playerXY(m)
 	return fmt.Errorf("position not stable within %d frames on map %02x at (%d,%d)",
 		budget, m.Peek8(sym.CurMap), x, y)
+}
+
+// warpTarget picks the warp tile to cross: the first tile in the map's warp
+// table that leads to e.To and that the tile pathfinder can actually reach
+// from (sx,sy). Reachability is re-derived on every call from the current
+// position — it is a fact about where the player stands right now, exactly
+// like GoTo's per-tile leg bans, and is never cached as a property of the
+// map or the warp.
+//
+// A warp tile is reachable when FindPathAdjacent finds a route to it whose
+// walked tiles step on no other warp tile of this map: entering a warp tile
+// fires that warp the frame the player steps on it, so a route through
+// (5,0) cannot reach (4,0) — the player is already on the destination map
+// before the push lands. That is the forest gate: both (4,0) and (5,0) warp
+// to the forest, (4,0) is non-walkable, and the only path the pathfinder
+// offers to it from the corridor runs through the (5,0) warp.
+//
+// The returned walk ends on a walkable tile orthogonally adjacent to the
+// chosen warp; the push step enters it. The entry is the push the caller
+// holds, never a WalkPath step: a mid-walk entry lands the re-plan on the
+// destination map, against the source grid.
+//
+// A 0xFF (LAST_MAP) destination means "the map you came from." The graph
+// resolved it when it built e: if e's own tile is a 0xFF warp, every 0xFF
+// warp on this map resolves to e.To, so all of them lead to the target.
+func warpTarget(h rom.MapHeader, e world.Edge, g *world.Grid, sx, sy int, blocked map[[2]int]bool) (wx, wy int, steps []world.Step, push world.Step, err error) {
+	lastMapDest, haveLastMap := uint8(0), false
+	for _, w := range h.Warps {
+		if int(w.X) == int(e.WarpX) && int(w.Y) == int(e.WarpY) && w.DestMap == 0xFF {
+			lastMapDest, haveLastMap = e.To, true
+		}
+	}
+	warpTile := make(map[[2]int]bool, len(h.Warps))
+	for _, w := range h.Warps {
+		warpTile[[2]int{int(w.X), int(w.Y)}] = true
+	}
+
+	var reasons []string
+	for _, w := range h.Warps {
+		dest := w.DestMap
+		if dest == 0xFF {
+			if !haveLastMap || lastMapDest != e.To {
+				continue
+			}
+			dest = e.To
+		}
+		if dest != e.To {
+			continue
+		}
+		wx, wy = int(w.X), int(w.Y)
+		steps, push, err = world.FindPathAdjacent(g, sx, sy, wx, wy, blocked)
+		if err != nil {
+			reasons = append(reasons, fmt.Sprintf("warp (%d,%d): %v", wx, wy, err))
+			continue
+		}
+		if routeCrossesWarp(steps, sx, sy, warpTile) {
+			reasons = append(reasons, fmt.Sprintf("warp (%d,%d): every route steps on another warp tile", wx, wy))
+			continue
+		}
+		return wx, wy, steps, push, nil
+	}
+	if len(reasons) > 0 {
+		return 0, 0, nil, world.Step{}, fmt.Errorf("%s", strings.Join(reasons, "; "))
+	}
+	return 0, 0, nil, world.Step{}, fmt.Errorf("no warp on map %02x leads to %02x", e.From, e.To)
+}
+
+// routeCrossesWarp reports whether the walk given by steps from (sx,sy)
+// lands on any tile in warps at any point. The start tile is exempt: the
+// player may be standing on a warp tile (warp arrival does not re-fire it),
+// and the path only leaves it.
+func routeCrossesWarp(steps []world.Step, sx, sy int, warps map[[2]int]bool) bool {
+	x, y := sx, sy
+	for _, s := range steps {
+		x += s.DX
+		y += s.DY
+		if warps[[2]int{x, y}] {
+			return true
+		}
+	}
+	return false
 }
 
 // edgeTarget picks the walkable tile on the map's connection edge with the

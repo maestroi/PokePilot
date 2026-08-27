@@ -99,6 +99,10 @@ func StepOnce(m *emu.Emu, s world.Step) error {
 // WalkPath executes each step in order, re-reading state after every step.
 // It stops and returns an error if a step cannot be completed, if a battle
 // starts, or if a text box opens.
+//
+// Movement never advances dialogue. After dialogue has interrupted
+// movement, the recovery layer may press A only while ordinary text is
+// active. It never answers a choice.
 func WalkPath(m *emu.Emu, path []world.Step) error {
 	var mem state.Mem
 	for _, step := range path {
@@ -137,33 +141,42 @@ const (
 // collision grid cannot know about: sprites stand in doorways and wander
 // into gaps, and only walking into one discovers it.
 //
-// plan is called with the tiles discovered to be blocked and must re-read
-// the player's position, because a partially-walked path leaves them
-// somewhere new. walk performs the steps. wait lets game time pass.
+// readBlocked returns the tiles live sprites occupy right now, decoded from
+// a fresh RAM snapshot; it is called exactly once at the top of every
+// attempt, and that snapshot is what plan receives. plan must re-read the
+// player's position, because a partially-walked path leaves them somewhere
+// new. walk performs the steps. wait lets game time pass.
 //
-// TWO THINGS THIS LEARNED THE HARD WAY, both on Route 1 (map 0x0C):
+// Live sprite positions are ephemeral observations, never learned world
+// geometry. Every plan rebuilds blockers from current RAM. A collision
+// retries from new RAM; no blocker cache exists, so there is nothing to
+// expire or forget.
 //
-// A sprite is only banned after it blocks the SAME tile twice. Banning on
-// the first collision treats a wandering NPC as scenery: measured
-// 2026-08-27, an NPC walking beside the player poisoned enough of the
-// four-wide corridor at y=13 that Traverse reported "no reachable walkable
-// tile on the north edge from (15,13)" — a tile from which the static grid
-// reaches the north edge perfectly well. A ban must describe something that
-// is still there, so the first collision only waits and re-plans.
+// Two known races, both absorbed by the retry and neither a reason for a
+// cache:
 //
-// And if planning fails while bans are held, the bans are dropped and it
-// tries again. They came from sprites, which move; the grid does not lie,
-// so our own guesses are the first thing to doubt.
-func walkAround(plan func(blocked map[[2]int]bool) ([]world.Step, error), walk func([]world.Step) error, wait func()) error {
-	blocked := map[[2]int]bool{}
-	hit := map[[2]int]bool{}
+//   - The liveness filter is the sprite's IMAGEINDEX, which is the screen
+//     overlay's state, so the snapshot is screen-local: a sprite that just
+//     walked off the edge of the screen still decodes live on its last
+//     tile until the overlay catches up, and one that just entered may not
+//     be in it yet.
+//   - TryWalking writes a walking NPC's DESTINATION tile at the start of
+//     its 16-frame animation, so a sprite mid-step can straddle two tiles:
+//     the snapshot may report the tile it is leaving, not the one it is
+//     entering.
+func walkAround(readBlocked func() map[[2]int]bool, plan func(blocked map[[2]int]bool) ([]world.Step, error), walk func([]world.Step) error, wait func()) error {
 	for attempt := 0; ; attempt++ {
+		blocked := readBlocked()
 		steps, err := plan(blocked)
 		if err != nil {
+			// A plan error with live blockers present is a sprite problem,
+			// not a grid problem: the grid does not lie, so the snapshot is
+			// the first thing to doubt. With no live blockers the static
+			// path error is real and is returned unchanged.
 			if len(blocked) == 0 || attempt >= maxWalkRetries {
 				return err
 			}
-			blocked = map[[2]int]bool{}
+			wait()
 			continue
 		}
 		if err := walk(steps); err != nil {
@@ -171,14 +184,8 @@ func walkAround(plan func(blocked map[[2]int]bool) ([]world.Step, error), walk f
 			if !errors.As(err, &eb) || attempt >= maxWalkRetries {
 				return err
 			}
-			// The tile that could not be entered is one step on from where
-			// the walk stopped, not the tile stood on.
-			t := [2]int{int(eb.At.X) + eb.Step.DX, int(eb.At.Y) + eb.Step.DY}
-			if hit[t] {
-				blocked[t] = true // twice is standing there, not passing through
-			}
-			hit[t] = true
-			wait() // give a wandering sprite time to move on
+			wait() // give a wandering sprite time to move on; the next
+			// attempt reads a fresh snapshot
 			continue
 		}
 		return nil

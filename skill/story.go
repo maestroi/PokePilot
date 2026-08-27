@@ -282,8 +282,12 @@ func yesNoMenuUp(mem *state.Mem) bool {
 }
 
 // walkLab walks within Oak's lab to (tx,ty), re-planning around dynamic
-// obstacles (NPC sprites) the static grid does not model. It returns the
-// wrapped WalkPath error when a step stays blocked after all retries.
+// obstacles (NPC sprites) the static grid does not model. blocked carries
+// the lab's fixed exclusions — the NPC home tiles and the three ball
+// tiles, which are real world geometry: every attempt merges them into a
+// fresh sprite snapshot via mergeBlockers, so the live set stays ephemeral
+// and no collision can ever mutate the fixed set. It returns the wrapped
+// WalkPath error when a step stays blocked after all retries.
 func walkLab(m *emu.Emu, romData []byte, tx, ty int, blocked map[[2]int]bool) error {
 	if cur := m.Peek8(sym.CurMap); cur != oaksLabMap {
 		return fmt.Errorf("skill: GetStarter: walkLab: on map %#04x, want map %#04x", cur, oaksLabMap)
@@ -297,28 +301,31 @@ func walkLab(m *emu.Emu, romData []byte, tx, ty int, blocked map[[2]int]bool) er
 		return fmt.Errorf("skill: GetStarter: build map %#04x: %w", oaksLabMap, err)
 	}
 
-	const maxRetries = 4
-	for attempt := 0; ; attempt++ {
+	// planErr is the "no path at all" case: already described in full, so
+	// it is returned as-is rather than re-wrapped as a walk failure.
+	var planErr error
+	err = walkAround(func() map[[2]int]bool { return mergeBlockers(spriteBlockers(m), blocked) },
+		func(blocked map[[2]int]bool) ([]world.Step, error) {
 		x, y := playerXY(m)
 		steps, err := world.FindPath(grid, int(x), int(y), tx, ty, blocked)
 		if err != nil {
-			return fmt.Errorf("skill: GetStarter: no path on map %#04x from (%d,%d) to (%d,%d): %w",
+			planErr = fmt.Errorf("skill: GetStarter: no path on map %#04x from (%d,%d) to (%d,%d): %w",
 				oaksLabMap, x, y, tx, ty, err)
+			return nil, planErr
 		}
-		if err := WalkPath(m, steps); err != nil {
-			var eb *ErrBlocked
-			if errors.As(err, &eb) {
-				if attempt >= maxRetries {
-					return fmt.Errorf("skill: GetStarter: blocked on map %#04x at (%d,%d) after %d retries: %w",
-						oaksLabMap, eb.At.X, eb.At.Y, maxRetries, err)
-				}
-				blocked[[2]int{int(eb.At.X) + eb.Step.DX, int(eb.At.Y) + eb.Step.DY}] = true
-				continue
-			}
-			return fmt.Errorf("skill: GetStarter: walk on map %#04x at (%d,%d): %w", oaksLabMap, x, y, err)
-		}
-		return nil
+		return steps, nil
+	}, func(steps []world.Step) error { return WalkPath(m, steps) },
+		func() { m.StepFrames(npcWaitFrames) })
+	if err == nil || err == planErr {
+		return err
 	}
+	x, y := playerXY(m)
+	var eb *ErrBlocked
+	if errors.As(err, &eb) {
+		return fmt.Errorf("skill: GetStarter: blocked on map %#04x at (%d,%d) after %d retries: %w",
+			oaksLabMap, eb.At.X, eb.At.Y, maxWalkRetries, err)
+	}
+	return fmt.Errorf("skill: GetStarter: walk on map %#04x at (%d,%d): %w", oaksLabMap, x, y, err)
 }
 
 // labBlockedSet is the blocked set for Oak's lab: the rival at (4,3) and Oak

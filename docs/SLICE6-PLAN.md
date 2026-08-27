@@ -103,3 +103,48 @@ gameplay outcomes (travel blackout, training blackout, Gym win, Gym loss) that
 should be structured return data. S6-9 makes failures reach the planner as
 text, which is enough for this slice's question. Revisit when a second consumer
 needs the outcome as data rather than a log line.
+
+## Measured before slice 6 started: the badge journey does not converge
+
+S5c-6 set out to prove the Boulder Badge three runs running and could not.
+The measurement, not the guess, is the handoff. All three of slice 5's
+close-out fixes were in place for it.
+
+    trained the lead to level 12 in 18 battles          ~1 minute
+    text box at map 0x0033 (1,18) text="Hey, wait u"    dismissed once, never returned
+    ... 8+ minutes, no further progress
+    killed at 9m44s, never completed
+
+A separate run hit Go's 10-minute default with the test at 9m09s, inside:
+
+    skill.waitForPositionStable                 warp.go:188
+    skill.Traverse  Edge{From:0x0d, To:0x32}    warp.go:176
+    skill.GoTo -> skill.Travel -> travelFightsThrough
+
+`From:0x0d To:0x32` is Route 2 heading back into the **south** gate while the
+leg in flight targets the **north** gate (0x2F). The journey oscillates
+instead of advancing.
+
+Two conclusions for this slice, both load-bearing:
+
+1. **Dialogue recovery is necessary but NOT sufficient.** The rival's forced
+   cutscene box was logged exactly once and dismissed cleanly — the paging fix
+   works. The stall is downstream of it, in route selection.
+
+2. **The journey needs ONE global deadline.** Nothing in the stack bounds the
+   composite, so a stuck run burns an hour instead of reporting in seconds:
+
+        travelFightsThrough  10 retries
+          Travel             maxBattles 10, loops per battle
+            GoTo             maxReplans 8
+              Traverse       crossBudget + arriveBudget + positionStableBudget(500) frames
+
+   Raising `-timeout` was tried and only buys a longer stall. A deadline that
+   fails fast with the diagnostic bundle is the fix.
+
+`TestGymBoulderBadge` is skipped, not deleted, and keeps its full journey and
+diagnostic wiring. It is this slice's starting point. `TestTravelToPewter`
+stays skipped alongside it.
+
+Suspected, not confirmed: the oscillation may be a regression from S5c-3's
+warp-tile selection change. Worth ruling out before designing around it.
