@@ -82,6 +82,17 @@ func formatNavigationTrace(trace []navigationState) string {
 	return strings.Join(parts, " -> ")
 }
 
+// blockImmediateReverse excludes every first-hop edge that would return to
+// the map just left. It mutates only the caller's per-route block set; no
+// reversal is learned as persistent geometry.
+func blockImmediateReverse(g *world.Graph, blocked map[world.Edge]bool, current, previous uint8) {
+	for _, e := range g.Edges[current] {
+		if e.To == previous {
+			blocked[e] = true
+		}
+	}
+}
+
 func newReplanExhaustedError(max int, cur, x, y uint8, dest Destination, last error) error {
 	return fmt.Errorf("%w: %d re-plans from map %02x at (%d,%d) toward map %02x at (%d,%d), last leg: %w",
 		ErrReplanExhausted, max, cur, x, y, dest.Map, dest.X, dest.Y, last)
@@ -123,6 +134,8 @@ func GoTo(m *emu.Emu, romData []byte, dest Destination) error {
 	// pathological map by walking it for an hour.
 	const maxReplans = 8
 	replans := 0
+	var previousMap uint8
+	havePreviousMap := false
 
 	for {
 		if err := abortIfBattle(m); err != nil {
@@ -140,6 +153,9 @@ func GoTo(m *emu.Emu, romData []byte, dest Destination) error {
 			if k.m == cur && k.x == x && k.y == y {
 				blockedHere[k.e] = true
 			}
+		}
+		if havePreviousMap {
+			blockImmediateReverse(g, blockedHere, cur, previousMap)
 		}
 
 		route, err := world.FindRouteAvoiding(g, cur, dest.Map, blockedHere)
@@ -163,6 +179,7 @@ func GoTo(m *emu.Emu, romData []byte, dest Destination) error {
 			}
 			return fmt.Errorf("skill: GoTo: %w", err)
 		}
+		previousMap, havePreviousMap = e.From, true
 		nowX, nowY := playerXY(m)
 		if err := guard.observe(navigationState{
 			Map: m.Peek8(sym.CurMap), X: nowX, Y: nowY,
