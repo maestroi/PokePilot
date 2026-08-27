@@ -86,6 +86,10 @@ func TestString(t *testing.T) {
 		{agent.Objective{Kind: agent.KindGoTo, Place: "pallet town"}, "go to pallet town"},
 		{agent.Objective{Kind: agent.KindTalk, X: 3, Y: 1}, "talk at (3,1)"},
 		{agent.Objective{Kind: agent.KindStarter}, "take a starter"},
+		{agent.Objective{Kind: agent.KindErrand}, "deliver oak's parcel"},
+		{agent.Objective{Kind: agent.KindTrain, Level: 10}, "train the lead to level 10"},
+		{agent.Objective{Kind: agent.KindHeal}, "heal the party"},
+		{agent.Objective{Kind: agent.KindGym}, "beat the pewter gym leader"},
 		{agent.Objective{Kind: 99}, "unknown kind 99"},
 	}
 	for _, c := range cases {

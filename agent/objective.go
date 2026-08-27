@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
+	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/skill"
 )
 
@@ -14,6 +15,10 @@ const (
 	KindGoTo    Kind = iota // walk to a named place
 	KindTalk                // face and talk to something at a coordinate
 	KindStarter             // complete the opening story and take a starter
+	KindErrand              // deliver Oak's parcel (Viridian Mart -> Oak's lab)
+	KindTrain               // battle in grass until the lead reaches Level
+	KindHeal                // heal the party (the player must be at a center)
+	KindGym                 // fight the Pewter Gym leader, Brock
 )
 
 // Objective is one unit of intent a planner can choose.
@@ -21,6 +26,7 @@ type Objective struct {
 	Kind  Kind
 	Place string // KindGoTo: a name accepted by skill.Place
 	X, Y  uint8  // KindTalk: the tile to face and talk to
+	Level uint8  // KindTrain: the level the lead should reach
 	Note  string // human-readable, shown to a planner; never parsed
 }
 
@@ -63,6 +69,44 @@ func Execute(m *emu.Emu, romData []byte, o Objective) error {
 			return fmt.Errorf("agent: %s: %w", o, err)
 		}
 		return nil
+	case KindErrand:
+		if err := skill.OaksParcel(m, romData, skill.StatAwareMove(romData)); err != nil {
+			return fmt.Errorf("agent: %s: %w", o, err)
+		}
+		return nil
+	case KindTrain:
+		// 20 battles is the same cap the fixtures use for the Pallet ->
+		// Viridian legs; a lead far below Level will report it as a
+		// reached-level shortfall rather than burn an unattended run.
+		res, err := skill.Train(m, romData, int(o.Level), skill.StatAwareMove(romData), 20)
+		if err != nil {
+			return fmt.Errorf("agent: %s: %v (battles=%d, reached=%v, blackedOut=%v)", o, err, res.Battles, res.Reached, res.BlackedOut)
+		}
+		if res.BlackedOut {
+			fmt.Printf("  blacked out training, resumed from a Pokemon Center\n")
+		}
+		return nil
+	case KindHeal:
+		// Heal talks to the nurse on the current map; a center elsewhere
+		// is a separate KindGoTo objective, and the planner sequences them.
+		if err := skill.Heal(m); err != nil {
+			return fmt.Errorf("agent: %s: %w", o, err)
+		}
+		return nil
+	case KindGym:
+		// The result is an outcome, not an error: a loss blackouts the
+		// player to the Pewter center and the run can resume (train, heal,
+		// come back), but an unattended run log must say it happened.
+		outcome, err := skill.Gym(m, romData, skill.StatAwareMove(romData))
+		if err != nil {
+			return fmt.Errorf("agent: %s: %w", o, err)
+		}
+		if outcome == state.ResultWon {
+			fmt.Printf("  beat Brock: Boulder Badge set\n")
+		} else {
+			fmt.Printf("  lost to Brock, blacked out to the Pewter center\n")
+		}
+		return nil
 	}
 	return fmt.Errorf("agent: unknown objective kind %d", int(o.Kind))
 }
@@ -77,6 +121,14 @@ func (o Objective) String() string {
 		return fmt.Sprintf("talk at (%d,%d)", o.X, o.Y)
 	case KindStarter:
 		return "take a starter"
+	case KindErrand:
+		return "deliver oak's parcel"
+	case KindTrain:
+		return fmt.Sprintf("train the lead to level %d", o.Level)
+	case KindHeal:
+		return "heal the party"
+	case KindGym:
+		return "beat the pewter gym leader"
 	}
 	return fmt.Sprintf("unknown kind %d", int(o.Kind))
 }

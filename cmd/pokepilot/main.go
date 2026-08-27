@@ -165,8 +165,20 @@ func runScripted(m *emu.Emu, starter, dest string, hold time.Duration, served st
 // runLLM drives the objective loop: the model picks the next objective from
 // the offered list each round, and every round is printed to stdout so an
 // unattended run leaves something a human can read in the morning.
+//
+// The list is the whole safety argument: the model picks a number, never
+// invents an action. The journey verbs (starter, errand, train, heal, gym)
+// are offered in milestone order so a sensible model walks the route;
+// every named place is offered too, so the planner can still go anywhere
+// skill.Place knows.
 func runLLM(m *emu.Emu) {
-	offered := []agent.Objective{{Kind: agent.KindStarter}}
+	offered := []agent.Objective{
+		{Kind: agent.KindStarter},
+		{Kind: agent.KindErrand},
+		{Kind: agent.KindTrain, Level: 10},
+		{Kind: agent.KindHeal},
+		{Kind: agent.KindGym},
+	}
 	for _, name := range skill.PlaceNames() {
 		offered = append(offered, agent.Objective{Kind: agent.KindGoTo, Place: name})
 	}

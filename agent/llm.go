@@ -26,7 +26,20 @@ type LLMPlanner struct {
 	Token   string       // bearer token; empty means no Authorization header
 	Client  *http.Client // nil means a client with a sane timeout
 	Log     io.Writer    // one line per call; nil means no logging
+
+	// recent is what this planner has already chosen, oldest first. It
+	// exists because Next is otherwise a pure function of the
+	// observation: at temperature 0 the same observation yields the same
+	// choice forever, so any objective that returns the player to a
+	// place they have been is an infinite loop by construction (measured:
+	// lab -> pallet -> lab for 21 rounds). The history breaks the tie.
+	recent []string
 }
+
+// recentCap is how many past choices the prompt carries: enough to show
+// a two- or three-step oscillation, short enough not to crowd out the
+// observation.
+const recentCap = 6
 
 // NewLLMPlanner returns an LLMPlanner with the defaults, overridden by
 // POKEPILOT_LLM_URL and POKEPILOT_LLM_MODEL when set. The bearer
@@ -79,17 +92,21 @@ func (p *LLMPlanner) Next(obs Observation, offered []Objective) (Objective, erro
 		return Objective{}, err
 	}
 	picked = o.String()
+	p.recent = append(p.recent, picked)
+	if len(p.recent) > recentCap {
+		p.recent = p.recent[len(p.recent)-recentCap:]
+	}
 	return o, nil
 }
 
-const llmSystemPrompt = "You are choosing the next objective for a Pokemon Red player. Reply with ONLY the number of your choice. Do not explain."
+const llmSystemPrompt = "You are choosing the next objective for a Pokemon Red player. Prefer an objective that makes NEW progress: repeating what you just did wastes the run. Reply with ONLY the number of your choice. Do not explain."
 
 // llmUserPrompt renders the observation as indented JSON, then the
 // offered objectives as a 1-based numbered list of their String() forms.
 // The model is asked for the index, not the sentence: Chosen accepts a
 // bare index, and small models emit indices far more reliably than exact
 // sentences.
-func llmUserPrompt(obs Observation, offered []Objective) string {
+func llmUserPrompt(obs Observation, offered []Objective, recent []string) string {
 	obsJSON, err := json.MarshalIndent(obs, "", "  ")
 	if err != nil {
 		obsJSON = []byte("{}") // Observation is plain data; this cannot happen
@@ -97,6 +114,13 @@ func llmUserPrompt(obs Observation, offered []Objective) string {
 	var b strings.Builder
 	b.WriteString("Observation:\n")
 	b.Write(obsJSON)
+	if len(recent) > 0 {
+		b.WriteString("\n\nAlready done this run, oldest first:\n")
+		for _, r := range recent {
+			b.WriteString("- " + r + "\n")
+		}
+		b.WriteString("Do not simply undo the last one.")
+	}
 	b.WriteString("\n\nOffered objectives:\n")
 	for i, o := range offered {
 		fmt.Fprintf(&b, "%d: %s\n", i+1, o)
@@ -137,7 +161,7 @@ func (p *LLMPlanner) ask(obs Observation, offered []Objective) (string, error) {
 		Temperature: 0,
 		Messages: []chatMessage{
 			{Role: "system", Content: llmSystemPrompt},
-			{Role: "user", Content: llmUserPrompt(obs, offered)},
+			{Role: "user", Content: llmUserPrompt(obs, offered, p.recent)},
 		},
 	})
 	if err != nil {

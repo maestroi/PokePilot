@@ -254,3 +254,30 @@ func TestNewLLMPlannerEnv(t *testing.T) {
 		t.Errorf("Model = %q, want the POKEPILOT_LLM_MODEL value", p.Model)
 	}
 }
+
+// TestLLMPlannerPromptCarriesHistory: the planner is otherwise a pure
+// function of the observation, so at temperature 0 an objective that
+// returns the player to a place they have been loops forever (measured:
+// oak's lab -> pallet town -> oak's lab for 21 rounds). The second call
+// must show the model what the first one chose.
+func TestLLMPlannerPromptCarriesHistory(t *testing.T) {
+	var body string
+	srv := startModelServer(t, `{"choices":[{"message":{"content":"1"}}]}`, &body)
+	offered := llmOffered()
+	p := llmPlanner(srv)
+
+	if _, err := p.Next(llmObs(), offered); err != nil {
+		t.Fatalf("Next: %v", err)
+	}
+	if strings.Contains(body, "Already done this run") {
+		t.Fatalf("first prompt claims history before anything was chosen\nbody: %s", body)
+	}
+	if _, err := p.Next(llmObs(), offered); err != nil {
+		t.Fatalf("Next: %v", err)
+	}
+	for _, want := range []string{"Already done this run", "- go to pallet town"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("second prompt does not contain %q\nbody: %s", want, body)
+		}
+	}
+}
