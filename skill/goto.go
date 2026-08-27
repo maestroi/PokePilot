@@ -22,6 +22,18 @@ type Destination struct {
 // never fights or flees; it aborts and reports the battle.
 var ErrBattle = errors.New("skill: battle interrupted the route")
 
+// ErrReplanExhausted reports that GoTo spent its whole re-plan budget and
+// gave up. It is a terminal give-up, not a recoverable single-leg failure:
+// it wraps the last failed leg's error (usually ErrLegUnwalkable) so a
+// caller still sees WHY the last attempt died, but errors.Is on
+// ErrReplanExhausted is the unambiguous "stop retrying" signal.
+var ErrReplanExhausted = errors.New("skill: route re-plan budget exhausted")
+
+func newReplanExhaustedError(max int, cur, x, y uint8, dest Destination, last error) error {
+	return fmt.Errorf("%w: %d re-plans from map %02x at (%d,%d) toward map %02x at (%d,%d), last leg: %w",
+		ErrReplanExhausted, max, cur, x, y, dest.Map, dest.X, dest.Y, last)
+}
+
 // GoTo walks the player to dest, crossing maps as needed. The graph is built
 // once; after every leg the current map and coordinates are re-read from RAM
 // and the remaining route is re-planned, so a leg that lands the player
@@ -87,8 +99,7 @@ func GoTo(m *emu.Emu, romData []byte, dest Destination) error {
 			k := legAt{e: e, m: cur, x: x, y: y}
 			if errors.Is(err, ErrLegUnwalkable) && !failed[k] {
 				if replans++; replans > maxReplans {
-					return fmt.Errorf("skill: GoTo: %d re-plans from map %02x at (%d,%d) toward map %02x at (%d,%d), last leg %w",
-						maxReplans, cur, x, y, dest.Map, dest.X, dest.Y, err)
+					return newReplanExhaustedError(maxReplans, cur, x, y, dest, err)
 				}
 				failed[k] = true
 				continue // re-plan without this leg, from this tile

@@ -1,54 +1,14 @@
-# RUNNOTES — S5b-6: Pewter milestone gate-measured, test removed
+# RUNNOTES — S5c-2: re-plan exhaustion now unambiguously terminal
 
-## For the next task (short note)
-- S5b-6 was run against the real ROM and failed before any battle, at
-  route planning, not walking: the known OUT-OF-SCOPE world/ routing
-  hole (Route 2's ledge splits it into two walk bands; the only
-  walkable forest route must revisit map 0x0D, and
-  world.FindRouteAvoiding is simple-paths-only, so it can never return
-  one). Not re-derived here — full finding below.
-- What I changed: removed TestTravelToPewter and the red/state import
-  from skill/travel_test.go so the suite is green with zero skips. No
-  production code changed; no fixture added or bumped (post_errand
-  v4/v5 still the checkpoint); zz_measure_test.go and zz_dump_test.go
-  confirmed absent.
-- To close this: a world/-scoped follow-up (see below), then restore
-  the preserved test verbatim below (+ the red/state import) and re-run
-  with POKEMON_RED_ROM set. Expect battles >= 1 in the forest and
-  arrival at Place("pewter city") (map 0x02, 14, 8).
-
-## S5b-6 finding (measured 2026-08-27)
-- Command: `POKEMON_RED_ROM=... go test ./skill/ -run TestTravelToPewter
-  -count=1`. Result: FAIL in 0.12s, 0 battles, exact line:
-    travel_test.go:176: Travel to pewter city: skill: GoTo: skill:
-    Traverse: no reachable walkable tile on the north edge from (8,71);
-    stopped on map 0x000d at (8,71) after 0 battles
-- Root cause (known, not re-derived): a ledge splits Route 2 (map 0x0D)
-  into a south band — where Travel lands the player at (8,71) from
-  Viridian — and a north band holding Pewter's entry edge. The only
-  walkable Route 2 -> Viridian Forest -> Route 2 (re-enter) -> Pewter
-  path revisits map 0x0D; world.FindRouteAvoiding's visited-BFS returns
-  simple paths only and can never return it. The north-edge search from
-  (8,71) is band-locked, hence the failure.
-- Why not fixed here: the fix belongs in world/route.go or
-  world/graph.go, outside this task's allowed files, and hardcoding the
-  forest route in skill/travel.go is forbidden. It is not a Travel or
-  battle defect: 0 battles, failure at the edge search before any walk.
-- Recommended world/-scoped follow-up: (a) allow a bounded start-map
-  revisit in FindRouteAvoiding's BFS (a loop back to 0x0D is exactly
-  what this route needs — smallest change), or (b) per-band map nodes
-  so a ledge-splittable map becomes two graph nodes with a
-  no-crossing edge (the honest graph fix).
+## For the next task (S5c-6: prove the badge)
+- S5c-2 changed the ERROR TYPE ONLY: re-plan loop, maxReplans=8, and per-tile ban keying (legAt{e,m,x,y}) unchanged; no frame budget, walk, battle, or seed path touched — no new rDIV reseeding variable.
+- skill/goto.go: the `replans > maxReplans` branch now returns newReplanExhaustedError(...), wrapping BOTH ErrReplanExhausted (new exported terminal sentinel) AND the last leg's error (usually ErrLegUnwalkable) via two %w verbs (Go 1.20+).
+- skill/goto_replan_test.go asserts BOTH errors.Is checks; pure, fast, no ROM. Written first, watched to fail compile before the helper.
+- Verified: `go test ./...` with POKEMON_RED_ROM, -skip TestGymBoulderBadge: 159 pass, 0 fail, 0 skip (TestProbe's env-gated skip is the permanent probe harness, pre-existing). TestWalkAroundGivesUpAfterMaxRetries passes unchanged.
+- S5c-6: TestGymBoulderBadge is the gate to prove (excluded here on purpose). If it still loses to Brock, the S5b-6 finding likely matters first: Route 2's ledge split needs a world/-scoped fix (bounded start-map revisit in FindRouteAvoiding, or per-band map nodes) before the forest route is plannable. The preserved TestTravelToPewter below is the travel-milestone check to restore once world/ is fixed.
 
 ## Preserved TestTravelToPewter (verbatim — drop into skill/travel_test.go, plus the red/state import)
 ```go
-// TestTravelToPewter is the S5b-6 milestone: from the post_errand
-// checkpoint (the Oak's-parcel errand is done, so the sleepy old man at
-// (19,9) no longer blocks Viridian's north exit, and the player stands
-// controllable just south of the gate), Travel crosses the forest route to
-// Pewter City and leaves the player exactly at skill.Place("pewter city") —
-// the open plaza below the center door warp — still controllable. Every
-// expected coordinate comes from that Place, never a literal.
 func TestTravelToPewter(t *testing.T) {
 	e := fixture.Load(t, "post_errand")
 	dest, ok := skill.Place("pewter city")
