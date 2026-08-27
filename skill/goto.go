@@ -32,12 +32,28 @@ func GoTo(m *emu.Emu, romData []byte, dest Destination) error {
 		return err
 	}
 
-	// Edges the map graph offers but the tile-level pathfinder cannot
-	// walk. Route 2 is the case that forced this: it connects Viridian to
-	// Pewter in one hop, but the map is split across its full width, so
-	// the real route leaves through Viridian Forest. Only walking finds
-	// that out, so a failed leg is banned here and the route re-planned.
-	blocked := map[world.Edge]bool{}
+	// Legs the map graph offers but the tile-level pathfinder cannot walk
+	// FROM A GIVEN TILE. Route 2 is the case that forced this: it connects
+	// Viridian to Pewter in one hop, but a ledge splits it across its full
+	// width, so that connection is unwalkable from the southern landing
+	// tile and perfectly walkable from the northern band the Viridian
+	// Forest exit leads to. Banning the edge outright — which this did
+	// until it was measured — makes the only real route to Pewter
+	// unplannable, because that route ends on the very edge that failed.
+	// So the ban is keyed by where it failed, and only the bans recorded
+	// at the current tile are handed to the planner.
+	type legAt struct {
+		e    world.Edge
+		m    uint8
+		x, y uint8
+	}
+	failed := map[legAt]bool{}
+
+	// A bound on re-plans. Each ban is a distinct (leg, tile), so this
+	// terminates on its own, but an unattended run should not discover a
+	// pathological map by walking it for an hour.
+	const maxReplans = 8
+	replans := 0
 
 	for {
 		if err := abortIfBattle(m); err != nil {
@@ -50,7 +66,14 @@ func GoTo(m *emu.Emu, romData []byte, dest Destination) error {
 			return walkWithinMap(m, romData, dest)
 		}
 
-		route, err := world.FindRouteAvoiding(g, cur, dest.Map, blocked)
+		blockedHere := map[world.Edge]bool{}
+		for k := range failed {
+			if k.m == cur && k.x == x && k.y == y {
+				blockedHere[k.e] = true
+			}
+		}
+
+		route, err := world.FindRouteAvoiding(g, cur, dest.Map, blockedHere)
 		if err != nil {
 			return fmt.Errorf("skill: GoTo: no route from map %02x at (%d,%d) to map %02x at (%d,%d): %w",
 				cur, x, y, dest.Map, dest.X, dest.Y, err)
@@ -61,9 +84,14 @@ func GoTo(m *emu.Emu, romData []byte, dest Destination) error {
 
 		e := route[0]
 		if err := Traverse(m, romData, e); err != nil {
-			if errors.Is(err, ErrLegUnwalkable) && !blocked[e] {
-				blocked[e] = true
-				continue // re-plan without this leg
+			k := legAt{e: e, m: cur, x: x, y: y}
+			if errors.Is(err, ErrLegUnwalkable) && !failed[k] {
+				if replans++; replans > maxReplans {
+					return fmt.Errorf("skill: GoTo: %d re-plans from map %02x at (%d,%d) toward map %02x at (%d,%d), last leg %w",
+						maxReplans, cur, x, y, dest.Map, dest.X, dest.Y, err)
+				}
+				failed[k] = true
+				continue // re-plan without this leg, from this tile
 			}
 			return fmt.Errorf("skill: GoTo: %w", err)
 		}
@@ -72,9 +100,9 @@ func GoTo(m *emu.Emu, romData []byte, dest Destination) error {
 
 // places is the single source of truth for the names Place accepts.
 var places = map[string]Destination{
-	"reds bedroom":  {Map: 0x26, X: 3, Y: 6},
-	"reds house":    {Map: 0x25, X: 3, Y: 2},
-	"pallet town":   {Map: 0x00, X: 5, Y: 6},
+	"reds bedroom": {Map: 0x26, X: 3, Y: 6},
+	"reds house":   {Map: 0x25, X: 3, Y: 2},
+	"pallet town":  {Map: 0x00, X: 5, Y: 6},
 	// 0x28 is Oak's lab. (5,3) is the open floor tile directly below Oak
 	// (5,2); it is where GetStarter's cutscene leaves the player and it is
 	// no NPC's home tile. The Pallet door into the lab is not a plain
@@ -158,31 +186,31 @@ func walkWithinMap(m *emu.Emu, romData []byte, dest Destination) error {
 		return fmt.Errorf("skill: GoTo: build map %02x at (%d,%d): %w", cur, sx, sy, err)
 	}
 
-	blocked := map[[2]int]bool{}
-	const maxRetries = 3
-	for attempt := 0; ; attempt++ {
+	// planErr is the "no path at all" case: already described in full, so
+	// it is returned as-is rather than re-wrapped as a walk failure.
+	var planErr error
+	err = walkAround(func(blocked map[[2]int]bool) ([]world.Step, error) {
 		x, y := playerXY(m)
 		steps, err := world.FindPath(grid, int(x), int(y), int(dest.X), int(dest.Y), blocked)
 		if err != nil {
-			return fmt.Errorf("skill: GoTo: no path on map %02x from (%d,%d) to (%d,%d): %w",
+			planErr = fmt.Errorf("skill: GoTo: no path on map %02x from (%d,%d) to (%d,%d): %w",
 				cur, x, y, dest.X, dest.Y, err)
+			return nil, planErr
 		}
-		if err := WalkPath(m, steps); err != nil {
-			if errors.Is(err, ErrBattleInterrupted) {
-				x, y := playerXY(m)
-				return fmt.Errorf("skill: GoTo: battle on map %02x at (%d,%d): %w", cur, x, y, ErrBattle)
-			}
-			var eb *ErrBlocked
-			if errors.As(err, &eb) {
-				if attempt >= maxRetries {
-					return fmt.Errorf("skill: GoTo: blocked on map %02x at (%d,%d) after %d retries: %w",
-						cur, eb.At.X, eb.At.Y, maxRetries, err)
-				}
-				blocked[[2]int{int(eb.At.X) + eb.Step.DX, int(eb.At.Y) + eb.Step.DY}] = true
-				continue
-			}
-			return fmt.Errorf("skill: GoTo: walk on map %02x at (%d,%d): %w", cur, x, y, err)
-		}
-		return nil
+		return steps, nil
+	}, func(steps []world.Step) error { return WalkPath(m, steps) },
+		func() { m.StepFrames(npcWaitFrames) })
+	if err == nil || err == planErr {
+		return err
 	}
+	x, y := playerXY(m)
+	if errors.Is(err, ErrBattleInterrupted) {
+		return fmt.Errorf("skill: GoTo: battle on map %02x at (%d,%d): %w", cur, x, y, ErrBattle)
+	}
+	var eb *ErrBlocked
+	if errors.As(err, &eb) {
+		return fmt.Errorf("skill: GoTo: blocked on map %02x at (%d,%d) after %d retries: %w",
+			cur, eb.At.X, eb.At.Y, maxWalkRetries, err)
+	}
+	return fmt.Errorf("skill: GoTo: walk on map %02x at (%d,%d): %w", cur, x, y, err)
 }

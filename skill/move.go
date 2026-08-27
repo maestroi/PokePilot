@@ -123,3 +123,64 @@ func WalkPath(m *emu.Emu, path []world.Step) error {
 	}
 	return nil
 }
+
+// ponytail: maxWalkRetries and npcWaitFrames are knobs, not laws. Six
+// attempts covers a sprite that wanders across a corridor twice;
+// npcWaitFrames is about one and a half NPC steps on this ROM. Tune with a
+// measurement, not a guess.
+const (
+	maxWalkRetries = 6
+	npcWaitFrames  = 48
+)
+
+// walkAround walks a planned path, re-planning around obstacles the static
+// collision grid cannot know about: sprites stand in doorways and wander
+// into gaps, and only walking into one discovers it.
+//
+// plan is called with the tiles discovered to be blocked and must re-read
+// the player's position, because a partially-walked path leaves them
+// somewhere new. walk performs the steps. wait lets game time pass.
+//
+// TWO THINGS THIS LEARNED THE HARD WAY, both on Route 1 (map 0x0C):
+//
+// A sprite is only banned after it blocks the SAME tile twice. Banning on
+// the first collision treats a wandering NPC as scenery: measured
+// 2026-08-27, an NPC walking beside the player poisoned enough of the
+// four-wide corridor at y=13 that Traverse reported "no reachable walkable
+// tile on the north edge from (15,13)" — a tile from which the static grid
+// reaches the north edge perfectly well. A ban must describe something that
+// is still there, so the first collision only waits and re-plans.
+//
+// And if planning fails while bans are held, the bans are dropped and it
+// tries again. They came from sprites, which move; the grid does not lie,
+// so our own guesses are the first thing to doubt.
+func walkAround(plan func(blocked map[[2]int]bool) ([]world.Step, error), walk func([]world.Step) error, wait func()) error {
+	blocked := map[[2]int]bool{}
+	hit := map[[2]int]bool{}
+	for attempt := 0; ; attempt++ {
+		steps, err := plan(blocked)
+		if err != nil {
+			if len(blocked) == 0 || attempt >= maxWalkRetries {
+				return err
+			}
+			blocked = map[[2]int]bool{}
+			continue
+		}
+		if err := walk(steps); err != nil {
+			var eb *ErrBlocked
+			if !errors.As(err, &eb) || attempt >= maxWalkRetries {
+				return err
+			}
+			// The tile that could not be entered is one step on from where
+			// the walk stopped, not the tile stood on.
+			t := [2]int{int(eb.At.X) + eb.Step.DX, int(eb.At.Y) + eb.Step.DY}
+			if hit[t] {
+				blocked[t] = true // twice is standing there, not passing through
+			}
+			hit[t] = true
+			wait() // give a wandering sprite time to move on
+			continue
+		}
+		return nil
+	}
+}

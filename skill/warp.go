@@ -60,30 +60,55 @@ func Traverse(m *emu.Emu, romData []byte, e world.Edge) error {
 		return fmt.Errorf("skill: Traverse: build map %02x: %w", e.From, err)
 	}
 
-	x, y := playerXY(m)
+	// Position is re-read inside each plan below, not here: a re-plan
+	// around an NPC starts from wherever the interrupted walk stopped.
 	var push world.Step
 	switch e.Kind {
 	case world.EdgeWarp:
-		steps, p, err := world.FindPathAdjacent(grid, int(x), int(y), int(e.WarpX), int(e.WarpY), nil)
+		var unwalkable error
+		err := walkAround(func(blocked map[[2]int]bool) ([]world.Step, error) {
+			x, y := playerXY(m)
+			steps, p, err := world.FindPathAdjacent(grid, int(x), int(y), int(e.WarpX), int(e.WarpY), blocked)
+			if err != nil {
+				unwalkable = fmt.Errorf("skill: Traverse: no route to warp (%d,%d) on map %02x: %v: %w",
+					e.WarpX, e.WarpY, e.From, err, ErrLegUnwalkable)
+				return nil, unwalkable
+			}
+			push = p // the last plan's push direction is the one walked
+			return steps, nil
+		}, func(steps []world.Step) error { return WalkPath(m, steps) },
+			func() { m.StepFrames(npcWaitFrames) })
 		if err != nil {
-			return fmt.Errorf("skill: Traverse: no route to warp (%d,%d) on map %02x: %v: %w",
-				e.WarpX, e.WarpY, e.From, err, ErrLegUnwalkable)
-		}
-		if err := WalkPath(m, steps); err != nil {
+			if err == unwalkable {
+				return err
+			}
 			return fmt.Errorf("skill: Traverse: walk to warp on map %02x: %w", e.From, err)
 		}
-		push = p
 	case world.EdgeConnection:
-		tx, ty, err := edgeTarget(grid, e.Dir, int(x), int(y))
+		// The edge tile is re-chosen on every re-plan, not just the path to
+		// it: an NPC standing in a one-tile gap can make the nearest edge
+		// tile unreachable while another one on the same edge is fine.
+		var unwalkable error
+		err := walkAround(func(blocked map[[2]int]bool) ([]world.Step, error) {
+			x, y := playerXY(m)
+			tx, ty, err := edgeTarget(grid, e.Dir, int(x), int(y), blocked)
+			if err != nil {
+				unwalkable = err
+				return nil, err
+			}
+			steps, err := world.FindPath(grid, int(x), int(y), tx, ty, blocked)
+			if err != nil {
+				unwalkable = fmt.Errorf("skill: Traverse: no route to edge tile (%d,%d) on map %02x: %v: %w",
+					tx, ty, e.From, err, ErrLegUnwalkable)
+				return nil, unwalkable
+			}
+			return steps, nil
+		}, func(steps []world.Step) error { return WalkPath(m, steps) },
+			func() { m.StepFrames(npcWaitFrames) })
 		if err != nil {
-			return err
-		}
-		steps, err := world.FindPath(grid, int(x), int(y), tx, ty, nil)
-		if err != nil {
-			return fmt.Errorf("skill: Traverse: no route to edge tile (%d,%d) on map %02x: %v: %w",
-				tx, ty, e.From, err, ErrLegUnwalkable)
-		}
-		if err := WalkPath(m, steps); err != nil {
+			if err == unwalkable {
+				return err
+			}
 			// Normalize to ErrBattle like walkWithinMap does, so a caller
 			// can test one sentinel no matter which layer was walking.
 			if errors.Is(err, ErrBattleInterrupted) {
@@ -164,7 +189,7 @@ func waitForPositionStable(m *emu.Emu, budget, stableFrames int) error {
 // game tile coordinates. Tiles are scanned in (y, x) order and only a
 // strictly shorter path replaces the current best, so ties break toward the
 // lowest y, then the lowest x.
-func edgeTarget(g *world.Grid, dir uint8, sx, sy int) (int, int, error) {
+func edgeTarget(g *world.Grid, dir uint8, sx, sy int, blocked map[[2]int]bool) (int, int, error) {
 	var edge [][2]int
 	switch dir {
 	case 0:
@@ -190,10 +215,10 @@ func edgeTarget(g *world.Grid, dir uint8, sx, sy int) (int, int, error) {
 	var best [2]int
 	bestLen := -1
 	for _, t := range edge {
-		if !g.Walkable(t[0], t[1]) {
+		if !g.Walkable(t[0], t[1]) || blocked[[2]int{t[0], t[1]}] {
 			continue
 		}
-		steps, err := world.FindPath(g, sx, sy, t[0], t[1], nil)
+		steps, err := world.FindPath(g, sx, sy, t[0], t[1], blocked)
 		if err != nil {
 			continue
 		}
