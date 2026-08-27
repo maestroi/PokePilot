@@ -5,8 +5,70 @@ import (
 
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/skill"
+	"github.com/maestroi/pokepilot/skill/fixture"
 	"github.com/maestroi/pokepilot/world"
 )
+
+// TestTraverseGateWarp is the ROM-backed end-to-end proof of the warp-tile
+// selection: the south gate's warp table offers (4,0) first, and (4,0) is
+// non-walkable in this ROM with the pathfinder's only route to it crossing
+// the (5,0) warp. Handing Traverse the (4,0) edge must still cross the gate,
+// via the reachable (5,0) tile. The landing position pins which warp fired:
+// (5,0) is warp id 4 on the gate and lands at forest (17,47); (4,0) is id 3
+// and would land at (16,47).
+func TestTraverseGateWarp(t *testing.T) {
+	e := fixture.Load(t, "post_errand")
+	p := playerAt(t, e)
+	if p.MapID != 0x01 {
+		t.Fatalf("fixture start = map %02x, want 0x01 (Viridian City)", p.MapID)
+	}
+
+	// Walk to the gate corridor, one row below the warp line — the same
+	// position the old crossGate helper started from.
+	southGate := skill.Destination{Map: 0x32, X: 5, Y: 1}
+	travelFightsThrough(t, e, e.ROM(), southGate, skill.StatAwareMove(e.ROM()), 10)
+	p = playerAt(t, e)
+	if p.MapID != 0x32 || p.X != 5 || p.Y != 1 {
+		t.Fatalf("travel stopped at map %02x (%d,%d), want the south gate 0x32 (5,1)", p.MapID, p.X, p.Y)
+	}
+
+	g := graphFor(t, e.ROM())
+	edges := edgesFromTo(g, 0x32, 0x33)
+	if len(edges) != 2 {
+		t.Fatalf("edges 0x32->0x33 = %d, want exactly 2 (the two gate warp tiles)", len(edges))
+	}
+	var bad world.Edge
+	for _, c := range edges {
+		if c.WarpX == 4 && c.WarpY == 0 {
+			bad = c
+			break
+		}
+	}
+	if bad.To != 0x33 {
+		t.Fatalf("no (4,0) warp edge 0x32->0x33 in the graph: %+v", edges)
+	}
+
+	// The (4,0) edge is the one the old Traverse died on: the player cannot
+	// stand on (4,0) and the pathfinder's route to it fires the (5,0) warp
+	// mid-walk. Traverse must pick the reachable tile itself.
+	if err := skill.Traverse(e, e.ROM(), bad); err != nil {
+		t.Fatalf("Traverse 0x32->0x33 on the (4,0) edge: %v", err)
+	}
+
+	var mem state.Mem
+	state.Snapshot(e, &mem)
+	p = state.DecodePlayer(&mem)
+	if p.MapID != 0x33 {
+		t.Fatalf("CurMap = %02x, want 0x33 (Viridian Forest)", p.MapID)
+	}
+	if p.X != 17 || p.Y != 47 {
+		t.Errorf("player = (%d,%d), want (17,47): the (5,0) warp's landing; (16,47) would mean the (4,0) warp fired", p.X, p.Y)
+	}
+	if !state.Controllable(&mem) {
+		t.Error("player not controllable after the gate crossing")
+	}
+	t.Logf("crossed the south gate via the reachable warp tile, landed at (%d,%d)", p.X, p.Y)
+}
 
 // graphFor builds the map-level graph from the live ROM.
 func graphFor(t *testing.T, romData []byte) *world.Graph {

@@ -1,36 +1,32 @@
-# RUNNOTES — S5c-2: re-plan exhaustion now unambiguously terminal
+# RUNNOTES — S5c-3: Traverse reaches the warp tile the pathfinder can actually reach
 
-## For the next task (S5c-6: prove the badge)
-- S5c-2 changed the ERROR TYPE ONLY: re-plan loop, maxReplans=8, and per-tile ban keying (legAt{e,m,x,y}) unchanged; no frame budget, walk, battle, or seed path touched — no new rDIV reseeding variable.
-- skill/goto.go: the `replans > maxReplans` branch now returns newReplanExhaustedError(...), wrapping BOTH ErrReplanExhausted (new exported terminal sentinel) AND the last leg's error (usually ErrLegUnwalkable) via two %w verbs (Go 1.20+).
-- skill/goto_replan_test.go asserts BOTH errors.Is checks; pure, fast, no ROM. Written first, watched to fail compile before the helper.
-- Verified: `go test ./...` with POKEMON_RED_ROM, -skip TestGymBoulderBadge: 159 pass, 0 fail, 0 skip (TestProbe's env-gated skip is the permanent probe harness, pre-existing). TestWalkAroundGivesUpAfterMaxRetries passes unchanged.
-- S5c-6: TestGymBoulderBadge is the gate to prove (excluded here on purpose). If it still loses to Brock, the S5b-6 finding likely matters first: Route 2's ledge split needs a world/-scoped fix (bounded start-map revisit in FindRouteAvoiding, or per-band map nodes) before the forest route is plannable. The preserved TestTravelToPewter below is the travel-milestone check to restore once world/ is fixed.
+## What changed (for S5c-6: prove the badge)
+- skill/warp.go: Traverse's warp leg no longer walks to the graph edge's tile. `warpTarget` (new, unexported) considers EVERY warp tile on the current map that leads to the edge's destination (0xFF/LAST_MAP resolved via the edge the graph already resolved) and picks the first whose FindPathAdjacent route from the player's CURRENT position steps on no other warp tile — entering a warp fires it mid-walk. Re-derived per re-plan; nothing cached as a map/warp property.
+- skill/gym_test.go: crossGate DELETED. Its two call sites are ordinary travel legs: leg 2 travels to Place("viridian forest") (0x33 17,43), leg 4 travels straight to the gym (0x2F -> 0x0D -> 0x02 -> 0x36 in one Travel). travelFightsThrough and dismissDialogue stay (dialogue is slice 6).
+- New tests: skill/warp_internal_test.go (package skill; asserts the chosen tile: (5,1)->(5,0) and (4,2)->(4,0) on BOTH gates, proving per-position consultation) and TestTraverseGateWarp in skill/warp_test.go (ROM-backed: Traverse on the (4,0) edge crosses and lands at (17,47) — the (5,0) warp's landing; (16,47) would mean (4,0) fired).
+- Verified: go test ./... -skip TestGymBoulderBadge with POKEMON_RED_ROM: 162 pass, 0 fail; only skip is TestProbe's permanent PROBE_MAP gate.
 
-## Preserved TestTravelToPewter (verbatim — drop into skill/travel_test.go, plus the red/state import)
-```go
-func TestTravelToPewter(t *testing.T) {
-	e := fixture.Load(t, "post_errand")
-	dest, ok := skill.Place("pewter city")
-	if !ok {
-		t.Fatal(`Place: "pewter city" not found`)
-	}
-	res, err := skill.Travel(e, e.ROM(), dest, skill.StatAwareMove(e.ROM()), 20)
-	if err != nil {
-		t.Fatalf("Travel to pewter city: %v; stopped on map %#04x at (%d,%d) after %d battles",
-			err, e.Peek8(sym.CurMap), e.Peek8(sym.XCoord), e.Peek8(sym.YCoord), res.Battles)
-	}
-	var mem state.Mem
-	state.Snapshot(e, &mem)
-	p := state.DecodePlayer(&mem)
-	if p.MapID != dest.Map || p.X != dest.X || p.Y != dest.Y {
-		t.Fatalf("player at (map %#04x, %d, %d), want Place(pewter city) = (map %#04x, %d, %d); Battles=%d BlackedOut=%v",
-			p.MapID, p.X, p.Y, dest.Map, dest.X, dest.Y, res.Battles, res.BlackedOut)
-	}
-	if !state.Controllable(&mem) {
-		t.Fatalf("player not controllable at Pewter; Battles=%d BlackedOut=%v",
-			res.Battles, res.BlackedOut)
-	}
-	t.Logf("reached Pewter City at Place(%s) after %d battles (BlackedOut=%v)", "pewter city", res.Battles, res.BlackedOut)
-}
+## TestGymBoulderBadge status (S5c-6's job)
+Gates are no longer the blocker: legs 1-2 now cross the south gate automatically and forest training ran ("trained the lead to level 8 in 2 battles"). It now fails exactly where slice 5 left it: leg 3's forest walk opens the "Hey, wait up!" box at 0x33 (1,18) and `dismissDialogue: text box did not close` (600 frames of A). Dialogue recovery is slice 6's scope.
+
+## Probe output (paste into commit message)
 ```
+$ POKEMON_RED_ROM=... PROBE_MAP=0x32 PROBE_AT=5,1 go test ./skill -run '^TestProbe$' -v
+    map 0x0032: 10x8, standing (5,1) walkable=true, 0 tile(s) treated as occupied
+    north edge: nearest reachable tile (5,0)
+    grid window (@ = you, # = wall, x = occupied):
+        y=  0    #####.####
+        y=  1    .....@....
+        y=  7    #........#
+$ POKEMON_RED_ROM=... PROBE_MAP=0x2F PROBE_AT=5,1 go test ./skill -run '^TestProbe$' -v
+    map 0x002f: 10x8, standing (5,1) walkable=true, 0 tile(s) treated as occupied
+    north edge: nearest reachable tile (5,0)
+    grid window (@ = you, # = wall, x = occupied):
+        y=  0    #####.####
+        y=  1    .....@....
+        y=  7    #........#
+```
+(4,0) is a wall on both gates; (5,0) is the only walkable exit. Warp tables: 0x32 (4,0),(5,0)->0x33; 0x2F (4,0),(5,0)->LAST_MAP=0x0D.
+
+## Carried over
+The verbatim preserved TestTravelToPewter (S5b-6, still blocked by the Route 2 ledge split in world/) is in `git show 723fa6d:RUNNOTES.md` if a future task needs it.
