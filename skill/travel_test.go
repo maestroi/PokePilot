@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/skill"
 	"github.com/maestroi/pokepilot/skill/fixture"
@@ -155,4 +156,36 @@ func TestTravelPalletToViridian(t *testing.T) {
 		t.Fatalf("wCurMap = %#04x, want Viridian City (0x01), at (%d,%d)",
 			got, e.Peek8(sym.XCoord), e.Peek8(sym.YCoord))
 	}
+}
+
+// TestTravelToPewter is the S5b-6 milestone: from the post_errand
+// checkpoint (the Oak's-parcel errand is done, so the sleepy old man at
+// (19,9) no longer blocks Viridian's north exit, and the player stands
+// controllable just south of the gate), Travel crosses the forest route to
+// Pewter City and leaves the player exactly at skill.Place("pewter city") —
+// the open plaza below the center door warp — still controllable. Every
+// expected coordinate comes from that Place, never a literal.
+func TestTravelToPewter(t *testing.T) {
+	e := fixture.Load(t, "post_errand")
+	dest, ok := skill.Place("pewter city")
+	if !ok {
+		t.Fatal(`Place: "pewter city" not found`)
+	}
+	res, err := skill.Travel(e, e.ROM(), dest, skill.StatAwareMove(e.ROM()), 20)
+	if err != nil {
+		t.Fatalf("Travel to pewter city: %v; stopped on map %#04x at (%d,%d) after %d battles",
+			err, e.Peek8(sym.CurMap), e.Peek8(sym.XCoord), e.Peek8(sym.YCoord), res.Battles)
+	}
+	var mem state.Mem
+	state.Snapshot(e, &mem)
+	p := state.DecodePlayer(&mem)
+	if p.MapID != dest.Map || p.X != dest.X || p.Y != dest.Y {
+		t.Fatalf("player at (map %#04x, %d, %d), want Place(pewter city) = (map %#04x, %d, %d); Battles=%d BlackedOut=%v",
+			p.MapID, p.X, p.Y, dest.Map, dest.X, dest.Y, res.Battles, res.BlackedOut)
+	}
+	if !state.Controllable(&mem) {
+		t.Fatalf("player not controllable at Pewter; Battles=%d BlackedOut=%v",
+			res.Battles, res.BlackedOut)
+	}
+	t.Logf("reached Pewter City at Place(%s) after %d battles (BlackedOut=%v)", "pewter city", res.Battles, res.BlackedOut)
 }
