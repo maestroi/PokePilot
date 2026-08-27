@@ -92,17 +92,18 @@ func TestFindRouteNoRoute(t *testing.T) {
 }
 
 // TestFindRouteAvoiding: the map graph knows which maps touch, not which
-// are walkable between. When a leg turns out to be unwalkable the caller
-// bans it and asks again, and the search must find the longer way round
-// rather than insisting on the short impossible one.
+// are walkable between. When the leg the caller is standing in front of
+// turns out to be unwalkable it reports that and asks again, and the
+// search must find the way round rather than insisting on the short
+// impossible one.
 func TestFindRouteAvoiding(t *testing.T) {
-	// 1 --conn--> 2 --conn--> 3   (short, and the 2->3 leg is unwalkable)
-	// 2 --warp--> 4 --warp--> 3   (longer, and real)
-	short := Edge{Kind: EdgeConnection, From: 2, To: 3}
+	// 1 --conn--> 3        (short, and unwalkable from where we stand)
+	// 1 --warp--> 2 --> 3  (longer, and real)
+	short := Edge{Kind: EdgeConnection, From: 1, To: 3}
+	viaWarp := Edge{Kind: EdgeWarp, From: 1, To: 2, WarpX: 5, WarpY: 5}
 	g := &Graph{Edges: map[uint8][]Edge{
-		1: {{Kind: EdgeConnection, From: 1, To: 2}},
-		2: {short, {Kind: EdgeWarp, From: 2, To: 4, WarpX: 5, WarpY: 5}},
-		4: {{Kind: EdgeWarp, From: 4, To: 3, WarpX: 1, WarpY: 1}},
+		1: {short, viaWarp},
+		2: {{Kind: EdgeWarp, From: 2, To: 3, WarpX: 1, WarpY: 1}},
 		3: nil,
 	}}
 
@@ -110,30 +111,57 @@ func TestFindRouteAvoiding(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FindRoute: %v", err)
 	}
-	if len(route) != 2 || route[1] != short {
-		t.Fatalf("unblocked route = %v, want it to take the short 2->3 leg", route)
+	if len(route) != 1 || route[0] != short {
+		t.Fatalf("unblocked route = %v, want the short 1->3 leg", route)
 	}
 
 	route, err = FindRouteAvoiding(g, 1, 3, map[Edge]bool{short: true})
 	if err != nil {
 		t.Fatalf("FindRouteAvoiding: %v", err)
 	}
-	if len(route) != 3 {
-		t.Fatalf("route avoiding the blocked leg = %v, want the 3-hop way round", route)
-	}
-	for _, e := range route {
-		if e == short {
-			t.Fatalf("route %v still uses the blocked leg", route)
-		}
+	if len(route) != 2 || route[0] != viaWarp {
+		t.Fatalf("route avoiding the blocked leg = %v, want the 2-hop way round", route)
 	}
 
-	// Banning every way through leaves no route, and that is an error
+	// Barring every first hop leaves no route, and that is an error
 	// rather than a route that cannot be walked.
-	_, err = FindRouteAvoiding(g, 1, 3, map[Edge]bool{
-		short: true,
-		{Kind: EdgeWarp, From: 2, To: 4, WarpX: 5, WarpY: 5}: true,
-	})
+	_, err = FindRouteAvoiding(g, 1, 3, map[Edge]bool{short: true, viaWarp: true})
 	if !errors.Is(err, ErrNoRoute) {
-		t.Fatalf("err = %v, want ErrNoRoute when every leg is banned", err)
+		t.Fatalf("err = %v, want ErrNoRoute when every first hop is barred", err)
+	}
+}
+
+// TestFindRouteAvoidingReEntersTheStartMap is the Route 2 shape, and the
+// reason this search is keyed by edge and bars only the first hop.
+//
+// A ledge splits Route 2 (0x0D) across its width. Its northern connection
+// to Pewter (0x02) is unwalkable from the southern landing tile, so the
+// caller reports it — but the only walkable route ENDS on that very edge,
+// after a detour through Viridian Forest (0x33) that re-enters 0x0D in the
+// northern band. A search keyed by map returns simple paths and can never
+// express it; one that bars the reported edge everywhere rules out its own
+// answer. Measured 2026-08-27: this route planning failed before any walk.
+func TestFindRouteAvoidingReEntersTheStartMap(t *testing.T) {
+	north := Edge{Kind: EdgeConnection, From: 0x0D, To: 0x02, Dir: 0}
+	intoForest := Edge{Kind: EdgeWarp, From: 0x0D, To: 0x33, WarpX: 15, WarpY: 55}
+	outOfForest := Edge{Kind: EdgeWarp, From: 0x33, To: 0x0D, WarpX: 1, WarpY: 0}
+	g := &Graph{Edges: map[uint8][]Edge{
+		0x0D: {north, intoForest},
+		0x33: {outOfForest},
+		0x02: nil,
+	}}
+
+	route, err := FindRouteAvoiding(g, 0x0D, 0x02, map[Edge]bool{north: true})
+	if err != nil {
+		t.Fatalf("FindRouteAvoiding: %v", err)
+	}
+	want := []Edge{intoForest, outOfForest, north}
+	if len(route) != len(want) {
+		t.Fatalf("route = %v, want the 3-hop forest detour %v", route, want)
+	}
+	for i := range want {
+		if route[i] != want[i] {
+			t.Fatalf("route[%d] = %+v, want %+v (full route %v)", i, route[i], want[i], route)
+		}
 	}
 }
