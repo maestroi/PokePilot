@@ -20,14 +20,47 @@ So run the search and read the answer:
 `PROBE_MAP` is a map id (`0x0c` or `12`); `PROBE_AT` is where you stand. It
 reports whether that tile is walkable, the nearest reachable tile on each of
 the four map edges, any object sprite home tiles nearby, and a small grid
-window — never the whole map. Two optional variables:
+window — never the whole map. Four optional variables:
 
 - `PROBE_TO=11,0` — path to one tile instead of reporting every edge.
 - `PROBE_BLOCK=14,13;15,12` — treat tiles as occupied, which is how you ask
   what a sprite standing in the way actually costs.
+- `PROBE_ROUTE=0x2f` — the legs Travel would take from `PROBE_MAP` to that
+  map. Needs no `PROBE_AT`; it is a question about the map graph. With a
+  standing tile it also reports whether the FIRST leg is walkable from there,
+  which is the leg that fails.
+- `PROBE_STATE=<path to a .state>` — read where the player ACTUALLY is out of
+  a save state (a fixture under `skill/fixture/testdata/fixtures/`, or one a
+  run wrote). `PROBE_MAP` and `PROBE_AT` then default to the live map and
+  tile, so the common case names no coordinates at all. This is the half the
+  ROM cannot answer: "why did I end up here" is RAM, not geometry. Do not
+  write a throwaway test that boots a fixture and prints a position — this is
+  that test.
+
+Every run also prints that map's warps and connections, so which exit leads
+where never has to be assembled by hand:
+
+    PROBE_MAP=0x33 -> warp (15,47) -> map 0x0032 warp 1  (and the other five)
+    PROBE_MAP=0x0d PROBE_ROUTE=0x2f -> leg 1: map 0x000d -warp(3,11)-> 0x002f
+    PROBE_STATE=.../post_starter.v3.state PROBE_ROUTE=0x02
+        -> live: map 0x0028 (5,6) facing=down controllable=true
+        -> leg 1: map 0x0028 -warp(4,11)-> map 0x0000
+             from (5,6): 6 step(s) to that warp, err=<nil>
 
 The same rule applies to the planner's prompt: whoever is reasoning gets the
 answer, and deterministic code keeps the geometry.
+
+That rule binds your *thinking*, not only your context. Uncertainty about game
+state is a measurement, not a deliberation: if you have reasoned two paragraphs
+about where a sprite stands or whether a tile is walkable, stop and run the
+probe. A second "let me reconsider" about the same fact means you owe a
+command, not another paragraph. Measured on one 91-minute session here: 9,450
+reasoning tokens spent guessing the Viridian Forest sprite layout, 482 "let me
+reconsider", and zero probe runs.
+
+Batch independent reads, greps and probes into one call. Every tool result
+restarts the reasoning, so ten separate lookups cost ten times the thinking of
+one call that answers all ten.
 
 ## Read the decomp; it is vendored here
 
@@ -62,6 +95,39 @@ it is how S3-1 shipped a bit index wrong by two.
   is nothing to expire or forget. A ban that outlives one plan is a bug —
   it has already shipped once.
 
+## A journey test that loses a battle is probably not your bug
+
+The RNG is seeded from `rDIV`, the hardware divider register
+(`pokered/engine/math/random.asm`): every random number mixes in the cycle
+count. So changing how many frames *anything* waits — a settle budget, a
+button hold, a retry bound — reseeds every wild encounter, crit and accuracy
+roll that happens after it. Fixtures are replayed rather than committed, so
+the suite is one long cycle chain: an edit in `move.go` can make
+`TestGymBoulderBadge` lose to Brock without touching a line it executes.
+
+Two consequences.
+
+**Re-running is not reproducing.** The second run is a different game, so
+"let me try it again and see" answers nothing. Every `fixture.Load` test
+writes its final save state to `skill/failure/<TestName>.state` when it
+fails, and logs the path. Read that instead:
+
+    PROBE_STATE=failure/TestGymBoulderBadge.state \
+        go test ./skill -run '^TestProbe$' -v
+
+(`PROBE_STATE` resolves relative to `skill/`, the test's working directory,
+not the repo root. The dump's log line prints an absolute path; paste that.)
+
+**A game outcome is not a defect.** A blackout, a lead that ended under the
+level it needed, a lost battle — that is the game answering, and the dumped
+state says which happened. If it is not on your task's surface, report it in
+one line and move on. Adopting an unrelated journey failure is how a task
+spends its whole budget inside someone else's slice.
+
+Assertions that are a function of ROM bytes do not belong in a journey test
+at all. `world` and `red/rom` tests run in milliseconds and cannot flake;
+put geometry there and leave the emulator for RAM and timing.
+
 ## Throwaway measurements
 
 Name scratch measurement files `skill/zz_*_test.go`. They are expected to be
@@ -79,4 +145,5 @@ verification passes. This has cost this project several runs.
 
 Reporting "this task is built on a wrong assumption" is a good outcome, and
 has been the right answer more than once. Stop and say so rather than
-spending the whole budget proving it.
+spending the whole budget proving it. A red test that is not on your task's
+surface is the same shape: name it and hand it back, do not adopt it.

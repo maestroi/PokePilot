@@ -18,7 +18,7 @@ import (
 const (
 	trainTilesetsBank    uint8  = 0x03
 	trainTilesetsAddr    uint16 = 0x47BE
-	trainTilesetEntryLen      = 12
+	trainTilesetEntryLen        = 12
 )
 
 // TrainResult reports what a grind session did.
@@ -102,9 +102,17 @@ func Train(m *emu.Emu, romData []byte, targetLevel int, policy MovePolicy, maxBa
 		}
 		if err != nil && !battleInFlight(m) {
 			// A non-battle failure: nothing is left in progress, so the
-			// error is reported as-is.
+			// error is reported as-is — unless the party has blacked out.
+			// A blackout teleports the player to a Pokemon Center, and
+			// Travel re-plans from there: it walks the whole route back
+			// toward grind cells that are now maps away, and fails
+			// somewhere along it. The session ended at the blackout, so
+			// report that ending rather than the walk that followed it.
 			res.EndLevel = leadLevel(m)
 			res.Reached = res.EndLevel >= targetLevel
+			if res.BlackedOut {
+				return res, nil
+			}
 			return res, err
 		}
 		if err != nil {

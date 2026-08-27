@@ -13,11 +13,14 @@ import (
 	"github.com/maestroi/pokepilot/world"
 )
 
-// gymLeadLevel is the level the lead must reach before Brock, whose team
-// is a level 12 Geodude and a level 14 Onix. A level 8 Squirtle with
-// BUBBLE is derived to win that matchup; if that is wrong the battle
-// below fails and this constant is the knob.
-const gymLeadLevel = 8
+// gymLeadLevel is the level the lead must reach before Pewter. Two fights
+// stand in the way: the rival's forced cutscene battle on the forest leg
+// (the player blacked out at level 8) and Brock himself, whose team is a
+// level 12 Geodude and a level 14 Onix. The forest grass is sparse (about
+// one battle per thirty steps), so the target stays within reach of a
+// single training loop; a water lead at 12 is super-effective against the
+// rock team and clears both. If a battle still loses, this is the knob.
+const gymLeadLevel = 12
 
 // travelFightsThrough is Travel plus the one case Travel misses: a wild
 // battle that interrupts the walk inside a Traverse warp leg is not
@@ -64,17 +67,31 @@ func travelFightsThrough(t *testing.T, e *emu.Emu, romData []byte, dest skill.De
 	}
 }
 
-// dismissDialogue holds A until no dialogue is active, paging through
-// multi-line NPC text and closing the box.
+// dismissDialogue lets an open text box run to its end. A plain NPC line
+// pages closed under a held A; the rival's "hey, wait up" cutscene is forced
+// and plays out on its own, so step frames (holding A, which is harmless for
+// both) until either the box is gone and the player is controllable, or a
+// battle the box led into is in progress — the caller then handles it.
 func dismissDialogue(t *testing.T, e *emu.Emu) {
 	t.Helper()
-	if _, err := e.HoldUntil(emu.A, 600, func(m *emu.Emu) bool {
+	for i := 0; i < 400; i++ {
+		// Text pages on a button press, not a hold, so tap A rather than
+		// holding it. The tap is harmless for a forced cutscene and required
+		// for an NPC line.
+		e.Tap(emu.A, 3, 7)
 		var mem state.Mem
-		state.Snapshot(m, &mem)
-		return state.DecodeDialogue(&mem) == nil
-	}); err != nil {
-		t.Fatalf("dismissDialogue: text box did not close: %v", err)
+		state.Snapshot(e, &mem)
+		if state.DecodeBattle(&mem) != nil {
+			return
+		}
+		if state.DecodeDialogue(&mem) == nil && state.Controllable(&mem) {
+			return
+		}
 	}
+	var mem state.Mem
+	state.Snapshot(e, &mem)
+	t.Fatalf("dismissDialogue: text box did not settle: fontLoaded=%#04x joyIgnore=%#04x battle=%v text=%q",
+		mem.U8(sym.FontLoaded), mem.U8(sym.JoyIgnore), state.DecodeBattle(&mem) != nil, state.DecodeDialogue(&mem).Text)
 }
 
 // crossGate steps the player out of a forest gate map. This is the one
@@ -167,15 +184,23 @@ func TestGymBoulderBadge(t *testing.T) {
 	// Leg 2: the south gate into the forest.
 	crossGate(t, e, romData, 0x32, 0x33)
 
+	// The gate drops the player at (17,47), inside the pocket that holds the
+	// four south warps (15,47)-(18,47). A grind ping-pong there steps on a
+	// warp and gets carried back to Route 2's dead-end south band, so walk up
+	// into the open forest first: the grass the trainer finds is a few steps
+	// from here, and it is clear of every warp on the map.
+	safeSpot := skill.Destination{Map: 0x33, X: 17, Y: 40}
+	travelFightsThrough(t, e, romData, safeSpot, policy, 5)
+
 	// Train in the forest itself if the lead is under the level that
 	// beats Brock: its grass is a few steps from the travel target, so the
 	// detour is the approach the journey already made.
 	var mem state.Mem
 	state.Snapshot(e, &mem)
 	if lead := state.DecodeParty(&mem).Mons[0].Level; int(lead) < gymLeadLevel {
-		res, err := skill.Train(e, romData, gymLeadLevel, policy, 20)
+		res, err := skill.Train(e, romData, gymLeadLevel, policy, 25)
 		if err != nil {
-			t.Fatalf("Train: %v (battles=%d, reached=%v, blackedOut=%v)", err, res.Battles, res.Reached, res.BlackedOut)
+			t.Fatalf("Train: %v (start=%d end=%d battles=%d, reached=%v, blackedOut=%v)", err, res.StartLevel, res.EndLevel, res.Battles, res.Reached, res.BlackedOut)
 		}
 		state.Snapshot(e, &mem)
 		if lead := state.DecodeParty(&mem).Mons[0].Level; int(lead) < gymLeadLevel {
@@ -184,6 +209,9 @@ func TestGymBoulderBadge(t *testing.T) {
 		}
 		t.Logf("trained the lead to level %d in %d battles", state.DecodeParty(&mem).Mons[0].Level, res.Battles)
 	}
+	state.Snapshot(e, &mem)
+	t.Logf("post-train position: map=%#04x at (%d,%d) controllable=%v",
+		mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord), state.Controllable(&mem))
 
 	// Leg 3: the forest to the north gate.
 	northGate := skill.Destination{Map: 0x2F, X: 5, Y: 1}
