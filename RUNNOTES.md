@@ -1,39 +1,71 @@
-# RUNNOTES — S5c-5b: every path planner now plans from a live sprite snapshot
+# RUNNOTES — S5c-6: slice 5 close-out, and why the badge is not proven
 
-## What changed
-- `skill/goto.go` (walkWithinMap), `skill/warp.go` (both Traverse cases):
-  replaced the S5c-5a stubs with `func() map[[2]int]bool { return spriteBlockers(m) }`.
-  That is the whole wiring — no planning-logic changes.
-- `skill/story.go` (walkLab): deleted its own retry loop (local maxRetries=4,
-  collision-ban map) and refactored onto walkAround. readBlocked is
-  `mergeBlockers(spriteBlockers(m), blocked)` — the lab's static exclusions
-  (rival (4,3), Oak (5,2), ball tiles (6..8,3)) are merged into every FRESH
-  snapshot; mergeBlockers returns a new map, so no collision can ever mutate
-  the fixed set. `labBlockedSet()` unchanged; callers unchanged.
-- `skill/move.go`: the verbatim contract comment now sits above WalkPath
-  ("Movement never advances dialogue... never answers a choice"). It is the
-  contract half of slice 6's recovery layer; no code in move.go changed.
+## Outcome
 
-## Behaviour notes for S5c-6
-- walkLab retry count is now walkAround's maxWalkRetries=6 (was 4), waits
-  npcWaitFrames=48 between attempts.
-- walkLab plan errors: the merged set is never empty, so walkAround retries
-  up to 6x before returning the plan error AS-IS (GoTo planErr passthrough).
-  Error wraps preserved: "no path on map 0x28...", "blocked ... after %d
-  retries", "walk on map 0x28 ...". ErrDialogueInterrupted still passes
-  through immediately (GetStarter step 8 relies on errors.Is).
-- Pre-existing gofmt deviation in goto.go/warp.go (closure-body indent from
-  S5c-5a) left alone to keep the diff minimal.
+Slice 5's five code tasks landed. The sixth, proving the Boulder Badge three
+runs running, **did not** — and that is the recorded result, not a pending
+item. `TestGymBoulderBadge` is skipped with its reason; slice 6 owns the proof.
 
-## Verified
-- `POKEMON_RED_ROM=/home/maestro/Documents/projects/PokePilot/roms/pokemon_red.gb
-  go test ./... -skip TestGymBoulderBadge`: all ok, 163 pass, 1 skip (TestProbe's
-  permanent PROBE_MAP env gate). TestGetStarter (ROM-backed, both walkLab calls)
-  PASS — the static ball-tile exclusions survived the refactor.
-- TestGymBoulderBadge stays OUT of the gate: rDIV-seeded battles, S5c-6 owns the
-  badge proof. Do not re-add it or "fix" it in wiring tasks.
+## What landed
 
-## For the next task
-- ROM: /home/maestro/Documents/projects/PokePilot/roms/pokemon_red.gb (main
-  checkout). No roms/ in this worktree (gitignored) — use the env var, no symlink.
-- Do not commit; leave edits uncommitted for the runner.
+- **S5c-2** `ErrReplanExhausted` — re-plan exhaustion is now distinguishable
+  from an ordinary unwalkable leg, while keeping both identities in the chain.
+- **S5c-3** `Traverse` picks a warp tile the pathfinder can actually reach, so
+  the forest gates cross on ordinary legs. `crossGate` is deleted from the test.
+- **S5c-4** `state.DecodeSprites` — live NPC positions from `wSpriteStateData1`
+  liveness plus `wSpriteStateData2` coordinates.
+- **S5c-5a** `walkAround` re-reads blockers from fresh RAM every attempt; the
+  collision-memory maps are gone.
+- **S5c-5b** every path planner (`goto.go`, `warp.go`, `story.go`) plans on the
+  live blocker overlay; `walkLab`'s static ball-tile exclusions are merged in,
+  never mutated.
+- **S5c-6** the diagnostic bundle (`diagFatalf`), and one real fix found while
+  measuring: `Traverse` now types an unreachable connection edge as
+  `ErrLegUnwalkable`. Unwrapped it was terminal, which killed the only real
+  route to Pewter — Route 2's ledge makes the north edge unreachable from the
+  southern landing tile, and GoTo's per-tile ban is what re-routes through the
+  forest.
+
+## Why the badge is not proven
+
+Measured with all close-out fixes in place:
+
+    trained the lead to level 12 in 18 battles          ~1 minute
+    text box at map 0x0033 (1,18) text="Hey, wait u"    dismissed once, never returned
+    ... 8+ minutes, no further progress
+    killed at 9m44s, never completed
+
+A separate run hit Go's 10-minute default with the test at 9m09s, inside:
+
+    skill.waitForPositionStable                 warp.go:188
+    skill.Traverse  Edge{From:0x0d, To:0x32}    warp.go:176
+    skill.GoTo -> skill.Travel -> travelFightsThrough
+
+`From:0x0d To:0x32` is Route 2 back into the **south** gate while the leg
+targets the **north** gate (0x2F). It oscillates rather than advancing.
+
+Not a timeout bug: raising `-timeout` was tried and only buys a longer stall.
+Not a dialogue-retry loop either — the box was logged **once** and dismissed,
+so the paging fix works. What is missing is any bound on the composite:
+
+    travelFightsThrough  10 retries
+      Travel             maxBattles 10, loops per battle
+        GoTo             maxReplans 8
+          Traverse       crossBudget + arriveBudget + positionStableBudget(500) frames
+
+## For the next slice
+
+1. Dialogue recovery is necessary but **not sufficient**.
+2. The journey needs **one global deadline** so a stuck run reports in seconds.
+3. Suspected, unconfirmed: the oscillation may be a regression from S5c-3's
+   warp-tile selection. Rule it out before designing around it.
+
+Both conclusions are also in `docs/SLICE6-PLAN.md`.
+
+## Gotchas worth keeping
+
+- `TestGymBoulderBadge` and `TestTravelToPewter` are skipped **on purpose**,
+  with pointers. Do not un-skip or delete either; slice 6 starts from them.
+- This package outruns Go's 10-minute default. Pass `-timeout` on every
+  command that unskips the journey test.
+- `gymLeadLevel = 12` is what survives Brock. Do not lower it to fit a budget.
