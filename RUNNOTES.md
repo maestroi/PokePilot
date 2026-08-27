@@ -1,54 +1,34 @@
-# RUNNOTES — S5b-5: skill.Train — grind wild battles in grass until a level target
+# RUNNOTES — S5b-6a: Pewter arrival milestone test in skill/travel_test.go
 
 ## What landed
-- skill/train.go: `Train(m, romData, targetLevel, policy, maxBattles) (TrainResult, error)`.
-  Ping-pongs the player between two adjacent walkable grass cells on the
-  current map; each leg is a Travel, so a mid-leg encounter is fought
-  (skill.Battle + policy) and Travel re-plans the rest of the leg. The
-  lead's level is re-read from RAM after every leg. The session ends on
-  level >= target, budget exhausted, or blackout. Level is checked per
-  LEG, so a session that hits target mid-leg may fight 1-2 more battles
-  that leg (and possibly blackout) before stopping: the result can report
-  both Reached and BlackedOut.
-- Grass cells come from the ROM (tileset table 03:47BE, grass tile at
-  +10, walkable cells only) — no coordinates, no hardcoded tiles.
-- skill/train_test.go: two tests, both green, zero skips.
+- skill/travel_test.go: `TestTravelToPewter` (compiles; NOT executed in this
+  step). Loads fixture `post_errand` (old-man gate open, player controllable
+  at (19,8) on Viridian 0x01), Travel to `skill.Place("pewter city")`
+  (0x02, 14, 8) with StatAwareMove, budget 20. On error: Fatalf naming the
+  stop map/X/Y and res.Battles (mirrors TestTravelPalletToViridian). On
+  success: ONE state.Snapshot + DecodePlayer asserts the player is EXACTLY
+  at the Place, and state.Controllable is true; both failures name
+  res.Battles and res.BlackedOut. Added `red/state` import; no other file
+  touched, no fixture added or bumped (post_errand exists at v4 and v5).
+- Verified: `go build ./...` and `go vet ./...` green; `go test -run
+  ZZZ_no_match ./skill/` links the test binary (zero tests executed).
 
-## Measured (real ROM, 2026-08-27, pallet_town fixture)
-- Approach Travel onto Route 1 (0x0C): 0 battles.
-- TestTrainGrindsOnRoute1 (target L+2, budget 12): 7 battles, L6->L8,
-  ended in a blackout on battle 7, player back at (16,6) on 0x0C —
-   8.61s wall. Deterministic: three runs gave identical values.
-- TestTrainBudgetIsAResult (target L+8, budget 1): 1 battle, L6->6,
-   nil error, no battle left — 1.58s wall.
-- Route 1 grass rate 25/256: ~1 battle per 6 legs / 24 steps; the grace
-  counter (wNumberOfNoRandomBattleStepsLeft) slows encounters right after
-  one. Pallet Town grass has no wild entry in the ROM: zero encounters.
-- Blackout with a one-mon party: this ROM did NOT visibly transport to a
-  center — the next wild battle started ~860 frames later on the same
-  grass and the fainted (0 HP) lead was even sent out and won (XP and
-  the level-up still applied). Blackout is a legitimate session ending,
-  not a failure; the test accepts it. S5b-1's Travel settle (wait for the
-  wCurMap flip or a stable position, then re-plan from the world) covers
-  the aftermath either way.
-- The fixture's L6 Squirtle already carries Water Gun (0x21) and Bubble
-  (0x27); S5b-7's "learns BUBBLE at level 8" does not match this
-   fixture, so measure the Brock-fight level requirement rather than
-   assuming it. XP curve (medium-slow): L6=179, L7=236, L8=314, so
-   6->7 needs ~2-3 wins and 7->8 ~3-4.
-- Re-verified 2026-08-27: full suite 9 packages ok, zero skips, skill
-  package 53.05s.
-
-## For the next task (S5b-6: survive trainer ambushes, reach Pewter)
-- Measure FIRST whether Travel already copes with an ambush (trainer
-  battles set wIsInBattle=2 and wJoyIgnore while the trainer walks
-  over). After any battle ends, wIsInBattle can briefly read 0xff (stale);
-  DecodeBattle returns nil then — do not treat 0xff as an error state.
-- A raw manual step loop hit a dynamic obstacle (an NPC on Route 1
-  blocked the step at (12,6)); Travel's retry/detour handles it. For
-  diagnostics use Travel, or mirror its retries, not bare StepOnce.
-- Route per S5b-6: Route 2 (0x0D) -> gate -> Viridian Forest -> gate ->
-  Route 2 north -> Pewter. Earlier note: Route 2's exit is Viridian's
-  north edge (row 0, x17-19), landing on 0x0D at (8,71).
-- Fixtures are v4 and warm; if you add a pewter_city checkpoint, bump
-  fixtureVersion to 5 (a stale cache poisons itself).
+## For the next task (running/finishing S5b-6: survive ambushes, reach Pewter)
+- First action: actually RUN TestTravelToPewter against the real ROM
+  (POKEMON_RED_ROM set). This step deliberately did not.
+- Expected hard spots, in order: (1) the Route 2 south-edge crossing is
+  now open (EVENT_GOT_POKEDEX set in post_errand) — the old "text box
+  interrupted movement at (19,9)" failure mode should be gone; if it
+  returns, the fixture lost the pokedex event, check state first.
+  (2) Viridian Forest grass throws wild battles — that is what the
+  budget-20 Travel is for. (3) trainer ambushes on Route 2 set
+  wJoyIgnore; wIsInBattle can read stale 0xff right after a battle ends —
+  DecodeBattle returns nil then, do not treat 0xff as an error.
+- If Travel stops short of the Place: it settles on the leg's landing
+  tile, so the EXACT-arrival assertion is the real test of whether
+  Travel's walkWithinMap reaches (14,8). If it fails there, measure the
+  actual stop point from the Fatalf before changing anything.
+- Route recap: Viridian north edge (row 0, x17-19) -> 0x0D at (8,71) ->
+  forest -> Route 2 north -> Pewter (0x02).
+- Do not add/rename/bump fixtures unless the test demands a new
+  checkpoint; if one is added, bump fixtureVersion (cache is v5 now).
