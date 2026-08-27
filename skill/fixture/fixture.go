@@ -1,6 +1,6 @@
 // Package fixture caches expensive emulator boot sequences as save states so
 // tests start from a deterministic, millisecond-fast state instead of replay
-//ing thousands of frames.
+// ing thousands of frames.
 //
 // Fixtures are derived from a commercial ROM, so they are generated on demand
 // from the ROM named by POKEMON_RED_ROM and cached under Dir; they are never
@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/maestroi/pokepilot/emu"
@@ -24,6 +25,15 @@ import (
 
 // Dir is where generated fixtures are cached. It is gitignored.
 const Dir = "testdata/fixtures"
+
+// FailureDir is where a failing test's final save state is dumped. It is
+// gitignored. The state is the only reproducible record a journey test
+// leaves: the RNG is seeded from rDIV (pokered/engine/math/random.asm), so
+// the cycle count is the seed and re-running after any edit rolls a
+// different game. Read a dump back with the probe:
+//
+//	PROBE_STATE=failure/TestGymBoulderBadge.state go test ./skill -run '^TestProbe$' -v
+const FailureDir = "failure"
 
 // fixtureVersion is embedded in fixture filenames. Bump it whenever the boot
 // sequence or the definition of a valid state changes: a new version
@@ -192,7 +202,7 @@ func Load(t *testing.T, name string) *emu.Emu {
 		}
 		gs, ok := validateState(e)
 		if ok {
-			t.Cleanup(func() { e.Close() })
+			dumpOnFailure(t, e)
 			return e
 		}
 		e.Close()
@@ -239,6 +249,40 @@ func Load(t *testing.T, name string) *emu.Emu {
 		e.Close()
 		t.Fatalf("fixture %s: write %s: %v", name, path, err)
 	}
-	t.Cleanup(func() { e.Close() })
+	dumpOnFailure(t, e)
 	return e
+}
+
+// dumpOnFailure closes e when the test ends, and first writes its save state
+// to FailureDir if the test failed. A journey test that loses a battle and a
+// journey test that hits a real bug fail the same way from the outside; the
+// state says which, and it cannot be recovered by re-running, because any
+// edit to a frame budget upstream reseeds every roll after it.
+func dumpOnFailure(t *testing.T, e *emu.Emu) {
+	t.Helper()
+	t.Cleanup(func() {
+		defer e.Close()
+		if !t.Failed() {
+			return
+		}
+		b, err := e.SaveState()
+		if err != nil {
+			t.Logf("failure dump: SaveState: %v", err)
+			return
+		}
+		if err := os.MkdirAll(FailureDir, 0o755); err != nil {
+			t.Logf("failure dump: mkdir %s: %v", FailureDir, err)
+			return
+		}
+		path := filepath.Join(FailureDir, strings.ReplaceAll(t.Name(), "/", "_")+".state")
+		if err := os.WriteFile(path, b, 0o644); err != nil {
+			t.Logf("failure dump: write %s: %v", path, err)
+			return
+		}
+		abs, err := filepath.Abs(path)
+		if err != nil {
+			abs = path
+		}
+		t.Logf("failure dump: wrote %s (read it with PROBE_STATE=%s)", path, abs)
+	})
 }

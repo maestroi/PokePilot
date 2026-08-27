@@ -175,15 +175,23 @@ func TestGymBoulderBadge(t *testing.T) {
 	}
 	travelFightsThrough(t, e, romData, forest, policy, 10)
 
+	// The gate drops the player at (17,47), inside the pocket that holds the
+	// four south warps (15,47)-(18,47). A grind ping-pong there steps on a
+	// warp and gets carried back to Route 2's dead-end south band, so walk up
+	// into the open forest first: the grass the trainer finds is a few steps
+	// from here, and it is clear of every warp on the map.
+	safeSpot := skill.Destination{Map: 0x33, X: 17, Y: 40}
+	travelFightsThrough(t, e, romData, safeSpot, policy, 5)
+
 	// Train in the forest itself if the lead is under the level that
 	// beats Brock: its grass is a few steps from the travel target, so the
 	// detour is the approach the journey already made.
 	var mem state.Mem
 	state.Snapshot(e, &mem)
 	if lead := state.DecodeParty(&mem).Mons[0].Level; int(lead) < gymLeadLevel {
-		res, err := skill.Train(e, romData, gymLeadLevel, policy, 20)
+		res, err := skill.Train(e, romData, gymLeadLevel, policy, 25)
 		if err != nil {
-			diagFatalf(t, e, err, "Train: %v (battles=%d, reached=%v, blackedOut=%v)", err, res.Battles, res.Reached, res.BlackedOut)
+			diagFatalf(t, e, err, "Train: %v (start=%d end=%d battles=%d, reached=%v, blackedOut=%v)", err, res.StartLevel, res.EndLevel, res.Battles, res.Reached, res.BlackedOut)
 		}
 		state.Snapshot(e, &mem)
 		if lead := state.DecodeParty(&mem).Mons[0].Level; int(lead) < gymLeadLevel {
@@ -192,6 +200,9 @@ func TestGymBoulderBadge(t *testing.T) {
 		}
 		t.Logf("trained the lead to level %d in %d battles", state.DecodeParty(&mem).Mons[0].Level, res.Battles)
 	}
+	state.Snapshot(e, &mem)
+	t.Logf("post-train position: map=%#04x at (%d,%d) controllable=%v",
+		mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord), state.Controllable(&mem))
 
 	// Leg 3: the forest to the north gate.
 	northGate := skill.Destination{Map: 0x2F, X: 5, Y: 1}
