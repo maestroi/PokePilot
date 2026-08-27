@@ -106,21 +106,27 @@ Define the intended public shape:
 func TestDecodeSpritesExcludesPlayerAndInactiveSlots(t *testing.T) {
 	var mem Mem
 
-	// Slot 0: active-looking player, never returned.
+	// Slot 0: active player, never returned.
+	mem[sym.SpritePlayerStateData1+0x00] = 1
+	mem[sym.SpritePlayerStateData1+0x02] = 2
 	mem[sym.SpriteStateData2+0x04] = 4 + 9
 	mem[sym.SpriteStateData2+0x05] = 4 + 7
-	mem[sym.SpriteStateData2+0x0d] = 1
 
-	// Slot 1: active NPC, raw coordinates include +4.
-	base := sym.SpriteStateData2 + 0x10
-	mem[base+0x04] = 4 + 3
-	mem[base+0x05] = 4 + 5
-	mem[base+0x0d] = 11
+	// Slot 1: active and on-screen. Data2 picture scratch is deliberately 0.
+	data1 := sym.SpritePlayerStateData1 + 0x10
+	data2 := sym.SpriteStateData2 + 0x10
+	mem[data1+0x00] = 11
+	mem[data1+0x02] = 2
+	mem[data2+0x04] = 4 + 3
+	mem[data2+0x05] = 4 + 5
 
-	// Slot 2: stale coordinates, zero picture, inactive.
-	base = sym.SpriteStateData2 + 0x20
-	mem[base+0x04] = 4 + 8
-	mem[base+0x05] = 4 + 8
+	// Slot 2: real object, but hidden/off-screen.
+	data1 = sym.SpritePlayerStateData1 + 0x20
+	data2 = sym.SpriteStateData2 + 0x20
+	mem[data1+0x00] = 12
+	mem[data1+0x02] = 0xff
+	mem[data2+0x04] = 4 + 8
+	mem[data2+0x05] = 4 + 8
 
 	got := DecodeSprites(&mem)
 	want := []SpriteState{{Slot: 1, X: 5, Y: 3, PictureID: 11}}
@@ -144,11 +150,12 @@ In `red/state/sprite.go`, keep layout constants local to the decoder:
 
 ```go
 const (
-	spriteStateData2Stride = uint16(0x10)
-	spriteMapYOffset       = uint16(0x04)
-	spriteMapXOffset       = uint16(0x05)
-	spritePictureIDOffset  = uint16(0x0d)
-	spriteStateData2Slots  = 16
+	spriteStateStride      = uint16(0x10)
+	spritePictureIDOffset  = uint16(0x00) // data1
+	spriteImageIndexOffset = uint16(0x02) // data1; 0xff is hidden/off-screen
+	spriteMapYOffset       = uint16(0x04) // data2
+	spriteMapXOffset       = uint16(0x05) // data2
+	spriteSlots            = 16
 	spriteCoordinateBias   = 4
 )
 
@@ -159,17 +166,18 @@ type SpriteState struct {
 }
 
 func DecodeSprites(m *Mem) []SpriteState {
-	out := make([]SpriteState, 0, spriteStateData2Slots-1)
-	for slot := 1; slot < spriteStateData2Slots; slot++ {
-		base := sym.SpriteStateData2 + uint16(slot)*spriteStateData2Stride
-		picture := m.U8(base + spritePictureIDOffset)
-		if picture == 0 {
+	out := make([]SpriteState, 0, spriteSlots-1)
+	for slot := 1; slot < spriteSlots; slot++ {
+		data1 := sym.SpritePlayerStateData1 + uint16(slot)*spriteStateStride
+		picture := m.U8(data1 + spritePictureIDOffset)
+		if picture == 0 || m.U8(data1+spriteImageIndexOffset) == 0xff {
 			continue
 		}
+		data2 := sym.SpriteStateData2 + uint16(slot)*spriteStateStride
 		out = append(out, SpriteState{
 			Slot: slot,
-			X: int(m.U8(base+spriteMapXOffset)) - spriteCoordinateBias,
-			Y: int(m.U8(base+spriteMapYOffset)) - spriteCoordinateBias,
+			X: int(m.U8(data2+spriteMapXOffset)) - spriteCoordinateBias,
+			Y: int(m.U8(data2+spriteMapYOffset)) - spriteCoordinateBias,
 			PictureID: picture,
 		})
 	}
@@ -177,7 +185,9 @@ func DecodeSprites(m *Mem) []SpriteState {
 }
 ```
 
-Do not add `wNumSprites` or read `wSpriteStateData1`. Picture ID in this same array is the active predicate.
+Do not add `wNumSprites`: unused data1 slots have picture ID zero. Do not use
+`SPRITESTATEDATA2_PICTUREID` at `+0x0d`; map sprite loading zeroes that scratch
+byte after tile patterns are loaded.
 
 ### Step 3: Add the independent real-ROM anchor
 
@@ -270,6 +280,13 @@ func mergeBlockers(live, fixed map[[2]int]bool) map[[2]int]bool {
 }
 ```
 
+Because the data1 image-index filter excludes off-screen sprites, this overlay
+is deliberately screen-local. A distant sprite becomes a blocker only when the
+engine makes it visible. Also document that `TryWalking` writes a moving NPC's
+destination MAPY/MAPX before its 16-frame animation finishes, so the sprite can
+visually straddle two tiles. Both cases are races handled by the bounded retry,
+not reasons to add a cache or a second inferred tile.
+
 Change `walkAround` to accept `readBlocked func() map[[2]int]bool`. At the top of every attempt, call it exactly once and pass that fresh map to `plan`.
 
 - On a plan error with live blockers present, wait and retry until `maxWalkRetries`; with no live blockers, return the static/path error.
@@ -302,14 +319,11 @@ git add skill/blockers.go skill/move.go skill/goto.go skill/warp.go skill/story.
 git commit -m "feat: plan around live sprite blockers"
 ```
 
-## Task 4: Populate map names from pure generated data
+## Task 4: Populate map names from a checked pure table
 
 **Files:**
 
-- Create: `internal/genmapnames/main.go`
-- Create: `internal/genmapnames/main_test.go`
 - Create: `red/state/map_names.go`
-- Create: `red/state/map_names_generated.go`
 - Create: `red/state/map_names_test.go`
 - Modify: `agent/observe.go`
 - Modify: `agent/observe_test.go`
@@ -340,23 +354,31 @@ Run and require failure:
 go test ./red/state ./agent -run 'TestMapName|TestObserveFreshBoot|TestObserveJSONRoundTrip' -count=1
 ```
 
-### Step 2: Add a reproducible generator
+### Step 2: Add the plain table and a decomp-parity test
 
-`red/state/map_names.go`:
+In `red/state/map_names.go`, add a `[256]string` literal keyed by the explicit
+IDs in `pokered/constants/map_constants.asm`:
 
 ```go
-//go:generate go run ../../internal/genmapnames -in ../../pokered/constants/map_constants.asm -out map_names_generated.go
+var mapNames = [256]string{
+	0x00: "PALLET_TOWN",
+	0x01: "VIRIDIAN_CITY",
+	// ...the remaining map_const entries...
+	0x28: "OAKS_LAB",
+}
 
 func MapName(id uint8) string { return mapNames[id] }
 ```
 
-The generator parses only `map_const NAME, width, height ; $ID` lines and emits a `[256]string` literal keyed by the explicit hex ID. Fail on duplicate IDs, duplicate names, malformed matching lines, or write failure. Unit-test the parser with a tiny input string so generated output is not its only test.
+In `red/state/map_names_test.go`, follow the existing
+`event_constants_test.go` approach: parse the vendored
+`../../pokered/constants/map_constants.asm`, extract each
+`map_const NAME, ... ; $ID` line, and assert the complete Go table agrees.
+Fail on duplicate IDs, duplicate names, malformed `map_const` lines, a missing
+Go entry, or a Go entry not present in the decomp. The decomp is fixed inventory;
+do not add a generator, generated file, `go:generate`, or drift build step.
 
-Generate and wire `Observe`:
-
-```bash
-go generate ./red/state
-```
+Wire `Observe`:
 
 ```go
 MapName: state.MapName(gs.Player.MapID),
@@ -367,11 +389,9 @@ No fixture or runtime ROM parsing belongs in this lookup.
 ### Step 3: Verify and commit
 
 ```bash
-gofmt -w internal/genmapnames/*.go red/state/map_names.go red/state/map_names_generated.go red/state/map_names_test.go
-go test ./internal/genmapnames ./red/state ./agent -count=1
-go generate ./red/state
-git diff --exit-code -- red/state/map_names_generated.go
-git add internal/genmapnames red/state/map_names.go red/state/map_names_generated.go red/state/map_names_test.go agent/observe.go agent/observe_test.go
+gofmt -w red/state/map_names.go red/state/map_names_test.go agent/observe.go agent/observe_test.go
+go test ./red/state ./agent -count=1
+git add red/state/map_names.go red/state/map_names_test.go agent/observe.go agent/observe_test.go
 git commit -m "feat: expose stable map names"
 ```
 
@@ -395,18 +415,23 @@ got, err := agent.Execute(e, e.ROM(), o)
 if err != nil { t.Fatal(err) }
 if got.Objective != o { ... }
 if got.Outcome != agent.OutcomeCompleted { ... }
-if got.Postcondition != agent.PostconditionSatisfied { ... }
 if got.Final.Map != dest.Map || got.Final.X != dest.X || got.Final.Y != dest.Y { ... }
 if got.Travel == nil { t.Fatal("Travel = nil") }
 ```
 
-Extend a Pallet-to-Viridian test to prove `TravelResult.Battles`, `Replans`, and `BlackedOut` survive without flattening. Do not capture stdout; structured data is the behavior that matters.
+Extend a Pallet-to-Viridian test to prove `TravelResult.Battles`, `Replans`,
+and `BlackedOut` survive without flattening. Add result tests for the complete
+`TrainResult` and for Gym win/loss. A Gym loss and a training shortfall are
+structured non-completion outcomes the planner can reason from, not successful
+completion hidden behind a log line. Do not capture stdout; structured data is
+the behavior that matters.
 
 Add pure postcondition cases:
 
-- exact `KindGoTo` destination and controllable -> satisfied;
-- wrong map/tile after claimed success -> false;
-- still transient/uncontrollable after the settle budget -> unavailable.
+- exact `KindGoTo` destination and controllable -> `OutcomeCompleted`;
+- wrong map/tile after claimed success -> `OutcomePostconditionFailed`;
+- still transient/uncontrollable after the settle budget ->
+  `OutcomePostconditionUnavailable`.
 
 Run:
 
@@ -435,25 +460,20 @@ const (
 	OutcomeUnknownFailure           Outcome = "unknown_failure"
 )
 
-type PostconditionStatus string
-
-const (
-	PostconditionSatisfied   PostconditionStatus = "satisfied"
-	PostconditionFalse       PostconditionStatus = "false"
-	PostconditionUnavailable PostconditionStatus = "unavailable"
-)
-
 type ObjectiveResult struct {
-	Objective     Objective
-	Outcome       Outcome
-	Summary       string
-	Final         Observation
-	Travel        *skill.TravelResult
-	Postcondition PostconditionStatus
+	Objective  Objective
+	Outcome    Outcome
+	Summary    string
+	Final      Observation
+	Travel     *skill.TravelResult
+	Train      *skill.TrainResult
+	GymOutcome *state.BattleResult
 }
 ```
 
 Keep the low-level `error` as `Execute`'s second return value; do not put an `error` interface in planner JSON.
+The outcome code is also the only postcondition status; do not add a second
+tri-state field that can disagree with it.
 
 ### Step 3: Change Execute, without recovery yet
 
@@ -463,7 +483,16 @@ Change the signature:
 func Execute(m *emu.Emu, romData []byte, o Objective) (ObjectiveResult, error)
 ```
 
-Initialize `Objective` immediately. Preserve the complete `TravelResult` for `KindGoTo`. Remove the blackout `fmt.Printf` and summarize it in the result. Snapshot `Final` on every return path.
+Initialize `Objective` immediately. Preserve complete `TravelResult`,
+`TrainResult`, and Gym battle results. Remove all four objective-level
+`fmt.Printf` calls in `agent/objective.go`: travel blackout, training blackout,
+Gym win, and Gym loss. Put those facts in `Summary` and the typed fields.
+Snapshot `Final` on every return path.
+
+Map explicit skill results semantically: Gym win and `TrainResult.Reached` can
+complete their objectives; Gym loss, training blackout, or a bounded training
+shortfall return `OutcomeBlocked` rather than silently returning
+`OutcomeCompleted`.
 
 After reported success, use a named bounded settle helper only when required, then evaluate the semantic postcondition. `KindGoTo` requires exact destination plus controllable overworld. Existing positive assertions satisfy `KindStarter` and `KindTalk`; record them rather than replaying those contracts.
 
@@ -471,7 +500,11 @@ A false claimed-success postcondition returns `OutcomePostconditionFailed` and a
 
 ### Step 4: Adapt Run mechanically
 
-Change `Run` only enough to compile and keep today's stop-on-any-error behavior. Append to `Completed` only on `OutcomeCompleted`. Do not update its load-bearing comment until Task 8 changes behavior.
+Change `Run` only enough to compile and keep today's stop-on-any-error behavior.
+Add `Outcomes []ObjectiveResult` to the whole-run `Result` now, initialize it,
+and append to `Completed` only on `OutcomeCompleted`. Task 8 will begin retaining
+all normalized results in `Outcomes`. Do not update the load-bearing `Run`
+comment until Task 8 changes behavior.
 
 ### Step 5: Verify and commit
 
@@ -489,50 +522,76 @@ git commit -m "feat: return structured objective results"
 - Create: `skill/dialogue_recovery.go`
 - Create: `skill/dialogue_recovery_test.go`
 - Create: `skill/dialogue_recovery_real_test.go`
+- Create: `red/state/choice.go`
+- Create: `red/state/choice_test.go`
 - Modify: `skill/story.go`
 - Modify: `skill/move.go`
-- Modify: `skill/goto.go`
 
-### Step 1: Pin the positive choice predicate
+### Step 1: Measure the tilemap before choosing the predicate
+
+Create a temporary `skill/zz_dialogue_choice_probe_test.go` and inspect two real
+states without implementing a predicate yet:
+
+1. A live two-option menu, using a fixture-backed known yes/no flow.
+2. The Viridian old-man ordinary dialogue: load `post_starter`, `Travel` to
+   Viridian, use a test-local named `Destination` for the safe south approach,
+   trigger the script, and capture each pre-A tilemap.
+
+Log `FontLoaded`, `TextBoxID`, cursor/max, `JoyIgnore`, `ScreenText`, raw rows
+containing the cursor/options, and the final deposit tile. Dump the rows as raw
+tile IDs from `m.Slice(sym.TileMap, sym.TileMapLen)` in 20-wide lines, not
+through `ScreenText`: `DecodeTiles` has no `textChars` entry for the `▶` cursor
+(charmap `$ed`), so it renders as a space, and `strings.Fields` then collapses
+away the row boundaries the predicate needs. Do not add the gate
+approach to production `places`: `PlaceNames()` would offer a measurement
+coordinate to the LLM.
+
+Run verbose output to a file, inspect the small relevant excerpts, then delete
+the scratch test before the task commit:
+
+```bash
+go test ./skill -run TestDialogueChoiceProbe -count=1 -v > /tmp/pokepilot-dialogue-choice.log 2>&1
+rg -n 'choice|ordinary|TextBoxID|cursor|deposit' /tmp/pokepilot-dialogue-choice.log
+```
+
+Do not proceed until the measurement identifies a positive live tilemap shape
+and establishes the old-man budget and safe deposit. If it does not, revise the
+design rather than falling back to `TextBoxID`.
+
+### Step 2: Write the choice and recovery tests from the measurement
+
+In `red/state/choice_test.go`, test a decoder that returns non-nil only for the
+measured live shape: `FontLoaded != 0`, a filled menu cursor tile, and two known
+option strings in the corresponding tilemap rows. `DecodeTwoOptionMenu` reads
+raw tile IDs out of `sym.TileMap` as 20-wide rows and compares the cursor tile
+(`0xed`) by value; it must not go through `ScreenText` or `DecodeTiles`, which
+erase both the cursor glyph and the row layout. `drawOrdinaryTextForTest` and
+its live-menu counterpart therefore write tile IDs into `mem` at `sym.TileMap`
+offsets. Include this adversarial row:
 
 ```go
-func TestTwoOptionChoiceUpRequiresWholeLiveShape(t *testing.T) {
-	var mem state.Mem
+func TestDecodeTwoOptionMenuRejectsStaleIDDuringOrdinaryText(t *testing.T) {
+	var mem Mem
 	mem[sym.FontLoaded] = 1
-	mem[sym.TextBoxID] = 0x14
-	mem[sym.CurrentMenuItem] = 0
-	mem[sym.MaxMenuItem] = 1
-	if !twoOptionChoiceUp(&mem) { t.Fatal("live shape not detected") }
+	mem[sym.TextBoxID] = 0x14       // stale TWO_OPTION_MENU
+	mem[sym.CurrentMenuItem] = 0   // stale plausible cursor
+	mem[sym.MaxMenuItem] = 1       // stale plausible shape
+	drawOrdinaryTextForTest(&mem, "YES, I KNOW")
 
-	mem[sym.FontLoaded] = 0 // stale fields after close
-	if twoOptionChoiceUp(&mem) { t.Fatal("stale menu detected as live") }
+	if got := DecodeTwoOptionMenu(&mem); got != nil {
+		t.Fatalf("ordinary text decoded as choice: %+v", got)
+	}
 }
 ```
 
-Add rows for wrong `TextBoxID`, `Max != 1`, and `Current > 1`.
+Also test both cursor positions on a real two-option tilemap shape, a missing
+cursor, incomplete/misaligned option strings, and `FontLoaded == 0`. Do not use
+`TextBoxID`, `CurrentMenuItem`, or `MaxMenuItem` as the deciding liveness signal;
+they may be retained in diagnostics.
 
-### Step 2: Measure the old-man flow before enabling recovery
-
-In `skill/dialogue_recovery_real_test.go`:
-
-1. Load `post_starter`.
-2. `Travel` to Viridian City.
-3. Add and resolve a named `skill.Place` entry for the old-man gate's safe
-   south approach; do not embed its coordinate in the test.
-4. `GoTo` that destination, then take the one documented northward trigger
-   step and require `ErrDialogueInterrupted`.
-5. Before every candidate A press, log map/tile, `FontLoaded`, `TextBoxID`, cursor/max, `JoyIgnore`, decoded text, and choice predicate.
-6. Guardedly advance until controllable, choice, unexpected mode, or exhaustion.
-7. Assert controllable overworld and record the force-walk deposit tile.
-8. Idle long enough to prove that tile does not immediately retrigger.
-
-Run it alone:
-
-```bash
-go test ./skill -run TestViridianOldManDialogueMeasurement -count=1 -v
-```
-
-General recovery remains disabled until the run proves all four assumptions: bounded guarded-A recovery, no stale false-positive choice, budget headroom, and a predictable safe deposit tile. Put measured values in test comments. If an assumption fails, stop and revise the outcome definition.
+In `skill/dialogue_recovery_real_test.go`, turn the old-man half of the probe
+into permanent assertions for guarded recovery, its measured budget, deposit
+tile, and no immediate retrigger. Keep its approach coordinate test-local.
 
 ### Step 3: Reuse the existing input loop
 
@@ -543,7 +602,10 @@ Extract `advanceUntil`'s body into one internal core accepting:
 - a fixed budget;
 - an A-press count in its result.
 
-Keep the existing `advanceUntil` wrapper so story/heal/gym behavior does not drift. `dialogue_recovery.go` calls the shared core with `twoOptionChoiceUp` as `stopBeforeA`; it must not grow a second A/StepFrame loop.
+Keep the existing `advanceUntil` wrapper so story/heal/gym behavior does not
+drift. `dialogue_recovery.go` calls the shared core with
+`state.DecodeTwoOptionMenu(mem) != nil` as `stopBeforeA`; it must not grow a
+second A/StepFrame loop.
 
 Define:
 
@@ -564,9 +626,13 @@ type DialogueRecoveryResult struct {
 	Final   state.GameState
 	Sprites []state.SpriteState
 }
+
+func RecoverDialogue(m *emu.Emu, budget int) DialogueRecoveryResult
 ```
 
-The entry point is valid only after `ErrDialogueInterrupted`. It never sends directions. Before each A press it snapshots and checks the choice predicate. Choice returns without input.
+`RecoverDialogue` is valid only after `ErrDialogueInterrupted`. It never sends
+directions. Before each A press it snapshots and checks the tilemap-backed
+choice decoder. Choice returns without input.
 
 Put the exact movement/recovery invariant from Task 3 above this loop too.
 
@@ -576,7 +642,8 @@ Use a small loop seam for snapshot, tap A, and step frame. Prove:
 
 - `WalkPath` still sends no A on dialogue interruption;
 - recovery sends A only after its interruption entry point;
-- choice is checked before every A and receives zero input;
+- the tilemap choice shape is checked before every A and receives zero input;
+- stale `TextBoxID = 0x14` plus ordinary text still advances normally;
 - exhaustion returns `DialogueBudgetExhausted`;
 - battle/unexpected mode returns `DialogueUnexpectedMode`.
 
@@ -585,9 +652,10 @@ Do not add recovery knowledge to `WalkPath` or `StepOnce`.
 ### Step 5: Verify and commit
 
 ```bash
-go test ./skill -run 'TestTwoOptionChoice|TestDialogueRecovery|TestWalkPath' -count=1
+go test ./red/state ./skill -run 'TestDecodeTwoOptionMenu|TestDialogueRecovery|TestWalkPath' -count=1
 go test ./skill -run TestViridianOldManDialogueMeasurement -count=1 -v
-git add skill/dialogue_recovery.go skill/dialogue_recovery_test.go skill/dialogue_recovery_real_test.go skill/story.go skill/move.go skill/goto.go
+test ! -e skill/zz_dialogue_choice_probe_test.go
+git add red/state/choice.go red/state/choice_test.go skill/dialogue_recovery.go skill/dialogue_recovery_test.go skill/dialogue_recovery_real_test.go skill/story.go skill/move.go
 git commit -m "feat: stabilize interrupted dialogue safely"
 ```
 
@@ -599,27 +667,29 @@ git commit -m "feat: stabilize interrupted dialogue safely"
 - Create: `agent/outcome_test.go`
 - Modify: `agent/objective_result.go`
 
-### Step 1: Test the normalized policy and precedence
+### Step 1: Test the three actions and default-stop policy
 
-Table-test every outcome:
+Keep the action mapping small:
 
 ```go
-tests := []struct {
-	name string
-	out  Outcome
-	want runAction
-}{
-	{"completed", OutcomeCompleted, actionContinue},
-	{"blocked", OutcomeBlocked, actionReplan},
-	{"choice", OutcomeChoiceRequired, actionChoice},
-	{"stabilization", OutcomeStabilizationFailed, actionStop},
-	{"ownership", OutcomeOwnershipFailure, actionStop},
-	{"controller", OutcomeControllerUncertain, actionStop},
-	{"postcondition false", OutcomePostconditionFailed, actionStop},
-	{"postcondition unavailable", OutcomePostconditionUnavailable, actionStop},
-	{"unknown", OutcomeUnknownFailure, actionStop},
+func actionFor(out Outcome) runAction {
+	switch out {
+	case OutcomeCompleted:
+		return actionContinue
+	case OutcomeBlocked:
+		return actionReplan
+	case OutcomeChoiceRequired:
+		return actionChoice
+	default:
+		return actionStop
+	}
 }
 ```
+
+Test those three exceptions directly, then one loop asserting that every
+current terminal label plus an unrecognized future value uses the default stop.
+The labels remain useful diagnostics; they do not need nine bespoke action
+rows.
 
 Add precedence cases:
 
@@ -663,7 +733,7 @@ git add agent/outcome.go agent/outcome_test.go agent/objective_result.go
 git commit -m "feat: normalize objective failures"
 ```
 
-## Task 8: Feed outcomes to planners and preserve both stuck guards
+## Task 8: Feed outcomes to planners and preserve the stuck guard
 
 **Files:**
 
@@ -692,21 +762,23 @@ type Planner interface {
 
 Migrate the current `LLMPlanner.recent []string` work to caller-supplied context. Remove planner-owned history so `Run` is the single source of truth and an exact planning context is replayable.
 
-### Step 2: Write both stuck-guard tests
+### Step 2: Preserve the existing no-progress guard
 
-Use a small package-internal guard helper if needed so tests are ROM-free:
+Add a ROM-free alternating-objective regression: objective A and objective B
+alternate while every resulting progress observation is unchanged. The single
+existing counter must reach `StuckAfter` because it is not keyed by objective.
+Also keep the existing same-objective stuck test and prove actual progress
+resets the counter.
 
-1. Alternate objective A/B while every resulting progress observation is unchanged. The original no-progress guard must reach `StuckAfter` even though the objective changes.
-2. Repeat the same objective + outcome + resulting progress observation. The second guard independently reaches the same threshold.
-3. Change only outcome: repeated-outcome resets, no-progress continues.
-4. Make actual progress: both reset according to contract.
-
-Do not merge the counters or key the original one by objective.
+Do not add a repeated-outcome counter. Consecutive identical result
+observations become no-progress rounds after their first occurrence, so a
+second counter adds no new loop class. Compute the objective + outcome + final
+progress fingerprint only for the log.
 
 Run and require failure:
 
 ```bash
-go test ./agent -run 'TestScriptedPlanner|TestLLMPlanner|TestNoProgressGuard|TestRepeatedOutcomeGuard' -count=1
+go test ./agent -run 'TestScriptedPlanner|TestLLMPlanner|TestNoProgressGuard|TestAlternatingObjectivesStillStop' -count=1
 ```
 
 ### Step 3: Update Run
@@ -719,23 +791,27 @@ Each round:
 4. On error, call `normalizeObjectiveFailure`.
 5. Append every normalized `ObjectiveResult` to `Result.Outcomes`; append `Completed` only for completed outcomes.
 6. Continue for `OutcomeCompleted`, re-plan for `OutcomeBlocked`, stop cleanly on `OutcomeChoiceRequired` until an explicit choice-owning objective exists, and stop with `StopError` for terminal outcomes.
-7. Update no-progress regardless of objective/outcome.
-8. Independently update the fingerprint counter keyed by exact objective, outcome, and resulting progress observation.
-9. Stop with `StopStuck` when either reaches `Budget.StuckAfter`.
-10. Keep round/frame budgets as outer bounds.
+7. Update the existing no-progress counter regardless of objective/outcome.
+8. Stop with `StopStuck` when it reaches `Budget.StuckAfter`.
+9. Keep round/frame budgets as outer bounds.
 
 Add `StopChoiceRequired` rather than labeling a safe choice refusal a controller error. Bound history to six results and copy the slice before passing it to a planner.
 
-Replace `Run`'s old comment with the real invariant: recoverable failures are normalized only after the controllable-overworld gate, terminal overrides win, and two independent stuck guards bound re-planning.
+Replace `Run`'s old comment with the real invariant: recoverable failures are
+normalized only after the controllable-overworld gate, terminal overrides win,
+and the unchanged no-progress guard bounds re-planning.
 
 ### Step 4: Improve diagnostics
 
-Per-round logs include outcome plus short summary. Navigation failures include named map/tile, decoded sprites, last blocker set, normalized result, and original typed error. Only the short summary enters the model prompt.
+Per-round logs include outcome, short summary, and the diagnostic fingerprint
+of objective + outcome + resulting progress observation. Navigation failures
+include named map/tile, decoded sprites, last blocker set, normalized result,
+and original typed error. Only the short summary enters the model prompt.
 
 ### Step 5: Verify and commit
 
 ```bash
-go test ./agent -run 'TestRun|TestScriptedPlanner|TestLLMPlanner|TestNoProgressGuard|TestRepeatedOutcomeGuard' -count=1
+go test ./agent -run 'TestRun|TestScriptedPlanner|TestLLMPlanner|TestNoProgressGuard|TestAlternatingObjectivesStillStop' -count=1
 go test ./agent ./skill ./world -count=1
 git add agent/planner.go agent/planner_test.go agent/llm.go agent/llm_test.go agent/run.go agent/run_test.go agent/stuck_test.go
 git commit -m "feat: replan from normalized outcomes"

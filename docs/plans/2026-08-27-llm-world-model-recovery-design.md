@@ -60,23 +60,40 @@ makes exhaustion look like an ordinary recoverable unwalkable leg.
 ## 3. First priority: live sprite blockers
 
 The static collision grid cannot know where NPC sprites stand. Sprite RAM does.
-Decode the sixteen 16-byte entries beginning at `wSpriteStateData2` (`0xC200`):
+Decode the sixteen 16-byte slots across both sprite-state arrays:
 
 - slot 0 is the player and must never enter the blocker set;
 - slots 1 through 15 are candidate NPC/object sprites;
-- byte `+0x0d` is `SPRITESTATEDATA2_PICTUREID`; zero means inactive;
-- byte `+0x04` is MAPY and byte `+0x05` is MAPX;
+- in `wSpriteStateData1` (`0xC100`), byte `+0x00`
+  (`SPRITESTATEDATA1_PICTUREID`) must be non-zero and byte `+0x02`
+  (`SPRITESTATEDATA1_IMAGEINDEX`) must not be `0xff`;
+- picture ID zero means an unused slot; image index `0xff` means a hidden,
+  removed, or off-screen object and must not block navigation;
+- in `wSpriteStateData2` (`0xC200`), byte `+0x04` is MAPY and byte `+0x05`
+  is MAPX;
 - MAPY/MAPX contain the object-table `+4` encoding, so subtract four when
   converting them to the tile coordinates used by `wYCoord`, `wXCoord`, and
   `world.Grid`.
 
+Do not use `SPRITESTATEDATA2_PICTUREID` at `+0x0d` as liveness. It is scratch
+used while loading sprite tile patterns and is zeroed afterwards. `wNumSprites`
+is still unnecessary because unused data1 slots have picture ID zero.
+
 `rom.ParseMap` already performs the same normalization for
 `MapHeader.Objects`; no parser change is required.
 
-Every path plan reconstructs its blocker set from a fresh RAM snapshot. If a
-sprite moves between planning and stepping, movement may still collide. That
-collision causes a bounded retry which re-reads the player and sprite positions
-and plans again.
+The `IMAGEINDEX != 0xff` filter intentionally makes the overlay screen-local.
+A sprite beyond the active screen region appears only when the player gets near
+it. Every path plan reconstructs its blocker set from a fresh RAM snapshot. If
+a sprite becomes visible or moves between planning and stepping, movement may
+still collide. That collision causes a bounded retry which re-reads the player
+and sprite positions and plans again.
+
+`TryWalking` writes an NPC's destination MAPY/MAPX at the start of its 16-frame
+walk animation. The sprite can therefore visually straddle two tiles while the
+overlay contains only its destination. The same bounded retry absorbs that
+race; the overlay is current engine state, not a promise that collision is
+impossible.
 
 The permanent invariant is:
 
@@ -91,10 +108,10 @@ Keep the retry. Delete the memory of guessed blocked tiles.
 
 ## 4. Map names before a larger world object
 
-`Observation.MapName` already exists but `Observe` never fills it. Generate or
-maintain a pure map-ID-to-name table from
-`pokered/constants/map_constants.asm`, then populate the field. Unknown IDs
-remain `""`.
+`Observation.MapName` already exists but `Observe` never fills it. Maintain a
+plain Go map-ID-to-name table and test it against the vendored
+`pokered/constants/map_constants.asm`, following the existing
+`event_constants_test.go` parity-test pattern. Unknown IDs remain `""`.
 
 This directly improves model prompts. It does not require fixtures, emulator
 boot, a world cache, or exposing more map data to the model.
@@ -152,19 +169,22 @@ carry at least:
 - a normalized outcome code;
 - a short planner-facing summary;
 - the final structured observation;
-- relevant skill output, including `TravelResult` battles, re-plans, and
-  blackout state, and `TrainResult` when training becomes an objective;
-- whether the postcondition was satisfied, false, or unavailable.
+- relevant skill output for every objective kind that produces it: complete
+  `TravelResult`, complete `TrainResult`, and the Gym battle result;
+- postcondition failure or unavailability in the normalized outcome code.
 
 `Execute` must not print gameplay outcomes. Structured return data is the
 outward channel. Tests prove the positive result data rather than capturing
-stdout to prove a negative.
+stdout to prove a negative. This removes all four current objective-level
+prints: travel blackout, training blackout, Gym win, and Gym loss.
 
 Skills retain their existing internal positive assertions. `Execute` adds only
 missing semantic postconditions, such as exact destination arrival. A skill
 which returns success but whose objective postcondition is false has violated
 the boundary and is terminal. A postcondition which cannot be evaluated after
-its settle budget is separately terminal; unavailable is not passed.
+its settle budget is separately terminal; unavailable is not passed. Do not
+also add a `PostconditionStatus`: `completed`, `postcondition_failed`, and
+`postcondition_unavailable` are the single source of truth.
 
 ---
 
@@ -199,15 +219,30 @@ The four outcomes are:
 - battle or another unexpected mode appears -> terminal ownership failure.
 
 `state.DecodeMenu` alone cannot identify an open menu; its cursor fields may be
-stale and it has no open/closed signal. The initial choice predicate should be
-measured using the positive live shape:
+stale and it has no open/closed signal. `TextBoxID` is also not a liveness bit:
+the repository already measured it staying `0x01` before, during, and after
+ordinary dialogue, and `DisplayTextBoxID` does not clear it. A stale
+`TWO_OPTION_MENU` (`0x14`) combined with a later ordinary text box is therefore
+the dangerous false positive, not stale menu RAM after `FontLoaded` clears.
 
-- `FontLoaded != 0`;
-- `TextBoxID == TWO_OPTION_MENU` (`0x14`);
-- cursor/max fields match a live two-option menu.
+Choice detection must be anchored in what is currently drawn. Measure a
+positive tilemap shape: `FontLoaded != 0`, a live menu cursor tile, and one of
+the known two-option string pairs at the corresponding rows.
 
-Those RAM cells are not reliably cleared when a menu closes, so this predicate
-must be emulator-verified before general recovery uses it.
+`ScreenText` cannot express that shape and must not be the predicate's input.
+It calls `DecodeTiles`, which maps unknown tile IDs to a space and then
+collapses whitespace with `strings.Fields`. The menu cursor is `▶`, charmap
+`$ed`, which has no `textChars` entry: `ScreenText` renders it as a space and
+then discards it along with every row boundary. A choice decoder therefore
+reads the raw `sym.TileMap` bytes as 20-wide rows and tests tile IDs directly.
+`ScreenText` remains the right thing to put in a planner summary or a log line.
+
+`TextBoxID` and cursor/max RAM may be logged as supporting evidence; they
+cannot be the deciding predicate.
+
+Before general recovery uses the predicate, emulator verification must include
+the adversarial state `FontLoaded = 1`, stale `TextBoxID = 0x14`, and ordinary
+dialogue on screen. That state must classify as ordinary text, not a choice.
 
 Wild battles remain owned by `Travel`. If `ErrBattle` or
 `ErrBattleInterrupted` escapes an objective that should have used `Travel`, it
@@ -239,32 +274,33 @@ interruption. Explicit terminal overrides take precedence.
 
 ---
 
-## 9. Planner history and two stuck guards
+## 9. Planner history and the existing stuck guard
 
 The planner receives a short history of normalized `ObjectiveResult` summaries,
 not only selected objective names. This complements the current fix for a
 temperature-zero, memoryless planner; layering did not cause that oscillation.
 
-Reuse `Budget.StuckAfter` as one threshold, but keep two independent counters:
+Preserve today's no-progress counter exactly. It increments whenever
+`sameProgress(before, after)` is true, regardless of which objective ran, so
+alternating objectives cannot evade it.
 
-1. Preserve today's no-progress counter exactly. It increments whenever
-   `sameProgress(before, after)` is true, regardless of which objective ran.
-   Alternating objectives therefore cannot evade it.
-2. Add a repeated-outcome counter keyed by:
+Do not add a repeated-outcome counter. Consecutive identical resulting progress
+observations necessarily become no-progress rounds after the first occurrence;
+a separate fingerprint counter detects no distinct loop class and can beat the
+existing guard by at most one round when the first occurrence moved before
+failing. Keep the fingerprint
 
-   ```
-   objective + normalized outcome code + resulting progress observation
-   ```
+```
+objective + normalized outcome code + resulting progress observation
+```
 
-   It catches a planner selecting the same failed objective under the same
-   conditions. It resets when that fingerprint changes.
-
-The run stops as stuck when either counter reaches `StuckAfter`. `MaxRounds` and
-`MaxFrames` remain outer safety budgets, not the primary loop detector.
+in the diagnostic log instead. `MaxRounds` and `MaxFrames` remain outer safety
+budgets.
 
 The current `Run` comment that says no failed objective is ever retried is
 load-bearing documentation. Change it with the behavior and state the
-normalization, state gate, terminal overrides, and two stuck guards explicitly.
+normalization, state gate, terminal overrides, and unchanged no-progress guard
+explicitly.
 
 ---
 
@@ -272,7 +308,9 @@ normalization, state gate, terminal overrides, and two stuck guards explicitly.
 
 ### Sprite decoding and navigation
 
-- Synthetic tests prove slot 0 is excluded and zero-picture slots are ignored.
+- Synthetic tests prove slot 0 is excluded, data1 picture ID zero is unused,
+  data1 image index `0xff` is hidden/off-screen, and the cleared data2 picture
+  scratch byte is irrelevant.
 - A real fixture at a stable map-entry point anchors coordinate decoding to an
   independently parsed, already-normalized `MapHeader.Objects` entry. This
   catches a wrong stride, wrong offsets, or a missed `-4`; a synthetic test
@@ -289,18 +327,21 @@ normalization, state gate, terminal overrides, and two stuck guards explicitly.
 
 - Pure table tests cover map IDs `0x00`, `0x28`, and `0x02`, plus unknown ->
   `""`; no emulator fixture is needed.
-- Result tests prove `TravelResult` fields survive into `ObjectiveResult`.
-- Postcondition tests separately cover true, false, and unavailable.
+- Result tests prove `TravelResult`, `TrainResult`, and the Gym battle result
+  survive into `ObjectiveResult`.
+- Postcondition tests separately cover completed, failed, and unavailable
+  outcome codes without a second status field.
 
 ### Normalization and run-loop policy
 
-- Tests at the normalized-outcome layer enumerate every run-loop row and prove
-  terminal overrides take precedence.
+- Tests prove the three non-terminal actions (`completed`, `blocked`, and
+  `choice_required`), that every other/unknown outcome stops, and that terminal
+  overrides take precedence.
 - Dialogue tests prove movement never presses A, recovery presses A only after
-  an interruption, and a detected choice receives no input.
-- Separate tests prove the unchanged no-progress counter and the new
-  repeated-outcome counter each stop a run; alternating objectives must still
-  trigger the original counter.
+  an interruption, a tilemap-confirmed choice receives no input, and stale
+  `TextBoxID = 0x14` during ordinary text does not stop recovery.
+- Tests preserve the unchanged no-progress counter, including the alternating
+  objective case. Outcome fingerprints are diagnostic output only.
 
 ### Real-ROM measurements
 
@@ -309,8 +350,8 @@ not yet running-game proof. Measure these before enabling general recovery:
 
 1. Viridian's old-man text reaches controllable overworld state within a
    bounded number of guarded A presses.
-2. The proposed choice predicate distinguishes a live choice from stale menu
-   RAM.
+2. The tilemap-based choice predicate distinguishes a live choice from
+   ordinary text even when `FontLoaded = 1` and `TextBoxID` is stale `0x14`.
 3. Stabilization and choice-detection budgets are sufficient.
 4. The old man's force-walk deposits the player on a predictable safe tile
    which does not immediately retrigger the gate.
@@ -331,7 +372,8 @@ error.
 4. Populate `Observation.MapName` from pure map data.
 5. Add `ObjectiveResult` and missing objective postconditions.
 6. Measure and implement guarded dialogue normalization and choice detection.
-7. Feed normalized results back to the planner with both stuck counters.
+7. Feed normalized results back to the planner while preserving the existing
+   no-progress counter and logging outcome fingerprints.
 8. Promote places into richer landmarks only when a concrete new objective
    needs prerequisites or postconditions; introduce `World` at that point.
 
