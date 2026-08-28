@@ -15,6 +15,7 @@ import (
 
 	"github.com/maestroi/pokepilot/agent"
 	"github.com/maestroi/pokepilot/emu"
+	"github.com/maestroi/pokepilot/farm"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/skill"
@@ -79,6 +80,20 @@ func main() {
 	}
 	report(m, "booted")
 
+	// Farm mode: the wall, not the flags, decides what runs. The boot state
+	// is saved at this clean post-boot point and restored per lease, so a
+	// CLI -seed never burns frames here; each leased spec's seed is applied
+	// exactly once by runOne.
+	if orchURL := os.Getenv("POKEPILOT_ORCH_URL"); orchURL != "" {
+		bootState, err := m.SaveState()
+		if err != nil {
+			log.Fatalf("save boot state: %v", err)
+		}
+		fmt.Printf("farm mode: leasing runs from %s\n", orchURL)
+		runFarm(m, farm.NewClient(orchURL), bootState)
+		return
+	}
+
 	if burn > 0 {
 		m.StepFrames(burn)
 		fmt.Printf("seed %d: burned %d idle frames, so this run's luck differs\n", *seed, burn)
@@ -119,15 +134,8 @@ func runScripted(m *emu.Emu, starter, dest string, hold time.Duration, served st
 	// The north exit of Pallet Town is gated on the opening story: walking to
 	// y==1 without a Pokemon triggers Oak's "Don't go out!" cutscene and sets
 	// wJoyIgnore, which no amount of walking gets past.
-	var which skill.Starter
-	switch starter {
-	case "charmander":
-		which = skill.StarterCharmander
-	case "squirtle":
-		which = skill.StarterSquirtle
-	case "bulbasaur":
-		which = skill.StarterBulbasaur
-	default:
+	which, ok := starterFromName(starter)
+	if !ok {
 		log.Fatalf("unknown starter %q: want charmander, squirtle or bulbasaur", starter)
 	}
 

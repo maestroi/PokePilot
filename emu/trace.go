@@ -201,3 +201,19 @@ func (m *Emu) TraceHeader(text string) {
 // steps the emulator, so it may read emulator memory without racing. Use it
 // to record anything emu cannot decode by itself. Passing nil clears it.
 func (m *Emu) OnSample(fn func(*Emu)) { m.onSample = fn }
+
+// TraceTail returns the last n trace lines as "kind: text", newest last.
+// Used to fill the trace_tail field of a farm.FinishReport; nothing in
+// emu imports farm, this just exposes data already collected.
+func (m *Emu) TraceTail(n int) []string {
+	entries := m.trace.snapshot()
+	if n > len(entries) {
+		n = len(entries)
+	}
+	entries = entries[len(entries)-n:]
+	out := make([]string, len(entries))
+	for i, e := range entries {
+		out[i] = e.Kind + ": " + e.Text
+	}
+	return out
+}

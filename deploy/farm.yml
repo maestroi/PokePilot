@@ -1,0 +1,40 @@
+# Local single-node Swarm smoke test (docs/plans/2026-08-26-farm-design.md
+# section 6). Deploy with:
+#
+#   docker stack deploy --resolve-image never -c deploy/farm.yml pokefarm
+#
+# `--resolve-image never` lets a single-node Swarm use the image that
+# `make farm-image` loaded locally. On a MULTI-NODE swarm the nodes cannot
+# see each other's local image store, so the image must be published to a
+# registry and FARM_IMAGE pointed at that reference instead; this stack
+# file intentionally contains no build: keys because `docker stack deploy`
+# does not build images.
+#
+# The ROM is never baked into the image: the runner bind-mounts the
+# operator's ${POKEMON_RED_ROM} read-only and reads it back as
+# /rom/pokemon_red.gb.
+
+services:
+  wall:
+    image: ${FARM_IMAGE:-pokepilot-farm:local}
+    command: ["pokewall", "-http", ":8080", "-dumps", "/var/lib/pokewall/dumps"]
+    deploy:
+      replicas: 1
+    ports:
+      - "8080:8080"
+    volumes:
+      - wall-dumps:/var/lib/pokewall/dumps
+
+  runner:
+    image: ${FARM_IMAGE:-pokepilot-farm:local}
+    command: ["pokepilot"]
+    environment:
+      POKEPILOT_ORCH_URL: http://wall:8080
+      POKEMON_RED_ROM: /rom/pokemon_red.gb
+    volumes:
+      - ${POKEMON_RED_ROM}:/rom/pokemon_red.gb:ro
+    deploy:
+      replicas: 2
+
+volumes:
+  wall-dumps:

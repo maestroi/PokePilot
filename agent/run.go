@@ -44,6 +44,11 @@ type Budget struct {
 	StuckAfter int
 	// Log receives one line per round. Nil means no logging.
 	Log io.Writer
+	// Cancel, when closed, stops Run before the next round's objective
+	// starts. Nil means never cancelled — the zero value of Budget keeps
+	// every existing caller's behavior unchanged. Checked between rounds
+	// only: an objective already in flight always finishes.
+	Cancel <-chan struct{}
 }
 
 // Run drives observe -> plan -> execute until the planner is done or a
@@ -63,11 +68,25 @@ func Run(m *emu.Emu, romData []byte, p Planner, offered []Objective, budget Budg
 	}
 
 	res := Result{Completed: []Objective{}}
+	// A run cancelled before round 1 must stop before it touches the
+	// emulator at all: there is no observation to report, and callers
+	// may pass a nil emu for exactly that case.
+	select {
+	case <-budget.Cancel:
+		return Result{Stop: StopBudget, Rounds: 0}
+	default:
+	}
 	startFrame := m.FrameCount()
 	last := Observe(m)
 	stuck := 0
 
 	for round := 1; ; round++ {
+		select {
+		case <-budget.Cancel:
+			return Result{Stop: StopBudget, Rounds: round - 1}
+		default:
+		}
+
 		if round > budget.MaxRounds {
 			res.Stop = StopBudget
 			break

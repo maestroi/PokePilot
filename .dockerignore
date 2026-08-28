@@ -1,0 +1,10 @@
+# Nothing ROM- or save-state-shaped may enter the Docker context or image.
+roms/
+*.gb
+*.sav
+*.state
+skill/failure/
+.git
+# Root build binaries, if any were left behind by a local `go build`.
+/pokepilot
+/pokewall

@@ -1,71 +1,44 @@
-# RUNNOTES — S5c-6: slice 5 close-out, and why the badge is not proven
+# RUNNOTES — local-Swarm deployment (buildable image + stack)
 
-## Outcome
+## What changed
+- `deploy/Dockerfile` (new): BuildKit named context `gomeboy` copied to the
+  exact absolute path go.mod's replace expects
+  (/home/maestro/Documents/projects/gomeboy); repo at
+  /home/maestro/Documents/projects/PokePilot; builds /pokepilot + /pokewall;
+  alpine:3.20 runtime with only those binaries + ca-certificates. No ROM.
+- `deploy/farm.yml` (new): `image: ${FARM_IMAGE:-pokepilot-farm:local}` for
+  both services, no build: keys. Wall: 1 replica, :8080 published, named
+  volume wall-dumps at -dumps /var/lib/pokewall/dumps. Runner: 2 replicas,
+  POKEPILOT_ORCH_URL=http://wall:8080, POKEMON_RED_ROM=/rom/pokemon_red.gb,
+  operator's ${POKEMON_RED_ROM} bind-mounted ro. Replicas live under
+  `deploy:` — `docker stack config` rejects top-level `replicas`.
+- `.dockerignore` (new): roms/, *.gb, *.sav, *.state, skill/failure/, .git,
+  root pokepilot/pokewall binaries.
+- `Makefile`: FARM_IMAGE (default pokepilot-farm:local), GOMEBOY_CONTEXT
+  (default ../gomeboy), farm-image (buildx --load with named context),
+  farm-up (ROM check + farm-image, then `docker stack deploy --resolve-image
+  never -c deploy/farm.yml pokefarm`), farm-down (`docker stack rm pokefarm`).
 
-Slice 5's five code tasks landed. The sixth, proving the Boulder Badge three
-runs running, **did not** — and that is the recorded result, not a pending
-item. `TestGymBoulderBadge` is skipped with its reason; slice 6 owns the proof.
+## Why
+Old task's Dockerfile couldn't build: the replace is an absolute path outside
+the build context, and stack deploy does not honor compose build keys. The
+named context fixes the former; images-only stack file fixes the latter.
 
-## What landed
+## Verified
+- `docker buildx build --load --build-context gomeboy=../gomeboy -t
+  pokepilot-farm:verify -f deploy/Dockerfile .` succeeded; image contains no
+  .gb/.sav/.state (find over /), only the two binaries + CA certs.
+- `FARM_IMAGE=pokepilot-farm:verify POKEMON_RED_ROM="$PWD/roms/pokemon_red.gb"
+  docker stack config -c deploy/farm.yml` renders images, not build keys.
+- `env -u POKEMON_RED_ROM go test ./... -count=1`, `go build ./...`,
+  `go vet ./...` all green; TestGymBoulderBadge's t.Skip untouched; go.mod
+  unchanged. Stack was NOT deployed.
 
-- **S5c-2** `ErrReplanExhausted` — re-plan exhaustion is now distinguishable
-  from an ordinary unwalkable leg, while keeping both identities in the chain.
-- **S5c-3** `Traverse` picks a warp tile the pathfinder can actually reach, so
-  the forest gates cross on ordinary legs. `crossGate` is deleted from the test.
-- **S5c-4** `state.DecodeSprites` — live NPC positions from `wSpriteStateData1`
-  liveness plus `wSpriteStateData2` coordinates.
-- **S5c-5a** `walkAround` re-reads blockers from fresh RAM every attempt; the
-  collision-memory maps are gone.
-- **S5c-5b** every path planner (`goto.go`, `warp.go`, `story.go`) plans on the
-  live blocker overlay; `walkLab`'s static ball-tile exclusions are merged in,
-  never mutated.
-- **S5c-6** the diagnostic bundle (`diagFatalf`), and one real fix found while
-  measuring: `Traverse` now types an unreachable connection edge as
-  `ErrLegUnwalkable`. Unwrapped it was terminal, which killed the only real
-  route to Pewter — Route 2's ledge makes the north edge unreachable from the
-  southern landing tile, and GoTo's per-tile ban is what re-routes through the
-  forest.
-
-## Why the badge is not proven
-
-Measured with all close-out fixes in place:
-
-    trained the lead to level 12 in 18 battles          ~1 minute
-    text box at map 0x0033 (1,18) text="Hey, wait u"    dismissed once, never returned
-    ... 8+ minutes, no further progress
-    killed at 9m44s, never completed
-
-A separate run hit Go's 10-minute default with the test at 9m09s, inside:
-
-    skill.waitForPositionStable                 warp.go:188
-    skill.Traverse  Edge{From:0x0d, To:0x32}    warp.go:176
-    skill.GoTo -> skill.Travel -> travelFightsThrough
-
-`From:0x0d To:0x32` is Route 2 back into the **south** gate while the leg
-targets the **north** gate (0x2F). It oscillates rather than advancing.
-
-Not a timeout bug: raising `-timeout` was tried and only buys a longer stall.
-Not a dialogue-retry loop either — the box was logged **once** and dismissed,
-so the paging fix works. What is missing is any bound on the composite:
-
-    travelFightsThrough  10 retries
-      Travel             maxBattles 10, loops per battle
-        GoTo             maxReplans 8
-          Traverse       crossBudget + arriveBudget + positionStableBudget(500) frames
-
-## For the next slice
-
-1. Dialogue recovery is necessary but **not sufficient**.
-2. The journey needs **one global deadline** so a stuck run reports in seconds.
-3. Suspected, unconfirmed: the oscillation may be a regression from S5c-3's
-   warp-tile selection. Rule it out before designing around it.
-
-Both conclusions are also in `docs/SLICE6-PLAN.md`.
-
-## Gotchas worth keeping
-
-- `TestGymBoulderBadge` and `TestTravelToPewter` are skipped **on purpose**,
-  with pointers. Do not un-skip or delete either; slice 6 starts from them.
-- This package outruns Go's 10-minute default. Pass `-timeout` on every
-  command that unskips the journey test.
-- `gymLeadLevel = 12` is what survives Brock. Do not lower it to fit a budget.
+## Gotchas for the next task
+- This worktree has no roms/pokemon_red.gb; farm-up will fail its ROM check
+  until the operator sets POKEMON_RED_ROM or drops a ROM in roms/.
+- I created a symlink `../gomeboy -> /home/maestro/Documents/projects/gomeboy`
+  in the workspace parent dir so the literal `--build-context gomeboy=../gomeboy`
+  works from this worktree. Overridable via GOMEBOY_CONTEXT.
+- Multi-node Swarm needs FARM_IMAGE published to a registry; documented in
+  farm.yml and the Makefile. Left uncommitted for the runner.
