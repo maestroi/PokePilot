@@ -8,8 +8,9 @@ Status: draft for review
 The slice 7 discussion raised five things. They decompose into three
 independent projects, and this spec covers only the first:
 
-- **A — capability + honest measurement (THIS SPEC):** stating the goal, the
-  planner's rejection recovery, NPC interaction, item pickup.
+- **A — capability + honest measurement (THIS SPEC):** stating the goal,
+  validating the model's replies and identity, the planner's rejection
+  recovery, NPC interaction, item pickup.
 - **B — test economics:** an artifact store holding checkpoints and failure
   dumps, and segment-based testing so the Elite 4 does not require replaying
   the whole game. Independent of A. Its seam already exists as
@@ -106,6 +107,67 @@ tests a fact the model has no stated reason to want.
 **The measurement consequence.** No scoreboard collected before this lands
 says anything about reasoning. Item 0 and item 1 must both be in before
 S6-12's numbers are read as capability.
+
+## 0b. Nothing checks that the model answering is the model we asked for
+
+VERIFIED 2026-08-29. The entire response envelope the client parses is:
+
+```go
+type chatResponse struct {
+    Choices []chatChoice `json:"choices"`
+}
+```
+
+No `model`, no `finish_reason`, no `usage`; `grep -c finish_reason` over
+`agent/llm.go` returns 0.
+
+Credit where due — the transport layer is careful. Non-200, unreadable body,
+malformed envelope and empty `choices` all produce typed errors; an
+out-of-range choice is an error and never a guess; and `answerInt` strips
+reasoning blocks and takes the LAST integer, which is a real bug avoided.
+The gaps are all one layer up, in trusting the reply's *content*.
+
+**1. Model identity is never verified — this invalidates ablation A.**
+S6-12's ablation A is "swap the model, hold information fixed": solves it means
+capacity, still fails means not capacity. If the server ignores the `model`
+field, or has a single model loaded, or the env var is wrong, the ablation
+compares a model to itself and reports "not capacity". That is a FALSE
+NEGATIVE on the central experiment of the project, and nothing in the code or
+the scoreboard would reveal it. The response carries `model`; read it and fail
+loudly when it is not what was requested.
+
+**2. Truncation is invisible.** `finish_reason == "length"` means the reply was
+cut off. A truncated JSON that still parses becomes a silent wrong answer —
+relevant given the observed `{"choice": 1, "species": "}"}`. Read
+`finish_reason` and treat anything but `stop` as a rejected reply (which item 1
+now makes retryable rather than fatal).
+
+**3. The plain-text fallback is too permissive.** `resolveReply` falls back to
+`answerInt` whenever the JSON parse fails, and `answerInt` takes the last
+integer ANYWHERE in the reply. An HTTP-200 body containing prose — "rate
+limited, retry in 5 seconds" — becomes choice 5. The fallback exists for a
+good reason (servers that ignore `response_format` still answer in plain text)
+and must stay, but it should require the reply to LOOK like an answer: short,
+and substantially just the number. A long prose reply containing a digit is an
+unhealthy response, not a choice.
+
+**4. No preflight, and no health counters in the scoreboard.** Nothing verifies
+the endpoint is up and serving the expected model before a multi-hour sweep,
+and the per-run record counts badges, frames and objectives but not timeouts,
+HTTP errors, unparseable replies, or fallback-path uses. Those four counters
+are what answer "was the API healthy for this run", and without them a bad
+sweep is indistinguishable from a bad model.
+
+This is not hypothetical. Ablation A's own launcher carries
+`POKEPILOT_LLM_TIMEOUT=5m` with the comment that the 60s default "was killing
+runs spuriously" — a sweep was already being corrupted by API behaviour that
+nothing surfaced.
+
+**Design.** Preflight the endpoint once per sweep (one cheap call, assert the
+served model matches the requested one, fail the sweep loudly if not); verify
+`model` and `finish_reason` on every reply; tighten the fallback to reject
+prose; and add the four health counters to the per-run record so every
+scoreboard row carries the conditions it was collected under.
 
 ## 1. The planner may be wrong about its reply without the run ending
 
