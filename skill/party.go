@@ -24,6 +24,21 @@ func partyMenuUp(m *emu.Emu) bool {
 	return battleScreenHas(m, partyMenuMarker)
 }
 
+// useItemPartyMenuMarker identifies the OVERWORLD item-use party menu from
+// wTileMap: the footer line _PartyMenuItemUseText ("Use item on which
+// #MON?") that DrawPartyMenu prints for USE_ITEM_PARTY_MENU
+// (engine/items/item_effects.asm ItemUseMedicine); no battle screen and no
+// other overworld menu contains this line.
+const useItemPartyMenuMarker = "Use item"
+
+// useItemPartyMenuUp reports whether the overworld item-use party menu is on
+// screen.
+func useItemPartyMenuUp(m *emu.Emu) bool {
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	return battleScreenHas(m, useItemPartyMenuMarker)
+}
+
 // The FIGHT/ITEM/PKMN/RUN battle menu is a 2x2 grid: FIGHT/ITEM in the left
 // column, PKMN/RUN in the right (DisplayBattleMenu, engine/battle/core.asm).
 // The cursor's tile X sits in wTopMenuItemX: $9 for the left column, $f for
@@ -202,10 +217,11 @@ func SwitchActive(m *emu.Emu, slot int) error {
 
 // SelectPartySlot moves the party menu cursor to index, asserts that
 // wCurrentMenuItem reads index, presses A, and waits for the selection to
-// take. It is the single slot-selection path for BOTH battle party menus:
-// Battle's forced switch after a faint (the "Bring out" menu) and the
-// voluntary switch (the "Choose" menu, SwitchActive) go through it rather
-// than hand-rolling a second one.
+// take. It is the single slot-selection path for every party menu: Battle's
+// forced switch after a faint (the "Bring out" menu), the voluntary switch
+// (the "Choose" menu, SwitchActive) and the overworld item-use menu (the
+// "Use item on which #MON?" menu, UseFieldItem) go through it rather than
+// hand-rolling a second one.
 //
 // SelectMenuItem cannot do this job: the party menu stores wMaxMenuItem as
 // the LAST valid index (count-1, PartyMenuInit), while SelectMenuItem's
@@ -262,7 +278,7 @@ func SelectPartySlot(m *emu.Emu, index int) error {
 	// persists in wTileMap under the box, so "menu gone" alone would never
 	// fire for the voluntary one.
 	selectionTook := func(m *emu.Emu) bool {
-		return switchBoxUp(m) || (!partyMenuUp(m) && !battleSwitchMenuUp(m))
+		return switchBoxUp(m) || (!partyMenuUp(m) && !battleSwitchMenuUp(m) && !useItemPartyMenuUp(m))
 	}
 	for i := 0; i < 24; i++ {
 		if selectionTook(m) {
