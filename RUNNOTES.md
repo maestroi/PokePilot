@@ -653,3 +653,71 @@ committed.
 deliberately did NOT add one.
 - Post-Brock / post-leg checkpoints were written to `/tmp/s83_*.state` (not
   committed) if a follow-up wants to resume without re-running the journey.
+
+## S8-4: skill.Flee — escape a wild battle; trainer battles refuse RUN
+
+### What landed
+- `skill/flee.go`: `Flee(m *emu.Emu, attempts int) error` + `ErrTrainerBattle`.
+  Selects RUN (the last entry of the FIGHT/ITEM/PKMN/RUN grid) and follows it
+  to a resolution read from RAM: battle over → settle and return nil; the
+  NoRunningText box → `ErrTrainerBattle`; menu up again → retry with better
+  odds. Faint-and-switch episodes are answered exactly as Battle answers
+  them. Not wired into Travel (out of scope for this task).
+- `red/sym/addresses.go`: `NumRunAttempts uint16 = 0xD120`.
+
+### ROM-derived facts (read, not guessed)
+- **RUN is unreachable by SelectMenuItem.** The grid is 2 columns ×
+  mainMenuMax+1 rows with wMaxMenuItem == 1 per column, so the item index
+  tops out below RUN. `selectRunEntry` steps and verifies against
+  wTopMenuItemX/wCurrentMenuItem (same pattern as SwitchActive).
+- **Trainer refusal is text-only.** `TryRunningFromBattle .trainerBattle`
+  (engine/battle/core.asm:1496) prints NoRunningText ("No! There's no running
+  from a trainer battle!") and sets wForcePlayerToChooseMon — but its caller
+  `BattleMenu_RunWasSelected` zeroes that flag in the same instruction
+  sequence, so it is NOT observable. The positive signal is the text on
+  screen; Flee detects the marker "running from a" (on NoRunningText only).
+- **wNumRunAttempts (0xD120) increments once per WILD roll** (after the
+  trainer check) and is zeroed at battle end (end_of_battle.asm:54). So the
+  max sampled during a flee == attempts used, and it reads 0 after a
+  trainer refusal — both assertions are positive.
+- **In THIS ROM the lead outruns every reachable wild.** post_pokeballs lead
+  (species 0xB1, L15→16) has speed 20–26; Route 1 wilds (species 0x24/0xa5,
+  L3–5) and Route 2 wilds (same two species, L2–5) run speed 7–12. The escape
+  quotient short-circuits on the speed comparison (StringCmp), so a wild flee
+  succeeds on attempt 1 every time — measured 7/7 on Route 1 and 8/8 clean
+  battles on Route 2. A failed wild attempt ("Can't escape!") is therefore
+  unreachable from any fixture in this ROM; the only deterministic
+  never-succeeds case is a trainer battle, which is exactly what
+  TestFleeTrainerBattle covers.
+
+### Permanent tests (both skipped under -short)
+- `TestFleeWildBattle`: post_pokeballs → Route 1 → EnterWildBattle →
+  Flee(5). Asserts the battle is over (DecodeBattle nil), the player is
+  controllable, and the per-frame-sampled max of wNumRunAttempts lies in
+  [1, 5] — at least one roll happened (RUN was really selected) and no more
+  than `attempts` (the retry bound). Proven PASS in 1.1s: "fled in 1
+  attempt(s)".
+- `TestFleeTrainerBattle`: post_pokeballs → Pewter Center (heal) → gym x=1
+  side corridor (the S7-8 route that stays off the Cool Trainer's sight line)
+  → GoTo onto row 6 at (5,6), which engages him (pre-battle box →
+  ErrDialogueInterrupted, paged with RecoverDialogue) → Flee(3). Asserts
+  `errors.Is(err, ErrTrainerBattle)`, the battle still in progress, and
+  wNumRunAttempts == 0 (no wild rolls; Flee did not loop attempts times
+  against a wall). Proven PASS in 9.2s.
+
+### Verified
+`go build ./...`, `go vet ./skill/`, both tests green under full runs. No
+`zz_*_test.go` left behind (scratch `skill/zz_spd_test.go` deleted); no
+ROM/.gb/.sav/.state committed.
+
+### For the next task
+- A wild flee in this ROM is a one-try affair; the retry loop exists for
+  correctness (odds improve +30/roll per attempt) but will not be exercised
+  by any reachable fixture unless a future map ships faster wilds.
+- `Flee` is NOT wired into Travel: a wild battle mid-route still costs the
+  full Battle tax. If a future task wants "escape instead of fight" routing,
+  the seam is Travel's ErrBattle interception (travel.go).
+- The Cool Trainer re-arms on every crossing (his defeat flag is set only by
+  Brock's victory script), so TestFleeTrainerBattle pays his full two-mon
+  presence every run — cheap at L16+, but a party that has not trained yet
+  should heal first, as the test does.
