@@ -434,14 +434,16 @@ func TestRunCheckpointRingIsBounded(t *testing.T) {
 // rejection text actually reached the re-prompt, and counts every ask.
 type replyPlanner struct {
 	objs      []agent.Objective
-	rejectErr error // returned by Next (and NextFeedback) when non-nil
+	rejectErr error // returned by the next `rejects` asks, Next and NextFeedback alike
+	rejects   int
 	next      int
 	asks      int
 	feedback  []string
 }
 
 func (p *replyPlanner) take() (agent.Objective, error) {
-	if p.rejectErr != nil {
+	if p.rejectErr != nil && p.rejects > 0 {
+		p.rejects--
 		return agent.Objective{}, p.rejectErr
 	}
 	if p.next >= len(p.objs) {
@@ -474,14 +476,13 @@ func TestRunRejectedReplyRecovers(t *testing.T) {
 
 	const msg = "agent: level argument 12 does not apply to go to route 1"
 	p := &replyPlanner{
-		rejectErr: errors.New(msg), // rejected once, then valid
+		rejectErr: errors.New(msg),
+		rejects:   1, // the first ask is rejected; the re-ask answers normally
 		objs: []agent.Objective{
 			{Kind: agent.KindStarter},
 		},
 	}
-	// The wrapper rejects only the FIRST ask; the re-ask and later rounds
-	// answer normally.
-	res := agent.Run(e, e.ROM(), &onceRejectPlanner{inner: p}, testBudget())
+	res := agent.Run(e, e.ROM(), p, testBudget())
 
 	if res.Stop != agent.StopDone {
 		t.Fatalf("Stop = %d, want StopDone (a malformed reply does not end the run): Err = %v", res.Stop, res.Err)
@@ -492,34 +493,12 @@ func TestRunRejectedReplyRecovers(t *testing.T) {
 	if res.ReplyRetries != 1 {
 		t.Fatalf("ReplyRetries = %d, want 1 (one rejected reply, one re-ask)", res.ReplyRetries)
 	}
-	if p.asks != 2 {
-		t.Fatalf("asks = %d, want 2 (initial + one re-ask)", p.asks)
+	if p.asks != 3 {
+		t.Fatalf("asks = %d, want 3 (initial + one re-ask + the ErrDone ask)", p.asks)
 	}
 	if len(p.feedback) != 1 || !strings.Contains(p.feedback[0], msg) {
 		t.Fatalf("feedback = %v, want the rejection text quoted back into the re-prompt", p.feedback)
 	}
-}
-
-// onceRejectPlanner wraps a replyPlanner so only its FIRST ask rejects;
-// the re-ask (and any later round) answers normally.
-type onceRejectPlanner struct {
-	inner *replyPlanner
-	did   bool
-}
-
-func (p *onceRejectPlanner) Next(obs agent.Observation, offered []agent.Objective) (agent.Objective, error) {
-	if !p.did { // first ask: reject
-		p.did = true
-		p.inner.asks++
-		return agent.Objective{}, p.inner.rejectErr
-	}
-	return p.inner.take()
-}
-
-func (p *onceRejectPlanner) NextFeedback(obs agent.Observation, offered []agent.Objective, feedback string) (agent.Objective, error) {
-	p.inner.asks++
-	p.inner.feedback = append(p.inner.feedback, feedback)
-	return p.inner.take()
 }
 
 // TestRunRejectedReplyExhaustsRetries is the other side of the bound: a
@@ -531,7 +510,9 @@ func TestRunRejectedReplyExhaustsRetries(t *testing.T) {
 	e := loadFixture(t)
 
 	const msg = "agent: level argument 12 does not apply to go to route 1"
-	p := &replyPlanner{rejectErr: errors.New(msg)}
+	// More rejections than any retry budget: the run must stop at exactly
+	// MaxReplyRetries asks, not when the planner runs out of bad replies.
+	p := &replyPlanner{rejectErr: errors.New(msg), rejects: 10}
 	res := agent.Run(e, e.ROM(), p, testBudget())
 
 	if res.Stop != agent.StopError {

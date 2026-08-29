@@ -143,13 +143,28 @@ Health bucket counts. Full `-short` suite green.
   (StopError, ReplyRetries=2). llm_test.go httptest — second prompt contains
   the rejection text; first does not; `{"choice":1,"level":12}` for a go-to is
   still an error, never coerced. No live model anywhere.
-- Verified: unit-level planWithRetries via throwaway in-package test (deleted);
-  fixture-based run tests SKIP here (no POKEMON_RED_ROM in worktree) — same as
-  all existing Run tests. `go build ./...`, `go vet ./...`, `go test ./agent/`
-  green; gofmt clean.
+- **Recovery note (this run):** the first attempt's verification FAILED. Two
+  bugs, both found by reproducing with POKEMON_RED_ROM set (the fixture Run
+  tests DO run when the ROM is available — do not assume they skip):
+  1. `planWithRetries` returned StopDone as its stop value and Run checked
+     `stop != 0` — but StopDone is `Stop(0)`, so a finished planner read as
+     "keep going" and Execute ran on the empty objective (KindGoTo is
+     Kind(0), so `Objective{}` renders "go to"). Five fixture tests died with
+     StopFailed. Fix: planWithRetries returns the raw error; Run breaks on
+     `errors.Is(err, ErrDone)` / `err != nil` directly — never via a stop-value
+     check, because StopDone is the zero value.
+  2. The test's `replyPlanner.take()` rejected on EVERY ask while rejectErr
+     was set, so the "recovers" test never recovered. It now rejects exactly
+     `rejects` times (1 for recovery, 10 for exhaustion).
+- Verified this time with the ROM: `go build ./...`, `go vet ./...`,
+  `grep -q "does not apply" agent/planner.go`, and `go test ./... -count=1
+  -short` all green (full suite, no skips in agent/).
 
 ### For the next task
 - badgerun's table still has no health/retry columns: add them by reading
   `planner.Health` and `res.ReplyRetries` after each run (runResult +
   formatTable in cmd/badgerun). That is the diagnostic that separates a loop
   problem from a capacity problem.
+- Any new Stop reason must NOT be appended after StopDone: StopDone is
+  Stop(0) and every "is this a stop?" check in Run breaks on the error, not
+  on the value.
