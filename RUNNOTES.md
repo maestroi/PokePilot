@@ -168,3 +168,27 @@ Health bucket counts. Full `-short` suite green.
 - Any new Stop reason must NOT be appended after StopDone: StopDone is
   Stop(0) and every "is this a stop?" check in Run breaks on the error, not
   on the value.
+
+## S7-5: item and trainer bytes kept by the map parser
+
+- `red/rom/map.go`: `Object` gained `ItemID`, `TrainerClass`, `TrainerSet`.
+  The parse that used to `skip(1)`/`skip(2)` now reads those bytes in ROM
+  order (trainer: class then roster; item: item id). Nothing else in the
+  parser changed. Pure parsing — no emulator, no fixture.
+- `red/rom/map_test.go`: two ROM-backed tests (loadROM / POKEMON_RED_ROM):
+  Viridian Forest has exactly three 0x80-bit objects at (25,11),(12,29),(1,31),
+  all SPRITE_POKE_BALL (0x3D), the (1,31) one ItemID==0x04; Pewter Gym has
+  two 0x40-bit trainers at (4,1),(3,6) and exactly one plain NPC — the guide
+  at (7,10). Cross-contamination asserted both ways: plain NPCs have
+  ItemID/TrainerClass/TrainerSet all 0; items have TrainerClass/Set 0.
+- **All ground-truth coordinates and ids matched the real ROM on the first
+  run.** No discrepancies to report.
+- Verified: `go build ./...`, `go vet ./red/rom/`, `go test ./red/... -count=1`
+  green (ROM at /home/maestro/Documents/projects/PokePilot/roms/pokemon_red.gb;
+  the worktree has no roms/ dir — point POKEMON_RED_ROM there).
+
+### For the next task
+- `ParseMap(rom, mapID).Objects` now carries pickup and trainer payloads, so
+  later tasks (item pickup, trainer engagement) read them from the header —
+  no re-parsing needed. Item ids are raw ROM constants (0x04 = POKE_BALL);
+  `skill.ItemPokeBall` already names that one.
