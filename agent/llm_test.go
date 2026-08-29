@@ -446,6 +446,24 @@ func TestLLMPlannerMissingModelIsAccepted(t *testing.T) {
 	}
 }
 
+// TestLLMPlannerLogReportsUsage catches silent prompt growth: llama.cpp's
+// OpenAI-compatible envelope reports input and output token counts, and the
+// per-call log must expose both beside the latency.
+func TestLLMPlannerLogReportsUsage(t *testing.T) {
+	var logBuf bytes.Buffer
+	srv := startModelServer(t,
+		`{"model":"qwen3.8-27b","choices":[{"message":{"content":"{\"choice\":1}"},"finish_reason":"stop"}],"usage":{"prompt_tokens":321,"completion_tokens":7,"total_tokens":328}}`, nil)
+	p := llmPlanner(srv)
+	p.Log = &logBuf
+
+	if _, err := p.Next(llmObs(), llmOffered()); err != nil {
+		t.Fatalf("Next: %v", err)
+	}
+	if want := "tokens 321 prompt/7 completion"; !strings.Contains(logBuf.String(), want) {
+		t.Fatalf("run log does not contain %q:\n%s", want, logBuf.String())
+	}
+}
+
 // TestLLMPlannerFinishReason: finish_reason "length" means the reply was
 // cut off — a truncated JSON that still parses would be a silent wrong
 // answer. Any non-stop reason is a rejection; "stop" (and an omitted
@@ -604,29 +622,27 @@ func TestLLMPlannerGoalDoesNotChangeParsing(t *testing.T) {
 	}
 }
 
-// TestLLMPlannerPromptCarriesHistory: the planner is otherwise a pure
-// function of the observation, so at temperature 0 an objective that
-// returns the player to a place they have been loops forever (measured:
-// oak's lab -> pallet town -> oak's lab for 21 rounds). The second call
-// must show the model what the first one chose.
-func TestLLMPlannerPromptCarriesHistory(t *testing.T) {
+// TestLLMPlannerPromptUsesObservationHistoryOnly catches duplicated run
+// memory: Observation.History already carries objectives and their outcomes,
+// including failure text. Repeating objective-only strings under a second
+// "Already done" section spends prompt tokens while discarding that outcome.
+func TestLLMPlannerPromptUsesObservationHistoryOnly(t *testing.T) {
 	var body string
 	srv := startModelServer(t, `{"choices":[{"message":{"content":"1"}}]}`, &body)
 	offered := llmOffered()
 	p := llmPlanner(srv)
 
-	if _, err := p.Next(llmObs(), offered); err != nil {
-		t.Fatalf("Next: %v", err)
-	}
-	if strings.Contains(body, "Already done this run") {
-		t.Fatalf("first prompt claims history before anything was chosen\nbody: %s", body)
-	}
-	if _, err := p.Next(llmObs(), offered); err != nil {
-		t.Fatalf("Next: %v", err)
-	}
-	for _, want := range []string{"Already done this run", "- go to pallet town"} {
-		if !strings.Contains(body, want) {
-			t.Errorf("second prompt does not contain %q\nbody: %s", want, body)
+	for call := 1; call <= 2; call++ {
+		if _, err := p.Next(llmObs(), offered); err != nil {
+			t.Fatalf("Next call %d: %v", call, err)
+		}
+		if strings.Contains(body, "Already done this run") {
+			t.Fatalf("call %d duplicated observation history under an Already done section\nbody: %s", call, body)
+		}
+		for _, want := range []string{`\"History\"`, `\"Outcome\":\"done\"`} {
+			if !strings.Contains(body, want) {
+				t.Errorf("call %d prompt does not contain observation history field %q\nbody: %s", call, want, body)
+			}
 		}
 	}
 }

@@ -66,14 +66,6 @@ type LLMPlanner struct {
 	// badgerun raises it via POKEPILOT_LLM_TIMEOUT rather than editing code.
 	Timeout time.Duration
 
-	// recent is what this planner has already chosen, oldest first. It
-	// exists because Next is otherwise a pure function of the
-	// observation: at temperature 0 the same observation yields the same
-	// choice forever, so any objective that returns the player to a
-	// place they have been is an infinite loop by construction (measured:
-	// lab -> pallet -> lab for 21 rounds). The history breaks the tie.
-	recent []string
-
 	// Health counts what happened to this planner's replies, per run. A
 	// scoreboard row collected with a dozen transport errors or nine
 	// fallback parses is not comparable to one with none; the counters are
@@ -97,11 +89,6 @@ type LLMHealth struct {
 	Rejected  int // replies rejected for shape: model mismatch, finish_reason != stop, unparseable content
 	Fallbacks int // replies parsed by the plain-text fallback path
 }
-
-// recentCap is how many past choices the prompt carries: enough to show
-// a two- or three-step oscillation, short enough not to crowd out the
-// observation.
-const recentCap = 6
 
 // maxReplyTokens caps the reply so a model that will not stop cannot burn the
 // whole request timeout. It is NOT a way to keep replies short: a reasoning
@@ -177,8 +164,13 @@ func (p *LLMPlanner) NextFeedback(obs Observation, offered []Objective, feedback
 		// Logged after the reply has resolved, so the line reports what it
 		// actually became rather than what it looked like.
 		if p.Log != nil {
-			fmt.Fprintf(p.Log, "  llm: %d offered, %s, reply %q -> %s\n",
-				len(offered), took.Round(10*time.Millisecond), snippet([]byte(reply)), picked)
+			usage := ""
+			if res.Usage != nil {
+				usage = fmt.Sprintf(", tokens %d prompt/%d completion",
+					res.Usage.PromptTokens, res.Usage.CompletionTokens)
+			}
+			fmt.Fprintf(p.Log, "  llm: %d offered, %s%s, reply %q -> %s\n",
+				len(offered), took.Round(10*time.Millisecond), usage, snippet([]byte(reply)), picked)
 		}
 	}()
 	if res.Model != "" && res.Model != p.Model {
@@ -216,10 +208,6 @@ func (p *LLMPlanner) NextFeedback(obs Observation, offered []Objective, feedback
 		return Objective{}, fmt.Errorf("agent: llm planner: %w", err)
 	}
 	picked = o.String()
-	p.recent = append(p.recent, picked)
-	if len(p.recent) > recentCap {
-		p.recent = p.recent[len(p.recent)-recentCap:]
-	}
 	return o, nil
 }
 
@@ -331,8 +319,8 @@ func looksLikeAnswer(s string) bool {
 // one; nothing here has to change for that.
 const llmSystemPrompt = `You are choosing the next objective for a Pokemon Red player. Prefer an objective that makes NEW progress: repeating what you just did wastes the run. Reply with ONLY a JSON object: {"choice": N} where N is the number of your choice, plus the arguments of that objective when it has any ("level", "species", "item", "quantity"). Do not explain.`
 
-// llmUserPrompt renders the observation as indented JSON, then the
-// offered objectives as a 1-based numbered list of their String() forms.
+// llmUserPrompt renders the observation as compact JSON, then the offered
+// objectives as a 1-based numbered list of their String() forms.
 // The model is asked for the index, not the sentence: Chosen accepts a
 // bare index, and small models emit indices far more reliably than exact
 // sentences.
@@ -341,7 +329,7 @@ const llmSystemPrompt = `You are choosing the next objective for a Pokemon Red p
 // lead's moves, the bag, the recent dialogue and the round history, which
 // is what makes "fight Brock now or train first?" answerable. If a field
 // is not rendered here it might as well not exist.
-func llmUserPrompt(obs Observation, offered []Objective, recent []string) string {
+func llmUserPrompt(obs Observation, offered []Objective) string {
 	// Compact, not indented: indentation is pure prompt cost. MEASURED
 	// 2026-08-29 on a live run — latency scales with prompt length, 5-7
 	// offered took ~6-7s per call and 13-15 took ~21-23s.
@@ -352,13 +340,6 @@ func llmUserPrompt(obs Observation, offered []Objective, recent []string) string
 	var b strings.Builder
 	b.WriteString("Observation:\n")
 	b.Write(obsJSON)
-	if len(recent) > 0 {
-		b.WriteString("\n\nAlready done this run, oldest first:\n")
-		for _, r := range recent {
-			b.WriteString("- " + r + "\n")
-		}
-		b.WriteString("Do not simply undo the last one.")
-	}
 	b.WriteString("\n\nOffered objectives:\n")
 	for i, o := range offered {
 		fmt.Fprintf(&b, "%d: %s\n", i+1, o)
@@ -419,6 +400,12 @@ type chatChoice struct {
 	FinishReason string      `json:"finish_reason"`
 }
 
+type chatUsage struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"`
+}
+
 // chatResponse carries the model field: which model actually ANSWERED. It
 // is verified against the requested model in Next (a mismatch is a typed
 // error) because an ablation that compares a model to itself would report
@@ -427,6 +414,7 @@ type chatChoice struct {
 type chatResponse struct {
 	Model   string       `json:"model"`
 	Choices []chatChoice `json:"choices"`
+	Usage   *chatUsage   `json:"usage,omitempty"`
 }
 
 // systemPrompt renders the full system message. With a Goal it is a
@@ -449,6 +437,7 @@ type chatResult struct {
 	Content      string
 	Model        string // empty when the server omitted the field
 	FinishReason string // empty when the server omitted the field
+	Usage        *chatUsage
 }
 
 // ask performs the one POST to {BaseURL}/chat/completions and returns the
@@ -468,7 +457,7 @@ func (p *LLMPlanner) ask(obs Observation, offered []Objective, feedback string) 
 		client = &http.Client{Timeout: timeout}
 	}
 	system := p.systemPrompt()
-	user := llmUserPrompt(obs, offered, p.recent)
+	user := llmUserPrompt(obs, offered)
 	if feedback != "" {
 		user += "\n\nYour previous reply was rejected: " + feedback +
 			"\nReply again with ONLY a JSON object naming one of the offered objectives and only arguments that apply to it."
@@ -531,6 +520,7 @@ func (p *LLMPlanner) ask(obs Observation, offered []Objective, feedback string) 
 		Content:      cr.Choices[0].Message.Content,
 		Model:        cr.Model,
 		FinishReason: cr.Choices[0].FinishReason,
+		Usage:        cr.Usage,
 	}, nil
 }
 

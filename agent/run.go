@@ -181,28 +181,44 @@ func (d *dialogueTape) sample(m *emu.Emu) {
 	if ds := state.DecodeDialogue(&mem); ds != nil {
 		text = ds.Text
 	}
+	if d.observeText(text) {
+		m.TraceNote("dialogue", text)
+	}
+}
+
+// observeText folds one sampled screen-text value into the recent dialogue.
+// A line may pause long enough while typing for several growing prefixes to
+// settle; those replace the current page instead of becoming separate prompt
+// entries. d.last is cleared when the box closes, so the first settled text
+// in a genuinely new page always appends.
+func (d *dialogueTape) observeText(text string) bool {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	switch {
 	case text == "":
 		// Box closed: forget the line so saying it again later re-keeps it.
 		d.last, d.pending, d.stable = "", "", false
-		return
+		return false
 	case text != d.pending:
 		d.pending, d.stable = text, false
-		return
+		return false
 	case !d.stable:
 		d.stable = true
 		if text == d.last {
-			return
+			return false
+		}
+		if d.last != "" && strings.HasPrefix(text, d.last) && len(d.lines) > 0 {
+			d.lines[len(d.lines)-1] = text
+		} else {
+			d.lines = append(d.lines, text)
 		}
 		d.last = text
-		d.lines = append(d.lines, text)
 		if len(d.lines) > dialogueCap {
 			d.lines = d.lines[len(d.lines)-dialogueCap:]
 		}
-		m.TraceNote("dialogue", text)
+		return true
 	}
+	return false
 }
 
 // recent returns a copy of the settled lines, oldest first.
