@@ -8,8 +8,8 @@ Status: draft for review
 The slice 7 discussion raised five things. They decompose into three
 independent projects, and this spec covers only the first:
 
-- **A — capability + honest measurement (THIS SPEC):** the planner's rejection
-  recovery, NPC interaction, item pickup.
+- **A — capability + honest measurement (THIS SPEC):** stating the goal, the
+  planner's rejection recovery, NPC interaction, item pickup.
 - **B — test economics:** an artifact store holding checkpoints and failure
   dumps, and segment-based testing so the Elite 4 does not require replaying
   the whole game. Independent of A. Its seam already exists as
@@ -22,8 +22,9 @@ B and C get their own specs. Do not start them from this one.
 
 ## Goal
 
-Make S6-12's measurement mean something, then let the planner see the two
-things in the world it currently cannot: people who know things, and items
+Make S6-12's measurement mean something — tell the planner what it is trying
+to do, and stop killing runs over reply shape — then let the planner see the
+two things in the world it currently cannot: people who know things, and items
 lying on the floor.
 
 ## The evidence this rests on
@@ -54,6 +55,57 @@ The 27b ablation produced zero validation errors and instead wandered
 (Viridian City → Oak's Lab → Viridian City → Route 2). That is a real planning
 weakness and worth measuring — but only once the baseline is not dominated by
 a parse error.
+
+## 0. The planner is never told what it is trying to do
+
+**This is the most serious finding and it comes first.**
+
+VERIFIED 2026-08-29. `agent/llm.go:171` is the entire system prompt:
+
+> You are choosing the next objective for a Pokemon Red player. Prefer an
+> objective that makes NEW progress: repeating what you just did wastes the
+> run. Reply with ONLY a JSON object [...]
+
+There is no goal in it. `grep -i goal` over `agent/` returns **nothing** — the
+concept does not exist in the codebase. The dumped prompts confirm it
+end-to-end: the only occurrences of "Badge" in a real prompt are the
+observation field `"Badges": []`.
+
+So S6-12 measures "does the planner earn the Boulder Badge" while never
+telling the planner that a badge exists, or that earning one is the point.
+
+**Goal is not solution, and the difference is the whole experiment.**
+S6-12 is right to withhold the SOLUTION — it must not say "take Squirtle", or
+mention Caterpie, or hint that Butterfree beats Onix. Working that out is the
+capability being measured. But the GOAL is the task statement, not the answer.
+Withholding it does not make the test harder; it makes it a different test —
+of what an unprompted model does with a menu — and that is not the question
+this project exists to ask.
+
+This reframes the one behaviour the 27b ablation actually exhibited. Its
+wander — Viridian City → Oak's Lab → Viridian City → Route 2 — is not weak
+planning. It is a model with no objective correctly obeying "prefer something
+new". It also undercuts ablation B: injecting "Rock-type Pokemon resist Fire"
+tests a fact the model has no stated reason to want.
+
+**Design.**
+
+- `Run` takes a goal — one sentence of plain English, stating the task and
+  nothing about how to reach it. For this milestone: `"Earn the Boulder Badge."`
+  Not "train a Butterfree", not "beat Brock with a Grass or Water type".
+- The goal is rendered into the system prompt above the observation.
+- It is a RUN PARAMETER, not a constant, and `badgerun` takes it as a flag.
+  This is what later makes segment-based testing expressible: sub-project B's
+  checkpoints plus a goal give "start from this state, achieve this" — which
+  is the only affordable way to test toward the Elite 4.
+- Anything beyond the task statement goes through S6-12's existing
+  fact-injection flag, which already defaults OFF and is already labelled a
+  diagnostic that must not ship. The goal is not fact injection; keep the two
+  separate so the ablation stays meaningful.
+
+**The measurement consequence.** No scoreboard collected before this lands
+says anything about reasoning. Item 0 and item 1 must both be in before
+S6-12's numbers are read as capability.
 
 ## 1. The planner may be wrong about its reply without the run ending
 
@@ -243,6 +295,13 @@ measured with one hand tied.
 - **Object count.** Some maps carry many objects; offering all of them could
   flood the prompt. Measure the largest count on the Pallet→Pewter route
   before deciding whether a cap is needed. Do not pre-emptively cap.
-- **Sequencing.** Item 1 (rejection recovery) should land and be re-measured
-  before items 2-5 are judged, because until it does, no scoreboard
-  distinguishes a planning failure from a parse error.
+- **Sequencing.** Items 0 and 1 must both land and be re-measured before
+  anything else is judged. Until item 1 lands, no scoreboard distinguishes a
+  planning failure from a parse error; until item 0 lands, no scoreboard
+  distinguishes weak planning from a model that was never told what to do.
+- **Goal wording is load-bearing and easy to get wrong.** One sentence too
+  helpful ("earn the Boulder Badge at Pewter Gym by training a Grass or Water
+  type") silently converts the benchmark into a walkthrough, which is exactly
+  what S6-12's fact-injection flag exists to keep out of the default path. The
+  implementation plan must fix the exact wording and put it under review, not
+  leave it to the implementer.
