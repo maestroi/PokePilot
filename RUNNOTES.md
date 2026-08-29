@@ -376,3 +376,34 @@ Rule, stated plainly: **APPEND to this file, do not replace it.**
 - No Go changes were made; verification is `git diff --quiet HEAD -- "*.go"`.
 - Do not design around "there is no PC in Centers"; the PC exists as a
   hidden event at (13,3), faced UP.
+
+## S8-1: StepFrames now runs per-frame hooks (emu/emu.go)
+
+`Emu.StepFrames` previously batched (`m.e.StepFrames(n)`) and called NEITHER
+`onFrame` nor `onSample`, so every conversation `skill.Talk` drives via
+`StepFrames(talkSettle)` was invisible to per-frame samplers — including
+agent.Run's dialogue tape. Now, when a hook is installed, it loops
+`StepFrame()` n times (which already does capture + throttle per frame).
+With no hook it keeps the fast batch path unchanged.
+
+The StepFrames hook condition matches StepFrame's exactly:
+`onFrame != nil || (trace == nil && onSample != nil)`.
+
+### Suite timing, `go test ./skill -short -count=1`
+- Before: real 0m0.595s (go test reports 0.005s)
+- After:  real 0m0.605s (go test reports 0.005s)
+
+Within noise — the no-hook fast path is untouched and nothing unexpected
+installs a hook in the -short suite.
+
+### New tests (emu/emu_test.go)
+- `TestStepFramesCallsOnFrameEveryFrame` — OnFrame installed, StepFrames(10),
+  hook ran exactly 10 times. Verified it FAILS on pre-change code (0 calls).
+- `TestStepFramesNoHookAdvancesInBatch` — no hook, FrameCount advances by 10.
+- `TestStepFramesCallsOnSampleEveryFrame` — OnSample + no trace, called n times.
+
+### For the next task
+- A Talk-driven conversation is now visible to a per-frame sampler: whatever
+  S7-7's planner offered (KindTalk at the gym guide) can now land in
+  `Observation.RecentDialogue`. skill.Talk itself was intentionally not
+  touched — the seam is the emulator's.

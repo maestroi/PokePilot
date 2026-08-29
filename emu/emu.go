@@ -65,8 +65,20 @@ func (m *Emu) StepFrame() {
 	m.throttle(1)
 }
 
-// StepFrames advances the emulator by n frames.
+// StepFrames advances the emulator by n frames. With a per-frame hook
+// installed it steps one frame at a time so the hook sees every frame —
+// skill.Talk pages whole conversations through here, and a batched call
+// would be invisible to it. The condition must match StepFrame's own two
+// hook conditions exactly: if they drift, some frames sample and some do
+// not. With no hook it takes the fast batch path, which exists because
+// stepping one frame at a time through a long settle is measurably slower.
 func (m *Emu) StepFrames(n int) {
+	if m.onFrame != nil || (m.trace == nil && m.onSample != nil) {
+		for i := 0; i < n; i++ {
+			m.StepFrame()
+		}
+		return
+	}
 	m.e.StepFrames(n)
 	m.capture()
 	m.throttle(n)
