@@ -4,12 +4,43 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/maestroi/pokepilot/farm"
 )
+
+// TestMainWiresFarmMode is the regression for 96eaf02: that merge kept
+// runFarm but deleted the POKEPILOT_ORCH_URL gate in main(), so Swarm
+// runners ran the one-shot CLI path and queued specs never leased.
+func TestMainWiresFarmMode(t *testing.T) {
+	src, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(src)
+	if !strings.Contains(text, `os.Getenv("POKEPILOT_ORCH_URL")`) {
+		t.Fatal("main() does not read POKEPILOT_ORCH_URL; farm workers ignore the wall")
+	}
+	if !strings.Contains(text, "runFarm(") {
+		t.Fatal("main() never calls runFarm")
+	}
+}
+
+func TestWatchPort(t *testing.T) {
+	if got := watchPort("[::]:8099"); got != 8099 {
+		t.Fatalf("watchPort([::]:8099) = %d, want 8099", got)
+	}
+	if got := watchPort("localhost:18080"); got != 18080 {
+		t.Fatalf("watchPort(localhost:18080) = %d, want 18080", got)
+	}
+	if got := watchPort("not-an-addr"); got != 0 {
+		t.Fatalf("watchPort(bad) = %d, want 0", got)
+	}
+}
 
 // TestApplySpec pins the lease semantics: the spec is authoritative, so a
 // zero Seed and a zero FPS must survive applySpec untouched (no CLI or

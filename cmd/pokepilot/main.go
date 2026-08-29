@@ -10,11 +10,14 @@ import (
 	"fmt"
 	"log"
 	"math/rand/v2"
+	"net"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/maestroi/pokepilot/agent"
 	"github.com/maestroi/pokepilot/emu"
+	"github.com/maestroi/pokepilot/farm"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/skill"
@@ -79,6 +82,20 @@ func main() {
 	}
 	report(m, "booted")
 
+	// Farm mode: the wall, not the flags, decides what runs. The boot state
+	// is saved at this clean post-boot point and restored per lease, so a
+	// CLI -seed never burns frames here; each leased spec's seed is applied
+	// exactly once by runOne.
+	if orchURL := os.Getenv("POKEPILOT_ORCH_URL"); orchURL != "" {
+		bootState, err := m.SaveState()
+		if err != nil {
+			log.Fatalf("save boot state: %v", err)
+		}
+		fmt.Printf("farm mode: leasing runs from %s\n", orchURL)
+		runFarm(m, farm.NewClient(orchURL), bootState, watchPort(served))
+		return
+	}
+
 	if burn > 0 {
 		m.StepFrames(burn)
 		fmt.Printf("seed %d: burned %d idle frames, so this run's luck differs\n", *seed, burn)
@@ -111,6 +128,22 @@ func runHeader(planner, starter, dest string, seed int64, burn int) string {
 		return what + " · seed 0 (replays identically)"
 	}
 	return fmt.Sprintf("%s · seed %d (+%d idle frames)", what, seed, burn)
+}
+
+// watchPort extracts the port actually listened on from the address
+// Watch reported, so farm mode can tell the wall where to fetch this
+// runner's live screen. Zero means "not known", which the wall treats as
+// "no frames".
+func watchPort(served string) int {
+	_, portStr, err := net.SplitHostPort(served)
+	if err != nil {
+		return 0
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		return 0
+	}
+	return port
 }
 
 // runScripted is the original flow, unchanged: take the starter, walk to the
