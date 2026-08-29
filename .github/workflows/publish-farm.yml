@@ -16,7 +16,7 @@ permissions:
   packages: write
 
 env:
-  IMAGE: ghcr.io/maestroi/pokepilot-farm
+  IMAGE: ghcr.io/maestroi/pokepilot
 
 jobs:
   publish:

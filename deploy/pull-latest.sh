@@ -3,7 +3,7 @@
 # Safe to commit: image name and stack name only, no hosts, tokens, or ROM.
 set -euo pipefail
 
-IMAGE=${FARM_IMAGE_REPO:-ghcr.io/maestroi/pokepilot-farm}
+IMAGE=${FARM_IMAGE_REPO:-ghcr.io/maestroi/pokepilot}
 STACK=${FARM_STACK:-pokefarm}
 SERVICES=(wall ui runner)
 
