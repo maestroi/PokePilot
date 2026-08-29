@@ -86,3 +86,41 @@ rebuild post_starter/post_pokeballs from boot.
   They are not comparable — say so when reading them side by side.
 - Empty-Goal behavior is byte-identical, so `-goal ""` reproduces the old
   prompt exactly if an ablation needs it.
+
+## S7-3: Check that the model answering is the model we asked for
+
+### What landed (agent/llm.go, agent/llm_test.go; httptest only, no live model)
+- `chatResponse` now parses `model`; `chatChoice` parses `finish_reason`.
+  `ask` returns a `chatResult{Content, Model, FinishReason}`.
+- **Model mismatch is a hard typed error** (`ErrModelMismatch`) naming BOTH
+  requested and answering models — never coerce, never warn-and-continue.
+  This is what makes ablation A's "not capacity" reading trustworthy.
+- **Omitted `model` field is accepted** (some servers omit it) but logged
+  ONCE per run: "cannot verify which model answered".
+- **`finish_reason` present and != "stop" (e.g. "length") is a typed
+  rejection** (`ErrNotFinished`), not parsed. Truncated-JSON-still-parses
+  silent wrong answers are gone.
+- **Fallback tightened** (`looksLikeAnswer`): non-JSON reply accepted only
+  if, after think-block stripping + trim, <= 12 chars, exactly one integer,
+  rest whitespace/punctuation. "2" and "  3 " pass; "rate limited, retry in
+  5 seconds" is REJECTED (was choice 5), as is any prose with a digit.
+  Consequence: old tests expecting prose acceptance now expect rejection —
+  the scratch-work test keeps only the closed-think-block + bare-number case.
+- **`LLMPlanner.Health LLMHealth{Transport, Rejected, Fallbacks}`**: per-run
+  counters (transport/timeout/non-200/bad envelope; shape rejections incl.
+  mismatch + finish_reason + unparseable; fallback-path uses). Exported on
+  the planner; badgerun should print them on each scoreboard row in S7-4
+  (not done here — task scope was agent/ only).
+
+### Tests (all httptest)
+mismatch rejected naming both models; missing model accepted + once-only log;
+finish_reason length/content_filter rejected, stop + omitted accepted;
+prose-with-digit rejected (3 cases); bare "2" fallback still works;
+Health bucket counts. Full `-short` suite green.
+
+### For the next task (S7-4: make rejections retryable)
+- `errors.Is(err, agent.ErrModelMismatch)` / `agent.ErrNotFinished` are the
+  hooks; both wrap with detail. Rejected replies are already counted in
+  `planner.Health.Rejected`.
+- badgerun's table has no health columns yet — add them there (runResult +
+  formatTable), reading `planner.Health` after each run.

@@ -1,6 +1,7 @@
 package agent_test
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"net/http"
@@ -117,34 +118,48 @@ func TestLLMPlannerPicksOfferedObjective(t *testing.T) {
 	}
 }
 
-// TestLLMPlannerStripsProse: the model wraps the number in prose; the
-// answer still wins.
-func TestLLMPlannerStripsProse(t *testing.T) {
-	srv := startModelServer(t, `{"choices":[{"message":{"content":"I choose 2 because it is closer."}}]}`, nil)
-	offered := llmOffered()
+// TestLLMPlannerProseWithDigitIsRejected: an HTTP-200 body of prose that
+// merely contains a digit is an unhealthy response, not a choice. Under
+// the old fallback "rate limited, retry in 5 seconds" became choice 5 —
+// a server error turning straight into a game action. The tightened rule
+// (short, substantially just the number) rejects it.
+func TestLLMPlannerProseWithDigitIsRejected(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		reply string
+	}{
+		{"rate limit message", "rate limited, retry in 5 seconds"},
+		{"apology with a number", "I choose 2 because it is closer."},
+		{"weighs two options out loud", "Option 1 is tempting, but 3 is better."},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := startModelServer(t, fmt.Sprintf(`{"choices":[{"message":{"content":%q}}]}`, tc.reply), nil)
 
-	got, err := llmPlanner(srv).Next(llmObs(), offered)
-	if err != nil {
-		t.Fatalf("Next: %v", err)
-	}
-	if got != offered[1] {
-		t.Fatalf("Next = %s, want %s", got, offered[1])
+			got, err := llmPlanner(srv).Next(llmObs(), llmOffered())
+			if err == nil {
+				t.Fatalf("Next = %s, want an error for prose reply %q", got, tc.reply)
+			}
+			if got != (agent.Objective{}) {
+				t.Fatalf("Next = %s, must not resolve to any objective", got)
+			}
+		})
 	}
 }
 
 // TestLLMPlannerAnswerWinsOverScratchWork: a model that reasons out loud
-// mentions numbers it then rejects. The ANSWER is the last integer, not
-// the first — taking the first silently picks a rejected option, which is
-// a legal objective and therefore an invisible wrong choice.
+// in a CLOSED block then answers with the bare number still works — the
+// scratch work is stripped before the fallback gate, leaving exactly the
+// answer. (Prose outside the block is rejected; see
+// TestLLMPlannerProseWithDigitIsRejected.)
 func TestLLMPlannerAnswerWinsOverScratchWork(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
 		reply string
 		want  int // index into offered
 	}{
-		{"weighs two options", "Option 1 is tempting, but 3 is better.", 2},
 		{"thinks out loud first", "<think>maybe 1? no, 2 is closer</think>\n3", 2},
 		{"bare number", "2", 1},
+		{"number with a trailing period", "2.", 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			body := fmt.Sprintf(`{"choices":[{"message":{"content":%q}}]}`, tc.reply)
@@ -353,7 +368,9 @@ func TestLLMPlannerOutOfRangeArgRejected(t *testing.T) {
 // TestLLMPlannerIgnoresSchemaFallback: a server that ignores
 // response_format answers in plain text; the existing parsing path must
 // still yield a valid objective. This is the guarantee that pointing
-// POKEPILOT_LLM_URL at a non-schema server does not break the run.
+// POKEPILOT_LLM_URL at a non-schema server does not break the run. The
+// fallback is now gated (looksLikeAnswer), so only replies that
+// substantially ARE the number get through.
 func TestLLMPlannerIgnoresSchemaFallback(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -361,8 +378,7 @@ func TestLLMPlannerIgnoresSchemaFallback(t *testing.T) {
 		want  int // index into offered
 	}{
 		{"bare number", "2", 1},
-		{"prose around the number", "I choose 2 because it is closer.", 1},
-		{"number after rejected options", "Option 1 is tempting, but 3 is better.", 2},
+		{"padded number", "  3 ", 2},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			srv := startModelServer(t, fmt.Sprintf(`{"choices":[{"message":{"content":%q}}]}`, tc.reply), nil)
@@ -376,6 +392,144 @@ func TestLLMPlannerIgnoresSchemaFallback(t *testing.T) {
 				t.Fatalf("Next = %s, want %s", got, offered[tc.want])
 			}
 		})
+	}
+}
+
+// TestLLMPlannerModelMismatchIsRejected: the reply's model field names a
+// DIFFERENT model than the one requested. This is the test ablation A's
+// validity rests on: if the server ignores the model field or has one
+// model loaded, the ablation compares a model to itself and reports "not
+// capacity" — a false negative on the central experiment. The error must
+// name BOTH models.
+func TestLLMPlannerModelMismatchIsRejected(t *testing.T) {
+	srv := startModelServer(t,
+		`{"model":"qwen3.5-4b","choices":[{"message":{"content":"2"}}]}`, nil)
+
+	got, err := llmPlanner(srv).Next(llmObs(), llmOffered())
+	if err == nil {
+		t.Fatalf("Next = %s, want a model-mismatch error", got)
+	}
+	for _, want := range []string{"qwen3.8-27b", "qwen3.5-4b"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error does not name %q: %v", want, err)
+		}
+	}
+	if got != (agent.Objective{}) {
+		t.Fatalf("Next = %s, must not resolve to any objective", got)
+	}
+}
+
+// TestLLMPlannerMissingModelIsAccepted: some OpenAI-compatible servers
+// omit the model field entirely. That is NOT an error — failing there
+// would break working setups — but it means which model answered is
+// unverified, so the planner says so once in the run log.
+func TestLLMPlannerMissingModelIsAccepted(t *testing.T) {
+	var logBuf bytes.Buffer
+	srv := startModelServer(t, `{"choices":[{"message":{"content":"2"}}]}`, nil)
+	p := llmPlanner(srv)
+	p.Log = &logBuf
+	offered := llmOffered()
+
+	got, err := p.Next(llmObs(), offered)
+	if err != nil {
+		t.Fatalf("Next: %v", err)
+	}
+	if got != offered[1] {
+		t.Fatalf("Next = %s, want %s", got, offered[1])
+	}
+	// A second call must not repeat the line.
+	if _, err := p.Next(llmObs(), offered); err != nil {
+		t.Fatalf("second Next: %v", err)
+	}
+	if n := strings.Count(logBuf.String(), "did not report a model"); n != 1 {
+		t.Errorf("run log mentions the omitted model %d times, want exactly once:\n%s", n, logBuf.String())
+	}
+}
+
+// TestLLMPlannerFinishReason: finish_reason "length" means the reply was
+// cut off — a truncated JSON that still parses would be a silent wrong
+// answer. Any non-stop reason is a rejection; "stop" (and an omitted
+// field) are accepted.
+func TestLLMPlannerFinishReason(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		reason    string // empty means the field is absent
+		wantErr   bool
+		wantIndex int // valid only when !wantErr
+	}{
+		{"stop with bare number", "stop", false, 1},
+		{"stop with valid JSON", "stop", false, 2},
+		{"length rejects even a parseable reply", "length", true, 0},
+		{"content_filter rejects", "content_filter", true, 0},
+		{"omitted finish_reason accepted", "", false, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			content := "2"
+			if tc.wantIndex == 2 {
+				content = `{"choice":3,"level":12}`
+			}
+			body := fmt.Sprintf(`{"choices":[{"message":{"content":%q}`, content)
+			if tc.reason != "" {
+				body += `,"finish_reason":"` + tc.reason + `"`
+			}
+			body += `}]}`
+			srv := startModelServer(t, body, nil)
+
+			got, err := llmPlanner(srv).Next(llmObs(), llmOffered())
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("Next = %s, want a rejection for finish_reason %q", got, tc.reason)
+				}
+				if !strings.Contains(err.Error(), tc.reason) {
+					t.Errorf("error does not name the finish_reason: %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Next: %v", err)
+			}
+			if tc.wantIndex == 2 {
+				want := agent.Objective{Kind: agent.KindTrain, Level: 12}
+				if got != want {
+					t.Fatalf("Next = %s, want %s", got, want)
+				}
+				return
+			}
+			if got != llmOffered()[tc.wantIndex] {
+				t.Fatalf("Next = %s, want offered[%d]", got, tc.wantIndex)
+			}
+		})
+	}
+}
+
+// TestLLMPlannerHealthCounts: the per-run counters that keep a bad sweep
+// from looking like a bad model. One transport error (HTTP 500), one
+// reply rejected for shape (model mismatch), one fallback parse — each
+// lands in its own bucket.
+func TestLLMPlannerHealthCounts(t *testing.T) {
+	srv500 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+	}))
+	t.Cleanup(srv500.Close)
+	planner := llmPlanner(srv500)
+	if _, err := planner.Next(llmObs(), llmOffered()); err == nil {
+		t.Fatal("Next: want a transport error")
+	}
+	// model mismatch (rejected for shape)
+	srvMismatch := startModelServer(t, `{"model":"other-model","choices":[{"message":{"content":"2"}}]}`, nil)
+	planner.BaseURL = srvMismatch.URL
+	if _, err := planner.Next(llmObs(), llmOffered()); err == nil {
+		t.Fatal("Next: want a model-mismatch error")
+	}
+	// bare-number fallback (accepted, counted as a fallback use)
+	srvPlain := startModelServer(t, `{"choices":[{"message":{"content":"2"}}]}`, nil)
+	planner.BaseURL = srvPlain.URL
+	if _, err := planner.Next(llmObs(), llmOffered()); err != nil {
+		t.Fatalf("Next: %v", err)
+	}
+	h := planner.Health
+	if h.Transport != 1 || h.Rejected != 1 || h.Fallbacks != 1 {
+		t.Errorf("Health = %+v, want {Transport:1 Rejected:1 Fallbacks:1}", h)
 	}
 }
 

@@ -3,6 +3,7 @@ package agent
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,6 +12,15 @@ import (
 	"strconv"
 	"strings"
 	"time"
+)
+
+// Typed rejection errors. A reply that fails envelope verification (wrong
+// model, non-stop finish) or content parsing is REJECTED: an error, never a
+// guess. S7-4 makes these retryable; until then they are clean stops rather
+// than silent wrong answers.
+var (
+	ErrModelMismatch = errors.New("agent: llm planner: model mismatch")
+	ErrNotFinished   = errors.New("agent: llm planner: reply did not finish cleanly")
 )
 
 const (
@@ -62,6 +72,29 @@ type LLMPlanner struct {
 	// place they have been is an infinite loop by construction (measured:
 	// lab -> pallet -> lab for 21 rounds). The history breaks the tie.
 	recent []string
+
+	// Health counts what happened to this planner's replies, per run. A
+	// scoreboard row collected with a dozen transport errors or nine
+	// fallback parses is not comparable to one with none; the counters are
+	// what make that visible, so every row can carry the conditions it was
+	// collected under. badgerun reads these off the planner at the end of
+	// each run.
+	Health LLMHealth
+
+	// modelOmittedLogged is the once-per-run gate for the "server did not
+	// report a model" log line: visible, but not repeated every call.
+	modelOmittedLogged bool
+}
+
+// LLMHealth counts the conditions a run's replies were collected under,
+// per planner (one planner per run). A bad sweep must not look like a bad
+// model: Transport errors are server problems, Rejected is reply-shape
+// problems, Fallbacks marks replies that did not honour the requested JSON
+// schema and had to be parsed as plain text.
+type LLMHealth struct {
+	Transport int // POST failures, timeouts, non-200, unreadable or malformed envelope
+	Rejected  int // replies rejected for shape: model mismatch, finish_reason != stop, unparseable content
+	Fallbacks int // replies parsed by the plain-text fallback path
 }
 
 // recentCap is how many past choices the prompt carries: enough to show
@@ -98,23 +131,27 @@ func NewLLMPlanner() *LLMPlanner {
 // The reply is asked for as a JSON object ({"choice": N, plus the
 // arguments of the chosen objective when it has any) via
 // response_format/json_schema, so a well-behaved server cannot emit a
-// bare number wrapped in prose. A server that rejects or ignores the
-// schema still works: a reply without a parseable "choice" falls back to
-// the existing text path (last integer wins). The schema is an
-// optimisation, not the safety mechanism — WithArgs and Validate check
-// every value against its stated range either way.
+// bare number wrapped in prose. Before any of that is parsed, the
+// envelope is verified: a reply whose model field names a DIFFERENT model
+// than the one requested is a typed error (ErrModelMismatch), and a
+// finish_reason other than "stop" (truncation, content filter) is a typed
+// rejection (ErrNotFinished). A server that rejects or ignores the schema
+// still works: a non-JSON reply that looks like an answer (short,
+// substantially just the number) falls back to the text path. The schema
+// is an optimisation, not the safety mechanism — WithArgs and Validate
+// check every value against its stated range either way.
 func (p *LLMPlanner) Next(obs Observation, offered []Objective) (Objective, error) {
 	if len(offered) == 0 {
 		return Objective{}, fmt.Errorf("agent: llm planner: nothing was offered")
 	}
 	picked := "" // filled in below; the deferred log line reports it
 	start := time.Now()
-	reply, err := p.ask(obs, offered)
+	res, err := p.ask(obs, offered)
 	took := time.Since(start)
 	if err != nil {
 		return Objective{}, err
 	}
-	reply = strings.TrimSpace(reply)
+	reply := strings.TrimSpace(res.Content)
 	defer func() {
 		// Logged after the reply has resolved, so the line reports what it
 		// actually became rather than what it looked like.
@@ -123,8 +160,37 @@ func (p *LLMPlanner) Next(obs Observation, offered []Objective) (Objective, erro
 				len(offered), took.Round(10*time.Millisecond), snippet([]byte(reply)), picked)
 		}
 	}()
-	o, err := resolveReply(offered, reply)
+	if res.Model != "" && res.Model != p.Model {
+		// The ablation question is "does the bigger model solve this?". If
+		// the server ignored the model field, loaded one model, or the env
+		// var is wrong, comparing a model to itself would be read as "not
+		// capacity" — a false negative on the central experiment. So this
+		// is a hard error naming both sides, never a warn-and-continue.
+		p.Health.Rejected++
+		return Objective{}, fmt.Errorf("%w: requested %q but %q answered", ErrModelMismatch, p.Model, res.Model)
+	}
+	if res.Model == "" && !p.modelOmittedLogged {
+		// Some OpenAI-compatible servers omit the field entirely; that is
+		// not an error (failing there would break working setups), but it
+		// means which model answered is UNVERIFIED, so say so once.
+		p.modelOmittedLogged = true
+		if p.Log != nil {
+			fmt.Fprintln(p.Log, "  llm: server did not report a model field; cannot verify which model answered")
+		}
+	}
+	if res.FinishReason != "" && res.FinishReason != "stop" {
+		// "length" means the reply was cut off: a truncated JSON that still
+		// parses is a silent wrong answer. Any non-stop stop reason is a
+		// REJECTED reply, not one to be parsed.
+		p.Health.Rejected++
+		return Objective{}, fmt.Errorf("%w: finish_reason %q", ErrNotFinished, res.FinishReason)
+	}
+	o, usedFallback, err := resolveReply(offered, reply)
+	if usedFallback {
+		p.Health.Fallbacks++
+	}
 	if err != nil {
+		p.Health.Rejected++
 		picked = "rejected: " + err.Error()
 		return Objective{}, fmt.Errorf("agent: llm planner: %w", err)
 	}
@@ -139,27 +205,42 @@ func (p *LLMPlanner) Next(obs Observation, offered []Objective) (Objective, erro
 // resolveReply turns a raw model reply into an offered objective. A reply
 // that parses as a JSON object with an integer "choice" takes the schema
 // path: the choice indexes the offered list and any argument fields are
-// applied (and range-checked) by WithArgs. Anything else — a bare number,
-// prose, or a server that ignored response_format — takes the fallback
-// text path, where the last integer wins.
-func resolveReply(offered []Objective, reply string) (Objective, error) {
+// applied (and range-checked) by WithArgs. Anything else — a server that
+// ignored response_format — takes the fallback text path, which is kept
+// because those servers must keep working, but is now gated: the reply
+// must LOOK like an answer (looksLikeAnswer), or it is rejected.
+//
+// The second return value says whether the fallback path was taken, so the
+// caller can count how many replies did not honour the requested schema.
+func resolveReply(offered []Objective, reply string) (Objective, bool, error) {
 	if cr, ok := parseChoiceReply(reply); ok {
 		base, err := Chosen(offered, strconv.Itoa(*cr.Choice))
 		if err != nil {
-			return Objective{}, err
+			return Objective{}, false, err
 		}
-		return WithArgs(base, ReplyArgs{
+		o, err := WithArgs(base, ReplyArgs{
 			Level:    cr.Level,
 			Species:  cr.Species,
 			Item:     cr.Item,
 			Quantity: cr.Quantity,
 		})
+		if err != nil {
+			return Objective{}, false, err
+		}
+		return o, false, nil
+	}
+	if !looksLikeAnswer(reply) {
+		return Objective{}, true, fmt.Errorf("reply does not look like an answer: %s", snippet([]byte(reply)))
 	}
 	n, ok := answerInt(reply)
 	if !ok {
-		return Objective{}, fmt.Errorf("no number in reply %q", reply)
+		return Objective{}, true, fmt.Errorf("no number in reply %q", reply)
 	}
-	return Chosen(offered, n)
+	o, err := Chosen(offered, n)
+	if err != nil {
+		return Objective{}, true, err
+	}
+	return o, true, nil
 }
 
 // choiceReply is the schema-shaped reply: the choice is required, the
@@ -190,6 +271,33 @@ func parseChoiceReply(s string) (choiceReply, bool) {
 		return choiceReply{}, false
 	}
 	return r, true
+}
+
+// looksLikeAnswer is the fallback gate (S7-3). A non-JSON reply is
+// accepted only when it substantially IS the number: after stripping
+// reasoning blocks and trimming, at most 12 characters long, containing
+// exactly one integer, with every remaining character whitespace or
+// punctuation. "2", " 2.", "(5)" pass; "rate limited, retry in 5 seconds"
+// (letters) and "Option 1 is tempting, but 3 is better." (two integers,
+// letters) do not. The rule exists because the old fallback took the last
+// integer ANYWHERE in the reply: an HTTP-200 body of prose that merely
+// contains a digit became a game action. A long prose reply containing a
+// digit is an unhealthy response, not a choice.
+func looksLikeAnswer(s string) bool {
+	s = strings.TrimSpace(thinkRe.ReplaceAllString(s, " "))
+	if len(s) > 12 {
+		return false
+	}
+	if n := len(intRe.FindAllString(s, -1)); n != 1 {
+		return false
+	}
+	rest := intRe.ReplaceAllString(s, "")
+	for _, r := range rest {
+		if !strings.ContainsRune(" \t\n.,:;!?()[]{}\"'-", r) {
+			return false
+		}
+	}
+	return true
 }
 
 // The reply is constrained with a single call, not two. A whole-output
@@ -278,11 +386,21 @@ var choiceSchema = map[string]any{
 	"required": []string{"choice"},
 }
 
+// chatChoice carries the message plus finish_reason: "length" means the
+// reply was cut off mid-generation, and a truncated JSON that still parses
+// is a silent wrong answer, so Next rejects any non-stop reason.
 type chatChoice struct {
-	Message chatMessage `json:"message"`
+	Message      chatMessage `json:"message"`
+	FinishReason string      `json:"finish_reason"`
 }
 
+// chatResponse carries the model field: which model actually ANSWERED. It
+// is verified against the requested model in Next (a mismatch is a typed
+// error) because an ablation that compares a model to itself would report
+// "not capacity" for what is a serving bug. An empty Model means the
+// server omitted the field, which is legal but unverified — logged once.
 type chatResponse struct {
+	Model   string       `json:"model"`
 	Choices []chatChoice `json:"choices"`
 }
 
@@ -299,11 +417,21 @@ func (p *LLMPlanner) systemPrompt() string {
 	return s
 }
 
-// ask performs the one POST to {BaseURL}/chat/completions and returns
-// choices[0].message.content. Every failure mode — transport error,
-// non-200 status, unparseable body, empty choices — is an error naming
-// what happened.
-func (p *LLMPlanner) ask(obs Observation, offered []Objective) (string, error) {
+// chatResult is the parsed reply: the content plus the envelope facts
+// (which model answered, how the generation stopped) that Next verifies
+// before trusting the content.
+type chatResult struct {
+	Content      string
+	Model        string // empty when the server omitted the field
+	FinishReason string // empty when the server omitted the field
+}
+
+// ask performs the one POST to {BaseURL}/chat/completions and returns the
+// first choice's content plus the envelope model and finish_reason. Every
+// failure mode — transport error, timeout, non-200 status, unparseable
+// body, empty choices — is an error naming what happened, and each one
+// increments Health.Transport.
+func (p *LLMPlanner) ask(obs Observation, offered []Objective) (chatResult, error) {
 	client := p.Client
 	if client == nil {
 		timeout := p.Timeout
@@ -316,6 +444,10 @@ func (p *LLMPlanner) ask(obs Observation, offered []Objective) (string, error) {
 	user := llmUserPrompt(obs, offered, p.recent)
 	if p.PromptLog != nil {
 		fmt.Fprintf(p.PromptLog, "=== prompt (model %s) ===\n[system]\n%s\n[user]\n%s\n", p.Model, system, user)
+	}
+	transportErr := func(format string, args ...any) (chatResult, error) {
+		p.Health.Transport++
+		return chatResult{}, fmt.Errorf("agent: llm planner: "+format, args...)
 	}
 	reqBody, err := json.Marshal(chatRequest{
 		Model:       p.Model,
@@ -330,12 +462,12 @@ func (p *LLMPlanner) ask(obs Observation, offered []Objective) (string, error) {
 		},
 	})
 	if err != nil {
-		return "", fmt.Errorf("agent: llm planner: encode request: %w", err)
+		return transportErr("encode request: %w", err)
 	}
 	url := strings.TrimRight(p.BaseURL, "/") + "/chat/completions"
 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(reqBody))
 	if err != nil {
-		return "", fmt.Errorf("agent: llm planner: build request: %w", err)
+		return transportErr("build request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if p.Token != "" {
@@ -343,24 +475,31 @@ func (p *LLMPlanner) ask(obs Observation, offered []Objective) (string, error) {
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("agent: llm planner: POST %s: %w", url, err)
+		// A timeout lands here as a context deadline error; it counts as a
+		// transport failure, which is what it is — the POKEPILOT_LLM_TIMEOUT
+		// comment "was killing runs spuriously" is this counter in disguise.
+		return transportErr("POST %s: %w", url, err)
 	}
 	defer resp.Body.Close()
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", fmt.Errorf("agent: llm planner: read reply: %w", err)
+		return transportErr("read reply: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("agent: llm planner: model returned HTTP %s: %s", resp.Status, snippet(data))
+		return transportErr("model returned HTTP %s: %s", resp.Status, snippet(data))
 	}
 	var cr chatResponse
 	if err := json.Unmarshal(data, &cr); err != nil {
-		return "", fmt.Errorf("agent: llm planner: reply is not valid JSON: %v", err)
+		return transportErr("reply is not valid JSON: %v", err)
 	}
 	if len(cr.Choices) == 0 {
-		return "", fmt.Errorf("agent: llm planner: reply has no choices: %s", snippet(data))
+		return transportErr("reply has no choices: %s", snippet(data))
 	}
-	return cr.Choices[0].Message.Content, nil
+	return chatResult{
+		Content:      cr.Choices[0].Message.Content,
+		Model:        cr.Model,
+		FinishReason: cr.Choices[0].FinishReason,
+	}, nil
 }
 
 var (
