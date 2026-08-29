@@ -522,6 +522,6 @@ unchanged.
 **Verification:** the same 60-phase sweep through the real `skill.Travel`
 path fails 8/60 on the old push with the swarm's error string verbatim, and
 passes 60/60 with the fix (16 iterations fought a battle and recovered).
-`TestTraverseRoute1ToPallet` (skipped under -short) pins the edge: Route 1
+`TestTravelRoute1ToPallet` (skipped under -short) pins the edge: Route 1
 → Pallet Town, asserting arrival positively — wCurMap == 0x00 and the
 player controllable.

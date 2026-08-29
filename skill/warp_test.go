@@ -73,7 +73,7 @@ func TestTraverseGateWarp(t *testing.T) {
 	t.Logf("crossed the south gate via the reachable warp tile, landed at (%d,%d)", p.X, p.Y)
 }
 
-// TestTraverseRoute1ToPallet is the regression for the swarm's 0c->00
+// TestTravelRoute1ToPallet is the regression for the swarm's 0c->00
 // failure (measured 2026-08-29, three identical runs at frame 17571):
 // Route 1's south edge is tall grass at x=10 and x=11, and edgeTarget picks
 // (10,35) from Place("route 1") — so the walk to the edge ends on a step
@@ -88,9 +88,9 @@ func TestTraverseGateWarp(t *testing.T) {
 // on row 0 of 0x00 (probed), and the push crosses in 17 frames when no
 // battle fires. So the assertion is positive about arrival — wCurMap ==
 // 0x00 and the player controllable — never about which column crossed.
-func TestTraverseRoute1ToPallet(t *testing.T) {
+func TestTravelRoute1ToPallet(t *testing.T) {
 	if testing.Short() {
-		t.Skip("full journey; run with -run '^TestTraverseRoute1ToPallet$'")
+		t.Skip("full journey; run with -run '^TestTravelRoute1ToPallet$'")
 	}
 	m := fixture.Load(t, "pallet_town")
 	if p := playerAt(t, m); p.MapID != 0x00 {
