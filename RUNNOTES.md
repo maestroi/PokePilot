@@ -43,3 +43,23 @@ the goal, reply validation and rejection recovery land.
 - Do NOT run sweeps from inside agent-runner (single-slot contention).
 - S6-11 (prev): per-objective checkpoint ring in agent.Run; plain
   `fixture.LoadState`.
+
+## S7-1: fixture cache survives a clean worktree
+
+`fixture.Dir` replaced by `DefaultDir` + `ResolveDir()` in
+skill/fixture/fixture.go; `POKEPILOT_FIXTURE_DIR` overrides the cache
+location. `FailureDir` untouched. Two unit tests added to fixture_test.go.
+
+Cache-reuse measurement (same POKEPILOT_FIXTURE_DIR=/tmp/pokepilot-fixtures,
+POKEMON_RED_ROM set, `go test ./skill/fixture -count=1`):
+
+- cold (empty dir):  **43.227s**
+- warm (reused):     **1.708s**
+
+/tmp/pokepilot-fixtures now holds: reds_bedroom.v5.state,
+post_starter.v5.state, pallet_town.v5.state, viridian_city.v5.state,
+viridian_pokecenter.v5.state.
+
+For the next task: set POKEPILOT_FIXTURE_DIR to a shared path (e.g.
+/tmp/pokepilot-fixtures) when running the suite — clean worktrees no longer
+rebuild post_starter/post_pokeballs from boot.
