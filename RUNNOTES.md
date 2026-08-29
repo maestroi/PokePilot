@@ -472,3 +472,56 @@ timeout — run it with `-timeout 40m` (measured: ok in 919s).
 - Level-up move offers on a line are a property of the CURRENT species'
   table, not the starter's: check EvosMoves for the evolved form before
   predicting which level a prompt fires at.
+
+## S8-3: Route 1 → Pallet Town edge crossing (2026-08-29)
+
+Swarm failure, three identical runs (seed 0, frame 17571):
+`connection edge 0c->00 via south did not cross within 180 frames; still on
+map 0c at (10,35)`. Every run ended later at Oak's lab (5,6) — the player
+recovered after the error, which pointed at a battle that was active but
+never reported as one.
+
+**The destination-walkability hypothesis is REFUTED.** The four probe
+answers, measured with `TestProbe` and a walkability sweep over both seam
+rows (Route 1 row 35, Pallet Town row 0):
+
+- Route 1 (0x0c) row 35 walkable columns: 0,1,2,4,5,6,7,8,10,11,13,14,15,
+  16,17,19; unwalkable: 3,9,12,18.
+- Pallet Town (0x00) row 0 walkable columns: 0,1,2,4,5,6,7,8,10,11,13,14,
+  15,16,17,19; unwalkable: 3,9,12,18. Identical to the source row, as a
+  connection pair should be.
+- x=10 is walkable on BOTH sides, and the crossing works: from (10,35)
+  facing down, holding down crosses in 17 frames (Pallet→Route 1→Pallet
+  round trip passes).
+- `edgeTarget` from `Place("route 1")`=(5,14) picks exactly (10,35)
+  (`PROBE_MAP=0x0c PROBE_AT=5,14`: south edge nearest reachable tile
+  (10,35)) — the swarm's tile was never a bad choice.
+
+**What actually happens:** Route 1's south edge is TALL GRASS at x=10 and
+x=11 — stepping onto (10,35) or (11,35) fires wild encounters (measured:
+12/40 and 3/12 rDIV phases respectively), and Pallet Town's row 0 has the
+same grass at the same columns ((10,0): 6/12, (11,0): 2/12). The walk to
+the edge therefore ends on a step ONTO an encounter tile, and that step is
+WalkPath's LAST one: its `DecodeBattle` check can land a few frames before
+the encounter fires. A phase sweep (40 fixture replays with shifted rDIV
+phases — a fixture replay is bit-identical, so without the shift every run
+rolls the same game) found 12/40 encounters, of which 4 fired at push frame
+1, after the walk had returned: the player frozen at (10,35) on map 0x0c
+while the push held its button for 180 frames. That is the swarm error
+verbatim, and it explains the "multiple consecutive" pattern: same seed →
+same rDIV phase → same encounter.
+
+**The fix** (skill/warp.go): the push phase now watches `wInBattle` as well
+as the map flip — shared by both warp and connection edges, so no parallel
+path. When a battle is active it releases the button and returns the
+normalized `ErrBattle`, exactly like a battle on the walk: Travel fights it
+and re-plans from the same tile, where no second encounter can fire because
+the player is already standing on the grass. The timeout message is
+unchanged.
+
+**Verification:** the same 60-phase sweep through the real `skill.Travel`
+path fails 8/60 on the old push with the swarm's error string verbatim, and
+passes 60/60 with the fix (16 iterations fought a battle and recovered).
+`TestTraverseRoute1ToPallet` (skipped under -short) pins the edge: Route 1
+→ Pallet Town, asserting arrival positively — wCurMap == 0x00 and the
+player controllable.

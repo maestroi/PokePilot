@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/maestroi/pokepilot/red/state"
+	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/skill"
 	"github.com/maestroi/pokepilot/skill/fixture"
 	"github.com/maestroi/pokepilot/world"
@@ -70,6 +71,61 @@ func TestTraverseGateWarp(t *testing.T) {
 		t.Error("player not controllable after the gate crossing")
 	}
 	t.Logf("crossed the south gate via the reachable warp tile, landed at (%d,%d)", p.X, p.Y)
+}
+
+// TestTraverseRoute1ToPallet is the regression for the swarm's 0c->00
+// failure (measured 2026-08-29, three identical runs at frame 17571):
+// Route 1's south edge is tall grass at x=10 and x=11, and edgeTarget picks
+// (10,35) from Place("route 1") — so the walk to the edge ends on a step
+// ONTO an encounter tile. When the encounter fires after WalkPath's final
+// battle check, the push used to hold its button inside a frozen battle
+// and report "did not cross within 180 frames; still on map 0c at (10,35)".
+// Traverse now returns ErrBattle for that; Travel fights it and re-plans
+// from the same tile, where no second encounter can fire because the player
+// is already standing on the grass.
+//
+// The tile choice was NOT the bug: x=10 is walkable on row 35 of 0x0c AND
+// on row 0 of 0x00 (probed), and the push crosses in 17 frames when no
+// battle fires. So the assertion is positive about arrival — wCurMap ==
+// 0x00 and the player controllable — never about which column crossed.
+func TestTraverseRoute1ToPallet(t *testing.T) {
+	if testing.Short() {
+		t.Skip("full journey; run with -run '^TestTraverseRoute1ToPallet$'")
+	}
+	m := fixture.Load(t, "pallet_town")
+	if p := playerAt(t, m); p.MapID != 0x00 {
+		t.Fatalf("fixture start = map %#04x, want 0x00 (Pallet Town)", p.MapID)
+	}
+
+	r1, ok := skill.Place("route 1")
+	if !ok {
+		t.Fatal(`Place "route 1" not found`)
+	}
+	if _, err := skill.Travel(m, m.ROM(), r1, skill.StatAwareMove(m.ROM()), 20); err != nil {
+		diagFatalf(t, m, err, "Travel to Route 1: %v", err)
+	}
+	if p := playerAt(t, m); p.MapID != 0x0c {
+		t.Fatalf("after the first leg the player is on map %#04x, want 0x0c (Route 1)", p.MapID)
+	}
+
+	pal, ok := skill.Place("pallet town")
+	if !ok {
+		t.Fatal(`Place "pallet town" not found`)
+	}
+	res, err := skill.Travel(m, m.ROM(), pal, skill.StatAwareMove(m.ROM()), 20)
+	if err != nil {
+		diagFatalf(t, m, err, "Travel back to Pallet: %v", err)
+	}
+
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	if got := mem.U8(sym.CurMap); got != 0x00 {
+		t.Fatalf("wCurMap = %#04x, want 0x00 (Pallet Town)", got)
+	}
+	if !state.Controllable(&mem) {
+		t.Errorf("player not controllable on map %#04x after the crossing", mem.U8(sym.CurMap))
+	}
+	t.Logf("Route 1 -> Pallet crossed; battles fought: %d, replans: %+v", res.Battles, res.Replans)
 }
 
 // graphFor builds the map-level graph from the live ROM.
