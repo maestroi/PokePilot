@@ -23,22 +23,23 @@ const (
 	KindGym                 // fight the Pewter Gym leader, Brock
 	KindCatch               // hunt tall grass for a wanted species and catch it
 	KindBuy                 // buy Item x Qty from the mart clerk
+	KindPickup              // pick up the item at a coordinate; the bag must rise
 )
 
 // Objective is one unit of intent a planner can choose. The argument fields
 // are per-kind: Place for KindGoTo, X/Y for KindTalk, Starter for
 // KindStarter, Level for KindTrain, Species for KindCatch, Item and Qty for
-// KindBuy. Every argument is checked by Validate before it reaches a skill;
+// KindBuy, X/Y and Item for KindPickup. Every argument is checked by Validate before it reaches a skill;
 // an out-of-range value is a typed error that stops the round, never a
 // clamp or a best match.
 type Objective struct {
 	Kind    Kind
 	Place   string        // KindGoTo: a name accepted by skill.Place
-	X, Y    uint8         // KindTalk: the tile to face and talk to
+	X, Y    uint8         // KindTalk, KindPickup: the tile to face
 	Starter skill.Starter // KindStarter: which ball to take
 	Level   uint8         // KindTrain: the level the lead should reach
 	Species uint8         // KindCatch: the ROM species index to hunt
-	Item    uint8         // KindBuy: the bag item ID
+	Item    uint8         // KindBuy, KindPickup: the bag item ID
 	Qty     int           // KindBuy: how many
 	Note    string        // human-readable, shown to a planner; never parsed
 }
@@ -142,6 +143,13 @@ func Execute(m *emu.Emu, romData []byte, o Objective) error {
 			fmt.Printf("  no %s in %d encounters (outcome %v, balls=%d)\n", strings.ToUpper(name), res.Encounters, res.Outcome, res.BallsThrown)
 		}
 		return nil
+	case KindPickup:
+		// The proof is inside Pickup: it returns nil only when the bag's
+		// count for Item rose by one. A text box opening is not evidence.
+		if err := skill.Pickup(m, romData, o.X, o.Y, o.Item); err != nil {
+			return fmt.Errorf("agent: %s: %w", o, err)
+		}
+		return nil
 	case KindBuy:
 		err := skill.Buy(m, o.Item, o.Qty)
 		if err != nil {
@@ -181,6 +189,10 @@ func (o Objective) Validate() error {
 		if _, ok := SpeciesName(o.Species); !ok {
 			return fmt.Errorf("agent: %s: unknown species %d", o, o.Species)
 		}
+	case KindPickup:
+		if _, ok := ItemName(o.Item); !ok {
+			return fmt.Errorf("agent: %s: unknown item %d", o, int(o.Item))
+		}
 	case KindBuy:
 		if o.Qty < 1 || o.Qty > 99 {
 			return fmt.Errorf("agent: %s: quantity %d out of range 1..99", o, o.Qty)
@@ -217,6 +229,11 @@ func (o Objective) String() string {
 			return "catch a " + strings.ToUpper(name) + " here"
 		}
 		return fmt.Sprintf("catch species %d here", o.Species)
+	case KindPickup:
+		if name, ok := ItemName(o.Item); ok {
+			return fmt.Sprintf("pick up the %s at (%d,%d)", strings.ToUpper(name), o.X, o.Y)
+		}
+		return fmt.Sprintf("pick up item %d at (%d,%d)", int(o.Item), o.X, o.Y)
 	case KindBuy:
 		if name, ok := ItemName(o.Item); ok {
 			return fmt.Sprintf("buy %d %s", o.Qty, strings.ToUpper(name))

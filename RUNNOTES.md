@@ -192,3 +192,44 @@ Health bucket counts. Full `-short` suite green.
   later tasks (item pickup, trainer engagement) read them from the header —
   no re-parsing needed. Item ids are raw ROM constants (0x04 = POKE_BALL);
   `skill.ItemPokeBall` already names that one.
+
+## S7-6: skill.Pickup — collect an item ball and prove the bag grew
+
+### What landed
+- `skill/pickup.go`: `Pickup(m, romData, x, y, want)` — reads the bag count
+  for `want` BEFORE (state.DecodeInventory), walks to a walkable adjacent
+  tile via GoTo (`approachItem`; no-op when already adjacent, so there is no
+  second approach path), Face, press A, page the box closed.
+  - Postcondition is POSITIVE: the count must be exactly before+1, else
+    `ErrBagNotRisen` naming both counts. An already-collected ball fails
+    here, cleanly — deliberately unfiltered (no item event flags exist;
+    no decoder added, per spec).
+  - Yes/no trap: every page pass checks `state.DecodeTwoOptionMenu` BEFORE
+    the next A and returns `ErrPickupMenu` naming the cursor option — never
+    presses A into a menu (the S6-3/S6-4 lesson).
+- `agent/objective.go`: `KindPickup` (X, Y, Item) appended after KindBuy so
+  no existing kind renumbers; Execute calls skill.Pickup; Validate checks
+  ItemName; String renders "pick up the POKE BALL at (x,y)".
+- `skill/pickup_test.go`: TestPickupPokeBall — post_errand fixture (Viridian
+  City, the same start TestGymBoulderBadge uses for this crossing), Travel to
+  the forest, Travel to (2,31) east of the ball at (1,31) on 0x33, Pickup,
+  assert POKE BALL count rose by one. `testing.Short()`-skipped; proven
+  separately: `-run '^TestPickupPokeBall$'` PASS (2.2s).
+
+### Verified
+`go build ./...`, `go vet ./skill/ ./agent/`, both gate greps in
+skill/pickup.go (DecodeInventory, DecodeTwoOptionMenu), `go test ./skill/...
+./agent/... -short -count=1` all green.
+
+### For the next task
+- The city -> Route 2 crossing is STOCHASTIC: Viridian City has two walkers
+  (SAILOR, DAISY) patrolling the plaza north of (19,8). One run from
+  post_starter died there: "You can't go through here!" re-opened on every
+  retry, Travel gave up after 10 dialogue recoveries. The same crossing from
+  post_errand passed. If a journey test flakes at (19,9) on map 0x01 facing
+  up, that is the plaza, not your code — dump says so via PROBE_STATE.
+- `approachItem` picks the first walkable orthogonal neighbor in
+  Up/Down/Left/Right order; for the (1,31) ball that is (2,31), the tile the
+  test stands on. If a future ball has only one reachable neighbor behind a
+  grass band, Travel (not GoTo) belongs in the approach instead — GoTo
+  aborts on wild battles by design.
