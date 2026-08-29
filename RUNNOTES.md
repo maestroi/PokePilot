@@ -721,3 +721,56 @@ ROM/.gb/.sav/.state committed.
   Brock's victory script), so TestFleeTrainerBattle pays his full two-mon
   presence every run — cheap at L16+, but a party that has not trained yet
   should heal first, as the test does.
+
+## S8-5: UseFieldItem — a Potion from the overworld (START -> ITEM)
+
+### What landed
+- `skill/field_item.go`: `UseFieldItem(m, item, slot)` — START -> ITEM ->
+  bag entry -> party slot, every menu step-and-verify (SelectMenuItem,
+  selectBagEntry, SelectPartySlot — all reused, none re-implemented).
+  Postcondition from RAM via state.DecodeParty: the target's HP ROSE or its
+  status byte CLEARED, else ErrFieldItemNoEffect naming both values; the bag
+  count must also drop by one. Paging the result text stops at any
+  DecodeTwoOptionMenu menu and returns ErrFieldItemPrompt WITHOUT pressing A
+  (the S6-3/S6-4 trap). The chain closes with B, not A: after the result box
+  the game returns to the BAG LIST, where A would select an entry.
+- `skill/field_item_test.go`: TestUseFieldItemPotion — viridian_mart fixture,
+  hidden POTION at (1,18) on map 0x33 (faced, not stepped on: hidden events
+  fire on A toward the tile), Route 1 wild battle to damage the lead, then
+  UseFieldItem raises the lead's HP from RAM. -short-skipped; proven PASS in
+  17.9s (one blackout on the forest leg, recovered by the Travel retry).
+- Not wired into Heal/Travel, no objective Kind — S8-7 decides.
+
+### Start menu indices (measured + derived, the task's open question)
+The menu GROWS with story progress; a hardcoded index is wrong after the
+next flag. `startMenuShape` derives both from EVENT_GOT_POKEDEX (flag 37,
+state.EventGotPokedex) instead of writing a constant:
+- WITHOUT pokedex: 6 items, ITEM at index 1. MEASURED live in
+  TestSelectMenuItemStartMenu (menu_test.go): wMaxMenuItem=6, cursor reaches
+  5 and wraps to 0, A on index 1 opens the bag list (wListMenuID=3).
+- WITH pokedex: 7 items, POKéDEX printed FIRST (index 0), ITEM shifts to
+  index 2. Derived from draw_start_menu.asm: `CheckEvent EVENT_GOT_POKEDEX`
+  gates the box height ($0e vs $0c) and the item count ($07 vs $06), and the
+  pokedex branch prints StartMenuPokedexText before everything else. The
+  S8-5 test runs from viridian_mart (post-errand, flag set), so it exercises
+  the index-2 path end to end.
+- Draw-readiness signal: wMaxMenuItem is the LAST write in DrawStartMenu,
+  so (wFontLoaded != 0 && wMaxMenuItem == derived count) means fully drawn
+  in the expected shape. Also measured: right after a battle ends, a single
+  START tap can be lost — UseFieldItem re-taps until drawn (5 attempts).
+- USE/TOSS prompt identification: DecodeTwoOptionMenu alone is NOT enough —
+  the bag list itself decodes as a two-option menu (one entry + CANCEL row).
+  useTossPrompt additionally requires the top item at tile (11,14), where
+  start_sub_menus.asm .choseItem puts it.
+- The "Use item on which #MON?" party menu is identified by its text marker
+  (useItemPartyMenuUp in party.go, added this task); SelectPartySlot drives
+  it.
+
+### For the next task
+- UseFieldItem handles heals and status cures; it does NOT guard against an
+  item that cannot affect the target (e.g. a POTION on a full-HP mon fails
+  ErrFieldItemNoEffect, which is the correct reading: no effect happened).
+- S8-7 wires in callers; the function takes raw item id + slot, no romData.
+- The lost-START-tap-after-battle behavior (wFontLoaded stuck 0 for the whole
+  draw budget, menu opens 120 frames later) is a real ROM quirk measured this
+  task; any future code that taps START once after a battle will hit it.
