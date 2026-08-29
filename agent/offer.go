@@ -174,6 +174,25 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 			out = append(out, Objective{Kind: KindBuy, Item: it, Qty: 3})
 		}
 	}
+
+	// The people and items of this map, from the ROM map header (see
+	// MapObjects): each person is a KindTalk at its tile, each item a
+	// KindPickup with the item named. Trainers are REPORTED in MapObjects
+	// but NOT offered — a fightable trainer verb is a separate slice, and
+	// offering one with no verb behind it manufactures a guaranteed failed
+	// objective every round. Collected items are not filtered: there is no
+	// data source for it, and a vanished ball fails Pickup's bag
+	// postcondition as an ordinary failed objective.
+	for _, o := range obs.MapObjects {
+		switch o.Kind {
+		case "person":
+			out = append(out, Objective{Kind: KindTalk, X: o.X, Y: o.Y})
+		case "item":
+			if id, ok := ItemByName(o.Item); ok {
+				out = append(out, Objective{Kind: KindPickup, X: o.X, Y: o.Y, Item: id})
+			}
+		}
+	}
 	return out
 }
 

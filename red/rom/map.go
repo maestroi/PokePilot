@@ -35,6 +35,13 @@ type Object struct {
 	Movement uint8
 	Range    uint8
 	TextID   uint8
+
+	// ItemID is set when TextID has the 0x80 (item) bit; zero otherwise.
+	ItemID uint8
+	// TrainerClass and TrainerSet are set when TextID has the 0x40 (trainer)
+	// bit; zero otherwise.
+	TrainerClass uint8
+	TrainerSet   uint8
 }
 
 // Connection links this map to an adjacent map. Dir: 0=north 1=south 2=west 3=east.
@@ -255,12 +262,15 @@ func ParseMap(rom []byte, mapID uint8) (MapHeader, error) {
 		obj.Y -= 4 // object coordinates are stored with +4 added
 		obj.X -= 4
 		switch {
-		case obj.TextID&0x40 != 0: // trainer entry: 2 extra bytes
-			if err := o.skip(2); err != nil {
+		case obj.TextID&0x40 != 0: // trainer entry: class then roster
+			if obj.TrainerClass, err = o.byte(); err != nil {
 				return h, mapErr(mapID, err)
 			}
-		case obj.TextID&0x80 != 0: // item entry: 1 extra byte
-			if err := o.skip(1); err != nil {
+			if obj.TrainerSet, err = o.byte(); err != nil {
+				return h, mapErr(mapID, err)
+			}
+		case obj.TextID&0x80 != 0: // item entry: item id
+			if obj.ItemID, err = o.byte(); err != nil {
 				return h, mapErr(mapID, err)
 			}
 		}

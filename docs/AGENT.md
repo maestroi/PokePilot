@@ -53,6 +53,20 @@ Worked example:
 Note: in llm mode a "go to" objective uses skill.Travel, so a wild
 encounter on the way is fought and the route resumes.
 
+## ROM facts
+
+Facts about the ROM that planning and tests may rely on, verified against
+the vendored decompilation in `pokered/`.
+
+- **Pokemon Center PC:** tile (13,3) of every Center, faced UP. It is a
+  `hidden_event` (`OpenPokemonCenterPC`), NOT an NPC sprite, so searching
+  the map object files for a PC sprite finds nothing and is misleading.
+  S6-4's RUNNOTES claimed "this decompilation's pokecenters have no PC
+  machine sprite" and used that to abandon its acceptance test; the claim
+  is false — the PC is present in every Center (VIRIDIAN, PEWTER,
+  CERULEAN, ...) as a tile-activated hidden event, and depositing a mon
+  IS possible in-rom.
+
 ## badgerun: the scoreboard
 
 `cmd/badgerun` answers the slice's question — given verbs and an

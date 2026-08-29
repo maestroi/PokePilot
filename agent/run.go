@@ -34,6 +34,54 @@ type Result struct {
 	Completed []Objective
 	Err       error // set when Stop is StopError or StopFailed
 	Final     Observation
+	// ReplyRetries counts how many times the planner answered in the wrong
+	// shape and the same round was re-asked with the rejection quoted back.
+	// It is the diagnostic that separates a loop problem from a capacity
+	// problem: a run full of them answered but could not answer in shape,
+	// while zero means every reply the model gave was structurally fine.
+	ReplyRetries int
+}
+
+// MaxReplyRetries is how many times the planner may be asked for one
+// round's choice: the initial ask plus re-asks that quote the rejection
+// back. A malformed reply says nothing about the world — only that the
+// model answered in the wrong shape — so it is retryable, but a model that
+// cannot answer in shape three times running is a real finding, not a
+// transient, and the round stops with StopError.
+const MaxReplyRetries = 3
+
+// FeedbackPlanner is a planner that can be re-asked about the same round
+// with the text of its own rejection quoted back as feedback. LLMPlanner
+// implements it; the scripted planners do not, and a plain Planner's error
+// keeps stopping the run exactly as before.
+type FeedbackPlanner interface {
+	NextFeedback(obs Observation, offered []Objective, feedback string) (Objective, error)
+}
+
+// planWithRetries asks the planner for this round's objective and, when it
+// rejects its own reply (a planner error that is not ErrDone), re-asks the
+// SAME round with the rejection quoted back. The observation does not
+// change; only the rejection feedback is added. It returns the objective
+// (meaningful only when err is nil), the planner's error — ErrDone passes
+// through untouched; any other non-nil error means MaxReplyRetries asks
+// have all been rejected, or a planner that cannot take feedback errored at
+// all — and n, how many re-asks happened, so the caller can count them in
+// the result. Run classifies the error into a Stop reason: StopDone is the
+// ZERO value of Stop, so it must never be signalled through a "stop != 0"
+// check.
+func planWithRetries(log io.Writer, round int, p Planner, obs Observation, offered []Objective) (Objective, error, int) {
+	obj, err := p.Next(obs, offered)
+	fp, canFeedback := p.(FeedbackPlanner)
+	retries := 0
+	for err != nil && !errors.Is(err, ErrDone) && canFeedback && retries < MaxReplyRetries-1 {
+		retries++
+		if log != nil {
+			fmt.Fprintf(log, "round %d: reply rejected (ask %d of %d): %v\n",
+				round, retries+1, MaxReplyRetries, err)
+		}
+		obj, err = fp.NextFeedback(obs, offered, err.Error())
+	}
+	return obj, err, retries
 }
 
 // defaultStuckAfter is the StuckAfter used when Budget leaves it zero.
@@ -298,7 +346,20 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 			break
 		}
 
-		obj, err := p.Next(last, now)
+		// A rejected reply is a different kind of event from a failed
+		// objective: it says nothing about the world, only that the model
+		// answered in the wrong shape, so the same round is re-asked with
+		// the rejection quoted back (planWithRetries) instead of stopping.
+		// ErrDone and other errors are classified here, not by a stop-value
+		// check: StopDone is Stop(0), the zero value, so "stop != 0" would
+		// read a finished planner as "keep going" and execute an empty
+		// objective.
+		obj, err, retries := planWithRetries(budget.Log, round, p, last, now)
+		res.ReplyRetries += retries
+		// StopDone is Stop(0), the zero value, so it cannot be signalled
+		// through a "res.Stop != 0" check: the break must come from the
+		// error itself, or a finished planner would read as "keep going"
+		// and Execute would run on an empty objective.
 		if errors.Is(err, ErrDone) {
 			res.Stop = StopDone
 			break

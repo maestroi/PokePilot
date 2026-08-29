@@ -10,6 +10,20 @@ import (
 	"github.com/maestroi/pokepilot/skill"
 )
 
+func TestResolveDirHonoursEnvOverride(t *testing.T) {
+	t.Setenv("POKEPILOT_FIXTURE_DIR", "/tmp/pokepilot-fixtures-test")
+	if got := ResolveDir(); got != "/tmp/pokepilot-fixtures-test" {
+		t.Fatalf("ResolveDir() = %q, want the env override", got)
+	}
+}
+
+func TestResolveDirDefaultsToRepoPath(t *testing.T) {
+	t.Setenv("POKEPILOT_FIXTURE_DIR", "")
+	if got := ResolveDir(); got != "testdata/fixtures" {
+		t.Fatalf("ResolveDir() = %q, want the in-repo default", got)
+	}
+}
+
 func checkOverworld(t *testing.T, e *emu.Emu) {
 	t.Helper()
 	var m state.Mem
@@ -73,8 +87,8 @@ func TestLoadRejectsPoisonedFixture(t *testing.T) {
 		t.Fatalf("SaveState: %v", err)
 	}
 	e.Close()
-	if err := os.MkdirAll(Dir, 0o755); err != nil {
-		t.Fatalf("mkdir %s: %v", Dir, err)
+	if err := os.MkdirAll(ResolveDir(), 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", ResolveDir(), err)
 	}
 	path := fixturePath("reds_bedroom")
 	if err := os.WriteFile(path, b, 0o644); err != nil {

@@ -3,7 +3,8 @@
 // ing thousands of frames.
 //
 // Fixtures are derived from a commercial ROM, so they are generated on demand
-// from the ROM named by POKEMON_RED_ROM and cached under Dir; they are never
+// from the ROM named by POKEMON_RED_ROM and cached under ResolveDir();
+// they are never
 // committed.
 //
 // It lives in its own package (not inside skill) because it imports skill for
@@ -24,8 +25,19 @@ import (
 	"github.com/maestroi/pokepilot/world"
 )
 
-// Dir is where generated fixtures are cached. It is gitignored.
-const Dir = "testdata/fixtures"
+// DefaultDir is the in-repo fixture cache, used when nothing overrides it.
+// It is gitignored (.gitignore: *.state and testdata/fixtures/).
+const DefaultDir = "testdata/fixtures"
+
+// ResolveDir is where generated fixtures are cached. POKEPILOT_FIXTURE_DIR
+// overrides it, so a clean worktree can share a cache instead of rebuilding
+// post_pokeballs from post_starter on every run.
+func ResolveDir() string {
+	if d := os.Getenv("POKEPILOT_FIXTURE_DIR"); d != "" {
+		return d
+	}
+	return DefaultDir
+}
 
 // FailureDir is where a failing test's final save state is dumped. It is
 // gitignored. The state is the only reproducible record a journey test
@@ -282,7 +294,7 @@ func place(name string) (skill.Destination, error) {
 // fixturePath returns the cache path for a named fixture at the current
 // fixtureVersion.
 func fixturePath(name string) string {
-	return filepath.Join(Dir, fmt.Sprintf("%s.v%d.state", name, fixtureVersion))
+	return filepath.Join(ResolveDir(), fmt.Sprintf("%s.v%d.state", name, fixtureVersion))
 }
 
 // validateState snapshots the emulator and reports the decoded game state
@@ -359,9 +371,9 @@ func LoadState(name string) (*emu.Emu, error) {
 		e.Close()
 		return nil, fmt.Errorf("fixture %s: SaveState: %w", name, err)
 	}
-	if err := os.MkdirAll(Dir, 0o755); err != nil {
+	if err := os.MkdirAll(ResolveDir(), 0o755); err != nil {
 		e.Close()
-		return nil, fmt.Errorf("fixture %s: mkdir %s: %w", name, Dir, err)
+		return nil, fmt.Errorf("fixture %s: mkdir %s: %w", name, ResolveDir(), err)
 	}
 	if err := os.WriteFile(path, b, 0o644); err != nil {
 		e.Close()

@@ -427,6 +427,122 @@ func TestRunCheckpointRingIsBounded(t *testing.T) {
 	}
 }
 
+// replyPlanner is a scripted planner that also implements FeedbackPlanner:
+// it can reject its first Next with a malformed-reply error (the shape of
+// an LLM planner's "argument does not apply" rejection) and then answer.
+// It records every feedback string it is handed so a test can assert the
+// rejection text actually reached the re-prompt, and counts every ask.
+type replyPlanner struct {
+	objs      []agent.Objective
+	rejectErr error // returned by the next `rejects` asks, Next and NextFeedback alike
+	rejects   int
+	next      int
+	asks      int
+	feedback  []string
+}
+
+func (p *replyPlanner) take() (agent.Objective, error) {
+	if p.rejectErr != nil && p.rejects > 0 {
+		p.rejects--
+		return agent.Objective{}, p.rejectErr
+	}
+	if p.next >= len(p.objs) {
+		return agent.Objective{}, agent.ErrDone
+	}
+	o := p.objs[p.next]
+	p.next++
+	return o, nil
+}
+
+func (p *replyPlanner) Next(agent.Observation, []agent.Objective) (agent.Objective, error) {
+	p.asks++
+	return p.take()
+}
+
+func (p *replyPlanner) NextFeedback(obs agent.Observation, offered []agent.Objective, feedback string) (agent.Objective, error) {
+	p.asks++
+	p.feedback = append(p.feedback, feedback)
+	return p.take()
+}
+
+// TestRunRejectedReplyRecovers is the measured baseline bug: 9 of 9 sweep
+// runs died on "argument does not apply" rejections, and a scoreboard
+// reading 0/9 from that measures a schema bug, not a model. A planner that
+// answers in the wrong shape once must not end the run: the round is
+// re-asked with the rejection quoted back, the valid reply executes, and
+// the retry is counted in the result.
+func TestRunRejectedReplyRecovers(t *testing.T) {
+	e := loadFixture(t)
+
+	const msg = "agent: level argument 12 does not apply to go to route 1"
+	p := &replyPlanner{
+		rejectErr: errors.New(msg),
+		rejects:   1, // the first ask is rejected; the re-ask answers normally
+		objs: []agent.Objective{
+			{Kind: agent.KindStarter},
+		},
+	}
+	res := agent.Run(e, e.ROM(), p, testBudget())
+
+	if res.Stop != agent.StopDone {
+		t.Fatalf("Stop = %d, want StopDone (a malformed reply does not end the run): Err = %v", res.Stop, res.Err)
+	}
+	if len(res.Completed) != 1 || res.Completed[0].Kind != agent.KindStarter {
+		t.Fatalf("Completed = %v, want the starter after the recovered round", res.Completed)
+	}
+	if res.ReplyRetries != 1 {
+		t.Fatalf("ReplyRetries = %d, want 1 (one rejected reply, one re-ask)", res.ReplyRetries)
+	}
+	if p.asks != 3 {
+		t.Fatalf("asks = %d, want 3 (initial + one re-ask + the ErrDone ask)", p.asks)
+	}
+	if len(p.feedback) != 1 || !strings.Contains(p.feedback[0], msg) {
+		t.Fatalf("feedback = %v, want the rejection text quoted back into the re-prompt", p.feedback)
+	}
+}
+
+// TestRunRejectedReplyExhaustsRetries is the other side of the bound: a
+// planner that answers in the wrong shape every time stops with StopError
+// after exactly MaxReplyRetries asks — not on the first rejection, and not
+// any later. A retry loop with no proven bound is how a run burns an hour
+// on one round.
+func TestRunRejectedReplyExhaustsRetries(t *testing.T) {
+	e := loadFixture(t)
+
+	const msg = "agent: level argument 12 does not apply to go to route 1"
+	// More rejections than any retry budget: the run must stop at exactly
+	// MaxReplyRetries asks, not when the planner runs out of bad replies.
+	p := &replyPlanner{rejectErr: errors.New(msg), rejects: 10}
+	res := agent.Run(e, e.ROM(), p, testBudget())
+
+	if res.Stop != agent.StopError {
+		t.Fatalf("Stop = %d, want StopError (a model that cannot answer in shape is a finding)", res.Stop)
+	}
+	if res.Err == nil || !strings.Contains(res.Err.Error(), msg) {
+		t.Fatalf("Err = %v, want the last rejection kept", res.Err)
+	}
+	if p.asks != agent.MaxReplyRetries {
+		t.Fatalf("asks = %d, want exactly MaxReplyRetries (%d): not on the first, not any later",
+			p.asks, agent.MaxReplyRetries)
+	}
+	if res.ReplyRetries != agent.MaxReplyRetries-1 {
+		t.Fatalf("ReplyRetries = %d, want %d (re-asks after the initial one)",
+			res.ReplyRetries, agent.MaxReplyRetries-1)
+	}
+	if len(p.feedback) != agent.MaxReplyRetries-1 {
+		t.Fatalf("feedback = %v, want %d re-prompts, each carrying the rejection",
+			p.feedback, agent.MaxReplyRetries-1)
+	}
+	for i, fb := range p.feedback {
+		if !strings.Contains(fb, msg) {
+			t.Errorf("feedback[%d] = %q, want the rejection text quoted back", i, fb)
+		}
+	}
+	if res.Rounds != 0 || len(res.Completed) != 0 {
+		t.Fatalf("Rounds = %d Completed = %v, want 0/empty (no objective ran)", res.Rounds, res.Completed)
+	}
+}
+
 // TestRunStuck repeats a GoTo to the place the player is already standing
 // on. The first walk moves the player to Pallet Town; every repeat changes
 // nothing, so the run must stop with StopStuck instead of looping.

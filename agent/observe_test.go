@@ -2,12 +2,71 @@ package agent_test
 
 import (
 	"encoding/json"
+	"os"
 	"reflect"
 	"testing"
 
 	"github.com/maestroi/pokepilot/agent"
 	"github.com/maestroi/pokepilot/red/state"
 )
+
+// TestMapObjectsFromROM checks the map-header object classification against
+// the real ROM. No emulator: MapObjects is pure ROM data, so this runs in
+// milliseconds and cannot flake.
+func TestMapObjectsFromROM(t *testing.T) {
+	path := os.Getenv("POKEMON_RED_ROM")
+	if path == "" {
+		t.Skip("POKEMON_RED_ROM not set")
+	}
+	romData, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read ROM: %v", err)
+	}
+
+	// Viridian Forest (0x33): three items, including a POKE_BALL at (1,31).
+	forest := agent.MapObjects(romData, 0x33)
+	var items []agent.MapObject
+	for _, o := range forest {
+		if o.Kind == "item" {
+			items = append(items, o)
+		}
+	}
+	if len(items) != 3 {
+		t.Fatalf("viridian forest items = %+v, want three", items)
+	}
+	found := false
+	for _, it := range items {
+		if it.X == 1 && it.Y == 31 && it.Item == "pokeball" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("viridian forest items = %+v, want a pokeball at (1,31)", items)
+	}
+
+	// Pewter Gym (0x36): one person at (7,10) and two trainers. The trainers
+	// are REPORTED here; the offered-list side of the split is in
+	// TestOfferMapObjects.
+	gym := agent.MapObjects(romData, 0x36)
+	var persons, trainers int
+	for _, o := range gym {
+		switch o.Kind {
+		case "person":
+			persons++
+			if o.X != 7 || o.Y != 10 {
+				t.Errorf("pewter gym person at (%d,%d), want (7,10)", o.X, o.Y)
+			}
+		case "trainer":
+			trainers++
+		}
+	}
+	if persons != 1 {
+		t.Errorf("pewter gym persons = %d, want 1 (%+v)", persons, gym)
+	}
+	if trainers != 2 {
+		t.Errorf("pewter gym trainers = %d, want 2 (%+v)", trainers, gym)
+	}
+}
 
 // TestObserveFreshBoot observes a freshly booted, controllable overworld and
 // checks the basics: the game is controllable, the party is empty, and Map

@@ -259,3 +259,39 @@ func TestKnowledgeDialogueMentions(t *testing.T) {
 		t.Errorf("dialogue named Pallet Town; Knowledge does not know it")
 	}
 }
+
+// TestOfferMapObjects: people and items on the map become objectives;
+// trainers are reported in MapObjects but NOT offered — there is no fight
+// verb behind them yet, so offering one would manufacture a guaranteed
+// failed objective every round. Synthetic observation: the split lives in
+// Offer, not in Observe.
+func TestOfferMapObjects(t *testing.T) {
+	obs := agent.Observation{
+		Map: 0x99, X: 5, Y: 6, PartyCount: 1, // a map no place names
+		MapObjects: []agent.MapObject{
+			{X: 7, Y: 10, Kind: "person"},
+			{X: 2, Y: 4, Kind: "trainer"},
+			{X: 9, Y: 2, Kind: "trainer"},
+			{X: 5, Y: 6, Kind: "item", Item: "pokeball"},
+		},
+	}
+	out := agent.Offer(obs, agent.NewKnowledge(nil))
+
+	var got []string
+	for _, o := range out {
+		got = append(got, o.String())
+	}
+	want := []string{
+		"deliver oak's parcel",
+		"talk at (7,10)",
+		"pick up the POKEBALL at (5,6)",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("Offer = %v, want %v", got, want)
+	}
+	for _, s := range got {
+		if strings.Contains(s, "(2,4)") || strings.Contains(s, "(9,2)") {
+			t.Errorf("a trainer is on the offered list: %q; no fight verb exists behind it", s)
+		}
+	}
+}
