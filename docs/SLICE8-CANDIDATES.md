@@ -97,14 +97,41 @@ the answer to "does Travel survive an ambush" is: it survives one, but a
 trainer whose flag never gets set is a repeating toll, and a small party
 cannot pay it in, out for a heal, and back in.
 
-The open question for slice 8 is narrower than I first wrote it: not "can we
-survive a trainer" but **"can the router see a sight line?"** Route 3's seven
-trainers cannot all be side-stepped the way one gym trainer was. Sight lines
-are derivable — facing plus range, both already in `rom.Object` after S7-5.
+**S8-4 then MEASURED the general case, and it is already solved.** Travel
+survives a trainer ambush end to end: 6 of Route 3's 8 trainers engaged in one
+eastward crossing, `Battle` drove all six to `ResultWon`, Travel re-planned
+from each encounter tile and reached the destination, and the return crossing
+fought **0** battles. Route 3's trainers go through the standard
+`EndTrainerBattle` path, which sets the event flag AND calls `HideObject`, so
+they stay defeated.
+
+So no trainer verb is needed, and no sight-line avoidance. The Pewter gym Cool
+Trainer is the EXCEPTION, not the rule: his flag is set only by Brock's victory
+script, so he alone re-arms. Sight lines stay out of scope.
+
+The signal chain is worth knowing: the in-progress step completes (its
+coordinate predicate is satisfied even though the walk-up sets `wJoyIgnore`),
+WalkPath's post-step check finds the trainer's pre-battle text box and returns
+`ErrDialogueInterrupted`, Travel pages it with `RecoverDialogue`, and the next
+`GoTo` sees `wIsInBattle` and returns `ErrBattle`. The first signal is the text
+box, not a block — which is why slice 6's dialogue recovery was a prerequisite
+for trainers working at all.
+
+MEASURED CONSTRAINT for any route east of Pewter: `PewterCityDefaultScript`
+(`scripts/PewterCity.asm`) re-fires a forced "Go take on Brock!" box EVERY
+FRAME while the player stands on (35,17)/(36,17)/(37,18)/(37,19) until
+`EVENT_BEAT_BROCK` (flag 0x77 = byte 14, bit 6 of `wEventFlags`) is set. No
+pre-Brock state can reach Route 3 at all. The Cascade goal therefore requires
+the Boulder Badge first — not as strategy, as geometry.
+
+NOT A DISCREPANCY: S8-4's notes flag `ROUTE_3` as 35×9 in the decomp versus
+70×18 probed. Those agree — `map_const` dimensions are in BLOCKS and tiles are
+twice that. Do not "fix" either number.
 
 DERIVED — Route 3 is not a route with some trainers on it, it is a corridor OF
-trainers. `data/maps/objects/Route3.asm` has **eight** objects, seven of them
-trainers, all `STAY` with a facing:
+trainers. `data/maps/objects/Route3.asm` has **eight OPP_ trainers** plus one
+plain NPC, all `STAY` with a facing (an earlier draft of this file said seven
+trainers; it was miscounted, and S8-4 measured eight):
 
     object_event 10, 6, ... OPP_BUG_CATCHER, 4     object_event 14, 4, ... OPP_YOUNGSTER, 1
     object_event 16, 9, ... OPP_LASS, 1            object_event 19, 5, ... OPP_BUG_CATCHER, 5
