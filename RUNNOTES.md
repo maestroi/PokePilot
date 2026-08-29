@@ -233,3 +233,37 @@ skill/pickup.go (DecodeInventory, DecodeTwoOptionMenu), `go test ./skill/...
   test stands on. If a future ball has only one reachable neighbor behind a
   grass band, Travel (not GoTo) belongs in the approach instead — GoTo
   aborts on wild battles by design.
+
+## S7-7: planner is offered the people and items on its map
+
+### What changed
+- `agent/observe.go`: `Observation.MapObjects []MapObject` (X, Y, Kind
+  "person"|"item"|"trainer", Item name). New `agent.MapObjects(romData,
+  mapID)` reads the ROM map header via `rom.ParseMap` — NOT sprite RAM.
+  Classification from the TextID bits: 0x80 item (named via the bag table,
+  unknown id says "item %d"), 0x40 trainer, else person.
+- `agent/offer.go`: Offer appends `KindTalk{X,Y}` per person and
+  `KindPickup{X,Y,Item}` per item. TRAINERS ARE REPORTED BUT NOT OFFERED
+  (no fight verb exists; offering one is a guaranteed failed objective).
+  Collected items are NOT filtered — no data source; a vanished ball fails
+  Pickup's bag postcondition as an ordinary failure.
+
+### Object counts, Pallet -> Pewter route (measured, real ROM)
+pallet_town 0x01: 7 (7 person) | route_1 0x02: 5 (5 person) |
+viridian_city 0x03: 11 (10 person, 1 trainer) | route_2 0x2f: 2 (2
+person) | pewter_city 0x30: 2 (2 person). **Largest is 11 — small. No cap
+added.**
+
+### Verified
+`go build ./...`, `go vet ./agent`, `go test ./agent -count=1` green
+(55s). Gate: zero occurrences of the sprite-RAM decoder identifier in
+agent/observe.go and agent/offer.go. New tests: TestMapObjectsFromROM
+(Viridian Forest 0x33 = 3 items incl. pokeball at (1,31); Pewter Gym 0x36 =
+person at (7,10) + 2 trainers), TestOfferMapObjects (talk at (7,10) and
+named pickup offered; no trainer objective).
+
+### For the next task
+- The fightable-trainer verb (S7-8?) must add a Kind and an Offer branch;
+  MapObjects already reports trainers with coordinates.
+- `skill.Pickup`'s bag postcondition is the only guard against collected
+  items being re-offered; that stays by design.

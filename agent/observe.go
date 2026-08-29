@@ -65,6 +65,21 @@ type Observation struct {
 	// tileset table (skill.HasGrass), like LeadMoves: geometry the player
 	// can see on screen, reported so a planner does not have to guess it.
 	HasGrass bool
+
+	// MapObjects are the current map's objects read from the ROM map header,
+	// NOT from sprite RAM: sprite RAM is screen-local (MEASURED: zero sprites
+	// visible standing seven tiles from an NPC), so it cannot tell a planner
+	// that a person worth talking to exists across the map.
+	MapObjects []MapObject
+}
+
+// MapObject is one object of the current map in the form a planner may see
+// it: where it stands and what kind of thing it is. Item is the item name
+// for Kind "item" only; an unknown id says so rather than vanishing.
+type MapObject struct {
+	X, Y uint8
+	Kind string // "person" | "item" | "trainer"
+	Item string // item name, "item" only; "" otherwise
 }
 
 // Move is one move the lead knows, in the form a planner may see it.
@@ -202,5 +217,39 @@ func Observe(m *emu.Emu, romData []byte) Observation {
 	if grass, err := skill.HasGrass(romData, obs.Map); err == nil {
 		obs.HasGrass = grass
 	}
+	obs.MapObjects = MapObjects(romData, obs.Map)
 	return obs
+}
+
+// MapObjects decodes one map's objects from the ROM map header — static,
+// map-wide data whose coordinates are already de-biased. It is deliberately
+// not the sprite-RAM decoder: that one's IMAGEINDEX == $ff filter is
+// screen-local, so standing seven tiles from an NPC it returns zero sprites
+// (measured on the viridian_city fixture), and a planner offered only
+// visible sprites could never decide to cross a map to reach someone. Live
+// sprite RAM stays for blockers; this is the offering's data source.
+func MapObjects(romData []byte, mapID uint8) []MapObject {
+	h, err := rom.ParseMap(romData, mapID)
+	if err != nil {
+		return []MapObject{}
+	}
+	out := make([]MapObject, 0, len(h.Objects))
+	for _, o := range h.Objects {
+		mo := MapObject{X: o.X, Y: o.Y}
+		switch {
+		case o.TextID&0x80 != 0:
+			mo.Kind = "item"
+			if name, ok := ItemName(o.ItemID); ok {
+				mo.Item = name
+			} else {
+				mo.Item = fmt.Sprintf("item %d", o.ItemID)
+			}
+		case o.TextID&0x40 != 0:
+			mo.Kind = "trainer"
+		default:
+			mo.Kind = "person"
+		}
+		out = append(out, mo)
+	}
+	return out
 }
