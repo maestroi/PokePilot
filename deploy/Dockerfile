@@ -1,7 +1,9 @@
 # syntax=docker/dockerfile:1
 #
-# PokePilot farm image: one image, two entrypoints (pokepilot runner and
-# pokewall wall). See docs/plans/2026-08-26-farm-design.md section 6.
+# PokePilot farm image: one image, three entrypoints (pokepilot runner,
+# pokewall wall, pokeui operator console). See
+# docs/plans/2026-08-26-farm-design.md section 6 and
+# docs/plans/2026-08-29-pokefarm-wall-ui-design.md.
 #
 # go.mod replaces github.com/thelolagemann/gomeboy with the ABSOLUTE path
 # /home/maestro/Documents/projects/gomeboy, so the build must place the
@@ -26,12 +28,20 @@ COPY --from=gomeboy . /home/maestro/Documents/projects/gomeboy/
 COPY . /home/maestro/Documents/projects/PokePilot/
 
 WORKDIR /home/maestro/Documents/projects/PokePilot
-RUN go build -o /out/pokepilot ./cmd/pokepilot && \
-    go build -o /out/pokewall ./cmd/pokewall
+# CGO_ENABLED=0: the golang image ships gcc, so a plain `go build` emits
+# dynamically-linked glibc binaries. The runtime stage is alpine (musl),
+# which has no /lib64/ld-linux-x86-64.so.2, so exec fails with "no such
+# file or directory" and every container exits 255 in a crash loop.
+# Static pure-Go binaries are the only kind that can cross that boundary.
+RUN CGO_ENABLED=0 go build -o /out/pokepilot ./cmd/pokepilot && \
+    CGO_ENABLED=0 go build -o /out/pokewall ./cmd/pokewall && \
+    CGO_ENABLED=0 go build -o /out/pokeui ./cmd/pokeui
 
-# Slim runtime: the two binaries plus CA certificates (the wall serves HTTP
-# and the runners may talk to an LLM endpoint over TLS). No ROM, no sources.
+# Slim runtime: the three binaries plus CA certificates (the wall serves
+# HTTP and the runners may talk to an LLM endpoint over TLS). No ROM, no
+# sources.
 FROM alpine:3.20
 RUN apk add --no-cache ca-certificates && update-ca-certificates
 COPY --from=build /out/pokepilot /usr/local/bin/pokepilot
 COPY --from=build /out/pokewall /usr/local/bin/pokewall
+COPY --from=build /out/pokeui /usr/local/bin/pokeui

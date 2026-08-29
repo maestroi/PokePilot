@@ -10,7 +10,9 @@ import (
 	"fmt"
 	"log"
 	"math/rand/v2"
+	"net"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/maestroi/pokepilot/agent"
@@ -36,7 +38,7 @@ func main() {
 	dest := flag.String("goto", "viridian pokemon center", "named destination to walk to")
 	fps := flag.Int("fps", 60, "pace the walk to this many frames per second so it is watchable; 0 runs flat out")
 	hold := flag.Duration("hold", 30*time.Second, "how long to keep serving after the run finishes")
-	starter := flag.String("starter", "squirtle", "starter to take: charmander, squirtle or bulbasaur (bulbasaur loses the rival battle)")
+	starter := flag.String("starter", "squirtle", "starter to take (scripted and llm): charmander, squirtle or bulbasaur (bulbasaur loses the rival battle)")
 	planner := flag.String("planner", "scripted", "how to choose objectives: scripted or llm")
 	seed := flag.Int64("seed", 0, "diverge this run's luck by burning seed-derived idle frames after boot; 0 replays bit-identically")
 	flag.Parse()
@@ -90,7 +92,7 @@ func main() {
 			log.Fatalf("save boot state: %v", err)
 		}
 		fmt.Printf("farm mode: leasing runs from %s\n", orchURL)
-		runFarm(m, farm.NewClient(orchURL), bootState)
+		runFarm(m, farm.NewClient(orchURL), bootState, watchPort(served))
 		return
 	}
 
@@ -108,10 +110,26 @@ func main() {
 	case "scripted":
 		runScripted(m, *starter, *dest, *hold, served)
 	case "llm":
-		runLLM(m)
+		runLLM(m, *starter)
 	default:
 		log.Fatalf("unknown planner %q: want scripted or llm", *planner)
 	}
+}
+
+// watchPort extracts the port actually listened on from the address
+// Watch reported, so farm mode can tell the wall where to fetch this
+// runner's live screen. Zero means "not known", which the wall treats as
+// "no frames".
+func watchPort(served string) int {
+	_, portStr, err := net.SplitHostPort(served)
+	if err != nil {
+		return 0
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		return 0
+	}
+	return port
 }
 
 // runHeader is the one line pinned above the watch page's trace: what is
@@ -179,9 +197,9 @@ func runScripted(m *emu.Emu, starter, dest string, hold time.Duration, served st
 // are offered in milestone order so a sensible model walks the route;
 // every named place is offered too, so the planner can still go anywhere
 // skill.Place knows.
-func runLLM(m *emu.Emu) {
+func runLLM(m *emu.Emu, starter string) {
 	offered := []agent.Objective{
-		{Kind: agent.KindStarter},
+		{Kind: agent.KindStarter, Starter: starter},
 		{Kind: agent.KindErrand},
 		{Kind: agent.KindTrain, Level: 10},
 		{Kind: agent.KindHeal},

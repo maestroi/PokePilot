@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"log"
 	"math/rand/v2"
+	"net"
 	"os"
+	"strconv"
 	"sync"
 	"time"
 
@@ -139,12 +141,14 @@ func heartbeatLoop(client *farm.Client, runID string, snap func() farm.Heartbeat
 //
 // The emulator is single-goroutine: everything that steps or reads it runs
 // on this goroutine. The heartbeat goroutine sees only the plain snapshot.
-func runFarm(m *emu.Emu, client *farm.Client, bootState []byte) {
+func runFarm(m *emu.Emu, client *farm.Client, bootState []byte, watchPort int) {
 	tracer := newDialogueTracer()
 	snap := &heartbeatSnap{}
-	var mem state.Mem // hoisted: every sample reuses this buffer
+	var mem state.Mem               // hoisted: every sample reuses this buffer
+	addrs := workerAddrs(watchPort) // fixed for the container's lifetime
 
 	for {
+		pingWorker(client, addrs)
 		spec, err := leaseSpec(client)
 		if err != nil {
 			log.Printf("farm: lease: %v; retrying in %s", err, farmErrorSleep)
@@ -170,7 +174,7 @@ func runFarm(m *emu.Emu, client *farm.Client, bootState []byte) {
 			continue
 		}
 
-		runOne(m, client, *spec, planner, starter, dest, fps, maxRounds, maxFrames, bootState, tracer, snap, &mem)
+		runOne(m, client, *spec, planner, starter, dest, fps, maxRounds, maxFrames, bootState, tracer, snap, &mem, addrs)
 	}
 }
 
@@ -182,9 +186,22 @@ func leaseSpec(client *farm.Client) (*farm.Spec, error) {
 	return client.Lease(ctx)
 }
 
+// pingWorker advertises this worker's watch addresses to the wall while it
+// is between runs, so the grid shows idle capacity. It is a presence beacon,
+// not a dependency: failures are silent here because the lease call right
+// after reports the same outage loudly.
+func pingWorker(client *farm.Client, addrs []string) {
+	if len(addrs) == 0 {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), farmHTTPTimeout)
+	defer cancel()
+	_ = client.Ping(ctx, addrs)
+}
+
 // validateSpec rejects a bad spec before it spends a run: the planner must
 // be known, and a scripted spec must name a starter and destination we can
-// resolve. An llm spec ignores starter/dest; its offered list is fixed.
+// resolve. An llm spec may name a starter (empty is Squirtle); dest is unused.
 func validateSpec(planner, starter, dest string) error {
 	switch planner {
 	case "scripted":
@@ -195,6 +212,11 @@ func validateSpec(planner, starter, dest string) error {
 			return fmt.Errorf("unknown destination %q", dest)
 		}
 	case "llm":
+		if starter != "" {
+			if _, ok := starterFromName(starter); !ok {
+				return fmt.Errorf("unknown starter %q: want charmander, squirtle or bulbasaur", starter)
+			}
+		}
 	default:
 		return fmt.Errorf("unknown planner %q: want scripted or llm", planner)
 	}
@@ -204,7 +226,7 @@ func validateSpec(planner, starter, dest string) error {
 // runOne runs one leased spec end-to-end and always finishes it. The
 // heartbeat starts before gameplay and is stopped and joined before the
 // dump, so no heartbeat arrives after Finish.
-func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, dest string, fps, maxRounds, maxFrames int, bootState []byte, tracer *dialogueTracer, snap *heartbeatSnap, mem *state.Mem) {
+func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, dest string, fps, maxRounds, maxFrames int, bootState []byte, tracer *dialogueTracer, snap *heartbeatSnap, mem *state.Mem, addrs []string) {
 	if err := m.LoadState(bootState); err != nil {
 		log.Printf("farm: %s: load state: %v", spec.RunID, err)
 		finishRun(m, client, spec, "error", fmt.Sprintf("load state: %v", err))
@@ -227,9 +249,9 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 	// tracer plus the heartbeat snapshot, sharing one hoisted Mem buffer.
 	m.OnSample(func(m *emu.Emu) {
 		tracer.sample(m)
-		sampleHeartbeat(m, spec.RunID, snap, mem)
+		sampleHeartbeat(m, spec.RunID, snap, mem, addrs)
 	})
-	sampleHeartbeat(m, spec.RunID, snap, mem) // synchronous initial sample
+	sampleHeartbeat(m, spec.RunID, snap, mem, addrs) // synchronous initial sample
 
 	cancel := make(chan struct{})
 	stop := make(chan struct{})
@@ -240,7 +262,7 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 	case "scripted":
 		reason, detail = runFarmScripted(m, starter, dest)
 	case "llm":
-		reason, detail = runFarmLLM(m, maxRounds, maxFrames, cancel)
+		reason, detail = runFarmLLM(m, starter, maxRounds, maxFrames, cancel)
 	}
 
 	// Stop and join the heartbeat before TraceTail/SaveState/Finish.
@@ -254,19 +276,52 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 // send. It runs on the stepping goroutine (via the composed OnSample
 // callback or the initial call), so it may read emulator memory; mem is
 // hoisted and reused rather than allocated per sample.
-func sampleHeartbeat(m *emu.Emu, runID string, snap *heartbeatSnap, mem *state.Mem) {
+func sampleHeartbeat(m *emu.Emu, runID string, snap *heartbeatSnap, mem *state.Mem, addrs []string) {
 	g := state.Read(m, mem)
 	hb := farm.Heartbeat{
-		RunID: runID,
-		Frame: m.FrameCount(),
-		Map:   g.Player.MapID,
-		X:     g.Player.X,
-		Y:     g.Player.Y,
+		RunID:       runID,
+		Frame:       m.FrameCount(),
+		Map:         g.Player.MapID,
+		X:           g.Player.X,
+		Y:           g.Player.Y,
+		WorkerAddrs: addrs,
 	}
 	if tail := m.TraceTail(1); len(tail) > 0 {
 		hb.Trace = tail[len(tail)-1]
 	}
 	snap.store(hb)
+}
+
+// workerAddrs lists every non-loopback local address as "host:port", so the
+// wall can reach this runner's watch server from whichever swarm network
+// interface it is on. The container's interfaces are fixed for the process
+// lifetime, so the result is computed once and reused by every heartbeat.
+func workerAddrs(port int) []string {
+	if port <= 0 {
+		return nil
+	}
+	var out []string
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return nil
+	}
+	for _, ifc := range ifaces {
+		if ifc.Flags&net.FlagLoopback != 0 || ifc.Flags&net.FlagUp == 0 {
+			continue
+		}
+		addrs, err := ifc.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, a := range addrs {
+			ipnet, ok := a.(*net.IPNet)
+			if !ok || ipnet.IP.IsLoopback() {
+				continue
+			}
+			out = append(out, net.JoinHostPort(ipnet.IP.String(), strconv.Itoa(port)))
+		}
+	}
+	return out
 }
 
 // runFarmScripted mirrors runScripted: take the starter, walk to the
@@ -296,9 +351,9 @@ func runFarmScripted(m *emu.Emu, starter, dest string) (string, string) {
 // runFarmLLM mirrors runLLM's diagnostics and objective list; the only
 // differences are that the budget comes from the spec and cancel is the
 // wall's cooperative stop.
-func runFarmLLM(m *emu.Emu, maxRounds, maxFrames int, cancel <-chan struct{}) (string, string) {
+func runFarmLLM(m *emu.Emu, starter string, maxRounds, maxFrames int, cancel <-chan struct{}) (string, string) {
 	offered := []agent.Objective{
-		{Kind: agent.KindStarter},
+		{Kind: agent.KindStarter, Starter: starter},
 		{Kind: agent.KindErrand},
 		{Kind: agent.KindTrain, Level: 10},
 		{Kind: agent.KindHeal},
@@ -338,6 +393,7 @@ func runFarmLLM(m *emu.Emu, maxRounds, maxFrames int, cancel <-chan struct{}) (s
 func finishRun(m *emu.Emu, client *farm.Client, spec farm.Spec, reason, detail string) {
 	report := farm.FinishReport{
 		RunID:     spec.RunID,
+		Attempt:   spec.Attempt,
 		Reason:    reason,
 		Detail:    detail,
 		TraceTail: m.TraceTail(20),

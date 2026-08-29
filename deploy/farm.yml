@@ -1,5 +1,6 @@
 # Local single-node Swarm smoke test (docs/plans/2026-08-26-farm-design.md
-# section 6). Deploy with:
+# section 6 and docs/plans/2026-08-29-pokefarm-wall-ui-design.md). Deploy
+# with:
 #
 #   docker stack deploy --resolve-image never -c deploy/farm.yml pokefarm
 #
@@ -13,28 +14,60 @@
 # The ROM is never baked into the image: the runner bind-mounts the
 # operator's ${POKEMON_RED_ROM} read-only and reads it back as
 # /rom/pokemon_red.gb.
+#
+# pokeui is in the stack. Its port is published in host mode so the
+# browser can reach it without swarm ingress (unreachable from outside on
+# this host). The wall publishes no host ports; in-network debugging is
+# still http://wall:8080 (HTML table + /frame).
 
 services:
   wall:
     image: ${FARM_IMAGE:-pokepilot-farm:local}
-    command: ["pokewall", "-http", ":8080", "-dumps", "/var/lib/pokewall/dumps"]
+    # -state persists the tile map and queue, so a rolled wall remembers
+    # active runs (their heartbeats resume within a second of its return);
+    # the reaper then clears any run whose runner truly died.
+    command: ["pokewall", "-http", ":8080", "-dumps", "/var/lib/pokewall/dumps", "-state", "/var/lib/pokewall/state.json"]
     deploy:
       replicas: 1
-    ports:
-      - "8080:8080"
     volumes:
-      - wall-dumps:/var/lib/pokewall/dumps
+      # Bind mount, NOT a named volume: on this host a named volume handed
+      # to a swarm task comes up EMPTY on every task rollover (measured:
+      # state written by one wall task is invisible to its replacement),
+      # while bind-mounted host directories survive rollovers fine.
+      - ${FARM_STATE_DIR}:/var/lib/pokewall
+
+  ui:
+    image: ${FARM_IMAGE:-pokepilot-farm:local}
+    command: ["pokeui", "-http", ":8080", "-wall", "http://wall:8080"]
+    ports:
+      - target: 8080
+        published: ${FARM_WALL_PORT:-18080}
+        protocol: tcp
+        mode: host
+    deploy:
+      replicas: 1
 
   runner:
     image: ${FARM_IMAGE:-pokepilot-farm:local}
-    command: ["pokepilot"]
+    # -http :8099 binds all interfaces inside the container. The runners
+    # publish NO ports: they stay fully inside the swarm network, and the
+    # wall proxies each runner's live screen (GET /frame?run=...) using
+    # the addresses the runners report in their heartbeats. pokeui then
+    # proxies that to the browser.
+    # capture-every 1: the wall UI streams these frames as fast as the
+    # overlay can carry a 160x144 PNG (the form's 60 fps is the emu pace;
+    # a 4-frame skip made the screen look like a slideshow).
+    command: ["pokepilot", "-http", ":8099", "-capture-every", "1"]
     environment:
       POKEPILOT_ORCH_URL: http://wall:8080
       POKEMON_RED_ROM: /rom/pokemon_red.gb
+      # Same names make run-llm exports from .env. farm-up sources that
+      # file so the runners can reach the model; empty means no bearer
+      # token (and the compiled URL/model defaults).
+      llm_token: ${llm_token:-}
+      POKEPILOT_LLM_URL: ${POKEPILOT_LLM_URL:-}
+      POKEPILOT_LLM_MODEL: ${POKEPILOT_LLM_MODEL:-}
     volumes:
       - ${POKEMON_RED_ROM}:/rom/pokemon_red.gb:ro
     deploy:
       replicas: 2
-
-volumes:
-  wall-dumps:

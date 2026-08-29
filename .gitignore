@@ -6,3 +6,10 @@ roms/
 testdata/fixtures/
 failure/
 .env
+# Local build leftovers and the homelab Swarm overlay (registry, hosts,
+# Traefik). Public docs for the local farm are deploy/README.md.
+/pokepilot
+/pokewall
+deploy/farm.swarm.yml
+deploy/SWARM.md
+deploy/swarm.sh

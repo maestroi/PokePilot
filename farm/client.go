@@ -8,7 +8,7 @@ import (
 	"net/http"
 )
 
-// Client is the runner's only knowledge of the wall: three HTTP calls.
+// Client is the runner's only knowledge of the wall: four HTTP calls.
 // No Docker, no Swarm.
 type Client struct {
 	BaseURL string
@@ -71,6 +71,31 @@ func (c *Client) Heartbeat(ctx context.Context, hb Heartbeat) (HeartbeatReply, e
 		return reply, fmt.Errorf("farm: heartbeat: decode: %w", err)
 	}
 	return reply, nil
+}
+
+// Ping advertises this worker's watch addresses while it is between runs,
+// so the wall's grid shows idle capacity as well as in-flight runs. The
+// wall treats it as presence only; a failure means the wall is
+// unreachable, which the lease call right after reports loudly.
+func (c *Client) Ping(ctx context.Context, addrs []string) error {
+	body, err := json.Marshal(WorkerPing{Addrs: addrs})
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/v1/workers", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return fmt.Errorf("farm: ping: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("farm: ping: status %d", resp.StatusCode)
+	}
+	return nil
 }
 
 // Finish reports why a leased run ended. It is the last call the runner

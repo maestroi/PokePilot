@@ -9,7 +9,12 @@ package farm
 // by a lease from the wall (farm mode). Field names mirror the flags in
 // cmd/pokepilot/main.go one for one.
 type Spec struct {
-	RunID     string `json:"run_id"`
+	RunID string `json:"run_id"`
+	// Attempt is which attempt of this run the wall is handing out: 1 for
+	// the first, higher after retries. The runner echoes it back in its
+	// FinishReport so a late finish from a dead attempt cannot settle a
+	// newer one.
+	Attempt   int    `json:"attempt"`
 	Seed      int64  `json:"seed"`
 	Planner   string `json:"planner"`
 	Starter   string `json:"starter"`
@@ -29,6 +34,11 @@ type Heartbeat struct {
 	Y         uint8  `json:"y"`
 	Trace     string `json:"trace"`
 	StopSoFar string `json:"stop_so_far"`
+	// WorkerAddrs is where this runner's watch server (frame.png) is
+	// reachable from the swarm network, one "host:port" per interface.
+	// The wall uses these to proxy the live screen for its dashboard; it
+	// is empty on runners that do not report it.
+	WorkerAddrs []string `json:"worker_addrs,omitempty"`
 }
 
 // HeartbeatReply is the wall's answer to a heartbeat. Cancel asks the
@@ -38,9 +48,20 @@ type HeartbeatReply struct {
 	Cancel bool `json:"cancel"`
 }
 
+// WorkerPing advertises a runner's presence while it is between runs.
+// Heartbeats carry WorkerAddrs for the in-flight half of a worker's life;
+// this is the idle half, so the wall's grid can show which runners are
+// available, not only which runs are in flight.
+type WorkerPing struct {
+	Addrs []string `json:"addrs"`
+}
+
 // FinishReport is why a run ended, sent once when it stops.
 type FinishReport struct {
-	RunID     string   `json:"run_id"`
+	RunID string `json:"run_id"`
+	// Attempt echoes the spec's attempt number; 0 from older runners is
+	// accepted without validation.
+	Attempt   int      `json:"attempt,omitempty"`
 	Reason    string   `json:"reason"`
 	Detail    string   `json:"detail"`
 	TraceTail []string `json:"trace_tail"`

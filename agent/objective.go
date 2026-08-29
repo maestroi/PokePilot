@@ -23,11 +23,26 @@ const (
 
 // Objective is one unit of intent a planner can choose.
 type Objective struct {
-	Kind  Kind
-	Place string // KindGoTo: a name accepted by skill.Place
-	X, Y  uint8  // KindTalk: the tile to face and talk to
-	Level uint8  // KindTrain: the level the lead should reach
-	Note  string // human-readable, shown to a planner; never parsed
+	Kind    Kind
+	Place   string // KindGoTo: a name accepted by skill.Place
+	X, Y    uint8  // KindTalk: the tile to face and talk to
+	Level   uint8  // KindTrain: the level the lead should reach
+	Starter string // KindStarter: charmander, squirtle, bulbasaur; empty is squirtle
+	Note    string // human-readable, shown to a planner; never parsed
+}
+
+// starterOf maps KindStarter's name onto a table ball. Empty and unknown
+// names keep the historic default (Squirtle) so existing offered lists
+// that omit Starter stay bit-identical.
+func starterOf(o Objective) skill.Starter {
+	switch o.Starter {
+	case "charmander":
+		return skill.StarterCharmander
+	case "bulbasaur":
+		return skill.StarterBulbasaur
+	default:
+		return skill.StarterSquirtle
+	}
 }
 
 // Execute carries out one objective against the emulator. Every error it
@@ -65,7 +80,7 @@ func Execute(m *emu.Emu, romData []byte, o Objective) error {
 	case KindStarter:
 		// GetStarter is idempotent: it returns nil immediately when the
 		// rival-battle event is already set, so no guard is needed here.
-		if err := skill.GetStarter(m, romData, skill.StarterSquirtle, skill.StatAwareMove(romData)); err != nil {
+		if err := skill.GetStarter(m, romData, starterOf(o), skill.StatAwareMove(romData)); err != nil {
 			return fmt.Errorf("agent: %s: %w", o, err)
 		}
 		return nil

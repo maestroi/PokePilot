@@ -65,8 +65,10 @@ func TestFarmClientRoundTripsAgainstWall(t *testing.T) {
 	if got == nil {
 		t.Fatal("client.Lease = nil spec, want the enqueued spec")
 	}
-	if *got != spec {
-		t.Fatalf("leased spec = %+v, want %+v", *got, spec)
+	wantSpec := spec
+	wantSpec.Attempt = 1 // the wall numbers attempts from one
+	if *got != wantSpec {
+		t.Fatalf("leased spec = %+v, want %+v", *got, wantSpec)
 	}
 
 	// Heartbeat: no cancel requested yet.

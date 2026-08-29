@@ -6,13 +6,21 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"html/template"
+	"io"
+	"log"
+	"math/rand/v2"
 	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"sync"
+	"time"
 
 	"github.com/maestroi/pokepilot/farm"
 )
@@ -36,6 +44,9 @@ type Tile struct {
 	FPS       int
 	MaxRounds int
 	MaxFrames int
+	// Attempts counts completed attempts; a retried run keeps its history
+	// so the grid can show where it is in its retry budget.
+	Attempts  int
 	Frame     uint64
 	Map       uint8
 	X         uint8
@@ -45,64 +56,241 @@ type Tile struct {
 	Reason    string
 	Detail    string
 	Finished  bool
+	// workerAddrs is where this run's runner watch server is reachable,
+	// last reported by its heartbeats. Unexported: it is proxy input, not
+	// grid data.
+	workerAddrs []string
+	// lastUpdate is when this tile last changed (enqueue, lease, or
+	// heartbeat). The reaper uses it to spot runs whose runner went quiet.
+	// It is deliberately NOT persisted: every restored tile gets a fresh
+	// grace period on load, which is exactly right after a wall outage —
+	// live runners refresh it within one heartbeat, dead ones age out.
+	lastUpdate time.Time
+	// lastFrame is the most recent live screen we successfully proxied
+	// (or grabbed on finish). Not persisted: a wall restart leaves
+	// history cards without a picture until a new run writes one.
+	lastFrame []byte
 }
 
 // tileRow is a plain-value snapshot of a Tile, taken under w.mu so the
 // grid template never reads live tiles after unlock. Rendering []*Tile
 // after unlock is what raced with heartbeat/cancel/finish.
 type tileRow struct {
-	RunID     string
-	Status    string
-	Planner   string
-	Starter   string
-	Dest      string
-	Seed      int64
-	FPS       int
-	MaxRounds int
-	MaxFrames int
-	Frame     uint64
-	Map       uint8
-	X         uint8
-	Y         uint8
-	Trace     string
-	StopSoFar string
-	Reason    string
-	Detail    string
+	RunID     string `json:"run_id"`
+	Status    string `json:"status"`
+	Planner   string `json:"planner"`
+	Starter   string `json:"starter"`
+	Dest      string `json:"dest"`
+	Seed      int64  `json:"seed"`
+	FPS       int    `json:"fps"`
+	MaxRounds int    `json:"max_rounds"`
+	MaxFrames int    `json:"max_frames"`
+	Frame     uint64 `json:"frame"`
+	Map       uint8  `json:"map"`
+	X         uint8  `json:"x"`
+	Y         uint8  `json:"y"`
+	Trace     string `json:"trace"`
+	StopSoFar string `json:"stop_so_far"`
+	Attempts  int    `json:"attempts"`
+	Reason    string `json:"reason"`
+	Detail    string `json:"detail"`
 }
 
-// Wall owns the spec queue, the tile map, cancel flags, and the optional
-// dump directory. Every state change happens under w.mu; filesystem I/O
-// for dumps happens outside it.
+// Wall owns the spec queue, the tile map, cancel flags, the optional dump
+// directory, and the optional state file. Every state change happens under
+// w.mu; filesystem I/O for dumps and state happens outside it.
 type Wall struct {
-	mu       sync.Mutex
-	order    []string         // run IDs in insertion order, for the grid
-	queue    []string         // queued run IDs, oldest first
-	tiles    map[string]*Tile // every known run
-	cancel   map[string]bool  // cooperative cancel flags
-	dumpsDir string           // "" disables durable dumps
+	mu           sync.Mutex
+	order        []string               // run IDs in insertion order, for the grid
+	queue        []string               // queued run IDs, oldest first
+	tiles        map[string]*Tile       // every known run
+	cancel       map[string]bool        // cooperative cancel flags
+	dumpsDir     string                 // "" disables durable dumps
+	statePath    string                 // "" disables tile/queue persistence
+	workers      map[string]*workerInfo // runner presence, keyed by first reported addr
+	workerExpiry time.Duration          // how long a worker may go unseen before the reaper drops it
+	staleAfter   time.Duration          // how long a run may go quiet before the reaper declares it lost
 }
 
 // NewWall builds a Wall. If dumpsDir is non-empty, finish reports are also
 // written there as JSON.
 func NewWall(dumpsDir string) *Wall {
 	return &Wall{
-		tiles:    map[string]*Tile{},
-		cancel:   map[string]bool{},
-		dumpsDir: dumpsDir,
+		tiles:        map[string]*Tile{},
+		cancel:       map[string]bool{},
+		dumpsDir:     dumpsDir,
+		workers:      map[string]*workerInfo{},
+		workerExpiry: 15 * time.Second,
+		staleAfter:   defaultStaleExpiry,
 	}
+}
+
+// SetStatePath enables persistence of the tile map and queue to path, and
+// loads any previously saved state. A missing or corrupt file is not an
+// error: the wall simply starts empty.
+func (w *Wall) SetStatePath(path string) {
+	w.statePath = path
+	w.loadState()
+}
+
+// persistedTile is the JSON shape of one Tile. workerAddrs is persisted so
+// a restarted wall can resume proxying frames without waiting for the next
+// heartbeat; lastUpdate is not (see Tile.lastUpdate).
+type persistedTile struct {
+	RunID       string   `json:"run_id"`
+	Status      string   `json:"status"`
+	Planner     string   `json:"planner,omitempty"`
+	Starter     string   `json:"starter,omitempty"`
+	Dest        string   `json:"dest,omitempty"`
+	Seed        int64    `json:"seed"`
+	FPS         int      `json:"fps"`
+	MaxRounds   int      `json:"max_rounds"`
+	MaxFrames   int      `json:"max_frames"`
+	Attempts    int      `json:"attempts"`
+	Frame       uint64   `json:"frame"`
+	Map         uint8    `json:"map"`
+	X           uint8    `json:"x"`
+	Y           uint8    `json:"y"`
+	Trace       string   `json:"trace,omitempty"`
+	StopSoFar   string   `json:"stop_so_far,omitempty"`
+	Reason      string   `json:"reason,omitempty"`
+	Detail      string   `json:"detail,omitempty"`
+	Finished    bool     `json:"finished"`
+	WorkerAddrs []string `json:"worker_addrs,omitempty"`
+}
+
+// persistedState is the wall's whole on-disk memory: run order, tiles, and
+// the queue of not-yet-leased runs.
+type persistedState struct {
+	Order []string                 `json:"order"`
+	Queue []string                 `json:"queue"`
+	Tiles map[string]persistedTile `json:"tiles"`
+}
+
+// marshalStateLocked encodes the wall's memory. Caller holds w.mu.
+func (w *Wall) marshalStateLocked() ([]byte, error) {
+	ps := persistedState{
+		Order: append([]string(nil), w.order...),
+		Queue: append([]string(nil), w.queue...),
+		Tiles: make(map[string]persistedTile, len(w.tiles)),
+	}
+	for id, t := range w.tiles {
+		ps.Tiles[id] = persistedTile{
+			RunID:       t.RunID,
+			Status:      t.Status,
+			Planner:     t.Planner,
+			Starter:     t.Starter,
+			Dest:        t.Dest,
+			Seed:        t.Seed,
+			FPS:         t.FPS,
+			MaxRounds:   t.MaxRounds,
+			MaxFrames:   t.MaxFrames,
+			Attempts:    t.Attempts,
+			Frame:       t.Frame,
+			Map:         t.Map,
+			X:           t.X,
+			Y:           t.Y,
+			Trace:       t.Trace,
+			StopSoFar:   t.StopSoFar,
+			Reason:      t.Reason,
+			Detail:      t.Detail,
+			Finished:    t.Finished,
+			WorkerAddrs: append([]string(nil), t.workerAddrs...),
+		}
+	}
+	return json.Marshal(ps)
+}
+
+// saveState writes the tile map and queue to the state file. It marshals
+// under w.mu and writes outside it, so a slow disk cannot stall the wall;
+// a failed write is logged, not fatal — the in-memory state is
+// authoritative and the next mutation retries.
+func (w *Wall) saveState() {
+	if w.statePath == "" {
+		return
+	}
+	w.mu.Lock()
+	data, err := w.marshalStateLocked()
+	w.mu.Unlock()
+	if err != nil {
+		log.Printf("pokewall: encode state: %v", err)
+		return
+	}
+	if err := writeAtomic(w.statePath, data, 0o644); err != nil {
+		log.Printf("pokewall: write state: %v", err)
+	}
+}
+
+// loadState restores the tile map and queue from the state file. Every
+// restored tile gets lastUpdate = now: after a wall outage, live runners
+// refresh it within one heartbeat, and dead ones age out on the reaper's
+// clock instead of being blamed for the downtime.
+func (w *Wall) loadState() {
+	if w.statePath == "" {
+		return
+	}
+	data, err := os.ReadFile(w.statePath)
+	if err != nil {
+		return // first start or unreadable file: begin empty
+	}
+	var ps persistedState
+	if err := json.Unmarshal(data, &ps); err != nil {
+		log.Printf("pokewall: load state %s: %v; starting empty", w.statePath, err)
+		return
+	}
+	now := time.Now()
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	for _, id := range ps.Order {
+		pt, ok := ps.Tiles[id]
+		if !ok {
+			continue
+		}
+		w.order = append(w.order, id)
+		w.tiles[id] = &Tile{
+			RunID:       pt.RunID,
+			Status:      pt.Status,
+			Planner:     pt.Planner,
+			Starter:     pt.Starter,
+			Dest:        pt.Dest,
+			Seed:        pt.Seed,
+			FPS:         pt.FPS,
+			MaxRounds:   pt.MaxRounds,
+			MaxFrames:   pt.MaxFrames,
+			Attempts:    pt.Attempts,
+			Frame:       pt.Frame,
+			Map:         pt.Map,
+			X:           pt.X,
+			Y:           pt.Y,
+			Trace:       pt.Trace,
+			StopSoFar:   pt.StopSoFar,
+			Reason:      pt.Reason,
+			Detail:      pt.Detail,
+			Finished:    pt.Finished,
+			workerAddrs: append([]string(nil), pt.WorkerAddrs...),
+			lastUpdate:  now,
+		}
+	}
+	w.queue = append(w.queue, ps.Queue...)
 }
 
 var unsafeName = regexp.MustCompile(`[^A-Za-z0-9._-]`)
 
-// safeDumpName derives a filesystem-safe single filename from a run ID.
+// safeBase derives a filesystem-safe single filename stem from a run ID.
 // Every path separator and every other odd byte becomes '_', so the result
-// can never escape the dump directory — ".." itself is replaced outright.
-func safeDumpName(runID string) string {
+// can never escape its parent directory — ".." itself is replaced outright.
+// pokeui's frame route applies this same rule to ?run= (see cmd/pokeui).
+func safeBase(runID string) string {
 	name := unsafeName.ReplaceAllString(runID, "_")
 	if name == "" || name == "." || name == ".." {
 		name = "run"
 	}
-	return name + ".json"
+	return name
+}
+
+// safeDumpName derives a filesystem-safe single filename from a run ID.
+func safeDumpName(runID string) string {
+	return safeBase(runID) + ".json"
 }
 
 // Handler wires the wall's endpoints.
@@ -110,10 +298,13 @@ func (w *Wall) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/specs", w.handleSpecs)
 	mux.HandleFunc("POST /v1/lease", w.handleLease)
+	mux.HandleFunc("POST /v1/workers", w.handleWorkers)
 	mux.HandleFunc("POST /v1/runs/{id}/heartbeat", w.handleHeartbeat)
 	mux.HandleFunc("POST /v1/runs/{id}/cancel", w.handleCancel)
 	mux.HandleFunc("POST /v1/runs/{id}/finish", w.handleFinish)
+	mux.HandleFunc("GET /v1/dashboard", w.handleDashboard)
 	mux.HandleFunc("GET /", w.handleGrid)
+	mux.HandleFunc("GET /frame", w.handleFrame)
 	return mux
 }
 
@@ -153,6 +344,7 @@ func (w *Wall) handleSpecs(res http.ResponseWriter, req *http.Request) {
 	w.applySpec(spec.RunID, spec)
 	delete(w.cancel, spec.RunID)
 	w.mu.Unlock()
+	w.saveState()
 	writeJSON(res, http.StatusOK, map[string]string{"status": statusQueued})
 }
 
@@ -160,6 +352,7 @@ func (w *Wall) applySpec(runID string, spec farm.Spec) {
 	t := w.tiles[runID]
 	t.RunID = spec.RunID
 	t.Status = statusQueued
+	t.lastUpdate = time.Now()
 	t.Planner = spec.Planner
 	t.Starter = spec.Starter
 	t.Dest = spec.Dest
@@ -167,6 +360,7 @@ func (w *Wall) applySpec(runID string, spec farm.Spec) {
 	t.FPS = spec.FPS
 	t.MaxRounds = spec.MaxRounds
 	t.MaxFrames = spec.MaxFrames
+	t.Attempts = 0 // a manual re-queue is a fresh start, not a retry
 	t.Finished = false
 }
 
@@ -183,8 +377,10 @@ func (w *Wall) handleLease(res http.ResponseWriter, req *http.Request) {
 	w.queue = w.queue[1:]
 	t := w.tiles[runID]
 	t.Status = statusLeased
+	t.lastUpdate = time.Now()
 	spec := farm.Spec{
 		RunID:     t.RunID,
+		Attempt:   t.Attempts + 1,
 		Seed:      t.Seed,
 		Planner:   t.Planner,
 		Starter:   t.Starter,
@@ -194,6 +390,7 @@ func (w *Wall) handleLease(res http.ResponseWriter, req *http.Request) {
 		MaxFrames: t.MaxFrames,
 	}
 	w.mu.Unlock()
+	w.saveState()
 	writeJSON(res, http.StatusOK, spec)
 }
 
@@ -230,9 +427,69 @@ func (w *Wall) handleHeartbeat(res http.ResponseWriter, req *http.Request) {
 	t.Y = hb.Y
 	t.Trace = hb.Trace
 	t.StopSoFar = hb.StopSoFar
+	t.workerAddrs = hb.WorkerAddrs
+	t.lastUpdate = time.Now()
+	w.upsertWorkerLocked(hb.WorkerAddrs, id, t.lastUpdate)
 	cancel := w.cancel[id]
 	w.mu.Unlock()
+	w.saveState()
 	writeJSON(res, http.StatusOK, farm.HeartbeatReply{Cancel: cancel})
+}
+
+// workerInfo is the wall's presence record for one runner, keyed by the
+// first of the addresses the runner reports. It is ephemeral by design and
+// never persisted: a worker that stops pinging (runner died or rolled) ages
+// out of the grid, so the section never shows capacity that is not there.
+type workerInfo struct {
+	Addrs    []string
+	RunID    string // "" while idle between runs
+	LastSeen time.Time
+}
+
+// workerRow is the plain snapshot renderGrid hands to the template, taken
+// under w.mu like tileRow.
+type workerRow struct {
+	Addr    string `json:"addr"`
+	RunID   string `json:"run_id"`
+	SeenAgo string `json:"seen_ago"`
+}
+
+// dashboardView is the JSON snapshot GET /v1/dashboard returns, and the
+// source renderGrid uses for the in-network debug table.
+type dashboardView struct {
+	Now     int64       `json:"now"`
+	Runs    []tileRow   `json:"runs"`
+	Workers []workerRow `json:"workers"`
+}
+
+// upsertWorkerLocked records that the runner reporting addrs is alive: an
+// idle ping carries runID "", a heartbeat its in-flight run. Caller holds
+// w.mu.
+func (w *Wall) upsertWorkerLocked(addrs []string, runID string, now time.Time) {
+	if len(addrs) == 0 {
+		return
+	}
+	w.workers[addrs[0]] = &workerInfo{Addrs: addrs, RunID: runID, LastSeen: now}
+}
+
+// handleWorkers is the idle half of worker presence: a runner pings it on
+// every lease attempt so the grid shows available capacity, not just runs
+// in flight. It is presence, not work: the queue and tiles are untouched.
+func (w *Wall) handleWorkers(res http.ResponseWriter, req *http.Request) {
+	var ping farm.WorkerPing
+	if err := json.NewDecoder(req.Body).Decode(&ping); err != nil {
+		writeJSON(res, http.StatusBadRequest, map[string]string{"error": "bad worker ping: " + err.Error()})
+		return
+	}
+	if len(ping.Addrs) == 0 {
+		writeJSON(res, http.StatusBadRequest, map[string]string{"error": "addrs is required"})
+		return
+	}
+	now := time.Now()
+	w.mu.Lock()
+	w.upsertWorkerLocked(ping.Addrs, "", now)
+	w.mu.Unlock()
+	writeJSON(res, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 // handleCancel marks an active run for cooperative cancellation. Unknown
@@ -287,14 +544,29 @@ func (w *Wall) handleFinish(res http.ResponseWriter, req *http.Request) {
 		}
 		// Identical duplicate: idempotent, but the dump below is still
 		// rewritten so a previously failed write self-heals.
+	} else if report.Attempt != 0 && report.Attempt != t.Attempts+1 {
+		// A late finish from an earlier attempt (its runner died and the
+		// run was retried) must not settle the attempt now in flight.
+		w.mu.Unlock()
+		writeJSON(res, http.StatusConflict, map[string]string{
+			"error": fmt.Sprintf("stale finish: run is on attempt %d, report claims %d", t.Attempts+1, report.Attempt),
+		})
+		return
 	} else {
-		t.Status = statusDone
-		t.Reason = report.Reason
-		t.Detail = report.Detail
-		t.Finished = true
-		delete(w.cancel, id)
+		addrs := append([]string(nil), t.workerAddrs...)
+		w.mu.Unlock()
+		if data, err := fetchRunnerFrame(addrs); err == nil {
+			w.mu.Lock()
+			if cur := w.tiles[id]; cur != nil {
+				cur.lastFrame = data
+			}
+			w.mu.Unlock()
+		}
+		w.mu.Lock()
+		w.settleRun(t, report.Reason, report.Detail, time.Now())
 	}
 	w.mu.Unlock()
+	w.saveState()
 
 	if w.dumpsDir != "" {
 		data, err := json.Marshal(report)
@@ -302,7 +574,13 @@ func (w *Wall) handleFinish(res http.ResponseWriter, req *http.Request) {
 			writeJSON(res, http.StatusInternalServerError, map[string]string{"error": "encode dump: " + err.Error()})
 			return
 		}
-		if err := os.WriteFile(filepath.Join(w.dumpsDir, safeDumpName(report.RunID)), data, 0o644); err != nil {
+		// Attempt 1 keeps the historic name; retries get their own file so
+		// no attempt's dump is overwritten by a later one.
+		name := safeDumpName(report.RunID)
+		if report.Attempt > 1 {
+			name = fmt.Sprintf("%s-attempt-%d.json", safeBase(report.RunID), report.Attempt)
+		}
+		if err := os.WriteFile(filepath.Join(w.dumpsDir, name), data, 0o644); err != nil {
 			writeJSON(res, http.StatusInternalServerError, map[string]string{"error": "write dump: " + err.Error()})
 			return
 		}
@@ -310,22 +588,121 @@ func (w *Wall) handleFinish(res http.ResponseWriter, req *http.Request) {
 	writeJSON(res, http.StatusOK, map[string]string{"status": statusDone})
 }
 
+// frameTimeout bounds one upstream fetch of a runner's frame: a wedged
+// runner must not stall the caller. The live page issues these back-to-back,
+// so the client is reused (keep-alive) rather than built per fetch.
+const frameTimeout = time.Second
+
+var frameClient = &http.Client{Timeout: frameTimeout}
+
+// fetchRunnerFrame pulls one runner's live screen, trying the addresses the
+// runner reported in its heartbeats in order until one answers.
+func fetchRunnerFrame(addrs []string) ([]byte, error) {
+	client := frameClient
+	for _, addr := range addrs {
+		up, err := client.Get("http://" + addr + "/frame.png")
+		if err != nil {
+			continue
+		}
+		if up.StatusCode != http.StatusOK {
+			up.Body.Close()
+			continue
+		}
+		data, rerr := io.ReadAll(up.Body)
+		up.Body.Close()
+		if rerr != nil {
+			continue
+		}
+		return data, nil
+	}
+	return nil, errors.New("no worker address answered")
+}
+
+// handleFrame proxies one runner's live screen for the in-network dashboard.
+// The wall reaches the specific runner over the swarm network using the
+// addresses that runner reported in its heartbeats. Only a run that is
+// actively running has frames — queued, leased and finished runs are 404.
+func (w *Wall) handleFrame(res http.ResponseWriter, req *http.Request) {
+	runID := req.URL.Query().Get("run")
+	w.mu.Lock()
+	t, ok := w.tiles[runID]
+	var addrs []string
+	var cached []byte
+	live := false
+	if ok {
+		addrs = append([]string(nil), t.workerAddrs...)
+		cached = t.lastFrame
+		live = !t.Finished && t.Status == statusRunning
+	}
+	w.mu.Unlock()
+	if !ok {
+		res.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	if live {
+		data, err := fetchRunnerFrame(addrs)
+		if err == nil {
+			w.mu.Lock()
+			if cur := w.tiles[runID]; cur != nil {
+				cur.lastFrame = data
+			}
+			w.mu.Unlock()
+			writePNG(res, data)
+			return
+		}
+	}
+	if len(cached) > 0 {
+		writePNG(res, cached)
+		return
+	}
+	if live {
+		res.WriteHeader(http.StatusBadGateway)
+		return
+	}
+	res.WriteHeader(http.StatusNotFound)
+}
+
+func writePNG(res http.ResponseWriter, data []byte) {
+	res.Header().Set("Content-Type", "image/png")
+	res.Header().Set("Cache-Control", "no-store")
+	res.Write(data) //nolint:errcheck // best effort: the browser retries on refresh
+}
+
 var gridTmpl = template.Must(template.New("grid").Parse(`<!doctype html>
-<html><head><meta charset="utf-8"><title>pokefarm wall</title></head>
+<html><head><meta charset="utf-8"><title>pokefarm wall</title>
+<meta http-equiv="refresh" content="2"></head>
 <body>
 <h1>pokefarm wall</h1>
 <table border="1" cellspacing="0">
-<tr><th>run</th><th>status</th><th>planner</th><th>starter</th><th>dest</th><th>seed</th><th>frame</th><th>map</th><th>x,y</th><th>trace</th><th>stop so far</th><th>reason</th><th>detail</th></tr>
-{{range .}}<tr><td>{{.RunID}}</td><td>{{.Status}}</td><td>{{.Planner}}</td><td>{{.Starter}}</td><td>{{.Dest}}</td><td>{{.Seed}}</td><td>{{.Frame}}</td><td>{{printf "0x%02x" .Map}}</td><td>{{.X}},{{.Y}}</td><td>{{.Trace}}</td><td>{{.StopSoFar}}</td><td>{{.Reason}}</td><td>{{.Detail}}</td></tr>
-{{else}}<tr><td colspan="13">no runs</td></tr>
+<tr><th>run</th><th>screen</th><th>status</th><th>planner</th><th>starter</th><th>dest</th><th>seed</th><th>frame</th><th>map</th><th>x,y</th><th>trace</th><th>stop so far</th><th>attempts</th><th>reason</th><th>detail</th></tr>
+{{range .Rows}}<tr><td>{{.RunID}}</td><td>{{if eq .Status "running"}}<img src="/frame?run={{.RunID}}&t={{$.Now}}" width="160" style="image-rendering:pixelated">{{else}}&mdash;{{end}}</td><td>{{.Status}}</td><td>{{.Planner}}</td><td>{{.Starter}}</td><td>{{.Dest}}</td><td>{{.Seed}}</td><td>{{.Frame}}</td><td>{{printf "0x%02x" .Map}}</td><td>{{.X}},{{.Y}}</td><td>{{.Trace}}</td><td>{{.StopSoFar}}</td><td>{{.Attempts}}</td><td>{{.Reason}}</td><td>{{.Detail}}</td></tr>
+{{else}}<tr><td colspan="15">no runs</td></tr>
+{{end}}</table>
+<h2>workers</h2>
+<table border="1" cellspacing="0">
+<tr><th>worker</th><th>status</th><th>seen</th></tr>
+{{range .Workers}}<tr><td>{{.Addr}}</td><td>{{if .RunID}}running {{.RunID}}{{else}}idle{{end}}</td><td>{{.SeenAgo}} ago</td></tr>
+{{else}}<tr><td colspan="3">no workers</td></tr>
 {{end}}</table>
 </body></html>`))
 
-// handleGrid renders the known tiles. It snapshots plain row values under
-// w.mu and only after unlocking does the template read those copies, so a
-// concurrent heartbeat/cancel/finish cannot race with the render.
-func (w *Wall) handleGrid(res http.ResponseWriter, req *http.Request) {
+// snapshot copies tiles and workers under w.mu so callers never read live
+// maps after unlock. Insertion order is preserved for runs; workers are
+// sorted by addr so the page does not flicker.
+func (w *Wall) snapshot() dashboardView {
 	w.mu.Lock()
+	defer w.mu.Unlock()
+	now := time.Now()
+	workers := make([]workerRow, 0, len(w.workers))
+	for _, wk := range w.workers {
+		workers = append(workers, workerRow{
+			Addr:    wk.Addrs[0],
+			RunID:   wk.RunID,
+			SeenAgo: now.Sub(wk.LastSeen).Round(time.Second).String(),
+		})
+	}
+	sort.Slice(workers, func(i, j int) bool { return workers[i].Addr < workers[j].Addr })
 	rows := make([]tileRow, 0, len(w.order))
 	for _, id := range w.order {
 		t := w.tiles[id]
@@ -339,6 +716,7 @@ func (w *Wall) handleGrid(res http.ResponseWriter, req *http.Request) {
 			FPS:       t.FPS,
 			MaxRounds: t.MaxRounds,
 			MaxFrames: t.MaxFrames,
+			Attempts:  t.Attempts,
 			Frame:     t.Frame,
 			Map:       t.Map,
 			X:         t.X,
@@ -349,10 +727,205 @@ func (w *Wall) handleGrid(res http.ResponseWriter, req *http.Request) {
 			Detail:    t.Detail,
 		})
 	}
+	return dashboardView{Now: now.Unix(), Runs: rows, Workers: workers}
+}
+
+// renderGrid renders the known tiles into the in-network debug HTML.
+func (w *Wall) renderGrid() ([]byte, error) {
+	dash := w.snapshot()
+	var buf bytes.Buffer
+	view := struct {
+		Rows    []tileRow
+		Workers []workerRow
+		Now     int64
+	}{dash.Runs, dash.Workers, dash.Now}
+	if err := gridTmpl.Execute(&buf, view); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func (w *Wall) handleDashboard(res http.ResponseWriter, req *http.Request) {
+	writeJSON(res, http.StatusOK, w.snapshot())
+}
+
+// handleGrid renders the known tiles.
+func (w *Wall) handleGrid(res http.ResponseWriter, req *http.Request) {
+	data, err := w.renderGrid()
+	if err != nil {
+		http.Error(res, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	res.Header().Set("Content-Type", "text/html; charset=utf-8")
+	res.Write(data) //nolint:errcheck // best effort: the page refreshes itself
+}
+
+// Publish writes the dashboard — the grid HTML plus each running run's
+// latest frame — into dir, for a browser-facing relay (pokeui) that cannot
+// reach the swarm network directly. Every file is written atomically (temp
+// file + rename in the same directory), so the relay never reads a half
+// written page or frame. A run whose runner does not answer keeps its
+// previous frame; the next tick retries.
+func (w *Wall) Publish(dir string) error {
+	if err := os.MkdirAll(filepath.Join(dir, "live"), 0o755); err != nil {
+		return err
+	}
+	html, err := w.renderGrid()
+	if err != nil {
+		return err
+	}
+	if err := writeAtomic(filepath.Join(dir, "index.html"), html, 0o644); err != nil {
+		return err
+	}
+
+	w.mu.Lock()
+	type frameJob struct {
+		id    string
+		addrs []string
+	}
+	jobs := make([]frameJob, 0, len(w.order))
+	for _, id := range w.order {
+		t := w.tiles[id]
+		if !t.Finished && t.Status == statusRunning {
+			jobs = append(jobs, frameJob{id, append([]string(nil), t.workerAddrs...)})
+		}
+	}
 	w.mu.Unlock()
 
-	res.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := gridTmpl.Execute(res, rows); err != nil {
-		http.Error(res, err.Error(), http.StatusInternalServerError)
+	for _, job := range jobs {
+		data, err := fetchRunnerFrame(job.addrs)
+		if err != nil {
+			continue
+		}
+		if err := writeAtomic(filepath.Join(dir, "live", safeBase(job.id)+".png"), data, 0o644); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// writeAtomic writes data to path via a temp file + rename in the same
+// directory, so readers never observe a partial file.
+func writeAtomic(path string, data []byte, perm os.FileMode) error {
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, ".publish-*")
+	if err != nil {
+		return err
+	}
+	name := tmp.Name()
+	defer os.Remove(name) // no-op once the rename has succeeded
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Chmod(name, perm); err != nil {
+		return err
+	}
+	return os.Rename(name, path)
+}
+
+// RunPublisher publishes the dashboard to dir every interval. The first
+// publish happens immediately, so the relay has content without waiting a
+// full interval after the wall starts.
+func (w *Wall) RunPublisher(dir string, interval time.Duration) {
+	tick := time.After(0)
+	for {
+		<-tick
+		if err := w.Publish(dir); err != nil {
+			log.Printf("pokewall: publish to %s: %v", dir, err)
+		}
+		tick = time.After(interval)
+	}
+}
+
+// defaultStaleExpiry is how long a leased or running run may go without a
+// state change (its heartbeats come every second) before the wall declares
+// it lost. Thirty seconds is thirty heartbeat cycles of margin.
+const defaultStaleExpiry = 30 * time.Second
+
+// maxAttempts is how many times a run may be attempted before the wall
+// settles it as failed.
+const maxAttempts = 3
+
+// settleRun records that a run stopped for reason/detail. error and lost
+// are retried up to maxAttempts, each retry with a fresh seed (the same
+// seed replays the same bad luck); everything else settles as done. A run
+// the user cancelled is never retried: that stop was intentional. Caller
+// holds w.mu; it returns the number of attempts completed so far.
+func (w *Wall) settleRun(t *Tile, reason, detail string, now time.Time) int {
+	t.Attempts++
+	completed := t.Attempts
+	t.lastUpdate = now
+	_, cancelled := w.cancel[t.RunID]
+	delete(w.cancel, t.RunID)
+	if (reason != "error" && reason != "lost") || cancelled || completed >= maxAttempts {
+		t.Status = statusDone
+		t.Reason = reason
+		t.Detail = detail
+		t.Finished = true
+		return completed
+	}
+	// Retry: fresh luck, fresh progress, back of the queue. The old
+	// runner's addresses belong to its attempt, not this one.
+	t.Status = statusQueued
+	t.Seed = rand.Int64()
+	t.Frame = 0
+	t.Map = 0
+	t.X = 0
+	t.Y = 0
+	t.Trace = ""
+	t.StopSoFar = ""
+	t.Reason = ""
+	t.Detail = fmt.Sprintf("attempt %d failed: %s", completed, detail)
+	t.workerAddrs = nil
+	t.Finished = false
+	w.queue = append(w.queue, t.RunID)
+	return completed
+}
+
+// reapStale handles leased or running runs whose lastUpdate is older than
+// w.staleAfter: settleRun declares them lost and retries them while
+// attempts remain. It returns what it handled. Queued runs are never
+// reaped: they are waiting for a runner, not on one. It also drops workers
+// unseen for longer than workerExpiry; worker presence is never persisted,
+// so only the run handling triggers a save.
+func (w *Wall) reapStale(now time.Time) []string {
+	w.mu.Lock()
+	var reaped []string
+	for _, id := range w.order {
+		t := w.tiles[id]
+		if t.Finished || t.Status == statusQueued {
+			continue
+		}
+		age := now.Sub(t.lastUpdate)
+		if age <= w.staleAfter {
+			continue
+		}
+		reaped = append(reaped, id)
+		w.settleRun(t, "lost", fmt.Sprintf("no heartbeat for %s", age.Round(time.Second)), now)
+	}
+	for key, wk := range w.workers {
+		if now.Sub(wk.LastSeen) > w.workerExpiry {
+			delete(w.workers, key)
+		}
+	}
+	w.mu.Unlock()
+	if len(reaped) > 0 {
+		w.saveState()
+	}
+	return reaped
+}
+
+// RunReaper reaps stale runs on a fixed interval.
+func (w *Wall) RunReaper(interval time.Duration) {
+	tick := time.NewTicker(interval)
+	defer tick.Stop()
+	for now := range tick.C {
+		if reaped := w.reapStale(now); len(reaped) > 0 {
+			log.Printf("pokewall: reaped stale runs: %v", reaped)
+		}
 	}
 }
