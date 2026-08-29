@@ -525,3 +525,131 @@ passes 60/60 with the fix (16 iterations fought a battle and recovered).
 `TestTravelRoute1ToPallet` (skipped under -short) pins the edge: Route 1
 → Pallet Town, asserting arrival positively — wCurMap == 0x00 and the
 player controllable.
+
+## S8-4: does Travel survive a trainer ambush mid-route? (Route 3, 0x0E)
+
+Measurement task — no fixes, no new Kinds, no sight-line avoidance. The
+question is what `skill.Travel` does when a stationary trainer's line of sight
+engages the player while it is walking Route 3, and whether the defeated
+trainers re-arm on a return crossing. (Slice 8 candidate item 1,
+docs/SLICE8-CANDIDATES.md.)
+
+### Setup constraint (why the measurement ran the whole Brock journey first)
+Route 3 is reachable only from Pewter City's east edge, and
+`PewterCityDefaultScript` (`scripts/PewterCity.asm`) re-fires a forced
+"Go take on Brock!" text box **every frame** while the player stands on any of
+(35,17)/(36,17)/(37,18)/(37,19) until `EVENT_BEAT_BROCK` is set. So no
+pre-Brock fixture can reach Route 3 at all — the first measurement attempt
+stalled on that dialogue in Pewter. The setup therefore ran the
+`TestGymBoulderBadge` journey (train the lead to L12, gym, badge) once and
+cached a post-Brock checkpoint; the two crossing legs then ran from it.
+`EVENT_BEAT_BROCK` is event flag 0x77 = byte 14, **bit 6** of `wEventFlags`
+(derived from `event_constants.asm`, not counted).
+
+### Route 3 geometry (measured with TestProbe on the live ROM)
+A **70×18** east-west corridor. West edge → Pewter City (0x02); north edge
+(59,0) → Route 4 (0x0f). No tall grass anywhere — every battle on the map is a
+trainer. The player enters from the west edge (near (0,9)); the far side used
+as the destination was (59,1), past every trainer. The object file has **eight
+OPP_ trainers** at x=10..33 plus one plain NPC (Super Nerd at (57,11)):
+
+    (10,6) YOUNGSTER RIGHT  L4   (14,4) YOUNGSTER DOWN   L1
+    (16,9) COOLTRAINER LEFT L1   (19,5) YOUNGSTER DOWN   L5
+    (23,4) COOLTRAINER LEFT L2   (22,9) YOUNGSTER LEFT   L2
+    (24,6) YOUNGSTER RIGHT  L6   (33,10) COOLTRAINER UP  L3
+
+### The five answers
+**1. Does the battle start at all when a trainer's line of sight engages
+mid-route — or does Travel report ErrBlocked / a step timeout?**
+The battle starts normally; there is no ErrBlocked and no step timeout.
+The exact sequence WalkPath sees: the in-progress step completes (its
+coordinate-change predicate is satisfied even though the trainer walk-up sets
+`wJoyIgnore`), then WalkPath's post-step check finds the trainer's pre-battle
+text box and returns `ErrDialogueInterrupted`. Travel recovers that dialogue
+(`RecoverDialogue` pages it), and the next `GoTo` sees `wIsInBattle` and
+returns `ErrBattle`. So the first signal is the pre-battle text box, not a
+block; the battle then runs.
+
+**2. Does `Battle(m, policy)` drive the trainer battles to a result — win or
+lose?**
+Yes. All six were driven to `ResultWon`. No losses in the measured run (the
+lead was ~L16 entering Route 3 and every trainer is L1–L6, so it won cleanly).
+
+**3. After each battle, does Travel resume the route and reach the
+destination?**
+Yes. Each victory leaves the player on the encounter tile; Travel re-plans
+from there and continues. Leg 1's `Replans` list showed exactly six replans at
+the six encounter tiles, and the final position was exactly the destination
+(59,1), controllable.
+
+**4. Once defeated, do the trainers re-engage on a return crossing? Are they
+flagged / hidden?**
+No re-engagement. The return westward crossing (leg 2) fought **0** battles on
+Route 3. Defeat sets the trainer's event flag AND calls `HideObject`
+(`EndTrainerBattle`, `home/trainers.asm`), so `CheckForEngagingTrainers` skips
+them and their sprites are removed. This is DIFFERENT from the Pewter gym Cool
+Trainer (S7-8), whose defeat flag is set only by Brock's victory script — Route
+3 trainers use the standard `EndTrainerBattle` path, so they stay defeated.
+"Still a blocker on their tile?" is answered behaviorally: leg 2 walked
+straight through the corridor with 0 battles and no blocking errors. (The
+sprite ImageIndex byte read `$ff` for **every** sprite on the map after the
+battles — including the never-fought Super Nerd — so that byte is not a
+reliable hidden marker in this state and was not relied on.)
+
+**5. How many trainers engaged in a single crossing, and what is the party
+state after?**
+**6 of 8** engaged in one eastward crossing. The two that did NOT engage are
+both west-facing along row 9 — COOLTRAINER_F1 at (16,9) and YOUNGSTER4 at
+(22,9); the measured path climbed to rows 4–8 early and never crossed their
+sight lines. Encounter tile → trainer:
+
+    (11,6) ← YOUNGSTER1 (10,6) RIGHT
+    (14,5) ← YOUNGSTER2 (14,4) DOWN
+    (19,4) ← COOLTRAINER_F2 (23,4) LEFT
+    (19,6) ← YOUNGSTER3 (19,5) DOWN
+    (27,6) ← YOUNGSTER5 (24,6) RIGHT
+    (33,8) ← COOLTRAINER_F3 (33,10) UP
+
+Party: lead entered Route 3 at L16 (HP 46/50) and ended at **L19 (HP 35/57)**.
+
+### Two discrepancies found (reported, not fixed)
+- **The design doc's trainer count is wrong.** SLICE8-CANDIDATES.md item 1 says
+  Route 3 has "seven" trainers, but the ROM object file has **eight** OPP_
+  trainer objects (the doc's own list shows eight). Measured 6 of 8 engaged.
+- **The vendored decomp's map dimensions do not match this ROM.**
+  `pokered/constants/map_constants.asm` says `ROUTE_3` is 35×9, but TestProbe
+  on the live ROM reports **70×18** (and the player physically reached x=59).
+  Do not trust the decomp's dimensions for this ROM; measure with TestProbe.
+
+### Permanent test added (behavior passes, so it is pinned)
+`TestTravelRoute3TrainerCrossing` in `skill/travel_test.go`, skipped under
+-short (full journey, like `TestTravelToPewter`/`TestGymBoulderBadge`). It runs
+post_errand → Brock, then crosses Route 3 east to (59,1) with bounded blackout
+retries, and asserts: arrival at the destination, controllable, **≥1 trainer
+battle fought**, and the lead's level increased (experience from won battles).
+A regression that made Travel report ErrBlocked / a step timeout on the walk-up,
+or fail to drive the battle to a result, would show up as a non-nil err or a
+missing arrival. Proven PASS in 111s: "6 battle(s), lead L16 -> L19, arrived
+controllable at (59,1)".
+
+### Verified
+`go build ./...`, `go vet ./skill/`, `go test ./skill -short -count=1` green
+(63s), and the permanent test PASS under a full run. No `zz_*_test.go` left
+behind (scratch `skill/zz_trainer_test.go` deleted); no ROM/.gb/.sav/.state
+committed.
+
+### For the next task
+- This confirms Travel **survives** the ambush (fights + resumes) but does not
+  **avoid** it: it pays the full battle tax for every trainer whose line it
+  crosses. A small party can pay Route 3's 6-battle tax once (measured), and a
+  return crossing is free only because the defeat flags stuck.
+- The two unengaged trainers prove a path CAN avoid specific sight lines, so a
+  sight-line-aware router has a real, measurable benefit (0 battles vs 6). That
+  is the actual slice-8 question: "can the router see a sight line?" Sight
+  lines are derivable from facing + range, both already in `rom.Object` after
+  S7-5.
+- The trainer fight verb (a Kind + an Offer branch) is still missing — S7-7
+  reports trainers in `MapObjects` but does not offer them. This task
+deliberately did NOT add one.
+- Post-Brock / post-leg checkpoints were written to `/tmp/s83_*.state` (not
+  committed) if a follow-up wants to resume without re-running the journey.
