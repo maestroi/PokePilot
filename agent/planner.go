@@ -70,6 +70,81 @@ func Chosen(offered []Objective, s string) (Objective, error) {
 	return Objective{}, fmt.Errorf("agent: %q is not one of the offered objectives; offered: %s", s, offeredList(offered))
 }
 
+// ReplyArgs is what the model may attach to its choice: the arguments of
+// the objective it picked. Pointer fields mean "the model said nothing",
+// which is legal — an objective already carries its own argument, and a
+// bare {"choice": N} selects it unchanged. A present value must be valid
+// for the chosen kind or the round stops with a typed error.
+type ReplyArgs struct {
+	Level    *int
+	Species  string
+	Item     string
+	Quantity *int
+}
+
+// WithArgs applies a model-supplied argument to an offered objective and
+// returns the concrete objective to execute. Every value is checked against
+// its stated range before it is accepted: a level outside 1..100, an
+// unknown species, a quantity outside 1..99, or an unknown item is an error
+// that stops the round. Nothing is clamped and nothing is best-matched,
+// and an argument that does not apply to the chosen kind (a level on a
+// "go to" objective) is an error too — a reply that says one thing and
+// means another is exactly the silent wrong choice this exists to prevent.
+func WithArgs(o Objective, a ReplyArgs) (Objective, error) {
+	// Validate EVERY argument before any of them lands: a rejected reply
+	// must not leave a half-updated objective behind.
+	var species, item uint8
+	if a.Level != nil {
+		if o.Kind != KindTrain {
+			return o, fmt.Errorf("agent: level argument %d does not apply to %s", *a.Level, o)
+		}
+		if *a.Level < 1 || *a.Level > 100 {
+			return o, fmt.Errorf("agent: level %d out of range 1..100 for %s", *a.Level, o)
+		}
+	}
+	if a.Species != "" {
+		if o.Kind != KindCatch {
+			return o, fmt.Errorf("agent: species argument %q does not apply to %s", a.Species, o)
+		}
+		id, ok := SpeciesByName(a.Species)
+		if !ok {
+			return o, fmt.Errorf("agent: unknown species %q for %s", a.Species, o)
+		}
+		species = id
+	}
+	if a.Item != "" {
+		if o.Kind != KindBuy {
+			return o, fmt.Errorf("agent: item argument %q does not apply to %s", a.Item, o)
+		}
+		id, ok := ItemByName(a.Item)
+		if !ok {
+			return o, fmt.Errorf("agent: unknown item %q for %s", a.Item, o)
+		}
+		item = id
+	}
+	if a.Quantity != nil {
+		if o.Kind != KindBuy {
+			return o, fmt.Errorf("agent: quantity argument %d does not apply to %s", *a.Quantity, o)
+		}
+		if *a.Quantity < 1 || *a.Quantity > 99 {
+			return o, fmt.Errorf("agent: quantity %d out of range 1..99 for %s", *a.Quantity, o)
+		}
+	}
+	if a.Level != nil {
+		o.Level = uint8(*a.Level)
+	}
+	if a.Species != "" {
+		o.Species = species
+	}
+	if a.Item != "" {
+		o.Item = item
+	}
+	if a.Quantity != nil {
+		o.Qty = *a.Quantity
+	}
+	return o, nil
+}
+
 // offeredList renders the offered objectives as a numbered one-liner for
 // error messages, so a planner's reply can be read against them.
 func offeredList(offered []Objective) string {

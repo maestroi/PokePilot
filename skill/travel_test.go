@@ -182,19 +182,41 @@ func TestTravelRecoversFromBattleOnWalkToWarp(t *testing.T) {
 // the open plaza below the center door warp — still controllable. Every
 // expected coordinate comes from that Place, never a literal.
 //
-// It is a bare Travel call and cannot pass until dialogue recovery lands in
-// slice 6: the walk hits the rival's forced "hey, wait up" cutscene box and
-// other forced text in the forest, which Travel does not recover from (the
-// journey verbs in TestGymBoulderBadge do). Kept skipped on purpose — see
-// docs/SLICE6-PLAN.md. Do not un-skip it, and do not delete it.
+// It is a bare Travel call: dialogue recovery (S6-0b) is what lets it
+// cross the forest's forced text. It is a full journey — minutes of
+// emulation and stochastic wild battles — so it runs only outside -short,
+// in the slice's journey command, not the per-task gate. Do not delete it.
 func TestTravelToPewter(t *testing.T) {
-	t.Skip("bare Travel cannot cross the forest route until dialogue recovery lands in slice 6; see docs/SLICE6-PLAN.md")
+	if testing.Short() {
+		t.Skip("full journey; runs in the slice's journey command, not the per-task gate")
+	}
 	e := fixture.Load(t, "post_errand")
 	dest, ok := skill.Place("pewter city")
 	if !ok {
 		t.Fatal(`Place: "pewter city" not found`)
 	}
-	res, err := skill.Travel(e, e.ROM(), dest, skill.StatAwareMove(e.ROM()), 20)
+	// The one-mon party can lose a wild battle on this long route. A blackout
+	// is not a failure here: it fully heals the party and warps it to a
+	// Pokemon Center, so Travel simply resumes from there. Bounded, like
+	// every other retry in this suite.
+	var res skill.TravelResult
+	var err error
+	for attempt := 0; ; attempt++ {
+		res, err = skill.Travel(e, e.ROM(), dest, skill.StatAwareMove(e.ROM()), 20)
+		if err == nil || attempt >= 3 {
+			break
+		}
+		if !errors.Is(err, skill.ErrBlackedOut) {
+			break
+		}
+		var zmem state.Mem
+		state.Snapshot(e, &zmem)
+		zp := state.DecodePlayer(&zmem)
+		zlead := state.DecodeParty(&zmem).Mons[0]
+		t.Logf("blackout on the way to Pewter (attempt %d): at map %#04x (%d,%d), lead level %d HP %d/%d status=%#02x; waiting for the respawn warp, then resuming",
+			attempt+1, zp.MapID, zp.X, zp.Y, zlead.Level, zlead.HP, zlead.MaxHP, zlead.Status)
+		settleBlackout(t, e)
+	}
 	if err != nil {
 		t.Fatalf("Travel to pewter city: %v; stopped on map %#04x at (%d,%d) after %d battles",
 			err, e.Peek8(sym.CurMap), e.Peek8(sym.XCoord), e.Peek8(sym.YCoord), res.Battles)
@@ -212,6 +234,16 @@ func TestTravelToPewter(t *testing.T) {
 	}
 	t.Logf("reached Pewter City at Place(%s) after %d battles (BlackedOut=%v)", "pewter city", res.Battles, res.BlackedOut)
 }
+
+// The movement half of the recovery contract — WalkPath never presses A —
+// is pinned structurally: WalkPath and StepOnce send direction buttons only
+// (see skill/move.go), and the recovery half (RecoverDialogue presses A on
+// ordinary text, never on a choice) is pinned by the deterministic seam
+// tests in dialogue_recovery_test.go. A ROM-backed "step onto a sign" test
+// is not possible on this ROM: sign tiles are not in the tileset's
+// walkable list, so the step is blocked before any box can open (measured
+// on Viridian City's signs; 2 of 131 ROM signs are walkable, both map-edge
+// cases).
 
 // TestTravelPalletToViridian is the milestone: from the post-story state,
 // Travel walks through Pallet Town, crosses Route 1's tall grass, fights

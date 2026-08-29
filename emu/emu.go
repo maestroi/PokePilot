@@ -21,6 +21,13 @@ type Emu struct {
 	trace    *traceBuf
 	traceSt  traceState
 
+	// onFrame runs after every stepped frame, on the goroutine stepping the
+	// emulator. Headless consumers use it for per-frame RAM sampling (for
+	// example counting battle-flag transitions): Watch's sampleTrace only
+	// samples while a screen is being served, and OnSample alone is not
+	// enough because agent.Run replaces it with its own hook.
+	onFrame func(*Emu)
+
 	// Set by Pace. Zero means run flat out; see emu/watch.go.
 	frameDur  time.Duration
 	nextFrame time.Time
@@ -43,6 +50,17 @@ func (m *Emu) Close() error {
 // StepFrame advances the emulator by exactly one frame.
 func (m *Emu) StepFrame() {
 	m.e.StepFrame()
+	if m.onFrame != nil {
+		m.onFrame(m)
+	}
+	if m.trace == nil && m.onSample != nil {
+		// Headless sampling: without Watch there is no sampleTrace to call
+		// the sample hook, but a headless run (badgerun) still needs its
+		// per-frame RAM sampling — agent.Run's dialogue tape is installed
+		// through OnSample and is dead code otherwise. In watch mode this
+		// is skipped: sampleTrace already calls onSample at capture cadence.
+		m.onSample(m)
+	}
 	m.capture()
 	m.throttle(1)
 }
@@ -52,6 +70,15 @@ func (m *Emu) StepFrames(n int) {
 	m.e.StepFrames(n)
 	m.capture()
 	m.throttle(n)
+}
+
+// OnFrame registers fn to run after every frame step, on the goroutine
+// stepping the emulator. It is for headless consumers that need per-frame
+// RAM sampling without Watch (which serves a screen and an HTTP server).
+// Like OnSample, fn runs where the emulator steps: it may read memory but
+// must not step the emulator.
+func (m *Emu) OnFrame(fn func(*Emu)) {
+	m.onFrame = fn
 }
 
 // Peek8 reads a byte without any hardware side effects.

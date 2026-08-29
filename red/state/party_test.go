@@ -63,6 +63,64 @@ func TestDecodePartyOneMon(t *testing.T) {
 	}
 }
 
+// TestStatusPredicatesSleepCounter is the table the single-bit mistake
+// dies on: the low three bits are a sleep TURN COUNTER, so every value
+// 1..7 is asleep, and none of them is poison. A test written as
+// `status == SLP` (one bit) passes for 0 and 1 and silently reads a
+// 3-turn sleep as some other status while every other predicate looks
+// fine.
+func TestStatusPredicatesSleepCounter(t *testing.T) {
+	for s := uint8(1); s <= 7; s++ {
+		m := Mon{Status: s}
+		if !m.Asleep() {
+			t.Errorf("Asleep() = false for sleep counter %d (0b%03b), want true", s, s)
+		}
+		if m.Poisoned() {
+			t.Errorf("Poisoned() = true for sleep counter %d (0b%03b), want false", s, s)
+		}
+		if got := m.StatusName(); got != "asleep" {
+			t.Errorf("StatusName() = %q for sleep counter %d, want \"asleep\"", got, s)
+		}
+	}
+}
+
+// TestStatusPredicates covers every single status and the combinations the
+// game allows (a mon can be poisoned and asleep at once): the predicates
+// are independent, and StatusName reports the first match in its
+// documented order.
+func TestStatusPredicates(t *testing.T) {
+	tests := []struct {
+		status   uint8
+		asleep   bool
+		poisoned bool
+		name     string
+	}{
+		{0b00000000, false, false, ""},       // healthy
+		{0b00000001, true, false, "asleep"},   // 1-turn sleep
+		{0b00000010, true, false, "asleep"},   // 2-turn sleep
+		{0b00000111, true, false, "asleep"},   // 7-turn sleep
+		{0b00001000, false, true, "poisoned"}, // PSN, bit 3
+		{0b00010000, false, false, "burned"},  // BRN, bit 4
+		{0b00100000, false, false, "frozen"},  // FRZ, bit 5
+		{0b01000000, false, false, "paralyzed"}, // PAR, bit 6
+		{0b00001111, true, true, "asleep"},    // sleep + poison
+		{0b00011000, false, true, "poisoned"}, // poison + burn
+		{0b01100111, true, false, "asleep"},   // sleep + freeze + paralyze
+	}
+	for _, tc := range tests {
+		m := Mon{Status: tc.status}
+		if got := m.Asleep(); got != tc.asleep {
+			t.Errorf("Asleep() for status 0b%08b = %v, want %v", tc.status, got, tc.asleep)
+		}
+		if got := m.Poisoned(); got != tc.poisoned {
+			t.Errorf("Poisoned() for status 0b%08b = %v, want %v", tc.status, got, tc.poisoned)
+		}
+		if got := m.StatusName(); got != tc.name {
+			t.Errorf("StatusName() for status 0b%08b = %q, want %q", tc.status, got, tc.name)
+		}
+	}
+}
+
 func TestDecodePartyClampsCount(t *testing.T) {
 	var m Mem
 	m[sym.PartyCount] = 200

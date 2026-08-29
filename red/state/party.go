@@ -16,6 +16,47 @@ type Mon struct {
 // Fainted reports whether the mon's HP is 0.
 func (m Mon) Fainted() bool { return m.HP == 0 }
 
+// The status byte's bits, derived from constants/battle_constants.asm:62-67.
+// The low three bits are a SLEEP COUNTER, not a flag: any non-zero value
+// means the mon is asleep, and the value is the number of turns left. The
+// rest are single-bit flags.
+const (
+	statusSleepMask = 0b00000111
+	statusPoison    = 1 << 3
+	statusBurn      = 1 << 4
+	statusFreeze    = 1 << 5
+	statusParalyze  = 1 << 6
+)
+
+// Poisoned reports whether the mon has the poison status.
+func (m Mon) Poisoned() bool { return m.Status&statusPoison != 0 }
+
+// Asleep reports whether the mon is asleep. Sleep lives in the low three
+// bits as a counter, so this tests the whole mask, never a single bit: a
+// 3-turn sleep (0b011) and a 7-turn sleep (0b111) are both asleep, and a
+// single-bit test (status == 0b001) would read them as something else.
+func (m Mon) Asleep() bool { return m.Status&statusSleepMask != 0 }
+
+// StatusName reports the mon's status as a name for prompts and logs, or
+// "" when the mon is healthy. Several bits can be set at once (a mon can
+// be poisoned and asleep), so the name is the first match in the order
+// sleep, poison, burn, freeze, paralyze.
+func (m Mon) StatusName() string {
+	switch {
+	case m.Asleep():
+		return "asleep"
+	case m.Poisoned():
+		return "poisoned"
+	case m.Status&statusBurn != 0:
+		return "burned"
+	case m.Status&statusFreeze != 0:
+		return "frozen"
+	case m.Status&statusParalyze != 0:
+		return "paralyzed"
+	}
+	return ""
+}
+
 // PartyState is the decoded party: Count mons, capped at 6.
 type PartyState struct {
 	Count uint8

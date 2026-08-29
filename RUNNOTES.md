@@ -1,44 +1,45 @@
-# RUNNOTES — local-Swarm deployment (buildable image + stack)
+# RUNNOTES
 
-## What changed
-- `deploy/Dockerfile` (new): BuildKit named context `gomeboy` copied to the
-  exact absolute path go.mod's replace expects
-  (/home/maestro/Documents/projects/gomeboy); repo at
-  /home/maestro/Documents/projects/PokePilot; builds /pokepilot + /pokewall;
-  alpine:3.20 runtime with only those binaries + ca-certificates. No ROM.
-- `deploy/farm.yml` (new): `image: ${FARM_IMAGE:-pokepilot-farm:local}` for
-  both services, no build: keys. Wall: 1 replica, :8080 published, named
-  volume wall-dumps at -dumps /var/lib/pokewall/dumps. Runner: 2 replicas,
-  POKEPILOT_ORCH_URL=http://wall:8080, POKEMON_RED_ROM=/rom/pokemon_red.gb,
-  operator's ${POKEMON_RED_ROM} bind-mounted ro. Replicas live under
-  `deploy:` — `docker stack config` rejects top-level `replicas`.
-- `.dockerignore` (new): roms/, *.gb, *.sav, *.state, skill/failure/, .git,
-  root pokepilot/pokewall binaries.
-- `Makefile`: FARM_IMAGE (default pokepilot-farm:local), GOMEBOY_CONTEXT
-  (default ../gomeboy), farm-image (buildx --load with named context),
-  farm-up (ROM check + farm-image, then `docker stack deploy --resolve-image
-  never -c deploy/farm.yml pokefarm`), farm-down (`docker stack rm pokefarm`).
+## S6-12 — Badge harness landed; scoreboard is VOID
 
-## Why
-Old task's Dockerfile couldn't build: the replace is an absolute path outside
-the build context, and stack deploy does not honor compose build keys. The
-named context fixes the former; images-only stack file fixes the latter.
+### What landed (restored from snapshot commit 3b98489, no new logic)
+- `cmd/badgerun/`: sweep harness — llm planner to the Boulder Badge per
+  starter/seed, prints a table. Tests cover arg parsing + table format only;
+  not part of `go test ./...`.
+- `agent/llm.go`: `PromptLog`, `ExtraSystem` (the -inject-fact seam),
+  `Timeout` (POKEPILOT_LLM_TIMEOUT). Restored because the harness references
+  all three and the current file was exactly the snapshot version minus them.
+- `emu/emu.go`: `OnFrame` — headless runs now get the dialogue tape
+  (agent.Run's OnSample install was dead code without a Watch).
+- `skill/story.go`: GetStarter no longer requires WINNING the rival battle
+  (seed-dependent outcome; ROM proceeds identically either way).
+- `docs/AGENT.md`: badgerun section. `-inject-fact` defaults OFF, verified in
+  code: `fs.Bool("inject-fact", false, ...)`. No `badgerun-out/`, `.log` or
+  `.state` file committed.
 
-## Verified
-- `docker buildx build --load --build-context gomeboy=../gomeboy -t
-  pokepilot-farm:verify -f deploy/Dockerfile .` succeeded; image contains no
-  .gb/.sav/.state (find over /), only the two binaries + CA certs.
-- `FARM_IMAGE=pokepilot-farm:verify POKEMON_RED_ROM="$PWD/roms/pokemon_red.gb"
-  docker stack config -c deploy/farm.yml` renders images, not build keys.
-- `env -u POKEMON_RED_ROM go test ./... -count=1`, `go build ./...`,
-  `go vet ./...` all green; TestGymBoulderBadge's t.Skip untouched; go.mod
-  unchanged. Stack was NOT deployed.
+### The scoreboard is VOID. Four measured reasons:
+1. **Single-slot contention.** badgerun and this coding agent share one
+   inference slot (server :8002, model qwen3.8-27b). Every 27b sweep died on
+   its FIRST call: "context deadline exceeded ... awaiting headers", 0
+   frames. GET /v1/models answered in 0.3ms; POST timed out at 90s. Attempt
+   1's baseline completed only because it used the default qwen3.5-4b.
+2. **No goal in the prompt.** agent/llm.go's system prompt has no objective
+   (`grep -ri goal agent/` → nothing). Runs measure an unprompted model with
+   a menu.
+3. **A superfluous argument kills the run.** Attempt 1's baseline: 9 of 9
+   runs ended in error, 27 "argument does not apply" rejections, 0 badges.
+4. **No model verification.** chatResponse parses only "choices" — no model,
+   no finish_reason — so ablation A cannot detect a different model served.
 
-## Gotchas for the next task
-- This worktree has no roms/pokemon_red.gb; farm-up will fail its ROM check
-  until the operator sets POKEMON_RED_ROM or drops a ROM in roms/.
-- I created a symlink `../gomeboy -> /home/maestro/Documents/projects/gomeboy`
-  in the workspace parent dir so the literal `--build-context gomeboy=../gomeboy`
-  works from this worktree. Overridable via GOMEBOY_CONTEXT.
-- Multi-node Swarm needs FARM_IMAGE published to a registry; documented in
-  farm.yml and the Makefile. Left uncommitted for the runner.
+**NO recall-vs-derivation reading is possible from these runs, and none is
+offered.** No completion rate, no capability claim. The real measurement
+moves to slice 7 (docs/superpowers/specs/2026-08-29-slice7-design.md) after
+the goal, reply validation and rejection recovery land.
+
+### For the next task
+- Smoke run NOT executed: 192.168.50.204:8000 returns 401 without a bearer
+  token and no `.env`/`llm_token` exists in this worktree. Harness verified
+  via build + vet + `-short` suite (all ok, 0 skips).
+- Do NOT run sweeps from inside agent-runner (single-slot contention).
+- S6-11 (prev): per-objective checkpoint ring in agent.Run; plain
+  `fixture.LoadState`.

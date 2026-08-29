@@ -82,8 +82,17 @@ const (
 
 // Menus, text and input state
 const (
+	TopMenuItemY    uint16 = 0xCC24
+	TopMenuItemX    uint16 = 0xCC25
 	CurrentMenuItem uint16 = 0xCC26
+	// PlayerMonNumber is wPlayerMonNumber: the party slot that is currently
+	// out in battle (InitBattleVariables zeroes it; SwitchPlayerMon and
+	// ChooseNextMon write it).
+	PlayerMonNumber uint16 = 0xCC2F
 	MaxMenuItem     uint16 = 0xCC28
+	// ListScrollOffset is wListScrollOffset, the list menu's scroll offset:
+	// the selected bag entry is ListScrollOffset + CurrentMenuItem.
+	ListScrollOffset uint16 = 0xCC36
 	MenuWatchedKeys uint16 = 0xCC29
 	ListMenuID      uint16 = 0xCF94
 	TextBoxID       uint16 = 0xD125
@@ -94,6 +103,32 @@ const (
 	TileMapLen        = 20 * 18
 	FontLoaded uint16 = 0xCFC4
 	JoyIgnore  uint16 = 0xCD6B
+)
+
+// Shop / mart. The buy flow (pokered/engine/events/pokemart.asm) loads the
+// clerk's stock from the ROM into wItemList and works through a sequence of
+// menus; these are the live values that flow drives and verifies against.
+const (
+	// ItemList is wItemList: the clerk's stock copied from the ROM by
+	// LoadItemList, item ids in menu order, $ff-terminated. 16 bytes.
+	ItemList uint16 = 0xCF7B
+	// ItemQuantity is wItemQuantity, the quantity selector's scrolling number
+	// (DisplayChooseQuantityMenu): 1..MaxItemQuantity, UP increments, DOWN
+	// decrements. It is NOT wCurrentMenuItem, so SelectMenuItem cannot drive it.
+	ItemQuantity uint16 = 0xCF96
+	// MaxItemQuantity is wMaxItemQuantity: 99 on the buy path.
+	MaxItemQuantity uint16 = 0xCF97
+	// ChosenMenuItem and MenuExitMethod are written by each menu on exit:
+	// ChosenMenuItem is the selected index, MenuExitMethod is CHOSE_MENU_ITEM,
+	// CHOSE_SECOND_ITEM or CANCELLED_MENU.
+	ChosenMenuItem uint16 = 0xD12D
+	MenuExitMethod uint16 = 0xD12E
+)
+
+// HRAM. Money (hMoney) is the total price the quantity selector shows: the
+// buy path multiplies the item price by the quantity into these 3 BCD bytes.
+const (
+	Money uint16 = 0xFF9F // hMoney, 3 bytes BCD
 )
 
 // HRAM joypad mirrors, in Gen 1 bit order:

@@ -26,7 +26,9 @@ func TestTraverseGateWarp(t *testing.T) {
 	// Walk to the gate corridor, one row below the warp line — the same
 	// position the old crossGate helper started from.
 	southGate := skill.Destination{Map: 0x32, X: 5, Y: 1}
-	travelFightsThrough(t, e, e.ROM(), southGate, skill.StatAwareMove(e.ROM()), 10)
+	if _, err := skill.Travel(e, e.ROM(), southGate, skill.StatAwareMove(e.ROM()), 10); err != nil {
+		diagFatalf(t, e, err, "Travel to the south gate: %v", err)
+	}
 	p = playerAt(t, e)
 	if p.MapID != 0x32 || p.X != 5 || p.Y != 1 {
 		t.Fatalf("travel stopped at map %02x (%d,%d), want the south gate 0x32 (5,1)", p.MapID, p.X, p.Y)

@@ -8,7 +8,7 @@ func TestRunStopsOnCancelBetweenRounds(t *testing.T) {
 	cancel := make(chan struct{})
 	close(cancel) // already cancelled: must stop before round 1's objective runs
 	planner := NewScriptedPlanner(Objective{Kind: KindGoTo, Place: "pallet town"})
-	res := Run(nil, nil, planner, nil, Budget{
+	res := Run(nil, nil, planner, Budget{
 		MaxRounds: 5, MaxFrames: 1000, Cancel: cancel,
 	})
 	if res.Stop != StopBudget {

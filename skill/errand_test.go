@@ -210,12 +210,16 @@ func TestOaksParcelOpensViridianNorthGate(t *testing.T) {
 
 	// Walk to the gate's approach tile. The leg from the lab crosses Route
 	// 1's tall grass, so Travel (not GoTo) with the fixture package's
-	// measured battle headroom.
+	// measured battle headroom. A blackout on this leg is a game outcome,
+	// not a failure: the party is wiped out but fully healed at the
+	// respawn spot, so the journey is re-attempted from there (the fixture
+	// package owns that decision; skill.Travel itself stops on the typed
+	// ErrBlackedOut, S6-0d).
 	city, ok := skill.Place("viridian city")
 	if !ok {
 		t.Fatal(`Place: "viridian city" not found`)
 	}
-	if _, err := skill.Travel(m, romData, city, policy, 20); err != nil {
+	if _, err := fixture.Travel(m, city, policy, 20); err != nil {
 		t.Fatalf("Travel to Viridian City: %v", err)
 	}
 	state.Snapshot(m, &mem)

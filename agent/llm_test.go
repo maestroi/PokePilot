@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/maestroi/pokepilot/agent"
+	"github.com/maestroi/pokepilot/skill"
 )
 
 // The LLM tests stand up an httptest server and point BaseURL at it: no
@@ -18,28 +19,36 @@ import (
 
 func llmObs() agent.Observation {
 	return agent.Observation{
-		Map:          0x28,
-		MapName:      "OAKS_LAB",
-		X:            5,
-		Y:            6,
-		Facing:       "down",
-		Controllable: true,
-		PartyCount:   1,
-		Party:        []agent.PartyMon{{Species: 1, Level: 5, HP: 20, MaxHP: 20}},
-		Badges:       []string{},
-		Money:        3000,
-		Events:       []string{"got a starter"},
+		Map:            0x28,
+		MapName:        "OAKS_LAB",
+		X:              5,
+		Y:              6,
+		Facing:         "down",
+		Controllable:   true,
+		PartyCount:     1,
+		Party:          []agent.PartyMon{{Species: 1, Level: 5, HP: 20, MaxHP: 20}},
+		Badges:         []string{},
+		Money:          3000,
+		Events:         []string{"got a starter"},
+		LeadMoves:      []agent.Move{{Power: 35, Type: "normal"}, {Power: 0, Type: "normal"}},
+		Bag:            []agent.Item{{Name: "pokeball", Quantity: 5}},
+		RecentDialogue: []string{"OAK: Oh! You're awake! It's been a while, huh?"},
+		History:        []agent.RoundRecord{{Objective: "take the charmander starter", Outcome: "done"}},
 	}
 }
 
 // llmOffered deliberately does not start with a bare KindStarter: the
 // zero Objective is equal to {Kind: KindStarter}, and the out-of-range
-// test must be able to tell "no objective" apart from offered[0].
+// test must be able to tell "no objective" apart from offered[0]. It also
+// carries one argument per kind (a starter, a level, a species) so the
+// reply-argument tests have something to aim at.
 func llmOffered() []agent.Objective {
 	return []agent.Objective{
 		{Kind: agent.KindGoTo, Place: "pallet town"},
-		{Kind: agent.KindStarter},
+		{Kind: agent.KindStarter, Starter: skill.StarterCharmander},
+		{Kind: agent.KindTrain, Level: 10},
 		{Kind: agent.KindTalk, X: 3, Y: 1},
+		{Kind: agent.KindCatch, Species: 0x7B}, // CATERPIE
 	}
 }
 
@@ -97,8 +106,10 @@ func TestLLMPlannerPicksOfferedObjective(t *testing.T) {
 		`"role":"system"`,
 		`"role":"user"`,
 		"1: go to pallet town",
-		"2: take a starter",
-		"3: talk at (3,1)",
+		"2: take the charmander starter",
+		"3: train the lead to level 10",
+		"4: talk at (3,1)",
+		"5: catch a CATERPIE here",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("request body does not contain %q\nbody: %s", want, body)
@@ -252,6 +263,151 @@ func TestNewLLMPlannerEnv(t *testing.T) {
 	}
 	if p.Model != "some-model" {
 		t.Errorf("Model = %q, want the POKEPILOT_LLM_MODEL value", p.Model)
+	}
+}
+
+// TestLLMPlannerSendsSchema: the request asks for a json_schema reply
+// shape, so a well-behaved server cannot emit a bare number in prose.
+func TestLLMPlannerSendsSchema(t *testing.T) {
+	var body string
+	srv := startModelServer(t, `{"choices":[{"message":{"content":"1"}}]}`, &body)
+
+	if _, err := llmPlanner(srv).Next(llmObs(), llmOffered()); err != nil {
+		t.Fatalf("Next: %v", err)
+	}
+	for _, want := range []string{
+		`"response_format"`,
+		`"type":"json_schema"`,
+		`"choice"`,
+		`"required":["choice"]`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("request body does not contain %q\nbody: %s", want, body)
+		}
+	}
+}
+
+// TestLLMPlannerSchemaReplyWithArgs: a schema-shaped reply carries the
+// choice AND the argument; the argument overrides the offered objective's
+// default and comes back on the returned objective.
+func TestLLMPlannerSchemaReplyWithArgs(t *testing.T) {
+	srv := startModelServer(t, `{"choices":[{"message":{"content":"{\"choice\":3,\"level\":12}"}}]}`, nil)
+	offered := llmOffered()
+
+	got, err := llmPlanner(srv).Next(llmObs(), offered)
+	if err != nil {
+		t.Fatalf("Next: %v", err)
+	}
+	want := agent.Objective{Kind: agent.KindTrain, Level: 12}
+	if got != want {
+		t.Fatalf("Next = %s, want %s (level override applied)", got, want)
+	}
+}
+
+// TestLLMPlannerSchemaReplyBareChoice: a schema-shaped reply with only the
+// choice selects the offered objective unchanged, argument and all.
+func TestLLMPlannerSchemaReplyBareChoice(t *testing.T) {
+	srv := startModelServer(t, `{"choices":[{"message":{"content":"{\"choice\":5}"}}]}`, nil)
+	offered := llmOffered()
+
+	got, err := llmPlanner(srv).Next(llmObs(), offered)
+	if err != nil {
+		t.Fatalf("Next: %v", err)
+	}
+	if got != offered[4] {
+		t.Fatalf("Next = %s, want %s", got, offered[4])
+	}
+}
+
+// TestLLMPlannerOutOfRangeArgRejected: an argument outside its stated
+// range is REJECTED with a typed error — never clamped to 100, never
+// best-matched. This is the safety mechanism; the schema only makes such
+// replies less likely, so this must hold regardless of it.
+func TestLLMPlannerOutOfRangeArgRejected(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		reply string
+		want  string
+	}{
+		{"level above range", `{"choice":3,"level":500}`, "out of range"},
+		{"level zero", `{"choice":3,"level":0}`, "out of range"},
+		{"unknown species", `{"choice":5,"species":"snorlax"}`, "unknown species"},
+		{"quantity above range", `{"choice":5,"quantity":150}`, "does not apply"},
+		{"choice out of range", `{"choice":7}`, "out of range"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := fmt.Sprintf(`{"choices":[{"message":{"content":%q}}]}`, tc.reply)
+			srv := startModelServer(t, body, nil)
+
+			got, err := llmPlanner(srv).Next(llmObs(), llmOffered())
+			if err == nil {
+				t.Fatalf("Next = %s, want an error for %s", got, tc.reply)
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error does not name the problem (%q): %v", tc.want, err)
+			}
+		})
+	}
+}
+
+// TestLLMPlannerIgnoresSchemaFallback: a server that ignores
+// response_format answers in plain text; the existing parsing path must
+// still yield a valid objective. This is the guarantee that pointing
+// POKEPILOT_LLM_URL at a non-schema server does not break the run.
+func TestLLMPlannerIgnoresSchemaFallback(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		reply string
+		want  int // index into offered
+	}{
+		{"bare number", "2", 1},
+		{"prose around the number", "I choose 2 because it is closer.", 1},
+		{"number after rejected options", "Option 1 is tempting, but 3 is better.", 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := startModelServer(t, fmt.Sprintf(`{"choices":[{"message":{"content":%q}}]}`, tc.reply), nil)
+			offered := llmOffered()
+
+			got, err := llmPlanner(srv).Next(llmObs(), offered)
+			if err != nil {
+				t.Fatalf("Next: %v", err)
+			}
+			if got != offered[tc.want] {
+				t.Fatalf("Next = %s, want %s", got, offered[tc.want])
+			}
+		})
+	}
+}
+
+// TestLLMPlannerPromptCarriesMovesAndHistory: the fields that make
+// "fight Brock now or train first?" answerable must actually reach the
+// prompt. A field added to Observation but never rendered into it changes
+// nothing for the model, so this asserts on the request body, not the
+// struct.
+func TestLLMPlannerPromptCarriesMovesAndHistory(t *testing.T) {
+	var body string
+	srv := startModelServer(t, `{"choices":[{"message":{"content":"1"}}]}`, &body)
+
+	if _, err := llmPlanner(srv).Next(llmObs(), llmOffered()); err != nil {
+		t.Fatalf("Next: %v", err)
+	}
+	// The observation JSON is embedded in a chat message, so its quotes
+	// arrive escaped: assert on the escaped form.
+	for _, want := range []string{
+		`\"LeadMoves\"`,
+		`\"Power\": 35`,
+		`\"Type\": \"normal\"`,
+		`\"Bag\"`,
+		`pokeball`,
+		`\"RecentDialogue\"`,
+		`\"History\"`,
+		`take the charmander starter`,
+		`\"Objective\": \"take the charmander starter\"`,
+		`\"Outcome\": \"done\"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("request body does not contain %q", want)
+		}
 	}
 }
 

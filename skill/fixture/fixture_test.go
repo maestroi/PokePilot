@@ -34,6 +34,27 @@ func TestLoadGeneratesAndCaches(t *testing.T) {
 	checkOverworld(t, e2)
 }
 
+// TestLoadStatePlain: the non-test entry point is the same validated,
+// versioned cache Load uses, and it reports problems as errors instead of
+// failing a test — so code outside a test (a replay of a failed run) can
+// stand on it.
+func TestLoadStatePlain(t *testing.T) {
+	if os.Getenv("POKEMON_RED_ROM") == "" {
+		t.Skip("POKEMON_RED_ROM not set; cannot generate or load fixture")
+	}
+	e, err := LoadState("reds_bedroom")
+	if err != nil {
+		t.Fatalf("LoadState: %v", err)
+	}
+	defer e.Close()
+	checkOverworld(t, e)
+
+	// An unregistered name is an error, not a panic and not a nil emu.
+	if _, err := LoadState("no_such_fixture"); err == nil {
+		t.Fatal("LoadState of an unregistered name returned a nil error")
+	}
+}
+
 func TestLoadRejectsPoisonedFixture(t *testing.T) {
 	rom := os.Getenv("POKEMON_RED_ROM")
 	if rom == "" {

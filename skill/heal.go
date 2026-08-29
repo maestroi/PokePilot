@@ -96,8 +96,10 @@ func openNurseMenu(m *emu.Emu) error {
 			ErrNoDialogue, mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord),
 			mem.U16BE(sym.JoyIgnore))
 	}
-	mem = advanceUntil(m, healMenuBudget, yesNoMenuUp)
-	if !yesNoMenuUp(&mem) {
+	mem = advanceUntil(m, healMenuBudget, func(mem *state.Mem) bool {
+		return state.DecodeTwoOptionMenu(mem) != nil
+	})
+	if state.DecodeTwoOptionMenu(&mem) == nil {
 		return fmt.Errorf("skill: Heal: yes/no prompt did not appear within %d iterations: map=%#04x at (%d,%d) wFontLoaded=%#04x wJoyIgnore=%#04x wStatusFlags4=%#04x menu=%+v",
 			healMenuBudget, mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord),
 			mem.U16BE(sym.FontLoaded), mem.U16BE(sym.JoyIgnore), mem.U16BE(sym.StatusFlags4),

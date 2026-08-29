@@ -190,15 +190,15 @@ func GetStarter(m *emu.Emu, romData []byte, which Starter, policy MovePolicy) er
 			mem.U8(sym.JoyIgnore), mem.U8(sym.FontLoaded), state.HasEvent(&mem, state.EventGotStarter))
 	}
 
-	result, err := Battle(m, policy)
-	if err != nil {
+	// The rival battle is won or lost depending on the seed (bulbasaur often
+	// loses to Red's Pidgey). Either way the ROM runs the end-battle script:
+	// it heals the party, sets EVENT_BATTLED_RIVAL_IN_OAKS_LAB and hands
+	// control back, so the badge journey proceeds identically. We therefore do
+	// NOT require a win here — that would gate on a negative (not lost) instead
+	// of the positive fact we actually need, which step 10 checks: the event is
+	// set and control has come back.
+	if _, err := Battle(m, policy); err != nil {
 		return err
-	}
-	if result != state.ResultWon {
-		state.Snapshot(m, &mem)
-		return fmt.Errorf("skill: GetStarter: rival battle result = %d, want win: map=%#04x at (%d,%d) wJoyIgnore=%#04x EventBattledRivalInOaksLab=%v",
-			result, mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord),
-			mem.U8(sym.JoyIgnore), state.HasEvent(&mem, state.EventBattledRivalInOaksLab))
 	}
 
 	// 10. The EVENT_BATTLED_RIVAL_IN_OAKS_LAB flag is set by the battle-end
@@ -224,25 +224,54 @@ func GetStarter(m *emu.Emu, romData []byte, which Starter, policy MovePolicy) er
 	return nil
 }
 
-// advanceUntil steps frames, pressing A while a text box is up, until pred
-// holds or the frame budget is exhausted. It returns the final snapshot. It
-// is the overworld counterpart of Cutscene for predicates that must be
-// checked while text is being advanced.
-func advanceUntil(m *emu.Emu, budget int, pred func(*state.Mem) bool) state.Mem {
+// frameClock is the slice of the emulator the advance loop drives: read a
+// RAM snapshot, tap A, step frames. *emu.Emu satisfies it; the recovery
+// tests substitute a scripted fake so the loop runs without an emulator.
+type frameClock interface {
+	state.Peeker
+	Tap(b emu.Button, holdFrames, gapFrames int)
+	StepFrame()
+	StepFrames(n int)
+}
+
+// advanceCore steps frames, pressing A while a text box is up, until pred
+// holds, until stopBeforeA reports a screen this loop must not advance
+// (returned before any A is sent for that iteration), or the frame budget
+// is exhausted. It returns the final snapshot and the number of A presses
+// it sent.
+//
+// stopBeforeA is checked after the snapshot and before every A press: it is
+// how a caller refuses to advance a screen it does not own, such as a
+// two-option prompt. A nil stopBeforeA never stops the loop.
+func advanceCore(m frameClock, budget int, pred func(*state.Mem) bool, stopBeforeA func(*state.Mem) bool) (state.Mem, int) {
 	var mem state.Mem
+	presses := 0
 	for i := 0; i < budget; i++ {
 		state.Snapshot(m, &mem)
 		if pred(&mem) {
-			return mem
+			return mem, presses
+		}
+		if stopBeforeA != nil && stopBeforeA(&mem) {
+			return mem, presses
 		}
 		if mem.U8(sym.FontLoaded) != 0 {
 			m.Tap(emu.A, 3, 7)
 			m.StepFrames(talkSettle)
+			presses++
 		} else {
 			m.StepFrame()
 		}
 	}
 	state.Snapshot(m, &mem)
+	return mem, presses
+}
+
+// advanceUntil steps frames, pressing A while a text box is up, until pred
+// holds or the frame budget is exhausted. It returns the final snapshot. It
+// is the overworld counterpart of Cutscene for predicates that must be
+// checked while text is being advanced.
+func advanceUntil(m frameClock, budget int, pred func(*state.Mem) bool) state.Mem {
+	mem, _ := advanceCore(m, budget, pred, nil)
 	return mem
 }
 
@@ -254,7 +283,7 @@ func chooseStarterBall(m *emu.Emu) error {
 	var mem state.Mem
 	for i := 0; i < choiceWaitBudget; i++ {
 		state.Snapshot(m, &mem)
-		if yesNoMenuUp(&mem) {
+		if state.DecodeTwoOptionMenu(&mem) != nil {
 			if err := SelectMenuItem(m, 0); err != nil {
 				return fmt.Errorf("skill: GetStarter: select YES: %w", err)
 			}
@@ -271,14 +300,6 @@ func chooseStarterBall(m *emu.Emu) error {
 	return fmt.Errorf("skill: GetStarter: YesNoChoice menu did not appear within %d frames: map=%#04x at (%d,%d) wFontLoaded=%#04x wJoyIgnore=%#04x menu=%+v",
 		choiceWaitBudget, mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord),
 		mem.U8(sym.FontLoaded), mem.U8(sym.JoyIgnore), state.DecodeMenu(&mem))
-}
-
-// yesNoMenuUp reports whether the YES/NO choice box is drawn: a text box is
-// up and wMaxMenuItem carries the yes/no shape (highest valid index 1,
-// inclusive; index 0 = YES, index 1 = NO). wMaxMenuItem is stale-0 until the
-// choice box writes it, so the shape is a positive identifier in this flow.
-func yesNoMenuUp(mem *state.Mem) bool {
-	return mem.U8(sym.FontLoaded) != 0 && state.DecodeMenu(mem).Max == 1
 }
 
 // walkLab walks within Oak's lab to (tx,ty), re-planning around dynamic

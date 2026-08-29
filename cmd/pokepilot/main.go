@@ -10,14 +10,11 @@ import (
 	"fmt"
 	"log"
 	"math/rand/v2"
-	"net"
 	"os"
-	"strconv"
 	"time"
 
 	"github.com/maestroi/pokepilot/agent"
 	"github.com/maestroi/pokepilot/emu"
-	"github.com/maestroi/pokepilot/farm"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/skill"
@@ -38,7 +35,7 @@ func main() {
 	dest := flag.String("goto", "viridian pokemon center", "named destination to walk to")
 	fps := flag.Int("fps", 60, "pace the walk to this many frames per second so it is watchable; 0 runs flat out")
 	hold := flag.Duration("hold", 30*time.Second, "how long to keep serving after the run finishes")
-	starter := flag.String("starter", "squirtle", "starter to take (scripted and llm): charmander, squirtle or bulbasaur (bulbasaur loses the rival battle)")
+	starter := flag.String("starter", "squirtle", "starter to take: charmander, squirtle or bulbasaur (bulbasaur loses the rival battle)")
 	planner := flag.String("planner", "scripted", "how to choose objectives: scripted or llm")
 	seed := flag.Int64("seed", 0, "diverge this run's luck by burning seed-derived idle frames after boot; 0 replays bit-identically")
 	flag.Parse()
@@ -82,20 +79,6 @@ func main() {
 	}
 	report(m, "booted")
 
-	// Farm mode: the wall, not the flags, decides what runs. The boot state
-	// is saved at this clean post-boot point and restored per lease, so a
-	// CLI -seed never burns frames here; each leased spec's seed is applied
-	// exactly once by runOne.
-	if orchURL := os.Getenv("POKEPILOT_ORCH_URL"); orchURL != "" {
-		bootState, err := m.SaveState()
-		if err != nil {
-			log.Fatalf("save boot state: %v", err)
-		}
-		fmt.Printf("farm mode: leasing runs from %s\n", orchURL)
-		runFarm(m, farm.NewClient(orchURL), bootState, watchPort(served))
-		return
-	}
-
 	if burn > 0 {
 		m.StepFrames(burn)
 		fmt.Printf("seed %d: burned %d idle frames, so this run's luck differs\n", *seed, burn)
@@ -110,26 +93,10 @@ func main() {
 	case "scripted":
 		runScripted(m, *starter, *dest, *hold, served)
 	case "llm":
-		runLLM(m, *starter)
+		runLLM(m)
 	default:
 		log.Fatalf("unknown planner %q: want scripted or llm", *planner)
 	}
-}
-
-// watchPort extracts the port actually listened on from the address
-// Watch reported, so farm mode can tell the wall where to fetch this
-// runner's live screen. Zero means "not known", which the wall treats as
-// "no frames".
-func watchPort(served string) int {
-	_, portStr, err := net.SplitHostPort(served)
-	if err != nil {
-		return 0
-	}
-	port, err := strconv.Atoi(portStr)
-	if err != nil {
-		return 0
-	}
-	return port
 }
 
 // runHeader is the one line pinned above the watch page's trace: what is
@@ -152,8 +119,15 @@ func runScripted(m *emu.Emu, starter, dest string, hold time.Duration, served st
 	// The north exit of Pallet Town is gated on the opening story: walking to
 	// y==1 without a Pokemon triggers Oak's "Don't go out!" cutscene and sets
 	// wJoyIgnore, which no amount of walking gets past.
-	which, ok := starterFromName(starter)
-	if !ok {
+	var which skill.Starter
+	switch starter {
+	case "charmander":
+		which = skill.StarterCharmander
+	case "squirtle":
+		which = skill.StarterSquirtle
+	case "bulbasaur":
+		which = skill.StarterBulbasaur
+	default:
 		log.Fatalf("unknown starter %q: want charmander, squirtle or bulbasaur", starter)
 	}
 
@@ -193,28 +167,20 @@ func runScripted(m *emu.Emu, starter, dest string, hold time.Duration, served st
 // unattended run leaves something a human can read in the morning.
 //
 // The list is the whole safety argument: the model picks a number, never
-// invents an action. The journey verbs (starter, errand, train, heal, gym)
-// are offered in milestone order so a sensible model walks the route;
-// every named place is offered too, so the planner can still go anywhere
-// skill.Place knows.
-func runLLM(m *emu.Emu, starter string) {
-	offered := []agent.Objective{
-		{Kind: agent.KindStarter, Starter: starter},
-		{Kind: agent.KindErrand},
-		{Kind: agent.KindTrain, Level: 10},
-		{Kind: agent.KindHeal},
-		{Kind: agent.KindGym},
-	}
-	for _, name := range skill.PlaceNames() {
-		offered = append(offered, agent.Objective{Kind: agent.KindGoTo, Place: name})
-	}
-	fmt.Printf("planner: llm — the model picks from %d offered objectives\n", len(offered))
+// invents an action. The list is not built here at all — Run rebuilds it
+// every round from the current observation and what the run has actually
+// seen (agent.Offer): places already visited or one step out of where the
+// player stands, verbs whose preconditions currently hold, the starter only
+// while the party is empty. A menu of every place in the ROM would be both
+// a worse prompt and a worse question.
+func runLLM(m *emu.Emu) {
+	fmt.Println("planner: llm — the model picks from a menu rebuilt every round")
 
 	// Tee llm/round lines to the watch panel as well as stdout.
 	log := &agentTraceLog{w: os.Stdout, note: m.TraceNote}
 	planner := agent.NewLLMPlanner()
 	planner.Log = log // one line per model call, above its round line
-	res := agent.Run(m, m.ROM(), planner, offered, agent.Budget{
+	res := agent.Run(m, m.ROM(), planner, agent.Budget{
 		MaxRounds: llmMaxRounds,
 		MaxFrames: llmMaxFrames,
 		Log:       log,
@@ -230,7 +196,7 @@ func runLLM(m *emu.Emu, starter string) {
 
 	// A run that stops on error or stuck has not done what it was told to
 	// do; exiting zero would make an overnight failure invisible.
-	if res.Stop == agent.StopError || res.Stop == agent.StopStuck {
+	if res.Stop == agent.StopError || res.Stop == agent.StopStuck || res.Stop == agent.StopFailed {
 		os.Exit(1)
 	}
 }
@@ -245,6 +211,8 @@ func stopName(s agent.Stop) string {
 		return "stuck"
 	case agent.StopBudget:
 		return "budget"
+	case agent.StopFailed:
+		return "failed"
 	case agent.StopError:
 		return "error"
 	}

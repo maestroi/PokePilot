@@ -2,6 +2,7 @@ package skill
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/rom"
@@ -39,6 +40,26 @@ type TrainResult struct {
 // After every leg the lead's level is re-read from RAM, and the session
 // ends when the level reaches targetLevel, when maxBattles battles have
 // been fought, or when a blackout ends it.
+//
+// Non-battle sequences that a grind throws up — the level-up EVOLUTION
+// cutscene ("CATERPIE evolved into METAPOD!") and the learned-move box
+// ("learned CONFUSION!") — are survived without Train doing anything
+// special, and this was MEASURED, not assumed (TestTrainSurvivesEvolution
+// carries a level-15 SQUIRTLE through its level-16 evolution AND a
+// level-22 learned-move offer up to level 22 without stopping or hanging).
+// The reason is timing: both sequences run during the battle-end sequence
+// while wIsInBattle is still set (pokered/engine/battle/end_of_battle.asm
+// calls EvolutionAfterBattle before it clears wIsInBattle; the learned-move
+// box plays during GainExperience, likewise in-battle), so Battle's loop is
+// still running and its default A-tap branch advances them before Train ever
+// re-reads the lead's level. Train therefore needs no separate handling for
+// a plain learned-move box or an evolution cutscene. The one case it does
+// NOT fully handle is the "forget a move?" prompt (a mon offered a new move
+// while already holding four): measured, Train survives it without hanging
+// but dismisses it, so the move is not learned. That prompt does not occur on
+// the Caterpie->Butterfree line (the level-12 Butterfree holds three moves,
+// an empty slot, so CONFUSION is a plain box), which is why no branch for it
+// is written here — see RUNNOTES.md.
 //
 // Both axes bound the session: at most maxBattles battles are fought and
 // reaching the target ends it early. Not reaching the target within
@@ -142,8 +163,225 @@ func Train(m *emu.Emu, romData []byte, targetLevel int, policy MovePolicy, maxBa
 	}
 }
 
+// PromoteToLead moves party member index (1..Count-1) into slot 0 through
+// the in-game party swap: START -> PKMN -> select the current lead ->
+// SWITCH -> select the partner. Every step is verified against RAM before
+// the next input, and the function returns only once the wanted species is
+// asserted to be Mons[0] and the player is controllable again.
+//
+// The swap is the only way a caught mon can ever fight: US Red has no other
+// party reordering, every battle sends out slot 0 (InitBattleVariables
+// zeroes wPlayerMonNumber), and only the mon that fights gains experience
+// (wPartyGainExpFlags is set for wPlayerMonNumber alone, see
+// engine/battle/experience.asm). Training a caught Caterpie to Butterfree
+// therefore starts here.
+func PromoteToLead(m *emu.Emu, index int) error {
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	party := state.DecodeParty(&mem)
+	if index < 1 || index >= int(party.Count) {
+		return fmt.Errorf("skill: PromoteToLead: index %d out of range for a party of %d (want 1..%d)", index, party.Count, party.Count-1)
+	}
+	if !state.Controllable(&mem) {
+		return fmt.Errorf("skill: PromoteToLead: player not controllable on map %#04x", m.Peek8(sym.CurMap))
+	}
+	want := party.Mons[index].Species
+	partyMax := int(party.Count) - 1
+
+	waitFor := func(budget int, what string, pred func(*state.Mem) bool) error {
+		if _, err := m.StepUntil(budget, func(m *emu.Emu) bool {
+			var s state.Mem
+			state.Snapshot(m, &s)
+			return pred(&s)
+		}); err != nil {
+			return fmt.Errorf("skill: PromoteToLead: %s did not appear within %d frames: %w", what, budget, err)
+		}
+		return nil
+	}
+	tap := func(b emu.Button) { m.Tap(b, 3, 7) }
+	onScreen := func(s *state.Mem, marker string) bool {
+		return strings.Contains(state.ScreenText(s), marker)
+	}
+
+	// moveCursor taps toward target until wCurrentMenuItem reads it. It is
+	// convention-agnostic on purpose: the party menu stores wMaxMenuItem as
+	// the LAST valid index (count-1) while the start menu stores the COUNT,
+	// so SelectMenuItem's exclusive range check rejects the party menu's last
+	// entry (the partner). Moving by verifying wCurrentMenuItem sidesteps the
+	// mismatch; the cursor index is the positive fact, as in SelectMenuItem.
+	moveCursor := func(target int) error {
+		for i := 0; i < 60; i++ {
+			var s state.Mem
+			state.Snapshot(m, &s)
+			cur := state.DecodeMenu(&s).Current
+			if cur == target {
+				return nil
+			}
+			btn := emu.Down
+			if cur > target {
+				btn = emu.Up
+			}
+			m.Tap(btn, 3, 7)
+		}
+		var s state.Mem
+		state.Snapshot(m, &s)
+		return fmt.Errorf("skill: PromoteToLead: cursor stuck at %d, want %d", state.DecodeMenu(&s).Current, target)
+	}
+
+	// pressUntil presses A and waits for the positive fact pred (the next
+	// screen / RAM change). The FIRST A can be lost in the menu's joypad-init
+	// window — the footer text is drawn a few frames before HandlePartyMenuInput
+	// starts polling, so an A fired on the detection frame is dropped (measured:
+	// the first A never lands, the second always does). It re-presses A until
+	// pred holds, each re-press gated on stillHere so a stray A that left the
+	// expected screen is reported instead of chased. Success is pred, never a
+	// press count.
+	// pressKeyUntil presses btn and waits for the positive fact pred. The
+	// FIRST press can be lost in the menu's joypad-init window — the screen
+	// is drawn a few frames before the input handler starts polling, so a
+	// press fired on the detection frame is dropped (measured: the first A
+	// never lands, the second always does; B behaves the same). It re-presses
+	// until pred holds, each re-press gated on stillHere so a stray press that
+	// left the expected screen is reported instead of chased. Success is pred,
+	// never a press count.
+	pressKeyUntil := func(btn emu.Button, budget int, what string, stillHere, pred func(*state.Mem) bool) error {
+		for i := 0; i < budget/25; i++ {
+			var s state.Mem
+			state.Snapshot(m, &s)
+			if pred(&s) {
+				return nil
+			}
+			m.Tap(btn, 3, 7)
+			if _, err := m.StepUntil(25, func(m *emu.Emu) bool {
+				var s2 state.Mem
+				state.Snapshot(m, &s2)
+				return pred(&s2)
+			}); err == nil {
+				return nil
+			}
+			state.Snapshot(m, &s)
+			if !stillHere(&s) {
+				return fmt.Errorf("skill: PromoteToLead: %s: left the expected screen before the press took", what)
+			}
+		}
+		return fmt.Errorf("skill: PromoteToLead: %s did not appear after repeated presses", what)
+	}
+
+	pressUntil := func(budget int, what string, stillHere, pred func(*state.Mem) bool) error {
+		return pressKeyUntil(emu.A, budget, what, stillHere, pred)
+	}
+
+	pick := func(index, budget int, what string, stillHere, pred func(*state.Mem) bool) error {
+		if err := moveCursor(index); err != nil {
+			return fmt.Errorf("skill: PromoteToLead: %s: %w", what, err)
+		}
+		return pressUntil(budget, what, stillHere, pred)
+	}
+
+	// Every wait below is a POSITIVE screen fact, never a stale cursor or
+	// menu counter: wMaxMenuItem and wCurrentMenuItem survive across menus
+	// in RAM, so "Max == 7" matched the overworld on the first attempt and
+	// the taps went to the player sprite instead of a menu.
+
+	// START menu: seven entries (POKEDex PKMN ITEM name SAVE OPTIONS EXIT),
+	// opened with the START button (A talks to sprites in the overworld),
+	// drawn straight into wTileMap rather than as a text box.
+	tap(emu.Start)
+	// Require a valid Max (6 or 7) in the SAME snapshot as the labels: the
+	// footer text is drawn before wMaxMenuItem is written, so reading Max
+	// from an earlier frame could give a stale count and pick the wrong entry.
+	if err := waitFor(500, "start menu", func(s *state.Mem) bool {
+		mx := state.DecodeMenu(s).Max
+		return onScreen(s, "SAVE") && onScreen(s, "EXIT") && (mx == 6 || mx == 7)
+	}); err != nil {
+		return err
+	}
+	// PKMN is the second entry when the POKéDEX is present (7 items) and the
+	// first when it is not (6 items); the POKéDEX entry sits at the top and
+	// pushes everything down by one.
+	var mem2 state.Mem
+	state.Snapshot(m, &mem2)
+	pkmnIndex := 0
+	if state.DecodeMenu(&mem2).Max == 7 {
+		pkmnIndex = 1
+	}
+	// Normal party screen: the footer reads "Choose a POKéMON." (the # glyph
+	// renders as the POKé ligature).
+	if err := pick(pkmnIndex, 600, "start menu", func(s *state.Mem) bool {
+		return onScreen(s, "SAVE") && onScreen(s, "EXIT")
+	}, func(s *state.Mem) bool {
+		return onScreen(s, "Choose") && state.DecodeMenu(s).Max == partyMax
+	}); err != nil {
+		return err
+	}
+	// Select the current lead; its option menu (STATUS SWITCH CANCEL with no
+	// field moves known) is a text box.
+	if err := pick(0, 600, "party screen", func(s *state.Mem) bool {
+		return onScreen(s, "Choose")
+	}, func(s *state.Mem) bool {
+		return onScreen(s, "SWITCH")
+	}); err != nil {
+		return err
+	}
+	// SWITCH is the middle entry: STATUS SWITCH CANCEL. Selecting it enters
+	// swap mode; the footer changes to "Move POKéMON where?".
+	if err := pick(1, 600, "option menu", func(s *state.Mem) bool {
+		return onScreen(s, "SWITCH")
+	}, func(s *state.Mem) bool {
+		return onScreen(s, "where?") && state.DecodeMenu(s).Max == partyMax
+	}); err != nil {
+		return err
+	}
+	// Select the partner; SwitchPartyMon performs the swap. The positive fact
+	// that it happened: the wanted species is now Mons[0] in RAM.
+	if err := pick(index, 600, "swap-mode party screen", func(s *state.Mem) bool {
+		return onScreen(s, "where?")
+	}, func(s *state.Mem) bool {
+		return state.DecodeParty(s).Mons[0].Species == want
+	}); err != nil {
+		return err
+	}
+	// B out of the party screen (back to the start menu), B out of the
+	// start menu (overworld). Both are retry-gated: the first B is lost in
+	// the same joypad-init window as the A presses.
+	if err := pressKeyUntil(emu.B, 600, "party screen exit", func(s *state.Mem) bool {
+		return onScreen(s, "Choose")
+	}, func(s *state.Mem) bool {
+		return onScreen(s, "SAVE") && onScreen(s, "EXIT")
+	}); err != nil {
+		return err
+	}
+	if err := pressKeyUntil(emu.B, 600, "start menu exit", func(s *state.Mem) bool {
+		return onScreen(s, "SAVE") && onScreen(s, "EXIT")
+	}, func(s *state.Mem) bool {
+		return state.Controllable(s)
+	}); err != nil {
+		return err
+	}
+
+	state.Snapshot(m, &mem)
+	if got := state.DecodeParty(&mem).Mons[0].Species; got != want {
+		return fmt.Errorf("skill: PromoteToLead: lead is species %#02x, want %#02x", got, want)
+	}
+	return nil
+}
+
+
+
 // cell is a game-tile position on a map.
 type cell struct{ x, y int }
+
+// HasGrass reports whether mapID has any walkable tall grass — the
+// precondition for training at all. It is a map feature, decoded from the
+// same tileset table Train reads, so a caller that knows the current map
+// can say whether "train" is even possible there without hunting.
+func HasGrass(romData []byte, mapID uint8) (bool, error) {
+	grass, _, err := grassCells(romData, mapID)
+	if err != nil {
+		return false, err
+	}
+	return len(grass) > 0, nil
+}
 
 // grassCells returns the walkable cells of mapID that stand on the
 // tileset's grass tile — the cells where the game actually rolls wild

@@ -52,3 +52,36 @@ Worked example:
 
 Note: in llm mode a "go to" objective uses skill.Travel, so a wild
 encounter on the way is fought and the route resumes.
+
+## badgerun: the scoreboard
+
+`cmd/badgerun` answers the slice's question — given verbs and an
+observation, does the planner get badge 1? — by running the llm planner to
+the Boulder Badge, N times per starter, across several seeds, and printing
+a table. It is a harness, not a service: no session registry, no pool,
+no UI. It is NOT part of `go test ./...` (its tests cover argument parsing
+and table formatting only); a real scoreboard needs a ROM and a live model.
+
+    set -a; . ./.env; set +a
+    POKEMON_RED_ROM=roms/pokemon_red.gb \
+        go run ./cmd/badgerun -starter all -n 3 -seeds 1,2,3
+
+Per run it reports: starter, seed, badge yes/no, frames to badge (emulated
+frames, never wall clock), planner calls, objectives attempted and failed,
+battles, blackouts, and where the run stopped. The harness takes the
+starter itself — that is the controlled variable; from there the model
+decides everything, and nobody tells it the answer (no "take Squirtle",
+no Caterpie hint).
+
+- `-seed` varies luck, not skill: idle frames burned after boot shift DIV
+  and reroute every encounter. Different seeds are different luck.
+- Each run keeps `run.log` (every round line, llm line and outcome line),
+  `prompts.txt` (every prompt verbatim — the record of what the model was
+  actually told), and `checkpoints/` (S6-11's per-objective ring), so a
+  failed run is resumable and inspectable rather than replayed from boot.
+- `-inject-fact` appends ONE fact to the system prompt. It is a DIAGNOSTIC
+  and defaults OFF: the injected fact is the thing being measured, so on by
+  default it would turn the benchmark into a walkthrough. A scoreboard run
+  with it on prints a note saying its rows are not comparable to baseline.
+- Ablation A (swap the model) is just `POKEPILOT_LLM_MODEL=... \
+  POKEPILOT_LLM_URL=...` around the same command.

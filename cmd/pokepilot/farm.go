@@ -352,22 +352,22 @@ func runFarmScripted(m *emu.Emu, starter, dest string) (string, string) {
 // differences are that the budget comes from the spec and cancel is the
 // wall's cooperative stop.
 func runFarmLLM(m *emu.Emu, starter string, maxRounds, maxFrames int, cancel <-chan struct{}) (string, string) {
-	offered := []agent.Objective{
-		{Kind: agent.KindStarter, Starter: starter},
-		{Kind: agent.KindErrand},
-		{Kind: agent.KindTrain, Level: 10},
-		{Kind: agent.KindHeal},
-		{Kind: agent.KindGym},
+	// The starter is the farm's controlled variable, so the harness TAKES it
+	// before handing control to the model — the same reason badgerun does
+	// (a model that knows Pokemon always picks Squirtle otherwise). From
+	// here on the model decides everything, and the menu is no longer built
+	// here at all: agent.Run rebuilds it every round from the current
+	// observation (agent.Offer), which is strictly better than a static list
+	// of every place in the ROM.
+	if err := skill.GetStarter(m, m.ROM(), farmStarterFor(starter), skill.StatAwareMove(m.ROM())); err != nil {
+		return "error", fmt.Sprintf("get starter %s: %v", starter, err)
 	}
-	for _, name := range skill.PlaceNames() {
-		offered = append(offered, agent.Objective{Kind: agent.KindGoTo, Place: name})
-	}
-	fmt.Printf("planner: llm — the model picks from %d offered objectives\n", len(offered))
+	fmt.Println("planner: llm — the model picks from a menu rebuilt every round")
 
 	logw := &agentTraceLog{w: os.Stdout, note: m.TraceNote}
 	planner := agent.NewLLMPlanner()
 	planner.Log = logw // one line per model call, above its round line
-	res := agent.Run(m, m.ROM(), planner, offered, agent.Budget{
+	res := agent.Run(m, m.ROM(), planner, agent.Budget{
 		MaxRounds: maxRounds,
 		MaxFrames: maxFrames,
 		Log:       logw,
@@ -412,4 +412,20 @@ func finishRun(m *emu.Emu, client *farm.Client, spec farm.Spec, reason, detail s
 		return
 	}
 	fmt.Printf("run %s finished: %s\n", spec.RunID, reason)
+}
+
+// farmStarterFor maps a spec's starter name onto the typed skill.Starter the
+// objective layer now carries. The conversion lives at the CLI/spec boundary
+// rather than inside agent: since S6-7 an Objective's Starter is typed, so
+// agent no longer parses names. Unknown and empty keep the historic default
+// (Squirtle) so an older spec that omits the field behaves as it always did.
+func farmStarterFor(name string) skill.Starter {
+	switch name {
+	case "charmander":
+		return skill.StarterCharmander
+	case "bulbasaur":
+		return skill.StarterBulbasaur
+	default:
+		return skill.StarterSquirtle
+	}
 }

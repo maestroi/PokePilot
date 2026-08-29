@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -26,6 +27,22 @@ type LLMPlanner struct {
 	Token   string       // bearer token; empty means no Authorization header
 	Client  *http.Client // nil means a client with a sane timeout
 	Log     io.Writer    // one line per call; nil means no logging
+
+	// PromptLog, when set, receives every prompt verbatim (system and user
+	// messages) before it is sent. It exists for the record: badgerun keeps
+	// it so a scored run can show exactly what the model was told.
+	PromptLog io.Writer
+
+	// ExtraSystem is appended to the system prompt. Empty by default. It is
+	// the seam badgerun's -inject-fact diagnostic uses (one injected fact,
+	// default off): the fact being injected is the thing being measured, so
+	// this must never be on in a baseline measurement.
+	ExtraSystem string
+
+	// Timeout bounds one POST to the model. Zero means the 60s default. A
+	// large model (ablation A) can take well over a minute per call, so
+	// badgerun raises it via POKEPILOT_LLM_TIMEOUT rather than editing code.
+	Timeout time.Duration
 
 	// recent is what this planner has already chosen, oldest first. It
 	// exists because Next is otherwise a pure function of the
@@ -53,6 +70,11 @@ func NewLLMPlanner() *LLMPlanner {
 		p.Model = v
 	}
 	p.Token = os.Getenv("llm_token")
+	if v := os.Getenv("POKEPILOT_LLM_TIMEOUT"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			p.Timeout = d
+		}
+	}
 	return p
 }
 
@@ -61,6 +83,15 @@ func NewLLMPlanner() *LLMPlanner {
 // reply that does not resolve to one of the offered objectives is an
 // error, so the run loop can stop on it instead of acting on a wrong
 // answer.
+//
+// The reply is asked for as a JSON object ({"choice": N, plus the
+// arguments of the chosen objective when it has any) via
+// response_format/json_schema, so a well-behaved server cannot emit a
+// bare number wrapped in prose. A server that rejects or ignores the
+// schema still works: a reply without a parseable "choice" falls back to
+// the existing text path (last integer wins). The schema is an
+// optimisation, not the safety mechanism — WithArgs and Validate check
+// every value against its stated range either way.
 func (p *LLMPlanner) Next(obs Observation, offered []Objective) (Objective, error) {
 	if len(offered) == 0 {
 		return Objective{}, fmt.Errorf("agent: llm planner: nothing was offered")
@@ -74,22 +105,17 @@ func (p *LLMPlanner) Next(obs Observation, offered []Objective) (Objective, erro
 	}
 	reply = strings.TrimSpace(reply)
 	defer func() {
-		// Logged after Chosen has run, so the line reports what the reply
-		// actually resolved to rather than what it looked like.
+		// Logged after the reply has resolved, so the line reports what it
+		// actually became rather than what it looked like.
 		if p.Log != nil {
 			fmt.Fprintf(p.Log, "  llm: %d offered, %s, reply %q -> %s\n",
 				len(offered), took.Round(10*time.Millisecond), snippet([]byte(reply)), picked)
 		}
 	}()
-	n, ok := answerInt(reply)
-	if !ok {
-		picked = "no number in the reply"
-		return Objective{}, fmt.Errorf("agent: llm planner: no number in reply %q", reply)
-	}
-	o, err := Chosen(offered, n)
+	o, err := resolveReply(offered, reply)
 	if err != nil {
-		picked = "not an offered objective"
-		return Objective{}, err
+		picked = "rejected: " + err.Error()
+		return Objective{}, fmt.Errorf("agent: llm planner: %w", err)
 	}
 	picked = o.String()
 	p.recent = append(p.recent, picked)
@@ -99,13 +125,82 @@ func (p *LLMPlanner) Next(obs Observation, offered []Objective) (Objective, erro
 	return o, nil
 }
 
-const llmSystemPrompt = "You are choosing the next objective for a Pokemon Red player. Prefer an objective that makes NEW progress: repeating what you just did wastes the run. Reply with ONLY the number of your choice. Do not explain."
+// resolveReply turns a raw model reply into an offered objective. A reply
+// that parses as a JSON object with an integer "choice" takes the schema
+// path: the choice indexes the offered list and any argument fields are
+// applied (and range-checked) by WithArgs. Anything else — a bare number,
+// prose, or a server that ignored response_format — takes the fallback
+// text path, where the last integer wins.
+func resolveReply(offered []Objective, reply string) (Objective, error) {
+	if cr, ok := parseChoiceReply(reply); ok {
+		base, err := Chosen(offered, strconv.Itoa(*cr.Choice))
+		if err != nil {
+			return Objective{}, err
+		}
+		return WithArgs(base, ReplyArgs{
+			Level:    cr.Level,
+			Species:  cr.Species,
+			Item:     cr.Item,
+			Quantity: cr.Quantity,
+		})
+	}
+	n, ok := answerInt(reply)
+	if !ok {
+		return Objective{}, fmt.Errorf("no number in reply %q", reply)
+	}
+	return Chosen(offered, n)
+}
+
+// choiceReply is the schema-shaped reply: the choice is required, the
+// argument fields are optional and only meaningful for the kind they
+// belong to (WithArgs enforces that).
+type choiceReply struct {
+	Choice   *int   `json:"choice"`
+	Level    *int   `json:"level"`
+	Species  string `json:"species"`
+	Item     string `json:"item"`
+	Quantity *int   `json:"quantity"`
+}
+
+// parseChoiceReply decodes a schema-shaped reply. ok is false when the
+// reply is not a JSON object with an integer "choice" — that is the
+// fallback signal, not an error: servers that ignore response_format
+// still answer in plain text, and those replies must keep working.
+func parseChoiceReply(s string) (choiceReply, bool) {
+	s = strings.TrimSpace(s)
+	if !strings.HasPrefix(s, "{") {
+		return choiceReply{}, false
+	}
+	var r choiceReply
+	if err := json.Unmarshal([]byte(s), &r); err != nil {
+		return choiceReply{}, false
+	}
+	if r.Choice == nil {
+		return choiceReply{}, false
+	}
+	return r, true
+}
+
+// The reply is constrained with a single call, not two. A whole-output
+// schema forbids visible reasoning (the answer must come immediately), and
+// that is the deliberate trade: at ~260 ms per call against a multi-minute
+// run, one constrained call halves the planning latency, and the choice is
+// bounded — an index into a short offered list plus at most one argument.
+// If S6-11's diagnosis shows the model needs to think out loud before
+// choosing, the answer is a free pre-call followed by this constrained
+// one; nothing here has to change for that.
+const llmSystemPrompt = `You are choosing the next objective for a Pokemon Red player. Prefer an objective that makes NEW progress: repeating what you just did wastes the run. Reply with ONLY a JSON object: {"choice": N} where N is the number of your choice, plus the arguments of that objective when it has any ("level", "species", "item", "quantity"). Do not explain.`
 
 // llmUserPrompt renders the observation as indented JSON, then the
 // offered objectives as a 1-based numbered list of their String() forms.
 // The model is asked for the index, not the sentence: Chosen accepts a
 // bare index, and small models emit indices far more reliably than exact
 // sentences.
+//
+// The whole Observation is the prompt's game knowledge — including the
+// lead's moves, the bag, the recent dialogue and the round history, which
+// is what makes "fight Brock now or train first?" answerable. If a field
+// is not rendered here it might as well not exist.
 func llmUserPrompt(obs Observation, offered []Objective, recent []string) string {
 	obsJSON, err := json.MarshalIndent(obs, "", "  ")
 	if err != nil {
@@ -134,9 +229,42 @@ type chatMessage struct {
 }
 
 type chatRequest struct {
-	Model       string        `json:"model"`
-	Temperature float64       `json:"temperature"`
-	Messages    []chatMessage `json:"messages"`
+	Model          string          `json:"model"`
+	Temperature    float64         `json:"temperature"`
+	Messages       []chatMessage   `json:"messages"`
+	ResponseFormat *responseFormat `json:"response_format,omitempty"`
+}
+
+// responseFormat asks a server that supports structured output (llama.cpp
+// does: type "json_schema") to constrain the whole reply. Servers that do
+// not support it either ignore the field or reject the request; the
+// fallback path in resolveReply covers the first, and a rejection is a
+// visible HTTP error naming the status.
+type responseFormat struct {
+	Type       string      `json:"type"`
+	JSONSchema *jsonSchema `json:"json_schema,omitempty"`
+}
+
+type jsonSchema struct {
+	Name   string         `json:"name"`
+	Strict bool           `json:"strict"`
+	Schema map[string]any `json:"schema"`
+}
+
+// choiceSchema is the requested reply shape. "choice" is the only required
+// field; the argument fields are optional because most offered objectives
+// carry no argument, and strict mode (which would require all of them)
+// would make a bare {"choice": N} malformed.
+var choiceSchema = map[string]any{
+	"type": "object",
+	"properties": map[string]any{
+		"choice":   map[string]any{"type": "integer"},
+		"level":    map[string]any{"type": "integer"},
+		"species":  map[string]any{"type": "string"},
+		"item":     map[string]any{"type": "string"},
+		"quantity": map[string]any{"type": "integer"},
+	},
+	"required": []string{"choice"},
 }
 
 type chatChoice struct {
@@ -154,14 +282,27 @@ type chatResponse struct {
 func (p *LLMPlanner) ask(obs Observation, offered []Objective) (string, error) {
 	client := p.Client
 	if client == nil {
-		client = &http.Client{Timeout: 60 * time.Second}
+		timeout := p.Timeout
+		if timeout <= 0 {
+			timeout = 60 * time.Second
+		}
+		client = &http.Client{Timeout: timeout}
+	}
+	system := llmSystemPrompt + p.ExtraSystem
+	user := llmUserPrompt(obs, offered, p.recent)
+	if p.PromptLog != nil {
+		fmt.Fprintf(p.PromptLog, "=== prompt (model %s) ===\n[system]\n%s\n[user]\n%s\n", p.Model, system, user)
 	}
 	reqBody, err := json.Marshal(chatRequest{
 		Model:       p.Model,
 		Temperature: 0,
 		Messages: []chatMessage{
-			{Role: "system", Content: llmSystemPrompt},
-			{Role: "user", Content: llmUserPrompt(obs, offered, p.recent)},
+			{Role: "system", Content: system},
+			{Role: "user", Content: user},
+		},
+		ResponseFormat: &responseFormat{
+			Type:       "json_schema",
+			JSONSchema: &jsonSchema{Name: "objective_choice", Strict: false, Schema: choiceSchema},
 		},
 	})
 	if err != nil {

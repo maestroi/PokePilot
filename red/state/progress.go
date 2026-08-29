@@ -69,17 +69,21 @@ const (
 	EventGotPokedex            Event = 37
 	EventOakAppearedInPallet   Event = 39
 	EventGotOaksParcel         Event = 57
+	// Set by Route22Rival1AfterBattleScript (pokered/scripts/Route22.asm:167),
+	// the only setter in the decomp; it is what unlocks Oak's .give_poke_balls.
+	EventBeatRoute22Rival1stBattle Event = 1317
 )
 
 var eventNames = map[Event]string{
-	EventFollowedOakIntoLab:    "FollowedOakIntoLab",
-	EventOakAskedToChooseMon:   "OakAskedToChooseMon",
-	EventGotStarter:            "GotStarter",
-	EventBattledRivalInOaksLab: "BattledRivalInOaksLab",
-	EventGotPokeballsFromOak:   "GotPokeballsFromOak",
-	EventGotPokedex:            "GotPokedex",
-	EventOakAppearedInPallet:   "OakAppearedInPallet",
-	EventGotOaksParcel:         "GotOaksParcel",
+	EventFollowedOakIntoLab:        "FollowedOakIntoLab",
+	EventOakAskedToChooseMon:       "OakAskedToChooseMon",
+	EventGotStarter:                "GotStarter",
+	EventBattledRivalInOaksLab:     "BattledRivalInOaksLab",
+	EventGotPokeballsFromOak:       "GotPokeballsFromOak",
+	EventGotPokedex:                "GotPokedex",
+	EventOakAppearedInPallet:       "OakAppearedInPallet",
+	EventGotOaksParcel:             "GotOaksParcel",
+	EventBeatRoute22Rival1stBattle: "BeatRoute22Rival1stBattle",
 }
 
 // String renders the event name; unnamed indices render as "unknown(N)".

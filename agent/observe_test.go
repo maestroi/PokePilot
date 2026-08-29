@@ -15,7 +15,7 @@ import (
 func TestObserveFreshBoot(t *testing.T) {
 	e := loadFixture(t)
 
-	obs := agent.Observe(e)
+	obs := agent.Observe(e, e.ROM())
 
 	if !obs.Controllable {
 		t.Fatalf("Controllable = false, want true at a fresh boot")
@@ -23,11 +23,19 @@ func TestObserveFreshBoot(t *testing.T) {
 	if obs.PartyCount != 0 {
 		t.Fatalf("PartyCount = %d, want 0", obs.PartyCount)
 	}
+	if obs.BlackedOut {
+		t.Fatalf("BlackedOut = true at a fresh boot, want false")
+	}
 	var mem state.Mem
 	state.Snapshot(e, &mem)
 	want := state.DecodePlayer(&mem).MapID
 	if obs.Map != want {
 		t.Fatalf("Map = %#04x, want %#04x (what state decodes)", obs.Map, want)
+	}
+	// A fresh boot lands on Reds House 2F (0x26). The planner sees the
+	// name, not just the integer: an unnamed map would be "".
+	if obs.MapName != "REDS_HOUSE_2F" {
+		t.Fatalf("MapName = %q, want %q for map %#04x", obs.MapName, "REDS_HOUSE_2F", obs.Map)
 	}
 }
 
@@ -40,21 +48,51 @@ func TestObserveAfterStarter(t *testing.T) {
 		t.Fatalf("Execute starter: %v", err)
 	}
 
-	obs := agent.Observe(e)
+	obs := agent.Observe(e, e.ROM())
 
 	if obs.PartyCount != 1 {
 		t.Fatalf("PartyCount = %d, want 1", obs.PartyCount)
+	}
+	// The lead's moves are decoded from the ROM's move table: power and
+	// type, no invented names. Charmander's level-1 learnset (pokered
+	// base_stats) is SCRATCH + GROWL.
+	if len(obs.LeadMoves) != 2 {
+		t.Fatalf("LeadMoves = %+v, want the starter's two moves", obs.LeadMoves)
+	}
+	if obs.LeadMoves[0] != (agent.Move{Power: 40, Type: "normal"}) || obs.LeadMoves[1] != (agent.Move{Power: 0, Type: "normal"}) {
+		t.Errorf("LeadMoves = %+v, want SCRATCH (power 40 normal) and GROWL (power 0 normal)", obs.LeadMoves)
+	}
+	// The bag is decoded too; at this point in the story Oak has not given
+	// the pokeballs yet, so it is empty. (A populated bag round-trips in
+	// TestObserveJSONRoundTrip.)
+	if len(obs.Bag) != 0 {
+		t.Errorf("Bag = %+v, want empty at this point in the story", obs.Bag)
+	}
+	// Observe alone decodes no run memory: dialogue and history are Run's.
+	if len(obs.RecentDialogue) != 0 || len(obs.History) != 0 {
+		t.Errorf("standalone Observe carries run memory: dialogue=%v history=%v", obs.RecentDialogue, obs.History)
 	}
 	if len(obs.Party) != 1 {
 		t.Fatalf("len(Party) = %d, want 1", len(obs.Party))
 	}
 	wantEvent := state.EventBattledRivalInOaksLab.String()
+	found := false
 	for _, name := range obs.Events {
 		if name == wantEvent {
-			return
+			found = true
 		}
 	}
-	t.Fatalf("Events = %v, want it to contain %q", obs.Events, wantEvent)
+	if !found {
+		t.Fatalf("Events = %v, want it to contain %q", obs.Events, wantEvent)
+	}
+	// The starter comes out of the story healthy: the status field is
+	// populated ("" for a healthy mon), not missing.
+	if obs.Party[0].Status != "" {
+		t.Errorf("Party[0].Status = %q, want \"\" (the starter is healthy)", obs.Party[0].Status)
+	}
+	if obs.BlackedOut {
+		t.Errorf("BlackedOut = true after the starter, want false")
+	}
 }
 
 // TestObserveJSONRoundTrip marshals a fully populated Observation and back,
@@ -63,7 +101,7 @@ func TestObserveAfterStarter(t *testing.T) {
 func TestObserveJSONRoundTrip(t *testing.T) {
 	obs := agent.Observation{
 		Map:          0x00,
-		MapName:      "",
+		MapName:      "PALLET_TOWN",
 		X:            5,
 		Y:            6,
 		Facing:       "up",
@@ -71,11 +109,19 @@ func TestObserveJSONRoundTrip(t *testing.T) {
 		InBattle:     false,
 		PartyCount:   1,
 		Party: []agent.PartyMon{
-			{Species: 7, Level: 5, HP: 20, MaxHP: 20},
+			{Species: 7, Level: 5, HP: 20, MaxHP: 20, Status: "poisoned"},
 		},
-		Badges: []string{},
-		Money:  5000,
-		Events: []string{"BattledRivalInOaksLab"},
+		Badges:     []string{},
+		Money:      5000,
+		Events:     []string{"BattledRivalInOaksLab"},
+		BlackedOut: true,
+		LeadMoves: []agent.Move{
+			{Power: 35, Type: "normal"},
+			{Power: 0, Type: "normal"},
+		},
+		Bag:            []agent.Item{{Name: "pokeball", Quantity: 5}},
+		RecentDialogue: []string{"OAK: Oh! You're awake!"},
+		History:        []agent.RoundRecord{{Objective: "take the charmander starter", Outcome: "done"}},
 	}
 
 	b, err := json.Marshal(obs)

@@ -60,11 +60,20 @@ const mainMenuMax = 1
 // The battle is driven as a state machine. The FIGHT/ITEM/PKMN/RUN menu is
 // identified by wMaxMenuItem == 1; the move menu by wMaxMenuItem >= 2. Text
 // boxes and animations (which carry a stale wMaxMenuItem) are advanced with
-// A. Battle never uses items or switches mons; if the game reaches a state
-// it does not handle (e.g. the party menu after a faint), the frame cap
-// trips and Battle fails loudly.
+// A. Battle never uses items, but it does answer the forced switch after a
+// faint in a wild battle: the "Use next #MON?" prompt is answered YES
+// (NO is an escape attempt) and the first non-fainted party slot is sent
+// out. The OTHER half of the party menu — the voluntary switch opened by
+// the player through the POKéMON branch — is driven by SwitchActive, not
+// here. If the game reaches any other state Battle does not handle, the
+// frame cap trips and Battle fails loudly.
 //
 // Losing is a result, not an error: a blackout returns ResultLost with a
+// zbatDebug is read once at init, not per frame: Go 1.27's test harness
+// logs every os.Getenv call to the test log (measured: a per-frame getenv
+// produced 42MB of "getenv ZBAT" lines in one nine-minute run).
+var zbatDebug = os.Getenv("ZBAT") != ""
+
 // nil error. Recovering from a blackout is out of scope.
 func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
 	if policy == nil {
@@ -87,7 +96,7 @@ func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
 		}
 
 		state.Snapshot(m, &mem)
-		if os.Getenv("ZBAT") != "" {
+		if zbatDebug {
 			if bs := state.DecodeBattle(&mem); bs != nil {
 				fmt.Printf("zbat f=%6d max=%d cur=%d me=%d/%d enemy=%d/%d moves=%v | %s\n",
 					m.FrameCount(), m.Peek8(sym.MaxMenuItem), m.Peek8(sym.CurrentMenuItem),
@@ -96,7 +105,7 @@ func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
 			}
 		}
 		if state.DecodeBattle(&mem) == nil {
-			if os.Getenv("ZBAT") != "" {
+			if zbatDebug {
 				fmt.Printf("zbat EXIT f=%d inBattle=%#02x rawResult=%#02x\n",
 					m.FrameCount(), m.Peek8(sym.IsInBattle), m.Peek8(sym.BattleResult))
 			}
@@ -149,6 +158,45 @@ func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
 				return menuError(m, "select FIGHT", err)
 			}
 
+		case useNextMonUp(m):
+			// "Use next #MON?" after the active mon faints in a WILD battle
+			// with others alive (core.asm DoUseNextMonDialogue; it returns
+			// early for trainer battles). YES proceeds to the party menu; NO
+			// is an escape attempt (.tryRunning), which is not what a travel
+			// battle wants, so answer YES.
+			var s state.Mem
+			state.Snapshot(m, &s)
+			if state.DecodeTwoOptionMenu(&s) == nil {
+				// The prompt text is on screen but the menu cursor is not
+				// drawn yet. Step, then look again: a bare continue would skip
+				// the StepFrame at the foot of the loop and spin without ever
+				// advancing the emulator (measured: frozen frame counter).
+				m.StepFrame()
+				continue
+			}
+			// YES is index 0. If this A is lost in the menu's joypad-init
+			// window the next pass sees the same prompt and answers again.
+			if err := SelectMenuItem(m, 0); err != nil {
+				return menuError(m, "answer UseNextMon", err)
+			}
+
+		case partyMenuUp(m):
+			// The battle party menu (ChooseNextMon). Send out the first slot
+			// that is not fainted; the ROM bounces a fainted pick back to the
+			// menu, so the choice must come from live party RAM.
+			var s state.Mem
+			state.Snapshot(m, &s)
+			slot := firstLivePartySlot(&s)
+			if slot < 0 {
+				// No live mon: the ROM would not have opened this menu. Step
+				// rather than bare-continue, as in the useNextMon case above.
+				m.StepFrame()
+				continue
+			}
+			if err := SelectPartySlot(m, slot); err != nil {
+				return menuError(m, "select party slot", err)
+			}
+
 		default:
 			// Text or an animation. Advance it and look again.
 			m.Tap(emu.A, 3, 7)
@@ -168,8 +216,20 @@ func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
 // wMaxMenuItem alone cannot do this job: it holds the move menu's value
 // (numMoves+1) while the "used TACKLE!" text that follows is on screen.
 const (
-	mainMenuMarker = "FIGHT" // only on the FIGHT/ITEM/PKMN/RUN menu
-	moveMenuMarker = "TYPE/" // only on the move-selection menu
+	mainMenuMarker   = "FIGHT"    // only on the FIGHT/ITEM/PKMN/RUN menu
+	moveMenuMarker   = "TYPE/"    // only on the move-selection menu
+	useNextMonMarker = "Use next" // only on UseNextMonText (data/text/text_2.asm:889)
+	// switchMenuMarker is the NORMAL_PARTY_MENU footer ("Choose a #MON."),
+	// which the VOLUNTARY mid-battle switch prints: core.asm .partyMenuWasSelected
+	// sets wPartyMenuTypeOrMessageID to NORMAL_PARTY_MENU, unlike the forced
+	// switch's BATTLE_PARTY_MENU ("Bring out", partyMenuMarker). It comes from
+	// wTileMap like every other battle marker and is only meaningful while a
+	// battle is in progress — the overworld party screen prints the same line.
+	switchMenuMarker = "Choose"
+	// switchBoxMarker is on the SWITCH/STATS/CANCEL box
+	// (SWITCH_STATS_CANCEL_MENU_TEMPLATE) that follows a slot pick in the
+	// voluntary party menu; the forced switch has no such box.
+	switchBoxMarker = "SWITCH"
 )
 
 // mainMenuUp reports whether the FIGHT/ITEM/PKMN/RUN menu is up.
@@ -180,6 +240,44 @@ func mainMenuUp(m *emu.Emu) bool {
 // moveMenuUp reports whether the move-selection menu is up.
 func moveMenuUp(m *emu.Emu) bool {
 	return battleScreenHas(m, moveMenuMarker)
+}
+
+// useNextMonUp reports whether the "Use next #MON?" prompt after a faint is
+// on screen. The yes/no box itself carries no text marker, so this gates on
+// the prompt's own line; answering still waits on DecodeTwoOptionMenu seeing
+// the drawn cursor (see the case in Battle).
+func useNextMonUp(m *emu.Emu) bool {
+	return battleScreenHas(m, useNextMonMarker)
+}
+
+// battleSwitchMenuUp reports whether the VOLUNTARY battle party menu is on
+// screen: a party menu drawn while a battle is in progress. The forced
+// switch after a faint prints the BATTLE_PARTY_MENU footer ("Bring out"),
+// which partyMenuUp matches; this one prints the NORMAL_PARTY_MENU footer
+// ("Choose a #MON."), and no other battle screen contains it.
+func battleSwitchMenuUp(m *emu.Emu) bool {
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	return state.DecodeBattle(&mem) != nil && strings.Contains(state.ScreenText(&mem), switchMenuMarker)
+}
+
+// switchBoxUp reports whether the SWITCH/STATS/CANCEL box is on screen.
+func switchBoxUp(m *emu.Emu) bool {
+	return battleScreenHas(m, switchBoxMarker)
+}
+
+// firstLivePartySlot returns the index of the first party member that is not
+// fainted, or -1 when every member is. The battle party menu bounces a
+// fainted pick back to itself (core.asm ChooseNextMon), so a forced switch
+// must land on a live slot.
+func firstLivePartySlot(mem *state.Mem) int {
+	party := state.DecodeParty(mem)
+	for i, mon := range party.Mons {
+		if !mon.Fainted() {
+			return i
+		}
+	}
+	return -1
 }
 
 // battleScreenHas reports whether marker appears in the text the game has

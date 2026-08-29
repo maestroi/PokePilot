@@ -202,6 +202,12 @@ var places = map[string]Destination{
 	// resumed with Cutscene (OaksParcel in errand.go does this).
 	"oak's lab":     {Map: 0x28, X: 5, Y: 3},
 	"viridian city": {Map: 0x01, X: 23, Y: 26},
+	// 0x0C is Route 1, between Viridian City (north) and Pallet Town
+	// (south). (5,14) is open road in the map's middle, reachable from the
+	// north-edge connection (measured 2026-08-28: PROBE_MAP=0x0c
+	// PROBE_AT=5,14, nearest reachable north-edge tile (11,0)); the map's
+	// tall grass is where Train grinds.
+	"route 1": {Map: 0x0C, X: 5, Y: 14},
 	// (3,3) is the tile BELOW the counter, not the counter itself: on map
 	// 0x29 the nurse stands at (3,1) and (3,2) is a counter tile, which the
 	// player can never stand on. Talking works across the counter.
@@ -216,13 +222,29 @@ var places = map[string]Destination{
 	// (8,71) sits in the open band of Route 2's south edge (x7-9), the
 	// landing zone of the crossing from Viridian City's north edge (x17-19).
 	"route 2": {Map: 0x0D, X: 8, Y: 71},
+	// 0x21 is Route 22. (29,5) is the coordinate trigger of the Route 22
+	// rival battle: Route22DefaultScript (pokered/scripts/Route22.asm:58)
+	// fires when EVENT_ROUTE22_RIVAL_WANTS_BATTLE is set and the player
+	// stands on (29,4) or (29,5); the rival object's home tile is (25,5).
+	// Measured 2026-08-28 (PROBE_MAP=0x21 PROBE_AT=29,5): standable and
+	// reachable from the Viridian City connection on the east edge; the
+	// only other exit is the warp at (8,5) to Route 22 Gate.
+	"route 22": {Map: 0x21, X: 29, Y: 5},
 	// (14,8) is open plaza directly below the center door warp at (14,7).
 	"pewter city": {Map: 0x02, X: 14, Y: 8},
-	// 0x34 is the Pewter center: both of Pewter City's center door warps
-	// (14,7) and (19,5) target it. The nurse (sprite 11) stands at (1,4) and
-	// (2,4) is the open floor tile beside her, the same stand-beside pattern
-	// as the Viridian center's (3,3).
-	"pewter pokemon center": {Map: 0x34, X: 2, Y: 4},
+	// 0x3a is the Pewter center, reached from Pewter City's door warp at
+	// (13,25). It has the Viridian center's exact layout (tileset 0x06,
+	// 7x4 blocks): the nurse (sprite 41) stands at (3,1) behind the counter
+	// and (3,3) is the floor tile in front of it, the same stand-beside
+	// pattern as the Viridian center's Place. NOTE: 0x34 — which Pewter
+	// City's warps at (14,7) and (19,5) lead into — is NOT a center in this
+	// ROM. It is a ticket-booth building whose clerk opens a "Would you
+	// like to come in?" YES/NO box (¥50, "It's ¥50 for a child's ticket.")
+	// that aborts Travel with ErrDialogueChoice, and whose nurse sprite is
+	// hidden, so skill.Heal cannot run there. Measured 2026-08-29 by
+	// answering the box in a dumped state and by parsing every map header
+	// for the center layout.
+	"pewter pokemon center": {Map: 0x3a, X: 3, Y: 3},
 	// 0x36 is the gym, reached from Pewter City's door warp at (16,17).
 	// Brock (sprite 12) stands at (4,1) in the top room and (4,2) is the
 	// open floor tile directly below him.
@@ -282,15 +304,15 @@ func walkWithinMap(m *emu.Emu, romData []byte, dest Destination) error {
 	var planErr error
 	err = walkAround(func() map[[2]int]bool { return spriteBlockers(m) },
 		func(blocked map[[2]int]bool) ([]world.Step, error) {
-		x, y := playerXY(m)
-		steps, err := world.FindPath(grid, int(x), int(y), int(dest.X), int(dest.Y), blocked)
-		if err != nil {
-			planErr = fmt.Errorf("skill: GoTo: no path on map %02x from (%d,%d) to (%d,%d): %w",
-				cur, x, y, dest.X, dest.Y, err)
-			return nil, planErr
-		}
-		return steps, nil
-	}, func(steps []world.Step) error { return WalkPath(m, steps) },
+			x, y := playerXY(m)
+			steps, err := world.FindPath(grid, int(x), int(y), int(dest.X), int(dest.Y), blocked)
+			if err != nil {
+				planErr = fmt.Errorf("skill: GoTo: no path on map %02x from (%d,%d) to (%d,%d): %w",
+					cur, x, y, dest.X, dest.Y, err)
+				return nil, planErr
+			}
+			return steps, nil
+		}, func(steps []world.Step) error { return WalkPath(m, steps) },
 		func() { m.StepFrames(npcWaitFrames) })
 	if err == nil || err == planErr {
 		return err
