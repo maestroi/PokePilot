@@ -103,6 +103,15 @@ type LLMHealth struct {
 // observation.
 const recentCap = 6
 
+// maxReplyTokens caps the reply so a model that will not stop cannot burn the
+// whole request timeout. It is NOT a way to keep replies short: a reasoning
+// model emits a <think> block before the answer (see thinkRe), so a tight cap
+// truncates it mid-thought, the server reports finish_reason "length", the
+// reply is rejected as ErrNotFinished, and after MaxReplyRetries the run stops
+// — which reads as a failing model rather than a truncated one. Keep it well
+// above a think block plus {"choice": N}.
+const maxReplyTokens = 512
+
 // NewLLMPlanner returns an LLMPlanner with the defaults, overridden by
 // POKEPILOT_LLM_URL and POKEPILOT_LLM_MODEL when set. The bearer
 // token comes from llm_token (the name used in .env).
@@ -362,6 +371,7 @@ type chatMessage struct {
 type chatRequest struct {
 	Model          string          `json:"model"`
 	Temperature    float64         `json:"temperature"`
+	MaxTokens      int             `json:"max_tokens"`
 	Messages       []chatMessage   `json:"messages"`
 	ResponseFormat *responseFormat `json:"response_format,omitempty"`
 }
@@ -470,6 +480,7 @@ func (p *LLMPlanner) ask(obs Observation, offered []Objective, feedback string) 
 	reqBody, err := json.Marshal(chatRequest{
 		Model:       p.Model,
 		Temperature: 0,
+		MaxTokens:   maxReplyTokens,
 		Messages: []chatMessage{
 			{Role: "system", Content: system},
 			{Role: "user", Content: user},
