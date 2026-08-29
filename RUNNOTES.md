@@ -267,3 +267,77 @@ named pickup offered; no trainer objective).
   MapObjects already reports trainers with coordinates.
 - `skill.Pickup`'s bag postcondition is the only guard against collected
   items being re-offered; that stays by design.
+
+## S7-8: TestGymJourneyAffordances — Pallet -> Brock with both affordances used
+
+### What landed
+- `skill/journey_test.go`: TestGymJourneyAffordances. One run, post_errand ->
+  forest ball pickup (bag POKE BALL 0->1 via state.DecodeInventory) -> train
+  lead to L12 -> Pewter Center heal -> gym guide talk at (7,11)/(7,10) ->
+  exit, heal, re-enter -> Brock. -short-skipped; proven by its own -run gate:
+  PASS in 58s (run 7).
+
+### Cool Trainer re-arms on every crossing — route around him
+PEWTERGYM_COOLTRAINER_M sits at (3,6) facing right (sight line x=4..8,
+engage distance 5), and his defeat flag is set ONLY by Brock's victory
+script (PewterGym.asm:79 .gymVictory) — his own end-battle text sets no
+event. Every crossing of row 6 on his sight line is a fresh two-Pokemon
+fight (Diglett L11 + Sandshrew L11); a one-Pokemon party cannot pay that
+tax in, out for the heal, and back in. The test instead routes through the
+x=1 side corridor: entrance -> (1,8) -> (1,4) -> (4,2), and the guide
+approach returns (4,2) -> (1,4) -> (1,8) -> (7,11). Every waypoint leg is a
+Manhattan-distance shortest path whose bounding box never includes row 6
+x=4..8 (all eight legs probed on map 0x36), so no battle can start on them
+regardless of BFS tie-breaks. Run 7: every gym leg arrived with battles=0
+and the lead faced Brock at full HP deterministically.
+
+### emu.StepFrames(n) never fires the onFrame hook — Talk-driven talks are invisible
+The reason the guide's line was missing from the tape in runs 1-6.
+`Emu.StepFrames` (emu/emu.go) batch-steps via `m.e.StepFrames(n)` and does
+NOT call onFrame; only single-frame `StepFrame` does. skill.Talk pages its
+whole conversation with `StepFrames(talkSettle)`, so a conversation Talk
+drives is invisible to every per-frame sampler — agent.Run's dialogue tape
+included. The journey test therefore drives its own talk: one StepFrame per
+loop iteration, Talk's own tap/40-frame-settle cadence, A-taps only while
+wFontLoaded != 0, done after 30 controllable frames. (A StepFrames that
+stepped through the hook — or a Talk with an onFrame-visible pacing — would
+fix this at the source; out of scope here.)
+
+### wFontLoaded IS set during PrintText dialogue on this ROM
+Measured: 1 from within one frame of the opening A press until the final
+close, so DecodeDialogue and DecodeTwoOptionMenu both see the guide's boxes
+(the yes/no menu decoded live, cursor on option 0; the next A tap confirms
+the default YES, which is the branch the script takes). Caveat: the vendored
+decompilation shows only DisplayTextIDInit setting BIT_FONT_LOADED
+(display_text_id_init.asm:34) — a decomp/ROM discrepancy worth resolving,
+but empirically the gate passes. Note for future trace work: the earlier
+"PrintText never sets wFontLoaded" reading was itself an artifact of the
+StepFrames blindness above — the trace had no samples inside the talk.
+
+### Text facts
+- The `#` control code ($54) expands to "POKé" at runtime (charmap $BA =
+  é), so "#MON champ!" decodes as "POKéMON champ!". Assertions match the
+  ASCII on either side of the glyph ("MON champ", "MON LIST").
+- The tape records every typing prefix as a settled line once two samples
+  agree (224 lines for this one conversation) — the same prefix-capture
+  semantics agent.Run's tape has; substring matching is the right assertion.
+
+### Brock fight: lost, and that is the game answering
+Run 7: lead L12, HP 36/36, no status, outcome=ResultLost, no badge. Both
+affordances were proved from RAM before the fight, so the test logs a
+one-line FINDING and passes (AGENTS.md: a game outcome is not a defect; the
+rDIV-seeded RNG makes this cycle-chain-dependent).
+
+### Verified
+`go build ./...`, `go vet ./skill`, `go test ./skill -short -count=1` green,
+`-run '^TestGymJourneyAffordances$'` PASS (58s), `-short` skips it. No
+zz_*_test.go left behind; no ROM/.gb/.sav/.state committed.
+
+### For the next task
+- If the agent's tape must capture NPC PrintText dialogue, fix the sampling
+  seam: make StepFrames step through onFrame (or give Talk an observable
+  pacing). Until then, anything asserted from a per-frame sampler about a
+  Talk-driven conversation is asserting on frames that were never sampled.
+- The decomp/ROM wFontLoaded discrepancy (only DisplayTextIDInit sets it in
+  the vendored source; the ROM sets it for PrintText boxes) should get its
+  own note before anyone "simplifies" DecodeDialogue's gate off it.
