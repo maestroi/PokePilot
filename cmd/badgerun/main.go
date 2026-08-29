@@ -64,6 +64,7 @@ type config struct {
 	outDir     string
 	injectFact bool
 	fact       string
+	goal       string // task statement rendered into the planner's system prompt
 }
 
 // parseConfig parses and validates the harness arguments. It is a pure
@@ -83,13 +84,17 @@ func parseConfig(args []string) (config, error) {
 		inject    = fs.Bool("inject-fact", false,
 			"DIAGNOSTIC ONLY, default off: append -fact to the system prompt. "+
 				"The injected fact is the thing being measured; leaving it on turns the benchmark into a walkthrough.")
-		fact = fs.String("fact", defaultFact, "the one sentence -inject-fact injects")
+		fact  = fs.String("fact", defaultFact, "the one sentence -inject-fact injects")
+		goal  = fs.String("goal", "Earn the Boulder Badge.",
+			"the task statement rendered into the planner's system prompt above everything else. "+
+				"A run parameter, not a constant: later slices need a different goal with a checkpoint. "+
+				"It must name the task and nothing else — no strategy, which is what -inject-fact is for.")
 	)
 	if err := fs.Parse(args); err != nil {
 		return config{}, err
 	}
 
-	cfg := config{romPath: *rom, n: *n, maxRounds: *maxRounds, maxFrames: *maxFrames, outDir: *outDir, injectFact: *inject, fact: *fact}
+	cfg := config{romPath: *rom, n: *n, maxRounds: *maxRounds, maxFrames: *maxFrames, outDir: *outDir, injectFact: *inject, fact: *fact, goal: *goal}
 	if cfg.romPath == "" {
 		return config{}, fmt.Errorf("badgerun: no ROM (-rom or POKEMON_RED_ROM)")
 	}
@@ -382,8 +387,8 @@ func main() {
 		}
 	}
 
-	fmt.Printf("badgerun: %d run(s), model %s @ %s, fact-injection %s\n",
-		len(jobs), plannerModel(), plannerURL(), injectionState(cfg))
+	fmt.Printf("badgerun: %d run(s), model %s @ %s, goal %q, fact-injection %s\n",
+		len(jobs), plannerModel(), plannerURL(), cfg.goal, injectionState(cfg))
 
 	var results []runResult
 	for i, j := range jobs {
@@ -409,6 +414,10 @@ func main() {
 // is "set those env vars to a larger model and re-run".
 func plannerFor(cfg config) *agent.LLMPlanner {
 	p := agent.NewLLMPlanner()
+	// The goal is the task statement: one sentence, no strategy. It is
+	// always set (the flag has a default) and stays separate from the
+	// -inject-fact diagnostic below.
+	p.Goal = cfg.goal
 	if cfg.injectFact {
 		// Ablation B, DIAGNOSTIC ONLY and default off. The fact being
 		// injected is the thing being measured; if this ever ships on by

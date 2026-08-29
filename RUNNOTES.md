@@ -63,3 +63,26 @@ viridian_pokecenter.v5.state.
 For the next task: set POKEPILOT_FIXTURE_DIR to a shared path (e.g.
 /tmp/pokepilot-fixtures) when running the suite — clean worktrees no longer
 rebuild post_starter/post_pokeballs from boot.
+
+## S7-2: Tell the planner what it is trying to do
+
+### What landed
+- `agent/llm.go`: `LLMPlanner.Goal` (task statement, explicitly NOT strategy).
+  New `systemPrompt()` method: with a Goal the prompt is
+  `Your goal: <goal>\n\n` + the old prompt; without one it is byte-identical
+  to `llmSystemPrompt` (+ ExtraSystem) — asserted in a test, not prose.
+- Exact goal sentence shipped: **`Earn the Boulder Badge.`** The solution is
+  STILL WITHHELD: no starter, no Pokemon, no type hint anywhere in the prompt
+  path (gate grep on agent/llm.go clean).
+- `cmd/badgerun`: `-goal` FLAG (not a constant), defaulting to
+  "Earn the Boulder Badge."; set on the planner in plannerFor; echoed in the
+  run banner. `-inject-fact` stays OFF by default and separate from the goal.
+- Tests: agent/llm_goal_test.go (internal pkg, byte-identity + goal rendering)
+  and two agent_test cases via httptest (goal in system prompt; goal does not
+  alter reply parsing). No live model anywhere.
+
+### For the next task
+- Every prior badgerun row was scored WITHOUT a goal; new rows carry one.
+  They are not comparable — say so when reading them side by side.
+- Empty-Goal behavior is byte-identical, so `-goal ""` reproduces the old
+  prompt exactly if an ablation needs it.

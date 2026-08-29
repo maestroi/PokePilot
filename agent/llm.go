@@ -33,6 +33,17 @@ type LLMPlanner struct {
 	// it so a scored run can show exactly what the model was told.
 	PromptLog io.Writer
 
+	// Goal is the task statement the run is trying to achieve — for
+	// example "Earn the Boulder Badge.". It is a GOAL, not a solution:
+	// it names the task and nothing else. It must never say which starter
+	// to take, which Pokemon to catch, or which type beats which — that is
+	// the answer the experiment measures whether the model derives on its
+	// own. When non-empty it is rendered into the system prompt above
+	// everything else; when empty the prompt is byte-identical to the one
+	// without a Goal, so prior measurements stay comparable. badgerun sets
+	// it from -goal; it is a run parameter, not a constant.
+	Goal string
+
 	// ExtraSystem is appended to the system prompt. Empty by default. It is
 	// the seam badgerun's -inject-fact diagnostic uses (one injected fact,
 	// default off): the fact being injected is the thing being measured, so
@@ -275,6 +286,19 @@ type chatResponse struct {
 	Choices []chatChoice `json:"choices"`
 }
 
+// systemPrompt renders the full system message. With a Goal it is a
+// single line above everything else — the task statement, and nothing
+// that looks like strategy. Without one the result is byte-identical to
+// the pre-Goal prompt (llmSystemPrompt + ExtraSystem), so every existing
+// caller and measurement is unchanged.
+func (p *LLMPlanner) systemPrompt() string {
+	s := llmSystemPrompt + p.ExtraSystem
+	if p.Goal != "" {
+		s = "Your goal: " + p.Goal + "\n\n" + s
+	}
+	return s
+}
+
 // ask performs the one POST to {BaseURL}/chat/completions and returns
 // choices[0].message.content. Every failure mode — transport error,
 // non-200 status, unparseable body, empty choices — is an error naming
@@ -288,7 +312,7 @@ func (p *LLMPlanner) ask(obs Observation, offered []Objective) (string, error) {
 		}
 		client = &http.Client{Timeout: timeout}
 	}
-	system := llmSystemPrompt + p.ExtraSystem
+	system := p.systemPrompt()
 	user := llmUserPrompt(obs, offered, p.recent)
 	if p.PromptLog != nil {
 		fmt.Fprintf(p.PromptLog, "=== prompt (model %s) ===\n[system]\n%s\n[user]\n%s\n", p.Model, system, user)

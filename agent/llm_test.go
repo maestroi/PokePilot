@@ -411,6 +411,43 @@ func TestLLMPlannerPromptCarriesMovesAndHistory(t *testing.T) {
 	}
 }
 
+// TestLLMPlannerGoalInSystemPrompt: with Goal set, the task statement
+// reaches the model as a line above everything else in the system prompt.
+func TestLLMPlannerGoalInSystemPrompt(t *testing.T) {
+	var body string
+	srv := startModelServer(t, `{"choices":[{"message":{"content":"1"}}]}`, &body)
+	p := llmPlanner(srv)
+	p.Goal = "Earn the Boulder Badge."
+
+	if _, err := p.Next(llmObs(), llmOffered()); err != nil {
+		t.Fatalf("Next: %v", err)
+	}
+	if !strings.Contains(body, `Your goal: Earn the Boulder Badge.`) {
+		t.Errorf("system prompt does not carry the goal\nbody: %s", body)
+	}
+}
+
+// TestLLMPlannerGoalDoesNotChangeParsing: a goal is not an argument. The
+// same reply and the same offered list must resolve to the same objective
+// with or without a Goal — the goal changes what the model is told, never
+// how its reply is read.
+func TestLLMPlannerGoalDoesNotChangeParsing(t *testing.T) {
+	for _, goal := range []string{"", "Earn the Boulder Badge."} {
+		srv := startModelServer(t, `{"choices":[{"message":{"content":"{\"choice\":3,\"level\":12}"}}]}`, nil)
+		p := llmPlanner(srv)
+		p.Goal = goal
+
+		got, err := p.Next(llmObs(), llmOffered())
+		if err != nil {
+			t.Fatalf("Next (goal %q): %v", goal, err)
+		}
+		want := agent.Objective{Kind: agent.KindTrain, Level: 12}
+		if got != want {
+			t.Fatalf("Next (goal %q) = %s, want %s", goal, got, want)
+		}
+	}
+}
+
 // TestLLMPlannerPromptCarriesHistory: the planner is otherwise a pure
 // function of the observation, so at temperature 0 an objective that
 // returns the player to a place they have been loops forever (measured:
