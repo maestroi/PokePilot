@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pokefarm</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Syne:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #14180f;
+    --panel: #1e2619;
+    --panel-2: #252e1f;
+    --bezel: #8b8355;
+    --bezel-dark: #5c5638;
+    --lcd-dark: #0f380f;
+    --lcd: #9bbc0f;
+    --red: #c62828;
+    --cream: #d4c89a;
+    --line: #3a4530;
+    --focus: #9bbc0f;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--ink); color: var(--cream); }
+  body {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 13px;
+    line-height: 1.45;
+    min-height: 100vh;
+  }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  .bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 16px 24px;
+    padding: 20px 24px 16px;
+    border-bottom: 1px solid var(--line);
+    background: var(--panel);
+  }
+  h1 {
+    font-family: Syne, sans-serif;
+    font-size: 1.75rem;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    margin: 0;
+    color: var(--lcd);
+  }
+  .counts { display: flex; gap: 20px; color: var(--bezel); }
+  .counts b { color: var(--cream); font-weight: 500; }
+  .queue-btn {
+    margin-left: auto;
+    background: var(--lcd);
+    color: var(--lcd-dark);
+    border: 0;
+    padding: 8px 14px;
+    font-family: Syne, sans-serif;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+  .queue-btn:hover { filter: brightness(1.08); }
+  .queue-btn[aria-expanded="true"] { background: var(--bezel); color: var(--ink); }
+  #banner {
+    background: var(--red);
+    color: #fff8e8;
+    padding: 10px 24px;
+  }
+  #banner[hidden] { display: none; }
+  #queue {
+    background: var(--panel-2);
+    padding: 16px 24px 20px;
+    border-bottom: 1px solid var(--line);
+  }
+  #queue[hidden] { display: none; }
+  #queue h2, .section-h {
+    font-family: Syne, sans-serif;
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin: 0 0 12px;
+    color: var(--lcd);
+  }
+  .fields {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 12px;
+    max-width: 960px;
+  }
+  label { display: flex; flex-direction: column; gap: 4px; color: var(--bezel); }
+  label[hidden], .scripted-only[hidden] { display: none !important; }
+  input, select {
+    background: var(--ink);
+    border: 1px solid var(--line);
+    padding: 8px 10px;
+    color: var(--cream);
+  }
+  .form-row { display: flex; align-items: center; gap: 16px; margin-top: 16px; }
+  .submit {
+    background: var(--lcd);
+    color: var(--lcd-dark);
+    border: 0;
+    padding: 8px 16px;
+    font-family: Syne, sans-serif;
+    font-weight: 700;
+  }
+  .submit:disabled, .queue-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  #form-error { color: #ffb4a8; }
+  main { padding: 20px 24px 48px; display: grid; gap: 32px; }
+  .stage {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+  @media (min-width: 960px) {
+    .stage { grid-template-columns: 1fr 280px; align-items: start; }
+    .stage:not(.has-detail) { grid-template-columns: 1fr; }
+  }
+  #live {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 16px;
+  }
+  .bezel {
+    background: var(--bezel);
+    padding: 12px 12px 14px;
+    border: 0;
+    text-align: left;
+    width: 100%;
+    box-shadow: 3px 6px 0 var(--ink);
+    color: var(--ink);
+    cursor: pointer;
+  }
+  .bezel.selected { box-shadow: 3px 6px 0 var(--lcd); }
+  .lcd {
+    background: var(--lcd-dark);
+    height: 144px;
+    display: grid;
+    place-items: center;
+    margin-bottom: 10px;
+    overflow: hidden;
+  }
+  .lcd img {
+    width: 160px;
+    height: 144px;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    display: block;
+  }
+  .lcd .idle { color: #306230; font-size: 11px; }
+  .meta { display: grid; gap: 2px; }
+  .rid { font-family: Syne, sans-serif; font-weight: 700; font-size: 15px; }
+  .chip {
+    display: inline-block;
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    padding: 1px 6px;
+    background: var(--ink);
+    color: var(--lcd);
+    margin-bottom: 4px;
+  }
+  .chip.running { background: var(--lcd-dark); color: var(--lcd); }
+  .chip.leased, .chip.queued { background: var(--bezel-dark); color: var(--cream); }
+  .chip.done { background: var(--ink); color: var(--bezel); }
+  .cancel {
+    margin-top: 8px;
+    background: var(--red);
+    color: #fff8e8;
+    border: 0;
+    padding: 4px 8px;
+    font-size: 11px;
+  }
+  .cancel:hover { filter: brightness(1.1); }
+  .empty { color: var(--bezel); padding: 8px 0; }
+  #detail {
+    background: var(--panel);
+    padding: 16px;
+    min-height: 160px;
+    border: 1px solid var(--line);
+  }
+  #detail[hidden] { display: none; }
+  #detail h2 { margin-top: 0; }
+  .trace {
+    white-space: pre-wrap;
+    color: var(--lcd);
+    margin: 8px 0 0;
+    max-height: 240px;
+    overflow: auto;
+  }
+  #workers { display: flex; flex-wrap: wrap; gap: 8px; }
+  .worker {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    padding: 8px 12px;
+  }
+  .worker b { color: var(--lcd); }
+  #history { display: grid; gap: 4px; }
+  .hist {
+    display: grid;
+    grid-template-columns: minmax(8rem, 1fr) auto auto auto;
+    gap: 8px 16px;
+    width: 100%;
+    text-align: left;
+    background: transparent;
+    border: 0;
+    border-bottom: 1px solid var(--line);
+    padding: 10px 4px;
+    color: var(--cream);
+  }
+  .hist:hover, .hist.selected { background: var(--panel); }
+  .reason { color: var(--bezel); }
+  .card-err { color: var(--red); margin-top: 6px; }
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; }
+  }
+</style>
+</head>
+<body>
+  <header class="bar">
+    <h1>pokefarm</h1>
+    <div class="counts" aria-live="polite">
+      <span><b id="n-running">0</b> running</span>
+      <span><b id="n-queued">0</b> queued</span>
+      <span><b id="n-idle">0</b> idle workers</span>
+    </div>
+    <button type="button" class="queue-btn" id="queue-toggle" aria-expanded="false" aria-controls="queue">Queue a run</button>
+  </header>
+  <div id="banner" hidden role="alert">wall unreachable</div>
+  <section id="queue" hidden>
+    <h2>Queue a run</h2>
+    <form id="spec-form">
+      <div class="fields">
+        <label>run id <input name="run_id" required autocomplete="off"></label>
+        <label>how
+          <select name="planner">
+            <option value="llm" selected>Play the game</option>
+            <option value="scripted">Walk to a place</option>
+          </select>
+        </label>
+        <label>starter
+          <select name="starter">
+            <option value="squirtle">Squirtle</option>
+            <option value="charmander">Charmander</option>
+            <option value="bulbasaur">Bulbasaur (loses the rival fight)</option>
+          </select>
+        </label>
+        <label class="scripted-only" hidden>walk to
+          <input name="dest" value="viridian pokemon center" autocomplete="off">
+        </label>
+        <label>seed <input name="seed" type="number" value="0"></label>
+        <label>fps <input name="fps" type="number" value="60"></label>
+        <label>max rounds <input name="max_rounds" type="number" value="32"></label>
+        <label>max frames <input name="max_frames" type="number" value="0"></label>
+      </div>
+      <div class="form-row">
+        <button type="submit" class="submit">Queue a run</button>
+        <span id="form-error" role="status"></span>
+      </div>
+    </form>
+  </section>
+  <main>
+    <div class="stage" id="stage">
+      <section>
+        <h2 class="section-h">Live</h2>
+        <div id="live"></div>
+      </section>
+      <aside id="detail" hidden>
+        <h2 class="section-h" id="detail-title"></h2>
+        <div class="lcd" id="detail-lcd"></div>
+        <div id="detail-body"></div>
+      </aside>
+    </div>
+    <section>
+      <h2 class="section-h">Workers</h2>
+      <div id="workers"></div>
+    </section>
+    <section>
+      <h2 class="section-h">History</h2>
+      <div id="history"></div>
+    </section>
+  </main>
+<script src="/ui.js"></script>
+</body>
+</html>
