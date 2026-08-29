@@ -774,3 +774,78 @@ state.EventGotPokedex) instead of writing a constant:
 - The lost-START-tap-after-battle behavior (wFontLoaded stuck 0 for the whole
   draw budget, menu opens 120 frames later) is a real ROM quirk measured this
   task; any future code that taps START once after a battle will hit it.
+
+## S8-6: nine destinations + does the router route Route 3 → Mt Moon → Route 4?
+
+Add nine place-table entries and measure whether the router can cross Route 3's
+north seam into Route 4 and then through Mt. Moon's ladders to Route 4 — the
+first destination chain to cross a multi-floor indoor dungeon. No verb, no
+objective Kind; the only test beyond the table check is the routing measurement.
+
+### The nine destinations (all probed: walkable + reachable)
+Added to `skill/goto.go`; every coordinate verified with TestProbe against the
+live ROM (tile walkable, and on a component that touches a seam/entrance so it
+is actually reachable, not just standable):
+
+    name                    map   tile      note
+    route 3                 0x0e  (59,1)    past every trainer; N edge -> Route 4
+    route 4                 0x0f  (10,10)   comp 2: cave entrance + PC + S seam
+    mt moon 1f              0x3b  (20,18)   open floor, reachable from (14,35)
+    mt moon b1f             0x3c  (14,16)   open floor below the ladder drop
+    mt moon b2f             0x3d  (20,18)   deepest floor, ladder landing area
+    mt moon pokemon center  0x44  (3,3)     interior room, warp 0 from Route 4 (11,5)
+    cerulean city           0x03  (5,18)    W seam (rows 12,13,18,19,21..35)
+    cerulean pokemon center 0x40  (3,3)     interior room, warp 0 from Cerulean (19,17)
+    cerulean gym            0x41  (4,3)     interior room, warp 0 from Cerulean (30,19)
+
+`TestS86NewDestinations` pins map id + tile per name; `TestPlaceDestinationsStandable`
+(already present) now also confirms each is walkable on its own collision grid.
+
+### The router measurement: it routes through the cave
+Pinned by `TestRouteThroughMtMoon` (deterministic, graph-level, no emulator).
+The descent **skips 1F** — Route 4 has a direct warp (24,5) to B1F, so the
+shortest path never touches the 1F floor:
+
+    down: 0x0e -north edge-> 0x0f  -warp(24,5)-> 0x3c  -ladder(17,11)-> 0x3d
+    up:   0x3d -ladder(25,9)-> 0x3c  -warp(27,3)-> 0x0f
+
+1F is connected separately: Route 4 warp (18,5) → 0x3b, and 0x3b ladders down
+to 0x3c. So the router answers "yes" to Route 3 → through Mt Moon → Route 4.
+
+### Route 4 is a 5-component map (why the B1F exit is a trap)
+Route 4's collision grid splits into five walkable components. Component 2
+holds the cave entrance (18,5), the PC (11,5), and the south seam to Route 3;
+component 0 is **sealed** (no edge, no warp-out) and contains the B1F exit
+landing (24,5) and a pocket at (60,8). The graph edge B1F warp (27,3) → Route 4
+therefore lands the walker in component 0, from which there is no walkable path
+back to component 2. This is why the descent uses the direct (24,5)→B1F warp
+down but the only clean return the router knows is B2F→B1F→(27,3)→Route 4 — a
+round trip that dead-ends in the sealed pocket. A full walk of the ascent is
+therefore not currently executable; the graph-level route (above) is the honest
+measurement and what the test pins.
+
+### FINDING (not on this task's surface): a collision-grid defect on Mt Moon 1F
+A full emulator WALK down to B2F fails deterministically on Mt Moon 1F: the
+intra-map BFS routes through grid cell (10,22)→(9,22), and the ROM blocks the
+step onto (9,22). Two independent runs failed at the exact same tile; the
+failure dump shows no sprite at (9,22), `wJoyIgnore` = 0, player controllable.
+So `world.Build` marks (9,22) walkable when the ROM treats it as a wall.
+
+Root cause is in `world/grid.go`'s Build: each 2×2 step's walkability is read
+from a single "bottom-left" sub-tile (`romData[tilesOff+(2*sy+1)*4+2*sx]`, a
+heuristic measured on Oak's Lab). On Mt Moon 1F that heuristic picks a
+walkable sub-tile for the step at grid (9,22) while another sub-tile of the
+same step is a wall, so the game refuses the step the walker plans. This is a
+localized grid defect (no prior test walked Mt Moon 1F, so it never surfaced),
+not a routing failure — the router's route is correct. Tracked separately; do
+not adopt here.
+
+### For the next task
+- The nine destinations are in the place table and probed; any objective or
+  journey can now name them.
+- A full B2F walk (and any Mt Moon 1F traversal) needs the `world.Build`
+  single-sub-tile collision heuristic fixed for mixed-collision steps — that is
+  the follow-up this task hands back.
+- Route 4's sealed component 0 means "exit the cave and re-enter" is not a
+  walkable round trip; plan Mt Moon excursions as one-way descents or fix the
+  grid so the B1F exit lands on a live component.

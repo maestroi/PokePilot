@@ -252,6 +252,63 @@ var places = map[string]Destination{
 	// (17,43) is open floor in the forest's south. (16,43) is occupied by a
 	// standing NPC, which the player can never walk onto.
 	"viridian forest": {Map: 0x33, X: 17, Y: 43},
+	// 0x0E is Route 3, between Pewter City (west edge) and Route 4 (north
+	// edge). (59,1) is the far side past every trainer (they stand at
+	// x<=33). Measured 2026-08-30: PROBE_MAP=0x0e PROBE_AT=0,9 PROBE_TO=59,1
+	// reached it in 83 steps from the west entry; walkable, no object home
+	// tile nearby. The north seam to Route 4 is x=57..63.
+	"route 3": {Map: 0x0E, X: 59, Y: 1},
+	// 0x0F is Route 4, between Mt. Moon (west) and Cerulean City (east).
+	// (10,10) measured 2026-08-30: walkable, no object home tile, reached
+	// in 13 steps from BOTH the Route 3 seam landing band (PROBE_AT=8,17)
+	// and the cave exit (18,5). NOTE: this ROM's Route 4 is fragmented into
+	// five disconnected walkable components; (10,10) is in the one that
+	// holds the seam and the cave entrance. See RUNNOTES S8-6 before routing
+	// anything else on this map.
+	"route 4": {Map: 0x0F, X: 10, Y: 10},
+	// 0x3B is Mt. Moon 1F. Route 4's warp (18,5) targets this map's warp 0,
+	// which lands at (14,35); the exit warps (14,35)/(15,35) go back
+	// outdoors (DestMap 0xFF resolves to Route 4). (20,18) measured
+	// 2026-08-30: PROBE_MAP=0x3b PROBE_AT=14,35 PROBE_TO=20,18 reached it in
+	// 23 steps; walkable, no object home tile nearby. Ladders down to B1F
+	// at (5,5), (17,11), (25,15).
+	"mt moon 1f": {Map: 0x3B, X: 20, Y: 18},
+	// 0x3C is Mt. Moon B1F, reached from 1F's ladders (landing tiles (5,5),
+	// (25,9), (25,15)). (14,16) measured 2026-08-30: PROBE_MAP=0x3c
+	// PROBE_AT=5,5 PROBE_TO=14,16 reached it in 20 steps; walkable, no
+	// object home tile nearby. Ladders down to B2F at (17,11), (21,17),
+	// (13,27), (23,3). NOTE: this map's own exit warp (27,3) lands at Route
+	// 4's (24,5), which sits in a sealed pocket of Route 4 that touches no
+	// map edge — see RUNNOTES S8-6.
+	"mt moon b1f": {Map: 0x3C, X: 14, Y: 16},
+	// 0x3D is Mt. Moon B2F, reached from B1F's ladders (landing tiles
+	// (25,9), (21,17), (15,27), (5,7)). (20,18) measured 2026-08-30:
+	// PROBE_MAP=0x3d PROBE_AT=25,9 PROBE_TO=20,18 reached it in 14 steps;
+	// walkable, no object home tile nearby.
+	"mt moon b2f": {Map: 0x3D, X: 20, Y: 18},
+	// 0x44 is the Mt. Moon Pokemon Center, reached from Route 4's warp
+	// (11,5) -> warp 0 at (3,7). Same layout as the other Centers: the
+	// nurse stands at (3,1) behind the counter and (3,3) is the floor tile
+	// in front of it. Measured 2026-08-30: PROBE_MAP=0x44 PROBE_AT=3,7
+	// PROBE_TO=3,3 reached it in 4 steps; walkable, no object home tile.
+	"mt moon pokemon center": {Map: 0x44, X: 3, Y: 3},
+	// 0x03 is Cerulean City, reached from Route 4's east edge. (5,18)
+	// measured 2026-08-30: walkable, no object home tile, reached in 5
+	// steps from the west seam landing (0,18) (PROBE_TO=5,18).
+	"cerulean city": {Map: 0x03, X: 5, Y: 18},
+	// 0x40 is the Cerulean Pokemon Center, reached from Cerulean City's
+	// warp (19,17) -> warp 0 at (3,7). Same counter layout as the other
+	// Centers: nurse at (3,1), (3,3) in front of it. Measured 2026-08-30:
+	// PROBE_MAP=0x40 PROBE_AT=3,7 PROBE_TO=3,3 reached it in 4 steps;
+	// walkable, no object home tile.
+	"cerulean pokemon center": {Map: 0x40, X: 3, Y: 3},
+	// 0x41 is the Cerulean Gym, reached from Cerulean City's warp (30,19)
+	// -> warp 0 at (4,13). The gym leader stands at (4,2) — one row lower
+	// than Brock's (4,1) — so the stand-beside tile is (4,3), directly
+	// below him. Measured 2026-08-30: PROBE_MAP=0x41 PROBE_AT=4,13
+	// PROBE_TO=4,3 reached it in 16 steps; walkable, and (4,2) is the
+	// leader's home tile so the destination is one row below it.
+	"cerulean gym": {Map: 0x41, X: 4, Y: 3},
 }
 
 // Place maps a friendly name to a Destination.

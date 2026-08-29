@@ -111,3 +111,138 @@ func TestPlaceDestinationsStandable(t *testing.T) {
 		})
 	}
 }
+
+// TestS86NewDestinations asserts the S8-6 additions to the place table: every
+// new name resolves through Place, appears in PlaceNames(), and carries the
+// map id derived from constants/map_constants.asm (CERULEAN_CITY $03,
+// ROUTE_3 $0E, ROUTE_4 $0F, MT_MOON_1F $3B, MT_MOON_B1F $3C, MT_MOON_B2F $3D,
+// CERULEAN_POKECENTER $40, CERULEAN_GYM $41, MT_MOON_POKECENTER $44).
+// Standability and object-home clearance are covered by
+// TestPlaceDestinationsStandable, which iterates PlaceNames() and therefore
+// picks these up automatically; the probe evidence for every coordinate is in
+// RUNNOTES S8-6.
+func TestS86NewDestinations(t *testing.T) {
+	want := map[string]uint8{
+		"route 3":                 0x0E,
+		"route 4":                 0x0F,
+		"cerulean city":           0x03,
+		"mt moon 1f":              0x3B,
+		"mt moon b1f":             0x3C,
+		"mt moon b2f":             0x3D,
+		"mt moon pokemon center":  0x44,
+		"cerulean pokemon center": 0x40,
+		"cerulean gym":            0x41,
+	}
+	listed := map[string]bool{}
+	for _, n := range skill.PlaceNames() {
+		listed[n] = true
+	}
+	for name, id := range want {
+		if !listed[name] {
+			t.Errorf("PlaceNames() missing %q", name)
+			continue
+		}
+		d, ok := skill.Place(name)
+		if !ok {
+			t.Errorf("Place(%q): not found", name)
+			continue
+		}
+		if d.Map != id {
+			t.Errorf("Place(%q).Map = %#04x, want %#04x", name, d.Map, id)
+		}
+	}
+}
+
+// TestRouteThroughMtMoon pins the S8-6 measurement at the router level: the
+// map graph connects Route 3 to Route 4 THROUGH Mt. Moon's cave floors — the
+// first destination chain to cross a multi-floor indoor dungeon. It answers
+// the slice's question, "can the router route Route 3 -> Route 4 through the
+// cave?", deterministically, without an emulator.
+//
+// Routes measured with TestProbe (RUNNOTES S8-6). The descent skips 1F:
+// Route 4 has a direct warp (24,5) to B1F, so the shortest path is
+//
+//	Route 3 (0x0E) -north edge-> Route 4 (0x0F)
+//	Route 4 (0x0F) -warp(24,5)-> B1F (0x3C)
+//	B1F (0x3C)     -ladder warp(17,11)-> B2F (0x3D)
+//
+// The ascent is the reverse via B1F's own exit warp:
+//
+//	B2F (0x3D) -ladder warp(25,9)-> B1F (0x3C)
+//	B1F (0x3C) -warp(27,3)-> Route 4 (0x0F)
+//
+// The 1F floor is connected separately: Route 4's cave-entrance warp (18,5)
+// reaches it and it ladders down to B1F.
+//
+// NOTE (RUNNOTES S8-6): a full emulator WALK of the descent currently fails
+// on Mt. Moon 1F — world.Build mislabels grid cell (9,22) as walkable (the
+// ROM blocks the step; no sprite is there), so the intra-map BFS dead-ends.
+// That is a localized collision-grid defect, not a routing failure, tracked
+// separately; this test pins the routing, which is correct.
+func TestRouteThroughMtMoon(t *testing.T) {
+	romPath := os.Getenv("POKEMON_RED_ROM")
+	if romPath == "" {
+		t.Skip("POKEMON_RED_ROM not set")
+	}
+	romData, err := os.ReadFile(romPath)
+	if err != nil {
+		t.Fatalf("read ROM: %v", err)
+	}
+	g, err := world.BuildGraph(romData)
+	if err != nil {
+		t.Fatalf("BuildGraph: %v", err)
+	}
+
+	// Descent: Route 3 reaches the deepest cave floor only by going through
+	// the cave; the route must pass through Route 4, B1F, then B2F.
+	down, err := world.FindRoute(g, 0x0E, 0x3D)
+	if err != nil {
+		t.Fatalf("FindRoute(Route 3 -> B2F): %v", err)
+	}
+	if got := routeMaps(0x0E, down); !containsSubseq(got, []uint8{0x0F, 0x3C, 0x3D}) {
+		t.Fatalf("descent Route 3 -> B2F = %v; expected it to pass through Route 4, B1F, B2F", got)
+	}
+
+	// Ascent: the deepest floor routes back out to Route 4 through B1F.
+	up, err := world.FindRoute(g, 0x3D, 0x0F)
+	if err != nil {
+		t.Fatalf("FindRoute(B2F -> Route 4): %v", err)
+	}
+	if got := routeMaps(0x3D, up); !containsSubseq(got, []uint8{0x3C, 0x0F}) {
+		t.Fatalf("ascent B2F -> Route 4 = %v; expected it to pass through B1F", got)
+	}
+
+	// The 1F floor is connected: Route 4's cave-entrance warp reaches it and
+	// it ladders down to B1F.
+	if _, err := world.FindRoute(g, 0x0F, 0x3B); err != nil {
+		t.Fatalf("FindRoute(Route 4 -> Mt Moon 1F): %v", err)
+	}
+	if _, err := world.FindRoute(g, 0x3B, 0x3C); err != nil {
+		t.Fatalf("FindRoute(Mt Moon 1F -> B1F): %v", err)
+	}
+
+	t.Logf("router routes Route 3 -> through Mt Moon -> Route 4: down %v, up %v",
+		routeMaps(0x0E, down), routeMaps(0x3D, up))
+}
+
+// routeMaps expands a FindRoute edge list into the sequence of map ids it
+// visits, starting at start.
+func routeMaps(start uint8, edges []world.Edge) []uint8 {
+	maps := []uint8{start}
+	for _, e := range edges {
+		maps = append(maps, e.To)
+	}
+	return maps
+}
+
+// containsSubseq reports whether sub appears in a as an ordered subsequence
+// (a may visit extra maps between the expected ones).
+func containsSubseq(a, sub []uint8) bool {
+	i := 0
+	for _, v := range a {
+		if i < len(sub) && v == sub[i] {
+			i++
+		}
+	}
+	return i == len(sub)
+}
