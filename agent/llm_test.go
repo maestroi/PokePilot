@@ -628,3 +628,68 @@ func TestLLMPlannerPromptCarriesHistory(t *testing.T) {
 		}
 	}
 }
+
+// TestLLMPlannerRejectionCarriedIntoReprompt is the feedback half of S7-4:
+// a reply whose argument does not apply to the chosen objective is
+// rejected, and the re-ask (NextFeedback) must carry the rejection text
+// into the next prompt. A retry that re-asks the identical question
+// teaches the model nothing and just burns the budget three times as fast;
+// quoting the rejection back is what makes the retry a correction instead
+// of a repeat. The strict rejection itself must survive: the first reply
+// is still an error, never coerced into the bare choice.
+func TestLLMPlannerRejectionCarriedIntoReprompt(t *testing.T) {
+	var bodies []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read request body: %v", err)
+		}
+		bodies = append(bodies, string(b))
+		w.Header().Set("Content-Type", "application/json")
+		switch len(bodies) {
+		case 1:
+			// level does not apply to the first offered objective (go to).
+			fmt.Fprint(w, `{"model":"qwen3.8-27b","choices":[{"message":{"role":"assistant","content":"{\"choice\":1,\"level\":12}"}, "finish_reason":"stop"}]}`)
+		default:
+			fmt.Fprint(w, `{"model":"qwen3.8-27b","choices":[{"message":{"role":"assistant","content":"{\"choice\":1}"}, "finish_reason":"stop"}]}`)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	p := llmPlanner(srv)
+	offered := llmOffered()
+
+	// First ask: the superfluous argument is rejected, not coerced away.
+	_, err := p.Next(llmObs(), offered)
+	if err == nil {
+		t.Fatalf("Next accepted {\"choice\":1,\"level\":12} for a go-to objective; the strict rejection must survive")
+	}
+	const want = "level argument 12 does not apply to go to pallet town"
+	if !strings.Contains(err.Error(), want) {
+		t.Fatalf("Err = %v, want the rejection naming %q", err, want)
+	}
+
+	// Re-ask with the rejection quoted back: the model corrects it.
+	got, err := p.NextFeedback(llmObs(), offered, err.Error())
+	if err != nil {
+		t.Fatalf("NextFeedback: %v", err)
+	}
+	if got.Kind != agent.KindGoTo || got.Place != "pallet town" {
+		t.Fatalf("NextFeedback = %s, want the corrected bare choice", got)
+	}
+
+	// The rejection text is in the SECOND prompt and only there.
+	if len(bodies) != 2 {
+		t.Fatalf("%d requests, want 2 (initial + one re-ask)", len(bodies))
+	}
+	if strings.Contains(bodies[0], "rejected") {
+		t.Errorf("first prompt already carries rejection feedback:\n%s", bodies[0])
+	}
+	for _, want := range []string{"was rejected", want} {
+		if !strings.Contains(bodies[1], want) {
+			t.Errorf("second prompt does not contain %q\nbody: %s", want, bodies[1])
+		}
+	}
+	if p.Health.Rejected != 1 {
+		t.Errorf("Health.Rejected = %d, want 1 (the first reply was rejected)", p.Health.Rejected)
+	}
+}

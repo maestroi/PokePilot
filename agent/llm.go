@@ -16,8 +16,9 @@ import (
 
 // Typed rejection errors. A reply that fails envelope verification (wrong
 // model, non-stop finish) or content parsing is REJECTED: an error, never a
-// guess. S7-4 makes these retryable; until then they are clean stops rather
-// than silent wrong answers.
+// guess. Run re-asks the same round with the rejection quoted back
+// (NextFeedback), up to MaxReplyRetries asks; exhausting them is a clean
+// stop rather than a silent wrong answer.
 var (
 	ErrModelMismatch = errors.New("agent: llm planner: model mismatch")
 	ErrNotFinished   = errors.New("agent: llm planner: reply did not finish cleanly")
@@ -126,8 +127,19 @@ func NewLLMPlanner() *LLMPlanner {
 // returns the offered objective the model picked. It never guesses: a
 // reply that does not resolve to one of the offered objectives is an
 // error, so the run loop can stop on it instead of acting on a wrong
-// answer.
-//
+// answer. It is NextFeedback with no rejection feedback.
+func (p *LLMPlanner) Next(obs Observation, offered []Objective) (Objective, error) {
+	return p.NextFeedback(obs, offered, "")
+}
+
+// NextFeedback is Next for a round that was already asked once: feedback
+// carries the text of the rejection the previous reply drew, and it is
+// appended to the user prompt verbatim so the model sees exactly what it
+// did wrong ("level argument 12 does not apply to go to route 1") and can
+// correct it. A retry that re-asks the identical question teaches nothing
+// and just burns the budget faster; the feedback is the whole point. The
+// observation itself is unchanged — a malformed reply says nothing about
+// the world, only about the shape of the answer.
 // The reply is asked for as a JSON object ({"choice": N, plus the
 // arguments of the chosen objective when it has any) via
 // response_format/json_schema, so a well-behaved server cannot emit a
@@ -140,13 +152,13 @@ func NewLLMPlanner() *LLMPlanner {
 // substantially just the number) falls back to the text path. The schema
 // is an optimisation, not the safety mechanism — WithArgs and Validate
 // check every value against its stated range either way.
-func (p *LLMPlanner) Next(obs Observation, offered []Objective) (Objective, error) {
+func (p *LLMPlanner) NextFeedback(obs Observation, offered []Objective, feedback string) (Objective, error) {
 	if len(offered) == 0 {
 		return Objective{}, fmt.Errorf("agent: llm planner: nothing was offered")
 	}
 	picked := "" // filled in below; the deferred log line reports it
 	start := time.Now()
-	res, err := p.ask(obs, offered)
+	res, err := p.ask(obs, offered, feedback)
 	took := time.Since(start)
 	if err != nil {
 		return Objective{}, err
@@ -430,8 +442,10 @@ type chatResult struct {
 // first choice's content plus the envelope model and finish_reason. Every
 // failure mode — transport error, timeout, non-200 status, unparseable
 // body, empty choices — is an error naming what happened, and each one
-// increments Health.Transport.
-func (p *LLMPlanner) ask(obs Observation, offered []Objective) (chatResult, error) {
+// increments Health.Transport. When feedback is non-empty (a re-ask after
+// a rejected reply) it is appended to the user prompt as rejection
+// feedback; see NextFeedback.
+func (p *LLMPlanner) ask(obs Observation, offered []Objective, feedback string) (chatResult, error) {
 	client := p.Client
 	if client == nil {
 		timeout := p.Timeout
@@ -442,6 +456,10 @@ func (p *LLMPlanner) ask(obs Observation, offered []Objective) (chatResult, erro
 	}
 	system := p.systemPrompt()
 	user := llmUserPrompt(obs, offered, p.recent)
+	if feedback != "" {
+		user += "\n\nYour previous reply was rejected: " + feedback +
+			"\nReply again with ONLY a JSON object naming one of the offered objectives and only arguments that apply to it."
+	}
 	if p.PromptLog != nil {
 		fmt.Fprintf(p.PromptLog, "=== prompt (model %s) ===\n[system]\n%s\n[user]\n%s\n", p.Model, system, user)
 	}

@@ -124,3 +124,32 @@ Health bucket counts. Full `-short` suite green.
   `planner.Health.Rejected`.
 - badgerun's table has no health columns yet — add them there (runResult +
   formatTable), reading `planner.Health` after each run.
+
+## S7-4: a malformed reply is information, not the end of the run
+
+- `agent/run.go`: new `FeedbackPlanner` interface (`NextFeedback(obs, offered, feedback)`);
+  `Run` now routes planning through `planWithRetries`, which re-asks the SAME
+  round with the rejection text quoted back, up to `MaxReplyRetries = 3` total
+  asks (initial + 2 re-asks). Exhausting them is StopError as before; a plain
+  Planner (ScriptedPlanner) that errors keeps the old stop-on-first behavior.
+  New `Result.ReplyRetries` counts re-asks across the run, and each rejection
+  logs a "round N: reply rejected (ask X of 3)" line.
+- `agent/llm.go`: `LLMPlanner.Next` is now `NextFeedback(..., "")`; `ask`
+  appends the rejection verbatim to the user prompt ("Your previous reply was
+  rejected: ..."). Strictness untouched: planner.go still rejects every
+  non-applying argument (gate grep "does not apply" = 5 hits).
+- Tests: run_test.go — recovers after one bad reply (StopDone, ReplyRetries=1,
+  feedback carries the text) and exhausts at exactly MaxReplyRetries asks
+  (StopError, ReplyRetries=2). llm_test.go httptest — second prompt contains
+  the rejection text; first does not; `{"choice":1,"level":12}` for a go-to is
+  still an error, never coerced. No live model anywhere.
+- Verified: unit-level planWithRetries via throwaway in-package test (deleted);
+  fixture-based run tests SKIP here (no POKEMON_RED_ROM in worktree) — same as
+  all existing Run tests. `go build ./...`, `go vet ./...`, `go test ./agent/`
+  green; gofmt clean.
+
+### For the next task
+- badgerun's table still has no health/retry columns: add them by reading
+  `planner.Health` and `res.ReplyRetries` after each run (runResult +
+  formatTable in cmd/badgerun). That is the diagnostic that separates a loop
+  problem from a capacity problem.
