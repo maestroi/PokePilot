@@ -849,3 +849,80 @@ not adopt here.
 - Route 4's sealed component 0 means "exit the cave and re-enter" is not a
   walkable round trip; plan Mt Moon excursions as one-way descents or fix the
   grid so the B1F exit lands on a live component.
+
+## S8-7: fight/flee policy in Travel + the Talk seam (TestCeruleanJourney)
+
+### What landed
+
+**`skill/travel.go` — an opt-in fight/flee policy.** `travel()` now takes a
+`resolveBattle` strategy; `Travel` keeps its old behaviour (a new `fightOnly`
+resolver produces byte-identical messages and counter semantics, so every
+existing measurement is unchanged), and a new exported `TravelFlee` passes
+`fleeThenFight`: it RUNs out of wild battles and fights trainers (which refuse
+RUN — S8-4). `TravelResult` gained `Flees int`, and the engagement bound now
+counts flees + fights, so "bounded" holds for both policies. The policy is the
+`fleeThenFight` resolver (flee first, fight only when `Flee` returns
+`ErrTrainerBattle`); its two halves are proven by `TestFleeWildBattle` (a wild
+is fled) and `TestFleeTrainerBattle` (a trainer refuses RUN), and end-to-end a
+post_starter → Viridian leg fled its one wild (`Flees=1 Battles=0`) instead of
+fighting it, while `TestCeruleanJourney` flees 9 wilds / fights 0 across the
+forest legs.
+
+**The Talk seam.** An NPC's line reaches the per-frame sampler through
+`skill.Talk` with an `OnFrame` hook installed — proven in isolation on a Route
+3 state (the Super Nerd's "That tunnel from CERULEAN…" was captured by the
+tape), and wired into `TestCeruleanJourney` as a HARD assert for whenever the
+journey actually reaches Route 3. The NPC is identified by `Kind == "person"`
+(the sole plain NPC on Route 3, at (57,11)); coordinates come from
+`agent.MapObjects`, never a literal.
+
+**`TestCeruleanJourney`** (skill/journey_test.go) reuses the S7-8 scaffold. It
+travels with `TravelFlee`, trains the lead to L12, beats Brock if it can get
+there, and — if Route 3 is reached — proves the seam. It does NOT hard-fail on
+a leg blocked by a pre-existing issue: it logs where it stopped and hands the
+blocker back (see below). On this build it flees 9 wilds, fights 0, trains to
+L12 in 19 battles, then stops at the forest north gate on the Youngster
+stalemate and reports the Cerulean finding. It passes by documenting reality,
+not by forcing a pass.
+
+### FINDING (pre-existing, handed back): the S8-6 grid defect is broader than Mt Moon
+The `world.Build` single-sub-tile collision heuristic (S8-6 found it on Mt
+Moon 1F) fragments **more** maps, and it is what actually blocks this journey:
+
+- **Route 4** — already known: the Route 3 → Route 4 seam lands in a 159-tile
+  west component whose max x is 19, so it cannot reach Cerulean's east exit
+  (x=89). Cerulean is therefore unreachable via Travel.
+- **Route 2 (0x0d)** and the **Viridian Forest (0x33)** — measured the same
+  way: `PROBE_AT` tiles that are individually walkable report "no reachable
+  walkable tile on the … edge" / "no path" between interior points. So a
+  Viridian → Pewter leg that should go straight up Route 2 instead detours
+  through the forest, and the forest's own north-south crossing is not one
+  connected component.
+
+Fixing `world.Build` for mixed-collision steps (the S8-6 follow-up) is what
+unblocks all of these at once; it is not this slice's job.
+
+### FINDING (game answering, not a defect): the (2,18) Youngster stalemate
+The post_errand lead (species 177) cannot beat the Viridian Forest (2,18)
+Youngster's mon (species 112). It looped to `Battle`'s 60000-frame cap in two
+independent runs — once with its moves PP-exhausted and once with full PP — so
+it is a genuine type-ineffective stalemate, not move exhaustion. Any forest
+path that crosses that trainer (and, given the fragmentation above, every
+route to Pewter does) dead-ends there. This is the ROM answering, not a bug in
+this slice; a different lead or a PP/type-aware battle policy would clear it,
+but neither is on this task's surface.
+
+### Confirmed gate: Pewter's east exit needs Brock
+`PROBE_BLOCK` with the four "take on Brock!" tiles (35,17)/(36,17)/(37,18)/(37,19)
+occupied shows no path to Pewter's east edge until `EVENT_BEAT_BROCK` is set.
+So beating Brock is a real prerequisite for leaving Pewter east toward Route 3
+— the journey cannot shortcut it.
+
+### For the next task
+- Fix `world.Build`'s single-sub-tile heuristic for mixed-collision steps; that
+  alone makes Route 2, Route 4 and the forest one connected component each and
+  unblocks Cerulean via Travel.
+- If the journey is to clear the forest, it needs a lead (or battle policy) that
+  can beat species 112 — the post_errand species-177 lead stalemates it by type.
+- The flee policy and the Talk-seam proof are done and reusable; a future
+  Cerulean milestone only needs the grid fix to arrive.

@@ -20,9 +20,55 @@ type Replan struct {
 // TravelResult reports what happened on the way.
 type TravelResult struct {
 	Battles    int      // wild encounters fought
+	Flees      int      // wild encounters fled (S8-7's fight/flee policy)
 	Dialogues  int      // text boxes recovered on the way
 	BlackedOut bool     // the journey ended in a blackout (a lost battle, or the last mon fainted out of poison)
-	Replans    []Replan // one entry per battle, in order fought
+	Replans    []Replan // one entry per engagement, in order resolved
+}
+
+// battleResolution is the outcome of resolving one interrupting battle under
+// the journey's policy: either it was fought to a BattleResult, or it was a
+// wild encounter that was fled (fled true, outcome empty). A lost fight sets
+// outcome to state.ResultLost; a flee can never lose.
+type battleResolution struct {
+	outcome state.BattleResult
+	fled    bool
+}
+
+// resolveBattle is the seam between Travel's walk loop and the journey's
+// fight/flee policy. It is called once per interrupting battle, with the
+// emulator already in that battle, and must leave the player back in the
+// overworld before returning.
+type resolveBattle func() (battleResolution, error)
+
+// fightOnly resolves every interrupting battle by fighting it. This is the
+// policy Travel has always used; a trainer battle is fought exactly as a wild
+// one, because there is nothing else to do — you cannot flee a trainer.
+func fightOnly(m *emu.Emu, policy MovePolicy) resolveBattle {
+	return func() (battleResolution, error) {
+		outcome, err := Battle(m, policy)
+		return battleResolution{outcome: outcome}, err
+	}
+}
+
+// fleeThenFight resolves an interrupting battle by fleeing it first and only
+// falling back to a fight when the game refuses the flee — which it does for
+// trainer battles (Flee returns ErrTrainerBattle). This is S8-7's policy:
+// wild encounters are fled (S8-4 measured they succeed on the first attempt
+// in this ROM, and fleeing skips the damage and the level-up math), while
+// trainer battles are fought because they cannot be fled. fleeAttempts bounds
+// one battle's flee retries.
+func fleeThenFight(m *emu.Emu, policy MovePolicy, fleeAttempts int) resolveBattle {
+	return func() (battleResolution, error) {
+		if err := Flee(m, fleeAttempts); err != nil {
+			if errors.Is(err, ErrTrainerBattle) {
+				outcome, berr := Battle(m, policy)
+				return battleResolution{outcome: outcome}, berr
+			}
+			return battleResolution{}, fmt.Errorf("skill: Travel: flee: %w", err)
+		}
+		return battleResolution{fled: true}, nil
+	}
 }
 
 // ErrBlackedOut reports that the journey ended in a blackout: a battle was
@@ -103,6 +149,25 @@ func Travel(m *emu.Emu, romData []byte, dest Destination, policy MovePolicy, max
 		func() error { return GoTo(m, romData, dest) },
 		func() DialogueRecoveryResult { return RecoverDialogue(m, dialogueRecoveryBudget) },
 		func() bool { return m.Peek8(sym.StatusFlags4)&blackoutBit != 0 },
+		fightOnly(m, policy),
+	)
+}
+
+// TravelFlee is Travel with S8-7's fight/flee policy: wild encounters are
+// fled instead of fought (skipping the damage and the level-up math), while
+// trainer battles are fought because they cannot be fled. It returns the same
+// TravelResult as Travel, with Flees counting the fled wilds and Battles the
+// fought trainers (and any wild a flee refused). maxBattles bounds total
+// engagements (flees and fights alike), exactly as it bounds fights in
+// Travel. A lost trainer battle blackouts exactly as in Travel: the error is
+// ErrBlackedOut, the party is fully healed at a center, and re-planning from
+// the respawn spot is the caller's decision.
+func TravelFlee(m *emu.Emu, romData []byte, dest Destination, policy MovePolicy, maxBattles int) (TravelResult, error) {
+	return travel(m, policy, maxBattles,
+		func() error { return GoTo(m, romData, dest) },
+		func() DialogueRecoveryResult { return RecoverDialogue(m, dialogueRecoveryBudget) },
+		func() bool { return m.Peek8(sym.StatusFlags4)&blackoutBit != 0 },
+		fleeThenFight(m, policy, 5),
 	)
 }
 
@@ -110,7 +175,7 @@ func Travel(m *emu.Emu, romData []byte, dest Destination, policy MovePolicy, max
 // again. goTo, recoverBox and blackout are the resolvers; Travel wires them
 // to GoTo, RecoverDialogue and the wStatusFlags4 blackout bit, and the
 // tests drive the loop with fakes instead of an emulator.
-func travel(m *emu.Emu, policy MovePolicy, maxBattles int, goTo func() error, recoverBox func() DialogueRecoveryResult, blackout func() bool) (TravelResult, error) {
+func travel(m *emu.Emu, policy MovePolicy, maxBattles int, goTo func() error, recoverBox func() DialogueRecoveryResult, blackout func() bool, resolveBattle resolveBattle) (TravelResult, error) {
 	var res TravelResult
 	for {
 		err := goTo()
@@ -119,17 +184,24 @@ func travel(m *emu.Emu, policy MovePolicy, maxBattles int, goTo func() error, re
 		}
 		switch {
 		case errors.Is(err, ErrBattle):
-			if res.Battles >= maxBattles {
-				return res, fmt.Errorf("skill: Travel: still interrupted by a wild battle after %d battles (maxBattles): %v",
+			// The bound is on engagements (fights and flees alike): it caps how
+			// long the walk may be interrupted, whatever the policy does with each
+			// encounter.
+			if res.Battles+res.Flees >= maxBattles {
+				return res, fmt.Errorf("skill: Travel: still interrupted after %d engagement(s) (maxBattles): %v",
 					maxBattles, err)
 			}
-			res.Battles++
 			pre := currentWorld(m)
-			outcome, berr := Battle(m, policy)
+			r, berr := resolveBattle()
 			if berr != nil {
-				return res, fmt.Errorf("skill: Travel: battle %d: %w", res.Battles, berr)
+				return res, fmt.Errorf("skill: Travel: battle %d: %w", res.Battles+res.Flees+1, berr)
 			}
-			lost := outcome == state.ResultLost
+			if r.fled {
+				res.Flees++
+			} else {
+				res.Battles++
+			}
+			lost := r.outcome == state.ResultLost
 			res.Replans = append(res.Replans, settleWorld(m, pre, lost))
 			if lost {
 				// A blackout ends the journey. Losing was once a silent
