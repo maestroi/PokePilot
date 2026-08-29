@@ -31,6 +31,7 @@ make farm-down
 ```
 
 `--resolve-image never` uses the image `make farm-image` loaded locally.
-A multi-node Swarm cannot see that image store: publish `FARM_IMAGE` to a
-registry you control and point the stack at that reference. Keep registry
-names, Traefik hosts, and node bind-mounts out of git.
+A multi-node Swarm cannot see that image store: CI on `main` publishes a
+private GHCR image (`.github/workflows/publish-farm.yml`). Rollout is a
+timer on the manager (`deploy/pull-latest.sh`) that pins services to the
+new digest. Keep Traefik hosts, node bind-mounts, and tokens out of git.
