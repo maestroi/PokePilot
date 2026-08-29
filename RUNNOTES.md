@@ -341,3 +341,38 @@ zz_*_test.go left behind; no ROM/.gb/.sav/.state committed.
 - The decomp/ROM wFontLoaded discrepancy (only DisplayTextIDInit sets it in
   the vendored source; the ROM sets it for PrintText boxes) should get its
   own note before anyone "simplifies" DecodeDialogue's gate off it.
+
+## S7-9: correcting false facts slice 6 committed (doc-only)
+
+### The "pokecenters have no PC" claim is FALSE
+S6-4's RUNNOTES justified abandoning its acceptance test on the grounds
+that "this decompilation's pokecenters have no PC machine sprite (no
+SPRITE_PC constant, no PC in any Pokecenter object file)". Wrong: the PC
+is not an NPC sprite at all — it is a TILE-ACTIVATED HIDDEN EVENT.
+`~/.cache/pokered/data/events/hidden_events.asm` has, for VIRIDIAN, PEWTER
+and CERULEAN (and the other Centers): `hidden_event 13, 3,
+OpenPokemonCenterPC, SPRITE_FACING_UP`. The PC sits at tile (13,3) of every
+Center and is used by standing on it facing UP; depositing a mon IS
+possible in-rom. The search missed it because it looked for a sprite in the
+object files — searching object files for a sprite is not evidence about
+hidden events. The fact now lives in docs/AGENT.md under "## ROM facts".
+
+### RUNNOTES has been getting wiped
+Five slice-6 tasks in a row REPLACED this file instead of appending, so
+each task's measurements vanished from the tip. S6-6 nearly shipped a guess
+at balls-per-catch because its instructions said "read S6-3's RUNNOTES
+numbers" and they were gone. The deleted sections are recoverable in git:
+
+    S6-0f  82880c7:RUNNOTES.md
+    S6-3   f5300305:RUNNOTES.md   (the balls-per-catch table S6-6 needed)
+    S6-4   8a64e468:RUNNOTES.md
+
+Do NOT reconstruct them from memory — a summary written from recollection
+is a new source of wrong facts, which is the exact problem this task fixes.
+
+Rule, stated plainly: **APPEND to this file, do not replace it.**
+
+### For the next task
+- No Go changes were made; verification is `git diff --quiet HEAD -- "*.go"`.
+- Do not design around "there is no PC in Centers"; the PC exists as a
+  hidden event at (13,3), faced UP.
