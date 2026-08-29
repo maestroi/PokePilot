@@ -407,3 +407,68 @@ installs a hook in the -short suite.
   S7-7's planner offered (KindTalk at the gym guide) can now land in
   `Observation.RecentDialogue`. skill.Talk itself was intentionally not
   touched — the seam is the emulator's.
+
+## S8-2: Battle answers the "forget a move?" prompt on purpose
+
+### What landed
+- `skill/battle.go`: `useNextMonUp` generalized to `twoOptionPromptUp`
+  (marker "Use next" OR "trying to learn") — ONE detection path for both
+  yes/no prompts, per the task; answering still waits on
+  `state.DecodeTwoOptionMenu` seeing the drawn cursor. New `forgetMenuUp`
+  case ("forgotten?") drives the move list after a YES: `selectForgetSlot`
+  steps the cursor and verifies `wCurrentMenuItem` after every tap (A only
+  once the cursor reads the target — it cannot use SelectMenuItem, which
+  treats wMaxMenuItem as exclusive while this menu stores
+  wNumMovesMinusOne, 3 for four moves). Policy is `forgetSlot`: replace the
+  LOWEST slot that is not the mon's only damaging option (power > 0 via
+  `rom.LookupMove`; an unknown id counts as damaging, the same safe reading
+  StatAwareMove uses); a pick the ROM bounces as an HM technique marks that
+  move tried and retries the next slot; all-bounced fails loudly.
+- `skill/battle_test.go`: TestBattleAnswersForgetMovePrompt — positive,
+  RAM-read assertion: after the grind the move set is exactly
+  `[BITE TAIL_WHIP BUBBLE WATER_GUN]` (slot computed by the stated policy,
+  not hardcoded). -short-skipped; proven by its own -run gate.
+- Stale comment fixed at `skill/train.go:57-59` (the prompt is answered on
+  purpose now, and the level-22 claim corrected — see below).
+
+### Two measurements that changed the task's own premise
+1. **The offer comes at level 24, not 22.** The fixture's level-15 SQUIRTLE
+   evolves into WARTORTLE at 16, and LearnMoveFromLevelUp reads the CURRENT
+   species' learnset (`wPokedexNum = wCurSpecies`): SquirtleEvosMoves says
+   `db 22, BITE`, WartortleEvosMoves says `db 24, BITE`. Measured: a grind to
+   22 shows "grew to level 22!" + the stats box and then the battle ends
+   with NO prompt at all. So S6-4's RUNNOTES diagnosis — "the prompt was
+   shown and dismissed by the A-tap" — was itself a stale note: no prompt
+   ever fired on that line's path to 22. The test targets 24, and the false
+   level-22 claims in train_test.go / train.go were corrected.
+2. **The prompt text has a `<CONT>` wait.** TryingToLearnText is
+   `"<NAME> is" / "trying to learn" <CONT> "<MOVE>!"` — the first half
+   BLOCKS on a button press before "BITE!" and the yes/no box are drawn. A
+   bare StepFrame in the detection case spins (measured: 60,000-frame cap
+   stuck on the half-finished line, `max=5` stale from the move menu). The
+   case now taps A while the cursor is not yet drawn; for "Use next #MON?"
+   (no wait) the tap is harmless, and if it lands after the box is drawn it
+   answers YES at cursor 0 — the same answer SelectMenuItem gives.
+
+### Result (measured, ZBAT=1, real ROM)
+- `moves [33 39 145 55] -> [44 39 145 55]` — TACKLE/TAIL_WHIP/BUBBLE/
+  WATER_GUN become BITE/TAIL_WHIP/BUBBLE/WATER_GUN; BITE (0x2c) in slot 0,
+  the lowest slot (three of the four moves deal damage, so no slot is
+  protected). 343 battles across 5 blackout-split segments; PASS in 263s.
+- The tape shows the whole episode: "is trying to learn" -> YES ->
+  "Which move should be forgotten?" (cursor 0) -> "1, 2 and... Poof!" ->
+  "learned BITE!" with `moves=[{44 25} ...]` in RAM.
+
+### Verified
+`go build ./...`, `go vet ./skill/`, `go test ./... -count=1` all green
+(POKEMON_RED_ROM at the sibling checkout). NOTE: the skill package now takes
+~15 min end-to-end and FAILS under go test's default 10-minute per-package
+timeout — run it with `-timeout 40m` (measured: ok in 919s).
+
+### For the next task
+- The forget-menu cursor is `wCurrentMenuItem` over an INCLUSIVE
+  wMaxMenuItem (= numMoves-1); any future helper that reuses SelectMenuItem
+  for it will reject the last slot. selectForgetSlot exists for that reason.
+- Level-up move offers on a line are a property of the CURRENT species'
+  table, not the starter's: check EvosMoves for the evolved form before
+  predicting which level a prompt fires at.

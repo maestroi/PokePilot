@@ -45,21 +45,22 @@ type TrainResult struct {
 // cutscene ("CATERPIE evolved into METAPOD!") and the learned-move box
 // ("learned CONFUSION!") — are survived without Train doing anything
 // special, and this was MEASURED, not assumed (TestTrainSurvivesEvolution
-// carries a level-15 SQUIRTLE through its level-16 evolution AND a
-// level-22 learned-move offer up to level 22 without stopping or hanging).
+// carries a level-15 SQUIRTLE through its level-16 evolution up to level 22
+// without stopping or hanging).
 // The reason is timing: both sequences run during the battle-end sequence
 // while wIsInBattle is still set (pokered/engine/battle/end_of_battle.asm
 // calls EvolutionAfterBattle before it clears wIsInBattle; the learned-move
 // box plays during GainExperience, likewise in-battle), so Battle's loop is
 // still running and its default A-tap branch advances them before Train ever
 // re-reads the lead's level. Train therefore needs no separate handling for
-// a plain learned-move box or an evolution cutscene. The one case it does
-// NOT fully handle is the "forget a move?" prompt (a mon offered a new move
-// while already holding four): measured, Train survives it without hanging
-// but dismisses it, so the move is not learned. That prompt does not occur on
-// the Caterpie->Butterfree line (the level-12 Butterfree holds three moves,
-// an empty slot, so CONFUSION is a plain box), which is why no branch for it
-// is written here — see RUNNOTES.md.
+// a plain learned-move box or an evolution cutscene. That includes the
+// "forget a move?" prompt (a mon offered a new move while already holding
+// four): it plays during GainExperience, likewise in-battle, so Battle's
+// loop is the one that sees it and answers it — YES, then replacing the move
+// in the lowest slot that is not the mon's only damaging option (forgetSlot
+// in battle.go) — and Train only has to keep going. That prompt does not
+// occur on the Caterpie->Butterfree line (the level-12 Butterfree holds
+// three moves, an empty slot, so CONFUSION is a plain box).
 //
 // Both axes bound the session: at most maxBattles battles are fought and
 // reaching the target ends it early. Not reaching the target within

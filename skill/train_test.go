@@ -211,13 +211,16 @@ func TestTrainBudgetIsAResult(t *testing.T) {
 const (
 	speciesSquirtle  uint8 = 0xB1
 	speciesWartortle uint8 = 0xB3
-	// moveBite is the move SQUIRTLE is offered at level 22 (db 22, BITE in
-	// SquirtleEvosMoves). The fixture's level-15 SQUIRTLE already carries four
-	// moves, so BITE is offered with the "forget a move?" prompt — the same
-	// class of interruption as the task's level-12 move-learning prompt. It is
-	// only used to LOG what Train does with that prompt (measured: it survives
-	// it but dismisses it, so BITE is not learned); the assertion is on reaching
-	// the level and staying controllable, not on the move being learned.
+	// moveBite is the BITE this line is eventually offered. NOTE: the offer
+	// does NOT come at level 22 — SquirtleEvosMoves says db 22, BITE, but the
+	// fixture's SQUIRTLE evolves into WARTORTLE at 16 and LearnMoveFromLevelUp
+	// reads the CURRENT species' table, where BITE sits at 24 (measured: a
+	// grind to 22 ends with no prompt at all). So this test, which stops at
+	// 22, never sees the "forget a move?" prompt; TestBattleAnswersForgetMovePrompt
+	// grinds to 24 and asserts the resulting move set. Battle answers that
+	// prompt on purpose (YES, replacing the lowest slot that is not the mon's
+	// only damaging option); this test's assertion stays on reaching the level
+	// and staying controllable.
 	moveBite uint8 = 0x2C
 )
 
@@ -234,15 +237,15 @@ const (
 // pokecenters have no PC machine sprite to deposit the partner, so there is
 // no in-game way to make a caught Caterpie the only mon — see RUNNOTES.md.
 //
-// The target is level 22, which forces Train through BOTH interruption
-// classes: the level-16 evolution cutscene (SQUIRTLE -> WARTORTLE) and the
-// level-22 learned-move PROMPT (the fixture's SQUIRTLE already has four moves,
-// so BITE is offered with a "forget a move?" yes/no plus move list, not a
-// plain text box). A pass proves Train survives both WITHOUT hanging and keeps
-// grinding to the target. Note this deliberately exercises the HARDER case:
-// on the task's Caterpie line the level-12 learned move (CONFUSION) is offered
-// with only a plain text box (the Butterfree has three moves then, an empty
-// slot), which is strictly easier to survive than the prompt exercised here.
+// The target is level 22, which forces Train through the level-16 evolution
+// cutscene (SQUIRTLE -> WARTORTLE) and keeps grinding past it. A pass proves
+// Train survives the cutscene WITHOUT hanging and reaches the target.
+// NOTE: this test does NOT exercise the "forget a move?" prompt — BITE is
+// offered at level 24 on this line (WartortleEvosMoves, since the mon has
+// already evolved), so a grind to 22 never sees it. The prompt is exercised
+// by TestBattleAnswersForgetMovePrompt (target 24). On the task's Caterpie
+// line the level-12 learned move (CONFUSION) is offered with only a plain
+// text box (the Butterfree has three moves then, an empty slot).
 // It is a full journey, guarded out of -short like the other S6 journey tests:
 //
 //	POKEMON_RED_ROM=roms/pokemon_red.gb go test ./skill -run TestTrainSurvivesEvolution -v
@@ -270,9 +273,11 @@ func TestTrainSurvivesEvolution(t *testing.T) {
 
 	dest := route1Grass(t, romData)
 
-	// Target level 22: past the level-16 evolution AND the level-22 learned-
-	// move prompt. A pass means Train read the lead at level 22 AFTER both
-	// sequences finished, i.e. it survived each and kept grinding.
+	// Target level 22: past the level-16 evolution cutscene. A pass means
+	// Train read the lead at level 22 AFTER the cutscene finished, i.e. it
+	// survived it and kept grinding. (The "forget a move?" prompt is NOT on
+	// this line's path to 22 — BITE is offered at 24, see the moveBite note;
+	// TestBattleAnswersForgetMovePrompt covers it.)
 	const target = 22
 	// Route 1's level 2-5 wilds give little exp to a level 15+ mon (measured
 	// ~20 battles/level), and the cumulative damage of that many wins faints
@@ -312,10 +317,9 @@ func TestTrainSurvivesEvolution(t *testing.T) {
 	if state.DecodeBattle(&mem) != nil || !state.Controllable(&mem) {
 		t.Fatalf("a sequence was left in progress after Train: battle=%v controllable=%v", state.DecodeBattle(&mem) != nil, state.Controllable(&mem))
 	}
-	// Informational: whether the level-22 prompt actually learned BITE. Measured
-	// behaviour is that Train survives the prompt (no hang, keeps grinding) but
-	// dismisses it, so BITE is not in the set. This does not affect the Caterpie
-	// line, where the level-12 move is a plain text box and IS learned.
+	// Informational: BITE is NOT expected here — the offer comes at level 24
+	// on this line (see the moveBite note), so a grind to 22 never sees the
+	// prompt. TestBattleAnswersForgetMovePrompt asserts the learned set.
 	learnedBite := false
 	for _, mv := range after.Moves {
 		if mv == moveBite {
