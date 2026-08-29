@@ -546,18 +546,20 @@ func TestLLMPlannerPromptCarriesMovesAndHistory(t *testing.T) {
 		t.Fatalf("Next: %v", err)
 	}
 	// The observation JSON is embedded in a chat message, so its quotes
-	// arrive escaped: assert on the escaped form.
+	// arrive escaped: assert on the escaped form. It is marshalled COMPACT
+	// (no space after the colon) — indentation is prompt cost the model
+	// gains nothing from.
 	for _, want := range []string{
 		`\"LeadMoves\"`,
-		`\"Power\": 35`,
-		`\"Type\": \"normal\"`,
+		`\"Power\":35`,
+		`\"Type\":\"normal\"`,
 		`\"Bag\"`,
 		`pokeball`,
 		`\"RecentDialogue\"`,
 		`\"History\"`,
 		`take the charmander starter`,
-		`\"Objective\": \"take the charmander starter\"`,
-		`\"Outcome\": \"done\"`,
+		`\"Objective\":\"take the charmander starter\"`,
+		`\"Outcome\":\"done\"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("request body does not contain %q", want)

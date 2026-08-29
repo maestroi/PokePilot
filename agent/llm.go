@@ -342,7 +342,10 @@ const llmSystemPrompt = `You are choosing the next objective for a Pokemon Red p
 // is what makes "fight Brock now or train first?" answerable. If a field
 // is not rendered here it might as well not exist.
 func llmUserPrompt(obs Observation, offered []Objective, recent []string) string {
-	obsJSON, err := json.MarshalIndent(obs, "", "  ")
+	// Compact, not indented: indentation is pure prompt cost. MEASURED
+	// 2026-08-29 on a live run — latency scales with prompt length, 5-7
+	// offered took ~6-7s per call and 13-15 took ~21-23s.
+	obsJSON, err := json.Marshal(obs)
 	if err != nil {
 		obsJSON = []byte("{}") // Observation is plain data; this cannot happen
 	}

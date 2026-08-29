@@ -41,6 +41,7 @@ func main() {
 	starter := flag.String("starter", "squirtle", "starter to take: charmander, squirtle or bulbasaur (bulbasaur loses the rival battle)")
 	planner := flag.String("planner", "scripted", "how to choose objectives: scripted or llm")
 	seed := flag.Int64("seed", 0, "diverge this run's luck by burning seed-derived idle frames after boot; 0 replays bit-identically")
+	goal := flag.String("goal", "Earn the Boulder Badge.", "the task statement given to the llm planner: what it is trying to do, never how. Empty means no goal, which is what made slice 6's scoreboard void")
 	flag.Parse()
 
 	romPath := os.Getenv("POKEMON_RED_ROM")
@@ -110,7 +111,7 @@ func main() {
 	case "scripted":
 		runScripted(m, *starter, *dest, *hold, served)
 	case "llm":
-		runLLM(m)
+		runLLM(m, *goal)
 	default:
 		log.Fatalf("unknown planner %q: want scripted or llm", *planner)
 	}
@@ -206,12 +207,17 @@ func runScripted(m *emu.Emu, starter, dest string, hold time.Duration, served st
 // player stands, verbs whose preconditions currently hold, the starter only
 // while the party is empty. A menu of every place in the ROM would be both
 // a worse prompt and a worse question.
-func runLLM(m *emu.Emu) {
+func runLLM(m *emu.Emu, goal string) {
 	fmt.Println("planner: llm — the model picks from a menu rebuilt every round")
 
 	// Tee llm/round lines to the watch panel as well as stdout.
 	log := &agentTraceLog{w: os.Stdout, note: m.TraceNote}
 	planner := agent.NewLLMPlanner()
+	// Without this the planner is told only "prefer something new", which is
+	// how a run wanders: lab -> pallet -> route 1 -> lab. badgerun has had a
+	// goal since S7-2; this binary did not, so `make run-llm` was still
+	// measuring a goal-less planner.
+	planner.Goal = goal
 	planner.Log = log // one line per model call, above its round line
 	res := agent.Run(m, m.ROM(), planner, agent.Budget{
 		MaxRounds: llmMaxRounds,
