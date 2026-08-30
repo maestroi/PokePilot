@@ -926,3 +926,96 @@ So beating Brock is a real prerequisite for leaving Pewter east toward Route 3
   can beat species 112 — the post_errand species-177 lead stalemates it by type.
 - The flee policy and the Talk-seam proof are done and reusable; a future
   Cerulean milestone only needs the grid fix to arrive.
+
+## S8-9: world.Build's single-sub-tile rule is CORRECT — the S8-6/S8-7 "defect" is a misdiagnosis
+
+Task premise: `Build` "decides walkability from a single sub-tile (bottom-left),
+fragmenting Route 2, Route 4, Viridian Forest and Mt Moon 1F into disconnected
+components," fixable by testing a different sub-tile. **That premise is wrong,
+and it is now proven, not guessed.** No change was made to `world/grid.go`.
+
+### The rule is bottom-left, settled by the decompilation (not inferred)
+`TryWalking` (`pokered/engine/overworld/movement.asm`): `GetTileSpriteStandsOn`
+returns a pointer to **the lower-left tile of the 2×2 block the sprite stands on**
+(the comment in the source says so verbatim). Each direction handler then shifts
+that pointer by exactly ±2 tiles (`.moveDown`/`.moveUp`: `±2*SCREEN_WIDTH`; 
+`.moveLeft`/`.moveRight`: `dec hl; dec hl` / `inc hl; inc hl`) to the destination
+block's lower-left tile, and `TryWalking` does `ld c, [hl]` → `call CanWalkOntoTile`.
+`CanWalkOntoTile` checks that ONE metatile (`c`) against `wTilesetCollisionPtr`
+'s walkable list and performs NO other tile-collision test. So the ROM's
+tile-collision rule is: **is the destination block's lower-left sub-tile in the
+walkable list?** That is byte-for-byte what `Build` reads:
+`romData[tilesOff+(2*sy+1)*4+2*sx]`.
+
+### Confirmed on real hardware (Pallet Town, tileset 0)
+Two cells with opposite sub-tile patterns; only BL is consistent with what the
+player actually did (fresh fixture load per cell to avoid step state-bleed):
+- (10,14): TL=T TR=T **BL=T** BR=F → player STOOD there (walkable). Rules out
+  BR and BL∧BR ("both bottom").
+- (7,14): TL=T TR=T **BL=F** BR=T → player BLOCKED. Rules out BR, TL, TR.
+- Intersection = {BL}. The scratch `getSub` extraction matched `Build`'s index
+  exactly, so this is a measurement of the game, not of the extractor.
+
+### The codebase already pins this rule
+`TestBuildOaksLabCollision` (world/grid_test.go) asserts the (6,4)/(6,3)
+regression pair "fails under the old top-left indexing (2*sy), passes under the
+bottom-left indexing (2*sy+1)" — i.e. the suite ALREADY encodes BL as correct.
+Changing `Build` to BR or BL∧BR would break that passing test AND make the grid
+disagree with the ROM. There is no rule change that both fixes the alleged
+fragmentation and keeps the existing tests green.
+
+### The S8-6 Mt Moon 1F (9,22) "defect" does not reproduce as a tile issue
+- Mt Moon 1F is **40×36** in this ROM (`PROBE_MAP=0x3b`); the vendored
+  `map_constants.asm` says 20×18 — stale, the same class of error S8-4 found
+  for Route 3. Do not trust decomp dimensions; probe.
+- Grid window at (10,22): `(8,22)=#`, **(9,22)=.**, `(10,22)=@`. The ROM rule
+  passes the step onto (9,22) (its BL sub-tile is on the walkable list).
+- The only nearby object is the Youngster at **(7,22)** (object file +
+  `PROBE_STATE` agree), behind the (8,22) wall and 2 tiles from the destination
+  — its 2×2 does not overlap the player's destination block, so
+  `DetectCollisionBetweenSprites` cannot block that step.
+- So (9,22) is genuinely walkable and unblocked; the grid marks it correctly.
+  S8-6's "ROM blocks the step onto (9,22)" was a different cause (the (8,22)
+  wall one tile further, a trainer engagement, or a BFS path that went
+  elsewhere), not a sub-tile collision defect.
+
+### The "fragmentation" is real geometry that NO sub-tile rule can fix
+Measured the barrier rows/columns under BL, BR, and any-of-4 (all four
+sub-tiles walkable):
+- **Route 2 (0x0d), 20×72:** rows y=36,37 are non-walkable across the FULL
+  width (x=0..19) under every rule. Raw tiles there: left half `0x40`, right
+  half `4c/53` and `5a/12` — none on the walkable list. This is the lake: a
+  surf / warp-structure crossing (warps at (16,35) and (15,39) bracket it), not
+  a walkable path. North edge → Pewter (0x02), south edge → Viridian (0x01).
+  The north/south split is genuine on-foot geometry.
+- **Route 4 (0x0f), 90×18:** columns x=20..23 are solid across the FULL height
+  (y=0..17) under every rule. West (x≤19) and east (x≥24) are genuinely
+  separate regions.
+- **Viridian Forest (0x33):** **1 component under BL** (N↔S reachable —
+  correct); **109 components under BR**. So BL is the rule that matches the
+  game; switching to BR would be a massive regression, not a fix.
+
+Because both Route 2's and Route 4's barriers are solid under EVERY sub-tile
+rule, the proposed fix (test a different sub-tile) cannot address either map.
+The multi-component structure is real in-game geometry, not a heuristic artifact.
+
+### Determination
+`world/grid.go Build` correctly implements the ROM's collision rule (the
+destination block's lower-left sub-tile), proven by decompilation, confirmed on
+real hardware, and already pinned by `TestBuildOaksLabCollision`. The maps cited
+as "fragmented" are fragmented by genuine terrain (Route 2's surf lake, Route
+4's mountain wall) that no sub-tile choice bridges, and the Mt Moon (9,22) case
+is a walkable, unblocked tile that S8-6 misattributed. `TestGymJourneyAffordances`
+passes with the current code. **No change made; no map ID or tileset
+special-cased.**
+
+### For the next task
+- If the router must cross Route 2's lake, that is a **surf action** (a verb),
+  not a grid edit — the grid correctly says you cannot WALK on water.
+- Route 4's west and east halves are separate regions connected only via other
+  routes/warps; model that in the graph layer, never by fudging the collision
+  grid.
+- If a future agent re-measures "the player got stuck at X" on a walkable tile,
+  check `DetectCollisionBetweenSprites` (an adjacent NPC's 2×2) and the tile one
+  step further before blaming the sub-tile rule — that is what S8-6 hit on
+  Mt Moon.
