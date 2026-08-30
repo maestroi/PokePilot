@@ -139,11 +139,87 @@ func TestWithArgsApplies(t *testing.T) {
 		t.Errorf("WithArgs(buy, potion x3) = %s, %v; want item 0x14 qty 3", got, err)
 	}
 
+	// Flee applies to the kinds that travel: a go-to and a heal that
+	// carries a place. A false flee is a legal no-op.
+	fleeTrue, fleeFalse := true, false
+	got, err = agent.WithArgs(agent.Objective{Kind: agent.KindGoTo, Place: "mt moon 1f"},
+		agent.ReplyArgs{Flee: &fleeTrue})
+	if err != nil || !got.Flee {
+		t.Errorf("WithArgs(go to, flee true) = %s, %v; want Flee set", got, err)
+	}
+	got, err = agent.WithArgs(agent.Objective{Kind: agent.KindHeal, Place: "viridian pokemon center"},
+		agent.ReplyArgs{Flee: &fleeTrue})
+	if err != nil || !got.Flee {
+		t.Errorf("WithArgs(heal at a place, flee true) = %s, %v; want Flee set", got, err)
+	}
+	got, err = agent.WithArgs(agent.Objective{Kind: agent.KindGoTo, Place: "pallet town"},
+		agent.ReplyArgs{Flee: &fleeFalse})
+	if err != nil || got.Flee {
+		t.Errorf("WithArgs(go to, flee false) = %s, %v; want the objective unchanged", got, err)
+	}
+
 	// No arguments: the objective comes back unchanged.
 	got, err = agent.WithArgs(agent.Objective{Kind: agent.KindGoTo, Place: "pallet town"},
 		agent.ReplyArgs{})
 	if err != nil || got.Place != "pallet town" {
 		t.Errorf("WithArgs with no args = %s, %v; want the objective unchanged", got, err)
+	}
+
+	// Intent applies to EVERY kind (unlike level/species/item): every
+	// objective can be in service of something. It lands on kinds that
+	// carry other arguments too, alongside them.
+	got, err = agent.WithArgs(agent.Objective{Kind: agent.KindGoTo, Place: "pallet town"},
+		agent.ReplyArgs{Intent: "reach the gym"})
+	if err != nil || got.Intent != "reach the gym" {
+		t.Errorf("WithArgs(go to, intent) = %s, %v; want Intent set", got, err)
+	}
+	got, err = agent.WithArgs(agent.Objective{Kind: agent.KindTrain, Level: 10},
+		agent.ReplyArgs{Level: &i12, Intent: "earn the boulder badge"})
+	if err != nil || got.Level != 12 || got.Intent != "earn the boulder badge" {
+		t.Errorf("WithArgs(train, level+intent) = %s, %v; want both applied", got, err)
+	}
+	got, err = agent.WithArgs(agent.Objective{Kind: agent.KindStarter, Starter: skill.StarterCharmander},
+		agent.ReplyArgs{Intent: "start the journey"})
+	if err != nil || got.Intent != "start the journey" {
+		t.Errorf("WithArgs(starter, intent) = %s, %v; want Intent set", got, err)
+	}
+	// The boundary is inclusive: exactly IntentCap bytes is accepted.
+	atCap := strings.Repeat("a", agent.IntentCap)
+	got, err = agent.WithArgs(agent.Objective{Kind: agent.KindGoTo, Place: "pallet town"},
+		agent.ReplyArgs{Intent: atCap})
+	if err != nil || got.Intent != atCap {
+		t.Errorf("WithArgs(intent at the cap) = %s, %v; want it accepted verbatim", got, err)
+	}
+}
+
+// TestWithArgsIntentOverCapRejected is the cap's other side: an intent over
+// IntentCap bytes costs that many prompt tokens on EVERY subsequent round,
+// so it is REJECTED with a typed error — never truncated, because a cut
+// sentence reads as valid while saying something the model never said.
+// Rejection means the whole reply failed: the objective comes back
+// unmutated.
+func TestWithArgsIntentOverCapRejected(t *testing.T) {
+	o := agent.Objective{Kind: agent.KindGoTo, Place: "pallet town"}
+	long := strings.Repeat("a", agent.IntentCap+1)
+
+	got, err := agent.WithArgs(o, agent.ReplyArgs{Intent: long})
+	if err == nil {
+		t.Fatalf("WithArgs with a %d-byte intent succeeded, want a typed rejection", len(long))
+	}
+	if !errors.Is(err, agent.ErrIntentTooLong) {
+		t.Errorf("error = %v, want errors.Is(err, ErrIntentTooLong)", err)
+	}
+	// The cap is stated in the error, and nothing was applied.
+	if got != o {
+		t.Errorf("rejected reply left the objective mutated: %s", got)
+	}
+
+	// The rejection is not kind-specific: the same over-cap intent on a
+	// different kind is rejected the same way.
+	got, err = agent.WithArgs(agent.Objective{Kind: agent.KindTrain, Level: 10},
+		agent.ReplyArgs{Level: nil, Intent: long})
+	if err == nil || !errors.Is(err, agent.ErrIntentTooLong) {
+		t.Errorf("WithArgs(train, over-cap intent) = %s, %v; want ErrIntentTooLong", got, err)
 	}
 }
 
@@ -155,6 +231,7 @@ func TestWithArgsApplies(t *testing.T) {
 func TestWithArgsRejects(t *testing.T) {
 	l500, l0 := 500, 0
 	l12, q3, qNeg, q150 := 12, 3, -1, 150
+	fleeTrue := true
 
 	cases := []struct {
 		name string
@@ -172,6 +249,9 @@ func TestWithArgsRejects(t *testing.T) {
 		{"level on a goto", agent.Objective{Kind: agent.KindGoTo, Place: "pallet town"}, agent.ReplyArgs{Level: &l12}, "does not apply"},
 		{"species on a train", agent.Objective{Kind: agent.KindTrain, Level: 10}, agent.ReplyArgs{Species: "pidgey"}, "does not apply"},
 		{"quantity on a catch", agent.Objective{Kind: agent.KindCatch, Species: 0x7B}, agent.ReplyArgs{Quantity: &q3}, "does not apply"},
+		{"flee on a train", agent.Objective{Kind: agent.KindTrain, Level: 10}, agent.ReplyArgs{Flee: &fleeTrue}, "does not apply"},
+		{"flee on a catch", agent.Objective{Kind: agent.KindCatch, Species: 0x7B}, agent.ReplyArgs{Flee: &fleeTrue}, "does not apply"},
+		{"flee on a heal in place", agent.Objective{Kind: agent.KindHeal}, agent.ReplyArgs{Flee: &fleeTrue}, "does not apply"},
 	}
 	for _, c := range cases {
 		got, err := agent.WithArgs(c.o, c.a)

@@ -8,6 +8,18 @@ Labelling, as always: MEASURED means someone ran it, DERIVED means it was read
 out of `~/.cache/pokered`, UNMEASURED means it needs a task before it can be
 scoped.
 
+**STATUS (S9-12, 2026-08-30): the milestone has been run, and the answer is in
+RUNNOTES under "S9-12".** Two goal-driven runs ("Earn the Cascade Badge.",
+256-round budget, qwen3.5-4b) both died on round 7 at Viridian Pokemon Center,
+zero badges: the model kept attaching superfluous arguments (flee/level) to a
+talk objective and repeated the identical invalid reply through all three
+retries. That is item 6's gate — the S9-11 rejection storm, not game distance.
+The intent field (item 2) was used actively every round and held across rounds,
+but no run lives long enough to answer "longer than it can remember". Slice 10
+must fix the reply-shape gate before any further milestone measurement is
+possible; until then items 4 and 5 stay unexercised at depth (no requirement
+sentence was ever in range, and flee worked on every leg it got).
+
 ---
 
 ## The proposed goal: a run that keeps its own plan
@@ -181,6 +193,36 @@ The offered menu grew this week — one catch per wild species instead of one
 fixed catch, a travelling heal, gyms beyond Pewter. A longer menu is a slower
 round, and a goal measured in hundreds of rounds multiplies both. Any plan
 layer that adds prompt text is spending the same budget.
+
+**S9-11 measured it (2026-08-30; Offer unchanged).** Sizes, per map a run
+actually visits (Knowledge: visited maps only, first visit — a floor):
+
+    map                        total  per-kind
+    Pallet Town                    6   goto=3 talk=2 errand=1
+    Route 1                        6   goto=2 talk=2 errand=1 train=1
+    Viridian City                 13   goto=6 talk=6 errand=1
+    Viridian Mart                  7   goto=3 talk=3 buy=1
+    Viridian Pokemon Center        9   goto=4 talk=4 heal=1
+    Route 2                        7   goto=6 train=1
+    Viridian Forest               12   goto=6 talk=2 train=1 pickup=3
+    Viridian Forest (with balls)  17   goto=6 talk=2 train=1 catch=5 pickup=3
+    Pewter City                   15   goto=10 talk=5
+    Pewter Gym                    11   goto=8 talk=1 heal=1 gym=1
+
+Towns are expensive because of **talk** (one entry per person on the map) and
+**goto** (one per place name on a known map — Pewter's 10 come from 8 visited
+maps); the forest because of **catch** (one per wild-table species: five)
+plus field-item pickups. Latency against qwen3.5-4b at :8000 showed NO size
+effect within a run — n=6 and n=15-18 cost the same, prompt tokens grew only
+~+30 per entry (498p at n=6, 892p at n=18) — and server load (1.5s-44s)
+dominated the sample, so the 2026-08-29 "13-15 -> 21-23s" line does not
+reproduce. What DOES multiply every round: every reply in the measurement was
+rejected for a superfluous argument (item 0's neighbour, S6-12 #3), and
+`planWithRetries` re-asks up to 3 times — up to 3x one call at ANY menu size.
+**Recommendation: do nothing to Offer.** Capping catch (5 -> 1 WithArgs entry)
+saves ~130 tokens on one map for no measured latency and gives back the
+per-species specificity `5f379dd` added. If slice 10 cuts round latency, cut
+the rejection storm, not the menu.
 
 ---
 

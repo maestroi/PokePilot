@@ -148,6 +148,17 @@ type Budget struct {
 	// CheckpointKeep is how many checkpoints per run are kept. Zero means
 	// defaultCheckpointKeep.
 	CheckpointKeep int
+	// ResumeFrom, when non-empty, is a checkpoint .state file written by a
+	// CheckpointDir ring. Run restores that save state into m and loads the
+	// knowledge file written beside it before round 1: the game and the
+	// run's understanding start from the same captured moment, so a resumed
+	// run is not amnesiac in a world it has already explored — every map is
+	// not unvisited, every place unnamed, every completed one-shot offered
+	// again. Both halves are loaded from this ONE path (see
+	// LoadCheckpointMemory), which keeps the pairing structural: knowledge
+	// can only be restored onto the exact save state it was captured with.
+	// A plain Run leaves this empty and behaves exactly as before.
+	ResumeFrom string
 	// Cancel, when closed, stops Run before the next round's objective
 	// starts. Nil means never cancelled — the zero value of Budget keeps
 	// every existing caller's behavior unchanged. Checked between rounds
@@ -269,9 +280,14 @@ func appendHistory(h []RoundRecord, r RoundRecord) []RoundRecord {
 // reports its loss as an outcome for exactly this reason). It is still
 // recorded in history — the objective was not reached — but it neither
 // counts against MaxConsecutiveFailures nor repeats the last failure, because
-// the respawn changed the world. The round budget still bounds a planner that
-// keeps choosing doomed trains: each blackout cycle costs a round and levels
-// the lead up, so the loop is slow progress, not a stall.
+// the respawn changed the world. A train retreat (ErrTrainRetreat) is exempt
+// for the same reason in miniature: the session damaged the party, so a
+// repeated attempt is a new one from a new state, and the planner's correct
+// response — heal — is visible in the next observation's party HP; a planner
+// that ignores it trips StuckAfter, because a retried train leaves the player
+// where it started. The round budget still bounds a planner that keeps
+// choosing doomed trains: each blackout cycle costs a round and levels the
+// lead up, so the loop is slow progress, not a stall.
 //
 // Failure text reaches the planner as plain consequence, never as advice:
 // Run records the error the skills produced ("step up blocked at (10,1)")
@@ -323,6 +339,28 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 		}
 	}
 	known := NewKnowledge(adjacency)
+	// intent and intentAge are what the planner said with its last choice,
+	// and how many rounds it has gone unchanged. Run only CARRIES them:
+	// it never writes, edits or summarises the sentence — generating an
+	// intent would be planning for the model again, which defeats the
+	// measurement this exists to take (S9-7).
+	intent, intentAge := "", 0
+	if budget.ResumeFrom != "" {
+		// Resume from a checkpoint: restore the save state and the knowledge
+		// captured beside it, both from this one path. The knowledge file's
+		// name is derived from the state file's (knowledgeFileName), so the
+		// two cannot be loaded independently — see LoadCheckpointMemory.
+		stateBytes, err := os.ReadFile(budget.ResumeFrom)
+		if err != nil {
+			return Result{Stop: StopError, Err: fmt.Errorf("agent: Run: resume %s: %w", budget.ResumeFrom, err)}
+		}
+		if err := m.LoadState(stateBytes); err != nil {
+			return Result{Stop: StopError, Err: fmt.Errorf("agent: Run: resume %s: LoadState: %w", budget.ResumeFrom, err)}
+		}
+		mem := LoadCheckpointMemory(budget.ResumeFrom, adjacency, budget.Log)
+		known = mem.Knowledge
+		intent, intentAge = mem.Intent, mem.IntentAge
+	}
 	var ring *checkpointRing
 	if budget.CheckpointDir != "" {
 		keep := budget.CheckpointKeep
@@ -368,6 +406,14 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 		// of the dialogue window. Then rebuild the menu: what is possible
 		// depends on where the player is and what they already have.
 		noteObservation(known, last)
+		// The walls the game has stated stay visible every round: Knowledge
+		// keeps them across rounds (and checkpoints), and this is where the
+		// planner reads them. A copy, so a later round cannot mutate what an
+		// earlier observation already showed. Offer does not branch on these:
+		// the run reports what it heard; the planner decides.
+		if reqs := known.Requirements; len(reqs) > 0 {
+			last.Requirements = append([]string{}, reqs...)
+		}
 		now := Offer(last, known)
 		if len(now) == 0 {
 			res.Stop = StopError
@@ -383,6 +429,11 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 		// check: StopDone is Stop(0), the zero value, so "stop != 0" would
 		// read a finished planner as "keep going" and execute an empty
 		// objective.
+		// The planner sees what it said last time: the same sentence, with
+		// its age, is read back from this observation.
+		last.Intent = intent
+		last.IntentAge = intentAge
+
 		obj, err, retries := planWithRetries(budget.Log, round, p, last, now)
 		res.ReplyRetries += retries
 		// StopDone is Stop(0), the zero value, so it cannot be signalled
@@ -399,11 +450,22 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 			break
 		}
 
+		// Carry the planner's sentence forward, verbatim. A different
+		// non-empty intent replaces it (age 0); the same one, or silence,
+		// ages it by one round — a model that keeps re-affirming or ignoring
+		// its purpose has been chasing it just as long.
+		switch {
+		case obj.Intent != "" && obj.Intent != intent:
+			intent, intentAge = obj.Intent, 0
+		case intent != "":
+			intentAge++
+		}
+
 		// The checkpoint is taken BEFORE Execute: it is the exact state the
 		// decision was made in, and the resume point if this objective is
 		// where the run went wrong.
 		if ring != nil {
-			if err := ring.write(m, round, obj); err != nil {
+			if err := ring.write(m, round, obj, known, intent, intentAge); err != nil {
 				res.Stop = StopError
 				res.Err = fmt.Errorf("agent: Run: checkpoint round %d: %w", round, err)
 				break
@@ -429,6 +491,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 			last = Observe(m, romData)
 			outcome := "failed: " + err.Error()
 			blackedOut := errors.Is(err, skill.ErrBlackedOut)
+			retreated := errors.Is(err, skill.ErrTrainRetreat)
 			if blackedOut {
 				// The blackout bit clears on the respawn map entry, before
 				// this Observe; carry the fact for the round that follows the
@@ -449,12 +512,22 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 			last.RecentDialogue = tape.recent()
 			logRound(budget.Log, round, obj, last)
 
-			if blackedOut {
+			if blackedOut || retreated {
 				// The blackout is recorded in history like any failure, but it
 				// does not count against the failure budget and it breaks the
 				// same-failure-twice chain: the respawn healed the party and
-				// moved the player, so the world changed. Only the frame budget
-				// still applies to this round.
+				// moved the player, so the world changed. A train retreat is
+				// exempt for the same reason in miniature: the session spent
+				// battles and damaged the party, so repeating the objective is
+				// a new attempt from a new state, not an identical repetition —
+				// and without the exemption, "train to 19" stopping hurt twice
+				// in a row would read as the same failure twice and end the run,
+				// trading a recoverable, costless stop for a dead one. The
+				// planner's correct response (heal) is visible in the next
+				// observation's party HP, and a planner that ignores it trips
+				// StuckAfter instead: a retried train leaves the player standing
+				// where it started. Only the frame budget still applies to this
+				// round.
 				lastFailObj, lastFailErr = "", ""
 				if m.FrameCount()-startFrame >= uint64(budget.MaxFrames) {
 					res.Stop = StopBudget
@@ -561,8 +634,12 @@ type checkpointRing struct {
 }
 
 // write snapshots m and evicts whatever the ring no longer holds. It runs
-// on Run's goroutine before Execute, where m is not being stepped.
-func (c *checkpointRing) write(m *emu.Emu, round int, obj Objective) error {
+// on Run's goroutine before Execute, where m is not being stepped. The
+// knowledge file is written HERE, beside the state it describes: same
+// function, same base name, so the two cannot drift out of step — a
+// surviving checkpoint is always a state and the understanding the run had
+// at that moment, and resume (LoadCheckpointMemory) can only pair them.
+func (c *checkpointRing) write(m *emu.Emu, round int, obj Objective, k *Knowledge, intent string, intentAge int) error {
 	b, err := m.SaveState()
 	if err != nil {
 		return fmt.Errorf("SaveState: %w", err)
@@ -572,24 +649,51 @@ func (c *checkpointRing) write(m *emu.Emu, round int, obj Objective) error {
 	if err := os.WriteFile(path, b, 0o644); err != nil {
 		return fmt.Errorf("write %s: %w", path, err)
 	}
+	if err := writeMemoryFile(path, k, intent, intentAge); err != nil {
+		return fmt.Errorf("knowledge round %d: %w", round, err)
+	}
 	return c.evict()
 }
 
-// evict keeps only the newest keep states in the ring's directory.
+// evict keeps only the newest keep states in the ring's directory. A state
+// and the knowledge file beside it are ONE checkpoint: evicting the state
+// evicts its knowledge too, and a knowledge file whose state is gone is
+// orphaned — its save state no longer exists to pair with — so it is
+// dropped as well. Knowledge without a state is exactly the "claims to know
+// things this game state has not seen" case, just with no state at all.
 func (c *checkpointRing) evict() error {
 	entries, err := os.ReadDir(c.dir)
 	if err != nil {
 		return fmt.Errorf("read %s: %w", c.dir, err)
 	}
 	names := make([]string, 0, len(entries))
+	stateSet := map[string]bool{}
 	for _, en := range entries {
 		if strings.HasSuffix(en.Name(), ".state") {
 			names = append(names, en.Name())
+			stateSet[en.Name()] = true
+		}
+	}
+	// A knowledge file whose state is still in the ring belongs to it; only
+	// a knowledge file with NO state beside it is orphaned and dropped.
+	for _, en := range entries {
+		if !isKnowledgeName(en.Name()) {
+			continue
+		}
+		base := strings.TrimSuffix(strings.TrimSuffix(en.Name(), ".json"), fmt.Sprintf(".knowledge-v%d", memoryVersion))
+		if stateSet[base+".state"] {
+			continue
+		}
+		if err := os.Remove(filepath.Join(c.dir, en.Name())); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("evict %s: %w", en.Name(), err)
 		}
 	}
 	sort.Strings(names)
 	for _, n := range names[:max(0, len(names)-c.keep)] {
 		if err := os.Remove(filepath.Join(c.dir, n)); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("evict %s: %w", n, err)
+		}
+		if err := os.Remove(knowledgePathForState(filepath.Join(c.dir, n))); err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("evict %s: %w", n, err)
 		}
 	}

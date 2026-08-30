@@ -2,6 +2,7 @@ package agent_test
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -582,6 +583,78 @@ func TestLLMPlannerPromptCarriesMovesAndHistory(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Errorf("request body does not contain %q", want)
 		}
+	}
+}
+
+// TestLLMPlannerPromptCarriesIntentBack is the prompt half of the round
+// trip: the intent the run carries (what the planner said last round, and
+// how old it is) must actually reach the model — asserted on the captured
+// request body, the way every other Observation field is tested here. It
+// also asserts the system prompt tells the model the field exists and will
+// be read back: an argument the model is never told about is one it never
+// sends.
+func TestLLMPlannerPromptCarriesIntentBack(t *testing.T) {
+	var body string
+	srv := startModelServer(t, `{"choices":[{"message":{"content":"1"}}]}`, &body)
+
+	obs := llmObs()
+	obs.Intent = "earn the boulder badge"
+	obs.IntentAge = 2
+
+	if _, err := llmPlanner(srv).Next(obs, llmOffered()); err != nil {
+		t.Fatalf("Next: %v", err)
+	}
+	// The observation JSON is embedded in a chat message, so its quotes
+	// arrive escaped.
+	for _, want := range []string{
+		`\"Intent\":\"earn the boulder badge\"`,
+		`\"IntentAge\":2`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("request body does not contain %q\nbody: %s", want, body)
+		}
+	}
+	// The system prompt names the field and says it is read back.
+	for _, want := range []string{
+		`"intent"`,
+		"in service of",
+		"read back",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("system prompt does not tell the model about the intent field (%q)\nbody: %s", want, body)
+		}
+	}
+}
+
+// TestLLMPlannerReplyCarriesIntent: a schema reply with an intent lands on
+// the returned objective, so Run can carry it onto the next round.
+func TestLLMPlannerReplyCarriesIntent(t *testing.T) {
+	srv := startModelServer(t,
+		`{"choices":[{"message":{"content":"{\"choice\":1,\"intent\":\"earn the boulder badge\"}"}}]}`, nil)
+
+	got, err := llmPlanner(srv).Next(llmObs(), llmOffered())
+	if err != nil {
+		t.Fatalf("Next: %v", err)
+	}
+	if got.Intent != "earn the boulder badge" {
+		t.Errorf("got.Intent = %q, want the model's sentence carried on the objective", got.Intent)
+	}
+}
+
+// TestLLMPlannerIntentOverCapRejected: an over-cap intent in a schema reply
+// is a typed rejection of the whole reply — never a truncation, because a
+// cut sentence reads as valid while saying something the model never said.
+func TestLLMPlannerIntentOverCapRejected(t *testing.T) {
+	long := strings.Repeat("a", agent.IntentCap+1)
+	reply := fmt.Sprintf(`{"choices":[{"message":{"content":"{\"choice\":1,\"intent\":\"%s\"}"}}]}`, long)
+	srv := startModelServer(t, reply, nil)
+
+	_, err := llmPlanner(srv).Next(llmObs(), llmOffered())
+	if err == nil {
+		t.Fatalf("Next accepted a %d-byte intent, want a typed rejection", len(long))
+	}
+	if !errors.Is(err, agent.ErrIntentTooLong) {
+		t.Errorf("error = %v, want errors.Is(err, ErrIntentTooLong)", err)
 	}
 }
 

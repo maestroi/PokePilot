@@ -24,6 +24,7 @@ const (
 	KindCatch               // hunt tall grass for a wanted species and catch it
 	KindBuy                 // buy Item x Qty from the mart clerk
 	KindPickup              // pick up the item at a coordinate; the bag must rise
+	KindUseItem             // use one bag item on one party member, out in the field
 )
 
 // Objective is one unit of intent a planner can choose. The argument fields
@@ -39,9 +40,18 @@ type Objective struct {
 	Starter skill.Starter // KindStarter: which ball to take
 	Level   uint8         // KindTrain: the level the lead should reach
 	Species uint8         // KindCatch: the ROM species index to hunt
-	Item    uint8         // KindBuy, KindPickup: the bag item ID
+	Item    uint8         // KindBuy, KindPickup, KindUseItem: the bag item ID
+	Slot    int           // KindUseItem: the party slot to use it on (0-based, as skill.UseFieldItem takes it)
 	Qty     int           // KindBuy: how many
+	Flee    bool          // KindGoTo, KindHeal-with-Place: resolve wild encounters by running, not fighting
 	Note    string        // human-readable, shown to a planner; never parsed
+	// Intent is the sentence the planner attached to this choice: what it is
+	// in service of. It is run memory, not an argument — Validate and
+	// Execute ignore it, String() does not render it, and Run carries it
+	// verbatim onto the next round's Observation (never edited or
+	// summarised). WithArgs is the only writer; a model that says nothing
+	// leaves it empty.
+	Intent string
 }
 
 // Execute carries out one objective against the emulator. Every error it
@@ -62,7 +72,15 @@ func Execute(m *emu.Emu, romData []byte, o Objective) error {
 		// design, which on any route through grass means the run stops at
 		// the first Pidgey. maxBattles bounds it; 20 is the cap the
 		// fixtures use for the Pallet -> Viridian legs, which measured 1.
-		res, err := skill.Travel(m, romData, dest, skill.StatAwareMove(romData), 20)
+		// Flee is the planner's call (a fled wild is XP the run did not
+		// get), so the default stays fight: TravelFlee only when asked.
+		var res skill.TravelResult
+		var err error
+		if o.Flee {
+			res, err = skill.TravelFlee(m, romData, dest, skill.StatAwareMove(romData), 20)
+		} else {
+			res, err = skill.Travel(m, romData, dest, skill.StatAwareMove(romData), 20)
+		}
 		if err != nil {
 			return fmt.Errorf("agent: %s: %w", o, err)
 		}
@@ -102,6 +120,17 @@ func Execute(m *emu.Emu, romData []byte, o Objective) error {
 		if res.Reached {
 			return nil
 		}
+		if res.Retreated {
+			// The session stopped while the party could still walk: a
+			// shortfall with a reason. It is its own outcome, not a blackout,
+			// so Run exempts it from the failure accounting the way it
+			// exempts one — and the level is in the text on purpose: two
+			// retreats that end at the same level read as the same failure,
+			// which is exactly the case the exemption must absorb. The hurt
+			// lead itself is in the next observation's party HP, where the
+			// planner reads it and decides whether to heal.
+			return fmt.Errorf("agent: %s: %w (ended level %d)", o, skill.ErrTrainRetreat, res.EndLevel)
+		}
 		if res.BlackedOut {
 			return fmt.Errorf("agent: %s: %w before reaching level %d (ended level %d after %d battles)",
 				o, skill.ErrBlackedOut, o.Level, res.EndLevel, res.Battles)
@@ -125,7 +154,13 @@ func Execute(m *emu.Emu, romData []byte, o Objective) error {
 			// blackout here already healed the party, so it is reported as
 			// the outcome it is and the heal that follows is a no-op the
 			// nurse handles.
-			res, err := skill.Travel(m, romData, dest, skill.StatAwareMove(romData), 20)
+			var res skill.TravelResult
+			var err error
+			if o.Flee {
+				res, err = skill.TravelFlee(m, romData, dest, skill.StatAwareMove(romData), 20)
+			} else {
+				res, err = skill.Travel(m, romData, dest, skill.StatAwareMove(romData), 20)
+			}
 			if err != nil {
 				return fmt.Errorf("agent: %s: %w", o, err)
 			}
@@ -171,6 +206,14 @@ func Execute(m *emu.Emu, romData []byte, o Objective) error {
 		// The proof is inside Pickup: it returns nil only when the bag's
 		// count for Item rose by one. A text box opening is not evidence.
 		if err := skill.Pickup(m, romData, o.X, o.Y, o.Item, skill.StatAwareMove(romData)); err != nil {
+			return fmt.Errorf("agent: %s: %w", o, err)
+		}
+		return nil
+	case KindUseItem:
+		// The proof is inside UseFieldItem: it returns nil only when the
+		// target's HP rose or its status cleared, read from RAM before and
+		// after — a closed menu is not evidence (S8-5).
+		if err := skill.UseFieldItem(m, o.Item, o.Slot); err != nil {
 			return fmt.Errorf("agent: %s: %w", o, err)
 		}
 		return nil
@@ -230,6 +273,15 @@ func (o Objective) Validate() error {
 				return fmt.Errorf("agent: %s: %q is not a Pokemon Center", o, o.Place)
 			}
 		}
+	case KindUseItem:
+		if _, ok := ItemName(o.Item); !ok {
+			return fmt.Errorf("agent: %s: unknown item %d", o, int(o.Item))
+		}
+		// The party caps at six (state.DecodeParty) and the slot is 0-based,
+		// the same addressing skill.UseFieldItem takes: no second scheme.
+		if o.Slot < 0 || o.Slot > 5 {
+			return fmt.Errorf("agent: %s: party slot %d out of range 0..5", o, o.Slot)
+		}
 	case KindBuy:
 		if o.Qty < 1 || o.Qty > 99 {
 			return fmt.Errorf("agent: %s: quantity %d out of range 1..99", o, o.Qty)
@@ -248,6 +300,9 @@ func (o Objective) Validate() error {
 func (o Objective) String() string {
 	switch o.Kind {
 	case KindGoTo:
+		if o.Flee {
+			return "go to " + o.Place + ", fleeing wild battles"
+		}
 		return "go to " + o.Place
 	case KindTalk:
 		return fmt.Sprintf("talk at (%d,%d)", o.X, o.Y)
@@ -259,6 +314,9 @@ func (o Objective) String() string {
 		return fmt.Sprintf("train the lead to level %d", o.Level)
 	case KindHeal:
 		if o.Place != "" {
+			if o.Flee {
+				return "heal the party at " + strings.ToUpper(o.Place) + ", fleeing wild battles"
+			}
 			return "heal the party at " + strings.ToUpper(o.Place)
 		}
 		return "heal the party"
@@ -277,6 +335,11 @@ func (o Objective) String() string {
 			return fmt.Sprintf("pick up the %s at (%d,%d)", strings.ToUpper(name), o.X, o.Y)
 		}
 		return fmt.Sprintf("pick up item %d at (%d,%d)", int(o.Item), o.X, o.Y)
+	case KindUseItem:
+		if name, ok := ItemName(o.Item); ok {
+			return fmt.Sprintf("use %s %s on party slot %d", article(name), strings.ToUpper(name), o.Slot)
+		}
+		return fmt.Sprintf("use item %d on party slot %d", int(o.Item), o.Slot)
 	case KindBuy:
 		if name, ok := ItemName(o.Item); ok {
 			return fmt.Sprintf("buy %d %s", o.Qty, strings.ToUpper(name))
@@ -284,6 +347,17 @@ func (o Objective) String() string {
 		return fmt.Sprintf("buy %d of item %d", o.Qty, o.Item)
 	}
 	return fmt.Sprintf("unknown kind %d", int(o.Kind))
+}
+
+// article renders the indefinite article for an item name: "a POTION",
+// "an ANTIDOTE". The check is on the first letter, which is all the
+// table's names need (no TH-word among them).
+func article(name string) string {
+	switch name[0] {
+	case 'a', 'e', 'i', 'o', 'u':
+		return "an"
+	}
+	return "a"
 }
 
 // starterName renders a skill.Starter for String(). An out-of-range value

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/maestroi/pokepilot/red/rom"
@@ -86,11 +87,13 @@ func bankedOffTest(t *testing.T, bank uint8, addr uint16) (int, error) {
 // party, the cumulative damage of several wins can faint the lead even
 // though it outbeats Route 1's level 2-5 wilds one at a time. Train ends
 // the session at the blackout and reports it; the game fully heals the
-// party and respawns it at Pallet Town (the last town's fly-warp spot),
-// so the test walks back to the grass and resumes the grind — the
-// caller's decision, made with the blackout knowledge — and still
-// requires the level gain, the Reached flag, and a clean stop (no battle
-// left in progress).
+// party and respawns it at Pallet Town (the last town's fly-warp spot).
+// The retreat line is the other way a short session can end with the
+// party hurt: there the player stands where the session stopped, so the
+// test heals at a center before resuming. Either way the grind resumes
+// from a healthy party — the caller's decision, made here — and the test
+// still requires the level gain, the Reached flag, and a clean stop (no
+// battle left in progress).
 func TestTrainGrindsOnRoute1(t *testing.T) {
 	e := fixture.Load(t, "pallet_town")
 	romData := e.ROM()
@@ -107,30 +110,57 @@ func TestTrainGrindsOnRoute1(t *testing.T) {
 	}
 	startLevel := state.DecodeParty(&mem).Mons[0].Level
 
-	res, err := skill.Train(e, romData, int(startLevel)+2, policy, 12)
-	if err != nil {
-		t.Fatalf("Train: %v (battles=%d)", err, res.Battles)
-	}
-	blackedOut := res.BlackedOut
-	if res.BlackedOut && !res.Reached {
-		// The session blacked out short of the target. The party is fully
-		// healed at the respawn spot, so walk back to the grass and resume
-		// the grind from a healthy party. Every battle of the effort counts
-		// toward the total — the level gain may land on the walk, in which
-		// case the resumed session ends at the target with no battles of
-		// its own.
-		firstBattles := res.Battles
+	// A lone L6 lead against Route 1's level 2-5 wilds takes enough
+	// cumulative damage that a session of twelve battles ends before the
+	// two-level climb is done — on the retreat line, or on a true blackout.
+	// Either way the grind resumes from a healthy party at the grass: a
+	// blackout already healed it at the respawn spot, a retreat left it
+	// where it stopped and needs an explicit heal first (the caller's
+	// decision, made here). Every battle of the effort counts toward the
+	// total — the level gain may land on a walk, in which case the next
+	// session ends at the target with no battles of its own.
+	target := int(startLevel) + 2
+	totalBattles := 0
+	blackedOut := false
+	var res skill.TrainResult
+	for segment := 1; ; segment++ {
+		r, err := skill.Train(e, romData, target, policy, 12)
+		if err != nil {
+			t.Fatalf("Train (segment %d): %v (battles=%d)", segment, err, totalBattles+r.Battles)
+		}
+		totalBattles += r.Battles
+		res = r
+		if r.Reached {
+			break
+		}
+		if totalBattles > 60 {
+			t.Fatalf("did not reach level %d in %d battles (endLevel=%d)", target, totalBattles, r.EndLevel)
+		}
+		if r.BlackedOut {
+			blackedOut = true
+		}
+		if r.Retreated {
+			center, ok := skill.Place("viridian pokemon center")
+			if !ok {
+				t.Fatal("Place(viridian pokemon center) did not resolve")
+			}
+			walk, err := fixture.Travel(e, center, policy, 6)
+			if err != nil {
+				t.Fatalf("travel to the center (segment %d): %v", segment, err)
+			}
+			totalBattles += walk.Battles
+			if err := skill.Heal(e); err != nil {
+				t.Fatalf("heal (segment %d): %v", segment, err)
+			}
+		}
 		walk, err := fixture.Travel(e, dest, policy, 6)
 		if err != nil {
-			t.Fatalf("resume Travel to Route 1: %v", err)
+			t.Fatalf("resume Travel to Route 1 (segment %d): %v", segment, err)
 		}
-		resumed, err := skill.Train(e, romData, int(startLevel)+2, policy, 12)
-		if err != nil {
-			t.Fatalf("Train (resumed): %v (battles=%d)", err, resumed.Battles)
-		}
-		res = resumed
-		res.Battles += firstBattles + walk.Battles
+		totalBattles += walk.Battles
+		t.Logf("segment %d: %d battle(s), level %d, blackedOut=%v retreated=%v; resuming the grind", segment, r.Battles, r.EndLevel, r.BlackedOut, r.Retreated)
 	}
+	res.Battles = totalBattles
 	state.Snapshot(e, &mem)
 	finalLevel := state.DecodeParty(&mem).Mons[0].Level
 	if finalLevel < startLevel {
@@ -147,11 +177,11 @@ func TestTrainGrindsOnRoute1(t *testing.T) {
 	if res.Battles < 1 {
 		t.Errorf("Battles = 0, want >= 1 (the level gain has no other source)")
 	}
-	// The bound counts a blackout resume if one happened: the first
-	// session (maxBattles+1), the walk back to the grass (its own
-	// maxBattles), and the fresh session (maxBattles+1).
-	if res.Battles > 13+6+13 {
-		t.Errorf("Battles = %d, want <= 32 (a session, a resume walk, a fresh session)", res.Battles)
+	// The bound counts the worst case: four segments of (session at most
+	// maxBattles+1 battles, walk to the center and back at most two
+	// maxBattles walks each) plus the final session.
+	if res.Battles > 4*(13+6+6)+13 {
+		t.Errorf("Battles = %d, want <= %d (four resume segments plus a final session)", res.Battles, 4*(13+6+6)+13)
 	}
 	state.Snapshot(e, &mem)
 	if state.DecodeBattle(&mem) != nil || !state.Controllable(&mem) {
@@ -164,6 +194,53 @@ func TestTrainGrindsOnRoute1(t *testing.T) {
 	}
 	t.Logf("trained the lead from level %d to %d (target %d) in %d battles (blackedOut=%v)",
 		startLevel, finalLevel, startLevel+2, res.Battles, blackedOut)
+}
+
+// TestTrainRetreatsBeforeBlackout: a lone starter grinding Route 2 would
+// have blacked out — measured, one battle before each of three such
+// blackouts the lead stood at 5/27 (18.5%), 4/31 (12.9%) and 1/38 (2.6%),
+// RUNNOTES S9-9 — but the session must end while the party can still walk:
+// the new outcome set, no blackout, and the lead's HP above zero read from
+// RAM, not inferred from the absence of a blackout flag.
+func TestTrainRetreatsBeforeBlackout(t *testing.T) {
+	if testing.Short() {
+		t.Skip("full grind (Route 2); run without -short")
+	}
+	e := fixture.Load(t, "post_errand")
+	romData := e.ROM()
+	policy := skill.StatAwareMove(romData)
+
+	dest, ok := skill.Place("route 2")
+	if !ok {
+		t.Fatal("Place(route 2) did not resolve")
+	}
+	if _, err := fixture.Travel(e, dest, policy, 6); err != nil {
+		t.Fatalf("setup travel to route 2: %v", err)
+	}
+
+	res, err := skill.Train(e, romData, 99, policy, 40)
+	if err != nil {
+		t.Fatalf("Train: %v (battles=%d)", err, res.Battles)
+	}
+	if res.Reached || res.BlackedOut {
+		t.Fatalf("Reached=%v BlackedOut=%v, want neither (target 99 is out of budget; the session must end on the retreat line)", res.Reached, res.BlackedOut)
+	}
+	if !res.Retreated {
+		t.Fatalf("Retreated = false after %d battles (endLevel=%d); the lone lead's cumulative damage must reach the retreat line before the budget or a blackout — measured: from this state it blacked out within 24 battles without the line", res.Battles, res.EndLevel)
+	}
+	var mem state.Mem
+	state.Snapshot(e, &mem)
+	lead := state.DecodeParty(&mem).Mons[0]
+	if lead.HP == 0 {
+		t.Fatalf("lead HP = 0 in RAM; the retreat must leave the lead alive")
+	}
+	if int(lead.HP)*2 >= int(lead.MaxHP) {
+		t.Errorf("lead HP = %d/%d in RAM, want below the retreat line (half max)", lead.HP, lead.MaxHP)
+	}
+	if state.DecodeBattle(&mem) != nil || !state.Controllable(&mem) {
+		t.Fatalf("a sequence was left in progress after Train: battle=%v controllable=%v", state.DecodeBattle(&mem) != nil, state.Controllable(&mem))
+	}
+	t.Logf("retreat: %d battles, level %d -> %d, lead %d/%d HP — the session that would have blacked out ended alive", res.Battles, res.StartLevel, res.EndLevel, lead.HP, lead.MaxHP)
 }
 
 // TestTrainBudgetIsAResult: exhausting maxBattles without reaching the
@@ -309,7 +386,24 @@ func TestTrainSurvivesEvolution(t *testing.T) {
 		if totalBattles >= totalCap {
 			t.Fatalf("did not reach level %d in %d battles (endLevel=%d) — Train stopped short of or hung at an interruption", target, totalBattles, r.EndLevel)
 		}
-		t.Logf("segment %d: %d battle(s), level %d, blackedOut=%v; resuming the grind", segment, r.Battles, r.EndLevel, r.BlackedOut)
+		if r.Retreated {
+			// The session stopped while the party was alive: the grind resumes
+			// only from a healed lead, so walk to a center and heal — the
+			// caller's decision, made here explicitly. A retreat does not
+			// respawn the player, so without this the next segment would
+			// start below the line and stop before it fights.
+			center, ok := skill.Place("viridian pokemon center")
+			if !ok {
+				t.Fatal("Place(viridian pokemon center) did not resolve")
+			}
+			if _, err := fixture.Travel(e, center, policy, 6); err != nil {
+				t.Fatalf("travel to the center (segment %d): %v", segment, err)
+			}
+			if err := skill.Heal(e); err != nil {
+				t.Fatalf("heal (segment %d): %v", segment, err)
+			}
+		}
+		t.Logf("segment %d: %d battle(s), level %d, blackedOut=%v retreated=%v; resuming the grind", segment, r.Battles, r.EndLevel, r.BlackedOut, r.Retreated)
 	}
 	state.Snapshot(e, &mem)
 	after := state.DecodeParty(&mem).Mons[0]
@@ -338,6 +432,32 @@ func TestTrainSurvivesEvolution(t *testing.T) {
 // tileset 0's grass tile but points at NothingWildMons (rate 0), so the game
 // never encounters there — and Train used to ping-pong those four tiles for
 // 460 legs with zero battles, wasting rounds and tripping the failure budget.
+// TestNoEncounterDiagnostic pins Train's maxLegs diagnostic: it states what
+// is actually known — legs walked, encounters rolled, the map, its grass
+// rate and wild species count — and speculates about no cause. The message
+// it replaced blamed the map's grass for having no encounter rate at all,
+// a branch that cannot reach maxLegs any more (a zero rate makes grassCells
+// return nil, so Train fails with "no walkable tall grass" long before)
+// and sent the next reader in the wrong direction.
+func TestNoEncounterDiagnostic(t *testing.T) {
+	err := skill.NoEncounterDiagnostic(141, 2, 4, 0x33, 8, 5)
+	msg := err.Error()
+	for _, want := range []string{
+		"no-encounter phase after 141 legs",
+		"2 encounters (want 4 battles)",
+		"map 0x0033",
+		"grass rate 8/256",
+		"5 species in wild table",
+	} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("diagnostic %q missing %q", msg, want)
+		}
+	}
+	if strings.Contains(msg, "has no wild rate") {
+		t.Errorf("diagnostic %q still blames the impossible cause the old message named", msg)
+	}
+}
+
 func TestHasGrassMatchesTheGameEncounterRule(t *testing.T) {
 	path := os.Getenv("POKEMON_RED_ROM")
 	if path == "" {

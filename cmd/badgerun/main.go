@@ -65,6 +65,7 @@ type config struct {
 	injectFact bool
 	fact       string
 	goal       string // task statement rendered into the planner's system prompt
+	badge      string // badge name that ends the run (default "Boulder")
 }
 
 // parseConfig parses and validates the harness arguments. It is a pure
@@ -89,12 +90,15 @@ func parseConfig(args []string) (config, error) {
 			"the task statement rendered into the planner's system prompt above everything else. "+
 				"A run parameter, not a constant: later slices need a different goal with a checkpoint. "+
 				"It must name the task and nothing else — no strategy, which is what -inject-fact is for.")
+		badge = fs.String("badge", "Boulder",
+			"the badge name in the observation that ends the run (default Boulder; "+
+				"set Cascade for the S9-12 milestone so a run that earns Pewter keeps going)")
 	)
 	if err := fs.Parse(args); err != nil {
 		return config{}, err
 	}
 
-	cfg := config{romPath: *rom, n: *n, maxRounds: *maxRounds, maxFrames: *maxFrames, outDir: *outDir, injectFact: *inject, fact: *fact, goal: *goal}
+	cfg := config{romPath: *rom, n: *n, maxRounds: *maxRounds, maxFrames: *maxFrames, outDir: *outDir, injectFact: *inject, fact: *fact, goal: *goal, badge: *badge}
 	if cfg.romPath == "" {
 		return config{}, fmt.Errorf("badgerun: no ROM (-rom or POKEMON_RED_ROM)")
 	}
@@ -210,8 +214,9 @@ func formatTable(rs []runResult) string {
 // ErrDone rather than letting the model keep playing makes "frames to badge"
 // a well-defined number instead of "frames until the model stopped".
 type badgePlanner struct {
-	inner         agent.Planner
+	inner         *agent.LLMPlanner // the real planner; typed so NextFeedback can be forwarded
 	m             *emu.Emu
+	badge         string // -badge: the badge name that ends the run
 	calls         int
 	blackouts     int
 	sawBlackout   bool // the carried flag is live for one round; count it once
@@ -219,22 +224,35 @@ type badgePlanner struct {
 	framesToBadge uint64
 }
 
-func (b *badgePlanner) Next(obs agent.Observation, offered []agent.Objective) (agent.Objective, error) {
+// NextFeedback forwards the rejection feedback, so planWithRetries can re-ask
+// a rejected reply up to MaxReplyRetries times. Without this method the
+// wrapper fails the FeedbackPlanner type assertion and ONE superfluous-
+// argument reply (the S9-11 rejection storm) stops the whole run after a
+// single call — which is exactly how the first S9-12 attempt died on round 1.
+func (b *badgePlanner) NextFeedback(obs agent.Observation, offered []agent.Objective, feedback string) (agent.Objective, error) {
 	b.calls++
 	if obs.BlackedOut && !b.sawBlackout {
 		b.blackouts++
 	}
 	b.sawBlackout = obs.BlackedOut
-	if b.framesToBadge == 0 && hasBoulder(obs) {
+	if b.framesToBadge == 0 && hasBadge(obs, b.badge) {
 		b.framesToBadge = b.m.FrameCount()
 		return agent.Objective{}, agent.ErrDone
 	}
-	return b.inner.Next(obs, offered)
+	return b.inner.NextFeedback(obs, offered, feedback)
 }
 
-func hasBoulder(obs agent.Observation) bool {
+func (b *badgePlanner) Next(obs agent.Observation, offered []agent.Objective) (agent.Objective, error) {
+	return b.NextFeedback(obs, offered, "")
+}
+
+// hasBadge reports whether the named badge is visible in the observation.
+// The name comes from -badge, not a constant: the S9-12 milestone chases
+// Cascade through Pewter, and a run that stops at Boulder would answer the
+// wrong question.
+func hasBadge(obs agent.Observation, name string) bool {
 	for _, n := range obs.Badges {
-		if n == "Boulder" {
+		if n == name {
 			return true
 		}
 	}
@@ -302,7 +320,7 @@ func runOne(cfg config, starter string, seed int64) (runResult, error) {
 		planner := plannerFor(cfg)
 		planner.Log = os.Stdout // one line per model call, captured into logBuf
 		planner.PromptLog = promptFile // every prompt, verbatim, for the record
-		wrapped = &badgePlanner{inner: planner, m: m}
+		wrapped = &badgePlanner{inner: planner, m: m, badge: cfg.badge}
 		// Battles are counted per frame from the battle flag's rising
 		// edges: every battle in this slice is stepped frame by frame, so
 		// no transition is missed. (wStatusFlags4 bit 5 is NOT a blackout
@@ -333,6 +351,15 @@ func runOne(cfg config, starter string, seed int64) (runResult, error) {
 		return runResult{starter: starter, seed: seed, stop: "error", where: starterErr.Error()}, nil
 	}
 	writeRunLog(dir, logBuf.String())
+	// The final save state is the measurement surface for "how far": map,
+	// badges and party are read from RAM out of this file (PROBE_STATE),
+	// not from the log's prose. The checkpoint ring is bounded and lags the
+	// last objective, so it cannot stand in for where the run actually died.
+	if st, err := m.SaveState(); err != nil {
+		fmt.Fprintf(os.Stderr, "badgerun: save final state: %v\n", err)
+	} else if err := os.WriteFile(dir+"/final.state", st, 0o644); err != nil {
+		fmt.Fprintf(os.Stderr, "badgerun: write final.state: %v\n", err)
+	}
 
 	stop := stopName(res.Stop)
 	where := fmt.Sprintf("%s (%d,%d)", res.Final.MapName, res.Final.X, res.Final.Y)
@@ -343,7 +370,7 @@ func runOne(cfg config, starter string, seed int64) (runResult, error) {
 		// A non-done stop is a diagnosis input; the table row says why.
 		where += " — " + res.Err.Error()
 	}
-	badge := wrapped.framesToBadge != 0 || hasBoulder(res.Final)
+	badge := wrapped.framesToBadge != 0 || hasBadge(res.Final, cfg.badge)
 	r := runResult{
 		starter:   starter,
 		seed:      seed,

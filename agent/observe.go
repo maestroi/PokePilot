@@ -70,6 +70,19 @@ type Observation struct {
 	// Run, not decoded from RAM: outcomes are run memory, not game state.
 	History []RoundRecord
 
+	// Intent is the sentence the planner most recently attached to its
+	// choice — what that choice was in service of. Set by Run from the
+	// planner's own words, never written, edited or summarised by Run: a
+	// model that keeps re-choosing an objective it has chosen before sees
+	// here why it chose it, at temperature 0 where nothing else changes.
+	// Empty until the planner says one.
+	Intent string
+	// IntentAge is how many rounds the carried intent has gone unchanged:
+	// 0 on the round after it was (re)set, counting up while the planner
+	// leaves it alone. Age is what lets a model notice it has been chasing
+	// the same thing for thirty rounds.
+	IntentAge int
+
 	// WildGrass names the species this map's tall grass can actually roll,
 	// with the level band each appears at and how many of the ten encounter
 	// slots it holds (rarity, in the only form the ROM states it). Decoded
@@ -89,6 +102,14 @@ type Observation struct {
 	// visible standing seven tiles from an NPC), so it cannot tell a planner
 	// that a person worth talking to exists across the map.
 	MapObjects []MapObject
+
+	// Requirements are raw sentences the game has said that carry the shape
+	// of a stated requirement or blocked way, kept across rounds by
+	// Knowledge and set here by Run (like RecentDialogue): a wall stated
+	// once must still be visible ten rounds later, or the run keeps walking
+	// into the same wall to remember it. The game's exact words, newest
+	// first; nothing is parsed out of them. Empty until the game says one.
+	Requirements []string
 }
 
 // MapObject is one object of the current map in the form a planner may see
@@ -200,6 +221,7 @@ func Observe(m *emu.Emu, romData []byte) Observation {
 		Bag:            []Item{},
 		RecentDialogue: []string{},
 		History:        []RoundRecord{},
+		Requirements:   []string{},
 	}
 	for i, mon := range gs.Party.Mons {
 		obs.Party[i] = PartyMon{Species: mon.Species, Level: mon.Level, HP: mon.HP, MaxHP: mon.MaxHP, Status: mon.StatusName()}

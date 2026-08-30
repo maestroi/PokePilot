@@ -162,6 +162,93 @@ func TestOfferTable(t *testing.T) {
 			mustNot: []string{"heal"},
 		},
 		{
+			name: "hurt party with a potion in the bag: field healing joins without walking to a center",
+			obs: agent.Observation{
+				Map: 0x0c, MapName: "ROUTE_1", X: 5, Y: 14, PartyCount: 1,
+				Party:  []agent.PartyMon{{Species: 1, Level: 6, HP: 4, MaxHP: 20}},
+				Bag:    []agent.Item{{Name: "potion", Quantity: 3}},
+				Events: []string{"BattledRivalInOaksLab"},
+			},
+			known: func() *agent.Knowledge {
+				k := agent.NewKnowledge(adj)
+				for _, m := range []uint8{0x00, 0x0c, 0x01, 0x29} {
+					k.SawMap(m)
+				}
+				return k
+			},
+			want: []string{
+				"go to pallet town",
+				"go to viridian city",
+				"go to viridian pokemon center",
+				"deliver oak's parcel",
+				"heal the party at VIRIDIAN POKEMON CENTER",
+				"use a POTION on party slot 0",
+			},
+		},
+		{
+			name: "whole party with a potion in the bag: no use-item — a round that changes nothing",
+			obs: agent.Observation{
+				Map: 0x0c, MapName: "ROUTE_1", X: 5, Y: 14, PartyCount: 1,
+				Party:  []agent.PartyMon{{Species: 1, Level: 6, HP: 20, MaxHP: 20}},
+				Bag:    []agent.Item{{Name: "potion", Quantity: 3}},
+				Events: []string{"BattledRivalInOaksLab"},
+			},
+			known: func() *agent.Knowledge {
+				k := agent.NewKnowledge(adj)
+				k.SawMap(0x00)
+				k.SawMap(0x0c)
+				return k
+			},
+			want: []string{
+				"go to pallet town",
+				"go to viridian city",
+				"deliver oak's parcel",
+			},
+			mustNot: []string{"use", "heal"},
+		},
+		{
+			name: "hurt party, empty bag: no use-item to offer",
+			obs: agent.Observation{
+				Map: 0x0c, MapName: "ROUTE_1", X: 5, Y: 14, PartyCount: 1,
+				Party:  []agent.PartyMon{{Species: 1, Level: 6, HP: 4, MaxHP: 20}},
+				Events: []string{"BattledRivalInOaksLab"},
+			},
+			known: func() *agent.Knowledge {
+				k := agent.NewKnowledge(adj)
+				k.SawMap(0x00)
+				k.SawMap(0x0c)
+				return k
+			},
+			want: []string{
+				"go to pallet town",
+				"go to viridian city",
+				"deliver oak's parcel",
+			},
+			mustNot: []string{"use"},
+		},
+		{
+			name: "poisoned mon with an antidote: the status cure joins, though the HP is whole",
+			obs: agent.Observation{
+				Map: 0x0c, MapName: "ROUTE_1", X: 5, Y: 14, PartyCount: 1,
+				Party:  []agent.PartyMon{{Species: 1, Level: 6, HP: 20, MaxHP: 20, Status: "poisoned"}},
+				Bag:    []agent.Item{{Name: "antidote", Quantity: 1}},
+				Events: []string{"BattledRivalInOaksLab"},
+			},
+			known: func() *agent.Knowledge {
+				k := agent.NewKnowledge(adj)
+				k.SawMap(0x00)
+				k.SawMap(0x0c)
+				return k
+			},
+			want: []string{
+				"go to pallet town",
+				"go to viridian city",
+				"deliver oak's parcel",
+				"use an ANTIDOTE on party slot 0",
+			},
+			mustNot: []string{"heal"},
+		},
+		{
 			name: "inside a center: heal joins; no balls, so no catch",
 			obs: agent.Observation{
 				Map: 0x29, MapName: "VIRIDIAN_POKECENTER", X: 4, Y: 5, PartyCount: 1,
@@ -392,6 +479,71 @@ func TestKnowledgeDialogueMentions(t *testing.T) {
 	k.SawDialogue([]string{"In Pallet Town, Oak waits."})
 	if !k.Places["pallet town"] {
 		t.Errorf("dialogue named Pallet Town; Knowledge does not know it")
+	}
+}
+
+// TestKnowledgeHarvestsStatedRequirements: the Route 23 guard text, pasted
+// as the game renders it ("<BADGE>" is the badge name in wNameBuffer, "#"
+// expands to POKé), is harvested as RAW SENTENCES — no badge name, item or
+// flag parsed out; ordinary NPC chatter is not; the same line twice appears
+// once. The third page carries no requirement shape and must stay out.
+func TestKnowledgeHarvestsStatedRequirements(t *testing.T) {
+	k := agent.NewKnowledge(nil)
+	guard := []string{
+		"You can pass here\nonly if you have\nthe CASCADEBADGE!",
+		"You don't have the\nCASCADEBADGE yet!",
+		"You have to have\nit to get to\nPOKéMON LEAGUE!",
+	}
+	chatter := []string{
+		"I'm raising #MON too!",
+		"Time is money...",
+		"Are you going to VIRIDIAN FOREST?\nBe careful, it's\na natural maze!",
+	}
+
+	k.SawDialogue(chatter)
+	if len(k.Requirements) != 0 {
+		t.Fatalf("ordinary chatter was harvested: %v", k.Requirements)
+	}
+
+	k.SawDialogue(guard)
+	want := []string{
+		"You don't have the\nCASCADEBADGE yet!", // newest first
+		"You can pass here\nonly if you have\nthe CASCADEBADGE!",
+	}
+	if !reflect.DeepEqual(k.Requirements, want) {
+		t.Fatalf("Requirements = %v, want %v", k.Requirements, want)
+	}
+
+	// The same lines again — a box that re-fires while the player stands
+	// there must not fill the observation with the sentence forty times.
+	k.SawDialogue(guard)
+	if !reflect.DeepEqual(k.Requirements, want) {
+		t.Fatalf("re-heard lines duplicated: %v", k.Requirements)
+	}
+}
+
+// TestKnowledgeRequirementShapesAndCap pins the filter's two edges: a
+// wall-statement shape ("can't go through") is caught, and more than
+// requirementCap distinct walls keep only the newest ones, first.
+func TestKnowledgeRequirementShapesAndCap(t *testing.T) {
+	k := agent.NewKnowledge(nil)
+	k.HeardRequirement("You can't go\nthrough here!")
+	if len(k.Requirements) != 1 || !strings.Contains(k.Requirements[0], "can't go") {
+		t.Fatalf("the 'can't go through' shape was not caught: %v", k.Requirements)
+	}
+
+	k2 := agent.NewKnowledge(nil)
+	for i := 0; i < 12; i++ {
+		k2.HeardRequirement("You need key " + string(rune('a'+i)) + " to pass.")
+	}
+	if len(k2.Requirements) != 8 {
+		t.Fatalf("cap not enforced: %d lines kept, want 8: %v", len(k2.Requirements), k2.Requirements)
+	}
+	if !strings.Contains(k2.Requirements[0], "key l") {
+		t.Errorf("newest line not first: %v", k2.Requirements)
+	}
+	if !strings.Contains(k2.Requirements[len(k2.Requirements)-1], "key e") {
+		t.Errorf("oldest surviving line not last: %v", k2.Requirements)
 	}
 }
 

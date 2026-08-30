@@ -340,7 +340,23 @@ func TestBattleAnswersForgetMovePrompt(t *testing.T) {
 		if totalBattles >= totalCap {
 			t.Fatalf("did not reach level %d in %d battles (endLevel=%d) — Train stopped short of or hung at an interruption", target, totalBattles, r.EndLevel)
 		}
-		t.Logf("segment %d: %d battle(s), level %d, blackedOut=%v; resuming the grind", segment, r.Battles, r.EndLevel, r.BlackedOut)
+		if r.Retreated {
+			// The session stopped while the party was alive: the grind resumes
+			// only from a healed lead (a retreat does not respawn the player,
+			// so the next segment would start below the line and stop before
+			// it fights). Same caller decision as TestTrainSurvivesEvolution.
+			center, ok := skill.Place("viridian pokemon center")
+			if !ok {
+				t.Fatal("Place(viridian pokemon center) did not resolve")
+			}
+			if _, err := fixture.Travel(e, center, policy, 6); err != nil {
+				t.Fatalf("travel to the center (segment %d): %v", segment, err)
+			}
+			if err := skill.Heal(e); err != nil {
+				t.Fatalf("heal (segment %d): %v", segment, err)
+			}
+		}
+		t.Logf("segment %d: %d battle(s), level %d, blackedOut=%v retreated=%v; resuming the grind", segment, r.Battles, r.EndLevel, r.BlackedOut, r.Retreated)
 	}
 
 	state.Snapshot(e, &mem)

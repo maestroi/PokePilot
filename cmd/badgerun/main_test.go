@@ -138,14 +138,17 @@ squirtle   2    no        200000     60  10/5         8         0 stuck    Route
 	}
 }
 
-func TestHasBoulder(t *testing.T) {
-	if !hasBoulder(agent.Observation{Badges: []string{"Boulder", "Cascade"}}) {
-		t.Error("hasBoulder(Boulder, Cascade) = false")
+func TestHasBadge(t *testing.T) {
+	if !hasBadge(agent.Observation{Badges: []string{"Boulder", "Cascade"}}, "Boulder") {
+		t.Error("hasBadge(Boulder, Cascade; Boulder) = false")
 	}
-	if hasBoulder(agent.Observation{Badges: []string{"Cascade", "Thunder"}}) {
-		t.Error("hasBoulder(Cascade, Thunder) = true")
+	if !hasBadge(agent.Observation{Badges: []string{"Cascade", "Thunder"}}, "Cascade") {
+		t.Error("hasBadge(Cascade, Thunder; Cascade) = false")
 	}
-	if hasBoulder(agent.Observation{}) {
-		t.Error("hasBoulder(no badges) = true")
+	if hasBadge(agent.Observation{Badges: []string{"Cascade", "Thunder"}}, "Boulder") {
+		t.Error("hasBadge(Cascade, Thunder; Boulder) = true")
+	}
+	if hasBadge(agent.Observation{}, "Boulder") {
+		t.Error("hasBadge(no badges) = true")
 	}
 }

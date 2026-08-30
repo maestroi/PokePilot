@@ -16,6 +16,16 @@ type Planner interface {
 // ErrDone is returned by a planner with nothing left to do.
 var ErrDone = errors.New("agent: nothing left to do")
 
+// IntentCap is the byte cap on a planner's intent sentence. It is stated in
+// the reply schema's description AND enforced here as a typed rejection:
+// an intent that costs more than this many prompt bytes on every subsequent
+// round is a paragraph, not a sentence, and one that is silently truncated
+// means something different from what the model said.
+const IntentCap = 200
+
+// ErrIntentTooLong is the typed rejection for an intent over IntentCap.
+var ErrIntentTooLong = errors.New("agent: intent exceeds the byte cap")
+
 // ScriptedPlanner walks a fixed list of objectives in order. It is the
 // default: deterministic, free, and the reason tests never call a model.
 type ScriptedPlanner struct {
@@ -80,6 +90,11 @@ type ReplyArgs struct {
 	Species  string
 	Item     string
 	Quantity *int
+	Flee     *bool // KindGoTo / KindHeal-with-Place: run wild encounters instead of fighting them
+	// Intent applies to EVERY kind (unlike level/species/item): every
+	// objective can be in service of something. It is the model's own
+	// sentence, carried by Run onto the next round's Observation.
+	Intent string
 }
 
 // WithArgs applies a model-supplied argument to an offered objective and
@@ -94,6 +109,14 @@ func WithArgs(o Objective, a ReplyArgs) (Objective, error) {
 	// Validate EVERY argument before any of them lands: a rejected reply
 	// must not leave a half-updated objective behind.
 	var species, item uint8
+	if a.Intent != "" {
+		// Rejected, not truncated: a cut sentence reads as valid while
+		// saying something the model never said — the same class of bug as
+		// the truncated-reply case ErrNotFinished exists to catch.
+		if len(a.Intent) > IntentCap {
+			return o, fmt.Errorf("%w: %d bytes exceeds the %d-byte cap", ErrIntentTooLong, len(a.Intent), IntentCap)
+		}
+	}
 	if a.Level != nil {
 		if o.Kind != KindTrain {
 			return o, fmt.Errorf("agent: level argument %d does not apply to %s", *a.Level, o)
@@ -130,6 +153,15 @@ func WithArgs(o Objective, a ReplyArgs) (Objective, error) {
 			return o, fmt.Errorf("agent: quantity %d out of range 1..99 for %s", *a.Quantity, o)
 		}
 	}
+	if a.Flee != nil {
+		// Flee only applies to the kinds that travel: KindGoTo, and
+		// KindHeal when it carries a Place (a heal in place walks nowhere,
+		// so there is nothing to flee on). A flee on anything else is the
+		// same silent-wrong-choice error as the other misplaced arguments.
+		if o.Kind != KindGoTo && !(o.Kind == KindHeal && o.Place != "") {
+			return o, fmt.Errorf("agent: flee argument %v does not apply to %s", *a.Flee, o)
+		}
+	}
 	if a.Level != nil {
 		o.Level = uint8(*a.Level)
 	}
@@ -141,6 +173,12 @@ func WithArgs(o Objective, a ReplyArgs) (Objective, error) {
 	}
 	if a.Quantity != nil {
 		o.Qty = *a.Quantity
+	}
+	if a.Flee != nil {
+		o.Flee = *a.Flee
+	}
+	if a.Intent != "" {
+		o.Intent = a.Intent
 	}
 	return o, nil
 }

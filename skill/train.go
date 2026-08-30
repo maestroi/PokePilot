@@ -1,6 +1,7 @@
 package skill
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -33,7 +34,30 @@ type TrainResult struct {
 	Battles    int  // wild battles fought
 	BlackedOut bool // a battle ended in ResultLost
 	Reached    bool // EndLevel >= targetLevel
+	Retreated  bool // stopped while the party was alive: continuing would have lost it
 }
+
+// ErrTrainRetreat marks a Train session that ended while the party was still
+// able to walk: the lead's HP fell below the retreat line, so the next battle
+// was more likely to faint it than to level it. It is an outcome, not a
+// defect — the caller heals and trains again — but it must be distinguishable
+// from both a shortfall (Reached == false on budget) and a wipe (BlackedOut),
+// and it carries the exemption agent.Run gives a blackout: the session
+// changed the party, so repeating the objective is not an identical attempt.
+var ErrTrainRetreat = errors.New("skill: Train: stopped while the party was alive: continuing would have lost it")
+
+// retreatLineNum/Den: a session stops when the lead's HP is below this
+// fraction of its max, and refuses to start from below it. MEASURED on
+// Route 2 (post_errand, one-mon L7 lead, type-aware policy): three
+// blackout-ending sessions in which the lead stood at 5/27 (18.5%), 4/31
+// (12.9%) and 1/38 (2.6%) one battle before the fatal one — every sub-20%
+// reading in those sessions was followed by the blackout. Half max HP sits
+// well above that line, with margin for other rDIV phases; RUNNOTES (S9-9)
+// carries the full per-battle table.
+const (
+	retreatLineNum = 1
+	retreatLineDen = 2
+)
 
 // Train levels the lead party member by fighting the wild encounters that
 // tall grass on the current map throws at it.
@@ -43,7 +67,10 @@ type TrainResult struct {
 // policy and Travel re-plans the rest of the leg from the encounter tile.
 // After every leg the lead's level is re-read from RAM, and the session
 // ends when the level reaches targetLevel, when maxBattles battles have
-// been fought, or when a blackout ends it.
+// been fought, when a blackout ends it, or when the lead's HP falls below
+// the retreat line (Retreated == true): the fourth exit, which stops while
+// the party can still walk instead of trading half the money and the walk
+// back for the last battle of a session that was already lost.
 //
 // Non-battle sequences that a grind throws up — the level-up EVOLUTION
 // cutscene ("CATERPIE evolved into METAPOD!") and the learned-move box
@@ -66,9 +93,10 @@ type TrainResult struct {
 // occur on the Caterpie->Butterfree line (the level-12 Butterfree holds
 // three moves, an empty slot, so CONFUSION is a plain box).
 //
-// Both axes bound the session: at most maxBattles battles are fought and
-// reaching the target ends it early. Not reaching the target within
-// budget is a result (Reached == false, nil error), not a failure. A
+// Three things bound the session: at most maxBattles battles are fought,
+// reaching the target ends it early, and the retreat line ends it while the
+// party can still walk. Not reaching the target within budget is a result
+// (Reached == false, nil error), not a failure. A
 // blackout ends the session and is reported: with no healthy mon left,
 // grinding is over. A blackout is a legitimate ending, not a failure —
 // cumulative damage across several battles can faint even a lead that
@@ -114,9 +142,23 @@ func Train(m *emu.Emu, romData []byte, targetLevel int, policy MovePolicy, maxBa
 		return res, fmt.Errorf("skill: Train: map %#04x has no two walkable grass cells close enough to grind between", now.Map)
 	}
 
+	// A session that starts below the retreat line has already lost: the
+	// next battle is more likely to faint the lead than to level it, so the
+	// session ends before it fights anything. Healing is the caller's
+	// decision (KindHeal exists for exactly this).
+	if leadBelowRetreatLine(m) {
+		res.EndLevel = res.StartLevel
+		res.Retreated = true
+		return res, nil
+	}
+
 	// maxLegs bounds the session when encounters come sparser than the
 	// budget assumes (Route 1 fights about one per six legs, measured):
-	// tripping it means the map's grass has no wild rate at all.
+	// tripping it means the game rolled fewer encounters than that budget
+	// implies over maxLegs legs of walking. The roll is hRandomAdd against
+	// the map's grass rate, sampled once per step onto grass, and hRandomAdd
+	// advances with rDIV every frame — so which legs produce a fight depends
+	// on when the steps land, not just on how many there are.
 	maxLegs := 20*maxBattles + 60
 	next := b
 	legs := 0
@@ -159,9 +201,21 @@ func Train(m *emu.Emu, romData []byte, targetLevel int, policy MovePolicy, maxBa
 		if res.BlackedOut || res.Reached || res.Battles >= maxBattles {
 			return res, nil
 		}
+		// The fourth exit: the party is alive but continuing would have lost
+		// it. End the session and report the retreat; a blackout costs half
+		// the money and the walk back, this costs only the level the next,
+		// healed, session can still earn.
+		if leadBelowRetreatLine(m) {
+			res.Retreated = true
+			return res, nil
+		}
 		if legs+1 > maxLegs {
-			return res, fmt.Errorf("skill: Train: %d legs without enough encounters (want %d battles on map %#04x; its grass has no wild rate?)",
-				legs+1, maxBattles, now.Map)
+			rate, _ := wildGrassRate(romData, now.Map)
+			species := 0
+			if sp, serr := WildGrass(romData, now.Map); serr == nil {
+				species = len(sp)
+			}
+			return res, NoEncounterDiagnostic(legs+1, res.Battles, maxBattles, now.Map, rate, species)
 		}
 		next = flip(a, b, next)
 		legs++
@@ -522,12 +576,39 @@ func leadLevel(m *emu.Emu) int {
 	return int(state.DecodeParty(&mem).Mons[0].Level)
 }
 
+// leadBelowRetreatLine reports whether the lead's HP is below the fraction
+// of its max at which a session stops instead of risking the party. A
+// fainted lead (HP 0, a backup mon still standing) reads as below the line:
+// continuing would spend that backup the same way.
+func leadBelowRetreatLine(m *emu.Emu) bool {
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	lead := state.DecodeParty(&mem).Mons[0]
+	if lead.MaxHP == 0 {
+		return true
+	}
+	return int(lead.HP)*retreatLineDen < int(lead.MaxHP)*retreatLineNum
+}
+
 // flip returns the other end of the ping-pong.
 func flip(a, b, cur cell) cell {
 	if cur == a {
 		return b
 	}
 	return a
+}
+
+// NoEncounterDiagnostic renders Train's maxLegs diagnostic: what is
+// actually known when a session walks out its leg budget short of battles —
+// how many legs, how many encounters, on which map, with that map's grass
+// rate and wild species count read from the wild table. It states no cause:
+// the roll is hRandomAdd against the grass rate, sampled once per step onto
+// grass, and hRandomAdd advances with rDIV every frame, so a dry stretch is
+// a property of WHEN the steps land as much as of how many there are.
+// Callers that retry after a no-encounter phase match on its stable prefix.
+func NoEncounterDiagnostic(legs, battles, want int, mapID uint8, rate uint8, species int) error {
+	return fmt.Errorf("skill: Train: no-encounter phase after %d legs: %d encounters (want %d battles) on map %#04x, grass rate %d/256, %d species in wild table",
+		legs, battles, want, mapID, rate, species)
 }
 
 // wildSlots is how many (level, species) pairs a grass record carries.

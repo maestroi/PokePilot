@@ -9,11 +9,12 @@ import (
 
 // Knowledge is what a run has accumulated: the maps the player has stood on,
 // the place names the game has actually shown — a visited map, or a name
-// that appeared in decoded dialogue — and the objectives already completed.
-// It grows during the run and is derived ONLY from what the game has shown.
-// It is never seeded from the ROM's map table or from a list written out in
-// advance: seeding it is the difference between an agent that explores and
-// an agent that reads our notes.
+// that appeared in decoded dialogue — the raw sentences the game has said
+// that state a requirement or a blocked way, and the objectives already
+// completed. It grows during the run and is derived ONLY from what the game
+// has shown. It is never seeded from the ROM's map table or from a list
+// written out in advance: seeding it is the difference between an agent that
+// explores and an agent that reads our notes.
 //
 // Adjacency is the one field that is not game-shown, and it is kept apart
 // on purpose: it is route geometry (which map's doors lead where), built
@@ -26,17 +27,26 @@ type Knowledge struct {
 	Completed map[string]bool             // objectives already completed, by Objective.String()
 	Talked    map[uint8]map[[2]uint8]bool // map-local object coordinates already talked to
 	Adjacency map[uint8][]uint8           // for each map id, the map ids its exits lead to
+	// Requirements are raw sentences the game has said that carry the shape
+	// of a stated requirement or blocked way — "You don't have the
+	// CASCADEBADGE yet!" — kept VERBATIM: the model reads English, and a
+	// parser that turns the sentence into a badge name or item id would be
+	// us deciding what the sentence meant. Like Places, a line enters only
+	// when the game actually said it. Newest first, deduplicated, capped at
+	// requirementCap.
+	Requirements []string
 }
 
 // NewKnowledge returns an empty Knowledge over the given route geometry.
 // All maps start empty: a fresh run has seen nothing.
 func NewKnowledge(adjacency map[uint8][]uint8) *Knowledge {
 	return &Knowledge{
-		Visited:   map[uint8]bool{},
-		Places:    map[string]bool{},
-		Completed: map[string]bool{},
-		Talked:    map[uint8]map[[2]uint8]bool{},
-		Adjacency: adjacency,
+		Visited:      map[uint8]bool{},
+		Places:       map[string]bool{},
+		Completed:    map[string]bool{},
+		Talked:       map[uint8]map[[2]uint8]bool{},
+		Adjacency:    adjacency,
+		Requirements: []string{},
 	}
 }
 
@@ -44,8 +54,9 @@ func NewKnowledge(adjacency map[uint8][]uint8) *Knowledge {
 // stood on is a place the player knows, whatever its name.
 func (k *Knowledge) SawMap(id uint8) { k.Visited[id] = true }
 
-// SawDialogue scans decoded dialogue lines for place names and adds any it
-// finds. The place table is used as a VOCABULARY for the match — which
+// SawDialogue scans decoded dialogue lines for place names and for the raw
+// sentences that state a requirement or a blocked way, and keeps whatever it
+// finds. The place table is used as a VOCABULARY for the name match — which
 // names are recognizable — not as a seed: a name enters Knowledge only when
 // the game actually said it. Matching is on word boundaries, so "Route 22"
 // does not count as a mention of "route 2".
@@ -57,7 +68,75 @@ func (k *Knowledge) SawDialogue(lines []string) {
 				k.Places[name] = true
 			}
 		}
+		k.HeardRequirement(line)
 	}
+}
+
+// requirementCap bounds how many harvested sentences a run carries. A box
+// that re-fires every frame while the player stands on its tile must not
+// fill the observation with the same sentence forty times: dedup keeps one
+// copy, and the cap keeps the prompt bounded even if the game states many
+// different walls. Newest first.
+const requirementCap = 8
+
+// requirementShapes are ENGLISH SHAPES that mark a line as one where the
+// game tells the player what it needs or what blocks it. This list is a
+// FILTER, not knowledge: it decides which lines are interesting to carry
+// forward, never what is true — it names no badges, items or events, and
+// the harvested value is the raw sentence (Knowledge.Requirements), not a
+// parsed requirement. Keep it short; every shape here is a whole phrase the
+// game actually uses to state a requirement or a wall:
+//
+//	"You can pass here only if you have the CASCADEBADGE!"  (text/Route23.asm)
+//	"You don't have the CASCADEBADGE yet!"                  (text/Route23.asm)
+//	"You need to look everywhere to get different kinds!"    (text/ViridianForestNorthGate.asm)
+//	"You can't go through here! This is private property!"   (text/ViridianCity.asm)
+var requirementShapes = []string{
+	"you don't have",
+	"you need",
+	"only if you have",
+	"can't go through",
+}
+
+// looksLikeRequirement reports whether a line carries a requirement shape.
+// Gen 1 wraps dialogue at the line width, so a shape may be split across a
+// newline ("You can't go\nthrough here!"); the match runs on whitespace-
+// normalized text. The stored value stays verbatim — normalization is only
+// for the test, never for what the planner reads.
+func looksLikeRequirement(line string) bool {
+	low := strings.ToLower(line)
+	for strings.Contains(low, "\n") {
+		low = strings.ReplaceAll(low, "\n", " ")
+	}
+	for strings.Contains(low, "  ") {
+		low = strings.ReplaceAll(low, "  ", " ")
+	}
+	for _, s := range requirementShapes {
+		if strings.Contains(low, s) {
+			return true
+		}
+	}
+	return false
+}
+
+// HeardRequirement records one raw sentence the game has said, if it carries
+// a requirement shape. The sentence is kept verbatim and deduplicated: a box
+// that re-fires while the player stands there must not fill the observation
+// with the same line forty times. Newer sentences move to the front; the
+// list is capped at requirementCap, newest first.
+func (k *Knowledge) HeardRequirement(line string) {
+	line = strings.TrimSpace(line)
+	if line == "" || !looksLikeRequirement(line) {
+		return
+	}
+	out := make([]string, 0, len(k.Requirements)+1)
+	out = append(out, line)
+	for _, prev := range k.Requirements {
+		if prev != line && len(out) < requirementCap {
+			out = append(out, prev)
+		}
+	}
+	k.Requirements = out
 }
 
 // Done records a completed objective. Only one-shot objectives are dropped
@@ -74,6 +153,33 @@ func (k *Knowledge) TalkedTo(mapID, x, y uint8) {
 		k.Talked[mapID] = map[[2]uint8]bool{}
 	}
 	k.Talked[mapID][[2]uint8{x, y}] = true
+}
+
+// restore folds one captured memoryFile (memory.go) back into k. It is the
+// read-side half of checkpoint resume, and it touches exactly the fields
+// the game has shown: maps stood on, place names spoken or visited,
+// objectives completed, objects talked to. Adjacency is left as k was built
+// with: route geometry is rebuilt from the ROM by world.BuildGraph every
+// run, never restored from disk — a stale copy would outlive a map fix.
+func (k *Knowledge) restore(mem memoryFile) {
+	for _, id := range mem.Visited {
+		k.Visited[id] = true
+	}
+	for _, name := range mem.Places {
+		k.Places[name] = true
+	}
+	for _, s := range mem.Completed {
+		k.Completed[s] = true
+	}
+	for _, t := range mem.Talked {
+		k.TalkedTo(t.Map, t.X, t.Y)
+	}
+	for _, line := range mem.Requirements {
+		// Through HeardRequirement, not a raw append: the file was written
+		// by a version that already filtered these, and re-validating keeps
+		// this field honest if the shape list ever shrinks.
+		k.HeardRequirement(line)
+	}
 }
 
 // mentions reports whether line contains name as a whole word: the match
@@ -192,6 +298,26 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 		// the same reason a satisfied starter is not offered.
 		out = append(out, Objective{Kind: KindHeal, Place: name})
 	}
+	// Field medicine: use a bag item on a party member without walking to
+	// a Center. On the menu only while BOTH facts hold — the bag holds an
+	// item the ROM dispatches to ItemUseMedicine (fieldMedStatus), AND a
+	// slot exists it would do something to. A POTION offered to a whole
+	// party is a round that changes nothing: the same reason a satisfied
+	// starter is withheld and a full party is not offered the travelling
+	// heal. The planner picks the item and the target; Offer only says the
+	// pair is legal.
+	for _, it := range obs.Bag {
+		want, ok := fieldMedStatus[it.Name]
+		if !ok || it.Quantity < 1 {
+			continue // not medicine (or an unknown id "item N"); no use-item for it
+		}
+		id, _ := ItemByName(it.Name) // every fieldMedStatus key is a table name
+		for slot, mon := range obs.Party {
+			if medReaches(mon, want) {
+				out = append(out, Objective{Kind: KindUseItem, Item: id, Slot: slot})
+			}
+		}
+	}
 	// The gym objective fights the leader of whichever gym the player is
 	// standing in; elsewhere it has no one to fight. Being on a gym map is
 	// a precondition of the verb, not a verdict on whether the party is
@@ -260,17 +386,57 @@ func hasBadge(obs Observation, b state.Badge) bool {
 // nothing about which part of it went wrong.
 const trainStep = 2
 
+// monHurt says one mon is fainted or down to half HP or less. Half, not
+// "any damage at all": a lead at 25/26 is not a reason to spend a round
+// walking, and the point of the offer is the party that will lose the next
+// fight it takes.
+func monHurt(mon PartyMon) bool {
+	return mon.MaxHP > 0 && mon.HP*2 <= mon.MaxHP
+}
+
 // partyHurt says at least one mon is fainted or down to half HP or less.
-// Half, not "any damage at all": a lead at 25/26 is not a reason to spend a
-// round walking, and the point of the offer is the party that will lose the
-// next fight it takes.
 func partyHurt(obs Observation) bool {
 	for _, mon := range obs.Party {
-		if mon.MaxHP > 0 && mon.HP*2 <= mon.MaxHP {
+		if monHurt(mon) {
 			return true
 		}
 	}
 	return false
+}
+
+// fieldMedStatus says what each field medicine does to a party member, and
+// so which mon it would do something TO. Derived from the ROM's own
+// dispatch, not typed: ItemUsePtrTable (pokered/engine/items/item_effects.asm)
+// sends exactly these items to ItemUseMedicine, and ItemUseMedicine's
+// .checkItemType is the per-item rule — POTION through FULL_RESTORE take the
+// .healHP path (a fainted mon is refused with .healingItemNoEffect), while
+// ANTIDOTE/BURN_HEAL/ICE_HEAL/AWAKENING/PARLYZ_HEAL take
+// .cureStatusAilment, each effective only when the mon carries the status
+// its mask names (PSN/BRN/FRZ/SLP_MASK/PAR). The values are
+// state.Mon.StatusName's vocabulary; "" is an HP healer.
+var fieldMedStatus = map[string]string{
+	"potion":       "",
+	"super potion": "",
+	"hyper potion": "",
+	"max potion":   "",
+	"full restore": "",
+	"antidote":     "poisoned",
+	"burn heal":    "burned",
+	"ice heal":     "frozen",
+	"awakening":    "asleep",
+	"parlyz heal":  "paralyzed",
+}
+
+// medReaches says whether a field medicine does something to this mon: an
+// HP healer wants a hurt-but-alive mon (monHurt's rule per slot, minus
+// fainted — ItemUseMedicine refuses a potion on a fainted mon, so offering
+// one there would change nothing); a status cure wants the mon to carry
+// exactly the status it cures.
+func medReaches(mon PartyMon, wantStatus string) bool {
+	if wantStatus == "" {
+		return mon.HP > 0 && monHurt(mon)
+	}
+	return mon.Status == wantStatus
 }
 
 // nearestKnownCenter names the Pokemon Center the player could plausibly

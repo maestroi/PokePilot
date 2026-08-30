@@ -1057,3 +1057,842 @@ dominant bug was invisible. This is what /v1/triage now prints.
   column is what makes a group actionable.
 - Triage groups finished runs only; a run still burning its retry budget
   with repeated identical failures will not show up until it settles.
+
+## S9-1: planner can choose to flee a journey's wild encounters
+
+### What landed
+- `agent/objective.go`: `Objective.Flee bool`. `String()` renders "go to X,
+  fleeing wild battles" / "heal the party at X, fleeing wild battles" when
+  set. `Execute` calls `skill.TravelFlee` (same maxBattles=20 bound) instead
+  of `skill.Travel` when Flee is set — KindGoTo and KindHeal's travel leg.
+  Flee is NOT the default: a fled wild is XP the run did not get.
+- `agent/planner.go`: `ReplyArgs.Flee *bool`; `WithArgs` applies it only to
+  KindGoTo and KindHeal-with-Place (a heal in place walks nowhere), else the
+  "does not apply" typed error, validated before anything lands (unmutated
+  on rejection, as the table test asserts).
+- `agent/llm.go`: `"flee": {"type":"boolean"}` in choiceSchema; choiceReply
+  carries it through to WithArgs; system prompt now names "flee".
+
+### Tests
+- planner_test: TestWithArgsApplies (flee on goto + heal-with-place; false
+  is a no-op) and TestWithArgsRejects (+3 cases: flee on train/catch/heal-in-
+  place, all "does not apply", objective unmutated).
+- objective_test: TestString both forms; `TestExecuteGoToFleesWildEncounters`
+  (-short-skipped): leg 1 post_starter -> Viridian City via TravelFlee asserts
+  Flees>0 AND Battles==0 (S8-7's measured one-wild leg); leg 2 Viridian ->
+  Route 1 via `Execute{Flee:true}` asserts arrival on 0x0c. Proven PASS twice
+  (1.5s each, deterministic fixture replay).
+
+### Verified
+`go build ./...`, `go vet ./agent/`, gate greps (TravelFlee in objective.go
+= 3, "flee" in llm.go = 3), `go test ./... -short -count=1` green, full
+`go test ./agent -count=1` with ROM green (88s). No zz_* left, no .state/.gb
+committed.
+
+### For the next task
+- The e2e leg's counters come from a direct TravelFlee call: Execute returns
+  only error, so a future "did it actually flee?" assertion on an Execute
+  leg needs Execute to surface its TravelResult (or a log line).
+- Viridian City -> Route 1 crossed clean in this replay (the S7-6 plaza
+  walkers did not block); fixture replays are deterministic, so it stays
+  clean.
+- `skill/zz_train_dynamics_test.go` is tracked on main (committed by an
+  earlier task) despite the zz_ name; not deleted here.
+
+## S9-2: KindUseItem — the planner can heal without walking to a Center
+
+### What landed
+- `agent/objective.go`: `KindUseItem` appended after KindPickup (no renumber).
+  `Objective.Slot int` (0-based, the exact addressing `skill.UseFieldItem(m,
+  item uint8, slot int)` takes — no second scheme). Reuses `Objective.Item`.
+  Validate: unknown item id and slot outside 0..5 are typed errors, never
+  clamped. String: "use a POTION on party slot 0" (article helper for the
+  vowel items). Execute wraps skill.UseFieldItem's error with the objective;
+  the HP-ROSE / status-CLEARED postcondition lives in the skill (S8-5).
+- `agent/offer.go`: Offer appends one use-item objective per (bag medicine,
+  slot it would do something to), right after the heal block. `partyHurt`
+  factored into per-mon `monHurt`; HP healers want a hurt-but-alive mon
+  (fainted excluded: ItemUseMedicine refuses a potion on a fainted mon with
+  .healingItemNoEffect), status cures want the matching status name.
+- No planner.go/llm.go change needed: Offer hands out concrete Item+Slot
+  objectives, so the model picks by index; a bare {"choice": N} selects one
+  unchanged.
+
+### The "field-usable items" table and why it is written down, not parsed
+`fieldMedStatus` (agent/offer.go) maps ten item names to "" (HP healer) or a
+status name. Every entry is DERIVED from the vendored decomp, not typed:
+ItemUsePtrTable (pokered/engine/items/item_effects.asm) sends exactly these
+ten to ItemUseMedicine, and .checkItemType is the per-item rule (POTION..
+FULL_RESTORE → .healHP; ANTIDOTE/BURN_HEAL/ICE_HEAL/AWAKENING/PARLYZ_HEAL →
+.cureStatusAilment with masks PSN/BRN/FRZ/SLP_MASK/PAR). The ROM route
+(parse ItemUsePtrTable from ROM bytes at runtime) was NOT taken: Offer works
+on the decoded Observation with no romData, and the codebase precedent for
+argument vocabulary is decode-once-write-down-with-citation (speciesTable,
+itemTable — the "farow" incident). Each entry here cites its dispatch line.
+
+### Tests
+- objective_test: TestString (both article forms), TestValidateRejects
+  (unknown item, slot -1 and 6 rejected; slots 0 and 5 accepted), and
+  TestExecuteUseItemHealsTheTarget (-short-skipped): viridian_mart fixture →
+  hidden POTION at (1,18) on 0x33 (S8-5's setup) → Route 1 damage battle →
+  Execute KindUseItem → asserts from RAM that lead HP ROSE and the bag count
+  dropped. Proven PASS in 17.7s (one blackout on the forest leg, recovered).
+- offer_test: four TestOfferTable cases — hurt party + potion offered; whole
+  party + potion NOT offered; hurt party, empty bag NOT offered; poisoned
+  whole-HP mon + antidote offered (status cure independent of HP).
+
+### Verified
+`go build ./...`, `go vet ./agent/`, `go test ./... -short -count=1` green,
+full `go test ./agent -count=1` with ROM green (105s). No zz_* left, no
+.gb/.sav/.state committed.
+
+### For the next task
+- A UseItem objective offered inside a Center is legal but wasteful (the
+  nurse is free); Offer does not filter on location by design ("possible,
+  never wise"). If runs show models burning potions in Centers, that is the
+  gate to add — and it is a judgement gate, flag it as such.
+- UseFieldItem cannot revive: a fainted mon is refused by the ROM, so the
+  offer excludes fainted slots for HP healers. A Revive objective (different
+  item class, .healHP path with the revive branch) would be a new kind.
+
+## S9-3: ROAD-TO-ELITE-FOUR.md — survey of the Cerulean → Indigo road
+
+Recovery run: the previous attempt left a scratch test but no document.
+This run re-measured everything (scratch `agent/zz_road_test.go`, deleted
+before commit; output to a temp file, never into context) and wrote the
+deliverable.
+
+### What landed
+- `docs/ROAD-TO-ELITE-FOUR.md`: the 8-leg road with per-leg status, the
+  five gates (G1 Route 2 wall / forest crossing, G2 Flash at Route 2 Gate,
+  G3 Boulder badge at Route 22 gate `0xC1`, G4 Surf + seven badges on
+  Route 23, G5 none at Indigo), the badge ledger, the Surf acquisition
+  chain (Warden's House is inside Fuchsia City in this ROM), and the Q3/Q4/
+  Q5 answers: map-level graph routes it (8 legs, 2 phantom edges, 1 water
+  gate); verb gaps are Surf/HM-use and an Elite Four battle kind plus
+  routing gaps for phantom edges and the dead-end gate; slice count seven
+  (floor five, ceiling eight).
+
+### Findings that surprised
+- Route 2's row-22 wall is not water — solid `$50`/`$3D`. The crossing is
+  the Viridian Forest through gate buildings `0x2F`/`0x32` (130-step path,
+  measured). The agent already did this in a live run.
+- Route 23's three full-width bands (rows 81/92/101) are water + cliff
+  tiles; PLATEAU's walkable list is six tiles, so Surf is the only crossing.
+  Walk-only BFS from the gate exit cannot reach the north edge — the water
+  is what partitions the map.
+- The vendored decomp is of THIS ROM (Giovanni/Viridian/Earth badge are in
+  it), so all script citations are valid here; gym→badge table confirmed
+  against `data/maps/badge_maps.asm`.
+- Map `0x0B` (UNUSED_MAP_0B) has warp entries pointing at Indigo but an
+  invalid header — dead data, noted in the doc.
+
+### Verified
+`go build ./...` green after scratch deletion; all cited
+`pokered/<file>:<line>` spot-checked against the vendored tree (identical
+to `~/.cache/pokered`); no `.gb`/`.sav`/`.state` committed; no `zz_*` left.
+
+## S9-4: the run keeps what it is trying to do, across rounds
+
+### What landed (one string and an integer — no plan DSL)
+- `agent/planner.go`: `IntentCap = 200` bytes, typed `ErrIntentTooLong`.
+  `ReplyArgs.Intent` applies to EVERY kind in `WithArgs` (unlike
+  level/species/item); over-cap is a typed REJECTION of the whole reply —
+  never a truncation — with the objective returned unmutated.
+- `agent/objective.go`: `Objective.Intent string`. Run memory, not an
+  argument: Validate/Execute ignore it, String() does not render it, so
+  Knowledge.Done (keyed on String()) is unaffected.
+- `agent/observe.go`: `Observation.Intent` + `IntentAge int`, set by Run,
+  never decoded from RAM.
+- `agent/run.go`: Run carries the most recent non-empty intent and its age.
+  A different non-empty intent replaces it (age 0); the same sentence or
+  silence ages it by one round. Run NEVER writes/edits/summarises the
+  sentence — that would be planning for the model again.
+- `agent/llm.go`: `intent` in choiceSchema (description states the 200-byte
+  cap) and in choiceReply; the system prompt now tells the model the field
+  exists, will be read back as Intent/IntentAge, and to change it only when
+  its purpose changes.
+
+### Tests (deliverable = the round trip)
+- `TestRunCarriesIntentAcrossRounds`: scripted 3-round run; obs on round N
+  carries what round N-1 sent verbatim, age counts up while unchanged (0 ->
+  1) and resets to 0 when it changes. PASS in 6.5s.
+- planner_test: intent applies to any kind alongside other args; exactly
+  200 bytes accepted, 201 rejected with errors.Is(err, ErrIntentTooLong),
+  objective unmutated.
+- llm_test (httptest): captured request body carries `"Intent"`/`"IntentAge"`
+  and the system prompt names the field; a schema reply's intent lands on the
+  returned objective; an over-cap reply is rejected typed, not cut.
+
+### Verified
+`go build ./...`, `go vet ./agent`, `go test ./agent -count=1` (117s) and
+`go test ./... -short -count=1` all green (ROM + shared fixture dir). No
+zz_* files; nothing committed.
+
+### For the next task (S9-7 measurement)
+- The system prompt CHANGED: every prior badgerun row was scored without the
+  intent sentence in the prompt and without Intent/IntentAge in the
+  observation JSON (~20 extra tokens/round). Not comparable side by side.
+- If the model ignores the intent field live (empty on purpose), that is a
+  FINDING to write down — do not make Run synthesise an intent; that defeats
+  S9-7's measurement. An unchanged intent is a log finding, not a stop
+  condition: no Stop reason was added.
+
+## S9-5: a resumed run is not amnesiac
+
+### What landed
+- `agent/memory.go`: versioned serialisable Knowledge. `memoryFile` holds
+  Visited, Places, Completed, Talked + S9-4's intent and age — NOT Adjacency
+  (route geometry, rebuilt from the ROM by world.BuildGraph every run) and
+  NOT Observation/History/offered (re-derived in one round). Filename is
+  versioned: `<state-base>.knowledge-v1.json`. `writeMemoryFile` is atomic
+  (temp+rename); `LoadCheckpointMemory(statePath, adjacency, log)` derives
+  the knowledge path FROM the state path — there is no API that takes a bare
+  knowledge path, so the pairing is structural. Wrong version, truncation,
+  garbage, missing file, and over-cap intent all return an EMPTY
+  ResumedMemory + one log line: clean start, never a partial load, never a
+  panic.
+- `agent/run.go`: `Budget.ResumeFrom` (a checkpoint .state path). Run reads
+  the state, `m.LoadState`s it, and loads the paired knowledge from that ONE
+  path before round 1 — a plain Run (empty ResumeFrom) is unchanged.
+  `checkpointRing.write` now writes the knowledge beside each state in the
+  same call (same base name, so they cannot drift); `evict` evicts pairs as
+  one and drops orphaned knowledge (knowledge with no state is exactly the
+  "knows things this save has not seen" case).
+- `agent/offer.go`: `Knowledge.restore(mem)` — read-side half; touches only
+  game-shown fields, leaves Adjacency as built.
+
+### Tests
+- memory_test.go (internal pkg): round trip with every field + intent/age
+  intact, Adjacency from the argument not the file; wrong-version /
+  truncated / garbage each assert a CLEAN EMPTY START + log line; missing
+  file and over-cap intent too.
+- run_test.go: `TestRunResumesKnowledge` — first run talks to (2,1) on
+  Pallet Town then completes a second objective (so the LAST checkpoint was
+  taken with the talk already in knowledge); a FRESH emulator resumes from
+  the last checkpoint and its Offer does NOT re-offer the talk, while the
+  first run's Offer did. (2,1) was measured to stay offered on the post-talk
+  state with EMPTY knowledge — the (6,3) NPC hides after a talk and would
+  let the test pass for the wrong reason; that trap is in the test comment.
+- Pre-existing `TestRunCheckpointRoundTrips` / `TestRunCheckpointRingIsBounded`
+  updated: a checkpoint is now a state+knowledge pair (helpers match
+  `.state` only; the ring test asserts two states each with its knowledge
+  beside it).
+
+### Verified
+`go build ./...`, `go vet`, full `go test ./agent -count=1` green (115s,
+ROM + shared fixture dir), `go test ./... -short -count=1` green. No zz_*
+left (skill/zz_train_dynamics_test.go is tracked on main, untouched); no
+.state/.gb committed; edits left uncommitted for the runner.
+
+### For the next task
+- badgerun/pokewall do not resume yet: the seam is `Budget.ResumeFrom` +
+  the newest `.state` in the run's `checkpoints/` dir (lexicographic max).
+- Resumed round numbers restart at 1; old ring entries stay until evicted
+  (frame numbers in the names keep them distinct). If a resumed run writes
+  into the same ring and that confuses tooling, offset the round counter.
+
+## S9-6: requirement harvesting — the run keeps what the game told it it can't do
+
+### What landed
+- `agent/offer.go`: `Knowledge.Requirements []string` — the raw sentences,
+  verbatim, newest first, capped. `HeardRequirement(line)` is the ONLY writer:
+  it trims, dedups (case-insensitive), prepends, and caps at `requirementCap`.
+  `SawDialogue` now runs each settled line through `looksLikeRequirement`
+  before storing it. The filter is a whole-phrase substring list —
+  `you don't have`, `you need`, `only if you have`, `can't go through` — each
+  verified against a real ROM text in the comment above it. Matching runs on
+  whitespace-normalised text (Gen 1 wraps at the line width, so "You can't
+  go\nthrough here!" must match "can't go through"), but the STORED value stays
+  verbatim. No badge/item names are parsed; there is no struct, no branch in
+  Offer — Offer never reads Requirements (grep-verified).
+- `agent/observe.go`: `Observation.Requirements []string`, initialised to an
+  empty slice so it serialises as `[]` not `null`.
+- `agent/run.go`: after `noteObservation`, copies `known.Requirements` into the
+  observation (defensive copy) so the planner sees what the game said.
+- `agent/memory.go`: `memoryVersion` bumped 1→2; `memoryFile` gains
+  `Requirements`; encode writes it, restore re-validates each line through
+  `HeardRequirement` (keeps the field honest if the shape list ever shrinks).
+  Old v1 files are rejected as wrong-version → clean empty start.
+
+### The shapes are a FILTER, not knowledge
+They decide which lines to carry forward, never what is true. A line that
+matches a shape is stored verbatim and shown to the planner; the planner (or a
+human reading the log) decides what it means. That is the whole design: the ROM
+states requirements in a handful of idioms, we catch those idioms, and we do
+not try to understand them.
+
+### Tests
+- offer_test.go (unit): `TestKnowledgeHarvestsStatedRequirements` feeds the
+  REAL Route 23 guard text (`pokered/text/Route23.asm`: "You can pass here /
+  only if you have / the CASCADEBADGE!" and "You don't have the / CASCADEBADGE
+  yet!") plus chatter, asserts the two requirement lines are harvested verbatim
+  (chatter is not), that re-hearing dedups, and that a plain line never matches.
+  `TestKnowledgeRequirementShapesAndCap` pins each shape to a ROM example and
+  checks the cap + newest-first ordering.
+- memory_test.go: `TestMemoryRoundTrip` now feeds one harvested wall beside
+  chatter and asserts the wall survives write→read verbatim while the chatter
+  does not — the persist-across-rounds half. `assertEmptyKnowledge` covers the
+  field in the clean-start cases.
+
+### The live end-to-end proof is PENDING, and here is exactly why
+The feature is proven by the unit tests above (filter on real ROM text, dedup,
+cap, ordering, SawDialogue wiring, checkpoint round-trip). A live test that
+drives a REAL Talk through the per-frame tape into `Observation.Requirements`
+is NOT robustly writable in this build, because every reachable requirement /
+wall line is blocked by something that is not this task's surface:
+
+- The clean requirement lines are far away. The Route 23 guard and the Viridian
+  Forest North Gate Super Nerd ("You need to look everywhere...") sit behind
+  two documented pre-existing blockers: the (2,18) Youngster stalemate in the
+  forest (S8-7) and the Route 2 world.Build fragmentation (S8-6/S8-9). Reaching
+  them means adopting someone else's slice — exactly what AGENTS.md warns
+  against.
+- The near wall line (Old Man Sleepy, Viridian City (18,9), "You can't go
+  through here! This is private property!") is in the post_errand fixture's own
+  city, but his SPRITE_GAMBLER_ASLEEP object is not rendered as a live sprite in
+  that state (a scratch probe decoded only slots 4 and 7; slot 5 is absent), so
+  `skill.TalkAt` gets "A did not open a text box". That is a fixture/ROM quirk,
+  not the tape or the harvest.
+
+So: when S8-6/S8-7 land (or the sprite quirk is understood), the live test is
+one objective — `{Kind: KindTalk}` at the North Gate Super Nerd or the Route 23
+guard — and a `strings.Contains(line, "you need")` assert on
+`res.Final.Requirements`. The wiring it would exercise (tape.recent →
+RecentDialogue → SawDialogue → Knowledge.Requirements → Observation.Requirements)
+is already covered piece by piece by the unit tests.
+
+### Verified
+`go build ./...`, `go vet ./agent ./skill`, `go test ./agent ./skill ./red/...
+-short -count=1` green. Live `TestRunCheckpointRoundTrips`,
+`TestRunResumesKnowledge`, `TestRunCarriesIntentAcrossRounds` green (ROM +
+shared fixture dir) — confirms the memory version bump and the Run-loop
+Requirements copy did not break checkpoint persistence. No zz_* left; no
+.state/.gb committed; edits left uncommitted for the runner.
+
+### For the next task
+- Add the live test once a requirement line is reachable (see above); it is a
+  few lines on top of the existing capturePlanner harness.
+- If more requirement idioms show up in the wild, extend `requirementShapes`
+  with a verified ROM example per shape. Resist adding shapes to force a match
+  with an unreachable line — that is overfitting the filter to a test.
+
+## S9-8: why a grind walk goes 141 legs without a fight (measurement)
+
+Answer, measured: **not a phase lock — a deterministic drought window.** The
+encounter roll is `hRandomAdd` (HRAM 0xFFD3) compared against the map's grass
+rate; `hRandomAdd` advances by rDIV every frame, so the roll at each step is a
+fixed function of the absolute frame count. A ping-pong grind samples that
+fixed sequence at a constant stride, and some 141-leg windows of it contain
+only 0–2 values below the rate. The journey's phase landed in one.
+
+### The numbered account (measured 2026-08-30, real ROM, post_errand state)
+1. **Legs vs encounters.** My deliberate repro on map 0x33: pair A
+   ((18,40)↔(18,39)) ran 38 legs with encounters at legs 14, 27, 37 (the 3rd
+   battle lost → blackout); pair B ((18,40)↔(18,34), dist 6) then ran 40 legs
+   + the return walk with 10 battles. Whole run: 247 grass steps, 11 rolls
+   under rate (9 fired; 2 suppressed), max dry streak 59.
+2. **The walk.** `grindPair` picks adjacent cells a=(18,40), b=(18,39): one
+   step per leg, **exactly 17 frames per leg** (every leg measured +17), so
+   exactly one roll per leg.
+3. **The roll.** After each completed step, `InitBattle` (core.asm:6664) calls
+   `TryDoWildEncounter` (engine/battle/wild_encounters.asm): if the
+   half-block's bottom-right tile is the grass tile, it compares
+   `hRandomAdd` (0xFFD3) against `wGrassRate` (0xD887) — encounter iff
+   `hRandomAdd < rate`. Map 0x33: **rate = 8/256 = 3.125% per step**, 5
+   species (ids 112, 113, 124, 123, 84). `hRandomAdd += rDIV` at every vblank
+   (home/vblank.asm → Random_, engine/math/random.asm) — the roll is NOT an
+   independent draw. Also: `wNumberOfNoRandomBattleStepsLeft = 3` suppresses
+   rolls for 3 steps after a battle/map entry (EnterMap, home/overworld.asm).
+4. **Phase-lock hypothesis: refuted as a residue lock, confirmed as a
+   drought window.**
+   - Per-frame `hRandomAdd` delta over ~9.5k walking frames: uniform over
+     0..255 (every delta seen 11–35×) — no fixed increment, no residue class.
+   - Idle scan, 16 phase offsets × 500 samples at the 17-frame stride: every
+     phase hits **213–227 distinct values of 256**; minimum hit count over
+     sliding 141-windows: **0** at offsets 48 and 240, **exactly 2** at
+     offsets 32/64/112/160 — the journey's exact event.
+   - Binomial check: P(≤2 encounters in 141 legs at 8/256) ≈ **18%**; and
+     maxLegs=140 sits only ~⅕σ above the mean legs for 4 battles (128±66),
+     so **~35% of sessions trip the budget at all** (P(≤3)≈0.35). The
+     "no-encounter phase" is a routine event, not an anomaly.
+   - Why `StepFrames(123)` works: it shifts the sampling window by 123 frames
+     → a different 141-window that has ≥4 hits. It resamples; there is no
+     lock to break. Varying the leg (dist-6 pair → 6 rolls/leg) changes the
+     stride and the count (pair B: 5 forest encounters in 40 legs) — same
+     mechanism, different subsequence.
+
+### What changed
+- `skill/train.go`: the impossible diagnostic ("its grass has no wild rate?"
+  — unreachable since the zero-rate gate makes `grassCells` return nil first)
+  is gone. New `NoEncounterDiagnostic(legs, battles, want, mapID, rate,
+  species)` states only what is known: "no-encounter phase after %d legs:
+  %d encounters (want %d battles) on map %#04x, grass rate %d/256, %d
+  species in wild table". Rate/species read from the wild table.
+- Retry anchors: gym_test.go, journey_test.go (×2), travel_test.go now match
+  "no-encounter phase" instead of "without enough encounters".
+- `skill/train_test.go`: TestNoEncounterDiagnostic pins the message content
+  and asserts the impossible cause is absent. Runs under -short.
+
+### For the next task
+- The principled fix needs its own task: budget legs by expected rolls
+  (want ÷ rate/256, with slack for the heavy tail) instead of the fixed
+  20×maxBattles+60, or make Train vary its stride so a drought window cannot
+  persist. The test's frame-shift retry stays a workaround — it works, and
+  this section is why.
+- `skill/zz_train_dynamics_test.go` is a committed scratch test left by an
+  earlier task (5f379dd); delete it when convenient.
+- Scratch for this task (`skill/zz_s98_test.go`) deleted; raw logs at
+  /tmp/s98_frames.log and /tmp/s98_scan.log (not committed).
+
+## S9-9: Train stops while the party is still alive (the retreat line)
+
+### The measurement (why half max HP)
+
+From `post_errand` (lone level-7 SQUIRTLE, 24/24), Route 2 (map 0x0D,
+entry (8,71), 24 reachable grass cells — the route is multi-component and
+the north-east pocket is unreachable from the entry), three full
+grind-to-blackout cycles were logged battle by battle. The lead's HP in
+the last four battles of each cycle:
+
+- cycle 1 (battles 16–19): 20/27, 14/27, **5/27** → fainted on battle 20
+- cycle 2 (battles 21–24): 23/31, 15/31, **4/31** → fainted on battle 25
+- cycle 3 (battles 26–29): 26/38, 17/38, **1/38** → fainted on battle 30
+
+The pre-fatal readings are 18.5%, 12.9% and 2.6% of max — the lead is
+already below half its HP four battles before it dies, and the drop from
+there is one bad hit away from zero every battle. **Half max HP**
+(`retreatLineNum=1, retreatLineDen=2`) stops the session while the party
+can still walk; a lower line (a third) would have let all three measured
+cycles reach their fatal battle.
+
+The line cannot prevent every blackout: one battle can always drop the
+lead from just above the line to zero. TestTrainSurvivesEvolution's first
+segment still blacked out (level 18, SQUIRTLE→WARTORTLE) on this run; the
+line ends the *expected* death — the measured sub-20% slide — not the
+variance.
+
+### What landed
+
+- `skill/train.go`: `TrainResult.Retreated`, sentinel `ErrTrainRetreat`,
+  `retreatLineNum/Den`. The check runs at session start (a resumed party
+  that is already below the line stops before it fights — a retreat does
+  not respawn the player, so this is what keeps a naive retry loop from
+  spinning) and after every battle. Blackout still wins when both happen
+  in one battle. Doc comments updated on `Train` and `TrainResult`.
+- `agent/objective.go`: KindTrain maps a retreat to
+  `fmt.Errorf("agent: train the lead to level %d: %w (ended level %d)",
+  o.Level, skill.ErrTrainRetreat, res.EndLevel)`. The text carries the
+  level, not the battle count, so two consecutive retreats at the same
+  level produce identical error strings — which is exactly what the new
+  run test needs to force the same-failure-twice path.
+- `agent/run.go`: `ErrTrainRetreat` joins `ErrBlackedOut` in the
+  exemption from the consecutive-failure accounting (no
+  `consecFailures` bump, no `lastFail*` pin). Rationale: a retreat is not
+  an identical repetition — the session changed the party state (level
+  and HP), so the next attempt faces a different game. A planner that
+  ignores damage and keeps re-retreating at the same level is caught by
+  the pre-existing `StuckAfter` path instead.
+
+### Tests
+
+- New `skill.TestTrainRetreatsBeforeBlackout`: post_errand → Route 2 →
+  one `Train(99, 40)`. Asserts `Retreated=true`, no blackout, and the
+  lead's HP read from RAM: above zero, below half max. Measured result:
+  4 battles, level 7→8, lead 5/27 — the session that would have blacked
+  out by battle ~10 ended alive.
+- New `agent.TestRunTrainRetreatTwiceDoesNotStopTheRun`: setup grinds the
+  lead below the line, then two identical `{KindTrain, Level:100}`
+  objectives both stop at the start check with byte-identical error text
+  (the test asserts the two outcome strings are equal — without that the
+  same-failure-twice check would never fire and the test would pass even
+  without the exemption). Verified negative: with the exemption removed,
+  the run dies on round 2 with StopFailed.
+- Adapted: `TestTrainGrindsOnRoute1` now runs a segment loop (a L6 lead
+  retreats after ~3 battles; heal at the Viridian Center between
+  segments). `TestTrainSurvivesEvolution` and
+  `TestBattleAnswersForgetMovePrompt` heal after a retreated segment. The
+  journey/gym/travel grind loops' heal condition now includes
+  `res.Retreated` (their old trigger was HP < 1/3, which the retreat line
+  pre-empts). `agent.TestExecuteTrainCharmanderToOfferedLevel` accepts
+  either typed ending (blackout or retreat).
+
+### Verification
+
+- `go build ./...`, `go vet ./...`: clean.
+- `go test -short ./...`: all packages ok (skill 107s, agent 95s).
+- Long training tests (no -short): TestTrainGrindsOnRoute1 8.6s,
+  TestTrainRetreatsBeforeBlackout 5.6s, TestBattleAnswersForgetMovePrompt
+  269s, TestTrainSurvivesEvolution 170s — all pass.
+- `skill/zz_retreat_test.go` (measurement scratch) deleted.
+
+### For the next task
+
+- The journey tests' `maxHealDetours = 6` was sized for the old damage
+  cadence; the retreat line makes heal detours more frequent, so a tight
+  grind may now trip the cap. If TestGymBoulderBadge or a journey test
+  dies on "N heal detour(s)", raise the constant — do not lower the line.
+- A planner that sees `stopped while the party was alive` should walk to
+  a center (or use an item) before re-offering Train; nothing enforces
+  that yet, and StuckAfter is the only backstop.
+
+## S9-10: drive the Cerulean gym once — does the generalised Gym beat Misty? (map 0x41)
+
+Measurement task. `skill.Gym` was generalised on 2026-08-30 (0c6c9b4) from
+Brock-only to a `gyms` table; this drives it against Misty (map 0x41) and
+reports the four answers. No Cerulean fixture exists, so the run drives the
+whole journey: post_errand → forest grind L12 → Pewter/Brock (a hard
+prerequisite — Pewter's east exit stays locked until `EVENT_BEAT_BROCK`) →
+Route 3 → Route 4 → Cerulean. New `skill.TestGymCascadeBadge` sits alongside
+`TestGymBoulderBadge` (`-short`-skipped).
+
+### The four answers
+**1. Did Travel carry the approach past the COOLTRAINER_F?** Not reached.
+The run stopped *before* Cerulean, on Route 3 (below), so the Cerulean
+approach — where the gym's COOLTRAINER_F at (2,3) faces right along row 3,
+the same row as `Place("cerulean gym")` (4,3) — was never driven. From code
+only: `gym.go` already anticipates it and relies on `Travel` to fight
+through line-of-sight trainers, which S8-4 measured it doing on Route 3.
+**2. Did the fight start, and what was the outcome?** Not reached — the run
+never entered the Cerulean gym, so no Misty battle started.
+**3. `wObtainedBadges` on a win (bit 1 or nothing)?** N/A — no win. The run
+did set bit 0 beating Brock (`wObtainedBadges=0x01` at that point); bit 1
+(Cascade) was never reached.
+**4. Anything the generalised Gym assumed that is only true in Pewter?**
+See below — answerable from code even without a live win.
+
+### Where it stopped (one trainer short of the seam)
+The journey got ~95% there: forest grind to L12, Pewter, **beat Brock
+(badge 0x01)**, onto Route 3. It then reached Route 3's *final* trainer —
+the Lass at (33,10), Jigglypuff L14 — the last one before the north-edge
+seam to Route 4 (59,0) — and the battle **hung to the 60000-frame cap with
+both mons alive** (our L17 water-type lead 37/52; Jigglypuff 38/58). Player
+ended at (33,8) on map 0x0e, in front of her.
+
+A `ZBAT=1` trace (`/tmp/cascade_zbat.log`) shows the exact mechanism:
+- Our lead's top move is **WATER GUN** (power 40 + STAB); `StatAwareMove`
+picks it and it lands (enemy 58→38).
+- Jigglypuff replies **DISABLE** → "WARTORTLE's WATER GUN was disabled!".
+- Next turn `StatAwareMove` *still* picks WATER GUN — it has no notion of a
+disabled move, and `Usable()` filters only 0-PP — so the ROM bounces
+"The move is disabled!" back to the menu. Repeat forever to the cap.
+This is a **deterministic policy defect given the enemy's move choice**, not
+RNG: whenever an enemy DISABLEs the policy's top-ranked move, `Battle`
+stalls. It fires on some enemy-RNG cycles (S8-4 crossed Route 3 and won all
+six — that cycle Jigglypuff never disabled our best move), so the journey is
+**flaky, not impossible**.
+
+### The defect (named and handed back, not fixed)
+`skill.StatAwareMove` / `skill.Battle` do not model a move disabled by the
+enemy's DISABLE. Fix is its own task: teach `Usable()`/the policy about the
+disabled-move status, or have `Battle` detect the "The move is disabled!"
+bounce and fall back to the next-best usable move. This is **not on S9-10's
+surface** (my surface is the Cerulean gym / badge bit), so per the working
+rules I name it and hand it back rather than adopt or fix it.
+
+### Q4 in full: what did the generalised Gym assume that is Pewter-only?
+From code inspection (no live win to confirm):
+- **Data-driven, correctly generalised (not Pewter-specific):** the badge bit
+  (`BadgeCascade` bit 1 vs `BadgeBoulder` bit 0), the leader tile (Misty
+  (4,2) vs Brock (4,1)), the place name ("cerulean gym" → (4,3)), and the
+  postcondition `Has(g.Badge)` all come from the `gyms` table. A Cerulean win
+  checks bit 1, not bit 0 — the pre-generalisation bug is gone.
+- **Pewter-calibrated constants (unverified for Cerulean):**
+  `gymBattleWaitBudget=10000` (leader intro boxes) and
+  `gymPostBattleBudget=3000` (post-victory boxes). Misty's post-battle script
+  (`scripts/CeruleanGym.asm`) is structurally identical to Brock's — badge-info
+  box → `GiveItem` TM11 → "received TM" box → **set `BIT_CASCADEBADGE`** →
+  reset — same box count and the badge-written-before-reset ordering, so both
+  budgets should fit. Read from the decomp, not measured.
+- **The approach:** Cerulean's COOLTRAINER_F (2,3) faces right along row 3 and
+  the SWIMMER (8,7) faces left across the walk column — `Travel` is expected to
+  fight through both. Unmeasured (not reached).
+- **Notable:** Misty's team (Staryu L18 + Starmie L21) knows only
+  Tackle/Water Gun — **no DISABLE**. So the Route 3 blocker would *not* recur
+  inside the actual Cerulean fight; had the journey reached the gym, the fight
+  itself was not exposed to the defect that stopped the run.
+
+### Tests
+New `skill.TestGymCascadeBadge` (`-short`-skipped), alongside
+`TestGymBoulderBadge`: post_errand → forest grind L12 → Pewter/Brock (hard
+prereq) → Route 3 → Route 4 east-half grass grind to L24 → Cerulean gym →
+`Gym(Misty)` → assert **raw** `wObtainedBadges` bit 1. It is currently
+**blocked by the DISABLE defect on Route 3** (flaky in full mode) and should
+join a full journey pass only once that is fixed; under `-short` (the per-task
+gate) it skips, like `TestGymBoulderBadge`.
+
+### Verification
+- `go build ./...`, `go vet ./skill/`: clean.
+- `go test ./skill -short`: ok (249s).
+- Full run (no `-short`): reached Route 3's final trainer, hung on DISABLE
+  (above). Failure state at `skill/failure/TestGymCascadeBadge.state`; trace
+  at `/tmp/cascade_zbat.log`. Scratch `skill/zz_*` measurement files deleted.
+
+### For the next task
+- The DISABLE defect is the gating item for every Cerulean-and-beyond journey:
+  Route 3's Lass, and any later trainer whose mon knows DISABLE. Fixing it
+  unblocks this test and `TestCeruleanJourney`.
+- S8-7's premise that "the journey to Cerulean works" was not quite right:
+  S8-7 never reached Cerulean (it stopped at the forest on the Youngster
+  stalemate). The Route 3 → Route 4 seam is not the blocker — the run got to
+  the last Route 3 trainer without a geometry problem; the real gate is the
+  DISABLE policy defect.
+
+
+## S9-11: what does the menu cost now? (measurement)
+
+Measurement task; **Offer was NOT changed** (verified by diff). Scratch
+harness `agent/zz_menu_test.go` deleted. Method: load each fixture (and drive
+one short journey for the maps without fixtures), Observe, Offer, count.
+Knowledge = visited maps only, first visit, Talked empty, so these sizes are a
+FLOOR — dialogue place names would only add goto entries. Pallet/Route 1/
+Viridian City rows are pre-errand states; everything else is post-errand.
+
+### Size table (measured 2026-08-30, Offer at 0c6c9b4+KindUseItem)
+
+```
+map                        total  per-kind
+Pallet Town                    6   goto=3 talk=2 errand=1
+Route 1                        6   goto=2 talk=2 errand=1 train=1
+Viridian City                 13   goto=6 talk=6 errand=1
+Viridian Mart                  7   goto=3 talk=3 buy=1
+Viridian Pokemon Center        9   goto=4 talk=4 heal=1
+Route 2                        7   goto=6 train=1
+Viridian Forest               12   goto=6 talk=2 train=1 pickup=3
+Viridian Forest (with balls)  17   goto=6 talk=2 train=1 catch=5 pickup=3
+Pewter City                   15   goto=10 talk=5
+Pewter Gym                    11   goto=8 talk=1 heal=1 gym=1
+```
+
+Where the entries come from: towns are expensive because of **talk** (one per
+person on the map: 6 in Viridian, 5 in Pewter) and **goto** (one per place name
+on a known map — Pewter's 10 come from 8 visited maps). The forest is
+expensive because of **catch** (one per wild-table species: WEEDLE KAKUNA
+METAPOD CATERPIE PIKACHU = 5) plus 3 field-item pickups. The no-balls chain
+measured the forest at 12; a hunting run carries balls, so 17 is the real town/
+forest ceiling so far.
+
+### Latency and prompt tokens (qwen3.5-4b @ :8000, one ask each, two runs)
+
+```
+offered   light-load run            heavy-load run           prompt tokens
+6         9.1 / 4.2 / 4.2 s         30 / 20 / 20.5 s         498-745
+13-14     10.6 / 1.4; 10.9/1.8/1.7  44 / 29 / 27             642-827
+15        11.0 / 1.5; 1.6 / 1.5     -                        657
+18        -                         14.6 / 2.2               892
+```
+
+The 2026-08-29 baseline (5-7 -> 6-7s, 13-15 -> 21-23s) does NOT reproduce:
+within each run, n=6 and n=15-18 cost the same, and server load (1.5s-44s
+across the two runs) dominates over any size effect. Prompt tokens grow about
++30 per entry: 12 extra entries buy ~+390 prompt tokens.
+
+**The real round cost is not the menu.** Every reply in both runs was rejected
+for a superfluous argument (the S6-12 #3 defect: "level argument N does not
+apply to go to route 1"), and `planWithRetries` re-asks up to MaxReplyRetries=3
+times — so a round whose model keeps mis-arguing costs up to 3x one call, at
+ANY menu size.
+
+### Recommendation: do nothing to Offer
+
+Sizes are 6-17; no measurable latency penalty at 18 vs 6 on today's server;
+the prompt growth is small and bounded by the maps a run has actually visited.
+Capping catch (5 -> 1 WithArgs entry, S9-1's path) would save ~130 tokens on
+one map for no measured latency and would give back the per-species
+specificity 5f379dd deliberately added. The next task that cuts round latency
+is the superfluous-argument rejection storm (prompt/WithArgs validation), which
+multiplies every call by up to 3 regardless of menu size.
+
+## S9-12: the milestone — how far does a long goal actually get (measurement)
+
+### Baseline drift: merge check (done before running anything)
+The plan said main was at cc40b7f. It is not: 17edf44 (StatAwareMove now
+scores power x type effectiveness x STAB from the ROM's TypeEffects chart,
+not raw Power — changes the outcome of every battle) and d93ebc9
+(Result.Err set ONLY when a failure stops the run) both landed on main
+after the plan was written. **Merge check: no merge was needed.** HEAD
+(b732082) already contains both commits via merge 4cb3233 made during the
+S9-6 task; `git merge-base --is-ancestor` confirms 17edf44 and d93ebc9 are
+ancestors of HEAD, and main's tip (835a010) is itself an ancestor of HEAD.
+**Move policy used by this run: the NEW TypeEffects-based StatAwareMove
+(17edf44), identical to what main fights with.** Result.Err semantics are
+the d93ebc9 ones: Stop carries the reason, Err is nil on a recovered run.
+
+### The harness change (the one allowed)
+
+`cmd/badgerun` only, no agent code, no verbs, no prompt text (verified by
+diff): `-badge` flag (default "Boulder") so a run chasing Cascade does not
+auto-stop the moment Pewter is earned; `final.state` written to the run dir
+after every run (the bounded checkpoint ring lags the last objective and
+cannot stand in for where the run died); `badgePlanner.NextFeedback`
+forwarding rejections. The third item is why the first attempt exists:
+without it the wrapper failed the FeedbackPlanner type assertion, so
+planWithRetries could not re-ask and ONE superfluous-argument reply stopped
+the run on round 1 ask 1 (seed 7, pre-fix binary) — fixed and re-run, which
+is the "fix that specific thing" case, recorded here. Scratch
+`skill/zz_s912_final_test.go` (RAM read of final.state) deleted after use.
+
+### The runs
+
+Two runs, goal "Earn the Cascade Badge.", `-badge Cascade`, starter squirtle
+(harness-controlled), seeds 7 and 11, max-rounds 256 (4x the badge run's
+64), max-frames 8h emulated. qwen3.5-4b @ 192.168.50.204:8000, temperature
+0. Both runs died on round 7, on the same map, on the same objective —
+deterministic, not RNG: run 2 had a different encounter history (5 wild
+battles vs 2) yet converged onto the identical wall, and with temperature 0
+the model's reply is a function of the menu, which is the same menu at that
+point for any seed. Further seeds are provably redundant; two was the
+"more than once" the task asked for.
+
+### Answer 1 — HOW FAR (read from RAM, not log prose)
+
+`final.state` loaded into a fresh emulator and decoded
+(`state.Read`/`DecodeParty`/`DecodeProgress`):
+
+```
+run 1 (seed 7):  map 0x29 VIRIDIAN_POKECENTER (3,3), controllable, no battle
+                 badges [] (wObtainedBadges raw 0x00)
+                 party[0] SQUIRTLE (species 177) L6 hp 21/21, money 3175
+run 2 (seed 11): map 0x29 VIRIDIAN_POKECENTER (3,3), controllable, no battle
+                 badges [] (raw 0x00)
+                 party[0] SQUIRTLE L7 hp 25/25, money 3175
+```
+
+Map sequence from the round lines: 0x28 Oak's lab -> 0x00 Pallet -> 0x0c
+Route 1 -> 0x01 Viridian City -> 0x29 Viridian Pokemon Center. It never
+reached Viridian Forest, Route 2 or Pewter. The furthest point of the whole
+slice so far was S9-10's deterministic journey (Route 3's last trainer);
+the LLM planner has now been measured at its own furthest point: one town
+past Route 1.
+
+### Answer 2 — WHAT STOPPED IT
+
+Stop reason: **error** (StopError), round 7, in both runs. The model kept
+attaching a superfluous argument to the offered objective "talk at (3,1)" —
+`"flee": true` in run 1, `"level": 7` then `"flee": true` in run 2 — and
+repeated the IDENTICAL invalid reply through all three asks;
+planWithRetries quoted the rejection back each time and the model ignored
+it. MaxReplyRetries=3 exhausted -> the run stops. Result.Err carries that
+error (d93ebc9 semantics: this failure actually stopped the run, so Err is
+set — it would be nil on a recovered run). It is NOT the budget (7 of 256
+rounds, ~16-22k of 7.5M frames) and NOT a missing verb: talk was offered
+and is a working verb; the gate is reply-shape validation meeting a model
+that fills every schema field regardless of kind. This is the S9-11
+rejection storm (S6-12 #3, "level argument N does not apply to go to route
+1"), which predates slice 9's intent work — the storm was 100% of S9-11's
+measured replies.
+
+### Answer 3 — DID THE INTENT HOLD (the number the slice is about)
+
+**The model did NOT ignore the field.** It wrote an intent on every round,
+from round 1 (ask 2) through 7, and both runs' timelines are byte-identical:
+
+```
+round 1: "Deliver Oak's parcel to progress toward the Cascade Badge."
+round 2: "Return to Pallet Town to access the route leading to the Cascade Badge."
+round 3: "Head to Route 1 to begin the journey toward the Cascade Badge."
+round 4: "Head to Viridian City to progress toward the Cascade Badge."
+rounds 5-7: "Heal the party at the Viridian Pokemon Center to recover HP
+             before continuing toward the Cascade Badge."
+```
+
+It changed every round while the next step changed (4 distinct sentences in
+5 rounds) and held unchanged once the step stopped changing. Longest
+survival: the heal intent, carried through 3 observations with IntentAge
+reaching 1 — the run died before it could age further. Every sentence is
+suffixed "...toward the Cascade Badge": the goal statement is bound into
+the intent, but the intent itself is STEP-level, not goal-level.
+
+The milestone question — can a run hold an objective LONGER than it can
+remember — is therefore **unanswerable at this point**: the mechanism works
+as designed (S9-4's round trip holds live), but no run can outlive round 7
+to show a long hold. That is the finding slice 10 must size against: fix
+the rejection storm first, or the intent question stays open forever.
+
+### Answer 4 — DID THE FLEE ARGUMENT GET USED (S9-1)
+
+Yes, on every travel leg: rounds 2-5 were all "go to X, fleeing wild
+battles". Run 1: 2 wild encounters, all fled. Run 2: 5 wild encounters, all
+fled. Blackouts: 0 in both runs; the party ended at FULL HP (run 2's lead
+even reached L7 from the fled encounters). Against a comparable earlier
+run: there is no comparable earlier LLM run — no long LLM-driven run has
+ever completed, so the fights-avoided-vs-blackouts comparison has no prior
+LLM baseline. The three-blackouts-per-journey baseline is a deterministic-
+journey number from the grind phase, which this run never reached; the
+comparison is vacuous beyond "flee worked exactly as designed on the legs
+it was used on".
+
+### Answer 5 — WHAT DID IT HEAR (S9-6)
+
+Nothing. Requirements was `[]` in all 11 observations of both runs. The only
+dialogue the runs had was the town-map woman ("I'll borrow a TOWN MAP from
+my sis!") and the nurse ("Shall we heal your POKéMON?") — neither carries
+the "you can pass here only if you have X" shape HeardRequirement harvests.
+No requirement sentence reached the observation, so no claim about choice
+change after one is supportable from these logs. The proof case (a guard
+stating a requirement) is past Route 1's reach; it was never in these runs.
+
+### Answer 6 — DID TRAIN RETREAT (S9-9)
+
+No train objective was ever offered or executed: the run stopped before the
+first grass grind, so there were 0 retreats and 0 blackouts. The comparison
+against the three-blackouts-per-journey baseline is vacuous for the same
+reason as answer 4 — the run never entered the phase where that baseline
+applies.
+
+### Cost (part of the result)
+
+```
+              run 1 (seed 7)     run 2 (seed 11)
+wall clock    156 s              177 s
+rounds        7 attempted, 6 ok  7 attempted, 6 ok
+llm calls     11 (4 re-asks)     11 (4 re-asks)
+offered/ask   5-13 (avg 8.6)     5-13 (avg 8.6)
+prompt tokens 612-793, avg 716   612-793, avg 716
+completion    24-49,  avg 35     24-49,  avg 36
+latency/call  2.7-19.7 s, avg 12.7 s   2.7-19.7 s, avg 14.1 s
+total tokens  7874p / 390c       7875p / 401c
+```
+
+Against S9-11's table (not re-derived): prompt tokens at n=5-13 offered sit
+inside its 498-827 band and the ~+30/entry rule holds (n=13 -> 793).
+Latency is between S9-11's light (4-11s) and heavy (20-44s) samples —
+server load dominates, as it concluded. The storm is the dominant cost:
+each rejection costs a full extra call (~13-20s), and the round that killed
+the run cost 3 calls.
+
+### What slice 10 gets sized from
+
+1. The milestone is gated by the rejection storm, not by game distance.
+   Until superfluous-argument replies stop killing runs (S9-11's
+   recommendation: prompt/WithArgs validation, up to 3x cost per round),
+   no long-goal measurement can get past ~round 7, and the intent-hold
+   question (answer 3) stays open.
+2. Intent is used actively and is step-level; a long hold has never been
+   observed because no run lives long enough.
+3. Flee and the requirement harvester are wired but unexercised at depth:
+   flee worked on every leg it got, and no requirement sentence was ever in
+   range of these runs.
+
+### Handoff for the next task (S9-13 / slice 10)
+
+What changed: `cmd/badgerun` only — `-badge` flag (default Boulder), a
+`final.state` dump per run, and `badgePlanner.NextFeedback` forwarding so
+rejection retries work in badgerun (without it one bad reply killed the run).
+No agent code, no verbs, no prompt text. Scratch zz test deleted.
+
+What the next task must know:
+- The milestone (S9-12) is DONE and its answer is above: two runs, both dead
+  on round 7 at Viridian Pokemon Center, zero badges, gated by the S9-11
+  rejection storm (superfluous flee/level args on talk, identical reply
+  repeated through all 3 retries). Further seeds are redundant (temp 0).
+- Slice 10's first job is the reply-shape gate (prompt/WithArgs validation).
+  Until then no long-goal measurement can pass ~round 7 and the intent-hold
+  question stays open. Intent IS used actively (step-level, goal-suffixed).
+- Run artifacts kept at /tmp/s912-run{1,2}/ (run.log, prompts.txt,
+  final.state) if anyone wants to re-derive a number; they are not in the
+  repo and may be gone.
+- To re-run: `badgerun -goal "Earn the Cascade Badge." -badge Cascade
+  -starter squirtle -n 1 -seeds <N> -max-rounds 256 -max-frames 20736000`,
+  with POKEMON_RED_ROM and llm_token set (server: qwen3.5-4b only, no bigger
+  model available for ablation A).

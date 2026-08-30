@@ -385,7 +385,7 @@ func route3PostBrockEmu(t *testing.T) *emu.Emu {
 			}
 			res, err := skill.Train(e, romData, gymLeadLevel, policy, trainBattleBudget)
 			if err != nil {
-				if strings.Contains(err.Error(), "without enough encounters") && phaseRetries < maxPhaseRetries {
+				if strings.Contains(err.Error(), "no-encounter phase") && phaseRetries < maxPhaseRetries {
 					phaseRetries++
 					e.StepFrames(123)
 					continue
@@ -401,16 +401,23 @@ func route3PostBrockEmu(t *testing.T) *emu.Emu {
 				}
 				continue
 			}
-			if int(lead.Level) < gymLeadLevel && (int(lead.HP)*3 < int(lead.MaxHP) || lead.Status != 0) {
+			if int(lead.Level) < gymLeadLevel && (res.Retreated || int(lead.HP)*3 < int(lead.MaxHP) || lead.Status != 0) {
 				center, ok := skill.Place("viridian pokemon center")
 				if !ok {
 					diagFatalf(t, e, nil, `Place "viridian pokemon center" not found`)
 				}
+				// A blackout on the walk to the center is the same recovery as
+				// an in-session one (the party respawns fully healed); see the
+				// matching comment in gym_test.go.
 				if _, err := skill.Travel(e, romData, center, policy, 5); err != nil {
-					diagFatalf(t, e, err, "setup: Travel to the Viridian Center: %v", err)
-				}
-				if err := skill.Heal(e); err != nil {
-					diagFatalf(t, e, err, "setup: Heal: %v", err)
+					if !errors.Is(err, skill.ErrBlackedOut) {
+						diagFatalf(t, e, err, "setup: Travel to the Viridian Center: %v", err)
+					}
+					settleBlackout(t, e)
+				} else {
+					if err := skill.Heal(e); err != nil {
+						diagFatalf(t, e, err, "setup: Heal: %v", err)
+					}
 				}
 				if _, err := skill.Travel(e, romData, safeSpot, policy, 10); err != nil {
 					diagFatalf(t, e, err, "setup: Travel back to the forest after healing: %v", err)

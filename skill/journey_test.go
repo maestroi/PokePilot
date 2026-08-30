@@ -129,7 +129,7 @@ func TestGymJourneyAffordances(t *testing.T) {
 		}
 		res, err := skill.Train(e, romData, gymLeadLevel, policy, trainBattleBudget)
 		if err != nil {
-			if strings.Contains(err.Error(), "without enough encounters") && phaseRetries < maxPhaseRetries {
+			if strings.Contains(err.Error(), "no-encounter phase") && phaseRetries < maxPhaseRetries {
 				phaseRetries++
 				e.StepFrames(123)
 				t.Logf("grind session %d hit a no-encounter phase (%v): shifting the frame phase and retrying (retry %d)", detours+1, err, phaseRetries)
@@ -147,7 +147,7 @@ func TestGymJourneyAffordances(t *testing.T) {
 			t.Logf("grind session %d blacked out at level %d (detour %d): party healed by the blackout, resuming", detours+1, lead.Level, detours)
 			continue
 		}
-		if int(lead.Level) < gymLeadLevel && (int(lead.HP)*3 < int(lead.MaxHP) || lead.Status != 0) {
+		if int(lead.Level) < gymLeadLevel && (res.Retreated || int(lead.HP)*3 < int(lead.MaxHP) || lead.Status != 0) {
 			center, ok := skill.Place("viridian pokemon center")
 			if !ok {
 				diagFatalf(t, e, nil, `Place "viridian pokemon center" not found`)
@@ -555,7 +555,7 @@ func TestCeruleanJourney(t *testing.T) {
 		res, err := skill.Train(e, romData, gymLeadLevel, policy, trainBattleBudget)
 		totalBattles += res.Battles
 		if err != nil {
-			if strings.Contains(err.Error(), "without enough encounters") && phaseRetries < maxPhaseRetries {
+			if strings.Contains(err.Error(), "no-encounter phase") && phaseRetries < maxPhaseRetries {
 				phaseRetries++
 				e.StepFrames(123)
 				continue
@@ -569,7 +569,7 @@ func TestCeruleanJourney(t *testing.T) {
 			leg(safeSpot, "back to the safe spot after a blackout")
 			continue
 		}
-		if int(lead.Level) < gymLeadLevel && (int(lead.HP)*3 < int(lead.MaxHP) || lead.Status != 0) {
+		if int(lead.Level) < gymLeadLevel && (res.Retreated || int(lead.HP)*3 < int(lead.MaxHP) || lead.Status != 0) {
 			center, ok := skill.Place("viridian pokemon center")
 			if !ok {
 				diagFatalf(t, e, nil, `Place "viridian pokemon center" not found`)

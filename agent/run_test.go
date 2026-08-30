@@ -184,6 +184,67 @@ func TestRunObservationCarriesHistoryAndMoves(t *testing.T) {
 	}
 }
 
+// TestRunCarriesIntentAcrossRounds is the deliverable: what the planner
+// sent with its choice on round N-1 must be visible on round N's
+// observation, and IntentAge must count up while it goes unchanged and
+// reset when it changes. Run only carries the sentence — it never writes
+// or edits one, so a scripted planner that says nothing sees the carried
+// intent age rather than being answered for.
+func TestRunCarriesIntentAcrossRounds(t *testing.T) {
+	e := loadFixture(t)
+
+	const first, second = "earn the boulder badge", "catch a pidgey on route 1"
+	p := &capturePlanner{objs: []agent.Objective{
+		{Kind: agent.KindStarter, Intent: first},
+		// Round two says nothing: the carried intent must survive and age.
+		{Kind: agent.KindGoTo, Place: "pallet town"},
+		// Round three changes purpose: the observation must reset.
+		{Kind: agent.KindGoTo, Place: "pallet town", Intent: second},
+	}}
+	res := agent.Run(e, e.ROM(), p, testBudget())
+
+	if res.Stop != agent.StopDone {
+		t.Fatalf("Stop = %d, want StopDone (Err = %v)", res.Stop, res.Err)
+	}
+	if len(p.seen) != 4 {
+		t.Fatalf("len(seen) = %d, want 4 (initial + one per round)", len(p.seen))
+	}
+
+	// Round one's observation carries nothing yet: the planner has not said
+	// a word.
+	if p.seen[0].Intent != "" || p.seen[0].IntentAge != 0 {
+		t.Errorf("seen[0] = Intent %q Age %d, want empty/0 before the planner speaks",
+			p.seen[0].Intent, p.seen[0].IntentAge)
+	}
+
+	// Round two's observation is what the planner sent on round one: the
+	// sentence verbatim, age 0 (set last round).
+	if p.seen[1].Intent != first {
+		t.Errorf("seen[1].Intent = %q, want %q (what round one sent)", p.seen[1].Intent, first)
+	}
+	if p.seen[1].IntentAge != 0 {
+		t.Errorf("seen[1].IntentAge = %d, want 0 (set last round)", p.seen[1].IntentAge)
+	}
+
+	// Round three: the planner said nothing on round two, so the SAME
+	// sentence comes back with age counting up.
+	if p.seen[2].Intent != first {
+		t.Errorf("seen[2].Intent = %q, want %q (unchanged, still carried)", p.seen[2].Intent, first)
+	}
+	if p.seen[2].IntentAge != 1 {
+		t.Errorf("seen[2].IntentAge = %d, want 1 (counting up while unchanged)", p.seen[2].IntentAge)
+	}
+
+	// Round four: the planner changed purpose on round three, so the new
+	// sentence comes back with the age reset.
+	if p.seen[3].Intent != second {
+		t.Errorf("seen[3].Intent = %q, want %q (what round three sent)", p.seen[3].Intent, second)
+	}
+	if p.seen[3].IntentAge != 0 {
+		t.Errorf("seen[3].IntentAge = %d, want 0 (reset when it changes)", p.seen[3].IntentAge)
+	}
+}
+
 // TestRunFailedObjectiveFeedsNextRound is the loop this run exists to
 // produce: an objective fails, the failure lands in the observation history,
 // and the planner chooses again — with the game still in a state the next
@@ -402,6 +463,77 @@ func TestRunBlackoutDoesNotStopTheRun(t *testing.T) {
 	}
 }
 
+// TestRunTrainRetreatTwiceDoesNotStopTheRun: Train's fourth exit must be
+// exempt from the failure accounting exactly the way a blackout is. The
+// setup leaves the lead below the retreat line, so the two scripted train
+// objectives fail with the same objective and the same error text —
+// precisely the same-failure-twice case that ends a run with StopFailed.
+// Without the exemption this run dies on round 2; with it, both rounds are
+// recorded in history and the planner's end finishes the run. The lead is
+// never sent into a battle: both objectives stop before they fight.
+func TestRunTrainRetreatTwiceDoesNotStopTheRun(t *testing.T) {
+	e := fixture.Load(t, "post_errand")
+
+	dest, ok := skill.Place("route 2")
+	if !ok {
+		t.Fatal("Place(route 2) did not resolve")
+	}
+	if _, err := fixture.Travel(e, dest, skill.StatAwareMove(e.ROM()), 6); err != nil {
+		t.Fatalf("setup: travel to route 2: %v", err)
+	}
+	// Pre-damage: one grind session takes the lead below the retreat line
+	// and stops there (the behaviour under test, pinned by
+	// TestTrainRetreatsBeforeBlackout). From here on every train objective
+	// ends before it fights, at the level it started.
+	res, err := skill.Train(e, e.ROM(), 99, skill.StatAwareMove(e.ROM()), 40)
+	if err != nil {
+		t.Fatalf("setup Train: %v", err)
+	}
+	if !res.Retreated {
+		t.Fatalf("setup: Retreated = false (reached=%v blackedOut=%v battles=%d); the test needs the lead below the retreat line", res.Reached, res.BlackedOut, res.Battles)
+	}
+
+	p := &capturePlanner{objs: []agent.Objective{
+		{Kind: agent.KindTrain, Level: 100},
+		{Kind: agent.KindTrain, Level: 100},
+	}}
+	run := agent.Run(e, e.ROM(), p, testBudget())
+
+	if run.Stop != agent.StopDone {
+		t.Fatalf("Stop = %d after %d rounds, want StopDone (a retreat is exempt from the failure accounting, the way a blackout is)", run.Stop, run.Rounds)
+	}
+	if run.Rounds != 2 {
+		t.Fatalf("Rounds = %d, want 2", run.Rounds)
+	}
+	if len(run.Final.History) != 2 {
+		t.Fatalf("Final.History = %+v, want both failed rounds", run.Final.History)
+	}
+	h0, h1 := run.Final.History[0].Outcome, run.Final.History[1].Outcome
+	for i, h := range []string{h0, h1} {
+		if !strings.Contains(h, "stopped while the party was alive") {
+			t.Errorf("Final.History[%d] = %q, want the retreat outcome", i, h)
+		}
+	}
+	// The exemption is only exercised if the two failures were identical:
+	// same objective, same error text. If the strings differ, this test
+	// would pass even without the exemption, because the same-failure-twice
+	// check compares both.
+	if h0 != h1 {
+		t.Errorf("the two retreat failures differ (%q vs %q); this test no longer exercises the same-failure-twice path", h0, h1)
+	}
+	// The planner saw the first retreat before choosing the second one.
+	if len(p.seen) != 3 || !strings.Contains(p.seen[1].History[0].Outcome, "stopped while the party was alive") {
+		t.Errorf("p.seen = %d observation(s); seen[1] must carry the first retreat in its history", len(p.seen))
+	}
+	// The lead is still alive: neither round fought a battle.
+	var mem state.Mem
+	state.Snapshot(e, &mem)
+	if lead := state.DecodeParty(&mem).Mons[0]; lead.HP == 0 {
+		t.Errorf("lead HP = 0 in RAM after the run; neither round should have fought")
+	}
+	t.Logf("two identical retreats: %q — the run survived both", h0)
+}
+
 // checkpointForRound finds the checkpoint file Run wrote for a round.
 func checkpointForRound(t *testing.T, dir string, round int) string {
 	t.Helper()
@@ -413,7 +545,9 @@ func checkpointForRound(t *testing.T, dir string, round int) string {
 	var names []string
 	for _, en := range entries {
 		names = append(names, en.Name())
-		if strings.HasPrefix(en.Name(), prefix) {
+		// A checkpoint is a state file with its knowledge file beside it;
+		// this helper names the STATE, so skip the knowledge half.
+		if strings.HasPrefix(en.Name(), prefix) && strings.HasSuffix(en.Name(), ".state") {
 			return filepath.Join(dir, en.Name())
 		}
 	}
@@ -486,9 +620,10 @@ func TestRunCheckpointRoundTrips(t *testing.T) {
 }
 
 // TestRunCheckpointRingIsBounded: the checkpoint directory holds a ring of
-// the last CheckpointKeep states, not one file per round forever. A run that
+// the last CheckpointKeep checkpoints, not one per round forever. A run that
 // executes four rounds with keep=2 leaves exactly the last two checkpoints
-// on disk — proof the bound evicts rather than grows.
+// on disk — each a state file with its knowledge file beside it — proof the
+// bound evicts rather than grows, and evicts the pair as one.
 func TestRunCheckpointRingIsBounded(t *testing.T) {
 	e := loadFixture(t)
 	dir := t.TempDir()
@@ -514,16 +649,31 @@ func TestRunCheckpointRingIsBounded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadDir %s: %v", dir, err)
 	}
-	if len(entries) != 2 {
-		var names []string
-		for _, en := range entries {
-			names = append(names, en.Name())
+	var states []string
+	for _, en := range entries {
+		if strings.HasSuffix(en.Name(), ".state") {
+			states = append(states, en.Name())
 		}
-		t.Fatalf("%d checkpoints on disk, want exactly 2 (the ring must evict): %v", len(entries), names)
 	}
-	if !strings.Contains(entries[0].Name(), "round-003") || !strings.Contains(entries[1].Name(), "round-004") {
-		t.Fatalf("ring kept %v, want the newest two rounds (003 and 004)",
-			[]string{entries[0].Name(), entries[1].Name()})
+	if len(states) != 2 {
+		t.Fatalf("%d checkpoint states on disk, want exactly 2 (the ring must evict): %v", len(states), entries)
+	}
+	if !strings.Contains(states[0], "round-003") || !strings.Contains(states[1], "round-004") {
+		t.Fatalf("ring kept %v, want the newest two rounds (003 and 004)", states)
+	}
+	// Each surviving state has its knowledge file beside it, and no orphaned
+	// knowledge survived the eviction.
+	for _, st := range states {
+		base := strings.TrimSuffix(st, ".state")
+		found := false
+		for _, en := range entries {
+			if strings.HasPrefix(en.Name(), base+".") && strings.Contains(en.Name(), "knowledge") && strings.HasSuffix(en.Name(), ".json") {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("no knowledge file beside %s (entries: %v)", st, entries)
+		}
 	}
 }
 
@@ -666,5 +816,121 @@ func TestRunStuck(t *testing.T) {
 	// defaultStuckAfter (3) unchanged repeats stop the run at round 4.
 	if res.Rounds != 4 {
 		t.Fatalf("Rounds = %d, want 4 (1 progress + 3 stuck repeats)", res.Rounds)
+	}
+}
+
+// offerCapturingPlanner wraps a scripted planner and records the offered
+// menu of its first round, so a test can assert what the run's Offer built
+// without reaching into Run. It then hands control back to the script.
+type offerCapturingPlanner struct {
+	script  *agent.ScriptedPlanner
+	offered *[]agent.Objective
+}
+
+func (p *offerCapturingPlanner) Next(obs agent.Observation, off []agent.Objective) (agent.Objective, error) {
+	if p.offered != nil && *p.offered == nil {
+		*p.offered = append([]agent.Objective(nil), off...)
+	}
+	return p.script.Next(obs, off)
+}
+
+// latestCheckpoint returns the newest .state file in a checkpoint ring's
+// directory and asserts its knowledge file sits beside it: that pairing is
+// what makes resume safe, so a ring without it has broken.
+func latestCheckpoint(t *testing.T, dir string) string {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	last := ""
+	for _, en := range entries {
+		if strings.HasSuffix(en.Name(), ".state") && en.Name() > last {
+			last = en.Name()
+		}
+	}
+	if last == "" {
+		t.Fatalf("no checkpoint .state file in %s", dir)
+	}
+	base := strings.TrimSuffix(last, ".state")
+	for _, en := range entries {
+		if strings.HasPrefix(en.Name(), base+".") && strings.Contains(en.Name(), "knowledge") && strings.HasSuffix(en.Name(), ".json") {
+			return filepath.Join(dir, last)
+		}
+	}
+	t.Fatalf("no knowledge file beside %s (entries: %v)", last, entries)
+	return ""
+}
+
+// TestRunResumesKnowledge is the behaviour a human would actually notice:
+// a run that completed a one-shot and then died does not offer it again
+// after a resume. The first run talks to the person at (2,1) on Pallet Town
+// (a one-shot: once talked to, Offer stops offering them), completes a
+// second objective so its LAST checkpoint was taken with that talk already
+// in the knowledge, and finishes. A fresh emulator resumes from that last
+// checkpoint, and its first Offer must not re-offer the talk - while the
+// first run's own Offer did offer it, which is what makes the absence mean
+// something.
+//
+// (2,1) was chosen for a reason: on the post-talk save state it is STILL
+// offered with empty knowledge (measured), so its absence from the resumed
+// Offer can only come from the restored Talked record, not from the game
+// hiding the sprite. The (6,3) person does hide after a talk, which would
+// let this test pass for the wrong reason.
+func TestRunResumesKnowledge(t *testing.T) {
+	e := fixture.Load(t, "post_starter")
+	dir := t.TempDir()
+
+	var firstOffered []agent.Objective
+	p := &offerCapturingPlanner{
+		script: agent.NewScriptedPlanner(
+			agent.Objective{Kind: agent.KindTalk, X: 2, Y: 1},
+			agent.Objective{Kind: agent.KindGoTo, Place: "pallet town"},
+		),
+		offered: &firstOffered,
+	}
+	b := testBudget()
+	b.CheckpointDir = dir
+	res := agent.Run(e, e.ROM(), p, b)
+	if res.Stop != agent.StopDone {
+		t.Fatalf("first run: Stop = %d, err = %v; want StopDone", res.Stop, res.Err)
+	}
+	if len(res.Completed) != 2 {
+		t.Fatalf("first run: Completed = %v, want both objectives", res.Completed)
+	}
+	foundTalk := false
+	for _, o := range firstOffered {
+		if o.Kind == agent.KindTalk && o.X == 2 && o.Y == 1 {
+			foundTalk = true
+		}
+	}
+	if !foundTalk {
+		t.Fatalf("first run's Offer did not offer the talk at (2,1): %v", firstOffered)
+	}
+
+	last := latestCheckpoint(t, dir)
+
+	// A FRESH emulator: whatever the resumed run knows must come from the
+	// checkpoint pair, not from the first run's process.
+	e2 := fixture.Load(t, "post_starter")
+	var resumedOffered []agent.Objective
+	p2 := &offerCapturingPlanner{script: agent.NewScriptedPlanner(), offered: &resumedOffered}
+	b2 := testBudget()
+	b2.ResumeFrom = last
+	res2 := agent.Run(e2, e2.ROM(), p2, b2)
+
+	if res2.Stop != agent.StopDone {
+		t.Fatalf("resumed run: Stop = %d, err = %v; want StopDone", res2.Stop, res2.Err)
+	}
+	if len(resumedOffered) == 0 {
+		t.Fatal("resumed run: Offer was empty; nothing to assert about")
+	}
+	if res2.Final.Map != 0x28 {
+		t.Fatalf("resumed run: Final.Map = %#04x, want 0x28 (the checkpoint's map)", res2.Final.Map)
+	}
+	for _, o := range resumedOffered {
+		if o.Kind == agent.KindTalk && o.X == 2 && o.Y == 1 {
+			t.Fatalf("resumed run re-offers the one-shot talk at (2,1) the first run completed: %v", resumedOffered)
+		}
 	}
 }
