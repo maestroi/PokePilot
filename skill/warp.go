@@ -156,9 +156,34 @@ func Traverse(m *emu.Emu, romData []byte, e world.Edge) error {
 	if !ok {
 		return fmt.Errorf("skill: Traverse: invalid push step %s on %02x->%02x", push, e.From, e.To)
 	}
-	if _, err := m.HoldUntil(btn, crossBudget, func(m *emu.Emu) bool {
-		return m.Peek8(sym.CurMap) != e.From
-	}); err != nil {
+	// The push watches for a battle as well as the map flip. A wild
+	// encounter fires on the step that lands the walk on a tall-grass edge
+	// tile — Route 1's south edge is grass at x=10 and x=11, measured — and
+	// that step is WalkPath's LAST one, whose DecodeBattle check can land a
+	// few frames before the encounter fires. The push then holds its button
+	// inside a frozen battle and reads as "did not cross within 180 frames"
+	// (the 0c->00 swarm failure, measured 2026-08-29: the tile is walkable
+	// on both sides and crosses in 17 frames when no battle fires). Returning
+	// ErrBattle normalizes it exactly like a battle on the walk: Travel
+	// fights it and re-plans from the same tile, where no second encounter
+	// can fire because the player is already standing on the grass.
+	m.Press(btn)
+	crossed := false
+	for i := 0; i < crossBudget; i++ {
+		if m.Peek8(sym.CurMap) != e.From {
+			crossed = true
+			break
+		}
+		if m.Peek8(sym.IsInBattle) != 0 {
+			m.Release(btn)
+			x, y := playerXY(m)
+			return fmt.Errorf("skill: Traverse: %s: battle on map %02x at (%d,%d): %w",
+				edgeName(e), e.From, x, y, ErrBattle)
+		}
+		m.StepFrame()
+	}
+	m.Release(btn)
+	if !crossed {
 		x, y := playerXY(m)
 		return fmt.Errorf("skill: Traverse: %s did not cross within %d frames; still on map %02x at (%d,%d)",
 			edgeName(e), crossBudget, m.Peek8(sym.CurMap), x, y)

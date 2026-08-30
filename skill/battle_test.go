@@ -4,6 +4,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/skill"
 	"github.com/maestroi/pokepilot/skill/fixture"
@@ -254,4 +255,131 @@ func forcedSwitchAttempt(t *testing.T, attempt int) bool {
 	}
 	t.Logf("attempt %d: the lead never fainted in 6 trips; retrying", attempt)
 	return false
+}
+
+// TestBattleAnswersForgetMovePrompt is S8-2: a level-up that offers a move
+// while all four slots are full prints "<NAME> is trying to learn <MOVE>?"
+// and, on YES, a "Which move should be forgotten?" list. Before this task
+// Battle's default A-tap branch answered that prompt by accident — the run
+// survives but the move is dropped. Now Battle answers it on purpose: YES,
+// then the move in the lowest slot that is not the mon's only damaging
+// option (forgetSlot) gives way to the new one.
+//
+// It follows TestTrainSurvivesEvolution's setup: the post_pokeballs
+// fixture's level-15 SQUIRTLE already carries four moves, so the BITE offer
+// is a prompt, not a plain box. The target is level 24, NOT 22: the mon
+// evolves into WARTORTLE at 16, and LearnMoveFromLevelUp reads the CURRENT
+// species' learnset (wPokedexNum = wCurSpecies), where BITE sits at 24 —
+// Squirtle's table says 22, but that table stopped applying at level 16.
+// (Measured: a grind to 22 shows "grew to level 22!" and the stats box and
+// then the battle ends with no prompt at all.) The assertion is POSITIVE
+// and read from RAM: after the grind, the move set is exactly what the
+// stated policy says it should be — BITE in the computed slot, the other
+// three moves untouched.
+//
+// A full journey (Route 1 grind), guarded out of -short:
+//
+//	POKEMON_RED_ROM=roms/pokemon_red.gb go test ./skill -run TestBattleAnswersForgetMovePrompt -v
+func TestBattleAnswersForgetMovePrompt(t *testing.T) {
+	if testing.Short() {
+		t.Skip("full journey (Route 1 grind); run without -short, see the test docs")
+	}
+	e := fixture.Load(t, "post_pokeballs")
+	romData := e.ROM()
+	policy := skill.StatAwareMove(romData)
+
+	// Precondition: one mon, a level-15 SQUIRTLE with all four slots full.
+	// An empty slot would make the level-24 BITE offer a plain text box and
+	// the prompt under test would never fire.
+	var mem state.Mem
+	state.Snapshot(e, &mem)
+	party := state.DecodeParty(&mem)
+	if party.Count != 1 {
+		t.Fatalf("fixture precondition: party has %d mons, want exactly one", party.Count)
+	}
+	lead := party.Mons[0]
+	if lead.Species != speciesSquirtle || lead.Level < 15 {
+		t.Fatalf("fixture precondition: lead is species %#02x lv%d, want SQUIRTLE (%#02x) lv>=15", lead.Species, lead.Level, speciesSquirtle)
+	}
+	before := lead.Moves
+	for i, mv := range before {
+		if mv == 0 {
+			t.Fatalf("fixture precondition: move slot %d is empty — the prompt only fires with four moves held", i)
+		}
+	}
+
+	// Expected outcome per the stated policy: BITE replaces the lowest slot
+	// that is not the mon's only damaging option; the other three moves stay.
+	wantSlot := expectedForgetSlot(t, romData, before)
+	want := before
+	want[wantSlot] = moveBite
+
+	dest := route1Grass(t, romData)
+	// Level 24: WARTORTLE's BITE (WartortleEvosMoves db 24), the first
+	// offered move after the level-16 evolution.
+	const target = 24
+	// Same blackout handling as TestTrainSurvivesEvolution: a one-mon party
+	// that faints is fully healed and respawned on a grassless town, so each
+	// segment re-Travel's to the grass and resumes from the level reached.
+	// Four levels at roughly 35-45 battles a level (measured), plus
+	// blackouts, so the cap is generous.
+	const totalCap = 700
+	totalBattles := 0
+	for segment := 1; ; segment++ {
+		if _, err := skill.Travel(e, romData, dest, policy, 6); err != nil {
+			t.Fatalf("Travel to Route 1 (segment %d): %v", segment, err)
+		}
+		r, err := skill.Train(e, romData, target, policy, 150)
+		if err != nil {
+			t.Fatalf("Train (segment %d): %v (battles=%d)", segment, err, totalBattles+r.Battles)
+		}
+		totalBattles += r.Battles
+		if r.Reached {
+			break
+		}
+		if totalBattles >= totalCap {
+			t.Fatalf("did not reach level %d in %d battles (endLevel=%d) — Train stopped short of or hung at an interruption", target, totalBattles, r.EndLevel)
+		}
+		t.Logf("segment %d: %d battle(s), level %d, blackedOut=%v; resuming the grind", segment, r.Battles, r.EndLevel, r.BlackedOut)
+	}
+
+	state.Snapshot(e, &mem)
+	after := state.DecodeParty(&mem).Mons[0]
+	if after.Species != speciesWartortle {
+		t.Fatalf("lead is species %#02x lv%d after training to %d, want WARTORTLE (%#02x)", after.Species, after.Level, target, speciesWartortle)
+	}
+	if state.DecodeBattle(&mem) != nil || !state.Controllable(&mem) {
+		t.Fatalf("a sequence was left in progress after Train: battle=%v controllable=%v", state.DecodeBattle(&mem) != nil, state.Controllable(&mem))
+	}
+	if after.Moves != want {
+		t.Fatalf("move set after the level-24 prompt is %v, want %v — BITE (%#02x) replacing slot %d, the lowest slot that is not the mon's only damaging option", after.Moves, want, moveBite, wantSlot)
+	}
+	t.Logf("level-24 prompt answered on purpose: moves %v -> %v (BITE %#02x in slot %d), %d battle(s)", before, after.Moves, moveBite, wantSlot, totalBattles)
+}
+
+// expectedForgetSlot mirrors the policy Battle states in forgetSlot: the
+// lowest slot that is not the mon's only damaging option. If exactly one of
+// the four moves deals damage (power > 0 in the ROM move table), it stays
+// and the lowest of the rest is returned; otherwise the lowest slot is.
+func expectedForgetSlot(t *testing.T, romData []byte, moves [4]uint8) int {
+	t.Helper()
+	damagers := 0
+	damages := [4]bool{}
+	for i, id := range moves {
+		mv, err := rom.LookupMove(romData, id)
+		if err != nil {
+			t.Fatalf("look up move %#02x: %v", id, err)
+		}
+		damages[i] = mv.Power > 0
+		if damages[i] {
+			damagers++
+		}
+	}
+	for i := range moves {
+		if !(damagers == 1 && damages[i]) {
+			return i
+		}
+	}
+	t.Fatal("no slot is acceptable")
+	return 0
 }

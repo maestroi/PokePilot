@@ -14,6 +14,13 @@ import (
 	"github.com/maestroi/pokepilot/red/sym"
 )
 
+// noBattles is the battle resolver for these fake-driven travel tests: their
+// fakes interrupt the walk with dialogue, never a battle, so if the resolver
+// were ever called it is a bug in the test's fakes, not in travel.
+func noBattles() (battleResolution, error) {
+	return battleResolution{}, errors.New("test: travel's battle resolver was called but the fake never starts a battle")
+}
+
 // fakeClock is the scripted frameClock the recovery tests drive. It owns a
 // RAM image and a one-knob model of the text box: when the box is open and
 // A is tapped, it closes after talkSettle stepped frames, unless
@@ -321,7 +328,7 @@ func TestTravelRetriesGoToAfterRecoveredBox(t *testing.T) {
 		return DialogueRecoveryResult{Stop: DialogueRecovered}
 	}
 
-	res, err := travel(nil, nil, 5, goTo, recoverBox, func() bool { return false })
+	res, err := travel(nil, nil, 5, goTo, recoverBox, func() bool { return false }, noBattles)
 
 	if err != nil {
 		t.Fatalf("travel: %v", err)
@@ -350,7 +357,7 @@ func TestTravelDoesNotRetryAfterChoiceRequired(t *testing.T) {
 		return DialogueRecoveryResult{Stop: DialogueChoiceRequired, Text: "HEAL"}
 	}
 
-	res, err := travel(nil, nil, 5, goTo, recoverBox, func() bool { return false })
+	res, err := travel(nil, nil, 5, goTo, recoverBox, func() bool { return false }, noBattles)
 
 	var choice *ErrDialogueChoice
 	if !errors.As(err, &choice) {
@@ -375,7 +382,7 @@ func TestTravelBoundsDialogueRecoveries(t *testing.T) {
 		return DialogueRecoveryResult{Stop: DialogueRecovered}
 	}
 
-	res, err := travel(nil, nil, 5, goTo, recoverBox, func() bool { return false })
+	res, err := travel(nil, nil, 5, goTo, recoverBox, func() bool { return false }, noBattles)
 
 	if err == nil {
 		t.Fatal("travel = nil error, want the bound to trip")
@@ -411,7 +418,7 @@ func TestTravelStopsOnBlackoutAfterRecoveredBox(t *testing.T) {
 		return true
 	}
 
-	res, err := travel(nil, nil, 5, goTo, recoverBox, blackout)
+	res, err := travel(nil, nil, 5, goTo, recoverBox, blackout, noBattles)
 
 	if !errors.Is(err, ErrBlackedOut) {
 		t.Fatalf("err = %v, want ErrBlackedOut", err)
@@ -453,7 +460,7 @@ func TestTravelIgnoresClearedBlackoutBit(t *testing.T) {
 		return false
 	}
 
-	res, err := travel(nil, nil, 5, goTo, recoverBox, blackout)
+	res, err := travel(nil, nil, 5, goTo, recoverBox, blackout, noBattles)
 
 	if err != nil {
 		t.Fatalf("travel: %v", err)

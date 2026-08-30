@@ -70,6 +70,38 @@ func TestStepUntilSucceedsMidway(t *testing.T) {
 	}
 }
 
+func TestStepFramesCallsOnFrameEveryFrame(t *testing.T) {
+	m := openTestEmu(t)
+	var calls int
+	m.OnFrame(func(*Emu) { calls++ })
+	m.StepFrames(10)
+	if calls != 10 {
+		t.Fatalf("OnFrame hook called %d times over StepFrames(10), want exactly 10", calls)
+	}
+	if got := m.FrameCount(); got != 10 {
+		t.Fatalf("FrameCount() = %d, want 10", got)
+	}
+}
+
+func TestStepFramesNoHookAdvancesInBatch(t *testing.T) {
+	m := openTestEmu(t)
+	start := m.FrameCount()
+	m.StepFrames(10)
+	if got := m.FrameCount(); got != start+10 {
+		t.Fatalf("FrameCount() advanced by %d, want 10", got-start)
+	}
+}
+
+func TestStepFramesCallsOnSampleEveryFrame(t *testing.T) {
+	m := openTestEmu(t)
+	var calls int
+	m.OnSample(func(*Emu) { calls++ })
+	m.StepFrames(7)
+	if calls != 7 {
+		t.Fatalf("OnSample hook called %d times over StepFrames(7), want exactly 7", calls)
+	}
+}
+
 func TestTapAndHoldDoNotPanic(t *testing.T) {
 	m := openTestEmu(t)
 	for _, b := range []Button{A, B, Start, Select, Up, Down, Left, Right} {

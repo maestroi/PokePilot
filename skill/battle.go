@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/maestroi/pokepilot/emu"
+	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 )
@@ -63,9 +64,14 @@ const mainMenuMax = 1
 // A. Battle never uses items, but it does answer the forced switch after a
 // faint in a wild battle: the "Use next #MON?" prompt is answered YES
 // (NO is an escape attempt) and the first non-fainted party slot is sent
-// out. The OTHER half of the party menu — the voluntary switch opened by
-// the player through the POKéMON branch — is driven by SwitchActive, not
-// here. If the game reaches any other state Battle does not handle, the
+// out. It also answers the "<NAME> is trying to learn <MOVE>" prompt that a
+// level-up prints when it offers a move while all four slots are full:
+// YES, then in the "Which move should be forgotten?" list it replaces the
+// move in the lowest slot that is not the mon's only damaging option
+// (forgetSlot). The prompt plays during GainExperience while wIsInBattle is
+// still set, so it reaches this loop; Train never sees it. The OTHER half of
+// the party menu — the voluntary switch opened by the player through the
+// POKéMON branch — is driven by SwitchActive, not here. If the game reaches any other state Battle does not handle, the
 // frame cap trips and Battle fails loudly.
 //
 // Losing is a result, not an error: a blackout returns ResultLost with a
@@ -89,6 +95,12 @@ func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
 	}
 
 	startFrame := m.FrameCount()
+
+	// The "forget a move?" episode, if one happens, is tracked across loop
+	// passes: lastForgetSlot is the slot just picked in the move list, and
+	// triedForgets collects the moves the ROM bounced as HM techniques.
+	var lastForgetSlot = -1
+	var triedForgets map[uint8]bool
 
 	for {
 		if int(m.FrameCount()-startFrame) > battleFrameCap {
@@ -158,26 +170,71 @@ func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
 				return menuError(m, "select FIGHT", err)
 			}
 
-		case useNextMonUp(m):
-			// "Use next #MON?" after the active mon faints in a WILD battle
-			// with others alive (core.asm DoUseNextMonDialogue; it returns
-			// early for trainer battles). YES proceeds to the party menu; NO
-			// is an escape attempt (.tryRunning), which is not what a travel
-			// battle wants, so answer YES.
+		case forgetMenuUp(m):
+			// "Which move should be forgotten?" — the move list that follows a
+			// YES on the "<NAME> is trying to learn <MOVE>" prompt (learn_move.asm
+			// TryingToLearn) when a level-up offers a move with all four slots
+			// full. Policy: replace the move in the LOWEST slot that is not the
+			// mon's only damaging option — if exactly one of the four moves deals
+			// damage (power > 0 in the ROM move table), that one stays and the
+			// lowest of the rest goes; otherwise the lowest slot goes. A move id
+			// the table cannot answer for counts as damaging, the same safe
+			// reading StatAwareMove uses. If the ROM bounces a pick as an HM
+			// technique (HMCantDeleteText redraws this menu), that move is marked
+			// tried and skipped; if every acceptable slot is bounced, fail loudly.
+			bs := state.DecodeBattle(&mem)
+			if bs == nil {
+				continue // the battle ended while the menu was up
+			}
+			if lastForgetSlot >= 0 {
+				// The menu reappeared: the ROM rejected the last pick as an HM
+				// technique, so that move is off the table from now on.
+				if triedForgets == nil {
+					triedForgets = map[uint8]bool{}
+				}
+				triedForgets[bs.Moves[lastForgetSlot].ID] = true
+				lastForgetSlot = -1
+			}
+			ids := [4]uint8{bs.Moves[0].ID, bs.Moves[1].ID, bs.Moves[2].ID, bs.Moves[3].ID}
+			slot := forgetSlot(m.ROM(), ids, triedForgets)
+			if slot < 0 {
+				x, y := playerXY(m)
+				return 0, fmt.Errorf("skill: Battle: map %02x at (%d,%d) battle %+v: every acceptable move is an HM technique, nothing to forget",
+					m.Peek8(sym.CurMap), x, y, bs)
+			}
+			if err := selectForgetSlot(m, slot); err != nil {
+				return menuError(m, "select move to forget", err)
+			}
+			lastForgetSlot = slot
+
+		case twoOptionPromptUp(m):
+			// Two prompts render this same yes/no box and both are answered YES
+			// (index 0) on purpose, never by the default A-tap: "Use next #MON?"
+			// after the active mon faints in a WILD battle with others alive
+			// (core.asm DoUseNextMonDialogue; NO is an escape attempt,
+			// .tryRunning), and "<NAME> is trying to learn <MOVE>" when a
+			// level-up offers a move with all four slots full (learn_move.asm
+			// TryingToLearn; YES proceeds to the move list that forgetMenuUp
+			// drives, NO abandons the learning and the move is lost).
 			var s state.Mem
 			state.Snapshot(m, &s)
 			if state.DecodeTwoOptionMenu(&s) == nil {
 				// The prompt text is on screen but the menu cursor is not
-				// drawn yet. Step, then look again: a bare continue would skip
-				// the StepFrame at the foot of the loop and spin without ever
-				// advancing the emulator (measured: frozen frame counter).
-				m.StepFrame()
+				// drawn yet. Tap A, then look again. The tap is load-bearing for
+				// the try-learn prompt: its text has a <CONT> ("<NAME> is trying
+				// to learn" / "BITE!") that blocks on a button press BEFORE the
+				// yes/no box is drawn, so a bare StepFrame spins until the frame
+				// cap (measured: 60k frames stuck on the half-finished line). The
+				// "Use next #MON?" text has no such wait, where the tap is simply
+				// harmless. If the tap lands after the box is drawn it answers
+				// YES at cursor 0 — the same answer SelectMenuItem gives below.
+				m.Tap(emu.A, 3, 7)
 				continue
 			}
 			// YES is index 0. If this A is lost in the menu's joypad-init
 			// window the next pass sees the same prompt and answers again.
 			if err := SelectMenuItem(m, 0); err != nil {
-				return menuError(m, "answer UseNextMon", err)
+				return menuError(m, "answer two-option prompt", err)
 			}
 
 		case partyMenuUp(m):
@@ -219,6 +276,15 @@ const (
 	mainMenuMarker   = "FIGHT"    // only on the FIGHT/ITEM/PKMN/RUN menu
 	moveMenuMarker   = "TYPE/"    // only on the move-selection menu
 	useNextMonMarker = "Use next" // only on UseNextMonText (data/text/text_2.asm:889)
+	// tryLearnMarker is on the "<NAME> is trying to learn <MOVE>" prompt that
+	// GainExperience prints when a level-up offers a move while all four slots
+	// are full (learn_move.asm TryingToLearnText). ScreenText joins the box's
+	// lines with single spaces and text wraps at word boundaries, so the
+	// phrase stays contiguous no matter where the line breaks.
+	tryLearnMarker = "trying to learn"
+	// forgetMenuMarker is on "Which move should be forgotten?", the move list
+	// printed after answering YES to the try-learn prompt.
+	forgetMenuMarker = "forgotten?"
 	// switchMenuMarker is the NORMAL_PARTY_MENU footer ("Choose a #MON."),
 	// which the VOLUNTARY mid-battle switch prints: core.asm .partyMenuWasSelected
 	// sets wPartyMenuTypeOrMessageID to NORMAL_PARTY_MENU, unlike the forced
@@ -242,12 +308,104 @@ func moveMenuUp(m *emu.Emu) bool {
 	return battleScreenHas(m, moveMenuMarker)
 }
 
-// useNextMonUp reports whether the "Use next #MON?" prompt after a faint is
-// on screen. The yes/no box itself carries no text marker, so this gates on
-// the prompt's own line; answering still waits on DecodeTwoOptionMenu seeing
-// the drawn cursor (see the case in Battle).
-func useNextMonUp(m *emu.Emu) bool {
-	return battleScreenHas(m, useNextMonMarker)
+// twoOptionPromptUp reports whether a yes/no prompt Battle must answer on
+// purpose is on screen: the "Use next #MON?" after a faint, or "<NAME> is
+// trying to learn <MOVE>" when a level-up offers a move while all four slots
+// are full. Both render the same TWO_OPTION_MENU; the marker only decides
+// WHICH prompt it is — whether one is actually up is DecodeTwoOptionMenu's
+// job in the case (it checks the drawn cursor), so there is exactly one
+// detection path for both.
+func twoOptionPromptUp(m *emu.Emu) bool {
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	t := state.ScreenText(&mem)
+	return strings.Contains(t, useNextMonMarker) || strings.Contains(t, tryLearnMarker)
+}
+
+// forgetMenuUp reports whether the "Which move should be forgotten?" move
+// list is on screen — the menu that follows a YES on the try-learn prompt.
+func forgetMenuUp(m *emu.Emu) bool {
+	return battleScreenHas(m, forgetMenuMarker)
+}
+
+// forgetSlot picks which of the mon's four moves to forget when a new move
+// is offered with no empty slot: the LOWEST slot that is not the mon's only
+// damaging option. If exactly one move deals damage (power > 0 in the ROM
+// move table), it stays and the lowest of the rest is returned; otherwise
+// the lowest slot is. A move id the table cannot answer for counts as
+// damaging — the same safe reading StatAwareMove uses, since forgetting a
+// move we cannot classify is how a mon loses its only way to hit. Slots
+// whose move id is in tried are skipped (the ROM bounced them as HM
+// techniques). It returns -1 when every slot is excluded.
+func forgetSlot(romData []byte, moves [4]uint8, tried map[uint8]bool) int {
+	damagers := 0
+	damages := [4]bool{}
+	for i, id := range moves {
+		if id == 0 {
+			continue
+		}
+		damages[i] = true // assume damaging until the table says otherwise
+		if mv, err := rom.LookupMove(romData, id); err == nil && mv.Power == 0 {
+			damages[i] = false
+		}
+		if damages[i] {
+			damagers++
+		}
+	}
+	for i, id := range moves {
+		if id == 0 || tried[id] {
+			continue
+		}
+		if damagers == 1 && damages[i] {
+			continue // the only damaging option stays
+		}
+		return i
+	}
+	return -1
+}
+
+// selectForgetSlot moves the cursor of the "Which move should be forgotten?"
+// list to index and presses A, step-and-verify: each direction tap is
+// followed by a re-read of wCurrentMenuItem, and A is pressed only once the
+// cursor reads index. The cursor index is the positive fact, never a press
+// count.
+//
+// It cannot use SelectMenuItem: that helper treats wMaxMenuItem as an
+// exclusive count, but this menu stores wNumMovesMinusOne (3 for four
+// moves), so its last slot would be rejected as out of range.
+func selectForgetSlot(m *emu.Emu, index int) error {
+	var cur int
+	stuck := 0
+	for i := 0; i < 60; i++ {
+		var s state.Mem
+		state.Snapshot(m, &s)
+		cur = state.DecodeMenu(&s).Current
+		if cur == index {
+			break
+		}
+		btn := emu.Down
+		if cur > index {
+			btn = emu.Up
+		}
+		m.Tap(btn, 3, 7)
+		if _, err := m.StepUntil(menuSettleFrames, func(m *emu.Emu) bool {
+			return int(m.Peek8(sym.CurrentMenuItem)) != cur
+		}); err != nil {
+			if stuck >= 4 {
+				return fmt.Errorf("skill: selectForgetSlot: cursor stuck at %d, wanted %d: %w", cur, index, ErrMenuStuck)
+			}
+			stuck++
+		} else {
+			stuck = 0
+		}
+	}
+	var s state.Mem
+	state.Snapshot(m, &s)
+	if cur = state.DecodeMenu(&s).Current; cur != index {
+		return fmt.Errorf("skill: selectForgetSlot: cursor at %d, wanted %d: %w", cur, index, ErrMenuStuck)
+	}
+	m.Tap(emu.A, 3, 7)
+	return nil
 }
 
 // battleSwitchMenuUp reports whether the VOLUNTARY battle party menu is on

@@ -83,6 +83,11 @@ const (
 	BattleMonPP         uint16 = 0xD02D // wBattleMonPP: 4 bytes, parallel to wBattleMonMoves
 	EnemyMonLevel       uint16 = 0xCFF3 // wEnemyMonLevel
 	EnemyMonMaxHP       uint16 = 0xCFF4 // wEnemyMonMaxHP
+	// NumRunAttempts is wNumRunAttempts: incremented once per RUN attempt in
+	// a WILD battle (engine/battle/core.asm TryRunningFromBattle) and zeroed
+	// when the battle ends (end_of_battle.asm .resetVariables). It never
+	// increments in a trainer battle, which refuses RUN before the roll.
+	NumRunAttempts uint16 = 0xD120 // wNumRunAttempts
 )
 
 // Menus, text and input state
