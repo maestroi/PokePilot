@@ -263,7 +263,15 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 		if d.Map == obs.Map && d.X == obs.X && d.Y == obs.Y {
 			continue // already standing on it; "go" would be a no-op
 		}
-		out = append(out, Objective{Kind: KindGoTo, Place: name})
+		// Both variants, side by side: the plain leg fights wild battles,
+		// the fleeing one runs them. The choice is made HERE, as an index,
+		// not in the reply — the model cannot reliably attach a conditional
+		// argument ("flee": true) to only the objectives that carry it, and
+		// a misplaced flag used to stop whole runs (see llm.go's schema).
+		out = append(out,
+			Objective{Kind: KindGoTo, Place: name},
+			Objective{Kind: KindGoTo, Place: name, Flee: true},
+		)
 	}
 
 	// Verbs, gated on preconditions that are facts about the situation —
@@ -295,8 +303,13 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 		// wasted round to a model reading its own history. This is the
 		// chain as one objective, and it is gated on a fact rather than a
 		// judgement — a full party healing is a round that changes nothing,
-		// the same reason a satisfied starter is not offered.
-		out = append(out, Objective{Kind: KindHeal, Place: name})
+		// the same reason a satisfied starter is not offered. The walk back
+		// runs through grass, so both variants are offered, as for go-to:
+		// fight the way back, or run it.
+		out = append(out,
+			Objective{Kind: KindHeal, Place: name},
+			Objective{Kind: KindHeal, Place: name, Flee: true},
+		)
 	}
 	// Field medicine: use a bag item on a party member without walking to
 	// a Center. On the menu only while BOTH facts hold — the bag holds an

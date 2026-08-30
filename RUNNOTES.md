@@ -1896,3 +1896,85 @@ What the next task must know:
   -starter squirtle -n 1 -seeds <N> -max-rounds 256 -max-frames 20736000`,
   with POKEMON_RED_ROM and llm_token set (server: qwen3.5-4b only, no bigger
   model available for ablation A).
+
+## S10-1: the reply-shape gate — flee moves out of the reply and into the menu (farm hotfix)
+
+### The bug, measured
+
+The farm (pokemon.labstack.cc) was dying on this. Dashboard, 79 runs:
+36 done/error, of which ~30 are one error, in four shapes:
+
+```
+agent: llm planner: agent: flee argument true does not apply to talk at (5,24)
+agent: llm planner: agent: flee argument true does not apply to deliver oak's parcel
+agent: llm planner: agent: flee argument true does not apply to talk at (3,1)
+agent: llm planner: agent: flee argument true does not apply to talk at (8,3)
+```
+
+Reproduced locally with `make run-llm` (seed 0): round 1, the model replied
+`{"choice": 1, "flee": true, ...}` for "take the charmander starter", was
+rejected, and repeated the IDENTICAL reply through all 3 asks (temp 0 — the
+feedback text changes the prompt but not this model's answer), so the run
+stopped with StopError after 0 completed rounds. This is S9-12's rejection
+storm, confirmed on the live farm, and slice 10's first job per that
+handoff.
+
+Root cause: `flee` was a CONDITIONAL argument in one flat reply schema —
+legal only on go-to and heal-with-place, but present in the schema (and the
+system prompt) for every choice. A small model given the field emits it on
+every reply it can; WithArgs rejects the misplaced flag; at temperature 0
+the rejection feedback does not change the answer; MaxReplyRetries runs out;
+the run dies. The other arguments (level/species/item/quantity) are the same
+class but were not observed misfiring in production: they override values
+the menu already shows, while flee was a hidden boolean visible nowhere in
+the offered list.
+
+### The fix
+
+The choice is made in the MENU, where the model demonstrably is reliable
+(picking an index), not in the reply, where it is not:
+
+- `agent/offer.go`: every journey — each go-to, and the travelling heal —
+  is offered twice, plain then its fleeing variant, adjacent. The variant's
+  String() already existed ("go to X, fleeing wild battles", S9-1).
+- `agent/llm.go`: `"flee"` removed from choiceSchema. The constrained
+  decoder (llama.cpp json_schema) forbids whatever the schema omits, so a
+  conforming server CANNOT emit the field — the rejection is prevented
+  rather than detected. System prompt reworded: travelling objectives come
+  in two variants; pick the one you want by number.
+- `choiceReply` keeps the `Flee` field and WithArgs still rejects a
+  misplaced one: a server that ignores response_format and emits "flee" in
+  prose-JSON is rejected as before, never silently dropped.
+
+This is stronger than S9-12's proposed "prompt/WithArgs validation":
+validation after the fact is what failed (3 identical rejections), so the
+field is gone from the grammar instead.
+
+### Verification
+
+- `go test ./...` green. TestOfferTable's exact menus updated; new
+  TestOfferJourneyVariants pins plain-then-variant adjacency for every
+  journey; TestLLMPlannerSendsSchema now pins that the request schema does
+  NOT contain `"flee"` (regression gate on this exact bug).
+- `make run-llm` against the live server, before: dead at round 1 (3
+  identical rejections). After: rounds 1-4 clean — starter taken, parcel
+  delivered, two journeys walked, zero re-asks, replies now
+  `{"choice": N, "intent": ...}` only.
+
+### Cost (part of the result)
+
+The menu grows by one entry per journey. Per S9-11's ~+30 tokens/entry and
+~1.4s/entry rules, a run with 3-4 journeys pays ~+90-120 prompt tokens and
+~4-6s per call — minutes over a 32-round run, against a farm where the same
+runs died at round 1-7. The model handled the larger menus (9-14 offered)
+without a single index miss in the verification run.
+
+### Left as-is (measured, not fixed)
+
+- 6 of 79 runs ended "no heartbeat for 31-33s": the runner's heartbeat
+  goroutine ticks every second, so this is the reaper doing its job on dead
+  or wedged runner tasks (Swarm restart churn), not a planner bug.
+- The remaining error details ("text box interrupted movement", "connection
+  edge ... did not cross within 180 frames", "no path ...") are skill-level
+  traversal outcomes — the game answering, per the standing rule. They are
+  candidates for slice 10's next measurement, not this fix.

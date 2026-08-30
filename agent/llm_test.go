@@ -301,6 +301,15 @@ func TestLLMPlannerSendsSchema(t *testing.T) {
 			t.Errorf("request body does not contain %q\nbody: %s", want, body)
 		}
 	}
+	// The flee field must stay OUT of the schema: the constrained decoder
+	// forbids whatever the schema omits, and that is the whole fix for the
+	// live runs dying on "flee argument true does not apply to ..." — the
+	// model emits the flag on every reply it can, and the fight/flee choice
+	// therefore lives in the menu (Offer lists both variants), not in the
+	// reply.
+	if strings.Contains(body, `"flee"`) {
+		t.Errorf("request body's schema still offers a \"flee\" field; the model will emit it on non-travel objectives and the run dies on the rejection\nbody: %s", body)
+	}
 }
 
 // TestLLMPlannerSchemaReplyWithArgs: a schema-shaped reply carries the

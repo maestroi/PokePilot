@@ -256,7 +256,10 @@ func resolveReply(offered []Objective, reply string) (Objective, bool, error) {
 
 // choiceReply is the schema-shaped reply: the choice is required, the
 // argument fields are optional and only meaningful for the kind they
-// belong to (WithArgs enforces that).
+// belong to (WithArgs enforces that). Flee is no longer in the schema —
+// a conforming server cannot emit it — but the field stays so a reply from
+// a server that ignores response_format and still carries "flee" is parsed
+// here and rejected by WithArgs, never silently dropped.
 type choiceReply struct {
 	Choice   *int   `json:"choice"`
 	Level    *int   `json:"level"`
@@ -321,7 +324,7 @@ func looksLikeAnswer(s string) bool {
 // If S6-11's diagnosis shows the model needs to think out loud before
 // choosing, the answer is a free pre-call followed by this constrained
 // one; nothing here has to change for that.
-const llmSystemPrompt = `You are choosing the next objective for a Pokemon Red player. Prefer an objective that makes NEW progress: repeating what you just did wastes the run. The run has a limited number of rounds and each objective costs one: most small talk does not advance your goal, so spend rounds on objectives that move toward it. Reply with ONLY a JSON object: {"choice": N} where N is the number of your choice, plus the arguments of that objective when it has any ("level", "species", "item", "quantity", and "flee" — true makes a go-to or heal run wild battles on the way instead of fighting them). Also include "intent": one short sentence (at most 200 bytes) saying what this choice is in service of. It will be read back to you on the next round's observation as "Intent", with "IntentAge" — how many rounds it has gone unchanged — so state it honestly and change it only when your purpose changes. Do not explain.`
+const llmSystemPrompt = `You are choosing the next objective for a Pokemon Red player. Prefer an objective that makes NEW progress: repeating what you just did wastes the run. The run has a limited number of rounds and each objective costs one: most small talk does not advance your goal, so spend rounds on objectives that move toward it. Reply with ONLY a JSON object: {"choice": N} where N is the number of your choice, plus the arguments of that objective when it has any ("level", "species", "item", "quantity"). Travelling objectives are offered twice: the plain one FIGHTS wild battles on the way, and the one ending in ", fleeing wild battles" RUNS them instead — pick the variant you want by its number. Also include "intent": one short sentence (at most 200 bytes) saying what this choice is in service of. It will be read back to you on the next round's observation as "Intent", with "IntentAge" — how many rounds it has gone unchanged — so state it honestly and change it only when your purpose changes. Do not explain.`
 
 // llmUserPrompt renders the observation as compact JSON, then the offered
 // objectives as a 1-based numbered list of their String() forms.
@@ -384,6 +387,15 @@ type jsonSchema struct {
 // field; the argument fields are optional because most offered objectives
 // carry no argument, and strict mode (which would require all of them)
 // would make a bare {"choice": N} malformed.
+//
+// "flee" is deliberately ABSENT: it is a conditional argument (only go-to
+// and heal-with-place carry it), and a small model given the field emits it
+// on every reply, including starters and talk, where WithArgs rejects it —
+// and at temperature 0 the rejection feedback does not change its answer,
+// so the run burned MaxReplyRetries and stopped. The constrained decoder
+// forbids whatever the schema omits, so the fight/flee choice lives in the
+// menu instead (Offer lists both variants of each journey) and is made as
+// an index, which the model does reliably.
 var choiceSchema = map[string]any{
 	"type": "object",
 	"properties": map[string]any{
@@ -392,7 +404,6 @@ var choiceSchema = map[string]any{
 		"species":  map[string]any{"type": "string"},
 		"item":     map[string]any{"type": "string"},
 		"quantity": map[string]any{"type": "integer"},
-		"flee":     map[string]any{"type": "boolean"},
 		"intent": map[string]any{
 			"type":        "string",
 			"description": "One short sentence, at most 200 bytes: what this choice is in service of. It is read back to you next round as the observation's Intent field, with IntentAge — how many rounds it has gone unchanged.",

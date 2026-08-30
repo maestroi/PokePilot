@@ -44,6 +44,7 @@ func TestOfferTable(t *testing.T) {
 				"take the squirtle starter",
 				"take the bulbasaur starter",
 				"go to route 1", // the door of where you stand
+				"go to route 1, fleeing wild battles",
 			},
 			mustNot: []string{"pewter", "heal", "catch", "train", "gym", "parcel"},
 		},
@@ -70,7 +71,9 @@ func TestOfferTable(t *testing.T) {
 			},
 			want: []string{
 				"go to pallet town",
+				"go to pallet town, fleeing wild battles",
 				"go to viridian city", // one step out of route 1
+				"go to viridian city, fleeing wild battles",
 				"deliver oak's parcel",
 				"catch a PIDGEY here",
 				"catch a RATTATA here",
@@ -92,7 +95,9 @@ func TestOfferTable(t *testing.T) {
 			},
 			want: []string{
 				"go to pallet town",
+				"go to pallet town, fleeing wild battles",
 				"go to route 1",
+				"go to route 1, fleeing wild battles",
 				"deliver oak's parcel",
 			},
 			mustNot: []string{"catch", "train"},
@@ -113,10 +118,14 @@ func TestOfferTable(t *testing.T) {
 			},
 			want: []string{
 				"go to pallet town",
+				"go to pallet town, fleeing wild battles",
 				"go to viridian city",
+				"go to viridian city, fleeing wild battles",
 				"go to viridian pokemon center",
+				"go to viridian pokemon center, fleeing wild battles",
 				"deliver oak's parcel",
 				"heal the party at VIRIDIAN POKEMON CENTER",
+				"heal the party at VIRIDIAN POKEMON CENTER, fleeing wild battles",
 			},
 		},
 		{
@@ -135,8 +144,11 @@ func TestOfferTable(t *testing.T) {
 			},
 			want: []string{
 				"go to pallet town",
+				"go to pallet town, fleeing wild battles",
 				"go to viridian city",
+				"go to viridian city, fleeing wild battles",
 				"go to viridian pokemon center",
+				"go to viridian pokemon center, fleeing wild battles",
 				"deliver oak's parcel",
 			},
 			mustNot: []string{"heal"},
@@ -156,7 +168,9 @@ func TestOfferTable(t *testing.T) {
 			},
 			want: []string{
 				"go to pallet town",
+				"go to pallet town, fleeing wild battles",
 				"go to viridian city",
+				"go to viridian city, fleeing wild battles",
 				"deliver oak's parcel",
 			},
 			mustNot: []string{"heal"},
@@ -178,10 +192,14 @@ func TestOfferTable(t *testing.T) {
 			},
 			want: []string{
 				"go to pallet town",
+				"go to pallet town, fleeing wild battles",
 				"go to viridian city",
+				"go to viridian city, fleeing wild battles",
 				"go to viridian pokemon center",
+				"go to viridian pokemon center, fleeing wild battles",
 				"deliver oak's parcel",
 				"heal the party at VIRIDIAN POKEMON CENTER",
+				"heal the party at VIRIDIAN POKEMON CENTER, fleeing wild battles",
 				"use a POTION on party slot 0",
 			},
 		},
@@ -201,7 +219,9 @@ func TestOfferTable(t *testing.T) {
 			},
 			want: []string{
 				"go to pallet town",
+				"go to pallet town, fleeing wild battles",
 				"go to viridian city",
+				"go to viridian city, fleeing wild battles",
 				"deliver oak's parcel",
 			},
 			mustNot: []string{"use", "heal"},
@@ -221,7 +241,9 @@ func TestOfferTable(t *testing.T) {
 			},
 			want: []string{
 				"go to pallet town",
+				"go to pallet town, fleeing wild battles",
 				"go to viridian city",
+				"go to viridian city, fleeing wild battles",
 				"deliver oak's parcel",
 			},
 			mustNot: []string{"use"},
@@ -242,7 +264,9 @@ func TestOfferTable(t *testing.T) {
 			},
 			want: []string{
 				"go to pallet town",
+				"go to pallet town, fleeing wild battles",
 				"go to viridian city",
+				"go to viridian city, fleeing wild battles",
 				"deliver oak's parcel",
 				"use an ANTIDOTE on party slot 0",
 			},
@@ -263,9 +287,13 @@ func TestOfferTable(t *testing.T) {
 			},
 			want: []string{
 				"go to pallet town",
+				"go to pallet town, fleeing wild battles",
 				"go to route 1",
+				"go to route 1, fleeing wild battles",
 				"go to viridian city",
+				"go to viridian city, fleeing wild battles",
 				"go to viridian pokemon center",
+				"go to viridian pokemon center, fleeing wild battles",
 				"deliver oak's parcel",
 				"heal the party",
 			},
@@ -285,6 +313,7 @@ func TestOfferTable(t *testing.T) {
 			},
 			want: []string{
 				"go to pewter gym",
+				"go to pewter gym, fleeing wild battles",
 				"deliver oak's parcel",
 				"beat the gym leader here",
 			},
@@ -302,7 +331,9 @@ func TestOfferTable(t *testing.T) {
 			},
 			want: []string{
 				"go to pallet town",
+				"go to pallet town, fleeing wild battles",
 				"go to route 1",
+				"go to route 1, fleeing wild battles",
 				"deliver oak's parcel",
 			},
 			mustNot: []string{"pewter city", "viridian city", "forest", "lab"},
@@ -321,8 +352,11 @@ func TestOfferTable(t *testing.T) {
 			},
 			want: []string{
 				"go to pallet town",
+				"go to pallet town, fleeing wild battles",
 				"go to pewter city",
+				"go to pewter city, fleeing wild battles",
 				"go to route 1",
+				"go to route 1, fleeing wild battles",
 				"deliver oak's parcel",
 			},
 		},
@@ -339,6 +373,7 @@ func TestOfferTable(t *testing.T) {
 			},
 			want: []string{
 				"go to viridian mart",
+				"go to viridian mart, fleeing wild battles",
 				"deliver oak's parcel",
 				"buy 3 POTION",
 			},
@@ -357,6 +392,7 @@ func TestOfferTable(t *testing.T) {
 			},
 			want: []string{
 				"go to viridian pokemon center",
+				"go to viridian pokemon center, fleeing wild battles",
 				"heal the party", // a completed heal is no reason to stop offering heals
 			},
 		},
@@ -544,6 +580,45 @@ func TestKnowledgeRequirementShapesAndCap(t *testing.T) {
 	}
 	if !strings.Contains(k2.Requirements[len(k2.Requirements)-1], "key e") {
 		t.Errorf("oldest surviving line not last: %v", k2.Requirements)
+	}
+}
+
+// TestOfferJourneyVariants pins the live-farm fix: the fight/flee choice
+// is made in the MENU, not in the reply. Every offered journey — a go-to,
+// and a heal that walks to a center — appears twice, plain then its fleeing
+// variant, because the model cannot reliably attach a conditional "flee"
+// argument to only the objectives that carry it (it emitted the flag on
+// starters and talk, and at temperature 0 the rejection feedback did not
+// change its answer, so whole runs stopped). The schema omits the field,
+// the constrained decoder forbids what it omits, and the variant is picked
+// by index — which the model does reliably.
+func TestOfferJourneyVariants(t *testing.T) {
+	adj := map[uint8][]uint8{0x0c: {0x00, 0x01, 0x29}}
+	obs := agent.Observation{
+		Map: 0x0c, MapName: "ROUTE_1", X: 5, Y: 14, PartyCount: 1,
+		Party: []agent.PartyMon{{Level: 6, HP: 4, MaxHP: 20}}, // hurt: the travelling heal joins
+	}
+	known := agent.NewKnowledge(adj)
+	known.SawMap(0x0c)
+	known.SawMap(0x29) // the run has been inside the Viridian center
+
+	got := agent.Offer(obs, known)
+	for i, o := range got {
+		isJourney := o.Kind == agent.KindGoTo || (o.Kind == agent.KindHeal && o.Place != "")
+		if !isJourney {
+			continue
+		}
+		if !o.Flee {
+			want := agent.Objective{Kind: o.Kind, Place: o.Place, Flee: true}
+			if i+1 >= len(got) || got[i+1] != want {
+				t.Fatalf("journey %q at %d has no fleeing variant beside it:\n%v", o, i, got)
+			}
+		} else {
+			plain := agent.Objective{Kind: o.Kind, Place: o.Place}
+			if i == 0 || got[i-1] != plain {
+				t.Fatalf("fleeing variant %q at %d does not follow its plain one:\n%v", o, i, got)
+			}
+		}
 	}
 }
 
