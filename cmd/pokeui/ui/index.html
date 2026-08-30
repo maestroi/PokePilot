@@ -392,11 +392,16 @@
     align-items: stretch;
     border-bottom: 1px solid var(--line);
   }
+  /* Every track is content-independent: with an auto outcome column or a
+     minmax(8rem,...) chip floor, one row's long goal chip or short outcome
+     moves every column boundary, so the table never lined up across rows.
+     Chips wrap inside their track, ids wrap anywhere, the outcome ellipsizes.
+     11rem holds the status chip plus the 28ch outcome at 11px. */
   .hist-row:hover { background: var(--panel); }
   .hist-row.selected { background: var(--panel-2); box-shadow: inset 3px 0 0 var(--lcd); }
   .hist {
     display: grid;
-    grid-template-columns: 6.5rem minmax(7rem, 1fr) minmax(8rem, 1.2fr) minmax(8rem, 1fr) auto;
+    grid-template-columns: 6.5rem minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 1fr) 11rem;
     align-items: center;
     gap: 6px 14px;
     width: 100%;
@@ -420,6 +425,23 @@
   .hist-where { color: var(--cream); }
   .hist-out { display: flex; flex-direction: column; gap: 2px; align-items: flex-end; text-align: right; }
   .hist-outcome { color: var(--bezel); font-size: 11px; max-width: 28ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pager {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin-top: var(--space-2);
+  }
+  .pager-count, .pager-page { color: var(--bezel); font-size: 11px; }
+  .pager-btn {
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--cream);
+    padding: 4px 10px;
+    font-size: 11px;
+    cursor: pointer;
+  }
+  .pager-btn:not(:disabled):hover { background: var(--panel); }
+  .pager-btn:disabled { opacity: 0.35; cursor: default; }
   .card-err { color: var(--red); margin-top: 6px; }
   @media (max-width: 800px) {
     /* one column: an auto chip column next to a 1fr track is greedy (it takes
@@ -546,6 +568,7 @@
         <div class="filters" id="hist-filters"></div>
       </div>
       <div id="history"></div>
+      <div class="pager" id="hist-pager"></div>
     </section>
   </main>
 <script src="/ui.js"></script>

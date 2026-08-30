@@ -11,6 +11,11 @@
   let wallDown = false;
   const pumps = new Map();
   const histFilter = { outcome: "", how: "", starter: "" };
+  // History is paged: a farm that has run for a while has hundreds of
+  // finished runs, and rendering them all at once is a long DOM and a long
+  // scroll. 25 rows fills the pane without a scrollbar of its own.
+  const HIST_PAGE = 25;
+  let histPage = 0;
 
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({
@@ -455,13 +460,18 @@
     const el = $("history");
     if (!doneRuns().length) {
       el.innerHTML = `<p class="empty">Nothing finished yet</p>`;
+      $("hist-pager").innerHTML = "";
       return;
     }
     if (!runs.length) {
       el.innerHTML = `<p class="empty">No runs match these filters</p>`;
+      $("hist-pager").innerHTML = "";
       return;
     }
-    el.innerHTML = runs.map((r) => {
+    const pages = Math.max(1, Math.ceil(runs.length / HIST_PAGE));
+    histPage = Math.min(histPage, pages - 1);
+    const start = histPage * HIST_PAGE;
+    el.innerHTML = runs.slice(start, start + HIST_PAGE).map((r) => {
       const sel = r.run_id === selected ? " selected" : "";
       const where = r.planner === "scripted" && r.dest
         ? r.dest : tileLabel(r);
@@ -477,6 +487,18 @@
         <button type="button" class="hist-del" data-delete="${esc(r.run_id)}">Delete</button>
       </div>`;
     }).join("");
+    renderHistPager(runs.length, pages);
+  }
+
+  function renderHistPager(total, pages) {
+    const el = $("hist-pager");
+    const start = histPage * HIST_PAGE + 1;
+    const end = Math.min(total, (histPage + 1) * HIST_PAGE);
+    el.innerHTML =
+      `<span class="pager-count">${start}\u2013${end} of ${total}</span>` +
+      `<button type="button" class="pager-btn" data-page="prev" ${histPage === 0 ? "disabled" : ""}>\u2190 prev</button>` +
+      `<span class="pager-page">${histPage + 1} / ${pages}</span>` +
+      `<button type="button" class="pager-btn" data-page="next" ${histPage >= pages - 1 ? "disabled" : ""}>next \u2192</button>`;
   }
 
   function renderDetail() {
@@ -690,6 +712,15 @@
       ev.preventDefault();
       const group = filt.getAttribute("data-filter-group");
       histFilter[group] = filt.getAttribute("data-filter-value") || "";
+      histPage = 0;
+      renderHistory();
+      return;
+    }
+    const page = ev.target.closest("[data-page]");
+    if (page) {
+      ev.preventDefault();
+      if (page.getAttribute("data-page") === "prev") histPage = Math.max(0, histPage - 1);
+      else histPage += 1;
       renderHistory();
       return;
     }

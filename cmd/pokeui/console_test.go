@@ -107,6 +107,44 @@ func TestUIRendersLLMStats(t *testing.T) {
 	}
 }
 
+// TestUIHistoryPaginatedAndAligned: the history table lines its columns up
+// across rows (no content-sized tracks) and pages the list so a long farm
+// history does not render hundreds of rows at once.
+func TestUIHistoryPaginatedAndAligned(t *testing.T) {
+	js := string(uiJS)
+	for _, want := range []string{
+		"const HIST_PAGE = 25",
+		"let histPage = 0",
+		"hist-pager",
+		`data-page="prev"`,
+		`data-page="next"`,
+		"filteredHistory()",
+		".slice(",
+	} {
+		if !strings.Contains(js, want) {
+			t.Errorf("ui.js missing %q", want)
+		}
+	}
+	// A filter change starts on the first page again.
+	if !strings.Contains(js, "histPage = 0") {
+		t.Error("ui.js does not reset the history page on filter change")
+	}
+	html := string(indexHTML)
+	for _, want := range []string{`id="hist-pager"`, `.pager`} {
+		if !strings.Contains(html, want) {
+			t.Errorf("index.html missing %s", want)
+		}
+	}
+	// The row grid must be content-independent: an auto track or a minmax
+	// with a content floor lets one row's chips or outcome text move every
+	// column boundary, which is the misalignment this fixes.
+	if m := regexp.MustCompile(`\.hist \{[^}]*grid-template-columns:([^;]*);`).FindStringSubmatch(html); m == nil {
+		t.Fatal("index.html .hist has no grid-template-columns")
+	} else if !strings.Contains(m[1], "6.5rem minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 1fr) 11rem") {
+		t.Errorf(".hist grid %q is not content-independent; row columns will not align", m[1])
+	}
+}
+
 func TestVersionEndpoint(t *testing.T) {
 	h := handler("http://wall.invalid")
 	req := httptest.NewRequest(http.MethodGet, "/v1/version", nil)
