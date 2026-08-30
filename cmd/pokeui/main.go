@@ -16,6 +16,10 @@ import (
 	_ "embed"
 )
 
+// version is this build's identity (git SHA), stamped by the Dockerfile via
+// -ldflags "-X main.version=..."; "dev" for local builds.
+var version = "dev"
+
 //go:embed ui/index.html
 var indexHTML []byte
 

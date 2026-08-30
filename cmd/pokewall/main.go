@@ -14,6 +14,10 @@ import (
 	"time"
 )
 
+// version is this build's identity (git SHA), stamped by the Dockerfile via
+// -ldflags "-X main.version=..."; "dev" for local builds.
+var version = "dev"
+
 func main() {
 	httpAddr := flag.String("http", "localhost:8080", "listen address for the wall HTTP API")
 	dumpsDir := flag.String("dumps", "/var/lib/pokewall/dumps", "directory for durable finish dumps")

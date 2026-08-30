@@ -23,7 +23,9 @@ import (
 	"github.com/maestroi/pokepilot/skill"
 )
 
-const version = "pokepilot v0.1.0-dev"
+// version is this build's identity (git SHA), stamped by the Dockerfile via
+// -ldflags "-X main.version=..."; "dev" for local builds.
+var version = "dev"
 
 // llmMaxRounds and llmMaxFrames are guardrails for an unattended run, not
 // goals: a healthy run stops well before either, on stuck or error.

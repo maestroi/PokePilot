@@ -33,9 +33,10 @@ WORKDIR /home/maestro/Documents/projects/PokePilot
 # which has no /lib64/ld-linux-x86-64.so.2, so exec fails with "no such
 # file or directory" and every container exits 255 in a crash loop.
 # Static pure-Go binaries are the only kind that can cross that boundary.
-RUN CGO_ENABLED=0 go build -o /out/pokepilot ./cmd/pokepilot && \
-    CGO_ENABLED=0 go build -o /out/pokewall ./cmd/pokewall && \
-    CGO_ENABLED=0 go build -o /out/pokeui ./cmd/pokeui
+ARG GIT_SHA=dev
+RUN CGO_ENABLED=0 go build -ldflags "-X main.version=${GIT_SHA}" -o /out/pokepilot ./cmd/pokepilot && \
+    CGO_ENABLED=0 go build -ldflags "-X main.version=${GIT_SHA}" -o /out/pokewall ./cmd/pokewall && \
+    CGO_ENABLED=0 go build -ldflags "-X main.version=${GIT_SHA}" -o /out/pokeui ./cmd/pokeui
 
 # Slim runtime: the three binaries plus CA certificates (the wall serves
 # HTTP and the runners may talk to an LLM endpoint over TLS). No ROM, no
