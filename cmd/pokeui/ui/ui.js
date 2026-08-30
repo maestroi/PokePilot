@@ -1,6 +1,9 @@
 (function () {
   const pollMs = 2000;
   const frameMs = 50; // 20 fps; a tight /frame loop burned the Chrome tab
+  const slowFrameMs = 500; // phones on data: 2 fps still shows progress, 40x less traffic
+  const narrow = () => window.matchMedia("(max-width: 700px)").matches;
+  const short = (v) => String(v || "").slice(0, 7); // display SHAs short; JSON keeps the full one
   let snap = { now: 0, runs: [], workers: [] };
   let consoleVersion = "";
   let selected = "";
@@ -250,6 +253,7 @@
     pumps.set(id, () => { stop = true; });
     (async function loop() {
       let blobUrl = "";
+      const tick = narrow() ? slowFrameMs : frameMs; // decided per pump start
       while (!stop) {
         await whenVisible();
         if (stop) break;
@@ -263,7 +267,7 @@
             blobUrl = url;
           }
         } catch (e) { /* next tick */ }
-        const wait = frameMs - (Date.now() - started);
+        const wait = tick - (Date.now() - started);
         if (wait > 0) await sleep(wait);
       }
     })();
@@ -394,7 +398,7 @@
     }
     const summary = Object.entries(byVer)
       .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-      .map(([v, n]) => `${n} × ${v}`)
+      .map(([v, n]) => `${n} × ${short(v)}`)
       .join(", ");
     el.innerHTML = `<p class="ver-summary">${esc(summary)}</p>` + ws.map((w) => {
       const busy = Boolean(w.run_id);
@@ -402,7 +406,7 @@
       return `<div class="worker">
         ${chip(busy ? "busy" : "idle", busy ? "busy" : "idle")}
         <span class="addr">${esc(w.addr)}</span>
-        ${w.version ? `<span class="ver">${esc(w.version)}</span>` : ""}
+        ${w.version ? `<span class="ver">${esc(short(w.version))}</span>` : ""}
         <span class="job">${job}</span>
         <span class="ago">${esc(w.seen_ago)} ago</span>
       </div>`;
@@ -543,7 +547,13 @@
   function renderVersions() {
     const wall = snap.wall_version || "";
     $("versions").textContent =
-      ["console", consoleVersion, "wall", wall].filter(Boolean).join(" · ");
+      ["console", short(consoleVersion), "wall", short(wall)].filter(Boolean).join(" · ");
+  }
+
+  function selectRun(id) {
+    selected = id;
+    render();
+    if (id && narrow()) $("watch").scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   function render() {
@@ -632,8 +642,7 @@
     const pick = ev.target.closest("article[data-run]");
     if (pick && ev.target === pick) {
       ev.preventDefault();
-      selected = pick.getAttribute("data-run");
-      render();
+      selectRun(pick.getAttribute("data-run"));
     }
   });
 
@@ -681,8 +690,7 @@
     }
     const pick = ev.target.closest("[data-run]");
     if (pick && !ev.target.closest("[data-cancel]")) {
-      selected = pick.getAttribute("data-run");
-      render();
+      selectRun(pick.getAttribute("data-run"));
     }
   });
 

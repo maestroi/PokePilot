@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>pokefarm</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -38,13 +38,19 @@
   }
   button, input, select, textarea { font: inherit; color: inherit; }
   button { cursor: pointer; }
+  /* touch-action kills the double-tap-zoom delay on buttons and fields */
+  button, input, select { touch-action: manipulation; }
+  /* grid items must be allowed to shrink below their min-content, or a
+     wide child (an unbreakable SHA, a chip row) pushes the whole section
+     past the viewport and phones zoom the page out to fit it */
+  main > * { min-width: 0; }
   :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
   .bar {
     display: flex;
     flex-wrap: wrap;
     align-items: baseline;
     gap: var(--space-4) var(--space-5);
-    padding: 20px var(--space-5) var(--space-4);
+    padding: max(20px, env(safe-area-inset-top)) var(--space-5) var(--space-4);
     border-bottom: 1px solid var(--line);
     background: var(--panel);
   }
@@ -115,7 +121,7 @@
   }
   .submit:disabled, .queue-btn:disabled { opacity: 0.4; cursor: not-allowed; }
   #form-error { color: #ffb4a8; }
-  main { padding: 20px var(--space-5) 48px; display: grid; gap: var(--space-5); }
+  main { padding: 20px var(--space-5) calc(48px + env(safe-area-inset-bottom)); display: grid; gap: var(--space-5); }
   .check {
     flex-direction: row;
     align-items: center;
@@ -390,6 +396,37 @@
       grid-template-columns: 1fr auto;
     }
     .hist-when, .hist-where { grid-column: 1 / -1; }
+  }
+  /* touch devices at any size: real tap areas, not desktop crumbs */
+  @media (pointer: coarse) {
+    .queue-btn, .submit { min-height: 44px; }
+    .filter { padding: 8px 12px; font-size: 12px; min-height: 40px; }
+    .cancel { padding: 10px var(--space-3); font-size: 12px; min-height: 44px; }
+    .close-detail { padding: 8px 12px; }
+    .hist-del { padding: 10px 12px; min-height: 44px; }
+  }
+  @media (max-width: 700px) {
+    body { font-size: 14px; }
+    /* sticky status bar: the counts stay visible while scrolling history */
+    .bar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      padding: max(12px, env(safe-area-inset-top)) var(--space-4) var(--space-3);
+      gap: var(--space-2) var(--space-4);
+    }
+    /* row 1: title + action; row 2: the counts */
+    .bar h1 { font-size: 1.375rem; order: 1; }
+    .queue-btn { order: 2; }
+    .counts { flex-wrap: wrap; flex-basis: 100%; order: 3; gap: 12px; font-size: 12px; }
+    #versions, .worker .ver { overflow-wrap: anywhere; }
+    /* the version line takes the row to itself instead of mid-line wrapping */
+    #versions { flex-basis: 100%; }
+    /* one full-width field per row; 16px stops iOS Safari zooming on focus */
+    .fields { grid-template-columns: 1fr; max-width: none; }
+    input, select { font-size: 16px; }
+    /* a tapped card opens the watch pane above the fold; clear the sticky bar */
+    #watch { scroll-margin-top: calc(52px + env(safe-area-inset-top)); }
   }
   @media (prefers-reduced-motion: reduce) {
     * { transition: none !important; }
