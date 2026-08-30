@@ -2,6 +2,7 @@
   const pollMs = 2000;
   const frameMs = 50; // 20 fps; a tight /frame loop burned the Chrome tab
   let snap = { now: 0, runs: [], workers: [] };
+  let consoleVersion = "";
   let selected = "";
   let cardErr = "";
   let wallDown = false;
@@ -386,12 +387,22 @@
       el.innerHTML = `<p class="empty">No workers</p>`;
       return;
     }
-    el.innerHTML = ws.map((w) => {
+    const byVer = {};
+    for (const w of ws) {
+      const v = w.version || "unknown";
+      byVer[v] = (byVer[v] || 0) + 1;
+    }
+    const summary = Object.entries(byVer)
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([v, n]) => `${n} × ${v}`)
+      .join(", ");
+    el.innerHTML = `<p class="ver-summary">${esc(summary)}</p>` + ws.map((w) => {
       const busy = Boolean(w.run_id);
       const job = busy ? `on <b>${esc(w.run_id)}</b>` : "waiting for a lease";
       return `<div class="worker">
         ${chip(busy ? "busy" : "idle", busy ? "busy" : "idle")}
         <span class="addr">${esc(w.addr)}</span>
+        ${w.version ? `<span class="ver">${esc(w.version)}</span>` : ""}
         <span class="job">${job}</span>
         <span class="ago">${esc(w.seen_ago)} ago</span>
       </div>`;
@@ -529,11 +540,18 @@
     $("n-idle").textContent = workers.filter((w) => !w.run_id).length;
   }
 
+  function renderVersions() {
+    const wall = snap.wall_version || "";
+    $("versions").textContent =
+      ["console", consoleVersion, "wall", wall].filter(Boolean).join(" · ");
+  }
+
   function render() {
     $("banner").hidden = !wallDown;
     $("queue-toggle").disabled = wallDown;
     $("spec-form").querySelector(".submit").disabled = wallDown;
     renderCounts();
+    renderVersions();
     renderLive();
     renderWorkers();
     renderHistory();
@@ -668,6 +686,15 @@
     }
   });
 
+  fetch("/v1/version", { cache: "no-store" })
+    .then((r) => (r.ok ? r.json() : null))
+    .then((v) => {
+      if (v && v.version) {
+        consoleVersion = v.version;
+        renderVersions();
+      }
+    })
+    .catch(() => {}); // version is cosmetic; never block the console on it
   refresh();
   setInterval(refresh, pollMs);
 })();

@@ -312,6 +312,9 @@
   .worker .addr { color: var(--cream); overflow-wrap: anywhere; }
   .worker .ago { color: var(--bezel); font-size: 11px; }
   .worker .job { overflow-wrap: anywhere; }
+  #versions { color: var(--bezel); font-size: 11px; font-family: ui-monospace, monospace; }
+  .worker .ver { color: var(--bezel); font-family: ui-monospace, monospace; font-size: 11px; }
+  .ver-summary { color: var(--cream); font-family: ui-monospace, monospace; font-size: 12px; margin-bottom: 6px; }
   .section-top {
     display: flex;
     flex-wrap: wrap;
@@ -400,6 +403,7 @@
       <span><b id="n-running">0</b> running</span>
       <span><b id="n-queued">0</b> queued</span>
       <span><b id="n-idle">0</b> idle workers</span>
+      <span class="ver" id="versions"></span>
     </div>
     <button type="button" class="queue-btn" id="queue-toggle" aria-expanded="false" aria-controls="queue">Queue a run</button>
   </header>
