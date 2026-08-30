@@ -125,6 +125,7 @@ type Wall struct {
 	workers      map[string]*workerInfo // runner presence, keyed by first reported addr
 	workerExpiry time.Duration          // how long a worker may go unseen before the reaper drops it
 	staleAfter   time.Duration          // how long a run may go quiet before the reaper declares it lost
+	Version      string                 // this wall's build identity, shown in the dashboard and grid
 }
 
 // NewWall builds a Wall. If dumpsDir is non-empty, finish reports are also
@@ -477,7 +478,7 @@ func (w *Wall) handleHeartbeat(res http.ResponseWriter, req *http.Request) {
 	t.StopSoFar = hb.StopSoFar
 	t.workerAddrs = hb.WorkerAddrs
 	t.lastUpdate = time.Now()
-	w.upsertWorkerLocked(hb.WorkerAddrs, id, t.lastUpdate)
+	w.upsertWorkerLocked(hb.WorkerAddrs, id, hb.Version, t.lastUpdate)
 	cancel := w.cancel[id]
 	w.mu.Unlock()
 	w.saveState()
@@ -490,6 +491,7 @@ func (w *Wall) handleHeartbeat(res http.ResponseWriter, req *http.Request) {
 // out of the grid, so the section never shows capacity that is not there.
 type workerInfo struct {
 	Addrs    []string
+	Version  string // build identity the runner reports; "" from older runners
 	RunID    string // "" while idle between runs
 	LastSeen time.Time
 }
@@ -498,6 +500,7 @@ type workerInfo struct {
 // under w.mu like tileRow.
 type workerRow struct {
 	Addr    string `json:"addr"`
+	Version string `json:"version,omitempty"`
 	RunID   string `json:"run_id"`
 	SeenAgo string `json:"seen_ago"`
 }
@@ -505,19 +508,20 @@ type workerRow struct {
 // dashboardView is the JSON snapshot GET /v1/dashboard returns, and the
 // source renderGrid uses for the in-network debug table.
 type dashboardView struct {
-	Now     int64       `json:"now"`
-	Runs    []tileRow   `json:"runs"`
-	Workers []workerRow `json:"workers"`
+	Now         int64       `json:"now"`
+	WallVersion string      `json:"wall_version,omitempty"`
+	Runs        []tileRow   `json:"runs"`
+	Workers     []workerRow `json:"workers"`
 }
 
 // upsertWorkerLocked records that the runner reporting addrs is alive: an
 // idle ping carries runID "", a heartbeat its in-flight run. Caller holds
 // w.mu.
-func (w *Wall) upsertWorkerLocked(addrs []string, runID string, now time.Time) {
+func (w *Wall) upsertWorkerLocked(addrs []string, runID, version string, now time.Time) {
 	if len(addrs) == 0 {
 		return
 	}
-	w.workers[addrs[0]] = &workerInfo{Addrs: addrs, RunID: runID, LastSeen: now}
+	w.workers[addrs[0]] = &workerInfo{Addrs: addrs, Version: version, RunID: runID, LastSeen: now}
 }
 
 // handleWorkers is the idle half of worker presence: a runner pings it on
@@ -535,7 +539,7 @@ func (w *Wall) handleWorkers(res http.ResponseWriter, req *http.Request) {
 	}
 	now := time.Now()
 	w.mu.Lock()
-	w.upsertWorkerLocked(ping.Addrs, "", now)
+	w.upsertWorkerLocked(ping.Addrs, "", ping.Version, now)
 	w.mu.Unlock()
 	writeJSON(res, http.StatusOK, map[string]string{"status": "ok"})
 }
@@ -756,7 +760,7 @@ var gridTmpl = template.Must(template.New("grid").Parse(`<!doctype html>
 <html><head><meta charset="utf-8"><title>pokefarm wall</title>
 <meta http-equiv="refresh" content="2"></head>
 <body>
-<h1>pokefarm wall</h1>
+<h1>pokefarm wall <small>{{.Version}}</small></h1>
 <table border="1" cellspacing="0">
 <tr><th>run</th><th>screen</th><th>status</th><th>planner</th><th>starter</th><th>dest</th><th>seed</th><th>frame</th><th>map</th><th>x,y</th><th>trace</th><th>stop so far</th><th>attempts</th><th>reason</th><th>detail</th></tr>
 {{range .Rows}}<tr><td>{{.RunID}}</td><td>{{if eq .Status "running"}}<img src="/frame?run={{.RunID}}&t={{$.Now}}" width="160" style="image-rendering:pixelated">{{else}}&mdash;{{end}}</td><td>{{.Status}}</td><td>{{.Planner}}</td><td>{{.Starter}}</td><td>{{.Dest}}</td><td>{{.Seed}}</td><td>{{.Frame}}</td><td>{{printf "0x%02x" .Map}}</td><td>{{.X}},{{.Y}}</td><td>{{.Trace}}</td><td>{{.StopSoFar}}</td><td>{{.Attempts}}</td><td>{{.Reason}}</td><td>{{.Detail}}</td></tr>
@@ -764,9 +768,9 @@ var gridTmpl = template.Must(template.New("grid").Parse(`<!doctype html>
 {{end}}</table>
 <h2>workers</h2>
 <table border="1" cellspacing="0">
-<tr><th>worker</th><th>status</th><th>seen</th></tr>
-{{range .Workers}}<tr><td>{{.Addr}}</td><td>{{if .RunID}}running {{.RunID}}{{else}}idle{{end}}</td><td>{{.SeenAgo}} ago</td></tr>
-{{else}}<tr><td colspan="3">no workers</td></tr>
+<tr><th>worker</th><th>version</th><th>status</th><th>seen</th></tr>
+{{range .Workers}}<tr><td>{{.Addr}}</td><td>{{if .Version}}{{.Version}}{{else}}&mdash;{{end}}</td><td>{{if .RunID}}running {{.RunID}}{{else}}idle{{end}}</td><td>{{.SeenAgo}} ago</td></tr>
+{{else}}<tr><td colspan="4">no workers</td></tr>
 {{end}}</table>
 <h2>failure groups</h2>
 <table border="1" cellspacing="0">
@@ -788,6 +792,7 @@ func (w *Wall) snapshot() dashboardView {
 	for _, wk := range w.workers {
 		workers = append(workers, workerRow{
 			Addr:    wk.Addrs[0],
+			Version: wk.Version,
 			RunID:   wk.RunID,
 			SeenAgo: now.Sub(wk.LastSeen).Round(time.Second).String(),
 		})
@@ -825,7 +830,7 @@ func (w *Wall) snapshot() dashboardView {
 			Detail:     t.Detail,
 		})
 	}
-	return dashboardView{Now: now.Unix(), Runs: rows, Workers: workers}
+	return dashboardView{Now: now.Unix(), WallVersion: w.Version, Runs: rows, Workers: workers}
 }
 
 // renderGrid renders the known tiles into the in-network debug HTML.
@@ -837,7 +842,8 @@ func (w *Wall) renderGrid() ([]byte, error) {
 		Workers []workerRow
 		Groups  []triageGroup
 		Now     int64
-	}{dash.Runs, dash.Workers, w.triage(), dash.Now}
+		Version string
+	}{dash.Runs, dash.Workers, w.triage(), dash.Now, w.Version}
 	if err := gridTmpl.Execute(&buf, view); err != nil {
 		return nil, err
 	}

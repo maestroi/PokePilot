@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -75,7 +76,7 @@ func TestWallWorkerPresence(t *testing.T) {
 	if !strings.Contains(page, "running worker-pres") {
 		t.Fatalf("grid does not show the running worker:\n%s", page)
 	}
-	if !strings.Contains(page, "10.0.1.21:8099</td><td>idle") {
+	if !strings.Contains(page, "10.0.1.21:8099</td><td>&mdash;</td><td>idle") {
 		t.Fatalf("grid lost the idle worker:\n%s", page)
 	}
 }
@@ -104,5 +105,61 @@ func TestWallReapsStaleWorkers(t *testing.T) {
 	wall.reapStale(time.Now())
 	if page := gridHTML(t, h); strings.Contains(page, "10.0.1.30:8099") {
 		t.Fatalf("stale worker still shown after reap:\n%s", page)
+	}
+}
+
+func TestWallWorkerVersion(t *testing.T) {
+	wall := NewWall(t.TempDir())
+	wall.Version = "def456"
+	h := wall.Handler()
+
+	body, _ := json.Marshal(farm.WorkerPing{Addrs: []string{"10.0.1.30:8099"}, Version: "abc123"})
+	req := httptest.NewRequest(http.MethodPost, "/v1/workers", bytes.NewReader(body))
+	res := httptest.NewRecorder()
+	h.ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("POST /v1/workers = %d: %s", res.Code, res.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/v1/dashboard", nil)
+	res = httptest.NewRecorder()
+	h.ServeHTTP(res, req)
+	var dash struct {
+		WallVersion string `json:"wall_version"`
+		Workers     []struct {
+			Addr    string `json:"addr"`
+			Version string `json:"version"`
+		} `json:"workers"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&dash); err != nil {
+		t.Fatalf("decode dashboard: %v", err)
+	}
+	if dash.WallVersion != "def456" {
+		t.Fatalf("wall_version = %q, want def456", dash.WallVersion)
+	}
+	if len(dash.Workers) != 1 || dash.Workers[0].Version != "abc123" {
+		t.Fatalf("workers = %+v, want one worker with version abc123", dash.Workers)
+	}
+
+	page := gridHTML(t, h)
+	for _, want := range []string{"abc123", "def456"} {
+		if !strings.Contains(page, want) {
+			t.Fatalf("grid missing %q:\n%s", want, page)
+		}
+	}
+}
+
+func TestWallWorkerVersionEmptyFromOldRunner(t *testing.T) {
+	wall := NewWall(t.TempDir())
+	h := wall.Handler()
+
+	postWorkerPing(t, h, []string{"10.0.1.31:8099"}) // no Version field
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/dashboard", nil)
+	res := httptest.NewRecorder()
+	h.ServeHTTP(res, req)
+	body, _ := io.ReadAll(res.Body)
+	if strings.Contains(string(body), `"version"`) {
+		t.Fatalf("old-runner worker should omit the version key:\n%s", body)
 	}
 }

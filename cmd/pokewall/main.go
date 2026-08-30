@@ -31,6 +31,7 @@ func main() {
 	}
 
 	wall := NewWall(*dumpsDir)
+	wall.Version = version
 	if *stateFile != "" {
 		if err := os.MkdirAll(filepath.Dir(*stateFile), 0o755); err != nil {
 			log.Fatalf("pokewall: cannot create state directory %s: %v", filepath.Dir(*stateFile), err)
