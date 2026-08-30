@@ -125,8 +125,10 @@ pre-Brock state can reach Route 3 at all. The Cascade goal therefore requires
 the Boulder Badge first — not as strategy, as geometry.
 
 NOT A DISCREPANCY: S8-4's notes flag `ROUTE_3` as 35×9 in the decomp versus
-70×18 probed. Those agree — `map_const` dimensions are in BLOCKS and tiles are
-twice that. Do not "fix" either number.
+70×18 probed, and S8-9's flag `MT_MOON_1F` as 20×18 versus 40×36 and `ROUTE_2`
+as 10×36 versus 20×72. All three agree — `map_const` dimensions are in BLOCKS
+and tiles are twice that. Do not "fix" any of these numbers. This has now been
+misread three times, so it is recorded permanently in docs/AGENT.md.
 
 DERIVED — Route 3 is not a route with some trainers on it, it is a corridor OF
 trainers. `data/maps/objects/Route3.asm` has **eight OPP_ trainers** plus one

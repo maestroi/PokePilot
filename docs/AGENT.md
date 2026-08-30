@@ -67,6 +67,14 @@ the vendored decompilation in `pokered/`.
   CERULEAN, ...) as a tile-activated hidden event, and depositing a mon
   IS possible in-rom.
 
+- **`map_const` dimensions are in BLOCKS; player coordinates are in TILES,
+  and a block is 2x2 tiles.** So `map_const MT_MOON_1F, 20, 18` and a probed
+  40x36 AGREE, and `map_const ROUTE_2, 10, 36` and a probed 20x72 AGREE.
+  Neither is stale. Three separate tasks (S8-4, and S8-9 twice) have read a
+  probe against the decomp, seen the factor of two, and reported the decomp
+  as wrong for this ROM. It is not: multiply by two before comparing. Do not
+  "correct" either number.
+
 ## badgerun: the scoreboard
 
 `cmd/badgerun` answers the slice's question — given verbs and an
