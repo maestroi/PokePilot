@@ -42,6 +42,11 @@ func handler(wallBase string) http.Handler {
 		res.Header().Set("Cache-Control", "no-store")
 		res.Write(uiJS) //nolint:errcheck // best effort
 	})
+	mux.HandleFunc("GET /v1/version", func(res http.ResponseWriter, req *http.Request) {
+		res.Header().Set("Content-Type", "application/json")
+		res.Header().Set("Cache-Control", "no-store")
+		json.NewEncoder(res).Encode(map[string]string{"version": version}) //nolint:errcheck
+	})
 	mux.HandleFunc("GET /v1/dashboard", proxy(wallBase, true))
 	mux.HandleFunc("POST /v1/specs", proxy(wallBase, false))
 	mux.HandleFunc("POST /v1/runs/{id}/cancel", proxy(wallBase, false))

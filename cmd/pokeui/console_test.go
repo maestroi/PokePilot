@@ -1,6 +1,9 @@
 package main
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"regexp"
 	"strconv"
 	"strings"
@@ -75,5 +78,22 @@ func TestUIHistoryCanBeDeletedAndNewestFirst(t *testing.T) {
 		if !strings.Contains(js, want) {
 			t.Errorf("ui.js missing %q", want)
 		}
+	}
+}
+
+func TestVersionEndpoint(t *testing.T) {
+	h := handler("http://wall.invalid")
+	req := httptest.NewRequest(http.MethodGet, "/v1/version", nil)
+	res := httptest.NewRecorder()
+	h.ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("GET /v1/version = %d, want 200: %s", res.Code, res.Body.String())
+	}
+	var got map[string]string
+	if err := json.NewDecoder(res.Body).Decode(&got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got["version"] == "" {
+		t.Fatal("version missing from /v1/version")
 	}
 }
