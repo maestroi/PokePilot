@@ -1019,3 +1019,41 @@ special-cased.**
   check `DetectCollisionBetweenSprites` (an adjacent NPC's 2×2) and the tile one
   step further before blaming the sub-tile rule — that is what S8-6 hit on
   Mt Moon.
+
+## S8-8: wall triage — group the failures so 200 runs read as four bugs
+
+### What landed (cmd/pokewall only; no emulator, no ROM, no fixtures)
+- `wall.go`: `normalizeDetail` — `0x[0-9a-fA-F]+` → `<hex>`, digit runs →
+  `<n>`, then capped at 128 chars. `triageGroups(order, tiles)` groups
+  finished runs whose reason is error/lost AND whose detail is non-empty,
+  most frequent first; each group carries the pattern, exact count, ONE
+  verbatim example detail, and run ids capped at 5. New read-only endpoint
+  `GET /v1/triage` (JSON) and a "failure groups" table on the grid page
+  under the run table (same template, no second page). REPORTS ONLY: no
+  task creation, no runner calls, no writes outside the wall's own state.
+- `triage_test.go`: table test — coordinate/hex variants group; the
+  connection-edge error and the text-box error do NOT group (the assertion
+  that catches over-normalising); count-descending order; empty-detail run
+  in no group; example is one of the inputs unmodified; id cap; endpoint +
+  grid rendering. All green, `go build`/`go vet` clean.
+
+### Worked example: the 16-run wall of 2026-08-29 reads as five groups
+One curl of /v1/dashboard, details normalised and counted:
+
+    9  agent: go to <place>: skill: GoTo: skill: Traverse: walk to warp on map <hex>: text box interrupted movement
+    3  agent: go to pallet town: skill: GoTo: skill: Traverse: connection edge <n>c-><n> via south did not cross within <n> frames
+    1  agent: go to pallet town: skill: Travel: blacked out
+    1  agent: take a starter: ... rival battle result = <n>, want win
+    1  unknown destination "pallet"
+
+Nine of sixteen runs were ONE bug (the Route 1 edge, landed in S8-3); the
+16th run finished with an empty detail and appears in no group. Read
+run-by-run the same wall looked like sixteen separate disasters and the
+dominant bug was invisible. This is what /v1/triage now prints.
+
+### For the next task
+- The grid's pattern column renders `<hex>`/`<n>` (HTML-escaped in source);
+  the verbatim example column carries the real coordinates/map ids — that
+  column is what makes a group actionable.
+- Triage groups finished runs only; a run still burning its retry budget
+  with repeated identical failures will not show up until it settles.

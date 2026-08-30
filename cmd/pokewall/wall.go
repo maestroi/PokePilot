@@ -303,6 +303,7 @@ func (w *Wall) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/runs/{id}/cancel", w.handleCancel)
 	mux.HandleFunc("POST /v1/runs/{id}/finish", w.handleFinish)
 	mux.HandleFunc("GET /v1/dashboard", w.handleDashboard)
+	mux.HandleFunc("GET /v1/triage", w.handleTriage)
 	mux.HandleFunc("GET /", w.handleGrid)
 	mux.HandleFunc("GET /frame", w.handleFrame)
 	return mux
@@ -685,6 +686,12 @@ var gridTmpl = template.Must(template.New("grid").Parse(`<!doctype html>
 {{range .Workers}}<tr><td>{{.Addr}}</td><td>{{if .RunID}}running {{.RunID}}{{else}}idle{{end}}</td><td>{{.SeenAgo}} ago</td></tr>
 {{else}}<tr><td colspan="3">no workers</td></tr>
 {{end}}</table>
+<h2>failure groups</h2>
+<table border="1" cellspacing="0">
+<tr><th>count</th><th>pattern</th><th>example</th><th>runs</th></tr>
+{{range .Groups}}<tr><td>{{.Count}}</td><td>{{.Pattern}}</td><td>{{.Example}}</td><td>{{range $i, $id := .RunIDs}}{{if $i}}, {{end}}{{$id}}{{end}}</td></tr>
+{{else}}<tr><td colspan="4">no failures</td></tr>
+{{end}}</table>
 </body></html>`))
 
 // snapshot copies tiles and workers under w.mu so callers never read live
@@ -737,8 +744,9 @@ func (w *Wall) renderGrid() ([]byte, error) {
 	view := struct {
 		Rows    []tileRow
 		Workers []workerRow
+		Groups  []triageGroup
 		Now     int64
-	}{dash.Runs, dash.Workers, dash.Now}
+	}{dash.Runs, dash.Workers, w.triage(), dash.Now}
 	if err := gridTmpl.Execute(&buf, view); err != nil {
 		return nil, err
 	}
@@ -747,6 +755,98 @@ func (w *Wall) renderGrid() ([]byte, error) {
 
 func (w *Wall) handleDashboard(res http.ResponseWriter, req *http.Request) {
 	writeJSON(res, http.StatusOK, w.snapshot())
+}
+
+var (
+	// triageHexRe matches 0x-prefixed hex literals (map ids and the like).
+	triageHexRe = regexp.MustCompile(`0x[0-9a-fA-F]+`)
+	// triageNumRe matches runs of digits (coordinates, frame counts).
+	triageNumRe = regexp.MustCompile(`\d+`)
+)
+
+const (
+	// triagePatternCap bounds the normalised pattern. Past this length two
+	// details sharing a long prefix would merge into one group, so the cap
+	// is generous enough for every real error string and short enough that
+	// only genuinely different tails can still split groups.
+	triagePatternCap = 128
+	// triageRunIDCap caps how many run ids a group reports. The count is
+	// exact; the id list is a sample to go looking for the runs.
+	triageRunIDCap = 5
+)
+
+// normalizeDetail reduces a failure detail to its pattern: 0x-prefixed hex
+// literals become <hex>, runs of digits become <n>, then the length is
+// capped. "map 0x0c at (10,35)" and "map 0x21 at (4,22)" land on the same
+// pattern; the words that name the bug stay untouched.
+func normalizeDetail(detail string) string {
+	s := triageHexRe.ReplaceAllString(detail, "<hex>")
+	s = triageNumRe.ReplaceAllString(s, "<n>")
+	if len(s) > triagePatternCap {
+		s = s[:triagePatternCap]
+	}
+	return s
+}
+
+// triageGroup is one cluster of failed runs sharing a normalised detail.
+type triageGroup struct {
+	Pattern string   `json:"pattern"` // the normalised detail
+	Count   int      `json:"count"`   // exact number of runs in the group
+	Example string   `json:"example"` // ONE verbatim detail from the group
+	RunIDs  []string `json:"run_ids"` // capped at triageRunIDCap
+}
+
+// triageGroups groups finished, failed runs (reason error or lost) with a
+// non-empty detail by normalised pattern, most frequent first. A run with an
+// empty detail is not a cluster of one — it is a run that finished — and a
+// run that finished cleanly never appears at all.
+func triageGroups(order []string, tiles map[string]*Tile) []triageGroup {
+	type acc struct {
+		example string
+		count   int
+		ids     []string
+	}
+	groups := map[string]*acc{}
+	var keys []string
+	for _, id := range order {
+		t := tiles[id]
+		if t == nil || !t.Finished || (t.Reason != "error" && t.Reason != "lost") || t.Detail == "" {
+			continue
+		}
+		key := normalizeDetail(t.Detail)
+		a, ok := groups[key]
+		if !ok {
+			a = &acc{example: t.Detail}
+			groups[key] = a
+			keys = append(keys, key)
+		}
+		a.count++
+		if len(a.ids) < triageRunIDCap {
+			a.ids = append(a.ids, t.RunID)
+		}
+	}
+	out := make([]triageGroup, 0, len(keys))
+	for _, k := range keys {
+		a := groups[k]
+		out = append(out, triageGroup{Pattern: k, Count: a.count, Example: a.example, RunIDs: a.ids})
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Count > out[j].Count })
+	return out
+}
+
+// triage is the wall's failure ranking, taken under w.mu.
+func (w *Wall) triage() []triageGroup {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return triageGroups(w.order, w.tiles)
+}
+
+// handleTriage reports failure groups, most frequent first. It is a read:
+// it creates no tasks, calls no runner, and writes nothing. A human reads
+// the ranking and decides what to file — a queue filled automatically by a
+// noisy classifier would be worse than no queue.
+func (w *Wall) handleTriage(res http.ResponseWriter, req *http.Request) {
+	writeJSON(res, http.StatusOK, w.triage())
 }
 
 // handleGrid renders the known tiles.
