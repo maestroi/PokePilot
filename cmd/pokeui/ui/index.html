@@ -299,6 +299,33 @@
     color: var(--bezel);
     margin: 4px 0 0;
   }
+  .pnums {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px var(--space-3);
+  }
+  .prow { display: flex; justify-content: space-between; gap: 8px; }
+  .prow span:first-child { color: var(--bezel); }
+  .prow .pwarn { color: var(--amber); }
+  .pintent { margin: var(--space-2) 0 0; color: var(--lcd); white-space: pre-wrap; }
+  .pchoices { margin-top: var(--space-2); }
+  .pchoice {
+    position: relative;
+    padding: 2px 4px;
+    margin-top: 1px;
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .pbar {
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    background: rgba(155, 188, 15, 0.16);
+    z-index: 0;
+    border-radius: 2px;
+  }
+  .pchoice span { position: relative; z-index: 1; }
+  .pchoice .n { color: var(--lcd); }
   #workers {
     display: flex;
     flex-wrap: wrap;

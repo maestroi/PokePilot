@@ -23,6 +23,14 @@
   const outcomeOf = (r) => (r.reason || r.status || "").toLowerCase();
   const goalOf = (r) => (r.goal || "").trim();
 
+  // The same tally the runner's watch page renders, compressed to one card
+  // line. Nil on scripted runs and before the first ask.
+  function statsLine(r) {
+    const s = r.stats;
+    if (!s || r.planner === "scripted") return "";
+    return `round ${s.round} (${s.rounds_left} left) · rep ${s.repeats}/${s.rounds} · think ${s.avg_seconds.toFixed(1)}s avg`;
+  }
+
   // Decomp map constants, same inventory as red/state/map_names.go.
   const MAP_NAMES = {
     0x00: "PALLET_TOWN", 0x01: "VIRIDIAN_CITY", 0x02: "PEWTER_CITY",
@@ -340,6 +348,8 @@
               <div class="pos"></div>
               <div class="fact-k">progress</div>
               <div class="stats"></div>
+              <div class="fact-k">llm</div>
+              <div class="llm"></div>
             </div>
             <button type="button" class="cancel"></button>
             <div class="card-err" hidden></div>
@@ -361,6 +371,8 @@
       } else {
         art.querySelector(".pos").textContent = tileLabel(r);
         art.querySelector(".stats").textContent = "frame " + r.frame + " · attempt " + r.attempts;
+        const line = statsLine(r);
+        art.querySelector(".llm").textContent = line;
       }
       const cancel = art.querySelector(".cancel");
       cancel.hidden = r.status === "done";
@@ -510,6 +522,7 @@
       `<div class="block"><h3>Settings</h3>${settings}</div>`
       + `<div class="block"><h3>${run.status === "done" ? "Outcome" : "Now"}</h3>${kv(stateRows)}</div>`
       + planHTML(run)
+      + playHTML(run)
       + lastEventHTML(run);
   }
 
@@ -528,6 +541,31 @@
     return `<div class="block"><h3>Plan</h3>
       <div class="plan-k">question</div>${question}
       ${decision}</div>`;
+  }
+
+  // The full Play panel, mirroring the runner's watch page: one row per
+  // number, amber when it is the warning (repeat picks, rejected replies,
+  // transport errors, fallbacks), plus the last intent and the choice bars.
+  function playHTML(run) {
+    const s = run.stats;
+    if (!s || run.planner === "scripted") return "";
+    const row = (k, v, warn) =>
+      `<div class="prow"><span>${esc(k)}</span><span${warn ? ' class="pwarn"' : ""}>${esc(v)}</span></div>`;
+    const nums =
+      row("round", s.round + (s.rounds_left ? ` (${s.rounds_left} left)` : "")) +
+      row("repeat picks", `${s.repeats} of ${s.rounds}`, s.rounds > 3 && s.repeats * 2 >= s.rounds) +
+      row("think", `${s.last_seconds.toFixed(1)}s / ${s.avg_seconds.toFixed(1)}s avg`) +
+      row("offered", `${s.avg_offered.toFixed(1)} avg`) +
+      row("tokens", `${s.prompt_tokens} / ${s.completion_tokens}`) +
+      row("rejected", String(s.rejected), s.rejected > 0) +
+      row("transport", String(s.transport), s.transport > 0) +
+      row("fallbacks", String(s.fallbacks), s.fallbacks > 0);
+    const intent = s.intent ? `<p class="pintent">"${esc(s.intent)}" (${s.intent_age} rounds)</p>` : "";
+    const top = (s.choices && s.choices[0]) ? s.choices[0].count : 1;
+    const choices = (s.choices || []).map((c) =>
+      `<div class="pchoice"><div class="pbar" style="width:${(100 * c.count) / top}%"></div>` +
+      `<span>${esc(c.objective)}</span><span class="n">${c.count}</span></div>`).join("");
+    return `<div class="block"><h3>Play</h3><div class="pnums">${nums}</div>${intent}<div class="pchoices">${choices}</div></div>`;
   }
 
   function lastEventHTML(run) {

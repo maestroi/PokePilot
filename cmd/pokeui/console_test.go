@@ -81,6 +81,32 @@ func TestUIHistoryCanBeDeletedAndNewestFirst(t *testing.T) {
 	}
 }
 
+// TestUIRendersLLMStats: the console shows the same planner tally the
+// runner's watch page renders — a line on each live llm card and a Play
+// block in the detail pane — so a wandering run is visible without opening
+// port 8099.
+func TestUIRendersLLMStats(t *testing.T) {
+	js := string(uiJS)
+	for _, want := range []string{
+		"statsLine", "playHTML",
+		`r.stats`,
+		`repeat picks`,
+		`round ${s.round}`,
+		`${s.avg_offered.toFixed(1)} avg`,
+		`pbar`,
+	} {
+		if !strings.Contains(js, want) {
+			t.Errorf("ui.js missing %q", want)
+		}
+	}
+	html := string(indexHTML)
+	for _, want := range []string{`.pnums`, `.pchoice`, `.pwarn`} {
+		if !strings.Contains(html, want) {
+			t.Errorf("index.html missing %s", want)
+		}
+	}
+}
+
 func TestVersionEndpoint(t *testing.T) {
 	h := handler("http://wall.invalid")
 	req := httptest.NewRequest(http.MethodGet, "/v1/version", nil)
