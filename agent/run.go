@@ -32,8 +32,13 @@ type Result struct {
 	Stop      Stop
 	Rounds    int
 	Completed []Objective
-	Err       error // set when Stop is StopError or StopFailed
-	Final     Observation
+	// Err is why the run STOPPED, and it is nil unless Stop is StopError or
+	// StopFailed. A round that failed and was recovered from does not set
+	// it: those live in Final.History, which is also where the planner reads
+	// them. A caller can therefore treat a non-nil Err as "this run ended
+	// badly" without having to re-derive that from Stop.
+	Err   error
+	Final Observation
 	// ReplyRetries counts how many times the planner answered in the wrong
 	// shape and the same round was re-asked with the rejection quoted back.
 	// It is the diagnostic that separates a loop problem from a capacity
@@ -410,8 +415,17 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 			// The failure is recorded where the planner reads it — the next
 			// round's history — and the run continues. res.Rounds counts the
 			// failed round: it ran.
+			//
+			// res.Err is NOT set here. Its documented meaning is why the run
+			// STOPPED, and a failed objective the run recovers from is not
+			// that: it is a round that went badly in a run that carried on.
+			// Setting it on every failure left the last one showing on a run
+			// that finished fine — cmd/pokepilot printed "error: ..." after a
+			// healthy run, and the farm filed the same text as the run's
+			// failure detail, so every recovered blackout was being counted
+			// as a failed run in the wall's triage. It is set below, only
+			// where the failure actually ends the run.
 			res.Rounds = round
-			res.Err = err
 			last = Observe(m, romData)
 			outcome := "failed: " + err.Error()
 			blackedOut := errors.Is(err, skill.ErrBlackedOut)
@@ -458,12 +472,15 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 				// The same objective failing the same way twice in a row:
 				// the world is not going to change on its own, and repeating
 				// the identical attempt will not teach the planner anything.
-				res.Stop = StopFailed
+				res.Stop, res.Err = StopFailed, err
 			case consecFailures >= maxConsecFailures:
 				// Different failures, but every objective the planner picks
 				// dies: it is not reading the consequences.
-				res.Stop = StopFailed
+				res.Stop, res.Err = StopFailed, err
 			case m.FrameCount()-startFrame >= uint64(budget.MaxFrames):
+				// The frame budget ran out on a round that happened to fail.
+				// The budget is the reason, not the failure, so Err stays
+				// nil and StopBudget carries the meaning.
 				res.Stop = StopBudget
 			}
 			if res.Stop != 0 {

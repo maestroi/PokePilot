@@ -255,6 +255,11 @@ func TestRunRepeatedFailureStops(t *testing.T) {
 	b.MaxRounds = 50
 	res := agent.Run(e, e.ROM(), agent.NewScriptedPlanner(objs...), b)
 
+	// The failure that ends the run IS the run's error: StopFailed and a
+	// nil Err would leave the caller with no reason to print.
+	if res.Err == nil {
+		t.Error("Err = nil on a run stopped by the failure budget; the failure that ended it is the run's error")
+	}
 	if res.Stop != agent.StopFailed {
 		t.Fatalf("Stop = %d after %d rounds, want StopFailed", res.Stop, res.Rounds)
 	}
@@ -342,6 +347,14 @@ func TestRunBlackoutDoesNotStopTheRun(t *testing.T) {
 
 	if res.Stop != agent.StopDone {
 		t.Fatalf("Stop = %d after %d rounds, want StopDone (the blackout is not a failure-budget event)", res.Stop, res.Rounds)
+	}
+	// Err means why the run STOPPED. This run did not stop on a failure, so
+	// it has no error — even though three of its rounds failed. Setting it
+	// on every failure made a healthy run print "error: ... blacked out"
+	// at the end, and made the farm file a recovered blackout as the run's
+	// failure detail, so the wall counted recovered runs as failed ones.
+	if res.Err != nil {
+		t.Errorf("Err = %v on a run that recovered and finished; failed rounds belong in History, not in Err", res.Err)
 	}
 	if res.Rounds != 3 {
 		t.Fatalf("Rounds = %d, want 3 (the three failed rounds; the planner's end is not a round)", res.Rounds)
