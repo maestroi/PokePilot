@@ -48,12 +48,18 @@ func TestOfferTable(t *testing.T) {
 			mustNot: []string{"pewter", "heal", "catch", "train", "gym", "parcel"},
 		},
 		{
-			name: "on route 1 with a party, balls and grass: catch and train join, starters leave",
+			name: "on route 1 with a party, balls and grass: one catch per species the map rolls",
 			obs: agent.Observation{
 				Map: 0x0c, MapName: "ROUTE_1", X: 5, Y: 14, PartyCount: 1,
 				Bag:      []agent.Item{{Name: "pokeball", Quantity: 5}},
 				HasGrass: true,
-				Events:   []string{"BattledRivalInOaksLab"},
+				// Route1WildMons, as the ROM has it: no CATERPIE anywhere
+				// on this map, which the old fixed menu offered anyway.
+				WildGrass: []agent.WildSpecies{
+					{Name: "pidgey", MinLevel: 2, MaxLevel: 5, Slots: 6},
+					{Name: "rattata", MinLevel: 2, MaxLevel: 4, Slots: 4},
+				},
+				Events: []string{"BattledRivalInOaksLab"},
 			},
 			known: func() *agent.Knowledge {
 				k := agent.NewKnowledge(adj)
@@ -65,13 +71,14 @@ func TestOfferTable(t *testing.T) {
 				"go to pallet town",
 				"go to viridian city", // one step out of route 1
 				"deliver oak's parcel",
-				"catch a CATERPIE here",
+				"catch a PIDGEY here",
+				"catch a RATTATA here",
 				"train the lead to level 12",
 			},
-			mustNot: []string{"starter", "heal"},
+			mustNot: []string{"starter", "heal", "CATERPIE"},
 		},
 		{
-			name: "balls without grass: catch stays off — the hunt needs tall grass",
+			name: "balls but the map rolls nothing: catch stays off — the hunt needs a wild table",
 			obs: agent.Observation{
 				Map: 0x00, MapName: "PALLET_TOWN", X: 4, Y: 7, PartyCount: 1,
 				Bag:    []agent.Item{{Name: "pokeball", Quantity: 5}},

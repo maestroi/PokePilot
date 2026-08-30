@@ -346,7 +346,7 @@ func TestLLMPlannerOutOfRangeArgRejected(t *testing.T) {
 	}{
 		{"level above range", `{"choice":3,"level":500}`, "out of range"},
 		{"level zero", `{"choice":3,"level":0}`, "out of range"},
-		{"unknown species", `{"choice":5,"species":"snorlax"}`, "unknown species"},
+		{"unknown species", `{"choice":5,"species":"mewthree"}`, "unknown species"},
 		{"quantity above range", `{"choice":5,"quantity":150}`, "does not apply"},
 		{"choice out of range", `{"choice":7}`, "out of range"},
 	} {

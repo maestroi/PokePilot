@@ -245,8 +245,20 @@ func TestSpeciesAndItemTables(t *testing.T) {
 	if name, ok := agent.SpeciesName(0x24); !ok || name != "pidgey" {
 		t.Errorf("SpeciesName(0x24) = %q, %v; want pidgey", name, ok)
 	}
-	if _, ok := agent.SpeciesByName("snorlax"); ok {
-		t.Error("SpeciesByName(snorlax) resolved; it is not in the table")
+	// The whole ROM roster, not a hand-picked subset: a species the table
+	// omits is a species the planner is not allowed to want, and the map's
+	// wild table names plenty the old 28-entry list did not contain.
+	if _, ok := agent.SpeciesByName("snorlax"); !ok {
+		t.Error("SpeciesByName(snorlax) did not resolve; all 151 should be nameable")
+	}
+	if id, ok := agent.SpeciesByName("fearow"); !ok || id != 0x23 {
+		t.Errorf("SpeciesByName(fearow) = %#04x, %v; want 0x23 (the old table misspelled this one)", id, ok)
+	}
+	if n := agent.SpeciesCount(); n != 151 {
+		t.Errorf("species table holds %d names, want 151", n)
+	}
+	if _, ok := agent.SpeciesByName("mewthree"); ok {
+		t.Error("SpeciesByName(mewthree) resolved; it is not a species")
 	}
 	if id, ok := agent.ItemByName("potion"); !ok || id != 0x14 {
 		t.Errorf("ItemByName(potion) = %#04x, %v; want 0x14", id, ok)

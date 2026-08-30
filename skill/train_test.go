@@ -3,6 +3,7 @@ package skill_test
 import (
 	"errors"
 	"os"
+	"reflect"
 	"testing"
 
 	"github.com/maestroi/pokepilot/red/rom"
@@ -363,6 +364,53 @@ func TestHasGrassMatchesTheGameEncounterRule(t *testing.T) {
 			t.Fatalf("%s: %v", tc.name, err)
 		} else if got != tc.want {
 			t.Errorf("%s: HasGrass = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+// TestWildGrassMatchesTheDecomp pins the map's own answer to "what is
+// catchable here" against data/wild/maps/*.asm, read as LoadWildData reads
+// it: the rate byte, then ten (level, species) slots. Route 1 is six PIDGEY
+// slots and four RATTATA; Pallet Town has a zero rate and so no species at
+// all, which is the same fact HasGrass reports.
+func TestWildGrassMatchesTheDecomp(t *testing.T) {
+	path := os.Getenv("POKEMON_RED_ROM")
+	if path == "" {
+		t.Skip("POKEMON_RED_ROM not set")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		id   uint8
+		name string
+		want []skill.WildSpecies
+	}{
+		// Route1WildMons: rate 25, PIDGEY at 2-5 in six slots, RATTATA at
+		// 2-4 in four.
+		{0x0c, "ROUTE_1", []skill.WildSpecies{
+			{ID: 0x24, MinLevel: 2, MaxLevel: 5, Slots: 6}, // PIDGEY
+			{ID: 0xA5, MinLevel: 2, MaxLevel: 4, Slots: 4}, // RATTATA
+		}},
+		{0x00, "PALLET_TOWN", nil}, // NothingWildMons: rate 0
+		{0x28, "OAKS_LAB", nil},
+	}
+	for _, tc := range cases {
+		got, err := skill.WildGrass(data, tc.id)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		if !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("%s: WildGrass = %+v, want %+v", tc.name, got, tc.want)
+		}
+		// The two readings of the same record must never disagree.
+		hasGrass, err := skill.HasGrass(data, tc.id)
+		if err != nil {
+			t.Fatalf("%s: HasGrass: %v", tc.name, err)
+		}
+		if hasGrass && len(got) == 0 {
+			t.Errorf("%s: HasGrass says yes but WildGrass names no species", tc.name)
 		}
 	}
 }

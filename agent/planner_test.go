@@ -164,7 +164,7 @@ func TestWithArgsRejects(t *testing.T) {
 	}{
 		{"level above range", agent.Objective{Kind: agent.KindTrain, Level: 10}, agent.ReplyArgs{Level: &l500}, "out of range"},
 		{"level zero", agent.Objective{Kind: agent.KindTrain, Level: 10}, agent.ReplyArgs{Level: &l0}, "out of range"},
-		{"unknown species", agent.Objective{Kind: agent.KindCatch, Species: 0x7B}, agent.ReplyArgs{Species: "snorlax"}, "unknown species"},
+		{"unknown species", agent.Objective{Kind: agent.KindCatch, Species: 0x7B}, agent.ReplyArgs{Species: "mewthree"}, "unknown species"},
 		{"fuzzy species name", agent.Objective{Kind: agent.KindCatch, Species: 0x7B}, agent.ReplyArgs{Species: "caterpy"}, "unknown species"},
 		{"negative quantity", agent.Objective{Kind: agent.KindBuy}, agent.ReplyArgs{Item: "potion", Quantity: &qNeg}, "out of range"},
 		{"quantity above range", agent.Objective{Kind: agent.KindBuy}, agent.ReplyArgs{Item: "potion", Quantity: &q150}, "out of range"},

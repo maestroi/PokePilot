@@ -166,14 +166,18 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 		!known.Completed[Objective{Kind: KindErrand}.String()] {
 		out = append(out, Objective{Kind: KindErrand}) // one-shot story event
 	}
-	// Catch hunts tall grass for a wanted species, so the same map fact
-	// that gates Train gates it: without walkable grass on this map the
-	// hunt cannot happen, and offering it would hand the planner an
-	// objective that fails on its precondition (a city round spent on a
-	// guaranteed failure). Balls alone are not enough.
-	if obs.HasGrass && hasBalls(obs) {
-		if sp, ok := SpeciesByName("caterpie"); ok {
-			out = append(out, Objective{Kind: KindCatch, Species: sp})
+	// One catch per species this map's grass can actually roll, from the
+	// map's own wild data (Observation.WildGrass). No species is special:
+	// the menu used to name CATERPIE everywhere, which made the one hunt
+	// the Brock slice needed look like the only hunt there is, and offered
+	// it on maps whose wild table has never held one. A map with no grass
+	// encounters names nothing, so the precondition is a fact rather than
+	// a guess, and balls alone are still not enough to hunt.
+	if hasBalls(obs) {
+		for _, w := range obs.WildGrass {
+			if sp, ok := SpeciesByName(w.Name); ok {
+				out = append(out, Objective{Kind: KindCatch, Species: sp})
+			}
 		}
 	}
 	if isCenter(obs.MapName) {

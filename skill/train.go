@@ -17,12 +17,12 @@ import (
 // copy of the offsets because it needs the grass tile and block offset,
 // which world does not expose.
 const (
-	trainTilesetsBank    uint8  = 0x03
-	trainTilesetsAddr    uint16 = 0x47BE
+	trainTilesetsBank uint8  = 0x03
+	trainTilesetsAddr uint16 = 0x47BE
 	// WildDataPointers (pokered/pokered.sym): a 2-byte pointer per map to
 	// that map's wild data record, whose first byte is the grass rate.
-	trainWildBank uint8  = 0x03
-	trainWildAddr uint16 = 0x4EEB
+	trainWildBank        uint8  = 0x03
+	trainWildAddr        uint16 = 0x4EEB
 	trainTilesetEntryLen        = 12
 )
 
@@ -371,8 +371,6 @@ func PromoteToLead(m *emu.Emu, index int) error {
 	return nil
 }
 
-
-
 // cell is a game-tile position on a map.
 type cell struct{ x, y int }
 
@@ -532,17 +530,73 @@ func flip(a, b, cur cell) cell {
 	return a
 }
 
-// wildGrassRate returns the map's grass encounter rate, read exactly as
-// LoadWildData does (pokered/engine/overworld/wild_mons.asm): the map's
-// WildDataPointers entry names a record whose first byte is the rate.
-func wildGrassRate(romData []byte, mapID uint8) (uint8, error) {
+// wildSlots is how many (level, species) pairs a grass record carries.
+// def_grass_wildmons is followed by exactly NUM_WILDMONS entries
+// (pokered/macros/asserts.asm asserts the length), then the water record.
+const wildSlots = 10
+
+// WildSpecies is one species a map's grass can roll, with the level band it
+// appears at and how many of the ten encounter slots it holds. Slots is
+// rarity in the only form the ROM states it: a species in six slots is met
+// roughly six times as often as one in a single slot.
+type WildSpecies struct {
+	ID       uint8
+	MinLevel uint8
+	MaxLevel uint8
+	Slots    int
+}
+
+// WildGrass returns the species a map's tall grass can roll, in ROM slot
+// order, deduplicated. It is empty when the map has no grass encounters at
+// all — the same zero rate HasGrass checks, so the two agree by
+// construction. This is the map's own answer to "what is catchable here";
+// nothing about it is a preference, and no species is special.
+func WildGrass(romData []byte, mapID uint8) ([]WildSpecies, error) {
+	off, err := wildRecord(romData, mapID)
+	if err != nil {
+		return nil, err
+	}
+	if romData[off] == 0 {
+		return nil, nil // no grass encounters on this map
+	}
+	if off+1+2*wildSlots > len(romData) {
+		return nil, fmt.Errorf("skill: WildGrass: map %#04x: wild data record runs past the ROM", mapID)
+	}
+	var out []WildSpecies
+	index := map[uint8]int{}
+	for i := 0; i < wildSlots; i++ {
+		level, species := romData[off+1+2*i], romData[off+2+2*i]
+		if species == 0 {
+			continue
+		}
+		if at, seen := index[species]; seen {
+			out[at].Slots++
+			if level < out[at].MinLevel {
+				out[at].MinLevel = level
+			}
+			if level > out[at].MaxLevel {
+				out[at].MaxLevel = level
+			}
+			continue
+		}
+		index[species] = len(out)
+		out = append(out, WildSpecies{ID: species, MinLevel: level, MaxLevel: level, Slots: 1})
+	}
+	return out, nil
+}
+
+// wildRecord returns the ROM offset of a map's wild data record, read
+// exactly as LoadWildData does (pokered/engine/overworld/wild_mons.asm):
+// the map's WildDataPointers entry names the record. The record's first
+// byte is the grass encounter rate.
+func wildRecord(romData []byte, mapID uint8) (int, error) {
 	base, err := bankedOff(trainWildBank, trainWildAddr)
 	if err != nil {
-		return 0, fmt.Errorf("skill: Train: %w", err)
+		return 0, fmt.Errorf("skill: wild data: %w", err)
 	}
 	pOff := base + int(mapID)*2
 	if pOff+2 > len(romData) {
-		return 0, fmt.Errorf("skill: Train: map %#04x: wild data pointer out of ROM", mapID)
+		return 0, fmt.Errorf("skill: wild data: map %#04x: pointer out of ROM", mapID)
 	}
 	// The pointer is a 16-bit offset in the same bank as WildDataPointers
 	// (LoadWildData loads it straight into hl and uses it):
@@ -550,12 +604,23 @@ func wildGrassRate(romData []byte, mapID uint8) (uint8, error) {
 	off := uint16(romData[pOff]) | uint16(romData[pOff+1])<<8
 	recOff, err := bankedOff(trainWildBank, off)
 	if err != nil {
-		return 0, fmt.Errorf("skill: Train: map %#04x: %w", mapID, err)
+		return 0, fmt.Errorf("skill: wild data: map %#04x: %w", mapID, err)
 	}
 	if recOff >= len(romData) {
-		return 0, fmt.Errorf("skill: Train: map %#04x: wild data record out of ROM", mapID)
+		return 0, fmt.Errorf("skill: wild data: map %#04x: record out of ROM", mapID)
 	}
-	return romData[recOff], nil
+	return recOff, nil
+}
+
+// wildGrassRate returns the map's grass encounter rate: the first byte of
+// the record wildRecord locates. Zero means the game never rolls an
+// encounter there, whatever the tiles underfoot look like.
+func wildGrassRate(romData []byte, mapID uint8) (uint8, error) {
+	off, err := wildRecord(romData, mapID)
+	if err != nil {
+		return 0, err
+	}
+	return romData[off], nil
 }
 
 // bankedOff converts a banked address (bank:addr) to a ROM file offset,

@@ -70,6 +70,14 @@ type Observation struct {
 	// Run, not decoded from RAM: outcomes are run memory, not game state.
 	History []RoundRecord
 
+	// WildGrass names the species this map's tall grass can actually roll,
+	// with the level band each appears at and how many of the ten encounter
+	// slots it holds (rarity, in the only form the ROM states it). Decoded
+	// from the map's own wild data (skill.WildGrass), so it is the game's
+	// answer to "what is catchable here", not a list we chose. Empty on a
+	// map with no grass encounters.
+	WildGrass []WildSpecies
+
 	// HasGrass says the current map has walkable tall grass — the
 	// precondition for training. A map feature decoded from the ROM's
 	// tileset table (skill.HasGrass), like LeadMoves: geometry the player
@@ -143,6 +151,16 @@ type PartyMon struct {
 	// Status is the mon's status as a name ("poisoned", "asleep", ...),
 	// never the raw byte: "" when healthy.
 	Status string
+}
+
+// WildSpecies is one species the current map's grass can roll. Named, not
+// indexed: an index is a number the planner cannot reason about, and the
+// name is the same vocabulary it uses to ask for a catch.
+type WildSpecies struct {
+	Name     string
+	MinLevel uint8
+	MaxLevel uint8
+	Slots    int // of the map's ten encounter slots
 }
 
 // knownEvents is the full set of story events red/state decodes today, in
@@ -227,6 +245,18 @@ func Observe(m *emu.Emu, romData []byte) Observation {
 	}
 	if grass, err := skill.HasGrass(romData, obs.Map); err == nil {
 		obs.HasGrass = grass
+	}
+	obs.WildGrass = []WildSpecies{}
+	if wild, err := skill.WildGrass(romData, obs.Map); err == nil {
+		for _, w := range wild {
+			name, ok := SpeciesName(w.ID)
+			if !ok {
+				continue // an index outside the roster; report nothing rather than a number
+			}
+			obs.WildGrass = append(obs.WildGrass, WildSpecies{
+				Name: name, MinLevel: w.MinLevel, MaxLevel: w.MaxLevel, Slots: w.Slots,
+			})
+		}
 	}
 	objects := MapObjects(romData, obs.Map)
 	hidden := state.HiddenObjectIDs(&mem)

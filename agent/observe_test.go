@@ -8,6 +8,8 @@ import (
 
 	"github.com/maestroi/pokepilot/agent"
 	"github.com/maestroi/pokepilot/red/state"
+	"github.com/maestroi/pokepilot/skill"
+	"github.com/maestroi/pokepilot/skill/fixture"
 )
 
 // TestMapObjectsFromROM checks the map-header object classification against
@@ -209,5 +211,49 @@ func TestObserveJSONRoundTrip(t *testing.T) {
 	}
 	if !reflect.DeepEqual(obs, back) {
 		t.Fatalf("round trip changed the observation:\n in:  %+v\n out: %+v\n json: %s", obs, back, b)
+	}
+}
+
+// TestObserveAndOfferNameTheMapsOwnWildSpecies is the whole chain the
+// per-map catch rests on, driven for real: stand on Route 1, and the
+// observation must name the species Route1WildMons holds — PIDGEY and
+// RATTATA, and no CATERPIE, which is what the fixed menu used to offer
+// here — with one catch objective per species.
+func TestObserveAndOfferNameTheMapsOwnWildSpecies(t *testing.T) {
+	if testing.Short() {
+		t.Skip("full journey; not part of the -short gate")
+	}
+	e := fixture.Load(t, "post_starter")
+	dest, ok := skill.Place("route 1")
+	if !ok {
+		t.Fatal("Place(route 1) did not resolve")
+	}
+	if _, err := fixture.Travel(e, dest, skill.StatAwareMove(e.ROM()), 20); err != nil {
+		t.Fatalf("travel to route 1: %v", err)
+	}
+
+	obs := agent.Observe(e, e.ROM())
+	var names []string
+	for _, w := range obs.WildGrass {
+		names = append(names, w.Name)
+		if w.MinLevel == 0 || w.MaxLevel < w.MinLevel || w.Slots < 1 {
+			t.Errorf("%s: levels %d-%d in %d slots is not a usable band", w.Name, w.MinLevel, w.MaxLevel, w.Slots)
+		}
+	}
+	if !reflect.DeepEqual(names, []string{"pidgey", "rattata"}) {
+		t.Fatalf("Observe().WildGrass = %+v, want pidgey and rattata", obs.WildGrass)
+	}
+
+	// Balls in the bag, so the hunt's other precondition holds too.
+	obs.Bag = append(obs.Bag, agent.Item{Name: "pokeball", Quantity: 5})
+	var catches []string
+	for _, o := range agent.Offer(obs, agent.NewKnowledge(nil)) {
+		if o.Kind == agent.KindCatch {
+			catches = append(catches, o.String())
+		}
+	}
+	want := []string{"catch a PIDGEY here", "catch a RATTATA here"}
+	if !reflect.DeepEqual(catches, want) {
+		t.Fatalf("catch objectives = %v, want %v", catches, want)
 	}
 }
