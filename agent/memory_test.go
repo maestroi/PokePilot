@@ -25,7 +25,7 @@ func memoryFixture(t *testing.T) (*Knowledge, string, int) {
 	k.SawDialogue([]string{
 		"You can pass here\nonly if you have\nthe CASCADEBADGE!",
 		"I'm raising #MON too!", // chatter: must NOT be harvested
-	})
+	}, "ROUTE_23", 4, 57)
 	return k, "earn the boulder badge", 3
 }
 
@@ -98,8 +98,17 @@ func TestMemoryRoundTrip(t *testing.T) {
 	}
 	// The harvested wall survives the round-trip verbatim; the chatter that
 	// sat beside it in the same dialogue does not.
-	if len(got.Knowledge.Requirements) != 1 || got.Knowledge.Requirements[0] != "You can pass here\nonly if you have\nthe CASCADEBADGE!" {
-		t.Errorf("Requirements = %v, want the one harvested line verbatim", got.Knowledge.Requirements)
+	if len(got.Knowledge.Requirements) != 1 {
+		t.Fatalf("Requirements = %v, want the one harvested line", got.Knowledge.Requirements)
+	}
+	wall := got.Knowledge.Requirements[0]
+	if wall.Text != "You can pass here\nonly if you have\nthe CASCADEBADGE!" {
+		t.Errorf("Requirement text = %q, want the harvested line verbatim", wall.Text)
+	}
+	// Where it was heard and how often survive too: a resumed run that
+	// forgets it has already hit this wall walks into it again.
+	if wall.Place != "ROUTE_23" || wall.X != 4 || wall.Y != 57 || wall.Times != 1 {
+		t.Errorf("Requirement = %+v, want it located at ROUTE_23 (4,57), heard once", wall)
 	}
 	// Adjacency is route geometry: it comes from the argument, not the file.
 	if len(got.Knowledge.Adjacency) != 1 || len(got.Knowledge.Adjacency[0x09]) != 1 || got.Knowledge.Adjacency[0x09][0] != 0x0a {

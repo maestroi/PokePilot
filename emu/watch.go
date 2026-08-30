@@ -66,6 +66,25 @@ const watchPage = `<!doctype html>
           display:flex; flex-direction:column; border-left:1px solid #333; }
   #head { flex:0 0 auto; padding:8px 12px; border-bottom:1px solid #333;
           color:#6cf; background:#181818; white-space:pre-wrap; }
+  /* The statistics panel: pinned like the header, capped at a third of the
+     column so a long choice list never squeezes the trace out of view. */
+  #stats { flex:0 0 auto; display:none; max-height:34vh; overflow-y:auto;
+           box-sizing:border-box; padding:8px 12px; background:#181818;
+           border-bottom:1px solid #333; }
+  #nums { display:grid; grid-template-columns:1fr 1fr; gap:2px 12px; }
+  #nums div { display:flex; justify-content:space-between; gap:8px; }
+  #nums span:first-child { color:#888; }
+  .warn { color:#f96; }
+  #intent { margin-top:6px; color:#9c9; white-space:pre-wrap; }
+  #choices { margin-top:6px; }
+  #choices div { position:relative; padding:2px 4px; margin-top:1px;
+                 display:flex; justify-content:space-between; gap:8px; }
+  /* The bar is the row's own background, so a choice picked six times reads
+     at a glance without a chart library. */
+  .bar { position:absolute; left:0; top:0; bottom:0; background:#2a3a4a;
+         z-index:0; border-radius:2px; }
+  #choices span { position:relative; z-index:1; }
+  .n { color:#6cf; }
   #trace { flex:1 1 auto; min-height:0; overflow-y:auto; box-sizing:border-box;
            padding:8px 12px; }
   #trace div { padding:2px 0; border-bottom:1px solid #222; white-space:pre-wrap; }
@@ -80,12 +99,20 @@ const watchPage = `<!doctype html>
 </div>
 <div id="side">
   <div id="head"></div>
+  <div id="stats">
+    <div id="nums"></div>
+    <div id="intent"></div>
+    <div id="choices"></div>
+  </div>
   <div id="trace"></div>
 </div>
 <script>
 const img = document.getElementById('f'), wait = document.getElementById('w');
 const trace = document.getElementById('trace');
 const head = document.getElementById('head');
+const stats = document.getElementById('stats'), nums = document.getElementById('nums');
+const intent = document.getElementById('intent'), choices = document.getElementById('choices');
+const esc = s => String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 let inFlight = false;
 async function tickFrame() {
   if (inFlight) return;
@@ -114,6 +141,7 @@ async function tickTrace() {
     if (!r.ok) return;
     const payload = await r.json();
     head.textContent = payload.header || '';
+    renderStats(payload.stats);
     if (payload.run !== run) {
       run = payload.run;
       lastSeq = 0;
@@ -130,6 +158,31 @@ async function tickTrace() {
     }
     trace.scrollTop = trace.scrollHeight;
   } catch (e) { /* server gone */ }
+}
+
+// renderStats draws the planner tally the run pushes with TraceStats. The
+// server decides what a statistic is; this only lays it out, so a new field
+// needs a row here and nothing else.
+function renderStats(s) {
+  if (!s) { stats.style.display = 'none'; return; }
+  stats.style.display = 'block';
+  const row = (label, value, warn) =>
+    '<div><span>' + label + '</span><span' + (warn ? ' class="warn"' : '') +
+    '>' + esc(value) + '</span></div>';
+  nums.innerHTML =
+    row('round', s.round + (s.rounds_left ? ' (' + s.rounds_left + ' left)' : '')) +
+    row('repeat picks', s.repeats + ' of ' + s.rounds, s.rounds > 3 && s.repeats * 2 >= s.rounds) +
+    row('think', s.last_seconds.toFixed(1) + 's / ' + s.avg_seconds.toFixed(1) + 's avg') +
+    row('offered', s.avg_offered.toFixed(1) + ' avg') +
+    row('tokens', s.prompt_tokens + ' / ' + s.completion_tokens) +
+    row('rejected', s.rejected, s.rejected > 0) +
+    row('transport', s.transport, s.transport > 0) +
+    row('fallbacks', s.fallbacks, s.fallbacks > 0);
+  intent.textContent = s.intent ? '"' + s.intent + '" (' + s.intent_age + ' rounds)' : '';
+  const top = (s.choices && s.choices[0]) ? s.choices[0].count : 1;
+  choices.innerHTML = (s.choices || []).map(c =>
+    '<div><div class="bar" style="width:' + (100 * c.count / top) + '%"></div>' +
+    '<span>' + esc(c.objective) + '</span><span class="n">' + c.count + '</span></div>').join('');
 }
 
 setInterval(tickFrame, 100);

@@ -39,6 +39,12 @@ type traceBuf struct {
 	// knows what this run is sets it.
 	header string
 
+	// stats is an opaque JSON blob the watching layer sets: emu carries it
+	// to the page without interpreting a byte of it, exactly as it carries
+	// header. What counts as a run statistic is a question about Pokemon
+	// and about planners, and emu is not allowed to know either.
+	stats json.RawMessage
+
 	// run identifies this process's trace. A consumer that sees a different
 	// run must discard what it has: sequence numbers restart from scratch,
 	// so without this a reconnecting page replays the whole trace again.
@@ -79,17 +85,18 @@ func (t *traceBuf) snapshot() []TraceEntry {
 // tracePayload is what /trace.json returns. Entries are wrapped rather than
 // sent bare so a consumer can tell one process's trace from another's.
 type tracePayload struct {
-	Run     string       `json:"run"`
-	Header  string       `json:"header"`
-	Entries []TraceEntry `json:"entries"`
+	Run     string          `json:"run"`
+	Header  string          `json:"header"`
+	Stats   json.RawMessage `json:"stats,omitempty"`
+	Entries []TraceEntry    `json:"entries"`
 }
 
 func (t *traceBuf) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	t.mu.Lock()
-	run, header := t.run, t.header
+	run, header, stats := t.run, t.header, t.stats
 	t.mu.Unlock()
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(tracePayload{Run: run, Header: header, Entries: t.snapshot()})
+	_ = json.NewEncoder(w).Encode(tracePayload{Run: run, Header: header, Stats: stats, Entries: t.snapshot()})
 }
 
 // diffChanged is the change-detection primitive: it reports whether cur
@@ -194,6 +201,23 @@ func (m *Emu) TraceHeader(text string) {
 	}
 	m.trace.mu.Lock()
 	m.trace.header = text
+	m.trace.mu.Unlock()
+}
+
+// TraceStats replaces the statistics blob served alongside the trace. v is
+// marshalled here and carried verbatim; a value that will not marshal is
+// dropped, because a broken statistic must never take down a run. Safe to
+// call at any time, from any goroutine.
+func (m *Emu) TraceStats(v any) {
+	if m.trace == nil {
+		return
+	}
+	b, err := json.Marshal(v)
+	if err != nil {
+		return
+	}
+	m.trace.mu.Lock()
+	m.trace.stats = b
 	m.trace.mu.Unlock()
 }
 

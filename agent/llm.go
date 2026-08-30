@@ -61,6 +61,30 @@ type LLMPlanner struct {
 	// this must never be on in a baseline measurement.
 	ExtraSystem string
 
+	// NoThink asks the server to render the chat template with thinking
+	// turned OFF (chat_template_kwargs {"enable_thinking": false}), for a
+	// reasoning model that will not stop thinking about a menu.
+	//
+	// MEASURED 2026-08-31, qwen3.8-27b on llama.cpp, one 16-objective menu:
+	// thinking on, 47.1s and 4096 completion tokens, truncated mid-thought
+	// and REJECTED as finish_reason "length"; thinking off, 0.88s and 22
+	// tokens, a clean {"choice": 1, "intent": ...}. Fifty times faster and
+	// the difference between a run and a stall. (Qwen's "/no_think" prompt
+	// suffix did nothing on this build: 44.8s, truncated. The template
+	// argument is what this server honours.)
+	//
+	// Off by default, so the request is byte-identical for every existing
+	// caller and prior measurement. A server that does not know the field
+	// ignores it. POKEPILOT_LLM_NO_THINK=1 sets it.
+	NoThink bool
+
+	// MaxTokens caps one reply's completion tokens. Zero means
+	// maxReplyTokens. Raise it for a reasoning model: the think block is
+	// spent from this budget, and a cap that truncates it is reported as
+	// finish_reason "length" and rejected, which reads as a broken model
+	// rather than a short leash. POKEPILOT_LLM_MAX_TOKENS sets it.
+	MaxTokens int
+
 	// Timeout bounds one POST to the model. Zero means the 60s default. A
 	// large model (ablation A) can take well over a minute per call, so
 	// badgerun raises it via POKEPILOT_LLM_TIMEOUT rather than editing code.
@@ -88,6 +112,12 @@ type LLMHealth struct {
 	Transport int // POST failures, timeouts, non-200, unreadable or malformed envelope
 	Rejected  int // replies rejected for shape: model mismatch, finish_reason != stop, unparseable content
 	Fallbacks int // replies parsed by the plain-text fallback path
+	// PromptTokens and CompletionTokens are what the run has spent, summed
+	// over every reply whose server reported usage. A server that omits
+	// usage leaves them at zero, which is why they are counters and not an
+	// average: zero means "not reported", never "free".
+	PromptTokens     int
+	CompletionTokens int
 }
 
 // maxReplyTokens caps the reply so a model that will not stop cannot burn the
@@ -97,6 +127,13 @@ type LLMHealth struct {
 // reply is rejected as ErrNotFinished, and after MaxReplyRetries the run stops
 // — which reads as a failing model rather than a truncated one. Keep it well
 // above a think block plus {"choice": N}.
+//
+// 512 is sized for a small model that barely thinks. MEASURED 2026-08-31
+// against a local qwen3.8-27b: 439 completion tokens to choose between TWO
+// objectives, nearly all of it reasoning. A real round's menu would blow
+// straight through this and stop the run on round 1, so a bigger model
+// raises it with POKEPILOT_LLM_MAX_TOKENS rather than by editing code —
+// the same seam POKEPILOT_LLM_TIMEOUT is for.
 const maxReplyTokens = 512
 
 // NewLLMPlanner returns an LLMPlanner with the defaults, overridden by
@@ -111,6 +148,14 @@ func NewLLMPlanner() *LLMPlanner {
 		p.Model = v
 	}
 	p.Token = os.Getenv("llm_token")
+	if v := os.Getenv("POKEPILOT_LLM_NO_THINK"); v != "" && v != "0" {
+		p.NoThink = true
+	}
+	if v := os.Getenv("POKEPILOT_LLM_MAX_TOKENS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			p.MaxTokens = n
+		}
+	}
 	if v := os.Getenv("POKEPILOT_LLM_TIMEOUT"); v != "" {
 		if d, err := time.ParseDuration(v); err == nil {
 			p.Timeout = d
@@ -160,6 +205,10 @@ func (p *LLMPlanner) NextFeedback(obs Observation, offered []Objective, feedback
 		return Objective{}, err
 	}
 	reply := strings.TrimSpace(res.Content)
+	if res.Usage != nil {
+		p.Health.PromptTokens += res.Usage.PromptTokens
+		p.Health.CompletionTokens += res.Usage.CompletionTokens
+	}
 	defer func() {
 		// Logged after the reply has resolved, so the line reports what it
 		// actually became rather than what it looked like.
@@ -324,7 +373,7 @@ func looksLikeAnswer(s string) bool {
 // If S6-11's diagnosis shows the model needs to think out loud before
 // choosing, the answer is a free pre-call followed by this constrained
 // one; nothing here has to change for that.
-const llmSystemPrompt = `You are choosing the next objective for a Pokemon Red player. Prefer an objective that makes NEW progress: repeating what you just did wastes the run. The run has a limited number of rounds and each objective costs one: most small talk does not advance your goal, so spend rounds on objectives that move toward it. Reply with ONLY a JSON object: {"choice": N} where N is the number of your choice, plus the arguments of that objective when it has any ("level", "species", "item", "quantity"). Travelling objectives are offered twice: the plain one FIGHTS wild battles on the way, and the one ending in ", fleeing wild battles" RUNS them instead — pick the variant you want by its number. Also include "intent": one short sentence (at most 200 bytes) saying what this choice is in service of. It will be read back to you on the next round's observation as "Intent", with "IntentAge" — how many rounds it has gone unchanged — so state it honestly and change it only when your purpose changes. Do not explain.`
+const llmSystemPrompt = `You are choosing the next objective for a Pokemon Red player. Prefer an objective that makes NEW progress: repeating what you just did wastes the run. The run has a limited number of rounds and each objective costs one — the observation's "RoundsLeft" is how many you have left, this one included: most small talk does not advance your goal, so spend rounds on objectives that move toward it. Reply with ONLY a JSON object: {"choice": N} where N is the number of your choice, plus the arguments of that objective when it has any ("level", "species", "item", "quantity"). Travelling objectives are offered twice: the plain one FIGHTS wild battles on the way, and the one ending in ", fleeing wild battles" RUNS them instead — pick the variant you want by its number. Also include "intent": one short sentence (at most 200 bytes) saying what this choice is in service of. It will be read back to you on the next round's observation as "Intent", with "IntentAge" — how many rounds it has gone unchanged — so state it honestly and change it only when your purpose changes. Do not explain.`
 
 // llmUserPrompt renders the observation as compact JSON, then the offered
 // objectives as a 1-based numbered list of their String() forms.
@@ -360,11 +409,15 @@ type chatMessage struct {
 }
 
 type chatRequest struct {
-	Model          string          `json:"model"`
-	Temperature    float64         `json:"temperature"`
-	MaxTokens      int             `json:"max_tokens"`
-	Messages       []chatMessage   `json:"messages"`
-	ResponseFormat *responseFormat `json:"response_format,omitempty"`
+	Model       string        `json:"model"`
+	Temperature float64       `json:"temperature"`
+	MaxTokens   int           `json:"max_tokens"`
+	Messages    []chatMessage `json:"messages"`
+	// ChatTemplateKwargs are arguments for the server's chat template. Only
+	// ever set from NoThink; omitted otherwise, so the request a server sees
+	// is unchanged unless someone asked for this.
+	ChatTemplateKwargs map[string]any  `json:"chat_template_kwargs,omitempty"`
+	ResponseFormat     *responseFormat `json:"response_format,omitempty"`
 }
 
 // responseFormat asks a server that supports structured output (llama.cpp
@@ -383,33 +436,57 @@ type jsonSchema struct {
 	Schema map[string]any `json:"schema"`
 }
 
-// choiceSchema is the requested reply shape. "choice" is the only required
-// field; the argument fields are optional because most offered objectives
-// carry no argument, and strict mode (which would require all of them)
-// would make a bare {"choice": N} malformed.
+// choiceSchema is the requested reply shape FOR THIS ROUND. "choice" is the
+// only required field, and the argument fields are present only when an
+// offered objective could actually take one: "level" only when something
+// trainable is offered, "species" only with a catch, "item"/"quantity" only
+// with a buy.
 //
-// "flee" is deliberately ABSENT: it is a conditional argument (only go-to
-// and heal-with-place carry it), and a small model given the field emits it
-// on every reply, including starters and talk, where WithArgs rejects it —
-// and at temperature 0 the rejection feedback does not change its answer,
-// so the run burned MaxReplyRetries and stopped. The constrained decoder
-// forbids whatever the schema omits, so the fight/flee choice lives in the
-// menu instead (Offer lists both variants of each journey) and is made as
-// an index, which the model does reliably.
-var choiceSchema = map[string]any{
-	"type": "object",
-	"properties": map[string]any{
-		"choice":   map[string]any{"type": "integer"},
-		"level":    map[string]any{"type": "integer"},
-		"species":  map[string]any{"type": "string"},
-		"item":     map[string]any{"type": "string"},
-		"quantity": map[string]any{"type": "integer"},
+// Building it per round rather than once is the same lesson "flee" taught
+// (see the comment below): a small model given an optional field in the
+// schema FILLS IT IN, on every reply, whatever it picked — and WithArgs
+// then rejects the argument as inapplicable, correctly. At temperature 0
+// the rejection feedback does not change the next answer, so the round
+// burns MaxReplyRetries and the run stops on its first objective.
+// MEASURED 2026-08-30: round 1 offered three starters and two journeys,
+// none of which take an argument, and the model answered
+// {"choice": 1, "level": 1, "species": "Charmander"} three times running.
+// The constrained decoder forbids whatever the schema omits, so the cure is
+// to omit it: on a round where no offered objective carries an argument the
+// model is left with the one question it can actually answer.
+//
+// This is a narrowing, never a widening: an argument the model may legally
+// send still reaches WithArgs, which range-checks it exactly as before. The
+// schema is an optimisation, not the safety mechanism.
+//
+// "flee" is deliberately ABSENT whatever is offered: it is a conditional
+// argument on go-to and heal-with-place, and the fight/flee choice lives in
+// the menu instead (Offer lists both variants of each journey), made as an
+// index, which the model does reliably.
+func choiceSchema(offered []Objective) map[string]any {
+	props := map[string]any{
+		"choice": map[string]any{"type": "integer"},
 		"intent": map[string]any{
 			"type":        "string",
 			"description": "One short sentence, at most 200 bytes: what this choice is in service of. It is read back to you next round as the observation's Intent field, with IntentAge — how many rounds it has gone unchanged.",
 		},
-	},
-	"required": []string{"choice"},
+	}
+	for _, o := range offered {
+		switch o.Kind {
+		case KindTrain:
+			props["level"] = map[string]any{"type": "integer"}
+		case KindCatch:
+			props["species"] = map[string]any{"type": "string"}
+		case KindBuy:
+			props["item"] = map[string]any{"type": "string"}
+			props["quantity"] = map[string]any{"type": "integer"}
+		}
+	}
+	return map[string]any{
+		"type":       "object",
+		"properties": props,
+		"required":   []string{"choice"},
+	}
 }
 
 // chatChoice carries the message plus finish_reason: "length" means the
@@ -489,17 +566,26 @@ func (p *LLMPlanner) ask(obs Observation, offered []Objective, feedback string) 
 		p.Health.Transport++
 		return chatResult{}, fmt.Errorf("agent: llm planner: "+format, args...)
 	}
+	maxTokens := p.MaxTokens
+	if maxTokens <= 0 {
+		maxTokens = maxReplyTokens
+	}
+	var templateKwargs map[string]any
+	if p.NoThink {
+		templateKwargs = map[string]any{"enable_thinking": false}
+	}
 	reqBody, err := json.Marshal(chatRequest{
 		Model:       p.Model,
 		Temperature: 0,
-		MaxTokens:   maxReplyTokens,
+		MaxTokens:   maxTokens,
 		Messages: []chatMessage{
 			{Role: "system", Content: system},
 			{Role: "user", Content: user},
 		},
+		ChatTemplateKwargs: templateKwargs,
 		ResponseFormat: &responseFormat{
 			Type:       "json_schema",
-			JSONSchema: &jsonSchema{Name: "objective_choice", Strict: false, Schema: choiceSchema},
+			JSONSchema: &jsonSchema{Name: "objective_choice", Strict: false, Schema: choiceSchema(offered)},
 		},
 	})
 	if err != nil {

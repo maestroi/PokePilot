@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"sort"
 	"strings"
 
 	"github.com/maestroi/pokepilot/red/state"
@@ -22,19 +23,32 @@ import (
 // question about exits and deterministic code keeps the geometry. It names
 // no places; it only answers where the doors of a map lead.
 type Knowledge struct {
-	Visited   map[uint8]bool              // maps the player has stood on
-	Places    map[string]bool             // place names the game has shown (visited or spoken)
-	Completed map[string]bool             // objectives already completed, by Objective.String()
+	Visited   map[uint8]bool  // maps the player has stood on
+	Places    map[string]bool // place names the game has shown (visited or spoken)
+	Completed map[string]bool // objectives already completed, by Objective.String()
+	// Failures are the objectives the run has TRIED and failed, by
+	// Objective.String(). It exists because History scrolls: it carries
+	// historyCap rounds, so six rounds of anything push a failure out of
+	// the planner's view entirely. MEASURED 2026-08-31: "go to route 2"
+	// failed on rounds 10 and 11, six talk rounds followed, and by round 19
+	// the model could no longer see it had ever tried — so it tried again,
+	// twice, and the run ended on the identical-failure guard. A tally that
+	// does not scroll is the difference between "untried idea" and "I have
+	// hit this eight times".
+	//
+	// An entry is dropped the moment the same objective succeeds: a wall
+	// that opened is not a wall, and a stale failure would argue against
+	// the thing that now works.
+	Failures  map[string]Failure
 	Talked    map[uint8]map[[2]uint8]bool // map-local object coordinates already talked to
 	Adjacency map[uint8][]uint8           // for each map id, the map ids its exits lead to
-	// Requirements are raw sentences the game has said that carry the shape
-	// of a stated requirement or blocked way — "You don't have the
-	// CASCADEBADGE yet!" — kept VERBATIM: the model reads English, and a
-	// parser that turns the sentence into a badge name or item id would be
-	// us deciding what the sentence meant. Like Places, a line enters only
-	// when the game actually said it. Newest first, deduplicated, capped at
-	// requirementCap.
-	Requirements []string
+	// Requirements are the walls the game has stated: each one the raw
+	// sentence, kept VERBATIM — the model reads English, and a parser that
+	// turned the sentence into a badge name or item id would be us deciding
+	// what it meant — plus WHERE it was heard and HOW MANY times. Like
+	// Places, one enters only when the game actually said it. Newest first,
+	// deduplicated by text, capped at requirementCap.
+	Requirements []Requirement
 }
 
 // NewKnowledge returns an empty Knowledge over the given route geometry.
@@ -46,8 +60,79 @@ func NewKnowledge(adjacency map[uint8][]uint8) *Knowledge {
 		Completed:    map[string]bool{},
 		Talked:       map[uint8]map[[2]uint8]bool{},
 		Adjacency:    adjacency,
-		Requirements: []string{},
+		Requirements: []Requirement{},
+		Failures:     map[string]Failure{},
 	}
+}
+
+// Failure is one objective the run has tried and failed, and how often. The
+// error text is the last one verbatim, like Requirement.Text: what went
+// wrong is the game's answer, not ours to summarise.
+type Failure struct {
+	Objective string
+	Times     int
+	Last      string // the last error, verbatim
+}
+
+// failureCap bounds how many distinct failed objectives the observation
+// carries, most-failed first. Same shape as requirementCap: enough to show
+// what the run keeps walking into, not a transcript of everything that ever
+// went wrong.
+const failureCap = 8
+
+// Failed records that an objective was tried and failed. The same objective
+// failing again is not a new entry — the count goes up and the newest error
+// replaces the old one.
+func (k *Knowledge) Failed(o Objective, err error) {
+	if err == nil {
+		return
+	}
+	name := o.String()
+	f := k.Failures[name]
+	f.Objective, f.Times, f.Last = name, f.Times+1, err.Error()
+	k.Failures[name] = f
+}
+
+// FailureList renders the tally for an observation: most-failed first, ties
+// by name so the list does not reshuffle between rounds, capped at
+// failureCap.
+func (k *Knowledge) FailureList() []Failure {
+	out := make([]Failure, 0, len(k.Failures))
+	for _, f := range k.Failures {
+		out = append(out, f)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Times != out[j].Times {
+			return out[i].Times > out[j].Times
+		}
+		return out[i].Objective < out[j].Objective
+	})
+	if len(out) > failureCap {
+		out = out[:failureCap]
+	}
+	return out
+}
+
+// Requirement is one wall the game has stated, and the facts about hitting
+// it that the game's own words do not carry.
+//
+// Text alone is not actionable. MEASURED 2026-08-31: the old man blocking
+// Viridian's north path says "You can't go through here! This is private
+// property!" and nothing else — the decomp moves him on EVENT_GOT_POKEDEX
+// (ViridianCityCheckGotPokedexScript), but he never says so. A planner
+// handed that sentence has a wall and no key, and it walked into it on ten
+// consecutive rounds because nothing in the observation said it had been
+// there before.
+//
+// Place/X/Y and Times are that missing fact: not what the wall MEANS —
+// that stays the planner's to work out — but that this exact wall, at this
+// exact tile, has now been hit N times. A loop the run cannot see is a loop
+// it repeats.
+type Requirement struct {
+	Text  string // the game's words, verbatim; never parsed
+	Place string // map name where it was last heard; "" when unknown
+	X, Y  uint8  // tile where it was last heard
+	Times int    // how many rounds have heard it, this one included
 }
 
 // SawMap records that the player has stood on the map. A map the player has
@@ -60,7 +145,7 @@ func (k *Knowledge) SawMap(id uint8) { k.Visited[id] = true }
 // names are recognizable — not as a seed: a name enters Knowledge only when
 // the game actually said it. Matching is on word boundaries, so "Route 22"
 // does not count as a mention of "route 2".
-func (k *Knowledge) SawDialogue(lines []string) {
+func (k *Knowledge) SawDialogue(lines []string, place string, x, y uint8) {
 	for _, line := range lines {
 		low := strings.ToLower(line)
 		for _, name := range skill.PlaceNames() {
@@ -68,7 +153,7 @@ func (k *Knowledge) SawDialogue(lines []string) {
 				k.Places[name] = true
 			}
 		}
-		k.HeardRequirement(line)
+		k.HeardRequirement(line, place, x, y)
 	}
 }
 
@@ -120,19 +205,29 @@ func looksLikeRequirement(line string) bool {
 }
 
 // HeardRequirement records one raw sentence the game has said, if it carries
-// a requirement shape. The sentence is kept verbatim and deduplicated: a box
-// that re-fires while the player stands there must not fill the observation
-// with the same line forty times. Newer sentences move to the front; the
-// list is capped at requirementCap, newest first.
-func (k *Knowledge) HeardRequirement(line string) {
+// a requirement shape, along with where the player stood when it was said.
+// The sentence is kept verbatim and deduplicated: a box that re-fires while
+// the player stands there must not fill the observation with the same line
+// forty times. A line already known is not a new entry — it moves to the
+// front, takes the current position, and its Times count goes up, which is
+// the whole point: hitting the same wall twice is a fact the run must be
+// able to see. The list is capped at requirementCap, newest first.
+func (k *Knowledge) HeardRequirement(line, place string, x, y uint8) {
 	line = strings.TrimSpace(line)
 	if line == "" || !looksLikeRequirement(line) {
 		return
 	}
-	out := make([]string, 0, len(k.Requirements)+1)
-	out = append(out, line)
+	seen := Requirement{Text: line, Place: place, X: x, Y: y, Times: 1}
 	for _, prev := range k.Requirements {
-		if prev != line && len(out) < requirementCap {
+		if prev.Text == line {
+			seen.Times = prev.Times + 1
+			break
+		}
+	}
+	out := make([]Requirement, 0, len(k.Requirements)+1)
+	out = append(out, seen)
+	for _, prev := range k.Requirements {
+		if prev.Text != line && len(out) < requirementCap {
 			out = append(out, prev)
 		}
 	}
@@ -143,7 +238,13 @@ func (k *Knowledge) HeardRequirement(line string) {
 // from the menu because of this (see Offer): a completed heal is no reason
 // to stop offering heals, and neither is a lost gym challenge — the run is
 // meant to train, heal, and come back.
-func (k *Knowledge) Done(o Objective) { k.Completed[o.String()] = true }
+func (k *Knowledge) Done(o Objective) {
+	name := o.String()
+	k.Completed[name] = true
+	// It worked: whatever blocked it before is gone, and a kept failure
+	// would argue against the thing that just succeeded.
+	delete(k.Failures, name)
+}
 
 // TalkedTo records a successful conversation at a map-local object tile.
 // Coordinates alone are not globally unique: the same (x,y) can name
@@ -171,14 +272,22 @@ func (k *Knowledge) restore(mem memoryFile) {
 	for _, s := range mem.Completed {
 		k.Completed[s] = true
 	}
+	for _, f := range mem.Failures {
+		k.Failures[f.Objective] = f
+	}
 	for _, t := range mem.Talked {
 		k.TalkedTo(t.Map, t.X, t.Y)
 	}
-	for _, line := range mem.Requirements {
+	for _, r := range mem.Requirements {
 		// Through HeardRequirement, not a raw append: the file was written
 		// by a version that already filtered these, and re-validating keeps
-		// this field honest if the shape list ever shrinks.
-		k.HeardRequirement(line)
+		// this field honest if the shape list ever shrinks. The restored
+		// Times is then put back — a resumed run must not forget it has
+		// already hit this wall five times.
+		k.HeardRequirement(r.Text, r.Place, r.X, r.Y)
+		if len(k.Requirements) > 0 && k.Requirements[0].Text == r.Text {
+			k.Requirements[0].Times = r.Times
+		}
 	}
 }
 

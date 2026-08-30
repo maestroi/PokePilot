@@ -347,7 +347,7 @@ func TestOfferTable(t *testing.T) {
 			known: func() *agent.Knowledge {
 				k := agent.NewKnowledge(adj)
 				k.SawMap(0x00)
-				k.SawDialogue([]string{"An old man said: Pewter City lies to the east."})
+				k.SawDialogue([]string{"An old man said: Pewter City lies to the east."}, "PALLET_TOWN", 5, 6)
 				return k
 			},
 			want: []string{
@@ -501,7 +501,7 @@ func TestKnowledgeDialogueMentions(t *testing.T) {
 	k.SawDialogue([]string{
 		"The sign reads: Route 22. Beware the rival.",
 		"Nothing here names a place at all.",
-	})
+	}, "ROUTE_22", 5, 5)
 	if !k.Places["route 22"] {
 		t.Errorf("dialogue named route 22; Knowledge does not know it")
 	}
@@ -512,7 +512,7 @@ func TestKnowledgeDialogueMentions(t *testing.T) {
 		t.Errorf("Knowledge.Places = %v, want exactly {route 22}", k.Places)
 	}
 
-	k.SawDialogue([]string{"In Pallet Town, Oak waits."})
+	k.SawDialogue([]string{"In Pallet Town, Oak waits."}, "PALLET_TOWN", 5, 6)
 	if !k.Places["pallet town"] {
 		t.Errorf("dialogue named Pallet Town; Knowledge does not know it")
 	}
@@ -536,15 +536,15 @@ func TestKnowledgeHarvestsStatedRequirements(t *testing.T) {
 		"Are you going to VIRIDIAN FOREST?\nBe careful, it's\na natural maze!",
 	}
 
-	k.SawDialogue(chatter)
+	k.SawDialogue(chatter, "ROUTE_23", 4, 57)
 	if len(k.Requirements) != 0 {
 		t.Fatalf("ordinary chatter was harvested: %v", k.Requirements)
 	}
 
-	k.SawDialogue(guard)
-	want := []string{
-		"You don't have the\nCASCADEBADGE yet!", // newest first
-		"You can pass here\nonly if you have\nthe CASCADEBADGE!",
+	k.SawDialogue(guard, "ROUTE_23", 4, 57)
+	want := []agent.Requirement{
+		{Text: "You don't have the\nCASCADEBADGE yet!", Place: "ROUTE_23", X: 4, Y: 57, Times: 1}, // newest first
+		{Text: "You can pass here\nonly if you have\nthe CASCADEBADGE!", Place: "ROUTE_23", X: 4, Y: 57, Times: 1},
 	}
 	if !reflect.DeepEqual(k.Requirements, want) {
 		t.Fatalf("Requirements = %v, want %v", k.Requirements, want)
@@ -552,9 +552,12 @@ func TestKnowledgeHarvestsStatedRequirements(t *testing.T) {
 
 	// The same lines again — a box that re-fires while the player stands
 	// there must not fill the observation with the sentence forty times.
-	k.SawDialogue(guard)
+	// It is not a new entry: the count goes up, which is how a run sees it
+	// is walking into the same wall over and over.
+	k.SawDialogue(guard, "ROUTE_23", 4, 57)
+	want[0].Times, want[1].Times = 2, 2
 	if !reflect.DeepEqual(k.Requirements, want) {
-		t.Fatalf("re-heard lines duplicated: %v", k.Requirements)
+		t.Fatalf("re-heard lines duplicated or uncounted: %v", k.Requirements)
 	}
 }
 
@@ -563,22 +566,22 @@ func TestKnowledgeHarvestsStatedRequirements(t *testing.T) {
 // requirementCap distinct walls keep only the newest ones, first.
 func TestKnowledgeRequirementShapesAndCap(t *testing.T) {
 	k := agent.NewKnowledge(nil)
-	k.HeardRequirement("You can't go\nthrough here!")
-	if len(k.Requirements) != 1 || !strings.Contains(k.Requirements[0], "can't go") {
+	k.HeardRequirement("You can't go\nthrough here!", "VIRIDIAN_CITY", 19, 10)
+	if len(k.Requirements) != 1 || !strings.Contains(k.Requirements[0].Text, "can't go") {
 		t.Fatalf("the 'can't go through' shape was not caught: %v", k.Requirements)
 	}
 
 	k2 := agent.NewKnowledge(nil)
 	for i := 0; i < 12; i++ {
-		k2.HeardRequirement("You need key " + string(rune('a'+i)) + " to pass.")
+		k2.HeardRequirement("You need key "+string(rune('a'+i))+" to pass.", "ROUTE_23", 4, 57)
 	}
 	if len(k2.Requirements) != 8 {
 		t.Fatalf("cap not enforced: %d lines kept, want 8: %v", len(k2.Requirements), k2.Requirements)
 	}
-	if !strings.Contains(k2.Requirements[0], "key l") {
+	if !strings.Contains(k2.Requirements[0].Text, "key l") {
 		t.Errorf("newest line not first: %v", k2.Requirements)
 	}
-	if !strings.Contains(k2.Requirements[len(k2.Requirements)-1], "key e") {
+	if !strings.Contains(k2.Requirements[len(k2.Requirements)-1].Text, "key e") {
 		t.Errorf("oldest surviving line not last: %v", k2.Requirements)
 	}
 }

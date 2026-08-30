@@ -33,11 +33,11 @@ type (
 // out, the wall clock around it — so agent stays exactly as it was.
 type statsPlanner struct {
 	inner *agent.LLMPlanner
-	push  func(any) // emu.TraceStats
+	push  func(any)      // emu.TraceStats
 	snap  *heartbeatSnap // farm heartbeat; nil on the local (non-farm) run
 
-	stats  runStats
-	counts map[string]int
+	stats   runStats
+	counts  map[string]int
 	offered int           // summed over calls, for the average
 	elapsed time.Duration // summed over calls, for the average
 }

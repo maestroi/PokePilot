@@ -15,7 +15,10 @@ import (
 // fixture-cache rule (validate on write AND on read, version the filename),
 // learned the hard way. The version is in the file NAME as well, so a wrong
 // or old reader can tell at a glance which files it cannot claim.
-const memoryVersion = 2
+// Bumped to 3 when Requirements became located and counted (agent.Requirement)
+// rather than bare sentences: a v2 file's requirements would decode as
+// zero-valued structs, and a mismatched version is discarded cleanly.
+const memoryVersion = 3
 
 // knowledgeFileName is the ONLY way to name a knowledge file: from the base
 // name of the checkpoint state it was written beside. There is no function
@@ -47,14 +50,18 @@ func isKnowledgeName(name string) bool {
 // stale copy would outlive a map fix); and Observation, History and the
 // offered list, which are re-derived from the game state in one round.
 type memoryFile struct {
-	Version   int         `json:"version"`
-	Visited   []uint8     `json:"visited"`
-	Places    []string    `json:"places"`
-	Completed    []string    `json:"completed"`
-	Talked       []talkedKey `json:"talked"`
-	Requirements []string    `json:"requirements,omitempty"`
-	Intent    string      `json:"intent,omitempty"`
-	IntentAge int         `json:"intent_age,omitempty"`
+	Version      int           `json:"version"`
+	Visited      []uint8       `json:"visited"`
+	Places       []string      `json:"places"`
+	Completed    []string      `json:"completed"`
+	Talked       []talkedKey   `json:"talked"`
+	Requirements []Requirement `json:"requirements,omitempty"`
+	// Failures is the tally History cannot hold (see Knowledge.Failures):
+	// additive, so a file written before it existed still restores, with
+	// an empty tally — which is exactly what a run that recorded none had.
+	Failures  []Failure `json:"failures,omitempty"`
+	Intent    string    `json:"intent,omitempty"`
+	IntentAge int       `json:"intent_age,omitempty"`
 }
 
 // talkedKey is one "talked to this object" record: map-local coordinates are
@@ -87,6 +94,7 @@ func encodeMemoryFile(k *Knowledge, intent string, intentAge int) ([]byte, error
 		}
 	}
 	mem.Requirements = append(mem.Requirements, k.Requirements...)
+	mem.Failures = append(mem.Failures, k.FailureList()...)
 	return json.Marshal(mem)
 }
 

@@ -12,6 +12,7 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
+	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/skill"
 	"github.com/maestroi/pokepilot/world"
 )
@@ -186,6 +187,16 @@ type dialogueTape struct {
 	last    string   // last line kept
 	pending string   // last reading, not yet stable
 	stable  bool
+	// maps are the map ids the player has stood on since the last read,
+	// sampled for the same reason the dialogue is: an objective can walk
+	// through half of Kanto inside one Execute, and a post-Execute Observe
+	// sees only where it ended. Without this, Knowledge.Visited grows by at
+	// most one map per round, so the parcel errand walks to Viridian and
+	// back and the run still does not know Viridian City exists — the menu
+	// stays the four maps around Pallet and the planner shuffles between
+	// them forever. MEASURED 2026-08-30 on a live run: 18 rounds inside
+	// Pallet after the Pokedex.
+	maps map[uint8]bool
 }
 
 // sample runs on the goroutine stepping the emulator, so it may read
@@ -200,6 +211,17 @@ func (d *dialogueTape) sample(m *emu.Emu) {
 	if d.observeText(text) {
 		m.TraceNote("dialogue", text)
 	}
+	d.noteMap(mem.U8(sym.CurMap))
+}
+
+// noteMap records one sampled map id.
+func (d *dialogueTape) noteMap(id uint8) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.maps == nil {
+		d.maps = map[uint8]bool{}
+	}
+	d.maps[id] = true
 }
 
 // observeText folds one sampled screen-text value into the recent dialogue.
@@ -223,10 +245,24 @@ func (d *dialogueTape) observeText(text string) bool {
 		if text == d.last {
 			return false
 		}
-		if d.last != "" && strings.HasPrefix(text, d.last) && len(d.lines) > 0 {
-			d.lines[len(d.lines)-1] = text
-		} else {
+		switch {
+		case d.last == "" || len(d.lines) == 0:
+			// A genuinely new box: the last one closed (or this is the
+			// first), so this starts its own entry.
 			d.lines = append(d.lines, text)
+		case strings.HasPrefix(text, d.last):
+			// Still typing the same page: replace, do not accumulate.
+			d.lines[len(d.lines)-1] = text
+		default:
+			// A later PAGE of a box that is still open. It is the same
+			// utterance, so it EXTENDS the entry instead of starting a new
+			// one. Gen 1 breaks a sentence across pages at "para", and
+			// splitting there is what left the run holding "You can't go
+			// through here!" while "This is private property!" — the rest
+			// of the same breath — was filed as unrelated chatter and
+			// dropped by the requirement filter. An utterance is what the
+			// game said, not what fit on the screen at once.
+			d.lines[len(d.lines)-1] += " " + text
 		}
 		d.last = text
 		if len(d.lines) > dialogueCap {
@@ -237,6 +273,19 @@ func (d *dialogueTape) observeText(text string) bool {
 	return false
 }
 
+// seenMaps returns the map ids sampled since the last call, and clears
+// them: the caller folds them into Knowledge, which is the durable copy.
+func (d *dialogueTape) seenMaps() []uint8 {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	out := make([]uint8, 0, len(d.maps))
+	for id := range d.maps {
+		out = append(out, id)
+	}
+	d.maps = nil
+	return out
+}
+
 // recent returns a copy of the settled lines, oldest first.
 func (d *dialogueTape) recent() []string {
 	d.mu.Lock()
@@ -244,6 +293,63 @@ func (d *dialogueTape) recent() []string {
 	out := make([]string, len(d.lines))
 	copy(out, d.lines)
 	return out
+}
+
+// roundRecoveryBudget bounds the between-rounds dialogue recovery, in
+// frames. Ten seconds of game time: a leftover box is a page or two, which
+// is a handful of A presses, so anything that has not cleared by here is a
+// real failure to report rather than something to keep waiting on. It is
+// deliberately far shorter than skill's own 10000-frame budget, which is
+// sized for a forced cutscene — spending that between every round would be
+// nearly three minutes of wall clock on a paced run.
+const roundRecoveryBudget = 600
+
+// observeAfter pages away a text box the finished objective left open, then
+// observes. Every skill demands a controllable start and refuses otherwise
+// ("skill: Buy: not controllable (wFontLoaded=0x0001)"), and no objective
+// exists whose job is to close a box — so a single round that ends
+// mid-dialogue poisons EVERY round after it, whatever the planner picks,
+// until the run dies on repeated failures. MEASURED 2026-08-30: a run
+// reached the Viridian mart, bought potions, and then failed every
+// remaining round on a box that was never closed.
+//
+// RecoverDialogue is the right tool and already exists: it only pages
+// ordinary text, never sends a direction, and stops without pressing
+// anything if a choice is up — answering a question the run did not ask is
+// not recovery, so a choice is left alone and the next objective's own
+// guard reports it.
+func observeAfter(m *emu.Emu, romData []byte, log io.Writer) Observation {
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	if !state.Controllable(&mem) {
+		res := skill.RecoverDialogue(m, roundRecoveryBudget)
+		if log != nil {
+			if res.Stop == skill.DialogueRecovered {
+				fmt.Fprintf(log, "  recovered: closed a text box the objective left open (%d A press(es))\n", res.Presses)
+			} else {
+				fmt.Fprintf(log, "  recovery failed (%s): the next objective will refuse to start; box says %q\n",
+					recoveryStopName(res.Stop), res.Text)
+			}
+		}
+	}
+	return Observe(m, romData)
+}
+
+// recoveryStopName names a recovery outcome for the run log. The type has
+// no String() of its own, and a bare enum number in a log a human reads in
+// the morning is not a diagnosis.
+func recoveryStopName(s skill.DialogueRecoveryStop) string {
+	switch s {
+	case skill.DialogueRecovered:
+		return "recovered"
+	case skill.DialogueChoiceRequired:
+		return "a choice is up and this layer does not answer questions"
+	case skill.DialogueBudgetExhausted:
+		return "the box never closed"
+	case skill.DialogueUnexpectedMode:
+		return "a battle, not a text box"
+	}
+	return fmt.Sprintf("unknown stop %d", int(s))
 }
 
 // appendHistory adds one round to the run's history, keeping at most
@@ -406,14 +512,22 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 		// of the dialogue window. Then rebuild the menu: what is possible
 		// depends on where the player is and what they already have.
 		noteObservation(known, last)
+		// Every map the last objective actually walked through, not just
+		// the one it ended on: see dialogueTape.maps.
+		for _, id := range tape.seenMaps() {
+			known.SawMap(id)
+		}
 		// The walls the game has stated stay visible every round: Knowledge
 		// keeps them across rounds (and checkpoints), and this is where the
 		// planner reads them. A copy, so a later round cannot mutate what an
 		// earlier observation already showed. Offer does not branch on these:
 		// the run reports what it heard; the planner decides.
 		if reqs := known.Requirements; len(reqs) > 0 {
-			last.Requirements = append([]string{}, reqs...)
+			last.Requirements = append([]Requirement{}, reqs...)
 		}
+		// The failure tally, for the same reason and read the same way:
+		// History scrolls, this does not.
+		last.Failures = known.FailureList()
 		now := Offer(last, known)
 		if len(now) == 0 {
 			res.Stop = StopError
@@ -433,6 +547,11 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 		// its age, is read back from this observation.
 		last.Intent = intent
 		last.IntentAge = intentAge
+		// What the budget has left, in the observation the planner reads.
+		// MaxRounds is the last round that runs (the loop breaks on
+		// round > MaxRounds), so this round counts itself.
+		last.Round = round
+		last.RoundsLeft = budget.MaxRounds - round + 1
 
 		obj, err, retries := planWithRetries(budget.Log, round, p, last, now)
 		res.ReplyRetries += retries
@@ -488,7 +607,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 			// as a failed run in the wall's triage. It is set below, only
 			// where the failure actually ends the run.
 			res.Rounds = round
-			last = Observe(m, romData)
+			last = observeAfter(m, romData, budget.Log)
 			outcome := "failed: " + err.Error()
 			blackedOut := errors.Is(err, skill.ErrBlackedOut)
 			retreated := errors.Is(err, skill.ErrTrainRetreat)
@@ -507,10 +626,11 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 				outcome += fmt.Sprintf(" (respawned in %s, money %d -> %d)",
 					last.RespawnPlace, before.Money, last.Money)
 			}
+			known.Failed(obj, err)
 			history = appendHistory(history, RoundRecord{Objective: obj.String(), Outcome: outcome})
 			last.History = history
 			last.RecentDialogue = tape.recent()
-			logRound(budget.Log, round, obj, last)
+			logRound(budget.Log, round, obj, outcome, last)
 
 			if blackedOut || retreated {
 				// The blackout is recorded in history like any failure, but it
@@ -562,7 +682,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 			lastFailObj, lastFailErr = obj.String(), err.Error()
 			continue
 		}
-		last = Observe(m, romData)
+		last = observeAfter(m, romData, budget.Log)
 		res.Rounds = round
 		res.Completed = append(res.Completed, obj)
 		known.Done(obj)
@@ -574,7 +694,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 		history = appendHistory(history, RoundRecord{Objective: obj.String(), Outcome: "done"})
 		last.History = history
 		last.RecentDialogue = tape.recent()
-		logRound(budget.Log, round, obj, last)
+		logRound(budget.Log, round, obj, "done", last)
 
 		if sameProgress(before, last) {
 			stuck++
@@ -599,7 +719,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 // the player is standing on and any place names in its recent dialogue.
 func noteObservation(k *Knowledge, obs Observation) {
 	k.SawMap(obs.Map)
-	k.SawDialogue(obs.RecentDialogue)
+	k.SawDialogue(obs.RecentDialogue, obs.MapName, obs.X, obs.Y)
 }
 
 // sameProgress reports whether two observations are identical on the fields
@@ -720,9 +840,9 @@ func checkpointSlug(o Objective) string {
 // logRound writes the one per-round line that makes an overnight run
 // diagnosable in the morning: the round number, what was attempted, and
 // where the player ended up.
-func logRound(w io.Writer, round int, o Objective, after Observation) {
+func logRound(w io.Writer, round int, o Objective, outcome string, after Observation) {
 	if w == nil {
 		return
 	}
-	fmt.Fprintf(w, "round %d: %s -> map %02x at (%d,%d)\n", round, o, after.Map, after.X, after.Y)
+	fmt.Fprintf(w, "round %d: %s -> %s, map %02x at (%d,%d)\n", round, o, outcome, after.Map, after.X, after.Y)
 }

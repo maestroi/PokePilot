@@ -1,6 +1,10 @@
 package emu
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -120,5 +124,28 @@ func TestEachBufHasItsOwnRun(t *testing.T) {
 	}
 	if a.run == b.run {
 		t.Fatalf("two buffers share run %q", a.run)
+	}
+}
+
+// TestTraceStatsRoundTrip: the stats blob is carried verbatim and is absent
+// until something sets it, so a page polling a run with no planner tally
+// sees no panel rather than an empty one.
+func TestTraceStatsRoundTrip(t *testing.T) {
+	b := newTraceBuf()
+	rec := httptest.NewRecorder()
+	b.serveHTTP(rec, httptest.NewRequest(http.MethodGet, "/trace.json", nil))
+	if strings.Contains(rec.Body.String(), "stats") {
+		t.Fatalf("unset stats must be omitted, got %s", rec.Body.String())
+	}
+
+	b.stats = json.RawMessage(`{"repeats":3}`)
+	rec = httptest.NewRecorder()
+	b.serveHTTP(rec, httptest.NewRequest(http.MethodGet, "/trace.json", nil))
+	var got tracePayload
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if string(got.Stats) != `{"repeats":3}` {
+		t.Fatalf("stats = %s, want the blob verbatim", got.Stats)
 	}
 }

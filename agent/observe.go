@@ -68,7 +68,28 @@ type Observation struct {
 	RecentDialogue []string
 	// History is the last few objectives and how each turned out. Set by
 	// Run, not decoded from RAM: outcomes are run memory, not game state.
+	// It SCROLLS: only the last historyCap rounds are here.
 	History []RoundRecord
+	// Failures is the tally History scrolls past: every objective the run
+	// has tried and failed, with how many times and the last error, kept
+	// across the whole run by Knowledge and set here by Run. Most-failed
+	// first. An objective that later succeeds leaves the list. It is what
+	// tells a planner the difference between an idea it has not tried and
+	// one it has walked into eight times.
+	Failures []Failure
+
+	// Round is which round of the run this is, 1-based, and RoundsLeft is
+	// how many rounds the budget still allows INCLUDING this one — 1 means
+	// this is the last objective the run will ever pick. Set by Run, like
+	// History: a budget is run bookkeeping, not game state.
+	//
+	// The prompt has always said the run has a limited number of rounds
+	// while never saying how many were left, so the model could not ration:
+	// it spent rounds on a round trip to a place it had just come from with
+	// the same weight whether the budget was fresh or nearly gone. Naming
+	// the remainder is what makes "is this worth a round?" answerable.
+	Round      int
+	RoundsLeft int
 
 	// Intent is the sentence the planner most recently attached to its
 	// choice — what that choice was in service of. Set by Run from the
@@ -103,13 +124,14 @@ type Observation struct {
 	// that a person worth talking to exists across the map.
 	MapObjects []MapObject
 
-	// Requirements are raw sentences the game has said that carry the shape
-	// of a stated requirement or blocked way, kept across rounds by
+	// Requirements are the walls the game has stated, kept across rounds by
 	// Knowledge and set here by Run (like RecentDialogue): a wall stated
 	// once must still be visible ten rounds later, or the run keeps walking
-	// into the same wall to remember it. The game's exact words, newest
-	// first; nothing is parsed out of them. Empty until the game says one.
-	Requirements []string
+	// into the same wall to remember it. Each carries the game's exact
+	// words — nothing is parsed out of them — plus where it was heard and
+	// how many times, so a run can see it is repeating itself. Newest
+	// first. Empty until the game says one.
+	Requirements []Requirement
 }
 
 // MapObject is one object of the current map in the form a planner may see
@@ -221,7 +243,8 @@ func Observe(m *emu.Emu, romData []byte) Observation {
 		Bag:            []Item{},
 		RecentDialogue: []string{},
 		History:        []RoundRecord{},
-		Requirements:   []string{},
+		Failures:       []Failure{},
+		Requirements:   []Requirement{},
 	}
 	for i, mon := range gs.Party.Mons {
 		obs.Party[i] = PartyMon{Species: mon.Species, Level: mon.Level, HP: mon.HP, MaxHP: mon.MaxHP, Status: mon.StatusName()}

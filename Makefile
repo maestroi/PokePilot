@@ -23,7 +23,32 @@ FARM_STATE_DIR ?= /tmp/pokefarm-state
 export FARM_STATE_DIR
 GOMEBOY_CONTEXT ?= ../gomeboy
 
-.PHONY: run run-60 run-0 run-llm test farm-image farm-up farm-down
+# A model served locally instead of the LAN box .env points at. It is the
+# same run as run-llm with the endpoint, the model name and the reply room
+# overridden — nothing about the agent changes, only who answers.
+#
+# MODEL must match what the server reports: the planner rejects a reply
+# whose model field names a different one (a mismatch would make an
+# ablation compare a model to itself). Ask the server what it serves:
+#   curl -s localhost:8002/v1/models | head -c 200
+#
+# NO_THINK is the whole reason this target is usable. MEASURED 2026-08-31
+# on one 16-objective menu: thinking on, 47s and 4096 completion tokens,
+# truncated mid-thought and rejected as finish_reason "length"; thinking
+# off, 0.88s and 22 tokens, a clean answer. A coding model reasons its way
+# through a menu at temperature 0 and never gets to the JSON.
+#
+# MAX_TOKENS is then room, not a leash — a rejected truncation reads as a
+# broken model rather than a short one, so leave headroom. TIMEOUT is
+# generous because a card shared with your editor is not a card answering
+# only this.
+LOCAL_LLM_URL ?= http://localhost:8002/v1
+LOCAL_LLM_MODEL ?= qwen3.8-27b
+LOCAL_LLM_NO_THINK ?= 0
+LOCAL_LLM_MAX_TOKENS ?= 1024
+LOCAL_LLM_TIMEOUT ?= 300s
+
+.PHONY: run run-60 run-0 run-llm run-llm-local test farm-image farm-up farm-down
 
 require-rom = @test -f "$(POKEMON_RED_ROM)" || { \
 	echo "POKEMON_RED_ROM not found: $(POKEMON_RED_ROM)"; \
@@ -45,6 +70,19 @@ run-0:
 run-llm:
 	$(require-rom)
 	set -a; [ -f .env ] && . ./.env; set +a; \
+	go run ./cmd/pokepilot -planner llm -fps 0 $(ARGS)
+
+# The local model answers without a key; .env's llm_token is for the LAN
+# box, and sending someone else's bearer token to localhost is not a thing
+# to do by accident, so it is cleared rather than inherited.
+run-llm-local:
+	$(require-rom)
+	POKEPILOT_LLM_URL=$(LOCAL_LLM_URL) \
+	POKEPILOT_LLM_MODEL=$(LOCAL_LLM_MODEL) \
+	POKEPILOT_LLM_NO_THINK=$(LOCAL_LLM_NO_THINK) \
+	POKEPILOT_LLM_MAX_TOKENS=$(LOCAL_LLM_MAX_TOKENS) \
+	POKEPILOT_LLM_TIMEOUT=$(LOCAL_LLM_TIMEOUT) \
+	llm_token= \
 	go run ./cmd/pokepilot -planner llm -fps 0 $(ARGS)
 
 test:

@@ -88,8 +88,11 @@ func TestFarmLLMAppliesSpecGoal(t *testing.T) {
 	if !strings.Contains(text, "spec.Goal") {
 		t.Fatal("runFarm never passes spec.Goal into the llm run")
 	}
-	if !strings.Contains(text, "reportingPlanner{inner: planner, snap: snap}") {
+	if !strings.Contains(text, "reportingPlanner{inner: stats, snap: snap}") {
 		t.Fatal("runFarmLLM does not publish the latest plan onto the heartbeat snap")
+	}
+	if !strings.Contains(text, "newStatsPlanner(planner") {
+		t.Fatal("runFarmLLM does not tally the llm planner's choices for the watch page")
 	}
 }
 
