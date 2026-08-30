@@ -95,7 +95,9 @@ func main() {
 			log.Fatalf("save boot state: %v", err)
 		}
 		fmt.Printf("farm mode: leasing runs from %s\n", orchURL)
-		runFarm(m, farm.NewClient(orchURL), bootState, watchPort(served))
+		client := farm.NewClient(orchURL)
+		client.Version = version
+		runFarm(m, client, bootState, watchPort(served))
 		return
 	}
 

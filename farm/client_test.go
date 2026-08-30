@@ -81,3 +81,39 @@ func TestClientFinishPostsReport(t *testing.T) {
 		t.Fatalf("server received %+v", got)
 	}
 }
+
+func TestClientPingSendsVersion(t *testing.T) {
+	var got WorkerPing
+	srv := httptest.NewServer(http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+		json.NewDecoder(req.Body).Decode(&got) //nolint:errcheck
+		res.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL)
+	c.Version = "abc123"
+	if err := c.Ping(context.Background(), []string{"10.0.1.5:8099"}); err != nil {
+		t.Fatalf("Ping: %v", err)
+	}
+	if got.Version != "abc123" {
+		t.Fatalf("ping version = %q, want abc123", got.Version)
+	}
+}
+
+func TestClientHeartbeatSendsVersion(t *testing.T) {
+	var got Heartbeat
+	srv := httptest.NewServer(http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+		json.NewDecoder(req.Body).Decode(&got) //nolint:errcheck
+		json.NewEncoder(res).Encode(HeartbeatReply{}) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL)
+	c.Version = "abc123"
+	if _, err := c.Heartbeat(context.Background(), Heartbeat{RunID: "r1"}); err != nil {
+		t.Fatalf("Heartbeat: %v", err)
+	}
+	if got.Version != "abc123" {
+		t.Fatalf("heartbeat version = %q, want abc123", got.Version)
+	}
+}

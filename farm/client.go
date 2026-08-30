@@ -13,6 +13,9 @@ import (
 type Client struct {
 	BaseURL string
 	HTTP    *http.Client
+	// Version is this build's identity (git SHA), stamped onto pings and
+	// heartbeats so the wall can show which build each worker runs.
+	Version string
 }
 
 // NewClient builds a Client with a default *http.Client.
@@ -49,6 +52,7 @@ func (c *Client) Lease(ctx context.Context) (*Spec, error) {
 // reply, which may ask for a cooperative cancel.
 func (c *Client) Heartbeat(ctx context.Context, hb Heartbeat) (HeartbeatReply, error) {
 	var reply HeartbeatReply
+	hb.Version = c.Version
 	body, err := json.Marshal(hb)
 	if err != nil {
 		return reply, err
@@ -78,7 +82,7 @@ func (c *Client) Heartbeat(ctx context.Context, hb Heartbeat) (HeartbeatReply, e
 // wall treats it as presence only; a failure means the wall is
 // unreachable, which the lease call right after reports loudly.
 func (c *Client) Ping(ctx context.Context, addrs []string) error {
-	body, err := json.Marshal(WorkerPing{Addrs: addrs})
+	body, err := json.Marshal(WorkerPing{Addrs: addrs, Version: c.Version})
 	if err != nil {
 		return err
 	}

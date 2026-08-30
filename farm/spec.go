@@ -54,6 +54,9 @@ type Heartbeat struct {
 	// The wall uses these to proxy the live screen for its dashboard; it
 	// is empty on runners that do not report it.
 	WorkerAddrs []string `json:"worker_addrs,omitempty"`
+	// Version is this runner's build identity (git SHA), so the wall can
+	// show which build each worker runs. Empty from older runners.
+	Version string `json:"version,omitempty"`
 }
 
 // HeartbeatReply is the wall's answer to a heartbeat. Cancel asks the
@@ -68,7 +71,8 @@ type HeartbeatReply struct {
 // this is the idle half, so the wall's grid can show which runners are
 // available, not only which runs are in flight.
 type WorkerPing struct {
-	Addrs []string `json:"addrs"`
+	Addrs   []string `json:"addrs"`
+	Version string   `json:"version,omitempty"`
 }
 
 // FinishReport is why a run ended, sent once when it stops.
