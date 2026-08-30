@@ -6,9 +6,18 @@ import (
 )
 
 // StatAwareMove is the default policy for a real fight. It attacks with the
-// strongest move it has, except when the opponent has been grinding our
-// offence down, in which case it spends a turn lowering the opponent's
-// Defense instead.
+// move that will do the most damage to THIS opponent, except when the
+// opponent has been grinding our offence down, in which case it spends a
+// turn lowering the opponent's Defense instead.
+//
+// "Most damage" is not "most power". MEASURED failing: the policy used to
+// rank moves by raw Power alone, so a 40-power NORMAL move beat a 40-power
+// WATER one against Brock's ROCK/GROUND ONIX — the first lands for half,
+// the second for quadruple, an eightfold error in the wrong direction. The
+// score is now power x type effectiveness x STAB, all read from the ROM
+// (rom.TypeEffectiveness walks the same TypeEffects table the battle engine
+// walks at engine/battle/core.asm:5129, and applies BOTH of the defender's
+// types the way the engine does).
 //
 // This exists because FirstUsableMove loses the rival battle in Oak's lab,
 // and not by chance. MEASURED: the rival's Bulbasaur opens with GROWL, four
@@ -36,7 +45,7 @@ func StatAwareMove(romData []byte) MovePolicy {
 			return -1
 		}
 
-		bestAttack, bestPower := -1, -1
+		bestAttack, bestScore := -1, -1
 		defenseDown := -1
 		for _, i := range usable {
 			mv, err := rom.LookupMove(romData, b.Moves[i].ID)
@@ -48,8 +57,8 @@ func StatAwareMove(romData []byte) MovePolicy {
 			}
 			switch {
 			case mv.Power > 0:
-				if int(mv.Power) > bestPower {
-					bestAttack, bestPower = i, int(mv.Power)
+				if score := moveScore(romData, mv, b); score > bestScore {
+					bestAttack, bestScore = i, score
 				}
 			case mv.Effect == rom.DefenseDown1Effect && defenseDown < 0:
 				defenseDown = i
@@ -79,4 +88,35 @@ func StatAwareMove(romData []byte) MovePolicy {
 		}
 		return usable[0]
 	}
+}
+
+// stabEffect is the same-type attack bonus, in tenths: a move whose type
+// matches one of the attacker's own types does one and a half times damage
+// (the BIT_STAB_DAMAGE half of engine/battle/core.asm:5148).
+const stabEffect = 15
+
+// moveScore ranks one damaging move against the mon actually in front of us:
+// its power, scaled by how the type chart treats it and by STAB. The units
+// are arbitrary — only the ordering is used — so the tenths are left
+// unnormalised rather than divided back down and rounded.
+//
+// A move the chart makes an immunity scores zero, which is what keeps a
+// GROUND move off a FLYING opponent even when it is the strongest thing in
+// the set. When EVERY damaging move scores zero they tie at zero and the
+// first is taken: no attack is better than any other against something the
+// whole move set cannot touch, and refusing to act would be worse. Switching
+// or a status move is the real answer there, and neither is in this policy.
+//
+// A chart lookup that fails is treated as ordinary damage, the same safe
+// reading the unknown-move case above takes: worst case we hit something.
+func moveScore(romData []byte, mv rom.Move, b state.BattleState) int {
+	eff, err := rom.TypeEffectiveness(romData, mv.Type, b.EnemyType1, b.EnemyType2)
+	if err != nil {
+		eff = rom.NeutralEffect
+	}
+	stab := rom.NeutralEffect
+	if mv.Type == b.ActiveType1 || mv.Type == b.ActiveType2 {
+		stab = stabEffect
+	}
+	return int(mv.Power) * eff * stab
 }

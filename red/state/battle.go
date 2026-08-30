@@ -36,6 +36,17 @@ type BattleState struct {
 	ActiveDefenseMod uint8 // wPlayerMonDefenseMod
 	EnemyAttackMod   uint8 // wEnemyMonAttackMod
 	EnemyDefenseMod  uint8 // wEnemyMonDefenseMod
+
+	// The combatants' types. Gen 1 damage is multiplied by the move's
+	// effectiveness against BOTH of the defender's types, so a policy that
+	// reads only raw power picks a 40-power Normal move over a 40-power
+	// Water one against a Rock/Ground opponent — the first does half damage,
+	// the second does quadruple. A single-type mon repeats its type in both
+	// bytes, exactly as the game stores it.
+	EnemyType1  uint8 // wEnemyMonType1
+	EnemyType2  uint8 // wEnemyMonType2
+	ActiveType1 uint8 // wBattleMonType1
+	ActiveType2 uint8 // wBattleMonType2
 }
 
 // StatStageNeutral is the value both stat mods hold when nothing has raised
@@ -95,6 +106,10 @@ func DecodeBattle(m *Mem) *BattleState {
 		ActiveDefenseMod: m.U8(sym.PlayerMonDefenseMod),
 		EnemyAttackMod:   m.U8(sym.EnemyMonAttackMod),
 		EnemyDefenseMod:  m.U8(sym.EnemyMonDefenseMod),
+		EnemyType1:       m.U8(sym.EnemyMonType1),
+		EnemyType2:       m.U8(sym.EnemyMonType2),
+		ActiveType1:      m.U8(sym.BattleMonType1),
+		ActiveType2:      m.U8(sym.BattleMonType2),
 	}
 	for i := 0; i < len(s.Moves); i++ {
 		s.Moves[i].ID = m.U8(sym.BattleMonMoves + uint16(i))

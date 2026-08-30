@@ -89,6 +89,14 @@ const (
 	BattleMonPP         uint16 = 0xD02D // wBattleMonPP: 4 bytes, parallel to wBattleMonMoves
 	EnemyMonLevel       uint16 = 0xCFF3 // wEnemyMonLevel
 	EnemyMonMaxHP       uint16 = 0xCFF4 // wEnemyMonMaxHP
+	// The combatants' types, which is what decides whether a move lands for
+	// double, half or nothing (engine/battle/core.asm:5129 walks TypeEffects
+	// with the move's type in b and the defender's two types in d and e).
+	// A single-type mon stores the same value in both bytes.
+	EnemyMonType1  uint16 = 0xCFEA // wEnemyMonType1
+	EnemyMonType2  uint16 = 0xCFEB // wEnemyMonType2
+	BattleMonType1 uint16 = 0xD019 // wBattleMonType1
+	BattleMonType2 uint16 = 0xD01A // wBattleMonType2
 	// NumRunAttempts is wNumRunAttempts: incremented once per RUN attempt in
 	// a WILD battle (engine/battle/core.asm TryRunningFromBattle) and zeroed
 	// when the battle ends (end_of_battle.asm .resetVariables). It never
