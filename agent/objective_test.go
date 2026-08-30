@@ -126,6 +126,40 @@ func TestExecuteUnknownPlace(t *testing.T) {
 	}
 }
 
+// TestExecuteHealTravelsToTheNamedCenter drives the path Offer hands a hurt
+// party in the field: one objective that walks to a named center and heals
+// there. The postconditions are both halves — the player must END UP on the
+// center map, and every mon must be at full HP, so a travel that stopped
+// short cannot pass as a heal.
+func TestExecuteHealTravelsToTheNamedCenter(t *testing.T) {
+	if testing.Short() {
+		t.Skip("full journey; not part of the -short gate")
+	}
+	e := fixture.Load(t, "post_errand") // Viridian City, outdoors
+
+	o := agent.Objective{Kind: agent.KindHeal, Place: "viridian pokemon center"}
+	if err := agent.Execute(e, e.ROM(), o); err != nil {
+		t.Fatalf("Execute %s: %v", o, err)
+	}
+
+	var mem state.Mem
+	state.Snapshot(e, &mem)
+	if cur := mem.U8(sym.CurMap); cur != 0x29 {
+		t.Fatalf("wCurMap = %#04x, want 0x29 (viridian pokecenter): at (%d,%d)",
+			cur, mem.U8(sym.XCoord), mem.U8(sym.YCoord))
+	}
+	for i, mon := range state.DecodeParty(&mem).Mons {
+		if mon.HP != mon.MaxHP {
+			t.Errorf("party[%d] HP = %d/%d after the heal, want full", i, mon.HP, mon.MaxHP)
+		}
+	}
+	// The heal is also the checkpoint: SetLastBlackoutMap runs on YES to the
+	// nurse, so a blackout after this lands in Viridian City, not Pallet Town.
+	if got := mem.U8(sym.LastBlackoutMap); got != 0x01 {
+		t.Errorf("wLastBlackoutMap = %#04x after healing in Viridian, want 0x01 (VIRIDIAN_CITY)", got)
+	}
+}
+
 // TestString is the one test that needs no ROM: it pins the plain, stable
 // one-line descriptions a planner will see.
 func TestString(t *testing.T) {
@@ -141,6 +175,7 @@ func TestString(t *testing.T) {
 		{agent.Objective{Kind: agent.KindErrand}, "deliver oak's parcel"},
 		{agent.Objective{Kind: agent.KindTrain, Level: 10}, "train the lead to level 10"},
 		{agent.Objective{Kind: agent.KindHeal}, "heal the party"},
+		{agent.Objective{Kind: agent.KindHeal, Place: "viridian pokemon center"}, "heal the party at VIRIDIAN POKEMON CENTER"},
 		{agent.Objective{Kind: agent.KindGym}, "beat the pewter gym leader"},
 		{agent.Objective{Kind: agent.KindCatch, Species: 0x7B}, "catch a CATERPIE here"},
 		{agent.Objective{Kind: agent.KindBuy, Item: 0x14, Qty: 3}, "buy 3 POTION"},
@@ -171,6 +206,8 @@ func TestValidateRejects(t *testing.T) {
 		{"buy 150 quantity", agent.Objective{Kind: agent.KindBuy, Item: 0x14, Qty: 150}, "out of range"},
 		{"buy unknown item", agent.Objective{Kind: agent.KindBuy, Item: 0x00, Qty: 1}, "unknown item"},
 		{"unknown starter", agent.Objective{Kind: agent.KindStarter, Starter: skill.Starter(4)}, "unknown starter"},
+		{"heal at an unknown place", agent.Objective{Kind: agent.KindHeal, Place: "atlantis"}, "unknown place"},
+		{"heal at a mart", agent.Objective{Kind: agent.KindHeal, Place: "viridian mart"}, "not a Pokemon Center"},
 	}
 	for _, c := range reject {
 		if err := c.o.Validate(); err == nil {
@@ -189,6 +226,8 @@ func TestValidateRejects(t *testing.T) {
 		{Kind: agent.KindBuy, Item: 0x14, Qty: 99},
 		{Kind: agent.KindStarter, Starter: skill.StarterCharmander},
 		{Kind: agent.KindGoTo, Place: "pallet town"}, // no arguments, nothing to check
+		{Kind: agent.KindHeal},                       // "" is the center you are standing in
+		{Kind: agent.KindHeal, Place: "viridian pokemon center"},
 	}
 	for _, o := range accept {
 		if err := o.Validate(); err != nil {

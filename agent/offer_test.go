@@ -21,6 +21,7 @@ func TestOfferTable(t *testing.T) {
 	adj := map[uint8][]uint8{
 		0x00: {0x0c},
 		0x0c: {0x00, 0x01},
+		0x01: {0x0c, 0x29},
 	}
 
 	cases := []struct {
@@ -87,6 +88,70 @@ func TestOfferTable(t *testing.T) {
 				"deliver oak's parcel",
 			},
 			mustNot: []string{"catch", "train"},
+		},
+		{
+			name: "hurt party in the field: the walk back to a known center is one objective",
+			obs: agent.Observation{
+				Map: 0x0c, MapName: "ROUTE_1", X: 5, Y: 14, PartyCount: 1,
+				Party:  []agent.PartyMon{{Species: 1, Level: 6, HP: 4, MaxHP: 20}},
+				Events: []string{"BattledRivalInOaksLab"},
+			},
+			known: func() *agent.Knowledge {
+				k := agent.NewKnowledge(adj)
+				for _, m := range []uint8{0x00, 0x0c, 0x01, 0x29} {
+					k.SawMap(m) // the run has been inside the Viridian center
+				}
+				return k
+			},
+			want: []string{
+				"go to pallet town",
+				"go to viridian city",
+				"go to viridian pokemon center",
+				"deliver oak's parcel",
+				"heal the party at VIRIDIAN POKEMON CENTER",
+			},
+		},
+		{
+			name: "healthy party in the field: no heal — a full heal is a round that changes nothing",
+			obs: agent.Observation{
+				Map: 0x0c, MapName: "ROUTE_1", X: 5, Y: 14, PartyCount: 1,
+				Party:  []agent.PartyMon{{Species: 1, Level: 6, HP: 20, MaxHP: 20}},
+				Events: []string{"BattledRivalInOaksLab"},
+			},
+			known: func() *agent.Knowledge {
+				k := agent.NewKnowledge(adj)
+				for _, m := range []uint8{0x00, 0x0c, 0x01, 0x29} {
+					k.SawMap(m)
+				}
+				return k
+			},
+			want: []string{
+				"go to pallet town",
+				"go to viridian city",
+				"go to viridian pokemon center",
+				"deliver oak's parcel",
+			},
+			mustNot: []string{"heal"},
+		},
+		{
+			name: "hurt party but no center the run has been inside: no heal it cannot reach",
+			obs: agent.Observation{
+				Map: 0x0c, MapName: "ROUTE_1", X: 5, Y: 14, PartyCount: 1,
+				Party:  []agent.PartyMon{{Species: 1, Level: 6, HP: 4, MaxHP: 20}},
+				Events: []string{"BattledRivalInOaksLab"},
+			},
+			known: func() *agent.Knowledge {
+				k := agent.NewKnowledge(adj)
+				k.SawMap(0x00)
+				k.SawMap(0x0c)
+				return k
+			},
+			want: []string{
+				"go to pallet town",
+				"go to viridian city",
+				"deliver oak's parcel",
+			},
+			mustNot: []string{"heal"},
 		},
 		{
 			name: "inside a center: heal joins; no balls, so no catch",

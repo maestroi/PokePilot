@@ -178,6 +178,15 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 	}
 	if isCenter(obs.MapName) {
 		out = append(out, Objective{Kind: KindHeal})
+	} else if name, ok := nearestKnownCenter(obs, known, knownMaps); ok && partyHurt(obs) {
+		// A hurt party in the field has no heal-shaped option otherwise:
+		// the planner has to invent the chain "go to the center" then
+		// "heal" across two rounds, and a round spent walking looks like a
+		// wasted round to a model reading its own history. This is the
+		// chain as one objective, and it is gated on a fact rather than a
+		// judgement — a full party healing is a round that changes nothing,
+		// the same reason a satisfied starter is not offered.
+		out = append(out, Objective{Kind: KindHeal, Place: name})
 	}
 	// The gym objective fights Brock in the Pewter Gym; elsewhere it has
 	// no one to fight. That is a precondition of the verb, not a verdict
@@ -214,6 +223,53 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 		}
 	}
 	return out
+}
+
+// partyHurt says at least one mon is fainted or down to half HP or less.
+// Half, not "any damage at all": a lead at 25/26 is not a reason to spend a
+// round walking, and the point of the offer is the party that will lose the
+// next fight it takes.
+func partyHurt(obs Observation) bool {
+	for _, mon := range obs.Party {
+		if mon.MaxHP > 0 && mon.HP*2 <= mon.MaxHP {
+			return true
+		}
+	}
+	return false
+}
+
+// nearestKnownCenter names the Pokemon Center the player could plausibly
+// walk back to: fewest map hops from where they stand, among the centers
+// whose maps are already in knownMaps. Knowledge is unchanged by this — a
+// center the run has never been inside is not offered, exactly as its GoTo
+// is not. Only the hop count comes from the route geometry, which is what
+// Adjacency is for (see the Knowledge doc): it decides WHICH known center
+// is nearest, never whether an unknown one exists.
+func nearestKnownCenter(obs Observation, known *Knowledge, knownMaps map[uint8]bool) (string, bool) {
+	dist := map[uint8]int{obs.Map: 0}
+	for queue := []uint8{obs.Map}; len(queue) > 0; queue = queue[1:] {
+		for _, next := range known.Adjacency[queue[0]] {
+			if _, seen := dist[next]; !seen {
+				dist[next] = dist[queue[0]] + 1
+				queue = append(queue, next)
+			}
+		}
+	}
+	best, bestDist := "", 0
+	for _, name := range skill.PlaceNames() { // sorted: ties break the same way every round
+		d, _ := skill.Place(name)
+		if d.Map == obs.Map || !knownMaps[d.Map] || !isCenter(state.MapName(d.Map)) {
+			continue
+		}
+		hops, reachable := dist[d.Map]
+		if !reachable {
+			continue
+		}
+		if best == "" || hops < bestDist {
+			best, bestDist = name, hops
+		}
+	}
+	return best, best != ""
 }
 
 func observedEvent(obs Observation, name string) bool {

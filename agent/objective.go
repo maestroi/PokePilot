@@ -19,7 +19,7 @@ const (
 	KindStarter             // complete the opening story and take a chosen starter
 	KindErrand              // deliver Oak's parcel (Viridian Mart -> Oak's lab)
 	KindTrain               // battle in grass until the lead reaches Level
-	KindHeal                // heal the party (the player must be at a center)
+	KindHeal                // heal the party at a center; Place names one to travel to first
 	KindGym                 // fight the Pewter Gym leader, Brock
 	KindCatch               // hunt tall grass for a wanted species and catch it
 	KindBuy                 // buy Item x Qty from the mart clerk
@@ -27,14 +27,14 @@ const (
 )
 
 // Objective is one unit of intent a planner can choose. The argument fields
-// are per-kind: Place for KindGoTo, X/Y for KindTalk, Starter for
+// are per-kind: Place for KindGoTo and KindHeal, X/Y for KindTalk, Starter for
 // KindStarter, Level for KindTrain, Species for KindCatch, Item and Qty for
 // KindBuy, X/Y and Item for KindPickup. Every argument is checked by Validate before it reaches a skill;
 // an out-of-range value is a typed error that stops the round, never a
 // clamp or a best match.
 type Objective struct {
 	Kind    Kind
-	Place   string        // KindGoTo: a name accepted by skill.Place
+	Place   string        // KindGoTo: a name accepted by skill.Place; KindHeal: a center to travel to first, "" for the one you are standing in
 	X, Y    uint8         // KindTalk, KindPickup: the tile to face
 	Starter skill.Starter // KindStarter: which ball to take
 	Level   uint8         // KindTrain: the level the lead should reach
@@ -109,8 +109,30 @@ func Execute(m *emu.Emu, romData []byte, o Objective) error {
 		return fmt.Errorf("agent: %s: target level %d not reached (ended level %d after %d battles)",
 			o, o.Level, res.EndLevel, res.Battles)
 	case KindHeal:
-		// Heal talks to the nurse on the current map; a center elsewhere
-		// is a separate KindGoTo objective, and the planner sequences them.
+		// Heal talks to the nurse on the current map. With a Place, the
+		// walk there is part of the objective: a hurt party in the field
+		// would otherwise have to spend one round walking and another
+		// healing, and Offer only names a center the run has already been
+		// inside, so this is a way back, never a way to somewhere new.
+		if o.Place != "" {
+			dest, ok := skill.Place(o.Place)
+			if !ok {
+				return fmt.Errorf("agent: %s: unknown place %q", o, o.Place)
+			}
+			// Travel, not GoTo, for the same reason KindGoTo uses it: the
+			// way back to a center runs through grass, and a hurt party is
+			// exactly the one that meets a wild Pokemon on the way. A
+			// blackout here already healed the party, so it is reported as
+			// the outcome it is and the heal that follows is a no-op the
+			// nurse handles.
+			res, err := skill.Travel(m, romData, dest, skill.StatAwareMove(romData), 20)
+			if err != nil {
+				return fmt.Errorf("agent: %s: %w", o, err)
+			}
+			if res.BlackedOut {
+				return fmt.Errorf("agent: %s: %w on the way (%d battles)", o, skill.ErrBlackedOut, res.Battles)
+			}
+		}
 		if err := skill.Heal(m); err != nil {
 			return fmt.Errorf("agent: %s: %w", o, err)
 		}
@@ -195,6 +217,19 @@ func (o Objective) Validate() error {
 		if _, ok := ItemName(o.Item); !ok {
 			return fmt.Errorf("agent: %s: unknown item %d", o, int(o.Item))
 		}
+	case KindHeal:
+		// "" means the center the player is standing in. A named one must
+		// resolve AND be a center: travelling to a mart and asking a clerk
+		// for a heal is a guaranteed failed round.
+		if o.Place != "" {
+			d, ok := skill.Place(o.Place)
+			if !ok {
+				return fmt.Errorf("agent: %s: unknown place %q", o, o.Place)
+			}
+			if !isCenter(state.MapName(d.Map)) {
+				return fmt.Errorf("agent: %s: %q is not a Pokemon Center", o, o.Place)
+			}
+		}
 	case KindBuy:
 		if o.Qty < 1 || o.Qty > 99 {
 			return fmt.Errorf("agent: %s: quantity %d out of range 1..99", o, o.Qty)
@@ -223,6 +258,9 @@ func (o Objective) String() string {
 	case KindTrain:
 		return fmt.Sprintf("train the lead to level %d", o.Level)
 	case KindHeal:
+		if o.Place != "" {
+			return "heal the party at " + strings.ToUpper(o.Place)
+		}
 		return "heal the party"
 	case KindGym:
 		return "beat the pewter gym leader"
