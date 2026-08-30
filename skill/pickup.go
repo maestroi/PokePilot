@@ -5,10 +5,8 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
-	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
-	"github.com/maestroi/pokepilot/world"
 )
 
 // ErrBagNotRisen reports that pressing A did not collect the wanted item:
@@ -33,7 +31,7 @@ func Pickup(m *emu.Emu, romData []byte, x, y uint8, want uint8) error {
 	state.Snapshot(m, &mem)
 	before := bagCount(state.DecodeInventory(&mem).Items, want)
 
-	if err := approachItem(m, romData, x, y); err != nil {
+	if err := Approach(m, romData, x, y); err != nil {
 		return err
 	}
 	if err := Face(m, x, y); err != nil {
@@ -77,38 +75,4 @@ func Pickup(m *emu.Emu, romData []byte, x, y uint8, want uint8) error {
 		return fmt.Errorf("%w: item %d was %d before and %d after", ErrBagNotRisen, want, before, after)
 	}
 	return nil
-}
-
-// approachItem leaves the player standing on a walkable tile orthogonally
-// adjacent to (x,y) on the current map. It is the same approach Talk's
-// callers use — GoTo plus Face — with no second way to walk-to-and-face:
-// when the player is already adjacent it does nothing and lets Face turn.
-func approachItem(m *emu.Emu, romData []byte, x, y uint8) error {
-	cur := m.Peek8(sym.CurMap)
-	sx, sy := playerXY(m)
-	if _, ok := directionTo(sx, sy, x, y); ok {
-		return nil
-	}
-
-	h, err := rom.ParseMap(romData, cur)
-	if err != nil {
-		return fmt.Errorf("skill: Pickup: parse map %#04x: %w", cur, err)
-	}
-	grid, err := world.Build(romData, h)
-	if err != nil {
-		return fmt.Errorf("skill: Pickup: build map %#04x: %w", cur, err)
-	}
-
-	for _, s := range []world.Step{world.StepUp, world.StepDown, world.StepLeft, world.StepRight} {
-		nx, ny := int(x)+s.DX, int(y)+s.DY
-		if !grid.InBounds(nx, ny) || !grid.Walkable(nx, ny) {
-			continue
-		}
-		dest := Destination{Map: cur, X: uint8(nx), Y: uint8(ny)}
-		if err := GoTo(m, romData, dest); err != nil {
-			return fmt.Errorf("skill: Pickup: approach (%d,%d) on map %#04x: %w", x, y, cur, err)
-		}
-		return nil
-	}
-	return fmt.Errorf("skill: Pickup: no walkable tile adjacent to the item at (%d,%d) on map %#04x", x, y, cur)
 }

@@ -19,9 +19,17 @@ type Spec struct {
 	Planner   string `json:"planner"`
 	Starter   string `json:"starter"`
 	Dest      string `json:"dest"`
+	// Goal is the task statement for the llm planner: what to achieve,
+	// never how. Empty means no goal (the pre-Goal prompt).
+	Goal      string `json:"goal,omitempty"`
 	FPS       int    `json:"fps"`
 	MaxRounds int    `json:"max_rounds"`
 	MaxFrames int    `json:"max_frames"`
+	// Endless asks the wall to queue a successor when this run settles,
+	// so idle workers keep picking up work. RandomSeed picks a fresh
+	// seed on each successor; otherwise the seed is copied.
+	Endless    bool `json:"endless,omitempty"`
+	RandomSeed bool `json:"random_seed,omitempty"`
 }
 
 // Heartbeat is the small, frequent status push a runner sends while a

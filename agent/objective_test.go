@@ -1,6 +1,7 @@
 package agent_test
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -40,6 +41,49 @@ func TestExecuteStarter(t *testing.T) {
 	if party.Mons[0].Species != speciesCharmander {
 		t.Fatalf("lead species = %#04x, want %#04x (charmander): the objective said charmander",
 			party.Mons[0].Species, speciesCharmander)
+	}
+}
+
+func TestExecuteTalkWalksToMapObject(t *testing.T) {
+	e := loadFixture(t)
+	if err := agent.Execute(e, e.ROM(), agent.Objective{Kind: agent.KindStarter, Starter: skill.StarterCharmander}); err != nil {
+		t.Fatalf("Execute starter: %v", err)
+	}
+
+	// The lab girl is map-wide offer data, not adjacent to the post-starter
+	// position. KindTalk must approach her before facing and interacting.
+	if err := agent.Execute(e, e.ROM(), agent.Objective{Kind: agent.KindTalk, X: 1, Y: 9}); err != nil {
+		t.Fatalf("Execute distant talk: %v", err)
+	}
+}
+
+func TestExecuteTrainCharmanderToOfferedLevel(t *testing.T) {
+	e := loadFixture(t)
+	for _, objective := range []agent.Objective{
+		{Kind: agent.KindStarter, Starter: skill.StarterCharmander},
+		{Kind: agent.KindErrand},
+		{Kind: agent.KindGoTo, Place: "route 1"},
+	} {
+		if err := agent.Execute(e, e.ROM(), objective); err != nil {
+			t.Fatalf("Execute %q: %v", objective, err)
+		}
+	}
+	err := agent.Execute(e, e.ROM(), agent.Objective{Kind: agent.KindTrain, Level: 12})
+	obs := agent.Observe(e, e.ROM())
+	if len(obs.Party) == 0 {
+		t.Fatal("training removed the party")
+	}
+	if obs.Party[0].Level >= 12 {
+		if err != nil {
+			t.Fatalf("train reached level %d but returned %v", obs.Party[0].Level, err)
+		}
+		return
+	}
+	if err == nil {
+		t.Fatalf("train stopped at level %d but reported success for level 12", obs.Party[0].Level)
+	}
+	if !errors.Is(err, skill.ErrBlackedOut) {
+		t.Fatalf("incomplete train error = %v, want typed blackout consequence", err)
 	}
 }
 

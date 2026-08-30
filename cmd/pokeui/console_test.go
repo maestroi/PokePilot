@@ -35,3 +35,25 @@ func TestUIDoesNotKeepPumpingFinishedRuns(t *testing.T) {
 		}
 	}
 }
+
+func TestUISeparatesSettingsFromState(t *testing.T) {
+	html := string(indexHTML)
+	js := string(uiJS)
+	if !strings.Contains(html, `id="hist-filters"`) {
+		t.Error("index missing history filters")
+	}
+	if !strings.Contains(html, `id="watch"`) {
+		t.Error("index missing watch theater")
+	}
+	if !strings.Contains(html, `name="goal"`) || !strings.Contains(html, `name="endless"`) {
+		t.Error("index missing goal or endless fields")
+	}
+	if !strings.Contains(html, `id="detail-chips"`) {
+		t.Error("index missing detail badge row")
+	}
+	for _, want := range []string{`settingChips`, `statusChip`, `<h3>Settings</h3>`, `Outcome`, `histFilter`, `ended_at`, `random_seed`} {
+		if !strings.Contains(js, want) {
+			t.Errorf("ui.js missing %q", want)
+		}
+	}
+}

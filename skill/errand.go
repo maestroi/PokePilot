@@ -86,6 +86,15 @@ const pokeballTalkBudget = 8000
 // cutscene is run to completion whether Travel failed or succeeded. Any
 // Travel failure with the player off the mart is returned as-is.
 func GetParcel(m *emu.Emu, romData []byte, policy MovePolicy) error {
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	party := state.DecodeParty(&mem)
+	if !state.HasEvent(&mem, state.EventBattledRivalInOaksLab) || party.Count < 1 {
+		return fmt.Errorf("skill: GetParcel: starter story is not complete: %s=%v party=%d",
+			state.EventBattledRivalInOaksLab,
+			state.HasEvent(&mem, state.EventBattledRivalInOaksLab), party.Count)
+	}
+
 	dest, ok := Place("viridian mart")
 	if !ok {
 		return fmt.Errorf("skill: GetParcel: Place \"viridian mart\" not found")
@@ -117,7 +126,6 @@ func GetParcel(m *emu.Emu, romData []byte, policy MovePolicy) error {
 
 	// Positive postcondition, both halves: the story flag is set AND the
 	// item is in the bag. Either alone could be a half-finished cutscene.
-	var mem state.Mem
 	state.Snapshot(m, &mem)
 	if !state.HasEvent(&mem, state.EventGotOaksParcel) {
 		return fmt.Errorf("skill: GetParcel: parcel flag not set (map %#04x at (%d,%d))",

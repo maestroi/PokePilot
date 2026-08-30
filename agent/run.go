@@ -442,6 +442,9 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 		res.Rounds = round
 		res.Completed = append(res.Completed, obj)
 		known.Done(obj)
+		if obj.Kind == KindTalk {
+			known.TalkedTo(before.Map, obj.X, obj.Y)
+		}
 		consecFailures = 0
 		lastFailObj, lastFailErr = "", ""
 		history = appendHistory(history, RoundRecord{Objective: obj.String(), Outcome: "done"})

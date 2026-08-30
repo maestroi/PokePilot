@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
+	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
@@ -124,4 +125,105 @@ func Talk(m *emu.Emu) (int, error) {
 		}
 	}
 	return presses, nil
+}
+
+// TalkAt approaches a map object by its ROM home coordinate, refreshes its
+// live sprite position, then faces and talks to it. The ROM coordinate makes
+// a map-wide objective possible; the sprite refresh keeps wandering NPCs
+// from turning that objective into a stale-coordinate interaction.
+func TalkAt(m *emu.Emu, romData []byte, homeX, homeY uint8) (int, error) {
+	cur := m.Peek8(sym.CurMap)
+	h, err := rom.ParseMap(romData, cur)
+	if err != nil {
+		return 0, fmt.Errorf("skill: TalkAt: parse map %#04x: %w", cur, err)
+	}
+	objectID := 0
+	for i, object := range h.Objects {
+		if object.X == homeX && object.Y == homeY {
+			objectID = i + 1 // map object constants and sprite slots are 1-based
+			break
+		}
+	}
+	if objectID == 0 {
+		return 0, fmt.Errorf("skill: TalkAt: no map object at (%d,%d) on map %#04x", homeX, homeY, cur)
+	}
+
+	const attempts = 4
+	tx, ty := homeX, homeY
+	for attempt := 1; attempt <= attempts; attempt++ {
+		if liveX, liveY, ok := liveObjectPosition(m, objectID); ok {
+			tx, ty = liveX, liveY
+		}
+		if err := Approach(m, romData, tx, ty); err != nil {
+			return 0, fmt.Errorf("skill: TalkAt: approach object %d at (%d,%d): %w", objectID, tx, ty, err)
+		}
+
+		// The NPC may have walked while the player approached. Re-read the
+		// slot and retry if its current tile is no longer adjacent.
+		if liveX, liveY, ok := liveObjectPosition(m, objectID); ok {
+			tx, ty = liveX, liveY
+		}
+		px, py := playerXY(m)
+		if _, ok := directionTo(px, py, tx, ty); !ok {
+			m.StepFrames(npcWaitFrames)
+			continue
+		}
+		if err := Face(m, tx, ty); err != nil {
+			m.StepFrames(npcWaitFrames)
+			continue
+		}
+		presses, err := Talk(m)
+		if err != nil {
+			return presses, fmt.Errorf("skill: TalkAt: object %d at (%d,%d): %w", objectID, tx, ty, err)
+		}
+		return presses, nil
+	}
+	return 0, fmt.Errorf("skill: TalkAt: object %d did not remain adjacent after %d approaches", objectID, attempts)
+}
+
+func liveObjectPosition(m *emu.Emu, objectID int) (uint8, uint8, bool) {
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	for _, sprite := range state.DecodeSprites(&mem) {
+		if sprite.Slot == objectID && sprite.X >= 0 && sprite.Y >= 0 && sprite.X <= 255 && sprite.Y <= 255 {
+			return uint8(sprite.X), uint8(sprite.Y), true
+		}
+	}
+	return 0, 0, false
+}
+
+// Approach walks to a reachable tile orthogonally adjacent to target on the
+// current map. Dynamic blockers are re-read on every retry and never cached.
+func Approach(m *emu.Emu, romData []byte, targetX, targetY uint8) error {
+	sx, sy := playerXY(m)
+	if _, ok := directionTo(sx, sy, targetX, targetY); ok {
+		return nil
+	}
+	cur := m.Peek8(sym.CurMap)
+	h, err := rom.ParseMap(romData, cur)
+	if err != nil {
+		return fmt.Errorf("skill: Approach: parse map %#04x: %w", cur, err)
+	}
+	grid, err := world.Build(romData, h)
+	if err != nil {
+		return fmt.Errorf("skill: Approach: build map %#04x: %w", cur, err)
+	}
+
+	var planErr error
+	err = walkAround(func() map[[2]int]bool { return spriteBlockers(m) },
+		func(blocked map[[2]int]bool) ([]world.Step, error) {
+			x, y := playerXY(m)
+			steps, _, err := world.FindPathAdjacent(grid, int(x), int(y), int(targetX), int(targetY), blocked)
+			if err != nil {
+				planErr = fmt.Errorf("skill: Approach: no path on map %#04x from (%d,%d) beside (%d,%d): %w",
+					cur, x, y, targetX, targetY, err)
+				return nil, planErr
+			}
+			return steps, nil
+		}, func(steps []world.Step) error { return WalkPath(m, steps) },
+		func() { m.StepFrames(npcWaitFrames) })
+	if err == nil || err == planErr {
+		return err
+	}
+	return fmt.Errorf("skill: Approach: walk beside (%d,%d) on map %#04x: %w", targetX, targetY, cur, err)
 }

@@ -3,6 +3,7 @@ package agent
 import (
 	"strings"
 
+	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/skill"
 )
 
@@ -20,10 +21,11 @@ import (
 // question about exits and deterministic code keeps the geometry. It names
 // no places; it only answers where the doors of a map lead.
 type Knowledge struct {
-	Visited   map[uint8]bool    // maps the player has stood on
-	Places    map[string]bool   // place names the game has shown (visited or spoken)
-	Completed map[string]bool   // objectives already completed, by Objective.String()
-	Adjacency map[uint8][]uint8 // for each map id, the map ids its exits lead to
+	Visited   map[uint8]bool              // maps the player has stood on
+	Places    map[string]bool             // place names the game has shown (visited or spoken)
+	Completed map[string]bool             // objectives already completed, by Objective.String()
+	Talked    map[uint8]map[[2]uint8]bool // map-local object coordinates already talked to
+	Adjacency map[uint8][]uint8           // for each map id, the map ids its exits lead to
 }
 
 // NewKnowledge returns an empty Knowledge over the given route geometry.
@@ -33,6 +35,7 @@ func NewKnowledge(adjacency map[uint8][]uint8) *Knowledge {
 		Visited:   map[uint8]bool{},
 		Places:    map[string]bool{},
 		Completed: map[string]bool{},
+		Talked:    map[uint8]map[[2]uint8]bool{},
 		Adjacency: adjacency,
 	}
 }
@@ -62,6 +65,16 @@ func (k *Knowledge) SawDialogue(lines []string) {
 // to stop offering heals, and neither is a lost gym challenge — the run is
 // meant to train, heal, and come back.
 func (k *Knowledge) Done(o Objective) { k.Completed[o.String()] = true }
+
+// TalkedTo records a successful conversation at a map-local object tile.
+// Coordinates alone are not globally unique: the same (x,y) can name
+// unrelated people on different maps.
+func (k *Knowledge) TalkedTo(mapID, x, y uint8) {
+	if k.Talked[mapID] == nil {
+		k.Talked[mapID] = map[[2]uint8]bool{}
+	}
+	k.Talked[mapID][[2]uint8{x, y}] = true
+}
 
 // mentions reports whether line contains name as a whole word: the match
 // must not be embedded in a longer alphanumeric run on either side, so
@@ -149,7 +162,8 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 
 	// Verbs, gated on preconditions that are facts about the situation —
 	// never judgements about it.
-	if !known.Completed[Objective{Kind: KindErrand}.String()] {
+	if observedEvent(obs, state.EventBattledRivalInOaksLab.String()) &&
+		!known.Completed[Objective{Kind: KindErrand}.String()] {
 		out = append(out, Objective{Kind: KindErrand}) // one-shot story event
 	}
 	if hasBalls(obs) {
@@ -166,7 +180,7 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 	if d, ok := skill.Place("pewter gym"); ok && d.Map == obs.Map {
 		out = append(out, Objective{Kind: KindGym})
 	}
-	if obs.HasGrass {
+	if obs.HasGrass && (len(obs.Party) == 0 || obs.Party[0].Level < 12) {
 		out = append(out, Objective{Kind: KindTrain, Level: 12})
 	}
 	if isMart(obs.MapName) {
@@ -180,13 +194,14 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 	// KindPickup with the item named. Trainers are REPORTED in MapObjects
 	// but NOT offered — a fightable trainer verb is a separate slice, and
 	// offering one with no verb behind it manufactures a guaranteed failed
-	// objective every round. Collected items are not filtered: there is no
-	// data source for it, and a vanished ball fails Pickup's bag
-	// postcondition as an ordinary failed objective.
+	// objective every round. Observe has already removed map objects whose
+	// authoritative toggleable-object flag says they are hidden.
 	for _, o := range obs.MapObjects {
 		switch o.Kind {
 		case "person":
-			out = append(out, Objective{Kind: KindTalk, X: o.X, Y: o.Y})
+			if !known.Talked[obs.Map][[2]uint8{o.X, o.Y}] {
+				out = append(out, Objective{Kind: KindTalk, X: o.X, Y: o.Y})
+			}
 		case "item":
 			if id, ok := ItemByName(o.Item); ok {
 				out = append(out, Objective{Kind: KindPickup, X: o.X, Y: o.Y, Item: id})
@@ -194,6 +209,15 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 		}
 	}
 	return out
+}
+
+func observedEvent(obs Observation, name string) bool {
+	for _, event := range obs.Events {
+		if event == name {
+			return true
+		}
+	}
+	return false
 }
 
 // hasBalls says the bag holds at least one usable ball. The bag is decoded

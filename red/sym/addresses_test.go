@@ -63,6 +63,8 @@ func TestAddressesMatchSymbolFile(t *testing.T) {
 		{"wNumBagItems", NumBagItems},
 		{"wBagItems", BagItems},
 		{"wPlayerMoney", PlayerMoney},
+		{"wToggleableObjectFlags", ToggleableObjectFlags},
+		{"wToggleableObjectList", ToggleableObjectList},
 		{"wObtainedBadges", ObtainedBadges},
 		{"wEventFlags", EventFlags},
 		{"wStatusFlags4", StatusFlags4},

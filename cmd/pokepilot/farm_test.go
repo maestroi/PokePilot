@@ -75,6 +75,20 @@ func TestApplySpec(t *testing.T) {
 	}
 }
 
+func TestFarmLLMAppliesSpecGoal(t *testing.T) {
+	src, err := os.ReadFile("farm.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(src)
+	if !strings.Contains(text, "planner.Goal = goal") {
+		t.Fatal("runFarmLLM does not set planner.Goal from the leased spec")
+	}
+	if !strings.Contains(text, "spec.Goal") {
+		t.Fatal("runFarm never passes spec.Goal into the llm run")
+	}
+}
+
 // TestHeartbeatSnapshot hammers the plain snapshot from many goroutines so
 // -race catches a missing lock on either store or load.
 func TestHeartbeatSnapshot(t *testing.T) {

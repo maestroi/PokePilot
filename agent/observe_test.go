@@ -144,6 +144,22 @@ func TestObserveAfterStarter(t *testing.T) {
 	if !found {
 		t.Fatalf("Events = %v, want it to contain %q", obs.Events, wantEvent)
 	}
+	// The ROM map header permanently contains all three starter balls, but
+	// the game hides the player's and rival's choices through the current
+	// map's toggleable-object flags. Observe must expose the remaining ball
+	// only, otherwise Offer manufactures a stale talk objective at (6,3).
+	balls := map[[2]uint8]bool{}
+	for _, object := range obs.MapObjects {
+		if object.Y == 3 && object.X >= 6 && object.X <= 8 {
+			balls[[2]uint8{object.X, object.Y}] = true
+		}
+	}
+	if balls[[2]uint8{6, 3}] || balls[[2]uint8{7, 3}] {
+		t.Fatalf("MapObjects still exposes hidden starter balls: %v", balls)
+	}
+	if !balls[[2]uint8{8, 3}] {
+		t.Fatalf("MapObjects omitted the remaining starter ball: %v", balls)
+	}
 	// The starter comes out of the story healthy: the status field is
 	// populated ("" for a healthy mon), not missing.
 	if obs.Party[0].Status != "" {

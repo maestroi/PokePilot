@@ -1,6 +1,7 @@
 package skill_test
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -9,6 +10,31 @@ import (
 	"github.com/maestroi/pokepilot/skill/fixture"
 	"github.com/maestroi/pokepilot/world"
 )
+
+// TestOaksParcelRejectsPreStarterState catches the live sequence that let the
+// parcel script run from a fresh boot and left story flags advanced with an
+// empty party. A rejected call must not advance a single emulated frame.
+func TestOaksParcelRejectsPreStarterState(t *testing.T) {
+	m := fixture.Load(t, "reds_bedroom")
+	startFrame := m.FrameCount()
+
+	err := skill.OaksParcel(m, m.ROM(), skill.StatAwareMove(m.ROM()))
+	if err == nil || !strings.Contains(err.Error(), "starter story is not complete") {
+		t.Fatalf("OaksParcel error = %v, want starter-story precondition", err)
+	}
+	if got := m.FrameCount(); got != startFrame {
+		t.Fatalf("OaksParcel advanced from frame %d to %d before rejecting pre-starter state", startFrame, got)
+	}
+
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	if state.DecodeParty(&mem).Count != 0 {
+		t.Fatalf("pre-starter rejection changed party count to %d", state.DecodeParty(&mem).Count)
+	}
+	if state.HasEvent(&mem, state.EventGotOaksParcel) || state.HasEvent(&mem, state.EventGotPokedex) {
+		t.Fatal("pre-starter rejection advanced parcel story events")
+	}
+}
 
 // TestGetParcel is S5b-2: from the post-starter state, collect Oak's parcel
 // from the Viridian Mart and return with the parcel flag set and the parcel

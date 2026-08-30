@@ -20,6 +20,13 @@
     --cream: #d4c89a;
     --line: #3a4530;
     --focus: #9bbc0f;
+    --amber: #c4a035;
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 24px;
+    --space-6: 32px;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; background: var(--ink); color: var(--cream); }
@@ -36,8 +43,8 @@
     display: flex;
     flex-wrap: wrap;
     align-items: baseline;
-    gap: 16px 24px;
-    padding: 20px 24px 16px;
+    gap: var(--space-4) var(--space-5);
+    padding: 20px var(--space-5) var(--space-4);
     border-bottom: 1px solid var(--line);
     background: var(--panel);
   }
@@ -56,7 +63,7 @@
     background: var(--lcd);
     color: var(--lcd-dark);
     border: 0;
-    padding: 8px 14px;
+    padding: var(--space-2) 14px;
     font-family: Syne, sans-serif;
     font-weight: 700;
     letter-spacing: -0.02em;
@@ -66,12 +73,12 @@
   #banner {
     background: var(--red);
     color: #fff8e8;
-    padding: 10px 24px;
+    padding: 10px var(--space-5);
   }
   #banner[hidden] { display: none; }
   #queue {
     background: var(--panel-2);
-    padding: 16px 24px 20px;
+    padding: var(--space-4) var(--space-5) 20px;
     border-bottom: 1px solid var(--line);
   }
   #queue[hidden] { display: none; }
@@ -80,52 +87,50 @@
     font-size: 1rem;
     font-weight: 700;
     letter-spacing: -0.02em;
-    margin: 0 0 12px;
+    margin: 0 0 var(--space-3);
     color: var(--lcd);
   }
   .fields {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-    gap: 12px;
+    gap: var(--space-3);
     max-width: 960px;
   }
-  label { display: flex; flex-direction: column; gap: 4px; color: var(--bezel); }
+  label { display: flex; flex-direction: column; gap: var(--space-1); color: var(--bezel); }
   label[hidden], .scripted-only[hidden] { display: none !important; }
   input, select {
     background: var(--ink);
     border: 1px solid var(--line);
-    padding: 8px 10px;
+    padding: var(--space-2) 10px;
     color: var(--cream);
   }
-  .form-row { display: flex; align-items: center; gap: 16px; margin-top: 16px; }
+  .form-row { display: flex; align-items: center; gap: var(--space-4); margin-top: var(--space-4); }
   .submit {
     background: var(--lcd);
     color: var(--lcd-dark);
     border: 0;
-    padding: 8px 16px;
+    padding: var(--space-2) var(--space-4);
     font-family: Syne, sans-serif;
     font-weight: 700;
   }
   .submit:disabled, .queue-btn:disabled { opacity: 0.4; cursor: not-allowed; }
   #form-error { color: #ffb4a8; }
-  main { padding: 20px 24px 48px; display: grid; gap: 32px; }
-  .stage {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 20px;
+  main { padding: 20px var(--space-5) 48px; display: grid; gap: var(--space-5); }
+  .check {
+    flex-direction: row;
+    align-items: center;
+    gap: var(--space-2);
   }
-  @media (min-width: 960px) {
-    .stage { grid-template-columns: 1fr 280px; align-items: start; }
-    .stage:not(.has-detail) { grid-template-columns: 1fr; }
-  }
+  .check input { width: auto; }
+  .llm-only[hidden], .endless-only[hidden] { display: none !important; }
   #live {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-    gap: 16px;
+    grid-template-columns: repeat(auto-fill, minmax(232px, 1fr));
+    gap: var(--space-4);
   }
   .bezel {
     background: var(--bezel);
-    padding: 12px 12px 14px;
+    padding: var(--space-3) var(--space-3) 14px;
     border: 0;
     text-align: left;
     width: 100%;
@@ -139,7 +144,6 @@
     height: 144px;
     display: grid;
     place-items: center;
-    margin-bottom: 10px;
     overflow: hidden;
   }
   .lcd img {
@@ -150,68 +154,204 @@
     display: block;
   }
   .lcd .idle { color: #306230; font-size: 11px; }
-  .meta { display: grid; gap: 2px; }
-  .rid { font-family: Syne, sans-serif; font-weight: 700; font-size: 15px; }
+  .meta { display: grid; gap: var(--space-2); margin-top: 10px; }
+  .rid {
+    font-family: Syne, sans-serif;
+    font-weight: 700;
+    font-size: 14px;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+  }
+  .chips { display: flex; flex-wrap: wrap; gap: var(--space-1); }
   .chip {
     display: inline-block;
     font-size: 10px;
     letter-spacing: 0.04em;
-    padding: 1px 6px;
+    padding: 2px 6px;
     background: var(--ink);
     color: var(--lcd);
-    margin-bottom: 4px;
   }
   .chip.running { background: var(--lcd-dark); color: var(--lcd); }
   .chip.leased, .chip.queued { background: var(--bezel-dark); color: var(--cream); }
-  .chip.done { background: var(--ink); color: var(--bezel); }
+  .chip.done, .chip.outcome-done { background: var(--ink); color: var(--lcd); }
+  .chip.idle { background: var(--ink); color: var(--bezel); }
+  .chip.busy { background: var(--lcd-dark); color: var(--lcd); }
+  .chip.outcome-stuck, .chip.outcome-budget { background: var(--bezel-dark); color: var(--amber); }
+  .chip.outcome-error, .chip.outcome-lost, .chip.outcome-cancelled { background: var(--red); color: #fff8e8; }
+  .chip.starter, .chip.how, .chip.seed, .chip.goal, .chip.loop {
+    background: var(--ink);
+    color: var(--cream);
+  }
+  .bezel .chip.starter, .bezel .chip.how, .bezel .chip.seed,
+  .bezel .chip.goal, .bezel .chip.loop {
+    background: #2a2716;
+    color: #f0e6b8;
+  }
+  .facts {
+    display: grid;
+    gap: 2px;
+    font-size: 12px;
+  }
+  .fact-k {
+    color: var(--bezel-dark);
+    font-size: 10px;
+    letter-spacing: 0.04em;
+  }
+  .bezel .fact-k { color: #2a2716; }
   .cancel {
-    margin-top: 8px;
+    margin-top: var(--space-1);
     background: var(--red);
     color: #fff8e8;
     border: 0;
-    padding: 4px 8px;
+    padding: 6px var(--space-2);
     font-size: 11px;
+    width: 100%;
   }
   .cancel:hover { filter: brightness(1.1); }
-  .empty { color: var(--bezel); padding: 8px 0; }
-  #detail {
+  .empty { color: var(--bezel); padding: var(--space-2) 0; }
+  #watch {
     background: var(--panel);
-    padding: 16px;
-    min-height: 160px;
+    padding: var(--space-4);
     border: 1px solid var(--line);
+    display: grid;
+    gap: var(--space-4);
   }
-  #detail[hidden] { display: none; }
-  #detail h2 { margin-top: 0; }
+  #watch[hidden] { display: none; }
+  @media (min-width: 900px) {
+    #watch { grid-template-columns: minmax(320px, 480px) 1fr; align-items: start; }
+    #watch .watch-side { grid-column: 2; grid-row: 1 / 4; }
+    #watch .lcd { grid-row: 2; }
+  }
+  #watch .lcd {
+    width: min(100%, 480px);
+    height: auto;
+    aspect-ratio: 160 / 144;
+  }
+  #watch .lcd img {
+    width: 100%;
+    height: 100%;
+  }
+  .detail-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-3);
+  }
+  .detail-head h2 { margin: 0; overflow-wrap: anywhere; }
+  .close-detail {
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--bezel);
+    padding: 4px 8px;
+    flex: none;
+  }
+  .close-detail:hover { color: var(--cream); border-color: var(--bezel); }
+  .block {
+    margin-top: var(--space-4);
+  }
+  .block h3 {
+    margin: 0 0 var(--space-2);
+    font-family: Syne, sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--bezel);
+  }
+  .kv {
+    display: grid;
+    grid-template-columns: 7.5rem 1fr;
+    gap: 6px var(--space-3);
+    margin: 0;
+  }
+  .kv dt { color: var(--bezel); }
+  .kv dd { margin: 0; overflow-wrap: anywhere; }
   .trace {
     white-space: pre-wrap;
     color: var(--lcd);
-    margin: 8px 0 0;
+    margin: var(--space-2) 0 0;
     max-height: 240px;
     overflow: auto;
   }
-  #workers { display: flex; flex-wrap: wrap; gap: 8px; }
+  #workers {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
   .worker {
     background: var(--panel);
     border: 1px solid var(--line);
-    padding: 8px 12px;
+    padding: 8px var(--space-3);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px 12px;
+    flex: 1 1 16rem;
+    min-width: 0;
   }
-  .worker b { color: var(--lcd); }
-  #history { display: grid; gap: 4px; }
+  .worker .addr { color: var(--cream); overflow-wrap: anywhere; }
+  .worker .ago { color: var(--bezel); font-size: 11px; }
+  .worker .job { overflow-wrap: anywhere; }
+  .section-top {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-3);
+    margin-bottom: var(--space-3);
+  }
+  .section-top .section-h { margin: 0; }
+  .filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2) var(--space-4);
+  }
+  .filter-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+    align-items: center;
+  }
+  .filter-group span { color: var(--bezel); font-size: 11px; margin-right: 2px; }
+  .filter {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    color: var(--cream);
+    padding: 3px 8px;
+    font-size: 11px;
+  }
+  .filter:hover { border-color: var(--bezel); }
+  .filter[aria-pressed="true"] {
+    background: var(--lcd-dark);
+    border-color: var(--lcd);
+    color: var(--lcd);
+  }
+  #history { display: grid; }
   .hist {
     display: grid;
-    grid-template-columns: minmax(8rem, 1fr) auto auto auto;
-    gap: 8px 16px;
+    grid-template-columns: 6.5rem minmax(7rem, 1fr) minmax(8rem, 1.2fr) minmax(8rem, 1fr) auto;
+    align-items: center;
+    gap: 6px 14px;
     width: 100%;
     text-align: left;
     background: transparent;
     border: 0;
     border-bottom: 1px solid var(--line);
-    padding: 10px 4px;
+    padding: 8px 4px;
     color: var(--cream);
   }
-  .hist:hover, .hist.selected { background: var(--panel); }
-  .reason { color: var(--bezel); }
+  .hist:hover { background: var(--panel); }
+  .hist.selected { background: var(--panel-2); box-shadow: inset 3px 0 0 var(--lcd); }
+  .hist-when { color: var(--bezel); font-size: 11px; }
+  .hist-id { font-family: Syne, sans-serif; font-weight: 700; overflow-wrap: anywhere; }
+  .hist-where { color: var(--cream); }
+  .hist-out { display: flex; flex-direction: column; gap: 2px; align-items: flex-end; text-align: right; }
+  .hist-outcome { color: var(--bezel); font-size: 11px; max-width: 28ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .card-err { color: var(--red); margin-top: 6px; }
+  @media (max-width: 800px) {
+    .hist {
+      grid-template-columns: 1fr auto;
+    }
+    .hist-when, .hist-where { grid-column: 1 / -1; }
+  }
   @media (prefers-reduced-motion: reduce) {
     * { transition: none !important; }
   }
@@ -249,10 +389,22 @@
         <label class="scripted-only" hidden>walk to
           <input name="dest" value="viridian pokemon center" autocomplete="off">
         </label>
+        <label class="llm-only">goal
+          <input name="goal" value="Earn the Boulder Badge." autocomplete="off">
+        </label>
         <label>seed <input name="seed" type="number" value="0"></label>
         <label>fps <input name="fps" type="number" value="60"></label>
         <label>max rounds <input name="max_rounds" type="number" value="32"></label>
         <label>max frames <input name="max_frames" type="number" value="0"></label>
+        <label class="check">keep going
+          <input name="endless" type="checkbox">
+        </label>
+        <label class="endless-only" hidden>next seed
+          <select name="seed_mode">
+            <option value="same">same seed</option>
+            <option value="random" selected>random seed</option>
+          </select>
+        </label>
       </div>
       <div class="form-row">
         <button type="submit" class="submit">Queue a run</button>
@@ -261,23 +413,30 @@
     </form>
   </section>
   <main>
-    <div class="stage" id="stage">
-      <section>
-        <h2 class="section-h">Live</h2>
-        <div id="live"></div>
-      </section>
-      <aside id="detail" hidden>
+    <aside id="watch" hidden>
+      <div class="detail-head">
         <h2 class="section-h" id="detail-title"></h2>
-        <div class="lcd" id="detail-lcd"></div>
+        <button type="button" class="close-detail" id="detail-close">Close</button>
+      </div>
+      <div class="lcd" id="detail-lcd"></div>
+      <div class="watch-side">
+        <div class="chips" id="detail-chips"></div>
         <div id="detail-body"></div>
-      </aside>
-    </div>
+      </div>
+    </aside>
+    <section>
+      <h2 class="section-h">Live</h2>
+      <div id="live"></div>
+    </section>
     <section>
       <h2 class="section-h">Workers</h2>
       <div id="workers"></div>
     </section>
     <section>
-      <h2 class="section-h">History</h2>
+      <div class="section-top">
+        <h2 class="section-h">History</h2>
+        <div class="filters" id="hist-filters"></div>
+      </div>
       <div id="history"></div>
     </section>
   </main>

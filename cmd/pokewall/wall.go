@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"sync"
 	"time"
 
@@ -40,10 +41,15 @@ type Tile struct {
 	Planner   string
 	Starter   string
 	Dest      string
+	Goal      string
 	Seed      int64
 	FPS       int
 	MaxRounds int
 	MaxFrames int
+	Endless    bool
+	RandomSeed bool
+	QueuedAt   time.Time
+	EndedAt    time.Time
 	// Attempts counts completed attempts; a retried run keeps its history
 	// so the grid can show where it is in its retry budget.
 	Attempts  int
@@ -79,21 +85,26 @@ type tileRow struct {
 	RunID     string `json:"run_id"`
 	Status    string `json:"status"`
 	Planner   string `json:"planner"`
-	Starter   string `json:"starter"`
-	Dest      string `json:"dest"`
-	Seed      int64  `json:"seed"`
-	FPS       int    `json:"fps"`
-	MaxRounds int    `json:"max_rounds"`
-	MaxFrames int    `json:"max_frames"`
-	Frame     uint64 `json:"frame"`
-	Map       uint8  `json:"map"`
-	X         uint8  `json:"x"`
-	Y         uint8  `json:"y"`
-	Trace     string `json:"trace"`
-	StopSoFar string `json:"stop_so_far"`
-	Attempts  int    `json:"attempts"`
-	Reason    string `json:"reason"`
-	Detail    string `json:"detail"`
+	Starter    string `json:"starter"`
+	Dest       string `json:"dest"`
+	Goal       string `json:"goal,omitempty"`
+	Seed       int64  `json:"seed"`
+	FPS        int    `json:"fps"`
+	MaxRounds  int    `json:"max_rounds"`
+	MaxFrames  int    `json:"max_frames"`
+	Endless    bool   `json:"endless,omitempty"`
+	RandomSeed bool   `json:"random_seed,omitempty"`
+	QueuedAt   int64  `json:"queued_at,omitempty"`
+	EndedAt    int64  `json:"ended_at,omitempty"`
+	Frame      uint64 `json:"frame"`
+	Map        uint8  `json:"map"`
+	X          uint8  `json:"x"`
+	Y          uint8  `json:"y"`
+	Trace      string `json:"trace"`
+	StopSoFar  string `json:"stop_so_far"`
+	Attempts   int    `json:"attempts"`
+	Reason     string `json:"reason"`
+	Detail     string `json:"detail"`
 }
 
 // Wall owns the spec queue, the tile map, cancel flags, the optional dump
@@ -142,10 +153,15 @@ type persistedTile struct {
 	Planner     string   `json:"planner,omitempty"`
 	Starter     string   `json:"starter,omitempty"`
 	Dest        string   `json:"dest,omitempty"`
+	Goal        string   `json:"goal,omitempty"`
 	Seed        int64    `json:"seed"`
 	FPS         int      `json:"fps"`
 	MaxRounds   int      `json:"max_rounds"`
 	MaxFrames   int      `json:"max_frames"`
+	Endless     bool     `json:"endless,omitempty"`
+	RandomSeed  bool     `json:"random_seed,omitempty"`
+	QueuedAt    int64    `json:"queued_at,omitempty"`
+	EndedAt     int64    `json:"ended_at,omitempty"`
 	Attempts    int      `json:"attempts"`
 	Frame       uint64   `json:"frame"`
 	Map         uint8    `json:"map"`
@@ -181,10 +197,15 @@ func (w *Wall) marshalStateLocked() ([]byte, error) {
 			Planner:     t.Planner,
 			Starter:     t.Starter,
 			Dest:        t.Dest,
+			Goal:        t.Goal,
 			Seed:        t.Seed,
 			FPS:         t.FPS,
 			MaxRounds:   t.MaxRounds,
 			MaxFrames:   t.MaxFrames,
+			Endless:     t.Endless,
+			RandomSeed:  t.RandomSeed,
+			QueuedAt:    unixTime(t.QueuedAt),
+			EndedAt:     unixTime(t.EndedAt),
 			Attempts:    t.Attempts,
 			Frame:       t.Frame,
 			Map:         t.Map,
@@ -253,10 +274,15 @@ func (w *Wall) loadState() {
 			Planner:     pt.Planner,
 			Starter:     pt.Starter,
 			Dest:        pt.Dest,
+			Goal:        pt.Goal,
 			Seed:        pt.Seed,
 			FPS:         pt.FPS,
 			MaxRounds:   pt.MaxRounds,
 			MaxFrames:   pt.MaxFrames,
+			Endless:     pt.Endless,
+			RandomSeed:  pt.RandomSeed,
+			QueuedAt:    timeFromUnix(pt.QueuedAt),
+			EndedAt:     timeFromUnix(pt.EndedAt),
 			Attempts:    pt.Attempts,
 			Frame:       pt.Frame,
 			Map:         pt.Map,
@@ -356,10 +382,15 @@ func (w *Wall) applySpec(runID string, spec farm.Spec) {
 	t.Planner = spec.Planner
 	t.Starter = spec.Starter
 	t.Dest = spec.Dest
+	t.Goal = spec.Goal
 	t.Seed = spec.Seed
 	t.FPS = spec.FPS
 	t.MaxRounds = spec.MaxRounds
 	t.MaxFrames = spec.MaxFrames
+	t.Endless = spec.Endless
+	t.RandomSeed = spec.RandomSeed
+	t.QueuedAt = time.Now()
+	t.EndedAt = time.Time{}
 	t.Attempts = 0 // a manual re-queue is a fresh start, not a retry
 	t.Finished = false
 }
@@ -382,12 +413,15 @@ func (w *Wall) handleLease(res http.ResponseWriter, req *http.Request) {
 		RunID:     t.RunID,
 		Attempt:   t.Attempts + 1,
 		Seed:      t.Seed,
-		Planner:   t.Planner,
-		Starter:   t.Starter,
-		Dest:      t.Dest,
-		FPS:       t.FPS,
-		MaxRounds: t.MaxRounds,
-		MaxFrames: t.MaxFrames,
+		Planner:    t.Planner,
+		Starter:    t.Starter,
+		Dest:       t.Dest,
+		Goal:       t.Goal,
+		FPS:        t.FPS,
+		MaxRounds:  t.MaxRounds,
+		MaxFrames:  t.MaxFrames,
+		Endless:    t.Endless,
+		RandomSeed: t.RandomSeed,
 	}
 	w.mu.Unlock()
 	w.saveState()
@@ -709,14 +743,19 @@ func (w *Wall) snapshot() dashboardView {
 		rows = append(rows, tileRow{
 			RunID:     t.RunID,
 			Status:    t.Status,
-			Planner:   t.Planner,
-			Starter:   t.Starter,
-			Dest:      t.Dest,
-			Seed:      t.Seed,
-			FPS:       t.FPS,
-			MaxRounds: t.MaxRounds,
-			MaxFrames: t.MaxFrames,
-			Attempts:  t.Attempts,
+			Planner:    t.Planner,
+			Starter:    t.Starter,
+			Dest:       t.Dest,
+			Goal:       t.Goal,
+			Seed:       t.Seed,
+			FPS:        t.FPS,
+			MaxRounds:  t.MaxRounds,
+			MaxFrames:  t.MaxFrames,
+			Endless:    t.Endless,
+			RandomSeed: t.RandomSeed,
+			QueuedAt:   unixTime(t.QueuedAt),
+			EndedAt:    unixTime(t.EndedAt),
+			Attempts:   t.Attempts,
 			Frame:     t.Frame,
 			Map:       t.Map,
 			X:         t.X,
@@ -866,6 +905,10 @@ func (w *Wall) settleRun(t *Tile, reason, detail string, now time.Time) int {
 		t.Reason = reason
 		t.Detail = detail
 		t.Finished = true
+		t.EndedAt = now
+		if t.Endless && !cancelled {
+			w.enqueueNextLocked(t)
+		}
 		return completed
 	}
 	// Retry: fresh luck, fresh progress, back of the queue. The old
@@ -884,6 +927,53 @@ func (w *Wall) settleRun(t *Tile, reason, detail string, now time.Time) int {
 	t.Finished = false
 	w.queue = append(w.queue, t.RunID)
 	return completed
+}
+
+func unixTime(t time.Time) int64 {
+	if t.IsZero() {
+		return 0
+	}
+	return t.Unix()
+}
+
+func timeFromUnix(sec int64) time.Time {
+	if sec == 0 {
+		return time.Time{}
+	}
+	return time.Unix(sec, 0)
+}
+
+func newRunID() string {
+	return "run-" + strconv.FormatUint(rand.Uint64(), 36) + strconv.FormatUint(rand.Uint64(), 36)
+}
+
+// enqueueNextLocked queues a successor for an endless run. Caller holds w.mu.
+// The new run copies settings; the seed is either kept or rolled.
+func (w *Wall) enqueueNextLocked(prev *Tile) {
+	id := newRunID()
+	for w.tiles[id] != nil {
+		id = newRunID()
+	}
+	seed := prev.Seed
+	if prev.RandomSeed {
+		seed = rand.Int64()
+	}
+	w.order = append(w.order, id)
+	w.tiles[id] = &Tile{}
+	w.queue = append(w.queue, id)
+	w.applySpec(id, farm.Spec{
+		RunID:      id,
+		Seed:       seed,
+		Planner:    prev.Planner,
+		Starter:    prev.Starter,
+		Dest:       prev.Dest,
+		Goal:       prev.Goal,
+		FPS:        prev.FPS,
+		MaxRounds:  prev.MaxRounds,
+		MaxFrames:  prev.MaxFrames,
+		Endless:    true,
+		RandomSeed: prev.RandomSeed,
+	})
 }
 
 // reapStale handles leased or running runs whose lastUpdate is older than

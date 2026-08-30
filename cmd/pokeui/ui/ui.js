@@ -6,15 +6,160 @@
   let cardErr = "";
   let wallDown = false;
   const pumps = new Map();
+  const histFilter = { outcome: "", how: "", starter: "" };
 
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
   }[c]));
   const hexMap = (n) => "0x" + Number(n).toString(16).padStart(2, "0");
-  const routeLine = (r) => r.planner === "llm"
-    ? ((r.starter || "squirtle") + " · play the game")
-    : ((r.starter || "—") + " → " + (r.dest || "—"));
+  const howLabel = (r) => r.planner === "scripted" ? "walk" : "play";
+  const howText = (r) => r.planner === "scripted" ? "walk to a place" : "play the game";
+  const starterOf = (r) => r.starter || "squirtle";
+  const outcomeOf = (r) => (r.reason || r.status || "").toLowerCase();
+  const goalOf = (r) => (r.goal || "").trim();
+
+  // Decomp map constants, same inventory as red/state/map_names.go.
+  const MAP_NAMES = {
+    0x00: "PALLET_TOWN", 0x01: "VIRIDIAN_CITY", 0x02: "PEWTER_CITY",
+    0x03: "CERULEAN_CITY", 0x04: "LAVENDER_TOWN", 0x05: "VERMILION_CITY",
+    0x06: "CELADON_CITY", 0x07: "FUCHSIA_CITY", 0x08: "CINNABAR_ISLAND",
+    0x09: "INDIGO_PLATEAU", 0x0A: "SAFFRON_CITY", 0x0C: "ROUTE_1",
+    0x0D: "ROUTE_2", 0x0E: "ROUTE_3", 0x0F: "ROUTE_4", 0x10: "ROUTE_5",
+    0x11: "ROUTE_6", 0x12: "ROUTE_7", 0x13: "ROUTE_8", 0x14: "ROUTE_9",
+    0x15: "ROUTE_10", 0x16: "ROUTE_11", 0x17: "ROUTE_12", 0x18: "ROUTE_13",
+    0x19: "ROUTE_14", 0x1A: "ROUTE_15", 0x1B: "ROUTE_16", 0x1C: "ROUTE_17",
+    0x1D: "ROUTE_18", 0x1E: "ROUTE_19", 0x1F: "ROUTE_20", 0x20: "ROUTE_21",
+    0x21: "ROUTE_22", 0x22: "ROUTE_23", 0x23: "ROUTE_24", 0x24: "ROUTE_25",
+    0x25: "REDS_HOUSE_1F", 0x26: "REDS_HOUSE_2F", 0x27: "BLUES_HOUSE",
+    0x28: "OAKS_LAB", 0x29: "VIRIDIAN_POKECENTER", 0x2A: "VIRIDIAN_MART",
+    0x2B: "VIRIDIAN_SCHOOL_HOUSE", 0x2C: "VIRIDIAN_NICKNAME_HOUSE",
+    0x2D: "VIRIDIAN_GYM", 0x2E: "DIGLETTS_CAVE_ROUTE_2",
+    0x2F: "VIRIDIAN_FOREST_NORTH_GATE", 0x30: "ROUTE_2_TRADE_HOUSE",
+    0x31: "ROUTE_2_GATE", 0x32: "VIRIDIAN_FOREST_SOUTH_GATE",
+    0x33: "VIRIDIAN_FOREST", 0x34: "MUSEUM_1F", 0x35: "MUSEUM_2F",
+    0x36: "PEWTER_GYM", 0x37: "PEWTER_NIDORAN_HOUSE", 0x38: "PEWTER_MART",
+    0x39: "PEWTER_SPEECH_HOUSE", 0x3A: "PEWTER_POKECENTER", 0x3B: "MT_MOON_1F",
+    0x3C: "MT_MOON_B1F", 0x3D: "MT_MOON_B2F", 0x3E: "CERULEAN_TRASHED_HOUSE",
+    0x3F: "CERULEAN_TRADE_HOUSE", 0x40: "CERULEAN_POKECENTER", 0x41: "CERULEAN_GYM",
+    0x42: "BIKE_SHOP", 0x43: "CERULEAN_MART", 0x44: "MT_MOON_POKECENTER",
+    0x46: "ROUTE_5_GATE", 0x47: "UNDERGROUND_PATH_ROUTE_5", 0x48: "DAYCARE",
+    0x49: "ROUTE_6_GATE", 0x4A: "UNDERGROUND_PATH_ROUTE_6", 0x4C: "ROUTE_7_GATE",
+    0x4D: "UNDERGROUND_PATH_ROUTE_7", 0x4F: "ROUTE_8_GATE",
+    0x50: "UNDERGROUND_PATH_ROUTE_8", 0x51: "ROCK_TUNNEL_POKECENTER",
+    0x52: "ROCK_TUNNEL_1F", 0x53: "POWER_PLANT", 0x54: "ROUTE_11_GATE_1F",
+    0x55: "DIGLETTS_CAVE_ROUTE_11", 0x56: "ROUTE_11_GATE_2F",
+    0x57: "ROUTE_12_GATE_1F", 0x58: "BILLS_HOUSE", 0x59: "VERMILION_POKECENTER",
+    0x5A: "POKEMON_FAN_CLUB", 0x5B: "VERMILION_MART", 0x5C: "VERMILION_GYM",
+    0x5D: "VERMILION_PIDGEY_HOUSE", 0x5E: "VERMILION_DOCK", 0x5F: "SS_ANNE_1F",
+    0x60: "SS_ANNE_2F", 0x61: "SS_ANNE_3F", 0x62: "SS_ANNE_B1F",
+    0x63: "SS_ANNE_BOW", 0x64: "SS_ANNE_KITCHEN", 0x65: "SS_ANNE_CAPTAINS_ROOM",
+    0x66: "SS_ANNE_1F_ROOMS", 0x67: "SS_ANNE_2F_ROOMS", 0x68: "SS_ANNE_B1F_ROOMS",
+    0x6C: "VICTORY_ROAD_1F", 0x71: "LANCES_ROOM", 0x76: "HALL_OF_FAME",
+    0x77: "UNDERGROUND_PATH_NORTH_SOUTH", 0x78: "CHAMPIONS_ROOM",
+    0x79: "UNDERGROUND_PATH_WEST_EAST", 0x7A: "CELADON_MART_1F",
+    0x7B: "CELADON_MART_2F", 0x7C: "CELADON_MART_3F", 0x7D: "CELADON_MART_4F",
+    0x7E: "CELADON_MART_ROOF", 0x7F: "CELADON_MART_ELEVATOR",
+    0x80: "CELADON_MANSION_1F", 0x81: "CELADON_MANSION_2F",
+    0x82: "CELADON_MANSION_3F", 0x83: "CELADON_MANSION_ROOF",
+    0x84: "CELADON_MANSION_ROOF_HOUSE", 0x85: "CELADON_POKECENTER",
+    0x86: "CELADON_GYM", 0x87: "GAME_CORNER", 0x88: "CELADON_MART_5F",
+    0x89: "GAME_CORNER_PRIZE_ROOM", 0x8A: "CELADON_DINER",
+    0x8B: "CELADON_CHIEF_HOUSE", 0x8C: "CELADON_HOTEL", 0x8D: "LAVENDER_POKECENTER",
+    0x8E: "POKEMON_TOWER_1F", 0x8F: "POKEMON_TOWER_2F", 0x90: "POKEMON_TOWER_3F",
+    0x91: "POKEMON_TOWER_4F", 0x92: "POKEMON_TOWER_5F", 0x93: "POKEMON_TOWER_6F",
+    0x94: "POKEMON_TOWER_7F", 0x95: "MR_FUJIS_HOUSE", 0x96: "LAVENDER_MART",
+    0x97: "LAVENDER_CUBONE_HOUSE", 0x98: "FUCHSIA_MART",
+    0x99: "FUCHSIA_BILLS_GRANDPAS_HOUSE", 0x9A: "FUCHSIA_POKECENTER",
+    0x9B: "WARDENS_HOUSE", 0x9C: "SAFARI_ZONE_GATE", 0x9D: "FUCHSIA_GYM",
+    0x9E: "FUCHSIA_MEETING_ROOM", 0x9F: "SEAFOAM_ISLANDS_B1F",
+    0xA0: "SEAFOAM_ISLANDS_B2F", 0xA1: "SEAFOAM_ISLANDS_B3F",
+    0xA2: "SEAFOAM_ISLANDS_B4F", 0xA3: "VERMILION_OLD_ROD_HOUSE",
+    0xA4: "FUCHSIA_GOOD_ROD_HOUSE", 0xA5: "POKEMON_MANSION_1F",
+    0xA6: "CINNABAR_GYM", 0xA7: "CINNABAR_LAB", 0xA8: "CINNABAR_LAB_TRADE_ROOM",
+    0xA9: "CINNABAR_LAB_METRONOME_ROOM", 0xAA: "CINNABAR_LAB_FOSSIL_ROOM",
+    0xAB: "CINNABAR_POKECENTER", 0xAC: "CINNABAR_MART",
+    0xAE: "INDIGO_PLATEAU_LOBBY", 0xAF: "COPYCATS_HOUSE_1F",
+    0xB0: "COPYCATS_HOUSE_2F", 0xB1: "FIGHTING_DOJO", 0xB2: "SAFFRON_GYM",
+    0xB3: "SAFFRON_PIDGEY_HOUSE", 0xB4: "SAFFRON_MART", 0xB5: "SILPH_CO_1F",
+    0xB6: "SAFFRON_POKECENTER", 0xB7: "MR_PSYCHICS_HOUSE",
+    0xB8: "ROUTE_15_GATE_1F", 0xB9: "ROUTE_15_GATE_2F", 0xBA: "ROUTE_16_GATE_1F",
+    0xBB: "ROUTE_16_GATE_2F", 0xBC: "ROUTE_16_FLY_HOUSE",
+    0xBD: "ROUTE_12_SUPER_ROD_HOUSE", 0xBE: "ROUTE_18_GATE_1F",
+    0xBF: "ROUTE_18_GATE_2F", 0xC0: "SEAFOAM_ISLANDS_1F", 0xC1: "ROUTE_22_GATE",
+    0xC2: "VICTORY_ROAD_2F", 0xC3: "ROUTE_12_GATE_2F", 0xC4: "VERMILION_TRADE_HOUSE",
+    0xC5: "DIGLETTS_CAVE", 0xC6: "VICTORY_ROAD_3F", 0xC7: "ROCKET_HIDEOUT_B1F",
+    0xC8: "ROCKET_HIDEOUT_B2F", 0xC9: "ROCKET_HIDEOUT_B3F",
+    0xCA: "ROCKET_HIDEOUT_B4F", 0xCB: "ROCKET_HIDEOUT_ELEVATOR",
+    0xCF: "SILPH_CO_2F", 0xD0: "SILPH_CO_3F", 0xD1: "SILPH_CO_4F",
+    0xD2: "SILPH_CO_5F", 0xD3: "SILPH_CO_6F", 0xD4: "SILPH_CO_7F",
+    0xD5: "SILPH_CO_8F", 0xD6: "POKEMON_MANSION_2F", 0xD7: "POKEMON_MANSION_3F",
+    0xD8: "POKEMON_MANSION_B1F", 0xD9: "SAFARI_ZONE_EAST", 0xDA: "SAFARI_ZONE_NORTH",
+    0xDB: "SAFARI_ZONE_WEST", 0xDC: "SAFARI_ZONE_CENTER",
+    0xDD: "SAFARI_ZONE_CENTER_REST_HOUSE", 0xDE: "SAFARI_ZONE_SECRET_HOUSE",
+    0xDF: "SAFARI_ZONE_WEST_REST_HOUSE", 0xE0: "SAFARI_ZONE_EAST_REST_HOUSE",
+    0xE1: "SAFARI_ZONE_NORTH_REST_HOUSE", 0xE2: "CERULEAN_CAVE_2F",
+    0xE3: "CERULEAN_CAVE_B1F", 0xE4: "CERULEAN_CAVE_1F", 0xE5: "NAME_RATERS_HOUSE",
+    0xE6: "CERULEAN_BADGE_HOUSE", 0xE8: "ROCK_TUNNEL_B1F", 0xE9: "SILPH_CO_9F",
+    0xEA: "SILPH_CO_10F", 0xEB: "SILPH_CO_11F", 0xEC: "SILPH_CO_ELEVATOR",
+    0xEF: "TRADE_CENTER", 0xF0: "COLOSSEUM", 0xF5: "LORELEIS_ROOM",
+    0xF6: "BRUNOS_ROOM", 0xF7: "AGATHAS_ROOM"
+  };
+
+  function titleMap(raw) {
+    if (!raw) return "";
+    return raw.toLowerCase().replace(/_/g, " ").replace(/\b[a-z]/g, (c) => c.toUpperCase())
+      .replace(/\bSs\b/g, "S.S.")
+      .replace(/\bMt\b/g, "Mt.")
+      .replace(/\bPokecenter\b/g, "Pokécenter")
+      .replace(/\bPokemon\b/g, "Pokémon");
+  }
+  function mapLabel(n) {
+    const name = titleMap(MAP_NAMES[Number(n)]);
+    const hex = hexMap(n);
+    return name ? name + " " + hex : hex;
+  }
+  function tileLabel(r) {
+    return mapLabel(r.map) + " (" + r.x + "," + r.y + ")";
+  }
+  function chip(kind, text) {
+    return `<span class="chip ${kind}">${esc(text)}</span>`;
+  }
+  function settingChips(r) {
+    let html = chip("starter", starterOf(r))
+      + chip("how", howLabel(r))
+      + chip("seed", "seed " + r.seed);
+    if (goalOf(r)) html += chip("goal", goalOf(r));
+    if (r.endless) html += chip("loop", r.random_seed ? "endless random" : "endless");
+    return html;
+  }
+  function fmtWhen(unix) {
+    const n = Number(unix);
+    if (!n) return "";
+    const now = snap.now || Math.floor(Date.now() / 1000);
+    const sec = Math.max(0, now - n);
+    let rel = "just now";
+    if (sec >= 86400) rel = Math.floor(sec / 86400) + "d ago";
+    else if (sec >= 3600) rel = Math.floor(sec / 3600) + "h ago";
+    else if (sec >= 60) rel = Math.floor(sec / 60) + "m ago";
+    else if (sec >= 5) rel = sec + "s ago";
+    const d = new Date(n * 1000);
+    const clock = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    return clock + " " + rel;
+  }
+  function runWhen(r) {
+    return fmtWhen(r.ended_at || r.queued_at);
+  }
+  function statusChip(r) {
+    const out = outcomeOf(r);
+    if (r.status === "done") return chip("outcome-" + out, out || "done");
+    return chip(r.status, r.status);
+  }
+  function kv(rows) {
+    const body = rows.filter((row) => row[1] !== "" && row[1] != null)
+      .map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("");
+    return body ? `<dl class="kv">${body}</dl>` : "";
+  }
 
   function newRunId() {
     const n = new Uint32Array(2);
@@ -22,8 +167,11 @@
     return "run-" + n[0].toString(36) + n[1].toString(36);
   }
   function syncPlannerFields() {
-    const scripted = $("spec-form").planner.value === "scripted";
+    const f = $("spec-form");
+    const scripted = f.planner.value === "scripted";
     document.querySelectorAll(".scripted-only").forEach((el) => { el.hidden = !scripted; });
+    document.querySelectorAll(".llm-only").forEach((el) => { el.hidden = scripted; });
+    document.querySelectorAll(".endless-only").forEach((el) => { el.hidden = !f.endless.checked; });
   }
   function fillDefaults() {
     const f = $("spec-form");
@@ -31,15 +179,26 @@
     f.planner.value = "llm";
     f.starter.value = "squirtle";
     f.dest.value = "viridian pokemon center";
+    f.goal.value = "Earn the Boulder Badge.";
     f.seed.value = "0";
     f.fps.value = "60";
     f.max_rounds.value = "32";
     f.max_frames.value = "0";
+    f.endless.checked = false;
+    f.seed_mode.value = "random";
     syncPlannerFields();
   }
 
   function liveRuns() { return (snap.runs || []).filter((r) => r.status !== "done"); }
   function doneRuns() { return (snap.runs || []).filter((r) => r.status === "done"); }
+  function filteredHistory() {
+    return doneRuns().filter((r) => {
+      if (histFilter.outcome && outcomeOf(r) !== histFilter.outcome) return false;
+      if (histFilter.how && howLabel(r) !== histFilter.how) return false;
+      if (histFilter.starter && starterOf(r) !== histFilter.starter) return false;
+      return true;
+    });
+  }
 
   function fillLcd(lcd, run) {
     if (run.status === "queued" || run.status === "leased") {
@@ -168,11 +327,15 @@
         art.dataset.run = r.run_id;
         art.innerHTML = `<div class="lcd"></div>
           <div class="meta">
-            <span class="chip"></span>
+            <div class="chips status-chips"></div>
             <div class="rid"></div>
-            <div class="route"></div>
-            <div class="stats"></div>
-            <div class="pos"></div>
+            <div class="chips setting-chips"></div>
+            <div class="facts">
+              <div class="fact-k">now</div>
+              <div class="pos"></div>
+              <div class="fact-k">progress</div>
+              <div class="stats"></div>
+            </div>
             <button type="button" class="cancel"></button>
             <div class="card-err" hidden></div>
           </div>`;
@@ -180,12 +343,20 @@
       }
       art.classList.toggle("selected", r.run_id === selected);
       fillLcd(art.querySelector(".lcd"), r);
-      art.querySelector(".chip").className = "chip " + r.status;
-      art.querySelector(".chip").textContent = r.status;
+      art.querySelector(".status-chips").innerHTML = statusChip(r);
       art.querySelector(".rid").textContent = r.run_id;
-      art.querySelector(".route").textContent = routeLine(r);
-      art.querySelector(".stats").textContent = "seed " + r.seed + " · frame " + r.frame;
-      art.querySelector(".pos").textContent = hexMap(r.map) + " (" + r.x + "," + r.y + ") · attempt " + r.attempts;
+      art.querySelector(".setting-chips").innerHTML = settingChips(r);
+      const waiting = r.status === "queued" || r.status === "leased";
+      if (waiting && r.planner === "scripted" && r.dest) {
+        art.querySelector(".pos").textContent = "to " + r.dest;
+        art.querySelector(".stats").textContent = "waiting for a worker";
+      } else if (waiting) {
+        art.querySelector(".pos").textContent = "waiting for a worker";
+        art.querySelector(".stats").textContent = "not started";
+      } else {
+        art.querySelector(".pos").textContent = tileLabel(r);
+        art.querySelector(".stats").textContent = "frame " + r.frame + " · attempt " + r.attempts;
+      }
       const cancel = art.querySelector(".cancel");
       cancel.hidden = r.status === "done";
       cancel.dataset.cancel = r.run_id;
@@ -212,51 +383,111 @@
       return;
     }
     el.innerHTML = ws.map((w) => {
-      const st = w.run_id ? `running <b>${esc(w.run_id)}</b>` : "<b>idle</b>";
-      return `<div class="worker">${esc(w.addr)} · ${st} · ${esc(w.seen_ago)} ago</div>`;
+      const busy = Boolean(w.run_id);
+      const job = busy ? `on <b>${esc(w.run_id)}</b>` : "waiting for a lease";
+      return `<div class="worker">
+        ${chip(busy ? "busy" : "idle", busy ? "busy" : "idle")}
+        <span class="addr">${esc(w.addr)}</span>
+        <span class="job">${job}</span>
+        <span class="ago">${esc(w.seen_ago)} ago</span>
+      </div>`;
     }).join("");
   }
 
-  function renderHistory() {
+  function filterBtn(group, value, label) {
+    const on = histFilter[group] === value;
+    return `<button type="button" class="filter" data-filter-group="${group}" data-filter-value="${esc(value)}" aria-pressed="${on}">${esc(label)}</button>`;
+  }
+  function renderHistFilters() {
     const runs = doneRuns();
-    const el = $("history");
+    const outcomes = [...new Set(runs.map(outcomeOf).filter(Boolean))].sort();
+    const hows = [...new Set(runs.map(howLabel))];
+    const starters = [...new Set(runs.map(starterOf))];
+    const el = $("hist-filters");
     if (!runs.length) {
+      el.innerHTML = "";
+      return;
+    }
+    let html = `<div class="filter-group"><span>ended</span>${filterBtn("outcome", "", "all")}`;
+    for (const o of outcomes) html += filterBtn("outcome", o, o);
+    html += `</div><div class="filter-group"><span>how</span>${filterBtn("how", "", "all")}`;
+    for (const h of hows) html += filterBtn("how", h, h);
+    html += `</div><div class="filter-group"><span>starter</span>${filterBtn("starter", "", "all")}`;
+    for (const s of starters) html += filterBtn("starter", s, s);
+    html += `</div>`;
+    el.innerHTML = html;
+  }
+
+  function renderHistory() {
+    renderHistFilters();
+    const runs = filteredHistory();
+    const el = $("history");
+    if (!doneRuns().length) {
       el.innerHTML = `<p class="empty">Nothing finished yet</p>`;
+      return;
+    }
+    if (!runs.length) {
+      el.innerHTML = `<p class="empty">No runs match these filters</p>`;
       return;
     }
     el.innerHTML = runs.map((r) => {
       const sel = r.run_id === selected ? " selected" : "";
+      const where = r.planner === "scripted" && r.dest
+        ? r.dest : tileLabel(r);
+      const out = r.detail || r.reason || "done";
       return `<button type="button" class="hist${sel}" data-run="${esc(r.run_id)}">
-        <span>${esc(r.run_id)}</span>
-        <span>${esc(routeLine(r))}</span>
-        <span>attempt ${esc(r.attempts)}</span>
-        <span class="reason">${esc(r.reason || "")}</span>
+        <span class="hist-when">${esc(runWhen(r) || "—")}</span>
+        <span class="hist-id">${esc(r.run_id)}</span>
+        <span class="chips">${settingChips(r)}</span>
+        <span class="hist-where">${esc(where)}</span>
+        <span class="hist-out">${statusChip(r)}<span class="hist-outcome">${esc(out)}</span></span>
       </button>`;
     }).join("");
   }
 
   function renderDetail() {
-    const pane = $("detail");
-    const stage = $("stage");
+    const pane = $("watch");
     const run = (snap.runs || []).find((r) => r.run_id === selected);
     if (!run) {
       pane.hidden = true;
-      stage.classList.remove("has-detail");
       return;
     }
     pane.hidden = false;
-    stage.classList.add("has-detail");
     $("detail-title").textContent = run.run_id;
+    $("detail-chips").innerHTML = statusChip(run) + settingChips(run);
     fillLcd($("detail-lcd"), run);
-    const body = run.status === "done"
-      ? `<p>${esc(run.planner || "")} · seed ${esc(run.seed)}</p>
-         <p>${esc(run.reason || "done")}${run.detail ? " — " + esc(run.detail) : ""}</p>
-         <pre class="trace">${esc(run.trace || "")}</pre>`
-      : `<p>${esc(run.planner || "")} · seed ${esc(run.seed)}</p>
-         <p>${esc(hexMap(run.map))} (${esc(run.x)},${esc(run.y)}) · frame ${esc(run.frame)}</p>
-         <p>${esc(run.stop_so_far || "")}</p>
-         <pre class="trace">${esc(run.trace || "")}</pre>`;
-    $("detail-body").innerHTML = body;
+    const settings = kv([
+      ["how", howText(run)],
+      ["starter", starterOf(run)],
+      ["goal", goalOf(run)],
+      ["walk to", run.planner === "scripted" ? (run.dest || "—") : ""],
+      ["seed", String(run.seed)],
+      ["keep going", run.endless ? (run.random_seed ? "yes, random seed" : "yes, same seed") : ""],
+      ["queued", fmtWhen(run.queued_at)],
+      ["ended", fmtWhen(run.ended_at)],
+      ["fps", run.fps ? String(run.fps) : ""],
+      ["max rounds", run.max_rounds ? String(run.max_rounds) : ""],
+      ["max frames", run.max_frames ? String(run.max_frames) : ""]
+    ]);
+    const stateRows = run.status === "done"
+      ? [
+          ["ended", run.reason || "done"],
+          ["detail", run.detail || ""],
+          ["last map", tileLabel(run)],
+          ["frame", String(run.frame)],
+          ["attempts", String(run.attempts)]
+        ]
+      : [
+          ["status", run.status],
+          ["map", tileLabel(run)],
+          ["frame", String(run.frame)],
+          ["attempt", String(run.attempts)],
+          ["so far", run.stop_so_far || ""]
+        ];
+    $("detail-body").innerHTML =
+      `<div class="block"><h3>Settings</h3>${settings}</div>`
+      + `<div class="block"><h3>${run.status === "done" ? "Outcome" : "Now"}</h3>${kv(stateRows)}</div>`
+      + (run.trace ? `<div class="block"><h3>Trace</h3><pre class="trace">${esc(run.trace)}</pre></div>` : "");
   }
 
   function renderCounts() {
@@ -298,6 +529,11 @@
     if (!q.hidden) fillDefaults();
   });
   $("spec-form").planner.addEventListener("change", syncPlannerFields);
+  $("spec-form").endless.addEventListener("change", syncPlannerFields);
+  $("detail-close").addEventListener("click", () => {
+    selected = "";
+    render();
+  });
 
   $("spec-form").addEventListener("submit", async (ev) => {
     ev.preventDefault();
@@ -310,10 +546,13 @@
       planner: planner,
       starter: f.starter.value,
       dest: planner === "scripted" ? f.dest.value.trim() : "",
+      goal: planner === "llm" ? f.goal.value.trim() : "",
       seed: Number(f.seed.value || 0),
       fps: Number(f.fps.value || 0),
       max_rounds: Number(f.max_rounds.value || 0),
-      max_frames: Number(f.max_frames.value || 0)
+      max_frames: Number(f.max_frames.value || 0),
+      endless: f.endless.checked,
+      random_seed: f.endless.checked && f.seed_mode.value === "random"
     };
     try {
       const res = await fetch("/v1/specs", {
@@ -350,6 +589,14 @@
   });
 
   document.body.addEventListener("click", async (ev) => {
+    const filt = ev.target.closest("[data-filter-group]");
+    if (filt) {
+      ev.preventDefault();
+      const group = filt.getAttribute("data-filter-group");
+      histFilter[group] = filt.getAttribute("data-filter-value") || "";
+      renderHistory();
+      return;
+    }
     const cancel = ev.target.closest("[data-cancel]");
     if (cancel) {
       ev.preventDefault();

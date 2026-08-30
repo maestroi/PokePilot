@@ -217,7 +217,16 @@ func Observe(m *emu.Emu, romData []byte) Observation {
 	if grass, err := skill.HasGrass(romData, obs.Map); err == nil {
 		obs.HasGrass = grass
 	}
-	obs.MapObjects = MapObjects(romData, obs.Map)
+	objects := MapObjects(romData, obs.Map)
+	hidden := state.HiddenObjectIDs(&mem)
+	obs.MapObjects = make([]MapObject, 0, len(objects))
+	for i, object := range objects {
+		// Map object constants are 1-based indexes in header order, which is
+		// also what wToggleableObjectList stores for the current map.
+		if !hidden[uint8(i+1)] {
+			obs.MapObjects = append(obs.MapObjects, object)
+		}
+	}
 	return obs
 }
 

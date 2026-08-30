@@ -73,10 +73,7 @@ func Execute(m *emu.Emu, romData []byte, o Objective) error {
 		}
 		return nil
 	case KindTalk:
-		if err := skill.Face(m, o.X, o.Y); err != nil {
-			return fmt.Errorf("agent: %s: %w", o, err)
-		}
-		if _, err := skill.Talk(m); err != nil {
+		if _, err := skill.TalkAt(m, romData, o.X, o.Y); err != nil {
 			return fmt.Errorf("agent: %s: %w", o, err)
 		}
 		return nil
@@ -102,10 +99,15 @@ func Execute(m *emu.Emu, romData []byte, o Objective) error {
 		if err != nil {
 			return fmt.Errorf("agent: %s: %v (battles=%d, reached=%v, blackedOut=%v)", o, err, res.Battles, res.Reached, res.BlackedOut)
 		}
-		if res.BlackedOut {
-			fmt.Printf("  blacked out training, resumed from a Pokemon Center\n")
+		if res.Reached {
+			return nil
 		}
-		return nil
+		if res.BlackedOut {
+			return fmt.Errorf("agent: %s: %w before reaching level %d (ended level %d after %d battles)",
+				o, skill.ErrBlackedOut, o.Level, res.EndLevel, res.Battles)
+		}
+		return fmt.Errorf("agent: %s: target level %d not reached (ended level %d after %d battles)",
+			o, o.Level, res.EndLevel, res.Battles)
 	case KindHeal:
 		// Heal talks to the nurse on the current map; a center elsewhere
 		// is a separate KindGoTo objective, and the planner sequences them.

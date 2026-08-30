@@ -17,12 +17,17 @@ type dashboardJSON struct {
 		Status    string `json:"status"`
 		Planner   string `json:"planner"`
 		Starter   string `json:"starter"`
-		Dest      string `json:"dest"`
-		Seed      int64  `json:"seed"`
-		FPS       int    `json:"fps"`
-		MaxRounds int    `json:"max_rounds"`
-		MaxFrames int    `json:"max_frames"`
-		Attempts  int    `json:"attempts"`
+		Dest       string `json:"dest"`
+		Goal       string `json:"goal"`
+		Seed       int64  `json:"seed"`
+		FPS        int    `json:"fps"`
+		MaxRounds  int    `json:"max_rounds"`
+		MaxFrames  int    `json:"max_frames"`
+		Endless    bool   `json:"endless"`
+		RandomSeed bool   `json:"random_seed"`
+		QueuedAt   int64  `json:"queued_at"`
+		EndedAt    int64  `json:"ended_at"`
+		Attempts   int    `json:"attempts"`
 		Frame     uint64 `json:"frame"`
 		Map       uint8  `json:"map"`
 		X         uint8  `json:"x"`
@@ -71,7 +76,7 @@ func TestDashboardJSON(t *testing.T) {
 
 	specBody, _ := json.Marshal(farm.Spec{
 		RunID: "dash-1", Seed: 42, Planner: "scripted", Starter: "charmander",
-		Dest: "pallet", FPS: 60, MaxRounds: 3, MaxFrames: 1000,
+		Dest: "pallet", Goal: "Earn the Boulder Badge.", FPS: 60, MaxRounds: 3, MaxFrames: 1000,
 	})
 	req := httptest.NewRequest(http.MethodPost, "/v1/specs", bytes.NewReader(specBody))
 	res := httptest.NewRecorder()
@@ -85,8 +90,14 @@ func TestDashboardJSON(t *testing.T) {
 		t.Fatalf("queued runs = %d, want 1", len(got.Runs))
 	}
 	r := got.Runs[0]
-	if r.RunID != "dash-1" || r.Status != "queued" || r.Planner != "scripted" || r.Starter != "charmander" || r.Dest != "pallet" || r.Seed != 42 || r.FPS != 60 || r.MaxRounds != 3 || r.MaxFrames != 1000 {
+	if r.RunID != "dash-1" || r.Status != "queued" || r.Planner != "scripted" || r.Starter != "charmander" || r.Dest != "pallet" || r.Goal != "Earn the Boulder Badge." || r.Seed != 42 || r.FPS != 60 || r.MaxRounds != 3 || r.MaxFrames != 1000 {
 		t.Fatalf("queued run = %+v", r)
+	}
+	if r.QueuedAt == 0 {
+		t.Fatal("queued run has no queued_at")
+	}
+	if r.EndedAt != 0 {
+		t.Fatalf("queued run ended_at = %d, want 0", r.EndedAt)
 	}
 
 	req = httptest.NewRequest(http.MethodPost, "/v1/lease", nil)
@@ -127,6 +138,9 @@ func TestDashboardJSON(t *testing.T) {
 	r = got.Runs[0]
 	if r.Status != "done" || r.Reason != "done" || r.Detail != "arrived" {
 		t.Fatalf("finished run = %+v", r)
+	}
+	if r.EndedAt == 0 {
+		t.Fatal("finished run has no ended_at")
 	}
 	if r.Trace != "stepped north" {
 		t.Errorf("finished run dropped last trace: %+v", r)

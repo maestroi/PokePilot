@@ -174,7 +174,7 @@ func runFarm(m *emu.Emu, client *farm.Client, bootState []byte, watchPort int) {
 			continue
 		}
 
-		runOne(m, client, *spec, planner, starter, dest, fps, maxRounds, maxFrames, bootState, tracer, snap, &mem, addrs)
+		runOne(m, client, *spec, planner, starter, dest, spec.Goal, fps, maxRounds, maxFrames, bootState, tracer, snap, &mem, addrs)
 	}
 }
 
@@ -226,7 +226,7 @@ func validateSpec(planner, starter, dest string) error {
 // runOne runs one leased spec end-to-end and always finishes it. The
 // heartbeat starts before gameplay and is stopped and joined before the
 // dump, so no heartbeat arrives after Finish.
-func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, dest string, fps, maxRounds, maxFrames int, bootState []byte, tracer *dialogueTracer, snap *heartbeatSnap, mem *state.Mem, addrs []string) {
+func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, dest, goal string, fps, maxRounds, maxFrames int, bootState []byte, tracer *dialogueTracer, snap *heartbeatSnap, mem *state.Mem, addrs []string) {
 	if err := m.LoadState(bootState); err != nil {
 		log.Printf("farm: %s: load state: %v", spec.RunID, err)
 		finishRun(m, client, spec, "error", fmt.Sprintf("load state: %v", err))
@@ -262,7 +262,7 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 	case "scripted":
 		reason, detail = runFarmScripted(m, starter, dest)
 	case "llm":
-		reason, detail = runFarmLLM(m, starter, maxRounds, maxFrames, cancel)
+		reason, detail = runFarmLLM(m, starter, goal, maxRounds, maxFrames, cancel)
 	}
 
 	// Stop and join the heartbeat before TraceTail/SaveState/Finish.
@@ -351,7 +351,7 @@ func runFarmScripted(m *emu.Emu, starter, dest string) (string, string) {
 // runFarmLLM mirrors runLLM's diagnostics and objective list; the only
 // differences are that the budget comes from the spec and cancel is the
 // wall's cooperative stop.
-func runFarmLLM(m *emu.Emu, starter string, maxRounds, maxFrames int, cancel <-chan struct{}) (string, string) {
+func runFarmLLM(m *emu.Emu, starter, goal string, maxRounds, maxFrames int, cancel <-chan struct{}) (string, string) {
 	// The starter is the farm's controlled variable, so the harness TAKES it
 	// before handing control to the model — the same reason badgerun does
 	// (a model that knows Pokemon always picks Squirtle otherwise). From
@@ -366,6 +366,7 @@ func runFarmLLM(m *emu.Emu, starter string, maxRounds, maxFrames int, cancel <-c
 
 	logw := &agentTraceLog{w: os.Stdout, note: m.TraceNote}
 	planner := agent.NewLLMPlanner()
+	planner.Goal = goal
 	planner.Log = logw // one line per model call, above its round line
 	res := agent.Run(m, m.ROM(), planner, agent.Budget{
 		MaxRounds: maxRounds,

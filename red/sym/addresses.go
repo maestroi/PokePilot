@@ -50,8 +50,13 @@ const (
 	BagItems       uint16 = 0xD31E
 	PlayerMoney    uint16 = 0xD347 // 3 bytes, binary-coded decimal
 	ObtainedBadges uint16 = 0xD356
-	EventFlags     uint16 = 0xD747
-	StatusFlags4   uint16 = 0xD72E // wStatusFlags4
+	// ToggleableObjectFlags is the 256-bit global hidden-object array;
+	// ToggleableObjectList maps the current map's 1-based object IDs to
+	// indexes in that array and is terminated by 0xff.
+	ToggleableObjectFlags uint16 = 0xD5A6
+	ToggleableObjectList  uint16 = 0xD5CE
+	EventFlags            uint16 = 0xD747
+	StatusFlags4          uint16 = 0xD72E // wStatusFlags4
 )
 
 // Battle
@@ -93,9 +98,9 @@ const (
 	// ListScrollOffset is wListScrollOffset, the list menu's scroll offset:
 	// the selected bag entry is ListScrollOffset + CurrentMenuItem.
 	ListScrollOffset uint16 = 0xCC36
-	MenuWatchedKeys uint16 = 0xCC29
-	ListMenuID      uint16 = 0xCF94
-	TextBoxID       uint16 = 0xD125
+	MenuWatchedKeys  uint16 = 0xCC29
+	ListMenuID       uint16 = 0xCF94
+	TextBoxID        uint16 = 0xD125
 	// TileMap is wTileMap, the WRAM shadow of the background tilemap
 	// (pokered.sym: 00:c3a0). 20x18 tiles; while a text box is up its rows
 	// hold font tile IDs, which are the same values charmap.asm uses.

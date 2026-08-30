@@ -43,9 +43,8 @@ func TestOfferTable(t *testing.T) {
 				"take the squirtle starter",
 				"take the bulbasaur starter",
 				"go to route 1", // the door of where you stand
-				"deliver oak's parcel",
 			},
-			mustNot: []string{"pewter", "heal", "catch", "train", "gym"},
+			mustNot: []string{"pewter", "heal", "catch", "train", "gym", "parcel"},
 		},
 		{
 			name: "on route 1 with a party, balls and grass: catch and train join, starters leave",
@@ -53,6 +52,7 @@ func TestOfferTable(t *testing.T) {
 				Map: 0x0c, MapName: "ROUTE_1", X: 5, Y: 14, PartyCount: 1,
 				Bag:      []agent.Item{{Name: "pokeball", Quantity: 5}},
 				HasGrass: true,
+				Events:   []string{"BattledRivalInOaksLab"},
 			},
 			known: func() *agent.Knowledge {
 				k := agent.NewKnowledge(adj)
@@ -71,7 +71,10 @@ func TestOfferTable(t *testing.T) {
 		},
 		{
 			name: "inside a center: heal joins; no balls, so no catch",
-			obs:  agent.Observation{Map: 0x29, MapName: "VIRIDIAN_POKECENTER", X: 4, Y: 5, PartyCount: 1},
+			obs: agent.Observation{
+				Map: 0x29, MapName: "VIRIDIAN_POKECENTER", X: 4, Y: 5, PartyCount: 1,
+				Events: []string{"BattledRivalInOaksLab"},
+			},
 			known: func() *agent.Knowledge {
 				k := agent.NewKnowledge(adj)
 				for _, m := range []uint8{0x00, 0x0c, 0x01, 0x29} {
@@ -93,7 +96,8 @@ func TestOfferTable(t *testing.T) {
 			name: "at the gym underlevelled: the gym is STILL offered — Offer never filters on wisdom",
 			obs: agent.Observation{
 				Map: 0x36, MapName: "PEWTER_GYM", X: 5, Y: 3, PartyCount: 1,
-				Party: []agent.PartyMon{{Species: 7, Level: 5, HP: 1, MaxHP: 20}},
+				Party:  []agent.PartyMon{{Species: 7, Level: 5, HP: 1, MaxHP: 20}},
+				Events: []string{"BattledRivalInOaksLab"},
 			},
 			known: func() *agent.Knowledge {
 				k := agent.NewKnowledge(adj)
@@ -108,7 +112,10 @@ func TestOfferTable(t *testing.T) {
 		},
 		{
 			name: "unvisited and unmentioned places stay off the menu",
-			obs:  agent.Observation{Map: 0x00, MapName: "PALLET_TOWN", X: 4, Y: 7, PartyCount: 1},
+			obs: agent.Observation{
+				Map: 0x00, MapName: "PALLET_TOWN", X: 4, Y: 7, PartyCount: 1,
+				Events: []string{"BattledRivalInOaksLab"},
+			},
 			known: func() *agent.Knowledge {
 				k := agent.NewKnowledge(adj)
 				k.SawMap(0x00)
@@ -123,7 +130,10 @@ func TestOfferTable(t *testing.T) {
 		},
 		{
 			name: "a place the game named in dialogue joins the menu",
-			obs:  agent.Observation{Map: 0x00, MapName: "PALLET_TOWN", X: 4, Y: 7, PartyCount: 1},
+			obs: agent.Observation{
+				Map: 0x00, MapName: "PALLET_TOWN", X: 4, Y: 7, PartyCount: 1,
+				Events: []string{"BattledRivalInOaksLab"},
+			},
 			known: func() *agent.Knowledge {
 				k := agent.NewKnowledge(adj)
 				k.SawMap(0x00)
@@ -139,7 +149,10 @@ func TestOfferTable(t *testing.T) {
 		},
 		{
 			name: "inside the mart: buy joins",
-			obs:  agent.Observation{Map: 0x2a, MapName: "VIRIDIAN_MART", X: 3, Y: 6, PartyCount: 1},
+			obs: agent.Observation{
+				Map: 0x2a, MapName: "VIRIDIAN_MART", X: 3, Y: 6, PartyCount: 1,
+				Events: []string{"BattledRivalInOaksLab"},
+			},
 			known: func() *agent.Knowledge {
 				k := agent.NewKnowledge(adj)
 				k.SawMap(0x2a)
@@ -153,7 +166,10 @@ func TestOfferTable(t *testing.T) {
 		},
 		{
 			name: "a completed one-shot stays off; repeatable verbs do not",
-			obs:  agent.Observation{Map: 0x29, MapName: "VIRIDIAN_POKECENTER", X: 4, Y: 5, PartyCount: 1},
+			obs: agent.Observation{
+				Map: 0x29, MapName: "VIRIDIAN_POKECENTER", X: 4, Y: 5, PartyCount: 1,
+				Events: []string{"BattledRivalInOaksLab"},
+			},
 			known: func() *agent.Knowledge {
 				k := agent.NewKnowledge(adj)
 				k.SawMap(0x29)
@@ -184,6 +200,33 @@ func TestOfferTable(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestOfferWithholdsParcelUntilStarterStoryComplete catches the exact live
+// failure where the model delivered Oak's parcel on round one, before taking a
+// starter. PartyCount alone is not the story postcondition: the rival battle in
+// Oak's lab must have completed before the parcel skill's preconditions hold.
+func TestOfferWithholdsParcelUntilStarterStoryComplete(t *testing.T) {
+	known := agent.NewKnowledge(nil)
+	before := agent.Observation{Map: 0x00, MapName: "PALLET_TOWN", X: 5, Y: 6, PartyCount: 1}
+	after := before
+	after.Events = []string{"BattledRivalInOaksLab"}
+
+	hasParcel := func(obs agent.Observation) bool {
+		for _, objective := range agent.Offer(obs, known) {
+			if objective.Kind == agent.KindErrand {
+				return true
+			}
+		}
+		return false
+	}
+
+	if hasParcel(before) {
+		t.Fatal("parcel offered before the starter story and rival battle completed")
+	}
+	if !hasParcel(after) {
+		t.Fatal("parcel not offered after the starter story and rival battle completed")
 	}
 }
 
@@ -268,6 +311,7 @@ func TestKnowledgeDialogueMentions(t *testing.T) {
 func TestOfferMapObjects(t *testing.T) {
 	obs := agent.Observation{
 		Map: 0x99, X: 5, Y: 6, PartyCount: 1, // a map no place names
+		Events: []string{"BattledRivalInOaksLab"},
 		MapObjects: []agent.MapObject{
 			{X: 7, Y: 10, Kind: "person"},
 			{X: 2, Y: 4, Kind: "trainer"},
@@ -293,5 +337,59 @@ func TestOfferMapObjects(t *testing.T) {
 		if strings.Contains(s, "(2,4)") || strings.Contains(s, "(9,2)") {
 			t.Errorf("a trainer is on the offered list: %q; no fight verb exists behind it", s)
 		}
+	}
+}
+
+func TestOfferDoesNotRepeatCompletedTalk(t *testing.T) {
+	obs := agent.Observation{
+		Map: 0x28,
+		MapObjects: []agent.MapObject{
+			{X: 8, Y: 3, Kind: "person"},
+			{X: 5, Y: 2, Kind: "person"},
+		},
+	}
+	known := agent.NewKnowledge(nil)
+	known.TalkedTo(0x28, 8, 3)
+
+	got := agent.Offer(obs, known)
+	for _, objective := range got {
+		if objective == (agent.Objective{Kind: agent.KindTalk, X: 8, Y: 3}) {
+			t.Fatalf("Offer repeated completed objective %q", objective)
+		}
+	}
+	want := agent.Objective{Kind: agent.KindTalk, X: 5, Y: 2}
+	found := false
+	for _, objective := range got {
+		if objective == want {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("Offer omitted untried objective %q: %v", want, got)
+	}
+}
+
+func TestOfferWithholdsSatisfiedTrainingTarget(t *testing.T) {
+	known := agent.NewKnowledge(nil)
+	below := agent.Observation{
+		Map: 0x0c, HasGrass: true, PartyCount: 1,
+		Party: []agent.PartyMon{{Level: 11}},
+	}
+	atTarget := below
+	atTarget.Party = []agent.PartyMon{{Level: 12}}
+
+	hasTrain := func(obs agent.Observation) bool {
+		for _, objective := range agent.Offer(obs, known) {
+			if objective.Kind == agent.KindTrain {
+				return true
+			}
+		}
+		return false
+	}
+	if !hasTrain(below) {
+		t.Fatal("training not offered below the target level")
+	}
+	if hasTrain(atTarget) {
+		t.Fatal("training still offered after the lead reached the target level")
 	}
 }
