@@ -61,9 +61,12 @@ type Tile struct {
 	Question  string
 	Decision  string
 	StopSoFar string
-	Reason    string
-	Detail    string
-	Finished  bool
+	// Stats is the llm planner's tally, last pushed by a heartbeat. Kept on
+	// finish (the final tally explains the outcome), nilled on retry.
+	Stats    *farm.LLMStats
+	Reason   string
+	Detail   string
+	Finished bool
 	// workerAddrs is where this run's runner watch server is reachable,
 	// last reported by its heartbeats. Unexported: it is proxy input, not
 	// grid data.
@@ -84,31 +87,32 @@ type Tile struct {
 // grid template never reads live tiles after unlock. Rendering []*Tile
 // after unlock is what raced with heartbeat/cancel/finish.
 type tileRow struct {
-	RunID      string `json:"run_id"`
-	Status     string `json:"status"`
-	Planner    string `json:"planner"`
-	Starter    string `json:"starter"`
-	Dest       string `json:"dest"`
-	Goal       string `json:"goal,omitempty"`
-	Seed       int64  `json:"seed"`
-	FPS        int    `json:"fps"`
-	MaxRounds  int    `json:"max_rounds"`
-	MaxFrames  int    `json:"max_frames"`
-	Endless    bool   `json:"endless,omitempty"`
-	RandomSeed bool   `json:"random_seed,omitempty"`
-	QueuedAt   int64  `json:"queued_at,omitempty"`
-	EndedAt    int64  `json:"ended_at,omitempty"`
-	Frame      uint64 `json:"frame"`
-	Map        uint8  `json:"map"`
-	X          uint8  `json:"x"`
-	Y          uint8  `json:"y"`
-	Trace      string `json:"trace"`
-	Question   string `json:"question,omitempty"`
-	Decision   string `json:"decision,omitempty"`
-	StopSoFar  string `json:"stop_so_far"`
-	Attempts   int    `json:"attempts"`
-	Reason     string `json:"reason"`
-	Detail     string `json:"detail"`
+	RunID      string         `json:"run_id"`
+	Status     string         `json:"status"`
+	Planner    string         `json:"planner"`
+	Starter    string         `json:"starter"`
+	Dest       string         `json:"dest"`
+	Goal       string         `json:"goal,omitempty"`
+	Seed       int64          `json:"seed"`
+	FPS        int            `json:"fps"`
+	MaxRounds  int            `json:"max_rounds"`
+	MaxFrames  int            `json:"max_frames"`
+	Endless    bool           `json:"endless,omitempty"`
+	RandomSeed bool           `json:"random_seed,omitempty"`
+	QueuedAt   int64          `json:"queued_at,omitempty"`
+	EndedAt    int64          `json:"ended_at,omitempty"`
+	Frame      uint64         `json:"frame"`
+	Map        uint8          `json:"map"`
+	X          uint8          `json:"x"`
+	Y          uint8          `json:"y"`
+	Trace      string         `json:"trace"`
+	Question   string         `json:"question,omitempty"`
+	Decision   string         `json:"decision,omitempty"`
+	StopSoFar  string         `json:"stop_so_far"`
+	Stats      *farm.LLMStats `json:"stats,omitempty"`
+	Attempts   int            `json:"attempts"`
+	Reason     string         `json:"reason"`
+	Detail     string         `json:"detail"`
 }
 
 // Wall owns the spec queue, the tile map, cancel flags, the optional dump
@@ -153,33 +157,34 @@ func (w *Wall) SetStatePath(path string) {
 // a restarted wall can resume proxying frames without waiting for the next
 // heartbeat; lastUpdate is not (see Tile.lastUpdate).
 type persistedTile struct {
-	RunID       string   `json:"run_id"`
-	Status      string   `json:"status"`
-	Planner     string   `json:"planner,omitempty"`
-	Starter     string   `json:"starter,omitempty"`
-	Dest        string   `json:"dest,omitempty"`
-	Goal        string   `json:"goal,omitempty"`
-	Seed        int64    `json:"seed"`
-	FPS         int      `json:"fps"`
-	MaxRounds   int      `json:"max_rounds"`
-	MaxFrames   int      `json:"max_frames"`
-	Endless     bool     `json:"endless,omitempty"`
-	RandomSeed  bool     `json:"random_seed,omitempty"`
-	QueuedAt    int64    `json:"queued_at,omitempty"`
-	EndedAt     int64    `json:"ended_at,omitempty"`
-	Attempts    int      `json:"attempts"`
-	Frame       uint64   `json:"frame"`
-	Map         uint8    `json:"map"`
-	X           uint8    `json:"x"`
-	Y           uint8    `json:"y"`
-	Trace       string   `json:"trace,omitempty"`
-	Question    string   `json:"question,omitempty"`
-	Decision    string   `json:"decision,omitempty"`
-	StopSoFar   string   `json:"stop_so_far,omitempty"`
-	Reason      string   `json:"reason,omitempty"`
-	Detail      string   `json:"detail,omitempty"`
-	Finished    bool     `json:"finished"`
-	WorkerAddrs []string `json:"worker_addrs,omitempty"`
+	RunID       string         `json:"run_id"`
+	Status      string         `json:"status"`
+	Planner     string         `json:"planner,omitempty"`
+	Starter     string         `json:"starter,omitempty"`
+	Dest        string         `json:"dest,omitempty"`
+	Goal        string         `json:"goal,omitempty"`
+	Seed        int64          `json:"seed"`
+	FPS         int            `json:"fps"`
+	MaxRounds   int            `json:"max_rounds"`
+	MaxFrames   int            `json:"max_frames"`
+	Endless     bool           `json:"endless,omitempty"`
+	RandomSeed  bool           `json:"random_seed,omitempty"`
+	QueuedAt    int64          `json:"queued_at,omitempty"`
+	EndedAt     int64          `json:"ended_at,omitempty"`
+	Attempts    int            `json:"attempts"`
+	Frame       uint64         `json:"frame"`
+	Map         uint8          `json:"map"`
+	X           uint8          `json:"x"`
+	Y           uint8          `json:"y"`
+	Trace       string         `json:"trace,omitempty"`
+	Question    string         `json:"question,omitempty"`
+	Decision    string         `json:"decision,omitempty"`
+	StopSoFar   string         `json:"stop_so_far,omitempty"`
+	Stats       *farm.LLMStats `json:"stats,omitempty"`
+	Reason      string         `json:"reason,omitempty"`
+	Detail      string         `json:"detail,omitempty"`
+	Finished    bool           `json:"finished"`
+	WorkerAddrs []string       `json:"worker_addrs,omitempty"`
 }
 
 // persistedState is the wall's whole on-disk memory: run order, tiles, and
@@ -222,6 +227,7 @@ func (w *Wall) marshalStateLocked() ([]byte, error) {
 			Question:    t.Question,
 			Decision:    t.Decision,
 			StopSoFar:   t.StopSoFar,
+			Stats:       t.Stats,
 			Reason:      t.Reason,
 			Detail:      t.Detail,
 			Finished:    t.Finished,
@@ -301,6 +307,7 @@ func (w *Wall) loadState() {
 			Question:    pt.Question,
 			Decision:    pt.Decision,
 			StopSoFar:   pt.StopSoFar,
+			Stats:       pt.Stats,
 			Reason:      pt.Reason,
 			Detail:      pt.Detail,
 			Finished:    pt.Finished,
@@ -476,6 +483,7 @@ func (w *Wall) handleHeartbeat(res http.ResponseWriter, req *http.Request) {
 	t.Question = hb.Question
 	t.Decision = hb.Decision
 	t.StopSoFar = hb.StopSoFar
+	t.Stats = hb.Stats
 	t.workerAddrs = hb.WorkerAddrs
 	t.lastUpdate = time.Now()
 	w.upsertWorkerLocked(hb.WorkerAddrs, id, hb.Version, t.lastUpdate)
@@ -826,6 +834,7 @@ func (w *Wall) snapshot() dashboardView {
 			Question:   t.Question,
 			Decision:   t.Decision,
 			StopSoFar:  t.StopSoFar,
+			Stats:      t.Stats,
 			Reason:     t.Reason,
 			Detail:     t.Detail,
 		})
@@ -1081,6 +1090,7 @@ func (w *Wall) settleRun(t *Tile, reason, detail string, now time.Time) int {
 	t.Question = ""
 	t.Decision = ""
 	t.StopSoFar = ""
+	t.Stats = nil
 	t.Reason = ""
 	t.Detail = fmt.Sprintf("attempt %d failed: %s", completed, detail)
 	t.workerAddrs = nil
