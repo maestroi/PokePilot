@@ -356,9 +356,12 @@
     color: var(--lcd);
   }
   #history { display: grid; }
+  /* minmax(0,1fr): a plain 1fr keeps the content's min-content as its floor,
+     and the nowrap outcome span (28ch) plus the chip column then push the row
+     past the viewport on phones */
   .hist-row {
     display: grid;
-    grid-template-columns: 1fr auto;
+    grid-template-columns: minmax(0, 1fr) auto;
     align-items: stretch;
     border-bottom: 1px solid var(--line);
   }
@@ -392,10 +395,11 @@
   .hist-outcome { color: var(--bezel); font-size: 11px; max-width: 28ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .card-err { color: var(--red); margin-top: 6px; }
   @media (max-width: 800px) {
-    .hist {
-      grid-template-columns: 1fr auto;
-    }
-    .hist-when, .hist-where { grid-column: 1 / -1; }
+    /* one column: an auto chip column next to a 1fr track is greedy (it takes
+       its full max-content and squeezes the other track to zero), so stack
+       everything and let the chips wrap at the available width */
+    .hist { grid-template-columns: minmax(0, 1fr); gap: 4px 14px; }
+    .hist-out { align-items: flex-start; text-align: left; }
   }
   /* touch devices at any size: real tap areas, not desktop crumbs */
   @media (pointer: coarse) {
