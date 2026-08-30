@@ -70,6 +70,25 @@ func TestOfferTable(t *testing.T) {
 			mustNot: []string{"starter", "heal"},
 		},
 		{
+			name: "balls without grass: catch stays off — the hunt needs tall grass",
+			obs: agent.Observation{
+				Map: 0x00, MapName: "PALLET_TOWN", X: 4, Y: 7, PartyCount: 1,
+				Bag:    []agent.Item{{Name: "pokeball", Quantity: 5}},
+				Events: []string{"BattledRivalInOaksLab"},
+			},
+			known: func() *agent.Knowledge {
+				k := agent.NewKnowledge(adj)
+				k.SawMap(0x00)
+				return k
+			},
+			want: []string{
+				"go to pallet town",
+				"go to route 1",
+				"deliver oak's parcel",
+			},
+			mustNot: []string{"catch", "train"},
+		},
+		{
 			name: "inside a center: heal joins; no balls, so no catch",
 			obs: agent.Observation{
 				Map: 0x29, MapName: "VIRIDIAN_POKECENTER", X: 4, Y: 5, PartyCount: 1,

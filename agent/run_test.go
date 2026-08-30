@@ -12,6 +12,8 @@ import (
 	"github.com/maestroi/pokepilot/agent"
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
+	"github.com/maestroi/pokepilot/skill"
+	"github.com/maestroi/pokepilot/skill/fixture"
 )
 
 // testBudget is a generous budget: the assertions under test are about the
@@ -299,6 +301,71 @@ func TestRunConsecutiveFailureBudget(t *testing.T) {
 	}
 	if len(res.Final.History) != 3 {
 		t.Fatalf("Final.History = %+v, want all three failed rounds", res.Final.History)
+	}
+}
+
+// TestRunBlackoutDoesNotStopTheRun: a blackout is the game answering, not
+// the planner failing — the party is healed and standing in a town, the same
+// recoverable state a lost gym challenge leaves. It must be recorded in
+// history (the objective was not reached) but it must NOT count against the
+// consecutive-failure budget: under the old accounting this exact sequence
+// stopped with StopFailed on the third round, which is what killed the live
+// runs — a lone starter blackouts in about three training battles, and the
+// model retried the doomed train until the budget ran out.
+func TestRunBlackoutDoesNotStopTheRun(t *testing.T) {
+	e := fixture.Load(t, "post_starter")
+
+	// Setup: get the player onto Route 1, where Train can find grass.
+	// fixture.Travel retries through blackouts, so the setup is bounded.
+	dest, ok := skill.Place("route 1")
+	if !ok {
+		t.Fatal("Place(route 1) did not resolve")
+	}
+	if _, err := fixture.Travel(e, dest, skill.StatAwareMove(e.ROM()), 20); err != nil {
+		t.Fatalf("setup: travel to route 1: %v", err)
+	}
+
+	p := &capturePlanner{objs: []agent.Objective{
+		// A lone L6 lead cannot reach level 100 in 20 battles; the session
+		// ends when cumulative damage blackouts the party, which is certain:
+		// finite HP against a wild that keeps hitting.
+		{Kind: agent.KindTrain, Level: 100},
+		// The blackout lands the player in Pallet Town, which has no center:
+		// a deterministic failure that DOES count against the budget.
+		{Kind: agent.KindHeal},
+		// A second different failure; two counted failures are under the
+		// default budget of three, so the run must survive to the planner's
+		// end instead of stopping with StopFailed.
+		{Kind: agent.KindGoTo, Place: "atlantis"},
+	}}
+	res := agent.Run(e, e.ROM(), p, testBudget())
+
+	if res.Stop != agent.StopDone {
+		t.Fatalf("Stop = %d after %d rounds, want StopDone (the blackout is not a failure-budget event)", res.Stop, res.Rounds)
+	}
+	if res.Rounds != 3 {
+		t.Fatalf("Rounds = %d, want 3 (the three failed rounds; the planner's end is not a round)", res.Rounds)
+	}
+	if len(res.Completed) != 0 {
+		t.Fatalf("Completed = %v, want empty (none of the three objectives was reached)", res.Completed)
+	}
+	if len(p.seen) != 4 {
+		t.Fatalf("len(seen) = %d, want 4", len(p.seen))
+	}
+	// The round after the blackout saw the carried fact and the failure text.
+	if !p.seen[1].BlackedOut {
+		t.Errorf("seen[1].BlackedOut = false, want true (the fact must carry across the respawn)")
+	}
+	if len(p.seen[1].History) != 1 || !strings.Contains(p.seen[1].History[0].Outcome, "blacked out") {
+		t.Errorf("seen[1].History = %+v, want the blackout failure recorded", p.seen[1].History)
+	}
+	if len(res.Final.History) != 3 {
+		t.Fatalf("Final.History = %+v, want all three failed rounds", res.Final.History)
+	}
+	for i, h := range res.Final.History {
+		if !strings.HasPrefix(h.Outcome, "failed: ") {
+			t.Errorf("Final.History[%d] = %+v, want a failed round", i, h)
+		}
 	}
 }
 

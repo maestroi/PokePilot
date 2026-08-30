@@ -2,6 +2,7 @@ package skill_test
 
 import (
 	"errors"
+	"os"
 	"testing"
 
 	"github.com/maestroi/pokepilot/red/rom"
@@ -323,4 +324,41 @@ func TestTrainSurvivesEvolution(t *testing.T) {
 		}
 	}
 	t.Logf("SQUIRTLE evolved to WARTORTLE (lv16) and ground through the lv22 learned-move prompt to level %d: %d battle(s), BITE learned=%v, moves %v", after.Level, totalBattles, learnedBite, after.Moves)
+}
+
+// TestHasGrassMatchesTheGameEncounterRule pins the two-part rule from
+// wild_encounters.asm: a map counts as grass only where walkable tiles match
+// the tileset's grass id AND the map's wild data has a non-zero grass rate.
+// Pallet Town is the regression case: its top edge (10,0)-(11,1) stands on
+// tileset 0's grass tile but points at NothingWildMons (rate 0), so the game
+// never encounters there — and Train used to ping-pong those four tiles for
+// 460 legs with zero battles, wasting rounds and tripping the failure budget.
+func TestHasGrassMatchesTheGameEncounterRule(t *testing.T) {
+	path := os.Getenv("POKEMON_RED_ROM")
+	if path == "" {
+		t.Skip("POKEMON_RED_ROM not set")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		id   uint8
+		name string
+		want bool
+	}{
+		{0x00, "PALLET_TOWN", false}, // tiles match at the top edge, rate is 0
+		{0x28, "OAKS_LAB", false},    // no matching tiles
+		{0x01, "VIRIDIAN_CITY", false},
+		{0x02, "PEWTER_CITY", false},
+		{0x0c, "ROUTE_1", true}, // tiles match, rate 25
+		{0x0d, "ROUTE_2", true},
+	}
+	for _, tc := range cases {
+		if got, err := skill.HasGrass(data, tc.id); err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		} else if got != tc.want {
+			t.Errorf("%s: HasGrass = %v, want %v", tc.name, got, tc.want)
+		}
+	}
 }

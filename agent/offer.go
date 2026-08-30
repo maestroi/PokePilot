@@ -166,7 +166,12 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 		!known.Completed[Objective{Kind: KindErrand}.String()] {
 		out = append(out, Objective{Kind: KindErrand}) // one-shot story event
 	}
-	if hasBalls(obs) {
+	// Catch hunts tall grass for a wanted species, so the same map fact
+	// that gates Train gates it: without walkable grass on this map the
+	// hunt cannot happen, and offering it would hand the planner an
+	// objective that fails on its precondition (a city round spent on a
+	// guaranteed failure). Balls alone are not enough.
+	if obs.HasGrass && hasBalls(obs) {
 		if sp, ok := SpeciesByName("caterpie"); ok {
 			out = append(out, Objective{Kind: KindCatch, Species: sp})
 		}

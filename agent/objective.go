@@ -148,7 +148,7 @@ func Execute(m *emu.Emu, romData []byte, o Objective) error {
 	case KindPickup:
 		// The proof is inside Pickup: it returns nil only when the bag's
 		// count for Item rose by one. A text box opening is not evidence.
-		if err := skill.Pickup(m, romData, o.X, o.Y, o.Item); err != nil {
+		if err := skill.Pickup(m, romData, o.X, o.Y, o.Item, skill.StatAwareMove(romData)); err != nil {
 			return fmt.Errorf("agent: %s: %w", o, err)
 		}
 		return nil

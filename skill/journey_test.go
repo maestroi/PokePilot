@@ -100,7 +100,7 @@ func TestGymJourneyAffordances(t *testing.T) {
 	ballsBefore := pokeBallCount(&mem)
 	t.Logf("bag before pickup: POKE BALL x%d (map=%#04x at (%d,%d))", ballsBefore,
 		mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord))
-	if err := skill.Pickup(e, romData, 1, 31, skill.ItemPokeBall); err != nil {
+	if err := skill.Pickup(e, romData, 1, 31, skill.ItemPokeBall, policy); err != nil {
 		diagFatalf(t, e, err, "Pickup the POKE BALL at (1,31): %v", err)
 	}
 	state.Snapshot(e, &mem)

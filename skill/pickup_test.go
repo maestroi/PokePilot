@@ -41,7 +41,7 @@ func TestPickupPokeBall(t *testing.T) {
 		t.Fatalf("Travel to (2,31): %v", err)
 	}
 
-	if err := skill.Pickup(m, romData, 1, 31, skill.ItemPokeBall); err != nil {
+	if err := skill.Pickup(m, romData, 1, 31, skill.ItemPokeBall, policy); err != nil {
 		t.Fatalf("Pickup: %v", err)
 	}
 

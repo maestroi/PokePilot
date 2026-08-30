@@ -258,7 +258,15 @@ func appendHistory(h []RoundRecord, r RoundRecord) []RoundRecord {
 // (default 3); the same objective failing with the same error twice stops
 // it immediately, because two identical failures outweigh any number of
 // different ones; and MaxRounds and MaxFrames bound failure rounds like any
-// other round.
+// other round. A blackout is exempt from the failure accounting: it is the
+// game answering, not the planner failing — the party is healed and standing
+// in a town, the same recoverable state a lost gym challenge leaves (KindGym
+// reports its loss as an outcome for exactly this reason). It is still
+// recorded in history — the objective was not reached — but it neither
+// counts against MaxConsecutiveFailures nor repeats the last failure, because
+// the respawn changed the world. The round budget still bounds a planner that
+// keeps choosing doomed trains: each blackout cycle costs a round and levels
+// the lead up, so the loop is slow progress, not a stall.
 //
 // Failure text reaches the planner as plain consequence, never as advice:
 // Run records the error the skills produced ("step up blocked at (10,1)")
@@ -406,7 +414,8 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 			res.Err = err
 			history = appendHistory(history, RoundRecord{Objective: obj.String(), Outcome: "failed: " + err.Error()})
 			last = Observe(m, romData)
-			if errors.Is(err, skill.ErrBlackedOut) {
+			blackedOut := errors.Is(err, skill.ErrBlackedOut)
+			if blackedOut {
 				// The blackout bit clears on the respawn map entry, before
 				// this Observe; carry the fact for the round that follows the
 				// loss so the planner sees a wiped party, not just a healed
@@ -416,6 +425,22 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 			last.History = history
 			last.RecentDialogue = tape.recent()
 			logRound(budget.Log, round, obj, last)
+
+			if blackedOut {
+				// The blackout is recorded in history like any failure, but it
+				// does not count against the failure budget and it breaks the
+				// same-failure-twice chain: the respawn healed the party and
+				// moved the player, so the world changed. Only the frame budget
+				// still applies to this round.
+				lastFailObj, lastFailErr = "", ""
+				if m.FrameCount()-startFrame >= uint64(budget.MaxFrames) {
+					res.Stop = StopBudget
+				}
+				if res.Stop != 0 {
+					break
+				}
+				continue
+			}
 
 			consecFailures++
 			// res.Stop is still the zero value unless one of these sets it.

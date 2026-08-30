@@ -317,7 +317,7 @@ func looksLikeAnswer(s string) bool {
 // If S6-11's diagnosis shows the model needs to think out loud before
 // choosing, the answer is a free pre-call followed by this constrained
 // one; nothing here has to change for that.
-const llmSystemPrompt = `You are choosing the next objective for a Pokemon Red player. Prefer an objective that makes NEW progress: repeating what you just did wastes the run. Reply with ONLY a JSON object: {"choice": N} where N is the number of your choice, plus the arguments of that objective when it has any ("level", "species", "item", "quantity"). Do not explain.`
+const llmSystemPrompt = `You are choosing the next objective for a Pokemon Red player. Prefer an objective that makes NEW progress: repeating what you just did wastes the run. The run has a limited number of rounds and each objective costs one: most small talk does not advance your goal, so spend rounds on objectives that move toward it. Reply with ONLY a JSON object: {"choice": N} where N is the number of your choice, plus the arguments of that objective when it has any ("level", "species", "item", "quantity"). Do not explain.`
 
 // llmUserPrompt renders the observation as compact JSON, then the offered
 // objectives as a 1-based numbered list of their String() forms.

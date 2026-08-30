@@ -19,6 +19,10 @@ import (
 const (
 	trainTilesetsBank    uint8  = 0x03
 	trainTilesetsAddr    uint16 = 0x47BE
+	// WildDataPointers (pokered/pokered.sym): a 2-byte pointer per map to
+	// that map's wild data record, whose first byte is the grass rate.
+	trainWildBank uint8  = 0x03
+	trainWildAddr uint16 = 0x4EEB
 	trainTilesetEntryLen        = 12
 )
 
@@ -371,10 +375,11 @@ func PromoteToLead(m *emu.Emu, index int) error {
 // cell is a game-tile position on a map.
 type cell struct{ x, y int }
 
-// HasGrass reports whether mapID has any walkable tall grass — the
-// precondition for training at all. It is a map feature, decoded from the
-// same tileset table Train reads, so a caller that knows the current map
-// can say whether "train" is even possible there without hunting.
+// HasGrass reports whether mapID has any walkable tall grass where the
+// game actually rolls encounters — the precondition for training at all.
+// It is a map feature, decoded from the same tileset table and wild data
+// Train reads, so a caller that knows the current map can say whether
+// "train" is even possible there without hunting.
 func HasGrass(romData []byte, mapID uint8) (bool, error) {
 	grass, _, err := grassCells(romData, mapID)
 	if err != nil {
@@ -385,13 +390,24 @@ func HasGrass(romData []byte, mapID uint8) (bool, error) {
 
 // grassCells returns the walkable cells of mapID that stand on the
 // tileset's grass tile — the cells where the game actually rolls wild
-// encounters — along with the map's collision grid. The grass tile and
-// block data come from the tileset table, exactly as world/grid.go reads
-// it for collisions.
+// encounters — along with the map's collision grid (nil when the map has
+// no such cells). The grass tile and block data come from the tileset
+// table, exactly as world/grid.go reads it for collisions.
 func grassCells(romData []byte, mapID uint8) ([]cell, *world.Grid, error) {
 	h, err := rom.ParseMap(romData, mapID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("skill: Train: map %#04x: %w", mapID, err)
+	}
+	// The game rolls grass encounters only where BOTH the tile underfoot
+	// matches the tileset's grass id AND the map's wild data has a
+	// non-zero grass rate (pokered/engine/battle/wild_encounters.asm).
+	// The tile match alone lies: Pallet Town's top edge stands on its
+	// tileset's grass tile but points at NothingWildMons, so the game stays
+	// quiet there and a session would ping-pong those tiles forever.
+	if rate, err := wildGrassRate(romData, mapID); err != nil {
+		return nil, nil, err
+	} else if rate == 0 {
+		return nil, nil, nil
 	}
 	tsOff, err := bankedOff(trainTilesetsBank, trainTilesetsAddr)
 	if err != nil {
@@ -513,6 +529,32 @@ func flip(a, b, cur cell) cell {
 		return b
 	}
 	return a
+}
+
+// wildGrassRate returns the map's grass encounter rate, read exactly as
+// LoadWildData does (pokered/engine/overworld/wild_mons.asm): the map's
+// WildDataPointers entry names a record whose first byte is the rate.
+func wildGrassRate(romData []byte, mapID uint8) (uint8, error) {
+	base, err := bankedOff(trainWildBank, trainWildAddr)
+	if err != nil {
+		return 0, fmt.Errorf("skill: Train: %w", err)
+	}
+	pOff := base + int(mapID)*2
+	if pOff+2 > len(romData) {
+		return 0, fmt.Errorf("skill: Train: map %#04x: wild data pointer out of ROM", mapID)
+	}
+	// The pointer is a 16-bit offset in the same bank as WildDataPointers
+	// (LoadWildData loads it straight into hl and uses it):
+	// ld a,[hli] / ld h,[hl] / ld l,a.
+	off := uint16(romData[pOff]) | uint16(romData[pOff+1])<<8
+	recOff, err := bankedOff(trainWildBank, off)
+	if err != nil {
+		return 0, fmt.Errorf("skill: Train: map %#04x: %w", mapID, err)
+	}
+	if recOff >= len(romData) {
+		return 0, fmt.Errorf("skill: Train: map %#04x: wild data record out of ROM", mapID)
+	}
+	return romData[recOff], nil
 }
 
 // bankedOff converts a banked address (bank:addr) to a ROM file offset,
