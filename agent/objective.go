@@ -20,7 +20,7 @@ const (
 	KindErrand              // deliver Oak's parcel (Viridian Mart -> Oak's lab)
 	KindTrain               // battle in grass until the lead reaches Level
 	KindHeal                // heal the party at a center; Place names one to travel to first
-	KindGym                 // fight the Pewter Gym leader, Brock
+	KindGym                 // fight the leader of whichever gym the player is in
 	KindCatch               // hunt tall grass for a wanted species and catch it
 	KindBuy                 // buy Item x Qty from the mart clerk
 	KindPickup              // pick up the item at a coordinate; the bag must rise
