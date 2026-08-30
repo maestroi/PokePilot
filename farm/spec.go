@@ -57,6 +57,49 @@ type Heartbeat struct {
 	// Version is this runner's build identity (git SHA), so the wall can
 	// show which build each worker runs. Empty from older runners.
 	Version string `json:"version,omitempty"`
+	// Stats is the llm planner's tally — the same numbers the runner's own
+	// watch page renders, pushed here so the console shows them too. Nil on
+	// scripted runs and on runners that predate it.
+	Stats *LLMStats `json:"stats,omitempty"`
+}
+
+// LLMStats is the planner tally a runner pushes on its heartbeats: round
+// progress, how often it re-picks an objective it already picked (Repeats —
+// the wander signal), think time, spend, and the replies that never
+// resolved. The wall carries it verbatim for the console; the field names
+// are the same JSON keys the runner's watch page renders, so both surfaces
+// show one number.
+type LLMStats struct {
+	Round      int `json:"round"`
+	RoundsLeft int `json:"rounds_left"`
+	// Calls counts every ask, Rounds only the ones that became an
+	// objective: the gap between them is re-asks after a rejected reply.
+	Calls    int `json:"calls"`
+	Rounds   int `json:"rounds"`
+	Rejected int `json:"rejected"`
+	Repeats  int `json:"repeats"`
+
+	AvgOffered  float64 `json:"avg_offered"`
+	LastSeconds float64 `json:"last_seconds"`
+	AvgSeconds  float64 `json:"avg_seconds"`
+
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	Transport        int `json:"transport"`
+	Fallbacks        int `json:"fallbacks"`
+
+	Intent    string `json:"intent"`
+	IntentAge int    `json:"intent_age"`
+
+	Choices []ChoiceCount `json:"choices"`
+}
+
+// ChoiceCount is one objective and how many times the model has chosen it
+// this run. The full sentence, not the kind: "go to pallet town" chosen six
+// times is the finding, and "go-to chosen six times" hides it.
+type ChoiceCount struct {
+	Objective string `json:"objective"`
+	Count     int    `json:"count"`
 }
 
 // HeartbeatReply is the wall's answer to a heartbeat. Cancel asks the
