@@ -14,11 +14,11 @@ type Spec struct {
 	// the first, higher after retries. The runner echoes it back in its
 	// FinishReport so a late finish from a dead attempt cannot settle a
 	// newer one.
-	Attempt   int    `json:"attempt"`
-	Seed      int64  `json:"seed"`
-	Planner   string `json:"planner"`
-	Starter   string `json:"starter"`
-	Dest      string `json:"dest"`
+	Attempt int    `json:"attempt"`
+	Seed    int64  `json:"seed"`
+	Planner string `json:"planner"`
+	Starter string `json:"starter"`
+	Dest    string `json:"dest"`
 	// Goal is the task statement for the llm planner: what to achieve,
 	// never how. Empty means no goal (the pre-Goal prompt).
 	Goal      string `json:"goal,omitempty"`
@@ -35,12 +35,19 @@ type Spec struct {
 // Heartbeat is the small, frequent status push a runner sends while a
 // leased run is in progress.
 type Heartbeat struct {
-	RunID     string `json:"run_id"`
-	Frame     uint64 `json:"frame"`
-	Map       uint8  `json:"map"`
-	X         uint8  `json:"x"`
-	Y         uint8  `json:"y"`
-	Trace     string `json:"trace"`
+	RunID string `json:"run_id"`
+	Frame uint64 `json:"frame"`
+	Map   uint8  `json:"map"`
+	X     uint8  `json:"x"`
+	Y     uint8  `json:"y"`
+	Trace string `json:"trace"`
+	// Question is the offered menu the planner was last asked, numbered
+	// the way the model saw it. Decision is the objective that ask
+	// resolved to, or empty while the model is still answering. Both are
+	// empty until the first plan of an llm run; a scripted run never
+	// fills them.
+	Question  string `json:"question,omitempty"`
+	Decision  string `json:"decision,omitempty"`
 	StopSoFar string `json:"stop_so_far"`
 	// WorkerAddrs is where this runner's watch server (frame.png) is
 	// reachable from the swarm network, one "host:port" per interface.

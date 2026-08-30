@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/maestroi/pokepilot/agent"
 	"github.com/maestroi/pokepilot/farm"
 )
 
@@ -87,6 +88,9 @@ func TestFarmLLMAppliesSpecGoal(t *testing.T) {
 	if !strings.Contains(text, "spec.Goal") {
 		t.Fatal("runFarm never passes spec.Goal into the llm run")
 	}
+	if !strings.Contains(text, "reportingPlanner{inner: planner, snap: snap}") {
+		t.Fatal("runFarmLLM does not publish the latest plan onto the heartbeat snap")
+	}
 }
 
 // TestHeartbeatSnapshot hammers the plain snapshot from many goroutines so
@@ -109,6 +113,106 @@ func TestHeartbeatSnapshot(t *testing.T) {
 		}(g)
 	}
 	wg.Wait()
+}
+
+// TestHeartbeatSnapKeepsPlan is the race the watch pane depends on:
+// sampleHeartbeat rewrites Frame/Map/Trace every tick, and must not
+// blank the question/decision the planner wrote while the model was
+// thinking (when the stepper is blocked in HTTP and not sampling).
+func TestHeartbeatSnapKeepsPlan(t *testing.T) {
+	s := &heartbeatSnap{}
+	s.store(farm.Heartbeat{RunID: "r1", Frame: 10, Trace: "control: control regained"})
+	s.storePlan("1: go to pallet town\n2: talk at (5,3)", "")
+	got := s.load()
+	if got.Question != "1: go to pallet town\n2: talk at (5,3)" || got.Decision != "" || got.Frame != 10 {
+		t.Fatalf("after storePlan: %+v", got)
+	}
+
+	s.storeStatus(farm.Heartbeat{RunID: "r1", Frame: 11, Map: 0x28, X: 5, Y: 6, Trace: "map: map 0x28 -> 0x00"})
+	got = s.load()
+	if got.Frame != 11 || got.Trace != "map: map 0x28 -> 0x00" {
+		t.Fatalf("storeStatus dropped live fields: %+v", got)
+	}
+	if got.Question != "1: go to pallet town\n2: talk at (5,3)" || got.Decision != "" {
+		t.Fatalf("storeStatus wiped the in-flight plan: %+v", got)
+	}
+
+	s.storePlan("1: go to pallet town\n2: talk at (5,3)", "go to pallet town")
+	got = s.load()
+	if got.Decision != "go to pallet town" || got.Frame != 11 {
+		t.Fatalf("after decision: %+v", got)
+	}
+}
+
+// blockingPlanner parks in Next until release is closed, so the test
+// can observe the snap after the question is published and before the
+// decision exists.
+type blockingPlanner struct {
+	entered chan struct{}
+	release chan struct{}
+	obj     agent.Objective
+}
+
+func (p blockingPlanner) Next(obs agent.Observation, offered []agent.Objective) (agent.Objective, error) {
+	close(p.entered)
+	<-p.release
+	return p.obj, nil
+}
+
+func TestReportingPlannerPublishesQuestionBeforeReply(t *testing.T) {
+	snap := &heartbeatSnap{}
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	want := agent.Objective{Kind: agent.KindGoTo, Place: "pallet town"}
+	p := reportingPlanner{
+		inner: blockingPlanner{entered: entered, release: release, obj: want},
+		snap:  snap,
+	}
+	offered := []agent.Objective{
+		want,
+		{Kind: agent.KindTalk, X: 5, Y: 3},
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		got, err := p.Next(agent.Observation{}, offered)
+		if err != nil {
+			done <- err
+			return
+		}
+		if got != want {
+			done <- fmt.Errorf("Next = %s, want %s", got, want)
+			return
+		}
+		done <- nil
+	}()
+
+	select {
+	case <-entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("planner never entered Next")
+	}
+	got := snap.load()
+	if !strings.Contains(got.Question, "1: go to pallet town") || !strings.Contains(got.Question, "2: talk at (5,3)") {
+		t.Fatalf("question while thinking = %q", got.Question)
+	}
+	if got.Decision != "" {
+		t.Fatalf("decision set before the model replied: %q", got.Decision)
+	}
+
+	close(release)
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("planner did not return after release")
+	}
+	got = snap.load()
+	if got.Decision != "go to pallet town" {
+		t.Fatalf("decision after reply = %q, want go to pallet town", got.Decision)
+	}
 }
 
 // TestHeartbeatLoopJoinsDespiteHungHandler proves the request deadline: the

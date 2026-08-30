@@ -373,6 +373,10 @@
     el.querySelectorAll("article").forEach((art) => {
       if (!seen.has(art.dataset.run)) art.remove();
     });
+    for (const r of runs) {
+      const art = el.querySelector('article[data-run="' + CSS.escape(r.run_id) + '"]');
+      if (art) el.appendChild(art);
+    }
   }
 
   function renderWorkers() {
@@ -435,13 +439,16 @@
       const where = r.planner === "scripted" && r.dest
         ? r.dest : tileLabel(r);
       const out = r.detail || r.reason || "done";
-      return `<button type="button" class="hist${sel}" data-run="${esc(r.run_id)}">
+      return `<div class="hist-row${sel}">
+        <button type="button" class="hist" data-run="${esc(r.run_id)}">
         <span class="hist-when">${esc(runWhen(r) || "—")}</span>
         <span class="hist-id">${esc(r.run_id)}</span>
         <span class="chips">${settingChips(r)}</span>
         <span class="hist-where">${esc(where)}</span>
         <span class="hist-out">${statusChip(r)}<span class="hist-outcome">${esc(out)}</span></span>
-      </button>`;
+        </button>
+        <button type="button" class="hist-del" data-delete="${esc(r.run_id)}">Delete</button>
+      </div>`;
     }).join("");
   }
 
@@ -487,7 +494,31 @@
     $("detail-body").innerHTML =
       `<div class="block"><h3>Settings</h3>${settings}</div>`
       + `<div class="block"><h3>${run.status === "done" ? "Outcome" : "Now"}</h3>${kv(stateRows)}</div>`
-      + (run.trace ? `<div class="block"><h3>Trace</h3><pre class="trace">${esc(run.trace)}</pre></div>` : "");
+      + planHTML(run)
+      + lastEventHTML(run);
+  }
+
+  function planHTML(run) {
+    const play = run.planner !== "scripted";
+    if (!play && !run.question && !run.decision) return "";
+    const question = run.question
+      ? `<pre class="plan-q">${esc(run.question)}</pre>`
+      : `<p class="plan-wait">waiting for the first plan</p>`;
+    let decision = "";
+    if (run.decision) {
+      decision = `<div class="plan-k">decision</div><p class="plan-d">${esc(run.decision)}</p>`;
+    } else if (run.question) {
+      decision = `<div class="plan-k">decision</div><p class="plan-wait">waiting for reply</p>`;
+    }
+    return `<div class="block"><h3>Plan</h3>
+      <div class="plan-k">question</div>${question}
+      ${decision}</div>`;
+  }
+
+  function lastEventHTML(run) {
+    if (!run.trace) return "";
+    const title = run.question || run.decision ? "Last event" : "Trace";
+    return `<div class="block"><h3>${title}</h3><pre class="trace">${esc(run.trace)}</pre></div>`;
   }
 
   function renderCounts() {
@@ -595,6 +626,22 @@
       const group = filt.getAttribute("data-filter-group");
       histFilter[group] = filt.getAttribute("data-filter-value") || "";
       renderHistory();
+      return;
+    }
+    const del = ev.target.closest("[data-delete]");
+    if (del) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      const id = del.getAttribute("data-delete");
+      try {
+        const res = await fetch("/v1/runs/" + encodeURIComponent(id), { method: "DELETE" });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) cardErr = { id, text: body.error || "could not delete" };
+        else if (selected === id) selected = "";
+      } catch (e) {
+        cardErr = { id, text: "wall unreachable" };
+      }
+      await refresh();
       return;
     }
     const cancel = ev.target.closest("[data-cancel]");

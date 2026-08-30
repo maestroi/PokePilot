@@ -41,6 +41,7 @@ func handler(wallBase string) http.Handler {
 	mux.HandleFunc("GET /v1/dashboard", proxy(wallBase, true))
 	mux.HandleFunc("POST /v1/specs", proxy(wallBase, false))
 	mux.HandleFunc("POST /v1/runs/{id}/cancel", proxy(wallBase, false))
+	mux.HandleFunc("DELETE /v1/runs/{id}", proxy(wallBase, false))
 	mux.HandleFunc("GET /frame", proxy(wallBase, true))
 	return mux
 }

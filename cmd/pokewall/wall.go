@@ -36,16 +36,16 @@ const (
 
 // Tile is one run's live state as the wall sees it.
 type Tile struct {
-	RunID     string
-	Status    string
-	Planner   string
-	Starter   string
-	Dest      string
-	Goal      string
-	Seed      int64
-	FPS       int
-	MaxRounds int
-	MaxFrames int
+	RunID      string
+	Status     string
+	Planner    string
+	Starter    string
+	Dest       string
+	Goal       string
+	Seed       int64
+	FPS        int
+	MaxRounds  int
+	MaxFrames  int
 	Endless    bool
 	RandomSeed bool
 	QueuedAt   time.Time
@@ -58,6 +58,8 @@ type Tile struct {
 	X         uint8
 	Y         uint8
 	Trace     string
+	Question  string
+	Decision  string
 	StopSoFar string
 	Reason    string
 	Detail    string
@@ -82,9 +84,9 @@ type Tile struct {
 // grid template never reads live tiles after unlock. Rendering []*Tile
 // after unlock is what raced with heartbeat/cancel/finish.
 type tileRow struct {
-	RunID     string `json:"run_id"`
-	Status    string `json:"status"`
-	Planner   string `json:"planner"`
+	RunID      string `json:"run_id"`
+	Status     string `json:"status"`
+	Planner    string `json:"planner"`
 	Starter    string `json:"starter"`
 	Dest       string `json:"dest"`
 	Goal       string `json:"goal,omitempty"`
@@ -101,6 +103,8 @@ type tileRow struct {
 	X          uint8  `json:"x"`
 	Y          uint8  `json:"y"`
 	Trace      string `json:"trace"`
+	Question   string `json:"question,omitempty"`
+	Decision   string `json:"decision,omitempty"`
 	StopSoFar  string `json:"stop_so_far"`
 	Attempts   int    `json:"attempts"`
 	Reason     string `json:"reason"`
@@ -168,6 +172,8 @@ type persistedTile struct {
 	X           uint8    `json:"x"`
 	Y           uint8    `json:"y"`
 	Trace       string   `json:"trace,omitempty"`
+	Question    string   `json:"question,omitempty"`
+	Decision    string   `json:"decision,omitempty"`
 	StopSoFar   string   `json:"stop_so_far,omitempty"`
 	Reason      string   `json:"reason,omitempty"`
 	Detail      string   `json:"detail,omitempty"`
@@ -212,6 +218,8 @@ func (w *Wall) marshalStateLocked() ([]byte, error) {
 			X:           t.X,
 			Y:           t.Y,
 			Trace:       t.Trace,
+			Question:    t.Question,
+			Decision:    t.Decision,
 			StopSoFar:   t.StopSoFar,
 			Reason:      t.Reason,
 			Detail:      t.Detail,
@@ -289,6 +297,8 @@ func (w *Wall) loadState() {
 			X:           pt.X,
 			Y:           pt.Y,
 			Trace:       pt.Trace,
+			Question:    pt.Question,
+			Decision:    pt.Decision,
 			StopSoFar:   pt.StopSoFar,
 			Reason:      pt.Reason,
 			Detail:      pt.Detail,
@@ -327,6 +337,7 @@ func (w *Wall) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/workers", w.handleWorkers)
 	mux.HandleFunc("POST /v1/runs/{id}/heartbeat", w.handleHeartbeat)
 	mux.HandleFunc("POST /v1/runs/{id}/cancel", w.handleCancel)
+	mux.HandleFunc("DELETE /v1/runs/{id}", w.handleDelete)
 	mux.HandleFunc("POST /v1/runs/{id}/finish", w.handleFinish)
 	mux.HandleFunc("GET /v1/dashboard", w.handleDashboard)
 	mux.HandleFunc("GET /v1/triage", w.handleTriage)
@@ -411,9 +422,9 @@ func (w *Wall) handleLease(res http.ResponseWriter, req *http.Request) {
 	t.Status = statusLeased
 	t.lastUpdate = time.Now()
 	spec := farm.Spec{
-		RunID:     t.RunID,
-		Attempt:   t.Attempts + 1,
-		Seed:      t.Seed,
+		RunID:      t.RunID,
+		Attempt:    t.Attempts + 1,
+		Seed:       t.Seed,
 		Planner:    t.Planner,
 		Starter:    t.Starter,
 		Dest:       t.Dest,
@@ -461,6 +472,8 @@ func (w *Wall) handleHeartbeat(res http.ResponseWriter, req *http.Request) {
 	t.X = hb.X
 	t.Y = hb.Y
 	t.Trace = hb.Trace
+	t.Question = hb.Question
+	t.Decision = hb.Decision
 	t.StopSoFar = hb.StopSoFar
 	t.workerAddrs = hb.WorkerAddrs
 	t.lastUpdate = time.Now()
@@ -546,6 +559,41 @@ func (w *Wall) handleCancel(res http.ResponseWriter, req *http.Request) {
 	w.cancel[id] = true
 	w.mu.Unlock()
 	writeJSON(res, http.StatusOK, map[string]bool{"cancel": true})
+}
+
+// handleDelete drops a finished run from the wall's memory. Active runs
+// are 409 — cancel those. Unknown IDs are 404. Finish dumps on disk are
+// left alone; this only removes the history row.
+func (w *Wall) handleDelete(res http.ResponseWriter, req *http.Request) {
+	id := req.PathValue("id")
+	w.mu.Lock()
+	t, ok := w.tiles[id]
+	if !ok {
+		w.mu.Unlock()
+		writeJSON(res, http.StatusNotFound, map[string]string{"error": "unknown run " + id})
+		return
+	}
+	if !t.Finished {
+		w.mu.Unlock()
+		writeJSON(res, http.StatusConflict, map[string]string{"error": "run still active: " + id})
+		return
+	}
+	delete(w.tiles, id)
+	delete(w.cancel, id)
+	w.order = removeID(w.order, id)
+	w.mu.Unlock()
+	w.saveState()
+	writeJSON(res, http.StatusOK, map[string]bool{"deleted": true})
+}
+
+func removeID(ids []string, id string) []string {
+	out := make([]string, 0, len(ids))
+	for _, x := range ids {
+		if x != id {
+			out = append(out, x)
+		}
+	}
+	return out
 }
 
 // handleFinish records why a run ended. An identical repeat is idempotent;
@@ -729,8 +777,9 @@ var gridTmpl = template.Must(template.New("grid").Parse(`<!doctype html>
 </body></html>`))
 
 // snapshot copies tiles and workers under w.mu so callers never read live
-// maps after unlock. Insertion order is preserved for runs; workers are
-// sorted by addr so the page does not flicker.
+// maps after unlock. Runs are newest-first (the opposite of insertion
+// order) so the operator page and debug grid grow downward from the
+// latest work. Workers are sorted by addr so the page does not flicker.
 func (w *Wall) snapshot() dashboardView {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -745,11 +794,12 @@ func (w *Wall) snapshot() dashboardView {
 	}
 	sort.Slice(workers, func(i, j int) bool { return workers[i].Addr < workers[j].Addr })
 	rows := make([]tileRow, 0, len(w.order))
-	for _, id := range w.order {
+	for i := len(w.order) - 1; i >= 0; i-- {
+		id := w.order[i]
 		t := w.tiles[id]
 		rows = append(rows, tileRow{
-			RunID:     t.RunID,
-			Status:    t.Status,
+			RunID:      t.RunID,
+			Status:     t.Status,
 			Planner:    t.Planner,
 			Starter:    t.Starter,
 			Dest:       t.Dest,
@@ -763,14 +813,16 @@ func (w *Wall) snapshot() dashboardView {
 			QueuedAt:   unixTime(t.QueuedAt),
 			EndedAt:    unixTime(t.EndedAt),
 			Attempts:   t.Attempts,
-			Frame:     t.Frame,
-			Map:       t.Map,
-			X:         t.X,
-			Y:         t.Y,
-			Trace:     t.Trace,
-			StopSoFar: t.StopSoFar,
-			Reason:    t.Reason,
-			Detail:    t.Detail,
+			Frame:      t.Frame,
+			Map:        t.Map,
+			X:          t.X,
+			Y:          t.Y,
+			Trace:      t.Trace,
+			Question:   t.Question,
+			Decision:   t.Decision,
+			StopSoFar:  t.StopSoFar,
+			Reason:     t.Reason,
+			Detail:     t.Detail,
 		})
 	}
 	return dashboardView{Now: now.Unix(), Runs: rows, Workers: workers}
@@ -1020,6 +1072,8 @@ func (w *Wall) settleRun(t *Tile, reason, detail string, now time.Time) int {
 	t.X = 0
 	t.Y = 0
 	t.Trace = ""
+	t.Question = ""
+	t.Decision = ""
 	t.StopSoFar = ""
 	t.Reason = ""
 	t.Detail = fmt.Sprintf("attempt %d failed: %s", completed, detail)

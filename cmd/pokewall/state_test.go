@@ -39,7 +39,8 @@ func TestWallStateSurvivesRestart(t *testing.T) {
 	if got, err := client.Lease(ctx); err != nil || got == nil || got.RunID != "first" {
 		t.Fatalf("client.Lease = %v, %v; want first", got, err)
 	}
-	hb := farm.Heartbeat{RunID: "first", Frame: 7, Map: 0x0c, X: 3, Y: 4}
+	hb := farm.Heartbeat{RunID: "first", Frame: 7, Map: 0x0c, X: 3, Y: 4,
+		Question: "1: go to pallet town", Decision: "go to pallet town"}
 	hb.WorkerAddrs = []string{"10.0.0.5:8099"}
 	if _, err := client.Heartbeat(ctx, hb); err != nil {
 		t.Fatalf("client.Heartbeat: %v", err)
@@ -61,6 +62,11 @@ func TestWallStateSurvivesRestart(t *testing.T) {
 		if !strings.Contains(page, want) {
 			t.Errorf("restored grid missing %s:\n%s", want, page)
 		}
+	}
+
+	dash := doGet(t, srv2.URL+"/v1/dashboard")
+	if !strings.Contains(dash, `"question":"1: go to pallet town"`) || !strings.Contains(dash, `"decision":"go to pallet town"`) {
+		t.Errorf("restored dashboard dropped the plan:\n%s", dash)
 	}
 
 	// The live run's heartbeats continue seamlessly (no 404 "unknown run").

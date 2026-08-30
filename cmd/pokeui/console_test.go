@@ -57,3 +57,23 @@ func TestUISeparatesSettingsFromState(t *testing.T) {
 		}
 	}
 }
+
+// TestUIShowsLatestPlan is the watch-pane half of the heartbeat question
+// and decision: a one-line emulator trace is not the plan.
+func TestUIShowsLatestPlan(t *testing.T) {
+	js := string(uiJS)
+	for _, want := range []string{`run.question`, `run.decision`, `<h3>Plan</h3>`} {
+		if !strings.Contains(js, want) {
+			t.Errorf("ui.js missing %q", want)
+		}
+	}
+}
+
+func TestUIHistoryCanBeDeletedAndNewestFirst(t *testing.T) {
+	js := string(uiJS)
+	for _, want := range []string{`data-delete`, `method: "DELETE"`} {
+		if !strings.Contains(js, want) {
+			t.Errorf("ui.js missing %q", want)
+		}
+	}
+}

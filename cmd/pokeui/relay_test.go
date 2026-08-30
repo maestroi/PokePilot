@@ -34,6 +34,9 @@ func TestPokeuiProxiesAllowlistedRoutes(t *testing.T) {
 		case req.Method == http.MethodPost && req.URL.Path == "/v1/runs/r1/cancel":
 			res.Header().Set("Content-Type", "application/json")
 			res.Write([]byte(`{"cancel":true}`))
+		case req.Method == http.MethodDelete && req.URL.Path == "/v1/runs/r1":
+			res.Header().Set("Content-Type", "application/json")
+			res.Write([]byte(`{"deleted":true}`))
 		case req.Method == http.MethodGet && req.URL.Path == "/frame" && req.URL.Query().Get("run") == "demo/1":
 			res.Header().Set("Content-Type", "image/png")
 			res.Write(png)
@@ -87,6 +90,20 @@ func TestPokeuiProxiesAllowlistedRoutes(t *testing.T) {
 	res.Body.Close()
 	if res.StatusCode != 200 {
 		t.Fatalf("POST cancel = %d, want 200", res.StatusCode)
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, ui.URL+"/v1/runs/r1", nil)
+	if err != nil {
+		t.Fatalf("DELETE request: %v", err)
+	}
+	res, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("DELETE run: %v", err)
+	}
+	io.Copy(io.Discard, res.Body) //nolint:errcheck // test probe
+	res.Body.Close()
+	if res.StatusCode != 200 {
+		t.Fatalf("DELETE /v1/runs/r1 = %d, want 200", res.StatusCode)
 	}
 
 	res, err = http.Get(ui.URL + "/frame?run=demo/1")

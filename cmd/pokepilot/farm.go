@@ -11,6 +11,7 @@ import (
 	"net"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -90,6 +91,28 @@ type heartbeatSnap struct {
 func (s *heartbeatSnap) store(hb farm.Heartbeat) {
 	s.mu.Lock()
 	s.hb = hb
+	s.mu.Unlock()
+}
+
+// storeStatus writes the live position/trace without touching the last
+// plan. sampleHeartbeat uses this so a tick cannot blank the question
+// the planner published while the model was still answering.
+func (s *heartbeatSnap) storeStatus(hb farm.Heartbeat) {
+	s.mu.Lock()
+	hb.Question = s.hb.Question
+	hb.Decision = s.hb.Decision
+	s.hb = hb
+	s.mu.Unlock()
+}
+
+// storePlan writes the latest offered menu and chosen objective. The
+// planner calls this from the stepping goroutine — including just
+// before a blocking model POST, so heartbeats keep showing the
+// question while the stepper is stuck in HTTP.
+func (s *heartbeatSnap) storePlan(question, decision string) {
+	s.mu.Lock()
+	s.hb.Question = question
+	s.hb.Decision = decision
 	s.mu.Unlock()
 }
 
@@ -227,6 +250,9 @@ func validateSpec(planner, starter, dest string) error {
 // heartbeat starts before gameplay and is stopped and joined before the
 // dump, so no heartbeat arrives after Finish.
 func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, dest, goal string, fps, maxRounds, maxFrames int, bootState []byte, tracer *dialogueTracer, snap *heartbeatSnap, mem *state.Mem, addrs []string) {
+	// A new lease must not inherit the previous run's plan: the snap is
+	// reused for the worker's lifetime.
+	snap.store(farm.Heartbeat{RunID: spec.RunID})
 	if err := m.LoadState(bootState); err != nil {
 		log.Printf("farm: %s: load state: %v", spec.RunID, err)
 		finishRun(m, client, spec, "error", fmt.Sprintf("load state: %v", err))
@@ -262,7 +288,7 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 	case "scripted":
 		reason, detail = runFarmScripted(m, starter, dest)
 	case "llm":
-		reason, detail = runFarmLLM(m, starter, goal, maxRounds, maxFrames, cancel)
+		reason, detail = runFarmLLM(m, starter, goal, maxRounds, maxFrames, cancel, snap)
 	}
 
 	// Stop and join the heartbeat before TraceTail/SaveState/Finish.
@@ -289,7 +315,7 @@ func sampleHeartbeat(m *emu.Emu, runID string, snap *heartbeatSnap, mem *state.M
 	if tail := m.TraceTail(1); len(tail) > 0 {
 		hb.Trace = tail[len(tail)-1]
 	}
-	snap.store(hb)
+	snap.storeStatus(hb)
 }
 
 // workerAddrs lists every non-loopback local address as "host:port", so the
@@ -351,7 +377,7 @@ func runFarmScripted(m *emu.Emu, starter, dest string) (string, string) {
 // runFarmLLM mirrors runLLM's diagnostics and objective list; the only
 // differences are that the budget comes from the spec and cancel is the
 // wall's cooperative stop.
-func runFarmLLM(m *emu.Emu, starter, goal string, maxRounds, maxFrames int, cancel <-chan struct{}) (string, string) {
+func runFarmLLM(m *emu.Emu, starter, goal string, maxRounds, maxFrames int, cancel <-chan struct{}, snap *heartbeatSnap) (string, string) {
 	// The starter is the farm's controlled variable, so the harness TAKES it
 	// before handing control to the model — the same reason badgerun does
 	// (a model that knows Pokemon always picks Squirtle otherwise). From
@@ -368,7 +394,7 @@ func runFarmLLM(m *emu.Emu, starter, goal string, maxRounds, maxFrames int, canc
 	planner := agent.NewLLMPlanner()
 	planner.Goal = goal
 	planner.Log = logw // one line per model call, above its round line
-	res := agent.Run(m, m.ROM(), planner, agent.Budget{
+	res := agent.Run(m, m.ROM(), reportingPlanner{inner: planner, snap: snap}, agent.Budget{
 		MaxRounds: maxRounds,
 		MaxFrames: maxFrames,
 		Log:       logw,
@@ -385,6 +411,55 @@ func runFarmLLM(m *emu.Emu, starter, goal string, maxRounds, maxFrames int, canc
 		detail = res.Err.Error()
 	}
 	return stopName(res.Stop), detail
+}
+
+// reportingPlanner publishes the offered menu onto the heartbeat snap
+// before the inner planner is asked, and the chosen objective after it
+// answers. That is what keeps the watch pane current during a multi-second
+// model POST, when the stepper is blocked and sampleHeartbeat is not
+// running.
+type reportingPlanner struct {
+	inner agent.Planner
+	snap  *heartbeatSnap
+}
+
+func (p reportingPlanner) Next(obs agent.Observation, offered []agent.Objective) (agent.Objective, error) {
+	return p.ask(obs, offered, "")
+}
+
+func (p reportingPlanner) NextFeedback(obs agent.Observation, offered []agent.Objective, feedback string) (agent.Objective, error) {
+	return p.ask(obs, offered, feedback)
+}
+
+func (p reportingPlanner) ask(obs agent.Observation, offered []agent.Objective, feedback string) (agent.Objective, error) {
+	q := planQuestion(offered)
+	if p.snap != nil {
+		p.snap.storePlan(q, "")
+	}
+	var (
+		obj agent.Objective
+		err error
+	)
+	if feedback != "" {
+		obj, err = p.inner.(agent.FeedbackPlanner).NextFeedback(obs, offered, feedback)
+	} else {
+		obj, err = p.inner.Next(obs, offered)
+	}
+	if err == nil && p.snap != nil {
+		p.snap.storePlan(q, obj.String())
+	}
+	return obj, err
+}
+
+func planQuestion(offered []agent.Objective) string {
+	var b strings.Builder
+	for i, o := range offered {
+		if i > 0 {
+			b.WriteByte('\n')
+		}
+		fmt.Fprintf(&b, "%d: %s", i+1, o)
+	}
+	return b.String()
 }
 
 // finishRun sends the Finish dump for one accepted run. Every accepted
