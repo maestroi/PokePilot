@@ -8,19 +8,42 @@ import (
 	"github.com/maestroi/pokepilot/red/sym"
 )
 
-// pewterGymMap is the Pewter Gym map: the first gym, and the only one
-// the journey reaches before a badge exists.
-const pewterGymMap = 0x36
+// GymInfo is what Gym needs to fight one gym: where the leader stands,
+// which place name is the tile to stand on, and which bit of wObtainedBadges
+// the victory sets. Every field is measured or read from the decomp — none
+// of it is derivable at runtime, because "which of this map's trainers is
+// the leader" is not a fact the map header states.
+type GymInfo struct {
+	Map     uint8
+	Place   string // the stand-beside tile, from the place table
+	LeaderX uint8  // the leader's home tile, faced from Place
+	LeaderY uint8
+	Badge   state.Badge // the bit of wObtainedBadges a win sets
+	Leader  string      // for logs and errors; never parsed
+}
 
-// Brock (sprite 12) stands at (4,1) in the gym's top room;
-// Place("pewter gym") is the open floor tile (4,2) directly below him.
-const (
-	gymLeaderX = 4
-	gymLeaderY = 1
-)
+// gyms is every gym the journey can currently reach. A gym missing from
+// here is a gym Gym refuses to fight rather than one it guesses at: the
+// leader tile and the badge bit are the two facts a wrong guess would turn
+// into a silent wrong postcondition.
+//
+// PEWTER_GYM 0x36: Brock at (4,1), Place("pewter gym") is (4,2) below him.
+// CERULEAN_GYM 0x41: Misty at (4,2) (data/maps/objects/CeruleanGym.asm),
+// one row lower than Brock, so Place("cerulean gym") is (4,3).
+var gyms = map[uint8]GymInfo{
+	0x36: {Map: 0x36, Place: "pewter gym", LeaderX: 4, LeaderY: 1, Badge: state.BadgeBoulder, Leader: "BROCK"},
+	0x41: {Map: 0x41, Place: "cerulean gym", LeaderX: 4, LeaderY: 2, Badge: state.BadgeCascade, Leader: "MISTY"},
+}
+
+// GymAt reports the gym on a map, if the map is one. Callers use it to ask
+// whether a gym challenge is even possible where the player stands.
+func GymAt(mapID uint8) (GymInfo, bool) {
+	g, ok := gyms[mapID]
+	return g, ok
+}
 
 // gymBattleWaitBudget bounds the leader's intro dialogue to the start of
-// the battle: Brock's two text boxes and the battle transition. It is a
+// the battle: two or three text boxes and the battle transition. It is a
 // budget, not a prediction; exhausting it is an error with diagnostics.
 const gymBattleWaitBudget = 10000
 
@@ -31,35 +54,57 @@ const gymBattleWaitBudget = 10000
 // closes.
 const gymPostBattleBudget = 3000
 
-// Gym fights the Pewter Gym leader, Brock. The player must already be on
-// the gym map: Gym walks to the approach tile below the leader, faces
-// him, opens the trainer dialogue, advances it until the battle starts,
-// then fights it to completion with policy.
+// Gym fights the leader of whichever gym the player is standing in (see
+// gyms). The player must already be on a gym map: Gym travels to the
+// approach tile beside the leader, faces them, opens the trainer dialogue,
+// advances it until the battle starts, then fights it to completion with
+// policy.
 //
-// The postcondition is the badge, not the battle: on a win Gym advances
-// the post-victory text until bit 0 of wObtainedBadges is set AND the
-// player is Controllable again, so a returned ResultWon means the Boulder
-// Badge is provably in RAM. On a loss it advances until controllable
-// (the blackout then carries the player to the Pewter center). It is an
-// error when the player is not on the gym map, the walk to the leader
-// fails, the battle never starts within budget, Battle fails, or the
-// post-battle sequence does not finish within budget.
+// It used to name Brock in its code as well as its comments — the map, the
+// leader tile and the badge bit were all Pewter constants — so a second gym
+// could not be fought at all, and a Cerulean challenge would have checked
+// the Boulder bit and reported a win as a failure.
+//
+// The postcondition is THAT gym's badge, not the battle: on a win Gym
+// advances the post-victory text until the leader's badge bit is set in
+// wObtainedBadges AND the player is Controllable again, so a returned
+// ResultWon means the badge is provably in RAM. On a loss it advances until
+// controllable (the blackout then carries the player to their respawn
+// point). It is an error when the player is not on a known gym map, the
+// approach fails, the battle never starts within budget, Battle fails, or
+// the post-battle sequence does not finish within budget.
 func Gym(m *emu.Emu, romData []byte, policy MovePolicy) (state.BattleResult, error) {
 	if policy == nil {
 		return 0, fmt.Errorf("skill: Gym: nil policy")
 	}
-	if cur := m.Peek8(sym.CurMap); cur != pewterGymMap {
-		return 0, fmt.Errorf("skill: Gym: player on map %#04x, not the gym %#04x", cur, pewterGymMap)
-	}
-	dest, ok := Place("pewter gym")
+	cur := m.Peek8(sym.CurMap)
+	g, ok := GymAt(cur)
 	if !ok {
-		return 0, fmt.Errorf("skill: Gym: Place \"pewter gym\" not found")
+		return 0, fmt.Errorf("skill: Gym: map %#04x is not a gym this run can fight", cur)
 	}
-	if err := walkWithinMap(m, romData, dest); err != nil {
-		return 0, fmt.Errorf("skill: Gym: %w", err)
+	dest, ok := Place(g.Place)
+	if !ok {
+		return 0, fmt.Errorf("skill: Gym: Place %q not found", g.Place)
 	}
-	if err := Face(m, gymLeaderX, gymLeaderY); err != nil {
-		return 0, fmt.Errorf("skill: Gym: %w", err)
+	// Travel, not walkWithinMap: a gym's other trainers engage by line of
+	// sight on the way to the leader (MEASURED, S7-8: the Pewter cool
+	// trainer at (3,6) re-arms on every crossing), and Cerulean's cool
+	// trainer at (2,3) faces right along the row the approach tile sits on.
+	// walkWithinMap aborts on that; Travel fights through it, which is what
+	// S8-4 measured it doing on Route 3.
+	res, err := Travel(m, romData, dest, policy, 20)
+	if err != nil {
+		return 0, fmt.Errorf("skill: Gym: approach %s: %w", g.Leader, err)
+	}
+	if res.BlackedOut {
+		// The party was wiped out by one of the gym's own trainers on the
+		// way in, and the respawn has already moved the player off the gym
+		// map. There is no leader to face; say so as the outcome it is,
+		// rather than failing later on a Face that cannot work.
+		return 0, fmt.Errorf("skill: Gym: %w approaching %s (%d battles)", ErrBlackedOut, g.Leader, res.Battles)
+	}
+	if err := Face(m, g.LeaderX, g.LeaderY); err != nil {
+		return 0, fmt.Errorf("skill: Gym: face %s: %w", g.Leader, err)
 	}
 
 	// The first A opens the leader's dialogue; advanceUntil keeps tapping
@@ -69,8 +114,8 @@ func Gym(m *emu.Emu, romData []byte, policy MovePolicy) (state.BattleResult, err
 		return state.DecodeBattle(mm) != nil
 	})
 	if state.DecodeBattle(&mem) == nil {
-		return 0, fmt.Errorf("skill: Gym: battle did not start after the leader dialogue: map=%#04x at (%d,%d) wJoyIgnore=%#04x wFontLoaded=%#04x",
-			mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord),
+		return 0, fmt.Errorf("skill: Gym: battle with %s did not start after the leader dialogue: map=%#04x at (%d,%d) wJoyIgnore=%#04x wFontLoaded=%#04x",
+			g.Leader, mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord),
 			mem.U8(sym.JoyIgnore), mem.U8(sym.FontLoaded))
 	}
 
@@ -83,11 +128,11 @@ func Gym(m *emu.Emu, romData []byte, policy MovePolicy) (state.BattleResult, err
 	// closed and the badge bit is not yet written. Advance them.
 	if outcome == state.ResultWon {
 		mem = advanceUntil(m, gymPostBattleBudget, func(mm *state.Mem) bool {
-			return mm.U8(sym.ObtainedBadges)&0x01 != 0
+			return state.DecodeProgress(mm).Has(g.Badge)
 		})
-		if mem.U8(sym.ObtainedBadges)&0x01 == 0 {
-			return outcome, fmt.Errorf("skill: Gym: badge not set %d frames after the victory: map=%#04x at (%d,%d) wJoyIgnore=%#04x wFontLoaded=%#04x",
-				gymPostBattleBudget, mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord),
+		if !state.DecodeProgress(&mem).Has(g.Badge) {
+			return outcome, fmt.Errorf("skill: Gym: %s badge not set %d frames after beating %s: map=%#04x at (%d,%d) wJoyIgnore=%#04x wFontLoaded=%#04x",
+				g.Badge, gymPostBattleBudget, g.Leader, mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord),
 				mem.U8(sym.JoyIgnore), mem.U8(sym.FontLoaded))
 		}
 	}

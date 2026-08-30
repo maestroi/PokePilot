@@ -176,7 +176,7 @@ func TestString(t *testing.T) {
 		{agent.Objective{Kind: agent.KindTrain, Level: 10}, "train the lead to level 10"},
 		{agent.Objective{Kind: agent.KindHeal}, "heal the party"},
 		{agent.Objective{Kind: agent.KindHeal, Place: "viridian pokemon center"}, "heal the party at VIRIDIAN POKEMON CENTER"},
-		{agent.Objective{Kind: agent.KindGym}, "beat the pewter gym leader"},
+		{agent.Objective{Kind: agent.KindGym}, "beat the gym leader here"},
 		{agent.Objective{Kind: agent.KindCatch, Species: 0x7B}, "catch a CATERPIE here"},
 		{agent.Objective{Kind: agent.KindBuy, Item: 0x14, Qty: 3}, "buy 3 POTION"},
 		{agent.Objective{Kind: 99}, "unknown kind 99"},

@@ -243,8 +243,8 @@ func (o Objective) Validate() error {
 
 // String renders a short, plain, stable one-line description of the
 // objective. It is shown to a planner, never parsed. Arguments are part of
-// the sentence: "train the lead to level 12", "catch a CATERPIE here" —
-// the model reads what it would be choosing.
+// the sentence: "train the lead to level 7", "catch a PIDGEY here" — the
+// model reads what it would be choosing.
 func (o Objective) String() string {
 	switch o.Kind {
 	case KindGoTo:
@@ -263,7 +263,10 @@ func (o Objective) String() string {
 		}
 		return "heal the party"
 	case KindGym:
-		return "beat the pewter gym leader"
+		// "here" and not the leader's name: Offer puts this on the menu
+		// only while the player is standing in a gym, and naming Brock on
+		// the Cerulean menu would be a lie the planner cannot check.
+		return "beat the gym leader here"
 	case KindCatch:
 		if name, ok := SpeciesName(o.Species); ok {
 			return "catch a " + strings.ToUpper(name) + " here"

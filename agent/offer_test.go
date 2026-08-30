@@ -51,6 +51,7 @@ func TestOfferTable(t *testing.T) {
 			name: "on route 1 with a party, balls and grass: one catch per species the map rolls",
 			obs: agent.Observation{
 				Map: 0x0c, MapName: "ROUTE_1", X: 5, Y: 14, PartyCount: 1,
+				Party:    []agent.PartyMon{{Level: 5, HP: 20, MaxHP: 20}},
 				Bag:      []agent.Item{{Name: "pokeball", Quantity: 5}},
 				HasGrass: true,
 				// Route1WildMons, as the ROM has it: no CATERPIE anywhere
@@ -73,7 +74,7 @@ func TestOfferTable(t *testing.T) {
 				"deliver oak's parcel",
 				"catch a PIDGEY here",
 				"catch a RATTATA here",
-				"train the lead to level 12",
+				"train the lead to level 7",
 			},
 			mustNot: []string{"starter", "heal", "CATERPIE"},
 		},
@@ -198,7 +199,7 @@ func TestOfferTable(t *testing.T) {
 			want: []string{
 				"go to pewter gym",
 				"deliver oak's parcel",
-				"beat the pewter gym leader",
+				"beat the gym leader here",
 			},
 		},
 		{
@@ -460,27 +461,87 @@ func TestOfferDoesNotRepeatCompletedTalk(t *testing.T) {
 	}
 }
 
-func TestOfferWithholdsSatisfiedTrainingTarget(t *testing.T) {
+func TestOfferTrainingTargetTracksTheLead(t *testing.T) {
 	known := agent.NewKnowledge(nil)
-	below := agent.Observation{
+	obs := agent.Observation{
 		Map: 0x0c, HasGrass: true, PartyCount: 1,
 		Party: []agent.PartyMon{{Level: 11}},
 	}
-	atTarget := below
-	atTarget.Party = []agent.PartyMon{{Level: 12}}
-
-	hasTrain := func(obs agent.Observation) bool {
+	trainTarget := func(obs agent.Observation) (uint8, bool) {
 		for _, objective := range agent.Offer(obs, known) {
 			if objective.Kind == agent.KindTrain {
+				return objective.Level, true
+			}
+		}
+		return 0, false
+	}
+
+	// The target is always a step the run has not taken. Under the old
+	// fixed target of 12 a level-12 lead was offered no training at all,
+	// whatever it was about to walk into.
+	for _, tc := range []struct{ lead, want uint8 }{{5, 7}, {11, 13}, {12, 14}, {40, 42}} {
+		obs.Party = []agent.PartyMon{{Level: tc.lead}}
+		got, ok := trainTarget(obs)
+		if !ok {
+			t.Fatalf("lead level %d: training not offered", tc.lead)
+		}
+		if got != tc.want {
+			t.Errorf("lead level %d: offered target %d, want %d", tc.lead, got, tc.want)
+		}
+	}
+
+	// A lead at the ceiling has no next rung, and no party has nothing to
+	// train: both are objectives that could only fail.
+	obs.Party = []agent.PartyMon{{Level: 100}}
+	if got, ok := trainTarget(obs); ok {
+		t.Errorf("training offered at level %d for a level-100 lead; there is no rung above it", got)
+	}
+	obs.Party, obs.PartyCount = nil, 0
+	if got, ok := trainTarget(obs); ok {
+		t.Errorf("training offered to level %d with an empty party", got)
+	}
+}
+
+// TestOfferGymIsNotPewterOnly: the gym challenge follows the player into
+// whichever gym they are standing in, and stops being offered once that
+// gym's badge is in hand — that leader will not rebattle, so the challenge
+// could only fail. Under the Pewter-only gate, standing in the Cerulean Gym
+// offered no gym objective at all.
+func TestOfferGymIsNotPewterOnly(t *testing.T) {
+	gymObjective := func(obs agent.Observation) bool {
+		known := agent.NewKnowledge(nil)
+		known.SawMap(obs.Map)
+		for _, o := range agent.Offer(obs, known) {
+			if o.Kind == agent.KindGym {
 				return true
 			}
 		}
 		return false
 	}
-	if !hasTrain(below) {
-		t.Fatal("training not offered below the target level")
+
+	cerulean := agent.Observation{
+		Map: 0x41, MapName: "CERULEAN_GYM", X: 4, Y: 3, PartyCount: 1,
+		Party:  []agent.PartyMon{{Level: 20, HP: 40, MaxHP: 40}},
+		Badges: []string{"Boulder"},
 	}
-	if hasTrain(atTarget) {
-		t.Fatal("training still offered after the lead reached the target level")
+	if !gymObjective(cerulean) {
+		t.Error("no gym objective in the Cerulean Gym; the verb was Pewter-only")
+	}
+
+	pewter := cerulean
+	pewter.Map, pewter.MapName, pewter.X, pewter.Y = 0x36, "PEWTER_GYM", 4, 2
+	if gymObjective(pewter) {
+		t.Error("gym offered in Pewter with the Boulder Badge already held; Brock will not rebattle")
+	}
+	pewter.Badges = nil
+	if !gymObjective(pewter) {
+		t.Error("gym not offered in Pewter without the badge")
+	}
+
+	// Underlevelled is still offered: Offer reports what is possible, and
+	// losing stays the planner's mistake to make.
+	pewter.Party = []agent.PartyMon{{Level: 5, HP: 2, MaxHP: 20}}
+	if !gymObjective(pewter) {
+		t.Error("gym withheld from an underlevelled party; Offer must not filter on wisdom")
 	}
 }

@@ -192,14 +192,27 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 		// the same reason a satisfied starter is not offered.
 		out = append(out, Objective{Kind: KindHeal, Place: name})
 	}
-	// The gym objective fights Brock in the Pewter Gym; elsewhere it has
-	// no one to fight. That is a precondition of the verb, not a verdict
-	// on whether the party is ready for it — underlevelled stays offered.
-	if d, ok := skill.Place("pewter gym"); ok && d.Map == obs.Map {
+	// The gym objective fights the leader of whichever gym the player is
+	// standing in; elsewhere it has no one to fight. Being on a gym map is
+	// a precondition of the verb, not a verdict on whether the party is
+	// ready for it — underlevelled stays offered, and losing is the
+	// planner's mistake to make. A badge already earned is different: that
+	// leader will not rebattle, so the challenge could only fail.
+	if g, ok := skill.GymAt(obs.Map); ok && !hasBadge(obs, g.Badge) {
 		out = append(out, Objective{Kind: KindGym})
 	}
-	if obs.HasGrass && (len(obs.Party) == 0 || obs.Party[0].Level < 12) {
-		out = append(out, Objective{Kind: KindTrain, Level: 12})
+	// Training is offered wherever the grass can actually roll an encounter
+	// and there is a lead to level up. The target used to be a fixed 12 —
+	// the level the Brock slice happened to need — which said "train" until
+	// 12 and then never again, whatever the run was walking into next. It
+	// is now the next rung above the lead, so the objective always names a
+	// step the run has not taken; the planner can aim anywhere in 1..100 by
+	// sending the level argument, and the map's wild band (WildGrass) is in
+	// the observation for it to judge how long a target would take.
+	if obs.HasGrass && len(obs.Party) > 0 {
+		if target := int(obs.Party[0].Level) + trainStep; target <= 100 {
+			out = append(out, Objective{Kind: KindTrain, Level: uint8(target)})
+		}
 	}
 	if isMart(obs.MapName) {
 		if it, ok := ItemByName("potion"); ok {
@@ -228,6 +241,24 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 	}
 	return out
 }
+
+// hasBadge reports whether the observation already lists a badge. Badges
+// reach the observation as names (state.Badge.String()), which is what a
+// planner reads, so the comparison is on the name rather than the bit.
+func hasBadge(obs Observation, b state.Badge) bool {
+	for _, name := range obs.Badges {
+		if name == b.String() {
+			return true
+		}
+	}
+	return false
+}
+
+// trainStep is how far above the lead the offered training target sits. Two
+// levels is a step the run can finish in a handful of battles and then be
+// offered again; a distant target is one long objective whose failure says
+// nothing about which part of it went wrong.
+const trainStep = 2
 
 // partyHurt says at least one mon is fainted or down to half HP or less.
 // Half, not "any damage at all": a lead at 25/26 is not a reason to spend a

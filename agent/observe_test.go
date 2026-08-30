@@ -257,3 +257,46 @@ func TestObserveAndOfferNameTheMapsOwnWildSpecies(t *testing.T) {
 		t.Fatalf("catch objectives = %v, want %v", catches, want)
 	}
 }
+
+// TestGymTableMatchesTheROM pins the two hand-carried facts in skill.gyms
+// against the map headers: the leader's tile must actually hold a trainer,
+// and the place the run stands on to face them must be beside it. A wrong
+// leader tile is the kind of error that shows up as "the battle never
+// started" three minutes into a run.
+func TestGymTableMatchesTheROM(t *testing.T) {
+	path := os.Getenv("POKEMON_RED_ROM")
+	if path == "" {
+		t.Skip("POKEMON_RED_ROM not set")
+	}
+	romData, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read ROM: %v", err)
+	}
+	for _, mapID := range []uint8{0x36, 0x41} { // PEWTER_GYM, CERULEAN_GYM
+		g, ok := skill.GymAt(mapID)
+		if !ok {
+			t.Fatalf("map %#04x is not in the gym table", mapID)
+		}
+		found := false
+		for _, o := range agent.MapObjects(romData, mapID) {
+			if o.Kind == "trainer" && o.X == g.LeaderX && o.Y == g.LeaderY {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("%s: no trainer at the leader tile (%d,%d) on map %#04x", g.Leader, g.LeaderX, g.LeaderY, mapID)
+		}
+		d, ok := skill.Place(g.Place)
+		if !ok {
+			t.Fatalf("%s: Place(%q) not found", g.Leader, g.Place)
+		}
+		if d.Map != mapID {
+			t.Errorf("%s: Place(%q) is on map %#04x, not the gym %#04x", g.Leader, g.Place, d.Map, mapID)
+		}
+		dx, dy := int(d.X)-int(g.LeaderX), int(d.Y)-int(g.LeaderY)
+		if dx*dx+dy*dy != 1 {
+			t.Errorf("%s: stand tile (%d,%d) is not orthogonally adjacent to the leader at (%d,%d)",
+				g.Leader, d.X, d.Y, g.LeaderX, g.LeaderY)
+		}
+	}
+}
