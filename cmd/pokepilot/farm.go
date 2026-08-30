@@ -95,12 +95,14 @@ func (s *heartbeatSnap) store(hb farm.Heartbeat) {
 }
 
 // storeStatus writes the live position/trace without touching the last
-// plan. sampleHeartbeat uses this so a tick cannot blank the question
-// the planner published while the model was still answering.
+// plan or the latest tally. sampleHeartbeat uses this so a tick cannot
+// blank the question the planner published while the model was still
+// answering, or the stats it pushed between samples.
 func (s *heartbeatSnap) storeStatus(hb farm.Heartbeat) {
 	s.mu.Lock()
 	hb.Question = s.hb.Question
 	hb.Decision = s.hb.Decision
+	hb.Stats = s.hb.Stats
 	s.hb = hb
 	s.mu.Unlock()
 }
@@ -113,6 +115,16 @@ func (s *heartbeatSnap) storePlan(question, decision string) {
 	s.mu.Lock()
 	s.hb.Question = question
 	s.hb.Decision = decision
+	s.mu.Unlock()
+}
+
+// storeStats writes the latest planner tally. The copy is taken here —
+// value plus a fresh Choices slice — so the snap never aliases the live
+// tally that record() keeps mutating on the stepping goroutine.
+func (s *heartbeatSnap) storeStats(st farm.LLMStats) {
+	st.Choices = append([]farm.ChoiceCount(nil), st.Choices...)
+	s.mu.Lock()
+	s.hb.Stats = &st
 	s.mu.Unlock()
 }
 
@@ -394,7 +406,10 @@ func runFarmLLM(m *emu.Emu, starter, goal string, maxRounds, maxFrames int, canc
 	planner := agent.NewLLMPlanner()
 	planner.Goal = goal
 	planner.Log = logw // one line per model call, above its round line
-	res := agent.Run(m, m.ROM(), reportingPlanner{inner: planner, snap: snap}, agent.Budget{
+	// The same tally the local watch page shows (runStats): a farm worker's
+	// page is this page, so a wandering leased run is visible on it too.
+	stats := newStatsPlanner(planner, m.TraceStats, snap)
+	res := agent.Run(m, m.ROM(), reportingPlanner{inner: stats, snap: snap}, agent.Budget{
 		MaxRounds: maxRounds,
 		MaxFrames: maxFrames,
 		Log:       logw,
