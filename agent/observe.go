@@ -28,12 +28,22 @@ type Observation struct {
 	Party        []PartyMon // Species, Level, HP, MaxHP, Status
 	Badges       []string
 	Money        uint32
+	// RespawnPlace is the map a blackout sends the player to, decoded from
+	// wLastBlackoutMap. It is NOT "the nearest town": only healing at a
+	// Pokemon Center writes it (SetLastBlackoutMap is called from one place,
+	// DisplayPokemonCenterDialogue_, on YES to the nurse), and its zeroed
+	// new-game value is PALLET_TOWN. So a run that walks to Pewter and
+	// loses to Brock without ever using a Center wakes up in Pallet Town
+	// with half its money — the whole journey to redo, and the shop money
+	// gone. Reported so the planner can see what a loss would cost before
+	// it picks the fight, and see a Center as the checkpoint it is.
+	RespawnPlace string
 	Events       []string // names of the story events currently set
 	// BlackedOut says a blackout just happened: the party was wiped out
 	// (a lost battle, or poison fainted the last mon out of it) and the
-	// game is mid-respawn. The respawn fully heals the party and lands the
-	// player on the last town's fly-warp spot (a Route 1 blackout lands on
-	// Pallet Town, which has no center at all), so the party is healthy
+	// game is mid-respawn. The respawn fully heals the party, HALVES the
+	// money (ResetStatusAndHalveMoneyOnBlackout, home/overworld.asm:767)
+	// and lands the player on RespawnPlace, so the party is healthy
 	// again by the time the player is controllable. The bit this reads
 	// (wStatusFlags4 bit 5) is cleared on every map entry, so it is live
 	// only while that transition is in flight; Run carries the fact across
@@ -164,6 +174,7 @@ func Observe(m *emu.Emu, romData []byte) Observation {
 		InBattle:       gs.Battle != nil,
 		PartyCount:     int(gs.Party.Count),
 		Money:          gs.Inventory.Money,
+		RespawnPlace:   state.MapName(mem.U8(sym.LastBlackoutMap)),
 		Party:          make([]PartyMon, len(gs.Party.Mons)),
 		Badges:         []string{},
 		Events:         []string{},

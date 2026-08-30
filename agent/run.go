@@ -412,8 +412,8 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 			// failed round: it ran.
 			res.Rounds = round
 			res.Err = err
-			history = appendHistory(history, RoundRecord{Objective: obj.String(), Outcome: "failed: " + err.Error()})
 			last = Observe(m, romData)
+			outcome := "failed: " + err.Error()
 			blackedOut := errors.Is(err, skill.ErrBlackedOut)
 			if blackedOut {
 				// The blackout bit clears on the respawn map entry, before
@@ -421,7 +421,16 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 				// loss so the planner sees a wiped party, not just a healed
 				// one.
 				last.BlackedOut = true
+				// What the loss actually cost, in the one place the planner
+				// re-reads every round. The respawn is wherever the party was
+				// last healed at a Center — PALLET_TOWN until it uses one —
+				// and the money is halved on the way there. Without this the
+				// history says "blacked out" and the planner sees a healed
+				// party in a town, which reads like a free reset.
+				outcome += fmt.Sprintf(" (respawned in %s, money %d -> %d)",
+					last.RespawnPlace, before.Money, last.Money)
 			}
+			history = appendHistory(history, RoundRecord{Objective: obj.String(), Outcome: outcome})
 			last.History = history
 			last.RecentDialogue = tape.recent()
 			logRound(budget.Log, round, obj, last)

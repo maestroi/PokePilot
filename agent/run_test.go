@@ -359,6 +359,26 @@ func TestRunBlackoutDoesNotStopTheRun(t *testing.T) {
 	if len(p.seen[1].History) != 1 || !strings.Contains(p.seen[1].History[0].Outcome, "blacked out") {
 		t.Errorf("seen[1].History = %+v, want the blackout failure recorded", p.seen[1].History)
 	}
+	// The record must name what the loss cost, or a healed party in a town
+	// reads to the planner as a free reset. The respawn is PALLET_TOWN
+	// because this run never healed at a Center, and the money is halved.
+	if got := p.seen[1].History[0].Outcome; !strings.Contains(got, "respawned in PALLET_TOWN") {
+		t.Errorf("blackout outcome = %q, want it to name the respawn place", got)
+	}
+	if p.seen[1].RespawnPlace != "PALLET_TOWN" {
+		t.Errorf("seen[1].RespawnPlace = %q, want PALLET_TOWN (no Center was used, so wLastBlackoutMap is still its new-game value)", p.seen[1].RespawnPlace)
+	}
+	// Halved exactly, not just "went down": ResetStatusAndHalveMoneyOnBlackout
+	// (home/overworld.asm:767) is the whole reason a blackout loop is
+	// expensive, and a zero-money start would make a "went down" check pass
+	// while proving nothing.
+	if p.seen[0].Money == 0 {
+		t.Fatal("the run started the blackout round with no money; the halving cannot be observed")
+	}
+	if want := p.seen[0].Money / 2; p.seen[1].Money != want {
+		t.Errorf("money %d -> %d across the blackout, want %d (halved)", p.seen[0].Money, p.seen[1].Money, want)
+	}
+	t.Logf("blackout cost: respawned in %s, money %d -> %d", p.seen[1].RespawnPlace, p.seen[0].Money, p.seen[1].Money)
 	if len(res.Final.History) != 3 {
 		t.Fatalf("Final.History = %+v, want all three failed rounds", res.Final.History)
 	}

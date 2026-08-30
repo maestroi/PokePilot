@@ -57,6 +57,12 @@ const (
 	ToggleableObjectList  uint16 = 0xD5CE
 	EventFlags            uint16 = 0xD747
 	StatusFlags4          uint16 = 0xD72E // wStatusFlags4
+	// LastBlackoutMap is where a blackout respawns the player. Only
+	// SetLastBlackoutMap writes it (pokered/engine/events/set_blackout_map.asm)
+	// and only DisplayPokemonCenterDialogue_ calls that — on YES to the
+	// nurse, before HealParty. A run that never heals at a Center leaves it
+	// at its zeroed new-game value, PALLET_TOWN.
+	LastBlackoutMap uint16 = 0xD719
 )
 
 // Battle
