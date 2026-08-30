@@ -5,48 +5,24 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
-	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
-	"github.com/maestroi/pokepilot/world"
 )
 
 // approachViaTravel walks to a walkable tile orthogonally adjacent to
 // (targetX, targetY) on the current map, resolving the wild battles that
 // interrupt the way. It is a no-op when the player is already adjacent.
 func approachViaTravel(m *emu.Emu, romData []byte, targetX, targetY uint8, policy MovePolicy) error {
-	sx, sy := playerXY(m)
-	if _, ok := directionTo(sx, sy, targetX, targetY); ok {
+	dest, ok, err := besideDestination(m, romData, targetX, targetY)
+	if err != nil {
+		return fmt.Errorf("skill: Pickup: %w", err)
+	}
+	if !ok {
 		return nil
 	}
-	px, py := int(sx), int(sy)
-	cur := m.Peek8(sym.CurMap)
-	h, err := rom.ParseMap(romData, cur)
+	_, err = Travel(m, romData, dest, policy, 20)
 	if err != nil {
-		return fmt.Errorf("skill: Pickup: parse map %#04x: %w", cur, err)
-	}
-	grid, err := world.Build(romData, h)
-	if err != nil {
-		return fmt.Errorf("skill: Pickup: build map %#04x: %w", cur, err)
-	}
-
-	var best *struct{ x, y, d int }
-	for _, s := range []world.Step{world.StepUp, world.StepDown, world.StepLeft, world.StepRight} {
-		nx, ny := int(targetX)+s.DX, int(targetY)+s.DY
-		if !grid.InBounds(nx, ny) || !grid.Walkable(nx, ny) {
-			continue
-		}
-		c := struct{ x, y, d int }{nx, ny, absInt(nx-px) + absInt(ny-py)}
-		if best == nil || c.d < best.d {
-			best = &c
-		}
-	}
-	if best == nil {
-		return fmt.Errorf("skill: Pickup: no walkable tile beside (%d,%d) on map %#04x", targetX, targetY, cur)
-	}
-	_, err = Travel(m, romData, Destination{Map: cur, X: uint8(best.x), Y: uint8(best.y)}, policy, 20)
-	if err != nil {
-		return fmt.Errorf("skill: Pickup: approach beside (%d,%d) on map %#04x: %w", targetX, targetY, cur, err)
+		return fmt.Errorf("skill: Pickup: approach beside (%d,%d) on map %#04x: %w", targetX, targetY, dest.Map, err)
 	}
 	return nil
 }

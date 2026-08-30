@@ -1978,3 +1978,89 @@ without a single index miss in the verification run.
   edge ... did not cross within 180 frames", "no path ...") are skill-level
   traversal outcomes — the game answering, per the standing rule. They are
   candidates for slice 10's next measurement, not this fix.
+
+## S10-2: talk through the grass — TalkAt's approach flees wild encounters instead of dying on them
+
+### The bug, measured
+
+`make run-llm`, post-S10-1, died at round 18 — two consecutive identical
+failures of one objective, then the failure budget ran out:
+
+```
+round 18: talk at (5,24) -> map 0c at (12,22)
+round 19: talk at (5,24) -> map 0c at (12,22)
+run stopped: failed after 19 round(s)
+  error: agent: talk at (5,24): skill: TalkAt: approach object 1 at (5,24):
+         skill: Approach: walk beside (5,24) on map 0x000c:
+         skill: battle interrupted movement
+```
+
+The same class was killing farm runs: three dashboard hits on `talk at
+(15,13)` / `(14,13)` on map 0x000c (Route 1).
+
+Root cause: TalkAt's approach was a raw `WalkPath`, which aborts on the first
+wild battle by design ("callers decide what to do"). NPCs stand in tall grass
+as often as in towns — the Route 1 old man at (5,24), the (15,13) pair — so
+every approach that crosses grass died on the first encounter; the model
+re-offered the same objective and it died again. The codebase had already
+solved exactly this for ground items: `Pickup`'s `approachViaTravel` uses
+Travel, with the comment "Approach aborts on the first wild battle by design
+— a pickup objective there would fail on every retry". TalkAt was the outlier.
+
+### The fix
+
+- New shared planner `besideDestination` (skill/interact.go): picks the
+  walkable tile orthogonally adjacent to the target that is closest
+  (Manhattan) to the player; ok=false when already adjacent. `Pickup`'s
+  `approachViaTravel` now uses it — behaviour and error strings unchanged.
+- New `talkBeside`: walks to the beside-tile via **TravelFlee**, not a raw
+  walk. Flee, not fight: the walk is logistics for the conversation, not an
+  end in itself — a fight here is damage and level-up math the objective
+  never asked for, and a loss blackouts the party into a town, so the NPC's
+  map may no longer be the current one when it returns. Fleeing never loses
+  (S8-4 measured first-attempt success in this ROM). A trainer battle — which
+  the game refuses to let you flee — is fought with the policy; a blackout
+  from that fallback comes back as ErrBlackedOut for the caller to decide on.
+- `TalkAt` takes a `policy MovePolicy` (mirroring Pickup); the agent passes
+  StatAwareMove.
+- `Approach` deleted: zero callers after this change, and its contract (dies
+  on a battle) is exactly the trap that killed these runs.
+
+### Verification
+
+- New `TestExecuteTalkCrossesTallGrass` (agent) with a new `route1` fixture
+  (post-story, Place("route 1") center (5,14) on 0x0c): KindTalk at (5,24),
+  whose approach crosses tall grass. Postconditions are both halves: the
+  player must END UP on 0x0c orthogonally adjacent to (5,24) (the talk
+  happened where it was offered, not in a town after a blackout), and the
+  lead's HP must be unchanged (the approach fled; a fought encounter would
+  have damaged it). Passes in ~11s.
+- `go test -short ./...` green; `go test -count=1 ./agent` green.
+- `make run-llm` live: **all 32 rounds completed** ("run stopped: budget",
+  the normal ending) where the previous runs died at rounds 1–19. The model
+  used the S10-1 flee variants twice ("go to route 1, fleeing wild battles",
+  "go to viridian city, fleeing wild battles"), trained on Route 1's grass,
+  healed at the Viridian center, and completed five talk objectives across
+  Oak's lab and Viridian City. One self-recovered rejection in 32 rounds
+  (below).
+
+### Observation, not fixed (self-recovering)
+
+Round 23: the model sent `{"choice": 11, "level": 9, "species":
+"{...}"}` for train — cross-wiring the catch objective's `species` argument
+onto train. WithArgs rejected it; the model corrected to `{"choice": 11}` on
+ask 2 and the round completed. Same flat-schema shape as S10-1's flee, but
+recoverable: unlike flee (emitted on every reply, temp 0, identical answer),
+the species field appeared once and the feedback changed the answer. If it
+starts burning retries, the fix is per-objective argument schemas, not
+prompting.
+
+### Left as-is (measured, not fixed)
+
+- Two dashboard hits on `talk at (12,4): Approach: no path on map 0x0034
+  from (10,4) beside (12,4)`: a genuinely unreachable beside-tile — a
+  different class (geometry or door state), needs a saved state to measure.
+- `TestGymCascadeBadge` full-mode flake is the documented DISABLE policy
+  defect (named and handed back in S9-10): this session's failure reproduced
+  the recorded battle state byte-for-byte — L17 lead 37/52 vs Jigglypuff
+  38/58 at the 60000-frame cap, Route 3 (33,8). Not on this slice's surface.

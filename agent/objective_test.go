@@ -57,6 +57,47 @@ func TestExecuteTalkWalksToMapObject(t *testing.T) {
 	}
 }
 
+// TestExecuteTalkCrossesTallGrass is the end-to-end proof of S10-2: a talk
+// whose approach crosses tall grass must complete, with the encounters on
+// the way fled rather than fought. Before the fix the approach was a raw
+// walk that aborts on the first wild battle ("skill: battle interrupted
+// movement"), and the objective failed on every retry until the run's
+// failure budget ran out — make run-llm died at round 18 on exactly this
+// objective (talk at (5,24) on Route 1), and three farm runs died on its
+// neighbours. The postconditions are both halves: the player must END UP on
+// Route 1 beside the NPC (the talk happened where it was offered, not in a
+// town after a blackout), and the lead's HP must be unchanged (the approach
+// fled; a fought encounter would have damaged it).
+func TestExecuteTalkCrossesTallGrass(t *testing.T) {
+	e := fixture.Load(t, "route1")
+
+	var mem state.Mem
+	state.Snapshot(e, &mem)
+	if cur := mem.U8(sym.CurMap); cur != 0x0c {
+		t.Fatalf("fixture start = map %#04x, want 0x0c (route 1)", cur)
+	}
+	hpBefore := state.DecodeParty(&mem).Mons[0].HP
+
+	// The NPC at (5,24) is the route's talk target; the approach from the
+	// fixture's (5,14) crosses tall grass.
+	if err := agent.Execute(e, e.ROM(), agent.Objective{Kind: agent.KindTalk, X: 5, Y: 24}); err != nil {
+		t.Fatalf("Execute talk across grass: %v", err)
+	}
+
+	state.Snapshot(e, &mem)
+	if cur := mem.U8(sym.CurMap); cur != 0x0c {
+		t.Fatalf("after talk = map %#04x, want 0x0c (route 1): the approach must not have blacked out", cur)
+	}
+	x, y := int(mem.U8(sym.XCoord)), int(mem.U8(sym.YCoord))
+	beside := (x == 5 && (y == 23 || y == 25)) || (y == 24 && (x == 4 || x == 6))
+	if !beside {
+		t.Fatalf("after talk = (%d,%d), want orthogonally adjacent to (5,24): the talk must have happened beside the NPC", x, y)
+	}
+	if hp := state.DecodeParty(&mem).Mons[0].HP; hp != hpBefore {
+		t.Fatalf("lead HP = %d after, was %d before: the approach fought an encounter instead of fleeing it", hp, hpBefore)
+	}
+}
+
 func TestExecuteTrainCharmanderToOfferedLevel(t *testing.T) {
 	e := loadFixture(t)
 	for _, objective := range []agent.Objective{

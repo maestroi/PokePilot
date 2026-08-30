@@ -115,6 +115,15 @@ func init() {
 		return skill.GoTo(e, e.ROM(), dest)
 	})
 
+	// route1: post-story, walked to Route 1's center (Place("route 1"),
+	// (5,14) on map 0x0c). The state a talk objective on the route stands
+	// beside: the NPC at (5,24) is reached only through tall grass, so
+	// TalkAt's approach crosses wild encounters. Built with Travel, not
+	// GoTo — see viridian_city.
+	Register("route1", func(e *emu.Emu) error {
+		return travelTo(e, "route 1")
+	})
+
 	// viridian_city and viridian_pokecenter: post-story, walked across
 	// Route 1's tall grass. Travel, not GoTo: GoTo aborts on a wild battle
 	// by design, so built with GoTo these fixtures would fail

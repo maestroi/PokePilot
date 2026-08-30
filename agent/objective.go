@@ -91,7 +91,7 @@ func Execute(m *emu.Emu, romData []byte, o Objective) error {
 		}
 		return nil
 	case KindTalk:
-		if _, err := skill.TalkAt(m, romData, o.X, o.Y); err != nil {
+		if _, err := skill.TalkAt(m, romData, o.X, o.Y, skill.StatAwareMove(romData)); err != nil {
 			return fmt.Errorf("agent: %s: %w", o, err)
 		}
 		return nil

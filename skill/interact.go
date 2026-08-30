@@ -131,7 +131,11 @@ func Talk(m *emu.Emu) (int, error) {
 // live sprite position, then faces and talks to it. The ROM coordinate makes
 // a map-wide objective possible; the sprite refresh keeps wandering NPCs
 // from turning that objective into a stale-coordinate interaction.
-func TalkAt(m *emu.Emu, romData []byte, homeX, homeY uint8) (int, error) {
+//
+// The approach crosses wild battles by fleeing them (talkBeside): policy is
+// the move policy for the one case fleeing cannot cover — a trainer battle,
+// which the game refuses to let you flee and which talkBeside fights.
+func TalkAt(m *emu.Emu, romData []byte, homeX, homeY uint8, policy MovePolicy) (int, error) {
 	cur := m.Peek8(sym.CurMap)
 	h, err := rom.ParseMap(romData, cur)
 	if err != nil {
@@ -154,7 +158,7 @@ func TalkAt(m *emu.Emu, romData []byte, homeX, homeY uint8) (int, error) {
 		if liveX, liveY, ok := liveObjectPosition(m, objectID); ok {
 			tx, ty = liveX, liveY
 		}
-		if err := Approach(m, romData, tx, ty); err != nil {
+		if err := talkBeside(m, romData, tx, ty, policy); err != nil {
 			return 0, fmt.Errorf("skill: TalkAt: approach object %d at (%d,%d): %w", objectID, tx, ty, err)
 		}
 
@@ -192,38 +196,71 @@ func liveObjectPosition(m *emu.Emu, objectID int) (uint8, uint8, bool) {
 	return 0, 0, false
 }
 
-// Approach walks to a reachable tile orthogonally adjacent to target on the
-// current map. Dynamic blockers are re-read on every retry and never cached.
-func Approach(m *emu.Emu, romData []byte, targetX, targetY uint8) error {
+// besideDestination picks the walkable tile orthogonally adjacent to
+// (targetX, targetY) on the current map that is closest (Manhattan) to the
+// player. ok is false when the player already stands on such a tile: no
+// journey is needed. It is the shared planning step of the "walk beside
+// something" approaches — TalkAt and Pickup both need a tile to stand on, and
+// Travel needs one destination, so the choice lives here rather than in each
+// caller.
+func besideDestination(m *emu.Emu, romData []byte, targetX, targetY uint8) (Destination, bool, error) {
 	sx, sy := playerXY(m)
 	if _, ok := directionTo(sx, sy, targetX, targetY); ok {
-		return nil
+		return Destination{}, false, nil
 	}
 	cur := m.Peek8(sym.CurMap)
 	h, err := rom.ParseMap(romData, cur)
 	if err != nil {
-		return fmt.Errorf("skill: Approach: parse map %#04x: %w", cur, err)
+		return Destination{}, false, fmt.Errorf("parse map %#04x: %w", cur, err)
 	}
 	grid, err := world.Build(romData, h)
 	if err != nil {
-		return fmt.Errorf("skill: Approach: build map %#04x: %w", cur, err)
+		return Destination{}, false, fmt.Errorf("build map %#04x: %w", cur, err)
 	}
+	px, py := int(sx), int(sy)
+	var best *struct{ x, y, d int }
+	for _, s := range []world.Step{world.StepUp, world.StepDown, world.StepLeft, world.StepRight} {
+		nx, ny := int(targetX)+s.DX, int(targetY)+s.DY
+		if !grid.InBounds(nx, ny) || !grid.Walkable(nx, ny) {
+			continue
+		}
+		c := struct{ x, y, d int }{nx, ny, absInt(nx-px) + absInt(ny-py)}
+		if best == nil || c.d < best.d {
+			best = &c
+		}
+	}
+	if best == nil {
+		return Destination{}, false, fmt.Errorf("no walkable tile beside (%d,%d) on map %#04x", targetX, targetY, cur)
+	}
+	return Destination{Map: cur, X: uint8(best.x), Y: uint8(best.y)}, true, nil
+}
 
-	var planErr error
-	err = walkAround(func() map[[2]int]bool { return spriteBlockers(m) },
-		func(blocked map[[2]int]bool) ([]world.Step, error) {
-			x, y := playerXY(m)
-			steps, _, err := world.FindPathAdjacent(grid, int(x), int(y), int(targetX), int(targetY), blocked)
-			if err != nil {
-				planErr = fmt.Errorf("skill: Approach: no path on map %#04x from (%d,%d) beside (%d,%d): %w",
-					cur, x, y, targetX, targetY, err)
-				return nil, planErr
-			}
-			return steps, nil
-		}, func(steps []world.Step) error { return WalkPath(m, steps) },
-		func() { m.StepFrames(npcWaitFrames) })
-	if err == nil || err == planErr {
-		return err
+// talkBeside walks to a walkable tile orthogonally adjacent to (tx,ty) on the
+// current map, fleeing the wild encounters that interrupt the way. It is a
+// no-op when the player is already adjacent.
+//
+// The approach uses TravelFlee, not a raw walk: talk targets stand in tall
+// grass as often as in towns (the Route 1 old man), and a raw WalkPath aborts
+// on the first wild battle by design — a talk objective there failed on every
+// retry until the run's failure budget ran out (the make run-llm that died at
+// round 18 on talk at (5,24), and three farm runs on talk at (15,13)). The
+// walk is logistics for the conversation, not an end in itself: a fight here
+// is damage and level-up math the objective never asked for, and a loss
+// blackouts the party into a town, so the NPC's map may no longer be the
+// current one when it returns. Fleeing never loses (S8-4 measured
+// first-attempt success in this ROM), and a trainer battle — which the game
+// refuses to let you flee — is fought with policy; a blackout from that
+// fallback comes back as ErrBlackedOut for the caller to decide on.
+func talkBeside(m *emu.Emu, romData []byte, tx, ty uint8, policy MovePolicy) error {
+	dest, ok, err := besideDestination(m, romData, tx, ty)
+	if err != nil {
+		return fmt.Errorf("skill: TalkAt: %w", err)
 	}
-	return fmt.Errorf("skill: Approach: walk beside (%d,%d) on map %#04x: %w", targetX, targetY, cur, err)
+	if !ok {
+		return nil
+	}
+	if _, err := TravelFlee(m, romData, dest, policy, 20); err != nil {
+		return fmt.Errorf("skill: TalkAt: approach beside (%d,%d) on map %#04x: %w", tx, ty, dest.Map, err)
+	}
+	return nil
 }
