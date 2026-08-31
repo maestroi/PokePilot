@@ -348,6 +348,8 @@ func recoveryStopName(s skill.DialogueRecoveryStop) string {
 		return "the box never closed"
 	case skill.DialogueUnexpectedMode:
 		return "a battle, not a text box"
+	case skill.DialogueMenuOpen:
+		return "a menu is open and this layer does not operate menus"
 	}
 	return fmt.Sprintf("unknown stop %d", int(s))
 }

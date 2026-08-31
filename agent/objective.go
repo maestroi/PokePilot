@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 
@@ -221,12 +220,18 @@ func Execute(m *emu.Emu, romData []byte, o Objective) error {
 		err := skill.Buy(m, o.Item, o.Qty)
 		if err != nil {
 			// CantAfford and NotInStock are game outcomes the planner can
-			// react to (earn money, go elsewhere); a setup failure is not.
-			if errors.Is(err, skill.ErrCantAfford) || errors.Is(err, skill.ErrNotInStock) {
-				item, _ := ItemName(o.Item) // Validate already checked it
-				fmt.Printf("  buy failed: %s (%d x %s)\n", err, o.Qty, strings.ToUpper(item))
-				return nil
-			}
+			// react to (earn money, go elsewhere) rather than setup
+			// failures — but they are still FAILURES, and they used to
+			// return nil. A purchase that did not happen was recorded as a
+			// completed round: history said "done", Knowledge counted it in
+			// Completed, and the menu line grew a "(done 1x)" for something
+			// the clerk had refused. The planner then had no reason to stop
+			// choosing it. Returning the error puts it in the failure tally
+			// instead, which is where the run can see it and where the
+			// game's own words ("the clerk does not stock...") are quoted
+			// back on the next round.
+			item, _ := ItemName(o.Item) // Validate already checked it
+			fmt.Printf("  buy failed: %s (%d x %s)\n", err, o.Qty, strings.ToUpper(item))
 			return fmt.Errorf("agent: %s: %w", o, err)
 		}
 		item, _ := ItemName(o.Item)
