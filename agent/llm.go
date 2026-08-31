@@ -373,7 +373,7 @@ func looksLikeAnswer(s string) bool {
 // If S6-11's diagnosis shows the model needs to think out loud before
 // choosing, the answer is a free pre-call followed by this constrained
 // one; nothing here has to change for that.
-const llmSystemPrompt = `You are choosing the next objective for a Pokemon Red player. Prefer an objective that makes NEW progress: repeating what you just did wastes the run. The run has a limited number of rounds and each objective costs one — the observation's "RoundsLeft" is how many you have left, this one included: most small talk does not advance your goal, so spend rounds on objectives that move toward it. Reply with ONLY a JSON object: {"choice": N} where N is the number of your choice, plus the arguments of that objective when it has any ("level", "species", "item", "quantity"). Travelling objectives are offered twice: the plain one FIGHTS wild battles on the way, and the one ending in ", fleeing wild battles" RUNS them instead — pick the variant you want by its number. Also include "intent": one short sentence (at most 200 bytes) saying what this choice is in service of. It will be read back to you on the next round's observation as "Intent", with "IntentAge" — how many rounds it has gone unchanged — so state it honestly and change it only when your purpose changes. Do not explain.`
+const llmSystemPrompt = `You are choosing the next objective for a Pokemon Red player. Prefer an objective that makes NEW progress: repeating what you just did wastes the run. The run has a limited number of rounds and each objective costs one — the observation's "RoundsLeft" is how many you have left, this one included: most small talk does not advance your goal, so spend rounds on objectives that move toward it. Reply with ONLY a JSON object: {"choice": N} where N is the number of your choice. Every objective is already complete as written — the level, species, item and quantity are part of the sentence you are picking, so send no other fields. Travelling objectives are offered twice: the plain one FIGHTS wild battles on the way, and the one ending in ", fleeing wild battles" RUNS them instead — pick the variant you want by its number. Also include "intent": one short sentence (at most 200 bytes) saying what this choice is in service of. It will be read back to you on the next round's observation as "Intent", with "IntentAge" — how many rounds it has gone unchanged — so state it honestly and change it only when your purpose changes. Do not explain.`
 
 // llmUserPrompt renders the observation as compact JSON, then the offered
 // objectives as a 1-based numbered list of their String() forms.
@@ -398,6 +398,17 @@ func llmUserPrompt(obs Observation, offered []Objective) string {
 	b.Write(obsJSON)
 	b.WriteString("\n\nOffered objectives:\n")
 	for i, o := range offered {
+		// Note is what this run has already done with this objective (see
+		// Offer's annotate): "(done 6x)", "(failed 3x)". It rides on the
+		// LINE BEING CHOSEN because the same counts sitting elsewhere in
+		// the prompt were demonstrably skipped — the model re-picked an
+		// objective while its own failure record named it three lines
+		// above. String() does not include it, so nothing that identifies
+		// an objective changes.
+		if o.Note != "" {
+			fmt.Fprintf(&b, "%d: %s  %s\n", i+1, o, o.Note)
+			continue
+		}
 		fmt.Fprintf(&b, "%d: %s\n", i+1, o)
 	}
 	return b.String()
@@ -436,57 +447,52 @@ type jsonSchema struct {
 	Schema map[string]any `json:"schema"`
 }
 
-// choiceSchema is the requested reply shape FOR THIS ROUND. "choice" is the
-// only required field, and the argument fields are present only when an
-// offered objective could actually take one: "level" only when something
-// trainable is offered, "species" only with a catch, "item"/"quantity" only
-// with a buy.
+// choiceSchema is the requested reply shape: an index, and a sentence
+// saying what it is for. NOTHING ELSE.
 //
-// Building it per round rather than once is the same lesson "flee" taught
-// (see the comment below): a small model given an optional field in the
-// schema FILLS IT IN, on every reply, whatever it picked — and WithArgs
-// then rejects the argument as inapplicable, correctly. At temperature 0
-// the rejection feedback does not change the next answer, so the round
-// burns MaxReplyRetries and the run stops on its first objective.
-// MEASURED 2026-08-30: round 1 offered three starters and two journeys,
-// none of which take an argument, and the model answered
-// {"choice": 1, "level": 1, "species": "Charmander"} three times running.
-// The constrained decoder forbids whatever the schema omits, so the cure is
-// to omit it: on a round where no offered objective carries an argument the
-// model is left with the one question it can actually answer.
+// Every offered objective is already CONCRETE when Offer builds it — the
+// catch names its species, the train names its target level, the buy names
+// its item and quantity, the use-item names its slot. So an argument in the
+// reply was never information the menu lacked; it was only ever a way to
+// OVERRIDE the offered value, and that override has now ended three runs:
 //
-// This is a narrowing, never a widening: an argument the model may legally
-// send still reaches WithArgs, which range-checks it exactly as before. The
-// schema is an optimisation, not the safety mechanism.
+//	"flee": true attached to starters and talk (S10-1)
+//	{"choice": 1, "level": 1, "species": "Charmander"} on a starter menu
+//	{"choice": 2, "level": 7} on "use a POTION on party slot 0"
 //
-// "flee" is deliberately ABSENT whatever is offered: it is a conditional
-// argument on go-to and heal-with-place, and the fight/flee choice lives in
-// the menu instead (Offer lists both variants of each journey), made as an
-// index, which the model does reliably.
-func choiceSchema(offered []Objective) map[string]any {
-	props := map[string]any{
+// The pattern is always the same. A small model handed an optional field
+// FILLS IT IN, attaches it to whatever it picked, WithArgs correctly
+// rejects it as inapplicable, and at temperature 0 the rejection feedback
+// produces a byte-identical reply — so the round burns MaxReplyRetries and
+// the run stops. Narrowing the schema per round fixed only the case where
+// NOTHING offered took an argument; the moment one objective on the menu
+// carries a level, the model can staple that level to a different one.
+//
+// The constrained decoder forbids what the schema omits, so omitting all of
+// them leaves exactly the question the model answers reliably: a number.
+// This is the flee lesson applied to the rest — the choice lives in the
+// MENU, made as an index.
+//
+// The COST, stated plainly: the planner can no longer aim training at an
+// arbitrary level. It gets the offered target (the lead's level plus
+// trainStep) and can pick training again to climb further. If aiming
+// higher in one round turns out to matter, the answer is another menu
+// entry, not another reply field.
+//
+// WithArgs is unchanged and still range-checks every argument that arrives:
+// a server that ignores response_format can still send one, and it is still
+// rejected rather than silently dropped. The schema is an optimisation, not
+// the safety mechanism.
+var choiceSchema = map[string]any{
+	"type": "object",
+	"properties": map[string]any{
 		"choice": map[string]any{"type": "integer"},
 		"intent": map[string]any{
 			"type":        "string",
 			"description": "One short sentence, at most 200 bytes: what this choice is in service of. It is read back to you next round as the observation's Intent field, with IntentAge — how many rounds it has gone unchanged.",
 		},
-	}
-	for _, o := range offered {
-		switch o.Kind {
-		case KindTrain:
-			props["level"] = map[string]any{"type": "integer"}
-		case KindCatch:
-			props["species"] = map[string]any{"type": "string"}
-		case KindBuy:
-			props["item"] = map[string]any{"type": "string"}
-			props["quantity"] = map[string]any{"type": "integer"}
-		}
-	}
-	return map[string]any{
-		"type":       "object",
-		"properties": props,
-		"required":   []string{"choice"},
-	}
+	},
+	"required": []string{"choice"},
 }
 
 // chatChoice carries the message plus finish_reason: "length" means the
@@ -585,7 +591,7 @@ func (p *LLMPlanner) ask(obs Observation, offered []Objective, feedback string) 
 		ChatTemplateKwargs: templateKwargs,
 		ResponseFormat: &responseFormat{
 			Type:       "json_schema",
-			JSONSchema: &jsonSchema{Name: "objective_choice", Strict: false, Schema: choiceSchema(offered)},
+			JSONSchema: &jsonSchema{Name: "objective_choice", Strict: false, Schema: choiceSchema},
 		},
 	})
 	if err != nil {

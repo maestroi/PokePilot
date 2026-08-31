@@ -1,41 +1,47 @@
 package agent
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
-// TestChoiceSchemaOnlyOffersApplicableArguments is the fix for the round-1
-// stall: a model handed an optional field fills it in, and WithArgs then
-// rejects the argument as inapplicable, three asks running. A round whose
-// menu takes no arguments must ask only for the choice.
-func TestChoiceSchemaOnlyOffersApplicableArguments(t *testing.T) {
-	props := func(offered []Objective) map[string]any {
-		return choiceSchema(offered)["properties"].(map[string]any)
+// TestChoiceSchemaAsksOnlyForTheIndex: three runs have now died because a
+// small model stapled an optional argument onto a choice it did not belong
+// to, and at temperature 0 the rejection feedback never changed the answer.
+// The menu carries every value already, so the reply asks for a number and
+// a sentence, whatever is offered.
+func TestChoiceSchemaAsksOnlyForTheIndex(t *testing.T) {
+	props, ok := choiceSchema["properties"].(map[string]any)
+	if !ok {
+		t.Fatal("schema has no properties object")
 	}
-
-	starters := []Objective{
-		{Kind: KindStarter},
-		{Kind: KindGoTo, Place: "pallet town"},
-	}
-	for _, field := range []string{"level", "species", "item", "quantity", "flee"} {
-		if _, ok := props(starters)[field]; ok {
-			t.Fatalf("%q offered on a menu that cannot take it", field)
+	for _, field := range []string{"level", "species", "item", "quantity", "flee", "slot"} {
+		if _, present := props[field]; present {
+			t.Errorf("%q is in the reply schema; a model handed the field will attach it to the wrong choice", field)
 		}
 	}
-	if _, ok := props(starters)["choice"]; !ok {
-		t.Fatal("choice must always be askable")
-	}
-
-	withArgs := append(starters,
-		Objective{Kind: KindTrain, Level: 9},
-		Objective{Kind: KindCatch},
-		Objective{Kind: KindBuy},
-	)
-	for _, field := range []string{"level", "species", "item", "quantity"} {
-		if _, ok := props(withArgs)[field]; !ok {
-			t.Fatalf("%q missing though an objective that takes it is offered", field)
+	for _, field := range []string{"choice", "intent"} {
+		if _, present := props[field]; !present {
+			t.Errorf("%q missing from the reply schema", field)
 		}
 	}
-	if _, ok := props(withArgs)["flee"]; ok {
-		t.Fatal("flee must never be in the schema; the menu carries both variants")
+	if len(props) != 2 {
+		t.Errorf("schema asks for %d fields, want exactly choice and intent", len(props))
+	}
+}
+
+// TestWithArgsStillRejects: the schema is an optimisation, not the safety
+// mechanism. A server that ignores response_format can still send an
+// argument, and it must still be refused rather than silently dropped.
+func TestWithArgsStillRejects(t *testing.T) {
+	level := 7
+	potion, _ := ItemByName("potion")
+	_, err := WithArgs(Objective{Kind: KindUseItem, Item: potion, Slot: 0}, ReplyArgs{Level: &level})
+	if err == nil {
+		t.Fatal("a level on a use-item was accepted; it must be rejected")
+	}
+	if !strings.Contains(err.Error(), "level argument") {
+		t.Fatalf("error does not name the misplaced argument: %v", err)
 	}
 }
 
