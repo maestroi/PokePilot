@@ -46,8 +46,14 @@ type Heartbeat struct {
 	// resolved to, or empty while the model is still answering. Both are
 	// empty until the first plan of an llm run; a scripted run never
 	// fills them.
-	Question  string `json:"question,omitempty"`
-	Decision  string `json:"decision,omitempty"`
+	Question string `json:"question,omitempty"`
+	Decision string `json:"decision,omitempty"`
+	// Raw is the last model exchange verbatim: the prompt as it was sent,
+	// and — once it arrives — the reply content as the server sent it.
+	// Question is the menu rendered for a human; this is the bytes. It is
+	// live-only (never persisted by the wall) and clipped, because it
+	// rides every heartbeat.
+	Raw       string `json:"raw,omitempty"`
 	StopSoFar string `json:"stop_so_far"`
 	// WorkerAddrs is where this runner's watch server (frame.png) is
 	// reachable from the swarm network, one "host:port" per interface.

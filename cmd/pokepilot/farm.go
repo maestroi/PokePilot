@@ -102,6 +102,7 @@ func (s *heartbeatSnap) storeStatus(hb farm.Heartbeat) {
 	s.mu.Lock()
 	hb.Question = s.hb.Question
 	hb.Decision = s.hb.Decision
+	hb.Raw = s.hb.Raw
 	hb.Stats = s.hb.Stats
 	s.hb = hb
 	s.mu.Unlock()
@@ -116,6 +117,47 @@ func (s *heartbeatSnap) storePlan(question, decision string) {
 	s.hb.Question = question
 	s.hb.Decision = decision
 	s.mu.Unlock()
+}
+
+// storeRaw publishes the verbatim model exchange. A prompt starts a fresh
+// entry (start true) and the reply appends to it, so the panel shows the
+// prompt while the POST is still blocked and grows the reply when it lands.
+//
+// ponytail: clipped, not paged. Raw rides every heartbeat, and an
+// observation JSON plus a 16-line menu is a few KB; a run whose prompt
+// outgrows the clip needs a per-round artifact, not a bigger heartbeat.
+func (s *heartbeatSnap) storeRaw(text string, start bool) {
+	s.mu.Lock()
+	if start {
+		s.hb.Raw = clip(text, maxRawPrompt)
+	} else {
+		s.hb.Raw += "\n" + clip(text, maxRawReply)
+	}
+	s.mu.Unlock()
+}
+
+const (
+	maxRawPrompt = 6000
+	maxRawReply  = 2000
+)
+
+func clip(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "\n… clipped"
+}
+
+// rawWriter adapts storeRaw to the io.Writer the planner's PromptLog and
+// ReplyLog want. Each Fprintf there is one Write, so no buffering.
+type rawWriter struct {
+	snap  *heartbeatSnap
+	start bool
+}
+
+func (w rawWriter) Write(p []byte) (int, error) {
+	w.snap.storeRaw(string(p), w.start)
+	return len(p), nil
 }
 
 // storeStats writes the latest planner tally. The copy is taken here —
@@ -437,6 +479,10 @@ func runFarmLLM(m *emu.Emu, starter, goal string, maxRounds, maxFrames int, canc
 	planner := agent.NewLLMPlanner()
 	planner.Goal = goal
 	planner.Log = logw // one line per model call, above its round line
+	// The exact bytes, onto the heartbeat: the console's Plan panel shows
+	// the prompt while the model is still thinking, then the raw reply.
+	planner.PromptLog = rawWriter{snap: snap, start: true}
+	planner.ReplyLog = rawWriter{snap: snap}
 	// The same tally the local watch page shows (runStats): a farm worker's
 	// page is this page, so a wandering leased run is visible on it too.
 	stats := newStatsPlanner(planner, m.TraceStats, snap)

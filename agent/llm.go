@@ -44,6 +44,13 @@ type LLMPlanner struct {
 	// it so a scored run can show exactly what the model was told.
 	PromptLog io.Writer
 
+	// ReplyLog is PromptLog's other half: it receives the reply content
+	// verbatim, as the server sent it, once per call — including replies
+	// that are about to be rejected for shape, which are the ones worth
+	// reading. Written after the POST returns, so a prompt logged with no
+	// reply beside it is a call that never came back.
+	ReplyLog io.Writer
+
 	// Goal is the task statement the run is trying to achieve — for
 	// example "Earn the Boulder Badge.". It is a GOAL, not a solution:
 	// it names the task and nothing else. It must never say which starter
@@ -627,6 +634,10 @@ func (p *LLMPlanner) ask(obs Observation, offered []Objective, feedback string) 
 	}
 	if len(cr.Choices) == 0 {
 		return transportErr("reply has no choices: %s", snippet(data))
+	}
+	if p.ReplyLog != nil {
+		fmt.Fprintf(p.ReplyLog, "=== reply (model %s, finish %s) ===\n%s\n",
+			cr.Model, cr.Choices[0].FinishReason, cr.Choices[0].Message.Content)
 	}
 	return chatResult{
 		Content:      cr.Choices[0].Message.Content,

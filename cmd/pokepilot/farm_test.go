@@ -147,6 +147,41 @@ func TestHeartbeatSnapKeepsPlan(t *testing.T) {
 	}
 }
 
+// TestHeartbeatSnapRaw covers the exchange panel: the prompt replaces the
+// previous round's, the reply appends to it rather than replacing it (both
+// halves must be readable at once), a status tick does not wipe it, and an
+// oversized prompt is clipped instead of riding every heartbeat whole.
+func TestHeartbeatSnapRaw(t *testing.T) {
+	s := &heartbeatSnap{}
+	w := rawWriter{snap: s, start: true}
+	if _, err := w.Write([]byte("[user]\nObservation: {}")); err != nil {
+		t.Fatalf("write prompt: %v", err)
+	}
+	if got := s.load().Raw; got != "[user]\nObservation: {}" {
+		t.Fatalf("prompt: %q", got)
+	}
+
+	s.storeStatus(farm.Heartbeat{RunID: "r1", Frame: 11})
+	if got := s.load().Raw; got != "[user]\nObservation: {}" {
+		t.Fatalf("storeStatus wiped the exchange: %q", got)
+	}
+
+	rawWriter{snap: s}.Write([]byte(`{"choice": 1}`))
+	if got, want := s.load().Raw, "[user]\nObservation: {}\n"+`{"choice": 1}`; got != want {
+		t.Fatalf("reply: %q want %q", got, want)
+	}
+
+	// Next round starts clean, and a huge prompt is clipped.
+	w.Write([]byte(strings.Repeat("x", maxRawPrompt+500)))
+	got := s.load().Raw
+	if len(got) > maxRawPrompt+len("\n… clipped") {
+		t.Fatalf("prompt not clipped: %d bytes", len(got))
+	}
+	if !strings.HasSuffix(got, "… clipped") {
+		t.Fatalf("clipped prompt is not marked: %q", got[len(got)-20:])
+	}
+}
+
 // blockingPlanner parks in Next until release is closed, so the test
 // can observe the snap after the question is published and before the
 // decision exists.

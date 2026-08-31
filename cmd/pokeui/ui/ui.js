@@ -581,9 +581,16 @@
     } else if (run.question) {
       decision = `<div class="plan-k">decision</div><p class="plan-wait">waiting for reply</p>`;
     }
+    // The verbatim exchange is folded away: it is the observation JSON plus
+    // the menu, which is worth reading when a choice looks wrong and pure
+    // noise the rest of the time. The system prompt is a constant of the
+    // build (agent.llmSystemPrompt) and is not sent here.
+    const raw = run.raw
+      ? `<details class="plan-raw"><summary>raw exchange</summary><pre>${esc(run.raw)}</pre></details>`
+      : "";
     return `<div class="block"><h3>Plan</h3>
       <div class="plan-k">question</div>${question}
-      ${decision}</div>`;
+      ${decision}${raw}</div>`;
   }
 
   // The full Play panel, mirroring the runner's watch page: one row per

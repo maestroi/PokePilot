@@ -52,14 +52,18 @@ type Tile struct {
 	EndedAt    time.Time
 	// Attempts counts completed attempts; a retried run keeps its history
 	// so the grid can show where it is in its retry budget.
-	Attempts  int
-	Frame     uint64
-	Map       uint8
-	X         uint8
-	Y         uint8
-	Trace     string
-	Question  string
-	Decision  string
+	Attempts int
+	Frame    uint64
+	Map      uint8
+	X        uint8
+	Y        uint8
+	Trace    string
+	Question string
+	Decision string
+	// Raw is the last verbatim model exchange from the heartbeat. Live
+	// only: it is deliberately absent from persistedTile, so a wall
+	// restart drops it rather than growing the state file.
+	Raw       string
 	StopSoFar string
 	// Stats is the llm planner's tally, last pushed by a heartbeat. Kept on
 	// finish (the final tally explains the outcome), nilled on retry.
@@ -108,6 +112,7 @@ type tileRow struct {
 	Trace      string         `json:"trace"`
 	Question   string         `json:"question,omitempty"`
 	Decision   string         `json:"decision,omitempty"`
+	Raw        string         `json:"raw,omitempty"`
 	StopSoFar  string         `json:"stop_so_far"`
 	Stats      *farm.LLMStats `json:"stats,omitempty"`
 	Attempts   int            `json:"attempts"`
@@ -496,6 +501,7 @@ func (w *Wall) handleHeartbeat(res http.ResponseWriter, req *http.Request) {
 	t.Trace = hb.Trace
 	t.Question = hb.Question
 	t.Decision = hb.Decision
+	t.Raw = hb.Raw
 	t.StopSoFar = hb.StopSoFar
 	t.Stats = hb.Stats
 	t.workerAddrs = hb.WorkerAddrs
@@ -853,6 +859,7 @@ func (w *Wall) snapshot() dashboardView {
 			Trace:      t.Trace,
 			Question:   t.Question,
 			Decision:   t.Decision,
+			Raw:        t.Raw,
 			StopSoFar:  t.StopSoFar,
 			Stats:      t.Stats,
 			Reason:     t.Reason,
@@ -1205,6 +1212,7 @@ func (w *Wall) settleRun(t *Tile, reason, detail string, now time.Time) int {
 	t.Trace = ""
 	t.Question = ""
 	t.Decision = ""
+	t.Raw = ""
 	t.StopSoFar = ""
 	t.Stats = nil
 	t.Reason = ""
