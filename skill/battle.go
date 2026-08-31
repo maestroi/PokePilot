@@ -39,6 +39,23 @@ func FirstUsableMove(b state.BattleState) int {
 // ErrNoUsableMove reports that every move slot is empty or out of PP.
 var ErrNoUsableMove = errors.New("skill: no usable move")
 
+// ErrForcedChoiceStuck reports that the post-refusal "choose a Pokémon"
+// screen (wForcePlayerToChooseMon, set when a trainer refuses RUN — see
+// ErrTrainerBattle) did not clear within forcedChoiceCap round-trips.
+// UNRESOLVED 2026-08-31, MEASURED live against the checkpointed Viridian
+// Forest wedge (SLICE10-CANDIDATES.md item 19): neither B (cancel) nor
+// selecting STATS clears the underlying flag — both loop the screen
+// indefinitely, alternating with the party list. The correct escape
+// sequence is still unknown; this bounds the attempt so the failure is fast
+// and diagnosable (a couple hundred frames) instead of silently spinning
+// for the full battleFrameCap (60000 frames, ~10s wall clock).
+var ErrForcedChoiceStuck = errors.New("skill: Battle: the post-refusal Pokémon-choice screen did not clear")
+
+// forcedChoiceCap bounds how many times the switch/party-list round-trip
+// (case switchBoxUp / battleSwitchMenuUp below) may repeat before giving up
+// with ErrForcedChoiceStuck.
+const forcedChoiceCap = 5
+
 // Frame budgets for Battle. They are upper bounds, not measured timings: a
 // real turn (menu + move + resolution) is a few hundred frames and a whole
 // battle a few thousand. The total cap exists so a stuck battle fails
@@ -71,8 +88,11 @@ const mainMenuMax = 1
 // (forgetSlot). The prompt plays during GainExperience while wIsInBattle is
 // still set, so it reaches this loop; Train never sees it. The OTHER half of
 // the party menu — the voluntary switch opened by the player through the
-// POKéMON branch — is driven by SwitchActive, not here. If the game reaches any other state Battle does not handle, the
-// frame cap trips and Battle fails loudly.
+// POKéMON branch — is driven by SwitchActive, not here; Battle only
+// backstops it (case switchBoxUp / battleSwitchMenuUp) for the one way it
+// can appear unbidden: a trainer's RUN refusal leaves it open (see
+// ErrForcedChoiceStuck). If the game reaches any other state Battle does
+// not handle, the frame cap trips and Battle fails loudly.
 //
 // Losing is a result, not an error: a blackout returns ResultLost with a
 // zbatDebug is read once at init, not per frame: Go 1.27's test harness
@@ -101,6 +121,7 @@ func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
 	// triedForgets collects the moves the ROM bounced as HM techniques.
 	var lastForgetSlot = -1
 	var triedForgets map[uint8]bool
+	forcedChoiceRounds := 0
 
 	for {
 		if int(m.FrameCount()-startFrame) > battleFrameCap {
@@ -252,6 +273,40 @@ func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
 			}
 			if err := SelectPartySlot(m, slot); err != nil {
 				return menuError(m, "select party slot", err)
+			}
+
+		case switchBoxUp(m):
+			// SWITCH/STATS box — only 2 cursor positions (MEASURED:
+			// DecodeMenu's Max is 2), so CANCEL is not a selectable index at
+			// all; it is bound to B directly, the same as backing out of a
+			// stats page or any other sub-menu in this ROM. MEASURED this
+			// does not clear wForcePlayerToChooseMon (see ErrForcedChoiceStuck) —
+			// bounded below regardless.
+			forcedChoiceRounds++
+			if forcedChoiceRounds > forcedChoiceCap {
+				x, y := playerXY(m)
+				return 0, fmt.Errorf("skill: Battle: map %02x at (%d,%d): %w", m.Peek8(sym.CurMap), x, y, ErrForcedChoiceStuck)
+			}
+			m.Tap(emu.B, 3, 7)
+
+		case battleSwitchMenuUp(m):
+			// The VOLUNTARY switch party list — Battle never opens this
+			// itself (mainMenuUp always picks FIGHT), so reaching it means a
+			// caller left the battle mid-transition: Flee does exactly that
+			// after a trainer refuses RUN (ErrTrainerBattle's doc comment on
+			// wForcePlayerToChooseMon). Pick the only/first live slot to
+			// reach the SWITCH/STATS/CANCEL box above — selecting the
+			// already-active mon is what opens it, per the switchBoxMarker
+			// comment ("follows a slot pick").
+			var s state.Mem
+			state.Snapshot(m, &s)
+			slot := firstLivePartySlot(&s)
+			if slot < 0 {
+				m.StepFrame()
+				continue
+			}
+			if err := SelectPartySlot(m, slot); err != nil {
+				return menuError(m, "select party slot (forced choice)", err)
 			}
 
 		default:

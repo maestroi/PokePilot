@@ -45,6 +45,7 @@ func main() {
 	seed := flag.Int64("seed", 0, "diverge this run's luck by burning seed-derived idle frames after boot; 0 replays bit-identically")
 	maxRounds := flag.Int("max-rounds", llmMaxRounds, "objectives one llm run may spend; each costs a model call. The default is a guardrail for an unattended run, not a target — raise it to ask how far the greedy loop actually gets")
 	goal := flag.String("goal", "Earn the Boulder Badge.", "the task statement given to the llm planner: what it is trying to do, never how. Empty means no goal, which is what made slice 6's scoreboard void")
+	checkpointDir := flag.String("checkpoint-dir", "", "write a save-state ring here before every objective, so a run that dies (a wedged battle, a stuck loop) leaves a state to replay instead of a stack trace. Empty means off, which is why SLICE10-CANDIDATES.md item 19's wedged battle has never been reproduced")
 	flag.Parse()
 
 	romPath := os.Getenv("POKEMON_RED_ROM")
@@ -116,7 +117,7 @@ func main() {
 	case "scripted":
 		runScripted(m, *starter, *dest, *hold, served)
 	case "llm":
-		runLLM(m, *goal, *maxRounds)
+		runLLM(m, *goal, *maxRounds, *checkpointDir)
 	default:
 		log.Fatalf("unknown planner %q: want scripted or llm", *planner)
 	}
@@ -212,7 +213,7 @@ func runScripted(m *emu.Emu, starter, dest string, hold time.Duration, served st
 // player stands, verbs whose preconditions currently hold, the starter only
 // while the party is empty. A menu of every place in the ROM would be both
 // a worse prompt and a worse question.
-func runLLM(m *emu.Emu, goal string, maxRounds int) {
+func runLLM(m *emu.Emu, goal string, maxRounds int, checkpointDir string) {
 	fmt.Println("planner: llm — the model picks from a menu rebuilt every round")
 
 	// Tee llm/round lines to the watch panel as well as stdout.
@@ -229,9 +230,10 @@ func runLLM(m *emu.Emu, goal string, maxRounds int) {
 	// makes a wandering run visible while it is still wandering.
 	stats := newStatsPlanner(planner, m.TraceStats, nil)
 	res := agent.Run(m, m.ROM(), stats, agent.Budget{
-		MaxRounds: maxRounds,
-		MaxFrames: llmMaxFrames,
-		Log:       log,
+		MaxRounds:     maxRounds,
+		MaxFrames:     llmMaxFrames,
+		Log:           log,
+		CheckpointDir: checkpointDir,
 	})
 
 	fmt.Printf("\nrun stopped: %s after %d round(s)\n", stopName(res.Stop), res.Rounds)

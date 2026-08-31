@@ -95,6 +95,21 @@ func fleeOneAttempt(m *emu.Emu) (fleeOutcome, error) {
 
 	var mem state.Mem
 	start := m.FrameCount()
+	// refused remembers that the trainer has already rejected RUN. The ROM
+	// does not return straight to the main menu after that refusal — per
+	// ErrTrainerBattle's doc comment it sets wForcePlayerToChooseMon instead
+	// — and MEASURED live (2026-08-31, checkpoint from the Viridian Forest
+	// wedge) the very next screen is the voluntary switch menu ("Choose a
+	// POKéMON."), not the FIGHT/ITEM/PKMN/RUN menu. Returning ErrTrainerBattle
+	// the instant the refusal text appears — the old behaviour — orphaned
+	// that screen: Battle()'s state machine has no case for it, so its
+	// default (Tap A) picked SWITCH on the only, already-active party
+	// member every time, and the ROM's "X is already out!" bounce sent it
+	// right back, forever, until the 60000-frame cap. Now the refusal is
+	// remembered and draining continues below until the battle is actually
+	// back at a state Battle() can pick up.
+	refused := false
+	forcedChoiceRounds := 0
 	for int(m.FrameCount()-start) < fleeAttemptBudget {
 		state.Snapshot(m, &mem)
 		if state.DecodeBattle(&mem) == nil {
@@ -103,12 +118,45 @@ func fleeOneAttempt(m *emu.Emu) (fleeOutcome, error) {
 			// the postcondition.
 			return fleeSucceeded, settleAfterBattle(m, &mem)
 		}
-		if strings.Contains(state.ScreenText(&mem), trainerNoRunningMarker) {
-			x, y := playerXY(m)
-			return 0, fmt.Errorf("skill: Flee: map %02x at (%d,%d): %w", m.Peek8(sym.CurMap), x, y, ErrTrainerBattle)
-		}
 		switch {
+		case !refused && strings.Contains(state.ScreenText(&mem), trainerNoRunningMarker):
+			refused = true
+			m.Tap(emu.A, 3, 7)
+
+		case switchBoxUp(m):
+			// SWITCH/STATS box — only 2 cursor positions (MEASURED:
+			// DecodeMenu's Max is 2), so CANCEL is not a selectable index at
+			// all; it is bound to B directly, the same as backing out of a
+			// stats page or any other sub-menu in this ROM. MEASURED this
+			// does not clear wForcePlayerToChooseMon — bounded regardless
+			// (see ErrForcedChoiceStuck in battle.go).
+			forcedChoiceRounds++
+			if forcedChoiceRounds > forcedChoiceCap {
+				x, y := playerXY(m)
+				return 0, fmt.Errorf("skill: Flee: map %02x at (%d,%d): %w", m.Peek8(sym.CurMap), x, y, ErrForcedChoiceStuck)
+			}
+			m.Tap(emu.B, 3, 7)
+
+		case battleSwitchMenuUp(m):
+			// The forced choice the refusal above triggers. Pick the
+			// only/first live slot — the already-active mon — to reach the
+			// SWITCH/STATS/CANCEL box handled above.
+			var s state.Mem
+			state.Snapshot(m, &s)
+			slot := firstLivePartySlot(&s)
+			if slot < 0 {
+				m.StepFrame()
+				continue
+			}
+			if err := SelectPartySlot(m, slot); err != nil {
+				return 0, fmt.Errorf("skill: Flee: select party slot (forced choice): %w", err)
+			}
+
 		case mainMenuUp(m):
+			if refused {
+				x, y := playerXY(m)
+				return 0, fmt.Errorf("skill: Flee: map %02x at (%d,%d): %w", m.Peek8(sym.CurMap), x, y, ErrTrainerBattle)
+			}
 			// "Can't escape!" resolved and the enemy took its turn: the menu
 			// is up again. wNumRunAttempts already counts this attempt, so
 			// the next roll has better odds.
