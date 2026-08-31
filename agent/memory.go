@@ -15,10 +15,11 @@ import (
 // fixture-cache rule (validate on write AND on read, version the filename),
 // learned the hard way. The version is in the file NAME as well, so a wrong
 // or old reader can tell at a glance which files it cannot claim.
-// Bumped to 3 when Requirements became located and counted (agent.Requirement)
-// rather than bare sentences: a v2 file's requirements would decode as
-// zero-valued structs, and a mismatched version is discarded cleanly.
-const memoryVersion = 3
+// Bumped to 3 when Requirements became located and counted
+// (agent.Requirement) rather than bare sentences, and to 4 when Completed
+// became counts rather than a set: an older file's fields would decode as
+// zero values, and a mismatched version is discarded cleanly instead.
+const memoryVersion = 4
 
 // knowledgeFileName is the ONLY way to name a knowledge file: from the base
 // name of the checkpoint state it was written beside. There is no function
@@ -53,7 +54,7 @@ type memoryFile struct {
 	Version      int           `json:"version"`
 	Visited      []uint8       `json:"visited"`
 	Places       []string      `json:"places"`
-	Completed    []string      `json:"completed"`
+	Completed    []Completion  `json:"completed"`
 	Talked       []talkedKey   `json:"talked"`
 	Requirements []Requirement `json:"requirements,omitempty"`
 	// Failures is the tally History cannot hold (see Knowledge.Failures):
@@ -85,8 +86,8 @@ func encodeMemoryFile(k *Knowledge, intent string, intentAge int) ([]byte, error
 	for name := range k.Places {
 		mem.Places = append(mem.Places, name)
 	}
-	for s := range k.Completed {
-		mem.Completed = append(mem.Completed, s)
+	for name, times := range k.Completed {
+		mem.Completed = append(mem.Completed, Completion{Objective: name, Times: times})
 	}
 	for mapID, tiles := range k.Talked {
 		for tile := range tiles {

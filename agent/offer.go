@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 
@@ -23,9 +24,13 @@ import (
 // question about exits and deterministic code keeps the geometry. It names
 // no places; it only answers where the doors of a map lead.
 type Knowledge struct {
-	Visited   map[uint8]bool  // maps the player has stood on
-	Places    map[string]bool // place names the game has shown (visited or spoken)
-	Completed map[string]bool // objectives already completed, by Objective.String()
+	Visited map[uint8]bool  // maps the player has stood on
+	Places  map[string]bool // place names the game has shown (visited or spoken)
+	// Completed counts how many times each objective has SUCCEEDED, by
+	// Objective.String(). A count, not a flag: "go to pallet town" having
+	// worked once and having worked six times are different facts, and the
+	// second one is a run walking in circles. Zero is the set test.
+	Completed map[string]int
 	// Failures are the objectives the run has TRIED and failed, by
 	// Objective.String(). It exists because History scrolls: it carries
 	// historyCap rounds, so six rounds of anything push a failure out of
@@ -57,7 +62,7 @@ func NewKnowledge(adjacency map[uint8][]uint8) *Knowledge {
 	return &Knowledge{
 		Visited:      map[uint8]bool{},
 		Places:       map[string]bool{},
-		Completed:    map[string]bool{},
+		Completed:    map[string]int{},
 		Talked:       map[uint8]map[[2]uint8]bool{},
 		Adjacency:    adjacency,
 		Requirements: []Requirement{},
@@ -72,6 +77,14 @@ type Failure struct {
 	Objective string
 	Times     int
 	Last      string // the last error, verbatim
+}
+
+// Completion is one objective the run has finished, and how many times.
+// The count is what separates "this worked" from "this has worked six times
+// and the run is still here" — see Knowledge.Completed.
+type Completion struct {
+	Objective string
+	Times     int
 }
 
 // failureCap bounds how many distinct failed objectives the observation
@@ -240,7 +253,7 @@ func (k *Knowledge) HeardRequirement(line, place string, x, y uint8) {
 // meant to train, heal, and come back.
 func (k *Knowledge) Done(o Objective) {
 	name := o.String()
-	k.Completed[name] = true
+	k.Completed[name]++
 	// It worked: whatever blocked it before is gone, and a kept failure
 	// would argue against the thing that just succeeded.
 	delete(k.Failures, name)
@@ -269,8 +282,8 @@ func (k *Knowledge) restore(mem memoryFile) {
 	for _, name := range mem.Places {
 		k.Places[name] = true
 	}
-	for _, s := range mem.Completed {
-		k.Completed[s] = true
+	for _, c := range mem.Completed {
+		k.Completed[c.Objective] = c.Times
 	}
 	for _, f := range mem.Failures {
 		k.Failures[f.Objective] = f
@@ -324,6 +337,23 @@ func isAlnum(c byte) bool {
 // everything-forever question on every frame, including places the player
 // has no way of knowing exist.
 //
+// ORDER: the things that act on where the player already is come first —
+// the starter, the story errand, a catch, a heal, the gym, training, a
+// purchase, the people and items of this map — and the journeys come last.
+// Order is not a hint about which is right: every objective is offered
+// either way, and the planner still picks freely. It is about what an
+// arbitrary order costs. Journeys are the one part of the menu that grows
+// with the size of the KNOWN WORLD, and they were listed first, so every
+// map the run discovered pushed the verbs further down.
+//
+// MEASURED 2026-08-31: standing in Oak's lab with the parcel undelivered,
+// "deliver oak's parcel" sat at index 9 of 9 — and at index 17 of 17 once
+// the errand's own walk through Viridian was recorded, behind sixteen
+// near-identical travel lines. A model reading a numbered list top-down had
+// the one action that advances the story sink out of reach for no reason
+// except that it had seen more of the map. The verbs do not multiply; the
+// places do, so the places go at the bottom.
+//
 // It says what is POSSIBLE, never what is WISE. An objective that is legal
 // but unwise stays on the list: walking into the gym underlevelled is
 // offered, and losing is the planner's mistake to make. The moment Offer
@@ -364,6 +394,11 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 			knownMaps[d.Map] = true
 		}
 	}
+	// Journeys are collected here and appended LAST (see the ordering note
+	// in Offer's doc): they are the only part of the menu that grows with
+	// the size of the known world, so listing them first buries every verb
+	// deeper with every map the run discovers.
+	journeys := make([]Objective, 0, 8)
 	for _, name := range skill.PlaceNames() { // sorted: a stable menu order
 		d, _ := skill.Place(name)
 		if !knownMaps[d.Map] {
@@ -377,7 +412,7 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 		// not in the reply — the model cannot reliably attach a conditional
 		// argument ("flee": true) to only the objectives that carry it, and
 		// a misplaced flag used to stop whole runs (see llm.go's schema).
-		out = append(out,
+		journeys = append(journeys,
 			Objective{Kind: KindGoTo, Place: name},
 			Objective{Kind: KindGoTo, Place: name, Flee: true},
 		)
@@ -386,7 +421,7 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 	// Verbs, gated on preconditions that are facts about the situation —
 	// never judgements about it.
 	if observedEvent(obs, state.EventBattledRivalInOaksLab.String()) &&
-		!known.Completed[Objective{Kind: KindErrand}.String()] {
+		known.Completed[Objective{Kind: KindErrand}.String()] == 0 {
 		out = append(out, Objective{Kind: KindErrand}) // one-shot story event
 	}
 	// One catch per species this map's grass can actually roll, from the
@@ -454,9 +489,11 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 	// the level the Brock slice happened to need — which said "train" until
 	// 12 and then never again, whatever the run was walking into next. It
 	// is now the next rung above the lead, so the objective always names a
-	// step the run has not taken; the planner can aim anywhere in 1..100 by
-	// sending the level argument, and the map's wild band (WildGrass) is in
-	// the observation for it to judge how long a target would take.
+	// step the run has not taken; picking it again climbs another rung, and
+	// the map's wild band (WildGrass) is in the observation for the planner
+	// to judge how long a target would take. The level is NOT a reply
+	// argument any more — see choiceSchema in llm.go for why every argument
+	// left the reply and stayed in the menu.
 	if obs.HasGrass && len(obs.Party) > 0 {
 		if target := int(obs.Party[0].Level) + trainStep; target <= 100 {
 			out = append(out, Objective{Kind: KindTrain, Level: uint8(target)})
@@ -485,6 +522,37 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 			if id, ok := ItemByName(o.Item); ok {
 				out = append(out, Objective{Kind: KindPickup, X: o.X, Y: o.Y, Item: id})
 			}
+		}
+	}
+	return annotate(append(out, journeys...), known)
+}
+
+// annotate writes each objective's own history onto its menu line, in
+// Objective.Note — which String() ignores, so nothing that identifies an
+// objective changes.
+//
+// The counts were already in the observation (Failures) and in Knowledge
+// (Completed), and a model that reads a numbered list top-down skipped
+// straight past them: it re-picked "go to route 2" with a Failures entry
+// naming it three lines above, and walked Pallet-Lab-Pallet for eight
+// rounds while History recorded every leg as "done". A fact the planner has
+// to join across two parts of the prompt is a fact it does not use. On the
+// line it is choosing, it might.
+//
+// This withholds nothing. Every objective is still offered, in the same
+// order, and the note is what the run has ALREADY DONE — never advice about
+// what to do next.
+func annotate(out []Objective, known *Knowledge) []Objective {
+	for i := range out {
+		name := out[i].String()
+		done, failed := known.Completed[name], known.Failures[name].Times
+		switch {
+		case done > 0 && failed > 0:
+			out[i].Note = fmt.Sprintf("(done %dx, failed %dx)", done, failed)
+		case done > 0:
+			out[i].Note = fmt.Sprintf("(done %dx)", done)
+		case failed > 0:
+			out[i].Note = fmt.Sprintf("(failed %dx)", failed)
 		}
 	}
 	return out

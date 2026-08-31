@@ -70,14 +70,14 @@ func TestOfferTable(t *testing.T) {
 				return k
 			},
 			want: []string{
-				"go to pallet town",
-				"go to pallet town, fleeing wild battles",
-				"go to viridian city", // one step out of route 1
-				"go to viridian city, fleeing wild battles",
 				"deliver oak's parcel",
 				"catch a PIDGEY here",
 				"catch a RATTATA here",
 				"train the lead to level 7",
+				"go to pallet town",
+				"go to pallet town, fleeing wild battles",
+				"go to viridian city", // one step out of route 1
+				"go to viridian city, fleeing wild battles",
 			},
 			mustNot: []string{"starter", "heal", "CATERPIE"},
 		},
@@ -94,11 +94,11 @@ func TestOfferTable(t *testing.T) {
 				return k
 			},
 			want: []string{
+				"deliver oak's parcel",
 				"go to pallet town",
 				"go to pallet town, fleeing wild battles",
 				"go to route 1",
 				"go to route 1, fleeing wild battles",
-				"deliver oak's parcel",
 			},
 			mustNot: []string{"catch", "train"},
 		},
@@ -117,15 +117,15 @@ func TestOfferTable(t *testing.T) {
 				return k
 			},
 			want: []string{
+				"deliver oak's parcel",
+				"heal the party at VIRIDIAN POKEMON CENTER",
+				"heal the party at VIRIDIAN POKEMON CENTER, fleeing wild battles",
 				"go to pallet town",
 				"go to pallet town, fleeing wild battles",
 				"go to viridian city",
 				"go to viridian city, fleeing wild battles",
 				"go to viridian pokemon center",
 				"go to viridian pokemon center, fleeing wild battles",
-				"deliver oak's parcel",
-				"heal the party at VIRIDIAN POKEMON CENTER",
-				"heal the party at VIRIDIAN POKEMON CENTER, fleeing wild battles",
 			},
 		},
 		{
@@ -143,13 +143,13 @@ func TestOfferTable(t *testing.T) {
 				return k
 			},
 			want: []string{
+				"deliver oak's parcel",
 				"go to pallet town",
 				"go to pallet town, fleeing wild battles",
 				"go to viridian city",
 				"go to viridian city, fleeing wild battles",
 				"go to viridian pokemon center",
 				"go to viridian pokemon center, fleeing wild battles",
-				"deliver oak's parcel",
 			},
 			mustNot: []string{"heal"},
 		},
@@ -167,11 +167,11 @@ func TestOfferTable(t *testing.T) {
 				return k
 			},
 			want: []string{
+				"deliver oak's parcel",
 				"go to pallet town",
 				"go to pallet town, fleeing wild battles",
 				"go to viridian city",
 				"go to viridian city, fleeing wild battles",
-				"deliver oak's parcel",
 			},
 			mustNot: []string{"heal"},
 		},
@@ -191,16 +191,16 @@ func TestOfferTable(t *testing.T) {
 				return k
 			},
 			want: []string{
+				"deliver oak's parcel",
+				"heal the party at VIRIDIAN POKEMON CENTER",
+				"heal the party at VIRIDIAN POKEMON CENTER, fleeing wild battles",
+				"use a POTION on party slot 0",
 				"go to pallet town",
 				"go to pallet town, fleeing wild battles",
 				"go to viridian city",
 				"go to viridian city, fleeing wild battles",
 				"go to viridian pokemon center",
 				"go to viridian pokemon center, fleeing wild battles",
-				"deliver oak's parcel",
-				"heal the party at VIRIDIAN POKEMON CENTER",
-				"heal the party at VIRIDIAN POKEMON CENTER, fleeing wild battles",
-				"use a POTION on party slot 0",
 			},
 		},
 		{
@@ -218,11 +218,11 @@ func TestOfferTable(t *testing.T) {
 				return k
 			},
 			want: []string{
+				"deliver oak's parcel",
 				"go to pallet town",
 				"go to pallet town, fleeing wild battles",
 				"go to viridian city",
 				"go to viridian city, fleeing wild battles",
-				"deliver oak's parcel",
 			},
 			mustNot: []string{"use", "heal"},
 		},
@@ -240,11 +240,11 @@ func TestOfferTable(t *testing.T) {
 				return k
 			},
 			want: []string{
+				"deliver oak's parcel",
 				"go to pallet town",
 				"go to pallet town, fleeing wild battles",
 				"go to viridian city",
 				"go to viridian city, fleeing wild battles",
-				"deliver oak's parcel",
 			},
 			mustNot: []string{"use"},
 		},
@@ -263,12 +263,12 @@ func TestOfferTable(t *testing.T) {
 				return k
 			},
 			want: []string{
+				"deliver oak's parcel",
+				"use an ANTIDOTE on party slot 0",
 				"go to pallet town",
 				"go to pallet town, fleeing wild battles",
 				"go to viridian city",
 				"go to viridian city, fleeing wild battles",
-				"deliver oak's parcel",
-				"use an ANTIDOTE on party slot 0",
 			},
 			mustNot: []string{"heal"},
 		},
@@ -286,6 +286,8 @@ func TestOfferTable(t *testing.T) {
 				return k
 			},
 			want: []string{
+				"deliver oak's parcel",
+				"heal the party",
 				"go to pallet town",
 				"go to pallet town, fleeing wild battles",
 				"go to route 1",
@@ -294,8 +296,6 @@ func TestOfferTable(t *testing.T) {
 				"go to viridian city, fleeing wild battles",
 				"go to viridian pokemon center",
 				"go to viridian pokemon center, fleeing wild battles",
-				"deliver oak's parcel",
-				"heal the party",
 			},
 			mustNot: []string{"catch", "train", "gym"},
 		},
@@ -312,10 +312,10 @@ func TestOfferTable(t *testing.T) {
 				return k
 			},
 			want: []string{
-				"go to pewter gym",
-				"go to pewter gym, fleeing wild battles",
 				"deliver oak's parcel",
 				"beat the gym leader here",
+				"go to pewter gym",
+				"go to pewter gym, fleeing wild battles",
 			},
 		},
 		{
@@ -330,11 +330,11 @@ func TestOfferTable(t *testing.T) {
 				return k
 			},
 			want: []string{
+				"deliver oak's parcel",
 				"go to pallet town",
 				"go to pallet town, fleeing wild battles",
 				"go to route 1",
 				"go to route 1, fleeing wild battles",
-				"deliver oak's parcel",
 			},
 			mustNot: []string{"pewter city", "viridian city", "forest", "lab"},
 		},
@@ -351,13 +351,13 @@ func TestOfferTable(t *testing.T) {
 				return k
 			},
 			want: []string{
+				"deliver oak's parcel",
 				"go to pallet town",
 				"go to pallet town, fleeing wild battles",
 				"go to pewter city",
 				"go to pewter city, fleeing wild battles",
 				"go to route 1",
 				"go to route 1, fleeing wild battles",
-				"deliver oak's parcel",
 			},
 		},
 		{
@@ -372,10 +372,10 @@ func TestOfferTable(t *testing.T) {
 				return k
 			},
 			want: []string{
-				"go to viridian mart",
-				"go to viridian mart, fleeing wild battles",
 				"deliver oak's parcel",
 				"buy 3 POTION",
+				"go to viridian mart",
+				"go to viridian mart, fleeing wild battles",
 			},
 		},
 		{
@@ -391,13 +391,16 @@ func TestOfferTable(t *testing.T) {
 				return k
 			},
 			want: []string{
+				"heal the party", // a completed heal is no reason to stop offering heals
 				"go to viridian pokemon center",
 				"go to viridian pokemon center, fleeing wild battles",
-				"heal the party", // a completed heal is no reason to stop offering heals
 			},
 		},
 	}
 
+	// want is the menu in order, and the order is part of the contract:
+	// journeys last, because they are the only entries that multiply with
+	// the size of the known world (see Offer).
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			got := agent.Offer(tc.obs, tc.known())

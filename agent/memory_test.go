@@ -83,7 +83,7 @@ func TestMemoryRoundTrip(t *testing.T) {
 		}
 	}
 	for _, s := range []string{Objective{Kind: KindErrand}.String(), Objective{Kind: KindTalk, X: 6, Y: 3}.String()} {
-		if !got.Knowledge.Completed[s] {
+		if got.Knowledge.Completed[s] == 0 {
 			t.Errorf("Completed missing %q", s)
 		}
 	}
