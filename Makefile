@@ -1,5 +1,8 @@
 # Pokemon Red ROM. Override: make run POKEMON_RED_ROM=/path/to/red.gb
-POKEMON_RED_ROM ?= $(CURDIR)/roms/pokemon_red.gb
+# roms/ is gitignored, so an agent-runner worktree has none — fall back to
+# ~/.config/pokepilot/, outside every checkout. The checkout's own copy wins,
+# and the plain path stays the default so the not-found message names it.
+POKEMON_RED_ROM ?= $(firstword $(wildcard $(CURDIR)/roms/pokemon_red.gb $(HOME)/.config/pokepilot/pokemon_red.gb) $(CURDIR)/roms/pokemon_red.gb)
 export POKEMON_RED_ROM
 
 # Extra flags, e.g. make run ARGS='-goto "pallet town"'
@@ -66,10 +69,13 @@ run-0:
 	$(require-rom)
 	go run ./cmd/pokepilot -fps 0 $(ARGS)
 
-# .env carries llm_token, the API key for the model server.
+# .env carries llm_token, the API key for the model server. Agent runners get a
+# fresh git worktree and .env is gitignored, so it is never there — fall back to
+# ~/.config/pokepilot/env, which lives outside every checkout. Local .env wins.
+load_env = set -a; for f in $$HOME/.config/pokepilot/env .env; do [ -f "$$f" ] && . "$$f"; done; set +a;
 run-llm:
 	$(require-rom)
-	set -a; [ -f .env ] && . ./.env; set +a; \
+	$(load_env) \
 	go run ./cmd/pokepilot -planner llm -fps 0 $(ARGS)
 
 # The local model answers without a key; .env's llm_token is for the LAN
@@ -102,7 +108,7 @@ farm-up: farm-image
 	# llm_token (and optional POKEPILOT_LLM_*) live in .env for
 	# make run-llm. Source the same file here so farm runners get the
 	# key; docker stack deploy interpolates ${llm_token} from the env.
-	set -a; [ -f .env ] && . ./.env; set +a; \
+	$(load_env) \
 	docker stack deploy --resolve-image never -c deploy/farm.yml pokefarm
 	# The image tag does not change between builds, so the service spec is
 	# identical and Docker would not roll healthy tasks — a rebuilt image
