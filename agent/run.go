@@ -495,7 +495,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 	stuck := 0
 	consecFailures := 0 // consecutive failed objectives; a success resets it
 	lastFailObj, lastFailErr := "", ""
-	retreatObj, retreatStreak := "", 0 // consecutive train retreats on the SAME objective; capped like any other failure streak
+	retreatStreak := 0 // consecutive train retreats; capped like any other failure streak
 
 	for round := 1; ; round++ {
 		select {
@@ -658,16 +658,21 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 				// gets the identical objective and identical error 23 rounds
 				// running, because retreated never trips StopFailed AND never
 				// touches `stuck` (that counter only lives on the success
-				// path). Same-objective retreats are now counted separately
-				// and capped at maxConsecFailures, same threshold as any other
-				// failure streak — two survive (the exemption still does its
-				// job), a long run of them does not.
-				if retreated && obj.String() == retreatObj {
+				// path). Retreats in a row are now counted and capped at
+				// maxConsecFailures, same threshold as any other failure
+				// streak — two survive (the exemption still does its job), a
+				// long run of them does not. The count is NOT keyed on
+				// obj.String(): ErrTrainRetreat only ever comes from
+				// KindTrain, and a model that varies the requested level
+				// each attempt (10, then 11, then 11 again) while the lead's
+				// HP stays exactly as stuck is still the identical problem
+				// repeating, not a new one — MEASURED live, same session,
+				// same run: the model asked for level 10 then 11 across
+				// three consecutive retreats with the party never healed.
+				if retreated {
 					retreatStreak++
-				} else if retreated {
-					retreatObj, retreatStreak = obj.String(), 1
 				} else {
-					retreatObj, retreatStreak = "", 0
+					retreatStreak = 0
 				}
 				if retreated && retreatStreak >= maxConsecFailures {
 					res.Stop, res.Err = StopFailed, err
@@ -681,7 +686,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 				}
 				continue
 			}
-			retreatObj, retreatStreak = "", 0
+			retreatStreak = 0
 
 			consecFailures++
 			// res.Stop is still the zero value unless one of these sets it.
@@ -716,7 +721,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 		}
 		consecFailures = 0
 		lastFailObj, lastFailErr = "", ""
-		retreatObj, retreatStreak = "", 0
+		retreatStreak = 0
 		history = appendHistory(history, RoundRecord{Objective: obj.String(), Outcome: "done"})
 		last.History = history
 		last.RecentDialogue = tape.recent()
