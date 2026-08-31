@@ -187,6 +187,38 @@ of them silently corrupts the history the planner reads.
 
 ---
 
+### 22. Train does not know a wild band can be too weak to level a lead
+
+**DERIVED, 2026-08-31** (raised in conversation, not yet measured): `Offer`
+(`agent/offer.go:493`) offers training wherever there is grass, targeting
+`lead level + trainStep`, whatever the map's actual wild band is —
+`Observation.WildGrass` names the species and level range, but nothing reads
+it here. `skill.Train`'s retreat (`skill/train.go`, item 1 above) is purely
+HP-based; it has no notion of how much XP a battle is worth.
+
+Gen 1's real XP formula scales down hard once the lead outlevels the wild
+Pokémon it is fighting — a level-10 lead grinding Route 1's level-3-5 band can
+take many more battles to gain even one level than a session's battle cap
+allows. The HP-based retreat then fires first, every session, before the
+level target is ever reached, and the resulting `ended level N` streak
+(`agent/run.go`'s retreat cap, this session's fix) is indistinguishable from a
+genuinely stuck lead — the code cannot tell "this area is too weak to level
+me" from "I keep nearly dying here."
+
+Two shapes were discussed, not decided: (a) leave it alone — the model
+already sees `WildGrass`'s level band and is supposed to route to a
+higher-level area itself, so a model that does not is the finding, not a code
+gap; or (b) make the mismatch more legible in the observation (e.g. surface
+the level gap explicitly) without gating or blocking anything — a nudge, not
+a rule. Given this project's standing rule against seeding Pokémon knowledge
+into Go (`docs/plans/2026-08-31-run-keeps-a-plan-design.md`, "What this does
+NOT do"), (b) is the more in-pattern option if this gets picked up, but no
+measurement has been taken yet — the first step is confirming with a live run
+whether a stuck-at-level streak actually correlates with an outlevelled wild
+band, before deciding whether it is worth a fix at all.
+
+---
+
 ## The proposed goal: stop paying interest, then open the road
 
 Slice 9 shipped nine things and deferred a named list of follow-ups behind
