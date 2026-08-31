@@ -42,13 +42,16 @@ var ErrNoUsableMove = errors.New("skill: no usable move")
 // ErrForcedChoiceStuck reports that the post-refusal "choose a Pokémon"
 // screen (wForcePlayerToChooseMon, set when a trainer refuses RUN — see
 // ErrTrainerBattle) did not clear within forcedChoiceCap round-trips.
-// UNRESOLVED 2026-08-31, MEASURED live against the checkpointed Viridian
-// Forest wedge (SLICE10-CANDIDATES.md item 19): neither B (cancel) nor
-// selecting STATS clears the underlying flag — both loop the screen
-// indefinitely, alternating with the party list. The correct escape
-// sequence is still unknown; this bounds the attempt so the failure is fast
-// and diagnosable (a couple hundred frames) instead of silently spinning
-// for the full battleFrameCap (60000 frames, ~10s wall clock).
+// RESOLVED 2026-08-31 for the normal case (SLICE10-CANDIDATES.md item 19,
+// the Viridian Forest wedge): the correct sequence — pick the only live
+// slot, B out of the SWITCH/STATS box, B again on the party list, then
+// selectFightEntry to reach FIGHT from wherever the cursor landed — is
+// CONFIRMED against pret/pokered's DisplayBattleMenu / PartyMenuInit and
+// verified live against the checkpointed repro (won the battle it used to
+// hang on for the full battleFrameCap). This error is now a backstop should
+// the sequence not resolve for a reason this session did not encounter —
+// e.g. a different party composition — so the failure is fast and
+// diagnosable instead of silently spinning for 60000 frames.
 var ErrForcedChoiceStuck = errors.New("skill: Battle: the post-refusal Pokémon-choice screen did not clear")
 
 // forcedChoiceCap bounds how many times the switch/party-list round-trip
@@ -121,7 +124,7 @@ func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
 	// triedForgets collects the moves the ROM bounced as HM techniques.
 	var lastForgetSlot = -1
 	var triedForgets map[uint8]bool
-	forcedChoiceRounds := 0
+	forcedChoiceVisits := 0
 
 	for {
 		if int(m.FrameCount()-startFrame) > battleFrameCap {
@@ -187,6 +190,24 @@ func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
 
 		case mainMenuUp(m):
 			// Choose FIGHT. The move menu is picked up on a later pass.
+			//
+			// FOUND live (checkpointed repro of the item-19 wedge, cross-
+			// checked against pret/pokered's DisplayBattleMenu): this is a
+			// 2x2 grid — column via wTopMenuItemX, row via wCurrentMenuItem
+			// (0 or mainMenuMax) — and Up/Down never cross columns
+			// (.leftColumn_WaitForInput/.rightColumn_WaitForInput each
+			// watch only one of Left/Right, plus A). SelectMenuItem's
+			// generic Up/Down-only stepper silently does nothing when the
+			// cursor is on PKMN or RUN (the right column), which is exactly
+			// where it lands after backing out of the forced switch menu
+			// (wBattleAndStartSavedMenuItem restored to PKMN's slot). Every
+			// other caller reaches this case fresh, cursor already on
+			// FIGHT, so the gap was never exercised before. selectFightEntry
+			// is the same grid-walk skill/party.go's SwitchActive already
+			// uses for PKMN and skill/flee.go's selectRunEntry uses for RUN.
+			if err := selectFightEntry(m); err != nil {
+				return menuError(m, "select FIGHT", err)
+			}
 			if err := SelectMenuItem(m, 0); err != nil {
 				return menuError(m, "select FIGHT", err)
 			}
@@ -276,37 +297,63 @@ func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
 			}
 
 		case switchBoxUp(m):
-			// SWITCH/STATS box — only 2 cursor positions (MEASURED:
-			// DecodeMenu's Max is 2), so CANCEL is not a selectable index at
-			// all; it is bound to B directly, the same as backing out of a
-			// stats page or any other sub-menu in this ROM. MEASURED this
-			// does not clear wForcePlayerToChooseMon (see ErrForcedChoiceStuck) —
-			// bounded below regardless.
-			forcedChoiceRounds++
-			if forcedChoiceRounds > forcedChoiceCap {
-				x, y := playerXY(m)
-				return 0, fmt.Errorf("skill: Battle: map %02x at (%d,%d): %w", m.Peek8(sym.CurMap), x, y, ErrForcedChoiceStuck)
-			}
+			// SWITCH/STATS/CANCEL box (engine/battle/core.asm
+			// .partyMonWasSelected — CONFIRMED against pret/pokered): B is
+			// watched here and answers "Cancel selected"'s sibling,
+			// .partyMonDeselected — back to the party list, NOT out of the
+			// battle. forcedChoiceVisits (checked in battleSwitchMenuUp
+			// below, which every round-trip through this machinery passes
+			// through) bounds the whole cycle, in case some other screen
+			// this project hasn't seen yet also matches switchBoxMarker.
 			m.Tap(emu.B, 3, 7)
 
 		case battleSwitchMenuUp(m):
+			// forcedChoiceVisits bounds the WHOLE forced-choice cycle, not
+			// just the sub-box: MEASURED live, once B correctly exits back
+			// to the main menu (below), selecting FIGHT from a cursor left
+			// on RUN can land back here instead of the move menu — the main
+			// menu is a 2x2 grid (mainMenuMax) and the generic
+			// SelectMenuItem's linear Up/Down assumption does not hold for
+			// it, a latent bug this is the first path ever to exercise
+			// (every other caller reaches the main menu with the cursor
+			// already on FIGHT). That is a separate bug; this bound keeps
+			// it from turning into another silent 60000-frame spin while it
+			// is unfixed.
+			forcedChoiceVisits++
+			if forcedChoiceVisits > forcedChoiceCap {
+				x, y := playerXY(m)
+				return 0, fmt.Errorf("skill: Battle: map %02x at (%d,%d): %w", m.Peek8(sym.CurMap), x, y, ErrForcedChoiceStuck)
+			}
 			// The VOLUNTARY switch party list — Battle never opens this
 			// itself (mainMenuUp always picks FIGHT), so reaching it means a
 			// caller left the battle mid-transition: Flee does exactly that
 			// after a trainer refuses RUN (ErrTrainerBattle's doc comment on
-			// wForcePlayerToChooseMon). Pick the only/first live slot to
-			// reach the SWITCH/STATS/CANCEL box above — selecting the
-			// already-active mon is what opens it, per the switchBoxMarker
-			// comment ("follows a slot pick").
-			var s state.Mem
-			state.Snapshot(m, &s)
-			slot := firstLivePartySlot(&s)
-			if slot < 0 {
-				m.StepFrame()
-				continue
-			}
-			if err := SelectPartySlot(m, slot); err != nil {
-				return menuError(m, "select party slot (forced choice)", err)
+			// wForcePlayerToChooseMon).
+			//
+			// CONFIRMED against pret/pokered (home/pokemon.asm
+			// PartyMenuInit, engine/battle/core.asm .partyMonDeselected):
+			// the FIRST time this list is up, wForcePlayerToChooseMon has
+			// disabled B — only A (a slot pick) is watched, which is what
+			// opens the SWITCH/STATS/CANCEL box above. Backing out of that
+			// box calls GoBackToPartyMenu, which re-runs PartyMenuInit; the
+			// flag is already cleared by then, so B is watched THIS time —
+			// pressing it now genuinely exits the party menu back to the
+			// main battle menu (.checkIfPartyMonWasSelected takes the
+			// carry-set path to .quitPartyMenu). So: pick the slot on the
+			// first visit, press B on every visit after.
+			if forcedChoiceVisits == 1 {
+				var s state.Mem
+				state.Snapshot(m, &s)
+				slot := firstLivePartySlot(&s)
+				if slot < 0 {
+					m.StepFrame()
+					continue
+				}
+				if err := SelectPartySlot(m, slot); err != nil {
+					return menuError(m, "select party slot (forced choice)", err)
+				}
+			} else {
+				m.Tap(emu.B, 3, 7)
 			}
 
 		default:
@@ -477,6 +524,45 @@ func battleSwitchMenuUp(m *emu.Emu) bool {
 // switchBoxUp reports whether the SWITCH/STATS/CANCEL box is on screen.
 func switchBoxUp(m *emu.Emu) bool {
 	return battleScreenHas(m, switchBoxMarker)
+}
+
+// selectFightEntry moves the FIGHT/ITEM/PKMN/RUN cursor to FIGHT — left
+// column, row 0. The grid is 2 columns by mainMenuMax+1 rows with
+// wMaxMenuItem == 1 per column (comment on mainMenuMax), so a plain
+// SelectMenuItem cannot reach it from the right column (PKMN/RUN): Up/Down
+// never cross columns (engine/battle/core.asm .leftColumn_WaitForInput /
+// .rightColumn_WaitForInput each watch only one of Left/Right, plus A).
+// Same shape as skill/party.go's SwitchActive (targets PKMN) and
+// skill/flee.go's selectRunEntry (targets RUN) — every tap is verified
+// against wTopMenuItemX and wCurrentMenuItem before the next one, never a
+// press count.
+func selectFightEntry(m *emu.Emu) error {
+	atFight := func(m *emu.Emu) bool {
+		return m.Peek8(sym.TopMenuItemX) == battleMenuLeftX && int(m.Peek8(sym.CurrentMenuItem)) == 0
+	}
+	for i := 0; i < 8; i++ {
+		if atFight(m) {
+			return nil
+		}
+		prevX, prevRow := m.Peek8(sym.TopMenuItemX), int(m.Peek8(sym.CurrentMenuItem))
+		var btn emu.Button
+		switch {
+		case prevX == battleMenuRightX && prevRow != 0:
+			btn = emu.Up // RUN -> PKMN
+		case prevX == battleMenuRightX:
+			btn = emu.Left // PKMN -> FIGHT: LEFT keeps the row
+		default:
+			btn = emu.Up // left column below the target: back up
+		}
+		m.Tap(btn, 3, 7)
+		if _, err := m.StepUntil(menuSettleFrames, func(m *emu.Emu) bool {
+			return m.Peek8(sym.TopMenuItemX) != prevX || int(m.Peek8(sym.CurrentMenuItem)) != prevRow
+		}); err != nil {
+			return fmt.Errorf("skill: Battle: cursor stuck at x=%#02x row %d, want FIGHT (x=%#02x row 0): %w",
+				prevX, prevRow, battleMenuLeftX, ErrMenuStuck)
+		}
+	}
+	return fmt.Errorf("skill: Battle: cursor did not reach FIGHT")
 }
 
 // firstLivePartySlot returns the index of the first party member that is not

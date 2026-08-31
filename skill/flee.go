@@ -124,12 +124,10 @@ func fleeOneAttempt(m *emu.Emu) (fleeOutcome, error) {
 			m.Tap(emu.A, 3, 7)
 
 		case switchBoxUp(m):
-			// SWITCH/STATS box — only 2 cursor positions (MEASURED:
-			// DecodeMenu's Max is 2), so CANCEL is not a selectable index at
-			// all; it is bound to B directly, the same as backing out of a
-			// stats page or any other sub-menu in this ROM. MEASURED this
-			// does not clear wForcePlayerToChooseMon — bounded regardless
-			// (see ErrForcedChoiceStuck in battle.go).
+			// SWITCH/STATS/CANCEL box (engine/battle/core.asm
+			// .partyMonWasSelected — CONFIRMED against pret/pokered): B is
+			// watched here and takes .partyMonDeselected — back to the
+			// party list, not out of the battle. Bounded regardless.
 			forcedChoiceRounds++
 			if forcedChoiceRounds > forcedChoiceCap {
 				x, y := playerXY(m)
@@ -138,18 +136,27 @@ func fleeOneAttempt(m *emu.Emu) (fleeOutcome, error) {
 			m.Tap(emu.B, 3, 7)
 
 		case battleSwitchMenuUp(m):
-			// The forced choice the refusal above triggers. Pick the
-			// only/first live slot — the already-active mon — to reach the
-			// SWITCH/STATS/CANCEL box handled above.
-			var s state.Mem
-			state.Snapshot(m, &s)
-			slot := firstLivePartySlot(&s)
-			if slot < 0 {
-				m.StepFrame()
-				continue
-			}
-			if err := SelectPartySlot(m, slot); err != nil {
-				return 0, fmt.Errorf("skill: Flee: select party slot (forced choice): %w", err)
+			// The forced choice the refusal above triggers. CONFIRMED
+			// against pret/pokered (home/pokemon.asm PartyMenuInit): B is
+			// disabled on the FIRST visit to this list
+			// (wForcePlayerToChooseMon), so the only legal move is picking
+			// the slot, which opens the box above. Backing out of that box
+			// re-runs PartyMenuInit with the flag already cleared, so B
+			// is watched on every visit after — and pressing it then
+			// genuinely exits to the main battle menu.
+			if forcedChoiceRounds == 0 {
+				var s state.Mem
+				state.Snapshot(m, &s)
+				slot := firstLivePartySlot(&s)
+				if slot < 0 {
+					m.StepFrame()
+					continue
+				}
+				if err := SelectPartySlot(m, slot); err != nil {
+					return 0, fmt.Errorf("skill: Flee: select party slot (forced choice): %w", err)
+				}
+			} else {
+				m.Tap(emu.B, 3, 7)
 			}
 
 		case mainMenuUp(m):
