@@ -495,7 +495,8 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 	stuck := 0
 	consecFailures := 0 // consecutive failed objectives; a success resets it
 	lastFailObj, lastFailErr := "", ""
-	retreatStreak := 0 // consecutive train retreats; capped like any other failure streak
+	retreatStreak := 0           // consecutive train retreats ending at the SAME level; capped like any other failure streak
+	lastRetreatLevel := uint8(0) // the lead's level after the last retreat, 0 meaning none yet
 
 	for round := 1; ; round++ {
 		select {
@@ -658,21 +659,31 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 				// gets the identical objective and identical error 23 rounds
 				// running, because retreated never trips StopFailed AND never
 				// touches `stuck` (that counter only lives on the success
-				// path). Retreats in a row are now counted and capped at
-				// maxConsecFailures, same threshold as any other failure
-				// streak — two survive (the exemption still does its job), a
-				// long run of them does not. The count is NOT keyed on
-				// obj.String(): ErrTrainRetreat only ever comes from
-				// KindTrain, and a model that varies the requested level
-				// each attempt (10, then 11, then 11 again) while the lead's
-				// HP stays exactly as stuck is still the identical problem
-				// repeating, not a new one — MEASURED live, same session,
-				// same run: the model asked for level 10 then 11 across
-				// three consecutive retreats with the party never healed.
-				if retreated {
+				// path).
+				//
+				// The ceiling counts STUCK-ness, not raw retries: a session
+				// that keeps ending at a higher level each attempt IS
+				// progress (the level-up's max-HP bump is exactly why two
+				// retreats can end at different levels with nothing else
+				// changing) and must not be capped just for repeating the
+				// objective — only ended-level-unchanged streaks trip it.
+				// The requested level in obj.String() is deliberately NOT
+				// part of the comparison: a model that varies the number
+				// asked for (10, then 11, then 11 again) while the lead's
+				// actual level stays exactly as stuck is still the
+				// identical problem repeating — MEASURED live, same
+				// session, same run.
+				retreatLevel := uint8(0)
+				if len(last.Party) > 0 {
+					retreatLevel = last.Party[0].Level
+				}
+				if retreated && retreatLevel != 0 && retreatLevel == lastRetreatLevel {
 					retreatStreak++
+				} else if retreated {
+					retreatStreak = 1
+					lastRetreatLevel = retreatLevel
 				} else {
-					retreatStreak = 0
+					retreatStreak, lastRetreatLevel = 0, 0
 				}
 				if retreated && retreatStreak >= maxConsecFailures {
 					res.Stop, res.Err = StopFailed, err
@@ -686,7 +697,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 				}
 				continue
 			}
-			retreatStreak = 0
+			retreatStreak, lastRetreatLevel = 0, 0
 
 			consecFailures++
 			// res.Stop is still the zero value unless one of these sets it.
@@ -721,7 +732,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 		}
 		consecFailures = 0
 		lastFailObj, lastFailErr = "", ""
-		retreatStreak = 0
+		retreatStreak, lastRetreatLevel = 0, 0
 		history = appendHistory(history, RoundRecord{Objective: obj.String(), Outcome: "done"})
 		last.History = history
 		last.RecentDialogue = tape.recent()
