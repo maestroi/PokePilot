@@ -77,7 +77,7 @@ run-0:
 # .env carries llm_token, the API key for the model server. Agent runners get a
 # fresh git worktree and .env is gitignored, so it is never there — fall back to
 # ~/.config/pokepilot/env, which lives outside every checkout. Local .env wins.
-load_env = set -a; for f in $$HOME/.config/pokepilot/env .env; do [ -f "$$f" ] && . "$$f"; done; set +a;
+load_env = set -a; for f in $$HOME/.config/pokepilot/env ./.env; do [ -f "$$f" ] && . "$$f"; done; set +a;
 run-llm:
 	$(require-rom)
 	$(load_env) \
