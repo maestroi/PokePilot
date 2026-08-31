@@ -145,6 +145,31 @@ func TestUIHistoryPaginatedAndAligned(t *testing.T) {
 	}
 }
 
+func TestUIFailuresAndIssueLinks(t *testing.T) {
+	html := string(indexHTML)
+	js := string(uiJS)
+	if !strings.Contains(html, `id="failures"`) {
+		t.Error("index missing Failures section")
+	}
+	for _, want := range []string{
+		`/v1/triage`,
+		`data-investigate`,
+		`Investigate now`,
+		`pending report`,
+		`issueHref`,
+		`new URL`,
+		`investigating`,
+		`issueBadge`,
+	} {
+		if !strings.Contains(js, want) {
+			t.Errorf("ui.js missing %q", want)
+		}
+	}
+	if strings.Contains(js, "/api/issues/") && strings.Contains(js, "issue_number") && strings.Contains(js, "`/issues/${") {
+		t.Error("ui.js must not build Agent Orchestrator URLs from issue numbers")
+	}
+}
+
 func TestVersionEndpoint(t *testing.T) {
 	h := handler("http://wall.invalid")
 	req := httptest.NewRequest(http.MethodGet, "/v1/version", nil)

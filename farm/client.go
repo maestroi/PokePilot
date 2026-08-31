@@ -105,6 +105,9 @@ func (c *Client) Ping(ctx context.Context, addrs []string) error {
 // Finish reports why a leased run ended. It is the last call the runner
 // makes before leasing again.
 func (c *Client) Finish(ctx context.Context, report FinishReport) error {
+	if err := ValidateFinishArtifacts(report); err != nil {
+		return err
+	}
 	body, err := json.Marshal(report)
 	if err != nil {
 		return err
@@ -122,6 +125,33 @@ func (c *Client) Finish(ctx context.Context, report FinishReport) error {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("farm: finish: status %d", resp.StatusCode)
+	}
+	return nil
+}
+
+// Checkpoint uploads one in-flight checkpoint. It accepts plain artifact
+// bytes and never receives an emulator handle.
+func (c *Client) Checkpoint(ctx context.Context, report CheckpointReport) error {
+	if err := ValidateFinishArtifacts(FinishReport{Artifacts: report.Artifacts}); err != nil {
+		return err
+	}
+	body, err := json.Marshal(report)
+	if err != nil {
+		return err
+	}
+	url := fmt.Sprintf("%s/v1/runs/%s/checkpoint", c.BaseURL, report.RunID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return fmt.Errorf("farm: checkpoint: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("farm: checkpoint: status %d", resp.StatusCode)
 	}
 	return nil
 }

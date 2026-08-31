@@ -24,6 +24,11 @@ export FARM_WALL_PORT
 # restarts only via this host bind mount.
 FARM_STATE_DIR ?= /tmp/pokefarm-state
 export FARM_STATE_DIR
+# Optional Agent Orchestrator issue handoff (wall only). Empty values
+# leave reporting disabled. LAN examples, not defaults:
+#   AGENT_ORCHESTRATOR_API=http://192.168.50.81:8080
+#   AGENT_ORCHESTRATOR_UI=http://192.168.50.81:8081
+#   AGENT_ORCHESTRATOR_POKEPILOT_PROJECT_ID=<project uuid>
 GOMEBOY_CONTEXT ?= ../gomeboy
 
 # A model served locally instead of the LAN box .env points at. It is the

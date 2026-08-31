@@ -2,9 +2,12 @@ package farm
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -79,6 +82,75 @@ func TestClientFinishPostsReport(t *testing.T) {
 	}
 	if got.RunID != "r1" || got.Reason != "done" {
 		t.Fatalf("server received %+v", got)
+	}
+}
+
+func TestClientFinishRejectsInvalidArtifacts(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("Finish must not send an invalid report")
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL)
+	err := c.Finish(context.Background(), FinishReport{
+		RunID:    "r1",
+		SeedBurn: -1,
+	})
+	if err == nil {
+		t.Fatal("Finish accepted negative seed burn")
+	}
+}
+
+func TestClientCheckpointPostsArtifacts(t *testing.T) {
+	data := []byte("periodic-state")
+	sum := sha256.Sum256(data)
+	want := CheckpointReport{
+		RunID:   "r1",
+		Attempt: 1,
+		Artifacts: []Artifact{{
+			Name:      "periodic-00000018000.state",
+			MediaType: "application/octet-stream",
+			SHA256:    hex.EncodeToString(sum[:]),
+			Data:      data,
+		}},
+	}
+	var got CheckpointReport
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/runs/r1/checkpoint" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		json.NewDecoder(r.Body).Decode(&got)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL)
+	if err := c.Checkpoint(context.Background(), want); err != nil {
+		t.Fatalf("Checkpoint: %v", err)
+	}
+	if got.RunID != "r1" || got.Attempt != 1 || len(got.Artifacts) != 1 || got.Artifacts[0].Name != want.Artifacts[0].Name {
+		t.Fatalf("server received %+v", got)
+	}
+}
+
+func TestClientCheckpointRejectsInvalidArtifacts(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("Checkpoint must not send an invalid report")
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL)
+	err := c.Checkpoint(context.Background(), CheckpointReport{
+		RunID: "r1",
+		Artifacts: []Artifact{{
+			Name:      "../evil.state",
+			MediaType: "application/octet-stream",
+			SHA256:    strings.Repeat("0", 64),
+			Data:      []byte("x"),
+		}},
+	})
+	if err == nil {
+		t.Fatal("Checkpoint accepted an unsafe name")
 	}
 }
 

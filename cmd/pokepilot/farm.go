@@ -204,7 +204,7 @@ func runFarm(m *emu.Emu, client *farm.Client, bootState []byte, watchPort int) {
 		planner, starter, dest, fps, maxRounds, maxFrames := applySpec(*spec)
 		if err := validateSpec(planner, starter, dest); err != nil {
 			log.Printf("farm: %s: %v", spec.RunID, err)
-			finishRun(m, client, *spec, "error", err.Error())
+			finishRun(m, client, *spec, "error", err.Error(), 0, "")
 			time.Sleep(farmErrorSleep)
 			continue
 		}
@@ -267,7 +267,7 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 	snap.store(farm.Heartbeat{RunID: spec.RunID})
 	if err := m.LoadState(bootState); err != nil {
 		log.Printf("farm: %s: load state: %v", spec.RunID, err)
-		finishRun(m, client, spec, "error", fmt.Sprintf("load state: %v", err))
+		finishRun(m, client, spec, "error", fmt.Sprintf("load state: %v", err), 0, "")
 		return
 	}
 
@@ -283,6 +283,17 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 	m.Pace(fps)
 	m.TraceHeader(runHeader(planner, starter, dest, seed, burn))
 
+	checkpointDir := ""
+	if planner == "llm" {
+		dir, err := os.MkdirTemp("", "pokefarm-checkpoints-")
+		if err != nil {
+			log.Printf("farm: %s: checkpoint dir: %v", spec.RunID, err)
+			finishRun(m, client, spec, "error", fmt.Sprintf("checkpoint dir: %v", err), burn, "")
+			return
+		}
+		checkpointDir = dir
+	}
+
 	// Compose the sample callback on this (stepping) goroutine: the dialogue
 	// tracer plus the heartbeat snapshot, sharing one hoisted Mem buffer.
 	m.OnSample(func(m *emu.Emu) {
@@ -290,6 +301,21 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 		sampleHeartbeat(m, spec.RunID, snap, mem, addrs)
 	})
 	sampleHeartbeat(m, spec.RunID, snap, mem, addrs) // synchronous initial sample
+
+	var samples chan periodicSample
+	var stopUploader chan struct{}
+	var uploaderDone <-chan struct{}
+	if checkpointDir != "" {
+		samples = make(chan periodicSample, 1)
+		stopUploader = make(chan struct{})
+		uploaderDone = runCheckpointUploader(client, spec.RunID, spec.Attempt, checkpointDir, samples, stopUploader)
+		// agent.Run replaces OnSample with its dialogue tape, so the
+		// flight recorder lives on OnFrame, which the stepper always
+		// runs and the uploader never sees.
+		m.OnFrame(func(em *emu.Emu) {
+			maybeCapturePeriodic(em, snap, samples)
+		})
+	}
 
 	cancel := make(chan struct{})
 	stop := make(chan struct{})
@@ -300,14 +326,19 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 	case "scripted":
 		reason, detail = runFarmScripted(m, starter, dest)
 	case "llm":
-		reason, detail = runFarmLLM(m, starter, goal, maxRounds, maxFrames, cancel, snap)
+		reason, detail = runFarmLLM(m, starter, goal, maxRounds, maxFrames, cancel, snap, checkpointDir)
 	}
 
 	// Stop and join the heartbeat before TraceTail/SaveState/Finish.
 	close(stop)
 	<-hbDone
+	m.OnFrame(nil)
+	if stopUploader != nil {
+		close(stopUploader)
+		<-uploaderDone
+	}
 
-	finishRun(m, client, spec, reason, detail)
+	finishRun(m, client, spec, reason, detail, burn, checkpointDir)
 }
 
 // sampleHeartbeat captures the plain snapshot the heartbeat goroutine will
@@ -389,7 +420,7 @@ func runFarmScripted(m *emu.Emu, starter, dest string) (string, string) {
 // runFarmLLM mirrors runLLM's diagnostics and objective list; the only
 // differences are that the budget comes from the spec and cancel is the
 // wall's cooperative stop.
-func runFarmLLM(m *emu.Emu, starter, goal string, maxRounds, maxFrames int, cancel <-chan struct{}, snap *heartbeatSnap) (string, string) {
+func runFarmLLM(m *emu.Emu, starter, goal string, maxRounds, maxFrames int, cancel <-chan struct{}, snap *heartbeatSnap, checkpointDir string) (string, string) {
 	// The starter is the farm's controlled variable, so the harness TAKES it
 	// before handing control to the model — the same reason badgerun does
 	// (a model that knows Pokemon always picks Squirtle otherwise). From
@@ -410,10 +441,11 @@ func runFarmLLM(m *emu.Emu, starter, goal string, maxRounds, maxFrames int, canc
 	// page is this page, so a wandering leased run is visible on it too.
 	stats := newStatsPlanner(planner, m.TraceStats, snap)
 	res := agent.Run(m, m.ROM(), reportingPlanner{inner: stats, snap: snap}, agent.Budget{
-		MaxRounds: maxRounds,
-		MaxFrames: maxFrames,
-		Log:       logw,
-		Cancel:    cancel,
+		MaxRounds:     maxRounds,
+		MaxFrames:     maxFrames,
+		Log:           logw,
+		Cancel:        cancel,
+		CheckpointDir: checkpointDir,
 	})
 
 	fmt.Printf("\nrun stopped: %s after %d round(s)\n", stopName(res.Stop), res.Rounds)
@@ -481,28 +513,22 @@ func planQuestion(offered []agent.Objective) string {
 // nonempty RunID gets an attempt, including runs that died in validation or
 // LoadState before they stepped a frame. It is the last call before the next
 // lease, and it happens after the heartbeat has been joined.
-func finishRun(m *emu.Emu, client *farm.Client, spec farm.Spec, reason, detail string) {
+func finishRun(m *emu.Emu, client *farm.Client, spec farm.Spec, reason, detail string, burn int, checkpointDir string) {
 	report := farm.FinishReport{
-		RunID:     spec.RunID,
-		Attempt:   spec.Attempt,
-		Reason:    reason,
-		Detail:    detail,
-		TraceTail: m.TraceTail(20),
+		RunID:         spec.RunID,
+		Attempt:       spec.Attempt,
+		Reason:        reason,
+		Detail:        detail,
+		TraceTail:     m.TraceTail(20),
+		RunnerVersion: client.Version,
+		SeedBurn:      burn,
 	}
 	if save, err := m.SaveState(); err == nil {
 		report.SaveState = save
 	} else {
 		log.Printf("farm: %s: save state: %v", spec.RunID, err)
 	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), farmHTTPTimeout)
-	err := client.Finish(ctx, report)
-	cancel()
-	if err != nil {
-		log.Printf("farm: %s: finish: %v", spec.RunID, err)
-		return
-	}
-	fmt.Printf("run %s finished: %s\n", spec.RunID, reason)
+	sendFinish(client, report, checkpointDir)
 }
 
 // farmStarterFor maps a spec's starter name onto the typed skill.Starter the

@@ -107,3 +107,18 @@ no Caterpie hint).
   with it on prints a note saying its rows are not comparable to baseline.
 - Ablation A (swap the model) is just `POKEPILOT_LLM_MODEL=... \
   POKEPILOT_LLM_URL=...` around the same command.
+
+## Farm evidence and issue handoff
+
+A pokefarm LLM lease writes a bounded checkpoint directory and a periodic
+flight recorder. Finish carries `runner_version`, `seed_burn` (zero is a
+real value), the final save state, and hashed artifacts: objective
+state/knowledge pairs plus recent periodic states. The wall stores those
+dumps, groups `error`/`lost` failures by SHA-256 fingerprint, and — when
+`-issues-api`, `-issues-project`, and `-issues-ui` are all set — files each
+settled occurrence with Agent Orchestrator.
+
+A linked issue number in the farm console is not a PokePilot defect. Agent
+Orchestrator may classify the occurrence as expected game/RNG behavior or
+external infrastructure. Pokéfarm reports what happened; it does not
+declare a code bug.

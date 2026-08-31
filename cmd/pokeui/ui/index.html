@@ -383,6 +383,26 @@
     color: var(--lcd);
   }
   #history { display: grid; }
+  #failures { display: grid; gap: var(--space-2); }
+  .fail-card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    padding: var(--space-3);
+    display: grid;
+    gap: var(--space-2);
+  }
+  .fail-pat { font-family: Syne, sans-serif; font-weight: 700; overflow-wrap: anywhere; }
+  .fail-ex { color: var(--bezel); font-size: 11px; overflow-wrap: anywhere; }
+  .fail-meta { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
+  .fail-act {
+    background: var(--lcd-dark);
+    border: 1px solid var(--lcd);
+    color: var(--lcd);
+    padding: 4px 10px;
+    font-size: 11px;
+  }
+  .fail-act:disabled { opacity: 0.45; cursor: default; }
+  .issue-a { color: var(--lcd); }
   /* minmax(0,1fr): a plain 1fr keeps the content's min-content as its floor,
      and the nowrap outcome span (28ch) plus the chip column then push the row
      past the viewport on phones */
@@ -557,6 +577,10 @@
     <section>
       <h2 class="section-h">Live</h2>
       <div id="live"></div>
+    </section>
+    <section>
+      <h2 class="section-h">Failures</h2>
+      <div id="failures"></div>
     </section>
     <section>
       <h2 class="section-h">Workers</h2>

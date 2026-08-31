@@ -5,10 +5,12 @@
   const narrow = () => window.matchMedia("(max-width: 700px)").matches;
   const short = (v) => String(v || "").slice(0, 7); // display SHAs short; JSON keeps the full one
   let snap = { now: 0, runs: [], workers: [] };
+  let groups = [];
   let consoleVersion = "";
   let selected = "";
   let cardErr = "";
   let wallDown = false;
+  const investigating = new Set();
   const pumps = new Map();
   const histFilter = { outcome: "", how: "", starter: "" };
   // History is paged: a farm that has run for a while has hundreds of
@@ -27,6 +29,25 @@
   const starterOf = (r) => r.starter || "squirtle";
   const outcomeOf = (r) => (r.reason || r.status || "").toLowerCase();
   const goalOf = (r) => (r.goal || "").trim();
+
+  function issueHref(url) {
+    try {
+      const u = new URL(url);
+      if (u.protocol === "http:" || u.protocol === "https:") return u.href;
+    } catch (e) {}
+    return "";
+  }
+  function issueBadge(issue) {
+    if (!issue || !issue.issue_number) return "";
+    const href = issueHref(issue.issue_url);
+    const label = `Issue #${issue.issue_number}`;
+    const st = issue.status ? ` · ${issue.status}` : "";
+    const n = issue.occurrence_count ? ` · ${issue.occurrence_count}×` : "";
+    const fixed = issue.fixed_revision ? ` · ${short(issue.fixed_revision)}` : "";
+    const stale = issue.stale ? " · stale" : "";
+    if (!href) return `<span class="chip">${esc(label + st + n + fixed + stale)}</span>`;
+    return `<a class="issue-a" href="${esc(href)}" target="_blank" rel="noopener">${esc(label)}</a><span class="chip">${esc((issue.status || "") + n + fixed + stale)}</span>`;
+  }
 
   // The same tally the runner's watch page renders, compressed to one card
   // line. Nil on scripted runs and before the first ask.
@@ -482,7 +503,7 @@
         <span class="hist-id">${esc(r.run_id)}</span>
         <span class="chips">${settingChips(r)}</span>
         <span class="hist-where">${esc(where)}</span>
-        <span class="hist-out">${statusChip(r)}<span class="hist-outcome">${esc(out)}</span></span>
+        <span class="hist-out">${statusChip(r)}${issueBadge(r.issue)}<span class="hist-outcome">${esc(out)}</span></span>
         </button>
         <button type="button" class="hist-del" data-delete="${esc(r.run_id)}">Delete</button>
       </div>`;
@@ -510,7 +531,7 @@
     }
     pane.hidden = false;
     $("detail-title").textContent = run.run_id;
-    $("detail-chips").innerHTML = statusChip(run) + settingChips(run);
+    $("detail-chips").innerHTML = statusChip(run) + settingChips(run) + issueBadge(run.issue);
     fillLcd($("detail-lcd"), run);
     const settings = kv([
       ["how", howText(run)],
@@ -616,6 +637,36 @@
     if (id && narrow()) $("watch").scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
+  function renderFailures() {
+    const el = $("failures");
+    if (!el) return;
+    const active = (groups || []).filter((g) => {
+      const st = g.issue && g.issue.status;
+      const res = g.issue && g.issue.resolution;
+      return st !== "resolved" && st !== "fixed" && res !== "fixed";
+    });
+    if (!active.length) {
+      el.innerHTML = `<p class="empty">No open failure groups</p>`;
+      return;
+    }
+    el.innerHTML = active.map((g) => {
+      const issue = g.issue;
+      let action = "";
+      if (!issue || !issue.issue_id) {
+        if (g.outbox === "error") action = `<span class="chip">report failed</span>`;
+        else if (g.outbox === "pending") action = `<span class="chip">pending report</span>`;
+      } else if (issue.status === "open" || issue.status === "diagnosed") {
+        const busy = investigating.has(g.key);
+        action = `<button type="button" class="fail-act" data-investigate="${esc(g.key)}" ${busy ? "disabled" : ""}>Investigate now</button>`;
+      }
+      return `<div class="fail-card">
+        <div class="fail-pat">${esc(g.pattern)}</div>
+        <div class="fail-ex">${esc(g.example || "")} · ${g.count} run${g.count === 1 ? "" : "s"}</div>
+        <div class="fail-meta">${issueBadge(issue)}${action}</div>
+      </div>`;
+    }).join("");
+  }
+
   function render() {
     $("banner").hidden = !wallDown;
     $("queue-toggle").disabled = wallDown;
@@ -623,6 +674,7 @@
     renderCounts();
     renderVersions();
     renderLive();
+    renderFailures();
     renderWorkers();
     renderHistory();
     renderDetail();
@@ -635,6 +687,12 @@
       if (!res.ok) throw new Error("bad");
       snap = await res.json();
       wallDown = false;
+      try {
+        const tr = await fetch("/v1/triage", { cache: "no-store" });
+        if (tr.ok) groups = await tr.json();
+      } catch (e) {
+        groups = groups || [];
+      }
     } catch (e) {
       wallDown = true;
     }
@@ -737,6 +795,21 @@
       } catch (e) {
         cardErr = { id, text: "wall unreachable" };
       }
+      await refresh();
+      return;
+    }
+    const inv = ev.target.closest("[data-investigate]");
+    if (inv) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      const key = inv.getAttribute("data-investigate");
+      if (!key || investigating.has(key)) return;
+      investigating.add(key);
+      inv.disabled = true;
+      try {
+        await fetch("/v1/triage/" + encodeURIComponent(key) + "/investigate", { method: "POST" });
+      } catch (e) {}
+      investigating.delete(key);
       await refresh();
       return;
     }

@@ -113,6 +113,7 @@ type tileRow struct {
 	Attempts   int            `json:"attempts"`
 	Reason     string         `json:"reason"`
 	Detail     string         `json:"detail"`
+	Issue      *IssueLink     `json:"issue,omitempty"`
 }
 
 // Wall owns the spec queue, the tile map, cancel flags, the optional dump
@@ -130,6 +131,9 @@ type Wall struct {
 	workerExpiry time.Duration          // how long a worker may go unseen before the reaper drops it
 	staleAfter   time.Duration          // how long a run may go quiet before the reaper declares it lost
 	Version      string                 // this wall's build identity, shown in the dashboard and grid
+	issueLinks   map[string]IssueLink   // failure key → Agent Orchestrator issue
+	outbox       map[string]outboxEntry // external occurrence id → report outbox
+	issues       *issueClient
 }
 
 // NewWall builds a Wall. If dumpsDir is non-empty, finish reports are also
@@ -142,6 +146,8 @@ func NewWall(dumpsDir string) *Wall {
 		workers:      map[string]*workerInfo{},
 		workerExpiry: 15 * time.Second,
 		staleAfter:   defaultStaleExpiry,
+		issueLinks:   map[string]IssueLink{},
+		outbox:       map[string]outboxEntry{},
 	}
 }
 
@@ -190,17 +196,21 @@ type persistedTile struct {
 // persistedState is the wall's whole on-disk memory: run order, tiles, and
 // the queue of not-yet-leased runs.
 type persistedState struct {
-	Order []string                 `json:"order"`
-	Queue []string                 `json:"queue"`
-	Tiles map[string]persistedTile `json:"tiles"`
+	Order      []string                 `json:"order"`
+	Queue      []string                 `json:"queue"`
+	Tiles      map[string]persistedTile `json:"tiles"`
+	IssueLinks map[string]IssueLink     `json:"issue_links,omitempty"`
+	Outbox     map[string]outboxEntry   `json:"outbox,omitempty"`
 }
 
 // marshalStateLocked encodes the wall's memory. Caller holds w.mu.
 func (w *Wall) marshalStateLocked() ([]byte, error) {
 	ps := persistedState{
-		Order: append([]string(nil), w.order...),
-		Queue: append([]string(nil), w.queue...),
-		Tiles: make(map[string]persistedTile, len(w.tiles)),
+		Order:      append([]string(nil), w.order...),
+		Queue:      append([]string(nil), w.queue...),
+		Tiles:      make(map[string]persistedTile, len(w.tiles)),
+		IssueLinks: copyIssueLink(w.issueLinks),
+		Outbox:     copyOutbox(w.outbox),
 	}
 	for id, t := range w.tiles {
 		ps.Tiles[id] = persistedTile{
@@ -316,6 +326,8 @@ func (w *Wall) loadState() {
 		}
 	}
 	w.queue = append(w.queue, ps.Queue...)
+	w.issueLinks = copyIssueLink(ps.IssueLinks)
+	w.outbox = copyOutbox(ps.Outbox)
 }
 
 var unsafeName = regexp.MustCompile(`[^A-Za-z0-9._-]`)
@@ -347,8 +359,10 @@ func (w *Wall) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/runs/{id}/cancel", w.handleCancel)
 	mux.HandleFunc("DELETE /v1/runs/{id}", w.handleDelete)
 	mux.HandleFunc("POST /v1/runs/{id}/finish", w.handleFinish)
+	mux.HandleFunc("POST /v1/runs/{id}/checkpoint", w.handleCheckpoint)
 	mux.HandleFunc("GET /v1/dashboard", w.handleDashboard)
 	mux.HandleFunc("GET /v1/triage", w.handleTriage)
+	mux.HandleFunc("POST /v1/triage/{key}/investigate", w.handleInvestigate)
 	mux.HandleFunc("GET /", w.handleGrid)
 	mux.HandleFunc("GET /frame", w.handleFrame)
 	return mux
@@ -623,6 +637,10 @@ func (w *Wall) handleFinish(res http.ResponseWriter, req *http.Request) {
 		writeJSON(res, http.StatusBadRequest, map[string]string{"error": "run_id mismatch: path " + id + " body " + report.RunID})
 		return
 	}
+	if err := farm.ValidateFinishArtifacts(report); err != nil {
+		writeJSON(res, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
 
 	w.mu.Lock()
 	t, ok := w.tiles[id]
@@ -679,6 +697,8 @@ func (w *Wall) handleFinish(res http.ResponseWriter, req *http.Request) {
 			writeJSON(res, http.StatusInternalServerError, map[string]string{"error": "write dump: " + err.Error()})
 			return
 		}
+		w.enqueueIssueAfterDump(id, report)
+		w.saveState()
 	}
 	writeJSON(res, http.StatusOK, map[string]string{"status": statusDone})
 }
@@ -837,6 +857,7 @@ func (w *Wall) snapshot() dashboardView {
 			Stats:      t.Stats,
 			Reason:     t.Reason,
 			Detail:     t.Detail,
+			Issue:      issueLinkFor(t, w.issueLinks),
 		})
 	}
 	return dashboardView{Now: now.Unix(), WallVersion: w.Version, Runs: rows, Workers: workers}
@@ -896,16 +917,21 @@ func normalizeDetail(detail string) string {
 
 // triageGroup is one cluster of failed runs sharing a normalised detail.
 type triageGroup struct {
-	Pattern string   `json:"pattern"` // the normalised detail
-	Count   int      `json:"count"`   // exact number of runs in the group
-	Example string   `json:"example"` // ONE verbatim detail from the group
-	RunIDs  []string `json:"run_ids"` // capped at triageRunIDCap
+	Pattern     string     `json:"pattern"`
+	Key         string     `json:"key"`
+	Fingerprint string     `json:"fingerprint"`
+	Count       int        `json:"count"`
+	Example     string     `json:"example"`
+	RunIDs      []string   `json:"run_ids"`
+	Issue       *IssueLink `json:"issue,omitempty"`
+	Outbox      string     `json:"outbox,omitempty"`
 }
 
 // triageGroups groups finished, failed runs (reason error or lost) with a
 // non-empty detail by normalised pattern, most frequent first. A run with an
 // empty detail is not a cluster of one — it is a run that finished — and a
-// run that finished cleanly never appears at all.
+// run that finished cleanly never appears at all. Representative IDs are
+// newest-first.
 func triageGroups(order []string, tiles map[string]*Tile) []triageGroup {
 	type acc struct {
 		example string
@@ -927,6 +953,14 @@ func triageGroups(order []string, tiles map[string]*Tile) []triageGroup {
 			keys = append(keys, key)
 		}
 		a.count++
+	}
+	for i := len(order) - 1; i >= 0; i-- {
+		id := order[i]
+		t := tiles[id]
+		if t == nil || !t.Finished || (t.Reason != "error" && t.Reason != "lost") || t.Detail == "" {
+			continue
+		}
+		a := groups[normalizeDetail(t.Detail)]
 		if len(a.ids) < triageRunIDCap {
 			a.ids = append(a.ids, t.RunID)
 		}
@@ -934,17 +968,99 @@ func triageGroups(order []string, tiles map[string]*Tile) []triageGroup {
 	out := make([]triageGroup, 0, len(keys))
 	for _, k := range keys {
 		a := groups[k]
-		out = append(out, triageGroup{Pattern: k, Count: a.count, Example: a.example, RunIDs: a.ids})
+		short, fp := failureIdentity(k)
+		out = append(out, triageGroup{
+			Pattern:     k,
+			Key:         short,
+			Fingerprint: fp,
+			Count:       a.count,
+			Example:     a.example,
+			RunIDs:      a.ids,
+		})
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Count > out[j].Count })
 	return out
 }
 
-// triage is the wall's failure ranking, taken under w.mu.
 func (w *Wall) triage() []triageGroup {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	return triageGroups(w.order, w.tiles)
+	groups := triageGroups(w.order, w.tiles)
+	for i := range groups {
+		if link, ok := w.issueLinks[groups[i].Key]; ok && link.IssueID != "" {
+			cp := link
+			groups[i].Issue = &cp
+		}
+		groups[i].Outbox = outboxStatusForKey(w.outbox, groups[i].Key)
+	}
+	return groups
+}
+
+func issueLinkFor(t *Tile, links map[string]IssueLink) *IssueLink {
+	if t == nil || !t.Finished || (t.Reason != "error" && t.Reason != "lost") || t.Detail == "" {
+		return nil
+	}
+	key, _ := failureIdentity(normalizeDetail(t.Detail))
+	link, ok := links[key]
+	if !ok || link.IssueID == "" {
+		return nil
+	}
+	cp := link
+	return &cp
+}
+
+func outboxStatusForKey(box map[string]outboxEntry, key string) string {
+	status := ""
+	for _, e := range box {
+		if e.Key != key {
+			continue
+		}
+		switch e.Status {
+		case outboxError:
+			return outboxError
+		case outboxPending:
+			status = outboxPending
+		}
+	}
+	return status
+}
+
+func (w *Wall) enqueueIssueAfterDump(runID string, report farm.FinishReport) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.issues == nil {
+		return
+	}
+	t := w.tiles[runID]
+	if t == nil || !t.Finished {
+		return
+	}
+	if t.Reason != "error" && t.Reason != "lost" {
+		return
+	}
+	if t.Detail == "" || t.Detail == "cancelled" {
+		return
+	}
+	attempt := report.Attempt
+	if attempt <= 0 {
+		attempt = t.Attempts
+	}
+	if attempt <= 0 {
+		attempt = 1
+	}
+	key, _ := failureIdentity(normalizeDetail(t.Detail))
+	ext := fmt.Sprintf("%s-attempt-%d", runID, attempt)
+	if existing, ok := w.outbox[ext]; ok && existing.Status != "" {
+		return
+	}
+	w.outbox[ext] = outboxEntry{
+		ExternalID: ext,
+		RunID:      runID,
+		Attempt:    attempt,
+		Key:        key,
+		Status:     outboxPending,
+		UpdatedAt:  time.Now().Unix(),
+	}
 }
 
 // handleTriage reports failure groups, most frequent first. It is a read:

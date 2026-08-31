@@ -1,8 +1,11 @@
 package farm
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -94,4 +97,134 @@ func TestHeartbeatCarriesLLMStats(t *testing.T) {
 	if contains(string(b), `"stats"`) {
 		t.Errorf("nil stats must be omitted: %s", b)
 	}
+}
+
+func TestFinishReportJSONRoundTrip(t *testing.T) {
+	data := []byte("checkpoint-state")
+	sum := sha256.Sum256(data)
+	want := FinishReport{
+		RunID:         "r1",
+		Attempt:       1,
+		Reason:        "error",
+		Detail:        "stuck",
+		TraceTail:     []string{"a", "b"},
+		SaveState:     []byte("final-state"),
+		RunnerVersion: "7b66005",
+		SeedBurn:      0,
+		Artifacts: []Artifact{{
+			Name:      "round-001-frame-0000000100-goto.state",
+			MediaType: "application/octet-stream",
+			SHA256:    hex.EncodeToString(sum[:]),
+			Data:      data,
+		}},
+	}
+	b, err := json.Marshal(want)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	for _, field := range []string{`"runner_version"`, `"seed_burn"`, `"artifacts"`, `"name"`, `"media_type"`, `"sha256"`, `"data"`} {
+		if !contains(string(b), field) {
+			t.Errorf("marshaled finish missing %s: %s", field, b)
+		}
+	}
+	if !contains(string(b), `"seed_burn":0`) {
+		t.Errorf("zero seed_burn must be preserved: %s", b)
+	}
+	var got FinishReport
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("round trip = %+v, want %+v", got, want)
+	}
+}
+
+func TestFinishReportJSONOmitsNewFields(t *testing.T) {
+	var got FinishReport
+	if err := json.Unmarshal([]byte(`{"run_id":"old","reason":"done"}`), &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got.RunID != "old" || got.Reason != "done" {
+		t.Fatalf("legacy fields = %+v", got)
+	}
+	if got.RunnerVersion != "" || got.SeedBurn != 0 || got.Artifacts != nil {
+		t.Fatalf("omitted evidence must stay zero: %+v", got)
+	}
+}
+
+func TestValidateFinishArtifacts(t *testing.T) {
+	data := []byte("ok")
+	sum := sha256.Sum256(data)
+	hash := hex.EncodeToString(sum[:])
+	ok := FinishReport{
+		SeedBurn: 0,
+		Artifacts: []Artifact{{
+			Name:      "periodic-00000018000.state",
+			MediaType: "application/octet-stream",
+			SHA256:    hash,
+			Data:      data,
+		}},
+	}
+	if err := ValidateFinishArtifacts(ok); err != nil {
+		t.Fatalf("valid report: %v", err)
+	}
+
+	dup := ok
+	dup.Artifacts = []Artifact{ok.Artifacts[0], ok.Artifacts[0]}
+	if err := ValidateFinishArtifacts(dup); err == nil {
+		t.Fatal("duplicate names must be rejected")
+	}
+
+	empty := ok
+	empty.Artifacts = []Artifact{{Name: "", MediaType: "application/octet-stream", SHA256: hash, Data: data}}
+	if err := ValidateFinishArtifacts(empty); err == nil {
+		t.Fatal("empty names must be rejected")
+	}
+
+	pathName := ok
+	pathName.Artifacts = []Artifact{{Name: "../evil.state", MediaType: "application/octet-stream", SHA256: hash, Data: data}}
+	if err := ValidateFinishArtifacts(pathName); err == nil {
+		t.Fatal("path names must be rejected")
+	}
+
+	space := ok
+	space.Artifacts = []Artifact{{Name: "bad name.state", MediaType: "application/octet-stream", SHA256: hash, Data: data}}
+	if err := ValidateFinishArtifacts(space); err == nil {
+		t.Fatal("non-ASCII-conservative names must be rejected")
+	}
+
+	neg := ok
+	neg.SeedBurn = -1
+	if err := ValidateFinishArtifacts(neg); err == nil {
+		t.Fatal("negative seed burn must be rejected")
+	}
+
+	mismatch := ok
+	mismatch.Artifacts = []Artifact{{Name: "periodic-00000018000.state", MediaType: "application/octet-stream", SHA256: strings.Repeat("0", 64), Data: data}}
+	if err := ValidateFinishArtifacts(mismatch); err == nil {
+		t.Fatal("mismatched SHA-256 must be rejected")
+	}
+
+	upper := ok
+	upper.Artifacts = []Artifact{{Name: "periodic-00000018000.state", MediaType: "application/octet-stream", SHA256: strings.ToUpper(hash), Data: data}}
+	if err := ValidateFinishArtifacts(upper); err == nil {
+		t.Fatal("uppercase SHA-256 must be rejected")
+	}
+
+	over := ok
+	over.Artifacts = []Artifact{{
+		Name:      "huge.state",
+		MediaType: "application/octet-stream",
+		SHA256:    hash,
+		Data:      make([]byte, MaxFinishArtifactBytes+1),
+	}}
+	over.Artifacts[0].SHA256 = sha256Hex(over.Artifacts[0].Data)
+	if err := ValidateFinishArtifacts(over); err == nil {
+		t.Fatal("over-budget payload must be rejected")
+	}
+}
+
+func sha256Hex(b []byte) string {
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
 }

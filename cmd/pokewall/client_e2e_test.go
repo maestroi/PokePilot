@@ -99,12 +99,16 @@ func TestFarmClientRoundTripsAgainstWall(t *testing.T) {
 	}
 
 	// Finish through the client with a representative report.
+	art := hashedNamed("round-001-frame-0000000100-goto.state", "application/octet-stream", []byte("ckpt"))
 	report := farm.FinishReport{
-		RunID:     spec.RunID,
-		Reason:    "cancelled",
-		Detail:    "operator cancel at route 2",
-		TraceTail: []string{"enter route-2", "stop on cancel"},
-		SaveState: []byte("state-bytes"),
+		RunID:         spec.RunID,
+		Reason:        "cancelled",
+		Detail:        "operator cancel at route 2",
+		TraceTail:     []string{"enter route-2", "stop on cancel"},
+		SaveState:     []byte("state-bytes"),
+		RunnerVersion: "e2e-sha",
+		SeedBurn:      0,
+		Artifacts:     []farm.Artifact{art},
 	}
 	if err := client.Finish(ctx, report); err != nil {
 		t.Fatalf("client.Finish: %v", err)

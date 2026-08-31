@@ -26,7 +26,23 @@ services:
     # -state persists the tile map and queue, so a rolled wall remembers
     # active runs (their heartbeats resume within a second of its return);
     # the reaper then clears any run whose runner truly died.
-    command: ["pokewall", "-http", ":8080", "-dumps", "/var/lib/pokewall/dumps", "-state", "/var/lib/pokewall/state.json"]
+    # Issue handoff is off unless the operator supplies all three
+    # Agent Orchestrator values. Empty interpolation is a disabled
+    # triple, not a partial one; pokewall rejects a mix.
+    command:
+      - pokewall
+      - -http
+      - ":8080"
+      - -dumps
+      - /var/lib/pokewall/dumps
+      - -state
+      - /var/lib/pokewall/state.json
+      - -issues-api
+      - "${AGENT_ORCHESTRATOR_API:-}"
+      - -issues-project
+      - "${AGENT_ORCHESTRATOR_POKEPILOT_PROJECT_ID:-}"
+      - -issues-ui
+      - "${AGENT_ORCHESTRATOR_UI:-}"
     deploy:
       replicas: 1
     volumes:

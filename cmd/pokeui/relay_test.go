@@ -23,6 +23,12 @@ func TestPokeuiProxiesAllowlistedRoutes(t *testing.T) {
 		case req.Method == http.MethodGet && req.URL.Path == "/v1/dashboard":
 			res.Header().Set("Content-Type", "application/json")
 			res.Write([]byte(`{"now":1,"runs":[],"workers":[]}`))
+		case req.Method == http.MethodGet && req.URL.Path == "/v1/triage":
+			res.Header().Set("Content-Type", "application/json")
+			res.Write([]byte(`[{"pattern":"stuck","key":"abcdabcdabcdabcd","count":2}]`))
+		case req.Method == http.MethodPost && req.URL.Path == "/v1/triage/abcdabcdabcdabcd/investigate":
+			res.Header().Set("Content-Type", "application/json")
+			res.Write([]byte(`{"issue_number":42}`))
 		case req.Method == http.MethodPost && req.URL.Path == "/v1/specs":
 			body, _ := io.ReadAll(req.Body)
 			if !bytes.Contains(body, []byte(`"run_id"`)) {
@@ -69,6 +75,52 @@ func TestPokeuiProxiesAllowlistedRoutes(t *testing.T) {
 	}
 	if !bytes.Contains(body, []byte(`"runs"`)) {
 		t.Errorf("dashboard body = %s", body)
+	}
+
+	res, err = http.Get(ui.URL + "/v1/triage")
+	if err != nil {
+		t.Fatalf("GET triage: %v", err)
+	}
+	triage, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != 200 {
+		t.Fatalf("GET /v1/triage = %d, want 200", res.StatusCode)
+	}
+	if cc := res.Header.Get("Cache-Control"); cc != "no-store" {
+		t.Errorf("triage Cache-Control = %q, want no-store", cc)
+	}
+	if !bytes.Contains(triage, []byte(`"pattern"`)) {
+		t.Errorf("triage body = %s", triage)
+	}
+
+	res, err = http.Post(ui.URL+"/v1/triage/abcdabcdabcdabcd/investigate", "application/json", bytes.NewReader(nil))
+	if err != nil {
+		t.Fatalf("POST investigate: %v", err)
+	}
+	io.Copy(io.Discard, res.Body) //nolint:errcheck
+	res.Body.Close()
+	if res.StatusCode != 200 {
+		t.Fatalf("POST investigate = %d, want 200", res.StatusCode)
+	}
+
+	res, err = http.Post(ui.URL+"/v1/triage/abcdabcdabcdabcd/other", "application/json", bytes.NewReader(nil))
+	if err != nil {
+		t.Fatalf("POST other triage: %v", err)
+	}
+	io.Copy(io.Discard, res.Body) //nolint:errcheck
+	res.Body.Close()
+	if res.StatusCode != 404 {
+		t.Errorf("POST /v1/triage/{key}/other = %d, want 404", res.StatusCode)
+	}
+
+	res, err = http.Get(ui.URL + "/api/issues/1")
+	if err != nil {
+		t.Fatalf("GET orchestrator path: %v", err)
+	}
+	io.Copy(io.Discard, res.Body) //nolint:errcheck
+	res.Body.Close()
+	if res.StatusCode != 404 {
+		t.Errorf("GET /api/issues/1 = %d, want 404", res.StatusCode)
 	}
 
 	spec, _ := json.Marshal(map[string]string{"run_id": "r1"})
@@ -171,7 +223,7 @@ func TestPokeuiServesIndex(t *testing.T) {
 	if cc := res.Header.Get("Cache-Control"); cc != "no-store" {
 		t.Errorf("Cache-Control = %q, want no-store", cc)
 	}
-	for _, want := range []string{"pokefarm", "Queue a run", "Play the game", `id="live"`, `id="workers"`, `id="history"`, "/ui.js"} {
+	for _, want := range []string{"pokefarm", "Queue a run", "Play the game", `id="live"`, `id="workers"`, `id="history"`, `id="failures"`, "/ui.js"} {
 		if !bytes.Contains(body, []byte(want)) {
 			t.Errorf("index missing %q", want)
 		}
@@ -188,5 +240,8 @@ func TestPokeuiServesIndex(t *testing.T) {
 	}
 	if !bytes.Contains(js, []byte("/v1/dashboard")) {
 		t.Errorf("ui.js missing /v1/dashboard")
+	}
+	if !bytes.Contains(js, []byte("/v1/triage")) {
+		t.Errorf("ui.js missing /v1/triage")
 	}
 }

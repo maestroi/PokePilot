@@ -118,8 +118,8 @@ func TestTriageExampleIsVerbatim(t *testing.T) {
 	if got[0].Example == normalizeDetail(details[0]) && got[0].Example != details[0] {
 		t.Errorf("example %q looks normalised, want unmodified", got[0].Example)
 	}
-	if len(got[0].RunIDs) != 2 || got[0].RunIDs[0] != "run-a" || got[0].RunIDs[1] != "run-b" {
-		t.Errorf("run ids = %v, want [run-a run-b]", got[0].RunIDs)
+	if len(got[0].RunIDs) != 2 || got[0].RunIDs[0] != "run-b" || got[0].RunIDs[1] != "run-a" {
+		t.Errorf("run ids = %v, want newest first [run-b run-a]", got[0].RunIDs)
 	}
 }
 
