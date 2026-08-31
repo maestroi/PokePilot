@@ -23,6 +23,11 @@ const (
 	// DialogueUnexpectedMode: the screen is not an ordinary text box —
 	// measured so far, a battle the box led into.
 	DialogueUnexpectedMode
+	// DialogueMenuOpen: a MENU is up, not a text box. The loop stopped
+	// before pressing A, because A on a menu is a selection: recovery
+	// closes boxes, it does not operate menus. Like a choice, this is the
+	// caller's to resolve.
+	DialogueMenuOpen
 )
 
 // DialogueRecoveryResult is what RecoverDialogue found when it stopped.
@@ -70,9 +75,11 @@ func recoverDialogue(m frameClock, budget int) DialogueRecoveryResult {
 	}
 	// stopBeforeA is checked after the snapshot and before every A press:
 	// a two-option prompt is a question, and this layer does not answer
-	// questions.
+	// questions — and any other menu is worse, because A there SELECTS.
+	// Paging a box closed and operating a menu look identical from here
+	// (both want A) and are not remotely the same act.
 	stopBeforeA := func(mm *state.Mem) bool {
-		return state.DecodeTwoOptionMenu(mm) != nil
+		return state.DecodeTwoOptionMenu(mm) != nil || state.MenuUp(mm)
 	}
 
 	final, presses := advanceCore(m, budget, done, stopBeforeA)
@@ -87,6 +94,8 @@ func recoverDialogue(m frameClock, budget int) DialogueRecoveryResult {
 		res.Stop = DialogueUnexpectedMode
 	case state.DecodeTwoOptionMenu(&final) != nil:
 		res.Stop = DialogueChoiceRequired
+	case state.MenuUp(&final):
+		res.Stop = DialogueMenuOpen
 	case state.DecodeDialogue(&final) == nil && state.Controllable(&final):
 		res.Stop = DialogueRecovered
 	default:

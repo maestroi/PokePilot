@@ -82,6 +82,17 @@ func Buy(m *emu.Emu, item uint8, qty int) error {
 	state.Snapshot(m, &mem)
 	pos, ok := martItemPosition(&mem, item)
 	if !ok {
+		// Refusing the purchase is not enough: the item list is UP, and
+		// returning from here left it up. Every later objective then
+		// refuses to start on a screen nothing closes. MEASURED
+		// 2026-08-31: the Viridian Mart stocks POKe BALL, ANTIDOTE, PARLYZ
+		// HEAL and BURN HEAL — no POTION — so "buy 3 POTION" returned
+		// ErrNotInStock from inside the shop and killed the run four
+		// rounds later. Same rule as the affordability refusal below: leave
+		// the world where it was found, and say so loudly when you cannot.
+		if err := exitToOverworld(m); err != nil {
+			return fmt.Errorf("skill: Buy: item %#02x is not stocked and the shop did not close: %w", item, err)
+		}
 		return fmt.Errorf("skill: Buy: %w: item %#02x", ErrNotInStock, item)
 	}
 
@@ -107,7 +118,15 @@ func Buy(m *emu.Emu, item uint8, qty int) error {
 	// 6. Affordability: a typed refusal, not a silent no-op or a hang.
 	if moneyBefore < total {
 		if err := backOutOfShop(m); err != nil {
-			return fmt.Errorf("skill: Buy: %w (backing out: %v)", ErrCantAfford, err)
+			// NOT wrapped in ErrCantAfford. A caller that sees ErrCantAfford
+			// is told "the game said no, the world is fine, pick something
+			// else" — agent.Execute treats it as a benign outcome and
+			// reports the round DONE. A backout that failed leaves the shop
+			// menus on screen, which is the opposite of fine: every later
+			// objective refuses to start on it. MEASURED 2026-08-31: "buy 3
+			// POTION -> done" with 793 in hand against a 900 total, and the
+			// run dead four rounds later on an item list nobody closed.
+			return fmt.Errorf("skill: Buy: cannot afford %d (have %d) and the shop did not close: %w", total, moneyBefore, err)
 		}
 		return fmt.Errorf("skill: Buy: %w: have %d, need %d", ErrCantAfford, moneyBefore, total)
 	}
@@ -261,26 +280,72 @@ func exitShop(m *emu.Emu) error {
 	return leaveFromItemList(m)
 }
 
-// backOutOfShop leaves the shop from the choose-quantity box (used to refuse an
-// unaffordable purchase): B back to the item list, then out. There is no RAM
-// marker for the quantity->list redraw (both watch A|B|SELECT and leave
-// wMaxItemQuantity stale), so settle for the redraw before the next B.
+// backOutOfShop leaves the shop from the choose-quantity box (used to refuse
+// an unaffordable purchase).
+//
+// It is exitToOverworld and nothing else. The old version choreographed the
+// exit — B to the item list, settle for a redraw with no RAM marker, then
+// leaveFromItemList's B / wait-for-BUY-SELL-QUIT / B — and every step of
+// that assumed the screen it expected was the screen that was there. One
+// stale wMenuWatchedKeys and the sequence pressed its buttons at the wrong
+// menus and stopped somewhere inside the shop. exitToOverworld does not
+// assume: it looks at what is on screen and presses the button that closes
+// THAT, until the player is controllable and stays controllable.
 func backOutOfShop(m *emu.Emu) error {
-	m.Tap(emu.B, 3, 7)
-	m.StepFrames(backOutRedraw * talkSettle)
-	return leaveFromItemList(m)
+	return exitToOverworld(m)
 }
 
 // leaveFromItemList exits from the item list: B -> the "anything else" text
-// auto-advances to the BUY/SELL/QUIT menu -> B quits -> wait for controllable
-// (the farewell box needs an A).
+// auto-advances to the BUY/SELL/QUIT menu -> B quits -> then back to the
+// overworld, whatever the shop still has on screen.
 func leaveFromItemList(m *emu.Emu) error {
 	m.Tap(emu.B, 3, 7)
 	if err := martWait(m, buySellQuitUp, "the BUY/SELL/QUIT menu after leaving the item list"); err != nil {
 		return err
 	}
 	m.Tap(emu.B, 3, 7)
-	return martAdvance(m, state.Controllable, "controllable after quitting the shop")
+	return exitToOverworld(m)
+}
+
+// exitToOverworld backs out of whatever is still on screen until the player
+// is controllable, pressing the button that CLOSES what is up: B on a menu,
+// A on ordinary text.
+//
+// It replaces a martAdvance(state.Controllable) that pressed A at every
+// screen. Two things were wrong with that. A on a menu SELECTS, so the exit
+// path could re-enter the shop it was leaving; and the predicate was checked
+// on single snapshots, so the one-frame gap between one menu closing and the
+// next drawing reads as "controllable" — Buy then returned SUCCESS with the
+// item list still up, and every objective after it failed on a screen
+// nothing would clear. MEASURED 2026-08-31: "buy 3 POTION -> done" followed
+// immediately by "MONEY BUY Y793 ... POKe BALL ... Take your time.".
+//
+// So the exit confirms: controllable, then still controllable one settle
+// later. A screen that redraws in that window is not an exit.
+func exitToOverworld(m *emu.Emu) error {
+	var mem state.Mem
+	for i := 0; i < martWaitBudget; i++ {
+		state.Snapshot(m, &mem)
+		switch {
+		case state.Controllable(&mem):
+			m.StepFrames(talkSettle)
+			state.Snapshot(m, &mem)
+			if state.Controllable(&mem) {
+				return nil
+			}
+		case state.MenuUp(&mem):
+			m.Tap(emu.B, 3, 7) // B backs out of every Gen 1 menu
+			m.StepFrames(talkSettle)
+		case mem.U8(sym.FontLoaded) != 0:
+			m.Tap(emu.A, 3, 7) // ordinary text: page it closed
+			m.StepFrames(talkSettle)
+		default:
+			m.StepFrames(talkSettle) // mid-transition; let it land
+		}
+	}
+	state.Snapshot(m, &mem)
+	return fmt.Errorf("skill: Buy: still not controllable after leaving the shop (wFontLoaded=%#04x wJoyIgnore=%#04x menu=%t screen=%q)",
+		mem.U8(sym.FontLoaded), mem.U8(sym.JoyIgnore), state.MenuUp(&mem), state.ScreenText(&mem))
 }
 
 // martItemPosition returns the 0-based position of item in the clerk's stock

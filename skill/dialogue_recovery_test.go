@@ -475,3 +475,40 @@ func TestTravelIgnoresClearedBlackoutBit(t *testing.T) {
 		t.Error("BlackedOut = true, want false")
 	}
 }
+
+// openMenu draws a menu the way the mart's item list does: font loaded and
+// the cursor glyph on the tilemap at the coordinates the menu published.
+// wMaxMenuItem is 3, not 1, so it is NOT a two-option prompt — this is the
+// case that used to look exactly like ordinary text to the recovery loop.
+func openMenu(m *state.Mem, y, x int, text string) {
+	openTextBox(m, text)
+	m[sym.MaxMenuItem] = 3
+	m[sym.TopMenuItemY] = byte(y)
+	m[sym.TopMenuItemX] = byte(x)
+	m[sym.TileMap+uint16(y*20+x)] = 0xED
+}
+
+// TestRecoverDialogueRefusesAMenu is the Viridian Mart bug: A on a text box
+// turns the page, but A on a menu SELECTS. Blind presses walked the shop
+// from its item list into a POKe BALL purchase and left the run parked on a
+// confirmation nothing would answer. Recovery closes boxes; it does not
+// operate menus.
+func TestRecoverDialogueRefusesAMenu(t *testing.T) {
+	mem := newFakeRAM()
+	openMenu(mem, 2, 1, "POKE BALL")
+	f := &fakeClock{mem: mem, closesOnTap: true}
+
+	res := recoverDialogue(f, 100)
+
+	if res.Stop != DialogueMenuOpen {
+		t.Fatalf("Stop = %d, want DialogueMenuOpen", res.Stop)
+	}
+	if res.Presses != 0 || f.taps != 0 {
+		t.Fatalf("Presses = %d taps = %d, want zero input on a menu", res.Presses, f.taps)
+	}
+	for _, op := range f.ops {
+		if op == "tap" {
+			t.Fatalf("ops = %v: input sent into a menu", f.ops)
+		}
+	}
+}

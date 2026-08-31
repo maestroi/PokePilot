@@ -227,11 +227,12 @@ func travel(m *emu.Emu, policy MovePolicy, maxBattles int, goTo func() error, re
 			res.Dialogues++
 			rec := recoverBox()
 			switch rec.Stop {
-			case DialogueChoiceRequired:
-				// The choice is unanswered and the box is still up, so the
-				// next walk returns the same interruption forever. Return
-				// the typed outcome and let the caller decide; retrying
-				// here would loop.
+			case DialogueChoiceRequired, DialogueMenuOpen:
+				// The choice is unanswered, or a menu is up that this layer
+				// will not operate, and either way the screen is still
+				// there — so the next walk returns the same interruption
+				// forever. Return the typed outcome and let the caller
+				// decide; retrying here would loop.
 				return res, &ErrDialogueChoice{Result: rec}
 			case DialogueBudgetExhausted:
 				// The box did not clear within the budget and is still up,
