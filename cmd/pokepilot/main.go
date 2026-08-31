@@ -43,6 +43,7 @@ func main() {
 	starter := flag.String("starter", "squirtle", "starter to take: charmander, squirtle or bulbasaur (bulbasaur loses the rival battle)")
 	planner := flag.String("planner", "scripted", "how to choose objectives: scripted or llm")
 	seed := flag.Int64("seed", 0, "diverge this run's luck by burning seed-derived idle frames after boot; 0 replays bit-identically")
+	maxRounds := flag.Int("max-rounds", llmMaxRounds, "objectives one llm run may spend; each costs a model call. The default is a guardrail for an unattended run, not a target — raise it to ask how far the greedy loop actually gets")
 	goal := flag.String("goal", "Earn the Boulder Badge.", "the task statement given to the llm planner: what it is trying to do, never how. Empty means no goal, which is what made slice 6's scoreboard void")
 	flag.Parse()
 
@@ -115,7 +116,7 @@ func main() {
 	case "scripted":
 		runScripted(m, *starter, *dest, *hold, served)
 	case "llm":
-		runLLM(m, *goal)
+		runLLM(m, *goal, *maxRounds)
 	default:
 		log.Fatalf("unknown planner %q: want scripted or llm", *planner)
 	}
@@ -211,7 +212,7 @@ func runScripted(m *emu.Emu, starter, dest string, hold time.Duration, served st
 // player stands, verbs whose preconditions currently hold, the starter only
 // while the party is empty. A menu of every place in the ROM would be both
 // a worse prompt and a worse question.
-func runLLM(m *emu.Emu, goal string) {
+func runLLM(m *emu.Emu, goal string, maxRounds int) {
 	fmt.Println("planner: llm — the model picks from a menu rebuilt every round")
 
 	// Tee llm/round lines to the watch panel as well as stdout.
@@ -228,7 +229,7 @@ func runLLM(m *emu.Emu, goal string) {
 	// makes a wandering run visible while it is still wandering.
 	stats := newStatsPlanner(planner, m.TraceStats, nil)
 	res := agent.Run(m, m.ROM(), stats, agent.Budget{
-		MaxRounds: llmMaxRounds,
+		MaxRounds: maxRounds,
 		MaxFrames: llmMaxFrames,
 		Log:       log,
 	})

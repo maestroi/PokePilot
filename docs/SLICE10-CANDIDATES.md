@@ -34,6 +34,159 @@ anticipated. Do not treat the ordering below as settled until then.
 
 ---
 
+---
+
+## AMENDED 2026-08-31: the milestone ran, and it named its own stoppers
+
+The PROVISIONAL note above asked for S9-12's answer — how far does a long
+goal-driven run get, and what stopped it — and said to amend this file before
+creating the plan. This section is that amendment.
+
+It was measured against a **27B model served locally with thinking disabled**
+(`make run-llm-local`, added this session), which answers a menu in ~1.2s
+against the 4-14s of the CPU-hosted 4B. Model choice is the reason these runs
+reach further than any before them, and it is a confound to keep in view: the
+stoppers below are real, but the 4B never survived long enough to reach most
+of them.
+
+### The best run, end to end
+
+**MEASURED 2026-08-31**, `-max-rounds 200`, goal "Earn the Boulder Badge.":
+
+    23 rounds used of 200. Stopped: failed, not budget.
+    starter -> parcel (2 blackouts, recovered) -> route 1 -> viridian city
+    -> pokecenter -> heal -> mart -> route 1 -> train x2 -> heal
+    -> route 1 -> talks -> viridian city -> ROUTE 2 -> VIRIDIAN FOREST
+    -> wedged in a trainer battle.
+
+Three facts worth carrying into the plan:
+
+1. **The road opened.** Route 2 and Viridian Forest are new ground; every
+   previous run died in Pallet or Viridian.
+2. **The budget was not the limit.** 23 of 200 rounds. Raising `llmMaxRounds`
+   was necessary and is not sufficient — it is now the `-max-rounds` flag
+   (`cmd/pokepilot/main.go`), default unchanged at 32.
+3. **Roughly 7 of 23 rounds were spent circling** Route 1 and the Center
+   (rounds 12-18: route 1, train, train, heal, route 1, talk, talk). That is
+   the greedy loop's cost, measured, and it is the case item 10 exists for.
+
+### What was fixed this session, so nothing gets rebuilt
+
+All in the working tree, **not committed**. Each has a test.
+
+| Area | Was | Now |
+|---|---|---|
+| `agent/llm.go` | reply schema carried `level`/`species`/`item`/`quantity` | schema is `{choice, intent}` ALWAYS |
+| `agent/llm.go` | 512-token reply cap, no override | `POKEPILOT_LLM_MAX_TOKENS` |
+| `agent/llm.go` | no way to disable a reasoning model's thinking | `POKEPILOT_LLM_NO_THINK` -> `chat_template_kwargs` |
+| `agent/offer.go` | journeys listed FIRST | journeys listed LAST |
+| `agent/offer.go` | `Completed` a set; `Requirements` bare strings | counts; located + counted walls; failure tally; menu annotation |
+| `agent/run.go` | `Knowledge` saw only round-boundary maps | every map an objective walks through |
+| `agent/run.go` | a leftover text box poisoned every later round | `observeAfter` recovers between rounds |
+| `skill/dialogue_recovery.go` | pressed A into menus | `state.MenuUp` stops it |
+| `skill/shop.go` | refusals returned from inside the shop | `exitToOverworld` |
+
+### 18. The rejection storm was three faces of one bug
+
+**MEASURED 2026-08-31.** Three separate runs died on reply-shape rejections,
+each one a small model stapling an optional schema field to a choice it did
+not belong to, and at temperature 0 the rejection feedback produced a
+byte-identical reply — so `MaxReplyRetries` burned and the run stopped:
+
+    {"choice": 1, "level": 1, "species": "Charmander"}   on a starter menu
+    {"choice": 2, "level": 7}                            on "use a POTION"
+    "flee": true                                          (S10-1, already known)
+
+The fix shipped this session removes every argument field from the schema,
+because `Offer` already builds each objective CONCRETE — the catch names its
+species, the train names its level, the buy names its item and quantity. The
+argument was never information the menu lacked; it was only ever an override.
+
+**What this costs, and what is left to decide:** training can no longer aim at
+an arbitrary level. It takes the offered rung (`lead + trainStep`) and climbs
+by being chosen again. If aiming higher in one round turns out to matter, the
+answer is another menu entry, not another reply field. **Worth confirming
+against item 2's Train work** — the two touch the same knob from opposite
+sides.
+
+The other half of the storm is `finish_reason "length"`, which is not a schema
+problem at all: a reasoning model spends its whole completion budget thinking
+about a menu. MEASURED on one 16-objective menu, qwen3.8-27b: thinking on,
+47.1s and 4096 tokens, truncated and rejected; thinking off, 0.88s and 22
+tokens, clean. `reasoning_effort: low|minimal` and `thinking_budget` were both
+silently ignored by this llama.cpp build — the chat-template argument is the
+only switch that works here.
+
+### 19. A wedged battle is unrecoverable, and there is no way to reproduce one
+
+**MEASURED 2026-08-31**, the stopper of the best run — Viridian Forest, map
+0x33 at (1,18):
+
+    skill: Battle: exceeded 60000-frame cap
+    Kind:2 (BattleTrainer) EnemySpecies:112 EnemyHP:27/27 Level:9
+    ActiveSpecies:153 ActiveHP:30/30 Level:9
+
+**Both sides at full HP after 60000 frames** — sixteen minutes of game time in
+which no turn was taken. `Battle`'s own doc comment predicts exactly this:
+"If the game reaches any other state Battle does not handle, the frame cap
+trips and Battle fails loudly." It is a state machine meeting a screen it does
+not know, and the first trainer battle any run has reached.
+
+It then poisons the run: rounds 22 and 23 each re-entered the same stuck
+battle and failed identically, which is what ended the run.
+
+**The blocker on fixing it is reproduction.** `Budget.CheckpointDir` exists and
+writes a save-state ring before every objective, and `cmd/pokepilot` never sets
+it — so the wedge cannot be replayed. `skill/battle.go` already has a `ZBAT`
+env var that dumps per-frame battle state; it is useless without a state to
+point it at. **A `-checkpoint-dir` flag is the whole prerequisite**, and it
+overlaps item 3 (`ResumeFrom` has no callers) — the same seam, from the other
+end. Do them together.
+
+This also raises a question item 19 cannot answer alone: **should a run that
+cannot resolve a battle be able to flee it?** Today a wedged battle is terminal
+for the run, whatever the planner does.
+
+### 20. `Offer` sells POTION at a mart that does not stock it
+
+**MEASURED 2026-08-31** — the Viridian Mart's shelf is POKe BALL, ANTIDOTE,
+PARLYZ HEAL, BURN HEAL. `agent/offer.go` offers `buy 3 POTION` at every mart:
+
+    if isMart(obs.MapName) {
+        if it, ok := ItemByName("potion"); ok {
+            out = append(out, Objective{Kind: KindBuy, Item: it, Qty: 3})
+        }
+    }
+
+So the objective is a guaranteed failure at Viridian, which is the FIRST mart
+every run reaches. This is the same shape as the CATERPIE finding slice 9
+fixed for `KindCatch` — a hardcoded item standing in for the map's own data —
+and it has the same fix: read the shelf. The stock is in the ROM's mart table;
+`martItemPosition` already reads `wItemList`, but only while the shop menu is
+open, so the overworld menu needs the ROM side. **UNMEASURED:** whether
+`red/rom` can already parse the mart table, or whether that is new decoding.
+
+Until then the failure is at least honest: `ErrNotInStock` now closes the shop
+and is reported as a failed round rather than a completed one.
+
+### 21. `ErrCantAfford` and `ErrNotInStock` were reported as completed rounds
+
+**DERIVED**, `agent/objective.go`, before this session:
+
+    if errors.Is(err, skill.ErrCantAfford) || errors.Is(err, skill.ErrNotInStock) {
+        fmt.Printf("  buy failed: ...")
+        return nil          // <- the round is recorded DONE
+    }
+
+A purchase that did not happen was a completed round: `History` said "done",
+`Knowledge.Completed` counted it, and (after this session's menu annotation)
+the line would have grown a "(done 1x)" for something the clerk refused. Fixed
+by returning the error. **Flagged here because the pattern is worth a sweep** —
+these were not the only two typed outcomes converted to `nil`, and every one
+of them silently corrupts the history the planner reads.
+
+---
+
 ## The proposed goal: stop paying interest, then open the road
 
 Slice 9 shipped nine things and deferred a named list of follow-ups behind
@@ -336,6 +489,32 @@ it is walking toward, not because it belongs in slice 10.
 
 ## 10. Does a plan survive a run that is longer than its memory?
 
+> **AMENDED 2026-08-31.** The milestone measured this item's cost directly:
+> ~7 of 23 rounds circling Route 1 and the Viridian Center (train, retreat,
+> heal, train). The greedy loop reached Viridian Forest without ever holding
+> a plan, so this is no longer "does it matter" but "what does it save".
+>
+> The shape discussed after the run, recorded so it is not re-derived: a
+> STRATEGIST call with thinking ON, made rarely, emits an ORDERED LIST of
+> objectives; `Run` executes the next step with no model call at all; the
+> model is consulted again only when the plan breaks — exhausted, next step
+> not offered, an objective failed, or a material change (blackout, a newly
+> stated wall). Plan steps must be objective SENTENCES, not menu indices,
+> because the menu is rebuilt every round; `agent.Chosen` already resolves a
+> sentence against the offered list, and a step that no longer resolves is
+> the re-plan trigger rather than an error.
+>
+> The cost argument, in this session's numbers: greedy is ~1.2s/round of
+> model time, thinking is ~45s/call. A plan of 8 steps pays 45s once instead
+> of ~10s of greedy calls, and buys back the ~7 wasted rounds at ~10s of
+> EMULATOR time each. The trade improves as runs lengthen, because wasted
+> rounds scale with run length and re-plans do not. `NoThink` is already
+> per-request (`agent/llm.go`), so "think for this call, not that one" needs
+> no new plumbing — only a rule for when, and that rule IS the re-plan
+> trigger list.
+>
+> Not designed yet. Deliberately left for a session that starts fresh.
+
 Slice 9 built the plan slot: `Objective.Intent` (200 bytes, typed rejection
 over cap), `Observation.Intent`/`IntentAge`, carried by `Run`, persisted beside
 each checkpoint by S9-5, and declared in the schema and the system prompt. Run
@@ -553,9 +732,34 @@ live behaviour under `flee` is the evidence for whether the pattern generalises
 
 ## Suggested sequencing
 
-The spine is consolidation — small items, in code slice 9 just wrote, several
-costing measured run time today. The reach items follow, gated on the survey
-and on S9-12.
+REVISED 2026-08-31 after the milestone ran. The shape is unchanged —
+consolidation first, reach items after — but the milestone put a new stage in
+front of it: the run now dies on stoppers that no amount of graph work
+reaches. Stage 0 is those. Everything after it is the original spine,
+renumbered.
+
+**0. Stop the rejection storm, and make a wedge reproducible (18, 19, 20, 21)**
+
+The theme is the same in all four: a run ends for a reason that has nothing to
+do with the quality of its decisions.
+
+0a. **Land and verify this session's rejection fixes (18).** The schema change
+   is in the working tree and untested against the 4B — only against the 27B.
+   Confirm the small model no longer staples arguments, and confirm what the
+   lost `level` override costs against item 2's Train work. These two touch
+   the same knob from opposite sides and should be decided once.
+0b. **`-checkpoint-dir` on `cmd/pokepilot`, then chase the wedged battle
+   (19, 3).** The flag is the whole prerequisite for reproducing a wedge under
+   `ZBAT`, and it is the same seam as item 3's orphaned `ResumeFrom`. Do them
+   together. Until this lands, a battle `skill/battle.go` does not understand
+   is terminal for the run and cannot be studied.
+0c. **Read the mart's shelf instead of assuming POTION (20).** A guaranteed
+   failed round at the first mart every run reaches. Open with the UNMEASURED
+   question — can `red/rom` parse the mart table today? — because the answer
+   sizes the task.
+0d. **Sweep the typed outcomes converted to `nil` (21).** Two are fixed. The
+   pattern is what matters: an objective that did not happen must never be
+   recorded as done, because the history the planner reads is downstream of it.
 
 **A. Stop the bleeding (two tasks, both one expression each)**
 
@@ -592,7 +796,10 @@ and on S9-12.
 
 **D. The slice's real work**
 
-9. **One graph for a fragmented world (6).** Open with its two cheap questions —
+9. **One graph for a fragmented world (6).** Now the milestone has walked
+   Route 2 and Viridian Forest, this has real ground to be measured against —
+   compare what the graph believes about that road to what the run actually
+   did. Open with its two cheap questions —
    do the phantom edges and S8-9's fragmentation share a root, and are the seven
    unexplained unreachable maps the `0xFF`-warp bug — because both answers
    resize the task. Then legs 5 and 7. This is what turns the road from "walked
