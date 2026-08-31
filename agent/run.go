@@ -495,6 +495,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 	stuck := 0
 	consecFailures := 0 // consecutive failed objectives; a success resets it
 	lastFailObj, lastFailErr := "", ""
+	retreatObj, retreatStreak := "", 0 // consecutive train retreats on the SAME objective; capped like any other failure streak
 
 	for round := 1; ; round++ {
 		select {
@@ -650,6 +651,27 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 				// StuckAfter instead: a retried train leaves the player standing
 				// where it started. Only the frame budget still applies to this
 				// round.
+				//
+				// The exemption still needs a ceiling: MEASURED 2026-08-30 on
+				// the live GPU farm, a lead that retreats at the same level
+				// every time (HP not meaningfully changing between attempts)
+				// gets the identical objective and identical error 23 rounds
+				// running, because retreated never trips StopFailed AND never
+				// touches `stuck` (that counter only lives on the success
+				// path). Same-objective retreats are now counted separately
+				// and capped at maxConsecFailures, same threshold as any other
+				// failure streak — two survive (the exemption still does its
+				// job), a long run of them does not.
+				if retreated && obj.String() == retreatObj {
+					retreatStreak++
+				} else if retreated {
+					retreatObj, retreatStreak = obj.String(), 1
+				} else {
+					retreatObj, retreatStreak = "", 0
+				}
+				if retreated && retreatStreak >= maxConsecFailures {
+					res.Stop, res.Err = StopFailed, err
+				}
 				lastFailObj, lastFailErr = "", ""
 				if m.FrameCount()-startFrame >= uint64(budget.MaxFrames) {
 					res.Stop = StopBudget
@@ -659,6 +681,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 				}
 				continue
 			}
+			retreatObj, retreatStreak = "", 0
 
 			consecFailures++
 			// res.Stop is still the zero value unless one of these sets it.
@@ -693,6 +716,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 		}
 		consecFailures = 0
 		lastFailObj, lastFailErr = "", ""
+		retreatObj, retreatStreak = "", 0
 		history = appendHistory(history, RoundRecord{Objective: obj.String(), Outcome: "done"})
 		last.History = history
 		last.RecentDialogue = tape.recent()

@@ -534,6 +534,55 @@ func TestRunTrainRetreatTwiceDoesNotStopTheRun(t *testing.T) {
 	t.Logf("two identical retreats: %q — the run survived both", h0)
 }
 
+// TestRunTrainRetreatStreakStopsTheRun: MEASURED on the live GPU farm
+// (2026-08-30, /tmp/pokepilot-run-llm-gpu-9b.log), a lead that retreats at
+// the same level every attempt gets offered — and repeats — the identical
+// train objective 23 rounds running: retreated skips StopFailed AND never
+// touches `stuck` (success-path only), so nothing in Run ever noticed. Two
+// identical retreats must still survive (TestRunTrainRetreatTwiceDoesNotStopTheRun
+// pins that), but the streak needs a ceiling. This pins maxConsecFailures as
+// that ceiling: one more identical retreat than the default
+// (defaultMaxConsecutiveFailures = 3) stops the run with StopFailed instead
+// of burning the rest of the round budget on a choice that will never
+// change the world.
+func TestRunTrainRetreatStreakStopsTheRun(t *testing.T) {
+	e := fixture.Load(t, "post_errand")
+
+	dest, ok := skill.Place("route 2")
+	if !ok {
+		t.Fatal("Place(route 2) did not resolve")
+	}
+	if _, err := fixture.Travel(e, dest, skill.StatAwareMove(e.ROM()), 6); err != nil {
+		t.Fatalf("setup: travel to route 2: %v", err)
+	}
+	res, err := skill.Train(e, e.ROM(), 99, skill.StatAwareMove(e.ROM()), 40)
+	if err != nil {
+		t.Fatalf("setup Train: %v", err)
+	}
+	if !res.Retreated {
+		t.Fatalf("setup: Retreated = false (reached=%v blackedOut=%v battles=%d); the test needs the lead below the retreat line", res.Reached, res.BlackedOut, res.Battles)
+	}
+
+	objs := make([]agent.Objective, 6)
+	for i := range objs {
+		objs[i] = agent.Objective{Kind: agent.KindTrain, Level: 100}
+	}
+	p := &capturePlanner{objs: objs}
+	b := testBudget()
+	b.MaxRounds = 6
+	run := agent.Run(e, e.ROM(), p, b)
+
+	if run.Stop != agent.StopFailed {
+		t.Fatalf("Stop = %d after %d rounds, want StopFailed (the retreat exemption must have a ceiling)", run.Stop, run.Rounds)
+	}
+	if run.Rounds != 3 {
+		t.Fatalf("Rounds = %d, want 3 (defaultMaxConsecutiveFailures=3: the streak reaches the cap on the 3rd identical retreat)", run.Rounds)
+	}
+	if run.Err == nil || !strings.Contains(run.Err.Error(), "stopped while the party was alive") {
+		t.Errorf("Err = %v, want the retreat error", run.Err)
+	}
+}
+
 // checkpointForRound finds the checkpoint file Run wrote for a round.
 func checkpointForRound(t *testing.T, dir string, round int) string {
 	t.Helper()
