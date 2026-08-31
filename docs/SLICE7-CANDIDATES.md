@@ -3,7 +3,7 @@
 Four gaps raised after slice 6 finished. Recorded so they are not lost; not yet
 a plan. Every ROM fact below is cited so the next planner does not re-derive it.
 
-The slice-6 close-out plan (`docs/superpowers/plans/2026-08-29-slice6-closeout.md`)
+The slice-6 close-out plan (`docs/plans/2026-08-29-slice6-closeout.md`)
 is separate and smaller — it repairs debts. This file is about new capability.
 
 ---
