@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -47,5 +48,41 @@ func TestPokeuiServesLiveMapUIAndEmbeddedAssetDirectory(t *testing.T) {
 	}
 	if !bytes.Contains(asset, []byte("Semantic map assets")) {
 		t.Errorf("embedded map directory returned unexpected body: %s", asset)
+	}
+}
+
+func TestPokeuiServesFallbackMapWhenSemanticAssetIsMissing(t *testing.T) {
+	ui := httptest.NewServer(handler("http://127.0.0.1:1"))
+	t.Cleanup(ui.Close)
+
+	res, err := http.Get(ui.URL + "/maps/28.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("GET /maps/28.json = %d, want 200", res.StatusCode)
+	}
+	if got := res.Header.Get("Content-Type"); got != "application/json" {
+		t.Fatalf("Content-Type = %q, want application/json", got)
+	}
+
+	var asset struct {
+		Width    int    `json:"width"`
+		Height   int    `json:"height"`
+		Cells    string `json:"cells"`
+		Fallback bool   `json:"fallback"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&asset); err != nil {
+		t.Fatal(err)
+	}
+	if asset.Width != fallbackMapSize || asset.Height != fallbackMapSize {
+		t.Fatalf("fallback dimensions = %dx%d, want %dx%d", asset.Width, asset.Height, fallbackMapSize, fallbackMapSize)
+	}
+	if len(asset.Cells) != fallbackMapSize*fallbackMapSize {
+		t.Fatalf("fallback cells length = %d, want %d", len(asset.Cells), fallbackMapSize*fallbackMapSize)
+	}
+	if !asset.Fallback {
+		t.Fatal("fallback marker is false")
 	}
 }
