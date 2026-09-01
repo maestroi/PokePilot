@@ -21,4 +21,7 @@ require (
 	golang.org/x/text v0.41.0 // indirect
 )
 
-replace github.com/thelolagemann/gomeboy => /home/maestro/Documents/projects/gomeboy
+// Keep imports on GomeBoy's canonical module path while building from the
+// PokePilot-maintained fork. Pin the fork so clean clones and CI use exactly
+// the same emulator revision without depending on a developer-local checkout.
+replace github.com/thelolagemann/gomeboy => github.com/maestroi/gomeboy v0.0.0-20260901100952-828c2c01e328
