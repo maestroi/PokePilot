@@ -6,14 +6,14 @@ package main
 
 import (
 	"context"
+	"embed"
 	"encoding/json"
 	"flag"
 	"io"
+	"io/fs"
 	"log"
 	"net/http"
 	"time"
-
-	_ "embed"
 )
 
 // version is this build's identity (git SHA), stamped by the Dockerfile via
@@ -25,6 +25,11 @@ var indexHTML []byte
 
 //go:embed ui/ui.js
 var uiJS []byte
+
+// mapFiles holds build-time semantic map exports. The directory is kept in
+// the repository even before a local ROM owner generates the JSON assets.
+//go:embed ui/maps
+var mapFiles embed.FS
 
 const proxyTimeout = 5 * time.Second
 
@@ -42,6 +47,9 @@ func handler(wallBase string) http.Handler {
 		res.Header().Set("Cache-Control", "no-store")
 		res.Write(uiJS) //nolint:errcheck // best effort
 	})
+	if maps, err := fs.Sub(mapFiles, "ui/maps"); err == nil {
+		mux.Handle("GET /maps/", http.StripPrefix("/maps/", http.FileServer(http.FS(maps))))
+	}
 	mux.HandleFunc("GET /v1/version", func(res http.ResponseWriter, req *http.Request) {
 		res.Header().Set("Content-Type", "application/json")
 		res.Header().Set("Cache-Control", "no-store")

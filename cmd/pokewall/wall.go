@@ -65,6 +65,11 @@ type Tile struct {
 	// restart drops it rather than growing the state file.
 	Raw       string
 	StopSoFar string
+	// Sprites and Trail are the live map overlay. Like Raw, they are
+	// deliberately absent from persistedTile: blockers are ephemeral RAM
+	// observations, and the trail belongs to the current runner attempt.
+	Sprites []farm.MapSprite
+	Trail   [][2]uint8
 	// Stats is the llm planner's tally, last pushed by a heartbeat. Kept on
 	// finish (the final tally explains the outcome), nilled on retry.
 	Stats    *farm.LLMStats
@@ -91,34 +96,36 @@ type Tile struct {
 // grid template never reads live tiles after unlock. Rendering []*Tile
 // after unlock is what raced with heartbeat/cancel/finish.
 type tileRow struct {
-	RunID      string         `json:"run_id"`
-	Status     string         `json:"status"`
-	Planner    string         `json:"planner"`
-	Starter    string         `json:"starter"`
-	Dest       string         `json:"dest"`
-	Goal       string         `json:"goal,omitempty"`
-	Seed       int64          `json:"seed"`
-	FPS        int            `json:"fps"`
-	MaxRounds  int            `json:"max_rounds"`
-	MaxFrames  int            `json:"max_frames"`
-	Endless    bool           `json:"endless,omitempty"`
-	RandomSeed bool           `json:"random_seed,omitempty"`
-	QueuedAt   int64          `json:"queued_at,omitempty"`
-	EndedAt    int64          `json:"ended_at,omitempty"`
-	Frame      uint64         `json:"frame"`
-	Map        uint8          `json:"map"`
-	X          uint8          `json:"x"`
-	Y          uint8          `json:"y"`
-	Trace      string         `json:"trace"`
-	Question   string         `json:"question,omitempty"`
-	Decision   string         `json:"decision,omitempty"`
-	Raw        string         `json:"raw,omitempty"`
-	StopSoFar  string         `json:"stop_so_far"`
-	Stats      *farm.LLMStats `json:"stats,omitempty"`
-	Attempts   int            `json:"attempts"`
-	Reason     string         `json:"reason"`
-	Detail     string         `json:"detail"`
-	Issue      *IssueLink     `json:"issue,omitempty"`
+	RunID      string           `json:"run_id"`
+	Status     string           `json:"status"`
+	Planner    string           `json:"planner"`
+	Starter    string           `json:"starter"`
+	Dest       string           `json:"dest"`
+	Goal       string           `json:"goal,omitempty"`
+	Seed       int64            `json:"seed"`
+	FPS        int              `json:"fps"`
+	MaxRounds  int              `json:"max_rounds"`
+	MaxFrames  int              `json:"max_frames"`
+	Endless    bool             `json:"endless,omitempty"`
+	RandomSeed bool             `json:"random_seed,omitempty"`
+	QueuedAt   int64            `json:"queued_at,omitempty"`
+	EndedAt    int64            `json:"ended_at,omitempty"`
+	Frame      uint64           `json:"frame"`
+	Map        uint8            `json:"map"`
+	X          uint8            `json:"x"`
+	Y          uint8            `json:"y"`
+	Trace      string           `json:"trace"`
+	Question   string           `json:"question,omitempty"`
+	Decision   string           `json:"decision,omitempty"`
+	Raw        string           `json:"raw,omitempty"`
+	StopSoFar  string           `json:"stop_so_far"`
+	Sprites    []farm.MapSprite `json:"sprites,omitempty"`
+	Trail      [][2]uint8        `json:"trail,omitempty"`
+	Stats      *farm.LLMStats   `json:"stats,omitempty"`
+	Attempts   int              `json:"attempts"`
+	Reason     string           `json:"reason"`
+	Detail     string           `json:"detail"`
+	Issue      *IssueLink       `json:"issue,omitempty"`
 }
 
 // Wall owns the spec queue, the tile map, cancel flags, the optional dump
@@ -431,6 +438,22 @@ func (w *Wall) applySpec(runID string, spec farm.Spec) {
 	t.QueuedAt = time.Now()
 	t.EndedAt = time.Time{}
 	t.Attempts = 0 // a manual re-queue is a fresh start, not a retry
+	t.Frame = 0
+	t.Map = 0
+	t.X = 0
+	t.Y = 0
+	t.Trace = ""
+	t.Question = ""
+	t.Decision = ""
+	t.Raw = ""
+	t.StopSoFar = ""
+	t.Sprites = nil
+	t.Trail = nil
+	t.Stats = nil
+	t.Reason = ""
+	t.Detail = ""
+	t.workerAddrs = nil
+	t.lastFrame = nil
 	t.Finished = false
 }
 
@@ -503,6 +526,8 @@ func (w *Wall) handleHeartbeat(res http.ResponseWriter, req *http.Request) {
 	t.Decision = hb.Decision
 	t.Raw = hb.Raw
 	t.StopSoFar = hb.StopSoFar
+	t.Sprites = append(t.Sprites[:0], hb.Sprites...)
+	t.Trail = append(t.Trail[:0], hb.Trail...)
 	t.Stats = hb.Stats
 	t.workerAddrs = hb.WorkerAddrs
 	t.lastUpdate = time.Now()
@@ -861,6 +886,8 @@ func (w *Wall) snapshot() dashboardView {
 			Decision:   t.Decision,
 			Raw:        t.Raw,
 			StopSoFar:  t.StopSoFar,
+			Sprites:    append([]farm.MapSprite(nil), t.Sprites...),
+			Trail:      append([][2]uint8(nil), t.Trail...),
 			Stats:      t.Stats,
 			Reason:     t.Reason,
 			Detail:     t.Detail,
@@ -1214,6 +1241,8 @@ func (w *Wall) settleRun(t *Tile, reason, detail string, now time.Time) int {
 	t.Decision = ""
 	t.Raw = ""
 	t.StopSoFar = ""
+	t.Sprites = nil
+	t.Trail = nil
 	t.Stats = nil
 	t.Reason = ""
 	t.Detail = fmt.Sprintf("attempt %d failed: %s", completed, detail)

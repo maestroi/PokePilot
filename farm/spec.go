@@ -32,6 +32,16 @@ type Spec struct {
 	RandomSeed bool `json:"random_seed,omitempty"`
 }
 
+// MapSprite is one live map object on the runner's current map. These are
+// ephemeral RAM observations: consumers may draw them as blockers, but must
+// never retain them as learned geometry after a newer heartbeat arrives.
+type MapSprite struct {
+	X         uint8 `json:"x"`
+	Y         uint8 `json:"y"`
+	PictureID uint8 `json:"picture_id,omitempty"`
+	Slot      uint8 `json:"slot,omitempty"`
+}
+
 // Heartbeat is the small, frequent status push a runner sends while a
 // leased run is in progress.
 type Heartbeat struct {
@@ -41,6 +51,11 @@ type Heartbeat struct {
 	X     uint8  `json:"x"`
 	Y     uint8  `json:"y"`
 	Trace string `json:"trace"`
+	// Sprites are the current live map objects (slots 1..15). Trail is a
+	// bounded history of recent positions on this map, oldest first. Both
+	// are live-only and optional for compatibility with older runners.
+	Sprites []MapSprite `json:"sprites,omitempty"`
+	Trail   [][2]uint8  `json:"trail,omitempty"`
 	// Question is the offered menu the planner was last asked, numbered
 	// the way the model saw it. Decision is the objective that ask
 	// resolved to, or empty while the model is still answering. Both are

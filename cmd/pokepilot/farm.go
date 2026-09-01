@@ -36,6 +36,9 @@ const (
 	farmIdleSleep = time.Second
 	// farmErrorSleep backs off after a failed lease, finish, or bad spec.
 	farmErrorSleep = 2 * time.Second
+	// heartbeatTrailMax is roughly one minute of positions at the normal
+	// heartbeat cadence. The trail resets whenever the player changes maps.
+	heartbeatTrailMax = 64
 )
 
 // applySpec maps a leased spec onto the same values the CLI flags set. The
@@ -175,6 +178,32 @@ func (s *heartbeatSnap) load() farm.Heartbeat {
 	h := s.hb
 	s.mu.Unlock()
 	return h
+}
+
+// heartbeatTrail owns the recent map-local position samples. It is only
+// touched on the stepping goroutine; snapshots get a copied slice.
+type heartbeatTrail struct {
+	mapID uint8
+	set   bool
+	pts   [][2]uint8
+}
+
+func (t *heartbeatTrail) add(mapID, x, y uint8) [][2]uint8 {
+	if !t.set || t.mapID != mapID {
+		t.mapID = mapID
+		t.set = true
+		t.pts = t.pts[:0]
+	}
+	p := [2]uint8{x, y}
+	if len(t.pts) == 0 || t.pts[len(t.pts)-1] != p {
+		if len(t.pts) == heartbeatTrailMax {
+			copy(t.pts, t.pts[1:])
+			t.pts[len(t.pts)-1] = p
+		} else {
+			t.pts = append(t.pts, p)
+		}
+	}
+	return append([][2]uint8(nil), t.pts...)
 }
 
 // heartbeatLoop pushes one Heartbeat per tick until stop is closed, and
@@ -340,11 +369,12 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 
 	// Compose the sample callback on this (stepping) goroutine: the dialogue
 	// tracer plus the heartbeat snapshot, sharing one hoisted Mem buffer.
+	trail := &heartbeatTrail{}
 	m.OnSample(func(m *emu.Emu) {
 		tracer.sample(m)
-		sampleHeartbeat(m, spec.RunID, snap, mem, addrs)
+		sampleHeartbeat(m, spec.RunID, snap, mem, addrs, trail)
 	})
-	sampleHeartbeat(m, spec.RunID, snap, mem, addrs) // synchronous initial sample
+	sampleHeartbeat(m, spec.RunID, snap, mem, addrs, trail) // synchronous initial sample
 
 	var samples chan periodicSample
 	var stopUploader chan struct{}
@@ -390,7 +420,7 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 // send. It runs on the stepping goroutine (via the composed OnSample
 // callback or the initial call), so it may read emulator memory; mem is
 // hoisted and reused rather than allocated per sample.
-func sampleHeartbeat(m *emu.Emu, runID string, snap *heartbeatSnap, mem *state.Mem, addrs []string) {
+func sampleHeartbeat(m *emu.Emu, runID string, snap *heartbeatSnap, mem *state.Mem, addrs []string, trail *heartbeatTrail) {
 	g := state.Read(m, mem)
 	hb := farm.Heartbeat{
 		RunID:       runID,
@@ -399,6 +429,18 @@ func sampleHeartbeat(m *emu.Emu, runID string, snap *heartbeatSnap, mem *state.M
 		X:           g.Player.X,
 		Y:           g.Player.Y,
 		WorkerAddrs: addrs,
+		Trail:       trail.add(g.Player.MapID, g.Player.X, g.Player.Y),
+	}
+	for _, sp := range state.DecodeSprites(mem) {
+		if sp.X < 0 || sp.Y < 0 || sp.X > 255 || sp.Y > 255 {
+			continue
+		}
+		hb.Sprites = append(hb.Sprites, farm.MapSprite{
+			X:         uint8(sp.X),
+			Y:         uint8(sp.Y),
+			PictureID: sp.PictureID,
+			Slot:      uint8(sp.Slot),
+		})
 	}
 	if tail := m.TraceTail(1); len(tail) > 0 {
 		hb.Trace = tail[len(tail)-1]

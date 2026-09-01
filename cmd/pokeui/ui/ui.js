@@ -12,10 +12,8 @@
   let wallDown = false;
   const investigating = new Set();
   const pumps = new Map();
+  const mapAssets = new Map();
   const histFilter = { outcome: "", how: "", starter: "" };
-  // History is paged: a farm that has run for a while has hundreds of
-  // finished runs, and rendering them all at once is a long DOM and a long
-  // scroll. 25 rows fills the pane without a scrollbar of its own.
   const HIST_PAGE = 25;
   let histPage = 0;
 
@@ -49,8 +47,6 @@
     return `<a class="issue-a" href="${esc(href)}" target="_blank" rel="noopener">${esc(label)}</a><span class="chip">${esc((issue.status || "") + n + fixed + stale)}</span>`;
   }
 
-  // The same tally the runner's watch page renders, compressed to one card
-  // line. Nil on scripted runs and before the first ask.
   function statsLine(r) {
     const s = r.stats;
     if (!s || r.planner === "scripted") return "";
@@ -185,9 +181,7 @@
     const clock = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
     return clock + " " + rel;
   }
-  function runWhen(r) {
-    return fmtWhen(r.ended_at || r.queued_at);
-  }
+  function runWhen(r) { return fmtWhen(r.ended_at || r.queued_at); }
   function statusChip(r) {
     const out = outcomeOf(r);
     if (r.status === "done") return chip("outcome-" + out, out || "done");
@@ -238,6 +232,109 @@
     });
   }
 
+  function mapAssetURL(id) {
+    return "/maps/" + Number(id).toString(16).padStart(2, "0") + ".json";
+  }
+  function loadMapAsset(id) {
+    const key = Number(id);
+    if (!mapAssets.has(key)) {
+      mapAssets.set(key, fetch(mapAssetURL(key), { cache: "force-cache" })
+        .then((r) => r.ok ? r.json() : null)
+        .catch(() => null));
+    }
+    return mapAssets.get(key);
+  }
+  function mapColor(name, fallback) {
+    const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return v || fallback;
+  }
+  function paintMap(canvas, asset, run) {
+    if (!asset || !asset.width || !asset.height || typeof asset.cells !== "string") return false;
+    const scroll = canvas.closest(".map-scroll");
+    const fit = scroll ? Math.floor(Math.max(1, scroll.clientWidth - 20) / asset.width) : 6;
+    const px = Math.max(4, Math.min(10, fit || 6));
+    canvas.width = asset.width * px;
+    canvas.height = asset.height * px;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return false;
+    ctx.imageSmoothingEnabled = false;
+    const colors = {
+      ground: mapColor("--lcd-dark", "#0f380f"),
+      wall: mapColor("--panel-2", "#252e1f"),
+      grass: mapColor("--line", "#3a4530"),
+      water: mapColor("--bezel-dark", "#5c5638"),
+      warp: mapColor("--amber", "#c4a035"),
+      trail: mapColor("--bezel", "#8b8355"),
+      sprite: mapColor("--amber", "#c4a035"),
+      player: mapColor("--lcd", "#9bbc0f")
+    };
+    for (let y = 0; y < asset.height; y++) {
+      for (let x = 0; x < asset.width; x++) {
+        const ch = asset.cells[y * asset.width + x] || "#";
+        ctx.fillStyle = ch === "#" ? colors.wall : ch === "g" ? colors.grass : ch === "~" ? colors.water : colors.ground;
+        ctx.fillRect(x * px, y * px, px, px);
+        if (ch === "W") {
+          ctx.strokeStyle = colors.warp;
+          ctx.lineWidth = Math.max(1, Math.floor(px / 4));
+          ctx.strokeRect(x * px + 1, y * px + 1, Math.max(1, px - 2), Math.max(1, px - 2));
+        }
+      }
+    }
+    const trail = Array.isArray(run.trail) ? run.trail : [];
+    if (trail.length > 1) {
+      ctx.strokeStyle = colors.trail;
+      ctx.lineWidth = Math.max(1, Math.floor(px / 3));
+      ctx.globalAlpha = 0.55;
+      ctx.beginPath();
+      trail.forEach((p, i) => {
+        const x = (Number(p[0]) + 0.5) * px;
+        const y = (Number(p[1]) + 0.5) * px;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+    const hits = [];
+    for (const sp of (run.sprites || [])) {
+      const sx = Number(sp.x), sy = Number(sp.y);
+      if (sx < 0 || sy < 0 || sx >= asset.width || sy >= asset.height) continue;
+      ctx.fillStyle = colors.sprite;
+      const pad = Math.max(1, Math.floor(px / 4));
+      ctx.fillRect(sx * px + pad, sy * px + pad, Math.max(2, px - pad * 2), Math.max(2, px - pad * 2));
+      hits.push({ x: sx, y: sy, slot: sp.slot, picture: sp.picture_id });
+    }
+    const pxX = Number(run.x), pxY = Number(run.y);
+    if (pxX >= 0 && pxY >= 0 && pxX < asset.width && pxY < asset.height) {
+      ctx.fillStyle = colors.player;
+      ctx.beginPath();
+      ctx.arc((pxX + 0.5) * px, (pxY + 0.5) * px, Math.max(2, px * 0.42), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    canvas._mapHit = { px, hits };
+    return true;
+  }
+  let mapRenderSerial = 0;
+  function renderMap(run) {
+    const panel = $("detail-map-panel");
+    const status = $("detail-map-status");
+    const canvas = $("detail-map");
+    const serial = ++mapRenderSerial;
+    if (!run || (run.status !== "running" && run.status !== "done")) {
+      panel.hidden = true;
+      return;
+    }
+    status.textContent = tileLabel(run);
+    loadMapAsset(run.map).then((asset) => {
+      if (serial !== mapRenderSerial || selected !== run.run_id) return;
+      if (!asset || !paintMap(canvas, asset, run)) {
+        panel.hidden = true;
+        return;
+      }
+      panel.hidden = false;
+      status.textContent = tileLabel(run);
+    });
+  }
+
   function fillLcd(lcd, run) {
     if (run.status === "queued" || run.status === "leased") {
       lcd.dataset.frameRun = "";
@@ -245,9 +342,7 @@
       return;
     }
     lcd.dataset.frameRun = run.run_id;
-    if (!lcd.querySelector("img")) {
-      lcd.innerHTML = `<span class="idle">live</span>`;
-    }
+    if (!lcd.querySelector("img")) lcd.innerHTML = `<span class="idle">live</span>`;
   }
 
   function paintFrame(id, url) {
@@ -266,9 +361,7 @@
     });
   }
 
-  function sleep(ms) {
-    return new Promise((ok) => setTimeout(ok, ms));
-  }
+  function sleep(ms) { return new Promise((ok) => setTimeout(ok, ms)); }
   function whenVisible() {
     if (!document.hidden) return Promise.resolve();
     return new Promise((ok) => {
@@ -287,7 +380,7 @@
     pumps.set(id, () => { stop = true; });
     (async function loop() {
       let blobUrl = "";
-      const tick = narrow() ? slowFrameMs : frameMs; // decided per pump start
+      const tick = narrow() ? slowFrameMs : frameMs;
       while (!stop) {
         await whenVisible();
         if (stop) break;
@@ -300,7 +393,7 @@
             if (blobUrl) URL.revokeObjectURL(blobUrl);
             blobUrl = url;
           }
-        } catch (e) { /* next tick */ }
+        } catch (e) {}
         const wait = tick - (Date.now() - started);
         if (wait > 0) await sleep(wait);
       }
@@ -310,37 +403,27 @@
   const lastOnce = new Set();
   function fetchLast(id) {
     if (lastOnce.has(id)) return;
-    const has = [...document.querySelectorAll(".lcd")].some(
-      (lcd) => lcd.dataset.frameRun === id && lcd.querySelector("img")
-    );
+    const has = [...document.querySelectorAll(".lcd")].some((lcd) => lcd.dataset.frameRun === id && lcd.querySelector("img"));
     if (has) return;
     lastOnce.add(id);
     (async () => {
       try {
         const r = await fetch("/frame?run=" + encodeURIComponent(id), { cache: "no-store" });
-        if (!r.ok) {
-          lastOnce.delete(id);
-          return;
-        }
+        if (!r.ok) { lastOnce.delete(id); return; }
         paintFrame(id, URL.createObjectURL(await r.blob()));
-      } catch (e) {
-        lastOnce.delete(id);
-      }
+      } catch (e) { lastOnce.delete(id); }
     })();
   }
 
   function syncPumps() {
     const want = new Set();
-    for (const r of liveRuns()) {
-      if (r.status === "running") want.add(r.run_id);
-    }
+    for (const r of liveRuns()) if (r.status === "running") want.add(r.run_id);
     const sel = (snap.runs || []).find((r) => r.run_id === selected);
     if (sel && sel.status === "running") want.add(sel.run_id);
     for (const id of want) ensurePump(id);
     for (const [id, stop] of pumps) {
       if (want.has(id)) continue;
-      stop();
-      pumps.delete(id);
+      stop(); pumps.delete(id);
     }
     if (sel && sel.status === "done") fetchLast(sel.run_id);
   }
@@ -348,38 +431,16 @@
   function renderLive() {
     const runs = liveRuns();
     const el = $("live");
-    if (!runs.length) {
-      el.innerHTML = `<p class="empty">No runs yet</p>`;
-      return;
-    }
-    const empty = el.querySelector(".empty");
-    if (empty) empty.remove();
+    if (!runs.length) { el.innerHTML = `<p class="empty">No runs yet</p>`; return; }
+    const empty = el.querySelector(".empty"); if (empty) empty.remove();
     const seen = new Set();
     for (const r of runs) {
       seen.add(r.run_id);
       let art = el.querySelector('article[data-run="' + CSS.escape(r.run_id) + '"]');
       if (!art) {
         art = document.createElement("article");
-        art.className = "bezel";
-        art.tabIndex = 0;
-        art.setAttribute("role", "button");
-        art.dataset.run = r.run_id;
-        art.innerHTML = `<div class="lcd"></div>
-          <div class="meta">
-            <div class="chips status-chips"></div>
-            <div class="rid"></div>
-            <div class="chips setting-chips"></div>
-            <div class="facts">
-              <div class="fact-k">now</div>
-              <div class="pos"></div>
-              <div class="fact-k">progress</div>
-              <div class="stats"></div>
-              <div class="fact-k">llm</div>
-              <div class="llm"></div>
-            </div>
-            <button type="button" class="cancel"></button>
-            <div class="card-err" hidden></div>
-          </div>`;
+        art.className = "bezel"; art.tabIndex = 0; art.setAttribute("role", "button"); art.dataset.run = r.run_id;
+        art.innerHTML = `<div class="lcd"></div><div class="meta"><div class="chips status-chips"></div><div class="rid"></div><div class="chips setting-chips"></div><div class="facts"><div class="fact-k">now</div><div class="pos"></div><div class="fact-k">progress</div><div class="stats"></div><div class="fact-k">llm</div><div class="llm"></div></div><button type="button" class="cancel"></button><div class="card-err" hidden></div></div>`;
         el.appendChild(art);
       }
       art.classList.toggle("selected", r.run_id === selected);
@@ -397,57 +458,28 @@
       } else {
         art.querySelector(".pos").textContent = tileLabel(r);
         art.querySelector(".stats").textContent = "frame " + r.frame + " · attempt " + r.attempts;
-        const line = statsLine(r);
-        art.querySelector(".llm").textContent = line;
+        art.querySelector(".llm").textContent = statsLine(r);
       }
-      const cancel = art.querySelector(".cancel");
-      cancel.hidden = r.status === "done";
-      cancel.dataset.cancel = r.run_id;
-      cancel.textContent = "Cancel run";
+      const cancel = art.querySelector(".cancel"); cancel.hidden = r.status === "done"; cancel.dataset.cancel = r.run_id; cancel.textContent = "Cancel run";
       const err = art.querySelector(".card-err");
-      if (cardErr && cardErr.id === r.run_id) {
-        err.hidden = false;
-        err.textContent = cardErr.text;
-      } else {
-        err.hidden = true;
-        err.textContent = "";
-      }
+      if (cardErr && cardErr.id === r.run_id) { err.hidden = false; err.textContent = cardErr.text; }
+      else { err.hidden = true; err.textContent = ""; }
     }
-    el.querySelectorAll("article").forEach((art) => {
-      if (!seen.has(art.dataset.run)) art.remove();
-    });
-    for (const r of runs) {
-      const art = el.querySelector('article[data-run="' + CSS.escape(r.run_id) + '"]');
-      if (art) el.appendChild(art);
-    }
+    el.querySelectorAll("article").forEach((art) => { if (!seen.has(art.dataset.run)) art.remove(); });
+    for (const r of runs) { const art = el.querySelector('article[data-run="' + CSS.escape(r.run_id) + '"]'); if (art) el.appendChild(art); }
   }
 
   function renderWorkers() {
     const ws = snap.workers || [];
     const el = $("workers");
-    if (!ws.length) {
-      el.innerHTML = `<p class="empty">No workers</p>`;
-      return;
-    }
+    if (!ws.length) { el.innerHTML = `<p class="empty">No workers</p>`; return; }
     const byVer = {};
-    for (const w of ws) {
-      const v = w.version || "unknown";
-      byVer[v] = (byVer[v] || 0) + 1;
-    }
-    const summary = Object.entries(byVer)
-      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-      .map(([v, n]) => `${n} × ${short(v)}`)
-      .join(", ");
+    for (const w of ws) { const v = w.version || "unknown"; byVer[v] = (byVer[v] || 0) + 1; }
+    const summary = Object.entries(byVer).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([v, n]) => `${n} × ${short(v)}`).join(", ");
     el.innerHTML = `<p class="ver-summary">${esc(summary)}</p>` + ws.map((w) => {
       const busy = Boolean(w.run_id);
       const job = busy ? `on <b>${esc(w.run_id)}</b>` : "waiting for a lease";
-      return `<div class="worker">
-        ${chip(busy ? "busy" : "idle", busy ? "busy" : "idle")}
-        <span class="addr">${esc(w.addr)}</span>
-        ${w.version ? `<span class="ver">${esc(short(w.version))}</span>` : ""}
-        <span class="job">${job}</span>
-        <span class="ago">${esc(w.seen_ago)} ago</span>
-      </div>`;
+      return `<div class="worker">${chip(busy ? "busy" : "idle", busy ? "busy" : "idle")}<span class="addr">${esc(w.addr)}</span>${w.version ? `<span class="ver">${esc(short(w.version))}</span>` : ""}<span class="job">${job}</span><span class="ago">${esc(w.seen_ago)} ago</span></div>`;
     }).join("");
   }
 
@@ -461,177 +493,88 @@
     const hows = [...new Set(runs.map(howLabel))];
     const starters = [...new Set(runs.map(starterOf))];
     const el = $("hist-filters");
-    if (!runs.length) {
-      el.innerHTML = "";
-      return;
-    }
+    if (!runs.length) { el.innerHTML = ""; return; }
     let html = `<div class="filter-group"><span>ended</span>${filterBtn("outcome", "", "all")}`;
     for (const o of outcomes) html += filterBtn("outcome", o, o);
     html += `</div><div class="filter-group"><span>how</span>${filterBtn("how", "", "all")}`;
     for (const h of hows) html += filterBtn("how", h, h);
     html += `</div><div class="filter-group"><span>starter</span>${filterBtn("starter", "", "all")}`;
     for (const s of starters) html += filterBtn("starter", s, s);
-    html += `</div>`;
-    el.innerHTML = html;
+    html += `</div>`; el.innerHTML = html;
   }
 
   function renderHistory() {
     renderHistFilters();
     const runs = filteredHistory();
     const el = $("history");
-    if (!doneRuns().length) {
-      el.innerHTML = `<p class="empty">Nothing finished yet</p>`;
-      $("hist-pager").innerHTML = "";
-      return;
-    }
-    if (!runs.length) {
-      el.innerHTML = `<p class="empty">No runs match these filters</p>`;
-      $("hist-pager").innerHTML = "";
-      return;
-    }
-    const pages = Math.max(1, Math.ceil(runs.length / HIST_PAGE));
-    histPage = Math.min(histPage, pages - 1);
+    if (!doneRuns().length) { el.innerHTML = `<p class="empty">Nothing finished yet</p>`; $("hist-pager").innerHTML = ""; return; }
+    if (!runs.length) { el.innerHTML = `<p class="empty">No runs match these filters</p>`; $("hist-pager").innerHTML = ""; return; }
+    const pages = Math.max(1, Math.ceil(runs.length / HIST_PAGE)); histPage = Math.min(histPage, pages - 1);
     const start = histPage * HIST_PAGE;
     el.innerHTML = runs.slice(start, start + HIST_PAGE).map((r) => {
       const sel = r.run_id === selected ? " selected" : "";
-      const where = r.planner === "scripted" && r.dest
-        ? r.dest : tileLabel(r);
+      const where = r.planner === "scripted" && r.dest ? r.dest : tileLabel(r);
       const out = r.detail || r.reason || "done";
-      return `<div class="hist-row${sel}">
-        <button type="button" class="hist" data-run="${esc(r.run_id)}">
-        <span class="hist-when">${esc(runWhen(r) || "—")}</span>
-        <span class="hist-id">${esc(r.run_id)}</span>
-        <span class="chips">${settingChips(r)}</span>
-        <span class="hist-where">${esc(where)}</span>
-        <span class="hist-out">${statusChip(r)}${issueBadge(r.issue)}<span class="hist-outcome">${esc(out)}</span></span>
-        </button>
-        <button type="button" class="hist-del" data-delete="${esc(r.run_id)}">Delete</button>
-      </div>`;
+      return `<div class="hist-row${sel}"><button type="button" class="hist" data-run="${esc(r.run_id)}"><span class="hist-when">${esc(runWhen(r) || "—")}</span><span class="hist-id">${esc(r.run_id)}</span><span class="chips">${settingChips(r)}</span><span class="hist-where">${esc(where)}</span><span class="hist-out">${statusChip(r)}${issueBadge(r.issue)}<span class="hist-outcome">${esc(out)}</span></span></button><button type="button" class="hist-del" data-delete="${esc(r.run_id)}">Delete</button></div>`;
     }).join("");
     renderHistPager(runs.length, pages);
   }
 
   function renderHistPager(total, pages) {
     const el = $("hist-pager");
-    const start = histPage * HIST_PAGE + 1;
-    const end = Math.min(total, (histPage + 1) * HIST_PAGE);
-    el.innerHTML =
-      `<span class="pager-count">${start}\u2013${end} of ${total}</span>` +
-      `<button type="button" class="pager-btn" data-page="prev" ${histPage === 0 ? "disabled" : ""}>\u2190 prev</button>` +
-      `<span class="pager-page">${histPage + 1} / ${pages}</span>` +
-      `<button type="button" class="pager-btn" data-page="next" ${histPage >= pages - 1 ? "disabled" : ""}>next \u2192</button>`;
+    const start = histPage * HIST_PAGE + 1, end = Math.min(total, (histPage + 1) * HIST_PAGE);
+    el.innerHTML = `<span class="pager-count">${start}\u2013${end} of ${total}</span><button type="button" class="pager-btn" data-page="prev" ${histPage === 0 ? "disabled" : ""}>\u2190 prev</button><span class="pager-page">${histPage + 1} / ${pages}</span><button type="button" class="pager-btn" data-page="next" ${histPage >= pages - 1 ? "disabled" : ""}>next \u2192</button>`;
   }
 
-  // Whether the raw-exchange fold is open and how far it is scrolled,
-  // remembered across re-renders. renderDetail rebuilds the whole pane on
-  // every poll, so anything the operator did to it has to be re-applied.
   let rawOpen = false;
   let rawScroll = 0;
 
   function renderDetail() {
     const pane = $("watch");
     const run = (snap.runs || []).find((r) => r.run_id === selected);
-    if (!run) {
-      pane.hidden = true;
-      return;
-    }
+    if (!run) { pane.hidden = true; $("detail-map-panel").hidden = true; return; }
     pane.hidden = false;
     $("detail-title").textContent = run.run_id;
     $("detail-chips").innerHTML = statusChip(run) + settingChips(run) + issueBadge(run.issue);
     fillLcd($("detail-lcd"), run);
+    renderMap(run);
     const settings = kv([
-      ["how", howText(run)],
-      ["starter", starterOf(run)],
-      ["goal", goalOf(run)],
-      ["walk to", run.planner === "scripted" ? (run.dest || "—") : ""],
-      ["seed", String(run.seed)],
+      ["how", howText(run)], ["starter", starterOf(run)], ["goal", goalOf(run)],
+      ["walk to", run.planner === "scripted" ? (run.dest || "—") : ""], ["seed", String(run.seed)],
       ["keep going", run.endless ? (run.random_seed ? "yes, random seed" : "yes, same seed") : ""],
-      ["queued", fmtWhen(run.queued_at)],
-      ["ended", fmtWhen(run.ended_at)],
-      ["fps", run.fps ? String(run.fps) : ""],
-      ["max rounds", run.max_rounds ? String(run.max_rounds) : ""],
-      ["max frames", run.max_frames ? String(run.max_frames) : ""]
+      ["queued", fmtWhen(run.queued_at)], ["ended", fmtWhen(run.ended_at)], ["fps", run.fps ? String(run.fps) : ""],
+      ["max rounds", run.max_rounds ? String(run.max_rounds) : ""], ["max frames", run.max_frames ? String(run.max_frames) : ""]
     ]);
     const stateRows = run.status === "done"
-      ? [
-          ["ended", run.reason || "done"],
-          ["detail", run.detail || ""],
-          ["last map", tileLabel(run)],
-          ["frame", String(run.frame)],
-          ["attempts", String(run.attempts)]
-        ]
-      : [
-          ["status", run.status],
-          ["map", tileLabel(run)],
-          ["frame", String(run.frame)],
-          ["attempt", String(run.attempts)],
-          ["so far", run.stop_so_far || ""]
-        ];
-    $("detail-body").innerHTML =
-      `<div class="block"><h3>Settings</h3>${settings}</div>`
-      + `<div class="block"><h3>${run.status === "done" ? "Outcome" : "Now"}</h3>${kv(stateRows)}</div>`
-      + planHTML(run)
-      + playHTML(run)
-      + lastEventHTML(run);
-    // renderDetail replaces the whole pane every poll, so a <details> the
-    // operator opened would slam shut a second later. Re-apply the flag and
-    // let the toggle write it back.
+      ? [["ended", run.reason || "done"], ["detail", run.detail || ""], ["last map", tileLabel(run)], ["frame", String(run.frame)], ["attempts", String(run.attempts)]]
+      : [["status", run.status], ["map", tileLabel(run)], ["frame", String(run.frame)], ["attempt", String(run.attempts)], ["so far", run.stop_so_far || ""]];
+    $("detail-body").innerHTML = `<div class="block"><h3>Settings</h3>${settings}</div><div class="block"><h3>${run.status === "done" ? "Outcome" : "Now"}</h3>${kv(stateRows)}</div>` + planHTML(run) + playHTML(run) + lastEventHTML(run);
     const raw = $("detail-body").querySelector(".plan-raw");
     if (raw) {
-      raw.open = rawOpen;
-      raw.addEventListener("toggle", () => { rawOpen = raw.open; });
-      const pre = raw.querySelector("pre");
-      pre.scrollTop = rawScroll;
-      pre.addEventListener("scroll", () => { rawScroll = pre.scrollTop; });
+      raw.open = rawOpen; raw.addEventListener("toggle", () => { rawOpen = raw.open; });
+      const pre = raw.querySelector("pre"); pre.scrollTop = rawScroll; pre.addEventListener("scroll", () => { rawScroll = pre.scrollTop; });
     }
   }
 
   function planHTML(run) {
     const play = run.planner !== "scripted";
     if (!play && !run.question && !run.decision) return "";
-    const question = run.question
-      ? `<pre class="plan-q">${esc(run.question)}</pre>`
-      : `<p class="plan-wait">waiting for the first plan</p>`;
+    const question = run.question ? `<pre class="plan-q">${esc(run.question)}</pre>` : `<p class="plan-wait">waiting for the first plan</p>`;
     let decision = "";
-    if (run.decision) {
-      decision = `<div class="plan-k">decision</div><p class="plan-d">${esc(run.decision)}</p>`;
-    } else if (run.question) {
-      decision = `<div class="plan-k">decision</div><p class="plan-wait">waiting for reply</p>`;
-    }
-    // The verbatim exchange is folded away: it is the observation JSON plus
-    // the menu, which is worth reading when a choice looks wrong and pure
-    // noise the rest of the time. The system prompt is a constant of the
-    // build (agent.llmSystemPrompt) and is not sent here.
-    const raw = run.raw
-      ? `<details class="plan-raw"><summary>raw exchange</summary><pre>${esc(run.raw)}</pre></details>`
-      : "";
-    return `<div class="block"><h3>Plan</h3>
-      <div class="plan-k">question</div>${question}
-      ${decision}${raw}</div>`;
+    if (run.decision) decision = `<div class="plan-k">decision</div><p class="plan-d">${esc(run.decision)}</p>`;
+    else if (run.question) decision = `<div class="plan-k">decision</div><p class="plan-wait">waiting for reply</p>`;
+    const raw = run.raw ? `<details class="plan-raw"><summary>raw exchange</summary><pre>${esc(run.raw)}</pre></details>` : "";
+    return `<div class="block"><h3>Plan</h3><div class="plan-k">question</div>${question}${decision}${raw}</div>`;
   }
 
-  // The full Play panel, mirroring the runner's watch page: one row per
-  // number, amber when it is the warning (repeat picks, rejected replies,
-  // transport errors, fallbacks), plus the last intent and the choice bars.
   function playHTML(run) {
     const s = run.stats;
     if (!s || run.planner === "scripted") return "";
-    const row = (k, v, warn) =>
-      `<div class="prow"><span>${esc(k)}</span><span${warn ? ' class="pwarn"' : ""}>${esc(v)}</span></div>`;
-    const nums =
-      row("round", s.round + (s.rounds_left ? ` (${s.rounds_left} left)` : "")) +
-      row("repeat picks", `${s.repeats} of ${s.rounds}`, s.rounds > 3 && s.repeats * 2 >= s.rounds) +
-      row("think", `${s.last_seconds.toFixed(1)}s / ${s.avg_seconds.toFixed(1)}s avg`) +
-      row("offered", `${s.avg_offered.toFixed(1)} avg`) +
-      row("tokens", `${s.prompt_tokens} / ${s.completion_tokens}`) +
-      row("rejected", String(s.rejected), s.rejected > 0) +
-      row("transport", String(s.transport), s.transport > 0) +
-      row("fallbacks", String(s.fallbacks), s.fallbacks > 0);
+    const row = (k, v, warn) => `<div class="prow"><span>${esc(k)}</span><span${warn ? ' class="pwarn"' : ""}>${esc(v)}</span></div>`;
+    const nums = row("round", s.round + (s.rounds_left ? ` (${s.rounds_left} left)` : "")) + row("repeat picks", `${s.repeats} of ${s.rounds}`, s.rounds > 3 && s.repeats * 2 >= s.rounds) + row("think", `${s.last_seconds.toFixed(1)}s / ${s.avg_seconds.toFixed(1)}s avg`) + row("offered", `${s.avg_offered.toFixed(1)} avg`) + row("tokens", `${s.prompt_tokens} / ${s.completion_tokens}`) + row("rejected", String(s.rejected), s.rejected > 0) + row("transport", String(s.transport), s.transport > 0) + row("fallbacks", String(s.fallbacks), s.fallbacks > 0);
     const intent = s.intent ? `<p class="pintent">"${esc(s.intent)}" (${s.intent_age} rounds)</p>` : "";
     const top = (s.choices && s.choices[0]) ? s.choices[0].count : 1;
-    const choices = (s.choices || []).map((c) =>
-      `<div class="pchoice"><div class="pbar" style="width:${(100 * c.count) / top}%"></div>` +
-      `<span>${esc(c.objective)}</span><span class="n">${c.count}</span></div>`).join("");
+    const choices = (s.choices || []).map((c) => `<div class="pchoice"><div class="pbar" style="width:${(100 * c.count) / top}%"></div><span>${esc(c.objective)}</span><span class="n">${c.count}</span></div>`).join("");
     return `<div class="block"><h3>Play</h3><div class="pnums">${nums}</div>${intent}<div class="pchoices">${choices}</div></div>`;
   }
 
@@ -642,233 +585,110 @@
   }
 
   function renderCounts() {
-    const runs = snap.runs || [];
-    const workers = snap.workers || [];
+    const runs = snap.runs || [], workers = snap.workers || [];
     $("n-running").textContent = runs.filter((r) => r.status === "running").length;
     $("n-queued").textContent = runs.filter((r) => r.status === "queued" || r.status === "leased").length;
     $("n-idle").textContent = workers.filter((w) => !w.run_id).length;
   }
-
   function renderVersions() {
     const wall = snap.wall_version || "";
-    $("versions").textContent =
-      ["console", short(consoleVersion), "wall", short(wall)].filter(Boolean).join(" · ");
+    $("versions").textContent = ["console", short(consoleVersion), "wall", short(wall)].filter(Boolean).join(" · ");
   }
-
   function selectRun(id) {
-    selected = id;
-    render();
+    selected = id; render();
     if (id && narrow()) $("watch").scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   function renderFailures() {
-    const el = $("failures");
-    if (!el) return;
-    const active = (groups || []).filter((g) => {
-      const st = g.issue && g.issue.status;
-      const res = g.issue && g.issue.resolution;
-      return st !== "resolved" && st !== "fixed" && res !== "fixed";
-    });
-    if (!active.length) {
-      el.innerHTML = `<p class="empty">No open failure groups</p>`;
-      return;
-    }
+    const el = $("failures"); if (!el) return;
+    const active = (groups || []).filter((g) => { const st = g.issue && g.issue.status, res = g.issue && g.issue.resolution; return st !== "resolved" && st !== "fixed" && res !== "fixed"; });
+    if (!active.length) { el.innerHTML = `<p class="empty">No open failure groups</p>`; return; }
     el.innerHTML = active.map((g) => {
-      const issue = g.issue;
-      let action = "";
-      if (!issue || !issue.issue_id) {
-        if (g.outbox === "error") action = `<span class="chip">report failed</span>`;
-        else if (g.outbox === "pending") action = `<span class="chip">pending report</span>`;
-      } else if (issue.status === "open" || issue.status === "diagnosed") {
-        const busy = investigating.has(g.key);
-        action = `<button type="button" class="fail-act" data-investigate="${esc(g.key)}" ${busy ? "disabled" : ""}>Investigate now</button>`;
-      }
-      return `<div class="fail-card">
-        <div class="fail-pat">${esc(g.pattern)}</div>
-        <div class="fail-ex">${esc(g.example || "")} · ${g.count} run${g.count === 1 ? "" : "s"}</div>
-        <div class="fail-meta">${issueBadge(issue)}${action}</div>
-      </div>`;
+      const issue = g.issue; let action = "";
+      if (!issue || !issue.issue_id) { if (g.outbox === "error") action = `<span class="chip">report failed</span>`; else if (g.outbox === "pending") action = `<span class="chip">pending report</span>`; }
+      else if (issue.status === "open" || issue.status === "diagnosed") { const busy = investigating.has(g.key); action = `<button type="button" class="fail-act" data-investigate="${esc(g.key)}" ${busy ? "disabled" : ""}>Investigate now</button>`; }
+      return `<div class="fail-card"><div class="fail-pat">${esc(g.pattern)}</div><div class="fail-ex">${esc(g.example || "")} · ${g.count} run${g.count === 1 ? "" : "s"}</div><div class="fail-meta">${issueBadge(issue)}${action}</div></div>`;
     }).join("");
   }
 
   function render() {
-    $("banner").hidden = !wallDown;
-    $("queue-toggle").disabled = wallDown;
-    $("spec-form").querySelector(".submit").disabled = wallDown;
-    renderCounts();
-    renderVersions();
-    renderLive();
-    renderFailures();
-    renderWorkers();
-    renderHistory();
-    renderDetail();
-    syncPumps();
+    $("banner").hidden = !wallDown; $("queue-toggle").disabled = wallDown; $("spec-form").querySelector(".submit").disabled = wallDown;
+    renderCounts(); renderVersions(); renderLive(); renderFailures(); renderWorkers(); renderHistory(); renderDetail(); syncPumps();
   }
 
   async function refresh() {
     try {
-      const res = await fetch("/v1/dashboard", { cache: "no-store" });
-      if (!res.ok) throw new Error("bad");
-      snap = await res.json();
-      wallDown = false;
-      try {
-        const tr = await fetch("/v1/triage", { cache: "no-store" });
-        if (tr.ok) groups = await tr.json();
-      } catch (e) {
-        groups = groups || [];
-      }
-    } catch (e) {
-      wallDown = true;
-    }
+      const res = await fetch("/v1/dashboard", { cache: "no-store" }); if (!res.ok) throw new Error("bad");
+      snap = await res.json(); wallDown = false;
+      try { const tr = await fetch("/v1/triage", { cache: "no-store" }); if (tr.ok) groups = await tr.json(); } catch (e) { groups = groups || []; }
+    } catch (e) { wallDown = true; }
     render();
   }
 
+  $("detail-map").addEventListener("mousemove", (ev) => {
+    const canvas = ev.currentTarget, data = canvas._mapHit;
+    if (!data) return;
+    const rect = canvas.getBoundingClientRect();
+    const sx = canvas.width / rect.width, sy = canvas.height / rect.height;
+    const x = Math.floor(((ev.clientX - rect.left) * sx) / data.px);
+    const y = Math.floor(((ev.clientY - rect.top) * sy) / data.px);
+    const hit = data.hits.find((h) => h.x === x && h.y === y);
+    canvas.title = hit ? `sprite slot ${hit.slot || "?"} · picture ${hexMap(hit.picture || 0)}` : "";
+  });
+
   $("queue-toggle").addEventListener("click", () => {
-    const q = $("queue");
-    q.hidden = !q.hidden;
-    $("queue-toggle").setAttribute("aria-expanded", String(!q.hidden));
-    if (!q.hidden) fillDefaults();
+    const q = $("queue"); q.hidden = !q.hidden; $("queue-toggle").setAttribute("aria-expanded", String(!q.hidden)); if (!q.hidden) fillDefaults();
   });
   $("spec-form").planner.addEventListener("change", syncPlannerFields);
   $("spec-form").endless.addEventListener("change", syncPlannerFields);
-  $("detail-close").addEventListener("click", () => {
-    selected = "";
-    render();
-  });
+  $("detail-close").addEventListener("click", () => { selected = ""; render(); });
 
   $("spec-form").addEventListener("submit", async (ev) => {
-    ev.preventDefault();
-    const err = $("form-error");
-    err.textContent = "";
-    const f = ev.target;
-    const planner = f.planner.value;
-    const spec = {
-      run_id: f.run_id.value.trim(),
-      planner: planner,
-      starter: f.starter.value,
-      dest: planner === "scripted" ? f.dest.value.trim() : "",
-      goal: planner === "llm" ? f.goal.value.trim() : "",
-      seed: Number(f.seed.value || 0),
-      fps: Number(f.fps.value || 0),
-      max_rounds: Number(f.max_rounds.value || 0),
-      max_frames: Number(f.max_frames.value || 0),
-      endless: f.endless.checked,
-      random_seed: f.endless.checked && f.seed_mode.value === "random"
-    };
+    ev.preventDefault(); const err = $("form-error"); err.textContent = ""; const f = ev.target; const planner = f.planner.value;
+    const spec = { run_id: f.run_id.value.trim(), planner, starter: f.starter.value, dest: planner === "scripted" ? f.dest.value.trim() : "", goal: planner === "llm" ? f.goal.value.trim() : "", seed: Number(f.seed.value || 0), fps: Number(f.fps.value || 0), max_rounds: Number(f.max_rounds.value || 0), max_frames: Number(f.max_frames.value || 0), endless: f.endless.checked, random_seed: f.endless.checked && f.seed_mode.value === "random" };
     try {
-      const res = await fetch("/v1/specs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(spec)
-      });
+      const res = await fetch("/v1/specs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(spec) });
       const body = await res.json().catch(() => ({}));
-      if (res.status === 409) {
-        err.textContent = "run already active";
-        return;
-      }
-      if (!res.ok) {
-        err.textContent = body.error || "could not queue";
-        return;
-      }
-      fillDefaults();
-      $("queue").hidden = true;
-      $("queue-toggle").setAttribute("aria-expanded", "false");
-      await refresh();
-    } catch (e) {
-      err.textContent = "wall unreachable";
-    }
+      if (res.status === 409) { err.textContent = "run already active"; return; }
+      if (!res.ok) { err.textContent = body.error || "could not queue"; return; }
+      fillDefaults(); $("queue").hidden = true; $("queue-toggle").setAttribute("aria-expanded", "false"); await refresh();
+    } catch (e) { err.textContent = "wall unreachable"; }
   });
 
   document.body.addEventListener("keydown", (ev) => {
     if (ev.key !== "Enter" && ev.key !== " ") return;
     const pick = ev.target.closest("article[data-run]");
-    if (pick && ev.target === pick) {
-      ev.preventDefault();
-      selectRun(pick.getAttribute("data-run"));
-    }
+    if (pick && ev.target === pick) { ev.preventDefault(); selectRun(pick.getAttribute("data-run")); }
   });
 
   document.body.addEventListener("click", async (ev) => {
     const filt = ev.target.closest("[data-filter-group]");
-    if (filt) {
-      ev.preventDefault();
-      const group = filt.getAttribute("data-filter-group");
-      histFilter[group] = filt.getAttribute("data-filter-value") || "";
-      histPage = 0;
-      renderHistory();
-      return;
-    }
+    if (filt) { ev.preventDefault(); const group = filt.getAttribute("data-filter-group"); histFilter[group] = filt.getAttribute("data-filter-value") || ""; histPage = 0; renderHistory(); return; }
     const page = ev.target.closest("[data-page]");
-    if (page) {
-      ev.preventDefault();
-      if (page.getAttribute("data-page") === "prev") histPage = Math.max(0, histPage - 1);
-      else histPage += 1;
-      renderHistory();
-      return;
-    }
+    if (page) { ev.preventDefault(); if (page.getAttribute("data-page") === "prev") histPage = Math.max(0, histPage - 1); else histPage += 1; renderHistory(); return; }
     const del = ev.target.closest("[data-delete]");
     if (del) {
-      ev.preventDefault();
-      ev.stopPropagation();
-      const id = del.getAttribute("data-delete");
-      try {
-        const res = await fetch("/v1/runs/" + encodeURIComponent(id), { method: "DELETE" });
-        const body = await res.json().catch(() => ({}));
-        if (!res.ok) cardErr = { id, text: body.error || "could not delete" };
-        else if (selected === id) selected = "";
-      } catch (e) {
-        cardErr = { id, text: "wall unreachable" };
-      }
-      await refresh();
-      return;
+      ev.preventDefault(); ev.stopPropagation(); const id = del.getAttribute("data-delete");
+      try { const res = await fetch("/v1/runs/" + encodeURIComponent(id), { method: "DELETE" }); const body = await res.json().catch(() => ({})); if (!res.ok) cardErr = { id, text: body.error || "could not delete" }; else if (selected === id) selected = ""; }
+      catch (e) { cardErr = { id, text: "wall unreachable" }; }
+      await refresh(); return;
     }
     const inv = ev.target.closest("[data-investigate]");
     if (inv) {
-      ev.preventDefault();
-      ev.stopPropagation();
-      const key = inv.getAttribute("data-investigate");
-      if (!key || investigating.has(key)) return;
-      investigating.add(key);
-      inv.disabled = true;
-      try {
-        await fetch("/v1/triage/" + encodeURIComponent(key) + "/investigate", { method: "POST" });
-      } catch (e) {}
-      investigating.delete(key);
-      await refresh();
-      return;
+      ev.preventDefault(); ev.stopPropagation(); const key = inv.getAttribute("data-investigate"); if (!key || investigating.has(key)) return; investigating.add(key); inv.disabled = true;
+      try { await fetch("/v1/triage/" + encodeURIComponent(key) + "/investigate", { method: "POST" }); } catch (e) {}
+      investigating.delete(key); await refresh(); return;
     }
     const cancel = ev.target.closest("[data-cancel]");
     if (cancel) {
-      ev.preventDefault();
-      ev.stopPropagation();
-      const id = cancel.getAttribute("data-cancel");
-      cardErr = "";
-      try {
-        const res = await fetch("/v1/runs/" + encodeURIComponent(id) + "/cancel", { method: "POST" });
-        const body = await res.json().catch(() => ({}));
-        if (res.status === 409) cardErr = { id, text: "already finished" };
-        else if (!res.ok) cardErr = { id, text: body.error || "could not cancel" };
-      } catch (e) {
-        cardErr = { id, text: "wall unreachable" };
-      }
-      await refresh();
-      return;
+      ev.preventDefault(); ev.stopPropagation(); const id = cancel.getAttribute("data-cancel"); cardErr = "";
+      try { const res = await fetch("/v1/runs/" + encodeURIComponent(id) + "/cancel", { method: "POST" }); const body = await res.json().catch(() => ({})); if (res.status === 409) cardErr = { id, text: "already finished" }; else if (!res.ok) cardErr = { id, text: body.error || "could not cancel" }; }
+      catch (e) { cardErr = { id, text: "wall unreachable" }; }
+      await refresh(); return;
     }
-    const pick = ev.target.closest("[data-run]");
-    if (pick && !ev.target.closest("[data-cancel]")) {
-      selectRun(pick.getAttribute("data-run"));
-    }
+    const pick = ev.target.closest("[data-run]"); if (pick && !ev.target.closest("[data-cancel]")) selectRun(pick.getAttribute("data-run"));
   });
 
-  fetch("/v1/version", { cache: "no-store" })
-    .then((r) => (r.ok ? r.json() : null))
-    .then((v) => {
-      if (v && v.version) {
-        consoleVersion = v.version;
-        renderVersions();
-      }
-    })
-    .catch(() => {}); // version is cosmetic; never block the console on it
-  refresh();
-  setInterval(refresh, pollMs);
+  fetch("/v1/version", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).then((v) => { if (v && v.version) { consoleVersion = v.version; renderVersions(); } }).catch(() => {});
+  refresh(); setInterval(refresh, pollMs);
 })();
