@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -98,7 +99,7 @@ func FuzzWallSpecJSONDoesNotPanic(f *testing.F) {
 
 	f.Fuzz(func(t *testing.T, body []byte) {
 		w := NewWall("")
-		req := httptest.NewRequest(http.MethodPost, "/v1/specs", bytesReader(body))
+		req := httptest.NewRequest(http.MethodPost, "/v1/specs", bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		res := httptest.NewRecorder()
 		w.Handler().ServeHTTP(res, req)
@@ -106,20 +107,4 @@ func FuzzWallSpecJSONDoesNotPanic(f *testing.F) {
 			t.Fatalf("unexpected status %d for body %q", res.Code, body)
 		}
 	})
-}
-
-func bytesReader(data []byte) *byteReader { return &byteReader{data: data} }
-
-type byteReader struct {
-	data []byte
-	off  int
-}
-
-func (r *byteReader) Read(p []byte) (int, error) {
-	if r.off >= len(r.data) {
-		return 0, io.EOF
-	}
-	n := copy(p, r.data[r.off:])
-	r.off += n
-	return n, nil
 }
