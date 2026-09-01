@@ -38,11 +38,7 @@
   }
   button, input, select, textarea { font: inherit; color: inherit; }
   button { cursor: pointer; }
-  /* touch-action kills the double-tap-zoom delay on buttons and fields */
   button, input, select { touch-action: manipulation; }
-  /* grid items must be allowed to shrink below their min-content, or a
-     wide child (an unbreakable SHA, a chip row) pushes the whole section
-     past the viewport and phones zoom the page out to fit it */
   main > * { min-width: 0; }
   :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
   .bar {
@@ -76,17 +72,9 @@
   }
   .queue-btn:hover { filter: brightness(1.08); }
   .queue-btn[aria-expanded="true"] { background: var(--bezel); color: var(--ink); }
-  #banner {
-    background: var(--red);
-    color: #fff8e8;
-    padding: 10px var(--space-5);
-  }
+  #banner { background: var(--red); color: #fff8e8; padding: 10px var(--space-5); }
   #banner[hidden] { display: none; }
-  #queue {
-    background: var(--panel-2);
-    padding: var(--space-4) var(--space-5) 20px;
-    border-bottom: 1px solid var(--line);
-  }
+  #queue { background: var(--panel-2); padding: var(--space-4) var(--space-5) 20px; border-bottom: 1px solid var(--line); }
   #queue[hidden] { display: none; }
   #queue h2, .section-h {
     font-family: Syne, sans-serif;
@@ -96,87 +84,28 @@
     margin: 0 0 var(--space-3);
     color: var(--lcd);
   }
-  .fields {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-    gap: var(--space-3);
-    max-width: 960px;
-  }
+  .fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: var(--space-3); max-width: 960px; }
   label { display: flex; flex-direction: column; gap: var(--space-1); color: var(--bezel); }
   label[hidden], .scripted-only[hidden] { display: none !important; }
-  input, select {
-    background: var(--ink);
-    border: 1px solid var(--line);
-    padding: var(--space-2) 10px;
-    color: var(--cream);
-  }
+  input, select { background: var(--ink); border: 1px solid var(--line); padding: var(--space-2) 10px; color: var(--cream); }
   .form-row { display: flex; align-items: center; gap: var(--space-4); margin-top: var(--space-4); }
-  .submit {
-    background: var(--lcd);
-    color: var(--lcd-dark);
-    border: 0;
-    padding: var(--space-2) var(--space-4);
-    font-family: Syne, sans-serif;
-    font-weight: 700;
-  }
+  .submit { background: var(--lcd); color: var(--lcd-dark); border: 0; padding: var(--space-2) var(--space-4); font-family: Syne, sans-serif; font-weight: 700; }
   .submit:disabled, .queue-btn:disabled { opacity: 0.4; cursor: not-allowed; }
   #form-error { color: #ffb4a8; }
   main { padding: 20px var(--space-5) calc(48px + env(safe-area-inset-bottom)); display: grid; gap: var(--space-5); }
-  .check {
-    flex-direction: row;
-    align-items: center;
-    gap: var(--space-2);
-  }
+  .check { flex-direction: row; align-items: center; gap: var(--space-2); }
   .check input { width: auto; }
   .llm-only[hidden], .endless-only[hidden] { display: none !important; }
-  #live {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(232px, 1fr));
-    gap: var(--space-4);
-  }
-  .bezel {
-    background: var(--bezel);
-    padding: var(--space-3) var(--space-3) 14px;
-    border: 0;
-    text-align: left;
-    width: 100%;
-    box-shadow: 3px 6px 0 var(--ink);
-    color: var(--ink);
-    cursor: pointer;
-  }
+  #live { display: grid; grid-template-columns: repeat(auto-fill, minmax(232px, 1fr)); gap: var(--space-4); }
+  .bezel { background: var(--bezel); padding: var(--space-3) var(--space-3) 14px; border: 0; text-align: left; width: 100%; box-shadow: 3px 6px 0 var(--ink); color: var(--ink); cursor: pointer; }
   .bezel.selected { box-shadow: 3px 6px 0 var(--lcd); }
-  .lcd {
-    background: var(--lcd-dark);
-    height: 144px;
-    display: grid;
-    place-items: center;
-    overflow: hidden;
-  }
-  .lcd img {
-    width: 160px;
-    height: 144px;
-    image-rendering: pixelated;
-    image-rendering: crisp-edges;
-    display: block;
-  }
+  .lcd { background: var(--lcd-dark); height: 144px; display: grid; place-items: center; overflow: hidden; }
+  .lcd img { width: 160px; height: 144px; image-rendering: pixelated; image-rendering: crisp-edges; display: block; }
   .lcd .idle { color: #306230; font-size: 11px; }
   .meta { display: grid; gap: var(--space-2); margin-top: 10px; }
-  .rid {
-    font-family: Syne, sans-serif;
-    font-weight: 700;
-    font-size: 14px;
-    line-height: 1.2;
-    overflow-wrap: anywhere;
-  }
+  .rid { font-family: Syne, sans-serif; font-weight: 700; font-size: 14px; line-height: 1.2; overflow-wrap: anywhere; }
   .chips { display: flex; flex-wrap: wrap; gap: var(--space-1); }
-  .chip {
-    display: inline-block;
-    font-size: 10px;
-    letter-spacing: 0.04em;
-    padding: 2px 6px;
-    background: var(--ink);
-    color: var(--lcd);
-  }
+  .chip { display: inline-block; font-size: 10px; letter-spacing: 0.04em; padding: 2px 6px; background: var(--ink); color: var(--lcd); }
   .chip.running { background: var(--lcd-dark); color: var(--lcd); }
   .chip.leased, .chip.queued { background: var(--bezel-dark); color: var(--cream); }
   .chip.done, .chip.outcome-done { background: var(--ink); color: var(--lcd); }
@@ -184,310 +113,107 @@
   .chip.busy { background: var(--lcd-dark); color: var(--lcd); }
   .chip.outcome-stuck, .chip.outcome-budget { background: var(--bezel-dark); color: var(--amber); }
   .chip.outcome-error, .chip.outcome-lost, .chip.outcome-cancelled { background: var(--red); color: #fff8e8; }
-  .chip.starter, .chip.how, .chip.seed, .chip.goal, .chip.loop {
-    background: var(--ink);
-    color: var(--cream);
-  }
-  .bezel .chip.starter, .bezel .chip.how, .bezel .chip.seed,
-  .bezel .chip.goal, .bezel .chip.loop {
-    background: #2a2716;
-    color: #f0e6b8;
-  }
-  .facts {
-    display: grid;
-    gap: 2px;
-    font-size: 12px;
-  }
-  .fact-k {
-    color: var(--bezel-dark);
-    font-size: 10px;
-    letter-spacing: 0.04em;
-  }
+  .chip.starter, .chip.how, .chip.seed, .chip.goal, .chip.loop { background: var(--ink); color: var(--cream); }
+  .bezel .chip.starter, .bezel .chip.how, .bezel .chip.seed, .bezel .chip.goal, .bezel .chip.loop { background: #2a2716; color: #f0e6b8; }
+  .facts { display: grid; gap: 2px; font-size: 12px; }
+  .fact-k { color: var(--bezel-dark); font-size: 10px; letter-spacing: 0.04em; }
   .bezel .fact-k { color: #2a2716; }
-  .cancel {
-    margin-top: var(--space-1);
-    background: var(--red);
-    color: #fff8e8;
-    border: 0;
-    padding: 6px var(--space-2);
-    font-size: 11px;
-    width: 100%;
-  }
+  .cancel { margin-top: var(--space-1); background: var(--red); color: #fff8e8; border: 0; padding: 6px var(--space-2); font-size: 11px; width: 100%; }
   .cancel:hover { filter: brightness(1.1); }
   .empty { color: var(--bezel); padding: var(--space-2) 0; }
-  #watch {
-    background: var(--panel);
-    padding: var(--space-4);
-    border: 1px solid var(--line);
-    display: grid;
-    gap: var(--space-4);
-  }
+  #watch { background: var(--panel); padding: var(--space-4); border: 1px solid var(--line); display: grid; gap: var(--space-4); }
   #watch[hidden] { display: none; }
   @media (min-width: 900px) {
-    #watch { grid-template-columns: minmax(320px, 480px) 1fr; align-items: start; }
-    #watch .watch-side { grid-column: 2; grid-row: 1 / 4; }
-    #watch .lcd { grid-row: 2; }
+    #watch { grid-template-columns: minmax(300px, 480px) minmax(260px, 1fr); align-items: start; }
+    #watch .detail-head { grid-column: 1 / -1; }
+    #watch .lcd { grid-column: 1; grid-row: 2; }
+    #watch .map-panel { grid-column: 2; grid-row: 2; }
+    #watch .watch-side { grid-column: 1 / -1; grid-row: 3; }
   }
-  #watch .lcd {
-    width: min(100%, 480px);
-    height: auto;
-    aspect-ratio: 160 / 144;
-  }
-  #watch .lcd img {
-    width: 100%;
-    height: 100%;
-  }
-  .detail-head {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: var(--space-3);
-  }
+  #watch .lcd { width: min(100%, 480px); height: auto; aspect-ratio: 160 / 144; }
+  #watch .lcd img { width: 100%; height: 100%; }
+  .map-panel { border: 1px solid var(--line); background: var(--ink); min-width: 0; }
+  .map-panel[hidden] { display: none; }
+  .map-head { display: flex; justify-content: space-between; gap: var(--space-3); align-items: baseline; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  .map-head strong { font-family: Syne, sans-serif; color: var(--lcd); }
+  .map-head span { color: var(--bezel); font-size: 11px; overflow-wrap: anywhere; text-align: right; }
+  .map-scroll { max-height: 480px; overflow: auto; padding: var(--space-2); display: grid; place-items: start center; }
+  #detail-map { display: block; image-rendering: pixelated; image-rendering: crisp-edges; max-width: 100%; }
+  .map-legend { display: flex; flex-wrap: wrap; gap: 6px 12px; padding: 7px 10px; border-top: 1px solid var(--line); color: var(--bezel); font-size: 10px; }
+  .map-legend b { color: var(--cream); font-weight: 500; }
+  .detail-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); }
   .detail-head h2 { margin: 0; overflow-wrap: anywhere; }
-  .close-detail {
-    background: transparent;
-    border: 1px solid var(--line);
-    color: var(--bezel);
-    padding: 4px 8px;
-    flex: none;
-  }
+  .close-detail { background: transparent; border: 1px solid var(--line); color: var(--bezel); padding: 4px 8px; flex: none; }
   .close-detail:hover { color: var(--cream); border-color: var(--bezel); }
-  .block {
-    margin-top: var(--space-4);
-  }
-  .block h3 {
-    margin: 0 0 var(--space-2);
-    font-family: Syne, sans-serif;
-    font-size: 13px;
-    font-weight: 700;
-    color: var(--bezel);
-  }
-  .kv {
-    display: grid;
-    grid-template-columns: 7.5rem 1fr;
-    gap: 6px var(--space-3);
-    margin: 0;
-  }
+  .block { margin-top: var(--space-4); }
+  .block h3 { margin: 0 0 var(--space-2); font-family: Syne, sans-serif; font-size: 13px; font-weight: 700; color: var(--bezel); }
+  .kv { display: grid; grid-template-columns: 7.5rem 1fr; gap: 6px var(--space-3); margin: 0; }
   .kv dt { color: var(--bezel); }
   .kv dd { margin: 0; overflow-wrap: anywhere; }
-  .trace {
-    white-space: pre-wrap;
-    color: var(--lcd);
-    margin: var(--space-2) 0 0;
-    max-height: 240px;
-    overflow: auto;
-  }
-  .plan-k {
-    color: var(--bezel);
-    font-size: 10px;
-    letter-spacing: 0.04em;
-    margin-top: var(--space-2);
-  }
-  .plan-q {
-    white-space: pre-wrap;
-    color: var(--cream);
-    margin: 4px 0 0;
-    max-height: 280px;
-    overflow: auto;
-  }
-  .plan-raw {
-    margin-top: var(--space-2);
-  }
-  .plan-raw summary {
-    color: var(--bezel);
-    font-size: 10px;
-    letter-spacing: 0.04em;
-    cursor: pointer;
-  }
-  .plan-raw pre {
-    white-space: pre-wrap;
-    word-break: break-all;
-    color: var(--lcd);
-    margin: 4px 0 0;
-    max-height: 320px;
-    overflow: auto;
-  }
-  .plan-d {
-    color: var(--lcd);
-    margin: 4px 0 0;
-    font-weight: 500;
-  }
-  .plan-wait {
-    color: var(--bezel);
-    margin: 4px 0 0;
-  }
-  .pnums {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 4px var(--space-3);
-  }
+  .trace { white-space: pre-wrap; color: var(--lcd); margin: var(--space-2) 0 0; max-height: 240px; overflow: auto; }
+  .plan-k { color: var(--bezel); font-size: 10px; letter-spacing: 0.04em; margin-top: var(--space-2); }
+  .plan-q { white-space: pre-wrap; color: var(--cream); margin: 4px 0 0; max-height: 280px; overflow: auto; }
+  .plan-raw { margin-top: var(--space-2); }
+  .plan-raw summary { color: var(--bezel); font-size: 10px; letter-spacing: 0.04em; cursor: pointer; }
+  .plan-raw pre { white-space: pre-wrap; word-break: break-all; color: var(--lcd); margin: 4px 0 0; max-height: 320px; overflow: auto; }
+  .plan-d { color: var(--lcd); margin: 4px 0 0; font-weight: 500; }
+  .plan-wait { color: var(--bezel); margin: 4px 0 0; }
+  .pnums { display: grid; grid-template-columns: 1fr 1fr; gap: 4px var(--space-3); }
   .prow { display: flex; justify-content: space-between; gap: 8px; }
   .prow span:first-child { color: var(--bezel); }
   .prow .pwarn { color: var(--amber); }
   .pintent { margin: var(--space-2) 0 0; color: var(--lcd); white-space: pre-wrap; }
   .pchoices { margin-top: var(--space-2); }
-  .pchoice {
-    position: relative;
-    padding: 2px 4px;
-    margin-top: 1px;
-    display: flex;
-    justify-content: space-between;
-    gap: 8px;
-  }
-  .pbar {
-    position: absolute;
-    left: 0; top: 0; bottom: 0;
-    background: rgba(155, 188, 15, 0.16);
-    z-index: 0;
-    border-radius: 2px;
-  }
+  .pchoice { position: relative; padding: 2px 4px; margin-top: 1px; display: flex; justify-content: space-between; gap: 8px; }
+  .pbar { position: absolute; left: 0; top: 0; bottom: 0; background: rgba(155, 188, 15, 0.16); z-index: 0; border-radius: 2px; }
   .pchoice span { position: relative; z-index: 1; }
   .pchoice .n { color: var(--lcd); }
-  #workers {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-2);
-  }
-  .worker {
-    background: var(--panel);
-    border: 1px solid var(--line);
-    padding: 8px var(--space-3);
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: 6px 12px;
-    flex: 1 1 16rem;
-    min-width: 0;
-  }
+  #workers { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+  .worker { background: var(--panel); border: 1px solid var(--line); padding: 8px var(--space-3); display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; flex: 1 1 16rem; min-width: 0; }
   .worker .addr { color: var(--cream); overflow-wrap: anywhere; }
   .worker .ago { color: var(--bezel); font-size: 11px; }
   .worker .job { overflow-wrap: anywhere; }
   #versions { color: var(--bezel); font-size: 11px; font-family: ui-monospace, monospace; }
   .worker .ver { color: var(--bezel); font-family: ui-monospace, monospace; font-size: 11px; }
   .ver-summary { color: var(--cream); font-family: ui-monospace, monospace; font-size: 12px; margin-bottom: 6px; }
-  .section-top {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: var(--space-3);
-    margin-bottom: var(--space-3);
-  }
+  .section-top { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-3); }
   .section-top .section-h { margin: 0; }
-  .filters {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-2) var(--space-4);
-  }
-  .filter-group {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-1);
-    align-items: center;
-  }
+  .filters { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); }
+  .filter-group { display: flex; flex-wrap: wrap; gap: var(--space-1); align-items: center; }
   .filter-group span { color: var(--bezel); font-size: 11px; margin-right: 2px; }
-  .filter {
-    background: var(--panel);
-    border: 1px solid var(--line);
-    color: var(--cream);
-    padding: 3px 8px;
-    font-size: 11px;
-  }
+  .filter { background: var(--panel); border: 1px solid var(--line); color: var(--cream); padding: 3px 8px; font-size: 11px; }
   .filter:hover { border-color: var(--bezel); }
-  .filter[aria-pressed="true"] {
-    background: var(--lcd-dark);
-    border-color: var(--lcd);
-    color: var(--lcd);
-  }
+  .filter[aria-pressed="true"] { background: var(--lcd-dark); border-color: var(--lcd); color: var(--lcd); }
   #history { display: grid; }
   #failures { display: grid; gap: var(--space-2); }
-  .fail-card {
-    background: var(--panel);
-    border: 1px solid var(--line);
-    padding: var(--space-3);
-    display: grid;
-    gap: var(--space-2);
-  }
+  .fail-card { background: var(--panel); border: 1px solid var(--line); padding: var(--space-3); display: grid; gap: var(--space-2); }
   .fail-pat { font-family: Syne, sans-serif; font-weight: 700; overflow-wrap: anywhere; }
   .fail-ex { color: var(--bezel); font-size: 11px; overflow-wrap: anywhere; }
   .fail-meta { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
-  .fail-act {
-    background: var(--lcd-dark);
-    border: 1px solid var(--lcd);
-    color: var(--lcd);
-    padding: 4px 10px;
-    font-size: 11px;
-  }
+  .fail-act { background: var(--lcd-dark); border: 1px solid var(--lcd); color: var(--lcd); padding: 4px 10px; font-size: 11px; }
   .fail-act:disabled { opacity: 0.45; cursor: default; }
   .issue-a { color: var(--lcd); }
-  /* minmax(0,1fr): a plain 1fr keeps the content's min-content as its floor,
-     and the nowrap outcome span (28ch) plus the chip column then push the row
-     past the viewport on phones */
-  .hist-row {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: stretch;
-    border-bottom: 1px solid var(--line);
-  }
-  /* Every track is content-independent: with an auto outcome column or a
-     minmax(8rem,...) chip floor, one row's long goal chip or short outcome
-     moves every column boundary, so the table never lined up across rows.
-     Chips wrap inside their track, ids wrap anywhere, the outcome ellipsizes.
-     11rem holds the status chip plus the 28ch outcome at 11px. */
+  .hist-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: stretch; border-bottom: 1px solid var(--line); }
   .hist-row:hover { background: var(--panel); }
   .hist-row.selected { background: var(--panel-2); box-shadow: inset 3px 0 0 var(--lcd); }
-  .hist {
-    display: grid;
-    grid-template-columns: 6.5rem minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 1fr) 11rem;
-    align-items: center;
-    gap: 6px 14px;
-    width: 100%;
-    text-align: left;
-    background: transparent;
-    border: 0;
-    padding: 8px 4px;
-    color: var(--cream);
-  }
-  .hist-del {
-    background: transparent;
-    border: 0;
-    color: var(--bezel);
-    padding: 8px 10px;
-    font-size: 11px;
-    align-self: center;
-  }
+  .hist { display: grid; grid-template-columns: 6.5rem minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 1fr) 11rem; align-items: center; gap: 6px 14px; width: 100%; text-align: left; background: transparent; border: 0; padding: 8px 4px; color: var(--cream); }
+  .hist-del { background: transparent; border: 0; color: var(--bezel); padding: 8px 10px; font-size: 11px; align-self: center; }
   .hist-del:hover { background: var(--red); color: #fff8e8; }
   .hist-when { color: var(--bezel); font-size: 11px; }
   .hist-id { font-family: Syne, sans-serif; font-weight: 700; overflow-wrap: anywhere; }
   .hist-where { color: var(--cream); }
   .hist-out { display: flex; flex-direction: column; gap: 2px; align-items: flex-end; text-align: right; }
   .hist-outcome { color: var(--bezel); font-size: 11px; max-width: 28ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .pager {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    margin-top: var(--space-2);
-  }
+  .pager { display: flex; align-items: center; gap: var(--space-2); margin-top: var(--space-2); }
   .pager-count, .pager-page { color: var(--bezel); font-size: 11px; }
-  .pager-btn {
-    background: transparent;
-    border: 1px solid var(--line);
-    color: var(--cream);
-    padding: 4px 10px;
-    font-size: 11px;
-    cursor: pointer;
-  }
+  .pager-btn { background: transparent; border: 1px solid var(--line); color: var(--cream); padding: 4px 10px; font-size: 11px; cursor: pointer; }
   .pager-btn:not(:disabled):hover { background: var(--panel); }
   .pager-btn:disabled { opacity: 0.35; cursor: default; }
   .card-err { color: var(--red); margin-top: 6px; }
   @media (max-width: 800px) {
-    /* one column: an auto chip column next to a 1fr track is greedy (it takes
-       its full max-content and squeezes the other track to zero), so stack
-       everything and let the chips wrap at the available width */
     .hist { grid-template-columns: minmax(0, 1fr); gap: 4px 14px; }
     .hist-out { align-items: flex-start; text-align: left; }
   }
-  /* touch devices at any size: real tap areas, not desktop crumbs */
   @media (pointer: coarse) {
     .queue-btn, .submit { min-height: 44px; }
     .filter { padding: 8px 12px; font-size: 12px; min-height: 40px; }
@@ -497,30 +223,18 @@
   }
   @media (max-width: 700px) {
     body { font-size: 14px; }
-    /* sticky status bar: the counts stay visible while scrolling history */
-    .bar {
-      position: sticky;
-      top: 0;
-      z-index: 20;
-      padding: max(12px, env(safe-area-inset-top)) var(--space-4) var(--space-3);
-      gap: var(--space-2) var(--space-4);
-    }
-    /* row 1: title + action; row 2: the counts */
+    .bar { position: sticky; top: 0; z-index: 20; padding: max(12px, env(safe-area-inset-top)) var(--space-4) var(--space-3); gap: var(--space-2) var(--space-4); }
     .bar h1 { font-size: 1.375rem; order: 1; }
     .queue-btn { order: 2; }
     .counts { flex-wrap: wrap; flex-basis: 100%; order: 3; gap: 12px; font-size: 12px; }
     #versions, .worker .ver { overflow-wrap: anywhere; }
-    /* the version line takes the row to itself instead of mid-line wrapping */
     #versions { flex-basis: 100%; }
-    /* one full-width field per row; 16px stops iOS Safari zooming on focus */
     .fields { grid-template-columns: 1fr; max-width: none; }
     input, select { font-size: 16px; }
-    /* a tapped card opens the watch pane above the fold; clear the sticky bar */
     #watch { scroll-margin-top: calc(52px + env(safe-area-inset-top)); }
+    .map-scroll { max-height: 360px; }
   }
-  @media (prefers-reduced-motion: reduce) {
-    * { transition: none !important; }
-  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 </head>
 <body>
@@ -553,30 +267,18 @@
             <option value="bulbasaur">Bulbasaur (loses the rival fight)</option>
           </select>
         </label>
-        <label class="scripted-only" hidden>walk to
-          <input name="dest" value="viridian pokemon center" autocomplete="off">
-        </label>
-        <label class="llm-only">goal
-          <input name="goal" value="Earn the Boulder Badge." autocomplete="off">
-        </label>
+        <label class="scripted-only" hidden>walk to <input name="dest" value="viridian pokemon center" autocomplete="off"></label>
+        <label class="llm-only">goal <input name="goal" value="Earn the Boulder Badge." autocomplete="off"></label>
         <label>seed <input name="seed" type="number" value="0"></label>
         <label>fps <input name="fps" type="number" value="60"></label>
         <label>max rounds <input name="max_rounds" type="number" value="32"></label>
         <label>max frames <input name="max_frames" type="number" value="0"></label>
-        <label class="check">keep going
-          <input name="endless" type="checkbox">
-        </label>
+        <label class="check">keep going <input name="endless" type="checkbox"></label>
         <label class="endless-only" hidden>next seed
-          <select name="seed_mode">
-            <option value="same">same seed</option>
-            <option value="random" selected>random seed</option>
-          </select>
+          <select name="seed_mode"><option value="same">same seed</option><option value="random" selected>random seed</option></select>
         </label>
       </div>
-      <div class="form-row">
-        <button type="submit" class="submit">Queue a run</button>
-        <span id="form-error" role="status"></span>
-      </div>
+      <div class="form-row"><button type="submit" class="submit">Queue a run</button><span id="form-error" role="status"></span></div>
     </form>
   </section>
   <main>
@@ -586,30 +288,22 @@
         <button type="button" class="close-detail" id="detail-close">Close</button>
       </div>
       <div class="lcd" id="detail-lcd"></div>
+      <section class="map-panel" id="detail-map-panel" hidden aria-label="Live map">
+        <div class="map-head"><strong>Map</strong><span id="detail-map-status"></span></div>
+        <div class="map-scroll"><canvas id="detail-map" role="img" aria-label="Current map with player, sprites and movement trail"></canvas></div>
+        <div class="map-legend"><span><b>@</b> you</span><span><b>■</b> sprite</span><span><b>·</b> trail</span><span><b>W</b> warp</span><span><b>#</b> wall</span></div>
+      </section>
       <div class="watch-side">
         <div class="chips" id="detail-chips"></div>
         <div id="detail-body"></div>
       </div>
     </aside>
+    <section><h2 class="section-h">Live</h2><div id="live"></div></section>
+    <section><h2 class="section-h">Failures</h2><div id="failures"></div></section>
+    <section><h2 class="section-h">Workers</h2><div id="workers"></div></section>
     <section>
-      <h2 class="section-h">Live</h2>
-      <div id="live"></div>
-    </section>
-    <section>
-      <h2 class="section-h">Failures</h2>
-      <div id="failures"></div>
-    </section>
-    <section>
-      <h2 class="section-h">Workers</h2>
-      <div id="workers"></div>
-    </section>
-    <section>
-      <div class="section-top">
-        <h2 class="section-h">History</h2>
-        <div class="filters" id="hist-filters"></div>
-      </div>
-      <div id="history"></div>
-      <div class="pager" id="hist-pager"></div>
+      <div class="section-top"><h2 class="section-h">History</h2><div class="filters" id="hist-filters"></div></div>
+      <div id="history"></div><div class="pager" id="hist-pager"></div>
     </section>
   </main>
 <script src="/ui.js"></script>
