@@ -1,0 +1,49 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Go tests (ROM-free)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout PokePilot
+        uses: actions/checkout@v4
+
+      # PokePilot's go.mod uses a developer-local absolute replace for gomeboy.
+      # Checkout the dependency in CI and rewrite only the runner's working copy.
+      - name: Checkout gomeboy
+        uses: actions/checkout@v4
+        with:
+          repository: maestroi/gomeboy
+          path: .deps/gomeboy
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Point gomeboy replace at CI checkout
+        run: go mod edit -replace=github.com/thelolagemann/gomeboy=${{ github.workspace }}/.deps/gomeboy
+
+      # ROM-backed fixture tests already skip when POKEMON_RED_ROM is unset.
+      # -short also skips intentionally long journey tests, so CI never needs
+      # a commercial Pokemon ROM or a full Pokemon gameplay run.
+      - name: Run short test suite
+        env:
+          POKEMON_RED_ROM: ""
+        run: go test -short -count=1 ./...
