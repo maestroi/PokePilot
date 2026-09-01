@@ -251,8 +251,15 @@
   function paintMap(canvas, asset, run) {
     if (!asset || !asset.width || !asset.height || typeof asset.cells !== "string") return false;
     const scroll = canvas.closest(".map-scroll");
-    const fit = scroll ? Math.floor(Math.max(1, scroll.clientWidth - 20) / asset.width) : 6;
-    const px = Math.max(4, Math.min(10, fit || 6));
+    let availW = 320, availH = 288;
+    if (scroll) {
+      const cs = getComputedStyle(scroll);
+      availW = Math.max(1, scroll.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight));
+      availH = Math.max(1, scroll.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom));
+    }
+    if (availW < 8 || availH < 8) return false;
+    const fit = Math.max(1, Math.floor(Math.min(availW / asset.width, availH / asset.height)));
+    const px = Math.max(6, fit);
     canvas.width = asset.width * px;
     canvas.height = asset.height * px;
     const ctx = canvas.getContext("2d");
@@ -323,15 +330,15 @@
       panel.hidden = true;
       return;
     }
+    panel.hidden = false;
     status.textContent = tileLabel(run);
     loadMapAsset(run.map).then((asset) => {
       if (serial !== mapRenderSerial || selected !== run.run_id) return;
-      if (!asset || !paintMap(canvas, asset, run)) {
-        panel.hidden = true;
-        return;
-      }
-      panel.hidden = false;
-      status.textContent = tileLabel(run);
+      const paint = () => {
+        if (serial !== mapRenderSerial || selected !== run.run_id) return;
+        if (!asset || !paintMap(canvas, asset, run)) panel.hidden = true;
+      };
+      requestAnimationFrame(paint);
     });
   }
 
@@ -624,6 +631,19 @@
     } catch (e) { wallDown = true; }
     render();
   }
+
+  (function watchMapSize() {
+    const scroll = document.querySelector(".map-scroll");
+    if (!scroll) return;
+    let timer = 0;
+    new ResizeObserver(() => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        const run = (snap.runs || []).find((r) => r.run_id === selected);
+        if (run) renderMap(run);
+      }, 50);
+    }).observe(scroll);
+  })();
 
   $("detail-map").addEventListener("mousemove", (ev) => {
     const canvas = ev.currentTarget, data = canvas._mapHit;
