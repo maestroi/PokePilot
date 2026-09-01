@@ -6,12 +6,22 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"flag"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 	"time"
+)
+
+const (
+	serverReadHeaderTimeout = 5 * time.Second
+	serverIdleTimeout       = 60 * time.Second
+	serverShutdownTimeout   = 10 * time.Second
 )
 
 // version is this build's identity (git SHA), stamped by the Dockerfile via
@@ -65,7 +75,36 @@ func main() {
 	} else {
 		log.Printf("pokewall listening on http://%s (dumps in %s)", *httpAddr, *dumpsDir)
 	}
-	if err := http.ListenAndServe(*httpAddr, wall.Handler()); err != nil {
-		log.Fatalf("pokewall: server stopped: %v", err)
+
+	server := &http.Server{
+		Addr:              *httpAddr,
+		Handler:           wall.Handler(),
+		ReadHeaderTimeout: serverReadHeaderTimeout,
+		IdleTimeout:       serverIdleTimeout,
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- server.ListenAndServe()
+	}()
+
+	select {
+	case err := <-errCh:
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("pokewall: server stopped: %v", err)
+		}
+	case <-ctx.Done():
+		log.Printf("pokewall: shutting down")
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), serverShutdownTimeout)
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			log.Printf("pokewall: graceful shutdown failed: %v", err)
+			_ = server.Close()
+		}
+		cancel()
+		if err := <-errCh; err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("pokewall: server stopped during shutdown: %v", err)
+		}
 	}
 }
