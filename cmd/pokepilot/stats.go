@@ -53,9 +53,9 @@ func (s *statsPlanner) Next(obs agent.Observation, offered []agent.Objective) (a
 	return o, err
 }
 
-func (s *statsPlanner) NextFeedback(obs agent.Observation, offered []agent.Objective, feedback string) (agent.Objective, error) {
+func (s *statsPlanner) NextRetry(obs agent.Observation, offered []agent.Objective, r agent.Retry) (agent.Objective, error) {
 	start := time.Now()
-	o, err := s.inner.NextFeedback(obs, offered, feedback)
+	o, err := s.inner.NextRetry(obs, offered, r)
 	s.record(obs, len(offered), o, err, time.Since(start))
 	return o, err
 }

@@ -255,6 +255,39 @@ func TestExecuteGoToFleesWildEncounters(t *testing.T) {
 	}
 }
 
+// TestExecuteCatchMissIsAFailure is the S10-2d pin for the KindCatch
+// branch: a hunt that ended without the species in the party is a FAILURE,
+// not a quietly recorded done round. The route1 fixture's bag holds no
+// balls, so the hunt runs out of balls after the first non-target
+// encounter — a deterministic miss on replay, and the exact shape a
+// planner sees when the grass does not cooperate. Before the fix this
+// outcome returned nil: the round was recorded DONE, Knowledge counted it
+// in Completed, and the next round's menu line grew a "(done 1x)" for a
+// catch that never happened.
+func TestExecuteCatchMissIsAFailure(t *testing.T) {
+	e := fixture.Load(t, "route1")
+
+	o := agent.Objective{Kind: agent.KindCatch, Species: 0x24} // PIDGEY
+	err := agent.Execute(e, e.ROM(), o)
+	if err == nil {
+		t.Fatalf("Execute %s: want an error (the hunt did not end with a PIDGEY in the party), got nil", o)
+	}
+	if !strings.Contains(err.Error(), "no PIDGEY caught") {
+		t.Fatalf("error = %v, want the missed-hunt text naming the species and the outcome", err)
+	}
+
+	// The failure left the world where it can continue: the party did not
+	// grow, and the player is still standing on Route 1.
+	var mem state.Mem
+	state.Snapshot(e, &mem)
+	if party := state.DecodeParty(&mem); party.Count != 1 {
+		t.Fatalf("party count = %d, want 1 (the hunt added no mon)", party.Count)
+	}
+	if cur := mem.U8(sym.CurMap); cur != 0x0c {
+		t.Fatalf("wCurMap = %#04x, want 0x0c (route 1): the miss did not black out", cur)
+	}
+}
+
 // TestExecuteUseItemHealsTheTarget is the end-to-end proof of KindUseItem:
 // from a fixture, damage taken, Execute the objective, and assert from RAM
 // that the target's HP ROSE. A returned nil is not evidence: UseFieldItem

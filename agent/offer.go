@@ -502,19 +502,37 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 	// retreat. That is not "unwise", it is "already answered" — the same
 	// ground the satisfied starter, the full party's heal and medReaches
 	// stand on. MEASURED 2026-08-31: rounds 13 and 14 of the best run to
-	// date were back-to-back train retreats from a hurt lead.
+	// date were back-to-back train retreats from a hurt lead. The line is
+	// skill's to own: BelowRetreatLine reads retreatLineNum/Den, the
+	// fraction Train enforces, and a lead at or above it is still offered.
 	//
 	// The planner's correct response is still its own to find: KindHeal and
 	// the field medicine are on the menu whenever they would do something,
 	// and the party's HP is in the observation either way.
-	if obs.HasGrass && len(obs.Party) > 0 && !skill.BelowRetreatLine(obs.Party[0].HP, obs.Party[0].MaxHP) {
-		if target := int(obs.Party[0].Level) + trainStep; target <= 100 {
-			out = append(out, Objective{Kind: KindTrain, Level: uint8(target)})
+	if obs.HasGrass && len(obs.Party) > 0 {
+		lead := obs.Party[0]
+		if !skill.BelowRetreatLine(lead.HP, lead.MaxHP) {
+			if target := int(lead.Level) + trainStep; target <= 100 {
+				out = append(out, Objective{Kind: KindTrain, Level: uint8(target)})
+			}
 		}
 	}
+	// The shelf is the clerk's own ROM data (Observation.MartStock, decoded
+	// by Observe from the clerk's text script — red/rom.MartItems), not a
+	// fixed list: the menu used to offer POTION at every mart, and the
+	// Viridian Mart does not stock it, so the first shop every run reached
+	// carried a guaranteed-failing objective (MEASURED 2026-08-31: the
+	// planner picked it, Buy returned ErrNotInStock, and the run died four
+	// rounds later). One buy per stocked item, like the wild-grass catch
+	// offers: gated on the map's own table rather than a guess. A shelf that
+	// cannot be read offers NOTHING — an objective that cannot succeed is
+	// worse than an absent one: it costs a round, a model call, and (before
+	// the shop closed itself) the run.
 	if isMart(obs.MapName) {
-		if it, ok := ItemByName("potion"); ok {
-			out = append(out, Objective{Kind: KindBuy, Item: it, Qty: 3})
+		for _, name := range obs.MartStock {
+			if it, ok := ItemByName(name); ok {
+				out = append(out, Objective{Kind: KindBuy, Item: it, Qty: 3})
+			}
 		}
 	}
 
@@ -587,6 +605,17 @@ func hasBadge(obs Observation, b state.Badge) bool {
 // levels is a step the run can finish in a handful of battles and then be
 // offered again; a distant target is one long objective whose failure says
 // nothing about which part of it went wrong.
+//
+// SETTLED IN S10-1: with the reply argument-free, one rung per round is the
+// right granularity, and this value stays 2. A long climb costs more rounds
+// (each is a model call), but a bigger rung just moves the cost into a
+// longer, less attributable objective, and the offered target is always a
+// step the run has not taken — climbing is choosing Train again, which the
+// model answers reliably because it is the same index it already picked. If
+// a climb ever proves too slow, the answer is ANOTHER MENU ENTRY (a second
+// Train objective at a larger step), never another reply field: adding an
+// entry reuses the index, and the per-Kind schema test in llm_test.go would
+// fail a reply field.
 const trainStep = 2
 
 // monHurt says one mon is fainted or down to half HP or less. Half, not

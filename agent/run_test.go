@@ -22,6 +22,23 @@ func testBudget() agent.Budget {
 	return agent.Budget{MaxRounds: 10, MaxFrames: 10_000_000}
 }
 
+// TestStopZeroValueIsUnset pins the invariant the S7-4 failure was built on:
+// the zero value of Stop must mean "no reason set yet", never a real reason.
+// StopDone used to be Stop(0), so a finished planner read as "keep going" in
+// a "stop != 0" check and Execute ran on an empty Objective. If a Stop
+// reason is ever renumbered ahead of StopUnset, this test fails instead of
+// the whole suite dying with StopFailed.
+func TestStopZeroValueIsUnset(t *testing.T) {
+	if agent.Stop(0) != agent.StopUnset {
+		t.Fatalf("Stop(0) = %d, want StopUnset (the zero value must mean unset)", agent.Stop(0))
+	}
+	for _, s := range []agent.Stop{agent.StopDone, agent.StopStuck, agent.StopBudget, agent.StopFailed, agent.StopError} {
+		if s == agent.StopUnset {
+			t.Fatalf("Stop reason %d collides with StopUnset: a reported reason must not be the zero value", s)
+		}
+	}
+}
+
 // TestRunDone runs starter -> walk to Pallet Town and expects the planner to
 // run out of objectives: StopDone, two rounds, and the player on map 0x00.
 func TestRunDone(t *testing.T) {
@@ -297,6 +314,54 @@ func TestRunFailedObjectiveFeedsNextRound(t *testing.T) {
 	}
 	if res.Final.PartyCount != 1 {
 		t.Errorf("Final.PartyCount = %d, want 1 (the starter started from the failure's aftermath)", res.Final.PartyCount)
+	}
+}
+
+// TestRunRefusedPurchaseIsAFailureNotADoneRound is the Run-level half of
+// S10-2d: a purchase the clerk refuses must land in the failure tally the
+// planner reads next round, not in Completed. The viridian_mart fixture
+// stands the player facing the clerk, and the Viridian Mart stocks POKe
+// BALL, ANTIDOTE, PARLYZ HEAL and BURN HEAL — no POTION — so "buy 1
+// POTION" is a deterministic refusal (ErrNotInStock) on replay. Before the
+// fix the round came back nil: history said "done", Knowledge counted the
+// refused purchase in Completed, and the menu line grew a "(done 1x)" for
+// something the clerk had refused — the planner then had no reason to stop
+// choosing it, which is exactly the loop that killed the measured run four
+// rounds later (skill/shop.go's ErrNotInStock comment keeps the record).
+func TestRunRefusedPurchaseIsAFailureNotADoneRound(t *testing.T) {
+	e := fixture.Load(t, "viridian_mart")
+
+	p := &capturePlanner{objs: []agent.Objective{
+		{Kind: agent.KindBuy, Item: 0x14, Qty: 1}, // POTION: not stocked in Viridian
+	}}
+	res := agent.Run(e, e.ROM(), p, testBudget())
+
+	if res.Stop != agent.StopDone {
+		t.Fatalf("Stop = %d, want StopDone (a refused purchase does not end the run)", res.Stop)
+	}
+	if len(res.Completed) != 0 {
+		t.Fatalf("Completed = %v, want empty (the purchase did not happen)", res.Completed)
+	}
+	if res.Err != nil {
+		t.Fatalf("Err = %v, want nil (the refusal was recovered from, not terminal)", res.Err)
+	}
+
+	// The next round's observation carries the refusal as a FAILED round
+	// with the game's own words, so the planner can react (go elsewhere)
+	// instead of re-choosing a done-marked purchase.
+	if len(p.seen) != 2 {
+		t.Fatalf("len(seen) = %d, want 2 (initial + one per round)", len(p.seen))
+	}
+	obs := p.seen[1]
+	if len(obs.History) != 1 {
+		t.Fatalf("History = %+v, want the refused purchase round", obs.History)
+	}
+	h := obs.History[0]
+	if h.Objective != "buy 1 POTION" || !strings.HasPrefix(h.Outcome, "failed: ") {
+		t.Fatalf("History[0] = %+v, want {buy 1 POTION failed: ...}", h)
+	}
+	if !strings.Contains(h.Outcome, "does not stock") {
+		t.Errorf("History[0].Outcome = %q, want the clerk's refusal quoted back", h.Outcome)
 	}
 }
 
@@ -729,15 +794,16 @@ func TestRunCheckpointRingIsBounded(t *testing.T) {
 // replyPlanner is a scripted planner that also implements FeedbackPlanner:
 // it can reject its first Next with a malformed-reply error (the shape of
 // an LLM planner's "argument does not apply" rejection) and then answer.
-// It records every feedback string it is handed so a test can assert the
-// rejection text actually reached the re-prompt, and counts every ask.
+// It records every Retry it is handed so a test can assert what the re-ask
+// differs by (feedback text, temperature, max_tokens), and counts every ask.
 type replyPlanner struct {
 	objs      []agent.Objective
-	rejectErr error // returned by the next `rejects` asks, Next and NextFeedback alike
+	rejectErr error // returned by the next `rejects` asks, Next and NextRetry alike
 	rejects   int
 	next      int
 	asks      int
-	feedback  []string
+	feedback  []string // the Feedback half of every Retry handed to NextRetry
+	retries   []agent.Retry // every Retry handed to NextRetry, in order
 }
 
 func (p *replyPlanner) take() (agent.Objective, error) {
@@ -758,9 +824,12 @@ func (p *replyPlanner) Next(agent.Observation, []agent.Objective) (agent.Objecti
 	return p.take()
 }
 
-func (p *replyPlanner) NextFeedback(obs agent.Observation, offered []agent.Objective, feedback string) (agent.Objective, error) {
+func (p *replyPlanner) NextRetry(obs agent.Observation, offered []agent.Objective, r agent.Retry) (agent.Objective, error) {
 	p.asks++
-	p.feedback = append(p.feedback, feedback)
+	p.retries = append(p.retries, r)
+	if r.Feedback != "" {
+		p.feedback = append(p.feedback, r.Feedback)
+	}
 	return p.take()
 }
 
@@ -839,6 +908,92 @@ func TestRunRejectedReplyExhaustsRetries(t *testing.T) {
 	}
 	if res.Rounds != 0 || len(res.Completed) != 0 {
 		t.Fatalf("Rounds = %d Completed = %v, want 0/empty (no objective ran)", res.Rounds, res.Completed)
+	}
+}
+
+// TestRunModelMismatchNotRetried is the class that must NOT be retried: a
+// reply answered by a different model than the one requested is a serving
+// defect, and no re-ask changes which model the server loads. The old
+// mechanism spent MaxReplyRetries identical asks on it; the run must stop
+// after exactly one ask.
+func TestRunModelMismatchNotRetried(t *testing.T) {
+	e := loadFixture(t)
+
+	// More rejections than any retry budget: if the class were misread as
+	// retryable, the run would burn MaxReplyRetries asks.
+	p := &replyPlanner{
+		rejectErr: fmt.Errorf("server: %w: requested %q but %q answered", agent.ErrModelMismatch, "qwen3.5-4b", "other"),
+		rejects:   10,
+	}
+	res := agent.Run(e, e.ROM(), p, testBudget())
+
+	if res.Stop != agent.StopError {
+		t.Fatalf("Stop = %d, want StopError (a mismatched model is a finding): Err = %v", res.Stop, res.Err)
+	}
+	if p.asks != 1 {
+		t.Fatalf("asks = %d, want 1: a model mismatch cannot change on a re-ask", p.asks)
+	}
+	if res.ReplyRetries != 0 {
+		t.Fatalf("ReplyRetries = %d, want 0 (nothing was re-asked)", res.ReplyRetries)
+	}
+}
+
+// TestRunLengthTruncationRetriedWithLargerBudget pins the "length" design:
+// finish_reason "length" means the reply was cut off at the completion
+// budget, so the retry differs by REQUEST, not by prompt — max_tokens goes
+// up and the prompt is unchanged (no feedback quoted). A re-ask of the same
+// request truncates again at the same token.
+func TestRunLengthTruncationRetriedWithLargerBudget(t *testing.T) {
+	e := loadFixture(t)
+
+	p := &replyPlanner{
+		rejectErr: fmt.Errorf("agent: llm planner: %w: finish_reason %q", agent.ErrNotFinished, "length"),
+		rejects:   1, // the first ask truncates; the re-ask answers normally
+		objs:      []agent.Objective{{Kind: agent.KindStarter}},
+	}
+	res := agent.Run(e, e.ROM(), p, testBudget())
+
+	if res.Stop != agent.StopDone {
+		t.Fatalf("Stop = %d, want StopDone (the re-ask answered): Err = %v", res.Stop, res.Err)
+	}
+	if res.ReplyRetries != 1 {
+		t.Fatalf("ReplyRetries = %d, want 1", res.ReplyRetries)
+	}
+	if len(p.retries) != 1 {
+		t.Fatalf("retries = %v, want exactly one re-ask", p.retries)
+	}
+	r := p.retries[0]
+	if r.MaxTokensFactor != 2 {
+		t.Errorf("MaxTokensFactor = %d, want 2 (the budget is what must change)", r.MaxTokensFactor)
+	}
+	if r.Feedback != "" {
+		t.Errorf("Feedback = %q, want empty: the prompt is unchanged, the budget differs", r.Feedback)
+	}
+	if r.Temperature != nil {
+		t.Errorf("Temperature = %v, want nil: sampling is not the defect", r.Temperature)
+	}
+}
+
+// TestRunOtherFinishReasonNotRetried: a non-stop finish_reason that is not
+// "length" (a content filter, ...) is deterministic at temperature 0 with an
+// unchanged prompt — a re-ask returns the same bytes, so it is not retried.
+func TestRunOtherFinishReasonNotRetried(t *testing.T) {
+	e := loadFixture(t)
+
+	p := &replyPlanner{
+		rejectErr: fmt.Errorf("agent: llm planner: %w: finish_reason %q", agent.ErrNotFinished, "content_filter"),
+		rejects:   10,
+	}
+	res := agent.Run(e, e.ROM(), p, testBudget())
+
+	if res.Stop != agent.StopError {
+		t.Fatalf("Stop = %d, want StopError: Err = %v", res.Stop, res.Err)
+	}
+	if p.asks != 1 {
+		t.Fatalf("asks = %d, want 1: a non-length non-stop finish cannot change on a re-ask", p.asks)
+	}
+	if res.ReplyRetries != 0 {
+		t.Fatalf("ReplyRetries = %d, want 0", res.ReplyRetries)
 	}
 }
 
@@ -981,5 +1136,105 @@ func TestRunResumesKnowledge(t *testing.T) {
 		if o.Kind == agent.KindTalk && o.X == 2 && o.Y == 1 {
 			t.Fatalf("resumed run re-offers the one-shot talk at (2,1) the first run completed: %v", resumedOffered)
 		}
+	}
+}
+
+// The Viridian Forest North Gate Super Nerd says, across two pages of one
+// utterance:
+//
+//	page 1: "Many POKéMON live only in forests and caves."
+//	page 2: "You need to look everywhere to get different kinds!"
+//
+// page 2 carries the "you need" shape. But the Gen 1 dialogue box shows only
+// TWO text rows and scrolls (pokered/home/text.asm ScrollTextUpOneLine:
+// "move both rows of text in the normal text box up one row"), so a three-
+// line page is never all on screen at once: when line 3 starts typing, line
+// 1 is erased. The per-frame dialogue tape settles on the FINAL window of
+// each page (two consecutive identical samples), so it keeps the scrolled
+// line with the first line of the page gone. MEASURED 2026-09-01 on this
+// fixture: the tape captures the two pages as
+//
+//	"only in forests and caves."
+//	"everywhere to get different kinds!"
+//
+// — "You need to look" scrolled off before the tape settled, so the captured
+// line does not contain "you need" and the requirement is not harvested.
+// These are the verbatim strings the live tape produced on the run this test
+// asserts.
+const (
+	superNerdPage1Captured = "only in forests and caves."
+	superNerdPage2Captured = "everywhere to get different kinds!"
+)
+
+// TestRunHearsRequirementLive is the chain S9-6 proved link by link in unit
+// tests, running live for the first time: a real Talk, through the per-frame
+// dialogue tape, into RecentDialogue, through SawDialogue, into
+// Knowledge.Requirements, out to Observation.Requirements. S9-12 measured
+// Requirements empty in every observation of every earlier live run — no
+// requirement sentence was in range. The forest_north_gate fixture (S10-8)
+// ends two steps from the Super Nerd, so one talk reaches him.
+//
+// FINDING (the reason this test asserts what it does): the chain runs live
+// end-to-end — the talk is heard, the lines reach RecentDialogue, and
+// SawDialogue runs over them — but the requirement is NOT harvested. The
+// Super Nerd's "you need" phrase sits on the FIRST line of page 2, and the
+// dialogue box's two-row scroll erases that line before the tape settles on
+// the page's final window, so the captured line is "everywhere to get
+// different kinds!" — no "you need", no match. This is not a shape-list gap
+// ("you need" is present in requirementShapes and is the right idiom) and
+// not an emulator bug (the two-row scroll is real Gen 1 behaviour); it is
+// the tape not accumulating across the box's scroll. See the S10-9 RUNNOTES
+// for the follow-up (teach the tape to keep the line that scrolls off).
+//
+// Written with the same suspicion as TestRunResumesKnowledge, which
+// documents a real "passes for the wrong reason" hazard: each assertion
+// must be able to fail for the reason this task cares about. StopDone plus
+// one Completed rules out a RecentDialogue entry that arrived without the
+// utterance ever happening (a failed talk stops the run before that); the
+// exact-string assertions pin the VERBATIM lines the tape produced, so the
+// test fails if the capture changes (a scroll fix that recovers "You need
+// to look" would change superNerdPage2Captured and fail this test, which is
+// the point — the finding is then re-examined); the empty-Requirements
+// assertion is the guard that the filter has not quietly become "keep
+// everything" (it must still drop the chatter page even though it heard it).
+func TestRunHearsRequirementLive(t *testing.T) {
+	e := fixture.Load(t, "forest_north_gate")
+
+	p := &capturePlanner{objs: []agent.Objective{
+		{Kind: agent.KindTalk, X: 3, Y: 2}, // the north gate's Super Nerd
+	}}
+	res := agent.Run(e, e.ROM(), p, testBudget())
+	if res.Stop != agent.StopDone {
+		t.Fatalf("Stop = %d, err = %v; want StopDone", res.Stop, res.Err)
+	}
+	if len(res.Completed) != 1 {
+		t.Fatalf("Completed = %v, want the single talk", res.Completed)
+	}
+
+	// The utterance was actually heard by the live tape this run. Both pages
+	// arrive as separate RecentDialogue entries (the box closes between
+	// them), each truncated to the page's final two-row window. Without this
+	// the Requirements assertion could be satisfied by a line that reached
+	// the observation by some other route.
+	got := map[string]bool{}
+	for _, line := range res.Final.RecentDialogue {
+		got[line] = true
+	}
+	for _, want := range []string{superNerdPage1Captured, superNerdPage2Captured} {
+		if !got[want] {
+			t.Fatalf("RecentDialogue = %q, want the verbatim captured page %q to have been heard live", res.Final.RecentDialogue, want)
+		}
+	}
+
+	// The finding: the requirement was NOT harvested. The "you need" phrase
+	// is on the first line of page 2, which the box's two-row scroll erased
+	// before the tape settled, so the captured line carries no shape. This
+	// assertion is the guard against a filter that has quietly become "keep
+	// everything": even though the run heard two dialogue lines, neither may
+	// land in Requirements (the chatter page is dropped for lack of a shape,
+	// and the requirement page for the same reason — its shape scrolled off).
+	if len(res.Final.Requirements) != 0 {
+		t.Fatalf("Requirements = %v, want empty: the box's two-row scroll erases "+
+			"the \"you need\" line before the tape settles, so no captured line carries a shape", res.Final.Requirements)
 	}
 }

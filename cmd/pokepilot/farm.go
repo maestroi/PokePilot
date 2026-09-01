@@ -218,7 +218,7 @@ func heartbeatLoop(client *farm.Client, runID string, snap func() farm.Heartbeat
 //
 // The emulator is single-goroutine: everything that steps or reads it runs
 // on this goroutine. The heartbeat goroutine sees only the plain snapshot.
-func runFarm(m *emu.Emu, client *farm.Client, bootState []byte, watchPort int) {
+func runFarm(m *emu.Emu, client *farm.Client, bootState []byte, watchPort int, checkpointDir string) {
 	tracer := newDialogueTracer()
 	snap := &heartbeatSnap{}
 	var mem state.Mem               // hoisted: every sample reuses this buffer
@@ -251,7 +251,7 @@ func runFarm(m *emu.Emu, client *farm.Client, bootState []byte, watchPort int) {
 			continue
 		}
 
-		runOne(m, client, *spec, planner, starter, dest, spec.Goal, fps, maxRounds, maxFrames, bootState, tracer, snap, &mem, addrs)
+		runOne(m, client, *spec, planner, starter, dest, spec.Goal, fps, maxRounds, maxFrames, bootState, tracer, snap, &mem, addrs, checkpointDir)
 	}
 }
 
@@ -303,7 +303,7 @@ func validateSpec(planner, starter, dest string) error {
 // runOne runs one leased spec end-to-end and always finishes it. The
 // heartbeat starts before gameplay and is stopped and joined before the
 // dump, so no heartbeat arrives after Finish.
-func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, dest, goal string, fps, maxRounds, maxFrames int, bootState []byte, tracer *dialogueTracer, snap *heartbeatSnap, mem *state.Mem, addrs []string) {
+func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, dest, goal string, fps, maxRounds, maxFrames int, bootState []byte, tracer *dialogueTracer, snap *heartbeatSnap, mem *state.Mem, addrs []string, checkpointDir string) {
 	// A new lease must not inherit the previous run's plan: the snap is
 	// reused for the worker's lifetime.
 	snap.store(farm.Heartbeat{RunID: spec.RunID})
@@ -325,8 +325,10 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 	m.Pace(fps)
 	m.TraceHeader(runHeader(planner, starter, dest, seed, burn))
 
-	checkpointDir := ""
-	if planner == "llm" {
+	// A caller-supplied -checkpoint-dir wins; only an "llm" planner with none
+	// given gets an ephemeral one, so the flag threaded from main.go is never
+	// silently discarded in favor of a temp dir nobody asked for.
+	if checkpointDir == "" && planner == "llm" {
 		dir, err := os.MkdirTemp("", "pokefarm-checkpoints-")
 		if err != nil {
 			log.Printf("farm: %s: checkpoint dir: %v", spec.RunID, err)
@@ -517,14 +519,14 @@ type reportingPlanner struct {
 }
 
 func (p reportingPlanner) Next(obs agent.Observation, offered []agent.Objective) (agent.Objective, error) {
-	return p.ask(obs, offered, "")
+	return p.ask(obs, offered, agent.Retry{})
 }
 
-func (p reportingPlanner) NextFeedback(obs agent.Observation, offered []agent.Objective, feedback string) (agent.Objective, error) {
-	return p.ask(obs, offered, feedback)
+func (p reportingPlanner) NextRetry(obs agent.Observation, offered []agent.Objective, r agent.Retry) (agent.Objective, error) {
+	return p.ask(obs, offered, r)
 }
 
-func (p reportingPlanner) ask(obs agent.Observation, offered []agent.Objective, feedback string) (agent.Objective, error) {
+func (p reportingPlanner) ask(obs agent.Observation, offered []agent.Objective, r agent.Retry) (agent.Objective, error) {
 	q := planQuestion(offered)
 	if p.snap != nil {
 		p.snap.storePlan(q, "")
@@ -533,8 +535,8 @@ func (p reportingPlanner) ask(obs agent.Observation, offered []agent.Objective, 
 		obj agent.Objective
 		err error
 	)
-	if feedback != "" {
-		obj, err = p.inner.(agent.FeedbackPlanner).NextFeedback(obs, offered, feedback)
+	if r != (agent.Retry{}) {
+		obj, err = p.inner.(agent.FeedbackPlanner).NextRetry(obs, offered, r)
 	} else {
 		obj, err = p.inner.Next(obs, offered)
 	}

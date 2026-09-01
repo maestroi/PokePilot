@@ -450,16 +450,19 @@ func (d *dialogueRecorder) reset() {
 //     agent.MapObjects, never a literal.
 //
 // The journey does NOT hard-fail when a leg is blocked by a PRE-EXISTING
-// issue, because two of them are not on this slice's surface and AGENTS.md
-// says to name them and hand them back rather than adopt them:
+// issue, because the S8-6 world.Build single-sub-tile defect is not on this
+// slice's surface and AGENTS.md says to name it and hand it back rather
+// than adopt it: it fragments Route 2, Route 4 and the Viridian Forest
+// (measured: "no path" within each), so Travel cannot always route through
+// them.
 //
-//   - The S8-6 world.Build single-sub-tile defect fragments Route 2, Route 4
-//     and the Viridian Forest (measured: "no path" within each), so Travel
-//     cannot always route through them.
-//   - The post_errand lead (species 177) has a type-ineffective stalemate
-//     with the (2,18) Youngster's mon (species 112): it looped to Battle's
-//     60000-frame cap even with full PP, so no forest path that crosses that
-//     trainer can clear it.
+// The journey starts from the forest_north_gate fixture (S10-8): the road
+// to the gate and the forest grind are the fixture's job, and starting at
+// the gate also sidesteps the (2,18) Youngster stalemate that stopped
+// earlier runs on the forest leg — the post_errand lead (species 177) has a
+// type-ineffective stalemate with the Youngster's mon (species 112): it
+// looped to Battle's 60000-frame cap even with full PP, so no forest path
+// that crosses that trainer can clear it.
 //
 // Cerulean itself is unreachable via Travel on this build: the Route 3 ->
 // Route 4 seam lands in a component of Route 4's west half that cannot reach
@@ -510,87 +513,17 @@ func TestCeruleanJourney(t *testing.T) {
 		}
 	}
 
-	e = fixture.Load(t, "post_errand")
+	e = fixture.Load(t, "forest_north_gate")
 	romData = e.ROM()
 	policy = skill.StatAwareMove(romData)
 
 	tape := &dialogueRecorder{}
 	e.OnFrame(tape.sample)
 
-	// Leg 1: Viridian City to the south gate, one row below the (5,0) forest
-	// warp — same leg as TestGymBoulderBadge.
-	if !leg(skill.Destination{Map: 0x32, X: 5, Y: 1}, "the south gate") {
-		reportStop("the south gate")
-		return
-	}
-	// Leg 2: into the forest, the training ground.
-	forest, ok := skill.Place("viridian forest")
-	if !ok {
-		diagFatalf(t, e, nil, `Place "viridian forest" not found`)
-	}
-	if !leg(forest, "the forest") {
-		reportStop("the forest")
-		return
-	}
-	// Back to the warp-free safe spot before any grind ping-pong.
-	safeSpot := skill.Destination{Map: 0x33, X: 17, Y: 40}
-	if !leg(safeSpot, "the safe spot") {
-		reportStop("the safe spot")
-		return
-	}
-
-	// Train the lead up to gymLeadLevel (beats Brock; Route 3's trainers are
-	// L1-6), with S7-8's session/heal/blackout loop. Best-effort: a stalemate
-	// here is the pre-existing trainer issue, reported and stopped.
-	totalBattles := 0
-	phaseRetries := 0
-	trained := false
-	for detours := 0; detours <= maxHealDetours && !trained; detours++ {
-		state.Snapshot(e, &mem)
-		lead := state.DecodeParty(&mem).Mons[0]
-		if int(lead.Level) >= gymLeadLevel {
-			trained = true
-			break
-		}
-		res, err := skill.Train(e, romData, gymLeadLevel, policy, trainBattleBudget)
-		totalBattles += res.Battles
-		if err != nil {
-			if strings.Contains(err.Error(), "no-encounter phase") && phaseRetries < maxPhaseRetries {
-				phaseRetries++
-				e.StepFrames(123)
-				continue
-			}
-			t.Logf("FINDING: training hit a wall (likely the (2,18) Youngster stalemate): %v", err)
-			break
-		}
-		state.Snapshot(e, &mem)
-		lead = state.DecodeParty(&mem).Mons[0]
-		if res.BlackedOut {
-			leg(safeSpot, "back to the safe spot after a blackout")
-			continue
-		}
-		if int(lead.Level) < gymLeadLevel && (res.Retreated || int(lead.HP)*3 < int(lead.MaxHP) || lead.Status != 0) {
-			center, ok := skill.Place("viridian pokemon center")
-			if !ok {
-				diagFatalf(t, e, nil, `Place "viridian pokemon center" not found`)
-			}
-			leg(center, "the Viridian Center to heal")
-			skill.Heal(e)
-			leg(safeSpot, "back to the safe spot after healing")
-		}
-	}
-	state.Snapshot(e, &mem)
-	if lead := state.DecodeParty(&mem).Mons[0]; int(lead.Level) < gymLeadLevel {
-		t.Logf("the lead is level %d after %d training battle(s); Brock will likely be a loss (game answering, not a defect)", lead.Level, totalBattles)
-	} else {
-		t.Logf("trained the lead to level %d in %d battles", lead.Level, totalBattles)
-	}
-
-	// Leg 3: the forest to the north gate.
-	if !leg(skill.Destination{Map: 0x2F, X: 5, Y: 1}, "the north gate") {
-		reportStop("the north gate (likely the (2,18) Youngster stalemate or forest fragmentation)")
-		return
-	}
+	// The road to the north gate is the fixture's job now (S10-8): the
+	// journey starts at the gate, past the (2,18) Youngster stalemate and
+	// the forest fragmentation that stopped earlier runs on the forest
+	// leg. The lead is already at gymLeadLevel, so there is no grind here.
 	// Leg 4: up Route 2 into Pewter — to the Center, healing before the gym.
 	center, ok := skill.Place("pewter pokemon center")
 	if !ok {

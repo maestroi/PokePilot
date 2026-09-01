@@ -148,174 +148,50 @@ func diagnosticBundle(e *emu.Emu, err error) string {
 	return b.String()
 }
 
-// TestGymBoulderBadge is the journey milestone: from the fresh post_errand
-// checkpoint (the player has just delivered Oak's parcel and is back in
-// Viridian City) it travels to the Pewter Gym, trains the lead first if it
-// is under the level that beats Brock, fights the gym, and proves the
+// TestGymBoulderBadge is the journey milestone: from the forest_north_gate
+// fixture it travels to the Pewter Gym, fights the gym, and proves the
 // Boulder Badge is set in RAM with the player controllable again.
 //
-// The route has four travel legs. The gates (maps 0x32 south, 0x2F north)
-// are small bridge maps between Route 2 and the forest, and each exposes
-// two warp tiles to the same destination: (4,0) is non-walkable in this
-// ROM and the pathfinder's only route to it crosses the (5,0) warp, so
-// Traverse selects the reachable (5,0) tile from where the player stands.
+// The road to the north gate — city to the south gate, through the forest,
+// up to the north gate — and the forest grind to gymLeadLevel are the
+// fixture's job now (S10-8); the fixture contract (north gate, lead at the
+// gym level) is asserted below before the fight. The one remaining leg:
+// 0x2F -> gym, the gate crossing up Route 2's north band into Pewter City,
+// through the door. The gates (maps 0x32 south, 0x2F north) are small
+// bridge maps between Route 2 and the forest, and each exposes two warp
+// tiles to the same destination: (4,0) is non-walkable in this ROM and the
+// pathfinder's only route to it crosses the (5,0) warp, so Traverse selects
+// the reachable (5,0) tile from where the player stands.
 //
-//  1. 0x01 -> 0x32 (5,1)    city to Route 2, up the band to the south gate
-//  2. 0x32 -> 0x33 (17,43)  south gate -> forest, the training ground
-//  3. 0x33 -> 0x2F (5,1)    through the forest to the north gate
-//  4. 0x2F -> gym           north gate -> Route 2's north band -> Pewter City, through the door
-// It is a full journey — minutes of emulation and stochastic wild battles
-// — so it runs only outside -short, in the slice's journey command, not the
-// per-task gate. The whole journey and its diagnostic wiring stay intact
-// below the guard: slice 6 starts from this test, and a deleted milestone
-// is how TestTravelToPewter was nearly lost.
+// It is a full journey — stochastic wild battles on the last leg and a
+// trainer fight — so it runs only outside -short, in the slice's journey
+// command, not the per-task gate. The journey and its diagnostic wiring
+// stay intact below the guard: slice 6 starts from this test, and a deleted
+// milestone is how TestTravelToPewter was nearly lost.
 func TestGymBoulderBadge(t *testing.T) {
 	if testing.Short() {
 		t.Skip("full journey; runs in the slice's journey command, not the per-task gate")
 	}
-	e := fixture.Load(t, "post_errand")
+	// The road to the north gate is the fixture's job now (S10-8):
+	// forest_north_gate stands at the gate with the lead already ground to
+	// gymLeadLevel in the forest.
+	e := fixture.Load(t, "forest_north_gate")
 	romData := e.ROM()
 	policy := skill.StatAwareMove(romData)
 
-	// Leg 1: Viridian City to the south gate, stopping one row below the
-	// (5,0) forest warp. The gate is entered from Route 2's warp (3,43).
-	southGate := skill.Destination{Map: 0x32, X: 5, Y: 1}
-	journeyLeg(t, e, romData, southGate, policy, "Travel to the south gate")
-
-	// Leg 2: the south gate into the forest. Traverse picks the reachable
-	// (5,0) warp tile itself; the landing (17,47) is the training ground's
-	// own row, so the detour Train makes is the approach the journey
-	// already took.
-	forest, ok := skill.Place("viridian forest")
-	if !ok {
-		diagFatalf(t, e, nil, `Place "viridian forest" not found`)
-	}
-	journeyLeg(t, e, romData, forest, policy, "Travel to the forest")
-
-	// The gate drops the player at (17,47), inside the pocket that holds the
-	// four south warps (15,47)-(18,47). A grind ping-pong there steps on a
-	// warp and gets carried back to Route 2's dead-end south band, so walk up
-	// into the open forest first: the grass the trainer finds is a few steps
-	// from here, and it is clear of every warp on the map.
-	safeSpot := skill.Destination{Map: 0x33, X: 17, Y: 40}
-	journeyLeg(t, e, romData, safeSpot, policy, "Travel to the safe spot")
-
-	// Train in the forest itself if the lead is under the level that
-	// beats Brock: its grass is a few steps from the travel target, so the
-	// detour is the approach the journey already made. Train stops a session
-	// when the lead drops below its retreat line (half max HP), so the grind
-	// runs in short sessions and the test heals the lead between them: a
-	// session that left the lead hurt (retreated, under a third of its HP,
-	// or statused) takes a detour to the Viridian Center, and a session that
-	// blacked out is already healed by the blackout itself — travel back
-	// into the forest and resume.
+	// Fixture contract, asserted positive: the player stands at the north
+	// gate and the lead is at the gym level.
 	var mem state.Mem
 	state.Snapshot(e, &mem)
-	if lead := state.DecodeParty(&mem).Mons[0].Level; int(lead) < gymLeadLevel {
-		totalBattles := 0
-		phaseRetries := 0
-		for detours := 0; detours <= maxHealDetours; detours++ {
-			state.Snapshot(e, &mem)
-			lead := state.DecodeParty(&mem).Mons[0]
-			if int(lead.Level) >= gymLeadLevel {
-				break
-			}
-			res, err := skill.Train(e, romData, gymLeadLevel, policy, trainBattleBudget)
-			if err != nil {
-				if strings.Contains(err.Error(), "no-encounter phase") && phaseRetries < maxPhaseRetries {
-					phaseRetries++
-					e.StepFrames(123)
-					t.Logf("grind session %d hit a no-encounter phase (%v): shifting the frame phase and retrying (retry %d)", detours+1, err, phaseRetries)
-					continue
-				}
-				diagFatalf(t, e, err, "Train: %v (start=%d end=%d battles=%d, reached=%v, blackedOut=%v)", err, res.StartLevel, res.EndLevel, res.Battles, res.Reached, res.BlackedOut)
-			}
-			totalBattles += res.Battles
-			state.Snapshot(e, &mem)
-			lead = state.DecodeParty(&mem).Mons[0]
-			if res.BlackedOut {
-				// A blackout fully heals the party and warps it back to a
-				// Pokemon Center: nothing to heal, just wait for the respawn
-				// warp to land and get back into the grass.
-				settleBlackout(t, e)
-				if _, err := skill.Travel(e, romData, safeSpot, policy, 10); err != nil {
-					diagFatalf(t, e, err, "Travel back to the forest after a blackout: %v", err)
-				}
-				t.Logf("grind session %d blacked out at level %d (detour %d): party healed by the blackout, resuming", detours+1, lead.Level, detours)
-				continue
-			}
-			if int(lead.Level) < gymLeadLevel && (res.Retreated || int(lead.HP)*3 < int(lead.MaxHP) || lead.Status != 0) {
-				center, ok := skill.Place("viridian pokemon center")
-				if !ok {
-					diagFatalf(t, e, nil, `Place "viridian pokemon center" not found`)
-				}
-				// A blackout ON the walk to the center is the same recovery as
-				// an in-session one: the party respawns fully healed at the last
-				// town. Measured on S9-9's first run of this test: the retreat
-				// line takes the detour with the lead near half HP, and one wild
-				// battle on the forest leg ended the walk (respawn at Pallet
-				// Town, party healed).
-				if _, err := skill.Travel(e, romData, center, policy, 5); err != nil {
-					if !errors.Is(err, skill.ErrBlackedOut) {
-						diagFatalf(t, e, err, "Travel to the Viridian Center to heal: %v", err)
-					}
-					settleBlackout(t, e)
-				} else {
-					if err := skill.Heal(e); err != nil {
-						diagFatalf(t, e, err, "Heal at the Viridian Center: %v", err)
-					}
-				}
-				if _, err := skill.Travel(e, romData, safeSpot, policy, 10); err != nil {
-					diagFatalf(t, e, err, "Travel back to the forest after healing: %v", err)
-				}
-				t.Logf("healed the lead at level %d (HP %d/%d, status=%#02x) (detour %d)", lead.Level, lead.HP, lead.MaxHP, lead.Status, detours)
-			}
-		}
-		state.Snapshot(e, &mem)
-		lead := state.DecodeParty(&mem).Mons[0]
-		if int(lead.Level) < gymLeadLevel {
-			diagFatalf(t, e, nil, "the lead is level %d after %d battles and %d heal detour(s), want >= %d to face Brock (HP %d/%d, status=%#02x)",
-				lead.Level, totalBattles, maxHealDetours, gymLeadLevel, lead.HP, lead.MaxHP, lead.Status)
-		}
-		t.Logf("trained the lead to level %d in %d battles (HP %d/%d, status=%#02x)", lead.Level, totalBattles, lead.HP, lead.MaxHP, lead.Status)
+	if mem.U8(sym.CurMap) != 0x2F {
+		diagFatalf(t, e, nil, "fixture contract: map=%#04x, want 0x2f (the north gate)", mem.U8(sym.CurMap))
 	}
-	// Leave the forest healthy: the grind ends the moment the level is
-	// reached, which can be with a statused lead (measured: level 12 at
-	// 22/36 HP, paralyzed), and a lead like that blacks out on the forest
-	// leg and the journey dies with it. The detour is taken only when the
-	// lead is actually in danger — statused or under half HP — because a
-	// long walk back through the gates is where the journey can go wrong,
-	// and a 33/36 lead needs no heal (the Pewter Center one before the gym
-	// is unconditional either way). Same detour as inside the loop: Viridian
-	// Center, heal, back to the safe spot.
-	state.Snapshot(e, &mem)
-	lead := state.DecodeParty(&mem).Mons[0]
-	if lead.Status != 0 || int(lead.HP)*2 < int(lead.MaxHP) {
-		center, ok := skill.Place("viridian pokemon center")
-		if !ok {
-			diagFatalf(t, e, nil, `Place "viridian pokemon center" not found`)
-		}
-		if _, err := skill.Travel(e, romData, center, policy, 5); err != nil {
-			diagFatalf(t, e, err, "Travel to the Viridian Center before leaving the forest: %v", err)
-		}
-		if err := skill.Heal(e); err != nil {
-			diagFatalf(t, e, err, "Heal at the Viridian Center before leaving the forest: %v", err)
-		}
-		if _, err := skill.Travel(e, romData, safeSpot, policy, 10); err != nil {
-			diagFatalf(t, e, err, "Travel back to the forest after the pre-journey heal: %v", err)
-		}
-		t.Logf("left the forest healed: level %d (was HP %d/%d, status=%#02x)", lead.Level, lead.HP, lead.MaxHP, lead.Status)
+	if lead := state.DecodeParty(&mem).Mons[0]; int(lead.Level) < gymLeadLevel {
+		diagFatalf(t, e, nil, "fixture contract: the lead is level %d, want >= %d", lead.Level, gymLeadLevel)
 	}
-	state.Snapshot(e, &mem)
-	t.Logf("post-train position: map=%#04x at (%d,%d) controllable=%v",
-		mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord), state.Controllable(&mem))
 
-	// Leg 3: the forest to the north gate.
-	northGate := skill.Destination{Map: 0x2F, X: 5, Y: 1}
-	journeyLeg(t, e, romData, northGate, policy, "Travel to the north gate")
-
-	// Leg 4: the north gate into Route 2's north band, then up Route 2
-	// into Pewter City and through the gym door. The gate crossing is an
+	// The one leg: the north gate into Route 2's north band, then up Route
+	// 2 into Pewter City and through the gym door. The gate crossing is an
 	// ordinary leg: Traverse picks the reachable (5,0) warp tile itself.
 	gym, ok := skill.Place("pewter gym")
 	if !ok {
@@ -342,7 +218,7 @@ func TestGymBoulderBadge(t *testing.T) {
 		diagFatalf(t, e, err, "Travel back to the gym door after healing: %v", err)
 	}
 	state.Snapshot(e, &mem)
-	lead = state.DecodeParty(&mem).Mons[0]
+	lead := state.DecodeParty(&mem).Mons[0]
 	if int(lead.HP) != int(lead.MaxHP) || lead.Status != 0 {
 		diagFatalf(t, e, nil, "the lead is not at full strength when the gym fight starts: level %d, HP %d/%d, status=%#02x",
 			lead.Level, lead.HP, lead.MaxHP, lead.Status)
@@ -381,16 +257,18 @@ func TestGymBoulderBadge(t *testing.T) {
 	t.Logf("first badge won: lead level %d, wObtainedBadges=%#02x", state.DecodeParty(&mem).Mons[0].Level, mem.U8(sym.ObtainedBadges))
 }
 
-// TestGymCascadeBadge is the Cerulean half of the gym generalisation: the
-// same journey as TestGymBoulderBadge (which this test re-runs in full,
-// because beating Brock is a hard prerequisite — Pewter's east exit stays
-// locked until EVENT_BEAT_BROCK, S8-7), then across Route 3 and the
-// Route 3 -> Route 4 seam to Cerulean, a grind on Route 4's grass to the
-// level that beats her, and skill.Gym on map 0x41. It exists to answer two
-// questions Pewter never could: does Travel carry the gym approach past the
-// COOLTRAINER_F at (2,3) whose sight line runs along the approach tile's
-// own row, and does a win set BadgeCascade (bit 1), not BadgeBoulder (bit 0)
-// — the exact failure the table generalisation was meant to prevent.
+// TestGymCascadeBadge is the Cerulean half of the gym generalisation: from
+// the post_boulder fixture (the whole Pewter half — road, forest grind,
+// Brock — is its job now, S10-8), across Route 3 and the Route 3 -> Route
+// 4 seam to Cerulean, a grind on Route 4's grass to the level that beats
+// her, and skill.Gym on map 0x41. It exists to answer two questions Pewter
+// never could: does Travel carry the gym approach past the COOLTRAINER_F at
+// (2,3) whose sight line runs along the approach tile's own row, and does a
+// win set BadgeCascade (bit 1), not BadgeBoulder (bit 0) — the exact
+// failure the table generalisation was meant to prevent. Beating Brock is a
+// hard prerequisite (Pewter's east exit stays locked until
+// EVENT_BEAT_BROCK, S8-7), and the fixture carries that prerequisite: the
+// Boulder Badge bit set in RAM and the exit open.
 //
 // Like TestGymBoulderBadge it is a full journey (minutes of emulation and
 // stochastic wild battles) and runs only outside -short. A lost fight is
@@ -400,7 +278,7 @@ func TestGymCascadeBadge(t *testing.T) {
 	if testing.Short() {
 		t.Skip("full journey; runs in the slice's journey command, not the per-task gate")
 	}
-	e := fixture.Load(t, "post_errand")
+	e := fixture.Load(t, "post_boulder")
 	romData := e.ROM()
 	policy := skill.StatAwareMove(romData)
 
@@ -420,136 +298,27 @@ func TestGymCascadeBadge(t *testing.T) {
 		inBattle = b
 	})
 
-	// The Pewter half: legs and grind are the proven TestGymBoulderBadge
-	// scaffold, copied rather than refactored — this test's surface is
-	// Cerulean, and a change to the proven half would make a failure here
-	// ambiguous about which half moved.
-	southGate := skill.Destination{Map: 0x32, X: 5, Y: 1}
-	journeyLeg(t, e, romData, southGate, policy, "Travel to the south gate")
-	forest, ok := skill.Place("viridian forest")
-	if !ok {
-		diagFatalf(t, e, nil, `Place "viridian forest" not found`)
-	}
-	journeyLeg(t, e, romData, forest, policy, "Travel to the forest")
-	safeSpot := skill.Destination{Map: 0x33, X: 17, Y: 40}
-	journeyLeg(t, e, romData, safeSpot, policy, "Travel to the safe spot")
-
+	// Fixture contract, asserted positive (S10-8): the Boulder Badge is
+	// set, the player stands at Place("pewter city"), and the lead is at
+	// the gym level with the party healed.
 	var mem state.Mem
 	state.Snapshot(e, &mem)
-	if lead := state.DecodeParty(&mem).Mons[0].Level; int(lead) < gymLeadLevel {
-		totalBattles := 0
-		phaseRetries := 0
-		for detours := 0; detours <= maxHealDetours; detours++ {
-			state.Snapshot(e, &mem)
-			lead := state.DecodeParty(&mem).Mons[0]
-			if int(lead.Level) >= gymLeadLevel {
-				break
-			}
-			res, err := skill.Train(e, romData, gymLeadLevel, policy, trainBattleBudget)
-			if err != nil {
-				if strings.Contains(err.Error(), "no-encounter phase") && phaseRetries < maxPhaseRetries {
-					phaseRetries++
-					e.StepFrames(123)
-					continue
-				}
-				diagFatalf(t, e, err, "Train: %v (start=%d end=%d battles=%d, reached=%v, blackedOut=%v)", err, res.StartLevel, res.EndLevel, res.Battles, res.Reached, res.BlackedOut)
-			}
-			totalBattles += res.Battles
-			state.Snapshot(e, &mem)
-			lead = state.DecodeParty(&mem).Mons[0]
-			if res.BlackedOut {
-				settleBlackout(t, e)
-				if _, err := skill.Travel(e, romData, safeSpot, policy, 10); err != nil {
-					diagFatalf(t, e, err, "Travel back to the forest after a blackout: %v", err)
-				}
-				continue
-			}
-			if int(lead.Level) < gymLeadLevel && (res.Retreated || int(lead.HP)*3 < int(lead.MaxHP) || lead.Status != 0) {
-				center, ok := skill.Place("viridian pokemon center")
-				if !ok {
-					diagFatalf(t, e, nil, `Place "viridian pokemon center" not found`)
-				}
-				if _, err := skill.Travel(e, romData, center, policy, 5); err != nil {
-					if !errors.Is(err, skill.ErrBlackedOut) {
-						diagFatalf(t, e, err, "Travel to the Viridian Center to heal: %v", err)
-					}
-					settleBlackout(t, e)
-				} else {
-					if err := skill.Heal(e); err != nil {
-						diagFatalf(t, e, err, "Heal at the Viridian Center: %v", err)
-					}
-				}
-				if _, err := skill.Travel(e, romData, safeSpot, policy, 10); err != nil {
-					diagFatalf(t, e, err, "Travel back to the forest after healing: %v", err)
-				}
-			}
-		}
-		state.Snapshot(e, &mem)
-		if lead := state.DecodeParty(&mem).Mons[0]; int(lead.Level) < gymLeadLevel {
-			diagFatalf(t, e, nil, "the lead is level %d after %d battles and %d heal detour(s), want >= %d to face Brock (HP %d/%d, status=%#02x)",
-				lead.Level, totalBattles, maxHealDetours, gymLeadLevel, lead.HP, lead.MaxHP, lead.Status)
-		}
+	if !state.DecodeProgress(&mem).Has(state.BadgeBoulder) {
+		diagFatalf(t, e, nil, "fixture contract: the Boulder Badge is not set: wObtainedBadges=%#02x", mem.U8(sym.ObtainedBadges))
 	}
-	// Leave the forest healthy (same guard as the Boulder test).
-	state.Snapshot(e, &mem)
+	city, ok := skill.Place("pewter city")
+	if !ok {
+		diagFatalf(t, e, nil, `Place "pewter city" not found`)
+	}
+	if mem.U8(sym.CurMap) != city.Map {
+		diagFatalf(t, e, nil, "fixture contract: map=%#04x, want %#04x (Pewter City)", mem.U8(sym.CurMap), city.Map)
+	}
 	lead := state.DecodeParty(&mem).Mons[0]
-	if lead.Status != 0 || int(lead.HP)*2 < int(lead.MaxHP) {
-		center, ok := skill.Place("viridian pokemon center")
-		if !ok {
-			diagFatalf(t, e, nil, `Place "viridian pokemon center" not found`)
-		}
-		if _, err := skill.Travel(e, romData, center, policy, 5); err != nil {
-			diagFatalf(t, e, err, "Travel to the Viridian Center before leaving the forest: %v", err)
-		}
-		if err := skill.Heal(e); err != nil {
-			diagFatalf(t, e, err, "Heal at the Viridian Center before leaving the forest: %v", err)
-		}
-		if _, err := skill.Travel(e, romData, safeSpot, policy, 10); err != nil {
-			diagFatalf(t, e, err, "Travel back to the forest after the pre-journey heal: %v", err)
-		}
+	if int(lead.Level) < gymLeadLevel {
+		diagFatalf(t, e, nil, "fixture contract: the lead is level %d, want >= %d", lead.Level, gymLeadLevel)
 	}
-
-	// North gate, then up Route 2 into Pewter and through the gym door.
-	northGate := skill.Destination{Map: 0x2F, X: 5, Y: 1}
-	journeyLeg(t, e, romData, northGate, policy, "Travel to the north gate")
-	gym, ok := skill.Place("pewter gym")
-	if !ok {
-		diagFatalf(t, e, nil, "Place \"pewter gym\" not found")
-	}
-	journeyLeg(t, e, romData, gym, policy, "Travel to the Pewter gym")
-
-	// Heal before Brock: full HP or the test fails before he moves.
-	center, ok := skill.Place("pewter pokemon center")
-	if !ok {
-		diagFatalf(t, e, nil, `Place "pewter pokemon center" not found`)
-	}
-	if _, err := skill.Travel(e, romData, center, policy, 5); err != nil {
-		diagFatalf(t, e, err, "Travel to the Pewter Center before the gym: %v", err)
-	}
-	if err := skill.Heal(e); err != nil {
-		diagFatalf(t, e, err, "Heal at the Pewter Center: %v", err)
-	}
-	if _, err := skill.Travel(e, romData, gym, policy, 5); err != nil {
-		diagFatalf(t, e, err, "Travel back to the Pewter gym door after healing: %v", err)
-	}
-
-	// Brock is a hard prerequisite, not an optional fight: Pewter's east
-	// exit stays locked until EVENT_BEAT_BROCK (S8-7), so a loss here means
-	// Cerulean is unreachable and the run stops — reported, not retried.
-	if outcome, err := skill.Gym(e, romData, policy); err != nil {
-		diagFatalf(t, e, err, "Gym (Brock): %v", err)
-	} else if outcome != state.ResultWon {
-		diagFatalf(t, e, nil, "Brock won or drew (the game answering, not a defect); Pewter's east exit stays locked, so Cerulean is unreachable: result=%d, battles so far=%d", int(outcome), battles)
-	}
-	state.Snapshot(e, &mem)
-	t.Logf("Brock beaten; wObtainedBadges=%#02x, battles so far=%d", mem.U8(sym.ObtainedBadges), battles)
-
-	// The party is hurt after Brock; heal before the Route 3 crossing.
-	if _, err := skill.Travel(e, romData, center, policy, 5); err != nil {
-		diagFatalf(t, e, err, "Travel to the Pewter Center after Brock: %v", err)
-	}
-	if err := skill.Heal(e); err != nil {
-		diagFatalf(t, e, err, "Heal at the Pewter Center after Brock: %v", err)
+	if int(lead.HP) != int(lead.MaxHP) || lead.Status != 0 {
+		diagFatalf(t, e, nil, "fixture contract: the lead is not healed: HP %d/%d, status=%#02x", lead.HP, lead.MaxHP, lead.Status)
 	}
 
 	// The Cerulean road: Pewter's east exit onto Route 3, across its eight

@@ -57,6 +57,8 @@ type MapHeader struct {
 	WidthBlocks  uint8
 	HeightBlocks uint8
 	BlocksAddr   uint16 // banked address of the block list
+	TextsAddr    uint16 // address (map bank) of the text pointer table
+	ScriptAddr   uint16 // address (map bank) of the default map script
 	Bank         uint8
 	BorderBlock  uint8
 	Connections  []Connection
@@ -158,7 +160,10 @@ func ParseMap(rom []byte, mapID uint8) (MapHeader, error) {
 	if h.BlocksAddr, err = r.u16(); err != nil {
 		return h, mapErr(mapID, err)
 	}
-	if err := r.skip(4); err != nil { // text pointers, script pointer
+	if h.TextsAddr, err = r.u16(); err != nil { // text pointer table
+		return h, mapErr(mapID, err)
+	}
+	if h.ScriptAddr, err = r.u16(); err != nil { // default map script
 		return h, mapErr(mapID, err)
 	}
 	connFlags, err := r.byte()

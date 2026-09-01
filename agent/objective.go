@@ -57,6 +57,19 @@ type Objective struct {
 // returns names the objective, so a failure deep in a long loop is
 // attributable. An unknown Kind is an error, not a no-op, and an argument
 // outside its stated range is rejected before any input is sent.
+//
+// The rule for a typed outcome a skill reports: an objective succeeds only
+// when the WORLD NOW MATCHES WHAT THE OBJECTIVE SAID IT WOULD DO (its
+// String()), not when the skill exited tidily. A hunt that ended without
+// the party growing, a gym the run lost to, a purchase the clerk refused —
+// each is returned as an error, because a recorded "done" round would put
+// the objective in Knowledge.Completed (the menu's "(done Nx)") and out of
+// the failure tally, telling the planner it had done the thing it just
+// failed to do. The recoverable game outcomes (a blackout that ends a
+// journey, a train retreat) are errors too: Run exempts their typed
+// sentinels (ErrBlackedOut, ErrTrainRetreat) from the failure budget, and
+// that exemption — not a nil return — is what keeps them from ending a
+// run.
 func Execute(m *emu.Emu, romData []byte, o Objective) error {
 	if err := o.Validate(); err != nil {
 		return err
@@ -73,20 +86,22 @@ func Execute(m *emu.Emu, romData []byte, o Objective) error {
 		// fixtures use for the Pallet -> Viridian legs, which measured 1.
 		// Flee is the planner's call (a fled wild is XP the run did not
 		// get), so the default stays fight: TravelFlee only when asked.
-		var res skill.TravelResult
 		var err error
 		if o.Flee {
-			res, err = skill.TravelFlee(m, romData, dest, skill.StatAwareMove(romData), 20)
+			_, err = skill.TravelFlee(m, romData, dest, skill.StatAwareMove(romData), 20)
 		} else {
-			res, err = skill.Travel(m, romData, dest, skill.StatAwareMove(romData), 20)
+			_, err = skill.Travel(m, romData, dest, skill.StatAwareMove(romData), 20)
 		}
 		if err != nil {
+			// A blackout ends the journey with ErrBlackedOut: skill.Travel
+			// pairs res.BlackedOut with that error, so no blackout reaches
+			// the nil return below. The journey genuinely ended — the party
+			// is healed and standing in a town — and Run exempts
+			// ErrBlackedOut from the failure budget for exactly that reason.
+			// The error is the channel the planner reads; the exemption is
+			// the recoverable half. (The old res.BlackedOut print branch was
+			// dead: the err check above already returned every blackout.)
 			return fmt.Errorf("agent: %s: %w", o, err)
-		}
-		if res.BlackedOut {
-			// Losing is a typed outcome, not an error — but an unattended
-			// run log must say it happened.
-			fmt.Printf("  blacked out on the way (%d battles), resumed from a Pokemon Center\n", res.Battles)
 		}
 		return nil
 	case KindTalk:
@@ -150,21 +165,26 @@ func Execute(m *emu.Emu, romData []byte, o Objective) error {
 			// Travel, not GoTo, for the same reason KindGoTo uses it: the
 			// way back to a center runs through grass, and a hurt party is
 			// exactly the one that meets a wild Pokemon on the way. A
-			// blackout here already healed the party, so it is reported as
-			// the outcome it is and the heal that follows is a no-op the
-			// nurse handles.
-			var res skill.TravelResult
+			// blackout here is a FAILURE, not an outcome: the objective said
+			// "heal the party at X" and the respawn put the player at the
+			// last center they used, not at X. It is returned wrapped in
+			// ErrBlackedOut, which Run exempts from the failure budget: the
+			// party is healed and the world changed, so the round is
+			// recoverable, the same exemption as a lost battle on any
+			// journey.
 			var err error
 			if o.Flee {
-				res, err = skill.TravelFlee(m, romData, dest, skill.StatAwareMove(romData), 20)
+				_, err = skill.TravelFlee(m, romData, dest, skill.StatAwareMove(romData), 20)
 			} else {
-				res, err = skill.Travel(m, romData, dest, skill.StatAwareMove(romData), 20)
+				_, err = skill.Travel(m, romData, dest, skill.StatAwareMove(romData), 20)
 			}
 			if err != nil {
+				// A blackout on the way comes back as ErrBlackedOut: the
+				// skill pairs res.BlackedOut with that error, so it is caught
+				// here and the journey's TravelResult carries no blackout the
+				// error does not already say (the old res.BlackedOut re-check
+				// was dead, as KindGoTo's print branch was).
 				return fmt.Errorf("agent: %s: %w", o, err)
-			}
-			if res.BlackedOut {
-				return fmt.Errorf("agent: %s: %w on the way (%d battles)", o, skill.ErrBlackedOut, res.Battles)
 			}
 		}
 		if err := skill.Heal(m); err != nil {
@@ -172,19 +192,24 @@ func Execute(m *emu.Emu, romData []byte, o Objective) error {
 		}
 		return nil
 	case KindGym:
-		// The result is an outcome, not an error: a loss blackouts the
-		// player to the Pewter center and the run can resume (train, heal,
-		// come back), but an unattended run log must say it happened.
+		// The postcondition is the badge: skill.Gym returns ResultWon only
+		// when the badge bit is set in RAM. A loss is the objective NOT
+		// having done what it said ("beat the gym leader here"), so it is a
+		// failure, not a done round: History would say "done" for a loss and
+		// the menu would grow a "(done 1x)" on a gym the run lost to. The
+		// loss blackouts the player to a center, so the run stays
+		// recoverable — the planner reads the failure tally and the quoted
+		// error, heals and trains, and comes back. (A blackout on the way IN
+		// is skill.ErrBlackedOut, which Run exempts from the failure budget;
+		// a loss to the leader is not exempt: the objective failed.)
 		outcome, err := skill.Gym(m, romData, skill.StatAwareMove(romData))
 		if err != nil {
 			return fmt.Errorf("agent: %s: %w", o, err)
 		}
 		if outcome == state.ResultWon {
 			fmt.Printf("  beat Brock: Boulder Badge set\n")
-		} else {
-			fmt.Printf("  lost to Brock, blacked out to the Pewter center\n")
 		}
-		return nil
+		return gymOutcomeErr(o, outcome)
 	case KindCatch:
 		// A missed hunt is the game answering, not a defect: the outcome
 		// is reported and the planner decides what to do next. Five balls
@@ -197,10 +222,18 @@ func Execute(m *emu.Emu, romData []byte, o Objective) error {
 		switch res.Outcome {
 		case skill.OutcomeCaught:
 			fmt.Printf("  caught %s (balls=%d, encounters=%d)\n", strings.ToUpper(name), res.BallsThrown, res.Encounters)
+			return nil
 		default:
-			fmt.Printf("  no %s in %d encounters (outcome %v, balls=%d)\n", strings.ToUpper(name), res.Encounters, res.Outcome, res.BallsThrown)
+			// A hunt that ended without the party having grown is the
+			// objective NOT having done what it said ("catch a X here"), so
+			// it is a failure: the planner reads the failure tally and the
+			// game's answer in the error text, which a recorded "done" round
+			// never gave it. (A blackout inside the hunt comes back as
+			// skill.ErrCatchBlackout on the err path above, and Run exempts
+			// ErrBlackedOut from the failure budget for the usual reason.)
+			return fmt.Errorf("agent: %s: no %s caught (outcome %s, balls=%d, encounters=%d)",
+				o, strings.ToUpper(name), catchOutcomeName(res.Outcome), res.BallsThrown, res.Encounters)
 		}
-		return nil
 	case KindPickup:
 		// The proof is inside Pickup: it returns nil only when the bag's
 		// count for Item rose by one. A text box opening is not evidence.
@@ -352,6 +385,38 @@ func (o Objective) String() string {
 		return fmt.Sprintf("buy %d of item %d", o.Qty, o.Item)
 	}
 	return fmt.Sprintf("unknown kind %d", int(o.Kind))
+}
+
+// gymOutcomeErr renders a gym battle result as the objective's error: nil
+// when the badge is in RAM (skill.Gym's win postcondition), the loss
+// otherwise. It is the KindGym branch's whole decision, separated so a
+// test pins it without a full journey to the gym map: the win side of the
+// journey is pinned by skill.TestGymBoulderBadge, and a loss side measured
+// on 2026-08-31 panics inside the vendored emulator's APU (apu.sample
+// index out of range) before the fight ends, which is a defect of that
+// emulator, not of this branch.
+func gymOutcomeErr(o Objective, outcome state.BattleResult) error {
+	if outcome == state.ResultWon {
+		return nil
+	}
+	return fmt.Errorf("agent: %s: lost to the gym leader (blacked out to the center)", o)
+}
+
+// catchOutcomeName renders a skill.CatchOutcome for the error text the
+// planner reads. The enum has no String() of its own, and a bare number in
+// a failure the planner has to act on is not an answer.
+func catchOutcomeName(o skill.CatchOutcome) string {
+	switch o {
+	case skill.OutcomeCaught:
+		return "caught"
+	case skill.OutcomeFled:
+		return "the target ran away"
+	case skill.OutcomeOutOfBalls:
+		return "out of balls"
+	case skill.OutcomeTargetFainted:
+		return "the target fainted"
+	}
+	return fmt.Sprintf("outcome %d", int(o))
 }
 
 // article renders the indefinite article for an item name: "a POTION",

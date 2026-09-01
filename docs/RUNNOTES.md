@@ -1,4 +1,9 @@
-# RUNNOTES
+# Runnotes
+
+Permanent, per-task runnotes. The root `RUNNOTES.md` is a short handoff for
+the next task only; decisions and measurements that outlive one task live
+here.
+
 
 ## S6-12 — Badge harness landed; scoreboard is VOID
 
@@ -33,7 +38,7 @@
 
 **NO recall-vs-derivation reading is possible from these runs, and none is
 offered.** No completion rate, no capability claim. The real measurement
-moves to slice 7 (docs/archive/2026-08-29-slice7-design.md) after
+moves to slice 7 (docs/superpowers/specs/2026-08-29-slice7-design.md) after
 the goal, reply validation and rejection recovery land.
 
 ### For the next task
@@ -2065,71 +2070,443 @@ prompting.
   the recorded battle state byte-for-byte — L17 lead 37/52 vs Jigglypuff
   38/58 at the 60000-frame cap, Route 3 (33,8). Not on this slice's surface.
 
-## S10-12 — Make the graph route legs 5 and 7
+## S10-1 — the argument-free reply, verified on the 4B; trainStep settled
 
-### What changed (world/ only)
-- `graph.go`: `BuildGraph` now flood-fills per-map walkable components and
-  stores each edge's exit/entry port component sets. The 0xFF resolver gained
-  geometric disambiguation (`nearestDir` + `candidateSide`) for multi-candidate
-  gates, so gate 0xC1's four 0xFF warps resolve to the route each door faces.
-- `route.go`: `FindRoute` is component-aware via `canExit` (exit port must be
-  walkable and share a component with the entry). Added `FindRouteAt` for a
-  position-constrained first hop. Hand-built graphs are untouched
-  (`componentAware=false` skips every check).
+**The per-entry annotation approach is SUPERSEDED and must not be
+resurrected.** This task was originally written to fix the rejection storm
+by ANNOTATING each menu entry with the arguments it accepts. Commit 8fc9525
+(2026-08-31) took a simpler route that is already on main: the reply schema
+is `{choice, intent}` and NOTHING ELSE, whatever is offered. Every offered
+objective is already CONCRETE when `Offer` builds it — the catch names its
+species, the train names its level, the buy names its item and quantity — so
+an argument in the reply was never information the menu lacked; it was only
+ever an OVERRIDE. Removing the fields removes the defect class instead of
+teaching a small model to navigate it, and it is the same medicine the flee
+precedent already applied. Do not re-add per-entry annotations or argument
+fields; `TestLLMPlannerSchemaStaysArgumentFreePerKind` fails them.
 
-### Verification
-- `go build ./...`, `go vet ./world` clean.
-- `go test ./world -count=1` green (new `route_legs_test.go`: leg 5 forest
-  detour, leg 7 gate, gate 0xFF resolution, a sealed-door detour, a dead-data
-  no-route negative, and the Pallet→Pewter→Cerulean regression).
-- Operator re-verification (manual review accept, see below): full non-short
-  `go test ./... -count=1 -timeout 30m` run against this exact commit with
-  POKEMON_RED_ROM and POKEPILOT_FIXTURE_DIR set. Every package green except
-  two pre-existing `skill` flakes (`TestGymCascadeBadge`,
-  `TestTravelRoute3TrainerCrossing`) — see "Not caused by this change".
+**MEASURED 2026-08-31: the storm is gone on the 4B.** `make run-llm`
+(qwen3.5-4b on the LAN box, the model every prior measurement used) with
+`-max-rounds 8`: 8 rounds, 8 model calls, **0 "reply rejected" lines,
+Result.ReplyRetries = 0**. Every reply was `{"choice": N, "intent": "..."}`,
+and all 8 objectives completed (starter through route 1). Before: S6-12
+measured 27 "argument does not apply" rejections across 9 runs; S9-11
+measured every reply in both load runs rejected. The fix had previously been
+measured against the 27B only (`make run-llm-local`); this is the first 4B
+measurement against the new schema.
 
-### BuildGraph cost delta
-- Nodes 228 → 228 (unchanged). Edges 1040 → 1072 (+32: the resolved 0xFF gate
-  warps). Time ~557µs → ~2.6ms/op (~4.7x) from the per-map component flood fill.
+**DECISION (binding for S10-5): trainStep stays 2, one rung per round.**
+The planner can no longer aim training at an arbitrary level; it takes the
+offered rung (lead + 2) and climbs by choosing Train again. One rung per
+round is the right granularity: a bigger rung would not save model calls in
+the cases that matter — the climb still costs one call per objective
+completed — and it would trade a short, attributable objective for a long
+one whose failure says nothing about which battle went wrong. The offered
+target is always a step the run has NOT taken, so re-picking Train is not a
+repeat-failure; it is the model answering the same reliable index. If a long
+climb ever proves too slow, the answer is ANOTHER MENU ENTRY (a second Train
+objective at a larger step), never another reply field — adding an entry
+reuses the index, and the per-Kind schema test fails a reply field.
 
-### The seven unreachable maps: 0 came back
-Per `docs/GRAPH-GAPS.md` Q2, all seven (`0x45`, `0x4B`, `0x4E`, `0xAD`, `0xE7`,
-`0xEF`, `0xF0`) are dead data (unused `_COPY` maps, garbage headers, sealed
-rooms with empty `def_warp_events`) — none share `0xC1`'s 0xFF-warp shape, so
-this task's resolver change does not touch them. Reach is exactly the two
-named legs.
+**Tests:** `agent/llm_test.go` gained
+`TestLLMPlannerSchemaStaysArgumentFreePerKind`, which renders the real
+request body with EACH Kind offered (KindGoTo through KindUseItem) and
+asserts the schema's properties are exactly `choice` and intent — so a
+future kind or a per-entry annotation re-runs the guard with itself on the
+menu. `TestWithArgsRejects` and `TestWithArgsStillRejects` are unmodified;
+WithArgs still range-checks anything that arrives (S7-3's strictness is
+load-bearing). `Objective.String()` is untouched — still byte-identical per
+Kind; the menu's history annotation stays in `Objective.Note`, which
+String() ignores.
 
-### Offer check
-Neither newly-routable destination has a place name in `skill/goto.go`
-(gate `0xC1`, Route 23 `0x22`), so `Offer` does not surface either as a
-`GoTo` objective — no guaranteed-failure objective was introduced by this
-change.
+**CONFIRMED by a second independent run (S10-1 re-run):** `make run-llm`
+(`-max-rounds 8`, same qwen3.5-4b endpoint): 8 rounds, 8 model calls,
+**0 "reply rejected" lines, Result.ReplyRetries = 0** (a retry exists only
+after a rejection, and none occurred). Every reply was
+`{"choice": N, "intent": "..."}`. The run reached route 1, fleeing, in
+round 8 — one blackout on round 7 is the game answering, not a defect.
+`go build ./...`, `go vet ./agent`, `go test ./agent -count=1` with
+POKEMON_RED_ROM set (fixture Run tests ran, not skipped) — all ok.
 
-### Named for slice 11 (not fixed here)
-- Gate door (8,5) on Route 22 is sealed from the road under every collision
-  sub-tile rule. The graph routes Route 22→Route 23 through 0xC1, but a query
-  rooted at the road detours the long way (TestRouteLeg7RoadDetours). The
-  tile pathfinder cannot walk the player to that door — that is the input.
+**THIRD CONFIRMATION (S10-1 re-run, 2026-08-31):** same command
+(`-planner llm -fps 0 -max-rounds 8`, same qwen3.5-4b endpoint):
+8 rounds, 8 model calls, **0 "reply rejected" lines,
+Result.ReplyRetries = 0** (a retry exists only after a rejection, and
+none occurred). Every reply `{"choice": N, "intent": "..."}`; the run
+reached route 1, fleeing, in round 8 (round 7 blacked out — the game
+answering, not a defect). `go build ./...`, `go vet ./agent`,
+`go test ./agent -count=1` with POKEMON_RED_ROM set (fixture Run tests
+ran, not skipped) — all ok.
 
-### Not caused by this change
-- `skill.TestGymBoulderBadge` timed out at 600s inside the `forest_north_gate`
-  fixture REBUILD (trainInForest → Travel), not in the graph. The cached state
-  validates controllable; the rebuild is the known RNG/cache-flaky journey.
-  Re-running does not reproduce it. Left unadopted per AGENTS.md.
-- `TestGymCascadeBadge` reproduces the SAME pre-existing battle-6 frame-cap
-  flake this file already recorded under S10-2's "Left as-is" note (L17 lead
-  vs Jigglypuff, Route 3 (33,8), byte-identical) — confirmed unrelated to
-  this change by running it against the pre-S10-12 base commit, where it
-  fails identically. `TestTravelRoute3TrainerCrossing` failed once on this
-  candidate and passed on base, but the diff touches zero files under
-  `skill/`, so it is fixture/RNG-state drift between runs, not a regression.
+**FOURTH CONFIRMATION (S10-1 re-run, 2026-08-31):** same command
+(`-planner llm -fps 0 -max-rounds 8`, same qwen3.5-4b endpoint):
+8 rounds, 8 model calls, **0 "reply rejected" lines,
+Result.ReplyRetries = 0**. Every reply `{"choice": N, "intent": "..."}`;
+all 8 objectives done, ending at route 1, map 0x0c (5,14) — no blackout
+this time. `go build ./...`, `go vet ./agent`, `go test ./agent -count=1`
+with POKEMON_RED_ROM set (fixture Run tests ran, not skipped) — all ok.
 
-### Manual review accept
-This task's automated review cycle (review `2c726848`) called the code
-"correct and well-constructed" on cycle 2 but kept requesting changes for a
-verification-evidence gap: the task's `verification_command` field itself
-ran `-short`, which skips the journey-test regression surface the task's
-prose instructions require as evidence — a contradiction in the task
-definition, not a code defect. Operator manually accepted the review after
-independently running the full suite (above) and isolating the two
-pre-existing flakes against the base commit.
+## S10-2 (retry mechanism): a retry must differ from the ask it repeats, or not be spent
+
+### Design decision (settled, recorded as required)
+
+What makes the second ask DIFFERENT is classified per rejection class
+(`classifyRetry`, agent/run.go), on the typed errors:
+
+| class | retried? | what makes the retry different |
+|---|---|---|
+| content-parse failure (resolveReply: wrong shape, bad index, ...) | yes, up to MaxReplyRetries asks | rejection quoted back **AND temperature 0.3** (`agent.RetryTemperature`) — the only change that makes a temperature-0 sampler emit different bytes at all |
+| `ErrNotFinished` with finish_reason "length" | yes | **max_tokens doubled** (512→1024, capped at `maxRetryTokens` 8192), prompt byte-identical, temperature stays 0 — a REQUEST change, not a prompt change: the budget, not the answer, was the defect |
+| `ErrModelMismatch` | **no** — stops after 1 ask | re-asking cannot change which model the server loads |
+| `ErrNotFinished` other (content_filter, ...) | **no** — stops after 1 ask | deterministic at temperature 0 with an unchanged prompt |
+
+Mechanism: new exported `agent.Retry{Feedback, Temperature, MaxTokensFactor}`;
+`FeedbackPlanner.NextFeedback(feedback string)` renamed
+`NextRetry(r Retry)`; `planWithRetries` classifies each rejection and passes
+the differing Retry (log line now says what the re-ask differs by). The three
+thin cmd wrappers (badgePlanner, statsPlanner, reportingPlanner) forward the
+Retry — updated so `go build ./...` stays green and farm runs get the new
+behavior. `MaxReplyRetries` still bounds total asks per round (3) but no
+longer means "ask the same thing three times". `Result.ReplyRetries` still
+counts what actually happened. `agent.IsLengthTruncation(err)` is the
+exported classifier hook.
+
+### Measured latency saved per rejected round
+
+Old mechanism paid MaxReplyRetries-1 = 2 EXTRA calls per rejected round,
+byte-identical at temperature 0 (S9-12: "repeated the IDENTICAL invalid
+reply through all three asks"). New: 0 extra calls for the two non-retryable
+classes, and the extra calls that remain are different requests. In prior
+measured call costs: ~12-14s saved per rejected round on qwen3.5-4b
+(~6-7s/call, S6-12/S10-1) and ~94s on qwen3.8-27b thinking (47.1s/call,
+S10-1) for the non-retryable classes; for "length", the previously wasted
+identical 47s calls are now the single useful doubled-budget call. The
+httptest tests assert the request COUNT (1 for non-retryable) and the
+captured body difference (temperature 0→0.3; max_tokens 512→1024 with
+byte-identical messages).
+
+### Tests (httptest only, no live model)
+
+- `TestShapeRetryDiffersByTemperature` — retry body has temperature 0.3 and
+  the rejection in the user prompt; first ask temperature 0, no feedback;
+  system prompt unchanged.
+- `TestLengthRetryRaisesMaxTokensNotPrompt` (names the design) — retry body
+  max_tokens 1024 vs 512, temperature 0, both messages byte-identical, no
+  feedback quoted.
+- `TestModelMismatchIsTypedAndSingleShot` (planner half) +
+  `TestRunModelMismatchNotRetried`, `TestRunOtherFinishReasonNotRetried`
+  (run half: exactly 1 ask, StopError, ReplyRetries=0).
+- `TestRunLengthTruncationRetriedWithLargerBudget` — retry carries
+  MaxTokensFactor=2, empty Feedback, nil Temperature; round recovers.
+- S7-4 tests UNCHANGED and still pass: `TestRunRejectedReplyRecovers`
+  (StopDone, **ReplyRetries=1**, feedback carries the text),
+  `TestRunRejectedReplyExhaustsRetries` (exactly MaxReplyRetries asks).
+
+### Verified
+
+`go build ./...`, `go vet ./...`, `go test ./agent -count=1` with
+POKEMON_RED_ROM set — all ok (fixture Run tests ran, not skipped; 197s).
+StopDone is Stop(0): Run still breaks on `errors.Is(err, ErrDone)` / the
+error itself, never on a stop-value check — TestRunDone (StopDone via
+fixture) passes. `go test -short ./cmd/...` green (wrappers updated).
+
+### For the next task
+
+- The reply schema is {choice, intent} (S10-1), so shape rejections should
+  be rare on a conforming server; the live class to watch is "length" on
+  reasoning models — the retry now doubles the budget once, and if a think
+  block needs more, the operator raises POKEPILOT_LLM_MAX_TOKENS (the retry
+  doubles THAT value, capped at 8192).
+- `agent.RetryTemperature` (0.3) is the one new tuning knob: if a live run
+  shows shape retries that never converge, that is the number to measure
+  against, not the prompt.
+
+## S10-2b: a wedged battle is terminal and cannot be reproduced — give cmd/pokepilot a checkpoint dir
+
+### What changed
+
+`cmd/pokepilot` gained `-checkpoint-dir` (default empty). When set, main.go
+MkdirAlls the directory and the value flows into `agent.Budget.CheckpointDir`
+in both `runLLM` and the farm's `runFarmLLM` (the farm had no checkpoint
+wiring of its own; the spec is untouched — the flag is operator-level). The
+ring itself (`agent/run.go`, `agent/memory.go`) already existed and was only
+ever exercised by tests; nothing in `agent/` changed. Empty flag: no
+MkdirAll, `ring` stays nil, no write path runs — verified below.
+
+### The wedge reproduced, exactly
+
+`cmd/pokepilot -planner llm -fps 0 -max-rounds 40 -checkpoint-dir <dir>`,
+local 27B (make run-llm-local shape), seed 0, ZBAT=1. Round 36, objective
+"go to pewter city, fleeing wild battles", battle 8 of Travel: map 0x33 at
+(1,18), Kind:2 (BattleTrainer), EnemySpecies 112 27/27 Lv9, Active 153
+30/30 Lv9 — identical to the milestone measurement. Rounds 37/38 re-entered
+the same battle and failed identically; run stopped: failed after 38.
+
+ZBAT tail before the cap: one repeating 30-frame cycle, both sides at full
+HP — the game sits in a "Choose a POKéMON" switch menu with the lead at full
+HP, and picking the only party member is rejected "is already out!".
+battle.go has no branch for this menu state; it waits for the move menu and
+burns the 60000-frame cap. That cycle is the input to the battle fix (a
+LATER task). `skill/battle.go` was NOT touched here.
+
+### Repro state (path only — the file is never committed)
+
+Copied out of the ring before eviction to
+`failure/s10-2b-wedge-round-36.state` (gitignored) with its paired
+`failure/s10-2b-wedge-round-36.knowledge-v4.json`. Round 36, frame 85246.
+The ZBAT tail is in `failure/zbat-tail-30.txt` (gitignored).
+
+### Verified
+
+- `go build ./...`, `go vet ./cmd/pokepilot`,
+  `go test ./cmd/pokepilot ./agent -count=1` — all ok.
+- Default off: a plain run-llm-shaped invocation (no `-checkpoint-dir`)
+  created no directories, wrote no states; structurally, empty flag means
+  no MkdirAll and a nil ring in `agent.Run`.
+- No `.state` / `.gb` / `.gbc` / `.sav` committed.
+
+### S10-7 overlap
+
+Did not collapse. Same seam (`agent.Budget`), two flags: this task wires the
+write side (`CheckpointDir`), S10-7 wires the read side (`ResumeFrom`). The
+wedge pair above is the first artifact ResumeFrom will load — test S10-7
+against `failure/s10-2b-wedge-round-36.state`.
+
+## S10-2c: Offer sells POTION at a mart that does not stock it — read the shelf
+
+**Could red/rom already reach the mart table? No.** There was no mart decoder;
+`red/rom/mart.go` was written for this task. `skill/shop.go`'s `martItemPosition`
+reads `wItemList`, but only while the shop menu is OPEN — useless to Offer,
+which builds the menu from the overworld.
+
+**The shelf is the clerk's own text script, not a table keyed by map id.**
+Each map object carries a text id (1-based) that indexes the map's text pointer
+table; the table whose entry for the clerk is a `TX_SCRIPT_MART` script
+(`0xfe, count, items..., 0xff`) IS the shelf. Two facts the first attempt got
+wrong and this one pins down:
+
+- The text pointer table lives in the **map's own bank** (e.g. Viridian at
+  `07:54e0`), not bank 0. `ParseMap` now also returns `ScriptAddr` (the default
+  map script, previously skipped).
+- The table in use at runtime is set by the default script with `ld hl, <table>`
+  (`engine/home/text_script.asm`: DisplayTextID indexes `wCurMapTextPtr` with
+  `(textID-1)*2`). The **Viridian Mart** keeps its shelf in a *second* table
+  (`TextPointers2`) the default script loads after Oak's parcel is delivered —
+  the header table's clerk entry is pre-quest dialogue, not a shop. So the
+  decoder collects the header table plus every table the default script (and
+  the map-bank sub-scripts it `call`s) loads, and the first entry that is a
+  mart script wins. The script walk reads raw bytes (not a full disassembly);
+  every candidate is validated by reading it, so a spurious match is dropped.
+
+**The Viridian shelf as read by the code:** `[0x04 0x0B 0x0F 0x0C]` = POKE BALL,
+ANTIDOTE, PARLYZ HEAL, BURN HEAL — matching the four measured 2026-08-31, no
+POTION. Pewter reads `[0x04 0x14 0x1D 0x0B 0x0C 0x0E 0x0F]` (includes POTION),
+so the fix keeps offering it where it is stocked. `red/rom.TestMartItemsViridian`
+pins the Viridian list against the ROM (skips when `POKEMON_RED_ROM` unset).
+
+**The Offer change** (`agent/offer.go`): the mart branch now offers one buy per
+item in `obs.MartStock` (decoded by Observe via `rom.MartItems`), never a fixed
+POTION. A shelf that cannot be read (`MartStock` empty) offers NOTHING — an
+objective that cannot succeed costs a round, a model call, and (before the shop
+closed itself on refusal) the run. `agent/offer_test.go` adds a Viridian case
+(four stocked items offered, POTION asserted absent) and an unreadable-shelf
+case (no buy objective at all).
+
+Note: the agent's item vocabulary spells the ball `"pokeball"` (the ROM prints
+`"POKE BALL"`), so the menu line is `buy 3 POKEBALL`. That vocabulary lives in
+`agent/objective.go`, outside this task's file scope — left as-is.
+
+**Verified:** `go build ./...`, `go vet ./agent ./red/rom`, `go test ./agent
+./red/rom -count=1` (POKEMON_RED_ROM set) — all ok.
+
+## S10-2d: Execute returned nil for typed outcomes — sweep every branch
+
+The rule: an objective succeeds only when the WORLD NOW MATCHES WHAT THE
+OBJECTIVE SAID IT WOULD DO (its String()), not when the skill exited tidily.
+A recorded "done" round puts the objective in Knowledge.Completed (the menu's
+"(done Nx)") and OUT of the failure tally, telling the planner it had done
+the thing it just failed to do. Recoverable game outcomes (journey blackouts,
+train retreats) are errors too: Run exempts their typed sentinels
+(ErrBlackedOut, ErrTrainRetreat) from the failure budget, and that exemption
+— not a nil return — is what keeps them from ending a run.
+
+**The audit, branch by branch** (`agent/objective.go` Execute):
+
+| Kind | typed outcome | decision |
+|---|---|---|
+| KindGoTo | `res.BlackedOut` | **Dead code, removed.** Travel/TravelFlee share one loop and pair `res.BlackedOut` with `ErrBlackedOut` (skill/travel.go returns `res, ErrBlackedOut` at both blackout sites), so the `err != nil` check above already returned every blackout; the print branch could never run. Failure side unchanged: the error is returned. |
+| KindTalk / KindStarter / KindErrand | error only | Already correct: the skill returns an error on every non-success and Execute wraps it. |
+| KindTrain | `res.Reached/Retreated/BlackedOut` | Already correct: `!Reached` returns an error in every form (retreat → ErrTrainRetreat, blackout → ErrBlackedOut, plain shortfall → error). The two exemptions in Run are unchanged and load-bearing: TestRunTrainRetreatTwiceDoesNotStopTheRun and TestRunBlackoutDoesNotStopTheRun pass unmodified. |
+| KindHeal | `res.BlackedOut` re-check | **Dead code, removed** (same pairing as KindGoTo). Behavior unchanged: a blackout on the way already came back wrapped in ErrBlackedOut through the err check; the re-check added nothing. The stale comment ("the heal that follows is a no-op") is gone — a blackout lands the player at the LAST center used, not at the named one, so it is a failure the exemption absorbs. |
+| KindGym | `outcome != ResultWon` | **CHANGED: loss now returns an error** (`gymOutcomeErr`), previously a print + nil. The objective said "beat the gym leader here" and the run lost, so it is a failure: the planner reads the failure tally and the quoted error, heals and trains, and comes back. NOT exempt: the error wraps neither sentinel, so two identical losses stop the run (StopFailed) exactly like any other repeated failure. A blackout on the way IN is still ErrBlackedOut and still exempt. |
+| KindCatch | `res.Outcome != OutcomeCaught` | **CHANGED: a missed hunt now returns an error** naming the species and the outcome (`catchOutcomeName` renders the enum: "out of balls", "the target ran away", "the target fainted"), previously a print + nil. The party did not grow; the objective did not do what it said. A blackout inside the hunt still comes back as skill.ErrCatchBlackout on the err path and keeps its exemption. |
+| KindPickup / KindUseItem | error only | Already correct: the skills enforce their own postconditions (bag count rose; HP rose or status cleared) and return an error otherwise. |
+| KindBuy | `ErrCantAfford` / `ErrNotInStock` | Already correct (fixed earlier, see the S10-2c-era comment in the branch): a refused purchase returns the error, so it lands in the failure tally with the game's own words. |
+
+**Tests added:**
+
+- `agent/objective_test.go` `TestExecuteCatchMissIsAFailure`: route1 fixture,
+  catch a PIDGEY with an empty ball bag — a deterministic miss on replay
+  (measured: first encounter fought, second is the target, out of balls).
+  Asserts the error names the species and the outcome, the party did not
+  grow, and the player is still standing on Route 1 (no blackout).
+- `agent/objective_internal_test.go` `TestGymOutcomeErr` (package agent):
+  pins the KindGym classification — ResultWon → nil, ResultLost → error
+  naming the loss. It is a unit test because the emulator side cannot be
+  exercised cheaply: the WIN side of the journey is pinned by
+  skill.TestGymBoulderBadge (full journey, -short guard), and a LOSS side
+  measured on 2026-08-31 (post_errand, lead trained L7→L11 on Route 2 with
+  heal detours, then walked to Pewter) panics inside the vendored emulator's
+  APU before the fight ends — `gomeboy/internal/apu apu.sample: index out of
+  range [16] with length 16`. That is a defect of that emulator, not of this
+  branch, and is handed back as-is.
+- `agent/run_test.go` `TestRunRefusedPurchaseIsAFailureNotADoneRound`:
+  viridian_mart fixture (player facing the clerk), buy 1 POTION — the
+  Viridian Mart stocks POKE BALL, ANTIDOTE, PARLYZ HEAL and BURN HEAL, no
+  POTION, so the refusal (ErrNotInStock) is deterministic on replay. Asserts
+  StopDone (the refusal does not end the run), Completed empty, and the next
+  round's observation carries the round as `{buy 1 POTION failed: ...}` with
+  the clerk's refusal quoted back.
+
+**Also touched:** `agent/run.go`'s exemption comment — the old text said a
+lost gym challenge leaves "the same recoverable state" a blackout does and
+implied the loss was exempt; it is not, and the comment now says so.
+
+**Verified:** `go build ./...`, `go vet ./agent`, `go test ./agent -count=1`
+(POKEMON_RED_ROM set) — all ok, including the two exemption tests
+unmodified. No `.state` / `.gb` committed; the scratch probe
+(`agent/zz_s10_2d_test.go`) was deleted.
+
+## S10-3: the milestone on both models — the stopper moved to the Viridian Mart
+
+**MEASURED 2026-08-31.** Both runs: `-planner llm -fps 0 -max-rounds 200`,
+goal "Earn the Boulder Badge.", seed 0 (bit-reproducible),
+`-checkpoint-dir` set. 27B: `make run-llm-local`'s environment
+(qwen3.8-27b, thinking off, localhost:8002). 4B: `make run-llm`'s environment
+(qwen3.5-4b on the LAN box, key from .env). Full logs kept at
+`/tmp/s103-27b.log` and `/tmp/s103-4b.log`; per-round checkpoints in
+`/tmp/s103-27b/` and `/tmp/s103-4b/` (uncommitted artifacts, /tmp is ephemeral).
+Repeats below use the watch page's definition (`cmd/pokepilot/stats.go`:
+each pick of an objective already picked); the poller's last panel snapshots
+agree (27B: repeats 2 at r11, +2 more picks after; 4B: repeats 1 at r15,
++1 after).
+
+### Side by side
+
+| | 27B (local, no think) | 4B (LAN box) |
+|---|---|---|
+| rounds used | 13 of 200 | 16 of 200 |
+| Stop value | **failed** (StopFailed) | **failed** (StopFailed) |
+| stopper error | `agent: buy 3 POKEBALL: skill: Buy: not controllable (wFontLoaded=0x0001 wJoyIgnore=0x0000)` | `agent: buy 3 BURN HEAL: skill: Buy: not controllable (wFontLoaded=0x0001 wJoyIgnore=0x0000)` |
+| furthest map | Viridian Mart (0x2a) | Viridian Mart (0x2a) |
+| repeat picks | 4 (parcel ×3, buy POKEBALL ×3) | 2 (buy BURN HEAL ×3) |
+| rejections / ReplyRetries | 0 / 0 | 0 / 0 |
+| model latency | 1.59s avg (0.66–6.2s) over 13 calls | 6.3s avg (1.9–22.3s) over 16 calls |
+| starter | bulbasaur (model's pick) | charmander (model's pick) |
+
+Neither run reached Route 2 or the forest. Both died in the Viridian Mart,
+two rounds short of the 2026-08-31 baseline's 23 — the stopper moved, it did
+not move forward.
+
+### The new stopper: a wedged shop, not a wedged battle
+
+Both runs reached the mart, and both wedged in the Buy skill:
+
+- 27B: r11 `buy 3 POKEBALL` — **first failure:** `skill: Buy: the
+  choose-quantity box did not appear (wFontLoaded=0x0001 wCurMenuItem=0
+  wMaxMenuItem=2 wItemQuantity=1 wMoney=1)`. The on-screen box at that point
+  was the item list with the cursor on POKé BALL; the A tap did not open the
+  quantity box and hMoney stayed at 1.
+- 4B: bought ANTIDOTE (r12) and PARLYZ HEAL (r13) cleanly, then r14
+  `buy 3 BURN HEAL` — **first failure:** `skill: Buy: select item 0x0c:
+  cursor did not reach list entry 3 (wCurMenuItem=2)`. The on-screen box was
+  the BUY/SELL/QUIT menu ("MONEY BUY ¥2275 SELL QUIT Is there anything else
+  I can do?") — three entries, so Down from QUIT (2) wraps 2→0→1→2 and can
+  never reach 3. The skill was operating one screen behind.
+
+Then, identically in both runs: the shop menu is left open, every later
+objective refuses to start (`recovery failed (a menu is open and this layer
+does not operate menus): the next objective will refuse to start`), the
+planner re-picks the same buy, it fails `not controllable`, and two identical
+failures stop the run (27B r12-13, 4B r15-16).
+
+**Suspect code:** `skill/shop.go` `Buy`. Two defects, one fatal:
+
+1. **Mid-flow failures do not leave the shop.** Only the `ErrNotInStock` and
+   `ErrCantAfford` paths call `exitToOverworld`/`backOutOfShop`; a failure in
+   steps 3-6 (item-list advance, `selectListEntry`, the quantity-box wait,
+   `setQuantity`) returns the error with the menus still up. That is what
+   turns a one-round blip into a terminal wedge — the recovery layer is
+   DESIGNED (d63fac7) not to operate menus.
+2. **The screen detection it relies on is known-stale.** The four shop
+   screens are told apart by `wMenuWatchedKeys` only, and the comment at
+   `shop.go:29` says `wMaxMenuItem` is "stale otherwise". Both first
+   failures are one-screen-behind symptoms: A consumed by a transition
+   (27B), or the cursor driven in the wrong menu (4B). WHY the tap landed
+   late is unmeasured — that is the fix task's first question, with the two
+   checkpoint states as the reproduction (`/tmp/s103-27b/round-011-*.state`,
+   `/tmp/s103-4b/round-014-*.state`; `PROBE_STATE` for the live position,
+   `ResumeFrom`/`-resume-from` once S10-7 wires it).
+
+### Stage-0 checklist
+
+- **Parcel delivered (184f28f, menu order): YES, both.** 27B r5 after two
+  blackout failures (r2-3, the game answering — the errand walks Route 1
+  grass); 4B r5 first try.
+- **Shop refusal ends the run (d63fac7): not exercised.** No refusal
+  occurred — S10-2c's shelf-reading is visible: the offered items are in
+  stock (the 4B bought two of them), so the `exitToOverworld` refusal path
+  was never needed. The wedge is on the NON-refusal path, which that fix
+  never covered.
+- **Leftover text box poisons later rounds (6077302): not observed.** The
+  open menu was detected and each next objective refused to start LOUDLY;
+  the run stopped with the shop's own words, not silent corruption. (Same
+  mechanism, other end: it is also what makes the wedge terminal.)
+- **Rejections zero (S10-1): YES, both.** 0 "reply rejected" lines,
+  Result.ReplyRetries = 0, 13/13 and 16/16 replies clean.
+- **The 4B's index-1 bias (2026-08-30) did not show:** choices were
+  1, 11, 10, 5, 1, 8, 5, 10, 1, 1, 18, 2, 3, 4, 4, 4. Confound: the prompt
+  changed with the schema, so this is not capacity-only evidence.
+
+### Planning vs skill — the number slice 11 asked for
+
+Classifying every round of both runs (29 total):
+
+| class | rounds | share |
+|---|---|---|
+| forward progress (starter, parcel, route 1, city, center, heal, mart, buys) | 17 | 59% |
+| **SKILL: the shop wedge** (27B r11-13, 4B r14-16) | 6 | 21% |
+| **PLANNING: greedy wandering** (4B r2 pallet town, r6 reds bedroom, r7 reds house, r10 second heal after r9 already healed) | 4 | 14% |
+| game answering (27B r2-3 parcel blackouts) | 2 | 7% |
+
+- **Stop reasons: 0% planning, 100% skill.** 2 of 2 runs stopped on the
+  wedged shop. The re-picks inside the wedge (27B r12-13, 4B r15-16) look
+  like planning failure but are not: the state is wedged — EVERY objective
+  refuses to start, so a re-plan cannot save those rounds either.
+- **Rounds a plan would have saved: 4 of 29 (14%).** All four are 4B
+  wandering; a "starter → parcel → city → center → heal → mart → buy" plan
+  skips them. The 27B wasted 0 of 13 on wandering (its 4 repeat picks are
+  parcel retries after blackouts and wedge re-picks). 27B: 0/13; 4B: 4/16
+  (25%). (4B r3, route 1 before the parcel, is debatable — forward but
+  backtracked; not counted.)
+
+**IS THE GREEDY LOOP THE LIMIT? No — not at this stopper.** The 2026-08-31
+baseline's 7/23 (30%) circling was real, but the runs now die in the mart
+(rounds 13/16) before the loop can waste more than 4 rounds. The current
+limit is a SKILL defect — the Buy flow wedging the shop — which is
+downstream of no plan. The go/no-go input for slice 11's strategist item
+(item 10): the measured planning waste is 14% of rounds and 0% of the stop
+reason, and the wall the runs hit is model-independent (both models died on
+the same screen, same class of error — a code defect, not capacity). Fix the
+shop wedge first; the evidence does not yet support starting the strategist
+work on a hunch, and this measurement is the hunch-check.
+
+**Caveats:** n=1 per model, but seed 0 + temperature 0 make each run
+bit-reproducible, so the numbers are the numbers, not a sample. The
+capacity/speed confound stands: the 27B is both faster and (in this run)
+NOT further — both died on the same wall, which is itself the finding.
+Latency: 27B 1.59s/call avg; 4B 6.3s/call avg (the documented 4-14s band,
+with two 21-22s outliers).
+
+**Verified:** `go build ./...` and `go test ./agent ./skill -short -count=1`
+pass unchanged — this task measured, no code modified.

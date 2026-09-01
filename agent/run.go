@@ -21,11 +21,12 @@ import (
 type Stop uint8
 
 const (
-	StopDone   Stop = iota // the planner reported ErrDone
-	StopStuck              // no progress for too many rounds
-	StopBudget             // the round or frame budget ran out
-	StopFailed             // consecutive objective failures exhausted the failure budget
-	StopError              // a planner error, or nothing is possible from here
+	StopUnset Stop = iota // the zero value: no stop reason set yet. Never reported.
+	StopDone              // the planner reported ErrDone
+	StopStuck             // no progress for too many rounds
+	StopBudget            // the round or frame budget ran out
+	StopFailed            // consecutive objective failures exhausted the failure budget
+	StopError             // a planner error, or nothing is possible from here
 )
 
 // Result is the outcome of a run.
@@ -40,52 +41,166 @@ type Result struct {
 	// badly" without having to re-derive that from Stop.
 	Err   error
 	Final Observation
-	// ReplyRetries counts how many times the planner answered in the wrong
-	// shape and the same round was re-asked with the rejection quoted back.
-	// It is the diagnostic that separates a loop problem from a capacity
+	// ReplyRetries counts how many times the planner's reply was rejected
+	// and the same round was re-asked in a DIFFERENT form (see Retry). It
+	// is the diagnostic that separates a loop problem from a capacity
 	// problem: a run full of them answered but could not answer in shape,
 	// while zero means every reply the model gave was structurally fine.
 	ReplyRetries int
+	// PromptTokens and CompletionTokens are what the run's model calls
+	// spent, summed over EVERY call including rejected re-asks — a re-ask
+	// costs a full prompt, and a scoreboard row that hides that reads
+	// cheaper than the run was. Zero means the planner does not report
+	// usage (UsagePlanner), which is "not reported", never "free".
+	PromptTokens     int
+	CompletionTokens int
 }
 
 // MaxReplyRetries is how many times the planner may be asked for one
-// round's choice: the initial ask plus re-asks that quote the rejection
-// back. A malformed reply says nothing about the world — only that the
-// model answered in the wrong shape — so it is retryable, but a model that
-// cannot answer in shape three times running is a real finding, not a
-// transient, and the round stops with StopError.
+// round's choice: the initial ask plus re-asks. It is NOT "ask the same
+// thing three times": at temperature 0 an unchanged request returns the
+// same bytes (MEASURED by S9-12: the model repeated the identical invalid
+// reply through all three asks), so planWithRetries classifies each
+// rejection (classifyRetry) and makes every re-ask differ — a raised
+// temperature for a wrong-shaped reply, a raised max_tokens for a "length"
+// truncation — and spends no re-ask at all on a class that cannot change
+// (a model mismatch, a non-length non-stop finish). A round that exhausts
+// the asks stops with StopError.
 const MaxReplyRetries = 3
 
+// RetryTemperature is the sampling temperature a wrong-shaped-reply retry
+// asks with (see Retry). Non-zero, so a deterministic sampler can produce
+// different bytes at all; small, so a reply that was in the right shape
+// but off in a detail is still overwhelmingly likely to stay a valid
+// choice.
+const RetryTemperature = 0.3
+
+// Retry describes how one re-ask differs from the ask it repeats. A
+// re-ask that is byte-identical to the ask it follows costs the full call
+// latency to obtain the same bytes, so every retry must change the request
+// in the way its rejection class needs:
+//
+//	Feedback        the rejection quoted back into the prompt (wrong shape)
+//	Temperature     raised sampling (wrong shape; the only change that
+//	                makes a temperature-0 sampler emit different bytes)
+//	MaxTokensFactor a larger completion budget ("length" truncation; a
+//	                request change, not a prompt change)
+//
+// A zero Retry is the ordinary ask and changes nothing.
+type Retry struct {
+	// Feedback is the rejection text quoted back to the planner. Empty
+	// means the prompt is unchanged.
+	Feedback string
+	// Temperature, when non-nil, overrides the planner's sampling
+	// temperature for this ask only.
+	Temperature *float64
+	// MaxTokensFactor, when > 1, multiplies the planner's effective
+	// max_tokens for this ask only.
+	MaxTokensFactor int
+}
+
+// describe names what this re-ask changes, for the run log.
+func (r Retry) describe() string {
+	var parts []string
+	if r.Feedback != "" {
+		parts = append(parts, "the rejection quoted back")
+	}
+	if r.Temperature != nil {
+		parts = append(parts, fmt.Sprintf("temperature %.1f", *r.Temperature))
+	}
+	if r.MaxTokensFactor > 1 {
+		parts = append(parts, fmt.Sprintf("max_tokens x%d", r.MaxTokensFactor))
+	}
+	if len(parts) == 0 {
+		return "nothing (bug: a retry must differ from the ask it repeats)"
+	}
+	return strings.Join(parts, " + ")
+}
+
+// UsagePlanner reports the tokens its model calls spent. LLMPlanner
+// implements it; scripted planners do not, and a run without one reports
+// zero usage, which means "not reported", never "free". The totals are
+// read at the end of the run, not per round: they are a property of the
+// whole run, and a planner that sums over every call (re-asks included) is
+// already doing the accumulation.
+type UsagePlanner interface {
+	Usage() (prompt, completion int)
+}
+
 // FeedbackPlanner is a planner that can be re-asked about the same round
-// with the text of its own rejection quoted back as feedback. LLMPlanner
+// in a form that differs from the ask it repeats (Retry). LLMPlanner
 // implements it; the scripted planners do not, and a plain Planner's error
 // keeps stopping the run exactly as before.
 type FeedbackPlanner interface {
-	NextFeedback(obs Observation, offered []Objective, feedback string) (Objective, error)
+	NextRetry(obs Observation, offered []Objective, r Retry) (Objective, error)
+}
+
+// classifyRetry decides how a rejected reply is re-asked, or that it is
+// not re-asked at all. It classifies on the typed errors the planner
+// returns, not on message text:
+//
+//	ErrDone                 not a rejection: the planner is finished.
+//	ErrModelMismatch        never retried — the server answered with a
+//	                        different model than the one requested, and no
+//	                        re-ask changes which model the server loads.
+//	ErrNotFinished "length" retried with a doubled max_tokens and an
+//	                        UNCHANGED prompt: the reply was cut off at the
+//	                        completion budget, so the budget is what must
+//	                        change, not the question.
+//	ErrNotFinished (other)  never retried — a content filter or any other
+//	                        non-stop reason is deterministic at temperature
+//	                        0 with an unchanged prompt.
+//	any other error         retried with the rejection quoted back AND a
+//	                        raised temperature: the model answered in the
+//	                        wrong shape, and a temperature-0 re-ask of the
+//	                        same prompt returns the same bytes (MEASURED by
+//		                    S9-12).
+func classifyRetry(err error) (Retry, bool) {
+	switch {
+	case errors.Is(err, ErrDone), errors.Is(err, ErrModelMismatch):
+		return Retry{}, false
+	case errors.Is(err, ErrNotFinished):
+		if IsLengthTruncation(err) {
+			return Retry{MaxTokensFactor: 2}, true
+		}
+		return Retry{}, false
+	default:
+		temp := RetryTemperature
+		return Retry{Feedback: err.Error(), Temperature: &temp}, true
+	}
 }
 
 // planWithRetries asks the planner for this round's objective and, when it
 // rejects its own reply (a planner error that is not ErrDone), re-asks the
-// SAME round with the rejection quoted back. The observation does not
-// change; only the rejection feedback is added. It returns the objective
-// (meaningful only when err is nil), the planner's error — ErrDone passes
-// through untouched; any other non-nil error means MaxReplyRetries asks
-// have all been rejected, or a planner that cannot take feedback errored at
-// all — and n, how many re-asks happened, so the caller can count them in
-// the result. Run classifies the error into a Stop reason: StopDone is the
-// ZERO value of Stop, so it must never be signalled through a "stop != 0"
-// check.
+// SAME round in a form that differs from the ask it repeats (classifyRetry):
+// the observation never changes — a malformed reply says nothing about the
+// world — but the request does. It returns the objective (meaningful only
+// when err is nil), the planner's error — ErrDone passes through untouched;
+// any other non-nil error means the asks are exhausted, the rejection class
+// cannot change on a re-ask, or a planner that cannot take retries errored
+// at all — and n, how many re-asks happened, so the caller can count them
+// in the result. Run classifies the error into a Stop reason from the error
+// itself: the zero value of Stop is StopUnset ("no reason set yet"), and a
+// finished planner must never be read as "keep going".
 func planWithRetries(log io.Writer, round int, p Planner, obs Observation, offered []Objective) (Objective, error, int) {
 	obj, err := p.Next(obs, offered)
-	fp, canFeedback := p.(FeedbackPlanner)
+	fp, canRetry := p.(FeedbackPlanner)
 	retries := 0
-	for err != nil && !errors.Is(err, ErrDone) && canFeedback && retries < MaxReplyRetries-1 {
+	for err != nil && !errors.Is(err, ErrDone) && canRetry && retries < MaxReplyRetries-1 {
+		r, retryable := classifyRetry(err)
+		if !retryable {
+			if log != nil {
+				fmt.Fprintf(log, "round %d: reply rejected and not retried (cannot change on a re-ask): %v\n",
+					round, err)
+			}
+			break
+		}
 		retries++
 		if log != nil {
-			fmt.Fprintf(log, "round %d: reply rejected (ask %d of %d): %v\n",
-				round, retries+1, MaxReplyRetries, err)
+			fmt.Fprintf(log, "round %d: reply rejected (ask %d of %d): %v; re-ask differs by %s\n",
+				round, retries+1, MaxReplyRetries, err, r.describe())
 		}
-		obj, err = fp.NextFeedback(obs, offered, err.Error())
+		obj, err = fp.NextRetry(obs, offered, r)
 	}
 	return obj, err, retries
 }
@@ -384,11 +499,14 @@ func appendHistory(h []RoundRecord, r RoundRecord) []RoundRecord {
 // different ones; and MaxRounds and MaxFrames bound failure rounds like any
 // other round. A blackout is exempt from the failure accounting: it is the
 // game answering, not the planner failing — the party is healed and standing
-// in a town, the same recoverable state a lost gym challenge leaves (KindGym
-// reports its loss as an outcome for exactly this reason). It is still
-// recorded in history — the objective was not reached — but it neither
-// counts against MaxConsecutiveFailures nor repeats the last failure, because
-// the respawn changed the world. A train retreat (ErrTrainRetreat) is exempt
+// in a town. It is still recorded in history and in the failure tally —
+// the objective was not reached — but it neither counts against
+// MaxConsecutiveFailures nor repeats the last failure, because the respawn
+// changed the world. A lost gym challenge is NOT exempt: the objective said
+// "beat the gym leader" and the run lost, so it is a failure like any other
+// (KindGym returns the loss as an error); the loss's own blackout is what
+// makes the next round startable, and the round budget still bounds a
+// planner that keeps challenging an unbeatable leader. A train retreat (ErrTrainRetreat) is exempt
 // for the same reason in miniature: the session damaged the party, so a
 // repeated attempt is a new one from a new state, and the planner's correct
 // response — heal — is visible in the next observation's party HP; a planner
@@ -541,11 +659,12 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 
 		// A rejected reply is a different kind of event from a failed
 		// objective: it says nothing about the world, only that the model
-		// answered in the wrong shape, so the same round is re-asked with
-		// the rejection quoted back (planWithRetries) instead of stopping.
-		// ErrDone and other errors are classified here, not by a stop-value
-		// check: StopDone is Stop(0), the zero value, so "stop != 0" would
-		// read a finished planner as "keep going" and execute an empty
+		// answered in the wrong shape, so the same round is re-asked in a
+		// form that differs from the ask it repeats (planWithRetries)
+		// instead of stopping.
+		// ErrDone and other errors are classified here from the error itself,
+		// not from a stop value: the break must come from the error, or a
+		// finished planner would read as "keep going" and execute an empty
 		// objective.
 		// The planner sees what it said last time: the same sentence, with
 		// its age, is read back from this observation.
@@ -559,10 +678,10 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 
 		obj, err, retries := planWithRetries(budget.Log, round, p, last, now)
 		res.ReplyRetries += retries
-		// StopDone is Stop(0), the zero value, so it cannot be signalled
-		// through a "res.Stop != 0" check: the break must come from the
-		// error itself, or a finished planner would read as "keep going"
-		// and Execute would run on an empty objective.
+		// The break comes from the error, not from a stop-value check: the
+		// zero value of Stop is StopUnset ("no reason set yet"), so the
+		// checks below can ask "has a reason been set?" without ever
+		// mistaking a finished planner for one.
 		if errors.Is(err, ErrDone) {
 			res.Stop = StopDone
 			break
@@ -692,7 +811,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 				if m.FrameCount()-startFrame >= uint64(budget.MaxFrames) {
 					res.Stop = StopBudget
 				}
-				if res.Stop != 0 {
+				if res.Stop != StopUnset {
 					break
 				}
 				continue
@@ -700,7 +819,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 			retreatStreak, lastRetreatLevel = 0, 0
 
 			consecFailures++
-			// res.Stop is still the zero value unless one of these sets it.
+			// res.Stop is still StopUnset unless one of these sets it.
 			switch {
 			case obj.String() == lastFailObj && err.Error() == lastFailErr:
 				// The same objective failing the same way twice in a row:
@@ -717,7 +836,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 				// nil and StopBudget carries the meaning.
 				res.Stop = StopBudget
 			}
-			if res.Stop != 0 {
+			if res.Stop != StopUnset {
 				break
 			}
 			lastFailObj, lastFailErr = obj.String(), err.Error()
@@ -754,6 +873,9 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 	}
 
 	res.Final = last
+	if up, ok := p.(UsagePlanner); ok {
+		res.PromptTokens, res.CompletionTokens = up.Usage()
+	}
 	return res
 }
 

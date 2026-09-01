@@ -361,10 +361,19 @@ func TestOfferTable(t *testing.T) {
 			},
 		},
 		{
-			name: "inside the mart: buy joins",
+			// The shelf as the ROM has it — red/rom.TestMartItemsViridian pins
+			// this exact list against POKEMON_RED_ROM (MEASURED 2026-08-31:
+			// POKe BALL, ANTIDOTE, PARLYZ HEAL, BURN HEAL — no POTION). Offer
+			// offers one buy per stocked item and nothing the shelf lacks:
+			// the old fixed menu offered POTION here, a guaranteed-failing
+			// objective at the first shop every run reached.
+			name: "inside the viridian mart: one buy per item the shelf actually stocks, no POTION",
 			obs: agent.Observation{
 				Map: 0x2a, MapName: "VIRIDIAN_MART", X: 3, Y: 6, PartyCount: 1,
-				Events: []string{"BattledRivalInOaksLab"},
+				// names are the agent's item vocabulary (ItemName), which spells
+				// the ball "pokeball"; the ROM prints "POKE BALL".
+				MartStock: []string{"pokeball", "antidote", "parlyz heal", "burn heal"},
+				Events:    []string{"BattledRivalInOaksLab"},
 			},
 			known: func() *agent.Knowledge {
 				k := agent.NewKnowledge(adj)
@@ -373,10 +382,36 @@ func TestOfferTable(t *testing.T) {
 			},
 			want: []string{
 				"deliver oak's parcel",
-				"buy 3 POTION",
+				"buy 3 POKEBALL",
+				"buy 3 ANTIDOTE",
+				"buy 3 PARLYZ HEAL",
+				"buy 3 BURN HEAL",
 				"go to viridian mart",
 				"go to viridian mart, fleeing wild battles",
 			},
+			mustNot: []string{"POTION"},
+		},
+		{
+			// A shelf that cannot be read offers NOTHING, not a guess: an
+			// objective that cannot succeed costs a round, a model call, and
+			// (before the shop closed itself on refusal) the run.
+			name: "inside a mart whose shelf is unreadable: no buy objective at all",
+			obs: agent.Observation{
+				Map: 0x2a, MapName: "VIRIDIAN_MART", X: 3, Y: 6, PartyCount: 1,
+				MartStock: nil, // the decode failed; Observe leaves it empty
+				Events:    []string{"BattledRivalInOaksLab"},
+			},
+			known: func() *agent.Knowledge {
+				k := agent.NewKnowledge(adj)
+				k.SawMap(0x2a)
+				return k
+			},
+			want: []string{
+				"deliver oak's parcel",
+				"go to viridian mart",
+				"go to viridian mart, fleeing wild battles",
+			},
+			mustNot: []string{"buy"},
 		},
 		{
 			name: "a completed one-shot stays off; repeatable verbs do not",
@@ -698,7 +733,7 @@ func TestOfferTrainingTargetTracksTheLead(t *testing.T) {
 	known := agent.NewKnowledge(nil)
 	obs := agent.Observation{
 		Map: 0x0c, HasGrass: true, PartyCount: 1,
-		Party: []agent.PartyMon{{Level: 11, HP: 30, MaxHP: 30}},
+		Party: []agent.PartyMon{{Level: 11, HP: 20, MaxHP: 20}},
 	}
 	trainTarget := func(obs agent.Observation) (uint8, bool) {
 		for _, objective := range agent.Offer(obs, known) {
@@ -713,7 +748,7 @@ func TestOfferTrainingTargetTracksTheLead(t *testing.T) {
 	// fixed target of 12 a level-12 lead was offered no training at all,
 	// whatever it was about to walk into.
 	for _, tc := range []struct{ lead, want uint8 }{{5, 7}, {11, 13}, {12, 14}, {40, 42}} {
-		obs.Party = []agent.PartyMon{{Level: tc.lead, HP: 30, MaxHP: 30}}
+		obs.Party = []agent.PartyMon{{Level: tc.lead, HP: 20, MaxHP: 20}}
 		got, ok := trainTarget(obs)
 		if !ok {
 			t.Fatalf("lead level %d: training not offered", tc.lead)
@@ -725,13 +760,76 @@ func TestOfferTrainingTargetTracksTheLead(t *testing.T) {
 
 	// A lead at the ceiling has no next rung, and no party has nothing to
 	// train: both are objectives that could only fail.
-	obs.Party = []agent.PartyMon{{Level: 100, HP: 30, MaxHP: 30}}
+	obs.Party = []agent.PartyMon{{Level: 100, HP: 20, MaxHP: 20}}
 	if got, ok := trainTarget(obs); ok {
 		t.Errorf("training offered at level %d for a level-100 lead; there is no rung above it", got)
 	}
 	obs.Party, obs.PartyCount = nil, 0
 	if got, ok := trainTarget(obs); ok {
 		t.Errorf("training offered to level %d with an empty party", got)
+	}
+}
+
+// TestOfferWithholdsTrainBelowRetreatLine: a lead at or below the retreat
+// line is not offered Train — skill.Train refuses before it fights
+// anything on the same line, so the objective would cost a planner call
+// and a failure slot to change nothing. The line is skill's to own
+// (skill.BelowRetreatLine, reading retreatLineNum/Den); Offer must not
+// restate the fraction.
+func TestOfferWithholdsTrainBelowRetreatLine(t *testing.T) {
+	known := agent.NewKnowledge(nil)
+	mk := func(hp, maxHP uint16) agent.Observation {
+		return agent.Observation{
+			Map: 0x0c, MapName: "ROUTE_1", HasGrass: true, PartyCount: 1,
+			Party: []agent.PartyMon{{Level: 5, HP: hp, MaxHP: maxHP}},
+		}
+	}
+	menu := func(obs agent.Observation) (train, others int) {
+		for _, o := range agent.Offer(obs, known) {
+			if o.Kind == agent.KindTrain {
+				train++
+			} else {
+				others++
+			}
+		}
+		return
+	}
+
+	// Above the line: Train IS offered. Without this case the test proves
+	// nothing — a broken Offer that returns an empty menu would pass an
+	// absence-only test.
+	if train, _ := menu(mk(20, 20)); train != 1 {
+		t.Fatalf("healthy lead on grass: train offered %d times, want 1", train)
+	}
+
+	// Exactly AT the line: skill.Train's start check is strict
+	// (hp*Den < maxHP*Num), so a lead at exactly half max HP is NOT below
+	// the line and the session would start. Offer agrees: still offered.
+	if train, _ := menu(mk(10, 20)); train != 1 {
+		t.Fatalf("lead at exactly the line: train offered %d times, want 1", train)
+	}
+
+	// Below the line: Train is withheld, and the menu is not empty — the
+	// rest of the run still has objectives to pick from.
+	if train, _ := menu(mk(9, 20)); train != 0 {
+		t.Errorf("lead below the line: train offered, want withheld")
+	}
+	if _, others := menu(mk(9, 20)); others == 0 {
+		t.Errorf("lead below the line: the whole menu is empty, want the other objectives still offered")
+	}
+
+	// Below the line and NOT on grass: unchanged — grass was already the
+	// gate, and nothing new is offered either.
+	obs := mk(9, 20)
+	obs.HasGrass = false
+	if train, _ := menu(obs); train != 0 {
+		t.Errorf("no grass: train offered, want withheld")
+	}
+
+	// A fainted lead (HP 0, a backup mon still standing) reads as below
+	// the line, as the start check does.
+	if train, _ := menu(mk(0, 20)); train != 0 {
+		t.Errorf("fainted lead: train offered, want withheld")
 	}
 }
 

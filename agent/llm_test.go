@@ -2,6 +2,7 @@ package agent_test
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -309,6 +310,47 @@ func TestLLMPlannerSendsSchema(t *testing.T) {
 	// reply.
 	if strings.Contains(body, `"flee"`) {
 		t.Errorf("request body's schema still offers a \"flee\" field; the model will emit it on non-travel objectives and the run dies on the rejection\nbody: %s", body)
+	}
+}
+
+// TestLLMPlannerSchemaStaysArgumentFreePerKind: the rendered request body
+// must ask for exactly choice and intent for EVERY kind on the menu, not
+// just the kinds that happen to be offered in a fixture. The defect that
+// killed the runs was not "the schema has a level field" but "the schema
+// has a field that SOME kind fills in and another kind rejects", so the
+// guard iterates every Kind, renders the real body with that kind offered,
+// and checks the schema's properties. A new kind added later re-runs this
+// test with itself on the menu; a per-kind annotation of the menu or of
+// the schema fails it.
+func TestLLMPlannerSchemaStaysArgumentFreePerKind(t *testing.T) {
+	for k := agent.Kind(0); k <= agent.KindUseItem; k++ {
+		var body string
+		srv := startModelServer(t, `{"choices":[{"message":{"content":"1"}}]}`, &body)
+		if _, err := llmPlanner(srv).Next(llmObs(), []agent.Objective{{Kind: k}}); err != nil {
+			t.Fatalf("Next with kind %d offered: %v", k, err)
+		}
+		var req struct {
+			ResponseFormat struct {
+				JSONSchema struct {
+					Schema struct {
+						Properties map[string]json.RawMessage `json:"properties"`
+					} `json:"schema"`
+				} `json:"json_schema"`
+			} `json:"response_format"`
+		}
+		if err := json.Unmarshal([]byte(body), &req); err != nil {
+			t.Fatalf("kind %d: request body is not JSON: %v\nbody: %s", k, err, body)
+		}
+		props := req.ResponseFormat.JSONSchema.Schema.Properties
+		if len(props) != 2 {
+			t.Errorf("kind %d: schema asks for %d fields, want exactly choice and intent\nbody: %s", k, len(props), body)
+			continue
+		}
+		for _, want := range []string{"choice", "intent"} {
+			if _, ok := props[want]; !ok {
+				t.Errorf("kind %d: schema missing %q", k, want)
+			}
+		}
 	}
 }
 
@@ -731,12 +773,12 @@ func TestLLMPlannerPromptUsesObservationHistoryOnly(t *testing.T) {
 
 // TestLLMPlannerRejectionCarriedIntoReprompt is the feedback half of S7-4:
 // a reply whose argument does not apply to the chosen objective is
-// rejected, and the re-ask (NextFeedback) must carry the rejection text
-// into the next prompt. A retry that re-asks the identical question
-// teaches the model nothing and just burns the budget three times as fast;
-// quoting the rejection back is what makes the retry a correction instead
-// of a repeat. The strict rejection itself must survive: the first reply
-// is still an error, never coerced into the bare choice.
+// rejected, and the re-ask (NextRetry) must carry the rejection text into
+// the next prompt. A retry that re-asks the identical question teaches the
+// model nothing and just burns the budget three times as fast; quoting the
+// rejection back is what makes the retry a correction instead of a repeat.
+// The strict rejection itself must survive: the first reply is still an
+// error, never coerced into the bare choice.
 func TestLLMPlannerRejectionCarriedIntoReprompt(t *testing.T) {
 	var bodies []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -769,12 +811,12 @@ func TestLLMPlannerRejectionCarriedIntoReprompt(t *testing.T) {
 	}
 
 	// Re-ask with the rejection quoted back: the model corrects it.
-	got, err := p.NextFeedback(llmObs(), offered, err.Error())
+	got, err := p.NextRetry(llmObs(), offered, agent.Retry{Feedback: err.Error()})
 	if err != nil {
-		t.Fatalf("NextFeedback: %v", err)
+		t.Fatalf("NextRetry: %v", err)
 	}
 	if got.Kind != agent.KindGoTo || got.Place != "pallet town" {
-		t.Fatalf("NextFeedback = %s, want the corrected bare choice", got)
+		t.Fatalf("NextRetry = %s, want the corrected bare choice", got)
 	}
 
 	// The rejection text is in the SECOND prompt and only there.
@@ -824,5 +866,190 @@ func TestPromptHashTracksTheBytesSent(t *testing.T) {
 		if got := tc.p.PromptHash(); got == h {
 			t.Errorf("%s did not change the prompt hash (both %q)", tc.what, got)
 		}
+	}
+}
+
+// llmRequest is the part of a captured chat/completions body the retry
+// tests assert on: the request-level knobs and the prompt itself.
+type llmRequest struct {
+	Temperature float64 `json:"temperature"`
+	MaxTokens   int     `json:"max_tokens"`
+	Messages    []struct {
+		Role    string `json:"role"`
+		Content string `json:"content"`
+	} `json:"messages"`
+}
+
+func decodeLLMRequest(t *testing.T, body string) llmRequest {
+	t.Helper()
+	var r llmRequest
+	if err := json.Unmarshal([]byte(body), &r); err != nil {
+		t.Fatalf("decode captured request body: %v\nbody: %s", err, body)
+	}
+	return r
+}
+
+// TestShapeRetryDiffersByTemperature pins the wrong-shaped-reply design:
+// at temperature 0 a re-ask of the same prompt returns the same bytes
+// (MEASURED by S9-12), so a shape rejection is retried with the rejection
+// quoted back AND a raised sampling temperature — the only change that
+// makes a deterministic sampler produce different bytes at all. The test
+// asserts the difference on the captured request bodies: the first ask is
+// temperature 0 without feedback, the retry is temperature 0.3 with the
+// rejection in the user prompt.
+func TestShapeRetryDiffersByTemperature(t *testing.T) {
+	var bodies []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read request body: %v", err)
+		}
+		bodies = append(bodies, string(b))
+		w.Header().Set("Content-Type", "application/json")
+		switch len(bodies) {
+		case 1:
+			// An out-of-range choice: a wrong-shaped reply, rejected.
+			fmt.Fprint(w, `{"model":"qwen3.8-27b","choices":[{"message":{"role":"assistant","content":"{\"choice\":9}"}, "finish_reason":"stop"}]}`)
+		default:
+			fmt.Fprint(w, `{"model":"qwen3.8-27b","choices":[{"message":{"role":"assistant","content":"{\"choice\":1}"}, "finish_reason":"stop"}]}`)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	p := llmPlanner(srv)
+	offered := llmOffered()
+
+	_, err := p.Next(llmObs(), offered)
+	if err == nil {
+		t.Fatalf("Next accepted an out-of-range choice; the strict rejection must survive")
+	}
+	temp := agent.RetryTemperature
+	got, err := p.NextRetry(llmObs(), offered, agent.Retry{Feedback: err.Error(), Temperature: &temp})
+	if err != nil {
+		t.Fatalf("NextRetry: %v", err)
+	}
+	if got.Kind != agent.KindGoTo || got.Place != "pallet town" {
+		t.Fatalf("NextRetry = %s, want the corrected choice", got)
+	}
+
+	if len(bodies) != 2 {
+		t.Fatalf("%d requests, want 2 (initial + one retry)", len(bodies))
+	}
+	first, second := decodeLLMRequest(t, bodies[0]), decodeLLMRequest(t, bodies[1])
+	if first.Temperature != 0 {
+		t.Errorf("first ask temperature = %v, want 0", first.Temperature)
+	}
+	if second.Temperature != agent.RetryTemperature {
+		t.Errorf("retry temperature = %v, want %v (a temperature-0 re-ask returns the same bytes)",
+			second.Temperature, agent.RetryTemperature)
+	}
+	if strings.Contains(bodies[0], "was rejected") {
+		t.Errorf("first prompt already carries rejection feedback:\n%s", bodies[0])
+	}
+	if !strings.Contains(bodies[1], "was rejected") {
+		t.Errorf("retry prompt does not carry the rejection text:\n%s", bodies[1])
+	}
+	// The observation prompt itself is unchanged; only the feedback line
+	// and the temperature differ.
+	if first.Messages[0].Content != second.Messages[0].Content {
+		t.Errorf("retry changed the system prompt; only the user feedback may differ")
+	}
+}
+
+// TestLengthRetryRaisesMaxTokensNotPrompt pins the "length" design: a
+// finish_reason "length" rejection is retried by raising max_tokens (a
+// request change), NOT by changing the prompt — the budget, not the
+// answer, was the defect, and quoting feedback into the prompt would only
+// shift the truncation point. The test asserts on the captured bodies:
+// max_tokens doubles (512 -> 1024), temperature stays 0, and both asks
+// carry byte-identical messages.
+func TestLengthRetryRaisesMaxTokensNotPrompt(t *testing.T) {
+	var bodies []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read request body: %v", err)
+		}
+		bodies = append(bodies, string(b))
+		w.Header().Set("Content-Type", "application/json")
+		switch len(bodies) {
+		case 1:
+			// Truncated at the budget: the reply is cut off mid-JSON.
+			fmt.Fprint(w, `{"model":"qwen3.8-27b","choices":[{"message":{"role":"assistant","content":"{\"choice\": 1, \"intent\": \"go th"}, "finish_reason":"length"}]}`)
+		default:
+			// The larger budget clears the think block: a complete reply.
+			fmt.Fprint(w, `{"model":"qwen3.8-27b","choices":[{"message":{"role":"assistant","content":"{\"choice\":1,\"intent\":\"go to pallet town\"}"}, "finish_reason":"stop"}]}`)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	p := llmPlanner(srv)
+	offered := llmOffered()
+
+	_, err := p.Next(llmObs(), offered)
+	if err == nil {
+		t.Fatalf("Next accepted a truncated reply; the strict rejection must survive")
+	}
+	if !agent.IsLengthTruncation(err) {
+		t.Fatalf("IsLengthTruncation = false, want true for %v", err)
+	}
+	got, err := p.NextRetry(llmObs(), offered, agent.Retry{MaxTokensFactor: 2})
+	if err != nil {
+		t.Fatalf("NextRetry: %v", err)
+	}
+	if got.Kind != agent.KindGoTo || got.Place != "pallet town" {
+		t.Fatalf("NextRetry = %s, want the choice from the complete reply", got)
+	}
+
+	if len(bodies) != 2 {
+		t.Fatalf("%d requests, want 2 (initial + one retry)", len(bodies))
+	}
+	first, second := decodeLLMRequest(t, bodies[0]), decodeLLMRequest(t, bodies[1])
+	if first.MaxTokens != 512 {
+		t.Fatalf("first ask max_tokens = %d, want 512 (the default budget)", first.MaxTokens)
+	}
+	if second.MaxTokens != 1024 {
+		t.Errorf("retry max_tokens = %d, want 1024 (the doubled budget is what differs)", second.MaxTokens)
+	}
+	if second.Temperature != 0 {
+		t.Errorf("retry temperature = %v, want 0 (sampling is not the defect)", second.Temperature)
+	}
+	if len(first.Messages) != len(second.Messages) {
+		t.Fatalf("message counts differ: %d vs %d", len(first.Messages), len(second.Messages))
+	}
+	for i := range first.Messages {
+		if first.Messages[i].Content != second.Messages[i].Content {
+			t.Errorf("retry changed the %s message; the prompt must be byte-identical",
+				first.Messages[i].Role)
+		}
+	}
+	if strings.Contains(bodies[1], "was rejected") {
+		t.Errorf("length retry quoted feedback into the prompt; the budget is what differs:\n%s", bodies[1])
+	}
+}
+
+// TestModelMismatchIsTypedAndSingleShot: a reply whose model field names a
+// different model than the one requested is ErrModelMismatch — the class
+// planWithRetries does NOT retry, because no re-ask changes which model the
+// server loads. The planner-level half of the no-retry assertion: the error
+// is typed, and one call drew it (the run-level half is
+// TestRunModelMismatchNotRetried).
+func TestModelMismatchIsTypedAndSingleShot(t *testing.T) {
+	var calls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"model":"qwen3.5-4b","choices":[{"message":{"role":"assistant","content":"{\"choice\":1}"}, "finish_reason":"stop"}]}`)
+	}))
+	t.Cleanup(srv.Close)
+	p := llmPlanner(srv) // requests qwen3.8-27b; the server answers qwen3.5-4b
+
+	_, err := p.Next(llmObs(), llmOffered())
+	if err == nil {
+		t.Fatalf("Next accepted a reply from the wrong model")
+	}
+	if !errors.Is(err, agent.ErrModelMismatch) {
+		t.Fatalf("Err = %v, want ErrModelMismatch (the typed error the retry classifier reads)", err)
+	}
+	if calls != 1 {
+		t.Fatalf("calls = %d, want 1 (the planner never re-asks on its own)", calls)
 	}
 }

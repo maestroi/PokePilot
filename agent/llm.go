@@ -18,13 +18,24 @@ import (
 
 // Typed rejection errors. A reply that fails envelope verification (wrong
 // model, non-stop finish) or content parsing is REJECTED: an error, never a
-// guess. Run re-asks the same round with the rejection quoted back
-// (NextFeedback), up to MaxReplyRetries asks; exhausting them is a clean
-// stop rather than a silent wrong answer.
+// guess. Run classifies the rejection (classifyRetry) and re-asks the same
+// round only when the re-ask can differ from the ask it repeats (Retry):
+// a wrong-shaped reply is re-asked with the rejection quoted back and a
+// raised temperature, a "length" truncation with a larger max_tokens, and
+// a model mismatch is never re-asked at all. Exhausting MaxReplyRetries
+// asks is a clean stop rather than a silent wrong answer.
 var (
 	ErrModelMismatch = errors.New("agent: llm planner: model mismatch")
 	ErrNotFinished   = errors.New("agent: llm planner: reply did not finish cleanly")
 )
+
+// IsLengthTruncation reports whether err is a finish_reason "length"
+// rejection: the reply was cut off at the completion budget, so a re-ask of
+// the same request truncates again at the same token — only a larger
+// max_tokens changes the outcome.
+func IsLengthTruncation(err error) bool {
+	return errors.Is(err, ErrNotFinished) && strings.Contains(err.Error(), `finish_reason "length"`)
+}
 
 const (
 	defaultLLMBaseURL = "http://192.168.50.204:8000/v1"
@@ -133,9 +144,11 @@ type LLMHealth struct {
 // whole request timeout. It is NOT a way to keep replies short: a reasoning
 // model emits a <think> block before the answer (see thinkRe), so a tight cap
 // truncates it mid-thought, the server reports finish_reason "length", the
-// reply is rejected as ErrNotFinished, and after MaxReplyRetries the run stops
-// — which reads as a failing model rather than a truncated one. Keep it well
-// above a think block plus {"choice": N}.
+// reply is rejected as ErrNotFinished. The retry then doubles the budget
+// (classifyRetry, capped at maxRetryTokens) rather than re-asking the same
+// request, and only if the doubled budget still truncates does the round
+// burn the rest of MaxReplyRetries. Keep it well above a think block plus
+// {"choice": N}.
 //
 // 512 is sized for a small model that barely thinks. MEASURED 2026-08-31
 // against a local qwen3.8-27b: 439 completion tokens to choose between TWO
@@ -144,6 +157,51 @@ type LLMHealth struct {
 // raises it with POKEPILOT_LLM_MAX_TOKENS rather than by editing code —
 // the same seam POKEPILOT_LLM_TIMEOUT is for.
 const maxReplyTokens = 512
+
+// maxRetryTokens caps a length-truncation retry's raised budget: the point
+// is to clear the think block, not to remove the cap that keeps a runaway
+// reply from eating the request timeout.
+const maxRetryTokens = 8192
+
+// Usage reports the tokens this planner's model calls have spent, summed
+// over EVERY call including rejected re-asks: the usage is folded in right
+// after each ask returns, before the reply is verified, so a re-ask costs a
+// full prompt and the total says so. Zero means the server never reported
+// usage, which is "not reported", never "free".
+func (p *LLMPlanner) Usage() (prompt, completion int) {
+	return p.Health.PromptTokens, p.Health.CompletionTokens
+}
+
+// PromptHash is the comparability marker for the prompt a planner sends:
+// the first 8 hex chars of SHA-256 over the four values the request is
+// built from — the base system prompt, the goal, the extra system text and
+// the reply schema — joined with NUL separators so no field boundary can be
+// reinterpreted as another field's content.
+//
+// It is a MARKER, not a version scheme: there is no registry and no mapping
+// of hashes to slices. Two rows with different hashes are not comparable,
+// and the run's prompts.txt holds the prompt verbatim, which is the record
+// of what a hash meant. It is deliberately not a hand-maintained version
+// constant: a constant someone forgets to bump asserts a comparability that
+// does not hold, which is worse than no marker at all.
+func PromptHash(system, goal, extraSystem, schema string) string {
+	h := sha256.Sum256([]byte(system + "\x00" + goal + "\x00" + extraSystem + "\x00" + schema))
+	return hex.EncodeToString(h[:])[:8]
+}
+
+// PromptHash returns the hash of the prompt THIS planner sends, computed
+// from the same values ask() builds the request from: the rendered system
+// prompt (base + goal + extra) and the reply schema, marshalled the same
+// way it enters the request. Any change to any of the four — including a
+// prompt edit like S10-1's argument annotations — changes the hash, which
+// is the point: the hash only ever changes when the prompt does.
+func (p *LLMPlanner) PromptHash() string {
+	schema, err := json.Marshal(choiceSchema)
+	if err != nil {
+		return "" // choiceSchema is static plain data; this cannot happen
+	}
+	return PromptHash(llmSystemPrompt, p.Goal, p.ExtraSystem, string(schema))
+}
 
 // NewLLMPlanner returns an LLMPlanner with the defaults, overridden by
 // POKEPILOT_LLM_URL and POKEPILOT_LLM_MODEL when set. The bearer
@@ -177,19 +235,23 @@ func NewLLMPlanner() *LLMPlanner {
 // returns the offered objective the model picked. It never guesses: a
 // reply that does not resolve to one of the offered objectives is an
 // error, so the run loop can stop on it instead of acting on a wrong
-// answer. It is NextFeedback with no rejection feedback.
+// answer. It is NextRetry with a zero Retry.
 func (p *LLMPlanner) Next(obs Observation, offered []Objective) (Objective, error) {
-	return p.NextFeedback(obs, offered, "")
+	return p.NextRetry(obs, offered, Retry{})
 }
 
-// NextFeedback is Next for a round that was already asked once: feedback
-// carries the text of the rejection the previous reply drew, and it is
-// appended to the user prompt verbatim so the model sees exactly what it
-// did wrong ("level argument 12 does not apply to go to route 1") and can
-// correct it. A retry that re-asks the identical question teaches nothing
-// and just burns the budget faster; the feedback is the whole point. The
-// observation itself is unchanged — a malformed reply says nothing about
-// the world, only about the shape of the answer.
+// NextRetry is Next for a round that was already asked once: r describes
+// how this ask DIFFERS from the one it repeats (see Retry). A retry that
+// re-asked the identical question of a temperature-0 model obtained the
+// identical bytes (MEASURED by S9-12), so r must change the request in the
+// way the rejection class needs: r.Feedback is appended to the user prompt
+// verbatim so the model sees exactly what it did wrong ("level argument 12
+// does not apply to go to route 1") and can correct it; r.Temperature
+// overrides the sampling temperature so a deterministic sampler can emit
+// different bytes at all; r.MaxTokensFactor multiplies the effective
+// max_tokens so a "length" truncation is retried with the larger budget it
+// was rejected for. The observation itself is unchanged — a malformed
+// reply says nothing about the world, only about the shape of the answer.
 // The reply is asked for as a JSON object ({"choice": N, plus the
 // arguments of the chosen objective when it has any) via
 // response_format/json_schema, so a well-behaved server cannot emit a
@@ -202,13 +264,13 @@ func (p *LLMPlanner) Next(obs Observation, offered []Objective) (Objective, erro
 // substantially just the number) falls back to the text path. The schema
 // is an optimisation, not the safety mechanism — WithArgs and Validate
 // check every value against its stated range either way.
-func (p *LLMPlanner) NextFeedback(obs Observation, offered []Objective, feedback string) (Objective, error) {
+func (p *LLMPlanner) NextRetry(obs Observation, offered []Objective, r Retry) (Objective, error) {
 	if len(offered) == 0 {
 		return Objective{}, fmt.Errorf("agent: llm planner: nothing was offered")
 	}
 	picked := "" // filled in below; the deferred log line reports it
 	start := time.Now()
-	res, err := p.ask(obs, offered, feedback)
+	res, err := p.ask(obs, offered, r.Feedback, r.Temperature, r.MaxTokensFactor)
 	took := time.Since(start)
 	if err != nil {
 		return Objective{}, err
@@ -542,40 +604,6 @@ func (p *LLMPlanner) systemPrompt() string {
 	return s
 }
 
-// PromptHash is a short hash of everything in the tree that determines the
-// prompt this planner sends: the system message (llmSystemPrompt, plus
-// ExtraSystem and Goal when set) and the reply schema. Two scoreboard rows
-// carrying different hashes were collected under different prompts and are
-// NOT comparable.
-//
-// It exists because three separate slices have protected comparability with
-// a sentence in a runnote — S7-2 (the goal arrived), S9-4 (the intent
-// sentence arrived), S6-12 (four reasons at once). Each did the right thing
-// available to it. But the sentence is read at the moment of WRITING, and
-// the comparison happens months later, by someone holding two tables and no
-// runnote. A hash stamped where the numbers are read cannot be missed the
-// same way.
-//
-// It hashes the bytes ACTUALLY SENT, never a version number someone has to
-// remember to bump — a stale version number is worse than none, because it
-// asserts comparability that is not there. Eight hex characters: enough that
-// two prompt generations will not collide, short enough for a table column.
-func (p *LLMPlanner) PromptHash() string {
-	// choiceSchema is a map, and encoding/json sorts object keys, so the
-	// rendering is stable across runs and builds.
-	schema, err := json.Marshal(choiceSchema)
-	if err != nil {
-		schema = []byte("unmarshalable") // a literal map of literals; cannot happen
-	}
-	h := sha256.New()
-	// The NUL separator keeps a system prompt that ends where the schema
-	// begins from hashing the same as one shifted a byte the other way.
-	h.Write([]byte(p.systemPrompt()))
-	h.Write([]byte{0})
-	h.Write(schema)
-	return hex.EncodeToString(h.Sum(nil)[:4])
-}
-
 // chatResult is the parsed reply: the content plus the envelope facts
 // (which model answered, how the generation stopped) that Next verifies
 // before trusting the content.
@@ -592,8 +620,10 @@ type chatResult struct {
 // body, empty choices — is an error naming what happened, and each one
 // increments Health.Transport. When feedback is non-empty (a re-ask after
 // a rejected reply) it is appended to the user prompt as rejection
-// feedback; see NextFeedback.
-func (p *LLMPlanner) ask(obs Observation, offered []Objective, feedback string) (chatResult, error) {
+// feedback; temperature (nil means 0) and maxTokensFactor (0 or 1 means
+// the planner's own budget) are the request-level differences a retry may
+// carry; see NextRetry.
+func (p *LLMPlanner) ask(obs Observation, offered []Objective, feedback string, temperature *float64, maxTokensFactor int) (chatResult, error) {
 	client := p.Client
 	if client == nil {
 		timeout := p.Timeout
@@ -619,9 +649,20 @@ func (p *LLMPlanner) ask(obs Observation, offered []Objective, feedback string) 
 		p.Health.Transport++
 		return chatResult{}, fmt.Errorf("agent: llm planner: "+format, args...)
 	}
+	temp := 0.0
+	if temperature != nil {
+		temp = *temperature
+	}
 	maxTokens := p.MaxTokens
 	if maxTokens <= 0 {
 		maxTokens = maxReplyTokens
+	}
+	if maxTokensFactor > 1 {
+		if mt := maxTokens * maxTokensFactor; mt < maxRetryTokens {
+			maxTokens = mt
+		} else {
+			maxTokens = maxRetryTokens
+		}
 	}
 	var templateKwargs map[string]any
 	if p.NoThink {
@@ -629,7 +670,7 @@ func (p *LLMPlanner) ask(obs Observation, offered []Objective, feedback string) 
 	}
 	reqBody, err := json.Marshal(chatRequest{
 		Model:       p.Model,
-		Temperature: 0,
+		Temperature: temp,
 		MaxTokens:   maxTokens,
 		Messages: []chatMessage{
 			{Role: "system", Content: system},

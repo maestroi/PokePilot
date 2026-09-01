@@ -166,36 +166,33 @@ func init() {
 	// on map 0x01 — one tile north of the gate line (19,9), south of the
 	// Route 2 exit at the map's north edge. Later tasks (S5b-4 onward,
 	// e.g. Travel to Pewter) load it instead of replaying the errand.
-	Register("post_errand", func(e *emu.Emu) error {
-		if err := starter(e); err != nil {
-			return err
-		}
-		romData := e.ROM()
-		policy := skill.StatAwareMove(romData)
-		if err := skill.OaksParcel(e, romData, policy); err != nil {
-			return err
-		}
-		dest, err := place("viridian city")
-		if err != nil {
-			return err
-		}
-		if _, err := Travel(e, dest, policy, maxBattles); err != nil {
-			return err
-		}
-		// (19,10) is the tile directly south of the gate line; the
-		// approach from (23,26) stays south of the gate.
-		if err := skill.GoTo(e, romData, skill.Destination{Map: 0x01, X: 19, Y: 10}); err != nil {
-			return err
-		}
-		// The crossing itself: two northward steps, ending on (19,8).
-		if err := skill.StepOnce(e, world.StepUp); err != nil {
-			return fmt.Errorf("fixture post_errand: step (19,10)->(19,9): %w", err)
-		}
-		if err := skill.StepOnce(e, world.StepUp); err != nil {
-			return fmt.Errorf("fixture post_errand: gate step (19,9)->(19,8): %w", err)
-		}
-		return nil
-	})
+	Register("post_errand", postErrand)
+
+	// forest_north_gate: the full road to the forest's NORTH gate (map
+	// 0x2f, (5,1)): post_errand, up Route 2's south band to the south
+	// gate, across the forest, up to the north gate — with the lead ground
+	// to forestGrindLevel in the forest itself, the same
+	// session/heal/blackout grind the gym journey used to run at test
+	// time. Two consumers: the gym tests start here instead of re-walking
+	// the road and re-grinding on every run, and the gate's standing
+	// Super Nerd (home tile (3,2),
+	// pokered/data/maps/objects/ViridianForestNorthGate.asm) is a two-step
+	// walk and one Talk away — the requirement-harvest test (S10-9) needs
+	// a state where its line is reachable, and this is it.
+	Register("forest_north_gate", forestNorthGate)
+
+	// pewter_city: forest_north_gate plus the last road leg: the gate
+	// crossing, up Route 2's north band into Pewter City, ending at
+	// Place("pewter city") (14,8).
+	Register("pewter_city", pewterCity)
+
+	// post_boulder: pewter_city plus the Brock fight: healed at the Pewter
+	// Center, beaten at the gym (ResultWon required — a fixture built on a
+	// lost fight is worse than no fixture), the Boulder Badge bit set in
+	// RAM, healed again, and back at Place("pewter city"). The Cascade
+	// test starts here instead of re-running the whole Pewter half, and
+	// Pewter's east exit — locked until EVENT_BEAT_BROCK — is open.
+	Register("post_boulder", postBoulder)
 
 	// post_pokeballs: post_errand state plus the five POKE_BALLs Oak gives
 	// after the Route 22 rival battle: EVENT_BEAT_ROUTE22_RIVAL_1ST_BATTLE
@@ -220,6 +217,289 @@ func init() {
 		}
 		return skill.GetPokeBalls(e, romData, policy)
 	})
+}
+
+// postErrand runs the story and the Oak's parcel errand, then crosses
+// Viridian City's north gate. It is a named function because the fixtures
+// further along the road (forest_north_gate and its descendants) build on
+// it from a freshly booted emulator, the way pallet_town builds on
+// starter.
+func postErrand(e *emu.Emu) error {
+	if err := starter(e); err != nil {
+		return err
+	}
+	romData := e.ROM()
+	policy := skill.StatAwareMove(romData)
+	if err := skill.OaksParcel(e, romData, policy); err != nil {
+		return err
+	}
+	dest, err := place("viridian city")
+	if err != nil {
+		return err
+	}
+	if _, err := Travel(e, dest, policy, maxBattles); err != nil {
+		return err
+	}
+	// (19,10) is the tile directly south of the gate line; the
+	// approach from (23,26) stays south of the gate.
+	if err := skill.GoTo(e, romData, skill.Destination{Map: 0x01, X: 19, Y: 10}); err != nil {
+		return err
+	}
+	// The crossing itself: two northward steps, ending on (19,8).
+	if err := skill.StepOnce(e, world.StepUp); err != nil {
+		return fmt.Errorf("fixture post_errand: step (19,10)->(19,9): %w", err)
+	}
+	if err := skill.StepOnce(e, world.StepUp); err != nil {
+		return fmt.Errorf("fixture post_errand: gate step (19,9)->(19,8): %w", err)
+	}
+	return nil
+}
+
+// forestNorthGate walks the road to the forest's north gate and grounds the
+// lead in the forest on the way. The legs are the proven
+// TestGymBoulderBadge scaffold: the south gate (0x32) is the only forest
+// crossing from Route 2's south band, and the safe spot (17,40) is clear of
+// every warp on the forest map, so the grind ping-pong cannot step on the
+// south warp pocket (15,47)-(18,47) and get carried back to Route 2's
+// dead-end south band.
+func forestNorthGate(e *emu.Emu) error {
+	if err := postErrand(e); err != nil {
+		return err
+	}
+	romData := e.ROM()
+	policy := skill.StatAwareMove(romData)
+
+	// Leg 1: Viridian City to the south gate, one row below the (5,0)
+	// forest warp; the gate is entered from Route 2's warp (3,43).
+	if _, err := Travel(e, skill.Destination{Map: 0x32, X: 5, Y: 1}, policy, maxBattles); err != nil {
+		return fmt.Errorf("fixture forest_north_gate: travel to the south gate: %w", err)
+	}
+	// Leg 2: the south gate into the forest at Place("viridian forest")
+	// (17,43).
+	forest, err := place("viridian forest")
+	if err != nil {
+		return err
+	}
+	if _, err := Travel(e, forest, policy, maxBattles); err != nil {
+		return fmt.Errorf("fixture forest_north_gate: travel to the forest: %w", err)
+	}
+	// The gate drops the player in the south warp pocket; walk up into the
+	// open forest before any grind.
+	safeSpot := skill.Destination{Map: 0x33, X: 17, Y: 40}
+	if _, err := Travel(e, safeSpot, policy, maxBattles); err != nil {
+		return fmt.Errorf("fixture forest_north_gate: travel to the safe spot: %w", err)
+	}
+	if err := trainInForest(e, romData, policy, safeSpot); err != nil {
+		return err
+	}
+	// Leave the forest healthy: the grind ends the moment the level is
+	// reached, which can be with a statused or hurt lead, and a lead like
+	// that blacks out on the gate leg. The detour is taken only when the
+	// lead is actually in danger; a healthy lead walks straight to the
+	// gate.
+	var mem state.Mem
+	state.Snapshot(e, &mem)
+	lead := state.DecodeParty(&mem).Mons[0]
+	if lead.Status != 0 || int(lead.HP)*2 < int(lead.MaxHP) {
+		center, err := place("viridian pokemon center")
+		if err != nil {
+			return err
+		}
+		if _, err := Travel(e, center, policy, 5); err != nil {
+			if !errors.Is(err, skill.ErrBlackedOut) {
+				return fmt.Errorf("fixture forest_north_gate: travel to the center before the gate: %w", err)
+			}
+			if err := settleBlackout(e); err != nil {
+				return err
+			}
+		} else if err := skill.Heal(e); err != nil {
+			return fmt.Errorf("fixture forest_north_gate: heal before the gate: %w", err)
+		}
+	}
+	// Leg 3: the forest to the north gate.
+	if _, err := Travel(e, skill.Destination{Map: 0x2F, X: 5, Y: 1}, policy, maxBattles); err != nil {
+		return fmt.Errorf("fixture forest_north_gate: travel to the north gate: %w", err)
+	}
+	return nil
+}
+
+// pewterCity is forest_north_gate plus the last road leg: the gate crossing
+// is an ordinary leg (Traverse picks the reachable (5,0) warp tile itself),
+// then up Route 2's north band into Pewter City.
+func pewterCity(e *emu.Emu) error {
+	if err := forestNorthGate(e); err != nil {
+		return err
+	}
+	romData := e.ROM()
+	policy := skill.StatAwareMove(romData)
+	dest, err := place("pewter city")
+	if err != nil {
+		return err
+	}
+	if _, err := Travel(e, dest, policy, maxBattles); err != nil {
+		return fmt.Errorf("fixture pewter_city: travel to Pewter City: %w", err)
+	}
+	return nil
+}
+
+// postBoulder is pewter_city plus the Brock fight. The fight must start
+// with the lead at full HP and no status — the same positive precondition
+// the gym test enforces — and it must be WON: a loss is the game
+// answering, and a fixture that depends on a lost fight is worse than no
+// fixture, so the build fails rather than caching it. The build ends back
+// at Place("pewter city") with the party healed.
+func postBoulder(e *emu.Emu) error {
+	if err := pewterCity(e); err != nil {
+		return err
+	}
+	romData := e.ROM()
+	policy := skill.StatAwareMove(romData)
+	gym, err := place("pewter gym")
+	if err != nil {
+		return err
+	}
+	center, err := place("pewter pokemon center")
+	if err != nil {
+		return err
+	}
+	if _, err := Travel(e, center, policy, 5); err != nil {
+		return fmt.Errorf("fixture post_boulder: travel to the Pewter Center: %w", err)
+	}
+	if err := skill.Heal(e); err != nil {
+		return fmt.Errorf("fixture post_boulder: heal: %w", err)
+	}
+	if _, err := Travel(e, gym, policy, 5); err != nil {
+		return fmt.Errorf("fixture post_boulder: travel to the gym: %w", err)
+	}
+	outcome, err := skill.Gym(e, romData, policy)
+	if err != nil {
+		return fmt.Errorf("fixture post_boulder: Gym: %w", err)
+	}
+	if outcome != state.ResultWon {
+		return fmt.Errorf("fixture post_boulder: the gym fight ended %d, want a win; the fixture is not buildable this run", outcome)
+	}
+	// The badge is written by the game during the fight; the poll is the
+	// same trip wire the gym test runs.
+	for i := 0; i < 3000; i++ {
+		e.StepFrame()
+		var mem state.Mem
+		state.Snapshot(e, &mem)
+		if state.DecodeProgress(&mem).Has(state.BadgeBoulder) {
+			break
+		}
+	}
+	if _, err := Travel(e, center, policy, 5); err != nil {
+		return fmt.Errorf("fixture post_boulder: travel to the Pewter Center after the gym: %w", err)
+	}
+	if err := skill.Heal(e); err != nil {
+		return fmt.Errorf("fixture post_boulder: heal after the gym: %w", err)
+	}
+	city, err := place("pewter city")
+	if err != nil {
+		return err
+	}
+	if _, err := Travel(e, city, policy, maxBattles); err != nil {
+		return fmt.Errorf("fixture post_boulder: travel back to Pewter City: %w", err)
+	}
+	return nil
+}
+
+// The forest grind the forest_north_gate fixture runs, in the same shape as
+// the gym journey's runtime grind (skill/gym_test.go): a water lead at 12
+// beats Brock's rock team and the forest leg's forced rival battle, so the
+// target is 12; a few battles per session, because Train has no HP
+// awareness and a one-mon party that grinds hard blacks out.
+const (
+	forestGrindLevel        = 12
+	forestTrainBattleBudget = 4
+	forestMaxHealDetours    = 6
+	forestMaxPhaseRetries   = 3
+	phaseShiftFrames        = 123 // the frame shift that breaks a no-encounter phase
+)
+
+// trainInForest grounds the lead to forestGrindLevel on the forest's grass,
+// the same session/heal/blackout structure the gym journey used to run at
+// test time: one session is a few battles, a hurt lead takes a detour to
+// the Viridian Center, a blackout is recovery (the respawn fully heals),
+// and a no-encounter phase is broken with a frame shift — the retry the
+// journey tests use, because the encounter roll mixes in the cycle count
+// and a blackout's fade frames can shift the grind into a dry cycle.
+func trainInForest(e *emu.Emu, romData []byte, policy skill.MovePolicy, safeSpot skill.Destination) error {
+	center, err := place("viridian pokemon center")
+	if err != nil {
+		return err
+	}
+	detours, phaseRetries := 0, 0
+	for {
+		var mem state.Mem
+		state.Snapshot(e, &mem)
+		lead := state.DecodeParty(&mem).Mons[0]
+		if int(lead.Level) >= forestGrindLevel {
+			return nil
+		}
+		res, err := skill.Train(e, romData, forestGrindLevel, policy, forestTrainBattleBudget)
+		if err != nil {
+			if strings.Contains(err.Error(), "no-encounter phase") && phaseRetries < forestMaxPhaseRetries {
+				phaseRetries++
+				e.StepFrames(phaseShiftFrames)
+				continue
+			}
+			return fmt.Errorf("fixture forest_north_gate: Train: %w (start=%d end=%d battles=%d reached=%v blackedOut=%v)",
+				err, res.StartLevel, res.EndLevel, res.Battles, res.Reached, res.BlackedOut)
+		}
+		state.Snapshot(e, &mem)
+		lead = state.DecodeParty(&mem).Mons[0]
+		if res.BlackedOut {
+			if err := settleBlackout(e); err != nil {
+				return err
+			}
+			if _, err := Travel(e, safeSpot, policy, maxBattles); err != nil {
+				return fmt.Errorf("fixture forest_north_gate: travel back to the forest after a blackout: %w", err)
+			}
+			continue
+		}
+		if int(lead.Level) < forestGrindLevel && (res.Retreated || int(lead.HP)*3 < int(lead.MaxHP) || lead.Status != 0) {
+			detours++
+			if detours > forestMaxHealDetours {
+				return fmt.Errorf("fixture forest_north_gate: the lead is level %d after %d heal detours and cannot reach %d",
+					lead.Level, detours, forestGrindLevel)
+			}
+			if _, err := Travel(e, center, policy, 5); err != nil {
+				if !errors.Is(err, skill.ErrBlackedOut) {
+					return fmt.Errorf("fixture forest_north_gate: travel to the center to heal: %w", err)
+				}
+				if err := settleBlackout(e); err != nil {
+					return err
+				}
+			} else if err := skill.Heal(e); err != nil {
+				return fmt.Errorf("fixture forest_north_gate: heal: %w", err)
+			}
+			if _, err := Travel(e, safeSpot, policy, maxBattles); err != nil {
+				return fmt.Errorf("fixture forest_north_gate: travel back to the forest after healing: %w", err)
+			}
+		}
+	}
+}
+
+// settleBlackout steps frames without input until a blackout's respawn warp
+// has landed: the party fully healed and the player controllable. Travel
+// returns ErrBlackedOut before the respawn completes, and walking in that
+// gap replays stale steps from the wrong map (the test helper of the same
+// name in skill/gym_test.go holds the measurement).
+func settleBlackout(e *emu.Emu) error {
+	for i := 0; i < 200; i++ {
+		e.StepFrames(25)
+		var mem state.Mem
+		state.Snapshot(e, &mem)
+		if !state.Controllable(&mem) {
+			continue
+		}
+		lead := state.DecodeParty(&mem).Mons[0]
+		if int(lead.HP) == int(lead.MaxHP) && lead.Status == 0 {
+			return nil
+		}
+	}
+	return fmt.Errorf("fixture: settleBlackout: the respawn warp did not land within 5000 frames")
 }
 
 // trainForRoute22Rival levels the lead to skill.Route22RivalLeadLevel on

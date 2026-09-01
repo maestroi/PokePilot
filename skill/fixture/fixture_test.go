@@ -133,6 +133,7 @@ func TestCheckpointFixturesAtPlace(t *testing.T) {
 		{"pallet_town", "pallet town"},
 		{"viridian_city", "viridian city"},
 		{"viridian_pokecenter", "viridian pokemon center"},
+		{"pewter_city", "pewter city"},
 	} {
 		t.Run(tc.fixture, func(t *testing.T) {
 			e := Load(t, tc.fixture)
@@ -167,5 +168,54 @@ func TestPostStarterFixture(t *testing.T) {
 	}
 	if !state.Controllable(&m) {
 		t.Error("Controllable = false, want true")
+	}
+}
+
+// TestForestNorthGateFixture: the north-gate fixture has no Place entry
+// (the gate tile is not a journey destination), so assert the gate
+// coordinates and the grind progress itself: the player stands at the gate
+// and the lead is at the level that beats Brock. These are the positive
+// contracts the gym tests and the S10-9 talk test rely on — "controllable"
+// alone would happily pass on a state parked anywhere else on the road.
+func TestForestNorthGateFixture(t *testing.T) {
+	e := Load(t, "forest_north_gate")
+	var m state.Mem
+	state.Snapshot(e, &m)
+	if !state.Controllable(&m) {
+		t.Error("Controllable = false, want true")
+	}
+	gs := state.Decode(&m)
+	if gs.Player.MapID != 0x2F {
+		t.Errorf("MapID = %#04x, want 0x2f (the Viridian Forest north gate)", gs.Player.MapID)
+	}
+	if gs.Player.X != 5 || gs.Player.Y != 1 {
+		t.Errorf("coords = (%d,%d), want (5,1)", gs.Player.X, gs.Player.Y)
+	}
+	if lead := state.DecodeParty(&m).Mons[0]; int(lead.Level) < 12 {
+		t.Errorf("lead is level %d, want >= 12 (the level that beats Brock)", lead.Level)
+	}
+}
+
+// TestPostBoulderFixture: the badge fixture must stand at Place("pewter
+// city") with the Boulder Badge set — the positive progress the Cascade
+// test relies on, not merely the absence of a bad state.
+func TestPostBoulderFixture(t *testing.T) {
+	e := Load(t, "post_boulder")
+	var m state.Mem
+	state.Snapshot(e, &m)
+	if !state.Controllable(&m) {
+		t.Error("Controllable = false, want true")
+	}
+	dest, ok := skill.Place("pewter city")
+	if !ok {
+		t.Fatal(`Place: "pewter city" not found`)
+	}
+	gs := state.Decode(&m)
+	if gs.Player.MapID != dest.Map || gs.Player.X != dest.X || gs.Player.Y != dest.Y {
+		t.Errorf("player is on map %#04x at (%d,%d), want map %#04x at (%d,%d) (Pewter City)",
+			gs.Player.MapID, gs.Player.X, gs.Player.Y, dest.Map, dest.X, dest.Y)
+	}
+	if !state.DecodeProgress(&m).Has(state.BadgeBoulder) {
+		t.Error("the Boulder Badge is not set; the fixture is not post-Brock")
 	}
 }

@@ -45,12 +45,21 @@ func main() {
 	seed := flag.Int64("seed", 0, "diverge this run's luck by burning seed-derived idle frames after boot; 0 replays bit-identically")
 	maxRounds := flag.Int("max-rounds", llmMaxRounds, "objectives one llm run may spend; each costs a model call. The default is a guardrail for an unattended run, not a target — raise it to ask how far the greedy loop actually gets")
 	goal := flag.String("goal", "Earn the Boulder Badge.", "the task statement given to the llm planner: what it is trying to do, never how. Empty means no goal, which is what made slice 6's scoreboard void")
-	checkpointDir := flag.String("checkpoint-dir", "", "write a save-state ring here before every objective, so a run that dies (a wedged battle, a stuck loop) leaves a state to replay instead of a stack trace. Empty means off, which is why SLICE10-CANDIDATES.md item 19's wedged battle has never been reproduced")
+	checkpointDir := flag.String("checkpoint-dir", "", "directory for the per-objective save-state ring (agent.Budget.CheckpointDir): a run that dies (a wedged battle, a stuck loop) leaves a state to replay instead of a stack trace. Empty (default) writes nothing, which is why SLICE10-CANDIDATES.md item 19's wedged battle has never been reproduced")
 	flag.Parse()
 
 	romPath := os.Getenv("POKEMON_RED_ROM")
 	if romPath == "" {
 		log.Fatal("POKEMON_RED_ROM is not set; point it at a Pokemon Red ROM")
+	}
+
+	// The checkpoint ring (agent.Budget.CheckpointDir) writes into this
+	// directory but does not create it — badgerun MkdirAlls its own. An
+	// empty flag is the default and costs nothing: no directory, no states.
+	if *checkpointDir != "" {
+		if err := os.MkdirAll(*checkpointDir, 0o755); err != nil {
+			log.Fatalf("checkpoint-dir: %v", err)
+		}
 	}
 
 	m, err := emu.Open(romPath)
@@ -99,7 +108,7 @@ func main() {
 		fmt.Printf("farm mode: leasing runs from %s\n", orchURL)
 		client := farm.NewClient(orchURL)
 		client.Version = version
-		runFarm(m, client, bootState, watchPort(served))
+		runFarm(m, client, bootState, watchPort(served), *checkpointDir)
 		return
 	}
 

@@ -118,6 +118,14 @@ type Observation struct {
 	// can see on screen, reported so a planner does not have to guess it.
 	HasGrass bool
 
+	// MartStock is the item names this map's mart clerk actually stocks,
+	// in shelf order, decoded from the clerk's own text script
+	// (rom.MartItems) — the game's answer to "what can I buy here", not a
+	// list we chose. Empty on a map whose shelf cannot be read: Offer
+	// treats that as "offer nothing", never as a reason to guess — an
+	// objective that cannot succeed is worse than an absent one.
+	MartStock []string
+
 	// MapObjects are the current map's objects read from the ROM map header,
 	// NOT from sprite RAM: sprite RAM is screen-local (MEASURED: zero sprites
 	// visible standing seven tiles from an NPC), so it cannot tell a planner
@@ -301,6 +309,14 @@ func Observe(m *emu.Emu, romData []byte) Observation {
 			obs.WildGrass = append(obs.WildGrass, WildSpecies{
 				Name: name, MinLevel: w.MinLevel, MaxLevel: w.MaxLevel, Slots: w.Slots,
 			})
+		}
+	}
+	obs.MartStock = []string{}
+	if items, err := rom.MartItems(romData, obs.Map); err == nil {
+		for _, id := range items {
+			if name, ok := ItemName(id); ok {
+				obs.MartStock = append(obs.MartStock, name)
+			}
 		}
 	}
 	objects := MapObjects(romData, obs.Map)

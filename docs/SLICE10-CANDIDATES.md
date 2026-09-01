@@ -51,24 +51,50 @@ of them.
 
 ### The best run, end to end
 
-**MEASURED 2026-08-31**, `-max-rounds 200`, goal "Earn the Boulder Badge.":
+**AMENDED S10-3 (MEASURED 2026-08-31, after stage 0 landed):** the milestone
+was re-run on BOTH models — `-planner llm -fps 0 -max-rounds 200`, goal
+"Earn the Boulder Badge.", seed 0. Full record: `docs/RUNNOTES.md` under
+`## S10-3`.
 
-    23 rounds used of 200. Stopped: failed, not budget.
-    starter -> parcel (2 blackouts, recovered) -> route 1 -> viridian city
-    -> pokecenter -> heal -> mart -> route 1 -> train x2 -> heal
-    -> route 1 -> talks -> viridian city -> ROUTE 2 -> VIRIDIAN FOREST
-    -> wedged in a trainer battle.
+    27B (local, no think):  13 rounds, stopped FAILED,
+        Viridian Mart, `buy 3 POKEBALL: skill: Buy: not controllable`
+        (first failure: the choose-quantity box did not appear)
+    4B (LAN box):           16 rounds, stopped FAILED,
+        Viridian Mart, `buy 3 BURN HEAL: skill: Buy: not controllable`
+        (first failure: cursor did not reach list entry 3 — the skill was
+        driving the BUY/SELL/QUIT menu, one screen behind)
+    comparison, 2026-08-31 pre-stage-0 (27B only): 23 rounds, stopped failed,
+        Viridian Forest, wedged trainer battle, ~7/23 circling
 
-Three facts worth carrying into the plan:
+The stopper moved, not forward: both runs now die in the Viridian Mart
+(rounds 13/16) before reaching Route 2. The mart wedge is a SKILL defect in
+`skill/shop.go` `Buy` — a mid-flow failure (item-list advance, cursor
+selection, quantity-box wait) returns with the shop menus still up, and the
+recovery layer is designed not to operate menus, so every later objective
+refuses to start and two identical failures stop the run. Only the
+`ErrNotInStock`/`ErrCantAfford` paths exit to the overworld; the non-refusal
+path never did. It is model-independent — both models died on the same
+screen, same class of error — and it is the current limit, downstream of
+nothing else open here. Reproduction: the run's `-checkpoint-dir` states
+(`/tmp/s103-27b/round-011-*.state`, `/tmp/s103-4b/round-014-*.state`).
 
-1. **The road opened.** Route 2 and Viridian Forest are new ground; every
-   previous run died in Pallet or Viridian.
-2. **The budget was not the limit.** 23 of 200 rounds. Raising `llmMaxRounds`
-   was necessary and is not sufficient — it is now the `-max-rounds` flag
-   (`cmd/pokepilot/main.go`), default unchanged at 32.
-3. **Roughly 7 of 23 rounds were spent circling** Route 1 and the Center
-   (rounds 12-18: route 1, train, train, heal, route 1, talk, talk). That is
-   the greedy loop's cost, measured, and it is the case item 10 exists for.
+Facts worth carrying into the plan (S10-3 numbers replace the 2026-08-31
+single-model baseline above where they differ):
+
+1. **The road opened, but the runs no longer reach it.** Route 2 and
+   Viridian Forest were new ground pre-stage-0; the stage-0 runs die in the
+   mart. The road stays open to a run that gets past the shop.
+2. **The budget was not the limit.** 13/16 of 200 rounds. (Unchanged from
+   the pre-stage-0 reading.)
+3. **The greedy loop's cost, measured on both models: 4 of 29 rounds (14%),
+   all on the 4B** (pallet town, reds bedroom, reds house, a second heal
+   after one); the 27B wasted 0 of 13. Pre-stage-0 it was 7/23 (30%). And the
+   stop reason is **0% planning, 100% skill**: 2 of 2 runs stopped on the
+   wedged shop; the wedge re-picks are not planning failures because the
+   state is wedged — every objective refuses to start, so a re-plan cannot
+   save those rounds. That ratio is the go/no-go input for item 10: the
+   strategist work should not start on this evidence; the shop wedge is the
+   thing to fix first.
 
 ### What was fixed this session, so nothing gets rebuilt
 
@@ -105,9 +131,14 @@ argument was never information the menu lacked; it was only ever an override.
 **What this costs, and what is left to decide:** training can no longer aim at
 an arbitrary level. It takes the offered rung (`lead + trainStep`) and climbs
 by being chosen again. If aiming higher in one round turns out to matter, the
-answer is another menu entry, not another reply field. **Worth confirming
-against item 2's Train work** — the two touch the same knob from opposite
-sides.
+answer is another menu entry, not another reply field.
+
+**SETTLED IN S10-1 (see docs/RUNNOTES.md):** `trainStep` stays 2, one rung
+per round, and the 4B ran clean against the new schema — `make run-llm`,
+8 rounds, 8 model calls, 0 rejections (before: S6-12's 27 rejections across
+9 runs). If a climb ever proves too slow, the answer is a SECOND Train menu
+entry at a larger step, never a reply field. Item 2's Train work must not
+re-open this knob from the other side.
 
 The other half of the storm is `finish_reason "length"`, which is not a schema
 problem at all: a reasoning model spends its whole completion budget thinking
@@ -119,8 +150,13 @@ only switch that works here.
 
 ### 19. A wedged battle is unrecoverable, and there is no way to reproduce one
 
-**MEASURED 2026-08-31**, the stopper of the best run — Viridian Forest, map
-0x33 at (1,18):
+**S10-3 note (2026-08-31):** the re-run's stopper is the Viridian Mart shop
+wedge (see the amended baseline above) — this battle wedge is no longer the
+limit of the best run, but it remains a recorded, unreproduced defect, and a
+run that gets past the mart will meet it again.
+
+**MEASURED 2026-08-31**, the stopper of the best run at the time — Viridian
+Forest, map 0x33 at (1,18):
 
     skill: Battle: exceeded 60000-frame cap
     Kind:2 (BattleTrainer) EnemySpecies:112 EnemyHP:27/27 Level:9
@@ -142,6 +178,12 @@ env var that dumps per-frame battle state; it is useless without a state to
 point it at. **A `-checkpoint-dir` flag is the whole prerequisite**, and it
 overlaps item 3 (`ResumeFrom` has no callers) — the same seam, from the other
 end. Do them together.
+
+**LANDED IN S10-2b (see docs/RUNNOTES.md):** `cmd/pokepilot` now takes
+`-checkpoint-dir` (default empty, verified to write nothing) and sets
+`Budget.CheckpointDir` in both `runLLM` and the farm's `runFarmLLM`. The
+battle itself is still unfixed: the reproduction and the `ZBAT` dump, if the
+wedge reproduced, are in the same RUNNOTES section.
 
 This also raises a question item 19 cannot answer alone: **should a run that
 cannot resolve a battle be able to flee it?** Today a wedged battle is terminal
@@ -314,6 +356,10 @@ one expression, and it buys back a third of the training sessions.
 
     $ git grep -n "ResumeFrom" -- cmd/ farm/
     (no matches)
+
+**S10-2b landed the write side of this seam (see docs/RUNNOTES.md):** the
+`-checkpoint-dir` flag on `cmd/pokepilot`. The read side — a caller for
+`ResumeFrom` — is still open and is the rest of this item.
 
 S9-5 built resume: `Budget.ResumeFrom` takes a checkpoint `.state` path, loads
 it, and loads the paired `.knowledge-v1.json` from the same base name before

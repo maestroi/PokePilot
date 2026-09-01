@@ -458,6 +458,40 @@ func TestNoEncounterDiagnostic(t *testing.T) {
 	}
 }
 
+// TestLegBudget pins the rate-aware leg budget (S10-5). It runs under
+// -short: it is pure arithmetic, no emulator.
+func TestLegBudget(t *testing.T) {
+	// Worked example, the S9-8 measurement: want = 4 battles on map 0x33
+	// (grass rate 8/256 = 1/32 per step).
+	//   base  = ceil(4·256/8) = 128                    (mean legs)
+	//   sigma = 16·sqrt(4·248)/8 = 16·31.49…/8 ≈ 63    (S9-8 measured 66)
+	//   slack = ceil(48·sqrt(4·248)/8) = ceil(48·32/8) = 192
+	//   budget = 128 + 192 = 320
+	// The old constant 20·4+60 = 140 sat ~⅕σ above the mean; 320 sits ~3σ
+	// above it.
+	if got := skill.LegBudget(4, 8); got != 320 {
+		t.Errorf("LegBudget(4, 8) = %d, want 320 (worked example)", got)
+	}
+	// A lower rate means fewer encounters per leg, so a larger budget.
+	if got := skill.LegBudget(4, 8); got <= skill.LegBudget(4, 16) {
+		t.Errorf("LegBudget(4, 8) = %d is not larger than LegBudget(4, 16) = %d", got, skill.LegBudget(4, 16))
+	}
+	// A higher want means more battles to find, so a larger budget.
+	if got := skill.LegBudget(8, 8); got <= skill.LegBudget(4, 8) {
+		t.Errorf("LegBudget(8, 8) = %d is not larger than LegBudget(4, 8) = %d", got, skill.LegBudget(4, 8))
+	}
+	// Finite and positive for every rate in 1..255: the budget must always
+	// terminate, and always through NoEncounterDiagnostic.
+	for rate := 1; rate <= 255; rate++ {
+		for _, want := range []int{1, 4, 40} {
+			b := skill.LegBudget(want, uint8(rate))
+			if b <= 0 || b > 1_000_000 {
+				t.Errorf("LegBudget(%d, %d) = %d, want a finite positive value", want, rate, b)
+			}
+		}
+	}
+}
+
 func TestHasGrassMatchesTheGameEncounterRule(t *testing.T) {
 	path := os.Getenv("POKEMON_RED_ROM")
 	if path == "" {

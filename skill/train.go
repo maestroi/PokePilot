@@ -3,6 +3,7 @@ package skill
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/maestroi/pokepilot/emu"
@@ -153,13 +154,18 @@ func Train(m *emu.Emu, romData []byte, targetLevel int, policy MovePolicy, maxBa
 	}
 
 	// maxLegs bounds the session when encounters come sparser than the
-	// budget assumes (Route 1 fights about one per six legs, measured):
-	// tripping it means the game rolled fewer encounters than that budget
-	// implies over maxLegs legs of walking. The roll is hRandomAdd against
-	// the map's grass rate, sampled once per step onto grass, and hRandomAdd
-	// advances with rDIV every frame — so which legs produce a fight depends
-	// on when the steps land, not just on how many there are.
-	maxLegs := 20*maxBattles + 60
+	// budget assumes: tripping it means the game rolled fewer encounters
+	// than the rate implies over maxLegs legs of walking. The roll is
+	// hRandomAdd against the map's grass rate, sampled once per step onto
+	// grass, and hRandomAdd advances with rDIV every frame — so which legs
+	// produce a fight depends on when the steps land, not just on how many
+	// there are (S9-8). The budget is therefore a function of THIS map's
+	// rate, not a constant sized once against one map's 8/256.
+	rate, err := wildGrassRate(romData, now.Map)
+	if err != nil {
+		return res, err
+	}
+	maxLegs := LegBudget(maxBattles, rate)
 	next := b
 	legs := 0
 	for {
@@ -210,7 +216,6 @@ func Train(m *emu.Emu, romData []byte, targetLevel int, policy MovePolicy, maxBa
 			return res, nil
 		}
 		if legs+1 > maxLegs {
-			rate, _ := wildGrassRate(romData, now.Map)
 			species := 0
 			if sp, serr := WildGrass(romData, now.Map); serr == nil {
 				species = len(sp)
@@ -576,32 +581,30 @@ func leadLevel(m *emu.Emu) int {
 	return int(state.DecodeParty(&mem).Mons[0].Level)
 }
 
-// leadBelowRetreatLine reports whether the lead's HP is below the fraction
-// of its max at which a session stops instead of risking the party. A
-// fainted lead (HP 0, a backup mon still standing) reads as below the line:
-// continuing would spend that backup the same way.
-func leadBelowRetreatLine(m *emu.Emu) bool {
-	var mem state.Mem
-	state.Snapshot(m, &mem)
-	lead := state.DecodeParty(&mem).Mons[0]
-	return BelowRetreatLine(lead.HP, lead.MaxHP)
-}
-
-// BelowRetreatLine reports whether a lead at hp/maxHP is below the line at
-// which Train refuses to start (see retreatLineNum/Den). It takes the two
-// numbers rather than the emulator so a caller holding a decoded party — an
-// observation, say — can ask the same question without stepping anything.
-//
-// It is exported so agent.Offer can ask BEFORE offering the objective. A
-// hurt lead used to be offered Train, Train refused it on the spot, and the
-// round was spent learning what this predicate already knew. One definition,
-// asked from both sides: duplicating the constant in the offering layer is
-// how the two drift apart and the guaranteed-failed round comes back.
+// BelowRetreatLine reports whether a lead at hp/maxHP is below the
+// retreat line — the one fraction a Train session enforces, written only
+// in retreatLineNum/Den. It is the shared predicate: Train's start check
+// and the loop exit call it, and agent.Offer withholds the Train objective
+// on it, so a lead below the line is never handed an objective that would
+// refuse before it fights anything. The comparison is strict: a lead at
+// exactly the line (hp*Den == maxHP*Num) is NOT below it, and a session
+// started there is allowed to fight. A zero max reads as below the line:
+// a fainted lead (HP 0, a backup mon still standing) is exactly the state
+// where continuing would spend that backup the same way.
 func BelowRetreatLine(hp, maxHP uint16) bool {
 	if maxHP == 0 {
 		return true
 	}
 	return int(hp)*retreatLineDen < int(maxHP)*retreatLineNum
+}
+
+// leadBelowRetreatLine reports whether the lead's HP is below the fraction
+// of its max at which a session stops instead of risking the party.
+func leadBelowRetreatLine(m *emu.Emu) bool {
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	lead := state.DecodeParty(&mem).Mons[0]
+	return BelowRetreatLine(lead.HP, lead.MaxHP)
 }
 
 // flip returns the other end of the ping-pong.
@@ -610,6 +613,35 @@ func flip(a, b, cur cell) cell {
 		return b
 	}
 	return a
+}
+
+// LegBudget is how many ping-pong legs a Train session may walk looking
+// for want battles on a map whose grass rate is rate/256 per step.
+//
+// It is the expected legs — want ÷ (rate/256) — plus three standard
+// deviations of the negative binomial that models the walk
+// (sigma = 16·sqrt(want·(256−rate)) ÷ rate). The old constant
+// (20·want + 60) was sized once against map 0x33's 8/256 rate and sat
+// only ~⅕σ above the mean legs for four battles, so ~35% of sessions
+// walked it out (S9-8). Bounded and positive for every rate in 1..255:
+// base is a ceiling division (so at least 1) and slack is non-negative.
+func LegBudget(want int, rate uint8) int {
+	if want <= 0 || rate == 0 {
+		return 0
+	}
+	base := (want*256 + int(rate) - 1) / int(rate) // want ÷ (rate/256), rounded up
+	// 3σ in integer arithmetic: 48·sqrt(want·(256−rate)) ÷ rate, rounded up.
+	slack := (48*ceilSqrt(want*(256-int(rate))) + int(rate) - 1) / int(rate)
+	return base + slack
+}
+
+// ceilSqrt is the ceiling of the integer square root of n (n >= 0).
+func ceilSqrt(n int) int {
+	s := int(math.Sqrt(float64(n)))
+	if s*s < n {
+		s++
+	}
+	return s
 }
 
 // NoEncounterDiagnostic renders Train's maxLegs diagnostic: what is
