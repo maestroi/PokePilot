@@ -54,6 +54,39 @@ type Result struct {
 	// usage (UsagePlanner), which is "not reported", never "free".
 	PromptTokens     int
 	CompletionTokens int
+	// ProgressEarly is the progress sampled before the first objective
+	// ran; ProgressFinal, the one at the stop. Together they let a dump
+	// of ONE run answer "did this move?": a run that stalled at round 3
+	// and one that progressed steadily can stop looking identical, and
+	// only the pair of samples tells them apart. Both are nil when the
+	// run stopped before its first observation (a zero budget, a cancel
+	// before the first frame, or a ROM the graph could not build), so a
+	// nil pair means "never played", never "played and moved nothing".
+	ProgressEarly *Progress
+	ProgressFinal *Progress
+}
+
+// Progress is one snapshot of how far a run has gotten: badges held,
+// story events set, distinct maps the player has stood on, and the map
+// the player stands on. Run samples it twice — before the first
+// objective and at the stop — and carries both on Result. The values
+// come from state the run already has: the observation's decoded badges
+// and events (red/state, via Observe) and the run's own Knowledge.Visited
+// for the maps, so sampling costs nothing the run was not already paying.
+type Progress struct {
+	// Round is the run round the sample was taken at: 0 before the first
+	// objective ran, N after round N settled.
+	Round int
+	// Badges is how many badges the party holds; Events, how many story
+	// event flags are set. Both are what red/state decoded, never counted
+	// here.
+	Badges int
+	Events int
+	// Maps is how many distinct maps the player has stood on this run.
+	Maps int
+	// Map and MapName are where the player stands at the sample.
+	Map     uint8
+	MapName string
 }
 
 // MaxReplyRetries is how many times the planner may be asked for one
@@ -610,6 +643,12 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 	m.OnSample(tape.sample)
 	var history []RoundRecord
 	last := Observe(m, romData)
+	// The early progress sample: what the run started with, taken before
+	// any objective ran. It is the baseline the finish sample is compared
+	// against in the finish dump; a single end-of-run snapshot cannot
+	// say whether the run moved at all.
+	early := progressOf(last, known, 0)
+	res.ProgressEarly = &early
 	stuck := 0
 	consecFailures := 0 // consecutive failed objectives; a success resets it
 	lastFailObj, lastFailErr := "", ""
@@ -873,10 +912,29 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 	}
 
 	res.Final = last
+	// The finish sample, at the same points the early one read: badges,
+	// events, maps stood on, and where the player stands.
+	final := progressOf(last, known, res.Rounds)
+	res.ProgressFinal = &final
 	if up, ok := p.(UsagePlanner); ok {
 		res.PromptTokens, res.CompletionTokens = up.Usage()
 	}
 	return res
+}
+
+// progressOf decodes one progress sample from an observation and the
+// run's knowledge: what red/state already put on the observation, plus
+// the maps the player has actually stood on. round is the run round the
+// sample was taken at (0 before the first objective ran).
+func progressOf(obs Observation, k *Knowledge, round int) Progress {
+	return Progress{
+		Round:   round,
+		Badges:  len(obs.Badges),
+		Events:  len(obs.Events),
+		Maps:    len(k.Visited),
+		Map:     obs.Map,
+		MapName: obs.MapName,
+	}
 }
 
 // noteObservation folds one observation into the run's knowledge: the map

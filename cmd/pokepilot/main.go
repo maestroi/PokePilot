@@ -249,6 +249,7 @@ func runLLM(m *emu.Emu, goal string, maxRounds int, checkpointDir string) {
 	for i, o := range res.Completed {
 		fmt.Printf("  completed %d: %s\n", i+1, o)
 	}
+	printProgress(res.ProgressEarly, res.ProgressFinal)
 	if res.Err != nil {
 		fmt.Printf("  error: %v\n", res.Err)
 	}
@@ -258,6 +259,27 @@ func runLLM(m *emu.Emu, goal string, maxRounds int, checkpointDir string) {
 	if res.Stop == agent.StopError || res.Stop == agent.StopStuck || res.Stop == agent.StopFailed {
 		os.Exit(1)
 	}
+}
+
+// printProgress renders the run's two progress samples: what it started
+// with and what it stopped with. The pair, not either alone, is the
+// signal — a budget run whose two samples are identical spent its whole
+// budget without its progress state changing, and a run that moved shows
+// where. It says what progress happened (badges, events, maps, place),
+// never merely that no error occurred.
+func printProgress(early, final *agent.Progress) {
+	if early == nil || final == nil {
+		return // the run never reached the agent loop; the stop reason says why
+	}
+	fmt.Printf("  progress: %s -> %s\n", describeProgress(early), describeProgress(final))
+}
+
+func describeProgress(p *agent.Progress) string {
+	place := p.MapName
+	if place == "" {
+		place = fmt.Sprintf("map %02x", p.Map)
+	}
+	return fmt.Sprintf("round %d: %d badge(s), %d event(s), %d map(s), %s", p.Round, p.Badges, p.Events, p.Maps, place)
 }
 
 // stopName renders an agent.Stop for the final line. The type has no

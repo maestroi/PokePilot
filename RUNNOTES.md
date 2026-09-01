@@ -2133,3 +2133,133 @@ prose instructions require as evidence — a contradiction in the task
 definition, not a code defect. Operator manually accepted the review after
 independently running the full suite (above) and isolating the two
 pre-existing flakes against the base commit.
+
+## S11-1: does a restored save state replay bit-exactly?
+
+**Answer: yes — deterministic.** Given the same save state and the same
+button inputs, the emulator produces the same result every time. Three
+replays of one input script from a fresh `LoadState` of the same `SaveState`
+bytes produced byte-identical digests; a fourth run with a DIFFERENT input
+script produced a different digest (the control, so the test can fail).
+
+- Test: `emu/determinism_test.go` (`TestRestoredStateReplaysDeterministically`),
+  ROM-gated, skips cleanly when `POKEMON_RED_ROM` is unset.
+- Known state via the existing helper: `fixture.LoadState("route1")` (Route 1
+  (5,14) facing left), then `SaveState` → snapshot bytes. No new boot path.
+- Main script (~1480 frames): 18×Tap(Right) walks east into the tall grass —
+  a wild battle starts at (14,14), the RNG-consuming event — then 300 frames,
+  6×Tap(A) (FIGHT/confirm), 600 frames (battle turns: move effectiveness,
+  crit, accuracy, damage), 4×Tap(B), 300 frames. Taps AND plain stepping.
+- Digest: SHA-256 over WRAM (0xC000–0xCFFF) ‖ VRAM (0x8000–0x9FFF) ‖
+  OAM/BGP/OBP (0xFE00–0xFE9F).
+- Result: 3 main runs identical (`e1425aac…8bf3bb`), control differs
+  (`cbee3f78…6b6eeb`). The three replays never diverged, so there is no
+  divergence point to localize. The control diverged in BOTH WRAM (position +
+  battle flag) and the framebuffer (battle scene vs overworld map).
+
+**Frame-buffer note (missing API, not added):** the rendered RGB frame
+(gomeboy's `e.Frame()`) is not exposed by `emu.Emu` — it sits behind the
+unexported `e` field. The task forbids adding a production API, so the test
+hashes the PPU display memory (VRAM + OAM/BGP/OBP) instead: the screen's
+backing store, and being plain memory it is scanline-stable, which sidesteps
+the "hash the PPU mid-frame" artifact a rendered-frame hash would carry. A
+true rendered-frame digest would need a public `Frame()` accessor on `emu.Emu`
+(GomeBoy already has one).
+
+### For the next task
+- The emulator is a pure function of (state, inputs): segment leases, seed
+  replay, and A/B from one save state can assume zero emulator variance.
+- No production code changed; only `emu/determinism_test.go` was added.
+
+## S11-2: measured plan lifetime in the 23-round run (analysis, no code)
+
+**What I did:** answered the design doc's open question 1 by hand, on the
+recorded 23-round run. The full per-round trace survived at
+`/tmp/pokepilot-run-llm-fixtest2.log` (qwen3.8-27b, NO_THINK=1, `-max-rounds
+200`, seed 0, `stopped: failed after 23 round(s)`); it matches the doc's
+quoted rounds 12–18 verbatim. The run had no `-checkpoint-dir`, so that log is
+the whole recorded evidence.
+
+**The number (the deliverable):** a plan committed at round 1 lives **1 step**
+under the design's own safety property (plan ⊆ the round-1 Offer, which was
+just the 3 starters + 2 journey variants), **~4 steps** under the loosest
+reading (starter, errand, viridian city, heal — then `train` returns the
+retreat error, a re-plan trigger), and **0 toward the goal from round 12**. The
+doc's ~8-step assumption is not supported; its own "if 3, redesign" rule says
+**redesign**.
+
+**Why the circling was not a commitment failure (the real finding):** the goal
+is the Boulder Badge = Brock = **Pewter City Gym** (0x36, in the place table);
+there is **no `viridian gym`** in the table, yet the model's intents kept
+saying "the Viridian Gym". And Route 2 (0x0d) / Pewter (0x02) were **not in
+`knownMaps`** until the run walked Route 2 at r20, so `go to route 2 / pewter
+city / pewter gym` were **never on the menu** during the r12–18 circling. A
+plan drawn from the offered menu cannot commit to a step the menu doesn't
+offer. The waste is a world-model/knowledge gap (+ a `train`-retreat skill
+stopper), which the design explicitly refuses to seed. Full measured/inferred
+table and the round-by-round walk are in the amended design doc.
+
+**Also decided (same evidence):** (a) the plan **supersedes `Intent`** — same
+slot, commitment vs caption; do not carry both into the memory file's v5 (and
+add no plan slot to v5 yet, since the recommendation is redesign-first).
+(b) Open question 4: **yes**, showing the strategist its previous plan invites
+the same rubber-stamping measured for `Intent`; design against it by showing
+the break point + what changed, not the old plan as a prior.
+
+**Files touched:** `docs/plans/2026-08-31-run-keeps-a-plan-design.md` (added a
+"Measured: plan lifetime (S11-2)" section after the cost-arithmetic section;
+marked open question 1 ANSWERED). No `.go` file touched; docs only.
+
+**For the next task:**
+- If you pick up the strategist, the gate is not the plan mechanism — it is
+  getting the goal into the known world (seed the Boulder→Pewter→Route 2
+  route) and fixing the `train` retreat stopper. The plan is downstream of
+  both.
+- The 23-round log is in `/tmp` (ephemeral); the per-round table is now
+  reproduced in the design doc, so the analysis survives a reboot.
+- `memoryVersion` is still 4; nothing here bumps it.
+
+## S11-3: progress signal in the finish dump (measurement only)
+
+**What I did:** the finish dump now carries a progress summary sampled at
+TWO points in the run, so "did this move?" is answerable from one dump.
+Nothing acts on it: `enqueueIssueAfterDump` and every issue-filing
+condition in `cmd/pokewall/wall.go` are byte-for-byte untouched (no
+`cmd/pokewall` diff at all), and there is no threshold or stall verdict.
+
+- `farm.Progress{Round, Badges, Events, Maps, Map, MapName}` — new wire
+  type in `farm/spec.go`; `FinishReport` gains `progress_early` /
+  `progress_final` (both `*Progress`, omitempty). The wall's dump is
+  `json.Marshal(report)`, so the fields ride it with no wall change.
+- `agent/run.go`: `agent.Progress` + `Result.ProgressEarly/Final`.
+  `Run` samples via `progressOf(obs, known, round)`: early right after the
+  first `Observe` (round 0, before any objective), final at the stop.
+  Values come from state the run already has — observation's decoded
+  badges/events (red/state) and `Knowledge.Visited` for distinct maps.
+  No new RAM literals anywhere; no new tracking added.
+- Both are nil when the run stopped before its first observation
+  (zero budget, pre-start cancel, graph build failure): nil means
+  "never played", never "played and moved nothing" (a zero sample is
+  indistinguishable from a fresh game).
+- `cmd/pokepilot`: `finishRun` takes the two samples; `runFarmLLM` lifts
+  them via `farmProgress` (agent and farm cannot import each other, so
+  the structs are deliberately duplicated); scripted runs pass nil
+  (they never enter the agent loop). `runLLM`/`runFarmLLM` print
+  `progress: round 0: ... -> round N: ...` to stdout.
+- Tests: `farm/spec_test.go` (pair round-trips; unsampled report omits
+  both keys; legacy dump unmarshals with nil samples) and
+  `agent/run_test.go` (ROM-gated: a played run carries both samples with
+  early.Round=0, final.Round=Rounds, final.Maps>=2, monotone Events; a
+  zero-budget run carries nil pairs).
+
+**For the next task:**
+- The decision layer is deliberately absent. Once a night of real dumps
+  exists, compare `progress_early` vs `progress_final` on `reason=budget`
+  runs before choosing any threshold; a stalled run shows identical
+  samples, a long-but-moving run does not.
+- `Maps` counts distinct maps stood on (Knowledge.Visited), including
+  checkpoint-resumed runs' prior maps; `Events` is the count of
+  red/state's `knownEvents` set, so it only grows when red/state names
+  more events.
+- The wall stores the full report only in the dump file; `settleRun`
+  still takes reason/detail alone, so the dashboard shows nothing new.

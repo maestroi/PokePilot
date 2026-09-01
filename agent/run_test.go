@@ -95,6 +95,70 @@ func TestRunRoundBudget(t *testing.T) {
 	}
 }
 
+// TestRunCarriesProgressSamplesAtTwoPoints runs starter -> Pallet Town and
+// expects the run to carry BOTH progress samples: one before the first
+// objective ran and one at the stop. The pair is what lets a dump of one
+// run answer "did this move?" — a single end-of-run snapshot cannot,
+// because a run that stalled at round 3 and one that progressed steadily
+// can stop looking identical.
+func TestRunCarriesProgressSamplesAtTwoPoints(t *testing.T) {
+	e := loadFixture(t)
+
+	var log bytes.Buffer
+	p := agent.NewScriptedPlanner(
+		agent.Objective{Kind: agent.KindStarter},
+		agent.Objective{Kind: agent.KindGoTo, Place: "pallet town"},
+	)
+	b := testBudget()
+	b.Log = &log
+	res := agent.Run(e, e.ROM(), p, b)
+
+	if res.Stop != agent.StopDone {
+		t.Fatalf("Stop = %d, want StopDone", res.Stop)
+	}
+	if res.ProgressEarly == nil || res.ProgressFinal == nil {
+		t.Fatalf("a run that played must carry both progress samples: early=%v final=%v", res.ProgressEarly, res.ProgressFinal)
+	}
+	early, final := res.ProgressEarly, res.ProgressFinal
+	if early.Round != 0 {
+		t.Errorf("early sample Round = %d, want 0 (taken before the first objective ran)", early.Round)
+	}
+	if final.Round != res.Rounds {
+		t.Errorf("final sample Round = %d, want %d (the run's last round)", final.Round, res.Rounds)
+	}
+	// The signal says what progress happened: the run took a starter and
+	// walked to Pallet Town, so the final sample must show at least as
+	// much progress as the early one, on the maps it actually stood on.
+	if final.Maps < early.Maps {
+		t.Errorf("Maps shrank: early=%d final=%d", early.Maps, final.Maps)
+	}
+	if final.Events < early.Events {
+		t.Errorf("Events shrank: early=%d final=%d", early.Events, final.Events)
+	}
+	if final.Maps < 2 {
+		t.Errorf("final Maps = %d, want >= 2 (the run stood on the bedroom and Pallet Town)", final.Maps)
+	}
+	if final.Map != res.Final.Map {
+		t.Errorf("final sample Map = %#04x, want the run's final map %#04x", final.Map, res.Final.Map)
+	}
+}
+
+// TestRunThatNeverPlayedCarriesNoProgressSamples gives Run a zero budget,
+// which stops it before its first observation: both samples must be nil.
+// Nil means "never played", never "played and moved nothing" — a zero
+// sample would be indistinguishable from a fresh game at round 0.
+func TestRunThatNeverPlayedCarriesNoProgressSamples(t *testing.T) {
+	e := loadFixture(t)
+	p := agent.NewScriptedPlanner(agent.Objective{Kind: agent.KindStarter})
+	res := agent.Run(e, e.ROM(), p, agent.Budget{})
+	if res.Stop != agent.StopError {
+		t.Fatalf("Stop = %d, want StopError (a zero budget is not unlimited)", res.Stop)
+	}
+	if res.ProgressEarly != nil || res.ProgressFinal != nil {
+		t.Fatalf("a run that never observed must carry nil samples: early=%v final=%v", res.ProgressEarly, res.ProgressFinal)
+	}
+}
+
 // errPlanner fails in Next itself: a failure of the planner, which no
 // objective-failure budget absorbs — the run stops with StopError on the
 // first round.

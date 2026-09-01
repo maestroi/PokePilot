@@ -124,6 +124,27 @@ type WorkerPing struct {
 	Version string   `json:"version,omitempty"`
 }
 
+// Progress is one snapshot of how far a run has gotten, at one point in
+// it: badges held, story event flags set, distinct maps the player has
+// stood on, and the map the player stands on. The runner decodes these
+// from the same RAM it already reads (red/state) and carries them here;
+// the wall stores them verbatim in the finish dump.
+type Progress struct {
+	// Round is the run round the sample was taken at: 0 before the first
+	// objective ran, N after round N settled.
+	Round int `json:"round"`
+	// Badges is how many of the eight badges the party holds.
+	Badges int `json:"badges"`
+	// Events is how many story event flags are set.
+	Events int `json:"events"`
+	// Maps is how many distinct maps the player has stood on this run.
+	Maps int `json:"maps"`
+	// Map is where the player stands at the sample; MapName is its name
+	// when the ROM names it.
+	Map     uint8  `json:"map"`
+	MapName string `json:"map_name,omitempty"`
+}
+
 // FinishReport is why a run ended, sent once when it stops.
 type FinishReport struct {
 	RunID string `json:"run_id"`
@@ -144,6 +165,16 @@ type FinishReport struct {
 	// Artifacts are hashed checkpoint files collected after gameplay.
 	// Empty from older runners and from scripted runs.
 	Artifacts []Artifact `json:"artifacts,omitempty"`
+	// ProgressEarly and ProgressFinal are the run's progress sampled
+	// before the first objective ran and at the stop. Comparing the two
+	// answers "did this run move?" from one dump: identical samples on a
+	// budget finish mean the whole budget was spent without the run's
+	// progress state changing. Both are nil when the run never reached
+	// the agent loop (a validation or LoadState failure) or came from a
+	// runner that predates the field. A single end-of-run snapshot cannot
+	// make that distinction, which is why there are two samples, not one.
+	ProgressEarly *Progress `json:"progress_early,omitempty"`
+	ProgressFinal *Progress `json:"progress_final,omitempty"`
 }
 
 // CheckpointReport is one in-flight checkpoint upload. The wall retains a

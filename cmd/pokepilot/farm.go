@@ -246,7 +246,7 @@ func runFarm(m *emu.Emu, client *farm.Client, bootState []byte, watchPort int, c
 		planner, starter, dest, fps, maxRounds, maxFrames := applySpec(*spec)
 		if err := validateSpec(planner, starter, dest); err != nil {
 			log.Printf("farm: %s: %v", spec.RunID, err)
-			finishRun(m, client, *spec, "error", err.Error(), 0, "")
+			finishRun(m, client, *spec, "error", err.Error(), 0, "", nil, nil)
 			time.Sleep(farmErrorSleep)
 			continue
 		}
@@ -309,7 +309,7 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 	snap.store(farm.Heartbeat{RunID: spec.RunID})
 	if err := m.LoadState(bootState); err != nil {
 		log.Printf("farm: %s: load state: %v", spec.RunID, err)
-		finishRun(m, client, spec, "error", fmt.Sprintf("load state: %v", err), 0, "")
+		finishRun(m, client, spec, "error", fmt.Sprintf("load state: %v", err), 0, "", nil, nil)
 		return
 	}
 
@@ -332,7 +332,7 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 		dir, err := os.MkdirTemp("", "pokefarm-checkpoints-")
 		if err != nil {
 			log.Printf("farm: %s: checkpoint dir: %v", spec.RunID, err)
-			finishRun(m, client, spec, "error", fmt.Sprintf("checkpoint dir: %v", err), burn, "")
+			finishRun(m, client, spec, "error", fmt.Sprintf("checkpoint dir: %v", err), burn, "", nil, nil)
 			return
 		}
 		checkpointDir = dir
@@ -366,11 +366,12 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 	hbDone := heartbeatLoop(client, spec.RunID, snap.load, cancel, stop, heartbeatInterval)
 
 	var reason, detail string
+	var progEarly, progFinal *farm.Progress
 	switch planner {
 	case "scripted":
-		reason, detail = runFarmScripted(m, starter, dest)
+		reason, detail, progEarly, progFinal = runFarmScripted(m, starter, dest)
 	case "llm":
-		reason, detail = runFarmLLM(m, starter, goal, maxRounds, maxFrames, cancel, snap, checkpointDir)
+		reason, detail, progEarly, progFinal = runFarmLLM(m, starter, goal, maxRounds, maxFrames, cancel, snap, checkpointDir)
 	}
 
 	// Stop and join the heartbeat before TraceTail/SaveState/Finish.
@@ -382,7 +383,7 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 		<-uploaderDone
 	}
 
-	finishRun(m, client, spec, reason, detail, burn, checkpointDir)
+	finishRun(m, client, spec, reason, detail, burn, checkpointDir, progEarly, progFinal)
 }
 
 // sampleHeartbeat captures the plain snapshot the heartbeat goroutine will
@@ -440,31 +441,33 @@ func workerAddrs(port int) []string {
 // runFarmScripted mirrors runScripted: take the starter, walk to the
 // destination. It returns the finish reason instead of keeping the server
 // alive, because the wall decides what happens next.
-func runFarmScripted(m *emu.Emu, starter, dest string) (string, string) {
+func runFarmScripted(m *emu.Emu, starter, dest string) (string, string, *farm.Progress, *farm.Progress) {
 	which, _ := starterFromName(starter) // validated before gameplay
 
 	fmt.Printf("getting the %s starter (this includes the rival battle)...\n", starter)
 	if err := skill.GetStarter(m, m.ROM(), which, skill.StatAwareMove(m.ROM())); err != nil {
-		return "error", fmt.Sprintf("get starter: %v", err)
+		return "error", fmt.Sprintf("get starter: %v", err), nil, nil
 	}
 
 	target, ok := skill.Place(dest)
 	if !ok {
-		return "error", fmt.Sprintf("unknown destination %q", dest)
+		return "error", fmt.Sprintf("unknown destination %q", dest), nil, nil
 	}
 	fmt.Printf("walking to %q (map %02x, %d,%d)...\n", dest, target.Map, target.X, target.Y)
 	start := time.Now()
 	if err := skill.GoTo(m, m.ROM(), target); err != nil {
-		return "error", fmt.Sprintf("GoTo: %v", err)
+		return "error", fmt.Sprintf("GoTo: %v", err), nil, nil
 	}
 	fmt.Printf("arrived at %q after %s\n", dest, time.Since(start).Round(time.Millisecond))
-	return "done", ""
+	// Scripted runs do not go through the agent loop, so they carry no
+	// progress samples: the pair is the agent run's measurement.
+	return "done", "", nil, nil
 }
 
 // runFarmLLM mirrors runLLM's diagnostics and objective list; the only
 // differences are that the budget comes from the spec and cancel is the
 // wall's cooperative stop.
-func runFarmLLM(m *emu.Emu, starter, goal string, maxRounds, maxFrames int, cancel <-chan struct{}, snap *heartbeatSnap, checkpointDir string) (string, string) {
+func runFarmLLM(m *emu.Emu, starter, goal string, maxRounds, maxFrames int, cancel <-chan struct{}, snap *heartbeatSnap, checkpointDir string) (string, string, *farm.Progress, *farm.Progress) {
 	// The starter is the farm's controlled variable, so the harness TAKES it
 	// before handing control to the model — the same reason badgerun does
 	// (a model that knows Pokemon always picks Squirtle otherwise). From
@@ -473,7 +476,7 @@ func runFarmLLM(m *emu.Emu, starter, goal string, maxRounds, maxFrames int, canc
 	// observation (agent.Offer), which is strictly better than a static list
 	// of every place in the ROM.
 	if err := skill.GetStarter(m, m.ROM(), farmStarterFor(starter), skill.StatAwareMove(m.ROM())); err != nil {
-		return "error", fmt.Sprintf("get starter %s: %v", starter, err)
+		return "error", fmt.Sprintf("get starter %s: %v", starter, err), nil, nil
 	}
 	fmt.Println("planner: llm — the model picks from a menu rebuilt every round")
 
@@ -500,12 +503,30 @@ func runFarmLLM(m *emu.Emu, starter, goal string, maxRounds, maxFrames int, canc
 	for i, o := range res.Completed {
 		fmt.Printf("  completed %d: %s\n", i+1, o)
 	}
+	printProgress(res.ProgressEarly, res.ProgressFinal)
 	detail := ""
 	if res.Err != nil {
 		fmt.Printf("  error: %v\n", res.Err)
 		detail = res.Err.Error()
 	}
-	return stopName(res.Stop), detail
+	return stopName(res.Stop), detail, farmProgress(res.ProgressEarly), farmProgress(res.ProgressFinal)
+}
+
+// farmProgress lifts one of the run's progress samples onto the wire type.
+// The two structs are separate on purpose: farm owns the wire contract and
+// imports nothing from agent, and agent imports nothing from farm.
+func farmProgress(p *agent.Progress) *farm.Progress {
+	if p == nil {
+		return nil
+	}
+	return &farm.Progress{
+		Round:   p.Round,
+		Badges:  p.Badges,
+		Events:  p.Events,
+		Maps:    p.Maps,
+		Map:     p.Map,
+		MapName: p.MapName,
+	}
 }
 
 // reportingPlanner publishes the offered menu onto the heartbeat snap
@@ -560,8 +581,11 @@ func planQuestion(offered []agent.Objective) string {
 // finishRun sends the Finish dump for one accepted run. Every accepted
 // nonempty RunID gets an attempt, including runs that died in validation or
 // LoadState before they stepped a frame. It is the last call before the next
-// lease, and it happens after the heartbeat has been joined.
-func finishRun(m *emu.Emu, client *farm.Client, spec farm.Spec, reason, detail string, burn int, checkpointDir string) {
+// lease, and it happens after the heartbeat has been joined. progEarly and
+// progFinal are the run's two progress samples (nil when the run never
+// reached the agent loop); they ride the dump so a stalled run is
+// distinguishable from a long one.
+func finishRun(m *emu.Emu, client *farm.Client, spec farm.Spec, reason, detail string, burn int, checkpointDir string, progEarly, progFinal *farm.Progress) {
 	report := farm.FinishReport{
 		RunID:         spec.RunID,
 		Attempt:       spec.Attempt,
@@ -570,6 +594,8 @@ func finishRun(m *emu.Emu, client *farm.Client, spec farm.Spec, reason, detail s
 		TraceTail:     m.TraceTail(20),
 		RunnerVersion: client.Version,
 		SeedBurn:      burn,
+		ProgressEarly: progEarly,
+		ProgressFinal: progFinal,
 	}
 	if save, err := m.SaveState(); err == nil {
 		report.SaveState = save

@@ -139,6 +139,50 @@ func TestFinishReportJSONRoundTrip(t *testing.T) {
 	}
 }
 
+func TestFinishReportCarriesProgressAtTwoPoints(t *testing.T) {
+	// The signal is the PAIR: an early sample and a finish sample, so the
+	// dump answers "did this run move?" without a second run to compare
+	// against. A stalled run's two samples are identical; a run that
+	// moved's are not.
+	want := FinishReport{
+		RunID:  "r1",
+		Reason: "budget",
+		ProgressEarly: &Progress{
+			Round: 0, Badges: 0, Events: 5, Maps: 1, Map: 0x31, MapName: "Pallet Town",
+		},
+		ProgressFinal: &Progress{
+			Round: 20, Badges: 0, Events: 5, Maps: 3, Map: 0x0d, MapName: "Route 2",
+		},
+	}
+	b, err := json.Marshal(want)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	for _, field := range []string{`"progress_early"`, `"progress_final"`, `"round"`, `"badges"`, `"events"`, `"maps"`, `"map"`, `"map_name"`} {
+		if !contains(string(b), field) {
+			t.Errorf("marshaled finish missing %s: %s", field, b)
+		}
+	}
+	var got FinishReport
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("round trip = %+v, want %+v", got, want)
+	}
+	// A report with no samples (a run that died before the agent loop, or
+	// an older runner) omits the keys entirely rather than shipping two
+	// zero samples that would read as "played and moved nothing".
+	var bare FinishReport
+	bareB, err := json.Marshal(bare)
+	if err != nil {
+		t.Fatalf("marshal bare: %v", err)
+	}
+	if contains(string(bareB), "progress_early") || contains(string(bareB), "progress_final") {
+		t.Errorf("unsampled report must omit the progress keys: %s", bareB)
+	}
+}
+
 func TestFinishReportJSONOmitsNewFields(t *testing.T) {
 	var got FinishReport
 	if err := json.Unmarshal([]byte(`{"run_id":"old","reason":"done"}`), &got); err != nil {
@@ -149,6 +193,9 @@ func TestFinishReportJSONOmitsNewFields(t *testing.T) {
 	}
 	if got.RunnerVersion != "" || got.SeedBurn != 0 || got.Artifacts != nil {
 		t.Fatalf("omitted evidence must stay zero: %+v", got)
+	}
+	if got.ProgressEarly != nil || got.ProgressFinal != nil {
+		t.Fatalf("a legacy dump carries no progress samples: %+v", got)
 	}
 }
 
