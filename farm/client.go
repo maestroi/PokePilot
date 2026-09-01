@@ -5,7 +5,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
+	"strings"
+	"time"
+)
+
+const (
+	defaultHTTPTimeout = 15 * time.Second
+	maxErrorBody       = 4 << 10
 )
 
 // Client is the runner's only knowledge of the wall: four HTTP calls.
@@ -18,9 +27,14 @@ type Client struct {
 	Version string
 }
 
-// NewClient builds a Client with a default *http.Client.
+// NewClient builds a Client with a bounded default HTTP timeout and a
+// normalized base URL. Tests and callers that need different transport or
+// timeout behavior can replace HTTP after construction.
 func NewClient(baseURL string) *Client {
-	return &Client{BaseURL: baseURL, HTTP: http.DefaultClient}
+	return &Client{
+		BaseURL: strings.TrimRight(baseURL, "/"),
+		HTTP:    &http.Client{Timeout: defaultHTTPTimeout},
+	}
 }
 
 // Lease asks the wall for the next spec. A 204 response means none is
@@ -39,7 +53,7 @@ func (c *Client) Lease(ctx context.Context) (*Spec, error) {
 		return nil, nil
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("farm: lease: status %d", resp.StatusCode)
+		return nil, responseError("lease", resp)
 	}
 	var spec Spec
 	if err := json.NewDecoder(resp.Body).Decode(&spec); err != nil {
@@ -57,8 +71,7 @@ func (c *Client) Heartbeat(ctx context.Context, hb Heartbeat) (HeartbeatReply, e
 	if err != nil {
 		return reply, err
 	}
-	url := fmt.Sprintf("%s/v1/runs/%s/heartbeat", c.BaseURL, hb.RunID)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.runURL(hb.RunID, "heartbeat"), bytes.NewReader(body))
 	if err != nil {
 		return reply, err
 	}
@@ -69,7 +82,7 @@ func (c *Client) Heartbeat(ctx context.Context, hb Heartbeat) (HeartbeatReply, e
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return reply, fmt.Errorf("farm: heartbeat: status %d", resp.StatusCode)
+		return reply, responseError("heartbeat", resp)
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&reply); err != nil {
 		return reply, fmt.Errorf("farm: heartbeat: decode: %w", err)
@@ -97,7 +110,7 @@ func (c *Client) Ping(ctx context.Context, addrs []string) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("farm: ping: status %d", resp.StatusCode)
+		return responseError("ping", resp)
 	}
 	return nil
 }
@@ -112,8 +125,7 @@ func (c *Client) Finish(ctx context.Context, report FinishReport) error {
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/v1/runs/%s/finish", c.BaseURL, report.RunID)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.runURL(report.RunID, "finish"), bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
@@ -124,7 +136,7 @@ func (c *Client) Finish(ctx context.Context, report FinishReport) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("farm: finish: status %d", resp.StatusCode)
+		return responseError("finish", resp)
 	}
 	return nil
 }
@@ -139,8 +151,7 @@ func (c *Client) Checkpoint(ctx context.Context, report CheckpointReport) error 
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/v1/runs/%s/checkpoint", c.BaseURL, report.RunID)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.runURL(report.RunID, "checkpoint"), bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
@@ -151,7 +162,20 @@ func (c *Client) Checkpoint(ctx context.Context, report CheckpointReport) error 
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("farm: checkpoint: status %d", resp.StatusCode)
+		return responseError("checkpoint", resp)
 	}
 	return nil
+}
+
+func (c *Client) runURL(runID, action string) string {
+	return fmt.Sprintf("%s/v1/runs/%s/%s", c.BaseURL, url.PathEscape(runID), action)
+}
+
+func responseError(op string, resp *http.Response) error {
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
+	detail := strings.TrimSpace(string(body))
+	if detail == "" {
+		return fmt.Errorf("farm: %s: status %d", op, resp.StatusCode)
+	}
+	return fmt.Errorf("farm: %s: status %d: %s", op, resp.StatusCode, detail)
 }
