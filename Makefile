@@ -55,7 +55,7 @@ LOCAL_LLM_NO_THINK ?= 1
 LOCAL_LLM_MAX_TOKENS ?= 1024
 LOCAL_LLM_TIMEOUT ?= 300s
 
-.PHONY: run run-60 run-0 run-llm run-llm-local test test-short test-race vet verify farm-image farm-up farm-down
+.PHONY: run run-60 run-0 run-llm run-llm-local test test-short test-race test-farm test-agent test-state vet verify farm-image farm-up farm-down
 
 require-rom = @test -f "$(POKEMON_RED_ROM)" || { \
 	echo "POKEMON_RED_ROM not found: $(POKEMON_RED_ROM)"; \
@@ -112,6 +112,17 @@ test-short:
 
 test-race:
 	POKEMON_RED_ROM= go test -race -short -count=1 ./... $(ARGS)
+
+# Focused ROM-free loops for the areas changed most often. These are not
+# substitutes for verify; they keep edit/test cycles short before the full gate.
+test-farm:
+	POKEMON_RED_ROM= go test -short -count=1 ./farm ./cmd/pokewall ./cmd/pokeui ./deploy $(ARGS)
+
+test-agent:
+	POKEMON_RED_ROM= go test -short -count=1 ./agent ./cmd/pokepilot $(ARGS)
+
+test-state:
+	POKEMON_RED_ROM= go test -short -count=1 ./red/state ./red/sym ./world $(ARGS)
 
 # GomeBoy is pinned to the maintained GitHub fork in go.mod, so the Docker
 # build needs only this repository as its build context.
