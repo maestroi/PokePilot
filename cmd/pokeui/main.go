@@ -13,6 +13,7 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -32,6 +33,7 @@ var uiJS []byte
 var mapFiles embed.FS
 
 const proxyTimeout = 5 * time.Second
+const fallbackMapSize = 128
 
 // handler serves the console at GET / and forwards only the operator
 // routes to wallBase. Runner-only paths (lease, heartbeat, finish) 404.
@@ -48,7 +50,29 @@ func handler(wallBase string) http.Handler {
 		res.Write(uiJS) //nolint:errcheck // best effort
 	})
 	if maps, err := fs.Sub(mapFiles, "ui/maps"); err == nil {
-		mux.Handle("GET /maps/", http.StripPrefix("/maps/", http.FileServer(http.FS(maps))))
+		mux.HandleFunc("GET /maps/{name}", func(res http.ResponseWriter, req *http.Request) {
+			name := req.PathValue("name")
+			if data, err := fs.ReadFile(maps, name); err == nil {
+				http.ServeContent(res, req, name, time.Time{}, strings.NewReader(string(data)))
+				return
+			}
+			// A deployment may intentionally omit ROM-derived semantic assets.
+			// Keep the live overlay usable instead of making the entire map panel
+			// disappear: return a neutral coordinate field for map JSON requests.
+			if len(name) == len("00.json") && strings.HasSuffix(name, ".json") {
+				res.Header().Set("Content-Type", "application/json")
+				res.Header().Set("Cache-Control", "no-store")
+				cells := strings.Repeat(".", fallbackMapSize*fallbackMapSize)
+				json.NewEncoder(res).Encode(map[string]any{
+					"width":    fallbackMapSize,
+					"height":   fallbackMapSize,
+					"cells":    cells,
+					"fallback": true,
+				}) //nolint:errcheck // best effort
+				return
+			}
+			http.NotFound(res, req)
+		})
 	}
 	mux.HandleFunc("GET /v1/version", func(res http.ResponseWriter, req *http.Request) {
 		res.Header().Set("Content-Type", "application/json")
