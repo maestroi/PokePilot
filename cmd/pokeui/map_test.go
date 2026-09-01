@@ -19,7 +19,13 @@ func TestPokeuiServesLiveMapUIAndEmbeddedAssetDirectory(t *testing.T) {
 	}
 	body, _ := io.ReadAll(res.Body)
 	res.Body.Close()
-	for _, want := range []string{`id="detail-map-panel"`, `id="detail-map"`, `class="map-legend"`} {
+	for _, want := range []string{
+		`id="detail-map-panel"`,
+		`id="detail-map"`,
+		`class="map-legend"`,
+		`url.startsWith("/maps/")`,
+		`cache: "no-store"`,
+	} {
 		if !bytes.Contains(body, []byte(want)) {
 			t.Errorf("index missing %q", want)
 		}
@@ -51,7 +57,7 @@ func TestPokeuiServesLiveMapUIAndEmbeddedAssetDirectory(t *testing.T) {
 	}
 }
 
-func TestPokeuiServesFallbackMapWhenSemanticAssetIsMissing(t *testing.T) {
+func TestPokeuiServesGeneratedSemanticMap(t *testing.T) {
 	ui := httptest.NewServer(handler("http://127.0.0.1:1"))
 	t.Cleanup(ui.Close)
 
@@ -62,6 +68,42 @@ func TestPokeuiServesFallbackMapWhenSemanticAssetIsMissing(t *testing.T) {
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("GET /maps/28.json = %d, want 200", res.StatusCode)
+	}
+
+	var asset struct {
+		ID       int    `json:"id"`
+		Width    int    `json:"width"`
+		Height   int    `json:"height"`
+		Cells    string `json:"cells"`
+		Fallback bool   `json:"fallback"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&asset); err != nil {
+		t.Fatal(err)
+	}
+	if asset.ID != 0x28 || asset.Width <= 0 || asset.Height <= 0 {
+		t.Fatalf("unexpected Oaks Lab asset: id=%#x size=%dx%d", asset.ID, asset.Width, asset.Height)
+	}
+	if len(asset.Cells) != asset.Width*asset.Height {
+		t.Fatalf("cells length = %d, want %d", len(asset.Cells), asset.Width*asset.Height)
+	}
+	if asset.Fallback {
+		t.Fatal("generated semantic map unexpectedly marked fallback")
+	}
+}
+
+func TestPokeuiServesFallbackMapWhenSemanticAssetIsMissing(t *testing.T) {
+	ui := httptest.NewServer(handler("http://127.0.0.1:1"))
+	t.Cleanup(ui.Close)
+
+	// Use a deliberately non-generated two-character map key so this test
+	// keeps exercising fallback behavior even after real ROM assets are added.
+	res, err := http.Get(ui.URL + "/maps/zz.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("GET /maps/zz.json = %d, want 200", res.StatusCode)
 	}
 	if got := res.Header.Get("Content-Type"); got != "application/json" {
 		t.Fatalf("Content-Type = %q, want application/json", got)
