@@ -48,10 +48,10 @@ the bit.
 
 ## Getting started
 
-Requires Go 1.26 and a Pokémon Red ROM. The `replace` in `go.mod` points
-GomeBoy at a local checkout (an absolute path), so a fresh clone builds only
-where that path exists; the Docker build injects it as a BuildKit named
-context instead.
+Requires Go 1.26 and a Pokémon Red ROM for gameplay. GomeBoy is pinned in
+`go.mod` to the PokePilot-maintained fork at `github.com/maestroi/gomeboy`, so
+a normal fresh clone has no dependency on a developer-local filesystem path.
+ROM-free verification also works without a ROM.
 
 ```sh
 export POKEMON_RED_ROM=roms/pokemon_red.gb   # roms/ is gitignored
@@ -91,7 +91,8 @@ a harness, not a service — not part of `go test ./...`.
 ## Testing
 
 ```sh
-make test           # go test ./...
+make verify         # ROM-free: module graph, vet, short tests, race tests
+make test           # full go test ./...; ROM-backed tests skip without ROM
 ```
 
 - `world` and `red/rom` tests are pure ROM-byte tests: milliseconds, no

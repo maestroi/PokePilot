@@ -29,7 +29,6 @@ export FARM_STATE_DIR
 #   AGENT_ORCHESTRATOR_API=http://192.168.50.81:8080
 #   AGENT_ORCHESTRATOR_UI=http://192.168.50.81:8081
 #   AGENT_ORCHESTRATOR_POKEPILOT_PROJECT_ID=<project uuid>
-GOMEBOY_CONTEXT ?= ../gomeboy
 
 # A model served locally instead of the LAN box .env points at. It is the
 # same run as run-llm with the endpoint, the model name and the reply room
@@ -56,7 +55,7 @@ LOCAL_LLM_NO_THINK ?= 1
 LOCAL_LLM_MAX_TOKENS ?= 1024
 LOCAL_LLM_TIMEOUT ?= 300s
 
-.PHONY: run run-60 run-0 run-llm run-llm-local test farm-image farm-up farm-down
+.PHONY: run run-60 run-0 run-llm run-llm-local test test-short test-race vet verify farm-image farm-up farm-down
 
 require-rom = @test -f "$(POKEMON_RED_ROM)" || { \
 	echo "POKEMON_RED_ROM not found: $(POKEMON_RED_ROM)"; \
@@ -99,10 +98,25 @@ run-llm-local:
 test:
 	go test ./... $(ARGS)
 
-# go.mod replaces gomeboy with an absolute path, so the checkout arrives as
-# a BuildKit named context that the Dockerfile copies to that exact path.
+# verify is deliberately ROM-free and mirrors CI. Emulator-backed fixture
+# tests skip when POKEMON_RED_ROM is empty; -short skips long journey tests.
+# A repository-wide gofmt gate is intentionally deferred until the existing
+# formatting debt is normalized in a dedicated no-behavior-change cleanup.
+verify: vet test-short test-race
+
+vet:
+	POKEMON_RED_ROM= go vet ./...
+
+test-short:
+	POKEMON_RED_ROM= go test -short -count=1 ./... $(ARGS)
+
+test-race:
+	POKEMON_RED_ROM= go test -race -short -count=1 ./... $(ARGS)
+
+# GomeBoy is pinned to the maintained GitHub fork in go.mod, so the Docker
+# build needs only this repository as its build context.
 farm-image:
-	docker buildx build --load --build-context gomeboy=$(GOMEBOY_CONTEXT) -t $(FARM_IMAGE) -f deploy/Dockerfile .
+	docker buildx build --load -t $(FARM_IMAGE) -f deploy/Dockerfile .
 
 farm-up: farm-image
 	$(require-rom)
@@ -127,4 +141,3 @@ farm-up: farm-image
 farm-down:
 	docker rm -f pokefarm_ui >/dev/null 2>&1 || true
 	docker stack rm pokefarm
-
