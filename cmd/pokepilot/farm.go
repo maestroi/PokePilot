@@ -37,7 +37,7 @@ const (
 	// farmErrorSleep backs off after a failed lease, finish, or bad spec.
 	farmErrorSleep = 2 * time.Second
 	// heartbeatTrailMax is roughly one minute of positions at the normal
-	// heartbeat cadence. The trail is reset whenever the map changes.
+	// heartbeat cadence. The trail resets whenever the player changes maps.
 	heartbeatTrailMax = 64
 )
 
@@ -180,8 +180,8 @@ func (s *heartbeatSnap) load() farm.Heartbeat {
 	return h
 }
 
-// heartbeatTrail owns the recent map-local position samples. It lives on the
-// stepping goroutine, so no locking is needed; heartbeatSnap receives copies.
+// heartbeatTrail owns the recent map-local position samples. It is only
+// touched on the stepping goroutine; snapshots get a copied slice.
 type heartbeatTrail struct {
 	mapID uint8
 	set   bool
@@ -432,13 +432,14 @@ func sampleHeartbeat(m *emu.Emu, runID string, snap *heartbeatSnap, mem *state.M
 		Trail:       trail.add(g.Player.MapID, g.Player.X, g.Player.Y),
 	}
 	for _, sp := range state.DecodeSprites(mem) {
-		// Coordinates outside uint8 are invalid map positions; hidden sprites
-		// have already been filtered by DecodeSprites.
 		if sp.X < 0 || sp.Y < 0 || sp.X > 255 || sp.Y > 255 {
 			continue
 		}
 		hb.Sprites = append(hb.Sprites, farm.MapSprite{
-			X: uint8(sp.X), Y: uint8(sp.Y), PictureID: sp.PictureID, Slot: uint8(sp.Slot),
+			X:         uint8(sp.X),
+			Y:         uint8(sp.Y),
+			PictureID: sp.PictureID,
+			Slot:      uint8(sp.Slot),
 		})
 	}
 	if tail := m.TraceTail(1); len(tail) > 0 {
@@ -469,19 +470,195 @@ func workerAddrs(port int) []string {
 			continue
 		}
 		for _, a := range addrs {
-			host, _, err := net.SplitHostPort(a.String())
-			if err != nil {
-				host = strings.TrimSuffix(strings.TrimPrefix(a.String(), "["), "]")
-				if i := strings.LastIndex(host, "%"); i >= 0 {
-					host = host[:i]
-				}
-			}
-			ip := net.ParseIP(host)
-			if ip == nil || ip.IsLoopback() || ip.IsUnspecified() {
+			ipnet, ok := a.(*net.IPNet)
+			if !ok || ipnet.IP.IsLoopback() {
 				continue
 			}
-			out = append(out, net.JoinHostPort(host, strconv.Itoa(port)))
+			out = append(out, net.JoinHostPort(ipnet.IP.String(), strconv.Itoa(port)))
 		}
 	}
 	return out
+}
+
+// runFarmScripted mirrors runScripted: take the starter, walk to the
+// destination. It returns the finish reason instead of keeping the server
+// alive, because the wall decides what happens next.
+func runFarmScripted(m *emu.Emu, starter, dest string) (string, string, *farm.Progress, *farm.Progress) {
+	which, _ := starterFromName(starter) // validated before gameplay
+
+	fmt.Printf("getting the %s starter (this includes the rival battle)...\n", starter)
+	if err := skill.GetStarter(m, m.ROM(), which, skill.StatAwareMove(m.ROM())); err != nil {
+		return "error", fmt.Sprintf("get starter: %v", err), nil, nil
+	}
+
+	target, ok := skill.Place(dest)
+	if !ok {
+		return "error", fmt.Sprintf("unknown destination %q", dest), nil, nil
+	}
+	fmt.Printf("walking to %q (map %02x, %d,%d)...\n", dest, target.Map, target.X, target.Y)
+	start := time.Now()
+	if err := skill.GoTo(m, m.ROM(), target); err != nil {
+		return "error", fmt.Sprintf("GoTo: %v", err), nil, nil
+	}
+	fmt.Printf("arrived at %q after %s\n", dest, time.Since(start).Round(time.Millisecond))
+	// Scripted runs do not go through the agent loop, so they carry no
+	// progress samples: the pair is the agent run's measurement.
+	return "done", "", nil, nil
+}
+
+// runFarmLLM mirrors runLLM's diagnostics and objective list; the only
+// differences are that the budget comes from the spec and cancel is the
+// wall's cooperative stop.
+func runFarmLLM(m *emu.Emu, starter, goal string, maxRounds, maxFrames int, cancel <-chan struct{}, snap *heartbeatSnap, checkpointDir string) (string, string, *farm.Progress, *farm.Progress) {
+	// The starter is the farm's controlled variable, so the harness TAKES it
+	// before handing control to the model — the same reason badgerun does
+	// (a model that knows Pokemon always picks Squirtle otherwise). From
+	// here on the model decides everything, and the menu is no longer built
+	// here at all: agent.Run rebuilds it every round from the current
+	// observation (agent.Offer), which is strictly better than a static list
+	// of every place in the ROM.
+	if err := skill.GetStarter(m, m.ROM(), farmStarterFor(starter), skill.StatAwareMove(m.ROM())); err != nil {
+		return "error", fmt.Sprintf("get starter %s: %v", starter, err), nil, nil
+	}
+	fmt.Println("planner: llm — the model picks from a menu rebuilt every round")
+
+	logw := &agentTraceLog{w: os.Stdout, note: m.TraceNote}
+	planner := agent.NewLLMPlanner()
+	planner.Goal = goal
+	planner.Log = logw // one line per model call, above its round line
+	// The exact bytes, onto the heartbeat: the console's Plan panel shows
+	// the prompt while the model is still thinking, then the raw reply.
+	planner.PromptLog = rawWriter{snap: snap, start: true}
+	planner.ReplyLog = rawWriter{snap: snap}
+	// The same tally the local watch page shows (runStats): a farm worker's
+	// page is this page, so a wandering leased run is visible on it too.
+	stats := newStatsPlanner(planner, m.TraceStats, snap)
+	res := agent.Run(m, m.ROM(), reportingPlanner{inner: stats, snap: snap}, agent.Budget{
+		MaxRounds:     maxRounds,
+		MaxFrames:     maxFrames,
+		Log:           logw,
+		Cancel:        cancel,
+		CheckpointDir: checkpointDir,
+	})
+
+	fmt.Printf("\nrun stopped: %s after %d round(s)\n", stopName(res.Stop), res.Rounds)
+	for i, o := range res.Completed {
+		fmt.Printf("  completed %d: %s\n", i+1, o)
+	}
+	printProgress(res.ProgressEarly, res.ProgressFinal)
+	detail := ""
+	if res.Err != nil {
+		fmt.Printf("  error: %v\n", res.Err)
+		detail = res.Err.Error()
+	}
+	return stopName(res.Stop), detail, farmProgress(res.ProgressEarly), farmProgress(res.ProgressFinal)
+}
+
+// farmProgress lifts one of the run's progress samples onto the wire type.
+// The two structs are separate on purpose: farm owns the wire contract and
+// imports nothing from agent, and agent imports nothing from farm.
+func farmProgress(p *agent.Progress) *farm.Progress {
+	if p == nil {
+		return nil
+	}
+	return &farm.Progress{
+		Round:   p.Round,
+		Badges:  p.Badges,
+		Events:  p.Events,
+		Maps:    p.Maps,
+		Map:     p.Map,
+		MapName: p.MapName,
+	}
+}
+
+// reportingPlanner publishes the offered menu onto the heartbeat snap
+// before the inner planner is asked, and the chosen objective after it
+// answers. That is what keeps the watch pane current during a multi-second
+// model POST, when the stepper is blocked and sampleHeartbeat is not
+// running.
+type reportingPlanner struct {
+	inner agent.Planner
+	snap  *heartbeatSnap
+}
+
+func (p reportingPlanner) Next(obs agent.Observation, offered []agent.Objective) (agent.Objective, error) {
+	return p.ask(obs, offered, agent.Retry{})
+}
+
+func (p reportingPlanner) NextRetry(obs agent.Observation, offered []agent.Objective, r agent.Retry) (agent.Objective, error) {
+	return p.ask(obs, offered, r)
+}
+
+func (p reportingPlanner) ask(obs agent.Observation, offered []agent.Objective, r agent.Retry) (agent.Objective, error) {
+	q := planQuestion(offered)
+	if p.snap != nil {
+		p.snap.storePlan(q, "")
+	}
+	var (
+		obj agent.Objective
+		err error
+	)
+	if r != (agent.Retry{}) {
+		obj, err = p.inner.(agent.FeedbackPlanner).NextRetry(obs, offered, r)
+	} else {
+		obj, err = p.inner.Next(obs, offered)
+	}
+	if err == nil && p.snap != nil {
+		p.snap.storePlan(q, obj.String())
+	}
+	return obj, err
+}
+
+func planQuestion(offered []agent.Objective) string {
+	var b strings.Builder
+	for i, o := range offered {
+		if i > 0 {
+			b.WriteByte('\n')
+		}
+		fmt.Fprintf(&b, "%d: %s", i+1, o)
+	}
+	return b.String()
+}
+
+// finishRun sends the Finish dump for one accepted run. Every accepted
+// nonempty RunID gets an attempt, including runs that died in validation or
+// LoadState before they stepped a frame. It is the last call before the next
+// lease, and it happens after the heartbeat has been joined. progEarly and
+// progFinal are the run's two progress samples (nil when the run never
+// reached the agent loop); they ride the dump so a stalled run is
+// distinguishable from a long one.
+func finishRun(m *emu.Emu, client *farm.Client, spec farm.Spec, reason, detail string, burn int, checkpointDir string, progEarly, progFinal *farm.Progress) {
+	report := farm.FinishReport{
+		RunID:         spec.RunID,
+		Attempt:       spec.Attempt,
+		Reason:        reason,
+		Detail:        detail,
+		TraceTail:     m.TraceTail(20),
+		RunnerVersion: client.Version,
+		SeedBurn:      burn,
+		ProgressEarly: progEarly,
+		ProgressFinal: progFinal,
+	}
+	if save, err := m.SaveState(); err == nil {
+		report.SaveState = save
+	} else {
+		log.Printf("farm: %s: save state: %v", spec.RunID, err)
+	}
+	sendFinish(client, report, checkpointDir)
+}
+
+// farmStarterFor maps a spec's starter name onto the typed skill.Starter the
+// objective layer now carries. The conversion lives at the CLI/spec boundary
+// rather than inside agent: since S6-7 an Objective's Starter is typed, so
+// agent no longer parses names. Unknown and empty keep the historic default
+// (Squirtle) so an older spec that omits the field behaves as it always did.
+func farmStarterFor(name string) skill.Starter {
+	switch name {
+	case "charmander":
+		return skill.StarterCharmander
+	case "bulbasaur":
+		return skill.StarterBulbasaur
+	default:
+		return skill.StarterSquirtle
+	}
 }
