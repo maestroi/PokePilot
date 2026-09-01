@@ -12,8 +12,8 @@
 
 Prerequisites and constraints:
 
-- Land Agent Orchestrator's `docs/plans/2026-08-30-external-issue-intake.md` first and verify its exact multipart response/route contract before implementation.
-- Follow `docs/plans/2026-08-30-pokefarm-issue-handoff-design.md` and repository `AGENTS.md`.
+- Land Agent Orchestrator's `docs/archive/2026-08-30-external-issue-intake.md` first and verify its exact multipart response/route contract before implementation.
+- Follow `docs/archive/2026-08-30-pokefarm-issue-handoff-design.md` and repository `AGENTS.md`.
 - Never read a collision grid into context. Use `skill/probe_test.go` for any state/location question.
 - Never commit `.gb`, `.sav`, `.state`, uploaded issue artifacts, or a ROM-derived fixture.
 - Keep all Agent Orchestrator concepts out of `emu`, `skill`, `agent`, and `red`; integration belongs to `farm`, `cmd/pokepilot`, `cmd/pokewall`, and `cmd/pokeui`.

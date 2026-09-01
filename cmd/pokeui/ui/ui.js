@@ -522,6 +522,12 @@
       `<button type="button" class="pager-btn" data-page="next" ${histPage >= pages - 1 ? "disabled" : ""}>next \u2192</button>`;
   }
 
+  // Whether the raw-exchange fold is open and how far it is scrolled,
+  // remembered across re-renders. renderDetail rebuilds the whole pane on
+  // every poll, so anything the operator did to it has to be re-applied.
+  let rawOpen = false;
+  let rawScroll = 0;
+
   function renderDetail() {
     const pane = $("watch");
     const run = (snap.runs || []).find((r) => r.run_id === selected);
@@ -567,6 +573,17 @@
       + planHTML(run)
       + playHTML(run)
       + lastEventHTML(run);
+    // renderDetail replaces the whole pane every poll, so a <details> the
+    // operator opened would slam shut a second later. Re-apply the flag and
+    // let the toggle write it back.
+    const raw = $("detail-body").querySelector(".plan-raw");
+    if (raw) {
+      raw.open = rawOpen;
+      raw.addEventListener("toggle", () => { rawOpen = raw.open; });
+      const pre = raw.querySelector("pre");
+      pre.scrollTop = rawScroll;
+      pre.addEventListener("scroll", () => { rawScroll = pre.scrollTop; });
+    }
   }
 
   function planHTML(run) {

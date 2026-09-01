@@ -33,7 +33,7 @@
 
 **NO recall-vs-derivation reading is possible from these runs, and none is
 offered.** No completion rate, no capability claim. The real measurement
-moves to slice 7 (docs/plans/2026-08-29-slice7-design.md) after
+moves to slice 7 (docs/archive/2026-08-29-slice7-design.md) after
 the goal, reply validation and rejection recovery land.
 
 ### For the next task

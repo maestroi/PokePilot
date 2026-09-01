@@ -17,7 +17,7 @@ types runners already speak. No Vue, no Node, no new Go module.
 
 The wall already tracks tiles, workers, heartbeats, and cooperative
 cancel. The page that shows them is a full-page `<table>` refresh. The
-farm design (`docs/plans/2026-08-26-farm-design.md` §5) wanted a card grid
+farm design (`docs/archive/2026-08-26-farm-design.md` §5) wanted a card grid
 you click for trace and history, plus start/stop from the wall. This is
 that surface, watch and operate.
 

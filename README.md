@@ -141,7 +141,8 @@ Details in `deploy/README.md`.
 | `docs/POKERED.md` | Question → file map for the vendored decomp |
 | `docs/ROAD-TO-ELITE-FOUR.md` | Everything between Cerulean City and the Pokémon League |
 | `RUNNOTES.md` | Per-slice run notes |
-| `docs/plans/` | Slice plans |
+| `docs/plans/` | Active slice plans |
+| `docs/archive/` | Implemented slice plans and designs |
 
 ## House rules
 

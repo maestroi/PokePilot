@@ -793,3 +793,36 @@ func TestLLMPlannerRejectionCarriedIntoReprompt(t *testing.T) {
 		t.Errorf("Health.Rejected = %d, want 1 (the first reply was rejected)", p.Health.Rejected)
 	}
 }
+
+// TestPromptHashTracksTheBytesSent pins the property the hash exists for: it
+// changes when anything that determines the prompt changes, and does not
+// change otherwise. A hash that drifted between two runs of the same
+// configuration would flag comparable rows as incomparable; one that stayed
+// put across a prompt change would do the far worse thing and hide a real
+// difference.
+func TestPromptHashTracksTheBytesSent(t *testing.T) {
+	base := &agent.LLMPlanner{Model: "m"}
+	h := base.PromptHash()
+	if len(h) != 8 {
+		t.Fatalf("PromptHash() = %q, want 8 hex characters", h)
+	}
+	if again := (&agent.LLMPlanner{Model: "m"}).PromptHash(); again != h {
+		t.Errorf("same configuration hashed differently: %q then %q", h, again)
+	}
+	// The model is NOT part of the prompt: an ablation that swaps the model
+	// is exactly the comparison this must not block.
+	if other := (&agent.LLMPlanner{Model: "other"}).PromptHash(); other != h {
+		t.Errorf("model changed the prompt hash: %q vs %q", other, h)
+	}
+	for _, tc := range []struct {
+		what string
+		p    *agent.LLMPlanner
+	}{
+		{"Goal", &agent.LLMPlanner{Model: "m", Goal: "Earn the Boulder Badge."}},
+		{"ExtraSystem", &agent.LLMPlanner{Model: "m", ExtraSystem: " One injected fact."}},
+	} {
+		if got := tc.p.PromptHash(); got == h {
+			t.Errorf("%s did not change the prompt hash (both %q)", tc.what, got)
+		}
+	}
+}

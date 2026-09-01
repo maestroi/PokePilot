@@ -698,7 +698,7 @@ func TestOfferTrainingTargetTracksTheLead(t *testing.T) {
 	known := agent.NewKnowledge(nil)
 	obs := agent.Observation{
 		Map: 0x0c, HasGrass: true, PartyCount: 1,
-		Party: []agent.PartyMon{{Level: 11}},
+		Party: []agent.PartyMon{{Level: 11, HP: 30, MaxHP: 30}},
 	}
 	trainTarget := func(obs agent.Observation) (uint8, bool) {
 		for _, objective := range agent.Offer(obs, known) {
@@ -713,7 +713,7 @@ func TestOfferTrainingTargetTracksTheLead(t *testing.T) {
 	// fixed target of 12 a level-12 lead was offered no training at all,
 	// whatever it was about to walk into.
 	for _, tc := range []struct{ lead, want uint8 }{{5, 7}, {11, 13}, {12, 14}, {40, 42}} {
-		obs.Party = []agent.PartyMon{{Level: tc.lead}}
+		obs.Party = []agent.PartyMon{{Level: tc.lead, HP: 30, MaxHP: 30}}
 		got, ok := trainTarget(obs)
 		if !ok {
 			t.Fatalf("lead level %d: training not offered", tc.lead)
@@ -725,7 +725,7 @@ func TestOfferTrainingTargetTracksTheLead(t *testing.T) {
 
 	// A lead at the ceiling has no next rung, and no party has nothing to
 	// train: both are objectives that could only fail.
-	obs.Party = []agent.PartyMon{{Level: 100}}
+	obs.Party = []agent.PartyMon{{Level: 100, HP: 30, MaxHP: 30}}
 	if got, ok := trainTarget(obs); ok {
 		t.Errorf("training offered at level %d for a level-100 lead; there is no rung above it", got)
 	}
@@ -776,5 +776,45 @@ func TestOfferGymIsNotPewterOnly(t *testing.T) {
 	pewter.Party = []agent.PartyMon{{Level: 5, HP: 2, MaxHP: 20}}
 	if !gymObjective(pewter) {
 		t.Error("gym withheld from an underlevelled party; Offer must not filter on wisdom")
+	}
+}
+
+// TestOfferWithholdsTrainBelowTheRetreatLine pins the guaranteed-failed round
+// this gate removes. skill.Train refuses to start from below the retreat line
+// and reports a retreat without fighting anything, so offering the objective
+// there spends a round and a model call to be told what the predicate already
+// knew. MEASURED 2026-08-31: rounds 13 and 14 of the best run to date were
+// back-to-back train retreats.
+//
+// The boundary is Train's, not monHurt's: a lead at exactly half max HP is
+// NOT below the line (the comparison is strict), and must still be offered —
+// mirroring the predicate rather than re-deriving it is the whole point.
+func TestOfferWithholdsTrainBelowTheRetreatLine(t *testing.T) {
+	known := agent.NewKnowledge(map[uint8][]uint8{})
+	offersTrain := func(hp, maxHP uint16) bool {
+		obs := agent.Observation{
+			Map: 0x0c, HasGrass: true, PartyCount: 1,
+			Party: []agent.PartyMon{{Level: 11, HP: hp, MaxHP: maxHP}},
+		}
+		for _, o := range agent.Offer(obs, known) {
+			if o.Kind == agent.KindTrain {
+				return true
+			}
+		}
+		return false
+	}
+	for _, tc := range []struct {
+		name      string
+		hp, maxHP uint16
+		want      bool
+	}{
+		{"healthy", 30, 30, true},
+		{"exactly half is not below the line", 15, 30, true},
+		{"one below half", 14, 30, false},
+		{"fainted lead", 0, 30, false},
+	} {
+		if got := offersTrain(tc.hp, tc.maxHP); got != tc.want {
+			t.Errorf("%s (%d/%d): offered train = %v, want %v", tc.name, tc.hp, tc.maxHP, got, tc.want)
+		}
 	}
 }

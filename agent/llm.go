@@ -2,6 +2,8 @@ package agent
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -540,6 +542,40 @@ func (p *LLMPlanner) systemPrompt() string {
 	return s
 }
 
+// PromptHash is a short hash of everything in the tree that determines the
+// prompt this planner sends: the system message (llmSystemPrompt, plus
+// ExtraSystem and Goal when set) and the reply schema. Two scoreboard rows
+// carrying different hashes were collected under different prompts and are
+// NOT comparable.
+//
+// It exists because three separate slices have protected comparability with
+// a sentence in a runnote — S7-2 (the goal arrived), S9-4 (the intent
+// sentence arrived), S6-12 (four reasons at once). Each did the right thing
+// available to it. But the sentence is read at the moment of WRITING, and
+// the comparison happens months later, by someone holding two tables and no
+// runnote. A hash stamped where the numbers are read cannot be missed the
+// same way.
+//
+// It hashes the bytes ACTUALLY SENT, never a version number someone has to
+// remember to bump — a stale version number is worse than none, because it
+// asserts comparability that is not there. Eight hex characters: enough that
+// two prompt generations will not collide, short enough for a table column.
+func (p *LLMPlanner) PromptHash() string {
+	// choiceSchema is a map, and encoding/json sorts object keys, so the
+	// rendering is stable across runs and builds.
+	schema, err := json.Marshal(choiceSchema)
+	if err != nil {
+		schema = []byte("unmarshalable") // a literal map of literals; cannot happen
+	}
+	h := sha256.New()
+	// The NUL separator keeps a system prompt that ends where the schema
+	// begins from hashing the same as one shifted a byte the other way.
+	h.Write([]byte(p.systemPrompt()))
+	h.Write([]byte{0})
+	h.Write(schema)
+	return hex.EncodeToString(h.Sum(nil)[:4])
+}
+
 // chatResult is the parsed reply: the content plus the envelope facts
 // (which model answered, how the generation stopped) that Next verifies
 // before trusting the content.
@@ -573,7 +609,11 @@ func (p *LLMPlanner) ask(obs Observation, offered []Objective, feedback string) 
 			"\nReply again with ONLY a JSON object naming one of the offered objectives and only arguments that apply to it."
 	}
 	if p.PromptLog != nil {
-		fmt.Fprintf(p.PromptLog, "=== prompt (model %s) ===\n[system]\n%s\n[user]\n%s\n", p.Model, system, user)
+		// The prompt hash rides on EVERY entry rather than a one-off header
+		// line: prompts.txt is read by tailing and grepping it, and a header
+		// scrolled past a thousand rounds ago is the runnote problem again.
+		fmt.Fprintf(p.PromptLog, "=== prompt (model %s, prompt %s) ===\n[system]\n%s\n[user]\n%s\n",
+			p.Model, p.PromptHash(), system, user)
 	}
 	transportErr := func(format string, args ...any) (chatResult, error) {
 		p.Health.Transport++

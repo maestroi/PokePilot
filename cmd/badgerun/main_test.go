@@ -120,14 +120,14 @@ func TestParseStarters(t *testing.T) {
 func TestFormatTable(t *testing.T) {
 	rs := []runResult{
 		{starter: "charmander", seed: 1, badge: true, frames: 123456, toBadge: 98765,
-			calls: 42, ok: 20, failed: 3, battles: 25, blackouts: 2, stop: "done", where: "Pewter City (10,5)"},
+			calls: 42, prompt: "a1b2c3d4", ok: 20, failed: 3, battles: 25, blackouts: 2, stop: "done", where: "Pewter City (10,5)"},
 		{starter: "squirtle", seed: 2, frames: 200000,
-			calls: 60, ok: 10, failed: 5, battles: 8, blackouts: 0, stop: "stuck", where: "Route 22 (3,4)"},
+			calls: 60, prompt: "a1b2c3d4", ok: 10, failed: 5, battles: 8, blackouts: 0, stop: "stuck", where: "Route 22 (3,4)"},
 	}
 	got := formatTable(rs)
-	want := `starter    seed badge     frames  calls ok/fail battles blackouts stop     where
-charmander 1    yes       98765*     42  20/3        25         2 done     Pewter City (10,5)
-squirtle   2    no        200000     60  10/5         8         0 stuck    Route 22 (3,4)
+	want := `starter    seed badge     frames  calls ok/fail battles blackouts prompt   stop     where
+charmander 1    yes       98765*     42  20/3        25         2 a1b2c3d4 done     Pewter City (10,5)
+squirtle   2    no        200000     60  10/5         8         0 a1b2c3d4 stuck    Route 22 (3,4)
 `
 	if got != want {
 		t.Errorf("formatTable:\ngot:\n%s\nwant:\n%s", got, want)

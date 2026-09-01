@@ -584,10 +584,24 @@ func leadBelowRetreatLine(m *emu.Emu) bool {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
 	lead := state.DecodeParty(&mem).Mons[0]
-	if lead.MaxHP == 0 {
+	return BelowRetreatLine(lead.HP, lead.MaxHP)
+}
+
+// BelowRetreatLine reports whether a lead at hp/maxHP is below the line at
+// which Train refuses to start (see retreatLineNum/Den). It takes the two
+// numbers rather than the emulator so a caller holding a decoded party — an
+// observation, say — can ask the same question without stepping anything.
+//
+// It is exported so agent.Offer can ask BEFORE offering the objective. A
+// hurt lead used to be offered Train, Train refused it on the spot, and the
+// round was spent learning what this predicate already knew. One definition,
+// asked from both sides: duplicating the constant in the offering layer is
+// how the two drift apart and the guaranteed-failed round comes back.
+func BelowRetreatLine(hp, maxHP uint16) bool {
+	if maxHP == 0 {
 		return true
 	}
-	return int(lead.HP)*retreatLineDen < int(lead.MaxHP)*retreatLineNum
+	return int(hp)*retreatLineDen < int(maxHP)*retreatLineNum
 }
 
 // flip returns the other end of the ping-pong.

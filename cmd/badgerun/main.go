@@ -85,8 +85,8 @@ func parseConfig(args []string) (config, error) {
 		inject    = fs.Bool("inject-fact", false,
 			"DIAGNOSTIC ONLY, default off: append -fact to the system prompt. "+
 				"The injected fact is the thing being measured; leaving it on turns the benchmark into a walkthrough.")
-		fact  = fs.String("fact", defaultFact, "the one sentence -inject-fact injects")
-		goal  = fs.String("goal", "Earn the Boulder Badge.",
+		fact = fs.String("fact", defaultFact, "the one sentence -inject-fact injects")
+		goal = fs.String("goal", "Earn the Boulder Badge.",
 			"the task statement rendered into the planner's system prompt above everything else. "+
 				"A run parameter, not a constant: later slices need a different goal with a checkpoint. "+
 				"It must name the task and nothing else — no strategy, which is what -inject-fact is for.")
@@ -169,14 +169,19 @@ func starterFor(name string) skill.Starter {
 
 // runResult is one row of the scoreboard. Every duration is emulated frames.
 type runResult struct {
-	starter   string
-	seed      int64
-	badge     bool
-	frames    uint64 // from starter-in-hand to stop
-	toBadge   uint64 // frames until the badge was observed; 0 when no badge
-	calls     int    // planner calls
-	ok        int    // objectives completed
-	failed    int    // objectives attempted that failed
+	starter string
+	seed    int64
+	badge   bool
+	frames  uint64 // from starter-in-hand to stop
+	toBadge uint64 // frames until the badge was observed; 0 when no badge
+	calls   int    // planner calls
+	// prompt is LLMPlanner.PromptHash: which prompt generation this row was
+	// collected under. Rows with different hashes are NOT comparable, and
+	// the whole point of carrying it here rather than in the run banner is
+	// that a table gets pasted somewhere the banner does not follow it.
+	prompt    string
+	ok        int // objectives completed
+	failed    int // objectives attempted that failed
 	battles   int
 	blackouts int
 	stop      string
@@ -190,8 +195,8 @@ type runResult struct {
 func formatTable(rs []runResult) string {
 	var b strings.Builder
 	// Header uses the same field widths as the rows, so columns line up.
-	fmt.Fprintf(&b, "%-10s %-4s %-5s %10s %6s %-6s %7s %9s %-8s %s\n",
-		"starter", "seed", "badge", "frames", "calls", "ok/fail", "battles", "blackouts", "stop", "where")
+	fmt.Fprintf(&b, "%-10s %-4s %-5s %10s %6s %-6s %7s %9s %-8s %-8s %s\n",
+		"starter", "seed", "badge", "frames", "calls", "ok/fail", "battles", "blackouts", "prompt", "stop", "where")
 	for _, r := range rs {
 		badge := "no"
 		if r.badge {
@@ -201,8 +206,8 @@ func formatTable(rs []runResult) string {
 		if r.badge {
 			frames = fmt.Sprintf("%d*", r.toBadge)
 		}
-		fmt.Fprintf(&b, "%-10s %-4d %-5s %10s %6d %3d/%-3d %7d %9d %-8s %s\n",
-			r.starter, r.seed, badge, frames, r.calls, r.ok, r.failed, r.battles, r.blackouts, r.stop, r.where)
+		fmt.Fprintf(&b, "%-10s %-4d %-5s %10s %6d %3d/%-3d %7d %9d %-8s %-8s %s\n",
+			r.starter, r.seed, badge, frames, r.calls, r.ok, r.failed, r.battles, r.blackouts, r.prompt, r.stop, r.where)
 	}
 	return b.String()
 }
@@ -318,7 +323,7 @@ func runOne(cfg config, starter string, seed int64) (runResult, error) {
 		startFrame = m.FrameCount()
 
 		planner := plannerFor(cfg)
-		planner.Log = os.Stdout // one line per model call, captured into logBuf
+		planner.Log = os.Stdout        // one line per model call, captured into logBuf
 		planner.PromptLog = promptFile // every prompt, verbatim, for the record
 		wrapped = &badgePlanner{inner: planner, m: m, badge: cfg.badge}
 		// Battles are counted per frame from the battle flag's rising
@@ -377,6 +382,7 @@ func runOne(cfg config, starter string, seed int64) (runResult, error) {
 		badge:     badge,
 		frames:    m.FrameCount() - startFrame,
 		calls:     wrapped.calls,
+		prompt:    wrapped.inner.PromptHash(),
 		ok:        len(res.Completed),
 		failed:    res.Rounds - len(res.Completed),
 		battles:   wrapped.battles,

@@ -8,7 +8,7 @@ export POKEMON_RED_ROM
 # Extra flags, e.g. make run ARGS='-goto "pallet town"'
 ARGS ?=
 
-# Local single-node Swarm farm (docs/plans/2026-08-26-farm-design.md 6).
+# Local single-node Swarm farm (docs/archive/2026-08-26-farm-design.md 6).
 # The image is built locally and loaded into this node's image store;
 # `farm-up` deploys with --resolve-image never so the local Swarm uses it.
 # A multi-node Swarm cannot see a --load'ed image on other nodes: publish

@@ -494,7 +494,20 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 	// to judge how long a target would take. The level is NOT a reply
 	// argument any more — see choiceSchema in llm.go for why every argument
 	// left the reply and stayed in the menu.
-	if obs.HasGrass && len(obs.Party) > 0 {
+	//
+	// A lead below Train's retreat line is the one case that is withheld,
+	// and it is a FACT rather than a judgement: Train refuses to start from
+	// below that line (skill.BelowRetreatLine, the same predicate the
+	// session itself uses), so the objective could only ever report a
+	// retreat. That is not "unwise", it is "already answered" — the same
+	// ground the satisfied starter, the full party's heal and medReaches
+	// stand on. MEASURED 2026-08-31: rounds 13 and 14 of the best run to
+	// date were back-to-back train retreats from a hurt lead.
+	//
+	// The planner's correct response is still its own to find: KindHeal and
+	// the field medicine are on the menu whenever they would do something,
+	// and the party's HP is in the observation either way.
+	if obs.HasGrass && len(obs.Party) > 0 && !skill.BelowRetreatLine(obs.Party[0].HP, obs.Party[0].MaxHP) {
 		if target := int(obs.Party[0].Level) + trainStep; target <= 100 {
 			out = append(out, Objective{Kind: KindTrain, Level: uint8(target)})
 		}

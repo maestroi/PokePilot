@@ -1,5 +1,5 @@
 // Farm mode for pokepilot: a loop around the existing run, driven by specs
-// leased from the wall (docs/plans/2026-08-26-farm-design.md §4). The game
+// leased from the wall (docs/archive/2026-08-26-farm-design.md §4). The game
 // stays a plain process; this file is the only PokePilot change.
 package main
 

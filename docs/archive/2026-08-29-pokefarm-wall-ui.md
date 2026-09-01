@@ -6,7 +6,7 @@
 
 **Architecture:** The wall grows `GET /v1/dashboard` JSON from the same tile/worker snapshot the debug table already renders. `pokeui` embeds one HTML/CSS/JS page at `GET /` and proxies only `/v1/dashboard`, `/v1/specs`, `/v1/runs/{id}/cancel`, and `/frame` to `-wall`. The farm stack adds a `ui` service with host-mode publish so the browser reaches pokeui without swarm ingress, and pokeui reaches `http://wall:8080` on the overlay. Publisher/frames-dir are dropped from the stack command; publisher code and tests stay.
 
-**Tech Stack:** Go 1.26 stdlib (`net/http`, `encoding/json`, `html/template` on the wall debug page only, `go:embed` on pokeui). No Vue, no Node, no new module. Spec: `docs/plans/2026-08-29-pokefarm-wall-ui-design.md`.
+**Tech Stack:** Go 1.26 stdlib (`net/http`, `encoding/json`, `html/template` on the wall debug page only, `go:embed` on pokeui). No Vue, no Node, no new module. Spec: `docs/archive/2026-08-29-pokefarm-wall-ui-design.md`.
 
 **If run by agent-runner:** do not commit (AGENTS.md). Skip every Commit step.
 

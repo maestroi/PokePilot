@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go (stdlib only), Go text/template, vanilla JS (embedded static console), Docker build-args, GitHub Actions.
 
-Design: `docs/plans/2026-08-30-build-version-display-design.md`
+Design: `docs/archive/2026-08-30-build-version-display-design.md`
 
 ---
 

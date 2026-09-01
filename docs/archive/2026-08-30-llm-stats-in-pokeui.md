@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go stdlib only; embedded HTML/JS console (`cmd/pokeui/ui`).
 
-**Design doc:** `docs/plans/2026-08-30-llm-stats-in-pokeui-design.md`
+**Design doc:** `docs/archive/2026-08-30-llm-stats-in-pokeui-design.md`
 
 **Working-tree note:** the tree carries unrelated uncommitted work (agent/, emu/, cmd/pokepilot/farm.go). Every commit below lists exact file paths — never `git add -A`. If a test failure is clearly in files this plan does not touch, report it, do not adopt it.
 

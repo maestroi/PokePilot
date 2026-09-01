@@ -2,8 +2,8 @@
 #
 # PokePilot farm image: one image, three entrypoints (pokepilot runner,
 # pokewall wall, pokeui operator console). See
-# docs/plans/2026-08-26-farm-design.md section 6 and
-# docs/plans/2026-08-29-pokefarm-wall-ui-design.md.
+# docs/archive/2026-08-26-farm-design.md section 6 and
+# docs/archive/2026-08-29-pokefarm-wall-ui-design.md.
 #
 # go.mod replaces github.com/thelolagemann/gomeboy with the ABSOLUTE path
 # /home/maestro/Documents/projects/gomeboy, so the build must place the
