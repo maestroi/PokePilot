@@ -8,12 +8,16 @@ import (
 	"context"
 	"embed"
 	"encoding/json"
+	"errors"
 	"flag"
 	"io"
 	"io/fs"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -32,8 +36,13 @@ var uiJS []byte
 //go:embed ui/maps
 var mapFiles embed.FS
 
-const proxyTimeout = 5 * time.Second
-const fallbackMapSize = 128
+const (
+	proxyTimeout            = 5 * time.Second
+	fallbackMapSize         = 128
+	serverReadHeaderTimeout = 5 * time.Second
+	serverIdleTimeout       = 60 * time.Second
+	serverShutdownTimeout   = 10 * time.Second
+)
 
 // handler serves the console at GET / and forwards only the operator
 // routes to wallBase. Runner-only paths (lease, heartbeat, finish) 404.
@@ -137,7 +146,35 @@ func main() {
 	}
 
 	log.Printf("pokeui proxying %s on http://%s", *wall, *httpAddr)
-	if err := http.ListenAndServe(*httpAddr, handler(*wall)); err != nil {
-		log.Fatalf("pokeui: server stopped: %v", err)
+	server := &http.Server{
+		Addr:              *httpAddr,
+		Handler:           handler(strings.TrimRight(*wall, "/")),
+		ReadHeaderTimeout: serverReadHeaderTimeout,
+		IdleTimeout:       serverIdleTimeout,
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- server.ListenAndServe()
+	}()
+
+	select {
+	case err := <-errCh:
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("pokeui: server stopped: %v", err)
+		}
+	case <-ctx.Done():
+		log.Printf("pokeui: shutting down")
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), serverShutdownTimeout)
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			log.Printf("pokeui: graceful shutdown failed: %v", err)
+			_ = server.Close()
+		}
+		cancel()
+		if err := <-errCh; err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("pokeui: server stopped during shutdown: %v", err)
+		}
 	}
 }
