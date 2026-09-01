@@ -29,6 +29,11 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Download module graph
+        run: |
+          go mod download
+          grep 'github.com/maestroi/gomeboy' go.sum || true
+
       - name: Vet
         env:
           POKEMON_RED_ROM: ""
