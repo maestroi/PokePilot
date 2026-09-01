@@ -135,13 +135,18 @@ func TestUIHistoryPaginatedAndAligned(t *testing.T) {
 			t.Errorf("index.html missing %s", want)
 		}
 	}
-	// The row grid must be content-independent: an auto track or a minmax
-	// with a content floor lets one row's chips or outcome text move every
-	// column boundary, which is the misalignment this fixes.
+	// The row grid must be content-independent. Fixed length minima (for
+	// example minmax(8rem, 1fr)) are safe; content-sized tracks such as auto,
+	// min-content, or max-content let individual row contents move boundaries.
 	if m := regexp.MustCompile(`\.hist \{[^}]*grid-template-columns:([^;]*);`).FindStringSubmatch(html); m == nil {
 		t.Fatal("index.html .hist has no grid-template-columns")
-	} else if !strings.Contains(m[1], "6.5rem minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 1fr) 11rem") {
-		t.Errorf(".hist grid %q is not content-independent; row columns will not align", m[1])
+	} else {
+		grid := strings.ToLower(m[1])
+		for _, bad := range []string{"auto", "min-content", "max-content"} {
+			if strings.Contains(grid, bad) {
+				t.Errorf(".hist grid %q contains content-sized track %q; row columns may not align", m[1], bad)
+			}
+		}
 	}
 }
 

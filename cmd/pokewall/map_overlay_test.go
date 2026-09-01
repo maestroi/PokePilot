@@ -16,7 +16,7 @@ func TestWallCarriesMapOverlayButDoesNotPersistIt(t *testing.T) {
 	stateFile := filepath.Join(dir, "wall-state.json")
 	w := NewWall("")
 	w.SetStatePath(stateFile)
-	srv := newTestServer(t, w)
+	srv := newWallTestServer(t, w)
 
 	enqueueViaHTTP(t, srv.URL, farm.Spec{RunID: "map-run", Planner: "scripted", Starter: "squirtle", Dest: "pallet"})
 	client := farm.NewClient(srv.URL)
@@ -48,7 +48,7 @@ func TestWallCarriesMapOverlayButDoesNotPersistIt(t *testing.T) {
 	}
 }
 
-func newTestServer(t *testing.T, w *Wall) *httptest.Server {
+func newWallTestServer(t *testing.T, w *Wall) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(w.Handler())
 	t.Cleanup(srv.Close)

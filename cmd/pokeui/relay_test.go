@@ -223,7 +223,7 @@ func TestPokeuiServesIndex(t *testing.T) {
 	if cc := res.Header.Get("Cache-Control"); cc != "no-store" {
 		t.Errorf("Cache-Control = %q, want no-store", cc)
 	}
-	for _, want := range []string{"pokefarm", "Queue a run", "Play the game", `id="live"`, `id="workers"`, `id="history"`, `id="failures"`, "/ui.js"} {
+	for _, want := range []string{"PokéFarm", "Queue a run", "Play the game", `id="live"`, `id="workers"`, `id="history"`, `id="failures"`, "/ui.js"} {
 		if !bytes.Contains(body, []byte(want)) {
 			t.Errorf("index missing %q", want)
 		}
