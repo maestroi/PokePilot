@@ -31,6 +31,7 @@ jobs:
 
       - name: Download module graph
         run: |
+          go mod download github.com/maestroi/gomeboy@v0.0.0-20260901100952-828c2c01e328
           go mod download
           grep 'github.com/maestroi/gomeboy' go.sum || true
 
