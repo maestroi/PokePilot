@@ -91,7 +91,7 @@ a harness, not a service — not part of `go test ./...`.
 ## Testing
 
 ```sh
-make verify         # ROM-free: format, vet, short tests, race tests
+make verify         # ROM-free: module graph, vet, short tests, race tests
 make test           # full go test ./...; ROM-backed tests skip without ROM
 ```
 
