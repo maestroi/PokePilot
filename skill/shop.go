@@ -101,15 +101,34 @@ func Buy(m *emu.Emu, item uint8, qty int) error {
 	// other RAM marker that distinguishes it from the item list).
 	hBefore := bcdMoney(&mem)
 	if err := selectListEntry(m, pos); err != nil {
+		// Same rule as the ErrNotInStock backout above: a cursor that never
+		// reached its target leaves the item list up, and returning here
+		// without closing it wedges every later objective on the same
+		// unanswered shop menu.
+		if exitErr := exitToOverworld(m); exitErr != nil {
+			return fmt.Errorf("skill: Buy: select item %#02x: %v (shop did not close: %w)", item, err, exitErr)
+		}
 		return fmt.Errorf("skill: Buy: select item %#02x: %w", item, err)
 	}
 	qtyUp := func(mm *state.Mem) bool { return bcdMoney(mm) > 0 && bcdMoney(mm) != hBefore }
 	if err := martWait(m, qtyUp, "the choose-quantity box"); err != nil {
+		// Same rule as the ErrNotInStock backout above: returning here
+		// leaves the item list (or whatever selectListEntry's A landed on)
+		// up, and every later objective then fails on a shop menu nothing
+		// closed. MEASURED 2026-09-02: "buy 3 POKEBALL" timed out here and
+		// parked the run on "MONEY BUY... Is there anything else I can
+		// do?" for the rest of the run.
+		if exitErr := exitToOverworld(m); exitErr != nil {
+			return fmt.Errorf("%w (shop did not close: %v)", err, exitErr)
+		}
 		return err
 	}
 
 	// 5. Set the quantity; hMoney now holds the total price for it.
 	if err := setQuantity(m, qty); err != nil {
+		if exitErr := exitToOverworld(m); exitErr != nil {
+			return fmt.Errorf("%w (shop did not close: %v)", err, exitErr)
+		}
 		return err
 	}
 	state.Snapshot(m, &mem)
@@ -135,11 +154,17 @@ func Buy(m *emu.Emu, item uint8, qty int) error {
 	// two-option prompt.
 	m.Tap(emu.A, 3, 7)
 	if err := martAdvance(m, twoOptionUp, "the purchase-confirmation prompt"); err != nil {
+		if exitErr := exitToOverworld(m); exitErr != nil {
+			return fmt.Errorf("%w (shop did not close: %v)", err, exitErr)
+		}
 		return err
 	}
 
 	// 8. Answer YES (menu index 0). The trap: never a bare Tap(A) on the box.
 	if err := SelectMenuItem(m, 0); err != nil {
+		if exitErr := exitToOverworld(m); exitErr != nil {
+			return fmt.Errorf("skill: Buy: answer YES: %v (shop did not close: %w)", err, exitErr)
+		}
 		return fmt.Errorf("skill: Buy: answer YES: %w", err)
 	}
 
