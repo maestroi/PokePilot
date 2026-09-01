@@ -65,9 +65,9 @@ type Tile struct {
 	// restart drops it rather than growing the state file.
 	Raw       string
 	StopSoFar string
-	// Sprites and Trail are the live map overlay from the runner. Like Raw,
-	// they are deliberately not persisted: a wall restart waits for the next
-	// heartbeat rather than showing stale blockers or a stale path.
+	// Sprites and Trail are the live map overlay. Like Raw, they are
+	// deliberately absent from persistedTile: blockers are ephemeral RAM
+	// observations, and the trail belongs to the current runner attempt.
 	Sprites []farm.MapSprite
 	Trail   [][2]uint8
 	// Stats is the llm planner's tally, last pushed by a heartbeat. Kept on
@@ -375,14 +375,22 @@ func (w *Wall) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/dashboard", w.handleDashboard)
 	mux.HandleFunc("GET /v1/triage", w.handleTriage)
 	mux.HandleFunc("POST /v1/triage/{key}/investigate", w.handleInvestigate)
+	mux.HandleFunc("GET /", w.handleGrid)
 	mux.HandleFunc("GET /frame", w.handleFrame)
-	mux.HandleFunc("GET /{$}", w.handleGrid)
 	return mux
 }
 
-// handleSpecs enqueues a run. A run ID may be reused only after its previous
-// run has finished; otherwise the operator gets 409 rather than silently
-// replacing work in flight.
+func writeJSON(w http.ResponseWriter, code int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	if v != nil {
+		json.NewEncoder(w).Encode(v)
+	}
+}
+
+// handleSpecs enqueues a spec. A missing run_id is 400; a run ID that is
+// already queued, leased, or running is 409. Finishing the same ID again
+// after it completed re-queues it fresh.
 func (w *Wall) handleSpecs(res http.ResponseWriter, req *http.Request) {
 	var spec farm.Spec
 	if err := json.NewDecoder(req.Body).Decode(&spec); err != nil {
@@ -393,46 +401,30 @@ func (w *Wall) handleSpecs(res http.ResponseWriter, req *http.Request) {
 		writeJSON(res, http.StatusBadRequest, map[string]string{"error": "run_id is required"})
 		return
 	}
+
 	w.mu.Lock()
-	if old := w.tiles[spec.RunID]; old != nil && !old.Finished {
+	if tile, ok := w.tiles[spec.RunID]; ok && !tile.Finished {
 		w.mu.Unlock()
 		writeJSON(res, http.StatusConflict, map[string]string{"error": "run already active: " + spec.RunID})
 		return
 	}
-	w.enqueueLocked(spec)
+	if _, ok := w.tiles[spec.RunID]; !ok {
+		w.order = append(w.order, spec.RunID)
+		w.tiles[spec.RunID] = &Tile{}
+	}
+	w.queue = append(w.queue, spec.RunID)
+	w.applySpec(spec.RunID, spec)
+	delete(w.cancel, spec.RunID)
 	w.mu.Unlock()
 	w.saveState()
 	writeJSON(res, http.StatusOK, map[string]string{"status": statusQueued})
 }
 
-func (w *Wall) enqueueLocked(spec farm.Spec) {
-	t := &Tile{RunID: spec.RunID, Status: statusQueued}
-	if old := w.tiles[spec.RunID]; old != nil {
-		*t = *old
-		t.Status = statusQueued
-		t.Frame = 0
-		t.Map = 0
-		t.X = 0
-		t.Y = 0
-		t.Trace = ""
-		t.Question = ""
-		t.Decision = ""
-		t.Raw = ""
-		t.StopSoFar = ""
-		t.Sprites = nil
-		t.Trail = nil
-		t.Stats = nil
-		t.Reason = ""
-		t.Detail = ""
-		t.workerAddrs = nil
-		t.lastFrame = nil
-		delete(w.cancel, spec.RunID)
-	}
-	w.tiles[spec.RunID] = t
-	if old := indexOf(w.order, spec.RunID); old < 0 {
-		w.order = append(w.order, spec.RunID)
-	}
-	w.queue = append(w.queue, spec.RunID)
+func (w *Wall) applySpec(runID string, spec farm.Spec) {
+	t := w.tiles[runID]
+	t.RunID = spec.RunID
+	t.Status = statusQueued
+	t.lastUpdate = time.Now()
 	t.Planner = spec.Planner
 	t.Starter = spec.Starter
 	t.Dest = spec.Dest
@@ -446,16 +438,23 @@ func (w *Wall) enqueueLocked(spec farm.Spec) {
 	t.QueuedAt = time.Now()
 	t.EndedAt = time.Time{}
 	t.Attempts = 0 // a manual re-queue is a fresh start, not a retry
+	t.Frame = 0
+	t.Map = 0
+	t.X = 0
+	t.Y = 0
+	t.Trace = ""
+	t.Question = ""
+	t.Decision = ""
+	t.Raw = ""
+	t.StopSoFar = ""
+	t.Sprites = nil
+	t.Trail = nil
+	t.Stats = nil
+	t.Reason = ""
+	t.Detail = ""
+	t.workerAddrs = nil
+	t.lastFrame = nil
 	t.Finished = false
-}
-
-func indexOf(ids []string, id string) int {
-	for i, x := range ids {
-		if x == id {
-			return i
-		}
-	}
-	return -1
 }
 
 // handleLease hands out the oldest queued spec exactly once; 204 when the
@@ -539,15 +538,19 @@ func (w *Wall) handleHeartbeat(res http.ResponseWriter, req *http.Request) {
 	writeJSON(res, http.StatusOK, farm.HeartbeatReply{Cancel: cancel})
 }
 
-// workerInfo is the wall's presence record one runner, keyed by the first of
-// the addresses it reports. It is ephemeral and is never persisted.
+// workerInfo is the wall's presence record for one runner, keyed by the
+// first of the addresses the runner reports. It is ephemeral by design and
+// never persisted: a worker that stops pinging (runner died or rolled) ages
+// out of the grid, so the section never shows capacity that is not there.
 type workerInfo struct {
 	Addrs    []string
-	Version  string
-	RunID    string
+	Version  string // build identity the runner reports; "" from older runners
+	RunID    string // "" while idle between runs
 	LastSeen time.Time
 }
 
+// workerRow is the plain snapshot renderGrid hands to the template, taken
+// under w.mu like tileRow.
 type workerRow struct {
 	Addr    string `json:"addr"`
 	Version string `json:"version,omitempty"`
@@ -555,6 +558,8 @@ type workerRow struct {
 	SeenAgo string `json:"seen_ago"`
 }
 
+// dashboardView is the JSON snapshot GET /v1/dashboard returns, and the
+// source renderGrid uses for the in-network debug table.
 type dashboardView struct {
 	Now         int64       `json:"now"`
 	WallVersion string      `json:"wall_version,omitempty"`
@@ -562,6 +567,9 @@ type dashboardView struct {
 	Workers     []workerRow `json:"workers"`
 }
 
+// upsertWorkerLocked records that the runner reporting addrs is alive: an
+// idle ping carries runID "", a heartbeat its in-flight run. Caller holds
+// w.mu.
 func (w *Wall) upsertWorkerLocked(addrs []string, runID, version string, now time.Time) {
 	if len(addrs) == 0 {
 		return
@@ -569,6 +577,9 @@ func (w *Wall) upsertWorkerLocked(addrs []string, runID, version string, now tim
 	w.workers[addrs[0]] = &workerInfo{Addrs: addrs, Version: version, RunID: runID, LastSeen: now}
 }
 
+// handleWorkers is the idle half of worker presence: a runner pings it on
+// every lease attempt so the grid shows available capacity, not just runs
+// in flight. It is presence, not work: the queue and tiles are untouched.
 func (w *Wall) handleWorkers(res http.ResponseWriter, req *http.Request) {
 	var ping farm.WorkerPing
 	if err := json.NewDecoder(req.Body).Decode(&ping); err != nil {
@@ -607,6 +618,9 @@ func (w *Wall) handleCancel(res http.ResponseWriter, req *http.Request) {
 	writeJSON(res, http.StatusOK, map[string]bool{"cancel": true})
 }
 
+// handleDelete drops a finished run from the wall's memory. Active runs
+// are 409 — cancel those. Unknown IDs are 404. Finish dumps on disk are
+// left alone; this only removes the history row.
 func (w *Wall) handleDelete(res http.ResponseWriter, req *http.Request) {
 	id := req.PathValue("id")
 	w.mu.Lock()
@@ -640,7 +654,9 @@ func removeID(ids []string, id string) []string {
 }
 
 // handleFinish records why a run ended. An identical repeat is idempotent;
-// a conflicting repeat is 409.
+// a conflicting repeat is 409. When a dump directory is configured the
+// report is written (or rewritten, on an idempotent retry) there BEFORE a
+// 200 goes out — and the write happens outside w.mu.
 func (w *Wall) handleFinish(res http.ResponseWriter, req *http.Request) {
 	id := req.PathValue("id")
 	var report farm.FinishReport
@@ -670,7 +686,11 @@ func (w *Wall) handleFinish(res http.ResponseWriter, req *http.Request) {
 			writeJSON(res, http.StatusConflict, map[string]string{"error": "conflicting finish for " + id})
 			return
 		}
+		// Identical duplicate: idempotent, but the dump below is still
+		// rewritten so a previously failed write self-heals.
 	} else if report.Attempt != 0 && report.Attempt != t.Attempts+1 {
+		// A late finish from an earlier attempt (its runner died and the
+		// run was retried) must not settle the attempt now in flight.
 		w.mu.Unlock()
 		writeJSON(res, http.StatusConflict, map[string]string{
 			"error": fmt.Sprintf("stale finish: run is on attempt %d, report claims %d", t.Attempts+1, report.Attempt),
@@ -698,6 +718,8 @@ func (w *Wall) handleFinish(res http.ResponseWriter, req *http.Request) {
 			writeJSON(res, http.StatusInternalServerError, map[string]string{"error": "encode dump: " + err.Error()})
 			return
 		}
+		// Attempt 1 keeps the historic name; retries get their own file so
+		// no attempt's dump is overwritten by a later one.
 		name := safeDumpName(report.RunID)
 		if report.Attempt > 1 {
 			name = fmt.Sprintf("%s-attempt-%d.json", safeBase(report.RunID), report.Attempt)
@@ -712,65 +734,115 @@ func (w *Wall) handleFinish(res http.ResponseWriter, req *http.Request) {
 	writeJSON(res, http.StatusOK, map[string]string{"status": statusDone})
 }
 
+// frameTimeout bounds one upstream fetch of a runner's frame: a wedged
+// runner must not stall the caller. The live page issues these back-to-back,
+// so the client is reused (keep-alive) rather than built per fetch.
 const frameTimeout = time.Second
+
 var frameClient = &http.Client{Timeout: frameTimeout}
 
+// fetchRunnerFrame pulls one runner's live screen, trying the addresses the
+// runner reported in its heartbeats in order until one answers.
 func fetchRunnerFrame(addrs []string) ([]byte, error) {
-	var last error
+	client := frameClient
 	for _, addr := range addrs {
-		resp, err := frameClient.Get("http://" + addr + "/frame.png")
+		up, err := client.Get("http://" + addr + "/frame.png")
 		if err != nil {
-			last = err
 			continue
 		}
-		data, readErr := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
-		resp.Body.Close()
-		if readErr != nil {
-			last = readErr
+		if up.StatusCode != http.StatusOK {
+			up.Body.Close()
 			continue
 		}
-		if resp.StatusCode != http.StatusOK {
-			last = fmt.Errorf("%s returned %s", addr, resp.Status)
+		data, rerr := io.ReadAll(up.Body)
+		up.Body.Close()
+		if rerr != nil {
 			continue
 		}
 		return data, nil
 	}
-	if last == nil {
-		last = errors.New("no worker address")
-	}
-	return nil, last
+	return nil, errors.New("no worker address answered")
 }
 
+// handleFrame proxies one runner's live screen for the in-network dashboard.
+// The wall reaches the specific runner over the swarm network using the
+// addresses that runner reported in its heartbeats. Only a run that is
+// actively running has frames — queued, leased and finished runs are 404.
 func (w *Wall) handleFrame(res http.ResponseWriter, req *http.Request) {
-	id := req.URL.Query().Get("run")
+	runID := req.URL.Query().Get("run")
 	w.mu.Lock()
-	t := w.tiles[id]
-	if t == nil {
-		w.mu.Unlock()
-		http.NotFound(res, req)
+	t, ok := w.tiles[runID]
+	var addrs []string
+	var cached []byte
+	live := false
+	if ok {
+		addrs = append([]string(nil), t.workerAddrs...)
+		cached = t.lastFrame
+		live = !t.Finished && t.Status == statusRunning
+	}
+	w.mu.Unlock()
+	if !ok {
+		res.WriteHeader(http.StatusNotFound)
 		return
 	}
-	addrs := append([]string(nil), t.workerAddrs...)
-	last := append([]byte(nil), t.lastFrame...)
-	done := t.Finished
-	w.mu.Unlock()
-	if !done {
-		if data, err := fetchRunnerFrame(addrs); err == nil {
-			res.Header().Set("Content-Type", "image/png")
-			res.Header().Set("Cache-Control", "no-store")
-			res.Write(data) //nolint:errcheck
+
+	if live {
+		data, err := fetchRunnerFrame(addrs)
+		if err == nil {
+			w.mu.Lock()
+			if cur := w.tiles[runID]; cur != nil {
+				cur.lastFrame = data
+			}
+			w.mu.Unlock()
+			writePNG(res, data)
 			return
 		}
 	}
-	if len(last) == 0 {
-		http.NotFound(res, req)
+	if len(cached) > 0 {
+		writePNG(res, cached)
 		return
 	}
-	res.Header().Set("Content-Type", "image/png")
-	res.Header().Set("Cache-Control", "no-store")
-	res.Write(last) //nolint:errcheck
+	if live {
+		res.WriteHeader(http.StatusBadGateway)
+		return
+	}
+	res.WriteHeader(http.StatusNotFound)
 }
 
+func writePNG(res http.ResponseWriter, data []byte) {
+	res.Header().Set("Content-Type", "image/png")
+	res.Header().Set("Cache-Control", "no-store")
+	res.Write(data) //nolint:errcheck // best effort: the browser retries on refresh
+}
+
+var gridTmpl = template.Must(template.New("grid").Parse(`<!doctype html>
+<html><head><meta charset="utf-8"><title>pokefarm wall</title>
+<meta http-equiv="refresh" content="2"></head>
+<body>
+<h1>pokefarm wall <small>{{.Version}}</small></h1>
+<table border="1" cellspacing="0">
+<tr><th>run</th><th>screen</th><th>status</th><th>planner</th><th>starter</th><th>dest</th><th>seed</th><th>frame</th><th>map</th><th>x,y</th><th>trace</th><th>stop so far</th><th>attempts</th><th>reason</th><th>detail</th></tr>
+{{range .Rows}}<tr><td>{{.RunID}}</td><td>{{if eq .Status "running"}}<img src="/frame?run={{.RunID}}&t={{$.Now}}" width="160" style="image-rendering:pixelated">{{else}}&mdash;{{end}}</td><td>{{.Status}}</td><td>{{.Planner}}</td><td>{{.Starter}}</td><td>{{.Dest}}</td><td>{{.Seed}}</td><td>{{.Frame}}</td><td>{{printf "0x%02x" .Map}}</td><td>{{.X}},{{.Y}}</td><td>{{.Trace}}</td><td>{{.StopSoFar}}</td><td>{{.Attempts}}</td><td>{{.Reason}}</td><td>{{.Detail}}</td></tr>
+{{else}}<tr><td colspan="15">no runs</td></tr>
+{{end}}</table>
+<h2>workers</h2>
+<table border="1" cellspacing="0">
+<tr><th>worker</th><th>version</th><th>status</th><th>seen</th></tr>
+{{range .Workers}}<tr><td>{{.Addr}}</td><td>{{if .Version}}{{.Version}}{{else}}&mdash;{{end}}</td><td>{{if .RunID}}running {{.RunID}}{{else}}idle{{end}}</td><td>{{.SeenAgo}} ago</td></tr>
+{{else}}<tr><td colspan="4">no workers</td></tr>
+{{end}}</table>
+<h2>failure groups</h2>
+<table border="1" cellspacing="0">
+<tr><th>count</th><th>pattern</th><th>example</th><th>runs</th></tr>
+{{range .Groups}}<tr><td>{{.Count}}</td><td>{{.Pattern}}</td><td>{{.Example}}</td><td>{{range $i, $id := .RunIDs}}{{if $i}}, {{end}}{{$id}}{{end}}</td></tr>
+{{else}}<tr><td colspan="4">no failures</td></tr>
+{{end}}</table>
+</body></html>`))
+
+// snapshot copies tiles and workers under w.mu so callers never read live
+// maps after unlock. Runs are newest-first (the opposite of insertion
+// order) so the operator page and debug grid grow downward from the
+// latest work. Workers are sorted by addr so the page does not flicker.
 func (w *Wall) snapshot() dashboardView {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -778,7 +850,9 @@ func (w *Wall) snapshot() dashboardView {
 	workers := make([]workerRow, 0, len(w.workers))
 	for _, wk := range w.workers {
 		workers = append(workers, workerRow{
-			Addr: wk.Addrs[0], Version: wk.Version, RunID: wk.RunID,
+			Addr:    wk.Addrs[0],
+			Version: wk.Version,
+			RunID:   wk.RunID,
 			SeenAgo: now.Sub(wk.LastSeen).Round(time.Second).String(),
 		})
 	}
@@ -788,19 +862,42 @@ func (w *Wall) snapshot() dashboardView {
 		id := w.order[i]
 		t := w.tiles[id]
 		rows = append(rows, tileRow{
-			RunID: t.RunID, Status: t.Status, Planner: t.Planner, Starter: t.Starter,
-			Dest: t.Dest, Goal: t.Goal, Seed: t.Seed, FPS: t.FPS, MaxRounds: t.MaxRounds,
-			MaxFrames: t.MaxFrames, Endless: t.Endless, RandomSeed: t.RandomSeed,
-			QueuedAt: unixTime(t.QueuedAt), EndedAt: unixTime(t.EndedAt), Attempts: t.Attempts,
-			Frame: t.Frame, Map: t.Map, X: t.X, Y: t.Y, Trace: t.Trace,
-			Question: t.Question, Decision: t.Decision, Raw: t.Raw, StopSoFar: t.StopSoFar,
-			Sprites: append([]farm.MapSprite(nil), t.Sprites...), Trail: append([][2]uint8(nil), t.Trail...),
-			Stats: t.Stats, Reason: t.Reason, Detail: t.Detail, Issue: issueLinkFor(t, w.issueLinks),
+			RunID:      t.RunID,
+			Status:     t.Status,
+			Planner:    t.Planner,
+			Starter:    t.Starter,
+			Dest:       t.Dest,
+			Goal:       t.Goal,
+			Seed:       t.Seed,
+			FPS:        t.FPS,
+			MaxRounds:  t.MaxRounds,
+			MaxFrames:  t.MaxFrames,
+			Endless:    t.Endless,
+			RandomSeed: t.RandomSeed,
+			QueuedAt:   unixTime(t.QueuedAt),
+			EndedAt:    unixTime(t.EndedAt),
+			Attempts:   t.Attempts,
+			Frame:      t.Frame,
+			Map:        t.Map,
+			X:          t.X,
+			Y:          t.Y,
+			Trace:      t.Trace,
+			Question:   t.Question,
+			Decision:   t.Decision,
+			Raw:        t.Raw,
+			StopSoFar:  t.StopSoFar,
+			Sprites:    append([]farm.MapSprite(nil), t.Sprites...),
+			Trail:      append([][2]uint8(nil), t.Trail...),
+			Stats:      t.Stats,
+			Reason:     t.Reason,
+			Detail:     t.Detail,
+			Issue:      issueLinkFor(t, w.issueLinks),
 		})
 	}
 	return dashboardView{Now: now.Unix(), WallVersion: w.Version, Runs: rows, Workers: workers}
 }
 
+// renderGrid renders the known tiles into the in-network debug HTML.
 func (w *Wall) renderGrid() ([]byte, error) {
 	dash := w.snapshot()
 	var buf bytes.Buffer
@@ -822,13 +919,426 @@ func (w *Wall) handleDashboard(res http.ResponseWriter, req *http.Request) {
 }
 
 var (
+	// triageHexRe matches 0x-prefixed hex literals (map ids and the like).
 	triageHexRe = regexp.MustCompile(`0x[0-9a-fA-F]+`)
+	// triageNumRe matches runs of digits (coordinates, frame counts).
 	triageNumRe = regexp.MustCompile(`\d+`)
 )
+
 const (
+	// triagePatternCap bounds the normalised pattern. Past this length two
+	// details sharing a long prefix would merge into one group, so the cap
+	// is generous enough for every real error string and short enough that
+	// only genuinely different tails can still split groups.
 	triagePatternCap = 128
+	// triageRunIDCap caps how many run ids a group reports. The count is
+	// exact; the id list is a sample to go looking for the runs.
 	triageRunIDCap = 5
 )
 
-// The remainder of this file contains triage, retry, checkpoint and template
-// helpers. It is unchanged by the live-map feature.
+// normalizeDetail reduces a failure detail to its pattern: 0x-prefixed hex
+// literals become <hex>, runs of digits become <n>, then the length is
+// capped. "map 0x0c at (10,35)" and "map 0x21 at (4,22)" land on the same
+// pattern; the words that name the bug stay untouched.
+func normalizeDetail(detail string) string {
+	s := triageHexRe.ReplaceAllString(detail, "<hex>")
+	s = triageNumRe.ReplaceAllString(s, "<n>")
+	if len(s) > triagePatternCap {
+		s = s[:triagePatternCap]
+	}
+	return s
+}
+
+// triageGroup is one cluster of failed runs sharing a normalised detail.
+type triageGroup struct {
+	Pattern     string     `json:"pattern"`
+	Key         string     `json:"key"`
+	Fingerprint string     `json:"fingerprint"`
+	Count       int        `json:"count"`
+	Example     string     `json:"example"`
+	RunIDs      []string   `json:"run_ids"`
+	Issue       *IssueLink `json:"issue,omitempty"`
+	Outbox      string     `json:"outbox,omitempty"`
+}
+
+// triageGroups groups finished, failed runs (reason error or lost) with a
+// non-empty detail by normalised pattern, most frequent first. A run with an
+// empty detail is not a cluster of one — it is a run that finished — and a
+// run that finished cleanly never appears at all. Representative IDs are
+// newest-first.
+func triageGroups(order []string, tiles map[string]*Tile) []triageGroup {
+	type acc struct {
+		example string
+		count   int
+		ids     []string
+	}
+	groups := map[string]*acc{}
+	var keys []string
+	for _, id := range order {
+		t := tiles[id]
+		if t == nil || !t.Finished || (t.Reason != "error" && t.Reason != "lost") || t.Detail == "" {
+			continue
+		}
+		key := normalizeDetail(t.Detail)
+		a, ok := groups[key]
+		if !ok {
+			a = &acc{example: t.Detail}
+			groups[key] = a
+			keys = append(keys, key)
+		}
+		a.count++
+	}
+	for i := len(order) - 1; i >= 0; i-- {
+		id := order[i]
+		t := tiles[id]
+		if t == nil || !t.Finished || (t.Reason != "error" && t.Reason != "lost") || t.Detail == "" {
+			continue
+		}
+		a := groups[normalizeDetail(t.Detail)]
+		if len(a.ids) < triageRunIDCap {
+			a.ids = append(a.ids, t.RunID)
+		}
+	}
+	out := make([]triageGroup, 0, len(keys))
+	for _, k := range keys {
+		a := groups[k]
+		short, fp := failureIdentity(k)
+		out = append(out, triageGroup{
+			Pattern:     k,
+			Key:         short,
+			Fingerprint: fp,
+			Count:       a.count,
+			Example:     a.example,
+			RunIDs:      a.ids,
+		})
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Count > out[j].Count })
+	return out
+}
+
+func (w *Wall) triage() []triageGroup {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	groups := triageGroups(w.order, w.tiles)
+	for i := range groups {
+		if link, ok := w.issueLinks[groups[i].Key]; ok && link.IssueID != "" {
+			cp := link
+			groups[i].Issue = &cp
+		}
+		groups[i].Outbox = outboxStatusForKey(w.outbox, groups[i].Key)
+	}
+	return groups
+}
+
+func issueLinkFor(t *Tile, links map[string]IssueLink) *IssueLink {
+	if t == nil || !t.Finished || (t.Reason != "error" && t.Reason != "lost") || t.Detail == "" {
+		return nil
+	}
+	key, _ := failureIdentity(normalizeDetail(t.Detail))
+	link, ok := links[key]
+	if !ok || link.IssueID == "" {
+		return nil
+	}
+	cp := link
+	return &cp
+}
+
+func outboxStatusForKey(box map[string]outboxEntry, key string) string {
+	status := ""
+	for _, e := range box {
+		if e.Key != key {
+			continue
+		}
+		switch e.Status {
+		case outboxError:
+			return outboxError
+		case outboxPending:
+			status = outboxPending
+		}
+	}
+	return status
+}
+
+func (w *Wall) enqueueIssueAfterDump(runID string, report farm.FinishReport) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.issues == nil {
+		return
+	}
+	t := w.tiles[runID]
+	if t == nil || !t.Finished {
+		return
+	}
+	if t.Reason != "error" && t.Reason != "lost" {
+		return
+	}
+	if t.Detail == "" || t.Detail == "cancelled" {
+		return
+	}
+	attempt := report.Attempt
+	if attempt <= 0 {
+		attempt = t.Attempts
+	}
+	if attempt <= 0 {
+		attempt = 1
+	}
+	key, _ := failureIdentity(normalizeDetail(t.Detail))
+	ext := fmt.Sprintf("%s-attempt-%d", runID, attempt)
+	if existing, ok := w.outbox[ext]; ok && existing.Status != "" {
+		return
+	}
+	w.outbox[ext] = outboxEntry{
+		ExternalID: ext,
+		RunID:      runID,
+		Attempt:    attempt,
+		Key:        key,
+		Status:     outboxPending,
+		UpdatedAt:  time.Now().Unix(),
+	}
+}
+
+// handleTriage reports failure groups, most frequent first. It is a read:
+// it creates no tasks, calls no runner, and writes nothing. A human reads
+// the ranking and decides what to file — a queue filled automatically by a
+// noisy classifier would be worse than no queue.
+func (w *Wall) handleTriage(res http.ResponseWriter, req *http.Request) {
+	writeJSON(res, http.StatusOK, w.triage())
+}
+
+// handleGrid renders the known tiles.
+func (w *Wall) handleGrid(res http.ResponseWriter, req *http.Request) {
+	data, err := w.renderGrid()
+	if err != nil {
+		http.Error(res, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	res.Header().Set("Content-Type", "text/html; charset=utf-8")
+	res.Write(data) //nolint:errcheck // best effort: the page refreshes itself
+}
+
+// Publish writes the dashboard — the grid HTML plus each running run's
+// latest frame — into dir, for a browser-facing relay (pokeui) that cannot
+// reach the swarm network directly. Every file is written atomically (temp
+// file + rename in the same directory), so the relay never reads a half
+// written page or frame. A run whose runner does not answer keeps its
+// previous frame; the next tick retries.
+func (w *Wall) Publish(dir string) error {
+	if err := os.MkdirAll(filepath.Join(dir, "live"), 0o755); err != nil {
+		return err
+	}
+	html, err := w.renderGrid()
+	if err != nil {
+		return err
+	}
+	if err := writeAtomic(filepath.Join(dir, "index.html"), html, 0o644); err != nil {
+		return err
+	}
+
+	w.mu.Lock()
+	type frameJob struct {
+		id    string
+		addrs []string
+	}
+	jobs := make([]frameJob, 0, len(w.order))
+	for _, id := range w.order {
+		t := w.tiles[id]
+		if !t.Finished && t.Status == statusRunning {
+			jobs = append(jobs, frameJob{id, append([]string(nil), t.workerAddrs...)})
+		}
+	}
+	w.mu.Unlock()
+
+	for _, job := range jobs {
+		data, err := fetchRunnerFrame(job.addrs)
+		if err != nil {
+			continue
+		}
+		if err := writeAtomic(filepath.Join(dir, "live", safeBase(job.id)+".png"), data, 0o644); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// writeAtomic writes data to path via a temp file + rename in the same
+// directory, so readers never observe a partial file.
+func writeAtomic(path string, data []byte, perm os.FileMode) error {
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, ".publish-*")
+	if err != nil {
+		return err
+	}
+	name := tmp.Name()
+	defer os.Remove(name) // no-op once the rename has succeeded
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Chmod(name, perm); err != nil {
+		return err
+	}
+	return os.Rename(name, path)
+}
+
+// RunPublisher publishes the dashboard to dir every interval. The first
+// publish happens immediately, so the relay has content without waiting a
+// full interval after the wall starts.
+func (w *Wall) RunPublisher(dir string, interval time.Duration) {
+	tick := time.After(0)
+	for {
+		<-tick
+		if err := w.Publish(dir); err != nil {
+			log.Printf("pokewall: publish to %s: %v", dir, err)
+		}
+		tick = time.After(interval)
+	}
+}
+
+// defaultStaleExpiry is how long a leased or running run may go without a
+// state change (its heartbeats come every second) before the wall declares
+// it lost. Thirty seconds is thirty heartbeat cycles of margin.
+const defaultStaleExpiry = 30 * time.Second
+
+// maxAttempts is how many times a run may be attempted before the wall
+// settles it as failed.
+const maxAttempts = 3
+
+// settleRun records that a run stopped for reason/detail. error and lost
+// are retried up to maxAttempts, each retry with a fresh seed (the same
+// seed replays the same bad luck); everything else settles as done. A run
+// the user cancelled is never retried: that stop was intentional. Caller
+// holds w.mu; it returns the number of attempts completed so far.
+func (w *Wall) settleRun(t *Tile, reason, detail string, now time.Time) int {
+	t.Attempts++
+	completed := t.Attempts
+	t.lastUpdate = now
+	_, cancelled := w.cancel[t.RunID]
+	delete(w.cancel, t.RunID)
+	if (reason != "error" && reason != "lost") || cancelled || completed >= maxAttempts {
+		t.Status = statusDone
+		t.Reason = reason
+		t.Detail = detail
+		t.Finished = true
+		t.EndedAt = now
+		if t.Endless && !cancelled {
+			w.enqueueNextLocked(t)
+		}
+		return completed
+	}
+	// Retry: fresh luck, fresh progress, back of the queue. The old
+	// runner's addresses belong to its attempt, not this one.
+	t.Status = statusQueued
+	t.Seed = rand.Int64()
+	t.Frame = 0
+	t.Map = 0
+	t.X = 0
+	t.Y = 0
+	t.Trace = ""
+	t.Question = ""
+	t.Decision = ""
+	t.Raw = ""
+	t.StopSoFar = ""
+	t.Sprites = nil
+	t.Trail = nil
+	t.Stats = nil
+	t.Reason = ""
+	t.Detail = fmt.Sprintf("attempt %d failed: %s", completed, detail)
+	t.workerAddrs = nil
+	t.Finished = false
+	w.queue = append(w.queue, t.RunID)
+	return completed
+}
+
+func unixTime(t time.Time) int64 {
+	if t.IsZero() {
+		return 0
+	}
+	return t.Unix()
+}
+
+func timeFromUnix(sec int64) time.Time {
+	if sec == 0 {
+		return time.Time{}
+	}
+	return time.Unix(sec, 0)
+}
+
+func newRunID() string {
+	return "run-" + strconv.FormatUint(rand.Uint64(), 36) + strconv.FormatUint(rand.Uint64(), 36)
+}
+
+// enqueueNextLocked queues a successor for an endless run. Caller holds w.mu.
+// The new run copies settings; the seed is either kept or rolled.
+func (w *Wall) enqueueNextLocked(prev *Tile) {
+	id := newRunID()
+	for w.tiles[id] != nil {
+		id = newRunID()
+	}
+	seed := prev.Seed
+	if prev.RandomSeed {
+		seed = rand.Int64()
+	}
+	w.order = append(w.order, id)
+	w.tiles[id] = &Tile{}
+	w.queue = append(w.queue, id)
+	w.applySpec(id, farm.Spec{
+		RunID:      id,
+		Seed:       seed,
+		Planner:    prev.Planner,
+		Starter:    prev.Starter,
+		Dest:       prev.Dest,
+		Goal:       prev.Goal,
+		FPS:        prev.FPS,
+		MaxRounds:  prev.MaxRounds,
+		MaxFrames:  prev.MaxFrames,
+		Endless:    true,
+		RandomSeed: prev.RandomSeed,
+	})
+}
+
+// reapStale handles leased or running runs whose lastUpdate is older than
+// w.staleAfter: settleRun declares them lost and retries them while
+// attempts remain. It returns what it handled. Queued runs are never
+// reaped: they are waiting for a runner, not on one. It also drops workers
+// unseen for longer than workerExpiry; worker presence is never persisted,
+// so only the run handling triggers a save.
+func (w *Wall) reapStale(now time.Time) []string {
+	w.mu.Lock()
+	var reaped []string
+	for _, id := range w.order {
+		t := w.tiles[id]
+		if t.Finished || t.Status == statusQueued {
+			continue
+		}
+		age := now.Sub(t.lastUpdate)
+		if age <= w.staleAfter {
+			continue
+		}
+		reaped = append(reaped, id)
+		w.settleRun(t, "lost", fmt.Sprintf("no heartbeat for %s", age.Round(time.Second)), now)
+	}
+	for key, wk := range w.workers {
+		if now.Sub(wk.LastSeen) > w.workerExpiry {
+			delete(w.workers, key)
+		}
+	}
+	w.mu.Unlock()
+	if len(reaped) > 0 {
+		w.saveState()
+	}
+	return reaped
+}
+
+// RunReaper reaps stale runs on a fixed interval.
+func (w *Wall) RunReaper(interval time.Duration) {
+	tick := time.NewTicker(interval)
+	defer tick.Stop()
+	for now := range tick.C {
+		if reaped := w.reapStale(now); len(reaped) > 0 {
+			log.Printf("pokewall: reaped stale runs: %v", reaped)
+		}
+	}
+}
