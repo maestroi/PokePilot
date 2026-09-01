@@ -189,3 +189,46 @@ func TestClientHeartbeatSendsVersion(t *testing.T) {
 		t.Fatalf("heartbeat version = %q, want abc123", got.Version)
 	}
 }
+
+func TestNewClientNormalizesBaseURLAndSetsTimeout(t *testing.T) {
+	c := NewClient("http://example.test///")
+	if c.BaseURL != "http://example.test" {
+		t.Fatalf("BaseURL = %q, want normalized URL", c.BaseURL)
+	}
+	if c.HTTP == nil || c.HTTP.Timeout != defaultHTTPTimeout {
+		t.Fatalf("HTTP timeout = %v, want %v", c.HTTP.Timeout, defaultHTTPTimeout)
+	}
+}
+
+func TestClientEscapesRunIDPathSegment(t *testing.T) {
+	const runID = "run/with space?%"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		want := "/v1/runs/run%2Fwith%20space%3F%25/heartbeat"
+		if got := r.URL.EscapedPath(); got != want {
+			t.Fatalf("escaped path = %q, want %q", got, want)
+		}
+		json.NewEncoder(w).Encode(HeartbeatReply{}) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL + "/")
+	if _, err := c.Heartbeat(context.Background(), Heartbeat{RunID: runID}); err != nil {
+		t.Fatalf("Heartbeat: %v", err)
+	}
+}
+
+func TestClientStatusErrorIncludesResponseDetail(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "worker rejected", http.StatusConflict)
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL)
+	err := c.Ping(context.Background(), nil)
+	if err == nil {
+		t.Fatal("Ping succeeded, want status error")
+	}
+	if got := err.Error(); !strings.Contains(got, "status 409") || !strings.Contains(got, "worker rejected") {
+		t.Fatalf("Ping error = %q, want status and response detail", got)
+	}
+}
