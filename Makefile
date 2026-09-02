@@ -92,7 +92,7 @@ run-0:
 # ~/.config/pokepilot/env, which lives outside every checkout. Local .env wins.
 load_env = set -a; for f in $$HOME/.config/pokepilot/env ./.env; do [ -f "$$f" ] && . "$$f"; done; set +a;
 run-llm:
-	$(require_rom)
+	$(require-rom)
 	$(load_env) \
 	go run ./cmd/pokepilot -planner llm -fps 0 $(ARGS)
 
@@ -100,7 +100,7 @@ run-llm:
 # box, and sending someone else's bearer token to localhost is not a thing
 # to do by accident, so it is cleared rather than inherited.
 run-llm-local:
-	$(require_rom)
+	$(require-rom)
 	POKEPILOT_LLM_URL=$(LOCAL_LLM_URL) \
 	POKEPILOT_LLM_MODEL=$(LOCAL_LLM_MODEL) \
 	POKEPILOT_LLM_NO_THINK=$(LOCAL_LLM_NO_THINK) \
@@ -115,7 +115,7 @@ run-llm-local:
 # the LAN bearer token into the fallback-specific variable before clearing
 # llm_token for localhost.
 run-llm-auto:
-	$(require_rom)
+	$(require-rom)
 	$(load_env) \
 	POKEPILOT_LLM_FALLBACK_URL="$${POKEPILOT_LLM_URL:-$(AUTO_LLM_FALLBACK_URL)}" \
 	POKEPILOT_LLM_FALLBACK_MODEL="$${POKEPILOT_LLM_MODEL:-$(AUTO_LLM_FALLBACK_MODEL)}" \
@@ -164,7 +164,7 @@ farm-image:
 	docker buildx build --load -t $(FARM_IMAGE) -f deploy/Dockerfile .
 
 farm-up: farm-image
-	$(require_rom)
+	$(require-rom)
 	mkdir -p "$(FARM_STATE_DIR)"
 	# A leftover standalone pokefarm_ui (from before it joined the stack)
 	# would hold the host port and block the new task.
