@@ -180,6 +180,17 @@ func TalkAt(m *emu.Emu, romData []byte, homeX, homeY uint8, policy MovePolicy) (
 		if err != nil {
 			return presses, fmt.Errorf("skill: TalkAt: object %d at (%d,%d): %w", objectID, tx, ty, err)
 		}
+
+		// Bill's Pokemon-form conversation is the one story interaction in
+		// this section that hands the player a non-object control: the Cell
+		// Separator PC is a hidden background event. Continue that explicit
+		// request through the PC and the ticket conversation so a generic
+		// talk objective does not strand the run with no action it can name.
+		if cur == billsHouseMap && homeX == billPokemonX && homeY == billPokemonY {
+			if err := finishBillRescue(m, romData, policy); err != nil {
+				return presses, fmt.Errorf("skill: TalkAt: help Bill: %w", err)
+			}
+		}
 		return presses, nil
 	}
 	return 0, fmt.Errorf("skill: TalkAt: object %d did not remain adjacent after %d approaches", objectID, attempts)
