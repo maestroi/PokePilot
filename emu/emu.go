@@ -1,10 +1,13 @@
 package emu
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/thelolagemann/gomeboy/pkg/gomeboy"
 )
+
+const addressSpaceSize = 1 << 16
 
 // Emu is a headless Pokemon Red emulator session.
 type Emu struct {
@@ -111,11 +114,15 @@ func (m *Emu) PeekInto(addr uint16, dst []byte) {
 }
 
 // SnapshotMemory copies the complete 64 KiB address space into dst and
-// returns the frame number the bytes belong to. It is the forensic form of
-// PeekInto: callers get one explicit full-memory sample without having to
-// pair a separate frame read themselves.
+// returns the frame number the bytes belong to. PokePilot composes this from
+// GomeBoy's existing side-effect-free PeekInto and FrameCount primitives so
+// the forensic feature does not depend on an unmerged emulator revision.
 func (m *Emu) SnapshotMemory(dst []byte) (uint64, error) {
-	return m.e.SnapshotMemory(dst)
+	if len(dst) != addressSpaceSize {
+		return 0, fmt.Errorf("emu: SnapshotMemory: buffer is %d bytes, want %d", len(dst), addressSpaceSize)
+	}
+	m.e.PeekInto(0, dst)
+	return m.e.FrameCount(), nil
 }
 
 // ROM returns the bytes of the loaded ROM. The slice aliases emulator
