@@ -18,6 +18,7 @@ const (
 	PlayerLastStopDirection uint16 = 0xD529
 	PlayerDirection         uint16 = 0xD52A
 	WalkCounter             uint16 = 0xCFC5
+	TileInFrontOfPlayer     uint16 = 0xCFC6 // wTileInFrontOfPlayer
 	PlayerName              uint16 = 0xD158
 	SpritePlayerStateData1  uint16 = 0xC100
 	SpritePlayerFacing      uint16 = 0xC109 // wSpritePlayerStateData1 + 9, SPRITE_FACING_* values
@@ -57,6 +58,10 @@ const (
 	ToggleableObjectList  uint16 = 0xD5CE
 	EventFlags            uint16 = 0xD747
 	StatusFlags4          uint16 = 0xD72E // wStatusFlags4
+	// The Vermilion Gym script seeds these with the live trash-can puzzle.
+	// They are indices into the 15 hidden-event cans, not coordinates.
+	FirstLockTrashCanIndex  uint16 = 0xD743 // wFirstLockTrashCanIndex
+	SecondLockTrashCanIndex uint16 = 0xD744 // wSecondLockTrashCanIndex
 	// LastBlackoutMap is where a blackout respawns the player. Only
 	// SetLastBlackoutMap writes it (pokered/engine/events/set_blackout_map.asm)
 	// and only DisplayPokemonCenterDialogue_ calls that — on YES to the
@@ -124,6 +129,13 @@ const (
 	MenuWatchedKeys  uint16 = 0xCC29
 	ListMenuID       uint16 = 0xCF94
 	TextBoxID        uint16 = 0xD125
+	// wFieldMoves is populated after choosing a Pokémon from the START-menu
+	// party list. Entries are field-move menu IDs (CUT=1), terminated by 0.
+	FieldMoves    uint16 = 0xCD3D
+	NumFieldMoves uint16 = 0xCD41
+	// ActionResult is wActionResultOrTookBattleTurn. UsedCut writes 1 only
+	// when the tile in front was actually cut.
+	ActionResult uint16 = 0xCD6A
 	// TileMap is wTileMap, the WRAM shadow of the background tilemap
 	// (pokered.sym: 00:c3a0). 20x18 tiles; while a text box is up its rows
 	// hold font tile IDs, which are the same values charmap.asm uses.
