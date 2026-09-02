@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/maestroi/pokepilot/agent"
@@ -9,19 +10,59 @@ import (
 
 func TestStatsPlannerStopsOnCompletedStructuredGoal(t *testing.T) {
 	inner := &agent.LLMPlanner{Goal: "badges:1"}
-	p := newStatsPlanner(inner, nil, nil)
+	var (
+		pushed int
+		got    runStats
+	)
+	p := newStatsPlanner(inner, func(v any) {
+		pushed++
+		got = v.(runStats)
+	}, nil)
 
-	_, err := p.Next(agent.Observation{Badges: []string{"Boulder"}}, nil)
+	_, err := p.Next(agent.Observation{Round: 4, RoundsLeft: 20, Badges: []string{"Boulder"}}, nil)
 	if !errors.Is(err, agent.ErrDone) {
 		t.Fatalf("Next error = %v, want ErrDone", err)
 	}
 	if p.stats.Calls != 0 {
 		t.Fatalf("model calls = %d, want 0 after deterministic completion", p.stats.Calls)
 	}
+	if pushed != 1 {
+		t.Fatalf("final goal snapshot pushes = %d, want 1", pushed)
+	}
+	if !got.GoalComplete || got.GoalSummary != "badges 1/1" || got.GoalCurrent != 1 || got.GoalTarget != 1 {
+		t.Fatalf("final goal stats = %+v", got)
+	}
+}
+
+func TestStatsPlannerSurfacesStructuredGoalProgress(t *testing.T) {
+	inner := &agent.LLMPlanner{Goal: "badges:2", ExtraSystem: "baseline system note"}
+	p := newStatsPlanner(inner, nil, nil)
+
+	done, err := p.prepareRunContext(agent.Observation{
+		Round: 1, Badges: []string{"Boulder"}, Party: []agent.PartyMon{{Level: 12}},
+	})
+	if err != nil {
+		t.Fatalf("prepareRunContext: %v", err)
+	}
+	if done {
+		t.Fatal("badges:2 unexpectedly complete at one badge")
+	}
+	if p.stats.GoalSummary != "badges 1/2" || p.stats.GoalCurrent != 1 || p.stats.GoalTarget != 2 || p.stats.GoalComplete {
+		t.Fatalf("goal stats = %+v", p.stats)
+	}
+	if !strings.Contains(inner.ExtraSystem, "RUN GOAL STATUS: badges 1/2") {
+		t.Fatalf("structured goal status not added to planner context: %q", inner.ExtraSystem)
+	}
+	if !strings.HasPrefix(inner.ExtraSystem, "baseline system note\n\n") {
+		t.Fatalf("base ExtraSystem not preserved: %q", inner.ExtraSystem)
+	}
+	if strings.Contains(inner.ExtraSystem, "go to") || strings.Contains(inner.ExtraSystem, "train") {
+		t.Fatalf("goal progress note prescribed a strategy: %q", inner.ExtraSystem)
+	}
 }
 
 func TestStatsPlannerLeavesFreeTextGoalPromptOnly(t *testing.T) {
-	inner := &agent.LLMPlanner{Goal: "Earn the Boulder Badge."}
+	inner := &agent.LLMPlanner{Goal: "Earn the Boulder Badge.", ExtraSystem: "baseline"}
 	p := newStatsPlanner(inner, nil, nil)
 
 	done, err := p.goalDone(agent.Observation{Badges: []string{"Boulder"}})
@@ -30,6 +71,15 @@ func TestStatsPlannerLeavesFreeTextGoalPromptOnly(t *testing.T) {
 	}
 	if done {
 		t.Fatal("free-text planner goal unexpectedly became a deterministic stop")
+	}
+	if done, err := p.prepareRunContext(agent.Observation{Round: 1, Badges: []string{"Boulder"}}); err != nil || done {
+		t.Fatalf("prepareRunContext = done %v, err %v; want free-text prompt-only", done, err)
+	}
+	if p.stats.GoalSummary != "" || p.stats.GoalCurrent != 0 || p.stats.GoalTarget != 0 || p.stats.GoalComplete {
+		t.Fatalf("free-text goal leaked into deterministic stats: %+v", p.stats)
+	}
+	if inner.ExtraSystem != "baseline" {
+		t.Fatalf("free-text goal changed system context: %q", inner.ExtraSystem)
 	}
 }
 
