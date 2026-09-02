@@ -5,23 +5,8 @@ import (
 	"testing"
 )
 
-func TestStrategicMemoryKeepsSpeculationSeparateAndBounded(t *testing.T) {
+func TestStrategicMemoryDetectsLongHorizonStallUsingIntent(t *testing.T) {
 	var m StrategicMemory
-	for i := 0; i < 10; i++ {
-		m.AddHypothesis(string(rune('a' + i)))
-	}
-	if len(m.Hypotheses) != strategyHypothesisCap {
-		t.Fatalf("hypotheses = %d, want %d", len(m.Hypotheses), strategyHypothesisCap)
-	}
-	m.AddHypothesis("h")
-	if m.Hypotheses[0] != "h" {
-		t.Fatalf("duplicate was not moved to front: %v", m.Hypotheses)
-	}
-}
-
-func TestStrategicMemoryDetectsLongHorizonStall(t *testing.T) {
-	var m StrategicMemory
-	m.SetStrategy("train before trying the gym again")
 	obs := Observation{Map: 1, Badges: []string{"boulder"}, Events: []string{"x"}, Party: []PartyMon{{Level: 12}}}
 	if !m.ObserveProgress(obs, 5) {
 		t.Fatal("first observation should establish progress baseline")
@@ -31,8 +16,18 @@ func TestStrategicMemoryDetectsLongHorizonStall(t *testing.T) {
 			t.Fatal("identical observation counted as progress")
 		}
 	}
-	reason := m.ReplanReason(4)
-	if !strings.Contains(reason, "materially different") {
+	reason := m.ReplanReason(4, "train before trying the gym again")
+	if !strings.Contains(reason, `Intent "train before trying the gym again"`) || !strings.Contains(reason, "materially different") {
+		t.Fatalf("replan reason = %q", reason)
+	}
+}
+
+func TestStrategicMemoryCanSignalWithoutIntent(t *testing.T) {
+	var m StrategicMemory
+	obs := Observation{Map: 1, Party: []PartyMon{{Level: 12}}}
+	m.ObserveProgress(obs, 1)
+	m.ObserveProgress(obs, 1)
+	if reason := m.ReplanReason(1, ""); !strings.Contains(reason, "No measurable progress for 1 rounds") {
 		t.Fatalf("replan reason = %q", reason)
 	}
 }
@@ -52,16 +47,9 @@ func TestStrategicMemoryResetsStallOnMeasurableProgress(t *testing.T) {
 	}
 }
 
-func TestStrategyAgeOnlyAdvancesWhenUnchanged(t *testing.T) {
-	var m StrategicMemory
-	m.SetStrategy("explore north")
-	m.SetStrategy("explore north")
-	m.SetStrategy("explore north")
-	if m.Age != 2 {
-		t.Fatalf("Age = %d, want 2", m.Age)
-	}
-	m.SetStrategy("heal first")
-	if m.Age != 0 || m.Strategy != "heal first" {
-		t.Fatalf("strategy change = %+v", m)
+func TestReplanReasonWaitsForThreshold(t *testing.T) {
+	m := StrategicMemory{NoProgress: 3}
+	if got := m.ReplanReason(4, "explore north"); got != "" {
+		t.Fatalf("early replan reason = %q", got)
 	}
 }

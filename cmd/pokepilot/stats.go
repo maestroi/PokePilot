@@ -1,9 +1,7 @@
 package main
 
 import (
-	"fmt"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/maestroi/pokepilot/agent"
@@ -121,13 +119,7 @@ func (s *statsPlanner) prepareStrategy(obs agent.Observation) {
 	}
 
 	extra := s.baseExtraSystem
-	if reason := s.strategy.ReplanReason(strategicReplanAfter); reason != "" {
-		intent := strings.TrimSpace(obs.Intent)
-		if intent == "" {
-			reason = fmt.Sprintf("No measurable progress for %d rounds; choose a materially different approach.", s.strategy.NoProgress)
-		} else {
-			reason = fmt.Sprintf("Intent %q has made no measurable progress for %d rounds; choose a materially different approach.", intent, s.strategy.NoProgress)
-		}
+	if reason := s.strategy.ReplanReason(strategicReplanAfter, obs.Intent); reason != "" {
 		if extra != "" {
 			extra += "\n\n"
 		}
