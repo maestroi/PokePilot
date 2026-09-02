@@ -55,6 +55,10 @@ services:
   ui:
     image: ${FARM_IMAGE:-pokepilot-farm:local}
     command: ["pokeui", "-http", ":8080", "-wall", "http://wall:8080"]
+    environment:
+      # Empty disables /mcp entirely. Set this to a long random secret before
+      # exposing pokeui on a public hostname: MCP can start and cancel runs.
+      POKEPILOT_MCP_TOKEN: ${POKEPILOT_MCP_TOKEN:-}
     ports:
       - target: 8080
         published: ${FARM_WALL_PORT:-18080}
