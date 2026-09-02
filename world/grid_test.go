@@ -60,6 +60,26 @@ func TestGridSetGet(t *testing.T) {
 	}
 }
 
+func TestGridTile(t *testing.T) {
+	g := &Grid{
+		Width: 2, Height: 2,
+		walkable: make([]bool, 4),
+		tiles:    []uint8{0x10, 0x20, 0x30, 0x3D},
+	}
+	if got, ok := g.Tile(1, 1); !ok || got != 0x3D {
+		t.Fatalf("Tile(1,1) = (%#02x,%v), want (0x3d,true)", got, ok)
+	}
+	if _, ok := g.Tile(-1, 0); ok {
+		t.Fatal("Tile(-1,0) reported an in-bounds value")
+	}
+	// A hand-built grid that does not carry tile ids must say so rather than
+	// returning a misleading zero tile that navigation could classify.
+	bare := &Grid{Width: 1, Height: 1, walkable: make([]bool, 1)}
+	if _, ok := bare.Tile(0, 0); ok {
+		t.Fatal("Tile on a grid without tile ids returned ok=true")
+	}
+}
+
 func TestBuildPalletTown(t *testing.T) {
 	path := os.Getenv("POKEMON_RED_ROM")
 	if path == "" {
@@ -93,6 +113,9 @@ func TestBuildPalletTown(t *testing.T) {
 	walkableCount, solidCount := 0, 0
 	for y := 0; y < g.Height; y++ {
 		for x := 0; x < g.Width; x++ {
+			if _, ok := g.Tile(x, y); !ok {
+				t.Fatalf("Tile(%d,%d) has no collision id after Build", x, y)
+			}
 			if g.Walkable(x, y) {
 				walkableCount++
 			} else {
