@@ -106,6 +106,7 @@ func EvaluateGoal(g Goal, obs Observation) GoalStatus {
 			if int(mon.Level) > level {
 				level = int(mon.Level)
 			}
+		}
 		return GoalStatus{Complete: level >= g.Count, Summary: fmt.Sprintf("party max level %d/%d", level, g.Count), Current: level, Target: g.Count}
 	case GoalItem:
 		for _, item := range obs.Bag {
