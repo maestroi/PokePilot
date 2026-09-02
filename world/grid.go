@@ -21,12 +21,16 @@ const (
 	tilesetEntryLen        = 12
 )
 
-// Grid is a map's walkability, indexed [y][x] in game tile coordinates —
-// the same coordinates reported by wXCoord/wYCoord.
+// Grid is a map's collision view, indexed [y][x] in game tile coordinates —
+// the same coordinates reported by wXCoord/wYCoord. Besides walkability it
+// retains the collision tile id for each cell. That matters for field moves:
+// a solid CUT tree and an ordinary solid wall are both non-walkable, but only
+// the former is a legal obstacle for navigation to remove.
 type Grid struct {
 	MapID         uint8
 	Width, Height int // in game tile coordinates
 	walkable      []bool
+	tiles         []uint8
 }
 
 // InBounds reports whether (x, y) is inside the grid.
@@ -41,6 +45,16 @@ func (g *Grid) Walkable(x, y int) bool {
 		return false
 	}
 	return g.walkable[y*g.Width+x]
+}
+
+// Tile returns the collision tile id for a game-tile coordinate. The value is
+// the same bottom-left tile that Build uses for collision and that the game
+// compares with wTileInFrontOfPlayer for field moves such as CUT.
+func (g *Grid) Tile(x, y int) (uint8, bool) {
+	if !g.InBounds(x, y) || len(g.tiles) != g.Width*g.Height {
+		return 0, false
+	}
+	return g.tiles[y*g.Width+x], true
 }
 
 // Set sets the walkability of the game-tile coordinate (x, y).
@@ -72,6 +86,7 @@ func Build(romData []byte, h rom.MapHeader) (*Grid, error) {
 		Width:    width,
 		Height:   height,
 		walkable: make([]bool, width*height),
+		tiles:    make([]uint8, width*height),
 	}
 	if width == 0 || height == 0 {
 		return g, nil
@@ -140,7 +155,9 @@ func Build(romData []byte, h rom.MapHeader) (*Grid, error) {
 			for sy := 0; sy < 2; sy++ {
 				for sx := 0; sx < 2; sx++ {
 					tile := romData[tilesOff+(2*sy+1)*4+2*sx]
-					g.walkable[(by*2+sy)*width+(bx*2+sx)] = walkableTiles[tile]
+					i := (by*2+sy)*width + (bx*2 + sx)
+					g.tiles[i] = tile
+					g.walkable[i] = walkableTiles[tile]
 				}
 			}
 		}
