@@ -29,7 +29,6 @@ func TestGridBounds(t *testing.T) {
 		t.Error("InBounds(0,4) = true, want false")
 	}
 
-	// Out-of-bounds Walkable must return false, not panic.
 	if g.Walkable(-1, 0) {
 		t.Error("Walkable(-1,0) = true, want false")
 	}
@@ -60,23 +59,32 @@ func TestGridSetGet(t *testing.T) {
 	}
 }
 
-func TestGridTile(t *testing.T) {
+func TestGridTileContracts(t *testing.T) {
 	g := &Grid{
-		Width: 2, Height: 2,
-		walkable: make([]bool, 4),
-		tiles:    []uint8{0x10, 0x20, 0x30, 0x3D},
+		Width:         2,
+		Height:        2,
+		walkable:      make([]bool, 4),
+		collisionTile: []uint8{0x10, 0x20, 0x30, 0x40},
+		fieldTile:     []uint8{0x50, 0x60, 0x70, 0x3D},
 	}
-	if got, ok := g.Tile(1, 1); !ok || got != 0x3D {
-		t.Fatalf("Tile(1,1) = (%#02x,%v), want (0x3d,true)", got, ok)
+	if got, ok := g.Tile(1, 1); !ok || got != 0x40 {
+		t.Fatalf("Tile(1,1) = (%#02x,%v), want collision (0x40,true)", got, ok)
+	}
+	if got, ok := g.FieldTile(1, 1); !ok || got != 0x3D {
+		t.Fatalf("FieldTile(1,1) = (%#02x,%v), want field-action (0x3d,true)", got, ok)
 	}
 	if _, ok := g.Tile(-1, 0); ok {
 		t.Fatal("Tile(-1,0) reported an in-bounds value")
 	}
-	// A hand-built grid that does not carry tile ids must say so rather than
-	// returning a misleading zero tile that navigation could classify.
+	if _, ok := g.FieldTile(2, 0); ok {
+		t.Fatal("FieldTile(2,0) reported an in-bounds value")
+	}
 	bare := &Grid{Width: 1, Height: 1, walkable: make([]bool, 1)}
 	if _, ok := bare.Tile(0, 0); ok {
-		t.Fatal("Tile on a grid without tile ids returned ok=true")
+		t.Fatal("Tile on a grid without collision ids returned ok=true")
+	}
+	if _, ok := bare.FieldTile(0, 0); ok {
+		t.Fatal("FieldTile on a grid without field-action ids returned ok=true")
 	}
 }
 
@@ -116,6 +124,9 @@ func TestBuildPalletTown(t *testing.T) {
 			if _, ok := g.Tile(x, y); !ok {
 				t.Fatalf("Tile(%d,%d) has no collision id after Build", x, y)
 			}
+			if _, ok := g.FieldTile(x, y); !ok {
+				t.Fatalf("FieldTile(%d,%d) has no field-action id after Build", x, y)
+			}
 			if g.Walkable(x, y) {
 				walkableCount++
 			} else {
@@ -153,8 +164,8 @@ func TestBuildOaksLabCollision(t *testing.T) {
 	}
 
 	// Measured against the game by walking Oak's Lab exhaustively with save
-	// states (2026-08-25). The collision tile is the one the player stands
-	// on, the step's bottom-left tile, not the tile above it.
+	// states (2026-08-25). Collision is the bottom-left subtile, not the tile
+	// above it; retaining FieldTile must not change that proven rule.
 	cases := []struct {
 		x, y int
 		walk bool
@@ -164,9 +175,7 @@ func TestBuildOaksLabCollision(t *testing.T) {
 		{0, 3, true}, {1, 3, true}, {2, 3, true}, {3, 3, true}, {4, 3, true},
 		{5, 3, true}, {9, 3, true},
 		{6, 4, true}, {7, 4, true}, {8, 4, true},
-		// The table with the three Poke Balls on it.
 		{6, 3, false}, {7, 3, false}, {8, 3, false},
-		// The top wall.
 		{0, 0, false}, {9, 0, false},
 	}
 	for _, c := range cases {
@@ -175,12 +184,10 @@ func TestBuildOaksLabCollision(t *testing.T) {
 		}
 	}
 
-	// The regression pair: fails under the old top-left indexing (2*sy),
-	// passes under the bottom-left indexing (2*sy+1).
 	if !g.Walkable(6, 4) {
-		t.Error("Walkable(6,4) = false, want true: collision must use the tile the player stands on (the step's bottom-left), not the tile above it")
+		t.Error("Walkable(6,4) = false, want true: collision must use the step's bottom-left tile")
 	}
 	if g.Walkable(6, 3) {
-		t.Error("Walkable(6,3) = true, want false: collision must use the tile the player stands on (the step's bottom-left), not the tile above it")
+		t.Error("Walkable(6,3) = true, want false: collision must use the step's bottom-left tile")
 	}
 }
