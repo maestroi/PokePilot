@@ -5,7 +5,7 @@
 #   docker stack deploy --resolve-image never -c deploy/farm.yml pokefarm
 #
 # `--resolve-image never` lets a single-node Swarm use the image that
-# `farm-image` loaded locally. On a MULTI-NODE swarm the nodes cannot
+# `make farm-image` loaded locally. On a MULTI-NODE swarm the nodes cannot
 # see each other's local image store, so the image must be published to a
 # registry and FARM_IMAGE pointed at that reference instead; this stack
 # file intentionally contains no build: keys because `docker stack deploy`
