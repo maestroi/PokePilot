@@ -12,7 +12,7 @@ func TestStatsPlannerSurfacesReplanSignalFromCarriedIntent(t *testing.T) {
 	p := newStatsPlanner(inner, nil, nil)
 
 	for round := 1; round <= strategicReplanAfter+1; round++ {
-		p.prepareStrategy(agent.Observation{
+		p.prepareRunContext(agent.Observation{
 			Round:  round,
 			Map:    1,
 			Intent: "find a way through viridian forest",
@@ -34,14 +34,14 @@ func TestStatsPlannerSurfacesReplanSignalFromCarriedIntent(t *testing.T) {
 func TestStatsPlannerCountsOneProgressSamplePerRound(t *testing.T) {
 	p := newStatsPlanner(&agent.LLMPlanner{}, nil, nil)
 	obs := agent.Observation{Round: 1, Map: 1, Party: []agent.PartyMon{{Level: 8}}}
-	p.prepareStrategy(obs)
-	p.prepareStrategy(obs) // same observation as a retry
+	p.prepareRunContext(obs)
+	p.prepareRunContext(obs) // same observation as a retry
 	if p.strategy.NoProgress != 0 {
 		t.Fatalf("same-round retry advanced no-progress counter: %d", p.strategy.NoProgress)
 	}
 
 	obs.Round = 2
-	p.prepareStrategy(obs)
+	p.prepareRunContext(obs)
 	if p.strategy.NoProgress != 1 {
 		t.Fatalf("next identical round no-progress = %d, want 1", p.strategy.NoProgress)
 	}
@@ -52,13 +52,13 @@ func TestStatsPlannerClearsReplanSignalOnObservableProgress(t *testing.T) {
 	p := newStatsPlanner(inner, nil, nil)
 
 	for round := 1; round <= strategicReplanAfter+1; round++ {
-		p.prepareStrategy(agent.Observation{Round: round, Map: 1, Intent: "explore", Party: []agent.PartyMon{{Level: 8}}})
+		p.prepareRunContext(agent.Observation{Round: round, Map: 1, Intent: "explore", Party: []agent.PartyMon{{Level: 8}}})
 	}
 	if !strings.Contains(inner.ExtraSystem, "RUN REPLAN SIGNAL") {
 		t.Fatalf("expected replan signal after stall: %q", inner.ExtraSystem)
 	}
 
-	p.prepareStrategy(agent.Observation{Round: strategicReplanAfter + 2, Map: 2, Intent: "explore", Party: []agent.PartyMon{{Level: 8}}})
+	p.prepareRunContext(agent.Observation{Round: strategicReplanAfter + 2, Map: 2, Intent: "explore", Party: []agent.PartyMon{{Level: 8}}})
 	if inner.ExtraSystem != "baseline" {
 		t.Fatalf("progress did not clear temporary signal: %q", inner.ExtraSystem)
 	}

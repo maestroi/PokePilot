@@ -169,11 +169,9 @@ func (s *statsPlanner) NextRetry(obs agent.Observation, offered []agent.Objectiv
 }
 
 func (s *statsPlanner) ask(obs agent.Observation, offered []agent.Objective, retry *agent.Retry) (agent.Objective, error) {
-	p := s.active
-	backend := s.backend
-	s.syncPlannerContext(p)
-	o, err, transport := s.callPlanner(p, backend, obs, offered, retry)
-	if transport && p == s.inner && s.fallback != nil {
+	s.syncPlannerContext(s.active)
+	o, err, transport := s.callPlanner(obs, offered, retry)
+	if transport && s.active == s.inner && s.fallback != nil {
 		s.failovers++
 		s.active = s.fallback
 		s.backend = "fallback"
@@ -182,10 +180,8 @@ func (s *statsPlanner) ask(obs agent.Observation, offered []agent.Objective, ret
 				"  llm route: primary %s at %s had a transport failure; pinning fallback %s at %s for the rest of the run\n",
 				s.inner.Model, s.inner.BaseURL, s.fallback.Model, s.fallback.BaseURL)
 		}
-		p = s.fallback
-		backend = s.backend
-		s.syncPlannerContext(p)
-		o, err, transport = s.callPlanner(p, backend, obs, offered, retry)
+		s.syncPlannerContext(s.active)
+		o, err, transport = s.callPlanner(obs, offered, retry)
 	}
 	if err != nil && transport {
 		return agent.Objective{}, fmt.Errorf("%w: %v", agent.ErrTransport, err)
@@ -193,7 +189,8 @@ func (s *statsPlanner) ask(obs agent.Observation, offered []agent.Objective, ret
 	return o, err
 }
 
-func (s *statsPlanner) callPlanner(p *agent.LLMPlanner, backend string, obs agent.Observation, offered []agent.Objective, retry *agent.Retry) (agent.Objective, error, bool) {
+func (s *statsPlanner) callPlanner(obs agent.Observation, offered []agent.Objective, retry *agent.Retry) (agent.Objective, error, bool) {
+	p := s.active
 	beforeTransport := p.Health.Transport
 	start := time.Now()
 	var (
@@ -205,7 +202,7 @@ func (s *statsPlanner) callPlanner(p *agent.LLMPlanner, backend string, obs agen
 	} else {
 		o, err = p.NextRetry(obs, offered, *retry)
 	}
-	s.recordFrom(p, backend, obs, len(offered), o, err, time.Since(start))
+	s.record(obs, len(offered), o, err, time.Since(start))
 	return o, err, p.Health.Transport > beforeTransport
 }
 
@@ -218,14 +215,6 @@ func (s *statsPlanner) syncPlannerContext(p *agent.LLMPlanner) {
 	p.Log = s.inner.Log
 	p.PromptLog = s.inner.PromptLog
 	p.ReplyLog = s.inner.ReplyLog
-}
-
-func (s *statsPlanner) goalDone(obs agent.Observation) (bool, error) {
-	status, structured, err := agent.PlannerGoalStatus(s.inner.Goal, obs)
-	if err != nil {
-		return false, err
-	}
-	return structured && status.Complete, nil
 }
 
 // prepareRunContext is the one per-ask seam for run-derived context. Goal
@@ -255,15 +244,11 @@ func (s *statsPlanner) setGoalStats(status agent.GoalStatus, structured bool) {
 	s.stats.GoalComplete = status.Complete
 }
 
-func (s *statsPlanner) prepareStrategy(obs agent.Observation) {
-	s.prepareStrategyWithGoal(obs, agent.GoalStatus{}, false)
-}
-
 func (s *statsPlanner) prepareStrategyWithGoal(obs agent.Observation, goal agent.GoalStatus, structuredGoal bool) {
 	// NextRetry receives the same observation and round as Next. Count a
 	// world state once, not once per model attempt.
 	if !s.strategySeen || obs.Round != s.strategyRound {
-		s.strategy.ObserveProgress(obs, 0)
+		s.strategy.ObserveProgress(obs)
 		s.strategyRound = obs.Round
 		s.strategySeen = true
 	}
@@ -289,10 +274,6 @@ func appendSystemNote(base, note string) string {
 // rejection counts as a call and as a rejection, never as a round: the
 // round is the same one, asked again.
 func (s *statsPlanner) record(obs agent.Observation, offered int, o agent.Objective, err error, took time.Duration) {
-	s.recordFrom(s.active, s.backend, obs, offered, o, err, took)
-}
-
-func (s *statsPlanner) recordFrom(p *agent.LLMPlanner, backend string, obs agent.Observation, offered int, o agent.Objective, err error, took time.Duration) {
 	s.stats.Calls++
 	s.offered += offered
 	s.elapsed += took
@@ -301,7 +282,7 @@ func (s *statsPlanner) recordFrom(p *agent.LLMPlanner, backend string, obs agent
 	s.stats.AvgSeconds = s.elapsed.Seconds() / float64(s.stats.Calls)
 	s.stats.Round, s.stats.RoundsLeft = obs.Round, obs.RoundsLeft
 	s.stats.Intent, s.stats.IntentAge = obs.Intent, obs.IntentAge
-	s.stats.Backend, s.stats.Model, s.stats.Failovers = backend, p.Model, s.failovers
+	s.stats.Backend, s.stats.Model, s.stats.Failovers = s.backend, s.active.Model, s.failovers
 
 	h := s.health()
 	s.stats.PromptTokens, s.stats.CompletionTokens = h.PromptTokens, h.CompletionTokens

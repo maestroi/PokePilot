@@ -65,13 +65,6 @@ func TestStatsPlannerLeavesFreeTextGoalPromptOnly(t *testing.T) {
 	inner := &agent.LLMPlanner{Goal: "Earn the Boulder Badge.", ExtraSystem: "baseline"}
 	p := newStatsPlanner(inner, nil, nil)
 
-	done, err := p.goalDone(agent.Observation{Badges: []string{"Boulder"}})
-	if err != nil {
-		t.Fatalf("goalDone: %v", err)
-	}
-	if done {
-		t.Fatal("free-text planner goal unexpectedly became a deterministic stop")
-	}
 	if done, err := p.prepareRunContext(agent.Observation{Round: 1, Badges: []string{"Boulder"}}); err != nil || done {
 		t.Fatalf("prepareRunContext = done %v, err %v; want free-text prompt-only", done, err)
 	}
