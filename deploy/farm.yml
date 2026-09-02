@@ -5,7 +5,7 @@
 #   docker stack deploy --resolve-image never -c deploy/farm.yml pokefarm
 #
 # `--resolve-image never` lets a single-node Swarm use the image that
-# `make farm-image` loaded locally. On a MULTI-NODE swarm the nodes cannot
+# `farm-image` loaded locally. On a MULTI-NODE swarm the nodes cannot
 # see each other's local image store, so the image must be published to a
 # registry and FARM_IMAGE pointed at that reference instead; this stack
 # file intentionally contains no build: keys because `docker stack deploy`
@@ -79,10 +79,21 @@ services:
       POKEMON_RED_ROM: /rom/pokemon_red.gb
       # Same names make run-llm exports from .env. farm-up sources that
       # file so the runners can reach the model; empty means no bearer
-      # token (and the compiled URL/model defaults).
+      # token (and the compiled URL/model defaults). The optional fallback
+      # family is passed through unchanged; statsPlanner only uses it after
+      # a primary transport failure and then pins it for the run.
       llm_token: ${llm_token:-}
       POKEPILOT_LLM_URL: ${POKEPILOT_LLM_URL:-}
       POKEPILOT_LLM_MODEL: ${POKEPILOT_LLM_MODEL:-}
+      POKEPILOT_LLM_NO_THINK: ${POKEPILOT_LLM_NO_THINK:-}
+      POKEPILOT_LLM_MAX_TOKENS: ${POKEPILOT_LLM_MAX_TOKENS:-}
+      POKEPILOT_LLM_TIMEOUT: ${POKEPILOT_LLM_TIMEOUT:-}
+      POKEPILOT_LLM_FALLBACK_URL: ${POKEPILOT_LLM_FALLBACK_URL:-}
+      POKEPILOT_LLM_FALLBACK_MODEL: ${POKEPILOT_LLM_FALLBACK_MODEL:-}
+      POKEPILOT_LLM_FALLBACK_TOKEN: ${POKEPILOT_LLM_FALLBACK_TOKEN:-}
+      POKEPILOT_LLM_FALLBACK_NO_THINK: ${POKEPILOT_LLM_FALLBACK_NO_THINK:-}
+      POKEPILOT_LLM_FALLBACK_MAX_TOKENS: ${POKEPILOT_LLM_FALLBACK_MAX_TOKENS:-}
+      POKEPILOT_LLM_FALLBACK_TIMEOUT: ${POKEPILOT_LLM_FALLBACK_TIMEOUT:-}
     volumes:
       - ${POKEMON_RED_ROM}:/rom/pokemon_red.gb:ro
     deploy:
