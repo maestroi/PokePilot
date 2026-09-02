@@ -7,6 +7,7 @@ import (
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
+	"github.com/maestroi/pokepilot/world"
 )
 
 // Replan records the world as Travel re-read it after a battle: the map and
@@ -118,10 +119,56 @@ const (
 // world.
 const maxDialogueRecoveries = 10
 
-// Travel walks to dest like GoTo, but resolves the wild encounters and the
-// text boxes that interrupt a route instead of aborting on them. Each
+// maxRouteCuts bounds field-move recovery inside one Travel call. Route 9 and
+// the Celadon Gym approach each need one tree; four leaves room for a route
+// with several legitimate gates while keeping a bad collision classification
+// from turning into an unbounded tree-clearing loop.
+const maxRouteCuts = 4
+
+func cutRecoverableNavigationError(err error) bool {
+	return errors.Is(err, ErrLegUnwalkable) ||
+		errors.Is(err, ErrReplanExhausted) ||
+		errors.Is(err, world.ErrNoPath)
+}
+
+// cutAwareGoTo wraps one Travel journey's GoTo attempts. Only a terminal
+// static-path failure is eligible for CUT recovery; battles and dialogue are
+// returned immediately to travel's existing resolvers. If the current map has
+// a real reachable Cut tree and the party can legally use Cut, the tree is
+// removed and the player steps onto the cleared cell before GoTo replans.
+// Otherwise the original navigation error is preserved verbatim.
+func cutAwareGoTo(m *emu.Emu, romData []byte, dest Destination) func() error {
+	cuts := 0
+	return func() error {
+		for {
+			err := GoTo(m, romData, dest)
+			if err == nil || errors.Is(err, ErrBattle) || errors.Is(err, ErrDialogueInterrupted) {
+				return err
+			}
+			if cuts >= maxRouteCuts || !cutRecoverableNavigationError(err) {
+				return err
+			}
+			opened, cutErr := cutThroughReachableTree(m, romData)
+			if cutErr != nil {
+				if errors.Is(cutErr, ErrBattle) || errors.Is(cutErr, ErrDialogueInterrupted) {
+					return cutErr
+				}
+				return fmt.Errorf("skill: Travel: Cut recovery after %v: %w", err, cutErr)
+			}
+			if !opened {
+				return err
+			}
+			cuts++
+		}
+	}
+}
+
+// Travel walks to dest like GoTo, but resolves the wild encounters, ordinary
+// text boxes, and legal Cut-tree route gates that interrupt a route. Each
 // encounter is fought with policy; each box is paged closed by
-// RecoverDialogue, which never answers a choice.
+// RecoverDialogue, which never answers a choice. A static path failure may
+// trigger CUT only when the current collision grid identifies an actual tree
+// tile and RAM says the party has the Cascade Badge plus HM01/Cut.
 //
 // After every battle the world is re-read from RAM once it has settled, and
 // the remainder is planned from that: a win leaves the player on the
@@ -130,11 +177,11 @@ const maxDialogueRecoveries = 10
 // from the pre-battle plan — or from inside that pre-flip window — would
 // keep walking the map the player is leaving.
 //
-// ErrBattle and ErrDialogueInterrupted are intercepted; any other GoTo
-// failure (blocked tile, no route, ...) is returned unchanged. A recovered
-// box is retried. A box that is a choice is NOT retried — the choice is
-// unanswered and the box is still up, so the next walk would meet it again
-// forever — and comes back as *ErrDialogueChoice for the caller to decide.
+// ErrBattle and ErrDialogueInterrupted are intercepted. A recovered box is
+// retried. A box that is a choice is NOT retried — the choice is unanswered
+// and the box is still up, so the next walk would meet it again forever — and
+// comes back as *ErrDialogueChoice for the caller to decide. A static failure
+// with no usable/reachable Cut tree is returned unchanged.
 // A blackout ends the journey with ErrBlackedOut: after a lost battle, and
 // after a recovered text box that closed on a non-battle blackout (poison
 // fainted the last mon out of it while walking), so a party wiped out
@@ -146,7 +193,7 @@ func Travel(m *emu.Emu, romData []byte, dest Destination, policy MovePolicy, max
 		return TravelResult{}, fmt.Errorf("skill: Travel: maxBattles must be > 0, got %d", maxBattles)
 	}
 	return travel(m, policy, maxBattles,
-		func() error { return GoTo(m, romData, dest) },
+		cutAwareGoTo(m, romData, dest),
 		func() DialogueRecoveryResult { return RecoverDialogue(m, dialogueRecoveryBudget) },
 		func() bool { return m.Peek8(sym.StatusFlags4)&blackoutBit != 0 },
 		fightOnly(m, policy),
@@ -164,7 +211,7 @@ func Travel(m *emu.Emu, romData []byte, dest Destination, policy MovePolicy, max
 // the respawn spot is the caller's decision.
 func TravelFlee(m *emu.Emu, romData []byte, dest Destination, policy MovePolicy, maxBattles int) (TravelResult, error) {
 	return travel(m, policy, maxBattles,
-		func() error { return GoTo(m, romData, dest) },
+		cutAwareGoTo(m, romData, dest),
 		func() DialogueRecoveryResult { return RecoverDialogue(m, dialogueRecoveryBudget) },
 		func() bool { return m.Peek8(sym.StatusFlags4)&blackoutBit != 0 },
 		fleeThenFight(m, policy, 5),
@@ -173,8 +220,8 @@ func TravelFlee(m *emu.Emu, romData []byte, dest Destination, policy MovePolicy,
 
 // travel is the retry loop: walk, resolve what interrupted the walk, walk
 // again. goTo, recoverBox and blackout are the resolvers; Travel wires them
-// to GoTo, RecoverDialogue and the wStatusFlags4 blackout bit, and the
-// tests drive the loop with fakes instead of an emulator.
+// to GoTo/Cut recovery, RecoverDialogue and the wStatusFlags4 blackout bit,
+// and the tests drive the loop with fakes instead of an emulator.
 func travel(m *emu.Emu, policy MovePolicy, maxBattles int, goTo func() error, recoverBox func() DialogueRecoveryResult, blackout func() bool, resolveBattle resolveBattle) (TravelResult, error) {
 	var res TravelResult
 	for {
