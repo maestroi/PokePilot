@@ -119,6 +119,15 @@ type LLMStats struct {
 	Intent    string `json:"intent"`
 	IntentAge int    `json:"intent_age"`
 
+	// Goal* is present only when LLMPlanner.Goal opted into the structured
+	// deterministic syntax. Summary is the human/model-facing status; the
+	// numeric fields make dashboards able to render progress without parsing
+	// prose. Complete becomes true on the final pre-model stop snapshot.
+	GoalSummary  string `json:"goal_summary,omitempty"`
+	GoalCurrent  int    `json:"goal_current,omitempty"`
+	GoalTarget   int    `json:"goal_target,omitempty"`
+	GoalComplete bool   `json:"goal_complete,omitempty"`
+
 	Choices []ChoiceCount `json:"choices"`
 }
 
