@@ -73,7 +73,7 @@ AUTO_LLM_FALLBACK_URL ?= http://192.168.50.204:8000/v1
 AUTO_LLM_FALLBACK_MODEL ?= qwen3.5-4b
 AUTO_LLM_FALLBACK_TIMEOUT ?= 60s
 
-.PHONY: run run-60 run-0 run-llm run-llm-local run-llm-auto test test-short test-race test-farm test-agent test-state vet verify farm-image farm-up farm-down
+.PHONY: run run-60 run-0 run-llm run-llm-local run-llm-auto test test-short test-race test-farm test-agent test-state fmt-check vet verify farm-image farm-up farm-down
 
 require-rom = @test -f "$(POKEMON_RED_ROM)" || { \
 	echo "POKEMON_RED_ROM not found: $(POKEMON_RED_ROM)"; \
@@ -140,9 +140,16 @@ test:
 
 # verify is deliberately ROM-free and mirrors CI. Emulator-backed fixture
 # tests skip when POKEMON_RED_ROM is empty; -short skips long journey tests.
-# A repository-wide gofmt gate is intentionally deferred until the existing
-# formatting debt is normalized in a dedicated no-behavior-change cleanup.
-verify: vet test-short test-race
+verify: fmt-check vet test-short test-race
+
+fmt-check:
+	@files="$$(gofmt -l .)"; \
+	if [ -n "$$files" ]; then \
+		echo "gofmt required:"; \
+		echo "$$files"; \
+		gofmt -d $$files; \
+		exit 1; \
+	fi
 
 vet:
 	POKEMON_RED_ROM= go vet ./...
