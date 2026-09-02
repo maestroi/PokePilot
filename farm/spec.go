@@ -109,6 +109,13 @@ type LLMStats struct {
 	Transport        int `json:"transport"`
 	Fallbacks        int `json:"fallbacks"`
 
+	// Backend and Model name the endpoint that answered the most recent ask.
+	// Backend is "primary" or "fallback"; Failovers counts primary transport
+	// failures that pinned the run to its configured fallback.
+	Backend   string `json:"backend,omitempty"`
+	Model     string `json:"model,omitempty"`
+	Failovers int    `json:"failovers,omitempty"`
+
 	Intent    string `json:"intent"`
 	IntentAge int    `json:"intent_age"`
 

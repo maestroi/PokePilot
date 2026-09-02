@@ -1,7 +1,11 @@
 package main
 
 import (
+	"fmt"
+	"os"
 	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/maestroi/pokepilot/agent"
@@ -47,10 +51,23 @@ const strategicReplanAfter = 4
 // a temporary system note asks for a materially different approach. The
 // signal never chooses that approach and is not persisted as a second memory
 // slot. Retries of the same round do not advance the counter.
+//
+// Finally, an optional fallback endpoint can be configured with
+// POKEPILOT_LLM_FALLBACK_*. Failover happens ONLY when the active planner's
+// LLMHealth.Transport counter rises during the ask: a bad model choice or
+// malformed reply stays with the same model and follows the ordinary reply
+// retry path. After one primary transport failure, the fallback is pinned for
+// the rest of the run so later rounds and reply retries do not bounce between
+// models.
 type statsPlanner struct {
-	inner *agent.LLMPlanner
-	push  func(any)      // emu.TraceStats
-	snap  *heartbeatSnap // farm heartbeat; nil on the local (non-farm) run
+	inner     *agent.LLMPlanner
+	fallback  *agent.LLMPlanner
+	active    *agent.LLMPlanner
+	backend   string
+	failovers int
+
+	push func(any)      // emu.TraceStats
+	snap *heartbeatSnap // farm heartbeat; nil on the local (non-farm) run
 
 	stats   runStats
 	counts  map[string]int
@@ -64,13 +81,63 @@ type statsPlanner struct {
 }
 
 func newStatsPlanner(inner *agent.LLMPlanner, push func(any), snap *heartbeatSnap) *statsPlanner {
-	return &statsPlanner{
+	s := &statsPlanner{
 		inner:           inner,
+		active:          inner,
+		backend:         "primary",
 		push:            push,
 		snap:            snap,
 		counts:          map[string]int{},
 		baseExtraSystem: inner.ExtraSystem,
 	}
+	s.fallback = fallbackPlannerFromEnv(inner)
+	return s
+}
+
+func fallbackPlannerFromEnv(primary *agent.LLMPlanner) *agent.LLMPlanner {
+	baseURL := strings.TrimSpace(os.Getenv("POKEPILOT_LLM_FALLBACK_URL"))
+	if baseURL == "" {
+		return nil
+	}
+	model := strings.TrimSpace(os.Getenv("POKEPILOT_LLM_FALLBACK_MODEL"))
+	if model == "" {
+		model = primary.Model
+	}
+	p := &agent.LLMPlanner{
+		BaseURL:     baseURL,
+		Model:       model,
+		Goal:        primary.Goal,
+		ExtraSystem: primary.ExtraSystem,
+		NoThink:     envBoolOr("POKEPILOT_LLM_FALLBACK_NO_THINK", primary.NoThink),
+		MaxTokens:   primary.MaxTokens,
+		Log:         primary.Log,
+		PromptLog:   primary.PromptLog,
+		ReplyLog:    primary.ReplyLog,
+	}
+	if token, ok := os.LookupEnv("POKEPILOT_LLM_FALLBACK_TOKEN"); ok {
+		p.Token = token
+	} else {
+		p.Token = primary.Token
+	}
+	if v := strings.TrimSpace(os.Getenv("POKEPILOT_LLM_FALLBACK_MAX_TOKENS")); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			p.MaxTokens = n
+		}
+	}
+	if v := strings.TrimSpace(os.Getenv("POKEPILOT_LLM_FALLBACK_TIMEOUT")); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			p.Timeout = d
+		}
+	}
+	return p
+}
+
+func envBoolOr(name string, fallback bool) bool {
+	v, ok := os.LookupEnv(name)
+	if !ok {
+		return fallback
+	}
+	return v != "" && v != "0"
 }
 
 func (s *statsPlanner) Next(obs agent.Observation, offered []agent.Objective) (agent.Objective, error) {
@@ -81,10 +148,7 @@ func (s *statsPlanner) Next(obs agent.Observation, offered []agent.Objective) (a
 		return agent.Objective{}, agent.ErrDone
 	}
 	s.prepareStrategy(obs)
-	start := time.Now()
-	o, err := s.inner.Next(obs, offered)
-	s.record(obs, len(offered), o, err, time.Since(start))
-	return o, err
+	return s.ask(obs, offered, nil)
 }
 
 func (s *statsPlanner) NextRetry(obs agent.Observation, offered []agent.Objective, r agent.Retry) (agent.Objective, error) {
@@ -95,10 +159,59 @@ func (s *statsPlanner) NextRetry(obs agent.Observation, offered []agent.Objectiv
 		return agent.Objective{}, agent.ErrDone
 	}
 	s.prepareStrategy(obs)
-	start := time.Now()
-	o, err := s.inner.NextRetry(obs, offered, r)
-	s.record(obs, len(offered), o, err, time.Since(start))
+	return s.ask(obs, offered, &r)
+}
+
+func (s *statsPlanner) ask(obs agent.Observation, offered []agent.Objective, retry *agent.Retry) (agent.Objective, error) {
+	p := s.active
+	backend := s.backend
+	s.syncPlannerContext(p)
+	o, err, transport := s.callPlanner(p, backend, obs, offered, retry)
+	if transport && p == s.inner && s.fallback != nil {
+		s.failovers++
+		s.active = s.fallback
+		s.backend = "fallback"
+		if s.inner.Log != nil {
+			fmt.Fprintf(s.inner.Log,
+				"  llm route: primary %s at %s had a transport failure; pinning fallback %s at %s for the rest of the run\n",
+				s.inner.Model, s.inner.BaseURL, s.fallback.Model, s.fallback.BaseURL)
+		}
+		p = s.fallback
+		backend = s.backend
+		s.syncPlannerContext(p)
+		o, err, transport = s.callPlanner(p, backend, obs, offered, retry)
+	}
+	if err != nil && transport {
+		return agent.Objective{}, fmt.Errorf("%w: %v", agent.ErrTransport, err)
+	}
 	return o, err
+}
+
+func (s *statsPlanner) callPlanner(p *agent.LLMPlanner, backend string, obs agent.Observation, offered []agent.Objective, retry *agent.Retry) (agent.Objective, error, bool) {
+	beforeTransport := p.Health.Transport
+	start := time.Now()
+	var (
+		o   agent.Objective
+		err error
+	)
+	if retry == nil {
+		o, err = p.Next(obs, offered)
+	} else {
+		o, err = p.NextRetry(obs, offered, *retry)
+	}
+	s.recordFrom(p, backend, obs, len(offered), o, err, time.Since(start))
+	return o, err, p.Health.Transport > beforeTransport
+}
+
+func (s *statsPlanner) syncPlannerContext(p *agent.LLMPlanner) {
+	if p == nil || p == s.inner {
+		return
+	}
+	p.Goal = s.inner.Goal
+	p.ExtraSystem = s.inner.ExtraSystem
+	p.Log = s.inner.Log
+	p.PromptLog = s.inner.PromptLog
+	p.ReplyLog = s.inner.ReplyLog
 }
 
 func (s *statsPlanner) goalDone(obs agent.Observation) (bool, error) {
@@ -132,6 +245,10 @@ func (s *statsPlanner) prepareStrategy(obs agent.Observation) {
 // rejection counts as a call and as a rejection, never as a round: the
 // round is the same one, asked again.
 func (s *statsPlanner) record(obs agent.Observation, offered int, o agent.Objective, err error, took time.Duration) {
+	s.recordFrom(s.active, s.backend, obs, offered, o, err, took)
+}
+
+func (s *statsPlanner) recordFrom(p *agent.LLMPlanner, backend string, obs agent.Observation, offered int, o agent.Objective, err error, took time.Duration) {
 	s.stats.Calls++
 	s.offered += offered
 	s.elapsed += took
@@ -140,8 +257,9 @@ func (s *statsPlanner) record(obs agent.Observation, offered int, o agent.Object
 	s.stats.AvgSeconds = s.elapsed.Seconds() / float64(s.stats.Calls)
 	s.stats.Round, s.stats.RoundsLeft = obs.Round, obs.RoundsLeft
 	s.stats.Intent, s.stats.IntentAge = obs.Intent, obs.IntentAge
+	s.stats.Backend, s.stats.Model, s.stats.Failovers = backend, p.Model, s.failovers
 
-	h := s.inner.Health
+	h := s.health()
 	s.stats.PromptTokens, s.stats.CompletionTokens = h.PromptTokens, h.CompletionTokens
 	s.stats.Transport, s.stats.Fallbacks = h.Transport, h.Fallbacks
 
@@ -162,6 +280,27 @@ func (s *statsPlanner) record(obs agent.Observation, offered int, o agent.Object
 	if s.push != nil {
 		s.push(s.stats)
 	}
+}
+
+func (s *statsPlanner) health() agent.LLMHealth {
+	h := s.inner.Health
+	if s.fallback == nil {
+		return h
+	}
+	f := s.fallback.Health
+	h.Transport += f.Transport
+	h.Rejected += f.Rejected
+	h.Fallbacks += f.Fallbacks
+	h.PromptTokens += f.PromptTokens
+	h.CompletionTokens += f.CompletionTokens
+	return h
+}
+
+// Usage makes the live local path preserve agent.Run's model-spend totals
+// even though statsPlanner sits between Run and the concrete LLMPlanner.
+func (s *statsPlanner) Usage() (prompt, completion int) {
+	h := s.health()
+	return h.PromptTokens, h.CompletionTokens
 }
 
 // rankChoices orders the tally most-chosen first, ties by name so the panel

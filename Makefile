@@ -55,7 +55,21 @@ LOCAL_LLM_NO_THINK ?= 1
 LOCAL_LLM_MAX_TOKENS ?= 1024
 LOCAL_LLM_TIMEOUT ?= 300s
 
-.PHONY: run run-60 run-0 run-llm run-llm-local test test-short test-race test-farm test-agent test-state vet verify farm-image farm-up farm-down
+# GPU-first local routing. The primary is the same localhost model above,
+# but with a deliberately short timeout: when the 4090 is occupied by the
+# coding agent, queueing behind it is worse than moving the run to the
+# always-on CPU model. statsPlanner fails over only on a transport failure
+# and then pins the fallback for the rest of the run.
+AUTO_LLM_URL ?= $(LOCAL_LLM_URL)
+AUTO_LLM_MODEL ?= $(LOCAL_LLM_MODEL)
+AUTO_LLM_NO_THINK ?= 1
+AUTO_LLM_MAX_TOKENS ?= 1024
+AUTO_LLM_TIMEOUT ?= 5s
+AUTO_LLM_FALLBACK_URL ?= http://192.168.50.204:8000/v1
+AUTO_LLM_FALLBACK_MODEL ?= qwen3.5-4b
+AUTO_LLM_FALLBACK_TIMEOUT ?= 60s
+
+.PHONY: run run-60 run-0 run-llm run-llm-local run-llm-auto test test-short test-race test-farm test-agent test-state vet verify farm-image farm-up farm-down
 
 require-rom = @test -f "$(POKEMON_RED_ROM)" || { \
 	echo "POKEMON_RED_ROM not found: $(POKEMON_RED_ROM)"; \
@@ -92,6 +106,26 @@ run-llm-local:
 	POKEPILOT_LLM_NO_THINK=$(LOCAL_LLM_NO_THINK) \
 	POKEPILOT_LLM_MAX_TOKENS=$(LOCAL_LLM_MAX_TOKENS) \
 	POKEPILOT_LLM_TIMEOUT=$(LOCAL_LLM_TIMEOUT) \
+	llm_token= \
+	go run ./cmd/pokepilot -planner llm -fps 0 $(ARGS)
+
+# Prefer the idle 4090, but keep the LAN/CPU model as a real fallback. The
+# fallback URL/model are taken from the sourced POKEPILOT_LLM_* values when
+# present, so an operator's .env still wins over these Make defaults. Capture
+# the LAN bearer token into the fallback-specific variable before clearing
+# llm_token for localhost.
+run-llm-auto:
+	$(require-rom)
+	$(load_env) \
+	POKEPILOT_LLM_FALLBACK_URL="$${POKEPILOT_LLM_URL:-$(AUTO_LLM_FALLBACK_URL)}" \
+	POKEPILOT_LLM_FALLBACK_MODEL="$${POKEPILOT_LLM_MODEL:-$(AUTO_LLM_FALLBACK_MODEL)}" \
+	POKEPILOT_LLM_FALLBACK_TOKEN="$$llm_token" \
+	POKEPILOT_LLM_FALLBACK_TIMEOUT=$(AUTO_LLM_FALLBACK_TIMEOUT) \
+	POKEPILOT_LLM_URL=$(AUTO_LLM_URL) \
+	POKEPILOT_LLM_MODEL=$(AUTO_LLM_MODEL) \
+	POKEPILOT_LLM_NO_THINK=$(AUTO_LLM_NO_THINK) \
+	POKEPILOT_LLM_MAX_TOKENS=$(AUTO_LLM_MAX_TOKENS) \
+	POKEPILOT_LLM_TIMEOUT=$(AUTO_LLM_TIMEOUT) \
 	llm_token= \
 	go run ./cmd/pokepilot -planner llm -fps 0 $(ARGS)
 
