@@ -54,6 +54,10 @@ LOCAL_LLM_MODEL ?= qwen3.8-27b
 LOCAL_LLM_NO_THINK ?= 1
 LOCAL_LLM_MAX_TOKENS ?= 1024
 LOCAL_LLM_TIMEOUT ?= 300s
+# 32 is the unattended guardrail on run-llm. Local watching defaults
+# higher so a session is not cut off mid-route. Override with
+# ARGS='-max-rounds N' or LOCAL_LLM_MAX_ROUNDS=N.
+LOCAL_LLM_MAX_ROUNDS ?= 128
 
 # GPU-first local routing. The primary is the same localhost model above.
 # Give a real generation enough time to finish, but still fail over well
@@ -107,7 +111,7 @@ run-llm-local:
 	POKEPILOT_LLM_MAX_TOKENS=$(LOCAL_LLM_MAX_TOKENS) \
 	POKEPILOT_LLM_TIMEOUT=$(LOCAL_LLM_TIMEOUT) \
 	llm_token= \
-	go run ./cmd/pokepilot -planner llm -fps 0 $(ARGS)
+	go run ./cmd/pokepilot -planner llm -fps 0 -max-rounds $(LOCAL_LLM_MAX_ROUNDS) $(ARGS)
 
 # Prefer the idle 4090, but keep the LAN/CPU model as a real fallback. The
 # fallback URL/model are taken from the sourced POKEPILOT_LLM_* values when
