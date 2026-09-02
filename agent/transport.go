@@ -1,5 +1,7 @@
 package agent
 
+import "fmt"
+
 // ErrTransport marks an LLM transport failure: the request never produced a
 // usable model reply (dial error, timeout, non-200 response, malformed
 // envelope, and similar failures counted in LLMHealth.Transport).
@@ -10,9 +12,4 @@ package agent
 // quoting rejection feedback cannot make a busy or unreachable backend
 // answer. Callers can still distinguish this class with errors.Is(err,
 // ErrTransport).
-var ErrTransport error = transportErrorSentinel{}
-
-type transportErrorSentinel struct{}
-
-func (transportErrorSentinel) Error() string { return "agent: llm planner: transport failure" }
-func (transportErrorSentinel) Unwrap() error { return ErrNotFinished }
+var ErrTransport = fmt.Errorf("agent: llm planner: transport failure: %w", ErrNotFinished)
