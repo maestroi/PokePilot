@@ -22,6 +22,43 @@ func TestStrategicMemoryDetectsLongHorizonStallUsingIntent(t *testing.T) {
 	}
 }
 
+func TestStrategicMemoryDetectsPingPongMapLoop(t *testing.T) {
+	var m StrategicMemory
+	base := Observation{Party: []PartyMon{{Level: 12}}}
+	maps := []uint8{1, 2, 1, 2, 1, 2, 1}
+	for i, mapID := range maps {
+		obs := base
+		obs.Map = mapID
+		progressed := m.ObserveProgress(obs, 0)
+		if i < 2 && !progressed {
+			t.Fatalf("observation %d on new map %d did not count as progress", i, mapID)
+		}
+	}
+	if m.NoProgress != 5 {
+		t.Fatalf("NoProgress = %d, want 5 after repeated A-B loop", m.NoProgress)
+	}
+	if reason := m.ReplanReason(4, "explore"); reason == "" {
+		t.Fatal("ping-pong map loop did not trigger replan signal")
+	}
+}
+
+func TestStrategicMemoryCreditsMapAfterItLeavesRecentWindow(t *testing.T) {
+	var m StrategicMemory
+	base := Observation{Party: []PartyMon{{Level: 12}}}
+	for _, mapID := range []uint8{1, 2, 3, 4, 5} {
+		obs := base
+		obs.Map = mapID
+		if !m.ObserveProgress(obs, 0) {
+			t.Fatalf("new map %d did not count as progress", mapID)
+		}
+	}
+	obs := base
+	obs.Map = 1
+	if !m.ObserveProgress(obs, 0) {
+		t.Fatal("map outside recent window should count as fresh local progress")
+	}
+}
+
 func TestStrategicMemoryCanSignalWithoutIntent(t *testing.T) {
 	var m StrategicMemory
 	obs := Observation{Map: 1, Party: []PartyMon{{Level: 12}}}
