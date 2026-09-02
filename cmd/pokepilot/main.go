@@ -44,7 +44,7 @@ func main() {
 	planner := flag.String("planner", "scripted", "how to choose objectives: scripted or llm")
 	seed := flag.Int64("seed", 0, "diverge this run's luck by burning seed-derived idle frames after boot; 0 replays bit-identically")
 	maxRounds := flag.Int("max-rounds", llmMaxRounds, "objectives one llm run may spend; each costs a model call. The default is a guardrail for an unattended run, not a target — raise it to ask how far the greedy loop actually gets")
-	goal := flag.String("goal", "Earn the Boulder Badge.", "the task statement given to the llm planner: what it is trying to do, never how. Empty means no goal, which is what made slice 6's scoreboard void")
+	goal := flag.String("goal", "Earn the Boulder Badge.", "the task statement given to the llm planner. Structured goals stop deterministically: badges:N | reach:<place> | level:N | item:<name> | elite-four. Other text is prompt-only; empty means no goal")
 	checkpointDir := flag.String("checkpoint-dir", "", "directory for the per-objective save-state ring (agent.Budget.CheckpointDir): a run that dies (a wedged battle, a stuck loop) leaves a state to replay instead of a stack trace. Empty (default) writes nothing, which is why SLICE10-CANDIDATES.md item 19's wedged battle has never been reproduced")
 	flag.Parse()
 
