@@ -12,8 +12,8 @@ github.com/hashicorp/golang-lru/v2 v2.0.7 h1:a+bsQ5rvGLjzHuww6tVxozPZFVghXaHOwFs
 github.com/hashicorp/golang-lru/v2 v2.0.7/go.mod h1:QeFd9opnmA6QUJc5vARoKUSoFhyfM2/ZepoAG6RGpeM=
 github.com/klauspost/compress v1.19.2 h1:hMRETovs/pu/dVWN7zIT1PGG8t509MwT6bO7XSi26R8=
 github.com/klauspost/compress v1.19.2/go.mod h1:cwPg85FWrGar70rWktvGQj8/hthj3wpl0PGDogxkrSQ=
-github.com/maestroi/gomeboy v0.0.0-20260901100952-828c2c01e328 h1:99nRz/8aE5CPAvbiLEAOu1LxsWmofkp35oiSICklh9Y=
-github.com/maestroi/gomeboy v0.0.0-20260901100952-828c2c01e328/go.mod h1:bSbV37qrUCdJ+aWTIkjf1p8f6B4aMt/pokm9gvVkSFk=
+github.com/maestroi/gomeboy v0.1.1-0.20260902215211-64bd13918748 h1:HgiWJEB6+1pGOarFEQOIkcUrIdSZlAMIC7Ku4HBiHsw=
+github.com/maestroi/gomeboy v0.1.1-0.20260902215211-64bd13918748/go.mod h1:bSbV37qrUCdJ+aWTIkjf1p8f6B4aMt/pokm9gvVkSFk=
 github.com/pierrec/lz4/v4 v4.1.29 h1:CDQY6qZOLI4DW0Nx6R1vRrifrCeQHnNXkMb0hZWXFjg=
 github.com/pierrec/lz4/v4 v4.1.29/go.mod h1:EoQMVJgeeEOMsCqCzqFm2O0cJvljX2nGZjcRIPL34O4=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
