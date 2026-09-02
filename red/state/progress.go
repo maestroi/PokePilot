@@ -72,6 +72,11 @@ const (
 	// Set by Route22Rival1AfterBattleScript (pokered/scripts/Route22.asm:167),
 	// the only setter in the decomp; it is what unlocks Oak's .give_poke_balls.
 	EventBeatRoute22Rival1stBattle Event = 1317
+	// The run-ending flag: set once the Champion is beaten, which is what
+	// the elite-four goal stops on. Index read out of
+	// testdata/event_constants.asm by parseEventConstants (see
+	// TestEventIndicesMatchDecomp), never hand-counted.
+	EventBeatChampionRival Event = 2305
 )
 
 var eventNames = map[Event]string{
@@ -84,6 +89,7 @@ var eventNames = map[Event]string{
 	EventOakAppearedInPallet:       "OakAppearedInPallet",
 	EventGotOaksParcel:             "GotOaksParcel",
 	EventBeatRoute22Rival1stBattle: "BeatRoute22Rival1stBattle",
+	EventBeatChampionRival:         "BeatChampionRival",
 }
 
 // String renders the event name; unnamed indices render as "unknown(N)".
