@@ -87,6 +87,11 @@ make run-llm ARGS='-goal badges:1'
 make run-llm-auto ARGS='-goal "reach:pewter city"'
 ```
 
+The default is `elite-four`. Nothing reaches the Champion yet, so a default
+run ends on the round cap rather than on success, and each round carries its
+own progress ("badges N/8") into the planner's prompt. Use `-goal badges:1`
+for a short run that can actually finish.
+
 Each round the model picks one of the offered objectives — `take a starter`
 plus one `go to <place>` per name `skill.Place` accepts — and the round is
 printed to stdout, so an unattended run leaves a log a human can read in the

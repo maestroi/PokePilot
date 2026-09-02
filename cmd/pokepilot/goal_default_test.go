@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/maestroi/pokepilot/agent"
+	"github.com/maestroi/pokepilot/red/state"
 )
 
 // The default goal must be a STRUCTURED goal, not prose. MEASURED
@@ -22,10 +23,20 @@ func TestDefaultGoalStopsDeterministically(t *testing.T) {
 		t.Fatalf("default goal %q is prompt-only prose; a run using it can never stop on success", defaultGoal)
 	}
 
-	if status := agent.EvaluateGoal(g, agent.Observation{Badges: []string{"Boulder"}}); !status.Complete {
-		t.Fatalf("default goal not complete once the Boulder badge is held: %+v", status)
+	// Reachable: the predicate must fire from the event spelling Observe
+	// actually writes, or the default is prose with extra steps.
+	done := agent.Observation{Events: []string{state.EventBeatChampionRival.String()}}
+	if status := agent.EvaluateGoal(g, done); !status.Complete {
+		t.Fatalf("default goal not complete once the Champion is beaten: %+v", status)
 	}
-	if status := agent.EvaluateGoal(g, agent.Observation{}); status.Complete {
-		t.Fatal("default goal complete with no badges")
+	// And it must not complete early: eight badges is not a finished game.
+	eight := agent.Observation{Badges: []string{"Boulder", "Cascade", "Thunder", "Rainbow", "Soul", "Marsh", "Volcano", "Earth"}}
+	if status := agent.EvaluateGoal(g, eight); status.Complete {
+		t.Fatalf("default goal complete on badges alone: %+v", status)
+	}
+	// While incomplete it must still report graded progress: that summary is
+	// the per-round system note, and an empty one teaches the model nothing.
+	if status := agent.EvaluateGoal(g, eight); status.Summary == "" {
+		t.Fatal("default goal reports no progress summary while incomplete")
 	}
 }

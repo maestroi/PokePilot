@@ -40,8 +40,19 @@ const (
 // correctly withheld the gym challenge (a beaten leader will not rebattle),
 // and with no stop condition the run ping-ponged Pewter City <-> Pewter Gym
 // from round 75 to the cap, spending a model call a round on nothing.
-// "badges:1" is the same aim, spelled so the run can finish it.
-const defaultGoal = "badges:1"
+//
+// elite-four rather than badges:1 because a goal that stops at Brock throws
+// away the interesting half of every run: run-llm-local budgets 128 rounds
+// and the badge landed around round 70. It also fixes that loop by
+// INFORMING rather than terminating — while incomplete, the goal's status
+// rides the system prompt every round as "badges N/8", which is exactly the
+// fact the looping model had in its observation and ignored.
+//
+// The honest cost: at the current capability no run reaches the Champion,
+// so the default run ends on the round cap, not on success. That is the
+// guardrail doing its job (see llmMaxRounds), not a goal that failed. Ask
+// for a run that can finish with -goal badges:1.
+const defaultGoal = "elite-four"
 
 func main() {
 	addr := flag.String("http", "localhost:8099", "address to serve the screen on")
