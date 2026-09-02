@@ -2,7 +2,10 @@ module github.com/maestroi/pokepilot
 
 go 1.26.0
 
-require github.com/thelolagemann/gomeboy v0.0.0
+require (
+	github.com/modelcontextprotocol/go-sdk v1.7.0
+	github.com/thelolagemann/gomeboy v0.0.0
+)
 
 require (
 	github.com/andybalholm/brotli v1.2.2 // indirect
