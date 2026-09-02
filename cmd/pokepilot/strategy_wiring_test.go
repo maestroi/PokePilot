@@ -31,6 +31,31 @@ func TestStatsPlannerSurfacesReplanSignalFromCarriedIntent(t *testing.T) {
 	}
 }
 
+func TestStatsPlannerSurfacesReplanWhenOnlyLevelsAdvance(t *testing.T) {
+	inner := &agent.LLMPlanner{}
+	p := newStatsPlanner(inner, nil, nil, nil)
+
+	for round := 1; round <= strategicReplanAfter+1; round++ {
+		p.prepareRunContext(agent.Observation{
+			Round:  round,
+			Map:    2,
+			Intent: "keep training near pewter",
+			Badges: []string{"boulder"},
+			Party:  []agent.PartyMon{{Level: uint8(15 + round)}},
+		})
+	}
+
+	if p.strategy.NoProgress != 0 {
+		t.Fatalf("level gains should remain measurable progress: %d", p.strategy.NoProgress)
+	}
+	if p.strategy.NoWorldProgress < strategicReplanAfter {
+		t.Fatalf("world-progress counter = %d, want >= %d", p.strategy.NoWorldProgress, strategicReplanAfter)
+	}
+	if !strings.Contains(inner.ExtraSystem, "RUN REPLAN SIGNAL") || !strings.Contains(inner.ExtraSystem, "no new badge, event, or map progress") {
+		t.Fatalf("level-only world stall did not reach planner: %q", inner.ExtraSystem)
+	}
+}
+
 func TestStatsPlannerCountsOneProgressSamplePerRound(t *testing.T) {
 	p := newStatsPlanner(&agent.LLMPlanner{}, nil, nil, nil)
 	obs := agent.Observation{Round: 1, Map: 1, Party: []agent.PartyMon{{Level: 8}}}
