@@ -225,4 +225,26 @@ func (m *Emu) Pace(fps int) {
 		return
 	}
 	m.frameDur = time.Second / time.Duration(fps)
+	m.nextFrame = time.Time{}
+}
+
+// throttle sleeps until n frames' worth of wall clock has passed.
+func (m *Emu) throttle(n int) {
+	if m.frameDur <= 0 {
+		return
+	}
+	if m.nextFrame.IsZero() {
+		m.nextFrame = time.Now()
+	}
+	m.nextFrame = m.nextFrame.Add(time.Duration(n) * m.frameDur)
+	d := time.Until(m.nextFrame)
+	switch {
+	case d > 0:
+		time.Sleep(d)
+	case d < -time.Second:
+		// ponytail: fell more than a second behind (a slow capture, a
+		// descheduled process). Resync instead of sprinting to catch up,
+		// which would look worse than the hitch we already took.
+		m.nextFrame = time.Now()
+	}
 }
