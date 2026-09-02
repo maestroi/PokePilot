@@ -34,6 +34,9 @@ jobs:
           go mod download
           git diff --exit-code -- go.mod go.sum
 
+      - name: Check formatting
+        run: make fmt-check
+
       - name: Vet
         env:
           POKEMON_RED_ROM: ""

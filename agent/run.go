@@ -21,12 +21,12 @@ import (
 type Stop uint8
 
 const (
-	StopUnset Stop = iota // the zero value: no stop reason set yet. Never reported.
-	StopDone              // the planner reported ErrDone
-	StopStuck             // no progress for too many rounds
-	StopBudget            // the round or frame budget ran out
-	StopFailed            // consecutive objective failures exhausted the failure budget
-	StopError             // a planner error, or nothing is possible from here
+	StopUnset  Stop = iota // the zero value: no stop reason set yet. Never reported.
+	StopDone               // the planner reported ErrDone
+	StopStuck              // no progress for too many rounds
+	StopBudget             // the round or frame budget ran out
+	StopFailed             // consecutive objective failures exhausted the failure budget
+	StopError              // a planner error, or nothing is possible from here
 )
 
 // Result is the outcome of a run.

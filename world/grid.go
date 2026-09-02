@@ -18,7 +18,7 @@ import (
 const (
 	tilesetsBank    uint8  = 0x03
 	tilesetsAddr    uint16 = 0x47BE
-	tilesetEntryLen      = 12
+	tilesetEntryLen        = 12
 )
 
 // Grid is a map's walkability, indexed [y][x] in game tile coordinates —

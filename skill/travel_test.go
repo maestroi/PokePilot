@@ -475,10 +475,9 @@ func route3PostBrockEmu(t *testing.T) *emu.Emu {
 	// EVENT_BEAT_BROCK is event flag 0x77 (event_constants.asm: const_next $68,
 	// +2 consts, const_skip 8 -> 0x72 TRAINER_0, const_skip 3 -> 0x76 GOT_TM34,
 	// 0x77 BEAT_BROCK): byte 14, bit 6 of wEventFlags.
-	if got := mem.U8(sym.EventFlags + 14) & (1 << 6); got == 0 {
+	if got := mem.U8(sym.EventFlags+14) & (1 << 6); got == 0 {
 		diagFatalf(t, e, nil, "setup: EVENT_BEAT_BROCK not set after the gym (wEventFlags+14=%#02x)", mem.U8(sym.EventFlags+14))
 	}
 	t.Log("setup: Brock beaten; crossing Route 3 from here")
 	return e
 }
-

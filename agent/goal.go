@@ -38,11 +38,11 @@ type GoalStatus struct {
 
 // ParseGoal accepts the stable structured spelling for run goals.
 //
-//   elite-four
-//   badges:8
-//   reach:cerulean city
-//   level:25
-//   item:potion
+//	elite-four
+//	badges:8
+//	reach:cerulean city
+//	level:25
+//	item:potion
 //
 // Empty input means no deterministic goal. Arbitrary prose is deliberately
 // rejected here: free-text LLMPlanner.Goal values remain valid prompt text,

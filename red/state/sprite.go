@@ -7,7 +7,7 @@ import "github.com/maestroi/pokepilot/red/sym"
 // player and slots 1..15 hold the current map's objects. The offsets below are
 // the fields this decoder reads; they are kept local to this file.
 const (
-	spriteSlotSize   uint16 = 0x10
+	spriteSlotSize  uint16 = 0x10
 	spriteFirstSlot        = 1
 	spriteLastSlot         = 15
 

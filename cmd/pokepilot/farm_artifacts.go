@@ -23,30 +23,30 @@ const (
 	// periodicCheckpointFrames is five minutes at 60 fps.
 	periodicCheckpointFrames = 18_000
 	// periodicCheckpointKeep is the local flight-recorder window.
-	periodicCheckpointKeep = 12
+	periodicCheckpointKeep  = 12
 	checkpointUploadTimeout = 2 * time.Second
 	farmFinishTimeout       = 30 * time.Second
 )
 
 type periodicSample struct {
-	Name  string
-	State []byte
-	Meta  []byte
-	Frame uint64
-	Map   uint8
-	X, Y  uint8
+	Name                      string
+	State                     []byte
+	Meta                      []byte
+	Frame                     uint64
+	Map                       uint8
+	X, Y                      uint8
 	Question, Decision, Trace string
 }
 
 type periodicMeta struct {
-	Frame                       uint64 `json:"frame"`
-	Map                         uint8  `json:"map"`
-	X                           uint8  `json:"x"`
-	Y                           uint8  `json:"y"`
-	Question                    string `json:"question,omitempty"`
-	Decision                    string `json:"decision,omitempty"`
-	Trace                       string `json:"trace,omitempty"`
-	LatestObjectiveCheckpoint   string `json:"latest_objective_checkpoint,omitempty"`
+	Frame                     uint64 `json:"frame"`
+	Map                       uint8  `json:"map"`
+	X                         uint8  `json:"x"`
+	Y                         uint8  `json:"y"`
+	Question                  string `json:"question,omitempty"`
+	Decision                  string `json:"decision,omitempty"`
+	Trace                     string `json:"trace,omitempty"`
+	LatestObjectiveCheckpoint string `json:"latest_objective_checkpoint,omitempty"`
 }
 
 func periodicStateName(frame uint64) string {

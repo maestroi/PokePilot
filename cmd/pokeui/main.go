@@ -33,6 +33,7 @@ var uiJS []byte
 
 // mapFiles holds build-time semantic map exports. The directory is kept in
 // the repository even before a local ROM owner generates the JSON assets.
+//
 //go:embed ui/maps
 var mapFiles embed.FS
 

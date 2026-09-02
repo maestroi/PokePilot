@@ -95,17 +95,17 @@ func TestStatusPredicates(t *testing.T) {
 		poisoned bool
 		name     string
 	}{
-		{0b00000000, false, false, ""},       // healthy
-		{0b00000001, true, false, "asleep"},   // 1-turn sleep
-		{0b00000010, true, false, "asleep"},   // 2-turn sleep
-		{0b00000111, true, false, "asleep"},   // 7-turn sleep
-		{0b00001000, false, true, "poisoned"}, // PSN, bit 3
-		{0b00010000, false, false, "burned"},  // BRN, bit 4
-		{0b00100000, false, false, "frozen"},  // FRZ, bit 5
+		{0b00000000, false, false, ""},          // healthy
+		{0b00000001, true, false, "asleep"},     // 1-turn sleep
+		{0b00000010, true, false, "asleep"},     // 2-turn sleep
+		{0b00000111, true, false, "asleep"},     // 7-turn sleep
+		{0b00001000, false, true, "poisoned"},   // PSN, bit 3
+		{0b00010000, false, false, "burned"},    // BRN, bit 4
+		{0b00100000, false, false, "frozen"},    // FRZ, bit 5
 		{0b01000000, false, false, "paralyzed"}, // PAR, bit 6
-		{0b00001111, true, true, "asleep"},    // sleep + poison
-		{0b00011000, false, true, "poisoned"}, // poison + burn
-		{0b01100111, true, false, "asleep"},   // sleep + freeze + paralyze
+		{0b00001111, true, true, "asleep"},      // sleep + poison
+		{0b00011000, false, true, "poisoned"},   // poison + burn
+		{0b01100111, true, false, "asleep"},     // sleep + freeze + paralyze
 	}
 	for _, tc := range tests {
 		m := Mon{Status: tc.status}

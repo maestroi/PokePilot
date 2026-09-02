@@ -91,9 +91,9 @@ func hashState(t *testing.T, m *emu.Emu) [32]byte {
 
 	m.PeekInto(0xC000, buf[:0x1000]) // WRAM
 	h.Write(buf[:0x1000])
-	m.PeekInto(0x8000, buf)          // VRAM: tile patterns + both tile maps
+	m.PeekInto(0x8000, buf) // VRAM: tile patterns + both tile maps
 	h.Write(buf)
-	m.PeekInto(0xFE00, buf[:0x100])  // OAM + BGP + OBP
+	m.PeekInto(0xFE00, buf[:0x100]) // OAM + BGP + OBP
 	h.Write(buf[:0x100])
 
 	var digest [32]byte

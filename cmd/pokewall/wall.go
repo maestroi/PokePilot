@@ -120,7 +120,7 @@ type tileRow struct {
 	Raw        string           `json:"raw,omitempty"`
 	StopSoFar  string           `json:"stop_so_far"`
 	Sprites    []farm.MapSprite `json:"sprites,omitempty"`
-	Trail      [][2]uint8        `json:"trail,omitempty"`
+	Trail      [][2]uint8       `json:"trail,omitempty"`
 	Stats      *farm.LLMStats   `json:"stats,omitempty"`
 	Attempts   int              `json:"attempts"`
 	Reason     string           `json:"reason"`

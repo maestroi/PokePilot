@@ -327,15 +327,15 @@ func walkLab(m *emu.Emu, romData []byte, tx, ty int, blocked map[[2]int]bool) er
 	var planErr error
 	err = walkAround(func() map[[2]int]bool { return mergeBlockers(spriteBlockers(m), blocked) },
 		func(blocked map[[2]int]bool) ([]world.Step, error) {
-		x, y := playerXY(m)
-		steps, err := world.FindPath(grid, int(x), int(y), tx, ty, blocked)
-		if err != nil {
-			planErr = fmt.Errorf("skill: GetStarter: no path on map %#04x from (%d,%d) to (%d,%d): %w",
-				oaksLabMap, x, y, tx, ty, err)
-			return nil, planErr
-		}
-		return steps, nil
-	}, func(steps []world.Step) error { return WalkPath(m, steps) },
+			x, y := playerXY(m)
+			steps, err := world.FindPath(grid, int(x), int(y), tx, ty, blocked)
+			if err != nil {
+				planErr = fmt.Errorf("skill: GetStarter: no path on map %#04x from (%d,%d) to (%d,%d): %w",
+					oaksLabMap, x, y, tx, ty, err)
+				return nil, planErr
+			}
+			return steps, nil
+		}, func(steps []world.Step) error { return WalkPath(m, steps) },
 		func() { m.StepFrames(npcWaitFrames) })
 	if err == nil || err == planErr {
 		return err

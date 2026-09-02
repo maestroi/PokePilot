@@ -261,14 +261,14 @@ func starterFor(name string) skill.Starter {
 
 // runResult is one row of the scoreboard. Every duration is emulated frames.
 type runResult struct {
-	starter string
-	seed    int64
-	badge   bool
-	frames  uint64 // from starter-in-hand to stop
-	toBadge uint64 // frames until the badge was observed; 0 when no badge
-	calls   int    // planner calls
-	ok      int    // objectives completed
-	failed    int // objectives attempted that failed
+	starter   string
+	seed      int64
+	badge     bool
+	frames    uint64 // from starter-in-hand to stop
+	toBadge   uint64 // frames until the badge was observed; 0 when no badge
+	calls     int    // planner calls
+	ok        int    // objectives completed
+	failed    int    // objectives attempted that failed
 	battles   int
 	blackouts int
 	stop      string

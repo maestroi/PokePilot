@@ -13,7 +13,7 @@ import (
 func writeLiveSlot(m *Mem, slot, x, y int, pictureID uint8) {
 	data1 := sym.SpritePlayerStateData1 + uint16(slot)*0x10
 	data2 := sym.SpriteStateData2 + uint16(slot)*0x10
-	m[data1+0x00] = pictureID     // SPRITESTATEDATA1_PICTUREID
+	m[data1+0x00] = pictureID    // SPRITESTATEDATA1_PICTUREID
 	m[data1+0x02] = 0x00         // SPRITESTATEDATA1_IMAGEINDEX (enabled)
 	m[data2+0x04] = uint8(y + 4) // SPRITESTATEDATA2_MAPY (with +4 bias)
 	m[data2+0x05] = uint8(x + 4) // SPRITESTATEDATA2_MAPX (with +4 bias)

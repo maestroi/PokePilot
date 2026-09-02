@@ -866,7 +866,7 @@ type replyPlanner struct {
 	rejects   int
 	next      int
 	asks      int
-	feedback  []string // the Feedback half of every Retry handed to NextRetry
+	feedback  []string      // the Feedback half of every Retry handed to NextRetry
 	retries   []agent.Retry // every Retry handed to NextRetry, in order
 }
 

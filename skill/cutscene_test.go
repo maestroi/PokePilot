@@ -36,10 +36,10 @@ func TestCutsceneEnduresOakGate(t *testing.T) {
 	// map (20x18 tiles): right to a clear column, up to the exit row, right to
 	// the exit, up to y==1. The gate fires at y==1.
 	path := []world.Step{
-		world.StepRight, world.StepRight, world.StepRight,    // (5,6) -> (8,6)
+		world.StepRight, world.StepRight, world.StepRight, // (5,6) -> (8,6)
 		world.StepUp, world.StepUp, world.StepUp, world.StepUp, // (8,6) -> (8,2)
-		world.StepRight, world.StepRight,                     // (8,2) -> (10,2)
-		world.StepUp,                                         // (10,2) -> (10,1): the gate fires at y==1
+		world.StepRight, world.StepRight, // (8,2) -> (10,2)
+		world.StepUp, // (10,2) -> (10,1): the gate fires at y==1
 	}
 	if err := skill.WalkPath(e, path); err != nil {
 		t.Fatalf("WalkPath to the north exit: %v", err)
