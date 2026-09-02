@@ -224,6 +224,7 @@ var knownEvents = []state.Event{
 	state.EventGotPokeballsFromOak,
 	state.EventGotPokedex,
 	state.EventOakAppearedInPallet,
+	state.EventBeatChampionRival,
 }
 
 // Observe decodes the current Observation from the emulator. romData is

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/maestroi/pokepilot/red/state"
 )
 
 // GoalKind identifies a run-level success condition. Objectives are actions;
@@ -131,8 +133,12 @@ func EvaluateGoal(g Goal, obs Observation) GoalStatus {
 	case GoalNone:
 		return GoalStatus{Summary: "no deterministic goal"}
 	case GoalEliteFour:
+		// state.Event.String(), not the raw decomp label: Observe fills
+		// Observation.Events with the former ("BeatChampionRival"), so a
+		// hardcoded "EVENT_BEAT_CHAMPION_RIVAL" could never match. offer.go
+		// reads event names the same way.
 		for _, event := range obs.Events {
-			if strings.EqualFold(event, "EVENT_BEAT_CHAMPION_RIVAL") {
+			if strings.EqualFold(event, state.EventBeatChampionRival.String()) {
 				return GoalStatus{Complete: true, Summary: "Elite Four and Champion defeated", Current: 1, Target: 1}
 			}
 		}
