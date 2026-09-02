@@ -176,20 +176,23 @@ func TalkAt(m *emu.Emu, romData []byte, homeX, homeY uint8, policy MovePolicy) (
 			m.StepFrames(npcWaitFrames)
 			continue
 		}
+
+		// Bill's first conversation flows directly into a scripted walk to
+		// the Cell Separator. Generic Talk deliberately expects ordinary NPC
+		// dialogue to settle within talkSettle frames after the box closes;
+		// Bill violates that contract. Hand this one interaction to the story
+		// driver, which has RAM-backed completion predicates for both scripted
+		// handoffs and continues through the S.S. Ticket.
+		if cur == billsHouseMap && homeX == billPokemonX && homeY == billPokemonY {
+			if err := helpBill(m, romData, policy); err != nil {
+				return 1, fmt.Errorf("skill: TalkAt: help Bill: %w", err)
+			}
+			return 1, nil
+		}
+
 		presses, err := Talk(m)
 		if err != nil {
 			return presses, fmt.Errorf("skill: TalkAt: object %d at (%d,%d): %w", objectID, tx, ty, err)
-		}
-
-		// Bill's Pokemon-form conversation is the one story interaction in
-		// this section that hands the player a non-object control: the Cell
-		// Separator PC is a hidden background event. Continue that explicit
-		// request through the PC and the ticket conversation so a generic
-		// talk objective does not strand the run with no action it can name.
-		if cur == billsHouseMap && homeX == billPokemonX && homeY == billPokemonY {
-			if err := finishBillRescue(m, romData, policy); err != nil {
-				return presses, fmt.Errorf("skill: TalkAt: help Bill: %w", err)
-			}
 		}
 		return presses, nil
 	}
