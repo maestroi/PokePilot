@@ -5,6 +5,9 @@ import (
 	"strings"
 )
 
+// ponytail: a fixed 4-map window; a cycle longer than this still reads as
+// progress. Widen the window (or track visit counts per map) if a run is seen
+// looping through five or more maps.
 const recentMapWindow = 4
 
 // StrategicMemory is derived run state used to detect long-horizon stalls.
@@ -19,21 +22,19 @@ type StrategicMemory struct {
 type progressMark struct {
 	badges int
 	events int
-	maps   int
 	level  int
 	set    bool
 }
 
 // ObserveProgress updates the long-horizon no-progress counter using only
-// facts already visible to the planner. Badges/events/visited-map growth and
-// party levels are measurable progress. Local movement counts only when the
-// current map has not appeared in the recent-map window, so A->B->A->B (or a
-// four-map cycle) cannot reset the stall counter forever.
-func (m *StrategicMemory) ObserveProgress(obs Observation, visitedMaps int) bool {
+// facts already visible to the planner. Badge, event and party-level growth
+// are measurable progress. Local movement counts only when the current map has
+// not appeared in the recent-map window, so A->B->A->B (or a four-map cycle)
+// cannot reset the stall counter forever.
+func (m *StrategicMemory) ObserveProgress(obs Observation) bool {
 	mark := progressMark{
 		badges: len(obs.Badges),
 		events: len(obs.Events),
-		maps:   visitedMaps,
 		level:  maxPartyLevel(obs),
 		set:    true,
 	}
@@ -45,7 +46,7 @@ func (m *StrategicMemory) ObserveProgress(obs Observation, visitedMaps int) bool
 		m.NoProgress = 0
 		return true
 	}
-	progressed := mark.badges > m.last.badges || mark.events > m.last.events || mark.maps > m.last.maps || mark.level > m.last.level || mapProgress
+	progressed := mark.badges > m.last.badges || mark.events > m.last.events || mark.level > m.last.level || mapProgress
 	if progressed {
 		m.NoProgress = 0
 	} else {

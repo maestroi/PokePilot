@@ -8,11 +8,11 @@ import (
 func TestStrategicMemoryDetectsLongHorizonStallUsingIntent(t *testing.T) {
 	var m StrategicMemory
 	obs := Observation{Map: 1, Badges: []string{"boulder"}, Events: []string{"x"}, Party: []PartyMon{{Level: 12}}}
-	if !m.ObserveProgress(obs, 5) {
+	if !m.ObserveProgress(obs) {
 		t.Fatal("first observation should establish progress baseline")
 	}
 	for i := 0; i < 4; i++ {
-		if m.ObserveProgress(obs, 5) {
+		if m.ObserveProgress(obs) {
 			t.Fatal("identical observation counted as progress")
 		}
 	}
@@ -29,7 +29,7 @@ func TestStrategicMemoryDetectsPingPongMapLoop(t *testing.T) {
 	for i, mapID := range maps {
 		obs := base
 		obs.Map = mapID
-		progressed := m.ObserveProgress(obs, 0)
+		progressed := m.ObserveProgress(obs)
 		if i < 2 && !progressed {
 			t.Fatalf("observation %d on new map %d did not count as progress", i, mapID)
 		}
@@ -48,13 +48,13 @@ func TestStrategicMemoryCreditsMapAfterItLeavesRecentWindow(t *testing.T) {
 	for _, mapID := range []uint8{1, 2, 3, 4, 5} {
 		obs := base
 		obs.Map = mapID
-		if !m.ObserveProgress(obs, 0) {
+		if !m.ObserveProgress(obs) {
 			t.Fatalf("new map %d did not count as progress", mapID)
 		}
 	}
 	obs := base
 	obs.Map = 1
-	if !m.ObserveProgress(obs, 0) {
+	if !m.ObserveProgress(obs) {
 		t.Fatal("map outside recent window should count as fresh local progress")
 	}
 }
@@ -62,8 +62,8 @@ func TestStrategicMemoryCreditsMapAfterItLeavesRecentWindow(t *testing.T) {
 func TestStrategicMemoryCanSignalWithoutIntent(t *testing.T) {
 	var m StrategicMemory
 	obs := Observation{Map: 1, Party: []PartyMon{{Level: 12}}}
-	m.ObserveProgress(obs, 1)
-	m.ObserveProgress(obs, 1)
+	m.ObserveProgress(obs)
+	m.ObserveProgress(obs)
 	if reason := m.ReplanReason(1, ""); !strings.Contains(reason, "No measurable progress for 1 rounds") {
 		t.Fatalf("replan reason = %q", reason)
 	}
@@ -72,14 +72,14 @@ func TestStrategicMemoryCanSignalWithoutIntent(t *testing.T) {
 func TestStrategicMemoryResetsStallOnMeasurableProgress(t *testing.T) {
 	var m StrategicMemory
 	obs := Observation{Map: 1, Party: []PartyMon{{Level: 12}}}
-	m.ObserveProgress(obs, 1)
-	m.ObserveProgress(obs, 1)
-	m.ObserveProgress(obs, 1)
+	m.ObserveProgress(obs)
+	m.ObserveProgress(obs)
+	m.ObserveProgress(obs)
 	if m.NoProgress != 2 {
 		t.Fatalf("NoProgress = %d, want 2", m.NoProgress)
 	}
 	obs.Party[0].Level = 13
-	if !m.ObserveProgress(obs, 1) || m.NoProgress != 0 {
+	if !m.ObserveProgress(obs) || m.NoProgress != 0 {
 		t.Fatalf("level gain did not reset stall: %+v", m)
 	}
 }
