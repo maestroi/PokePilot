@@ -5,6 +5,7 @@ roms/
 *.state
 testdata/fixtures/
 failure/
+artifacts/
 .env
 # Local build leftovers and the homelab Swarm overlay (registry, hosts,
 # Traefik). Public docs for the local farm are deploy/README.md.

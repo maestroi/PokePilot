@@ -110,6 +110,14 @@ func (m *Emu) PeekInto(addr uint16, dst []byte) {
 	m.e.PeekInto(addr, dst)
 }
 
+// SnapshotMemory copies the complete 64 KiB address space into dst and
+// returns the frame number the bytes belong to. It is the forensic form of
+// PeekInto: callers get one explicit full-memory sample without having to
+// pair a separate frame read themselves.
+func (m *Emu) SnapshotMemory(dst []byte) (uint64, error) {
+	return m.e.SnapshotMemory(dst)
+}
+
 // ROM returns the bytes of the loaded ROM. The slice aliases emulator
 // memory and must not be modified.
 func (m *Emu) ROM() []byte {
