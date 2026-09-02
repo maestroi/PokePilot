@@ -81,7 +81,8 @@ type Failure struct {
 
 // Completion is one objective the run has finished, and how many times.
 // The count is what separates "this worked" from "this has worked six times
-// and the run is still here" — see Knowledge.Completed.
+// and having worked six times are different facts, and the
+// second one is a run walking in circles. Zero is the set test.
 type Completion struct {
 	Objective string
 	Times     int
@@ -165,6 +166,7 @@ func (k *Knowledge) SawDialogue(lines []string, place string, x, y uint8) {
 			if mentions(low, name) {
 				k.Places[name] = true
 			}
+		}
 		k.HeardRequirement(line, place, x, y)
 	}
 }
