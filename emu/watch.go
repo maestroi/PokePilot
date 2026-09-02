@@ -68,6 +68,19 @@ const watchPage = `<!doctype html>
           color:#6cf; background:#181818; white-space:pre-wrap; }
   /* The statistics panel: pinned like the header, capped at a third of the
      column so a long choice list never squeezes the trace out of view. */
+  #party { flex:0 0 auto; display:none; max-height:28vh; overflow-y:auto;
+           box-sizing:border-box; padding:8px 12px; background:#181818;
+           border-bottom:1px solid #333; }
+  #psum { color:#fc9; margin-bottom:6px; }
+  .prow { display:grid; grid-template-columns:1fr auto auto; gap:6px 10px;
+          align-items:center; padding:2px 0; }
+  .php { color:#ddd; }
+  .pstatus { color:#f96; }
+  .hp { grid-column:1 / -1; height:4px; background:#2a3a4a; border-radius:2px; }
+  .hp i { display:block; height:100%; background:#6c6; border-radius:2px; }
+  .hp.mid i { background:#fc9; }
+  .hp.low i { background:#f66; }
+  .pempty { color:#888; }
   #stats { flex:0 0 auto; display:none; max-height:34vh; overflow-y:auto;
            box-sizing:border-box; padding:8px 12px; background:#181818;
            border-bottom:1px solid #333; }
@@ -100,6 +113,7 @@ const watchPage = `<!doctype html>
 </div>
 <div id="side">
   <div id="head"></div>
+  <div id="party"></div>
   <div id="stats">
     <div id="nums"></div>
     <div id="goal"></div>
@@ -145,6 +159,7 @@ async function tickTrace() {
     const payload = await r.json();
     head.textContent = payload.header || '';
     renderStats(payload.stats);
+    renderParty(payload.player);
     if (payload.run !== run) {
       run = payload.run;
       lastSeq = 0;
@@ -187,6 +202,25 @@ function renderStats(s) {
   choices.innerHTML = (s.choices || []).map(c =>
     '<div><div class="bar" style="width:' + (100 * c.count / top) + '%"></div>' +
     '<span>' + esc(c.objective) + '</span><span class="n">' + c.count + '</span></div>').join('');
+}
+
+function renderParty(p) {
+  const el = document.getElementById('party');
+  if (!p) { el.style.display = 'none'; el.replaceChildren(); return; }
+  el.style.display = 'block';
+  const badges = (p.badges && p.badges.length) ? p.badges.join(', ') : 'no badges';
+  const rows = (p.party || []).map(m => {
+    const max = m.max_hp || 0, hp = m.hp || 0;
+    const pct = max ? Math.max(0, Math.min(100, 100 * hp / max)) : 0;
+    const cls = (!max || hp === 0 || pct < 20) ? 'low' : (pct < 50 ? 'mid' : '');
+    const status = m.status ? '<span class="pstatus">' + esc(m.status) + '</span>' : '';
+    return '<div class="prow"><span>' + esc(m.name) + '</span><span>Lv.' +
+      esc(m.level) + '</span><span class="php">' + hp + '/' + max +
+      '</span>' + status + '<div class="hp ' + cls + '"><i style="width:' +
+      pct + '%"></i></div></div>';
+  }).join('');
+  el.innerHTML = '<div id="psum">₽' + esc(p.money) + ' · ' + esc(badges) + '</div>' +
+    (rows || '<div class="pempty">no Pokémon yet</div>');
 }
 
 setInterval(tickFrame, 100);

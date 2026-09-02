@@ -145,3 +145,115 @@ func TestWallStatePersistsLLMStats(t *testing.T) {
 		t.Fatalf("restored dashboard dropped the stats: %+v", dash.Runs)
 	}
 }
+
+func samplePlayer(hp uint16) *farm.Player {
+	return &farm.Player{
+		Money:  1840,
+		Badges: []string{"Boulder"},
+		Party:  []farm.PartyMon{{Name: "squirtle", Level: 8, HP: hp, MaxHP: 35}},
+	}
+}
+
+func TestDashboardCarriesPlayer(t *testing.T) {
+	w := NewWall("")
+	srv := httptest.NewServer(w.Handler())
+	defer srv.Close()
+	ctx := context.Background()
+	client := farm.NewClient(srv.URL)
+	enqueueViaHTTP(t, srv.URL, farm.Spec{RunID: "p1", Planner: "llm"})
+
+	spec, err := client.Lease(ctx)
+	if err != nil || spec == nil {
+		t.Fatalf("lease = %v, %v; want a spec", spec, err)
+	}
+	if _, err := client.Heartbeat(ctx, farm.Heartbeat{RunID: spec.RunID, Frame: 1}); err != nil {
+		t.Fatalf("heartbeat: %v", err)
+	}
+	dash := getDashboardView(t, srv.URL)
+	if len(dash.Runs) != 1 || dash.Runs[0].Player != nil {
+		t.Fatalf("pre-sample player = %+v, want nil", dash.Runs)
+	}
+
+	if _, err := client.Heartbeat(ctx, farm.Heartbeat{RunID: spec.RunID, Frame: 2, Player: samplePlayer(12)}); err != nil {
+		t.Fatalf("heartbeat with player: %v", err)
+	}
+	dash = getDashboardView(t, srv.URL)
+	p := dash.Runs[0].Player
+	if p == nil || p.Money != 1840 || len(p.Party) != 1 || p.Party[0].Name != "squirtle" || p.Party[0].HP != 12 {
+		t.Fatalf("dashboard player = %+v", p)
+	}
+}
+
+func TestWallResetsPlayerOnRetryKeptOnDone(t *testing.T) {
+	w := NewWall("")
+	srv := httptest.NewServer(w.Handler())
+	defer srv.Close()
+	ctx := context.Background()
+	client := farm.NewClient(srv.URL)
+	enqueueViaHTTP(t, srv.URL, farm.Spec{RunID: "flaky-party", Planner: "llm"})
+
+	spec, err := client.Lease(ctx)
+	if err != nil || spec == nil {
+		t.Fatalf("lease 1 = %v, %v", spec, err)
+	}
+	if _, err := client.Heartbeat(ctx, farm.Heartbeat{RunID: spec.RunID, Frame: 5, Player: samplePlayer(3)}); err != nil {
+		t.Fatalf("heartbeat: %v", err)
+	}
+	if err := client.Finish(ctx, farm.FinishReport{RunID: spec.RunID, Attempt: spec.Attempt, Reason: "error", Detail: "wild battle"}); err != nil {
+		t.Fatalf("finish 1: %v", err)
+	}
+	w.mu.Lock()
+	reset := w.tiles["flaky-party"].Player == nil && w.tiles["flaky-party"].Status == statusQueued
+	w.mu.Unlock()
+	if !reset {
+		t.Fatal("retried run kept attempt 1's player")
+	}
+
+	spec, err = client.Lease(ctx)
+	if err != nil || spec == nil || spec.Attempt != 2 {
+		t.Fatalf("lease 2 = %v, %v; want attempt 2", spec, err)
+	}
+	if _, err := client.Heartbeat(ctx, farm.Heartbeat{RunID: spec.RunID, Frame: 9, Player: samplePlayer(35)}); err != nil {
+		t.Fatalf("heartbeat 2: %v", err)
+	}
+	if err := client.Finish(ctx, farm.FinishReport{RunID: spec.RunID, Attempt: spec.Attempt, Reason: "done"}); err != nil {
+		t.Fatalf("finish 2: %v", err)
+	}
+	w.mu.Lock()
+	t2 := w.tiles["flaky-party"]
+	kept := t2.Finished && t2.Status == statusDone && t2.Player != nil && t2.Player.Party[0].HP == 35
+	w.mu.Unlock()
+	if !kept {
+		t.Fatalf("finished run did not keep its final player (player=%+v)", t2.Player)
+	}
+}
+
+func TestWallStatePersistsPlayer(t *testing.T) {
+	dir := t.TempDir()
+	stateFile := filepath.Join(dir, "wall-state.json")
+	ctx := context.Background()
+
+	w1 := NewWall("")
+	w1.SetStatePath(stateFile)
+	srv1 := httptest.NewServer(w1.Handler())
+	enqueueViaHTTP(t, srv1.URL, farm.Spec{RunID: "persist-party", Planner: "llm"})
+	c1 := farm.NewClient(srv1.URL)
+	spec, err := c1.Lease(ctx)
+	if err != nil || spec == nil {
+		t.Fatalf("lease = %v, %v", spec, err)
+	}
+	if _, err := c1.Heartbeat(ctx, farm.Heartbeat{RunID: spec.RunID, Frame: 3, Player: samplePlayer(20)}); err != nil {
+		t.Fatalf("heartbeat: %v", err)
+	}
+	srv1.Close()
+
+	w2 := NewWall("")
+	w2.SetStatePath(stateFile)
+	srv2 := httptest.NewServer(w2.Handler())
+	defer srv2.Close()
+
+	dash := getDashboardView(t, srv2.URL)
+	if len(dash.Runs) != 1 || dash.Runs[0].Player == nil || dash.Runs[0].Player.Party[0].HP != 20 {
+		t.Fatalf("restored dashboard dropped the player: %+v", dash.Runs)
+	}
+}

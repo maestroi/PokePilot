@@ -149,3 +149,23 @@ func TestTraceStatsRoundTrip(t *testing.T) {
 		t.Fatalf("stats = %s, want the blob verbatim", got.Stats)
 	}
 }
+
+func TestTracePlayerRoundTrip(t *testing.T) {
+	b := newTraceBuf()
+	rec := httptest.NewRecorder()
+	b.serveHTTP(rec, httptest.NewRequest(http.MethodGet, "/trace.json", nil))
+	if strings.Contains(rec.Body.String(), "player") {
+		t.Fatalf("unset player must be omitted, got %s", rec.Body.String())
+	}
+
+	b.player = json.RawMessage(`{"money":1840}`)
+	rec = httptest.NewRecorder()
+	b.serveHTTP(rec, httptest.NewRequest(http.MethodGet, "/trace.json", nil))
+	var got tracePayload
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if string(got.Player) != `{"money":1840}` {
+		t.Fatalf("player = %s, want the blob verbatim", got.Player)
+	}
+}

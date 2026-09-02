@@ -12,6 +12,7 @@ import (
 
 	"github.com/maestroi/pokepilot/agent"
 	"github.com/maestroi/pokepilot/farm"
+	"github.com/maestroi/pokepilot/red/state"
 )
 
 // TestMainWiresFarmMode is the regression for 96eaf02: that merge kept
@@ -308,5 +309,71 @@ func TestHeartbeatCancelClosesOnce(t *testing.T) {
 	case <-done:
 	case <-time.After(5 * time.Second):
 		t.Fatal("heartbeatLoop did not join after stop")
+	}
+}
+
+func TestPlayerSnapshotNamesParty(t *testing.T) {
+	g := state.GameState{
+		Inventory: state.InventoryState{Money: 1840},
+		Progress:  state.ProgressState{Badges: 0x01},
+		Party: state.PartyState{
+			Count: 1,
+			Mons: []state.Mon{{
+				Species: 0xB1, Level: 8, HP: 12, MaxHP: 35, Status: 1 << 3,
+			}},
+		},
+	}
+	got := playerSnapshot(g)
+	if got == nil {
+		t.Fatal("playerSnapshot returned nil")
+	}
+	if got.Money != 1840 {
+		t.Fatalf("money = %d, want 1840", got.Money)
+	}
+	if len(got.Badges) != 1 || got.Badges[0] != "Boulder" {
+		t.Fatalf("badges = %v, want [Boulder]", got.Badges)
+	}
+	if len(got.Party) != 1 {
+		t.Fatalf("party len = %d, want 1", len(got.Party))
+	}
+	m := got.Party[0]
+	if m.Name != "squirtle" || m.Level != 8 || m.HP != 12 || m.MaxHP != 35 || m.Status != "poisoned" {
+		t.Fatalf("party[0] = %+v, want squirtle Lv8 12/35 poisoned", m)
+	}
+
+	unknown := playerSnapshot(state.GameState{
+		Party: state.PartyState{Count: 1, Mons: []state.Mon{{Species: 0xFE, Level: 5, HP: 1, MaxHP: 1}}},
+	})
+	if unknown == nil || len(unknown.Party) != 1 || unknown.Party[0].Name != "species 0xfe" {
+		t.Fatalf("unknown species = %+v, want name species 0xfe", unknown)
+	}
+
+	empty := playerSnapshot(state.GameState{Inventory: state.InventoryState{Money: 3000}})
+	if empty == nil || empty.Party == nil || len(empty.Party) != 0 || empty.Money != 3000 {
+		t.Fatalf("empty party = %+v, want non-nil player with party []", empty)
+	}
+}
+
+func TestHeartbeatSnapTakesPlayerKeepsStats(t *testing.T) {
+	s := &heartbeatSnap{}
+	s.store(farm.Heartbeat{RunID: "r1"})
+	s.storeStats(farm.LLMStats{Round: 2, Rounds: 2})
+
+	next := farm.Heartbeat{
+		RunID: "r1", Frame: 20,
+		Player: &farm.Player{Money: 1840, Party: []farm.PartyMon{{Name: "squirtle", Level: 8, HP: 10, MaxHP: 35}}},
+	}
+	s.storeStatus(next)
+	got := s.load()
+	if got.Stats == nil || got.Stats.Round != 2 {
+		t.Fatalf("storeStatus blanked stats: %+v", got.Stats)
+	}
+	if got.Player == nil || got.Player.Money != 1840 || len(got.Player.Party) != 1 || got.Player.Party[0].HP != 10 {
+		t.Fatalf("storeStatus dropped player: %+v", got.Player)
+	}
+
+	s.store(farm.Heartbeat{RunID: "r2"})
+	if got = s.load(); got.Player != nil {
+		t.Fatalf("new lease kept the old player: %+v", got.Player)
 	}
 }

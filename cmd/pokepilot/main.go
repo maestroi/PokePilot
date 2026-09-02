@@ -92,7 +92,12 @@ func main() {
 	if err != nil {
 		log.Fatalf("serve screen: %v", err)
 	}
-	m.OnSample(newDialogueTracer().sample)
+	var watchMem state.Mem
+	tracer := newDialogueTracer()
+	m.OnSample(func(m *emu.Emu) {
+		tracer.sample(m)
+		m.TracePlayer(playerSnapshot(state.Read(m, &watchMem)))
+	})
 	fmt.Printf("%s\nwatch: http://%s\n\n", version, served)
 
 	// Gen 1 has no seed to set. Its RNG is hRandomAdd/hRandomSub ($FFD3,

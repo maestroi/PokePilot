@@ -131,6 +131,57 @@ func TestHeartbeatCarriesMapOverlay(t *testing.T) {
 	}
 }
 
+func TestHeartbeatCarriesPlayer(t *testing.T) {
+	want := Heartbeat{
+		RunID: "r1", Frame: 100,
+		Player: &Player{
+			Money:  1840,
+			Badges: []string{"Boulder"},
+			Party: []PartyMon{{
+				Name: "squirtle", Level: 8, HP: 12, MaxHP: 35, Status: "poisoned",
+			}},
+		},
+	}
+	b, err := json.Marshal(want)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var got Heartbeat
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if !reflect.DeepEqual(got.Player, want.Player) {
+		t.Fatalf("player round trip = %+v, want %+v", got.Player, want.Player)
+	}
+	for _, field := range []string{`"player"`, `"money"`, `"badges"`, `"party"`, `"name"`, `"level"`, `"hp"`, `"max_hp"`, `"status"`} {
+		if !contains(string(b), field) {
+			t.Errorf("marshaled heartbeat missing %s: %s", field, b)
+		}
+	}
+
+	// Pre-starter: empty party is a real snapshot, not an omitted key.
+	empty := Heartbeat{RunID: "r2", Player: &Player{Money: 3000, Party: []PartyMon{}}}
+	b, err = json.Marshal(empty)
+	if err != nil {
+		t.Fatalf("marshal empty: %v", err)
+	}
+	if !contains(string(b), `"party":[]`) && !contains(string(b), `"party": []`) {
+		t.Errorf("empty party must encode as an array: %s", b)
+	}
+	if !contains(string(b), `"player"`) {
+		t.Errorf("empty party must still send player: %s", b)
+	}
+
+	// Older runner: nil player omits the key.
+	b, err = json.Marshal(Heartbeat{RunID: "old"})
+	if err != nil {
+		t.Fatalf("marshal old: %v", err)
+	}
+	if contains(string(b), `"player"`) {
+		t.Errorf("nil player must be omitted: %s", b)
+	}
+}
+
 func TestFinishReportJSONRoundTrip(t *testing.T) {
 	data := []byte("checkpoint-state")
 	sum := sha256.Sum256(data)

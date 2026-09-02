@@ -72,7 +72,10 @@ type Tile struct {
 	Trail   [][2]uint8
 	// Stats is the llm planner's tally, last pushed by a heartbeat. Kept on
 	// finish (the final tally explains the outcome), nilled on retry.
-	Stats    *farm.LLMStats
+	Stats *farm.LLMStats
+	// Player is the live party/money/badges snapshot. Kept on finish,
+	// nilled on retry, same rule as Stats.
+	Player   *farm.Player
 	Reason   string
 	Detail   string
 	Finished bool
@@ -122,6 +125,7 @@ type tileRow struct {
 	Sprites    []farm.MapSprite `json:"sprites,omitempty"`
 	Trail      [][2]uint8       `json:"trail,omitempty"`
 	Stats      *farm.LLMStats   `json:"stats,omitempty"`
+	Player     *farm.Player     `json:"player,omitempty"`
 	Attempts   int              `json:"attempts"`
 	Reason     string           `json:"reason"`
 	Detail     string           `json:"detail"`
@@ -199,6 +203,7 @@ type persistedTile struct {
 	Decision    string         `json:"decision,omitempty"`
 	StopSoFar   string         `json:"stop_so_far,omitempty"`
 	Stats       *farm.LLMStats `json:"stats,omitempty"`
+	Player      *farm.Player   `json:"player,omitempty"`
 	Reason      string         `json:"reason,omitempty"`
 	Detail      string         `json:"detail,omitempty"`
 	Finished    bool           `json:"finished"`
@@ -250,6 +255,7 @@ func (w *Wall) marshalStateLocked() ([]byte, error) {
 			Decision:    t.Decision,
 			StopSoFar:   t.StopSoFar,
 			Stats:       t.Stats,
+			Player:      t.Player,
 			Reason:      t.Reason,
 			Detail:      t.Detail,
 			Finished:    t.Finished,
@@ -330,6 +336,7 @@ func (w *Wall) loadState() {
 			Decision:    pt.Decision,
 			StopSoFar:   pt.StopSoFar,
 			Stats:       pt.Stats,
+			Player:      pt.Player,
 			Reason:      pt.Reason,
 			Detail:      pt.Detail,
 			Finished:    pt.Finished,
@@ -450,6 +457,7 @@ func (w *Wall) applySpec(runID string, spec farm.Spec) {
 	t.Sprites = nil
 	t.Trail = nil
 	t.Stats = nil
+	t.Player = nil
 	t.Reason = ""
 	t.Detail = ""
 	t.workerAddrs = nil
@@ -529,6 +537,7 @@ func (w *Wall) handleHeartbeat(res http.ResponseWriter, req *http.Request) {
 	t.Sprites = append(t.Sprites[:0], hb.Sprites...)
 	t.Trail = append(t.Trail[:0], hb.Trail...)
 	t.Stats = hb.Stats
+	t.Player = hb.Player
 	t.workerAddrs = hb.WorkerAddrs
 	t.lastUpdate = time.Now()
 	w.upsertWorkerLocked(hb.WorkerAddrs, id, hb.Version, t.lastUpdate)
@@ -889,6 +898,7 @@ func (w *Wall) snapshot() dashboardView {
 			Sprites:    append([]farm.MapSprite(nil), t.Sprites...),
 			Trail:      append([][2]uint8(nil), t.Trail...),
 			Stats:      t.Stats,
+			Player:     t.Player,
 			Reason:     t.Reason,
 			Detail:     t.Detail,
 			Issue:      issueLinkFor(t, w.issueLinks),
@@ -1244,6 +1254,7 @@ func (w *Wall) settleRun(t *Tile, reason, detail string, now time.Time) int {
 	t.Sprites = nil
 	t.Trail = nil
 	t.Stats = nil
+	t.Player = nil
 	t.Reason = ""
 	t.Detail = fmt.Sprintf("attempt %d failed: %s", completed, detail)
 	t.workerAddrs = nil

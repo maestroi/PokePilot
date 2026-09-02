@@ -420,6 +420,32 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 // send. It runs on the stepping goroutine (via the composed OnSample
 // callback or the initial call), so it may read emulator memory; mem is
 // hoisted and reused rather than allocated per sample.
+func playerSnapshot(g state.GameState) *farm.Player {
+	p := &farm.Player{
+		Money: g.Inventory.Money,
+		Party: make([]farm.PartyMon, len(g.Party.Mons)),
+	}
+	for b := state.BadgeBoulder; b <= state.BadgeEarth; b++ {
+		if g.Progress.Has(b) {
+			p.Badges = append(p.Badges, b.String())
+		}
+	}
+	for i, mon := range g.Party.Mons {
+		name, ok := agent.SpeciesName(mon.Species)
+		if !ok {
+			name = fmt.Sprintf("species 0x%02x", mon.Species)
+		}
+		p.Party[i] = farm.PartyMon{
+			Name:   name,
+			Level:  mon.Level,
+			HP:     mon.HP,
+			MaxHP:  mon.MaxHP,
+			Status: mon.StatusName(),
+		}
+	}
+	return p
+}
+
 func sampleHeartbeat(m *emu.Emu, runID string, snap *heartbeatSnap, mem *state.Mem, addrs []string, trail *heartbeatTrail) {
 	g := state.Read(m, mem)
 	hb := farm.Heartbeat{
@@ -430,6 +456,7 @@ func sampleHeartbeat(m *emu.Emu, runID string, snap *heartbeatSnap, mem *state.M
 		Y:           g.Player.Y,
 		WorkerAddrs: addrs,
 		Trail:       trail.add(g.Player.MapID, g.Player.X, g.Player.Y),
+		Player:      playerSnapshot(g),
 	}
 	for _, sp := range state.DecodeSprites(mem) {
 		if sp.X < 0 || sp.Y < 0 || sp.X > 255 || sp.Y > 255 {
@@ -446,6 +473,7 @@ func sampleHeartbeat(m *emu.Emu, runID string, snap *heartbeatSnap, mem *state.M
 		hb.Trace = tail[len(tail)-1]
 	}
 	snap.storeStatus(hb)
+	m.TracePlayer(hb.Player)
 }
 
 // workerAddrs lists every non-loopback local address as "host:port", so the

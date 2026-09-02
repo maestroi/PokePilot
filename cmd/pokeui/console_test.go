@@ -218,3 +218,32 @@ func TestVersionEndpoint(t *testing.T) {
 		t.Fatal("version missing from /v1/version")
 	}
 }
+
+func TestUIRendersPlayerRoster(t *testing.T) {
+	js := string(uiJS)
+	for _, want := range []string{
+		"partyHTML",
+		`r.player`,
+		`<h3>Party</h3>`,
+		"no Pokémon yet",
+		"no badges",
+	} {
+		if !strings.Contains(js, want) {
+			t.Errorf("ui.js missing %q", want)
+		}
+	}
+	start := strings.Index(js, "function renderLive")
+	end := strings.Index(js, "function renderWorkers")
+	if start < 0 || end <= start {
+		t.Fatal("renderLive bounds")
+	}
+	if strings.Contains(js[start:end], "partyHTML") {
+		t.Error("live cards must not render the party roster")
+	}
+	html := string(indexHTML)
+	for _, want := range []string{`.party-row`, `.party-hp`, `.party-sum`} {
+		if !strings.Contains(html, want) {
+			t.Errorf("index.html missing %s", want)
+		}
+	}
+}

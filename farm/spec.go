@@ -42,6 +42,25 @@ type MapSprite struct {
 	Slot      uint8 `json:"slot,omitempty"`
 }
 
+// PartyMon is one party member on the operator wire: named, never a ROM
+// index. Status is empty when healthy.
+type PartyMon struct {
+	Name   string `json:"name"`
+	Level  uint8  `json:"level"`
+	HP     uint16 `json:"hp"`
+	MaxHP  uint16 `json:"max_hp"`
+	Status string `json:"status,omitempty"`
+}
+
+// Player is a live trainer snapshot the runner decodes from RAM. Nil on
+// older runners and before the first sample. An empty Party is a real
+// pre-starter snapshot and must still be sent.
+type Player struct {
+	Money  uint32     `json:"money"`
+	Badges []string   `json:"badges,omitempty"`
+	Party  []PartyMon `json:"party"`
+}
+
 // Heartbeat is the small, frequent status push a runner sends while a
 // leased run is in progress.
 type Heartbeat struct {
@@ -82,6 +101,9 @@ type Heartbeat struct {
 	// watch page renders, pushed here so the console shows them too. Nil on
 	// scripted runs and on runners that predate it.
 	Stats *LLMStats `json:"stats,omitempty"`
+	// Player is the live party/money/badges snapshot. Nil on older
+	// runners and before the first sample.
+	Player *Player `json:"player,omitempty"`
 }
 
 // LLMStats is the planner tally a runner pushes on its heartbeats: round

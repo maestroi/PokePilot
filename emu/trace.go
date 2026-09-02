@@ -45,6 +45,10 @@ type traceBuf struct {
 	// and about planners, and emu is not allowed to know either.
 	stats json.RawMessage
 
+	// player is an opaque JSON blob the watching layer sets for the live
+	// trainer snapshot, carried the same way as stats.
+	player json.RawMessage
+
 	// run identifies this process's trace. A consumer that sees a different
 	// run must discard what it has: sequence numbers restart from scratch,
 	// so without this a reconnecting page replays the whole trace again.
@@ -88,15 +92,16 @@ type tracePayload struct {
 	Run     string          `json:"run"`
 	Header  string          `json:"header"`
 	Stats   json.RawMessage `json:"stats,omitempty"`
+	Player  json.RawMessage `json:"player,omitempty"`
 	Entries []TraceEntry    `json:"entries"`
 }
 
 func (t *traceBuf) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	t.mu.Lock()
-	run, header, stats := t.run, t.header, t.stats
+	run, header, stats, player := t.run, t.header, t.stats, t.player
 	t.mu.Unlock()
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(tracePayload{Run: run, Header: header, Stats: stats, Entries: t.snapshot()})
+	_ = json.NewEncoder(w).Encode(tracePayload{Run: run, Header: header, Stats: stats, Player: player, Entries: t.snapshot()})
 }
 
 // diffChanged is the change-detection primitive: it reports whether cur
@@ -218,6 +223,22 @@ func (m *Emu) TraceStats(v any) {
 	}
 	m.trace.mu.Lock()
 	m.trace.stats = b
+	m.trace.mu.Unlock()
+}
+
+// TracePlayer replaces the player-snapshot blob served alongside the
+// trace. v is marshalled here and carried verbatim; a value that will
+// not marshal is dropped. Safe to call at any time, from any goroutine.
+func (m *Emu) TracePlayer(v any) {
+	if m.trace == nil {
+		return
+	}
+	b, err := json.Marshal(v)
+	if err != nil {
+		return
+	}
+	m.trace.mu.Lock()
+	m.trace.player = b
 	m.trace.mu.Unlock()
 }
 

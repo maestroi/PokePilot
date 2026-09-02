@@ -555,7 +555,7 @@
     const stateRows = run.status === "done"
       ? [["ended", run.reason || "done"], ["detail", run.detail || ""], ["last map", tileLabel(run)], ["frame", String(run.frame)], ["attempts", String(run.attempts)]]
       : [["status", run.status], ["map", tileLabel(run)], ["frame", String(run.frame)], ["attempt", String(run.attempts)], ["so far", run.stop_so_far || ""]];
-    $("detail-body").innerHTML = `<div class="block"><h3>Settings</h3>${settings}</div><div class="block"><h3>${run.status === "done" ? "Outcome" : "Now"}</h3>${kv(stateRows)}</div>` + planHTML(run) + playHTML(run) + lastEventHTML(run);
+    $("detail-body").innerHTML = `<div class="block"><h3>Settings</h3>${settings}</div><div class="block"><h3>${run.status === "done" ? "Outcome" : "Now"}</h3>${kv(stateRows)}</div>` + planHTML(run) + playHTML(run) + partyHTML(run) + lastEventHTML(run);
     const raw = $("detail-body").querySelector(".plan-raw");
     if (raw) {
       raw.open = rawOpen; raw.addEventListener("toggle", () => { rawOpen = raw.open; });
@@ -583,6 +583,20 @@
     const top = (s.choices && s.choices[0]) ? s.choices[0].count : 1;
     const choices = (s.choices || []).map((c) => `<div class="pchoice"><div class="pbar" style="width:${(100 * c.count) / top}%"></div><span>${esc(c.objective)}</span><span class="n">${c.count}</span></div>`).join("");
     return `<div class="block"><h3>Play</h3><div class="pnums">${nums}</div>${intent}<div class="pchoices">${choices}</div></div>`;
+  }
+
+  function partyHTML(r) {
+    const p = r.player;
+    if (!p) return "";
+    const badges = (p.badges && p.badges.length) ? p.badges.join(", ") : "no badges";
+    const rows = (p.party || []).map((m) => {
+      const max = m.max_hp || 0, hp = m.hp || 0;
+      const pct = max ? Math.max(0, Math.min(100, (100 * hp) / max)) : 0;
+      const cls = (!max || hp === 0 || pct < 20) ? "low" : (pct < 50 ? "mid" : "");
+      const status = m.status ? `<span class="pstatus">${esc(m.status)}</span>` : "";
+      return `<div class="party-row"><span>${esc(m.name)}</span><span>Lv.${esc(m.level)}</span><span class="php">${hp}/${max}</span>${status}<div class="party-hp ${cls}"><i style="width:${pct}%"></i></div></div>`;
+    }).join("");
+    return `<div class="block"><h3>Party</h3><div class="party-sum">₽${esc(p.money)} · ${esc(badges)}</div>${rows || `<p class="pempty">no Pokémon yet</p>`}</div>`;
   }
 
   function lastEventHTML(run) {
