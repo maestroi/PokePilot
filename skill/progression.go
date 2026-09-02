@@ -1,11 +1,14 @@
 package skill
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
+	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
+	"github.com/maestroi/pokepilot/world"
 )
 
 const (
@@ -168,4 +171,75 @@ func OpenVermilionGym(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		return fmt.Errorf("skill: OpenVermilionGym: second switch %d at (%d,%d): %w", second, x, y, err)
 	}
 	return nil
+}
+
+// travelOpenVermilion is Travel with one live-map correction: opening the
+// gym switches replaces map block (2,2) with clear floor in WRAM, while the
+// ordinary pathfinder rebuilds collision from the immutable ROM and therefore
+// still sees the original double-door block. Only this post-switch approach
+// gets the override. Battles and dialogue are resolved by the same Travel
+// loop as every other journey.
+func travelOpenVermilion(m *emu.Emu, romData []byte, dest Destination, policy MovePolicy, maxBattles int) (TravelResult, error) {
+	if maxBattles <= 0 {
+		return TravelResult{}, fmt.Errorf("skill: Travel: maxBattles must be > 0, got %d", maxBattles)
+	}
+	return travel(m, policy, maxBattles,
+		func() error { return walkOpenVermilion(m, romData, dest) },
+		func() DialogueRecoveryResult { return RecoverDialogue(m, dialogueRecoveryBudget) },
+		func() bool { return m.Peek8(sym.StatusFlags4)&blackoutBit != 0 },
+		fightOnly(m, policy),
+	)
+}
+
+func walkOpenVermilion(m *emu.Emu, romData []byte, dest Destination) error {
+	if err := abortIfBattle(m); err != nil {
+		return err
+	}
+	cur := m.Peek8(sym.CurMap)
+	if cur != vermilionGymMap || dest.Map != vermilionGymMap {
+		return fmt.Errorf("skill: Vermilion Gym live walk requires map %#04x, got current %#04x destination %#04x", vermilionGymMap, cur, dest.Map)
+	}
+	sx, sy := playerXY(m)
+	h, err := rom.ParseMap(romData, cur)
+	if err != nil {
+		return fmt.Errorf("skill: Vermilion Gym: parse map at (%d,%d): %w", sx, sy, err)
+	}
+	grid, err := world.Build(romData, h)
+	if err != nil {
+		return fmt.Errorf("skill: Vermilion Gym: build map at (%d,%d): %w", sx, sy, err)
+	}
+
+	// VermilionGymSetDoorTile does ReplaceTileBlock with bc=(2,2), replacing
+	// that 2x2 game-coordinate block by clear floor block $05. Grid operates
+	// in those game coordinates, so the live block covers x=4..5, y=4..5.
+	for y := 4; y <= 5; y++ {
+		for x := 4; x <= 5; x++ {
+			grid.Set(x, y, true)
+		}
+	}
+
+	var planErr error
+	err = walkAround(func() map[[2]int]bool { return spriteBlockers(m) },
+		func(blocked map[[2]int]bool) ([]world.Step, error) {
+			x, y := playerXY(m)
+			steps, err := world.FindPath(grid, int(x), int(y), int(dest.X), int(dest.Y), blocked)
+			if err != nil {
+				planErr = fmt.Errorf("skill: Vermilion Gym: no live path from (%d,%d) to (%d,%d): %w", x, y, dest.X, dest.Y, err)
+				return nil, planErr
+			}
+			return steps, nil
+		}, func(steps []world.Step) error { return WalkPath(m, steps) },
+		func() { m.StepFrames(npcWaitFrames) })
+	if err == nil || err == planErr {
+		return err
+	}
+	x, y := playerXY(m)
+	if errors.Is(err, ErrBattleInterrupted) {
+		return fmt.Errorf("skill: Vermilion Gym: battle at (%d,%d): %w", x, y, ErrBattle)
+	}
+	var eb *ErrBlocked
+	if errors.As(err, &eb) {
+		return fmt.Errorf("skill: Vermilion Gym: blocked at (%d,%d) after %d retries: %w", eb.At.X, eb.At.Y, maxWalkRetries, err)
+	}
+	return fmt.Errorf("skill: Vermilion Gym: live walk at (%d,%d): %w", x, y, err)
 }
