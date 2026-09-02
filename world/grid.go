@@ -21,12 +21,23 @@ const (
 	tilesetEntryLen        = 12
 )
 
-// Grid is a map's walkability, indexed [y][x] in game tile coordinates —
-// the same coordinates reported by wXCoord/wYCoord.
+// Grid is a map's collision view, indexed [y][x] in game tile coordinates —
+// the same coordinates reported by wXCoord/wYCoord. Each game step covers a
+// 2x2 pair of background tiles and the ROM deliberately uses DIFFERENT
+// subtiles for two jobs:
+//
+//   - collision uses the bottom-left tile (row 2*sy+1, column 2*sx), the
+//     measured rule this package has always used;
+//   - GetTileAndCoordsInFrontOfPlayer uses the top-left tile (row 2*sy,
+//     column 2*sx), which is the value field actions such as CUT compare.
+//
+// Both ids are retained so callers never infer one contract from the other.
 type Grid struct {
 	MapID         uint8
 	Width, Height int // in game tile coordinates
 	walkable      []bool
+	collisionTile []uint8
+	fieldTile     []uint8
 }
 
 // InBounds reports whether (x, y) is inside the grid.
@@ -41,6 +52,24 @@ func (g *Grid) Walkable(x, y int) bool {
 		return false
 	}
 	return g.walkable[y*g.Width+x]
+}
+
+// Tile returns the bottom-left collision tile id for a game-tile coordinate.
+func (g *Grid) Tile(x, y int) (uint8, bool) {
+	if !g.InBounds(x, y) || len(g.collisionTile) != g.Width*g.Height {
+		return 0, false
+	}
+	return g.collisionTile[y*g.Width+x], true
+}
+
+// FieldTile returns the top-left background tile id that
+// GetTileAndCoordsInFrontOfPlayer exposes through wTileInFrontOfPlayer when
+// this game-coordinate cell is directly in front of the player.
+func (g *Grid) FieldTile(x, y int) (uint8, bool) {
+	if !g.InBounds(x, y) || len(g.fieldTile) != g.Width*g.Height {
+		return 0, false
+	}
+	return g.fieldTile[y*g.Width+x], true
 }
 
 // Set sets the walkability of the game-tile coordinate (x, y).
@@ -68,10 +97,12 @@ func Build(romData []byte, h rom.MapHeader) (*Grid, error) {
 	width := int(h.WidthBlocks) * 2
 	height := int(h.HeightBlocks) * 2
 	g := &Grid{
-		MapID:    h.ID,
-		Width:    width,
-		Height:   height,
-		walkable: make([]bool, width*height),
+		MapID:         h.ID,
+		Width:         width,
+		Height:        height,
+		walkable:      make([]bool, width*height),
+		collisionTile: make([]uint8, width*height),
+		fieldTile:     make([]uint8, width*height),
 	}
 	if width == 0 || height == 0 {
 		return g, nil
@@ -132,15 +163,17 @@ func Build(romData []byte, h rom.MapHeader) (*Grid, error) {
 			if tilesOff+16 > len(romData) {
 				return nil, fmt.Errorf("map %d: block %d data at offset %d exceeds ROM of %d bytes", h.ID, blockID, tilesOff, len(romData))
 			}
-			// Each block is 4x4 tiles; the game's coordinates are 2x2-tile
-			// steps, so a block covers 2x2 grid cells. The collision tile
-			// is the one the player stands on: the step's bottom-left
-			// (block tile row 2*sy+1, column 2*sx). Measured against
-			// Oak's Lab (map 0x28), not assumed.
+			// Each block is 4x4 background tiles; one game-coordinate cell is
+			// the corresponding 2x2 background-tile pair. Collision and field
+			// actions intentionally read different left-hand subtiles.
 			for sy := 0; sy < 2; sy++ {
 				for sx := 0; sx < 2; sx++ {
-					tile := romData[tilesOff+(2*sy+1)*4+2*sx]
-					g.walkable[(by*2+sy)*width+(bx*2+sx)] = walkableTiles[tile]
+					field := romData[tilesOff+(2*sy)*4+2*sx]
+					collision := romData[tilesOff+(2*sy+1)*4+2*sx]
+					i := (by*2+sy)*width + (bx*2 + sx)
+					g.fieldTile[i] = field
+					g.collisionTile[i] = collision
+					g.walkable[i] = walkableTiles[collision]
 				}
 			}
 		}
