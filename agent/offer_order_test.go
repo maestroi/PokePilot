@@ -69,10 +69,10 @@ func TestVerbsDoNotSinkAsTheWorldGrows(t *testing.T) {
 
 // TestMenuCarriesItsOwnHistory: the counts already existed, in Failures and
 // Completed, and a model reading a numbered list top-down skipped them. They
-// now ride on the line being chosen. Nothing is withheld — the note is what
-// the run has already done, never advice about what to do next — and
-// String() is untouched, so an annotated objective is still the same
-// objective everywhere it is identified by name.
+// now ride on the line being chosen. Objective-local factual notes may share
+// that line; history composes with them instead of replacing them. String()
+// is untouched, so an annotated objective is still the same objective
+// everywhere it is identified by name.
 func TestMenuCarriesItsOwnHistory(t *testing.T) {
 	obs := Observation{
 		Map: 0x00, MapName: "PALLET_TOWN", X: 4, Y: 7, PartyCount: 1,
@@ -100,8 +100,9 @@ func TestMenuCarriesItsOwnHistory(t *testing.T) {
 			}
 		case route1.String():
 			sawRoute = true
-			if o.Note != "(failed 1x)" {
-				t.Errorf("route 1 note = %q, want (failed 1x)", o.Note)
+			want := "(unvisited adjacent map) (failed 1x)"
+			if o.Note != want {
+				t.Errorf("route 1 note = %q, want %q", o.Note, want)
 			}
 		}
 		// The note must never leak into identity: Completed and Failures are
