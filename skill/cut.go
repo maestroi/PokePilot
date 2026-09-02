@@ -42,27 +42,24 @@ func partyMoveSlot(mem *state.Mem, move uint8) int {
 	return -1
 }
 
-func screenContains(m *emu.Emu, marker string) bool {
+func cutScreenHas(m *emu.Emu, marker string) bool {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
 	return strings.Contains(state.ScreenText(&mem), marker)
 }
 
-func tmhmPartyMenuUp(m *emu.Emu) bool   { return screenContains(m, "Use TM") }
-func normalPartyMenuUp(m *emu.Emu) bool { return screenContains(m, "Choose") }
+func tmhmPartyMenuUp(m *emu.Emu) bool   { return cutScreenHas(m, "Use TM") }
+func normalPartyMenuUp(m *emu.Emu) bool { return cutScreenHas(m, "Choose") }
 func fieldMoveMenuUp(m *emu.Emu) bool {
-	return screenContains(m, "STATS") && m.Peek8(sym.FieldMoves) != 0
+	return cutScreenHas(m, "STATS") && m.Peek8(sym.FieldMoves) != 0
 }
 
-// movePartyCursor moves the party-list cursor to index and verifies every
-// direction by re-reading wCurrentMenuItem. It deliberately does not press A:
-// different party-menu callers have different positive handoff states.
 func movePartyCursor(m *emu.Emu, index int) error {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	party := state.DecodeParty(&mem)
-	if index < 0 || index >= int(party.Count) {
-		return fmt.Errorf("skill: party slot %d out of range for party of %d", index, party.Count)
+	count := int(state.DecodeParty(&mem).Count)
+	if index < 0 || index >= count {
+		return fmt.Errorf("skill: party slot %d out of range for party of %d", index, count)
 	}
 	for i := 0; i < 60; i++ {
 		cur := int(m.Peek8(sym.CurrentMenuItem))
@@ -109,18 +106,13 @@ func selectFieldMoveUser(m *emu.Emu, index int) error {
 	return nil
 }
 
-func openStartMenuEntry(m *emu.Emu, entry int, wantMax int) error {
+func openStartMenuEntry(m *emu.Emu, entry, wantMax int) error {
 	drawn := func(m *emu.Emu) bool {
 		return m.Peek8(sym.FontLoaded) != 0 && int(m.Peek8(sym.MaxMenuItem)) == wantMax
 	}
-	for attempt := 0; attempt < 5; attempt++ {
-		if drawn(m) {
-			break
-		}
+	for attempt := 0; attempt < 5 && !drawn(m); attempt++ {
 		m.Tap(emu.Start, 3, 7)
-		if _, err := m.StepUntil(startMenuDrawBudget, drawn); err == nil {
-			break
-		}
+		_, _ = m.StepUntil(startMenuDrawBudget, drawn)
 	}
 	if !drawn(m) {
 		return fmt.Errorf("skill: start menu did not finish drawing")
@@ -142,11 +134,6 @@ func closeToOverworld(m *emu.Emu) error {
 	return fmt.Errorf("skill: menus did not close to overworld: screen=%q", state.ScreenText(&mem))
 }
 
-// TeachCut teaches HM01 to the first party member the ROM accepts. The HM
-// party menu is authoritative about compatibility (CanLearnTM renders
-// ABLE/NOT ABLE), so this probes slots through the game rather than copying a
-// species compatibility table into PokePilot. HM probes are safe because HMs
-// are not consumed.
 func TeachCut(m *emu.Emu) (int, error) {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
@@ -167,9 +154,7 @@ func TeachCut(m *emu.Emu) (int, error) {
 	if err := openStartMenuEntry(m, itemIndex, wantMax); err != nil {
 		return -1, fmt.Errorf("skill: TeachCut: open ITEM: %w", err)
 	}
-	if _, err := m.StepUntil(bagMenuBudget, func(m *emu.Emu) bool {
-		return m.Peek8(sym.ListMenuID) == itemListMenuID
-	}); err != nil {
+	if _, err := m.StepUntil(bagMenuBudget, func(m *emu.Emu) bool { return m.Peek8(sym.ListMenuID) == itemListMenuID }); err != nil {
 		return -1, fmt.Errorf("skill: TeachCut: bag did not open")
 	}
 	state.Snapshot(m, &mem)
@@ -191,8 +176,6 @@ func TeachCut(m *emu.Emu) (int, error) {
 	}
 	m.Tap(emu.A, 3, 7)
 
-	// HM boot text -> contained CUT -> "Teach CUT to a POKEMON?". Stop only
-	// when the explicit two-option menu is drawn, then choose YES.
 	for i := 0; i < 100; i++ {
 		state.Snapshot(m, &mem)
 		if strings.Contains(state.ScreenText(&mem), "Teach") && state.DecodeTwoOptionMenu(&mem) != nil {
@@ -213,61 +196,21 @@ func TeachCut(m *emu.Emu) (int, error) {
 	}
 
 	state.Snapshot(m, &mem)
-	partyCount := int(state.DecodeParty(&mem).Count)
-	for slot := 0; slot < partyCount; slot++ {
+	count := int(state.DecodeParty(&mem).Count)
+	for slot := 0; slot < count; slot++ {
 		state.Snapshot(m, &mem)
 		before := state.DecodeParty(&mem).Mons[slot].Moves
 		if err := selectTMHMPartySlot(m, slot); err != nil {
 			return -1, fmt.Errorf("skill: TeachCut: select slot %d: %w", slot, err)
 		}
-
-		triedForgets := map[uint8]bool{}
-		lastForget := -1
-		for frames := 0; frames < cutMenuBudget; frames += 20 {
-			state.Snapshot(m, &mem)
-			if partyMoveSlot(&mem, cutMove) == slot {
-				if err := closeToOverworld(m); err != nil {
-					return -1, fmt.Errorf("skill: TeachCut: learned Cut but could not close menus: %w", err)
-				}
-				return slot, nil
+		if learned, err := finishTeachingCut(m, slot, before); learned || err != nil {
+			if err != nil {
+				return -1, err
 			}
-			text := state.ScreenText(&mem)
-			switch {
-			case strings.Contains(text, "not compatible"):
-				for i := 0; i < 30 && !tmhmPartyMenuUp(m); i++ {
-					m.Tap(emu.A, 3, 7)
-					m.StepFrames(20)
-				}
-				frames = cutMenuBudget
-				continue
-			case forgetMenuUp(m):
-				if lastForget >= 0 {
-					triedForgets[before[lastForget]] = true
-					lastForget = -1
-				}
-				pick := forgetSlot(m.ROM(), before, triedForgets)
-				if pick < 0 {
-					return -1, fmt.Errorf("skill: TeachCut: slot %d has no move that can be replaced", slot)
-				}
-				if err := selectForgetSlot(m, pick); err != nil {
-					return -1, fmt.Errorf("skill: TeachCut: choose move to forget: %w", err)
-				}
-				lastForget = pick
-			case strings.Contains(text, "trying to learn"):
-				if state.DecodeTwoOptionMenu(&mem) != nil {
-					if err := SelectMenuItem(m, 0); err != nil {
-						return -1, fmt.Errorf("skill: TeachCut: answer replace-move prompt: %w", err)
-					}
-				} else {
-					m.Tap(emu.A, 3, 7)
-				}
-			case tmhmPartyMenuUp(m):
-				frames = cutMenuBudget
-				continue
-			default:
-				m.Tap(emu.A, 3, 7)
+			if err := closeToOverworld(m); err != nil {
+				return -1, fmt.Errorf("skill: TeachCut: close menus: %w", err)
 			}
-			m.StepFrames(20)
+			return slot, nil
 		}
 		if !tmhmPartyMenuUp(m) {
 			if _, err := m.StepUntil(500, tmhmPartyMenuUp); err != nil {
@@ -280,13 +223,56 @@ func TeachCut(m *emu.Emu) (int, error) {
 	return -1, fmt.Errorf("skill: TeachCut: no party member can learn Cut")
 }
 
-func cuttableFrontTile(tile uint8) bool {
-	return tile == cutTreeTile || tile == gymCutTreeTile
+func finishTeachingCut(m *emu.Emu, slot int, before [4]uint8) (bool, error) {
+	tried := map[uint8]bool{}
+	lastForget := -1
+	var mem state.Mem
+	for frames := 0; frames < cutMenuBudget; frames += 20 {
+		state.Snapshot(m, &mem)
+		if partyMoveSlot(&mem, cutMove) == slot {
+			return true, nil
+		}
+		text := state.ScreenText(&mem)
+		switch {
+		case strings.Contains(text, "not compatible"):
+			for i := 0; i < 30 && !tmhmPartyMenuUp(m); i++ {
+				m.Tap(emu.A, 3, 7)
+				m.StepFrames(20)
+			}
+			return false, nil
+		case forgetMenuUp(m):
+			if lastForget >= 0 {
+				tried[before[lastForget]] = true
+				lastForget = -1
+			}
+			pick := forgetSlot(m.ROM(), before, tried)
+			if pick < 0 {
+				return false, fmt.Errorf("skill: TeachCut: slot %d has no move that can be replaced", slot)
+			}
+			if err := selectForgetSlot(m, pick); err != nil {
+				return false, fmt.Errorf("skill: TeachCut: choose move to forget: %w", err)
+			}
+			lastForget = pick
+		case strings.Contains(text, "trying to learn"):
+			if state.DecodeTwoOptionMenu(&mem) != nil {
+				if err := SelectMenuItem(m, 0); err != nil {
+					return false, fmt.Errorf("skill: TeachCut: answer replace-move prompt: %w", err)
+				}
+			} else {
+				m.Tap(emu.A, 3, 7)
+			}
+		case tmhmPartyMenuUp(m):
+			return false, nil
+		default:
+			m.Tap(emu.A, 3, 7)
+		}
+		m.StepFrames(20)
+	}
+	return false, fmt.Errorf("skill: TeachCut: slot %d did not settle within %d frames", slot, cutMenuBudget)
 }
 
-// CutAhead uses the party member that knows Cut, teaching HM01 first when
-// necessary. Success is the game's own action result plus a return to the
-// overworld; selecting the menu entry alone is never treated as success.
+func cuttableFrontTile(tile uint8) bool { return tile == cutTreeTile || tile == gymCutTreeTile }
+
 func CutAhead(m *emu.Emu) error {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
@@ -307,8 +293,7 @@ func CutAhead(m *emu.Emu) error {
 	}
 
 	wantMax, itemIndex := startMenuShape(&mem)
-	pokemonIndex := itemIndex - 1
-	if err := openStartMenuEntry(m, pokemonIndex, wantMax); err != nil {
+	if err := openStartMenuEntry(m, itemIndex-1, wantMax); err != nil {
 		return fmt.Errorf("skill: CutAhead: open POKEMON: %w", err)
 	}
 	if _, err := m.StepUntil(1000, normalPartyMenuUp); err != nil {
@@ -318,8 +303,6 @@ func CutAhead(m *emu.Emu) error {
 		return fmt.Errorf("skill: CutAhead: select Cut user: %w", err)
 	}
 
-	// wFieldMoves stores display indices; CUT is 1 in FieldMoveDisplayData.
-	// Field moves occupy entries before STATS/SWITCH/CANCEL in this order.
 	cutIndex := -1
 	for i := 0; i < 4; i++ {
 		if m.Peek8(sym.FieldMoves+uint16(i)) == cutFieldMove {
@@ -328,13 +311,12 @@ func CutAhead(m *emu.Emu) error {
 		}
 	}
 	if cutIndex < 0 {
-		return fmt.Errorf("skill: CutAhead: selected party slot %d knows Cut but CUT is absent from wFieldMoves", slot)
+		return fmt.Errorf("skill: CutAhead: slot %d knows Cut but CUT is absent from wFieldMoves", slot)
 	}
 	if err := SelectMenuItem(m, cutIndex); err != nil {
 		return fmt.Errorf("skill: CutAhead: select CUT: %w", err)
 	}
-
-	m.StepFrames(30) // UsedCut clears ActionResult before setting success itself.
+	m.StepFrames(30)
 	if _, err := m.StepUntil(3000, func(m *emu.Emu) bool {
 		var s state.Mem
 		state.Snapshot(m, &s)
@@ -346,13 +328,10 @@ func CutAhead(m *emu.Emu) error {
 	return nil
 }
 
-type cutCandidate struct {
-	x, y int
-	d    int
-}
+type cutCandidate struct{ x, y, d int }
 
 func vermilionCutCandidates(grid *world.Grid) []cutCandidate {
-	out := make([]cutCandidate, 0)
+	var out []cutCandidate
 	for y := 0; y < grid.Height; y++ {
 		for x := 0; x < grid.Width; x++ {
 			if grid.Walkable(x, y) {
@@ -363,6 +342,7 @@ func vermilionCutCandidates(grid *world.Grid) []cutCandidate {
 				out = append(out, cutCandidate{x: x, y: y, d: d})
 			}
 		}
+	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].d != out[j].d {
 			return out[i].d < out[j].d
@@ -386,22 +366,16 @@ func reachableBeside(grid *world.Grid, sx, sy, tx, ty int, blocked map[[2]int]bo
 		}
 		steps, err := world.FindPath(grid, sx, sy, x, y, blocked)
 		if err == nil && len(steps) < bestLen {
-			bestLen = len(steps)
+			bestLen, found = len(steps), true
 			best = Destination{Map: vermilionCity, X: uint8(x), Y: uint8(y)}
-			found = true
 		}
 	}
 	return best, found
 }
 
-// EnterVermilionGym owns the exterior prerequisite of the third gym. It
-// discovers the actual tree from live RAM rather than pinning a guessed map
-// coordinate, cuts it, patches only that proven cell in a temporary collision
-// grid, and walks through the door warp. The internal trash puzzle remains a
-// separate live-map mutation owned by OpenVermilionGym.
 func EnterVermilionGym(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if m.Peek8(sym.CurMap) != vermilionCity {
-		return fmt.Errorf("skill: EnterVermilionGym: on map %#04x, want Vermilion City %#04x", m.Peek8(sym.CurMap), vermilionCity)
+		return fmt.Errorf("skill: EnterVermilionGym: on map %#04x, want %#04x", m.Peek8(sym.CurMap), vermilionCity)
 	}
 	if policy == nil {
 		return fmt.Errorf("skill: EnterVermilionGym: nil policy")
@@ -412,15 +386,25 @@ func EnterVermilionGym(m *emu.Emu, romData []byte, policy MovePolicy) error {
 
 	h, err := rom.ParseMap(romData, vermilionCity)
 	if err != nil {
-		return fmt.Errorf("skill: EnterVermilionGym: parse Vermilion City: %w", err)
+		return fmt.Errorf("skill: EnterVermilionGym: parse city: %w", err)
 	}
 	grid, err := world.Build(romData, h)
 	if err != nil {
-		return fmt.Errorf("skill: EnterVermilionGym: build Vermilion City: %w", err)
+		return fmt.Errorf("skill: EnterVermilionGym: build city: %w", err)
 	}
 
-	var tree cutCandidate
-	found := false
+	tree, err := findVermilionGymTree(m, romData, grid, policy)
+	if err != nil {
+		return err
+	}
+	if err := CutAhead(m); err != nil {
+		return fmt.Errorf("skill: EnterVermilionGym: cut tree at (%d,%d): %w", tree.x, tree.y, err)
+	}
+	grid.Set(tree.x, tree.y, true)
+	return crossVermilionGymDoor(m, grid)
+}
+
+func findVermilionGymTree(m *emu.Emu, romData []byte, grid *world.Grid, policy MovePolicy) (cutCandidate, error) {
 	for _, c := range vermilionCutCandidates(grid) {
 		sx, sy := playerXY(m)
 		stand, ok := reachableBeside(grid, int(sx), int(sy), c.x, c.y, spriteBlockers(m))
@@ -435,22 +419,15 @@ func EnterVermilionGym(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		}
 		m.StepFrames(2)
 		if m.Peek8(sym.TileInFrontOfPlayer) == cutTreeTile {
-			tree, found = c, true
-			break
+			return c, nil
 		}
 	}
-	if !found {
-		return fmt.Errorf("skill: EnterVermilionGym: no reachable Cut tree found near gym warp (%d,%d)", vermilionGymX, vermilionGymY)
-	}
-	if err := CutAhead(m); err != nil {
-		return fmt.Errorf("skill: EnterVermilionGym: cut tree at (%d,%d): %w", tree.x, tree.y, err)
-	}
+	return cutCandidate{}, fmt.Errorf("skill: EnterVermilionGym: no reachable Cut tree found near gym warp (%d,%d)", vermilionGymX, vermilionGymY)
+}
 
-	// The ROM grid still contains the pre-Cut tree. For this one crossing,
-	// make only the tile the game just proved and cut passable.
-	grid.Set(tree.x, tree.y, true)
+func crossVermilionGymDoor(m *emu.Emu, grid *world.Grid) error {
 	sx, sy := playerXY(m)
-	var steps []world.Step
+	var best []world.Step
 	var push world.Step
 	for _, s := range []world.Step{world.StepUp, world.StepDown, world.StepLeft, world.StepRight} {
 		x, y := vermilionGymX+s.DX, vermilionGymY+s.DY
@@ -458,15 +435,14 @@ func EnterVermilionGym(m *emu.Emu, romData []byte, policy MovePolicy) error {
 			continue
 		}
 		p, err := world.FindPath(grid, int(sx), int(sy), x, y, spriteBlockers(m))
-		if err == nil && (steps == nil || len(p) < len(steps)) {
-			steps = p
-			push = world.Step{DX: -s.DX, DY: -s.DY}
+		if err == nil && (best == nil || len(p) < len(best)) {
+			best, push = p, world.Step{DX: -s.DX, DY: -s.DY}
 		}
 	}
-	if steps == nil {
+	if best == nil {
 		return fmt.Errorf("skill: EnterVermilionGym: no path through cut tree to gym door")
 	}
-	if err := WalkPath(m, steps); err != nil {
+	if err := WalkPath(m, best); err != nil {
 		return fmt.Errorf("skill: EnterVermilionGym: walk through cut tree: %w", err)
 	}
 	btn, ok := buttonFor(push)
