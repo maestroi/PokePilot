@@ -13,15 +13,15 @@ import (
 )
 
 const (
-	hm01Item        uint8 = 0xC4
-	cutMove         uint8 = 0x0F
-	cutFieldMove    uint8 = 1
-	cutTreeTile     uint8 = 0x3D
-	gymCutTreeTile  uint8 = 0x50
-	vermilionCity   uint8 = 0x05
-	vermilionGymX         = 12
-	vermilionGymY         = 19
-	cutMenuBudget         = 4000
+	hm01Item       uint8 = 0xC4
+	cutMove        uint8 = 0x0F
+	cutFieldMove   uint8 = 1
+	cutTreeTile    uint8 = 0x3D
+	gymCutTreeTile uint8 = 0x50
+	vermilionCity  uint8 = 0x05
+	vermilionGymX        = 12
+	vermilionGymY        = 19
+	cutMenuBudget        = 4000
 )
 
 func monKnowsMove(mon state.Mon, move uint8) bool {
@@ -42,23 +42,22 @@ func partyMoveSlot(mem *state.Mem, move uint8) int {
 	return -1
 }
 
-func tmhmPartyMenuUp(m *emu.Emu) bool {
+func screenContains(m *emu.Emu, marker string) bool {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	return strings.Contains(state.ScreenText(&mem), "Use TM")
+	return strings.Contains(state.ScreenText(&mem), marker)
 }
 
-func normalPartyMenuUp(m *emu.Emu) bool {
-	var mem state.Mem
-	state.Snapshot(m, &mem)
-	return strings.Contains(state.ScreenText(&mem), "Choose")
+func tmhmPartyMenuUp(m *emu.Emu) bool   { return screenContains(m, "Use TM") }
+func normalPartyMenuUp(m *emu.Emu) bool { return screenContains(m, "Choose") }
+func fieldMoveMenuUp(m *emu.Emu) bool {
+	return screenContains(m, "STATS") && m.Peek8(sym.FieldMoves) != 0
 }
 
-// selectRawPartySlot drives a party list whose caller owns what happens after
-// selection. SelectPartySlot cannot be used for TM/HM teaching because its
-// completion predicate predates TMHM_PARTY_MENU and would consider that menu
-// already gone before pressing A.
-func selectRawPartySlot(m *emu.Emu, index int, menuUp func(*emu.Emu) bool) error {
+// movePartyCursor moves the party-list cursor to index and verifies every
+// direction by re-reading wCurrentMenuItem. It deliberately does not press A:
+// different party-menu callers have different positive handoff states.
+func movePartyCursor(m *emu.Emu, index int) error {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
 	party := state.DecodeParty(&mem)
@@ -68,7 +67,7 @@ func selectRawPartySlot(m *emu.Emu, index int, menuUp func(*emu.Emu) bool) error
 	for i := 0; i < 60; i++ {
 		cur := int(m.Peek8(sym.CurrentMenuItem))
 		if cur == index {
-			break
+			return nil
 		}
 		btn := emu.Down
 		if cur > index {
@@ -79,15 +78,33 @@ func selectRawPartySlot(m *emu.Emu, index int, menuUp func(*emu.Emu) bool) error
 			return int(m.Peek8(sym.CurrentMenuItem)) != cur
 		})
 	}
-	if got := int(m.Peek8(sym.CurrentMenuItem)); got != index {
-		return fmt.Errorf("skill: party cursor at %d, want %d", got, index)
+	return fmt.Errorf("skill: party cursor at %d, want %d", m.Peek8(sym.CurrentMenuItem), index)
+}
+
+func selectTMHMPartySlot(m *emu.Emu, index int) error {
+	if err := movePartyCursor(m, index); err != nil {
+		return err
 	}
-	for i := 0; i < 24 && menuUp(m); i++ {
+	for i := 0; i < 24 && tmhmPartyMenuUp(m); i++ {
 		m.Tap(emu.A, 3, 7)
-		_, _ = m.StepUntil(25, func(m *emu.Emu) bool { return !menuUp(m) })
+		_, _ = m.StepUntil(25, func(m *emu.Emu) bool { return !tmhmPartyMenuUp(m) })
 	}
-	if menuUp(m) {
-		return fmt.Errorf("skill: party menu still up after selecting slot %d", index)
+	if tmhmPartyMenuUp(m) {
+		return fmt.Errorf("skill: TM/HM party menu still up after selecting slot %d", index)
+	}
+	return nil
+}
+
+func selectFieldMoveUser(m *emu.Emu, index int) error {
+	if err := movePartyCursor(m, index); err != nil {
+		return err
+	}
+	for i := 0; i < 24 && !fieldMoveMenuUp(m); i++ {
+		m.Tap(emu.A, 3, 7)
+		_, _ = m.StepUntil(25, fieldMoveMenuUp)
+	}
+	if !fieldMoveMenuUp(m) {
+		return fmt.Errorf("skill: field-move menu did not appear after selecting slot %d", index)
 	}
 	return nil
 }
@@ -108,10 +125,7 @@ func openStartMenuEntry(m *emu.Emu, entry int, wantMax int) error {
 	if !drawn(m) {
 		return fmt.Errorf("skill: start menu did not finish drawing")
 	}
-	if err := SelectMenuItem(m, entry); err != nil {
-		return err
-	}
-	return nil
+	return SelectMenuItem(m, entry)
 }
 
 func closeToOverworld(m *emu.Emu) error {
@@ -129,10 +143,10 @@ func closeToOverworld(m *emu.Emu) error {
 }
 
 // TeachCut teaches HM01 to the first party member the ROM accepts. The HM
-// party menu itself is authoritative about compatibility (CanLearnTM renders
-// ABLE/NOT ABLE); rather than duplicating the species compatibility table,
-// this tries each slot and treats the game's "not compatible" response as a
-// rejection. HMs are not consumed, so rejected slots are safe to probe.
+// party menu is authoritative about compatibility (CanLearnTM renders
+// ABLE/NOT ABLE), so this probes slots through the game rather than copying a
+// species compatibility table into PokePilot. HM probes are safe because HMs
+// are not consumed.
 func TeachCut(m *emu.Emu) (int, error) {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
@@ -158,9 +172,8 @@ func TeachCut(m *emu.Emu) (int, error) {
 	}); err != nil {
 		return -1, fmt.Errorf("skill: TeachCut: bag did not open")
 	}
-	idx, _ := bagEntry(&mem, hm01Item)
 	state.Snapshot(m, &mem)
-	idx, _ = bagEntry(&mem, hm01Item)
+	idx, _ := bagEntry(&mem, hm01Item)
 	if idx < 0 {
 		return -1, fmt.Errorf("skill: TeachCut: HM01 disappeared from the bag")
 	}
@@ -178,8 +191,8 @@ func TeachCut(m *emu.Emu) (int, error) {
 	}
 	m.Tap(emu.A, 3, 7)
 
-	// HM boot text -> contained CUT -> "Teach CUT to a POKEMON?". Advance
-	// only until its explicit two-option menu is drawn, then choose YES.
+	// HM boot text -> contained CUT -> "Teach CUT to a POKEMON?". Stop only
+	// when the explicit two-option menu is drawn, then choose YES.
 	for i := 0; i < 100; i++ {
 		state.Snapshot(m, &mem)
 		if strings.Contains(state.ScreenText(&mem), "Teach") && state.DecodeTwoOptionMenu(&mem) != nil {
@@ -199,11 +212,12 @@ func TeachCut(m *emu.Emu) (int, error) {
 		return -1, fmt.Errorf("skill: TeachCut: TM/HM party menu did not appear")
 	}
 
-	party := state.DecodeParty(&mem)
-	for slot := 0; slot < int(party.Count); slot++ {
+	state.Snapshot(m, &mem)
+	partyCount := int(state.DecodeParty(&mem).Count)
+	for slot := 0; slot < partyCount; slot++ {
 		state.Snapshot(m, &mem)
 		before := state.DecodeParty(&mem).Mons[slot].Moves
-		if err := selectRawPartySlot(m, slot, tmhmPartyMenuUp); err != nil {
+		if err := selectTMHMPartySlot(m, slot); err != nil {
 			return -1, fmt.Errorf("skill: TeachCut: select slot %d: %w", slot, err)
 		}
 
@@ -272,7 +286,7 @@ func cuttableFrontTile(tile uint8) bool {
 
 // CutAhead uses the party member that knows Cut, teaching HM01 first when
 // necessary. Success is the game's own action result plus a return to the
-// overworld; the caller never assumes that selecting CUT removed anything.
+// overworld; selecting the menu entry alone is never treated as success.
 func CutAhead(m *emu.Emu) error {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
@@ -300,13 +314,12 @@ func CutAhead(m *emu.Emu) error {
 	if _, err := m.StepUntil(1000, normalPartyMenuUp); err != nil {
 		return fmt.Errorf("skill: CutAhead: party menu did not appear")
 	}
-	if err := selectRawPartySlot(m, slot, normalPartyMenuUp); err != nil {
+	if err := selectFieldMoveUser(m, slot); err != nil {
 		return fmt.Errorf("skill: CutAhead: select Cut user: %w", err)
 	}
 
-	// The field move menu stores name indices in wFieldMoves. CUT is index 1
-	// in FieldMoveDisplayData; field moves occupy the menu entries before
-	// STATS/SWITCH/CANCEL in the same order.
+	// wFieldMoves stores display indices; CUT is 1 in FieldMoveDisplayData.
+	// Field moves occupy entries before STATS/SWITCH/CANCEL in this order.
 	cutIndex := -1
 	for i := 0; i < 4; i++ {
 		if m.Peek8(sym.FieldMoves+uint16(i)) == cutFieldMove {
@@ -321,7 +334,7 @@ func CutAhead(m *emu.Emu) error {
 		return fmt.Errorf("skill: CutAhead: select CUT: %w", err)
 	}
 
-	m.StepFrames(30) // let UsedCut clear and then set ActionResult itself
+	m.StepFrames(30) // UsedCut clears ActionResult before setting success itself.
 	if _, err := m.StepUntil(3000, func(m *emu.Emu) bool {
 		var s state.Mem
 		state.Snapshot(m, &s)
@@ -346,12 +359,10 @@ func vermilionCutCandidates(grid *world.Grid) []cutCandidate {
 				continue
 			}
 			d := absInt(x-vermilionGymX) + absInt(y-vermilionGymY)
-			if d > 12 {
-				continue
+			if d <= 12 {
+				out = append(out, cutCandidate{x: x, y: y, d: d})
 			}
-			out = append(out, cutCandidate{x: x, y: y, d: d})
 		}
-	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].d != out[j].d {
 			return out[i].d < out[j].d
@@ -383,11 +394,11 @@ func reachableBeside(grid *world.Grid, sx, sy, tx, ty int, blocked map[[2]int]bo
 	return best, found
 }
 
-// EnterVermilionGym handles the only exterior prerequisite of the third gym.
-// It discovers the actual tree from live RAM rather than pinning a map-block
-// guess, cuts it, patches only that proven cell in a temporary collision grid,
-// and walks through the door warp. On return the player is controllable on
-// VERMILION_GYM; OpenVermilionGym owns the separate trash-can gate inside.
+// EnterVermilionGym owns the exterior prerequisite of the third gym. It
+// discovers the actual tree from live RAM rather than pinning a guessed map
+// coordinate, cuts it, patches only that proven cell in a temporary collision
+// grid, and walks through the door warp. The internal trash puzzle remains a
+// separate live-map mutation owned by OpenVermilionGym.
 func EnterVermilionGym(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if m.Peek8(sym.CurMap) != vermilionCity {
 		return fmt.Errorf("skill: EnterVermilionGym: on map %#04x, want Vermilion City %#04x", m.Peek8(sym.CurMap), vermilionCity)
@@ -435,8 +446,8 @@ func EnterVermilionGym(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		return fmt.Errorf("skill: EnterVermilionGym: cut tree at (%d,%d): %w", tree.x, tree.y, err)
 	}
 
-	// The ROM-backed grid still contains the pre-Cut tree. For this one walk,
-	// make only the tile the game just proved/cut passable.
+	// The ROM grid still contains the pre-Cut tree. For this one crossing,
+	// make only the tile the game just proved and cut passable.
 	grid.Set(tree.x, tree.y, true)
 	sx, sy := playerXY(m)
 	var steps []world.Step
