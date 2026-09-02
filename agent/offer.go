@@ -165,7 +165,6 @@ func (k *Knowledge) SawDialogue(lines []string, place string, x, y uint8) {
 			if mentions(low, name) {
 				k.Places[name] = true
 			}
-		}
 		k.HeardRequirement(line, place, x, y)
 	}
 }
@@ -545,6 +544,7 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 			if it, ok := ItemByName(name); ok {
 				out = append(out, Objective{Kind: KindBuy, Item: it, Qty: 3})
 			}
+		}
 	}
 
 	// The people and items of this map, from the ROM map header (see
