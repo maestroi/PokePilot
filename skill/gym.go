@@ -30,9 +30,12 @@ type GymInfo struct {
 // PEWTER_GYM 0x36: Brock at (4,1), Place("pewter gym") is (4,2) below him.
 // CERULEAN_GYM 0x41: Misty at (4,2) (data/maps/objects/CeruleanGym.asm),
 // one row lower than Brock, so Place("cerulean gym") is (4,3).
+// VERMILION_GYM 0x5C: Lt. Surge at (5,1); the stand tile is (5,2), behind
+// the two-switch trash-can door. Gym solves that gate before approaching.
 var gyms = map[uint8]GymInfo{
 	0x36: {Map: 0x36, Place: "pewter gym", LeaderX: 4, LeaderY: 1, Badge: state.BadgeBoulder, Leader: "BROCK"},
 	0x41: {Map: 0x41, Place: "cerulean gym", LeaderX: 4, LeaderY: 2, Badge: state.BadgeCascade, Leader: "MISTY"},
+	0x5C: {Map: 0x5C, Place: "vermilion gym", LeaderX: 5, LeaderY: 1, Badge: state.BadgeThunder, Leader: "LT. SURGE"},
 }
 
 // GymAt reports the gym on a map, if the map is one. Callers use it to ask
@@ -48,17 +51,17 @@ func GymAt(mapID uint8) (GymInfo, bool) {
 const gymBattleWaitBudget = 10000
 
 // gymPostBattleBudget bounds the post-victory sequence: the end-of-battle
-// text, the "WAIT... TAKE THIS" text, the item-get box, and the TM34
-// explanation, all A-advanceable. The badge bit is written by the same
-// script that shows those boxes, so the badge appears before the last box
-// closes.
+// text, the leader's badge/item boxes and explanation, all A-advanceable.
+// The badge bit is written by the same script that shows those boxes, so
+// the badge appears before the last box closes.
 const gymPostBattleBudget = 3000
 
 // Gym fights the leader of whichever gym the player is standing in (see
-// gyms). The player must already be on a gym map: Gym travels to the
-// approach tile beside the leader, faces them, opens the trainer dialogue,
-// advances it until the battle starts, then fights it to completion with
-// policy.
+// gyms). The player must already be on a gym map: Gym resolves any internal
+// approach mechanic it knows (currently Vermilion's trash-can gate), travels
+// to the approach tile beside the leader, faces them, opens the trainer
+// dialogue, advances it until the battle starts, then fights it to completion
+// with policy.
 //
 // It used to name Brock in its code as well as its comments — the map, the
 // leader tile and the badge bit were all Pewter constants — so a second gym
@@ -86,29 +89,37 @@ func Gym(m *emu.Emu, romData []byte, policy MovePolicy) (state.BattleResult, err
 	if !ok {
 		return 0, fmt.Errorf("skill: Gym: Place %q not found", g.Place)
 	}
-	// Travel, not walkWithinMap: a gym's other trainers engage by line of
-	// sight on the way to the leader (MEASURED, S7-8: the Pewter cool
-	// trainer at (3,6) re-arms on every crossing), and Cerulean's cool
-	// trainer at (2,3) faces right along the row the approach tile sits on.
-	// walkWithinMap aborts on that; Travel fights through it, which is what
-	// S8-4 measured it doing on Route 3.
-	res, err := Travel(m, romData, dest, policy, 20)
+
+	// Surge is the first leader whose map itself contains a hard progression
+	// gate. Solve the live puzzle first. Its script replaces a collision block
+	// in WRAM, so the approach below also needs the live-grid-aware Travel
+	// variant instead of rebuilding the original closed door from ROM.
+	var (
+		res TravelResult
+		err error
+	)
+	if cur == vermilionGymMap {
+		if err := OpenVermilionGym(m, romData, policy); err != nil {
+			return 0, fmt.Errorf("skill: Gym: open %s's gate: %w", g.Leader, err)
+		}
+		res, err = travelOpenVermilion(m, romData, dest, policy, 20)
+	} else {
+		// Travel, not walkWithinMap: a gym's other trainers engage by line of
+		// sight on the way to the leader (MEASURED, S7-8: the Pewter cool
+		// trainer at (3,6) re-arms on every crossing), and Cerulean's cool
+		// trainer at (2,3) faces right along the row the approach tile sits on.
+		res, err = Travel(m, romData, dest, policy, 20)
+	}
 	if err != nil {
 		return 0, fmt.Errorf("skill: Gym: approach %s: %w", g.Leader, err)
 	}
 	if res.BlackedOut {
-		// The party was wiped out by one of the gym's own trainers on the
-		// way in, and the respawn has already moved the player off the gym
-		// map. There is no leader to face; say so as the outcome it is,
-		// rather than failing later on a Face that cannot work.
 		return 0, fmt.Errorf("skill: Gym: %w approaching %s (%d battles)", ErrBlackedOut, g.Leader, res.Battles)
 	}
 	if err := Face(m, g.LeaderX, g.LeaderY); err != nil {
 		return 0, fmt.Errorf("skill: Gym: face %s: %w", g.Leader, err)
 	}
 
-	// The first A opens the leader's dialogue; advanceUntil keeps tapping
-	// A on every box until the battle itself starts (DecodeBattle != nil).
 	m.Tap(emu.A, 3, 7)
 	mem := advanceUntil(m, gymBattleWaitBudget, func(mm *state.Mem) bool {
 		return state.DecodeBattle(mm) != nil
@@ -124,8 +135,6 @@ func Gym(m *emu.Emu, romData []byte, policy MovePolicy) (state.BattleResult, err
 		return outcome, fmt.Errorf("skill: Gym: %w", err)
 	}
 
-	// The battle screen is gone, but the post-victory boxes are not yet
-	// closed and the badge bit is not yet written. Advance them.
 	if outcome == state.ResultWon {
 		mem = advanceUntil(m, gymPostBattleBudget, func(mm *state.Mem) bool {
 			return state.DecodeProgress(mm).Has(g.Badge)
@@ -137,8 +146,6 @@ func Gym(m *emu.Emu, romData []byte, policy MovePolicy) (state.BattleResult, err
 		}
 	}
 
-	// Let the last box close and the font unload so the player is
-	// Controllable again (a loss blackouts to the center first).
 	mem = advanceUntil(m, gymPostBattleBudget, func(mm *state.Mem) bool {
 		return state.Controllable(mm)
 	})
