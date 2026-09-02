@@ -22,10 +22,10 @@ type routeCutCandidate struct {
 	d    int
 }
 
-// cutRouteTile reports whether a collision tile is a tree the game's CUT
-// field move can remove in this tileset. The tile id alone is not enough:
-// UsedCut first checks the tileset (OVERWORLD or GYM), then compares the
-// tile in front with $3d or $50 respectively.
+// cutRouteTile reports whether the TOP-LEFT field-action tile is a tree the
+// game's CUT field move can remove in this tileset. The tile id alone is not
+// enough: UsedCut first checks the tileset (OVERWORLD or GYM), then compares
+// wTileInFrontOfPlayer with $3d or $50 respectively.
 func cutRouteTile(tileset, tile uint8) bool {
 	switch tileset {
 	case overworldTileset:
@@ -52,7 +52,7 @@ func routeCutCandidates(grid *world.Grid, tileset uint8, sx, sy int) []routeCutC
 	out := make([]routeCutCandidate, 0)
 	for y := 0; y < grid.Height; y++ {
 		for x := 0; x < grid.Width; x++ {
-			tile, ok := grid.Tile(x, y)
+			tile, ok := grid.FieldTile(x, y)
 			if !ok || !cutRouteTile(tileset, tile) {
 				continue
 			}
@@ -100,10 +100,12 @@ func reachableBesideOnMap(grid *world.Grid, mapID uint8, sx, sy, tx, ty int, blo
 // but FindPath deliberately permits a solid START cell so a player standing
 // on a live-mutated tree cell can leave it for the newly opened side.
 //
-// The static grid is used only to identify candidates whose collision tile is
-// the exact tree id for this tileset. Before any field move is used the live
-// game must agree through wTileInFrontOfPlayer. An ordinary wall is therefore
-// never guessed to be removable.
+// The static grid is used only to identify candidates whose TOP-LEFT field
+// tile is the exact tree id for this tileset — the same subtile the ROM puts
+// in wTileInFrontOfPlayer. Walkability still comes from the independently
+// measured bottom-left collision tile. Before any field move is used the live
+// game must agree through wTileInFrontOfPlayer, so an ordinary wall is never
+// guessed to be removable.
 func cutThroughReachableTree(m *emu.Emu, romData []byte) (bool, error) {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
