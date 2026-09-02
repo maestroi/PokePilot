@@ -8,11 +8,11 @@ import (
 )
 
 const (
-	moveVineWhip   uint8 = 22
-	moveGrowl      uint8 = 45
-	moveLeechSeed  uint8 = 73
-	movePoisonPowder uint8 = 77
-	typeGrassIvysaur uint8 = 0x16
+	moveVineWhip      uint8 = 22
+	moveGrowl         uint8 = 45
+	moveLeechSeed     uint8 = 73
+	movePoisonPowder  uint8 = 77
+	typeGrassIvysaur  uint8 = 0x16
 	typePoisonIvysaur uint8 = 0x03
 )
 
