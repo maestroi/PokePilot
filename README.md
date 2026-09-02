@@ -66,15 +66,32 @@ The screen is served at `http://localhost:8099` for humans to watch.
 ```sh
 make run-llm        # sources .env for llm_token
 make run-llm-local  # same loop against a local model, thinking disabled
+make run-llm-auto   # prefer local GPU; pin the configured fallback on transport failure
 ```
 
 Environment: `POKEPILOT_LLM_URL` (default `http://192.168.50.204:8000/v1`),
-`POKEPILOT_LLM_MODEL` (default `qwen3.5-4b`), `llm_token` from `.env`. Each
-round the model picks one of the offered objectives — `take a starter` plus
-one `go to <place>` per name `skill.Place` accepts — and the round is
+`POKEPILOT_LLM_MODEL` (default `qwen3.5-4b`), `llm_token` from `.env`. The
+`run-llm-auto` target additionally understands `POKEPILOT_LLM_FALLBACK_URL`,
+`POKEPILOT_LLM_FALLBACK_MODEL`, `POKEPILOT_LLM_FALLBACK_TOKEN`,
+`POKEPILOT_LLM_FALLBACK_TIMEOUT`, and the `AUTO_LLM_*` Make overrides. A
+primary transport failure pins the fallback for the rest of the run; ordinary
+model rejection/retry does not switch backends.
+
+`-goal` accepts ordinary prompt text, but four structured forms are evaluated
+against decoded game state before each model call and stop deterministically
+when complete: `badges:N`, `reach:<place>`, `level:N`, `item:<name>`, plus the
+`elite-four` goal. For example:
+
+```sh
+make run-llm ARGS='-goal badges:1'
+make run-llm-auto ARGS='-goal "reach:pewter city"'
+```
+
+Each round the model picks one of the offered objectives — `take a starter`
+plus one `go to <place>` per name `skill.Place` accepts — and the round is
 printed to stdout, so an unattended run leaves a log a human can read in the
-morning. The run stops on budget exhaustion, a reply naming no objective, or
-a failed objective. Details in `docs/AGENT.md`.
+morning. The run stops on structured-goal completion, budget exhaustion, a
+reply naming no objective, or a failed objective. Details in `docs/AGENT.md`.
 
 ### Scoreboard
 
