@@ -133,7 +133,7 @@ func writeLLMChoice(t *testing.T, w http.ResponseWriter, model string, choice in
 		"choices": []any{map[string]any{
 			"message": map[string]any{
 				"role":    "assistant",
-				"content": `{"choice":` + jsonNumber(choice) + `,"intent":"continue toward the goal"}`,
+				"content": `{"choice":`[1:] + jsonNumber(choice) + `,"intent":"continue toward the goal"}`[1:],
 			},
 			"finish_reason": "stop",
 		}},
