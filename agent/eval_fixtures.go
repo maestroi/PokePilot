@@ -97,7 +97,7 @@ func CoreEvalCases() []EvalCase {
 			Name: "badge progress does not backtrack to old city",
 			Obs: Observation{
 				MapName: "Cerulean City", Round: 15, RoundsLeft: 8,
-				Badges: []string{"Boulder"},
+				Badges:     []string{"Boulder"},
 				PartyCount: 1, Party: []PartyMon{{Level: 18, HP: 45, MaxHP: 45}},
 			},
 			Offered: []Objective{goPewter, goCerulean},

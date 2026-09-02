@@ -175,7 +175,7 @@ func TestClientPingSendsVersion(t *testing.T) {
 func TestClientHeartbeatSendsVersion(t *testing.T) {
 	var got Heartbeat
 	srv := httptest.NewServer(http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
-		json.NewDecoder(req.Body).Decode(&got) //nolint:errcheck
+		json.NewDecoder(req.Body).Decode(&got)        //nolint:errcheck
 		json.NewEncoder(res).Encode(HeartbeatReply{}) //nolint:errcheck
 	}))
 	defer srv.Close()

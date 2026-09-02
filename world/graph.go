@@ -12,17 +12,17 @@ const maxMapID = 0xF7
 type EdgeKind uint8
 
 const (
-	EdgeWarp EdgeKind = iota // step into a warp tile
-	EdgeConnection           // walk off the map edge
+	EdgeWarp       EdgeKind = iota // step into a warp tile
+	EdgeConnection                 // walk off the map edge
 )
 
 type Edge struct {
-	Kind   EdgeKind
-	From   uint8 // source map id
-	To     uint8 // destination map id, already resolved (never 0xFF)
-	WarpX  uint8 // EdgeWarp only: the warp tile on the source map
-	WarpY  uint8
-	Dir    uint8 // EdgeConnection only: 0=north 1=south 2=west 3=east
+	Kind  EdgeKind
+	From  uint8 // source map id
+	To    uint8 // destination map id, already resolved (never 0xFF)
+	WarpX uint8 // EdgeWarp only: the warp tile on the source map
+	WarpY uint8
+	Dir   uint8 // EdgeConnection only: 0=north 1=south 2=west 3=east
 }
 
 // Map-edge directions, matching rom.Connection.Dir and Edge.Dir.
@@ -339,10 +339,10 @@ func tileOrNeighbourComps(comps [][]int, w, h int, x, y int) []int {
 		add(x, y)
 		return out
 	}
-	add(x + 1, y)
-	add(x - 1, y)
-	add(x, y + 1)
-	add(x, y - 1)
+	add(x+1, y)
+	add(x-1, y)
+	add(x, y+1)
+	add(x, y-1)
 	return out
 }
 
