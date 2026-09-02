@@ -1,7 +1,9 @@
 package main
 
 import (
+	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/maestroi/pokepilot/agent"
@@ -26,6 +28,8 @@ type (
 	choiceCount = farm.ChoiceCount
 )
 
+const strategicReplanAfter = 4
+
 // statsPlanner wraps a planner and tallies what it chooses, pushing the
 // tally to the watch page after every ask. It is a decorator rather than
 // bookkeeping inside agent.Run because the numbers it wants are all in the
@@ -37,6 +41,14 @@ type (
 // When that existing Goal uses agent.ParseGoal's structured syntax, evaluate
 // it before spending a model call and return ErrDone once RAM/state proves
 // completion. Free-text Goal values are untouched and remain prompt-only.
+//
+// The same decorator owns a derived long-horizon progress tracker. It uses
+// StrategicMemory only for observable progress/no-progress accounting; the
+// planner's existing Observation.Intent remains the sole planner-owned
+// strategy sentence. Once progress has stalled for several distinct rounds,
+// a temporary system note asks for a materially different approach. The
+// signal never chooses that approach and is not persisted as a second memory
+// slot. Retries of the same round do not advance the counter.
 type statsPlanner struct {
 	inner *agent.LLMPlanner
 	push  func(any)      // emu.TraceStats
@@ -46,10 +58,21 @@ type statsPlanner struct {
 	counts  map[string]int
 	offered int           // summed over calls, for the average
 	elapsed time.Duration // summed over calls, for the average
+
+	strategy        agent.StrategicMemory
+	strategyRound   int
+	strategySeen    bool
+	baseExtraSystem string
 }
 
 func newStatsPlanner(inner *agent.LLMPlanner, push func(any), snap *heartbeatSnap) *statsPlanner {
-	return &statsPlanner{inner: inner, push: push, snap: snap, counts: map[string]int{}}
+	return &statsPlanner{
+		inner:           inner,
+		push:            push,
+		snap:            snap,
+		counts:          map[string]int{},
+		baseExtraSystem: inner.ExtraSystem,
+	}
 }
 
 func (s *statsPlanner) Next(obs agent.Observation, offered []agent.Objective) (agent.Objective, error) {
@@ -59,6 +82,7 @@ func (s *statsPlanner) Next(obs agent.Observation, offered []agent.Objective) (a
 		}
 		return agent.Objective{}, agent.ErrDone
 	}
+	s.prepareStrategy(obs)
 	start := time.Now()
 	o, err := s.inner.Next(obs, offered)
 	s.record(obs, len(offered), o, err, time.Since(start))
@@ -72,6 +96,7 @@ func (s *statsPlanner) NextRetry(obs agent.Observation, offered []agent.Objectiv
 		}
 		return agent.Objective{}, agent.ErrDone
 	}
+	s.prepareStrategy(obs)
 	start := time.Now()
 	o, err := s.inner.NextRetry(obs, offered, r)
 	s.record(obs, len(offered), o, err, time.Since(start))
@@ -84,6 +109,31 @@ func (s *statsPlanner) goalDone(obs agent.Observation) (bool, error) {
 		return false, err
 	}
 	return structured && status.Complete, nil
+}
+
+func (s *statsPlanner) prepareStrategy(obs agent.Observation) {
+	// NextRetry receives the same observation and round as Next. Count a
+	// world state once, not once per model attempt.
+	if !s.strategySeen || obs.Round != s.strategyRound {
+		s.strategy.ObserveProgress(obs, 0)
+		s.strategyRound = obs.Round
+		s.strategySeen = true
+	}
+
+	extra := s.baseExtraSystem
+	if reason := s.strategy.ReplanReason(strategicReplanAfter); reason != "" {
+		intent := strings.TrimSpace(obs.Intent)
+		if intent == "" {
+			reason = fmt.Sprintf("No measurable progress for %d rounds; choose a materially different approach.", s.strategy.NoProgress)
+		} else {
+			reason = fmt.Sprintf("Intent %q has made no measurable progress for %d rounds; choose a materially different approach.", intent, s.strategy.NoProgress)
+		}
+		if extra != "" {
+			extra += "\n\n"
+		}
+		extra += "RUN REPLAN SIGNAL: " + reason
+	}
+	s.inner.ExtraSystem = extra
 }
 
 // record folds one ask into the tally and publishes it. A re-ask after a
