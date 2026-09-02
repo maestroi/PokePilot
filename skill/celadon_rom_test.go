@@ -57,7 +57,7 @@ func TestBadgeFourRoute10ToLavenderUsesRockTunnel(t *testing.T) {
 func TestBadgeFourMapsContainCutFieldTiles(t *testing.T) {
 	romData := badgeFourROM(t)
 	for _, tc := range []struct {
-		name string
+		name  string
 		mapID uint8
 	}{
 		{"route 9", 0x14},
@@ -85,6 +85,44 @@ func TestBadgeFourMapsContainCutFieldTiles(t *testing.T) {
 				t.Fatalf("map %02x has no field-action Cut tiles; Cut-aware routing cannot open its gate", tc.mapID)
 			}
 			t.Logf("map %02x exposes %d field-action Cut tile(s)", tc.mapID, count)
+		})
+	}
+}
+
+func TestBadgeFourPlaceTargetsAreWalkable(t *testing.T) {
+	romData := badgeFourROM(t)
+	for _, name := range []string{
+		"route 9",
+		"route 10",
+		"rock tunnel pokemon center",
+		"rock tunnel 1f",
+		"lavender town",
+		"lavender pokemon center",
+		"route 8",
+		"underground path route 8",
+		"underground path west east",
+		"underground path route 7",
+		"route 7",
+		"celadon city",
+		"celadon pokemon center",
+		"celadon gym",
+	} {
+		t.Run(name, func(t *testing.T) {
+			d, ok := Place(name)
+			if !ok {
+				t.Fatalf("Place(%q) missing", name)
+			}
+			h, err := rom.ParseMap(romData, d.Map)
+			if err != nil {
+				t.Fatalf("ParseMap(%02x): %v", d.Map, err)
+			}
+			g, err := world.Build(romData, h)
+			if err != nil {
+				t.Fatalf("Build(%02x): %v", d.Map, err)
+			}
+			if !g.Walkable(int(d.X), int(d.Y)) {
+				t.Fatalf("Place(%q) = map %02x (%d,%d), but that target is not walkable", name, d.Map, d.X, d.Y)
+			}
 		})
 	}
 }
