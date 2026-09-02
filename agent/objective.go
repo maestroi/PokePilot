@@ -70,10 +70,24 @@ type Objective struct {
 // sentinels (ErrBlackedOut, ErrTrainRetreat) from the failure budget, and
 // that exemption — not a nil return — is what keeps them from ending a
 // run.
-func Execute(m *emu.Emu, romData []byte, o Objective) error {
+func Execute(m *emu.Emu, romData []byte, o Objective) (retErr error) {
 	if err := o.Validate(); err != nil {
 		return err
 	}
+	// Preserve the exact emulator memory at the objective-error boundary.
+	// Run may recover dialogue immediately after this function returns, so
+	// capturing later can erase the transient menu/transition state we need
+	// to understand. Forensics is best-effort: its own failure is logged and
+	// never replaces the gameplay error the planner must see.
+	defer func() {
+		if retErr == nil {
+			return
+		}
+		if err := captureObjectiveFailure(m, o, retErr); err != nil {
+			fmt.Printf("  ram forensics: %v\n", err)
+		}
+	}()
+
 	switch o.Kind {
 	case KindGoTo:
 		dest, ok := skill.Place(o.Place)
