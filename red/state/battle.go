@@ -30,6 +30,12 @@ type BattleState struct {
 	ActiveMaxHP   uint16
 	Moves         [4]Move
 
+	// DisabledMove is the game's 1-based move slot from the high nibble of
+	// wPlayerDisabledMove. Zero means no move is disabled. Keeping the RAM's
+	// 1..4 encoding makes the zero value of BattleState mean "none disabled"
+	// and keeps hand-built test states backwards-compatible.
+	DisabledMove uint8
+
 	// Stat stages, biased the way the game stores them: 7 is neutral, lower
 	// is worse for us. An opponent spamming GROWL shows up only here.
 	ActiveAttackMod  uint8 // wPlayerMonAttackMod
@@ -69,12 +75,13 @@ func (b BattleState) DefenceStage() int {
 	return int(b.EnemyAttackMod) - int(b.ActiveDefenseMod)
 }
 
-// Usable returns the indices of move slots with ID != 0 and PP > 0, in
-// slot order. This is what a move policy picks from.
+// Usable returns the indices of move slots with ID != 0 and PP > 0 that are
+// not currently disabled, in slot order. This is what a move policy picks
+// from. DisabledMove uses the game's 1-based slot encoding, hence i+1.
 func (b BattleState) Usable() []int {
 	var out []int
 	for i, mv := range b.Moves {
-		if mv.ID != 0 && mv.PP > 0 {
+		if mv.ID != 0 && mv.PP > 0 && b.DisabledMove != uint8(i+1) {
 			out = append(out, i)
 		}
 	}
@@ -102,6 +109,7 @@ func DecodeBattle(m *Mem) *BattleState {
 		ActiveHP:         m.U16BE(sym.BattleMonHP),
 		ActiveLevel:      m.U8(sym.BattleMonLevel),
 		ActiveMaxHP:      m.U16BE(sym.BattleMonMaxHP),
+		DisabledMove:     m.U8(sym.PlayerDisabledMove) >> 4,
 		ActiveAttackMod:  m.U8(sym.PlayerMonAttackMod),
 		ActiveDefenseMod: m.U8(sym.PlayerMonDefenseMod),
 		EnemyAttackMod:   m.U8(sym.EnemyMonAttackMod),

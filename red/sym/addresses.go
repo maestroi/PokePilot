@@ -89,6 +89,10 @@ const (
 	BattleMonPP         uint16 = 0xD02D // wBattleMonPP: 4 bytes, parallel to wBattleMonMoves
 	EnemyMonLevel       uint16 = 0xCFF3 // wEnemyMonLevel
 	EnemyMonMaxHP       uint16 = 0xCFF4 // wEnemyMonMaxHP
+	// PlayerDisabledMove is wPlayerDisabledMove. The high nibble is the
+	// disabled move slot encoded as 1..4 (0 means none); the low nibble is
+	// the remaining disable-turn count.
+	PlayerDisabledMove uint16 = 0xD06D
 	// The combatants' types, which is what decides whether a move lands for
 	// double, half or nothing (engine/battle/core.asm:5129 walks TypeEffects
 	// with the move's type in b and the defender's two types in d and e).
