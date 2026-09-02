@@ -75,6 +75,7 @@ const watchPage = `<!doctype html>
   #nums div { display:flex; justify-content:space-between; gap:8px; }
   #nums span:first-child { color:#888; }
   .warn { color:#f96; }
+  #goal { margin-top:6px; color:#fc9; white-space:pre-wrap; }
   #intent { margin-top:6px; color:#9c9; white-space:pre-wrap; }
   #choices { margin-top:6px; }
   #choices div { position:relative; padding:2px 4px; margin-top:1px;
@@ -101,6 +102,7 @@ const watchPage = `<!doctype html>
   <div id="head"></div>
   <div id="stats">
     <div id="nums"></div>
+    <div id="goal"></div>
     <div id="intent"></div>
     <div id="choices"></div>
   </div>
@@ -111,7 +113,8 @@ const img = document.getElementById('f'), wait = document.getElementById('w');
 const trace = document.getElementById('trace');
 const head = document.getElementById('head');
 const stats = document.getElementById('stats'), nums = document.getElementById('nums');
-const intent = document.getElementById('intent'), choices = document.getElementById('choices');
+const goal = document.getElementById('goal'), intent = document.getElementById('intent');
+const choices = document.getElementById('choices');
 const esc = s => String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 let inFlight = false;
 async function tickFrame() {
@@ -178,6 +181,7 @@ function renderStats(s) {
     row('rejected', s.rejected, s.rejected > 0) +
     row('transport', s.transport, s.transport > 0) +
     row('fallbacks', s.fallbacks, s.fallbacks > 0);
+  goal.textContent = s.goal_summary ? 'goal: ' + s.goal_summary + (s.goal_complete ? ' (complete)' : '') : '';
   intent.textContent = s.intent ? '"' + s.intent + '" (' + s.intent_age + ' rounds)' : '';
   const top = (s.choices && s.choices[0]) ? s.choices[0].count : 1;
   choices.innerHTML = (s.choices || []).map(c =>
