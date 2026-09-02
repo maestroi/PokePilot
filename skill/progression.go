@@ -83,8 +83,21 @@ func finishBillRescue(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if err := Face(m, billsPCX, billsPCY); err != nil {
 		return fmt.Errorf("skill: Bill: face cell separator: %w", err)
 	}
-	if _, err := Talk(m); err != nil {
-		return fmt.Errorf("skill: Bill: use cell separator: %w", err)
+
+	// The hidden PC starts another long scripted handoff: sound effects,
+	// Bill's transformation, and his walk out of the separator. Drive that
+	// as a cutscene too. Human Bill is object slot 2 and is initially hidden;
+	// its appearance is the positive state transition we wait for.
+	m.Tap(emu.A, 3, 7)
+	if _, err := m.StepUntil(talkOpenBudget, func(m *emu.Emu) bool {
+		return m.Peek8(sym.FontLoaded) != 0
+	}); err != nil {
+		return fmt.Errorf("skill: Bill: cell separator: %w", ErrNoDialogue)
+	}
+	if err := Cutscene(m, 6000, func(mm *state.Mem) bool {
+		return spriteSlotPresent(mm, 2)
+	}); err != nil {
+		return fmt.Errorf("skill: Bill: exit separator: %w", err)
 	}
 
 	if _, err := TalkAt(m, romData, billHumanX, billHumanY, policy); err != nil {
