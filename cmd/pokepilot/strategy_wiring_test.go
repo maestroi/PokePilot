@@ -7,7 +7,7 @@ import (
 	"github.com/maestroi/pokepilot/agent"
 )
 
-func TestStatsPlannerSurfacesReplanSignalWithoutSecondStrategySlot(t *testing.T) {
+func TestStatsPlannerSurfacesReplanSignalFromCarriedIntent(t *testing.T) {
 	inner := &agent.LLMPlanner{ExtraSystem: "baseline system note"}
 	p := newStatsPlanner(inner, nil, nil)
 
@@ -28,9 +28,6 @@ func TestStatsPlannerSurfacesReplanSignalWithoutSecondStrategySlot(t *testing.T)
 	}
 	if !strings.HasPrefix(inner.ExtraSystem, "baseline system note\n\n") {
 		t.Fatalf("existing ExtraSystem was not preserved: %q", inner.ExtraSystem)
-	}
-	if p.strategy.Strategy != "" {
-		t.Fatalf("parallel strategy slot was populated: %q", p.strategy.Strategy)
 	}
 }
 
