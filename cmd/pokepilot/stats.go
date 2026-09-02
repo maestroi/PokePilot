@@ -60,10 +60,10 @@ const strategicReplanAfter = 4
 // the rest of the run so later rounds and reply retries do not bounce between
 // models.
 type statsPlanner struct {
-	inner    *agent.LLMPlanner
-	fallback *agent.LLMPlanner
-	active   *agent.LLMPlanner
-	backend  string
+	inner     *agent.LLMPlanner
+	fallback  *agent.LLMPlanner
+	active    *agent.LLMPlanner
+	backend   string
 	failovers int
 
 	push func(any)      // emu.TraceStats
@@ -104,15 +104,15 @@ func fallbackPlannerFromEnv(primary *agent.LLMPlanner) *agent.LLMPlanner {
 		model = primary.Model
 	}
 	p := &agent.LLMPlanner{
-		BaseURL:    baseURL,
-		Model:      model,
-		Goal:       primary.Goal,
+		BaseURL:     baseURL,
+		Model:       model,
+		Goal:        primary.Goal,
 		ExtraSystem: primary.ExtraSystem,
-		NoThink:    envBoolOr("POKEPILOT_LLM_FALLBACK_NO_THINK", primary.NoThink),
-		MaxTokens:  primary.MaxTokens,
-		Log:        primary.Log,
-		PromptLog:  primary.PromptLog,
-		ReplyLog:   primary.ReplyLog,
+		NoThink:     envBoolOr("POKEPILOT_LLM_FALLBACK_NO_THINK", primary.NoThink),
+		MaxTokens:   primary.MaxTokens,
+		Log:         primary.Log,
+		PromptLog:   primary.PromptLog,
+		ReplyLog:    primary.ReplyLog,
 	}
 	if token, ok := os.LookupEnv("POKEPILOT_LLM_FALLBACK_TOKEN"); ok {
 		p.Token = token
