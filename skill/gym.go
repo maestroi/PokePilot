@@ -91,21 +91,25 @@ func Gym(m *emu.Emu, romData []byte, policy MovePolicy) (state.BattleResult, err
 	}
 
 	// Surge is the first leader whose map itself contains a hard progression
-	// gate. Solve the live puzzle before asking Travel to reach the stand tile;
-	// otherwise the static door makes the objective fail 100% of the time.
+	// gate. Solve the live puzzle first. Its script replaces a collision block
+	// in WRAM, so the approach below also needs the live-grid-aware Travel
+	// variant instead of rebuilding the original closed door from ROM.
+	var (
+		res TravelResult
+		err error
+	)
 	if cur == vermilionGymMap {
 		if err := OpenVermilionGym(m, romData, policy); err != nil {
 			return 0, fmt.Errorf("skill: Gym: open %s's gate: %w", g.Leader, err)
 		}
+		res, err = travelOpenVermilion(m, romData, dest, policy, 20)
+	} else {
+		// Travel, not walkWithinMap: a gym's other trainers engage by line of
+		// sight on the way to the leader (MEASURED, S7-8: the Pewter cool
+		// trainer at (3,6) re-arms on every crossing), and Cerulean's cool
+		// trainer at (2,3) faces right along the row the approach tile sits on.
+		res, err = Travel(m, romData, dest, policy, 20)
 	}
-
-	// Travel, not walkWithinMap: a gym's other trainers engage by line of
-	// sight on the way to the leader (MEASURED, S7-8: the Pewter cool
-	// trainer at (3,6) re-arms on every crossing), and Cerulean's cool
-	// trainer at (2,3) faces right along the row the approach tile sits on.
-	// walkWithinMap aborts on that; Travel fights through it, which is what
-	// S8-4 measured it doing on Route 3.
-	res, err := Travel(m, romData, dest, policy, 20)
 	if err != nil {
 		return 0, fmt.Errorf("skill: Gym: approach %s: %w", g.Leader, err)
 	}
