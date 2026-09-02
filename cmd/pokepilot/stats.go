@@ -43,6 +43,10 @@ const strategicReplanAfter = 4
 // When that existing Goal uses agent.ParseGoal's structured syntax, evaluate
 // it before spending a model call and return ErrDone once RAM/state proves
 // completion. Free-text Goal values are untouched and remain prompt-only.
+// While a structured goal is incomplete, its deterministic GoalStatus is
+// also rendered as a progress-only system note and copied onto LLMStats so
+// the planner and operator see the same state. The note reports facts; it
+// never prescribes a route or strategy.
 //
 // The same decorator owns a derived long-horizon progress tracker. It uses
 // StrategicMemory only for observable progress/no-progress accounting; the
@@ -141,24 +145,26 @@ func envBoolOr(name string, fallback bool) bool {
 }
 
 func (s *statsPlanner) Next(obs agent.Observation, offered []agent.Objective) (agent.Objective, error) {
-	if done, err := s.goalDone(obs); err != nil || done {
-		if err != nil {
-			return agent.Objective{}, err
-		}
+	done, err := s.prepareRunContext(obs)
+	if err != nil {
+		return agent.Objective{}, err
+	}
+	if done {
+		s.publishSnapshot(obs)
 		return agent.Objective{}, agent.ErrDone
 	}
-	s.prepareStrategy(obs)
 	return s.ask(obs, offered, nil)
 }
 
 func (s *statsPlanner) NextRetry(obs agent.Observation, offered []agent.Objective, r agent.Retry) (agent.Objective, error) {
-	if done, err := s.goalDone(obs); err != nil || done {
-		if err != nil {
-			return agent.Objective{}, err
-		}
+	done, err := s.prepareRunContext(obs)
+	if err != nil {
+		return agent.Objective{}, err
+	}
+	if done {
+		s.publishSnapshot(obs)
 		return agent.Objective{}, agent.ErrDone
 	}
-	s.prepareStrategy(obs)
 	return s.ask(obs, offered, &r)
 }
 
@@ -222,7 +228,38 @@ func (s *statsPlanner) goalDone(obs agent.Observation) (bool, error) {
 	return structured && status.Complete, nil
 }
 
+// prepareRunContext is the one per-ask seam for run-derived context. Goal
+// evaluation happens first so malformed structured syntax fails before any
+// other state is mutated. The same observation then feeds the stall tracker.
+func (s *statsPlanner) prepareRunContext(obs agent.Observation) (bool, error) {
+	status, structured, err := agent.PlannerGoalStatus(s.inner.Goal, obs)
+	if err != nil {
+		return false, err
+	}
+	s.setGoalStats(status, structured)
+	s.prepareStrategyWithGoal(obs, status, structured)
+	return structured && status.Complete, nil
+}
+
+func (s *statsPlanner) setGoalStats(status agent.GoalStatus, structured bool) {
+	if !structured {
+		s.stats.GoalSummary = ""
+		s.stats.GoalCurrent = 0
+		s.stats.GoalTarget = 0
+		s.stats.GoalComplete = false
+		return
+	}
+	s.stats.GoalSummary = status.Summary
+	s.stats.GoalCurrent = status.Current
+	s.stats.GoalTarget = status.Target
+	s.stats.GoalComplete = status.Complete
+}
+
 func (s *statsPlanner) prepareStrategy(obs agent.Observation) {
+	s.prepareStrategyWithGoal(obs, agent.GoalStatus{}, false)
+}
+
+func (s *statsPlanner) prepareStrategyWithGoal(obs agent.Observation, goal agent.GoalStatus, structuredGoal bool) {
 	// NextRetry receives the same observation and round as Next. Count a
 	// world state once, not once per model attempt.
 	if !s.strategySeen || obs.Round != s.strategyRound {
@@ -232,13 +269,20 @@ func (s *statsPlanner) prepareStrategy(obs agent.Observation) {
 	}
 
 	extra := s.baseExtraSystem
+	if structuredGoal && goal.Summary != "" {
+		extra = appendSystemNote(extra, "RUN GOAL STATUS: "+goal.Summary+". This is observable progress only, not a prescribed strategy.")
+	}
 	if reason := s.strategy.ReplanReason(strategicReplanAfter, obs.Intent); reason != "" {
-		if extra != "" {
-			extra += "\n\n"
-		}
-		extra += "RUN REPLAN SIGNAL: " + reason
+		extra = appendSystemNote(extra, "RUN REPLAN SIGNAL: "+reason)
 	}
 	s.inner.ExtraSystem = extra
+}
+
+func appendSystemNote(base, note string) string {
+	if base == "" {
+		return note
+	}
+	return base + "\n\n" + note
 }
 
 // record folds one ask into the tally and publishes it. A re-ask after a
@@ -274,6 +318,26 @@ func (s *statsPlanner) recordFrom(p *agent.LLMPlanner, backend string, obs agent
 		s.counts[name]++
 		s.stats.Choices = rankChoices(s.counts)
 	}
+	s.publish()
+}
+
+// publishSnapshot pushes run-derived state without inventing a model call.
+// Structured goal completion uses it because the stop happens before the
+// next LLM ask; operators should still see the final Complete=true status.
+func (s *statsPlanner) publishSnapshot(obs agent.Observation) {
+	s.stats.Round, s.stats.RoundsLeft = obs.Round, obs.RoundsLeft
+	s.stats.Intent, s.stats.IntentAge = obs.Intent, obs.IntentAge
+	s.stats.Failovers = s.failovers
+	if s.active != nil {
+		s.stats.Backend, s.stats.Model = s.backend, s.active.Model
+	}
+	h := s.health()
+	s.stats.PromptTokens, s.stats.CompletionTokens = h.PromptTokens, h.CompletionTokens
+	s.stats.Transport, s.stats.Fallbacks = h.Transport, h.Fallbacks
+	s.publish()
+}
+
+func (s *statsPlanner) publish() {
 	if s.snap != nil {
 		s.snap.storeStats(s.stats)
 	}
