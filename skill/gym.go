@@ -22,60 +22,34 @@ type GymInfo struct {
 	Leader  string      // for logs and errors; never parsed
 }
 
-// gyms is every gym the journey can currently reach. A gym missing from
-// here is a gym Gym refuses to fight rather than one it guesses at: the
-// leader tile and the badge bit are the two facts a wrong guess would turn
-// into a silent wrong postcondition.
-//
-// PEWTER_GYM 0x36: Brock at (4,1), Place("pewter gym") is (4,2) below him.
-// CERULEAN_GYM 0x41: Misty at (4,2) (data/maps/objects/CeruleanGym.asm),
-// one row lower than Brock, so Place("cerulean gym") is (4,3).
-// VERMILION_GYM 0x5C: Lt. Surge at (5,1); the stand tile is (5,2), behind
-// the two-switch trash-can door. Gym solves that gate before approaching.
+var surgeGym = GymInfo{Map: 0x5C, Place: "vermilion gym", LeaderX: 5, LeaderY: 1, Badge: state.BadgeThunder, Leader: "LT. SURGE"}
+
+// gyms is every gym the journey can currently challenge. Vermilion City is
+// deliberately an alias for Lt. Surge: unlike Brock and Misty, the third gym
+// has a field-move prerequisite outside its map. Offering the challenge from
+// the city lets Gym own that prerequisite atomically — find/cut the tree,
+// enter the gym, solve the trash switches, then fight the leader — instead of
+// requiring the planner to invent an unexpressed "use Cut" objective.
 var gyms = map[uint8]GymInfo{
 	0x36: {Map: 0x36, Place: "pewter gym", LeaderX: 4, LeaderY: 1, Badge: state.BadgeBoulder, Leader: "BROCK"},
 	0x41: {Map: 0x41, Place: "cerulean gym", LeaderX: 4, LeaderY: 2, Badge: state.BadgeCascade, Leader: "MISTY"},
-	0x5C: {Map: 0x5C, Place: "vermilion gym", LeaderX: 5, LeaderY: 1, Badge: state.BadgeThunder, Leader: "LT. SURGE"},
+	0x05: surgeGym, // Vermilion City: exterior Cut prerequisite
+	0x5C: surgeGym, // Vermilion Gym: already inside
 }
 
-// GymAt reports the gym on a map, if the map is one. Callers use it to ask
-// whether a gym challenge is even possible where the player stands.
+// GymAt reports the gym challenge available from a map, if there is one.
 func GymAt(mapID uint8) (GymInfo, bool) {
 	g, ok := gyms[mapID]
 	return g, ok
 }
 
-// gymBattleWaitBudget bounds the leader's intro dialogue to the start of
-// the battle: two or three text boxes and the battle transition. It is a
-// budget, not a prediction; exhausting it is an error with diagnostics.
 const gymBattleWaitBudget = 10000
-
-// gymPostBattleBudget bounds the post-victory sequence: the end-of-battle
-// text, the leader's badge/item boxes and explanation, all A-advanceable.
-// The badge bit is written by the same script that shows those boxes, so
-// the badge appears before the last box closes.
 const gymPostBattleBudget = 3000
 
-// Gym fights the leader of whichever gym the player is standing in (see
-// gyms). The player must already be on a gym map: Gym resolves any internal
-// approach mechanic it knows (currently Vermilion's trash-can gate), travels
-// to the approach tile beside the leader, faces them, opens the trainer
-// dialogue, advances it until the battle starts, then fights it to completion
-// with policy.
-//
-// It used to name Brock in its code as well as its comments — the map, the
-// leader tile and the badge bit were all Pewter constants — so a second gym
-// could not be fought at all, and a Cerulean challenge would have checked
-// the Boulder bit and reported a win as a failure.
-//
-// The postcondition is THAT gym's badge, not the battle: on a win Gym
-// advances the post-victory text until the leader's badge bit is set in
-// wObtainedBadges AND the player is Controllable again, so a returned
-// ResultWon means the badge is provably in RAM. On a loss it advances until
-// controllable (the blackout then carries the player to their respawn
-// point). It is an error when the player is not on a known gym map, the
-// approach fails, the battle never starts within budget, Battle fails, or
-// the post-battle sequence does not finish within budget.
+// Gym executes the complete challenge available where the player stands.
+// Brock and Misty begin inside their gyms. Surge may begin in Vermilion City:
+// Gym then owns the exterior Cut prerequisite, the internal trash-can gate,
+// the leader battle, and the Thunder Badge postcondition.
 func Gym(m *emu.Emu, romData []byte, policy MovePolicy) (state.BattleResult, error) {
 	if policy == nil {
 		return 0, fmt.Errorf("skill: Gym: nil policy")
@@ -83,17 +57,20 @@ func Gym(m *emu.Emu, romData []byte, policy MovePolicy) (state.BattleResult, err
 	cur := m.Peek8(sym.CurMap)
 	g, ok := GymAt(cur)
 	if !ok {
-		return 0, fmt.Errorf("skill: Gym: map %#04x is not a gym this run can fight", cur)
+		return 0, fmt.Errorf("skill: Gym: map %#04x has no gym challenge this run can execute", cur)
 	}
 	dest, ok := Place(g.Place)
 	if !ok {
 		return 0, fmt.Errorf("skill: Gym: Place %q not found", g.Place)
 	}
 
-	// Surge is the first leader whose map itself contains a hard progression
-	// gate. Solve the live puzzle first. Its script replaces a collision block
-	// in WRAM, so the approach below also needs the live-grid-aware Travel
-	// variant instead of rebuilding the original closed door from ROM.
+	if cur == vermilionCity {
+		if err := EnterVermilionGym(m, romData, policy); err != nil {
+			return 0, fmt.Errorf("skill: Gym: reach %s: %w", g.Leader, err)
+		}
+		cur = m.Peek8(sym.CurMap)
+	}
+
 	var (
 		res TravelResult
 		err error
@@ -104,10 +81,9 @@ func Gym(m *emu.Emu, romData []byte, policy MovePolicy) (state.BattleResult, err
 		}
 		res, err = travelOpenVermilion(m, romData, dest, policy, 20)
 	} else {
-		// Travel, not walkWithinMap: a gym's other trainers engage by line of
-		// sight on the way to the leader (MEASURED, S7-8: the Pewter cool
-		// trainer at (3,6) re-arms on every crossing), and Cerulean's cool
-		// trainer at (2,3) faces right along the row the approach tile sits on.
+		// Travel, not walkWithinMap: gym trainers can engage by line of sight
+		// on the way to the leader, and Travel resolves those battles before
+		// replanning from the resulting live position.
 		res, err = Travel(m, romData, dest, policy, 20)
 	}
 	if err != nil {
