@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"sync/atomic"
 	"testing"
 
@@ -128,12 +129,13 @@ func brokenLLMServer(t *testing.T) *httptest.Server {
 func writeLLMChoice(t *testing.T, w http.ResponseWriter, model string, choice int) {
 	t.Helper()
 	w.Header().Set("Content-Type", "application/json")
+	content := "{\"choice\":" + strconv.Itoa(choice) + ",\"intent\":\"continue toward the goal\"}"
 	if err := json.NewEncoder(w).Encode(map[string]any{
 		"model": model,
 		"choices": []any{map[string]any{
 			"message": map[string]any{
 				"role":    "assistant",
-				"content": `{"choice":1}`,
+				"content": content,
 			},
 			"finish_reason": "stop",
 		}},
@@ -141,9 +143,4 @@ func writeLLMChoice(t *testing.T, w http.ResponseWriter, model string, choice in
 	}); err != nil {
 		t.Errorf("encode reply: %v", err)
 	}
-}
-
-func jsonNumber(n int) string {
-	b, _ := json.Marshal(n)
-	return string(b)
 }
