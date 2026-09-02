@@ -12,17 +12,17 @@ import (
 )
 
 const (
-	billsHouseMap      uint8 = 0x58
-	vermilionGymMap    uint8 = 0x5C
-	ssTicketItem       uint8 = 0x3F
-	billPokemonX       uint8 = 6
-	billPokemonY       uint8 = 5
-	billHumanX         uint8 = 4
-	billHumanY         uint8 = 4
-	billsPCX           uint8 = 1
-	billsPCY           uint8 = 4
-	billsPCStandY      uint8 = 5
-	vermilionCanCount        = 15
+	billsHouseMap     uint8 = 0x58
+	vermilionGymMap   uint8 = 0x5C
+	ssTicketItem      uint8 = 0x3F
+	billPokemonX      uint8 = 6
+	billPokemonY      uint8 = 5
+	billHumanX        uint8 = 4
+	billHumanY        uint8 = 4
+	billsPCX          uint8 = 1
+	billsPCY          uint8 = 4
+	billsPCStandY     uint8 = 5
+	vermilionCanCount       = 15
 )
 
 func spriteSlotPresent(mem *state.Mem, slot int) bool {
