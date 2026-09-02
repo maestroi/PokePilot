@@ -1,10 +1,12 @@
 package main
 
 import (
+	"fmt"
 	"sort"
 	"time"
 
 	"github.com/maestroi/pokepilot/agent"
+	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/farm"
 )
 
@@ -60,6 +62,7 @@ type statsPlanner struct {
 	inner  *agent.LLMPlanner
 	router *agent.FailoverPlanner
 
+	emu  *emu.Emu       // for stall RAM captures; nil in unit tests
 	push func(any)      // emu.TraceStats
 	snap *heartbeatSnap // farm heartbeat; nil on the local (non-farm) run
 
@@ -71,10 +74,11 @@ type statsPlanner struct {
 	strategy        agent.StrategicMemory
 	strategyRound   int
 	strategySeen    bool
+	stallCaptured   bool
 	baseExtraSystem string
 }
 
-func newStatsPlanner(inner *agent.LLMPlanner, push func(any), snap *heartbeatSnap) *statsPlanner {
+func newStatsPlanner(inner *agent.LLMPlanner, m *emu.Emu, push func(any), snap *heartbeatSnap) *statsPlanner {
 	fallbackDefaults := agent.LLMConfig{
 		Model:     inner.Model,
 		Token:     inner.Token,
@@ -89,6 +93,7 @@ func newStatsPlanner(inner *agent.LLMPlanner, push func(any), snap *heartbeatSna
 
 	s := &statsPlanner{
 		inner:           inner,
+		emu:             m,
 		push:            push,
 		snap:            snap,
 		counts:          map[string]int{},
@@ -172,8 +177,21 @@ func (s *statsPlanner) prepareStrategyWithGoal(obs agent.Observation, goal agent
 	if structuredGoal && goal.Summary != "" {
 		extra = appendSystemNote(extra, "RUN GOAL STATUS: "+goal.Summary+". This is observable progress only, not a prescribed strategy.")
 	}
-	if reason := s.strategy.ReplanReason(strategicReplanAfter, obs.Intent); reason != "" {
+	reason := s.strategy.ReplanReason(strategicReplanAfter, obs.Intent)
+	if reason != "" {
 		extra = appendSystemNote(extra, "RUN REPLAN SIGNAL: "+reason)
+	}
+	// Preserve RAM on the EDGE of the stall, not every stalled round. This is
+	// the pathology objective-failure forensics cannot see: nothing failed,
+	// every objective returned done, and the run still went nowhere.
+	switch {
+	case reason == "":
+		s.stallCaptured = false
+	case !s.stallCaptured:
+		s.stallCaptured = true
+		if err := agent.CaptureStall(s.emu, obs.Intent, reason); err != nil {
+			fmt.Printf("  ram forensics: %v\n", err)
+		}
 	}
 	s.inner.ExtraSystem = extra
 }

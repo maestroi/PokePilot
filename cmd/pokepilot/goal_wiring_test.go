@@ -14,7 +14,7 @@ func TestStatsPlannerStopsOnCompletedStructuredGoal(t *testing.T) {
 		pushed int
 		got    runStats
 	)
-	p := newStatsPlanner(inner, func(v any) {
+	p := newStatsPlanner(inner, nil, func(v any) {
 		pushed++
 		got = v.(runStats)
 	}, nil)
@@ -36,7 +36,7 @@ func TestStatsPlannerStopsOnCompletedStructuredGoal(t *testing.T) {
 
 func TestStatsPlannerSurfacesStructuredGoalProgress(t *testing.T) {
 	inner := &agent.LLMPlanner{Goal: "badges:2", ExtraSystem: "baseline system note"}
-	p := newStatsPlanner(inner, nil, nil)
+	p := newStatsPlanner(inner, nil, nil, nil)
 
 	done, err := p.prepareRunContext(agent.Observation{
 		Round: 1, Badges: []string{"Boulder"}, Party: []agent.PartyMon{{Level: 12}},
@@ -63,7 +63,7 @@ func TestStatsPlannerSurfacesStructuredGoalProgress(t *testing.T) {
 
 func TestStatsPlannerLeavesFreeTextGoalPromptOnly(t *testing.T) {
 	inner := &agent.LLMPlanner{Goal: "Earn the Boulder Badge.", ExtraSystem: "baseline"}
-	p := newStatsPlanner(inner, nil, nil)
+	p := newStatsPlanner(inner, nil, nil, nil)
 
 	if done, err := p.prepareRunContext(agent.Observation{Round: 1, Badges: []string{"Boulder"}}); err != nil || done {
 		t.Fatalf("prepareRunContext = done %v, err %v; want free-text prompt-only", done, err)
@@ -78,7 +78,7 @@ func TestStatsPlannerLeavesFreeTextGoalPromptOnly(t *testing.T) {
 
 func TestStatsPlannerRejectsMalformedStructuredGoal(t *testing.T) {
 	inner := &agent.LLMPlanner{Goal: "badges:99"}
-	p := newStatsPlanner(inner, nil, nil)
+	p := newStatsPlanner(inner, nil, nil, nil)
 
 	_, err := p.Next(agent.Observation{}, nil)
 	if err == nil || errors.Is(err, agent.ErrDone) {

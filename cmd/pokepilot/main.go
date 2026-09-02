@@ -257,7 +257,7 @@ func runLLM(m *emu.Emu, goal string, maxRounds int, checkpointDir string) {
 	// The watch page's statistics panel: the same asks, tallied. See
 	// runStats — the trace shows one round at a time, the tally is what
 	// makes a wandering run visible while it is still wandering.
-	stats := newStatsPlanner(planner, m.TraceStats, nil)
+	stats := newStatsPlanner(planner, m, m.TraceStats, nil)
 	res := agent.Run(m, m.ROM(), stats, agent.Budget{
 		MaxRounds:     maxRounds,
 		MaxFrames:     llmMaxFrames,

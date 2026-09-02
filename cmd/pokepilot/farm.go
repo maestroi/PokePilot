@@ -532,7 +532,7 @@ func runFarmLLM(m *emu.Emu, starter, goal string, maxRounds, maxFrames int, canc
 	planner.ReplyLog = rawWriter{snap: snap}
 	// The same tally the local watch page shows (runStats): a farm worker's
 	// page is this page, so a wandering leased run is visible on it too.
-	stats := newStatsPlanner(planner, m.TraceStats, snap)
+	stats := newStatsPlanner(planner, m, m.TraceStats, snap)
 	res := agent.Run(m, m.ROM(), reportingPlanner{inner: stats, snap: snap}, agent.Budget{
 		MaxRounds:     maxRounds,
 		MaxFrames:     maxFrames,

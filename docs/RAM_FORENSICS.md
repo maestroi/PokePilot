@@ -22,6 +22,33 @@ The `.ram` file is exactly 65,536 bytes: one byte for every address from `0x0000
 
 Capture happens inside `agent.Execute` on the error return, before `agent.Run` calls its between-round dialogue recovery. That keeps transient menu and map-transition state from being erased before it can be inspected. Objective validation errors are not captured because no gameplay happened.
 
+## Capture stalls
+
+A failure capture only fires when an objective returns an error. The costlier
+pathology is the opposite one: every objective succeeds and the run still goes
+nowhere. MEASURED 2026-09-02, rounds 75-82 of a live run alternated Pewter
+City and Pewter Gym, eight `-> done` results in a row, and the fact that
+explained it (the Boulder badge was already held, so `Offer` correctly
+withheld the gym challenge) sat in RAM the whole time with nothing to write
+it out.
+
+So the same `POKEPILOT_RAM_DIR` also captures on the edge of the planner's
+replan signal — the moment no observable progress has been made for
+`strategicReplanAfter` rounds:
+
+```text
+stall-frame-0000051004-explore.ram
+stall-frame-0000051004-explore.json
+```
+
+The sidecar's `kind` is `planner_stall`, its `objective` is the carried
+intent, and its `error` is the replan reason. One capture per stall episode,
+not per stalled round; observable progress re-arms it.
+
+`failure-` and `stall-` files are separate eviction rings, each holding
+`POKEPILOT_RAM_KEEP` pairs, so a burst of objective failures cannot evict the
+rarer stall evidence.
+
 Forensic failures are best-effort. An inability to write evidence is logged but never replaces the gameplay error that the planner receives.
 
 By default PokePilot keeps the latest 32 RAM/JSON pairs in the directory. Override that bounded ring with `POKEPILOT_RAM_KEEP`:

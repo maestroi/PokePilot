@@ -1044,8 +1044,12 @@ func (c *checkpointRing) evict() error {
 
 // checkpointSlug renders an objective for a filename: alphanumerics kept,
 // everything else one dash.
-func checkpointSlug(o Objective) string {
-	s := o.String()
+func checkpointSlug(o Objective) string { return slugify(o.String()) }
+
+// slugify is checkpointSlug's body over any string, so RAM captures keyed on
+// something other than an objective (a planner intent, say) name their files
+// the same way.
+func slugify(s string) string {
 	var b strings.Builder
 	b.Grow(len(s))
 	for _, r := range s {

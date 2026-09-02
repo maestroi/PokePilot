@@ -16,6 +16,10 @@ import (
 const (
 	forensicRAMVersion = 1
 	defaultRAMKeep     = 32
+	// Capture filename prefixes. Each is its own eviction ring, and each
+	// sorts lexically in frame order because the frame is zero-padded.
+	failurePrefix = "failure-frame-"
+	stallPrefix   = "stall-frame-"
 	// RAMForensicsDirEnv enables failure-time raw RAM captures. It is an
 	// environment variable instead of an agent objective or planner option:
 	// evidence collection is an operator concern and must never become a
@@ -51,6 +55,28 @@ type forensicRAMMeta struct {
 // is deliberately returned separately and must never replace the objective's
 // real gameplay error.
 func captureObjectiveFailure(m *emu.Emu, obj Objective, cause error) error {
+	return captureRAM(m, failurePrefix, "objective_failure", obj.String(), cause.Error(), checkpointSlug(obj))
+}
+
+// CaptureStall preserves RAM when the run is stalled but NOTHING has failed:
+// every objective succeeded and the world did not move. MEASURED 2026-09-02:
+// eight rounds of "go to pewter city -> done" alternating with the gym, no
+// error at any point, so captureObjectiveFailure recorded nothing — and the
+// fact that settled it (the badge was already held) was sitting in RAM the
+// whole time. Failure captures and stall captures cover disjoint pathologies.
+//
+// Called on the EDGE of the replan signal, not every stalled round: one
+// capture per stall episode. Like every capture here it is best-effort and
+// operator-gated by POKEPILOT_RAM_DIR.
+func CaptureStall(m *emu.Emu, intent, reason string) error {
+	slug := slugify(strings.TrimSpace(intent))
+	if slug == "" {
+		slug = "no-intent" // a stall with no carried intent is still evidence
+	}
+	return captureRAM(m, stallPrefix, "planner_stall", intent, reason, slug)
+}
+
+func captureRAM(m *emu.Emu, prefix, kind, objective, cause, slug string) error {
 	dir := strings.TrimSpace(os.Getenv(RAMForensicsDirEnv))
 	if dir == "" {
 		return nil
@@ -65,7 +91,7 @@ func captureObjectiveFailure(m *emu.Emu, obj Objective, cause error) error {
 		return fmt.Errorf("ram forensics snapshot: %w", err)
 	}
 	gs := state.Decode(&mem)
-	base, err := uniqueFailureBase(dir, fmt.Sprintf("failure-frame-%010d-%s", frame, checkpointSlug(obj)))
+	base, err := uniqueFailureBase(dir, fmt.Sprintf("%s%010d-%s", prefix, frame, slug))
 	if err != nil {
 		return err
 	}
@@ -76,10 +102,10 @@ func captureObjectiveFailure(m *emu.Emu, obj Objective, cause error) error {
 	}
 	meta := forensicRAMMeta{
 		Version:      forensicRAMVersion,
-		Kind:         "objective_failure",
+		Kind:         kind,
 		Frame:        frame,
-		Objective:    obj.String(),
-		Error:        cause.Error(),
+		Objective:    objective,
+		Error:        cause,
 		Map:          gs.Player.MapID,
 		X:            gs.Player.X,
 		Y:            gs.Player.Y,
@@ -98,7 +124,9 @@ func captureObjectiveFailure(m *emu.Emu, obj Objective, cause error) error {
 		_ = os.Remove(ramPath)
 		return fmt.Errorf("ram forensics write %s: %w", metaPath, err)
 	}
-	return evictRAMCaptures(dir, ramKeep())
+	// Per-prefix ring: a burst of objective failures must not evict the
+	// stall evidence, which is rarer and harder to reproduce.
+	return evictRAMCaptures(dir, prefix, ramKeep())
 }
 
 func ramKeep() int {
@@ -136,7 +164,7 @@ func uniqueFailureBase(dir, base string) (string, error) {
 // evictRAMCaptures keeps the latest keep failure RAM files and their JSON
 // sidecars. Filenames start with a zero-padded frame, so lexical order is
 // capture order apart from same-frame suffixes, which sort in creation order.
-func evictRAMCaptures(dir string, keep int) error {
+func evictRAMCaptures(dir, prefix string, keep int) error {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return fmt.Errorf("ram forensics read %s: %w", dir, err)
@@ -144,7 +172,7 @@ func evictRAMCaptures(dir string, keep int) error {
 	var names []string
 	for _, entry := range entries {
 		name := entry.Name()
-		if !entry.IsDir() && strings.HasPrefix(name, "failure-frame-") && strings.HasSuffix(name, ".ram") {
+		if !entry.IsDir() && strings.HasPrefix(name, prefix) && strings.HasSuffix(name, ".ram") {
 			names = append(names, name)
 		}
 	}

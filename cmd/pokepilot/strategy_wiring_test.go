@@ -9,7 +9,7 @@ import (
 
 func TestStatsPlannerSurfacesReplanSignalFromCarriedIntent(t *testing.T) {
 	inner := &agent.LLMPlanner{ExtraSystem: "baseline system note"}
-	p := newStatsPlanner(inner, nil, nil)
+	p := newStatsPlanner(inner, nil, nil, nil)
 
 	for round := 1; round <= strategicReplanAfter+1; round++ {
 		p.prepareRunContext(agent.Observation{
@@ -32,7 +32,7 @@ func TestStatsPlannerSurfacesReplanSignalFromCarriedIntent(t *testing.T) {
 }
 
 func TestStatsPlannerCountsOneProgressSamplePerRound(t *testing.T) {
-	p := newStatsPlanner(&agent.LLMPlanner{}, nil, nil)
+	p := newStatsPlanner(&agent.LLMPlanner{}, nil, nil, nil)
 	obs := agent.Observation{Round: 1, Map: 1, Party: []agent.PartyMon{{Level: 8}}}
 	p.prepareRunContext(obs)
 	p.prepareRunContext(obs) // same observation as a retry
@@ -49,7 +49,7 @@ func TestStatsPlannerCountsOneProgressSamplePerRound(t *testing.T) {
 
 func TestStatsPlannerClearsReplanSignalOnObservableProgress(t *testing.T) {
 	inner := &agent.LLMPlanner{ExtraSystem: "baseline"}
-	p := newStatsPlanner(inner, nil, nil)
+	p := newStatsPlanner(inner, nil, nil, nil)
 
 	for round := 1; round <= strategicReplanAfter+1; round++ {
 		p.prepareRunContext(agent.Observation{Round: round, Map: 1, Intent: "explore", Party: []agent.PartyMon{{Level: 8}}})
@@ -64,5 +64,31 @@ func TestStatsPlannerClearsReplanSignalOnObservableProgress(t *testing.T) {
 	}
 	if p.strategy.NoProgress != 0 {
 		t.Fatalf("progress did not reset no-progress counter: %d", p.strategy.NoProgress)
+	}
+}
+
+// The stall RAM capture fires on the EDGE of the replan signal. A stall that
+// persists for twenty rounds is one piece of evidence, not twenty 64 KiB
+// files, and observable progress re-arms it for the next episode.
+func TestStatsPlannerCapturesStallOncePerEpisode(t *testing.T) {
+	p := newStatsPlanner(&agent.LLMPlanner{}, nil, nil, nil)
+	stalled := func(round int) agent.Observation {
+		return agent.Observation{Round: round, Map: 1, Intent: "explore", Party: []agent.PartyMon{{Level: 8}}}
+	}
+
+	for round := 1; round <= strategicReplanAfter+3; round++ {
+		p.prepareRunContext(stalled(round))
+	}
+	if !p.stallCaptured {
+		t.Fatal("a sustained stall never armed the capture")
+	}
+
+	// Observable progress (a new map) clears the signal and re-arms capture.
+	p.prepareRunContext(agent.Observation{
+		Round: strategicReplanAfter + 4, Map: 2, Intent: "explore",
+		Party: []agent.PartyMon{{Level: 8}},
+	})
+	if p.stallCaptured {
+		t.Fatal("progress did not re-arm the stall capture")
 	}
 }
