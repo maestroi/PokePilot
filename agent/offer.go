@@ -386,8 +386,10 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 	for m := range known.Visited {
 		knownMaps[m] = true
 	}
+	adjacentMaps := map[uint8]bool{}
 	for _, n := range known.Adjacency[obs.Map] {
 		knownMaps[n] = true
+		adjacentMaps[n] = true
 	}
 	for name := range known.Places {
 		if d, ok := skill.Place(name); ok {
@@ -397,7 +399,10 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 	// Journeys are collected here and appended LAST (see the ordering note
 	// in Offer's doc): they are the only part of the menu that grows with
 	// the size of the known world, so listing them first buries every verb
-	// deeper with every map the run discovers.
+	// deeper with every map the run discovers. A directly adjacent map the
+	// run has never stood on gets that fact on its own choice line. This is
+	// geometry plus run history, not walkthrough knowledge: it says "new
+	// exit", never whether taking it is strategically correct.
 	journeys := make([]Objective, 0, 8)
 	for _, name := range skill.PlaceNames() { // sorted: a stable menu order
 		d, _ := skill.Place(name)
@@ -412,10 +417,13 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 		// not in the reply — the model cannot reliably attach a conditional
 		// argument ("flee": true) to only the objectives that carry it, and
 		// a misplaced flag used to stop whole runs (see llm.go's schema).
-		journeys = append(journeys,
-			Objective{Kind: KindGoTo, Place: name},
-			Objective{Kind: KindGoTo, Place: name, Flee: true},
-		)
+		plain := Objective{Kind: KindGoTo, Place: name}
+		flee := Objective{Kind: KindGoTo, Place: name, Flee: true}
+		if adjacentMaps[d.Map] && !known.Visited[d.Map] {
+			plain.Note = "(unvisited adjacent map)"
+			flee.Note = "(unvisited adjacent map)"
+		}
+		journeys = append(journeys, plain, flee)
 	}
 
 	// Verbs, gated on preconditions that are facts about the situation —
@@ -489,11 +497,11 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 	// the level the Brock slice happened to need — which said "train" until
 	// 12 and then never again, whatever the run was walking into next. It
 	// is now the next rung above the lead, so the objective always names a
-	// step the run has not taken; picking it again climbs another rung, and
-	// the map's wild band (WildGrass) is in the observation for the planner
-	// to judge how long a target would take. The level is NOT a reply
-	// argument any more — see choiceSchema in llm.go for why every argument
-	// left the reply and stayed in the menu.
+	// step the run has not taken; picking it again climbs another rung. The
+	// lead level and this map's wild level band are copied onto the choice
+	// line itself so the planner does not have to join that fact from a
+	// separate observation field. This still makes no judgement about
+	// whether training is wise.
 	//
 	// A lead below Train's retreat line is the one case that is withheld,
 	// and it is a FACT rather than a judgement: Train refuses to start from
@@ -513,7 +521,11 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 		lead := obs.Party[0]
 		if !skill.BelowRetreatLine(lead.HP, lead.MaxHP) {
 			if target := int(lead.Level) + trainStep; target <= 100 {
-				out = append(out, Objective{Kind: KindTrain, Level: uint8(target)})
+				out = append(out, Objective{
+					Kind:  KindTrain,
+					Level: uint8(target),
+					Note:  trainingChoiceNote(lead, obs.WildGrass),
+				})
 			}
 		}
 	}
@@ -533,7 +545,6 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 			if it, ok := ItemByName(name); ok {
 				out = append(out, Objective{Kind: KindBuy, Item: it, Qty: 3})
 			}
-		}
 	}
 
 	// The people and items of this map, from the ROM map header (see
@@ -558,9 +569,9 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 	return annotate(append(out, journeys...), known)
 }
 
-// annotate writes each objective's own history onto its menu line, in
-// Objective.Note — which String() ignores, so nothing that identifies an
-// objective changes.
+// annotate composes each objective's run history with any factual choice-local
+// note Offer already attached. Objective.Note is planner-facing only and
+// String() ignores it, so adding facts here never changes objective identity.
 //
 // The counts were already in the observation (Failures) and in Knowledge
 // (Completed), and a model that reads a numbered list top-down skipped
@@ -568,25 +579,56 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 // naming it three lines above, and walked Pallet-Lab-Pallet for eight
 // rounds while History recorded every leg as "done". A fact the planner has
 // to join across two parts of the prompt is a fact it does not use. On the
-// line it is choosing, it might.
+// line it is choosing, it might. The same principle now carries objective-
+// local facts such as "unvisited adjacent map" and the local training band.
 //
 // This withholds nothing. Every objective is still offered, in the same
-// order, and the note is what the run has ALREADY DONE — never advice about
-// what to do next.
+// order. Facts make choices distinguishable; they never say which one is
+// strategically correct.
 func annotate(out []Objective, known *Knowledge) []Objective {
 	for i := range out {
 		name := out[i].String()
 		done, failed := known.Completed[name], known.Failures[name].Times
+		history := ""
 		switch {
 		case done > 0 && failed > 0:
-			out[i].Note = fmt.Sprintf("(done %dx, failed %dx)", done, failed)
+			history = fmt.Sprintf("(done %dx, failed %dx)", done, failed)
 		case done > 0:
-			out[i].Note = fmt.Sprintf("(done %dx)", done)
+			history = fmt.Sprintf("(done %dx)", done)
 		case failed > 0:
-			out[i].Note = fmt.Sprintf("(failed %dx)", failed)
+			history = fmt.Sprintf("(failed %dx)", failed)
+		}
+		if history == "" {
+			continue
+		}
+		if out[i].Note == "" {
+			out[i].Note = history
+		} else {
+			out[i].Note += " " + history
 		}
 	}
 	return out
+}
+
+// trainingChoiceNote states the two facts that determine how expensive a
+// grass grind is: the lead's current level and the local encounter level
+// band. It deliberately does not compare them or label the grind good/bad;
+// that judgement remains the planner's. WildGrass is ROM-derived observation
+// data, the same source DecisionContext uses.
+func trainingChoiceNote(lead PartyMon, wild []WildSpecies) string {
+	if len(wild) == 0 {
+		return fmt.Sprintf("(lead L%d)", lead.Level)
+	}
+	minLevel, maxLevel := int(wild[0].MinLevel), int(wild[0].MaxLevel)
+	for _, w := range wild[1:] {
+		if int(w.MinLevel) < minLevel {
+			minLevel = int(w.MinLevel)
+		}
+		if int(w.MaxLevel) > maxLevel {
+			maxLevel = int(w.MaxLevel)
+		}
+	}
+	return fmt.Sprintf("(lead L%d; local wilds L%d-L%d)", lead.Level, minLevel, maxLevel)
 }
 
 // hasBadge reports whether the observation already lists a badge. Badges
