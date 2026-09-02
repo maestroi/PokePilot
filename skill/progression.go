@@ -22,15 +22,49 @@ const (
 	vermilionCanCount        = 15
 )
 
-// finishBillRescue continues the interaction that starts when the player
-// talks to Bill in his Pokemon form. The game itself asks for help, walks
-// Bill into the separator, and exposes a hidden-event PC at (1,4). Generic
-// TalkAt cannot discover that PC because it is not a map object, so this
-// story continuation lives beside TalkAt rather than as a fake sprite.
-//
-// The positive postcondition is the S.S. Ticket in the bag. If the bag is
-// full, Bill's script refuses the item and this returns an error rather than
-// recording a completed story step.
+func spriteSlotPresent(mem *state.Mem, slot int) bool {
+	for _, sprite := range state.DecodeSprites(mem) {
+		if sprite.Slot == slot {
+			return true
+		}
+	}
+	return false
+}
+
+// helpBill starts the Pokemon-form conversation and deliberately uses the
+// cutscene driver instead of Talk. That conversation hands control to a
+// scripted walk that lasts longer than Talk's ordinary 40-frame settle
+// window, so treating it as an ordinary one-box NPC conversation reports a
+// false timeout before Bill reaches the machine.
+func helpBill(m *emu.Emu, romData []byte, policy MovePolicy) error {
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	if _, count := bagEntry(&mem, ssTicketItem); count > 0 {
+		return nil
+	}
+
+	m.Tap(emu.A, 3, 7)
+	if _, err := m.StepUntil(talkOpenBudget, func(m *emu.Emu) bool {
+		return m.Peek8(sym.FontLoaded) != 0
+	}); err != nil {
+		return fmt.Errorf("skill: Bill: %w", ErrNoDialogue)
+	}
+
+	// A is the default YES on Bill's help prompt. Cutscene keeps advancing
+	// dialogue and scripted movement until object 1 (Pokemon-form Bill) has
+	// been hidden in the separator and control has returned to the player.
+	if err := Cutscene(m, 4000, func(mm *state.Mem) bool {
+		return !spriteSlotPresent(mm, 1)
+	}); err != nil {
+		return fmt.Errorf("skill: Bill: enter separator: %w", err)
+	}
+	return finishBillRescue(m, romData, policy)
+}
+
+// finishBillRescue continues after Pokemon-form Bill has entered the Cell
+// Separator. The PC is a hidden event at (1,4), so it cannot be surfaced by
+// the ordinary map-object talk menu. The positive postcondition is the S.S.
+// Ticket in the bag.
 func finishBillRescue(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if m.Peek8(sym.CurMap) != billsHouseMap {
 		return fmt.Errorf("skill: Bill: on map %#04x, want Bills House %#04x", m.Peek8(sym.CurMap), billsHouseMap)
@@ -42,17 +76,6 @@ func finishBillRescue(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		return nil
 	}
 
-	// Bill's first conversation ends by moving him into the machine. Wait
-	// for the scripted movement to release control before walking to the PC.
-	if !state.Controllable(&mem) {
-		if err := Cutscene(m, 4000, func(mm *state.Mem) bool { return true }); err != nil {
-			return fmt.Errorf("skill: Bill: enter separator: %w", err)
-		}
-	}
-
-	// The separator is a hidden background event, not an object. Stand below
-	// it, face up, and interact. The PC animation sets the separator event and
-	// Bill's map script walks the restored human sprite out of the machine.
 	pcStand := Destination{Map: billsHouseMap, X: billsPCX, Y: billsPCStandY}
 	if _, err := TravelFlee(m, romData, pcStand, policy, 4); err != nil {
 		return fmt.Errorf("skill: Bill: approach cell separator: %w", err)
@@ -64,9 +87,6 @@ func finishBillRescue(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		return fmt.Errorf("skill: Bill: use cell separator: %w", err)
 	}
 
-	// Human Bill's next conversation gives the ticket. TalkAt resolves the
-	// live sprite from object 2, so this remains correct after his scripted
-	// walk from the machine to the home coordinate at (4,4).
 	if _, err := TalkAt(m, romData, billHumanX, billHumanY, policy); err != nil {
 		return fmt.Errorf("skill: Bill: collect S.S. Ticket: %w", err)
 	}
@@ -109,10 +129,6 @@ func interactHiddenTile(m *emu.Emu, romData []byte, x, y uint8, policy MovePolic
 // succeeds, GymTrashScript writes the generated adjacent second switch into
 // wSecondLockTrashCanIndex. Reading those two values means a wrong second
 // guess can never reset the puzzle.
-//
-// It is safe to call when the gate is already open: the first interaction's
-// script short-circuits when EVENT_2ND_LOCK_OPENED is set, and Gym will then
-// verify reachability by walking to Surge immediately afterward.
 func OpenVermilionGym(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if m.Peek8(sym.CurMap) != vermilionGymMap {
 		return fmt.Errorf("skill: OpenVermilionGym: on map %#04x, want %#04x", m.Peek8(sym.CurMap), vermilionGymMap)
