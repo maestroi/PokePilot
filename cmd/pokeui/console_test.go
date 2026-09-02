@@ -150,6 +150,33 @@ func TestUIHistoryPaginatedAndAligned(t *testing.T) {
 	}
 }
 
+// TestUIWatchCardsShareGridTracks: Settings/Outcome/Plan/Play must share
+// equal tracks instead of sizing to content, or a long Play list drops the
+// row edge below the map.
+func TestUIWatchCardsShareGridTracks(t *testing.T) {
+	html := string(indexHTML)
+	body := regexp.MustCompile(`#detail-body\{[^}]+\}`).FindString(html)
+	if body == "" {
+		t.Fatal("index.html missing #detail-body rule")
+	}
+	for _, want := range []string{"grid-auto-rows:minmax(0,1fr)", "align-items:stretch"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("#detail-body %q missing %q", body, want)
+		}
+	}
+	if strings.Contains(body, "align-items:start") {
+		t.Error("#detail-body sizes cards to content")
+	}
+	block := regexp.MustCompile(`\.block\{[^}]+\}`).FindString(html)
+	if !strings.Contains(block, "overflow:auto") || !strings.Contains(block, "min-height:0") {
+		t.Errorf(".block %q must scroll inside a fixed cell", block)
+	}
+	grid := regexp.MustCompile(`\.watch-grid\{[^}]+\}`).FindString(html)
+	if !strings.Contains(grid, "align-items:stretch") {
+		t.Errorf(".watch-grid %q must stretch so the card grid matches the screens", grid)
+	}
+}
+
 func TestUIFailuresAndIssueLinks(t *testing.T) {
 	html := string(indexHTML)
 	js := string(uiJS)
