@@ -31,6 +31,12 @@ type (
 // bookkeeping inside agent.Run because the numbers it wants are all in the
 // call it already wraps — the observation going in, the objective coming
 // out, the wall clock around it — so agent stays exactly as it was.
+//
+// This is also the run-level structured-goal seam. Both local and farm LLM
+// runs already pass through statsPlanner after assigning LLMPlanner.Goal.
+// When that existing Goal uses agent.ParseGoal's structured syntax, evaluate
+// it before spending a model call and return ErrDone once RAM/state proves
+// completion. Free-text Goal values are untouched and remain prompt-only.
 type statsPlanner struct {
 	inner *agent.LLMPlanner
 	push  func(any)      // emu.TraceStats
@@ -47,6 +53,12 @@ func newStatsPlanner(inner *agent.LLMPlanner, push func(any), snap *heartbeatSna
 }
 
 func (s *statsPlanner) Next(obs agent.Observation, offered []agent.Objective) (agent.Objective, error) {
+	if done, err := s.goalDone(obs); err != nil || done {
+		if err != nil {
+			return agent.Objective{}, err
+		}
+		return agent.Objective{}, agent.ErrDone
+	}
 	start := time.Now()
 	o, err := s.inner.Next(obs, offered)
 	s.record(obs, len(offered), o, err, time.Since(start))
@@ -54,10 +66,24 @@ func (s *statsPlanner) Next(obs agent.Observation, offered []agent.Objective) (a
 }
 
 func (s *statsPlanner) NextRetry(obs agent.Observation, offered []agent.Objective, r agent.Retry) (agent.Objective, error) {
+	if done, err := s.goalDone(obs); err != nil || done {
+		if err != nil {
+			return agent.Objective{}, err
+		}
+		return agent.Objective{}, agent.ErrDone
+	}
 	start := time.Now()
 	o, err := s.inner.NextRetry(obs, offered, r)
 	s.record(obs, len(offered), o, err, time.Since(start))
 	return o, err
+}
+
+func (s *statsPlanner) goalDone(obs agent.Observation) (bool, error) {
+	status, structured, err := agent.PlannerGoalStatus(s.inner.Goal, obs)
+	if err != nil {
+		return false, err
+	}
+	return structured && status.Complete, nil
 }
 
 // record folds one ask into the tally and publishes it. A re-ask after a
