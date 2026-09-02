@@ -67,3 +67,49 @@ func SelectMenuItem(m *emu.Emu, index int) error {
 	m.Tap(emu.A, 3, 7)
 	return nil
 }
+
+// selectTwoOption selects YES (0) or NO (1) from a live TWO_OPTION_MENU.
+// Unlike the Start menu consumed by SelectMenuItem, DisplayTwoOptionMenu
+// stores the last valid index in wMaxMenuItem (1), not the item count. Its
+// decoded prompt is the positive proof that these inclusive semantics apply.
+func selectTwoOption(m *emu.Emu, index int) error {
+	if index < 0 || index > 1 {
+		return fmt.Errorf("skill: selectTwoOption: index %d out of range 0..1", index)
+	}
+
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	prompt := state.DecodeTwoOptionMenu(&mem)
+	if prompt == nil {
+		return errors.New("skill: selectTwoOption: no two-option prompt is open")
+	}
+
+	const stuckLimit = 5
+	stuck := 0
+	current := prompt.Index
+	for current != index {
+		previous := current
+		btn := emu.Down
+		if previous > index {
+			btn = emu.Up
+		}
+		m.Tap(btn, 3, 7)
+		if _, err := m.StepUntil(menuSettleFrames, func(m *emu.Emu) bool {
+			return int(m.Peek8(sym.CurrentMenuItem)) != previous
+		}); err != nil {
+			stuck++
+			if stuck >= stuckLimit {
+				return fmt.Errorf("skill: selectTwoOption: cursor stuck at %d, wanted %d: %w", previous, index, ErrMenuStuck)
+			}
+		} else {
+			stuck = 0
+		}
+		current = int(m.Peek8(sym.CurrentMenuItem))
+		if current < 0 || current > 1 {
+			return fmt.Errorf("skill: selectTwoOption: cursor moved out of range to %d", current)
+		}
+	}
+
+	m.Tap(emu.A, 3, 7)
+	return nil
+}

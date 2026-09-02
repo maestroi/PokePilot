@@ -249,6 +249,26 @@ func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
 			}
 			lastForgetSlot = slot
 
+		case trainerSwitchPromptUp(m):
+			// After a trainer's mon faints, shift battle style asks whether
+			// to change Pokémon before the replacement is sent out
+			// (core.asm EnemySendOut). NO keeps the healthy active mon and
+			// continues the battle. A blind A chooses YES, opens the forced
+			// "Bring out which Pokémon?" menu, and selecting the first live
+			// slot then bounces forever when that slot is already out.
+			var s state.Mem
+			state.Snapshot(m, &s)
+			if state.DecodeTwoOptionMenu(&s) == nil {
+				// The marker is on the final line immediately before the yes/no
+				// box. Let the ROM finish drawing it without another A: that A
+				// can land after the cursor appears and accidentally choose YES.
+				m.StepFrame()
+				continue
+			}
+			if err := selectTwoOption(m, 1); err != nil {
+				return menuError(m, "decline trainer switch", err)
+			}
+
 		case twoOptionPromptUp(m):
 			// Two prompts render this same yes/no box and both are answered YES
 			// (index 0) on purpose, never by the default A-tap: "Use next #MON?"
@@ -384,6 +404,10 @@ const (
 	// lines with single spaces and text wraps at word boundaries, so the
 	// phrase stays contiguous no matter where the line breaks.
 	tryLearnMarker = "trying to learn"
+	// trainerSwitchMarker is on TrainerAboutToUseText, the shift-style
+	// prompt shown between a trainer's party members. Battle answers NO so
+	// the current healthy mon stays out; YES opens BATTLE_PARTY_MENU.
+	trainerSwitchMarker = "change POK"
 	// forgetMenuMarker is on "Which move should be forgotten?", the move list
 	// printed after answering YES to the try-learn prompt.
 	forgetMenuMarker = "forgotten?"
@@ -422,6 +446,12 @@ func twoOptionPromptUp(m *emu.Emu) bool {
 	state.Snapshot(m, &mem)
 	t := state.ScreenText(&mem)
 	return strings.Contains(t, useNextMonMarker) || strings.Contains(t, tryLearnMarker)
+}
+
+// trainerSwitchPromptUp reports whether the trainer replacement prompt is
+// being drawn or its yes/no box is waiting for input.
+func trainerSwitchPromptUp(m *emu.Emu) bool {
+	return battleScreenHas(m, trainerSwitchMarker)
 }
 
 // forgetMenuUp reports whether the "Which move should be forgotten?" move

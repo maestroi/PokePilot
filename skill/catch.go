@@ -283,7 +283,7 @@ func waitThrowResult(m *emu.Emu) (bool, error) {
 			return false, nil
 		}
 		if state.DecodeTwoOptionMenu(&mem) != nil {
-			if err := SelectMenuItem(m, 1); err != nil {
+			if err := selectTwoOption(m, 1); err != nil {
 				return false, fmt.Errorf("declining the nickname prompt: %w", err)
 			}
 			continue
