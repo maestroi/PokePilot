@@ -175,6 +175,9 @@ func TestUIWatchCardsShareGridTracks(t *testing.T) {
 	if !strings.Contains(grid, "align-items:stretch") {
 		t.Errorf(".watch-grid %q must stretch so the card grid matches the screens", grid)
 	}
+	if !strings.Contains(html, `id="detail-party"`) {
+		t.Error("party must sit outside #detail-body so it does not take a 1fr track")
+	}
 }
 
 func TestUIFailuresAndIssueLinks(t *testing.T) {
@@ -241,9 +244,12 @@ func TestUIRendersPlayerRoster(t *testing.T) {
 		t.Error("live cards must not render the party roster")
 	}
 	html := string(indexHTML)
-	for _, want := range []string{`.party-row`, `.party-hp`, `.party-sum`} {
+	for _, want := range []string{`.party-row`, `.party-hp`, `.party-sum`, `id="detail-party"`} {
 		if !strings.Contains(html, want) {
 			t.Errorf("index.html missing %s", want)
 		}
+	}
+	if !strings.Contains(js, `$("detail-party")`) && !strings.Contains(js, `$("detail-party").innerHTML`) {
+		t.Error("ui.js must render the roster into #detail-party, not a 1fr grid cell")
 	}
 }

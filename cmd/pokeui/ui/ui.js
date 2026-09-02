@@ -539,7 +539,7 @@
   function renderDetail() {
     const pane = $("watch");
     const run = (snap.runs || []).find((r) => r.run_id === selected);
-    if (!run) { pane.hidden = true; $("detail-map-panel").hidden = true; return; }
+    if (!run) { pane.hidden = true; $("detail-map-panel").hidden = true; $("detail-party").replaceChildren(); return; }
     pane.hidden = false;
     $("detail-title").textContent = run.run_id;
     $("detail-chips").innerHTML = statusChip(run) + settingChips(run) + issueBadge(run.issue);
@@ -555,7 +555,8 @@
     const stateRows = run.status === "done"
       ? [["ended", run.reason || "done"], ["detail", run.detail || ""], ["last map", tileLabel(run)], ["frame", String(run.frame)], ["attempts", String(run.attempts)]]
       : [["status", run.status], ["map", tileLabel(run)], ["frame", String(run.frame)], ["attempt", String(run.attempts)], ["so far", run.stop_so_far || ""]];
-    $("detail-body").innerHTML = `<div class="block"><h3>Settings</h3>${settings}</div><div class="block"><h3>${run.status === "done" ? "Outcome" : "Now"}</h3>${kv(stateRows)}</div>` + planHTML(run) + playHTML(run) + partyHTML(run) + lastEventHTML(run);
+    $("detail-body").innerHTML = `<div class="block"><h3>Settings</h3>${settings}</div><div class="block"><h3>${run.status === "done" ? "Outcome" : "Now"}</h3>${kv(stateRows)}</div>` + planHTML(run) + playHTML(run) + lastEventHTML(run);
+    $("detail-party").innerHTML = partyHTML(run);
     const raw = $("detail-body").querySelector(".plan-raw");
     if (raw) {
       raw.open = rawOpen; raw.addEventListener("toggle", () => { rawOpen = raw.open; });
