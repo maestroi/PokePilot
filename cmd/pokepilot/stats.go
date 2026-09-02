@@ -1,11 +1,7 @@
 package main
 
 import (
-	"fmt"
-	"os"
 	"sort"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/maestroi/pokepilot/agent"
@@ -56,19 +52,13 @@ const strategicReplanAfter = 4
 // signal never chooses that approach and is not persisted as a second memory
 // slot. Retries of the same round do not advance the counter.
 //
-// Finally, an optional fallback endpoint can be configured with
-// POKEPILOT_LLM_FALLBACK_*. Failover happens ONLY when the active planner's
-// LLMHealth.Transport counter rises during the ask: a bad model choice or
-// malformed reply stays with the same model and follows the ordinary reply
-// retry path. After one primary transport failure, the fallback is pinned for
-// the rest of the run so later rounds and reply retries do not bounce between
-// models.
+// Endpoint selection is deliberately not another stats concern. The optional
+// POKEPILOT_LLM_FALLBACK_* endpoint is configured here, then agent's
+// FailoverPlanner owns transport-only failover and permanent pinning. Its
+// per-endpoint call hook is the only routing seam statsPlanner needs.
 type statsPlanner struct {
-	inner     *agent.LLMPlanner
-	fallback  *agent.LLMPlanner
-	active    *agent.LLMPlanner
-	backend   string
-	failovers int
+	inner  *agent.LLMPlanner
+	router *agent.FailoverPlanner
 
 	push func(any)      // emu.TraceStats
 	snap *heartbeatSnap // farm heartbeat; nil on the local (non-farm) run
@@ -85,63 +75,30 @@ type statsPlanner struct {
 }
 
 func newStatsPlanner(inner *agent.LLMPlanner, push func(any), snap *heartbeatSnap) *statsPlanner {
+	fallbackDefaults := agent.LLMConfig{
+		Model:     inner.Model,
+		Token:     inner.Token,
+		NoThink:   inner.NoThink,
+		MaxTokens: inner.MaxTokens,
+	}
+	fallbackConfig, configured := agent.OptionalLLMConfigFromEnv("POKEPILOT_LLM_FALLBACK_", fallbackDefaults)
+	var fallback *agent.LLMPlanner
+	if configured {
+		fallback = agent.NewLLMPlannerFromConfig(fallbackConfig)
+	}
+
 	s := &statsPlanner{
 		inner:           inner,
-		active:          inner,
-		backend:         "primary",
 		push:            push,
 		snap:            snap,
 		counts:          map[string]int{},
 		baseExtraSystem: inner.ExtraSystem,
 	}
-	s.fallback = fallbackPlannerFromEnv(inner)
+	s.router = agent.NewFailoverPlanner(inner, fallback)
+	s.router.OnCall = func(call agent.LLMCall) {
+		s.record(call.Observation, call.Offered, call.Objective, call.Err, call.Duration)
+	}
 	return s
-}
-
-func fallbackPlannerFromEnv(primary *agent.LLMPlanner) *agent.LLMPlanner {
-	baseURL := strings.TrimSpace(os.Getenv("POKEPILOT_LLM_FALLBACK_URL"))
-	if baseURL == "" {
-		return nil
-	}
-	model := strings.TrimSpace(os.Getenv("POKEPILOT_LLM_FALLBACK_MODEL"))
-	if model == "" {
-		model = primary.Model
-	}
-	p := &agent.LLMPlanner{
-		BaseURL:     baseURL,
-		Model:       model,
-		Goal:        primary.Goal,
-		ExtraSystem: primary.ExtraSystem,
-		NoThink:     envBoolOr("POKEPILOT_LLM_FALLBACK_NO_THINK", primary.NoThink),
-		MaxTokens:   primary.MaxTokens,
-		Log:         primary.Log,
-		PromptLog:   primary.PromptLog,
-		ReplyLog:    primary.ReplyLog,
-	}
-	if token, ok := os.LookupEnv("POKEPILOT_LLM_FALLBACK_TOKEN"); ok {
-		p.Token = token
-	} else {
-		p.Token = primary.Token
-	}
-	if v := strings.TrimSpace(os.Getenv("POKEPILOT_LLM_FALLBACK_MAX_TOKENS")); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			p.MaxTokens = n
-		}
-	}
-	if v := strings.TrimSpace(os.Getenv("POKEPILOT_LLM_FALLBACK_TIMEOUT")); v != "" {
-		if d, err := time.ParseDuration(v); err == nil {
-			p.Timeout = d
-		}
-	}
-	return p
-}
-
-func envBoolOr(name string, fallback bool) bool {
-	v, ok := os.LookupEnv(name)
-	if !ok {
-		return fallback
-	}
-	return v != "" && v != "0"
 }
 
 func (s *statsPlanner) Next(obs agent.Observation, offered []agent.Objective) (agent.Objective, error) {
@@ -169,52 +126,10 @@ func (s *statsPlanner) NextRetry(obs agent.Observation, offered []agent.Objectiv
 }
 
 func (s *statsPlanner) ask(obs agent.Observation, offered []agent.Objective, retry *agent.Retry) (agent.Objective, error) {
-	s.syncPlannerContext(s.active)
-	o, err, transport := s.callPlanner(obs, offered, retry)
-	if transport && s.active == s.inner && s.fallback != nil {
-		s.failovers++
-		s.active = s.fallback
-		s.backend = "fallback"
-		if s.inner.Log != nil {
-			fmt.Fprintf(s.inner.Log,
-				"  llm route: primary %s at %s had a transport failure; pinning fallback %s at %s for the rest of the run\n",
-				s.inner.Model, s.inner.BaseURL, s.fallback.Model, s.fallback.BaseURL)
-		}
-		s.syncPlannerContext(s.active)
-		o, err, transport = s.callPlanner(obs, offered, retry)
-	}
-	if err != nil && transport {
-		return agent.Objective{}, fmt.Errorf("%w: %v", agent.ErrTransport, err)
-	}
-	return o, err
-}
-
-func (s *statsPlanner) callPlanner(obs agent.Observation, offered []agent.Objective, retry *agent.Retry) (agent.Objective, error, bool) {
-	p := s.active
-	beforeTransport := p.Health.Transport
-	start := time.Now()
-	var (
-		o   agent.Objective
-		err error
-	)
 	if retry == nil {
-		o, err = p.Next(obs, offered)
-	} else {
-		o, err = p.NextRetry(obs, offered, *retry)
+		return s.router.Next(obs, offered)
 	}
-	s.record(obs, len(offered), o, err, time.Since(start))
-	return o, err, p.Health.Transport > beforeTransport
-}
-
-func (s *statsPlanner) syncPlannerContext(p *agent.LLMPlanner) {
-	if p == nil || p == s.inner {
-		return
-	}
-	p.Goal = s.inner.Goal
-	p.ExtraSystem = s.inner.ExtraSystem
-	p.Log = s.inner.Log
-	p.PromptLog = s.inner.PromptLog
-	p.ReplyLog = s.inner.ReplyLog
+	return s.router.NextRetry(obs, offered, *retry)
 }
 
 // prepareRunContext is the one per-ask seam for run-derived context. Goal
@@ -270,9 +185,10 @@ func appendSystemNote(base, note string) string {
 	return base + "\n\n" + note
 }
 
-// record folds one ask into the tally and publishes it. A re-ask after a
-// rejection counts as a call and as a rejection, never as a round: the
-// round is the same one, asked again.
+// record folds one endpoint ask into the tally and publishes it. A re-ask
+// after a rejection counts as a call and as a rejection, never as a round:
+// the round is the same one, asked again. On failover the router calls this
+// once for the failed primary and once for the fallback.
 func (s *statsPlanner) record(obs agent.Observation, offered int, o agent.Objective, err error, took time.Duration) {
 	s.stats.Calls++
 	s.offered += offered
@@ -282,9 +198,10 @@ func (s *statsPlanner) record(obs agent.Observation, offered int, o agent.Object
 	s.stats.AvgSeconds = s.elapsed.Seconds() / float64(s.stats.Calls)
 	s.stats.Round, s.stats.RoundsLeft = obs.Round, obs.RoundsLeft
 	s.stats.Intent, s.stats.IntentAge = obs.Intent, obs.IntentAge
-	s.stats.Backend, s.stats.Model, s.stats.Failovers = s.backend, s.active.Model, s.failovers
+	route := s.router.Route()
+	s.stats.Backend, s.stats.Model, s.stats.Failovers = route.Backend, route.Model, route.Failovers
 
-	h := s.health()
+	h := s.router.Health()
 	s.stats.PromptTokens, s.stats.CompletionTokens = h.PromptTokens, h.CompletionTokens
 	s.stats.Transport, s.stats.Fallbacks = h.Transport, h.Fallbacks
 
@@ -308,11 +225,9 @@ func (s *statsPlanner) record(obs agent.Observation, offered int, o agent.Object
 func (s *statsPlanner) publishSnapshot(obs agent.Observation) {
 	s.stats.Round, s.stats.RoundsLeft = obs.Round, obs.RoundsLeft
 	s.stats.Intent, s.stats.IntentAge = obs.Intent, obs.IntentAge
-	s.stats.Failovers = s.failovers
-	if s.active != nil {
-		s.stats.Backend, s.stats.Model = s.backend, s.active.Model
-	}
-	h := s.health()
+	route := s.router.Route()
+	s.stats.Backend, s.stats.Model, s.stats.Failovers = route.Backend, route.Model, route.Failovers
+	h := s.router.Health()
 	s.stats.PromptTokens, s.stats.CompletionTokens = h.PromptTokens, h.CompletionTokens
 	s.stats.Transport, s.stats.Fallbacks = h.Transport, h.Fallbacks
 	s.publish()
@@ -327,25 +242,10 @@ func (s *statsPlanner) publish() {
 	}
 }
 
-func (s *statsPlanner) health() agent.LLMHealth {
-	h := s.inner.Health
-	if s.fallback == nil {
-		return h
-	}
-	f := s.fallback.Health
-	h.Transport += f.Transport
-	h.Rejected += f.Rejected
-	h.Fallbacks += f.Fallbacks
-	h.PromptTokens += f.PromptTokens
-	h.CompletionTokens += f.CompletionTokens
-	return h
-}
-
 // Usage makes the live local path preserve agent.Run's model-spend totals
-// even though statsPlanner sits between Run and the concrete LLMPlanner.
+// even though statsPlanner sits between Run and the concrete LLM planners.
 func (s *statsPlanner) Usage() (prompt, completion int) {
-	h := s.health()
-	return h.PromptTokens, h.CompletionTokens
+	return s.router.Usage()
 }
 
 // rankChoices orders the tally most-chosen first, ties by name so the panel
