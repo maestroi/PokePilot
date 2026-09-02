@@ -55,16 +55,16 @@ LOCAL_LLM_NO_THINK ?= 1
 LOCAL_LLM_MAX_TOKENS ?= 1024
 LOCAL_LLM_TIMEOUT ?= 300s
 
-# GPU-first local routing. The primary is the same localhost model above,
-# but with a deliberately short timeout: when the 4090 is occupied by the
-# coding agent, queueing behind it is worse than moving the run to the
-# always-on CPU model. statsPlanner fails over only on a transport failure
-# and then pins the fallback for the rest of the run.
+# GPU-first local routing. The primary is the same localhost model above.
+# Give a real generation enough time to finish, but still fail over well
+# before LOCAL_LLM_TIMEOUT when the 4090 is genuinely unavailable. Because
+# statsPlanner pins the fallback after the first transport failure, this
+# timeout should not turn a single slow generation into a permanent downgrade.
 AUTO_LLM_URL ?= $(LOCAL_LLM_URL)
 AUTO_LLM_MODEL ?= $(LOCAL_LLM_MODEL)
 AUTO_LLM_NO_THINK ?= 1
 AUTO_LLM_MAX_TOKENS ?= 1024
-AUTO_LLM_TIMEOUT ?= 5s
+AUTO_LLM_TIMEOUT ?= 30s
 AUTO_LLM_FALLBACK_URL ?= http://192.168.50.204:8000/v1
 AUTO_LLM_FALLBACK_MODEL ?= qwen3.5-4b
 AUTO_LLM_FALLBACK_TIMEOUT ?= 60s
@@ -113,7 +113,9 @@ run-llm-local:
 # fallback URL/model are taken from the sourced POKEPILOT_LLM_* values when
 # present, so an operator's .env still wins over these Make defaults. Capture
 # the LAN bearer token into the fallback-specific variable before clearing
-# llm_token for localhost.
+# llm_token for localhost. Shell assignments are expanded left-to-right here:
+# POKEPILOT_LLM_FALLBACK_TOKEN sees the sourced llm_token before llm_token is
+# cleared later in the same command environment.
 run-llm-auto:
 	$(require-rom)
 	$(load_env) \
