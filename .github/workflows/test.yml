@@ -33,13 +33,13 @@ jobs:
 
       - name: Sync generated changes
         run: |
-          go mod download
+          go mod tidy
           gofmt -w cmd/pokeui/mcp.go
           if ! git diff --quiet -- go.mod go.sum cmd/pokeui/mcp.go; then
             git config user.name github-actions[bot]
             git config user.email 41898282+github-actions[bot]@users.noreply.github.com
             git add go.mod go.sum cmd/pokeui/mcp.go
-            git commit -m "ci: sync module graph and formatting"
+            git commit -m "ci: tidy module graph and formatting"
             git push origin "HEAD:${GITHUB_HEAD_REF}"
           fi
 
