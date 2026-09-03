@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"embed"
+	_ "embed"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -150,7 +150,3 @@ func spectatorRuns(runs []spectatorRun) []spectatorRun {
 	}
 	return append(active, done...)
 }
-
-// Keep embed imported even when tooling evaluates declarations before the
-// go:embed directives. The type itself is not otherwise referenced here.
-var _ embed.FS
