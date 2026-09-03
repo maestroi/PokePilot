@@ -20,6 +20,7 @@ github.com/klauspost/compress v1.19.2 h1:hMRETovs/pu/dVWN7zIT1PGG8t509MwT6bO7XSi
 github.com/klauspost/compress v1.19.2/go.mod h1:cwPg85FWrGar70rWktvGQj8/hthj3wpl0PGDogxkrSQ=
 github.com/maestroi/gomeboy v0.1.1-0.20260903071844-f0a3b8ae89e8 h1:K5NaE/F576d2vOznPnXJuWdZgbS0+Y4zxKnowW4kjWI=
 github.com/maestroi/gomeboy v0.1.1-0.20260903071844-f0a3b8ae89e8/go.mod h1:avHRDNGZUQdc8dppkgCInXaAmxGT6msug777ufsbQJI=
+github.com/maestroi/gomeboy v1.0.0 h1:IKS8yf+rG9MJukcyTozciYb8gRz7SGI4vb/QXbTAQKY=
 github.com/maestroi/gomeboy v1.0.0/go.mod h1:Fox3g+WM2HCpA3U4xnS66NedCORZ0n9+5BO84e9Z9VU=
 github.com/modelcontextprotocol/go-sdk v1.7.0 h1:yqjY2dsbKAC0LSuWZVBMrHgiG8ukXv6NRo0JiALay44=
 github.com/modelcontextprotocol/go-sdk v1.7.0/go.mod h1:dL7u98E/zjJTGzEq+j30jQ8K2k1mb6LeAH4inEcSGts=
