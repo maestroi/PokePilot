@@ -9,6 +9,7 @@ import "encoding/json"
 type DecisionContext struct {
 	Training *TrainingDecisionContext `json:",omitempty"`
 	Catch    *CatchDecisionContext    `json:",omitempty"`
+	Economy  *EconomyDecisionContext  `json:",omitempty"`
 }
 
 // TrainingDecisionContext puts the lead and the current map's wild level band
@@ -35,9 +36,8 @@ type CatchDecisionContext struct {
 
 // MarshalJSON keeps Observation's existing wire shape byte-for-byte for its
 // original fields and adds DecisionContext only when there is relevant local
-// encounter information. llmUserPrompt already json.Marshal's Observation, so
-// this reaches every planner without another prompt layer or another source of
-// Pokemon-route knowledge.
+// encounter or economy information. llmUserPrompt already json.Marshal's
+// Observation, so this reaches every planner without another prompt layer.
 func (o Observation) MarshalJSON() ([]byte, error) {
 	type plain Observation
 	return json.Marshal(struct {
@@ -79,7 +79,8 @@ func decisionContextFor(o Observation) *DecisionContext {
 		}
 	}
 
-	if ctx.Training == nil && ctx.Catch == nil {
+	ctx.Economy = EconomyContext(o)
+	if ctx.Training == nil && ctx.Catch == nil && ctx.Economy == nil {
 		return nil
 	}
 	return ctx
