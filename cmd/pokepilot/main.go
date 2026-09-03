@@ -122,7 +122,7 @@ func main() {
 	}
 	if resumeFrom != "" {
 		fmt.Printf("resuming run from %s; checkpoint ring: %s\n", resumeFrom, *checkpointDir)
-		m.TraceNote("resume " + resumeFrom)
+		m.TraceNote("resume", resumeFrom)
 	}
 
 	m.Pace(*fps)
