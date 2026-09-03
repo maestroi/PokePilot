@@ -3,10 +3,15 @@
 
   const $ = (id) => document.getElementById(id);
   const liveStatuses = new Set(["leased", "running"]);
+  const frameMs = 50; // 20 fps; same cap as the operator console
   const query = new URLSearchParams(window.location.search);
   let selectedRunID = query.get("run") || "";
   let snapshot = { now: 0, runs: [] };
   let wallDown = false;
+  let pumpingID = "";
+  let pumpStop = null;
+  let blobUrl = "";
+  const lastOnce = new Set();
 
   function setText(id, value) {
     $(id).textContent = value == null || value === "" ? "—" : String(value);
@@ -43,7 +48,7 @@
     else url.searchParams.delete("run");
     history.replaceState(null, "", url);
     render();
-    refreshFrame();
+    syncFrame();
   }
 
   function renderStatus(run) {
@@ -204,31 +209,109 @@
       $("connection").classList.add("offline");
     }
     render();
+    syncFrame();
   }
 
-  function refreshFrame() {
-    const run = preferredRun(Array.isArray(snapshot.runs) ? snapshot.runs : []);
+  function showEmpty(message) {
     const image = $("frame");
     const empty = $("screen-empty");
-    if (!run || !run.run_id) {
-      image.hidden = true;
-      empty.hidden = false;
-      return;
-    }
+    image.hidden = true;
+    empty.hidden = false;
+    if (message) empty.textContent = message;
+  }
+
+  function paintFrame(url) {
+    const image = $("frame");
+    const empty = $("screen-empty");
     image.onload = () => {
       image.hidden = false;
       empty.hidden = true;
     };
-    image.onerror = () => {
-      image.hidden = true;
-      empty.hidden = false;
-      empty.textContent = run.status === "done" ? "No captured frame is available for this run." : "Waiting for the live game screen…";
-    };
-    image.src = `/frame?run=${encodeURIComponent(run.run_id)}&t=${Date.now()}`;
+    image.onerror = () => showEmpty("Waiting for the live game screen…");
+    image.src = url;
+  }
+
+  function sleep(ms) { return new Promise((ok) => setTimeout(ok, ms)); }
+  function whenVisible() {
+    if (!document.hidden) return Promise.resolve();
+    return new Promise((ok) => {
+      const on = () => {
+        if (document.hidden) return;
+        document.removeEventListener("visibilitychange", on);
+        ok();
+      };
+      document.addEventListener("visibilitychange", on);
+    });
+  }
+
+  function stopPump() {
+    if (!pumpStop) return;
+    pumpStop();
+    pumpStop = null;
+    pumpingID = "";
+  }
+
+  function ensurePump(id) {
+    if (pumpingID === id) return;
+    stopPump();
+    pumpingID = id;
+    let stop = false;
+    pumpStop = () => { stop = true; };
+    (async function loop() {
+      while (!stop) {
+        await whenVisible();
+        if (stop) break;
+        const started = Date.now();
+        try {
+          const r = await fetch("/frame?run=" + encodeURIComponent(id), { cache: "no-store" });
+          if (r.ok) {
+            const url = URL.createObjectURL(await r.blob());
+            paintFrame(url);
+            if (blobUrl) URL.revokeObjectURL(blobUrl);
+            blobUrl = url;
+          }
+        } catch (e) {}
+        const wait = frameMs - (Date.now() - started);
+        if (wait > 0) await sleep(wait);
+      }
+    })();
+  }
+
+  function fetchLast(id) {
+    if (lastOnce.has(id)) return;
+    lastOnce.add(id);
+    (async () => {
+      try {
+        const r = await fetch("/frame?run=" + encodeURIComponent(id), { cache: "no-store" });
+        if (!r.ok) {
+          lastOnce.delete(id);
+          showEmpty("No captured frame is available for this run.");
+          return;
+        }
+        paintFrame(URL.createObjectURL(await r.blob()));
+      } catch (e) { lastOnce.delete(id); }
+    })();
+  }
+
+  function syncFrame() {
+    const run = preferredRun(Array.isArray(snapshot.runs) ? snapshot.runs : []);
+    if (!run || !run.run_id) {
+      stopPump();
+      showEmpty();
+      return;
+    }
+    if (run.status === "running") {
+      ensurePump(run.run_id);
+      return;
+    }
+    stopPump();
+    if (run.status === "done") {
+      fetchLast(run.run_id);
+      return;
+    }
+    showEmpty(run.status === "queued" || run.status === "leased" ? "Waiting for the live game screen…" : "No captured frame is available for this run.");
   }
 
   refreshSnapshot();
-  refreshFrame();
   setInterval(refreshSnapshot, 2000);
-  setInterval(refreshFrame, 750);
 })();

@@ -6,6 +6,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -151,6 +153,37 @@ func TestSpectatorServesReadOnlySanitizedSurface(t *testing.T) {
 	}
 	if !bytes.Equal(frame, png) {
 		t.Errorf("spectator frame = %x, want %x", frame, png)
+	}
+}
+
+// The public page used to assign <img src="/frame?...&t="> every 750ms.
+// That is ~1.3 fps — a slideshow next to the operator's 20 fps blob pump.
+// The PNG is ~2KB, so the spectator uses the same 50ms sequential fetch.
+func TestSpectatorFramePumpIsTwentyFPS(t *testing.T) {
+	src := string(watchJS)
+	if strings.Contains(src, "setInterval(refreshFrame") {
+		t.Fatal("watch.js still interval-polls the frame; that is a 750ms slideshow")
+	}
+	m := regexp.MustCompile(`const frameMs = (\d+)`).FindStringSubmatch(src)
+	if m == nil {
+		t.Fatal("watch.js frame pump has no frameMs; unbounded fetch+decode burns the tab")
+	}
+	n, err := strconv.Atoi(m[1])
+	if err != nil {
+		t.Fatalf("frameMs: %v", err)
+	}
+	if n != 50 {
+		t.Fatalf("frameMs = %d, want 50 (20 fps; 750 was a slideshow, 0 burns the tab)", n)
+	}
+	for _, want := range []string{
+		`fetch("/frame?run=`,
+		`cache: "no-store"`,
+		`createObjectURL`,
+		`revokeObjectURL`,
+	} {
+		if !strings.Contains(src, want) {
+			t.Errorf("watch.js missing %q", want)
+		}
 	}
 }
 
