@@ -175,7 +175,7 @@ const (
 	MaxItemQuantity uint16 = 0xCF97
 	// ChosenMenuItem and MenuExitMethod are written by each menu on exit:
 	// ChosenMenuItem is the selected index, MenuExitMethod is CHOSE_MENU_ITEM,
-	// ChosenMenuItem or CANCELLED_MENU.
+	// CHOSE_SECOND_ITEM or CANCELLED_MENU.
 	ChosenMenuItem uint16 = 0xD12D
 	MenuExitMethod uint16 = 0xD12E
 )
