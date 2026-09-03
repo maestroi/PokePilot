@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: tests-${{ github.workflow }}-${{ github.ref }}
@@ -22,8 +22,6 @@ jobs:
     steps:
       - name: Checkout PokePilot
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref }}
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -31,17 +29,10 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Sync generated changes
+      - name: Verify module graph
         run: |
-          go mod tidy
-          gofmt -w cmd/pokeui/mcp.go
-          if ! git diff --quiet -- go.mod go.sum cmd/pokeui/mcp.go; then
-            git config user.name github-actions[bot]
-            git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-            git add go.mod go.sum cmd/pokeui/mcp.go
-            git commit -m "ci: tidy module graph and formatting"
-            git push origin "HEAD:${GITHUB_HEAD_REF}"
-          fi
+          go mod download
+          git diff --exit-code -- go.mod go.sum
 
       - name: Check formatting
         run: make fmt-check
