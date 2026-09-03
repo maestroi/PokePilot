@@ -39,10 +39,16 @@ const (
 	MonSpecies uint16 = 0x00
 	MonHP      uint16 = 0x01 // 2 bytes, BIG-endian
 	MonStatus  uint16 = 0x04
+	MonType1   uint16 = 0x05
+	MonType2   uint16 = 0x06
 	MonMoves   uint16 = 0x08 // 4 bytes
 	MonPP      uint16 = 0x1D // 4 bytes
 	MonLevel   uint16 = 0x21
 	MonMaxHP   uint16 = 0x22 // 2 bytes, BIG-endian
+	MonAttack  uint16 = 0x24 // 2 bytes, BIG-endian
+	MonDefense uint16 = 0x26 // 2 bytes, BIG-endian
+	MonSpeed   uint16 = 0x28 // 2 bytes, BIG-endian
+	MonSpecial uint16 = 0x2A // 2 bytes, BIG-endian
 )
 
 // Inventory and progress
@@ -169,7 +175,7 @@ const (
 	MaxItemQuantity uint16 = 0xCF97
 	// ChosenMenuItem and MenuExitMethod are written by each menu on exit:
 	// ChosenMenuItem is the selected index, MenuExitMethod is CHOSE_MENU_ITEM,
-	// CHOSE_SECOND_ITEM or CANCELLED_MENU.
+	// ChosenMenuItem or CANCELLED_MENU.
 	ChosenMenuItem uint16 = 0xD12D
 	MenuExitMethod uint16 = 0xD12E
 )
