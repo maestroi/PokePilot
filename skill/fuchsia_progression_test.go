@@ -77,7 +77,7 @@ func TestNeedsSafariRewards(t *testing.T) {
 		t.Fatal("HM03 + Gold Teeth should satisfy Safari collection")
 	}
 	setTestBag(&mem, [2]uint8{hm03SurfItem, 1})
-	state.SetEvent(&mem, eventGaveGoldTeeth)
+	setTestEvent(&mem, eventGaveGoldTeeth)
 	if needsSafariRewards(&mem) {
 		t.Fatal("after giving Gold Teeth away, HM03 alone should satisfy Safari collection")
 	}
@@ -90,4 +90,9 @@ func setTestBag(mem *state.Mem, entries ...[2]uint8) {
 		mem[off] = entry[0]
 		mem[off+1] = entry[1]
 	}
+}
+
+func setTestEvent(mem *state.Mem, event state.Event) {
+	off := sym.EventFlags + uint16(event)/8
+	mem[off] |= 1 << (uint16(event) % 8)
 }
