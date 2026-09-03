@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/maestroi/pokepilot/farm"
@@ -77,7 +78,7 @@ func spectatorHandler(wallBase string) http.Handler {
 		res.Write(watchJS) //nolint:errcheck // best effort
 	})
 	mux.HandleFunc("GET /v1/watch", spectatorSnapshot(wallBase))
-	mux.HandleFunc("GET /frame", proxy(wallBase, true))
+	mux.HandleFunc("GET /frame", spectatorFrame(wallBase))
 	return spectatorSecurityHeaders(mux)
 }
 
@@ -100,29 +101,25 @@ func spectatorSnapshot(wallBase string) http.HandlerFunc {
 
 		up, err := http.NewRequestWithContext(ctx, http.MethodGet, wallBase+"/v1/dashboard", nil)
 		if err != nil {
-			writeUnreachable(res)
+			writeSpectatorUnavailable(res)
 			return
 		}
 		resp, err := client.Do(up)
 		if err != nil {
-			writeUnreachable(res)
+			writeSpectatorUnavailable(res)
 			return
 		}
 		defer resp.Body.Close()
 
 		res.Header().Set("Cache-Control", "no-store")
 		if resp.StatusCode != http.StatusOK {
-			if ct := resp.Header.Get("Content-Type"); ct != "" {
-				res.Header().Set("Content-Type", ct)
-			}
-			res.WriteHeader(resp.StatusCode)
-			io.Copy(res, resp.Body) //nolint:errcheck // best effort upstream error body
+			writeSpectatorUnavailable(res)
 			return
 		}
 
 		var snapshot spectatorDashboard
 		if err := json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&snapshot); err != nil {
-			writeUnreachable(res)
+			writeSpectatorUnavailable(res)
 			return
 		}
 		snapshot.Runs = spectatorRuns(snapshot.Runs)
@@ -130,6 +127,52 @@ func spectatorSnapshot(wallBase string) http.HandlerFunc {
 		res.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(res).Encode(snapshot) //nolint:errcheck // best effort
 	}
+}
+
+func spectatorFrame(wallBase string) http.HandlerFunc {
+	client := &http.Client{Timeout: proxyTimeout}
+	wallBase = strings.TrimRight(wallBase, "/")
+	return func(res http.ResponseWriter, req *http.Request) {
+		runID := strings.TrimSpace(req.URL.Query().Get("run"))
+		if runID == "" || len(runID) > 256 {
+			http.NotFound(res, req)
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(req.Context(), proxyTimeout)
+		defer cancel()
+		values := url.Values{"run": []string{runID}}
+		up, err := http.NewRequestWithContext(ctx, http.MethodGet, wallBase+"/frame?"+values.Encode(), nil)
+		if err != nil {
+			writeSpectatorUnavailable(res)
+			return
+		}
+		resp, err := client.Do(up)
+		if err != nil {
+			writeSpectatorUnavailable(res)
+			return
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			http.NotFound(res, req)
+			return
+		}
+		contentType := resp.Header.Get("Content-Type")
+		if !strings.HasPrefix(contentType, "image/") {
+			writeSpectatorUnavailable(res)
+			return
+		}
+		res.Header().Set("Cache-Control", "no-store")
+		res.Header().Set("Content-Type", contentType)
+		io.Copy(res, resp.Body) //nolint:errcheck // response body closes with request
+	}
+}
+
+func writeSpectatorUnavailable(res http.ResponseWriter) {
+	res.Header().Set("Cache-Control", "no-store")
+	res.Header().Set("Content-Type", "application/json")
+	res.WriteHeader(http.StatusBadGateway)
+	json.NewEncoder(res).Encode(map[string]string{"error": "spectator feed unavailable"}) //nolint:errcheck // best effort
 }
 
 // spectatorRuns keeps every in-flight run and only a small tail of finished
