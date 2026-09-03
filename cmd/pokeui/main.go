@@ -153,6 +153,7 @@ func writeUnreachable(res http.ResponseWriter) {
 func main() {
 	httpAddr := flag.String("http", ":8080", "listen address for the relay")
 	wall := flag.String("wall", "", "upstream wall URL (e.g. http://wall:8080)")
+	spectator := flag.Bool("spectator", false, "serve only the public read-only spectator surface")
 	flag.Parse()
 	if *wall == "" {
 		log.Fatal("pokeui: -wall is required")
@@ -160,14 +161,21 @@ func main() {
 
 	wallBase := strings.TrimRight(*wall, "/")
 	mcpToken := strings.TrimSpace(os.Getenv("POKEPILOT_MCP_TOKEN"))
-	if mcpToken == "" {
-		log.Printf("pokeui proxying %s on http://%s (MCP disabled)", *wall, *httpAddr)
+	var httpHandler http.Handler
+	if *spectator {
+		httpHandler = spectatorHandler(wallBase)
+		log.Printf("pokeui proxying %s on http://%s (public spectator mode; read-only)", *wall, *httpAddr)
 	} else {
-		log.Printf("pokeui proxying %s on http://%s (MCP enabled at /mcp)", *wall, *httpAddr)
+		httpHandler = handlerWithMCP(wallBase, mcpToken)
+		if mcpToken == "" {
+			log.Printf("pokeui proxying %s on http://%s (MCP disabled)", *wall, *httpAddr)
+		} else {
+			log.Printf("pokeui proxying %s on http://%s (MCP enabled at /mcp)", *wall, *httpAddr)
+		}
 	}
 	server := &http.Server{
 		Addr:              *httpAddr,
-		Handler:           handlerWithMCP(wallBase, mcpToken),
+		Handler:           httpHandler,
 		ReadHeaderTimeout: serverReadHeaderTimeout,
 		IdleTimeout:       serverIdleTimeout,
 	}

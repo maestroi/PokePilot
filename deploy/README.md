@@ -1,23 +1,28 @@
 # PokePilot farm
 
-One image, three processes: `pokepilot` (runner), `pokewall` (orchestrator),
-`pokeui` (operator console). The ROM is never in the image; runners bind-mount
-it at runtime.
+One image, four service roles: `pokepilot` (runner), `pokewall` (orchestrator),
+`pokeui` (private operator console), and `pokeui -spectator` (public read-only
+watch surface). The ROM is never in the image; runners bind-mount it at runtime.
 
 ## Use the wall
 
-After `make farm-up`, open **http://localhost:18080**.
+After `make farm-up`, open **http://localhost:18080** for the operator console.
+The public spectator surface is **http://localhost:18081** by default.
 
-- The bar shows running / queued / idle-worker counts.
+- The operator bar shows running / queued / idle-worker counts.
 - **Queue a run** sets planner (`scripted` or `llm`), starter, destination,
   seed, fps, and budgets. Scripted walks starter → dest; llm lets the model
   pick objectives. Idle runners lease the next spec.
-- Live cards show the Game Boy screen, map/tile, trace, and **Cancel**.
+- Live operator cards show the Game Boy screen, map/tile, trace, and **Cancel**.
 - Finished runs stay in history with the stop reason.
+- The spectator page can only watch runs. It exposes no queue, cancel, delete,
+  triage, raw dashboard, or MCP routes.
 
-The browser only talks to `pokeui`. The wall and runners stay on the overlay;
-`pokeui` proxies `/v1/dashboard`, `/v1/triage`, `/v1/specs`, cancel, and
-`/frame`.
+The browser only talks to a `pokeui` process. The wall and runners stay on the
+overlay. The private operator process proxies `/v1/dashboard`, `/v1/triage`,
+`/v1/specs`, cancel/delete, and `/frame`. The spectator process has its own
+server-side route table and sanitized `/v1/watch` contract; see
+`docs/SPECTATOR.md`.
 
 ## Local single-node Swarm
 
@@ -26,10 +31,15 @@ Needs Docker Swarm on this machine and `roms/pokemon_red.gb` (or
 `make run-llm`.
 
 ```sh
-make farm-up                 # build, deploy 1 wall + 1 ui + 2 runners
-# UI: http://localhost:18080/
+make farm-up                 # build + deploy wall, operator UI, spectator UI, and 2 runners
+# Operator UI: http://localhost:18080/
+# Spectator:   http://localhost:18081/
 make farm-down
 ```
+
+Override the published ports with `FARM_WALL_PORT` and `FARM_SPECTATOR_PORT`.
+If a hostname is public, route it only to the spectator port; keep the operator
+port private because its HTTP UI can mutate runs even when MCP is disabled.
 
 `--resolve-image never` uses the image `make farm-image` loaded locally.
 A multi-node Swarm cannot see that image store: CI on `main` publishes

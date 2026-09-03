@@ -5,7 +5,7 @@ set -euo pipefail
 
 IMAGE=${FARM_IMAGE_REPO:-ghcr.io/maestroi/pokepilot}
 STACK=${FARM_STACK:-pokefarm}
-SERVICES=(wall ui runner)
+SERVICES=(wall ui spectator runner)
 
 if ! docker service inspect "${STACK}_wall" >/dev/null 2>&1; then
 	echo "pokefarm-pull: stack ${STACK} not deployed; skip"
@@ -23,6 +23,13 @@ WANT=${DIGEST_REF##*@}
 updated=0
 for name in "${SERVICES[@]}"; do
 	svc="${STACK}_${name}"
+	# New service roles can land in the stack file before an operator has run
+	# the next docker stack deploy. Skip those rather than making the timer fail;
+	# once the service exists, it joins the normal digest rollout automatically.
+	if ! docker service inspect "$svc" >/dev/null 2>&1; then
+		echo "pokefarm-pull: $svc not deployed; skip"
+		continue
+	fi
 	img=$(docker service inspect "$svc" --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}')
 	case "$img" in
 	*@*) cur=${img##*@} ;;
