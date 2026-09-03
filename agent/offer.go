@@ -424,6 +424,14 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 		known.Completed[Objective{Kind: KindErrand}.String()] == 0 {
 		out = append(out, Objective{Kind: KindErrand}) // one-shot story event
 	}
+	// The Hideout is a second one-shot story verb. It appears only on maps
+	// from which the skill can actually begin or resume, including Celadon's
+	// Center after a blackout. The positive postcondition is equally factual:
+	// once the bag contains the Scope the objective disappears because the
+	// ROM has no second Scope to obtain.
+	if skill.RocketHideoutAvailable(obs.Map) && !bagHas(obs, "silph scope") {
+		out = append(out, Objective{Kind: KindRocketHideout})
+	}
 	// One catch per species this map's grass can actually roll, from the
 	// map's own wild data (Observation.WildGrass). No species is special:
 	// the menu used to name CATERPIE everywhere, which made the one hunt
@@ -708,6 +716,17 @@ func nearestKnownCenter(obs Observation, known *Knowledge, knownMaps map[uint8]b
 func observedEvent(obs Observation, name string) bool {
 	for _, event := range obs.Events {
 		if event == name {
+			return true
+		}
+	}
+	return false
+}
+
+// bagHas reports whether the named item is currently in the observation's
+// decoded bag. Names are the same item vocabulary ItemName exposes.
+func bagHas(obs Observation, name string) bool {
+	for _, it := range obs.Bag {
+		if it.Name == name && it.Quantity > 0 {
 			return true
 		}
 	}

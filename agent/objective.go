@@ -13,17 +13,18 @@ import (
 type Kind uint8
 
 const (
-	KindGoTo    Kind = iota // walk to a named place
-	KindTalk                // face and talk to something at a coordinate
-	KindStarter             // complete the opening story and take a chosen starter
-	KindErrand              // deliver Oak's parcel (Viridian Mart -> Oak's lab)
-	KindTrain               // battle in grass until the lead reaches Level
-	KindHeal                // heal the party at a center; Place names one to travel to first
-	KindGym                 // fight the leader of whichever gym the player is in
-	KindCatch               // hunt tall grass for a wanted species and catch it
-	KindBuy                 // buy Item x Qty from the mart clerk
-	KindPickup              // pick up the item at a coordinate; the bag must rise
-	KindUseItem             // use one bag item on one party member, out in the field
+	KindGoTo          Kind = iota // walk to a named place
+	KindTalk                      // face and talk to something at a coordinate
+	KindStarter                   // complete the opening story and take a chosen starter
+	KindErrand                    // deliver Oak's parcel (Viridian Mart -> Oak's lab)
+	KindTrain                     // battle in grass until the lead reaches Level
+	KindHeal                      // heal the party at a center; Place names one to travel to first
+	KindGym                       // fight the leader of whichever gym the player is in
+	KindCatch                     // hunt tall grass for a wanted species and catch it
+	KindBuy                       // buy Item x Qty from the mart clerk
+	KindPickup                    // pick up the item at a coordinate; the bag must rise
+	KindUseItem                   // use one bag item on one party member, out in the field
+	KindRocketHideout             // clear the Celadon Rocket Hideout and obtain the Silph Scope
 )
 
 // Objective is one unit of intent a planner can choose. The argument fields
@@ -263,6 +264,17 @@ func Execute(m *emu.Emu, romData []byte, o Objective) (retErr error) {
 			return fmt.Errorf("agent: %s: %w", o, err)
 		}
 		return nil
+	case KindRocketHideout:
+		// This story verb is atomic for the same reason Gym owns Surge's
+		// exterior Cut and trash switches: the intermediate interactions
+		// are prerequisites the planner cannot express as standalone
+		// objectives. The skill succeeds only once the Silph Scope is in
+		// the bag, so a Giovanni win without the pickup is not recorded as
+		// a completed round.
+		if err := skill.RocketHideout(m, romData, skill.StatAwareMove(romData)); err != nil {
+			return fmt.Errorf("agent: %s: %w", o, err)
+		}
+		return nil
 	case KindBuy:
 		err := skill.Buy(m, o.Item, o.Qty)
 		if err != nil {
@@ -392,6 +404,8 @@ func (o Objective) String() string {
 			return fmt.Sprintf("use %s %s on party slot %d", article(name), strings.ToUpper(name), o.Slot)
 		}
 		return fmt.Sprintf("use item %d on party slot %d", int(o.Item), o.Slot)
+	case KindRocketHideout:
+		return "clear the Rocket Hideout and get the SILPH SCOPE"
 	case KindBuy:
 		if name, ok := ItemName(o.Item); ok {
 			return fmt.Sprintf("buy %d %s", o.Qty, strings.ToUpper(name))
@@ -521,6 +535,7 @@ var itemTable = map[string]uint8{
 	"antidote": 0x0B, "burn heal": 0x0C, "ice heal": 0x0D,
 	"awakening": 0x0E, "parlyz heal": 0x0F, "full restore": 0x10,
 	"repel": 0x1E, "escape rope": 0x1D,
+	"silph scope": 0x48,
 }
 
 var speciesByID = func() map[uint8]string {
