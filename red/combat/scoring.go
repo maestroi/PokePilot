@@ -12,7 +12,17 @@ import (
 // This is the exact `cp SPECIAL` boundary in GetDamageVarsForPlayerAttack.
 const SpecialType uint8 = 0x14
 
-const stabTenths = 15
+const (
+	stabTenths = 15
+
+	// Move ids whose SPECIAL_DAMAGE_EFFECT behavior is selected by id in
+	// ApplyAttackToEnemyPokemon. These values are from move_constants.asm.
+	moveSonicBoom   uint8 = 0x31
+	moveSeismicToss uint8 = 0x45
+	moveDragonRage  uint8 = 0x52
+	moveNightShade  uint8 = 0x65
+	movePsywave     uint8 = 0x95
+)
 
 // Combatant is the part of one Pokémon needed to compare damage matchups.
 // It is intentionally independent of party position or battle menus so the
@@ -45,6 +55,7 @@ type MoveEvaluation struct {
 	Accuracy      uint8
 	CurrentPP     uint8
 	MaxPP         uint8
+	DamageRule    string // "" for ordinary formula; otherwise names the ROM path
 	ExpectedScore int64
 }
 
@@ -86,17 +97,20 @@ func EvaluateBattleMove(romData []byte, b state.BattleState, slot int) (MoveEval
 	return EvaluateMove(romData, attacker, defender, mv, bm.PP)
 }
 
-// EvaluateMove applies the Gen 1 ordinary damage ordering inputs that matter
-// before the shared random damage roll: level, power, the type-selected stat
-// pair, STAB, type effectiveness, accuracy, and current PP.
+// EvaluateMove applies the Gen 1 damage-ordering inputs relevant to one move.
+// Ordinary attacks use level, power, the type-selected stat pair, STAB, type
+// effectiveness and accuracy. Red's SetDamageEffects paths are handled before
+// that formula: Super Fang and SPECIAL_DAMAGE_EFFECT moves explicitly skip
+// CalculateDamage, STAB and type effectiveness in the ROM, so they are scored
+// from their actual damage rule instead of pretending their table power is a
+// normal base-power value.
 //
-// The base-damage arithmetic mirrors CalculateDamage closely enough to retain
-// its integer ordering. If either selected stat exceeds one byte, Red divides
-// both by four before the 8-bit calculation; doing the same matters for high
-// level matchups. Reflect/Light Screen, critical hits, multi-hit count, fixed
-// damage and other move-specific effects remain separate mechanics and are not
-// invented here. A zero-power move therefore gets score zero and can be given
-// bounded utility by the caller instead of being mislabelled as damage.
+// The ordinary base-damage arithmetic mirrors CalculateDamage closely enough
+// to retain its integer ordering. If either selected stat exceeds one byte,
+// Red divides both by four before the 8-bit calculation; doing the same matters
+// for high-level matchups. Reflect/Light Screen, critical-hit probability,
+// multi-hit distributions, Counter/Bide and two-turn tempo remain explicit
+// mechanics to layer on rather than silently inventing an "exact simulator".
 func EvaluateMove(romData []byte, attacker, defender Combatant, mv rom.Move, currentPP uint8) (MoveEvaluation, error) {
 	e := MoveEvaluation{
 		MoveID:    mv.ID,
@@ -105,10 +119,38 @@ func EvaluateMove(romData []byte, attacker, defender Combatant, mv rom.Move, cur
 		CurrentPP: currentPP,
 		MaxPP:     mv.PP,
 	}
-	if mv.Power == 0 || currentPP == 0 {
+	if currentPP == 0 {
 		return e, nil
 	}
 
+	switch mv.Effect {
+	case rom.SpecialDamageEffect:
+		e.NeutralDamage, e.DamageRule = specialDamageExpectation(attacker.Level, mv.ID)
+		e.Effectiveness = rom.NeutralEffect
+		e.ExpectedScore = fixedDamageScore(e.NeutralDamage, e.Accuracy)
+		return e, nil
+	case rom.SuperFangEffect:
+		damage := defender.HP / 2
+		if damage == 0 {
+			damage = 1
+		}
+		e.NeutralDamage = damage
+		e.DamageRule = "super-fang"
+		e.Effectiveness = rom.NeutralEffect
+		e.ExpectedScore = fixedDamageScore(damage, e.Accuracy)
+		return e, nil
+	case rom.OHKOEffect:
+		// OHKO success includes special level/speed rules in addition to
+		// accuracy. Do not manufacture an ordinary 1-power score for it.
+		// A policy with only an OHKO move can still select it; a conventional
+		// damaging move with a known positive score wins the comparison.
+		e.DamageRule = "ohko"
+		return e, nil
+	}
+
+	if mv.Power == 0 {
+		return e, nil
+	}
 	if e.Physical {
 		e.AttackStat, e.DefenseStat = attacker.Attack, defender.Defense
 	} else {
@@ -160,9 +202,51 @@ func (e MoveEvaluation) String() string {
 	if e.STAB {
 		stab = "1.5x"
 	}
-	return fmt.Sprintf("move=%d class=%s stats=%d/%d neutral=%d eff=%0.1fx stab=%s acc=%d/255 pp=%d/%d score=%d",
-		e.MoveID, class, e.AttackStat, e.DefenseStat, e.NeutralDamage,
+	rule := "ordinary"
+	if e.DamageRule != "" {
+		rule = e.DamageRule
+	}
+	return fmt.Sprintf("move=%d rule=%s class=%s stats=%d/%d neutral=%d eff=%0.1fx stab=%s acc=%d/255 pp=%d/%d score=%d",
+		e.MoveID, rule, class, e.AttackStat, e.DefenseStat, e.NeutralDamage,
 		float64(e.Effectiveness)/10, stab, e.Accuracy, e.CurrentPP, e.MaxPP, e.ExpectedScore)
+}
+
+func fixedDamageScore(damage uint16, accuracy uint8) int64 {
+	// Ordinary neutral non-STAB attacks carry 10x effectiveness and 10x STAB
+	// scale factors. Use the same scale here so fixed and ordinary damage are
+	// directly comparable while correctly receiving neither STAB nor type
+	// effectiveness in Red.
+	return int64(damage) * int64(rom.NeutralEffect) * int64(rom.NeutralEffect) * int64(accuracy)
+}
+
+func specialDamageExpectation(level, moveID uint8) (uint16, string) {
+	switch moveID {
+	case moveSeismicToss, moveNightShade:
+		if level == 0 {
+			return 1, "level-damage"
+		}
+		return uint16(level), "level-damage"
+	case moveSonicBoom:
+		return 20, "sonicboom-20"
+	case moveDragonRage:
+		return 40, "dragon-rage-40"
+	case movePsywave:
+		// The player's Psywave loop accepts uniformly from [1, floor(1.5L)).
+		// The mean of 1..b-1 is b/2, where b=floor(1.5L).
+		bound := int(level) + int(level)/2
+		if bound <= 1 {
+			return 1, "psywave-mean"
+		}
+		mean := bound / 2
+		if mean < 1 {
+			mean = 1
+		}
+		return uint16(mean), "psywave-mean"
+	default:
+		// SPECIAL_DAMAGE_EFFECT is only assigned to the five ids above in
+		// Red's move table. Keep an unknown future table entry conservative.
+		return 0, "special-damage-unknown"
+	}
 }
 
 func damageStats(attack, defense uint16) (uint16, uint16) {
