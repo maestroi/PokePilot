@@ -23,9 +23,9 @@ func TestPokemonTowerObjectiveStringAndItemVocabulary(t *testing.T) {
 func TestOfferPokemonTowerRequiresScopeAndStopsAfterFlute(t *testing.T) {
 	known := NewKnowledge(map[uint8][]uint8{})
 	availableMaps := []uint8{
-		0x06, // Celadon City
-		0x85, // Celadon Pokemon Center
-		0x87, // Game Corner
+		0x06,                   // Celadon City
+		0x85,                   // Celadon Pokemon Center
+		0x87,                   // Game Corner
 		0xC7, 0xC8, 0xC9, 0xCA, // Rocket Hideout B1F-B4F
 		0x12, 0x4D, 0x79, 0x50, 0x13, // Celadon -> Lavender transit
 		0x04, 0x8D, // Lavender Town + Center
