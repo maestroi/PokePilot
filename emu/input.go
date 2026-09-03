@@ -1,7 +1,7 @@
 package emu
 
 import (
-	"github.com/thelolagemann/gomeboy/pkg/gomeboy"
+	"github.com/maestroi/gomeboy/pkg/gomeboy"
 )
 
 // Button is a joypad button.

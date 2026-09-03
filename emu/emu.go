@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/thelolagemann/gomeboy/pkg/gomeboy"
+	"github.com/maestroi/gomeboy/pkg/gomeboy"
 )
 
 const addressSpaceSize = 1 << 16

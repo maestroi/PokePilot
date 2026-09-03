@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/thelolagemann/gomeboy/pkg/gomeboy"
+	"github.com/maestroi/gomeboy/pkg/gomeboy"
 )
 
 // Watch serves the emulator's screen over HTTP at addr so a human can see
