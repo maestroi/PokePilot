@@ -11,10 +11,15 @@ const (
 	BattleTrainer BattleKind = 2
 )
 
+// CurrentPPMask is the low six bits of a Gen 1 PP byte. The high two bits
+// store how many PP Ups were used, so testing the raw byte for non-zero can
+// falsely report a move with zero current PP as usable.
+const CurrentPPMask uint8 = 0x3f
+
 // Move is one battle move slot.
 type Move struct {
 	ID uint8 // 0 means the slot is empty
-	PP uint8
+	PP uint8 // current PP; PP Up count bits are stripped during decode
 }
 
 // BattleState is the decoded battle context.
@@ -76,8 +81,9 @@ func (b BattleState) DefenceStage() int {
 }
 
 // Usable returns the indices of move slots with ID != 0 and PP > 0 that are
-// not currently disabled, in slot order. This is what a move policy picks
-// from. DisabledMove uses the game's 1-based slot encoding, hence i+1.
+// not currently disabled, in slot order. DisabledMove uses the game's 1-based
+// slot encoding, hence i+1. PP is already decoded to current remaining PP;
+// the PP Up count bits never make an exhausted move appear usable.
 func (b BattleState) Usable() []int {
 	var out []int
 	for i, mv := range b.Moves {
@@ -121,7 +127,7 @@ func DecodeBattle(m *Mem) *BattleState {
 	}
 	for i := 0; i < len(s.Moves); i++ {
 		s.Moves[i].ID = m.U8(sym.BattleMonMoves + uint16(i))
-		s.Moves[i].PP = m.U8(sym.BattleMonPP + uint16(i))
+		s.Moves[i].PP = m.U8(sym.BattleMonPP+uint16(i)) & CurrentPPMask
 	}
 	return s
 }
