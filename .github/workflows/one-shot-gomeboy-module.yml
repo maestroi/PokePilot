@@ -31,6 +31,7 @@ jobs:
             perl -pi -e "s#\Q$old\E#$new#g" "${files[@]}"
           fi
           go mod edit -dropreplace=github.com/maestroi/gomeboy || true
+          go mod edit -droprequire=github.com/maestroi/gomeboy || true
           go get github.com/maestroi/gomeboy@f0a3b8ae89e8ea263738c0aad505d7ada113686c
           go mod tidy
           rm -f .github/workflows/one-shot-gomeboy-module.yml
