@@ -31,8 +31,11 @@ type Knowledge struct {
 	// worked once and having worked six times are different facts, and the
 	// second one is a run walking in circles. Zero is the set test.
 	Completed map[string]int
-	// Failures are the objectives the run has TRIED and failed, by
-	// Objective.String(). It exists because History scrolls: it carries
+	// Failures are the objectives the run has TRIED and failed, normally by
+	// Objective.String(). A leader loss is the one scoped exception: KindGym
+	// renders "here" in the menu, so an actual loss is keyed by its factual
+	// gym place (gymLossFailureKey) to avoid treating Brock and Misty as the
+	// same failure. It exists because History scrolls: it carries
 	// historyCap rounds, so six rounds of anything push a failure out of
 	// the planner's view entirely. MEASURED 2026-08-31: "go to route 2"
 	// failed on rounds 10 and 11, six talk rounds followed, and by round 19
@@ -43,7 +46,8 @@ type Knowledge struct {
 	//
 	// An entry is dropped the moment the same objective succeeds: a wall
 	// that opened is not a wall, and a stale failure would argue against
-	// the thing that now works.
+	// the thing that now works. Scoped gym losses additionally clear after a
+	// successful Train rung, because the party has materially changed.
 	Failures  map[string]Failure
 	Talked    map[uint8]map[[2]uint8]bool // map-local object coordinates already talked to
 	Adjacency map[uint8][]uint8           // for each map id, the map ids its exits lead to
@@ -96,12 +100,17 @@ const failureCap = 8
 
 // Failed records that an objective was tried and failed. The same objective
 // failing again is not a new entry — the count goes up and the newest error
-// replaces the old one.
+// replaces the old one. A reached-and-lost gym battle gets a gym-scoped key;
+// other gym errors keep the ordinary objective identity so a path/control
+// defect does not masquerade as evidence that the party needs training.
 func (k *Knowledge) Failed(o Objective, err error) {
 	if err == nil {
 		return
 	}
 	name := o.String()
+	if gymName, ok := gymLossFailureName(o, err); ok {
+		name = gymName
+	}
 	f := k.Failures[name]
 	f.Objective, f.Times, f.Last = name, f.Times+1, err.Error()
 	k.Failures[name] = f
@@ -250,14 +259,21 @@ func (k *Knowledge) HeardRequirement(line, place string, x, y uint8) {
 
 // Done records a completed objective. Only one-shot objectives are dropped
 // from the menu because of this (see Offer): a completed heal is no reason
-// to stop offering heals, and neither is a lost gym challenge — the run is
-// meant to train, heal, and come back.
+// to stop offering heals. A successful Train is also the recovery boundary
+// for an observed gym loss: it clears scoped leader-loss failures so the
+// materially changed party can challenge again.
 func (k *Knowledge) Done(o Objective) {
 	name := o.String()
 	k.Completed[name]++
 	// It worked: whatever blocked it before is gone, and a kept failure
 	// would argue against the thing that just succeeded.
 	delete(k.Failures, name)
+	if o.Kind == KindGym && o.Place != "" {
+		delete(k.Failures, gymLossFailureKey(o.Place))
+	}
+	if o.Kind == KindTrain {
+		k.clearGymLossFailures()
+	}
 }
 
 // TalkedTo records a successful conversation at a map-local object tile.
@@ -355,13 +371,15 @@ func isAlnum(c byte) bool {
 // except that it had seen more of the map. The verbs do not multiply; the
 // places do, so the places go at the bottom.
 //
-// It says what is POSSIBLE, never what is WISE. An objective that is legal
-// but unwise stays on the list: walking into the gym underlevelled is
-// offered, and losing is the planner's mistake to make. The moment Offer
-// starts withholding legal-but-unwise objectives, we are playing the game
-// again. The safety property is unchanged — stronger, in fact: the planner
-// still picks from a numbered list and can never invent an action, and the
-// list now fits the situation instead of the whole ROM.
+// It says what is POSSIBLE, never what is WISE before the run has evidence.
+// An underlevelled party is allowed its first gym attempt: pre-judging that
+// attempt would be us playing the game. Once the party actually reaches a
+// leader and loses, however, repeating the unchanged challenge is no longer
+// an unknown strategic choice — it is a failure the run has already observed.
+// That same gym stays off the menu until a Train objective succeeds; travel
+// and healing cannot erase the evidence merely because they were successful
+// rounds. The gate is scoped to the gym that won, so a different legal gym
+// remains a separate choice.
 func Offer(obs Observation, known *Knowledge) []Objective {
 	out := make([]Objective, 0, 8)
 
@@ -508,11 +526,17 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 	// The gym objective fights the leader of whichever gym the player is
 	// standing in; elsewhere it has no one to fight. Being on a gym map is
 	// a precondition of the verb, not a verdict on whether the party is
-	// ready for it — underlevelled stays offered, and losing is the
-	// planner's mistake to make. A badge already earned is different: that
-	// leader will not rebattle, so the challenge could only fail.
+	// ready for its FIRST attempt — underlevelled stays offered. An actual
+	// leader loss is different evidence: that gym is withheld until a Train
+	// objective succeeds, while another gym remains independent. Place is
+	// carried as deterministic internal identity; String still says "here".
+	// A badge already earned is different again: that leader will not
+	// rebattle, so the challenge could only fail.
 	if g, ok := skill.GymAt(obs.Map); ok && !hasBadge(obs, g.Badge) {
-		out = append(out, Objective{Kind: KindGym})
+		gym := Objective{Kind: KindGym, Place: g.Place}
+		if _, lost := known.Failures[gymLossFailureKey(g.Place)]; !lost {
+			out = append(out, gym)
+		}
 	}
 	// Training is offered wherever the grass can actually roll an encounter
 	// and there is a lead to level up. The target used to be a fixed 12 —
