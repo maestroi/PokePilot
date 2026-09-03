@@ -471,6 +471,7 @@ func TestOfferWithholdsParcelUntilStarterStoryComplete(t *testing.T) {
 			if objective.Kind == agent.KindErrand {
 				return true
 			}
+		}
 		return false
 	}
 
