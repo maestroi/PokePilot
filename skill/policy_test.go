@@ -65,11 +65,13 @@ func fakeROMChart(t *testing.T, chart []typePair, moves ...rom.Move) []byte {
 	return romData
 }
 
-// The three moves the opening of the game actually turns on.
+// The three moves the opening of the game actually turns on. The Ember test
+// fixture keeps its type neutral here because the legacy strongest-attack
+// test isolates power only; dedicated tests below cover real special typing.
 var (
 	tackle   = rom.Move{ID: 33, Power: 35}
 	tailWhip = rom.Move{ID: 39, Power: 0, Effect: rom.DefenseDown1Effect}
-	ember    = rom.Move{ID: 52, Power: 40, Type: typeFire}
+	ember    = rom.Move{ID: 52, Power: 40}
 )
 
 func battleWith(atkMod, defMod uint8, hp, maxHP uint16, ids ...uint8) state.BattleState {
