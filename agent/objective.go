@@ -13,19 +13,20 @@ import (
 type Kind uint8
 
 const (
-	KindGoTo          Kind = iota // walk to a named place
-	KindTalk                      // face and talk to something at a coordinate
-	KindStarter                   // complete the opening story and take a chosen starter
-	KindErrand                    // deliver Oak's parcel (Viridian Mart -> Oak's lab)
-	KindTrain                     // battle in grass until the lead reaches Level
-	KindHeal                      // heal the party at a center; Place names one to travel to first
-	KindGym                       // fight the leader of whichever gym the player is in
-	KindCatch                     // hunt tall grass for a wanted species and catch it
-	KindBuy                       // buy Item x Qty from the mart clerk
-	KindPickup                    // pick up the item at a coordinate; the bag must rise
-	KindUseItem                   // use one bag item on one party member, out in the field
-	KindRocketHideout             // clear the Celadon Rocket Hideout and obtain the Silph Scope
-	KindPokemonTower              // clear Pokemon Tower and obtain the Poke Flute
+	KindGoTo               Kind = iota // walk to a named place
+	KindTalk                           // face and talk to something at a coordinate
+	KindStarter                        // complete the opening story and take a chosen starter
+	KindErrand                         // deliver Oak's parcel (Viridian Mart -> Oak's lab)
+	KindTrain                          // battle in grass until the lead reaches Level
+	KindHeal                           // heal the party at a center; Place names one to travel to first
+	KindGym                            // fight the leader of whichever gym the player is in
+	KindCatch                          // hunt tall grass for a wanted species and catch it
+	KindBuy                            // buy Item x Qty from the mart clerk
+	KindPickup                         // pick up the item at a coordinate; the bag must rise
+	KindUseItem                        // use one bag item on one party member, out in the field
+	KindRocketHideout                  // clear the Celadon Rocket Hideout and obtain the Silph Scope
+	KindPokemonTower                   // clear Pokemon Tower and obtain the Poke Flute
+	KindFuchsiaProgression             // reach Fuchsia, beat Koga, and obtain Surf + Strength
 )
 
 // Objective is one unit of intent a planner can choose. The argument fields
@@ -284,6 +285,14 @@ func Execute(m *emu.Emu, romData []byte, o Objective) (retErr error) {
 			return fmt.Errorf("agent: %s: %w", o, err)
 		}
 		return nil
+	case KindFuchsiaProgression:
+		// #33 is the same kind of atomic story verb: its intermediate
+		// Snorlax/Safari interactions are not useful standalone objectives.
+		// Completion is proved by Soul Badge + HM03 + HM04 in the skill.
+		if err := skill.FuchsiaProgression(m, romData, skill.StatAwareMove(romData)); err != nil {
+			return fmt.Errorf("agent: %s: %w", o, err)
+		}
+		return nil
 	case KindBuy:
 		err := skill.Buy(m, o.Item, o.Qty)
 		if err != nil {
@@ -417,6 +426,8 @@ func (o Objective) String() string {
 		return "clear the Rocket Hideout and get the SILPH SCOPE"
 	case KindPokemonTower:
 		return "clear Pokemon Tower and get the POKE FLUTE"
+	case KindFuchsiaProgression:
+		return "reach Fuchsia, beat Koga, and get HM03 SURF + HM04 STRENGTH"
 	case KindBuy:
 		if name, ok := ItemName(o.Item); ok {
 			return fmt.Sprintf("buy %d %s", o.Qty, strings.ToUpper(name))
@@ -547,6 +558,7 @@ var itemTable = map[string]uint8{
 	"awakening": 0x0E, "parlyz heal": 0x0F, "full restore": 0x10,
 	"repel": 0x1E, "escape rope": 0x1D,
 	"silph scope": 0x48, "poke flute": 0x49,
+	"hm03": 0xC6, "hm04": 0xC7,
 }
 
 var speciesByID = func() map[uint8]string {

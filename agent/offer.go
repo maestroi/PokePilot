@@ -447,6 +447,13 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 	if skill.PokemonTowerAvailable(obs.Map) && bagHas(obs, "silph scope") && !bagHas(obs, "poke flute") {
 		out = append(out, Objective{Kind: KindPokemonTower})
 	}
+	// The Fuchsia slice follows the Tower's concrete postcondition. It is
+	// offered on every supported resume map once the Poké Flute is owned and
+	// remains until Soul Badge + HM03 + HM04 are all visible in observation.
+	if skill.FuchsiaProgressionAvailable(obs.Map) && bagHas(obs, "poke flute") &&
+		(!hasBadge(obs, state.BadgeSoul) || !bagHas(obs, "hm03") || !bagHas(obs, "hm04")) {
+		out = append(out, Objective{Kind: KindFuchsiaProgression})
+	}
 	// One catch per species this map's grass can actually roll, from the
 	// map's own wild data (Observation.WildGrass). No species is special:
 	// the menu used to name CATERPIE everywhere, which made the one hunt
