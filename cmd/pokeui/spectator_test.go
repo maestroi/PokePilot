@@ -63,6 +63,9 @@ func TestSpectatorServesReadOnlySanitizedSurface(t *testing.T) {
 	if got := res.Header.Get("Content-Security-Policy"); !strings.Contains(got, "form-action 'none'") {
 		t.Errorf("spectator CSP = %q, want form-action none", got)
 	}
+	if got := res.Header.Get("Content-Security-Policy"); !strings.Contains(got, "img-src") || !strings.Contains(got, "blob:") {
+		t.Errorf("spectator CSP = %q, want img-src to allow blob: (20 fps pump paints object URLs)", got)
+	}
 
 	res, err = http.Get(ui.URL + "/watch.js")
 	if err != nil {

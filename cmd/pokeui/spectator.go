@@ -84,7 +84,7 @@ func spectatorHandler(wallBase string) http.Handler {
 
 func spectatorSecurityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
-		res.Header().Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; script-src 'self'; style-src 'self' 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'")
+		res.Header().Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data: blob:; script-src 'self'; style-src 'self' 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'")
 		res.Header().Set("Referrer-Policy", "no-referrer")
 		res.Header().Set("X-Content-Type-Options", "nosniff")
 		res.Header().Set("X-Frame-Options", "SAMEORIGIN")
