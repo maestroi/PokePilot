@@ -9,6 +9,12 @@ type Mon struct {
 	HP      uint16
 	MaxHP   uint16
 	Status  uint8
+	Type1   uint8
+	Type2   uint8
+	Attack  uint16
+	Defense uint16
+	Speed   uint16
+	Special uint16
 	Moves   [4]uint8
 	PP      [4]uint8 // current PP; PP Up count bits are stripped during decode
 }
@@ -65,9 +71,10 @@ type PartyState struct {
 
 // DecodeParty reads the party from a RAM snapshot. A PartyCount larger than 6
 // (corrupt or mid-init RAM) is clamped to 6 rather than panicking. Gen 1's
-// party PP bytes pack the PP Up count into the high two bits; Mon.PP exposes
-// only current remaining PP so ordinary resource checks cannot mistake
-// exhausted moves with PP Ups for usable moves.
+// party entries already carry their current calculated stats and types, so
+// switch policy can score bench members directly without reconstructing base
+// stats from species data. Party PP bytes pack the PP Up count into the high
+// two bits; Mon.PP exposes only current remaining PP.
 func DecodeParty(m *Mem) PartyState {
 	count := int(m.U8(sym.PartyCount))
 	if count > 6 {
@@ -82,6 +89,12 @@ func DecodeParty(m *Mem) PartyState {
 			HP:      m.U16BE(base + sym.MonHP),
 			MaxHP:   m.U16BE(base + sym.MonMaxHP),
 			Status:  m.U8(base + sym.MonStatus),
+			Type1:   m.U8(base + sym.MonType1),
+			Type2:   m.U8(base + sym.MonType2),
+			Attack:  m.U16BE(base + sym.MonAttack),
+			Defense: m.U16BE(base + sym.MonDefense),
+			Speed:   m.U16BE(base + sym.MonSpeed),
+			Special: m.U16BE(base + sym.MonSpecial),
 		}
 		copy(mons[n].Moves[:], m.Slice(base+sym.MonMoves, 4))
 		copy(mons[n].PP[:], m.Slice(base+sym.MonPP, 4))
