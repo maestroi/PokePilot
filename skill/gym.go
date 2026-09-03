@@ -35,6 +35,7 @@ var gyms = map[uint8]GymInfo{
 	0x41: {Map: 0x41, Place: "cerulean gym", LeaderX: 4, LeaderY: 2, Badge: state.BadgeCascade, Leader: "MISTY"},
 	0x05: surgeGym, // Vermilion City: exterior Cut prerequisite
 	0x5C: surgeGym, // Vermilion Gym: already inside
+	0x9D: {Map: 0x9D, Place: "fuchsia gym", LeaderX: 4, LeaderY: 10, Badge: state.BadgeSoul, Leader: "KOGA"},
 }
 
 // GymAt reports the gym challenge available from a map, if there is one.
@@ -47,9 +48,9 @@ const gymBattleWaitBudget = 10000
 const gymPostBattleBudget = 3000
 
 // Gym executes the complete challenge available where the player stands.
-// Brock and Misty begin inside their gyms. Surge may begin in Vermilion City:
-// Gym then owns the exterior Cut prerequisite, the internal trash-can gate,
-// the leader battle, and the Thunder Badge postcondition.
+// Brock, Misty, and Koga begin inside their gyms. Surge may begin in
+// Vermilion City: Gym then owns the exterior Cut prerequisite, the internal
+// trash-can gate, the leader battle, and the Thunder Badge postcondition.
 func Gym(m *emu.Emu, romData []byte, policy MovePolicy) (state.BattleResult, error) {
 	if policy == nil {
 		return 0, fmt.Errorf("skill: Gym: nil policy")
@@ -83,7 +84,9 @@ func Gym(m *emu.Emu, romData []byte, policy MovePolicy) (state.BattleResult, err
 	} else {
 		// Travel, not walkWithinMap: gym trainers can engage by line of sight
 		// on the way to the leader, and Travel resolves those battles before
-		// replanning from the resulting live position.
+		// replanning from the resulting live position. Fuchsia's invisible
+		// walls are encoded in the map collision itself, so ordinary pathing
+		// follows the legal maze without a blind input script.
 		res, err = Travel(m, romData, dest, policy, 20)
 	}
 	if err != nil {
