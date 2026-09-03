@@ -9,17 +9,15 @@ import (
 )
 
 const (
-	eventGotHM04              state.Event = 0x238
-	eventGaveGoldTeeth        state.Event = 0x239
-	eventSafariGameOver       state.Event = 0x24E
-	eventInSafariZone         state.Event = 0x24F
-	eventBeatKoga             state.Event = 0x259
-	eventFightRoute12Snorlax  state.Event = 0x48E
-	eventBeatRoute12Snorlax   state.Event = 0x48F
-	eventGotHM03              state.Event = 0x880
-	fuchsiaStoryBudget                    = 12000
-	fuchsiaTravelEngagements              = 80
-	maxSafariSessions                     = 3
+	eventGotHM04             state.Event = 0x238
+	eventGaveGoldTeeth       state.Event = 0x239
+	eventInSafariZone        state.Event = 0x24F
+	eventFightRoute12Snorlax state.Event = 0x48E
+	eventBeatRoute12Snorlax  state.Event = 0x48F
+	eventGotHM03             state.Event = 0x880
+	fuchsiaStoryBudget                   = 12000
+	fuchsiaTravelEngagements             = 80
+	maxSafariSessions                    = 3
 )
 
 // FuchsiaProgression executes issue #33 as one resumable story verb. Its
@@ -47,21 +45,31 @@ func FuchsiaProgression(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		}
 	}
 
-	// Establish Fuchsia as the recovery checkpoint before the Gym/Safari
-	// phases. This also gives the trainer-heavy eastern route a clean heal.
-	center, ok := Place("fuchsia pokemon center")
-	if !ok {
-		return fmt.Errorf("skill: FuchsiaProgression: fuchsia pokemon center place missing")
-	}
-	if _, err := TravelFlee(m, romData, center, policy, fuchsiaTravelEngagements); err != nil {
-		return fmt.Errorf("skill: FuchsiaProgression: reach Fuchsia Pokemon Center: %w", err)
-	}
-	if err := Heal(m); err != nil {
-		return fmt.Errorf("skill: FuchsiaProgression: heal in Fuchsia: %w", err)
+	// A resumed save may already be inside the Safari Zone. Consume that
+	// finite 502-step session before routing back to a Center/Gym; otherwise
+	// resuming this objective would throw away the remaining Safari budget.
+	state.Snapshot(m, &mem)
+	if state.HasEvent(&mem, eventInSafariZone) && needsSafariRewards(&mem) {
+		if err := collectSafariRewards(m, romData, policy); err != nil {
+			return err
+		}
 	}
 
 	state.Snapshot(m, &mem)
 	if !state.DecodeProgress(&mem).Has(state.BadgeSoul) {
+		// Establish Fuchsia as the recovery checkpoint before Koga. This also
+		// gives the trainer-heavy eastern route a clean heal.
+		center, ok := Place("fuchsia pokemon center")
+		if !ok {
+			return fmt.Errorf("skill: FuchsiaProgression: fuchsia pokemon center place missing")
+		}
+		if _, err := TravelFlee(m, romData, center, policy, fuchsiaTravelEngagements); err != nil {
+			return fmt.Errorf("skill: FuchsiaProgression: reach Fuchsia Pokemon Center: %w", err)
+		}
+		if err := Heal(m); err != nil {
+			return fmt.Errorf("skill: FuchsiaProgression: heal in Fuchsia: %w", err)
+		}
+
 		gym, ok := Place("fuchsia gym")
 		if !ok {
 			return fmt.Errorf("skill: FuchsiaProgression: fuchsia gym place missing")
@@ -143,7 +151,7 @@ func clearRoute12Snorlax(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if err != nil {
 		return fmt.Errorf("skill: FuchsiaProgression: Snorlax battle: %w", err)
 	}
-	if outcome != state.ResultWon && outcome != state.ResultCaught {
+	if outcome != state.ResultWon {
 		return fmt.Errorf("skill: FuchsiaProgression: Snorlax battle ended with outcome %d", outcome)
 	}
 	if err := Cutscene(m, fuchsiaStoryBudget, func(mm *state.Mem) bool {
@@ -237,7 +245,10 @@ func collectSafariRewards(m *emu.Emu, romData []byte, policy MovePolicy) error {
 
 		state.Snapshot(m, &mem)
 		if !hasBagItem(&mem, goldTeethItem) && !state.HasEvent(&mem, eventGaveGoldTeeth) {
-			teethStand, _ := Place("safari gold teeth")
+			teethStand, ok := Place("safari gold teeth")
+			if !ok {
+				return fmt.Errorf("skill: FuchsiaProgression: safari gold teeth place missing")
+			}
 			if _, err := TravelFlee(m, romData, teethStand, policy, fuchsiaTravelEngagements); err != nil {
 				state.Snapshot(m, &mem)
 				if !state.HasEvent(&mem, eventInSafariZone) {
@@ -252,7 +263,10 @@ func collectSafariRewards(m *emu.Emu, romData []byte, policy MovePolicy) error {
 
 		state.Snapshot(m, &mem)
 		if !hasBagItem(&mem, hm03SurfItem) {
-			secret, _ := Place("safari secret house")
+			secret, ok := Place("safari secret house")
+			if !ok {
+				return fmt.Errorf("skill: FuchsiaProgression: safari secret house place missing")
+			}
 			if _, err := TravelFlee(m, romData, secret, policy, fuchsiaTravelEngagements); err != nil {
 				state.Snapshot(m, &mem)
 				if !state.HasEvent(&mem, eventInSafariZone) {
@@ -301,17 +315,21 @@ func leaveSafariZoneIfNeeded(m *emu.Emu, romData []byte, policy MovePolicy) erro
 	if !state.HasEvent(&mem, eventInSafariZone) {
 		return nil
 	}
-	gateInside, ok := Place("safari gate inside")
+	exit, ok := Place("safari exit approach")
 	if !ok {
-		return fmt.Errorf("safari gate inside place missing")
+		return fmt.Errorf("safari exit approach place missing")
 	}
-	if _, err := TravelFlee(m, romData, gateInside, policy, fuchsiaTravelEngagements); err != nil {
+	if _, err := TravelFlee(m, romData, exit, policy, fuchsiaTravelEngagements); err != nil {
 		state.Snapshot(m, &mem)
 		if !state.HasEvent(&mem, eventInSafariZone) {
 			return nil
 		}
 		return err
 	}
+	// Center (14,25) is the south gate warp. One Down enters the gate, whose
+	// early-leave prompt defaults to YES. If the Safari timer already expired,
+	// the same predicate simply observes the automatic ejection.
+	m.Tap(emu.Down, 3, 7)
 	return driveStoryUntil(m, fuchsiaStoryBudget, func(mm *state.Mem) bool {
 		return !state.HasEvent(mm, eventInSafariZone) && state.Controllable(mm)
 	})
