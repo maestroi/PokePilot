@@ -15,10 +15,10 @@
 # operator's ${POKEMON_RED_ROM} read-only and reads it back as
 # /rom/pokemon_red.gb.
 #
-# pokeui is in the stack. Its port is published in host mode so the
-# browser can reach it without swarm ingress (unreachable from outside on
-# this host). The wall publishes no host ports; in-network debugging is
-# still http://wall:8080 (HTML table + /frame).
+# pokeui is in the stack twice: `ui` is the private operator console, while
+# `spectator` is a separate process with a server-side read-only route table.
+# The wall publishes no host ports; in-network debugging is still
+# http://wall:8080 (HTML table + /frame).
 
 services:
   wall:
@@ -56,12 +56,26 @@ services:
     image: ${FARM_IMAGE:-pokepilot-farm:local}
     command: ["pokeui", "-http", ":8080", "-wall", "http://wall:8080"]
     environment:
-      # Empty disables /mcp entirely. Set this to a long random secret before
-      # exposing pokeui on a public hostname: MCP can start and cancel runs.
+      # Empty disables /mcp entirely. Keep this operator service private even
+      # when MCP is disabled: its HTTP UI can queue, cancel, and delete runs.
       POKEPILOT_MCP_TOKEN: ${POKEPILOT_MCP_TOKEN:-}
     ports:
       - target: 8080
         published: ${FARM_WALL_PORT:-18080}
+        protocol: tcp
+        mode: host
+    deploy:
+      replicas: 1
+
+  spectator:
+    image: ${FARM_IMAGE:-pokepilot-farm:local}
+    # This process never mounts the operator routes or MCP. It publishes a
+    # sanitized run snapshot plus read-only game frames, so this is the port
+    # intended for a public reverse proxy / hostname.
+    command: ["pokeui", "-http", ":8080", "-wall", "http://wall:8080", "-spectator"]
+    ports:
+      - target: 8080
+        published: ${FARM_SPECTATOR_PORT:-18081}
         protocol: tcp
         mode: host
     deploy:
