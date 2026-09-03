@@ -53,6 +53,36 @@ func TestFuchsiaProgressionComplete(t *testing.T) {
 	}
 }
 
+func TestFuchsiaGymRegistration(t *testing.T) {
+	g, ok := GymAt(fuchsiaGymMap)
+	if !ok {
+		t.Fatal("Fuchsia Gym is not registered")
+	}
+	if g.Leader != "KOGA" || g.LeaderX != 4 || g.LeaderY != 10 || g.Badge != state.BadgeSoul {
+		t.Fatalf("Fuchsia Gym = %+v, want KOGA at (4,10) with Soul Badge", g)
+	}
+	d, ok := Place(g.Place)
+	if !ok || d.Map != fuchsiaGymMap || d.X != 4 || d.Y != 11 {
+		t.Fatalf("Koga approach place = %+v,%v, want map %#02x at (4,11)", d, ok, fuchsiaGymMap)
+	}
+}
+
+func TestNeedsSafariRewards(t *testing.T) {
+	var mem state.Mem
+	if !needsSafariRewards(&mem) {
+		t.Fatal("missing both Safari rewards must require a Safari session")
+	}
+	setTestBag(&mem, [2]uint8{hm03SurfItem, 1}, [2]uint8{goldTeethItem, 1})
+	if needsSafariRewards(&mem) {
+		t.Fatal("HM03 + Gold Teeth should satisfy Safari collection")
+	}
+	setTestBag(&mem, [2]uint8{hm03SurfItem, 1})
+	state.SetEvent(&mem, eventGaveGoldTeeth)
+	if needsSafariRewards(&mem) {
+		t.Fatal("after giving Gold Teeth away, HM03 alone should satisfy Safari collection")
+	}
+}
+
 func setTestBag(mem *state.Mem, entries ...[2]uint8) {
 	mem[sym.NumBagItems] = uint8(len(entries))
 	for i, entry := range entries {
