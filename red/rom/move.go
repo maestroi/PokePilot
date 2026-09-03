@@ -8,7 +8,7 @@ import "fmt"
 //	+1  effect
 //	+2  power, 0 for a move that deals no damage
 //	+3  type
-//	+4  accuracy
+//	+4  accuracy, encoded as percent * 255 / 100
 //	+5  PP
 //
 // Move ids are 1-based, so move n is the (n-1)th entry.
@@ -30,11 +30,12 @@ const (
 
 // Move is one entry of the ROM's move table.
 type Move struct {
-	ID     uint8
-	Effect uint8
-	Power  uint8 // 0 means the move deals no damage
-	Type   uint8
-	PP     uint8
+	ID       uint8
+	Effect   uint8
+	Power    uint8 // 0 means the move deals no ordinary formula damage
+	Type     uint8
+	Accuracy uint8 // ROM threshold: 255 is the table's 100% value
+	PP       uint8
 }
 
 // LookupMove reads move id from the ROM's move table. Move id 0 means "no
@@ -53,5 +54,5 @@ func LookupMove(romData []byte, id uint8) (Move, error) {
 	if e[0] != id {
 		return Move{}, fmt.Errorf("rom: move table entry %d has animation %d, want %d: the table is not where we think", id, e[0], id)
 	}
-	return Move{ID: id, Effect: e[1], Power: e[2], Type: e[3], PP: e[5]}, nil
+	return Move{ID: id, Effect: e[1], Power: e[2], Type: e[3], Accuracy: e[4], PP: e[5]}, nil
 }
