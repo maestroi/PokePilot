@@ -79,7 +79,7 @@ func decisionContextFor(o Observation) *DecisionContext {
 		}
 	}
 
-	ctx.Economy = EconomyContext(o)
+	ctx.Economy = plannerEconomyContext(o)
 	if ctx.Training == nil && ctx.Catch == nil && ctx.Economy == nil {
 		return nil
 	}
