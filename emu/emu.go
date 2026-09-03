@@ -1,13 +1,10 @@
 package emu
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/maestroi/gomeboy/pkg/gomeboy"
 )
-
-const addressSpaceSize = 1 << 16
 
 // Emu is a headless Pokemon Red emulator session.
 type Emu struct {
@@ -114,30 +111,29 @@ func (m *Emu) PeekInto(addr uint16, dst []byte) {
 }
 
 // SnapshotMemory copies the complete 64 KiB address space into dst and
-// returns the frame number the bytes belong to. PokePilot composes this from
-// GomeBoy's existing side-effect-free PeekInto and FrameCount primitives so
-// the forensic feature does not depend on an unmerged emulator revision.
+// returns the frame number the bytes belong to.
 func (m *Emu) SnapshotMemory(dst []byte) (uint64, error) {
-	if len(dst) != addressSpaceSize {
-		return 0, fmt.Errorf("emu: SnapshotMemory: buffer is %d bytes, want %d", len(dst), addressSpaceSize)
-	}
-	m.e.PeekInto(0, dst)
-	return m.e.FrameCount(), nil
+	return m.e.SnapshotMemory(dst)
 }
 
-// ROM returns the bytes of the loaded ROM. The slice aliases emulator
-// memory and must not be modified.
+// ROM returns a caller-owned copy of the loaded ROM.
 func (m *Emu) ROM() []byte {
 	return m.e.ROM()
 }
 
-// SaveState serializes the emulator's complete execution state.
+// SaveState serializes the emulator's complete execution state in GomeBoy's
+// raw format. Use SaveStateChecked for durable evidence outside this process.
 func (m *Emu) SaveState() ([]byte, error) {
 	return m.e.SaveState()
 }
 
-// LoadState restores a state previously produced by SaveState.
+// LoadState restores either a legacy/raw GomeBoy state or a checked durable
+// state. This keeps existing fixtures and resumable-run checkpoints readable
+// while allowing new diagnostics to use SaveStateChecked.
 func (m *Emu) LoadState(b []byte) error {
+	if isCheckedState(b) {
+		return m.e.LoadStateChecked(b)
+	}
 	return m.e.LoadState(b)
 }
 
