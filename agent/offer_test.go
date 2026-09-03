@@ -471,7 +471,6 @@ func TestOfferWithholdsParcelUntilStarterStoryComplete(t *testing.T) {
 			if objective.Kind == agent.KindErrand {
 				return true
 			}
-		}
 		return false
 	}
 
@@ -632,7 +631,8 @@ func TestKnowledgeRequirementShapesAndCap(t *testing.T) {
 // starters and talk, and at temperature 0 the rejection feedback did not
 // change its answer, so whole runs stopped). The schema omits the field,
 // the constrained decoder forbids what it omits, and the variant is picked
-// by index — which the model does reliably.
+// by index — which the model does reliably. Choice-local display notes are
+// deliberately ignored here: they do not change objective identity.
 func TestOfferJourneyVariants(t *testing.T) {
 	adj := map[uint8][]uint8{0x0c: {0x00, 0x01, 0x29}}
 	obs := agent.Observation{
@@ -644,6 +644,9 @@ func TestOfferJourneyVariants(t *testing.T) {
 	known.SawMap(0x29) // the run has been inside the Viridian center
 
 	got := agent.Offer(obs, known)
+	sameJourney := func(a, b agent.Objective) bool {
+		return a.Kind == b.Kind && a.Place == b.Place && a.Flee == b.Flee
+	}
 	for i, o := range got {
 		isJourney := o.Kind == agent.KindGoTo || (o.Kind == agent.KindHeal && o.Place != "")
 		if !isJourney {
@@ -651,12 +654,12 @@ func TestOfferJourneyVariants(t *testing.T) {
 		}
 		if !o.Flee {
 			want := agent.Objective{Kind: o.Kind, Place: o.Place, Flee: true}
-			if i+1 >= len(got) || got[i+1] != want {
+			if i+1 >= len(got) || !sameJourney(got[i+1], want) {
 				t.Fatalf("journey %q at %d has no fleeing variant beside it:\n%v", o, i, got)
 			}
 		} else {
 			plain := agent.Objective{Kind: o.Kind, Place: o.Place}
-			if i == 0 || got[i-1] != plain {
+			if i == 0 || !sameJourney(got[i-1], plain) {
 				t.Fatalf("fleeing variant %q at %d does not follow its plain one:\n%v", o, i, got)
 			}
 		}
