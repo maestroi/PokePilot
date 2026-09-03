@@ -23,10 +23,10 @@ const (
 	safariZoneCenterMap     uint8 = 0xDC
 	safariZoneSecretHouse   uint8 = 0xDE
 
-	goldTeethItem uint8 = 0x40
+	goldTeethItem        uint8 = 0x40
 	pokeFluteItemFuchsia uint8 = 0x49
-	hm03SurfItem uint8 = 0xC6
-	hm04StrengthItem uint8 = 0xC7
+	hm03SurfItem         uint8 = 0xC6
+	hm04StrengthItem     uint8 = 0xC7
 
 	soulBadgeMask uint8 = 1 << 4
 )
