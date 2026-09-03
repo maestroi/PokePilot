@@ -192,6 +192,10 @@ func TalkAt(m *emu.Emu, romData []byte, homeX, homeY uint8, policy MovePolicy) (
 
 		presses, err := Talk(m)
 		if err != nil {
+			if errors.Is(err, ErrNoDialogue) && attempt < attempts {
+				m.StepFrames(npcWaitFrames)
+				continue
+			}
 			return presses, fmt.Errorf("skill: TalkAt: object %d at (%d,%d): %w", objectID, tx, ty, err)
 		}
 		return presses, nil

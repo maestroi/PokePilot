@@ -144,21 +144,19 @@ func GoTo(m *emu.Emu, romData []byte, dest Destination) error {
 		cur := m.Peek8(sym.CurMap)
 		x, y := playerXY(m)
 
-		if cur == dest.Map {
-			return walkWithinMap(m, romData, dest)
-		}
-
 		blockedHere := map[world.Edge]bool{}
 		for k := range failed {
 			if k.m == cur && k.x == x && k.y == y {
 				blockedHere[k.e] = true
 			}
 		}
-		if havePreviousMap {
+		if havePreviousMap && dest.Map != previousMap {
 			blockImmediateReverse(g, blockedHere, cur, previousMap)
 		}
 
-		route, err := world.FindRouteAvoiding(g, cur, dest.Map, blockedHere)
+		route, err := world.FindRouteAtDestination(
+			g, cur, dest.Map, int(x), int(y), int(dest.X), int(dest.Y), blockedHere,
+		)
 		if err != nil {
 			return fmt.Errorf("skill: GoTo: no route from map %02x at (%d,%d) to map %02x at (%d,%d): %w",
 				cur, x, y, dest.Map, dest.X, dest.Y, err)

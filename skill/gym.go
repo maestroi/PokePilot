@@ -22,17 +22,22 @@ type GymInfo struct {
 	Leader  string      // for logs and errors; never parsed
 }
 
-var surgeGym = GymInfo{Map: 0x5C, Place: "vermilion gym", LeaderX: 5, LeaderY: 1, Badge: state.BadgeThunder, Leader: "LT. SURGE"}
+var (
+	brockGym = GymInfo{Map: 0x36, Place: "pewter gym", LeaderX: 4, LeaderY: 1, Badge: state.BadgeBoulder, Leader: "BROCK"}
+	mistyGym = GymInfo{Map: 0x41, Place: "cerulean gym", LeaderX: 4, LeaderY: 2, Badge: state.BadgeCascade, Leader: "MISTY"}
+	surgeGym = GymInfo{Map: 0x5C, Place: "vermilion gym", LeaderX: 5, LeaderY: 1, Badge: state.BadgeThunder, Leader: "LT. SURGE"}
+)
 
-// gyms is every gym the journey can currently challenge. Vermilion City is
-// deliberately an alias for Lt. Surge: unlike Brock and Misty, the third gym
-// has a field-move prerequisite outside its map. Offering the challenge from
-// the city lets Gym own that prerequisite atomically — find/cut the tree,
-// enter the gym, solve the trash switches, then fight the leader — instead of
-// requiring the planner to invent an unexpressed "use Cut" objective.
+// gyms is every gym challenge the journey can currently begin. City aliases
+// make the challenge an atomic, salient verb before the planner has separately
+// chosen the gym doorway: Gym owns the short approach, trainers, leader battle,
+// and badge postcondition. Vermilion additionally owns its exterior Cut
+// prerequisite and internal trash-can gate.
 var gyms = map[uint8]GymInfo{
-	0x36: {Map: 0x36, Place: "pewter gym", LeaderX: 4, LeaderY: 1, Badge: state.BadgeBoulder, Leader: "BROCK"},
-	0x41: {Map: 0x41, Place: "cerulean gym", LeaderX: 4, LeaderY: 2, Badge: state.BadgeCascade, Leader: "MISTY"},
+	0x02: brockGym, // Pewter City: walk into the gym, then challenge Brock
+	0x36: brockGym, // Pewter Gym: already inside
+	0x03: mistyGym, // Cerulean City: walk into the gym, then challenge Misty
+	0x41: mistyGym, // Cerulean Gym: already inside
 	0x05: surgeGym, // Vermilion City: exterior Cut prerequisite
 	0x5C: surgeGym, // Vermilion Gym: already inside
 	0x9D: {Map: 0x9D, Place: "fuchsia gym", LeaderX: 4, LeaderY: 10, Badge: state.BadgeSoul, Leader: "KOGA"},
@@ -48,9 +53,10 @@ const gymBattleWaitBudget = 10000
 const gymPostBattleBudget = 3000
 
 // Gym executes the complete challenge available where the player stands.
-// Brock, Misty, and Koga begin inside their gyms. Surge may begin in
-// Vermilion City: Gym then owns the exterior Cut prerequisite, the internal
-// trash-can gate, the leader battle, and the Thunder Badge postcondition.
+// Brock and Misty may begin from their cities or inside their gyms; Koga begins
+// inside his gym. Surge may begin in Vermilion City: Gym then owns the exterior
+// Cut prerequisite, the internal trash-can gate, the leader battle, and the
+// Thunder Badge postcondition.
 func Gym(m *emu.Emu, romData []byte, policy MovePolicy) (state.BattleResult, error) {
 	if policy == nil {
 		return 0, fmt.Errorf("skill: Gym: nil policy")

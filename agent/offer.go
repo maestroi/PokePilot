@@ -584,15 +584,21 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 	// Viridian Mart does not stock it, so the first shop every run reached
 	// carried a guaranteed-failing objective (MEASURED 2026-08-31: the
 	// planner picked it, Buy returned ErrNotInStock, and the run died four
-	// rounds later). One buy per stocked item, like the wild-grass catch
-	// offers: gated on the map's own table rather than a guess. A shelf that
+	// rounds later). The shelf is then filtered through EconomyContext: only
+	// purchases it marks ShouldBuy are offered, at the affordable SuggestedQty
+	// that already preserves strategic reserves and bag capacity. A shelf that
 	// cannot be read offers NOTHING — an objective that cannot succeed is
 	// worse than an absent one: it costs a round, a model call, and (before
 	// the shop closed itself) the run.
 	if isMart(obs.MapName) {
-		for _, name := range obs.MartStock {
-			if it, ok := ItemByName(name); ok {
-				out = append(out, Objective{Kind: KindBuy, Item: it, Qty: 3})
+		if economy := EconomyContext(obs); economy != nil {
+			for _, advice := range economy.Purchases {
+				if !advice.ShouldBuy || advice.SuggestedQty < 1 {
+					continue
+				}
+				if it, ok := ItemByName(advice.Item); ok {
+					out = append(out, Objective{Kind: KindBuy, Item: it, Qty: advice.SuggestedQty})
+				}
 			}
 		}
 	}

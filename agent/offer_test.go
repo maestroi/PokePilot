@@ -369,7 +369,7 @@ func TestOfferTable(t *testing.T) {
 			// objective at the first shop every run reached.
 			name: "inside the viridian mart: one buy per item the shelf actually stocks, no POTION",
 			obs: agent.Observation{
-				Map: 0x2a, MapName: "VIRIDIAN_MART", X: 3, Y: 6, PartyCount: 1,
+				Map: 0x2a, MapName: "VIRIDIAN_MART", X: 3, Y: 6, PartyCount: 1, Money: 10000,
 				// names are the agent's item vocabulary (ItemName), which spells
 				// the ball "pokeball"; the ROM prints "POKE BALL".
 				MartStock: []string{"pokeball", "antidote", "parlyz heal", "burn heal"},
@@ -382,10 +382,7 @@ func TestOfferTable(t *testing.T) {
 			},
 			want: []string{
 				"deliver oak's parcel",
-				"buy 3 POKEBALL",
-				"buy 3 ANTIDOTE",
-				"buy 3 PARLYZ HEAL",
-				"buy 3 BURN HEAL",
+				"buy 10 POKEBALL",
 				"go to viridian mart",
 				"go to viridian mart, fleeing wild battles",
 			},
