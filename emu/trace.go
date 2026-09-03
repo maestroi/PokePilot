@@ -245,7 +245,27 @@ func (m *Emu) TracePlayer(v any) {
 // OnSample registers fn to run on every trace sample, on the goroutine that
 // steps the emulator, so it may read emulator memory without racing. Use it
 // to record anything emu cannot decode by itself. Passing nil clears it.
+// A second OnSample call replaces the first: each farm lease starts clean.
 func (m *Emu) OnSample(fn func(*Emu)) { m.onSample = fn }
+
+// AlsoSample appends fn after the current OnSample hook. agent.Run's
+// dialogue tape must not wipe a farm heartbeat (or the local watch
+// TracePlayer) that was already installed — that replacement froze the
+// console on Oak's Lab, the last tile sampled before the tape took over.
+func (m *Emu) AlsoSample(fn func(*Emu)) {
+	if fn == nil {
+		return
+	}
+	prev := m.onSample
+	if prev == nil {
+		m.onSample = fn
+		return
+	}
+	m.onSample = func(e *Emu) {
+		prev(e)
+		fn(e)
+	}
+}
 
 // TraceTail returns the last n trace lines as "kind: text", newest last.
 // Used to fill the trace_tail field of a farm.FinishReport; nothing in

@@ -27,8 +27,8 @@ type Emu struct {
 	// onFrame runs after every stepped frame, on the goroutine stepping the
 	// emulator. Headless consumers use it for per-frame RAM sampling (for
 	// example counting battle-flag transitions): Watch's sampleTrace only
-	// samples while a screen is being served, and OnSample alone is not
-	// enough because agent.Run replaces it with its own hook.
+	// samples while a screen is being served. OnSample still fires in
+	// headless mode; agent.Run AlsoSamples onto it rather than replacing.
 	onFrame func(*Emu)
 
 	// Set by Pace. Zero means run flat out; see emu/watch.go.
@@ -60,7 +60,7 @@ func (m *Emu) StepFrame() {
 		// Headless sampling: without Watch there is no sampleTrace to call
 		// the sample hook, but a headless run (badgerun) still needs its
 		// per-frame RAM sampling — agent.Run's dialogue tape is installed
-		// through OnSample and is dead code otherwise. In watch mode this
+		// through AlsoSample and is dead code otherwise. In watch mode this
 		// is skipped: sampleTrace already calls onSample at capture cadence.
 		m.onSample(m)
 	}

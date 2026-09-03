@@ -383,9 +383,10 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 		samples = make(chan periodicSample, 1)
 		stopUploader = make(chan struct{})
 		uploaderDone = runCheckpointUploader(client, spec.RunID, spec.Attempt, checkpointDir, samples, stopUploader)
-		// agent.Run replaces OnSample with its dialogue tape, so the
-		// flight recorder lives on OnFrame, which the stepper always
-		// runs and the uploader never sees.
+		// The flight recorder lives on OnFrame so the uploader never
+		// sees it. agent.Run AlsoSamples its dialogue tape onto
+		// OnSample and leaves this hook (and the farm heartbeat) in
+		// place.
 		m.OnFrame(func(em *emu.Emu) {
 			maybeCapturePeriodic(em, snap, samples)
 		})

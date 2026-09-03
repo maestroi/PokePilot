@@ -102,6 +102,25 @@ func TestStepFramesCallsOnSampleEveryFrame(t *testing.T) {
 	}
 }
 
+// TestAlsoSampleKeepsTheFarmHeartbeat is why the console froze on Oak's Lab:
+// agent.Run used to OnSample-replace the farm heartbeat, so every later
+// heartbeat replayed the post-starter tile. AlsoSample must chain.
+func TestAlsoSampleKeepsTheFarmHeartbeat(t *testing.T) {
+	m := openTestEmu(t)
+	var farm, tape int
+	m.OnSample(func(*Emu) { farm++ })
+	m.AlsoSample(func(*Emu) { tape++ })
+	m.StepFrames(5)
+	if farm != 5 || tape != 5 {
+		t.Fatalf("hooks farm=%d tape=%d, want 5 and 5 (AlsoSample must not wipe OnSample)", farm, tape)
+	}
+	m.OnSample(func(*Emu) { farm = 100 })
+	m.StepFrames(1)
+	if farm != 100 {
+		t.Fatalf("OnSample after AlsoSample must still replace, so the next farm lease starts clean: farm=%d", farm)
+	}
+}
+
 func TestTapAndHoldDoNotPanic(t *testing.T) {
 	m := openTestEmu(t)
 	for _, b := range []Button{A, B, Start, Select, Up, Down, Left, Right} {

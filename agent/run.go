@@ -640,7 +640,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 	res := Result{Completed: []Objective{}}
 	startFrame := m.FrameCount()
 	tape := &dialogueTape{}
-	m.OnSample(tape.sample)
+	m.AlsoSample(tape.sample)
 	var history []RoundRecord
 	last := Observe(m, romData)
 	// The early progress sample: what the run started with, taken before
