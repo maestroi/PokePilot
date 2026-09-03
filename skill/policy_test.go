@@ -74,9 +74,15 @@ var (
 	ember    = rom.Move{ID: 52, Power: 40}
 )
 
+// battleWith builds a neutral but possible battle rather than leaving the
+// newly scored level/stats at their zero values. Level 20 and equal 70 stats
+// make power differences visible through the same integer damage formula the
+// production scorer uses; individual tests override the matchup when needed.
 func battleWith(atkMod, defMod uint8, hp, maxHP uint16, ids ...uint8) state.BattleState {
 	b := state.BattleState{
-		ActiveHP: hp, ActiveMaxHP: maxHP,
+		ActiveHP: hp, ActiveMaxHP: maxHP, ActiveLevel: 20,
+		ActiveAttack: 70, ActiveSpecial: 70,
+		EnemyDefense: 70, EnemySpecial: 70,
 		ActiveAttackMod: atkMod, EnemyDefenseMod: defMod,
 		ActiveDefenseMod: state.StatStageNeutral, EnemyAttackMod: state.StatStageNeutral,
 	}
