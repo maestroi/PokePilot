@@ -26,6 +26,14 @@ const (
 	// to win a damage race — cut what is coming in rather than raise what
 	// goes out.
 	AttackDown1Effect uint8 = 18
+
+	// These effect ids are the non-ordinary damage paths in Red's battle
+	// engine. Super Fang and SPECIAL_DAMAGE_EFFECT are listed in
+	// SetDamageEffects and skip CalculateDamage entirely. OHKO moves also
+	// bypass the ordinary formula through their own effect handler.
+	OHKOEffect          uint8 = 0x26
+	SuperFangEffect     uint8 = 0x28
+	SpecialDamageEffect uint8 = 0x29
 )
 
 // Move is one entry of the ROM's move table.
