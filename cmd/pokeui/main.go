@@ -45,9 +45,18 @@ const (
 	serverShutdownTimeout   = 10 * time.Second
 )
 
-// handler serves the console at GET / and forwards only the operator
-// routes to wallBase. Runner-only paths (lease, heartbeat, finish) 404.
+// handler is the browser-only default used by tests and local callers that do
+// not configure MCP. Production main calls handlerWithMCP with the token from
+// POKEPILOT_MCP_TOKEN.
 func handler(wallBase string) http.Handler {
+	return handlerWithMCP(wallBase, "")
+}
+
+// handlerWithMCP serves the console at GET / and forwards only the operator
+// routes to wallBase. Runner-only paths (lease, heartbeat, finish) 404. MCP is
+// mounted at /mcp only when token is non-empty; an unset secret means the
+// remote control plane does not exist rather than existing anonymously.
+func handlerWithMCP(wallBase, token string) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", func(res http.ResponseWriter, req *http.Request) {
 		res.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -96,6 +105,9 @@ func handler(wallBase string) http.Handler {
 	mux.HandleFunc("POST /v1/runs/{id}/cancel", proxy(wallBase, false))
 	mux.HandleFunc("DELETE /v1/runs/{id}", proxy(wallBase, false))
 	mux.HandleFunc("GET /frame", proxy(wallBase, true))
+	if token = strings.TrimSpace(token); token != "" {
+		mux.Handle("/mcp", newMCPHandler(wallBase, token))
+	}
 	return mux
 }
 
@@ -146,10 +158,16 @@ func main() {
 		log.Fatal("pokeui: -wall is required")
 	}
 
-	log.Printf("pokeui proxying %s on http://%s", *wall, *httpAddr)
+	wallBase := strings.TrimRight(*wall, "/")
+	mcpToken := strings.TrimSpace(os.Getenv("POKEPILOT_MCP_TOKEN"))
+	if mcpToken == "" {
+		log.Printf("pokeui proxying %s on http://%s (MCP disabled)", *wall, *httpAddr)
+	} else {
+		log.Printf("pokeui proxying %s on http://%s (MCP enabled at /mcp)", *wall, *httpAddr)
+	}
 	server := &http.Server{
 		Addr:              *httpAddr,
-		Handler:           handler(strings.TrimRight(*wall, "/")),
+		Handler:           handlerWithMCP(wallBase, mcpToken),
 		ReadHeaderTimeout: serverReadHeaderTimeout,
 		IdleTimeout:       serverIdleTimeout,
 	}
