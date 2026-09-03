@@ -14,13 +14,13 @@ import (
 )
 
 const (
-	forensicRAMVersion = 1
+	forensicRAMVersion = 2
 	defaultRAMKeep     = 32
 	// Capture filename prefixes. Each is its own eviction ring, and each
 	// sorts lexically in frame order because the frame is zero-padded.
 	failurePrefix = "failure-frame-"
 	stallPrefix   = "stall-frame-"
-	// RAMForensicsDirEnv enables failure-time raw RAM captures. It is an
+	// RAMForensicsDirEnv enables failure-time forensic captures. It is an
 	// environment variable instead of an agent objective or planner option:
 	// evidence collection is an operator concern and must never become a
 	// choice the model can make about its own run.
@@ -28,28 +28,35 @@ const (
 	RAMForensicsKeepEnv = "POKEPILOT_RAM_KEEP"
 )
 
-// forensicRAMMeta is the small human-readable sidecar for a raw 64 KiB RAM
-// capture. The .ram file is the source of truth; this metadata only makes a
-// failure searchable without first running a decoder.
+// forensicRAMMeta is the human-readable sidecar for a raw 64 KiB RAM capture
+// and checked emulator state. The .ram and .state files are the source of
+// truth; this metadata makes a failure searchable without first restoring it.
 type forensicRAMMeta struct {
-	Version      int    `json:"version"`
-	Kind         string `json:"kind"`
-	Frame        uint64 `json:"frame"`
-	Objective    string `json:"objective"`
-	Error        string `json:"error"`
-	Map          uint8  `json:"map"`
-	X            uint8  `json:"x"`
-	Y            uint8  `json:"y"`
-	Controllable bool   `json:"controllable"`
-	InBattle     bool   `json:"in_battle"`
-	MenuCurrent  int    `json:"menu_current"`
-	MenuMax      int    `json:"menu_max"`
+	Version        int          `json:"version"`
+	Kind           string       `json:"kind"`
+	Frame          uint64       `json:"frame"`
+	Cycle          uint64       `json:"cycle"`
+	Objective      string       `json:"objective"`
+	Error          string       `json:"error"`
+	ROMSHA256      string       `json:"rom_sha256"`
+	StateHash      string       `json:"state_hash,omitempty"`
+	StateHashError string       `json:"state_hash_error,omitempty"`
+	Opcode         uint8        `json:"opcode"`
+	CPU            emu.CPUState `json:"cpu"`
+	PPU            emu.PPUState `json:"ppu"`
+	Map            uint8        `json:"map"`
+	X              uint8        `json:"x"`
+	Y              uint8        `json:"y"`
+	Controllable   bool         `json:"controllable"`
+	InBattle       bool         `json:"in_battle"`
+	MenuCurrent    int          `json:"menu_current"`
+	MenuMax        int          `json:"menu_max"`
 }
 
-// captureObjectiveFailure preserves the exact RAM state in which Execute is
-// returning a gameplay error, before agent.Run's between-round recovery is
-// allowed to close dialogue or otherwise settle the game. This is the useful
-// boundary for reverse-engineering menu and map-transition failures.
+// captureObjectiveFailure preserves the exact RAM and emulator state in which
+// Execute is returning a gameplay error, before agent.Run's between-round
+// recovery is allowed to close dialogue or otherwise settle the game. This is
+// the useful boundary for reverse-engineering menu and map-transition failures.
 //
 // Capture is disabled unless POKEPILOT_RAM_DIR is non-empty. A capture error
 // is deliberately returned separately and must never replace the objective's
@@ -96,16 +103,37 @@ func captureRAM(m *emu.Emu, prefix, kind, objective, cause, slug string) error {
 		return err
 	}
 	ramPath := filepath.Join(dir, base+".ram")
+	statePath := filepath.Join(dir, base+".state")
 	metaPath := filepath.Join(dir, base+".json")
 	if err := os.WriteFile(ramPath, mem[:], 0o644); err != nil {
 		return fmt.Errorf("ram forensics write %s: %w", ramPath, err)
 	}
+
+	checkedState, err := m.SaveStateChecked()
+	if err != nil {
+		_ = os.Remove(ramPath)
+		return fmt.Errorf("ram forensics checked state: %w", err)
+	}
+	if err := os.WriteFile(statePath, checkedState, 0o644); err != nil {
+		_ = os.Remove(ramPath)
+		return fmt.Errorf("ram forensics write %s: %w", statePath, err)
+	}
+
+	cpu := m.CPUState()
+	ppu := m.PPUState()
+	stateHash, hashErr := m.StateHashHex()
 	meta := forensicRAMMeta{
 		Version:      forensicRAMVersion,
 		Kind:         kind,
 		Frame:        frame,
+		Cycle:        m.Cycle(),
 		Objective:    objective,
 		Error:        cause,
+		ROMSHA256:    m.ROMSHA256Hex(),
+		StateHash:    stateHash,
+		Opcode:       m.Peek8(cpu.PC),
+		CPU:          cpu,
+		PPU:          ppu,
 		Map:          gs.Player.MapID,
 		X:            gs.Player.X,
 		Y:            gs.Player.Y,
@@ -114,14 +142,19 @@ func captureRAM(m *emu.Emu, prefix, kind, objective, cause, slug string) error {
 		MenuCurrent:  gs.Menu.Current,
 		MenuMax:      gs.Menu.Max,
 	}
+	if hashErr != nil {
+		meta.StateHashError = hashErr.Error()
+	}
 	b, err := json.MarshalIndent(meta, "", "  ")
 	if err != nil {
 		_ = os.Remove(ramPath)
+		_ = os.Remove(statePath)
 		return fmt.Errorf("ram forensics metadata: %w", err)
 	}
 	b = append(b, '\n')
 	if err := os.WriteFile(metaPath, b, 0o644); err != nil {
 		_ = os.Remove(ramPath)
+		_ = os.Remove(statePath)
 		return fmt.Errorf("ram forensics write %s: %w", metaPath, err)
 	}
 	// Per-prefix ring: a burst of objective failures must not evict the
@@ -161,9 +194,9 @@ func uniqueFailureBase(dir, base string) (string, error) {
 	}
 }
 
-// evictRAMCaptures keeps the latest keep failure RAM files and their JSON
-// sidecars. Filenames start with a zero-padded frame, so lexical order is
-// capture order apart from same-frame suffixes, which sort in creation order.
+// evictRAMCaptures keeps the latest keep forensic bundles. Filenames start
+// with a zero-padded frame, so lexical order is capture order apart from
+// same-frame suffixes, which sort in creation order.
 func evictRAMCaptures(dir, prefix string, keep int) error {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -179,11 +212,10 @@ func evictRAMCaptures(dir, prefix string, keep int) error {
 	sort.Strings(names)
 	for _, name := range names[:max(0, len(names)-keep)] {
 		base := strings.TrimSuffix(name, ".ram")
-		if err := os.Remove(filepath.Join(dir, name)); err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("ram forensics evict %s: %w", name, err)
-		}
-		if err := os.Remove(filepath.Join(dir, base+".json")); err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("ram forensics evict %s.json: %w", base, err)
+		for _, ext := range []string{".ram", ".state", ".json"} {
+			if err := os.Remove(filepath.Join(dir, base+ext)); err != nil && !os.IsNotExist(err) {
+				return fmt.Errorf("ram forensics evict %s%s: %w", base, ext, err)
+			}
 		}
 	}
 	return nil
