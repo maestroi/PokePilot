@@ -13,18 +13,18 @@ import (
 type Kind uint8
 
 const (
-	KindGoTo    Kind = iota // walk to a named place
-	KindTalk                // face and talk to something at a coordinate
-	KindStarter             // complete the opening story and take a chosen starter
-	KindErrand              // deliver Oak's parcel (Viridian Mart -> Oak's lab)
-	KindTrain               // battle in grass until the lead reaches Level
-	KindHeal                // heal the party at a center; Place names one to travel to first
-	KindGym                 // fight the leader of whichever gym the player is in
-	KindCatch               // hunt tall grass for a wanted species and catch it
-	KindBuy                 // buy Item x Qty from the mart clerk
-	KindPickup              // pick up the item at a coordinate; the bag must rise
-	KindUseItem             // use one bag item on one party member, out in the field
-	KindRocketHideout       // clear the Celadon Rocket Hideout and obtain the Silph Scope
+	KindGoTo          Kind = iota // walk to a named place
+	KindTalk                      // face and talk to something at a coordinate
+	KindStarter                   // complete the opening story and take a chosen starter
+	KindErrand                    // deliver Oak's parcel (Viridian Mart -> Oak's lab)
+	KindTrain                     // battle in grass until the lead reaches Level
+	KindHeal                      // heal the party at a center; Place names one to travel to first
+	KindGym                       // fight the leader of whichever gym the player is in
+	KindCatch                     // hunt tall grass for a wanted species and catch it
+	KindBuy                       // buy Item x Qty from the mart clerk
+	KindPickup                    // pick up the item at a coordinate; the bag must rise
+	KindUseItem                   // use one bag item on one party member, out in the field
+	KindRocketHideout             // clear the Celadon Rocket Hideout and obtain the Silph Scope
 )
 
 // Objective is one unit of intent a planner can choose. The argument fields
