@@ -35,17 +35,17 @@ type Combatant struct {
 // precision to float rounding. A larger score is a better expected-damage
 // choice for the same turn.
 type MoveEvaluation struct {
-	MoveID            uint8
-	Physical          bool
-	AttackStat        uint16
-	DefenseStat       uint16
-	NeutralDamage     uint16
-	Effectiveness     int // tenths: 5=0.5x, 10=1x, 20=2x, 40=4x
-	STAB              bool
-	Accuracy          uint8
-	CurrentPP         uint8
-	MaxPP             uint8
-	ExpectedScore     int64
+	MoveID        uint8
+	Physical      bool
+	AttackStat    uint16
+	DefenseStat   uint16
+	NeutralDamage uint16
+	Effectiveness int // tenths: 5=0.5x, 10=1x, 20=2x, 40=4x
+	STAB          bool
+	Accuracy      uint8
+	CurrentPP     uint8
+	MaxPP         uint8
+	ExpectedScore int64
 }
 
 // IsPhysicalType applies Red's type-based damage-class split. There are no
@@ -56,15 +56,17 @@ func IsPhysicalType(moveType uint8) bool { return moveType < SpecialType }
 // used by EvaluateMove. The stats are already the current values Red itself
 // consumes after stat changes.
 func PlayerMatchup(b state.BattleState) (Combatant, Combatant) {
-	return Combatant{
+	attacker := Combatant{
 		Level: b.ActiveLevel, HP: b.ActiveHP, MaxHP: b.ActiveMaxHP,
 		Attack: b.ActiveAttack, Defense: b.ActiveDefense, Special: b.ActiveSpecial,
 		Type1: b.ActiveType1, Type2: b.ActiveType2,
-	}, Combatant{
+	}
+	defender := Combatant{
 		Level: b.EnemyLevel, HP: b.EnemyHP, MaxHP: b.EnemyMaxHP,
 		Attack: b.EnemyAttack, Defense: b.EnemyDefense, Special: b.EnemySpecial,
 		Type1: b.EnemyType1, Type2: b.EnemyType2,
 	}
+	return attacker, defender
 }
 
 // EvaluateBattleMove evaluates one live move slot from BattleState.
