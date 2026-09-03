@@ -1,9 +1,11 @@
 package agent
 
-// economyCatalog fills the item vocabulary that pre-dates later progression
-// slices. Observe uses ItemName while decoding both the bag and mart shelves;
-// without these names, strategically important items simply disappear from the
-// planner's observation before the economy policy can classify them.
+// economyCatalog fills the observation vocabulary that pre-dates later
+// progression slices. Observe uses ItemName while decoding both the bag and
+// mart shelves; without these names, strategically important inventory simply
+// disappears before the economy policy can classify it. These entries are
+// observation-only: adding them to itemByID must not widen ItemByName, which is
+// also the planner's executable argument whitelist.
 func init() {
 	catalog := []ItemEconomySpec{
 		{Name: "master ball", ID: 0x01, Category: InventoryCapture},
@@ -46,9 +48,6 @@ func init() {
 	}
 	for _, spec := range catalog {
 		itemEconomy[spec.Name] = spec
-		if _, exists := itemTable[spec.Name]; !exists {
-			itemTable[spec.Name] = spec.ID
-		}
 		if _, exists := itemByID[spec.ID]; !exists {
 			itemByID[spec.ID] = spec.Name
 		}
