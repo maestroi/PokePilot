@@ -118,6 +118,30 @@ func TestChooseTacticalSwitchStaysForEquivalentCandidate(t *testing.T) {
 	}
 }
 
+func TestChooseTacticalSwitchIgnoresDisabledActiveMove(t *testing.T) {
+	strong := rom.Move{ID: 33, Power: 120, Type: typeNormal, Accuracy: 255, PP: 5}
+	weak := rom.Move{ID: 10, Power: 20, Type: typeNormal, Accuracy: 255, PP: 35}
+	benchMove := rom.Move{ID: 1, Power: 60, Type: typeNormal, Accuracy: 255, PP: 20}
+	romData := fakeROM(t, strong, weak, benchMove)
+	active := healthySwitchMon(1, 20, typeNormal, typeNormal, strong.ID, weak.ID)
+	bench := healthySwitchMon(2, 20, typeNormal, typeNormal, benchMove.ID)
+	var mem state.Mem
+	putSwitchMon(&mem, 0, active)
+	putSwitchMon(&mem, 1, bench)
+	mem[sym.PlayerMonNumber] = 0
+	b := switchBattle(active, [2]uint8{typeNormal, typeNormal}, strong.ID, weak.ID)
+	b.DisabledMove = 1
+
+	decision := chooseTacticalSwitch(romData, &mem, b)
+	if !decision.Switch || decision.Slot != 1 {
+		t.Fatalf("decision = %+v, want bench switch when active's strong move is disabled", decision)
+	}
+	if decision.Active.BestMove.MoveID != weak.ID {
+		t.Fatalf("active best move = %d, want usable weak move %d instead of disabled %d",
+			decision.Active.BestMove.MoveID, weak.ID, strong.ID)
+	}
+}
+
 func TestChooseTacticalSwitchRejectsCriticallyWeakBench(t *testing.T) {
 	tackle := rom.Move{ID: 33, Power: 35, Type: typeNormal, Accuracy: 255, PP: 35}
 	bubble := rom.Move{ID: 145, Power: 20, Type: typeWater, Accuracy: 255, PP: 30}
