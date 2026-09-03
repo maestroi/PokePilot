@@ -22,21 +22,21 @@ import (
 // slot. The default policy is deterministic, so tests never call a model.
 type MovePolicy func(state.BattleState) int
 
-// FirstUsableMove is the default policy: the lowest-numbered move slot
-// that has a move and PP remaining. Deterministic, so tests are stable.
-// It returns -1 when no slot is usable; Battle checks Usable() before
-// calling a policy, so this is only reachable if a policy is called
-// directly on an empty-battle state.
+// FirstUsableMove is the default policy: the lowest-numbered usable move
+// slot. Using BattleState.Usable keeps the default aligned with Battle's
+// legality check, including disabled moves and PP exhaustion.
 func FirstUsableMove(b state.BattleState) int {
-	for i, mv := range b.Moves {
-		if mv.ID != 0 && mv.PP > 0 {
-			return i
-		}
+	usable := b.Usable()
+	if len(usable) == 0 {
+		return -1
 	}
-	return -1
+	return usable[0]
 }
 
-// ErrNoUsableMove reports that every move slot is empty or out of PP.
+// ErrNoUsableMove reports that the active Pokémon has no selectable move.
+// Battle normally recovers by switching to a live party member with PP or,
+// when none exists, by backing out so the ROM can select STRUGGLE. The error
+// remains a defensive diagnostic for menu states that refuse both paths.
 var ErrNoUsableMove = errors.New("skill: no usable move")
 
 // ErrForcedChoiceStuck reports that the post-refusal "choose a Pokémon"
@@ -65,7 +65,7 @@ const forcedChoiceCap = 5
 // loudly instead of hanging the suite.
 const (
 	battleFrameCap  = 60000 // total frames for the whole battle
-	moveMenuBudget  = 500   // wait for the move menu after selecting FIGHT
+	moveMenuBudget  = 500   // wait for the move/main menu transition
 	moveCloseBudget = 500   // wait for the move menu to close after a move
 	settleBudget    = 3000  // wait for controllable after the battle ends
 )
@@ -81,29 +81,36 @@ const mainMenuMax = 1
 // The battle is driven as a state machine. The FIGHT/ITEM/PKMN/RUN menu is
 // identified by wMaxMenuItem == 1; the move menu by wMaxMenuItem >= 2. Text
 // boxes and animations (which carry a stale wMaxMenuItem) are advanced with
-// A. Battle never uses items, but it does answer the forced switch after a
-// faint in a wild battle: the "Use next #MON?" prompt is answered YES
-// (NO is an escape attempt) and the first non-fainted party slot is sent
-// out. It also answers the "<NAME> is trying to learn <MOVE>" prompt that a
-// level-up prints when it offers a move while all four slots are full:
-// YES, then in the "Which move should be forgotten?" list it replaces the
-// move in the lowest slot that is not the mon's only damaging option
-// (forgetSlot). The prompt plays during GainExperience while wIsInBattle is
-// still set, so it reaches this loop; Train never sees it. The OTHER half of
-// the party menu — the voluntary switch opened by the player through the
-// POKéMON branch — is driven by SwitchActive, not here; Battle only
-// backstops it (case switchBoxUp / battleSwitchMenuUp) for the one way it
-// can appear unbidden: a trainer's RUN refusal leaves it open (see
-// ErrForcedChoiceStuck). If the game reaches any other state Battle does
-// not handle, the frame cap trips and Battle fails loudly.
+// A. Before committing to FIGHT, Battle may spend a bounded medicine turn
+// when the active mon is critically hurt or has a curable status. It also
+// switches away from an active mon with no selectable move when a live bench
+// mon still has PP. If the whole party is PP-dead, the ROM's own legal
+// STRUGGLE fallback is allowed to run rather than leaving the caller trapped
+// inside a battle.
 //
-// Losing is a result, not an error: a blackout returns ResultLost with a
-// zbatDebug is read once at init, not per frame: Go 1.27's test harness
-// logs every os.Getenv call to the test log (measured: a per-frame getenv
-// produced 42MB of "getenv ZBAT" lines in one nine-minute run).
+// Battle also answers the forced switch after a faint in a wild battle: the
+// "Use next #MON?" prompt is answered YES (NO is an escape attempt) and the
+// first non-fainted party slot is sent out. It answers the "<NAME> is trying
+// to learn <MOVE>" prompt that a level-up prints when it offers a move while
+// all four slots are full: YES, then in the "Which move should be forgotten?"
+// list it replaces the move in the lowest slot that is not the mon's only
+// damaging option (forgetSlot). The prompt plays during GainExperience while
+// wIsInBattle is still set, so it reaches this loop; Train never sees it.
+// The OTHER half of the party menu — the voluntary switch opened by the
+// player through the POKéMON branch — is driven by SwitchActive. Battle calls
+// that primitive only for PP recovery; it still backstops an unbidden menu
+// after a trainer's RUN refusal (see ErrForcedChoiceStuck).
+//
+// If the game reaches any other state Battle does not handle, the frame cap
+// trips and Battle fails loudly. Losing is a result, not an error: a blackout
+// returns ResultLost with a nil error. Recovering from a blackout is out of
+// scope.
+//
+// zbatDebug is read once at init, not per frame: Go 1.27's test harness logs
+// every os.Getenv call to the test log (measured: a per-frame getenv produced
+// 42MB of "getenv ZBAT" lines in one nine-minute run).
 var zbatDebug = os.Getenv("ZBAT") != ""
 
-// nil error. Recovering from a blackout is out of scope.
 func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
 	if policy == nil {
 		return 0, errors.New("skill: Battle: nil policy")
@@ -125,6 +132,7 @@ func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
 	var lastForgetSlot = -1
 	var triedForgets map[uint8]bool
 	forcedChoiceVisits := 0
+	itemUses := 0
 
 	for {
 		if int(m.FrameCount()-startFrame) > battleFrameCap {
@@ -134,9 +142,10 @@ func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
 		state.Snapshot(m, &mem)
 		if zbatDebug {
 			if bs := state.DecodeBattle(&mem); bs != nil {
-				fmt.Printf("zbat f=%6d max=%d cur=%d me=%d/%d enemy=%d/%d moves=%v | %s\n",
+				fmt.Printf("zbat f=%6d max=%d cur=%d me=%d/%d enemy=%d/%d moves=%v items=%d/%d | %s\n",
 					m.FrameCount(), m.Peek8(sym.MaxMenuItem), m.Peek8(sym.CurrentMenuItem),
 					bs.ActiveHP, bs.ActiveMaxHP, bs.EnemyHP, bs.EnemyMaxHP, bs.Moves,
+					itemUses, battleItemUseCap,
 					strings.Join(strings.Fields(state.ScreenText(&mem)), " "))
 			}
 		}
@@ -166,9 +175,31 @@ func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
 			}
 			usable := bs.Usable()
 			if len(usable) == 0 {
-				x, y := playerXY(m)
-				return 0, fmt.Errorf("skill: Battle: map %02x at (%d,%d) battle %+v: %w",
-					m.Peek8(sym.CurMap), x, y, bs, ErrNoUsableMove)
+				// Normally the main-menu preflight below catches this before
+				// FIGHT opens a move menu. If the ROM nevertheless presents one,
+				// back out and either switch to PP or let AnyMoveToSelect choose
+				// STRUGGLE on the next FIGHT attempt. Never select an exhausted
+				// or disabled slot just to make the menu go away.
+				if slot, ok := ppRecoverySlot(&mem); ok {
+					m.Tap(emu.B, 3, 7)
+					if _, err := m.StepUntil(moveMenuBudget, mainMenuUp); err != nil {
+						return menuError(m, "back out of unusable move menu for PP switch", err)
+					}
+					if zbatDebug {
+						fmt.Printf("zbat resource=SWITCH reason=no-usable-move slot=%d\n", slot)
+					}
+					if err := SwitchActive(m, slot); err != nil {
+						return menuError(m, "switch to party member with PP", err)
+					}
+					continue
+				}
+				m.Tap(emu.B, 3, 7)
+				if _, err := m.StepUntil(moveMenuBudget, mainMenuUp); err != nil {
+					x, y := playerXY(m)
+					return 0, fmt.Errorf("skill: Battle: map %02x at (%d,%d) battle %+v: cannot leave unusable move menu: %w",
+						m.Peek8(sym.CurMap), x, y, bs, ErrNoUsableMove)
+				}
+				continue
 			}
 			slot := policy(*bs)
 			if !containsInt(usable, slot) {
@@ -189,6 +220,44 @@ func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
 			})
 
 		case mainMenuUp(m):
+			// PP recovery comes before spending medicine: if this active mon
+			// cannot legally attack and a live bench mon can, switching is the
+			// bounded escape from an otherwise pointless turn. If no such
+			// bench exists we deliberately continue to FIGHT; pret/pokered's
+			// AnyMoveToSelect selects STRUGGLE when all moves are 0 PP and/or
+			// disabled, so the legal ROM fallback remains available.
+			if bs := state.DecodeBattle(&mem); bs != nil && len(bs.Usable()) == 0 {
+				if slot, ok := ppRecoverySlot(&mem); ok {
+					if zbatDebug {
+						fmt.Printf("zbat resource=SWITCH reason=no-usable-move slot=%d\n", slot)
+					}
+					if err := SwitchActive(m, slot); err != nil {
+						return menuError(m, "switch to party member with PP", err)
+					}
+					continue
+				}
+				if zbatDebug && !livePartyHasCurrentPP(&mem) {
+					fmt.Printf("zbat resource=STRUGGLE reason=all-live-party-pp-exhausted\n")
+				}
+			}
+
+			// Automatic medicine is intentionally conservative and bounded.
+			// A successful use returns as soon as RAM proves both effect and
+			// consumption; the enemy response is then resumed by this state
+			// machine on the next pass.
+			if itemUses < battleItemUseCap {
+				if choice, ok := chooseBattleMedicine(&mem); ok {
+					if zbatDebug {
+						fmt.Printf("zbat resource=ITEM item=%#02x slot=%d reason=%s\n", choice.Item, choice.Slot, choice.Reason)
+					}
+					if err := UseBattleMedicine(m, choice.Item, choice.Slot); err != nil {
+						return menuError(m, "use battle medicine", err)
+					}
+					itemUses++
+					continue
+				}
+			}
+
 			// Choose FIGHT. The move menu is picked up on a later pass.
 			//
 			// FOUND live (checkpointed repro of the item-19 wedge, cross-
@@ -345,7 +414,7 @@ func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
 				return 0, fmt.Errorf("skill: Battle: map %02x at (%d,%d): %w", m.Peek8(sym.CurMap), x, y, ErrForcedChoiceStuck)
 			}
 			// The VOLUNTARY switch party list — Battle never opens this
-			// itself (mainMenuUp always picks FIGHT), so reaching it means a
+			// itself (mainMenuUp normally picks FIGHT), so reaching it means a
 			// caller left the battle mid-transition: Flee does exactly that
 			// after a trainer refuses RUN (ErrTrainerBattle's doc comment on
 			// wForcePlayerToChooseMon).
