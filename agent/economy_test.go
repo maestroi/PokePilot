@@ -36,11 +36,11 @@ func TestEconomyContextReservesKnownSafariSpend(t *testing.T) {
 
 func TestEconomyCanAffordButShouldNotSpendReservedMoney(t *testing.T) {
 	obs := Observation{
-		Money:     1600,
-		Bag:       []Item{{Name: "poke flute", Quantity: 1}},
-		Party:     []PartyMon{{HP: 10, MaxHP: 60}},
+		Money:      1600,
+		Bag:        []Item{{Name: "poke flute", Quantity: 1}},
+		Party:      []PartyMon{{HP: 10, MaxHP: 60}},
 		PartyCount: 1,
-		MartStock: []string{"super potion"},
+		MartStock:  []string{"super potion"},
 	}
 	ctx := EconomyContext(obs)
 	p := purchase(t, ctx, "super potion")
@@ -57,8 +57,8 @@ func TestEconomyCanAffordButShouldNotSpendReservedMoney(t *testing.T) {
 
 func TestEconomyBoundedBallResupply(t *testing.T) {
 	obs := Observation{
-		Money: 5000,
-		Bag:   []Item{{Name: "pokeball", Quantity: 2}},
+		Money:     5000,
+		Bag:       []Item{{Name: "pokeball", Quantity: 2}},
 		WildGrass: []WildSpecies{{Name: "pidgey", MinLevel: 2, MaxLevel: 5, Slots: 10}},
 		MartStock: []string{"pokeball", "great ball"},
 	}
