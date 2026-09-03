@@ -10,7 +10,7 @@ type Mon struct {
 	MaxHP   uint16
 	Status  uint8
 	Moves   [4]uint8
-	PP      [4]uint8
+	PP      [4]uint8 // current PP; PP Up count bits are stripped during decode
 }
 
 // Fainted reports whether the mon's HP is 0.
@@ -64,7 +64,10 @@ type PartyState struct {
 }
 
 // DecodeParty reads the party from a RAM snapshot. A PartyCount larger than 6
-// (corrupt or mid-init RAM) is clamped to 6 rather than panicking.
+// (corrupt or mid-init RAM) is clamped to 6 rather than panicking. Gen 1's
+// party PP bytes pack the PP Up count into the high two bits; Mon.PP exposes
+// only current remaining PP so ordinary resource checks cannot mistake
+// exhausted moves with PP Ups for usable moves.
 func DecodeParty(m *Mem) PartyState {
 	count := int(m.U8(sym.PartyCount))
 	if count > 6 {
@@ -82,6 +85,9 @@ func DecodeParty(m *Mem) PartyState {
 		}
 		copy(mons[n].Moves[:], m.Slice(base+sym.MonMoves, 4))
 		copy(mons[n].PP[:], m.Slice(base+sym.MonPP, 4))
+		for i := range mons[n].PP {
+			mons[n].PP[i] &= CurrentPPMask
+		}
 	}
 	return PartyState{Count: uint8(count), Mons: mons}
 }
