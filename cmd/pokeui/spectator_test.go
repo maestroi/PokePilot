@@ -31,6 +31,7 @@ func TestSpectatorServesReadOnlySanitizedSurface(t *testing.T) {
 					"trace":"private trace","question":"private question","decision":"Travel to Pewter City","raw":"private raw exchange","stop_so_far":"No badge yet",
 					"stats":{"round":3,"rounds_left":7,"calls":4,"rounds":3,"rejected":1,"repeats":1,"last_seconds":2.5,"avg_seconds":2.0,"model":"private-model","backend":"fallback","prompt_tokens":5000},
 					"player":{"money":1200,"badges":["Boulder"],"party":[{"name":"BULBASAUR","level":12,"hp":25,"max_hp":31}]},
+					"sprites":[{"x":8,"y":3,"picture_id":61,"slot":4}],"trail":[[12,11],[5,11]],
 					"attempts":1,"reason":"","detail":"private failure detail","issue":{"number":42}
 				}]
 			}`))
@@ -55,7 +56,7 @@ func TestSpectatorServesReadOnlySanitizedSurface(t *testing.T) {
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("GET / = %d, want 200", res.StatusCode)
 	}
-	for _, want := range []string{"PokéPilot Spectator Mode", "Read only", "/watch.js"} {
+	for _, want := range []string{"PokéPilot Spectator Mode", "Read only", "/watch.js", `id="live-map"`, `[hidden]{display:none!important}`} {
 		if !bytes.Contains(body, []byte(want)) {
 			t.Errorf("spectator index missing %q", want)
 		}
@@ -79,6 +80,11 @@ func TestSpectatorServesReadOnlySanitizedSurface(t *testing.T) {
 	if !bytes.Contains(js, []byte("/v1/watch")) {
 		t.Errorf("watch.js missing public snapshot route")
 	}
+	for _, want := range []string{`/maps/`, `getContext("2d")`, `run.sprites`, `run.trail`} {
+		if !bytes.Contains(js, []byte(want)) {
+			t.Errorf("watch.js missing map overlay %q", want)
+		}
+	}
 	for _, forbidden := range []string{"/v1/specs", "/cancel", "/mcp", "/v1/triage"} {
 		if bytes.Contains(js, []byte(forbidden)) {
 			t.Errorf("watch.js unexpectedly contains control route %q", forbidden)
@@ -97,7 +103,7 @@ func TestSpectatorServesReadOnlySanitizedSurface(t *testing.T) {
 	if cc := res.Header.Get("Cache-Control"); cc != "no-store" {
 		t.Errorf("watch Cache-Control = %q, want no-store", cc)
 	}
-	for _, secret := range []string{"secret-wall-sha", "10.0.0.9", "secret-runner-sha", "999", "private trace", "private question", "private raw exchange", "private failure detail", "private-model", "fallback", "prompt_tokens", "\"issue\"", "\"workers\""} {
+	for _, secret := range []string{"secret-wall-sha", "10.0.0.9", "secret-runner-sha", "999", "private trace", "private question", "private raw exchange", "private failure detail", "private-model", "fallback", "prompt_tokens", "\"issue\"", "\"workers\"", "picture_id", "\"slot\""} {
 		if bytes.Contains(watchBody, []byte(secret)) {
 			t.Errorf("public snapshot leaked %q: %s", secret, watchBody)
 		}
@@ -113,6 +119,12 @@ func TestSpectatorServesReadOnlySanitizedSurface(t *testing.T) {
 	}
 	if len(decoded.Runs) != 1 || decoded.Runs[0].Stats == nil || decoded.Runs[0].Stats.Round != 3 {
 		t.Fatalf("decoded snapshot = %+v", decoded)
+	}
+	if len(decoded.Runs[0].Sprites) != 1 || decoded.Runs[0].Sprites[0].X != 8 || decoded.Runs[0].Sprites[0].Y != 3 {
+		t.Fatalf("public sprites = %+v", decoded.Runs[0].Sprites)
+	}
+	if len(decoded.Runs[0].Trail) != 2 || decoded.Runs[0].Trail[1] != [2]uint8{5, 11} {
+		t.Fatalf("public trail = %+v", decoded.Runs[0].Trail)
 	}
 
 	beforeBlocked := upstreamCalls.Load()
@@ -156,6 +168,15 @@ func TestSpectatorServesReadOnlySanitizedSurface(t *testing.T) {
 	}
 	if !bytes.Equal(frame, png) {
 		t.Errorf("spectator frame = %x, want %x", frame, png)
+	}
+
+	res, err = http.Get(ui.URL + "/maps/28.json")
+	if err != nil {
+		t.Fatalf("GET spectator map: %v", err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("GET /maps/28.json = %d, want 200", res.StatusCode)
 	}
 }
 

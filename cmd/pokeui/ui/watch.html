@@ -19,6 +19,7 @@
       --radius: 20px;
     }
     * { box-sizing: border-box; }
+    [hidden]{display:none!important}
     body {
       margin: 0;
       min-height: 100vh;
@@ -51,9 +52,17 @@
     .status { display: inline-flex; align-items: center; gap: 7px; padding: 7px 10px; border-radius: 999px; background: var(--panel-soft); color: var(--muted); font-size: 12px; font-weight: 850; text-transform: uppercase; letter-spacing: .08em; }
     .status.live { color: var(--live); }
     .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; box-shadow: 0 0 14px currentColor; }
+    .stage { display: grid; grid-template-columns: minmax(0,1.25fr) minmax(220px,.75fr); gap: 12px; align-items: stretch; }
     .screen-wrap { position: relative; display: grid; place-items: center; min-height: 340px; border-radius: 16px; overflow: hidden; background: #05070d; border: 1px solid rgba(255,255,255,.08); }
     #frame { width: min(100%, 720px); image-rendering: pixelated; display: block; aspect-ratio: 160 / 144; object-fit: contain; }
     .screen-empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); text-align: center; padding: 32px; background: radial-gradient(circle, rgba(255,255,255,.03), transparent 65%); }
+    .map-panel { display: flex; flex-direction: column; min-width: 0; border-radius: 16px; overflow: hidden; background: #05070d; border: 1px solid rgba(255,255,255,.08); }
+    .map-head { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+    .map-head strong { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
+    .map-head span { color: var(--muted); font-size: 12px; }
+    .map-scroll { flex: 1; min-height: 280px; display: grid; place-items: center; overflow: auto; padding: 10px; }
+    #live-map { image-rendering: pixelated; max-width: 100%; }
+    .map-legend { color: var(--muted); font-size: 11px; padding: 0 12px 10px; }
     .facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
     .fact { background: var(--panel-soft); border: 1px solid var(--line); border-radius: 14px; padding: 11px 12px; min-width: 0; }
     .fact b { display: block; font-size: 17px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -63,7 +72,7 @@
     .card h2 { margin: 0 0 8px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .09em; }
     .card p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
     .progress { height: 8px; border-radius: 99px; background: rgba(255,255,255,.08); overflow: hidden; margin-top: 10px; }
-    .progress > div { height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), #ff9e4a); transition: width .25s ease; }
+    .progress > div { height: 100%; width: 100%; transform: scaleX(0); transform-origin: left center; background: linear-gradient(90deg, var(--accent), #ff9e4a); transition: transform .25s ease; }
     .side { padding: 14px; min-height: 680px; }
     .side h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); margin: 3px 5px 10px; }
     .run-list { display: grid; gap: 8px; }
@@ -85,7 +94,7 @@
     .badge { border: 1px solid rgba(255,216,74,.24); color: var(--accent); background: rgba(255,216,74,.06); border-radius: 999px; padding: 3px 7px; font-size: 11px; font-weight: 800; }
     .offline { color: var(--danger); }
     footer { color: var(--muted); text-align: center; padding: 18px 0 0; font-size: 12px; }
-    @media (max-width: 920px) { .layout { grid-template-columns: 1fr; } .side { min-height: 0; } .run-list { grid-template-columns: repeat(2, minmax(0,1fr)); } }
+    @media (max-width: 920px) { .layout { grid-template-columns: 1fr; } .stage { grid-template-columns: 1fr; } .side { min-height: 0; } .run-list { grid-template-columns: repeat(2, minmax(0,1fr)); } }
     @media (max-width: 620px) { .shell { padding: 14px; } header { align-items: flex-start; } .readonly { white-space: normal; text-align: center; } .facts { grid-template-columns: repeat(2, 1fr); } .details { grid-template-columns: 1fr; } .party { grid-template-columns: repeat(2, 1fr); } .run-list { grid-template-columns: 1fr; } .screen-wrap { min-height: 260px; } }
   </style>
 </head>
@@ -106,9 +115,16 @@
           <div id="status" class="status"><span class="dot"></span><span>Connecting</span></div>
         </div>
 
-        <div class="screen-wrap">
-          <img id="frame" alt="Live Pokémon game screen" hidden>
-          <div id="screen-empty" class="screen-empty">The game screen will appear when a run is available.</div>
+        <div class="stage">
+          <div class="screen-wrap">
+            <img id="frame" alt="Live Pokémon game screen" hidden src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">
+            <div id="screen-empty" class="screen-empty">The game screen will appear when a run is available.</div>
+          </div>
+          <section class="map-panel" id="map-panel" hidden aria-label="Live map">
+            <div class="map-head"><strong>Map</strong><span id="map-status"></span></div>
+            <div class="map-scroll"><canvas id="live-map" role="img" aria-label="Semantic map"></canvas></div>
+            <div class="map-legend">you · npc · grass · water · warp</div>
+          </section>
         </div>
 
         <div class="facts">

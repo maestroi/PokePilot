@@ -12,6 +12,8 @@
   let pumpStop = null;
   let blobUrl = "";
   const lastOnce = new Set();
+  const mapAssets = new Map();
+  let mapRenderSerial = 0;
 
   function setText(id, value) {
     $(id).textContent = value == null || value === "" ? "—" : String(value);
@@ -160,7 +162,100 @@
     let pct = 0;
     if (stats?.goal_complete) pct = 100;
     else if (stats?.goal_target > 0) pct = Math.max(0, Math.min(100, (stats.goal_current / stats.goal_target) * 100));
-    bar.style.width = `${pct}%`;
+    bar.style.transform = `scaleX(${pct / 100})`;
+  }
+
+  function mapAssetURL(id) {
+    return "/maps/" + Number(id).toString(16).padStart(2, "0") + ".json";
+  }
+
+  function loadMapAsset(id) {
+    const key = Number(id);
+    if (!mapAssets.has(key)) {
+      mapAssets.set(key, fetch(mapAssetURL(key), { cache: "force-cache" })
+        .then((r) => r.ok ? r.json() : null)
+        .catch(() => null));
+    }
+    return mapAssets.get(key);
+  }
+
+  function paintMap(canvas, asset, run) {
+    if (!asset || !asset.width || !asset.height || typeof asset.cells !== "string") return false;
+    const scroll = canvas.closest(".map-scroll");
+    let availW = 280, availH = 260;
+    if (scroll) {
+      availW = Math.max(1, scroll.clientWidth - 8);
+      availH = Math.max(1, scroll.clientHeight - 8);
+    }
+    if (availW < 8 || availH < 8) return false;
+    const px = Math.max(4, Math.floor(Math.min(availW / asset.width, availH / asset.height)));
+    canvas.width = asset.width * px;
+    canvas.height = asset.height * px;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return false;
+    ctx.imageSmoothingEnabled = false;
+    for (let y = 0; y < asset.height; y++) {
+      for (let x = 0; x < asset.width; x++) {
+        const ch = asset.cells[y * asset.width + x] || "#";
+        ctx.fillStyle = ch === "#" ? "#1a2438" : ch === "g" ? "#2f6b45" : ch === "~" ? "#2a4a78" : "#12192c";
+        ctx.fillRect(x * px, y * px, px, px);
+        if (ch === "W") {
+          ctx.strokeStyle = "#ffd84a";
+          ctx.lineWidth = Math.max(1, Math.floor(px / 4));
+          ctx.strokeRect(x * px + 1, y * px + 1, Math.max(1, px - 2), Math.max(1, px - 2));
+        }
+      }
+    }
+    const trail = Array.isArray(run.trail) ? run.trail : [];
+    if (trail.length > 1) {
+      ctx.strokeStyle = "#8b9cc4";
+      ctx.lineWidth = Math.max(1, Math.floor(px / 3));
+      ctx.globalAlpha = 0.55;
+      ctx.beginPath();
+      trail.forEach((p, i) => {
+        const x = (Number(p[0]) + 0.5) * px;
+        const y = (Number(p[1]) + 0.5) * px;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+    for (const sp of (run.sprites || [])) {
+      const sx = Number(sp.x), sy = Number(sp.y);
+      if (sx < 0 || sy < 0 || sx >= asset.width || sy >= asset.height) continue;
+      ctx.fillStyle = "#ffd84a";
+      const pad = Math.max(1, Math.floor(px / 4));
+      ctx.fillRect(sx * px + pad, sy * px + pad, Math.max(2, px - pad * 2), Math.max(2, px - pad * 2));
+    }
+    const pxX = Number(run.x), pxY = Number(run.y);
+    if (pxX >= 0 && pxY >= 0 && pxX < asset.width && pxY < asset.height) {
+      ctx.fillStyle = "#5ee6a8";
+      ctx.beginPath();
+      ctx.arc((pxX + 0.5) * px, (pxY + 0.5) * px, Math.max(2, px * 0.42), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    return true;
+  }
+
+  function renderMap(run) {
+    const panel = $("map-panel");
+    const status = $("map-status");
+    const canvas = $("live-map");
+    const serial = ++mapRenderSerial;
+    if (!run || (run.status !== "running" && run.status !== "done")) {
+      panel.hidden = true;
+      return;
+    }
+    panel.hidden = false;
+    status.textContent = `0x${Number(run.map || 0).toString(16).padStart(2, "0").toUpperCase()} · ${run.x ?? 0},${run.y ?? 0}`;
+    loadMapAsset(run.map).then((asset) => {
+      if (serial !== mapRenderSerial) return;
+      const paint = () => {
+        if (serial !== mapRenderSerial) return;
+        if (!asset || !paintMap(canvas, asset, run)) panel.hidden = true;
+      };
+      requestAnimationFrame(paint);
+    });
   }
 
   function render() {
@@ -175,10 +270,11 @@
       setText("run-title", wallDown ? "Spectator feed unavailable" : "No runs to watch yet");
       setText("run-sub", wallDown ? "The public read-only endpoint cannot reach the wall." : "When an operator starts a run, it will appear here automatically.");
       ["map", "position", "round", "badges-count", "goal", "decision", "stats"].forEach((id) => setText(id, "—"));
-      $("goal-progress").style.width = "0%";
+      $("goal-progress").style.transform = "scaleX(0)";
       renderParty(null);
       $("frame").hidden = true;
       $("screen-empty").hidden = false;
+      $("map-panel").hidden = true;
       return;
     }
 
@@ -193,6 +289,7 @@
     renderGoal(run);
     renderParty(run);
     renderStats(run);
+    renderMap(run);
   }
 
   async function refreshSnapshot() {

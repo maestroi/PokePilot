@@ -13,7 +13,7 @@ import (
 )
 
 // The spectator surface is intentionally separate from the operator console.
-// A process started with -spectator mounts only these embedded assets plus two
+// A process started with -spectator mounts only these embedded assets plus
 // read-only data routes. It never mounts queue, cancel, delete, triage, MCP, or
 // the raw dashboard contract.
 //
@@ -31,23 +31,25 @@ type spectatorDashboard struct {
 }
 
 type spectatorRun struct {
-	RunID     string          `json:"run_id"`
-	Status    string          `json:"status"`
-	Starter   string          `json:"starter,omitempty"`
-	Dest      string          `json:"dest,omitempty"`
-	Goal      string          `json:"goal,omitempty"`
-	QueuedAt  int64           `json:"queued_at,omitempty"`
-	EndedAt   int64           `json:"ended_at,omitempty"`
-	Frame     uint64          `json:"frame"`
-	Map       uint8           `json:"map"`
-	X         uint8           `json:"x"`
-	Y         uint8           `json:"y"`
-	Decision  string          `json:"decision,omitempty"`
-	StopSoFar string          `json:"stop_so_far,omitempty"`
-	Stats     *spectatorStats `json:"stats,omitempty"`
-	Player    *farm.Player    `json:"player,omitempty"`
-	Attempts  int             `json:"attempts,omitempty"`
-	Reason    string          `json:"reason,omitempty"`
+	RunID     string           `json:"run_id"`
+	Status    string           `json:"status"`
+	Starter   string           `json:"starter,omitempty"`
+	Dest      string           `json:"dest,omitempty"`
+	Goal      string           `json:"goal,omitempty"`
+	QueuedAt  int64            `json:"queued_at,omitempty"`
+	EndedAt   int64            `json:"ended_at,omitempty"`
+	Frame     uint64           `json:"frame"`
+	Map       uint8            `json:"map"`
+	X         uint8            `json:"x"`
+	Y         uint8            `json:"y"`
+	Decision  string           `json:"decision,omitempty"`
+	StopSoFar string           `json:"stop_so_far,omitempty"`
+	Stats     *spectatorStats  `json:"stats,omitempty"`
+	Player    *farm.Player     `json:"player,omitempty"`
+	Sprites   []farm.MapSprite `json:"sprites,omitempty"`
+	Trail     [][2]uint8       `json:"trail,omitempty"`
+	Attempts  int              `json:"attempts,omitempty"`
+	Reason    string           `json:"reason,omitempty"`
 }
 
 type spectatorStats struct {
@@ -77,6 +79,7 @@ func spectatorHandler(wallBase string) http.Handler {
 		res.Header().Set("Cache-Control", "no-store")
 		res.Write(watchJS) //nolint:errcheck // best effort
 	})
+	mountMaps(mux)
 	mux.HandleFunc("GET /v1/watch", spectatorSnapshot(wallBase))
 	mux.HandleFunc("GET /frame", spectatorFrame(wallBase))
 	return spectatorSecurityHeaders(mux)

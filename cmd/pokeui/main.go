@@ -68,31 +68,7 @@ func handlerWithMCP(wallBase, token string) http.Handler {
 		res.Header().Set("Cache-Control", "no-store")
 		res.Write(uiJS) //nolint:errcheck // best effort
 	})
-	if maps, err := fs.Sub(mapFiles, "ui/maps"); err == nil {
-		mux.HandleFunc("GET /maps/{name}", func(res http.ResponseWriter, req *http.Request) {
-			name := req.PathValue("name")
-			if data, err := fs.ReadFile(maps, name); err == nil {
-				http.ServeContent(res, req, name, time.Time{}, strings.NewReader(string(data)))
-				return
-			}
-			// A deployment may intentionally omit ROM-derived semantic assets.
-			// Keep the live overlay usable instead of making the entire map panel
-			// disappear: return a neutral coordinate field for map JSON requests.
-			if len(name) == len("00.json") && strings.HasSuffix(name, ".json") {
-				res.Header().Set("Content-Type", "application/json")
-				res.Header().Set("Cache-Control", "no-store")
-				cells := strings.Repeat(".", fallbackMapSize*fallbackMapSize)
-				json.NewEncoder(res).Encode(map[string]any{
-					"width":    fallbackMapSize,
-					"height":   fallbackMapSize,
-					"cells":    cells,
-					"fallback": true,
-				}) //nolint:errcheck // best effort
-				return
-			}
-			http.NotFound(res, req)
-		})
-	}
+	mountMaps(mux)
 	mux.HandleFunc("GET /v1/version", func(res http.ResponseWriter, req *http.Request) {
 		res.Header().Set("Content-Type", "application/json")
 		res.Header().Set("Cache-Control", "no-store")
@@ -109,6 +85,36 @@ func handlerWithMCP(wallBase, token string) http.Handler {
 		mux.Handle("/mcp", newMCPHandler(wallBase, token))
 	}
 	return mux
+}
+
+// mountMaps serves the embedded semantic map JSON used by both the operator
+// console and the public spectator overlay. Missing ROM exports still get a
+// fallback grid so the live position marker has somewhere to sit.
+func mountMaps(mux *http.ServeMux) {
+	maps, err := fs.Sub(mapFiles, "ui/maps")
+	if err != nil {
+		return
+	}
+	mux.HandleFunc("GET /maps/{name}", func(res http.ResponseWriter, req *http.Request) {
+		name := req.PathValue("name")
+		if data, err := fs.ReadFile(maps, name); err == nil {
+			http.ServeContent(res, req, name, time.Time{}, strings.NewReader(string(data)))
+			return
+		}
+		if len(name) == len("00.json") && strings.HasSuffix(name, ".json") {
+			res.Header().Set("Content-Type", "application/json")
+			res.Header().Set("Cache-Control", "no-store")
+			cells := strings.Repeat(".", fallbackMapSize*fallbackMapSize)
+			json.NewEncoder(res).Encode(map[string]any{
+				"width":    fallbackMapSize,
+				"height":   fallbackMapSize,
+				"cells":    cells,
+				"fallback": true,
+			}) //nolint:errcheck // best effort
+			return
+		}
+		http.NotFound(res, req)
+	})
 }
 
 // proxy copies one request to the wall and writes the upstream response.

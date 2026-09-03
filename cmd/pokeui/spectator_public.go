@@ -20,6 +20,10 @@ func (run spectatorRun) MarshalJSON() ([]byte, error) {
 		Badges []string         `json:"badges,omitempty"`
 		Party  []publicPartyMon `json:"party"`
 	}
+	type publicSprite struct {
+		X uint8 `json:"x"`
+		Y uint8 `json:"y"`
+	}
 	type publicRun struct {
 		RunID     string          `json:"run_id"`
 		Status    string          `json:"status"`
@@ -36,6 +40,8 @@ func (run spectatorRun) MarshalJSON() ([]byte, error) {
 		StopSoFar string          `json:"stop_so_far,omitempty"`
 		Stats     *spectatorStats `json:"stats,omitempty"`
 		Player    *publicPlayer   `json:"player,omitempty"`
+		Sprites   []publicSprite  `json:"sprites,omitempty"`
+		Trail     [][2]uint8      `json:"trail,omitempty"`
 		Attempts  int             `json:"attempts,omitempty"`
 		Reason    string          `json:"reason,omitempty"`
 	}
@@ -58,6 +64,11 @@ func (run spectatorRun) MarshalJSON() ([]byte, error) {
 		}
 	}
 
+	sprites := make([]publicSprite, len(run.Sprites))
+	for i, sp := range run.Sprites {
+		sprites[i] = publicSprite{X: sp.X, Y: sp.Y}
+	}
+
 	return json.Marshal(publicRun{
 		RunID:     run.RunID,
 		Status:    run.Status,
@@ -74,6 +85,8 @@ func (run spectatorRun) MarshalJSON() ([]byte, error) {
 		StopSoFar: run.StopSoFar,
 		Stats:     run.Stats,
 		Player:    player,
+		Sprites:   sprites,
+		Trail:     append([][2]uint8(nil), run.Trail...),
 		Attempts:  run.Attempts,
 		Reason:    run.Reason,
 	})

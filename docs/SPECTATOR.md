@@ -10,10 +10,11 @@ Spectator mode mounts only:
 - `GET /watch.js` — its browser code
 - `GET /v1/watch` — a sanitized run snapshot
 - `GET /frame?run=...` — a read-only game frame
+- `GET /maps/{name}` — embedded semantic map JSON for the live overlay
 
 It does **not** mount the operator dashboard, queue, cancel, delete, triage, or MCP routes. Requests for those paths never reach `pokewall`.
 
-The public snapshot intentionally omits infrastructure and debugging fields from `/v1/dashboard`, including worker addresses and versions, wall version, seeds, traces, planner questions, raw model exchanges, failure detail, issue links, token counts, model names, and backend/failover metadata. The browser receives only the pieces useful for watching a run: status, route/goal, position, current decision, bounded planner progress, party, money, badges, attempts, and finish reason.
+The public snapshot intentionally omits infrastructure and debugging fields from `/v1/dashboard`, including worker addresses and versions, wall version, seeds, traces, planner questions, raw model exchanges, failure detail, issue links, token counts, model names, and backend/failover metadata. The browser receives only the pieces useful for watching a run: status, route/goal, position, current decision, bounded planner progress, party, money, badges, attempts, finish reason, and the live map overlay (player tile, NPC tiles, recent trail). Sprite picture IDs and slots stay off the public wire.
 
 The page renders run-provided text with DOM `textContent`, and spectator responses add a restrictive Content Security Policy plus `nosniff`, no-referrer, and same-origin framing headers.
 
