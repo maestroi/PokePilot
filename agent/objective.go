@@ -25,6 +25,7 @@ const (
 	KindPickup                    // pick up the item at a coordinate; the bag must rise
 	KindUseItem                   // use one bag item on one party member, out in the field
 	KindRocketHideout             // clear the Celadon Rocket Hideout and obtain the Silph Scope
+	KindPokemonTower              // clear Pokemon Tower and obtain the Poke Flute
 )
 
 // Objective is one unit of intent a planner can choose. The argument fields
@@ -275,6 +276,14 @@ func Execute(m *emu.Emu, romData []byte, o Objective) (retErr error) {
 			return fmt.Errorf("agent: %s: %w", o, err)
 		}
 		return nil
+	case KindPokemonTower:
+		// Like the Hideout verb, this owns a story chain whose intermediate
+		// interactions are not useful standalone objectives. Completion is
+		// proved by the Poke Flute in the bag inside skill.PokemonTower.
+		if err := skill.PokemonTower(m, romData, skill.StatAwareMove(romData)); err != nil {
+			return fmt.Errorf("agent: %s: %w", o, err)
+		}
+		return nil
 	case KindBuy:
 		err := skill.Buy(m, o.Item, o.Qty)
 		if err != nil {
@@ -406,6 +415,8 @@ func (o Objective) String() string {
 		return fmt.Sprintf("use item %d on party slot %d", int(o.Item), o.Slot)
 	case KindRocketHideout:
 		return "clear the Rocket Hideout and get the SILPH SCOPE"
+	case KindPokemonTower:
+		return "clear Pokemon Tower and get the POKE FLUTE"
 	case KindBuy:
 		if name, ok := ItemName(o.Item); ok {
 			return fmt.Sprintf("buy %d %s", o.Qty, strings.ToUpper(name))
@@ -535,7 +546,7 @@ var itemTable = map[string]uint8{
 	"antidote": 0x0B, "burn heal": 0x0C, "ice heal": 0x0D,
 	"awakening": 0x0E, "parlyz heal": 0x0F, "full restore": 0x10,
 	"repel": 0x1E, "escape rope": 0x1D,
-	"silph scope": 0x48,
+	"silph scope": 0x48, "poke flute": 0x49,
 }
 
 var speciesByID = func() map[uint8]string {

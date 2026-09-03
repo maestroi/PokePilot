@@ -441,6 +441,12 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 	if skill.RocketHideoutAvailable(obs.Map) && !bagHas(obs, "silph scope") {
 		out = append(out, Objective{Kind: KindRocketHideout})
 	}
+	// The Tower follows the Hideout's concrete postcondition: it appears only
+	// where the story skill can begin/resume, only once the Scope is actually
+	// owned, and disappears once the Poké Flute is actually in the bag.
+	if skill.PokemonTowerAvailable(obs.Map) && bagHas(obs, "silph scope") && !bagHas(obs, "poke flute") {
+		out = append(out, Objective{Kind: KindPokemonTower})
+	}
 	// One catch per species this map's grass can actually roll, from the
 	// map's own wild data (Observation.WildGrass). No species is special:
 	// the menu used to name CATERPIE everywhere, which made the one hunt
