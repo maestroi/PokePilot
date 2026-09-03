@@ -3,8 +3,8 @@ module github.com/maestroi/pokepilot
 go 1.26.0
 
 require (
+	github.com/maestroi/gomeboy v0.1.1-0.20260903071844-f0a3b8ae89e8
 	github.com/modelcontextprotocol/go-sdk v1.7.0
-	github.com/thelolagemann/gomeboy v0.0.0
 )
 
 require (
@@ -20,6 +20,7 @@ require (
 	github.com/segmentio/encoding v0.5.4 // indirect
 	github.com/spf13/afero v1.15.0 // indirect
 	github.com/stangelandcl/ppmd v0.1.1 // indirect
+	github.com/stretchr/objx v0.5.3 // indirect
 	github.com/ulikunitz/xz v0.5.16 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	go4.org v0.0.0-20260112195520-a5071408f32f // indirect
@@ -31,8 +32,3 @@ require (
 	golang.org/x/text v0.41.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 )
-
-// Keep imports on GomeBoy's canonical module path while building from the
-// PokePilot-maintained fork. Pin the fork so clean clones and CI use exactly
-// the same emulator revision without depending on a developer-local checkout.
-replace github.com/thelolagemann/gomeboy => github.com/maestroi/gomeboy v0.1.1-0.20260902215211-64bd13918748
