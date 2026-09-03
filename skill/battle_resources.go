@@ -1,7 +1,6 @@
 package skill
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
@@ -9,38 +8,28 @@ import (
 	"github.com/maestroi/pokepilot/red/sym"
 )
 
-// Gen 1 item IDs used by the battle resource policy. They come directly from
-// pokered/constants/item_constants.asm. Keep this table small and explicit:
-// the policy only needs ordinary medicine, not every battle item in the ROM.
+// Gen 1 item IDs from pokered/constants/item_constants.asm. The automatic
+// battle policy intentionally covers ordinary medicine only.
 const (
-	itemAntidote     uint8 = 0x0b
-	itemBurnHeal     uint8 = 0x0c
-	itemIceHeal      uint8 = 0x0d
-	itemAwakening    uint8 = 0x0e
-	itemParlyzHeal   uint8 = 0x0f
-	itemFullRestore  uint8 = 0x10
-	itemMaxPotion    uint8 = 0x11
-	itemHyperPotion  uint8 = 0x12
-	itemSuperPotion  uint8 = 0x13
-	itemPotion       uint8 = 0x14
-	itemFullHeal     uint8 = 0x34
-	itemFreshWater   uint8 = 0x3c
-	itemSodaPop      uint8 = 0x3d
-	itemLemonade     uint8 = 0x3e
+	itemAntidote    uint8 = 0x0b
+	itemBurnHeal    uint8 = 0x0c
+	itemIceHeal     uint8 = 0x0d
+	itemAwakening   uint8 = 0x0e
+	itemParlyzHeal  uint8 = 0x0f
+	itemFullRestore uint8 = 0x10
+	itemMaxPotion   uint8 = 0x11
+	itemHyperPotion uint8 = 0x12
+	itemSuperPotion uint8 = 0x13
+	itemPotion      uint8 = 0x14
+	itemFullHeal    uint8 = 0x34
+	itemFreshWater  uint8 = 0x3c
+	itemSodaPop     uint8 = 0x3d
+	itemLemonade    uint8 = 0x3e
 )
 
-// battleItemUseCap prevents a deterministic healing loop. Even if an enemy
-// repeatedly knocks the active mon back below the heal line, Battle will spend
-// at most this many automatic item turns before it commits to fighting or
-// another recovery path.
+// Even if an enemy repeatedly knocks the active mon back below the healing
+// line, automatic medicine can consume only this many battle turns.
 const battleItemUseCap = 4
-
-// ErrPartyOutOfPP means every non-fainted party member has no current PP in
-// any known move. This is distinct from ErrNoUsableMove: a temporarily
-// disabled move can make the active mon unable to act even though the party
-// still owns PP. Callers can treat this error as an explicit Center/PP-recovery
-// signal instead of retrying the same impossible move menu forever.
-var ErrPartyOutOfPP = errors.New("skill: all live party members are out of PP")
 
 type battleMedicineChoice struct {
 	Item   uint8
@@ -53,9 +42,8 @@ type hpMedicine struct {
 	heal int
 }
 
-// Ordered by effective heal size so chooseHPMedicine naturally picks the
-// smallest item that can cover the missing HP. Full heals come last to avoid
-// spending them when a finite ordinary drink/potion is enough.
+// Ordered by heal size so the first sufficient item minimizes waste. Full
+// heals come last, which preserves them when an ordinary finite heal suffices.
 var hpMedicines = []hpMedicine{
 	{item: itemPotion, heal: 20},
 	{item: itemSuperPotion, heal: 50},
@@ -67,15 +55,10 @@ var hpMedicines = []hpMedicine{
 	{item: itemFullRestore, heal: 1 << 30},
 }
 
-// chooseBattleMedicine returns one conservative automatic medicine action for
-// the current active Pokémon. It makes no long-horizon economy judgement; its
-// job is only to keep a battle from deterministically throwing away a nearly
-// fainted or incapacitated active mon.
-//
-// HP medicine is considered only at one-third HP or below. Status medicine is
-// considered whenever the active mon has a status for which the bag has a
-// matching cure. When both are true, FULL RESTORE is preferred if present
-// because it resolves both problems in one battle turn.
+// chooseBattleMedicine returns one conservative medicine action for the
+// active mon. HP medicine is considered only at one-third HP or below;
+// status medicine is considered whenever a matching cure exists. When both
+// apply, FULL RESTORE resolves them in one turn if available.
 func chooseBattleMedicine(mem *state.Mem) (battleMedicineChoice, bool) {
 	if state.DecodeBattle(mem) == nil {
 		return battleMedicineChoice{}, false
@@ -100,8 +83,7 @@ func chooseBattleMedicine(mem *state.Mem) (battleMedicineChoice, bool) {
 		}, true
 	}
 	if lowHP {
-		missing := int(mon.MaxHP - mon.HP)
-		if item, ok := chooseHPMedicine(mem, missing); ok {
+		if item, ok := chooseHPMedicine(mem, int(mon.MaxHP-mon.HP)); ok {
 			return battleMedicineChoice{
 				Item:   item,
 				Slot:   slot,
@@ -111,31 +93,26 @@ func chooseBattleMedicine(mem *state.Mem) (battleMedicineChoice, bool) {
 	}
 	if status != "" {
 		if item, ok := chooseStatusMedicine(mem, status); ok {
-			return battleMedicineChoice{
-				Item:   item,
-				Slot:   slot,
-				Reason: "active is " + status,
-			}, true
+			return battleMedicineChoice{Item: item, Slot: slot, Reason: "active is " + status}, true
 		}
 	}
 	return battleMedicineChoice{}, false
 }
 
 func chooseHPMedicine(mem *state.Mem, missing int) (uint8, bool) {
-	bestAvailable := -1
+	var strongest uint8
+	found := false
 	for _, med := range hpMedicines {
 		if !bagHasItem(mem, med.item) {
 			continue
 		}
-		bestAvailable = med.item
+		strongest = med.item
+		found = true
 		if med.heal >= missing {
 			return med.item, true
 		}
 	}
-	if bestAvailable >= 0 {
-		return uint8(bestAvailable), true
-	}
-	return 0, false
+	return strongest, found
 }
 
 func chooseStatusMedicine(mem *state.Mem, status string) (uint8, bool) {
@@ -154,14 +131,10 @@ func chooseStatusMedicine(mem *state.Mem, status string) (uint8, bool) {
 	default:
 		return 0, false
 	}
-	if bagHasItem(mem, specific) {
-		return specific, true
-	}
-	if bagHasItem(mem, itemFullHeal) {
-		return itemFullHeal, true
-	}
-	if bagHasItem(mem, itemFullRestore) {
-		return itemFullRestore, true
+	for _, item := range []uint8{specific, itemFullHeal, itemFullRestore} {
+		if bagHasItem(mem, item) {
+			return item, true
+		}
 	}
 	return 0, false
 }
@@ -171,18 +144,15 @@ func bagHasItem(mem *state.Mem, item uint8) bool {
 	return qty > 0
 }
 
-// ppRecoverySlot returns the first live bench slot that has at least one move
-// with current PP. Battle calls this only when the active battle state has no
-// usable move, so switching is a bounded escape from an otherwise dead move
-// menu rather than a general team-composition policy.
+// ppRecoverySlot returns the first live bench mon that has at least one known
+// move with current PP. This is a dead-turn escape, not team strategy.
 func ppRecoverySlot(mem *state.Mem) (int, bool) {
 	party := state.DecodeParty(mem)
 	active := int(mem.U8(sym.PlayerMonNumber))
 	for slot, mon := range party.Mons {
-		if slot == active || mon.Fainted() || !monHasCurrentPP(mon) {
-			continue
+		if slot != active && !mon.Fainted() && monHasCurrentPP(mon) {
+			return slot, true
 		}
-		return slot, true
 	}
 	return 0, false
 }
@@ -205,16 +175,11 @@ func livePartyHasCurrentPP(mem *state.Mem) bool {
 	return false
 }
 
-// UseBattleMedicine uses one medicine item on one party slot while a battle
-// is in progress. Unlike UseItem (which is sufficient for balls), Gen 1
-// medicine opens USE_ITEM_PARTY_MENU and therefore requires an explicit
-// target. This helper drives that target menu and verifies two positive facts:
-// the target's HP/status changed and the bag quantity dropped by one.
-//
-// It returns as soon as those facts are observed. The enemy's response may
-// still be animating; Battle's outer state machine owns that continuation.
-// Returning early is intentional: waiting until the next main menu could hide
-// a real heal behind the damage from the enemy's following attack.
+// UseBattleMedicine uses one medicine item on one party slot. Unlike a ball,
+// medicine opens USE_ITEM_PARTY_MENU and needs an explicit target. Success is
+// proven from RAM: target HP/status changes and the bag count drops by one.
+// It returns as soon as both facts are visible, before a following enemy hit
+// can hide the heal in a later HP snapshot; Battle resumes the turn itself.
 func UseBattleMedicine(m *emu.Emu, item uint8, slot int) error {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
@@ -282,9 +247,8 @@ func UseBattleMedicine(m *emu.Emu, item uint8, slot int) error {
 		item, bagUseBudget, beforeQty, afterQty, effectObserved)
 }
 
-// selectItemEntry drives the battle main menu's 2x2 cursor to ITEM: left
-// column, row 1. It mirrors selectFightEntry/SwitchActive and verifies every
-// movement rather than assuming the cursor starts on FIGHT.
+// selectItemEntry moves the 2x2 battle-main-menu cursor to ITEM (left column,
+// row 1), verifying each transition rather than assuming it starts on FIGHT.
 func selectItemEntry(m *emu.Emu) error {
 	atItem := func(m *emu.Emu) bool {
 		return m.Peek8(sym.TopMenuItemX) == battleMenuLeftX && int(m.Peek8(sym.CurrentMenuItem)) == 1
