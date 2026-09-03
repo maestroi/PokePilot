@@ -121,7 +121,7 @@ func RocketHideout(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	}
 
 	if m.Peek8(sym.CurMap) != rocketHideoutB4FMap {
-		if _, err := Travel(m, romData, rocketB4FEntry, policy, 20); err != nil {
+		if err := descendRocketHideout(m, romData, policy); err != nil {
 			return fmt.Errorf("skill: RocketHideout: descend to B4F: %w", err)
 		}
 	}
