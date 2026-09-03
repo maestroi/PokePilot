@@ -84,8 +84,51 @@ func TestStrategicMemoryResetsStallOnMeasurableProgress(t *testing.T) {
 	}
 }
 
+func TestStrategicMemoryReplansWhenOnlyLevelsAdvance(t *testing.T) {
+	var m StrategicMemory
+	obs := Observation{
+		Map:    2,
+		Badges: []string{"boulder"},
+		Party:  []PartyMon{{Level: 16}},
+	}
+	m.ObserveProgress(obs)
+	for level := uint8(17); level <= 20; level++ {
+		obs.Party[0].Level = level
+		if !m.ObserveProgress(obs) {
+			t.Fatalf("level %d should still count as measurable progress", level)
+		}
+	}
+	if m.NoProgress != 0 {
+		t.Fatalf("NoProgress = %d, want 0 while levels are rising", m.NoProgress)
+	}
+	if m.NoWorldProgress != 4 {
+		t.Fatalf("NoWorldProgress = %d, want 4", m.NoWorldProgress)
+	}
+	reason := m.ReplanReason(4, "keep training near pewter")
+	if !strings.Contains(reason, "no new badge, event, or map progress") || !strings.Contains(reason, "re-evaluate") {
+		t.Fatalf("replan reason = %q", reason)
+	}
+}
+
+func TestStrategicMemoryWorldProgressResetsLevelOnlyBackstop(t *testing.T) {
+	var m StrategicMemory
+	obs := Observation{Map: 1, Party: []PartyMon{{Level: 12}}}
+	m.ObserveProgress(obs)
+	for level := uint8(13); level <= 15; level++ {
+		obs.Party[0].Level = level
+		m.ObserveProgress(obs)
+	}
+	if m.NoWorldProgress != 3 {
+		t.Fatalf("NoWorldProgress = %d, want 3 before exploration", m.NoWorldProgress)
+	}
+	obs.Map = 2
+	if !m.ObserveProgress(obs) || m.NoWorldProgress != 0 {
+		t.Fatalf("new map did not reset world-progress backstop: %+v", m)
+	}
+}
+
 func TestReplanReasonWaitsForThreshold(t *testing.T) {
-	m := StrategicMemory{NoProgress: 3}
+	m := StrategicMemory{NoProgress: 3, NoWorldProgress: 3}
 	if got := m.ReplanReason(4, "explore north"); got != "" {
 		t.Fatalf("early replan reason = %q", got)
 	}
