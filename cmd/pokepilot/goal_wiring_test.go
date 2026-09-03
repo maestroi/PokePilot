@@ -9,12 +9,11 @@ import (
 )
 
 func TestStatsPlannerStopsOnCompletedStructuredGoal(t *testing.T) {
-	inner := &agent.LLMPlanner{Goal: "badges:1"}
 	var (
 		pushed int
 		got    runStats
 	)
-	p := newStatsPlanner(inner, nil, func(v any) {
+	p := newStatsPlanner("", "badges:1", nil, func(v any) {
 		pushed++
 		got = v.(runStats)
 	}, nil)
@@ -35,8 +34,9 @@ func TestStatsPlannerStopsOnCompletedStructuredGoal(t *testing.T) {
 }
 
 func TestStatsPlannerSurfacesStructuredGoalProgress(t *testing.T) {
-	inner := &agent.LLMPlanner{Goal: "badges:2", ExtraSystem: "baseline system note"}
-	p := newStatsPlanner(inner, nil, nil, nil)
+	p := newStatsPlanner("", "badges:2", nil, nil, nil)
+	p.inner.ExtraSystem = "baseline system note"
+	p.baseExtraSystem = p.inner.ExtraSystem
 
 	done, err := p.prepareRunContext(agent.Observation{
 		Round: 1, Badges: []string{"Boulder"}, Party: []agent.PartyMon{{Level: 12}},
@@ -50,20 +50,21 @@ func TestStatsPlannerSurfacesStructuredGoalProgress(t *testing.T) {
 	if p.stats.GoalSummary != "badges 1/2" || p.stats.GoalCurrent != 1 || p.stats.GoalTarget != 2 || p.stats.GoalComplete {
 		t.Fatalf("goal stats = %+v", p.stats)
 	}
-	if !strings.Contains(inner.ExtraSystem, "RUN GOAL STATUS: badges 1/2") {
-		t.Fatalf("structured goal status not added to planner context: %q", inner.ExtraSystem)
+	if !strings.Contains(p.inner.ExtraSystem, "RUN GOAL STATUS: badges 1/2") {
+		t.Fatalf("structured goal status not added to planner context: %q", p.inner.ExtraSystem)
 	}
-	if !strings.HasPrefix(inner.ExtraSystem, "baseline system note\n\n") {
-		t.Fatalf("base ExtraSystem not preserved: %q", inner.ExtraSystem)
+	if !strings.HasPrefix(p.inner.ExtraSystem, "baseline system note\n\n") {
+		t.Fatalf("base ExtraSystem not preserved: %q", p.inner.ExtraSystem)
 	}
-	if strings.Contains(inner.ExtraSystem, "go to") || strings.Contains(inner.ExtraSystem, "train") {
-		t.Fatalf("goal progress note prescribed a strategy: %q", inner.ExtraSystem)
+	if strings.Contains(p.inner.ExtraSystem, "go to") || strings.Contains(p.inner.ExtraSystem, "train") {
+		t.Fatalf("goal progress note prescribed a strategy: %q", p.inner.ExtraSystem)
 	}
 }
 
 func TestStatsPlannerLeavesFreeTextGoalPromptOnly(t *testing.T) {
-	inner := &agent.LLMPlanner{Goal: "Earn the Boulder Badge.", ExtraSystem: "baseline"}
-	p := newStatsPlanner(inner, nil, nil, nil)
+	p := newStatsPlanner("", "Earn the Boulder Badge.", nil, nil, nil)
+	p.inner.ExtraSystem = "baseline"
+	p.baseExtraSystem = p.inner.ExtraSystem
 
 	if done, err := p.prepareRunContext(agent.Observation{Round: 1, Badges: []string{"Boulder"}}); err != nil || done {
 		t.Fatalf("prepareRunContext = done %v, err %v; want free-text prompt-only", done, err)
@@ -71,14 +72,13 @@ func TestStatsPlannerLeavesFreeTextGoalPromptOnly(t *testing.T) {
 	if p.stats.GoalSummary != "" || p.stats.GoalCurrent != 0 || p.stats.GoalTarget != 0 || p.stats.GoalComplete {
 		t.Fatalf("free-text goal leaked into deterministic stats: %+v", p.stats)
 	}
-	if inner.ExtraSystem != "baseline" {
-		t.Fatalf("free-text goal changed system context: %q", inner.ExtraSystem)
+	if p.inner.ExtraSystem != "baseline" {
+		t.Fatalf("free-text goal changed system context: %q", p.inner.ExtraSystem)
 	}
 }
 
 func TestStatsPlannerRejectsMalformedStructuredGoal(t *testing.T) {
-	inner := &agent.LLMPlanner{Goal: "badges:99"}
-	p := newStatsPlanner(inner, nil, nil, nil)
+	p := newStatsPlanner("", "badges:99", nil, nil, nil)
 
 	_, err := p.Next(agent.Observation{}, nil)
 	if err == nil || errors.Is(err, agent.ErrDone) {

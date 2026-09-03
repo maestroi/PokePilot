@@ -14,17 +14,18 @@ type Spec struct {
 	// the first, higher after retries. The runner echoes it back in its
 	// FinishReport so a late finish from a dead attempt cannot settle a
 	// newer one.
-	Attempt int    `json:"attempt"`
-	Seed    int64  `json:"seed"`
-	Planner string `json:"planner"`
-	Starter string `json:"starter"`
-	Dest    string `json:"dest"`
+	Attempt    int    `json:"attempt"`
+	Seed       int64  `json:"seed"`
+	Planner    string `json:"planner"`
+	Starter    string `json:"starter"`
+	Dest       string `json:"dest"`
 	// Goal is the task statement for the llm planner: what to achieve,
 	// never how. Empty means no goal (the pre-Goal prompt).
-	Goal      string `json:"goal,omitempty"`
-	FPS       int    `json:"fps"`
-	MaxRounds int    `json:"max_rounds"`
-	MaxFrames int    `json:"max_frames"`
+	Goal       string `json:"goal,omitempty"`
+	LLMProfile string `json:"llm_profile,omitempty"`
+	FPS        int    `json:"fps"`
+	MaxRounds  int    `json:"max_rounds"`
+	MaxFrames  int    `json:"max_frames"`
 	// Endless asks the wall to queue a successor when this run settles,
 	// so idle workers keep picking up work. RandomSeed picks a fresh
 	// seed on each successor; otherwise the seed is copied.

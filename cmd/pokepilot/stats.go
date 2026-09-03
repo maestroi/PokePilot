@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"sort"
 	"time"
 
@@ -78,17 +79,13 @@ type statsPlanner struct {
 	baseExtraSystem string
 }
 
-func newStatsPlanner(inner *agent.LLMPlanner, m *emu.Emu, push func(any), snap *heartbeatSnap) *statsPlanner {
-	fallbackDefaults := agent.LLMConfig{
-		Model:     inner.Model,
-		Token:     inner.Token,
-		NoThink:   inner.NoThink,
-		MaxTokens: inner.MaxTokens,
-	}
-	fallbackConfig, configured := agent.OptionalLLMConfigFromEnv("POKEPILOT_LLM_FALLBACK_", fallbackDefaults)
+func newStatsPlanner(profile, goal string, m *emu.Emu, push func(any), snap *heartbeatSnap) *statsPlanner {
+	primaryCfg, fallbackCfg := agent.ResolveLLMEndpoints(agent.NormalizeLLMProfile(profile))
+	inner := agent.NewLLMPlannerFromConfig(primaryCfg)
+	inner.Goal = goal
 	var fallback *agent.LLMPlanner
-	if configured {
-		fallback = agent.NewLLMPlannerFromConfig(fallbackConfig)
+	if fallbackCfg != nil {
+		fallback = agent.NewLLMPlannerFromConfig(*fallbackCfg)
 	}
 
 	s := &statsPlanner{
@@ -104,6 +101,16 @@ func newStatsPlanner(inner *agent.LLMPlanner, m *emu.Emu, push func(any), snap *
 		s.record(call.Observation, call.Offered, call.Objective, call.Err, call.Duration)
 	}
 	return s
+}
+
+func (s *statsPlanner) wirePlannerLogs(log io.Writer, snap *heartbeatSnap) {
+	if log != nil {
+		s.inner.Log = log
+	}
+	if snap != nil {
+		s.inner.PromptLog = rawWriter{snap: snap, start: true}
+		s.inner.ReplyLog = rawWriter{snap: snap}
+	}
 }
 
 func (s *statsPlanner) Next(obs agent.Observation, offered []agent.Objective) (agent.Objective, error) {

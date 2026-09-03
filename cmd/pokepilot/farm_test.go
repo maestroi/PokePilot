@@ -83,8 +83,8 @@ func TestFarmLLMAppliesSpecGoal(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(src)
-	if !strings.Contains(text, "planner.Goal = goal") {
-		t.Fatal("runFarmLLM does not set planner.Goal from the leased spec")
+	if !strings.Contains(text, "newStatsPlanner(llmProfile, goal") {
+		t.Fatal("runFarmLLM does not pass the leased profile and goal into statsPlanner")
 	}
 	if !strings.Contains(text, "spec.Goal") {
 		t.Fatal("runFarm never passes spec.Goal into the llm run")
@@ -92,7 +92,7 @@ func TestFarmLLMAppliesSpecGoal(t *testing.T) {
 	if !strings.Contains(text, "reportingPlanner{inner: stats, snap: snap}") {
 		t.Fatal("runFarmLLM does not publish the latest plan onto the heartbeat snap")
 	}
-	if !strings.Contains(text, "newStatsPlanner(planner") {
+	if !strings.Contains(text, "newStatsPlanner(") {
 		t.Fatal("runFarmLLM does not tally the llm planner's choices for the watch page")
 	}
 }

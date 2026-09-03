@@ -8,8 +8,9 @@ import (
 )
 
 func TestStatsPlannerSurfacesReplanSignalFromCarriedIntent(t *testing.T) {
-	inner := &agent.LLMPlanner{ExtraSystem: "baseline system note"}
-	p := newStatsPlanner(inner, nil, nil, nil)
+	p := newStatsPlanner("", "", nil, nil, nil)
+	p.inner.ExtraSystem = "baseline system note"
+	p.baseExtraSystem = p.inner.ExtraSystem
 
 	for round := 1; round <= strategicReplanAfter+1; round++ {
 		p.prepareRunContext(agent.Observation{
@@ -20,20 +21,19 @@ func TestStatsPlannerSurfacesReplanSignalFromCarriedIntent(t *testing.T) {
 		})
 	}
 
-	if !strings.Contains(inner.ExtraSystem, `Intent "find a way through viridian forest"`) {
-		t.Fatalf("replan signal did not reuse carried intent: %q", inner.ExtraSystem)
+	if !strings.Contains(p.inner.ExtraSystem, `Intent "find a way through viridian forest"`) {
+		t.Fatalf("replan signal did not reuse carried intent: %q", p.inner.ExtraSystem)
 	}
-	if !strings.Contains(inner.ExtraSystem, "materially different approach") {
-		t.Fatalf("replan signal = %q", inner.ExtraSystem)
+	if !strings.Contains(p.inner.ExtraSystem, "materially different approach") {
+		t.Fatalf("replan signal = %q", p.inner.ExtraSystem)
 	}
-	if !strings.HasPrefix(inner.ExtraSystem, "baseline system note\n\n") {
-		t.Fatalf("existing ExtraSystem was not preserved: %q", inner.ExtraSystem)
+	if !strings.HasPrefix(p.inner.ExtraSystem, "baseline system note\n\n") {
+		t.Fatalf("existing ExtraSystem was not preserved: %q", p.inner.ExtraSystem)
 	}
 }
 
 func TestStatsPlannerSurfacesReplanWhenOnlyLevelsAdvance(t *testing.T) {
-	inner := &agent.LLMPlanner{}
-	p := newStatsPlanner(inner, nil, nil, nil)
+	p := newStatsPlanner("", "", nil, nil, nil)
 
 	for round := 1; round <= strategicReplanAfter+1; round++ {
 		p.prepareRunContext(agent.Observation{
@@ -51,13 +51,13 @@ func TestStatsPlannerSurfacesReplanWhenOnlyLevelsAdvance(t *testing.T) {
 	if p.strategy.NoWorldProgress < strategicReplanAfter {
 		t.Fatalf("world-progress counter = %d, want >= %d", p.strategy.NoWorldProgress, strategicReplanAfter)
 	}
-	if !strings.Contains(inner.ExtraSystem, "RUN REPLAN SIGNAL") || !strings.Contains(inner.ExtraSystem, "no new badge, event, or map progress") {
-		t.Fatalf("level-only world stall did not reach planner: %q", inner.ExtraSystem)
+	if !strings.Contains(p.inner.ExtraSystem, "RUN REPLAN SIGNAL") || !strings.Contains(p.inner.ExtraSystem, "no new badge, event, or map progress") {
+		t.Fatalf("level-only world stall did not reach planner: %q", p.inner.ExtraSystem)
 	}
 }
 
 func TestStatsPlannerCountsOneProgressSamplePerRound(t *testing.T) {
-	p := newStatsPlanner(&agent.LLMPlanner{}, nil, nil, nil)
+	p := newStatsPlanner("", "", nil, nil, nil)
 	obs := agent.Observation{Round: 1, Map: 1, Party: []agent.PartyMon{{Level: 8}}}
 	p.prepareRunContext(obs)
 	p.prepareRunContext(obs) // same observation as a retry
@@ -73,19 +73,20 @@ func TestStatsPlannerCountsOneProgressSamplePerRound(t *testing.T) {
 }
 
 func TestStatsPlannerClearsReplanSignalOnObservableProgress(t *testing.T) {
-	inner := &agent.LLMPlanner{ExtraSystem: "baseline"}
-	p := newStatsPlanner(inner, nil, nil, nil)
+	p := newStatsPlanner("", "", nil, nil, nil)
+	p.inner.ExtraSystem = "baseline"
+	p.baseExtraSystem = p.inner.ExtraSystem
 
 	for round := 1; round <= strategicReplanAfter+1; round++ {
 		p.prepareRunContext(agent.Observation{Round: round, Map: 1, Intent: "explore", Party: []agent.PartyMon{{Level: 8}}})
 	}
-	if !strings.Contains(inner.ExtraSystem, "RUN REPLAN SIGNAL") {
-		t.Fatalf("expected replan signal after stall: %q", inner.ExtraSystem)
+	if !strings.Contains(p.inner.ExtraSystem, "RUN REPLAN SIGNAL") {
+		t.Fatalf("expected replan signal after stall: %q", p.inner.ExtraSystem)
 	}
 
 	p.prepareRunContext(agent.Observation{Round: strategicReplanAfter + 2, Map: 2, Intent: "explore", Party: []agent.PartyMon{{Level: 8}}})
-	if inner.ExtraSystem != "baseline" {
-		t.Fatalf("progress did not clear temporary signal: %q", inner.ExtraSystem)
+	if p.inner.ExtraSystem != "baseline" {
+		t.Fatalf("progress did not clear temporary signal: %q", p.inner.ExtraSystem)
 	}
 	if p.strategy.NoProgress != 0 {
 		t.Fatalf("progress did not reset no-progress counter: %d", p.strategy.NoProgress)
@@ -96,7 +97,7 @@ func TestStatsPlannerClearsReplanSignalOnObservableProgress(t *testing.T) {
 // persists for twenty rounds is one piece of evidence, not twenty 64 KiB
 // files, and observable progress re-arms it for the next episode.
 func TestStatsPlannerCapturesStallOncePerEpisode(t *testing.T) {
-	p := newStatsPlanner(&agent.LLMPlanner{}, nil, nil, nil)
+	p := newStatsPlanner("", "", nil, nil, nil)
 	stalled := func(round int) agent.Observation {
 		return agent.Observation{Round: round, Map: 1, Intent: "explore", Party: []agent.PartyMon{{Level: 8}}}
 	}

@@ -14,7 +14,7 @@ import (
 // count as a call but never as a round.
 func TestStatsPlannerTally(t *testing.T) {
 	var pushed int
-	s := newStatsPlanner(&agent.LLMPlanner{}, nil, func(any) { pushed++ }, nil)
+	s := newStatsPlanner("", "", nil, func(any) { pushed++ }, nil)
 
 	pallet := agent.Objective{Kind: agent.KindGoTo, Place: "pallet town"}
 	lab := agent.Objective{Kind: agent.KindGoTo, Place: "oak's lab"}
@@ -49,7 +49,7 @@ func TestStatsPlannerTally(t *testing.T) {
 func TestStatsPlannerPushesToSnap(t *testing.T) {
 	snap := &heartbeatSnap{}
 	snap.store(farm.Heartbeat{RunID: "r1"})
-	s := newStatsPlanner(&agent.LLMPlanner{}, nil, nil, snap)
+	s := newStatsPlanner("", "", nil, nil, snap)
 
 	pallet := agent.Objective{Kind: agent.KindGoTo, Place: "pallet town"}
 	obs := agent.Observation{Round: 2, RoundsLeft: 30}

@@ -88,9 +88,10 @@ func TestUIHistoryCanBeDeletedAndNewestFirst(t *testing.T) {
 func TestUIRendersLLMStats(t *testing.T) {
 	js := string(uiJS)
 	for _, want := range []string{
-		"statsLine", "playHTML",
+		"statsLine", "playHTML", "llmProfileLabel", "llm_profile",
 		`r.stats`,
 		`repeat picks`,
+		`row("model"`,
 		`round ${s.round}`,
 		`${s.avg_offered.toFixed(1)} avg`,
 		`pbar`,
@@ -150,26 +151,32 @@ func TestUIHistoryPaginatedAndAligned(t *testing.T) {
 	}
 }
 
-// TestUIWatchCardsShareGridTracks: Settings/Outcome/Plan/Play must share
-// equal tracks instead of sizing to content, or a long Play list drops the
-// row edge below the map.
+// TestUIWatchCardsShareGridTracks: Settings and Outcome stay compact while
+// Plan/Play scroll inside a fixed cap so a growing play list does not leave
+// empty stretched cells above it.
 func TestUIWatchCardsShareGridTracks(t *testing.T) {
 	html := string(indexHTML)
 	body := regexp.MustCompile(`#detail-body\{[^}]+\}`).FindString(html)
 	if body == "" {
 		t.Fatal("index.html missing #detail-body rule")
 	}
-	for _, want := range []string{"grid-auto-rows:minmax(0,1fr)", "align-items:stretch"} {
+	for _, want := range []string{"grid-auto-rows:auto", "align-items:start", "align-content:start"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("#detail-body %q missing %q", body, want)
 		}
 	}
-	if strings.Contains(body, "align-items:start") {
-		t.Error("#detail-body sizes cards to content")
+	if strings.Contains(body, "grid-auto-rows:minmax(0,1fr)") {
+		t.Error("#detail-body still stretches every card to equal height")
 	}
-	block := regexp.MustCompile(`\.block\{[^}]+\}`).FindString(html)
-	if !strings.Contains(block, "overflow:auto") || !strings.Contains(block, "min-height:0") {
-		t.Errorf(".block %q must scroll inside a fixed cell", block)
+	scroll := regexp.MustCompile(`\.block\.scroll\{[^}]+\}`).FindString(html)
+	if !strings.Contains(scroll, "max-height:") || !strings.Contains(scroll, "overflow:auto") {
+		t.Errorf(".block.scroll %q must cap height and scroll", scroll)
+	}
+	js := string(uiJS)
+	for _, want := range []string{`class="block compact"`, `class="block scroll"`, `fpsLabel`, `updateFpsLive`} {
+		if !strings.Contains(js, want) {
+			t.Errorf("ui.js missing %q", want)
+		}
 	}
 	grid := regexp.MustCompile(`\.watch-grid\{[^}]+\}`).FindString(html)
 	if !strings.Contains(grid, "align-items:stretch") {

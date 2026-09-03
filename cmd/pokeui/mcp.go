@@ -43,6 +43,7 @@ type mcpStartRunInput struct {
 	FPS       int    `json:"fps,omitempty" jsonschema:"emulation pace; zero runs flat out"`
 	MaxRounds int    `json:"max_rounds,omitempty" jsonschema:"LLM round budget; zero uses the runner default"`
 	MaxFrames int    `json:"max_frames,omitempty" jsonschema:"emulated frame budget; zero uses the runner default"`
+	LLMProfile string `json:"llm_profile,omitempty" jsonschema:"llm endpoint routing: default, gpu, or auto (GPU primary with LAN fallback)"`
 }
 
 type mcpStartRunOutput struct {
@@ -69,8 +70,9 @@ type mcpRunView struct {
 	Planner   string         `json:"planner,omitempty"`
 	Starter   string         `json:"starter,omitempty"`
 	Dest      string         `json:"dest,omitempty"`
-	Goal      string         `json:"goal,omitempty"`
-	Seed      int64          `json:"seed"`
+	Goal       string         `json:"goal,omitempty"`
+	LLMProfile string         `json:"llm_profile,omitempty"`
+	Seed       int64          `json:"seed"`
 	FPS       int            `json:"fps"`
 	MaxRounds int            `json:"max_rounds"`
 	MaxFrames int            `json:"max_frames"`
@@ -196,6 +198,12 @@ func (c *mcpControl) startRun(ctx context.Context, _ *mcp.CallToolRequest, in mc
 	if in.MaxFrames < 0 || in.MaxFrames > 50_000_000 {
 		return nil, mcpStartRunOutput{}, fmt.Errorf("max_frames must be between 0 and 50000000")
 	}
+	llmProfile := strings.ToLower(strings.TrimSpace(in.LLMProfile))
+	switch llmProfile {
+	case "", "default", "gpu", "auto":
+	default:
+		return nil, mcpStartRunOutput{}, fmt.Errorf("llm_profile must be default, gpu, or auto")
+	}
 
 	dest := strings.TrimSpace(in.Dest)
 	goal := strings.TrimSpace(in.Goal)
@@ -213,8 +221,9 @@ func (c *mcpControl) startRun(ctx context.Context, _ *mcp.CallToolRequest, in mc
 		Planner:   planner,
 		Starter:   starter,
 		Dest:      dest,
-		Goal:      goal,
-		FPS:       in.FPS,
+		Goal:       goal,
+		LLMProfile: llmProfile,
+		FPS:        in.FPS,
 		MaxRounds: in.MaxRounds,
 		MaxFrames: in.MaxFrames,
 	}

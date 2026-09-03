@@ -42,6 +42,7 @@ type Tile struct {
 	Starter    string
 	Dest       string
 	Goal       string
+	LLMProfile string
 	Seed       int64
 	FPS        int
 	MaxRounds  int
@@ -105,6 +106,7 @@ type tileRow struct {
 	Starter    string           `json:"starter"`
 	Dest       string           `json:"dest"`
 	Goal       string           `json:"goal,omitempty"`
+	LLMProfile string           `json:"llm_profile,omitempty"`
 	Seed       int64            `json:"seed"`
 	FPS        int              `json:"fps"`
 	MaxRounds  int              `json:"max_rounds"`
@@ -185,6 +187,7 @@ type persistedTile struct {
 	Starter     string         `json:"starter,omitempty"`
 	Dest        string         `json:"dest,omitempty"`
 	Goal        string         `json:"goal,omitempty"`
+	LLMProfile  string         `json:"llm_profile,omitempty"`
 	Seed        int64          `json:"seed"`
 	FPS         int            `json:"fps"`
 	MaxRounds   int            `json:"max_rounds"`
@@ -237,6 +240,7 @@ func (w *Wall) marshalStateLocked() ([]byte, error) {
 			Starter:     t.Starter,
 			Dest:        t.Dest,
 			Goal:        t.Goal,
+			LLMProfile:  t.LLMProfile,
 			Seed:        t.Seed,
 			FPS:         t.FPS,
 			MaxRounds:   t.MaxRounds,
@@ -318,6 +322,7 @@ func (w *Wall) loadState() {
 			Starter:     pt.Starter,
 			Dest:        pt.Dest,
 			Goal:        pt.Goal,
+			LLMProfile:  pt.LLMProfile,
 			Seed:        pt.Seed,
 			FPS:         pt.FPS,
 			MaxRounds:   pt.MaxRounds,
@@ -436,6 +441,7 @@ func (w *Wall) applySpec(runID string, spec farm.Spec) {
 	t.Starter = spec.Starter
 	t.Dest = spec.Dest
 	t.Goal = spec.Goal
+	t.LLMProfile = spec.LLMProfile
 	t.Seed = spec.Seed
 	t.FPS = spec.FPS
 	t.MaxRounds = spec.MaxRounds
@@ -487,6 +493,7 @@ func (w *Wall) handleLease(res http.ResponseWriter, req *http.Request) {
 		Starter:    t.Starter,
 		Dest:       t.Dest,
 		Goal:       t.Goal,
+		LLMProfile: t.LLMProfile,
 		FPS:        t.FPS,
 		MaxRounds:  t.MaxRounds,
 		MaxFrames:  t.MaxFrames,
@@ -877,6 +884,7 @@ func (w *Wall) snapshot() dashboardView {
 			Starter:    t.Starter,
 			Dest:       t.Dest,
 			Goal:       t.Goal,
+			LLMProfile: t.LLMProfile,
 			Seed:       t.Seed,
 			FPS:        t.FPS,
 			MaxRounds:  t.MaxRounds,
@@ -1302,6 +1310,7 @@ func (w *Wall) enqueueNextLocked(prev *Tile) {
 		Starter:    prev.Starter,
 		Dest:       prev.Dest,
 		Goal:       prev.Goal,
+		LLMProfile: prev.LLMProfile,
 		FPS:        prev.FPS,
 		MaxRounds:  prev.MaxRounds,
 		MaxFrames:  prev.MaxFrames,

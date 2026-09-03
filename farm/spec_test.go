@@ -13,7 +13,7 @@ func TestSpecJSONRoundTrip(t *testing.T) {
 	want := Spec{
 		RunID: "r1", Seed: 42, Planner: "llm", Starter: "squirtle",
 		Dest: "viridian pokemon center", Goal: "Earn the Boulder Badge.",
-		FPS: 0, MaxRounds: 32, MaxFrames: 1000, Endless: true, RandomSeed: true,
+		FPS: 0, MaxRounds: 32, MaxFrames: 1000, Endless: true, RandomSeed: true, LLMProfile: "auto",
 	}
 	b, err := json.Marshal(want)
 	if err != nil {
@@ -26,7 +26,7 @@ func TestSpecJSONRoundTrip(t *testing.T) {
 	if got != want {
 		t.Fatalf("round trip = %+v, want %+v", got, want)
 	}
-	for _, field := range []string{`"run_id"`, `"seed"`, `"planner"`, `"starter"`, `"dest"`, `"goal"`, `"fps"`, `"max_rounds"`, `"max_frames"`, `"endless"`, `"random_seed"`} {
+	for _, field := range []string{`"run_id"`, `"seed"`, `"planner"`, `"starter"`, `"dest"`, `"goal"`, `"llm_profile"`, `"fps"`, `"max_rounds"`, `"max_frames"`, `"endless"`, `"random_seed"`} {
 		if !json.Valid(b) {
 			t.Fatalf("invalid JSON: %s", b)
 		}

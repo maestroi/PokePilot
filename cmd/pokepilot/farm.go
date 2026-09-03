@@ -307,7 +307,7 @@ func pingWorker(client *farm.Client, addrs []string) {
 
 // validateSpec rejects a bad spec before it spends a run: the planner must
 // be known, and a scripted spec must name a starter and destination we can
-// resolve. An llm spec may name a starter (empty is Squirtle); dest is unused.
+// resolve. An llm spec may name a starter (empty lets the model pick); dest is unused.
 func validateSpec(planner, starter, dest string) error {
 	switch planner {
 	case "scripted":
@@ -402,7 +402,7 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 	case "scripted":
 		reason, detail, progEarly, progFinal = runFarmScripted(m, starter, dest)
 	case "llm":
-		reason, detail, progEarly, progFinal = runFarmLLM(m, starter, goal, maxRounds, maxFrames, cancel, snap, checkpointDir)
+		reason, detail, progEarly, progFinal = runFarmLLM(m, starter, goal, spec.LLMProfile, maxRounds, maxFrames, cancel, snap, checkpointDir)
 	}
 
 	// Stop and join the heartbeat before TraceTail/SaveState/Finish.
@@ -538,30 +538,21 @@ func runFarmScripted(m *emu.Emu, starter, dest string) (string, string, *farm.Pr
 // runFarmLLM mirrors runLLM's diagnostics and objective list; the only
 // differences are that the budget comes from the spec and cancel is the
 // wall's cooperative stop.
-func runFarmLLM(m *emu.Emu, starter, goal string, maxRounds, maxFrames int, cancel <-chan struct{}, snap *heartbeatSnap, checkpointDir string) (string, string, *farm.Progress, *farm.Progress) {
-	// The starter is the farm's controlled variable, so the harness TAKES it
-	// before handing control to the model — the same reason badgerun does
-	// (a model that knows Pokemon always picks Squirtle otherwise). From
-	// here on the model decides everything, and the menu is no longer built
-	// here at all: agent.Run rebuilds it every round from the current
-	// observation (agent.Offer), which is strictly better than a static list
-	// of every place in the ROM.
-	if err := skill.GetStarter(m, m.ROM(), farmStarterFor(starter), skill.StatAwareMove(m.ROM())); err != nil {
-		return "error", fmt.Sprintf("get starter %s: %v", starter, err), nil, nil
+func runFarmLLM(m *emu.Emu, starter, goal, llmProfile string, maxRounds, maxFrames int, cancel <-chan struct{}, snap *heartbeatSnap, checkpointDir string) (string, string, *farm.Progress, *farm.Progress) {
+	// When the spec names a starter, the farm takes it before handing control
+	// to the model — the same reason badgerun does (a model that knows Pokemon
+	// always picks Squirtle otherwise). An empty starter matches local
+	// run-llm: the opening menu offers all three and the model chooses.
+	if starter != "" {
+		if err := skill.GetStarter(m, m.ROM(), farmStarterFor(starter), skill.StatAwareMove(m.ROM())); err != nil {
+			return "error", fmt.Sprintf("get starter %s: %v", starter, err), nil, nil
+		}
 	}
 	fmt.Println("planner: llm — the model picks from a menu rebuilt every round")
 
 	logw := &agentTraceLog{w: os.Stdout, note: m.TraceNote}
-	planner := agent.NewLLMPlanner()
-	planner.Goal = goal
-	planner.Log = logw // one line per model call, above its round line
-	// The exact bytes, onto the heartbeat: the console's Plan panel shows
-	// the prompt while the model is still thinking, then the raw reply.
-	planner.PromptLog = rawWriter{snap: snap, start: true}
-	planner.ReplyLog = rawWriter{snap: snap}
-	// The same tally the local watch page shows (runStats): a farm worker's
-	// page is this page, so a wandering leased run is visible on it too.
-	stats := newStatsPlanner(planner, m, m.TraceStats, snap)
+	stats := newStatsPlanner(llmProfile, goal, m, m.TraceStats, snap)
+	stats.wirePlannerLogs(logw, snap)
 	res := agent.Run(m, m.ROM(), reportingPlanner{inner: stats, snap: snap}, agent.Budget{
 		MaxRounds:     maxRounds,
 		MaxFrames:     maxFrames,

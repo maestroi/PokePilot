@@ -207,10 +207,8 @@ func runScripted(m *emu.Emu, starter, dest string, hold time.Duration, served st
 func runLLM(m *emu.Emu, goal string, maxRounds int, checkpointDir, resumeFrom string) {
 	fmt.Println("planner: llm — the model picks from a menu rebuilt every round")
 	log := &agentTraceLog{w: os.Stdout, note: m.TraceNote}
-	planner := agent.NewLLMPlanner()
-	planner.Goal = goal
-	planner.Log = log
-	stats := newStatsPlanner(planner, m, m.TraceStats, nil)
+	stats := newStatsPlanner("", goal, m, m.TraceStats, nil)
+	stats.wirePlannerLogs(log, nil)
 	res := agent.Run(m, m.ROM(), stats, agent.Budget{
 		MaxRounds:     maxRounds,
 		MaxFrames:     llmMaxFrames,

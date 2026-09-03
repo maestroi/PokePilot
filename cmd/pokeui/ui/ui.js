@@ -16,6 +16,8 @@
   const histFilter = { outcome: "", how: "", starter: "" };
   const HIST_PAGE = 25;
   let histPage = 0;
+  const fpsSamples = new Map();
+  const fpsLive = new Map();
 
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({
@@ -24,9 +26,17 @@
   const hexMap = (n) => "0x" + Number(n).toString(16).padStart(2, "0");
   const howLabel = (r) => r.planner === "scripted" ? "walk" : "play";
   const howText = (r) => r.planner === "scripted" ? "walk to a place" : "play the game";
-  const starterOf = (r) => r.starter || "squirtle";
+  const starterOf = (r) => r.starter || (r.planner === "scripted" ? "squirtle" : "LLM picks");
   const outcomeOf = (r) => (r.reason || r.status || "").toLowerCase();
   const goalOf = (r) => (r.goal || "").trim();
+  const llmProfileLabel = (r) => {
+    switch ((r.llm_profile || "").toLowerCase()) {
+      case "gpu": return "GPU";
+      case "auto": return "Auto (GPU → LAN)";
+      case "default": return "Default (LAN)";
+      default: return r.planner === "llm" ? "Default (LAN)" : "";
+    }
+  };
 
   function issueHref(url) {
     try {
@@ -182,6 +192,27 @@
     return clock + " " + rel;
   }
   function runWhen(r) { return fmtWhen(r.ended_at || r.queued_at); }
+  function updateFpsLive() {
+    const now = snap.now || Math.floor(Date.now() / 1000);
+    for (const r of snap.runs || []) {
+      if (r.status !== "running") continue;
+      const prev = fpsSamples.get(r.run_id);
+      fpsSamples.set(r.run_id, { frame: r.frame, at: now });
+      if (!prev || r.frame < prev.frame) { fpsLive.delete(r.run_id); continue; }
+      const dt = now - prev.at;
+      if (dt >= 1) fpsLive.set(r.run_id, (Math.max(0, r.frame - prev.frame) / dt).toFixed(1));
+    }
+  }
+  function fpsLabel(run) {
+    if (run.status === "done" && run.ended_at && run.frame > 0) {
+      const dur = run.ended_at - (run.queued_at || 0);
+      if (dur > 1) return (run.frame / dur).toFixed(1);
+    }
+    const live = fpsLive.get(run.run_id);
+    if (live) return live;
+    if (run.fps) return String(run.fps) + " target";
+    return "";
+  }
   function statusChip(r) {
     const out = outcomeOf(r);
     if (r.status === "done") return chip("outcome-" + out, out || "done");
@@ -204,17 +235,21 @@
     document.querySelectorAll(".scripted-only").forEach((el) => { el.hidden = !scripted; });
     document.querySelectorAll(".llm-only").forEach((el) => { el.hidden = scripted; });
     document.querySelectorAll(".endless-only").forEach((el) => { el.hidden = !f.endless.checked; });
+    const llmOpt = f.starter.querySelector('option[value=""]');
+    if (llmOpt) llmOpt.hidden = scripted;
+    if (scripted && f.starter.value === "") f.starter.value = "squirtle";
   }
   function fillDefaults() {
     const f = $("spec-form");
     f.run_id.value = newRunId();
     f.planner.value = "llm";
-    f.starter.value = "squirtle";
+    f.starter.value = "";
     f.dest.value = "viridian pokemon center";
     f.goal.value = "Earn the Boulder Badge.";
+    f.llm_profile.value = "auto";
     f.seed.value = "0";
     f.fps.value = "60";
-    f.max_rounds.value = "32";
+    f.max_rounds.value = "128";
     f.max_frames.value = "0";
     f.endless.checked = false;
     f.seed_mode.value = "random";
@@ -464,7 +499,8 @@
         art.querySelector(".stats").textContent = "not started";
       } else {
         art.querySelector(".pos").textContent = tileLabel(r);
-        art.querySelector(".stats").textContent = "frame " + r.frame + " · attempt " + r.attempts;
+        const fps = fpsLabel(r);
+        art.querySelector(".stats").textContent = "frame " + r.frame + (fps ? " · " + fps + " fps" : "") + " · attempt " + r.attempts;
         art.querySelector(".llm").textContent = statsLine(r);
       }
       const cancel = art.querySelector(".cancel"); cancel.hidden = r.status === "done"; cancel.dataset.cancel = r.run_id; cancel.textContent = "Cancel run";
@@ -547,15 +583,16 @@
     renderMap(run);
     const settings = kv([
       ["how", howText(run)], ["starter", starterOf(run)], ["goal", goalOf(run)],
+      ["model", run.planner === "llm" ? llmProfileLabel(run) : ""],
       ["walk to", run.planner === "scripted" ? (run.dest || "—") : ""], ["seed", String(run.seed)],
       ["keep going", run.endless ? (run.random_seed ? "yes, random seed" : "yes, same seed") : ""],
       ["queued", fmtWhen(run.queued_at)], ["ended", fmtWhen(run.ended_at)], ["fps", run.fps ? String(run.fps) : ""],
       ["max rounds", run.max_rounds ? String(run.max_rounds) : ""], ["max frames", run.max_frames ? String(run.max_frames) : ""]
     ]);
     const stateRows = run.status === "done"
-      ? [["ended", run.reason || "done"], ["detail", run.detail || ""], ["last map", tileLabel(run)], ["frame", String(run.frame)], ["attempts", String(run.attempts)]]
-      : [["status", run.status], ["map", tileLabel(run)], ["frame", String(run.frame)], ["attempt", String(run.attempts)], ["so far", run.stop_so_far || ""]];
-    $("detail-body").innerHTML = `<div class="block"><h3>Settings</h3>${settings}</div><div class="block"><h3>${run.status === "done" ? "Outcome" : "Now"}</h3>${kv(stateRows)}</div>` + planHTML(run) + playHTML(run) + lastEventHTML(run);
+      ? [["ended", run.reason || "done"], ["detail", run.detail || ""], ["last map", tileLabel(run)], ["frame", String(run.frame)], ["fps", fpsLabel(run)], ["attempts", String(run.attempts)]]
+      : [["status", run.status], ["map", tileLabel(run)], ["frame", String(run.frame)], ["fps", fpsLabel(run)], ["attempt", String(run.attempts)], ["so far", run.stop_so_far || ""]];
+    $("detail-body").innerHTML = `<div class="block compact"><h3>Settings</h3>${settings}</div><div class="block compact"><h3>${run.status === "done" ? "Outcome" : "Now"}</h3>${kv(stateRows)}</div>` + planHTML(run) + playHTML(run) + lastEventHTML(run);
     $("detail-party").innerHTML = partyHTML(run);
     const raw = $("detail-body").querySelector(".plan-raw");
     if (raw) {
@@ -572,18 +609,19 @@
     if (run.decision) decision = `<div class="plan-k">decision</div><p class="plan-d">${esc(run.decision)}</p>`;
     else if (run.question) decision = `<div class="plan-k">decision</div><p class="plan-wait">waiting for reply</p>`;
     const raw = run.raw ? `<details class="plan-raw"><summary>raw exchange</summary><pre>${esc(run.raw)}</pre></details>` : "";
-    return `<div class="block"><h3>Plan</h3><div class="plan-k">question</div>${question}${decision}${raw}</div>`;
+    return `<div class="block scroll"><h3>Plan</h3><div class="plan-k">question</div>${question}${decision}${raw}</div>`;
   }
 
   function playHTML(run) {
     const s = run.stats;
     if (!s || run.planner === "scripted") return "";
     const row = (k, v, warn) => `<div class="prow"><span>${esc(k)}</span><span${warn ? ' class="pwarn"' : ""}>${esc(v)}</span></div>`;
-    const nums = row("round", s.round + (s.rounds_left ? ` (${s.rounds_left} left)` : "")) + row("repeat picks", `${s.repeats} of ${s.rounds}`, s.rounds > 3 && s.repeats * 2 >= s.rounds) + row("think", `${s.last_seconds.toFixed(1)}s / ${s.avg_seconds.toFixed(1)}s avg`) + row("offered", `${s.avg_offered.toFixed(1)} avg`) + row("tokens", `${s.prompt_tokens} / ${s.completion_tokens}`) + row("rejected", String(s.rejected), s.rejected > 0) + row("transport", String(s.transport), s.transport > 0) + row("fallbacks", String(s.fallbacks), s.fallbacks > 0);
+    const modelLine = (s.model ? s.model : "—") + (s.backend ? " · " + s.backend : "");
+    const nums = row("round", s.round + (s.rounds_left ? ` (${s.rounds_left} left)` : "")) + row("model", modelLine) + row("repeat picks", `${s.repeats} of ${s.rounds}`, s.rounds > 3 && s.repeats * 2 >= s.rounds) + row("think", `${s.last_seconds.toFixed(1)}s / ${s.avg_seconds.toFixed(1)}s avg`) + row("offered", `${s.avg_offered.toFixed(1)} avg`) + row("tokens", `${s.prompt_tokens} / ${s.completion_tokens}`) + row("rejected", String(s.rejected), s.rejected > 0) + row("transport", String(s.transport), s.transport > 0) + row("fallbacks", String(s.fallbacks), s.fallbacks > 0);
     const intent = s.intent ? `<p class="pintent">"${esc(s.intent)}" (${s.intent_age} rounds)</p>` : "";
     const top = (s.choices && s.choices[0]) ? s.choices[0].count : 1;
     const choices = (s.choices || []).map((c) => `<div class="pchoice"><div class="pbar" style="width:${(100 * c.count) / top}%"></div><span>${esc(c.objective)}</span><span class="n">${c.count}</span></div>`).join("");
-    return `<div class="block"><h3>Play</h3><div class="pnums">${nums}</div>${intent}<div class="pchoices">${choices}</div></div>`;
+    return `<div class="block scroll"><h3>Play</h3><div class="pnums">${nums}</div>${intent}<div class="pchoices">${choices}</div></div>`;
   }
 
   function partyHTML(r) {
@@ -603,7 +641,7 @@
   function lastEventHTML(run) {
     if (!run.trace) return "";
     const title = run.question || run.decision ? "Last event" : "Trace";
-    return `<div class="block"><h3>${title}</h3><pre class="trace">${esc(run.trace)}</pre></div>`;
+    return `<div class="block scroll"><h3>${title}</h3><pre class="trace">${esc(run.trace)}</pre></div>`;
   }
 
   function renderCounts() {
@@ -643,6 +681,7 @@
       const res = await fetch("/v1/dashboard", { cache: "no-store" }); if (!res.ok) throw new Error("bad");
       snap = await res.json(); wallDown = false;
       try { const tr = await fetch("/v1/triage", { cache: "no-store" }); if (tr.ok) groups = await tr.json(); } catch (e) { groups = groups || []; }
+      updateFpsLive();
     } catch (e) { wallDown = true; }
     render();
   }
@@ -680,7 +719,7 @@
 
   $("spec-form").addEventListener("submit", async (ev) => {
     ev.preventDefault(); const err = $("form-error"); err.textContent = ""; const f = ev.target; const planner = f.planner.value;
-    const spec = { run_id: f.run_id.value.trim(), planner, starter: f.starter.value, dest: planner === "scripted" ? f.dest.value.trim() : "", goal: planner === "llm" ? f.goal.value.trim() : "", seed: Number(f.seed.value || 0), fps: Number(f.fps.value || 0), max_rounds: Number(f.max_rounds.value || 0), max_frames: Number(f.max_frames.value || 0), endless: f.endless.checked, random_seed: f.endless.checked && f.seed_mode.value === "random" };
+    const spec = { run_id: f.run_id.value.trim(), planner, starter: f.starter.value, dest: planner === "scripted" ? f.dest.value.trim() : "", goal: planner === "llm" ? f.goal.value.trim() : "", llm_profile: planner === "llm" ? f.llm_profile.value : "", seed: Number(f.seed.value || 0), fps: Number(f.fps.value || 0), max_rounds: Number(f.max_rounds.value || 0), max_frames: Number(f.max_frames.value || 0), endless: f.endless.checked, random_seed: f.endless.checked && f.seed_mode.value === "random" };
     try {
       const res = await fetch("/v1/specs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(spec) });
       const body = await res.json().catch(() => ({}));
