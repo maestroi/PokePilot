@@ -32,22 +32,23 @@ type Knowledge struct {
 	// second one is a run walking in circles. Zero is the set test.
 	Completed map[string]int
 	// Failures are the objectives the run has TRIED and failed, normally by
-	// Objective.String(). A leader loss is the one scoped exception: KindGym
+	// Objective.String(). A leader loss is one scoped exception: KindGym
 	// renders "here" in the menu, so an actual loss is keyed by its factual
 	// gym place (gymLossFailureKey) to avoid treating Brock and Misty as the
-	// same failure. It exists because History scrolls: it carries
-	// historyCap rounds, so six rounds of anything push a failure out of
-	// the planner's view entirely. MEASURED 2026-08-31: "go to route 2"
-	// failed on rounds 10 and 11, six talk rounds followed, and by round 19
-	// the model could no longer see it had ever tried — so it tried again,
-	// twice, and the run ended on the identical-failure guard. A tally that
-	// does not scroll is the difference between "untried idea" and "I have
-	// hit this eight times".
+	// same failure. A trainer-caused blackout is another: fight/flee travel
+	// variants that hit the same mandatory trainer share one recovery key.
+	// It exists because History scrolls: it carries historyCap rounds, so six
+	// rounds of anything push a failure out of the planner's view entirely.
+	// MEASURED 2026-08-31: "go to route 2" failed on rounds 10 and 11, six
+	// talk rounds followed, and by round 19 the model could no longer see it
+	// had ever tried — so it tried again, twice, and the run ended on the
+	// identical-failure guard. A tally that does not scroll is the difference
+	// between "untried idea" and "I have hit this eight times".
 	//
 	// An entry is dropped the moment the same objective succeeds: a wall
 	// that opened is not a wall, and a stale failure would argue against
-	// the thing that now works. Scoped gym losses additionally clear after a
-	// successful Train rung, because the party has materially changed.
+	// the thing that now works. Scoped combat losses additionally clear after
+	// a successful Train rung, because the party has materially changed.
 	Failures  map[string]Failure
 	Talked    map[uint8]map[[2]uint8]bool // map-local object coordinates already talked to
 	Adjacency map[uint8][]uint8           // for each map id, the map ids its exits lead to
@@ -101,8 +102,8 @@ const failureCap = 8
 // Failed records that an objective was tried and failed. The same objective
 // failing again is not a new entry — the count goes up and the newest error
 // replaces the old one. A reached-and-lost gym battle gets a gym-scoped key;
-// other gym errors keep the ordinary objective identity so a path/control
-// defect does not masquerade as evidence that the party needs training.
+// a trainer-caused blackout gets a normalized objective-scoped key; other
+// errors keep the ordinary objective identity.
 func (k *Knowledge) Failed(o Objective, err error) {
 	if err == nil {
 		return
@@ -110,6 +111,9 @@ func (k *Knowledge) Failed(o Objective, err error) {
 	name := o.String()
 	if gymName, ok := gymLossFailureName(o, err); ok {
 		name = gymName
+	}
+	if trainerName, ok := trainerLossFailureName(o, err); ok {
+		name = trainerName
 	}
 	f := k.Failures[name]
 	f.Objective, f.Times, f.Last = name, f.Times+1, err.Error()
@@ -260,19 +264,21 @@ func (k *Knowledge) HeardRequirement(line, place string, x, y uint8) {
 // Done records a completed objective. Only one-shot objectives are dropped
 // from the menu because of this (see Offer): a completed heal is no reason
 // to stop offering heals. A successful Train is also the recovery boundary
-// for an observed gym loss: it clears scoped leader-loss failures so the
-// materially changed party can challenge again.
+// for observed combat losses: it clears scoped leader/trainer-loss failures
+// so the materially changed party can try again.
 func (k *Knowledge) Done(o Objective) {
 	name := o.String()
 	k.Completed[name]++
 	// It worked: whatever blocked it before is gone, and a kept failure
 	// would argue against the thing that just succeeded.
 	delete(k.Failures, name)
+	delete(k.Failures, trainerLossFailureKey(o))
 	if o.Kind == KindGym && o.Place != "" {
 		delete(k.Failures, gymLossFailureKey(o.Place))
 	}
 	if o.Kind == KindTrain {
 		k.clearGymLossFailures()
+		k.clearTrainerLossFailures()
 	}
 }
 
@@ -372,14 +378,11 @@ func isAlnum(c byte) bool {
 // places do, so the places go at the bottom.
 //
 // It says what is POSSIBLE, never what is WISE before the run has evidence.
-// An underlevelled party is allowed its first gym attempt: pre-judging that
-// attempt would be us playing the game. Once the party actually reaches a
-// leader and loses, however, repeating the unchanged challenge is no longer
-// an unknown strategic choice — it is a failure the run has already observed.
-// That same gym stays off the menu until a Train objective succeeds; travel
-// and healing cannot erase the evidence merely because they were successful
-// rounds. The gate is scoped to the gym that won, so a different legal gym
-// remains a separate choice.
+// An underlevelled party is allowed its first gym/trainer attempt: pre-judging
+// it would be us playing the game. Once a mandatory trainer actually wins,
+// repeating the same logical objective is observed evidence, not an unknown
+// choice. That retry stays off the menu until a Train objective succeeds;
+// travel fight/flee variants share one gate because trainers cannot be fled.
 func Offer(obs Observation, known *Knowledge) []Objective {
 	out := make([]Objective, 0, 8)
 
@@ -613,7 +616,8 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 			}
 		}
 	}
-	return annotate(append(out, journeys...), known)
+	candidates := append(out, journeys...)
+	return annotate(filterTrainerLossBlocked(candidates, known), known)
 }
 
 // annotate composes each objective's run history with any factual choice-local
@@ -629,9 +633,9 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 // line it is choosing, it might. The same principle now carries objective-
 // local facts such as "unvisited adjacent map" and the local training band.
 //
-// This withholds nothing. Every objective is still offered, in the same
-// order. Facts make choices distinguishable; they never say which one is
-// strategically correct.
+// This withholds nothing. Every objective passed to annotate is still kept,
+// in the same order. Facts make choices distinguishable; they never say which
+// one is strategically correct.
 func annotate(out []Objective, known *Knowledge) []Objective {
 	for i := range out {
 		name := out[i].String()

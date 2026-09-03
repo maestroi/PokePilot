@@ -30,10 +30,12 @@ type TravelResult struct {
 // battleResolution is the outcome of resolving one interrupting battle under
 // the journey's policy: either it was fought to a BattleResult, or it was a
 // wild encounter that was fled (fled true, outcome empty). A lost fight sets
-// outcome to state.ResultLost; a flee can never lose.
+// outcome to state.ResultLost; a flee can never lose. trainer preserves the
+// battle kind after Battle clears wIsInBattle so a loss can be classified.
 type battleResolution struct {
 	outcome state.BattleResult
 	fled    bool
+	trainer bool
 }
 
 // resolveBattle is the seam between Travel's walk loop and the journey's
@@ -47,8 +49,9 @@ type resolveBattle func() (battleResolution, error)
 // one, because there is nothing else to do — you cannot flee a trainer.
 func fightOnly(m *emu.Emu, policy MovePolicy) resolveBattle {
 	return func() (battleResolution, error) {
+		trainer := state.BattleKind(m.Peek8(sym.IsInBattle)) == state.BattleTrainer
 		outcome, err := Battle(m, policy)
-		return battleResolution{outcome: outcome}, err
+		return battleResolution{outcome: outcome, trainer: trainer}, err
 	}
 }
 
@@ -64,7 +67,7 @@ func fleeThenFight(m *emu.Emu, policy MovePolicy, fleeAttempts int) resolveBattl
 		if err := Flee(m, fleeAttempts); err != nil {
 			if errors.Is(err, ErrTrainerBattle) {
 				outcome, berr := Battle(m, policy)
-				return battleResolution{outcome: outcome}, berr
+				return battleResolution{outcome: outcome, trainer: true}, berr
 			}
 			return battleResolution{}, fmt.Errorf("skill: Travel: flee: %w", err)
 		}
@@ -81,6 +84,19 @@ func fleeThenFight(m *emu.Emu, policy MovePolicy, fleeAttempts int) resolveBattl
 // is still the right move, but it is the caller's decision, made with the
 // knowledge that the party lost — not a silent continue.
 var ErrBlackedOut = errors.New("skill: Travel: blacked out")
+
+// ErrTrainerBlackedOut is the narrower class for a blackout caused by losing
+// a mandatory trainer battle. It unwraps to ErrBlackedOut so every existing
+// recovery caller keeps working while the agent can distinguish the repeated
+// trainer wall from a wild loss or poison wipe.
+var ErrTrainerBlackedOut = fmt.Errorf("%w: lost trainer battle", ErrBlackedOut)
+
+func battleBlackoutError(r battleResolution) error {
+	if r.trainer {
+		return ErrTrainerBlackedOut
+	}
+	return ErrBlackedOut
+}
 
 // blackoutBit is wStatusFlags4's BIT_BATTLE_OVER_OR_BLACKOUT
 // (constants/ram_constants.asm:99). The game sets it when a battle ends
@@ -185,9 +201,10 @@ func cutAwareGoTo(m *emu.Emu, romData []byte, dest Destination) func() error {
 // A blackout ends the journey with ErrBlackedOut: after a lost battle, and
 // after a recovered text box that closed on a non-battle blackout (poison
 // fainted the last mon out of it while walking), so a party wiped out
-// mid-walk cannot look like a successful arrival. maxBattles bounds the
-// fight loop; zero or negative is an error, not "unlimited".
-// maxDialogueRecoveries bounds the recovery loop the same way.
+// mid-walk cannot look like a successful arrival. Trainer losses additionally
+// satisfy ErrTrainerBlackedOut. maxBattles bounds the fight loop; zero or
+// negative is an error, not "unlimited". maxDialogueRecoveries bounds the
+// recovery loop the same way.
 func Travel(m *emu.Emu, romData []byte, dest Destination, policy MovePolicy, maxBattles int) (TravelResult, error) {
 	if maxBattles <= 0 {
 		return TravelResult{}, fmt.Errorf("skill: Travel: maxBattles must be > 0, got %d", maxBattles)
@@ -207,8 +224,9 @@ func Travel(m *emu.Emu, romData []byte, dest Destination, policy MovePolicy, max
 // fought trainers (and any wild a flee refused). maxBattles bounds total
 // engagements (flees and fights alike), exactly as it bounds fights in
 // Travel. A lost trainer battle blackouts exactly as in Travel: the error is
-// ErrBlackedOut, the party is fully healed at a center, and re-planning from
-// the respawn spot is the caller's decision.
+// ErrTrainerBlackedOut (and therefore also ErrBlackedOut), the party is fully
+// healed at a center, and re-planning from the respawn spot is the caller's
+// decision.
 func TravelFlee(m *emu.Emu, romData []byte, dest Destination, policy MovePolicy, maxBattles int) (TravelResult, error) {
 	return travel(m, policy, maxBattles,
 		cutAwareGoTo(m, romData, dest),
@@ -262,9 +280,9 @@ func travel(m *emu.Emu, policy MovePolicy, maxBattles int, goTo func() error, re
 				// deaths, nothing to see either fact). Re-planning from the
 				// respawn spot is still the right move, but it is the
 				// caller's decision, made with the knowledge that the party
-				// lost.
+				// lost. Trainer losses preserve that narrower cause too.
 				res.BlackedOut = true
-				return res, ErrBlackedOut
+				return res, battleBlackoutError(r)
 			}
 		case errors.Is(err, ErrDialogueInterrupted):
 			if res.Dialogues >= maxDialogueRecoveries {
