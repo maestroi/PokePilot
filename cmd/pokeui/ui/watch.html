@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>PokéPilot — Spectator Mode</title>
+  <style>
+    :root {
+      --bg: #0b1020;
+      --panel: rgba(18, 27, 49, .92);
+      --panel-soft: rgba(24, 36, 64, .72);
+      --line: rgba(255, 255, 255, .1);
+      --text: #f5f7ff;
+      --muted: #9eacc9;
+      --accent: #ffd84a;
+      --live: #5ee6a8;
+      --danger: #ff7c86;
+      --radius: 20px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at 20% -10%, rgba(83, 109, 254, .2), transparent 34rem),
+        radial-gradient(circle at 110% 40%, rgba(255, 216, 74, .08), transparent 30rem),
+        var(--bg);
+      color: var(--text);
+      font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    button { font: inherit; }
+    .shell { width: min(1500px, 100%); margin: 0 auto; padding: 24px; }
+    header { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 22px; }
+    .brand { display: flex; align-items: center; gap: 14px; }
+    .ball {
+      width: 42px; height: 42px; border-radius: 50%; position: relative; overflow: hidden;
+      background: linear-gradient(#f45f63 0 46%, #151a2a 46% 54%, #f7f8ff 54%);
+      box-shadow: 0 0 0 1px rgba(255,255,255,.16), 0 10px 30px rgba(0,0,0,.25);
+    }
+    .ball::after { content: ""; position: absolute; width: 12px; height: 12px; border: 5px solid #151a2a; background: white; border-radius: 50%; left: 10px; top: 10px; }
+    h1 { font-size: clamp(22px, 3vw, 34px); line-height: 1.05; margin: 0; letter-spacing: -.03em; }
+    .eyebrow { color: var(--muted); font-size: 12px; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; margin-bottom: 5px; }
+    .readonly { padding: 8px 11px; border: 1px solid var(--line); background: var(--panel-soft); color: var(--muted); border-radius: 999px; font-size: 12px; font-weight: 800; white-space: nowrap; }
+    .layout { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(280px, .65fr); gap: 18px; }
+    .panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: 0 24px 80px rgba(0,0,0,.23); }
+    .hero { padding: 18px; }
+    .hero-top { display: flex; justify-content: space-between; gap: 18px; align-items: flex-start; margin-bottom: 14px; }
+    .run-title { font-size: 20px; font-weight: 850; letter-spacing: -.02em; overflow-wrap: anywhere; }
+    .sub { color: var(--muted); margin-top: 3px; }
+    .status { display: inline-flex; align-items: center; gap: 7px; padding: 7px 10px; border-radius: 999px; background: var(--panel-soft); color: var(--muted); font-size: 12px; font-weight: 850; text-transform: uppercase; letter-spacing: .08em; }
+    .status.live { color: var(--live); }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; box-shadow: 0 0 14px currentColor; }
+    .screen-wrap { position: relative; display: grid; place-items: center; min-height: 340px; border-radius: 16px; overflow: hidden; background: #05070d; border: 1px solid rgba(255,255,255,.08); }
+    #frame { width: min(100%, 720px); image-rendering: pixelated; display: block; aspect-ratio: 160 / 144; object-fit: contain; }
+    .screen-empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); text-align: center; padding: 32px; background: radial-gradient(circle, rgba(255,255,255,.03), transparent 65%); }
+    .facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
+    .fact { background: var(--panel-soft); border: 1px solid var(--line); border-radius: 14px; padding: 11px 12px; min-width: 0; }
+    .fact b { display: block; font-size: 17px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .fact span { color: var(--muted); font-size: 11px; text-transform: uppercase; font-weight: 800; letter-spacing: .08em; }
+    .details { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+    .card { padding: 15px; background: var(--panel-soft); border: 1px solid var(--line); border-radius: 16px; min-height: 112px; }
+    .card h2 { margin: 0 0 8px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .09em; }
+    .card p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .progress { height: 8px; border-radius: 99px; background: rgba(255,255,255,.08); overflow: hidden; margin-top: 10px; }
+    .progress > div { height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), #ff9e4a); transition: width .25s ease; }
+    .side { padding: 14px; min-height: 680px; }
+    .side h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); margin: 3px 5px 10px; }
+    .run-list { display: grid; gap: 8px; }
+    .run-btn { width: 100%; border: 1px solid var(--line); border-radius: 14px; background: rgba(255,255,255,.025); color: var(--text); text-align: left; padding: 12px; cursor: pointer; transition: border-color .15s ease, transform .15s ease, background .15s ease; }
+    .run-btn:hover { transform: translateY(-1px); border-color: rgba(255,255,255,.22); }
+    .run-btn.active { background: rgba(255,216,74,.08); border-color: rgba(255,216,74,.4); }
+    .run-btn-top { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+    .run-btn strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .mini-status { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; font-weight: 900; }
+    .mini-status.live { color: var(--live); }
+    .run-btn small { color: var(--muted); display: block; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .party { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+    .mon { border: 1px solid var(--line); border-radius: 12px; padding: 9px; background: rgba(0,0,0,.1); min-width: 0; }
+    .mon strong { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .mon small { color: var(--muted); }
+    .hp { height: 5px; background: rgba(255,255,255,.09); border-radius: 99px; margin-top: 7px; overflow: hidden; }
+    .hp > div { height: 100%; background: var(--live); }
+    .badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+    .badge { border: 1px solid rgba(255,216,74,.24); color: var(--accent); background: rgba(255,216,74,.06); border-radius: 999px; padding: 3px 7px; font-size: 11px; font-weight: 800; }
+    .offline { color: var(--danger); }
+    footer { color: var(--muted); text-align: center; padding: 18px 0 0; font-size: 12px; }
+    @media (max-width: 920px) { .layout { grid-template-columns: 1fr; } .side { min-height: 0; } .run-list { grid-template-columns: repeat(2, minmax(0,1fr)); } }
+    @media (max-width: 620px) { .shell { padding: 14px; } header { align-items: flex-start; } .readonly { white-space: normal; text-align: center; } .facts { grid-template-columns: repeat(2, 1fr); } .details { grid-template-columns: 1fr; } .party { grid-template-columns: repeat(2, 1fr); } .run-list { grid-template-columns: 1fr; } .screen-wrap { min-height: 260px; } }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <div class="brand">
+        <div class="ball" aria-hidden="true"></div>
+        <div><div class="eyebrow">Public watch</div><h1>PokéPilot Spectator Mode</h1></div>
+      </div>
+      <div class="readonly">Read only · no run controls</div>
+    </header>
+
+    <div class="layout">
+      <section class="panel hero" aria-live="polite">
+        <div class="hero-top">
+          <div><div id="run-title" class="run-title">Looking for a run…</div><div id="run-sub" class="sub">Connecting to PokéPilot</div></div>
+          <div id="status" class="status"><span class="dot"></span><span>Connecting</span></div>
+        </div>
+
+        <div class="screen-wrap">
+          <img id="frame" alt="Live Pokémon game screen" hidden>
+          <div id="screen-empty" class="screen-empty">The game screen will appear when a run is available.</div>
+        </div>
+
+        <div class="facts">
+          <div class="fact"><b id="map">—</b><span>Map</span></div>
+          <div class="fact"><b id="position">—</b><span>Position</span></div>
+          <div class="fact"><b id="round">—</b><span>Round</span></div>
+          <div class="fact"><b id="badges-count">—</b><span>Badges</span></div>
+        </div>
+
+        <div class="details">
+          <div class="card"><h2>Current goal</h2><p id="goal">—</p><div class="progress"><div id="goal-progress"></div></div></div>
+          <div class="card"><h2>Latest decision</h2><p id="decision">—</p></div>
+          <div class="card"><h2>Party</h2><div id="party" class="party"></div><div id="badges" class="badges"></div></div>
+          <div class="card"><h2>Run stats</h2><p id="stats">—</p></div>
+        </div>
+      </section>
+
+      <aside class="panel side">
+        <h2>Runs</h2>
+        <div id="run-list" class="run-list"></div>
+      </aside>
+    </div>
+    <footer id="connection">Public spectator feed · state refreshes automatically</footer>
+  </main>
+  <script src="/watch.js" defer></script>
+</body>
+</html>
