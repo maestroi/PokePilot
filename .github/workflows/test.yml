@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: write
 
 concurrency:
   group: tests-${{ github.workflow }}-${{ github.ref }}
@@ -30,9 +31,21 @@ jobs:
           cache: true
 
       - name: Verify module graph
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           go mod download
-          git diff --exit-code -- go.mod go.sum
+          if ! git diff --quiet -- go.mod go.sum; then
+            {
+              echo 'CI-generated module graph diff:'
+              echo
+              echo '```diff'
+              git diff -- go.mod go.sum
+              echo '```'
+            } > /tmp/module-diff.md
+            gh pr comment "${{ github.event.pull_request.number }}" --body-file /tmp/module-diff.md
+            exit 1
+          fi
 
       - name: Check formatting
         run: make fmt-check
