@@ -35,14 +35,14 @@ type mcpControl struct {
 }
 
 type mcpStartRunInput struct {
-	Planner   string `json:"planner,omitempty" jsonschema:"planner mode: llm or scripted; defaults to llm"`
-	Starter   string `json:"starter,omitempty" jsonschema:"starter Pokemon: squirtle, charmander, or bulbasaur; defaults to squirtle"`
-	Dest      string `json:"dest,omitempty" jsonschema:"destination for scripted mode"`
-	Goal      string `json:"goal,omitempty" jsonschema:"task statement for llm mode; defaults to earning the Boulder Badge"`
-	Seed      int64  `json:"seed,omitempty" jsonschema:"deterministic run seed; zero is the bit-identical baseline"`
-	FPS       int    `json:"fps,omitempty" jsonschema:"emulation pace; zero runs flat out"`
-	MaxRounds int    `json:"max_rounds,omitempty" jsonschema:"LLM round budget; zero uses the runner default"`
-	MaxFrames int    `json:"max_frames,omitempty" jsonschema:"emulated frame budget; zero uses the runner default"`
+	Planner    string `json:"planner,omitempty" jsonschema:"planner mode: llm or scripted; defaults to llm"`
+	Starter    string `json:"starter,omitempty" jsonschema:"starter Pokemon: squirtle, charmander, or bulbasaur; defaults to squirtle"`
+	Dest       string `json:"dest,omitempty" jsonschema:"destination for scripted mode"`
+	Goal       string `json:"goal,omitempty" jsonschema:"task statement for llm mode; defaults to earning the Boulder Badge"`
+	Seed       int64  `json:"seed,omitempty" jsonschema:"deterministic run seed; zero is the bit-identical baseline"`
+	FPS        int    `json:"fps,omitempty" jsonschema:"emulation pace; zero runs flat out"`
+	MaxRounds  int    `json:"max_rounds,omitempty" jsonschema:"LLM round budget; zero uses the runner default"`
+	MaxFrames  int    `json:"max_frames,omitempty" jsonschema:"emulated frame budget; zero uses the runner default"`
 	LLMProfile string `json:"llm_profile,omitempty" jsonschema:"llm endpoint routing: default, gpu, or auto (GPU primary with LAN fallback)"`
 }
 
@@ -65,32 +65,32 @@ type mcpInvestigateInput struct {
 }
 
 type mcpRunView struct {
-	RunID     string         `json:"run_id"`
-	Status    string         `json:"status"`
-	Planner   string         `json:"planner,omitempty"`
-	Starter   string         `json:"starter,omitempty"`
-	Dest      string         `json:"dest,omitempty"`
+	RunID      string         `json:"run_id"`
+	Status     string         `json:"status"`
+	Planner    string         `json:"planner,omitempty"`
+	Starter    string         `json:"starter,omitempty"`
+	Dest       string         `json:"dest,omitempty"`
 	Goal       string         `json:"goal,omitempty"`
 	LLMProfile string         `json:"llm_profile,omitempty"`
 	Seed       int64          `json:"seed"`
-	FPS       int            `json:"fps"`
-	MaxRounds int            `json:"max_rounds"`
-	MaxFrames int            `json:"max_frames"`
-	QueuedAt  int64          `json:"queued_at,omitempty"`
-	EndedAt   int64          `json:"ended_at,omitempty"`
-	Attempts  int            `json:"attempts"`
-	Frame     uint64         `json:"frame"`
-	Map       uint8          `json:"map"`
-	X         uint8          `json:"x"`
-	Y         uint8          `json:"y"`
-	Trace     string         `json:"trace,omitempty"`
-	Question  string         `json:"question,omitempty"`
-	Decision  string         `json:"decision,omitempty"`
-	StopSoFar string         `json:"stop_so_far,omitempty"`
-	Stats     *farm.LLMStats `json:"stats,omitempty"`
-	Player    *farm.Player   `json:"player,omitempty"`
-	Reason    string         `json:"reason,omitempty"`
-	Detail    string         `json:"detail,omitempty"`
+	FPS        int            `json:"fps"`
+	MaxRounds  int            `json:"max_rounds"`
+	MaxFrames  int            `json:"max_frames"`
+	QueuedAt   int64          `json:"queued_at,omitempty"`
+	EndedAt    int64          `json:"ended_at,omitempty"`
+	Attempts   int            `json:"attempts"`
+	Frame      uint64         `json:"frame"`
+	Map        uint8          `json:"map"`
+	X          uint8          `json:"x"`
+	Y          uint8          `json:"y"`
+	Trace      string         `json:"trace,omitempty"`
+	Question   string         `json:"question,omitempty"`
+	Decision   string         `json:"decision,omitempty"`
+	StopSoFar  string         `json:"stop_so_far,omitempty"`
+	Stats      *farm.LLMStats `json:"stats,omitempty"`
+	Player     *farm.Player   `json:"player,omitempty"`
+	Reason     string         `json:"reason,omitempty"`
+	Detail     string         `json:"detail,omitempty"`
 }
 
 type mcpWorkerView struct {
@@ -216,16 +216,16 @@ func (c *mcpControl) startRun(ctx context.Context, _ *mcp.CallToolRequest, in mc
 
 	runID := fmt.Sprintf("mcp-%s-%04x", time.Now().UTC().Format("20060102-150405"), mcpRunSequence.Add(1)&0xffff)
 	spec := farm.Spec{
-		RunID:     runID,
-		Seed:      in.Seed,
-		Planner:   planner,
-		Starter:   starter,
-		Dest:      dest,
+		RunID:      runID,
+		Seed:       in.Seed,
+		Planner:    planner,
+		Starter:    starter,
+		Dest:       dest,
 		Goal:       goal,
 		LLMProfile: llmProfile,
 		FPS:        in.FPS,
-		MaxRounds: in.MaxRounds,
-		MaxFrames: in.MaxFrames,
+		MaxRounds:  in.MaxRounds,
+		MaxFrames:  in.MaxFrames,
 	}
 	var upstream map[string]any
 	if err := c.requestJSON(ctx, http.MethodPost, "/v1/specs", spec, &upstream); err != nil {

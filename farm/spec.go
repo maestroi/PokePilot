@@ -14,11 +14,11 @@ type Spec struct {
 	// the first, higher after retries. The runner echoes it back in its
 	// FinishReport so a late finish from a dead attempt cannot settle a
 	// newer one.
-	Attempt    int    `json:"attempt"`
-	Seed       int64  `json:"seed"`
-	Planner    string `json:"planner"`
-	Starter    string `json:"starter"`
-	Dest       string `json:"dest"`
+	Attempt int    `json:"attempt"`
+	Seed    int64  `json:"seed"`
+	Planner string `json:"planner"`
+	Starter string `json:"starter"`
+	Dest    string `json:"dest"`
 	// Goal is the task statement for the llm planner: what to achieve,
 	// never how. Empty means no goal (the pre-Goal prompt).
 	Goal       string `json:"goal,omitempty"`
