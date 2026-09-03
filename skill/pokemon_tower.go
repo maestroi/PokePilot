@@ -32,7 +32,7 @@ const (
 	marowakSpecies uint8 = 0x91
 
 	pokemonTowerTravelEngagements = 60
-	mrFujiRescueBudget             = 15000
+	mrFujiRescueBudget            = 15000
 )
 
 var pokemonTowerFujiStand = Destination{Map: pokemonTower7FMap, X: 10, Y: 4}
