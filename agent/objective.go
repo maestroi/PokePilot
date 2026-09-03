@@ -26,6 +26,7 @@ const (
 	KindUseItem                   // use one bag item on one party member, out in the field
 	KindRocketHideout             // clear the Celadon Rocket Hideout and obtain the Silph Scope
 	KindPokemonTower              // clear Pokemon Tower and obtain the Poke Flute
+	KindFuchsiaProgression        // reach Fuchsia, beat Koga, and obtain Surf + Strength
 )
 
 // Objective is one unit of intent a planner can choose. The argument fields
@@ -96,12 +97,6 @@ func Execute(m *emu.Emu, romData []byte, o Objective) (retErr error) {
 		if !ok {
 			return fmt.Errorf("agent: %s: unknown place %q", o, o.Place)
 		}
-		// Travel, not GoTo: GoTo aborts on the first wild battle by
-		// design, which on any route through grass means the run stops at
-		// the first Pidgey. maxBattles bounds it; 20 is the cap the
-		// fixtures use for the Pallet -> Viridian legs, which measured 1.
-		// Flee is the planner's call (a fled wild is XP the run did not
-		// get), so the default stays fight: TravelFlee only when asked.
 		var err error
 		if o.Flee {
 			_, err = skill.TravelFlee(m, romData, dest, skill.StatAwareMove(romData), 20)
@@ -109,14 +104,6 @@ func Execute(m *emu.Emu, romData []byte, o Objective) (retErr error) {
 			_, err = skill.Travel(m, romData, dest, skill.StatAwareMove(romData), 20)
 		}
 		if err != nil {
-			// A blackout ends the journey with ErrBlackedOut: skill.Travel
-			// pairs res.BlackedOut with that error, so no blackout reaches
-			// the nil return below. The journey genuinely ended — the party
-			// is healed and standing in a town — and Run exempts
-			// ErrBlackedOut from the failure budget for exactly that reason.
-			// The error is the channel the planner reads; the exemption is
-			// the recoverable half. (The old res.BlackedOut print branch was
-			// dead: the err check above already returned every blackout.)
 			return fmt.Errorf("agent: %s: %w", o, err)
 		}
 		return nil
@@ -126,10 +113,6 @@ func Execute(m *emu.Emu, romData []byte, o Objective) (retErr error) {
 		}
 		return nil
 	case KindStarter:
-		// GetStarter is idempotent: it returns nil immediately when the
-		// rival-battle event is already set, so no guard is needed here.
-		// Which ball is the planner's choice, not this layer's: the three
-		// starters are offered as three objectives and the model picks.
 		if err := skill.GetStarter(m, romData, o.Starter, skill.StatAwareMove(romData)); err != nil {
 			return fmt.Errorf("agent: %s: %w", o, err)
 		}
@@ -140,9 +123,6 @@ func Execute(m *emu.Emu, romData []byte, o Objective) (retErr error) {
 		}
 		return nil
 	case KindTrain:
-		// 20 battles is the same cap the fixtures use for the Pallet ->
-		// Viridian legs; a lead far below Level will report it as a
-		// reached-level shortfall rather than burn an unattended run.
 		res, err := skill.Train(m, romData, int(o.Level), skill.StatAwareMove(romData), 20)
 		if err != nil {
 			return fmt.Errorf("agent: %s: %v (battles=%d, reached=%v, blackedOut=%v)", o, err, res.Battles, res.Reached, res.BlackedOut)
@@ -151,14 +131,6 @@ func Execute(m *emu.Emu, romData []byte, o Objective) (retErr error) {
 			return nil
 		}
 		if res.Retreated {
-			// The session stopped while the party could still walk: a
-			// shortfall with a reason. It is its own outcome, not a blackout,
-			// so Run exempts it from the failure accounting the way it
-			// exempts one — and the level is in the text on purpose: two
-			// retreats that end at the same level read as the same failure,
-			// which is exactly the case the exemption must absorb. The hurt
-			// lead itself is in the next observation's party HP, where the
-			// planner reads it and decides whether to heal.
 			return fmt.Errorf("agent: %s: %w (ended level %d)", o, skill.ErrTrainRetreat, res.EndLevel)
 		}
 		if res.BlackedOut {
@@ -168,26 +140,11 @@ func Execute(m *emu.Emu, romData []byte, o Objective) (retErr error) {
 		return fmt.Errorf("agent: %s: target level %d not reached (ended level %d after %d battles)",
 			o, o.Level, res.EndLevel, res.Battles)
 	case KindHeal:
-		// Heal talks to the nurse on the current map. With a Place, the
-		// walk there is part of the objective: a hurt party in the field
-		// would otherwise have to spend one round walking and another
-		// healing, and Offer only names a center the run has already been
-		// inside, so this is a way back, never a way to somewhere new.
 		if o.Place != "" {
 			dest, ok := skill.Place(o.Place)
 			if !ok {
 				return fmt.Errorf("agent: %s: unknown place %q", o, o.Place)
 			}
-			// Travel, not GoTo, for the same reason KindGoTo uses it: the
-			// way back to a center runs through grass, and a hurt party is
-			// exactly the one that meets a wild Pokemon on the way. A
-			// blackout here is a FAILURE, not an outcome: the objective said
-			// "heal the party at X" and the respawn put the player at the
-			// last center they used, not at X. It is returned wrapped in
-			// ErrBlackedOut, which Run exempts from the failure budget: the
-			// party is healed and the world changed, so the round is
-			// recoverable, the same exemption as a lost battle on any
-			// journey.
 			var err error
 			if o.Flee {
 				_, err = skill.TravelFlee(m, romData, dest, skill.StatAwareMove(romData), 20)
@@ -195,11 +152,6 @@ func Execute(m *emu.Emu, romData []byte, o Objective) (retErr error) {
 				_, err = skill.Travel(m, romData, dest, skill.StatAwareMove(romData), 20)
 			}
 			if err != nil {
-				// A blackout on the way comes back as ErrBlackedOut: the
-				// skill pairs res.BlackedOut with that error, so it is caught
-				// here and the journey's TravelResult carries no blackout the
-				// error does not already say (the old res.BlackedOut re-check
-				// was dead, as KindGoTo's print branch was).
 				return fmt.Errorf("agent: %s: %w", o, err)
 			}
 		}
@@ -208,97 +160,60 @@ func Execute(m *emu.Emu, romData []byte, o Objective) (retErr error) {
 		}
 		return nil
 	case KindGym:
-		// The postcondition is the badge: skill.Gym returns ResultWon only
-		// when the badge bit is set in RAM. A loss is the objective NOT
-		// having done what it said ("beat the gym leader here"), so it is a
-		// failure, not a done round: History would say "done" for a loss and
-		// the menu would grow a "(done 1x)" on a gym the run lost to. The
-		// loss blackouts the player to a center, so the run stays
-		// recoverable — the planner reads the failure tally and the quoted
-		// error, heals and trains, and comes back. (A blackout on the way IN
-		// is skill.ErrBlackedOut, which Run exempts from the failure budget;
-		// a loss to the leader is not exempt: the objective failed.)
 		outcome, err := skill.Gym(m, romData, skill.StatAwareMove(romData))
 		if err != nil {
 			return fmt.Errorf("agent: %s: %w", o, err)
 		}
 		if outcome == state.ResultWon {
-			fmt.Printf("  beat Brock: Boulder Badge set\n")
+			fmt.Printf("  beat gym leader: badge set\n")
 		}
 		return gymOutcomeErr(o, outcome)
 	case KindCatch:
-		// A missed hunt is the game answering, not a defect: the outcome
-		// is reported and the planner decides what to do next. Five balls
-		// is the cap the catch fixtures use.
 		res, err := skill.Catch(m, romData, []uint8{o.Species}, skill.StatAwareMove(romData), 5)
 		if err != nil {
 			return fmt.Errorf("agent: %s: %w", o, err)
 		}
-		name, _ := SpeciesName(o.Species) // Validate already checked it
+		name, _ := SpeciesName(o.Species)
 		switch res.Outcome {
 		case skill.OutcomeCaught:
 			fmt.Printf("  caught %s (balls=%d, encounters=%d)\n", strings.ToUpper(name), res.BallsThrown, res.Encounters)
 			return nil
 		default:
-			// A hunt that ended without the party having grown is the
-			// objective NOT having done what it said ("catch a X here"), so
-			// it is a failure: the planner reads the failure tally and the
-			// game's answer in the error text, which a recorded "done" round
-			// never gave it. (A blackout inside the hunt comes back as
-			// skill.ErrCatchBlackout on the err path above, and Run exempts
-			// ErrBlackedOut from the failure budget for the usual reason.)
 			return fmt.Errorf("agent: %s: no %s caught (outcome %s, balls=%d, encounters=%d)",
 				o, strings.ToUpper(name), catchOutcomeName(res.Outcome), res.BallsThrown, res.Encounters)
 		}
 	case KindPickup:
-		// The proof is inside Pickup: it returns nil only when the bag's
-		// count for Item rose by one. A text box opening is not evidence.
 		if err := skill.Pickup(m, romData, o.X, o.Y, o.Item, skill.StatAwareMove(romData)); err != nil {
 			return fmt.Errorf("agent: %s: %w", o, err)
 		}
 		return nil
 	case KindUseItem:
-		// The proof is inside UseFieldItem: it returns nil only when the
-		// target's HP rose or its status cleared, read from RAM before and
-		// after — a closed menu is not evidence (S8-5).
 		if err := skill.UseFieldItem(m, o.Item, o.Slot); err != nil {
 			return fmt.Errorf("agent: %s: %w", o, err)
 		}
 		return nil
 	case KindRocketHideout:
-		// This story verb is atomic for the same reason Gym owns Surge's
-		// exterior Cut and trash switches: the intermediate interactions
-		// are prerequisites the planner cannot express as standalone
-		// objectives. The skill succeeds only once the Silph Scope is in
-		// the bag, so a Giovanni win without the pickup is not recorded as
-		// a completed round.
 		if err := skill.RocketHideout(m, romData, skill.StatAwareMove(romData)); err != nil {
 			return fmt.Errorf("agent: %s: %w", o, err)
 		}
 		return nil
 	case KindPokemonTower:
-		// Like the Hideout verb, this owns a story chain whose intermediate
-		// interactions are not useful standalone objectives. Completion is
-		// proved by the Poke Flute in the bag inside skill.PokemonTower.
 		if err := skill.PokemonTower(m, romData, skill.StatAwareMove(romData)); err != nil {
+			return fmt.Errorf("agent: %s: %w", o, err)
+		}
+		return nil
+	case KindFuchsiaProgression:
+		// The post-Tower story slice owns the Snorlax gate, Koga, and the
+		// finite Safari/Warden handoffs atomically. The skill returns nil only
+		// after Soul Badge + HM03 + HM04 are all positively present.
+		if err := skill.FuchsiaProgression(m, romData, skill.StatAwareMove(romData)); err != nil {
 			return fmt.Errorf("agent: %s: %w", o, err)
 		}
 		return nil
 	case KindBuy:
 		err := skill.Buy(m, o.Item, o.Qty)
 		if err != nil {
-			// CantAfford and NotInStock are game outcomes the planner can
-			// react to (earn money, go elsewhere) rather than setup
-			// failures — but they are still FAILURES, and they used to
-			// return nil. A purchase that did not happen was recorded as a
-			// completed round: history said "done", Knowledge counted it in
-			// Completed, and the menu line grew a "(done 1x)" for something
-			// the clerk had refused. The planner then had no reason to stop
-			// choosing it. Returning the error puts it in the failure tally
-			// instead, which is where the run can see it and where the
-			// game's own words ("the clerk does not stock...") are quoted
-			// back on the next round.
-			item, _ := ItemName(o.Item) // Validate already checked it
+			item, _ := ItemName(o.Item)
 			fmt.Printf("  buy failed: %s (%d x %s)\n", err, o.Qty, strings.ToUpper(item))
 			return fmt.Errorf("agent: %s: %w", o, err)
 		}
@@ -334,9 +249,6 @@ func (o Objective) Validate() error {
 			return fmt.Errorf("agent: %s: unknown item %d", o, int(o.Item))
 		}
 	case KindHeal:
-		// "" means the center the player is standing in. A named one must
-		// resolve AND be a center: travelling to a mart and asking a clerk
-		// for a heal is a guaranteed failed round.
 		if o.Place != "" {
 			d, ok := skill.Place(o.Place)
 			if !ok {
@@ -350,8 +262,6 @@ func (o Objective) Validate() error {
 		if _, ok := ItemName(o.Item); !ok {
 			return fmt.Errorf("agent: %s: unknown item %d", o, int(o.Item))
 		}
-		// The party caps at six (state.DecodeParty) and the slot is 0-based,
-		// the same addressing skill.UseFieldItem takes: no second scheme.
 		if o.Slot < 0 || o.Slot > 5 {
 			return fmt.Errorf("agent: %s: party slot %d out of range 0..5", o, o.Slot)
 		}
@@ -394,9 +304,6 @@ func (o Objective) String() string {
 		}
 		return "heal the party"
 	case KindGym:
-		// "here" and not the leader's name: Offer puts this on the menu
-		// only while the player is standing in a gym, and naming Brock on
-		// the Cerulean menu would be a lie the planner cannot check.
 		return "beat the gym leader here"
 	case KindCatch:
 		if name, ok := SpeciesName(o.Species); ok {
@@ -417,6 +324,8 @@ func (o Objective) String() string {
 		return "clear the Rocket Hideout and get the SILPH SCOPE"
 	case KindPokemonTower:
 		return "clear Pokemon Tower and get the POKE FLUTE"
+	case KindFuchsiaProgression:
+		return "reach Fuchsia, beat Koga, and get HM03 SURF + HM04 STRENGTH"
 	case KindBuy:
 		if name, ok := ItemName(o.Item); ok {
 			return fmt.Sprintf("buy %d %s", o.Qty, strings.ToUpper(name))
@@ -426,14 +335,6 @@ func (o Objective) String() string {
 	return fmt.Sprintf("unknown kind %d", int(o.Kind))
 }
 
-// gymOutcomeErr renders a gym battle result as the objective's error: nil
-// when the badge is in RAM (skill.Gym's win postcondition), the loss
-// otherwise. It is the KindGym branch's whole decision, separated so a
-// test pins it without a full journey to the gym map: the win side of the
-// journey is pinned by skill.TestGymBoulderBadge, and a loss side measured
-// on 2026-08-31 panics inside the vendored emulator's APU (apu.sample
-// index out of range) before the fight ends, which is a defect of that
-// emulator, not of this branch.
 func gymOutcomeErr(o Objective, outcome state.BattleResult) error {
 	if outcome == state.ResultWon {
 		return nil
@@ -441,9 +342,6 @@ func gymOutcomeErr(o Objective, outcome state.BattleResult) error {
 	return fmt.Errorf("agent: %s: lost to the gym leader (blacked out to the center)", o)
 }
 
-// catchOutcomeName renders a skill.CatchOutcome for the error text the
-// planner reads. The enum has no String() of its own, and a bare number in
-// a failure the planner has to act on is not an answer.
 func catchOutcomeName(o skill.CatchOutcome) string {
 	switch o {
 	case skill.OutcomeCaught:
@@ -458,9 +356,6 @@ func catchOutcomeName(o skill.CatchOutcome) string {
 	return fmt.Sprintf("outcome %d", int(o))
 }
 
-// article renders the indefinite article for an item name: "a POTION",
-// "an ANTIDOTE". The check is on the first letter, which is all the
-// table's names need (no TH-word among them).
 func article(name string) string {
 	switch name[0] {
 	case 'a', 'e', 'i', 'o', 'u':
@@ -469,8 +364,6 @@ func article(name string) string {
 	return "a"
 }
 
-// starterName renders a skill.Starter for String(). An out-of-range value
-// says so rather than silently picking a ball.
 func starterName(s skill.Starter) string {
 	switch s {
 	case skill.StarterCharmander:
@@ -483,22 +376,6 @@ func starterName(s skill.Starter) string {
 	return fmt.Sprintf("unknown starter %d", int(s))
 }
 
-// The species and item tables are the argument vocabulary. A value the
-// planner can name is a value it can aim at; anything else is a typed error
-// upstream, before a skill ever sees it. Indices come from
-// pokered/constants/pokemon_constants.asm and item_constants.asm (ROM
-// pokemon / bag-item indexes, NOT pokedex numbers).
-
-// speciesTable is decoded from the ROM's own MonsterNames table (bank 07,
-// 0x421E; 10 bytes per entry, indexed by internal species index minus one,
-// as home/names.asm GetMonName reads it) and written down here so Validate
-// and String stay pure functions with no ROM to carry. All 151 are present:
-// a hand-picked subset silently caps what the planner is allowed to want,
-// and the map's own wild table (skill.WildGrass) now names species no
-// hand-written list would have contained. The 28-entry list this replaces
-// agreed with the ROM on 27 of its entries; the 28th said "farow" for what
-// the game calls FEAROW, which is the argument for decoding rather than
-// typing.
 var speciesTable = map[string]uint8{
 	"rhydon": 0x01, "kangaskhan": 0x02, "nidoran♂": 0x03, "clefairy": 0x04,
 	"spearow": 0x05, "voltorb": 0x06, "nidoking": 0x07, "slowbro": 0x08,
@@ -547,6 +424,7 @@ var itemTable = map[string]uint8{
 	"awakening": 0x0E, "parlyz heal": 0x0F, "full restore": 0x10,
 	"repel": 0x1E, "escape rope": 0x1D,
 	"silph scope": 0x48, "poke flute": 0x49,
+	"hm03": 0xC6, "hm04": 0xC7,
 }
 
 var speciesByID = func() map[uint8]string {
@@ -565,32 +443,23 @@ var itemByID = func() map[uint8]string {
 	return m
 }()
 
-// SpeciesCount is how many species the table names. It exists so a test can
-// pin "the whole roster" without listing it.
 func SpeciesCount() int { return len(speciesTable) }
 
-// SpeciesName returns the lowercase display name of a ROM species index.
 func SpeciesName(id uint8) (string, bool) {
 	name, ok := speciesByID[id]
 	return name, ok
 }
 
-// SpeciesByName resolves a model-supplied species name to its ROM index.
-// Matching is exact after trimming and lowercasing: "Caterpie" works,
-// "caterpy" does not, and neither does anything fuzzy.
 func SpeciesByName(name string) (uint8, bool) {
 	id, ok := speciesTable[strings.ToLower(strings.TrimSpace(name))]
 	return id, ok
 }
 
-// ItemName returns the lowercase display name of a bag item ID.
 func ItemName(id uint8) (string, bool) {
 	name, ok := itemByID[id]
 	return name, ok
 }
 
-// ItemByName resolves a model-supplied item name to its bag item ID, with
-// the same exact-match rule as SpeciesByName.
 func ItemByName(name string) (uint8, bool) {
 	id, ok := itemTable[strings.ToLower(strings.TrimSpace(name))]
 	return id, ok
