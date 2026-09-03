@@ -8,7 +8,7 @@ import "fmt"
 //	+1  effect
 //	+2  power, 0 for a move that deals no damage
 //	+3  type
-//	+4  accuracy
+//	+4  accuracy, encoded as percent * 255 / 100
 //	+5  PP
 //
 // Move ids are 1-based, so move n is the (n-1)th entry.
@@ -26,15 +26,24 @@ const (
 	// to win a damage race — cut what is coming in rather than raise what
 	// goes out.
 	AttackDown1Effect uint8 = 18
+
+	// These effect ids are the non-ordinary damage paths in Red's battle
+	// engine. Super Fang and SPECIAL_DAMAGE_EFFECT are listed in
+	// SetDamageEffects and skip CalculateDamage entirely. OHKO moves also
+	// bypass the ordinary formula through their own effect handler.
+	OHKOEffect          uint8 = 0x26
+	SuperFangEffect     uint8 = 0x28
+	SpecialDamageEffect uint8 = 0x29
 )
 
 // Move is one entry of the ROM's move table.
 type Move struct {
-	ID     uint8
-	Effect uint8
-	Power  uint8 // 0 means the move deals no damage
-	Type   uint8
-	PP     uint8
+	ID       uint8
+	Effect   uint8
+	Power    uint8 // 0 means the move deals no ordinary formula damage
+	Type     uint8
+	Accuracy uint8 // ROM threshold: 255 is the table's 100% value
+	PP       uint8
 }
 
 // LookupMove reads move id from the ROM's move table. Move id 0 means "no
@@ -53,5 +62,5 @@ func LookupMove(romData []byte, id uint8) (Move, error) {
 	if e[0] != id {
 		return Move{}, fmt.Errorf("rom: move table entry %d has animation %d, want %d: the table is not where we think", id, e[0], id)
 	}
-	return Move{ID: id, Effect: e[1], Power: e[2], Type: e[3], PP: e[5]}, nil
+	return Move{ID: id, Effect: e[1], Power: e[2], Type: e[3], Accuracy: e[4], PP: e[5]}, nil
 }

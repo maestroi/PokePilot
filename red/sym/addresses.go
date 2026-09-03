@@ -91,9 +91,18 @@ const (
 	BattleMonSpecies    uint16 = 0xD014 // wBattleMonSpecies
 	BattleMonMoves      uint16 = 0xD01C // wBattleMonMoves: 4 bytes, move ids, 0 = empty slot
 	BattleMonMaxHP      uint16 = 0xD023 // wBattleMonMaxHP
-	BattleMonPP         uint16 = 0xD02D // wBattleMonPP: 4 bytes, parallel to wBattleMonMoves
-	EnemyMonLevel       uint16 = 0xCFF3 // wEnemyMonLevel
-	EnemyMonMaxHP       uint16 = 0xCFF4 // wEnemyMonMaxHP
+	// These are the live stats CalculateDamage reads. Stat-up/down effects
+	// update these values, so a scorer using them sees the same post-stage
+	// Attack/Defense/Special values as the ROM rather than reapplying stages.
+	BattleMonAttack  uint16 = 0xD025 // wBattleMonAttack
+	BattleMonDefense uint16 = 0xD027 // wBattleMonDefense
+	BattleMonSpecial uint16 = 0xD02B // wBattleMonSpecial
+	BattleMonPP      uint16 = 0xD02D // wBattleMonPP: 4 bytes, parallel to wBattleMonMoves
+	EnemyMonLevel    uint16 = 0xCFF3 // wEnemyMonLevel
+	EnemyMonMaxHP    uint16 = 0xCFF4 // wEnemyMonMaxHP
+	EnemyMonAttack   uint16 = 0xCFF6 // wEnemyMonAttack
+	EnemyMonDefense  uint16 = 0xCFF8 // wEnemyMonDefense
+	EnemyMonSpecial  uint16 = 0xCFFC // wEnemyMonSpecial
 	// PlayerDisabledMove is wPlayerDisabledMove. The high nibble is the
 	// disabled move slot encoded as 1..4 (0 means none); the low nibble is
 	// the remaining disable-turn count.

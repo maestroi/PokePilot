@@ -5,15 +5,15 @@ import "testing"
 func TestLookupMoveKnownEntries(t *testing.T) {
 	romData := loadROM(t)
 	for _, tc := range []struct {
-		name          string
-		id            uint8
-		power, effect uint8
+		name                    string
+		id                      uint8
+		power, effect, accuracy uint8
 	}{
-		{"SCRATCH", 10, 40, 0},
-		{"TACKLE", 33, 35, 0},
-		{"TAIL_WHIP", 39, 0, DefenseDown1Effect},
-		{"GROWL", 45, 0, 18}, // ATTACK_DOWN1_EFFECT
-		{"EMBER", 52, 40, 4},
+		{"SCRATCH", 10, 40, 0, 255},
+		{"TACKLE", 33, 35, 0, 242},
+		{"TAIL_WHIP", 39, 0, DefenseDown1Effect, 255},
+		{"GROWL", 45, 0, 18, 255}, // ATTACK_DOWN1_EFFECT
+		{"EMBER", 52, 40, 4, 255},
 	} {
 		got, err := LookupMove(romData, tc.id)
 		if err != nil {
@@ -24,6 +24,9 @@ func TestLookupMoveKnownEntries(t *testing.T) {
 		}
 		if got.Effect != tc.effect {
 			t.Errorf("%s effect = %d, want %d", tc.name, got.Effect, tc.effect)
+		}
+		if got.Accuracy != tc.accuracy {
+			t.Errorf("%s accuracy = %d, want %d", tc.name, got.Accuracy, tc.accuracy)
 		}
 	}
 }

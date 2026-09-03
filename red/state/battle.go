@@ -35,6 +35,16 @@ type BattleState struct {
 	ActiveMaxHP   uint16
 	Moves         [4]Move
 
+	// These are the current battle stats used directly by Red's damage
+	// routine. Stat-stage moves update these values, so callers can compare
+	// physical and special attacks without reconstructing stage math.
+	ActiveAttack  uint16
+	ActiveDefense uint16
+	ActiveSpecial uint16
+	EnemyAttack   uint16
+	EnemyDefense  uint16
+	EnemySpecial  uint16
+
 	// DisabledMove is the game's 1-based move slot from the high nibble of
 	// wPlayerDisabledMove. Zero means no move is disabled. Keeping the RAM's
 	// 1..4 encoding makes the zero value of BattleState mean "none disabled"
@@ -42,7 +52,8 @@ type BattleState struct {
 	DisabledMove uint8
 
 	// Stat stages, biased the way the game stores them: 7 is neutral, lower
-	// is worse for us. An opponent spamming GROWL shows up only here.
+	// is worse for us. They remain useful for deciding whether a setup move
+	// is worth a turn even though expected damage uses the live stats above.
 	ActiveAttackMod  uint8 // wPlayerMonAttackMod
 	ActiveDefenseMod uint8 // wPlayerMonDefenseMod
 	EnemyAttackMod   uint8 // wEnemyMonAttackMod
@@ -115,6 +126,12 @@ func DecodeBattle(m *Mem) *BattleState {
 		ActiveHP:         m.U16BE(sym.BattleMonHP),
 		ActiveLevel:      m.U8(sym.BattleMonLevel),
 		ActiveMaxHP:      m.U16BE(sym.BattleMonMaxHP),
+		ActiveAttack:     m.U16BE(sym.BattleMonAttack),
+		ActiveDefense:    m.U16BE(sym.BattleMonDefense),
+		ActiveSpecial:    m.U16BE(sym.BattleMonSpecial),
+		EnemyAttack:      m.U16BE(sym.EnemyMonAttack),
+		EnemyDefense:     m.U16BE(sym.EnemyMonDefense),
+		EnemySpecial:     m.U16BE(sym.EnemyMonSpecial),
 		DisabledMove:     m.U8(sym.PlayerDisabledMove) >> 4,
 		ActiveAttackMod:  m.U8(sym.PlayerMonAttackMod),
 		ActiveDefenseMod: m.U8(sym.PlayerMonDefenseMod),

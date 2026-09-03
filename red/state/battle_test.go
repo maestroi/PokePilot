@@ -169,3 +169,29 @@ func TestDecodeBattleReadsStatStages(t *testing.T) {
 		t.Fatalf("DefenceStage = %d, want 0", got)
 	}
 }
+
+func TestDecodeBattleReadsLiveCombatStats(t *testing.T) {
+	var m Mem
+	m[sym.IsInBattle] = 2
+	put := func(addr uint16, value uint16) {
+		m[addr] = uint8(value >> 8)
+		m[addr+1] = uint8(value)
+	}
+	put(sym.BattleMonAttack, 123)
+	put(sym.BattleMonDefense, 87)
+	put(sym.BattleMonSpecial, 201)
+	put(sym.EnemyMonAttack, 99)
+	put(sym.EnemyMonDefense, 144)
+	put(sym.EnemyMonSpecial, 77)
+
+	b := DecodeBattle(&m)
+	if b == nil {
+		t.Fatal("DecodeBattle returned nil during a trainer battle")
+	}
+	if b.ActiveAttack != 123 || b.ActiveDefense != 87 || b.ActiveSpecial != 201 {
+		t.Fatalf("active stats = atk %d def %d special %d; want 123/87/201", b.ActiveAttack, b.ActiveDefense, b.ActiveSpecial)
+	}
+	if b.EnemyAttack != 99 || b.EnemyDefense != 144 || b.EnemySpecial != 77 {
+		t.Fatalf("enemy stats = atk %d def %d special %d; want 99/144/77", b.EnemyAttack, b.EnemyDefense, b.EnemySpecial)
+	}
+}

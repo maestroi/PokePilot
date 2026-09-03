@@ -12,6 +12,7 @@ const (
 	typeNormal uint8 = 0x00
 	typeGround uint8 = 0x04
 	typeRock   uint8 = 0x05
+	typeFire   uint8 = 0x14
 	typeWater  uint8 = 0x15
 )
 
@@ -25,10 +26,9 @@ type typePair struct{ atk, def, mult uint8 }
 // own id in the animation byte LookupMove sanity-checks, and TypeEffects
 // sits at 0x0F:0x6474 as three-byte rows ended by 0xFF.
 //
-// The chart is written even when it is empty — a bare terminator, meaning
-// every pairing is ordinary damage. Leaving it off the end of the image
-// instead would make every lookup an out-of-ROM error that moveScore
-// quietly reads as neutral, so the tests would pass with a broken offset.
+// Tests written before accuracy/PP were part of the scorer leave those Move
+// fields zero; the helper fills them with neutral legal defaults. Tests that
+// care about either field set it explicitly.
 func fakeROM(t *testing.T, moves ...rom.Move) []byte {
 	return fakeROMChart(t, nil, moves...)
 }
@@ -42,10 +42,20 @@ func fakeROMChart(t *testing.T, chart []typePair, moves ...rom.Move) []byte {
 	romData := make([]byte, chartOffset+3*(len(chart)+1))
 	for _, mv := range moves {
 		off := tableOffset + (int(mv.ID)-1)*6
+		accuracy := mv.Accuracy
+		if accuracy == 0 {
+			accuracy = 255
+		}
+		pp := mv.PP
+		if pp == 0 {
+			pp = 20
+		}
 		romData[off] = mv.ID
 		romData[off+1] = mv.Effect
 		romData[off+2] = mv.Power
 		romData[off+3] = mv.Type
+		romData[off+4] = accuracy
+		romData[off+5] = pp
 	}
 	for i, e := range chart {
 		off := chartOffset + i*3
@@ -55,16 +65,24 @@ func fakeROMChart(t *testing.T, chart []typePair, moves ...rom.Move) []byte {
 	return romData
 }
 
-// The three moves the opening of the game actually turns on.
+// The three moves the opening of the game actually turns on. The Ember test
+// fixture keeps its type neutral here because the legacy strongest-attack
+// test isolates power only; dedicated tests below cover real special typing.
 var (
 	tackle   = rom.Move{ID: 33, Power: 35}
 	tailWhip = rom.Move{ID: 39, Power: 0, Effect: rom.DefenseDown1Effect}
 	ember    = rom.Move{ID: 52, Power: 40}
 )
 
+// battleWith builds a neutral but possible battle rather than leaving the
+// newly scored level/stats at their zero values. Level 20 and equal 70 stats
+// make power differences visible through the same integer damage formula the
+// production scorer uses; individual tests override the matchup when needed.
 func battleWith(atkMod, defMod uint8, hp, maxHP uint16, ids ...uint8) state.BattleState {
 	b := state.BattleState{
-		ActiveHP: hp, ActiveMaxHP: maxHP,
+		ActiveHP: hp, ActiveMaxHP: maxHP, ActiveLevel: 20,
+		ActiveAttack: 70, ActiveSpecial: 70,
+		EnemyDefense: 70, EnemySpecial: 70,
 		ActiveAttackMod: atkMod, EnemyDefenseMod: defMod,
 		ActiveDefenseMod: state.StatStageNeutral, EnemyAttackMod: state.StatStageNeutral,
 	}
@@ -76,7 +94,8 @@ func battleWith(atkMod, defMod uint8, hp, maxHP uint16, ids ...uint8) state.Batt
 
 func TestStatAwareMovePicksStrongestAttack(t *testing.T) {
 	p := StatAwareMove(fakeROM(t, tackle, tailWhip, ember))
-	// Slot 0 is Tackle (35), slot 1 Ember (40): power wins, not slot order.
+	// Slot 0 is Tackle (35), slot 1 Ember (40): power wins when the rest of
+	// the matchup is neutral.
 	b := battleWith(7, 7, 20, 20, tackle.ID, ember.ID)
 	if got := p(b); got != 1 {
 		t.Fatalf("policy chose slot %d, want 1 (Ember, the stronger move)", got)
@@ -128,36 +147,29 @@ func TestStatAwareMoveReportsNoUsableMove(t *testing.T) {
 	}
 }
 
-// TestStatAwareMovePicksByEffectivenessNotPower is the Brock fight, and it
-// FAILS on the policy as it stood before types were read: BUBBLE is weaker
-// than TACKLE on paper (20 against 35) and lands for eight times as much
-// against a ROCK/GROUND ONIX — quadruple for hitting both of its types, and
-// half again for coming off a WATER attacker. Ranking by raw power picked
-// TACKLE every time.
+// TestStatAwareMovePicksByEffectivenessNotPower is the Brock fight: BUBBLE
+// is weaker than TACKLE on paper and lands for eight times as much against a
+// ROCK/GROUND ONIX once both weaknesses and WATER STAB are included.
 func TestStatAwareMovePicksByEffectivenessNotPower(t *testing.T) {
 	var (
 		tackleN = rom.Move{ID: 33, Power: 35, Type: typeNormal}
 		bubble  = rom.Move{ID: 145, Power: 20, Type: typeWater}
 	)
 	chart := []typePair{
-		{typeNormal, typeRock, 5},   // normal into rock: half
-		{typeWater, typeRock, 20},   // water into rock: double
-		{typeWater, typeGround, 20}, // water into ground: double again
+		{typeNormal, typeRock, 5},
+		{typeWater, typeRock, 20},
+		{typeWater, typeGround, 20},
 	}
 	p := StatAwareMove(fakeROMChart(t, chart, tackleN, bubble))
 
 	b := battleWith(7, 7, 20, 20, tackleN.ID, bubble.ID)
-	b.ActiveType1, b.ActiveType2 = typeWater, typeWater // SQUIRTLE
-	b.EnemyType1, b.EnemyType2 = typeRock, typeGround   // ONIX
+	b.ActiveType1, b.ActiveType2 = typeWater, typeWater
+	b.EnemyType1, b.EnemyType2 = typeRock, typeGround
 	if got := p(b); got != 1 {
-		t.Fatalf("policy chose slot %d, want 1 (BUBBLE): raw power says TACKLE, the type chart says BUBBLE does eight times as much", got)
+		t.Fatalf("policy chose slot %d, want 1 (BUBBLE): raw power says TACKLE, matchup says BUBBLE", got)
 	}
 }
 
-// TestStatAwareMoveWillNotPickAnImmuneMove: an immunity is zero damage
-// however strong the move is, so the weaker move that can actually connect
-// has to win. A GROUND move into a FLYING opponent is the case the chart
-// states as NO_EFFECT.
 func TestStatAwareMoveWillNotPickAnImmuneMove(t *testing.T) {
 	const typeFlying uint8 = 0x02
 	var (
@@ -171,13 +183,10 @@ func TestStatAwareMoveWillNotPickAnImmuneMove(t *testing.T) {
 	b.ActiveType1, b.ActiveType2 = typeNormal, typeNormal
 	b.EnemyType1, b.EnemyType2 = typeFlying, typeFlying
 	if got := p(b); got != 1 {
-		t.Fatalf("policy chose slot %d, want 1 (TACKLE): DIG is the stronger move and does nothing at all to a FLYING opponent", got)
+		t.Fatalf("policy chose slot %d, want 1 (TACKLE): DIG does no damage to FLYING", got)
 	}
 }
 
-// TestStatAwareMoveAppliesSTAB: with the type chart silent about both moves,
-// the tie is broken by the attacker's own type. Equal power, and only one of
-// them comes off a matching type.
 func TestStatAwareMoveAppliesSTAB(t *testing.T) {
 	var (
 		tackleN = rom.Move{ID: 33, Power: 40, Type: typeNormal}
@@ -189,6 +198,51 @@ func TestStatAwareMoveAppliesSTAB(t *testing.T) {
 	b.ActiveType1, b.ActiveType2 = typeWater, typeWater
 	b.EnemyType1, b.EnemyType2 = typeNormal, typeNormal
 	if got := p(b); got != 1 {
-		t.Fatalf("policy chose slot %d, want 1 (BUBBLE): equal power, but only BUBBLE gets the same-type bonus", got)
+		t.Fatalf("policy chose slot %d, want 1 (BUBBLE): equal power, only BUBBLE gets STAB", got)
+	}
+}
+
+func TestStatAwareMoveAccountsForAccuracy(t *testing.T) {
+	// A 120-power 50%-accurate physical attack has lower expected turn value
+	// than an 80-power fully accurate one in an otherwise identical matchup.
+	wild := rom.Move{ID: 25, Power: 120, Type: typeNormal, Accuracy: 127}
+	reliable := rom.Move{ID: 70, Power: 80, Type: typeNormal, Accuracy: 255}
+	p := StatAwareMove(fakeROM(t, wild, reliable))
+	b := battleWith(7, 7, 30, 30, wild.ID, reliable.ID)
+	b.ActiveLevel = 30
+	b.ActiveAttack, b.EnemyDefense = 80, 80
+	b.ActiveType1, b.ActiveType2 = typeNormal, typeNormal
+	b.EnemyType1, b.EnemyType2 = typeNormal, typeNormal
+	if got := p(b); got != 1 {
+		t.Fatalf("policy chose slot %d, want 1: reliable expected damage beats the inaccurate high-power move", got)
+	}
+}
+
+func TestStatAwareMoveUsesGen1PhysicalSpecialStats(t *testing.T) {
+	physical := rom.Move{ID: 1, Power: 90, Type: typeNormal, Accuracy: 255}
+	special := rom.Move{ID: 55, Power: 70, Type: typeWater, Accuracy: 255}
+	p := StatAwareMove(fakeROM(t, physical, special))
+	b := battleWith(7, 7, 30, 30, physical.ID, special.ID)
+	b.ActiveLevel = 30
+	b.ActiveAttack, b.EnemyDefense = 40, 120
+	b.ActiveSpecial, b.EnemySpecial = 120, 50
+	b.ActiveType1, b.ActiveType2 = typeFire, typeFire
+	b.EnemyType1, b.EnemyType2 = typeNormal, typeNormal
+	if got := p(b); got != 1 {
+		t.Fatalf("policy chose slot %d, want 1: lower-power WATER uses the much stronger Special matchup", got)
+	}
+}
+
+func TestStatAwareMoveUsesPPAsTieBreak(t *testing.T) {
+	a := rom.Move{ID: 1, Power: 50, Type: typeNormal, Accuracy: 255, PP: 20}
+	bmove := rom.Move{ID: 10, Power: 50, Type: typeNormal, Accuracy: 255, PP: 20}
+	p := StatAwareMove(fakeROM(t, a, bmove))
+	b := battleWith(7, 7, 30, 30, a.ID, bmove.ID)
+	b.ActiveLevel = 20
+	b.ActiveAttack, b.EnemyDefense = 70, 70
+	b.Moves[0].PP = 2
+	b.Moves[1].PP = 9
+	if got := p(b); got != 1 {
+		t.Fatalf("policy chose slot %d, want 1: equal expected damage should spend the move with more PP remaining", got)
 	}
 }
