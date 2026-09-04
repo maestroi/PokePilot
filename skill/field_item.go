@@ -22,12 +22,12 @@ var ErrFieldItemNoEffect = errors.New("skill: UseFieldItem: the item had no effe
 var ErrFieldItemPrompt = errors.New("skill: UseFieldItem: a two-option prompt appeared while paging the result text; not answering it")
 
 const (
-	startMenuDrawBudget = 60
-	useTossBudget       = 60
-	itemUsePartyBudget  = 1000
-	itemUseMoveBudget   = 1000
+	startMenuDrawBudget   = 60
+	useTossBudget         = 60
+	itemUsePartyBudget    = 1000
+	itemUseMoveBudget     = 1000
 	fieldResultTextBudget = 3000
-	itemListMenuID      = 3
+	itemListMenuID        = 3
 
 	// Gen 1 item IDs from constants/item_constants.asm. ETHER/MAX ETHER ask
 	// for one move after the party member; ELIXER/MAX ELIXER restore every
