@@ -43,15 +43,34 @@ func majorProgressMarkOf(obs Observation, k *Knowledge) majorProgressMark {
 	return mark
 }
 
-// advancedBeyond reports real forward progress. It is intentionally
-// monotonic: a blackout losing money, a party member taking damage, or any
-// other regression must not reset the watchdog.
-func (m majorProgressMark) advancedBeyond(prev majorProgressMark) bool {
-	return m.Badges > prev.Badges ||
-		m.Events > prev.Events ||
-		m.Maps > prev.Maps ||
-		m.PartyCount > prev.PartyCount ||
-		m.MaxLevel > prev.MaxLevel
+// absorb folds next into the historical high-water mark and reports whether
+// any dimension moved forward. Keeping maxima matters when one dimension can
+// regress: discovering a map while the party is temporarily weaker must not
+// lower the remembered level and let merely recovering that old level count
+// as fresh progress later.
+func (m *majorProgressMark) absorb(next majorProgressMark) bool {
+	advanced := false
+	if next.Badges > m.Badges {
+		m.Badges = next.Badges
+		advanced = true
+	}
+	if next.Events > m.Events {
+		m.Events = next.Events
+		advanced = true
+	}
+	if next.Maps > m.Maps {
+		m.Maps = next.Maps
+		advanced = true
+	}
+	if next.PartyCount > m.PartyCount {
+		m.PartyCount = next.PartyCount
+		advanced = true
+	}
+	if next.MaxLevel > m.MaxLevel {
+		m.MaxLevel = next.MaxLevel
+		advanced = true
+	}
+	return advanced
 }
 
 func (m majorProgressMark) String() string {
