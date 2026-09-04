@@ -84,19 +84,54 @@ func ParseGoal(raw string) (Goal, error) {
 	}
 }
 
-// PlannerGoal parses an LLMPlanner.Goal only when it uses one of the
-// structured spellings above. This is the compatibility seam between the
-// existing free-text Goal prompt and deterministic completion: prose such as
-// "Earn the Boulder Badge." remains prompt-only and byte-for-byte unchanged,
-// while "badges:1" or "elite-four" gains an observable stop condition.
+// plannerGoalPreset recognizes the finite human-readable goals exposed by the
+// operator UI. They remain natural language in the LLM prompt, but get the
+// same observable stop predicate as their structured equivalent. This is a
+// deliberately small compatibility table, not a natural-language parser: an
+// arbitrary sentence still stays prompt-only until a real goal resolver is
+// added.
+func plannerGoalPreset(raw string) (Goal, bool) {
+	normalized := strings.ToLower(strings.TrimSpace(raw))
+	normalized = strings.TrimSpace(strings.TrimSuffix(normalized, "."))
+	switch normalized {
+	case "earn the boulder badge", "earn 1 badge", "earn one badge":
+		return Goal{Kind: GoalBadges, Count: 1}, true
+	case "earn 2 badges":
+		return Goal{Kind: GoalBadges, Count: 2}, true
+	case "earn 3 badges":
+		return Goal{Kind: GoalBadges, Count: 3}, true
+	case "earn 4 badges":
+		return Goal{Kind: GoalBadges, Count: 4}, true
+	case "earn 5 badges":
+		return Goal{Kind: GoalBadges, Count: 5}, true
+	case "earn 6 badges":
+		return Goal{Kind: GoalBadges, Count: 6}, true
+	case "earn 7 badges":
+		return Goal{Kind: GoalBadges, Count: 7}, true
+	case "earn 8 badges", "earn all 8 badges":
+		return Goal{Kind: GoalBadges, Count: 8}, true
+	case "beat the elite four and champion", "beat the elite four and the champion":
+		return Goal{Kind: GoalEliteFour}, true
+	default:
+		return Goal{}, false
+	}
+}
+
+// PlannerGoal parses an LLMPlanner.Goal when it uses structured syntax or one
+// of the finite human-readable presets above. Presets keep the task sentence
+// natural for the model while still gaining an observable stop condition.
+// Arbitrary prose remains prompt-only and byte-for-byte unchanged.
 //
-// The bool reports whether raw opted into the structured syntax. If it did,
-// validation errors are returned instead of silently treating a malformed
-// structured goal as prose.
+// The bool reports whether raw opted into a deterministic goal. Structured
+// validation errors are returned instead of silently treating malformed
+// structured syntax as prose.
 func PlannerGoal(raw string) (Goal, bool, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return Goal{}, false, nil
+	}
+	if g, ok := plannerGoalPreset(raw); ok {
+		return g, true, nil
 	}
 	if strings.EqualFold(raw, "elite-four") || strings.EqualFold(raw, "elite four") {
 		g, err := ParseGoal(raw)
@@ -116,8 +151,8 @@ func PlannerGoal(raw string) (Goal, bool, error) {
 	}
 }
 
-// PlannerGoalStatus evaluates a planner goal when it opted into structured
-// syntax. Free-text goals return structured=false and remain prompt-only.
+// PlannerGoalStatus evaluates a planner goal when it opted into deterministic
+// syntax or a known preset. Other free-text goals remain prompt-only.
 func PlannerGoalStatus(raw string, obs Observation) (status GoalStatus, structured bool, err error) {
 	g, structured, err := PlannerGoal(raw)
 	if err != nil || !structured {

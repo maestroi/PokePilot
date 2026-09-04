@@ -35,6 +35,15 @@ var uiJS []byte
 //go:embed ui/stats.js
 var statsJS []byte
 
+// The operator used to expose Goal as an unrestricted text box even though
+// only structured syntax had a deterministic stop condition. Keep the prompt
+// human-readable, but constrain normal UI runs to the finite presets the agent
+// can prove complete. External/API callers can still send structured goals or
+// arbitrary prompt-only prose explicitly.
+var goalInputHTML = []byte(`<label class="llm-only goal-field">goal <input name="goal" value="Earn the Boulder Badge." autocomplete="off"></label>`)
+
+var goalPresetHTML = []byte(`<label class="llm-only goal-field">goal <select name="goal"><option value="Earn the Boulder Badge." selected>Earn the Boulder Badge</option><option value="Earn 2 badges.">Earn 2 badges</option><option value="Earn 3 badges.">Earn 3 badges</option><option value="Earn 4 badges.">Earn 4 badges</option><option value="Earn 5 badges.">Earn 5 badges</option><option value="Earn 6 badges.">Earn 6 badges</option><option value="Earn 7 badges.">Earn 7 badges</option><option value="Earn all 8 badges.">Earn all 8 badges</option><option value="Beat the Elite Four and Champion.">Beat the Elite Four + Champion</option><option value="">Free play (no automatic stop)</option></select></label>`)
+
 // mapFiles holds build-time semantic map exports. The directory is kept in
 // the repository even before a local ROM owner generates the JSON assets.
 //
@@ -56,6 +65,11 @@ func handler(wallBase string) http.Handler {
 	return handlerWithMCP(wallBase, "")
 }
 
+func operatorIndexPage() []byte {
+	page := bytes.Replace(indexHTML, goalInputHTML, goalPresetHTML, 1)
+	return bytes.Replace(page, []byte("</body>"), []byte("<script src=\"/stats.js\"></script>\n</body>"), 1)
+}
+
 // handlerWithMCP serves the console at GET / and forwards only the operator
 // routes to wallBase. Runner-only paths (lease, heartbeat, finish) 404. MCP is
 // mounted at /mcp only when token is non-empty; an unset secret means the
@@ -65,10 +79,7 @@ func handlerWithMCP(wallBase, token string) http.Handler {
 	mux.HandleFunc("GET /{$}", func(res http.ResponseWriter, req *http.Request) {
 		res.Header().Set("Content-Type", "text/html; charset=utf-8")
 		res.Header().Set("Cache-Control", "no-store")
-		// Keep the large console document unchanged: the outcome panel is a
-		// small independent script injected before </body> at serve time.
-		page := bytes.Replace(indexHTML, []byte("</body>"), []byte("<script src=\"/stats.js\"></script>\n</body>"), 1)
-		res.Write(page) //nolint:errcheck // best effort: the page polls itself
+		res.Write(operatorIndexPage()) //nolint:errcheck // best effort: the page polls itself
 	})
 	mux.HandleFunc("GET /ui.js", func(res http.ResponseWriter, req *http.Request) {
 		res.Header().Set("Content-Type", "text/javascript; charset=utf-8")
