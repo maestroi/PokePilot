@@ -65,6 +65,16 @@ func filterTrainerLossBlocked(out []Objective, known *Knowledge) []Objective {
 		if _, blocked := known.Failures[trainerLossFailureKey(o)]; blocked {
 			continue
 		}
+		// Offer normally removes a gym whose scoped leader-loss marker exists
+		// before this filter runs. Keep the same invariant here too: recovery
+		// filtering is also used directly in tests and should never allow an
+		// unchanged leader rechallenge merely because it was handed a raw
+		// candidate list.
+		if o.Kind == KindGym && o.Place != "" {
+			if _, blocked := known.Failures[gymLossFailureKey(o.Place)]; blocked {
+				continue
+			}
+		}
 		if retryDue && o.Kind == KindTrain {
 			continue
 		}
