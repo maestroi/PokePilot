@@ -10,6 +10,21 @@ import "fmt"
 // places) without advancing through the game.
 const defaultStagnationAfter = 200
 
+// roundCapReached says whether round is beyond an explicitly configured cap.
+// Zero is the normal goal-driven mode and therefore never reaches a round cap.
+func roundCapReached(round, maxRounds int) bool {
+	return maxRounds > 0 && round > maxRounds
+}
+
+// roundsLeft is planner telemetry for an optional cap. Zero is deliberately
+// reserved for "uncapped"; positive values include the current round.
+func roundsLeft(round, maxRounds int) int {
+	if maxRounds <= 0 {
+		return 0
+	}
+	return maxRounds - round + 1
+}
+
 // majorProgressMark is the monotonic subset of game state used by the long
 // stagnation watchdog. Position, HP, money and consumables are intentionally
 // absent: they can churn forever without saying the run got farther.
