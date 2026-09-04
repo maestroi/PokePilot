@@ -138,6 +138,9 @@ const (
 	// ChooseNextMon write it).
 	PlayerMonNumber uint16 = 0xCC2F
 	MaxMenuItem     uint16 = 0xCC28
+	// MoveMenuType is wMoveMenuType: 0=regular battle move menu, 1=mimic,
+	// 2=the field move menu shown above a PP-recovery message.
+	MoveMenuType uint16 = 0xCCDB
 	// ListScrollOffset is wListScrollOffset, the list menu's scroll offset:
 	// the selected bag entry is ListScrollOffset + CurrentMenuItem.
 	ListScrollOffset uint16 = 0xCC36

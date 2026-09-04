@@ -58,6 +58,11 @@ type Observation struct {
 	// while the party is empty. No move names: the ROM's table stores no
 	// name strings, and inventing them would be data the player cannot see.
 	LeadMoves []Move
+	// LeadPP is parallel to LeadMoves and contains each move's live current
+	// PP from party RAM, with PP-Up count bits already stripped by
+	// state.DecodeParty. Keeping it separate preserves Move's established
+	// planner/test contract while making hard PP exhaustion observable.
+	LeadPP []uint8
 	// Bag is the decoded bag (state.DecodeInventory), named. Only entries
 	// with a quantity; an unknown item ID says so rather than vanishing.
 	Bag []Item
@@ -249,6 +254,7 @@ func Observe(m *emu.Emu, romData []byte) Observation {
 		Badges:         []string{},
 		Events:         []string{},
 		LeadMoves:      []Move{},
+		LeadPP:         []uint8{},
 		Bag:            []Item{},
 		RecentDialogue: []string{},
 		History:        []RoundRecord{},
@@ -275,7 +281,8 @@ func Observe(m *emu.Emu, romData []byte) Observation {
 		}
 	}
 	if len(gs.Party.Mons) > 0 {
-		for _, id := range gs.Party.Mons[0].Moves {
+		lead := gs.Party.Mons[0]
+		for slot, id := range lead.Moves {
 			if id == 0 {
 				continue
 			}
@@ -285,6 +292,7 @@ func Observe(m *emu.Emu, romData []byte) Observation {
 				continue
 			}
 			obs.LeadMoves = append(obs.LeadMoves, Move{Power: mv.Power, Type: moveTypeNames[mv.Type]})
+			obs.LeadPP = append(obs.LeadPP, lead.PP[slot])
 		}
 	}
 	for _, it := range gs.Inventory.Items {
