@@ -42,6 +42,15 @@ func init() {
 		{Name: "old rod", ID: 0x4C, Category: InventoryProgressionCritical},
 		{Name: "good rod", ID: 0x4D, Category: InventoryProgressionCritical},
 		{Name: "super rod", ID: 0x4E, Category: InventoryProgressionCritical},
+		// PP restorers are finite world pickups in Red (shop price 0 in the
+		// ROM), so classify them as battle consumables but never make the
+		// economy planner try to buy them. The ROM's item constant is
+		// intentionally spelled ELIXER in Gen 1; keep the player-facing name
+		// readable while preserving the actual item IDs.
+		{Name: "ether", ID: 0x50, Category: InventoryBattleConsumable},
+		{Name: "max ether", ID: 0x51, Category: InventoryBattleConsumable},
+		{Name: "elixer", ID: 0x52, Category: InventoryBattleConsumable},
+		{Name: "max elixer", ID: 0x53, Category: InventoryBattleConsumable},
 		{Name: "hm01", ID: 0xC4, Category: InventoryProgressionCritical},
 		{Name: "hm02", ID: 0xC5, Category: InventoryProgressionCritical},
 		{Name: "hm05", ID: 0xC8, Category: InventoryProgressionCritical},
