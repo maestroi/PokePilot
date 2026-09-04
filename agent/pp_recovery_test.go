@@ -114,6 +114,38 @@ func TestOfferKnownCenterForHealthyPPExhaustedParty(t *testing.T) {
 	}
 }
 
+func TestPPRecoveryDueWithholdsTrainAndGym(t *testing.T) {
+	known := NewKnowledge(nil)
+	candidates := []Objective{
+		{Kind: KindHeal, Note: "(lead has no PP; Center restores PP without spending finite items)"},
+		{Kind: KindTrain, Level: 24},
+		{Kind: KindGym, Place: "pewter gym"},
+		{Kind: KindTalk, X: 1, Y: 2},
+	}
+	got := filterTrainerLossBlocked(candidates, known)
+	for _, o := range got {
+		if o.Kind == KindTrain || o.Kind == KindGym {
+			t.Fatalf("combat objective survived PP-recovery gate: %+v (all=%+v)", o, got)
+		}
+	}
+	if !ppRecoveryDue(got) {
+		t.Fatalf("PP recovery option disappeared with combat objectives: %+v", got)
+	}
+}
+
+func TestFinitePPRecoveryAlsoWithholdsCombat(t *testing.T) {
+	known := NewKnowledge(nil)
+	candidates := []Objective{
+		{Kind: KindUseItem, Item: ppRestoreItems["ether"], Slot: 0, Note: "(finite PP recovery)"},
+		{Kind: KindTrain, Level: 24},
+		{Kind: KindGym, Place: "pewter gym"},
+	}
+	got := filterTrainerLossBlocked(candidates, known)
+	if len(got) != 1 || got[0].Kind != KindUseItem {
+		t.Fatalf("finite PP recovery should be the only surviving candidate, got %+v", got)
+	}
+}
+
 func TestPPItemsAreExecutableVocabulary(t *testing.T) {
 	for name, want := range map[string]uint8{
 		"ether": 0x50, "max ether": 0x51, "elixer": 0x52, "max elixer": 0x53,
