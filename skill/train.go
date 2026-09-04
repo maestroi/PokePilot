@@ -508,11 +508,14 @@ func grassCells(romData []byte, mapID uint8) ([]cell, *world.Grid, error) {
 	return out, grid, nil
 }
 
-// grindPair picks the two cells the session ping-pongs between: a is the
-// grass cell nearest the player, and b is a grass cell on the same row or
-// column, 1-6 cells away, chosen for the densest grass along the straight
-// path between them. Every cell of that path is walkable, so each leg is
-// a short straight walk.
+// grindPair picks the two cells the session ping-pongs between. a is the
+// grass cell nearest the player. If a has an adjacent grass neighbor, that
+// one-tile pair always wins: every completed grass step already gets a wild
+// encounter roll, so walking three or six tiles per leg adds latency and
+// makes the spectator view look like pointless pacing. Only when no adjacent
+// grass cell exists do we fall back to a straight 2-6-cell walk, preferring
+// the densest grass path and then the shorter distance. Every fallback path
+// cell is walkable.
 func grindPair(grass []cell, grid *world.Grid, px, py int) (cell, cell, bool) {
 	at := cell{px, py}
 	a := grass[0]
@@ -521,6 +524,15 @@ func grindPair(grass []cell, grid *world.Grid, px, py int) (cell, cell, bool) {
 			a = c
 		}
 	}
+
+	// Fast path: one step out, one step back. grassCells is row-major, so the
+	// choice is deterministic when more than one adjacent neighbor exists.
+	for _, c := range grass {
+		if c != a && dist(a, c) == 1 {
+			return a, c, true
+		}
+	}
+
 	isGrass := make(map[cell]bool, len(grass))
 	for _, c := range grass {
 		isGrass[c] = true
@@ -536,7 +548,7 @@ func grindPair(grass []cell, grid *world.Grid, px, py int) (cell, cell, bool) {
 			continue
 		}
 		d := dist(a, c)
-		if d < 1 || d > 6 {
+		if d < 2 || d > 6 {
 			continue
 		}
 		dx, dy := sign(c.x-a.x), sign(c.y-a.y)
