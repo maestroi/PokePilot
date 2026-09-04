@@ -151,16 +151,13 @@ func TestUIHistoryPaginatedAndAligned(t *testing.T) {
 	}
 }
 
-// TestUIWatchCardsShareGridTracks: Settings and Outcome stay compact while
-// Plan/Play scroll inside a fixed cap so a growing play list does not leave
-// empty stretched cells above it.
 func TestUIWatchCardsShareGridTracks(t *testing.T) {
 	html := string(indexHTML)
 	body := regexp.MustCompile(`#detail-body\{[^}]+\}`).FindString(html)
 	if body == "" {
 		t.Fatal("index.html missing #detail-body rule")
 	}
-	for _, want := range []string{"grid-auto-rows:auto", "align-items:start", "align-content:start"} {
+	for _, want := range []string{"grid-template-rows:auto minmax(0,1fr)", "align-items:stretch", "grid-auto-rows:auto"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("#detail-body %q missing %q", body, want)
 		}
@@ -172,8 +169,11 @@ func TestUIWatchCardsShareGridTracks(t *testing.T) {
 	if !strings.Contains(scroll, "max-height:") || !strings.Contains(scroll, "overflow:auto") {
 		t.Errorf(".block.scroll %q must cap height and scroll", scroll)
 	}
+	if !strings.Contains(html, `#detail-body>.block.scroll{max-height:none}`) {
+		t.Error("plan/play must drop the compact max-height inside the 1fr row")
+	}
 	js := string(uiJS)
-	for _, want := range []string{`class="block compact"`, `class="block scroll"`, `fpsLabel`, `updateFpsLive`} {
+	for _, want := range []string{`class="block compact"`, `class="block scroll"`, `fpsLabel`, `updateFpsLive`, `paintHTML`, `holding`} {
 		if !strings.Contains(js, want) {
 			t.Errorf("ui.js missing %q", want)
 		}
@@ -251,10 +251,13 @@ func TestUIRendersPlayerRoster(t *testing.T) {
 		t.Error("live cards must not render the party roster")
 	}
 	html := string(indexHTML)
-	for _, want := range []string{`.party-row`, `.party-hp`, `.party-sum`, `id="detail-party"`} {
+	for _, want := range []string{`.party-row`, `.party-hp`, `.party-sum`, `.party-grid`, `id="detail-party"`} {
 		if !strings.Contains(html, want) {
 			t.Errorf("index.html missing %s", want)
 		}
+	}
+	if !strings.Contains(html, `grid-template-columns:repeat(3,minmax(0,1fr))`) {
+		t.Error("party grid must be 3 columns (2 rows of 6)")
 	}
 	if !strings.Contains(js, `$("detail-party")`) && !strings.Contains(js, `$("detail-party").innerHTML`) {
 		t.Error("ui.js must render the roster into #detail-party, not a 1fr grid cell")

@@ -572,13 +572,73 @@
   let rawOpen = false;
   let rawScroll = 0;
 
+  function holding(el) {
+    if (!el) return false;
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || !sel.rangeCount) return false;
+    return el.contains(sel.anchorNode) || el.contains(sel.focusNode);
+  }
+
+  function paintHTML(el, html) {
+    if (!el) return false;
+    html = html || "";
+    if (el._paint === html) return false;
+    if (holding(el)) return false;
+    const self = el.scrollTop;
+    const inner = [...el.querySelectorAll("pre, .trace, .plan-q")].map((n) => n.scrollTop);
+    el.innerHTML = html;
+    el._paint = html;
+    el.scrollTop = self;
+    el.querySelectorAll("pre, .trace, .plan-q").forEach((n, i) => { if (inner[i] != null) n.scrollTop = inner[i]; });
+    return true;
+  }
+
+  function paintBlock(el, html) {
+    if (!el) return;
+    if (!html) {
+      if (holding(el)) return;
+      el.hidden = true;
+      paintHTML(el, "");
+      return;
+    }
+    el.hidden = false;
+    paintHTML(el, html);
+  }
+
+  function clearPaint(el) {
+    if (!el) return;
+    el.replaceChildren();
+    el._paint = undefined;
+    el.hidden = false;
+  }
+
+  function ensureWatchBlocks() {
+    if ($("detail-settings")) return;
+    $("detail-body").innerHTML = `<div id="detail-settings" class="block compact"></div><div id="detail-now" class="block compact"></div><div id="detail-plan" class="block scroll" hidden></div><div id="detail-play" class="block scroll" hidden></div>`;
+  }
+
+  function bindPlanRaw() {
+    const raw = $("detail-plan") && $("detail-plan").querySelector(".plan-raw");
+    if (!raw) return;
+    raw.open = rawOpen;
+    raw.ontoggle = () => { rawOpen = raw.open; };
+    const pre = raw.querySelector("pre");
+    if (!pre) return;
+    pre.scrollTop = rawScroll;
+    pre.onscroll = () => { rawScroll = pre.scrollTop; };
+  }
+
   function renderDetail() {
     const pane = $("watch");
     const run = (snap.runs || []).find((r) => r.run_id === selected);
-    if (!run) { pane.hidden = true; $("detail-map-panel").hidden = true; $("detail-party").replaceChildren(); return; }
+    if (!run) {
+      pane.hidden = true; $("detail-map-panel").hidden = true;
+      clearPaint($("detail-body")); clearPaint($("detail-party")); clearPaint($("screen-event"));
+      return;
+    }
     pane.hidden = false;
     $("detail-title").textContent = run.run_id;
-    $("detail-chips").innerHTML = statusChip(run) + settingChips(run) + issueBadge(run.issue);
+    paintHTML($("detail-chips"), statusChip(run) + settingChips(run) + issueBadge(run.issue));
     fillLcd($("detail-lcd"), run);
     renderMap(run);
     const settings = kv([
@@ -592,13 +652,14 @@
     const stateRows = run.status === "done"
       ? [["ended", run.reason || "done"], ["detail", run.detail || ""], ["last map", tileLabel(run)], ["frame", String(run.frame)], ["fps", fpsLabel(run)], ["attempts", String(run.attempts)]]
       : [["status", run.status], ["map", tileLabel(run)], ["frame", String(run.frame)], ["fps", fpsLabel(run)], ["attempt", String(run.attempts)], ["so far", run.stop_so_far || ""]];
-    $("detail-body").innerHTML = `<div class="block compact"><h3>Settings</h3>${settings}</div><div class="block compact"><h3>${run.status === "done" ? "Outcome" : "Now"}</h3>${kv(stateRows)}</div>` + planHTML(run) + playHTML(run) + lastEventHTML(run);
-    $("detail-party").innerHTML = partyHTML(run);
-    const raw = $("detail-body").querySelector(".plan-raw");
-    if (raw) {
-      raw.open = rawOpen; raw.addEventListener("toggle", () => { rawOpen = raw.open; });
-      const pre = raw.querySelector("pre"); pre.scrollTop = rawScroll; pre.addEventListener("scroll", () => { rawScroll = pre.scrollTop; });
-    }
+    ensureWatchBlocks();
+    paintHTML($("detail-settings"), `<h3>Settings</h3>${settings}`);
+    paintHTML($("detail-now"), `<h3>${run.status === "done" ? "Outcome" : "Now"}</h3>${kv(stateRows)}`);
+    paintBlock($("detail-plan"), planHTML(run));
+    paintBlock($("detail-play"), playHTML(run));
+    paintHTML($("detail-party"), partyHTML(run));
+    paintHTML($("screen-event"), lastEventHTML(run));
+    bindPlanRaw();
   }
 
   function planHTML(run) {
@@ -609,7 +670,7 @@
     if (run.decision) decision = `<div class="plan-k">decision</div><p class="plan-d">${esc(run.decision)}</p>`;
     else if (run.question) decision = `<div class="plan-k">decision</div><p class="plan-wait">waiting for reply</p>`;
     const raw = run.raw ? `<details class="plan-raw"><summary>raw exchange</summary><pre>${esc(run.raw)}</pre></details>` : "";
-    return `<div class="block scroll"><h3>Plan</h3><div class="plan-k">question</div>${question}${decision}${raw}</div>`;
+    return `<h3>Plan</h3><div class="plan-k">question</div>${question}${decision}${raw}`;
   }
 
   function playHTML(run) {
@@ -621,7 +682,7 @@
     const intent = s.intent ? `<p class="pintent">"${esc(s.intent)}" (${s.intent_age} rounds)</p>` : "";
     const top = (s.choices && s.choices[0]) ? s.choices[0].count : 1;
     const choices = (s.choices || []).map((c) => `<div class="pchoice"><div class="pbar" style="width:${(100 * c.count) / top}%"></div><span>${esc(c.objective)}</span><span class="n">${c.count}</span></div>`).join("");
-    return `<div class="block scroll"><h3>Play</h3><div class="pnums">${nums}</div>${intent}<div class="pchoices">${choices}</div></div>`;
+    return `<h3>Play</h3><div class="pnums">${nums}</div>${intent}<div class="pchoices">${choices}</div>`;
   }
 
   function partyHTML(r) {
@@ -633,15 +694,15 @@
       const pct = max ? Math.max(0, Math.min(100, (100 * hp) / max)) : 0;
       const cls = (!max || hp === 0 || pct < 20) ? "low" : (pct < 50 ? "mid" : "");
       const status = m.status ? `<span class="pstatus">${esc(m.status)}</span>` : "";
-      return `<div class="party-row"><span>${esc(m.name)}</span><span>Lv.${esc(m.level)}</span><span class="php">${hp}/${max}</span>${status}<div class="party-hp ${cls}"><i style="width:${pct}%"></i></div></div>`;
+      return `<div class="party-row"><span class="pname">${esc(m.name)}</span><span>Lv.${esc(m.level)}</span><span class="php">${hp}/${max}</span>${status}<div class="party-hp ${cls}"><i style="width:${pct}%"></i></div></div>`;
     }).join("");
-    return `<div class="block"><h3>Party</h3><div class="party-sum">₽${esc(p.money)} · ${esc(badges)}</div>${rows || `<p class="pempty">no Pokémon yet</p>`}</div>`;
+    return `<div class="block"><h3>Party</h3><div class="party-sum">₽${esc(p.money)} · ${esc(badges)}</div>${rows ? `<div class="party-grid">${rows}</div>` : `<p class="pempty">no Pokémon yet</p>`}</div>`;
   }
 
   function lastEventHTML(run) {
     if (!run.trace) return "";
     const title = run.question || run.decision ? "Last event" : "Trace";
-    return `<div class="block scroll"><h3>${title}</h3><pre class="trace">${esc(run.trace)}</pre></div>`;
+    return `<div class="block scroll screen-event-card"><h3>${title}</h3><pre class="trace">${esc(run.trace)}</pre></div>`;
   }
 
   function renderCounts() {
