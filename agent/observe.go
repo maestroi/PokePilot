@@ -53,10 +53,10 @@ type Observation struct {
 	// bit.
 	BlackedOut bool
 
-	// LeadMoves are the lead's moves, decoded from the ROM's move table
-	// (the same table skill/policy.go reads for power and effect). Empty
-	// while the party is empty. No move names: the ROM's table stores no
-	// name strings, and inventing them would be data the player cannot see.
+	// LeadMoves are the lead's moves, decoded from the ROM's move table and
+	// paired with the live current PP from party RAM. Empty while the party
+	// is empty. No move names: the ROM's table stores no name strings, and
+	// inventing them would be data the player cannot see.
 	LeadMoves []Move
 	// Bag is the decoded bag (state.DecodeInventory), named. Only entries
 	// with a quantity; an unknown item ID says so rather than vanishing.
@@ -151,10 +151,13 @@ type MapObject struct {
 	Item string // item name, "item" only; "" otherwise
 }
 
-// Move is one move the lead knows, in the form a planner may see it.
+// Move is one move the lead knows, in the form a planner may see it. PP is
+// the current remaining PP from party RAM, with PP-Up count bits stripped by
+// state.DecodeParty. Zero therefore means genuinely exhausted.
 type Move struct {
 	Power uint8  // 0 = deals no damage
 	Type  string // "normal", "fire", ...; "" when the byte is not a known type
+	PP    uint8
 }
 
 // Item is one bag entry in the form a planner may see it.
@@ -275,7 +278,8 @@ func Observe(m *emu.Emu, romData []byte) Observation {
 		}
 	}
 	if len(gs.Party.Mons) > 0 {
-		for _, id := range gs.Party.Mons[0].Moves {
+		lead := gs.Party.Mons[0]
+		for slot, id := range lead.Moves {
 			if id == 0 {
 				continue
 			}
@@ -284,7 +288,7 @@ func Observe(m *emu.Emu, romData []byte) Observation {
 				// An id not in the table is not a move; never invent one.
 				continue
 			}
-			obs.LeadMoves = append(obs.LeadMoves, Move{Power: mv.Power, Type: moveTypeNames[mv.Type]})
+			obs.LeadMoves = append(obs.LeadMoves, Move{Power: mv.Power, Type: moveTypeNames[mv.Type], PP: lead.PP[slot]})
 		}
 	}
 	for _, it := range gs.Inventory.Items {
