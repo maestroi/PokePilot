@@ -57,17 +57,17 @@ type badgeBucket struct {
 }
 
 type farmOutcomeStats struct {
-	CompletedAttempts         int                       `json:"completed_attempts"`
-	SettledRuns               int                       `json:"settled_runs"`
-	UsableProgressRuns        int                       `json:"usable_progress_runs"`
-	GoalTrackedRuns           int                       `json:"goal_tracked_runs"`
-	GoalWins                  int                       `json:"goal_wins"`
-	AtLeastOneBadge           int                       `json:"at_least_one_badge"`
-	BestBadges                int                       `json:"best_badges"`
-	RetryableFailureAttempts  int                       `json:"retryable_failure_attempts"`
-	TerminalReasons           []outcomeCount            `json:"terminal_reasons"`
-	BadgeDistribution         []badgeBucket             `json:"badge_distribution"`
-	EndlessExperiments        []endlessExperimentStats  `json:"endless_experiments"`
+	CompletedAttempts        int                      `json:"completed_attempts"`
+	SettledRuns              int                      `json:"settled_runs"`
+	UsableProgressRuns       int                      `json:"usable_progress_runs"`
+	GoalTrackedRuns          int                      `json:"goal_tracked_runs"`
+	GoalWins                 int                      `json:"goal_wins"`
+	AtLeastOneBadge          int                      `json:"at_least_one_badge"`
+	BestBadges               int                      `json:"best_badges"`
+	RetryableFailureAttempts int                      `json:"retryable_failure_attempts"`
+	TerminalReasons          []outcomeCount           `json:"terminal_reasons"`
+	BadgeDistribution        []badgeBucket            `json:"badge_distribution"`
+	EndlessExperiments       []endlessExperimentStats `json:"endless_experiments"`
 }
 
 type endlessExperimentStats struct {
