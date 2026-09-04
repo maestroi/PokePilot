@@ -42,8 +42,14 @@ func TestIssueConfigReachesWallOnly(t *testing.T) {
 	if strings.Contains(ui, "-issues-") || strings.Contains(runner, "-issues-") {
 		t.Error("issue flags must not reach ui or runner")
 	}
-	if strings.Contains(s, "192.168.50.81") {
-		t.Error("LAN Agent Orchestrator examples must not be stack defaults")
+	for _, line := range strings.Split(s, "\n") {
+		if strings.Contains(line, "AGENT_ORCHESTRATOR") && strings.Contains(line, "192.168.50.81") {
+			t.Error("LAN Agent Orchestrator examples must not be stack defaults")
+			break
+		}
+	}
+	if !strings.Contains(runner, "POKEPILOT_LLM_GPU_URL: ${POKEPILOT_LLM_GPU_URL:-http://192.168.50.81:8002/v1}") {
+		t.Error("runner must default Auto/GPU to the LAN GPU endpoint")
 	}
 	img := string(dockerfile)
 	if strings.Contains(img, "issues-api") || strings.Contains(img, "AGENT_ORCHESTRATOR") {
