@@ -185,6 +185,10 @@ func TestUIWatchCardsShareGridTracks(t *testing.T) {
 	if !strings.Contains(html, `id="detail-party"`) {
 		t.Error("party must sit outside #detail-body so it does not take a 1fr track")
 	}
+	watch := regexp.MustCompile(`#watch\{[^}]+\}`).FindString(html)
+	if !strings.Contains(watch, "100vh") {
+		t.Errorf("#watch %q must be viewport-capped so the plan/play 1fr row stays put and party stays on the first screen", watch)
+	}
 }
 
 func TestUIFailuresAndIssueLinks(t *testing.T) {
