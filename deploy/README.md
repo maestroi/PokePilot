@@ -42,11 +42,17 @@ If a hostname is public, route it only to the spectator port; keep the operator
 port private because its HTTP UI can mutate runs even when MCP is disabled.
 
 `--resolve-image never` uses the image `make farm-image` loaded locally.
-A multi-node Swarm cannot see that image store: CI on `main` publishes
-`ghcr.io/maestroi/pokepilot` (`.github/workflows/publish-farm.yml`).
-Rollout is a timer on the manager (`deploy/pull-latest.sh`) that pins
-services to the new digest. Keep Traefik hosts, node bind-mounts, and
-tokens out of git.
+A multi-node Swarm cannot see that image store, so CI publishes
+`ghcr.io/maestroi/pokepilot` (`.github/workflows/publish-farm.yml`). Every pull
+request runs the complete Docker build. Pull requests whose head branch is in
+this repository also publish the built merge result as both its exact commit
+tag and `:latest`; pushes to `main` do the same. The manager timer
+(`deploy/pull-latest.sh`) watches `:latest` and pins `wall`, `ui`, `spectator`,
+and `runner` to each new digest, so one PR image rolls the complete farm end to
+end. Fork pull requests are build-only because their GitHub token is read-only.
+Closing a pull request rebuilds the current base branch onto `:latest`, so an
+unmerged review cannot remain deployed indefinitely. Keep Traefik hosts, node
+bind-mounts, and tokens out of git.
 
 ## Issue handoff (optional)
 
