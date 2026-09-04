@@ -54,10 +54,10 @@ LOCAL_LLM_MODEL ?= qwen3.8-27b
 LOCAL_LLM_NO_THINK ?= 1
 LOCAL_LLM_MAX_TOKENS ?= 1024
 LOCAL_LLM_TIMEOUT ?= 300s
-# 32 is the unattended guardrail on run-llm. Local watching defaults
-# higher so a session is not cut off mid-route. Override with
-# ARGS='-max-rounds N' or LOCAL_LLM_MAX_ROUNDS=N.
-LOCAL_LLM_MAX_ROUNDS ?= 128
+# Goal-driven by default. Zero means no hard round cap; agent.Run's short
+# loop detector, long stagnation watchdog and frame watchdog still stop
+# runaway sessions. Set this or ARGS='-max-rounds N' for a fixed experiment.
+LOCAL_LLM_MAX_ROUNDS ?= 0
 
 # GPU-first local routing. The primary is the same localhost model above.
 # Give a real generation enough time to finish, but still fail over well
