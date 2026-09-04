@@ -636,7 +636,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 		default:
 		}
 
-		if budget.MaxRounds > 0 && round > budget.MaxRounds {
+		if roundCapReached(round, budget.MaxRounds) {
 			res.Stop = StopBudget
 			break
 		}
@@ -657,6 +657,9 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 		// changed nothing. This longer detector catches moving loops. It runs
 		// at the next round boundary so it sees every map sampled during the
 		// previous Execute as well as the settled badge/event/party state.
+		// We calculate stagnation here but do not stop yet: the planner's
+		// deterministic goal wrapper gets first chance to report ErrDone, so
+		// a goal reached exactly on the watchdog boundary is success, not stuck.
 		currentMajorProgress := majorProgressMarkOf(last, known)
 		if majorProgress.absorb(currentMajorProgress) {
 			lastMajorProgressRound = round - 1
@@ -665,14 +668,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 			}
 		}
 		completedRounds := round - 1
-		if completedRounds-lastMajorProgressRound >= stagnationAfter {
-			res.Stop = StopStuck
-			if budget.Log != nil {
-				fmt.Fprintf(budget.Log, "stagnation watchdog: %d rounds without major progress; high-water mark: %s\n",
-					completedRounds-lastMajorProgressRound, majorProgress)
-			}
-			break
-		}
+		stagnantRounds := completedRounds - lastMajorProgressRound
 
 		// The walls the game has stated stay visible every round: Knowledge
 		// keeps them across rounds (and checkpoints), and this is where the
@@ -706,20 +702,13 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 		last.Intent = intent
 		last.IntentAge = intentAge
 		last.Round = round
-		last.RoundsLeft = 0
-		if budget.MaxRounds > 0 {
-			// A positive MaxRounds is an explicit safety/experiment cap. Zero
-			// deliberately stays zero so the planner knows there is no round
-			// deadline to optimise for.
-			last.RoundsLeft = budget.MaxRounds - round + 1
-		}
+		last.RoundsLeft = roundsLeft(round, budget.MaxRounds)
 
 		obj, err, retries := planWithRetries(budget.Log, round, p, last, now)
 		res.ReplyRetries += retries
-		// The break comes from the error, not from a stop-value check: the
-		// zero value of Stop is StopUnset ("no reason set yet"), so the
-		// checks below can ask "has a reason been set?" without ever
-		// mistaking a finished planner for one.
+		// Goal completion has precedence over watchdog classification. A goal
+		// may be satisfied by a state change that deliberately is not a major
+		// progress signal (for example an item goal), so check ErrDone first.
 		if errors.Is(err, ErrDone) {
 			res.Stop = StopDone
 			break
@@ -727,6 +716,14 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 		if err != nil {
 			res.Stop = StopError
 			res.Err = err
+			break
+		}
+		if stagnantRounds >= stagnationAfter {
+			res.Stop = StopStuck
+			if budget.Log != nil {
+				fmt.Fprintf(budget.Log, "stagnation watchdog: %d rounds without major progress; high-water mark: %s\n",
+					stagnantRounds, majorProgress)
+			}
 			break
 		}
 
