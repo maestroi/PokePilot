@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/maestroi/pokepilot/red/state"
@@ -23,6 +24,15 @@ func pewterGymObservation() Observation {
 		Map: 0x36, MapName: "PEWTER_GYM", X: 4, Y: 2, PartyCount: 1,
 		Party: []PartyMon{{Level: 9, HP: 28, MaxHP: 28}},
 	}
+}
+
+func hasKind(offered []Objective, kind Kind) bool {
+	for _, o := range offered {
+		if o.Kind == kind {
+			return true
+		}
+	}
+	return false
 }
 
 // TestGymLossRequiresTrainingBeforeRechallenge pins the live Brock loop from
@@ -83,8 +93,68 @@ func TestGymLossRequiresTrainingBeforeRechallenge(t *testing.T) {
 	if _, blocked := known.Failures[key]; blocked {
 		t.Fatalf("successful training left gym recovery failure %q behind", key)
 	}
-	if _, ok := offeredGym(pewter, known); !ok {
+	ready, ok := offeredGym(pewter, known)
+	if !ok {
 		t.Fatal("Pewter Gym not re-enabled after a successful training rung")
+	}
+	if !strings.Contains(ready.Note, "retry due") {
+		t.Fatalf("re-enabled gym note = %q, want retry-due fact", ready.Note)
+	}
+}
+
+// TestGymRetryDueWithholdsFurtherTraining pins the live runaway shown by the
+// spectator run: after Brock had already proved the party too weak, the model
+// kept selecting two-level Train rungs until Ivysaur reached L22 while badge
+// count stayed zero. One successful rung now creates a mandatory experiment:
+// try the gym with the materially changed party before spending another rung.
+func TestGymRetryDueWithholdsFurtherTraining(t *testing.T) {
+	known := NewKnowledge(nil)
+	gym := Objective{Kind: KindGym, Place: "pewter gym"}
+	known.Failed(gym, gymOutcomeErr(gym, state.ResultLost))
+	known.Done(Objective{Kind: KindTrain, Level: 11})
+
+	out := filterTrainerLossBlocked([]Objective{
+		{Kind: KindTrain, Level: 13},
+		{Kind: KindGoTo, Place: "pewter gym"},
+		gym,
+	}, known)
+	if hasKind(out, KindTrain) {
+		t.Fatal("another Train rung remained available while a trained gym retry was due")
+	}
+	var sawJourney, sawGym bool
+	for _, o := range out {
+		switch {
+		case o.Kind == KindGoTo && o.Place == "pewter gym":
+			sawJourney = strings.Contains(o.Note, "gym retry")
+		case o.Kind == KindGym:
+			sawGym = strings.Contains(o.Note, "retry due")
+		}
+	}
+	if !sawJourney || !sawGym {
+		t.Fatalf("retry choices missing factual notes: %+v", out)
+	}
+
+	// If that retry loses, the scoped loss marker returns. That is evidence
+	// the last rung was insufficient, so exactly the normal training path is
+	// legal again.
+	known.Failed(gym, gymOutcomeErr(gym, state.ResultLost))
+	out = filterTrainerLossBlocked([]Objective{{Kind: KindTrain, Level: 13}, gym}, known)
+	if !hasKind(out, KindTrain) {
+		t.Fatal("Train stayed blocked after the due gym retry was attempted and lost")
+	}
+	if hasKind(out, KindGym) {
+		t.Fatal("immediate unchanged gym rechallenge was offered after the retry loss")
+	}
+
+	// The next successful rung restores retry-due; a successful gym then
+	// consumes the ordinary ready marker through Knowledge.Done.
+	known.Done(Objective{Kind: KindTrain, Level: 13})
+	if _, ok := gymRetryPending(known); !ok {
+		t.Fatal("second successful rung did not restore gym retry-due state")
+	}
+	known.Done(gym)
+	if _, ok := gymRetryPending(known); ok {
+		t.Fatal("successful gym challenge left stale retry-due state behind")
 	}
 }
 
@@ -106,9 +176,9 @@ func TestGymControlFailureDoesNotDemandTraining(t *testing.T) {
 	}
 }
 
-// TestGymLossGateSurvivesCheckpointMemory proves resume cannot forget the
-// learned loss. The gate is encoded as an ordinary scoped Failure, so it uses
-// the existing versioned checkpoint-memory path without a new side channel.
+// TestGymLossGateSurvivesCheckpointMemory proves resume cannot forget either
+// half of recovery: the scoped loss before training and the retry-due marker
+// after training both use the existing versioned Failure persistence path.
 func TestGymLossGateSurvivesCheckpointMemory(t *testing.T) {
 	pewter := pewterGymObservation()
 	known := NewKnowledge(nil)
@@ -134,5 +204,21 @@ func TestGymLossGateSurvivesCheckpointMemory(t *testing.T) {
 	resumed.Knowledge.Done(Objective{Kind: KindTrain, Level: 11})
 	if _, ok := offeredGym(pewter, resumed.Knowledge); !ok {
 		t.Fatal("training did not unlock the resumed gym-loss gate")
+	}
+
+	statePath2 := filepath.Join(dir, "round-011-frame-0001234999-gym-ready.state")
+	if err := os.WriteFile(statePath2, []byte("state-bytes"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeMemoryFile(statePath2, resumed.Knowledge, "retry Brock after training", 0); err != nil {
+		t.Fatalf("write retry-ready memory: %v", err)
+	}
+	ready := LoadCheckpointMemory(statePath2, nil, nil)
+	if _, ok := gymRetryPending(ready.Knowledge); !ok {
+		t.Fatal("checkpoint resume forgot the trained gym retry-due state")
+	}
+	out := filterTrainerLossBlocked([]Objective{{Kind: KindTrain, Level: 13}, gym}, ready.Knowledge)
+	if hasKind(out, KindTrain) {
+		t.Fatal("resumed retry-due state allowed another Train rung")
 	}
 }
