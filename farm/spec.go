@@ -24,8 +24,15 @@ type Spec struct {
 	Goal       string `json:"goal,omitempty"`
 	LLMProfile string `json:"llm_profile,omitempty"`
 	FPS        int    `json:"fps"`
-	MaxRounds  int    `json:"max_rounds"`
-	MaxFrames  int    `json:"max_frames"`
+	// MaxRounds is an OPTIONAL emergency/experiment cap for an LLM run.
+	// Zero is the normal goal-driven mode: there is no hard round limit and
+	// the run ends on goal completion, a real failure, cancellation, or the
+	// agent's automatic stagnation watchdog. A positive value is preserved
+	// for fixed-budget experiments and still ends with reason "budget".
+	MaxRounds int `json:"max_rounds"`
+	// MaxFrames remains the last-resort emulator watchdog. Zero on the wire
+	// asks the runner to use its built-in frame safety limit.
+	MaxFrames int `json:"max_frames"`
 	// Endless asks the wall to queue a successor when this run settles,
 	// so idle workers keep picking up work. RandomSeed picks a fresh
 	// seed on each successor; otherwise the seed is copied.
@@ -114,7 +121,10 @@ type Heartbeat struct {
 // are the same JSON keys the runner's watch page renders, so both surfaces
 // show one number.
 type LLMStats struct {
-	Round      int `json:"round"`
+	Round int `json:"round"`
+	// RoundsLeft is positive only when the run has an explicit MaxRounds
+	// cap. Zero means uncapped/goal-driven; it does NOT mean the run is out
+	// of rounds.
 	RoundsLeft int `json:"rounds_left"`
 	// Calls counts every ask, Rounds only the ones that became an
 	// objective: the gap between them is re-asks after a rejected reply.
@@ -221,12 +231,11 @@ type FinishReport struct {
 	Artifacts []Artifact `json:"artifacts,omitempty"`
 	// ProgressEarly and ProgressFinal are the run's progress sampled
 	// before the first objective ran and at the stop. Comparing the two
-	// answers "did this run move?" from one dump: identical samples on a
-	// budget finish mean the whole budget was spent without the run's
-	// progress state changing. Both are nil when the run never reached
-	// the agent loop (a validation or LoadState failure) or came from a
-	// runner that predates the field. A single end-of-run snapshot cannot
-	// make that distinction, which is why there are two samples, not one.
+	// answers "did this run move?" from one dump. Both are nil when the run
+	// never reached the agent loop (a validation or LoadState failure) or
+	// came from a runner that predates the field. A single end-of-run
+	// snapshot cannot make that distinction, which is why there are two
+	// samples, not one.
 	ProgressEarly *Progress `json:"progress_early,omitempty"`
 	ProgressFinal *Progress `json:"progress_final,omitempty"`
 }
