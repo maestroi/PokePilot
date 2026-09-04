@@ -138,6 +138,9 @@ const (
 	// ChooseNextMon write it).
 	PlayerMonNumber uint16 = 0xCC2F
 	MaxMenuItem     uint16 = 0xCC28
+	// MoveNum is wMoveNum: LearnMove keeps the currently offered natural
+	// move here while TryingToLearn / WhichMoveToForget are on screen.
+	MoveNum uint16 = 0xD0E0
 	// MoveMenuType is wMoveMenuType: 0=regular battle move menu, 1=mimic,
 	// 2=the field move menu shown above a PP-recovery message.
 	MoveMenuType uint16 = 0xCCDB
