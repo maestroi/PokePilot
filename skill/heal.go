@@ -26,31 +26,38 @@ const healMenuBudget = 3000
 // as cutsceneBudget.
 const healRunBudget = 30000
 
-// allPartyAtFullHP reports whether every party member's current HP equals
-// its max HP. It is the positive fact a completed heal leaves behind:
-// HealParty (pokered/engine/events/heal_party.asm) writes each mon's HP from
-// its max, so the equality holds exactly once the heal has run, and a party
-// with any mon below max proves the sequence stopped short of it.
-func allPartyAtFullHP(mem *state.Mem) bool {
+// allPartyCenterRecovered reports the state a Center visit guarantees that
+// matters to the autonomous runner: every party member is at full HP, clear
+// of status, and every known move has non-zero current PP. HealParty restores
+// HP, clears status, and refills PP from the ROM move table (including PP Up
+// bonus PP). We intentionally do not try to reconstruct each move's exact max
+// PP here: detecting/recovering an exhausted move is the run-lifecycle problem
+// this predicate must make impossible to report as a successful no-op.
+func allPartyCenterRecovered(mem *state.Mem) bool {
 	party := state.DecodeParty(mem)
 	if party.Count == 0 {
 		return false
 	}
 	for _, mon := range party.Mons {
-		if mon.HP != mon.MaxHP {
+		if mon.HP != mon.MaxHP || mon.Status != 0 {
 			return false
+		}
+		for i, move := range mon.Moves {
+			if move != 0 && mon.PP[i] == 0 {
+				return false
+			}
 		}
 	}
 	return true
 }
 
 // counterDirection returns the step toward the center's counter: the unique
-// in-bounds non-walkable neighbor of the player's tile in the ROM's
-// collision grid. The nurse stands behind the counter, two tiles from the
-// player, which is beyond Face's one-tile reach; the game extends the talk
-// range over a counter tile in front of the player
-// (pokered/home/overworld.asm, IsSpriteOrSignInFrontOfPlayer), so facing the
-// counter is what makes the nurse talkable.
+// in-bounds non-walkable neighbor of the player's tile in the ROM's collision
+// grid. The nurse stands behind the counter, two tiles from the player, which
+// is beyond Face's one-tile reach; the game extends the talk range over a
+// counter tile in front of the player (pokered/home/overworld.asm,
+// IsSpriteOrSignInFrontOfPlayer), so facing the counter is what makes the nurse
+// talkable.
 func counterDirection(m *emu.Emu) (world.Step, error) {
 	romData := m.ROM()
 	cur := m.Peek8(sym.CurMap)
@@ -81,10 +88,10 @@ func counterDirection(m *emu.Emu) (world.Step, error) {
 }
 
 // openNurseMenu presses A on the nurse and advances each text box until the
-// YES/NO prompt is up. It returns ErrNoDialogue (wrapped) when A opens no
-// box at all, and a descriptive error when the boxes advance but the prompt
-// never appears. The wStatusFlags4 (bit 2 = BIT_USED_POKECENTER) in the
-// diagnostics distinguishes the first-visit and repeat-visit flows.
+// YES/NO prompt is up. It returns ErrNoDialogue (wrapped) when A opens no box
+// at all, and a descriptive error when the boxes advance but the prompt never
+// appears. The wStatusFlags4 (bit 2 = BIT_USED_POKECENTER) in the diagnostics
+// distinguishes the first-visit and repeat-visit flows.
 func openNurseMenu(m *emu.Emu) error {
 	m.Tap(emu.A, 3, 7)
 	var mem state.Mem
@@ -120,17 +127,18 @@ func openNurseMenu(m *emu.Emu) error {
 // visit one more box; then the yes/no prompt (pokered/home/yes_no.asm,
 // YesNoChoicePokeCenter) — an ordinary two-item menu with index 0 = YES and
 // 1 = NO, the same shape SelectMenuItem drives in the starter flow. Choosing
-// YES runs HealParty (pokered/engine/events/heal_party.asm), which sets each
-// mon's HP to its max, behind the healing-machine animation and a few more
-// boxes, before control returns to the player.
+// YES runs HealParty (pokered/engine/events/heal_party.asm), which restores HP
+// and PP and clears status, behind the healing-machine animation and a few
+// more boxes, before control returns to the player.
 //
-// The nurse is not addressed by coordinates: Face reaches only one tile,
-// and the counter between the player and the nurse is found as the unique
+// The nurse is not addressed by coordinates: Face reaches only one tile, and
+// the counter between the player and the nurse is found as the unique
 // non-walkable neighbor of the player's tile in the ROM's collision grid.
 //
-// Heal returns as soon as the party is at full HP and the player is
-// controllable again, so a party that is already at full HP succeeds without
-// re-running the dialogue.
+// Success requires the Center recovery postcondition plus controllability.
+// This deliberately includes exhausted PP: a healthy party with a 0-PP move
+// must not let a PP-recovery objective succeed without actually using the
+// nurse.
 func Heal(m *emu.Emu) error {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
@@ -157,8 +165,8 @@ func Heal(m *emu.Emu) error {
 		return err
 	}
 
-	// YES is index 0. The cursor starts at 0, so SelectMenuItem presses A
-	// once it has asserted the index; the decomp branches on the index
+	// YES is index 0. The cursor starts at 0, so SelectMenuItem presses A once
+	// it has asserted the index; the decomp branches on the index
 	// (pokecenter.asm: 0 continues to HealParty, 1 declines).
 	if err := SelectMenuItem(m, 0); err != nil {
 		state.Snapshot(m, &mem)
@@ -167,17 +175,16 @@ func Heal(m *emu.Emu) error {
 			mem.U16BE(sym.FontLoaded), state.DecodeMenu(&mem))
 	}
 
-	if err := Cutscene(m, healRunBudget, allPartyAtFullHP); err != nil {
+	if err := Cutscene(m, healRunBudget, allPartyCenterRecovered); err != nil {
 		return fmt.Errorf("skill: Heal: %w", err)
 	}
 
-	// Cutscene's return already means allPartyAtFullHP and Controllable,
-	// but re-asserting both here with named failures keeps Heal's
-	// postcondition explicit to its caller, the way GetStarter re-asserts
-	// after its cutscenes.
+	// Cutscene's return already means the positive recovery predicate and
+	// Controllable both hold, but re-asserting them keeps Heal's contract
+	// explicit to its callers.
 	state.Snapshot(m, &mem)
-	if !allPartyAtFullHP(&mem) {
-		return fmt.Errorf("skill: Heal: party not at full HP after the heal: %+v (map=%#04x at (%d,%d) wJoyIgnore=%#04x)",
+	if !allPartyCenterRecovered(&mem) {
+		return fmt.Errorf("skill: Heal: party not fully recovered after the heal: %+v (map=%#04x at (%d,%d) wJoyIgnore=%#04x)",
 			state.DecodeParty(&mem).Mons, mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord),
 			mem.U16BE(sym.JoyIgnore))
 	}
