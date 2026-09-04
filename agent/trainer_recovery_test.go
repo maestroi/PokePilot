@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/skill"
 )
 
@@ -33,9 +34,13 @@ func TestTrainerLossBlocksSameJourneyUntilTraining(t *testing.T) {
 		t.Fatal("route 3 missing from place table")
 	}
 
+	// Route 3 itself is not reachable before Brock; this test is about the
+	// trainers ON Route 3, so model the post-Boulder state where the Pewter
+	// exit is genuinely open.
 	obs := Observation{
 		Map: 0x02, MapName: "PEWTER_CITY", X: 15, Y: 17, PartyCount: 1,
-		Party: []PartyMon{{Level: 10, HP: 30, MaxHP: 30}},
+		Party:  []PartyMon{{Level: 10, HP: 30, MaxHP: 30}},
+		Badges: []string{state.BadgeBoulder.String()},
 	}
 	known := NewKnowledge(nil)
 	known.SawMap(obs.Map)
@@ -77,7 +82,8 @@ func TestTrainerLossNormalizesFleeVariantAndIgnoresOrdinaryBlackout(t *testing.T
 	}
 	obs := Observation{
 		Map: 0x02, MapName: "PEWTER_CITY", X: 15, Y: 17, PartyCount: 1,
-		Party: []PartyMon{{Level: 10, HP: 30, MaxHP: 30}},
+		Party:  []PartyMon{{Level: 10, HP: 30, MaxHP: 30}},
+		Badges: []string{state.BadgeBoulder.String()},
 	}
 
 	trainer := NewKnowledge(nil)
@@ -108,7 +114,8 @@ func TestTrainerLossGateSurvivesCheckpointMemory(t *testing.T) {
 	}
 	obs := Observation{
 		Map: 0x02, MapName: "PEWTER_CITY", X: 15, Y: 17, PartyCount: 1,
-		Party: []PartyMon{{Level: 10, HP: 30, MaxHP: 30}},
+		Party:  []PartyMon{{Level: 10, HP: 30, MaxHP: 30}},
+		Badges: []string{state.BadgeBoulder.String()},
 	}
 	known := NewKnowledge(nil)
 	known.SawMap(obs.Map)

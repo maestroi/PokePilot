@@ -3,6 +3,8 @@ package agent
 import (
 	"strings"
 	"testing"
+
+	"github.com/maestroi/pokepilot/red/state"
 )
 
 func TestOfferMarksUnvisitedAdjacentJourney(t *testing.T) {
@@ -20,6 +22,7 @@ func TestOfferMarksUnvisitedAdjacentJourney(t *testing.T) {
 		Y:          8,
 		PartyCount: 1,
 		Party:      []PartyMon{{Level: 20, HP: 50, MaxHP: 50}},
+		Badges:     []string{state.BadgeBoulder.String()},
 	}
 
 	offered := Offer(obs, known)

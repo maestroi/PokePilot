@@ -424,11 +424,17 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 	// deeper with every map the run discovers. A directly adjacent map the
 	// run has never stood on gets that fact on its own choice line. This is
 	// geometry plus run history, not walkthrough knowledge: it says "new
-	// exit", never whether taking it is strategically correct.
+	// exit", never whether taking it is strategically correct. Scripted
+	// progression gates are facts too: an exit the game refuses right now is
+	// not an executable journey and stays off the menu until its condition is
+	// visible in the observation.
 	journeys := make([]Objective, 0, 8)
 	for _, name := range skill.PlaceNames() { // sorted: a stable menu order
 		d, _ := skill.Place(name)
 		if !knownMaps[d.Map] {
+			continue
+		}
+		if journeyProgressionBlocked(obs, d.Map) {
 			continue
 		}
 		if d.Map == obs.Map && d.X == obs.X && d.Y == obs.Y {
