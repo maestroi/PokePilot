@@ -53,7 +53,7 @@ func gymLossFailureName(o Objective, err error) (string, bool) {
 // free to pick Train again and again (observed live: zero badges, Ivysaur L22,
 // 141 repeated decisions). The recovery cycle is now bounded:
 //
-//   leader loss -> Train one rung -> retry due -> leader attempt
+//	leader loss -> Train one rung -> retry due -> leader attempt
 //
 // If the retry loses, Knowledge.Failed writes the scoped loss key again;
 // gymRetryPending then becomes false and one more Train rung is allowed. If
