@@ -33,6 +33,21 @@ func TestStatsPlannerStopsOnCompletedStructuredGoal(t *testing.T) {
 	}
 }
 
+func TestStatsPlannerStopsOnCompletedGoalPreset(t *testing.T) {
+	p := newStatsPlanner("", "Earn the Boulder Badge.", nil, nil, nil)
+
+	_, err := p.Next(agent.Observation{Round: 4, RoundsLeft: 20, Badges: []string{"Boulder"}}, nil)
+	if !errors.Is(err, agent.ErrDone) {
+		t.Fatalf("Next error = %v, want ErrDone", err)
+	}
+	if p.stats.Calls != 0 {
+		t.Fatalf("model calls = %d, want 0 after preset completion", p.stats.Calls)
+	}
+	if !p.stats.GoalComplete || p.stats.GoalSummary != "badges 1/1" || p.stats.GoalCurrent != 1 || p.stats.GoalTarget != 1 {
+		t.Fatalf("preset goal stats = %+v", p.stats)
+	}
+}
+
 func TestStatsPlannerSurfacesStructuredGoalProgress(t *testing.T) {
 	p := newStatsPlanner("", "badges:2", nil, nil, nil)
 	p.inner.ExtraSystem = "baseline system note"
@@ -61,13 +76,13 @@ func TestStatsPlannerSurfacesStructuredGoalProgress(t *testing.T) {
 	}
 }
 
-func TestStatsPlannerLeavesFreeTextGoalPromptOnly(t *testing.T) {
-	p := newStatsPlanner("", "Earn the Boulder Badge.", nil, nil, nil)
+func TestStatsPlannerLeavesArbitraryFreeTextGoalPromptOnly(t *testing.T) {
+	p := newStatsPlanner("", "Explore Kanto and see how far you get.", nil, nil, nil)
 	p.inner.ExtraSystem = "baseline"
 	p.baseExtraSystem = p.inner.ExtraSystem
 
 	if done, err := p.prepareRunContext(agent.Observation{Round: 1, Badges: []string{"Boulder"}}); err != nil || done {
-		t.Fatalf("prepareRunContext = done %v, err %v; want free-text prompt-only", done, err)
+		t.Fatalf("prepareRunContext = done %v, err %v; want arbitrary free text prompt-only", done, err)
 	}
 	if p.stats.GoalSummary != "" || p.stats.GoalCurrent != 0 || p.stats.GoalTarget != 0 || p.stats.GoalComplete {
 		t.Fatalf("free-text goal leaked into deterministic stats: %+v", p.stats)
