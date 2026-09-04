@@ -489,21 +489,25 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 			}
 		}
 	}
+	ppExhausted := leadOutOfPP(obs)
 	if isCenter(obs.MapName) {
-		out = append(out, Objective{Kind: KindHeal})
-	} else if name, ok := nearestKnownCenter(obs, known, knownMaps); ok && partyHurt(obs) {
-		// A hurt party in the field has no heal-shaped option otherwise:
-		// the planner has to invent the chain "go to the center" then
-		// "heal" across two rounds, and a round spent walking looks like a
-		// wasted round to a model reading its own history. This is the
-		// chain as one objective, and it is gated on a fact rather than a
-		// judgement — a full party healing is a round that changes nothing,
-		// the same reason a satisfied starter is not offered. The walk back
-		// runs through grass, so both variants are offered, as for go-to:
-		// fight the way back, or run it.
+		heal := Objective{Kind: KindHeal}
+		if ppExhausted {
+			heal.Note = "(lead has no PP; Center restores PP without spending finite items)"
+		}
+		out = append(out, heal)
+	} else if name, ok := nearestKnownCenter(obs, known, knownMaps); ok && (partyHurt(obs) || ppExhausted) {
+		// A hurt or PP-exhausted party in the field has no recovery-shaped
+		// option otherwise. Center recovery is the free, renewable resource;
+		// when PP is the reason, the note makes the tradeoff against finite
+		// Ether/Elixer objectives visible on the exact choice line.
+		note := ""
+		if ppExhausted {
+			note = "(lead has no PP; Center restores PP without spending finite items)"
+		}
 		out = append(out,
-			Objective{Kind: KindHeal, Place: name},
-			Objective{Kind: KindHeal, Place: name, Flee: true},
+			Objective{Kind: KindHeal, Place: name, Note: note},
+			Objective{Kind: KindHeal, Place: name, Flee: true, Note: note},
 		)
 	}
 	// Field medicine: use a bag item on a party member without walking to
@@ -524,6 +528,25 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 			if medReaches(mon, want) {
 				out = append(out, Objective{Kind: KindUseItem, Item: id, Slot: slot})
 			}
+		}
+	}
+	// PP recovery items are finite pickups in Red. Offer them only at hard
+	// exhaustion and never while already standing in a Center, where the same
+	// recovery is free. A known Center may still be some distance away, so in
+	// the field both choices remain visible and the finite-resource note tells
+	// the planner exactly what it is spending.
+	if ppExhausted && len(obs.Party) > 0 && !isCenter(obs.MapName) {
+		for _, it := range obs.Bag {
+			id, ok := ppRestoreItems[it.Name]
+			if !ok || it.Quantity < 1 {
+				continue
+			}
+			out = append(out, Objective{
+				Kind: KindUseItem,
+				Item: id,
+				Slot: 0,
+				Note: "(finite PP recovery; prefer a known Center when the detour is practical)",
+			})
 		}
 	}
 	// The gym objective fights the leader of whichever gym the player is
@@ -733,6 +756,21 @@ func partyHurt(obs Observation) bool {
 		}
 	}
 	return false
+}
+
+// leadOutOfPP is the hard-exhaustion fact used by recovery offering. Empty
+// LeadMoves means there is no reliable move state to act on; otherwise every
+// known lead move must be at exactly zero current PP.
+func leadOutOfPP(obs Observation) bool {
+	if len(obs.LeadMoves) == 0 {
+		return false
+	}
+	for _, move := range obs.LeadMoves {
+		if move.PP > 0 {
+			return false
+		}
+	}
+	return true
 }
 
 // fieldMedStatus says what each field medicine does to a party member, and
