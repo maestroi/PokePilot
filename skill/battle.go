@@ -93,13 +93,12 @@ const mainMenuMax = 1
 //
 // Battle also answers the forced switch after a faint in a wild battle: the
 // "Use next #MON?" prompt is answered YES (NO is an escape attempt) and the
-// best live replacement for the current opponent is sent out. It answers the
-// "<NAME> is trying to learn <MOVE>" prompt that a level-up prints when it
-// offers a move while all four slots are full: YES, then in the "Which move
-// should be forgotten?" list it replaces the move in the lowest slot that is
-// not the mon's only damaging option (forgetSlot). The prompt plays during
-// GainExperience while wIsInBattle is still set, so it reaches this loop;
-// Train never sees it.
+// best live replacement for the current opponent is sent out. Level-up move
+// learning is deliberate: DecideNaturalMove can decline a bad move or choose
+// the weakest replaceable slot from the full move-set score. The chosen move
+// is then positively verified from party RAM before Battle is allowed to
+// finish. The prompt plays during GainExperience while wIsInBattle is still
+// set, so it reaches this loop; Train never sees it.
 // The OTHER half of the party menu — the voluntary switch opened by the
 // player through the POKéMON branch — is driven by SwitchActive. Battle now
 // uses that same verified primitive for tactical switches and PP recovery; it
@@ -131,11 +130,15 @@ func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
 
 	startFrame := m.FrameCount()
 
-	// The "forget a move?" episode, if one happens, is tracked across loop
-	// passes: lastForgetSlot is the slot just picked in the move list, and
-	// triedForgets collects the moves the ROM bounced as HM techniques.
+	// The move-learning episode is tracked across loop passes. lastForgetSlot
+	// is the slot just picked in the forget list; triedForgets records a move
+	// the ROM bounced as permanent. pendingLearn* is the positive postcondition:
+	// the offered move must appear in that exact party slot before Battle exits.
 	var lastForgetSlot = -1
 	var triedForgets map[uint8]bool
+	pendingLearnMove := uint8(0)
+	pendingLearnSlot := -1
+	pendingLearnPartySlot := -1
 	forcedChoiceVisits := 0
 	itemUses := 0
 	voluntarySwitches := 0
@@ -146,6 +149,20 @@ func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
 		}
 
 		state.Snapshot(m, &mem)
+		if pendingLearnMove != 0 && pendingLearnSlot >= 0 && pendingLearnPartySlot >= 0 {
+			party := state.DecodeParty(&mem)
+			if pendingLearnPartySlot < len(party.Mons) && party.Mons[pendingLearnPartySlot].Moves[pendingLearnSlot] == pendingLearnMove {
+				if zbatDebug {
+					fmt.Printf("zbat move-learn verified move=%d party-slot=%d move-slot=%d\n",
+						pendingLearnMove, pendingLearnPartySlot, pendingLearnSlot)
+				}
+				pendingLearnMove = 0
+				pendingLearnSlot = -1
+				pendingLearnPartySlot = -1
+				lastForgetSlot = -1
+				triedForgets = nil
+			}
+		}
 		if zbatDebug {
 			if bs := state.DecodeBattle(&mem); bs != nil {
 				fmt.Printf("zbat f=%6d max=%d cur=%d me=%d/%d enemy=%d/%d moves=%v items=%d/%d switches=%d/%d | %s\n",
@@ -156,6 +173,10 @@ func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
 			}
 		}
 		if state.DecodeBattle(&mem) == nil {
+			if pendingLearnMove != 0 {
+				return 0, fmt.Errorf("skill: Battle: natural move %d was accepted for party slot %d move slot %d but the resulting move set was never verified",
+					pendingLearnMove, pendingLearnPartySlot, pendingLearnSlot)
+			}
 			if zbatDebug {
 				fmt.Printf("zbat EXIT f=%d inBattle=%#02x rawResult=%#02x\n",
 					m.FrameCount(), m.Peek8(sym.IsInBattle), m.Peek8(sym.BattleResult))
@@ -312,24 +333,16 @@ func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
 			}
 
 		case forgetMenuUp(m):
-			// "Which move should be forgotten?" — the move list that follows a
-			// YES on the "<NAME> is trying to learn <MOVE>" prompt (learn_move.asm
-			// TryingToLearn) when a level-up offers a move with all four slots
-			// full. Policy: replace the move in the LOWEST slot that is not the
-			// mon's only damaging option — if exactly one of the four moves deals
-			// damage (power > 0 in the ROM move table), that one stays and the
-			// lowest of the rest goes; otherwise the lowest slot goes. A move id
-			// the table cannot answer for counts as damaging, the same safe
-			// reading StatAwareMove uses. If the ROM bounces a pick as an HM
-			// technique (HMCantDeleteText redraws this menu), that move is marked
-			// tried and skipped; if every acceptable slot is bounced, fail loudly.
+			// "Which move should be forgotten?" follows a deliberate YES on
+			// TryingToLearn. Re-evaluate from live RAM so an HM rejection can
+			// remove that move from consideration without guessing a cursor path.
 			bs := state.DecodeBattle(&mem)
 			if bs == nil {
 				continue // the battle ended while the menu was up
 			}
 			if lastForgetSlot >= 0 {
 				// The menu reappeared: the ROM rejected the last pick as an HM
-				// technique, so that move is off the table from now on.
+				// technique (or another permanent move), so remember the fact.
 				if triedForgets == nil {
 					triedForgets = map[uint8]bool{}
 				}
@@ -337,12 +350,20 @@ func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
 				lastForgetSlot = -1
 			}
 			ids := [4]uint8{bs.Moves[0].ID, bs.Moves[1].ID, bs.Moves[2].ID, bs.Moves[3].ID}
-			slot := forgetSlot(m.ROM(), ids, triedForgets)
-			if slot < 0 {
+			offered := m.Peek8(sym.MoveNum)
+			decision := decideNaturalMove(m.ROM(), bs.ActiveType1, bs.ActiveType2, ids, offered, triedForgets)
+			if !decision.Learn || decision.ReplaceSlot < 0 {
 				x, y := playerXY(m)
-				return 0, fmt.Errorf("skill: Battle: map %02x at (%d,%d) battle %+v: every acceptable move is an HM technique, nothing to forget",
-					m.Peek8(sym.CurMap), x, y, bs)
+				return 0, fmt.Errorf("skill: Battle: map %02x at (%d,%d): accepted natural move %d but no legal strategic replacement remains: %s",
+					m.Peek8(sym.CurMap), x, y, offered, decision.Reason)
 			}
+			if zbatDebug {
+				fmt.Printf("zbat move-learn action=replace %s\n", decision.Reason)
+			}
+			slot := decision.ReplaceSlot
+			pendingLearnMove = offered
+			pendingLearnSlot = slot
+			pendingLearnPartySlot = int(m.Peek8(sym.PlayerMonNumber))
 			if err := selectForgetSlot(m, slot); err != nil {
 				return menuError(m, "select move to forget", err)
 			}
@@ -368,33 +389,55 @@ func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
 				return menuError(m, "decline trainer switch", err)
 			}
 
-		case twoOptionPromptUp(m):
-			// Two prompts render this same yes/no box and both are answered YES
-			// (index 0) on purpose, never by the default A-tap: "Use next #MON?"
-			// after the active mon faints in a WILD battle with others alive
-			// (core.asm DoUseNextMonDialogue; NO is an escape attempt,
-			// .tryRunning), and "<NAME> is trying to learn <MOVE>" when a
-			// level-up offers a move with all four slots full (learn_move.asm
-			// TryingToLearn; YES proceeds to the move list that forgetMenuUp
-			// drives, NO abandons the learning and the move is lost).
+		case abandonLearnPromptUp(m):
+			// A strategic NO on TryingToLearn leads to a second confirmation:
+			// "Abandon learning <MOVE>?". YES (index 0) is the intentional
+			// completion of that decision; do not leave it to blind A-mashing.
 			var s state.Mem
 			state.Snapshot(m, &s)
 			if state.DecodeTwoOptionMenu(&s) == nil {
-				// The prompt text is on screen but the menu cursor is not
-				// drawn yet. Tap A, then look again. The tap is load-bearing for
-				// the try-learn prompt: its text has a <CONT> ("<NAME> is trying
-				// to learn" / "BITE!") that blocks on a button press BEFORE the
-				// yes/no box is drawn, so a bare StepFrame spins until the frame
-				// cap (measured: 60k frames stuck on the half-finished line). The
-				// "Use next #MON?" text has no such wait, where the tap is simply
-				// harmless. If the tap lands after the box is drawn it answers
-				// YES at cursor 0 — the same answer SelectMenuItem gives below.
+				m.StepFrame()
+				continue
+			}
+			if err := SelectMenuItem(m, 0); err != nil {
+				return menuError(m, "confirm decline of natural move", err)
+			}
+
+		case twoOptionPromptUp(m):
+			// "Use next #MON?" is always YES. A natural move prompt is now a
+			// scored decision: YES only if the resulting four-move set improves;
+			// otherwise NO proceeds to the explicit abandon confirmation above.
+			var s state.Mem
+			state.Snapshot(m, &s)
+			text := state.ScreenText(&s)
+			if state.DecodeTwoOptionMenu(&s) == nil {
+				// The try-learn text has a <CONT> before the menu. A is required
+				// to reveal the offered move and draw the cursor; UseNextMon has
+				// no such wait, where the tap is harmless.
 				m.Tap(emu.A, 3, 7)
 				continue
 			}
-			// YES is index 0. If this A is lost in the menu's joypad-init
-			// window the next pass sees the same prompt and answers again.
-			if err := SelectMenuItem(m, 0); err != nil {
+			choice := 0 // YES for Use next #MON?
+			if strings.Contains(text, tryLearnMarker) {
+				bs := state.DecodeBattle(&s)
+				if bs == nil {
+					continue
+				}
+				ids := [4]uint8{bs.Moves[0].ID, bs.Moves[1].ID, bs.Moves[2].ID, bs.Moves[3].ID}
+				offered := m.Peek8(sym.MoveNum)
+				decision := decideNaturalMove(m.ROM(), bs.ActiveType1, bs.ActiveType2, ids, offered, nil)
+				if !decision.Learn {
+					choice = 1 // NO: then confirm Abandon learning on the next prompt
+				}
+				if zbatDebug {
+					action := "learn"
+					if !decision.Learn {
+						action = "decline"
+					}
+					fmt.Printf("zbat move-learn action=%s offered=%d reason=%s\n", action, offered, decision.Reason)
+				}
+			}
+			if err := SelectMenuItem(m, choice); err != nil {
 				return menuError(m, "answer two-option prompt", err)
 			}
 
@@ -513,6 +556,9 @@ const (
 	// lines with single spaces and text wraps at word boundaries, so the
 	// phrase stays contiguous no matter where the line breaks.
 	tryLearnMarker = "trying to learn"
+	// abandonLearnMarker is the confirmation shown after answering NO to
+	// TryingToLearn. YES there intentionally completes the strategic decline.
+	abandonLearnMarker = "Abandon learning"
 	// trainerSwitchMarker is on TrainerAboutToUseText, the shift-style
 	// prompt shown between a trainer's party members. Battle answers NO so
 	// the current healthy mon stays out; YES opens BATTLE_PARTY_MENU.
@@ -548,13 +594,16 @@ func moveMenuUp(m *emu.Emu) bool {
 // trying to learn <MOVE>" when a level-up offers a move while all four slots
 // are full. Both render the same TWO_OPTION_MENU; the marker only decides
 // WHICH prompt it is — whether one is actually up is DecodeTwoOptionMenu's
-// job in the case (it checks the drawn cursor), so there is exactly one
-// detection path for both.
+// job in the case (it checks the drawn cursor).
 func twoOptionPromptUp(m *emu.Emu) bool {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
 	t := state.ScreenText(&mem)
 	return strings.Contains(t, useNextMonMarker) || strings.Contains(t, tryLearnMarker)
+}
+
+func abandonLearnPromptUp(m *emu.Emu) bool {
+	return battleScreenHas(m, abandonLearnMarker)
 }
 
 // trainerSwitchPromptUp reports whether the trainer replacement prompt is
@@ -569,15 +618,9 @@ func forgetMenuUp(m *emu.Emu) bool {
 	return battleScreenHas(m, forgetMenuMarker)
 }
 
-// forgetSlot picks which of the mon's four moves to forget when a new move
-// is offered with no empty slot: the LOWEST slot that is not the mon's only
-// damaging option. If exactly one move deals damage (power > 0 in the ROM
-// move table), it stays and the lowest of the rest is returned; otherwise
-// the lowest slot is. A move id the table cannot answer for counts as
-// damaging — the same safe reading StatAwareMove uses, since forgetting a
-// move we cannot classify is how a mon loses its only way to hit. Slots
-// whose move id is in tried are skipped (the ROM bounced them as HM
-// techniques). It returns -1 when every slot is excluded.
+// forgetSlot is the conservative legacy replacement helper used by the Cut
+// teaching path. Natural level-up learning no longer uses slot order: it calls
+// DecideNaturalMove/decideNaturalMove and can decline the offered move.
 func forgetSlot(romData []byte, moves [4]uint8, tried map[uint8]bool) int {
 	damagers := 0
 	damages := [4]bool{}

@@ -58,10 +58,15 @@ type Observation struct {
 	// while the party is empty. No move names: the ROM's table stores no
 	// name strings, and inventing them would be data the player cannot see.
 	LeadMoves []Move
-	// LeadPP is parallel to LeadMoves and contains each move's live current
-	// PP from party RAM, with PP-Up count bits already stripped by
-	// state.DecodeParty. Keeping it separate preserves Move's established
-	// planner/test contract while making hard PP exhaustion observable.
+	// LeadPP is parallel to LeadMoves and is intentionally recovery-oriented.
+	// When the lead owns at least one damaging move, status-only slots are
+	// represented as zero here while damaging slots retain their live current
+	// PP. That makes "TACKLE/VINE WHIP are exhausted but GROWL still has 40 PP"
+	// observable as combat-resource exhaustion instead of letting status PP
+	// hide it forever. If a Pokémon genuinely has no damaging move at all,
+	// its real status PP is preserved so a Center is not offered in a loop for
+	// a resource healing cannot create. PP-Up count bits are already stripped
+	// by state.DecodeParty.
 	LeadPP []uint8
 	// Bag is the decoded bag (state.DecodeInventory), named. Only entries
 	// with a quantity; an unknown item ID says so rather than vanishing.
@@ -282,6 +287,17 @@ func Observe(m *emu.Emu, romData []byte) Observation {
 	}
 	if len(gs.Party.Mons) > 0 {
 		lead := gs.Party.Mons[0]
+		hasDamagingMove := false
+		for _, id := range lead.Moves {
+			if id == 0 {
+				continue
+			}
+			mv, err := rom.LookupMove(romData, id)
+			if err == nil && observedMoveDealsDamage(mv) {
+				hasDamagingMove = true
+				break
+			}
+		}
 		for slot, id := range lead.Moves {
 			if id == 0 {
 				continue
@@ -292,7 +308,11 @@ func Observe(m *emu.Emu, romData []byte) Observation {
 				continue
 			}
 			obs.LeadMoves = append(obs.LeadMoves, Move{Power: mv.Power, Type: moveTypeNames[mv.Type]})
-			obs.LeadPP = append(obs.LeadPP, lead.PP[slot])
+			pp := lead.PP[slot]
+			if hasDamagingMove && !observedMoveDealsDamage(mv) {
+				pp = 0
+			}
+			obs.LeadPP = append(obs.LeadPP, pp)
 		}
 	}
 	for _, it := range gs.Inventory.Items {
@@ -339,6 +359,14 @@ func Observe(m *emu.Emu, romData []byte) Observation {
 		}
 	}
 	return obs
+}
+
+// observedMoveDealsDamage mirrors the battle/move-learning definition for the
+// smaller planner observation. Fixed-damage moves have zero table power in Red
+// but are still attacks; without these effects a Seismic Toss user would look
+// PP-dead while it still had a perfectly usable damaging move.
+func observedMoveDealsDamage(mv rom.Move) bool {
+	return mv.Power > 0 || mv.Effect == rom.SpecialDamageEffect || mv.Effect == rom.SuperFangEffect || mv.Effect == rom.OHKOEffect
 }
 
 // MapObjects decodes one map's objects from the ROM map header — static,

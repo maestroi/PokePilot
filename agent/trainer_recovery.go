@@ -50,6 +50,30 @@ func (k *Knowledge) clearTrainerLossFailures() {
 	}
 }
 
+// ppRecoveryDue reports whether Offer already proved that attacking PP needs
+// recovery by constructing a recovery objective. This deliberately consumes
+// Offer's factual result rather than re-decoding move semantics here: a Center
+// heal carries the PP reason on its note, and a finite Ether/Elixer objective
+// exists only when leadOutOfPP was true. If neither recovery path is actually
+// available, this returns false so the planner is not left with an artificially
+// empty menu.
+func ppRecoveryDue(out []Objective) bool {
+	for _, o := range out {
+		if o.Kind == KindHeal && strings.Contains(o.Note, "lead has no PP") {
+			return true
+		}
+		if o.Kind != KindUseItem {
+			continue
+		}
+		for _, id := range ppRestoreItems {
+			if o.Item == id {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // filterTrainerLossBlocked removes objectives that are currently disproved by
 // observed combat outcomes. Mandatory-trainer losses stay blocked until one
 // successful Train rung as before. Gym recovery adds one bounded phase: after
@@ -58,8 +82,15 @@ func (k *Knowledge) clearTrainerLossFailures() {
 // and training becomes legal again; if it wins, Knowledge.Done consumes the
 // ready marker. This prevents an LLM from climbing L10 -> L12 -> ... -> L22
 // without ever testing whether the last material change was already enough.
+//
+// The same final filter also handles PP recovery. If Offer has constructed a
+// Center/Ether recovery because every real attacking move is exhausted, Train
+// and Gym are withheld until that resource is restored. Status PP (for example
+// GROWL) is not a reason to enter another combat objective that cannot deal
+// damage.
 func filterTrainerLossBlocked(out []Objective, known *Knowledge) []Objective {
 	retryPlace, retryDue := gymRetryPending(known)
+	ppDue := ppRecoveryDue(out)
 	filtered := make([]Objective, 0, len(out))
 	for _, o := range out {
 		if _, blocked := known.Failures[trainerLossFailureKey(o)]; blocked {
@@ -74,6 +105,9 @@ func filterTrainerLossBlocked(out []Objective, known *Knowledge) []Objective {
 			if _, blocked := known.Failures[gymLossFailureKey(o.Place)]; blocked {
 				continue
 			}
+		}
+		if ppDue && (o.Kind == KindTrain || o.Kind == KindGym) {
+			continue
 		}
 		if retryDue && o.Kind == KindTrain {
 			continue

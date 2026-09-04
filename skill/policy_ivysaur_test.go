@@ -43,6 +43,22 @@ func TestStatAwareMoveIvysaurUsesVineWhipAfterTackleIsForgotten(t *testing.T) {
 	}
 }
 
+// The live spectator report that prompted #50 also looked like TACKLE had
+// reached 0 PP and GROWL (slot 2 in the menu) was being repeated. Exhausted
+// TACKLE must disappear from Usable, but that does not make a status move a
+// better attack while VINE WHIP still has PP.
+func TestStatAwareMoveIvysaurUsesVineWhipWhenTackleHasNoPP(t *testing.T) {
+	p := ivysaurPolicy(t)
+	b := battleWith(state.StatStageNeutral, state.StatStageNeutral, 55, 55,
+		tackle.ID, moveGrowl, moveLeechSeed, moveVineWhip)
+	b.ActiveType1, b.ActiveType2 = typeGrassIvysaur, typePoisonIvysaur
+	b.Moves[0].PP = 0
+
+	if got := p(b); got != 3 {
+		t.Fatalf("policy chose slot %d, want 3 (VINE WHIP): TACKLE has no PP and status moves must not replace live damage", got)
+	}
+}
+
 // DISABLE must have the same fallback property. PR #23 made the disabled
 // slot disappear from BattleState.Usable(); this pins the later-Ivysaur case
 // where Tackle is temporarily unavailable while Vine Whip remains legal.
