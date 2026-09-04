@@ -89,8 +89,8 @@ func TestOfferKnownCenterForHealthyPPExhaustedParty(t *testing.T) {
 		fieldMap = 0xfd
 	}
 	known := NewKnowledge(map[uint8][]uint8{
-		fieldMap:  {center.Map},
-		center.Map: {fieldMap},
+		fieldMap:   []uint8{center.Map},
+		center.Map: []uint8{fieldMap},
 	})
 	known.Visited[center.Map] = true
 	obs := Observation{
