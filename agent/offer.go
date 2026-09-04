@@ -759,14 +759,14 @@ func partyHurt(obs Observation) bool {
 }
 
 // leadOutOfPP is the hard-exhaustion fact used by recovery offering. Empty
-// LeadMoves means there is no reliable move state to act on; otherwise every
+// LeadPP means there is no reliable move state to act on; otherwise every
 // known lead move must be at exactly zero current PP.
 func leadOutOfPP(obs Observation) bool {
-	if len(obs.LeadMoves) == 0 {
+	if len(obs.LeadPP) == 0 {
 		return false
 	}
-	for _, move := range obs.LeadMoves {
-		if move.PP > 0 {
+	for _, pp := range obs.LeadPP {
+		if pp > 0 {
 			return false
 		}
 	}
@@ -823,7 +823,6 @@ func nearestKnownCenter(obs Observation, known *Knowledge, knownMaps map[uint8]b
 				dist[next] = dist[queue[0]] + 1
 				queue = append(queue, next)
 			}
-		}
 	}
 	best, bestDist := "", 0
 	for _, name := range skill.PlaceNames() { // sorted: ties break the same way every round
