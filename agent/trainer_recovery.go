@@ -50,15 +50,41 @@ func (k *Knowledge) clearTrainerLossFailures() {
 	}
 }
 
-// filterTrainerLossBlocked removes only objectives that have already blacked
-// out against a mandatory trainer since the last successful training step.
-// The marker is persisted in the ordinary Failure tally, so checkpoint resume
-// cannot forget it. Unrelated routes and actions remain available.
+// filterTrainerLossBlocked removes objectives that are currently disproved by
+// observed combat outcomes. Mandatory-trainer losses stay blocked until one
+// successful Train rung as before. Gym recovery adds one bounded phase: after
+// that rung, another Train objective is withheld until the ready gym retry is
+// actually attempted. If the retry loses, the scoped gym-loss marker returns
+// and training becomes legal again; if it wins, Knowledge.Done consumes the
+// ready marker. This prevents an LLM from climbing L10 -> L12 -> ... -> L22
+// without ever testing whether the last material change was already enough.
 func filterTrainerLossBlocked(out []Objective, known *Knowledge) []Objective {
+	retryPlace, retryDue := gymRetryPending(known)
 	filtered := make([]Objective, 0, len(out))
 	for _, o := range out {
 		if _, blocked := known.Failures[trainerLossFailureKey(o)]; blocked {
 			continue
+		}
+		// Offer normally removes a gym whose scoped leader-loss marker exists
+		// before this filter runs. Keep the same invariant here too: recovery
+		// filtering is also used directly in tests and should never allow an
+		// unchanged leader rechallenge merely because it was handed a raw
+		// candidate list.
+		if o.Kind == KindGym && o.Place != "" {
+			if _, blocked := known.Failures[gymLossFailureKey(o.Place)]; blocked {
+				continue
+			}
+		}
+		if retryDue && o.Kind == KindTrain {
+			continue
+		}
+		if retryDue {
+			switch {
+			case o.Kind == KindGym:
+				o = appendObjectiveNote(o, "(retry due after successful training; test the stronger party now)")
+			case o.Kind == KindGoTo && retryPlace != "" && strings.EqualFold(o.Place, retryPlace):
+				o = appendObjectiveNote(o, "(return for gym retry after successful training)")
+			}
 		}
 		filtered = append(filtered, o)
 	}
