@@ -45,7 +45,7 @@ func FindRoute(g *Graph, from, to uint8) ([]Edge, error) {
 //
 // Edge is comparable, so the caller's set is a plain map[Edge]bool.
 func FindRouteAvoiding(g *Graph, from, to uint8, blockedHere map[Edge]bool) ([]Edge, error) {
-	return findRoute(g, from, to, blockedHere, nil)
+	return findRoute(g, from, to, blockedHere, nil, nil)
 }
 
 // FindRouteAt is FindRouteAvoiding with the player's position on `from` known:
@@ -54,17 +54,39 @@ func FindRouteAvoiding(g *Graph, from, to uint8, blockedHere map[Edge]bool) ([]E
 // components (Route 2, the gate maps) and the caller knows which one it stands
 // in; the component the player is in is the only honest first-hop constraint.
 func FindRouteAt(g *Graph, from, to uint8, x, y int, blockedHere map[Edge]bool) ([]Edge, error) {
-	var first []int
-	if g.componentAware {
-		if c := g.comps[from]; c != nil && y >= 0 && y < len(c) && x >= 0 && x < len(c[0]) && c[y][x] != 0 {
-			first = []int{c[y][x]}
-		}
-	}
-	return findRoute(g, from, to, blockedHere, first)
+	return findRoute(g, from, to, blockedHere, componentSetAt(g, from, x, y), nil)
 }
 
-func findRoute(g *Graph, from, to uint8, blockedHere map[Edge]bool, first []int) ([]Edge, error) {
-	if from == to {
+// FindRouteAtDestination is FindRouteAt with the destination tile known too.
+// On component-aware graphs, reaching the destination MAP is not sufficient:
+// the incoming edge must land in the walkable component that contains (tx,ty).
+// If from == to but the player and target are in different components, this
+// deliberately searches a cycle that leaves and re-enters the map through a
+// component that can actually reach the target.
+func FindRouteAtDestination(g *Graph, from, to uint8, x, y, tx, ty int, blockedHere map[Edge]bool) ([]Edge, error) {
+	first := componentSetAt(g, from, x, y)
+	target := componentSetAt(g, to, tx, ty)
+	if !g.componentAware || len(first) == 0 || len(target) == 0 {
+		// Missing component data is not evidence that a detour is required.
+		// Preserve the old map-level behavior in that case.
+		return findRoute(g, from, to, blockedHere, first, nil)
+	}
+	return findRoute(g, from, to, blockedHere, first, target)
+}
+
+func componentSetAt(g *Graph, mapID uint8, x, y int) []int {
+	if !g.componentAware {
+		return nil
+	}
+	c := g.comps[mapID]
+	if c == nil || y < 0 || y >= len(c) || x < 0 || x >= len(c[y]) || c[y][x] == 0 {
+		return nil
+	}
+	return []int{c[y][x]}
+}
+
+func findRoute(g *Graph, from, to uint8, blockedHere map[Edge]bool, first, target []int) ([]Edge, error) {
+	if from == to && (len(target) == 0 || shareComp(first, target)) {
 		return []Edge{}, nil
 	}
 	// node.prev indexes back into nodes, or -1 for a first hop.
@@ -88,7 +110,7 @@ func findRoute(g *Graph, from, to uint8, blockedHere map[Edge]bool, first []int)
 	}
 	expand(from, -1, first)
 	for i := 0; i < len(nodes); i++ {
-		if nodes[i].edge.To == to {
+		if nodes[i].edge.To == to && (len(target) == 0 || shareComp(g.entryComps[nodes[i].edge], target)) {
 			var route []Edge
 			for j := i; j >= 0; j = nodes[j].prev {
 				route = append([]Edge{nodes[j].edge}, route...)
