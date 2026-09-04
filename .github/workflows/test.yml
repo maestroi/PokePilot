@@ -29,6 +29,12 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Resolve GomeBoy module checksum
+        run: |
+          go mod download github.com/maestroi/gomeboy@v1.1.0
+          git diff -- go.sum
+          exit 1
+
       - name: Verify module graph
         run: |
           go mod download
