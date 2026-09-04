@@ -5,6 +5,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"embed"
 	"encoding/json"
@@ -30,6 +31,9 @@ var indexHTML []byte
 
 //go:embed ui/ui.js
 var uiJS []byte
+
+//go:embed ui/stats.js
+var statsJS []byte
 
 // mapFiles holds build-time semantic map exports. The directory is kept in
 // the repository even before a local ROM owner generates the JSON assets.
@@ -61,12 +65,20 @@ func handlerWithMCP(wallBase, token string) http.Handler {
 	mux.HandleFunc("GET /{$}", func(res http.ResponseWriter, req *http.Request) {
 		res.Header().Set("Content-Type", "text/html; charset=utf-8")
 		res.Header().Set("Cache-Control", "no-store")
-		res.Write(indexHTML) //nolint:errcheck // best effort: the page polls itself
+		// Keep the large console document unchanged: the outcome panel is a
+		// small independent script injected before </body> at serve time.
+		page := bytes.Replace(indexHTML, []byte("</body>"), []byte("<script src=\"/stats.js\"></script>\n</body>"), 1)
+		res.Write(page) //nolint:errcheck // best effort: the page polls itself
 	})
 	mux.HandleFunc("GET /ui.js", func(res http.ResponseWriter, req *http.Request) {
 		res.Header().Set("Content-Type", "text/javascript; charset=utf-8")
 		res.Header().Set("Cache-Control", "no-store")
 		res.Write(uiJS) //nolint:errcheck // best effort
+	})
+	mux.HandleFunc("GET /stats.js", func(res http.ResponseWriter, req *http.Request) {
+		res.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+		res.Header().Set("Cache-Control", "no-store")
+		res.Write(statsJS) //nolint:errcheck // best effort
 	})
 	mountMaps(mux)
 	mux.HandleFunc("GET /v1/version", func(res http.ResponseWriter, req *http.Request) {
@@ -75,6 +87,7 @@ func handlerWithMCP(wallBase, token string) http.Handler {
 		json.NewEncoder(res).Encode(map[string]string{"version": version}) //nolint:errcheck
 	})
 	mux.HandleFunc("GET /v1/dashboard", proxy(wallBase, true))
+	mux.HandleFunc("GET /v1/stats", statsHandler(wallBase))
 	mux.HandleFunc("GET /v1/triage", proxy(wallBase, true))
 	mux.HandleFunc("POST /v1/specs", proxy(wallBase, false))
 	mux.HandleFunc("POST /v1/triage/{key}/investigate", proxy(wallBase, false))
