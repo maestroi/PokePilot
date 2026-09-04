@@ -2,14 +2,15 @@ package agent
 
 import "testing"
 
-func TestPlannerGoalDistinguishesStructuredFromFreeText(t *testing.T) {
+func TestPlannerGoalDistinguishesDeterministicGoalsFromArbitraryProse(t *testing.T) {
 	tests := []struct {
 		name       string
 		raw        string
 		structured bool
 		wantErr    bool
 	}{
-		{name: "free text remains prompt only", raw: "Earn the Boulder Badge."},
+		{name: "known Boulder preset is deterministic", raw: "Earn the Boulder Badge.", structured: true},
+		{name: "arbitrary prose remains prompt only", raw: "Explore Kanto and see how far you get."},
 		{name: "colon in prose remains prompt only", raw: "Goal: earn the Boulder Badge."},
 		{name: "elite four", raw: "elite-four", structured: true},
 		{name: "badge count", raw: "badges:1", structured: true},
@@ -40,9 +41,17 @@ func TestPlannerGoalStatusUsesObservation(t *testing.T) {
 
 	status, structured, err = PlannerGoalStatus("Earn the Boulder Badge.", Observation{Badges: []string{"Boulder"}})
 	if err != nil {
+		t.Fatalf("Boulder preset PlannerGoalStatus: %v", err)
+	}
+	if !structured || !status.Complete || status.Current != 1 || status.Target != 1 {
+		t.Fatalf("Boulder preset did not complete deterministically: structured=%v status=%+v", structured, status)
+	}
+
+	status, structured, err = PlannerGoalStatus("Explore Kanto and see how far you get.", Observation{Badges: []string{"Boulder"}})
+	if err != nil {
 		t.Fatalf("free text PlannerGoalStatus: %v", err)
 	}
 	if structured || status.Complete {
-		t.Fatalf("free-text goal became deterministic: structured=%v status=%+v", structured, status)
+		t.Fatalf("arbitrary free-text goal became deterministic: structured=%v status=%+v", structured, status)
 	}
 }
