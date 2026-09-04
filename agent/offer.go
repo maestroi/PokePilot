@@ -823,6 +823,7 @@ func nearestKnownCenter(obs Observation, known *Knowledge, knownMaps map[uint8]b
 				dist[next] = dist[queue[0]] + 1
 				queue = append(queue, next)
 			}
+		}
 	}
 	best, bestDist := "", 0
 	for _, name := range skill.PlaceNames() { // sorted: ties break the same way every round
