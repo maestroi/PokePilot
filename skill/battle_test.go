@@ -4,7 +4,6 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/skill"
 	"github.com/maestroi/pokepilot/skill/fixture"
@@ -257,30 +256,23 @@ func forcedSwitchAttempt(t *testing.T, attempt int) bool {
 	return false
 }
 
-// TestBattleAnswersForgetMovePrompt is S8-2: a level-up that offers a move
-// while all four slots are full prints "<NAME> is trying to learn <MOVE>?"
-// and, on YES, a "Which move should be forgotten?" list. Before this task
-// Battle's default A-tap branch answered that prompt by accident — the run
-// survives but the move is dropped. Now Battle answers it on purpose: YES,
-// then the move in the lowest slot that is not the mon's only damaging
-// option (forgetSlot) gives way to the new one.
+// TestBattleHandlesStrategicMovePrompt is the ROM-backed acceptance test for
+// #50. A level-up with four full slots prints "<NAME> is trying to learn
+// <MOVE>?". Battle must apply the same deterministic move-set decision used by
+// the ROM-free tests, answer YES or NO deliberately, and if it learns the move
+// replace exactly the selected slot. The final assertion is party RAM, not
+// dialogue or a menu transition.
 //
-// It follows TestTrainSurvivesEvolution's setup: the post_pokeballs
-// fixture's level-15 SQUIRTLE already carries four moves, so the BITE offer
-// is a prompt, not a plain box. The target is level 24, NOT 22: the mon
-// evolves into WARTORTLE at 16, and LearnMoveFromLevelUp reads the CURRENT
-// species' learnset (wPokedexNum = wCurSpecies), where BITE sits at 24 —
-// Squirtle's table says 22, but that table stopped applying at level 16.
-// (Measured: a grind to 22 shows "grew to level 22!" and the stats box and
-// then the battle ends with no prompt at all.) The assertion is POSITIVE
-// and read from RAM: after the grind, the move set is exactly what the
-// stated policy says it should be — BITE in the computed slot, the other
-// three moves untouched.
+// It follows TestTrainSurvivesEvolution's setup: the post_pokeballs fixture's
+// level-15 SQUIRTLE already carries four moves. The target is level 24, NOT 22:
+// the mon evolves into WARTORTLE at 16, and LearnMoveFromLevelUp reads the
+// CURRENT species' learnset, where BITE sits at 24. Squirtle's table says 22,
+// but that table stopped applying at evolution.
 //
 // A full journey (Route 1 grind), guarded out of -short:
 //
-//	POKEMON_RED_ROM=roms/pokemon_red.gb go test ./skill -run TestBattleAnswersForgetMovePrompt -v
-func TestBattleAnswersForgetMovePrompt(t *testing.T) {
+//	POKEMON_RED_ROM=roms/pokemon_red.gb go test ./skill -run TestBattleHandlesStrategicMovePrompt -v
+func TestBattleHandlesStrategicMovePrompt(t *testing.T) {
 	if testing.Short() {
 		t.Skip("full journey (Route 1 grind); run without -short, see the test docs")
 	}
@@ -308,11 +300,14 @@ func TestBattleAnswersForgetMovePrompt(t *testing.T) {
 		}
 	}
 
-	// Expected outcome per the stated policy: BITE replaces the lowest slot
-	// that is not the mon's only damaging option; the other three moves stay.
-	wantSlot := expectedForgetSlot(t, romData, before)
+	decision := skill.DecideNaturalMove(romData, lead.Type1, lead.Type2, before, moveBite)
 	want := before
-	want[wantSlot] = moveBite
+	if decision.Learn {
+		if decision.ReplaceSlot < 0 || decision.ReplaceSlot >= len(want) {
+			t.Fatalf("strategic decision accepted BITE without a valid replacement: %+v", decision)
+		}
+		want[decision.ReplaceSlot] = moveBite
+	}
 
 	dest := route1Grass(t, romData)
 	// Level 24: WARTORTLE's BITE (WartortleEvosMoves db 24), the first
@@ -368,34 +363,7 @@ func TestBattleAnswersForgetMovePrompt(t *testing.T) {
 		t.Fatalf("a sequence was left in progress after Train: battle=%v controllable=%v", state.DecodeBattle(&mem) != nil, state.Controllable(&mem))
 	}
 	if after.Moves != want {
-		t.Fatalf("move set after the level-24 prompt is %v, want %v — BITE (%#02x) replacing slot %d, the lowest slot that is not the mon's only damaging option", after.Moves, want, moveBite, wantSlot)
+		t.Fatalf("move set after the level-24 BITE prompt is %v, want %v from strategic decision %+v", after.Moves, want, decision)
 	}
-	t.Logf("level-24 prompt answered on purpose: moves %v -> %v (BITE %#02x in slot %d), %d battle(s)", before, after.Moves, moveBite, wantSlot, totalBattles)
-}
-
-// expectedForgetSlot mirrors the policy Battle states in forgetSlot: the
-// lowest slot that is not the mon's only damaging option. If exactly one of
-// the four moves deals damage (power > 0 in the ROM move table), it stays
-// and the lowest of the rest is returned; otherwise the lowest slot is.
-func expectedForgetSlot(t *testing.T, romData []byte, moves [4]uint8) int {
-	t.Helper()
-	damagers := 0
-	damages := [4]bool{}
-	for i, id := range moves {
-		mv, err := rom.LookupMove(romData, id)
-		if err != nil {
-			t.Fatalf("look up move %#02x: %v", id, err)
-		}
-		damages[i] = mv.Power > 0
-		if damages[i] {
-			damagers++
-		}
-	}
-	for i := range moves {
-		if !(damagers == 1 && damages[i]) {
-			return i
-		}
-	}
-	t.Fatal("no slot is acceptable")
-	return 0
+	t.Logf("level-24 move prompt handled strategically: moves %v -> %v, decision=%+v, %d battle(s)", before, after.Moves, decision, totalBattles)
 }
