@@ -71,7 +71,9 @@ func ResolveLLMEndpoints(profile LLMProfile) (primary LLMConfig, fallback *LLMCo
 		if hasGPU {
 			return gpu, nil
 		}
-		return lan, nil
+		// GPU-only with no GPU endpoint configured must not silently become
+		// the LAN model. An empty config fails the first ask instead.
+		return LLMConfig{}, nil
 	case LLMProfileAuto:
 		if hasGPU {
 			fb := lan

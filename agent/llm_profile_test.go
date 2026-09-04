@@ -72,9 +72,30 @@ func TestResolveLLMEndpointsAutoWithoutGPUFallsBackToDefault(t *testing.T) {
 	}
 	t.Setenv("POKEPILOT_LLM_URL", "http://lan.example/v1")
 	t.Setenv("POKEPILOT_LLM_MODEL", "lan-model")
+	t.Setenv("llm_token", "")
 
 	primary, fb := ResolveLLMEndpoints(LLMProfileAuto)
 	if primary.BaseURL != "http://lan.example/v1" || fb != nil {
 		t.Fatalf("auto without gpu = primary %+v fallback %v", primary, fb)
+	}
+}
+
+func TestResolveLLMEndpointsGPUWithoutGPUDoesNotUseLAN(t *testing.T) {
+	for _, key := range []string{
+		"POKEPILOT_LLM_GPU_URL", "POKEPILOT_LLM_GPU_MODEL",
+		"POKEPILOT_LLM_FALLBACK_URL", "POKEPILOT_LLM_FALLBACK_MODEL",
+	} {
+		os.Unsetenv(key)
+	}
+	t.Setenv("POKEPILOT_LLM_URL", "http://lan.example/v1")
+	t.Setenv("POKEPILOT_LLM_MODEL", "lan-model")
+	t.Setenv("llm_token", "")
+
+	primary, fb := ResolveLLMEndpoints(LLMProfileGPU)
+	if primary.BaseURL == "http://lan.example/v1" || primary.Model == "lan-model" {
+		t.Fatalf("gpu without gpu endpoint = %+v, must not silently use LAN", primary)
+	}
+	if fb != nil {
+		t.Fatalf("gpu fallback = %+v, want nil", fb)
 	}
 }
