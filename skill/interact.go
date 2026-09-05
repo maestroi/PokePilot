@@ -268,14 +268,19 @@ const (
 // EVENT_BOUGHT_MUSEUM_TICKET and disables the gate script, so the interrupted
 // approach can safely resume. No other prompt is answered here.
 func talkApproachChoiceIndex(mapID uint8, text string) (int, bool) {
-	if mapID != museum1FMap {
-		return 0, false
-	}
-	normalized := strings.ToLower(strings.Join(strings.Fields(text), " "))
-	if !strings.Contains(normalized, "would you like to come in?") {
+	if mapID != museum1FMap || !routeGateChoiceText(text) {
 		return 0, false
 	}
 	return 0, true // Museum1F YesNoChoice: index 0 = YES
+}
+
+// routeGateChoiceText reports whether text is the Museum 1F admission
+// prompt, independent of map. It is split out of talkApproachChoiceIndex so
+// callers can check the (cheap) text before reading the (possibly
+// unavailable, e.g. in tests) map ID that gates the match.
+func routeGateChoiceText(text string) bool {
+	normalized := strings.ToLower(strings.Join(strings.Fields(text), " "))
+	return strings.Contains(normalized, "would you like to come in?")
 }
 
 // talkBeside walks to a walkable tile orthogonally adjacent to (tx,ty) on the
