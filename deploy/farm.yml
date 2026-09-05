@@ -11,8 +11,8 @@
 # file intentionally contains no build: keys because `docker stack deploy`
 # does not build images.
 #
-# The ROM is never baked into the image: the runner bind-mounts the
-# operator's ${POKEMON_RED_ROM} read-only and reads it back as
+# The ROM is never baked into the image: runner and replay tasks bind-mount
+# the operator's ${POKEMON_RED_ROM} read-only and read it back as
 # /rom/pokemon_red.gb.
 #
 # pokeui is in the stack twice: `ui` is the private operator console, while
@@ -52,9 +52,30 @@ services:
       # while bind-mounted host directories survive rollovers fine.
       - ${FARM_STATE_DIR}:/var/lib/pokewall
 
+  replay:
+    image: ${FARM_IMAGE:-pokepilot-farm:local}
+    # Replay is intentionally a separate trust boundary. It needs the ROM and
+    # S3 credentials to verify/render .gbrun recordings; pokewall does not.
+    command: ["pokereplay", "-http", ":8080", "-wall", "http://wall:8080", "-rom", "/rom/pokemon_red.gb"]
+    environment:
+      POKEPILOT_S3_ENDPOINT: ${POKEPILOT_S3_ENDPOINT:-}
+      POKEPILOT_S3_BUCKET: ${POKEPILOT_S3_BUCKET:-}
+      POKEPILOT_S3_REGION: ${POKEPILOT_S3_REGION:-us-east-1}
+      POKEPILOT_S3_ACCESS_KEY: ${POKEPILOT_S3_ACCESS_KEY:-}
+      POKEPILOT_S3_SECRET_KEY: ${POKEPILOT_S3_SECRET_KEY:-}
+      # Rendering a long recording can legitimately take longer than a normal
+      # runner artifact PUT, so replay gets its own configurable S3 timeout.
+      POKEPILOT_S3_TIMEOUT: ${POKEPILOT_REPLAY_S3_TIMEOUT:-10m}
+    volumes:
+      - ${POKEMON_RED_ROM}:/rom/pokemon_red.gb:ro
+    deploy:
+      replicas: 1
+
   ui:
     image: ${FARM_IMAGE:-pokepilot-farm:local}
-    command: ["pokeui", "-http", ":8080", "-wall", "http://wall:8080"]
+    # Private operator only: same-origin proxy to wall metadata plus the replay
+    # sidecar for artifact bytes/video. The public spectator never mounts these.
+    command: ["pokeui", "-http", ":8080", "-wall", "http://wall:8080", "-replay", "http://replay:8080"]
     environment:
       # Empty disables /mcp entirely. Keep this operator service private even
       # when MCP is disabled: its HTTP UI can queue, cancel, and delete runs.
@@ -69,9 +90,9 @@ services:
 
   spectator:
     image: ${FARM_IMAGE:-pokepilot-farm:local}
-    # This process never mounts the operator routes or MCP. It publishes a
-    # sanitized run snapshot plus read-only game frames, so this is the port
-    # intended for a public reverse proxy / hostname.
+    # This process never mounts operator routes, MCP, artifact browsing or
+    # replay. It publishes a sanitized run snapshot plus read-only game frames,
+    # so this is the port intended for a public reverse proxy / hostname.
     command: ["pokeui", "-http", ":8080", "-wall", "http://wall:8080", "-spectator"]
     ports:
       - target: 8080
