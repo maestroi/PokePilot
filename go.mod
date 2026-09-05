@@ -3,7 +3,7 @@ module github.com/maestroi/pokepilot
 go 1.26.0
 
 require (
-	github.com/maestroi/gomeboy v1.0.0
+	github.com/maestroi/gomeboy v1.1.0
 	github.com/modelcontextprotocol/go-sdk v1.7.0
 )
 

@@ -367,6 +367,15 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 		checkpointDir = dir
 	}
 
+	// Start after restore + seed burn, so the checked recording start state
+	// already embodies the run's randomized starting point. Recording is
+	// diagnostic evidence only: failure to start must not affect gameplay.
+	recorder, err := m.StartSessionRecording(farmRecordingMetadata(spec, planner, starter, dest, goal, burn, client.Version))
+	if err != nil {
+		log.Printf("farm: %s: start session recording: %v", spec.RunID, err)
+		recorder = nil
+	}
+
 	// Compose the sample callback on this (stepping) goroutine: the dialogue
 	// tracer plus the heartbeat snapshot, sharing one hoisted Mem buffer.
 	trail := &heartbeatTrail{}
@@ -414,7 +423,8 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 		<-uploaderDone
 	}
 
-	finishRun(m, client, spec, reason, detail, burn, checkpointDir, progEarly, progFinal)
+	recording := stopFarmRecording(spec.RunID, recorder)
+	finishRunWithRecording(m, client, spec, reason, detail, burn, checkpointDir, progEarly, progFinal, recording)
 }
 
 // sampleHeartbeat captures the plain snapshot the heartbeat goroutine will
