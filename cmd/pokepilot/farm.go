@@ -241,9 +241,9 @@ func heartbeatLoop(client *farm.Client, runID string, snap func() farm.Heartbeat
 
 // runFarm is the farm loop: lease a spec, validate it before gameplay, run
 // it exactly as main.go runs from flags, report why it stopped, and lease
-// again. bootState is the SaveState taken right after BootToOverworld; every
-// leased run restores it before applying its seed, so each run starts from
-// the same overworld frame.
+// again. bootState is the SaveState taken right after BootToOverworld; fresh
+// leases restore it before applying their seed. A lease following a lost
+// worker may instead restore the latest durable objective checkpoint.
 //
 // The emulator is single-goroutine: everything that steps or reads it runs
 // on this goroutine. The heartbeat goroutine sees only the plain snapshot.
@@ -336,40 +336,22 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 	// A new lease must not inherit the previous run's plan: the snap is
 	// reused for the worker's lifetime.
 	snap.store(farm.Heartbeat{RunID: spec.RunID})
-	if err := m.LoadState(bootState); err != nil {
-		log.Printf("farm: %s: load state: %v", spec.RunID, err)
-		finishRun(m, client, spec, "error", fmt.Sprintf("load state: %v", err), 0, "", nil, nil)
-		return
-	}
 
-	// The seed is applied exactly once per lease, after the restore: idle
-	// frames shift the cycle count and with it every encounter that follows.
 	seed := spec.Seed
-	burn := seedBurn(seed)
-	if burn > 0 {
-		m.StepFrames(burn)
-		fmt.Printf("seed %d: burned %d idle frames, so this run's luck differs\n", seed, burn)
+	preparedDir, burn, err := prepareFarmAttempt(m, client, spec, planner, bootState, checkpointDir)
+	checkpointDir = preparedDir
+	if err != nil {
+		log.Printf("farm: %s: prepare attempt: %v", spec.RunID, err)
+		finishRun(m, client, spec, "error", err.Error(), 0, checkpointDir, nil, nil)
+		return
 	}
 
 	m.Pace(fps)
 	m.TraceHeader(runHeader(planner, starter, dest, seed, burn))
 
-	// A caller-supplied -checkpoint-dir wins; only an "llm" planner with none
-	// given gets an ephemeral one, so the flag threaded from main.go is never
-	// silently discarded in favor of a temp dir nobody asked for.
-	if checkpointDir == "" && planner == "llm" {
-		dir, err := os.MkdirTemp("", "pokefarm-checkpoints-")
-		if err != nil {
-			log.Printf("farm: %s: checkpoint dir: %v", spec.RunID, err)
-			finishRun(m, client, spec, "error", fmt.Sprintf("checkpoint dir: %v", err), burn, "", nil, nil)
-			return
-		}
-		checkpointDir = dir
-	}
-
-	// Start after restore + seed burn, so the checked recording start state
-	// already embodies the run's randomized starting point. Recording is
-	// diagnostic evidence only: failure to start must not affect gameplay.
+	// Start after fresh restore + seed burn, or after durable resume restore,
+	// so the checked recording start state is the state this worker continues.
+	// Recording is diagnostic evidence only: failure to start must not affect gameplay.
 	recorder, err := m.StartSessionRecording(farmRecordingMetadata(spec, planner, starter, dest, goal, burn, client.Version))
 	if err != nil {
 		log.Printf("farm: %s: start session recording: %v", spec.RunID, err)
@@ -489,8 +471,8 @@ func sampleHeartbeat(m *emu.Emu, runID string, snap *heartbeatSnap, mem *state.M
 
 // workerAddrs lists every non-loopback local address as "host:port", so the
 // wall can reach this runner's watch server from whichever swarm network
-// interface it is on. The container's interfaces are fixed for the process
-// lifetime, so the result is computed once and reused by every heartbeat.
+// interface it is on. Only a run that is actively running has frames — queued,
+// leased and finished runs are not associated with a live watch server.
 func workerAddrs(port int) []string {
 	if port <= 0 {
 		return nil
@@ -549,11 +531,12 @@ func runFarmScripted(m *emu.Emu, starter, dest string) (string, string, *farm.Pr
 // differences are that the budget comes from the spec and cancel is the
 // wall's cooperative stop.
 func runFarmLLM(m *emu.Emu, starter, goal, llmProfile string, maxRounds, maxFrames int, cancel <-chan struct{}, snap *heartbeatSnap, checkpointDir string) (string, string, *farm.Progress, *farm.Progress) {
+	resumeFrom := farmResumePath(checkpointDir)
 	// When the spec names a starter, the farm takes it before handing control
 	// to the model — the same reason badgerun does (a model that knows Pokemon
-	// always picks Squirtle otherwise). An empty starter matches local
-	// run-llm: the opening menu offers all three and the model chooses.
-	if starter != "" {
+	// always picks Squirtle otherwise). A resumed state is already past that
+	// setup, so replaying GetStarter would corrupt the continuation.
+	if starter != "" && resumeFrom == "" {
 		if err := skill.GetStarter(m, m.ROM(), farmStarterFor(starter), skill.StatAwareMove(m.ROM())); err != nil {
 			return "error", fmt.Sprintf("get starter %s: %v", starter, err), nil, nil
 		}
@@ -569,6 +552,7 @@ func runFarmLLM(m *emu.Emu, starter, goal, llmProfile string, maxRounds, maxFram
 		Log:           logw,
 		Cancel:        cancel,
 		CheckpointDir: checkpointDir,
+		ResumeFrom:    resumeFrom,
 	})
 
 	fmt.Printf("\nrun stopped: %s after %d round(s)\n", stopName(res.Stop), res.Rounds)
