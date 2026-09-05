@@ -51,16 +51,21 @@ type Tile struct {
 	RandomSeed bool
 	QueuedAt   time.Time
 	EndedAt    time.Time
-	// Attempts counts completed attempts; a retried run keeps its history
-	// so the grid can show where it is in its retry budget.
+	// Attempts counts completed runner generations. It always advances when
+	// a generation ends so late heartbeats/checkpoints/finish reports can be
+	// rejected even when worker-loss recovery does not consume error budget.
 	Attempts int
-	Frame    uint64
-	Map      uint8
-	X        uint8
-	Y        uint8
-	Trace    string
-	Question string
-	Decision string
+	// ErrorAttempts and LossRecoveries are independent retry budgets. They
+	// are persisted so wall restarts cannot reset either guard.
+	ErrorAttempts  int
+	LossRecoveries int
+	Frame          uint64
+	Map            uint8
+	X              uint8
+	Y              uint8
+	Trace          string
+	Question       string
+	Decision       string
 	// Raw is the last verbatim model exchange from the heartbeat. Live
 	// only: it is deliberately absent from persistedTile, so a wall
 	// restart drops it rather than growing the state file.
@@ -100,38 +105,40 @@ type Tile struct {
 // grid template never reads live tiles after unlock. Rendering []*Tile
 // after unlock is what raced with heartbeat/cancel/finish.
 type tileRow struct {
-	RunID      string           `json:"run_id"`
-	Status     string           `json:"status"`
-	Planner    string           `json:"planner"`
-	Starter    string           `json:"starter"`
-	Dest       string           `json:"dest"`
-	Goal       string           `json:"goal,omitempty"`
-	LLMProfile string           `json:"llm_profile,omitempty"`
-	Seed       int64            `json:"seed"`
-	FPS        int              `json:"fps"`
-	MaxRounds  int              `json:"max_rounds"`
-	MaxFrames  int              `json:"max_frames"`
-	Endless    bool             `json:"endless,omitempty"`
-	RandomSeed bool             `json:"random_seed,omitempty"`
-	QueuedAt   int64            `json:"queued_at,omitempty"`
-	EndedAt    int64            `json:"ended_at,omitempty"`
-	Frame      uint64           `json:"frame"`
-	Map        uint8            `json:"map"`
-	X          uint8            `json:"x"`
-	Y          uint8            `json:"y"`
-	Trace      string           `json:"trace"`
-	Question   string           `json:"question,omitempty"`
-	Decision   string           `json:"decision,omitempty"`
-	Raw        string           `json:"raw,omitempty"`
-	StopSoFar  string           `json:"stop_so_far"`
-	Sprites    []farm.MapSprite `json:"sprites,omitempty"`
-	Trail      [][2]uint8       `json:"trail,omitempty"`
-	Stats      *farm.LLMStats   `json:"stats,omitempty"`
-	Player     *farm.Player     `json:"player,omitempty"`
-	Attempts   int              `json:"attempts"`
-	Reason     string           `json:"reason"`
-	Detail     string           `json:"detail"`
-	Issue      *IssueLink       `json:"issue,omitempty"`
+	RunID          string           `json:"run_id"`
+	Status         string           `json:"status"`
+	Planner        string           `json:"planner"`
+	Starter        string           `json:"starter"`
+	Dest           string           `json:"dest"`
+	Goal           string           `json:"goal,omitempty"`
+	LLMProfile     string           `json:"llm_profile,omitempty"`
+	Seed           int64            `json:"seed"`
+	FPS            int              `json:"fps"`
+	MaxRounds      int              `json:"max_rounds"`
+	MaxFrames      int              `json:"max_frames"`
+	Endless        bool             `json:"endless,omitempty"`
+	RandomSeed     bool             `json:"random_seed,omitempty"`
+	QueuedAt       int64            `json:"queued_at,omitempty"`
+	EndedAt        int64            `json:"ended_at,omitempty"`
+	Frame          uint64           `json:"frame"`
+	Map            uint8            `json:"map"`
+	X              uint8            `json:"x"`
+	Y              uint8            `json:"y"`
+	Trace          string           `json:"trace"`
+	Question       string           `json:"question,omitempty"`
+	Decision       string           `json:"decision,omitempty"`
+	Raw            string           `json:"raw,omitempty"`
+	StopSoFar      string           `json:"stop_so_far"`
+	Sprites        []farm.MapSprite `json:"sprites,omitempty"`
+	Trail          [][2]uint8       `json:"trail,omitempty"`
+	Stats          *farm.LLMStats   `json:"stats,omitempty"`
+	Player         *farm.Player     `json:"player,omitempty"`
+	Attempts       int              `json:"attempts"`
+	ErrorAttempts  int              `json:"error_attempts,omitempty"`
+	LossRecoveries int              `json:"loss_recoveries,omitempty"`
+	Reason         string           `json:"reason"`
+	Detail         string           `json:"detail"`
+	Issue          *IssueLink       `json:"issue,omitempty"`
 }
 
 // Wall owns the spec queue, the tile map, cancel flags, the optional dump
@@ -181,36 +188,38 @@ func (w *Wall) SetStatePath(path string) {
 // a restarted wall can resume proxying frames without waiting for the next
 // heartbeat; lastUpdate is not (see Tile.lastUpdate).
 type persistedTile struct {
-	RunID       string         `json:"run_id"`
-	Status      string         `json:"status"`
-	Planner     string         `json:"planner,omitempty"`
-	Starter     string         `json:"starter,omitempty"`
-	Dest        string         `json:"dest,omitempty"`
-	Goal        string         `json:"goal,omitempty"`
-	LLMProfile  string         `json:"llm_profile,omitempty"`
-	Seed        int64          `json:"seed"`
-	FPS         int            `json:"fps"`
-	MaxRounds   int            `json:"max_rounds"`
-	MaxFrames   int            `json:"max_frames"`
-	Endless     bool           `json:"endless,omitempty"`
-	RandomSeed  bool           `json:"random_seed,omitempty"`
-	QueuedAt    int64          `json:"queued_at,omitempty"`
-	EndedAt     int64          `json:"ended_at,omitempty"`
-	Attempts    int            `json:"attempts"`
-	Frame       uint64         `json:"frame"`
-	Map         uint8          `json:"map"`
-	X           uint8          `json:"x"`
-	Y           uint8          `json:"y"`
-	Trace       string         `json:"trace,omitempty"`
-	Question    string         `json:"question,omitempty"`
-	Decision    string         `json:"decision,omitempty"`
-	StopSoFar   string         `json:"stop_so_far,omitempty"`
-	Stats       *farm.LLMStats `json:"stats,omitempty"`
-	Player      *farm.Player   `json:"player,omitempty"`
-	Reason      string         `json:"reason,omitempty"`
-	Detail      string         `json:"detail,omitempty"`
-	Finished    bool           `json:"finished"`
-	WorkerAddrs []string       `json:"worker_addrs,omitempty"`
+	RunID          string         `json:"run_id"`
+	Status         string         `json:"status"`
+	Planner        string         `json:"planner,omitempty"`
+	Starter        string         `json:"starter,omitempty"`
+	Dest           string         `json:"dest,omitempty"`
+	Goal           string         `json:"goal,omitempty"`
+	LLMProfile     string         `json:"llm_profile,omitempty"`
+	Seed           int64          `json:"seed"`
+	FPS            int            `json:"fps"`
+	MaxRounds      int            `json:"max_rounds"`
+	MaxFrames      int            `json:"max_frames"`
+	Endless        bool           `json:"endless,omitempty"`
+	RandomSeed     bool           `json:"random_seed,omitempty"`
+	QueuedAt       int64          `json:"queued_at,omitempty"`
+	EndedAt        int64          `json:"ended_at,omitempty"`
+	Attempts       int            `json:"attempts"`
+	ErrorAttempts  int            `json:"error_attempts,omitempty"`
+	LossRecoveries int            `json:"loss_recoveries,omitempty"`
+	Frame          uint64         `json:"frame"`
+	Map            uint8          `json:"map"`
+	X              uint8          `json:"x"`
+	Y              uint8          `json:"y"`
+	Trace          string         `json:"trace,omitempty"`
+	Question       string         `json:"question,omitempty"`
+	Decision       string         `json:"decision,omitempty"`
+	StopSoFar      string         `json:"stop_so_far,omitempty"`
+	Stats          *farm.LLMStats `json:"stats,omitempty"`
+	Player         *farm.Player   `json:"player,omitempty"`
+	Reason         string         `json:"reason,omitempty"`
+	Detail         string         `json:"detail,omitempty"`
+	Finished       bool           `json:"finished"`
+	WorkerAddrs    []string       `json:"worker_addrs,omitempty"`
 }
 
 // persistedState is the wall's whole on-disk memory: run order, tiles, and
@@ -234,36 +243,38 @@ func (w *Wall) marshalStateLocked() ([]byte, error) {
 	}
 	for id, t := range w.tiles {
 		ps.Tiles[id] = persistedTile{
-			RunID:       t.RunID,
-			Status:      t.Status,
-			Planner:     t.Planner,
-			Starter:     t.Starter,
-			Dest:        t.Dest,
-			Goal:        t.Goal,
-			LLMProfile:  t.LLMProfile,
-			Seed:        t.Seed,
-			FPS:         t.FPS,
-			MaxRounds:   t.MaxRounds,
-			MaxFrames:   t.MaxFrames,
-			Endless:     t.Endless,
-			RandomSeed:  t.RandomSeed,
-			QueuedAt:    unixTime(t.QueuedAt),
-			EndedAt:     unixTime(t.EndedAt),
-			Attempts:    t.Attempts,
-			Frame:       t.Frame,
-			Map:         t.Map,
-			X:           t.X,
-			Y:           t.Y,
-			Trace:       t.Trace,
-			Question:    t.Question,
-			Decision:    t.Decision,
-			StopSoFar:   t.StopSoFar,
-			Stats:       t.Stats,
-			Player:      t.Player,
-			Reason:      t.Reason,
-			Detail:      t.Detail,
-			Finished:    t.Finished,
-			WorkerAddrs: append([]string(nil), t.workerAddrs...),
+			RunID:          t.RunID,
+			Status:         t.Status,
+			Planner:        t.Planner,
+			Starter:        t.Starter,
+			Dest:           t.Dest,
+			Goal:           t.Goal,
+			LLMProfile:     t.LLMProfile,
+			Seed:           t.Seed,
+			FPS:            t.FPS,
+			MaxRounds:      t.MaxRounds,
+			MaxFrames:      t.MaxFrames,
+			Endless:        t.Endless,
+			RandomSeed:     t.RandomSeed,
+			QueuedAt:       unixTime(t.QueuedAt),
+			EndedAt:        unixTime(t.EndedAt),
+			Attempts:       t.Attempts,
+			ErrorAttempts:  t.ErrorAttempts,
+			LossRecoveries: t.LossRecoveries,
+			Frame:          t.Frame,
+			Map:            t.Map,
+			X:              t.X,
+			Y:              t.Y,
+			Trace:          t.Trace,
+			Question:       t.Question,
+			Decision:       t.Decision,
+			StopSoFar:      t.StopSoFar,
+			Stats:          t.Stats,
+			Player:         t.Player,
+			Reason:         t.Reason,
+			Detail:         t.Detail,
+			Finished:       t.Finished,
+			WorkerAddrs:    append([]string(nil), t.workerAddrs...),
 		}
 	}
 	return json.Marshal(ps)
@@ -316,37 +327,39 @@ func (w *Wall) loadState() {
 		}
 		w.order = append(w.order, id)
 		w.tiles[id] = &Tile{
-			RunID:       pt.RunID,
-			Status:      pt.Status,
-			Planner:     pt.Planner,
-			Starter:     pt.Starter,
-			Dest:        pt.Dest,
-			Goal:        pt.Goal,
-			LLMProfile:  pt.LLMProfile,
-			Seed:        pt.Seed,
-			FPS:         pt.FPS,
-			MaxRounds:   pt.MaxRounds,
-			MaxFrames:   pt.MaxFrames,
-			Endless:     pt.Endless,
-			RandomSeed:  pt.RandomSeed,
-			QueuedAt:    timeFromUnix(pt.QueuedAt),
-			EndedAt:     timeFromUnix(pt.EndedAt),
-			Attempts:    pt.Attempts,
-			Frame:       pt.Frame,
-			Map:         pt.Map,
-			X:           pt.X,
-			Y:           pt.Y,
-			Trace:       pt.Trace,
-			Question:    pt.Question,
-			Decision:    pt.Decision,
-			StopSoFar:   pt.StopSoFar,
-			Stats:       pt.Stats,
-			Player:      pt.Player,
-			Reason:      pt.Reason,
-			Detail:      pt.Detail,
-			Finished:    pt.Finished,
-			workerAddrs: append([]string(nil), pt.WorkerAddrs...),
-			lastUpdate:  now,
+			RunID:          pt.RunID,
+			Status:         pt.Status,
+			Planner:        pt.Planner,
+			Starter:        pt.Starter,
+			Dest:           pt.Dest,
+			Goal:           pt.Goal,
+			LLMProfile:     pt.LLMProfile,
+			Seed:           pt.Seed,
+			FPS:            pt.FPS,
+			MaxRounds:      pt.MaxRounds,
+			MaxFrames:      pt.MaxFrames,
+			Endless:        pt.Endless,
+			RandomSeed:     pt.RandomSeed,
+			QueuedAt:       timeFromUnix(pt.QueuedAt),
+			EndedAt:        timeFromUnix(pt.EndedAt),
+			Attempts:       pt.Attempts,
+			ErrorAttempts:  pt.ErrorAttempts,
+			LossRecoveries: pt.LossRecoveries,
+			Frame:          pt.Frame,
+			Map:            pt.Map,
+			X:              pt.X,
+			Y:              pt.Y,
+			Trace:          pt.Trace,
+			Question:       pt.Question,
+			Decision:       pt.Decision,
+			StopSoFar:      pt.StopSoFar,
+			Stats:          pt.Stats,
+			Player:         pt.Player,
+			Reason:         pt.Reason,
+			Detail:         pt.Detail,
+			Finished:       pt.Finished,
+			workerAddrs:    append([]string(nil), pt.WorkerAddrs...),
+			lastUpdate:     now,
 		}
 	}
 	w.queue = append(w.queue, ps.Queue...)
@@ -451,6 +464,8 @@ func (w *Wall) applySpec(runID string, spec farm.Spec) {
 	t.QueuedAt = time.Now()
 	t.EndedAt = time.Time{}
 	t.Attempts = 0 // a manual re-queue is a fresh start, not a retry
+	t.ErrorAttempts = 0
+	t.LossRecoveries = 0
 	t.Frame = 0
 	t.Map = 0
 	t.X = 0
@@ -878,38 +893,40 @@ func (w *Wall) snapshot() dashboardView {
 		id := w.order[i]
 		t := w.tiles[id]
 		rows = append(rows, tileRow{
-			RunID:      t.RunID,
-			Status:     t.Status,
-			Planner:    t.Planner,
-			Starter:    t.Starter,
-			Dest:       t.Dest,
-			Goal:       t.Goal,
-			LLMProfile: t.LLMProfile,
-			Seed:       t.Seed,
-			FPS:        t.FPS,
-			MaxRounds:  t.MaxRounds,
-			MaxFrames:  t.MaxFrames,
-			Endless:    t.Endless,
-			RandomSeed: t.RandomSeed,
-			QueuedAt:   unixTime(t.QueuedAt),
-			EndedAt:    unixTime(t.EndedAt),
-			Attempts:   t.Attempts,
-			Frame:      t.Frame,
-			Map:        t.Map,
-			X:          t.X,
-			Y:          t.Y,
-			Trace:      t.Trace,
-			Question:   t.Question,
-			Decision:   t.Decision,
-			Raw:        t.Raw,
-			StopSoFar:  t.StopSoFar,
-			Sprites:    append([]farm.MapSprite(nil), t.Sprites...),
-			Trail:      append([][2]uint8(nil), t.Trail...),
-			Stats:      t.Stats,
-			Player:     t.Player,
-			Reason:     t.Reason,
-			Detail:     t.Detail,
-			Issue:      issueLinkFor(t, w.issueLinks),
+			RunID:          t.RunID,
+			Status:         t.Status,
+			Planner:        t.Planner,
+			Starter:        t.Starter,
+			Dest:           t.Dest,
+			Goal:           t.Goal,
+			LLMProfile:     t.LLMProfile,
+			Seed:           t.Seed,
+			FPS:            t.FPS,
+			MaxRounds:      t.MaxRounds,
+			MaxFrames:      t.MaxFrames,
+			Endless:        t.Endless,
+			RandomSeed:     t.RandomSeed,
+			QueuedAt:       unixTime(t.QueuedAt),
+			EndedAt:        unixTime(t.EndedAt),
+			Attempts:       t.Attempts,
+			ErrorAttempts:  t.ErrorAttempts,
+			LossRecoveries: t.LossRecoveries,
+			Frame:          t.Frame,
+			Map:            t.Map,
+			X:              t.X,
+			Y:              t.Y,
+			Trace:          t.Trace,
+			Question:       t.Question,
+			Decision:       t.Decision,
+			Raw:            t.Raw,
+			StopSoFar:      t.StopSoFar,
+			Sprites:        append([]farm.MapSprite(nil), t.Sprites...),
+			Trail:          append([][2]uint8(nil), t.Trail...),
+			Stats:          t.Stats,
+			Player:         t.Player,
+			Reason:         t.Reason,
+			Detail:         t.Detail,
+			Issue:          issueLinkFor(t, w.issueLinks),
 		})
 	}
 	return dashboardView{Now: now.Unix(), WallVersion: w.Version, Runs: rows, Workers: workers}
@@ -1220,22 +1237,45 @@ func (w *Wall) RunPublisher(dir string, interval time.Duration) {
 // it lost. Thirty seconds is thirty heartbeat cycles of margin.
 const defaultStaleExpiry = 30 * time.Second
 
-// maxAttempts is how many times a run may be attempted before the wall
-// settles it as failed.
-const maxAttempts = 3
+const (
+	// maxAttempts remains the genuine gameplay/code error retry budget. Keep
+	// the historic name because tests and diagnostics already use it.
+	maxAttempts = 3
+	// maxLostRecoveries is deliberately much larger: deployments and worker
+	// churn should not kill a healthy long-running run, but a crash loop must
+	// still terminate eventually.
+	maxLostRecoveries = 20
+)
 
-// settleRun records that a run stopped for reason/detail. error and lost
-// are retried up to maxAttempts, each retry with a fresh seed (the same
-// seed replays the same bad luck); everything else settles as done. A run
-// the user cancelled is never retried: that stop was intentional. Caller
-// holds w.mu; it returns the number of attempts completed so far.
+// settleRun records that one runner generation stopped for reason/detail.
+// Attempts always advances to preserve generation identity. Genuine errors
+// and worker loss consume separate budgets; everything else settles at once.
+// A user cancellation is never retried. Caller holds w.mu; the return value
+// is the number of completed generations.
 func (w *Wall) settleRun(t *Tile, reason, detail string, now time.Time) int {
 	t.Attempts++
 	completed := t.Attempts
+	switch reason {
+	case "error":
+		t.ErrorAttempts++
+	case "lost":
+		t.LossRecoveries++
+	}
 	t.lastUpdate = now
 	_, cancelled := w.cancel[t.RunID]
 	delete(w.cancel, t.RunID)
-	if (reason != "error" && reason != "lost") || cancelled || completed >= maxAttempts {
+
+	terminal := reason != "error" && reason != "lost"
+	if reason == "error" && t.ErrorAttempts >= maxAttempts {
+		terminal = true
+	}
+	if reason == "lost" && t.LossRecoveries >= maxLostRecoveries {
+		terminal = true
+	}
+	if cancelled {
+		terminal = true
+	}
+	if terminal {
 		t.Status = statusDone
 		t.Reason = reason
 		t.Detail = detail
@@ -1247,7 +1287,7 @@ func (w *Wall) settleRun(t *Tile, reason, detail string, now time.Time) int {
 		return completed
 	}
 	// Retry: fresh luck, fresh progress, back of the queue. The old
-	// runner's addresses belong to its attempt, not this one.
+	// runner's addresses belong to its generation, not the next one.
 	t.Status = statusQueued
 	t.Seed = rand.Int64()
 	t.Frame = 0
@@ -1320,11 +1360,11 @@ func (w *Wall) enqueueNextLocked(prev *Tile) {
 }
 
 // reapStale handles leased or running runs whose lastUpdate is older than
-// w.staleAfter: settleRun declares them lost and retries them while
-// attempts remain. It returns what it handled. Queued runs are never
-// reaped: they are waiting for a runner, not on one. It also drops workers
-// unseen for longer than workerExpiry; worker presence is never persisted,
-// so only the run handling triggers a save.
+// w.staleAfter: settleRun declares them lost and retries them while the
+// worker-loss recovery budget remains. Queued runs are never reaped: they
+// are waiting for a runner, not on one. It also drops workers unseen for
+// longer than workerExpiry; worker presence is never persisted, so only run
+// handling triggers a save.
 func (w *Wall) reapStale(now time.Time) []string {
 	w.mu.Lock()
 	var reaped []string
