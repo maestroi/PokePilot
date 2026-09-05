@@ -135,7 +135,16 @@ func WalkPath(m *emu.Emu, path []world.Step) error {
 const (
 	maxWalkRetries = 6
 	npcWaitFrames  = 48
+
+	// Two misses at the same destination are enough to distinguish a
+	// deterministic runtime blocker from the known one-snapshot sprite races
+	// below. The learned blocker lives only for this walkAround call.
+	unexplainedBlockLearnThreshold = 2
 )
+
+func blockedDestination(e *ErrBlocked) [2]int {
+	return [2]int{int(e.At.X) + e.Step.DX, int(e.At.Y) + e.Step.DY}
+}
 
 // walkAround walks a planned path, re-planning around obstacles the static
 // collision grid cannot know about: sprites stand in doorways and wander
@@ -143,17 +152,20 @@ const (
 //
 // readBlocked returns the tiles live sprites occupy right now, decoded from
 // a fresh RAM snapshot; it is called exactly once at the top of every
-// attempt, and that snapshot is what plan receives. plan must re-read the
-// player's position, because a partially-walked path leaves them somewhere
-// new. walk performs the steps. wait lets game time pass.
+// attempt. plan must re-read the player's position, because a partially-walked
+// path leaves them somewhere new. walk performs the steps. wait lets game
+// time pass.
 //
-// Live sprite positions are ephemeral observations, never learned world
-// geometry. Every plan rebuilds blockers from current RAM. A collision
-// retries from new RAM; no blocker cache exists, so there is nothing to
-// expire or forget.
+// Live sprite positions are ephemeral observations and are never cached.
+// Separately, if real movement is blocked twice at the same destination while
+// that tile is absent from the live-sprite snapshot, the destination is added
+// to a call-local blocker set. That gives the pathfinder one bounded chance to
+// route around deterministic runtime geometry without teaching permanent
+// world state or special-casing a map coordinate. This is the failure shape
+// seen in Mt. Moon 1F at (10,22)->(9,22): repeatedly retrying the identical
+// static-grid path can never make progress, but another path may.
 //
-// Two known races, both absorbed by the retry and neither a reason for a
-// cache:
+// Two known sprite races are absorbed before a blocker is learned:
 //
 //   - The liveness filter is the sprite's IMAGEINDEX, which is the screen
 //     overlay's state, so the snapshot is screen-local: a sprite that just
@@ -165,15 +177,19 @@ const (
 //     the snapshot may report the tile it is leaving, not the one it is
 //     entering.
 func walkAround(readBlocked func() map[[2]int]bool, plan func(blocked map[[2]int]bool) ([]world.Step, error), walk func([]world.Step) error, wait func()) error {
+	unexplainedMisses := map[[2]int]int{}
+	learnedBlocked := map[[2]int]bool{}
+
 	for attempt := 0; ; attempt++ {
-		blocked := readBlocked()
+		liveBlocked := readBlocked()
+		blocked := mergeBlockers(liveBlocked, learnedBlocked)
 		steps, err := plan(blocked)
 		if err != nil {
-			// A plan error with live blockers present is a sprite problem,
-			// not a grid problem: the grid does not lie, so the snapshot is
-			// the first thing to doubt. With no live blockers the static
-			// path error is real and is returned unchanged.
-			if len(blocked) == 0 || attempt >= maxWalkRetries {
+			// A plan error is retryable only when the fresh sprite snapshot
+			// contains blockers that may move. Call-local learned blockers are
+			// evidence from repeated failed movement, so do not spin waiting
+			// for them to disappear.
+			if len(liveBlocked) == 0 || attempt >= maxWalkRetries {
 				return err
 			}
 			wait()
@@ -184,8 +200,22 @@ func walkAround(readBlocked func() map[[2]int]bool, plan func(blocked map[[2]int
 			if !errors.As(err, &eb) || attempt >= maxWalkRetries {
 				return err
 			}
+
+			target := blockedDestination(eb)
+			if liveBlocked[target] {
+				// This was explained by the snapshot we planned from. Never
+				// turn an observed sprite position into learned geometry.
+				delete(unexplainedMisses, target)
+			} else {
+				unexplainedMisses[target]++
+				if unexplainedMisses[target] >= unexplainedBlockLearnThreshold {
+					learnedBlocked[target] = true
+				}
+			}
+
 			wait() // give a wandering sprite time to move on; the next
-			// attempt reads a fresh snapshot
+			// attempt reads a fresh snapshot and may also avoid a repeatedly
+			// unexplained destination for the remainder of this call
 			continue
 		}
 		return nil
