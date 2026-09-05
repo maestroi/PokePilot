@@ -681,7 +681,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 		// The failure tally, for the same reason and read the same way:
 		// History scrolls, this does not.
 		last.Failures = known.FailureList()
-		now := Offer(last, known)
+		now := offerWithTMHM(m, romData, last, known)
 		if len(now) == 0 {
 			res.Stop = StopError
 			res.Err = errors.New("agent: Run: nothing is possible from here")
@@ -750,7 +750,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 		}
 
 		before := last
-		if err := Execute(m, romData, obj); err != nil {
+		if err := executeObjective(m, romData, obj); err != nil {
 			// The failure is recorded where the planner reads it — the next
 			// round's history — and the run continues. res.Rounds counts the
 			// failed round: it ran.
