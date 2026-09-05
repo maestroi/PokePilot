@@ -15,8 +15,8 @@ import (
 )
 
 const (
-	defaultObjectiveFailureReportEvery    = 2 * time.Second
-	agentOrchestratorMaxArtifactBytes      = 8 << 20
+	defaultObjectiveFailureReportEvery = 2 * time.Second
+	agentOrchestratorMaxArtifactBytes  = 8 << 20
 )
 
 type objectiveDumpStamp struct {
