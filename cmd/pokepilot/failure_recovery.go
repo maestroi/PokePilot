@@ -8,6 +8,8 @@ import (
 
 const farmFailureCooldownRounds = 2
 
+const farmGymChallengeNote = "(gym challenge: this action approaches, talks to, and battles the leader)"
+
 // farmProgressionCritical reports objectives that represent an explicit story
 // frontier rather than an optional/repeatable action. These stay visible even
 // when the exact objective failed recently: hiding one merely because other
@@ -33,6 +35,27 @@ func farmProgressionCritical(o agent.Objective) bool {
 	}
 }
 
+// clarifyFarmProgression makes the atomic gym verb explicit on the exact menu
+// line the LLM chooses. `go to pewter gym` and `beat the gym leader here` can
+// otherwise look like two halves of the same action, and small planners have
+// been observed to do only the first half. KindGym already owns the approach,
+// leader dialogue and battle in skill.Gym; this note exposes that existing
+// contract without changing objective identity or hard-coding Brock.
+func clarifyFarmProgression(offered []agent.Objective) []agent.Objective {
+	out := append([]agent.Objective(nil), offered...)
+	for i := range out {
+		if out[i].Kind != agent.KindGym || strings.Contains(out[i].Note, farmGymChallengeNote) {
+			continue
+		}
+		if out[i].Note == "" {
+			out[i].Note = farmGymChallengeNote
+		} else {
+			out[i].Note += " " + farmGymChallengeNote
+		}
+	}
+	return out
+}
+
 // farmRecoveryOffered keeps an exact objective that just failed out of the
 // farm planner's menu for a short cooldown when alternatives exist. This is
 // deliberately run-local and temporary: it prevents the current
@@ -44,6 +67,7 @@ func farmProgressionCritical(o agent.Objective) bool {
 // blocker, but silently hiding them can itself create a progression failure.
 // If filtering would remove every remaining option, the full menu is returned.
 func farmRecoveryOffered(obs agent.Observation, offered []agent.Objective) []agent.Objective {
+	offered = clarifyFarmProgression(offered)
 	if len(offered) <= 1 || len(obs.History) == 0 {
 		return offered
 	}
