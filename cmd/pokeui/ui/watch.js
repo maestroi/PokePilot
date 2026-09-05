@@ -4,16 +4,21 @@
   const $ = (id) => document.getElementById(id);
   const liveStatuses = new Set(["leased", "running"]);
   const frameMs = 50; // 20 fps; same cap as the operator console
+  const replayStatusTTL = 10000;
   const query = new URLSearchParams(window.location.search);
   let selectedRunID = query.get("run") || "";
-  let snapshot = { now: 0, runs: [] };
+  let selectionPinned = query.has("run");
+  let snapshot = { now: 0, runs: [], summary: { live: 0, queued: 0, completed: 0 } };
   let wallDown = false;
   let pumpingID = "";
   let pumpStop = null;
   let blobUrl = "";
+  let currentReplayID = "";
   const lastOnce = new Set();
+  const replayStatusCache = new Map();
   const mapAssets = new Map();
   let mapRenderSerial = 0;
+  let mediaSerial = 0;
 
   function setText(id, value) {
     $(id).textContent = value == null || value === "" ? "—" : String(value);
@@ -28,35 +33,53 @@
     return run && liveStatuses.has(run.status);
   }
 
+  function newest(runs, field) {
+    return [...runs].sort((a, b) => Number(b[field] || 0) - Number(a[field] || 0))[0] || null;
+  }
+
   function preferredRun(runs) {
     if (!runs.length) return null;
-    if (selectedRunID) {
+    if (selectionPinned && selectedRunID) {
       const selected = runs.find((run) => run.run_id === selectedRunID);
       if (selected) return selected;
     }
-    const running = runs.find((run) => run.status === "running");
+    const running = newest(runs.filter((run) => run.status === "running"), "queued_at");
     if (running) return running;
-    const leased = runs.find((run) => run.status === "leased");
+    const leased = newest(runs.filter((run) => run.status === "leased"), "queued_at");
     if (leased) return leased;
-    const queued = runs.find((run) => run.status === "queued");
+    const queued = newest(runs.filter((run) => run.status === "queued"), "queued_at");
     if (queued) return queued;
-    return runs[runs.length - 1];
+    return newest(runs.filter((run) => run.status === "done"), "ended_at") || runs[runs.length - 1];
   }
 
   function selectRun(runID) {
     selectedRunID = runID;
+    selectionPinned = Boolean(runID);
     const url = new URL(window.location.href);
     if (runID) url.searchParams.set("run", runID);
     else url.searchParams.delete("run");
     history.replaceState(null, "", url);
     render();
-    syncFrame();
+    syncMedia();
+  }
+
+  function runPermalink(runID) {
+    const url = new URL(window.location.href);
+    url.searchParams.set("run", runID);
+    return url.toString();
+  }
+
+  function replayState(runID) {
+    return replayStatusCache.get(runID)?.status?.state || "";
   }
 
   function renderStatus(run) {
     const el = $("status");
+    const replayReady = run?.status === "done" && replayState(run.run_id) === "ready";
     el.classList.toggle("live", isLive(run));
-    el.querySelector("span:last-child").textContent = run ? statusLabel(run.status) : wallDown ? "Offline" : "Waiting";
+    el.classList.toggle("replay", replayReady);
+    const label = !run ? (wallDown ? "Offline" : "Waiting") : isLive(run) ? "Live" : replayReady ? "Replay" : statusLabel(run.status);
+    el.querySelector("span:last-child").textContent = label;
   }
 
   function renderParty(run) {
@@ -98,47 +121,61 @@
     });
   }
 
-  function renderRunList(runs, activeRun) {
-    const list = $("run-list");
+  function makeRunButton(run, activeRun) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "run-btn";
+    button.classList.toggle("active", activeRun && run.run_id === activeRun.run_id);
+    button.addEventListener("click", () => selectRun(run.run_id));
+
+    const top = document.createElement("div");
+    top.className = "run-btn-top";
+    const title = document.createElement("strong");
+    title.textContent = run.run_id || "Untitled run";
+    const status = document.createElement("span");
+    status.className = "mini-status";
+    const ready = run.status === "done" && replayState(run.run_id) === "ready";
+    status.classList.toggle("live", isLive(run));
+    status.classList.toggle("replay", ready);
+    status.textContent = isLive(run) ? "live" : ready ? "replay" : statusLabel(run.status);
+    top.append(title, status);
+
+    const meta = document.createElement("small");
+    const route = [run.starter, run.dest].filter(Boolean).join(" → ");
+    meta.textContent = route || run.goal || "Pokémon Red run";
+    button.append(top, meta);
+    return button;
+  }
+
+  function fillRunList(id, runs, activeRun, emptyText) {
+    const list = $(id);
     list.replaceChildren();
     if (!runs.length) {
       const empty = document.createElement("div");
-      empty.className = "sub";
-      empty.textContent = "No runs yet. Spectator mode cannot start one.";
+      empty.className = "empty-list";
+      empty.textContent = emptyText;
       list.appendChild(empty);
       return;
     }
+    runs.forEach((run) => list.appendChild(makeRunButton(run, activeRun)));
+  }
 
-    const ordered = [...runs].sort((a, b) => {
-      const aLive = isLive(a) || a.status === "queued" ? 1 : 0;
-      const bLive = isLive(b) || b.status === "queued" ? 1 : 0;
-      if (aLive !== bLive) return bLive - aLive;
-      return (b.ended_at || b.queued_at || 0) - (a.ended_at || a.queued_at || 0);
-    });
+  function renderRunLists(runs, activeRun) {
+    const live = [...runs]
+      .filter((run) => run.status !== "done")
+      .sort((a, b) => Number(b.queued_at || 0) - Number(a.queued_at || 0));
+    const recent = [...runs]
+      .filter((run) => run.status === "done")
+      .sort((a, b) => Number(b.ended_at || 0) - Number(a.ended_at || 0));
+    fillRunList("live-list", live, activeRun, "Nothing is running right now.");
+    fillRunList("recent-list", recent, activeRun, "No completed runs are available yet.");
+  }
 
-    ordered.forEach((run) => {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "run-btn";
-      button.classList.toggle("active", activeRun && run.run_id === activeRun.run_id);
-      button.addEventListener("click", () => selectRun(run.run_id));
-
-      const top = document.createElement("div");
-      top.className = "run-btn-top";
-      const title = document.createElement("strong");
-      title.textContent = run.run_id || "Untitled run";
-      const status = document.createElement("span");
-      status.className = "mini-status";
-      status.classList.toggle("live", isLive(run));
-      status.textContent = statusLabel(run.status);
-      top.append(title, status);
-
-      const meta = document.createElement("small");
-      const route = [run.starter, run.dest].filter(Boolean).join(" → ");
-      meta.textContent = route || run.goal || "Pokémon Red run";
-      button.append(top, meta);
-      list.appendChild(button);
-    });
+  function renderFarmSummary() {
+    const summary = snapshot.summary || {};
+    setText("farm-live", summary.live || 0);
+    setText("farm-queued", summary.queued || 0);
+    setText("farm-completed", summary.completed || 0);
   }
 
   function renderStats(run) {
@@ -250,37 +287,36 @@
     status.textContent = `0x${Number(run.map || 0).toString(16).padStart(2, "0").toUpperCase()} · ${run.x ?? 0},${run.y ?? 0}`;
     loadMapAsset(run.map).then((asset) => {
       if (serial !== mapRenderSerial) return;
-      const paint = () => {
+      requestAnimationFrame(() => {
         if (serial !== mapRenderSerial) return;
         if (!asset || !paintMap(canvas, asset, run)) panel.hidden = true;
-      };
-      requestAnimationFrame(paint);
+      });
     });
   }
 
   function render() {
     const runs = Array.isArray(snapshot.runs) ? snapshot.runs : [];
     const run = preferredRun(runs);
-    if (run && selectedRunID !== run.run_id) selectedRunID = run.run_id;
+    if (run && !selectionPinned) selectedRunID = run.run_id;
 
-    renderRunList(runs, run);
+    renderRunLists(runs, run);
+    renderFarmSummary();
     renderStatus(run);
+    $("copy-link").hidden = !run;
 
     if (!run) {
-      setText("run-title", wallDown ? "Spectator feed unavailable" : "No runs to watch yet");
-      setText("run-sub", wallDown ? "The public read-only endpoint cannot reach the wall." : "When an operator starts a run, it will appear here automatically.");
+      setText("run-title", wallDown ? "Spectator feed unavailable" : "Nothing is live right now");
+      setText("run-sub", wallDown ? "The public read-only endpoint cannot reach the wall." : "Recent completed runs will appear here when recordings are available.");
       ["map", "position", "round", "badges-count", "goal", "decision", "stats"].forEach((id) => setText(id, "—"));
       $("goal-progress").style.transform = "scaleX(0)";
       renderParty(null);
-      $("frame").hidden = true;
-      $("screen-empty").hidden = false;
       $("map-panel").hidden = true;
       return;
     }
 
     setText("run-title", run.run_id);
     const route = [run.starter, run.dest].filter(Boolean).join(" → ");
-    setText("run-sub", route || (run.status === "done" ? "Completed run" : "Pokémon Red autonomous run"));
+    setText("run-sub", route || (isLive(run) ? "Pokémon Red autonomous run" : "Completed run · replay when available"));
     setText("map", `0x${Number(run.map || 0).toString(16).padStart(2, "0").toUpperCase()}`);
     setText("position", `${run.x ?? 0}, ${run.y ?? 0}`);
     setText("round", run.stats ? `${run.stats.round || 0}${run.stats.rounds_left >= 0 ? ` · ${run.stats.rounds_left} left` : ""}` : "—");
@@ -298,7 +334,7 @@
       if (!response.ok) throw new Error(`watch ${response.status}`);
       snapshot = await response.json();
       wallDown = false;
-      $("connection").textContent = "Public spectator feed · state refreshes automatically";
+      $("connection").textContent = "Public spectator feed · live state refreshes automatically";
       $("connection").classList.remove("offline");
     } catch (error) {
       wallDown = true;
@@ -306,20 +342,56 @@
       $("connection").classList.add("offline");
     }
     render();
-    syncFrame();
+    syncMedia();
+  }
+
+  function setMediaLabel(text, kind) {
+    const label = $("media-label");
+    if (!text) {
+      label.hidden = true;
+      label.textContent = "";
+      label.classList.remove("live", "replay");
+      return;
+    }
+    label.hidden = false;
+    label.textContent = text;
+    label.classList.toggle("live", kind === "live");
+    label.classList.toggle("replay", kind === "replay");
+  }
+
+  function hideReplay() {
+    const video = $("replay");
+    if (currentReplayID) {
+      video.pause();
+      video.removeAttribute("src");
+      video.load();
+      currentReplayID = "";
+    }
+    video.hidden = true;
+    $("replay-tools").hidden = true;
   }
 
   function showEmpty(message) {
     const image = $("frame");
     const empty = $("screen-empty");
+    hideReplay();
     image.hidden = true;
     empty.hidden = false;
     if (message) empty.textContent = message;
   }
 
+  function completedSummary(run) {
+    const goal = run?.stats?.goal_summary || run?.goal || "Pokémon Red run";
+    const badges = run?.player?.badges?.length ?? 0;
+    const calls = run?.stats?.calls || 0;
+    const result = run?.reason ? `Finished: ${run.reason}` : "Run completed";
+    return `${result}\n${goal}\n${badges} badge${badges === 1 ? "" : "s"} · ${calls} model call${calls === 1 ? "" : "s"}\nNo public replay or final frame is available for this run.`;
+  }
+
   function paintFrame(url) {
     const image = $("frame");
     const empty = $("screen-empty");
+    hideReplay();
     image.onload = () => {
       image.hidden = false;
       empty.hidden = true;
@@ -328,7 +400,27 @@
     image.src = url;
   }
 
+  function showReplay(run) {
+    stopPump();
+    const image = $("frame");
+    const empty = $("screen-empty");
+    const video = $("replay");
+    image.hidden = true;
+    empty.hidden = true;
+    video.hidden = false;
+    $("replay-tools").hidden = false;
+    setMediaLabel("Replay", "replay");
+    if (currentReplayID !== run.run_id) {
+      currentReplayID = run.run_id;
+      video.src = `/v1/watch/runs/${encodeURIComponent(run.run_id)}/replay/video`;
+      video.load();
+    }
+    video.playbackRate = Number($("playback-rate").value || 1);
+    video.onerror = () => showEmpty(completedSummary(run));
+  }
+
   function sleep(ms) { return new Promise((ok) => setTimeout(ok, ms)); }
+
   function whenVisible() {
     if (!document.hidden) return Promise.resolve();
     return new Promise((ok) => {
@@ -351,6 +443,8 @@
   function ensurePump(id) {
     if (pumpingID === id) return;
     stopPump();
+    hideReplay();
+    setMediaLabel("● Live", "live");
     pumpingID = id;
     let stop = false;
     pumpStop = () => { stop = true; };
@@ -364,6 +458,7 @@
           if (r.ok) {
             const url = URL.createObjectURL(await r.blob());
             paintFrame(url);
+            setMediaLabel("● Live", "live");
             if (blobUrl) URL.revokeObjectURL(blobUrl);
             blobUrl = url;
           }
@@ -374,27 +469,54 @@
     })();
   }
 
-  function fetchLast(id) {
+  function fetchLast(run) {
+    const id = run.run_id;
     if (lastOnce.has(id)) return;
     lastOnce.add(id);
     (async () => {
       try {
         const r = await fetch("/frame?run=" + encodeURIComponent(id), { cache: "no-store" });
         if (!r.ok) {
-          lastOnce.delete(id);
-          showEmpty("No captured frame is available for this run.");
+          showEmpty(completedSummary(run));
           return;
         }
         paintFrame(URL.createObjectURL(await r.blob()));
-      } catch (e) { lastOnce.delete(id); }
+        setMediaLabel("Final frame", "");
+      } catch (e) {
+        lastOnce.delete(id);
+        showEmpty(completedSummary(run));
+      }
     })();
   }
 
-  function syncFrame() {
+  async function getReplayStatus(runID) {
+    const cached = replayStatusCache.get(runID);
+    const now = Date.now();
+    if (cached && now - cached.at < replayStatusTTL) return cached.status;
+    try {
+      const response = await fetch(`/v1/watch/runs/${encodeURIComponent(runID)}/replay/status`, { cache: "no-store" });
+      if (!response.ok) {
+        const status = { run_id: runID, state: "unavailable" };
+        replayStatusCache.set(runID, { at: now, status });
+        return status;
+      }
+      const status = await response.json();
+      replayStatusCache.set(runID, { at: now, status });
+      return status;
+    } catch (e) {
+      const status = { run_id: runID, state: "unavailable" };
+      replayStatusCache.set(runID, { at: now, status });
+      return status;
+    }
+  }
+
+  async function syncMedia() {
+    const serial = ++mediaSerial;
     const run = preferredRun(Array.isArray(snapshot.runs) ? snapshot.runs : []);
     if (!run || !run.run_id) {
       stopPump();
-      showEmpty();
+      setMediaLabel("", "");
+      showEmpty(wallDown ? "Spectator feed unavailable." : "Nothing is live right now.\nChoose a recent run to inspect its public summary.");
       return;
     }
     if (run.status === "running") {
@@ -403,11 +525,40 @@
     }
     stopPump();
     if (run.status === "done") {
-      fetchLast(run.run_id);
+      const status = await getReplayStatus(run.run_id);
+      if (serial !== mediaSerial) return;
+      renderStatus(run);
+      renderRunLists(Array.isArray(snapshot.runs) ? snapshot.runs : [], run);
+      if (status.state === "ready") {
+        showReplay(run);
+        return;
+      }
+      setMediaLabel("Completed", "");
+      fetchLast(run);
       return;
     }
+    setMediaLabel("Waiting", "");
     showEmpty(run.status === "queued" || run.status === "leased" ? "Waiting for the live game screen…" : "No captured frame is available for this run.");
   }
+
+  $("playback-rate").addEventListener("change", () => {
+    $("replay").playbackRate = Number($("playback-rate").value || 1);
+  });
+
+  $("copy-link").addEventListener("click", async () => {
+    const run = preferredRun(Array.isArray(snapshot.runs) ? snapshot.runs : []);
+    if (!run) return;
+    const link = runPermalink(run.run_id);
+    try {
+      await navigator.clipboard.writeText(link);
+      const button = $("copy-link");
+      const before = button.textContent;
+      button.textContent = "Copied";
+      setTimeout(() => { button.textContent = before; }, 1200);
+    } catch (e) {
+      window.prompt("Copy this run link", link);
+    }
+  });
 
   refreshSnapshot();
   setInterval(refreshSnapshot, 2000);
