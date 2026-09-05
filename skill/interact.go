@@ -316,7 +316,7 @@ func talkBeside(m *emu.Emu, romData []byte, tx, ty uint8, policy MovePolicy) err
 			if !recognized {
 				return fmt.Errorf("skill: TalkAt: approach beside (%d,%d) on map %#04x: %w", tx, ty, dest.Map, err)
 			}
-			if err := SelectMenuItem(m, index); err != nil {
+			if err := selectTwoOption(m, index); err != nil {
 				return fmt.Errorf("skill: TalkAt: answer Museum admission while approaching (%d,%d): %w", tx, ty, err)
 			}
 			handledChoices++
