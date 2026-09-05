@@ -20,14 +20,34 @@ func vaapiDevice() string {
 }
 
 func detectVAAPI() bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("POKEPILOT_REPLAY_ENCODER"))) {
+	on, _, _ := currentVAAPI()
+	return on
+}
+
+func currentVAAPI() (enabled bool, encoder, reason string) {
+	device := vaapiDevice()
+	_, err := os.Stat(device)
+	return vaapiExplain(os.Getenv("POKEPILOT_REPLAY_ENCODER"), device, err == nil)
+}
+
+func vaapiExplain(encoderEnv, device string, deviceExists bool) (enabled bool, encoder, reason string) {
+	switch strings.ToLower(strings.TrimSpace(encoderEnv)) {
 	case "off", "libx264", "software":
-		return false
+		return false, "libx264", "POKEPILOT_REPLAY_ENCODER=" + strings.TrimSpace(encoderEnv)
 	case "vaapi", "on":
-		return true
+		return true, "h264_vaapi", "POKEPILOT_REPLAY_ENCODER=" + strings.TrimSpace(encoderEnv)
 	}
-	_, err := os.Stat(vaapiDevice())
-	return err == nil
+	if deviceExists {
+		return true, "h264_vaapi", "render node " + device
+	}
+	return false, "libx264", "render node " + device + " not found"
+}
+
+func (s *replayServer) encoderName() string {
+	if s.vaapi {
+		return "h264_vaapi"
+	}
+	return "libx264"
 }
 
 func (s *replayServer) streamArgs(recordingPath, videoPath string) []string {

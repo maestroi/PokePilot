@@ -71,6 +71,7 @@ type replayServer struct {
 	romPath      string
 	streamBinary string
 	vaapi        bool
+	vaapiReason  string
 	ffmpegVAAPI  string
 	store        *artifactstore.S3
 	wallHTTP     *http.Client
@@ -93,7 +94,13 @@ func newReplayServer(wallBase, romPath, streamBinary string, store *artifactstor
 func (s *replayServer) handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "s3_configured": s.store != nil})
+		writeJSON(w, http.StatusOK, map[string]any{
+			"status":        "ok",
+			"s3_configured": s.store != nil,
+			"encoder":       s.encoderName(),
+			"vaapi":         s.vaapi,
+			"vaapi_reason":  s.vaapiReason,
+		})
 	})
 	mux.HandleFunc("GET /v1/runs/{id}/replay/status", s.handleReplayStatus)
 	mux.HandleFunc("POST /v1/runs/{id}/replay/render", s.handleReplayRender)
@@ -271,7 +278,11 @@ func (s *replayServer) replayStatus(ctx context.Context, runID string, recording
 func (s *replayServer) render(runID string, recording artifactRef, cacheKey string) {
 	ctx, cancel := context.WithTimeout(context.Background(), renderTimeout)
 	defer cancel()
+	started := time.Now()
+	encoder := s.encoderName()
+	log.Printf("pokereplay render start run=%s key=%s encoder=%s vaapi=%t", runID, cacheKey, encoder, s.vaapi)
 	setError := func(err error) {
+		log.Printf("pokereplay render fail run=%s key=%s encoder=%s dur=%s err=%v", runID, cacheKey, encoder, time.Since(started).Round(time.Millisecond), err)
 		s.setJob(cacheKey, replayStatus{RunID: runID, State: "error", ObjectKey: cacheKey, Error: clipError(err)})
 	}
 
@@ -305,6 +316,7 @@ func (s *replayServer) render(runID string, recording artifactRef, cacheKey stri
 		setError(err)
 		return
 	}
+	log.Printf("pokereplay render ok run=%s key=%s encoder=%s dur=%s size=%d", runID, cacheKey, encoder, time.Since(started).Round(time.Millisecond), obj.Size)
 	s.setJob(cacheKey, replayStatus{RunID: runID, State: "ready", ObjectKey: obj.Key, Size: obj.Size})
 }
 
@@ -549,7 +561,9 @@ func main() {
 		log.Printf("pokereplay: S3 not configured; artifact metadata remains browsable but replay cache is disabled")
 	}
 	serverImpl := newReplayServer(*wallBase, *romPath, *streamBinary, store)
-	serverImpl.vaapi = detectVAAPI()
+	on, encoder, reason := currentVAAPI()
+	serverImpl.vaapi = on
+	serverImpl.vaapiReason = reason
 	serverImpl.ffmpegVAAPI = defaultFFmpegVAAPI
 	server := &http.Server{
 		Addr:              *httpAddr,
@@ -562,7 +576,7 @@ func main() {
 
 	errCh := make(chan error, 1)
 	go func() { errCh <- server.ListenAndServe() }()
-	log.Printf("pokereplay listening on http://%s (wall %s, s3=%t, vaapi=%t)", *httpAddr, *wallBase, store != nil, serverImpl.vaapi)
+	log.Printf("pokereplay listening on http://%s (wall %s, s3=%t, encoder=%s, vaapi=%t, %s)", *httpAddr, *wallBase, store != nil, encoder, on, reason)
 	select {
 	case err := <-errCh:
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
