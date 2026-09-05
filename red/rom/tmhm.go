@@ -14,12 +14,12 @@ import "fmt"
 // actually running.
 const (
 	technicalMachinesOffset = 0x13773 // 04:7773, 55 move ids
-	pokedexOrderOffset       = 0x41024 // 10:5024, internal species -> dex number
-	pokedexOrderLen          = 190
-	baseStatsOffset          = 0x383DE // 0E:43DE, indexed by dex number - 1
-	baseStatsEntryLen        = 28
-	baseStatsTMHMOffset      = 20
-	tmhmBytesPerSpecies      = 7
+	pokedexOrderOffset      = 0x41024 // 10:5024, internal species -> dex number
+	pokedexOrderLen         = 190
+	baseStatsOffset         = 0x383DE // 0E:43DE, indexed by dex number - 1
+	baseStatsEntryLen       = 28
+	baseStatsTMHMOffset     = 20
+	tmhmBytesPerSpecies     = 7
 
 	HM01Item uint8 = 0xC4
 	HM05Item uint8 = 0xC8
