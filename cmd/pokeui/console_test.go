@@ -72,6 +72,28 @@ func TestUIShowsLatestPlan(t *testing.T) {
 	}
 }
 
+func TestUIInspectorLivesInHistory(t *testing.T) {
+	html := string(indexHTML)
+	if !strings.Contains(html, `id="run-inspector"`) {
+		t.Error("history card must host the run inspector")
+	}
+	if !strings.Contains(html, `class="history-list"`) {
+		t.Error("history list must scroll separately from the inspector")
+	}
+	js := string(inspectorJS)
+	for _, want := range []string{`className = "inspect"`, `class="block"`, `pokefarm-select-run`} {
+		if !strings.Contains(js, want) {
+			t.Errorf("inspector.js missing %q", want)
+		}
+	}
+	if strings.Contains(js, "pp-inspector-card") {
+		t.Error("inspector must use farm blocks, not a bolted-on card kit")
+	}
+	if strings.Contains(js, "runs[0].run_id") {
+		t.Error("inspector must not auto-select the first dashboard run")
+	}
+}
+
 func TestUIHistoryCanBeDeletedAndNewestFirst(t *testing.T) {
 	js := string(uiJS)
 	for _, want := range []string{`data-delete`, `method: "DELETE"`} {

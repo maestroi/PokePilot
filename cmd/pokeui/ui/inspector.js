@@ -1,44 +1,318 @@
 (() => {
-  const root = document.createElement('section');
-  root.id = 'run-inspector';
-  root.className = 'pp-inspector';
+  const root = document.getElementById("run-inspector") || document.createElement("section");
+  if (!root.id) {
+    root.id = "run-inspector";
+    const host = document.querySelector(".history .ops-inner") || document.querySelector("main") || document.body;
+    host.appendChild(root);
+  }
+  root.className = "inspect";
   root.innerHTML = `
-    <style>
-      .pp-inspector{margin:24px auto 40px;max-width:1180px;padding:0 16px;color:inherit;font:inherit}.pp-inspector *{box-sizing:border-box}
-      .pp-inspector-head{display:flex;align-items:end;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px}.pp-inspector h2{margin:0;font-size:1.15rem}.pp-inspector p{margin:.25rem 0;color:var(--muted,#6b7280)}
-      .pp-inspector-controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.pp-inspector select,.pp-inspector button{font:inherit;min-height:36px;border:1px solid rgba(127,127,127,.35);border-radius:8px;background:inherit;color:inherit;padding:6px 10px}.pp-inspector button{cursor:pointer}.pp-inspector button:disabled{opacity:.55;cursor:default}
-      .pp-inspector-grid{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(260px,.75fr);gap:12px}.pp-inspector-card{border:1px solid rgba(127,127,127,.28);border-radius:12px;padding:14px;background:rgba(127,127,127,.035);min-width:0}.pp-inspector-card h3{margin:0 0 10px;font-size:.95rem}
-      .pp-inspector-meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}.pp-inspector-kv{min-width:0}.pp-inspector-kv small{display:block;color:var(--muted,#6b7280);font-size:.72rem}.pp-inspector-kv strong{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:.9rem}
-      .pp-inspector-player video{width:100%;max-height:480px;image-rendering:pixelated;background:#000;border-radius:8px;margin-top:8px}.pp-inspector-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.pp-inspector-status{font-size:.82rem;color:var(--muted,#6b7280);word-break:break-word}
-      .pp-inspector-table-wrap{overflow:auto}.pp-inspector table{width:100%;border-collapse:collapse;font-size:.84rem}.pp-inspector th,.pp-inspector td{text-align:left;padding:7px 8px;border-bottom:1px solid rgba(127,127,127,.2);white-space:nowrap}.pp-inspector td:first-child{white-space:normal;word-break:break-word}.pp-inspector a{color:inherit}.pp-inspector details{margin-top:12px}.pp-inspector pre{max-height:420px;overflow:auto;padding:10px;border-radius:8px;background:rgba(127,127,127,.08);font-size:.75rem;white-space:pre-wrap;word-break:break-word}.pp-inspector-empty{padding:18px 0;color:var(--muted,#6b7280)}
-      @media(max-width:760px){.pp-inspector-grid{grid-template-columns:1fr}.pp-inspector-controls{width:100%}.pp-inspector select{flex:1;min-width:0}}
-    </style>
-    <div class="pp-inspector-head"><div><h2>Run Inspector</h2><p>Replay deterministic recordings, browse artifacts, and inspect the compact LLM debug bundle.</p></div><div class="pp-inspector-controls"><label>Run <select id="pp-inspector-run"><option value="">Loading…</option></select></label><button id="pp-inspector-refresh" type="button">Refresh</button></div></div>
-    <div id="pp-inspector-empty" class="pp-inspector-card pp-inspector-empty">Select a run to inspect it.</div>
-    <div id="pp-inspector-content" class="pp-inspector-grid" hidden>
-      <div class="pp-inspector-card"><h3>Run</h3><div id="pp-inspector-meta" class="pp-inspector-meta"></div><details><summary>Debug bundle</summary><pre id="pp-inspector-debug"></pre></details></div>
-      <div class="pp-inspector-card pp-inspector-player"><h3>Replay</h3><div class="pp-inspector-actions"><button id="pp-inspector-replay" type="button">Replay recording</button><span id="pp-inspector-replay-status" class="pp-inspector-status"></span></div><video id="pp-inspector-video" controls preload="metadata" hidden></video></div>
-      <div class="pp-inspector-card" style="grid-column:1/-1"><h3>Artifacts</h3><div class="pp-inspector-table-wrap"><table><thead><tr><th>Name</th><th>Type</th><th>Size</th><th>Storage</th><th>SHA-256</th><th></th></tr></thead><tbody id="pp-inspector-artifacts"></tbody></table></div></div>
+    <div class="inspect-head">
+      <h3>Selected run</h3>
+      <div class="inspect-controls">
+        <label>Run <select id="pp-inspector-run"><option value="">Loading…</option></select></label>
+        <button id="pp-inspector-refresh" type="button" class="pager-btn">Refresh</button>
+      </div>
+    </div>
+    <p id="pp-inspector-empty" class="empty">Select a run from the list to replay it and browse artifacts.</p>
+    <div id="pp-inspector-content" class="inspect-grid" hidden>
+      <div class="block">
+        <h3>Run</h3>
+        <dl id="pp-inspector-meta" class="kv"></dl>
+        <div class="inspect-actions">
+          <button id="pp-inspector-replay" type="button" class="pager-btn">Replay recording</button>
+          <span id="pp-inspector-replay-status" class="inspect-status"></span>
+        </div>
+        <video id="pp-inspector-video" controls preload="metadata" hidden></video>
+        <p id="pp-inspector-art-empty" class="inspect-status">No artifacts recorded for this run.</p>
+        <details class="plan-raw"><summary>Debug bundle</summary><pre id="pp-inspector-debug"></pre></details>
+      </div>
+      <div id="pp-inspector-art-table" class="block inspect-arts" hidden>
+        <h3>Artifacts</h3>
+        <div class="inspect-table-wrap">
+          <table>
+            <thead><tr><th>Name</th><th>Type</th><th>Size</th><th>Storage</th><th>SHA-256</th><th></th></tr></thead>
+            <tbody id="pp-inspector-artifacts"></tbody>
+          </table>
+        </div>
+      </div>
     </div>`;
 
-  (document.querySelector('main') || document.body).appendChild(root);
   const $ = (id) => root.querySelector(id);
-  const runSelect=$('#pp-inspector-run'), refreshButton=$('#pp-inspector-refresh'), empty=$('#pp-inspector-empty'), content=$('#pp-inspector-content'), meta=$('#pp-inspector-meta'), debugPre=$('#pp-inspector-debug'), artifactBody=$('#pp-inspector-artifacts'), replayButton=$('#pp-inspector-replay'), replayStatus=$('#pp-inspector-replay-status'), video=$('#pp-inspector-video');
-  let selectedRun='', selectedDebug=null, replayPoll=0;
-  const esc=encodeURIComponent;
-  const text=(v)=>v===undefined||v===null||v===''?'—':String(v);
-  const short=(s,n=16)=>!s?'—':(s.length>n?`${s.slice(0,n)}…`:s);
-  const fmtTime=(unix)=>unix?new Date(Number(unix)*1000).toLocaleString():'—';
-  const fmtSize=(raw)=>{let n=Number(raw||0);if(!Number.isFinite(n)||n<=0)return'—';const u=['B','KiB','MiB','GiB'];let i=0;while(n>=1024&&i<u.length-1){n/=1024;i++}return`${n>=10||i===0?n.toFixed(0):n.toFixed(1)} ${u[i]}`};
-  async function json(url,options){const res=await fetch(url,{cache:'no-store',...options});let body=null;try{body=await res.json()}catch(_){}if(!res.ok)throw new Error((body&&body.error)||`${res.status} ${res.statusText}`);return body}
-  function stopReplayPoll(){if(replayPoll)clearTimeout(replayPoll);replayPoll=0}
-  function kv(label,value,title){const n=document.createElement('div');n.className='pp-inspector-kv';const s=document.createElement('small');s.textContent=label;const b=document.createElement('strong');b.textContent=text(value);if(title)b.title=title;n.append(s,b);return n}
-  function renderDebug(debug){const run=debug.run||{},finish=debug.finish||{},summary=debug.summary||{},stats=run.stats||{};meta.replaceChildren(kv('Status',run.status),kv('Attempt',finish.attempt||run.attempts||1),kv('Goal',run.goal,run.goal),kv('Reason',finish.reason||run.reason,finish.detail||run.detail),kv('Map / position',`${run.map??'—'} · ${run.x??'—'},${run.y??'—'}`),kv('Frame',run.frame),kv('Queued',fmtTime(run.queued_at)),kv('Ended',fmtTime(run.ended_at)),kv('Runner build',short(finish.runner_version,18),finish.runner_version),kv('LLM model',stats.model||run.llm_profile),kv('LLM rounds',stats.rounds??stats.round),kv('Progress',summary.progress_known?(summary.progressed?'yes':'no'):'unknown'));debugPre.textContent=JSON.stringify(debug,null,2)}
-  function renderArtifacts(list){artifactBody.replaceChildren();const artifacts=Array.isArray(list.artifacts)?list.artifacts:[];if(!artifacts.length){const row=document.createElement('tr'),cell=document.createElement('td');cell.colSpan=6;cell.textContent='No artifacts recorded for this run.';row.append(cell);artifactBody.append(row);return}for(const a of artifacts){const row=document.createElement('tr');[a.name,a.media_type||'application/octet-stream',fmtSize(a.size),a.store||'inline',short(a.sha256,12)].forEach((v,i)=>{const c=document.createElement('td');c.textContent=v;if(i===4&&a.sha256)c.title=a.sha256;row.append(c)});const action=document.createElement('td'),link=document.createElement('a');link.textContent='Download';link.href=`/v1/runs/${esc(selectedRun)}/artifacts/${esc(a.name)}/content`;link.setAttribute('download',a.name);action.append(link);row.append(action);artifactBody.append(row)}}
-  function setReplayState(status){const state=status&&status.state?status.state:'missing';replayButton.disabled=false;video.hidden=true;if(state==='ready'){replayStatus.textContent=status.size?`Ready · ${fmtSize(status.size)}`:'Ready';replayButton.textContent='Replay ready';replayButton.disabled=true;const src=`/v1/runs/${esc(selectedRun)}/replay/video`;if(video.dataset.run!==selectedRun){video.src=src;video.dataset.run=selectedRun;video.load()}video.hidden=false;return}if(state==='generating'){replayStatus.textContent='Rendering deterministic replay…';replayButton.textContent='Rendering…';replayButton.disabled=true;stopReplayPoll();replayPoll=setTimeout(()=>loadReplayStatus(selectedRun),1500);return}if(state==='disabled'){replayStatus.textContent=status.error||'Replay service disabled';replayButton.textContent='Replay unavailable';replayButton.disabled=true;return}if(state==='error'){replayStatus.textContent=status.error||'Replay render failed';replayButton.textContent='Retry replay';return}replayStatus.textContent='Recording available; video will be generated and cached on first replay.';replayButton.textContent='Replay recording'}
-  async function loadReplayStatus(runID){if(!runID||runID!==selectedRun)return;try{const status=await json(`/v1/runs/${esc(runID)}/replay/status`);if(runID===selectedRun)setReplayState(status)}catch(err){if(runID!==selectedRun)return;replayStatus.textContent=err.message;replayButton.textContent='Replay unavailable';replayButton.disabled=true;video.hidden=true}}
-  async function selectRun(runID){stopReplayPoll();selectedRun=runID;selectedDebug=null;video.pause();video.removeAttribute('src');video.dataset.run='';video.hidden=true;if(!runID){empty.hidden=false;content.hidden=true;return}empty.hidden=true;content.hidden=false;replayStatus.textContent='Loading…';replayButton.disabled=true;try{const [debug,artifacts]=await Promise.all([json(`/v1/runs/${esc(runID)}/debug`),json(`/v1/runs/${esc(runID)}/artifacts`)]);if(runID!==selectedRun)return;selectedDebug=debug;renderDebug(debug);renderArtifacts(artifacts);const replayable=Array.isArray(artifacts.artifacts)&&artifacts.artifacts.some((a)=>a.replayable);if(!replayable){replayStatus.textContent='No run.gbrun recording for this run.';replayButton.textContent='Replay unavailable';replayButton.disabled=true}else await loadReplayStatus(runID)}catch(err){empty.textContent=`Could not inspect ${runID}: ${err.message}`;empty.hidden=false;content.hidden=true}}
-  async function refreshRuns(){const previous=selectedRun||runSelect.value;try{const dashboard=await json('/v1/dashboard'),runs=Array.isArray(dashboard.runs)?dashboard.runs:[];runSelect.replaceChildren();if(!runs.length){const o=document.createElement('option');o.value='';o.textContent='No runs yet';runSelect.append(o);selectedRun='';empty.textContent='No runs are available yet.';empty.hidden=false;content.hidden=true;return}for(const run of runs){const o=document.createElement('option');o.value=run.run_id;o.textContent=[run.run_id,run.status,run.reason].filter(Boolean).join(' · ');runSelect.append(o)}const keep=runs.some((r)=>r.run_id===previous)?previous:runs[0].run_id;runSelect.value=keep;if(keep!==selectedRun)await selectRun(keep)}catch(err){empty.textContent=`Run Inspector unavailable: ${err.message}`;empty.hidden=false;content.hidden=true}}
-  replayButton.addEventListener('click',async()=>{if(!selectedRun||!selectedDebug)return;replayButton.disabled=true;replayStatus.textContent='Starting replay render…';try{setReplayState(await json(`/v1/runs/${esc(selectedRun)}/replay/render`,{method:'POST'}))}catch(err){replayStatus.textContent=err.message;replayButton.textContent='Retry replay';replayButton.disabled=false}});
-  runSelect.addEventListener('change',()=>selectRun(runSelect.value));refreshButton.addEventListener('click',async()=>{refreshButton.disabled=true;try{await refreshRuns();if(selectedRun)await selectRun(selectedRun)}finally{refreshButton.disabled=false}});window.addEventListener('beforeunload',stopReplayPoll,{once:true});refreshRuns();setInterval(refreshRuns,8000);
+  const runSelect = $("#pp-inspector-run");
+  const refreshButton = $("#pp-inspector-refresh");
+  const empty = $("#pp-inspector-empty");
+  const content = $("#pp-inspector-content");
+  const meta = $("#pp-inspector-meta");
+  const debugPre = $("#pp-inspector-debug");
+  const artifactBody = $("#pp-inspector-artifacts");
+  const artifactEmpty = $("#pp-inspector-art-empty");
+  const artifactTable = $("#pp-inspector-art-table");
+  const replayButton = $("#pp-inspector-replay");
+  const replayStatus = $("#pp-inspector-replay-status");
+  const video = $("#pp-inspector-video");
+  let selectedRun = "";
+  let selectedDebug = null;
+  let replayPoll = 0;
+  const esc = encodeURIComponent;
+  const text = (v) => v === undefined || v === null || v === "" ? "—" : String(v);
+  const short = (s, n = 16) => !s ? "—" : (s.length > n ? `${s.slice(0, n)}…` : s);
+  const fmtTime = (unix) => unix ? new Date(Number(unix) * 1000).toLocaleString() : "—";
+  const fmtSize = (raw) => {
+    let n = Number(raw || 0);
+    if (!Number.isFinite(n) || n <= 0) return "—";
+    const u = ["B", "KiB", "MiB", "GiB"];
+    let i = 0;
+    while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+    return `${n >= 10 || i === 0 ? n.toFixed(0) : n.toFixed(1)} ${u[i]}`;
+  };
+
+  async function json(url, options) {
+    const res = await fetch(url, { cache: "no-store", ...options });
+    let body = null;
+    try { body = await res.json(); } catch (_) {}
+    if (!res.ok) throw new Error((body && body.error) || `${res.status} ${res.statusText}`);
+    return body;
+  }
+  function stopReplayPoll() {
+    if (replayPoll) clearTimeout(replayPoll);
+    replayPoll = 0;
+  }
+  function kv(label, value, title) {
+    const dt = document.createElement("dt");
+    dt.textContent = label;
+    const dd = document.createElement("dd");
+    dd.textContent = text(value);
+    if (title) dd.title = title;
+    return [dt, dd];
+  }
+  function ensureOption(id, label) {
+    if (!id) return;
+    if ([...runSelect.options].some((o) => o.value === id)) return;
+    const o = document.createElement("option");
+    o.value = id;
+    o.textContent = label || id;
+    runSelect.append(o);
+  }
+  function showEmpty(message) {
+    empty.textContent = message;
+    empty.hidden = false;
+    content.hidden = true;
+  }
+  function renderDebug(debug) {
+    const run = debug.run || {};
+    const finish = debug.finish || {};
+    const summary = debug.summary || {};
+    const stats = run.stats || {};
+    meta.replaceChildren();
+    const rows = [
+      ["status", run.status],
+      ["attempt", finish.attempt || run.attempts || 1],
+      ["goal", run.goal, run.goal],
+      ["reason", finish.reason || run.reason, finish.detail || run.detail],
+      ["map", `${run.map ?? "—"} · ${run.x ?? "—"},${run.y ?? "—"}`],
+      ["frame", run.frame],
+      ["queued", fmtTime(run.queued_at)],
+      ["ended", fmtTime(run.ended_at)],
+      ["runner", short(finish.runner_version, 18), finish.runner_version],
+      ["model", stats.model || run.llm_profile],
+      ["rounds", stats.rounds ?? stats.round],
+      ["progress", summary.progress_known ? (summary.progressed ? "yes" : "no") : "unknown"],
+    ];
+    for (const [label, value, title] of rows) {
+      if (value === "" || value == null) continue;
+      meta.append(...kv(label, value, title));
+    }
+    debugPre.textContent = JSON.stringify(debug, null, 2);
+  }
+  function renderArtifacts(list) {
+    artifactBody.replaceChildren();
+    const artifacts = Array.isArray(list.artifacts) ? list.artifacts : [];
+    if (!artifacts.length) {
+      artifactEmpty.hidden = false;
+      artifactTable.hidden = true;
+      return;
+    }
+    artifactEmpty.hidden = true;
+    artifactTable.hidden = false;
+    for (const a of artifacts) {
+      const row = document.createElement("tr");
+      [a.name, a.media_type || "application/octet-stream", fmtSize(a.size), a.store || "inline", short(a.sha256, 12)].forEach((v, i) => {
+        const c = document.createElement("td");
+        c.textContent = v;
+        if (i === 4 && a.sha256) c.title = a.sha256;
+        row.append(c);
+      });
+      const action = document.createElement("td");
+      const link = document.createElement("a");
+      link.textContent = "Download";
+      link.href = `/v1/runs/${esc(selectedRun)}/artifacts/${esc(a.name)}/content`;
+      link.setAttribute("download", a.name);
+      action.append(link);
+      row.append(action);
+      artifactBody.append(row);
+    }
+  }
+  function setReplayState(status) {
+    const state = status && status.state ? status.state : "missing";
+    replayButton.disabled = false;
+    video.hidden = true;
+    if (state === "ready") {
+      replayStatus.textContent = status.size ? `Ready · ${fmtSize(status.size)}` : "Ready";
+      replayButton.hidden = true;
+      replayButton.disabled = true;
+      const src = `/v1/runs/${esc(selectedRun)}/replay/video`;
+      if (video.dataset.run !== selectedRun) {
+        video.src = src;
+        video.dataset.run = selectedRun;
+        video.load();
+      }
+      video.hidden = false;
+      return;
+    }
+    if (state === "generating") {
+      replayStatus.textContent = "Rendering deterministic replay…";
+      replayButton.textContent = "Rendering…";
+      replayButton.disabled = true;
+      stopReplayPoll();
+      replayPoll = setTimeout(() => loadReplayStatus(selectedRun), 1500);
+      return;
+    }
+    if (state === "disabled") {
+      replayStatus.textContent = status.error || "Replay service disabled";
+      replayButton.hidden = true;
+      replayButton.disabled = true;
+      return;
+    }
+    if (state === "error") {
+      replayStatus.textContent = status.error || "Replay render failed";
+      replayButton.textContent = "Retry replay";
+      return;
+    }
+    replayStatus.textContent = "Recording available; video will be generated and cached on first replay.";
+    replayButton.textContent = "Replay recording";
+  }
+  async function loadReplayStatus(runID) {
+    if (!runID || runID !== selectedRun) return;
+    try {
+      const status = await json(`/v1/runs/${esc(runID)}/replay/status`);
+      if (runID === selectedRun) setReplayState(status);
+    } catch (err) {
+      if (runID !== selectedRun) return;
+      replayStatus.textContent = err.message;
+      replayButton.textContent = "Replay unavailable";
+      replayButton.disabled = true;
+      video.hidden = true;
+    }
+  }
+  async function selectRun(runID) {
+    stopReplayPoll();
+    selectedRun = runID;
+    selectedDebug = null;
+    video.pause();
+    video.removeAttribute("src");
+    video.dataset.run = "";
+    video.hidden = true;
+    if (!runID) {
+      showEmpty("Select a run from the list to replay it and browse artifacts.");
+      return;
+    }
+    empty.hidden = true;
+    content.hidden = false;
+    replayStatus.textContent = "Loading…";
+    replayButton.hidden = false;
+    replayButton.disabled = true;
+    try {
+      const [debug, artifacts] = await Promise.all([
+        json(`/v1/runs/${esc(runID)}/debug`),
+        json(`/v1/runs/${esc(runID)}/artifacts`),
+      ]);
+      if (runID !== selectedRun) return;
+      selectedDebug = debug;
+      renderDebug(debug);
+      renderArtifacts(artifacts);
+      const replayable = Array.isArray(artifacts.artifacts) && artifacts.artifacts.some((a) => a.replayable);
+      if (!replayable) {
+        replayStatus.textContent = "No run.gbrun recording for this run.";
+        replayButton.hidden = true;
+        replayButton.disabled = true;
+      } else {
+        replayButton.hidden = false;
+        await loadReplayStatus(runID);
+      }
+    } catch (err) {
+      showEmpty(`Could not inspect ${runID}: ${err.message}`);
+    }
+  }
+  async function refreshRuns() {
+    const previous = selectedRun || runSelect.value;
+    try {
+      const dashboard = await json("/v1/dashboard");
+      const runs = Array.isArray(dashboard.runs) ? dashboard.runs : [];
+      runSelect.replaceChildren();
+      if (!runs.length && !previous) {
+        const o = document.createElement("option");
+        o.value = "";
+        o.textContent = "No runs yet";
+        runSelect.append(o);
+        selectedRun = "";
+        showEmpty("No runs are available yet.");
+        return;
+      }
+      for (const run of runs) {
+        const o = document.createElement("option");
+        o.value = run.run_id;
+        o.textContent = [run.run_id, run.status].filter(Boolean).join(" · ");
+        runSelect.append(o);
+      }
+      if (previous && !runs.some((r) => r.run_id === previous)) ensureOption(previous, previous);
+      if (!previous) {
+        const blank = document.createElement("option");
+        blank.value = "";
+        blank.textContent = "Select a run";
+        runSelect.insertBefore(blank, runSelect.firstChild);
+        runSelect.value = "";
+        showEmpty("Select a run from the list to replay it and browse artifacts.");
+        return;
+      }
+      runSelect.value = previous;
+      if (previous !== selectedRun) await selectRun(previous);
+    } catch (err) {
+      showEmpty(`Run inspector unavailable: ${err.message}`);
+    }
+  }
+
+  replayButton.addEventListener("click", async () => {
+    if (!selectedRun || !selectedDebug) return;
+    replayButton.disabled = true;
+    replayStatus.textContent = "Starting replay render…";
+    try {
+      setReplayState(await json(`/v1/runs/${esc(selectedRun)}/replay/render`, { method: "POST" }));
+    } catch (err) {
+      replayStatus.textContent = err.message;
+      replayButton.textContent = "Retry replay";
+      replayButton.disabled = false;
+    }
+  });
+  runSelect.addEventListener("change", () => {
+    window.dispatchEvent(new CustomEvent("pokefarm-select-run", { detail: { runId: runSelect.value } }));
+  });
+  refreshButton.addEventListener("click", async () => {
+    refreshButton.disabled = true;
+    try {
+      await refreshRuns();
+      if (selectedRun) await selectRun(selectedRun);
+    } finally {
+      refreshButton.disabled = false;
+    }
+  });
+  window.addEventListener("pokefarm-select-run", (ev) => {
+    const id = (ev.detail && ev.detail.runId) || "";
+    if (id) ensureOption(id, id);
+    runSelect.value = id;
+    if (id !== selectedRun) selectRun(id);
+  });
+  window.addEventListener("beforeunload", stopReplayPoll, { once: true });
+  refreshRuns();
+  setInterval(refreshRuns, 8000);
 })();

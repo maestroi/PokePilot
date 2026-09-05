@@ -170,11 +170,11 @@
   function chip(kind, text) {
     return `<span class="chip ${kind}">${esc(text)}</span>`;
   }
-  function settingChips(r) {
+  function settingChips(r, compact) {
     let html = chip("starter", starterOf(r))
       + chip("how", howLabel(r))
       + chip("seed", "seed " + r.seed);
-    if (goalOf(r)) html += chip("goal", goalOf(r));
+    if (!compact && goalOf(r)) html += chip("goal", goalOf(r));
     if (r.endless) html += chip("loop", r.random_seed ? "endless random" : "endless");
     return html;
   }
@@ -559,7 +559,7 @@
       const sel = r.run_id === selected ? " selected" : "";
       const where = r.planner === "scripted" && r.dest ? r.dest : tileLabel(r);
       const out = r.detail || r.reason || "done";
-      return `<div class="hist-row${sel}"><button type="button" class="hist" data-run="${esc(r.run_id)}"><span class="hist-when">${esc(runWhen(r) || "—")}</span><span class="hist-id">${esc(r.run_id)}</span><span class="chips">${settingChips(r)}</span><span class="hist-where">${esc(where)}</span><span class="hist-out">${statusChip(r)}${issueBadge(r.issue)}<span class="hist-outcome">${esc(out)}</span></span></button><button type="button" class="hist-del" data-delete="${esc(r.run_id)}">Delete</button></div>`;
+      return `<div class="hist-row${sel}"><button type="button" class="hist" data-run="${esc(r.run_id)}"><span class="hist-who"><span class="hist-when">${esc(runWhen(r) || "—")}</span><span class="hist-id">${esc(r.run_id)}</span></span><span class="chips">${settingChips(r, true)}</span><span class="hist-where">${esc(where)}</span><span class="hist-out">${statusChip(r)}${issueBadge(r.issue)}<span class="hist-outcome" title="${esc(out)}">${esc(out)}</span></span></button><button type="button" class="hist-del" data-delete="${esc(r.run_id)}">Delete</button></div>`;
     }).join("");
     renderHistPager(runs.length, pages);
   }
@@ -718,8 +718,20 @@
   }
   function selectRun(id) {
     selected = id; render();
-    if (id && narrow()) $("watch").scrollIntoView({ behavior: "smooth", block: "start" });
+    window.dispatchEvent(new CustomEvent("pokefarm-select-run", { detail: { runId: id } }));
+    if (!id || !narrow()) return;
+    const run = (snap.runs || []).find((r) => r.run_id === id);
+    const watch = $("watch");
+    const inspect = $("run-inspector");
+    const target = run && run.status !== "done" && watch && !watch.hidden ? watch : inspect;
+    if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
   }
+  window.addEventListener("pokefarm-select-run", (ev) => {
+    const id = (ev.detail && ev.detail.runId) || "";
+    if (id === selected) return;
+    selected = id;
+    render();
+  });
 
   function renderFailures() {
     const el = $("failures"); if (!el) return;
