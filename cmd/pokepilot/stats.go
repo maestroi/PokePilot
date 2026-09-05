@@ -14,7 +14,7 @@ import (
 // runStats is the statistics blob the watch page renders above the trace.
 // It answers the question the trace cannot: not "what happened next" but
 // "what is this model DOING with its rounds" — how often it re-picks an
-// objective it has already picked (Repeats), what it keeps picking
+// objective it already picked (Repeats), what it keeps picking
 // (Choices), how long it is thinking, what it is spending, and how many
 // replies never resolved at all.
 //
@@ -138,6 +138,14 @@ func (s *statsPlanner) NextRetry(obs agent.Observation, offered []agent.Objectiv
 }
 
 func (s *statsPlanner) ask(obs agent.Observation, offered []agent.Objective, retry *agent.Retry) (agent.Objective, error) {
+	// Farm runs are long-lived experiments. A single skill edge case should
+	// not immediately repeat the exact same objective and trip Run's
+	// same-failure-twice stop. Quarantine recent failed objectives for a
+	// couple of rounds when alternatives exist; local/manual runs retain the
+	// historical menu exactly because snap is nil there.
+	if s.snap != nil {
+		offered = farmRecoveryOffered(obs, offered)
+	}
 	if retry == nil {
 		return s.router.Next(obs, offered)
 	}

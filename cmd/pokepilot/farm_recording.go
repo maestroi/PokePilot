@@ -65,9 +65,9 @@ func farmRecordingArtifact(data []byte) farm.Artifact {
 }
 
 // finishRunWithRecording mirrors finishRun but adds one optional durable
-// .gbrun artifact. It keeps recording best-effort: if the combined checkpoint
-// plus recording payload exceeds the farm artifact budget, the recording is
-// dropped and the run still finishes with its existing checkpoint evidence.
+// .gbrun artifact and the run's structured objective-failure summary. It
+// keeps diagnostic evidence best-effort: losing telemetry/recording must
+// never change the gameplay result or prevent the lease from settling.
 func finishRunWithRecording(m *emu.Emu, client *farm.Client, spec farm.Spec, reason, detail string, burn int, checkpointDir string, progEarly, progFinal *farm.Progress, recording []byte) {
 	report := farm.FinishReport{
 		RunID:         spec.RunID,
@@ -93,6 +93,19 @@ func finishRunWithRecording(m *emu.Emu, client *farm.Client, spec farm.Spec, rea
 	} else {
 		report.Artifacts = checkpointArtifacts
 	}
+
+	failures := drainObjectiveFailureTelemetry(reason)
+	if failureArtifact, err := farm.NewObjectiveFailureArtifact(failures); err != nil {
+		log.Printf("farm: %s: objective failure telemetry: %v", report.RunID, err)
+	} else if failureArtifact.Name != "" {
+		candidate := append(append([]farm.Artifact(nil), report.Artifacts...), failureArtifact)
+		if err := farm.ValidateFinishArtifacts(farm.FinishReport{Artifacts: candidate, SeedBurn: report.SeedBurn}); err != nil {
+			log.Printf("farm: %s: omit %s: %v", report.RunID, failureArtifact.Name, err)
+		} else {
+			report.Artifacts = candidate
+		}
+	}
+
 	if len(recording) > 0 {
 		candidate := append(append([]farm.Artifact(nil), report.Artifacts...), farmRecordingArtifact(recording))
 		if err := farm.ValidateFinishArtifacts(farm.FinishReport{Artifacts: candidate, SeedBurn: report.SeedBurn}); err != nil {

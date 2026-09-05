@@ -1,5 +1,5 @@
-// Command pokewall is the pokefarm wall: it queues run specs, leases them
-// to pokepilot runners, tracks heartbeats and cooperative cancels, keeps
+// Command pokewall is the pokefarm wall: it queues run specs, leases them to
+// pokepilot runners, tracks heartbeats and cooperative cancels, keeps
 // GET /v1/dashboard for the operator console (and GET / as an in-network
 // debug table), and stores durable finish dumps on disk. Standard library
 // plus the farm package only — no emu, skill, agent, red, Docker, or Swarm.
@@ -61,6 +61,11 @@ func main() {
 			log.Fatalf("pokewall: cannot create state directory %s: %v", filepath.Dir(*stateFile), err)
 		}
 		wall.SetStatePath(*stateFile)
+	}
+	if client != nil {
+		// Start after state restore so a restart can reuse persisted issue/outbox
+		// identities before the first objective-failure dump is scanned.
+		go wall.RunObjectiveFailureReporter(defaultObjectiveFailureReportEvery)
 	}
 	// The reaper runs whether or not state is persisted: a run whose runner
 	// died must not sit "running" on the grid forever.
