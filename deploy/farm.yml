@@ -93,10 +93,10 @@ services:
 
   spectator:
     image: ${FARM_IMAGE:-pokepilot-farm:local}
-    # This process never mounts operator routes, MCP, artifact browsing or
-    # replay. It publishes a sanitized run snapshot plus read-only game frames,
-    # so this is the port intended for a public reverse proxy / hostname.
-    command: ["pokeui", "-http", ":8080", "-wall", "http://wall:8080", "-spectator"]
+    # The public process still mounts only the sanitized spectator route table.
+    # It can read cached replay status/video from the replay sidecar, but cannot
+    # trigger renders, browse artifacts, inspect debug data, or mutate runs.
+    command: ["pokeui", "-http", ":8080", "-wall", "http://wall:8080", "-replay", "http://replay:8080", "-spectator"]
     ports:
       - target: 8080
         published: ${FARM_SPECTATOR_PORT:-18081}
