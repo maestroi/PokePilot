@@ -48,7 +48,7 @@ func recoverForcedChoiceBattle(m *emu.Emu, policy MovePolicy) error {
 			if _, err := m.StepUntil(moveMenuBudget, func(m *emu.Emu) bool {
 				return !switchBoxUp(m) || !battleInFlight(m)
 			}); err != nil {
-				return menuError(m, "leave forced-choice SWITCH/STATS box", err)
+				return forcedChoiceMenuError(m, "leave forced-choice SWITCH/STATS box", err)
 			}
 
 		case battleSwitchMenuUp(m):
@@ -72,12 +72,12 @@ func recoverForcedChoiceBattle(m *emu.Emu, policy MovePolicy) error {
 				return fmt.Errorf("skill: forced-choice recovery: no live party member")
 			}
 			if err := SelectPartySlot(m, slot); err != nil {
-				return menuError(m, "select live party slot during forced-choice recovery", err)
+				return forcedChoiceMenuError(m, "select live party slot during forced-choice recovery", err)
 			}
 			if _, err := m.StepUntil(moveMenuBudget, func(m *emu.Emu) bool {
 				return switchBoxUp(m) || mainMenuUp(m) || !battleInFlight(m)
 			}); err != nil {
-				return menuError(m, "wait for forced-choice slot selection", err)
+				return forcedChoiceMenuError(m, "wait for forced-choice slot selection", err)
 			}
 
 		default:
@@ -91,6 +91,14 @@ func recoverForcedChoiceBattle(m *emu.Emu, policy MovePolicy) error {
 		return battleRecoveryOutcome(m)
 	}
 	return fmt.Errorf("skill: forced-choice recovery did not reach the main battle menu after %d settled transitions: %w", forcedChoiceRecoveryPasses, ErrForcedChoiceStuck)
+}
+
+// menuError is shared with Battle and returns a BattleResult plus an error
+// because Battle itself returns that pair. The recovery helper only returns an
+// error, so preserve the same rich battle context and discard the zero result.
+func forcedChoiceMenuError(m *emu.Emu, detail string, err error) error {
+	_, wrapped := menuError(m, detail, err)
+	return wrapped
 }
 
 func battleRecoveryOutcome(m *emu.Emu) error {
