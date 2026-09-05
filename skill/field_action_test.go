@@ -149,7 +149,7 @@ func TestFieldActionCompletionUsesROMState(t *testing.T) {
 	if fieldActionComplete(m, surf) {
 		t.Fatal("Surf completed without entering surfing state")
 	}
-	m[fieldWalkBikeSurfState] = fieldSurfingState
+	m[sym.WalkBikeSurfState] = fieldSurfingState
 	if !fieldActionComplete(m, surf) {
 		t.Fatal("Surf action result + surfing state was not accepted")
 	}
@@ -159,7 +159,7 @@ func TestFieldActionCompletionUsesROMState(t *testing.T) {
 	if fieldActionComplete(m, strength) {
 		t.Fatal("Strength completed before BIT_STRENGTH_ACTIVE was set")
 	}
-	m[fieldStatusFlags1] = fieldStrengthActiveBit
+	m[sym.StatusFlags1] = fieldStrengthActiveBit
 	if !fieldActionComplete(m, strength) {
 		t.Fatal("Strength active flag was not accepted")
 	}
