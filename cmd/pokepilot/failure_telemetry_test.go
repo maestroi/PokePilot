@@ -34,6 +34,9 @@ func TestObjectiveFailureTelemetryMarksRepeatedUnrecoveredFailureBlocking(t *tes
 	if f.Recovered || !f.Blocking {
 		t.Fatalf("classification = recovered=%t blocking=%t, want false/true", f.Recovered, f.Blocking)
 	}
+	if f.ObservedAt.IsZero() {
+		t.Fatal("blocking failure has no stable observation timestamp")
+	}
 }
 
 func TestObjectiveFailureTelemetryMarksLaterProgressRecovered(t *testing.T) {
@@ -49,5 +52,15 @@ func TestObjectiveFailureTelemetryMarksLaterProgressRecovered(t *testing.T) {
 	}
 	if !got[0].Recovered || got[0].Blocking {
 		t.Fatalf("classification = recovered=%t blocking=%t, want true/false", got[0].Recovered, got[0].Blocking)
+	}
+}
+
+func TestObjectiveFailureTelemetryExcludesExpectedGameOutcome(t *testing.T) {
+	resetObjectiveFailureTelemetry()
+	t.Cleanup(resetObjectiveFailureTelemetry)
+
+	observeAgentLogLine("round 9: go to route 3 -> failed: agent: skill: Travel: blacked out after 2 battles, map 3a at (3,3)")
+	if got := drainObjectiveFailureTelemetry("budget"); len(got) != 0 {
+		t.Fatalf("blackout produced engineering failure telemetry: %+v", got)
 	}
 }
