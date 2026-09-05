@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/maestroi/pokepilot/farm"
 )
@@ -106,11 +107,13 @@ func drainObjectiveFailureTelemetry(reason string) []farm.ObjectiveFailure {
 	objectiveFailureTelemetry.lastProgressRound = 0
 	objectiveFailureTelemetry.Unlock()
 
+	observedAt := time.Now().UTC()
 	out := make([]farm.ObjectiveFailure, 0, len(groups))
 	for _, src := range groups {
 		f := *src
 		f.Recovered = reason == "done" || lastProgress > f.LastRound
 		f.Blocking = !f.Recovered && f.Count >= 2 && (reason == "failed" || reason == "stuck")
+		f.ObservedAt = observedAt
 		out = append(out, f)
 	}
 	sort.Slice(out, func(i, j int) bool {
