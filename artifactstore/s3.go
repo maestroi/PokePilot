@@ -64,9 +64,11 @@ type S3 struct {
 	now       func() time.Time
 }
 
-// S3FromEnv returns (nil, false, nil) when S3 storage is completely
-// unconfigured. If any S3 variable is present the required tuple is validated
-// so a typo cannot silently make a runner fall back to inline artifacts.
+// S3FromEnv returns (nil, false, nil) when the required S3 tuple is entirely
+// unconfigured. Region and timeout are optional defaults and do not opt a
+// runner into object storage by themselves. If any required S3 variable is
+// present the complete tuple is validated so a typo cannot silently make a
+// runner fall back to inline artifacts.
 func S3FromEnv() (*S3, bool, error) {
 	cfg := S3Config{
 		Endpoint:  strings.TrimSpace(os.Getenv(EnvS3Endpoint)),
@@ -75,7 +77,7 @@ func S3FromEnv() (*S3, bool, error) {
 		AccessKey: strings.TrimSpace(os.Getenv(EnvS3AccessKey)),
 		SecretKey: strings.TrimSpace(os.Getenv(EnvS3SecretKey)),
 	}
-	if cfg.Endpoint == "" && cfg.Bucket == "" && cfg.Region == "" && cfg.AccessKey == "" && cfg.SecretKey == "" && strings.TrimSpace(os.Getenv(EnvS3Timeout)) == "" {
+	if cfg.Endpoint == "" && cfg.Bucket == "" && cfg.AccessKey == "" && cfg.SecretKey == "" {
 		return nil, false, nil
 	}
 	if cfg.Region == "" {
