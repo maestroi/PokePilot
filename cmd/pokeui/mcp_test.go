@@ -100,6 +100,19 @@ func TestMCPToolsDriveOnlyOperatorAPI(t *testing.T) {
 				})
 			}
 			json.NewEncoder(res).Encode(map[string]any{"now": int64(123), "runs": runs, "workers": []any{}}) //nolint:errcheck
+		case req.Method == http.MethodGet && strings.HasPrefix(req.URL.Path, "/v1/runs/") && strings.HasSuffix(req.URL.Path, "/debug"):
+			id := strings.TrimSuffix(strings.TrimPrefix(req.URL.Path, "/v1/runs/"), "/debug")
+			json.NewEncoder(res).Encode(map[string]any{ //nolint:errcheck
+				"run":       map[string]any{"run_id": id, "status": "done"},
+				"summary":   map[string]any{"progress_known": true, "progressed": false, "replay_available": true},
+				"artifacts": []map[string]any{{"name": "run.gbrun", "replayable": true}},
+			})
+		case req.Method == http.MethodGet && strings.HasPrefix(req.URL.Path, "/v1/runs/") && strings.HasSuffix(req.URL.Path, "/artifacts"):
+			id := strings.TrimSuffix(strings.TrimPrefix(req.URL.Path, "/v1/runs/"), "/artifacts")
+			json.NewEncoder(res).Encode(map[string]any{ //nolint:errcheck
+				"run_id": id, "attempt": 1,
+				"artifacts": []map[string]any{{"name": "run.gbrun", "store": "s3", "object_key": "runs/x/run.gbrun"}},
+			})
 		case req.Method == http.MethodPost && strings.HasPrefix(req.URL.Path, "/v1/runs/") && strings.HasSuffix(req.URL.Path, "/cancel"):
 			cancelled = strings.TrimSuffix(strings.TrimPrefix(req.URL.Path, "/v1/runs/"), "/cancel")
 			json.NewEncoder(res).Encode(map[string]bool{"cancel": true}) //nolint:errcheck
@@ -141,6 +154,8 @@ func TestMCPToolsDriveOnlyOperatorAPI(t *testing.T) {
 	want := []string{
 		"pokepilot_cancel_run",
 		"pokepilot_get_run",
+		"pokepilot_get_run_artifacts",
+		"pokepilot_get_run_debug",
 		"pokepilot_get_triage",
 		"pokepilot_investigate_failure",
 		"pokepilot_list_runs",
@@ -175,29 +190,20 @@ func TestMCPToolsDriveOnlyOperatorAPI(t *testing.T) {
 		t.Fatalf("MCP must queue finite runs only: %+v", spec)
 	}
 
-	if _, err := session.CallTool(context.Background(), &mcp.CallToolParams{
-		Name:      "pokepilot_get_run",
-		Arguments: map[string]any{"run_id": runID},
-	}); err != nil {
-		t.Fatalf("get run: %v", err)
-	}
-	if _, err := session.CallTool(context.Background(), &mcp.CallToolParams{
-		Name:      "pokepilot_get_triage",
-		Arguments: map[string]any{},
-	}); err != nil {
-		t.Fatalf("get triage: %v", err)
-	}
-	if _, err := session.CallTool(context.Background(), &mcp.CallToolParams{
-		Name:      "pokepilot_investigate_failure",
-		Arguments: map[string]any{"key": "deadbeef"},
-	}); err != nil {
-		t.Fatalf("investigate failure: %v", err)
-	}
-	if _, err := session.CallTool(context.Background(), &mcp.CallToolParams{
-		Name:      "pokepilot_cancel_run",
-		Arguments: map[string]any{"run_id": runID},
-	}); err != nil {
-		t.Fatalf("cancel run: %v", err)
+	for _, call := range []struct {
+		name string
+		args map[string]any
+	}{
+		{"pokepilot_get_run", map[string]any{"run_id": runID}},
+		{"pokepilot_get_run_debug", map[string]any{"run_id": runID}},
+		{"pokepilot_get_run_artifacts", map[string]any{"run_id": runID}},
+		{"pokepilot_get_triage", map[string]any{}},
+		{"pokepilot_investigate_failure", map[string]any{"key": "deadbeef"}},
+		{"pokepilot_cancel_run", map[string]any{"run_id": runID}},
+	} {
+		if _, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: call.name, Arguments: call.args}); err != nil {
+			t.Fatalf("%s: %v", call.name, err)
+		}
 	}
 	if cancelled != runID {
 		t.Fatalf("cancelled = %q, want %q", cancelled, runID)
