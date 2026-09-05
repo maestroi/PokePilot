@@ -24,9 +24,12 @@ COPY . .
 # file or directory" and every container exits 255 in a crash loop.
 # Static pure-Go binaries are the only kind that can cross that boundary.
 ARG GIT_SHA=dev
+ARG GIT_PR_NUMBER=0
+ARG GIT_PR_TITLE_B64=
+ARG GIT_REPOSITORY=maestroi/PokePilot
 RUN CGO_ENABLED=0 go build -ldflags "-X main.version=${GIT_SHA}" -o /out/pokepilot ./cmd/pokepilot && \
     CGO_ENABLED=0 go build -ldflags "-X main.version=${GIT_SHA}" -o /out/pokewall ./cmd/pokewall && \
-    CGO_ENABLED=0 go build -ldflags "-X main.version=${GIT_SHA}" -o /out/pokeui ./cmd/pokeui
+    CGO_ENABLED=0 go build -ldflags "-X main.version=${GIT_SHA} -X main.buildPR=${GIT_PR_NUMBER} -X main.buildTitleB64=${GIT_PR_TITLE_B64} -X main.buildRepo=${GIT_REPOSITORY}" -o /out/pokeui ./cmd/pokeui
 
 # Slim runtime: the three binaries plus CA certificates (the wall serves
 # HTTP and the runners may talk to an LLM endpoint over TLS). No ROM, no

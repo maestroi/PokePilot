@@ -13,6 +13,7 @@ concurrency:
 
 permissions:
   contents: read
+  pull-requests: read
   packages: write
 
 env:
@@ -35,6 +36,29 @@ jobs:
           repository: maestroi/gomeboy
           path: gomeboy
 
+      - name: Resolve build provenance
+        id: buildmeta
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          prs_file="$(mktemp)"
+          if ! gh api \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls" > "${prs_file}"; then
+            printf '[]\n' > "${prs_file}"
+          fi
+
+          pr_number="$(jq -r 'map(select(.merged_at != null)) | last | .number // 0' "${prs_file}")"
+          pr_title="$(jq -r 'map(select(.merged_at != null)) | last | .title // empty' "${prs_file}")"
+          if [ -z "${pr_title}" ]; then
+            pr_title="$(git -C pokepilot log -1 --pretty=%s)"
+          fi
+          pr_title_b64="$(printf '%s' "${pr_title}" | base64 -w0)"
+
+          printf 'pr_number=%s\n' "${pr_number}" >> "${GITHUB_OUTPUT}"
+          printf 'pr_title_b64=%s\n' "${pr_title_b64}" >> "${GITHUB_OUTPUT}"
+
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -53,6 +77,9 @@ jobs:
           build-contexts: gomeboy=./gomeboy
           build-args: |
             GIT_SHA=${{ github.sha }}
+            GIT_PR_NUMBER=${{ steps.buildmeta.outputs.pr_number }}
+            GIT_PR_TITLE_B64=${{ steps.buildmeta.outputs.pr_title_b64 }}
+            GIT_REPOSITORY=${{ github.repository }}
           push: true
           provenance: false
           sbom: false
