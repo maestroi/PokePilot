@@ -46,6 +46,7 @@ func TestAddressesMatchSymbolFile(t *testing.T) {
 		constant uint16
 	}{
 		{"wCurMap", CurMap},
+		{"wMapPalOffset", MapPalOffset},
 		{"wYCoord", YCoord},
 		{"wXCoord", XCoord},
 		{"wYBlockCoord", YBlockCoord},
@@ -53,6 +54,7 @@ func TestAddressesMatchSymbolFile(t *testing.T) {
 		{"wCurMapTileset", CurMapTileset},
 		{"wCurMapHeight", CurMapHeight},
 		{"wCurMapWidth", CurMapWidth},
+		{"wWalkBikeSurfState", WalkBikeSurfState},
 		{"wPlayerMovingDirection", PlayerMovingDirection},
 		{"wPlayerDirection", PlayerDirection},
 		{"wWalkCounter", WalkCounter},
@@ -67,6 +69,7 @@ func TestAddressesMatchSymbolFile(t *testing.T) {
 		{"wToggleableObjectList", ToggleableObjectList},
 		{"wObtainedBadges", ObtainedBadges},
 		{"wEventFlags", EventFlags},
+		{"wStatusFlags1", StatusFlags1},
 		{"wStatusFlags4", StatusFlags4},
 		{"wLastBlackoutMap", LastBlackoutMap},
 		{"wIsInBattle", IsInBattle},
