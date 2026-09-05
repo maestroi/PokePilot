@@ -95,6 +95,15 @@ services:
     environment:
       POKEPILOT_ORCH_URL: http://wall:8080
       POKEMON_RED_ROM: /rom/pokemon_red.gb
+      # Optional S3-compatible artifact storage. Set the tuple to point at
+      # RustFS/MinIO/S3; with it configured, run.gbrun is uploaded directly
+      # and FinishReport carries only bucket/key/size/hash metadata.
+      POKEPILOT_S3_ENDPOINT: ${POKEPILOT_S3_ENDPOINT:-}
+      POKEPILOT_S3_BUCKET: ${POKEPILOT_S3_BUCKET:-}
+      POKEPILOT_S3_REGION: ${POKEPILOT_S3_REGION:-us-east-1}
+      POKEPILOT_S3_ACCESS_KEY: ${POKEPILOT_S3_ACCESS_KEY:-}
+      POKEPILOT_S3_SECRET_KEY: ${POKEPILOT_S3_SECRET_KEY:-}
+      POKEPILOT_S3_TIMEOUT: ${POKEPILOT_S3_TIMEOUT:-60s}
       # Same names make run-llm exports from .env. farm-up sources that
       # file so the runners can reach the model; empty means no bearer
       # token (and the compiled URL/model defaults). The optional fallback

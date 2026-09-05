@@ -6,13 +6,18 @@ import (
 	"encoding/hex"
 	"fmt"
 	"path"
+	"strings"
 	"unicode"
 )
 
-// MaxFinishArtifactBytes is the total artifact payload a FinishReport may
-// carry. 24 MiB leaves multipart overhead below Agent Orchestrator's 32 MiB
-// default report limit.
+// MaxFinishArtifactBytes is the total INLINE artifact payload a FinishReport
+// may carry. Remote object references do not count toward this limit because
+// their bytes never travel in the finish JSON.
 const MaxFinishArtifactBytes = 24 << 20
+
+// ArtifactStoreS3 identifies an artifact whose bytes live in an S3-compatible
+// object store and whose FinishReport carries metadata only.
+const ArtifactStoreS3 = "s3"
 
 // ValidateFinishArtifacts checks a FinishReport's evidence fields. It does
 // not interpret .state contents. Empty artifacts (older runners, scripted
@@ -52,13 +57,43 @@ func validateArtifact(a Artifact) error {
 	if len(a.SHA256) != 64 || !isLowerHex(a.SHA256) {
 		return fmt.Errorf("sha256 must be 64 lowercase hex characters")
 	}
-	sum := sha256.Sum256(a.Data)
-	want, err := hex.DecodeString(a.SHA256)
-	if err != nil {
-		return fmt.Errorf("sha256: %w", err)
-	}
-	if subtle.ConstantTimeCompare(sum[:], want) != 1 {
-		return fmt.Errorf("sha256 mismatch")
+
+	switch a.Store {
+	case "":
+		if a.Bucket != "" || a.ObjectKey != "" || a.Size != 0 {
+			return fmt.Errorf("inline artifact carries remote storage metadata")
+		}
+		sum := sha256.Sum256(a.Data)
+		want, err := hex.DecodeString(a.SHA256)
+		if err != nil {
+			return fmt.Errorf("sha256: %w", err)
+		}
+		if subtle.ConstantTimeCompare(sum[:], want) != 1 {
+			return fmt.Errorf("sha256 mismatch")
+		}
+	case ArtifactStoreS3:
+		if len(a.Data) != 0 {
+			return fmt.Errorf("remote artifact must not inline data")
+		}
+		if a.Bucket == "" {
+			return fmt.Errorf("remote artifact has empty bucket")
+		}
+		if strings.Contains(a.Bucket, "/") {
+			return fmt.Errorf("remote artifact bucket %q contains '/'", a.Bucket)
+		}
+		if a.ObjectKey == "" || strings.HasPrefix(a.ObjectKey, "/") {
+			return fmt.Errorf("remote artifact has invalid object key %q", a.ObjectKey)
+		}
+		for _, part := range strings.Split(a.ObjectKey, "/") {
+			if part == "" || part == "." || part == ".." {
+				return fmt.Errorf("remote artifact has invalid object key %q", a.ObjectKey)
+			}
+		}
+		if a.Size <= 0 {
+			return fmt.Errorf("remote artifact size must be positive")
+		}
+	default:
+		return fmt.Errorf("unknown artifact store %q", a.Store)
 	}
 	return nil
 }
