@@ -7,6 +7,7 @@ const ROMTitle = "POKEMON RED"
 // Player and world
 const (
 	CurMap                  uint16 = 0xD35E
+	MapPalOffset            uint16 = 0xD35D // wMapPalOffset: Flash clears this to light a dark map
 	YCoord                  uint16 = 0xD361
 	XCoord                  uint16 = 0xD362
 	YBlockCoord             uint16 = 0xD363
@@ -14,6 +15,7 @@ const (
 	CurMapTileset           uint16 = 0xD367
 	CurMapHeight            uint16 = 0xD368
 	CurMapWidth             uint16 = 0xD369
+	WalkBikeSurfState       uint16 = 0xD700 // wWalkBikeSurfState: 0 walking, 1 biking, 2 surfing
 	PlayerMovingDirection   uint16 = 0xD528
 	PlayerLastStopDirection uint16 = 0xD529
 	PlayerDirection         uint16 = 0xD52A
@@ -63,6 +65,7 @@ const (
 	ToggleableObjectFlags uint16 = 0xD5A6
 	ToggleableObjectList  uint16 = 0xD5CE
 	EventFlags            uint16 = 0xD747
+	StatusFlags1          uint16 = 0xD728 // wStatusFlags1: Strength active lives in bit 0
 	StatusFlags4          uint16 = 0xD72E // wStatusFlags4
 	// The Vermilion Gym script seeds these with the live trash-can puzzle.
 	// They are indices into the 15 hidden-event cans, not coordinates.
@@ -88,8 +91,7 @@ const (
 
 	// Stat stages. Gen 1 stores them biased: 7 is neutral, 1 is -6 and 13 is
 	// +6. A move like GROWL that lowers our Attack shows up here and nowhere
-	// else, so a move policy that ignores these cannot tell it is being
-	// ground down.
+	// else, so a scorer using them sees the same post-stage Attack/Defense/Special values as the ROM rather than reapplying stages.
 	PlayerMonAttackMod  uint16 = 0xCD1A // wPlayerMonAttackMod
 	PlayerMonDefenseMod uint16 = 0xCD1B // wPlayerMonDefenseMod
 	EnemyMonAttackMod   uint16 = 0xCD2E // wEnemyMonAttackMod
@@ -181,7 +183,7 @@ const (
 	MaxItemQuantity uint16 = 0xCF97
 	// ChosenMenuItem and MenuExitMethod are written by each menu on exit:
 	// ChosenMenuItem is the selected index, MenuExitMethod is CHOSE_MENU_ITEM,
-	// CHOSE_SECOND_ITEM or CANCELLED_MENU.
+	// ChosenMenuItem and MenuExitMethod are written by each menu on exit:
 	ChosenMenuItem uint16 = 0xD12D
 	MenuExitMethod uint16 = 0xD12E
 )
