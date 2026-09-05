@@ -37,15 +37,13 @@ func cutRouteTile(tileset, tile uint8) bool {
 	}
 }
 
-func cutCapabilityAvailable(mem *state.Mem) bool {
-	if !state.DecodeProgress(mem).Has(state.BadgeCascade) {
-		return false
-	}
-	if partyMoveSlot(mem, cutMove) >= 0 {
-		return true
-	}
-	_, count := bagEntry(mem, hm01Item)
-	return count > 0
+// cutCapabilityRecoverable is the route-facing field-capability query. A
+// learned Cut + Cascade Badge is immediately usable. An owned HM is only
+// enough when the generic TM/HM policy can actually teach it to the current
+// party; HM01 in the bag by itself is deliberately not a capability.
+func cutCapabilityRecoverable(romData []byte, mem *state.Mem) bool {
+	cap := FieldCapabilityFor(mem, FieldCut)
+	return cap.Usable || CanPrepareFieldMove(romData, mem, FieldCut)
 }
 
 func routeCutCandidates(grid *world.Grid, tileset uint8, sx, sy int) []routeCutCandidate {
@@ -109,7 +107,7 @@ func reachableBesideOnMap(grid *world.Grid, mapID uint8, sx, sy, tx, ty int, blo
 func cutThroughReachableTree(m *emu.Emu, romData []byte) (bool, error) {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if !cutCapabilityAvailable(&mem) {
+	if !cutCapabilityRecoverable(romData, &mem) {
 		return false, nil
 	}
 	cur := mem.U8(sym.CurMap)
@@ -151,7 +149,7 @@ func cutThroughReachableTree(m *emu.Emu, romData []byte) (bool, error) {
 		if absInt(step.DX)+absInt(step.DY) != 1 {
 			return false, fmt.Errorf("skill: cut route: tree (%d,%d) is not adjacent to player (%d,%d)", c.x, c.y, px, py)
 		}
-		if err := CutAhead(m); err != nil {
+		if _, err := UseFieldMove(m, FieldCut); err != nil {
 			return false, fmt.Errorf("skill: cut route: cut tree at (%d,%d): %w", c.x, c.y, err)
 		}
 		if err := StepOnce(m, step); err != nil {
