@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -83,6 +84,36 @@ func TestDetectVAAPIUsesRenderNode(t *testing.T) {
 	t.Setenv("POKEPILOT_VAAPI_DEVICE", device)
 	if !detectVAAPI() {
 		t.Fatal("detectVAAPI() = false, want true when render node exists")
+	}
+}
+
+func TestVAAPIExplainForcedOff(t *testing.T) {
+	on, encoder, reason := vaapiExplain("off", "/dev/dri/renderD128", true)
+	if on || encoder != "libx264" {
+		t.Fatalf("forced off: on=%t encoder=%q", on, encoder)
+	}
+	if !strings.Contains(reason, "POKEPILOT_REPLAY_ENCODER=off") {
+		t.Fatalf("reason=%q", reason)
+	}
+}
+
+func TestVAAPIExplainAutoWithDevice(t *testing.T) {
+	on, encoder, reason := vaapiExplain("", "/dev/dri/renderD128", true)
+	if !on || encoder != "h264_vaapi" {
+		t.Fatalf("auto+device: on=%t encoder=%q", on, encoder)
+	}
+	if !strings.Contains(reason, "/dev/dri/renderD128") {
+		t.Fatalf("reason=%q", reason)
+	}
+}
+
+func TestVAAPIExplainAutoWithoutDevice(t *testing.T) {
+	on, encoder, reason := vaapiExplain("auto", "/dev/dri/renderD128", false)
+	if on || encoder != "libx264" {
+		t.Fatalf("auto/no device: on=%t encoder=%q", on, encoder)
+	}
+	if !strings.Contains(reason, "not found") {
+		t.Fatalf("reason=%q", reason)
 	}
 }
 
