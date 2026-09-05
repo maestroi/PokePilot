@@ -28,6 +28,39 @@ func TestDecodeTilesContractions(t *testing.T) {
 	}
 }
 
+func TestNormalizeDisplayText(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "pathological player name", in: "AAAAAAAAAAAAA used CUT!", want: "A×13 used CUT!"},
+		{name: "pathological rival name", in: "BBBBBBBB challenged you!", want: "B×8 challenged you!"},
+		{name: "short expressive run", in: "NOOO!", want: "NOOO!"},
+		{name: "ordinary long word", in: "CONGRATULATIONS!", want: "CONGRATULATIONS!"},
+		{name: "digits", in: "1111111", want: "1×7"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := NormalizeDisplayText(tt.in); got != tt.want {
+				t.Fatalf("NormalizeDisplayText(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestScreenTextNormalizesPathologicalRuns(t *testing.T) {
+	var m Mem
+	for i := 0; i < 13; i++ {
+		m[sym.TileMap+uint16(i)] = 0x80 // A
+	}
+
+	if got := ScreenText(&m); got != "A×13" {
+		t.Fatalf("ScreenText = %q, want %q", got, "A×13")
+	}
+}
+
 func TestScreenTextEmptyWhenNothingDrawn(t *testing.T) {
 	var m Mem // all zero: no tile is in the char table
 	if got := ScreenText(&m); got != "" {

@@ -6,6 +6,7 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
+	"github.com/maestroi/pokepilot/red/sym"
 )
 
 func openEmu(t *testing.T) *emu.Emu {
@@ -20,6 +21,60 @@ func openEmu(t *testing.T) *emu.Emu {
 	}
 	t.Cleanup(func() { e.Close() })
 	return e
+}
+
+func introNameMenuMem(current byte) *state.Mem {
+	m := new(state.Mem)
+	m[sym.FontLoaded] = 1
+	m[sym.MaxMenuItem] = 3
+	m[sym.CurrentMenuItem] = current
+	// NEW NAME in Pokemon Red's font tile IDs.
+	copy(m[sym.TileMap:], []byte{0x8d, 0x84, 0x96, 0x7f, 0x8d, 0x80, 0x8c, 0x84})
+	return m
+}
+
+func TestBootInputSelectsFirstPresetName(t *testing.T) {
+	tests := []struct {
+		current byte
+		want    emu.Button
+	}{
+		{current: 0, want: emu.Down},
+		{current: 1, want: emu.A},
+		{current: 2, want: emu.Up},
+		{current: 3, want: emu.Up},
+	}
+
+	for _, tt := range tests {
+		m := introNameMenuMem(tt.current)
+		if !introNameMenu(m) {
+			t.Fatalf("introNameMenu(current=%d) = false, want true", tt.current)
+		}
+		if got := bootInput(m, 4); got != tt.want {
+			t.Fatalf("bootInput(current=%d) = %v, want %v", tt.current, got, tt.want)
+		}
+	}
+}
+
+func TestBootInputDoesNotTreatOrdinaryMenuAsNameEntry(t *testing.T) {
+	m := new(state.Mem)
+	m[sym.FontLoaded] = 1
+	m[sym.MaxMenuItem] = 3
+	m[sym.CurrentMenuItem] = 0
+	copy(m[sym.TileMap:], []byte{0x8e, 0x80, 0x8a}) // OAK
+
+	if introNameMenu(m) {
+		t.Fatal("introNameMenu = true for ordinary intro text")
+	}
+	if got := bootInput(m, 4); got != emu.A {
+		t.Fatalf("bootInput = %v, want A for ordinary intro text", got)
+	}
+}
+
+func TestBootInputPreservesInitialStartTaps(t *testing.T) {
+	m := introNameMenuMem(0)
+	if got := bootInput(m, 3); got != emu.Start {
+		t.Fatalf("bootInput(iteration=3) = %v, want Start", got)
+	}
 }
 
 func TestBootToOverworld(t *testing.T) {
@@ -41,6 +96,9 @@ func TestBootToOverworld(t *testing.T) {
 	state.Snapshot(e, &m)
 	if !state.Controllable(&m) {
 		t.Errorf("Controllable = false, want true")
+	}
+	if got := state.DecodeTiles(m.Slice(sym.PlayerName, 11)); got != "RED" {
+		t.Errorf("player name = %q, want RED", got)
 	}
 }
 

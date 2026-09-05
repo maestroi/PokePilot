@@ -1,7 +1,9 @@
 package state
 
 import (
+	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/maestroi/pokepilot/red/sym"
 )
@@ -50,8 +52,54 @@ func DecodeTiles(tiles []byte) string {
 	return strings.Join(strings.Fields(b.String()), " ")
 }
 
+const pathologicalDisplayRun = 6
+
+// NormalizeDisplayText keeps presentation/logging output compact when an old
+// save or a broken naming flow contains a pathological repeated-character
+// name such as AAAAAAAAAAAAA. It does not mutate game RAM or DecodeTiles; it
+// only abbreviates long runs of the same letter/digit in text shown to agents,
+// traces and UIs. Short expressive runs remain untouched.
+func NormalizeDisplayText(s string) string {
+	if s == "" {
+		return ""
+	}
+
+	var b strings.Builder
+	var previous rune
+	run := 0
+	flush := func() {
+		if run == 0 {
+			return
+		}
+		if run >= pathologicalDisplayRun && (unicode.IsLetter(previous) || unicode.IsDigit(previous)) {
+			b.WriteRune(previous)
+			b.WriteRune('×')
+			b.WriteString(strconv.Itoa(run))
+		} else {
+			for i := 0; i < run; i++ {
+				b.WriteRune(previous)
+			}
+		}
+	}
+
+	for _, r := range s {
+		if run != 0 && r == previous {
+			run++
+			continue
+		}
+		flush()
+		previous = r
+		run = 1
+	}
+	flush()
+
+	return b.String()
+}
+
 // ScreenText returns the text currently rendered on screen, decoded from the
-// tilemap. It is empty when nothing readable is drawn.
+// tilemap. It is empty when nothing readable is drawn. Presentation-only
+// normalization prevents pathological legacy names from flooding every trace,
+// observation and spectator surface that consumes screen text.
 func ScreenText(m *Mem) string {
-	return DecodeTiles(m.Slice(sym.TileMap, sym.TileMapLen))
+	return NormalizeDisplayText(DecodeTiles(m.Slice(sym.TileMap, sym.TileMapLen)))
 }
