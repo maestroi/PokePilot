@@ -82,10 +82,70 @@ func TestWalkAroundRereadsBlockersAfterCollision(t *testing.T) {
 	}
 }
 
-// TestWalkAroundForgetsVacatedSpriteTile proves the absence of a cache
-// without a second collision: read 1 sees the sprite at (14,13), the walk
-// collides, read 2 sees it gone. The second plan must not receive a
-// remembered copy of (14,13) — a ban that outlives one plan is a bug.
+// TestWalkAroundLearnsRepeatedUnexplainedBlock is the Mt. Moon regression:
+// the static grid and sprite snapshot both say (9,22) is available, but real
+// movement from (10,22) repeatedly refuses StepLeft. One miss is treated as
+// a possible sprite race; the second makes (9,22) a call-local blocker so the
+// third plan can take an alternate route instead of repeating the same step
+// until maxWalkRetries.
+func TestWalkAroundLearnsRepeatedUnexplainedBlock(t *testing.T) {
+	target := [2]int{9, 22}
+	var plans []map[[2]int]bool
+	walks := 0
+	waits := 0
+
+	err := walkAround(
+		func() map[[2]int]bool { return map[[2]int]bool{} },
+		func(blocked map[[2]int]bool) ([]world.Step, error) {
+			snap := map[[2]int]bool{}
+			for k, v := range blocked {
+				snap[k] = v
+			}
+			plans = append(plans, snap)
+			if blocked[target] {
+				return []world.Step{world.StepRight}, nil
+			}
+			return []world.Step{world.StepLeft}, nil
+		},
+		func(steps []world.Step) error {
+			walks++
+			if len(steps) != 1 {
+				t.Fatalf("walk %d got %d steps, want exactly 1", walks, len(steps))
+			}
+			if steps[0] == world.StepLeft {
+				return blockedAt(10, 22, world.StepLeft)
+			}
+			if steps[0] != world.StepRight {
+				t.Fatalf("walk %d step = %v, want left or right", walks, steps[0])
+			}
+			return nil
+		},
+		func() { waits++ },
+	)
+	if err != nil {
+		t.Fatalf("walkAround: %v", err)
+	}
+	if len(plans) != 3 {
+		t.Fatalf("planned %d times, want 3: two confirmations then one reroute", len(plans))
+	}
+	if plans[0][target] || plans[1][target] {
+		t.Errorf("target %v learned too early: plans = %v", target, plans)
+	}
+	if !plans[2][target] {
+		t.Errorf("third plan blockers = %v, want learned target %v", plans[2], target)
+	}
+	if walks != 3 {
+		t.Errorf("walked %d times, want 3", walks)
+	}
+	if waits != 2 {
+		t.Errorf("waited %d times, want 2", waits)
+	}
+}
+
+// TestWalkAroundForgetsVacatedSpriteTile proves the absence of a live-sprite
+// cache without a second collision: read 1 sees the sprite at (14,13), the
+// walk collides, read 2 sees it gone. The second plan must not receive a
+// remembered copy of (14,13).
 func TestWalkAroundForgetsVacatedSpriteTile(t *testing.T) {
 	p := &walkAroundProbe{
 		reads:  []map[[2]int]bool{{[2]int{14, 13}: true}, {}},
@@ -98,7 +158,7 @@ func TestWalkAroundForgetsVacatedSpriteTile(t *testing.T) {
 		t.Fatalf("planned %d times, want 2", len(p.plans))
 	}
 	if p.plans[1][[2]int{14, 13}] {
-		t.Errorf("second plan still carries %v from read 1; a vacated tile must not survive into a new snapshot", p.plans[1])
+		t.Errorf("second plan still carries %v from read 1; a vacated sprite tile must not survive into a new snapshot", p.plans[1])
 	}
 	if len(p.plans[1]) != 0 {
 		t.Errorf("second plan blocked = %v, want empty: read 2 saw no sprites", p.plans[1])
