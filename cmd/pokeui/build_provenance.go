@@ -106,7 +106,7 @@ func injectBuildProvenance(page []byte, p buildProvenance) []byte {
   const short = (v) => String(v || "").slice(0, 7);
   const pr = String(meta.pr_number || "");
   const sha = short(meta.version) || "dev";
-  el.dataset.buildLabel = pr ? `live #${pr} · ${sha}` : `live · ${sha}`;
+  el.dataset.buildLabel = pr ? "live #" + pr + " · " + sha : "live · " + sha;
   el.dataset.buildReady = "1";
   el.setAttribute("role", "button");
   el.setAttribute("tabindex", "0");
@@ -129,7 +129,7 @@ func injectBuildProvenance(page []byte, p buildProvenance) []byte {
 
   const title = document.createElement("div");
   title.className = "build-title";
-  title.textContent = meta.title || (pr ? `PR #${pr}` : "Direct/manual build");
+  title.textContent = meta.title || (pr ? "PR #" + pr : "Direct/manual build");
   panel.appendChild(title);
 
   const links = document.createElement("div");
@@ -143,8 +143,8 @@ func injectBuildProvenance(page []byte, p buildProvenance) []byte {
     a.textContent = label;
     links.appendChild(a);
   };
-  addLink(pr ? `PR #${pr}` : "", meta.pr_url);
-  addLink(`commit ${sha}`, meta.commit_url);
+  addLink(pr ? "PR #" + pr : "", meta.pr_url);
+  addLink("commit " + sha, meta.commit_url);
   panel.appendChild(links);
   host.appendChild(panel);
 
