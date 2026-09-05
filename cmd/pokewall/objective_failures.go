@@ -255,7 +255,9 @@ func objectiveFailureEvidenceArtifacts(dump farm.FinishReport, f farm.ObjectiveF
 			essential = append(essential, a)
 		case strings.HasPrefix(a.Name, prefix):
 			essential = append(essential, a)
-		case f.Blocking && a.Name == "run.gbrun" && len(a.Data) <= agentOrchestratorMaxArtifactBytes:
+		case f.Blocking && a.Store == "" && a.Name == "run.gbrun" && len(a.Data) > 0 && len(a.Data) <= agentOrchestratorMaxArtifactBytes:
+			// Agent Orchestrator currently accepts multipart bytes, not S3
+			// references. Never turn a remote recording into an empty upload.
 			cp := a
 			recording = &cp
 		}
