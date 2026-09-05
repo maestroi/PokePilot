@@ -63,12 +63,6 @@ const (
 	fieldStrengthMenuID uint8 = 5
 	fieldFlashMenuID    uint8 = 6
 
-	// These three WRAM addresses are named in the vendored pokered.sym. Keep
-	// them local until red/sym grows the corresponding public constants.
-	fieldWalkBikeSurfState uint16 = 0xD700 // wWalkBikeSurfState: 2 = surfing
-	fieldMapPalOffset      uint16 = 0xD35D // wMapPalOffset: 0 = lit palette
-	fieldStatusFlags1      uint16 = 0xD728 // wStatusFlags1 bit 0 = Strength active
-
 	fieldStrengthActiveBit = 1 << 0
 	fieldSurfingState      = 2
 	fieldBoulderPictureID  = 0x3F
@@ -100,7 +94,7 @@ var fieldMoveSpecs = [...]FieldMoveSpec{
 
 // FieldMoveSpecFor returns the definition for move.
 func FieldMoveSpecFor(move FieldMove) (FieldMoveSpec, bool) {
-	if int(move) < 0 || int(move) >= len(fieldMoveSpecs) {
+	if int(move) >= len(fieldMoveSpecs) {
 		return FieldMoveSpec{}, false
 	}
 	return fieldMoveSpecs[move], true
@@ -286,11 +280,11 @@ func validateFieldActionContext(mem *state.Mem, spec FieldMoveSpec) error {
 			return fmt.Errorf("no boulder is directly in front of the player")
 		}
 	case FieldSurf:
-		if mem.U8(fieldWalkBikeSurfState) == fieldSurfingState {
+		if mem.U8(sym.WalkBikeSurfState) == fieldSurfingState {
 			return fmt.Errorf("player is already surfing")
 		}
 	case FieldFlash:
-		if mem.U8(fieldMapPalOffset) == 0 {
+		if mem.U8(sym.MapPalOffset) == 0 {
 			return fmt.Errorf("current area is already lit")
 		}
 	case FieldFly:
@@ -317,11 +311,11 @@ func fieldActionComplete(mem *state.Mem, spec FieldMoveSpec) bool {
 	case FieldCut:
 		return mem.U8(sym.ActionResult) == 1
 	case FieldSurf:
-		return mem.U8(sym.ActionResult) == 1 && mem.U8(fieldWalkBikeSurfState) == fieldSurfingState
+		return mem.U8(sym.ActionResult) == 1 && mem.U8(sym.WalkBikeSurfState) == fieldSurfingState
 	case FieldStrength:
-		return mem.U8(fieldStatusFlags1)&fieldStrengthActiveBit != 0
+		return mem.U8(sym.StatusFlags1)&fieldStrengthActiveBit != 0
 	case FieldFlash:
-		return mem.U8(fieldMapPalOffset) == 0
+		return mem.U8(sym.MapPalOffset) == 0
 	default:
 		return false
 	}
@@ -379,7 +373,7 @@ func UseFieldMove(m *emu.Emu, move FieldMove) (FieldActionResult, error) {
 	}); err != nil {
 		state.Snapshot(m, &mem)
 		return FieldActionResult{}, fmt.Errorf("skill: %s did not complete: action=%d surfing=%d strength=%#02x palette=%d screen=%q",
-			spec.Name, mem.U8(sym.ActionResult), mem.U8(fieldWalkBikeSurfState), mem.U8(fieldStatusFlags1), mem.U8(fieldMapPalOffset), state.ScreenText(&mem))
+			spec.Name, mem.U8(sym.ActionResult), mem.U8(sym.WalkBikeSurfState), mem.U8(sym.StatusFlags1), mem.U8(sym.MapPalOffset), state.ScreenText(&mem))
 	}
 
 	state.Snapshot(m, &mem)
@@ -387,9 +381,9 @@ func UseFieldMove(m *emu.Emu, move FieldMove) (FieldActionResult, error) {
 		Move:           move,
 		PartySlot:      slot,
 		ActionResult:   mem.U8(sym.ActionResult),
-		Surfing:        mem.U8(fieldWalkBikeSurfState) == fieldSurfingState,
-		StrengthActive: mem.U8(fieldStatusFlags1)&fieldStrengthActiveBit != 0,
-		Lit:            mem.U8(fieldMapPalOffset) == 0,
+		Surfing:        mem.U8(sym.WalkBikeSurfState) == fieldSurfingState,
+		StrengthActive: mem.U8(sym.StatusFlags1)&fieldStrengthActiveBit != 0,
+		Lit:            mem.U8(sym.MapPalOffset) == 0,
 	}, nil
 }
 
