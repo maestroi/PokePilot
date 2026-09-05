@@ -91,7 +91,8 @@ const (
 
 	// Stat stages. Gen 1 stores them biased: 7 is neutral, 1 is -6 and 13 is
 	// +6. A move like GROWL that lowers our Attack shows up here and nowhere
-	// else, so a scorer using them sees the same post-stage Attack/Defense/Special values as the ROM rather than reapplying stages.
+	// else, so a move policy that ignores these cannot tell it is being
+	// ground down.
 	PlayerMonAttackMod  uint16 = 0xCD1A // wPlayerMonAttackMod
 	PlayerMonDefenseMod uint16 = 0xCD1B // wPlayerMonDefenseMod
 	EnemyMonAttackMod   uint16 = 0xCD2E // wEnemyMonAttackMod
@@ -183,7 +184,7 @@ const (
 	MaxItemQuantity uint16 = 0xCF97
 	// ChosenMenuItem and MenuExitMethod are written by each menu on exit:
 	// ChosenMenuItem is the selected index, MenuExitMethod is CHOSE_MENU_ITEM,
-	// ChosenMenuItem and MenuExitMethod are written by each menu on exit:
+	// CHOSE_SECOND_ITEM or CANCELLED_MENU.
 	ChosenMenuItem uint16 = 0xD12D
 	MenuExitMethod uint16 = 0xD12E
 )
