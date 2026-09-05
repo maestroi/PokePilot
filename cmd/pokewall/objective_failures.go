@@ -14,7 +14,10 @@ import (
 	"github.com/maestroi/pokepilot/farm"
 )
 
-const defaultObjectiveFailureReportEvery = 2 * time.Second
+const (
+	defaultObjectiveFailureReportEvery    = 2 * time.Second
+	agentOrchestratorMaxArtifactBytes      = 8 << 20
+)
 
 type objectiveDumpStamp struct {
 	size    int64
@@ -29,9 +32,9 @@ type objectiveDumpStamp struct {
 // progression blockers.
 //
 // The local seen cache avoids rereading multi-megabyte finish dumps every two
-// seconds. Agent Orchestrator's external_id is still the durable idempotency
-// boundary: after a wall restart every dump is scanned once, and duplicate
-// reports are harmless.
+// seconds. Agent Orchestrator's external_id is the durable idempotency
+// boundary: the runner-stamped ObservedAt and dump-derived evidence stay
+// identical across retries, including a wall restart after a lost HTTP reply.
 func (w *Wall) RunObjectiveFailureReporter(every time.Duration) {
 	if every <= 0 {
 		every = defaultObjectiveFailureReportEvery
@@ -136,13 +139,6 @@ func (w *Wall) reportObjectiveFailure(dump farm.FinishReport, f farm.ObjectiveFa
 		w.mu.Unlock()
 		return nil
 	}
-	var seed int64
-	var question, decision string
-	if t := w.tiles[dump.RunID]; t != nil {
-		seed = t.Seed
-		question = t.Question
-		decision = t.Decision
-	}
 	w.mu.Unlock()
 
 	severity := "normal"
@@ -156,29 +152,26 @@ func (w *Wall) reportObjectiveFailure(dump farm.FinishReport, f farm.ObjectiveFa
 	}
 
 	evidence, _ := json.Marshal(map[string]any{
-		"classification":   classification,
-		"run_id":           dump.RunID,
-		"attempt":          max(1, dump.Attempt),
-		"seed":             seed,
-		"seed_burn":        dump.SeedBurn,
-		"objective":        f.Objective,
-		"error":            f.Error,
+		"classification":     classification,
+		"run_id":             dump.RunID,
+		"attempt":            max(1, dump.Attempt),
+		"seed_burn":          dump.SeedBurn,
+		"objective":          f.Objective,
+		"error":              f.Error,
 		"occurrences_in_run": f.Count,
-		"first_round":      f.FirstRound,
-		"last_round":       f.LastRound,
-		"map":              fmt.Sprintf("0x%02x", f.Map),
-		"x":                f.X,
-		"y":                f.Y,
-		"recovered":        f.Recovered,
-		"blocking":         f.Blocking,
-		"run_reason":       dump.Reason,
-		"run_detail":       dump.Detail,
-		"progress_early":   dump.ProgressEarly,
-		"progress_final":   dump.ProgressFinal,
-		"trace_tail":       dump.TraceTail,
-		"question":         question,
-		"decision":         decision,
-		"runner_version":   dump.RunnerVersion,
+		"first_round":        f.FirstRound,
+		"last_round":         f.LastRound,
+		"map":                fmt.Sprintf("0x%02x", f.Map),
+		"x":                  f.X,
+		"y":                  f.Y,
+		"recovered":          f.Recovered,
+		"blocking":           f.Blocking,
+		"run_reason":         dump.Reason,
+		"run_detail":         dump.Detail,
+		"progress_early":     dump.ProgressEarly,
+		"progress_final":     dump.ProgressFinal,
+		"trace_tail":         dump.TraceTail,
+		"runner_version":     dump.RunnerVersion,
 	})
 
 	titlePrefix := "[farm] objective failure: "
@@ -189,14 +182,19 @@ func (w *Wall) reportObjectiveFailure(dump farm.FinishReport, f farm.ObjectiveFa
 		summary = fmt.Sprintf("Progression blocker candidate: %s failed %d time(s) on map 0x%02x with no later major progress; run ended %s. Last error: %s",
 			f.Objective, f.Count, f.Map, dump.Reason, f.Error)
 	}
-	title := truncateBytes(titlePrefix+f.Objective+": "+f.Error, maxIssueTitleBytes)
+	observedAt := f.ObservedAt
+	if observedAt.IsZero() {
+		// Backward compatibility for hand-built/early telemetry artifacts.
+		// New runners always stamp this in the finish artifact.
+		observedAt = time.Now().UTC()
+	}
 	manifest := issueReportManifest{
 		Source:           issueSource,
 		Fingerprint:      fp,
 		ExternalID:       ext,
-		Title:            title,
+		Title:            truncateBytes(titlePrefix+f.Objective+": "+f.Error, maxIssueTitleBytes),
 		Summary:          summary,
-		ObservedAt:       time.Now().UTC(),
+		ObservedAt:       observedAt,
 		ObservedRevision: dump.RunnerVersion,
 		Severity:         severity,
 		Evidence:         evidence,
@@ -257,7 +255,7 @@ func objectiveFailureEvidenceArtifacts(dump farm.FinishReport, f farm.ObjectiveF
 			essential = append(essential, a)
 		case strings.HasPrefix(a.Name, prefix):
 			essential = append(essential, a)
-		case f.Blocking && a.Name == "run.gbrun":
+		case f.Blocking && a.Name == "run.gbrun" && len(a.Data) <= agentOrchestratorMaxArtifactBytes:
 			cp := a
 			recording = &cp
 		}
