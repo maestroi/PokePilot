@@ -66,6 +66,9 @@ services:
       # Rendering a long recording can legitimately take longer than a normal
       # runner artifact PUT, so replay gets its own configurable S3 timeout.
       POKEPILOT_S3_TIMEOUT: ${POKEPILOT_REPLAY_S3_TIMEOUT:-10m}
+      # auto: h264_vaapi when /dev/dri/renderD128 exists; set off for libx264.
+      POKEPILOT_REPLAY_ENCODER: ${POKEPILOT_REPLAY_ENCODER:-auto}
+      LIBVA_DRIVER_NAME: ${LIBVA_DRIVER_NAME:-iHD}
     volumes:
       - ${POKEMON_RED_ROM}:/rom/pokemon_red.gb:ro
     deploy:

@@ -26,11 +26,13 @@ RUN CGO_ENABLED=0 go build -ldflags "-X main.version=${GIT_SHA}" -o /out/pokepil
     CGO_ENABLED=0 go build -o /out/gomeboy-stream github.com/maestroi/gomeboy/cmd/gomeboy-stream
 
 # FFmpeg is runtime-only and is used by gomeboy-stream to encode deterministic
-# .gbrun replays into cached MP4s. No ROM or source is copied into the image.
+# .gbrun replays into cached MP4s. intel-media-driver is the userspace half of
+# Iris Xe / Quick Sync (iHD). No ROM or source is copied into the image.
 FROM alpine:3.20
-RUN apk add --no-cache ca-certificates ffmpeg && update-ca-certificates
+RUN apk add --no-cache ca-certificates ffmpeg intel-media-driver && update-ca-certificates
 COPY --from=build /out/pokepilot /usr/local/bin/pokepilot
 COPY --from=build /out/pokewall /usr/local/bin/pokewall
 COPY --from=build /out/pokeui /usr/local/bin/pokeui
 COPY --from=build /out/pokereplay /usr/local/bin/pokereplay
 COPY --from=build /out/gomeboy-stream /usr/local/bin/gomeboy-stream
+RUN ln -s pokereplay /usr/local/bin/ffmpeg-vaapi

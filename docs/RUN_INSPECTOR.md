@@ -97,7 +97,10 @@ work unchanged.
 - `${POKEMON_RED_ROM}` mounted read-only at `/rom/pokemon_red.gb`.
 
 The farm image now contains `pokereplay`, the GomeBoy `gomeboy-stream` helper,
-and FFmpeg. The wall still has neither ROM nor S3 credentials.
+FFmpeg, and `intel-media-driver` (iHD). When `/dev/dri/renderD128` is present,
+`pokereplay` encodes through `h264_vaapi`; otherwise it stays on `libx264`.
+`POKEPILOT_REPLAY_ENCODER=off` forces software. The wall still has neither ROM
+nor S3 credentials.
 
 If S3 is not configured, the replay service stays healthy and reports replay as
 disabled. Dashboard, farm execution, finish dumps, inline artifact browsing,

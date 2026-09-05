@@ -21,6 +21,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -69,6 +70,8 @@ type replayServer struct {
 	wallBase     string
 	romPath      string
 	streamBinary string
+	vaapi        bool
+	ffmpegVAAPI  string
 	store        *artifactstore.S3
 	wallHTTP     *http.Client
 
@@ -285,12 +288,7 @@ func (s *replayServer) render(runID string, recording artifactRef, cacheKey stri
 		return
 	}
 
-	cmd := exec.CommandContext(ctx, s.streamBinary,
-		"-rom", s.romPath,
-		"-recording", recordingPath,
-		"-output", videoPath,
-		"-format", "mp4",
-	)
+	cmd := exec.CommandContext(ctx, s.streamBinary, s.streamArgs(recordingPath, videoPath)...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		setError(fmt.Errorf("gomeboy replay render: %w: %s", err, strings.TrimSpace(string(output))))
@@ -531,6 +529,9 @@ func pathJoinOS(dir, name string) string {
 }
 
 func main() {
+	if filepath.Base(os.Args[0]) == "ffmpeg-vaapi" {
+		os.Exit(runFFmpegVAAPI(os.Args[1:]))
+	}
 	httpAddr := flag.String("http", ":8080", "listen address for the replay HTTP API")
 	wallBase := flag.String("wall", "", "pokewall base URL")
 	romPath := flag.String("rom", "/rom/pokemon_red.gb", "ROM path used for deterministic replay")
@@ -548,6 +549,8 @@ func main() {
 		log.Printf("pokereplay: S3 not configured; artifact metadata remains browsable but replay cache is disabled")
 	}
 	serverImpl := newReplayServer(*wallBase, *romPath, *streamBinary, store)
+	serverImpl.vaapi = detectVAAPI()
+	serverImpl.ffmpegVAAPI = defaultFFmpegVAAPI
 	server := &http.Server{
 		Addr:              *httpAddr,
 		Handler:           serverImpl.handler(),
@@ -559,7 +562,7 @@ func main() {
 
 	errCh := make(chan error, 1)
 	go func() { errCh <- server.ListenAndServe() }()
-	log.Printf("pokereplay listening on http://%s (wall %s, s3=%t)", *httpAddr, *wallBase, store != nil)
+	log.Printf("pokereplay listening on http://%s (wall %s, s3=%t, vaapi=%t)", *httpAddr, *wallBase, store != nil, serverImpl.vaapi)
 	select {
 	case err := <-errCh:
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
