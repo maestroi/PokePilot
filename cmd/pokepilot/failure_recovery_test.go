@@ -33,6 +33,44 @@ func TestFarmRecoveryOfferedKeepsMandatoryOnlyOption(t *testing.T) {
 	}
 }
 
+func TestFarmRecoveryOfferedClarifiesGymChallengeWithoutHistory(t *testing.T) {
+	gym := agent.Objective{Kind: agent.KindGym, Place: "pewter gym"}
+	got := farmRecoveryOffered(agent.Observation{}, []agent.Objective{gym})
+	if len(got) != 1 {
+		t.Fatalf("offered = %v, want one gym objective", got)
+	}
+	if got[0].Note != farmGymChallengeNote {
+		t.Fatalf("gym note = %q, want %q", got[0].Note, farmGymChallengeNote)
+	}
+}
+
+func TestFarmRecoveryOfferedKeepsGymFrontierWhenAlternativesExist(t *testing.T) {
+	gym := agent.Objective{Kind: agent.KindGym, Place: "pewter gym"}
+	wander := agent.Objective{Kind: agent.KindGoTo, Place: "pewter city"}
+	obs := agent.Observation{History: []agent.RoundRecord{{
+		Objective: gym.String(),
+		Outcome:   "failed: skill: Gym: battle with BROCK did not start after the leader dialogue",
+	}}}
+
+	got := farmRecoveryOffered(obs, []agent.Objective{gym, wander})
+	if len(got) != 2 {
+		t.Fatalf("offered = %v, want the progression-critical gym objective retained alongside alternatives", got)
+	}
+	foundGym := false
+	for _, o := range got {
+		if o.Kind == agent.KindGym && o.Place == "pewter gym" {
+			foundGym = true
+			if o.Note != farmGymChallengeNote {
+				t.Fatalf("retained gym note = %q, want %q", o.Note, farmGymChallengeNote)
+			}
+			break
+		}
+	}
+	if !foundGym {
+		t.Fatalf("offered = %v, Brock challenge disappeared behind farm cooldown", got)
+	}
+}
+
 func TestFarmRecoveryOfferedExpiresAfterTwoRounds(t *testing.T) {
 	failed := agent.Objective{Kind: agent.KindGoTo, Place: "route 1"}
 	other := agent.Objective{Kind: agent.KindGoTo, Place: "route 2"}

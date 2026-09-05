@@ -129,9 +129,12 @@ func WalkPath(m *emu.Emu, path []world.Step) error {
 }
 
 // ponytail: maxWalkRetries and npcWaitFrames are knobs, not laws. Six
-// attempts covers a sprite that wanders across a corridor twice;
-// npcWaitFrames is about one and a half NPC steps on this ROM. Tune with a
-// measurement, not a guess.
+// STAGNANT retries covers a sprite that wanders across a corridor twice;
+// a walk that gets closer to its target or learns a new call-local runtime
+// blocker resets that budget. This distinction matters on long cave/grind
+// paths: encountering several independent blockers is progress, not six
+// repetitions of the same failure. npcWaitFrames is about one and a half NPC
+// steps on this ROM. Tune with a measurement, not a guess.
 const (
 	maxWalkRetries = 6
 	npcWaitFrames  = 48
@@ -159,11 +162,20 @@ func blockedDestination(e *ErrBlocked) [2]int {
 // Live sprite positions are ephemeral observations and are never cached.
 // Separately, if real movement is blocked twice at the same destination while
 // that tile is absent from the live-sprite snapshot, the destination is added
-// to a call-local blocker set. That gives the pathfinder one bounded chance to
+// to a call-local blocker set. That gives the pathfinder a bounded chance to
 // route around deterministic runtime geometry without teaching permanent
 // world state or special-casing a map coordinate. This is the failure shape
 // seen in Mt. Moon 1F at (10,22)->(9,22): repeatedly retrying the identical
 // static-grid path can never make progress, but another path may.
+//
+// The retry budget measures STAGNATION, not total re-plans. A long walk can
+// legitimately encounter several distinct runtime blockers (or make partial
+// progress before the next NPC crosses it). Learning a new blocker resets the
+// budget, and a newly planned path shorter than every path since the last
+// learned blocker does too. Six attempts that reveal nothing new still stop.
+// This keeps unattended runs bounded without turning "four different cave
+// tiles disagreed with the static grid" into a hard failure merely because
+// each tile needed two confirmations.
 //
 // Two known sprite races are absorbed before a blocker is learned:
 //
@@ -179,8 +191,10 @@ func blockedDestination(e *ErrBlocked) [2]int {
 func walkAround(readBlocked func() map[[2]int]bool, plan func(blocked map[[2]int]bool) ([]world.Step, error), walk func([]world.Step) error, wait func()) error {
 	unexplainedMisses := map[[2]int]int{}
 	learnedBlocked := map[[2]int]bool{}
+	stagnantRetries := 0
+	bestPlanLen := -1
 
-	for attempt := 0; ; attempt++ {
+	for {
 		liveBlocked := readBlocked()
 		blocked := mergeBlockers(liveBlocked, learnedBlocked)
 		steps, err := plan(blocked)
@@ -189,27 +203,52 @@ func walkAround(readBlocked func() map[[2]int]bool, plan func(blocked map[[2]int
 			// contains blockers that may move. Call-local learned blockers are
 			// evidence from repeated failed movement, so do not spin waiting
 			// for them to disappear.
-			if len(liveBlocked) == 0 || attempt >= maxWalkRetries {
+			if len(liveBlocked) == 0 || stagnantRetries >= maxWalkRetries {
 				return err
 			}
+			stagnantRetries++
 			wait()
 			continue
 		}
+
+		// walk may have completed a prefix before the previous collision.
+		// A shorter remaining plan is direct evidence that the call moved
+		// closer to its destination, so it gets a fresh stall budget.
+		if bestPlanLen < 0 || len(steps) < bestPlanLen {
+			bestPlanLen = len(steps)
+			stagnantRetries = 0
+		}
+
 		if err := walk(steps); err != nil {
 			var eb *ErrBlocked
-			if !errors.As(err, &eb) || attempt >= maxWalkRetries {
+			if !errors.As(err, &eb) {
 				return err
 			}
 
 			target := blockedDestination(eb)
+			learnedNow := false
 			if liveBlocked[target] {
 				// This was explained by the snapshot we planned from. Never
 				// turn an observed sprite position into learned geometry.
 				delete(unexplainedMisses, target)
 			} else {
 				unexplainedMisses[target]++
-				if unexplainedMisses[target] >= unexplainedBlockLearnThreshold {
+				if unexplainedMisses[target] >= unexplainedBlockLearnThreshold && !learnedBlocked[target] {
 					learnedBlocked[target] = true
+					learnedNow = true
+				}
+			}
+
+			if learnedNow {
+				// New runtime evidence means the next plan is meaningfully
+				// different. Its path may be longer than the old one, so reset
+				// both the stall count and the path-length baseline.
+				stagnantRetries = 0
+				bestPlanLen = -1
+			} else {
+				stagnantRetries++
+				if stagnantRetries > maxWalkRetries {
+					return err
 				}
 			}
 
