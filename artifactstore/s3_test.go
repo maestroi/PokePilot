@@ -87,6 +87,22 @@ func TestS3FromEnvDisabledWhenUnset(t *testing.T) {
 	}
 }
 
+func TestS3FromEnvOptionalDefaultsDoNotEnableStorage(t *testing.T) {
+	t.Setenv(EnvS3Endpoint, "")
+	t.Setenv(EnvS3Bucket, "")
+	t.Setenv(EnvS3AccessKey, "")
+	t.Setenv(EnvS3SecretKey, "")
+	t.Setenv(EnvS3Region, "us-east-1")
+	t.Setenv(EnvS3Timeout, "60s")
+	store, configured, err := S3FromEnv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if configured || store != nil {
+		t.Fatalf("optional defaults enabled storage: store=%v configured=%v", store, configured)
+	}
+}
+
 func TestS3FromEnvRejectsPartialConfig(t *testing.T) {
 	t.Setenv(EnvS3Endpoint, "http://nas:9000")
 	t.Setenv(EnvS3Bucket, "pokepilot")
