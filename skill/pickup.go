@@ -21,6 +21,18 @@ func approachViaTravel(m *emu.Emu, romData []byte, targetX, targetY uint8, polic
 		return nil
 	}
 	_, err = Travel(m, romData, dest, policy, 20)
+	if errors.Is(err, ErrForcedChoiceStuck) {
+		// A trainer can interrupt a forest/item approach after a failed RUN
+		// attempt and leave Battle on the forced party-choice screen. The
+		// battle state is still live, so throwing away the whole Pickup (and
+		// eventually the whole run) is too harsh. Settle that one known menu
+		// transition, finish the battle, then resume the same deterministic
+		// approach from wherever the fight left the player.
+		if recoverErr := recoverForcedChoiceBattle(m, policy); recoverErr != nil {
+			return fmt.Errorf("skill: Pickup: recover trainer battle while approaching (%d,%d): %w", targetX, targetY, recoverErr)
+		}
+		_, err = Travel(m, romData, dest, policy, 20)
+	}
 	if err != nil {
 		return fmt.Errorf("skill: Pickup: approach beside (%d,%d) on map %#04x: %w", targetX, targetY, dest.Map, err)
 	}
