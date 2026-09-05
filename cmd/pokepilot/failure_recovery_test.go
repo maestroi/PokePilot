@@ -33,6 +33,17 @@ func TestFarmRecoveryOfferedKeepsMandatoryOnlyOption(t *testing.T) {
 	}
 }
 
+func TestFarmRecoveryOfferedClarifiesGymChallengeWithoutHistory(t *testing.T) {
+	gym := agent.Objective{Kind: agent.KindGym, Place: "pewter gym"}
+	got := farmRecoveryOffered(agent.Observation{}, []agent.Objective{gym})
+	if len(got) != 1 {
+		t.Fatalf("offered = %v, want one gym objective", got)
+	}
+	if got[0].Note != farmGymChallengeNote {
+		t.Fatalf("gym note = %q, want %q", got[0].Note, farmGymChallengeNote)
+	}
+}
+
 func TestFarmRecoveryOfferedKeepsGymFrontierWhenAlternativesExist(t *testing.T) {
 	gym := agent.Objective{Kind: agent.KindGym, Place: "pewter gym"}
 	wander := agent.Objective{Kind: agent.KindGoTo, Place: "pewter city"}
@@ -49,6 +60,9 @@ func TestFarmRecoveryOfferedKeepsGymFrontierWhenAlternativesExist(t *testing.T) 
 	for _, o := range got {
 		if o.Kind == agent.KindGym && o.Place == "pewter gym" {
 			foundGym = true
+			if o.Note != farmGymChallengeNote {
+				t.Fatalf("retained gym note = %q, want %q", o.Note, farmGymChallengeNote)
+			}
 			break
 		}
 	}
