@@ -303,10 +303,7 @@ type FieldActionResult struct {
 	Lit            bool
 }
 
-func fieldActionComplete(mem *state.Mem, spec FieldMoveSpec) bool {
-	if !state.Controllable(mem) {
-		return false
-	}
+func fieldActionEffectObserved(mem *state.Mem, spec FieldMoveSpec) bool {
 	switch spec.Move {
 	case FieldCut:
 		return mem.U8(sym.ActionResult) == 1
@@ -319,6 +316,34 @@ func fieldActionComplete(mem *state.Mem, spec FieldMoveSpec) bool {
 	default:
 		return false
 	}
+}
+
+func fieldActionComplete(mem *state.Mem, spec FieldMoveSpec) bool {
+	return fieldActionEffectObserved(mem, spec) && state.Controllable(mem)
+}
+
+// settleFieldAction waits for the ROM-side effect and for control to return.
+// Field moves may print ordinary text after changing state (Strength is the
+// important case). Page those text boxes with A, but never select an open menu
+// blindly; MenuUp distinguishes a cursor menu from ordinary dialogue.
+func settleFieldAction(m *emu.Emu, mem *state.Mem, spec FieldMoveSpec) error {
+	for spent := 0; spent < fieldActionBudget; spent += 10 {
+		state.Snapshot(m, mem)
+		if fieldActionComplete(mem, spec) {
+			return nil
+		}
+		if mem.U8(sym.FontLoaded) != 0 && !state.MenuUp(mem) {
+			m.Tap(emu.A, 3, 7)
+			continue
+		}
+		// A failed field action returns to the overworld without the positive
+		// effect. Once that has happened there is nothing useful to wait for.
+		if spent >= 50 && state.Controllable(mem) && !fieldActionEffectObserved(mem, spec) {
+			return fmt.Errorf("field move returned to the overworld without its expected effect")
+		}
+		m.StepFrames(10)
+	}
+	return fmt.Errorf("field move did not settle within %d frames", fieldActionBudget)
 }
 
 // UseFieldMove executes one supported field move through the real START ->
@@ -367,13 +392,15 @@ func UseFieldMove(m *emu.Emu, move FieldMove) (FieldActionResult, error) {
 		return FieldActionResult{}, fmt.Errorf("skill: %s: select field move: %w", spec.Name, err)
 	}
 	m.StepFrames(30)
-	if _, err := m.StepUntil(fieldActionBudget, func(m *emu.Emu) bool {
+	if err := settleFieldAction(m, &mem, spec); err != nil {
 		state.Snapshot(m, &mem)
-		return fieldActionComplete(&mem, spec)
-	}); err != nil {
-		state.Snapshot(m, &mem)
-		return FieldActionResult{}, fmt.Errorf("skill: %s did not complete: action=%d surfing=%d strength=%#02x palette=%d screen=%q",
-			spec.Name, mem.U8(sym.ActionResult), mem.U8(sym.WalkBikeSurfState), mem.U8(sym.StatusFlags1), mem.U8(sym.MapPalOffset), state.ScreenText(&mem))
+		closeErr := closeToOverworld(m)
+		if closeErr != nil {
+			return FieldActionResult{}, fmt.Errorf("skill: %s did not complete: %v; action=%d surfing=%d strength=%#02x palette=%d screen=%q; cleanup: %v",
+				spec.Name, err, mem.U8(sym.ActionResult), mem.U8(sym.WalkBikeSurfState), mem.U8(sym.StatusFlags1), mem.U8(sym.MapPalOffset), state.ScreenText(&mem), closeErr)
+		}
+		return FieldActionResult{}, fmt.Errorf("skill: %s did not complete: %v; action=%d surfing=%d strength=%#02x palette=%d screen=%q",
+			spec.Name, err, mem.U8(sym.ActionResult), mem.U8(sym.WalkBikeSurfState), mem.U8(sym.StatusFlags1), mem.U8(sym.MapPalOffset), state.ScreenText(&mem))
 	}
 
 	state.Snapshot(m, &mem)
