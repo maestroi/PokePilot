@@ -8,6 +8,7 @@ import (
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/skill"
+	"github.com/maestroi/pokepilot/world"
 )
 
 // Observation is the whole view a planner gets of the game. It is a
@@ -384,11 +385,49 @@ func Observe(m *emu.Emu, romData []byte) Observation {
 	for i, object := range objects {
 		// Map object constants are 1-based indexes in header order, which is
 		// also what wToggleableObjectList stores for the current map.
-		if !hidden[uint8(i+1)] {
-			obs.MapObjects = append(obs.MapObjects, object)
+		if hidden[uint8(i+1)] {
+			continue
 		}
+		// An item ball the player cannot walk to is not an opportunity, it is
+		// a guaranteed-failing objective the planner re-picks every round.
+		// Mt. Moon B2F (map 0x3D) is TWO disconnected halves sharing one map
+		// id: from the (15,27) ladder the TM01 ball at (29,5) has no path,
+		// and from the other three ladders the HP UP at (25,21) has none
+		// (MEASURED against the ROM, see TestObservedItemsAreReachable).
+		// Reaching the other half means leaving through a ladder and coming
+		// back down another one, which is a warp, not a walk, so Pickup's own
+		// approach can never do it. Persons are deliberately NOT filtered: a
+		// mart clerk has no walkable tile beside them and is still talkable
+		// across the counter.
+		if object.Kind == "item" && !reachableOnFoot(romData, obs.Map, obs.X, obs.Y, object.X, object.Y) {
+			continue
+		}
+		obs.MapObjects = append(obs.MapObjects, object)
 	}
 	return obs
+}
+
+// reachableOnFoot reports whether a player at (px,py) can walk to a tile
+// orthogonally adjacent to (x,y) on mapID. It is the same static collision
+// BFS the approach itself uses (skill's besideDestination), with no sprite
+// blockers: NPCs move, walls do not, and only walls make a tile hopeless.
+//
+// It fails OPEN: a map that cannot be parsed or built reports reachable, so
+// missing ROM data can never silently empty the map's item list.
+func reachableOnFoot(romData []byte, mapID, px, py, x, y uint8) bool {
+	if (px == x && (py == y+1 || py+1 == y)) || (py == y && (px == x+1 || px+1 == x)) {
+		return true // already beside it; the player's own tile may be a warp
+	}
+	h, err := rom.ParseMap(romData, mapID)
+	if err != nil {
+		return true
+	}
+	g, err := world.Build(romData, h)
+	if err != nil {
+		return true
+	}
+	_, _, err = world.FindPathAdjacent(g, int(px), int(py), int(x), int(y), nil)
+	return err == nil
 }
 
 // observedMoveDealsDamage mirrors the battle/move-learning definition for the

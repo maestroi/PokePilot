@@ -216,12 +216,17 @@ func liveObjectPosition(m *emu.Emu, objectID int) (uint8, uint8, bool) {
 }
 
 // besideDestination picks the walkable tile orthogonally adjacent to
-// (targetX, targetY) on the current map that is closest (Manhattan) to the
-// player. ok is false when the player already stands on such a tile: no
-// journey is needed. It is the shared planning step of the "walk beside
-// something" approaches — TalkAt and Pickup both need a tile to stand on, and
-// Travel needs one destination, so the choice lives here rather than in each
-// caller.
+// (targetX, targetY) on the current map that the player can actually reach
+// by the shortest walk. ok is false when the player already stands on such a
+// tile: no journey is needed. It is the shared planning step of the "walk
+// beside something" approaches — TalkAt and Pickup both need a tile to stand
+// on, and Travel needs one destination, so the choice lives here rather than
+// in each caller.
+//
+// This uses FindPathAdjacent's BFS rather than picking the Manhattan-nearest
+// walkable side: a museum display or counter can make the nearest side
+// unreachable from the player's position while a farther side is a short
+// walk away, and Manhattan distance can't tell the two apart.
 func besideDestination(m *emu.Emu, romData []byte, targetX, targetY uint8) (Destination, bool, error) {
 	sx, sy := playerXY(m)
 	if _, ok := directionTo(sx, sy, targetX, targetY); ok {
@@ -236,22 +241,15 @@ func besideDestination(m *emu.Emu, romData []byte, targetX, targetY uint8) (Dest
 	if err != nil {
 		return Destination{}, false, fmt.Errorf("build map %#04x: %w", cur, err)
 	}
-	px, py := int(sx), int(sy)
-	var best *struct{ x, y, d int }
-	for _, s := range []world.Step{world.StepUp, world.StepDown, world.StepLeft, world.StepRight} {
-		nx, ny := int(targetX)+s.DX, int(targetY)+s.DY
-		if !grid.InBounds(nx, ny) || !grid.Walkable(nx, ny) {
-			continue
-		}
-		c := struct{ x, y, d int }{nx, ny, absInt(nx-px) + absInt(ny-py)}
-		if best == nil || c.d < best.d {
-			best = &c
-		}
+	steps, _, err := world.FindPathAdjacent(grid, int(sx), int(sy), int(targetX), int(targetY), nil)
+	if err != nil {
+		return Destination{}, false, fmt.Errorf("no walkable tile beside (%d,%d) on map %#04x: %w", targetX, targetY, cur, err)
 	}
-	if best == nil {
-		return Destination{}, false, fmt.Errorf("no walkable tile beside (%d,%d) on map %#04x", targetX, targetY, cur)
+	bx, by := int(sx), int(sy)
+	for _, s := range steps {
+		bx, by = bx+s.DX, by+s.DY
 	}
-	return Destination{Map: cur, X: uint8(best.x), Y: uint8(best.y)}, true, nil
+	return Destination{Map: cur, X: uint8(bx), Y: uint8(by)}, true, nil
 }
 
 const (
