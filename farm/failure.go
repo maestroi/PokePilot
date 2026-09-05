@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"time"
 )
 
 const (
@@ -22,16 +23,17 @@ const (
 // failed/stuck with this repeated group still unrecovered, making it useful
 // as a progression-blocker signal rather than merely a noisy skill edge case.
 type ObjectiveFailure struct {
-	Objective  string `json:"objective"`
-	Error      string `json:"error"`
-	Count      int    `json:"count"`
-	FirstRound int    `json:"first_round"`
-	LastRound  int    `json:"last_round"`
-	Map        uint8  `json:"map"`
-	X          uint8  `json:"x"`
-	Y          uint8  `json:"y"`
-	Recovered  bool   `json:"recovered"`
-	Blocking   bool   `json:"blocking,omitempty"`
+	Objective  string    `json:"objective"`
+	Error      string    `json:"error"`
+	Count      int       `json:"count"`
+	FirstRound int       `json:"first_round"`
+	LastRound  int       `json:"last_round"`
+	Map        uint8     `json:"map"`
+	X          uint8     `json:"x"`
+	Y          uint8     `json:"y"`
+	Recovered  bool      `json:"recovered"`
+	Blocking   bool      `json:"blocking,omitempty"`
+	ObservedAt time.Time `json:"observed_at"`
 }
 
 type objectiveFailureEnvelope struct {
