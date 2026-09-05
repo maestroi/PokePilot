@@ -146,81 +146,22 @@ func TeachCut(m *emu.Emu) (int, error) {
 	if !state.DecodeProgress(&mem).Has(state.BadgeCascade) {
 		return -1, fmt.Errorf("skill: TeachCut: Cascade Badge is required to use Cut")
 	}
-	if !state.Controllable(&mem) {
-		return -1, fmt.Errorf("skill: TeachCut: player is not controllable")
-	}
 
-	wantMax, itemIndex := startMenuShape(&mem)
-	if err := openStartMenuEntry(m, itemIndex, wantMax); err != nil {
-		return -1, fmt.Errorf("skill: TeachCut: open ITEM: %w", err)
+	machine, err := rom.LookupTMHM(m.ROM(), hm01Item)
+	if err != nil {
+		return -1, fmt.Errorf("skill: TeachCut: read HM01 from ROM: %w", err)
 	}
-	if _, err := m.StepUntil(bagMenuBudget, func(m *emu.Emu) bool { return m.Peek8(sym.ListMenuID) == itemListMenuID }); err != nil {
-		return -1, fmt.Errorf("skill: TeachCut: bag did not open")
+	if machine.Move != cutMove {
+		return -1, fmt.Errorf("skill: TeachCut: HM01 maps to move %d in this ROM, want Cut (%d)", machine.Move, cutMove)
 	}
-	state.Snapshot(m, &mem)
-	idx, _ := bagEntry(&mem, hm01Item)
-	if idx < 0 {
-		return -1, fmt.Errorf("skill: TeachCut: HM01 disappeared from the bag")
+	result, err := TeachTMHM(m, hm01Item, true)
+	if err != nil {
+		return -1, fmt.Errorf("skill: TeachCut: %w", err)
 	}
-	if err := selectBagEntry(m, idx); err != nil {
-		return -1, fmt.Errorf("skill: TeachCut: select HM01: %w", err)
+	if result.Decision.PartySlot < 0 {
+		return -1, fmt.Errorf("skill: TeachCut: generic HM policy returned no party slot")
 	}
-	if _, err := m.StepUntil(useTossBudget, func(m *emu.Emu) bool {
-		state.Snapshot(m, &mem)
-		return useTossPrompt(&mem) != nil
-	}); err != nil {
-		return -1, fmt.Errorf("skill: TeachCut: USE/TOSS prompt did not appear")
-	}
-	if p := useTossPrompt(&mem); p == nil || p.Index != 0 {
-		return -1, fmt.Errorf("skill: TeachCut: USE/TOSS cursor is not on USE")
-	}
-	m.Tap(emu.A, 3, 7)
-
-	for i := 0; i < 100; i++ {
-		state.Snapshot(m, &mem)
-		if strings.Contains(state.ScreenText(&mem), "Teach") && state.DecodeTwoOptionMenu(&mem) != nil {
-			break
-		}
-		m.Tap(emu.A, 3, 7)
-		m.StepFrames(20)
-	}
-	state.Snapshot(m, &mem)
-	if !(strings.Contains(state.ScreenText(&mem), "Teach") && state.DecodeTwoOptionMenu(&mem) != nil) {
-		return -1, fmt.Errorf("skill: TeachCut: teach-HM prompt did not appear: %q", state.ScreenText(&mem))
-	}
-	if err := SelectMenuItem(m, 0); err != nil {
-		return -1, fmt.Errorf("skill: TeachCut: answer teach prompt: %w", err)
-	}
-	if _, err := m.StepUntil(1000, tmhmPartyMenuUp); err != nil {
-		return -1, fmt.Errorf("skill: TeachCut: TM/HM party menu did not appear")
-	}
-
-	state.Snapshot(m, &mem)
-	count := int(state.DecodeParty(&mem).Count)
-	for slot := 0; slot < count; slot++ {
-		state.Snapshot(m, &mem)
-		before := state.DecodeParty(&mem).Mons[slot].Moves
-		if err := selectTMHMPartySlot(m, slot); err != nil {
-			return -1, fmt.Errorf("skill: TeachCut: select slot %d: %w", slot, err)
-		}
-		if learned, err := finishTeachingCut(m, slot, before); learned || err != nil {
-			if err != nil {
-				return -1, err
-			}
-			if err := closeToOverworld(m); err != nil {
-				return -1, fmt.Errorf("skill: TeachCut: close menus: %w", err)
-			}
-			return slot, nil
-		}
-		if !tmhmPartyMenuUp(m) {
-			if _, err := m.StepUntil(500, tmhmPartyMenuUp); err != nil {
-				state.Snapshot(m, &mem)
-				return -1, fmt.Errorf("skill: TeachCut: slot %d rejected but party menu did not return: %q", slot, state.ScreenText(&mem))
-			}
-		}
-	}
-	_ = closeToOverworld(m)
-	return -1, fmt.Errorf("skill: TeachCut: no party member can learn Cut")
+	return result.Decision.PartySlot, nil
 }
 
 func finishTeachingCut(m *emu.Emu, slot int, before [4]uint8) (bool, error) {
