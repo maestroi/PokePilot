@@ -3,6 +3,7 @@ package skill
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/rom"
@@ -253,6 +254,32 @@ func besideDestination(m *emu.Emu, romData []byte, targetX, targetY uint8) (Dest
 	return Destination{Map: cur, X: uint8(best.x), Y: uint8(best.y)}, true, nil
 }
 
+const (
+	museum1FMap            = 0x34
+	maxTalkApproachChoices = 1
+)
+
+// talkApproachChoiceIndex classifies the tiny set of choices that are part of
+// reaching a talk target rather than the target conversation itself. Keep this
+// deliberately specific: blindly answering generic YES/NO prompts has lost
+// caught Pokemon and made wrong move-learning decisions before.
+//
+// Museum 1F is one measured route gate. Walking from the entrance side to a
+// person behind the counter crosses (9,4)/(10,4), where the admission script
+// asks "Would you like to come in?". YES buys the ¥50 ticket, sets
+// EVENT_BOUGHT_MUSEUM_TICKET and disables the gate script, so the interrupted
+// approach can safely resume. No other prompt is answered here.
+func talkApproachChoiceIndex(mapID uint8, text string) (int, bool) {
+	if mapID != museum1FMap {
+		return 0, false
+	}
+	normalized := strings.ToLower(strings.Join(strings.Fields(text), " "))
+	if !strings.Contains(normalized, "would you like to come in?") {
+		return 0, false
+	}
+	return 0, true // Museum1F YesNoChoice: index 0 = YES
+}
+
 // talkBeside walks to a walkable tile orthogonally adjacent to (tx,ty) on the
 // current map, fleeing the wild encounters that interrupt the way. It is a
 // no-op when the player is already adjacent.
@@ -277,8 +304,41 @@ func talkBeside(m *emu.Emu, romData []byte, tx, ty uint8, policy MovePolicy) err
 	if !ok {
 		return nil
 	}
-	if _, err := TravelFlee(m, romData, dest, policy, 20); err != nil {
-		return fmt.Errorf("skill: TalkAt: approach beside (%d,%d) on map %#04x: %w", tx, ty, dest.Map, err)
+
+	handledChoices := 0
+	for {
+		if _, err := TravelFlee(m, romData, dest, policy, 20); err != nil {
+			var choice *ErrDialogueChoice
+			if !errors.As(err, &choice) || handledChoices >= maxTalkApproachChoices {
+				return fmt.Errorf("skill: TalkAt: approach beside (%d,%d) on map %#04x: %w", tx, ty, dest.Map, err)
+			}
+			index, recognized := talkApproachChoiceIndex(dest.Map, choice.Result.Text)
+			if !recognized {
+				return fmt.Errorf("skill: TalkAt: approach beside (%d,%d) on map %#04x: %w", tx, ty, dest.Map, err)
+			}
+			if err := selectTwoOption(m, index); err != nil {
+				return fmt.Errorf("skill: TalkAt: answer Museum admission while approaching (%d,%d): %w", tx, ty, err)
+			}
+			handledChoices++
+
+			// YES leaves the purchase/thank-you text up while the script sets
+			// EVENT_BOUGHT_MUSEUM_TICKET. Close only that ordinary text, then
+			// retry the same approach. If another menu appears, preserve the
+			// safety rule instead of guessing a second answer.
+			rec := RecoverDialogue(m, dialogueRecoveryBudget)
+			switch rec.Stop {
+			case DialogueRecovered:
+				continue
+			case DialogueChoiceRequired, DialogueMenuOpen:
+				return fmt.Errorf("skill: TalkAt: Museum admission led to another unanswered choice: %w", &ErrDialogueChoice{Result: rec})
+			case DialogueBudgetExhausted:
+				return fmt.Errorf("skill: TalkAt: Museum admission text did not clear: %q", rec.Text)
+			case DialogueUnexpectedMode:
+				return fmt.Errorf("skill: TalkAt: Museum admission unexpectedly entered a battle")
+			default:
+				return fmt.Errorf("skill: TalkAt: Museum admission recovery stopped with %d", rec.Stop)
+			}
+		}
+		return nil
 	}
-	return nil
 }
