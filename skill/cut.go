@@ -134,36 +134,16 @@ func closeToOverworld(m *emu.Emu) error {
 	return fmt.Errorf("skill: menus did not close to overworld: screen=%q", state.ScreenText(&mem))
 }
 
+// TeachCut is the compatibility entry point for existing story code. The
+// shared field-action framework owns prerequisite checks and generic HM
+// teaching now, so Cut cannot drift from Surf/Strength/Flash semantics.
 func TeachCut(m *emu.Emu) (int, error) {
-	var mem state.Mem
-	state.Snapshot(m, &mem)
-	if slot := partyMoveSlot(&mem, cutMove); slot >= 0 {
-		return slot, nil
-	}
-	if _, count := bagEntry(&mem, hm01Item); count == 0 {
-		return -1, fmt.Errorf("skill: TeachCut: HM01 is not in the bag")
-	}
-	if !state.DecodeProgress(&mem).Has(state.BadgeCascade) {
-		return -1, fmt.Errorf("skill: TeachCut: Cascade Badge is required to use Cut")
-	}
-
-	machine, err := rom.LookupTMHM(m.ROM(), hm01Item)
-	if err != nil {
-		return -1, fmt.Errorf("skill: TeachCut: read HM01 from ROM: %w", err)
-	}
-	if machine.Move != cutMove {
-		return -1, fmt.Errorf("skill: TeachCut: HM01 maps to move %d in this ROM, want Cut (%d)", machine.Move, cutMove)
-	}
-	result, err := TeachTMHM(m, hm01Item, true)
-	if err != nil {
-		return -1, fmt.Errorf("skill: TeachCut: %w", err)
-	}
-	if result.Decision.PartySlot < 0 {
-		return -1, fmt.Errorf("skill: TeachCut: generic HM policy returned no party slot")
-	}
-	return result.Decision.PartySlot, nil
+	return EnsureFieldMove(m, FieldCut)
 }
 
+// finishTeachingCut is retained for older measurement/tests that exercise the
+// historical menu path directly. Production teaching goes through TeachTMHM
+// via EnsureFieldMove.
 func finishTeachingCut(m *emu.Emu, slot int, before [4]uint8) (bool, error) {
 	tried := map[uint8]bool{}
 	lastForget := -1
@@ -214,59 +194,12 @@ func finishTeachingCut(m *emu.Emu, slot int, before [4]uint8) (bool, error) {
 
 func cuttableFrontTile(tile uint8) bool { return tile == cutTreeTile || tile == gymCutTreeTile }
 
+// CutAhead is retained as the public compatibility verb, but execution now
+// goes through UseFieldMove so Travel, Vermilion Gym, and direct callers all
+// share the same badge/learned-move/context/completion rules.
 func CutAhead(m *emu.Emu) error {
-	var mem state.Mem
-	state.Snapshot(m, &mem)
-	if !state.DecodeProgress(&mem).Has(state.BadgeCascade) {
-		return fmt.Errorf("skill: CutAhead: Cascade Badge is required")
-	}
-	if tile := mem.U8(sym.TileInFrontOfPlayer); !cuttableFrontTile(tile) {
-		return fmt.Errorf("skill: CutAhead: tile in front is %#02x, not a cut tree", tile)
-	}
-	slot := partyMoveSlot(&mem, cutMove)
-	if slot < 0 {
-		var err error
-		slot, err = TeachCut(m)
-		if err != nil {
-			return fmt.Errorf("skill: CutAhead: %w", err)
-		}
-		state.Snapshot(m, &mem)
-	}
-
-	wantMax, itemIndex := startMenuShape(&mem)
-	if err := openStartMenuEntry(m, itemIndex-1, wantMax); err != nil {
-		return fmt.Errorf("skill: CutAhead: open POKEMON: %w", err)
-	}
-	if _, err := m.StepUntil(1000, normalPartyMenuUp); err != nil {
-		return fmt.Errorf("skill: CutAhead: party menu did not appear")
-	}
-	if err := selectFieldMoveUser(m, slot); err != nil {
-		return fmt.Errorf("skill: CutAhead: select Cut user: %w", err)
-	}
-
-	cutIndex := -1
-	for i := 0; i < 4; i++ {
-		if m.Peek8(sym.FieldMoves+uint16(i)) == cutFieldMove {
-			cutIndex = i
-			break
-		}
-	}
-	if cutIndex < 0 {
-		return fmt.Errorf("skill: CutAhead: slot %d knows Cut but CUT is absent from wFieldMoves", slot)
-	}
-	if err := SelectMenuItem(m, cutIndex); err != nil {
-		return fmt.Errorf("skill: CutAhead: select CUT: %w", err)
-	}
-	m.StepFrames(30)
-	if _, err := m.StepUntil(3000, func(m *emu.Emu) bool {
-		var s state.Mem
-		state.Snapshot(m, &s)
-		return s.U8(sym.ActionResult) == 1 && state.Controllable(&s)
-	}); err != nil {
-		state.Snapshot(m, &mem)
-		return fmt.Errorf("skill: CutAhead: Cut did not complete: action=%d screen=%q", mem.U8(sym.ActionResult), state.ScreenText(&mem))
-	}
-	return nil
+	_, err := UseFieldMove(m, FieldCut)
+	return err
 }
 
 type cutCandidate struct{ x, y, d int }
