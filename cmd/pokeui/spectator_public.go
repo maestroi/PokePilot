@@ -25,25 +25,27 @@ func (run spectatorRun) MarshalJSON() ([]byte, error) {
 		Y uint8 `json:"y"`
 	}
 	type publicRun struct {
-		RunID     string          `json:"run_id"`
-		Status    string          `json:"status"`
-		Starter   string          `json:"starter,omitempty"`
-		Dest      string          `json:"dest,omitempty"`
-		Goal      string          `json:"goal,omitempty"`
-		QueuedAt  int64           `json:"queued_at,omitempty"`
-		EndedAt   int64           `json:"ended_at,omitempty"`
-		Frame     uint64          `json:"frame"`
-		Map       uint8           `json:"map"`
-		X         uint8           `json:"x"`
-		Y         uint8           `json:"y"`
-		Decision  string          `json:"decision,omitempty"`
-		StopSoFar string          `json:"stop_so_far,omitempty"`
-		Stats     *spectatorStats `json:"stats,omitempty"`
-		Player    *publicPlayer   `json:"player,omitempty"`
-		Sprites   []publicSprite  `json:"sprites,omitempty"`
-		Trail     [][2]uint8      `json:"trail,omitempty"`
-		Attempts  int             `json:"attempts,omitempty"`
-		Reason    string          `json:"reason,omitempty"`
+		RunID       string          `json:"run_id"`
+		Status      string          `json:"status"`
+		Starter     string          `json:"starter,omitempty"`
+		Dest        string          `json:"dest,omitempty"`
+		Goal        string          `json:"goal,omitempty"`
+		QueuedAt    int64           `json:"queued_at,omitempty"`
+		EndedAt     int64           `json:"ended_at,omitempty"`
+		Frame       uint64          `json:"frame"`
+		Map         uint8           `json:"map"`
+		X           uint8           `json:"x"`
+		Y           uint8           `json:"y"`
+		Decision    string          `json:"decision,omitempty"`
+		StopSoFar   string          `json:"stop_so_far,omitempty"`
+		Stats       *spectatorStats `json:"stats,omitempty"`
+		Player      *publicPlayer   `json:"player,omitempty"`
+		Sprites     []publicSprite  `json:"sprites,omitempty"`
+		Trail       [][2]uint8      `json:"trail,omitempty"`
+		Attempts    int             `json:"attempts,omitempty"`
+		Reason      string          `json:"reason,omitempty"`
+		ReplayReady bool            `json:"replay_ready,omitempty"`
+		Highlight   string          `json:"highlight,omitempty"`
 	}
 
 	var player *publicPlayer
@@ -70,24 +72,26 @@ func (run spectatorRun) MarshalJSON() ([]byte, error) {
 	}
 
 	return json.Marshal(publicRun{
-		RunID:     run.RunID,
-		Status:    run.Status,
-		Starter:   run.Starter,
-		Dest:      run.Dest,
-		Goal:      run.Goal,
-		QueuedAt:  run.QueuedAt,
-		EndedAt:   run.EndedAt,
-		Frame:     run.Frame,
-		Map:       run.Map,
-		X:         run.X,
-		Y:         run.Y,
-		Decision:  run.Decision,
-		StopSoFar: run.StopSoFar,
-		Stats:     run.Stats,
-		Player:    player,
-		Sprites:   sprites,
-		Trail:     append([][2]uint8(nil), run.Trail...),
-		Attempts:  run.Attempts,
-		Reason:    run.Reason,
+		RunID:       run.RunID,
+		Status:      run.Status,
+		Starter:     run.Starter,
+		Dest:        run.Dest,
+		Goal:        run.Goal,
+		QueuedAt:    run.QueuedAt,
+		EndedAt:     run.EndedAt,
+		Frame:       run.Frame,
+		Map:         run.Map,
+		X:           run.X,
+		Y:           run.Y,
+		Decision:    run.Decision,
+		StopSoFar:   run.StopSoFar,
+		Stats:       run.Stats,
+		Player:      player,
+		Sprites:     sprites,
+		Trail:       append([][2]uint8(nil), run.Trail...),
+		Attempts:    run.Attempts,
+		Reason:      run.Reason,
+		ReplayReady: run.ReplayReady,
+		Highlight:   run.Highlight,
 	})
 }
