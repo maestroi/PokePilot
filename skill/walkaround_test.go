@@ -166,10 +166,13 @@ func TestWalkAroundForgetsVacatedSpriteTile(t *testing.T) {
 }
 
 // A tile that stays blocked gives up rather than looping, and the caller
-// still sees the ErrBlocked underneath.
+// still sees the ErrBlocked underneath. Learning that tile is one piece of
+// new runtime evidence, so the stagnant-retry budget restarts once; after
+// that, the unchanged bad plan must still terminate.
 func TestWalkAroundGivesUpAfterMaxRetries(t *testing.T) {
 	stuck := blockedAt(14, 14, world.StepUp)
-	blocks := make([]error, maxWalkRetries+1)
+	wantWalks := maxWalkRetries + unexplainedBlockLearnThreshold + 1
+	blocks := make([]error, wantWalks)
 	for i := range blocks {
 		blocks[i] = stuck
 	}
@@ -178,8 +181,8 @@ func TestWalkAroundGivesUpAfterMaxRetries(t *testing.T) {
 	if err := p.run(); !errors.As(err, &eb) {
 		t.Fatalf("err = %v, want an *ErrBlocked", err)
 	}
-	if p.walks != maxWalkRetries+1 {
-		t.Errorf("walked %d times, want %d", p.walks, maxWalkRetries+1)
+	if p.walks != wantWalks {
+		t.Errorf("walked %d times, want %d", p.walks, wantWalks)
 	}
 }
 
