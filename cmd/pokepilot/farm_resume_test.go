@@ -46,7 +46,7 @@ func TestRunFarmLLMWiresResumeIntoAgentBudget(t *testing.T) {
 	if !strings.Contains(text, "ResumeFrom:    resumeFrom") {
 		t.Fatal("runFarmLLM does not pass ResumeFrom into agent.Budget")
 	}
-	if !strings.Contains(text, `starter != "" && resumeFrom == ""`) {
+	if !strings.Contains(text, "starter != \"\" && resumeFrom == \"\"") {
 		t.Fatal("resumed LLM run would replay starter acquisition")
 	}
 }
