@@ -50,7 +50,7 @@ func prepareFarmAttempt(m *emu.Emu, client *farm.Client, spec farm.Spec, planner
 				log.Printf("farm: %s: resume state rejected; starting attempt %d fresh: %v", spec.RunID, spec.Attempt, loadErr)
 			} else {
 				log.Printf("farm: %s: resumed attempt %d from attempt %d checkpoint %s", spec.RunID, spec.Attempt, cp.Attempt, cp.State.Name)
-				m.TraceNote(fmt.Sprintf("resumed from attempt %d checkpoint %s", cp.Attempt, cp.State.Name))
+				m.TraceNote("resume", fmt.Sprintf("attempt %d checkpoint %s", cp.Attempt, cp.State.Name))
 				return dir, 0, nil
 			}
 		}
