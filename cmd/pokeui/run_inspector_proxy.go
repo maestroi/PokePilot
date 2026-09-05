@@ -44,11 +44,26 @@ func streamProxy(upstreamBase string) http.HandlerFunc {
 	upstreamBase = strings.TrimRight(upstreamBase, "/")
 	return func(w http.ResponseWriter, r *http.Request) {
 		up, err := http.NewRequestWithContext(r.Context(), r.Method, upstreamBase+r.URL.RequestURI(), nil)
-		if err != nil { writeStreamProxyError(w); return }
-		for _, name := range []string{"Range", "If-Range"} { if value := r.Header.Get(name); value != "" { up.Header.Set(name, value) } }
-		res, err := client.Do(up); if err != nil { writeStreamProxyError(w); return }
+		if err != nil {
+			writeStreamProxyError(w)
+			return
+		}
+		for _, name := range []string{"Range", "If-Range"} {
+			if value := r.Header.Get(name); value != "" {
+				up.Header.Set(name, value)
+			}
+		}
+		res, err := client.Do(up)
+		if err != nil {
+			writeStreamProxyError(w)
+			return
+		}
 		defer res.Body.Close()
-		for _, name := range []string{"Content-Type","Content-Length","Content-Range","Accept-Ranges","Content-Disposition","ETag","Last-Modified","Cache-Control"} { if value := res.Header.Get(name); value != "" { w.Header().Set(name, value) } }
+		for _, name := range []string{"Content-Type", "Content-Length", "Content-Range", "Accept-Ranges", "Content-Disposition", "ETag", "Last-Modified", "Cache-Control"} {
+			if value := res.Header.Get(name); value != "" {
+				w.Header().Set(name, value)
+			}
+		}
 		w.WriteHeader(res.StatusCode)
 		_, _ = io.Copy(w, res.Body)
 	}
