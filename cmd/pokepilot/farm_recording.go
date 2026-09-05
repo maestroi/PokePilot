@@ -7,7 +7,10 @@ import (
 	"fmt"
 	"log"
 	"strconv"
+	"strings"
+	"unicode"
 
+	"github.com/maestroi/pokepilot/artifactstore"
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/farm"
 )
@@ -64,6 +67,67 @@ func farmRecordingArtifact(data []byte) farm.Artifact {
 	}
 }
 
+// uploadFarmRecording stores a recording remotely when S3 is configured.
+// configured is true even for a broken/partial configuration: once the
+// operator opts into object storage, a configuration or upload error must not
+// silently put the large recording back into FinishReport JSON.
+func uploadFarmRecording(spec farm.Spec, data []byte) (art farm.Artifact, configured bool, err error) {
+	store, configured, err := artifactstore.S3FromEnv()
+	if err != nil || !configured {
+		return farm.Artifact{}, configured, err
+	}
+	obj, err := store.PutObject(context.Background(), farmRecordingObjectKey(spec), "application/octet-stream", data)
+	if err != nil {
+		return farm.Artifact{}, true, err
+	}
+	return farm.Artifact{
+		Name:      farmRecordingName,
+		MediaType: "application/octet-stream",
+		SHA256:    obj.SHA256,
+		Store:     farm.ArtifactStoreS3,
+		Bucket:    obj.Bucket,
+		ObjectKey: obj.Key,
+		Size:      obj.Size,
+	}, true, nil
+}
+
+func farmRecordingObjectKey(spec farm.Spec) string {
+	// Keep keys pleasant to browse on a NAS while making collisions between
+	// unusual run IDs impossible. The short hash is over the original ID, not
+	// the sanitized display prefix.
+	prefix := sanitizeObjectSegment(spec.RunID)
+	if prefix == "" {
+		prefix = "run"
+	}
+	if len(prefix) > 64 {
+		prefix = prefix[:64]
+	}
+	sum := sha256.Sum256([]byte(spec.RunID))
+	attempt := spec.Attempt
+	if attempt < 1 {
+		attempt = 1
+	}
+	return fmt.Sprintf("runs/%s-%s/attempt-%d/%s", prefix, hex.EncodeToString(sum[:6]), attempt, farmRecordingName)
+}
+
+func sanitizeObjectSegment(s string) string {
+	var b strings.Builder
+	lastDash := false
+	for _, r := range strings.TrimSpace(s) {
+		allowed := r <= unicode.MaxASCII && (unicode.IsLetter(r) || unicode.IsDigit(r) || r == '.' || r == '_' || r == '-')
+		if allowed {
+			b.WriteRune(r)
+			lastDash = r == '-'
+			continue
+		}
+		if !lastDash {
+			b.WriteByte('-')
+			lastDash = true
+		}
+	}
+	return strings.Trim(b.String(), ".-")
+}
+
 // finishRunWithRecording mirrors finishRun but adds one optional durable
 // .gbrun artifact and the run's structured objective-failure summary. It
 // keeps diagnostic evidence best-effort: losing telemetry/recording must
@@ -107,11 +171,28 @@ func finishRunWithRecording(m *emu.Emu, client *farm.Client, spec farm.Spec, rea
 	}
 
 	if len(recording) > 0 {
-		candidate := append(append([]farm.Artifact(nil), report.Artifacts...), farmRecordingArtifact(recording))
-		if err := farm.ValidateFinishArtifacts(farm.FinishReport{Artifacts: candidate, SeedBurn: report.SeedBurn}); err != nil {
-			log.Printf("farm: %s: omit %s: %v", report.RunID, farmRecordingName, err)
-		} else {
-			report.Artifacts = candidate
+		remote, configured, uploadErr := uploadFarmRecording(spec, recording)
+		switch {
+		case configured && uploadErr != nil:
+			// Do not fall back to embedding the recording. An operator who
+			// configured S3 did so specifically to keep large blobs out of
+			// wall/database JSON; recording loss remains diagnostic-only.
+			log.Printf("farm: %s: omit %s after S3 upload failure: %v", report.RunID, farmRecordingName, uploadErr)
+		case configured:
+			candidate := append(append([]farm.Artifact(nil), report.Artifacts...), remote)
+			if err := farm.ValidateFinishArtifacts(farm.FinishReport{Artifacts: candidate, SeedBurn: report.SeedBurn}); err != nil {
+				log.Printf("farm: %s: omit remote %s: %v", report.RunID, farmRecordingName, err)
+			} else {
+				report.Artifacts = candidate
+			}
+		default:
+			// No S3 config preserves the existing local/small-install behavior.
+			candidate := append(append([]farm.Artifact(nil), report.Artifacts...), farmRecordingArtifact(recording))
+			if err := farm.ValidateFinishArtifacts(farm.FinishReport{Artifacts: candidate, SeedBurn: report.SeedBurn}); err != nil {
+				log.Printf("farm: %s: omit %s: %v", report.RunID, farmRecordingName, err)
+			} else {
+				report.Artifacts = candidate
+			}
 		}
 	}
 
