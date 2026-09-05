@@ -71,6 +71,11 @@ type Observation struct {
 	// Bag is the decoded bag (state.DecodeInventory), named. Only entries
 	// with a quantity; an unknown item ID says so rather than vanishing.
 	Bag []Item
+	// FieldCapabilities is the shared field-move capability snapshot. Usable
+	// means both the required badge and a learned move on the current party;
+	// HMOwned is deliberately separate so the planner never mistakes an HM in
+	// the bag for an executable capability. PartySlot is -1 when not learned.
+	FieldCapabilities []FieldCapability
 	// RecentDialogue is what the game has said recently, oldest first: NPC
 	// lines are the game's own hints (the gym guide says what Brock uses).
 	// Set by Run from its sample tape; Observe leaves it empty because a
@@ -173,6 +178,19 @@ type Item struct {
 	Quantity int
 }
 
+// FieldCapability is one planner-visible field-move capability. BadgeOwned,
+// HMOwned and Learned stay separate so the model can see exactly which
+// prerequisite is missing instead of treating possession as executability.
+type FieldCapability struct {
+	Name       string
+	Badge      string
+	BadgeOwned bool
+	HMOwned    bool
+	Learned    bool
+	PartySlot  int
+	Usable     bool
+}
+
 // RoundRecord is one line of run history: what was attempted and how it
 // turned out. Outcome is "done" or "failed: <reason>".
 type RoundRecord struct {
@@ -245,26 +263,27 @@ func Observe(m *emu.Emu, romData []byte) Observation {
 	gs := state.Read(m, &mem)
 
 	obs := Observation{
-		Map:            gs.Player.MapID,
-		MapName:        state.MapName(gs.Player.MapID),
-		X:              gs.Player.X,
-		Y:              gs.Player.Y,
-		Facing:         gs.Player.Facing.String(),
-		Controllable:   state.Controllable(&mem),
-		InBattle:       gs.Battle != nil,
-		PartyCount:     int(gs.Party.Count),
-		Money:          gs.Inventory.Money,
-		RespawnPlace:   state.MapName(mem.U8(sym.LastBlackoutMap)),
-		Party:          make([]PartyMon, len(gs.Party.Mons)),
-		Badges:         []string{},
-		Events:         []string{},
-		LeadMoves:      []Move{},
-		LeadPP:         []uint8{},
-		Bag:            []Item{},
-		RecentDialogue: []string{},
-		History:        []RoundRecord{},
-		Failures:       []Failure{},
-		Requirements:   []Requirement{},
+		Map:               gs.Player.MapID,
+		MapName:           state.MapName(gs.Player.MapID),
+		X:                 gs.Player.X,
+		Y:                 gs.Player.Y,
+		Facing:            gs.Player.Facing.String(),
+		Controllable:      state.Controllable(&mem),
+		InBattle:          gs.Battle != nil,
+		PartyCount:        int(gs.Party.Count),
+		Money:             gs.Inventory.Money,
+		RespawnPlace:      state.MapName(mem.U8(sym.LastBlackoutMap)),
+		Party:             make([]PartyMon, len(gs.Party.Mons)),
+		Badges:            []string{},
+		Events:            []string{},
+		LeadMoves:         []Move{},
+		LeadPP:            []uint8{},
+		Bag:               []Item{},
+		FieldCapabilities: []FieldCapability{},
+		RecentDialogue:    []string{},
+		History:           []RoundRecord{},
+		Failures:          []Failure{},
+		Requirements:      []Requirement{},
 	}
 	for i, mon := range gs.Party.Mons {
 		obs.Party[i] = PartyMon{Species: mon.Species, Level: mon.Level, HP: mon.HP, MaxHP: mon.MaxHP, Status: mon.StatusName()}
@@ -324,6 +343,17 @@ func Observe(m *emu.Emu, romData []byte) Observation {
 			name = fmt.Sprintf("item %d", it.ID)
 		}
 		obs.Bag = append(obs.Bag, Item{Name: name, Quantity: int(it.Quantity)})
+	}
+	for _, cap := range skill.FieldCapabilities(&mem) {
+		obs.FieldCapabilities = append(obs.FieldCapabilities, FieldCapability{
+			Name:       cap.Name,
+			Badge:      cap.Badge.String(),
+			BadgeOwned: cap.BadgeOwned,
+			HMOwned:    cap.HMOwned,
+			Learned:    cap.Learned,
+			PartySlot:  cap.PartySlot,
+			Usable:     cap.Usable,
+		})
 	}
 	if grass, err := skill.HasGrass(romData, obs.Map); err == nil {
 		obs.HasGrass = grass
