@@ -190,8 +190,12 @@ func TestFarmLLMBudgetReceivesCheckpointDir(t *testing.T) {
 	if !strings.Contains(text, "CheckpointDir: checkpointDir") {
 		t.Fatal("runFarmLLM does not pass CheckpointDir into agent.Budget")
 	}
-	if !strings.Contains(text, `os.MkdirTemp("", "pokefarm-checkpoints-")`) {
-		t.Fatal("runOne does not create a per-lease checkpoint directory")
+	resumeSrc, err := os.ReadFile("farm_resume.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(resumeSrc), "os.MkdirTemp(\"\", \"pokefarm-checkpoints-\")") {
+		t.Fatal("attempt preparation does not create a per-lease checkpoint directory")
 	}
 	scripted := text[strings.Index(text, "func runFarmScripted"):]
 	if i := strings.Index(scripted[1:], "\nfunc "); i > 0 {
