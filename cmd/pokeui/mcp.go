@@ -41,7 +41,7 @@ type mcpStartRunInput struct {
 	Goal       string `json:"goal,omitempty" jsonschema:"task statement for llm mode; defaults to earning the Boulder Badge"`
 	Seed       int64  `json:"seed,omitempty" jsonschema:"deterministic run seed; zero is the bit-identical baseline"`
 	FPS        int    `json:"fps,omitempty" jsonschema:"emulation pace; zero runs flat out"`
-	MaxRounds  int    `json:"max_rounds,omitempty" jsonschema:"LLM round budget; zero uses the runner default"`
+	MaxRounds  int    `json:"max_rounds,omitempty" jsonschema:"optional emergency/experiment LLM objective cap; zero means no hard round cap"`
 	MaxFrames  int    `json:"max_frames,omitempty" jsonschema:"emulated frame budget; zero uses the runner default"`
 	LLMProfile string `json:"llm_profile,omitempty" jsonschema:"llm endpoint routing: default, gpu, or auto (GPU primary with LAN fallback)"`
 }
@@ -118,7 +118,7 @@ func newMCPHandler(wallBase, token string) http.Handler {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "pokepilot_start_run",
-		Description: "Queue one finite PokePilot run and return its generated run id. Defaults to an LLM Squirtle run for the Boulder Badge.",
+		Description: "Queue one goal-driven PokePilot run and return its generated run id. Defaults to an LLM Squirtle run for the Boulder Badge.",
 	}, control.startRun)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "pokepilot_list_runs",
@@ -192,8 +192,8 @@ func (c *mcpControl) startRun(ctx context.Context, _ *mcp.CallToolRequest, in mc
 	if in.FPS < 0 || in.FPS > 240 {
 		return nil, mcpStartRunOutput{}, fmt.Errorf("fps must be between 0 and 240")
 	}
-	if in.MaxRounds < 0 || in.MaxRounds > 256 {
-		return nil, mcpStartRunOutput{}, fmt.Errorf("max_rounds must be between 0 and 256")
+	if in.MaxRounds < 0 {
+		return nil, mcpStartRunOutput{}, fmt.Errorf("max_rounds must be zero (uncapped) or positive")
 	}
 	if in.MaxFrames < 0 || in.MaxFrames > 50_000_000 {
 		return nil, mcpStartRunOutput{}, fmt.Errorf("max_frames must be between 0 and 50000000")

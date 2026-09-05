@@ -23,7 +23,9 @@ import (
 var version = "dev"
 
 const (
-	llmMaxRounds = 32
+	// Zero means goal-driven: no hard decision count. agent.Run still has
+	// its short loop detector, long stagnation watchdog and frame watchdog.
+	llmMaxRounds = 0
 	llmMaxFrames = 8 * 60 * 60 * 60
 )
 
@@ -38,7 +40,7 @@ func main() {
 	starter := flag.String("starter", "squirtle", "starter to take: charmander, squirtle or bulbasaur (bulbasaur loses the rival battle)")
 	planner := flag.String("planner", "scripted", "how to choose objectives: scripted or llm")
 	seed := flag.Int64("seed", 0, "diverge this run's luck by burning seed-derived idle frames after boot; 0 replays bit-identically")
-	maxRounds := flag.Int("max-rounds", llmMaxRounds, "objectives one llm run may spend; each costs a model call")
+	maxRounds := flag.Int("max-rounds", llmMaxRounds, "optional emergency objective cap for one llm run; 0 means no round cap")
 	goal := flag.String("goal", defaultGoal, "structured goal: badges:N | reach:<place> | level:N | item:<name> | elite-four")
 	checkpointDir := flag.String("checkpoint-dir", "", "directory for the per-objective save-state ring")
 	resume := flag.String("resume", "", "resume an llm run from a round checkpoint, checkpoint directory, or run directory")

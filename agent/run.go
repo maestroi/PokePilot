@@ -24,7 +24,7 @@ const (
 	StopUnset  Stop = iota // the zero value: no stop reason set yet. Never reported.
 	StopDone               // the planner reported ErrDone
 	StopStuck              // no progress for too many rounds
-	StopBudget             // the round or frame budget ran out
+	StopBudget             // an optional round cap or the frame budget ran out
 	StopFailed             // consecutive objective failures exhausted the failure budget
 	StopError              // a planner error, or nothing is possible from here
 )
@@ -59,9 +59,9 @@ type Result struct {
 	// of ONE run answer "did this move?": a run that stalled at round 3
 	// and one that progressed steadily can stop looking identical, and
 	// only the pair of samples tells them apart. Both are nil when the
-	// run stopped before its first observation (a zero budget, a cancel
-	// before the first frame, or a ROM the graph could not build), so a
-	// nil pair means "never played", never "played and moved nothing".
+	// run stopped before its first observation (an invalid frame budget, a
+	// cancel before the first frame, or a ROM the graph could not build),
+	// so a nil pair means "never played", never "played and moved nothing".
 	ProgressEarly *Progress
 	ProgressFinal *Progress
 }
@@ -267,16 +267,25 @@ const historyCap = 6
 // not a transcript.
 const dialogueCap = 6
 
-// Budget bounds a run. MaxRounds and MaxFrames are both required; a zero
-// budget is an error, not "unlimited". An unbounded loop against an
-// emulator is how a run silently eats 45 minutes.
+// Budget bounds a run. MaxFrames is always required as a last-resort
+// emulator watchdog. MaxRounds is optional: zero means no round cap, because
+// normal LLM runs are goal-driven and should end on success, a real failure,
+// or stagnation rather than an arbitrary decision count.
 type Budget struct {
+	// MaxRounds is an optional emergency objective cap. Zero means no round
+	// cap. A positive value still produces StopBudget when reached so explicit
+	// experiments can request a fixed decision budget.
 	MaxRounds int
 	MaxFrames int
 	// StuckAfter is how many consecutive objectives may leave the
 	// observation unchanged before the run stops with StopStuck.
 	// Zero means defaultStuckAfter.
 	StuckAfter int
+	// StagnationAfter is the long watchdog: how many completed rounds may
+	// pass without a badge, story event, new map, party growth or level gain.
+	// Movement, HP, money and consumable churn do not reset it. Zero means
+	// defaultStagnationAfter.
+	StagnationAfter int
 	// MaxConsecutiveFailures is how many objectives may fail in a row
 	// before the run stops with StopFailed. The same objective failing
 	// with the same error twice stops it sooner, whatever this is.
@@ -515,65 +524,24 @@ func appendHistory(h []RoundRecord, r RoundRecord) []RoundRecord {
 	return append(out, r)
 }
 
-// Run drives observe -> plan -> execute until the planner is done or a
-// budget is exhausted. A failed objective does not end the run: what was
-// attempted and the error text are recorded in the observation history, the
-// game is left where the failure left it, and the planner chooses again with
-// the failure visible. That is the loop the run exists to produce: blocked
-// at the town exit, hear why, go get what unblocks it. Stopping on every
-// failure was right about SILENT failure — a planner reasoning from a state
-// it thinks it reached is worse than stopping — and too strict for a precise
-// one.
+// Run drives observe -> plan -> execute until the planner is done, the world
+// is demonstrably stuck, a hard failure occurs, or a safety watchdog fires.
+// A failed objective does not end the run: what was attempted and the error
+// text are recorded in the observation history, the game is left where the
+// failure left it, and the planner chooses again with the failure visible.
 //
-// The continuation is bounded three ways. A streak of failed objectives
-// stops the run with StopFailed once it reaches MaxConsecutiveFailures
-// (default 3); the same objective failing with the same error twice stops
-// it immediately, because two identical failures outweigh any number of
-// different ones; and MaxRounds and MaxFrames bound failure rounds like any
-// other round. A blackout is exempt from the failure accounting: it is the
-// game answering, not the planner failing — the party is healed and standing
-// in a town. It is still recorded in history and in the failure tally —
-// the objective was not reached — but it neither counts against
-// MaxConsecutiveFailures nor repeats the last failure, because the respawn
-// changed the world. A lost gym challenge is NOT exempt: the objective said
-// "beat the gym leader" and the run lost, so it is a failure like any other
-// (KindGym returns the loss as an error); the loss's own blackout is what
-// makes the next round startable, and the round budget still bounds a
-// planner that keeps challenging an unbeatable leader. A train retreat (ErrTrainRetreat) is exempt
-// for the same reason in miniature: the session damaged the party, so a
-// repeated attempt is a new one from a new state, and the planner's correct
-// response — heal — is visible in the next observation's party HP; a planner
-// that ignores it trips StuckAfter, because a retried train leaves the player
-// where it started. The round budget still bounds a planner that keeps
-// choosing doomed trains: each blackout cycle costs a round and levels the
-// lead up, so the loop is slow progress, not a stall.
-//
-// Failure text reaches the planner as plain consequence, never as advice:
-// Run records the error the skills produced ("step up blocked at (10,1)")
-// and appends nothing to it. "you need a starter first" would be us solving
-// the objective, which makes the whole measurement worthless.
-//
-// A failed objective leaves the game in a state the next one can start from:
-// the skills settle the world before returning an error (Travel waits out
-// battles and blackouts; a blocked step leaves the player standing), so the
-// next round starts from RAM the game is done changing.
-//
-// Run also owns what Observe cannot decode from one snapshot: the recent
-// dialogue (sampled from the emulator while objectives run) and the round
-// history (what was attempted and how it turned out). Both are set on the
-// observation before each plan, so a planner that just lost to Brock sees
-// that in its prompt instead of choosing the same objective again.
-//
-// Run also owns the offered menu: it is rebuilt every round from the
-// current observation and the run's accumulated knowledge (Offer), never
-// built once at startup. A menu built before the first frame offers the
-// same everything-forever question on every round, including places the
-// player has no way of knowing exist.
+// There are two distinct progress watchdogs. StuckAfter catches a few
+// consecutive objectives that literally leave the observation unchanged.
+// StagnationAfter catches longer moving loops by requiring occasional
+// monotonic game progress (badge, story event, new map, party growth or level
+// gain). MaxRounds is only an optional experiment/emergency cap; zero means
+// goal-driven with no hard round limit. MaxFrames remains the final emulator
+// guardrail.
 func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
-	if budget.MaxRounds <= 0 || budget.MaxFrames <= 0 {
+	if budget.MaxRounds < 0 || budget.MaxFrames <= 0 {
 		return Result{
 			Stop: StopError,
-			Err:  errors.New("agent: Run: a zero budget is not unlimited; set MaxRounds and MaxFrames"),
+			Err:  errors.New("agent: Run: MaxRounds cannot be negative and MaxFrames must be positive"),
 		}
 	}
 	// Cancelled before we start: return without touching the emulator or the
@@ -632,6 +600,10 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 	if stuckAfter <= 0 {
 		stuckAfter = defaultStuckAfter
 	}
+	stagnationAfter := budget.StagnationAfter
+	if stagnationAfter <= 0 {
+		stagnationAfter = defaultStagnationAfter
+	}
 	maxConsecFailures := budget.MaxConsecutiveFailures
 	if maxConsecFailures <= 0 {
 		maxConsecFailures = defaultMaxConsecutiveFailures
@@ -649,6 +621,8 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 	// say whether the run moved at all.
 	early := progressOf(last, known, 0)
 	res.ProgressEarly = &early
+	majorProgress := majorProgressMarkOf(last, known)
+	lastMajorProgressRound := 0
 	stuck := 0
 	consecFailures := 0 // consecutive failed objectives; a success resets it
 	lastFailObj, lastFailErr := "", ""
@@ -662,7 +636,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 		default:
 		}
 
-		if round > budget.MaxRounds {
+		if roundCapReached(round, budget.MaxRounds) {
 			res.Stop = StopBudget
 			break
 		}
@@ -678,6 +652,24 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 		for _, id := range tape.seenMaps() {
 			known.SawMap(id)
 		}
+
+		// The short stuck detector below catches objectives that literally
+		// changed nothing. This longer detector catches moving loops. It runs
+		// at the next round boundary so it sees every map sampled during the
+		// previous Execute as well as the settled badge/event/party state.
+		// We calculate stagnation here but do not stop yet: the planner's
+		// deterministic goal wrapper gets first chance to report ErrDone, so
+		// a goal reached exactly on the watchdog boundary is success, not stuck.
+		currentMajorProgress := majorProgressMarkOf(last, known)
+		if majorProgress.absorb(currentMajorProgress) {
+			lastMajorProgressRound = round - 1
+			if budget.Log != nil && round > 1 {
+				fmt.Fprintf(budget.Log, "round %d: major progress -> %s\n", round-1, majorProgress)
+			}
+		}
+		completedRounds := round - 1
+		stagnantRounds := completedRounds - lastMajorProgressRound
+
 		// The walls the game has stated stay visible every round: Knowledge
 		// keeps them across rounds (and checkpoints), and this is where the
 		// planner reads them. A copy, so a later round cannot mutate what an
@@ -709,18 +701,14 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 		// its age, is read back from this observation.
 		last.Intent = intent
 		last.IntentAge = intentAge
-		// What the budget has left, in the observation the planner reads.
-		// MaxRounds is the last round that runs (the loop breaks on
-		// round > MaxRounds), so this round counts itself.
 		last.Round = round
-		last.RoundsLeft = budget.MaxRounds - round + 1
+		last.RoundsLeft = roundsLeft(round, budget.MaxRounds)
 
 		obj, err, retries := planWithRetries(budget.Log, round, p, last, now)
 		res.ReplyRetries += retries
-		// The break comes from the error, not from a stop-value check: the
-		// zero value of Stop is StopUnset ("no reason set yet"), so the
-		// checks below can ask "has a reason been set?" without ever
-		// mistaking a finished planner for one.
+		// Goal completion has precedence over watchdog classification. A goal
+		// may be satisfied by a state change that deliberately is not a major
+		// progress signal (for example an item goal), so check ErrDone first.
 		if errors.Is(err, ErrDone) {
 			res.Stop = StopDone
 			break
@@ -728,6 +716,14 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 		if err != nil {
 			res.Stop = StopError
 			res.Err = err
+			break
+		}
+		if stagnantRounds >= stagnationAfter {
+			res.Stop = StopStuck
+			if budget.Log != nil {
+				fmt.Fprintf(budget.Log, "stagnation watchdog: %d rounds without major progress; high-water mark: %s\n",
+					stagnantRounds, majorProgress)
+			}
 			break
 		}
 

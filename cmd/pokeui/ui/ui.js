@@ -60,7 +60,8 @@
   function statsLine(r) {
     const s = r.stats;
     if (!s || r.planner === "scripted") return "";
-    return `round ${s.round} (${s.rounds_left} left) · rep ${s.repeats}/${s.rounds} · think ${s.avg_seconds.toFixed(1)}s avg`;
+    const left = s.rounds_left ? ` (${s.rounds_left} left)` : "";
+    return `round ${s.round}${left} · rep ${s.repeats}/${s.rounds} · think ${s.avg_seconds.toFixed(1)}s avg`;
   }
 
   // Decomp map constants, same inventory as red/state/map_names.go.
@@ -249,7 +250,7 @@
     f.llm_profile.value = "auto";
     f.seed.value = "0";
     f.fps.value = "60";
-    f.max_rounds.value = "128";
+    f.max_rounds.value = "0";
     f.max_frames.value = "0";
     f.endless.checked = false;
     f.seed_mode.value = "random";
@@ -647,7 +648,7 @@
       ["walk to", run.planner === "scripted" ? (run.dest || "—") : ""], ["seed", String(run.seed)],
       ["keep going", run.endless ? (run.random_seed ? "yes, random seed" : "yes, same seed") : ""],
       ["queued", fmtWhen(run.queued_at)], ["ended", fmtWhen(run.ended_at)], ["fps", run.fps ? String(run.fps) : ""],
-      ["max rounds", run.max_rounds ? String(run.max_rounds) : ""], ["max frames", run.max_frames ? String(run.max_frames) : ""]
+      ["round cap", run.planner === "llm" ? (run.max_rounds ? String(run.max_rounds) : "none (goal-driven)") : ""], ["max frames", run.max_frames ? String(run.max_frames) : ""]
     ]);
     const stateRows = run.status === "done"
       ? [["ended", run.reason || "done"], ["detail", run.detail || ""], ["last map", tileLabel(run)], ["frame", String(run.frame)], ["fps", fpsLabel(run)], ["attempts", String(run.attempts)]]

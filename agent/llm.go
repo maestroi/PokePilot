@@ -113,9 +113,8 @@ type LLMPlanner struct {
 	// Health counts what happened to this planner's replies, per run. A
 	// scoreboard row collected with a dozen transport errors or nine
 	// fallback parses is not comparable to one with none; the counters are
-	// what make that visible, so every row can carry the conditions it was
-	// collected under. badgerun reads these off the planner at the end of
-	// each run.
+	// what make that visible, so every row can carry the conditions it ran
+	// under. badgerun reads these off the planner at the end of each run.
 	Health LLMHealth
 
 	// modelOmittedLogged is the once-per-run gate for the "server did not
@@ -447,7 +446,7 @@ func looksLikeAnswer(s string) bool {
 // If S6-11's diagnosis shows the model needs to think out loud before
 // choosing, the answer is a free pre-call followed by this constrained
 // one; nothing here has to change for that.
-const llmSystemPrompt = `You are choosing the next objective for a Pokemon Red player. Treat the current Observation as ground truth. Intent is only your previous purpose and may be stale or wrong; never use Intent as proof that a badge, event, item, or victory happened, and do not state a completed milestone in a new intent unless the Observation confirms it. Prefer an objective that makes NEW progress: repeating what you just did wastes the run. The run has a limited number of rounds and each objective costs one — the observation's "RoundsLeft" is how many you have left, this one included: most small talk does not advance your goal, so spend rounds on objectives that move toward it. Reply with ONLY a JSON object: {"choice": N} where N is the number of your choice. Every objective is already complete as written — the level, species, item and quantity are part of the sentence you are picking, so send no other fields. Travelling objectives are offered twice: the plain one FIGHTS wild battles on the way, and the one ending in ", fleeing wild battles" RUNS them instead — pick the variant you want by its number. Also include "intent": one short sentence (at most 200 bytes) saying what this choice is in service of. It will be read back to you on the next round's observation as "Intent", with "IntentAge" — how many rounds it has gone unchanged — so state it honestly and change it only when your purpose changes. Do not explain.`
+const llmSystemPrompt = `You are choosing the next objective for a Pokemon Red player. Treat the current Observation as ground truth. Intent is only your previous purpose and may be stale or wrong; never use Intent as proof that a badge, event, item, or victory happened, and do not state a completed milestone in a new intent unless the Observation confirms it. Prefer an objective that makes NEW progress: repeating what you just did wastes the run. Round is telemetry, not the goal. When the observation's "RoundsLeft" is 0 there is no hard round cap; when it is positive it is only an explicit safety/experiment ceiling. Keep making meaningful progress toward the goal instead of optimising for an arbitrary decision count. Reply with ONLY a JSON object: {"choice": N} where N is the number of your choice. Every objective is already complete as written — the level, species, item and quantity are part of the sentence you are picking, so send no other fields. Travelling objectives are offered twice: the plain one FIGHTS wild battles on the way, and the one ending in ", fleeing wild battles" RUNS them instead — pick the variant you want by its number. Also include "intent": one short sentence (at most 200 bytes) saying what this choice is in service of. It will be read back to you on the next round's observation as "Intent", with "IntentAge" — how many rounds it has gone unchanged — so state it honestly and change it only when your purpose changes. Do not explain.`
 
 // llmUserPrompt renders the observation as compact JSON, then the offered
 // objectives as a 1-based numbered list of their String() forms.
