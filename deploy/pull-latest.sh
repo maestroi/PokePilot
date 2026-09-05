@@ -5,7 +5,7 @@ set -euo pipefail
 
 IMAGE=${FARM_IMAGE_REPO:-ghcr.io/maestroi/pokepilot}
 STACK=${FARM_STACK:-pokefarm}
-SERVICES=(wall ui spectator runner)
+SERVICES=(wall ui spectator runner replay)
 
 if ! docker service inspect "${STACK}_wall" >/dev/null 2>&1; then
 	echo "pokefarm-pull: stack ${STACK} not deployed; skip"
