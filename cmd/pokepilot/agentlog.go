@@ -17,7 +17,7 @@ type agentTraceLog struct {
 
 func (l *agentTraceLog) Write(p []byte) (int, error) {
 	n, err := l.w.Write(p)
-	if n <= 0 || l.note == nil {
+	if n <= 0 {
 		return n, err
 	}
 	l.buf = append(l.buf, p[:n]...)
@@ -28,8 +28,14 @@ func (l *agentTraceLog) Write(p []byte) (int, error) {
 		}
 		line := string(bytes.TrimSpace(l.buf[:i]))
 		l.buf = l.buf[i+1:]
-		if kind := agentTraceKind(line); kind != "" {
-			l.note(kind, line)
+		// Run already emits one controlled, structured line for every
+		// objective outcome. Observe it here before the watch-only filter so
+		// failure telemetry is collected even when TraceNote is disabled.
+		observeAgentLogLine(line)
+		if l.note != nil {
+			if kind := agentTraceKind(line); kind != "" {
+				l.note(kind, line)
+			}
 		}
 	}
 	return n, err
