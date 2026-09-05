@@ -10,13 +10,14 @@ import (
 	"time"
 
 	"github.com/maestroi/pokepilot/farm"
+	"github.com/maestroi/pokepilot/skill"
 )
 
 var (
-	failureRoundRE = regexp.MustCompile(`^round ([0-9]+): (.+) -> failed: (.+), map ([0-9a-fA-F]{2}) at \(([0-9]+),([0-9]+)\)$`)
+	failureRoundRE  = regexp.MustCompile(`^round ([0-9]+): (.+) -> failed: (.+), map ([0-9a-fA-F]{2}) at \(([0-9]+),([0-9]+)\)$`)
 	progressRoundRE = regexp.MustCompile(`^round ([0-9]+): major progress -> `)
-	failureHexRE = regexp.MustCompile(`0x[0-9a-fA-F]+`)
-	failureNumRE = regexp.MustCompile(`[0-9]+`)
+	failureHexRE    = regexp.MustCompile(`0x[0-9a-fA-F]+`)
+	failureNumRE    = regexp.MustCompile(`[0-9]+`)
 )
 
 // objectiveFailureTelemetry is process-local run telemetry. A farm worker runs
@@ -62,6 +63,13 @@ func observeAgentLogLine(line string) {
 		return
 	}
 	objective, detail := m[2], m[3]
+	if expectedGameOutcome(detail) {
+		// Blackouts and deliberate training retreats are ordinary game
+		// outcomes. Run already exempts their typed sentinels from its failure
+		// budget; sending them to an engineering agent would turn "lost a
+		// battle" into a bogus code defect.
+		return
+	}
 	mapID := uint8(map64)
 	key := objectiveFailureTelemetryKey(objective, detail, mapID)
 
@@ -81,6 +89,11 @@ func observeAgentLogLine(line string) {
 	f.Map = mapID
 	f.X = uint8(x64)
 	f.Y = uint8(y64)
+}
+
+func expectedGameOutcome(detail string) bool {
+	return strings.Contains(detail, skill.ErrBlackedOut.Error()) ||
+		strings.Contains(detail, skill.ErrTrainRetreat.Error())
 }
 
 func objectiveFailureTelemetryKey(objective, detail string, mapID uint8) string {
