@@ -9,10 +9,10 @@ import (
 
 const (
 	testTechnicalMachinesOffset = 0x13773
-	testPokedexOrderOffset       = 0x41024
-	testBaseStatsOffset          = 0x383DE
-	testBaseStatsEntryLen        = 28
-	testBaseStatsTMHMOffset      = 20
+	testPokedexOrderOffset      = 0x41024
+	testBaseStatsOffset         = 0x383DE
+	testBaseStatsEntryLen       = 28
+	testBaseStatsTMHMOffset     = 20
 )
 
 func fakeTMHMROM(t *testing.T, machineItem, machineMove uint8, moves ...rom.Move) []byte {
