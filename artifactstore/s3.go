@@ -9,6 +9,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -31,6 +32,8 @@ const (
 	maxErrorBody   = 4 << 10
 )
 
+var emptyPayloadHash = sha256Hex(nil)
+
 // S3Config configures a path-style S3-compatible endpoint. Path-style URLs
 // work with RustFS and MinIO and keep buckets independent of local DNS.
 type S3Config struct {
@@ -42,8 +45,8 @@ type S3Config struct {
 	Timeout   time.Duration
 }
 
-// Object describes one successfully persisted object without exposing storage
-// credentials or the endpoint URL.
+// Object describes one successfully persisted or discovered object without
+// exposing storage credentials or the endpoint URL.
 type Object struct {
 	Bucket string
 	Key    string
@@ -51,9 +54,41 @@ type Object struct {
 	SHA256 string
 }
 
-// S3 is the minimal PutObject client PokePilot needs for durable artifacts.
-// It signs requests with AWS Signature Version 4 and is compatible with S3
-// implementations such as RustFS and MinIO.
+// ReadObject is a streaming S3 response. Callers must close Body. StatusCode
+// is normally 200 or 206 so HTTP relays can preserve byte-range semantics.
+type ReadObject struct {
+	Body          io.ReadCloser
+	StatusCode    int
+	ContentLength int64
+	ContentType   string
+	ContentRange  string
+	AcceptRanges  string
+	ETag          string
+}
+
+// StatusError preserves the upstream status so callers can distinguish an
+// absent derived cache object from a real storage failure without parsing an
+// error string.
+type StatusError struct {
+	Operation  string
+	Key        string
+	StatusCode int
+	Detail     string
+}
+
+func (e *StatusError) Error() string {
+	return fmt.Sprintf("artifactstore: %s %s: status %d: %s", e.Operation, e.Key, e.StatusCode, e.Detail)
+}
+
+// IsNotFound reports whether err is an S3 404 response.
+func IsNotFound(err error) bool {
+	var status *StatusError
+	return errors.As(err, &status) && status.StatusCode == http.StatusNotFound
+}
+
+// S3 is the minimal path-style S3 client PokePilot needs for durable
+// artifacts. It signs requests with AWS Signature Version 4 and is compatible
+// with S3 implementations such as RustFS and MinIO.
 type S3 struct {
 	endpoint  *url.URL
 	bucket    string
@@ -143,27 +178,52 @@ func NewS3(cfg S3Config) (*S3, error) {
 	}, nil
 }
 
+// Bucket returns the configured bucket name without exposing credentials.
+func (s *S3) Bucket() string {
+	if s == nil {
+		return ""
+	}
+	return s.bucket
+}
+
 // PutObject stores data under key and returns its stable object metadata.
 func (s *S3) PutObject(ctx context.Context, key, mediaType string, data []byte) (Object, error) {
+	return s.PutObjectReader(ctx, key, mediaType, bytes.NewReader(data))
+}
+
+// PutObjectReader stores a seekable stream without buffering the whole object
+// in memory. It makes one hashing pass, seeks back to the start, then uploads
+// with the exact payload hash required by SigV4. Files and bytes.Reader are
+// the intended callers.
+func (s *S3) PutObjectReader(ctx context.Context, key, mediaType string, r io.ReadSeeker) (Object, error) {
 	if s == nil {
 		return Object{}, fmt.Errorf("artifactstore: nil S3 client")
 	}
-	key = strings.TrimPrefix(key, "/")
-	if key == "" {
-		return Object{}, fmt.Errorf("artifactstore: empty object key")
+	key, err := cleanObjectKey(key)
+	if err != nil {
+		return Object{}, err
 	}
-	payload := sha256.Sum256(data)
-	payloadHex := hex.EncodeToString(payload[:])
+	if r == nil {
+		return Object{}, fmt.Errorf("artifactstore: nil object reader")
+	}
+	if _, err := r.Seek(0, io.SeekStart); err != nil {
+		return Object{}, fmt.Errorf("artifactstore: seek %s before hash: %w", key, err)
+	}
+	h := sha256.New()
+	size, err := io.Copy(h, r)
+	if err != nil {
+		return Object{}, fmt.Errorf("artifactstore: hash %s: %w", key, err)
+	}
+	payloadHex := hex.EncodeToString(h.Sum(nil))
+	if _, err := r.Seek(0, io.SeekStart); err != nil {
+		return Object{}, fmt.Errorf("artifactstore: seek %s before upload: %w", key, err)
+	}
 
-	u := *s.endpoint
-	base := strings.TrimSuffix(u.Path, "/")
-	u.Path = base + "/" + s.bucket + "/" + key
-	u.RawPath = ""
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, u.String(), bytes.NewReader(data))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, s.objectURL(key), r)
 	if err != nil {
 		return Object{}, fmt.Errorf("artifactstore: build PutObject request: %w", err)
 	}
+	req.ContentLength = size
 	if mediaType != "" {
 		req.Header.Set("Content-Type", mediaType)
 	}
@@ -176,14 +236,99 @@ func (s *S3) PutObject(ctx context.Context, key, mediaType string, data []byte) 
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
-		detail := strings.TrimSpace(string(body))
-		if detail == "" {
-			detail = resp.Status
-		}
-		return Object{}, fmt.Errorf("artifactstore: PutObject %s: status %d: %s", key, resp.StatusCode, detail)
+		return Object{}, statusError(resp, "PutObject", key)
 	}
-	return Object{Bucket: s.bucket, Key: key, Size: int64(len(data)), SHA256: payloadHex}, nil
+	return Object{Bucket: s.bucket, Key: key, Size: size, SHA256: payloadHex}, nil
+}
+
+// HeadObject returns object size when key exists. It does not download bytes.
+func (s *S3) HeadObject(ctx context.Context, key string) (Object, error) {
+	if s == nil {
+		return Object{}, fmt.Errorf("artifactstore: nil S3 client")
+	}
+	key, err := cleanObjectKey(key)
+	if err != nil {
+		return Object{}, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodHead, s.objectURL(key), nil)
+	if err != nil {
+		return Object{}, fmt.Errorf("artifactstore: build HeadObject request: %w", err)
+	}
+	req.Header.Set("x-amz-content-sha256", emptyPayloadHash)
+	s.sign(req, emptyPayloadHash, s.now().UTC())
+	resp, err := s.http.Do(req)
+	if err != nil {
+		return Object{}, fmt.Errorf("artifactstore: HeadObject %s: %w", key, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return Object{}, statusError(resp, "HeadObject", key)
+	}
+	return Object{Bucket: s.bucket, Key: key, Size: resp.ContentLength}, nil
+}
+
+// GetObject opens key for streaming. rangeHeader may be a standard HTTP Range
+// value such as "bytes=0-1023"; S3's 206 response metadata is preserved.
+func (s *S3) GetObject(ctx context.Context, key, rangeHeader string) (*ReadObject, error) {
+	if s == nil {
+		return nil, fmt.Errorf("artifactstore: nil S3 client")
+	}
+	key, err := cleanObjectKey(key)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.objectURL(key), nil)
+	if err != nil {
+		return nil, fmt.Errorf("artifactstore: build GetObject request: %w", err)
+	}
+	if rangeHeader = strings.TrimSpace(rangeHeader); rangeHeader != "" {
+		req.Header.Set("Range", rangeHeader)
+	}
+	req.Header.Set("x-amz-content-sha256", emptyPayloadHash)
+	s.sign(req, emptyPayloadHash, s.now().UTC())
+	resp, err := s.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("artifactstore: GetObject %s: %w", key, err)
+	}
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
+		err := statusError(resp, "GetObject", key)
+		resp.Body.Close()
+		return nil, err
+	}
+	return &ReadObject{
+		Body:          resp.Body,
+		StatusCode:    resp.StatusCode,
+		ContentLength: resp.ContentLength,
+		ContentType:   resp.Header.Get("Content-Type"),
+		ContentRange:  resp.Header.Get("Content-Range"),
+		AcceptRanges:  resp.Header.Get("Accept-Ranges"),
+		ETag:          resp.Header.Get("ETag"),
+	}, nil
+}
+
+func cleanObjectKey(key string) (string, error) {
+	key = strings.TrimPrefix(strings.TrimSpace(key), "/")
+	if key == "" {
+		return "", fmt.Errorf("artifactstore: empty object key")
+	}
+	return key, nil
+}
+
+func (s *S3) objectURL(key string) string {
+	u := *s.endpoint
+	base := strings.TrimSuffix(u.Path, "/")
+	u.Path = base + "/" + s.bucket + "/" + key
+	u.RawPath = ""
+	return u.String()
+}
+
+func statusError(resp *http.Response, operation, key string) error {
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
+	detail := strings.TrimSpace(string(body))
+	if detail == "" {
+		detail = resp.Status
+	}
+	return &StatusError{Operation: operation, Key: key, StatusCode: resp.StatusCode, Detail: detail}
 }
 
 func (s *S3) sign(req *http.Request, payloadHash string, now time.Time) {
@@ -213,6 +358,11 @@ func (s *S3) sign(req *http.Request, payloadHash string, now time.Time) {
 	kSigning := hmacSHA256(kService, "aws4_request")
 	signature := hex.EncodeToString(hmacSHA256(kSigning, stringToSign))
 	req.Header.Set("Authorization", "AWS4-HMAC-SHA256 Credential="+s.accessKey+"/"+scope+", SignedHeaders="+signedHeaders+", Signature="+signature)
+}
+
+func sha256Hex(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
 }
 
 func hmacSHA256(key []byte, value string) []byte {

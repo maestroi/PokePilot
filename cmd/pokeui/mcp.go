@@ -129,6 +129,14 @@ func newMCPHandler(wallBase, token string) http.Handler {
 		Description: "Get the live or finished state of one PokePilot run, including planner state, party, location and LLM statistics when available.",
 	}, control.getRun)
 	mcp.AddTool(server, &mcp.Tool{
+		Name:        "pokepilot_get_run_debug",
+		Description: "Get the compact persisted debug bundle for one run: finish reason, trace tail, progress deltas, latest planner decision, timeline markers and artifact references. Large artifact bytes are never embedded.",
+	}, control.getRunDebug)
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "pokepilot_get_run_artifacts",
+		Description: "List one run's artifacts and durable storage references without downloading artifact bytes. Use this to discover run.gbrun recordings and diagnostic evidence.",
+	}, control.getRunArtifacts)
+	mcp.AddTool(server, &mcp.Tool{
 		Name:        "pokepilot_cancel_run",
 		Description: "Request cooperative cancellation of one queued or active PokePilot run.",
 	}, control.cancelRun)
@@ -287,6 +295,30 @@ func (c *mcpControl) getRun(ctx context.Context, _ *mcp.CallToolRequest, in mcpR
 		}
 	}
 	return nil, nil, fmt.Errorf("run %q not found", id)
+}
+
+func (c *mcpControl) getRunDebug(ctx context.Context, _ *mcp.CallToolRequest, in mcpRunInput) (*mcp.CallToolResult, map[string]any, error) {
+	id := strings.TrimSpace(in.RunID)
+	if id == "" {
+		return nil, nil, fmt.Errorf("run_id is required")
+	}
+	var out map[string]any
+	if err := c.requestJSON(ctx, http.MethodGet, "/v1/runs/"+url.PathEscape(id)+"/debug", nil, &out); err != nil {
+		return nil, nil, err
+	}
+	return nil, out, nil
+}
+
+func (c *mcpControl) getRunArtifacts(ctx context.Context, _ *mcp.CallToolRequest, in mcpRunInput) (*mcp.CallToolResult, map[string]any, error) {
+	id := strings.TrimSpace(in.RunID)
+	if id == "" {
+		return nil, nil, fmt.Errorf("run_id is required")
+	}
+	var out map[string]any
+	if err := c.requestJSON(ctx, http.MethodGet, "/v1/runs/"+url.PathEscape(id)+"/artifacts", nil, &out); err != nil {
+		return nil, nil, err
+	}
+	return nil, out, nil
 }
 
 func (c *mcpControl) cancelRun(ctx context.Context, _ *mcp.CallToolRequest, in mcpRunInput) (*mcp.CallToolResult, map[string]any, error) {

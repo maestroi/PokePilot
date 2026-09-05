@@ -163,7 +163,7 @@ test-race:
 # Focused ROM-free loops for the areas changed most often. These are not
 # substitutes for verify; they keep edit/test cycles short before the full gate.
 test-farm:
-	POKEMON_RED_ROM= go test -short -count=1 ./farm ./cmd/pokewall ./cmd/pokeui ./deploy $(ARGS)
+	POKEMON_RED_ROM= go test -short -count=1 ./farm ./artifactstore ./cmd/pokewall ./cmd/pokeui ./cmd/pokereplay ./deploy $(ARGS)
 
 test-agent:
 	POKEMON_RED_ROM= go test -short -count=1 ./agent ./cmd/pokepilot $(ARGS)
@@ -193,6 +193,7 @@ farm-up: farm-image
 	# is how the CGO fix slipped through.) Force the rollout.
 	docker service update --force --detach pokefarm_wall
 	docker service update --force --detach pokefarm_runner
+	docker service update --force --detach pokefarm_replay
 	docker service update --force --detach pokefarm_ui
 	@echo "pokefarm UI: http://localhost:$(FARM_WALL_PORT)/"
 

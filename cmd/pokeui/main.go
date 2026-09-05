@@ -35,6 +35,9 @@ var uiJS []byte
 //go:embed ui/stats.js
 var statsJS []byte
 
+//go:embed ui/inspector.js
+var inspectorJS []byte
+
 // The operator used to expose Goal as an unrestricted text box even though
 // only structured syntax had a deterministic stop condition. Keep the prompt
 // human-readable, but constrain normal UI runs to the finite presets the agent
@@ -44,8 +47,7 @@ var goalInputHTML = []byte(`<label class="llm-only goal-field">goal <input name=
 
 var goalPresetHTML = []byte(`<label class="llm-only goal-field">goal <select name="goal"><option value="Earn the Boulder Badge." selected>Earn the Boulder Badge</option><option value="Earn 2 badges.">Earn 2 badges</option><option value="Earn 3 badges.">Earn 3 badges</option><option value="Earn 4 badges.">Earn 4 badges</option><option value="Earn 5 badges.">Earn 5 badges</option><option value="Earn 6 badges.">Earn 6 badges</option><option value="Earn 7 badges.">Earn 7 badges</option><option value="Earn all 8 badges.">Earn all 8 badges</option><option value="Beat the Elite Four and Champion.">Beat the Elite Four + Champion</option><option value="">Free play (no automatic stop)</option></select></label>`)
 
-// mapFiles holds build-time semantic map exports. The directory is kept in
-// the repository even before a local ROM owner generates the JSON assets.
+// mapFiles holds build-time semantic map JSON used by the operator console.
 //
 //go:embed ui/maps
 var mapFiles embed.FS
@@ -59,22 +61,28 @@ const (
 )
 
 // handler is the browser-only default used by tests and local callers that do
-// not configure MCP. Production main calls handlerWithMCP with the token from
-// POKEPILOT_MCP_TOKEN.
+// not configure MCP or replay. Production main supplies both optional services.
 func handler(wallBase string) http.Handler {
-	return handlerWithMCP(wallBase, "")
+	return handlerWithServices(wallBase, "", "")
 }
 
 func operatorIndexPage() []byte {
 	page := bytes.Replace(indexHTML, goalInputHTML, goalPresetHTML, 1)
-	return bytes.Replace(page, []byte("</body>"), []byte("<script src=\"/stats.js\"></script>\n</body>"), 1)
+	extra := []byte("<script src=\"/stats.js\"></script>\n<script src=\"/inspector.js\"></script>\n</body>")
+	return bytes.Replace(page, []byte("</body>"), extra, 1)
 }
 
-// handlerWithMCP serves the console at GET / and forwards only the operator
-// routes to wallBase. Runner-only paths (lease, heartbeat, finish) 404. MCP is
-// mounted at /mcp only when token is non-empty; an unset secret means the
-// remote control plane does not exist rather than existing anonymously.
+// handlerWithMCP preserves the test/local entrypoint used before replay was a
+// separate service. Production uses handlerWithServices below.
 func handlerWithMCP(wallBase, token string) http.Handler {
+	return handlerWithServices(wallBase, "", token)
+}
+
+// handlerWithServices serves the private operator console and forwards only
+// allowlisted operator/debug routes. Runner-only paths (lease, heartbeat,
+// finish) remain unreachable. Replay is optional: without a replayBase the
+// run/debug/artifact catalog still works and replay endpoints answer 503.
+func handlerWithServices(wallBase, replayBase, token string) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", func(res http.ResponseWriter, req *http.Request) {
 		res.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -91,6 +99,11 @@ func handlerWithMCP(wallBase, token string) http.Handler {
 		res.Header().Set("Cache-Control", "no-store")
 		res.Write(statsJS) //nolint:errcheck // best effort
 	})
+	mux.HandleFunc("GET /inspector.js", func(res http.ResponseWriter, req *http.Request) {
+		res.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+		res.Header().Set("Cache-Control", "no-store")
+		res.Write(inspectorJS) //nolint:errcheck // best effort
+	})
 	mountMaps(mux)
 	mux.HandleFunc("GET /v1/version", func(res http.ResponseWriter, req *http.Request) {
 		res.Header().Set("Content-Type", "application/json")
@@ -105,6 +118,7 @@ func handlerWithMCP(wallBase, token string) http.Handler {
 	mux.HandleFunc("POST /v1/runs/{id}/cancel", proxy(wallBase, false))
 	mux.HandleFunc("DELETE /v1/runs/{id}", proxy(wallBase, false))
 	mux.HandleFunc("GET /frame", proxy(wallBase, true))
+	mountRunInspectorRoutes(mux, wallBase, replayBase)
 	if token = strings.TrimSpace(token); token != "" {
 		mux.Handle("/mcp", newMCPHandler(wallBase, token))
 	}
@@ -141,15 +155,15 @@ func mountMaps(mux *http.ServeMux) {
 	})
 }
 
-// proxy copies one request to the wall and writes the upstream response.
-// noStore forces Cache-Control so the browser never keeps a stale grid or
-// screen. A dead wall is 502, not a hung socket.
-func proxy(wallBase string, noStore bool) http.HandlerFunc {
+// proxy copies one request to an upstream service and writes the response.
+// noStore forces Cache-Control so the browser never keeps stale operator data.
+// A dead upstream is 502, not a hung socket.
+func proxy(upstreamBase string, noStore bool) http.HandlerFunc {
 	client := &http.Client{Timeout: proxyTimeout}
 	return func(res http.ResponseWriter, req *http.Request) {
 		ctx, cancel := context.WithTimeout(req.Context(), proxyTimeout)
 		defer cancel()
-		up, err := http.NewRequestWithContext(ctx, req.Method, wallBase+req.URL.RequestURI(), req.Body)
+		up, err := http.NewRequestWithContext(ctx, req.Method, strings.TrimRight(upstreamBase, "/")+req.URL.RequestURI(), req.Body)
 		if err != nil {
 			writeUnreachable(res)
 			return
@@ -183,6 +197,7 @@ func writeUnreachable(res http.ResponseWriter) {
 func main() {
 	httpAddr := flag.String("http", ":8080", "listen address for the relay")
 	wall := flag.String("wall", "", "upstream wall URL (e.g. http://wall:8080)")
+	replay := flag.String("replay", "", "optional replay service URL (e.g. http://replay:8080)")
 	spectator := flag.Bool("spectator", false, "serve only the public read-only spectator surface")
 	flag.Parse()
 	if *wall == "" {
@@ -190,18 +205,15 @@ func main() {
 	}
 
 	wallBase := strings.TrimRight(*wall, "/")
+	replayBase := strings.TrimRight(*replay, "/")
 	mcpToken := strings.TrimSpace(os.Getenv("POKEPILOT_MCP_TOKEN"))
 	var httpHandler http.Handler
 	if *spectator {
 		httpHandler = spectatorHandler(wallBase)
 		log.Printf("pokeui proxying %s on http://%s (public spectator mode; read-only)", *wall, *httpAddr)
 	} else {
-		httpHandler = handlerWithMCP(wallBase, mcpToken)
-		if mcpToken == "" {
-			log.Printf("pokeui proxying %s on http://%s (MCP disabled)", *wall, *httpAddr)
-		} else {
-			log.Printf("pokeui proxying %s on http://%s (MCP enabled at /mcp)", *wall, *httpAddr)
-		}
+		httpHandler = handlerWithServices(wallBase, replayBase, mcpToken)
+		log.Printf("pokeui proxying %s on http://%s (MCP=%t, replay=%t)", *wall, *httpAddr, mcpToken != "", replayBase != "")
 	}
 	server := &http.Server{
 		Addr:              *httpAddr,
