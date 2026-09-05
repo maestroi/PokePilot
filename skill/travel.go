@@ -242,6 +242,7 @@ func TravelFlee(m *emu.Emu, romData []byte, dest Destination, policy MovePolicy,
 // and the tests drive the loop with fakes instead of an emulator.
 func travel(m *emu.Emu, policy MovePolicy, maxBattles int, goTo func() error, recoverBox func() DialogueRecoveryResult, blackout func() bool, resolveBattle resolveBattle) (TravelResult, error) {
 	var res TravelResult
+	gateChoicesAnswered := 0
 	for {
 		err := goTo()
 		if err == nil {
@@ -298,6 +299,29 @@ func travel(m *emu.Emu, policy MovePolicy, maxBattles int, goTo func() error, re
 				// there — so the next walk returns the same interruption
 				// forever. Return the typed outcome and let the caller
 				// decide; retrying here would loop.
+				//
+				// The one exception is Museum 1F's ticket gate: any Travel
+				// call that crosses (9,4)/(10,4) — not just TalkAt's approach
+				// — can meet it (2026-09-06: "go to cerulean city" routed
+				// back out through the same tile after an earlier round left
+				// the prompt up, and plain Travel had no way to clear it,
+				// wedging every later objective on the same frozen box).
+				// talkApproachChoiceIndex is the single recognizer for this
+				// one measured, already-safe prompt; answering it here covers
+				// every Travel-based caller instead of just TalkAt.
+				if rec.Stop == DialogueChoiceRequired && gateChoicesAnswered < maxTalkApproachChoices && routeGateChoiceText(rec.Text) {
+					if index, ok := talkApproachChoiceIndex(m.Peek8(sym.CurMap), rec.Text); ok {
+						if serr := selectTwoOption(m, index); serr != nil {
+							return res, fmt.Errorf("skill: Travel: answer route-gate choice: %w", serr)
+						}
+						gateChoicesAnswered++
+						after := RecoverDialogue(m, dialogueRecoveryBudget)
+						if after.Stop == DialogueRecovered {
+							continue
+						}
+						return res, &ErrDialogueChoice{Result: after}
+					}
+				}
 				return res, &ErrDialogueChoice{Result: rec}
 			case DialogueBudgetExhausted:
 				// The box did not clear within the budget and is still up,
