@@ -62,6 +62,11 @@ var ErrPickupMenu = errors.New("skill: Pickup: a two-option menu appeared while 
 // design — a pickup objective there would fail on every retry. Travel fights
 // through the encounters; a blackout ends the approach as ErrBlackedOut,
 // which is a recoverable outcome for the caller, not a dead end.
+//
+// Immediately before touching the ball, Pickup also guarantees capacity for
+// a new distinct stack. That makes story-critical ground items such as Gold
+// Teeth safe from the Gen I 20-stack bag limit without teaching their story
+// meaning to this generic primitive. Existing stacks need no free slot.
 func Pickup(m *emu.Emu, romData []byte, x, y uint8, want uint8, policy MovePolicy) error {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
@@ -69,6 +74,9 @@ func Pickup(m *emu.Emu, romData []byte, x, y uint8, want uint8, policy MovePolic
 
 	if err := approachViaTravel(m, romData, x, y, policy); err != nil {
 		return err
+	}
+	if err := EnsureBagSpaceFor(m, want); err != nil {
+		return fmt.Errorf("skill: Pickup: make room for item %#02x: %w", want, err)
 	}
 	if err := Face(m, x, y); err != nil {
 		return fmt.Errorf("skill: Pickup: %w", err)
