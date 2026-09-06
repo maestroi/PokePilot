@@ -25,11 +25,103 @@ var ErrTrainerBattle = errors.New("skill: cannot flee a trainer battle")
 // episode in between. The cap fails loudly instead of hanging, as in Battle.
 const fleeAttemptBudget = 6000
 
-// trainerNoRunningMarker is on NoRunningText ("No! There's no running from a
-// trainer battle!") and on no other battle screen. It is the POSITIVE fact
-// that the RUN option was refused because this is a trainer battle — not an
-// inference from "nothing happened".
-const trainerNoRunningMarker = "running from a"
+const (
+	// trainerNoRunningMarker is on NoRunningText ("No! There's no running
+	// from a trainer battle!") and on no other battle screen. It is the
+	// POSITIVE fact that the RUN option was refused because this is a trainer
+	// battle — not an inference from "nothing happened".
+	trainerNoRunningMarker = "running from a"
+
+	// Safari battles do not draw the ordinary FIGHT/ITEM/PKMN/RUN box.
+	// DisplayBattleMenu selects SAFARI_BATTLE_MENU_TEMPLATE, whose second row
+	// is "THROW ROCK  RUN" (pokered/data/text_boxes.asm). This marker is how
+	// Flee knows which live menu it must drive; waiting only for FIGHT would
+	// stall every Safari traversal on the first encounter.
+	safariBattleMenuMarker = "THROW ROCK"
+
+	// SAFARI_BATTLE_MENU_TEMPLATE prints its left text at x=2 and right text
+	// at x=14, so HandleMenuInput stores cursor X one tile before those
+	// columns: 1 and 13. RUN is the lower item in the right column.
+	safariBattleMenuLeftX  byte = 0x01
+	safariBattleMenuRightX byte = 0x0D
+)
+
+type fleeMenuKind uint8
+
+const (
+	fleeMenuNone fleeMenuKind = iota
+	fleeMenuNormal
+	fleeMenuSafari
+)
+
+// fleeMenuFromMem classifies only a fully rendered RUN-capable battle menu.
+// Text/animations return fleeMenuNone, which keeps input away from a menu
+// until its positive on-screen marker exists.
+func fleeMenuFromMem(mem *state.Mem) fleeMenuKind {
+	text := state.ScreenText(mem)
+	switch {
+	case strings.Contains(text, mainMenuMarker):
+		return fleeMenuNormal
+	case strings.Contains(text, safariBattleMenuMarker):
+		return fleeMenuSafari
+	default:
+		return fleeMenuNone
+	}
+}
+
+// safariRunCursor reports the exact live Safari menu state for RUN. It is
+// kept separate from the emulator driver so ROM-free tests can pin the menu
+// semantics directly.
+func safariRunCursor(mem *state.Mem) bool {
+	return fleeMenuFromMem(mem) == fleeMenuSafari &&
+		mem.U8(sym.TopMenuItemX) == safariBattleMenuRightX &&
+		int(mem.U8(sym.CurrentMenuItem)) == mainMenuMax
+}
+
+// safariRunNextInput returns the next verified cursor move toward RUN, or
+// done=true when the cursor is already there. The Safari menu is the same
+// two-column/two-row HandleMenuInput shape as the ordinary battle menu, but
+// its columns are at different X coordinates.
+func safariRunNextInput(mem *state.Mem) (btn emu.Button, done bool) {
+	if safariRunCursor(mem) {
+		return 0, true
+	}
+	row := int(mem.U8(sym.CurrentMenuItem))
+	x := mem.U8(sym.TopMenuItemX)
+	switch {
+	case row < mainMenuMax:
+		return emu.Down, false
+	case row > mainMenuMax:
+		return emu.Up, false
+	case x < safariBattleMenuRightX:
+		return emu.Right, false
+	case x > safariBattleMenuRightX:
+		return emu.Left, false
+	default:
+		// x is the right column and row is the lower row, so this can only
+		// happen while the text marker is between redraws. Wait for a fresh
+		// snapshot instead of sending an unrelated input.
+		return 0, false
+	}
+}
+
+// waitFleeMenu advances encounter text/animations until either battle menu
+// that Flee understands is positively rendered. It stops before sending A on
+// top of the menu itself.
+func waitFleeMenu(m *emu.Emu) (fleeMenuKind, error) {
+	start := m.FrameCount()
+	for {
+		var mem state.Mem
+		state.Snapshot(m, &mem)
+		if kind := fleeMenuFromMem(&mem); kind != fleeMenuNone {
+			return kind, nil
+		}
+		if int(m.FrameCount()-start) > bagMainMenuBudget {
+			return fleeMenuNone, fmt.Errorf("skill: Flee: battle RUN menu did not open within %d frames", bagMainMenuBudget)
+		}
+		m.Tap(emu.A, 3, 7)
+	}
+}
 
 // Flee attempts to escape a wild battle. A failed attempt is not an error:
 // wNumRunAttempts (ram/wram.asm) improves the odds on each try within the
@@ -38,6 +130,11 @@ const trainerNoRunningMarker = "running from a"
 // postcondition is POSITIVE — the battle is over (wIsInBattle clear, read
 // back via DecodeBattle) and the player is controllable again; "the menu
 // went away" is not enough, settleAfterBattle enforces it.
+//
+// Safari battles are also supported: they use BALL/BAIT/THROW ROCK/RUN rather
+// than the normal battle menu, and the ROM's TryRunningFromBattle explicitly
+// makes Safari RUN unconditional. Flee still verifies that the battle ended
+// and the overworld became controllable.
 //
 // A trainer battle cannot be fled: the first refusal returns ErrTrainerBattle
 // with the battle still in progress. Flee never fights the battle itself.
@@ -82,14 +179,21 @@ const (
 // back up (retry). Every transition is read from RAM, never inferred from
 // press counts.
 func fleeOneAttempt(m *emu.Emu) (fleeOutcome, error) {
-	// waitBattleMainMenu advances the encounter or "Can't escape!" text until
-	// the FIGHT/ITEM/PKMN/RUN menu is drawn, stopping the moment it appears
-	// so it never presses A on top of the menu itself.
-	if err := waitBattleMainMenu(m); err != nil {
+	kind, err := waitFleeMenu(m)
+	if err != nil {
 		return 0, err
 	}
-	if err := selectRunEntry(m); err != nil {
-		return 0, err
+	switch kind {
+	case fleeMenuNormal:
+		if err := selectRunEntry(m); err != nil {
+			return 0, err
+		}
+	case fleeMenuSafari:
+		if err := selectSafariRunEntry(m); err != nil {
+			return 0, err
+		}
+	default:
+		return 0, fmt.Errorf("skill: Flee: unsupported battle menu %d", kind)
 	}
 	m.Tap(emu.A, 3, 7)
 
@@ -242,4 +346,31 @@ func selectRunEntry(m *emu.Emu) error {
 		}
 	}
 	return fmt.Errorf("skill: Flee: cursor did not reach RUN")
+}
+
+// selectSafariRunEntry moves the Safari BALL/BAIT/THROW ROCK/RUN cursor to
+// RUN using the menu's actual live row/X state. Every move is followed by a
+// positive read-back before the next input.
+func selectSafariRunEntry(m *emu.Emu) error {
+	for i := 0; i < 12; i++ {
+		var mem state.Mem
+		state.Snapshot(m, &mem)
+		btn, done := safariRunNextInput(&mem)
+		if done {
+			return nil
+		}
+		if btn == 0 {
+			m.StepFrame()
+			continue
+		}
+		prevX, prevRow := mem.U8(sym.TopMenuItemX), int(mem.U8(sym.CurrentMenuItem))
+		m.Tap(btn, 3, 7)
+		if _, err := m.StepUntil(menuSettleFrames, func(m *emu.Emu) bool {
+			return m.Peek8(sym.TopMenuItemX) != prevX || int(m.Peek8(sym.CurrentMenuItem)) != prevRow
+		}); err != nil {
+			return fmt.Errorf("skill: Flee: Safari cursor stuck at x=%#02x row %d, want RUN (x=%#02x row %d)",
+				prevX, prevRow, safariBattleMenuRightX, mainMenuMax)
+		}
+	}
+	return fmt.Errorf("skill: Flee: Safari cursor did not reach RUN")
 }

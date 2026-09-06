@@ -13,7 +13,9 @@ func TestFuchsiaProgressionAvailable(t *testing.T) {
 		route12Map, route13Map, route14Map, route15Map, route15Gate1FMap,
 		fuchsiaCityMap, fuchsiaPokemonCenterMap, wardensHouseMap,
 		safariZoneGateMap, fuchsiaGymMap, safariZoneEastMap, safariZoneNorthMap,
-		safariZoneWestMap, safariZoneCenterMap, safariZoneSecretHouse,
+		safariZoneWestMap, safariZoneCenterMap, safariZoneCenterRestHouseMap,
+		safariZoneSecretHouse, safariZoneWestRestHouseMap, safariZoneEastRestHouseMap,
+		safariZoneNorthRestHouseMap,
 	} {
 		if !FuchsiaProgressionAvailable(mapID) {
 			t.Fatalf("expected map %#02x to be resumable", mapID)
