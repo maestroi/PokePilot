@@ -307,7 +307,13 @@ func PlanPushPuzzle(p PushPuzzle) (PushPlan, error) {
 
 				next := pushPuzzleState{Player: movable.Pos, Movables: copyMovables(cur.Movables)}
 				next.Movables[movableIndex].Pos = to
-				if IsStaticPushDeadlock(p.Grid, p.Fixed, to, targets) {
+				// Corner pruning is sound for pure target-occupancy puzzles: a
+				// boulder parked in a non-target static corner can never help.
+				// It is NOT sound for an exit-reachability goal, where parking a
+				// boulder irreversibly in an alcove may be exactly what opens the
+				// route. Disable this optimization whenever reachability is part
+				// of the goal and let the bounded search decide.
+				if p.Goal.Reachable == nil && IsStaticPushDeadlock(p.Grid, p.Fixed, to, targets) {
 					continue
 				}
 				key := pushStateKey(next)
