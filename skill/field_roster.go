@@ -361,13 +361,6 @@ func findWildFieldCandidate(m *emu.Emu, romData []byte, target FieldMove, requir
 	return best, found, nil
 }
 
-func minInt(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 // RepairFieldCapabilities makes every required move usable by the current
 // party. It first teaches within the existing roster, then tries the active PC
 // box, and finally acquires a ROM-compatible wild species from a reachable
@@ -434,7 +427,7 @@ func RepairFieldCapabilities(m *emu.Emu, romData []byte, policy MovePolicy, requ
 		state.Snapshot(m, &mem)
 		party = state.DecodeParty(&mem)
 		incoming := state.Mon{Species: candidate.Species}
-		depositSlot, legal, err = chooseDepositSlotForIncoming(romData, party, incoming, required)
+		depositSlot, legal, err := chooseDepositSlotForIncoming(romData, party, incoming, required)
 		if err != nil {
 			return fmt.Errorf("skill: RepairFieldCapabilities: plan party room for wild species %#02x: %w", candidate.Species, err)
 		}
