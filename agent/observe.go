@@ -396,10 +396,20 @@ func Observe(m *emu.Emu, romData []byte) Observation {
 		// (MEASURED against the ROM, see TestObservedItemsAreReachable).
 		// Reaching the other half means leaving through a ladder and coming
 		// back down another one, which is a warp, not a walk, so Pickup's own
-		// approach can never do it. Persons are deliberately NOT filtered: a
-		// mart clerk has no walkable tile beside them and is still talkable
-		// across the counter.
+		// approach can never do it.
 		if object.Kind == "item" && !reachableOnFoot(romData, obs.Map, obs.X, obs.Y, object.X, object.Y) {
+			continue
+		}
+		// A person is filtered the same way, with the counter exception
+		// personReachable adds: a mart clerk or nurse is still talkable
+		// across their counter with no ordinary adjacent tile at all
+		// (skill.Heal's counterDirection). Pewter Museum's exhibits (map
+		// 0x0034) are the opposite: an ordinary walkable tile beside them
+		// DOES exist, it is just in the wing behind the other door,
+		// unreachable from wherever the player currently stands (MEASURED,
+		// see TestObservedPersonsAreReachable). That is the same
+		// guaranteed-failing objective as the item case, not a counter.
+		if object.Kind == "person" && !personReachable(romData, obs.Map, obs.X, obs.Y, object.X, object.Y) {
 			continue
 		}
 		obs.MapObjects = append(obs.MapObjects, object)
@@ -428,6 +438,45 @@ func reachableOnFoot(romData []byte, mapID, px, py, x, y uint8) bool {
 	}
 	_, _, err = world.FindPathAdjacent(g, int(px), int(py), int(x), int(y), nil)
 	return err == nil
+}
+
+// personReachable is reachableOnFoot plus the counter exception: the game
+// accepts a talk from two tiles away when the tile between player and person
+// is the single non-walkable "counter" tile (pokered/home/overworld.asm,
+// IsSpriteOrSignInFrontOfPlayer; the same rule skill.Heal's counterDirection
+// uses to reach the nurse). Only that specific across-the-counter approach
+// tile counts — a person can have a walkable orthogonal neighbor that is
+// simply the staff-only side of the counter, never reachable to the player,
+// and that must not count as an approach.
+//
+// It fails OPEN, matching reachableOnFoot: a map that cannot be parsed or
+// built never silently empties the person list.
+func personReachable(romData []byte, mapID, px, py, x, y uint8) bool {
+	if reachableOnFoot(romData, mapID, px, py, x, y) {
+		return true
+	}
+	h, err := rom.ParseMap(romData, mapID)
+	if err != nil {
+		return true
+	}
+	g, err := world.Build(romData, h)
+	if err != nil {
+		return true
+	}
+	for _, s := range []world.Step{world.StepUp, world.StepDown, world.StepLeft, world.StepRight} {
+		midX, midY := int(x)+s.DX, int(y)+s.DY
+		farX, farY := int(x)+2*s.DX, int(y)+2*s.DY
+		if g.Walkable(midX, midY) || !g.Walkable(farX, farY) {
+			continue
+		}
+		if farX == int(px) && farY == int(py) {
+			return true
+		}
+		if _, err := world.FindPath(g, int(px), int(py), farX, farY, nil); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 // observedMoveDealsDamage mirrors the battle/move-learning definition for the
