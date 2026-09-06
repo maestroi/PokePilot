@@ -98,10 +98,11 @@ func newReplanExhaustedError(max int, cur, x, y uint8, dest Destination, last er
 		ErrReplanExhausted, max, cur, x, y, dest.Map, dest.X, dest.Y, last)
 }
 
-// GoTo walks the player to dest, crossing maps as needed. The graph is built
-// once; after every leg the current map and coordinates are re-read from RAM
-// and the remaining route is re-planned, so a leg that lands the player
-// somewhere unexpected is recovered from rather than assumed.
+// GoTo walks the player to dest, crossing maps as needed. The immutable graph
+// is built once, but every planning pass overlays the current map's live WRAM
+// block geometry before component routing. After every leg the current map and
+// coordinates are re-read and the remaining route is re-planned, so an opened
+// door, closed gate, or unexpected landing is observed rather than cached.
 func GoTo(m *emu.Emu, romData []byte, dest Destination) error {
 	g, err := world.BuildGraph(romData)
 	if err != nil {
@@ -144,6 +145,19 @@ func GoTo(m *emu.Emu, romData []byte, dest Destination) error {
 		cur := m.Peek8(sym.CurMap)
 		x, y := playerXY(m)
 
+		h, err := rom.ParseMap(romData, cur)
+		if err != nil {
+			return fmt.Errorf("skill: GoTo: parse live map %02x at (%d,%d): %w", cur, x, y, err)
+		}
+		liveGrid, err := liveMapGrid(m, romData, h)
+		if err != nil {
+			return fmt.Errorf("skill: GoTo: build live map %02x at (%d,%d): %w", cur, x, y, err)
+		}
+		routeGraph, err := g.WithMapGrid(cur, liveGrid)
+		if err != nil {
+			return fmt.Errorf("skill: GoTo: overlay live topology for map %02x: %w", cur, err)
+		}
+
 		blockedHere := map[world.Edge]bool{}
 		for k := range failed {
 			if k.m == cur && k.x == x && k.y == y {
@@ -151,11 +165,11 @@ func GoTo(m *emu.Emu, romData []byte, dest Destination) error {
 			}
 		}
 		if havePreviousMap && dest.Map != previousMap {
-			blockImmediateReverse(g, blockedHere, cur, previousMap)
+			blockImmediateReverse(routeGraph, blockedHere, cur, previousMap)
 		}
 
 		route, err := world.FindRouteAtDestination(
-			g, cur, dest.Map, int(x), int(y), int(dest.X), int(dest.Y), blockedHere,
+			routeGraph, cur, dest.Map, int(x), int(y), int(dest.X), int(dest.Y), blockedHere,
 		)
 		if err != nil {
 			return fmt.Errorf("skill: GoTo: no route from map %02x at (%d,%d) to map %02x at (%d,%d): %w",
@@ -340,8 +354,10 @@ func abortIfBattle(m *emu.Emu) error {
 }
 
 // walkWithinMap walks the player from their current position to dest on the
-// current map, retrying around dynamic obstacles (tiles the static collision
-// grid does not know about) up to maxRetries times.
+// current map, retrying around dynamic sprite obstacles up to maxRetries times.
+// Its collision grid is decoded from the current wOverworldMap block buffer,
+// so script-driven tile replacements are ordinary topology rather than
+// learned blockers or story-specific collision patches.
 func walkWithinMap(m *emu.Emu, romData []byte, dest Destination) error {
 	cur := m.Peek8(sym.CurMap)
 	sx, sy := playerXY(m)
@@ -349,9 +365,9 @@ func walkWithinMap(m *emu.Emu, romData []byte, dest Destination) error {
 	if err != nil {
 		return fmt.Errorf("skill: GoTo: parse map %02x at (%d,%d): %w", cur, sx, sy, err)
 	}
-	grid, err := world.Build(romData, h)
+	grid, err := liveMapGrid(m, romData, h)
 	if err != nil {
-		return fmt.Errorf("skill: GoTo: build map %02x at (%d,%d): %w", cur, sx, sy, err)
+		return fmt.Errorf("skill: GoTo: build live map %02x at (%d,%d): %w", cur, sx, sy, err)
 	}
 
 	// planErr is the "no path at all" case: already described in full, so

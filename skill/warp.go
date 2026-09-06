@@ -64,9 +64,9 @@ func Traverse(m *emu.Emu, romData []byte, e world.Edge) error {
 	if err != nil {
 		return fmt.Errorf("skill: Traverse: parse map %02x: %w", e.From, err)
 	}
-	grid, err := world.Build(romData, h)
+	grid, err := liveMapGrid(m, romData, h)
 	if err != nil {
-		return fmt.Errorf("skill: Traverse: build map %02x: %w", e.From, err)
+		return fmt.Errorf("skill: Traverse: build live map %02x: %w", e.From, err)
 	}
 
 	// Position is re-read inside each plan below, not here: a re-plan
