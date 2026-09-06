@@ -12,22 +12,22 @@ import (
 )
 
 const (
-	pokemonCenterPCX       uint8 = 13
-	pokemonCenterPCY       uint8 = 3
-	pokemonCenterPCFaceY   uint8 = 2
-	pcTravelBattles              = 80
-	pcTransitionBudget           = 3000
-	pcCloseBudget                = 120
-	gen1PartyCapacity            = 6
-	gen1BoxCapacity              = 20
+	pokemonCenterPCX     uint8 = 13
+	pokemonCenterPCY     uint8 = 3
+	pokemonCenterPCFaceY uint8 = 2
+	pcTravelBattles            = 80
+	pcTransitionBudget         = 3000
+	pcCloseBudget              = 120
+	gen1PartyCapacity          = 6
+	gen1BoxCapacity            = 20
 )
 
 var (
-	ErrPCPartyFull      = errors.New("skill: Bill's PC: party is full")
-	ErrPCBoxFull        = errors.New("skill: Bill's PC: active box is full")
-	ErrPCLastPartyMon   = errors.New("skill: Bill's PC: cannot deposit the last party Pokemon")
-	ErrPCNoPokemon      = errors.New("skill: Bill's PC: requested Pokemon is not available")
-	ErrPCNoKnownCenter  = errors.New("skill: Bill's PC: no reachable known Pokemon Center")
+	ErrPCPartyFull     = errors.New("skill: Bill's PC: party is full")
+	ErrPCBoxFull       = errors.New("skill: Bill's PC: active box is full")
+	ErrPCLastPartyMon  = errors.New("skill: Bill's PC: cannot deposit the last party Pokemon")
+	ErrPCNoPokemon     = errors.New("skill: Bill's PC: requested Pokemon is not available")
+	ErrPCNoKnownCenter = errors.New("skill: Bill's PC: no reachable known Pokemon Center")
 )
 
 // nearestPokemonCenter chooses the known Center requiring the fewest map
