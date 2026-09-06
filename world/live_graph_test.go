@@ -17,7 +17,7 @@ func TestWithMapGridRecomputesReachabilityWithoutMutatingBase(t *testing.T) {
 			1: {{1, 0, 2}}, // closed middle tile splits west/east halves
 			2: {{1}},
 		},
-		exitComps: map[Edge][]int{edge: {2}},
+		exitComps:  map[Edge][]int{edge: {2}},
 		entryComps: map[Edge][]int{edge: {1}},
 		tiles: map[uint8]dim{
 			1: {w: 3, h: 1},
