@@ -103,6 +103,27 @@ func TestUIHistoryCanBeDeletedAndNewestFirst(t *testing.T) {
 	}
 }
 
+func TestUIHistoryShowsReplayAvailability(t *testing.T) {
+	js := string(uiJS)
+	for _, want := range []string{
+		"replayChip",
+		"replay_available",
+		`chip("replay", "replay")`,
+	} {
+		if !strings.Contains(js, want) {
+			t.Errorf("ui.js missing %q", want)
+		}
+	}
+	html := string(indexHTML)
+	if !strings.Contains(html, `.chip.replay`) {
+		t.Error("index.html missing .chip.replay so the history badge cannot stand out")
+	}
+	inspector := string(inspectorJS)
+	if !strings.Contains(inspector, "replay_available") {
+		t.Error("inspector dropdown must label runs that have a replay")
+	}
+}
+
 // TestUIRendersLLMStats: the console shows the same planner tally the
 // runner's watch page renders — a line on each live llm card and a Play
 // block in the detail pane — so a wandering run is visible without opening

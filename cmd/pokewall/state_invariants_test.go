@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -88,6 +89,58 @@ func TestRestartPreservesFinishedRunWithoutRequeue(t *testing.T) {
 	defer srv2.Close()
 	if resp := postJSON(t, srv2.URL+"/v1/lease", struct{}{}); resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("lease after finished restart: status %d, want 204", resp.StatusCode)
+	}
+}
+
+func TestLoadStateBackfillsReplayAvailableFromDump(t *testing.T) {
+	dir := t.TempDir()
+	dumps := filepath.Join(dir, "dumps")
+	if err := os.Mkdir(dumps, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	stateFile := filepath.Join(dir, "state.json")
+	// Pre-flag wall state: a finished run with no replay_available field.
+	if err := os.WriteFile(stateFile, []byte(`{"order":["old-rec"],"queue":[],"tiles":{"old-rec":{"run_id":"old-rec","status":"done","finished":true,"attempts":1,"reason":"failed"}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	report, err := json.Marshal(farm.FinishReport{
+		RunID: "old-rec", Attempt: 1, Reason: "failed",
+		Artifacts: []farm.Artifact{recordingArtifact("old-rec")},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dumps, "old-rec.json"), report, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	w := NewWall(dumps)
+	w.SetStatePath(stateFile)
+	got := getDashboard(t, w.Handler())
+	if len(got.Runs) != 1 || got.Runs[0].RunID != "old-rec" || !got.Runs[0].ReplayAvailable {
+		t.Fatalf("restored dashboard = %+v, want old-rec with replay_available", got.Runs)
+	}
+}
+
+func TestRestartPreservesReplayAvailableWithoutDumps(t *testing.T) {
+	stateFile := filepath.Join(t.TempDir(), "wall-state.json")
+	w1 := NewWall("")
+	w1.SetStatePath(stateFile)
+	srv1 := httptest.NewServer(w1.Handler())
+	enqueueLease(t, w1.Handler(), "kept-rec")
+	if resp := postJSON(t, srv1.URL+"/v1/runs/kept-rec/finish", farm.FinishReport{
+		RunID: "kept-rec", Attempt: 1, Reason: "failed",
+		Artifacts: []farm.Artifact{recordingArtifact("kept-rec")},
+	}); resp.StatusCode != http.StatusOK {
+		t.Fatalf("finish: status %d", resp.StatusCode)
+	}
+	srv1.Close()
+
+	w2 := NewWall("")
+	w2.SetStatePath(stateFile)
+	got := getDashboard(t, w2.Handler())
+	if len(got.Runs) != 1 || !got.Runs[0].ReplayAvailable {
+		t.Fatalf("restored dashboard = %+v, want kept-rec with replay_available from state", got.Runs)
 	}
 }
 

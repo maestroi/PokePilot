@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/maestroi/pokepilot/farm"
@@ -13,31 +14,32 @@ import (
 type dashboardJSON struct {
 	Now  int64 `json:"now"`
 	Runs []struct {
-		RunID      string `json:"run_id"`
-		Status     string `json:"status"`
-		Planner    string `json:"planner"`
-		Starter    string `json:"starter"`
-		Dest       string `json:"dest"`
-		Goal       string `json:"goal"`
-		Seed       int64  `json:"seed"`
-		FPS        int    `json:"fps"`
-		MaxRounds  int    `json:"max_rounds"`
-		MaxFrames  int    `json:"max_frames"`
-		Endless    bool   `json:"endless"`
-		RandomSeed bool   `json:"random_seed"`
-		QueuedAt   int64  `json:"queued_at"`
-		EndedAt    int64  `json:"ended_at"`
-		Attempts   int    `json:"attempts"`
-		Frame      uint64 `json:"frame"`
-		Map        uint8  `json:"map"`
-		X          uint8  `json:"x"`
-		Y          uint8  `json:"y"`
-		Trace      string `json:"trace"`
-		Question   string `json:"question"`
-		Decision   string `json:"decision"`
-		StopSoFar  string `json:"stop_so_far"`
-		Reason     string `json:"reason"`
-		Detail     string `json:"detail"`
+		RunID           string `json:"run_id"`
+		Status          string `json:"status"`
+		Planner         string `json:"planner"`
+		Starter         string `json:"starter"`
+		Dest            string `json:"dest"`
+		Goal            string `json:"goal"`
+		Seed            int64  `json:"seed"`
+		FPS             int    `json:"fps"`
+		MaxRounds       int    `json:"max_rounds"`
+		MaxFrames       int    `json:"max_frames"`
+		Endless         bool   `json:"endless"`
+		RandomSeed      bool   `json:"random_seed"`
+		QueuedAt        int64  `json:"queued_at"`
+		EndedAt         int64  `json:"ended_at"`
+		Attempts        int    `json:"attempts"`
+		Frame           uint64 `json:"frame"`
+		Map             uint8  `json:"map"`
+		X               uint8  `json:"x"`
+		Y               uint8  `json:"y"`
+		Trace           string `json:"trace"`
+		Question        string `json:"question"`
+		Decision        string `json:"decision"`
+		StopSoFar       string `json:"stop_so_far"`
+		Reason          string `json:"reason"`
+		Detail          string `json:"detail"`
+		ReplayAvailable bool   `json:"replay_available"`
 	} `json:"runs"`
 	Workers []struct {
 		Addr    string `json:"addr"`
@@ -146,6 +148,9 @@ func TestDashboardJSON(t *testing.T) {
 	}
 	if r.Trace != "stepped north" {
 		t.Errorf("finished run dropped last trace: %+v", r)
+	}
+	if r.ReplayAvailable {
+		t.Fatal("finish without a recording marked replay_available")
 	}
 }
 
@@ -286,5 +291,74 @@ func TestDeleteFinishedRun(t *testing.T) {
 	h.ServeHTTP(res, req)
 	if res.Code != http.StatusNotFound {
 		t.Fatalf("DELETE unknown = %d, want 404", res.Code)
+	}
+}
+
+func recordingArtifact(runID string) farm.Artifact {
+	return farm.Artifact{
+		Name:      "run.gbrun",
+		MediaType: "application/octet-stream",
+		SHA256:    strings.Repeat("a", 64),
+		Store:     farm.ArtifactStoreS3,
+		Bucket:    "pokepilot",
+		ObjectKey: "runs/" + runID + "/attempt-1/run.gbrun",
+		Size:      1234,
+	}
+}
+
+func enqueueLease(t *testing.T, h http.Handler, runID string) {
+	t.Helper()
+	specBody, _ := json.Marshal(farm.Spec{RunID: runID, Planner: "llm", Starter: "squirtle", Goal: "Earn the Boulder Badge."})
+	req := httptest.NewRequest(http.MethodPost, "/v1/specs", bytes.NewReader(specBody))
+	res := httptest.NewRecorder()
+	h.ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("POST /v1/specs %s = %d", runID, res.Code)
+	}
+	req = httptest.NewRequest(http.MethodPost, "/v1/lease", nil)
+	res = httptest.NewRecorder()
+	h.ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("POST /v1/lease %s = %d", runID, res.Code)
+	}
+}
+
+func TestDashboardMarksReplayAvailable(t *testing.T) {
+	wall := NewWall("")
+	h := wall.Handler()
+	enqueueLease(t, h, "with-rec")
+	finBody, _ := json.Marshal(farm.FinishReport{
+		RunID: "with-rec", Attempt: 1, Reason: "failed", Detail: "talked into a wall",
+		Artifacts: []farm.Artifact{recordingArtifact("with-rec")},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/runs/with-rec/finish", bytes.NewReader(finBody))
+	res := httptest.NewRecorder()
+	h.ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("finish with recording = %d: %s", res.Code, res.Body.String())
+	}
+
+	enqueueLease(t, h, "no-rec")
+	finBody, _ = json.Marshal(farm.FinishReport{RunID: "no-rec", Attempt: 1, Reason: "failed"})
+	req = httptest.NewRequest(http.MethodPost, "/v1/runs/no-rec/finish", bytes.NewReader(finBody))
+	res = httptest.NewRecorder()
+	h.ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("finish without recording = %d: %s", res.Code, res.Body.String())
+	}
+
+	got := getDashboard(t, h)
+	if len(got.Runs) != 2 {
+		t.Fatalf("runs = %d, want 2", len(got.Runs))
+	}
+	byID := map[string]bool{}
+	for _, r := range got.Runs {
+		byID[r.RunID] = r.ReplayAvailable
+	}
+	if !byID["with-rec"] {
+		t.Fatal("run with run.gbrun is not replay_available on the dashboard")
+	}
+	if byID["no-rec"] {
+		t.Fatal("run without a recording is replay_available")
 	}
 }

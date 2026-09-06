@@ -99,46 +99,51 @@ type Tile struct {
 	// (or grabbed on finish). Not persisted: a wall restart leaves
 	// history cards without a picture until a new run writes one.
 	lastFrame []byte
+	// ReplayAvailable is true when the latest finish dump names a
+	// run.gbrun recording. History uses it so the console can mark a
+	// row without opening the inspector.
+	ReplayAvailable bool
 }
 
 // tileRow is a plain-value snapshot of a Tile, taken under w.mu so the
 // grid template never reads live tiles after unlock. Rendering []*Tile
 // after unlock is what raced with heartbeat/cancel/finish.
 type tileRow struct {
-	RunID          string           `json:"run_id"`
-	Status         string           `json:"status"`
-	Planner        string           `json:"planner"`
-	Starter        string           `json:"starter"`
-	Dest           string           `json:"dest"`
-	Goal           string           `json:"goal,omitempty"`
-	LLMProfile     string           `json:"llm_profile,omitempty"`
-	Seed           int64            `json:"seed"`
-	FPS            int              `json:"fps"`
-	MaxRounds      int              `json:"max_rounds"`
-	MaxFrames      int              `json:"max_frames"`
-	Endless        bool             `json:"endless,omitempty"`
-	RandomSeed     bool             `json:"random_seed,omitempty"`
-	QueuedAt       int64            `json:"queued_at,omitempty"`
-	EndedAt        int64            `json:"ended_at,omitempty"`
-	Frame          uint64           `json:"frame"`
-	Map            uint8            `json:"map"`
-	X              uint8            `json:"x"`
-	Y              uint8            `json:"y"`
-	Trace          string           `json:"trace"`
-	Question       string           `json:"question,omitempty"`
-	Decision       string           `json:"decision,omitempty"`
-	Raw            string           `json:"raw,omitempty"`
-	StopSoFar      string           `json:"stop_so_far"`
-	Sprites        []farm.MapSprite `json:"sprites,omitempty"`
-	Trail          [][2]uint8       `json:"trail,omitempty"`
-	Stats          *farm.LLMStats   `json:"stats,omitempty"`
-	Player         *farm.Player     `json:"player,omitempty"`
-	Attempts       int              `json:"attempts"`
-	ErrorAttempts  int              `json:"error_attempts,omitempty"`
-	LossRecoveries int              `json:"loss_recoveries,omitempty"`
-	Reason         string           `json:"reason"`
-	Detail         string           `json:"detail"`
-	Issue          *IssueLink       `json:"issue,omitempty"`
+	RunID           string           `json:"run_id"`
+	Status          string           `json:"status"`
+	Planner         string           `json:"planner"`
+	Starter         string           `json:"starter"`
+	Dest            string           `json:"dest"`
+	Goal            string           `json:"goal,omitempty"`
+	LLMProfile      string           `json:"llm_profile,omitempty"`
+	Seed            int64            `json:"seed"`
+	FPS             int              `json:"fps"`
+	MaxRounds       int              `json:"max_rounds"`
+	MaxFrames       int              `json:"max_frames"`
+	Endless         bool             `json:"endless,omitempty"`
+	RandomSeed      bool             `json:"random_seed,omitempty"`
+	QueuedAt        int64            `json:"queued_at,omitempty"`
+	EndedAt         int64            `json:"ended_at,omitempty"`
+	Frame           uint64           `json:"frame"`
+	Map             uint8            `json:"map"`
+	X               uint8            `json:"x"`
+	Y               uint8            `json:"y"`
+	Trace           string           `json:"trace"`
+	Question        string           `json:"question,omitempty"`
+	Decision        string           `json:"decision,omitempty"`
+	Raw             string           `json:"raw,omitempty"`
+	StopSoFar       string           `json:"stop_so_far"`
+	Sprites         []farm.MapSprite `json:"sprites,omitempty"`
+	Trail           [][2]uint8       `json:"trail,omitempty"`
+	Stats           *farm.LLMStats   `json:"stats,omitempty"`
+	Player          *farm.Player     `json:"player,omitempty"`
+	Attempts        int              `json:"attempts"`
+	ErrorAttempts   int              `json:"error_attempts,omitempty"`
+	LossRecoveries  int              `json:"loss_recoveries,omitempty"`
+	Reason          string           `json:"reason"`
+	Detail          string           `json:"detail"`
+	Issue           *IssueLink       `json:"issue,omitempty"`
+	ReplayAvailable bool             `json:"replay_available,omitempty"`
 }
 
 // Wall owns the spec queue, the tile map, cancel flags, the optional dump
@@ -182,44 +187,46 @@ func NewWall(dumpsDir string) *Wall {
 func (w *Wall) SetStatePath(path string) {
 	w.statePath = path
 	w.loadState()
+	w.backfillReplayAvailable()
 }
 
 // persistedTile is the JSON shape of one Tile. workerAddrs is persisted so
 // a restarted wall can resume proxying frames without waiting for the next
 // heartbeat; lastUpdate is not (see Tile.lastUpdate).
 type persistedTile struct {
-	RunID          string         `json:"run_id"`
-	Status         string         `json:"status"`
-	Planner        string         `json:"planner,omitempty"`
-	Starter        string         `json:"starter,omitempty"`
-	Dest           string         `json:"dest,omitempty"`
-	Goal           string         `json:"goal,omitempty"`
-	LLMProfile     string         `json:"llm_profile,omitempty"`
-	Seed           int64          `json:"seed"`
-	FPS            int            `json:"fps"`
-	MaxRounds      int            `json:"max_rounds"`
-	MaxFrames      int            `json:"max_frames"`
-	Endless        bool           `json:"endless,omitempty"`
-	RandomSeed     bool           `json:"random_seed,omitempty"`
-	QueuedAt       int64          `json:"queued_at,omitempty"`
-	EndedAt        int64          `json:"ended_at,omitempty"`
-	Attempts       int            `json:"attempts"`
-	ErrorAttempts  int            `json:"error_attempts,omitempty"`
-	LossRecoveries int            `json:"loss_recoveries,omitempty"`
-	Frame          uint64         `json:"frame"`
-	Map            uint8          `json:"map"`
-	X              uint8          `json:"x"`
-	Y              uint8          `json:"y"`
-	Trace          string         `json:"trace,omitempty"`
-	Question       string         `json:"question,omitempty"`
-	Decision       string         `json:"decision,omitempty"`
-	StopSoFar      string         `json:"stop_so_far,omitempty"`
-	Stats          *farm.LLMStats `json:"stats,omitempty"`
-	Player         *farm.Player   `json:"player,omitempty"`
-	Reason         string         `json:"reason,omitempty"`
-	Detail         string         `json:"detail,omitempty"`
-	Finished       bool           `json:"finished"`
-	WorkerAddrs    []string       `json:"worker_addrs,omitempty"`
+	RunID           string         `json:"run_id"`
+	Status          string         `json:"status"`
+	Planner         string         `json:"planner,omitempty"`
+	Starter         string         `json:"starter,omitempty"`
+	Dest            string         `json:"dest,omitempty"`
+	Goal            string         `json:"goal,omitempty"`
+	LLMProfile      string         `json:"llm_profile,omitempty"`
+	Seed            int64          `json:"seed"`
+	FPS             int            `json:"fps"`
+	MaxRounds       int            `json:"max_rounds"`
+	MaxFrames       int            `json:"max_frames"`
+	Endless         bool           `json:"endless,omitempty"`
+	RandomSeed      bool           `json:"random_seed,omitempty"`
+	QueuedAt        int64          `json:"queued_at,omitempty"`
+	EndedAt         int64          `json:"ended_at,omitempty"`
+	Attempts        int            `json:"attempts"`
+	ErrorAttempts   int            `json:"error_attempts,omitempty"`
+	LossRecoveries  int            `json:"loss_recoveries,omitempty"`
+	Frame           uint64         `json:"frame"`
+	Map             uint8          `json:"map"`
+	X               uint8          `json:"x"`
+	Y               uint8          `json:"y"`
+	Trace           string         `json:"trace,omitempty"`
+	Question        string         `json:"question,omitempty"`
+	Decision        string         `json:"decision,omitempty"`
+	StopSoFar       string         `json:"stop_so_far,omitempty"`
+	Stats           *farm.LLMStats `json:"stats,omitempty"`
+	Player          *farm.Player   `json:"player,omitempty"`
+	Reason          string         `json:"reason,omitempty"`
+	Detail          string         `json:"detail,omitempty"`
+	Finished        bool           `json:"finished"`
+	WorkerAddrs     []string       `json:"worker_addrs,omitempty"`
+	ReplayAvailable bool           `json:"replay_available,omitempty"`
 }
 
 // persistedState is the wall's whole on-disk memory: run order, tiles, and
@@ -243,38 +250,39 @@ func (w *Wall) marshalStateLocked() ([]byte, error) {
 	}
 	for id, t := range w.tiles {
 		ps.Tiles[id] = persistedTile{
-			RunID:          t.RunID,
-			Status:         t.Status,
-			Planner:        t.Planner,
-			Starter:        t.Starter,
-			Dest:           t.Dest,
-			Goal:           t.Goal,
-			LLMProfile:     t.LLMProfile,
-			Seed:           t.Seed,
-			FPS:            t.FPS,
-			MaxRounds:      t.MaxRounds,
-			MaxFrames:      t.MaxFrames,
-			Endless:        t.Endless,
-			RandomSeed:     t.RandomSeed,
-			QueuedAt:       unixTime(t.QueuedAt),
-			EndedAt:        unixTime(t.EndedAt),
-			Attempts:       t.Attempts,
-			ErrorAttempts:  t.ErrorAttempts,
-			LossRecoveries: t.LossRecoveries,
-			Frame:          t.Frame,
-			Map:            t.Map,
-			X:              t.X,
-			Y:              t.Y,
-			Trace:          t.Trace,
-			Question:       t.Question,
-			Decision:       t.Decision,
-			StopSoFar:      t.StopSoFar,
-			Stats:          t.Stats,
-			Player:         t.Player,
-			Reason:         t.Reason,
-			Detail:         t.Detail,
-			Finished:       t.Finished,
-			WorkerAddrs:    append([]string(nil), t.workerAddrs...),
+			RunID:           t.RunID,
+			Status:          t.Status,
+			Planner:         t.Planner,
+			Starter:         t.Starter,
+			Dest:            t.Dest,
+			Goal:            t.Goal,
+			LLMProfile:      t.LLMProfile,
+			Seed:            t.Seed,
+			FPS:             t.FPS,
+			MaxRounds:       t.MaxRounds,
+			MaxFrames:       t.MaxFrames,
+			Endless:         t.Endless,
+			RandomSeed:      t.RandomSeed,
+			QueuedAt:        unixTime(t.QueuedAt),
+			EndedAt:         unixTime(t.EndedAt),
+			Attempts:        t.Attempts,
+			ErrorAttempts:   t.ErrorAttempts,
+			LossRecoveries:  t.LossRecoveries,
+			Frame:           t.Frame,
+			Map:             t.Map,
+			X:               t.X,
+			Y:               t.Y,
+			Trace:           t.Trace,
+			Question:        t.Question,
+			Decision:        t.Decision,
+			StopSoFar:       t.StopSoFar,
+			Stats:           t.Stats,
+			Player:          t.Player,
+			Reason:          t.Reason,
+			Detail:          t.Detail,
+			Finished:        t.Finished,
+			WorkerAddrs:     append([]string(nil), t.workerAddrs...),
+			ReplayAvailable: t.ReplayAvailable,
 		}
 	}
 	return json.Marshal(ps)
@@ -327,44 +335,87 @@ func (w *Wall) loadState() {
 		}
 		w.order = append(w.order, id)
 		w.tiles[id] = &Tile{
-			RunID:          pt.RunID,
-			Status:         pt.Status,
-			Planner:        pt.Planner,
-			Starter:        pt.Starter,
-			Dest:           pt.Dest,
-			Goal:           pt.Goal,
-			LLMProfile:     pt.LLMProfile,
-			Seed:           pt.Seed,
-			FPS:            pt.FPS,
-			MaxRounds:      pt.MaxRounds,
-			MaxFrames:      pt.MaxFrames,
-			Endless:        pt.Endless,
-			RandomSeed:     pt.RandomSeed,
-			QueuedAt:       timeFromUnix(pt.QueuedAt),
-			EndedAt:        timeFromUnix(pt.EndedAt),
-			Attempts:       pt.Attempts,
-			ErrorAttempts:  pt.ErrorAttempts,
-			LossRecoveries: pt.LossRecoveries,
-			Frame:          pt.Frame,
-			Map:            pt.Map,
-			X:              pt.X,
-			Y:              pt.Y,
-			Trace:          pt.Trace,
-			Question:       pt.Question,
-			Decision:       pt.Decision,
-			StopSoFar:      pt.StopSoFar,
-			Stats:          pt.Stats,
-			Player:         pt.Player,
-			Reason:         pt.Reason,
-			Detail:         pt.Detail,
-			Finished:       pt.Finished,
-			workerAddrs:    append([]string(nil), pt.WorkerAddrs...),
-			lastUpdate:     now,
+			RunID:           pt.RunID,
+			Status:          pt.Status,
+			Planner:         pt.Planner,
+			Starter:         pt.Starter,
+			Dest:            pt.Dest,
+			Goal:            pt.Goal,
+			LLMProfile:      pt.LLMProfile,
+			Seed:            pt.Seed,
+			FPS:             pt.FPS,
+			MaxRounds:       pt.MaxRounds,
+			MaxFrames:       pt.MaxFrames,
+			Endless:         pt.Endless,
+			RandomSeed:      pt.RandomSeed,
+			QueuedAt:        timeFromUnix(pt.QueuedAt),
+			EndedAt:         timeFromUnix(pt.EndedAt),
+			Attempts:        pt.Attempts,
+			ErrorAttempts:   pt.ErrorAttempts,
+			LossRecoveries:  pt.LossRecoveries,
+			Frame:           pt.Frame,
+			Map:             pt.Map,
+			X:               pt.X,
+			Y:               pt.Y,
+			Trace:           pt.Trace,
+			Question:        pt.Question,
+			Decision:        pt.Decision,
+			StopSoFar:       pt.StopSoFar,
+			Stats:           pt.Stats,
+			Player:          pt.Player,
+			Reason:          pt.Reason,
+			Detail:          pt.Detail,
+			Finished:        pt.Finished,
+			workerAddrs:     append([]string(nil), pt.WorkerAddrs...),
+			ReplayAvailable: pt.ReplayAvailable,
+			lastUpdate:      now,
 		}
 	}
 	w.queue = append(w.queue, ps.Queue...)
 	w.issueLinks = copyIssueLink(ps.IssueLinks)
 	w.outbox = copyOutbox(ps.Outbox)
+}
+
+func hasReplayableArtifact(artifacts []farm.Artifact) bool {
+	for _, a := range artifacts {
+		if a.Name == "run.gbrun" {
+			return true
+		}
+	}
+	return false
+}
+
+// backfillReplayAvailable sets the history flag from finish dumps written
+// before the tile carried replay_available. One pass at load, not on the
+// 2-second snapshot.
+func (w *Wall) backfillReplayAvailable() {
+	if w.dumpsDir == "" {
+		return
+	}
+	w.mu.Lock()
+	ids := make([]string, 0)
+	for id, t := range w.tiles {
+		if t.Finished && !t.ReplayAvailable {
+			ids = append(ids, id)
+		}
+	}
+	w.mu.Unlock()
+	changed := false
+	for _, id := range ids {
+		report, err := w.loadLatestFinishReport(id)
+		if err != nil || report == nil || !hasReplayableArtifact(report.Artifacts) {
+			continue
+		}
+		w.mu.Lock()
+		if t := w.tiles[id]; t != nil && !t.ReplayAvailable {
+			t.ReplayAvailable = true
+			changed = true
+		}
+		w.mu.Unlock()
+	}
+	if changed {
+		w.saveState()
+	}
 }
 
 var unsafeName = regexp.MustCompile(`[^A-Za-z0-9._-]`)
@@ -740,6 +791,9 @@ func (w *Wall) handleFinish(res http.ResponseWriter, req *http.Request) {
 		w.mu.Lock()
 		w.settleRun(t, report.Reason, report.Detail, time.Now())
 	}
+	if t.Finished && hasReplayableArtifact(report.Artifacts) {
+		t.ReplayAvailable = true
+	}
 	w.mu.Unlock()
 	w.saveState()
 
@@ -893,40 +947,41 @@ func (w *Wall) snapshot() dashboardView {
 		id := w.order[i]
 		t := w.tiles[id]
 		rows = append(rows, tileRow{
-			RunID:          t.RunID,
-			Status:         t.Status,
-			Planner:        t.Planner,
-			Starter:        t.Starter,
-			Dest:           t.Dest,
-			Goal:           t.Goal,
-			LLMProfile:     t.LLMProfile,
-			Seed:           t.Seed,
-			FPS:            t.FPS,
-			MaxRounds:      t.MaxRounds,
-			MaxFrames:      t.MaxFrames,
-			Endless:        t.Endless,
-			RandomSeed:     t.RandomSeed,
-			QueuedAt:       unixTime(t.QueuedAt),
-			EndedAt:        unixTime(t.EndedAt),
-			Attempts:       t.Attempts,
-			ErrorAttempts:  t.ErrorAttempts,
-			LossRecoveries: t.LossRecoveries,
-			Frame:          t.Frame,
-			Map:            t.Map,
-			X:              t.X,
-			Y:              t.Y,
-			Trace:          t.Trace,
-			Question:       t.Question,
-			Decision:       t.Decision,
-			Raw:            t.Raw,
-			StopSoFar:      t.StopSoFar,
-			Sprites:        append([]farm.MapSprite(nil), t.Sprites...),
-			Trail:          append([][2]uint8(nil), t.Trail...),
-			Stats:          t.Stats,
-			Player:         t.Player,
-			Reason:         t.Reason,
-			Detail:         t.Detail,
-			Issue:          issueLinkFor(t, w.issueLinks),
+			RunID:           t.RunID,
+			Status:          t.Status,
+			Planner:         t.Planner,
+			Starter:         t.Starter,
+			Dest:            t.Dest,
+			Goal:            t.Goal,
+			LLMProfile:      t.LLMProfile,
+			Seed:            t.Seed,
+			FPS:             t.FPS,
+			MaxRounds:       t.MaxRounds,
+			MaxFrames:       t.MaxFrames,
+			Endless:         t.Endless,
+			RandomSeed:      t.RandomSeed,
+			QueuedAt:        unixTime(t.QueuedAt),
+			EndedAt:         unixTime(t.EndedAt),
+			Attempts:        t.Attempts,
+			ErrorAttempts:   t.ErrorAttempts,
+			LossRecoveries:  t.LossRecoveries,
+			Frame:           t.Frame,
+			Map:             t.Map,
+			X:               t.X,
+			Y:               t.Y,
+			Trace:           t.Trace,
+			Question:        t.Question,
+			Decision:        t.Decision,
+			Raw:             t.Raw,
+			StopSoFar:       t.StopSoFar,
+			Sprites:         append([]farm.MapSprite(nil), t.Sprites...),
+			Trail:           append([][2]uint8(nil), t.Trail...),
+			Stats:           t.Stats,
+			Player:          t.Player,
+			Reason:          t.Reason,
+			Detail:          t.Detail,
+			Issue:           issueLinkFor(t, w.issueLinks),
+			ReplayAvailable: t.ReplayAvailable,
 		})
 	}
 	return dashboardView{Now: now.Unix(), WallVersion: w.Version, Runs: rows, Workers: workers}

@@ -262,7 +262,7 @@
       for (const run of runs) {
         const o = document.createElement("option");
         o.value = run.run_id;
-        o.textContent = [run.run_id, run.status].filter(Boolean).join(" · ");
+        o.textContent = [run.run_id, run.status, run.replay_available ? "replay" : ""].filter(Boolean).join(" · ");
         runSelect.append(o);
       }
       if (previous && !runs.some((r) => r.run_id === previous)) ensureOption(previous, previous);

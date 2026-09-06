@@ -178,6 +178,9 @@
     if (r.endless) html += chip("loop", r.random_seed ? "endless random" : "endless");
     return html;
   }
+  function replayChip(r) {
+    return r.replay_available ? chip("replay", "replay") : "";
+  }
   function fmtWhen(unix) {
     const n = Number(unix);
     if (!n) return "";
@@ -559,7 +562,7 @@
       const sel = r.run_id === selected ? " selected" : "";
       const where = r.planner === "scripted" && r.dest ? r.dest : tileLabel(r);
       const out = r.detail || r.reason || "done";
-      return `<div class="hist-row${sel}"><button type="button" class="hist" data-run="${esc(r.run_id)}"><span class="hist-who"><span class="hist-when">${esc(runWhen(r) || "—")}</span><span class="hist-id">${esc(r.run_id)}</span></span><span class="chips">${settingChips(r, true)}</span><span class="hist-where">${esc(where)}</span><span class="hist-out">${statusChip(r)}${issueBadge(r.issue)}<span class="hist-outcome" title="${esc(out)}">${esc(out)}</span></span></button><button type="button" class="hist-del" data-delete="${esc(r.run_id)}">Delete</button></div>`;
+      return `<div class="hist-row${sel}"><button type="button" class="hist" data-run="${esc(r.run_id)}"><span class="hist-who"><span class="hist-when">${esc(runWhen(r) || "—")}</span><span class="hist-id">${esc(r.run_id)}</span></span><span class="chips">${settingChips(r, true)}</span><span class="hist-where">${esc(where)}</span><span class="hist-out">${statusChip(r)}${replayChip(r)}${issueBadge(r.issue)}<span class="hist-outcome" title="${esc(out)}">${esc(out)}</span></span></button><button type="button" class="hist-del" data-delete="${esc(r.run_id)}">Delete</button></div>`;
     }).join("");
     renderHistPager(runs.length, pages);
   }
@@ -639,7 +642,7 @@
     }
     pane.hidden = false;
     $("detail-title").textContent = run.run_id;
-    paintHTML($("detail-chips"), statusChip(run) + settingChips(run) + issueBadge(run.issue));
+    paintHTML($("detail-chips"), statusChip(run) + replayChip(run) + settingChips(run) + issueBadge(run.issue));
     fillLcd($("detail-lcd"), run);
     renderMap(run);
     const settings = kv([
