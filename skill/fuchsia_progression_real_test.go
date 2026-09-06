@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/maestroi/pokepilot/red/state"
+	"github.com/maestroi/pokepilot/red/sym"
 )
 
 // TestFuchsiaProgressionRealROM is the focused #33 run that PR #57 could not
@@ -20,8 +21,8 @@ func TestFuchsiaProgressionRealROM(t *testing.T) {
 	if !FuchsiaProgressionReady(&before) {
 		t.Fatal("prepared #33 state does not own the Poke Flute")
 	}
-	if !FuchsiaProgressionAvailable(before.U8(0xD35E)) {
-		t.Fatalf("prepared #33 state is on unsupported map %#02x", before.U8(0xD35E))
+	if !FuchsiaProgressionAvailable(before.U8(sym.CurMap)) {
+		t.Fatalf("prepared #33 state is on unsupported map %#02x", before.U8(sym.CurMap))
 	}
 	if state.HasEvent(&before, eventBeatRoute12Snorlax) {
 		t.Fatal("prepared #33 state already cleared the Route 12 Snorlax; want the full post-#32 slice")
