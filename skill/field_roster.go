@@ -133,38 +133,45 @@ func placeFieldMoveHypothetically(romData []byte, mon *state.Mon, move FieldMove
 }
 
 // partyCanSatisfyFieldMoves proves that a hypothetical party can eventually
-// hold the entire required set at once. Each planned HM is written into a copy
-// before the next requirement is considered, so one four-move Pokémon cannot
-// be counted as infinite future capacity.
+// hold the entire required set at once. It is an assignment search, not a
+// greedy first-compatible choice: a flexible mon may need to be reserved for
+// Surf while a different mon takes Cut. Each branch writes the planned HM into
+// a copy before assigning the next requirement, so four move slots and HM
+// permanence are both respected. At most five field moves across six party
+// members keeps this search tiny and deterministic.
 func partyCanSatisfyFieldMoves(romData []byte, mons []state.Mon, required []FieldMove) (bool, error) {
 	planned := append([]state.Mon(nil), mons...)
-	for _, move := range required {
-		already := false
-		for _, mon := range planned {
+	var assign func(int, []state.Mon) (bool, error)
+	assign = func(next int, current []state.Mon) (bool, error) {
+		if next >= len(required) {
+			return true, nil
+		}
+		move := required[next]
+		for _, mon := range current {
 			if monKnowsRequiredMove(mon, move) {
-				already = true
-				break
+				return assign(next+1, current)
 			}
 		}
-		if already {
-			continue
-		}
-		placed := false
-		for i := range planned {
-			ok, err := placeFieldMoveHypothetically(romData, &planned[i], move)
+		for i := range current {
+			branch := append([]state.Mon(nil), current...)
+			placed, err := placeFieldMoveHypothetically(romData, &branch[i], move)
+			if err != nil {
+				return false, err
+			}
+			if !placed {
+				continue
+			}
+			ok, err := assign(next+1, branch)
 			if err != nil {
 				return false, err
 			}
 			if ok {
-				placed = true
-				break
+				return true, nil
 			}
 		}
-		if !placed {
-			return false, nil
-		}
+		return false, nil
 	}
-	return true, nil
+	return assign(0, planned)
 }
 
 func requiredMovesKnownBy(mon state.Mon, required []FieldMove) int {
