@@ -6,26 +6,26 @@ import (
 )
 
 const (
-	fuchsiaCityMap                 uint8 = 0x07
-	route12Map                     uint8 = 0x17
-	route13Map                     uint8 = 0x18
-	route14Map                     uint8 = 0x19
-	route15Map                     uint8 = 0x1A
-	route15Gate1FMap               uint8 = 0xB8
-	fuchsiaMartMap                 uint8 = 0x98
-	fuchsiaPokemonCenterMap        uint8 = 0x9A
-	wardensHouseMap                uint8 = 0x9B
-	safariZoneGateMap              uint8 = 0x9C
-	fuchsiaGymMap                  uint8 = 0x9D
-	safariZoneEastMap              uint8 = 0xD9
-	safariZoneNorthMap             uint8 = 0xDA
-	safariZoneWestMap              uint8 = 0xDB
-	safariZoneCenterMap            uint8 = 0xDC
-	safariZoneCenterRestHouseMap   uint8 = 0xDD
-	safariZoneSecretHouse          uint8 = 0xDE
-	safariZoneWestRestHouseMap     uint8 = 0xDF
-	safariZoneEastRestHouseMap     uint8 = 0xE0
-	safariZoneNorthRestHouseMap    uint8 = 0xE1
+	fuchsiaCityMap               uint8 = 0x07
+	route12Map                   uint8 = 0x17
+	route13Map                   uint8 = 0x18
+	route14Map                   uint8 = 0x19
+	route15Map                   uint8 = 0x1A
+	route15Gate1FMap             uint8 = 0xB8
+	fuchsiaMartMap               uint8 = 0x98
+	fuchsiaPokemonCenterMap      uint8 = 0x9A
+	wardensHouseMap              uint8 = 0x9B
+	safariZoneGateMap            uint8 = 0x9C
+	fuchsiaGymMap                uint8 = 0x9D
+	safariZoneEastMap            uint8 = 0xD9
+	safariZoneNorthMap           uint8 = 0xDA
+	safariZoneWestMap            uint8 = 0xDB
+	safariZoneCenterMap          uint8 = 0xDC
+	safariZoneCenterRestHouseMap uint8 = 0xDD
+	safariZoneSecretHouse        uint8 = 0xDE
+	safariZoneWestRestHouseMap   uint8 = 0xDF
+	safariZoneEastRestHouseMap   uint8 = 0xE0
+	safariZoneNorthRestHouseMap  uint8 = 0xE1
 
 	goldTeethItem        uint8 = 0x40
 	pokeFluteItemFuchsia uint8 = 0x49
