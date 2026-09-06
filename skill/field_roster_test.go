@@ -30,6 +30,12 @@ func fakeCoreFieldROM(t *testing.T) []byte {
 	)
 	setTestMachineMove(t, romData, surf.HMItem, surf.MoveID)
 	setTestMachineMove(t, romData, strength.HMItem, strength.MoveID)
+	// The roster planner asks ROM compatibility about every hypothetical party
+	// member, including deliberately incompatible filler mons. Give those fake
+	// internal species valid Pokédex mappings with no HM compatibility bits.
+	for i, species := range []uint8{0x10, 0x11, 0x12, 0x13, 0x14, 0x15} {
+		romData[testPokedexOrderOffset+int(species)-1] = uint8(10 + i)
+	}
 	return romData
 }
 
@@ -72,7 +78,7 @@ func TestChooseDepositSlotPreservesCutSurfStrengthInvariant(t *testing.T) {
 	allowTMHM(t, romData, surfSpecies, 1, surf.HMItem)
 
 	party := state.PartyState{Count: 6, Mons: []state.Mon{
-		{Species: 0x10, Level: 4, Moves: [4]uint8{cut.MoveID}},      // only current Cut user: do not sacrifice
+		{Species: 0x10, Level: 4, Moves: [4]uint8{cut.MoveID}},       // only current Cut user: do not sacrifice
 		{Species: 0x11, Level: 6, Moves: [4]uint8{strength.MoveID}}, // only current Strength user
 		{Species: 0x12, Level: 2, Moves: [4]uint8{33}},              // weakest safe filler: should be stored
 		{Species: 0x13, Level: 8, Moves: [4]uint8{33}},
