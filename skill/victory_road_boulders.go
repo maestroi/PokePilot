@@ -62,38 +62,38 @@ func VictoryRoadBoulderSpec(section VictoryRoadBoulderSection) (BoulderPuzzleSpe
 	switch section {
 	case VictoryRoad1FSwitch:
 		spec = BoulderPuzzleSpec{
-			Map: victoryRoad1FMap,
-			Targets: []world.Point{{X: 17, Y: 13}},
-			CompleteEvent: eventVictoryRoad1BoulderOnSwitch,
+			Map:              victoryRoad1FMap,
+			Targets:          []world.Point{{X: 17, Y: 13}},
+			CompleteEvent:    eventVictoryRoad1BoulderOnSwitch,
 			HasCompleteEvent: true,
 		}
 	case VictoryRoad2FSwitch1:
 		spec = BoulderPuzzleSpec{
-			Map: victoryRoad2FMap,
-			Targets: []world.Point{{X: 1, Y: 16}},
-			CompleteEvent: eventVictoryRoad2BoulderOnSwitch1,
+			Map:              victoryRoad2FMap,
+			Targets:          []world.Point{{X: 1, Y: 16}},
+			CompleteEvent:    eventVictoryRoad2BoulderOnSwitch1,
 			HasCompleteEvent: true,
 		}
 	case VictoryRoad3FSwitch:
 		spec = BoulderPuzzleSpec{
-			Map: victoryRoad3FMap,
-			Targets: []world.Point{{X: 3, Y: 5}},
-			CompleteEvent: eventVictoryRoad3BoulderOnSwitch1,
+			Map:              victoryRoad3FMap,
+			Targets:          []world.Point{{X: 3, Y: 5}},
+			CompleteEvent:    eventVictoryRoad3BoulderOnSwitch1,
 			HasCompleteEvent: true,
 		}
 	case VictoryRoad3FHole:
 		spec = BoulderPuzzleSpec{
-			Map: victoryRoad3FMap,
-			Targets: []world.Point{{X: 23, Y: 15}},
-			TerminalTargets: map[[2]int]bool{{23, 15}: true},
-			CompleteEvent: eventVictoryRoad3BoulderInHole,
+			Map:              victoryRoad3FMap,
+			Targets:          []world.Point{{X: 23, Y: 15}},
+			TerminalTargets:  map[[2]int]bool{{23, 15}: true},
+			CompleteEvent:    eventVictoryRoad3BoulderInHole,
 			HasCompleteEvent: true,
 		}
 	case VictoryRoad2FSwitch2:
 		spec = BoulderPuzzleSpec{
-			Map: victoryRoad2FMap,
-			Targets: []world.Point{{X: 9, Y: 16}},
-			CompleteEvent: eventVictoryRoad2BoulderOnSwitch2,
+			Map:              victoryRoad2FMap,
+			Targets:          []world.Point{{X: 9, Y: 16}},
+			CompleteEvent:    eventVictoryRoad2BoulderOnSwitch2,
 			HasCompleteEvent: true,
 		}
 	default:
