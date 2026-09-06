@@ -92,8 +92,23 @@ func bankedOffset(bank uint8, addr uint16) (int, error) {
 	return int(addr), nil
 }
 
-// Build constructs the collision grid for a parsed map.
+// Build constructs the collision grid for a parsed map from its immutable ROM
+// block map. Runtime navigation should use BuildFromBlocks with the current
+// block IDs when map scripts may have replaced blocks after load.
 func Build(romData []byte, h rom.MapHeader) (*Grid, error) {
+	blocks, err := rom.Blocks(romData, h)
+	if err != nil {
+		return nil, err
+	}
+	return BuildFromBlocks(romData, h, blocks)
+}
+
+// BuildFromBlocks constructs the collision grid for h using the supplied
+// row-major block IDs rather than re-reading the immutable map block data from
+// ROM. This is the common decoder for both static maps and the live
+// wOverworldMap buffer, so script-driven ReplaceTileBlock changes get exactly
+// the same collision/field-tile semantics as ordinary ROM geometry.
+func BuildFromBlocks(romData []byte, h rom.MapHeader, blocks []byte) (*Grid, error) {
 	width := int(h.WidthBlocks) * 2
 	height := int(h.HeightBlocks) * 2
 	g := &Grid{
@@ -108,10 +123,11 @@ func Build(romData []byte, h rom.MapHeader) (*Grid, error) {
 		return g, nil
 	}
 
-	blocks, err := rom.Blocks(romData, h)
-	if err != nil {
-		return nil, err
+	wantBlocks := int(h.WidthBlocks) * int(h.HeightBlocks)
+	if len(blocks) < wantBlocks {
+		return nil, fmt.Errorf("map %d: block map has %d bytes, want at least %d", h.ID, len(blocks), wantBlocks)
 	}
+	blocks = blocks[:wantBlocks]
 
 	// Look up the map's tileset entry.
 	tsOff, err := bankedOffset(tilesetsBank, tilesetsAddr)
