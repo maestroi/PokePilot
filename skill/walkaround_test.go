@@ -186,6 +186,59 @@ func TestWalkAroundGivesUpAfterMaxRetries(t *testing.T) {
 	}
 }
 
+// TestWalkAroundRetriesPlanFailureWithEmptySnapshot pins the live Mt. Moon
+// B2F TM01 failure (run-1zt0jdn4lnm6y28udmy4p38nlf): plan() reported "no
+// path" on the very first attempt with an empty live-sprite snapshot, even
+// though the same static grid has a path with every known trainer sprite on
+// the map blocked. DecodeSprites can miss a real blocker for one snapshot
+// (the race notes on walkAround), so an empty snapshot must not fail plan()
+// immediately — it gets emptyBlockedRetries chances for a later snapshot to
+// see what this one missed.
+func TestWalkAroundRetriesPlanFailureWithEmptySnapshot(t *testing.T) {
+	planCalls := 0
+	err := walkAround(
+		func() map[[2]int]bool { return map[[2]int]bool{} },
+		func(blocked map[[2]int]bool) ([]world.Step, error) {
+			planCalls++
+			if planCalls <= emptyBlockedRetries {
+				return nil, errors.New("world: no path")
+			}
+			return []world.Step{world.StepUp}, nil
+		},
+		func([]world.Step) error { return nil },
+		func() {},
+	)
+	if err != nil {
+		t.Fatalf("walkAround: %v, want the retried plan to eventually succeed", err)
+	}
+	if planCalls != emptyBlockedRetries+1 {
+		t.Errorf("planned %d times, want %d (the retry budget plus the successful attempt)", planCalls, emptyBlockedRetries+1)
+	}
+}
+
+// TestWalkAroundGivesUpOnPersistentEmptySnapshotFailure proves the retry is
+// bounded: a plan() that never finds a path, however many empty-snapshot
+// chances it gets, still terminates instead of spinning forever.
+func TestWalkAroundGivesUpOnPersistentEmptySnapshotFailure(t *testing.T) {
+	wantErr := errors.New("world: no path")
+	planCalls := 0
+	err := walkAround(
+		func() map[[2]int]bool { return map[[2]int]bool{} },
+		func(blocked map[[2]int]bool) ([]world.Step, error) {
+			planCalls++
+			return nil, wantErr
+		},
+		func([]world.Step) error { return nil },
+		func() {},
+	)
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("err = %v, want %v", err, wantErr)
+	}
+	if planCalls != emptyBlockedRetries+1 {
+		t.Errorf("planned %d times, want %d", planCalls, emptyBlockedRetries+1)
+	}
+}
+
 // Anything that is not an ErrBlocked — a battle, a text box — is returned
 // at once. Retrying a walk a wild encounter interrupted would walk the
 // player around inside a battle.

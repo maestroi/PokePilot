@@ -143,6 +143,20 @@ const (
 	// deterministic runtime blocker from the known one-snapshot sprite races
 	// below. The learned blocker lives only for this walkAround call.
 	unexplainedBlockLearnThreshold = 2
+
+	// A plan() failure with an EMPTY live-sprite snapshot gets this many
+	// retries before walkAround accepts it as a genuine static-grid dead
+	// end. The two documented sprite races above (screen-edge liveness,
+	// mid-step tile straddling) can make DecodeSprites miss a real blocker
+	// entirely for one snapshot, not just misplace it — so an empty
+	// snapshot is not proof the blocker doesn't exist, only that this one
+	// frame didn't see it. MEASURED live (spectator run
+	// run-1zt0jdn4lnm6y28udmy4p38nlf): Mt. Moon B2F reported "no path from
+	// (35,12) to (28,5)" on the first and only plan attempt, though the
+	// same static grid has a path there even with every known trainer
+	// sprite on the map blocked at once — the one live snapshot that
+	// mattered was the one that missed.
+	emptyBlockedRetries = 2
 )
 
 func blockedDestination(e *ErrBlocked) [2]int {
@@ -193,23 +207,39 @@ func walkAround(readBlocked func() map[[2]int]bool, plan func(blocked map[[2]int
 	learnedBlocked := map[[2]int]bool{}
 	stagnantRetries := 0
 	bestPlanLen := -1
+	emptyBlockedMisses := 0
 
 	for {
 		liveBlocked := readBlocked()
 		blocked := mergeBlockers(liveBlocked, learnedBlocked)
 		steps, err := plan(blocked)
 		if err != nil {
-			// A plan error is retryable only when the fresh sprite snapshot
+			// A plan error is retryable when the fresh sprite snapshot
 			// contains blockers that may move. Call-local learned blockers are
 			// evidence from repeated failed movement, so do not spin waiting
 			// for them to disappear.
-			if len(liveBlocked) == 0 || stagnantRetries >= maxWalkRetries {
+			//
+			// An EMPTY snapshot still gets a short, separate retry budget
+			// (emptyBlockedRetries): DecodeSprites can miss a real blocker for
+			// exactly one frame (see the race notes above this function), so
+			// zero live blockers is not proof the static grid is really the
+			// whole story.
+			if len(liveBlocked) == 0 {
+				emptyBlockedMisses++
+				if emptyBlockedMisses > emptyBlockedRetries {
+					return err
+				}
+				wait()
+				continue
+			}
+			if stagnantRetries >= maxWalkRetries {
 				return err
 			}
 			stagnantRetries++
 			wait()
 			continue
 		}
+		emptyBlockedMisses = 0
 
 		// walk may have completed a prefix before the previous collision.
 		// A shorter remaining plan is direct evidence that the call moved
