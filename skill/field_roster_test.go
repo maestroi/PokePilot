@@ -78,7 +78,7 @@ func TestChooseDepositSlotPreservesCutSurfStrengthInvariant(t *testing.T) {
 	allowTMHM(t, romData, surfSpecies, 1, surf.HMItem)
 
 	party := state.PartyState{Count: 6, Mons: []state.Mon{
-		{Species: 0x10, Level: 4, Moves: [4]uint8{cut.MoveID}},       // only current Cut user: do not sacrifice
+		{Species: 0x10, Level: 4, Moves: [4]uint8{cut.MoveID}},      // only current Cut user: do not sacrifice
 		{Species: 0x11, Level: 6, Moves: [4]uint8{strength.MoveID}}, // only current Strength user
 		{Species: 0x12, Level: 2, Moves: [4]uint8{33}},              // weakest safe filler: should be stored
 		{Species: 0x13, Level: 8, Moves: [4]uint8{33}},
