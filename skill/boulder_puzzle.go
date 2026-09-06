@@ -14,12 +14,14 @@ import (
 var (
 	ErrBoulderObservationMismatch = errors.New("skill: boulder observation did not match planned push")
 	ErrBoulderPuzzlePushLimit     = errors.New("skill: boulder puzzle push limit reached")
+	ErrBoulderPuzzleReplanLimit   = errors.New("skill: boulder puzzle replan limit reached")
 	ErrBoulderPuzzleMapChanged    = errors.New("skill: boulder puzzle unexpectedly changed maps")
 )
 
 const (
-	defaultBoulderPuzzlePushLimit = 96
-	boulderPushObserveBudget      = 180
+	defaultBoulderPuzzlePushLimit   = 96
+	defaultBoulderPuzzleReplanLimit = 256
+	boulderPushObserveBudget        = 180
 )
 
 // BoulderPuzzleSpec describes a live single-map Strength puzzle. Targets are
@@ -40,6 +42,7 @@ type BoulderPuzzleSpec struct {
 	HasCompleteEvent bool
 	MaxStates        int
 	MaxPushes        int
+	MaxReplans       int
 }
 
 // BoulderPuzzleResult reports the verified work performed by SolveBoulderPuzzle.
@@ -212,6 +215,10 @@ func executeObservedBoulderPush(m *emu.Emu, spec BoulderPuzzleSpec, policy MoveP
 			}
 			return false, nil // world changed while walking: re-plan before pushing
 		}
+		var blocked *ErrBlocked
+		if errors.As(err, &blocked) {
+			return false, nil // a live blocker moved after planning; observe again
+		}
 		return false, fmt.Errorf("skill: boulder puzzle walk to slot %d push stand (%d,%d): %w", push.MovableID, push.Stand.X, push.Stand.Y, err)
 	}
 
@@ -240,17 +247,13 @@ func executeObservedBoulderPush(m *emu.Emu, spec BoulderPuzzleSpec, policy MoveP
 	}
 
 	if err := StepOnce(m, push.Direction); err != nil {
-		if errors.Is(err, ErrBattleInterrupted) || errors.Is(err, ErrDialogueInterrupted) {
-			if err := resolveBoulderWalkInterruption(m, policy, err); err != nil {
-				return false, err
-			}
-			return false, nil
+		var blocked *ErrBlocked
+		if errors.As(err, &blocked) {
+			return false, nil // destination changed after planning; observe again
 		}
 		return false, fmt.Errorf("skill: boulder puzzle push slot %d %s from (%d,%d): %w", push.MovableID, push.Direction, push.From.X, push.From.Y, err)
 	}
 
-	var after state.Mem
-	state.Snapshot(m, &after)
 	px, py := playerXY(m)
 	if int(px) != push.From.X || int(py) != push.From.Y {
 		return false, fmt.Errorf("%w: after slot %d push player=(%d,%d), want old boulder tile (%d,%d)", ErrBoulderObservationMismatch, push.MovableID, px, py, push.From.X, push.From.Y)
@@ -278,9 +281,13 @@ func SolveBoulderPuzzle(m *emu.Emu, romData []byte, policy MovePolicy, spec Boul
 	if pushLimit <= 0 {
 		pushLimit = defaultBoulderPuzzlePushLimit
 	}
+	replanLimit := spec.MaxReplans
+	if replanLimit <= 0 {
+		replanLimit = defaultBoulderPuzzleReplanLimit
+	}
 
 	result := BoulderPuzzleResult{}
-	for result.Pushes < pushLimit {
+	for result.Pushes < pushLimit && result.Replans < replanLimit {
 		puzzle, mem, err := currentBoulderPuzzle(m, romData, spec)
 		if err != nil {
 			return result, err
@@ -325,5 +332,8 @@ func SolveBoulderPuzzle(m *emu.Emu, romData []byte, policy MovePolicy, spec Boul
 
 	var mem state.Mem
 	state.Snapshot(m, &mem)
+	if result.Replans >= replanLimit {
+		return result, fmt.Errorf("%w: map %#02x after %d replans and %d verified pushes, player=(%d,%d), boulders=%v", ErrBoulderPuzzleReplanLimit, spec.Map, result.Replans, result.Pushes, mem.U8(sym.XCoord), mem.U8(sym.YCoord), state.DecodeBoulders(&mem))
+	}
 	return result, fmt.Errorf("%w: map %#02x after %d verified pushes, player=(%d,%d), boulders=%v", ErrBoulderPuzzlePushLimit, spec.Map, result.Pushes, mem.U8(sym.XCoord), mem.U8(sym.YCoord), state.DecodeBoulders(&mem))
 }
