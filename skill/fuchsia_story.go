@@ -274,12 +274,15 @@ func collectSafariRewards(m *emu.Emu, romData []byte, policy MovePolicy) error {
 				}
 				return fmt.Errorf("skill: FuchsiaProgression: reach Safari Secret House: %w", err)
 			}
+			if err := EnsureBagSpaceFor(m, hm03SurfItem); err != nil {
+				return fmt.Errorf("skill: FuchsiaProgression: make room for HM03: %w", err)
+			}
 			if _, err := TalkAt(m, romData, 3, 3, policy); err != nil {
 				return fmt.Errorf("skill: FuchsiaProgression: receive HM03: %w", err)
 			}
 			state.Snapshot(m, &mem)
 			if !hasBagItem(&mem, hm03SurfItem) || !state.HasEvent(&mem, eventGotHM03) {
-				return fmt.Errorf("skill: FuchsiaProgression: HM03 was not positively awarded (bag may be full)")
+				return fmt.Errorf("skill: FuchsiaProgression: HM03 was not positively awarded after bag-capacity preflight")
 			}
 		}
 	}
@@ -346,13 +349,23 @@ func receiveStrengthFromWarden(m *emu.Emu, romData []byte, policy MovePolicy) er
 	if _, err := TravelFlee(m, romData, warden, policy, fuchsiaTravelEngagements); err != nil {
 		return fmt.Errorf("skill: FuchsiaProgression: reach Warden: %w", err)
 	}
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	// When GOLD TEETH are still in the bag, the Warden removes them before
+	// GiveItem(HM04), so that same interaction creates the required slot. A
+	// resumed save with EVENT_GAVE_GOLD_TEETH already set has no such removal
+	// and must reserve a slot before asking for HM04 again.
+	if !hasBagItem(&mem, goldTeethItem) && state.HasEvent(&mem, eventGaveGoldTeeth) {
+		if err := EnsureBagSpaceFor(m, hm04StrengthItem); err != nil {
+			return fmt.Errorf("skill: FuchsiaProgression: make room for HM04: %w", err)
+		}
+	}
 	if _, err := TalkAt(m, romData, 2, 3, policy); err != nil {
 		return fmt.Errorf("skill: FuchsiaProgression: give Gold Teeth to Warden: %w", err)
 	}
-	var mem state.Mem
 	state.Snapshot(m, &mem)
 	if !hasBagItem(&mem, hm04StrengthItem) || !state.HasEvent(&mem, eventGotHM04) {
-		return fmt.Errorf("skill: FuchsiaProgression: HM04 was not positively awarded (Gold Teeth missing or bag full)")
+		return fmt.Errorf("skill: FuchsiaProgression: HM04 was not positively awarded (Gold Teeth missing or capacity preflight failed)")
 	}
 	return nil
 }
