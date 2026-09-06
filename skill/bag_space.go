@@ -92,7 +92,7 @@ func chooseSafeBagSacrifice(inv state.InventoryState) (int, state.BagItem, bool)
 func EnsureBagSpaceFor(m *emu.Emu, item uint8) error {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if hasBagItem(&mem, item) {
+	if _, quantity := bagEntry(&mem, item); quantity > 0 {
 		return nil
 	}
 	return EnsureBagFreeSlots(m, 1)
