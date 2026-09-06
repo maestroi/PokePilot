@@ -2,12 +2,14 @@ package agent
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/maestroi/pokepilot/red/state"
+	"github.com/maestroi/pokepilot/skill"
 )
 
 func offeredGym(obs Observation, known *Knowledge) (Objective, bool) {
@@ -155,6 +157,42 @@ func TestGymRetryDueWithholdsFurtherTraining(t *testing.T) {
 	known.Done(gym)
 	if _, ok := gymRetryPending(known); ok {
 		t.Fatal("successful gym challenge left stale retry-due state behind")
+	}
+}
+
+// TestGymRetryUnlocksOnTrainShortfallProgress pins the live deadlock from a
+// spectated run: Ivysaur climbed level 19 -> 28 across eight attempts, one
+// level short of every requested target (trainStep offers lead+2, a session
+// against an outlevelled map's grass often yields only +1), and Brock was
+// never rechallenged because Knowledge.Done(KindTrain) only fires on an
+// exact-target hit. A shortfall that still raised the lead's level is real
+// evidence the party changed and must open the same gate a full success does.
+func TestGymRetryUnlocksOnTrainShortfallProgress(t *testing.T) {
+	known := NewKnowledge(nil)
+	gym := Objective{Kind: KindGym, Place: "pewter gym"}
+	known.Failed(gym, gymOutcomeErr(gym, state.ResultLost))
+
+	train := Objective{Kind: KindTrain, Level: 28}
+	shortfall := fmt.Errorf("agent: %s: %w (target 28, ended level 27 after 20 battles)", train, skill.ErrTrainProgress)
+	if !errors.Is(shortfall, skill.ErrTrainProgress) {
+		t.Fatal("shortfall error does not unwrap to ErrTrainProgress")
+	}
+	known.Failed(train, shortfall)
+	if _, ok := offeredGym(pewterGymObservation(), known); ok {
+		t.Fatal("Failed alone must not clear the gym-loss gate: run.go clears it explicitly")
+	}
+
+	// This is the fix under test: run.go calls clearGymLossFailures whenever
+	// the Train failure unwraps to ErrTrainProgress, mirroring what a full
+	// Knowledge.Done(KindTrain) does today.
+	known.clearGymLossFailures()
+
+	ready, ok := offeredGym(pewterGymObservation(), known)
+	if !ok {
+		t.Fatal("Pewter Gym stayed locked after a Train session that raised the lead's level, even though it missed its exact target")
+	}
+	if !strings.Contains(ready.Note, "retry due") {
+		t.Fatalf("re-enabled gym note = %q, want retry-due fact", ready.Note)
 	}
 }
 

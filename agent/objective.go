@@ -166,6 +166,10 @@ func Execute(m *emu.Emu, romData []byte, o Objective) (retErr error) {
 			return fmt.Errorf("agent: %s: %w before reaching level %d (ended level %d after %d battles)",
 				o, skill.ErrBlackedOut, o.Level, res.EndLevel, res.Battles)
 		}
+		if res.EndLevel > res.StartLevel {
+			return fmt.Errorf("agent: %s: %w (target %d, ended level %d after %d battles)",
+				o, skill.ErrTrainProgress, o.Level, res.EndLevel, res.Battles)
+		}
 		return fmt.Errorf("agent: %s: target level %d not reached (ended level %d after %d battles)",
 			o, o.Level, res.EndLevel, res.Battles)
 	case KindHeal:

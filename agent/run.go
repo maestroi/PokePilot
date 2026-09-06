@@ -769,6 +769,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 			outcome := "failed: " + err.Error()
 			blackedOut := errors.Is(err, skill.ErrBlackedOut)
 			retreated := errors.Is(err, skill.ErrTrainRetreat)
+			trainProgressed := errors.Is(err, skill.ErrTrainProgress)
 			if blackedOut {
 				// The blackout bit clears on the respawn map entry, before
 				// this Observe; carry the fact for the round that follows the
@@ -785,6 +786,14 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 					last.RespawnPlace, before.Money, last.Money)
 			}
 			known.Failed(obj, err)
+			if trainProgressed {
+				// A shortfall that still raised the lead's level is exactly the
+				// "successful Train rung" the gym-retry gate is waiting for
+				// (see ErrTrainProgress) — Knowledge.Done never fires here
+				// because the exact requested level was missed, so the gate
+				// must be cleared directly instead of staying shut forever.
+				known.clearGymLossFailures()
+			}
 			history = appendHistory(history, RoundRecord{Objective: obj.String(), Outcome: outcome})
 			last.History = history
 			last.RecentDialogue = tape.recent()

@@ -47,6 +47,19 @@ type TrainResult struct {
 // changed the party, so repeating the objective is not an identical attempt.
 var ErrTrainRetreat = errors.New("skill: Train: stopped while the party was alive: continuing would have lost it")
 
+// ErrTrainProgress marks a Train session that exhausted its battle budget
+// short of targetLevel but still raised the lead's level at least once. The
+// offered target sits trainStep levels above the lead (agent/offer.go), while
+// a session's achievable gain against a given map's wild pool can be less —
+// widening as the lead outlevels that map's grass. Treating every such
+// shortfall as a plain failure means the gym-retry gate (which unlocks a
+// leader rematch only after a train rung completes, agent/gym_recovery.go)
+// can never open: MEASURED live, a lead climbed level 19->28 across eight
+// attempts, one level short of its target every single time, without ever
+// being allowed to rechallenge the leader it had already outgrown. The party
+// materially changed each session; that is the fact the gate cares about.
+var ErrTrainProgress = errors.New("skill: Train: target level not reached, but the lead gained at least one level")
+
 // retreatLineNum/Den: a session stops when the lead's HP is below this
 // fraction of its max, and refuses to start from below it. MEASURED on
 // Route 2 (post_errand, one-mon L7 lead, type-aware policy): three
