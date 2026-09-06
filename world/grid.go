@@ -96,6 +96,9 @@ func bankedOffset(bank uint8, addr uint16) (int, error) {
 // block map. Runtime navigation should use BuildFromBlocks with the current
 // block IDs when map scripts may have replaced blocks after load.
 func Build(romData []byte, h rom.MapHeader) (*Grid, error) {
+	if h.WidthBlocks == 0 || h.HeightBlocks == 0 {
+		return BuildFromBlocks(romData, h, nil)
+	}
 	blocks, err := rom.Blocks(romData, h)
 	if err != nil {
 		return nil, err
