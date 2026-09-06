@@ -68,6 +68,36 @@ func TestOwnedSurfWithoutCompatiblePartyNeedsRosterRepair(t *testing.T) {
 	}
 }
 
+func TestPartyCanSatisfyFieldMovesBacktracksFlexibleRecipient(t *testing.T) {
+	romData := fakeCoreFieldROM(t)
+	cut, _ := FieldMoveSpecFor(FieldCut)
+	surf, _ := FieldMoveSpecFor(FieldSurf)
+	strength, _ := FieldMoveSpecFor(FieldStrength)
+	const (
+		flexible = 0x20
+		cutOnly  = 0x21
+	)
+	allowTMHM(t, romData, flexible, 1, cut.HMItem)
+	allowTMHM(t, romData, flexible, 1, surf.HMItem)
+	allowTMHM(t, romData, cutOnly, 2, cut.HMItem)
+
+	// Each mon has exactly one legal future move slot. A greedy Cut-first
+	// assignment to the flexible mon makes Surf impossible, but assigning Cut
+	// to cutOnly and reserving flexible for Surf satisfies both requirements.
+	locked := [4]uint8{strength.MoveID, strength.MoveID, strength.MoveID, 0}
+	mons := []state.Mon{
+		{Species: flexible, Moves: locked},
+		{Species: cutOnly, Moves: locked},
+	}
+	ok, err := partyCanSatisfyFieldMoves(romData, mons, []FieldMove{FieldCut, FieldSurf})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatal("valid Cut/Surf assignment was rejected; planner did not backtrack")
+	}
+}
+
 func TestChooseDepositSlotPreservesCutSurfStrengthInvariant(t *testing.T) {
 	romData := fakeCoreFieldROM(t)
 	cut, _ := FieldMoveSpecFor(FieldCut)
