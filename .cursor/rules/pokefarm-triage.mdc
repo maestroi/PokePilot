@@ -1,0 +1,25 @@
+---
+description: Investigate PokeFarm runs and fix what makes them fail — pull the latest runs over the pokepilot MCP, group them by failure, replay the failing round's .state locally, fix at the shared point, commit and push once the tests pass.
+globs:
+alwaysApply: false
+---
+
+Follow the procedure in @.claude/skills/pokefarm-triage/SKILL.md exactly. It is
+the single source of truth for this workflow; this rule only makes Cursor aware
+of it.
+
+The short version, so you know what you are opting into:
+
+1. `pokepilot_list_runs` and group by the `detail` string yourself —
+   `pokepilot_get_triage` usually returns empty groups.
+2. `pokepilot_get_run_debug(run_id)` for `trace_tail`, `progress_final`, and the
+   artifact list.
+3. `curl` the failing round's `.state` artifact from the pokewall endpoint.
+4. Replay it in a throwaway `skill/zz_repro_scratch_test.go` before editing
+   anything — the farm runs committed HEAD, so a farm failure reproduces
+   locally in seconds and deterministically.
+5. Fix where every caller routes through, not on the path the failure named.
+6. Gate on `make test-short` (~6s) plus the repro. Never run the bare
+   `go test ./skill/...`: those tests boot the emulator and play the game for
+   tens of minutes.
+7. Branch, commit the fix only, push. Leave unrelated dirty files unstaged.
