@@ -59,11 +59,58 @@ func tmhmDecisionNote(machine rom.Machine, decision skill.TMHMDecision) string {
 		name, machine.Move, semantics, decision.PartySlot, decision.BeforeScore, decision.AfterScore, placement)
 }
 
+// prepareObjectiveBoundary restores the invariant every objective relies on:
+// execution starts from a controllable overworld state, never from a menu a
+// previous objective leaked. RecoverDialogue already distinguishes ordinary
+// text, choices, battles, and menus without guessing. Ordinary text is safe to
+// page away; a plain menu is safe to back out of with B. Battles and choices
+// are intentionally left untouched and reported as failures instead of having
+// this layer make a gameplay decision.
+func prepareObjectiveBoundary(m *emu.Emu) error {
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	if state.Controllable(&mem) && state.DecodeDialogue(&mem) == nil && !state.MenuUp(&mem) {
+		return nil
+	}
+	if state.DecodeBattle(&mem) != nil {
+		return fmt.Errorf("battle still in progress")
+	}
+	if state.DecodeTwoOptionMenu(&mem) != nil {
+		return fmt.Errorf("unanswered choice remains open")
+	}
+	if state.MenuUp(&mem) {
+		if err := skill.CloseOpenMenuToOverworld(m); err != nil {
+			return fmt.Errorf("close leftover menu: %w", err)
+		}
+		state.Snapshot(m, &mem)
+		if !state.Controllable(&mem) || state.MenuUp(&mem) {
+			return fmt.Errorf("leftover menu closed but player is still not controllable")
+		}
+		return nil
+	}
+	if state.DecodeDialogue(&mem) != nil {
+		res := skill.RecoverDialogue(m, roundRecoveryBudget)
+		if res.Stop != skill.DialogueRecovered {
+			return fmt.Errorf("leftover dialogue did not recover: %s", recoveryStopName(res.Stop))
+		}
+		return nil
+	}
+	return fmt.Errorf("player is not controllable and no recoverable menu or dialogue is open")
+}
+
 // executeObjective is Run's dispatch boundary. Ordinary objectives keep the
 // existing Execute path unchanged. Planner-offered TM/HM objectives reuse the
 // existing KindUseItem shape but are intercepted here because their semantics
 // are teach-a-move, not field medicine.
 func executeObjective(m *emu.Emu, romData []byte, o Objective) (retErr error) {
+	if err := prepareObjectiveBoundary(m); err != nil {
+		retErr = fmt.Errorf("agent: %s: objective boundary: %w", o, err)
+		if ferr := captureObjectiveFailure(m, o, retErr); ferr != nil {
+			fmt.Printf("  ram forensics: %v\n", ferr)
+		}
+		return retErr
+	}
+
 	if o.Kind != KindUseItem {
 		return Execute(m, romData, o)
 	}
