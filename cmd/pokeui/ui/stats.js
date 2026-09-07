@@ -120,3 +120,98 @@
   refresh();
   setInterval(refresh,3000);
 })();
+
+// Live goal progress belongs next to the run being watched, not only in the
+// aggregate outcomes card above. ui.js intentionally owns the core inspector;
+// this small additive layer reads the same dashboard wire fields and inserts a
+// block that ui.js does not repaint, so older walls/runners simply hide it.
+(()=>{
+  "use strict";
+
+  const style=document.createElement("style");
+  style.textContent=`
+    #live-goal-progress{flex:none;margin:0 0 8px;padding:9px 10px;background:var(--raised);border:1px solid var(--line);border-radius:9px}
+    #live-goal-progress[hidden]{display:none!important}
+    .live-goal-head{display:flex;justify-content:space-between;gap:10px;align-items:baseline}
+    .live-goal-k{color:var(--blue-dark);font-size:11px;text-transform:uppercase;letter-spacing:.05em;font-weight:800}
+    .live-goal-n{font:800 12px/1 var(--mono);color:var(--ink)}
+    .live-goal-summary{margin-top:4px;color:var(--ink);font-size:13px;overflow-wrap:anywhere}
+    .live-goal-track{height:6px;margin-top:7px;border-radius:999px;background:var(--bg-deep);overflow:hidden}
+    .live-goal-fill{height:100%;background:var(--green);transform-origin:left center}
+    .goal-mini{margin-top:2px;color:var(--green);font-size:12px;line-height:1.3;overflow-wrap:anywhere}
+  `;
+  document.head.appendChild(style);
+
+  const esc=(v)=>String(v??"").replace(/[&<>"']/g,(c)=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  let selected="";
+
+  function ensurePanel(){
+    let panel=document.getElementById("live-goal-progress");
+    if(panel)return panel;
+    const chips=document.getElementById("detail-chips");
+    const body=document.getElementById("detail-body");
+    if(!chips||!body||!body.parentNode)return null;
+    panel=document.createElement("div");
+    panel.id="live-goal-progress";
+    panel.hidden=true;
+    body.parentNode.insertBefore(panel,body);
+    return panel;
+  }
+
+  function progressOf(run){
+    const s=run&&run.stats;
+    if(!s||!s.goal_summary)return null;
+    const current=Number(s.goal_current||0);
+    const target=Number(s.goal_target||0);
+    const complete=Boolean(s.goal_complete);
+    const pct=complete?100:(target>0?Math.max(0,Math.min(100,100*current/target)):0);
+    return {summary:String(s.goal_summary),current,target,complete,pct};
+  }
+
+  function renderMini(run){
+    const article=document.querySelector(`article[data-run="${CSS.escape(run.run_id||"")}"]`);
+    if(!article)return;
+    let mini=article.querySelector(".goal-mini");
+    const p=progressOf(run);
+    if(!p){if(mini)mini.remove();return}
+    if(!mini){mini=document.createElement("div");mini.className="goal-mini";const meta=article.querySelector(".meta");if(meta)meta.appendChild(mini)}
+    if(mini)mini.textContent=p.summary;
+  }
+
+  function renderSelected(run){
+    const panel=ensurePanel();
+    if(!panel)return;
+    const p=progressOf(run);
+    if(!p){panel.hidden=true;panel.replaceChildren();return}
+    const numeric=p.target>0?`${p.current} / ${p.target}`:(p.complete?"complete":"in progress");
+    panel.hidden=false;
+    panel.innerHTML=`<div class="live-goal-head"><span class="live-goal-k">Goal progress</span><span class="live-goal-n">${esc(numeric)}</span></div><div class="live-goal-summary">${esc(p.summary)}</div><div class="live-goal-track" role="progressbar" aria-label="Goal progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${p.pct.toFixed(0)}"><div class="live-goal-fill" style="transform:scaleX(${p.pct/100})"></div></div>`;
+  }
+
+  function selectedID(){
+    if(selected)return selected;
+    const card=document.querySelector("article.bezel.selected[data-run]");
+    if(card)return card.dataset.run||"";
+    const title=document.getElementById("detail-title");
+    return title&&!title.closest("[hidden]")?String(title.textContent||"").trim():"";
+  }
+
+  async function refresh(){
+    try{
+      const res=await fetch("/v1/dashboard",{cache:"no-store"});
+      if(!res.ok)return;
+      const body=await res.json();
+      const runs=Array.isArray(body.runs)?body.runs:[];
+      runs.forEach(renderMini);
+      const id=selectedID();
+      renderSelected(runs.find((r)=>r.run_id===id)||null);
+    }catch(_){ }
+  }
+
+  window.addEventListener("pokefarm-select-run",(ev)=>{
+    selected=(ev.detail&&ev.detail.runId)||"";
+    refresh();
+  });
+  refresh();
+  setInterval(refresh,2000);
+})();
