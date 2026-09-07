@@ -45,6 +45,21 @@ func resolveRunGoal(p Planner, raw string) (Goal, bool, error) {
 	return g, deterministic, nil
 }
 
+// evaluateRunGoal evaluates one settled observation and mirrors the exact
+// same authoritative status to diagnostics. The contextual round/intent
+// fields are populated on a copy so Result.Final stays a plain game-state
+// observation rather than inheriting planner-only metadata.
+func evaluateRunGoal(p Planner, g Goal, obs Observation, round, maxRounds int, intent string, intentAge int) GoalStatus {
+	goalObs := obs
+	goalObs.Intent = intent
+	goalObs.IntentAge = intentAge
+	goalObs.Round = round
+	goalObs.RoundsLeft = roundsLeft(round, maxRounds)
+	status := EvaluateGoal(g, goalObs)
+	publishRunGoalStatus(p, goalObs, status, true)
+	return status
+}
+
 func publishRunGoalStatus(p Planner, obs Observation, status GoalStatus, deterministic bool) {
 	if sink, ok := p.(RunGoalStatusObserver); ok {
 		sink.ObserveRunGoal(obs, status, deterministic)
