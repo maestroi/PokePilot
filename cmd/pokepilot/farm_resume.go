@@ -23,21 +23,17 @@ func prepareFarmAttempt(m *emu.Emu, client *farm.Client, spec farm.Spec, planner
 	dir = checkpointDir
 	explicitRepro := spec.Attempt == 1 && strings.HasPrefix(spec.RunID, "replay-")
 	var repro *farm.ResumeCheckpoint
-	if spec.Attempt == 1 {
+	if explicitRepro {
 		ctx, cancel := context.WithTimeout(context.Background(), farmHTTPTimeout)
 		cp, lookupErr := client.ReplayCheckpoint(ctx, spec.RunID)
 		cancel()
 		if lookupErr != nil {
-			if explicitRepro {
-				return dir, 0, fmt.Errorf("replay checkpoint lookup: %w", lookupErr)
-			}
-			log.Printf("farm: %s: replay lookup failed; treating run as ordinary: %v", spec.RunID, lookupErr)
-		} else {
-			repro = cp
+			return dir, 0, fmt.Errorf("replay checkpoint lookup: %w", lookupErr)
 		}
-		if explicitRepro && repro == nil {
+		if cp == nil {
 			return dir, 0, fmt.Errorf("replay run %s has no pinned replay checkpoint", spec.RunID)
 		}
+		repro = cp
 	}
 
 	if dir == "" && (planner == "llm" || repro != nil) {
