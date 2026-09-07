@@ -69,11 +69,11 @@ func tmhmDecisionNote(machine rom.Machine, decision skill.TMHMDecision) string {
 
 // prepareObjectiveBoundary restores the invariant every objective relies on:
 // execution starts from a controllable overworld state, never from a menu a
-// previous objective leaked. RecoverDialogue already distinguishes ordinary
-// text, choices, battles, and menus without guessing. Ordinary text is safe to
-// page away; a plain menu is safe to back out of with B. Battles and choices
-// are intentionally left untouched and reported as failures instead of having
-// this layer make a gameplay decision.
+// previous objective leaked. Ordinary text is safe to page away and a known
+// dismissable menu is safe to back out of with B. The generic two-option
+// decoder can also match a two-entry bag list, so DismissableObjectiveMenu
+// resolves that ambiguity before a genuine unanswered choice is rejected.
+// Battles and genuine choices are intentionally left untouched.
 func prepareObjectiveBoundary(m *emu.Emu) error {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
@@ -83,10 +83,7 @@ func prepareObjectiveBoundary(m *emu.Emu) error {
 	if state.DecodeBattle(&mem) != nil {
 		return fmt.Errorf("battle still in progress")
 	}
-	if state.DecodeTwoOptionMenu(&mem) != nil {
-		return fmt.Errorf("unanswered choice remains open")
-	}
-	if state.MenuUp(&mem) {
+	if skill.DismissableObjectiveMenu(&mem) {
 		if err := skill.CloseOpenMenuToOverworld(m); err != nil {
 			return fmt.Errorf("close leftover menu: %w", err)
 		}
@@ -95,6 +92,12 @@ func prepareObjectiveBoundary(m *emu.Emu) error {
 			return fmt.Errorf("leftover menu closed but player is still not controllable")
 		}
 		return nil
+	}
+	if state.DecodeTwoOptionMenu(&mem) != nil {
+		return fmt.Errorf("unanswered choice remains open")
+	}
+	if state.MenuUp(&mem) {
+		return fmt.Errorf("non-dismissable menu remains open")
 	}
 	if state.DecodeDialogue(&mem) != nil {
 		res := skill.RecoverDialogue(m, roundRecoveryBudget)
