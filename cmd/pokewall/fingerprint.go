@@ -17,8 +17,10 @@ const (
 	checkpointObjectiveKeep = 6
 )
 
-// IssueLink is the wall's copy of an Agent Orchestrator issue identity.
-// Issue numbers are display-only; links always use the UUID URL.
+// IssueLink is the wall's copy of an Agent Orchestrator issue identity plus
+// local disposition metadata for the failure fingerprint. The local fields
+// deliberately live here because issueLinks is already durable wall state:
+// a resolved failure survives wall restarts even when no external issue exists.
 type IssueLink struct {
 	IssueID         string `json:"issue_id"`
 	IssueNumber     int64  `json:"issue_number"`
@@ -31,6 +33,16 @@ type IssueLink struct {
 	UpdatedAt       int64  `json:"updated_at,omitempty"`
 	Fingerprint     string `json:"fingerprint,omitempty"`
 	Stale           bool   `json:"stale,omitempty"`
+
+	// FailureResolution is PokePilot's local triage disposition. It is kept
+	// separate from Agent Orchestrator's Resolution so either system can be
+	// used independently. fixed means a code fix exists but may not be live;
+	// fixed_applied records the occurrence baseline after the fix is live.
+	FailureResolution      string `json:"failure_resolution,omitempty"`
+	FailureResolutionCount int    `json:"failure_resolution_count,omitempty"`
+	FailureRevision        string `json:"failure_revision,omitempty"`
+	FailureNote            string `json:"failure_note,omitempty"`
+	FailureUpdatedAt       int64  `json:"failure_updated_at,omitempty"`
 }
 
 type outboxEntry struct {
