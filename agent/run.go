@@ -22,11 +22,11 @@ type Stop uint8
 
 const (
 	StopUnset  Stop = iota // the zero value: no stop reason set yet. Never reported.
-	StopDone               // the planner reported ErrDone
+	StopDone               // the runtime goal is satisfied, or a prompt-only planner reported ErrDone
 	StopStuck              // no progress for too many rounds
 	StopBudget             // an optional round cap or the frame budget ran out
 	StopFailed             // consecutive objective failures exhausted the failure budget
-	StopError              // a planner error, or nothing is possible from here
+	StopError              // a planner error, invalid completion claim, or nothing is possible from here
 )
 
 // Result is the outcome of a run.
@@ -41,6 +41,9 @@ type Result struct {
 	// badly" without having to re-derive that from Stop.
 	Err   error
 	Final Observation
+	// GoalStatus is the final authoritative status for an opted-in
+	// deterministic goal. It is nil for free-text/prompt-only runs.
+	GoalStatus *GoalStatus
 	// ReplyRetries counts how many times the planner's reply was rejected
 	// and the same round was re-asked in a DIFFERENT form (see Retry). It
 	// is the diagnostic that separates a loop problem from a capacity
@@ -277,6 +280,11 @@ type Budget struct {
 	// experiments can request a fixed decision budget.
 	MaxRounds int
 	MaxFrames int
+	// Goal optionally configures the run-owned completion contract. Known
+	// presets and documented structured forms are evaluated deterministically;
+	// arbitrary free text remains prompt-only. When empty, a RunGoalProvider
+	// planner may supply the raw goal already used for its prompt.
+	Goal string
 	// StuckAfter is how many consecutive objectives may leave the
 	// observation unchanged before the run stops with StopStuck.
 	// Zero means defaultStuckAfter.
@@ -524,11 +532,12 @@ func appendHistory(h []RoundRecord, r RoundRecord) []RoundRecord {
 	return append(out, r)
 }
 
-// Run drives observe -> plan -> execute until the planner is done, the world
-// is demonstrably stuck, a hard failure occurs, or a safety watchdog fires.
-// A failed objective does not end the run: what was attempted and the error
-// text are recorded in the observation history, the game is left where the
-// failure left it, and the planner chooses again with the failure visible.
+// Run drives observe -> plan -> execute until the run-owned deterministic
+// goal is done, a prompt-only planner is done, the world is demonstrably
+// stuck, a hard failure occurs, or a safety watchdog fires. A failed
+// objective does not end the run: what was attempted and the error text are
+// recorded in the observation history, the game is left where the failure
+// left it, and the planner chooses again with the failure visible.
 //
 // There are two distinct progress watchdogs. StuckAfter catches a few
 // consecutive objectives that literally leave the observation unchanged.
@@ -552,6 +561,13 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 	case <-budget.Cancel:
 		return Result{Stop: StopBudget, Rounds: 0}
 	default:
+	}
+	// Parse the optional deterministic goal before touching ROM state. This
+	// makes malformed documented syntax a configuration error, not a gameplay
+	// failure, and lets callers validate a run without a ROM.
+	runGoal, deterministicGoal, err := resolveRunGoal(p, budget.Goal)
+	if err != nil {
+		return Result{Stop: StopError, Err: err}
 	}
 	// Route geometry for the menu: which map's exits lead where. Built
 	// once, like the ROM itself; it names no places.
@@ -636,6 +652,18 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 		default:
 		}
 
+		// The runtime-owned goal has precedence over every watchdog and over
+		// another planner/model call. This is a pure read of the settled
+		// observation; planners may mirror it but cannot decide it.
+		if deterministicGoal {
+			status := evaluateRunGoal(p, runGoal, last, round, budget.MaxRounds, intent, intentAge)
+			res.GoalStatus = &status
+			if status.Complete {
+				res.Stop = StopDone
+				break
+			}
+		}
+
 		if roundCapReached(round, budget.MaxRounds) {
 			res.Stop = StopBudget
 			break
@@ -657,9 +685,9 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 		// changed nothing. This longer detector catches moving loops. It runs
 		// at the next round boundary so it sees every map sampled during the
 		// previous Execute as well as the settled badge/event/party state.
-		// We calculate stagnation here but do not stop yet: the planner's
-		// deterministic goal wrapper gets first chance to report ErrDone, so
-		// a goal reached exactly on the watchdog boundary is success, not stuck.
+		// We calculate stagnation here but do not stop yet: deterministic
+		// completion was checked above, so a goal reached exactly on the
+		// watchdog boundary is success, not stuck.
 		currentMajorProgress := majorProgressMarkOf(last, known)
 		if majorProgress.absorb(currentMajorProgress) {
 			lastMajorProgressRound = round - 1
@@ -706,10 +734,23 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 
 		obj, err, retries := planWithRetries(budget.Log, round, p, last, now)
 		res.ReplyRetries += retries
-		// Goal completion has precedence over watchdog classification. A goal
-		// may be satisfied by a state change that deliberately is not a major
-		// progress signal (for example an item goal), so check ErrDone first.
+		// A prompt-only run still treats planner exhaustion as completion.
+		// With a deterministic goal, however, Run already evaluated the same
+		// settled observation above: an ErrDone while that status is incomplete
+		// is a false completion claim and therefore a run error.
 		if errors.Is(err, ErrDone) {
+			if deterministicGoal {
+				status := GoalStatus{}
+				if res.GoalStatus != nil {
+					status = *res.GoalStatus
+				} else {
+					status = evaluateRunGoal(p, runGoal, last, round, budget.MaxRounds, intent, intentAge)
+					res.GoalStatus = &status
+				}
+				res.Stop = StopError
+				res.Err = incompleteGoalError(status)
+				break
+			}
 			res.Stop = StopDone
 			break
 		}
@@ -798,6 +839,18 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 			last.History = history
 			last.RecentDialogue = tape.recent()
 			logRound(budget.Log, round, obj, outcome, last)
+
+			// A skill can return an error after the game has already committed
+			// the story state. The observable completion predicate wins over
+			// failure-budget classification at this settled boundary.
+			if deterministicGoal {
+				status := evaluateRunGoal(p, runGoal, last, round, budget.MaxRounds, intent, intentAge)
+				res.GoalStatus = &status
+				if status.Complete {
+					res.Stop = StopDone
+					break
+				}
+			}
 
 			if blackedOut || retreated {
 				// The blackout is recorded in history like any failure, but it
@@ -901,6 +954,18 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 		last.RecentDialogue = tape.recent()
 		logRound(budget.Log, round, obj, "done", last)
 
+		// Goal completion is checked before the short stuck detector and frame
+		// budget. A state change that satisfies the goal must not be reported
+		// as stuck/budget merely because the same objective also hit a guardrail.
+		if deterministicGoal {
+			status := evaluateRunGoal(p, runGoal, last, round, budget.MaxRounds, intent, intentAge)
+			res.GoalStatus = &status
+			if status.Complete {
+				res.Stop = StopDone
+				break
+			}
+		}
+
 		if sameProgress(before, last) {
 			stuck++
 		} else {
@@ -917,6 +982,10 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 	}
 
 	res.Final = last
+	if deterministicGoal {
+		status := evaluateRunGoal(p, runGoal, last, res.Rounds, budget.MaxRounds, intent, intentAge)
+		res.GoalStatus = &status
+	}
 	// The finish sample, at the same points the early one read: badges,
 	// events, maps stood on, and where the player stands.
 	final := progressOf(last, known, res.Rounds)
