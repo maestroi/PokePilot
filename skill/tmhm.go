@@ -138,8 +138,10 @@ func DecideTMHM(romData []byte, party state.PartyState, item uint8, required boo
 // first computes a ROM-derived compatible recipient and replacement decision,
 // then verifies the resulting move directly from party RAM. For TMs it also
 // verifies that exactly one copy was consumed; for HMs it verifies the item
-// remains in the bag.
-func TeachTMHM(m *emu.Emu, item uint8, required bool) (TMHMResult, error) {
+// remains in the bag. Once this function starts opening menus, every error
+// path backs out to the overworld before returning so a failed machine cannot
+// leave the next objective trapped in ITEM/party/forget UI.
+func TeachTMHM(m *emu.Emu, item uint8, required bool) (result TMHMResult, retErr error) {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
 	party := state.DecodeParty(&mem)
@@ -147,7 +149,7 @@ func TeachTMHM(m *emu.Emu, item uint8, required bool) (TMHMResult, error) {
 	if err != nil {
 		return TMHMResult{}, fmt.Errorf("skill: TeachTMHM: %w", err)
 	}
-	result := TMHMResult{Decision: decision}
+	result = TMHMResult{Decision: decision}
 	if decision.Existing {
 		return result, nil
 	}
@@ -159,7 +161,18 @@ func TeachTMHM(m *emu.Emu, item uint8, required bool) (TMHMResult, error) {
 		return TMHMResult{}, fmt.Errorf("skill: TeachTMHM: item %#02x is not in the bag", item)
 	}
 
+	menuMayBeOpen := false
+	defer func() {
+		if retErr == nil || !menuMayBeOpen {
+			return
+		}
+		if closeErr := closeToOverworld(m); closeErr != nil {
+			retErr = fmt.Errorf("%w; cleanup: %v", retErr, closeErr)
+		}
+	}()
+
 	wantMax, itemIndex := startMenuShape(&mem)
+	menuMayBeOpen = true
 	if err := openStartMenuEntry(m, itemIndex, wantMax); err != nil {
 		return TMHMResult{}, fmt.Errorf("skill: TeachTMHM: open ITEM: %w", err)
 	}

@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
@@ -8,6 +9,13 @@ import (
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/skill"
 )
+
+// objectiveFrameBudget is the emergency guard for one synchronous objective.
+// Most low-level waits are hundreds or thousands of frames and a journey is
+// already bounded to 20 engagements; half a million frames leaves generous
+// room for legitimate long travel/training while ensuring a broken inner loop
+// returns control to Run instead of leaving a farm worker on one round forever.
+const objectiveFrameBudget uint64 = 500_000
 
 // offerWithTMHM extends the ordinary factual objective menu with owned
 // machines that the ROM says a party member can learn and the move-set policy
@@ -59,11 +67,79 @@ func tmhmDecisionNote(machine rom.Machine, decision skill.TMHMDecision) string {
 		name, machine.Move, semantics, decision.PartySlot, decision.BeforeScore, decision.AfterScore, placement)
 }
 
-// executeObjective is Run's dispatch boundary. Ordinary objectives keep the
-// existing Execute path unchanged. Planner-offered TM/HM objectives reuse the
-// existing KindUseItem shape but are intercepted here because their semantics
-// are teach-a-move, not field medicine.
-func executeObjective(m *emu.Emu, romData []byte, o Objective) (retErr error) {
+// prepareObjectiveBoundary restores the invariant every objective relies on:
+// execution starts from a controllable overworld state, never from a menu a
+// previous objective leaked. Ordinary text is safe to page away and a known
+// dismissable menu is safe to back out of with B. The generic two-option
+// decoder can also match a two-entry bag list, so DismissableObjectiveMenu
+// resolves that ambiguity before a genuine unanswered choice is rejected.
+// Battles and genuine choices are intentionally left untouched.
+func prepareObjectiveBoundary(m *emu.Emu) error {
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	if state.Controllable(&mem) && state.DecodeDialogue(&mem) == nil && !state.MenuUp(&mem) {
+		return nil
+	}
+	if state.DecodeBattle(&mem) != nil {
+		return fmt.Errorf("battle still in progress")
+	}
+	if skill.DismissableObjectiveMenu(&mem) {
+		if err := skill.CloseOpenMenuToOverworld(m); err != nil {
+			return fmt.Errorf("close leftover menu: %w", err)
+		}
+		state.Snapshot(m, &mem)
+		if !state.Controllable(&mem) || state.MenuUp(&mem) {
+			return fmt.Errorf("leftover menu closed but player is still not controllable")
+		}
+		return nil
+	}
+	if state.DecodeTwoOptionMenu(&mem) != nil {
+		return fmt.Errorf("unanswered choice remains open")
+	}
+	if state.MenuUp(&mem) {
+		return fmt.Errorf("non-dismissable menu remains open")
+	}
+	if state.DecodeDialogue(&mem) != nil {
+		res := skill.RecoverDialogue(m, roundRecoveryBudget)
+		if res.Stop != skill.DialogueRecovered {
+			return fmt.Errorf("leftover dialogue did not recover: %s", recoveryStopName(res.Stop))
+		}
+		return nil
+	}
+	return fmt.Errorf("player is not controllable and no recoverable menu or dialogue is open")
+}
+
+// executeObjective is Run's synchronous dispatch boundary. Besides selecting
+// the TM/HM specialization, it puts an absolute frame deadline around the
+// whole operation. Run's ordinary MaxFrames check happens between rounds; this
+// inner watchdog is what guarantees a broken skill loop eventually returns to
+// that boundary instead of pinning the worker forever.
+func executeObjective(m *emu.Emu, romData []byte, o Objective) error {
+	deadline := m.FrameCount() + objectiveFrameBudget
+	err := m.WithFrameDeadline(deadline, func() error {
+		return executeObjectiveUnbounded(m, romData, o)
+	})
+	if errors.Is(err, emu.ErrFrameDeadline) {
+		err = fmt.Errorf("agent: %s: objective frame watchdog: %w", o, err)
+		if ferr := captureObjectiveFailure(m, o, err); ferr != nil {
+			fmt.Printf("  ram forensics: %v\n", ferr)
+		}
+	}
+	return err
+}
+
+// executeObjectiveUnbounded contains the ordinary dispatch. It is called only
+// through executeObjective so every planner-selected action shares the same
+// objective boundary recovery and frame watchdog.
+func executeObjectiveUnbounded(m *emu.Emu, romData []byte, o Objective) (retErr error) {
+	if err := prepareObjectiveBoundary(m); err != nil {
+		retErr = fmt.Errorf("agent: %s: objective boundary: %w", o, err)
+		if ferr := captureObjectiveFailure(m, o, retErr); ferr != nil {
+			fmt.Printf("  ram forensics: %v\n", ferr)
+		}
+		return retErr
+	}
+
 	if o.Kind != KindUseItem {
 		return Execute(m, romData, o)
 	}
