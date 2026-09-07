@@ -27,9 +27,11 @@ func (r trainerFlagRef) set(m *emu.Emu) bool { return m.Peek8(r.addr)&r.mask != 
 
 // decodeTrainerFlagRef decodes the active trainer header from ROM. The header
 // pointer is a Game Boy banked address; trainer headers store:
-//   +0 current trainer bit
-//   +1 sight range
-//   +2 little-endian pointer to the event-flag byte
+//
+//	+0 current trainer bit
+//	+1 sight range
+//	+2 little-endian pointer to the event-flag byte
+//
 // See pokered/macros/scripts/maps.asm: trainer.
 func decodeTrainerFlagRef(romData []byte, bank uint8, ptr uint16) (trainerFlagRef, error) {
 	var off int
