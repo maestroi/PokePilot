@@ -1,6 +1,6 @@
 ---
 name: pokefarm-triage
-description: Use when asked to investigate PokeFarm runs, check the latest farm failures, or fix what is making runs fail — pulls the recent runs over the pokepilot MCP, groups them by failure, downloads the failing round's .state, reproduces the failure locally as a Go test before changing anything, then commits and pushes the fix once the tests pass.
+description: Use when asked to investigate PokeFarm runs, check the latest farm failures, or fix what is making runs fail — pulls the actionable failure queue over the pokepilot MCP, downloads the failing round's .state, reproduces the failure locally as a Go test before changing anything, then commits and pushes the fix once the tests pass.
 ---
 
 # PokeFarm run triage
@@ -14,14 +14,29 @@ string alone — reproduce first, then fix, then re-run the same repro.
 ## 1. What is failing
 
 ```
-pokepilot_get_triage()                 # grouped failures; often empty
-pokepilot_list_runs(limit=20)          # the real source: read .reason/.detail
+pokepilot_get_triage()                         # authoritative actionable queue
+pokepilot_get_triage(include_resolved=true)    # history/audit only
+pokepilot_list_runs(limit=20)                  # raw run evidence/context
 ```
 
-`get_triage` returning `{"groups":[]}` means nothing was grouped, not that
-nothing is failing. Group `list_runs` yourself by the `detail` string — the
-same seed is re-queued after a failure, so one bug shows up as N identical
-`detail` lines in a row. Fix the class with the most runs.
+Start from `pokepilot_get_triage()`. PokePilot groups failures by stable
+fingerprint and carries the linked issue's synchronized `status`, `resolution`,
+`occurrence_count`, and `fixed_revision`. Groups whose issue is already
+resolved are `actionable: false` and hidden by default. Do **not** recreate
+work by grouping old `pokepilot_list_runs` detail strings: those rows are
+history and may describe a bug that was fixed days ago.
+
+Use `include_resolved=true` only when the user explicitly wants historical
+failures or when auditing whether a previous fix covered the current symptom.
+A resolved group's issue metadata tells you why it was suppressed. If a later
+occurrence reopens the issue, PokePilot treats active states such as `open`,
+`reopened`, or `investigating` as actionable again even if an old resolution
+value is still present. That is a regression and is valid new work.
+
+`pokepilot_list_runs` preserves the linked issue metadata on finished failures,
+so if you inspect a historical row directly, check `issue.status` /
+`issue.resolution` before treating it as something to fix. The list-runs tool
+is evidence, not the backlog.
 
 `reason` values: `failed` (an objective errored), `budget` (rounds/frames ran
 out — usually a planner loop, look at `stats.repeats` and the `choices`

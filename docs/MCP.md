@@ -36,13 +36,23 @@ Treat that token as a compute-control credential: holders can start and cancel r
 | Tool | Effect |
 |---|---|
 | `pokepilot_start_run` | Queue one finite run. Defaults to `llm`, Squirtle, and `Earn the Boulder Badge.` |
-| `pokepilot_list_runs` | List recent runs, optionally filtered by `queued`, `leased`, `running`, or `done` |
+| `pokepilot_list_runs` | List recent runs, optionally filtered by `queued`, `leased`, `running`, or `done`. Finished failures carry their linked issue status/resolution when known. |
 | `pokepilot_get_run` | Read one run's live/finished state, including planner state, party and LLM stats when available |
 | `pokepilot_cancel_run` | Request cooperative cancellation |
-| `pokepilot_get_triage` | Read grouped failures |
+| `pokepilot_get_triage` | Read the actionable grouped failures. Resolved issue groups are hidden by default; pass `include_resolved: true` to audit history. |
 | `pokepilot_investigate_failure` | Trigger the existing failure-investigation handoff |
 
 MCP intentionally does **not** expose runner leases, heartbeats, finish/checkpoint uploads, worker registration, run deletion, endless runs, arbitrary HTTP, Docker, or Swarm controls.
+
+### Failure resolution and history
+
+`pokewall` already stores the stable failure fingerprint and its linked Agent Orchestrator issue. The issue status, resolution, occurrence count, and fixed revision are synchronized back into that link. MCP now treats those values as the durable resolution signal instead of treating every old failed run as fresh work.
+
+`pokepilot_get_triage` is therefore the work queue: groups whose linked issue is resolved (for example `resolution: fixed`) are annotated `actionable: false` and omitted from the default response. `resolved_hidden` reports how many historical groups were suppressed. `include_resolved: true` returns everything for audits and debugging while preserving the `actionable` annotation and `resolution_state` / `fixed_revision` metadata.
+
+A later occurrence can reopen the linked issue. Active states such as `open`, `reopened`, or `investigating` take precedence over an old resolution value, so the same fingerprint becomes actionable again as a regression rather than silently staying hidden.
+
+`pokepilot_list_runs` remains raw run history. It now preserves each run's linked issue metadata, so an LLM inspecting old runs can see that a matching failure was already fixed. Do not build a new work queue by grouping historical `detail` strings; use `pokepilot_get_triage` for that.
 
 ## Example prompt
 
