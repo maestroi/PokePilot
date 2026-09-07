@@ -61,6 +61,10 @@ type mcpRunInput struct {
 	RunID string `json:"run_id" jsonschema:"PokePilot run id"`
 }
 
+type mcpTriageInput struct {
+	IncludeResolved bool `json:"include_resolved,omitempty" jsonschema:"include historical failure groups whose linked issue is already resolved; defaults to false"`
+}
+
 type mcpInvestigateInput struct {
 	Key string `json:"key" jsonschema:"triage failure key returned by pokepilot_get_triage"`
 }
@@ -92,6 +96,7 @@ type mcpRunView struct {
 	Player     *farm.Player   `json:"player,omitempty"`
 	Reason     string         `json:"reason,omitempty"`
 	Detail     string         `json:"detail,omitempty"`
+	Issue      map[string]any `json:"issue,omitempty"`
 }
 
 type mcpWorkerView struct {
@@ -123,7 +128,7 @@ func newMCPHandler(wallBase, token string) http.Handler {
 	}, control.startRun)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "pokepilot_list_runs",
-		Description: "List recent PokePilot runs, optionally filtered by lifecycle status.",
+		Description: "List recent PokePilot runs, optionally filtered by lifecycle status. Finished failures include their linked issue status/resolution when known; this is historical evidence, not an actionable work queue.",
 	}, control.listRuns)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "pokepilot_get_run",
@@ -143,11 +148,11 @@ func newMCPHandler(wallBase, token string) http.Handler {
 	}, control.cancelRun)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "pokepilot_get_triage",
-		Description: "Get grouped run failures that PokePilot considers useful for investigation.",
+		Description: "Get the authoritative actionable failure groups. Linked issues that are already resolved are hidden by default so historical fixes are not investigated again; pass include_resolved=true only when auditing history.",
 	}, control.getTriage)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "pokepilot_investigate_failure",
-		Description: "Trigger the existing PokePilot investigation handoff for one triage failure key.",
+		Description: "Trigger the existing PokePilot investigation handoff for one actionable triage failure key.",
 	}, control.investigateFailure)
 
 	streamable := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
@@ -337,12 +342,69 @@ func (c *mcpControl) cancelRun(ctx context.Context, _ *mcp.CallToolRequest, in m
 	return nil, out, nil
 }
 
-func (c *mcpControl) getTriage(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, map[string]any, error) {
+// triageGroupActionable annotates a wall triage group and reports whether it
+// should be offered as new work. Agent Orchestrator is the durable resolution
+// source already synced into IssueLink by pokewall. Active/reopened statuses
+// deliberately win over an old resolution value so a regression becomes
+// actionable again as soon as the issue is reopened.
+func triageGroupActionable(group map[string]any) bool {
+	issue, _ := group["issue"].(map[string]any)
+	if issue == nil {
+		group["actionable"] = true
+		return true
+	}
+	status, _ := issue["status"].(string)
+	resolution, _ := issue["resolution"].(string)
+	status = strings.ToLower(strings.TrimSpace(status))
+	resolution = strings.ToLower(strings.TrimSpace(resolution))
+
+	switch status {
+	case "open", "reopened", "investigating", "in_progress", "in-progress", "todo", "backlog":
+		group["actionable"] = true
+		return true
+	}
+
+	resolved := resolution != ""
+	if !resolved {
+		switch status {
+		case "resolved", "closed", "fixed", "done", "completed":
+			resolved = true
+		}
+	}
+	group["actionable"] = !resolved
+	if resolved {
+		state := resolution
+		if state == "" {
+			state = status
+		}
+		group["resolution_state"] = state
+		if rev, _ := issue["fixed_revision"].(string); strings.TrimSpace(rev) != "" {
+			group["fixed_revision"] = rev
+		}
+	}
+	return !resolved
+}
+
+func (c *mcpControl) getTriage(ctx context.Context, _ *mcp.CallToolRequest, in mcpTriageInput) (*mcp.CallToolResult, map[string]any, error) {
 	var groups []map[string]any
 	if err := c.requestJSON(ctx, http.MethodGet, "/v1/triage", nil, &groups); err != nil {
 		return nil, nil, err
 	}
-	return nil, map[string]any{"groups": groups}, nil
+	actionable := make([]map[string]any, 0, len(groups))
+	resolvedHidden := 0
+	for _, group := range groups {
+		isActionable := triageGroupActionable(group)
+		if isActionable || in.IncludeResolved {
+			actionable = append(actionable, group)
+		} else {
+			resolvedHidden++
+		}
+	}
+	return nil, map[string]any{
+		"groups":            actionable,
+		"resolved_hidden":   resolvedHidden,
+		"include_resolved": in.IncludeResolved,
+	}, nil
 }
 
 func (c *mcpControl) investigateFailure(ctx context.Context, _ *mcp.CallToolRequest, in mcpInvestigateInput) (*mcp.CallToolResult, map[string]any, error) {
