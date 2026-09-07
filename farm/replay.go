@@ -13,10 +13,10 @@ import (
 // worker-loss resume, this provenance belongs to a new run and survives code
 // changes between the source failure and the verification run.
 type ReplaySource struct {
-	SourceRunID  string `json:"source_run_id"`
+	SourceRunID   string `json:"source_run_id"`
 	SourceAttempt int    `json:"source_attempt"`
-	Checkpoint   string `json:"checkpoint"`
-	CreatedAt    int64  `json:"created_at,omitempty"`
+	Checkpoint    string `json:"checkpoint"`
+	CreatedAt     int64  `json:"created_at,omitempty"`
 }
 
 // ReplayRequest asks the wall to queue a fresh run using one checkpoint from
