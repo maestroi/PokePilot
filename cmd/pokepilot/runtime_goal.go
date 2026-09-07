@@ -11,16 +11,19 @@ func (s *statsPlanner) RunGoal() string {
 	return s.inner.Goal
 }
 
-// ObserveRunGoal mirrors Run's authoritative status into the existing live
-// statistics. The planner-side progress note is still prepared in Next; when
-// Run detects completion before another model call, publishSnapshot makes the
-// final complete=true state visible without fabricating a call.
+// ObserveRunGoal mirrors Run's authoritative status into planner context and
+// live statistics. Completion publishes exactly once on the incomplete ->
+// complete transition; the runtime may evaluate the final settled state more
+// than once for diagnostics, but that must not fabricate duplicate UI events.
 func (s *statsPlanner) ObserveRunGoal(obs agent.Observation, status agent.GoalStatus, deterministic bool) {
 	if s == nil {
 		return
 	}
+	wasComplete := s.stats.GoalComplete
+	s.runGoalStatus = status
+	s.runGoalDeterministic = deterministic
 	s.setGoalStats(status, deterministic)
-	if deterministic && status.Complete {
+	if deterministic && status.Complete && !wasComplete {
 		s.publishSnapshot(obs)
 	}
 }
