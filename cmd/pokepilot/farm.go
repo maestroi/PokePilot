@@ -629,6 +629,13 @@ func planQuestion(offered []agent.Objective) string {
 		if i > 0 {
 			b.WriteByte('\n')
 		}
+		// Note carries the run history the planner sees on the line it is
+		// choosing ("(done 6x)", "(failed 3x)"); dropping it here made the
+		// dashboard menu look like a fresh choice every round.
+		if o.Note != "" {
+			fmt.Fprintf(&b, "%d: %s  %s", i+1, o, o.Note)
+			continue
+		}
 		fmt.Fprintf(&b, "%d: %s", i+1, o)
 	}
 	return b.String()

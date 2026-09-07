@@ -166,6 +166,51 @@ type Requirement struct {
 // stood on is a place the player knows, whatever its name.
 func (k *Knowledge) SawMap(id uint8) { k.Visited[id] = true }
 
+// journeyPlaceLimit bounds how many places the travel menu may hold. The menu
+// is read top-down by a model whose latency scales with prompt length, and
+// every place the run has ever heard of is not a set of plans: from Pewter,
+// walking back to Pallet Town is noise, and by the Elite Four the unbounded
+// list is a hundred lines. Eight places is sixteen travel lines — the local
+// frontier plus the way back through it — beside the verbs.
+const journeyPlaceLimit = 8
+
+// mapHops is a breadth-first sweep of the route geometry from `from`,
+// returning map id -> transitions away. It is the same "fewest map
+// transitions" measure world.FindRoute plans by, over the adjacency Run
+// already built from the ROM; it answers "how far is this" and nothing else.
+func mapHops(adjacency map[uint8][]uint8, from uint8) map[uint8]int {
+	hops := map[uint8]int{from: 0}
+	frontier := []uint8{from}
+	for len(frontier) > 0 {
+		cur := frontier[0]
+		frontier = frontier[1:]
+		for _, n := range adjacency[cur] {
+			if _, seen := hops[n]; seen {
+				continue
+			}
+			hops[n] = hops[cur] + 1
+			frontier = append(frontier, n)
+		}
+	}
+	return hops
+}
+
+// placeHops is the hop distance to a named place. A place the sweep never
+// reached sorts behind every reachable one rather than being dropped: the
+// geometry may simply be missing an interior's door, and "no measured
+// distance" is not "not there".
+func placeHops(hops map[uint8]int, name string) int {
+	d, ok := skill.Place(name)
+	if !ok {
+		return 1 << 30
+	}
+	h, ok := hops[d.Map]
+	if !ok {
+		return 1 << 30
+	}
+	return h
+}
+
 // SawDialogue scans decoded dialogue lines for place names and for the raw
 // sentences that state a requirement or a blocked way, and keeps whatever it
 // finds. The place table is used as a VOCABULARY for the name match — which
@@ -399,14 +444,24 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 	}
 
 	// Places the player could plausibly know exist: maps already visited,
-	// the maps the current map's exits lead to (one step out — the doors of
-	// where you stand are what a player standing there can see; deeper
-	// reachability is our map, not the player's), and places the game has
-	// named in dialogue. The place table supplies the coordinates a known
-	// name stands for; it does not put any name on this list by itself.
+	// the maps whose doors the player has SEEN — one step out of any map
+	// stood on, not just the current one — and places the game has named in
+	// dialogue. The place table supplies the coordinates a known name stands
+	// for; it does not put any name on this list by itself.
+	//
+	// Keying the one-step-out set to the current map alone made that
+	// knowledge evaporate the moment the player walked on. MEASURED 2026-09-07
+	// on run-3t5kvlk55zvbjkkkno3ses4g6: Cerulean is a door off Route 4, so it
+	// was on the menu only while standing on Route 4; the run stepped into Mt.
+	// Moon, Cerulean vanished from the menu entirely, and with nothing forward
+	// left to pick it oscillated 1F <-> B1F <-> B2F. A player who has stood at
+	// Route 4's cave mouth does not forget Cerulean is east of it.
 	knownMaps := map[uint8]bool{obs.Map: true}
 	for m := range known.Visited {
 		knownMaps[m] = true
+		for _, n := range known.Adjacency[m] {
+			knownMaps[n] = true
+		}
 	}
 	adjacentMaps := map[uint8]bool{}
 	for _, n := range known.Adjacency[obs.Map] {
@@ -429,17 +484,24 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 	// not an executable journey and stays off the menu until its condition is
 	// visible in the observation.
 	//
-	// Every known place is offered from wherever the player stands, not only
-	// the maps one hop away: Travel routes across maps, so a destination two
-	// or six maps off is one executable choice. MEASURED 2026-09-07 on
-	// run-3svhxujac7fdutvoqd7eebtmq (679 rounds, 614 repeats, ended stuck) and
-	// run-1veq2t3ehtjfc2zuzg1emwjenm: with only one-hop destinations on the
-	// menu, reaching Cerulean took a chain of correct hops the planner never
-	// held together, so the run oscillated Viridian <-> Route 2 <-> Route 22
-	// for hundreds of rounds while Route 3 — visited, one map past Pewter —
-	// was never on the menu to pick. A remembered room the run has outgrown
-	// costs one line; an unreachable next step costs the run.
-	journeys := make([]Objective, 0, 8)
+	// A destination two or six maps off is one executable choice — Travel
+	// routes across maps — so the menu is not limited to one hop. MEASURED
+	// 2026-09-07 on run-3svhxujac7fdutvoqd7eebtmq (679 rounds, 614 repeats,
+	// ended stuck): with only one-hop destinations, reaching Cerulean took a
+	// chain of correct hops the planner never held together, and the run
+	// oscillated Viridian <-> Route 2 <-> Route 22 for hundreds of rounds while
+	// Route 3 — visited, one map past Pewter — was never on the menu to pick.
+	//
+	// But "every place the run has ever heard of" is the other cliff: standing
+	// in Pewter, walking back to Pallet Town is not a plan, and by the Elite
+	// Four that menu is a hundred lines the model reads top-down. So the
+	// journey menu is the NEAREST journeyPlaceLimit places by map-graph
+	// distance from where the player stands — the frontier and the way back
+	// through it, never the whole map. Distance is hops over the same route
+	// geometry Travel walks, so what is on the menu is what is close.
+	journeys := make([]Objective, 0, 2*journeyPlaceLimit)
+	hops := mapHops(known.Adjacency, obs.Map)
+	placeNames := make([]string, 0, 16)
 	for _, name := range skill.PlaceNames() { // sorted: a stable menu order
 		d, _ := skill.Place(name)
 		if !knownMaps[d.Map] {
@@ -451,6 +513,35 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 		if d.Map == obs.Map && d.X == obs.X && d.Y == obs.Y {
 			continue // already standing on it; "go" would be a no-op
 		}
+		placeNames = append(placeNames, name)
+	}
+	// Only narrow when there is geometry to narrow BY. A hand-built or empty
+	// Adjacency (the unit tests, and any run whose graph failed to build) has
+	// no distances, and guessing which places are near from nothing would drop
+	// the one that mattered.
+	if len(known.Adjacency) > 0 && len(placeNames) > journeyPlaceLimit {
+		// Places the run has never stood on come FIRST, whatever the
+		// distance, then everything else by distance. Ranking on distance
+		// alone loses the run: it ranks the familiar above the new, so eight
+		// doors of the town you are standing in crop the one unvisited place
+		// that is the way forward, and the planner is left navigating by
+		// floor because nothing on the menu names where it is trying to go.
+		// The frontier is small — it is the edge of what has been walked —
+		// so it costs a few lines and it is the only part of this menu that
+		// can make new progress.
+		sort.SliceStable(placeNames, func(i, j int) bool {
+			mi, _ := skill.Place(placeNames[i])
+			mj, _ := skill.Place(placeNames[j])
+			if vi, vj := known.Visited[mi.Map], known.Visited[mj.Map]; vi != vj {
+				return !vi
+			}
+			return placeHops(hops, placeNames[i]) < placeHops(hops, placeNames[j])
+		})
+		placeNames = placeNames[:journeyPlaceLimit]
+		sort.Strings(placeNames) // back to menu order; nearness picked, not ranked
+	}
+	for _, name := range placeNames {
+		d, _ := skill.Place(name)
 		// Both variants, side by side: the plain leg fights wild battles,
 		// the fleeing one runs them. The choice is made HERE, as an index,
 		// not in the reply — the model cannot reliably attach a conditional
