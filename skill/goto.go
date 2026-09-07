@@ -82,15 +82,21 @@ func formatNavigationTrace(trace []navigationState) string {
 	return strings.Join(parts, " -> ")
 }
 
-// blockImmediateReverse excludes every first-hop edge that would return to
-// the map just left. It mutates only the caller's per-route block set; no
-// reversal is learned as persistent geometry.
-func blockImmediateReverse(g *world.Graph, blocked map[world.Edge]bool, current, previous uint8) {
+// blockImmediateReverse returns hard plus every first-hop edge that would
+// return to the map just left. hard is not mutated: the reverse ban is a
+// PREFERENCE (don't bounce), while hard is measured geometry (this leg is
+// unwalkable from this tile), and the caller drops one without the other.
+func blockImmediateReverse(g *world.Graph, hard map[world.Edge]bool, current, previous uint8) map[world.Edge]bool {
+	blocked := make(map[world.Edge]bool, len(hard))
+	for e := range hard {
+		blocked[e] = true
+	}
 	for _, e := range g.Edges[current] {
 		if e.To == previous {
 			blocked[e] = true
 		}
 	}
+	return blocked
 }
 
 func newReplanExhaustedError(max int, cur, x, y uint8, dest Destination, last error) error {
@@ -164,13 +170,28 @@ func GoTo(m *emu.Emu, romData []byte, dest Destination) error {
 				blockedHere[k.e] = true
 			}
 		}
+		preferred := blockedHere
 		if havePreviousMap && dest.Map != previousMap {
-			blockImmediateReverse(routeGraph, blockedHere, cur, previousMap)
+			preferred = blockImmediateReverse(routeGraph, blockedHere, cur, previousMap)
 		}
 
 		route, err := world.FindRouteAtDestination(
-			routeGraph, cur, dest.Map, int(x), int(y), int(dest.X), int(dest.Y), blockedHere,
+			routeGraph, cur, dest.Map, int(x), int(y), int(dest.X), int(dest.Y), preferred,
 		)
+		// A dead-end map's only exit IS the reverse. Route 4's Pokemon
+		// Center (map 0x44) has two warps and both land back on Route 4,
+		// so banning the reverse bans every edge and the journey dies on
+		// "world: no route" one step after the router deliberately routed
+		// THROUGH the building to change walkable component (measured on
+		// run-3uhjsoyo0gx3i12rdm7cjax5pl round 46). Going back out of a
+		// one-way room is not a bounce, it is the only move, so retry
+		// with the preference dropped and the measured bans kept. The
+		// navigation guard still catches a real oscillation.
+		if errors.Is(err, world.ErrNoRoute) && len(preferred) > len(blockedHere) {
+			route, err = world.FindRouteAtDestination(
+				routeGraph, cur, dest.Map, int(x), int(y), int(dest.X), int(dest.Y), blockedHere,
+			)
+		}
 		if err != nil {
 			return fmt.Errorf("skill: GoTo: no route from map %02x at (%d,%d) to map %02x at (%d,%d): %w",
 				cur, x, y, dest.Map, dest.X, dest.Y, err)

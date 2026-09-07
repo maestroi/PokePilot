@@ -639,6 +639,9 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 	res.ProgressEarly = &early
 	majorProgress := majorProgressMarkOf(last, known)
 	lastMajorProgressRound := 0
+	// lastUnroutable is the last set logUnroutable printed, so a run standing
+	// still logs the dead end once instead of every round.
+	lastUnroutable := ""
 	stuck := 0
 	consecFailures := 0 // consecutive failed objectives; a success resets it
 	lastFailObj, lastFailErr := "", ""
@@ -680,6 +683,14 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 		for _, id := range tape.seenMaps() {
 			known.SawMap(id)
 		}
+		// Places the router cannot reach from here are withheld from the menu
+		// (Offer), which is right for the run and wrong for us: a menu that
+		// silently shrinks is how the Mt. Moon dead end stayed invisible for a
+		// whole run. Log the withholding, so "we could not go there" is a
+		// record someone can act on rather than an absence nobody sees. Logged
+		// only when the set CHANGES, so standing still does not spam the log,
+		// and never for the empty set.
+		logUnroutable(budget.Log, round, last, &lastUnroutable)
 
 		// The short stuck detector below catches objectives that literally
 		// changed nothing. This longer detector catches moving loops. It runs
@@ -1145,4 +1156,27 @@ func logRound(w io.Writer, round int, o Objective, outcome string, after Observa
 		return
 	}
 	fmt.Fprintf(w, "round %d: %s -> %s, map %02x at (%d,%d)\n", round, o, outcome, after.Map, after.X, after.Y)
+}
+
+// logUnroutable records the places Offer is about to withhold because the
+// router cannot plan a journey to them from this tile. prev carries the last
+// line's set so a run standing in one spot logs once, not every round.
+//
+// This is the whole point of the field: withholding an unreachable place is
+// what keeps the run moving, and logging it is what keeps the dead end
+// findable. One without the other is either a wasted round every time or a
+// bug nobody can see. The line names the map and tile because that is what
+// makes it reproducible — "unroutable from Mt. Moon 1F" is a shrug,
+// "unroutable from map 3b at (5,5)" is a probe.
+func logUnroutable(w io.Writer, round int, obs Observation, prev *string) {
+	if w == nil || len(obs.Unroutable) == 0 {
+		return
+	}
+	line := strings.Join(obs.Unroutable, ", ")
+	if line == *prev {
+		return
+	}
+	*prev = line
+	fmt.Fprintf(w, "round %d: unroutable from map %02x at (%d,%d): %s\n",
+		round, obs.Map, obs.X, obs.Y, line)
 }

@@ -501,6 +501,10 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 	// geometry Travel walks, so what is on the menu is what is close.
 	journeys := make([]Objective, 0, 2*journeyPlaceLimit)
 	hops := mapHops(known.Adjacency, obs.Map)
+	unroutable := map[string]bool{}
+	for _, name := range obs.Unroutable {
+		unroutable[name] = true
+	}
 	placeNames := make([]string, 0, 16)
 	for _, name := range skill.PlaceNames() { // sorted: a stable menu order
 		d, _ := skill.Place(name)
@@ -514,6 +518,32 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 			continue // already standing on it; "go" would be a no-op
 		}
 		placeNames = append(placeNames, name)
+	}
+	// The router refuses these journeys from this tile: the maps may touch,
+	// but the component the player stands in reaches no exit that leads there,
+	// so picking one cannot walk a single step. MEASURED 2026-09-07: "go to
+	// viridian city" from Mt. Moon 1F's (5,5) landing was the run's most-picked
+	// objective and failed on `world: no route` every time. Withheld here, and
+	// logged by Run — silence would only hide the dead end again. A nil
+	// Unroutable means the question was never asked, which is not evidence.
+	//
+	// Withholding must never EMPTY the menu. The answer comes from the live
+	// map overlay, and a wrong overlay is wrong about every destination on
+	// that map at once, so filtering on it unguarded turns one bad grid read
+	// into a run that stops with "nothing is possible from here". A wasted
+	// round is recoverable; an emptied menu is not. When the filter would
+	// leave no journey at all, keep them all and let the run discover the
+	// truth by walking — the log still records what the router claimed.
+	if len(unroutable) > 0 {
+		routable := make([]string, 0, len(placeNames))
+		for _, name := range placeNames {
+			if !unroutable[name] {
+				routable = append(routable, name)
+			}
+		}
+		if len(routable) > 0 {
+			placeNames = routable
+		}
 	}
 	// Only narrow when there is geometry to narrow BY. A hand-built or empty
 	// Adjacency (the unit tests, and any run whose graph failed to build) has

@@ -2,6 +2,7 @@ package agent
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/rom"
@@ -156,6 +157,23 @@ type Observation struct {
 	// how many times, so a run can see it is repeating itself. Newest
 	// first. Empty until the game says one.
 	Requirements []Requirement
+
+	// Unroutable are the place names the router refuses to plan a journey to
+	// from this exact tile, right now (skill.RoutePlanner). It is geometry,
+	// not strategy: the maps may well touch, but the walkable component the
+	// player stands in reaches no exit that leads there — a Mt. Moon ladder
+	// landing that can only be left by the ladder is the measured case.
+	//
+	// It is json:"-" ON PURPOSE. The planner must not read this; it is not a
+	// fact about the world worth spending prompt tokens on, and it would
+	// invite the model to reason about our router. Offer withholds these
+	// journeys from the menu instead, and Run logs them, so the signal reaches
+	// a human without reaching the prompt.
+	//
+	// nil means the routability question was never asked (no ROM, a graph
+	// that failed to build). That is not evidence a place is unreachable, so
+	// every consumer of this field must fail OPEN on nil.
+	Unroutable []string `json:"-"`
 }
 
 // MapObject is one object of the current map in the form a planner may see
@@ -359,6 +377,7 @@ func Observe(m *emu.Emu, romData []byte) Observation {
 	if grass, err := skill.HasGrass(romData, obs.Map); err == nil {
 		obs.HasGrass = grass
 	}
+	obs.Unroutable = unroutablePlaces(m, romData)
 	obs.WildGrass = []WildSpecies{}
 	if wild, err := skill.WildGrass(romData, obs.Map); err == nil {
 		for _, w := range wild {
@@ -415,6 +434,35 @@ func Observe(m *emu.Emu, romData []byte) Observation {
 		obs.MapObjects = append(obs.MapObjects, object)
 	}
 	return obs
+}
+
+// unroutablePlaces names the places the router cannot plan a journey to from
+// where the player stands right now, sorted for a stable log line. One graph
+// build answers for every place.
+//
+// It fails OPEN, like reachableOnFoot: a planner that cannot be built returns
+// nil — "never asked" — rather than an empty slice, because "nothing is
+// unroutable" and "we did not check" must not look the same to Offer.
+func unroutablePlaces(m *emu.Emu, romData []byte) []string {
+	planner, err := skill.NewRoutePlanner(m, romData)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, name := range skill.PlaceNames() {
+		d, ok := skill.Place(name)
+		if !ok || planner.CanReach(d) {
+			continue
+		}
+		out = append(out, name)
+	}
+	if out == nil {
+		// Everything is routable: an empty, NON-nil slice, so the caller can
+		// tell this apart from "never asked".
+		return []string{}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // reachableOnFoot reports whether a player at (px,py) can walk to a tile
