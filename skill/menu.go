@@ -17,6 +17,12 @@ var ErrMenuStuck = errors.New("skill: menu cursor did not reach the target")
 // joypad poll and cursor redraw.
 const menuSettleFrames = 30
 
+// twoOptionConsumedFrames bounds the wait for an answered YES/NO prompt to
+// leave the screen. The answer opens the script's next text box, which is
+// drawn well inside this window; a prompt still up at the end of it is not
+// slowness, it is an answer the game never took.
+const twoOptionConsumedFrames = 120
+
 // SelectMenuItem moves the cursor to index and presses A. It returns an
 // error if index is out of range for the open menu, or if the cursor stops
 // responding before reaching it.
@@ -111,5 +117,20 @@ func selectTwoOption(m *emu.Emu, index int) error {
 	}
 
 	m.Tap(emu.A, 3, 7)
+	// The prompt is not gone the frame A is sent: the game tears the menu
+	// down over the following frames, and DecodeTwoOptionMenu keeps seeing
+	// the cursor tile until it does. Returning inside that window made the
+	// caller's next RecoverDialogue stop on the stale menu with zero presses
+	// and report the answered choice as still unanswered — which wedged
+	// Travel on the Museum ticket gate (six farm runs on 2026-09-07, all
+	// "text box is a choice and is unanswered: ... Would you like to come
+	// in?"). The answer landing is the positive fact, so wait for it.
+	if _, err := m.StepUntil(twoOptionConsumedFrames, func(m *emu.Emu) bool {
+		var mem state.Mem
+		state.Snapshot(m, &mem)
+		return state.DecodeTwoOptionMenu(&mem) == nil
+	}); err != nil {
+		return fmt.Errorf("skill: selectTwoOption: prompt still open %d frames after answering %d: %w", twoOptionConsumedFrames, index, err)
+	}
 	return nil
 }
