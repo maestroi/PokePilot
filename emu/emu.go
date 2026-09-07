@@ -28,6 +28,12 @@ type Emu struct {
 	// headless mode; agent.Run AlsoSamples onto it rather than replacing.
 	onFrame func(*Emu)
 
+	// frameDeadline is an absolute frame count temporarily installed by
+	// WithFrameDeadline. Zero disables it. StepFrames takes the single-frame
+	// path while it is active so a long batched settle cannot jump past the
+	// caller's run budget without returning control.
+	frameDeadline uint64
+
 	// Set by Pace. Zero means run flat out; see emu/watch.go.
 	frameDur  time.Duration
 	nextFrame time.Time
@@ -63,17 +69,19 @@ func (m *Emu) StepFrame() {
 	}
 	m.capture()
 	m.throttle(1)
+	// Check only after the frame, hooks and capture all completed. The
+	// private deadline panic therefore never exposes a half-sampled frame to
+	// heartbeat/watch consumers; it merely unwinds the synchronous caller.
+	m.checkFrameDeadline()
 }
 
-// StepFrames advances the emulator by n frames. With a per-frame hook
-// installed it steps one frame at a time so the hook sees every frame —
-// skill.Talk pages whole conversations through here, and a batched call
-// would be invisible to it. The condition must match StepFrame's own two
-// hook conditions exactly: if they drift, some frames sample and some do
-// not. With no hook it takes the fast batch path, which exists because
-// stepping one frame at a time through a long settle is measurably slower.
+// StepFrames advances the emulator by n frames. With a per-frame hook OR an
+// active frame deadline it steps one frame at a time so every frame is visible
+// and a synchronous caller can be interrupted exactly at its budget. With no
+// hook/deadline it takes the fast batch path, which exists because stepping one
+// frame at a time through a long settle is measurably slower.
 func (m *Emu) StepFrames(n int) {
-	if m.onFrame != nil || (m.trace == nil && m.onSample != nil) {
+	if m.frameDeadline != 0 || m.onFrame != nil || (m.trace == nil && m.onSample != nil) {
 		for i := 0; i < n; i++ {
 			m.StepFrame()
 		}
