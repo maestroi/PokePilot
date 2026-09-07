@@ -1,5 +1,5 @@
 ---
-description: Investigate PokeFarm runs and fix what makes them fail — pull the latest runs over the pokepilot MCP, group them by failure, replay the failing round's .state locally, fix at the shared point, commit and push once the tests pass.
+description: Investigate PokeFarm runs and fix what makes them fail — pull the actionable failure queue over the pokepilot MCP, replay the failing round's .state locally, fix at the shared point, commit and push once the tests pass.
 globs:
 alwaysApply: false
 ---
@@ -10,8 +10,10 @@ of it.
 
 The short version, so you know what you are opting into:
 
-1. `pokepilot_list_runs` and group by the `detail` string yourself —
-   `pokepilot_get_triage` usually returns empty groups.
+1. Start with `pokepilot_get_triage()`. It is the actionable queue and hides
+   linked issues already marked resolved/fixed. Use `include_resolved=true`
+   only to audit history. `pokepilot_list_runs` is raw evidence, not a backlog;
+   never recreate work just by grouping old `detail` strings.
 2. `pokepilot_get_run_debug(run_id)` for `trace_tail`, `progress_final`, and the
    artifact list.
 3. `curl` the failing round's `.state` artifact from the pokewall endpoint.
