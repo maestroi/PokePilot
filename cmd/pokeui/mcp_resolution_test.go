@@ -10,11 +10,11 @@ import (
 
 func TestTriageGroupActionable(t *testing.T) {
 	tests := []struct {
-		name       string
-		issue      map[string]any
-		want       bool
-		wantState  string
-		wantFixed  string
+		name      string
+		issue     map[string]any
+		want      bool
+		wantState string
+		wantFixed string
 	}{
 		{name: "unlinked", want: true},
 		{name: "open", issue: map[string]any{"status": "open"}, want: true},
