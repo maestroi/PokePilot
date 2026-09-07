@@ -319,6 +319,12 @@ func routeGateChoiceText(text string) bool {
 // refuses to let you flee — is fought with policy; a blackout from that
 // fallback comes back as ErrBlackedOut for the caller to decide on.
 func talkBeside(m *emu.Emu, romData []byte, tx, ty uint8, policy MovePolicy) error {
+	// The Museum ticket box can already be up when TalkAt starts (the
+	// player is standing on the gate). Pathing beside a counter NPC then
+	// fails with "no path" because the wall is still closed. Pay first.
+	if _, err := AnswerKnownRouteGate(m); err != nil {
+		return fmt.Errorf("skill: TalkAt: %w", err)
+	}
 	dest, ok, err := besideDestination(m, romData, tx, ty)
 	if err != nil {
 		return fmt.Errorf("skill: TalkAt: %w", err)
