@@ -67,3 +67,46 @@ func TestJourneyProgressionBlockedRoute2UntilPokedex(t *testing.T) {
 		t.Fatal("Route 2 should open once the Pokedex is in hand")
 	}
 }
+
+func TestJourneyProgressionBlockedUsesSemanticLateGameFacts(t *testing.T) {
+	tests := []struct {
+		name   string
+		mapID  uint8
+		unlock func(*Observation)
+	}{
+		{
+			name:  "Saffron",
+			mapID: saffronCityMap,
+			unlock: func(obs *Observation) {
+				obs.Story.SaffronGateOpen = true
+			},
+		},
+		{
+			name:  "Cinnabar Gym",
+			mapID: cinnabarGymMap,
+			unlock: func(obs *Observation) {
+				obs.Story.SecretKeyOwned = true
+			},
+		},
+		{
+			name:  "Viridian Gym",
+			mapID: viridianGymMap,
+			unlock: func(obs *Observation) {
+				obs.Story.ViridianGymOpen = true
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			obs := Observation{}
+			if !journeyProgressionBlocked(obs, tc.mapID) {
+				t.Fatalf("map %#02x should be blocked before semantic prerequisite", tc.mapID)
+			}
+			tc.unlock(&obs)
+			if journeyProgressionBlocked(obs, tc.mapID) {
+				t.Fatalf("map %#02x should open after semantic prerequisite", tc.mapID)
+			}
+		})
+	}
+}

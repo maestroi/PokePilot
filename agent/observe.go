@@ -41,6 +41,10 @@ type Observation struct {
 	// it picks the fight, and see a Center as the checkpoint it is.
 	RespawnPlace string
 	Events       []string // names of the story events currently set
+	// Story is the compact semantic progression snapshot derived from Red's
+	// live RAM and inventory. Raw event/status encodings stay behind red/state
+	// so planner and operator output can reason in game concepts instead.
+	Story state.StoryFacts
 	// BlackedOut says a blackout just happened: the party was wiped out
 	// (a lost battle, or poison fainted the last mon out of it) and the
 	// game is mid-respawn. The respawn fully heals the party, HALVES the
@@ -295,6 +299,7 @@ func Observe(m *emu.Emu, romData []byte) Observation {
 		Party:             make([]PartyMon, len(gs.Party.Mons)),
 		Badges:            []string{},
 		Events:            []string{},
+		Story:             state.DecodeStoryFacts(&mem, gs.Inventory),
 		LeadMoves:         []Move{},
 		LeadPP:            []uint8{},
 		Bag:               []Item{},
