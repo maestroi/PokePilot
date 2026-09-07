@@ -14,13 +14,29 @@ import (
 
 const farmResumeMarker = ".farm-resume"
 
-// prepareFarmAttempt restores either a durable checkpoint from the immediately
-// previous lost worker or the ordinary boot state. Resume lookup is deliberately
-// best-effort: a missing/corrupt/unreachable checkpoint falls back to the exact
-// fresh-attempt path that farm mode used before recovery support.
+// prepareFarmAttempt restores either an explicitly queued repro checkpoint, a
+// durable checkpoint from the immediately previous lost worker, or the ordinary
+// boot state. Worker-loss resume remains best-effort. Explicit repro is strict:
+// silently falling back to boot would produce a green-looking verification run
+// that never exercised the failure checkpoint it was created to test.
 func prepareFarmAttempt(m *emu.Emu, client *farm.Client, spec farm.Spec, planner string, bootState []byte, checkpointDir string) (dir string, burn int, err error) {
 	dir = checkpointDir
-	if dir == "" && planner == "llm" {
+	explicitRepro := spec.Attempt == 1 && strings.HasPrefix(spec.RunID, "replay-")
+	var repro *farm.ResumeCheckpoint
+	if explicitRepro {
+		ctx, cancel := context.WithTimeout(context.Background(), farmHTTPTimeout)
+		cp, lookupErr := client.ReplayCheckpoint(ctx, spec.RunID)
+		cancel()
+		if lookupErr != nil {
+			return dir, 0, fmt.Errorf("replay checkpoint lookup: %w", lookupErr)
+		}
+		if cp == nil {
+			return dir, 0, fmt.Errorf("replay run %s has no pinned replay checkpoint", spec.RunID)
+		}
+		repro = cp
+	}
+
+	if dir == "" && (planner == "llm" || repro != nil) {
 		dir, err = os.MkdirTemp("", "pokefarm-checkpoints-")
 		if err != nil {
 			return "", 0, fmt.Errorf("checkpoint dir: %w", err)
@@ -31,6 +47,22 @@ func prepareFarmAttempt(m *emu.Emu, client *farm.Client, spec farm.Spec, planner
 			return dir, 0, fmt.Errorf("checkpoint dir: %w", err)
 		}
 		_ = os.Remove(filepath.Join(dir, farmResumeMarker))
+	}
+
+	if repro != nil {
+		if planner != "llm" {
+			return dir, 0, fmt.Errorf("replay checkpoint requires llm planner; got %q", planner)
+		}
+		if err := materializeFarmResume(dir, *repro); err != nil {
+			return dir, 0, fmt.Errorf("materialize replay checkpoint: %w", err)
+		}
+		if err := m.LoadState(repro.State.Data); err != nil {
+			_ = os.Remove(filepath.Join(dir, farmResumeMarker))
+			return dir, 0, fmt.Errorf("load replay checkpoint %s: %w", repro.State.Name, err)
+		}
+		log.Printf("farm: %s: replaying source attempt %d checkpoint %s", spec.RunID, repro.Attempt, repro.State.Name)
+		m.TraceNote("replay", fmt.Sprintf("source attempt %d checkpoint %s", repro.Attempt, repro.State.Name))
+		return dir, 0, nil
 	}
 
 	// LLM objective checkpoints are a paired emulator state + knowledge

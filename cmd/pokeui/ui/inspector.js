@@ -23,6 +23,11 @@
           <button id="pp-inspector-replay" type="button" class="pager-btn">Replay recording</button>
           <span id="pp-inspector-replay-status" class="inspect-status"></span>
         </div>
+        <div class="inspect-actions">
+          <label>Checkpoint <select id="pp-inspector-checkpoint"><option value="">Loading…</option></select></label>
+          <button id="pp-inspector-repro" type="button" class="pager-btn" disabled>Run from checkpoint</button>
+          <span id="pp-inspector-repro-status" class="inspect-status"></span>
+        </div>
         <video id="pp-inspector-video" controls preload="metadata" hidden></video>
         <p id="pp-inspector-art-empty" class="inspect-status">No artifacts recorded for this run.</p>
         <details class="plan-raw"><summary>Debug bundle</summary><pre id="pp-inspector-debug"></pre></details>
@@ -50,6 +55,9 @@
   const artifactTable = $("#pp-inspector-art-table");
   const replayButton = $("#pp-inspector-replay");
   const replayStatus = $("#pp-inspector-replay-status");
+  const checkpointSelect = $("#pp-inspector-checkpoint");
+  const reproButton = $("#pp-inspector-repro");
+  const reproStatus = $("#pp-inspector-repro-status");
   const video = $("#pp-inspector-video");
   let selectedRun = "";
   let selectedDebug = null;
@@ -153,6 +161,50 @@
       artifactBody.append(row);
     }
   }
+  function renderCheckpoints(list) {
+    checkpointSelect.replaceChildren();
+    const checkpoints = Array.isArray(list && list.checkpoints) ? list.checkpoints.filter((cp) => cp.replayable) : [];
+    if (!checkpoints.length) {
+      const option = document.createElement("option");
+      option.value = "";
+      option.textContent = "No replay-safe checkpoints";
+      checkpointSelect.append(option);
+      checkpointSelect.disabled = true;
+      reproButton.disabled = true;
+      reproStatus.textContent = "LLM repro needs an objective checkpoint with paired agent knowledge.";
+      return;
+    }
+    for (const cp of checkpoints) {
+      const option = document.createElement("option");
+      option.value = cp.name;
+      const where = cp.frame ? `frame ${Number(cp.frame).toLocaleString()}` : cp.name;
+      option.textContent = cp.round ? `round ${cp.round} · ${where}` : where;
+      option.title = cp.name;
+      checkpointSelect.append(option);
+    }
+    checkpointSelect.disabled = false;
+    reproButton.disabled = false;
+    reproStatus.textContent = "Queues a fresh run on the currently deployed runner build.";
+  }
+  async function loadCheckpoints(runID) {
+    if (!runID || runID !== selectedRun) return;
+    try {
+      renderCheckpoints(await json(`/v1/runs/${esc(runID)}/checkpoints`));
+    } catch (err) {
+      if (runID !== selectedRun) return;
+      renderCheckpoints(null);
+      reproStatus.textContent = err.message;
+    }
+  }
+  async function loadReproSource(runID) {
+    try {
+      const source = await json(`/v1/runs/${esc(runID)}/repro-source`);
+      if (runID !== selectedRun || !source || !source.source_run_id) return;
+      meta.append(...kv("repro source", `${source.source_run_id} · attempt ${source.source_attempt} · ${source.checkpoint}`, source.checkpoint));
+    } catch (_) {
+      // 404 simply means this is an ordinary run.
+    }
+  }
   function setReplayState(status) {
     const state = status && status.state ? status.state : "missing";
     replayButton.disabled = false;
@@ -213,6 +265,10 @@
     video.removeAttribute("src");
     video.dataset.run = "";
     video.hidden = true;
+    checkpointSelect.replaceChildren();
+    checkpointSelect.disabled = true;
+    reproButton.disabled = true;
+    reproStatus.textContent = "Loading checkpoints…";
     if (!runID) {
       showEmpty("Select a run from the list to replay it and browse artifacts.");
       return;
@@ -231,6 +287,8 @@
       selectedDebug = debug;
       renderDebug(debug);
       renderArtifacts(artifacts);
+      loadCheckpoints(runID);
+      loadReproSource(runID);
       const replayable = Array.isArray(artifacts.artifacts) && artifacts.artifacts.some((a) => a.replayable);
       if (!replayable) {
         replayStatus.textContent = "No run.gbrun recording for this run.";
@@ -292,6 +350,24 @@
       replayStatus.textContent = err.message;
       replayButton.textContent = "Retry replay";
       replayButton.disabled = false;
+    }
+  });
+  reproButton.addEventListener("click", async () => {
+    const checkpoint = checkpointSelect.value;
+    if (!selectedRun || !checkpoint) return;
+    reproButton.disabled = true;
+    reproStatus.textContent = "Queueing checkpoint repro…";
+    try {
+      const queued = await json(`/v1/runs/${esc(selectedRun)}/repro`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ checkpoint }),
+      });
+      reproStatus.textContent = `Queued ${queued.run_id}`;
+      ensureOption(queued.run_id, `${queued.run_id} · queued · repro`);
+    } catch (err) {
+      reproStatus.textContent = err.message;
+      reproButton.disabled = false;
     }
   });
   runSelect.addEventListener("change", () => {

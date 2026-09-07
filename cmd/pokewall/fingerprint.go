@@ -10,8 +10,11 @@ const (
 	outboxComplete = "complete"
 	outboxError    = "error"
 
-	checkpointPeriodicKeep  = 3
-	checkpointObjectiveKeep = 1
+	// Keep enough flight-recorder history to replay a failure from before the
+	// final bad decision. Objective checkpoints are the replay-safe LLM
+	// boundaries because they carry paired agent knowledge.
+	checkpointPeriodicKeep  = 6
+	checkpointObjectiveKeep = 6
 )
 
 // IssueLink is the wall's copy of an Agent Orchestrator issue identity.
