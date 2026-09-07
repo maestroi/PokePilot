@@ -156,7 +156,7 @@ func TestCheckpointRetainsBoundedWindow(t *testing.T) {
 	postJSON(t, srv.URL+"/v1/specs", spec("cp-1"))
 	postJSON(t, srv.URL+"/v1/lease", struct{}{})
 
-	for i := 1; i <= 5; i++ {
+	for i := 1; i <= checkpointPeriodicKeep+2; i++ {
 		name := periodicStateNameForTest(uint64(i) * 18000)
 		art := hashedArtifact(name, []byte("p"+strings.Repeat("x", i)))
 		if err := client.Checkpoint(t.Context(), farm.CheckpointReport{
@@ -165,19 +165,15 @@ func TestCheckpointRetainsBoundedWindow(t *testing.T) {
 			t.Fatalf("checkpoint periodic %d: %v", i, err)
 		}
 	}
-	objState := hashedArtifact("round-001-frame-0000000100-goto.state", []byte("obj-state"))
-	objKnow := hashedArtifact("round-001-frame-0000000100-goto.knowledge-v4.json", []byte(`{"k":1}`))
-	if err := client.Checkpoint(t.Context(), farm.CheckpointReport{
-		RunID: "cp-1", Attempt: 1, Artifacts: []farm.Artifact{objState, objKnow},
-	}); err != nil {
-		t.Fatalf("checkpoint objective: %v", err)
-	}
-	obj2 := hashedArtifact("round-002-frame-0000000200-goto.state", []byte("obj-state-2"))
-	know2 := hashedArtifact("round-002-frame-0000000200-goto.knowledge-v4.json", []byte(`{"k":2}`))
-	if err := client.Checkpoint(t.Context(), farm.CheckpointReport{
-		RunID: "cp-1", Attempt: 1, Artifacts: []farm.Artifact{obj2, know2},
-	}); err != nil {
-		t.Fatalf("checkpoint objective 2: %v", err)
+	for i := 1; i <= checkpointObjectiveKeep+2; i++ {
+		base := fmt.Sprintf("round-%03d-frame-%010d-goto", i, i*100)
+		objState := hashedArtifact(base+".state", []byte(fmt.Sprintf("obj-state-%d", i)))
+		objKnow := hashedArtifact(base+".knowledge-v4.json", []byte(fmt.Sprintf(`{"k":%d}`, i)))
+		if err := client.Checkpoint(t.Context(), farm.CheckpointReport{
+			RunID: "cp-1", Attempt: 1, Artifacts: []farm.Artifact{objState, objKnow},
+		}); err != nil {
+			t.Fatalf("checkpoint objective %d: %v", i, err)
+		}
 	}
 
 	files := listCheckpointFiles(t, dir)
@@ -190,17 +186,19 @@ func TestCheckpointRetainsBoundedWindow(t *testing.T) {
 			objective++
 		}
 	}
-	if periodic != 3 {
-		t.Fatalf("periodic states retained = %d, want 3: %v", periodic, files)
+	if periodic != checkpointPeriodicKeep {
+		t.Fatalf("periodic states retained = %d, want %d: %v", periodic, checkpointPeriodicKeep, files)
 	}
-	if objective != 1 {
-		t.Fatalf("objective states retained = %d, want 1 (latest pair): %v", objective, files)
+	if objective != checkpointObjectiveKeep {
+		t.Fatalf("objective states retained = %d, want %d: %v", objective, checkpointObjectiveKeep, files)
 	}
-	if !containsName(files, "round-002-frame-0000000200-goto.state") {
+	latest := checkpointObjectiveKeep + 2
+	latestObjective := fmt.Sprintf("round-%03d-frame-%010d-goto.state", latest, latest*100)
+	if !containsName(files, latestObjective) {
 		t.Fatalf("latest objective pair missing: %v", files)
 	}
 	if containsName(files, "round-001-frame-0000000100-goto.state") {
-		t.Fatalf("older objective pair was kept: %v", files)
+		t.Fatalf("oldest objective pair was kept: %v", files)
 	}
 
 	if resp := postJSON(t, srv.URL+"/v1/runs/cp-1/finish", farm.FinishReport{RunID: "cp-1", Attempt: 1, Reason: "done"}); resp.StatusCode != http.StatusOK {
