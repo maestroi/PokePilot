@@ -5,22 +5,21 @@ import (
 	"testing"
 )
 
-func TestClassifyPlannerDoneRejectsIncompleteDeterministicGoal(t *testing.T) {
+func TestIncompleteGoalErrorIsTypedWithoutROM(t *testing.T) {
 	status := GoalStatus{Summary: "badges 0/1", Current: 0, Target: 1}
-	stop, err := classifyPlannerDone(true, status)
-
-	if stop != StopError {
-		t.Fatalf("stop = %d, want StopError", stop)
-	}
+	err := incompleteGoalError(status)
 	if !errors.Is(err, ErrGoalIncomplete) {
 		t.Fatalf("err = %v, want ErrGoalIncomplete", err)
 	}
 }
 
-func TestClassifyPlannerDoneKeepsPromptOnlySemantics(t *testing.T) {
-	stop, err := classifyPlannerDone(false, GoalStatus{})
-	if stop != StopDone || err != nil {
-		t.Fatalf("prompt-only planner done = (%d, %v), want (StopDone, nil)", stop, err)
+func TestResolveRunGoalKeepsFreeTextPromptOnly(t *testing.T) {
+	goal, deterministic, err := resolveRunGoal(NewScriptedPlanner(), "Explore Kanto and see how far you get.")
+	if err != nil {
+		t.Fatalf("resolveRunGoal: %v", err)
+	}
+	if deterministic || goal.Kind != GoalNone {
+		t.Fatalf("free-text goal = (%+v, deterministic=%v), want prompt-only", goal, deterministic)
 	}
 }
 
