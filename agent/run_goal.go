@@ -27,6 +27,25 @@ type RunGoalStatusObserver interface {
 	ObserveRunGoal(obs Observation, status GoalStatus, deterministic bool)
 }
 
+// RunGoal exposes the raw goal on a direct LLM planner. This makes the
+// runtime invariant apply even when a caller does not use cmd/pokepilot's
+// stats decorator.
+func (p *LLMPlanner) RunGoal() string {
+	if p == nil {
+		return ""
+	}
+	return p.Goal
+}
+
+// RunGoal forwards the primary planner's goal through transport failover.
+// The endpoint may change; the run goal must not.
+func (p *FailoverPlanner) RunGoal() string {
+	if p == nil || p.Primary == nil {
+		return ""
+	}
+	return p.Primary.Goal
+}
+
 // resolveRunGoal parses the one run-owned goal contract. Free text remains
 // prompt-only (deterministic=false); documented structured syntax and known
 // presets become pure observation predicates. Budget.Goal wins over a planner
