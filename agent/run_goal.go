@@ -85,17 +85,6 @@ func publishRunGoalStatus(p Planner, obs Observation, status GoalStatus, determi
 	}
 }
 
-// classifyPlannerDone translates a planner's ErrDone into the run outcome.
-// Prompt-only runs keep the historical meaning. Deterministic runs can only
-// reach this function while incomplete: Run checks completion before asking
-// the planner, so the same signal is a typed false-completion error instead.
-func classifyPlannerDone(deterministic bool, status GoalStatus) (Stop, error) {
-	if deterministic {
-		return StopError, incompleteGoalError(status)
-	}
-	return StopDone, nil
-}
-
 func incompleteGoalError(status GoalStatus) error {
 	if status.Summary == "" {
 		return ErrGoalIncomplete
