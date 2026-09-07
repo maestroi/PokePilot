@@ -401,8 +401,8 @@ func (c *mcpControl) getTriage(ctx context.Context, _ *mcp.CallToolRequest, in m
 		}
 	}
 	return nil, map[string]any{
-		"groups":            actionable,
-		"resolved_hidden":   resolvedHidden,
+		"groups":           actionable,
+		"resolved_hidden":  resolvedHidden,
 		"include_resolved": in.IncludeResolved,
 	}, nil
 }
