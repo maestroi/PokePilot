@@ -37,15 +37,12 @@ const strategicReplanAfter = 4
 // call it already wraps — the observation going in, the objective coming
 // out, the wall clock around it — so agent stays exactly as it was.
 //
-// This is also the run-level structured-goal seam. Both local and farm LLM
-// runs already pass through statsPlanner after assigning LLMPlanner.Goal.
-// When that existing Goal uses agent.ParseGoal's structured syntax, evaluate
-// it before spending a model call and return ErrDone once RAM/state proves
-// completion. Free-text Goal values are untouched and remain prompt-only.
-// While a structured goal is incomplete, its deterministic GoalStatus is
-// also rendered as a progress-only system note and copied onto LLMStats so
-// the planner and operator see the same state. The note reports facts; it
-// never prescribes a route or strategy.
+// Structured-goal completion is NOT decided here. agent.Run owns the
+// deterministic completion predicate and sends its authoritative GoalStatus
+// through RunGoalStatusObserver. This decorator only mirrors that status into
+// LLMStats and renders the same progress as a fact-only system note, so the
+// planner and operator see the state Run is using without creating a second
+// success definition. Free-text goals remain prompt-only.
 //
 // The same decorator owns a derived long-horizon progress tracker. It uses
 // StrategicMemory only for observable progress/no-progress accounting; the
@@ -71,6 +68,12 @@ type statsPlanner struct {
 	counts  map[string]int
 	offered int           // summed over calls, for the average
 	elapsed time.Duration // summed over calls, for the average
+
+	// runGoalStatus is the last authoritative deterministic status delivered
+	// by agent.Run. The stats decorator consumes it; it never evaluates the
+	// goal or turns it into ErrDone itself.
+	runGoalStatus        agent.GoalStatus
+	runGoalDeterministic bool
 
 	strategy        agent.StrategicMemory
 	strategyRound   int
@@ -114,26 +117,12 @@ func (s *statsPlanner) wirePlannerLogs(log io.Writer, snap *heartbeatSnap) {
 }
 
 func (s *statsPlanner) Next(obs agent.Observation, offered []agent.Objective) (agent.Objective, error) {
-	done, err := s.prepareRunContext(obs)
-	if err != nil {
-		return agent.Objective{}, err
-	}
-	if done {
-		s.publishSnapshot(obs)
-		return agent.Objective{}, agent.ErrDone
-	}
+	s.prepareRunContext(obs)
 	return s.ask(obs, offered, nil)
 }
 
 func (s *statsPlanner) NextRetry(obs agent.Observation, offered []agent.Objective, r agent.Retry) (agent.Objective, error) {
-	done, err := s.prepareRunContext(obs)
-	if err != nil {
-		return agent.Objective{}, err
-	}
-	if done {
-		s.publishSnapshot(obs)
-		return agent.Objective{}, agent.ErrDone
-	}
+	s.prepareRunContext(obs)
 	return s.ask(obs, offered, &r)
 }
 
@@ -152,17 +141,12 @@ func (s *statsPlanner) ask(obs agent.Observation, offered []agent.Objective, ret
 	return s.router.NextRetry(obs, offered, *retry)
 }
 
-// prepareRunContext is the one per-ask seam for run-derived context. Goal
-// evaluation happens first so malformed structured syntax fails before any
-// other state is mutated. The same observation then feeds the stall tracker.
-func (s *statsPlanner) prepareRunContext(obs agent.Observation) (bool, error) {
-	status, structured, err := agent.PlannerGoalStatus(s.inner.Goal, obs)
-	if err != nil {
-		return false, err
-	}
-	s.setGoalStats(status, structured)
-	s.prepareStrategyWithGoal(obs, status, structured)
-	return structured && status.Complete, nil
+// prepareRunContext is the one per-ask seam for run-derived context. The
+// authoritative goal status has already been delivered by agent.Run; this
+// method only folds that status into planner context and updates the stall
+// tracker from the same observation.
+func (s *statsPlanner) prepareRunContext(obs agent.Observation) {
+	s.prepareStrategyWithGoal(obs, s.runGoalStatus, s.runGoalDeterministic)
 }
 
 func (s *statsPlanner) setGoalStats(status agent.GoalStatus, structured bool) {
@@ -253,7 +237,7 @@ func (s *statsPlanner) record(obs agent.Observation, offered int, o agent.Object
 }
 
 // publishSnapshot pushes run-derived state without inventing a model call.
-// Structured goal completion uses it because the stop happens before the
+// Deterministic goal completion uses it because the stop happens before the
 // next LLM ask; operators should still see the final Complete=true status.
 func (s *statsPlanner) publishSnapshot(obs agent.Observation) {
 	s.stats.Round, s.stats.RoundsLeft = obs.Round, obs.RoundsLeft
