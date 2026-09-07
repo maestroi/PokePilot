@@ -15,17 +15,17 @@ const (
 // consumes StoryFacts instead of learning raw event-bit numbers. The values
 // are checked against the vendored event_constants.asm in story_test.go.
 const (
-	eventViridianGymOpen          Event = 0x028
-	eventMansionSwitchOn          Event = 0x278
-	eventBeatRoute22Rival2ndBattle Event = 0x526
-	eventPassedCascadeBadgeCheck  Event = 0x530
-	eventPassedThunderBadgeCheck  Event = 0x531
-	eventPassedRainbowBadgeCheck  Event = 0x532
-	eventPassedSoulBadgeCheck     Event = 0x533
-	eventPassedMarshBadgeCheck    Event = 0x534
-	eventPassedVolcanoBadgeCheck  Event = 0x535
-	eventPassedEarthBadgeCheck    Event = 0x536
-	eventBeatSilphCoGiovanni      Event = 0x78f
+	eventViridianGymOpen            Event = 0x028
+	eventMansionSwitchOn            Event = 0x278
+	eventBeatRoute22Rival2ndBattle  Event = 0x526
+	eventPassedCascadeBadgeCheck    Event = 0x530
+	eventPassedThunderBadgeCheck    Event = 0x531
+	eventPassedRainbowBadgeCheck    Event = 0x532
+	eventPassedSoulBadgeCheck       Event = 0x533
+	eventPassedMarshBadgeCheck      Event = 0x534
+	eventPassedVolcanoBadgeCheck    Event = 0x535
+	eventPassedEarthBadgeCheck      Event = 0x536
+	eventBeatSilphCoGiovanni        Event = 0x78f
 	eventAutowalkedIntoLoreleisRoom Event = 0x8e6
 )
 
@@ -34,17 +34,17 @@ const (
 // planner/operator can reason about gates without inheriting Red's encoding.
 // Every field is deterministically re-derived from the current RAM/bag state.
 type StoryFacts struct {
-	SaffronGateOpen          bool
-	CardKeyOwned             bool
-	SilphCoCleared           bool
-	MansionSwitchOn          bool
-	SecretKeyOwned           bool
-	ViridianGymOpen          bool
-	Route22RivalResolved     bool
-	Route23BadgeChecksPassed int
+	SaffronGateOpen            bool
+	CardKeyOwned               bool
+	SilphCoCleared             bool
+	MansionSwitchOn            bool
+	SecretKeyOwned             bool
+	ViridianGymOpen            bool
+	Route22RivalResolved       bool
+	Route23BadgeChecksPassed   int
 	Route23BadgeChecksComplete bool
-	LeagueChallengeStarted   bool
-	LeagueChampionDefeated   bool
+	LeagueChallengeStarted     bool
+	LeagueChampionDefeated     bool
 }
 
 var route23BadgeCheckEvents = [...]Event{
