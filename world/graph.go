@@ -212,7 +212,13 @@ func components(grid *Grid) [][]int {
 					if nx < 0 || ny < 0 || nx >= w || ny >= h {
 						continue
 					}
-					if !grid.Walkable(nx, ny) || comps[ny][nx] != 0 {
+					// Passable, not Walkable: a tile-pair collision separates two
+					// regions of a cave as completely as a wall does, and a
+					// component flood that walks through one tells the route graph
+					// a journey exists that the walker will then refuse to walk.
+					// Seeding still uses Walkable above — that asks "can the player
+					// stand here", which is a property of the tile alone.
+					if !grid.Passable(c[0], c[1], nx, ny) || comps[ny][nx] != 0 {
 						continue
 					}
 					comps[ny][nx] = next

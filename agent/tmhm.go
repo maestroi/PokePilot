@@ -15,49 +15,10 @@ import (
 // move data, so machine recommendations live at Run's richer boundary rather
 // than smuggling compatibility policy into Observation.
 func offerWithTMHM(m *emu.Emu, romData []byte, obs Observation, known *Knowledge) []Objective {
-	out := focusWalkingJourneys(obs, known, Offer(obs, known))
+	out := Offer(obs, known)
 	var mem state.Mem
 	state.Snapshot(m, &mem)
 	return appendTMHMObjectives(romData, state.DecodeParty(&mem), state.DecodeInventory(&mem), out)
-}
-
-// focusWalkingJourneys keeps generic walking as a local navigation choice.
-// Offer remembers every map the run has ever seen so Knowledge can support
-// history, recovery, progress reporting and future travel mechanics. That
-// long-term memory should not make every old place a top-level "go to" choice
-// forever: from Mt. Moon, Red's bedroom is technically known but strategically
-// irrelevant and only bloats the planner prompt.
-//
-// A normal KindGoTo therefore names only the current map or a map directly
-// connected to it. The run can still backtrack by choosing adjacent maps one
-// hop at a time. Non-GoTo objectives are deliberately untouched: a concrete
-// recovery/story action such as healing at a known Center or delivering Oak's
-// parcel may legitimately travel farther because the reason for that trip is
-// encoded in the objective itself.
-//
-// This boundary is also intentional for future fast travel. Fly should become
-// its own objective/capability with its own unlocked global destinations,
-// rather than reopening the entire remembered world as ordinary walking.
-func focusWalkingJourneys(obs Observation, known *Knowledge, offered []Objective) []Objective {
-	localMaps := map[uint8]bool{obs.Map: true}
-	if known != nil {
-		for _, mapID := range known.Adjacency[obs.Map] {
-			localMaps[mapID] = true
-		}
-	}
-
-	out := make([]Objective, 0, len(offered))
-	for _, objective := range offered {
-		if objective.Kind != KindGoTo {
-			out = append(out, objective)
-			continue
-		}
-		destination, ok := skill.Place(objective.Place)
-		if !ok || localMaps[destination.Map] {
-			out = append(out, objective)
-		}
-	}
-	return out
 }
 
 func appendTMHMObjectives(romData []byte, party state.PartyState, inventory state.InventoryState, out []Objective) []Objective {

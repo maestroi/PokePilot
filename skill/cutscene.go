@@ -20,8 +20,35 @@ var ErrCutsceneTimeout = errors.New("skill: cutscene did not finish in budget")
 // cutscenes intentionally rely on the default YES choice, while nicknaming is
 // cosmetic and should never divert autonomous runs into the naming keyboard.
 func pokemonNicknamePrompt(mem *state.Mem) bool {
-	return state.DecodeTwoOptionMenu(mem) != nil &&
-		strings.Contains(state.ScreenText(mem), "give a nickname")
+	return state.DecodeTwoOptionMenu(mem) != nil && nicknamePromptOnScreen(mem)
+}
+
+// nicknamePromptOnScreen reports that AskName's question text is drawn. It is
+// NOT sufficient on its own: the question stays on the tilemap after it has
+// been answered, so a loop that refuses to press A on this alone deadlocks
+// (MEASURED: GetStarter then times out at 10000 frames with the box still up).
+// Pair it with a decodable two-option menu, which is the moment a press is
+// actually a choice.
+func nicknamePromptOnScreen(mem *state.Mem) bool {
+	return strings.Contains(state.ScreenText(mem), "give a nickname")
+}
+
+// declineNickname answers AskName with NO so the Pokemon keeps its species
+// name. It reports whether the prompt was actually answered; a caller that
+// gets false must NOT fall back to pressing A, because A is the YES that
+// opens the naming keyboard.
+//
+// The blind-A path is what produced a party of Pokemon literally named
+// "AAAAAAAAAA": one A opens the keyboard with the cursor on 'A', and every
+// subsequent A of the same advancing loop types another 'A' until the name is
+// full and confirmed. MEASURED in TestStarterKeepsSpeciesName (CHARMANDER ->
+// "AAAAAAAAAA") and live on a bought MAGIKARP.
+func declineNickname(m frameClock, mem *state.Mem) bool {
+	e, ok := m.(*emu.Emu)
+	if !ok || state.DecodeTwoOptionMenu(mem) == nil {
+		return false
+	}
+	return selectTwoOption(e, 1) == nil // 1 = NO
 }
 
 // Cutscene lets a scripted sequence run to completion. It presses A only

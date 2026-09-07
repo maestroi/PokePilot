@@ -196,6 +196,20 @@ func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
 		// turned into a hard error mid-fight instead of another look.
 		switch {
 		case moveMenuUp(m):
+			// A refusal box ("The move is disabled!") is still swallowing
+			// input: clear it first so the cursor presses below reach the move
+			// list rather than the message. One A returns to the same list
+			// with the cursor untouched, which is exactly what the policy
+			// selection then moves.
+			if disabledMoveRefusalUp(m) {
+				m.Tap(emu.A, 3, 7)
+				if _, err := m.StepUntil(moveMenuBudget, func(m *emu.Emu) bool {
+					return !disabledMoveRefusalUp(m)
+				}); err != nil {
+					return menuError(m, "clear the disabled-move refusal", err)
+				}
+				state.Snapshot(m, &mem)
+			}
 			bs := state.DecodeBattle(&mem)
 			if bs == nil {
 				continue // the battle ended while the menu was up
@@ -547,9 +561,13 @@ func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
 // wMaxMenuItem alone cannot do this job: it holds the move menu's value
 // (numMoves+1) while the "used TACKLE!" text that follows is on screen.
 const (
-	mainMenuMarker   = "FIGHT"    // only on the FIGHT/ITEM/PKMN/RUN menu
-	moveMenuMarker   = "TYPE/"    // only on the move-selection menu
-	useNextMonMarker = "Use next" // only on UseNextMonText (data/text/text_2.asm:889)
+	mainMenuMarker = "FIGHT" // only on the FIGHT/ITEM/PKMN/RUN menu
+	moveMenuMarker = "TYPE/" // only on the move-selection menu
+	// disabledMoveMarker is MoveSelectionMenu's refusal text. Matched on the
+	// unpunctuated middle so a line break between "move" and "is" cannot hide
+	// it: ScreenText joins the box's lines with single spaces.
+	disabledMoveMarker = "move is disabled"
+	useNextMonMarker   = "Use next" // only on UseNextMonText (data/text/text_2.asm:889)
 	// tryLearnMarker is on the "<NAME> is trying to learn <MOVE>" prompt that
 	// GainExperience prints when a level-up offers a move while all four slots
 	// are full (learn_move.asm TryingToLearnText). ScreenText joins the box's
@@ -586,7 +604,27 @@ func mainMenuUp(m *emu.Emu) bool {
 
 // moveMenuUp reports whether the move-selection menu is up.
 func moveMenuUp(m *emu.Emu) bool {
-	return battleScreenHas(m, moveMenuMarker)
+	return battleScreenHas(m, moveMenuMarker) || disabledMoveRefusalUp(m)
+}
+
+// disabledMoveRefusalUp reports that the game has just refused the selected
+// move because Disable is on it. MoveSelectionMenu prints "The move is
+// disabled!" into the box that normally holds the TYPE/ panel and then returns
+// to the SAME move list with the cursor still parked on the refused move, so
+// the TYPE/ marker is absent while the menu is genuinely up and waiting for
+// input.
+//
+// That combination is what made this a run-ending hang rather than a wasted
+// turn: moveMenuUp was false, so Battle's state machine fell through to its
+// default "text or animation, advance it" branch and tapped A — which
+// re-selects the disabled move, reprints the refusal, and starts the cycle
+// again. MEASURED on run-38jzpcl8708312r81btaxo0qld (Route 3, a trainer's
+// level-14 JIGGLYPUFF, which learns DISABLE at level 9): a six-iteration cycle
+// repeating until the 60000-frame cap, with GROWL and LEECH SEED usable the
+// whole time. Treating the refusal as the move menu lets the ordinary path
+// consult the policy and move the cursor off the disabled slot.
+func disabledMoveRefusalUp(m *emu.Emu) bool {
+	return battleScreenHas(m, disabledMoveMarker)
 }
 
 // twoOptionPromptUp reports whether a yes/no prompt Battle must answer on

@@ -19,6 +19,27 @@ const (
 	tilesetsBank    uint8  = 0x03
 	tilesetsAddr    uint16 = 0x47BE
 	tilesetEntryLen        = 12
+
+	// TilePairCollisionsLand (pokered.sym: 00:0c7e) is a bank-0 table of
+	// 3-byte {tileset, tileA, tileB} entries terminated by 0xff. The game
+	// checks it in CheckForTilePairCollisions on EVERY step: a move between
+	// two tiles named by an entry for the current tileset is refused even
+	// though BOTH tiles are in the tileset's walkable list. It is how Gen 1
+	// builds cave mouths and water edges you can see across but not walk
+	// across.
+	//
+	// MEASURED: Mt. Moon 1F (tileset 17, CAVERN) at (10,22) tile 0x20 with
+	// (9,22) tile 0x05 next to it. Both walkable, the pathfinder planned
+	// "left", and the game refused the step — entry {17, 0x20, 0x05} is the
+	// first row of this table. Without it the planner routes through cave
+	// walls it believes are corridors, the walk fails on the first step, and
+	// the run bounces between re-plans until its engagement budget dies.
+	//
+	// ponytail: land table only. TilePairCollisionsWater (00:0ca0, 3 entries)
+	// applies while surfing; add it when a run can surf, and pick the table
+	// by wWalkBikeSurfState the way CheckForTilePairCollisions2 does.
+	tilePairCollisionsLandAddr = 0x0c7e
+	tilePairEntryLen           = 3
 )
 
 // Grid is a map's collision view, indexed [y][x] in game tile coordinates —
@@ -38,6 +59,51 @@ type Grid struct {
 	walkable      []bool
 	collisionTile []uint8
 	fieldTile     []uint8
+	// tilePairs holds this map's tileset's forbidden tile transitions, as a
+	// set keyed by the ordered pair. The game's check is symmetric (it
+	// matches an entry in either direction), so both orders are stored and
+	// callers need not normalise.
+	tilePairs map[[2]uint8]bool
+}
+
+// Passable reports whether a step from (fx,fy) to (tx,ty) is one the game
+// would actually perform: the destination must be in bounds and walkable, and
+// the transition must not be a tile-pair collision for this map's tileset.
+//
+// This is the pathfinding predicate; Walkable alone is the weaker "could the
+// player ever stand here". Only orthogonally adjacent arguments are
+// meaningful, which is all the searches pass.
+func (g *Grid) Passable(fx, fy, tx, ty int) bool {
+	if !g.Walkable(tx, ty) {
+		return false
+	}
+	if len(g.tilePairs) == 0 {
+		return true
+	}
+	from, okFrom := g.Tile(fx, fy)
+	to, okTo := g.Tile(tx, ty)
+	if !okFrom || !okTo {
+		return true
+	}
+	return !g.tilePairs[[2]uint8{from, to}]
+}
+
+// tilePairsFor reads the land tile-pair collision table and returns the
+// forbidden transitions for one tileset, in both directions.
+func tilePairsFor(romData []byte, tileset uint8) map[[2]uint8]bool {
+	pairs := map[[2]uint8]bool{}
+	for off := tilePairCollisionsLandAddr; off+tilePairEntryLen <= len(romData); off += tilePairEntryLen {
+		if romData[off] == 0xff {
+			break
+		}
+		if romData[off] != tileset {
+			continue
+		}
+		a, b := romData[off+1], romData[off+2]
+		pairs[[2]uint8{a, b}] = true
+		pairs[[2]uint8{b, a}] = true
+	}
+	return pairs
 }
 
 // InBounds reports whether (x, y) is inside the grid.
@@ -121,6 +187,7 @@ func BuildFromBlocks(romData []byte, h rom.MapHeader, blocks []byte) (*Grid, err
 		walkable:      make([]bool, width*height),
 		collisionTile: make([]uint8, width*height),
 		fieldTile:     make([]uint8, width*height),
+		tilePairs:     tilePairsFor(romData, h.Tileset),
 	}
 	if width == 0 || height == 0 {
 		return g, nil

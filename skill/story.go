@@ -254,6 +254,17 @@ func advanceCore(m frameClock, budget int, pred func(*state.Mem) bool, stopBefor
 		if stopBeforeA != nil && stopBeforeA(&mem) {
 			return mem, presses
 		}
+		// A nickname prompt is never advanced with A. This is the shared
+		// text-advancing loop — advanceUntil's callers (the errand, gyms,
+		// Heal, the mart, the tower, the hideout) and RecoverDialogue all
+		// route through it — so the guard belongs here rather than in each
+		// one. Cutscene has always had it; this loop did not, which is why a
+		// starter taken through advanceUntil came out named "AAAAAAAAAA"
+		// while a starter taken through a cutscene did not.
+		if pokemonNicknamePrompt(&mem) && declineNickname(m, &mem) {
+			presses++
+			continue
+		}
 		if mem.U8(sym.FontLoaded) != 0 {
 			m.Tap(emu.A, 3, 7)
 			m.StepFrames(talkSettle)

@@ -151,7 +151,7 @@ func Train(m *emu.Emu, romData []byte, targetLevel int, policy MovePolicy, maxBa
 	if len(grass) == 0 {
 		return res, fmt.Errorf("skill: Train: no walkable tall grass on map %#04x", now.Map)
 	}
-	a, b, ok := grindPair(grass, grid, int(now.X), int(now.Y))
+	a, b, ok := grindPair(grass, grid, int(now.X), int(now.Y), spriteBlockers(m))
 	if !ok {
 		return res, fmt.Errorf("skill: Train: map %#04x has no two walkable grass cells close enough to grind between", now.Map)
 	}
@@ -195,11 +195,21 @@ func Train(m *emu.Emu, romData []byte, targetLevel int, policy MovePolicy, maxBa
 			// toward grind cells that are now maps away, and fails
 			// somewhere along it. The session ended at the blackout, so
 			// report that ending rather than the walk that followed it.
-			res.EndLevel = leadLevel(m)
-			res.Reached = res.EndLevel >= targetLevel
 			if res.BlackedOut {
+				res.EndLevel = leadLevel(m)
+				res.Reached = res.EndLevel >= targetLevel
 				return res, nil
 			}
+			// The walk was refused with nothing in progress: a sprite may
+			// have parked on a cell that was free when the pair was chosen.
+			// Re-pick and keep grinding; maxLegs still bounds the session.
+			if na, nb, ok := repickGrindPair(m, grass, grid, a, b); ok && legs+1 <= maxLegs {
+				a, b, next = na, nb, nb
+				legs++
+				continue
+			}
+			res.EndLevel = leadLevel(m)
+			res.Reached = res.EndLevel >= targetLevel
 			return res, err
 		}
 		if err != nil {
@@ -529,7 +539,31 @@ func grassCells(romData []byte, mapID uint8) ([]cell, *world.Grid, error) {
 // grass cell exists do we fall back to a straight 2-6-cell walk, preferring
 // the densest grass path and then the shorter distance. Every fallback path
 // cell is walkable.
-func grindPair(grass []cell, grid *world.Grid, px, py int) (cell, cell, bool) {
+//
+// blocked carries the tiles live sprites occupy right now (spriteBlockers);
+// it may be nil. Cells under a sprite are dropped before anything is chosen,
+// because the choice here is DETERMINISTIC — grass is row-major, so the same
+// map and the same standing position always name the same pair — and GoTo
+// refuses a destination another sprite is standing on. MEASURED: on Route 1
+// a player standing in the grass at (14,14) always drew (14,13), which is
+// inside a wandering NPC's patrol, and the hunt died on leg 1 with "no path"
+// while (15,14), (14,15) and (16,14) sat free. A blocked snapshot is only an
+// observation, not a guarantee — the sprite can step back on before GoTo
+// walks — but it costs nothing to not pick the one tile known to be taken.
+func grindPair(grass []cell, grid *world.Grid, px, py int, blocked map[[2]int]bool) (cell, cell, bool) {
+	if len(blocked) > 0 {
+		free := make([]cell, 0, len(grass))
+		for _, c := range grass {
+			if !blocked[[2]int{c.x, c.y}] {
+				free = append(free, c)
+			}
+		}
+		grass = free
+	}
+	if len(grass) == 0 {
+		return cell{}, cell{}, false
+	}
+
 	at := cell{px, py}
 	a := grass[0]
 	for _, c := range grass {
@@ -567,7 +601,8 @@ func grindPair(grass []cell, grid *world.Grid, px, py int) (cell, cell, bool) {
 		dx, dy := sign(c.x-a.x), sign(c.y-a.y)
 		ok := true
 		for s := 1; s < d; s++ {
-			if !grid.Walkable(a.x+dx*s, a.y+dy*s) {
+			px, py := a.x+dx*s, a.y+dy*s
+			if !grid.Walkable(px, py) || blocked[[2]int{px, py}] {
 				ok = false
 				break
 			}
@@ -589,6 +624,31 @@ func grindPair(grass []cell, grid *world.Grid, px, py int) (cell, cell, bool) {
 		return cell{}, cell{}, false
 	}
 	return a, best, true
+}
+
+// repickGrindPair re-chooses the ping-pong pair from where the player stands
+// NOW and a fresh sprite snapshot, reporting whether it found a different one.
+//
+// The pair is chosen once per session but walked for hundreds of legs, so
+// choosing it against a sprite snapshot only rules out cells that were
+// occupied at that instant. A wanderer can park on a chosen cell later, and
+// the walker then refuses a destination that was free when it was picked —
+// MEASURED on Route 1 (map 0x0c), where a Train session picked (14,13), an NPC
+// stepped onto it mid-session, and the whole session died on "no path from
+// (14,14) to (14,13)": the same tile that killed 90 farm runs from the
+// deterministic side of this bug. Re-picking turns that from a dead session
+// into a changed route.
+//
+// ok is false when nothing free is left, or when the re-pick returns the pair
+// that just failed — either way the caller has learned nothing new and should
+// report the original error rather than spin.
+func repickGrindPair(m *emu.Emu, grass []cell, grid *world.Grid, a, b cell) (cell, cell, bool) {
+	x, y := playerXY(m)
+	na, nb, ok := grindPair(grass, grid, int(x), int(y), spriteBlockers(m))
+	if !ok || (na == a && nb == b) {
+		return a, b, false
+	}
+	return na, nb, true
 }
 
 // battleInFlight reports whether a battle is in progress in RAM: the same

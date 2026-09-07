@@ -105,7 +105,7 @@ func FindPath(g *Grid, sx, sy, dx, dy int, blocked map[[2]int]bool) ([]Step, err
 		}
 		for _, s := range stepDirs {
 			n := [2]int{cur.x + s.DX, cur.y + s.DY}
-			if closed[n] || blocked[n] || !g.Walkable(n[0], n[1]) {
+			if closed[n] || blocked[n] || !g.Passable(cur.x, cur.y, n[0], n[1]) {
 				continue
 			}
 			ng := cur.g + 1
@@ -150,7 +150,7 @@ func FindPathAdjacent(g *Grid, sx, sy, tx, ty int, blocked map[[2]int]bool) ([]S
 		queue = queue[1:]
 		for _, s := range stepDirs {
 			n := [2]int{cur[0] + s.DX, cur[1] + s.DY}
-			if !g.InBounds(n[0], n[1]) || !g.Walkable(n[0], n[1]) || blocked[n] {
+			if !g.InBounds(n[0], n[1]) || !g.Passable(cur[0], cur[1], n[0], n[1]) || blocked[n] {
 				continue
 			}
 			if _, seen := dist[n]; seen {

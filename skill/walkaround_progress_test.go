@@ -8,14 +8,21 @@ import (
 
 // A long cave/grind leg can expose several independent runtime blockers in
 // sequence. Each one needs two confirmations before it becomes a call-local
-// blocker. The old total-attempt budget died on the fourth such tile even
+// blocker. A flat total-attempt budget dies partway along such a chain even
 // though every pair of retries taught the pathfinder something new.
+//
+// The chain must be long enough to cross maxWalkRetries, or this test proves
+// nothing: the final assertion enforces that, so a chain lengthened alongside
+// the budget keeps the scenario honest rather than quietly passing.
 func TestWalkAroundRetryBudgetResetsWhenLearningNewBlockers(t *testing.T) {
 	defects := []*ErrBlocked{
 		blockedAt(10, 22, world.StepLeft), // destination (9,22)
 		blockedAt(9, 22, world.StepUp),    // destination (9,21)
 		blockedAt(9, 21, world.StepLeft),  // destination (8,21)
 		blockedAt(8, 21, world.StepDown),  // destination (8,22)
+		blockedAt(8, 22, world.StepDown),  // destination (8,23)
+		blockedAt(8, 23, world.StepLeft),  // destination (7,23)
+		blockedAt(7, 23, world.StepUp),    // destination (7,22)
 	}
 
 	chosen := -1

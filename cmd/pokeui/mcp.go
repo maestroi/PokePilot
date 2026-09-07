@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -247,10 +248,6 @@ func (c *mcpControl) startRun(ctx context.Context, _ *mcp.CallToolRequest, in mc
 }
 
 func (c *mcpControl) listRuns(ctx context.Context, _ *mcp.CallToolRequest, in mcpListRunsInput) (*mcp.CallToolResult, map[string]any, error) {
-	dashboard, err := c.dashboard(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
 	status := strings.ToLower(strings.TrimSpace(in.Status))
 	if status != "" && status != "queued" && status != "leased" && status != "running" && status != "done" {
 		return nil, nil, fmt.Errorf("status must be queued, leased, running, or done")
@@ -263,15 +260,17 @@ func (c *mcpControl) listRuns(ctx context.Context, _ *mcp.CallToolRequest, in mc
 		return nil, nil, fmt.Errorf("limit must be between 1 and %d", mcpMaxRuns)
 	}
 
-	runs := make([]mcpRunView, 0, min(limit, len(dashboard.Runs)))
-	for _, run := range dashboard.Runs {
-		if status != "" && run.Status != status {
-			continue
-		}
-		runs = append(runs, run)
-		if len(runs) == limit {
-			break
-		}
+	// Narrow at the wall, not here. The whole dashboard is megabytes once a
+	// farm has a few hundred runs — more than mcpMaxResponseBytes — so a
+	// client-side limit is applied to a response that already failed to read.
+	dashboard, err := c.dashboardNarrowed(ctx, status, limit)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	runs := dashboard.Runs
+	if len(runs) > limit {
+		runs = runs[:limit]
 	}
 	return nil, map[string]any{
 		"now":     dashboard.Now,
@@ -285,16 +284,20 @@ func (c *mcpControl) getRun(ctx context.Context, _ *mcp.CallToolRequest, in mcpR
 	if id == "" {
 		return nil, nil, fmt.Errorf("run_id is required")
 	}
-	dashboard, err := c.dashboard(ctx)
-	if err != nil {
+	// One run comes from the wall's own single-run route, not from scanning
+	// the whole dashboard: the dashboard carries every run's question, trace,
+	// stats and sprite trail, so it outgrows mcpMaxResponseBytes as a farm
+	// accumulates runs (MEASURED 2026-09-07: 2,123,033 bytes at 378 runs) and
+	// this tool would start failing for every id at once, including ids whose
+	// own record is a few hundred bytes.
+	var out map[string]any
+	if err := c.requestJSON(ctx, http.MethodGet, "/v1/runs/"+url.PathEscape(id), nil, &out); err != nil {
 		return nil, nil, err
 	}
-	for _, run := range dashboard.Runs {
-		if run.RunID == id {
-			return nil, map[string]any{"run": run, "now": dashboard.Now}, nil
-		}
+	if out == nil {
+		return nil, nil, fmt.Errorf("run %q not found", id)
 	}
-	return nil, nil, fmt.Errorf("run %q not found", id)
+	return nil, out, nil
 }
 
 func (c *mcpControl) getRunDebug(ctx context.Context, _ *mcp.CallToolRequest, in mcpRunInput) (*mcp.CallToolResult, map[string]any, error) {
@@ -356,8 +359,26 @@ func (c *mcpControl) investigateFailure(ctx context.Context, _ *mcp.CallToolRequ
 }
 
 func (c *mcpControl) dashboard(ctx context.Context) (mcpDashboard, error) {
+	return c.dashboardNarrowed(ctx, "", 0)
+}
+
+// dashboardNarrowed fetches the dashboard with the wall doing the filtering.
+// An empty status and a limit of 0 mean unnarrowed, which is what the
+// whole-farm callers (getRun, the stats views) still ask for.
+func (c *mcpControl) dashboardNarrowed(ctx context.Context, status string, limit int) (mcpDashboard, error) {
+	path := "/v1/dashboard"
+	q := url.Values{}
+	if status != "" {
+		q.Set("status", status)
+	}
+	if limit > 0 {
+		q.Set("limit", strconv.Itoa(limit))
+	}
+	if len(q) > 0 {
+		path += "?" + q.Encode()
+	}
 	var dashboard mcpDashboard
-	err := c.requestJSON(ctx, http.MethodGet, "/v1/dashboard", nil, &dashboard)
+	err := c.requestJSON(ctx, http.MethodGet, path, nil, &dashboard)
 	return dashboard, err
 }
 

@@ -20,6 +20,7 @@ import (
 	"regexp"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -1004,8 +1005,40 @@ func (w *Wall) renderGrid() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// handleDashboard returns the run snapshot. status and limit narrow it BEFORE
+// the response is encoded, in that order: a caller that wants twenty runs must
+// not be handed every run ever recorded to filter client-side. The dashboard
+// carries each run's question, trace, stats and sprite trail, so it grows
+// without bound with the run count — MEASURED 2026-09-07 at 2,123,033 bytes
+// across 378 runs, past the 2 MiB ceiling the MCP client reads with, which made
+// every run tool fail at any limit including 1. Both parameters are optional
+// and absent means unnarrowed, so the HTML grid and older clients are unchanged.
 func (w *Wall) handleDashboard(res http.ResponseWriter, req *http.Request) {
-	writeJSON(res, http.StatusOK, w.snapshot())
+	view := w.snapshot()
+	q := req.URL.Query()
+
+	if status := strings.ToLower(strings.TrimSpace(q.Get("status"))); status != "" {
+		kept := make([]tileRow, 0, len(view.Runs))
+		for _, run := range view.Runs {
+			if run.Status == status {
+				kept = append(kept, run)
+			}
+		}
+		view.Runs = kept
+	}
+
+	if raw := strings.TrimSpace(q.Get("limit")); raw != "" {
+		limit, err := strconv.Atoi(raw)
+		if err != nil || limit < 1 {
+			writeJSON(res, http.StatusBadRequest, map[string]string{"error": "limit must be a positive integer"})
+			return
+		}
+		if limit < len(view.Runs) {
+			view.Runs = view.Runs[:limit]
+		}
+	}
+
+	writeJSON(res, http.StatusOK, view)
 }
 
 var (

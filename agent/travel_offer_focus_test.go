@@ -3,53 +3,33 @@ package agent
 import (
 	"testing"
 
+	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/skill"
 )
 
-func TestFocusWalkingJourneysKeepsCurrentAndAdjacentMaps(t *testing.T) {
-	current := mustPlaceForTravelFocusTest(t, "route 1")
-	adjacent := mustPlaceForTravelFocusTest(t, "viridian city")
+// A visited map stays an executable destination from wherever the player
+// stands: Travel routes across maps, and the run that could only see its
+// immediate neighbours walked Viridian <-> Route 2 for hundreds of rounds
+// with Route 3 — visited, one map past Pewter — off the menu entirely.
+func TestOfferKeepsVisitedDestinationsBeyondTheCurrentMap(t *testing.T) {
+	here := mustPlaceForTravelFocusTest(t, "viridian city")
+	far := mustPlaceForTravelFocusTest(t, "route 3")
 
-	known := NewKnowledge(map[uint8][]uint8{
-		current.Map: {adjacent.Map},
-	})
-	obs := Observation{Map: current.Map}
-	offered := []Objective{
-		{Kind: KindGoTo, Place: "route 1"},
-		{Kind: KindGoTo, Place: "viridian city"},
-		{Kind: KindGoTo, Place: "viridian city", Flee: true},
-		{Kind: KindGoTo, Place: "reds bedroom"},
-		{Kind: KindGoTo, Place: "reds bedroom", Flee: true},
+	known := NewKnowledge(map[uint8][]uint8{here.Map: {0x0C}})
+	known.Visited[far.Map] = true
+	obs := Observation{
+		Map:    here.Map,
+		X:      here.X,
+		Y:      here.Y,
+		Badges: []string{state.BadgeBoulder.String()}, // Route 3's scripted gate
 	}
 
-	got := focusWalkingJourneys(obs, known, offered)
-	if len(got) != 3 {
-		t.Fatalf("focused travel has %d choices, want 3: %#v", len(got), got)
-	}
-	for _, objective := range got {
-		if objective.Place == "reds bedroom" {
-			t.Fatalf("distant remembered destination survived local travel filter: %v", objective)
+	for _, o := range Offer(obs, known) {
+		if o.Kind == KindGoTo && o.Place == "route 3" {
+			return
 		}
 	}
-}
-
-func TestFocusWalkingJourneysPreservesReasonedLongDistanceObjectives(t *testing.T) {
-	current := mustPlaceForTravelFocusTest(t, "route 1")
-	known := NewKnowledge(nil)
-	obs := Observation{Map: current.Map}
-	offered := []Objective{
-		{Kind: KindGoTo, Place: "reds bedroom"},
-		{Kind: KindHeal, Place: "viridian pokemon center", Flee: true},
-		{Kind: KindErrand},
-	}
-
-	got := focusWalkingJourneys(obs, known, offered)
-	if len(got) != 2 {
-		t.Fatalf("focused menu has %d choices, want 2: %#v", len(got), got)
-	}
-	if got[0].Kind != KindHeal || got[1].Kind != KindErrand {
-		t.Fatalf("reasoned long-distance objectives changed: %#v", got)
-	}
+	t.Fatal("a visited map two hops away is not offered as a destination")
 }
 
 func mustPlaceForTravelFocusTest(t *testing.T, name string) skill.Destination {

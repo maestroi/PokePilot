@@ -6,6 +6,7 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
+	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/skill"
 )
 
@@ -206,6 +207,21 @@ func Execute(m *emu.Emu, romData []byte, o Objective) (retErr error) {
 				// error does not already say (the old res.BlackedOut re-check
 				// was dead, as KindGoTo's print branch was).
 				return fmt.Errorf("agent: %s: %w", o, err)
+			}
+		}
+		// Heal must be standing ON the counter approach tile: it finds the
+		// counter as the unique non-walkable neighbour of the player's tile,
+		// so anywhere else on the center floor gives it nothing to face.
+		// Being inside a center is not the same as being at its nurse —
+		// MEASURED on MT_MOON_POKECENTER, where a failed talk objective left
+		// the player at (10,5), "heal the party" was offered (correctly, it
+		// IS a center), and Heal died with "expected exactly one non-walkable
+		// neighbor (the counter), found 0" 20 times. The walk is part of the
+		// objective for the same reason it is in the Place branch above; it
+		// is a no-op when the player already stands there.
+		if dest, ok := skill.PlaceOnMap(m.Peek8(sym.CurMap)); ok {
+			if err := skill.GoTo(m, romData, dest); err != nil {
+				return fmt.Errorf("agent: %s: walk to the nurse: %w", o, err)
 			}
 		}
 		if err := skill.Heal(m); err != nil {

@@ -34,13 +34,16 @@ func TestTrainerLossBlocksSameJourneyUntilTraining(t *testing.T) {
 		t.Fatal("route 3 missing from place table")
 	}
 
-	// Route 3 itself is not reachable before Brock; this test is about the
-	// trainers ON Route 3, so model the post-Boulder state where the Pewter
-	// exit is genuinely open.
+	// Route 3 itself is not reachable before Brock, and Route 2 is not
+	// reachable before Oak's parcel is delivered; this test is about the
+	// trainers ON Route 3, so model the state where both scripted exits are
+	// genuinely open — a run standing in Pewter with a badge has long since
+	// been handed the Pokedex.
 	obs := Observation{
 		Map: 0x02, MapName: "PEWTER_CITY", X: 15, Y: 17, PartyCount: 1,
 		Party:  []PartyMon{{Level: 10, HP: 30, MaxHP: 30}},
 		Badges: []string{state.BadgeBoulder.String()},
+		Events: []string{state.EventGotPokedex.String()},
 	}
 	known := NewKnowledge(nil)
 	known.SawMap(obs.Map)

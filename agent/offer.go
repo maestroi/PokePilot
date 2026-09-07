@@ -428,6 +428,17 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 	// progression gates are facts too: an exit the game refuses right now is
 	// not an executable journey and stays off the menu until its condition is
 	// visible in the observation.
+	//
+	// Every known place is offered from wherever the player stands, not only
+	// the maps one hop away: Travel routes across maps, so a destination two
+	// or six maps off is one executable choice. MEASURED 2026-09-07 on
+	// run-3svhxujac7fdutvoqd7eebtmq (679 rounds, 614 repeats, ended stuck) and
+	// run-1veq2t3ehtjfc2zuzg1emwjenm: with only one-hop destinations on the
+	// menu, reaching Cerulean took a chain of correct hops the planner never
+	// held together, so the run oscillated Viridian <-> Route 2 <-> Route 22
+	// for hundreds of rounds while Route 3 — visited, one map past Pewter —
+	// was never on the menu to pick. A remembered room the run has outgrown
+	// costs one line; an unreachable next step costs the run.
 	journeys := make([]Objective, 0, 8)
 	for _, name := range skill.PlaceNames() { // sorted: a stable menu order
 		d, _ := skill.Place(name)
@@ -488,7 +499,17 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 	// it on maps whose wild table has never held one. A map with no grass
 	// encounters names nothing, so the precondition is a fact rather than
 	// a guess, and balls alone are still not enough to hunt.
-	if hasBalls(obs) {
+	//
+	// HasGrass is the second half of that precondition, and skill.Catch needs
+	// it for the same reason skill.Train does: the hunt ping-pongs between two
+	// walkable TALL GRASS TILES, which a cave does not have even though its
+	// wild table is full. Mt. Moon B2F (map 0x3d) rolls CLEFAIRY on ordinary
+	// cave floor, so WildGrass alone put "catch a CLEFAIRY here" on the menu
+	// and every pick died instantly with "no walkable tall grass on map
+	// 0x003d" — MEASURED 10 times. Offering an objective the skill cannot
+	// start is worse than not offering it: the planner spends rounds on it and
+	// reads the failure back as information about the world.
+	if hasBalls(obs) && obs.HasGrass {
 		for _, w := range obs.WildGrass {
 			if sp, ok := SpeciesByName(w.Name); ok {
 				out = append(out, Objective{Kind: KindCatch, Species: sp})

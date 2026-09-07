@@ -128,15 +128,25 @@ func WalkPath(m *emu.Emu, path []world.Step) error {
 	return nil
 }
 
-// ponytail: maxWalkRetries and npcWaitFrames are knobs, not laws. Six
-// STAGNANT retries covers a sprite that wanders across a corridor twice;
-// a walk that gets closer to its target or learns a new call-local runtime
-// blocker resets that budget. This distinction matters on long cave/grind
-// paths: encountering several independent blockers is progress, not six
-// repetitions of the same failure. npcWaitFrames is about one and a half NPC
-// steps on this ROM. Tune with a measurement, not a guess.
+// ponytail: maxWalkRetries and npcWaitFrames are knobs, not laws. STAGNANT
+// retries cover a sprite that wanders across a corridor and back; a walk that
+// gets closer to its target or learns a new call-local runtime blocker resets
+// that budget. This distinction matters on long cave/grind paths: encountering
+// several independent blockers is progress, not repetitions of the same
+// failure. npcWaitFrames is about one and a half NPC steps on this ROM.
+//
+// CORRECTED 2026-09-07. The budget was six retries, so a plan() that failed
+// only because a live sprite stood on the destination waited 6*48 = 288 frames
+// before giving up. MEASURED from run-21chn2lyuc4vj2swmequp7u40r's round-16
+// state (Route 1, player at (14,14), one wandering NPC parked on the
+// destination (14,13) and nothing else blocked): the sprite held that tile
+// past 360 frames and had moved to (15,13) by 480. The old budget quit while
+// the NPC was still standing there — reliably, because it always quit at the
+// same 288. Twelve retries is 576 frames, one full hold plus margin. Progress
+// still resets it, so a walk that is actually moving is unaffected; only a
+// genuinely dead-ended walk pays the extra ~4.8 seconds of game time.
 const (
-	maxWalkRetries = 6
+	maxWalkRetries = 12
 	npcWaitFrames  = 48
 
 	// Two misses at the same destination are enough to distinguish a

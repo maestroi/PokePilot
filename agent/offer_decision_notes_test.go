@@ -23,6 +23,7 @@ func TestOfferMarksUnvisitedAdjacentJourney(t *testing.T) {
 		PartyCount: 1,
 		Party:      []PartyMon{{Level: 20, HP: 50, MaxHP: 50}},
 		Badges:     []string{state.BadgeBoulder.String()},
+		Events:     []string{state.EventGotPokedex.String()},
 	}
 
 	offered := Offer(obs, known)

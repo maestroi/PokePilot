@@ -49,7 +49,7 @@ func EnterWildBattle(m *emu.Emu, attempts int) error {
 	}
 
 	at := cell{int(now.X), int(now.Y)}
-	a, b, ok := grindPair(grass, grid, at.x, at.y)
+	a, b, ok := grindPair(grass, grid, at.x, at.y, spriteBlockers(m))
 	if !ok {
 		return fmt.Errorf("skill: EnterWildBattle: map %#04x has no two walkable grass cells close enough to ping-pong between", now.Map)
 	}

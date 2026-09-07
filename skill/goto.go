@@ -329,6 +329,20 @@ func Place(name string) (Destination, bool) {
 	return d, ok
 }
 
+// PlaceOnMap returns the named destination recorded for mapID, so a caller
+// standing on a map can find the tile that map's objectives are written
+// against without hardcoding coordinates a second time. Names are scanned in
+// sorted order, so a map carrying more than one place resolves the same way
+// every call. ok is false for a map with no named place.
+func PlaceOnMap(mapID uint8) (Destination, bool) {
+	for _, name := range PlaceNames() {
+		if d := places[name]; d.Map == mapID {
+			return d, true
+		}
+	}
+	return Destination{}, false
+}
+
 // PlaceNames returns every name Place accepts, sorted, so a caller can offer
 // one objective per place without duplicating the list.
 func PlaceNames() []string {

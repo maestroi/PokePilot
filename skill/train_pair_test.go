@@ -14,7 +14,7 @@ func TestGrindPairPrefersAdjacentGrass(t *testing.T) {
 		{0, 3},
 		{0, 4},
 	}
-	a, b, ok := grindPair(grass, nil, 0, 0)
+	a, b, ok := grindPair(grass, nil, 0, 0, nil)
 	if !ok {
 		t.Fatal("grindPair returned no pair")
 	}

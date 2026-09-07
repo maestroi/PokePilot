@@ -140,7 +140,7 @@ func Catch(m *emu.Emu, romData []byte, want []uint8, policy MovePolicy, maxBalls
 	if len(grass) == 0 {
 		return res, fmt.Errorf("skill: Catch: no walkable tall grass on map %#04x", now.Map)
 	}
-	a, b, ok := grindPair(grass, grid, int(now.X), int(now.Y))
+	a, b, ok := grindPair(grass, grid, int(now.X), int(now.Y), spriteBlockers(m))
 	if !ok {
 		return res, fmt.Errorf("skill: Catch: map %#04x has no two walkable grass cells close enough to hunt between", now.Map)
 	}
@@ -152,7 +152,16 @@ func Catch(m *emu.Emu, romData []byte, want []uint8, policy MovePolicy, maxBalls
 		// cell re-rolls the encounter, whether or not one fires on this leg.
 		d := Destination{Map: now.Map, X: uint8(next.x), Y: uint8(next.y)}
 		if err := GoTo(m, romData, d); err != nil && !errors.Is(err, ErrBattle) {
-			return res, fmt.Errorf("skill: Catch: hunt leg %d: %w", legsSpent+1, err)
+			// A sprite may have wandered onto a cell that was free when the
+			// pair was chosen. Re-pick and spend the leg rather than ending
+			// the hunt; the leg budget still bounds the retries.
+			na, nb, ok := repickGrindPair(m, grass, grid, a, b)
+			if !ok {
+				return res, fmt.Errorf("skill: Catch: hunt leg %d: %w", legsSpent+1, err)
+			}
+			a, b, next = na, nb, nb
+			legsSpent++
+			continue
 		}
 		legsSpent++
 		next = flip(a, b, next)
