@@ -83,7 +83,7 @@ func main() {
 
 	server := &http.Server{
 		Addr:              *httpAddr,
-		Handler:           wallHTTPHandler(wall),
+		Handler:           operatorHTTPHandler(wall),
 		ReadHeaderTimeout: serverReadHeaderTimeout,
 		IdleTimeout:       serverIdleTimeout,
 	}
