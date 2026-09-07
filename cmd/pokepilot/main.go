@@ -43,6 +43,7 @@ func main() {
 	maxRounds := flag.Int("max-rounds", llmMaxRounds, "optional emergency objective cap for one llm run; 0 means no round cap")
 	goal := flag.String("goal", defaultGoal, "structured goal: badges:N | reach:<place> | level:N | item:<name> | elite-four")
 	checkpointDir := flag.String("checkpoint-dir", "", "directory for the per-objective save-state ring")
+	llmProfile := flag.String("llm-profile", "", "llm endpoint routing: default, gpu, or auto (GPU primary with LAN fallback)")
 	resume := flag.String("resume", "", "resume an llm run from a round checkpoint, checkpoint directory, or run directory")
 	flag.Parse()
 
@@ -136,7 +137,7 @@ func main() {
 	case "scripted":
 		runScripted(m, *starter, *dest, *hold, served)
 	case "llm":
-		runLLM(m, *goal, *maxRounds, *checkpointDir, resumeFrom)
+		runLLM(m, *goal, *llmProfile, *maxRounds, *checkpointDir, resumeFrom)
 	default:
 		log.Fatalf("unknown planner %q: want scripted or llm", *planner)
 	}
@@ -206,10 +207,10 @@ func runScripted(m *emu.Emu, starter, dest string, hold time.Duration, served st
 	}
 }
 
-func runLLM(m *emu.Emu, goal string, maxRounds int, checkpointDir, resumeFrom string) {
+func runLLM(m *emu.Emu, goal, llmProfile string, maxRounds int, checkpointDir, resumeFrom string) {
 	fmt.Println("planner: llm — the model picks from a menu rebuilt every round")
 	log := &agentTraceLog{w: os.Stdout, note: m.TraceNote}
-	stats := newStatsPlanner("", goal, m, m.TraceStats, nil)
+	stats := newStatsPlanner(llmProfile, goal, m, m.TraceStats, nil)
 	stats.wirePlannerLogs(log, nil)
 	res := agent.Run(m, m.ROM(), stats, agent.Budget{
 		MaxRounds:     maxRounds,

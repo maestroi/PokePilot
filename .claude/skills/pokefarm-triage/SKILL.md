@@ -84,6 +84,53 @@ from "the guard never ran" — and those want opposite fixes. For an
 instruction-level answer (which CPU step changed a byte), use the
 `gomeboy-forensics` skill instead.
 
+### Do not reproduce a failure through the planner
+
+The `.state` replay pins the objective that failed and calls its skill
+directly. Never reach for a live planner to reproduce a failure instead: it is
+free to pick something else, and then you are debugging a different round. The
+LLM chose the objective; it is not what broke it.
+
+So: `.state` + scratch test to **reproduce the failure and prove the fix**,
+pinning the objective by hand. `pokerepro -play` only to ask **"does the run
+get past this now"**, where a planner picking freely is the point.
+
+### When the failing round does not contain the bug
+
+Steps 3–4 are the default: seconds, deterministic, no wall needed. They only
+work when the bug is *in* the failing round. When the round's state is already
+wrong on arrival — a party wiped two objectives ago, a bad knowledge entry, a
+planner that went sideways earlier — replay from an earlier objective boundary
+instead. Checkpoints carry the paired LLM knowledge, so the run re-develops the
+bad state rather than you guessing how it got there.
+
+```bash
+W=https://pokemon.labstack.cc
+curl -sS "$W/v1/runs/<run-id>/checkpoints"             # pick a boundary
+go run ./cmd/pokerepro -wall $W -run <run-id> -checkpoint latest
+```
+
+`-attempt 0` takes the latest attempt, `-checkpoint latest` the newest boundary
+that is both replayable and has paired knowledge; it prints a `make run-llm
+ARGS=...` line, or `-play` runs that for you. It goes through `make` on purpose:
+`run-llm` sources `llm_token` from `.env` / `~/.config/pokepilot/env`, and a
+bare `go run ./cmd/pokepilot` gets a 401 from the model server. `POKEMON_RED_ROM`
+must be set either way. To prove a fix on the fleet instead of locally, use **Run
+from checkpoint** in the private Run Inspector — it re-queues the original
+config pinned to that checkpoint, and a checkpoint that will not load fails the
+run instead of silently starting from boot.
+
+`pokerepro` assembles the checkpoint from `/checkpoints` plus two artifact
+downloads rather than `GET /v1/runs/{id}/checkpoint`: the public host's proxy
+only exposes the read-only inspector subset, so that endpoint — and every
+`repro-*` route — 404s from outside the cluster. Same reason the Inspector
+button is reachable only from inside. Auth is not the issue (the read routes
+need no token; `-token` / `$POKEPILOT_TOKEN` exists for walls that do gate them,
+and falls back to the pokepilot MCP bearer in `~/.claude.json`).
+
+One real cost: this replays actual gameplay through a live LLM, so it takes
+minutes and is not deterministic. llm runs only.
+
 ## 5. Fix at the shared point
 
 Farm failures are almost always one skill misbehaving for every caller. Grep
