@@ -65,3 +65,10 @@ func (a *redObjectiveAdapter) VerifyPostcondition(o Objective, final Observation
 func (a *redObjectiveAdapter) CaptureFailure(o Objective, err error) error {
 	return captureObjectiveFailure(a.m, o, err)
 }
+
+// executeObjective keeps the existing Run-internal name while routing through
+// exactly the same adapter-backed public transaction boundary as Execute. There
+// is no longer a second Red-only lifecycle implementation hidden behind Run.
+func executeObjective(m *emu.Emu, romData []byte, o Objective) (ObjectiveResult, error) {
+	return Execute(m, romData, o)
+}
