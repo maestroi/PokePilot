@@ -17,19 +17,31 @@ type LLMConfig struct {
 	NoThink   bool
 	MaxTokens int
 	Timeout   time.Duration
+	// ReasoningEffort carries LLMPlanner.ReasoningEffort through the
+	// config path. Farm runs build their planner via
+	// NewLLMPlannerFromConfig, never NewLLMPlanner, so its "medium"
+	// default must be set here too or the strategist silently reverts to
+	// sending no reasoning_effort field at all — the broken path
+	// documented on LLMPlanner.ReasoningEffort.
+	ReasoningEffort string
 }
 
 // NewLLMPlannerFromConfig constructs a planner without reading process
 // environment. Callers that need environment overrides can build the config
 // first with OptionalLLMConfigFromEnv.
 func NewLLMPlannerFromConfig(c LLMConfig) *LLMPlanner {
+	effort := c.ReasoningEffort
+	if effort == "" {
+		effort = "medium"
+	}
 	return &LLMPlanner{
-		BaseURL:   c.BaseURL,
-		Model:     c.Model,
-		Token:     c.Token,
-		NoThink:   c.NoThink,
-		MaxTokens: c.MaxTokens,
-		Timeout:   c.Timeout,
+		BaseURL:         c.BaseURL,
+		Model:           c.Model,
+		Token:           c.Token,
+		NoThink:         c.NoThink,
+		MaxTokens:       c.MaxTokens,
+		Timeout:         c.Timeout,
+		ReasoningEffort: effort,
 	}
 }
 
@@ -63,6 +75,9 @@ func OptionalLLMConfigFromEnv(prefix string, defaults LLMConfig) (LLMConfig, boo
 		if d, err := time.ParseDuration(v); err == nil {
 			c.Timeout = d
 		}
+	}
+	if v := strings.TrimSpace(os.Getenv(prefix + "REASONING_EFFORT")); v != "" {
+		c.ReasoningEffort = v
 	}
 	return c, true
 }

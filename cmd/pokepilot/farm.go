@@ -393,7 +393,7 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 	case "scripted":
 		reason, detail, progEarly, progFinal = runFarmScripted(m, starter, dest)
 	case "llm":
-		reason, detail, progEarly, progFinal = runFarmLLM(m, starter, goal, spec.LLMProfile, maxRounds, maxFrames, cancel, snap, checkpointDir)
+		reason, detail, progEarly, progFinal = runFarmLLM(m, starter, goal, spec.LLMProfile, spec.ReasoningEffort, maxRounds, maxFrames, cancel, snap, checkpointDir)
 	}
 
 	// Stop and join the heartbeat before TraceTail/SaveState/Finish.
@@ -530,7 +530,7 @@ func runFarmScripted(m *emu.Emu, starter, dest string) (string, string, *farm.Pr
 // runFarmLLM mirrors runLLM's diagnostics and objective list; the only
 // differences are that the budget comes from the spec and cancel is the
 // wall's cooperative stop.
-func runFarmLLM(m *emu.Emu, starter, goal, llmProfile string, maxRounds, maxFrames int, cancel <-chan struct{}, snap *heartbeatSnap, checkpointDir string) (string, string, *farm.Progress, *farm.Progress) {
+func runFarmLLM(m *emu.Emu, starter, goal, llmProfile, reasoningEffort string, maxRounds, maxFrames int, cancel <-chan struct{}, snap *heartbeatSnap, checkpointDir string) (string, string, *farm.Progress, *farm.Progress) {
 	resumeFrom := farmResumePath(checkpointDir)
 	// When the spec names a starter, the farm takes it before handing control
 	// to the model — the same reason badgerun does (a model that knows Pokemon
@@ -544,7 +544,7 @@ func runFarmLLM(m *emu.Emu, starter, goal, llmProfile string, maxRounds, maxFram
 	fmt.Println("planner: llm — the model picks from a menu rebuilt every round")
 
 	logw := &agentTraceLog{w: os.Stdout, note: m.TraceNote}
-	stats := newStatsPlanner(llmProfile, goal, m, m.TraceStats, snap)
+	stats := newStatsPlanner(llmProfile, reasoningEffort, goal, m, m.TraceStats, snap)
 	stats.wirePlannerLogs(logw, snap)
 	res := agent.Run(m, m.ROM(), reportingPlanner{inner: stats, snap: snap}, agent.Budget{
 		MaxRounds:     maxRounds,

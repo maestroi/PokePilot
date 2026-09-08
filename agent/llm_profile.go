@@ -26,6 +26,19 @@ func NormalizeLLMProfile(s string) LLMProfile {
 	}
 }
 
+// NormalizeReasoningEffort maps a queue/form value onto a value this
+// server's reasoning_effort field accepts, or "" (meaning: use the
+// endpoint's configured default) for anything else, including "auto" and
+// empty.
+func NormalizeReasoningEffort(s string) string {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "low", "medium", "high":
+		return strings.ToLower(strings.TrimSpace(s))
+	default:
+		return ""
+	}
+}
+
 // LLMProfileLabel renders a profile for operator surfaces.
 func LLMProfileLabel(p LLMProfile) string {
 	switch p {
@@ -42,12 +55,13 @@ func LLMProfileLabel(p LLMProfile) string {
 func defaultLLMConfigFromEnv() LLMConfig {
 	p := NewLLMPlanner()
 	return LLMConfig{
-		BaseURL:   p.BaseURL,
-		Model:     p.Model,
-		Token:     p.Token,
-		NoThink:   p.NoThink,
-		MaxTokens: p.MaxTokens,
-		Timeout:   p.Timeout,
+		BaseURL:         p.BaseURL,
+		Model:           p.Model,
+		Token:           p.Token,
+		NoThink:         p.NoThink,
+		MaxTokens:       p.MaxTokens,
+		Timeout:         p.Timeout,
+		ReasoningEffort: p.ReasoningEffort,
 	}
 }
 
@@ -64,8 +78,20 @@ func gpuLLMConfigFromEnv(defaults LLMConfig) (LLMConfig, bool) {
 // endpoint configs. Auto matches make run-llm-auto: GPU primary with the
 // default/LAN endpoint as transport fallback.
 func ResolveLLMEndpoints(profile LLMProfile) (primary LLMConfig, fallback *LLMConfig) {
+	return ResolveLLMEndpointsWithEffort(profile, "")
+}
+
+// ResolveLLMEndpointsWithEffort is ResolveLLMEndpoints plus a per-run
+// reasoning_effort override (low/medium/high). Empty defers to the
+// environment/"medium" default on both endpoints; a run-specified value
+// wins over POKEPILOT_LLM_REASONING_EFFORT and POKEPILOT_LLM_GPU_*.
+func ResolveLLMEndpointsWithEffort(profile LLMProfile, reasoningEffort string) (primary LLMConfig, fallback *LLMConfig) {
 	lan := defaultLLMConfigFromEnv()
 	gpu, hasGPU := gpuLLMConfigFromEnv(lan)
+	if reasoningEffort != "" {
+		lan.ReasoningEffort = reasoningEffort
+		gpu.ReasoningEffort = reasoningEffort
+	}
 	switch profile {
 	case LLMProfileGPU:
 		if hasGPU {

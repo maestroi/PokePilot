@@ -23,7 +23,11 @@ type Spec struct {
 	// never how. Empty means no goal (the pre-Goal prompt).
 	Goal       string `json:"goal,omitempty"`
 	LLMProfile string `json:"llm_profile,omitempty"`
-	FPS        int    `json:"fps"`
+	// ReasoningEffort overrides the strategist's reasoning_effort field for
+	// this run: "low", "medium", or "high". Empty means the endpoint's
+	// configured default (POKEPILOT_LLM_REASONING_EFFORT, or "medium").
+	ReasoningEffort string `json:"reasoning_effort,omitempty"`
+	FPS             int    `json:"fps"`
 	// MaxRounds is an OPTIONAL emergency/experiment cap for an LLM run.
 	// Zero is the normal goal-driven mode: there is no hard round limit and
 	// the run ends on goal completion, a real failure, cancellation, or the

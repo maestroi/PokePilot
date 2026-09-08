@@ -82,8 +82,8 @@ type statsPlanner struct {
 	baseExtraSystem string
 }
 
-func newStatsPlanner(profile, goal string, m *emu.Emu, push func(any), snap *heartbeatSnap) *statsPlanner {
-	primaryCfg, fallbackCfg := agent.ResolveLLMEndpoints(agent.NormalizeLLMProfile(profile))
+func newStatsPlanner(profile, reasoningEffort, goal string, m *emu.Emu, push func(any), snap *heartbeatSnap) *statsPlanner {
+	primaryCfg, fallbackCfg := agent.ResolveLLMEndpointsWithEffort(agent.NormalizeLLMProfile(profile), agent.NormalizeReasoningEffort(reasoningEffort))
 	inner := agent.NewLLMPlannerFromConfig(primaryCfg)
 	inner.Goal = goal
 	var fallback *agent.LLMPlanner

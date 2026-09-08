@@ -37,6 +37,14 @@
       default: return r.planner === "llm" ? "Default (LAN)" : "";
     }
   };
+  const reasoningEffortLabel = (r) => {
+    switch ((r.reasoning_effort || "").toLowerCase()) {
+      case "low": return "Low (fastest)";
+      case "medium": return "Medium";
+      case "high": return "High (slowest)";
+      default: return "Auto (endpoint default)";
+    }
+  };
 
   function issueHref(url) {
     try {
@@ -251,6 +259,7 @@
     f.dest.value = "viridian pokemon center";
     f.goal.value = "Earn the Boulder Badge.";
     f.llm_profile.value = "auto";
+    f.reasoning_effort.value = "auto";
     f.seed.value = "0";
     f.fps.value = "60";
     f.max_rounds.value = "0";
@@ -648,6 +657,7 @@
     const settings = kv([
       ["how", howText(run)], ["starter", starterOf(run)], ["goal", goalOf(run)],
       ["model", run.planner === "llm" ? llmProfileLabel(run) : ""],
+      ["reasoning", run.planner === "llm" ? reasoningEffortLabel(run) : ""],
       ["walk to", run.planner === "scripted" ? (run.dest || "—") : ""], ["seed", String(run.seed)],
       ["keep going", run.endless ? (run.random_seed ? "yes, random seed" : "yes, same seed") : ""],
       ["queued", fmtWhen(run.queued_at)], ["ended", fmtWhen(run.ended_at)], ["fps", run.fps ? String(run.fps) : ""],
@@ -796,7 +806,7 @@
 
   $("spec-form").addEventListener("submit", async (ev) => {
     ev.preventDefault(); const err = $("form-error"); err.textContent = ""; const f = ev.target; const planner = f.planner.value;
-    const spec = { run_id: f.run_id.value.trim(), planner, starter: f.starter.value, dest: planner === "scripted" ? f.dest.value.trim() : "", goal: planner === "llm" ? f.goal.value.trim() : "", llm_profile: planner === "llm" ? f.llm_profile.value : "", seed: Number(f.seed.value || 0), fps: Number(f.fps.value || 0), max_rounds: Number(f.max_rounds.value || 0), max_frames: Number(f.max_frames.value || 0), endless: f.endless.checked, random_seed: f.endless.checked && f.seed_mode.value === "random" };
+    const spec = { run_id: f.run_id.value.trim(), planner, starter: f.starter.value, dest: planner === "scripted" ? f.dest.value.trim() : "", goal: planner === "llm" ? f.goal.value.trim() : "", llm_profile: planner === "llm" ? f.llm_profile.value : "", reasoning_effort: planner === "llm" && f.reasoning_effort.value !== "auto" ? f.reasoning_effort.value : "", seed: Number(f.seed.value || 0), fps: Number(f.fps.value || 0), max_rounds: Number(f.max_rounds.value || 0), max_frames: Number(f.max_frames.value || 0), endless: f.endless.checked, random_seed: f.endless.checked && f.seed_mode.value === "random" };
     try {
       const res = await fetch("/v1/specs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(spec) });
       const body = await res.json().catch(() => ({}));

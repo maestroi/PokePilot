@@ -12,7 +12,7 @@ func TestNewStatsPlannerHonorsLLMProfile(t *testing.T) {
 	t.Setenv("POKEPILOT_LLM_FALLBACK_URL", "http://gpu.example/v1")
 	t.Setenv("POKEPILOT_LLM_FALLBACK_MODEL", "gpu-model")
 
-	s := newStatsPlanner("auto", "Earn the Boulder Badge.", nil, nil, nil)
+	s := newStatsPlanner("auto", "", "Earn the Boulder Badge.", nil, nil, nil)
 	if s.inner.BaseURL != "http://gpu.example/v1" || s.inner.Model != "gpu-model" {
 		t.Fatalf("auto primary = %s %s, want gpu endpoint", s.inner.BaseURL, s.inner.Model)
 	}
@@ -20,12 +20,12 @@ func TestNewStatsPlannerHonorsLLMProfile(t *testing.T) {
 		t.Fatalf("auto fallback = %+v, want lan endpoint", s.router.Fallback)
 	}
 
-	s = newStatsPlanner("default", "Earn the Boulder Badge.", nil, nil, nil)
+	s = newStatsPlanner("default", "", "Earn the Boulder Badge.", nil, nil, nil)
 	if s.inner.BaseURL != "http://lan.example/v1" || s.router.Fallback != nil {
 		t.Fatalf("default = primary %s/%s fallback %v", s.inner.BaseURL, s.inner.Model, s.router.Fallback)
 	}
 
-	s = newStatsPlanner("gpu", "Earn the Boulder Badge.", nil, nil, nil)
+	s = newStatsPlanner("gpu", "", "Earn the Boulder Badge.", nil, nil, nil)
 	if s.inner.BaseURL != "http://gpu.example/v1" || s.router.Fallback != nil {
 		t.Fatalf("gpu = primary %s/%s fallback %v", s.inner.BaseURL, s.inner.Model, s.router.Fallback)
 	}

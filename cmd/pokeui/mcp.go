@@ -45,6 +45,12 @@ type mcpStartRunInput struct {
 	MaxRounds  int    `json:"max_rounds,omitempty" jsonschema:"optional emergency/experiment LLM objective cap; zero means no hard round cap"`
 	MaxFrames  int    `json:"max_frames,omitempty" jsonschema:"emulated frame budget; zero uses the runner default"`
 	LLMProfile string `json:"llm_profile,omitempty" jsonschema:"llm endpoint routing: default, gpu, or auto (GPU primary with LAN fallback)"`
+	// ReasoningEffort overrides the strategist's reasoning_effort: low,
+	// medium, or high. Empty/auto means the endpoint's configured default.
+	// Omitting the field entirely is a distinct broken path on this
+	// server's llama.cpp build (see agent.LLMPlanner.ReasoningEffort) —
+	// this option lets an operator dial it without redeploying.
+	ReasoningEffort string `json:"reasoning_effort,omitempty" jsonschema:"strategist reasoning effort: low, medium, high, or auto (endpoint default)"`
 }
 
 type mcpStartRunOutput struct {
@@ -70,33 +76,34 @@ type mcpInvestigateInput struct {
 }
 
 type mcpRunView struct {
-	RunID      string         `json:"run_id"`
-	Status     string         `json:"status"`
-	Planner    string         `json:"planner,omitempty"`
-	Starter    string         `json:"starter,omitempty"`
-	Dest       string         `json:"dest,omitempty"`
-	Goal       string         `json:"goal,omitempty"`
-	LLMProfile string         `json:"llm_profile,omitempty"`
-	Seed       int64          `json:"seed"`
-	FPS        int            `json:"fps"`
-	MaxRounds  int            `json:"max_rounds"`
-	MaxFrames  int            `json:"max_frames"`
-	QueuedAt   int64          `json:"queued_at,omitempty"`
-	EndedAt    int64          `json:"ended_at,omitempty"`
-	Attempts   int            `json:"attempts"`
-	Frame      uint64         `json:"frame"`
-	Map        uint8          `json:"map"`
-	X          uint8          `json:"x"`
-	Y          uint8          `json:"y"`
-	Trace      string         `json:"trace,omitempty"`
-	Question   string         `json:"question,omitempty"`
-	Decision   string         `json:"decision,omitempty"`
-	StopSoFar  string         `json:"stop_so_far,omitempty"`
-	Stats      *farm.LLMStats `json:"stats,omitempty"`
-	Player     *farm.Player   `json:"player,omitempty"`
-	Reason     string         `json:"reason,omitempty"`
-	Detail     string         `json:"detail,omitempty"`
-	Issue      map[string]any `json:"issue,omitempty"`
+	RunID           string         `json:"run_id"`
+	Status          string         `json:"status"`
+	Planner         string         `json:"planner,omitempty"`
+	Starter         string         `json:"starter,omitempty"`
+	Dest            string         `json:"dest,omitempty"`
+	Goal            string         `json:"goal,omitempty"`
+	LLMProfile      string         `json:"llm_profile,omitempty"`
+	ReasoningEffort string         `json:"reasoning_effort,omitempty"`
+	Seed            int64          `json:"seed"`
+	FPS             int            `json:"fps"`
+	MaxRounds       int            `json:"max_rounds"`
+	MaxFrames       int            `json:"max_frames"`
+	QueuedAt        int64          `json:"queued_at,omitempty"`
+	EndedAt         int64          `json:"ended_at,omitempty"`
+	Attempts        int            `json:"attempts"`
+	Frame           uint64         `json:"frame"`
+	Map             uint8          `json:"map"`
+	X               uint8          `json:"x"`
+	Y               uint8          `json:"y"`
+	Trace           string         `json:"trace,omitempty"`
+	Question        string         `json:"question,omitempty"`
+	Decision        string         `json:"decision,omitempty"`
+	StopSoFar       string         `json:"stop_so_far,omitempty"`
+	Stats           *farm.LLMStats `json:"stats,omitempty"`
+	Player          *farm.Player   `json:"player,omitempty"`
+	Reason          string         `json:"reason,omitempty"`
+	Detail          string         `json:"detail,omitempty"`
+	Issue           map[string]any `json:"issue,omitempty"`
 }
 
 type mcpWorkerView struct {
@@ -218,6 +225,15 @@ func (c *mcpControl) startRun(ctx context.Context, _ *mcp.CallToolRequest, in mc
 	default:
 		return nil, mcpStartRunOutput{}, fmt.Errorf("llm_profile must be default, gpu, or auto")
 	}
+	reasoningEffort := strings.ToLower(strings.TrimSpace(in.ReasoningEffort))
+	switch reasoningEffort {
+	case "", "auto", "low", "medium", "high":
+	default:
+		return nil, mcpStartRunOutput{}, fmt.Errorf("reasoning_effort must be low, medium, high, or auto")
+	}
+	if reasoningEffort == "auto" {
+		reasoningEffort = ""
+	}
 
 	dest := strings.TrimSpace(in.Dest)
 	goal := strings.TrimSpace(in.Goal)
@@ -230,16 +246,17 @@ func (c *mcpControl) startRun(ctx context.Context, _ *mcp.CallToolRequest, in mc
 
 	runID := fmt.Sprintf("mcp-%s-%04x", time.Now().UTC().Format("20060102-150405"), mcpRunSequence.Add(1)&0xffff)
 	spec := farm.Spec{
-		RunID:      runID,
-		Seed:       in.Seed,
-		Planner:    planner,
-		Starter:    starter,
-		Dest:       dest,
-		Goal:       goal,
-		LLMProfile: llmProfile,
-		FPS:        in.FPS,
-		MaxRounds:  in.MaxRounds,
-		MaxFrames:  in.MaxFrames,
+		RunID:           runID,
+		Seed:            in.Seed,
+		Planner:         planner,
+		Starter:         starter,
+		Dest:            dest,
+		Goal:            goal,
+		LLMProfile:      llmProfile,
+		ReasoningEffort: reasoningEffort,
+		FPS:             in.FPS,
+		MaxRounds:       in.MaxRounds,
+		MaxFrames:       in.MaxFrames,
 	}
 	var upstream map[string]any
 	if err := c.requestJSON(ctx, http.MethodPost, "/v1/specs", spec, &upstream); err != nil {

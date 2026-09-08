@@ -12,7 +12,7 @@ func TestStatsPlannerMirrorsCompletedRuntimeGoalOnce(t *testing.T) {
 		pushed int
 		got    runStats
 	)
-	p := newStatsPlanner("", "badges:1", nil, func(v any) {
+	p := newStatsPlanner("", "", "badges:1", nil, func(v any) {
 		pushed++
 		got = v.(runStats)
 	}, nil)
@@ -36,14 +36,14 @@ func TestStatsPlannerMirrorsCompletedRuntimeGoalOnce(t *testing.T) {
 }
 
 func TestStatsPlannerExposesRawRunGoal(t *testing.T) {
-	p := newStatsPlanner("", "Earn the Boulder Badge.", nil, nil, nil)
+	p := newStatsPlanner("", "", "Earn the Boulder Badge.", nil, nil, nil)
 	if got := p.RunGoal(); got != "Earn the Boulder Badge." {
 		t.Fatalf("RunGoal = %q", got)
 	}
 }
 
 func TestStatsPlannerSurfacesRuntimeGoalProgress(t *testing.T) {
-	p := newStatsPlanner("", "badges:2", nil, nil, nil)
+	p := newStatsPlanner("", "", "badges:2", nil, nil, nil)
 	p.inner.ExtraSystem = "baseline system note"
 	p.baseExtraSystem = p.inner.ExtraSystem
 	obs := agent.Observation{
@@ -68,7 +68,7 @@ func TestStatsPlannerSurfacesRuntimeGoalProgress(t *testing.T) {
 }
 
 func TestStatsPlannerLeavesPromptOnlyGoalOutOfDeterministicStats(t *testing.T) {
-	p := newStatsPlanner("", "Explore Kanto and see how far you get.", nil, nil, nil)
+	p := newStatsPlanner("", "", "Explore Kanto and see how far you get.", nil, nil, nil)
 	p.inner.ExtraSystem = "baseline"
 	p.baseExtraSystem = p.inner.ExtraSystem
 	obs := agent.Observation{Round: 1, Badges: []string{"Boulder"}}

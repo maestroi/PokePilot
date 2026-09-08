@@ -37,21 +37,22 @@ const (
 
 // Tile is one run's live state as the wall sees it.
 type Tile struct {
-	RunID      string
-	Status     string
-	Planner    string
-	Starter    string
-	Dest       string
-	Goal       string
-	LLMProfile string
-	Seed       int64
-	FPS        int
-	MaxRounds  int
-	MaxFrames  int
-	Endless    bool
-	RandomSeed bool
-	QueuedAt   time.Time
-	EndedAt    time.Time
+	RunID           string
+	Status          string
+	Planner         string
+	Starter         string
+	Dest            string
+	Goal            string
+	LLMProfile      string
+	ReasoningEffort string
+	Seed            int64
+	FPS             int
+	MaxRounds       int
+	MaxFrames       int
+	Endless         bool
+	RandomSeed      bool
+	QueuedAt        time.Time
+	EndedAt         time.Time
 	// Attempts counts completed runner generations. It always advances when
 	// a generation ends so late heartbeats/checkpoints/finish reports can be
 	// rejected even when worker-loss recovery does not consume error budget.
@@ -117,6 +118,7 @@ type tileRow struct {
 	Dest            string           `json:"dest"`
 	Goal            string           `json:"goal,omitempty"`
 	LLMProfile      string           `json:"llm_profile,omitempty"`
+	ReasoningEffort string           `json:"reasoning_effort,omitempty"`
 	Seed            int64            `json:"seed"`
 	FPS             int              `json:"fps"`
 	MaxRounds       int              `json:"max_rounds"`
@@ -202,6 +204,7 @@ type persistedTile struct {
 	Dest            string         `json:"dest,omitempty"`
 	Goal            string         `json:"goal,omitempty"`
 	LLMProfile      string         `json:"llm_profile,omitempty"`
+	ReasoningEffort string         `json:"reasoning_effort,omitempty"`
 	Seed            int64          `json:"seed"`
 	FPS             int            `json:"fps"`
 	MaxRounds       int            `json:"max_rounds"`
@@ -258,6 +261,7 @@ func (w *Wall) marshalStateLocked() ([]byte, error) {
 			Dest:            t.Dest,
 			Goal:            t.Goal,
 			LLMProfile:      t.LLMProfile,
+			ReasoningEffort: t.ReasoningEffort,
 			Seed:            t.Seed,
 			FPS:             t.FPS,
 			MaxRounds:       t.MaxRounds,
@@ -343,6 +347,7 @@ func (w *Wall) loadState() {
 			Dest:            pt.Dest,
 			Goal:            pt.Goal,
 			LLMProfile:      pt.LLMProfile,
+			ReasoningEffort: pt.ReasoningEffort,
 			Seed:            pt.Seed,
 			FPS:             pt.FPS,
 			MaxRounds:       pt.MaxRounds,
@@ -507,6 +512,7 @@ func (w *Wall) applySpec(runID string, spec farm.Spec) {
 	t.Dest = spec.Dest
 	t.Goal = spec.Goal
 	t.LLMProfile = spec.LLMProfile
+	t.ReasoningEffort = spec.ReasoningEffort
 	t.Seed = spec.Seed
 	t.FPS = spec.FPS
 	t.MaxRounds = spec.MaxRounds
@@ -553,19 +559,20 @@ func (w *Wall) handleLease(res http.ResponseWriter, req *http.Request) {
 	t.Status = statusLeased
 	t.lastUpdate = time.Now()
 	spec := farm.Spec{
-		RunID:      t.RunID,
-		Attempt:    t.Attempts + 1,
-		Seed:       t.Seed,
-		Planner:    t.Planner,
-		Starter:    t.Starter,
-		Dest:       t.Dest,
-		Goal:       t.Goal,
-		LLMProfile: t.LLMProfile,
-		FPS:        t.FPS,
-		MaxRounds:  t.MaxRounds,
-		MaxFrames:  t.MaxFrames,
-		Endless:    t.Endless,
-		RandomSeed: t.RandomSeed,
+		RunID:           t.RunID,
+		Attempt:         t.Attempts + 1,
+		Seed:            t.Seed,
+		Planner:         t.Planner,
+		Starter:         t.Starter,
+		Dest:            t.Dest,
+		Goal:            t.Goal,
+		LLMProfile:      t.LLMProfile,
+		ReasoningEffort: t.ReasoningEffort,
+		FPS:             t.FPS,
+		MaxRounds:       t.MaxRounds,
+		MaxFrames:       t.MaxFrames,
+		Endless:         t.Endless,
+		RandomSeed:      t.RandomSeed,
 	}
 	w.mu.Unlock()
 	w.saveState()
@@ -955,6 +962,7 @@ func (w *Wall) snapshot() dashboardView {
 			Dest:            t.Dest,
 			Goal:            t.Goal,
 			LLMProfile:      t.LLMProfile,
+			ReasoningEffort: t.ReasoningEffort,
 			Seed:            t.Seed,
 			FPS:             t.FPS,
 			MaxRounds:       t.MaxRounds,
@@ -1432,18 +1440,19 @@ func (w *Wall) enqueueNextLocked(prev *Tile) {
 	w.tiles[id] = &Tile{}
 	w.queue = append(w.queue, id)
 	w.applySpec(id, farm.Spec{
-		RunID:      id,
-		Seed:       seed,
-		Planner:    prev.Planner,
-		Starter:    prev.Starter,
-		Dest:       prev.Dest,
-		Goal:       prev.Goal,
-		LLMProfile: prev.LLMProfile,
-		FPS:        prev.FPS,
-		MaxRounds:  prev.MaxRounds,
-		MaxFrames:  prev.MaxFrames,
-		Endless:    true,
-		RandomSeed: prev.RandomSeed,
+		RunID:           id,
+		Seed:            seed,
+		Planner:         prev.Planner,
+		Starter:         prev.Starter,
+		Dest:            prev.Dest,
+		Goal:            prev.Goal,
+		LLMProfile:      prev.LLMProfile,
+		ReasoningEffort: prev.ReasoningEffort,
+		FPS:             prev.FPS,
+		MaxRounds:       prev.MaxRounds,
+		MaxFrames:       prev.MaxFrames,
+		Endless:         true,
+		RandomSeed:      prev.RandomSeed,
 	})
 }
 

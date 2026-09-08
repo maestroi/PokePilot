@@ -83,7 +83,7 @@ func TestFarmLLMAppliesSpecGoal(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(src)
-	if !strings.Contains(text, "newStatsPlanner(llmProfile, goal") {
+	if !strings.Contains(text, "newStatsPlanner(llmProfile, reasoningEffort, goal") {
 		t.Fatal("runFarmLLM does not pass the leased profile and goal into statsPlanner")
 	}
 	if !strings.Contains(text, "spec.Goal") {
