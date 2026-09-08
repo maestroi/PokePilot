@@ -98,6 +98,14 @@ type LLMPlanner struct {
 	// ignores it. POKEPILOT_LLM_NO_THINK=1 sets it.
 	NoThink bool
 
+	// ReasoningEffort is sent as the top-level reasoning_effort field on
+	// every strategist (askPlan) call, never on the chooser. See
+	// chatRequest.ReasoningEffort for why this must never be left empty for
+	// the strategist: an omitted field is a distinct, broken code path on
+	// this server, not merely "more thinking". Defaults to "medium" in
+	// NewLLMPlanner; POKEPILOT_LLM_REASONING_EFFORT overrides it.
+	ReasoningEffort string
+
 	// MaxTokens caps one reply's completion tokens. Zero means
 	// maxReplyTokens. Raise it for a reasoning model: the think block is
 	// spent from this budget, and a cap that truncates it is reported as
@@ -223,7 +231,7 @@ func (p *LLMPlanner) StrategicPromptHash() string {
 // POKEPILOT_LLM_URL and POKEPILOT_LLM_MODEL when set. The bearer
 // token comes from llm_token (the name used in .env).
 func NewLLMPlanner() *LLMPlanner {
-	p := &LLMPlanner{BaseURL: defaultLLMBaseURL, Model: defaultLLMModel}
+	p := &LLMPlanner{BaseURL: defaultLLMBaseURL, Model: defaultLLMModel, ReasoningEffort: "medium"}
 	if v := os.Getenv("POKEPILOT_LLM_URL"); v != "" {
 		p.BaseURL = v
 	}
@@ -243,6 +251,9 @@ func NewLLMPlanner() *LLMPlanner {
 		if d, err := time.ParseDuration(v); err == nil {
 			p.Timeout = d
 		}
+	}
+	if v := os.Getenv("POKEPILOT_LLM_REASONING_EFFORT"); v != "" {
+		p.ReasoningEffort = v
 	}
 	return p
 }
@@ -611,6 +622,16 @@ type chatRequest struct {
 	// is unchanged unless someone asked for this.
 	ChatTemplateKwargs map[string]any  `json:"chat_template_kwargs,omitempty"`
 	ResponseFormat     *responseFormat `json:"response_format,omitempty"`
+	// ReasoningEffort is the OpenAI-style top-level field this llama.cpp
+	// build honours. PROBED 2026-09-08 against this exact server: with the
+	// field omitted, three consecutive trivial one-line prompts each failed
+	// to return within 30s; with it set to any of low/medium/high, every
+	// call returned in 1-2s. So the server's default (no field) is not
+	// merely slower reasoning, it is a distinct and broken code path — the
+	// strategist must always send an explicit value. Empty means omitted,
+	// which stays byte-identical for the chooser (thinking already off
+	// there via NoThink).
+	ReasoningEffort string `json:"reasoning_effort,omitempty"`
 }
 
 // responseFormat asks a server that supports structured output (llama.cpp
@@ -759,7 +780,7 @@ func (p *LLMPlanner) ask(obs Observation, offered []Objective, feedback string, 
 	if maxTokens <= 0 {
 		maxTokens = maxReplyTokens
 	}
-	return p.askRequest(system, user, "objective_choice", choiceSchema, p.NoThink, maxTokens, maxRetryTokens, p.Timeout, p.PromptHash(), temperature, maxTokensFactor)
+	return p.askRequest(system, user, "objective_choice", choiceSchema, p.NoThink, "", maxTokens, maxRetryTokens, p.Timeout, p.PromptHash(), temperature, maxTokensFactor)
 }
 
 func (p *LLMPlanner) askPlan(obs Observation, offered []Objective, reason, feedback string, temperature *float64, maxTokensFactor int) (chatResult, error) {
@@ -777,10 +798,10 @@ func (p *LLMPlanner) askPlan(obs Observation, offered []Objective, reason, feedb
 	if timeout < strategicTimeout {
 		timeout = strategicTimeout
 	}
-	return p.askRequest(system, user, "objective_plan", planSchema, false, maxTokens, strategicRetryTokens, timeout, p.StrategicPromptHash(), temperature, maxTokensFactor)
+	return p.askRequest(system, user, "objective_plan", planSchema, false, p.ReasoningEffort, maxTokens, strategicRetryTokens, timeout, p.StrategicPromptHash(), temperature, maxTokensFactor)
 }
 
-func (p *LLMPlanner) askRequest(system, user, schemaName string, schema map[string]any, noThink bool, baseMaxTokens, retryCap int, timeout time.Duration, promptHash string, temperature *float64, maxTokensFactor int) (chatResult, error) {
+func (p *LLMPlanner) askRequest(system, user, schemaName string, schema map[string]any, noThink bool, reasoningEffort string, baseMaxTokens, retryCap int, timeout time.Duration, promptHash string, temperature *float64, maxTokensFactor int) (chatResult, error) {
 	client := p.Client
 	if client == nil {
 		if timeout <= 0 {
@@ -821,6 +842,7 @@ func (p *LLMPlanner) askRequest(system, user, schemaName string, schema map[stri
 			{Role: "user", Content: user},
 		},
 		ChatTemplateKwargs: templateKwargs,
+		ReasoningEffort:    reasoningEffort,
 		ResponseFormat: &responseFormat{
 			Type:       "json_schema",
 			JSONSchema: &jsonSchema{Name: schemaName, Strict: false, Schema: schema},

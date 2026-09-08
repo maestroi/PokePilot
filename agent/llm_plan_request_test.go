@@ -25,13 +25,16 @@ func TestStrategistUsesThinkingModeAndLargeBudget(t *testing.T) {
 		body := `{"model":"test-model","choices":[{"message":{"content":"{\"goal\":\"go north\",\"steps\":[\"go to route 1\"]}"},"finish_reason":"stop"}]}`
 		return &http.Response{StatusCode: 200, Status: "200 OK", Body: io.NopCloser(bytes.NewBufferString(body)), Header: make(http.Header)}, nil
 	})}
-	p := &LLMPlanner{BaseURL: "http://unused", Model: "test-model", Client: client, NoThink: true, MaxTokens: 512}
+	p := &LLMPlanner{BaseURL: "http://unused", Model: "test-model", Client: client, NoThink: true, MaxTokens: 512, ReasoningEffort: "medium"}
 	offered := []Objective{{Kind: KindGoTo, Place: "route 1"}}
 	if _, err := p.Strategize(Observation{Round: 3}, offered, "initial"); err != nil {
 		t.Fatalf("Strategize: %v", err)
 	}
 	if got := int(request["max_tokens"].(float64)); got < strategicReplyTokens {
 		t.Fatalf("max_tokens=%d, want >=%d", got, strategicReplyTokens)
+	}
+	if got := request["reasoning_effort"]; got != "medium" {
+		t.Fatalf("reasoning_effort=%v, want medium", got)
 	}
 	if _, present := request["chat_template_kwargs"]; present {
 		t.Fatalf("strategist inherited cheap NoThink request: %+v", request["chat_template_kwargs"])
