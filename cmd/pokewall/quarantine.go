@@ -69,6 +69,19 @@ func (w *Wall) issueDispositionForKey(key string) (IssueLink, issueOccurrenceDis
 // evidence; the persisted outbox marker makes restart rescans idempotent.
 // Repeating the same external id never increments the quarantine counter.
 func (w *Wall) quarantineOccurrence(e outboxEntry, fingerprint, build, note string) bool {
+	return w.settleQuarantinedOutbox(e, fingerprint, build, note, true)
+}
+
+// deferOccurrence transfers ownership from the generic terminal-run reporter
+// to the richer structured objective reporter. It uses the same durable outbox
+// terminal state as quarantine so restarts cannot redispatch it, but it does
+// NOT count as another failure occurrence: the objective reporter records that
+// single sighting exactly once.
+func (w *Wall) deferOccurrence(e outboxEntry, fingerprint, build, note string) bool {
+	return w.settleQuarantinedOutbox(e, fingerprint, build, note, false)
+}
+
+func (w *Wall) settleQuarantinedOutbox(e outboxEntry, fingerprint, build, note string, countOccurrence bool) bool {
 	now := time.Now().Unix()
 	w.mu.Lock()
 	if existing, ok := w.outbox[e.ExternalID]; ok {
@@ -95,16 +108,18 @@ func (w *Wall) quarantineOccurrence(e outboxEntry, fingerprint, build, note stri
 	e.UpdatedAt = now
 	w.outbox[e.ExternalID] = e
 
-	if link, ok := w.issueLinks[e.Key]; ok && link.IssueID != "" {
-		link.QuarantinedCount++
-		link.LastObservedRun = e.RunID
-		link.LastObservedRevision = strings.TrimSpace(build)
-		link.LastDisposition = string(occurrenceQuarantine)
-		link.UpdatedAt = now
-		if link.Fingerprint == "" {
-			link.Fingerprint = fingerprint
+	if countOccurrence {
+		if link, ok := w.issueLinks[e.Key]; ok && link.IssueID != "" {
+			link.QuarantinedCount++
+			link.LastObservedRun = e.RunID
+			link.LastObservedRevision = strings.TrimSpace(build)
+			link.LastDisposition = string(occurrenceQuarantine)
+			link.UpdatedAt = now
+			if link.Fingerprint == "" {
+				link.Fingerprint = fingerprint
+			}
+			w.issueLinks[e.Key] = link
 		}
-		w.issueLinks[e.Key] = link
 	}
 	w.mu.Unlock()
 	w.saveState()
