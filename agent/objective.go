@@ -8,62 +8,55 @@ import (
 	"github.com/maestroi/pokepilot/skill"
 )
 
-// Kind is what an objective does.
 type Kind uint8
 
 const (
-	KindGoTo               Kind = iota // walk to a named place
-	KindTalk                           // face and talk to something at a coordinate
-	KindStarter                        // complete the opening story and take a chosen starter
-	KindErrand                         // deliver Oak's parcel (Viridian Mart -> Oak's lab)
-	KindTrain                          // battle in grass until the lead reaches Level
-	KindHeal                           // heal the party at a center; Place names one to travel to first
-	KindGym                            // fight the leader of whichever gym the player is in
-	KindCatch                          // hunt tall grass for a wanted species and catch it
-	KindBuy                            // buy Item x Qty from the mart clerk
-	KindPickup                         // pick up the item at a coordinate; the bag must rise
-	KindUseItem                        // use one bag item on one party member, out in the field
-	KindRocketHideout                  // clear the Celadon Rocket Hideout and obtain the Silph Scope
-	KindPokemonTower                   // clear Pokemon Tower and obtain the Poke Flute
-	KindFuchsiaProgression             // reach Fuchsia, beat Koga, and obtain Surf + Strength
+	KindGoTo               Kind = iota
+	KindTalk
+	KindStarter
+	KindErrand
+	KindTrain
+	KindHeal
+	KindGym
+	KindCatch
+	KindBuy
+	KindPickup
+	KindUseItem
+	KindRocketHideout
+	KindPokemonTower
+	KindFuchsiaProgression
 )
 
-// Objective is one unit of intent a planner can choose. Planner-facing game
-// entities are semantic identifiers: no Red ROM species/item byte crosses this
-// contract. A concrete adapter resolves those identifiers immediately before
-// executing its game-specific skill.
+// Objective carries semantic planner arguments. Place was already a semantic
+// name before this migration; Species and Item are now names as well, never
+// Red ROM bytes. Starter remains the existing opening-story enum until #137
+// moves Red-specific progression verbs behind the adapter.
 type Objective struct {
 	Kind    Kind
-	Place   PlaceID   // KindGoTo/KindHeal/KindGym: semantic place identity; "" means heal where standing
-	X, Y    uint8     // KindTalk, KindPickup: the tile to face
-	Starter SpeciesID // KindStarter: semantic starter species
-	Level   uint8     // KindTrain: the level the lead should reach
-	Species SpeciesID // KindCatch: semantic species identity
-	Item    ItemID    // KindBuy, KindPickup, KindUseItem: semantic item identity
-	Slot    int       // KindUseItem: 0-based party slot
-	Qty     int       // KindBuy: how many
-	Flee    bool      // KindGoTo, KindHeal-with-Place: run from wild encounters
-	Note    string    // human-readable, shown to a planner; never parsed
-	// Intent is the sentence the planner attached to this choice: what it is
-	// in service of. It is run memory, not an argument — Validate and
-	// Execute ignore it, String() does not render it, and Run carries it
-	// verbatim onto the next round's Observation (never edited or summarised).
-	Intent string
+	Place   PlaceID
+	X, Y    uint8
+	Starter skill.Starter
+	Level   uint8
+	Species SpeciesID
+	Item    ItemID
+	Slot    int
+	Qty     int
+	Flee    bool
+	Note    string
+	Intent  string
 }
 
-// Validate checks game-independent shape/range invariants. Whether a semantic
-// species/item/place exists in a concrete title is adapter-owned validation;
-// keeping that lookup out of this method is what lets the same Objective shape
-// cross a Crystal/Emerald adapter later without pretending to use Red indexes.
+// Validate checks only portable shape/range invariants. Concrete-game name
+// resolution is adapter-owned.
 func (o Objective) Validate() error {
 	switch o.Kind {
 	case KindGoTo:
-		if strings.TrimSpace(string(o.Place)) == "" {
+		if strings.TrimSpace(o.Place) == "" {
 			return fmt.Errorf("agent: %s: empty place id", o)
 		}
 	case KindStarter:
-		if strings.TrimSpace(string(o.Starter)) == "" {
-			return fmt.Errorf("agent: %s: empty starter species id", o)
+		if o.Starter > skill.StarterBulbasaur {
+			return fmt.Errorf("agent: %s: unknown starter %d", o, int(o.Starter))
 		}
 	case KindTrain:
 		if o.Level < 1 || o.Level > 100 {
@@ -95,20 +88,17 @@ func (o Objective) Validate() error {
 	return nil
 }
 
-// String renders a short, plain, stable one-line description of the objective.
-// Semantic identifiers are already the planner vocabulary, so rendering never
-// needs to reverse-map a numeric game id.
 func (o Objective) String() string {
 	switch o.Kind {
 	case KindGoTo:
 		if o.Flee {
-			return "go to " + string(o.Place) + ", fleeing wild battles"
+			return "go to " + o.Place + ", fleeing wild battles"
 		}
-		return "go to " + string(o.Place)
+		return "go to " + o.Place
 	case KindTalk:
 		return fmt.Sprintf("talk at (%d,%d)", o.X, o.Y)
 	case KindStarter:
-		return "take the " + strings.ToLower(string(o.Starter)) + " starter"
+		return "take the " + starterName(o.Starter) + " starter"
 	case KindErrand:
 		return "deliver oak's parcel"
 	case KindTrain:
@@ -116,9 +106,9 @@ func (o Objective) String() string {
 	case KindHeal:
 		if o.Place != "" {
 			if o.Flee {
-				return "heal the party at " + strings.ToUpper(string(o.Place)) + ", fleeing wild battles"
+				return "heal the party at " + strings.ToUpper(o.Place) + ", fleeing wild battles"
 			}
-			return "heal the party at " + strings.ToUpper(string(o.Place))
+			return "heal the party at " + strings.ToUpper(o.Place)
 		}
 		return "heal the party"
 	case KindGym:
@@ -142,7 +132,6 @@ func (o Objective) String() string {
 	return fmt.Sprintf("unknown kind %d", int(o.Kind))
 }
 
-// gymOutcomeErr renders a gym battle result as the objective's diagnostic.
 func gymOutcomeErr(o Objective, outcome state.BattleResult) error {
 	if outcome == state.ResultWon {
 		return nil
@@ -175,10 +164,20 @@ func article(name string) string {
 	return "a"
 }
 
-// The following tables are Pokémon Red adapter vocabulary: they translate
-// stable semantic names to Red's internal ROM indexes. They remain here during
-// the incremental adapter migration, but planner-facing Objective/Observation
-// values never carry these numbers.
+func starterName(s skill.Starter) string {
+	switch s {
+	case skill.StarterCharmander:
+		return "charmander"
+	case skill.StarterSquirtle:
+		return "squirtle"
+	case skill.StarterBulbasaur:
+		return "bulbasaur"
+	}
+	return fmt.Sprintf("unknown starter %d", int(s))
+}
+
+// Red adapter vocabulary. These tables translate semantic names to Red's
+// internal indexes; planner-facing structs never carry the values.
 var speciesTable = map[string]uint8{
 	"rhydon": 0x01, "kangaskhan": 0x02, "nidoran♂": 0x03, "clefairy": 0x04,
 	"spearow": 0x05, "voltorb": 0x06, "nidoking": 0x07, "slowbro": 0x08,
@@ -248,26 +247,24 @@ var itemByID = func() map[uint8]string {
 
 func SpeciesCount() int { return len(speciesTable) }
 
-// SpeciesName/SpeciesByName are Red adapter helpers retained for code that is
-// explicitly inspecting Red state. Planner objectives use SpeciesID instead.
 func SpeciesName(id uint8) (string, bool) {
 	name, ok := speciesByID[id]
 	return name, ok
 }
 
-func SpeciesByName(name string) (uint8, bool) {
-	id, ok := speciesTable[strings.ToLower(strings.TrimSpace(name))]
-	return id, ok
+// SpeciesByName is planner-facing and returns the semantic identity. Use
+// redSpeciesID when a Red executor needs the ROM byte.
+func SpeciesByName(name string) (SpeciesID, bool) {
+	return semanticSpecies(name)
 }
 
-// ItemName/ItemByName are Red adapter helpers retained for Red-state tooling.
-// Planner objectives use ItemID instead.
 func ItemName(id uint8) (string, bool) {
 	name, ok := itemByID[id]
 	return name, ok
 }
 
-func ItemByName(name string) (uint8, bool) {
-	id, ok := itemTable[strings.ToLower(strings.TrimSpace(name))]
-	return id, ok
+// ItemByName is planner-facing and returns the semantic identity. Use
+// redItemID/resolveItemID at the Red boundary for a native bag byte.
+func ItemByName(name string) (ItemID, bool) {
+	return semanticItem(name)
 }
