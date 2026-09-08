@@ -24,6 +24,20 @@ jobs:
         run: |
           sed -i 's/tilePairs:      tilePairsFor/tilePairs:     tilePairsFor/' implement_146.py
           python3 implement_146.py
+          python3 - <<'PY'
+          from pathlib import Path
+          for name in [
+              "world/semantic_route.go",
+              "world/semantic_route_execution_test.go",
+              "skill/live_topology.go",
+              "skill/route_transition.go",
+              "skill/route_transition_test.go",
+              "skill/route_transition_real_test.go",
+          ]:
+              p = Path(name)
+              s = p.read_text().replace("\\t", "\t").replace("\\n", "\n")
+              p.write_text(s)
+          PY
       - name: Format and verify
         env:
           POKEMON_RED_ROM: ""
