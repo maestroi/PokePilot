@@ -84,24 +84,38 @@ func finalizeObjectiveResult(o Objective, result ObjectiveResult, final Observat
 }
 
 func objectivePostcondition(o Objective, final Observation) (Outcome, error) {
-	if o.Kind != KindGoTo {
+	switch o.Kind {
+	case KindProgress:
+		if !final.Controllable || final.InBattle {
+			return OutcomePostconditionUnavailable, fmt.Errorf(
+				"%w: %s ended at %s (%d,%d), controllable=%v inBattle=%v",
+				ErrObjectivePostconditionUnavailable, o, final.Location, final.X, final.Y, final.Controllable, final.InBattle)
+		}
+		if !final.Story.Has(o.Progress) {
+			return OutcomePostconditionFailed, fmt.Errorf(
+				"%w: %s finished but progression fact %q is false",
+				ErrObjectivePostconditionFailed, o, o.Progress)
+		}
+		return OutcomeCompleted, nil
+	case KindGoTo:
+		if !final.Controllable || final.InBattle {
+			return OutcomePostconditionUnavailable, fmt.Errorf(
+				"%w: %s ended on map %02x at (%d,%d), controllable=%v inBattle=%v",
+				ErrObjectivePostconditionUnavailable, o, final.Map, final.X, final.Y, final.Controllable, final.InBattle)
+		}
+		dest, ok := skill.Place(string(o.Place))
+		if !ok {
+			return OutcomePostconditionFailed, fmt.Errorf("%w: destination %q no longer resolves", ErrObjectivePostconditionFailed, o.Place)
+		}
+		if final.Map != dest.Map || final.X != dest.X || final.Y != dest.Y {
+			return OutcomePostconditionFailed, fmt.Errorf(
+				"%w: %s ended on map %02x at (%d,%d), want map %02x at (%d,%d)",
+				ErrObjectivePostconditionFailed, o, final.Map, final.X, final.Y, dest.Map, dest.X, dest.Y)
+		}
+		return OutcomeCompleted, nil
+	default:
 		return OutcomeCompleted, nil
 	}
-	if !final.Controllable || final.InBattle {
-		return OutcomePostconditionUnavailable, fmt.Errorf(
-			"%w: %s ended on map %02x at (%d,%d), controllable=%v inBattle=%v",
-			ErrObjectivePostconditionUnavailable, o, final.Map, final.X, final.Y, final.Controllable, final.InBattle)
-	}
-	dest, ok := skill.Place(string(o.Place))
-	if !ok {
-		return OutcomePostconditionFailed, fmt.Errorf("%w: destination %q no longer resolves", ErrObjectivePostconditionFailed, o.Place)
-	}
-	if final.Map != dest.Map || final.X != dest.X || final.Y != dest.Y {
-		return OutcomePostconditionFailed, fmt.Errorf(
-			"%w: %s ended on map %02x at (%d,%d), want map %02x at (%d,%d)",
-			ErrObjectivePostconditionFailed, o, final.Map, final.X, final.Y, dest.Map, dest.X, dest.Y)
-	}
-	return OutcomeCompleted, nil
 }
 
 func classifyObjectiveOutcome(_ Objective, err error, final Observation) Outcome {
