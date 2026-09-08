@@ -94,6 +94,13 @@ func prepareObjectiveBoundary(m *emu.Emu) error {
 		return nil
 	}
 	if state.DecodeTwoOptionMenu(&mem) != nil {
+		answered, err := skill.AnswerKnownRouteGate(m)
+		if err != nil {
+			return fmt.Errorf("answer leftover route-gate choice: %w", err)
+		}
+		if answered {
+			return nil
+		}
 		return fmt.Errorf("unanswered choice remains open")
 	}
 	if state.MenuUp(&mem) {

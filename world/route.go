@@ -101,6 +101,14 @@ func findRoute(g *Graph, from, to uint8, blockedHere map[Edge]bool, first, targe
 			if seen[e] || (prev < 0 && blockedHere[e]) {
 				continue
 			}
+			// Pewter's indoor group (Museum through the Center) is a dead
+			// end on the plaza. The reverse-ban used those warps as a
+			// detour toward Cerulean and walked farm runs onto the ticket
+			// YES/NO (run-3ray6e2s8w1j63np7mni08zgve). Mt. Moon and
+			// Viridian Forest are not in this group and stay legal.
+			if pewterBuildingIsTransit(e.To, to) {
+				continue
+			}
 			if !canExit(g, e, entry) {
 				continue
 			}
@@ -143,6 +151,25 @@ func canExit(g *Graph, e Edge, entry []int) bool {
 		return true // walkable; the caller does not know which component
 	}
 	return shareComp(entry, exit)
+}
+
+const (
+	// Pewter indoor group from pokered/constants/map_constants.asm
+	// (MUSEUM_1F $34 … PEWTER_POKECENTER $3A).
+	pewterIndoorFirst uint8 = 0x34
+	pewterIndoorLast  uint8 = 0x3a
+	museum1FMap       uint8 = 0x34
+	museum2FMap       uint8 = 0x35
+)
+
+// pewterBuildingIsTransit reports a hop into Pewter's indoor group that is
+// not itself the destination (or another map in that group). Those buildings
+// only return to Pewter plaza, so they cannot change overworld component.
+func pewterBuildingIsTransit(hop, dest uint8) bool {
+	if hop < pewterIndoorFirst || hop > pewterIndoorLast {
+		return false
+	}
+	return dest < pewterIndoorFirst || dest > pewterIndoorLast
 }
 
 // shareComp reports whether component sets a and b have a member in common.
