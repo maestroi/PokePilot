@@ -23,17 +23,21 @@ const (
 // IssueLink is the wall's copy of an Agent Orchestrator issue identity.
 // Issue numbers are display-only; links always use the UUID URL.
 type IssueLink struct {
-	IssueID         string `json:"issue_id"`
-	IssueNumber     int64  `json:"issue_number"`
-	IssueURL        string `json:"issue_url"`
-	Status          string `json:"status,omitempty"`
-	Resolution      string `json:"resolution,omitempty"`
-	OccurrenceCount int64  `json:"occurrence_count,omitempty"`
-	FixedRevision   string `json:"fixed_revision,omitempty"`
-	LastReportedRun string `json:"last_reported_run,omitempty"`
-	UpdatedAt       int64  `json:"updated_at,omitempty"`
-	Fingerprint     string `json:"fingerprint,omitempty"`
-	Stale           bool   `json:"stale,omitempty"`
+	IssueID              string `json:"issue_id"`
+	IssueNumber          int64  `json:"issue_number"`
+	IssueURL             string `json:"issue_url"`
+	Status               string `json:"status,omitempty"`
+	Resolution           string `json:"resolution,omitempty"`
+	OccurrenceCount      int64  `json:"occurrence_count,omitempty"`
+	QuarantinedCount     int64  `json:"quarantined_count,omitempty"`
+	FixedRevision        string `json:"fixed_revision,omitempty"`
+	LastReportedRun      string `json:"last_reported_run,omitempty"`
+	LastObservedRun      string `json:"last_observed_run,omitempty"`
+	LastObservedRevision string `json:"last_observed_revision,omitempty"`
+	LastDisposition      string `json:"last_disposition,omitempty"`
+	UpdatedAt            int64  `json:"updated_at,omitempty"`
+	Fingerprint          string `json:"fingerprint,omitempty"`
+	Stale                bool   `json:"stale,omitempty"`
 }
 
 type outboxEntry struct {
@@ -43,6 +47,7 @@ type outboxEntry struct {
 	Key         string `json:"key"`
 	Status      string `json:"status"`
 	Error       string `json:"error,omitempty"`
+	Note        string `json:"note,omitempty"`
 	NextAttempt int64  `json:"next_attempt,omitempty"`
 	UpdatedAt   int64  `json:"updated_at"`
 }
