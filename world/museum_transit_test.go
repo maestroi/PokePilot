@@ -57,7 +57,7 @@ func TestRoute4WestToCeruleanUsesMtMoon(t *testing.T) {
 	if !routeVisits(route, 0x3b) && !routeVisits(route, 0x3c) && !routeVisits(route, 0x3d) {
 		t.Fatalf("Route 4 west -> Cerulean did not use Mt. Moon: %+v", route)
 	}
-	if routeVisits(route, 0x02) || routeVisits(route, museum1FMap) {
+	if routeVisits(route, 0x02) || routeVisits(route, museum1FMapForTest) {
 		t.Fatalf("Route 4 west -> Cerulean detoured through Pewter: %+v", route)
 	}
 }
