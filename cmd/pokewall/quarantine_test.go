@@ -54,11 +54,11 @@ func TestStructuredObjectiveFailureQuarantinesActiveIssue(t *testing.T) {
 	failure, occurrence := structuredObjectiveFailureFixture(t, "build-new")
 	w.mu.Lock()
 	w.issueLinks[occurrence.Key] = IssueLink{
-		IssueID:      "issue-1",
-		IssueNumber:  42,
-		IssueURL:     "http://ui/issues/issue-1",
-		Status:       "open",
-		Fingerprint:  occurrence.Fingerprint,
+		IssueID:         "issue-1",
+		IssueNumber:     42,
+		IssueURL:        "http://ui/issues/issue-1",
+		Status:          "open",
+		Fingerprint:     occurrence.Fingerprint,
 		OccurrenceCount: 1,
 	}
 	w.mu.Unlock()
@@ -120,13 +120,13 @@ func TestStructuredObjectiveFailureReportsFixedRegression(t *testing.T) {
 	failure, occurrence := structuredObjectiveFailureFixture(t, "build-new")
 	w.mu.Lock()
 	w.issueLinks[occurrence.Key] = IssueLink{
-		IssueID:        "issue-1",
-		IssueNumber:    42,
-		IssueURL:       "http://ui/issues/issue-1",
-		Status:         "resolved",
-		Resolution:     "fixed",
-		FixedRevision:  "build-fixed",
-		Fingerprint:    occurrence.Fingerprint,
+		IssueID:       "issue-1",
+		IssueNumber:   42,
+		IssueURL:      "http://ui/issues/issue-1",
+		Status:        "resolved",
+		Resolution:    "fixed",
+		FixedRevision: "build-fixed",
+		Fingerprint:   occurrence.Fingerprint,
 	}
 	w.mu.Unlock()
 
