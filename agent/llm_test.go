@@ -29,7 +29,7 @@ func llmObs() agent.Observation {
 		Facing:         "down",
 		Controllable:   true,
 		PartyCount:     1,
-		Party:          []agent.PartyMon{{Species: 1, Level: 5, HP: 20, MaxHP: 20}},
+		Party:          []agent.PartyMon{{Species: agent.SpeciesID("rhydon"), Level: 5, HP: 20, MaxHP: 20}},
 		Badges:         []string{},
 		Money:          3000,
 		Events:         []string{"got a starter"},
@@ -51,7 +51,7 @@ func llmOffered() []agent.Objective {
 		{Kind: agent.KindStarter, Starter: skill.StarterCharmander},
 		{Kind: agent.KindTrain, Level: 10},
 		{Kind: agent.KindTalk, X: 3, Y: 1},
-		{Kind: agent.KindCatch, Species: 0x7B}, // CATERPIE
+		{Kind: agent.KindCatch, Species: agent.SpeciesID("caterpie")},
 	}
 }
 
