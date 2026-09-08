@@ -140,8 +140,10 @@ func objectivePostcondition(o Objective, final Observation) (Outcome, error) {
 // sentinel may be joined with a dirty finish, and an unanswered choice is more
 // specific than every other boundary problem. Preserve the most useful primary
 // diagnosis before falling back to generic stabilization failure; only ordinary
-// gameplay blockage is allowed to re-plan.
-func classifyObjectiveOutcome(o Objective, err error, final Observation) Outcome {
+// gameplay blockage is allowed to re-plan. Every recoverable game outcome is a
+// typed sentinel or a pre-classified structured result: policy never parses
+// error prose.
+func classifyObjectiveOutcome(_ Objective, err error, final Observation) Outcome {
 	if err == nil {
 		return OutcomeCompleted
 	}
@@ -198,12 +200,12 @@ func classifyObjectiveOutcome(o Objective, err error, final Observation) Outcome
 	// planner-visible blockage rather than controller defects.
 	if errors.Is(err, skill.ErrBlackedOut) ||
 		errors.Is(err, skill.ErrCatchBlackout) ||
+		errors.Is(err, skill.ErrCatchHuntExhausted) ||
 		errors.Is(err, skill.ErrTrainRetreat) ||
 		errors.Is(err, skill.ErrTrainProgress) ||
 		errors.Is(err, skill.ErrCantAfford) ||
 		errors.Is(err, skill.ErrNotInStock) ||
-		errors.Is(err, skill.ErrBagNotRisen) ||
-		expectedLegacyGameplayBlockage(o, err) {
+		errors.Is(err, skill.ErrBagNotRisen) {
 		return OutcomeBlocked
 	}
 
@@ -222,18 +224,6 @@ func classifyObjectiveOutcome(o Objective, err error, final Observation) Outcome
 	}
 
 	return OutcomeUnknownFailure
-}
-
-// expectedLegacyGameplayBlockage is now intentionally tiny. Execute itself
-// returns structured blocked results for gym loss, training shortfall, and a
-// non-caught CatchResult. The only pre-existing normal ending still delivered
-// solely as an untyped skill error is Catch exhausting its bounded grass hunt;
-// keep that compatibility bridge kind-scoped until Catch grows its own sentinel.
-func expectedLegacyGameplayBlockage(o Objective, err error) bool {
-	if err == nil || o.Kind != KindCatch {
-		return false
-	}
-	return strings.Contains(err.Error(), " encounters without a wanted species")
 }
 
 // HistoryText is the compact form placed in Observation.History. Completed
