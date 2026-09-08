@@ -57,17 +57,17 @@ type Transaction[Result any, Observation any] struct {
 	Result Result
 	Final  Observation
 
-	ValidationErr   error
-	StartBoundaryErr error
-	ExecutionErr    error
+	ValidationErr     error
+	StartBoundaryErr  error
+	ExecutionErr      error
 	FinishBoundaryErr error
-	PostconditionErr error
+	PostconditionErr  error
 }
 
 // ExecuteTransaction runs one objective through the portable lifecycle:
 //
-//   validate -> normalize start -> bounded owned execution -> passive settle
-//   -> normalize finish -> observe -> verify semantic postcondition
+//	validate -> normalize start -> bounded owned execution -> passive settle
+//	-> normalize finish -> observe -> verify semantic postcondition
 //
 // Finish normalization still runs after an execution failure so the objective
 // owns the state it leaves behind. Postcondition verification runs only after a
