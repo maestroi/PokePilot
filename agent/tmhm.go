@@ -67,80 +67,113 @@ func tmhmDecisionNote(machine rom.Machine, decision skill.TMHMDecision) string {
 		name, machine.Move, semantics, decision.PartySlot, decision.BeforeScore, decision.AfterScore, placement)
 }
 
-// prepareObjectiveBoundary restores the invariant every objective relies on:
-// execution starts from a controllable overworld state, never from a menu a
-// previous objective leaked. Ordinary text is safe to page away and a known
-// dismissable menu is safe to back out of with B. The generic two-option
-// decoder can also match a two-entry bag list, so DismissableObjectiveMenu
-// resolves that ambiguity before a genuine unanswered choice is rejected.
-// Battles and genuine choices are intentionally left untouched.
-func prepareObjectiveBoundary(m *emu.Emu) error {
-	var mem state.Mem
-	state.Snapshot(m, &mem)
-	if state.Controllable(&mem) && state.DecodeDialogue(&mem) == nil && !state.MenuUp(&mem) {
-		return nil
-	}
-	if state.DecodeBattle(&mem) != nil {
-		return fmt.Errorf("battle still in progress")
-	}
-	if skill.DismissableObjectiveMenu(&mem) {
-		if err := skill.CloseOpenMenuToOverworld(m); err != nil {
-			return fmt.Errorf("close leftover menu: %w", err)
-		}
+// normalizeObjectiveBoundary establishes the control invariant shared by the
+// start and finish of every objective transaction. It may perform only
+// semantically reversible cleanup: page ordinary text and back out of a menu
+// whose meaning is unambiguously "back". It never answers a gameplay choice,
+// starts/finishes a battle, or guesses through an unknown non-controllable
+// state. Those belong to the skill that encountered them.
+//
+// Keeping this rule symmetric is important. Cleanup after Execute attributes a
+// leaked menu/dialogue to the objective that produced it, before the planner is
+// allowed to choose something else. The start check then becomes an invariant
+// guard (and a compatibility path for old/resumed checkpoints), not the normal
+// owner of previous-objective recovery.
+func normalizeObjectiveBoundary(m *emu.Emu) error {
+	const maxPasses = 4
+	for pass := 0; pass < maxPasses; pass++ {
+		var mem state.Mem
 		state.Snapshot(m, &mem)
-		if !state.Controllable(&mem) || state.MenuUp(&mem) {
-			return fmt.Errorf("leftover menu closed but player is still not controllable")
-		}
-		return nil
-	}
-	if state.DecodeTwoOptionMenu(&mem) != nil {
-		answered, err := skill.AnswerKnownRouteGate(m)
-		if err != nil {
-			return fmt.Errorf("answer leftover route-gate choice: %w", err)
-		}
-		if answered {
+		if state.Controllable(&mem) && state.DecodeDialogue(&mem) == nil && !state.MenuUp(&mem) {
 			return nil
 		}
-		return fmt.Errorf("unanswered choice remains open")
-	}
-	if state.MenuUp(&mem) {
-		return fmt.Errorf("non-dismissable menu remains open")
-	}
-	if state.DecodeDialogue(&mem) != nil {
-		res := skill.RecoverDialogue(m, roundRecoveryBudget)
-		if res.Stop != skill.DialogueRecovered {
-			return fmt.Errorf("leftover dialogue did not recover: %s", recoveryStopName(res.Stop))
+		if state.DecodeBattle(&mem) != nil {
+			return fmt.Errorf("battle still in progress")
 		}
-		return nil
+		// Check dismissable menus before the generic two-option decoder: a
+		// two-entry bag list has the same cursor/max shape as YES/NO but is
+		// still just a menu that B can safely unwind.
+		if skill.DismissableObjectiveMenu(&mem) {
+			if err := skill.CloseOpenMenuToOverworld(m); err != nil {
+				return fmt.Errorf("close leftover menu: %w", err)
+			}
+			continue
+		}
+		if state.DecodeTwoOptionMenu(&mem) != nil {
+			return fmt.Errorf("unanswered choice remains open")
+		}
+		if state.MenuUp(&mem) {
+			return fmt.Errorf("non-dismissable menu remains open")
+		}
+		if state.DecodeDialogue(&mem) != nil {
+			res := skill.RecoverDialogue(m, roundRecoveryBudget)
+			if res.Stop != skill.DialogueRecovered {
+				return fmt.Errorf("leftover dialogue did not recover: %s", recoveryStopName(res.Stop))
+			}
+			continue
+		}
+		return fmt.Errorf("player is not controllable and no recoverable menu or dialogue is open")
 	}
-	return fmt.Errorf("player is not controllable and no recoverable menu or dialogue is open")
+	return fmt.Errorf("objective boundary cleanup did not converge after %d passes", maxPasses)
 }
 
-// executeObjective is Run's synchronous dispatch boundary. Besides selecting
-// the TM/HM specialization, it puts an absolute frame deadline around the
-// whole operation. Run's ordinary MaxFrames check happens between rounds; this
-// inner watchdog is what guarantees a broken skill loop eventually returns to
-// that boundary instead of pinning the worker forever.
+func prepareObjectiveBoundary(m *emu.Emu) error {
+	return normalizeObjectiveBoundary(m)
+}
+
+func settleObjectiveBoundary(m *emu.Emu) error {
+	return normalizeObjectiveBoundary(m)
+}
+
+// objectiveBoundaryError combines execution and finish-boundary failures
+// without losing the original typed error identity. If execution itself was
+// successful, a dirty finish is a postcondition failure owned by the objective
+// that just ran — never by whatever the planner might pick next.
+func objectiveBoundaryError(o Objective, primary, boundary error) error {
+	if boundary == nil {
+		return primary
+	}
+	if primary != nil {
+		return fmt.Errorf("%w; objective left invalid boundary: %v", primary, boundary)
+	}
+	return fmt.Errorf("agent: %s: objective postcondition: %w", o, boundary)
+}
+
+// executeObjective is Run's synchronous objective transaction boundary. It
+// normalizes the start, executes one planner-selected action under an absolute
+// frame deadline, then normalizes/verifies the finish before returning control
+// to Run. A menu/dialogue leak is therefore charged to the objective that
+// produced it instead of poisoning an unrelated next objective.
 func executeObjective(m *emu.Emu, romData []byte, o Objective) error {
 	deadline := m.FrameCount() + objectiveFrameBudget
-	err := m.WithFrameDeadline(deadline, func() error {
+	primary := m.WithFrameDeadline(deadline, func() error {
 		return executeObjectiveUnbounded(m, romData, o)
 	})
-	if errors.Is(err, emu.ErrFrameDeadline) {
-		err = fmt.Errorf("agent: %s: objective frame watchdog: %w", o, err)
-		if ferr := captureObjectiveFailure(m, o, err); ferr != nil {
+	if errors.Is(primary, emu.ErrFrameDeadline) {
+		primary = fmt.Errorf("agent: %s: objective frame watchdog: %w", o, primary)
+		if ferr := captureObjectiveFailure(m, o, primary); ferr != nil {
 			fmt.Printf("  ram forensics: %v\n", ferr)
 		}
 	}
-	return err
+
+	boundary := settleObjectiveBoundary(m)
+	retErr := objectiveBoundaryError(o, primary, boundary)
+	if primary == nil && boundary != nil {
+		// Execute captured nothing because it returned success; preserve the
+		// actual dirty finish that violated the objective transaction.
+		if ferr := captureObjectiveFailure(m, o, retErr); ferr != nil {
+			fmt.Printf("  ram forensics: %v\n", ferr)
+		}
+	}
+	return retErr
 }
 
 // executeObjectiveUnbounded contains the ordinary dispatch. It is called only
 // through executeObjective so every planner-selected action shares the same
-// objective boundary recovery and frame watchdog.
+// start invariant, finish invariant, and frame watchdog.
 func executeObjectiveUnbounded(m *emu.Emu, romData []byte, o Objective) (retErr error) {
 	if err := prepareObjectiveBoundary(m); err != nil {
-		retErr = fmt.Errorf("agent: %s: objective boundary: %w", o, err)
+		retErr = fmt.Errorf("agent: %s: objective start invariant: %w", o, err)
 		if ferr := captureObjectiveFailure(m, o, retErr); ferr != nil {
 			fmt.Printf("  ram forensics: %v\n", ferr)
 		}

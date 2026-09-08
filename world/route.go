@@ -2,6 +2,9 @@ package world
 
 import (
 	"errors"
+	"sort"
+	"strconv"
+	"strings"
 )
 
 // ErrNoRoute reports that no sequence of warps/connections links the maps.
@@ -37,11 +40,14 @@ func FindRoute(g *Graph, from, to uint8) ([]Edge, error) {
 // because that route ENDS on it. A caller re-plans from where it failed, so
 // the first hop is the only place its report can honestly apply.
 //
-// The search state is the EDGE just taken, not the map stood on. Keying on
-// the map yields simple paths only, and the walkable way to Pewter re-enters
-// Route 2 after a detour through Viridian Forest. Taking one edge twice can
-// never help, so barring repeated edges still terminates and still returns
-// the fewest transitions.
+// When component data is available, the search state is the map PLUS the
+// walkable component the previous transition landed in. This is the semantic
+// state routing actually cares about: leaving a plaza through a building and
+// returning to the same component changed nothing, so it cannot be used to
+// clear a first-hop preference; leaving Route 2 through Viridian Forest and
+// re-entering its other component IS a new state and remains legal. If
+// component data is unavailable, the search falls back to the old edge-keyed
+// identity rather than inventing geometry.
 //
 // Edge is comparable, so the caller's set is a plain map[Edge]bool.
 func FindRouteAvoiding(g *Graph, from, to uint8, blockedHere map[Edge]bool) ([]Edge, error) {
@@ -85,47 +91,86 @@ func componentSetAt(g *Graph, mapID uint8, x, y int) []int {
 	return []int{c[y][x]}
 }
 
+type routeStateKey struct {
+	mapID      uint8
+	components string
+	via        Edge
+	byEdge     bool
+}
+
+// routeStateIdentity names the state reached after crossing via. A known
+// component set is stronger than the transition that got there: two different
+// building cycles that both land on the same plaza component are the same
+// routing state. When the graph has no component evidence for the landing, use
+// via as the conservative fallback and preserve the previous edge-keyed search.
+func routeStateIdentity(g *Graph, mapID uint8, entry []int, via Edge) routeStateKey {
+	if g.componentAware && len(entry) > 0 {
+		return routeStateKey{mapID: mapID, components: componentSetKey(entry)}
+	}
+	return routeStateKey{mapID: mapID, via: via, byEdge: true}
+}
+
+func componentSetKey(in []int) string {
+	if len(in) == 0 {
+		return ""
+	}
+	v := append([]int(nil), in...)
+	sort.Ints(v)
+	var b strings.Builder
+	for i, c := range v {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteString(strconv.Itoa(c))
+	}
+	return b.String()
+}
+
 func findRoute(g *Graph, from, to uint8, blockedHere map[Edge]bool, first, target []int) ([]Edge, error) {
 	if from == to && (len(target) == 0 || shareComp(first, target)) {
 		return []Edge{}, nil
 	}
-	// node.prev indexes back into nodes, or -1 for a first hop.
+	// node.prev indexes back into nodes, or -1 for a first hop. entry is the
+	// walkable component set on edge.To after taking edge.
 	type node struct {
-		edge Edge
-		prev int
+		edge  Edge
+		prev  int
+		entry []int
 	}
 	var nodes []node
-	seen := make(map[Edge]bool)
+	seen := make(map[routeStateKey]bool)
+	if g.componentAware && len(first) > 0 {
+		// Returning to the exact component we started in is a no-op cycle, not
+		// a new opportunity to bypass a first-hop restriction.
+		seen[routeStateIdentity(g, from, first, Edge{})] = true
+	}
 	expand := func(cur uint8, prev int, entry []int) {
 		for _, e := range g.Edges[cur] {
-			if seen[e] || (prev < 0 && blockedHere[e]) {
-				continue
-			}
-			// Pewter's indoor group (Museum through the Center) is a dead
-			// end on the plaza. The reverse-ban used those warps as a
-			// detour toward Cerulean and walked farm runs onto the ticket
-			// YES/NO (run-3ray6e2s8w1j63np7mni08zgve). Mt. Moon and
-			// Viridian Forest are not in this group and stay legal.
-			if pewterBuildingIsTransit(e.To, to) {
+			if prev < 0 && blockedHere[e] {
 				continue
 			}
 			if !canExit(g, e, entry) {
 				continue
 			}
-			seen[e] = true
-			nodes = append(nodes, node{edge: e, prev: prev})
+			nextEntry := g.entryComps[e]
+			key := routeStateIdentity(g, e.To, nextEntry, e)
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			nodes = append(nodes, node{edge: e, prev: prev, entry: nextEntry})
 		}
 	}
 	expand(from, -1, first)
 	for i := 0; i < len(nodes); i++ {
-		if nodes[i].edge.To == to && (len(target) == 0 || shareComp(g.entryComps[nodes[i].edge], target)) {
+		if nodes[i].edge.To == to && (len(target) == 0 || shareComp(nodes[i].entry, target)) {
 			var route []Edge
 			for j := i; j >= 0; j = nodes[j].prev {
 				route = append([]Edge{nodes[j].edge}, route...)
 			}
 			return route, nil
 		}
-		expand(nodes[i].edge.To, i, g.entryComps[nodes[i].edge])
+		expand(nodes[i].edge.To, i, nodes[i].entry)
 	}
 	return nil, ErrNoRoute
 }
@@ -151,25 +196,6 @@ func canExit(g *Graph, e Edge, entry []int) bool {
 		return true // walkable; the caller does not know which component
 	}
 	return shareComp(entry, exit)
-}
-
-const (
-	// Pewter indoor group from pokered/constants/map_constants.asm
-	// (MUSEUM_1F $34 … PEWTER_POKECENTER $3A).
-	pewterIndoorFirst uint8 = 0x34
-	pewterIndoorLast  uint8 = 0x3a
-	museum1FMap       uint8 = 0x34
-	museum2FMap       uint8 = 0x35
-)
-
-// pewterBuildingIsTransit reports a hop into Pewter's indoor group that is
-// not itself the destination (or another map in that group). Those buildings
-// only return to Pewter plaza, so they cannot change overworld component.
-func pewterBuildingIsTransit(hop, dest uint8) bool {
-	if hop < pewterIndoorFirst || hop > pewterIndoorLast {
-		return false
-	}
-	return dest < pewterIndoorFirst || dest > pewterIndoorLast
 }
 
 // shareComp reports whether component sets a and b have a member in common.
