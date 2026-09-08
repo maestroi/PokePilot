@@ -21,7 +21,9 @@ jobs:
           go-version-file: go.mod
           cache: true
       - name: Apply implementation
-        run: python3 implement_146.py
+        run: |
+          sed -i 's/tilePairs:      tilePairsFor/tilePairs:     tilePairsFor/' implement_146.py
+          python3 implement_146.py
       - name: Format and verify
         env:
           POKEMON_RED_ROM: ""
