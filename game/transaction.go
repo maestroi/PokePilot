@@ -16,9 +16,11 @@ type Adapter[Objective any, Observation any, Result any] interface {
 	// addresses or require the generic runtime to understand game memory.
 	Observe() Observation
 
-	// Validate rejects malformed or impossible objective arguments before any
-	// gameplay input is sent.
-	Validate(Objective) error
+	// Validate rejects malformed objective arguments or unsatisfied adapter-
+	// visible prerequisites before gameplay input is sent. The initial semantic
+	// observation is supplied so a future game need not reach behind the seam to
+	// inspect its own state during validation.
+	Validate(Objective, Observation) error
 
 	// NormalizeBoundary returns the game to a safe objective boundary using
 	// only semantically reversible cleanup. It must not answer gameplay/story
@@ -54,8 +56,9 @@ type Adapter[Objective any, Observation any, Result any] interface {
 // identities and normalized Outcome vocabulary without teaching this package
 // game-specific error classes.
 type Transaction[Result any, Observation any] struct {
-	Result Result
-	Final  Observation
+	Result  Result
+	Initial Observation
+	Final   Observation
 
 	ValidationErr     error
 	StartBoundaryErr  error
@@ -66,8 +69,8 @@ type Transaction[Result any, Observation any] struct {
 
 // ExecuteTransaction runs one objective through the portable lifecycle:
 //
-//	validate -> normalize start -> bounded owned execution -> passive settle
-//	-> normalize finish -> observe -> verify semantic postcondition
+//	observe -> validate -> normalize start -> bounded owned execution
+//	-> passive settle -> normalize finish -> observe -> verify postcondition
 //
 // Finish normalization still runs after an execution failure so the objective
 // owns the state it leaves behind. Postcondition verification runs only after a
@@ -77,10 +80,11 @@ func ExecuteTransaction[Objective any, Observation any, Result any](
 	o Objective,
 ) Transaction[Result, Observation] {
 	var tx Transaction[Result, Observation]
+	tx.Initial = a.Observe()
 
-	if err := a.Validate(o); err != nil {
+	if err := a.Validate(o, tx.Initial); err != nil {
 		tx.ValidationErr = err
-		tx.Final = a.Observe()
+		tx.Final = tx.Initial
 		return tx
 	}
 
