@@ -640,6 +640,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 	var history []RoundRecord
 	last := Observe(m, romData)
 	planning := newRunPlanning(resumedPlan)
+	quarantine := newFailureQuarantine()
 	notifyPlanning(p, planning.snapshot())
 	knownRequirementCount := len(known.Requirements)
 	observedBadges, observedEvents := len(last.Badges), len(last.Events)
@@ -658,7 +659,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 	lastUnroutable := ""
 	stuck := 0
 	consecFailures := 0 // consecutive failed objectives; a success resets it
-	lastFailObj, lastFailErr := "", ""
+	lastFailKey := ""
 	retreatStreak := 0           // consecutive train retreats ending at the SAME level; capped like any other failure streak
 	lastRetreatLevel := uint8(0) // the lead's level after the last retreat, 0 meaning none yet
 
@@ -766,6 +767,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 		// History scrolls, this does not.
 		last.Failures = known.FailureList()
 		now := offerWithTMHM(m, romData, last, known)
+		now = quarantine.filter(last, now)
 		if len(now) == 0 {
 			res.Stop = StopError
 			res.Err = errors.New("agent: Run: nothing is possible from here")
@@ -863,8 +865,6 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 
 			known.Failed(obj, execErr)
 			if trainProgressed {
-				// A shortfall that still raised the lead's level is exactly the
-				// "successful Train rung" the gym-retry gate is waiting for.
 				known.clearGymLossFailures()
 			}
 			history = appendHistory(history, RoundRecord{Objective: obj.String(), Outcome: outcome})
@@ -872,53 +872,55 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 			last.RecentDialogue = tape.recent()
 			logRound(budget.Log, round, obj, outcome, last)
 
-			// A skill can return an error after the game has already committed
-			// the story state. The observable completion predicate wins over
-			// failure policy at this settled boundary.
+			// Observable goal completion wins over fault policy. The failure still
+			// remains in Outcomes/telemetry, but it did not terminate the campaign.
 			if deterministicGoal {
 				status := evaluateRunGoal(p, runGoal, last, round, budget.MaxRounds, intent, intentAge)
 				res.GoalStatus = &status
 				if status.Complete {
+					markLastOutcomeRecovered(&res)
 					res.Stop = StopDone
 					break
 				}
 			}
 
-			// Choice-required has its own action so a future explicit choice
-			// objective can own it. Today there is no generic choice objective,
-			// therefore both choice and every terminal label stop cleanly instead
-			// of making another planner-selected objective inherit the state.
-			switch actionFor(objectiveResult.Outcome) {
+			action := actionFor(objectiveResult.Outcome)
+			switch action {
 			case actionChoice, actionStop:
+				markLastOutcomeTerminal(&res)
 				res.Stop, res.Err = StopError, execErr
 				break
 			case actionContinue:
-				// An error normalized as completed would violate the result
-				// contract. Default to terminal rather than silently continuing.
+				markLastOutcomeTerminal(&res)
 				res.Stop = StopError
 				res.Err = fmt.Errorf("agent: objective %s returned error with completed outcome: %w", obj, execErr)
 				break
 			case actionReplan:
-				// Ordinary blocked gameplay continues through the existing
-				// failure-budget policy below.
+				// The final transaction boundary is trustworthy. Keep the fault in
+				// telemetry, quarantine this exact objective/state, and hand the
+				// fresh observation back to policy instead of killing the run.
+				quarantine.record(objectiveResult)
 			}
 			if res.Stop != StopUnset {
 				break
 			}
 
+			failureKey := recoverableFailureKey(obj, objectiveResult)
 			if planning.hasStrategist(p) {
 				consecFailures++
 				reason, key, terminal := recoverableFailureReplan(
 					failureEscalated, obj, objectiveResult, blackedOut, retreated, consecFailures, maxConsecFailures,
 				)
 				if terminal {
+					markLastOutcomeTerminal(&res)
 					res.Stop, res.Err = StopFailed, execErr
 					break
 				}
 				failureEscalated[key] = true
 				planning.request(reason)
 				notifyPlanning(p, planning.snapshot())
-				lastFailObj, lastFailErr = obj.String(), execErr.Error()
+				markLastOutcomeRecovered(&res)
+				lastFailKey = failureKey
 				if m.FrameCount()-startFrame >= uint64(budget.MaxFrames) {
 					res.Stop = StopBudget
 					break
@@ -926,9 +928,6 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 				continue
 			}
 			if blackedOut || retreated {
-				// These changed the world and are intentionally exempt from the
-				// normal identical-failure budget. A train retreat still has its
-				// own same-level ceiling to prevent infinite costless retries.
 				retreatLevel := uint8(0)
 				if len(last.Party) > 0 {
 					retreatLevel = last.Party[0].Level
@@ -942,10 +941,13 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 					retreatStreak, lastRetreatLevel = 0, 0
 				}
 				if retreated && retreatStreak >= maxConsecFailures {
+					markLastOutcomeTerminal(&res)
 					res.Stop, res.Err = StopFailed, execErr
+				} else {
+					markLastOutcomeRecovered(&res)
 				}
-				lastFailObj, lastFailErr = "", ""
-				if m.FrameCount()-startFrame >= uint64(budget.MaxFrames) {
+				lastFailKey = ""
+				if m.FrameCount()-startFrame >= uint64(budget.MaxFrames) && res.Stop == StopUnset {
 					res.Stop = StopBudget
 				}
 				if res.Stop != StopUnset {
@@ -956,26 +958,32 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 			retreatStreak, lastRetreatLevel = 0, 0
 
 			consecFailures++
-			// Only OutcomeBlocked reaches this budget. Controller/ownership/
-			// choice failures already stopped above, so repeating them cannot
-			// burn several workers' rounds before the run admits it is broken.
+			faultTerminal := false
 			switch {
-			case obj.String() == lastFailObj && execErr.Error() == lastFailErr:
+			case lastFailKey != "" && failureKey == lastFailKey:
+				faultTerminal = true
 				res.Stop, res.Err = StopFailed, execErr
 			case consecFailures >= maxConsecFailures:
+				faultTerminal = true
 				res.Stop, res.Err = StopFailed, execErr
 			case m.FrameCount()-startFrame >= uint64(budget.MaxFrames):
 				res.Stop = StopBudget
 			}
+			if faultTerminal {
+				markLastOutcomeTerminal(&res)
+			} else {
+				markLastOutcomeRecovered(&res)
+			}
 			if res.Stop != StopUnset {
 				break
 			}
-			lastFailObj, lastFailErr = obj.String(), execErr.Error()
+			lastFailKey = failureKey
 			continue
 		}
 
 		res.Outcomes = append(res.Outcomes, objectiveResult)
 		res.Completed = append(res.Completed, obj)
+		quarantine.clear(obj)
 		planning.success(fromPlan)
 		notifyPlanning(p, planning.snapshot())
 		known.Done(obj)
@@ -984,7 +992,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 		}
 		consecFailures = 0
 		failureEscalated = map[string]bool{}
-		lastFailObj, lastFailErr = "", ""
+		lastFailKey = ""
 		retreatStreak, lastRetreatLevel = 0, 0
 		history = appendHistory(history, RoundRecord{Objective: obj.String(), Outcome: objectiveResult.HistoryText()})
 		last.History = history

@@ -128,3 +128,31 @@ func TestAgentLogProseIsNotFailureIdentityInput(t *testing.T) {
 		t.Fatalf("log prose produced structured telemetry: %+v terminal=%+v", got, terminal)
 	}
 }
+
+func TestObjectiveFailureTelemetryCountsRecoveredAndTerminalOccurrences(t *testing.T) {
+	resetObjectiveFailureTelemetry()
+	t.Cleanup(resetObjectiveFailureTelemetry)
+
+	recovered1 := structuredFailureResult("navigation_stalled", 10)
+	recovered1.Recovered = true
+	recovered2 := recovered1
+	terminalFailure := recovered1
+	terminalFailure.Recovered = false
+	terminalFailure.Terminal = true
+
+	captureObjectiveFailureTelemetry(agent.Result{Outcomes: []agent.ObjectiveResult{recovered1, recovered2, terminalFailure}})
+	got, terminal := drainObjectiveFailureTelemetry("failed", "build-a", "")
+	if len(got) != 1 {
+		t.Fatalf("failures = %+v, want one group", got)
+	}
+	f := got[0]
+	if f.Count != 3 || f.RecoveredCount != 2 || f.TerminalCount != 1 {
+		t.Fatalf("impact counts = %+v, want count=3 recovered=2 terminal=1", f)
+	}
+	if f.Recovered || !f.Blocking {
+		t.Fatalf("mixed impact classification = recovered=%t blocking=%t", f.Recovered, f.Blocking)
+	}
+	if terminal == nil || terminal.Fingerprint != f.Fingerprint {
+		t.Fatalf("terminal = %+v, want group fingerprint %q", terminal, f.Fingerprint)
+	}
+}

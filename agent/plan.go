@@ -305,11 +305,7 @@ func (r *runPlanning) choose(log io.Writer, round int, p Planner, obs Observatio
 }
 
 func recoverableFailureReplan(seen map[string]bool, obj Objective, result ObjectiveResult, blackedOut, retreated bool, consecutive, maxConsecutive int) (reason, key string, terminal bool) {
-	cause := string(result.Cause)
-	if cause == "" {
-		cause = string(result.Outcome)
-	}
-	key = obj.String() + "|" + cause
+	key = recoverableFailureKey(obj, result)
 	if seen[key] || consecutive > maxConsecutive {
 		return "", key, true
 	}

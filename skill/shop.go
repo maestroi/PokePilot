@@ -23,6 +23,19 @@ var ErrCantAfford = errors.New("skill: not enough money for the purchase")
 // hardcoded price list.
 var ErrNotInStock = errors.New("skill: the clerk does not stock the requested item")
 
+// ErrShopMenuTimeout is a bounded mart transition timeout. It is recoverable
+// only when Buy successfully backs out to the overworld before returning it.
+var ErrShopMenuTimeout = errors.New("skill: shop menu transition timed out")
+
+// ErrShopControllerStalled is a bounded cursor/menu controller failure inside
+// Buy. Like ErrShopMenuTimeout, callers may recover only after a clean boundary.
+var ErrShopControllerStalled = errors.New("skill: shop controller stalled")
+
+// ErrShopStabilization means Buy could not prove that it returned to a safe
+// overworld boundary. It is deliberately terminal even if the original mart
+// error would otherwise be recoverable.
+var ErrShopStabilization = errors.New("skill: shop stabilization failed")
+
 // wMenuWatchedKeys values that identify the mart's menus. The BUY/SELL/QUIT
 // menu and the two-option prompt watch only A|B (3); the priced item list and
 // the choose-quantity box watch A|B|SELECT (7). These are the only signals that
@@ -67,17 +80,17 @@ func Buy(m *emu.Emu, item uint8, qty int) error {
 	// BUY/SELL/QUIT menu (wMenuWatchedKeys == A|B).
 	m.Tap(emu.A, 3, 7)
 	if err := martAdvance(m, buySellQuitUp, "the BUY/SELL/QUIT menu"); err != nil {
-		return err
+		return recoverShopFailure(m, err)
 	}
 
 	// 2. Select BUY (the cursor starts on BUY).
 	if err := SelectMenuItem(m, 0); err != nil {
-		return fmt.Errorf("skill: Buy: select BUY: %w", err)
+		return recoverShopFailure(m, shopControllerFailure("select BUY", err))
 	}
 
 	// 3. Advance to the priced item list ("Take your time." then the list).
 	if err := martAdvance(m, itemListUp, "the item list"); err != nil {
-		return err
+		return recoverShopFailure(m, err)
 	}
 	state.Snapshot(m, &mem)
 	pos, ok := martItemPosition(&mem, item)
@@ -90,10 +103,11 @@ func Buy(m *emu.Emu, item uint8, qty int) error {
 		// ErrNotInStock from inside the shop and killed the run four
 		// rounds later. Same rule as the affordability refusal below: leave
 		// the world where it was found, and say so loudly when you cannot.
+		primary := fmt.Errorf("skill: Buy: %w: item %#02x", ErrNotInStock, item)
 		if err := exitToOverworld(m); err != nil {
-			return fmt.Errorf("skill: Buy: item %#02x is not stocked and the shop did not close: %w", item, err)
+			return shopStabilizationFailure(primary, err)
 		}
-		return fmt.Errorf("skill: Buy: %w: item %#02x", ErrNotInStock, item)
+		return primary
 	}
 
 	// 4. Select the item; the choose-quantity box opens. Capture the stale
@@ -102,75 +116,51 @@ func Buy(m *emu.Emu, item uint8, qty int) error {
 	hBefore := bcdMoney(&mem)
 	if err := selectListEntry(m, pos); err != nil {
 		// Same rule as the ErrNotInStock backout above: a cursor that never
-		// reached its target leaves the item list up, and returning here
-		// without closing it wedges every later objective on the same
-		// unanswered shop menu.
-		if exitErr := exitToOverworld(m); exitErr != nil {
-			return fmt.Errorf("skill: Buy: select item %#02x: %v (shop did not close: %w)", item, err, exitErr)
-		}
-		return fmt.Errorf("skill: Buy: select item %#02x: %w", item, err)
+		// reached its target leaves the item list up. The typed controller
+		// failure becomes recoverable only after recoverShopFailure proves the
+		// shop is gone.
+		return recoverShopFailure(m, shopControllerFailure(fmt.Sprintf("select item %#02x", item), err))
 	}
 	qtyUp := func(mm *state.Mem) bool { return bcdMoney(mm) > 0 && bcdMoney(mm) != hBefore }
 	if err := martWait(m, qtyUp, "the choose-quantity box"); err != nil {
-		// Same rule as the ErrNotInStock backout above: returning here
-		// leaves the item list (or whatever selectListEntry's A landed on)
-		// up, and every later objective then fails on a shop menu nothing
-		// closed. MEASURED 2026-09-02: "buy 3 POKEBALL" timed out here and
-		// parked the run on "MONEY BUY... Is there anything else I can
-		// do?" for the rest of the run.
-		if exitErr := exitToOverworld(m); exitErr != nil {
-			return fmt.Errorf("%w (shop did not close: %v)", err, exitErr)
-		}
-		return err
+		// A timeout is still an engineering failure. The campaign may survive
+		// it only after the owning skill proves the shop has been closed.
+		return recoverShopFailure(m, err)
 	}
 
 	// 5. Set the quantity; hMoney now holds the total price for it.
 	if err := setQuantity(m, qty); err != nil {
-		if exitErr := exitToOverworld(m); exitErr != nil {
-			return fmt.Errorf("%w (shop did not close: %v)", err, exitErr)
-		}
-		return err
+		return recoverShopFailure(m, err)
 	}
 	state.Snapshot(m, &mem)
 	total := bcdMoney(&mem)
 
 	// 6. Affordability: a typed refusal, not a silent no-op or a hang.
 	if moneyBefore < total {
+		primary := fmt.Errorf("skill: Buy: %w: have %d, need %d", ErrCantAfford, moneyBefore, total)
 		if err := backOutOfShop(m); err != nil {
-			// NOT wrapped in ErrCantAfford. A caller that sees ErrCantAfford
-			// is told "the game said no, the world is fine, pick something
-			// else" — agent.Execute treats it as a benign outcome and
-			// reports the round DONE. A backout that failed leaves the shop
-			// menus on screen, which is the opposite of fine: every later
-			// objective refuses to start on it. MEASURED 2026-08-31: "buy 3
-			// POTION -> done" with 793 in hand against a 900 total, and the
-			// run dead four rounds later on an item list nobody closed.
-			return fmt.Errorf("skill: Buy: cannot afford %d (have %d) and the shop did not close: %w", total, moneyBefore, err)
+			// Do not leak the benign ErrCantAfford classification when cleanup
+			// itself failed: the campaign no longer has a trustworthy boundary.
+			return shopStabilizationFailure(primary, err)
 		}
-		return fmt.Errorf("skill: Buy: %w: have %d, need %d", ErrCantAfford, moneyBefore, total)
+		return primary
 	}
 
 	// 7. Confirm the quantity; the "That will be ¥X. OK?" box closes to a
 	// two-option prompt.
 	m.Tap(emu.A, 3, 7)
 	if err := martAdvance(m, twoOptionUp, "the purchase-confirmation prompt"); err != nil {
-		if exitErr := exitToOverworld(m); exitErr != nil {
-			return fmt.Errorf("%w (shop did not close: %v)", err, exitErr)
-		}
-		return err
+		return recoverShopFailure(m, err)
 	}
 
 	// 8. Answer YES (menu index 0). The trap: never a bare Tap(A) on the box.
 	if err := SelectMenuItem(m, 0); err != nil {
-		if exitErr := exitToOverworld(m); exitErr != nil {
-			return fmt.Errorf("skill: Buy: answer YES: %v (shop did not close: %w)", err, exitErr)
-		}
-		return fmt.Errorf("skill: Buy: answer YES: %w", err)
+		return recoverShopFailure(m, shopControllerFailure("answer YES", err))
 	}
 
 	// 9. The purchase runs; leave the shop and wait until controllable.
 	if err := exitShop(m); err != nil {
-		return err
+		return recoverShopFailure(m, err)
 	}
 
 	// 10. Postconditions: bag rose by qty AND money fell by the total.
@@ -239,9 +229,31 @@ func martWait(m *emu.Emu, pred func(*state.Mem) bool, what string) error {
 }
 
 func martTimeout(what string, mem *state.Mem) error {
-	return fmt.Errorf("skill: Buy: %s did not appear (wFontLoaded=%#04x wCurMenuItem=%d wMaxMenuItem=%d wItemQuantity=%d wMoney=%d)",
-		what, mem.U8(sym.FontLoaded), mem.U8(sym.CurrentMenuItem), mem.U8(sym.MaxMenuItem),
+	return fmt.Errorf("%w: skill: Buy: %s did not appear (wFontLoaded=%#04x wCurMenuItem=%d wMaxMenuItem=%d wItemQuantity=%d wMoney=%d)",
+		ErrShopMenuTimeout, what, mem.U8(sym.FontLoaded), mem.U8(sym.CurrentMenuItem), mem.U8(sym.MaxMenuItem),
 		mem.U8(sym.ItemQuantity), bcdMoney(mem))
+}
+
+func shopControllerFailure(context string, err error) error {
+	return fmt.Errorf("skill: Buy: %s: %w", context, errors.Join(ErrShopControllerStalled, err))
+}
+
+func shopStabilizationFailure(primary, cleanup error) error {
+	return errors.Join(primary, fmt.Errorf("%w: %v", ErrShopStabilization, cleanup))
+}
+
+// recoverShopFailure is the ownership proof for a recoverable mart fault. A
+// timeout/controller error remains fully visible to callers, but it is only
+// eligible for runtime re-planning if this cleanup succeeds. Cleanup failure
+// adds ErrShopStabilization, which the agent treats as terminal.
+func recoverShopFailure(m *emu.Emu, err error) error {
+	if err == nil {
+		return nil
+	}
+	if cleanup := exitToOverworld(m); cleanup != nil {
+		return shopStabilizationFailure(err, cleanup)
+	}
+	return err
 }
 
 // listPosition is the item list's entry under the cursor. The mart's list
@@ -293,7 +305,7 @@ func selectListEntry(m *emu.Emu, index int) error {
 		if listPosition(&mem) == pos {
 			stuck++
 			if stuck >= stuckLimit {
-				return fmt.Errorf("cursor stuck at list entry %d, wanted %d, %d consecutive taps without movement", pos, index, stuck)
+				return fmt.Errorf("%w: cursor stuck at list entry %d, wanted %d, %d consecutive taps without movement", ErrShopControllerStalled, pos, index, stuck)
 			}
 		} else {
 			stuck = 0
@@ -316,14 +328,14 @@ func setQuantity(m *emu.Emu, qty int) error {
 			return nil
 		}
 		if cur > qty {
-			return fmt.Errorf("quantity overshot %d (wItemQuantity=%d)", qty, cur)
+			return fmt.Errorf("%w: quantity overshot %d (wItemQuantity=%d)", ErrShopControllerStalled, qty, cur)
 		}
 		m.Tap(emu.Up, 3, 7)
 		m.StepFrames(talkSettle)
 	}
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	return fmt.Errorf("quantity did not reach %d (wItemQuantity=%d)", qty, mem.U8(sym.ItemQuantity))
+	return fmt.Errorf("%w: quantity did not reach %d (wItemQuantity=%d)", ErrShopControllerStalled, qty, mem.U8(sym.ItemQuantity))
 }
 
 // exitShop leaves the shop after a successful purchase: close "Here you are!"

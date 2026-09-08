@@ -161,7 +161,9 @@ func (w *Wall) reportObjectiveFailure(dump farm.FinishReport, f farm.ObjectiveFa
 
 	severity := "normal"
 	classification := "observed"
-	if f.Recovered {
+	if f.TerminalCount > 0 {
+		classification = "terminal"
+	} else if f.Recovered {
 		classification = "recovered"
 	}
 	if f.Blocking {
@@ -189,6 +191,8 @@ func (w *Wall) reportObjectiveFailure(dump farm.FinishReport, f farm.ObjectiveFa
 		"x":                    f.X,
 		"y":                    f.Y,
 		"recovered":            f.Recovered,
+		"recovered_count":      f.RecoveredCount,
+		"terminal_count":       f.TerminalCount,
 		"blocking":             f.Blocking,
 		"run_reason":           dump.Reason,
 		"run_detail":           dump.Detail,
@@ -209,12 +213,12 @@ func (w *Wall) reportObjectiveFailure(dump farm.FinishReport, f farm.ObjectiveFa
 	})
 
 	titlePrefix := "[farm] objective failure: "
-	summary := fmt.Sprintf("%s failed %d time(s) on map 0x%02x; recovered=%t; run ended %s.",
-		f.Objective, f.Count, f.Map, f.Recovered, dump.Reason)
+	summary := fmt.Sprintf("%s failed %d time(s) on map 0x%02x; recovered=%d terminal=%d; run ended %s.",
+		f.Objective, f.Count, f.Map, f.RecoveredCount, f.TerminalCount, dump.Reason)
 	if f.Blocking {
 		titlePrefix = "[farm][progression-blocker] "
-		summary = fmt.Sprintf("Progression blocker candidate: %s failed %d time(s) on map 0x%02x with no later major progress; run ended %s. Last error: %s",
-			f.Objective, f.Count, f.Map, dump.Reason, f.Error)
+		summary = fmt.Sprintf("Progression blocker candidate: %s failed %d time(s) on map 0x%02x (recovered=%d terminal=%d) with no later major progress; run ended %s. Last error: %s",
+			f.Objective, f.Count, f.Map, f.RecoveredCount, f.TerminalCount, dump.Reason, f.Error)
 	}
 	if disposition == occurrenceRegression {
 		titlePrefix = "[farm][regression] "

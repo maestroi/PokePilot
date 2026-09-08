@@ -22,7 +22,7 @@ func TestActionForObjectiveOutcome(t *testing.T) {
 		{OutcomeStabilizationFailed, actionStop},
 		{OutcomeOwnershipFailure, actionStop},
 		{OutcomeControllerUncertain, actionStop},
-		{OutcomePostconditionFailed, actionStop},
+		{OutcomePostconditionFailed, actionReplan},
 		{OutcomePostconditionUnavailable, actionStop},
 		{OutcomeUnknownFailure, actionStop},
 		{Outcome("future-value"), actionStop},
@@ -40,8 +40,8 @@ func TestClassifyObjectiveOutcomePrecedence(t *testing.T) {
 
 	lastLeg := fmt.Errorf("north edge: %w", skill.ErrLegUnwalkable)
 	replan := fmt.Errorf("%w: %w", skill.ErrReplanExhausted, lastLeg)
-	if got := classifyObjectiveOutcome(o, replan, clean); got != OutcomeControllerUncertain {
-		t.Fatalf("replan exhaustion = %q, want controller_uncertain", got)
+	if got := classifyObjectiveOutcome(o, replan, clean); got != OutcomeBlocked {
+		t.Fatalf("replan exhaustion = %q, want blocked", got)
 	}
 
 	joinedChoice := errors.Join(world.ErrNoPath, ErrObjectiveBoundaryChoice)
@@ -50,8 +50,8 @@ func TestClassifyObjectiveOutcomePrecedence(t *testing.T) {
 	}
 
 	joinedController := errors.Join(skill.ErrMenuStuck, ErrObjectiveBoundaryDirty)
-	if got := classifyObjectiveOutcome(o, joinedController, clean); got != OutcomeControllerUncertain {
-		t.Fatalf("controller + dirty boundary = %q, want controller_uncertain", got)
+	if got := classifyObjectiveOutcome(o, joinedController, clean); got != OutcomeStabilizationFailed {
+		t.Fatalf("controller + dirty boundary = %q, want stabilization_failed", got)
 	}
 	joinedBlocked := errors.Join(world.ErrNoPath, ErrObjectiveBoundaryDirty)
 	if got := classifyObjectiveOutcome(o, joinedBlocked, clean); got != OutcomeStabilizationFailed {
@@ -70,11 +70,11 @@ func TestClassifyObjectiveOutcomePrecedence(t *testing.T) {
 	if got := classifyObjectiveOutcome(o, skill.ErrBattleInterrupted, clean); got != OutcomeOwnershipFailure {
 		t.Fatalf("raw battle interruption = %q, want ownership_failure", got)
 	}
-	if got := classifyObjectiveOutcome(o, skill.ErrMenuStuck, clean); got != OutcomeControllerUncertain {
-		t.Fatalf("menu stuck = %q, want controller_uncertain", got)
+	if got := classifyObjectiveOutcome(o, skill.ErrMenuStuck, clean); got != OutcomeBlocked {
+		t.Fatalf("menu stuck = %q, want blocked", got)
 	}
-	if got := classifyObjectiveOutcome(o, emu.ErrFrameDeadline, clean); got != OutcomeControllerUncertain {
-		t.Fatalf("frame deadline = %q, want controller_uncertain", got)
+	if got := classifyObjectiveOutcome(o, emu.ErrFrameDeadline, clean); got != OutcomeBlocked {
+		t.Fatalf("frame deadline = %q, want blocked", got)
 	}
 }
 

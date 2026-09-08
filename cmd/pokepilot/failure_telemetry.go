@@ -46,12 +46,15 @@ func drainObjectiveFailureTelemetry(reason, build, checkpointDir string) ([]farm
 	}
 
 	type grouped struct {
-		failure farm.ObjectiveFailure
-		lastIdx int
+		failure        farm.ObjectiveFailure
+		lastIdx        int
+		lastOccurrence farm.FailureOccurrence
 	}
 	groups := map[string]*grouped{}
 	observedAt := time.Now().UTC()
 	var terminal *farm.FailureOccurrence
+	lastFailureIdx := -1
+	lastFailureFingerprint := ""
 
 	for i, result := range res.Outcomes {
 		if result.Outcome == agent.OutcomeCompleted || expectedStructuredGameOutcome(result) {
@@ -86,6 +89,14 @@ func drainObjectiveFailureTelemetry(reason, build, checkpointDir string) ([]farm
 			groups[occurrence.Fingerprint] = g
 		}
 		g.failure.Count++
+		if result.Recovered {
+			g.failure.RecoveredCount++
+		}
+		if result.Terminal {
+			g.failure.TerminalCount++
+			occ := occurrence
+			terminal = &occ
+		}
 		g.failure.LastRound = i + 1
 		g.failure.Map = result.Final.Map
 		g.failure.X = result.Final.X
@@ -93,20 +104,38 @@ func drainObjectiveFailureTelemetry(reason, build, checkpointDir string) ([]farm
 		g.failure.Error = result.Summary
 		g.failure.Checkpoint = occurrence.Checkpoint
 		g.lastIdx = i
-		occ := occurrence
-		terminal = &occ
+		g.lastOccurrence = occurrence
+		lastFailureIdx = i
+		lastFailureFingerprint = occurrence.Fingerprint
+	}
+
+	// Backward compatibility for Results produced before per-occurrence impact
+	// flags existed. New Run paths mark every non-completed result explicitly.
+	failureDrivenStop := reason == "failed" || reason == "stuck" || reason == "error"
+	if terminal == nil && failureDrivenStop && lastFailureIdx >= 0 {
+		if g := groups[lastFailureFingerprint]; g != nil && g.failure.TerminalCount == 0 {
+			g.failure.TerminalCount++
+			occ := g.lastOccurrence
+			terminal = &occ
+		}
 	}
 
 	out := make([]farm.ObjectiveFailure, 0, len(groups))
 	for _, g := range groups {
-		g.failure.Recovered = reason == "done" || majorProgressAfter(res.Outcomes, g.lastIdx)
-		g.failure.Blocking = !g.failure.Recovered && g.failure.Count >= 2 &&
-			(reason == "failed" || reason == "stuck" || reason == "error")
+		unknown := g.failure.Count - g.failure.RecoveredCount - g.failure.TerminalCount
+		if unknown > 0 && (reason == "done" || majorProgressAfter(res.Outcomes, g.lastIdx)) {
+			g.failure.RecoveredCount += unknown
+		}
+		g.failure.Recovered = g.failure.RecoveredCount > 0 && g.failure.TerminalCount == 0
+		g.failure.Blocking = g.failure.TerminalCount > 0 && g.failure.Count >= 2 && failureDrivenStop
 		out = append(out, g.failure)
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Blocking != out[j].Blocking {
 			return out[i].Blocking
+		}
+		if out[i].TerminalCount != out[j].TerminalCount {
+			return out[i].TerminalCount > out[j].TerminalCount
 		}
 		if out[i].Count != out[j].Count {
 			return out[i].Count > out[j].Count
