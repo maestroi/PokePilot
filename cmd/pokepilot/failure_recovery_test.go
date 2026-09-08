@@ -10,11 +10,7 @@ import (
 func TestFarmRecoveryOfferedQuarantinesRecentFailureWhenAlternativeExists(t *testing.T) {
 	failed := agent.Objective{Kind: agent.KindGoTo, Place: "route 1"}
 	other := agent.Objective{Kind: agent.KindGoTo, Place: "route 2"}
-	obs := agent.Observation{History: []agent.RoundRecord{{
-		Objective: failed.String(),
-		Outcome:   "failed: skill: no path",
-	}}}
-
+	obs := agent.Observation{History: []agent.RoundRecord{{Objective: failed.String(), Outcome: "failed: skill: no path"}}}
 	got := farmRecoveryOffered(obs, []agent.Objective{failed, other})
 	if len(got) != 1 || got[0].String() != other.String() {
 		t.Fatalf("offered = %v, want only %q", got, other.String())
@@ -23,11 +19,7 @@ func TestFarmRecoveryOfferedQuarantinesRecentFailureWhenAlternativeExists(t *tes
 
 func TestFarmRecoveryOfferedKeepsMandatoryOnlyOption(t *testing.T) {
 	failed := agent.Objective{Kind: agent.KindGoTo, Place: "mt moon b1f"}
-	obs := agent.Observation{History: []agent.RoundRecord{{
-		Objective: failed.String(),
-		Outcome:   "failed: skill: no path",
-	}}}
-
+	obs := agent.Observation{History: []agent.RoundRecord{{Objective: failed.String(), Outcome: "failed: skill: no path"}}}
 	got := farmRecoveryOffered(obs, []agent.Objective{failed})
 	if len(got) != 1 || got[0].String() != failed.String() {
 		t.Fatalf("offered = %v, want mandatory objective retained", got)
@@ -49,7 +41,6 @@ func TestFarmRecoveryOfferedPrefersActiveGymOverWandering(t *testing.T) {
 	gym := agent.Objective{Kind: agent.KindGym, Place: "pewter gym"}
 	wander := agent.Objective{Kind: agent.KindGoTo, Place: "viridian forest"}
 	train := agent.Objective{Kind: agent.KindTrain, Level: 14}
-
 	got := farmRecoveryOffered(agent.Observation{}, []agent.Objective{wander, train, gym})
 	if len(got) != 1 || got[0].Kind != agent.KindGym {
 		t.Fatalf("offered = %v, want only the active gym challenge", got)
@@ -62,11 +53,7 @@ func TestFarmRecoveryOfferedPrefersActiveGymOverWandering(t *testing.T) {
 func TestFarmRecoveryOfferedKeepsGymFrontierAfterFailure(t *testing.T) {
 	gym := agent.Objective{Kind: agent.KindGym, Place: "pewter gym"}
 	wander := agent.Objective{Kind: agent.KindGoTo, Place: "pewter city"}
-	obs := agent.Observation{History: []agent.RoundRecord{{
-		Objective: gym.String(),
-		Outcome:   "failed: skill: Gym: battle with BROCK did not start after the leader dialogue",
-	}}}
-
+	obs := agent.Observation{History: []agent.RoundRecord{{Objective: gym.String(), Outcome: "failed: skill: Gym: battle with BROCK did not start after the leader dialogue"}}}
 	got := farmRecoveryOffered(obs, []agent.Objective{gym, wander})
 	if len(got) != 1 || got[0].Kind != agent.KindGym {
 		t.Fatalf("offered = %v, want failed progression-critical gym challenge to remain the active frontier", got)
@@ -79,13 +66,12 @@ func TestFarmRecoveryOfferedKeepsGymFrontierAfterFailure(t *testing.T) {
 func TestFarmRecoveryOfferedBoulderToCascadeSuppressesOptionalDrift(t *testing.T) {
 	obs := agent.Observation{Badges: []string{state.BadgeBoulder.String()}}
 	offered := []agent.Objective{
-		{Kind: agent.KindCatch, Species: 1},
+		{Kind: agent.KindCatch, Species: agent.SpeciesID("rhydon")},
 		{Kind: agent.KindTrain, Level: 24},
 		{Kind: agent.KindGoTo, Place: "pewter gym"},
 		{Kind: agent.KindGoTo, Place: "viridian city"},
 		{Kind: agent.KindGoTo, Place: "pewter city"},
 	}
-
 	got := farmRecoveryOffered(obs, offered)
 	if len(got) != 2 {
 		t.Fatalf("offered = %v, want only non-gym travel choices while seeking Cascade", got)
@@ -103,10 +89,9 @@ func TestFarmRecoveryOfferedBoulderToCascadeLocksOntoUnvisitedAdjacent(t *testin
 	offered := []agent.Objective{
 		{Kind: agent.KindGoTo, Place: "viridian forest"},
 		{Kind: agent.KindTrain, Level: 24},
-		{Kind: agent.KindCatch, Species: 1},
+		{Kind: agent.KindCatch, Species: agent.SpeciesID("rhydon")},
 		frontier,
 	}
-
 	got := farmRecoveryOffered(obs, offered)
 	if len(got) != 1 || got[0].String() != frontier.String() {
 		t.Fatalf("offered = %v, want only forward frontier %q", got, frontier.String())
@@ -116,18 +101,14 @@ func TestFarmRecoveryOfferedBoulderToCascadeLocksOntoUnvisitedAdjacent(t *testin
 func TestFarmRecoveryOfferedBoulderToCascadeKeepsTrainingAfterMandatoryLoss(t *testing.T) {
 	obs := agent.Observation{
 		Badges: []string{state.BadgeBoulder.String()},
-		Failures: []agent.Failure{{
-			Objective: "trainer loss while attempting go to route 3",
-			Last:      "blacked out against mandatory trainer",
-		}},
+		Failures: []agent.Failure{{Objective: "trainer loss while attempting go to route 3", Last: "blacked out against mandatory trainer"}},
 	}
 	train := agent.Objective{Kind: agent.KindTrain, Level: 24}
 	offered := []agent.Objective{
 		train,
-		{Kind: agent.KindCatch, Species: 1},
+		{Kind: agent.KindCatch, Species: agent.SpeciesID("rhydon")},
 		{Kind: agent.KindGoTo, Place: "pewter city"},
 	}
-
 	got := farmRecoveryOffered(obs, offered)
 	foundTrain := false
 	for _, o := range got {
@@ -144,16 +125,12 @@ func TestFarmRecoveryOfferedBoulderToCascadeKeepsTrainingAfterMandatoryLoss(t *t
 }
 
 func TestFarmRecoveryOfferedStopsFirstBadgeSteeringAfterCascade(t *testing.T) {
-	obs := agent.Observation{Badges: []string{
-		state.BadgeBoulder.String(),
-		state.BadgeCascade.String(),
-	}}
+	obs := agent.Observation{Badges: []string{state.BadgeBoulder.String(), state.BadgeCascade.String()}}
 	offered := []agent.Objective{
-		{Kind: agent.KindCatch, Species: 1},
+		{Kind: agent.KindCatch, Species: agent.SpeciesID("rhydon")},
 		{Kind: agent.KindTrain, Level: 24},
 		{Kind: agent.KindGoTo, Place: "pewter gym"},
 	}
-
 	got := farmRecoveryOffered(obs, offered)
 	if len(got) != len(offered) {
 		t.Fatalf("offered = %v, want first-badge steering disabled after Cascade", got)
@@ -168,7 +145,6 @@ func TestFarmRecoveryOfferedExpiresAfterTwoRounds(t *testing.T) {
 		{Objective: other.String(), Outcome: "done"},
 		{Objective: other.String(), Outcome: "done"},
 	}}
-
 	got := farmRecoveryOffered(obs, []agent.Objective{failed, other})
 	if len(got) != 2 {
 		t.Fatalf("offered = %v, want cooldown expired", got)
