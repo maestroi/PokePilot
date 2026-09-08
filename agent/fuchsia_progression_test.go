@@ -14,13 +14,17 @@ func TestFuchsiaProgressionObjectiveAndItemVocabulary(t *testing.T) {
 	if got, want := o.String(), "reach Fuchsia, beat Koga, and get HM03 SURF + HM04 STRENGTH"; got != want {
 		t.Fatalf("String() = %q, want %q", got, want)
 	}
-	for name, want := range map[string]uint8{"hm03": 0xC6, "hm04": 0xC7} {
+	for name, wantRaw := range map[string]uint8{"hm03": 0xC6, "hm04": 0xC7} {
 		id, ok := ItemByName(name)
-		if !ok || id != want {
-			t.Fatalf("ItemByName(%q) = %#02x,%v, want %#02x,true", name, id, ok, want)
+		if !ok || id != ItemID(name) {
+			t.Fatalf("ItemByName(%q) = %q,%v, want %q,true", name, id, ok, name)
 		}
-		if got, ok := ItemName(want); !ok || got != name {
-			t.Fatalf("ItemName(%#02x) = %q,%v, want %q,true", want, got, ok, name)
+		raw, ok := redItemID(id)
+		if !ok || raw != wantRaw {
+			t.Fatalf("redItemID(%q) = %#02x,%v, want %#02x,true", id, raw, ok, wantRaw)
+		}
+		if got, ok := ItemName(wantRaw); !ok || got != name {
+			t.Fatalf("ItemName(%#02x) = %q,%v, want %q,true", wantRaw, got, ok, name)
 		}
 	}
 }
