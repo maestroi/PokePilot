@@ -84,7 +84,7 @@ func executeObjectiveResult(m *emu.Emu, romData []byte, o Objective) (ObjectiveR
 		result.Summary = outcomeSummary(o, result.Outcome, final, nil)
 		return result, nil
 	}
-	result.Outcome = classifyObjectiveOutcome(err, final)
+	result.Outcome = classifyObjectiveOutcome(o, err, final)
 	result.Summary = outcomeSummary(o, result.Outcome, final, err)
 	return result, err
 }
@@ -92,7 +92,13 @@ func executeObjectiveResult(m *emu.Emu, romData []byte, o Objective) (ObjectiveR
 // classifyObjectiveOutcome has load-bearing precedence. A re-plan exhaustion
 // still wraps ErrLegUnwalkable, a dirty finish can be joined with the primary
 // error, and an unanswered choice is more specific than generic instability.
-func classifyObjectiveOutcome(err error, final Observation) Outcome {
+//
+// The executor predates ObjectiveResult, so three normal game endings are still
+// encoded as narrow, stable agent error phrases (gym loss, bounded train
+// shortfall, bounded/missed catch). expectedLegacyGameplayBlockage is the one
+// compatibility bridge for those; new code should expose a typed sentinel or a
+// structured skill result instead of adding another phrase here.
+func classifyObjectiveOutcome(o Objective, err error, final Observation) Outcome {
 	if err == nil {
 		return OutcomeCompleted
 	}
@@ -101,7 +107,7 @@ func classifyObjectiveOutcome(err error, final Observation) Outcome {
 		return OutcomeChoiceRequired
 	}
 	var choice *skill.ErrDialogueChoice
-	if errors.As(err, &choice) {
+	if errors.As(err, &choice) || errors.Is(err, skill.ErrFieldItemPrompt) {
 		return OutcomeChoiceRequired
 	}
 	if errors.Is(err, ErrObjectiveBoundaryDirty) {
@@ -113,7 +119,9 @@ func classifyObjectiveOutcome(err error, final Observation) Outcome {
 	if errors.Is(err, emu.ErrFrameDeadline) ||
 		errors.Is(err, skill.ErrReplanExhausted) ||
 		errors.Is(err, skill.ErrMenuStuck) ||
-		errors.Is(err, skill.ErrCutsceneTimeout) {
+		errors.Is(err, skill.ErrCutsceneTimeout) ||
+		errors.Is(err, skill.ErrForcedChoiceStuck) ||
+		errors.Is(err, skill.ErrPickupMenu) {
 		return OutcomeControllerUncertain
 	}
 
@@ -123,11 +131,23 @@ func classifyObjectiveOutcome(err error, final Observation) Outcome {
 		return OutcomeOwnershipFailure
 	}
 
-	// These are explicit recoverable game outcomes. They changed the world and
-	// the planner should choose again from the new state.
+	// A field item that was consumed/ran to completion without changing its
+	// target violated the objective's positive effect postcondition. Retrying as
+	// ordinary gameplay would conceal that invariant failure.
+	if errors.Is(err, skill.ErrFieldItemNoEffect) {
+		return OutcomePostconditionFailed
+	}
+
+	// Explicit game outcomes that leave (or return to) a settled world are
+	// planner-visible blockage rather than controller defects.
 	if errors.Is(err, skill.ErrBlackedOut) ||
+		errors.Is(err, skill.ErrCatchBlackout) ||
 		errors.Is(err, skill.ErrTrainRetreat) ||
-		errors.Is(err, skill.ErrTrainProgress) {
+		errors.Is(err, skill.ErrTrainProgress) ||
+		errors.Is(err, skill.ErrCantAfford) ||
+		errors.Is(err, skill.ErrNotInStock) ||
+		errors.Is(err, skill.ErrBagNotRisen) ||
+		expectedLegacyGameplayBlockage(o, err) {
 		return OutcomeBlocked
 	}
 
@@ -146,6 +166,27 @@ func classifyObjectiveOutcome(err error, final Observation) Outcome {
 	}
 
 	return OutcomeUnknownFailure
+}
+
+// expectedLegacyGameplayBlockage keeps legacy normal outcomes recoverable while
+// the public Execute(error-only) contract is migrated incrementally. Each match
+// is constrained by objective kind and by text owned in agent/objective.go; it
+// must never become a generic substring classifier for arbitrary skill errors.
+func expectedLegacyGameplayBlockage(o Objective, err error) bool {
+	if err == nil {
+		return false
+	}
+	s := err.Error()
+	switch o.Kind {
+	case KindGym:
+		return strings.Contains(s, "lost to the gym leader (blacked out to the center)")
+	case KindTrain:
+		return strings.Contains(s, "target level ") && strings.Contains(s, " not reached (ended level ")
+	case KindCatch:
+		return (strings.Contains(s, ": no ") && strings.Contains(s, " caught (outcome ")) ||
+			strings.Contains(s, " encounters without a wanted species")
+	}
+	return false
 }
 
 // HistoryText is the compact form placed in Observation.History. Completed
