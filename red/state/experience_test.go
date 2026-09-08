@@ -9,7 +9,7 @@ import (
 func TestPartyExperienceReadsThreeByteBigEndianValue(t *testing.T) {
 	var mem Mem
 	mem[sym.PartyCount] = 2
-	base := sym.PartyMon1 + sym.PartyMonSize + partyMonExperienceOffset
+	base := sym.PartyMon1 + sym.PartyMonSize + sym.MonExp
 	mem[base], mem[base+1], mem[base+2] = 0x12, 0x34, 0x56
 
 	got, ok := PartyExperience(&mem, 1)
