@@ -1,23 +1,27 @@
-name: Harden issue 148
+name: Tests
 
 on:
   push:
-    branches:
-      - issue-148-training-xp-efficiency
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  harden:
+  test:
+    name: ROM-free verification
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
+
     steps:
-      - name: Checkout feature branch
+      - name: Checkout PokePilot
         uses: actions/checkout@v4
-        with:
-          ref: issue-148-training-xp-efficiency
-          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -25,114 +29,28 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Harden symbols and planner regressions
-        shell: bash
+      - name: Verify module graph
         run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
+          go mod download
+          git diff --exit-code -- go.mod go.sum
 
-          def replace(path, old, new, count=1):
-              p = Path(path)
-              text = p.read_text()
-              actual = text.count(old)
-              if actual != count:
-                  raise SystemExit(f"{path}: expected {count} occurrences, found {actual}")
-              p.write_text(text.replace(old, new, count))
+      - name: Check formatting
+        run: make fmt-check
 
-          replace("red/sym/addresses.go",
-          '''\tMonMoves   uint16 = 0x08 // 4 bytes
-          \tMonPP      uint16 = 0x1D // 4 bytes
-          ''',
-          '''\tMonMoves   uint16 = 0x08 // 4 bytes
-          \tMonExp     uint16 = 0x0E // 3 bytes, BIG-endian cumulative experience
-          \tMonPP      uint16 = 0x1D // 4 bytes
-          ''')
-
-          replace("red/state/experience.go",
-          '''// partyMonExperienceOffset is MON_EXP in Red's party struct. Experience is a
-          // three-byte big-endian cumulative value. Keep the raw offset inside the Red
-          // state boundary rather than exposing it to planner/runtime code.
-          const partyMonExperienceOffset uint16 = 0x0e
-
-          ''', '')
-          replace("red/state/experience.go",
-          '''\tbase := sym.PartyMon1 + uint16(slot)*sym.PartyMonSize + partyMonExperienceOffset
-          ''',
-          '''\tbase := sym.PartyMon1 + uint16(slot)*sym.PartyMonSize + sym.MonExp
-          ''')
-          replace("red/state/experience_test.go",
-          '''\tbase := sym.PartyMon1 + sym.PartyMonSize + partyMonExperienceOffset
-          ''',
-          '''\tbase := sym.PartyMon1 + sym.PartyMonSize + sym.MonExp
-          ''')
-
-          p = Path("agent/training_test.go")
-          text = p.read_text()
-          text += r'''
-
-func TestTrainingOfferCarriesOutsideBudgetEvidence(t *testing.T) {
-	obs := Observation{
-		Map:        0,
-		PartyCount: 1,
-		Party: []PartyMon{{
-			Species: "pidgey", Level: 16, HP: 20, MaxHP: 20,
-		}},
-		HasGrass: true,
-		WildGrass: []WildSpecies{{Name: "pidgey", MinLevel: 2, MaxLevel: 5, Slots: 10}},
-		Training: &TrainingEstimate{
-			CurrentLevel: 16, TargetLevel: 18, XPRemaining: 1700,
-			XPPerEncounter: 28, EstimatedEncounters: 61,
-			SessionBudget: 20, Viability: TrainingOutsideBudget,
-		},
-	}
-	offers := Offer(obs, NewKnowledge(map[uint8][]uint8{}))
-	for _, offer := range offers {
-		if offer.Kind != KindTrain {
-			continue
-		}
-		if !strings.Contains(offer.Note, "outside current session budget") || !strings.Contains(offer.Note, "~61 encounters") {
-			t.Fatalf("training note = %q, want quantitative outside-budget evidence", offer.Note)
-		}
-		return
-	}
-	t.Fatal("training objective was not offered")
-}
-
-func TestTrainingInefficiencyClassifiesAsRecoverableBlockage(t *testing.T) {
-	err := &TrainingInefficientError{Estimate: TrainingEstimate{Viability: TrainingOutsideBudget, SessionBudget: 20}}
-	if got := classifyObjectiveOutcome(Objective{Kind: KindTrain}, err, Observation{}); got != OutcomeBlocked {
-		t.Fatalf("classifyObjectiveOutcome(training inefficiency) = %q, want %q", got, OutcomeBlocked)
-	}
-	if got := actionFor(OutcomeBlocked); got != actionReplan {
-		t.Fatalf("actionFor(blocked) = %v, want replan", got)
-	}
-}
-'''
-          p.write_text(text)
-          PY
-
-          gofmt -w red/sym/addresses.go red/state/experience.go red/state/experience_test.go agent/training_test.go
-
-      - name: Verify hardening
-        shell: bash
+      - name: Vet
         env:
           POKEMON_RED_ROM: ""
-        run: |
-          set -euo pipefail
-          make fmt-check
-          go vet ./...
-          go test -short -count=1 ./...
+        run: go vet ./...
 
-      - name: Commit hardening and remove staging workflow diff
-        shell: bash
-        run: |
-          set -euo pipefail
-          git fetch origin main
-          git checkout origin/main -- .github/workflows/test.yml
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add .github/workflows/test.yml agent/training_test.go red/state red/sym/addresses.go
-          git diff --cached --check
-          git commit -m "agent: harden training viability evidence"
-          git push origin HEAD:issue-148-training-xp-efficiency
+      # ROM-backed fixture tests already skip when POKEMON_RED_ROM is unset.
+      # -short also skips intentionally long journey tests, so CI never needs
+      # a commercial Pokemon ROM or a full Pokemon gameplay run.
+      - name: Run short test suite
+        env:
+          POKEMON_RED_ROM: ""
+        run: go test -short -count=1 ./...
+
+      - name: Run short race suite
+        env:
+          POKEMON_RED_ROM: ""
+        run: go test -race -short -count=1 ./...
