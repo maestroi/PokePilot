@@ -9,13 +9,10 @@ import (
 	"github.com/maestroi/pokepilot/skill"
 )
 
-// offerWithTMHM extends the ordinary factual objective menu with owned
-// machines that the ROM says a party member can learn and the move-set policy
-// says are worth spending. Offer itself intentionally has no ROM or full party
-// move data, so machine recommendations live at Run's richer boundary rather
-// than smuggling compatibility policy into Observation.
+// offerWithTMHM extends the portable objective menu with Red-owned progression
+// goals and owned machines. Neither concern is reconstructed by generic Offer.
 func offerWithTMHM(m *emu.Emu, romData []byte, obs Observation, known *Knowledge) []Objective {
-	out := Offer(obs, known)
+	out := OfferWithProgression(obs, known, newRedObjectiveAdapter(m, romData))
 	var mem state.Mem
 	state.Snapshot(m, &mem)
 	return appendTMHMObjectives(romData, state.DecodeParty(&mem), state.DecodeInventory(&mem), out)
@@ -28,11 +25,11 @@ func appendTMHMObjectives(romData []byte, party state.PartyState, inventory stat
 		}
 		machine, err := rom.LookupTMHM(romData, item.ID)
 		if err != nil {
-			continue // ordinary bag item, unknown machine, or malformed ROM entry
+			continue
 		}
 		decision, err := skill.DecideTMHM(romData, party, item.ID, false)
 		if err != nil || decision.Existing {
-			continue // incompatible, not an upgrade, or already learned
+			continue
 		}
 		out = append(out, Objective{
 			Kind: KindUseItem,

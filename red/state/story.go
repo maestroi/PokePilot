@@ -7,8 +7,12 @@ const (
 	saffronGuardsDrinkMask uint8 = 1 << 6
 
 	// Item ids from pokered/constants/item_constants.asm.
-	secretKeyItemID uint8 = 0x2b
-	cardKeyItemID   uint8 = 0x30
+	secretKeyItemID  uint8 = 0x2b
+	cardKeyItemID    uint8 = 0x30
+	silphScopeItemID uint8 = 0x48
+	pokeFluteItemID  uint8 = 0x49
+	hm03ItemID       uint8 = 0xc6
+	hm04ItemID       uint8 = 0xc7
 )
 
 // These event ids stay private to the Red story decoder. Agent/planner code
@@ -29,11 +33,15 @@ const (
 	eventAutowalkedIntoLoreleisRoom Event = 0x8e6
 )
 
-// StoryFacts is the compact semantic progression state exposed to the agent.
-// It deliberately names game concepts, not event ids or WRAM bits, so the
-// planner/operator can reason about gates without inheriting Red's encoding.
-// Every field is deterministically re-derived from the current RAM/bag state.
+// StoryFacts is Red's semantic progression projection. It deliberately names
+// game concepts, not event ids, WRAM bits, or item bytes. Every field is
+// deterministically re-derived from the current RAM/bag state.
 type StoryFacts struct {
+	PokedexAcquired            bool
+	SilphScopeAcquired         bool
+	PokeFluteAcquired          bool
+	FuchsiaProgressionComplete bool
+
 	SaffronGateOpen            bool
 	CardKeyOwned               bool
 	SilphCoCleared             bool
@@ -61,16 +69,21 @@ var route23BadgeCheckEvents = [...]Event{
 // authoritative RAM and decoded inventory. No run memory is involved, so the
 // same checkpoint always reconstructs the same facts after resume.
 func DecodeStoryFacts(m *Mem, inv InventoryState) StoryFacts {
+	progress := DecodeProgress(m)
 	facts := StoryFacts{
-		SaffronGateOpen:        m.U8(sym.StatusFlags1)&saffronGuardsDrinkMask != 0,
-		CardKeyOwned:           inventoryHasItem(inv, cardKeyItemID),
-		SilphCoCleared:         HasEvent(m, eventBeatSilphCoGiovanni),
-		MansionSwitchOn:        HasEvent(m, eventMansionSwitchOn),
-		SecretKeyOwned:         inventoryHasItem(inv, secretKeyItemID),
-		ViridianGymOpen:        HasEvent(m, eventViridianGymOpen),
-		Route22RivalResolved:   HasEvent(m, eventBeatRoute22Rival2ndBattle),
-		LeagueChallengeStarted: HasEvent(m, eventAutowalkedIntoLoreleisRoom),
-		LeagueChampionDefeated: HasEvent(m, EventBeatChampionRival),
+		PokedexAcquired:            HasEvent(m, EventGotPokedex),
+		SilphScopeAcquired:         inventoryHasItem(inv, silphScopeItemID),
+		PokeFluteAcquired:          inventoryHasItem(inv, pokeFluteItemID),
+		FuchsiaProgressionComplete: progress.Has(BadgeSoul) && inventoryHasItem(inv, hm03ItemID) && inventoryHasItem(inv, hm04ItemID),
+		SaffronGateOpen:            m.U8(sym.StatusFlags1)&saffronGuardsDrinkMask != 0,
+		CardKeyOwned:               inventoryHasItem(inv, cardKeyItemID),
+		SilphCoCleared:             HasEvent(m, eventBeatSilphCoGiovanni),
+		MansionSwitchOn:            HasEvent(m, eventMansionSwitchOn),
+		SecretKeyOwned:             inventoryHasItem(inv, secretKeyItemID),
+		ViridianGymOpen:            HasEvent(m, eventViridianGymOpen),
+		Route22RivalResolved:       HasEvent(m, eventBeatRoute22Rival2ndBattle),
+		LeagueChallengeStarted:     HasEvent(m, eventAutowalkedIntoLoreleisRoom),
+		LeagueChampionDefeated:     HasEvent(m, EventBeatChampionRival),
 	}
 	for _, event := range route23BadgeCheckEvents {
 		if HasEvent(m, event) {

@@ -10,9 +10,10 @@ import (
 
 // The table below is the whole point of Offer: the menu CHANGES with the
 // situation. Every case is a synthetic observation — no ROM, no model — and
-// the expected list is exact, in Offer's order (starters, places by name,
-// then the verbs), so a place that slips onto the menu it should not be on
-// fails the case.
+// the expected list is exact, in Offer's order, so a place or verb that slips
+// onto the menu it should not be on fails the case. Game-specific progression
+// is intentionally absent: a concrete adapter composes it through
+// OfferWithProgression instead of teaching generic Offer a campaign.
 //
 // Map facts used here come from skill's place table: pallet town 0x00,
 // route 1 0x0c, viridian city 0x01, viridian pokemon center 0x29,
@@ -46,7 +47,7 @@ func TestOfferTable(t *testing.T) {
 				"go to route 1",
 				"go to route 1, fleeing wild battles",
 			},
-			mustNot: []string{"pewter", "heal", "catch", "train", "gym", "parcel"},
+			mustNot: []string{"pewter", "heal", "catch", "train", "gym", "parcel", "progress"},
 		},
 		{
 			name: "on route 1 with a party, balls and grass: one catch per species the map rolls",
@@ -68,7 +69,6 @@ func TestOfferTable(t *testing.T) {
 				return k
 			},
 			want: []string{
-				"deliver oak's parcel",
 				"catch a PIDGEY here",
 				"catch a RATTATA here",
 				"train the lead to level 7",
@@ -77,7 +77,7 @@ func TestOfferTable(t *testing.T) {
 				"go to viridian city",
 				"go to viridian city, fleeing wild battles",
 			},
-			mustNot: []string{"starter", "heal", "CATERPIE"},
+			mustNot: []string{"starter", "heal", "CATERPIE", "progress"},
 		},
 		{
 			name: "balls but the map rolls nothing: catch stays off — the hunt needs a wild table",
@@ -92,13 +92,12 @@ func TestOfferTable(t *testing.T) {
 				return k
 			},
 			want: []string{
-				"deliver oak's parcel",
 				"go to pallet town",
 				"go to pallet town, fleeing wild battles",
 				"go to route 1",
 				"go to route 1, fleeing wild battles",
 			},
-			mustNot: []string{"catch", "train"},
+			mustNot: []string{"catch", "train", "progress"},
 		},
 		{
 			name: "hurt party in the field: the walk back to a known center is one objective",
@@ -115,7 +114,6 @@ func TestOfferTable(t *testing.T) {
 				return k
 			},
 			want: []string{
-				"deliver oak's parcel",
 				"heal the party at VIRIDIAN POKEMON CENTER",
 				"heal the party at VIRIDIAN POKEMON CENTER, fleeing wild battles",
 				"go to pallet town",
@@ -141,7 +139,6 @@ func TestOfferTable(t *testing.T) {
 				return k
 			},
 			want: []string{
-				"deliver oak's parcel",
 				"go to pallet town",
 				"go to pallet town, fleeing wild battles",
 				"go to viridian city",
@@ -149,7 +146,7 @@ func TestOfferTable(t *testing.T) {
 				"go to viridian pokemon center",
 				"go to viridian pokemon center, fleeing wild battles",
 			},
-			mustNot: []string{"heal"},
+			mustNot: []string{"heal", "progress"},
 		},
 		{
 			name: "hurt party but no center the run has been inside: no heal it cannot reach",
@@ -165,13 +162,12 @@ func TestOfferTable(t *testing.T) {
 				return k
 			},
 			want: []string{
-				"deliver oak's parcel",
 				"go to pallet town",
 				"go to pallet town, fleeing wild battles",
 				"go to viridian city",
 				"go to viridian city, fleeing wild battles",
 			},
-			mustNot: []string{"heal"},
+			mustNot: []string{"heal", "progress"},
 		},
 		{
 			name: "hurt party with a potion in the bag: field healing joins without walking to a center",
@@ -189,7 +185,6 @@ func TestOfferTable(t *testing.T) {
 				return k
 			},
 			want: []string{
-				"deliver oak's parcel",
 				"heal the party at VIRIDIAN POKEMON CENTER",
 				"heal the party at VIRIDIAN POKEMON CENTER, fleeing wild battles",
 				"use a POTION on party slot 0",
@@ -216,13 +211,12 @@ func TestOfferTable(t *testing.T) {
 				return k
 			},
 			want: []string{
-				"deliver oak's parcel",
 				"go to pallet town",
 				"go to pallet town, fleeing wild battles",
 				"go to viridian city",
 				"go to viridian city, fleeing wild battles",
 			},
-			mustNot: []string{"use", "heal"},
+			mustNot: []string{"use", "heal", "progress"},
 		},
 		{
 			name: "hurt party, empty bag: no use-item to offer",
@@ -238,13 +232,12 @@ func TestOfferTable(t *testing.T) {
 				return k
 			},
 			want: []string{
-				"deliver oak's parcel",
 				"go to pallet town",
 				"go to pallet town, fleeing wild battles",
 				"go to viridian city",
 				"go to viridian city, fleeing wild battles",
 			},
-			mustNot: []string{"use"},
+			mustNot: []string{"use", "progress"},
 		},
 		{
 			name: "poisoned mon with an antidote: the status cure joins, though the HP is whole",
@@ -261,14 +254,13 @@ func TestOfferTable(t *testing.T) {
 				return k
 			},
 			want: []string{
-				"deliver oak's parcel",
 				"use an ANTIDOTE on party slot 0",
 				"go to pallet town",
 				"go to pallet town, fleeing wild battles",
 				"go to viridian city",
 				"go to viridian city, fleeing wild battles",
 			},
-			mustNot: []string{"heal"},
+			mustNot: []string{"heal", "progress"},
 		},
 		{
 			name: "inside a center: heal joins; no balls, so no catch",
@@ -284,7 +276,6 @@ func TestOfferTable(t *testing.T) {
 				return k
 			},
 			want: []string{
-				"deliver oak's parcel",
 				"heal the party",
 				"go to pallet town",
 				"go to pallet town, fleeing wild battles",
@@ -295,7 +286,7 @@ func TestOfferTable(t *testing.T) {
 				"go to viridian pokemon center",
 				"go to viridian pokemon center, fleeing wild battles",
 			},
-			mustNot: []string{"catch", "train", "gym"},
+			mustNot: []string{"catch", "train", "gym", "progress"},
 		},
 		{
 			name: "at the gym underlevelled: the gym is STILL offered — Offer never filters on wisdom",
@@ -310,7 +301,6 @@ func TestOfferTable(t *testing.T) {
 				return k
 			},
 			want: []string{
-				"deliver oak's parcel",
 				"beat the gym leader here",
 				"go to pewter gym",
 				"go to pewter gym, fleeing wild battles",
@@ -328,13 +318,12 @@ func TestOfferTable(t *testing.T) {
 				return k
 			},
 			want: []string{
-				"deliver oak's parcel",
 				"go to pallet town",
 				"go to pallet town, fleeing wild battles",
 				"go to route 1",
 				"go to route 1, fleeing wild battles",
 			},
-			mustNot: []string{"pewter city", "viridian city", "forest", "lab"},
+			mustNot: []string{"pewter city", "viridian city", "forest", "lab", "progress"},
 		},
 		{
 			name: "a place the game named in dialogue joins the menu",
@@ -349,7 +338,6 @@ func TestOfferTable(t *testing.T) {
 				return k
 			},
 			want: []string{
-				"deliver oak's parcel",
 				"go to pallet town",
 				"go to pallet town, fleeing wild battles",
 				"go to pewter city",
@@ -371,12 +359,11 @@ func TestOfferTable(t *testing.T) {
 				return k
 			},
 			want: []string{
-				"deliver oak's parcel",
 				"buy 10 POKEBALL",
 				"go to viridian mart",
 				"go to viridian mart, fleeing wild battles",
 			},
-			mustNot: []string{"POTION"},
+			mustNot: []string{"POTION", "progress"},
 		},
 		{
 			name: "inside a mart whose shelf is unreadable: no buy objective at all",
@@ -391,14 +378,13 @@ func TestOfferTable(t *testing.T) {
 				return k
 			},
 			want: []string{
-				"deliver oak's parcel",
 				"go to viridian mart",
 				"go to viridian mart, fleeing wild battles",
 			},
-			mustNot: []string{"buy"},
+			mustNot: []string{"buy", "progress"},
 		},
 		{
-			name: "a completed one-shot stays off; repeatable verbs do not",
+			name: "repeatable verbs remain available without campaign knowledge",
 			obs: agent.Observation{
 				Map: 0x29, MapName: "VIRIDIAN_POKECENTER", X: 4, Y: 5, PartyCount: 1,
 				Events: []string{"BattledRivalInOaksLab"},
@@ -406,7 +392,6 @@ func TestOfferTable(t *testing.T) {
 			known: func() *agent.Knowledge {
 				k := agent.NewKnowledge(adj)
 				k.SawMap(0x29)
-				k.Done(agent.Objective{Kind: agent.KindErrand})
 				return k
 			},
 			want: []string{
@@ -437,26 +422,18 @@ func TestOfferTable(t *testing.T) {
 	}
 }
 
-func TestOfferWithholdsParcelUntilStarterStoryComplete(t *testing.T) {
+func TestGenericOfferDoesNotInjectGameProgression(t *testing.T) {
 	known := agent.NewKnowledge(nil)
 	before := agent.Observation{Map: 0x00, MapName: "PALLET_TOWN", X: 5, Y: 6, PartyCount: 1}
 	after := before
 	after.Events = []string{"BattledRivalInOaksLab"}
 
-	hasParcel := func(obs agent.Observation) bool {
+	for name, obs := range map[string]agent.Observation{"before": before, "after": after} {
 		for _, objective := range agent.Offer(obs, known) {
-			if objective.Kind == agent.KindErrand {
-				return true
+			if objective.Kind == agent.KindProgress {
+				t.Fatalf("%s: generic Offer injected game progression %q", name, objective)
 			}
 		}
-		return false
-	}
-
-	if hasParcel(before) {
-		t.Fatal("parcel offered before the starter story and rival battle completed")
-	}
-	if !hasParcel(after) {
-		t.Fatal("parcel not offered after the starter story and rival battle completed")
 	}
 }
 
@@ -476,7 +453,6 @@ func TestOfferMenuChangesWithSituation(t *testing.T) {
 	k.SawMap(0x0c)
 	k.SawMap(0x01)
 	k.SawMap(0x29)
-	k.Done(agent.Objective{Kind: agent.KindErrand})
 	second := agent.Offer(later, k)
 
 	firstSet := map[string]bool{}
@@ -633,7 +609,6 @@ func TestOfferMapObjects(t *testing.T) {
 		got = append(got, o.String())
 	}
 	want := []string{
-		"deliver oak's parcel",
 		"talk at (7,10)",
 		"pick up the POKEBALL at (5,6)",
 	}

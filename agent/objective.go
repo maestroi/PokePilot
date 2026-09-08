@@ -14,7 +14,7 @@ const (
 	KindGoTo Kind = iota
 	KindTalk
 	KindStarter
-	KindErrand
+	_ // legacy KindErrand numeric slot; retained so existing generic kind values do not move
 	KindTrain
 	KindHeal
 	KindGym
@@ -22,32 +22,33 @@ const (
 	KindBuy
 	KindPickup
 	KindUseItem
-	KindRocketHideout
-	KindPokemonTower
-	KindFuchsiaProgression
+	_ // legacy KindRocketHideout numeric slot
+	_ // legacy KindPokemonTower numeric slot
+	_ // legacy KindFuchsiaProgression numeric slot
+	KindProgress
 )
 
-// Objective carries semantic planner arguments. Place was already a semantic
-// name before this migration; Species and Item are now names as well, never
-// Red ROM bytes. Starter remains the existing opening-story enum until #137
-// moves Red-specific progression verbs behind the adapter.
+// Objective carries semantic planner arguments. Game-specific encodings stay
+// behind the adapter boundary: Place/Species/Item/Progress are semantic IDs,
+// never Red ROM/RAM bytes or named campaign verbs.
 type Objective struct {
-	Kind    Kind
-	Place   PlaceID
-	X, Y    uint8
-	Starter skill.Starter
-	Level   uint8
-	Species SpeciesID
-	Item    ItemID
-	Slot    int
-	Qty     int
-	Flee    bool
-	Note    string
-	Intent  string
+	Kind     Kind
+	Place    PlaceID
+	X, Y     uint8
+	Starter  skill.Starter
+	Progress ProgressID
+	Level    uint8
+	Species  SpeciesID
+	Item     ItemID
+	Slot     int
+	Qty      int
+	Flee     bool
+	Note     string
+	Intent   string
 }
 
-// Validate checks only portable shape/range invariants. Concrete-game name
-// resolution is adapter-owned.
+// Validate checks only portable shape/range invariants. Concrete-game name and
+// progression-goal resolution is adapter-owned.
 func (o Objective) Validate() error {
 	switch o.Kind {
 	case KindGoTo:
@@ -57,6 +58,10 @@ func (o Objective) Validate() error {
 	case KindStarter:
 		if o.Starter > skill.StarterBulbasaur {
 			return fmt.Errorf("agent: %s: unknown starter %d", o, int(o.Starter))
+		}
+	case KindProgress:
+		if strings.TrimSpace(string(o.Progress)) == "" {
+			return fmt.Errorf("agent: %s: empty progression id", o)
 		}
 	case KindTrain:
 		if o.Level < 1 || o.Level > 100 {
@@ -99,8 +104,8 @@ func (o Objective) String() string {
 		return fmt.Sprintf("talk at (%d,%d)", o.X, o.Y)
 	case KindStarter:
 		return "take the " + starterName(o.Starter) + " starter"
-	case KindErrand:
-		return "deliver oak's parcel"
+	case KindProgress:
+		return "progress " + string(o.Progress)
 	case KindTrain:
 		return fmt.Sprintf("train the lead to level %d", o.Level)
 	case KindHeal:
@@ -120,12 +125,6 @@ func (o Objective) String() string {
 	case KindUseItem:
 		name := string(o.Item)
 		return fmt.Sprintf("use %s %s on party slot %d", article(name), strings.ToUpper(name), o.Slot)
-	case KindRocketHideout:
-		return "clear the Rocket Hideout and get the SILPH SCOPE"
-	case KindPokemonTower:
-		return "clear Pokemon Tower and get the POKE FLUTE"
-	case KindFuchsiaProgression:
-		return "reach Fuchsia, beat Koga, and get HM03 SURF + HM04 STRENGTH"
 	case KindBuy:
 		return fmt.Sprintf("buy %d %s", o.Qty, strings.ToUpper(string(o.Item)))
 	}

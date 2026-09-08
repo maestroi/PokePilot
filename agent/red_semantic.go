@@ -10,6 +10,16 @@ import (
 	"github.com/maestroi/pokepilot/skill"
 )
 
+// These IDs are Red adapter vocabulary, not generic planner kinds. The generic
+// runtime only knows that Objective.Progress should become true in
+// Observation.Story; Red owns what each goal means and how to prove it.
+const (
+	redProgressPokedexAcquired            ProgressID = "pokedex_acquired"
+	redProgressSilphScopeAcquired         ProgressID = "silph_scope_acquired"
+	redProgressPokeFluteAcquired          ProgressID = "poke_flute_acquired"
+	redProgressFuchsiaProgressionComplete ProgressID = "fuchsia_progression_complete"
+)
+
 func semanticPlace(name string) PlaceID {
 	return gameruntime.CanonicalID(name)
 }
@@ -65,9 +75,6 @@ func machineItemID(machine rom.Machine) ItemID {
 	return ItemID(fmt.Sprintf("tm%02d", machine.Number))
 }
 
-// Starter remains the existing Red opening-story enum until #137 replaces
-// Red-specific progression verbs. Keeping its validation here avoids widening
-// #136 beyond planner species/item/location identity.
 func redStarter(id skill.Starter) (skill.Starter, bool) {
 	if id > skill.StarterBulbasaur {
 		return 0, false
@@ -77,6 +84,10 @@ func redStarter(id skill.Starter) (skill.Starter, bool) {
 
 func redProgressState(f state.StoryFacts) ProgressState {
 	return ProgressState{
+		{ID: redProgressPokedexAcquired, Complete: f.PokedexAcquired},
+		{ID: redProgressSilphScopeAcquired, Complete: f.SilphScopeAcquired},
+		{ID: redProgressPokeFluteAcquired, Complete: f.PokeFluteAcquired},
+		{ID: redProgressFuchsiaProgressionComplete, Complete: f.FuchsiaProgressionComplete},
 		{ID: ProgressSaffronGateOpen, Complete: f.SaffronGateOpen},
 		{ID: ProgressCardKeyOwned, Complete: f.CardKeyOwned},
 		{ID: ProgressSilphCoCleared, Complete: f.SilphCoCleared},
@@ -88,4 +99,8 @@ func redProgressState(f state.StoryFacts) ProgressState {
 		{ID: ProgressLeagueChallengeStarted, Complete: f.LeagueChallengeStarted},
 		{ID: ProgressLeagueChampionDefeated, Complete: f.LeagueChampionDefeated},
 	}
+}
+
+func redProgressStateFromRAM(_ *state.Mem, _ state.InventoryState, f state.StoryFacts) ProgressState {
+	return redProgressState(f)
 }

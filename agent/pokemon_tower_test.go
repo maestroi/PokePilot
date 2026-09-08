@@ -2,9 +2,9 @@ package agent
 
 import "testing"
 
-func TestPokemonTowerObjectiveStringAndItemVocabulary(t *testing.T) {
-	o := Objective{Kind: KindPokemonTower}
-	if got, want := o.String(), "clear Pokemon Tower and get the POKE FLUTE"; got != want {
+func TestPokemonTowerUsesSemanticProgressionObjective(t *testing.T) {
+	o := Objective{Kind: KindProgress, Progress: redProgressPokeFluteAcquired}
+	if got, want := o.String(), "progress poke_flute_acquired"; got != want {
 		t.Fatalf("String() = %q, want %q", got, want)
 	}
 	if err := o.Validate(); err != nil {
@@ -18,14 +18,11 @@ func TestPokemonTowerObjectiveStringAndItemVocabulary(t *testing.T) {
 	if !ok || raw != 0x49 {
 		t.Fatalf("redItemID(poke flute) = %#02x, %v; want 0x49, true", raw, ok)
 	}
-	name, ok := ItemName(0x49)
-	if !ok || name != "poke flute" {
-		t.Fatalf("ItemName(0x49) = %q, %v; want poke flute, true", name, ok)
-	}
 }
 
-func TestOfferPokemonTowerRequiresScopeAndStopsAfterFlute(t *testing.T) {
+func TestOfferPokemonTowerProgressionRequiresScopeAndStopsAfterFlute(t *testing.T) {
 	known := NewKnowledge(map[uint8][]uint8{})
+	planner := &redObjectiveAdapter{}
 	availableMaps := []uint8{
 		0x06,
 		0x85,
@@ -42,20 +39,23 @@ func TestOfferPokemonTowerRequiresScopeAndStopsAfterFlute(t *testing.T) {
 			Map:        mapID,
 			PartyCount: 1,
 			Party:      []PartyMon{{Level: 30, HP: 80, MaxHP: 80}},
-			Bag:        []Item{{Name: "silph scope", Quantity: 1}},
+			Story:      ProgressState{{ID: redProgressSilphScopeAcquired, Complete: true}},
 		}
-		if got := countKind(Offer(obs, known), KindPokemonTower); got != 1 {
-			t.Errorf("map %#04x offers Pokemon Tower %d times with Scope, want 1", mapID, got)
-		}
-
-		obs.Bag = nil
-		if got := countKind(Offer(obs, known), KindPokemonTower); got != 0 {
-			t.Errorf("map %#04x offers Pokemon Tower %d times without Scope, want 0", mapID, got)
+		if got := countProgress(OfferWithProgression(obs, known, planner), redProgressPokeFluteAcquired); got != 1 {
+			t.Errorf("map %#04x offers Poke Flute progression %d times with Scope, want 1", mapID, got)
 		}
 
-		obs.Bag = []Item{{Name: "silph scope", Quantity: 1}, {Name: "poke flute", Quantity: 1}}
-		if got := countKind(Offer(obs, known), KindPokemonTower); got != 0 {
-			t.Errorf("map %#04x offers Pokemon Tower %d times after Flute, want 0", mapID, got)
+		obs.Story = nil
+		if got := countProgress(OfferWithProgression(obs, known, planner), redProgressPokeFluteAcquired); got != 0 {
+			t.Errorf("map %#04x offers Poke Flute progression %d times without Scope, want 0", mapID, got)
+		}
+
+		obs.Story = ProgressState{
+			{ID: redProgressSilphScopeAcquired, Complete: true},
+			{ID: redProgressPokeFluteAcquired, Complete: true},
+		}
+		if got := countProgress(OfferWithProgression(obs, known, planner), redProgressPokeFluteAcquired); got != 0 {
+			t.Errorf("map %#04x offers Poke Flute progression %d times after Flute, want 0", mapID, got)
 		}
 	}
 
@@ -63,10 +63,10 @@ func TestOfferPokemonTowerRequiresScopeAndStopsAfterFlute(t *testing.T) {
 		Map:        0x00,
 		PartyCount: 1,
 		Party:      []PartyMon{{Level: 30, HP: 80, MaxHP: 80}},
-		Bag:        []Item{{Name: "silph scope", Quantity: 1}},
+		Story:      ProgressState{{ID: redProgressSilphScopeAcquired, Complete: true}},
 	}
-	if got := countKind(Offer(outside, known), KindPokemonTower); got != 0 {
-		t.Fatalf("Pokemon Tower offered outside progression slice %d times", got)
+	if got := countProgress(OfferWithProgression(outside, known, planner), redProgressPokeFluteAcquired); got != 0 {
+		t.Fatalf("Poke Flute progression offered outside progression slice %d times", got)
 	}
 }
 
@@ -74,6 +74,16 @@ func countKind(offered []Objective, kind Kind) int {
 	count := 0
 	for _, o := range offered {
 		if o.Kind == kind {
+			count++
+		}
+	}
+	return count
+}
+
+func countProgress(offered []Objective, progress ProgressID) int {
+	count := 0
+	for _, o := range offered {
+		if o.Kind == KindProgress && o.Progress == progress {
 			count++
 		}
 	}

@@ -22,7 +22,12 @@ func newRedObjectiveAdapter(m *emu.Emu, romData []byte) *redObjectiveAdapter {
 }
 
 func (a *redObjectiveAdapter) Observe() Observation {
-	return Observe(a.m, a.romData)
+	obs := Observe(a.m, a.romData)
+	var mem state.Mem
+	state.Snapshot(a.m, &mem)
+	inv := state.DecodeInventory(&mem)
+	obs.Story = redProgressStateFromRAM(&mem, inv, state.DecodeStoryFacts(&mem, inv))
+	return obs
 }
 
 func (a *redObjectiveAdapter) Validate(o Objective, _ Observation) error {
@@ -47,6 +52,10 @@ func (a *redObjectiveAdapter) Validate(o Objective, _ Observation) error {
 	case KindStarter:
 		if o.Starter > skill.StarterBulbasaur {
 			return fmt.Errorf("agent: %s: unsupported Red starter %d", o, int(o.Starter))
+		}
+	case KindProgress:
+		if !redProgressionKnown(o.Progress) {
+			return fmt.Errorf("agent: %s: unknown Red progression goal %q", o, o.Progress)
 		}
 	case KindCatch:
 		if _, ok := redSpeciesID(o.Species); !ok {

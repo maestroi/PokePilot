@@ -61,8 +61,8 @@ func executeRedOwned(m *emu.Emu, romData []byte, o Objective) (result ObjectiveR
 		}
 		return result, nil
 
-	case KindErrand:
-		if err := skill.OaksParcel(m, romData, skill.StatAwareMove(romData)); err != nil {
+	case KindProgress:
+		if err := executeRedProgression(m, romData, o); err != nil {
 			return result, fmt.Errorf("agent: %s: %w", o, err)
 		}
 		return result, nil
@@ -167,24 +167,6 @@ func executeRedOwned(m *emu.Emu, romData []byte, o Objective) (result ObjectiveR
 			return result, nil
 		}
 		if err := skill.UseFieldItem(m, item, o.Slot); err != nil {
-			return result, fmt.Errorf("agent: %s: %w", o, err)
-		}
-		return result, nil
-
-	case KindRocketHideout:
-		if err := skill.RocketHideout(m, romData, skill.StatAwareMove(romData)); err != nil {
-			return result, fmt.Errorf("agent: %s: %w", o, err)
-		}
-		return result, nil
-
-	case KindPokemonTower:
-		if err := skill.PokemonTower(m, romData, skill.StatAwareMove(romData)); err != nil {
-			return result, fmt.Errorf("agent: %s: %w", o, err)
-		}
-		return result, nil
-
-	case KindFuchsiaProgression:
-		if err := skill.FuchsiaProgression(m, romData, skill.StatAwareMove(romData)); err != nil {
 			return result, fmt.Errorf("agent: %s: %w", o, err)
 		}
 		return result, nil
