@@ -276,13 +276,47 @@ func (w *Wall) dispatchOccurrence(e outboxEntry) error {
 	}
 	pattern := normalizeDetail(dump.Detail)
 	key, fp := failureIdentity(pattern)
-	if e.Key != "" {
+	markerKey, markerFP, structured := farm.ParseFailureDetailMarker(dump.Detail)
+	if structured {
+		key, fp = markerKey, markerFP
+		if e.Key != "" && e.Key != key {
+			return fmt.Errorf("structured failure outbox key %q does not match marker key %q", e.Key, key)
+		}
+	} else if e.Key != "" {
 		key = e.Key
 	}
+
+	// A v2 structured run also carries objective-failures.json. That reporter
+	// owns the richer occurrence: it has typed cause/state plus the nearest
+	// objective checkpoint. Settling the generic run outbox here prevents one
+	// terminal failure from becoming two Agent Orchestrator occurrences.
+	if structured && hasObjectiveFailureArtifact(dump) {
+		w.quarantineOccurrence(e, fp, dump.RunnerVersion, "structured objective failure reporter owns canonical occurrence")
+		return nil
+	}
+
+	prior := IssueLink{}
+	disposition := occurrenceReport
+	if structured {
+		prior, disposition = w.issueDispositionForKey(key)
+		if disposition == occurrenceQuarantine {
+			w.quarantineOccurrence(e, fp, dump.RunnerVersion, "equivalent structured fingerprint already has active issue")
+			return nil
+		}
+	}
+
 	title := truncateBytes(dump.Detail, maxIssueTitleBytes)
 	if title == "" {
 		title = "pokefarm failure"
 	}
+	severity := "normal"
+	classification := "observed"
+	if disposition == occurrenceRegression {
+		severity = "critical"
+		classification = "regression"
+		title = truncateBytes("[farm][regression] "+title, maxIssueTitleBytes)
+	}
+
 	w.mu.Lock()
 	var seed int64
 	var question, decision string
@@ -293,26 +327,36 @@ func (w *Wall) dispatchOccurrence(e outboxEntry) error {
 	}
 	w.mu.Unlock()
 	evidence, _ := json.Marshal(map[string]any{
-		"run_id":         e.RunID,
-		"attempt":        e.Attempt,
-		"seed":           seed,
-		"seed_burn":      dump.SeedBurn,
-		"reason":         dump.Reason,
-		"detail":         dump.Detail,
-		"trace_tail":     dump.TraceTail,
-		"question":       question,
-		"decision":       decision,
-		"runner_version": dump.RunnerVersion,
+		"classification":       classification,
+		"disposition":          string(disposition),
+		"run_id":               e.RunID,
+		"attempt":              e.Attempt,
+		"seed":                 seed,
+		"seed_burn":            dump.SeedBurn,
+		"reason":               dump.Reason,
+		"detail":               dump.Detail,
+		"trace_tail":           dump.TraceTail,
+		"question":             question,
+		"decision":             decision,
+		"runner_version":       dump.RunnerVersion,
+		"prior_issue_status":   prior.Status,
+		"prior_resolution":     prior.Resolution,
+		"prior_fixed_revision": prior.FixedRevision,
 	})
+	summary := dump.Detail
+	if disposition == occurrenceRegression {
+		summary = fmt.Sprintf("Regression candidate: fingerprint %s reproduced on revision %q after issue %d was resolved at revision %q. %s",
+			fp, dump.RunnerVersion, prior.IssueNumber, prior.FixedRevision, dump.Detail)
+	}
 	manifest := issueReportManifest{
 		Source:           issueSource,
 		Fingerprint:      fp,
 		ExternalID:       e.ExternalID,
 		Title:            title,
-		Summary:          dump.Detail,
+		Summary:          summary,
 		ObservedAt:       time.Now().UTC(),
 		ObservedRevision: dump.RunnerVersion,
-		Severity:         "normal",
+		Severity:         severity,
 		Evidence:         evidence,
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), defaultIssueTimeout)
@@ -324,20 +368,25 @@ func (w *Wall) dispatchOccurrence(e outboxEntry) error {
 	if result.Issue.ID == "" {
 		return fmt.Errorf("agent orchestrator returned an empty issue id")
 	}
+	now := time.Now().Unix()
 	w.mu.Lock()
-	w.issueLinks[key] = IssueLink{
-		IssueID:         result.Issue.ID,
-		IssueNumber:     result.Issue.IssueNumber,
-		IssueURL:        c.issueURL(result.Issue.ID),
-		Status:          result.Issue.Status,
-		LastReportedRun: e.RunID,
-		UpdatedAt:       time.Now().Unix(),
-		Fingerprint:     fp,
-	}
+	link := w.issueLinks[key]
+	link.IssueID = result.Issue.ID
+	link.IssueNumber = result.Issue.IssueNumber
+	link.IssueURL = c.issueURL(result.Issue.ID)
+	link.Status = result.Issue.Status
+	link.LastReportedRun = e.RunID
+	link.LastObservedRun = e.RunID
+	link.LastObservedRevision = strings.TrimSpace(dump.RunnerVersion)
+	link.LastDisposition = string(disposition)
+	link.UpdatedAt = now
+	link.Fingerprint = fp
+	w.issueLinks[key] = link
 	ent := w.outbox[e.ExternalID]
 	ent.Status = outboxComplete
 	ent.Error = ""
-	ent.UpdatedAt = time.Now().Unix()
+	ent.Note = ""
+	ent.UpdatedAt = now
 	w.outbox[e.ExternalID] = ent
 	w.mu.Unlock()
 	w.saveState()
@@ -399,6 +448,7 @@ func (w *Wall) noteOutboxResult(externalID string, err error, retryable bool) {
 		return
 	}
 	e.Error = err.Error()
+	e.Note = ""
 	e.UpdatedAt = time.Now().Unix()
 	if retryable {
 		e.Status = outboxPending
