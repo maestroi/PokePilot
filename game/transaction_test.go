@@ -24,8 +24,11 @@ func (f *fakeAdapter) Observe() string {
 	return f.obs
 }
 
-func (f *fakeAdapter) Validate(string) error {
+func (f *fakeAdapter) Validate(_ string, observation string) error {
 	f.calls = append(f.calls, "validate")
+	if observation != f.obs {
+		return errors.New("validation did not receive the initial observation")
+	}
 	return f.validateErr
 }
 
@@ -74,13 +77,16 @@ func TestExecuteTransactionOwnsPortableLifecycle(t *testing.T) {
 	if tx.ValidationErr != nil || tx.StartBoundaryErr != nil || tx.ExecutionErr != nil || tx.FinishBoundaryErr != nil || tx.PostconditionErr != nil {
 		t.Fatalf("transaction errors: %+v", tx)
 	}
+	if tx.Initial != "room-a" {
+		t.Fatalf("Initial = %q, want room-a", tx.Initial)
+	}
 	if tx.Result != "did:travel-room-b" {
 		t.Fatalf("Result = %q", tx.Result)
 	}
 	if tx.Final != "room-b" {
 		t.Fatalf("Final = %q, want room-b", tx.Final)
 	}
-	want := []string{"validate", "normalize-start", "budget", "execute", "settle", "normalize-finish", "observe", "verify"}
+	want := []string{"observe", "validate", "normalize-start", "budget", "execute", "settle", "normalize-finish", "observe", "verify"}
 	if !reflect.DeepEqual(adapter.calls, want) {
 		t.Fatalf("calls = %#v, want %#v", adapter.calls, want)
 	}
@@ -97,7 +103,7 @@ func TestExecuteTransactionExecutionFailureStillOwnsFinishBoundary(t *testing.T)
 	if tx.PostconditionErr != nil {
 		t.Fatalf("PostconditionErr = %v, want nil after execution failure", tx.PostconditionErr)
 	}
-	want := []string{"validate", "normalize-start", "budget", "execute", "normalize-finish", "observe"}
+	want := []string{"observe", "validate", "normalize-start", "budget", "execute", "normalize-finish", "observe"}
 	if !reflect.DeepEqual(adapter.calls, want) {
 		t.Fatalf("calls = %#v, want %#v", adapter.calls, want)
 	}
@@ -111,7 +117,24 @@ func TestExecuteTransactionStartInvariantStopsBeforeGameplay(t *testing.T) {
 	if !errors.Is(tx.StartBoundaryErr, startErr) {
 		t.Fatalf("StartBoundaryErr = %v, want %v", tx.StartBoundaryErr, startErr)
 	}
-	want := []string{"validate", "normalize-start", "observe"}
+	want := []string{"observe", "validate", "normalize-start", "observe"}
+	if !reflect.DeepEqual(adapter.calls, want) {
+		t.Fatalf("calls = %#v, want %#v", adapter.calls, want)
+	}
+}
+
+func TestExecuteTransactionValidationFailureUsesInitialObservation(t *testing.T) {
+	validationErr := errors.New("bad objective")
+	adapter := &fakeAdapter{obs: "room-a", validateErr: validationErr}
+	tx := ExecuteTransaction[string, string, string](adapter, "bad")
+
+	if !errors.Is(tx.ValidationErr, validationErr) {
+		t.Fatalf("ValidationErr = %v, want %v", tx.ValidationErr, validationErr)
+	}
+	if tx.Initial != "room-a" || tx.Final != "room-a" {
+		t.Fatalf("Initial/Final = %q/%q, want room-a/room-a", tx.Initial, tx.Final)
+	}
+	want := []string{"observe", "validate"}
 	if !reflect.DeepEqual(adapter.calls, want) {
 		t.Fatalf("calls = %#v, want %#v", adapter.calls, want)
 	}
