@@ -1,0 +1,23 @@
+---
+description: Binding PokePilot architecture gate for every gameplay/runtime change.
+globs:
+alwaysApply: true
+---
+
+Before changing gameplay/runtime code, read @AGENTS.md and
+@docs/ARCHITECTURE.md. The architecture document is a binding repository
+contract, not optional guidance.
+
+PokePilot is a multi-game runtime whose first adapter is Pokémon Red. Generic
+layers own semantic lifecycle, structured outcomes, recovery policy, and
+portable capabilities. Game-specific maps, RAM, dialogue, menus, story gates,
+and mechanics stay game-specific.
+
+If a requested patch does not fit that design, do not force it into the current
+layer merely to make a farm run or test green. Explain the mismatch and
+reshape/refactor the boundary first. Prefer a shared invariant plus the smallest
+deterministic replay over a named-map/NPC/dialogue special case or full-run-only
+verification.
+
+`docs/ARCHITECTURE.md` is the single source of truth; do not invent conflicting
+local rules here.
