@@ -61,6 +61,13 @@ func TestChosenMatches(t *testing.T) {
 		{"1", 0},
 		{"2", 1},
 		{"3", 2},
+		// A strategist reply sometimes copies the menu's own trailing
+		// annotation, or invents its own gloss, treating it as part of the
+		// sentence. MEASURED 2026-09-08 on a live run: both shapes rejected
+		// a valid plan step until Chosen learned to strip one trailing
+		// parenthetical and retry.
+		{"go to viridian pokemon center  (unvisited adjacent map)", 1},
+		{"take the charmander starter  (starts the run)", 0},
 	}
 	for _, c := range cases {
 		got, err := agent.Chosen(objs, c.s)

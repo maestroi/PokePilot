@@ -52,6 +52,27 @@ func Chosen(offered []Objective, s string) (Objective, error) {
 			return o, nil
 		}
 	}
+	// The offered menu renders each line as "sentence  (note)" — done/failed
+	// counts, "(unvisited adjacent map)", etc — and a model told to "copy the
+	// sentence after the number" sometimes copies the annotation too, reading
+	// it as part of the sentence rather than menu decoration. MEASURED
+	// 2026-09-08: both real rejections seen were exactly this shape, one
+	// copying the menu's own note verbatim, one inventing its own gloss.
+	// Stripping one trailing parenthetical and retrying is safe: it only
+	// succeeds when the stripped form exactly matches an offered objective,
+	// so a genuine objective that ends mid-sentence (none do; "talk at
+	// (X,Y)" has no trailing annotation to strip past the coordinate) is
+	// never affected.
+	if stripped, ok := strings.CutSuffix(strings.TrimRight(s, " "), ")"); ok {
+		if paren := strings.LastIndex(stripped, "("); paren > 0 {
+			base := strings.ToLower(strings.TrimSpace(stripped[:paren]))
+			for _, o := range offered {
+				if strings.ToLower(o.String()) == base {
+					return o, nil
+				}
+			}
+		}
+	}
 	return Objective{}, fmt.Errorf("agent: %q is not one of the offered objectives; offered: %s", s, offeredList(offered))
 }
 
