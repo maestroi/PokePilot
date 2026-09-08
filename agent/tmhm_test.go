@@ -72,7 +72,7 @@ func TestAppendTMHMObjectivesOffersMaterialTMUpgrade(t *testing.T) {
 		t.Fatalf("offered %d machine objectives, want 1: %+v", len(got), got)
 	}
 	o := got[0]
-	if o.Kind != KindUseItem || o.Item != rom.TM01Item || o.Slot != 0 {
+	if o.Kind != KindUseItem || o.Item != ItemID("tm01") || o.Slot != 0 {
 		t.Fatalf("machine objective = %+v, want KindUseItem TM01 party slot 0", o)
 	}
 	for _, want := range []string{"TM01", "consumable/finite", "score", "replace move slot"} {

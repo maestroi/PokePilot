@@ -11,8 +11,12 @@ func TestRocketHideoutObjectiveStringAndItemVocabulary(t *testing.T) {
 		t.Fatalf("Validate(): %v", err)
 	}
 	id, ok := ItemByName("silph scope")
-	if !ok || id != 0x48 {
-		t.Fatalf("ItemByName(silph scope) = %#02x, %v; want 0x48, true", id, ok)
+	if !ok || id != ItemID("silph scope") {
+		t.Fatalf("ItemByName(silph scope) = %q, %v; want silph scope, true", id, ok)
+	}
+	raw, ok := redItemID(id)
+	if !ok || raw != 0x48 {
+		t.Fatalf("redItemID(silph scope) = %#02x, %v; want 0x48, true", raw, ok)
 	}
 	name, ok := ItemName(0x48)
 	if !ok || name != "silph scope" {

@@ -32,7 +32,7 @@ func TestOfferPPItemOnlyAtHardExhaustion(t *testing.T) {
 	usable := base
 	usable.LeadPP = []uint8{0, 2}
 	for _, o := range Offer(usable, known) {
-		if o.Kind == KindUseItem && o.Item == 0x50 {
+		if o.Kind == KindUseItem && o.Item == ItemID("ether") {
 			t.Fatalf("ether offered before hard exhaustion: %+v", o)
 		}
 	}
@@ -41,7 +41,7 @@ func TestOfferPPItemOnlyAtHardExhaustion(t *testing.T) {
 	exhausted.LeadPP = []uint8{0, 0}
 	found := false
 	for _, o := range Offer(exhausted, known) {
-		if o.Kind == KindUseItem && o.Item == 0x50 && o.Slot == 0 {
+		if o.Kind == KindUseItem && o.Item == ItemID("ether") && o.Slot == 0 {
 			found = true
 			if !strings.Contains(o.Note, "finite PP recovery") {
 				t.Fatalf("ether objective missing finite-resource note: %+v", o)
@@ -64,7 +64,7 @@ func TestOfferPrefersFreeCenterWhenAlreadyThere(t *testing.T) {
 	}
 	foundHeal := false
 	for _, o := range Offer(obs, NewKnowledge(map[uint8][]uint8{})) {
-		if o.Kind == KindUseItem && o.Item == 0x50 {
+		if o.Kind == KindUseItem && o.Item == ItemID("ether") {
 			t.Fatalf("finite ether offered while already in a Center: %+v", o)
 		}
 		if o.Kind == KindHeal {
@@ -147,11 +147,16 @@ func TestFinitePPRecoveryAlsoWithholdsCombat(t *testing.T) {
 }
 
 func TestPPItemsAreExecutableVocabulary(t *testing.T) {
-	for name, want := range map[string]uint8{
+	for name, wantRaw := range map[string]uint8{
 		"ether": 0x50, "max ether": 0x51, "elixer": 0x52, "max elixer": 0x53,
 	} {
-		if got, ok := ItemByName(name); !ok || got != want {
-			t.Fatalf("ItemByName(%q) = %#02x,%v; want %#02x,true", name, got, ok, want)
+		got, ok := ItemByName(name)
+		if !ok || got != ItemID(name) {
+			t.Fatalf("ItemByName(%q) = %q,%v; want %q,true", name, got, ok, name)
+		}
+		raw, ok := redItemID(got)
+		if !ok || raw != wantRaw {
+			t.Fatalf("redItemID(%q) = %#02x,%v; want %#02x,true", got, raw, ok, wantRaw)
 		}
 	}
 }

@@ -186,7 +186,7 @@ func TestObserveJSONRoundTrip(t *testing.T) {
 		InBattle:     false,
 		PartyCount:   1,
 		Party: []agent.PartyMon{
-			{Species: 7, Level: 5, HP: 20, MaxHP: 20, Status: "poisoned"},
+			{Species: agent.SpeciesID("nidoking"), Level: 5, HP: 20, MaxHP: 20, Status: "poisoned"},
 		},
 		Badges:     []string{},
 		Money:      5000,

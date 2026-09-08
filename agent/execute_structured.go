@@ -11,30 +11,22 @@ import (
 	"github.com/maestroi/pokepilot/skill"
 )
 
-// objectivePostconditionSettleBudget is a passive settle only: it never presses
-// input. A successful skill may finish a few frames before control returns, but
-// an objective is not allowed to manufacture success by advancing dialogue or
-// answering a choice while checking its postcondition.
 const objectivePostconditionSettleBudget = 1200
 
-// Execute is Pokémon Red's public convenience entry point into the portable
-// objective transaction runtime. The lifecycle itself lives behind
-// ObjectiveGameAdapter; this function only binds the existing emulator/ROM to
-// the Red adapter so callers do not need to construct it themselves.
 func Execute(m *emu.Emu, romData []byte, o Objective) (ObjectiveResult, error) {
 	return executeObjectiveWithAdapter(newRedObjectiveAdapter(m, romData), o)
 }
 
-// executeRedOwned performs only the action owned by an objective. Validation,
-// start/finish boundary normalization, watchdog enforcement, final observation,
-// semantic postcondition verification, result normalization, and forensics are
-// deliberately outside this switch in the portable transaction runtime.
+// executeRedOwned is the Red adapter's action dispatcher. All semantic entity
+// ids are translated here, immediately before a Red skill consumes its native
+// numeric/index representation.
 func executeRedOwned(m *emu.Emu, romData []byte, o Objective) (result ObjectiveResult, retErr error) {
 	result.Objective = o
+	adapter := newRedObjectiveAdapter(m, romData)
 
 	switch o.Kind {
 	case KindGoTo:
-		dest, ok := skill.Place(o.Place)
+		dest, ok := skill.Place(string(o.Place))
 		if !ok {
 			return result, fmt.Errorf("agent: %s: unknown place %q", o, o.Place)
 		}
@@ -60,7 +52,11 @@ func executeRedOwned(m *emu.Emu, romData []byte, o Objective) (result ObjectiveR
 		return result, nil
 
 	case KindStarter:
-		if err := skill.GetStarter(m, romData, o.Starter, skill.StatAwareMove(romData)); err != nil {
+		starter, ok := redStarter(o.Starter)
+		if !ok {
+			return result, fmt.Errorf("agent: %s: unsupported Red starter %q", o, o.Starter)
+		}
+		if err := skill.GetStarter(m, romData, starter, skill.StatAwareMove(romData)); err != nil {
 			return result, fmt.Errorf("agent: %s: %w", o, err)
 		}
 		return result, nil
@@ -80,28 +76,21 @@ func executeRedOwned(m *emu.Emu, romData []byte, o Objective) (result ObjectiveR
 		if train.Reached {
 			return result, nil
 		}
-
-		// These are legitimate bounded endings. They return an error for the
-		// typed diagnostic channel but carry OutcomeBlocked explicitly, so Run
-		// never has to reverse-engineer their meaning from prose.
 		result.Outcome = OutcomeBlocked
 		switch {
 		case train.Retreated:
 			return result, fmt.Errorf("agent: %s: %w (ended level %d)", o, skill.ErrTrainRetreat, train.EndLevel)
 		case train.BlackedOut:
-			return result, fmt.Errorf("agent: %s: %w before reaching level %d (ended level %d after %d battles)",
-				o, skill.ErrBlackedOut, o.Level, train.EndLevel, train.Battles)
+			return result, fmt.Errorf("agent: %s: %w before reaching level %d (ended level %d after %d battles)", o, skill.ErrBlackedOut, o.Level, train.EndLevel, train.Battles)
 		case train.EndLevel > train.StartLevel:
-			return result, fmt.Errorf("agent: %s: %w (target %d, ended level %d after %d battles)",
-				o, skill.ErrTrainProgress, o.Level, train.EndLevel, train.Battles)
+			return result, fmt.Errorf("agent: %s: %w (target %d, ended level %d after %d battles)", o, skill.ErrTrainProgress, o.Level, train.EndLevel, train.Battles)
 		default:
-			return result, fmt.Errorf("agent: %s: target level %d not reached (ended level %d after %d battles)",
-				o, o.Level, train.EndLevel, train.Battles)
+			return result, fmt.Errorf("agent: %s: target level %d not reached (ended level %d after %d battles)", o, o.Level, train.EndLevel, train.Battles)
 		}
 
 	case KindHeal:
 		if o.Place != "" {
-			dest, ok := skill.Place(o.Place)
+			dest, ok := skill.Place(string(o.Place))
 			if !ok {
 				return result, fmt.Errorf("agent: %s: unknown place %q", o, o.Place)
 			}
@@ -142,7 +131,11 @@ func executeRedOwned(m *emu.Emu, romData []byte, o Objective) (result ObjectiveR
 		return result, gymOutcomeErr(o, gym)
 
 	case KindCatch:
-		caught, err := skill.Catch(m, romData, []uint8{o.Species}, skill.StatAwareMove(romData), 5)
+		species, ok := redSpeciesID(o.Species)
+		if !ok {
+			return result, fmt.Errorf("agent: %s: unknown Red species %q", o, o.Species)
+		}
+		caught, err := skill.Catch(m, romData, []uint8{species}, skill.StatAwareMove(romData), 5)
 		if err != nil {
 			return result, fmt.Errorf("agent: %s: %w", o, err)
 		}
@@ -150,27 +143,30 @@ func executeRedOwned(m *emu.Emu, romData []byte, o Objective) (result ObjectiveR
 			return result, nil
 		}
 		result.Outcome = OutcomeBlocked
-		name, _ := SpeciesName(o.Species)
-		return result, fmt.Errorf("agent: %s: no %s caught (outcome %s, balls=%d, encounters=%d)",
-			o, strings.ToUpper(name), catchOutcomeName(caught.Outcome), caught.BallsThrown, caught.Encounters)
+		return result, fmt.Errorf("agent: %s: no %s caught (outcome %s, balls=%d, encounters=%d)", o, strings.ToUpper(string(o.Species)), catchOutcomeName(caught.Outcome), caught.BallsThrown, caught.Encounters)
 
 	case KindPickup:
-		if err := skill.Pickup(m, romData, o.X, o.Y, o.Item, skill.StatAwareMove(romData)); err != nil {
+		item, ok := adapter.resolveItemID(o.Item)
+		if !ok {
+			return result, fmt.Errorf("agent: %s: unknown Red item %q", o, o.Item)
+		}
+		if err := skill.Pickup(m, romData, o.X, o.Y, item, skill.StatAwareMove(romData)); err != nil {
 			return result, fmt.Errorf("agent: %s: %w", o, err)
 		}
 		return result, nil
 
 	case KindUseItem:
-		// Planner-offered TM/HM objectives use the same public Execute contract
-		// as medicine; the machine path is selected from the ROM rather than
-		// being a hidden Run-only dispatch exception.
-		if _, err := rom.LookupTMHM(romData, o.Item); err == nil {
-			if _, err := skill.TeachTMHMToSlot(m, o.Item, false, o.Slot); err != nil {
+		item, ok := adapter.resolveItemID(o.Item)
+		if !ok {
+			return result, fmt.Errorf("agent: %s: unknown Red item %q", o, o.Item)
+		}
+		if _, err := rom.LookupTMHM(romData, item); err == nil {
+			if _, err := skill.TeachTMHMToSlot(m, item, false, o.Slot); err != nil {
 				return result, fmt.Errorf("agent: %s: %w", o, err)
 			}
 			return result, nil
 		}
-		if err := skill.UseFieldItem(m, o.Item, o.Slot); err != nil {
+		if err := skill.UseFieldItem(m, item, o.Slot); err != nil {
 			return result, fmt.Errorf("agent: %s: %w", o, err)
 		}
 		return result, nil
@@ -194,7 +190,11 @@ func executeRedOwned(m *emu.Emu, romData []byte, o Objective) (result ObjectiveR
 		return result, nil
 
 	case KindBuy:
-		if err := skill.Buy(m, o.Item, o.Qty); err != nil {
+		item, ok := adapter.resolveItemID(o.Item)
+		if !ok {
+			return result, fmt.Errorf("agent: %s: unknown Red item %q", o, o.Item)
+		}
+		if err := skill.Buy(m, item, o.Qty); err != nil {
 			return result, fmt.Errorf("agent: %s: %w", o, err)
 		}
 		return result, nil
@@ -202,9 +202,6 @@ func executeRedOwned(m *emu.Emu, romData []byte, o Objective) (result ObjectiveR
 	return result, fmt.Errorf("agent: unknown objective kind %d", int(o.Kind))
 }
 
-// settleObjectivePostcondition passively waits for a successful GoTo to reach
-// a readable overworld boundary. It intentionally does not recover dialogue or
-// menus: doing so would make a postcondition check own gameplay input.
 func settleObjectivePostcondition(m *emu.Emu, o Objective) {
 	if o.Kind != KindGoTo {
 		return

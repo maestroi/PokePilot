@@ -1,10 +1,16 @@
 package agent
 
-// ppRestoreItems are the finite field PP restorers in Pokemon Red. The ROM
-// constants intentionally spell ELIXER this way. Keep the same names in the
-// executable item vocabulary so map pickups, bag observations, and
-// KindUseItem objectives all resolve to one deterministic ID.
-var ppRestoreItems = map[string]uint8{
+// ppRestoreItems is the planner-facing semantic vocabulary for finite PP
+// restorers. The Red bytes stay in ppRestoreRedItems and are registered in the
+// adapter translation table below.
+var ppRestoreItems = map[string]ItemID{
+	"ether":      "ether",
+	"max ether":  "max ether",
+	"elixer":     "elixer",
+	"max elixer": "max elixer",
+}
+
+var ppRestoreRedItems = map[string]uint8{
 	"ether":      0x50,
 	"max ether":  0x51,
 	"elixer":     0x52,
@@ -12,7 +18,7 @@ var ppRestoreItems = map[string]uint8{
 }
 
 func init() {
-	for name, id := range ppRestoreItems {
+	for name, id := range ppRestoreRedItems {
 		itemTable[name] = id
 		itemByID[id] = name
 	}

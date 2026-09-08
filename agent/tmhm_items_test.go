@@ -8,29 +8,37 @@ import (
 
 func TestTMHMItemVocabularyCoversEveryMachine(t *testing.T) {
 	for i := 0; i < rom.NumHMs; i++ {
-		id := rom.HM01Item + uint8(i)
-		name, ok := ItemName(id)
+		raw := rom.HM01Item + uint8(i)
+		name, ok := ItemName(raw)
 		if !ok {
-			t.Fatalf("HM item %#02x missing from ItemName", id)
+			t.Fatalf("HM item %#02x missing from ItemName", raw)
 		}
-		if got, ok := ItemByName(name); !ok || got != id {
-			t.Fatalf("ItemByName(%q) = %#02x,%v, want %#02x,true", name, got, ok, id)
+		got, ok := ItemByName(name)
+		if !ok || got != ItemID(name) {
+			t.Fatalf("ItemByName(%q) = %q,%v, want %q,true", name, got, ok, name)
+		}
+		if roundTrip, ok := redItemID(got); !ok || roundTrip != raw {
+			t.Fatalf("redItemID(%q) = %#02x,%v, want %#02x,true", got, roundTrip, ok, raw)
 		}
 	}
 	for i := 0; i < rom.NumTMs; i++ {
-		id := rom.TM01Item + uint8(i)
-		name, ok := ItemName(id)
+		raw := rom.TM01Item + uint8(i)
+		name, ok := ItemName(raw)
 		if !ok {
-			t.Fatalf("TM item %#02x missing from ItemName", id)
+			t.Fatalf("TM item %#02x missing from ItemName", raw)
 		}
-		if got, ok := ItemByName(name); !ok || got != id {
-			t.Fatalf("ItemByName(%q) = %#02x,%v, want %#02x,true", name, got, ok, id)
+		got, ok := ItemByName(name)
+		if !ok || got != ItemID(name) {
+			t.Fatalf("ItemByName(%q) = %q,%v, want %q,true", name, got, ok, name)
+		}
+		if roundTrip, ok := redItemID(got); !ok || roundTrip != raw {
+			t.Fatalf("redItemID(%q) = %#02x,%v, want %#02x,true", got, roundTrip, ok, raw)
 		}
 	}
 }
 
 func TestTMHMObjectiveUsesExistingUseItemContract(t *testing.T) {
-	o := Objective{Kind: KindUseItem, Item: rom.TM01Item, Slot: 2}
+	o := Objective{Kind: KindUseItem, Item: ItemID("tm01"), Slot: 2}
 	if err := o.Validate(); err != nil {
 		t.Fatalf("TM objective failed validation: %v", err)
 	}
@@ -38,7 +46,7 @@ func TestTMHMObjectiveUsesExistingUseItemContract(t *testing.T) {
 		t.Fatalf("TM objective String() = %q, want %q", got, want)
 	}
 
-	o = Objective{Kind: KindUseItem, Item: rom.HM05Item, Slot: 0}
+	o = Objective{Kind: KindUseItem, Item: ItemID("hm05"), Slot: 0}
 	if err := o.Validate(); err != nil {
 		t.Fatalf("HM objective failed validation: %v", err)
 	}

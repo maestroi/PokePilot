@@ -125,11 +125,11 @@ func TestClassifyObjectiveOutcomeDoesNotParseLegacyGameplayProse(t *testing.T) {
 			fmt.Errorf("agent: train the lead to level 20: target level 20 not reached (ended level 18 after 20 battles)"),
 		},
 		{
-			Objective{Kind: KindCatch, Species: 0x24},
+			Objective{Kind: KindCatch, Species: "pidgey"},
 			fmt.Errorf("agent: catch a PIDGEY here: no PIDGEY caught (outcome out of balls, balls=5, encounters=1)"),
 		},
 		{
-			Objective{Kind: KindCatch, Species: 0x24},
+			Objective{Kind: KindCatch, Species: "pidgey"},
 			fmt.Errorf("agent: catch a PIDGEY here: skill: Catch: 500 grass legs and 26 encounters without a wanted species (map 0x33)"),
 		},
 	}
@@ -175,7 +175,7 @@ func TestObjectivePostconditionGoToExactDestination(t *testing.T) {
 }
 
 func TestObjectivePostconditionDefersToSkillForOtherKinds(t *testing.T) {
-	out, err := objectivePostcondition(Objective{Kind: KindUseItem, Item: 0x14}, Observation{})
+	out, err := objectivePostcondition(Objective{Kind: KindUseItem, Item: "potion"}, Observation{})
 	if err != nil || out != OutcomeCompleted {
 		t.Fatalf("UseItem postcondition = %q, %v; want skill-owned completed", out, err)
 	}
@@ -183,7 +183,7 @@ func TestObjectivePostconditionDefersToSkillForOtherKinds(t *testing.T) {
 
 func TestClassifyObjectiveOutcomePostconditionAndPrompt(t *testing.T) {
 	clean := Observation{Controllable: true}
-	o := Objective{Kind: KindUseItem, Item: 0x14, Slot: 0}
+	o := Objective{Kind: KindUseItem, Item: "potion", Slot: 0}
 	if got := classifyObjectiveOutcome(o, skill.ErrFieldItemNoEffect, clean); got != OutcomePostconditionFailed {
 		t.Fatalf("field item no effect = %q, want postcondition_failed", got)
 	}

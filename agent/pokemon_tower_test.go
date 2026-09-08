@@ -11,8 +11,12 @@ func TestPokemonTowerObjectiveStringAndItemVocabulary(t *testing.T) {
 		t.Fatalf("Validate(): %v", err)
 	}
 	id, ok := ItemByName("poke flute")
-	if !ok || id != 0x49 {
-		t.Fatalf("ItemByName(poke flute) = %#02x, %v; want 0x49, true", id, ok)
+	if !ok || id != ItemID("poke flute") {
+		t.Fatalf("ItemByName(poke flute) = %q, %v; want poke flute, true", id, ok)
+	}
+	raw, ok := redItemID(id)
+	if !ok || raw != 0x49 {
+		t.Fatalf("redItemID(poke flute) = %#02x, %v; want 0x49, true", raw, ok)
 	}
 	name, ok := ItemName(0x49)
 	if !ok || name != "poke flute" {
@@ -23,14 +27,14 @@ func TestPokemonTowerObjectiveStringAndItemVocabulary(t *testing.T) {
 func TestOfferPokemonTowerRequiresScopeAndStopsAfterFlute(t *testing.T) {
 	known := NewKnowledge(map[uint8][]uint8{})
 	availableMaps := []uint8{
-		0x06,                   // Celadon City
-		0x85,                   // Celadon Pokemon Center
-		0x87,                   // Game Corner
-		0xC7, 0xC8, 0xC9, 0xCA, // Rocket Hideout B1F-B4F
-		0x12, 0x4D, 0x79, 0x50, 0x13, // Celadon -> Lavender transit
-		0x04, 0x8D, // Lavender Town + Center
-		0x8E, 0x8F, 0x90, 0x91, 0x92, 0x93, 0x94, // Tower 1F-7F
-		0x95, // Mr. Fuji's house
+		0x06,
+		0x85,
+		0x87,
+		0xC7, 0xC8, 0xC9, 0xCA,
+		0x12, 0x4D, 0x79, 0x50, 0x13,
+		0x04, 0x8D,
+		0x8E, 0x8F, 0x90, 0x91, 0x92, 0x93, 0x94,
+		0x95,
 	}
 
 	for _, mapID := range availableMaps {

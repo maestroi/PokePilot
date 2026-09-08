@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/maestroi/pokepilot/agent"
-	"github.com/maestroi/pokepilot/red/state"
 )
 
 // The default goal must be a STRUCTURED goal, not prose. MEASURED
@@ -23,9 +22,10 @@ func TestDefaultGoalStopsDeterministically(t *testing.T) {
 		t.Fatalf("default goal %q is prompt-only prose; a run using it can never stop on success", defaultGoal)
 	}
 
-	// Reachable: the predicate must fire from the event spelling Observe
-	// actually writes, or the default is prose with extra steps.
-	done := agent.Observation{Events: []string{state.EventBeatChampionRival.String()}}
+	// Reachable through the portable planner contract: the Red adapter maps
+	// its story state to this fact, while goal evaluation itself knows nothing
+	// about Red event labels or event-bit encodings.
+	done := agent.Observation{Story: agent.ProgressState{{ID: agent.ProgressLeagueChampionDefeated, Complete: true}}}
 	if status := agent.EvaluateGoal(g, done); !status.Complete {
 		t.Fatalf("default goal not complete once the Champion is beaten: %+v", status)
 	}

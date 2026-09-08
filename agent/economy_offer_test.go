@@ -2,7 +2,7 @@ package agent
 
 import "testing"
 
-func offeredBuy(objs []Objective, item uint8) (Objective, bool) {
+func offeredBuy(objs []Objective, item ItemID) (Objective, bool) {
 	for _, o := range objs {
 		if o.Kind == KindBuy && o.Item == item {
 			return o, true

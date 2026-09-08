@@ -10,6 +10,7 @@ import (
 func TestObservationJSONMakesOutlevelledWildBandExplicit(t *testing.T) {
 	obs := agent.Observation{
 		Map:        0x0c,
+		Location:   "route 1",
 		MapName:    "ROUTE_1",
 		HasGrass:   true,
 		PartyCount: 1,
@@ -22,19 +23,27 @@ func TestObservationJSONMakesOutlevelledWildBandExplicit(t *testing.T) {
 		},
 	}
 
-	var got struct {
-		Map             uint8
-		DecisionContext *agent.DecisionContext
-	}
 	b, err := json.Marshal(obs)
 	if err != nil {
 		t.Fatalf("json.Marshal: %v", err)
 	}
+	var wire map[string]json.RawMessage
+	if err := json.Unmarshal(b, &wire); err != nil {
+		t.Fatalf("json.Unmarshal wire: %v", err)
+	}
+	if _, ok := wire["Map"]; ok {
+		t.Fatalf("planner JSON exposes raw Red map id: %s", b)
+	}
+
+	var got struct {
+		Location        agent.PlaceID
+		DecisionContext *agent.DecisionContext
+	}
 	if err := json.Unmarshal(b, &got); err != nil {
 		t.Fatalf("json.Unmarshal: %v", err)
 	}
-	if got.Map != obs.Map {
-		t.Fatalf("Map = %#02x, want %#02x: MarshalJSON dropped an existing Observation field", got.Map, obs.Map)
+	if got.Location != obs.Location {
+		t.Fatalf("Location = %q, want %q: semantic location was dropped", got.Location, obs.Location)
 	}
 	if got.DecisionContext == nil || got.DecisionContext.Training == nil {
 		t.Fatalf("DecisionContext.Training = %#v, want local level comparison", got.DecisionContext)
@@ -73,7 +82,7 @@ func TestObservationJSONStatesCatchDoesNotDamageWantedTarget(t *testing.T) {
 }
 
 func TestObservationJSONOmitsDecisionContextWhenIrrelevant(t *testing.T) {
-	b, err := json.Marshal(agent.Observation{Map: 0x00, MapName: "PALLET_TOWN"})
+	b, err := json.Marshal(agent.Observation{Map: 0x00, Location: "pallet town", MapName: "PALLET_TOWN"})
 	if err != nil {
 		t.Fatalf("json.Marshal: %v", err)
 	}
@@ -83,5 +92,8 @@ func TestObservationJSONOmitsDecisionContextWhenIrrelevant(t *testing.T) {
 	}
 	if _, ok := got["DecisionContext"]; ok {
 		t.Fatalf("DecisionContext present in irrelevant observation: %s", b)
+	}
+	if _, ok := got["Map"]; ok {
+		t.Fatalf("raw Red map id present in planner observation: %s", b)
 	}
 }

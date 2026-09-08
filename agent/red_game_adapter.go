@@ -5,20 +5,13 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
+	"github.com/maestroi/pokepilot/red/rom"
+	"github.com/maestroi/pokepilot/red/state"
+	"github.com/maestroi/pokepilot/skill"
 )
 
-// objectiveFrameBudget is the emergency guard for one synchronous objective.
-// Most low-level waits are hundreds or thousands of frames and a journey is
-// already bounded to 20 engagements; half a million frames leaves generous
-// room for legitimate long travel/training while ensuring a broken inner loop
-// returns control to Run instead of leaving a farm worker on one round forever.
 const objectiveFrameBudget uint64 = 500_000
 
-// redObjectiveAdapter is Pokémon Red's implementation of the portable
-// objective transaction seam. It is intentionally still located in agent while
-// the repository is migrated incrementally: all Red/emulator dependencies are
-// concentrated here and in the existing Red skill/state implementation instead
-// of being required by the lifecycle runtime itself.
 type redObjectiveAdapter struct {
 	m       *emu.Emu
 	romData []byte
@@ -33,7 +26,57 @@ func (a *redObjectiveAdapter) Observe() Observation {
 }
 
 func (a *redObjectiveAdapter) Validate(o Objective, _ Observation) error {
-	return o.Validate()
+	if err := o.Validate(); err != nil {
+		return err
+	}
+	switch o.Kind {
+	case KindGoTo:
+		if _, ok := skill.Place(o.Place); !ok {
+			return fmt.Errorf("agent: %s: unknown Red place %q", o, o.Place)
+		}
+	case KindHeal:
+		if o.Place != "" {
+			d, ok := skill.Place(o.Place)
+			if !ok {
+				return fmt.Errorf("agent: %s: unknown Red place %q", o, o.Place)
+			}
+			if !isCenter(state.MapName(d.Map)) {
+				return fmt.Errorf("agent: %s: %q is not a Pokemon Center", o, o.Place)
+			}
+		}
+	case KindStarter:
+		if o.Starter > skill.StarterBulbasaur {
+			return fmt.Errorf("agent: %s: unsupported Red starter %d", o, int(o.Starter))
+		}
+	case KindCatch:
+		if _, ok := redSpeciesID(o.Species); !ok {
+			return fmt.Errorf("agent: %s: unknown Red species %q", o, o.Species)
+		}
+	case KindPickup, KindUseItem, KindBuy:
+		if _, ok := a.resolveItemID(o.Item); !ok {
+			return fmt.Errorf("agent: %s: unknown Red item %q", o, o.Item)
+		}
+	}
+	return nil
+}
+
+func (a *redObjectiveAdapter) resolveItemID(id ItemID) (uint8, bool) {
+	if raw, ok := redItemID(id); ok {
+		return raw, true
+	}
+	var mem state.Mem
+	state.Snapshot(a.m, &mem)
+	inv := state.DecodeInventory(&mem)
+	for _, item := range inv.Items {
+		machine, err := rom.LookupTMHM(a.romData, item.ID)
+		if err != nil {
+			continue
+		}
+		if machineItemID(machine) == id {
+			return item.ID, true
+		}
+	}
+	return 0, false
 }
 
 func (a *redObjectiveAdapter) NormalizeBoundary() error {
@@ -66,9 +109,6 @@ func (a *redObjectiveAdapter) CaptureFailure(o Objective, err error) error {
 	return captureObjectiveFailure(a.m, o, err)
 }
 
-// executeObjective keeps the existing Run-internal name while routing through
-// exactly the same adapter-backed public transaction boundary as Execute. There
-// is no longer a second Red-only lifecycle implementation hidden behind Run.
 func executeObjective(m *emu.Emu, romData []byte, o Objective) (ObjectiveResult, error) {
 	return Execute(m, romData, o)
 }
