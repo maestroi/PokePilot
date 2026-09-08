@@ -28,8 +28,15 @@ func TestExecuteStarter(t *testing.T) {
 
 	const speciesCharmander uint8 = 0xB0 // ROM pokemon index, not dex number
 	o := agent.Objective{Kind: agent.KindStarter, Starter: skill.StarterCharmander}
-	if err := agent.Execute(e, e.ROM(), o); err != nil {
+	got, err := agent.Execute(e, e.ROM(), o)
+	if err != nil {
 		t.Fatalf("Execute %s: %v", o, err)
+	}
+	if got.Objective != o {
+		t.Fatalf("result Objective = %v, want %v", got.Objective, o)
+	}
+	if got.Outcome != agent.OutcomeCompleted {
+		t.Fatalf("result Outcome = %q, want completed", got.Outcome)
 	}
 
 	var mem state.Mem
@@ -46,13 +53,13 @@ func TestExecuteStarter(t *testing.T) {
 
 func TestExecuteTalkWalksToMapObject(t *testing.T) {
 	e := loadFixture(t)
-	if err := agent.Execute(e, e.ROM(), agent.Objective{Kind: agent.KindStarter, Starter: skill.StarterCharmander}); err != nil {
+	if _, err := agent.Execute(e, e.ROM(), agent.Objective{Kind: agent.KindStarter, Starter: skill.StarterCharmander}); err != nil {
 		t.Fatalf("Execute starter: %v", err)
 	}
 
 	// The lab girl is map-wide offer data, not adjacent to the post-starter
 	// position. KindTalk must approach her before facing and interacting.
-	if err := agent.Execute(e, e.ROM(), agent.Objective{Kind: agent.KindTalk, X: 1, Y: 9}); err != nil {
+	if _, err := agent.Execute(e, e.ROM(), agent.Objective{Kind: agent.KindTalk, X: 1, Y: 9}); err != nil {
 		t.Fatalf("Execute distant talk: %v", err)
 	}
 }
@@ -80,7 +87,7 @@ func TestExecuteTalkCrossesTallGrass(t *testing.T) {
 
 	// The NPC at (5,24) is the route's talk target; the approach from the
 	// fixture's (5,14) crosses tall grass.
-	if err := agent.Execute(e, e.ROM(), agent.Objective{Kind: agent.KindTalk, X: 5, Y: 24}); err != nil {
+	if _, err := agent.Execute(e, e.ROM(), agent.Objective{Kind: agent.KindTalk, X: 5, Y: 24}); err != nil {
 		t.Fatalf("Execute talk across grass: %v", err)
 	}
 
@@ -105,47 +112,76 @@ func TestExecuteTrainCharmanderToOfferedLevel(t *testing.T) {
 		{Kind: agent.KindErrand},
 		{Kind: agent.KindGoTo, Place: "route 1"},
 	} {
-		if err := agent.Execute(e, e.ROM(), objective); err != nil {
+		if _, err := agent.Execute(e, e.ROM(), objective); err != nil {
 			t.Fatalf("Execute %q: %v", objective, err)
 		}
 	}
-	err := agent.Execute(e, e.ROM(), agent.Objective{Kind: agent.KindTrain, Level: 12})
+	got, err := agent.Execute(e, e.ROM(), agent.Objective{Kind: agent.KindTrain, Level: 12})
+	if got.Train == nil {
+		t.Fatal("structured Train result = nil")
+	}
 	obs := agent.Observe(e, e.ROM())
 	if len(obs.Party) == 0 {
 		t.Fatal("training removed the party")
 	}
+	if got.Train.EndLevel != int(obs.Party[0].Level) {
+		t.Fatalf("Train.EndLevel = %d, observation lead level = %d", got.Train.EndLevel, obs.Party[0].Level)
+	}
 	if obs.Party[0].Level >= 12 {
 		if err != nil {
 			t.Fatalf("train reached level %d but returned %v", obs.Party[0].Level, err)
+		}
+		if got.Outcome != agent.OutcomeCompleted || !got.Train.Reached {
+			t.Fatalf("completed train result = %+v", got)
 		}
 		return
 	}
 	if err == nil {
 		t.Fatalf("train stopped at level %d but reported success for level 12", obs.Party[0].Level)
 	}
-	// A short session ends one of two ways: a true blackout (the lead
-	// fainted in a battle) or the retreat line (it stopped while the party
-	// was still alive). Both are typed consequences, not bare errors — the
-	// assertion is about the typing, and from this state the retreat line
-	// is the measured ending.
+	if got.Outcome != agent.OutcomeBlocked {
+		t.Fatalf("incomplete train Outcome = %q, want blocked", got.Outcome)
+	}
+	// A short session ends one of two ways in this measured fixture: a true
+	// blackout (the lead fainted in a battle) or the retreat line (it stopped
+	// while the party was still alive). Both keep the complete TrainResult.
 	if !errors.Is(err, skill.ErrBlackedOut) && !errors.Is(err, skill.ErrTrainRetreat) {
 		t.Fatalf("incomplete train error = %v, want a typed session ending (blackout or retreat)", err)
 	}
 }
 
 // TestExecuteGoToPallet runs the starter objective, then walks to Pallet
-// Town. MEASURED on main: Place("pallet town") resolves and the walk from
-// Oak's lab back to Pallet Town works, so wCurMap must land on 0x00.
+// Town. Besides the RAM check, it pins the public structured-result contract:
+// exact final destination plus the full TravelResult survive Execute.
 func TestExecuteGoToPallet(t *testing.T) {
 	e := loadFixture(t)
 
-	if err := agent.Execute(e, e.ROM(), agent.Objective{Kind: agent.KindStarter, Starter: skill.StarterCharmander}); err != nil {
+	if _, err := agent.Execute(e, e.ROM(), agent.Objective{Kind: agent.KindStarter, Starter: skill.StarterCharmander}); err != nil {
 		t.Fatalf("Execute starter: %v", err)
 	}
 
 	o := agent.Objective{Kind: agent.KindGoTo, Place: "pallet town"}
-	if err := agent.Execute(e, e.ROM(), o); err != nil {
+	got, err := agent.Execute(e, e.ROM(), o)
+	if err != nil {
 		t.Fatalf("Execute %s: %v", o, err)
+	}
+	if got.Objective != o {
+		t.Fatalf("result Objective = %v, want %v", got.Objective, o)
+	}
+	if got.Outcome != agent.OutcomeCompleted {
+		t.Fatalf("result Outcome = %q, want completed", got.Outcome)
+	}
+	if got.Travel == nil {
+		t.Fatal("result Travel = nil")
+	}
+	dest, ok := skill.Place("pallet town")
+	if !ok {
+		t.Fatal("Place(pallet town) did not resolve")
+	}
+	if got.Final.Map != dest.Map || got.Final.X != dest.X || got.Final.Y != dest.Y || !got.Final.Controllable || got.Final.InBattle {
+		t.Fatalf("result Final = map %02x at (%d,%d), controllable=%v battle=%v; want map %02x at (%d,%d) controllable overworld",
+			got.Final.Map, got.Final.X, got.Final.Y, got.Final.Controllable, got.Final.InBattle,
+			dest.Map, dest.X, dest.Y)
 	}
 
 	var mem state.Mem
@@ -163,9 +199,12 @@ func TestExecuteUnknownPlace(t *testing.T) {
 
 	const name = "atlantis"
 	o := agent.Objective{Kind: agent.KindGoTo, Place: name}
-	err := agent.Execute(e, e.ROM(), o)
+	got, err := agent.Execute(e, e.ROM(), o)
 	if err == nil {
 		t.Fatalf("Execute %s: want error, got nil", o)
+	}
+	if got.Objective != o || got.Outcome == agent.OutcomeCompleted {
+		t.Fatalf("structured failed result = %+v", got)
 	}
 	if !strings.Contains(err.Error(), name) {
 		t.Fatalf("error does not name the place: %v", err)
@@ -184,8 +223,12 @@ func TestExecuteHealTravelsToTheNamedCenter(t *testing.T) {
 	e := fixture.Load(t, "post_errand") // Viridian City, outdoors
 
 	o := agent.Objective{Kind: agent.KindHeal, Place: "viridian pokemon center"}
-	if err := agent.Execute(e, e.ROM(), o); err != nil {
+	got, err := agent.Execute(e, e.ROM(), o)
+	if err != nil {
 		t.Fatalf("Execute %s: %v", o, err)
+	}
+	if got.Outcome != agent.OutcomeCompleted || got.Travel == nil {
+		t.Fatalf("structured heal result = %+v", got)
 	}
 
 	var mem state.Mem
@@ -239,13 +282,18 @@ func TestExecuteGoToFleesWildEncounters(t *testing.T) {
 		t.Errorf("Battles = %d, want 0: a wild was fought instead of fled", res.Battles)
 	}
 
-	// Leg 2: through Execute, with Flee set. Viridian City -> Route 1 crosses
-	// the grass again; the wiring is proven by the leg arriving without an
-	// error (a fallen-back-to-Travel leg that met a wild would fight it, and
-	// a lost battle would surface as a blackout error).
+	// Leg 2: through Execute, with Flee set. The returned TravelResult is the
+	// proof that the public objective boundary no longer flattens the journey.
 	o := agent.Objective{Kind: agent.KindGoTo, Place: "route 1", Flee: true}
-	if err := agent.Execute(e, e.ROM(), o); err != nil {
+	got, err := agent.Execute(e, e.ROM(), o)
+	if err != nil {
 		t.Fatalf("Execute %s: %v", o, err)
+	}
+	if got.Travel == nil {
+		t.Fatal("Execute Travel = nil")
+	}
+	if got.Travel.Battles != 0 {
+		t.Errorf("Execute Travel.Battles = %d, want 0 with flee policy", got.Travel.Battles)
 	}
 	var mem state.Mem
 	state.Snapshot(e, &mem)
@@ -268,9 +316,12 @@ func TestExecuteCatchMissIsAFailure(t *testing.T) {
 	e := fixture.Load(t, "route1")
 
 	o := agent.Objective{Kind: agent.KindCatch, Species: 0x24} // PIDGEY
-	err := agent.Execute(e, e.ROM(), o)
+	got, err := agent.Execute(e, e.ROM(), o)
 	if err == nil {
 		t.Fatalf("Execute %s: want an error (the hunt did not end with a PIDGEY in the party), got nil", o)
+	}
+	if got.Outcome != agent.OutcomeBlocked {
+		t.Fatalf("missed catch Outcome = %q, want blocked", got.Outcome)
 	}
 	if !strings.Contains(err.Error(), "no PIDGEY caught") {
 		t.Fatalf("error = %v, want the missed-hunt text naming the species and the outcome", err)
@@ -367,8 +418,12 @@ func TestExecuteUseItemHealsTheTarget(t *testing.T) {
 	}
 
 	o := agent.Objective{Kind: agent.KindUseItem, Item: 0x14, Slot: 0}
-	if err := agent.Execute(e, e.ROM(), o); err != nil {
+	got, err := agent.Execute(e, e.ROM(), o)
+	if err != nil {
 		t.Fatalf("Execute %s: %v", o, err)
+	}
+	if got.Outcome != agent.OutcomeCompleted {
+		t.Fatalf("UseItem Outcome = %q, want completed", got.Outcome)
 	}
 
 	// The postcondition is HP RISING, read from RAM — not the nil error.
