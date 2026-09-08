@@ -25,21 +25,18 @@ func (a *redObjectiveAdapter) Observe() Observation {
 	return Observe(a.m, a.romData)
 }
 
-// Validate first enforces the portable Objective shape, then resolves semantic
-// ids against Pokémon Red. Numeric ROM ids never need to cross the planner
-// boundary merely so Red can reject an unsupported name.
 func (a *redObjectiveAdapter) Validate(o Objective, _ Observation) error {
 	if err := o.Validate(); err != nil {
 		return err
 	}
 	switch o.Kind {
 	case KindGoTo:
-		if _, ok := skill.Place(string(o.Place)); !ok {
+		if _, ok := skill.Place(o.Place); !ok {
 			return fmt.Errorf("agent: %s: unknown Red place %q", o, o.Place)
 		}
 	case KindHeal:
 		if o.Place != "" {
-			d, ok := skill.Place(string(o.Place))
+			d, ok := skill.Place(o.Place)
 			if !ok {
 				return fmt.Errorf("agent: %s: unknown Red place %q", o, o.Place)
 			}
@@ -48,8 +45,8 @@ func (a *redObjectiveAdapter) Validate(o Objective, _ Observation) error {
 			}
 		}
 	case KindStarter:
-		if _, ok := redStarter(o.Starter); !ok {
-			return fmt.Errorf("agent: %s: unsupported Red starter %q", o, o.Starter)
+		if o.Starter > skill.StarterBulbasaur {
+			return fmt.Errorf("agent: %s: unsupported Red starter %d", o, int(o.Starter))
 		}
 	case KindCatch:
 		if _, ok := redSpeciesID(o.Species); !ok {
@@ -63,10 +60,6 @@ func (a *redObjectiveAdapter) Validate(o Objective, _ Observation) error {
 	return nil
 }
 
-// resolveItemID maps a semantic item back to Red. Ordinary planner vocabulary
-// uses the static item table; TM/HM objectives may name machines that are only
-// known from this ROM/inventory, so resolve those from live owned items rather
-// than exposing their byte ids to the planner.
 func (a *redObjectiveAdapter) resolveItemID(id ItemID) (uint8, bool) {
 	if raw, ok := redItemID(id); ok {
 		return raw, true
