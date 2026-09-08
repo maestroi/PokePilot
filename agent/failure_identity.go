@@ -202,8 +202,23 @@ func failureCauseFor(err error) (FailureCauseID, []string) {
 	if errors.Is(err, ErrObjectivePostconditionUnavailable) {
 		return "objective_postcondition_unavailable", nil
 	}
+	if errors.Is(err, ErrObjectiveBoundaryDirty) {
+		return "objective_boundary_dirty", nil
+	}
+	if errors.Is(err, skill.ErrShopStabilization) {
+		return "shop_stabilization_failed", nil
+	}
 	if errors.Is(err, emu.ErrFrameDeadline) {
 		return "frame_deadline", nil
+	}
+	if errors.Is(err, skill.ErrNavigationStalled) {
+		return "navigation_stalled", nil
+	}
+	if errors.Is(err, skill.ErrShopMenuTimeout) {
+		return "shop_menu_timeout", nil
+	}
+	if errors.Is(err, skill.ErrShopControllerStalled) {
+		return "shop_controller_stalled", nil
 	}
 	if errors.Is(err, skill.ErrReplanExhausted) {
 		return "route_replan_exhausted", nil

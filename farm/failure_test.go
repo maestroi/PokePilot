@@ -49,3 +49,25 @@ func TestObjectiveFailureArtifactMissingIsBackwardCompatible(t *testing.T) {
 		t.Fatalf("old report decoded %+v, want nil", got)
 	}
 }
+
+func TestObjectiveFailureArtifactPreservesImpactCounts(t *testing.T) {
+	want := []ObjectiveFailure{{Objective: "buy 3 pokeball", Error: "shop menu timeout", Count: 4, RecoveredCount: 3, TerminalCount: 1}}
+	artifact, err := NewObjectiveFailureArtifact(want)
+	if err != nil {
+		t.Fatalf("artifact: %v", err)
+	}
+	got, err := DecodeObjectiveFailures(FinishReport{Artifacts: []Artifact{artifact}})
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %+v want %+v", got, want)
+	}
+}
+
+func TestObjectiveFailureRejectsImpossibleImpactCounts(t *testing.T) {
+	_, err := NewObjectiveFailureArtifact([]ObjectiveFailure{{Objective: "x", Count: 1, RecoveredCount: 1, TerminalCount: 1}})
+	if err == nil {
+		t.Fatal("accepted recovered+terminal counts greater than occurrence count")
+	}
+}

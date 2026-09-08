@@ -13,7 +13,7 @@ const (
 	// objective failures observed during one run. It rides FinishReport's
 	// generic artifact channel so older walls/runners remain wire-compatible.
 	ObjectiveFailureArtifactName = "objective-failures.json"
-	objectiveFailureVersion      = 2
+	objectiveFailureVersion      = 3
 )
 
 // ObjectiveFailure is one normalized failure group from a run. Count is how
@@ -22,17 +22,19 @@ const (
 // input. Version-1 artifacts omit the structured fields and remain readable for
 // historical evidence.
 type ObjectiveFailure struct {
-	Objective  string    `json:"objective"`
-	Error      string    `json:"error"`
-	Count      int       `json:"count"`
-	FirstRound int       `json:"first_round"`
-	LastRound  int       `json:"last_round"`
-	Map        uint8     `json:"map"`
-	X          uint8     `json:"x"`
-	Y          uint8     `json:"y"`
-	Recovered  bool      `json:"recovered"`
-	Blocking   bool      `json:"blocking,omitempty"`
-	ObservedAt time.Time `json:"observed_at"`
+	Objective      string    `json:"objective"`
+	Error          string    `json:"error"`
+	Count          int       `json:"count"`
+	FirstRound     int       `json:"first_round"`
+	LastRound      int       `json:"last_round"`
+	Map            uint8     `json:"map"`
+	X              uint8     `json:"x"`
+	Y              uint8     `json:"y"`
+	Recovered      bool      `json:"recovered"`
+	RecoveredCount int       `json:"recovered_count,omitempty"`
+	TerminalCount  int       `json:"terminal_count,omitempty"`
+	Blocking       bool      `json:"blocking,omitempty"`
+	ObservedAt     time.Time `json:"observed_at"`
 
 	Key          string           `json:"key,omitempty"`
 	Fingerprint  string           `json:"fingerprint,omitempty"`
@@ -101,8 +103,17 @@ func DecodeObjectiveFailures(report FinishReport) ([]ObjectiveFailure, error) {
 	if err := json.Unmarshal(data, &env); err != nil {
 		return nil, fmt.Errorf("farm: decode objective failures: %w", err)
 	}
-	if env.Version != 1 && env.Version != objectiveFailureVersion {
-		return nil, fmt.Errorf("farm: objective failure telemetry version %d, want 1 or %d", env.Version, objectiveFailureVersion)
+	if env.Version != 1 && env.Version != 2 && env.Version != objectiveFailureVersion {
+		return nil, fmt.Errorf("farm: objective failure telemetry version %d, want 1, 2 or %d", env.Version, objectiveFailureVersion)
+	}
+	if env.Version < 3 {
+		for i := range env.Failures {
+			if env.Failures[i].Recovered {
+				env.Failures[i].RecoveredCount = env.Failures[i].Count
+			} else if env.Failures[i].Blocking && env.Failures[i].Count > 0 {
+				env.Failures[i].TerminalCount = 1
+			}
+		}
 	}
 	if env.Version >= 2 {
 		for i := range env.Failures {
@@ -115,6 +126,9 @@ func DecodeObjectiveFailures(report FinishReport) ([]ObjectiveFailure, error) {
 }
 
 func validateObjectiveFailure(f ObjectiveFailure) error {
+	if f.RecoveredCount < 0 || f.TerminalCount < 0 || f.RecoveredCount+f.TerminalCount > f.Count {
+		return fmt.Errorf("invalid recovery impact counts recovered=%d terminal=%d count=%d", f.RecoveredCount, f.TerminalCount, f.Count)
+	}
 	if f.Identity == nil {
 		// Legacy/manual entries remain legal. New runner-generated entries carry
 		// Identity, Key and Fingerprint together.

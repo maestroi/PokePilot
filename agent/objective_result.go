@@ -36,6 +36,8 @@ type ObjectiveResult struct {
 	Travel       *skill.TravelResult `json:"travel,omitempty"`
 	Train        *skill.TrainResult  `json:"train,omitempty"`
 	GymOutcome   *state.BattleResult `json:"gym_outcome,omitempty"`
+	Recovered    bool                `json:"recovered,omitempty"`
+	Terminal     bool                `json:"terminal,omitempty"`
 }
 
 var (
@@ -59,7 +61,7 @@ func actionFor(out Outcome) runAction {
 	switch out {
 	case OutcomeCompleted:
 		return actionContinue
-	case OutcomeBlocked:
+	case OutcomeBlocked, OutcomePostconditionFailed:
 		return actionReplan
 	case OutcomeChoiceRequired:
 		return actionChoice
@@ -141,6 +143,13 @@ func classifyObjectiveOutcome(_ Objective, err error, final Observation) Outcome
 		return OutcomeChoiceRequired
 	}
 
+	// A dirty finish dominates the error that caused it. errors.Join keeps the
+	// original typed controller fault too, so this check must precede every
+	// recoverable class or an unsafe boundary could be mislabeled blocked.
+	if errors.Is(err, ErrObjectiveBoundaryDirty) || errors.Is(err, skill.ErrShopStabilization) {
+		return OutcomeStabilizationFailed
+	}
+
 	if errors.Is(err, ErrObjectivePostconditionFailed) {
 		return OutcomePostconditionFailed
 	}
@@ -148,12 +157,10 @@ func classifyObjectiveOutcome(_ Objective, err error, final Observation) Outcome
 		return OutcomePostconditionUnavailable
 	}
 
-	if errors.Is(err, emu.ErrFrameDeadline) ||
-		errors.Is(err, skill.ErrReplanExhausted) ||
-		errors.Is(err, skill.ErrMenuStuck) ||
-		errors.Is(err, skill.ErrCutsceneTimeout) ||
-		errors.Is(err, skill.ErrForcedChoiceStuck) ||
-		errors.Is(err, skill.ErrPickupMenu) {
+	if recoverableControllerFault(err) {
+		if stableObjectiveBoundary(final) {
+			return OutcomeBlocked
+		}
 		return OutcomeControllerUncertain
 	}
 
@@ -163,10 +170,6 @@ func classifyObjectiveOutcome(_ Objective, err error, final Observation) Outcome
 
 	if errors.Is(err, skill.ErrFieldItemNoEffect) {
 		return OutcomePostconditionFailed
-	}
-
-	if errors.Is(err, ErrObjectiveBoundaryDirty) {
-		return OutcomeStabilizationFailed
 	}
 
 	if errors.Is(err, skill.ErrBlackedOut) ||
@@ -188,13 +191,29 @@ func classifyObjectiveOutcome(_ Objective, err error, final Observation) Outcome
 		errors.Is(err, skill.ErrDialogueInterrupted) ||
 		errors.As(err, &blocked)
 	if knownBlockage {
-		if final.Controllable && !final.InBattle {
+		if stableObjectiveBoundary(final) {
 			return OutcomeBlocked
 		}
 		return OutcomeStabilizationFailed
 	}
 
 	return OutcomeUnknownFailure
+}
+
+func recoverableControllerFault(err error) bool {
+	return errors.Is(err, emu.ErrFrameDeadline) ||
+		errors.Is(err, skill.ErrNavigationStalled) ||
+		errors.Is(err, skill.ErrReplanExhausted) ||
+		errors.Is(err, skill.ErrMenuStuck) ||
+		errors.Is(err, skill.ErrCutsceneTimeout) ||
+		errors.Is(err, skill.ErrForcedChoiceStuck) ||
+		errors.Is(err, skill.ErrPickupMenu) ||
+		errors.Is(err, skill.ErrShopMenuTimeout) ||
+		errors.Is(err, skill.ErrShopControllerStalled)
+}
+
+func stableObjectiveBoundary(final Observation) bool {
+	return final.Controllable && !final.InBattle
 }
 
 func (r ObjectiveResult) HistoryText() string {
