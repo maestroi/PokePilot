@@ -1,9 +1,11 @@
 package agent
 
 import (
+	"fmt"
 	"strings"
 
 	gameruntime "github.com/maestroi/pokepilot/game"
+	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/skill"
 )
@@ -54,6 +56,13 @@ func semanticItemFromRed(raw uint8) ItemID {
 func redItemID(id ItemID) (uint8, bool) {
 	raw, ok := itemTable[gameruntime.CanonicalID(string(id))]
 	return raw, ok
+}
+
+func machineItemID(machine rom.Machine) ItemID {
+	if machine.HM {
+		return ItemID(fmt.Sprintf("hm%02d", machine.Number-rom.NumTMs))
+	}
+	return ItemID(fmt.Sprintf("tm%02d", machine.Number))
 }
 
 func redStarter(id SpeciesID) (skill.Starter, bool) {
