@@ -109,7 +109,7 @@ func TestExecuteTrainCharmanderToOfferedLevel(t *testing.T) {
 	e := loadFixture(t)
 	for _, objective := range []agent.Objective{
 		{Kind: agent.KindStarter, Starter: skill.StarterCharmander},
-		{Kind: agent.KindErrand},
+		{Kind: agent.KindProgress, Progress: agent.ProgressID("pokedex_acquired")},
 		{Kind: agent.KindGoTo, Place: "route 1"},
 	} {
 		if _, err := agent.Execute(e, e.ROM(), objective); err != nil {
@@ -499,7 +499,7 @@ func TestString(t *testing.T) {
 		{agent.Objective{Kind: agent.KindTalk, X: 3, Y: 1}, "talk at (3,1)"},
 		{agent.Objective{Kind: agent.KindStarter, Starter: skill.StarterCharmander}, "take the charmander starter"},
 		{agent.Objective{Kind: agent.KindStarter, Starter: skill.StarterSquirtle}, "take the squirtle starter"},
-		{agent.Objective{Kind: agent.KindErrand}, "deliver oak's parcel"},
+		{agent.Objective{Kind: agent.KindProgress, Progress: agent.ProgressID("pokedex_acquired")}, "progress pokedex_acquired"},
 		{agent.Objective{Kind: agent.KindTrain, Level: 10}, "train the lead to level 10"},
 		{agent.Objective{Kind: agent.KindHeal}, "heal the party"},
 		{agent.Objective{Kind: agent.KindHeal, Place: "viridian pokemon center"}, "heal the party at VIRIDIAN POKEMON CENTER"},
@@ -527,6 +527,7 @@ func TestValidateRejects(t *testing.T) {
 		want string
 	}{
 		{"empty go-to place", agent.Objective{Kind: agent.KindGoTo}, "empty place id"},
+		{"empty progression id", agent.Objective{Kind: agent.KindProgress}, "empty progression id"},
 		{"train level 0", agent.Objective{Kind: agent.KindTrain, Level: 0}, "out of range"},
 		{"train level 101", agent.Objective{Kind: agent.KindTrain, Level: 101}, "out of range"},
 		{"catch empty species", agent.Objective{Kind: agent.KindCatch}, "empty species id"},
@@ -550,6 +551,7 @@ func TestValidateRejects(t *testing.T) {
 	// Game-specific names are intentionally legal at this layer. The Red
 	// adapter rejects unsupported Red vocabulary before execution.
 	for _, o := range []agent.Objective{
+		{Kind: agent.KindProgress, Progress: agent.ProgressID("other_game_story_fact")},
 		{Kind: agent.KindCatch, Species: agent.SpeciesID("mewthree")},
 		{Kind: agent.KindBuy, Item: agent.ItemID("mystery item"), Qty: 1},
 		{Kind: agent.KindHeal, Place: "atlantis"},
@@ -561,6 +563,7 @@ func TestValidateRejects(t *testing.T) {
 
 	// The portable boundaries themselves are legal.
 	accept := []agent.Objective{
+		{Kind: agent.KindProgress, Progress: agent.ProgressID("campaign_goal")},
 		{Kind: agent.KindTrain, Level: 1},
 		{Kind: agent.KindTrain, Level: 100},
 		{Kind: agent.KindCatch, Species: agent.SpeciesID("caterpie")},
