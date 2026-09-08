@@ -32,6 +32,8 @@ func executeObjectiveWithAdapter(a ObjectiveGameAdapter, o Objective) (Objective
 	tx := gameruntime.ExecuteTransaction[Objective, Observation, ObjectiveResult](a, o)
 	result := tx.Result
 	result.Objective = o
+	initial := FailureStateFor(tx.Initial)
+	result.Initial = &initial
 
 	if tx.ValidationErr != nil {
 		result = finalizeObjectiveResult(o, result, tx.Final, tx.ValidationErr)
