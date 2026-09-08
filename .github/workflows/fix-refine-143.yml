@@ -1,0 +1,45 @@
+name: Fix refine issue 143
+
+on:
+  push:
+    branches: [codex/issue-143-persistent-planning]
+
+permissions:
+  contents: write
+
+jobs:
+  refine:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/issue-143-persistent-planning
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Apply refinement
+        run: |
+          python3 refine_143.py
+          python3 fix_refine_143.py
+      - name: Format and verify
+        env:
+          POKEMON_RED_ROM: ""
+        run: |
+          gofmt -w agent/plan.go agent/plan_test.go agent/llm_plan_request_test.go agent/run.go emu/watch.go
+          git diff --check
+          go mod download
+          git diff --exit-code -- go.mod go.sum
+          go vet ./...
+          go test -short -count=1 ./...
+          go test -race -short -count=1 ./...
+      - name: Commit verified refinement
+        run: |
+          rm refine_143.py fix_refine_143.py .github/workflows/refine-143.yml .github/workflows/fix-refine-143.yml
+          git add -A
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "planner: harden strategic plan validation and escalation (#143)"
+          git push origin HEAD:codex/issue-143-persistent-planning
