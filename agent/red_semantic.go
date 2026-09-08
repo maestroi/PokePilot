@@ -7,11 +7,10 @@ import (
 	gameruntime "github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/skill"
 )
 
 func semanticPlace(name string) PlaceID {
-	return PlaceID(gameruntime.CanonicalID(name))
+	return gameruntime.CanonicalID(name)
 }
 
 func semanticLocation(mapName string) PlaceID {
@@ -63,19 +62,6 @@ func machineItemID(machine rom.Machine) ItemID {
 		return ItemID(fmt.Sprintf("hm%02d", machine.Number-rom.NumTMs))
 	}
 	return ItemID(fmt.Sprintf("tm%02d", machine.Number))
-}
-
-func redStarter(id SpeciesID) (skill.Starter, bool) {
-	switch SpeciesID(gameruntime.CanonicalID(string(id))) {
-	case StarterCharmander:
-		return skill.StarterCharmander, true
-	case StarterSquirtle:
-		return skill.StarterSquirtle, true
-	case StarterBulbasaur:
-		return skill.StarterBulbasaur, true
-	default:
-		return 0, false
-	}
 }
 
 func redProgressState(f state.StoryFacts) ProgressState {
