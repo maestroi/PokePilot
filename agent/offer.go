@@ -414,7 +414,7 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 				out = append(out, Objective{
 					Kind:  KindTrain,
 					Level: uint8(target),
-					Note:  trainingChoiceNote(lead, obs.WildGrass),
+					Note:  trainingChoiceNote(lead, obs.WildGrass, obs.Training),
 				})
 			}
 		}
@@ -475,20 +475,24 @@ func annotate(out []Objective, known *Knowledge) []Objective {
 	return out
 }
 
-func trainingChoiceNote(lead PartyMon, wild []WildSpecies) string {
-	if len(wild) == 0 {
-		return fmt.Sprintf("(lead L%d)", lead.Level)
-	}
-	minLevel, maxLevel := int(wild[0].MinLevel), int(wild[0].MaxLevel)
-	for _, w := range wild[1:] {
-		if int(w.MinLevel) < minLevel {
-			minLevel = int(w.MinLevel)
+func trainingChoiceNote(lead PartyMon, wild []WildSpecies, estimate *TrainingEstimate) string {
+	detail := fmt.Sprintf("lead L%d", lead.Level)
+	if len(wild) > 0 {
+		minLevel, maxLevel := int(wild[0].MinLevel), int(wild[0].MaxLevel)
+		for _, w := range wild[1:] {
+			if int(w.MinLevel) < minLevel {
+				minLevel = int(w.MinLevel)
+			}
+			if int(w.MaxLevel) > maxLevel {
+				maxLevel = int(w.MaxLevel)
+			}
 		}
-		if int(w.MaxLevel) > maxLevel {
-			maxLevel = int(w.MaxLevel)
-		}
+		detail += fmt.Sprintf("; local wilds L%d-L%d", minLevel, maxLevel)
 	}
-	return fmt.Sprintf("(lead L%d; local wilds L%d-L%d)", lead.Level, minLevel, maxLevel)
+	if estimate != nil {
+		detail += "; " + estimate.Diagnostic()
+	}
+	return "(" + detail + ")"
 }
 
 func hasBadge(obs Observation, b state.Badge) bool {

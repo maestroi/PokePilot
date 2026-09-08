@@ -48,6 +48,7 @@ type Observation struct {
 
 	WildGrass  []WildSpecies
 	HasGrass   bool
+	Training   *TrainingEstimate `json:"training,omitempty"`
 	MartStock  []string
 	MapObjects []MapObject
 
@@ -110,11 +111,12 @@ var moveTypeNames = map[uint8]string{
 }
 
 type PartyMon struct {
-	Species SpeciesID
-	Level   uint8
-	HP      uint16
-	MaxHP   uint16
-	Status  string
+	Species    SpeciesID
+	Level      uint8
+	Experience uint32
+	HP         uint16
+	MaxHP      uint16
+	Status     string
 }
 
 type WildSpecies struct {
@@ -169,12 +171,14 @@ func Observe(m *emu.Emu, romData []byte) Observation {
 		Requirements:      []Requirement{},
 	}
 	for i, mon := range gs.Party.Mons {
+		experience, _ := state.PartyExperience(&mem, i)
 		obs.Party[i] = PartyMon{
-			Species: semanticSpeciesFromRed(mon.Species),
-			Level:   mon.Level,
-			HP:      mon.HP,
-			MaxHP:   mon.MaxHP,
-			Status:  mon.StatusName(),
+			Species:    semanticSpeciesFromRed(mon.Species),
+			Level:      mon.Level,
+			Experience: experience,
+			HP:         mon.HP,
+			MaxHP:      mon.MaxHP,
+			Status:     mon.StatusName(),
 		}
 	}
 
@@ -264,6 +268,14 @@ func Observe(m *emu.Emu, romData []byte) Observation {
 			obs.WildGrass = append(obs.WildGrass, WildSpecies{
 				Name: name, MinLevel: w.MinLevel, MaxLevel: w.MaxLevel, Slots: w.Slots,
 			})
+		}
+	}
+	if len(gs.Party.Mons) > 0 && obs.HasGrass {
+		target := int(gs.Party.Mons[0].Level) + trainStep
+		if target <= 100 {
+			if estimate, err := currentTrainingEstimate(&mem, romData, obs.Map, target, trainSessionBattleBudget); err == nil {
+				obs.Training = &estimate
+			}
 		}
 	}
 
