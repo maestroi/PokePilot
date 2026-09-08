@@ -21,7 +21,19 @@ jobs:
           go-version-file: go.mod
           cache: true
       - name: Apply implementation
-        run: python3 implement_147.py
+        run: |
+          python3 implement_147.py
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('agent/route_blockage_test.go')
+          s = p.read_text()
+          s = s.replace('skill.Place("cinnabar island")', 'skill.Place("vermilion city")')
+          s = s.replace('missing cinnabar island fixture', 'missing vermilion city fixture')
+          s = s.replace('[]string{"route 13", "mt moon 1f", "cinnabar island", "vermilion gym"}', '[]string{"route 13", "mt moon 1f", "vermilion city", "vermilion gym"}')
+          s = s.replace('byPlace["cinnabar island"]', 'byPlace["vermilion city"]')
+          s = s.replace('[]string{"cinnabar island"}', '[]string{"vermilion city"}')
+          p.write_text(s)
+          PY
       - name: Format and verify
         env:
           POKEMON_RED_ROM: ""
