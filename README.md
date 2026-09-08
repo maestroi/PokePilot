@@ -1,7 +1,9 @@
 # PokePilot
 
-PokePilot plays Pokémon Red headlessly, and measures how far a planner can
-get with a menu of game verbs.
+PokePilot plays Pokémon games headlessly, beginning with Pokémon Red, and
+measures how far a planner can get with a menu of semantic game verbs. Red is
+the first game adapter, not the intended permanent boundary of the runtime; the
+binding multi-game architecture principles live in `docs/ARCHITECTURE.md`.
 
 It boots the real ROM in [GomeBoy](https://github.com/maestroi/gomeboy), a
 deterministic Game Boy emulator, drives it with typed Go executors — boot,
@@ -24,6 +26,10 @@ the bit.
   byte-identical to `roms/pokemon_red.gb` (sha1
   `ea9bcae617fdf159b045185467ae58b2e4a48b9a`). Every ROM fact this project
   relies on is read from it; `docs/POKERED.md` maps question → file.
+- **Game facts do not define the core.** Generic layers own objective
+  lifecycle, structured outcomes, semantic capabilities, and recovery policy;
+  game-specific maps, RAM, menus, dialogue, and story mechanics belong behind
+  the game boundary. See `docs/ARCHITECTURE.md`.
 
 ## Layout
 
@@ -121,8 +127,7 @@ make test           # full go test ./...; ROM-backed tests skip without ROM
   emulator, cannot flake.
 - `skill` journey tests boot the emulator from cached fixtures — save states
   generated on demand from your ROM under `skill/testdata/fixtures/`
-  (gitignored; set `POKEPILOT_FIXTURE_DIR` to share a cache). Emulator tests
-  skip when `POKEMON_RED_ROM` is unset.
+  (gitignored; set `POKEMON_RED_ROM` is unset.
 - A failing journey test dumps its final save state to
   `skill/failure/<TestName>.state`. Re-running a journey test is **not**
   reproducing it: the RNG is seeded from the cycle count, so the second run
@@ -158,7 +163,8 @@ Details in `deploy/README.md`.
 
 | Doc | What it answers |
 |---|---|
-| `AGENTS.md` | Working rules: probes, the decomp, RNG, fixtures, what has already cost time |
+| `AGENTS.md` | Binding working rules for coding agents, probes, decomp/RNG/fixture discipline |
+| `docs/ARCHITECTURE.md` | Binding multi-game architecture principles and the design gate for every runtime fix |
 | `docs/DESIGN.md` | The technical design and the GomeBoy investigation |
 | `docs/AGENT.md` | The agent loop, ROM facts, badgerun, farm evidence |
 | `docs/POKERED.md` | Question → file map for the vendored decomp |
@@ -175,4 +181,5 @@ Details in `deploy/README.md`.
 - Event flag indices come from `state.Event`, never from counting `const`
   lines.
 
-The full list, with the reasoning, is in `AGENTS.md`.
+The full list, with the reasoning, is in `AGENTS.md`. The architecture rules
+that determine where a fix belongs are in `docs/ARCHITECTURE.md`.
