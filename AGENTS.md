@@ -3,6 +3,39 @@
 For the in-game agent loop (`-planner llm`, objectives, seeds) see `docs/AGENT.md`.
 This file is about working *on* this repository.
 
+## Mandatory architecture gate
+
+**Before changing gameplay/runtime architecture, read `docs/ARCHITECTURE.md`.**
+Its principles are binding repository requirements, not suggestions.
+
+PokePilot is intended to support multiple Pokémon games. Pokémon Red is the
+first adapter, not the permanent shape of the core runtime. New fixes must keep
+that direction intact: generic layers own semantic lifecycle/outcomes; game
+facts and generation-specific mechanics stay game-specific.
+
+For every gameplay fix, identify the owning layer, positive postcondition,
+structured failure outcome, and cheapest deterministic regression. Prefer fixing
+the shared invariant that allowed the failure over patching the exact map,
+NPC, dialogue, or route that exposed it.
+
+**If the requested change does not fit `docs/ARCHITECTURE.md`, do not force it
+in.** Stop, explain the mismatch, and reshape/refactor the architecture first.
+Making one farm run green by adding a generic Red-specific special case is not a
+successful implementation.
+
+In particular:
+
+- never put policy in error-string parsing when a typed/structured result can
+  represent it;
+- never let generic boundary cleanup answer gameplay/story choices;
+- never treat `nil` as sufficient proof of objective success — verify a positive
+  semantic postcondition;
+- never teach generic routing/planning a named Red map/story exception when the
+  missing concept is a transition prerequisite, capability, or adapter fact;
+- every actionable endless-run defect should become the smallest practical
+  deterministic replay/regression so it does not require replaying the full game
+  forever.
+
 ## Never read a collision grid into context
 
 Route 2 is 20x72. Viridian Forest is 34x48. Nothing is meant to read those
