@@ -9,8 +9,6 @@ import (
 	"testing"
 )
 
-// memoryFixture fills a Knowledge with entries in every field, and returns
-// it with the intent sentence and age a run would be carrying at that moment.
 func memoryFixture(t *testing.T) (*Knowledge, string, int) {
 	t.Helper()
 	k := NewKnowledge(map[uint8][]uint8{0x01: {0x02}, 0x02: {0x01}})
@@ -18,20 +16,17 @@ func memoryFixture(t *testing.T) (*Knowledge, string, int) {
 	k.SawMap(0x03)
 	k.Places["pallet town"] = true
 	k.Places["viridian city"] = true
-	k.Done(Objective{Kind: KindErrand})
+	k.Done(Objective{Kind: KindProgress, Progress: redProgressPokedexAcquired})
 	k.Done(Objective{Kind: KindTalk, X: 6, Y: 3})
 	k.TalkedTo(0x28, 6, 3)
 	k.TalkedTo(0x36, 7, 10)
 	k.SawDialogue([]string{
 		"You can pass here\nonly if you have\nthe CASCADEBADGE!",
-		"I'm raising #MON too!", // chatter: must NOT be harvested
+		"I'm raising #MON too!",
 	}, "ROUTE_23", 4, 57)
 	return k, "earn the boulder badge", 3
 }
 
-// assertEmptyKnowledge asserts the CLEAN START: every field empty, nothing
-// half-loaded. This is what the corruption cases must produce — not an
-// error a caller can ignore into a partial Knowledge.
 func assertEmptyKnowledge(t *testing.T, k *Knowledge) {
 	t.Helper()
 	if len(k.Visited) != 0 {
@@ -51,10 +46,6 @@ func assertEmptyKnowledge(t *testing.T, k *Knowledge) {
 	}
 }
 
-// TestMemoryRoundTrip: a Knowledge with entries in every field survives
-// write-then-read intact, including the intent and its age. Adjacency must
-// come from the argument (rebuilt from the ROM by the caller), never from
-// the file.
 func TestMemoryRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	statePath := filepath.Join(dir, "round-002-frame-0000012345-talk-at-6-3.state")
@@ -82,7 +73,10 @@ func TestMemoryRoundTrip(t *testing.T) {
 			t.Errorf("Places missing %q", name)
 		}
 	}
-	for _, s := range []string{Objective{Kind: KindErrand}.String(), Objective{Kind: KindTalk, X: 6, Y: 3}.String()} {
+	for _, s := range []string{
+		Objective{Kind: KindProgress, Progress: redProgressPokedexAcquired}.String(),
+		Objective{Kind: KindTalk, X: 6, Y: 3}.String(),
+	} {
 		if got.Knowledge.Completed[s] == 0 {
 			t.Errorf("Completed missing %q", s)
 		}
@@ -96,8 +90,6 @@ func TestMemoryRoundTrip(t *testing.T) {
 	if got.Intent != intent || got.IntentAge != age {
 		t.Errorf("Intent/Age = (%q, %d), want (%q, %d)", got.Intent, got.IntentAge, intent, age)
 	}
-	// The harvested wall survives the round-trip verbatim; the chatter that
-	// sat beside it in the same dialogue does not.
 	if len(got.Knowledge.Requirements) != 1 {
 		t.Fatalf("Requirements = %v, want the one harvested line", got.Knowledge.Requirements)
 	}
@@ -105,12 +97,9 @@ func TestMemoryRoundTrip(t *testing.T) {
 	if wall.Text != "You can pass here\nonly if you have\nthe CASCADEBADGE!" {
 		t.Errorf("Requirement text = %q, want the harvested line verbatim", wall.Text)
 	}
-	// Where it was heard and how often survive too: a resumed run that
-	// forgets it has already hit this wall walks into it again.
 	if wall.Place != "ROUTE_23" || wall.X != 4 || wall.Y != 57 || wall.Times != 1 {
 		t.Errorf("Requirement = %+v, want it located at ROUTE_23 (4,57), heard once", wall)
 	}
-	// Adjacency is route geometry: it comes from the argument, not the file.
 	if len(got.Knowledge.Adjacency) != 1 || len(got.Knowledge.Adjacency[0x09]) != 1 || got.Knowledge.Adjacency[0x09][0] != 0x0a {
 		t.Errorf("Adjacency = %v, want the caller's geometry, not the file's", got.Knowledge.Adjacency)
 	}
@@ -119,9 +108,6 @@ func TestMemoryRoundTrip(t *testing.T) {
 	}
 }
 
-// TestMemoryCorruptedFiles: a wrong-version file, a truncated file and a
-// file of garbage each produce a CLEAN EMPTY START plus a log line — never
-// a partial load, never a panic.
 func TestMemoryCorruptedFiles(t *testing.T) {
 	dir := t.TempDir()
 	statePath := filepath.Join(dir, "round-001-frame-0000000001-go-to-pewter-city.state")
@@ -163,8 +149,6 @@ func TestMemoryCorruptedFiles(t *testing.T) {
 	}
 }
 
-// TestMemoryMissingFile: no knowledge file beside the state is also a clean
-// start with a log line — the state stands on its own.
 func TestMemoryMissingFile(t *testing.T) {
 	dir := t.TempDir()
 	statePath := filepath.Join(dir, "round-001-frame-0000000001-go-to-pewter-city.state")
@@ -179,9 +163,6 @@ func TestMemoryMissingFile(t *testing.T) {
 	}
 }
 
-// TestMemoryIntentOverCap: an intent longer than IntentCap cannot have come
-// from a reply that passed WithArgs validation; the file is not what we
-// wrote, so it is rejected whole.
 func TestMemoryIntentOverCap(t *testing.T) {
 	dir := t.TempDir()
 	statePath := filepath.Join(dir, "round-001-frame-0000000001-go-to-pewter-city.state")
