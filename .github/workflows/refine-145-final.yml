@@ -1,0 +1,40 @@
+name: Final issue 145 hardening
+
+on:
+  push:
+    branches: [codex/issue-145-recoverable-faults]
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    env:
+      POKEMON_RED_ROM: ""
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/issue-145-recoverable-faults
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Apply refinement
+        run: python3 refine_145.py
+      - name: Format and verify
+        run: |
+          gofmt -w agent/run.go cmd/pokepilot/failure_telemetry_test.go
+          git diff --check
+          go mod download
+          git diff --exit-code -- go.mod go.sum
+          go vet ./...
+          go test -short -count=1 ./...
+          go test -race -short -count=1 ./...
+      - name: Commit verified refinement
+        run: |
+          rm -f refine_145.py .github/workflows/refine-145-final.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'runtime: keep repeat-fault escalation state-aware (#145)'
+          git push origin HEAD:codex/issue-145-recoverable-faults
