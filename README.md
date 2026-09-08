@@ -127,7 +127,8 @@ make test           # full go test ./...; ROM-backed tests skip without ROM
   emulator, cannot flake.
 - `skill` journey tests boot the emulator from cached fixtures — save states
   generated on demand from your ROM under `skill/testdata/fixtures/`
-  (gitignored; set `POKEMON_RED_ROM` is unset.
+  (gitignored; set `POKEPILOT_FIXTURE_DIR` to share a cache). Emulator tests
+  skip when `POKEMON_RED_ROM` is unset.
 - A failing journey test dumps its final save state to
   `skill/failure/<TestName>.state`. Re-running a journey test is **not**
   reproducing it: the RNG is seeded from the cycle count, so the second run
