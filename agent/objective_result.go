@@ -177,6 +177,7 @@ func classifyObjectiveOutcome(_ Objective, err error, final Observation) Outcome
 		errors.Is(err, skill.ErrCatchHuntExhausted) ||
 		errors.Is(err, skill.ErrTrainRetreat) ||
 		errors.Is(err, skill.ErrTrainProgress) ||
+		errors.Is(err, ErrTrainingInefficient) ||
 		errors.Is(err, skill.ErrCantAfford) ||
 		errors.Is(err, skill.ErrNotInStock) ||
 		errors.Is(err, skill.ErrBagNotRisen) {

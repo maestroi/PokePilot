@@ -125,8 +125,8 @@ func TestTrainingInefficientErrorIsTyped(t *testing.T) {
 		t.Fatal("TrainingInefficientError does not unwrap to ErrTrainingInefficient")
 	}
 	cause, _ := failureCauseFor(err)
-	if cause != "type:*agent.TrainingInefficientError" {
-		t.Fatalf("failure cause = %q, want typed training inefficiency", cause)
+	if cause != "training_inefficient_area" {
+		t.Fatalf("failure cause = %q, want training_inefficient_area", cause)
 	}
 }
 

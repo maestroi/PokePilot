@@ -31,11 +31,12 @@ type FailureObjective struct {
 }
 
 type FailurePartyMember struct {
-	Species SpeciesID
-	Level   uint8
-	HP      uint16
-	MaxHP   uint16
-	Status  string
+	Species    SpeciesID
+	Level      uint8
+	Experience uint32
+	HP         uint16
+	MaxHP      uint16
+	Status     string
 }
 
 type FailureInventoryItem struct {
@@ -135,11 +136,12 @@ func FailureStateFor(obs Observation) FailureState {
 	}
 	for _, mon := range obs.Party {
 		out.Party = append(out.Party, FailurePartyMember{
-			Species: mon.Species,
-			Level:   mon.Level,
-			HP:      mon.HP,
-			MaxHP:   mon.MaxHP,
-			Status:  strings.ToLower(strings.TrimSpace(mon.Status)),
+			Species:    mon.Species,
+			Level:      mon.Level,
+			Experience: mon.Experience,
+			HP:         mon.HP,
+			MaxHP:      mon.MaxHP,
+			Status:     strings.ToLower(strings.TrimSpace(mon.Status)),
 		})
 	}
 	for _, item := range obs.Bag {
@@ -252,6 +254,9 @@ func failureCauseFor(err error) (FailureCauseID, []string) {
 	}
 	if errors.Is(err, skill.ErrCatchHuntExhausted) {
 		return "catch_hunt_exhausted", nil
+	}
+	if errors.Is(err, ErrTrainingInefficient) {
+		return "training_inefficient_area", nil
 	}
 	if errors.Is(err, skill.ErrTrainRetreat) {
 		return "train_retreat", nil

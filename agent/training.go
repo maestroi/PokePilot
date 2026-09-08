@@ -93,10 +93,10 @@ func currentTrainingEstimate(mem *state.Mem, romData []byte, mapID uint8, target
 	return estimateTraining(romData, lead.Species, currentXP, lead.Level, slots, targetLevel, budget)
 }
 
-func currentTrainingEstimateFromEmu(m *emu.Emu, romData []byte, targetLevel, budget int) (TrainingEstimate, error) {
+func currentTrainingEstimateFromEmu(m *emu.Emu, romData []byte, mapID uint8, targetLevel, budget int) (TrainingEstimate, error) {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	return currentTrainingEstimate(&mem, romData, mem.U8(0xD35E), targetLevel, budget)
+	return currentTrainingEstimate(&mem, romData, mapID, targetLevel, budget)
 }
 
 func estimateTraining(romData []byte, leadSpecies uint8, currentXP uint32, currentLevel uint8, slots []skill.WildEncounterSlot, targetLevel, budget int) (TrainingEstimate, error) {

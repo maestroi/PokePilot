@@ -1,23 +1,27 @@
-name: Stage issue 148
+name: Tests
 
 on:
   push:
-    branches:
-      - issue-148-training-xp-efficiency
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  implement:
+  test:
+    name: ROM-free verification
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
+
     steps:
-      - name: Checkout feature branch
+      - name: Checkout PokePilot
         uses: actions/checkout@v4
-        with:
-          ref: issue-148-training-xp-efficiency
-          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -25,266 +29,28 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Wire training estimator into runtime
-        shell: bash
+      - name: Verify module graph
         run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
+          go mod download
+          git diff --exit-code -- go.mod go.sum
 
-          def replace(path, old, new, count=1):
-              p = Path(path)
-              text = p.read_text()
-              actual = text.count(old)
-              if actual != count:
-                  raise SystemExit(f"{path}: expected {count} occurrences, found {actual}: {old[:100]!r}")
-              p.write_text(text.replace(old, new, count))
+      - name: Check formatting
+        run: make fmt-check
 
-          replace("agent/training.go",
-          '''func currentTrainingEstimateFromEmu(m *emu.Emu, romData []byte, targetLevel, budget int) (TrainingEstimate, error) {
-          \tvar mem state.Mem
-          \tstate.Snapshot(m, &mem)
-          \treturn currentTrainingEstimate(&mem, romData, mem.U8(0xD35E), targetLevel, budget)
-          }
-          ''',
-          '''func currentTrainingEstimateFromEmu(m *emu.Emu, romData []byte, mapID uint8, targetLevel, budget int) (TrainingEstimate, error) {
-          \tvar mem state.Mem
-          \tstate.Snapshot(m, &mem)
-          \treturn currentTrainingEstimate(&mem, romData, mapID, targetLevel, budget)
-          }
-          ''')
-
-          replace("agent/observe.go",
-          '''\tWildGrass  []WildSpecies
-          \tHasGrass   bool
-          \tMartStock  []string
-          ''',
-          '''\tWildGrass []WildSpecies
-          \tHasGrass  bool
-          \tTraining  *TrainingEstimate `json:"training,omitempty"`
-          \tMartStock []string
-          ''')
-
-          replace("agent/observe.go",
-          '''type PartyMon struct {
-          \tSpecies SpeciesID
-          \tLevel   uint8
-          \tHP      uint16
-          ''',
-          '''type PartyMon struct {
-          \tSpecies    SpeciesID
-          \tLevel      uint8
-          \tExperience uint32
-          \tHP         uint16
-          ''')
-
-          replace("agent/observe.go",
-          '''\tfor i, mon := range gs.Party.Mons {
-          \t\tobs.Party[i] = PartyMon{
-          \t\t\tSpecies: semanticSpeciesFromRed(mon.Species),
-          \t\t\tLevel:   mon.Level,
-          \t\t\tHP:      mon.HP,
-          \t\t\tMaxHP:   mon.MaxHP,
-          \t\t\tStatus:  mon.StatusName(),
-          \t\t}
-          \t}
-          ''',
-          '''\tfor i, mon := range gs.Party.Mons {
-          \t\texperience, _ := state.PartyExperience(&mem, i)
-          \t\tobs.Party[i] = PartyMon{
-          \t\t\tSpecies:    semanticSpeciesFromRed(mon.Species),
-          \t\t\tLevel:      mon.Level,
-          \t\t\tExperience: experience,
-          \t\t\tHP:         mon.HP,
-          \t\t\tMaxHP:      mon.MaxHP,
-          \t\t\tStatus:     mon.StatusName(),
-          \t\t}
-          \t}
-          ''')
-
-          replace("agent/observe.go",
-          '''\tif wild, err := skill.WildGrass(romData, obs.Map); err == nil {
-          \t\tfor _, w := range wild {
-          \t\t\tname, ok := SpeciesName(w.ID)
-          \t\t\tif !ok {
-          \t\t\t\tcontinue
-          \t\t\t}
-          \t\t\tobs.WildGrass = append(obs.WildGrass, WildSpecies{
-          \t\t\t\tName: name, MinLevel: w.MinLevel, MaxLevel: w.MaxLevel, Slots: w.Slots,
-          \t\t\t})
-          \t\t}
-          \t}
-
-          \tobs.MartStock = []string{}
-          ''',
-          '''\tif wild, err := skill.WildGrass(romData, obs.Map); err == nil {
-          \t\tfor _, w := range wild {
-          \t\t\tname, ok := SpeciesName(w.ID)
-          \t\t\tif !ok {
-          \t\t\t\tcontinue
-          \t\t\t}
-          \t\t\tobs.WildGrass = append(obs.WildGrass, WildSpecies{
-          \t\t\t\tName: name, MinLevel: w.MinLevel, MaxLevel: w.MaxLevel, Slots: w.Slots,
-          \t\t\t})
-          \t\t}
-          \t}
-          \tif len(gs.Party.Mons) > 0 && obs.HasGrass {
-          \t\ttarget := int(gs.Party.Mons[0].Level) + trainStep
-          \t\tif target <= 100 {
-          \t\t\tif estimate, err := currentTrainingEstimate(&mem, romData, obs.Map, target, trainSessionBattleBudget); err == nil {
-          \t\t\t\tobs.Training = &estimate
-          \t\t\t}
-          \t\t}
-          \t}
-
-          \tobs.MartStock = []string{}
-          ''')
-
-          replace("agent/offer.go",
-          '''\t\t\t\t\tNote:  trainingChoiceNote(lead, obs.WildGrass),
-          ''',
-          '''\t\t\t\t\tNote:  trainingChoiceNote(lead, obs.WildGrass, obs.Training),
-          ''')
-
-          replace("agent/offer.go",
-          '''func trainingChoiceNote(lead PartyMon, wild []WildSpecies) string {
-          \tif len(wild) == 0 {
-          \t\treturn fmt.Sprintf("(lead L%d)", lead.Level)
-          \t}
-          \tminLevel, maxLevel := int(wild[0].MinLevel), int(wild[0].MaxLevel)
-          \tfor _, w := range wild[1:] {
-          \t\tif int(w.MinLevel) < minLevel {
-          \t\t\tminLevel = int(w.MinLevel)
-          \t\t}
-          \t\tif int(w.MaxLevel) > maxLevel {
-          \t\t\tmaxLevel = int(w.MaxLevel)
-          \t\t}
-          \t}
-          \treturn fmt.Sprintf("(lead L%d; local wilds L%d-L%d)", lead.Level, minLevel, maxLevel)
-          }
-          ''',
-          '''func trainingChoiceNote(lead PartyMon, wild []WildSpecies, estimate *TrainingEstimate) string {
-          \tdetail := fmt.Sprintf("lead L%d", lead.Level)
-          \tif len(wild) > 0 {
-          \t\tminLevel, maxLevel := int(wild[0].MinLevel), int(wild[0].MaxLevel)
-          \t\tfor _, w := range wild[1:] {
-          \t\t\tif int(w.MinLevel) < minLevel {
-          \t\t\t\tminLevel = int(w.MinLevel)
-          \t\t\t}
-          \t\t\tif int(w.MaxLevel) > maxLevel {
-          \t\t\t\tmaxLevel = int(w.MaxLevel)
-          \t\t\t}
-          \t\t}
-          \t\tdetail += fmt.Sprintf("; local wilds L%d-L%d", minLevel, maxLevel)
-          \t}
-          \tif estimate != nil {
-          \t\tdetail += "; " + estimate.Diagnostic()
-          \t}
-          \treturn "(" + detail + ")"
-          }
-          ''')
-
-          replace("agent/execute_structured.go",
-          '''\tcase KindTrain:
-          \t\ttrain, err := skill.Train(m, romData, int(o.Level), skill.StatAwareMove(romData), 20)
-          ''',
-          '''\tcase KindTrain:
-          \t\tif estimate, err := currentTrainingEstimateFromEmu(m, romData, m.Peek8(sym.CurMap), int(o.Level), trainSessionBattleBudget); err == nil && estimate.Viability == TrainingOutsideBudget {
-          \t\t\tresult.Outcome = OutcomeBlocked
-          \t\t\treturn result, fmt.Errorf("agent: %s: %w", o, &TrainingInefficientError{Estimate: estimate})
-          \t\t}
-          \t\ttrain, err := skill.Train(m, romData, int(o.Level), skill.StatAwareMove(romData), trainSessionBattleBudget)
-          ''')
-
-          replace("agent/failure_identity.go",
-          '''type FailurePartyMember struct {
-          \tSpecies SpeciesID
-          \tLevel   uint8
-          \tHP      uint16
-          ''',
-          '''type FailurePartyMember struct {
-          \tSpecies    SpeciesID
-          \tLevel      uint8
-          \tExperience uint32
-          \tHP         uint16
-          ''')
-
-          replace("agent/failure_identity.go",
-          '''\t\tout.Party = append(out.Party, FailurePartyMember{
-          \t\t\tSpecies: mon.Species,
-          \t\t\tLevel:   mon.Level,
-          \t\t\tHP:      mon.HP,
-          ''',
-          '''\t\tout.Party = append(out.Party, FailurePartyMember{
-          \t\t\tSpecies:    mon.Species,
-          \t\t\tLevel:      mon.Level,
-          \t\t\tExperience: mon.Experience,
-          \t\t\tHP:         mon.HP,
-          ''')
-
-          replace("agent/failure_identity.go",
-          '''\tif errors.Is(err, skill.ErrTrainRetreat) {
-          ''',
-          '''\tif errors.Is(err, ErrTrainingInefficient) {
-          \t\treturn "training_inefficient_area", nil
-          \t}
-          \tif errors.Is(err, skill.ErrTrainRetreat) {
-          ''')
-
-          replace("agent/objective_result.go",
-          '''\t\terrors.Is(err, skill.ErrTrainProgress) ||
-          \t\terrors.Is(err, skill.ErrCantAfford) ||
-          ''',
-          '''\t\terrors.Is(err, skill.ErrTrainProgress) ||
-          \t\terrors.Is(err, ErrTrainingInefficient) ||
-          \t\terrors.Is(err, skill.ErrCantAfford) ||
-          ''')
-
-          replace("agent/training_test.go",
-          '''\tif cause != "type:*agent.TrainingInefficientError" {
-          \t\tt.Fatalf("failure cause = %q, want typed training inefficiency", cause)
-          ''',
-          '''\tif cause != "training_inefficient_area" {
-          \t\tt.Fatalf("failure cause = %q, want training_inefficient_area", cause)
-          ''')
-          PY
-
-          gofmt -w \
-            agent/execute_structured.go \
-            agent/failure_identity.go \
-            agent/objective_result.go \
-            agent/observe.go \
-            agent/offer.go \
-            agent/training.go \
-            agent/training_test.go \
-            agent/training_rom_test.go \
-            red/rom/experience.go \
-            red/rom/experience_test.go \
-            red/state/experience.go \
-            red/state/experience_test.go \
-            skill/wild_experience.go \
-            skill/wild_experience_test.go
-
-      - name: Verify implementation
-        shell: bash
+      - name: Vet
         env:
           POKEMON_RED_ROM: ""
-        run: |
-          set -euo pipefail
-          go mod download
-          make fmt-check
-          go vet ./...
-          go test -short -count=1 ./...
+        run: go vet ./...
 
-      - name: Commit implementation and remove staging workflow diff
-        shell: bash
-        run: |
-          set -euo pipefail
-          git fetch origin main
-          git checkout origin/main -- .github/workflows/test.yml
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add .github/workflows/test.yml agent red skill
-          git diff --cached --check
-          git commit -m "agent: model training XP viability"
-          git push origin HEAD:issue-148-training-xp-efficiency
+      # ROM-backed fixture tests already skip when POKEMON_RED_ROM is unset.
+      # -short also skips intentionally long journey tests, so CI never needs
+      # a commercial Pokemon ROM or a full Pokemon gameplay run.
+      - name: Run short test suite
+        env:
+          POKEMON_RED_ROM: ""
+        run: go test -short -count=1 ./...
+
+      - name: Run short race suite
+        env:
+          POKEMON_RED_ROM: ""
+        run: go test -race -short -count=1 ./...
