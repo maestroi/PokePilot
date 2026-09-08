@@ -41,3 +41,39 @@ func TestPewterStillRoutesIntoMuseumWhenItIsTheDestination(t *testing.T) {
 		t.Fatalf("route to the museum did not enter it: %+v", route)
 	}
 }
+
+// TestRoute4WestToCeruleanUsesMtMoon is the last-hour farm death after #130:
+// Place("route 4") is (10,10) in the west pocket, whose east edge is a
+// different component. The south-edge port used to include both the real
+// Route 3 seam and the east pocket's unused south tiles, so a Route 3 bounce
+// looked like it unlocked Cerulean. Travel then walked into Pewter's Museum.
+// The west pocket's only way east is through Mt. Moon.
+func TestRoute4WestToCeruleanUsesMtMoon(t *testing.T) {
+	g := loadGraph(t)
+	route, err := FindRouteAtDestination(g, 0x0f, 0x03, 10, 10, 5, 18, nil)
+	if err != nil {
+		t.Fatalf("Route 4 (10,10) -> Cerulean (5,18): %v", err)
+	}
+	if !routeVisits(route, 0x3b) && !routeVisits(route, 0x3c) && !routeVisits(route, 0x3d) {
+		t.Fatalf("Route 4 west -> Cerulean did not use Mt. Moon: %+v", route)
+	}
+	if routeVisits(route, 0x02) || routeVisits(route, museum1FMap) {
+		t.Fatalf("Route 4 west -> Cerulean detoured through Pewter: %+v", route)
+	}
+}
+
+// TestRoute4CaveExitReachesEastEdge is the hop after Mt. Moon: (24,5) is
+// the B1F landing, (89,4) is the walkable Cerulean seam. A ledge around
+// x=60 used to split them, so the graph never offered the cave as a way
+// east.
+func TestRoute4CaveExitSharesCeruleanSeam(t *testing.T) {
+	g := loadGraph(t)
+	c := g.comps[0x0f]
+	if c == nil || c[5][24] == 0 {
+		t.Fatal("Route 4 cave exit (24,5) is not walkable")
+	}
+	east := Edge{Kind: EdgeConnection, From: 0x0f, To: 0x03, Dir: dirEast}
+	if !shareComp([]int{c[5][24]}, g.exitComps[east]) {
+		t.Fatalf("cave exit comp %d does not share the Cerulean seam %v", c[5][24], g.exitComps[east])
+	}
+}

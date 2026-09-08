@@ -55,6 +55,7 @@ const (
 // Both ids are retained so callers never infer one contract from the other.
 type Grid struct {
 	MapID         uint8
+	Tileset       uint8
 	Width, Height int // in game tile coordinates
 	walkable      []bool
 	collisionTile []uint8
@@ -86,6 +87,81 @@ func (g *Grid) Passable(fx, fy, tx, ty int) bool {
 		return true
 	}
 	return !g.tilePairs[[2]uint8{from, to}]
+}
+
+// overworldTileset is tileset 0. HandleLedges (pokered/engine/overworld/ledges.asm)
+// returns immediately on any other tileset.
+const overworldTileset uint8 = 0
+
+// overworldLedges is LedgeTiles: standing field tile + ledge field tile + hop
+// direction. The game jumps two tiles when the player walks into the ledge.
+var overworldLedges = []struct {
+	stand, ledge uint8
+	dir          Step
+}{
+	{0x2c, 0x37, StepDown},
+	{0x39, 0x36, StepDown},
+	{0x39, 0x37, StepDown},
+	{0x2c, 0x27, StepLeft},
+	{0x39, 0x27, StepLeft},
+	{0x2c, 0x0d, StepRight},
+	{0x2c, 0x1d, StepRight},
+	{0x39, 0x0d, StepRight},
+}
+
+// reach returns the tiles a player standing at (x,y) can occupy in one
+// action: an orthogonal walkable step, or an overworld ledge hop two tiles
+// beyond a matching ledge. The component flood and the walker share this
+// list so a planned hop is a real graph edge.
+func (g *Grid) reach(x, y int) [][2]int {
+	var out [][2]int
+	for _, s := range stepDirs {
+		nx, ny := x+s.DX, y+s.DY
+		if g.Passable(x, y, nx, ny) {
+			out = append(out, [2]int{nx, ny})
+		}
+		if hx, hy, ok := g.ledgeHop(x, y, s); ok {
+			out = append(out, [2]int{hx, hy})
+		}
+	}
+	return out
+}
+
+// ledgeHop reports the landing tile of an overworld ledge jump from (x,y)
+// in direction s. HandleLedges matches the standing tile (coord 8,9) and
+// the tile in front (GetTileAndCoordsInFrontOfPlayer) — both field tiles —
+// then simulates two joypad presses, so the player lands two tiles away.
+func (g *Grid) ledgeHop(x, y int, s Step) (int, int, bool) {
+	if g == nil || g.Tileset != overworldTileset {
+		return 0, 0, false
+	}
+	stand, ok := g.Tile(x, y)
+	if !ok {
+		return 0, 0, false
+	}
+	fx, fy := x+s.DX, y+s.DY
+	if g.Walkable(fx, fy) {
+		return 0, 0, false
+	}
+	ledge, ok := g.Tile(fx, fy)
+	if !ok {
+		return 0, 0, false
+	}
+	match := false
+	for _, row := range overworldLedges {
+		if row.dir == s && row.stand == stand && row.ledge == ledge {
+			match = true
+			break
+		}
+	}
+	if !match {
+		return 0, 0, false
+	}
+	hx, hy := x+2*s.DX, y+2*s.DY
+	if !g.Walkable(hx, hy) {
+		return 0, 0, false
+	}
+	return hx, hy, true
 }
 
 // tilePairsFor reads the land tile-pair collision table and returns the
@@ -182,6 +258,7 @@ func BuildFromBlocks(romData []byte, h rom.MapHeader, blocks []byte) (*Grid, err
 	height := int(h.HeightBlocks) * 2
 	g := &Grid{
 		MapID:         h.ID,
+		Tileset:       h.Tileset,
 		Width:         width,
 		Height:        height,
 		walkable:      make([]bool, width*height),

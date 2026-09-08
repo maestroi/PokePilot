@@ -90,10 +90,16 @@ func StepOnce(m *emu.Emu, s world.Step) error {
 	}
 
 	x, y := playerXY(m)
-	if int(x) != int(startX)+s.DX || int(y) != int(startY)+s.DY {
-		return &ErrBlocked{Step: s, At: struct{ X, Y uint8 }{x, y}}
+	gotX, gotY := int(x)-int(startX), int(y)-int(startY)
+	if gotX == s.DX && gotY == s.DY {
+		return nil
 	}
-	return nil
+	// HandleLedges hops two tiles on one press. The pathfinder emits one
+	// step toward the ledge and expects the landing, not the ledge tile.
+	if gotX == 2*s.DX && gotY == 2*s.DY {
+		return nil
+	}
+	return &ErrBlocked{Step: s, At: struct{ X, Y uint8 }{x, y}}
 }
 
 // WalkPath executes each step in order, re-reading state after every step.

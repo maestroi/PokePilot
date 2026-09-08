@@ -45,9 +45,14 @@ type Object struct {
 }
 
 // Connection links this map to an adjacent map. Dir: 0=north 1=south 2=west 3=east.
+// LandX/LandY are the signed tile values stored after the dest id (pokered
+// `connection` macro: dest Y then dest X). For north/south, LandX is the
+// dest-x offset when source x is 0; for east/west, LandY is the dest-y offset.
 type Connection struct {
 	Dir   uint8
 	MapID uint8
+	LandY int8
+	LandX int8
 }
 
 // MapHeader is one map's static header plus its object data.
@@ -180,10 +185,32 @@ func ParseMap(rom []byte, mapID uint8) (MapHeader, error) {
 		if err != nil {
 			return h, mapErr(mapID, err)
 		}
-		h.Connections = append(h.Connections, Connection{Dir: uint8(dir), MapID: dest})
-		if err := r.skip(10); err != nil {
+		if err := r.skip(4); err != nil { // block pointer + overworld dest pointer
 			return h, mapErr(mapID, err)
 		}
+		if _, err := r.byte(); err != nil { // strip length in blocks
+			return h, mapErr(mapID, err)
+		}
+		if _, err := r.byte(); err != nil { // dest map width in blocks
+			return h, mapErr(mapID, err)
+		}
+		landY, err := r.byte()
+		if err != nil {
+			return h, mapErr(mapID, err)
+		}
+		landX, err := r.byte()
+		if err != nil {
+			return h, mapErr(mapID, err)
+		}
+		if err := r.skip(2); err != nil { // window pointer
+			return h, mapErr(mapID, err)
+		}
+		h.Connections = append(h.Connections, Connection{
+			Dir:   uint8(dir),
+			MapID: dest,
+			LandY: int8(landY),
+			LandX: int8(landX),
+		})
 	}
 
 	objPtr, err := r.u16()

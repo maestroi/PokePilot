@@ -42,15 +42,12 @@ func TestRouteLeg7Gate(t *testing.T) {
 	}
 }
 
-// TestRouteLeg7RoadDetours is the component check in action. The gate door
-// (8,5) on Route 22 sits in a sealed component: under every collision sub-tile
-// rule it is either solid or cut off from the road the player walks. So a
-// query rooted at the road (where the player enters Route 22) must NOT take
-// the gate leg — it detours the long way around — even though the
-// graph-level FindRoute (no position) offers the gate. This is the tile-level
-// truth S10-11 flagged for the emulator; named here so the graph's optimism is
-// on the record.
-func TestRouteLeg7RoadDetours(t *testing.T) {
+// TestRouteLeg7RoadUsesGate is the ledge-aware counterpart of the old
+// "sealed door" measurement. Without hops, (8,5) sat in its own component
+// so a query from the Viridian-side road detoured the long way. Overworld
+// ledges join that door to the road, which is the path the game actually
+// walks to Route 23.
+func TestRouteLeg7RoadUsesGate(t *testing.T) {
 	g := loadGraph(t)
 	x, y, ok := g.walkableEdgeTile(0x21, dirEast)
 	if !ok {
@@ -60,8 +57,8 @@ func TestRouteLeg7RoadDetours(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FindRouteAt(0x21, 0x22) from the road: %v", err)
 	}
-	if routeVisits(route, 0xC1) {
-		t.Fatalf("route from the road takes the sealed gate door: %+v", route)
+	if !routeVisits(route, 0xC1) {
+		t.Fatalf("route from the road missed the gate: %+v", route)
 	}
 }
 

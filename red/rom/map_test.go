@@ -62,8 +62,8 @@ func TestParsePalletTown(t *testing.T) {
 	}
 
 	wantConns := []Connection{
-		{Dir: 0, MapID: mapRoute1},  // north
-		{Dir: 1, MapID: mapRoute21}, // south
+		{Dir: 0, MapID: mapRoute1, LandY: 35, LandX: 0}, // north: Route 1 south edge
+		{Dir: 1, MapID: mapRoute21, LandY: 0, LandX: 0}, // south: Route 21 north edge
 	}
 	if len(h.Connections) != len(wantConns) {
 		t.Fatalf("len(Connections) = %d, want %d: %#v", len(h.Connections), len(wantConns), h.Connections)

@@ -103,9 +103,8 @@ func FindPath(g *Grid, sx, sy, dx, dy int, blocked map[[2]int]bool) ([]Step, err
 		if cur.x == dx && cur.y == dy {
 			return stepsBetween(parent, start, c), nil
 		}
-		for _, s := range stepDirs {
-			n := [2]int{cur.x + s.DX, cur.y + s.DY}
-			if closed[n] || blocked[n] || !g.Passable(cur.x, cur.y, n[0], n[1]) {
+		for _, n := range g.reach(cur.x, cur.y) {
+			if closed[n] || blocked[n] {
 				continue
 			}
 			ng := cur.g + 1
@@ -148,9 +147,8 @@ func FindPathAdjacent(g *Grid, sx, sy, tx, ty int, blocked map[[2]int]bool) ([]S
 	for len(queue) > 0 {
 		cur := queue[0]
 		queue = queue[1:]
-		for _, s := range stepDirs {
-			n := [2]int{cur[0] + s.DX, cur[1] + s.DY}
-			if !g.InBounds(n[0], n[1]) || !g.Passable(cur[0], cur[1], n[0], n[1]) || blocked[n] {
+		for _, n := range g.reach(cur[0], cur[1]) {
+			if blocked[n] {
 				continue
 			}
 			if _, seen := dist[n]; seen {
@@ -210,7 +208,15 @@ func stepsBetween(parent map[[2]int][2]int, start, goal [2]int) []Step {
 	var steps []Step
 	for cur := goal; cur != start; {
 		prev := parent[cur]
-		steps = append(steps, Step{DX: cur[0] - prev[0], DY: cur[1] - prev[1]})
+		dx, dy := cur[0]-prev[0], cur[1]-prev[1]
+		// A ledge hop lands two tiles away from one joypad press.
+		if dx == 2 || dx == -2 {
+			dx /= 2
+		}
+		if dy == 2 || dy == -2 {
+			dy /= 2
+		}
+		steps = append(steps, Step{DX: dx, DY: dy})
 		cur = prev
 	}
 	for i, j := 0, len(steps)-1; i < j; i, j = i+1, j-1 {

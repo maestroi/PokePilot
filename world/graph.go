@@ -46,9 +46,17 @@ type Graph struct {
 	comps          map[uint8][][]int // per-map component labels, 0 = not walkable
 	exitComps      map[Edge][]int    // components an edge's exit port touches (on e.From)
 	entryComps     map[Edge][]int    // components an edge's entry port touches (on e.To)
-	warps          map[uint8][]rom.Warp
-	tiles          map[uint8]dim
+	// lands is the signed connection landing (pokered _y,_x) keyed by the
+	// connection Edge. It is not stored on Edge itself because Edge is a
+	// map key and callers construct those from Kind/From/To/Dir alone.
+	lands map[Edge]connLand
+	warps map[uint8][]rom.Warp
+	tiles map[uint8]dim
 }
+
+// connLand is the dest-tile offset stored in a map header connection.
+// For north/south, X is dest-x when source x is 0; for east/west, Y is dest-y.
+type connLand struct{ X, Y int8 }
 
 // BuildGraph builds a MAP-level graph over every parseable map. Nodes are map
 // ids; edges are warps and edge connections. Tile arrival coordinates are not
@@ -97,6 +105,7 @@ func BuildGraph(romData []byte) (*Graph, error) {
 		comps:          make(map[uint8][][]int, len(headers)),
 		exitComps:      make(map[Edge][]int),
 		entryComps:     make(map[Edge][]int),
+		lands:          make(map[Edge]connLand),
 		warps:          make(map[uint8][]rom.Warp, len(headers)),
 		tiles:          make(map[uint8]dim, len(headers)),
 	}
@@ -168,12 +177,14 @@ func BuildGraph(romData []byte) (*Graph, error) {
 			})
 		}
 		for _, c := range h.Connections {
-			g.Edges[id] = append(g.Edges[id], Edge{
+			e := Edge{
 				Kind: EdgeConnection,
 				From: id,
 				To:   c.MapID,
 				Dir:  c.Dir,
-			})
+			}
+			g.Edges[id] = append(g.Edges[id], e)
+			g.lands[e] = connLand{X: c.LandX, Y: c.LandY}
 		}
 	}
 
@@ -207,22 +218,12 @@ func components(grid *Grid) [][]int {
 			queue := [][2]int{{x, y}}
 			for qi := 0; qi < len(queue); qi++ {
 				c := queue[qi]
-				for _, dd := range [][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}} {
-					nx, ny := c[0]+dd[0], c[1]+dd[1]
-					if nx < 0 || ny < 0 || nx >= w || ny >= h {
+				for _, n := range grid.reach(c[0], c[1]) {
+					if comps[n[1]][n[0]] != 0 {
 						continue
 					}
-					// Passable, not Walkable: a tile-pair collision separates two
-					// regions of a cave as completely as a wall does, and a
-					// component flood that walks through one tells the route graph
-					// a journey exists that the walker will then refuse to walk.
-					// Seeding still uses Walkable above — that asks "can the player
-					// stand here", which is a property of the tile alone.
-					if !grid.Passable(c[0], c[1], nx, ny) || comps[ny][nx] != 0 {
-						continue
-					}
-					comps[ny][nx] = next
-					queue = append(queue, [2]int{nx, ny})
+					comps[n[1]][n[0]] = next
+					queue = append(queue, n)
 				}
 			}
 		}
@@ -241,7 +242,7 @@ func (g *Graph) exitPortComps(e Edge) []int {
 	d := g.tiles[e.From]
 	switch e.Kind {
 	case EdgeConnection:
-		return edgeLineComps(comps, d.w, d.h, e.Dir)
+		return g.seamComps(e, true)
 	case EdgeWarp:
 		return tileOrNeighbourComps(comps, d.w, d.h, int(e.WarpX), int(e.WarpY))
 	}
@@ -259,7 +260,7 @@ func (g *Graph) entryPortComps(e Edge) []int {
 	d := g.tiles[e.To]
 	switch e.Kind {
 	case EdgeConnection:
-		return edgeLineComps(comps, d.w, d.h, uint8(oppositeDir(int(e.Dir))))
+		return g.seamComps(e, false)
 	case EdgeWarp:
 		dx, dy, ok := g.destWarpTile(e)
 		if !ok {
@@ -291,6 +292,100 @@ func (g *Graph) destWarpTile(e Edge) (int, int, bool) {
 		return 0, 0, false
 	}
 	return int(dest[destID].X), int(dest[destID].Y), true
+}
+
+// seamComps returns the walkable components along a connection's actual
+// strip. Using the whole map edge is wrong on wide maps: Route 4's south
+// edge has the real Route 3 seam in the west pocket and unused walkable
+// tiles in the east pocket, and treating both as the landing made a
+// Route 3 bounce look like it unlocked Cerulean.
+func (g *Graph) seamComps(e Edge, onFrom bool) []int {
+	land, ok := g.lands[e]
+	from := g.tiles[e.From]
+	to := g.tiles[e.To]
+	if !ok || from.w == 0 || to.w == 0 {
+		if onFrom {
+			d := g.tiles[e.From]
+			return edgeLineComps(g.comps[e.From], d.w, d.h, e.Dir)
+		}
+		d := g.tiles[e.To]
+		return edgeLineComps(g.comps[e.To], d.w, d.h, uint8(oppositeDir(int(e.Dir))))
+	}
+
+	ns := e.Dir == dirNorth || e.Dir == dirSouth
+	if onFrom {
+		var lo, hi int
+		if ns {
+			lo, hi = stripRange(from.w, to.w, int(land.X))
+		} else {
+			lo, hi = stripRange(from.h, to.h, int(land.Y))
+		}
+		return lineComps(g.comps[e.From], from.w, from.h, e.Dir, lo, hi)
+	}
+	var lo, hi int
+	if ns {
+		lo, hi = destStripRange(from.w, to.w, int(land.X))
+	} else {
+		lo, hi = destStripRange(from.h, to.h, int(land.Y))
+	}
+	return lineComps(g.comps[e.To], to.w, to.h, uint8(oppositeDir(int(e.Dir))), lo, hi)
+}
+
+func stripRange(fromSize, toSize, land int) (lo, hi int) {
+	lo = max(0, -land)
+	hi = min(fromSize, toSize-land)
+	if hi < lo {
+		return 0, 0
+	}
+	return lo, hi
+}
+
+func destStripRange(fromSize, toSize, land int) (lo, hi int) {
+	lo = max(0, land)
+	hi = min(toSize, land+fromSize)
+	if hi < lo {
+		return 0, 0
+	}
+	return lo, hi
+}
+
+func lineComps(comps [][]int, w, h int, dir uint8, lo, hi int) []int {
+	if hi <= lo {
+		return edgeLineComps(comps, w, h, dir)
+	}
+	seen := make(map[int]bool)
+	var out []int
+	add := func(x, y int) {
+		if x < 0 || y < 0 || x >= w || y >= h {
+			return
+		}
+		if c := comps[y][x]; c != 0 && !seen[c] {
+			seen[c] = true
+			out = append(out, c)
+		}
+	}
+	switch dir {
+	case dirNorth:
+		for x := lo; x < hi && x < w; x++ {
+			add(x, 0)
+		}
+	case dirSouth:
+		for x := lo; x < hi && x < w; x++ {
+			add(x, h-1)
+		}
+	case dirWest:
+		for y := lo; y < hi && y < h; y++ {
+			add(0, y)
+		}
+	case dirEast:
+		for y := lo; y < hi && y < h; y++ {
+			add(w-1, y)
+		}
+	}
+	if len(out) == 0 {
+		return edgeLineComps(comps, w, h, dir)
+	}
+	return out
 }
 
 // edgeLineComps returns the components of the walkable tiles on a map's edge
