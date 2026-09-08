@@ -89,9 +89,11 @@ func executeObjectiveResult(m *emu.Emu, romData []byte, o Objective) (ObjectiveR
 	return result, err
 }
 
-// classifyObjectiveOutcome has load-bearing precedence. A re-plan exhaustion
-// still wraps ErrLegUnwalkable, a dirty finish can be joined with the primary
-// error, and an unanswered choice is more specific than generic instability.
+// classifyObjectiveOutcome has load-bearing precedence. A route/controller
+// sentinel may be joined with a dirty finish, and an unanswered choice is more
+// specific than every other boundary problem. Preserve the most useful primary
+// diagnosis before falling back to generic stabilization failure; only ordinary
+// gameplay blockage is allowed to re-plan.
 //
 // The executor predates ObjectiveResult, so three normal game endings are still
 // encoded as narrow, stable agent error phrases (gym loss, bounded train
@@ -110,12 +112,11 @@ func classifyObjectiveOutcome(o Objective, err error, final Observation) Outcome
 	if errors.As(err, &choice) || errors.Is(err, skill.ErrFieldItemPrompt) {
 		return OutcomeChoiceRequired
 	}
-	if errors.Is(err, ErrObjectiveBoundaryDirty) {
-		return OutcomeStabilizationFailed
-	}
 
 	// These are bounded controllers saying they no longer know how to drive
-	// the game safely. Replanning the same objective cannot repair them.
+	// the game safely. Replanning the same objective cannot repair them. This
+	// check precedes generic boundary dirtiness because objectiveBoundaryError
+	// preserves both identities with errors.Join.
 	if errors.Is(err, emu.ErrFrameDeadline) ||
 		errors.Is(err, skill.ErrReplanExhausted) ||
 		errors.Is(err, skill.ErrMenuStuck) ||
@@ -136,6 +137,13 @@ func classifyObjectiveOutcome(o Objective, err error, final Observation) Outcome
 	// ordinary gameplay would conceal that invariant failure.
 	if errors.Is(err, skill.ErrFieldItemNoEffect) {
 		return OutcomePostconditionFailed
+	}
+
+	// If an otherwise meaningful primary error also left the emulator outside a
+	// safe boundary, the dirty finish wins over anything that would normally be
+	// recoverable. Run must not hand an unsettled game back to the planner.
+	if errors.Is(err, ErrObjectiveBoundaryDirty) {
+		return OutcomeStabilizationFailed
 	}
 
 	// Explicit game outcomes that leave (or return to) a settled world are
@@ -208,7 +216,7 @@ func outcomeSummary(o Objective, out Outcome, final Observation, err error) stri
 	if place == "" {
 		place = fmt.Sprintf("map %02x", final.Map)
 	}
-	base := fmt.Sprintf("%s at %s (%d,%d)", out, place, final.X, final.Y)
+	base := fmt.Sprintf("at %s (%d,%d)", place, final.X, final.Y)
 	if err == nil {
 		return base
 	}
@@ -228,6 +236,10 @@ func conciseObjectiveError(o Objective, err error) string {
 	for strings.HasPrefix(s, prefix) {
 		s = strings.TrimSpace(strings.TrimPrefix(s, prefix))
 	}
+	// errors.Join deliberately preserves every typed cause and renders them on
+	// separate lines. History is one compact planner fact, so collapse display
+	// whitespace here while leaving the original Go error untouched in Result.Err.
+	s = strings.Join(strings.Fields(s), " ")
 	const max = 320
 	if len(s) > max {
 		s = s[:max-3] + "..."
