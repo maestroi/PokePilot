@@ -70,19 +70,6 @@ func (w *Wall) issueDispositionForKey(key string) (IssueLink, issueOccurrenceDis
 // Repeating the same run/attempt/fingerprint through both the generic and
 // structured reporters still counts as one quarantined sighting.
 func (w *Wall) quarantineOccurrence(e outboxEntry, fingerprint, build, note string) bool {
-	return w.settleQuarantinedOutbox(e, fingerprint, build, note, true)
-}
-
-// deferOccurrence transfers ownership from the generic terminal-run reporter
-// to the richer structured objective reporter. It uses the same durable outbox
-// terminal state as quarantine so restarts cannot redispatch it, but it does
-// NOT count as another failure occurrence: the objective reporter records that
-// single sighting exactly once.
-func (w *Wall) deferOccurrence(e outboxEntry, fingerprint, build, note string) bool {
-	return w.settleQuarantinedOutbox(e, fingerprint, build, note, false)
-}
-
-func (w *Wall) settleQuarantinedOutbox(e outboxEntry, fingerprint, build, note string, countOccurrence bool) bool {
 	now := time.Now().Unix()
 	w.mu.Lock()
 	if existing, ok := w.outbox[e.ExternalID]; ok {
@@ -104,12 +91,10 @@ func (w *Wall) settleQuarantinedOutbox(e outboxEntry, fingerprint, build, note s
 	}
 
 	alreadyCounted := false
-	if countOccurrence {
-		for _, prior := range w.outbox {
-			if prior.Status == outboxQuarantined && prior.RunID == e.RunID && prior.Attempt == e.Attempt && prior.Key == e.Key {
-				alreadyCounted = true
-				break
-			}
+	for _, prior := range w.outbox {
+		if prior.Status == outboxQuarantined && prior.RunID == e.RunID && prior.Attempt == e.Attempt && prior.Key == e.Key {
+			alreadyCounted = true
+			break
 		}
 	}
 
@@ -120,7 +105,7 @@ func (w *Wall) settleQuarantinedOutbox(e outboxEntry, fingerprint, build, note s
 	e.UpdatedAt = now
 	w.outbox[e.ExternalID] = e
 
-	if countOccurrence && !alreadyCounted {
+	if !alreadyCounted {
 		if link, ok := w.issueLinks[e.Key]; ok && link.IssueID != "" && classifyIssueOccurrence(link) == occurrenceQuarantine {
 			link.QuarantinedCount++
 			link.LastObservedRun = e.RunID
