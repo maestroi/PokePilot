@@ -137,3 +137,41 @@ func TestFailureStateTracksCumulativeExperience(t *testing.T) {
 		t.Fatalf("failure state did not preserve XP progress: a=%+v b=%+v", a.Party, b.Party)
 	}
 }
+
+func TestTrainingOfferCarriesOutsideBudgetEvidence(t *testing.T) {
+	obs := Observation{
+		Map:        0,
+		PartyCount: 1,
+		Party: []PartyMon{{
+			Species: "pidgey", Level: 16, HP: 20, MaxHP: 20,
+		}},
+		HasGrass:  true,
+		WildGrass: []WildSpecies{{Name: "pidgey", MinLevel: 2, MaxLevel: 5, Slots: 10}},
+		Training: &TrainingEstimate{
+			CurrentLevel: 16, TargetLevel: 18, XPRemaining: 1700,
+			XPPerEncounter: 28, EstimatedEncounters: 61,
+			SessionBudget: 20, Viability: TrainingOutsideBudget,
+		},
+	}
+	offers := Offer(obs, NewKnowledge(map[uint8][]uint8{}))
+	for _, offer := range offers {
+		if offer.Kind != KindTrain {
+			continue
+		}
+		if !strings.Contains(offer.Note, "outside current session budget") || !strings.Contains(offer.Note, "~61 encounters") {
+			t.Fatalf("training note = %q, want quantitative outside-budget evidence", offer.Note)
+		}
+		return
+	}
+	t.Fatal("training objective was not offered")
+}
+
+func TestTrainingInefficiencyClassifiesAsRecoverableBlockage(t *testing.T) {
+	err := &TrainingInefficientError{Estimate: TrainingEstimate{Viability: TrainingOutsideBudget, SessionBudget: 20}}
+	if got := classifyObjectiveOutcome(Objective{Kind: KindTrain}, err, Observation{}); got != OutcomeBlocked {
+		t.Fatalf("classifyObjectiveOutcome(training inefficiency) = %q, want %q", got, OutcomeBlocked)
+	}
+	if got := actionFor(OutcomeBlocked); got != actionReplan {
+		t.Fatalf("actionFor(blocked) = %v, want replan", got)
+	}
+}
