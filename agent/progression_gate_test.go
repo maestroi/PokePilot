@@ -7,9 +7,6 @@ import (
 )
 
 func TestJourneyProgressionBlockedRoute3UntilBoulderBadge(t *testing.T) {
-	// The Pokedex is held: Route 2's own gate is open, so it is a control
-	// for "the block is specific to this destination" rather than a second
-	// blocked journey.
 	obs := Observation{Events: []string{state.EventGotPokedex.String()}}
 	if !journeyProgressionBlocked(obs, route3Map) {
 		t.Fatal("Route 3 should be blocked before the Boulder Badge")
@@ -25,9 +22,7 @@ func TestJourneyProgressionBlockedRoute3UntilBoulderBadge(t *testing.T) {
 }
 
 func TestOfferSuppressesPewterRoute3UntilBoulderBadge(t *testing.T) {
-	known := NewKnowledge(map[uint8][]uint8{
-		0x02: {route3Map},
-	})
+	known := NewKnowledge(map[uint8][]uint8{0x02: {route3Map}})
 	known.SawMap(0x02)
 	obs := Observation{
 		Map:        0x02,
@@ -51,13 +46,10 @@ func TestOfferSuppressesPewterRoute3UntilBoulderBadge(t *testing.T) {
 }
 
 func TestJourneyProgressionBlockedRoute2UntilPokedex(t *testing.T) {
-	// The Viridian guard blocks the north exit until Oak's parcel is
-	// delivered; the Pokedex changing hands is that moment.
 	obs := Observation{}
 	if !journeyProgressionBlocked(obs, route2Map) {
 		t.Fatal("Route 2 should be blocked before the parcel is delivered")
 	}
-	// Holding the parcel is not delivering it: the guard is still there.
 	obs.Events = []string{state.EventGotOaksParcel.String()}
 	if !journeyProgressionBlocked(obs, route2Map) {
 		t.Fatal("Route 2 should stay blocked while the parcel is only carried")
@@ -70,31 +62,13 @@ func TestJourneyProgressionBlockedRoute2UntilPokedex(t *testing.T) {
 
 func TestJourneyProgressionBlockedUsesSemanticLateGameFacts(t *testing.T) {
 	tests := []struct {
-		name   string
-		mapID  uint8
-		unlock func(*Observation)
+		name  string
+		mapID uint8
+		fact  ProgressID
 	}{
-		{
-			name:  "Saffron",
-			mapID: saffronCityMap,
-			unlock: func(obs *Observation) {
-				obs.Story.SaffronGateOpen = true
-			},
-		},
-		{
-			name:  "Cinnabar Gym",
-			mapID: cinnabarGymMap,
-			unlock: func(obs *Observation) {
-				obs.Story.SecretKeyOwned = true
-			},
-		},
-		{
-			name:  "Viridian Gym",
-			mapID: viridianGymMap,
-			unlock: func(obs *Observation) {
-				obs.Story.ViridianGymOpen = true
-			},
-		},
+		{name: "Saffron", mapID: saffronCityMap, fact: ProgressSaffronGateOpen},
+		{name: "Cinnabar Gym", mapID: cinnabarGymMap, fact: ProgressSecretKeyOwned},
+		{name: "Viridian Gym", mapID: viridianGymMap, fact: ProgressViridianGymOpen},
 	}
 
 	for _, tc := range tests {
@@ -103,7 +77,7 @@ func TestJourneyProgressionBlockedUsesSemanticLateGameFacts(t *testing.T) {
 			if !journeyProgressionBlocked(obs, tc.mapID) {
 				t.Fatalf("map %#02x should be blocked before semantic prerequisite", tc.mapID)
 			}
-			tc.unlock(&obs)
+			obs.Story = ProgressState{{ID: tc.fact, Complete: true}}
 			if journeyProgressionBlocked(obs, tc.mapID) {
 				t.Fatalf("map %#02x should open after semantic prerequisite", tc.mapID)
 			}
