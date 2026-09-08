@@ -35,6 +35,7 @@ the bit.
 
 | Path | What it is |
 |---|---|
+| `game/` | Game-agnostic objective transaction runtime and adapter contract; forbidden from importing Red/emulator/skill/world implementations |
 | `emu/` | The only package that talks to GomeBoy: open, step, input, save states, watch |
 | `red/rom/` | Static game data parsed out of the ROM image: maps, warps, connections, collision |
 | `red/state/` | A RAM snapshot decoded into typed game state: party, inventory, badges, player, menus, text |

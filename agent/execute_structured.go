@@ -17,45 +17,20 @@ import (
 // answering a choice while checking its postcondition.
 const objectivePostconditionSettleBudget = 1200
 
-// Execute carries out one objective and returns the structured facts produced
-// by the owning skill. The low-level error remains the second return value so
-// errors.Is/errors.As keep working; ObjectiveResult is the planner/run-facing
-// semantic channel and therefore never contains an error interface.
-//
-// Skills retain their own positive assertions. Execute adds only the semantic
-// boundary they cannot know, most importantly exact KindGoTo arrival. Claimed
-// success with a false postcondition is terminal postcondition_failed; a state
-// that is still impossible to check after the passive settle budget is terminal
-// postcondition_unavailable.
-func Execute(m *emu.Emu, romData []byte, o Objective) (result ObjectiveResult, retErr error) {
-	result.Objective = o
-	if err := o.Validate(); err != nil {
-		result = finalizeObjectiveResult(o, result, Observe(m, romData), err)
-		return result, err
-	}
+// Execute is Pokémon Red's public convenience entry point into the portable
+// objective transaction runtime. The lifecycle itself lives behind
+// ObjectiveGameAdapter; this function only binds the existing emulator/ROM to
+// the Red adapter so callers do not need to construct it themselves.
+func Execute(m *emu.Emu, romData []byte, o Objective) (ObjectiveResult, error) {
+	return executeObjectiveWithAdapter(newRedObjectiveAdapter(m, romData), o)
+}
 
-	// Preserve exact RAM at the public objective-error boundary before Run can
-	// perform any later boundary recovery. Validation errors above are excluded
-	// because no gameplay input was sent.
-	defer func() {
-		if retErr == nil && (result.Outcome == "" || result.Outcome == OutcomeCompleted) {
-			settleObjectivePostcondition(m, o)
-			final := Observe(m, romData)
-			out, postErr := objectivePostcondition(o, final)
-			if postErr != nil {
-				result.Outcome = out
-				retErr = fmt.Errorf("agent: %s: %w", o, postErr)
-			}
-			result = finalizeObjectiveResult(o, result, final, retErr)
-		} else {
-			result = finalizeObjectiveResult(o, result, Observe(m, romData), retErr)
-		}
-		if retErr != nil {
-			if err := captureObjectiveFailure(m, o, retErr); err != nil {
-				fmt.Printf("  ram forensics: %v\n", err)
-			}
-		}
-	}()
+// executeRedOwned performs only the action owned by an objective. Validation,
+// start/finish boundary normalization, watchdog enforcement, final observation,
+// semantic postcondition verification, result normalization, and forensics are
+// deliberately outside this switch in the portable transaction runtime.
+func executeRedOwned(m *emu.Emu, romData []byte, o Objective) (result ObjectiveResult, retErr error) {
+	result.Objective = o
 
 	switch o.Kind {
 	case KindGoTo:
