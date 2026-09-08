@@ -1,0 +1,104 @@
+package skill
+
+import (
+	"strings"
+
+	gameruntime "github.com/maestroi/pokepilot/game"
+	"github.com/maestroi/pokepilot/red/state"
+	"github.com/maestroi/pokepilot/world"
+)
+
+const (
+	capCanCut          gameruntime.CapabilityID = "can_cut"
+	capCanSurf         gameruntime.CapabilityID = "can_surf"
+	capCanMoveBoulders gameruntime.CapabilityID = "can_move_boulders"
+	capCanClearSnorlax gameruntime.CapabilityID = "can_clear_snorlax"
+)
+
+const (
+	semanticPalletTownMap    uint8 = 0x00
+	semanticVermilionCityMap uint8 = 0x05
+	semanticCinnabarMap      uint8 = 0x08
+	semanticRoute21Map       uint8 = 0x20
+)
+
+// redRouteCapabilities is the Red adapter projection from RAM/party mechanics
+// into the portable route vocabulary. A field move counts only when Travel can
+// use it now, including the existing safe auto-teach path. Story/item encoding
+// stays entirely on this side of the boundary.
+func redRouteCapabilities(romData []byte, mem *state.Mem) gameruntime.CapabilitySet {
+	caps := gameruntime.NewCapabilitySet()
+	field := []struct {
+		move FieldMove
+		id   gameruntime.CapabilityID
+	}{
+		{FieldCut, capCanCut},
+		{FieldSurf, capCanSurf},
+		{FieldStrength, capCanMoveBoulders},
+	}
+	for _, entry := range field {
+		capability := FieldCapabilityFor(mem, entry.move)
+		if capability.Usable || CanPrepareFieldMove(romData, mem, entry.move) {
+			caps[entry.id] = true
+		}
+	}
+
+	inv := state.DecodeInventory(mem)
+	if state.DecodeStoryFacts(mem, inv).PokeFluteAcquired {
+		caps[capCanClearSnorlax] = true
+	}
+	return caps
+}
+
+func semanticMapPlace(mapID uint8) gameruntime.PlaceID {
+	return gameruntime.CanonicalID(strings.ReplaceAll(state.MapName(mapID), "_", " "))
+}
+
+func semanticTransition(id string, edge world.Edge, requires ...gameruntime.CapabilityID) gameruntime.Transition {
+	return gameruntime.Transition{
+		ID:       id,
+		From:     semanticMapPlace(edge.From),
+		To:       semanticMapPlace(edge.To),
+		Requires: requires,
+	}
+}
+
+// redRouteTransitionForEdge maps representative existing Red gates onto the
+// portable transition model. The router never sees these map ids; they are
+// adapter facts attached to ordinary geometric edges.
+func redRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, bool) {
+	pair := func(a, b uint8) bool {
+		return (edge.From == a && edge.To == b) || (edge.From == b && edge.To == a)
+	}
+	switch {
+	case pair(semanticVermilionCityMap, vermilionGymMap):
+		return semanticTransition("red:vermilion_gym_cut", edge, capCanCut), true
+	case pair(semanticPalletTownMap, semanticRoute21Map),
+		pair(semanticRoute21Map, semanticCinnabarMap):
+		return semanticTransition("red:route21_surf", edge, capCanSurf), true
+	case pair(route12Map, route13Map):
+		return semanticTransition("red:route12_snorlax", edge, capCanClearSnorlax), true
+	case pair(victoryRoad1FMap, victoryRoad2FMap),
+		pair(victoryRoad2FMap, victoryRoad3FMap):
+		return semanticTransition("red:victory_road_strength", edge, capCanMoveBoulders), true
+	default:
+		return gameruntime.Transition{}, false
+	}
+}
+
+// redRoutePrerequisites attaches adapter-owned transition facts to the concrete
+// graph while keeping the routing algorithm generic.
+func redRoutePrerequisites(g *world.Graph, romData []byte, mem *state.Mem) world.RoutePrerequisites {
+	transitions := make(map[world.Edge]gameruntime.Transition)
+	for _, edges := range g.Edges {
+		for _, edge := range edges {
+			if transition, ok := redRouteTransitionForEdge(edge); ok {
+				transitions[edge] = transition
+			}
+		}
+	}
+	return world.RoutePrerequisites{
+		Transitions:  transitions,
+		Capabilities: redRouteCapabilities(romData, mem),
+	}
+}
