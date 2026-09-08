@@ -1,31 +1,63 @@
 package main
 
 import (
-	"bytes"
 	"testing"
+
+	"github.com/maestroi/pokepilot/agent"
 )
+
+func structuredFailureResult(cause agent.FailureCauseID, level uint8) agent.ObjectiveResult {
+	initial := agent.FailureState{
+		Location:     "mt moon b1f",
+		X:            10,
+		Y:            22,
+		Controllable: true,
+		Party: []agent.FailurePartyMember{{
+			Species: "pikachu",
+			Level:   level,
+			HP:      20,
+			MaxHP:   20,
+		}},
+	}
+	return agent.ObjectiveResult{
+		Objective: agent.Objective{
+			Kind:  agent.KindGoTo,
+			Place: "mt moon b1f",
+			Flee:  true,
+		},
+		Outcome: agent.OutcomeBlocked,
+		Summary: "blocked at a stable route boundary",
+		Cause:   cause,
+		Initial: &initial,
+		Final: agent.Observation{
+			Map:          0x3b,
+			Location:     "mt moon b1f",
+			X:            10,
+			Y:            22,
+			Controllable: true,
+			Party: []agent.PartyMon{{
+				Species: "pikachu",
+				Level:   level,
+				HP:      20,
+				MaxHP:   20,
+			}},
+		},
+	}
+}
 
 func TestObjectiveFailureTelemetryMarksRepeatedUnrecoveredFailureBlocking(t *testing.T) {
 	resetObjectiveFailureTelemetry()
 	t.Cleanup(resetObjectiveFailureTelemetry)
 
-	var out bytes.Buffer
-	log := &agentTraceLog{w: &out} // no TraceNote: telemetry must still observe it
-	for _, line := range []string{
-		"round 14: go to mt moon b1f, fleeing wild battles -> failed: agent: go to mt moon b1f: skill: step left blocked at (10,22), map 3b at (10,22)\n",
-		"round 15: go to mt moon b1f, fleeing wild battles -> failed: agent: go to mt moon b1f: skill: step left blocked at (10,22), map 3b at (10,22)\n",
-	} {
-		if _, err := log.Write([]byte(line)); err != nil {
-			t.Fatalf("Write: %v", err)
-		}
-	}
+	failure := structuredFailureResult("blocked_step", 10)
+	captureObjectiveFailureTelemetry(agent.Result{Outcomes: []agent.ObjectiveResult{failure, failure}})
 
-	got := drainObjectiveFailureTelemetry("failed")
+	got, terminal := drainObjectiveFailureTelemetry("failed", "build-a", "")
 	if len(got) != 1 {
 		t.Fatalf("failures = %+v, want one group", got)
 	}
 	f := got[0]
-	if f.Count != 2 || f.FirstRound != 14 || f.LastRound != 15 {
+	if f.Count != 2 || f.FirstRound != 1 || f.LastRound != 2 {
 		t.Fatalf("round/count summary = %+v", f)
 	}
 	if f.Map != 0x3b || f.X != 10 || f.Y != 22 {
@@ -34,8 +66,11 @@ func TestObjectiveFailureTelemetryMarksRepeatedUnrecoveredFailureBlocking(t *tes
 	if f.Recovered || !f.Blocking {
 		t.Fatalf("classification = recovered=%t blocking=%t, want false/true", f.Recovered, f.Blocking)
 	}
-	if f.ObservedAt.IsZero() {
-		t.Fatal("blocking failure has no stable observation timestamp")
+	if f.ObservedAt.IsZero() || f.Fingerprint == "" || f.Key == "" || f.Identity == nil {
+		t.Fatalf("structured identity missing from %+v", f)
+	}
+	if terminal == nil || terminal.Fingerprint != f.Fingerprint {
+		t.Fatalf("terminal occurrence = %+v, want fingerprint %q", terminal, f.Fingerprint)
 	}
 }
 
@@ -43,10 +78,26 @@ func TestObjectiveFailureTelemetryMarksLaterProgressRecovered(t *testing.T) {
 	resetObjectiveFailureTelemetry()
 	t.Cleanup(resetObjectiveFailureTelemetry)
 
-	observeAgentLogLine("round 4: heal the party -> failed: skill: A did not open a text box, map 3a at (11,6)")
-	observeAgentLogLine("round 7: major progress -> 1 badge(s), 9 event(s), 14 map(s)")
+	failure := structuredFailureResult("no_route", 10)
+	progressed := agent.ObjectiveResult{
+		Objective: agent.Objective{Kind: agent.KindTrain, Level: 11},
+		Outcome:   agent.OutcomeCompleted,
+		Final: agent.Observation{
+			Location:     "mt moon b1f",
+			X:            10,
+			Y:            22,
+			Controllable: true,
+			Party: []agent.PartyMon{{
+				Species: "pikachu",
+				Level:   11,
+				HP:      20,
+				MaxHP:   20,
+			}},
+		},
+	}
+	captureObjectiveFailureTelemetry(agent.Result{Outcomes: []agent.ObjectiveResult{failure, progressed}})
 
-	got := drainObjectiveFailureTelemetry("budget")
+	got, _ := drainObjectiveFailureTelemetry("budget", "build-a", "")
 	if len(got) != 1 {
 		t.Fatalf("failures = %+v, want one group", got)
 	}
@@ -59,8 +110,21 @@ func TestObjectiveFailureTelemetryExcludesExpectedGameOutcome(t *testing.T) {
 	resetObjectiveFailureTelemetry()
 	t.Cleanup(resetObjectiveFailureTelemetry)
 
-	observeAgentLogLine("round 9: go to route 3 -> failed: agent: skill: Travel: blacked out after 2 battles, map 3a at (3,3)")
-	if got := drainObjectiveFailureTelemetry("budget"); len(got) != 0 {
-		t.Fatalf("blackout produced engineering failure telemetry: %+v", got)
+	failure := structuredFailureResult("blacked_out", 10)
+	captureObjectiveFailureTelemetry(agent.Result{Outcomes: []agent.ObjectiveResult{failure}})
+	got, terminal := drainObjectiveFailureTelemetry("budget", "build-a", "")
+	if len(got) != 0 || terminal != nil {
+		t.Fatalf("blackout produced engineering failure telemetry: %+v terminal=%+v", got, terminal)
+	}
+}
+
+func TestAgentLogProseIsNotFailureIdentityInput(t *testing.T) {
+	resetObjectiveFailureTelemetry()
+	t.Cleanup(resetObjectiveFailureTelemetry)
+
+	observeAgentLogLine("round 99: arbitrary human text -> failed: this must never become identity, map ff at (1,2)")
+	got, terminal := drainObjectiveFailureTelemetry("failed", "build-a", "")
+	if len(got) != 0 || terminal != nil {
+		t.Fatalf("log prose produced structured telemetry: %+v terminal=%+v", got, terminal)
 	}
 }
