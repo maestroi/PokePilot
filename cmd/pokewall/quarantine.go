@@ -67,7 +67,8 @@ func (w *Wall) issueDispositionForKey(key string) (IssueLink, issueOccurrenceDis
 // quarantineOccurrence settles an occurrence without sending it to Agent
 // Orchestrator. The finish dump/checkpoint remain the immutable historical
 // evidence; the persisted outbox marker makes restart rescans idempotent.
-// Repeating the same external id never increments the quarantine counter.
+// Repeating the same run/attempt/fingerprint through both the generic and
+// structured reporters still counts as one quarantined sighting.
 func (w *Wall) quarantineOccurrence(e outboxEntry, fingerprint, build, note string) bool {
 	return w.settleQuarantinedOutbox(e, fingerprint, build, note, true)
 }
@@ -101,6 +102,17 @@ func (w *Wall) settleQuarantinedOutbox(e outboxEntry, fingerprint, build, note s
 			e.Key = existing.Key
 		}
 	}
+
+	alreadyCounted := false
+	if countOccurrence {
+		for _, prior := range w.outbox {
+			if prior.Status == outboxQuarantined && prior.RunID == e.RunID && prior.Attempt == e.Attempt && prior.Key == e.Key {
+				alreadyCounted = true
+				break
+			}
+		}
+	}
+
 	e.Status = outboxQuarantined
 	e.Error = ""
 	e.Note = strings.TrimSpace(note)
@@ -108,8 +120,8 @@ func (w *Wall) settleQuarantinedOutbox(e outboxEntry, fingerprint, build, note s
 	e.UpdatedAt = now
 	w.outbox[e.ExternalID] = e
 
-	if countOccurrence {
-		if link, ok := w.issueLinks[e.Key]; ok && link.IssueID != "" {
+	if countOccurrence && !alreadyCounted {
+		if link, ok := w.issueLinks[e.Key]; ok && link.IssueID != "" && classifyIssueOccurrence(link) == occurrenceQuarantine {
 			link.QuarantinedCount++
 			link.LastObservedRun = e.RunID
 			link.LastObservedRevision = strings.TrimSpace(build)
