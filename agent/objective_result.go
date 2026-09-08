@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/maestroi/pokepilot/emu"
+	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/skill"
 	"github.com/maestroi/pokepilot/world"
 )
@@ -32,12 +33,17 @@ const (
 // ObjectiveResult is the durable, planner-facing record of one objective
 // transaction. Error stays a separate Go error so errors.Is/errors.As retain
 // the exact low-level identity; this value contains only stable data that can be
-// serialized into run/farm output.
+// serialized into run/farm output. Skill results are kept whole instead of
+// flattened into Summary so diagnostics can answer what actually happened on a
+// journey, training session, or gym battle.
 type ObjectiveResult struct {
-	Objective Objective   `json:"objective"`
-	Outcome   Outcome     `json:"outcome"`
-	Summary   string      `json:"summary,omitempty"`
-	Final     Observation `json:"final"`
+	Objective  Objective           `json:"objective"`
+	Outcome    Outcome             `json:"outcome"`
+	Summary    string              `json:"summary,omitempty"`
+	Final      Observation         `json:"final"`
+	Travel     *skill.TravelResult `json:"travel,omitempty"`
+	Train      *skill.TrainResult  `json:"train,omitempty"`
+	GymOutcome *state.BattleResult `json:"gym_outcome,omitempty"`
 }
 
 // Boundary cleanup may only undo semantically reversible UI state. These
@@ -46,6 +52,12 @@ type ObjectiveResult struct {
 var (
 	ErrObjectiveBoundaryChoice = errors.New("unanswered choice remains open")
 	ErrObjectiveBoundaryDirty  = errors.New("objective boundary did not stabilize")
+
+	// Postcondition errors are terminal invariant failures. Failed means the
+	// world was readable and contradicted the objective; unavailable means the
+	// bounded settle expired before the semantic check could safely be made.
+	ErrObjectivePostconditionFailed      = errors.New("objective postcondition failed")
+	ErrObjectivePostconditionUnavailable = errors.New("objective postcondition unavailable")
 )
 
 type runAction uint8
@@ -72,21 +84,56 @@ func actionFor(out Outcome) runAction {
 	}
 }
 
-// executeObjectiveResult is the normalization boundary between the stable
-// objective executor and Run. executeObjective owns start/execute/finish UI
-// lifecycle; this layer assigns semantic meaning to its result exactly once.
+// executeObjectiveResult is the normalization boundary used by Run. The
+// transaction wrapper already returns the structured result, including typed
+// skill payloads, so this function deliberately does no second execution or
+// result reconstruction.
 func executeObjectiveResult(m *emu.Emu, romData []byte, o Objective) (ObjectiveResult, error) {
-	err := executeObjective(m, romData, o)
-	final := Observe(m, romData)
-	result := ObjectiveResult{Objective: o, Final: final}
+	return executeObjective(m, romData, o)
+}
+
+// finalizeObjectiveResult attaches the settled observation and assigns a
+// normalized outcome only when the executor did not already provide a semantic
+// one. This is important for normal non-completion results such as gym loss or
+// a bounded training shortfall: their accompanying error is diagnostic, while
+// the structured Outcome is the policy input.
+func finalizeObjectiveResult(o Objective, result ObjectiveResult, final Observation, err error) ObjectiveResult {
+	result.Objective = o
+	result.Final = final
 	if err == nil {
-		result.Outcome = OutcomeCompleted
-		result.Summary = outcomeSummary(o, result.Outcome, final, nil)
-		return result, nil
+		if result.Outcome == "" {
+			result.Outcome = OutcomeCompleted
+		}
+	} else if result.Outcome == "" || result.Outcome == OutcomeCompleted {
+		result.Outcome = classifyObjectiveOutcome(o, err, final)
 	}
-	result.Outcome = classifyObjectiveOutcome(o, err, final)
 	result.Summary = outcomeSummary(o, result.Outcome, final, err)
-	return result, err
+	return result
+}
+
+// objectivePostcondition checks only semantic contracts that are not already
+// positively asserted inside their owning skill. GoTo is the important missing
+// boundary: success means the exact named destination and a controllable
+// overworld, not merely that Travel returned nil.
+func objectivePostcondition(o Objective, final Observation) (Outcome, error) {
+	if o.Kind != KindGoTo {
+		return OutcomeCompleted, nil
+	}
+	if !final.Controllable || final.InBattle {
+		return OutcomePostconditionUnavailable, fmt.Errorf(
+			"%w: %s ended on map %02x at (%d,%d), controllable=%v inBattle=%v",
+			ErrObjectivePostconditionUnavailable, o, final.Map, final.X, final.Y, final.Controllable, final.InBattle)
+	}
+	dest, ok := skill.Place(o.Place)
+	if !ok {
+		return OutcomePostconditionFailed, fmt.Errorf("%w: destination %q no longer resolves", ErrObjectivePostconditionFailed, o.Place)
+	}
+	if final.Map != dest.Map || final.X != dest.X || final.Y != dest.Y {
+		return OutcomePostconditionFailed, fmt.Errorf(
+			"%w: %s ended on map %02x at (%d,%d), want map %02x at (%d,%d)",
+			ErrObjectivePostconditionFailed, o, final.Map, final.X, final.Y, dest.Map, dest.X, dest.Y)
+	}
+	return OutcomeCompleted, nil
 }
 
 // classifyObjectiveOutcome has load-bearing precedence. A route/controller
@@ -94,12 +141,6 @@ func executeObjectiveResult(m *emu.Emu, romData []byte, o Objective) (ObjectiveR
 // specific than every other boundary problem. Preserve the most useful primary
 // diagnosis before falling back to generic stabilization failure; only ordinary
 // gameplay blockage is allowed to re-plan.
-//
-// The executor predates ObjectiveResult, so three normal game endings are still
-// encoded as narrow, stable agent error phrases (gym loss, bounded train
-// shortfall, bounded/missed catch). expectedLegacyGameplayBlockage is the one
-// compatibility bridge for those; new code should expose a typed sentinel or a
-// structured skill result instead of adding another phrase here.
 func classifyObjectiveOutcome(o Objective, err error, final Observation) Outcome {
 	if err == nil {
 		return OutcomeCompleted
@@ -111,6 +152,13 @@ func classifyObjectiveOutcome(o Objective, err error, final Observation) Outcome
 	var choice *skill.ErrDialogueChoice
 	if errors.As(err, &choice) || errors.Is(err, skill.ErrFieldItemPrompt) {
 		return OutcomeChoiceRequired
+	}
+
+	if errors.Is(err, ErrObjectivePostconditionFailed) {
+		return OutcomePostconditionFailed
+	}
+	if errors.Is(err, ErrObjectivePostconditionUnavailable) {
+		return OutcomePostconditionUnavailable
 	}
 
 	// These are bounded controllers saying they no longer know how to drive
@@ -176,25 +224,16 @@ func classifyObjectiveOutcome(o Objective, err error, final Observation) Outcome
 	return OutcomeUnknownFailure
 }
 
-// expectedLegacyGameplayBlockage keeps legacy normal outcomes recoverable while
-// the public Execute(error-only) contract is migrated incrementally. Each match
-// is constrained by objective kind and by text owned in agent/objective.go; it
-// must never become a generic substring classifier for arbitrary skill errors.
+// expectedLegacyGameplayBlockage is now intentionally tiny. Execute itself
+// returns structured blocked results for gym loss, training shortfall, and a
+// non-caught CatchResult. The only pre-existing normal ending still delivered
+// solely as an untyped skill error is Catch exhausting its bounded grass hunt;
+// keep that compatibility bridge kind-scoped until Catch grows its own sentinel.
 func expectedLegacyGameplayBlockage(o Objective, err error) bool {
-	if err == nil {
+	if err == nil || o.Kind != KindCatch {
 		return false
 	}
-	s := err.Error()
-	switch o.Kind {
-	case KindGym:
-		return strings.Contains(s, "lost to the gym leader (blacked out to the center)")
-	case KindTrain:
-		return strings.Contains(s, "target level ") && strings.Contains(s, " not reached (ended level ")
-	case KindCatch:
-		return (strings.Contains(s, ": no ") && strings.Contains(s, " caught (outcome ")) ||
-			strings.Contains(s, " encounters without a wanted species")
-	}
-	return false
+	return strings.Contains(err.Error(), " encounters without a wanted species")
 }
 
 // HistoryText is the compact form placed in Observation.History. Completed
