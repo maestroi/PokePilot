@@ -1,6 +1,9 @@
 package farm
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 func TestObjectiveFailureArtifactRoundTrip(t *testing.T) {
 	want := []ObjectiveFailure{{
@@ -25,7 +28,7 @@ func TestObjectiveFailureArtifactRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DecodeObjectiveFailures: %v", err)
 	}
-	if len(got) != 1 || got[0] != want[0] {
+	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("decoded = %+v, want %+v", got, want)
 	}
 }
