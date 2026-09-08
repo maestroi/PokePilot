@@ -26,13 +26,15 @@ func NormalizeLLMProfile(s string) LLMProfile {
 	}
 }
 
-// NormalizeReasoningEffort maps a queue/form value onto a value this
-// server's reasoning_effort field accepts, or "" (meaning: use the
-// endpoint's configured default) for anything else, including "auto" and
-// empty.
+// NormalizeReasoningEffort maps a queue/form value onto a value
+// LLMPlanner.ReasoningEffort accepts: "low"/"medium"/"high" (the
+// reasoning_effort field), "off" (disables thinking outright via
+// chat_template_kwargs, the same escape hatch NoThink gives the chooser),
+// or "" (meaning: use the endpoint's configured default) for anything
+// else, including "auto" and empty.
 func NormalizeReasoningEffort(s string) string {
 	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "low", "medium", "high":
+	case "low", "medium", "high", "off":
 		return strings.ToLower(strings.TrimSpace(s))
 	default:
 		return ""

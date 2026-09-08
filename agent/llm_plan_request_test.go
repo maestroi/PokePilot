@@ -45,3 +45,39 @@ func TestStrategistUsesThinkingModeAndLargeBudget(t *testing.T) {
 		t.Fatalf("schema name=%v, want objective_plan", schema["name"])
 	}
 }
+
+// TestStrategistReasoningEffortOffDisablesThinking locks in the escape
+// hatch added when "low" still reasoned too long on a big real-run prompt:
+// "off" must disable thinking via the chat-template argument, the same
+// mechanism NoThink gives the chooser, and must not also send
+// reasoning_effort (meaningless once thinking is off, and the field this
+// server treats as a request to reason more, not less).
+func TestStrategistReasoningEffortOffDisablesThinking(t *testing.T) {
+	var request map[string]any
+	client := &http.Client{Transport: strategicRoundTrip(func(r *http.Request) (*http.Response, error) {
+		data, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(data, &request); err != nil {
+			t.Fatal(err)
+		}
+		body := `{"model":"test-model","choices":[{"message":{"content":"{\"goal\":\"go north\",\"steps\":[\"go to route 1\"]}"},"finish_reason":"stop"}]}`
+		return &http.Response{StatusCode: 200, Status: "200 OK", Body: io.NopCloser(bytes.NewBufferString(body)), Header: make(http.Header)}, nil
+	})}
+	p := &LLMPlanner{BaseURL: "http://unused", Model: "test-model", Client: client, ReasoningEffort: "off"}
+	offered := []Objective{{Kind: KindGoTo, Place: "route 1"}}
+	if _, err := p.Strategize(Observation{Round: 3}, offered, "initial"); err != nil {
+		t.Fatalf("Strategize: %v", err)
+	}
+	if _, present := request["reasoning_effort"]; present {
+		t.Fatalf("reasoning_effort should be omitted when thinking is off, got %v", request["reasoning_effort"])
+	}
+	ctk, ok := request["chat_template_kwargs"].(map[string]any)
+	if !ok {
+		t.Fatalf("chat_template_kwargs missing; want enable_thinking:false, got %+v", request["chat_template_kwargs"])
+	}
+	if enabled, ok := ctk["enable_thinking"].(bool); !ok || enabled {
+		t.Fatalf("enable_thinking=%v, want false", ctk["enable_thinking"])
+	}
+}

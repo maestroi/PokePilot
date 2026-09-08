@@ -39,7 +39,8 @@
   };
   const reasoningEffortLabel = (r) => {
     switch ((r.reasoning_effort || "").toLowerCase()) {
-      case "low": return "Low (fastest)";
+      case "off": return "Off (no thinking)";
+      case "low": return "Low";
       case "medium": return "Medium";
       case "high": return "High (slowest)";
       default: return "Auto (endpoint default)";

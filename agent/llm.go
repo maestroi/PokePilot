@@ -98,12 +98,16 @@ type LLMPlanner struct {
 	// ignores it. POKEPILOT_LLM_NO_THINK=1 sets it.
 	NoThink bool
 
-	// ReasoningEffort is sent as the top-level reasoning_effort field on
-	// every strategist (askPlan) call, never on the chooser. See
-	// chatRequest.ReasoningEffort for why this must never be left empty for
-	// the strategist: an omitted field is a distinct, broken code path on
-	// this server, not merely "more thinking". Defaults to "medium" in
-	// NewLLMPlanner; POKEPILOT_LLM_REASONING_EFFORT overrides it.
+	// ReasoningEffort controls the strategist (askPlan) call, never the
+	// chooser. "low"/"medium"/"high" are sent as the top-level
+	// reasoning_effort field — see chatRequest.ReasoningEffort for why this
+	// must never be left empty on this server: an omitted field is a
+	// distinct, broken code path, not merely "more thinking". "off" instead
+	// disables thinking outright via chat_template_kwargs
+	// {"enable_thinking": false} — the same mechanism NoThink gives the
+	// chooser — for when even "low" still reasons too long on a big
+	// real-run prompt. Defaults to "medium" in NewLLMPlanner;
+	// POKEPILOT_LLM_REASONING_EFFORT overrides it.
 	ReasoningEffort string
 
 	// MaxTokens caps one reply's completion tokens. Zero means
@@ -798,7 +802,16 @@ func (p *LLMPlanner) askPlan(obs Observation, offered []Objective, reason, feedb
 	if timeout < strategicTimeout {
 		timeout = strategicTimeout
 	}
-	return p.askRequest(system, user, "objective_plan", planSchema, false, p.ReasoningEffort, maxTokens, strategicRetryTokens, timeout, p.StrategicPromptHash(), temperature, maxTokensFactor)
+	// "off" is the same escape hatch the chooser already has: disable
+	// thinking outright via the chat-template argument instead of asking
+	// the reasoning_effort field to shrink it. reasoning_effort is meaningless
+	// once thinking is off, so it is not sent alongside enable_thinking:false.
+	strategistNoThink := p.ReasoningEffort == "off"
+	effort := p.ReasoningEffort
+	if strategistNoThink {
+		effort = ""
+	}
+	return p.askRequest(system, user, "objective_plan", planSchema, strategistNoThink, effort, maxTokens, strategicRetryTokens, timeout, p.StrategicPromptHash(), temperature, maxTokensFactor)
 }
 
 func (p *LLMPlanner) askRequest(system, user, schemaName string, schema map[string]any, noThink bool, reasoningEffort string, baseMaxTokens, retryCap int, timeout time.Duration, promptHash string, temperature *float64, maxTokensFactor int) (chatResult, error) {

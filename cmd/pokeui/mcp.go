@@ -50,7 +50,7 @@ type mcpStartRunInput struct {
 	// Omitting the field entirely is a distinct broken path on this
 	// server's llama.cpp build (see agent.LLMPlanner.ReasoningEffort) —
 	// this option lets an operator dial it without redeploying.
-	ReasoningEffort string `json:"reasoning_effort,omitempty" jsonschema:"strategist reasoning effort: low, medium, high, or auto (endpoint default)"`
+	ReasoningEffort string `json:"reasoning_effort,omitempty" jsonschema:"strategist reasoning effort: low, medium, high, off (thinking disabled outright), or auto (endpoint default)"`
 }
 
 type mcpStartRunOutput struct {
@@ -227,9 +227,9 @@ func (c *mcpControl) startRun(ctx context.Context, _ *mcp.CallToolRequest, in mc
 	}
 	reasoningEffort := strings.ToLower(strings.TrimSpace(in.ReasoningEffort))
 	switch reasoningEffort {
-	case "", "auto", "low", "medium", "high":
+	case "", "auto", "low", "medium", "high", "off":
 	default:
-		return nil, mcpStartRunOutput{}, fmt.Errorf("reasoning_effort must be low, medium, high, or auto")
+		return nil, mcpStartRunOutput{}, fmt.Errorf("reasoning_effort must be low, medium, high, off, or auto")
 	}
 	if reasoningEffort == "auto" {
 		reasoningEffort = ""
