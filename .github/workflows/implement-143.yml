@@ -1,0 +1,43 @@
+name: Implement issue 143
+
+on:
+  push:
+    branches: [codex/issue-143-persistent-planning]
+
+permissions:
+  contents: write
+
+jobs:
+  implement:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/issue-143-persistent-planning
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Apply implementation
+        run: python3 implement_143.py
+      - name: Format and verify
+        env:
+          POKEMON_RED_ROM: ""
+        run: |
+          gofmt -w agent/plan.go agent/plan_test.go agent/memory_plan_test.go agent/memory.go agent/llm.go agent/llm_plan_test.go agent/failover.go agent/run.go agent/strategy.go agent/run_plan_test.go farm/spec.go cmd/pokepilot/stats.go cmd/pokepilot/farm.go cmd/badgerun/main.go emu/watch.go
+          git diff --check
+          go mod download
+          git diff --exit-code -- go.mod go.sum
+          go vet ./...
+          go test -short -count=1 ./...
+          go test -race -short -count=1 ./...
+      - name: Commit verified implementation
+        run: |
+          rm implement_143.py .github/workflows/implement-143.yml
+          git add -A
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "planner: add persistent strategist and replan loop (#143)"
+          git push origin HEAD:codex/issue-143-persistent-planning
