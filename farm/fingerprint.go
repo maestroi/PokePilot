@@ -15,7 +15,7 @@ const (
 	// structured failure fingerprint. Changing fingerprint semantics requires a
 	// new version rather than silently changing the meaning of an old digest.
 	FailureIdentityVersion = 1
-	failureDetailPrefix     = "failure-id:"
+	failureDetailPrefix    = "failure-id:"
 )
 
 // FailureObjective is the portable, planner-selected operation that failed.
@@ -66,17 +66,17 @@ type FailureProgressFact struct {
 // failure. Raw RAM addresses, Red map bytes and diagnostic prose never enter
 // the canonical identity.
 type FailureState struct {
-	Location     string                `json:"location"`
-	X            uint8                 `json:"x"`
-	Y            uint8                 `json:"y"`
-	Controllable bool                  `json:"controllable"`
-	InBattle     bool                  `json:"in_battle"`
-	Money        uint32                `json:"money"`
-	Party        []FailurePartyMember  `json:"party,omitempty"`
+	Location     string                 `json:"location"`
+	X            uint8                  `json:"x"`
+	Y            uint8                  `json:"y"`
+	Controllable bool                   `json:"controllable"`
+	InBattle     bool                   `json:"in_battle"`
+	Money        uint32                 `json:"money"`
+	Party        []FailurePartyMember   `json:"party,omitempty"`
 	Inventory    []FailureInventoryItem `json:"inventory,omitempty"`
-	Badges       []string              `json:"badges,omitempty"`
-	Capabilities []FailureCapability   `json:"capabilities,omitempty"`
-	Progress     []FailureProgressFact `json:"progress,omitempty"`
+	Badges       []string               `json:"badges,omitempty"`
+	Capabilities []FailureCapability    `json:"capabilities,omitempty"`
+	Progress     []FailureProgressFact  `json:"progress,omitempty"`
 }
 
 // FailureIdentity is the logical defect identity. Build/revision is
