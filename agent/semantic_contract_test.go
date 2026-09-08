@@ -11,7 +11,6 @@ func TestPlannerContractUsesSemanticIDs(t *testing.T) {
 	objective := reflect.TypeOf(Objective{})
 	for field, want := range map[string]reflect.Type{
 		"Place":   reflect.TypeOf(PlaceID("")),
-		"Starter": reflect.TypeOf(SpeciesID("")),
 		"Species": reflect.TypeOf(SpeciesID("")),
 		"Item":    reflect.TypeOf(ItemID("")),
 	} {
