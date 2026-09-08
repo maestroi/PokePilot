@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
@@ -9,13 +8,6 @@ import (
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/skill"
 )
-
-// objectiveFrameBudget is the emergency guard for one synchronous objective.
-// Most low-level waits are hundreds or thousands of frames and a journey is
-// already bounded to 20 engagements; half a million frames leaves generous
-// room for legitimate long travel/training while ensuring a broken inner loop
-// returns control to Run instead of leaving a farm worker on one round forever.
-const objectiveFrameBudget uint64 = 500_000
 
 // offerWithTMHM extends the ordinary factual objective menu with owned
 // machines that the ROM says a party member can learn and the move-set policy
@@ -67,18 +59,11 @@ func tmhmDecisionNote(machine rom.Machine, decision skill.TMHMDecision) string {
 		name, machine.Move, semantics, decision.PartySlot, decision.BeforeScore, decision.AfterScore, placement)
 }
 
-// normalizeObjectiveBoundary establishes the control invariant shared by the
-// start and finish of every objective transaction. It may perform only
-// semantically reversible cleanup: page ordinary text and back out of a menu
-// whose meaning is unambiguously "back". It never answers a gameplay choice,
-// starts/finishes a battle, or guesses through an unknown non-controllable
-// state. Those belong to the skill that encountered them.
-//
-// Keeping this rule symmetric is important. Cleanup after Execute attributes a
-// leaked menu/dialogue to the objective that produced it, before the planner is
-// allowed to choose something else. The start check then becomes an invariant
-// guard (and a compatibility path for old/resumed checkpoints), not the normal
-// owner of previous-objective recovery.
+// normalizeObjectiveBoundary is Pokémon Red's implementation of the portable
+// boundary contract. It may perform only semantically reversible cleanup: page
+// ordinary text and back out of a menu whose meaning is unambiguously "back".
+// It never answers a gameplay choice, starts/finishes a battle, or guesses
+// through an unknown non-controllable state.
 func normalizeObjectiveBoundary(m *emu.Emu) error {
 	const maxPasses = 4
 	for pass := 0; pass < maxPasses; pass++ {
@@ -120,78 +105,13 @@ func normalizeObjectiveBoundary(m *emu.Emu) error {
 	return fmt.Errorf("%w: cleanup did not converge after %d passes", ErrObjectiveBoundaryDirty, maxPasses)
 }
 
+// These aliases remain for existing boundary-focused tests and checkpoint
+// compatibility. Runtime execution calls the same implementation through the
+// Red adapter, so start and finish use one invariant.
 func prepareObjectiveBoundary(m *emu.Emu) error {
 	return normalizeObjectiveBoundary(m)
 }
 
 func settleObjectiveBoundary(m *emu.Emu) error {
 	return normalizeObjectiveBoundary(m)
-}
-
-// objectiveBoundaryError combines execution and finish-boundary failures
-// without losing either typed error identity. If execution itself was
-// successful, a dirty finish is a postcondition failure owned by the objective
-// that just ran — never by whatever the planner might pick next.
-func objectiveBoundaryError(o Objective, primary, boundary error) error {
-	if boundary == nil {
-		return primary
-	}
-	if primary != nil {
-		combined := errors.Join(primary, fmt.Errorf("objective left invalid boundary: %w", boundary))
-		return fmt.Errorf("agent: %s: %w", o, combined)
-	}
-	return fmt.Errorf("agent: %s: objective postcondition: %w", o, boundary)
-}
-
-// executeObjective is Run's synchronous objective transaction boundary. It
-// normalizes the start, executes one planner-selected action under an absolute
-// frame deadline, then normalizes/verifies the finish before returning control
-// to Run. The ObjectiveResult produced by Execute is preserved through this
-// wrapper instead of being reconstructed from the error afterwards.
-func executeObjective(m *emu.Emu, romData []byte, o Objective) (result ObjectiveResult, retErr error) {
-	result.Objective = o
-	deadline := m.FrameCount() + objectiveFrameBudget
-	primary := m.WithFrameDeadline(deadline, func() error {
-		var err error
-		result, err = executeObjectiveUnbounded(m, romData, o)
-		return err
-	})
-	if errors.Is(primary, emu.ErrFrameDeadline) {
-		primary = fmt.Errorf("agent: %s: objective frame watchdog: %w", o, primary)
-		if ferr := captureObjectiveFailure(m, o, primary); ferr != nil {
-			fmt.Printf("  ram forensics: %v\n", ferr)
-		}
-	}
-
-	boundary := settleObjectiveBoundary(m)
-	retErr = objectiveBoundaryError(o, primary, boundary)
-	if boundary != nil {
-		// A dirty finish is stronger than a semantic blocked result returned by
-		// the skill: the planner must never receive an unsettled emulator.
-		result.Outcome = ""
-	}
-	result = finalizeObjectiveResult(o, result, Observe(m, romData), retErr)
-	if primary == nil && boundary != nil {
-		// Execute captured nothing because it returned success; preserve the
-		// actual dirty finish that violated the objective transaction.
-		if ferr := captureObjectiveFailure(m, o, retErr); ferr != nil {
-			fmt.Printf("  ram forensics: %v\n", ferr)
-		}
-	}
-	return result, retErr
-}
-
-// executeObjectiveUnbounded contains the ordinary dispatch. It is called only
-// through executeObjective so every planner-selected action shares the same
-// start invariant, finish invariant, and frame watchdog.
-func executeObjectiveUnbounded(m *emu.Emu, romData []byte, o Objective) (ObjectiveResult, error) {
-	if err := prepareObjectiveBoundary(m); err != nil {
-		retErr := fmt.Errorf("agent: %s: objective start invariant: %w", o, err)
-		if ferr := captureObjectiveFailure(m, o, retErr); ferr != nil {
-			fmt.Printf("  ram forensics: %v\n", ferr)
-		}
-		result := finalizeObjectiveResult(o, ObjectiveResult{Objective: o}, Observe(m, romData), retErr)
-		return result, retErr
-	}
-	return Execute(m, romData, o)
 }
