@@ -29,6 +29,9 @@ type ObjectiveResult struct {
 	Objective  Objective           `json:"objective"`
 	Outcome    Outcome             `json:"outcome"`
 	Summary    string              `json:"summary,omitempty"`
+	Cause      FailureCauseID      `json:"cause,omitempty"`
+	CauseContext []string          `json:"cause_context,omitempty"`
+	Initial    *FailureState       `json:"initial,omitempty"`
 	Final      Observation         `json:"final"`
 	Travel     *skill.TravelResult `json:"travel,omitempty"`
 	Train      *skill.TrainResult  `json:"train,omitempty"`
@@ -78,6 +81,13 @@ func finalizeObjectiveResult(o Objective, result ObjectiveResult, final Observat
 		}
 	} else if result.Outcome == "" || result.Outcome == OutcomeCompleted {
 		result.Outcome = classifyObjectiveOutcome(o, err, final)
+	}
+	if err != nil {
+		result.Cause, result.CauseContext = failureCauseFor(err)
+	} else if result.Outcome != OutcomeCompleted && result.Cause == "" {
+		// A skill may return an explicit semantic outcome without a low-level
+		// error. Keep it distinguishable without inventing error prose.
+		result.Cause = FailureCauseID("outcome:" + string(result.Outcome))
 	}
 	result.Summary = outcomeSummary(o, result.Outcome, final, err)
 	return result
