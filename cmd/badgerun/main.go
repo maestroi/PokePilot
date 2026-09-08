@@ -367,6 +367,23 @@ func (b *badgePlanner) NextRetry(obs agent.Observation, offered []agent.Objectiv
 	return b.inner.NextRetry(obs, offered, r)
 }
 
+func (b *badgePlanner) Strategize(obs agent.Observation, offered []agent.Objective, reason string) (agent.Plan, error) {
+	return b.StrategizeRetry(obs, offered, reason, agent.Retry{})
+}
+
+func (b *badgePlanner) StrategizeRetry(obs agent.Observation, offered []agent.Objective, reason string, r agent.Retry) (agent.Plan, error) {
+	b.calls++
+	if obs.BlackedOut && !b.sawBlackout {
+		b.blackouts++
+	}
+	b.sawBlackout = obs.BlackedOut
+	if b.framesToBadge == 0 && hasBadge(obs, b.badge) {
+		b.framesToBadge = b.m.FrameCount()
+		return agent.Plan{}, agent.ErrDone
+	}
+	return b.inner.StrategizeRetry(obs, offered, reason, r)
+}
+
 func (b *badgePlanner) Next(obs agent.Observation, offered []agent.Objective) (agent.Objective, error) {
 	return b.NextRetry(obs, offered, agent.Retry{})
 }

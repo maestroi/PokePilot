@@ -162,6 +162,12 @@ const maxReplyTokens = 512
 // reply from eating the request timeout.
 const maxRetryTokens = 8192
 
+const (
+	strategicReplyTokens = 8192
+	strategicRetryTokens = 32768
+	strategicTimeout     = 2 * time.Minute
+)
+
 // Usage reports the tokens this planner's model calls have spent, summed
 // over EVERY call including rejected re-asks: the usage is folded in right
 // after each ask returns, before the reply is verified, so a re-ask costs a
@@ -200,6 +206,17 @@ func (p *LLMPlanner) PromptHash() string {
 		return "" // choiceSchema is static plain data; this cannot happen
 	}
 	return PromptHash(llmSystemPrompt, p.Goal, p.ExtraSystem, string(schema))
+}
+
+// StrategicPromptHash is the comparability marker for the strategist prompt.
+// It is deliberately separate from PromptHash because the two tiers have
+// different instructions and reply schemas.
+func (p *LLMPlanner) StrategicPromptHash() string {
+	schema, err := json.Marshal(planSchema)
+	if err != nil {
+		return ""
+	}
+	return PromptHash(strategicSystemPrompt, p.Goal, p.ExtraSystem, string(schema))
 }
 
 // NewLLMPlanner returns an LLMPlanner with the defaults, overridden by
@@ -331,6 +348,63 @@ func (p *LLMPlanner) NextRetry(obs Observation, offered []Objective, r Retry) (O
 	}
 	picked = o.String()
 	return o, nil
+}
+
+// Strategize asks the same endpoint for an ordered, bounded plan. Thinking is
+// intentionally enabled for this request even when the cheap chooser runs
+// with NoThink=true, and the strategist receives a larger completion/time
+// budget so a reasoning block cannot make planning unusable by construction.
+func (p *LLMPlanner) Strategize(obs Observation, offered []Objective, reason string) (Plan, error) {
+	return p.StrategizeRetry(obs, offered, reason, Retry{})
+}
+
+func (p *LLMPlanner) StrategizeRetry(obs Observation, offered []Objective, reason string, r Retry) (Plan, error) {
+	if len(offered) == 0 {
+		return Plan{}, fmt.Errorf("agent: strategist: nothing was offered")
+	}
+	start := time.Now()
+	res, err := p.askPlan(obs, offered, reason, r.Feedback, r.Temperature, r.MaxTokensFactor)
+	took := time.Since(start)
+	if err != nil {
+		return Plan{}, err
+	}
+	reply := strings.TrimSpace(res.Content)
+	if res.Usage != nil {
+		p.Health.PromptTokens += res.Usage.PromptTokens
+		p.Health.CompletionTokens += res.Usage.CompletionTokens
+	}
+	if p.Log != nil {
+		usage := ""
+		if res.Usage != nil {
+			usage = fmt.Sprintf(", tokens %d prompt/%d completion", res.Usage.PromptTokens, res.Usage.CompletionTokens)
+		}
+		fmt.Fprintf(p.Log, "  strategist: %d offered, %s%s, reply %q\n", len(offered), took.Round(10*time.Millisecond), usage, snippet([]byte(reply)))
+	}
+	if res.Model != "" && res.Model != p.Model {
+		p.Health.Rejected++
+		return Plan{}, fmt.Errorf("%w: requested %q but %q answered", ErrModelMismatch, p.Model, res.Model)
+	}
+	if res.Model == "" && !p.modelOmittedLogged {
+		p.modelOmittedLogged = true
+		if p.Log != nil {
+			fmt.Fprintln(p.Log, "  llm: server did not report a model field; cannot verify which model answered")
+		}
+	}
+	if res.FinishReason != "" && res.FinishReason != "stop" {
+		p.Health.Rejected++
+		return Plan{}, fmt.Errorf("%w: finish_reason %q", ErrNotFinished, res.FinishReason)
+	}
+	var raw Plan
+	if err := json.Unmarshal([]byte(thinkRe.ReplaceAllString(reply, "")), &raw); err != nil {
+		p.Health.Rejected++
+		return Plan{}, fmt.Errorf("agent: strategist: reply is not a plan JSON object: %w", err)
+	}
+	plan, err := validateStrategicPlan(raw, offered, obs.Round)
+	if err != nil {
+		p.Health.Rejected++
+		return Plan{}, err
+	}
+	return plan, nil
 }
 
 // resolveReply turns a raw model reply into an offered objective. A reply
@@ -487,6 +561,41 @@ func llmUserPrompt(obs Observation, offered []Objective) string {
 	return b.String()
 }
 
+const strategicSystemPrompt = `You are the strategic planner for a deterministic game-playing runtime. Build a short multi-round plan toward the run goal from the current Observation. Deterministic code owns legality, navigation, battles, menus, and execution; you only sequence semantic objectives. Every plan step MUST be copied exactly as an objective sentence from the current Offered objectives. Never use menu indexes, never invent an unavailable action, and never infer that a prerequisite is satisfied unless Observation says so. RouteBlockages and Requirements are explicit evidence for prerequisite planning. Reply with ONLY JSON: {"goal":"one short strategic purpose","steps":["exact objective sentence", ...]}. Use at most 10 steps. Do not explain.`
+
+func (p *LLMPlanner) strategicSystemMessage() string {
+	s := strategicSystemPrompt + p.ExtraSystem
+	if p.Goal != "" {
+		s = "Your goal: " + p.Goal + "\n\n" + s
+	}
+	return s
+}
+
+func strategicUserPrompt(obs Observation, offered []Objective, reason string) string {
+	obsJSON, err := json.Marshal(obs)
+	if err != nil {
+		obsJSON = []byte("{}")
+	}
+	var b strings.Builder
+	b.WriteString("Replan reason: ")
+	if strings.TrimSpace(reason) == "" {
+		b.WriteString("initial")
+	} else {
+		b.WriteString(reason)
+	}
+	b.WriteString("\nObservation:\n")
+	b.Write(obsJSON)
+	b.WriteString("\n\nOffered objectives (copy the sentence after the number, not the number):\n")
+	for i, o := range offered {
+		if o.Note != "" {
+			fmt.Fprintf(&b, "%d: %s  %s\n", i+1, o, o.Note)
+		} else {
+			fmt.Fprintf(&b, "%d: %s\n", i+1, o)
+		}
+	}
+	return b.String()
+}
+
 type chatMessage struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
@@ -568,6 +677,20 @@ var choiceSchema = map[string]any{
 	"required": []string{"choice"},
 }
 
+var planSchema = map[string]any{
+	"type": "object",
+	"properties": map[string]any{
+		"goal": map[string]any{"type": "string"},
+		"steps": map[string]any{
+			"type":     "array",
+			"minItems": 1,
+			"maxItems": MaxPlanSteps,
+			"items":    map[string]any{"type": "string"},
+		},
+	},
+	"required": []string{"goal", "steps"},
+}
+
 // chatChoice carries the message plus finish_reason: "length" means the
 // reply was cut off mid-generation, and a truncated JSON that still parses
 // is a silent wrong answer, so Next rejects any non-stop reason.
@@ -626,26 +749,48 @@ type chatResult struct {
 // the planner's own budget) are the request-level differences a retry may
 // carry; see NextRetry.
 func (p *LLMPlanner) ask(obs Observation, offered []Objective, feedback string, temperature *float64, maxTokensFactor int) (chatResult, error) {
-	client := p.Client
-	if client == nil {
-		timeout := p.Timeout
-		if timeout <= 0 {
-			timeout = 60 * time.Second
-		}
-		client = &http.Client{Timeout: timeout}
-	}
 	system := p.systemPrompt()
 	user := llmUserPrompt(obs, offered)
 	if feedback != "" {
 		user += "\n\nYour previous reply was rejected: " + feedback +
 			"\nReply again with ONLY a JSON object naming one of the offered objectives and only arguments that apply to it."
 	}
+	maxTokens := p.MaxTokens
+	if maxTokens <= 0 {
+		maxTokens = maxReplyTokens
+	}
+	return p.askRequest(system, user, "objective_choice", choiceSchema, p.NoThink, maxTokens, maxRetryTokens, p.Timeout, p.PromptHash(), temperature, maxTokensFactor)
+}
+
+func (p *LLMPlanner) askPlan(obs Observation, offered []Objective, reason, feedback string, temperature *float64, maxTokensFactor int) (chatResult, error) {
+	system := p.strategicSystemMessage()
+	user := strategicUserPrompt(obs, offered, reason)
+	if feedback != "" {
+		user += "\n\nYour previous plan reply was rejected: " + feedback +
+			"\nReturn ONLY corrected plan JSON, using exact objective sentences from the offered list."
+	}
+	maxTokens := p.MaxTokens
+	if maxTokens < strategicReplyTokens {
+		maxTokens = strategicReplyTokens
+	}
+	timeout := p.Timeout
+	if timeout < strategicTimeout {
+		timeout = strategicTimeout
+	}
+	return p.askRequest(system, user, "objective_plan", planSchema, false, maxTokens, strategicRetryTokens, timeout, p.StrategicPromptHash(), temperature, maxTokensFactor)
+}
+
+func (p *LLMPlanner) askRequest(system, user, schemaName string, schema map[string]any, noThink bool, baseMaxTokens, retryCap int, timeout time.Duration, promptHash string, temperature *float64, maxTokensFactor int) (chatResult, error) {
+	client := p.Client
+	if client == nil {
+		if timeout <= 0 {
+			timeout = 60 * time.Second
+		}
+		client = &http.Client{Timeout: timeout}
+	}
 	if p.PromptLog != nil {
-		// The prompt hash rides on EVERY entry rather than a one-off header
-		// line: prompts.txt is read by tailing and grepping it, and a header
-		// scrolled past a thousand rounds ago is the runnote problem again.
 		fmt.Fprintf(p.PromptLog, "=== prompt (model %s, prompt %s) ===\n[system]\n%s\n[user]\n%s\n",
-			p.Model, p.PromptHash(), system, user)
+			p.Model, promptHash, system, user)
 	}
 	transportErr := func(format string, args ...any) (chatResult, error) {
 		p.Health.Transport++
@@ -655,19 +800,16 @@ func (p *LLMPlanner) ask(obs Observation, offered []Objective, feedback string, 
 	if temperature != nil {
 		temp = *temperature
 	}
-	maxTokens := p.MaxTokens
-	if maxTokens <= 0 {
-		maxTokens = maxReplyTokens
-	}
+	maxTokens := baseMaxTokens
 	if maxTokensFactor > 1 {
-		if mt := maxTokens * maxTokensFactor; mt < maxRetryTokens {
+		if mt := maxTokens * maxTokensFactor; mt < retryCap {
 			maxTokens = mt
 		} else {
-			maxTokens = maxRetryTokens
+			maxTokens = retryCap
 		}
 	}
 	var templateKwargs map[string]any
-	if p.NoThink {
+	if noThink {
 		templateKwargs = map[string]any{"enable_thinking": false}
 	}
 	reqBody, err := json.Marshal(chatRequest{
@@ -681,7 +823,7 @@ func (p *LLMPlanner) ask(obs Observation, offered []Objective, feedback string, 
 		ChatTemplateKwargs: templateKwargs,
 		ResponseFormat: &responseFormat{
 			Type:       "json_schema",
-			JSONSchema: &jsonSchema{Name: "objective_choice", Strict: false, Schema: choiceSchema},
+			JSONSchema: &jsonSchema{Name: schemaName, Strict: false, Schema: schema},
 		},
 	})
 	if err != nil {
@@ -698,9 +840,6 @@ func (p *LLMPlanner) ask(obs Observation, offered []Objective, feedback string, 
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		// A timeout lands here as a context deadline error; it counts as a
-		// transport failure, which is what it is — the POKEPILOT_LLM_TIMEOUT
-		// comment "was killing runs spuriously" is this counter in disguise.
 		return transportErr("POST %s: %w", url, err)
 	}
 	defer resp.Body.Close()

@@ -191,6 +191,9 @@ function renderStats(s) {
     row('round', s.round + (s.rounds_left ? ' (' + s.rounds_left + ' left)' : '')) +
     row('repeat picks', s.repeats + ' of ' + s.rounds, s.rounds > 3 && s.repeats * 2 >= s.rounds) +
     row('think', s.last_seconds.toFixed(1) + 's / ' + s.avg_seconds.toFixed(1) + 's avg') +
+    row('tiers', (s.strategic_calls || 0) + ' strategic / ' + (s.fast_calls || 0) + ' fast / ' + (s.plan_executions || 0) + ' zero-call') +
+    row('plan', s.plan_goal ? (Math.min((s.plan_step || 0) + 1, (s.plan_steps ? s.plan_steps.length : 0)) + '/' + (s.plan_steps ? s.plan_steps.length : 0) + ' ' + s.plan_goal) : 'none') +
+    row('replan', s.last_replan_reason || '—') +
     row('offered', s.avg_offered.toFixed(1) + ' avg') +
     row('tokens', s.prompt_tokens + ' / ' + s.completion_tokens) +
     row('rejected', s.rejected, s.rejected > 0) +

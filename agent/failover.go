@@ -12,6 +12,8 @@ type LLMCall struct {
 	Observation Observation
 	Offered     int
 	Objective   Objective
+	Plan        Plan
+	Strategic   bool
 	Err         error
 	Duration    time.Duration
 }
@@ -53,6 +55,62 @@ func (p *FailoverPlanner) Next(obs Observation, offered []Objective) (Objective,
 
 func (p *FailoverPlanner) NextRetry(obs Observation, offered []Objective, r Retry) (Objective, error) {
 	return p.ask(obs, offered, &r)
+}
+
+func (p *FailoverPlanner) Strategize(obs Observation, offered []Objective, reason string) (Plan, error) {
+	return p.askPlan(obs, offered, reason, nil)
+}
+
+func (p *FailoverPlanner) StrategizeRetry(obs Observation, offered []Objective, reason string, r Retry) (Plan, error) {
+	return p.askPlan(obs, offered, reason, &r)
+}
+
+func (p *FailoverPlanner) askPlan(obs Observation, offered []Objective, reason string, retry *Retry) (Plan, error) {
+	active := p.active
+	p.syncContext(active)
+	plan, err, transport := p.callPlan(active, obs, offered, reason, retry)
+	if transport && active == p.Primary && p.Fallback != nil {
+		p.failovers++
+		p.active = p.Fallback
+		p.backend = "fallback"
+		if p.Primary.Log != nil {
+			fmt.Fprintf(p.Primary.Log,
+				"  llm route: primary %s at %s had a strategist transport failure; pinning fallback %s at %s for the rest of the run\n",
+				p.Primary.Model, p.Primary.BaseURL, p.Fallback.Model, p.Fallback.BaseURL)
+		}
+		active = p.Fallback
+		p.syncContext(active)
+		plan, err, transport = p.callPlan(active, obs, offered, reason, retry)
+	}
+	if err != nil && transport {
+		return Plan{}, fmt.Errorf("%w: %v", ErrTransport, err)
+	}
+	return plan, err
+}
+
+func (p *FailoverPlanner) callPlan(active *LLMPlanner, obs Observation, offered []Objective, reason string, retry *Retry) (Plan, error, bool) {
+	beforeTransport := active.Health.Transport
+	start := time.Now()
+	var (
+		plan Plan
+		err  error
+	)
+	if retry == nil {
+		plan, err = active.Strategize(obs, offered, reason)
+	} else {
+		plan, err = active.StrategizeRetry(obs, offered, reason, *retry)
+	}
+	if p.OnCall != nil {
+		p.OnCall(LLMCall{
+			Observation: obs,
+			Offered:     len(offered),
+			Plan:        plan,
+			Strategic:   true,
+			Err:         err,
+			Duration:    time.Since(start),
+		})
+	}
+	return plan, err, active.Health.Transport > beforeTransport
 }
 
 func (p *FailoverPlanner) ask(obs Observation, offered []Objective, retry *Retry) (Objective, error) {

@@ -152,6 +152,18 @@ type LLMStats struct {
 	Intent    string `json:"intent"`
 	IntentAge int    `json:"intent_age"`
 
+	StrategicCalls   int            `json:"strategic_calls,omitempty"`
+	FastCalls        int            `json:"fast_calls,omitempty"`
+	PlanExecutions   int            `json:"plan_executions,omitempty"`
+	StepsSkipped     int            `json:"steps_skipped,omitempty"`
+	PlanGoal         string         `json:"plan_goal,omitempty"`
+	PlanSteps        []string       `json:"plan_steps,omitempty"`
+	PlanStep         int            `json:"plan_step,omitempty"`
+	PlanRound        int            `json:"plan_round,omitempty"`
+	LastReplanReason string         `json:"last_replan_reason,omitempty"`
+	ReplanReasons    map[string]int `json:"replan_reasons,omitempty"`
+	StrategicSeconds float64        `json:"strategic_seconds,omitempty"`
+
 	// Goal* is present only when LLMPlanner.Goal opted into the structured
 	// deterministic syntax. Summary is the human/model-facing status; the
 	// numeric fields make dashboards able to render progress without parsing

@@ -100,9 +100,7 @@ func newStatsPlanner(profile, goal string, m *emu.Emu, push func(any), snap *hea
 		baseExtraSystem: inner.ExtraSystem,
 	}
 	s.router = agent.NewFailoverPlanner(inner, fallback)
-	s.router.OnCall = func(call agent.LLMCall) {
-		s.record(call.Observation, call.Offered, call.Objective, call.Err, call.Duration)
-	}
+	s.router.OnCall = s.recordCall
 	return s
 }
 
@@ -139,6 +137,31 @@ func (s *statsPlanner) ask(obs agent.Observation, offered []agent.Objective, ret
 		return s.router.Next(obs, offered)
 	}
 	return s.router.NextRetry(obs, offered, *retry)
+}
+
+func (s *statsPlanner) Strategize(obs agent.Observation, offered []agent.Objective, reason string) (agent.Plan, error) {
+	s.prepareRunContext(obs)
+	return s.router.Strategize(obs, offered, reason)
+}
+
+func (s *statsPlanner) StrategizeRetry(obs agent.Observation, offered []agent.Objective, reason string, r agent.Retry) (agent.Plan, error) {
+	s.prepareRunContext(obs)
+	return s.router.StrategizeRetry(obs, offered, reason, r)
+}
+
+func (s *statsPlanner) ObservePlanning(p agent.PlanningStats) {
+	s.stats.PlanGoal = p.Plan.Goal
+	s.stats.PlanSteps = append([]string(nil), p.Plan.Steps...)
+	s.stats.PlanStep = p.Plan.Step
+	s.stats.PlanRound = p.Plan.Round
+	s.stats.PlanExecutions = p.PlanExecutions
+	s.stats.StepsSkipped = p.StepsSkipped
+	s.stats.LastReplanReason = p.LastReplanReason
+	s.stats.ReplanReasons = make(map[string]int, len(p.ReplanReasons))
+	for k, v := range p.ReplanReasons {
+		s.stats.ReplanReasons[k] = v
+	}
+	s.publish()
 }
 
 // prepareRunContext is the one per-ask seam for run-derived context. The
@@ -207,6 +230,11 @@ func appendSystemNote(base, note string) string {
 // the round is the same one, asked again. On failover the router calls this
 // once for the failed primary and once for the fallback.
 func (s *statsPlanner) record(obs agent.Observation, offered int, o agent.Objective, err error, took time.Duration) {
+	s.recordCall(agent.LLMCall{Observation: obs, Offered: offered, Objective: o, Err: err, Duration: took})
+}
+
+func (s *statsPlanner) recordCall(call agent.LLMCall) {
+	obs, offered, o, err, took := call.Observation, call.Offered, call.Objective, call.Err, call.Duration
 	s.stats.Calls++
 	s.offered += offered
 	s.elapsed += took
@@ -222,6 +250,17 @@ func (s *statsPlanner) record(obs agent.Observation, offered int, o agent.Object
 	s.stats.PromptTokens, s.stats.CompletionTokens = h.PromptTokens, h.CompletionTokens
 	s.stats.Transport, s.stats.Fallbacks = h.Transport, h.Fallbacks
 
+	if call.Strategic {
+		s.stats.StrategicCalls++
+		s.stats.StrategicSeconds += took.Seconds()
+		if err != nil {
+			s.stats.Rejected++
+		}
+		s.publish()
+		return
+	}
+
+	s.stats.FastCalls++
 	if err != nil {
 		s.stats.Rejected++
 	} else {
