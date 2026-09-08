@@ -64,11 +64,11 @@ func (w *Wall) issueDispositionForKey(key string) (IssueLink, issueOccurrenceDis
 	return link, classifyIssueOccurrence(link)
 }
 
-// quarantineOccurrence settles an occurrence without sending it to Agent
-// Orchestrator. The finish dump/checkpoint remain the immutable historical
-// evidence; the persisted outbox marker makes restart rescans idempotent.
-// Repeating the same run/attempt/fingerprint through both the generic and
-// structured reporters still counts as one quarantined sighting.
+// quarantineOccurrence settles one reporter record without creating new
+// actionable work. The underlying run dump/checkpoint is the immutable
+// occurrence evidence. Both the generic terminal-run reporter and the richer
+// objective reporter can observe the same run/attempt/fingerprint, so the local
+// quarantine counter is de-duplicated across their outbox records.
 func (w *Wall) quarantineOccurrence(e outboxEntry, fingerprint, build, note string) bool {
 	now := time.Now().Unix()
 	w.mu.Lock()
