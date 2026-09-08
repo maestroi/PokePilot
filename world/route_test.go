@@ -131,16 +131,94 @@ func TestFindRouteAvoiding(t *testing.T) {
 	}
 }
 
-// TestFindRouteAvoidingReEntersTheStartMap is the Route 2 shape, and the
-// reason this search is keyed by edge and bars only the first hop.
-//
-// A ledge splits Route 2 (0x0D) across its width. Its northern connection
-// to Pewter (0x02) is unwalkable from the southern landing tile, so the
-// caller reports it — but the only walkable route ENDS on that very edge,
-// after a detour through Viridian Forest (0x33) that re-enters 0x0D in the
-// northern band. A search keyed by map returns simple paths and can never
-// express it; one that bars the reported edge everywhere rules out its own
-// answer. Measured 2026-08-27: this route planning failed before any walk.
+// A first-hop ban is about the state the player is standing in, not about
+// whether an edge has been seen. Entering a dead-end room and coming straight
+// back to the SAME component must not create a fake new chance to take the
+// banned edge. That is the generic shape behind the Pewter Museum loop.
+func TestFindRouteAtDoesNotUseSameComponentCycleToClearFirstHopBan(t *testing.T) {
+	direct := Edge{Kind: EdgeConnection, From: 1, To: 3}
+	intoRoom := Edge{Kind: EdgeWarp, From: 1, To: 2, WarpX: 1, WarpY: 0}
+	outOfRoom := Edge{Kind: EdgeWarp, From: 2, To: 1, WarpX: 0, WarpY: 0}
+	g := &Graph{
+		Edges: map[uint8][]Edge{
+			1: {direct, intoRoom},
+			2: {outOfRoom},
+			3: nil,
+		},
+		componentAware: true,
+		comps: map[uint8][][]int{
+			1: {{1}},
+			2: {{1}},
+			3: {{1}},
+		},
+		exitComps: map[Edge][]int{
+			direct:    {1},
+			intoRoom:  {1},
+			outOfRoom: {1},
+		},
+		entryComps: map[Edge][]int{
+			direct:    {1},
+			intoRoom:  {1},
+			outOfRoom: {1}, // returns to the exact component we started in
+		},
+	}
+
+	_, err := FindRouteAt(g, 1, 3, 0, 0, map[Edge]bool{direct: true})
+	if !errors.Is(err, ErrNoRoute) {
+		t.Fatalf("err = %v, want ErrNoRoute; a same-component room cycle must not clear the first-hop ban", err)
+	}
+}
+
+// Re-entering the same MAP is still required when the transition lands in a
+// different walkable component. This is the semantic Route 2/Viridian Forest
+// case: map identity alone is too coarse, while edge identity is too loose.
+func TestFindRouteAtReentersMapWhenComponentChanges(t *testing.T) {
+	north := Edge{Kind: EdgeConnection, From: 1, To: 3}
+	intoDetour := Edge{Kind: EdgeWarp, From: 1, To: 2, WarpX: 0, WarpY: 0}
+	outOfDetour := Edge{Kind: EdgeWarp, From: 2, To: 1, WarpX: 0, WarpY: 0}
+	g := &Graph{
+		Edges: map[uint8][]Edge{
+			1: {north, intoDetour},
+			2: {outOfDetour},
+			3: nil,
+		},
+		componentAware: true,
+		comps: map[uint8][][]int{
+			1: {{1, 2}},
+			2: {{1}},
+			3: {{1}},
+		},
+		exitComps: map[Edge][]int{
+			north:       {2},
+			intoDetour:  {1},
+			outOfDetour: {1},
+		},
+		entryComps: map[Edge][]int{
+			north:       {1},
+			intoDetour:  {1},
+			outOfDetour: {2}, // re-enters map 1 on its other component
+		},
+	}
+
+	route, err := FindRouteAt(g, 1, 3, 0, 0, nil)
+	if err != nil {
+		t.Fatalf("FindRouteAt: %v", err)
+	}
+	want := []Edge{intoDetour, outOfDetour, north}
+	if len(route) != len(want) {
+		t.Fatalf("route = %v, want component-changing detour %v", route, want)
+	}
+	for i := range want {
+		if route[i] != want[i] {
+			t.Fatalf("route[%d] = %+v, want %+v (full route %v)", i, route[i], want[i], route)
+		}
+	}
+}
+
+// TestFindRouteAvoidingReEntersTheStartMap is the Route 2 shape, and proves
+// the conservative fallback still permits map re-entry when component data is
+// unavailable. Real BuildGraph routes use the stronger map+component identity
+// tested above.
 func TestFindRouteAvoidingReEntersTheStartMap(t *testing.T) {
 	north := Edge{Kind: EdgeConnection, From: 0x0D, To: 0x02, Dir: 0}
 	intoForest := Edge{Kind: EdgeWarp, From: 0x0D, To: 0x33, WarpX: 15, WarpY: 55}

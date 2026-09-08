@@ -1,7 +1,9 @@
 package agent
 
 import (
+	"errors"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/maestroi/pokepilot/emu"
@@ -10,9 +12,8 @@ import (
 )
 
 // TestPrepareObjectiveBoundaryClosesLeftoverStartMenu covers the class of
-// stall where a failed item/TM action leaves START/ITEM open and the planner
-// has already chosen an overworld objective. The boundary owns no gameplay
-// choice here: B only backs out until Red is controllable again.
+// stall where a failed item/TM action leaves START/ITEM open. Backing out with
+// B is semantically reversible and belongs to objective lifecycle cleanup.
 func TestPrepareObjectiveBoundaryClosesLeftoverStartMenu(t *testing.T) {
 	e := fixture.Load(t, "post_starter")
 	e.Tap(emu.Start, 3, 7)
@@ -33,10 +34,11 @@ func TestPrepareObjectiveBoundaryClosesLeftoverStartMenu(t *testing.T) {
 	}
 }
 
-// TestPrepareObjectiveBoundaryAnswersMuseumGate is the farm death after
-// Travel left Museum 1F's ticket YES/NO up: the next objective used to die
-// on "unanswered choice remains open" before TalkAt/Travel could pay.
-func TestPrepareObjectiveBoundaryAnswersMuseumGate(t *testing.T) {
+// The Museum gate is a gameplay transition owned by Travel/TalkAt, not by the
+// generic objective boundary. A dirty checkpoint with the YES/NO open must be
+// rejected without sending input; otherwise an unrelated next objective can
+// silently buy a ticket on behalf of the objective that leaked it.
+func TestPrepareObjectiveBoundaryDoesNotAnswerMuseumGate(t *testing.T) {
 	path := os.Getenv("REPRO_TALK_STATE")
 	if path == "" {
 		path = "/tmp/r3ray-r53-talk.state"
@@ -63,13 +65,41 @@ func TestPrepareObjectiveBoundaryAnswersMuseumGate(t *testing.T) {
 	if state.DecodeTwoOptionMenu(&mem) == nil {
 		t.Fatal("setup did not leave the museum YES/NO open; the test proves nothing")
 	}
+	beforeFrame := e.FrameCount()
 
-	if err := prepareObjectiveBoundary(e); err != nil {
-		t.Fatalf("prepareObjectiveBoundary: %v", err)
+	err = prepareObjectiveBoundary(e)
+	if err == nil || !strings.Contains(err.Error(), "unanswered choice remains open") {
+		t.Fatalf("prepareObjectiveBoundary err = %v, want unanswered-choice rejection", err)
+	}
+	if got := e.FrameCount(); got != beforeFrame {
+		t.Fatalf("objective boundary stepped %d frames while a choice was open; want zero input", got-beforeFrame)
 	}
 	state.Snapshot(e, &mem)
-	if state.DecodeTwoOptionMenu(&mem) != nil || !state.Controllable(&mem) {
-		t.Fatalf("museum gate still open: choice=%v controllable=%v text=%q",
-			state.DecodeTwoOptionMenu(&mem) != nil, state.Controllable(&mem), state.ScreenText(&mem))
+	if state.DecodeTwoOptionMenu(&mem) == nil {
+		t.Fatal("objective boundary consumed the Museum choice; only Travel/TalkAt may answer it")
+	}
+}
+
+func TestObjectiveBoundaryErrorAttributesDirtyFinishToProducingObjective(t *testing.T) {
+	o := Objective{Kind: KindGoTo, Place: "cerulean city"}
+	boundary := errors.New("unanswered choice remains open")
+	err := objectiveBoundaryError(o, nil, boundary)
+	if !errors.Is(err, boundary) {
+		t.Fatalf("postcondition error lost boundary identity: %v", err)
+	}
+	if !strings.Contains(err.Error(), o.String()) || !strings.Contains(err.Error(), "objective postcondition") {
+		t.Fatalf("dirty finish not attributed to producing objective %q: %v", o.String(), err)
+	}
+}
+
+func TestObjectiveBoundaryErrorPreservesPrimaryFailureIdentity(t *testing.T) {
+	primary := errors.New("typed primary failure")
+	boundary := errors.New("unanswered choice remains open")
+	err := objectiveBoundaryError(Objective{Kind: KindGoTo, Place: "cerulean city"}, primary, boundary)
+	if !errors.Is(err, primary) {
+		t.Fatalf("combined boundary error lost primary typed failure: %v", err)
+	}
+	if !strings.Contains(err.Error(), "objective left invalid boundary") || !strings.Contains(err.Error(), boundary.Error()) {
+		t.Fatalf("combined error lost dirty-boundary evidence: %v", err)
 	}
 }
