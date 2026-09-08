@@ -88,33 +88,36 @@ func normalizeObjectiveBoundary(m *emu.Emu) error {
 			return nil
 		}
 		if state.DecodeBattle(&mem) != nil {
-			return fmt.Errorf("battle still in progress")
+			return fmt.Errorf("%w: battle still in progress", ErrObjectiveBoundaryDirty)
 		}
 		// Check dismissable menus before the generic two-option decoder: a
 		// two-entry bag list has the same cursor/max shape as YES/NO but is
 		// still just a menu that B can safely unwind.
 		if skill.DismissableObjectiveMenu(&mem) {
 			if err := skill.CloseOpenMenuToOverworld(m); err != nil {
-				return fmt.Errorf("close leftover menu: %w", err)
+				return fmt.Errorf("%w: close leftover menu: %v", ErrObjectiveBoundaryDirty, err)
 			}
 			continue
 		}
 		if state.DecodeTwoOptionMenu(&mem) != nil {
-			return fmt.Errorf("unanswered choice remains open")
+			return ErrObjectiveBoundaryChoice
 		}
 		if state.MenuUp(&mem) {
-			return fmt.Errorf("non-dismissable menu remains open")
+			return fmt.Errorf("%w: non-dismissable menu remains open", ErrObjectiveBoundaryDirty)
 		}
 		if state.DecodeDialogue(&mem) != nil {
 			res := skill.RecoverDialogue(m, roundRecoveryBudget)
 			if res.Stop != skill.DialogueRecovered {
-				return fmt.Errorf("leftover dialogue did not recover: %s", recoveryStopName(res.Stop))
+				if res.Stop == skill.DialogueChoiceRequired {
+					return ErrObjectiveBoundaryChoice
+				}
+				return fmt.Errorf("%w: leftover dialogue did not recover: %s", ErrObjectiveBoundaryDirty, recoveryStopName(res.Stop))
 			}
 			continue
 		}
-		return fmt.Errorf("player is not controllable and no recoverable menu or dialogue is open")
+		return fmt.Errorf("%w: player is not controllable and no recoverable menu or dialogue is open", ErrObjectiveBoundaryDirty)
 	}
-	return fmt.Errorf("objective boundary cleanup did not converge after %d passes", maxPasses)
+	return fmt.Errorf("%w: cleanup did not converge after %d passes", ErrObjectiveBoundaryDirty, maxPasses)
 }
 
 func prepareObjectiveBoundary(m *emu.Emu) error {
@@ -126,7 +129,7 @@ func settleObjectiveBoundary(m *emu.Emu) error {
 }
 
 // objectiveBoundaryError combines execution and finish-boundary failures
-// without losing the original typed error identity. If execution itself was
+// without losing either typed error identity. If execution itself was
 // successful, a dirty finish is a postcondition failure owned by the objective
 // that just ran — never by whatever the planner might pick next.
 func objectiveBoundaryError(o Objective, primary, boundary error) error {
@@ -134,7 +137,8 @@ func objectiveBoundaryError(o Objective, primary, boundary error) error {
 		return primary
 	}
 	if primary != nil {
-		return fmt.Errorf("%w; objective left invalid boundary: %v", primary, boundary)
+		combined := errors.Join(primary, fmt.Errorf("objective left invalid boundary: %w", boundary))
+		return fmt.Errorf("agent: %s: %w", o, combined)
 	}
 	return fmt.Errorf("agent: %s: objective postcondition: %w", o, boundary)
 }
