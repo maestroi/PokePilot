@@ -45,6 +45,22 @@ func TestListDoesNotNeedROM(t *testing.T) {
 	}
 }
 
+func TestRunRejectsUnsupportedROMBeforeCreatingOutput(t *testing.T) {
+	root := t.TempDir()
+	romPath := filepath.Join(root, "wrong.gb")
+	if err := os.WriteFile(romPath, []byte("not pokemon red"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(root, "out")
+	err := run(config{romPath: romPath, corpus: filepath.Join(root, "corpus"), profile: "skills", out: out}, &bytes.Buffer{})
+	if err == nil || !strings.Contains(strings.ToLower(err.Error()), "unsupported rom") {
+		t.Fatalf("err = %v, want unsupported ROM", err)
+	}
+	if _, statErr := os.Stat(out); !os.IsNotExist(statErr) {
+		t.Fatalf("qualification output exists despite ROM rejection: %v", statErr)
+	}
+}
+
 func TestVerifyExpectationUsesSemanticBag(t *testing.T) {
 	obs := agent.Observation{Bag: []agent.Item{{Name: "Silph Scope", Quantity: 1}}}
 	if err := verifyExpectation(qualification.Expectation{Kind: "item", Value: "silph scope"}, obs); err != nil {
@@ -86,7 +102,7 @@ func TestQualificationEnvOverridesROMAndDisablesFarm(t *testing.T) {
 }
 
 func TestManifestModelDoesNotIncludeTokenField(t *testing.T) {
-	data, err := jsonForTest(manifest{Model: modelInfo{URL: "http://model", Model: "x"}})
+	data, err := jsonForTest(t, manifest{Model: modelInfo{URL: "http://model", Model: "x"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,11 +152,11 @@ func envMap(env []string) map[string]string {
 	return out
 }
 
-func jsonForTest(v any) ([]byte, error) {
-	path := filepath.Join(os.TempDir(), "pokequal-test-manifest.json")
+func jsonForTest(t *testing.T, v any) ([]byte, error) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "manifest.json")
 	if err := writeJSON(path, v); err != nil {
 		return nil, err
 	}
-	defer os.Remove(path)
 	return os.ReadFile(path)
 }
