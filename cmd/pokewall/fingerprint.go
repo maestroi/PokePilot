@@ -3,12 +3,15 @@ package main
 import (
 	"crypto/sha256"
 	"encoding/hex"
+
+	"github.com/maestroi/pokepilot/farm"
 )
 
 const (
-	outboxPending  = "pending"
-	outboxComplete = "complete"
-	outboxError    = "error"
+	outboxPending     = "pending"
+	outboxComplete    = "complete"
+	outboxError       = "error"
+	outboxQuarantined = "quarantined"
 
 	// Keep enough flight-recorder history to replay a failure from before the
 	// final bad decision. Objective checkpoints are the replay-safe LLM
@@ -45,6 +48,13 @@ type outboxEntry struct {
 }
 
 func failureIdentity(pattern string) (key, fingerprint string) {
+	// New farm runs put a prose-free canonical fingerprint marker in Detail.
+	// Recover it directly so the wall/MCP/issue handoff all share the exact
+	// identity persisted in objective-failures.json. Historical dumps keep the
+	// old normalized-prose SHA fallback below.
+	if key, fingerprint, ok := farm.ParseFailureDetailMarker(pattern); ok {
+		return key, fingerprint
+	}
 	sum := sha256.Sum256([]byte(pattern))
 	h := hex.EncodeToString(sum[:])
 	return h[:16], "sha256:" + h
