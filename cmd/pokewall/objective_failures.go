@@ -113,7 +113,8 @@ func objectiveFailurePattern(f farm.ObjectiveFailure) string {
 	// Keep the existing triage normalizer for volatile coordinates/counts but
 	// add the map AFTER normalization. Map-local navigation bugs are distinct
 	// progression frontiers and should not be merged merely because their
-	// error strings have the same shape.
+	// error strings have the same shape. Version-2 telemetry never uses this
+	// prose path; it carries a canonical FailureIdentity instead.
 	base := normalizeDetail(strings.TrimSpace(f.Objective) + " | " + strings.TrimSpace(f.Error))
 	return fmt.Sprintf("%s | map=%02x", base, f.Map)
 }
@@ -130,16 +131,33 @@ func (w *Wall) reportObjectiveFailure(dump farm.FinishReport, f farm.ObjectiveFa
 	if c == nil {
 		return fmt.Errorf("issue integration is not configured")
 	}
-	pattern := objectiveFailurePattern(f)
-	key, fp := failureIdentity(pattern)
+	key, fp, structured, err := objectiveFailureFingerprint(f)
+	if err != nil {
+		return err
+	}
 	ext := objectiveFailureExternalID(dump.RunID, dump.Attempt, key)
 
 	w.mu.Lock()
-	if existing, ok := w.outbox[ext]; ok && existing.Status == outboxComplete {
-		w.mu.Unlock()
+	existing := w.outbox[ext]
+	prior := w.issueLinks[key]
+	w.mu.Unlock()
+	if existing.Status == outboxComplete || existing.Status == outboxQuarantined {
 		return nil
 	}
-	w.mu.Unlock()
+
+	disposition := occurrenceReport
+	if structured {
+		disposition = classifyIssueOccurrence(prior)
+		if disposition == occurrenceQuarantine {
+			w.quarantineOccurrence(outboxEntry{
+				ExternalID: ext,
+				RunID:      dump.RunID,
+				Attempt:    max(1, dump.Attempt),
+				Key:        key,
+			}, fp, observedObjectiveFailureRevision(dump, f), "equivalent structured fingerprint already has active issue")
+			return nil
+		}
+	}
 
 	severity := "normal"
 	classification := "observed"
@@ -150,28 +168,44 @@ func (w *Wall) reportObjectiveFailure(dump farm.FinishReport, f farm.ObjectiveFa
 		severity = "critical"
 		classification = "progression-blocker"
 	}
+	if disposition == occurrenceRegression {
+		severity = "critical"
+		classification = "regression"
+	}
 
+	observedRevision := observedObjectiveFailureRevision(dump, f)
 	evidence, _ := json.Marshal(map[string]any{
-		"classification":     classification,
-		"run_id":             dump.RunID,
-		"attempt":            max(1, dump.Attempt),
-		"seed_burn":          dump.SeedBurn,
-		"objective":          f.Objective,
-		"error":              f.Error,
-		"occurrences_in_run": f.Count,
-		"first_round":        f.FirstRound,
-		"last_round":         f.LastRound,
-		"map":                fmt.Sprintf("0x%02x", f.Map),
-		"x":                  f.X,
-		"y":                  f.Y,
-		"recovered":          f.Recovered,
-		"blocking":           f.Blocking,
-		"run_reason":         dump.Reason,
-		"run_detail":         dump.Detail,
-		"progress_early":     dump.ProgressEarly,
-		"progress_final":     dump.ProgressFinal,
-		"trace_tail":         dump.TraceTail,
-		"runner_version":     dump.RunnerVersion,
+		"classification":       classification,
+		"disposition":          string(disposition),
+		"run_id":               dump.RunID,
+		"attempt":              max(1, dump.Attempt),
+		"seed_burn":            dump.SeedBurn,
+		"objective":            f.Objective,
+		"error":                f.Error,
+		"occurrences_in_run":   f.Count,
+		"first_round":          f.FirstRound,
+		"last_round":           f.LastRound,
+		"map":                  fmt.Sprintf("0x%02x", f.Map),
+		"x":                    f.X,
+		"y":                    f.Y,
+		"recovered":            f.Recovered,
+		"blocking":             f.Blocking,
+		"run_reason":           dump.Reason,
+		"run_detail":           dump.Detail,
+		"progress_early":       dump.ProgressEarly,
+		"progress_final":       dump.ProgressFinal,
+		"trace_tail":           dump.TraceTail,
+		"runner_version":       dump.RunnerVersion,
+		"observed_revision":    observedRevision,
+		"fingerprint":          fp,
+		"identity":             f.Identity,
+		"outcome":              f.Outcome,
+		"cause":                f.Cause,
+		"cause_context":        f.CauseContext,
+		"checkpoint":           f.Checkpoint,
+		"prior_issue_status":   prior.Status,
+		"prior_resolution":     prior.Resolution,
+		"prior_fixed_revision": prior.FixedRevision,
 	})
 
 	titlePrefix := "[farm] objective failure: "
@@ -181,6 +215,11 @@ func (w *Wall) reportObjectiveFailure(dump farm.FinishReport, f farm.ObjectiveFa
 		titlePrefix = "[farm][progression-blocker] "
 		summary = fmt.Sprintf("Progression blocker candidate: %s failed %d time(s) on map 0x%02x with no later major progress; run ended %s. Last error: %s",
 			f.Objective, f.Count, f.Map, dump.Reason, f.Error)
+	}
+	if disposition == occurrenceRegression {
+		titlePrefix = "[farm][regression] "
+		summary = fmt.Sprintf("Regression candidate: fingerprint %s reproduced on revision %q after issue %d was resolved at revision %q. Objective: %s. Last error: %s",
+			fp, observedRevision, prior.IssueNumber, prior.FixedRevision, f.Objective, f.Error)
 	}
 	observedAt := f.ObservedAt
 	if observedAt.IsZero() {
@@ -195,7 +234,7 @@ func (w *Wall) reportObjectiveFailure(dump farm.FinishReport, f farm.ObjectiveFa
 		Title:            truncateBytes(titlePrefix+f.Objective+": "+f.Error, maxIssueTitleBytes),
 		Summary:          summary,
 		ObservedAt:       observedAt,
-		ObservedRevision: dump.RunnerVersion,
+		ObservedRevision: observedRevision,
 		Severity:         severity,
 		Evidence:         evidence,
 	}
@@ -222,6 +261,7 @@ func (w *Wall) reportObjectiveFailure(dump farm.FinishReport, f farm.ObjectiveFa
 		return fmt.Errorf("agent orchestrator returned an empty issue id")
 	}
 
+	now := time.Now().Unix()
 	w.mu.Lock()
 	link := w.issueLinks[key]
 	link.IssueID = result.Issue.ID
@@ -229,7 +269,10 @@ func (w *Wall) reportObjectiveFailure(dump farm.FinishReport, f farm.ObjectiveFa
 	link.IssueURL = c.issueURL(result.Issue.ID)
 	link.Status = result.Issue.Status
 	link.LastReportedRun = dump.RunID
-	link.UpdatedAt = time.Now().Unix()
+	link.LastObservedRun = dump.RunID
+	link.LastObservedRevision = observedRevision
+	link.LastDisposition = string(disposition)
+	link.UpdatedAt = now
 	link.Fingerprint = fp
 	w.issueLinks[key] = link
 	w.outbox[ext] = outboxEntry{
@@ -238,11 +281,18 @@ func (w *Wall) reportObjectiveFailure(dump farm.FinishReport, f farm.ObjectiveFa
 		Attempt:    max(1, dump.Attempt),
 		Key:        key,
 		Status:     outboxComplete,
-		UpdatedAt:  time.Now().Unix(),
+		UpdatedAt:  now,
 	}
 	w.mu.Unlock()
 	w.saveState()
 	return nil
+}
+
+func observedObjectiveFailureRevision(dump farm.FinishReport, f farm.ObjectiveFailure) string {
+	if build := strings.TrimSpace(f.Build); build != "" {
+		return build
+	}
+	return strings.TrimSpace(dump.RunnerVersion)
 }
 
 func objectiveFailureEvidenceArtifacts(dump farm.FinishReport, f farm.ObjectiveFailure) []farm.Artifact {
