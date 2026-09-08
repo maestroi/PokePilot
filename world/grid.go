@@ -38,8 +38,18 @@ const (
 	// ponytail: land table only. TilePairCollisionsWater (00:0ca0, 3 entries)
 	// applies while surfing; add it when a run can surf, and pick the table
 	// by wWalkBikeSurfState the way CheckForTilePairCollisions2 does.
-	tilePairCollisionsLandAddr = 0x0c7e
-	tilePairEntryLen           = 3
+	tilePairCollisionsLandAddr  = 0x0c7e
+	tilePairCollisionsWaterAddr = 0x0ca0
+	tilePairEntryLen            = 3
+)
+
+// TraversalMode selects the ROM tile-pair table used for movement. Tile
+// walkability itself is shared; Gen 1 changes pair restrictions while surfing.
+type TraversalMode uint8
+
+const (
+	TraversalLand TraversalMode = iota
+	TraversalWater
 )
 
 // Grid is a map's collision view, indexed [y][x] in game tile coordinates —
@@ -91,8 +101,16 @@ func (g *Grid) Passable(fx, fy, tx, ty int) bool {
 // tilePairsFor reads the land tile-pair collision table and returns the
 // forbidden transitions for one tileset, in both directions.
 func tilePairsFor(romData []byte, tileset uint8) map[[2]uint8]bool {
+	return tilePairsForTraversal(romData, tileset, TraversalLand)
+}
+
+func tilePairsForTraversal(romData []byte, tileset uint8, mode TraversalMode) map[[2]uint8]bool {
 	pairs := map[[2]uint8]bool{}
-	for off := tilePairCollisionsLandAddr; off+tilePairEntryLen <= len(romData); off += tilePairEntryLen {
+	addr := tilePairCollisionsLandAddr
+	if mode == TraversalWater {
+		addr = tilePairCollisionsWaterAddr
+	}
+	for off := addr; off+tilePairEntryLen <= len(romData); off += tilePairEntryLen {
 		if romData[off] == 0xff {
 			break
 		}
@@ -178,6 +196,13 @@ func Build(romData []byte, h rom.MapHeader) (*Grid, error) {
 // wOverworldMap buffer, so script-driven ReplaceTileBlock changes get exactly
 // the same collision/field-tile semantics as ordinary ROM geometry.
 func BuildFromBlocks(romData []byte, h rom.MapHeader, blocks []byte) (*Grid, error) {
+	return BuildFromBlocksForTraversal(romData, h, blocks, TraversalLand)
+}
+
+// BuildFromBlocksForTraversal decodes h with the movement-mode-specific
+// tile-pair collision table. It is used by live navigation after Surf changes
+// wWalkBikeSurfState; static graph construction intentionally stays on land.
+func BuildFromBlocksForTraversal(romData []byte, h rom.MapHeader, blocks []byte, mode TraversalMode) (*Grid, error) {
 	width := int(h.WidthBlocks) * 2
 	height := int(h.HeightBlocks) * 2
 	g := &Grid{
@@ -187,7 +212,7 @@ func BuildFromBlocks(romData []byte, h rom.MapHeader, blocks []byte) (*Grid, err
 		walkable:      make([]bool, width*height),
 		collisionTile: make([]uint8, width*height),
 		fieldTile:     make([]uint8, width*height),
-		tilePairs:     tilePairsFor(romData, h.Tileset),
+		tilePairs:     tilePairsForTraversal(romData, h.Tileset, mode),
 	}
 	if width == 0 || height == 0 {
 		return g, nil

@@ -1,0 +1,181 @@
+package skill
+
+import (
+	"errors"
+	"fmt"
+
+	"github.com/maestroi/pokepilot/emu"
+	gameruntime "github.com/maestroi/pokepilot/game"
+	"github.com/maestroi/pokepilot/red/rom"
+	"github.com/maestroi/pokepilot/red/state"
+	"github.com/maestroi/pokepilot/red/sym"
+	"github.com/maestroi/pokepilot/world"
+)
+
+var ErrRouteTransitionNeedsBattlePolicy = errors.New("skill: semantic route transition requires a battle policy")
+
+type redRouteTransitionExecutor struct {
+	m       *emu.Emu
+	romData []byte
+	policy  MovePolicy
+}
+
+func newRedRouteTransitionExecutor(m *emu.Emu, romData []byte, policy MovePolicy) world.TransitionExecutor {
+	return &redRouteTransitionExecutor{m: m, romData: romData, policy: policy}
+}
+
+func (x *redRouteTransitionExecutor) ExecuteTransition(edge world.Edge, transition gameruntime.Transition) (world.TransitionExecutionResult, error) {
+	if x == nil || x.m == nil {
+		return world.TransitionExecutionResult{}, fmt.Errorf("skill: nil Red semantic transition executor")
+	}
+	switch transition.ID {
+	case "red:vermilion_gym_cut":
+		opened, err := cutThroughReachableTree(x.m, x.romData)
+		if err != nil {
+			return world.TransitionExecutionResult{}, fmt.Errorf("Cut gate: %w", err)
+		}
+		// No candidate is the idempotent already-open case. Traverse is the
+		// positive proof that ordinary geometry is now sufficient.
+		return world.TransitionExecutionResult{Changed: opened}, nil
+
+	case "red:route21_surf":
+		return x.executeSurf(edge)
+
+	case "red:route12_snorlax":
+		return x.executeRoute12Snorlax()
+
+	case "red:victory_road_strength":
+		return x.executeVictoryRoadStrength(edge)
+	default:
+		return world.TransitionExecutionResult{}, fmt.Errorf("skill: no Red executor owns semantic transition %q", transition.ID)
+	}
+}
+
+func (x *redRouteTransitionExecutor) executeSurf(edge world.Edge) (world.TransitionExecutionResult, error) {
+	if x.m.Peek8(sym.WalkBikeSurfState) == fieldSurfingState {
+		return world.TransitionExecutionResult{}, nil
+	}
+	if edge.Kind != world.EdgeConnection {
+		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf transition %02x->%02x is not a map connection", edge.From, edge.To)
+	}
+	if got := x.m.Peek8(sym.CurMap); got != edge.From {
+		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf transition starts on %02x, current map is %02x", edge.From, got)
+	}
+
+	h, err := rom.ParseMap(x.romData, edge.From)
+	if err != nil {
+		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf transition parse map %02x: %w", edge.From, err)
+	}
+	land, err := liveMapGridForTraversal(x.m, x.romData, h, world.TraversalLand)
+	if err != nil {
+		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf transition land grid: %w", err)
+	}
+	water, err := liveMapGridForTraversal(x.m, x.romData, h, world.TraversalWater)
+	if err != nil {
+		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf transition water grid: %w", err)
+	}
+	sx, sy := playerXY(x.m)
+	blocked := spriteBlockers(x.m)
+	tx, ty, err := edgeTarget(water, edge.Dir, int(sx), int(sy), blocked)
+	if err != nil {
+		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf transition cannot reach %02x connection in water mode: %w", edge.To, err)
+	}
+	steps, err := world.FindPath(water, int(sx), int(sy), tx, ty, blocked)
+	if err != nil {
+		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf transition water path: %w", err)
+	}
+
+	px, py := int(sx), int(sy)
+	standX, standY, waterX, waterY := 0, 0, 0, 0
+	found := false
+	for _, step := range steps {
+		nx, ny := px+step.DX, py+step.DY
+		if !land.Passable(px, py, nx, ny) && water.Passable(px, py, nx, ny) {
+			standX, standY, waterX, waterY = px, py, nx, ny
+			found = true
+			break
+		}
+		px, py = nx, ny
+	}
+	if !found {
+		// The connection is already ordinary-walkable from this position;
+		// do not enter Surf merely because the semantic edge is annotated.
+		return world.TransitionExecutionResult{}, nil
+	}
+	if err := walkWithinMap(x.m, x.romData, Destination{Map: edge.From, X: uint8(standX), Y: uint8(standY)}); err != nil {
+		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf transition reach shoreline (%d,%d): %w", standX, standY, err)
+	}
+	if err := Face(x.m, uint8(waterX), uint8(waterY)); err != nil {
+		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf transition face water (%d,%d): %w", waterX, waterY, err)
+	}
+	x.m.StepFrames(2)
+	result, err := UseFieldMove(x.m, FieldSurf)
+	if err != nil {
+		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf transition enter mode: %w", err)
+	}
+	if !result.Surfing || x.m.Peek8(sym.WalkBikeSurfState) != fieldSurfingState {
+		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf transition returned without verified surfing state")
+	}
+	return world.TransitionExecutionResult{Changed: true}, nil
+}
+
+func (x *redRouteTransitionExecutor) executeRoute12Snorlax() (world.TransitionExecutionResult, error) {
+	var before state.Mem
+	state.Snapshot(x.m, &before)
+	if state.HasEvent(&before, eventBeatRoute12Snorlax) {
+		return world.TransitionExecutionResult{}, nil
+	}
+	if x.policy == nil {
+		return world.TransitionExecutionResult{}, fmt.Errorf("%w: Route 12 Snorlax", ErrRouteTransitionNeedsBattlePolicy)
+	}
+	if err := clearRoute12Snorlax(x.m, x.romData, x.policy); err != nil {
+		return world.TransitionExecutionResult{}, err
+	}
+	var after state.Mem
+	state.Snapshot(x.m, &after)
+	if !state.HasEvent(&after, eventBeatRoute12Snorlax) {
+		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Route 12 Snorlax transition completed without EVENT_BEAT_ROUTE12_SNORLAX")
+	}
+	return world.TransitionExecutionResult{Changed: true}, nil
+}
+
+func victoryRoadSectionForTransition(edge world.Edge) (VictoryRoadBoulderSection, bool) {
+	switch {
+	case edge.From == victoryRoad1FMap && edge.To == victoryRoad2FMap:
+		return VictoryRoad1FSwitch, true
+	case edge.From == victoryRoad2FMap && edge.To == victoryRoad3FMap:
+		return VictoryRoad2FSwitch1, true
+	case edge.From == victoryRoad3FMap && edge.To == victoryRoad2FMap:
+		return VictoryRoad3FSwitch, true
+	default:
+		// Descending 2F -> 1F is geometrically traversable and does not own a
+		// new boulder objective; the coarse bidirectional semantic annotation
+		// remains harmless until the route-fact model is made directional.
+		return 0, false
+	}
+}
+
+func (x *redRouteTransitionExecutor) executeVictoryRoadStrength(edge world.Edge) (world.TransitionExecutionResult, error) {
+	section, ok := victoryRoadSectionForTransition(edge)
+	if !ok {
+		return world.TransitionExecutionResult{}, nil
+	}
+	spec, _ := VictoryRoadBoulderSpec(section)
+	var before state.Mem
+	state.Snapshot(x.m, &before)
+	if boulderPuzzleEventComplete(&before, spec) {
+		return world.TransitionExecutionResult{}, nil
+	}
+	if x.policy == nil {
+		return world.TransitionExecutionResult{}, fmt.Errorf("%w: %s", ErrRouteTransitionNeedsBattlePolicy, section)
+	}
+	if _, err := SolveVictoryRoadBoulderSection(x.m, x.romData, x.policy, section); err != nil {
+		return world.TransitionExecutionResult{}, err
+	}
+	var after state.Mem
+	state.Snapshot(x.m, &after)
+	if !boulderPuzzleEventComplete(&after, spec) {
+		return world.TransitionExecutionResult{}, fmt.Errorf("skill: %s solver returned without its completion event", section)
+	}
+	return world.TransitionExecutionResult{Changed: true}, nil
+}

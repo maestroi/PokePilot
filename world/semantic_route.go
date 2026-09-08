@@ -8,17 +8,81 @@ import (
 )
 
 // RoutePrerequisites overlays semantic transition requirements onto the
-// geometric map graph. Edge remains the current Red-era graph identity; the
-// transition value is the portable contract consumed by the routing policy.
+// geometric map graph. Edge remains the current graph identity; the transition
+// value is the portable contract consumed by both routing and execution.
 type RoutePrerequisites struct {
 	Transitions  map[Edge]gameruntime.Transition
 	Capabilities gameruntime.CapabilitySet
 }
 
-// RouteBlockedError reports that a geometric route exists, but the usable
-// route does not because one or more semantic prerequisites are missing. It
-// unwraps to ErrNoRoute so existing callers keep their conservative behavior
-// while structured callers can inspect Blockages with errors.As.
+// RouteStep preserves the semantic transition identity selected for an edge.
+// Transition is nil for ordinary walking/warp edges.
+type RouteStep struct {
+	Edge       Edge
+	Transition *gameruntime.Transition
+}
+
+// TransitionExecutionResult is the portable observation returned by a
+// game-adapter executor. Changed means the executor positively observed a world
+// or traversal-state change, so the caller must discard the remaining route and
+// re-plan from fresh state before doing anything else.
+type TransitionExecutionResult struct {
+	Changed bool
+}
+
+// TransitionExecutor is the game-adapter seam for semantic route actions. The
+// generic world layer owns only the contract; badge/HM menus, story battles,
+// boulders, and other mechanics remain in the adapter.
+type TransitionExecutor interface {
+	ExecuteTransition(Edge, gameruntime.Transition) (TransitionExecutionResult, error)
+}
+
+var (
+	ErrTransitionExecutorUnavailable = errors.New("world: semantic transition executor unavailable")
+	ErrTransitionExecutionStalled    = errors.New("world: semantic transition execution made no durable progress")
+)
+
+// TransitionExecutionError preserves the selected transition/edge and the
+// typed adapter cause so objective recovery (#145) can classify it without
+// parsing prose.
+type TransitionExecutionError struct {
+	Edge       Edge
+	Transition gameruntime.Transition
+	Cause      error
+}
+
+func (e *TransitionExecutionError) Error() string {
+	if e == nil {
+		return "world: semantic transition execution failed"
+	}
+	return fmt.Sprintf("world: execute transition %q on %02x->%02x: %v", e.Transition.ID, e.Edge.From, e.Edge.To, e.Cause)
+}
+
+func (e *TransitionExecutionError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Cause
+}
+
+// ExecuteTransition invokes the adapter through a typed boundary and turns a
+// missing executor or adapter failure into structured transition evidence.
+func ExecuteTransition(executor TransitionExecutor, edge Edge, transition gameruntime.Transition) (TransitionExecutionResult, error) {
+	if executor == nil {
+		return TransitionExecutionResult{}, &TransitionExecutionError{
+			Edge: edge, Transition: transition, Cause: ErrTransitionExecutorUnavailable,
+		}
+	}
+	result, err := executor.ExecuteTransition(edge, transition)
+	if err != nil {
+		return TransitionExecutionResult{}, &TransitionExecutionError{Edge: edge, Transition: transition, Cause: err}
+	}
+	return result, nil
+}
+
+// RouteBlockedError reports that a semantic route exists, but one or more
+// transitions on it are unusable because capabilities are absent. It unwraps
+// to ErrNoRoute so conservative callers keep their existing behavior.
 type RouteBlockedError struct {
 	Blockages []gameruntime.TransitionBlockage
 }
@@ -32,8 +96,6 @@ func (e *RouteBlockedError) Error() string {
 
 func (e *RouteBlockedError) Unwrap() error { return ErrNoRoute }
 
-// MissingCapabilities returns a stable de-duplicated list of prerequisites
-// observed on the blocked geometric route.
 func (e *RouteBlockedError) MissingCapabilities() []gameruntime.CapabilityID {
 	if e == nil {
 		return nil
@@ -51,11 +113,8 @@ func (e *RouteBlockedError) MissingCapabilities() []gameruntime.CapabilityID {
 	return out
 }
 
-// FindRouteAtDestinationWithCapabilities preserves FindRouteAtDestination's
-// component-aware routing exactly, while removing edges whose semantic
-// prerequisites are not usable now. If that removal is the reason routing
-// fails, the shortest geometric route is inspected and returned as structured
-// prerequisite evidence instead of flattening the result to only ErrNoRoute.
+// FindRouteAtDestinationWithCapabilities is the compatibility edge-only view
+// of FindRoutePlanAtDestinationWithCapabilities.
 func FindRouteAtDestinationWithCapabilities(
 	g *Graph,
 	from, to uint8,
@@ -63,29 +122,63 @@ func FindRouteAtDestinationWithCapabilities(
 	blockedHere map[Edge]bool,
 	prereqs RoutePrerequisites,
 ) ([]Edge, error) {
+	plan, err := FindRoutePlanAtDestinationWithCapabilities(g, from, to, x, y, tx, ty, blockedHere, prereqs)
+	if err != nil {
+		return nil, err
+	}
+	edges := make([]Edge, len(plan))
+	for i := range plan {
+		edges[i] = plan[i].Edge
+	}
+	return edges, nil
+}
+
+// FindRoutePlanAtDestinationWithCapabilities applies the same semantic policy
+// used by reachability filtering and preserves transition identity for
+// execution. Capability-satisfied semantic edges are executable pivots: the
+// pre-action ordinary-walking component does not have to reach the port. A
+// missing capability removes that edge and, when it is the reason routing
+// fails, returns structured prerequisite evidence before any movement occurs.
+func FindRoutePlanAtDestinationWithCapabilities(
+	g *Graph,
+	from, to uint8,
+	x, y, tx, ty int,
+	blockedHere map[Edge]bool,
+	prereqs RoutePrerequisites,
+) ([]RouteStep, error) {
 	if g == nil || len(prereqs.Transitions) == 0 {
-		return FindRouteAtDestination(g, from, to, x, y, tx, ty, blockedHere)
+		route, err := FindRouteAtDestination(g, from, to, x, y, tx, ty, blockedHere)
+		return routeSteps(route, nil), err
 	}
 
 	denied := make(map[Edge]gameruntime.TransitionBlockage)
+	allowed := make(map[Edge]bool)
+	allSemantic := make(map[Edge]bool, len(prereqs.Transitions))
 	for edge, transition := range prereqs.Transitions {
+		allSemantic[edge] = true
 		if blockage, ok := gameruntime.EvaluateTransition(transition, prereqs.Capabilities); !ok {
 			denied[edge] = blockage
+		} else {
+			allowed[edge] = true
 		}
 	}
-	if len(denied) == 0 {
-		return FindRouteAtDestination(g, from, to, x, y, tx, ty, blockedHere)
+
+	usable := g
+	if len(denied) > 0 {
+		usable = graphWithoutSemanticEdges(g, denied)
+	}
+	route, err := findRouteAtDestinationAllowingSemantic(usable, from, to, x, y, tx, ty, blockedHere, allowed)
+	if err == nil {
+		return routeSteps(route, prereqs.Transitions), nil
+	}
+	if !errors.Is(err, ErrNoRoute) || len(denied) == 0 {
+		return nil, err
 	}
 
-	usable := graphWithoutSemanticEdges(g, denied)
-	route, err := FindRouteAtDestination(usable, from, to, x, y, tx, ty, blockedHere)
-	if err == nil || !errors.Is(err, ErrNoRoute) {
-		return route, err
-	}
-
-	// Only claim a semantic blockage when the same component-aware geometric
-	// planner can actually produce a route before semantic gates are applied.
-	geometric, geometricErr := FindRouteAtDestination(g, from, to, x, y, tx, ty, blockedHere)
+	// Diagnose against the route that would exist if every known semantic
+	// action were usable. This is essential for gates such as Surf/Cut whose
+	// pre-action walking topology deliberately cannot reach the port.
+	geometric, geometricErr := findRouteAtDestinationAllowingSemantic(g, from, to, x, y, tx, ty, blockedHere, allSemantic)
 	if geometricErr != nil {
 		return nil, err
 	}
@@ -101,9 +194,18 @@ func FindRouteAtDestinationWithCapabilities(
 	return nil, &RouteBlockedError{Blockages: blockages}
 }
 
-// graphWithoutSemanticEdges is a read-only graph view. Component labels and
-// edge port metadata are immutable routing evidence and can be shared; only
-// the adjacency slices are copied and filtered.
+func routeSteps(route []Edge, transitions map[Edge]gameruntime.Transition) []RouteStep {
+	steps := make([]RouteStep, len(route))
+	for i, edge := range route {
+		steps[i].Edge = edge
+		if transition, ok := transitions[edge]; ok {
+			t := transition
+			steps[i].Transition = &t
+		}
+	}
+	return steps
+}
+
 func graphWithoutSemanticEdges(g *Graph, denied map[Edge]gameruntime.TransitionBlockage) *Graph {
 	copyGraph := *g
 	copyGraph.Edges = make(map[uint8][]Edge, len(g.Edges))
