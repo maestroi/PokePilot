@@ -97,6 +97,7 @@ func TestClassifyObjectiveOutcomeGameplayRecovery(t *testing.T) {
 	for _, err := range []error{
 		skill.ErrBlackedOut,
 		skill.ErrCatchBlackout,
+		skill.ErrCatchHuntExhausted,
 		skill.ErrTrainRetreat,
 		skill.ErrTrainProgress,
 		skill.ErrCantAfford,
@@ -109,17 +110,8 @@ func TestClassifyObjectiveOutcomeGameplayRecovery(t *testing.T) {
 	}
 }
 
-func TestClassifyObjectiveOutcomeLegacyBridgeIsCatchHuntOnly(t *testing.T) {
+func TestClassifyObjectiveOutcomeDoesNotParseLegacyGameplayProse(t *testing.T) {
 	clean := Observation{Controllable: true}
-	catchHunt := Objective{Kind: KindCatch, Species: 0x24}
-	err := fmt.Errorf("agent: catch a PIDGEY here: skill: Catch: 500 grass legs and 26 encounters without a wanted species (map 0x33)")
-	if got := classifyObjectiveOutcome(catchHunt, err, clean); got != OutcomeBlocked {
-		t.Fatalf("bounded catch hunt = %q, want blocked", got)
-	}
-
-	// These normal endings are now structured by Execute itself. If their old
-	// prose ever leaks through without a pre-classified ObjectiveResult, default
-	// stop is safer than silently rebuilding semantics from strings again.
 	legacy := []struct {
 		o   Objective
 		err error
@@ -136,16 +128,15 @@ func TestClassifyObjectiveOutcomeLegacyBridgeIsCatchHuntOnly(t *testing.T) {
 			Objective{Kind: KindCatch, Species: 0x24},
 			fmt.Errorf("agent: catch a PIDGEY here: no PIDGEY caught (outcome out of balls, balls=5, encounters=1)"),
 		},
+		{
+			Objective{Kind: KindCatch, Species: 0x24},
+			fmt.Errorf("agent: catch a PIDGEY here: skill: Catch: 500 grass legs and 26 encounters without a wanted species (map 0x33)"),
+		},
 	}
 	for _, tc := range legacy {
 		if got := classifyObjectiveOutcome(tc.o, tc.err, clean); got != OutcomeUnknownFailure {
-			t.Errorf("legacy structured ending %s / %v = %q, want unknown_failure", tc.o, tc.err, got)
+			t.Errorf("legacy prose %s / %v = %q, want unknown_failure", tc.o, tc.err, got)
 		}
-	}
-
-	wrongKind := Objective{Kind: KindGoTo, Place: "pewter city"}
-	if got := classifyObjectiveOutcome(wrongKind, err, clean); got != OutcomeUnknownFailure {
-		t.Fatalf("catch-hunt phrase on wrong kind = %q, want unknown_failure", got)
 	}
 }
 
