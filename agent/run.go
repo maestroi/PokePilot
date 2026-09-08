@@ -736,7 +736,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 		stagnantRounds := completedRounds - lastMajorProgressRound
 		if stagnantRounds >= stagnationAfter {
 			if planning.hasStrategist(p) {
-				if stagnationEscalated {
+				if !replanOnce(&stagnationEscalated) {
 					res.Stop = StopStuck
 					if budget.Log != nil {
 						fmt.Fprintf(budget.Log, "stagnation watchdog recurred after strategic replan: %d rounds without major progress; high-water mark: %s\n", stagnantRounds, majorProgress)
@@ -744,7 +744,6 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 					break
 				}
 				planning.request("stagnation")
-				stagnationEscalated = true
 				lastMajorProgressRound = completedRounds
 			} else {
 				res.Stop = StopStuck
@@ -909,22 +908,14 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 
 			if planning.hasStrategist(p) {
 				consecFailures++
-				cause := string(objectiveResult.Cause)
-				if cause == "" {
-					cause = string(objectiveResult.Outcome)
-				}
-				key := obj.String() + "|" + cause
-				if failureEscalated[key] || consecFailures > maxConsecFailures {
+				reason, key, terminal := recoverableFailureReplan(
+					failureEscalated, obj, objectiveResult, blackedOut, retreated, consecFailures, maxConsecFailures,
+				)
+				if terminal {
 					res.Stop, res.Err = StopFailed, execErr
 					break
 				}
 				failureEscalated[key] = true
-				reason := "objective_failed"
-				if blackedOut {
-					reason = "blackout"
-				} else if retreated {
-					reason = "train_retreat"
-				}
 				planning.request(reason)
 				notifyPlanning(p, planning.snapshot())
 				lastFailObj, lastFailErr = obj.String(), execErr.Error()
@@ -1020,12 +1011,11 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 		}
 		if stuck >= stuckAfter {
 			if planning.hasStrategist(p) {
-				if stuckEscalated {
+				if !replanOnce(&stuckEscalated) {
 					res.Stop = StopStuck
 					break
 				}
 				planning.request("stuck")
-				stuckEscalated = true
 				stuck = 0
 				notifyPlanning(p, planning.snapshot())
 			} else {

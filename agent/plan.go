@@ -109,6 +109,9 @@ type StrategicFeedbackPlanner interface {
 
 func strategizeWithRetries(log io.Writer, round int, p StrategicPlanner, obs Observation, offered []Objective, reason string) (Plan, error, int) {
 	plan, err := p.Strategize(obs, offered, reason)
+	if err == nil {
+		plan, err = validateStrategicPlan(plan, offered, round)
+	}
 	fp, canRetry := p.(StrategicFeedbackPlanner)
 	retries := 0
 	for err != nil && !errors.Is(err, ErrDone) && canRetry && retries < MaxReplyRetries-1 {
@@ -120,11 +123,22 @@ func strategizeWithRetries(log io.Writer, round int, p StrategicPlanner, obs Obs
 			break
 		}
 		retries++
+		if IsLengthTruncation(err) {
+			// Unlike the cheap chooser, strategic planning starts at 8192
+			// tokens. Make the third ask genuinely larger than the second.
+			r.MaxTokensFactor = 1 << retries
+			if r.MaxTokensFactor < 2 {
+				r.MaxTokensFactor = 2
+			}
+		}
 		if log != nil {
 			fmt.Fprintf(log, "round %d: strategist reply rejected (ask %d of %d): %v; re-ask differs by %s\n",
 				round, retries+1, MaxReplyRetries, err, r.describe())
 		}
 		plan, err = fp.StrategizeRetry(obs, offered, reason, r)
+		if err == nil {
+			plan, err = validateStrategicPlan(plan, offered, round)
+		}
 	}
 	return plan, err, retries
 }
@@ -206,10 +220,12 @@ func (r *runPlanning) hasStrategist(p Planner) bool {
 }
 
 func (r *runPlanning) request(reason string) {
-	if reason == "" || r.pending != "" {
+	if reason == "" {
 		return
 	}
-	r.pending = reason
+	if r.pending == "" || (r.pending == "objective_failed" && reason != "objective_failed") {
+		r.pending = reason
+	}
 }
 
 func (r *runPlanning) sync() {
@@ -286,6 +302,34 @@ func (r *runPlanning) choose(log io.Writer, round int, p Planner, obs Observatio
 		r.sync()
 		return obj, false, err, retries
 	}
+}
+
+func recoverableFailureReplan(seen map[string]bool, obj Objective, result ObjectiveResult, blackedOut, retreated bool, consecutive, maxConsecutive int) (reason, key string, terminal bool) {
+	cause := string(result.Cause)
+	if cause == "" {
+		cause = string(result.Outcome)
+	}
+	key = obj.String() + "|" + cause
+	if seen[key] || consecutive > maxConsecutive {
+		return "", key, true
+	}
+	reason = "objective_failed"
+	if blackedOut {
+		reason = "blackout"
+	} else if retreated {
+		reason = "train_retreat"
+	}
+	return reason, key, false
+}
+
+// replanOnce converts a watchdog edge into one strategic replan opportunity.
+// The second edge before observable progress is terminal.
+func replanOnce(escalated *bool) bool {
+	if escalated == nil || *escalated {
+		return false
+	}
+	*escalated = true
+	return true
 }
 
 func (r *runPlanning) success(fromPlan bool) {
