@@ -1,10 +1,6 @@
 package agent
 
-import (
-	"testing"
-
-	"github.com/maestroi/pokepilot/red/state"
-)
+import "testing"
 
 func TestParseGoal(t *testing.T) {
 	cases := []struct {
@@ -37,18 +33,19 @@ func TestParseGoalRejectsInvalidTargets(t *testing.T) {
 	}
 }
 
-func TestEliteFourRequiresChampionEvent(t *testing.T) {
+func TestEliteFourRequiresChampionProgressFact(t *testing.T) {
 	g, _ := ParseGoal("elite-four")
 	obs := Observation{Badges: []string{"1", "2", "3", "4", "5", "6", "7", "8"}}
 	if got := EvaluateGoal(g, obs); got.Complete {
 		t.Fatal("eight badges alone completed elite-four goal")
 	}
-	// The spelling Observe actually writes. This line used to hold the raw
-	// decomp label, which no code path produces — so the test agreed with the
-	// implementation and both disagreed with reality.
-	obs.Events = []string{state.EventBeatChampionRival.String()}
+
+	// Goal evaluation consumes the portable progression contract, not a Red
+	// event label. The Red adapter is responsible for projecting its story
+	// state into this semantic fact.
+	obs.Story = ProgressState{{ID: ProgressLeagueChampionDefeated, Complete: true}}
 	if got := EvaluateGoal(g, obs); !got.Complete {
-		t.Fatal("champion event did not complete elite-four goal")
+		t.Fatal("champion progress fact did not complete elite-four goal")
 	}
 }
 
@@ -72,35 +69,26 @@ func TestEvaluateGoalUsesObservableState(t *testing.T) {
 	}
 }
 
-// The elite-four goal must complete from the SAME event spelling Observe
-// writes. MEASURED 2026-09-02: EvaluateGoal compared against the raw decomp
-// label "EVENT_BEAT_CHAMPION_RIVAL" while Observation.Events carries
-// state.Event.String() ("BeatChampionRival"), and the flag was not decoded
-// at all — so `-goal elite-four` reported "badges 8/8" and could never stop.
-func TestEvaluateGoalEliteFourCompletesOnDecodedEvent(t *testing.T) {
+// The elite-four predicate is intentionally pinned to the semantic fact that
+// crosses the game-adapter boundary. Falling back to Observation.Events here
+// would make a Red event spelling part of the generic planner contract again.
+func TestEvaluateGoalEliteFourCompletesOnSemanticProgress(t *testing.T) {
 	g, err := ParseGoal("elite-four")
 	if err != nil {
 		t.Fatalf("ParseGoal: %v", err)
 	}
 
-	champion := state.EventBeatChampionRival.String()
-	if got := EvaluateGoal(g, Observation{Events: []string{champion}}); !got.Complete {
-		t.Fatalf("elite-four not complete with %q set: %+v", champion, got)
+	done := Observation{Story: ProgressState{{ID: ProgressLeagueChampionDefeated, Complete: true}}}
+	if got := EvaluateGoal(g, done); !got.Complete {
+		t.Fatalf("elite-four not complete with champion progress set: %+v", got)
 	}
 
-	// The flag must actually be one Observe can produce, or the predicate is
-	// unreachable in a real run however well it compares strings.
-	var decoded bool
-	for _, e := range knownEvents {
-		if e == state.EventBeatChampionRival {
-			decoded = true
-		}
-	}
-	if !decoded {
-		t.Fatal("EventBeatChampionRival is not in knownEvents; Observe can never report it")
+	legacyOnly := Observation{Events: []string{"BeatChampionRival"}}
+	if got := EvaluateGoal(g, legacyOnly); got.Complete {
+		t.Fatalf("elite-four completed from legacy Red event text: %+v", got)
 	}
 
 	if got := EvaluateGoal(g, Observation{Badges: []string{"Boulder"}}); got.Complete {
-		t.Fatalf("elite-four complete without the champion event: %+v", got)
+		t.Fatalf("elite-four complete without the champion progress fact: %+v", got)
 	}
 }
