@@ -11,7 +11,7 @@ import (
 type Kind uint8
 
 const (
-	KindGoTo               Kind = iota
+	KindGoTo Kind = iota
 	KindTalk
 	KindStarter
 	KindErrand
