@@ -158,7 +158,14 @@ func finishRunWithRecording(m *emu.Emu, client *farm.Client, spec farm.Spec, rea
 		report.Artifacts = checkpointArtifacts
 	}
 
-	failures := drainObjectiveFailureTelemetry(reason)
+	failures, terminal := drainObjectiveFailureTelemetry(reason, client.Version, checkpointDir)
+	if terminal != nil {
+		if marker := farm.FailureDetailMarker(*terminal); marker != "" {
+			// The operator-facing top-level key is structured and stable. Human
+			// diagnostics remain in objective-failures.json and TraceTail.
+			report.Detail = marker
+		}
+	}
 	if failureArtifact, err := farm.NewObjectiveFailureArtifact(failures); err != nil {
 		log.Printf("farm: %s: objective failure telemetry: %v", report.RunID, err)
 	} else if failureArtifact.Name != "" {
