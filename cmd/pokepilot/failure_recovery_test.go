@@ -100,7 +100,7 @@ func TestFarmRecoveryOfferedBoulderToCascadeLocksOntoUnvisitedAdjacent(t *testin
 
 func TestFarmRecoveryOfferedBoulderToCascadeKeepsTrainingAfterMandatoryLoss(t *testing.T) {
 	obs := agent.Observation{
-		Badges: []string{state.BadgeBoulder.String()},
+		Badges:   []string{state.BadgeBoulder.String()},
 		Failures: []agent.Failure{{Objective: "trainer loss while attempting go to route 3", Last: "blacked out against mandatory trainer"}},
 	}
 	train := agent.Objective{Kind: agent.KindTrain, Level: 24}
