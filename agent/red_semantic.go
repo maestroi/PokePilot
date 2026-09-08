@@ -95,13 +95,11 @@ func redInventoryHas(inv state.InventoryState, id ItemID) bool {
 	return false
 }
 
-func redProgressState(mem *state.Mem, inv state.InventoryState, f state.StoryFacts) ProgressState {
-	progress := state.DecodeProgress(mem)
+// redProgressState projects the existing Red story decoder into portable facts.
+// Observe uses this compatibility entry point; the Red adapter enriches it with
+// objective-level progression facts from authoritative RAM/inventory below.
+func redProgressState(f state.StoryFacts) ProgressState {
 	return ProgressState{
-		{ID: redProgressPokedexAcquired, Complete: state.HasEvent(mem, state.EventGotPokedex)},
-		{ID: redProgressSilphScopeAcquired, Complete: redInventoryHas(inv, ItemID("silph scope"))},
-		{ID: redProgressPokeFluteAcquired, Complete: redInventoryHas(inv, ItemID("poke flute"))},
-		{ID: redProgressFuchsiaProgressionComplete, Complete: progress.Has(state.BadgeSoul) && redInventoryHas(inv, ItemID("hm03")) && redInventoryHas(inv, ItemID("hm04"))},
 		{ID: ProgressSaffronGateOpen, Complete: f.SaffronGateOpen},
 		{ID: ProgressCardKeyOwned, Complete: f.CardKeyOwned},
 		{ID: ProgressSilphCoCleared, Complete: f.SilphCoCleared},
@@ -113,4 +111,15 @@ func redProgressState(mem *state.Mem, inv state.InventoryState, f state.StoryFac
 		{ID: ProgressLeagueChallengeStarted, Complete: f.LeagueChallengeStarted},
 		{ID: ProgressLeagueChampionDefeated, Complete: f.LeagueChampionDefeated},
 	}
+}
+
+func redProgressStateFromRAM(mem *state.Mem, inv state.InventoryState, f state.StoryFacts) ProgressState {
+	progress := state.DecodeProgress(mem)
+	out := ProgressState{
+		{ID: redProgressPokedexAcquired, Complete: state.HasEvent(mem, state.EventGotPokedex)},
+		{ID: redProgressSilphScopeAcquired, Complete: redInventoryHas(inv, ItemID("silph scope"))},
+		{ID: redProgressPokeFluteAcquired, Complete: redInventoryHas(inv, ItemID("poke flute"))},
+		{ID: redProgressFuchsiaProgressionComplete, Complete: progress.Has(state.BadgeSoul) && redInventoryHas(inv, ItemID("hm03")) && redInventoryHas(inv, ItemID("hm04"))},
+	}
+	return append(out, redProgressState(f)...)
 }
