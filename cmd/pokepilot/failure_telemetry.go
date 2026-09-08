@@ -213,9 +213,9 @@ func majorProgressAfter(outcomes []agent.ObjectiveResult, idx int) bool {
 }
 
 type failureMajorMark struct {
-	badges       int
-	party        int
-	maxLevel     uint8
+	badges        int
+	party         int
+	maxLevel      uint8
 	completeFacts int
 	progressValue int
 }
