@@ -156,15 +156,20 @@ func TestEconomyExtendsLaterMartItemVocabulary(t *testing.T) {
 		"revive":     0x35,
 		"max repel":  0x39,
 	}
-	for name, want := range cases {
+	for name, wantRaw := range cases {
 		id, ok := ItemByName(name)
-		if !ok || id != want {
-			t.Errorf("ItemByName(%q) = %#02x,%v, want %#02x,true", name, id, ok, want)
+		if !ok || id != ItemID(name) {
+			t.Errorf("ItemByName(%q) = %q,%v, want semantic %q,true", name, id, ok, name)
 			continue
 		}
-		gotName, ok := ItemName(want)
+		raw, ok := redItemID(id)
+		if !ok || raw != wantRaw {
+			t.Errorf("redItemID(%q) = %#02x,%v, want %#02x,true", id, raw, ok, wantRaw)
+			continue
+		}
+		gotName, ok := ItemName(wantRaw)
 		if !ok || gotName != name {
-			t.Errorf("ItemName(%#02x) = %q,%v, want %q,true", want, gotName, ok, name)
+			t.Errorf("ItemName(%#02x) = %q,%v, want %q,true", wantRaw, gotName, ok, name)
 		}
 	}
 }
