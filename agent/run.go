@@ -34,6 +34,10 @@ type Result struct {
 	Stop      Stop
 	Rounds    int
 	Completed []Objective
+	// Outcomes is every objective transaction in execution order, including
+	// recoverable blockage and terminal controller/ownership failures. It is
+	// the durable structured counterpart to Final.History's short prompt text.
+	Outcomes []ObjectiveResult
 	// Err is why the run STOPPED, and it is nil unless Stop is StopError or
 	// StopFailed. A round that failed and was recovered from does not set
 	// it: those live in Final.History, which is also where the planner reads
@@ -534,10 +538,10 @@ func appendHistory(h []RoundRecord, r RoundRecord) []RoundRecord {
 
 // Run drives observe -> plan -> execute until the run-owned deterministic
 // goal is done, a prompt-only planner is done, the world is demonstrably
-// stuck, a hard failure occurs, or a safety watchdog fires. A failed
-// objective does not end the run: what was attempted and the error text are
-// recorded in the observation history, the game is left where the failure
-// left it, and the planner chooses again with the failure visible.
+// stuck, a hard failure occurs, or a safety watchdog fires. Every executed
+// objective is normalized into ObjectiveResult before policy is applied:
+// blocked gameplay is replanned, while ownership/controller/invariant defects
+// stop immediately instead of being fed back to the planner as ordinary play.
 //
 // There are two distinct progress watchdogs. StuckAfter catches a few
 // consecutive objectives that literally leave the observation unchanged.
@@ -625,7 +629,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 		maxConsecFailures = defaultMaxConsecutiveFailures
 	}
 
-	res := Result{Completed: []Objective{}}
+	res := Result{Completed: []Objective{}, Outcomes: []ObjectiveResult{}}
 	startFrame := m.FrameCount()
 	tape := &dialogueTape{}
 	m.AlsoSample(tape.sample)
@@ -802,48 +806,32 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 		}
 
 		before := last
-		if err := executeObjective(m, romData, obj); err != nil {
-			// The failure is recorded where the planner reads it — the next
-			// round's history — and the run continues. res.Rounds counts the
-			// failed round: it ran.
-			//
-			// res.Err is NOT set here. Its documented meaning is why the run
-			// STOPPED, and a failed objective the run recovers from is not
-			// that: it is a round that went badly in a run that carried on.
-			// Setting it on every failure left the last one showing on a run
-			// that finished fine — cmd/pokepilot printed "error: ..." after a
-			// healthy run, and the farm filed the same text as the run's
-			// failure detail, so every recovered blackout was being counted
-			// as a failed run in the wall's triage. It is set below, only
-			// where the failure actually ends the run.
-			res.Rounds = round
-			last = observeAfter(m, romData, budget.Log)
-			outcome := "failed: " + err.Error()
-			blackedOut := errors.Is(err, skill.ErrBlackedOut)
-			retreated := errors.Is(err, skill.ErrTrainRetreat)
-			trainProgressed := errors.Is(err, skill.ErrTrainProgress)
+		objectiveResult, execErr := executeObjectiveResult(m, romData, obj)
+		last = observeAfter(m, romData, budget.Log)
+		objectiveResult.Final = last
+		res.Rounds = round
+
+		if execErr != nil {
+			// The normalized result, rather than the raw error string, decides
+			// whether this is ordinary gameplay blockage or a terminal
+			// ownership/controller invariant. The raw typed error remains for
+			// diagnostics, Knowledge failure tallies, and errors.Is checks.
+			blackedOut := errors.Is(execErr, skill.ErrBlackedOut)
+			retreated := errors.Is(execErr, skill.ErrTrainRetreat)
+			trainProgressed := errors.Is(execErr, skill.ErrTrainProgress)
 			if blackedOut {
-				// The blackout bit clears on the respawn map entry, before
-				// this Observe; carry the fact for the round that follows the
-				// loss so the planner sees a wiped party, not just a healed
-				// one.
 				last.BlackedOut = true
-				// What the loss actually cost, in the one place the planner
-				// re-reads every round. The respawn is wherever the party was
-				// last healed at a Center — PALLET_TOWN until it uses one —
-				// and the money is halved on the way there. Without this the
-				// history says "blacked out" and the planner sees a healed
-				// party in a town, which reads like a free reset.
-				outcome += fmt.Sprintf(" (respawned in %s, money %d -> %d)",
+				objectiveResult.Final = last
+				objectiveResult.Summary += fmt.Sprintf(" (respawned in %s, money %d -> %d)",
 					last.RespawnPlace, before.Money, last.Money)
 			}
-			known.Failed(obj, err)
+			res.Outcomes = append(res.Outcomes, objectiveResult)
+			outcome := objectiveResult.HistoryText()
+
+			known.Failed(obj, execErr)
 			if trainProgressed {
 				// A shortfall that still raised the lead's level is exactly the
-				// "successful Train rung" the gym-retry gate is waiting for
-				// (see ErrTrainProgress) — Knowledge.Done never fires here
-				// because the exact requested level was missed, so the gate
-				// must be cleared directly instead of staying shut forever.
+				// "successful Train rung" the gym-retry gate is waiting for.
 				known.clearGymLossFailures()
 			}
 			history = appendHistory(history, RoundRecord{Objective: obj.String(), Outcome: outcome})
@@ -853,7 +841,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 
 			// A skill can return an error after the game has already committed
 			// the story state. The observable completion predicate wins over
-			// failure-budget classification at this settled boundary.
+			// failure policy at this settled boundary.
 			if deterministicGoal {
 				status := evaluateRunGoal(p, runGoal, last, round, budget.MaxRounds, intent, intentAge)
 				res.GoalStatus = &status
@@ -863,43 +851,32 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 				}
 			}
 
+			// Choice-required has its own action so a future explicit choice
+			// objective can own it. Today there is no generic choice objective,
+			// therefore both choice and every terminal label stop cleanly instead
+			// of making another planner-selected objective inherit the state.
+			switch actionFor(objectiveResult.Outcome) {
+			case actionChoice, actionStop:
+				res.Stop, res.Err = StopError, execErr
+				break
+			case actionContinue:
+				// An error normalized as completed would violate the result
+				// contract. Default to terminal rather than silently continuing.
+				res.Stop = StopError
+				res.Err = fmt.Errorf("agent: objective %s returned error with completed outcome: %w", obj, execErr)
+				break
+			case actionReplan:
+				// Ordinary blocked gameplay continues through the existing
+				// failure-budget policy below.
+			}
+			if res.Stop != StopUnset {
+				break
+			}
+
 			if blackedOut || retreated {
-				// The blackout is recorded in history like any failure, but it
-				// does not count against the failure budget and it breaks the
-				// same-failure-twice chain: the respawn healed the party and
-				// moved the player, so the world changed. A train retreat is
-				// exempt for the same reason in miniature: the session spent
-				// battles and damaged the party, so repeating the objective is
-				// a new attempt from a new state, not an identical repetition —
-				// and without the exemption, "train to 19" stopping hurt twice
-				// in a row would read as the same failure twice and end the run,
-				// trading a recoverable, costless stop for a dead one. The
-				// planner's correct response (heal) is visible in the next
-				// observation's party HP, and a planner that ignores it trips
-				// StuckAfter instead: a retried train leaves the player standing
-				// where it started. Only the frame budget still applies to this
-				// round.
-				//
-				// The exemption still needs a ceiling: MEASURED 2026-08-30 on
-				// the live GPU farm, a lead that retreats at the same level
-				// every time (HP not meaningfully changing between attempts)
-				// gets the identical objective and identical error 23 rounds
-				// running, because retreated never trips StopFailed AND never
-				// touches `stuck` (that counter only lives on the success
-				// path).
-				//
-				// The ceiling counts STUCK-ness, not raw retries: a session
-				// that keeps ending at a higher level each attempt IS
-				// progress (the level-up's max-HP bump is exactly why two
-				// retreats can end at different levels with nothing else
-				// changing) and must not be capped just for repeating the
-				// objective — only ended-level-unchanged streaks trip it.
-				// The requested level in obj.String() is deliberately NOT
-				// part of the comparison: a model that varies the number
-				// asked for (10, then 11, then 11 again) while the lead's
-				// actual level stays exactly as stuck is still the
-				// identical problem repeating — MEASURED live, same
-				// session, same run.
+				// These changed the world and are intentionally exempt from the
+				// normal identical-failure budget. A train retreat still has its
+				// own same-level ceiling to prevent infinite costless retries.
 				retreatLevel := uint8(0)
 				if len(last.Party) > 0 {
 					retreatLevel = last.Party[0].Level
@@ -913,7 +890,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 					retreatStreak, lastRetreatLevel = 0, 0
 				}
 				if retreated && retreatStreak >= maxConsecFailures {
-					res.Stop, res.Err = StopFailed, err
+					res.Stop, res.Err = StopFailed, execErr
 				}
 				lastFailObj, lastFailErr = "", ""
 				if m.FrameCount()-startFrame >= uint64(budget.MaxFrames) {
@@ -927,31 +904,25 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 			retreatStreak, lastRetreatLevel = 0, 0
 
 			consecFailures++
-			// res.Stop is still StopUnset unless one of these sets it.
+			// Only OutcomeBlocked reaches this budget. Controller/ownership/
+			// choice failures already stopped above, so repeating them cannot
+			// burn several workers' rounds before the run admits it is broken.
 			switch {
-			case obj.String() == lastFailObj && err.Error() == lastFailErr:
-				// The same objective failing the same way twice in a row:
-				// the world is not going to change on its own, and repeating
-				// the identical attempt will not teach the planner anything.
-				res.Stop, res.Err = StopFailed, err
+			case obj.String() == lastFailObj && execErr.Error() == lastFailErr:
+				res.Stop, res.Err = StopFailed, execErr
 			case consecFailures >= maxConsecFailures:
-				// Different failures, but every objective the planner picks
-				// dies: it is not reading the consequences.
-				res.Stop, res.Err = StopFailed, err
+				res.Stop, res.Err = StopFailed, execErr
 			case m.FrameCount()-startFrame >= uint64(budget.MaxFrames):
-				// The frame budget ran out on a round that happened to fail.
-				// The budget is the reason, not the failure, so Err stays
-				// nil and StopBudget carries the meaning.
 				res.Stop = StopBudget
 			}
 			if res.Stop != StopUnset {
 				break
 			}
-			lastFailObj, lastFailErr = obj.String(), err.Error()
+			lastFailObj, lastFailErr = obj.String(), execErr.Error()
 			continue
 		}
-		last = observeAfter(m, romData, budget.Log)
-		res.Rounds = round
+
+		res.Outcomes = append(res.Outcomes, objectiveResult)
 		res.Completed = append(res.Completed, obj)
 		known.Done(obj)
 		if obj.Kind == KindTalk {
@@ -960,10 +931,10 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 		consecFailures = 0
 		lastFailObj, lastFailErr = "", ""
 		retreatStreak, lastRetreatLevel = 0, 0
-		history = appendHistory(history, RoundRecord{Objective: obj.String(), Outcome: "done"})
+		history = appendHistory(history, RoundRecord{Objective: obj.String(), Outcome: objectiveResult.HistoryText()})
 		last.History = history
 		last.RecentDialogue = tape.recent()
-		logRound(budget.Log, round, obj, "done", last)
+		logRound(budget.Log, round, obj, objectiveResult.HistoryText(), last)
 
 		// Goal completion is checked before the short stuck detector and frame
 		// budget. A state change that satisfies the goal must not be reported
