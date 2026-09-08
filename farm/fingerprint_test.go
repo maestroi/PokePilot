@@ -25,9 +25,9 @@ func testFailureIdentity() FailureIdentity {
 			Y:            61,
 			Controllable: true,
 			Money:        1234,
-			Party: []FailurePartyMember{{Species: "Pikachu", Level: 24, HP: 50, MaxHP: 60}},
-			Inventory: []FailureInventoryItem{{ID: "poke flute", Quantity: 1}, {ID: "potion", Quantity: 3}},
-			Badges:    []string{"Thunder", "Boulder"},
+			Party:        []FailurePartyMember{{Species: "Pikachu", Level: 24, HP: 50, MaxHP: 60}},
+			Inventory:    []FailureInventoryItem{{ID: "poke flute", Quantity: 1}, {ID: "potion", Quantity: 3}},
+			Badges:       []string{"Thunder", "Boulder"},
 			Capabilities: []FailureCapability{
 				{ID: "can_surf", BadgeOwned: true},
 				{ID: "can_cut", BadgeOwned: true, Learned: true, Usable: true},
