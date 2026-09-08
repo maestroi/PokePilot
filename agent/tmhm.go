@@ -146,12 +146,15 @@ func objectiveBoundaryError(o Objective, primary, boundary error) error {
 // executeObjective is Run's synchronous objective transaction boundary. It
 // normalizes the start, executes one planner-selected action under an absolute
 // frame deadline, then normalizes/verifies the finish before returning control
-// to Run. A menu/dialogue leak is therefore charged to the objective that
-// produced it instead of poisoning an unrelated next objective.
-func executeObjective(m *emu.Emu, romData []byte, o Objective) error {
+// to Run. The ObjectiveResult produced by Execute is preserved through this
+// wrapper instead of being reconstructed from the error afterwards.
+func executeObjective(m *emu.Emu, romData []byte, o Objective) (result ObjectiveResult, retErr error) {
+	result.Objective = o
 	deadline := m.FrameCount() + objectiveFrameBudget
 	primary := m.WithFrameDeadline(deadline, func() error {
-		return executeObjectiveUnbounded(m, romData, o)
+		var err error
+		result, err = executeObjectiveUnbounded(m, romData, o)
+		return err
 	})
 	if errors.Is(primary, emu.ErrFrameDeadline) {
 		primary = fmt.Errorf("agent: %s: objective frame watchdog: %w", o, primary)
@@ -161,7 +164,13 @@ func executeObjective(m *emu.Emu, romData []byte, o Objective) error {
 	}
 
 	boundary := settleObjectiveBoundary(m)
-	retErr := objectiveBoundaryError(o, primary, boundary)
+	retErr = objectiveBoundaryError(o, primary, boundary)
+	if boundary != nil {
+		// A dirty finish is stronger than a semantic blocked result returned by
+		// the skill: the planner must never receive an unsettled emulator.
+		result.Outcome = ""
+	}
+	result = finalizeObjectiveResult(o, result, Observe(m, romData), retErr)
 	if primary == nil && boundary != nil {
 		// Execute captured nothing because it returned success; preserve the
 		// actual dirty finish that violated the objective transaction.
@@ -169,53 +178,20 @@ func executeObjective(m *emu.Emu, romData []byte, o Objective) error {
 			fmt.Printf("  ram forensics: %v\n", ferr)
 		}
 	}
-	return retErr
+	return result, retErr
 }
 
 // executeObjectiveUnbounded contains the ordinary dispatch. It is called only
 // through executeObjective so every planner-selected action shares the same
 // start invariant, finish invariant, and frame watchdog.
-func executeObjectiveUnbounded(m *emu.Emu, romData []byte, o Objective) (retErr error) {
+func executeObjectiveUnbounded(m *emu.Emu, romData []byte, o Objective) (ObjectiveResult, error) {
 	if err := prepareObjectiveBoundary(m); err != nil {
-		retErr = fmt.Errorf("agent: %s: objective start invariant: %w", o, err)
+		retErr := fmt.Errorf("agent: %s: objective start invariant: %w", o, err)
 		if ferr := captureObjectiveFailure(m, o, retErr); ferr != nil {
 			fmt.Printf("  ram forensics: %v\n", ferr)
 		}
-		return retErr
+		result := finalizeObjectiveResult(o, ObjectiveResult{Objective: o}, Observe(m, romData), retErr)
+		return result, retErr
 	}
-
-	if o.Kind != KindUseItem {
-		return Execute(m, romData, o)
-	}
-	if _, err := rom.LookupTMHM(romData, o.Item); err != nil {
-		return Execute(m, romData, o)
-	}
-	if o.Slot < 0 || o.Slot > 5 {
-		return fmt.Errorf("agent: %s: party slot %d out of range 0..5", o, o.Slot)
-	}
-
-	// Preserve the same objective-error forensics guarantee as Execute. TM/HM
-	// dispatch lives outside Execute only to avoid changing the stable generic
-	// UseItem contract for medicine.
-	defer func() {
-		if retErr == nil {
-			return
-		}
-		if err := captureObjectiveFailure(m, o, retErr); err != nil {
-			fmt.Printf("  ram forensics: %v\n", err)
-		}
-	}()
-
-	result, err := skill.TeachTMHMToSlot(m, o.Item, false, o.Slot)
-	if err != nil {
-		return fmt.Errorf("agent: %s: %w", o, err)
-	}
-	fmt.Printf("  taught machine move %d to party slot %d (score %d -> %d, consumed=%v)\n",
-		result.Decision.Machine.Move,
-		result.Decision.PartySlot,
-		result.Decision.BeforeScore,
-		result.Decision.AfterScore,
-		result.Consumed,
-	)
-	return nil
+	return Execute(m, romData, o)
 }

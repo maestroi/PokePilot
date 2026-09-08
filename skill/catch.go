@@ -78,9 +78,17 @@ const (
 	throwPollFrames = 10
 )
 
-// ErrCatchBlackout reports that a non-wanted battle ended in a loss: the
-// party blacked out and the hunt cannot continue from where it stands.
-var ErrCatchBlackout = errors.New("skill: Catch: blacked out while fighting a non-wanted battle")
+var (
+	// ErrCatchBlackout reports that a non-wanted battle ended in a loss: the
+	// party blacked out and the hunt cannot continue from where it stands.
+	ErrCatchBlackout = errors.New("skill: Catch: blacked out while fighting a non-wanted battle")
+
+	// ErrCatchHuntExhausted is the bounded, ordinary game outcome where the
+	// hunt spent its encounter/grass budget without ever seeing a wanted
+	// species. It is typed so callers can re-plan without parsing the measured
+	// legs/encounters diagnostic that accompanies it.
+	ErrCatchHuntExhausted = errors.New("skill: Catch: hunt exhausted without a wanted species")
+)
 
 // Catch hunts the tall grass on the current map until it meets a wild
 // Pokemon of one of the species in want, then throws POKE BALLs at it (via
@@ -188,8 +196,8 @@ func Catch(m *emu.Emu, romData []byte, want []uint8, policy MovePolicy, maxBalls
 
 		return catchWanted(m, &mem, want, policy, before, res, maxBalls)
 	}
-	return res, fmt.Errorf("skill: Catch: %d grass legs and %d encounters without a wanted species (map %#04x)",
-		legsSpent, res.Encounters, m.Peek8(sym.CurMap))
+	return res, fmt.Errorf("%w: %d grass legs and %d encounters (map %#04x)",
+		ErrCatchHuntExhausted, legsSpent, res.Encounters, m.Peek8(sym.CurMap))
 }
 
 // catchWanted throws balls at the wanted target in progress and reports the

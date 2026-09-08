@@ -58,6 +58,15 @@ func TestClassifyObjectiveOutcomePrecedence(t *testing.T) {
 		t.Fatalf("blocked + dirty boundary = %q, want stabilization_failed", got)
 	}
 
+	postFailed := fmt.Errorf("wrapped: %w", ErrObjectivePostconditionFailed)
+	if got := classifyObjectiveOutcome(o, postFailed, clean); got != OutcomePostconditionFailed {
+		t.Fatalf("postcondition failed = %q, want postcondition_failed", got)
+	}
+	postUnavailable := fmt.Errorf("wrapped: %w", ErrObjectivePostconditionUnavailable)
+	if got := classifyObjectiveOutcome(o, postUnavailable, clean); got != OutcomePostconditionUnavailable {
+		t.Fatalf("postcondition unavailable = %q, want postcondition_unavailable", got)
+	}
+
 	if got := classifyObjectiveOutcome(o, skill.ErrBattleInterrupted, clean); got != OutcomeOwnershipFailure {
 		t.Fatalf("raw battle interruption = %q, want ownership_failure", got)
 	}
@@ -88,6 +97,7 @@ func TestClassifyObjectiveOutcomeGameplayRecovery(t *testing.T) {
 	for _, err := range []error{
 		skill.ErrBlackedOut,
 		skill.ErrCatchBlackout,
+		skill.ErrCatchHuntExhausted,
 		skill.ErrTrainRetreat,
 		skill.ErrTrainProgress,
 		skill.ErrCantAfford,
@@ -100,9 +110,9 @@ func TestClassifyObjectiveOutcomeGameplayRecovery(t *testing.T) {
 	}
 }
 
-func TestClassifyObjectiveOutcomeLegacyGameplayEndings(t *testing.T) {
+func TestClassifyObjectiveOutcomeDoesNotParseLegacyGameplayProse(t *testing.T) {
 	clean := Observation{Controllable: true}
-	cases := []struct {
+	legacy := []struct {
 		o   Objective
 		err error
 	}{
@@ -123,18 +133,51 @@ func TestClassifyObjectiveOutcomeLegacyGameplayEndings(t *testing.T) {
 			fmt.Errorf("agent: catch a PIDGEY here: skill: Catch: 500 grass legs and 26 encounters without a wanted species (map 0x33)"),
 		},
 	}
-	for _, tc := range cases {
-		if got := classifyObjectiveOutcome(tc.o, tc.err, clean); got != OutcomeBlocked {
-			t.Errorf("%s / %v = %q, want blocked", tc.o, tc.err, got)
+	for _, tc := range legacy {
+		if got := classifyObjectiveOutcome(tc.o, tc.err, clean); got != OutcomeUnknownFailure {
+			t.Errorf("legacy prose %s / %v = %q, want unknown_failure", tc.o, tc.err, got)
 		}
 	}
+}
 
-	// The phrases are deliberately kind-scoped. An unrelated controller error
-	// that happens to mention one must not become recoverable.
-	wrongKind := Objective{Kind: KindGoTo, Place: "pewter city"}
-	if got := classifyObjectiveOutcome(wrongKind,
-		fmt.Errorf("transport log says lost to the gym leader (blacked out to the center)"), clean); got != OutcomeUnknownFailure {
-		t.Fatalf("wrong-kind legacy phrase = %q, want unknown_failure", got)
+func TestObjectivePostconditionGoToExactDestination(t *testing.T) {
+	o := Objective{Kind: KindGoTo, Place: "pallet town"}
+	dest, ok := skill.Place(o.Place)
+	if !ok {
+		t.Fatal("Place(pallet town) did not resolve")
+	}
+
+	good := Observation{Map: dest.Map, X: dest.X, Y: dest.Y, Controllable: true}
+	if out, err := objectivePostcondition(o, good); err != nil || out != OutcomeCompleted {
+		t.Fatalf("exact destination = %q, %v; want completed, nil", out, err)
+	}
+
+	wrongTile := good
+	wrongTile.X++
+	out, err := objectivePostcondition(o, wrongTile)
+	if out != OutcomePostconditionFailed || !errors.Is(err, ErrObjectivePostconditionFailed) {
+		t.Fatalf("wrong tile = %q, %v; want postcondition_failed sentinel", out, err)
+	}
+
+	unreadable := good
+	unreadable.Controllable = false
+	out, err = objectivePostcondition(o, unreadable)
+	if out != OutcomePostconditionUnavailable || !errors.Is(err, ErrObjectivePostconditionUnavailable) {
+		t.Fatalf("unreadable state = %q, %v; want postcondition_unavailable sentinel", out, err)
+	}
+
+	inBattle := good
+	inBattle.InBattle = true
+	out, err = objectivePostcondition(o, inBattle)
+	if out != OutcomePostconditionUnavailable || !errors.Is(err, ErrObjectivePostconditionUnavailable) {
+		t.Fatalf("battle state = %q, %v; want postcondition_unavailable sentinel", out, err)
+	}
+}
+
+func TestObjectivePostconditionDefersToSkillForOtherKinds(t *testing.T) {
+	out, err := objectivePostcondition(Objective{Kind: KindUseItem, Item: 0x14}, Observation{})
+	if err != nil || out != OutcomeCompleted {
+		t.Fatalf("UseItem postcondition = %q, %v; want skill-owned completed", out, err)
 	}
 }
 

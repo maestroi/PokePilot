@@ -105,7 +105,7 @@ func TestObserveFreshBoot(t *testing.T) {
 func TestObserveAfterStarter(t *testing.T) {
 	e := loadFixture(t)
 
-	if err := agent.Execute(e, e.ROM(), agent.Objective{Kind: agent.KindStarter}); err != nil {
+	if _, err := agent.Execute(e, e.ROM(), agent.Objective{Kind: agent.KindStarter}); err != nil {
 		t.Fatalf("Execute starter: %v", err)
 	}
 
