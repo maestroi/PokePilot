@@ -20,8 +20,11 @@ func (f *fakeObjectiveGame) Observe() Observation {
 	return f.obs
 }
 
-func (f *fakeObjectiveGame) Validate(Objective) error {
+func (f *fakeObjectiveGame) Validate(_ Objective, initial Observation) error {
 	f.calls = append(f.calls, "validate")
+	if initial.MapName != f.obs.MapName {
+		return errors.New("validation did not receive initial observation")
+	}
 	return nil
 }
 
@@ -93,7 +96,7 @@ func TestObjectiveRuntimeUsesGameAdapterWithoutEmulator(t *testing.T) {
 	if got.Final.MapName != "ROOM_B" || got.Final.X != 2 || got.Final.Y != 3 {
 		t.Fatalf("Final = %+v", got.Final)
 	}
-	wantCalls := []string{"validate", "normalize-start", "budget", "execute", "settle", "normalize-finish", "observe", "verify"}
+	wantCalls := []string{"observe", "validate", "normalize-start", "budget", "execute", "settle", "normalize-finish", "observe", "verify"}
 	if !reflect.DeepEqual(adapter.calls, wantCalls) {
 		t.Fatalf("calls = %#v, want %#v", adapter.calls, wantCalls)
 	}
