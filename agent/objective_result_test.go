@@ -35,52 +35,113 @@ func TestActionForObjectiveOutcome(t *testing.T) {
 
 func TestClassifyObjectiveOutcomePrecedence(t *testing.T) {
 	clean := Observation{Controllable: true}
+	o := Objective{Kind: KindGoTo, Place: "pewter city"}
 
 	lastLeg := fmt.Errorf("north edge: %w", skill.ErrLegUnwalkable)
 	replan := fmt.Errorf("%w: %w", skill.ErrReplanExhausted, lastLeg)
-	if got := classifyObjectiveOutcome(replan, clean); got != OutcomeControllerUncertain {
+	if got := classifyObjectiveOutcome(o, replan, clean); got != OutcomeControllerUncertain {
 		t.Fatalf("replan exhaustion = %q, want controller_uncertain", got)
 	}
 
 	joinedChoice := errors.Join(world.ErrNoPath, ErrObjectiveBoundaryChoice)
-	if got := classifyObjectiveOutcome(joinedChoice, clean); got != OutcomeChoiceRequired {
+	if got := classifyObjectiveOutcome(o, joinedChoice, clean); got != OutcomeChoiceRequired {
 		t.Fatalf("joined choice = %q, want choice_required", got)
 	}
 
-	if got := classifyObjectiveOutcome(skill.ErrBattleInterrupted, clean); got != OutcomeOwnershipFailure {
+	if got := classifyObjectiveOutcome(o, skill.ErrBattleInterrupted, clean); got != OutcomeOwnershipFailure {
 		t.Fatalf("raw battle interruption = %q, want ownership_failure", got)
 	}
-	if got := classifyObjectiveOutcome(skill.ErrMenuStuck, clean); got != OutcomeControllerUncertain {
+	if got := classifyObjectiveOutcome(o, skill.ErrMenuStuck, clean); got != OutcomeControllerUncertain {
 		t.Fatalf("menu stuck = %q, want controller_uncertain", got)
 	}
-	if got := classifyObjectiveOutcome(emu.ErrFrameDeadline, clean); got != OutcomeControllerUncertain {
+	if got := classifyObjectiveOutcome(o, emu.ErrFrameDeadline, clean); got != OutcomeControllerUncertain {
 		t.Fatalf("frame deadline = %q, want controller_uncertain", got)
 	}
 }
 
 func TestClassifyObjectiveOutcomeKnownBlockageRequiresStableOverworld(t *testing.T) {
-	if got := classifyObjectiveOutcome(world.ErrNoPath, Observation{Controllable: true}); got != OutcomeBlocked {
+	o := Objective{Kind: KindGoTo, Place: "pewter city"}
+	if got := classifyObjectiveOutcome(o, world.ErrNoPath, Observation{Controllable: true}); got != OutcomeBlocked {
 		t.Fatalf("clean no-path = %q, want blocked", got)
 	}
-	if got := classifyObjectiveOutcome(world.ErrNoPath, Observation{Controllable: false}); got != OutcomeStabilizationFailed {
+	if got := classifyObjectiveOutcome(o, world.ErrNoPath, Observation{Controllable: false}); got != OutcomeStabilizationFailed {
 		t.Fatalf("dirty no-path = %q, want stabilization_failed", got)
 	}
-	if got := classifyObjectiveOutcome(world.ErrNoPath, Observation{Controllable: true, InBattle: true}); got != OutcomeStabilizationFailed {
+	if got := classifyObjectiveOutcome(o, world.ErrNoPath, Observation{Controllable: true, InBattle: true}); got != OutcomeStabilizationFailed {
 		t.Fatalf("battle no-path = %q, want stabilization_failed", got)
 	}
 }
 
 func TestClassifyObjectiveOutcomeGameplayRecovery(t *testing.T) {
 	clean := Observation{Controllable: true}
-	for _, err := range []error{skill.ErrBlackedOut, skill.ErrTrainRetreat, skill.ErrTrainProgress} {
-		if got := classifyObjectiveOutcome(err, clean); got != OutcomeBlocked {
+	o := Objective{Kind: KindGoTo, Place: "pewter city"}
+	for _, err := range []error{
+		skill.ErrBlackedOut,
+		skill.ErrCatchBlackout,
+		skill.ErrTrainRetreat,
+		skill.ErrTrainProgress,
+		skill.ErrCantAfford,
+		skill.ErrNotInStock,
+		skill.ErrBagNotRisen,
+	} {
+		if got := classifyObjectiveOutcome(o, err, clean); got != OutcomeBlocked {
 			t.Errorf("%v = %q, want blocked", err, got)
 		}
 	}
 }
 
+func TestClassifyObjectiveOutcomeLegacyGameplayEndings(t *testing.T) {
+	clean := Observation{Controllable: true}
+	cases := []struct {
+		o   Objective
+		err error
+	}{
+		{
+			Objective{Kind: KindGym},
+			fmt.Errorf("agent: beat the gym leader here: lost to the gym leader (blacked out to the center)"),
+		},
+		{
+			Objective{Kind: KindTrain, Level: 20},
+			fmt.Errorf("agent: train the lead to level 20: target level 20 not reached (ended level 18 after 20 battles)"),
+		},
+		{
+			Objective{Kind: KindCatch, Species: 0x24},
+			fmt.Errorf("agent: catch a PIDGEY here: no PIDGEY caught (outcome out of balls, balls=5, encounters=1)"),
+		},
+		{
+			Objective{Kind: KindCatch, Species: 0x24},
+			fmt.Errorf("agent: catch a PIDGEY here: skill: Catch: 500 grass legs and 26 encounters without a wanted species (map 0x33)"),
+		},
+	}
+	for _, tc := range cases {
+		if got := classifyObjectiveOutcome(tc.o, tc.err, clean); got != OutcomeBlocked {
+			t.Errorf("%s / %v = %q, want blocked", tc.o, tc.err, got)
+		}
+	}
+
+	// The phrases are deliberately kind-scoped. An unrelated controller error
+	// that happens to mention one must not become recoverable.
+	wrongKind := Objective{Kind: KindGoTo, Place: "pewter city"}
+	if got := classifyObjectiveOutcome(wrongKind,
+		fmt.Errorf("transport log says lost to the gym leader (blacked out to the center)"), clean); got != OutcomeUnknownFailure {
+		t.Fatalf("wrong-kind legacy phrase = %q, want unknown_failure", got)
+	}
+}
+
+func TestClassifyObjectiveOutcomePostconditionAndPrompt(t *testing.T) {
+	clean := Observation{Controllable: true}
+	o := Objective{Kind: KindUseItem, Item: 0x14, Slot: 0}
+	if got := classifyObjectiveOutcome(o, skill.ErrFieldItemNoEffect, clean); got != OutcomePostconditionFailed {
+		t.Fatalf("field item no effect = %q, want postcondition_failed", got)
+	}
+	if got := classifyObjectiveOutcome(o, skill.ErrFieldItemPrompt, clean); got != OutcomeChoiceRequired {
+		t.Fatalf("field item prompt = %q, want choice_required", got)
+	}
+}
+
 func TestClassifyObjectiveOutcomeUnknownIsTerminal(t *testing.T) {
-	if got := classifyObjectiveOutcome(errors.New("surprise"), Observation{Controllable: true}); got != OutcomeUnknownFailure {
+	o := Objective{Kind: KindGoTo, Place: "pewter city"}
+	if got := classifyObjectiveOutcome(o, errors.New("surprise"), Observation{Controllable: true}); got != OutcomeUnknownFailure {
 		t.Fatalf("unknown error = %q, want unknown_failure", got)
 	}
 	if actionFor(OutcomeUnknownFailure) != actionStop {
