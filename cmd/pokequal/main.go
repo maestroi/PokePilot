@@ -1,10 +1,9 @@
 // Command pokequal runs the private ROM-backed qualification pyramid.
 //
-// It is intentionally separate from public CI. The commercial ROM stays on
-// the local/self-hosted runner, is verified before any scenario runs, and is
-// never copied into the qualification output. Outputs contain only metadata,
-// logs, checkpoints/save states, and semantic observations needed to replay a
-// failing leg.
+// The commercial ROM stays on the local/self-hosted runner, is verified before
+// any scenario runs, and is never copied into qualification output. Evidence is
+// limited to logs, save states/checkpoints, semantic observations, and runner
+// metadata needed to replay a failing leg.
 package main
 
 import (
@@ -24,12 +23,15 @@ import (
 
 	"github.com/maestroi/pokepilot/agent"
 	"github.com/maestroi/pokepilot/emu"
-	redrom "github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/qualification"
+	redrom "github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/skill"
 )
 
-const manifestVersion = 1
+const (
+	manifestVersion = 1
+	fullMaxFrames   = 8 * 60 * 60 * 60
+)
 
 type config struct {
 	romPath string
@@ -66,13 +68,16 @@ type runnerInfo struct {
 	GoVersion string `json:"go_version"`
 }
 
+// modelInfo intentionally has no credential/token field.
 type modelInfo struct {
-	Profile   string `json:"profile,omitempty"`
-	URL       string `json:"url,omitempty"`
-	Model     string `json:"model,omitempty"`
-	NoThink   string `json:"no_think,omitempty"`
-	MaxTokens string `json:"max_tokens,omitempty"`
-	Timeout   string `json:"timeout,omitempty"`
+	Profile       string `json:"profile,omitempty"`
+	URL           string `json:"url,omitempty"`
+	Model         string `json:"model,omitempty"`
+	NoThink       bool   `json:"no_think,omitempty"`
+	MaxTokens     int    `json:"max_tokens,omitempty"`
+	Timeout       string `json:"timeout,omitempty"`
+	FallbackURL   string `json:"fallback_url,omitempty"`
+	FallbackModel string `json:"fallback_model,omitempty"`
 }
 
 type caseResult struct {
@@ -89,6 +94,19 @@ type caseResult struct {
 	CheckpointHash string                    `json:"checkpoint_sha256,omitempty"`
 	Expectation    qualification.Expectation `json:"expect,omitempty"`
 	Evidence       []string                  `json:"evidence,omitempty"`
+}
+
+type fullRunEvidence struct {
+	Stop          string            `json:"stop"`
+	Rounds        int               `json:"rounds"`
+	Completed     int               `json:"completed"`
+	Goal          *agent.GoalStatus `json:"goal_status,omitempty"`
+	Route         agent.LLMRoute    `json:"llm_route"`
+	Health        agent.LLMHealth   `json:"llm_health"`
+	PromptTokens  int               `json:"prompt_tokens"`
+	OutputTokens  int               `json:"completion_tokens"`
+	Final         agent.Observation `json:"final"`
+	TerminalError string            `json:"terminal_error,omitempty"`
 }
 
 func parseConfig(args []string) (config, error) {
@@ -158,7 +176,7 @@ func run(cfg config, stdout io.Writer) error {
 	if err := os.MkdirAll(cfg.out, 0o755); err != nil {
 		return fmt.Errorf("pokequal: create output: %w", err)
 	}
-	m := manifest{
+	report := manifest{
 		SchemaVersion: manifestVersion,
 		RunID:         qualificationRunID(),
 		Profile:       selectedProfile(cfg),
@@ -172,32 +190,20 @@ func run(cfg config, stdout io.Writer) error {
 			Arch:      runtime.GOARCH,
 			GoVersion: runtime.Version(),
 		},
-		Model: modelInfo{
-			Profile:   strings.TrimSpace(os.Getenv("POKEPILOT_LLM_PROFILE")),
-			URL:       strings.TrimSpace(os.Getenv("POKEPILOT_LLM_URL")),
-			Model:     strings.TrimSpace(os.Getenv("POKEPILOT_LLM_MODEL")),
-			NoThink:   strings.TrimSpace(os.Getenv("POKEPILOT_LLM_NO_THINK")),
-			MaxTokens: strings.TrimSpace(os.Getenv("POKEPILOT_LLM_MAX_TOKENS")),
-			Timeout:   strings.TrimSpace(os.Getenv("POKEPILOT_LLM_TIMEOUT")),
-		},
+		Model: resolvedModelInfo(),
 	}
 
-	fmt.Fprintf(stdout, "pokequal: run %s, profile %s, revision %s, ROM %s verified\n", m.RunID, m.Profile, shortRevision(m.Revision), romSHA1)
+	fmt.Fprintf(stdout, "pokequal: run %s, profile %s, revision %s, ROM %s verified\n",
+		report.RunID, report.Profile, shortRevision(report.Revision), romSHA1)
 	failed := false
 	for _, c := range cases {
 		result := executeCase(cfg, c, stdout)
-		m.Cases = append(m.Cases, result)
-		if result.Status != "passed" {
-			failed = true
-		}
-		m.FinishedAt = time.Now().UTC()
-		if err := writeJSON(filepath.Join(cfg.out, "qualification.json"), m); err != nil {
+		report.Cases = append(report.Cases, result)
+		failed = failed || result.Status != "passed"
+		report.FinishedAt = time.Now().UTC()
+		if err := writeJSON(filepath.Join(cfg.out, "qualification.json"), report); err != nil {
 			return err
 		}
-	}
-	m.FinishedAt = time.Now().UTC()
-	if err := writeJSON(filepath.Join(cfg.out, "qualification.json"), m); err != nil {
-		return err
 	}
 	if failed {
 		return fmt.Errorf("pokequal: one or more qualification cases failed; evidence: %s", filepath.Join(cfg.out, "qualification.json"))
@@ -209,7 +215,7 @@ func printCatalog(w io.Writer) error {
 	for _, c := range qualification.Catalog() {
 		state := "ready"
 		if !c.Available {
-			state = fmt.Sprintf("blocked #%.0d", c.BlockedBy)
+			state = fmt.Sprintf("blocked #%d", c.BlockedBy)
 		} else if c.BlockedBy != 0 {
 			state = fmt.Sprintf("runner ready; product blocked #%d", c.BlockedBy)
 		}
@@ -219,13 +225,12 @@ func printCatalog(w io.Writer) error {
 }
 
 func executeCase(cfg config, c qualification.Case, stdout io.Writer) caseResult {
-	started := time.Now().UTC()
 	result := caseResult{
 		ID:          c.ID,
 		Layer:       c.Layer,
 		Description: c.Description,
 		Status:      "failed",
-		StartedAt:   started,
+		StartedAt:   time.Now().UTC(),
 		Checkpoint:  c.Checkpoint,
 		Expectation: c.Expect,
 	}
@@ -242,7 +247,7 @@ func executeCase(cfg config, c qualification.Case, stdout io.Writer) caseResult 
 	case qualification.RunnerRedSkill:
 		result.Evidence, result.CheckpointHash, err = runRedSkillCase(cfg, c, caseDir)
 	case qualification.RunnerFullRun:
-		result.Command, result.Evidence, err = runFullCase(cfg, c, caseDir, stdout)
+		result.Evidence, err = runFullCase(cfg, caseDir, stdout)
 	default:
 		err = fmt.Errorf("pokequal: case %s has unsupported runner %q", c.ID, c.Runner)
 	}
@@ -275,12 +280,18 @@ func runGoTestCase(cfg config, c qualification.Case, caseDir string, stdout io.W
 		return command, nil, err
 	}
 	defer logFile.Close()
+	fixtureDir := filepath.Join(cfg.out, "fixtures")
 	cmd := exec.Command("go", args...)
-	cmd.Env = qualificationEnv(cfg, filepath.Join(cfg.out, "fixtures"))
+	cmd.Env = qualificationEnv(cfg, fixtureDir)
 	cmd.Stdout = io.MultiWriter(stdout, logFile)
 	cmd.Stderr = io.MultiWriter(stdout, logFile)
 	err = cmd.Run()
 	evidence := []string{relativeEvidence(cfg.out, logPath)}
+	if strings.HasPrefix(c.Checkpoint, "fixture:") {
+		// The named fixture cache is inside the uploaded output. It is the exact
+		// replayable input used by this run, whether the test passed or failed.
+		evidence = append(evidence, relativeEvidence(cfg.out, fixtureDir))
+	}
 	if err != nil && c.Test != "" {
 		if copied, copyErr := copyJourneyFailureState(c.Test, caseDir); copyErr == nil && copied != "" {
 			evidence = append(evidence, relativeEvidence(cfg.out, copied))
@@ -346,7 +357,8 @@ func runRedSkillCase(cfg config, c qualification.Case, caseDir string) ([]string
 		}
 	}
 	logPath := filepath.Join(caseDir, "run.log")
-	logText := fmt.Sprintf("case=%s\naction=%s\ncheckpoint_sha256=%s\naction_error=%v\nfinal_location=%s\nfinal_xy=%d,%d\n", c.ID, c.Action, checkpointHash, actionErr, final.Location, final.X, final.Y)
+	logText := fmt.Sprintf("case=%s\naction=%s\ncheckpoint_sha256=%s\naction_error=%v\nfinal_location=%s\nfinal_xy=%d,%d\n",
+		c.ID, c.Action, checkpointHash, actionErr, final.Location, final.X, final.Y)
 	if err := os.WriteFile(logPath, []byte(logText), 0o600); err == nil {
 		evidence = append(evidence, relativeEvidence(cfg.out, logPath))
 	}
@@ -359,35 +371,114 @@ func runRedSkillCase(cfg config, c qualification.Case, caseDir string) ([]string
 	return evidence, checkpointHash, nil
 }
 
-func runFullCase(cfg config, c qualification.Case, caseDir string, stdout io.Writer) ([]string, []string, error) {
+// runFullCase owns a fresh emulator directly so success comes from typed
+// GoalStatus/semantic observation, not from parsing pokepilot console prose.
+func runFullCase(cfg config, caseDir string, stdout io.Writer) ([]string, error) {
 	checkpointDir := filepath.Join(caseDir, "checkpoints")
 	if err := os.MkdirAll(checkpointDir, 0o755); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	args := []string{
-		"run", "./cmd/pokepilot",
-		"-planner", "llm",
-		"-fps", "0",
-		"-http", "localhost:0",
-		"-max-rounds", "0",
-		"-goal", "elite-four",
-		"-checkpoint-dir", checkpointDir,
-		"-require-goal",
-	}
-	command := append([]string{"go"}, args...)
 	logPath := filepath.Join(caseDir, "run.log")
 	logFile, err := os.Create(logPath)
 	if err != nil {
-		return command, nil, err
+		return nil, err
 	}
 	defer logFile.Close()
-	cmd := exec.Command("go", args...)
-	cmd.Env = qualificationEnv(cfg, filepath.Join(cfg.out, "fixtures"))
-	cmd.Stdout = io.MultiWriter(stdout, logFile)
-	cmd.Stderr = io.MultiWriter(stdout, logFile)
-	err = cmd.Run()
-	evidence := []string{relativeEvidence(cfg.out, logPath), relativeEvidence(cfg.out, checkpointDir)}
-	return command, evidence, err
+	promptPath := filepath.Join(caseDir, "prompts.txt")
+	promptFile, err := os.Create(promptPath)
+	if err != nil {
+		return nil, err
+	}
+	defer promptFile.Close()
+	replyPath := filepath.Join(caseDir, "replies.txt")
+	replyFile, err := os.Create(replyPath)
+	if err != nil {
+		return nil, err
+	}
+	defer replyFile.Close()
+	evidence := []string{
+		relativeEvidence(cfg.out, logPath),
+		relativeEvidence(cfg.out, promptPath),
+		relativeEvidence(cfg.out, replyPath),
+		relativeEvidence(cfg.out, checkpointDir),
+	}
+	logWriter := io.MultiWriter(stdout, logFile)
+
+	m, err := emu.Open(cfg.romPath)
+	if err != nil {
+		return evidence, fmt.Errorf("pokequal: full run open ROM: %w", err)
+	}
+	defer m.Close()
+	if _, err := skill.BootToOverworld(m); err != nil {
+		return evidence, fmt.Errorf("pokequal: full run boot: %w", err)
+	}
+
+	profile := agent.NormalizeLLMProfile(os.Getenv("POKEPILOT_LLM_PROFILE"))
+	primaryCfg, fallbackCfg := agent.ResolveLLMEndpoints(profile)
+	primary := agent.NewLLMPlannerFromConfig(primaryCfg)
+	primary.Goal = "elite-four"
+	primary.Log = logWriter
+	primary.PromptLog = promptFile
+	primary.ReplyLog = replyFile
+	var fallback *agent.LLMPlanner
+	if fallbackCfg != nil {
+		fallback = agent.NewLLMPlannerFromConfig(*fallbackCfg)
+	}
+	planner := agent.NewFailoverPlanner(primary, fallback)
+
+	res := agent.Run(m, m.ROM(), planner, agent.Budget{
+		MaxRounds:     0,
+		MaxFrames:     fullMaxFrames,
+		Log:           logWriter,
+		CheckpointDir: checkpointDir,
+	})
+	final := agent.Observe(m, m.ROM())
+	goal, structured, goalErr := agent.PlannerGoalStatus("elite-four", final)
+	if !structured && goalErr == nil {
+		goalErr = fmt.Errorf("elite-four goal was not recognized as structured")
+	}
+	if res.GoalStatus == nil {
+		res.GoalStatus = &goal
+	}
+
+	if checked, saveErr := m.SaveStateChecked(); saveErr == nil {
+		finalState := filepath.Join(caseDir, "final.state")
+		if writeErr := os.WriteFile(finalState, checked, 0o600); writeErr == nil {
+			evidence = append(evidence, relativeEvidence(cfg.out, finalState))
+		}
+	}
+	obsPath := filepath.Join(caseDir, "final-observation.json")
+	if err := writeJSON(obsPath, final); err == nil {
+		evidence = append(evidence, relativeEvidence(cfg.out, obsPath))
+	}
+
+	promptTokens, completionTokens := planner.Usage()
+	runEvidence := fullRunEvidence{
+		Stop:         stopName(res.Stop),
+		Rounds:       res.Rounds,
+		Completed:    len(res.Completed),
+		Goal:         res.GoalStatus,
+		Route:        planner.Route(),
+		Health:       planner.Health(),
+		PromptTokens: promptTokens,
+		OutputTokens: completionTokens,
+		Final:        final,
+	}
+	if res.Err != nil {
+		runEvidence.TerminalError = res.Err.Error()
+	}
+	runResultPath := filepath.Join(caseDir, "run-result.json")
+	if err := writeJSON(runResultPath, runEvidence); err == nil {
+		evidence = append(evidence, relativeEvidence(cfg.out, runResultPath))
+	}
+
+	if goalErr != nil {
+		return evidence, fmt.Errorf("pokequal: full run goal evaluation: %w", goalErr)
+	}
+	if res.Stop != agent.StopDone || !goal.Complete {
+		return evidence, fmt.Errorf("pokequal: fresh campaign did not reach Hall of Fame: stop=%s goal=%s", stopName(res.Stop), goal.Summary)
+	}
+	return evidence, nil
 }
 
 func verifyExpectation(expect qualification.Expectation, obs agent.Observation) error {
@@ -417,8 +508,7 @@ func corpusCheckpoint(root, rel string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	path := filepath.Join(rootAbs, filepath.Clean(rel))
-	pathAbs, err := filepath.Abs(path)
+	pathAbs, err := filepath.Abs(filepath.Join(rootAbs, filepath.Clean(rel)))
 	if err != nil {
 		return "", err
 	}
@@ -436,8 +526,8 @@ func qualificationEnv(cfg config, fixtureDir string) []string {
 	env := os.Environ()
 	env = setEnv(env, "POKEMON_RED_ROM", cfg.romPath)
 	env = setEnv(env, "POKEPILOT_FIXTURE_DIR", fixtureDir)
-	// Qualification must never accidentally become a farm worker just because
-	// the self-hosted runner also hosts pokewall configuration.
+	// A self-hosted runner may also be a farm worker. Qualification must not
+	// accidentally lease unrelated work while running child tests.
 	env = setEnv(env, "POKEPILOT_ORCH_URL", "")
 	return env
 }
@@ -487,10 +577,7 @@ func defaultPrivatePath(current, leaf string) (string, error) {
 
 func qualificationRunID() string {
 	if id := strings.TrimSpace(os.Getenv("GITHUB_RUN_ID")); id != "" {
-		attempt := strings.TrimSpace(os.Getenv("GITHUB_RUN_ATTEMPT"))
-		if attempt == "" {
-			attempt = "1"
-		}
+		attempt := firstNonEmpty(os.Getenv("GITHUB_RUN_ATTEMPT"), "1")
 		return "github-" + id + "-attempt-" + attempt
 	}
 	return "local-" + time.Now().UTC().Format("20060102T150405.000000000Z")
@@ -500,12 +587,29 @@ func revision() string {
 	if sha := strings.TrimSpace(os.Getenv("GITHUB_SHA")); sha != "" {
 		return sha
 	}
-	cmd := exec.Command("git", "rev-parse", "HEAD")
-	out, err := cmd.Output()
+	out, err := exec.Command("git", "rev-parse", "HEAD").Output()
 	if err != nil {
 		return ""
 	}
 	return strings.TrimSpace(string(out))
+}
+
+func resolvedModelInfo() modelInfo {
+	profile := agent.NormalizeLLMProfile(os.Getenv("POKEPILOT_LLM_PROFILE"))
+	primary, fallback := agent.ResolveLLMEndpoints(profile)
+	info := modelInfo{
+		Profile:   string(profile),
+		URL:       primary.BaseURL,
+		Model:     primary.Model,
+		NoThink:   primary.NoThink,
+		MaxTokens: primary.MaxTokens,
+		Timeout:   primary.Timeout.String(),
+	}
+	if fallback != nil {
+		info.FallbackURL = fallback.BaseURL
+		info.FallbackModel = fallback.Model
+	}
+	return info
 }
 
 func selectedProfile(cfg config) string {
@@ -572,4 +676,21 @@ func shortRevision(rev string) string {
 		return "unknown"
 	}
 	return rev
+}
+
+func stopName(s agent.Stop) string {
+	switch s {
+	case agent.StopDone:
+		return "done"
+	case agent.StopStuck:
+		return "stuck"
+	case agent.StopBudget:
+		return "budget"
+	case agent.StopFailed:
+		return "failed"
+	case agent.StopError:
+		return "error"
+	default:
+		return "unset"
+	}
 }
