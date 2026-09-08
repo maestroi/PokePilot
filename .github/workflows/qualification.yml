@@ -1,0 +1,201 @@
+name: ROM-backed Qualification
+
+# This workflow deliberately never runs on pull_request. It requires a
+# self-hosted runner carrying the local commercial ROM and private checkpoint
+# corpus. Public PR CI remains the ROM-free workflow in test.yml.
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: Qualification profile
+        required: true
+        default: milestones
+        type: choice
+        options:
+          - skills
+          - milestones
+          - full
+          - all
+      case:
+        description: Optional exact case id (overrides profile selection)
+        required: false
+        type: string
+  schedule:
+    - cron: "17 3 * * *"
+    # Disabled by default at the job condition until #39 is complete and the
+    # POKEPILOT_FULL_QUALIFICATION repository variable is set to 1.
+    - cron: "41 3 * * 0"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rom-qualification
+  cancel-in-progress: false
+
+jobs:
+  qualification:
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '17 3 * * *'
+    runs-on: [self-hosted, linux, pokepilot-rom]
+    timeout-minutes: 720
+    steps:
+      - name: Checkout PokePilot
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Verify module graph
+        run: go mod download
+
+      - name: Resolve private qualification paths
+        shell: bash
+        env:
+          CONFIGURED_ROM: ${{ vars.POKEMON_RED_ROM_PATH }}
+          CONFIGURED_CORPUS: ${{ vars.POKEPILOT_QUALIFICATION_CORPUS }}
+          CONFIGURED_RESULTS: ${{ vars.POKEPILOT_QUALIFICATION_RESULTS }}
+        run: |
+          set -euo pipefail
+          if [[ -n "${CONFIGURED_ROM}" ]]; then
+            echo "POKEMON_RED_ROM=${CONFIGURED_ROM}" >> "$GITHUB_ENV"
+          fi
+          if [[ -n "${CONFIGURED_CORPUS}" ]]; then
+            echo "POKEPILOT_QUALIFICATION_CORPUS=${CONFIGURED_CORPUS}" >> "$GITHUB_ENV"
+          fi
+          results="${CONFIGURED_RESULTS:-$HOME/.local/state/pokepilot/qualification}"
+          out="${results}/${GITHUB_RUN_ID}-attempt-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "$out"
+          echo "POKEPILOT_QUALIFICATION_OUT=$out" >> "$GITHUB_ENV"
+
+      - name: Run qualification
+        shell: bash
+        env:
+          INPUT_PROFILE: ${{ inputs.profile }}
+          INPUT_CASE: ${{ inputs.case }}
+        run: |
+          set -euo pipefail
+          profile="${INPUT_PROFILE:-milestones}"
+          args=( -profile "$profile" -out "$POKEPILOT_QUALIFICATION_OUT" )
+          if [[ -n "${INPUT_CASE:-}" ]]; then
+            args+=( -case "$INPUT_CASE" )
+          fi
+          go run ./cmd/pokequal "${args[@]}"
+
+      - name: Build safe diagnostic artifact
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          safe="$RUNNER_TEMP/pokepilot-qualification-safe"
+          rm -rf "$safe"
+          mkdir -p "$safe"
+          if [[ ! -d "${POKEPILOT_QUALIFICATION_OUT:-}" ]]; then
+            exit 0
+          fi
+          cd "$POKEPILOT_QUALIFICATION_OUT"
+          while IFS= read -r -d '' file; do
+            mkdir -p "$safe/$(dirname "$file")"
+            cp "$file" "$safe/$file"
+          done < <(find . -type f \
+            ! -name '*.state' \
+            ! -name '*.sav' \
+            ! -name '*.gb' \
+            ! -name '*.gbc' \
+            -print0)
+          printf 'Replay save states/checkpoints remain on the self-hosted runner at:\n%s\n' \
+            "$POKEPILOT_QUALIFICATION_OUT" > "$safe/REPLAY_LOCATION.txt"
+
+      - name: Upload safe qualification diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rom-qualification-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/pokepilot-qualification-safe
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Record replay location
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### ROM-backed qualification'
+            echo
+            echo "Replay evidence (including private save states) remains on the self-hosted runner:"
+            echo
+            echo "\`$POKEPILOT_QUALIFICATION_OUT\`"
+            echo
+            echo 'The uploaded GitHub artifact intentionally excludes `.state`, `.sav`, `.gb`, and `.gbc` files.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  scheduled-full:
+    if: github.event_name == 'schedule' && github.event.schedule == '41 3 * * 0' && vars.POKEPILOT_FULL_QUALIFICATION == '1'
+    runs-on: [self-hosted, linux, pokepilot-rom]
+    timeout-minutes: 720
+    steps:
+      - name: Checkout PokePilot
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Resolve private qualification paths
+        shell: bash
+        env:
+          CONFIGURED_ROM: ${{ vars.POKEMON_RED_ROM_PATH }}
+          CONFIGURED_CORPUS: ${{ vars.POKEPILOT_QUALIFICATION_CORPUS }}
+          CONFIGURED_RESULTS: ${{ vars.POKEPILOT_QUALIFICATION_RESULTS }}
+        run: |
+          set -euo pipefail
+          if [[ -n "${CONFIGURED_ROM}" ]]; then
+            echo "POKEMON_RED_ROM=${CONFIGURED_ROM}" >> "$GITHUB_ENV"
+          fi
+          if [[ -n "${CONFIGURED_CORPUS}" ]]; then
+            echo "POKEPILOT_QUALIFICATION_CORPUS=${CONFIGURED_CORPUS}" >> "$GITHUB_ENV"
+          fi
+          results="${CONFIGURED_RESULTS:-$HOME/.local/state/pokepilot/qualification}"
+          out="${results}/${GITHUB_RUN_ID}-attempt-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "$out"
+          echo "POKEPILOT_QUALIFICATION_OUT=$out" >> "$GITHUB_ENV"
+
+      - name: Run fresh-save Hall of Fame qualification
+        run: go run ./cmd/pokequal -profile full -out "$POKEPILOT_QUALIFICATION_OUT"
+
+      - name: Build safe diagnostic artifact
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          safe="$RUNNER_TEMP/pokepilot-qualification-safe"
+          rm -rf "$safe"
+          mkdir -p "$safe"
+          if [[ ! -d "${POKEPILOT_QUALIFICATION_OUT:-}" ]]; then
+            exit 0
+          fi
+          cd "$POKEPILOT_QUALIFICATION_OUT"
+          while IFS= read -r -d '' file; do
+            mkdir -p "$safe/$(dirname "$file")"
+            cp "$file" "$safe/$file"
+          done < <(find . -type f \
+            ! -name '*.state' \
+            ! -name '*.sav' \
+            ! -name '*.gb' \
+            ! -name '*.gbc' \
+            -print0)
+          printf 'Replay save states/checkpoints remain on the self-hosted runner at:\n%s\n' \
+            "$POKEPILOT_QUALIFICATION_OUT" > "$safe/REPLAY_LOCATION.txt"
+
+      - name: Upload safe qualification diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: full-rom-qualification-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/pokepilot-qualification-safe
+          if-no-files-found: warn
+          retention-days: 14
