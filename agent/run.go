@@ -71,6 +71,8 @@ type Result struct {
 	// so a nil pair means "never played", never "played and moved nothing".
 	ProgressEarly *Progress
 	ProgressFinal *Progress
+	// Planning is the run-owned three-tier planner telemetry and final plan.
+	Planning PlanningStats
 }
 
 // Progress is one snapshot of how far a run has gotten: badges held,
@@ -592,6 +594,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 	// intent would be planning for the model again, which defeats the
 	// measurement this exists to take (S9-7).
 	intent, intentAge := "", 0
+	resumedPlan := Plan{}
 	if budget.ResumeFrom != "" {
 		// Resume from a checkpoint: restore the save state and the knowledge
 		// captured beside it, both from this one path. The knowledge file's
@@ -607,6 +610,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 		mem := LoadCheckpointMemory(budget.ResumeFrom, adjacency, budget.Log)
 		known = mem.Knowledge
 		intent, intentAge = mem.Intent, mem.IntentAge
+		resumedPlan = mem.Plan.clone()
 	}
 	var ring *checkpointRing
 	if budget.CheckpointDir != "" {
@@ -635,6 +639,12 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 	m.AlsoSample(tape.sample)
 	var history []RoundRecord
 	last := Observe(m, romData)
+	planning := newRunPlanning(resumedPlan)
+	notifyPlanning(p, planning.snapshot())
+	knownRequirementCount := len(known.Requirements)
+	observedBadges, observedEvents := len(last.Badges), len(last.Events)
+	stuckEscalated, stagnationEscalated := false, false
+	failureEscalated := map[string]bool{}
 	// The early progress sample: what the run started with, taken before
 	// any objective ran. It is the baseline the finish sample is compared
 	// against in the finish dump; a single end-of-run snapshot cannot
@@ -682,6 +692,17 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 		// of the dialogue window. Then rebuild the menu: what is possible
 		// depends on where the player is and what they already have.
 		noteObservation(known, last)
+		if len(known.Requirements) > knownRequirementCount {
+			planning.request("new_requirement")
+			knownRequirementCount = len(known.Requirements)
+		}
+		if round > 1 && len(last.Badges) > observedBadges {
+			planning.request("badge_changed")
+		}
+		if round > 1 && len(last.Events) > observedEvents {
+			planning.request("story_changed")
+		}
+		observedBadges, observedEvents = len(last.Badges), len(last.Events)
 		// Every map the last objective actually walked through, not just
 		// the one it ended on: see dialogueTape.maps.
 		for _, id := range tape.seenMaps() {
@@ -706,12 +727,33 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 		currentMajorProgress := majorProgressMarkOf(last, known)
 		if majorProgress.absorb(currentMajorProgress) {
 			lastMajorProgressRound = round - 1
+			stagnationEscalated = false
 			if budget.Log != nil && round > 1 {
 				fmt.Fprintf(budget.Log, "round %d: major progress -> %s\n", round-1, majorProgress)
 			}
 		}
 		completedRounds := round - 1
 		stagnantRounds := completedRounds - lastMajorProgressRound
+		if stagnantRounds >= stagnationAfter {
+			if planning.hasStrategist(p) {
+				if stagnationEscalated {
+					res.Stop = StopStuck
+					if budget.Log != nil {
+						fmt.Fprintf(budget.Log, "stagnation watchdog recurred after strategic replan: %d rounds without major progress; high-water mark: %s\n", stagnantRounds, majorProgress)
+					}
+					break
+				}
+				planning.request("stagnation")
+				stagnationEscalated = true
+				lastMajorProgressRound = completedRounds
+			} else {
+				res.Stop = StopStuck
+				if budget.Log != nil {
+					fmt.Fprintf(budget.Log, "stagnation watchdog: %d rounds without major progress; high-water mark: %s\n", stagnantRounds, majorProgress)
+				}
+				break
+			}
+		}
 
 		// The walls the game has stated stay visible every round: Knowledge
 		// keeps them across rounds (and checkpoints), and this is where the
@@ -747,8 +789,9 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 		last.Round = round
 		last.RoundsLeft = roundsLeft(round, budget.MaxRounds)
 
-		obj, err, retries := planWithRetries(budget.Log, round, p, last, now)
+		obj, fromPlan, err, retries := planning.choose(budget.Log, round, p, last, now)
 		res.ReplyRetries += retries
+		notifyPlanning(p, planning.snapshot())
 		// A prompt-only run still treats planner exhaustion as completion.
 		// With a deterministic goal, however, Run already evaluated the same
 		// settled observation above: an ErrDone while that status is incomplete
@@ -774,15 +817,6 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 			res.Err = err
 			break
 		}
-		if stagnantRounds >= stagnationAfter {
-			res.Stop = StopStuck
-			if budget.Log != nil {
-				fmt.Fprintf(budget.Log, "stagnation watchdog: %d rounds without major progress; high-water mark: %s\n",
-					stagnantRounds, majorProgress)
-			}
-			break
-		}
-
 		// Carry the planner's sentence forward, verbatim. A different
 		// non-empty intent replaces it (age 0); the same one, or silence,
 		// ages it by one round — a model that keeps re-affirming or ignoring
@@ -798,7 +832,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 		// decision was made in, and the resume point if this objective is
 		// where the run went wrong.
 		if ring != nil {
-			if err := ring.write(m, round, obj, known, intent, intentAge); err != nil {
+			if err := ring.write(m, round, obj, known, intent, intentAge, planning.Plan); err != nil {
 				res.Stop = StopError
 				res.Err = fmt.Errorf("agent: Run: checkpoint round %d: %w", round, err)
 				break
@@ -873,6 +907,33 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 				break
 			}
 
+			if planning.hasStrategist(p) {
+				consecFailures++
+				cause := string(objectiveResult.Cause)
+				if cause == "" {
+					cause = string(objectiveResult.Outcome)
+				}
+				key := obj.String() + "|" + cause
+				if failureEscalated[key] || consecFailures > maxConsecFailures {
+					res.Stop, res.Err = StopFailed, execErr
+					break
+				}
+				failureEscalated[key] = true
+				reason := "objective_failed"
+				if blackedOut {
+					reason = "blackout"
+				} else if retreated {
+					reason = "train_retreat"
+				}
+				planning.request(reason)
+				notifyPlanning(p, planning.snapshot())
+				lastFailObj, lastFailErr = obj.String(), execErr.Error()
+				if m.FrameCount()-startFrame >= uint64(budget.MaxFrames) {
+					res.Stop = StopBudget
+					break
+				}
+				continue
+			}
 			if blackedOut || retreated {
 				// These changed the world and are intentionally exempt from the
 				// normal identical-failure budget. A train retreat still has its
@@ -924,11 +985,14 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 
 		res.Outcomes = append(res.Outcomes, objectiveResult)
 		res.Completed = append(res.Completed, obj)
+		planning.success(fromPlan)
+		notifyPlanning(p, planning.snapshot())
 		known.Done(obj)
 		if obj.Kind == KindTalk {
 			known.TalkedTo(before.Map, obj.X, obj.Y)
 		}
 		consecFailures = 0
+		failureEscalated = map[string]bool{}
 		lastFailObj, lastFailErr = "", ""
 		retreatStreak, lastRetreatLevel = 0, 0
 		history = appendHistory(history, RoundRecord{Objective: obj.String(), Outcome: objectiveResult.HistoryText()})
@@ -952,10 +1016,22 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 			stuck++
 		} else {
 			stuck = 0
+			stuckEscalated = false
 		}
 		if stuck >= stuckAfter {
-			res.Stop = StopStuck
-			break
+			if planning.hasStrategist(p) {
+				if stuckEscalated {
+					res.Stop = StopStuck
+					break
+				}
+				planning.request("stuck")
+				stuckEscalated = true
+				stuck = 0
+				notifyPlanning(p, planning.snapshot())
+			} else {
+				res.Stop = StopStuck
+				break
+			}
 		}
 		if m.FrameCount()-startFrame >= uint64(budget.MaxFrames) {
 			res.Stop = StopBudget
@@ -964,6 +1040,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 	}
 
 	res.Final = last
+	res.Planning = planning.snapshot()
 	if deterministicGoal {
 		status := evaluateRunGoal(p, runGoal, last, res.Rounds, budget.MaxRounds, intent, intentAge)
 		res.GoalStatus = &status
@@ -1037,7 +1114,7 @@ type checkpointRing struct {
 // function, same base name, so the two cannot drift out of step — a
 // surviving checkpoint is always a state and the understanding the run had
 // at that moment, and resume (LoadCheckpointMemory) can only pair them.
-func (c *checkpointRing) write(m *emu.Emu, round int, obj Objective, k *Knowledge, intent string, intentAge int) error {
+func (c *checkpointRing) write(m *emu.Emu, round int, obj Objective, k *Knowledge, intent string, intentAge int, plans ...Plan) error {
 	b, err := m.SaveState()
 	if err != nil {
 		return fmt.Errorf("SaveState: %w", err)
@@ -1047,7 +1124,7 @@ func (c *checkpointRing) write(m *emu.Emu, round int, obj Objective, k *Knowledg
 	if err := os.WriteFile(path, b, 0o644); err != nil {
 		return fmt.Errorf("write %s: %w", path, err)
 	}
-	if err := writeMemoryFile(path, k, intent, intentAge); err != nil {
+	if err := writeMemoryFile(path, k, intent, intentAge, plans...); err != nil {
 		return fmt.Errorf("knowledge round %d: %w", round, err)
 	}
 	return c.evict()

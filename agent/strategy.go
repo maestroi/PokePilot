@@ -11,8 +11,9 @@ import (
 const recentMapWindow = 4
 
 // StrategicMemory is derived run state used to detect long-horizon stalls.
-// It deliberately stores no planner-authored strategy text: Observation.Intent
-// and IntentAge are the single planner-owned strategic memory carried by Run.
+// It deliberately stores no planner-authored strategy text. Observation.Intent
+// remains chooser-authored context; the persistent multi-step Plan is owned and
+// advanced separately by Run.
 //
 // NoProgress is the strict stall counter: badges, events, party levels and
 // genuinely new local maps all reset it. NoWorldProgress is the slower

@@ -603,6 +603,41 @@ func (p reportingPlanner) NextRetry(obs agent.Observation, offered []agent.Objec
 	return p.ask(obs, offered, r)
 }
 
+func (p reportingPlanner) Strategize(obs agent.Observation, offered []agent.Objective, reason string) (agent.Plan, error) {
+	return p.strategize(obs, offered, reason, agent.Retry{})
+}
+
+func (p reportingPlanner) StrategizeRetry(obs agent.Observation, offered []agent.Objective, reason string, r agent.Retry) (agent.Plan, error) {
+	return p.strategize(obs, offered, reason, r)
+}
+
+func (p reportingPlanner) strategize(obs agent.Observation, offered []agent.Objective, reason string, r agent.Retry) (agent.Plan, error) {
+	q := "STRATEGY (" + reason + ")\n" + planQuestion(offered)
+	if p.snap != nil {
+		p.snap.storePlan(q, "")
+	}
+	sp := p.inner.(agent.StrategicPlanner)
+	var (
+		plan agent.Plan
+		err  error
+	)
+	if r != (agent.Retry{}) {
+		plan, err = p.inner.(agent.StrategicFeedbackPlanner).StrategizeRetry(obs, offered, reason, r)
+	} else {
+		plan, err = sp.Strategize(obs, offered, reason)
+	}
+	if err == nil && p.snap != nil {
+		p.snap.storePlan(q, plan.Goal+": "+strings.Join(plan.Steps, " -> "))
+	}
+	return plan, err
+}
+
+func (p reportingPlanner) ObservePlanning(stats agent.PlanningStats) {
+	if o, ok := p.inner.(agent.PlanningObserver); ok {
+		o.ObservePlanning(stats)
+	}
+}
+
 func (p reportingPlanner) ask(obs agent.Observation, offered []agent.Objective, r agent.Retry) (agent.Objective, error) {
 	q := planQuestion(offered)
 	if p.snap != nil {

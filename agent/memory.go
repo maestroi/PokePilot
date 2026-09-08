@@ -63,6 +63,7 @@ type memoryFile struct {
 	Failures  []Failure `json:"failures,omitempty"`
 	Intent    string    `json:"intent,omitempty"`
 	IntentAge int       `json:"intent_age,omitempty"`
+	Plan      Plan      `json:"plan,omitempty"`
 }
 
 // talkedKey is one "talked to this object" record: map-local coordinates are
@@ -78,8 +79,11 @@ type talkedKey struct {
 // form. The struct IS the validation on write: every field has a fixed
 // type, the version is stamped, and there is no path by which an unknown
 // shape reaches the file.
-func encodeMemoryFile(k *Knowledge, intent string, intentAge int) ([]byte, error) {
+func encodeMemoryFile(k *Knowledge, intent string, intentAge int, plans ...Plan) ([]byte, error) {
 	mem := memoryFile{Version: memoryVersion, Intent: intent, IntentAge: intentAge}
+	if len(plans) > 0 {
+		mem.Plan = plans[0].clone()
+	}
 	for id := range k.Visited {
 		mem.Visited = append(mem.Visited, id)
 	}
@@ -106,8 +110,8 @@ func encodeMemoryFile(k *Knowledge, intent string, intentAge int) ([]byte, error
 // never a game state that has not seen what it claims to know. The write is
 // atomic (temp file + rename) so a crash mid-write cannot leave a truncated
 // file beside a valid state for a reader to half-trust.
-func writeMemoryFile(statePath string, k *Knowledge, intent string, intentAge int) error {
-	data, err := encodeMemoryFile(k, intent, intentAge)
+func writeMemoryFile(statePath string, k *Knowledge, intent string, intentAge int, plans ...Plan) error {
+	data, err := encodeMemoryFile(k, intent, intentAge, plans...)
 	if err != nil {
 		return fmt.Errorf("encode knowledge: %w", err)
 	}
@@ -138,6 +142,7 @@ type ResumedMemory struct {
 	Knowledge *Knowledge
 	Intent    string
 	IntentAge int
+	Plan      Plan
 }
 
 // LoadCheckpointMemory reads the knowledge file paired with the checkpoint
@@ -185,9 +190,13 @@ func LoadCheckpointMemory(statePath string, adjacency map[uint8][]uint8, log io.
 			statePath, len(mem.Intent), IntentCap)
 		return empty
 	}
+	if err := validateStoredPlan(mem.Plan); err != nil {
+		logMemory(log, "knowledge file beside %s carries an invalid plan (%v); starting with empty knowledge", statePath, err)
+		return empty
+	}
 	k := NewKnowledge(adjacency)
 	k.restore(mem)
-	return ResumedMemory{Knowledge: k, Intent: mem.Intent, IntentAge: mem.IntentAge}
+	return ResumedMemory{Knowledge: k, Intent: mem.Intent, IntentAge: mem.IntentAge, Plan: mem.Plan.clone()}
 }
 
 // logMemory writes the one line a failed knowledge load leaves behind. Nil
