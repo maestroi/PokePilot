@@ -32,7 +32,7 @@ func (a *redObjectiveAdapter) Observe() Observation {
 	return Observe(a.m, a.romData)
 }
 
-func (a *redObjectiveAdapter) Validate(o Objective) error {
+func (a *redObjectiveAdapter) Validate(o Objective, _ Observation) error {
 	return o.Validate()
 }
 
