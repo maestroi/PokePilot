@@ -26,16 +26,16 @@ const (
 )
 
 type ObjectiveResult struct {
-	Objective  Objective           `json:"objective"`
-	Outcome    Outcome             `json:"outcome"`
-	Summary    string              `json:"summary,omitempty"`
-	Cause      FailureCauseID      `json:"cause,omitempty"`
-	CauseContext []string          `json:"cause_context,omitempty"`
-	Initial    *FailureState       `json:"initial,omitempty"`
-	Final      Observation         `json:"final"`
-	Travel     *skill.TravelResult `json:"travel,omitempty"`
-	Train      *skill.TrainResult  `json:"train,omitempty"`
-	GymOutcome *state.BattleResult `json:"gym_outcome,omitempty"`
+	Objective    Objective           `json:"objective"`
+	Outcome      Outcome             `json:"outcome"`
+	Summary      string              `json:"summary,omitempty"`
+	Cause        FailureCauseID      `json:"cause,omitempty"`
+	CauseContext []string            `json:"cause_context,omitempty"`
+	Initial      *FailureState       `json:"initial,omitempty"`
+	Final        Observation         `json:"final"`
+	Travel       *skill.TravelResult `json:"travel,omitempty"`
+	Train        *skill.TrainResult  `json:"train,omitempty"`
+	GymOutcome   *state.BattleResult `json:"gym_outcome,omitempty"`
 }
 
 var (
