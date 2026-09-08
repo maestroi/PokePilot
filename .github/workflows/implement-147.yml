@@ -1,0 +1,43 @@
+name: Implement issue 147
+
+on:
+  push:
+    branches: [codex/issue-147-route-prerequisites]
+
+permissions:
+  contents: write
+
+jobs:
+  implement:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/issue-147-route-prerequisites
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Apply implementation
+        run: python3 implement_147.py
+      - name: Format and verify
+        env:
+          POKEMON_RED_ROM: ""
+        run: |
+          gofmt -w agent/observe.go agent/offer.go agent/route_blockage.go agent/route_blockage_test.go
+          git diff --check
+          go mod download
+          git diff --exit-code -- go.mod go.sum
+          go vet ./...
+          go test -short -count=1 ./...
+          go test -race -short -count=1 ./...
+      - name: Commit verified implementation
+        run: |
+          rm implement_147.py .github/workflows/implement-147.yml
+          git add -A
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "planner: expose structured route prerequisites (#147)"
+          git push origin HEAD:codex/issue-147-route-prerequisites
