@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/maestroi/pokepilot/agent"
@@ -154,5 +156,54 @@ func TestObjectiveFailureTelemetryCountsRecoveredAndTerminalOccurrences(t *testi
 	}
 	if terminal == nil || terminal.Fingerprint != f.Fingerprint {
 		t.Fatalf("terminal = %+v, want group fingerprint %q", terminal, f.Fingerprint)
+	}
+}
+
+func TestRecoverableProductionFaultsKeepReplayCheckpoints(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		cause     agent.FailureCauseID
+		objective agent.Objective
+	}{
+		{
+			name:      "navigation stall",
+			cause:     "navigation_stalled",
+			objective: agent.Objective{Kind: agent.KindGoTo, Place: "mt moon b1f", Flee: true},
+		},
+		{
+			name:      "shop timeout",
+			cause:     "shop_menu_timeout",
+			objective: agent.Objective{Kind: agent.KindBuy, Item: "pokeball", Qty: 3},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resetObjectiveFailureTelemetry()
+			t.Cleanup(resetObjectiveFailureTelemetry)
+
+			dir := t.TempDir()
+			checkpoint := "round-001-frame-0000001234-recovery.state"
+			if err := os.WriteFile(filepath.Join(dir, checkpoint), []byte("replay-state-placeholder"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			failure := structuredFailureResult(tc.cause, 10)
+			failure.Objective = tc.objective
+			failure.Recovered = true
+			captureObjectiveFailureTelemetry(agent.Result{Outcomes: []agent.ObjectiveResult{failure}})
+
+			got, terminal := drainObjectiveFailureTelemetry("budget", "build-a", dir)
+			if terminal != nil {
+				t.Fatalf("recoverable fault produced terminal occurrence: %+v", terminal)
+			}
+			if len(got) != 1 {
+				t.Fatalf("failures = %+v, want one", got)
+			}
+			if got[0].Checkpoint != checkpoint {
+				t.Fatalf("checkpoint = %q, want %q", got[0].Checkpoint, checkpoint)
+			}
+			if got[0].RecoveredCount != 1 || got[0].TerminalCount != 0 {
+				t.Fatalf("impact = recovered %d terminal %d", got[0].RecoveredCount, got[0].TerminalCount)
+			}
+		})
 	}
 }

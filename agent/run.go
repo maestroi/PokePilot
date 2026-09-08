@@ -991,7 +991,10 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 			known.TalkedTo(before.Map, obj.X, obj.Y)
 		}
 		consecFailures = 0
-		failureEscalated = map[string]bool{}
+		// failureEscalated intentionally survives successful objectives. Its
+		// keys include the semantic world-state fingerprint, so a material
+		// change naturally creates a fresh key while fail -> harmless success
+		// -> same fail cannot reset the strategic recovery budget forever.
 		lastFailKey = ""
 		retreatStreak, lastRetreatLevel = 0, 0
 		history = appendHistory(history, RoundRecord{Objective: obj.String(), Outcome: objectiveResult.HistoryText()})
