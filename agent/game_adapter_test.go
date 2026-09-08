@@ -102,9 +102,9 @@ func TestObjectiveRuntimeUsesGameAdapterWithoutEmulator(t *testing.T) {
 func TestObjectiveRuntimePreservesAdapterBlockedOutcome(t *testing.T) {
 	blockedErr := errors.New("door locked")
 	adapter := &fakeObjectiveGame{
-		obs: Observation{MapName: "ROOM_A", Controllable: true},
+		obs:           Observation{MapName: "ROOM_A", Controllable: true},
 		executeResult: ObjectiveResult{Outcome: OutcomeBlocked},
-		executeErr: blockedErr,
+		executeErr:    blockedErr,
 	}
 	o := Objective{Kind: KindGoTo, Place: "room-b"}
 
