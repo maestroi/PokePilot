@@ -315,7 +315,7 @@ func TestExecuteGoToFleesWildEncounters(t *testing.T) {
 func TestExecuteCatchMissIsAFailure(t *testing.T) {
 	e := fixture.Load(t, "route1")
 
-	o := agent.Objective{Kind: agent.KindCatch, Species: 0x24} // PIDGEY
+	o := agent.Objective{Kind: agent.KindCatch, Species: agent.SpeciesID("pidgey")}
 	got, err := agent.Execute(e, e.ROM(), o)
 	if err == nil {
 		t.Fatalf("Execute %s: want an error (the hunt did not end with a PIDGEY in the party), got nil", o)
@@ -417,7 +417,7 @@ func TestExecuteUseItemHealsTheTarget(t *testing.T) {
 		t.Fatalf("precondition: lead not damaged (HP %d/%d)", before.HP, before.MaxHP)
 	}
 
-	o := agent.Objective{Kind: agent.KindUseItem, Item: 0x14, Slot: 0}
+	o := agent.Objective{Kind: agent.KindUseItem, Item: agent.ItemID("potion"), Slot: 0}
 	got, err := agent.Execute(e, e.ROM(), o)
 	if err != nil {
 		t.Fatalf("Execute %s: %v", o, err)
@@ -504,10 +504,10 @@ func TestString(t *testing.T) {
 		{agent.Objective{Kind: agent.KindHeal}, "heal the party"},
 		{agent.Objective{Kind: agent.KindHeal, Place: "viridian pokemon center"}, "heal the party at VIRIDIAN POKEMON CENTER"},
 		{agent.Objective{Kind: agent.KindGym}, "beat the gym leader here"},
-		{agent.Objective{Kind: agent.KindCatch, Species: 0x7B}, "catch a CATERPIE here"},
-		{agent.Objective{Kind: agent.KindBuy, Item: 0x14, Qty: 3}, "buy 3 POTION"},
-		{agent.Objective{Kind: agent.KindUseItem, Item: 0x14, Slot: 0}, "use a POTION on party slot 0"},
-		{agent.Objective{Kind: agent.KindUseItem, Item: 0x0B, Slot: 2}, "use an ANTIDOTE on party slot 2"},
+		{agent.Objective{Kind: agent.KindCatch, Species: agent.SpeciesID("caterpie")}, "catch a CATERPIE here"},
+		{agent.Objective{Kind: agent.KindBuy, Item: agent.ItemID("potion"), Qty: 3}, "buy 3 POTION"},
+		{agent.Objective{Kind: agent.KindUseItem, Item: agent.ItemID("potion"), Slot: 0}, "use a POTION on party slot 0"},
+		{agent.Objective{Kind: agent.KindUseItem, Item: agent.ItemID("antidote"), Slot: 2}, "use an ANTIDOTE on party slot 2"},
 		{agent.Objective{Kind: 99}, "unknown kind 99"},
 	}
 	for _, c := range cases {
@@ -517,29 +517,27 @@ func TestString(t *testing.T) {
 	}
 }
 
-// TestValidateRejects is the argument safety net: every value a planner can
-// supply is checked against a stated range, and an out-of-range or unknown
-// value is REJECTED with a typed error — never clamped, never best-matched.
-// No ROM needed: Validate is pure.
+// TestValidateRejects pins only game-agnostic objective shape/range rules.
+// Concrete Pokémon Red vocabulary is adapter-owned: generic validation must
+// not know which species/items/places exist in one game.
 func TestValidateRejects(t *testing.T) {
 	reject := []struct {
 		name string
 		o    agent.Objective
-		want string // substring the error must carry
+		want string
 	}{
+		{"empty go-to place", agent.Objective{Kind: agent.KindGoTo}, "empty place id"},
 		{"train level 0", agent.Objective{Kind: agent.KindTrain, Level: 0}, "out of range"},
 		{"train level 101", agent.Objective{Kind: agent.KindTrain, Level: 101}, "out of range"},
-		{"catch unknown species", agent.Objective{Kind: agent.KindCatch, Species: 0x00}, "unknown species"},
-		{"buy zero quantity", agent.Objective{Kind: agent.KindBuy, Item: 0x14, Qty: 0}, "out of range"},
-		{"buy negative quantity", agent.Objective{Kind: agent.KindBuy, Item: 0x14, Qty: -1}, "out of range"},
-		{"buy 150 quantity", agent.Objective{Kind: agent.KindBuy, Item: 0x14, Qty: 150}, "out of range"},
-		{"buy unknown item", agent.Objective{Kind: agent.KindBuy, Item: 0x00, Qty: 1}, "unknown item"},
+		{"catch empty species", agent.Objective{Kind: agent.KindCatch}, "empty species id"},
+		{"buy zero quantity", agent.Objective{Kind: agent.KindBuy, Item: agent.ItemID("potion"), Qty: 0}, "out of range"},
+		{"buy negative quantity", agent.Objective{Kind: agent.KindBuy, Item: agent.ItemID("potion"), Qty: -1}, "out of range"},
+		{"buy 150 quantity", agent.Objective{Kind: agent.KindBuy, Item: agent.ItemID("potion"), Qty: 150}, "out of range"},
+		{"buy empty item", agent.Objective{Kind: agent.KindBuy, Qty: 1}, "empty item id"},
 		{"unknown starter", agent.Objective{Kind: agent.KindStarter, Starter: skill.Starter(4)}, "unknown starter"},
-		{"heal at an unknown place", agent.Objective{Kind: agent.KindHeal, Place: "atlantis"}, "unknown place"},
-		{"heal at a mart", agent.Objective{Kind: agent.KindHeal, Place: "viridian mart"}, "not a Pokemon Center"},
-		{"use an unknown item", agent.Objective{Kind: agent.KindUseItem, Item: 0x00, Slot: 0}, "unknown item"},
-		{"use an item on slot -1", agent.Objective{Kind: agent.KindUseItem, Item: 0x14, Slot: -1}, "out of range"},
-		{"use an item on slot 6", agent.Objective{Kind: agent.KindUseItem, Item: 0x14, Slot: 6}, "out of range"},
+		{"use empty item", agent.Objective{Kind: agent.KindUseItem, Slot: 0}, "empty item id"},
+		{"use an item on slot -1", agent.Objective{Kind: agent.KindUseItem, Item: agent.ItemID("potion"), Slot: -1}, "out of range"},
+		{"use an item on slot 6", agent.Objective{Kind: agent.KindUseItem, Item: agent.ItemID("potion"), Slot: 6}, "out of range"},
 	}
 	for _, c := range reject {
 		if err := c.o.Validate(); err == nil {
@@ -549,21 +547,31 @@ func TestValidateRejects(t *testing.T) {
 		}
 	}
 
-	// The boundaries themselves are legal: 1 and 100 train, 1 and 99 buy.
+	// Game-specific names are intentionally legal at this layer. The Red
+	// adapter rejects unsupported Red vocabulary before execution.
+	for _, o := range []agent.Objective{
+		{Kind: agent.KindCatch, Species: agent.SpeciesID("mewthree")},
+		{Kind: agent.KindBuy, Item: agent.ItemID("mystery item"), Qty: 1},
+		{Kind: agent.KindHeal, Place: "atlantis"},
+	} {
+		if err := o.Validate(); err != nil {
+			t.Errorf("portable Validate rejected adapter-owned vocabulary for %s: %v", o, err)
+		}
+	}
+
+	// The portable boundaries themselves are legal.
 	accept := []agent.Objective{
 		{Kind: agent.KindTrain, Level: 1},
 		{Kind: agent.KindTrain, Level: 100},
-		{Kind: agent.KindCatch, Species: 0x7B},
-		{Kind: agent.KindBuy, Item: 0x14, Qty: 1},
-		{Kind: agent.KindBuy, Item: 0x14, Qty: 99},
+		{Kind: agent.KindCatch, Species: agent.SpeciesID("caterpie")},
+		{Kind: agent.KindBuy, Item: agent.ItemID("potion"), Qty: 1},
+		{Kind: agent.KindBuy, Item: agent.ItemID("potion"), Qty: 99},
 		{Kind: agent.KindStarter, Starter: skill.StarterCharmander},
-		{Kind: agent.KindGoTo, Place: "pallet town"}, // no arguments, nothing to check
-		{Kind: agent.KindHeal},                       // "" is the center you are standing in
+		{Kind: agent.KindGoTo, Place: "pallet town"},
+		{Kind: agent.KindHeal},
 		{Kind: agent.KindHeal, Place: "viridian pokemon center"},
-		// The slot boundaries themselves are legal: 0 and 5 (the party caps
-		// at six), for a known item.
-		{Kind: agent.KindUseItem, Item: 0x14, Slot: 0},
-		{Kind: agent.KindUseItem, Item: 0x0B, Slot: 5},
+		{Kind: agent.KindUseItem, Item: agent.ItemID("potion"), Slot: 0},
+		{Kind: agent.KindUseItem, Item: agent.ItemID("antidote"), Slot: 5},
 	}
 	for _, o := range accept {
 		if err := o.Validate(); err != nil {
@@ -572,23 +580,21 @@ func TestValidateRejects(t *testing.T) {
 	}
 }
 
-// TestSpeciesAndItemTables pins the argument vocabulary a planner can aim
-// at: names resolve to ROM indexes and back, and unknown names do not.
+// TestSpeciesAndItemTables separates the planner-facing semantic vocabulary
+// from Pokémon Red's raw reverse lookup. Name resolution returns portable IDs;
+// raw bytes remain an implementation detail of the Red adapter.
 func TestSpeciesAndItemTables(t *testing.T) {
-	if id, ok := agent.SpeciesByName("CATERPIE"); !ok || id != 0x7B {
-		t.Errorf("SpeciesByName(CATERPIE) = %#04x, %v; want 0x7B", id, ok)
+	if id, ok := agent.SpeciesByName("CATERPIE"); !ok || id != agent.SpeciesID("caterpie") {
+		t.Errorf("SpeciesByName(CATERPIE) = %q, %v; want caterpie", id, ok)
 	}
 	if name, ok := agent.SpeciesName(0x24); !ok || name != "pidgey" {
 		t.Errorf("SpeciesName(0x24) = %q, %v; want pidgey", name, ok)
 	}
-	// The whole ROM roster, not a hand-picked subset: a species the table
-	// omits is a species the planner is not allowed to want, and the map's
-	// wild table names plenty the old 28-entry list did not contain.
-	if _, ok := agent.SpeciesByName("snorlax"); !ok {
-		t.Error("SpeciesByName(snorlax) did not resolve; all 151 should be nameable")
+	if id, ok := agent.SpeciesByName("snorlax"); !ok || id != agent.SpeciesID("snorlax") {
+		t.Errorf("SpeciesByName(snorlax) = %q, %v; want snorlax", id, ok)
 	}
-	if id, ok := agent.SpeciesByName("fearow"); !ok || id != 0x23 {
-		t.Errorf("SpeciesByName(fearow) = %#04x, %v; want 0x23 (the old table misspelled this one)", id, ok)
+	if id, ok := agent.SpeciesByName("fearow"); !ok || id != agent.SpeciesID("fearow") {
+		t.Errorf("SpeciesByName(fearow) = %q, %v; want fearow", id, ok)
 	}
 	if n := agent.SpeciesCount(); n != 151 {
 		t.Errorf("species table holds %d names, want 151", n)
@@ -596,8 +602,8 @@ func TestSpeciesAndItemTables(t *testing.T) {
 	if _, ok := agent.SpeciesByName("mewthree"); ok {
 		t.Error("SpeciesByName(mewthree) resolved; it is not a species")
 	}
-	if id, ok := agent.ItemByName("potion"); !ok || id != 0x14 {
-		t.Errorf("ItemByName(potion) = %#04x, %v; want 0x14", id, ok)
+	if id, ok := agent.ItemByName("potion"); !ok || id != agent.ItemID("potion") {
+		t.Errorf("ItemByName(potion) = %q, %v; want potion", id, ok)
 	}
 	if name, ok := agent.ItemName(0x0B); !ok || name != "antidote" {
 		t.Errorf("ItemName(0x0B) = %q, %v; want antidote", name, ok)
