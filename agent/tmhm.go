@@ -36,7 +36,7 @@ func appendTMHMObjectives(romData []byte, party state.PartyState, inventory stat
 		}
 		out = append(out, Objective{
 			Kind: KindUseItem,
-			Item: item.ID,
+			Item: machineItemID(machine),
 			Slot: decision.PartySlot,
 			Note: tmhmDecisionNote(machine, decision),
 		})
@@ -75,9 +75,6 @@ func normalizeObjectiveBoundary(m *emu.Emu) error {
 		if state.DecodeBattle(&mem) != nil {
 			return fmt.Errorf("%w: battle still in progress", ErrObjectiveBoundaryDirty)
 		}
-		// Check dismissable menus before the generic two-option decoder: a
-		// two-entry bag list has the same cursor/max shape as YES/NO but is
-		// still just a menu that B can safely unwind.
 		if skill.DismissableObjectiveMenu(&mem) {
 			if err := skill.CloseOpenMenuToOverworld(m); err != nil {
 				return fmt.Errorf("%w: close leftover menu: %v", ErrObjectiveBoundaryDirty, err)
@@ -105,9 +102,6 @@ func normalizeObjectiveBoundary(m *emu.Emu) error {
 	return fmt.Errorf("%w: cleanup did not converge after %d passes", ErrObjectiveBoundaryDirty, maxPasses)
 }
 
-// These aliases remain for existing boundary-focused tests and checkpoint
-// compatibility. Runtime execution calls the same implementation through the
-// Red adapter, so start and finish use one invariant.
 func prepareObjectiveBoundary(m *emu.Emu) error {
 	return normalizeObjectiveBoundary(m)
 }
