@@ -39,9 +39,17 @@ func (f *fakeObjectiveGame) NormalizeBoundary() error {
 	return nil
 }
 
-func (f *fakeObjectiveGame) ExecuteOwned(Objective) (ObjectiveResult, error) {
+func (f *fakeObjectiveGame) ExecuteOwned(o Objective) (ObjectiveResult, error) {
 	f.calls = append(f.calls, "execute")
-	f.obs = Observation{MapName: "ROOM_B", X: 2, Y: 3, Controllable: true}
+	if o.Kind == KindProgress {
+		f.obs = Observation{
+			MapName:      "ROOM_A",
+			Controllable: true,
+			Story:        ProgressState{{ID: o.Progress, Complete: true}},
+		}
+	} else {
+		f.obs = Observation{MapName: "ROOM_B", X: 2, Y: 3, Controllable: true}
+	}
 	return f.executeResult, f.executeErr
 }
 
@@ -54,10 +62,14 @@ func (f *fakeObjectiveGame) SettlePostcondition(Objective) {
 	f.calls = append(f.calls, "settle")
 }
 
-func (f *fakeObjectiveGame) VerifyPostcondition(_ Objective, final Observation, _ ObjectiveResult) error {
+func (f *fakeObjectiveGame) VerifyPostcondition(o Objective, final Observation, _ ObjectiveResult) error {
 	f.calls = append(f.calls, "verify")
 	if f.verifyErr != nil {
 		return f.verifyErr
+	}
+	if o.Kind == KindProgress {
+		_, err := objectivePostcondition(o, final)
+		return err
 	}
 	if final.MapName != "ROOM_B" || !final.Controllable {
 		return errors.New("fake game did not reach ROOM_B")
@@ -99,6 +111,24 @@ func TestObjectiveRuntimeUsesGameAdapterWithoutEmulator(t *testing.T) {
 	wantCalls := []string{"observe", "validate", "normalize-start", "budget", "execute", "settle", "normalize-finish", "observe", "verify"}
 	if !reflect.DeepEqual(adapter.calls, wantCalls) {
 		t.Fatalf("calls = %#v, want %#v", adapter.calls, wantCalls)
+	}
+}
+
+func TestObjectiveRuntimeCompletesGenericProgressionWithoutRed(t *testing.T) {
+	adapter := &fakeObjectiveGame{
+		obs: Observation{MapName: "ROOM_A", Controllable: true},
+	}
+	o := Objective{Kind: KindProgress, Progress: ProgressID("door_unlocked")}
+
+	got, err := executeObjectiveWithAdapter(adapter, o)
+	if err != nil {
+		t.Fatalf("executeObjectiveWithAdapter: %v", err)
+	}
+	if got.Outcome != OutcomeCompleted {
+		t.Fatalf("Outcome = %q, want completed", got.Outcome)
+	}
+	if !got.Final.Story.Has(o.Progress) {
+		t.Fatalf("final story = %+v, want %q complete", got.Final.Story, o.Progress)
 	}
 }
 
