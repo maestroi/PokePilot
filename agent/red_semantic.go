@@ -10,6 +10,16 @@ import (
 	"github.com/maestroi/pokepilot/skill"
 )
 
+// These IDs are Red adapter vocabulary, not generic planner kinds. The generic
+// runtime only knows that Objective.Progress should become true in
+// Observation.Story; Red owns what each goal means and how to prove it.
+const (
+	redProgressPokedexAcquired            ProgressID = "pokedex_acquired"
+	redProgressSilphScopeAcquired         ProgressID = "silph_scope_acquired"
+	redProgressPokeFluteAcquired          ProgressID = "poke_flute_acquired"
+	redProgressFuchsiaProgressionComplete ProgressID = "fuchsia_progression_complete"
+)
+
 func semanticPlace(name string) PlaceID {
 	return gameruntime.CanonicalID(name)
 }
@@ -65,9 +75,6 @@ func machineItemID(machine rom.Machine) ItemID {
 	return ItemID(fmt.Sprintf("tm%02d", machine.Number))
 }
 
-// Starter remains the existing Red opening-story enum until #137 replaces
-// Red-specific progression verbs. Keeping its validation here avoids widening
-// #136 beyond planner species/item/location identity.
 func redStarter(id skill.Starter) (skill.Starter, bool) {
 	if id > skill.StarterBulbasaur {
 		return 0, false
@@ -75,8 +82,26 @@ func redStarter(id skill.Starter) (skill.Starter, bool) {
 	return id, true
 }
 
-func redProgressState(f state.StoryFacts) ProgressState {
+func redInventoryHas(inv state.InventoryState, id ItemID) bool {
+	raw, ok := redItemID(id)
+	if !ok {
+		return false
+	}
+	for _, item := range inv.Items {
+		if item.ID == raw && item.Quantity > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func redProgressState(mem *state.Mem, inv state.InventoryState, f state.StoryFacts) ProgressState {
+	progress := state.DecodeProgress(mem)
 	return ProgressState{
+		{ID: redProgressPokedexAcquired, Complete: state.HasEvent(mem, state.EventGotPokedex)},
+		{ID: redProgressSilphScopeAcquired, Complete: redInventoryHas(inv, ItemID("silph scope"))},
+		{ID: redProgressPokeFluteAcquired, Complete: redInventoryHas(inv, ItemID("poke flute"))},
+		{ID: redProgressFuchsiaProgressionComplete, Complete: progress.Has(state.BadgeSoul) && redInventoryHas(inv, ItemID("hm03")) && redInventoryHas(inv, ItemID("hm04"))},
 		{ID: ProgressSaffronGateOpen, Complete: f.SaffronGateOpen},
 		{ID: ProgressCardKeyOwned, Complete: f.CardKeyOwned},
 		{ID: ProgressSilphCoCleared, Complete: f.SilphCoCleared},
