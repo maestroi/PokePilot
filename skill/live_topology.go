@@ -11,10 +11,6 @@ import (
 
 const liveMapBorderBlocks = 3
 
-// readLiveMapBlocks extracts the current map's interior block IDs from
-// wOverworldMap. Pokémon Red stores a three-block connection border on every
-// side, and ReplaceTileBlock writes directly into this buffer, so these are
-// the block IDs the running game is actually navigating now.
 func readLiveMapBlocks(peek func(uint16) uint8, widthBlocks, heightBlocks int) ([]byte, error) {
 	if widthBlocks < 0 || heightBlocks < 0 {
 		return nil, fmt.Errorf("skill: live map has negative dimensions %dx%d", widthBlocks, heightBlocks)
@@ -22,14 +18,12 @@ func readLiveMapBlocks(peek func(uint16) uint8, widthBlocks, heightBlocks int) (
 	if widthBlocks == 0 || heightBlocks == 0 {
 		return []byte{}, nil
 	}
-
 	stride := widthBlocks + 2*liveMapBorderBlocks
 	first := liveMapBorderBlocks*stride + liveMapBorderBlocks
 	last := first + (heightBlocks-1)*stride + (widthBlocks - 1)
 	if first < 0 || last >= sym.OverworldMapLen {
 		return nil, fmt.Errorf("skill: live map %dx%d needs wOverworldMap offset %d, buffer length is %d", widthBlocks, heightBlocks, last, sym.OverworldMapLen)
 	}
-
 	blocks := make([]byte, widthBlocks*heightBlocks)
 	for y := 0; y < heightBlocks; y++ {
 		for x := 0; x < widthBlocks; x++ {
@@ -51,14 +45,21 @@ func liveMapBlocks(m *emu.Emu, h rom.MapHeader) ([]byte, error) {
 	return readLiveMapBlocks(m.Peek8, widthBlocks, heightBlocks)
 }
 
-// liveMapGrid decodes the current post-script map geometry using the same
-// tileset collision rules as world.Build. It intentionally has no cache: every
-// navigation call observes the current loaded map, including block replacements
-// made since the ROM map data was loaded.
+// liveMapGrid decodes the current post-script geometry using the traversal mode
+// the game is actually in. It intentionally has no cache: semantic transitions
+// such as Cut and Surf are followed by a fresh decode before routing continues.
 func liveMapGrid(m *emu.Emu, romData []byte, h rom.MapHeader) (*world.Grid, error) {
+	mode := world.TraversalLand
+	if m.Peek8(sym.WalkBikeSurfState) == fieldSurfingState {
+		mode = world.TraversalWater
+	}
+	return liveMapGridForTraversal(m, romData, h, mode)
+}
+
+func liveMapGridForTraversal(m *emu.Emu, romData []byte, h rom.MapHeader, mode world.TraversalMode) (*world.Grid, error) {
 	blocks, err := liveMapBlocks(m, h)
 	if err != nil {
 		return nil, err
 	}
-	return world.BuildFromBlocks(romData, h, blocks)
+	return world.BuildFromBlocksForTraversal(romData, h, blocks, mode)
 }

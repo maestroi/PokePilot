@@ -35,7 +35,10 @@ var ErrReplanExhausted = errors.New("skill: route re-plan budget exhausted")
 // its destination. It aborts only the current navigation call.
 var ErrNavigationStalled = errors.New("skill: navigation made no progress")
 
-const maxNavigationTransitions = 64
+const (
+	maxNavigationTransitions        = 64
+	maxSemanticTransitionExecutions = 16
+)
 
 type navigationState struct {
 	Map  uint8
@@ -110,6 +113,10 @@ func newReplanExhaustedError(max int, cur, x, y uint8, dest Destination, last er
 // coordinates are re-read and the remaining route is re-planned, so an opened
 // door, closed gate, or unexpected landing is observed rather than cached.
 func GoTo(m *emu.Emu, romData []byte, dest Destination) error {
+	return goToWithTransitionExecutor(m, romData, dest, newRedRouteTransitionExecutor(m, romData, nil))
+}
+
+func goToWithTransitionExecutor(m *emu.Emu, romData []byte, dest Destination, executor world.TransitionExecutor) error {
 	g, err := world.BuildGraph(romData)
 	if err != nil {
 		return err
@@ -141,6 +148,7 @@ func GoTo(m *emu.Emu, romData []byte, dest Destination) error {
 	// pathological map by walking it for an hour.
 	const maxReplans = 8
 	replans := 0
+	semanticExecutions := 0
 	var previousMap uint8
 	havePreviousMap := false
 
@@ -175,8 +183,11 @@ func GoTo(m *emu.Emu, romData []byte, dest Destination) error {
 			preferred = blockImmediateReverse(routeGraph, blockedHere, cur, previousMap)
 		}
 
-		route, err := world.FindRouteAtDestination(
-			routeGraph, cur, dest.Map, int(x), int(y), int(dest.X), int(dest.Y), preferred,
+		var mem state.Mem
+		state.Snapshot(m, &mem)
+		prereqs := redRoutePrerequisites(routeGraph, romData, &mem)
+		route, err := world.FindRoutePlanAtDestinationWithCapabilities(
+			routeGraph, cur, dest.Map, int(x), int(y), int(dest.X), int(dest.Y), preferred, prereqs,
 		)
 		// A dead-end map's only exit IS the reverse. Route 4's Pokemon
 		// Center (map 0x44) has two warps and both land back on Route 4,
@@ -188,8 +199,8 @@ func GoTo(m *emu.Emu, romData []byte, dest Destination) error {
 		// with the preference dropped and the measured bans kept. The
 		// navigation guard still catches a real oscillation.
 		if errors.Is(err, world.ErrNoRoute) && len(preferred) > len(blockedHere) {
-			route, err = world.FindRouteAtDestination(
-				routeGraph, cur, dest.Map, int(x), int(y), int(dest.X), int(dest.Y), blockedHere,
+			route, err = world.FindRoutePlanAtDestinationWithCapabilities(
+				routeGraph, cur, dest.Map, int(x), int(y), int(dest.X), int(dest.Y), blockedHere, prereqs,
 			)
 		}
 		if err != nil {
@@ -200,7 +211,23 @@ func GoTo(m *emu.Emu, romData []byte, dest Destination) error {
 			return walkWithinMap(m, romData, dest)
 		}
 
-		e := route[0]
+		step := route[0]
+		e := step.Edge
+		if step.Transition != nil {
+			execution, execErr := world.ExecuteTransition(executor, e, *step.Transition)
+			if execErr != nil {
+				return fmt.Errorf("skill: GoTo: %w", execErr)
+			}
+			if execution.Changed {
+				semanticExecutions++
+				if semanticExecutions > maxSemanticTransitionExecutions {
+					return fmt.Errorf("skill: GoTo: %w", &world.TransitionExecutionError{
+						Edge: e, Transition: *step.Transition, Cause: world.ErrTransitionExecutionStalled,
+					})
+				}
+				continue // effect observed: discard stale route/topology and re-plan
+			}
+		}
 		if err := Traverse(m, romData, e); err != nil {
 			k := legAt{e: e, m: cur, x: x, y: y}
 			if errors.Is(err, ErrLegUnwalkable) && !failed[k] {

@@ -153,11 +153,16 @@ func cutRecoverableNavigationError(err error) bool {
 // a real reachable Cut tree and the party can legally use Cut, the tree is
 // removed and the player steps onto the cleared cell before GoTo replans.
 // Otherwise the original navigation error is preserved verbatim.
-func cutAwareGoTo(m *emu.Emu, romData []byte, dest Destination) func() error {
+func cutAwareGoTo(m *emu.Emu, romData []byte, dest Destination, policies ...MovePolicy) func() error {
+	var policy MovePolicy
+	if len(policies) > 0 {
+		policy = policies[0]
+	}
+	executor := newRedRouteTransitionExecutor(m, romData, policy)
 	cuts := 0
 	return func() error {
 		for {
-			err := GoTo(m, romData, dest)
+			err := goToWithTransitionExecutor(m, romData, dest, executor)
 			if err == nil || errors.Is(err, ErrBattle) || errors.Is(err, ErrDialogueInterrupted) {
 				return err
 			}
@@ -210,7 +215,7 @@ func Travel(m *emu.Emu, romData []byte, dest Destination, policy MovePolicy, max
 		return TravelResult{}, fmt.Errorf("skill: Travel: maxBattles must be > 0, got %d", maxBattles)
 	}
 	return travel(m, policy, maxBattles,
-		cutAwareGoTo(m, romData, dest),
+		cutAwareGoTo(m, romData, dest, policy),
 		func() DialogueRecoveryResult { return RecoverDialogue(m, dialogueRecoveryBudget) },
 		func() bool { return m.Peek8(sym.StatusFlags4)&blackoutBit != 0 },
 		fightOnly(m, policy),
@@ -229,7 +234,7 @@ func Travel(m *emu.Emu, romData []byte, dest Destination, policy MovePolicy, max
 // decision.
 func TravelFlee(m *emu.Emu, romData []byte, dest Destination, policy MovePolicy, maxBattles int) (TravelResult, error) {
 	return travel(m, policy, maxBattles,
-		cutAwareGoTo(m, romData, dest),
+		cutAwareGoTo(m, romData, dest, policy),
 		func() DialogueRecoveryResult { return RecoverDialogue(m, dialogueRecoveryBudget) },
 		func() bool { return m.Peek8(sym.StatusFlags4)&blackoutBit != 0 },
 		fleeThenFight(m, policy, 5),
