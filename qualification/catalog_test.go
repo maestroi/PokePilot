@@ -23,17 +23,17 @@ func TestCatalogIDsAreUniqueAndSafe(t *testing.T) {
 
 func TestCatalogContainsQualificationRoadmap(t *testing.T) {
 	want := map[string]int{
-		"opening-brock":                0,
-		"misty":                        0,
-		"rocket-hideout":               0,
-		"pokemon-tower":                0,
-		"fuchsia-koga-surf-strength":   33,
-		"silph-sabrina":                34,
-		"cinnabar-blaine":              35,
-		"viridian-giovanni":            36,
-		"victory-road-indigo":          37,
-		"elite-four-champion":          38,
-		"fresh-hall-of-fame":           39,
+		"opening-brock":              0,
+		"misty":                      0,
+		"rocket-hideout":             0,
+		"pokemon-tower":              0,
+		"fuchsia-koga-surf-strength": 33,
+		"silph-sabrina":              34,
+		"cinnabar-blaine":            35,
+		"viridian-giovanni":          36,
+		"victory-road-indigo":        37,
+		"elite-four-champion":        38,
+		"fresh-hall-of-fame":         39,
 	}
 	got := map[string]Case{}
 	for _, c := range Catalog() {
@@ -75,7 +75,7 @@ func TestSelectProfiles(t *testing.T) {
 					t.Fatalf("case %d=%q, want %q; all=%v", i, cases[i].ID, tc.want[i], caseIDs(cases))
 				}
 			}
-		}
+		})
 	}
 }
 
