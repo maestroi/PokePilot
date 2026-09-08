@@ -7,6 +7,7 @@ import (
 	gameruntime "github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
+	"github.com/maestroi/pokepilot/skill"
 )
 
 func semanticPlace(name string) PlaceID {
@@ -62,6 +63,16 @@ func machineItemID(machine rom.Machine) ItemID {
 		return ItemID(fmt.Sprintf("hm%02d", machine.Number-rom.NumTMs))
 	}
 	return ItemID(fmt.Sprintf("tm%02d", machine.Number))
+}
+
+// Starter remains the existing Red opening-story enum until #137 replaces
+// Red-specific progression verbs. Keeping its validation here avoids widening
+// #136 beyond planner species/item/location identity.
+func redStarter(id skill.Starter) (skill.Starter, bool) {
+	if id > skill.StarterBulbasaur {
+		return 0, false
+	}
+	return id, true
 }
 
 func redProgressState(f state.StoryFacts) ProgressState {
