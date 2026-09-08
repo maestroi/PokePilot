@@ -7,6 +7,7 @@ import (
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
+	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/skill"
 )
 
@@ -143,7 +144,7 @@ func Execute(m *emu.Emu, romData []byte, o Objective) (result ObjectiveResult, r
 				return result, fmt.Errorf("agent: %s: %w", o, err)
 			}
 		}
-		if dest, ok := skill.PlaceOnMap(m.Peek8(0xD35E)); ok { // wCurMap; kept local to avoid a second navigation contract
+		if dest, ok := skill.PlaceOnMap(m.Peek8(sym.CurMap)); ok {
 			if err := skill.GoTo(m, romData, dest); err != nil {
 				return result, fmt.Errorf("agent: %s: walk to the nurse: %w", o, err)
 			}
