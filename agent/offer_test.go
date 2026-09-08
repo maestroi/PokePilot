@@ -29,7 +29,7 @@ func TestOfferTable(t *testing.T) {
 		obs     agent.Observation
 		known   func() *agent.Knowledge
 		want    []string
-		mustNot []string // extra negative assertions, for the cases that matter
+		mustNot []string
 	}{
 		{
 			name: "fresh boot at pallet: starters, one step out, nothing else",
@@ -43,7 +43,7 @@ func TestOfferTable(t *testing.T) {
 				"take the charmander starter",
 				"take the squirtle starter",
 				"take the bulbasaur starter",
-				"go to route 1", // the door of where you stand
+				"go to route 1",
 				"go to route 1, fleeing wild battles",
 			},
 			mustNot: []string{"pewter", "heal", "catch", "train", "gym", "parcel"},
@@ -55,8 +55,6 @@ func TestOfferTable(t *testing.T) {
 				Party:    []agent.PartyMon{{Level: 5, HP: 20, MaxHP: 20}},
 				Bag:      []agent.Item{{Name: "pokeball", Quantity: 5}},
 				HasGrass: true,
-				// Route1WildMons, as the ROM has it: no CATERPIE anywhere
-				// on this map, which the old fixed menu offered anyway.
 				WildGrass: []agent.WildSpecies{
 					{Name: "pidgey", MinLevel: 2, MaxLevel: 5, Slots: 6},
 					{Name: "rattata", MinLevel: 2, MaxLevel: 4, Slots: 4},
@@ -76,7 +74,7 @@ func TestOfferTable(t *testing.T) {
 				"train the lead to level 7",
 				"go to pallet town",
 				"go to pallet town, fleeing wild battles",
-				"go to viridian city", // one step out of route 1
+				"go to viridian city",
 				"go to viridian city, fleeing wild battles",
 			},
 			mustNot: []string{"starter", "heal", "CATERPIE"},
@@ -106,13 +104,13 @@ func TestOfferTable(t *testing.T) {
 			name: "hurt party in the field: the walk back to a known center is one objective",
 			obs: agent.Observation{
 				Map: 0x0c, MapName: "ROUTE_1", X: 5, Y: 14, PartyCount: 1,
-				Party:  []agent.PartyMon{{Species: 1, Level: 6, HP: 4, MaxHP: 20}},
+				Party:  []agent.PartyMon{{Species: agent.SpeciesID("rhydon"), Level: 6, HP: 4, MaxHP: 20}},
 				Events: []string{"BattledRivalInOaksLab"},
 			},
 			known: func() *agent.Knowledge {
 				k := agent.NewKnowledge(adj)
 				for _, m := range []uint8{0x00, 0x0c, 0x01, 0x29} {
-					k.SawMap(m) // the run has been inside the Viridian center
+					k.SawMap(m)
 				}
 				return k
 			},
@@ -132,7 +130,7 @@ func TestOfferTable(t *testing.T) {
 			name: "healthy party in the field: no heal — a full heal is a round that changes nothing",
 			obs: agent.Observation{
 				Map: 0x0c, MapName: "ROUTE_1", X: 5, Y: 14, PartyCount: 1,
-				Party:  []agent.PartyMon{{Species: 1, Level: 6, HP: 20, MaxHP: 20}},
+				Party:  []agent.PartyMon{{Species: agent.SpeciesID("rhydon"), Level: 6, HP: 20, MaxHP: 20}},
 				Events: []string{"BattledRivalInOaksLab"},
 			},
 			known: func() *agent.Knowledge {
@@ -157,7 +155,7 @@ func TestOfferTable(t *testing.T) {
 			name: "hurt party but no center the run has been inside: no heal it cannot reach",
 			obs: agent.Observation{
 				Map: 0x0c, MapName: "ROUTE_1", X: 5, Y: 14, PartyCount: 1,
-				Party:  []agent.PartyMon{{Species: 1, Level: 6, HP: 4, MaxHP: 20}},
+				Party:  []agent.PartyMon{{Species: agent.SpeciesID("rhydon"), Level: 6, HP: 4, MaxHP: 20}},
 				Events: []string{"BattledRivalInOaksLab"},
 			},
 			known: func() *agent.Knowledge {
@@ -179,7 +177,7 @@ func TestOfferTable(t *testing.T) {
 			name: "hurt party with a potion in the bag: field healing joins without walking to a center",
 			obs: agent.Observation{
 				Map: 0x0c, MapName: "ROUTE_1", X: 5, Y: 14, PartyCount: 1,
-				Party:  []agent.PartyMon{{Species: 1, Level: 6, HP: 4, MaxHP: 20}},
+				Party:  []agent.PartyMon{{Species: agent.SpeciesID("rhydon"), Level: 6, HP: 4, MaxHP: 20}},
 				Bag:    []agent.Item{{Name: "potion", Quantity: 3}},
 				Events: []string{"BattledRivalInOaksLab"},
 			},
@@ -207,7 +205,7 @@ func TestOfferTable(t *testing.T) {
 			name: "whole party with a potion in the bag: no use-item — a round that changes nothing",
 			obs: agent.Observation{
 				Map: 0x0c, MapName: "ROUTE_1", X: 5, Y: 14, PartyCount: 1,
-				Party:  []agent.PartyMon{{Species: 1, Level: 6, HP: 20, MaxHP: 20}},
+				Party:  []agent.PartyMon{{Species: agent.SpeciesID("rhydon"), Level: 6, HP: 20, MaxHP: 20}},
 				Bag:    []agent.Item{{Name: "potion", Quantity: 3}},
 				Events: []string{"BattledRivalInOaksLab"},
 			},
@@ -230,7 +228,7 @@ func TestOfferTable(t *testing.T) {
 			name: "hurt party, empty bag: no use-item to offer",
 			obs: agent.Observation{
 				Map: 0x0c, MapName: "ROUTE_1", X: 5, Y: 14, PartyCount: 1,
-				Party:  []agent.PartyMon{{Species: 1, Level: 6, HP: 4, MaxHP: 20}},
+				Party:  []agent.PartyMon{{Species: agent.SpeciesID("rhydon"), Level: 6, HP: 4, MaxHP: 20}},
 				Events: []string{"BattledRivalInOaksLab"},
 			},
 			known: func() *agent.Knowledge {
@@ -252,7 +250,7 @@ func TestOfferTable(t *testing.T) {
 			name: "poisoned mon with an antidote: the status cure joins, though the HP is whole",
 			obs: agent.Observation{
 				Map: 0x0c, MapName: "ROUTE_1", X: 5, Y: 14, PartyCount: 1,
-				Party:  []agent.PartyMon{{Species: 1, Level: 6, HP: 20, MaxHP: 20, Status: "poisoned"}},
+				Party:  []agent.PartyMon{{Species: agent.SpeciesID("rhydon"), Level: 6, HP: 20, MaxHP: 20, Status: "poisoned"}},
 				Bag:    []agent.Item{{Name: "antidote", Quantity: 1}},
 				Events: []string{"BattledRivalInOaksLab"},
 			},
@@ -303,7 +301,7 @@ func TestOfferTable(t *testing.T) {
 			name: "at the gym underlevelled: the gym is STILL offered — Offer never filters on wisdom",
 			obs: agent.Observation{
 				Map: 0x36, MapName: "PEWTER_GYM", X: 5, Y: 3, PartyCount: 1,
-				Party:  []agent.PartyMon{{Species: 7, Level: 5, HP: 1, MaxHP: 20}},
+				Party:  []agent.PartyMon{{Species: agent.SpeciesID("nidoking"), Level: 5, HP: 1, MaxHP: 20}},
 				Events: []string{"BattledRivalInOaksLab"},
 			},
 			known: func() *agent.Knowledge {
@@ -361,17 +359,9 @@ func TestOfferTable(t *testing.T) {
 			},
 		},
 		{
-			// The shelf as the ROM has it — red/rom.TestMartItemsViridian pins
-			// this exact list against POKEMON_RED_ROM (MEASURED 2026-08-31:
-			// POKe BALL, ANTIDOTE, PARLYZ HEAL, BURN HEAL — no POTION). Offer
-			// offers one buy per stocked item and nothing the shelf lacks:
-			// the old fixed menu offered POTION here, a guaranteed-failing
-			// objective at the first shop every run reached.
 			name: "inside the viridian mart: one buy per item the shelf actually stocks, no POTION",
 			obs: agent.Observation{
 				Map: 0x2a, MapName: "VIRIDIAN_MART", X: 3, Y: 6, PartyCount: 1, Money: 10000,
-				// names are the agent's item vocabulary (ItemName), which spells
-				// the ball "pokeball"; the ROM prints "POKE BALL".
 				MartStock: []string{"pokeball", "antidote", "parlyz heal", "burn heal"},
 				Events:    []string{"BattledRivalInOaksLab"},
 			},
@@ -389,13 +379,10 @@ func TestOfferTable(t *testing.T) {
 			mustNot: []string{"POTION"},
 		},
 		{
-			// A shelf that cannot be read offers NOTHING, not a guess: an
-			// objective that cannot succeed costs a round, a model call, and
-			// (before the shop closed itself on refusal) the run.
 			name: "inside a mart whose shelf is unreadable: no buy objective at all",
 			obs: agent.Observation{
 				Map: 0x2a, MapName: "VIRIDIAN_MART", X: 3, Y: 6, PartyCount: 1,
-				MartStock: nil, // the decode failed; Observe leaves it empty
+				MartStock: nil,
 				Events:    []string{"BattledRivalInOaksLab"},
 			},
 			known: func() *agent.Knowledge {
@@ -423,16 +410,13 @@ func TestOfferTable(t *testing.T) {
 				return k
 			},
 			want: []string{
-				"heal the party", // a completed heal is no reason to stop offering heals
+				"heal the party",
 				"go to viridian pokemon center",
 				"go to viridian pokemon center, fleeing wild battles",
 			},
 		},
 	}
 
-	// want is the menu in order, and the order is part of the contract:
-	// journeys last, because they are the only entries that multiply with
-	// the size of the known world (see Offer).
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			got := agent.Offer(tc.obs, tc.known())
@@ -453,10 +437,6 @@ func TestOfferTable(t *testing.T) {
 	}
 }
 
-// TestOfferWithholdsParcelUntilStarterStoryComplete catches the exact live
-// failure where the model delivered Oak's parcel on round one, before taking a
-// starter. PartyCount alone is not the story postcondition: the rival battle in
-// Oak's lab must have completed before the parcel skill's preconditions hold.
 func TestOfferWithholdsParcelUntilStarterStoryComplete(t *testing.T) {
 	known := agent.NewKnowledge(nil)
 	before := agent.Observation{Map: 0x00, MapName: "PALLET_TOWN", X: 5, Y: 6, PartyCount: 1}
@@ -480,9 +460,6 @@ func TestOfferWithholdsParcelUntilStarterStoryComplete(t *testing.T) {
 	}
 }
 
-// TestOfferMenuChangesWithSituation is the regression this task exists to
-// pin: the same run, two rounds apart, sees two different menus. A menu
-// built once at startup offers the identical list forever; Offer must not.
 func TestOfferMenuChangesWithSituation(t *testing.T) {
 	adj := map[uint8][]uint8{0x00: {0x0c}, 0x0c: {0x00, 0x01}}
 
@@ -513,7 +490,6 @@ func TestOfferMenuChangesWithSituation(t *testing.T) {
 	if reflect.DeepEqual(firstSet, secondSet) {
 		t.Fatalf("menu did not change with the situation: %v", firstSet)
 	}
-	// The menu shrank where it should have and grew where it should have.
 	if firstSet["heal the party"] {
 		t.Errorf("heal offered at pallet town, which has no center")
 	}
@@ -528,9 +504,6 @@ func TestOfferMenuChangesWithSituation(t *testing.T) {
 	}
 }
 
-// TestKnowledgeDialogueMentions: names enter Knowledge only when the game
-// said them, and matching respects word boundaries — "Route 22" must not
-// plant a false memory of "route 2".
 func TestKnowledgeDialogueMentions(t *testing.T) {
 	k := agent.NewKnowledge(nil)
 	k.SawDialogue([]string{
@@ -553,11 +526,6 @@ func TestKnowledgeDialogueMentions(t *testing.T) {
 	}
 }
 
-// TestKnowledgeHarvestsStatedRequirements: the Route 23 guard text, pasted
-// as the game renders it ("<BADGE>" is the badge name in wNameBuffer, "#"
-// expands to POKé), is harvested as RAW SENTENCES — no badge name, item or
-// flag parsed out; ordinary NPC chatter is not; the same line twice appears
-// once. The third page carries no requirement shape and must stay out.
 func TestKnowledgeHarvestsStatedRequirements(t *testing.T) {
 	k := agent.NewKnowledge(nil)
 	guard := []string{
@@ -578,17 +546,13 @@ func TestKnowledgeHarvestsStatedRequirements(t *testing.T) {
 
 	k.SawDialogue(guard, "ROUTE_23", 4, 57)
 	want := []agent.Requirement{
-		{Text: "You don't have the\nCASCADEBADGE yet!", Place: "ROUTE_23", X: 4, Y: 57, Times: 1}, // newest first
+		{Text: "You don't have the\nCASCADEBADGE yet!", Place: "ROUTE_23", X: 4, Y: 57, Times: 1},
 		{Text: "You can pass here\nonly if you have\nthe CASCADEBADGE!", Place: "ROUTE_23", X: 4, Y: 57, Times: 1},
 	}
 	if !reflect.DeepEqual(k.Requirements, want) {
 		t.Fatalf("Requirements = %v, want %v", k.Requirements, want)
 	}
 
-	// The same lines again — a box that re-fires while the player stands
-	// there must not fill the observation with the sentence forty times.
-	// It is not a new entry: the count goes up, which is how a run sees it
-	// is walking into the same wall over and over.
 	k.SawDialogue(guard, "ROUTE_23", 4, 57)
 	want[0].Times, want[1].Times = 2, 2
 	if !reflect.DeepEqual(k.Requirements, want) {
@@ -596,9 +560,6 @@ func TestKnowledgeHarvestsStatedRequirements(t *testing.T) {
 	}
 }
 
-// TestKnowledgeRequirementShapesAndCap pins the filter's two edges: a
-// wall-statement shape ("can't go through") is caught, and more than
-// requirementCap distinct walls keep only the newest ones, first.
 func TestKnowledgeRequirementShapesAndCap(t *testing.T) {
 	k := agent.NewKnowledge(nil)
 	k.HeardRequirement("You can't go\nthrough here!", "VIRIDIAN_CITY", 19, 10)
@@ -621,25 +582,15 @@ func TestKnowledgeRequirementShapesAndCap(t *testing.T) {
 	}
 }
 
-// TestOfferJourneyVariants pins the live-farm fix: the fight/flee choice
-// is made in the MENU, not in the reply. Every offered journey — a go-to,
-// and a heal that walks to a center — appears twice, plain then its fleeing
-// variant, because the model cannot reliably attach a conditional "flee"
-// argument to only the objectives that carry it (it emitted the flag on
-// starters and talk, and at temperature 0 the rejection feedback did not
-// change its answer, so whole runs stopped). The schema omits the field,
-// the constrained decoder forbids what it omits, and the variant is picked
-// by index — which the model does reliably. Choice-local display notes are
-// deliberately ignored here: they do not change objective identity.
 func TestOfferJourneyVariants(t *testing.T) {
 	adj := map[uint8][]uint8{0x0c: {0x00, 0x01, 0x29}}
 	obs := agent.Observation{
 		Map: 0x0c, MapName: "ROUTE_1", X: 5, Y: 14, PartyCount: 1,
-		Party: []agent.PartyMon{{Level: 6, HP: 4, MaxHP: 20}}, // hurt: the travelling heal joins
+		Party: []agent.PartyMon{{Level: 6, HP: 4, MaxHP: 20}},
 	}
 	known := agent.NewKnowledge(adj)
 	known.SawMap(0x0c)
-	known.SawMap(0x29) // the run has been inside the Viridian center
+	known.SawMap(0x29)
 
 	got := agent.Offer(obs, known)
 	sameJourney := func(a, b agent.Objective) bool {
@@ -664,14 +615,9 @@ func TestOfferJourneyVariants(t *testing.T) {
 	}
 }
 
-// TestOfferMapObjects: people and items on the map become objectives;
-// trainers are reported in MapObjects but NOT offered — there is no fight
-// verb behind them yet, so offering one would manufacture a guaranteed
-// failed objective every round. Synthetic observation: the split lives in
-// Offer, not in Observe.
 func TestOfferMapObjects(t *testing.T) {
 	obs := agent.Observation{
-		Map: 0x99, X: 5, Y: 6, PartyCount: 1, // a map no place names
+		Map: 0x99, X: 5, Y: 6, PartyCount: 1,
 		Events: []string{"BattledRivalInOaksLab"},
 		MapObjects: []agent.MapObject{
 			{X: 7, Y: 10, Kind: "person"},
@@ -745,9 +691,6 @@ func TestOfferTrainingTargetTracksTheLead(t *testing.T) {
 		return 0, false
 	}
 
-	// The target is always a step the run has not taken. Under the old
-	// fixed target of 12 a level-12 lead was offered no training at all,
-	// whatever it was about to walk into.
 	for _, tc := range []struct{ lead, want uint8 }{{5, 7}, {11, 13}, {12, 14}, {40, 42}} {
 		obs.Party = []agent.PartyMon{{Level: tc.lead, HP: 20, MaxHP: 20}}
 		got, ok := trainTarget(obs)
@@ -759,8 +702,6 @@ func TestOfferTrainingTargetTracksTheLead(t *testing.T) {
 		}
 	}
 
-	// A lead at the ceiling has no next rung, and no party has nothing to
-	// train: both are objectives that could only fail.
 	obs.Party = []agent.PartyMon{{Level: 100, HP: 20, MaxHP: 20}}
 	if got, ok := trainTarget(obs); ok {
 		t.Errorf("training offered at level %d for a level-100 lead; there is no rung above it", got)
@@ -771,12 +712,6 @@ func TestOfferTrainingTargetTracksTheLead(t *testing.T) {
 	}
 }
 
-// TestOfferWithholdsTrainBelowRetreatLine: a lead at or below the retreat
-// line is not offered Train — skill.Train refuses before it fights
-// anything on the same line, so the objective would cost a planner call
-// and a failure slot to change nothing. The line is skill's to own
-// (skill.BelowRetreatLine, reading retreatLineNum/Den); Offer must not
-// restate the fraction.
 func TestOfferWithholdsTrainBelowRetreatLine(t *testing.T) {
 	known := agent.NewKnowledge(nil)
 	mk := func(hp, maxHP uint16) agent.Observation {
@@ -796,22 +731,12 @@ func TestOfferWithholdsTrainBelowRetreatLine(t *testing.T) {
 		return
 	}
 
-	// Above the line: Train IS offered. Without this case the test proves
-	// nothing — a broken Offer that returns an empty menu would pass an
-	// absence-only test.
 	if train, _ := menu(mk(20, 20)); train != 1 {
 		t.Fatalf("healthy lead on grass: train offered %d times, want 1", train)
 	}
-
-	// Exactly AT the line: skill.Train's start check is strict
-	// (hp*Den < maxHP*Num), so a lead at exactly half max HP is NOT below
-	// the line and the session would start. Offer agrees: still offered.
 	if train, _ := menu(mk(10, 20)); train != 1 {
 		t.Fatalf("lead at exactly the line: train offered %d times, want 1", train)
 	}
-
-	// Below the line: Train is withheld, and the menu is not empty — the
-	// rest of the run still has objectives to pick from.
 	if train, _ := menu(mk(9, 20)); train != 0 {
 		t.Errorf("lead below the line: train offered, want withheld")
 	}
@@ -819,26 +744,16 @@ func TestOfferWithholdsTrainBelowRetreatLine(t *testing.T) {
 		t.Errorf("lead below the line: the whole menu is empty, want the other objectives still offered")
 	}
 
-	// Below the line and NOT on grass: unchanged — grass was already the
-	// gate, and nothing new is offered either.
 	obs := mk(9, 20)
 	obs.HasGrass = false
 	if train, _ := menu(obs); train != 0 {
 		t.Errorf("no grass: train offered, want withheld")
 	}
-
-	// A fainted lead (HP 0, a backup mon still standing) reads as below
-	// the line, as the start check does.
 	if train, _ := menu(mk(0, 20)); train != 0 {
 		t.Errorf("fainted lead: train offered, want withheld")
 	}
 }
 
-// TestOfferGymIsNotPewterOnly: the gym challenge follows the player into
-// whichever gym they are standing in, and stops being offered once that
-// gym's badge is in hand — that leader will not rebattle, so the challenge
-// could only fail. Under the Pewter-only gate, standing in the Cerulean Gym
-// offered no gym objective at all.
 func TestOfferGymIsNotPewterOnly(t *testing.T) {
 	gymObjective := func(obs agent.Observation) bool {
 		known := agent.NewKnowledge(nil)
@@ -870,24 +785,12 @@ func TestOfferGymIsNotPewterOnly(t *testing.T) {
 		t.Error("gym not offered in Pewter without the badge")
 	}
 
-	// Underlevelled is still offered: Offer reports what is possible, and
-	// losing stays the planner's mistake to make.
 	pewter.Party = []agent.PartyMon{{Level: 5, HP: 2, MaxHP: 20}}
 	if !gymObjective(pewter) {
 		t.Error("gym withheld from an underlevelled party; Offer must not filter on wisdom")
 	}
 }
 
-// TestOfferWithholdsTrainBelowTheRetreatLine pins the guaranteed-failed round
-// this gate removes. skill.Train refuses to start from below the retreat line
-// and reports a retreat without fighting anything, so offering the objective
-// there spends a round and a model call to be told what the predicate already
-// knew. MEASURED 2026-08-31: rounds 13 and 14 of the best run to date were
-// back-to-back train retreats.
-//
-// The boundary is Train's, not monHurt's: a lead at exactly half max HP is
-// NOT below the line (the comparison is strict), and must still be offered —
-// mirroring the predicate rather than re-deriving it is the whole point.
 func TestOfferWithholdsTrainBelowTheRetreatLine(t *testing.T) {
 	known := agent.NewKnowledge(map[uint8][]uint8{})
 	offersTrain := func(hp, maxHP uint16) bool {
