@@ -279,9 +279,15 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 
 	journeys := make([]Objective, 0, 2*journeyPlaceLimit)
 	hops := mapHops(known.Adjacency, obs.Map)
+	semanticBlocked := map[string]bool{}
+	for _, blockage := range obs.RouteBlockages {
+		semanticBlocked[string(blockage.Destination)] = true
+	}
 	unroutable := map[string]bool{}
 	for _, name := range obs.Unroutable {
-		unroutable[name] = true
+		if !semanticBlocked[name] {
+			unroutable[name] = true
+		}
 	}
 	placeNames := make([]string, 0, 16)
 	for _, name := range skill.PlaceNames() {
@@ -296,6 +302,15 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 			continue
 		}
 		placeNames = append(placeNames, name)
+	}
+	if len(semanticBlocked) > 0 {
+		routable := make([]string, 0, len(placeNames))
+		for _, name := range placeNames {
+			if !semanticBlocked[name] {
+				routable = append(routable, name)
+			}
+		}
+		placeNames = routable
 	}
 	if len(unroutable) > 0 {
 		routable := make([]string, 0, len(placeNames))

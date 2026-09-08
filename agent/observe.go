@@ -1,8 +1,6 @@
 package agent
 
 import (
-	"sort"
-
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
@@ -53,8 +51,9 @@ type Observation struct {
 	MartStock  []string
 	MapObjects []MapObject
 
-	Requirements []Requirement
-	Unroutable   []string `json:"-"`
+	Requirements   []Requirement
+	RouteBlockages []RouteBlockage
+	Unroutable     []string `json:"-"`
 }
 
 // MapObject is one observable object on the current map. Item is a semantic
@@ -83,6 +82,7 @@ type FieldCapability struct {
 	Learned    bool
 	PartySlot  int
 	Usable     bool
+	Preparable bool
 }
 
 type RoundRecord struct {
@@ -244,13 +244,16 @@ func Observe(m *emu.Emu, romData []byte) Observation {
 			Learned:    cap.Learned,
 			PartySlot:  cap.PartySlot,
 			Usable:     cap.Usable,
+			Preparable: cap.Usable || skill.CanPrepareFieldMove(romData, &mem, cap.Move),
 		})
 	}
 
 	if grass, err := skill.HasGrass(romData, obs.Map); err == nil {
 		obs.HasGrass = grass
 	}
-	obs.Unroutable = unroutablePlaces(m, romData)
+	routes := routeAvailabilityFor(m, romData)
+	obs.Unroutable = routes.Unroutable
+	obs.RouteBlockages = routes.Blockages
 	obs.WildGrass = []WildSpecies{}
 	if wild, err := skill.WildGrass(romData, obs.Map); err == nil {
 		for _, w := range wild {
@@ -292,23 +295,7 @@ func Observe(m *emu.Emu, romData []byte) Observation {
 }
 
 func unroutablePlaces(m *emu.Emu, romData []byte) []string {
-	planner, err := skill.NewRoutePlanner(m, romData)
-	if err != nil {
-		return nil
-	}
-	var out []string
-	for _, name := range skill.PlaceNames() {
-		d, ok := skill.Place(name)
-		if !ok || planner.CanReach(d) {
-			continue
-		}
-		out = append(out, name)
-	}
-	if out == nil {
-		return []string{}
-	}
-	sort.Strings(out)
-	return out
+	return routeAvailabilityFor(m, romData).Unroutable
 }
 
 func reachableOnFoot(romData []byte, mapID, px, py, x, y uint8) bool {
