@@ -3,6 +3,7 @@ package agent
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/maestroi/pokepilot/emu"
@@ -46,6 +47,15 @@ func TestClassifyObjectiveOutcomePrecedence(t *testing.T) {
 	joinedChoice := errors.Join(world.ErrNoPath, ErrObjectiveBoundaryChoice)
 	if got := classifyObjectiveOutcome(o, joinedChoice, clean); got != OutcomeChoiceRequired {
 		t.Fatalf("joined choice = %q, want choice_required", got)
+	}
+
+	joinedController := errors.Join(skill.ErrMenuStuck, ErrObjectiveBoundaryDirty)
+	if got := classifyObjectiveOutcome(o, joinedController, clean); got != OutcomeControllerUncertain {
+		t.Fatalf("controller + dirty boundary = %q, want controller_uncertain", got)
+	}
+	joinedBlocked := errors.Join(world.ErrNoPath, ErrObjectiveBoundaryDirty)
+	if got := classifyObjectiveOutcome(o, joinedBlocked, clean); got != OutcomeStabilizationFailed {
+		t.Fatalf("blocked + dirty boundary = %q, want stabilization_failed", got)
 	}
 
 	if got := classifyObjectiveOutcome(o, skill.ErrBattleInterrupted, clean); got != OutcomeOwnershipFailure {
@@ -153,8 +163,23 @@ func TestObjectiveResultHistoryText(t *testing.T) {
 	if got := (ObjectiveResult{Outcome: OutcomeCompleted}).HistoryText(); got != "done" {
 		t.Fatalf("completed history = %q, want done", got)
 	}
-	got := (ObjectiveResult{Outcome: OutcomeBlocked, Summary: "blocked at Route 2"}).HistoryText()
-	if got != "blocked: blocked at Route 2" {
+	got := (ObjectiveResult{Outcome: OutcomeBlocked, Summary: "at Route 2"}).HistoryText()
+	if got != "blocked: at Route 2" {
 		t.Fatalf("blocked history = %q", got)
+	}
+}
+
+func TestConciseObjectiveErrorIsOneLine(t *testing.T) {
+	o := Objective{Kind: KindGoTo, Place: "pewter city"}
+	err := errors.Join(
+		fmt.Errorf("agent: %s: primary failure", o),
+		fmt.Errorf("objective left invalid boundary: %w", ErrObjectiveBoundaryDirty),
+	)
+	got := conciseObjectiveError(o, err)
+	if strings.Contains(got, "\n") {
+		t.Fatalf("concise error contains newline: %q", got)
+	}
+	if !strings.Contains(got, "primary failure") || !strings.Contains(got, "objective left invalid boundary") {
+		t.Fatalf("concise error lost joined evidence: %q", got)
 	}
 }
