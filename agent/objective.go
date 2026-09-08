@@ -28,76 +28,59 @@ const (
 	KindFuchsiaProgression             // reach Fuchsia, beat Koga, and obtain Surf + Strength
 )
 
-// Objective is one unit of intent a planner can choose. The argument fields
-// are per-kind: Place for KindGoTo and KindHeal, X/Y for KindTalk, Starter for
-// KindStarter, Level for KindTrain, Species for KindCatch, Item and Qty for
-// KindBuy, X/Y and Item for KindPickup. Every argument is checked by Validate before it reaches a skill;
-// an out-of-range value is a typed error that stops the round, never a
-// clamp or a best match.
+// Objective is one unit of intent a planner can choose. Planner-facing game
+// entities are semantic identifiers: no Red ROM species/item byte crosses this
+// contract. A concrete adapter resolves those identifiers immediately before
+// executing its game-specific skill.
 type Objective struct {
 	Kind    Kind
-	Place   string        // KindGoTo: a name accepted by skill.Place; KindHeal: a center to travel to first, "" for the one you are standing in
-	X, Y    uint8         // KindTalk, KindPickup: the tile to face
-	Starter skill.Starter // KindStarter: which ball to take
-	Level   uint8         // KindTrain: the level the lead should reach
-	Species uint8         // KindCatch: the ROM species index to hunt
-	Item    uint8         // KindBuy, KindPickup, KindUseItem: the bag item ID
-	Slot    int           // KindUseItem: the party slot to use it on (0-based, as skill.UseFieldItem takes it)
-	Qty     int           // KindBuy: how many
-	Flee    bool          // KindGoTo, KindHeal-with-Place: resolve wild encounters by running, not fighting
-	Note    string        // human-readable, shown to a planner; never parsed
+	Place   PlaceID   // KindGoTo/KindHeal/KindGym: semantic place identity; "" means heal where standing
+	X, Y    uint8     // KindTalk, KindPickup: the tile to face
+	Starter SpeciesID // KindStarter: semantic starter species
+	Level   uint8     // KindTrain: the level the lead should reach
+	Species SpeciesID // KindCatch: semantic species identity
+	Item    ItemID    // KindBuy, KindPickup, KindUseItem: semantic item identity
+	Slot    int       // KindUseItem: 0-based party slot
+	Qty     int       // KindBuy: how many
+	Flee    bool      // KindGoTo, KindHeal-with-Place: run from wild encounters
+	Note    string    // human-readable, shown to a planner; never parsed
 	// Intent is the sentence the planner attached to this choice: what it is
 	// in service of. It is run memory, not an argument — Validate and
 	// Execute ignore it, String() does not render it, and Run carries it
-	// verbatim onto the next round's Observation (never edited or
-	// summarised). WithArgs is the only writer; a model that says nothing
-	// leaves it empty.
+	// verbatim onto the next round's Observation (never edited or summarised).
 	Intent string
 }
 
-// Validate checks every argument against its stated range and returns a
-// typed error naming the offending value. It is the safety mechanism for
-// model-supplied arguments: the reply schema (when a server honors it) only
-// makes malformed replies less likely, so this runs on EVERY objective,
-// from every planner, before any input reaches the emulator. Values are
-// never clamped and never best-matched: a level of 101 is an error, not 100.
+// Validate checks game-independent shape/range invariants. Whether a semantic
+// species/item/place exists in a concrete title is adapter-owned validation;
+// keeping that lookup out of this method is what lets the same Objective shape
+// cross a Crystal/Emerald adapter later without pretending to use Red indexes.
 func (o Objective) Validate() error {
 	switch o.Kind {
+	case KindGoTo:
+		if strings.TrimSpace(string(o.Place)) == "" {
+			return fmt.Errorf("agent: %s: empty place id", o)
+		}
 	case KindStarter:
-		if o.Starter > skill.StarterBulbasaur {
-			return fmt.Errorf("agent: %s: unknown starter %d (want charmander, squirtle or bulbasaur)", o, int(o.Starter))
+		if strings.TrimSpace(string(o.Starter)) == "" {
+			return fmt.Errorf("agent: %s: empty starter species id", o)
 		}
 	case KindTrain:
 		if o.Level < 1 || o.Level > 100 {
 			return fmt.Errorf("agent: %s: level %d out of range 1..100", o, o.Level)
 		}
 	case KindCatch:
-		if _, ok := SpeciesName(o.Species); !ok {
-			return fmt.Errorf("agent: %s: unknown species %d", o, o.Species)
+		if strings.TrimSpace(string(o.Species)) == "" {
+			return fmt.Errorf("agent: %s: empty species id", o)
 		}
 	case KindPickup:
-		if _, ok := ItemName(o.Item); !ok {
-			return fmt.Errorf("agent: %s: unknown item %d", o, int(o.Item))
-		}
-	case KindHeal:
-		// "" means the center the player is standing in. A named one must
-		// resolve AND be a center: travelling to a mart and asking a clerk
-		// for a heal is a guaranteed failed round.
-		if o.Place != "" {
-			d, ok := skill.Place(o.Place)
-			if !ok {
-				return fmt.Errorf("agent: %s: unknown place %q", o, o.Place)
-			}
-			if !isCenter(state.MapName(d.Map)) {
-				return fmt.Errorf("agent: %s: %q is not a Pokemon Center", o, o.Place)
-			}
+		if strings.TrimSpace(string(o.Item)) == "" {
+			return fmt.Errorf("agent: %s: empty item id", o)
 		}
 	case KindUseItem:
-		if _, ok := ItemName(o.Item); !ok {
-			return fmt.Errorf("agent: %s: unknown item %d", o, int(o.Item))
+		if strings.TrimSpace(string(o.Item)) == "" {
+			return fmt.Errorf("agent: %s: empty item id", o)
 		}
-		// The party caps at six (state.DecodeParty) and the slot is 0-based,
-		// the same addressing skill.UseFieldItem takes: no second scheme.
 		if o.Slot < 0 || o.Slot > 5 {
 			return fmt.Errorf("agent: %s: party slot %d out of range 0..5", o, o.Slot)
 		}
@@ -105,28 +88,27 @@ func (o Objective) Validate() error {
 		if o.Qty < 1 || o.Qty > 99 {
 			return fmt.Errorf("agent: %s: quantity %d out of range 1..99", o, o.Qty)
 		}
-		if _, ok := ItemName(o.Item); !ok {
-			return fmt.Errorf("agent: %s: unknown item %d", o, o.Item)
+		if strings.TrimSpace(string(o.Item)) == "" {
+			return fmt.Errorf("agent: %s: empty item id", o)
 		}
 	}
 	return nil
 }
 
-// String renders a short, plain, stable one-line description of the
-// objective. It is shown to a planner, never parsed. Arguments are part of
-// the sentence: "train the lead to level 7", "catch a PIDGEY here" — the
-// model reads what it would be choosing.
+// String renders a short, plain, stable one-line description of the objective.
+// Semantic identifiers are already the planner vocabulary, so rendering never
+// needs to reverse-map a numeric game id.
 func (o Objective) String() string {
 	switch o.Kind {
 	case KindGoTo:
 		if o.Flee {
-			return "go to " + o.Place + ", fleeing wild battles"
+			return "go to " + string(o.Place) + ", fleeing wild battles"
 		}
-		return "go to " + o.Place
+		return "go to " + string(o.Place)
 	case KindTalk:
 		return fmt.Sprintf("talk at (%d,%d)", o.X, o.Y)
 	case KindStarter:
-		return "take the " + starterName(o.Starter) + " starter"
+		return "take the " + strings.ToLower(string(o.Starter)) + " starter"
 	case KindErrand:
 		return "deliver oak's parcel"
 	case KindTrain:
@@ -134,31 +116,20 @@ func (o Objective) String() string {
 	case KindHeal:
 		if o.Place != "" {
 			if o.Flee {
-				return "heal the party at " + strings.ToUpper(o.Place) + ", fleeing wild battles"
+				return "heal the party at " + strings.ToUpper(string(o.Place)) + ", fleeing wild battles"
 			}
-			return "heal the party at " + strings.ToUpper(o.Place)
+			return "heal the party at " + strings.ToUpper(string(o.Place))
 		}
 		return "heal the party"
 	case KindGym:
-		// "here" and not the leader's name: Offer puts this on the menu
-		// only while the player is standing in a gym, and naming Brock on
-		// the Cerulean menu would be a lie the planner cannot check.
 		return "beat the gym leader here"
 	case KindCatch:
-		if name, ok := SpeciesName(o.Species); ok {
-			return "catch a " + strings.ToUpper(name) + " here"
-		}
-		return fmt.Sprintf("catch species %d here", o.Species)
+		return "catch a " + strings.ToUpper(string(o.Species)) + " here"
 	case KindPickup:
-		if name, ok := ItemName(o.Item); ok {
-			return fmt.Sprintf("pick up the %s at (%d,%d)", strings.ToUpper(name), o.X, o.Y)
-		}
-		return fmt.Sprintf("pick up item %d at (%d,%d)", int(o.Item), o.X, o.Y)
+		return fmt.Sprintf("pick up the %s at (%d,%d)", strings.ToUpper(string(o.Item)), o.X, o.Y)
 	case KindUseItem:
-		if name, ok := ItemName(o.Item); ok {
-			return fmt.Sprintf("use %s %s on party slot %d", article(name), strings.ToUpper(name), o.Slot)
-		}
-		return fmt.Sprintf("use item %d on party slot %d", int(o.Item), o.Slot)
+		name := string(o.Item)
+		return fmt.Sprintf("use %s %s on party slot %d", article(name), strings.ToUpper(name), o.Slot)
 	case KindRocketHideout:
 		return "clear the Rocket Hideout and get the SILPH SCOPE"
 	case KindPokemonTower:
@@ -166,18 +137,12 @@ func (o Objective) String() string {
 	case KindFuchsiaProgression:
 		return "reach Fuchsia, beat Koga, and get HM03 SURF + HM04 STRENGTH"
 	case KindBuy:
-		if name, ok := ItemName(o.Item); ok {
-			return fmt.Sprintf("buy %d %s", o.Qty, strings.ToUpper(name))
-		}
-		return fmt.Sprintf("buy %d of item %d", o.Qty, o.Item)
+		return fmt.Sprintf("buy %d %s", o.Qty, strings.ToUpper(string(o.Item)))
 	}
 	return fmt.Sprintf("unknown kind %d", int(o.Kind))
 }
 
-// gymOutcomeErr renders a gym battle result as the objective's error: nil
-// when the badge is in RAM (skill.Gym's win postcondition), the loss
-// otherwise. It stays separate so pure tests can pin the semantic split while
-// Execute preserves the actual BattleResult in ObjectiveResult.GymOutcome.
+// gymOutcomeErr renders a gym battle result as the objective's diagnostic.
 func gymOutcomeErr(o Objective, outcome state.BattleResult) error {
 	if outcome == state.ResultWon {
 		return nil
@@ -185,9 +150,6 @@ func gymOutcomeErr(o Objective, outcome state.BattleResult) error {
 	return fmt.Errorf("agent: %s: lost to the gym leader (blacked out to the center)", o)
 }
 
-// catchOutcomeName renders a skill.CatchOutcome for the error text the
-// planner reads. The enum has no String() of its own, and a bare number in
-// a failure the planner has to act on is not an answer.
 func catchOutcomeName(o skill.CatchOutcome) string {
 	switch o {
 	case skill.OutcomeCaught:
@@ -202,10 +164,10 @@ func catchOutcomeName(o skill.CatchOutcome) string {
 	return fmt.Sprintf("outcome %d", int(o))
 }
 
-// article renders the indefinite article for an item name: "a POTION",
-// "an ANTIDOTE". The check is on the first letter, which is all the
-// table's names need (no TH-word among them).
 func article(name string) string {
+	if name == "" {
+		return "a"
+	}
 	switch name[0] {
 	case 'a', 'e', 'i', 'o', 'u':
 		return "an"
@@ -213,36 +175,10 @@ func article(name string) string {
 	return "a"
 }
 
-// starterName renders a skill.Starter for String(). An out-of-range value
-// says so rather than silently picking a ball.
-func starterName(s skill.Starter) string {
-	switch s {
-	case skill.StarterCharmander:
-		return "charmander"
-	case skill.StarterSquirtle:
-		return "squirtle"
-	case skill.StarterBulbasaur:
-		return "bulbasaur"
-	}
-	return fmt.Sprintf("unknown starter %d", int(s))
-}
-
-// The species and item tables are the argument vocabulary. A value the
-// planner can name is a value it can aim at; anything else is a typed error
-// upstream, before a skill ever sees it. Indices come from
-// pokered/constants/pokemon_constants.asm and item_constants.asm (ROM
-// pokemon / bag-item indexes, NOT pokedex numbers).
-
-// speciesTable is decoded from the ROM's own MonsterNames table (bank 07,
-// 0x421E; 10 bytes per entry, indexed by internal species index minus one,
-// as home/names.asm GetMonName reads it) and written down here so Validate
-// and String stay pure functions with no ROM to carry. All 151 are present:
-// a hand-picked subset silently caps what the planner is allowed to want,
-// and the map's own wild table (skill.WildGrass) now names species no
-// hand-written list would have contained. The 28-entry list this replaces
-// agreed with the ROM on 27 of its entries; the 28th said "farow" for what
-// the game calls FEAROW, which is the argument for decoding rather than
-// typing.
+// The following tables are Pokémon Red adapter vocabulary: they translate
+// stable semantic names to Red's internal ROM indexes. They remain here during
+// the incremental adapter migration, but planner-facing Objective/Observation
+// values never carry these numbers.
 var speciesTable = map[string]uint8{
 	"rhydon": 0x01, "kangaskhan": 0x02, "nidoran♂": 0x03, "clefairy": 0x04,
 	"spearow": 0x05, "voltorb": 0x06, "nidoking": 0x07, "slowbro": 0x08,
@@ -310,32 +246,27 @@ var itemByID = func() map[uint8]string {
 	return m
 }()
 
-// SpeciesCount is how many species the table names. It exists so a test can
-// pin "the whole roster" without listing it.
 func SpeciesCount() int { return len(speciesTable) }
 
-// SpeciesName returns the lowercase display name of a ROM species index.
+// SpeciesName/SpeciesByName are Red adapter helpers retained for code that is
+// explicitly inspecting Red state. Planner objectives use SpeciesID instead.
 func SpeciesName(id uint8) (string, bool) {
 	name, ok := speciesByID[id]
 	return name, ok
 }
 
-// SpeciesByName resolves a model-supplied species name to its ROM index.
-// Matching is exact after trimming and lowercasing: "Caterpie" works,
-// "caterpy" does not, and neither does anything fuzzy.
 func SpeciesByName(name string) (uint8, bool) {
 	id, ok := speciesTable[strings.ToLower(strings.TrimSpace(name))]
 	return id, ok
 }
 
-// ItemName returns the lowercase display name of a bag item ID.
+// ItemName/ItemByName are Red adapter helpers retained for Red-state tooling.
+// Planner objectives use ItemID instead.
 func ItemName(id uint8) (string, bool) {
 	name, ok := itemByID[id]
 	return name, ok
 }
 
-// ItemByName resolves a model-supplied item name to its bag item ID, with
-// the same exact-match rule as SpeciesByName.
 func ItemByName(name string) (uint8, bool) {
 	id, ok := itemTable[strings.ToLower(strings.TrimSpace(name))]
 	return id, ok
