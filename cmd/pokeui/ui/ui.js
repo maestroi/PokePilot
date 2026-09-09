@@ -10,6 +10,9 @@
   let selected = "";
   let cardErr = "";
   let wallDown = false;
+  let activeView = (location.hash || "#live").slice(1);
+  let selectionEstablished = false;
+  let lastFreshAt = 0;
   const investigating = new Set();
   const pumps = new Map();
   const mapAssets = new Map();
@@ -270,7 +273,12 @@
     syncPlannerFields();
   }
 
-  function liveRuns() { return (snap.runs || []).filter((r) => r.status !== "done"); }
+  function liveRuns() {
+    return [...(snap.runs || [])].sort((a, b) => {
+      const aDone = a.status === "done" ? 1 : 0, bDone = b.status === "done" ? 1 : 0;
+      return aDone - bDone || Number(b.ended_at || b.queued_at || 0) - Number(a.ended_at || a.queued_at || 0);
+    }).slice(0, 30);
+  }
   function doneRuns() { return (snap.runs || []).filter((r) => r.status === "done"); }
   function filteredHistory() {
     return doneRuns().filter((r) => {
@@ -652,6 +660,10 @@
     }
     pane.hidden = false;
     $("detail-title").textContent = run.run_id;
+    $("game-state-label").textContent = run.status === "done" ? "Last recorded frame" : "Live frame";
+    const cancel = $("selected-cancel");
+    cancel.hidden = run.status === "done";
+    cancel.dataset.cancel = run.run_id;
     paintHTML($("detail-chips"), statusChip(run) + replayChip(run) + settingChips(run) + issueBadge(run.issue));
     fillLcd($("detail-lcd"), run);
     renderMap(run);
@@ -725,13 +737,27 @@
     $("n-running").textContent = runs.filter((r) => r.status === "running").length;
     $("n-queued").textContent = runs.filter((r) => r.status === "queued" || r.status === "leased").length;
     $("n-idle").textContent = workers.filter((w) => !w.run_id).length;
+    $("n-failures").textContent = (groups || []).filter((g) => { const state = g.issue && g.issue.status; return state !== "resolved" && state !== "fixed"; }).length;
+  }
+  function setView(view, updateHash = true) {
+    const valid = ["live", "runs", "failures", "operations", "tools"];
+    activeView = valid.includes(view) ? view : "live";
+    document.querySelectorAll("[data-console-view]").forEach((panel) => { panel.hidden = panel.dataset.consoleView !== activeView; });
+    document.querySelectorAll("[role=tab][data-view]").forEach((tab) => { tab.setAttribute("aria-selected", String(tab.dataset.view === activeView)); });
+    if (updateHash) history.replaceState(null, "", `${location.pathname}${location.search}#${activeView}`);
   }
   function renderVersions() {
     const wall = snap.wall_version || "";
     $("versions").textContent = ["console", short(consoleVersion), "wall", short(wall)].filter(Boolean).join(" · ");
   }
   function selectRun(id) {
-    selected = id; render();
+    selected = id;
+    if (id) {
+      localStorage.setItem("pokefarm-selected-run", id);
+      const url = new URL(location.href); url.searchParams.set("run", id); history.replaceState(null, "", url);
+      setView("live", false);
+    }
+    render();
     window.dispatchEvent(new CustomEvent("pokefarm-select-run", { detail: { runId: id } }));
     if (!id || !narrow()) return;
     const run = (snap.runs || []).find((r) => r.run_id === id);
@@ -744,6 +770,11 @@
     const id = (ev.detail && ev.detail.runId) || "";
     if (id === selected) return;
     selected = id;
+    if (id) {
+      localStorage.setItem("pokefarm-selected-run", id);
+      const url = new URL(location.href); url.searchParams.set("run", id); history.replaceState(null, "", url);
+      setView("live", false);
+    }
     render();
   });
 
@@ -754,20 +785,35 @@
     el.innerHTML = active.map((g) => {
       const issue = g.issue; let action = "";
       if (!issue || !issue.issue_id) { if (g.outbox === "error") action = `<span class="chip">report failed</span>`; else if (g.outbox === "pending") action = `<span class="chip">pending report</span>`; }
-      else if (issue.status === "open" || issue.status === "diagnosed") { const busy = investigating.has(g.key); action = `<button type="button" class="fail-act" data-investigate="${esc(g.key)}" ${busy ? "disabled" : ""}>Investigate now</button>`; }
+      else if (issue.status === "open" || issue.status === "diagnosed") { const busy = investigating.has(g.key); action = `<button type="button" class="fail-act" data-investigate="${esc(g.key)}" ${busy ? "disabled" : ""}>Investigate with AI</button>`; }
       return `<div class="fail-card"><div class="fail-pat">${esc(g.pattern)}</div><div class="fail-ex">${esc(g.example || "")} · ${g.count} run${g.count === 1 ? "" : "s"}</div><div class="fail-meta">${issueBadge(issue)}${action}</div></div>`;
     }).join("");
   }
 
   function render() {
+    document.documentElement.dataset.selectedRun = selected;
     $("banner").hidden = !wallDown; $("queue-toggle").disabled = wallDown; $("spec-form").querySelector(".submit").disabled = wallDown;
+    const connection = document.querySelector(".connection");
+    connection.classList.toggle("connected", !wallDown);
+    connection.classList.toggle("disconnected", wallDown);
+    $("connection-label").textContent = wallDown ? `Stale · ${Math.max(0, Math.floor((Date.now() - lastFreshAt) / 1000))}s` : "Connected";
     renderCounts(); renderVersions(); renderLive(); renderFailures(); renderWorkers(); renderHistory(); renderDetail(); syncPumps();
+    setView(activeView, false);
   }
 
   async function refresh() {
     try {
       const res = await fetch("/v1/dashboard", { cache: "no-store" }); if (!res.ok) throw new Error("bad");
-      snap = await res.json(); wallDown = false;
+      snap = await res.json(); wallDown = false; lastFreshAt = Date.now();
+      if (!selectionEstablished) {
+        const runs = snap.runs || [];
+        const requested = new URL(location.href).searchParams.get("run") || "";
+        const remembered = localStorage.getItem("pokefarm-selected-run") || "";
+        const candidate = [requested, runs.find((r) => r.status === "running")?.run_id, remembered, runs[0]?.run_id].find((id) => id && runs.some((r) => r.run_id === id));
+        selected = candidate || "";
+        selectionEstablished = true;
+        if (selected) window.dispatchEvent(new CustomEvent("pokefarm-select-run", { detail: { runId: selected } }));
+      }
       try { const tr = await fetch("/v1/triage", { cache: "no-store" }); if (tr.ok) groups = await tr.json(); } catch (e) { groups = groups || []; }
       updateFpsLive();
     } catch (e) { wallDown = true; }
@@ -798,12 +844,22 @@
     canvas.title = hit ? `sprite slot ${hit.slot || "?"} · picture ${hexMap(hit.picture || 0)}` : "";
   });
 
-  $("queue-toggle").addEventListener("click", () => {
-    const q = $("queue"); q.hidden = !q.hidden; $("queue-toggle").setAttribute("aria-expanded", String(!q.hidden)); if (!q.hidden) fillDefaults();
+  $("queue-toggle").addEventListener("click", () => { setView("tools"); fillDefaults(); $("queue-toggle").setAttribute("aria-expanded", "true"); });
+  document.querySelectorAll("[role=tab][data-view]").forEach((tab) => tab.addEventListener("click", () => setView(tab.dataset.view)));
+  $("rail-toggle").addEventListener("click", () => { $("run-rail").classList.add("open"); $("rail-toggle").setAttribute("aria-expanded", "true"); });
+  $("rail-close").addEventListener("click", () => { $("run-rail").classList.remove("open"); $("rail-toggle").setAttribute("aria-expanded", "false"); });
+  $("copy-run-id").addEventListener("click", async () => {
+    if (!selected) return;
+    try { await navigator.clipboard.writeText(selected); $("copy-run-id").textContent = "Copied"; setTimeout(() => { $("copy-run-id").textContent = "Copy run ID"; }, 1200); }
+    catch (_) { $("copy-run-id").textContent = "Select the run ID to copy"; }
   });
   $("spec-form").planner.addEventListener("change", syncPlannerFields);
   $("spec-form").endless.addEventListener("change", syncPlannerFields);
-  $("detail-close").addEventListener("click", () => { selected = ""; render(); });
+  $("detail-close").addEventListener("click", () => {
+    selected = ""; localStorage.removeItem("pokefarm-selected-run");
+    const url = new URL(location.href); url.searchParams.delete("run"); history.replaceState(null, "", url);
+    render(); window.dispatchEvent(new CustomEvent("pokefarm-select-run", { detail: { runId: "" } }));
+  });
 
   $("spec-form").addEventListener("submit", async (ev) => {
     ev.preventDefault(); const err = $("form-error"); err.textContent = ""; const f = ev.target; const planner = f.planner.value;
@@ -813,7 +869,7 @@
       const body = await res.json().catch(() => ({}));
       if (res.status === 409) { err.textContent = "run already active"; return; }
       if (!res.ok) { err.textContent = body.error || "could not queue"; return; }
-      fillDefaults(); $("queue").hidden = true; $("queue-toggle").setAttribute("aria-expanded", "false"); await refresh();
+      const queuedID = spec.run_id; fillDefaults(); $("queue-toggle").setAttribute("aria-expanded", "false"); await refresh(); selectRun(queuedID);
     } catch (e) { err.textContent = "wall unreachable"; }
   });
 
@@ -848,9 +904,9 @@
       catch (e) { cardErr = { id, text: "wall unreachable" }; }
       await refresh(); return;
     }
-    const pick = ev.target.closest("[data-run]"); if (pick && !ev.target.closest("[data-cancel]")) selectRun(pick.getAttribute("data-run"));
+    const pick = ev.target.closest("[data-run]"); if (pick && !ev.target.closest("[data-cancel]")) { selectRun(pick.getAttribute("data-run")); $("run-rail").classList.remove("open"); }
   });
 
   fetch("/v1/version", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).then((v) => { if (v && v.version) { consoleVersion = v.version; renderVersions(); } }).catch(() => {});
-  refresh(); setInterval(refresh, pollMs);
+  setView(activeView, false); fillDefaults(); refresh(); setInterval(refresh, pollMs);
 })();

@@ -40,7 +40,7 @@
   const ops=document.querySelector(".ops");
   if(!ops)return;
 
-  const card=document.createElement("section");
+  const card=document.getElementById("run-outcomes")||document.createElement("section");
   card.className="ops-card outcome-stats";
   card.innerHTML=`
     <div class="ops-inner">
@@ -55,7 +55,7 @@
       </div>
       <div class="outcome-block"><h3>Endless experiments</h3><div class="outcome-note" style="margin-bottom:8px">Successor runs with identical endless settings are grouped together, so high-goal random-seed farms can be compared as one benchmark.</div><div id="outcome-endless"></div></div>
     </div>`;
-  ops.insertBefore(card,ops.firstChild);
+  if(!card.parentNode)ops.insertBefore(card,ops.firstChild);
 
   const esc=(v)=>String(v??"").replace(/[&<>"']/g,(c)=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   const pct=(n,d)=>d?`${(100*n/d).toFixed(n&&n<d?1:0)}%`:"—";

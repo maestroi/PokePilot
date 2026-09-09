@@ -39,6 +39,81 @@ func TestUIDoesNotKeepPumpingFinishedRuns(t *testing.T) {
 	}
 }
 
+func TestUIRunConsoleHasWatchingFirstWorkspace(t *testing.T) {
+	html := string(indexHTML)
+	for _, want := range []string{
+		`href="/console.css"`,
+		`role="tablist"`,
+		`data-view="live"`,
+		`data-view="runs"`,
+		`data-view="failures"`,
+		`data-view="operations"`,
+		`data-view="tools"`,
+		`id="system-summary"`,
+		`id="run-rail"`,
+		`id="selected-run"`,
+		`id="visual-stage"`,
+		`id="run-timeline"`,
+		`id="run-story"`,
+		`id="evidence-drawer"`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Errorf("operator console missing %q", want)
+		}
+	}
+}
+
+func TestUIRunConsoleUsesContextualActions(t *testing.T) {
+	js := string(inspectorJS)
+	for _, want := range []string{
+		"Generate replay",
+		"Return to live",
+		"Start a new run from here",
+		"Investigate with AI",
+		"Recorded events",
+	} {
+		if !strings.Contains(js, want) {
+			t.Errorf("inspector.js missing %q", want)
+		}
+	}
+}
+
+func TestUIInspectorCannotMissInitialRunSelection(t *testing.T) {
+	ui := string(uiJS)
+	inspector := string(inspectorJS)
+	if !strings.Contains(ui, `dataset.selectedRun = selected`) {
+		t.Error("dashboard renderer must publish the current selection for late-loaded console modules")
+	}
+	if !strings.Contains(inspector, `dataset.selectedRun`) {
+		t.Error("inspector must recover a selection dispatched before its script loaded")
+	}
+}
+
+func TestUIReplayTimelineIsSeekable(t *testing.T) {
+	js := string(inspectorJS)
+	for _, want := range []string{`id="pp-scrubber"`, `type="range"`, `video.currentTime`, `video.duration`} {
+		if !strings.Contains(js, want) {
+			t.Errorf("replay transport missing %q", want)
+		}
+	}
+}
+
+func TestUIConsoleStylesheetIsServed(t *testing.T) {
+	h := handler("http://wall.invalid")
+	req := httptest.NewRequest(http.MethodGet, "/console.css", nil)
+	res := httptest.NewRecorder()
+	h.ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("GET /console.css = %d, want 200", res.Code)
+	}
+	if got := res.Header().Get("Content-Type"); got != "text/css; charset=utf-8" {
+		t.Fatalf("Content-Type = %q, want text/css; charset=utf-8", got)
+	}
+	if got := res.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("Cache-Control = %q, want no-store", got)
+	}
+}
+
 func TestUISeparatesSettingsFromState(t *testing.T) {
 	html := string(indexHTML)
 	js := string(uiJS)
@@ -72,25 +147,19 @@ func TestUIShowsLatestPlan(t *testing.T) {
 	}
 }
 
-func TestUIInspectorLivesInHistory(t *testing.T) {
+func TestUIInspectorLivesWithSelectedRun(t *testing.T) {
 	html := string(indexHTML)
 	if !strings.Contains(html, `id="run-inspector"`) {
-		t.Error("history card must host the run inspector")
+		t.Error("selected run must host the run inspector")
 	}
-	if !strings.Contains(html, `class="history-list"`) {
-		t.Error("history list must scroll separately from the inspector")
+	if regexp.MustCompile(`(?s)id="selected-run".*id="run-inspector"`).FindString(html) == "" {
+		t.Error("run inspector must be inside the selected-run workspace")
 	}
 	js := string(inspectorJS)
-	for _, want := range []string{`className = "inspect"`, `class="block"`, `pokefarm-select-run`} {
+	for _, want := range []string{`id="run-timeline"`, `id="run-story"`, `id="evidence-drawer"`, `pokefarm-select-run`} {
 		if !strings.Contains(js, want) {
 			t.Errorf("inspector.js missing %q", want)
 		}
-	}
-	if strings.Contains(js, "pp-inspector-card") {
-		t.Error("inspector must use farm blocks, not a bolted-on card kit")
-	}
-	if strings.Contains(js, "runs[0].run_id") {
-		t.Error("inspector must not auto-select the first dashboard run")
 	}
 }
 
@@ -114,13 +183,13 @@ func TestUIHistoryShowsReplayAvailability(t *testing.T) {
 			t.Errorf("ui.js missing %q", want)
 		}
 	}
-	html := string(indexHTML)
-	if !strings.Contains(html, `.chip.replay`) {
-		t.Error("index.html missing .chip.replay so the history badge cannot stand out")
+	css := string(consoleCSS)
+	if !strings.Contains(css, `.chip.replay`) {
+		t.Error("console.css missing .chip.replay so the history badge cannot stand out")
 	}
 	inspector := string(inspectorJS)
-	if !strings.Contains(inspector, "replay_available") {
-		t.Error("inspector dropdown must label runs that have a replay")
+	if !strings.Contains(inspector, "replay/status") {
+		t.Error("selected-run transport must load replay availability")
 	}
 }
 
@@ -143,7 +212,7 @@ func TestUIRendersLLMStats(t *testing.T) {
 			t.Errorf("ui.js missing %q", want)
 		}
 	}
-	html := string(indexHTML)
+	html := string(consoleCSS)
 	for _, want := range []string{`.pnums`, `.pchoice`, `.pwarn`} {
 		if !strings.Contains(html, want) {
 			t.Errorf("index.html missing %s", want)
@@ -173,8 +242,11 @@ func TestUIHistoryPaginatedAndAligned(t *testing.T) {
 	if !strings.Contains(js, "histPage = 0") {
 		t.Error("ui.js does not reset the history page on filter change")
 	}
-	html := string(indexHTML)
-	for _, want := range []string{`id="hist-pager"`, `.pager`} {
+	html := string(consoleCSS)
+	if !strings.Contains(string(indexHTML), `id="hist-pager"`) {
+		t.Error("index.html missing history pager")
+	}
+	for _, want := range []string{`.pager`} {
 		if !strings.Contains(html, want) {
 			t.Errorf("index.html missing %s", want)
 		}
@@ -182,7 +254,7 @@ func TestUIHistoryPaginatedAndAligned(t *testing.T) {
 	// The row grid must be content-independent. Fixed length minima (for
 	// example minmax(8rem, 1fr)) are safe; content-sized tracks such as auto,
 	// min-content, or max-content let individual row contents move boundaries.
-	if m := regexp.MustCompile(`\.hist \{[^}]*grid-template-columns:([^;]*);`).FindStringSubmatch(html); m == nil {
+	if m := regexp.MustCompile(`\.hist\{[^}]*grid-template-columns:([^;]*);`).FindStringSubmatch(html); m == nil {
 		t.Fatal("index.html .hist has no grid-template-columns")
 	} else {
 		grid := strings.ToLower(m[1])
@@ -194,26 +266,18 @@ func TestUIHistoryPaginatedAndAligned(t *testing.T) {
 	}
 }
 
-func TestUIWatchCardsShareGridTracks(t *testing.T) {
-	html := string(indexHTML)
-	body := regexp.MustCompile(`#detail-body\{[^}]+\}`).FindString(html)
+func TestUIWatchUsesPairedVisualStageAndCompactStateDeck(t *testing.T) {
+	css := string(consoleCSS)
+	body := regexp.MustCompile(`#detail-body\{[^}]+\}`).FindString(css)
 	if body == "" {
-		t.Fatal("index.html missing #detail-body rule")
+		t.Fatal("console.css missing #detail-body rule")
 	}
-	for _, want := range []string{"grid-template-rows:auto minmax(0,1fr)", "align-items:stretch", "grid-auto-rows:auto"} {
-		if !strings.Contains(body, want) {
-			t.Errorf("#detail-body %q missing %q", body, want)
-		}
+	if !strings.Contains(body, "repeat(4,minmax(0,1fr))") {
+		t.Errorf("#detail-body %q must use a compact four-column state deck", body)
 	}
-	if strings.Contains(body, "grid-auto-rows:minmax(0,1fr)") {
-		t.Error("#detail-body still stretches every card to equal height")
-	}
-	scroll := regexp.MustCompile(`\.block\.scroll\{[^}]+\}`).FindString(html)
+	scroll := regexp.MustCompile(`\.block\.scroll\{[^}]+\}`).FindString(css)
 	if !strings.Contains(scroll, "max-height:") || !strings.Contains(scroll, "overflow:auto") {
 		t.Errorf(".block.scroll %q must cap height and scroll", scroll)
-	}
-	if !strings.Contains(html, `#detail-body>.block.scroll{max-height:none}`) {
-		t.Error("plan/play must drop the compact max-height inside the 1fr row")
 	}
 	js := string(uiJS)
 	for _, want := range []string{`class="block compact"`, `class="block scroll"`, `fpsLabel`, `updateFpsLive`, `paintHTML`, `holding`} {
@@ -221,16 +285,12 @@ func TestUIWatchCardsShareGridTracks(t *testing.T) {
 			t.Errorf("ui.js missing %q", want)
 		}
 	}
-	grid := regexp.MustCompile(`\.watch-grid\{[^}]+\}`).FindString(html)
-	if !strings.Contains(grid, "align-items:stretch") {
-		t.Errorf(".watch-grid %q must stretch so the card grid matches the screens", grid)
+	grid := regexp.MustCompile(`\.visual-stage\{[^}]+\}`).FindString(css)
+	if !strings.Contains(grid, "grid-template-columns") {
+		t.Errorf(".visual-stage %q must pair the game and semantic map", grid)
 	}
-	if !strings.Contains(html, `id="detail-party"`) {
+	if !strings.Contains(string(indexHTML), `id="detail-party"`) {
 		t.Error("party must sit outside #detail-body so it does not take a 1fr track")
-	}
-	watch := regexp.MustCompile(`#watch\{[^}]+\}`).FindString(html)
-	if !strings.Contains(watch, "100vh") {
-		t.Errorf("#watch %q must be viewport-capped so the plan/play 1fr row stays put and party stays on the first screen", watch)
 	}
 }
 
@@ -243,7 +303,7 @@ func TestUIFailuresAndIssueLinks(t *testing.T) {
 	for _, want := range []string{
 		`/v1/triage`,
 		`data-investigate`,
-		`Investigate now`,
+		`Investigate with AI`,
 		`pending report`,
 		`issueHref`,
 		`new URL`,
@@ -297,14 +357,18 @@ func TestUIRendersPlayerRoster(t *testing.T) {
 	if strings.Contains(js[start:end], "partyHTML") {
 		t.Error("live cards must not render the party roster")
 	}
-	html := string(indexHTML)
+	css := string(consoleCSS)
 	for _, want := range []string{`.party-row`, `.party-hp`, `.party-sum`, `.party-grid`, `id="detail-party"`} {
-		if !strings.Contains(html, want) {
-			t.Errorf("index.html missing %s", want)
+		if want == `id="detail-party"` {
+			if !strings.Contains(string(indexHTML), want) {
+				t.Errorf("index.html missing %s", want)
+			}
+		} else if !strings.Contains(css, want) {
+			t.Errorf("console.css missing %s", want)
 		}
 	}
-	if !strings.Contains(html, `grid-template-columns:repeat(3,minmax(0,1fr))`) {
-		t.Error("party grid must be 3 columns (2 rows of 6)")
+	if !strings.Contains(css, `grid-template-columns:repeat(6,minmax(0,1fr))`) {
+		t.Error("desktop party strip must show six slots in one compact row")
 	}
 	if !strings.Contains(js, `$("detail-party")`) && !strings.Contains(js, `$("detail-party").innerHTML`) {
 		t.Error("ui.js must render the roster into #detail-party, not a 1fr grid cell")
