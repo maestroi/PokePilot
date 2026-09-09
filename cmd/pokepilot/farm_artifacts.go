@@ -11,6 +11,7 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -26,6 +27,16 @@ const (
 	periodicCheckpointKeep  = 12
 	checkpointUploadTimeout = 2 * time.Second
 	farmFinishTimeout       = 30 * time.Second
+
+	// A major checkpoint is the first ordinary objective checkpoint whose
+	// paired agent knowledge says another gym leader has been beaten. Because
+	// objective checkpoints are taken before the NEXT objective, that pair is
+	// post-badge: the emulator state already holds the badge and the knowledge
+	// already records the successful gym objective. The wall keeps these on a
+	// separate, much longer-lived ring for endless-run recovery.
+	majorCheckpointStatePrefix  = "major-badge-"
+	majorCheckpointMarkerPrefix = ".major-badge-"
+	gymCompletionObjective      = "beat the gym leader here"
 )
 
 type periodicSample struct {
@@ -47,6 +58,13 @@ type periodicMeta struct {
 	Decision                  string `json:"decision,omitempty"`
 	Trace                     string `json:"trace,omitempty"`
 	LatestObjectiveCheckpoint string `json:"latest_objective_checkpoint,omitempty"`
+}
+
+type checkpointKnowledgeProgress struct {
+	Completed []struct {
+		Objective string
+		Times     int
+	} `json:"completed"`
 }
 
 func periodicStateName(frame uint64) string {
@@ -102,6 +120,11 @@ func runCheckpointUploader(client *farm.Client, runID string, attempt int, dir s
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
+		// A resumed attempt may materialize a major checkpoint from an older
+		// attempt into this directory. Seed its marker before scanning new
+		// round checkpoints so the same badge is not promoted again later in
+		// the stage and accidentally drift the rollback point toward a fault.
+		seedMajorPromotionMarkers(dir)
 		uploaded := map[string]struct{}{}
 		for {
 			select {
@@ -166,7 +189,7 @@ func uploadNewObjectivePairs(client *farm.Client, runID string, attempt int, dir
 	var states []string
 	for _, e := range entries {
 		name := e.Name()
-		if strings.HasSuffix(name, ".state") && !strings.HasPrefix(name, "periodic-") {
+		if strings.HasSuffix(name, ".state") && !strings.HasPrefix(name, "periodic-") && !strings.HasPrefix(name, majorCheckpointStatePrefix) {
 			states = append(states, name)
 			continue
 		}
@@ -191,8 +214,129 @@ func uploadNewObjectivePairs(client *farm.Client, runID string, attempt int, dir
 		if err := uploadCheckpoint(client, runID, attempt, arts); err != nil {
 			continue
 		}
+
+		badge, majorState, majorKnowledge, err := promoteBadgeCheckpointFiles(dir, st, kn)
+		if err != nil {
+			uploaded[st] = struct{}{}
+			log.Printf("farm: %s: promote major checkpoint from %s: %v", runID, st, err)
+			continue
+		}
+		if badge == 0 {
+			uploaded[st] = struct{}{}
+			continue
+		}
+		majorArts, err := artifactsForFiles([]string{majorKnowledge, majorState}, dir)
+		if err != nil {
+			log.Printf("farm: %s: read major badge %d checkpoint: %v", runID, badge, err)
+			return
+		}
+		if err := uploadCheckpoint(client, runID, attempt, majorArts); err != nil {
+			// Do not mark the ordinary source as fully uploaded yet. Return
+			// immediately so a later post-badge state in this same scan cannot
+			// steal the milestone while the wall is transiently unavailable.
+			return
+		}
+		if err := os.WriteFile(majorPromotionMarker(dir, badge), []byte(st+"\n"), 0o644); err != nil {
+			log.Printf("farm: %s: mark major badge %d checkpoint: %v", runID, badge, err)
+			return
+		}
 		uploaded[st] = struct{}{}
 	}
+}
+
+func gymCompletionCount(data []byte) (int, error) {
+	var mem checkpointKnowledgeProgress
+	if err := json.Unmarshal(data, &mem); err != nil {
+		return 0, err
+	}
+	badges := 0
+	for _, c := range mem.Completed {
+		if c.Objective == gymCompletionObjective && c.Times > badges {
+			badges = c.Times
+		}
+	}
+	if badges < 0 || badges > 8 {
+		return 0, fmt.Errorf("gym completion count %d outside badge range", badges)
+	}
+	return badges, nil
+}
+
+func promoteBadgeCheckpointFiles(dir, stateName, knowledgeName string) (badge int, majorState, majorKnowledge string, err error) {
+	knowledgeData, err := os.ReadFile(filepath.Join(dir, knowledgeName))
+	if err != nil {
+		return 0, "", "", err
+	}
+	badge, err = gymCompletionCount(knowledgeData)
+	if err != nil || badge == 0 {
+		return badge, "", "", err
+	}
+	if _, err := os.Stat(majorPromotionMarker(dir, badge)); err == nil {
+		return 0, "", "", nil
+	} else if !os.IsNotExist(err) {
+		return 0, "", "", err
+	}
+
+	sourceBase := strings.TrimSuffix(stateName, ".state")
+	knowledgeSuffix := strings.TrimPrefix(knowledgeName, sourceBase)
+	if sourceBase == stateName || !strings.HasPrefix(knowledgeSuffix, ".knowledge-v") || !strings.HasSuffix(knowledgeSuffix, ".json") {
+		return 0, "", "", fmt.Errorf("checkpoint pair does not share base: %s / %s", stateName, knowledgeName)
+	}
+	majorBase := fmt.Sprintf("%s%02d-%s", majorCheckpointStatePrefix, badge, sourceBase)
+	majorState = majorBase + ".state"
+	majorKnowledge = majorBase + knowledgeSuffix
+	stateData, err := os.ReadFile(filepath.Join(dir, stateName))
+	if err != nil {
+		return 0, "", "", err
+	}
+	// Write the knowledge first and state last. A reader only considers a
+	// checkpoint once its .state exists, so a crash cannot expose a state
+	// whose paired knowledge was never fully copied.
+	if err := os.WriteFile(filepath.Join(dir, majorKnowledge), knowledgeData, 0o644); err != nil {
+		return 0, "", "", err
+	}
+	if err := os.WriteFile(filepath.Join(dir, majorState), stateData, 0o644); err != nil {
+		_ = os.Remove(filepath.Join(dir, majorKnowledge))
+		return 0, "", "", err
+	}
+	return badge, majorState, majorKnowledge, nil
+}
+
+func majorPromotionMarker(dir string, badge int) string {
+	return filepath.Join(dir, fmt.Sprintf("%s%02d.promoted", majorCheckpointMarkerPrefix, badge))
+}
+
+func seedMajorPromotionMarkers(dir string) {
+	if dir == "" {
+		return
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		badge, ok := majorBadgeFromStateName(e.Name())
+		if !ok {
+			continue
+		}
+		marker := majorPromotionMarker(dir, badge)
+		if _, err := os.Stat(marker); err == nil {
+			continue
+		}
+		_ = os.WriteFile(marker, []byte(e.Name()+"\n"), 0o644)
+	}
+}
+
+func majorBadgeFromStateName(name string) (int, bool) {
+	if !strings.HasPrefix(name, majorCheckpointStatePrefix) || !strings.HasSuffix(name, ".state") {
+		return 0, false
+	}
+	rest := strings.TrimPrefix(name, majorCheckpointStatePrefix)
+	i := strings.IndexByte(rest, '-')
+	if i <= 0 {
+		return 0, false
+	}
+	badge, err := strconv.Atoi(rest[:i])
+	return badge, err == nil && badge >= 1 && badge <= 8
 }
 
 func uploadCheckpoint(client *farm.Client, runID string, attempt int, arts []farm.Artifact) error {
@@ -239,7 +383,7 @@ func latestObjectiveState(dir string) string {
 	var states []string
 	for _, e := range entries {
 		name := e.Name()
-		if strings.HasSuffix(name, ".state") && !strings.HasPrefix(name, "periodic-") {
+		if strings.HasSuffix(name, ".state") && !strings.HasPrefix(name, "periodic-") && !strings.HasPrefix(name, majorCheckpointStatePrefix) {
 			states = append(states, name)
 		}
 	}
