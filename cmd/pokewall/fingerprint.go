@@ -15,9 +15,12 @@ const (
 
 	// Keep enough flight-recorder history to replay a failure from before the
 	// final bad decision. Objective checkpoints are the replay-safe LLM
-	// boundaries because they carry paired agent knowledge.
+	// boundaries because they carry paired agent knowledge. Major checkpoints
+	// are progression milestones and get their own ring so ordinary churn can
+	// never evict the last few badges.
 	checkpointPeriodicKeep  = 6
 	checkpointObjectiveKeep = 6
+	checkpointMajorKeep     = 3
 )
 
 // IssueLink is the wall's copy of an Agent Orchestrator issue identity.
