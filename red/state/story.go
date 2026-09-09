@@ -9,6 +9,7 @@ const (
 	// Item ids from pokered/constants/item_constants.asm.
 	secretKeyItemID  uint8 = 0x2b
 	cardKeyItemID    uint8 = 0x30
+	ssTicketItemID   uint8 = 0x3f
 	silphScopeItemID uint8 = 0x48
 	pokeFluteItemID  uint8 = 0x49
 	hm03ItemID       uint8 = 0xc6
@@ -39,6 +40,7 @@ const (
 type StoryFacts struct {
 	MtMoonFossilAcquired       bool
 	PokedexAcquired            bool
+	SSTicketAcquired           bool
 	SilphScopeAcquired         bool
 	PokeFluteAcquired          bool
 	FuchsiaProgressionComplete bool
@@ -74,6 +76,7 @@ func DecodeStoryFacts(m *Mem, inv InventoryState) StoryFacts {
 	facts := StoryFacts{
 		MtMoonFossilAcquired:       HasEvent(m, EventBeatMtMoonSuperNerd) && (HasEvent(m, EventGotDomeFossil) || HasEvent(m, EventGotHelixFossil)) && m.U8(sym.MtMoonB2FCurScript) == 0,
 		PokedexAcquired:            HasEvent(m, EventGotPokedex),
+		SSTicketAcquired:           inventoryHasItem(inv, ssTicketItemID),
 		SilphScopeAcquired:         inventoryHasItem(inv, silphScopeItemID),
 		PokeFluteAcquired:          inventoryHasItem(inv, pokeFluteItemID),
 		FuchsiaProgressionComplete: progress.Has(BadgeSoul) && inventoryHasItem(inv, hm03ItemID) && inventoryHasItem(inv, hm04ItemID),
