@@ -22,6 +22,12 @@ const (
 	crossBudget  = 180
 	arriveBudget = 600
 
+	// crossAttemptBudget bounds how many different edge tiles a connection
+	// crossing will try before giving up: a tile the collision grid marks
+	// walkable can still sit outside the ROM-aligned connecting seam and
+	// never flip the map no matter how long the push is held (see Traverse).
+	crossAttemptBudget = 8
+
 	// positionStableBudget / positionStableFrames: after a map flip the tile
 	// position passes through transient states (the source warp tile, then the
 	// destination door tile, then the standing position) before settling. On
@@ -53,6 +59,22 @@ const (
 // touch, not which are walkable between, so this is a normal discovery
 // rather than a defect — the caller bans the edge and re-plans.
 var ErrLegUnwalkable = errors.New("skill: leg is not walkable from here")
+
+// mergeBlocked returns a new set containing every tile from both inputs,
+// leaving neither argument mutated.
+func mergeBlocked(a, b map[[2]int]bool) map[[2]int]bool {
+	if len(b) == 0 {
+		return a
+	}
+	out := make(map[[2]int]bool, len(a)+len(b))
+	for t := range a {
+		out[t] = true
+	}
+	for t := range b {
+		out[t] = true
+	}
+	return out
+}
 
 func Traverse(m *emu.Emu, romData []byte, e world.Edge) error {
 	cur := m.Peek8(sym.CurMap)
@@ -112,81 +134,150 @@ func Traverse(m *emu.Emu, romData []byte, e world.Edge) error {
 		// The edge tile is re-chosen on every re-plan, not just the path to
 		// it: an NPC standing in a one-tile gap can make the nearest edge
 		// tile unreachable while another one on the same edge is fine.
-		var unwalkable error
-		err := walkAround(func() error { return movementInterruption(m) }, func() map[[2]int]bool { return spriteBlockers(m) },
-			func(blocked map[[2]int]bool) ([]world.Step, error) {
-				x, y := playerXY(m)
-				tx, ty, err := edgeTarget(grid, e.Dir, int(x), int(y), blocked)
-				if err != nil {
-					// Type it as ErrLegUnwalkable like the FindPath failure below:
-					// Route 2's ledge makes the north edge unreachable from the
-					// southern landing tile, and GoTo's per-tile ban is what
-					// re-routes around it through the forest. Unwrapped, the
-					// error is terminal and the only real route to Pewter dies.
-					unwalkable = fmt.Errorf("skill: Traverse: map %02x: %v: %w", e.From, err, ErrLegUnwalkable)
-					return nil, unwalkable
-				}
-				steps, err := world.FindPath(grid, int(x), int(y), tx, ty, blocked)
-				if err != nil {
-					unwalkable = fmt.Errorf("skill: Traverse: no route to edge tile (%d,%d) on map %02x: %v: %w",
-						tx, ty, e.From, err, ErrLegUnwalkable)
-					return nil, unwalkable
-				}
-				return steps, nil
-			}, func(steps []world.Step) error { return WalkPath(m, steps) },
-			func() { m.StepFrames(npcWaitFrames) })
-		if err != nil {
-			if err == unwalkable {
-				return err
-			}
-			// Normalize to ErrBattle like walkWithinMap does, so a caller
-			// can test one sentinel no matter which layer was walking.
-			if errors.Is(err, ErrBattleInterrupted) {
-				x, y := playerXY(m)
-				return fmt.Errorf("skill: Traverse: battle on map %02x at (%d,%d): %w", e.From, x, y, ErrBattle)
-			}
-			return fmt.Errorf("skill: Traverse: walk to edge on map %02x: %w", e.From, err)
-		}
+		//
+		// A tile that edgeTarget picked as walkable can still fail to
+		// actually flip the map: the collision grid marks it walkable but it
+		// sits outside the ROM-aligned connecting seam (the seam is narrower
+		// than the walkable run of the edge). Measured 2026-09-09 on Route
+		// 3's north edge to Route 4: (62,0) is walkable and holds north for
+		// the full budget with no battle and no crossing, while (61,0) one
+		// tile over crosses in a handful of frames. deadTiles bans a tile
+		// that proved dead so the next attempt picks a different one on the
+		// same edge, mirroring warpTarget's multi-candidate search.
+		deadTiles := map[[2]int]bool{}
 		push = edgeDirStep(e.Dir)
+		btn, ok := buttonFor(push)
+		if !ok {
+			return fmt.Errorf("skill: Traverse: invalid push step %s on %02x->%02x", push, e.From, e.To)
+		}
+		for attempt := 0; ; attempt++ {
+			var unwalkable error
+			err := walkAround(func() error { return movementInterruption(m) },
+				func() map[[2]int]bool { return mergeBlocked(spriteBlockers(m), deadTiles) },
+				func(blocked map[[2]int]bool) ([]world.Step, error) {
+					x, y := playerXY(m)
+					tx, ty, err := edgeTarget(grid, e.Dir, int(x), int(y), blocked)
+					if err != nil {
+						// Type it as ErrLegUnwalkable like the FindPath failure below:
+						// Route 2's ledge makes the north edge unreachable from the
+						// southern landing tile, and GoTo's per-tile ban is what
+						// re-routes around it through the forest. Unwrapped, the
+						// error is terminal and the only real route to Pewter dies.
+						// Once every edge tile has proven dead this also fires,
+						// correctly reporting the leg as unwalkable rather than
+						// looping forever.
+						unwalkable = fmt.Errorf("skill: Traverse: map %02x: %v: %w", e.From, err, ErrLegUnwalkable)
+						return nil, unwalkable
+					}
+					// The start tile itself must never be in the blocked set
+					// passed to FindPath: a tile banned as an edgeTarget
+					// candidate (dead from a previous crossing attempt) can
+					// still be exactly where the player is now standing,
+					// re-planning after that attempt stopped, and a blocked
+					// start tile makes FindPath report no route to anywhere.
+					pathBlocked := blocked
+					if blocked[[2]int{int(x), int(y)}] {
+						pathBlocked = make(map[[2]int]bool, len(blocked))
+						for t := range blocked {
+							pathBlocked[t] = true
+						}
+						delete(pathBlocked, [2]int{int(x), int(y)})
+					}
+					steps, err := world.FindPath(grid, int(x), int(y), tx, ty, pathBlocked)
+					if err != nil {
+						unwalkable = fmt.Errorf("skill: Traverse: no route to edge tile (%d,%d) on map %02x: %v: %w",
+							tx, ty, e.From, err, ErrLegUnwalkable)
+						return nil, unwalkable
+					}
+					return steps, nil
+				}, func(steps []world.Step) error { return WalkPath(m, steps) },
+				func() { m.StepFrames(npcWaitFrames) })
+			if err != nil {
+				if err == unwalkable {
+					return err
+				}
+				// Normalize to ErrBattle like walkWithinMap does, so a caller
+				// can test one sentinel no matter which layer was walking.
+				if errors.Is(err, ErrBattleInterrupted) {
+					x, y := playerXY(m)
+					return fmt.Errorf("skill: Traverse: battle on map %02x at (%d,%d): %w", e.From, x, y, ErrBattle)
+				}
+				return fmt.Errorf("skill: Traverse: walk to edge on map %02x: %w", e.From, err)
+			}
+
+			// The push watches for a battle as well as the map flip. A wild
+			// encounter fires on the step that lands the walk on a tall-grass
+			// edge tile — Route 1's south edge is grass at x=10 and x=11,
+			// measured — and that step is WalkPath's LAST one, whose
+			// DecodeBattle check can land a few frames before the encounter
+			// fires. The push then holds its button inside a frozen battle
+			// and reads as "did not cross within 180 frames" (the 0c->00
+			// swarm failure, measured 2026-08-29: the tile is walkable on
+			// both sides and crosses in 17 frames when no battle fires).
+			// Returning ErrBattle normalizes it exactly like a battle on the
+			// walk: Travel fights it and re-plans from the same tile, where
+			// no second encounter can fire because the player is already
+			// standing on the grass.
+			m.Press(btn)
+			crossed := false
+			battled := false
+			for i := 0; i < crossBudget; i++ {
+				if m.Peek8(sym.CurMap) != e.From {
+					crossed = true
+					break
+				}
+				if m.Peek8(sym.IsInBattle) != 0 {
+					battled = true
+					break
+				}
+				m.StepFrame()
+			}
+			m.Release(btn)
+			if battled {
+				x, y := playerXY(m)
+				return fmt.Errorf("skill: Traverse: %s: battle on map %02x at (%d,%d): %w",
+					edgeName(e), e.From, x, y, ErrBattle)
+			}
+			if crossed {
+				break
+			}
+			x, y := playerXY(m)
+			if attempt+1 >= crossAttemptBudget {
+				return fmt.Errorf("skill: Traverse: %s did not cross within %d frames; still on map %02x at (%d,%d)",
+					edgeName(e), crossBudget, m.Peek8(sym.CurMap), x, y)
+			}
+			deadTiles[[2]int{int(x), int(y)}] = true
+		}
 	default:
 		return fmt.Errorf("skill: Traverse: unknown edge kind %d on %02x->%02x", e.Kind, e.From, e.To)
 	}
 
-	btn, ok := buttonFor(push)
-	if !ok {
-		return fmt.Errorf("skill: Traverse: invalid push step %s on %02x->%02x", push, e.From, e.To)
-	}
-	// The push watches for a battle as well as the map flip. A wild
-	// encounter fires on the step that lands the walk on a tall-grass edge
-	// tile — Route 1's south edge is grass at x=10 and x=11, measured — and
-	// that step is WalkPath's LAST one, whose DecodeBattle check can land a
-	// few frames before the encounter fires. The push then holds its button
-	// inside a frozen battle and reads as "did not cross within 180 frames"
-	// (the 0c->00 swarm failure, measured 2026-08-29: the tile is walkable
-	// on both sides and crosses in 17 frames when no battle fires). Returning
-	// ErrBattle normalizes it exactly like a battle on the walk: Travel
-	// fights it and re-plans from the same tile, where no second encounter
-	// can fire because the player is already standing on the grass.
-	m.Press(btn)
-	crossed := false
-	for i := 0; i < crossBudget; i++ {
-		if m.Peek8(sym.CurMap) != e.From {
-			crossed = true
-			break
+	if e.Kind == world.EdgeWarp {
+		btn, ok := buttonFor(push)
+		if !ok {
+			return fmt.Errorf("skill: Traverse: invalid push step %s on %02x->%02x", push, e.From, e.To)
 		}
-		if m.Peek8(sym.IsInBattle) != 0 {
-			m.Release(btn)
+		m.Press(btn)
+		crossed := false
+		for i := 0; i < crossBudget; i++ {
+			if m.Peek8(sym.CurMap) != e.From {
+				crossed = true
+				break
+			}
+			if m.Peek8(sym.IsInBattle) != 0 {
+				m.Release(btn)
+				x, y := playerXY(m)
+				return fmt.Errorf("skill: Traverse: %s: battle on map %02x at (%d,%d): %w",
+					edgeName(e), e.From, x, y, ErrBattle)
+			}
+			m.StepFrame()
+		}
+		m.Release(btn)
+		if !crossed {
 			x, y := playerXY(m)
-			return fmt.Errorf("skill: Traverse: %s: battle on map %02x at (%d,%d): %w",
-				edgeName(e), e.From, x, y, ErrBattle)
+			return fmt.Errorf("skill: Traverse: %s did not cross within %d frames; still on map %02x at (%d,%d)",
+				edgeName(e), crossBudget, m.Peek8(sym.CurMap), x, y)
 		}
-		m.StepFrame()
-	}
-	m.Release(btn)
-	if !crossed {
-		x, y := playerXY(m)
-		return fmt.Errorf("skill: Traverse: %s did not cross within %d frames; still on map %02x at (%d,%d)",
-			edgeName(e), crossBudget, m.Peek8(sym.CurMap), x, y)
 	}
 
 	// Positive arrival facts: a map is actually loaded (non-zero dimensions,
@@ -394,13 +485,27 @@ func edgeTarget(g *world.Grid, dir uint8, sx, sy int, blocked map[[2]int]bool) (
 		return 0, 0, fmt.Errorf("skill: Traverse: unknown connection dir %d", dir)
 	}
 
+	// blocked bans a candidate edge tile from being chosen (a tile a caller
+	// already proved dead, or a sprite standing on it), but must never ban
+	// the start tile itself: the player is validly standing there right
+	// now, and FindPath's start-tile check would otherwise report every
+	// candidate unreachable, not just the banned one.
+	pathBlocked := blocked
+	if blocked[[2]int{sx, sy}] {
+		pathBlocked = make(map[[2]int]bool, len(blocked))
+		for t := range blocked {
+			pathBlocked[t] = true
+		}
+		delete(pathBlocked, [2]int{sx, sy})
+	}
+
 	var best [2]int
 	bestLen := -1
 	for _, t := range edge {
 		if !g.Walkable(t[0], t[1]) || blocked[[2]int{t[0], t[1]}] {
 			continue
 		}
-		steps, err := world.FindPath(g, sx, sy, t[0], t[1], blocked)
+		steps, err := world.FindPath(g, sx, sy, t[0], t[1], pathBlocked)
 		if err != nil {
 			continue
 		}
