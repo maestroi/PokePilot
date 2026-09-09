@@ -44,6 +44,36 @@ func (x *redRouteTransitionExecutor) ExecuteTransition(edge world.Edge, transiti
 			}
 		}
 		return world.TransitionExecutionResult{}, nil
+
+	case "red:cerulean_robbed_house":
+		// Bill's S.S. Ticket script moves the guard away from the robbed
+		// house. The transition itself performs nothing; re-read the semantic
+		// story fact immediately before traversal so a stale plan cannot walk
+		// into the still-blocked door.
+		var mem state.Mem
+		state.Snapshot(x.m, &mem)
+		if !state.DecodeStoryFacts(&mem, state.DecodeInventory(&mem)).SSTicketAcquired {
+			return world.TransitionExecutionResult{}, &gameruntime.TransitionBlockage{
+				Transition: transition,
+				Missing:    []gameruntime.CapabilityID{capCanPassCeruleanRobbedHouse},
+			}
+		}
+		return world.TransitionExecutionResult{}, nil
+
+	case "red:route9_cut":
+		// The actual tree is inside Route 9 and is still handled by Travel's
+		// live Cut recovery. This gate only proves that recovery is possible
+		// before the planner commits to the east route.
+		var mem state.Mem
+		state.Snapshot(x.m, &mem)
+		if !redRouteCapabilities(x.romData, &mem).Has(capCanCut) {
+			return world.TransitionExecutionResult{}, &gameruntime.TransitionBlockage{
+				Transition: transition,
+				Missing:    []gameruntime.CapabilityID{capCanCut},
+			}
+		}
+		return world.TransitionExecutionResult{}, nil
+
 	case "red:vermilion_gym_cut":
 		opened, err := cutThroughReachableTree(x.m, x.romData)
 		if err != nil {
