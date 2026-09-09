@@ -36,6 +36,21 @@ var ErrShopControllerStalled = errors.New("skill: shop controller stalled")
 // error would otherwise be recoverable.
 var ErrShopStabilization = errors.New("skill: shop stabilization failed")
 
+// ErrShopNotOpenYet is returned by Buy when the clerk cannot offer a shop at
+// all right now: at the Viridian Mart specifically, talking to the clerk
+// before EventOakGotParcel always shows flavor text
+// (ViridianMartCheckParcelDeliveredScript, pokered/scripts/ViridianMart.asm)
+// instead of BUY/SELL/QUIT, however many times it is retried. It is a typed,
+// immediate refusal rather than the 500-frame menu timeout this used to
+// surface as ("the BUY/SELL/QUIT menu did not appear" / "the item list did
+// not appear", MEASURED on round-005 of run-2aaq5ecae52wzwayf1qcjk34, "buy 7
+// POKEBALL" issued before the parcel had been delivered to Oak).
+var ErrShopNotOpenYet = errors.New("skill: the clerk is not offering a shop yet")
+
+// viridianMartMap is Place("viridian mart").Map (pokered/data/maps/headers/
+// ViridianMart.asm), used directly since Buy runs before any Place lookup.
+const viridianMartMap = 0x2A
+
 // wMenuWatchedKeys values that identify the mart's menus. The BUY/SELL/QUIT
 // menu and the two-option prompt watch only A|B (3); the priced item list and
 // the choose-quantity box watch A|B|SELECT (7). These are the only signals that
@@ -76,8 +91,20 @@ func Buy(m *emu.Emu, item uint8, qty int) error {
 	moneyBefore := int(before.Money)
 	bagBefore := bagCount(before.Items, item)
 
+	// 0. The Viridian Mart clerk never offers a shop before Oak has received
+	// the parcel: ViridianMartCheckParcelDeliveredScript points the clerk's
+	// dialogue at flavor text instead of BUY/SELL/QUIT until EventOakGotParcel
+	// is set, and re-talking (or leaving and re-entering the mart) does not
+	// change that. Check it up front so that case fails fast and clearly
+	// instead of running the shop's menu-wait loops out to a confusing
+	// timeout. Scoped to the mart map so it never fires for skills that reuse
+	// this map id for something else.
+	if m.Peek8(sym.CurMap) == viridianMartMap && !state.HasEvent(&mem, state.EventOakGotParcel) {
+		return fmt.Errorf("%w: Viridian Mart clerk before EventOakGotParcel", ErrShopNotOpenYet)
+	}
+
 	// 1. Open the shop: A on the clerk auto-advances the greeting to the
-	// BUY/SELL/QUIT menu (wMenuWatchedKeys == A|B).
+	// BUY/SELL/QUIT menu (wMenuWatchedKeys == A|B, wMaxMenuItem == 2).
 	m.Tap(emu.A, 3, 7)
 	if err := martAdvance(m, buySellQuitUp, "the BUY/SELL/QUIT menu"); err != nil {
 		return recoverShopFailure(m, err)
@@ -178,11 +205,25 @@ func Buy(m *emu.Emu, item uint8, qty int) error {
 	return nil
 }
 
+// buySellQuitMax is wMaxMenuItem for the three-entry BUY/SELL/QUIT menu
+// (indices 0..2). MEASURED with DEBUG tracing on TestBuy: the real menu
+// reads wMenuWatchedKeys==3 wMaxMenuItem==2; the mart's own YES/NO
+// confirmation box also reads wMenuWatchedKeys==3 but wMaxMenuItem==1 — the
+// same wMaxMenuItem a plain flavor-text box leaves stale (nothing else in the
+// mart is a 3-item menu), so requiring both closes that false-positive.
+const buySellQuitMax = 2
+
 // buySellQuitUp reports that the BUY/SELL/QUIT menu is up. It is false while
 // controllable (wFontLoaded == 0) and while the item list / quantity box are up
-// (wMenuWatchedKeys == A|B|SELECT), so it cannot fire on a stale value.
+// (wMenuWatchedKeys == A|B|SELECT), so it cannot fire on a stale value. It also
+// checks wMaxMenuItem against the menu's real shape: without that, a plain
+// text box that happens to leave wMenuWatchedKeys==3 stale (e.g. the Viridian
+// Mart's pre-parcel flavor text, or its YES/NO confirmation box) reads as the
+// shop menu already open, and Buy selects BUY/SELL/QUIT entry 0 against
+// whatever is actually on screen instead.
 func buySellQuitUp(mm *state.Mem) bool {
-	return mm.U8(sym.FontLoaded) != 0 && mm.U8(sym.MenuWatchedKeys) == watchBuySellQuit
+	return mm.U8(sym.FontLoaded) != 0 && mm.U8(sym.MenuWatchedKeys) == watchBuySellQuit &&
+		mm.U8(sym.MaxMenuItem) == buySellQuitMax
 }
 
 // itemListUp reports that the priced item list is up. It is only used at points
