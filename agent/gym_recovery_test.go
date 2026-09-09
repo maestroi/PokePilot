@@ -160,6 +160,104 @@ func TestGymRetryDueWithholdsFurtherTraining(t *testing.T) {
 	}
 }
 
+// TestGymRetryUnlocksOnIncidentalLevelGain pins the farm budget loops
+// (run-3ex4ylnhn41b6gjkh1bmx37zf, run-3f6s2cuuozqf122q6p4ltmmflz): a starter
+// walked Pallet/Viridian/Route 2 after a Brock loss, gained several levels
+// from travel encounters, and never unlocked the gym because only
+// Knowledge.Done(KindTrain) released the gate. A settled observation whose
+// max party level rose is the same material combat-readiness change.
+func TestGymRetryUnlocksOnIncidentalLevelGain(t *testing.T) {
+	known := NewKnowledge(nil)
+	gym := Objective{Kind: KindGym, Place: "pewter gym"}
+	known.Failed(gym, gymOutcomeErr(gym, state.ResultLost))
+
+	before := pewterGymObservation()
+	after := pewterGymObservation()
+	after.Party = []PartyMon{{Level: 10, HP: 30, MaxHP: 30}}
+	known.notePartyCombatChange(before, after, nil)
+
+	ready, ok := offeredGym(pewterGymObservation(), known)
+	if !ok {
+		t.Fatal("Pewter Gym stayed locked after the lead gained a level while traveling")
+	}
+	if !strings.Contains(ready.Note, "retry due") {
+		t.Fatalf("re-enabled gym note = %q, want retry-due fact", ready.Note)
+	}
+}
+
+// TestGymRetryUnlocksOnPartyGrowth is the catch-side of the same farm loop:
+// the strategist tried to "secure a second Pokémon to survive Brock" while
+// the gym stayed hidden. Growing the party is combat-readiness, not a commute.
+func TestGymRetryUnlocksOnPartyGrowth(t *testing.T) {
+	known := NewKnowledge(nil)
+	gym := Objective{Kind: KindGym, Place: "pewter gym"}
+	known.Failed(gym, gymOutcomeErr(gym, state.ResultLost))
+
+	before := pewterGymObservation()
+	after := pewterGymObservation()
+	after.PartyCount = 2
+	after.Party = []PartyMon{
+		{Level: 9, HP: 28, MaxHP: 28},
+		{Level: 3, HP: 15, MaxHP: 15},
+	}
+	known.notePartyCombatChange(before, after, nil)
+
+	if _, ok := offeredGym(pewterGymObservation(), known); !ok {
+		t.Fatal("Pewter Gym stayed locked after the party gained a member")
+	}
+}
+
+// TestGymRetryUnlocksWhenLocalTrainingIsOutsideBudget pins the L22 Charmeleon
+// deadlock: local grass cannot deliver a Train session, so the recovery the
+// gate demands is unavailable. Offer must fail-open the same retry-due path
+// rather than leave only Pallet/Viridian wander on the menu. Standing where
+// there is no grass (the Pewter commute) must stay locked so #67 does not
+// return.
+func TestGymRetryUnlocksWhenLocalTrainingIsOutsideBudget(t *testing.T) {
+	known := NewKnowledge(nil)
+	gym := Objective{Kind: KindGym, Place: "pewter gym"}
+	known.Failed(gym, gymOutcomeErr(gym, state.ResultLost))
+
+	if _, ok := offeredGym(pewterGymObservation(), known); ok {
+		t.Fatal("Pewter Gym unlocked in the gym with no grass; the commute loop can return")
+	}
+
+	grass := pewterGymObservation()
+	grass.HasGrass = true
+	grass.Party = []PartyMon{{Level: 22, HP: 65, MaxHP: 65}}
+	grass.Training = &TrainingEstimate{
+		CurrentLevel: 22, TargetLevel: 24,
+		Viability: TrainingOutsideBudget, SessionBudget: 20,
+		EstimatedEncounters: 55, XPRemaining: 1567, XPPerEncounter: 29,
+	}
+	ready, ok := offeredGym(grass, known)
+	if !ok {
+		t.Fatal("Pewter Gym stayed locked while local training was outside the session budget")
+	}
+	if !strings.Contains(ready.Note, "retry due") {
+		t.Fatalf("re-enabled gym note = %q, want retry-due fact", ready.Note)
+	}
+	if hasKind(Offer(grass, known), KindTrain) {
+		t.Fatal("Train remained available after unviable-area fail-open created a gym retry-due")
+	}
+}
+
+// TestGymRetryUnlocksOnTrainingInefficientError is the executed form of the
+// same evidence: the Train skill refused the area with a typed blockage.
+func TestGymRetryUnlocksOnTrainingInefficientError(t *testing.T) {
+	known := NewKnowledge(nil)
+	gym := Objective{Kind: KindGym, Place: "pewter gym"}
+	known.Failed(gym, gymOutcomeErr(gym, state.ResultLost))
+
+	obs := pewterGymObservation()
+	err := &TrainingInefficientError{Estimate: TrainingEstimate{Viability: TrainingOutsideBudget, SessionBudget: 20}}
+	known.notePartyCombatChange(obs, obs, err)
+
+	if _, ok := offeredGym(obs, known); !ok {
+		t.Fatal("Pewter Gym stayed locked after Train proved the current grass cannot recover the party")
+	}
+}
+
 // TestGymRetryUnlocksOnTrainShortfallProgress pins the live deadlock from a
 // spectated run: Ivysaur climbed level 19 -> 28 across eight attempts, one
 // level short of every requested target (trainStep offers lead+2, a session
@@ -182,10 +280,7 @@ func TestGymRetryUnlocksOnTrainShortfallProgress(t *testing.T) {
 		t.Fatal("Failed alone must not clear the gym-loss gate: run.go clears it explicitly")
 	}
 
-	// This is the fix under test: run.go calls clearGymLossFailures whenever
-	// the Train failure unwraps to ErrTrainProgress, mirroring what a full
-	// Knowledge.Done(KindTrain) does today.
-	known.clearGymLossFailures()
+	known.notePartyCombatChange(pewterGymObservation(), pewterGymObservation(), shortfall)
 
 	ready, ok := offeredGym(pewterGymObservation(), known)
 	if !ok {

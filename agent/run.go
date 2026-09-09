@@ -853,7 +853,6 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 			// diagnostics, Knowledge failure tallies, and errors.Is checks.
 			blackedOut := errors.Is(execErr, skill.ErrBlackedOut)
 			retreated := errors.Is(execErr, skill.ErrTrainRetreat)
-			trainProgressed := errors.Is(execErr, skill.ErrTrainProgress)
 			if blackedOut {
 				last.BlackedOut = true
 				objectiveResult.Final = last
@@ -864,9 +863,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 			outcome := objectiveResult.HistoryText()
 
 			known.Failed(obj, execErr)
-			if trainProgressed {
-				known.clearGymLossFailures()
-			}
+			known.notePartyCombatChange(before, last, execErr)
 			history = appendHistory(history, RoundRecord{Objective: obj.String(), Outcome: outcome})
 			last.History = history
 			last.RecentDialogue = tape.recent()
@@ -987,6 +984,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 		planning.success(fromPlan)
 		notifyPlanning(p, planning.snapshot())
 		known.Done(obj)
+		known.notePartyCombatChange(before, last, nil)
 		if obj.Kind == KindTalk {
 			known.TalkedTo(before.Map, obj.X, obj.Y)
 		}

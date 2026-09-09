@@ -249,6 +249,14 @@ func isAlnum(c byte) bool {
 // evidence. Named campaign progression is deliberately absent: production
 // composes those game-owned goals through OfferWithProgression.
 func Offer(obs Observation, known *Knowledge) []Objective {
+	// A trainer/gym-loss gate demands a Train recovery. If this map's grass
+	// cannot deliver one, fail-open the same retry-due path a successful
+	// rung would have created. Maps without a training estimate (cities,
+	// gyms, centers) stay locked so an unchanged commute cannot rechallenge.
+	if trainingUnviableHere(obs) {
+		known.releaseCombatLossGates()
+	}
+
 	out := make([]Objective, 0, 8)
 
 	if obs.PartyCount == 0 {

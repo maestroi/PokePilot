@@ -47,17 +47,18 @@ func gymLossFailureName(o Objective, err error) (string, bool) {
 	return gymLossFailureKey(o.Place), true
 }
 
-// clearGymLossFailures marks a lost gym as READY TO RETRY after successful
-// training instead of simply forgetting the loss. The old behavior deleted
-// the only evidence that linked training to a rechallenge, so the planner was
-// free to pick Train again and again (observed live: zero badges, Ivysaur L22,
-// 141 repeated decisions). The recovery cycle is now bounded:
+// clearGymLossFailures marks a lost gym as READY TO RETRY after a material
+// combat-readiness change instead of simply forgetting the loss. The old
+// behavior deleted the only evidence that linked training to a rechallenge,
+// so the planner was free to pick Train again and again (observed live: zero
+// badges, Ivysaur L22, 141 repeated decisions). The recovery cycle is bounded:
 //
-//	leader loss -> Train one rung -> retry due -> leader attempt
+//	leader loss -> party got stronger (Train, travel XP, catch, or Train
+//	proved unviable here) -> retry due -> leader attempt
 //
 // If the retry loses, Knowledge.Failed writes the scoped loss key again;
-// gymRetryPending then becomes false and one more Train rung is allowed. If
-// the retry wins, Knowledge.Done deletes gymRetryReadyKey automatically.
+// gymRetryPending then becomes false and another readiness change is required.
+// If the retry wins, Knowledge.Done deletes gymRetryReadyKey automatically.
 func (k *Knowledge) clearGymLossFailures() {
 	var retry Failure
 	for name, f := range k.Failures {

@@ -50,6 +50,47 @@ func (k *Knowledge) clearTrainerLossFailures() {
 	}
 }
 
+// notePartyCombatChange lifts trainer-loss and gym-loss recovery gates when
+// the settled world got stronger, or when the demanded recovery action is
+// typed-impossible in this area. Travel/heal with an unchanged party must
+// not call this with a matching observation: that is the #67 commute loop.
+func (k *Knowledge) notePartyCombatChange(before, after Observation, execErr error) {
+	if k == nil {
+		return
+	}
+	if partyCombatAdvanced(before, after) ||
+		errors.Is(execErr, skill.ErrTrainProgress) ||
+		errors.Is(execErr, ErrTrainingInefficient) {
+		k.releaseCombatLossGates()
+	}
+}
+
+func (k *Knowledge) releaseCombatLossGates() {
+	k.clearGymLossFailures()
+	k.clearTrainerLossFailures()
+}
+
+func partyCombatAdvanced(before, after Observation) bool {
+	if after.PartyCount > before.PartyCount {
+		return true
+	}
+	return partyMaxLevel(after) > partyMaxLevel(before)
+}
+
+func partyMaxLevel(obs Observation) uint8 {
+	var max uint8
+	for _, mon := range obs.Party {
+		if mon.Level > max {
+			max = mon.Level
+		}
+	}
+	return max
+}
+
+func trainingUnviableHere(obs Observation) bool {
+	return obs.Training != nil && obs.Training.Viability == TrainingOutsideBudget
+}
+
 // ppRecoveryDue reports whether Offer already proved that attacking PP needs
 // recovery by constructing a recovery objective. This deliberately consumes
 // Offer's factual result rather than re-decoding move semantics here: a Center
@@ -75,11 +116,13 @@ func ppRecoveryDue(out []Objective) bool {
 }
 
 // filterTrainerLossBlocked removes objectives that are currently disproved by
-// observed combat outcomes. Mandatory-trainer losses stay blocked until one
-// successful Train rung as before. Gym recovery adds one bounded phase: after
-// that rung, another Train objective is withheld until the ready gym retry is
-// actually attempted. If the retry loses, the scoped gym-loss marker returns
-// and training becomes legal again; if it wins, Knowledge.Done consumes the
+// observed combat outcomes. Mandatory-trainer and gym-leader losses stay
+// blocked until a material combat-readiness change (Train success/shortfall,
+// incidental level/party growth, or Train proving the current grass cannot
+// recover the party). Gym recovery adds one bounded phase: after that change,
+// another Train objective is withheld until the ready gym retry is actually
+// attempted. If the retry loses, the scoped gym-loss marker returns and
+// training becomes legal again; if it wins, Knowledge.Done consumes the
 // ready marker. This prevents an LLM from climbing L10 -> L12 -> ... -> L22
 // without ever testing whether the last material change was already enough.
 //

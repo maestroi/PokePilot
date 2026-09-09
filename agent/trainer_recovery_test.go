@@ -110,6 +110,93 @@ func TestTrainerLossNormalizesFleeVariantAndIgnoresOrdinaryBlackout(t *testing.T
 	}
 }
 
+// TestTrainerLossUnlocksOnIncidentalLevelGain pins the Boulder-badge farm
+// loop (run-1w32fl3ssna3h2y7f2butfdwbr): Route 3 was suppressed after a
+// trainer blackout, Train on Route 1/2 was outside budget, and walking still
+// leveled the lead without ever re-offering Route 3.
+func TestTrainerLossUnlocksOnIncidentalLevelGain(t *testing.T) {
+	route3, ok := skill.Place("route 3")
+	if !ok {
+		t.Fatal("route 3 missing from place table")
+	}
+	obs := Observation{
+		Map: 0x02, MapName: "PEWTER_CITY", X: 15, Y: 17, PartyCount: 1,
+		Party:  []PartyMon{{Level: 16, HP: 48, MaxHP: 48}},
+		Badges: []string{state.BadgeBoulder.String()},
+		Events: []string{state.EventGotPokedex.String()},
+	}
+	known := NewKnowledge(nil)
+	known.SawMap(obs.Map)
+	known.SawMap(route3.Map)
+	failed := Objective{Kind: KindGoTo, Place: "route 3"}
+	known.Failed(failed, fmt.Errorf("agent: %s: %w", failed, skill.ErrTrainerBlackedOut))
+
+	after := obs
+	after.Party = []PartyMon{{Level: 17, HP: 50, MaxHP: 50}}
+	known.notePartyCombatChange(obs, after, nil)
+
+	plain, flee := offeredJourneyTo(obs, known, "route 3")
+	if !plain || !flee {
+		t.Fatalf("route 3 after incidental level gain = plain:%v flee:%v, want both re-enabled", plain, flee)
+	}
+}
+
+func TestTrainerLossUnlocksWhenLocalTrainingIsOutsideBudget(t *testing.T) {
+	route3, ok := skill.Place("route 3")
+	if !ok {
+		t.Fatal("route 3 missing from place table")
+	}
+	obs := Observation{
+		Map: 0x0c, MapName: "ROUTE_1", X: 10, Y: 20, PartyCount: 1,
+		Party:    []PartyMon{{Level: 16, HP: 48, MaxHP: 48}},
+		Badges:   []string{state.BadgeBoulder.String()},
+		Events:   []string{state.EventGotPokedex.String()},
+		HasGrass: true,
+		Training: &TrainingEstimate{
+			CurrentLevel: 16, TargetLevel: 18,
+			Viability: TrainingOutsideBudget, SessionBudget: 20,
+			EstimatedEncounters: 38, XPRemaining: 1088, XPPerEncounter: 29,
+		},
+	}
+	known := NewKnowledge(nil)
+	known.SawMap(0x02)
+	known.SawMap(route3.Map)
+	failed := Objective{Kind: KindGoTo, Place: "route 3"}
+	known.Failed(failed, fmt.Errorf("agent: %s: %w", failed, skill.ErrTrainerBlackedOut))
+
+	plain, flee := offeredJourneyTo(obs, known, "route 3")
+	if !plain || !flee {
+		t.Fatalf("route 3 with unviable local training = plain:%v flee:%v, want both re-enabled", plain, flee)
+	}
+}
+
+func TestTrainerLossUnlocksOnTrainProgressShortfall(t *testing.T) {
+	route3, ok := skill.Place("route 3")
+	if !ok {
+		t.Fatal("route 3 missing from place table")
+	}
+	obs := Observation{
+		Map: 0x02, MapName: "PEWTER_CITY", X: 15, Y: 17, PartyCount: 1,
+		Party:  []PartyMon{{Level: 16, HP: 48, MaxHP: 48}},
+		Badges: []string{state.BadgeBoulder.String()},
+		Events: []string{state.EventGotPokedex.String()},
+	}
+	known := NewKnowledge(nil)
+	known.SawMap(obs.Map)
+	known.SawMap(route3.Map)
+	failed := Objective{Kind: KindGoTo, Place: "route 3"}
+	known.Failed(failed, fmt.Errorf("agent: %s: %w", failed, skill.ErrTrainerBlackedOut))
+
+	train := Objective{Kind: KindTrain, Level: 18}
+	shortfall := fmt.Errorf("agent: %s: %w (target 18, ended level 17 after 20 battles)", train, skill.ErrTrainProgress)
+	known.notePartyCombatChange(obs, obs, shortfall)
+
+	plain, flee := offeredJourneyTo(obs, known, "route 3")
+	if !plain || !flee {
+		t.Fatalf("route 3 after Train shortfall = plain:%v flee:%v, want both re-enabled", plain, flee)
+	}
+}
+
 func TestTrainerLossGateSurvivesCheckpointMemory(t *testing.T) {
 	route3, ok := skill.Place("route 3")
 	if !ok {
