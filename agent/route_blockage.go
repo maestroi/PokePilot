@@ -116,6 +116,8 @@ func redRoutePrerequisiteLink(id CapabilityID) (RoutePrerequisiteLink, bool) {
 	switch gameruntime.CapabilityID(id) {
 	case "can_exit_mt_moon":
 		return RoutePrerequisiteLink{Capability: id, Progress: redProgressMtMoonFossilAcquired}, true
+	case "can_pass_cerulean_robbed_house":
+		return RoutePrerequisiteLink{Capability: id, Progress: redProgressSSTicketAcquired}, true
 	case "can_cut":
 		return RoutePrerequisiteLink{Capability: id, FieldCapability: "cut"}, true
 	case "can_surf":

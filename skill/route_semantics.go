@@ -9,18 +9,25 @@ import (
 )
 
 const (
-	capCanCut          gameruntime.CapabilityID = "can_cut"
-	capCanSurf         gameruntime.CapabilityID = "can_surf"
-	capCanMoveBoulders gameruntime.CapabilityID = "can_move_boulders"
-	capCanClearSnorlax gameruntime.CapabilityID = "can_clear_snorlax"
-	capCanExitMtMoon   gameruntime.CapabilityID = "can_exit_mt_moon"
+	capCanCut                     gameruntime.CapabilityID = "can_cut"
+	capCanSurf                    gameruntime.CapabilityID = "can_surf"
+	capCanMoveBoulders            gameruntime.CapabilityID = "can_move_boulders"
+	capCanClearSnorlax            gameruntime.CapabilityID = "can_clear_snorlax"
+	capCanExitMtMoon              gameruntime.CapabilityID = "can_exit_mt_moon"
+	capCanPassCeruleanRobbedHouse gameruntime.CapabilityID = "can_pass_cerulean_robbed_house"
 )
 
 const (
 	semanticPalletTownMap    uint8 = 0x00
+	semanticCeruleanCityMap  uint8 = 0x03
 	semanticVermilionCityMap uint8 = 0x05
 	semanticCinnabarMap      uint8 = 0x08
+	semanticRoute9Map        uint8 = 0x14
 	semanticRoute21Map       uint8 = 0x20
+
+	ceruleanTrashedHouseMap        uint8 = 0x3e
+	ceruleanTrashedHouseFrontWarpX uint8 = 27
+	ceruleanTrashedHouseFrontWarpY uint8 = 11
 
 	// The ladder out of Mt. Moon B2F's fossil corridor
 	// (pokered/data/maps/objects/MtMoonB2F.asm: warp_event 5, 7).
@@ -54,6 +61,9 @@ func redRouteCapabilities(romData []byte, mem *state.Mem) gameruntime.Capability
 	facts := state.DecodeStoryFacts(mem, inv)
 	if facts.MtMoonFossilAcquired {
 		caps[capCanExitMtMoon] = true
+	}
+	if facts.SSTicketAcquired {
+		caps[capCanPassCeruleanRobbedHouse] = true
 	}
 	if facts.PokeFluteAcquired {
 		caps[capCanClearSnorlax] = true
@@ -90,6 +100,24 @@ func redRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, bool) {
 		// pivot once the story flag is set would route between rooms that
 		// share nothing but a floor.
 		t := semanticTransition("red:mt_moon_exit", edge, capCanExitMtMoon)
+		t.Gate = true
+		return t, true
+	case edge.From == semanticCeruleanCityMap && edge.To == ceruleanTrashedHouseMap &&
+		edge.Kind == world.EdgeWarp && edge.WarpX == ceruleanTrashedHouseFrontWarpX &&
+		edge.WarpY == ceruleanTrashedHouseFrontWarpY:
+		// Before Bill gives the S.S. Ticket the guard occupies the approach
+		// tile in front of the robbed house. Bill's script moves that guard;
+		// the house's rear hole then changes walkable component and opens the
+		// real road south to Route 5. This is a precondition, not an action.
+		t := semanticTransition("red:cerulean_robbed_house", edge, capCanPassCeruleanRobbedHouse)
+		t.Gate = true
+		return t, true
+	case pair(semanticCeruleanCityMap, semanticRoute9Map):
+		// The east connection itself is open, but the named Route 9
+		// destination lies beyond the Cut tree. Mark the connection as a gate
+		// so reachability reports Cut up front; Travel's existing live-tree
+		// recovery performs the actual Cut after entering Route 9.
+		t := semanticTransition("red:route9_cut", edge, capCanCut)
 		t.Gate = true
 		return t, true
 	case pair(semanticVermilionCityMap, vermilionGymMap):

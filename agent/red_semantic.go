@@ -16,6 +16,7 @@ import (
 const (
 	redProgressMtMoonFossilAcquired       ProgressID = "mt_moon_fossil_acquired"
 	redProgressPokedexAcquired            ProgressID = "pokedex_acquired"
+	redProgressSSTicketAcquired           ProgressID = "ss_ticket_acquired"
 	redProgressSilphScopeAcquired         ProgressID = "silph_scope_acquired"
 	redProgressPokeFluteAcquired          ProgressID = "poke_flute_acquired"
 	redProgressFuchsiaProgressionComplete ProgressID = "fuchsia_progression_complete"
@@ -87,6 +88,7 @@ func redProgressState(f state.StoryFacts) ProgressState {
 	return ProgressState{
 		{ID: redProgressMtMoonFossilAcquired, Complete: f.MtMoonFossilAcquired},
 		{ID: redProgressPokedexAcquired, Complete: f.PokedexAcquired},
+		{ID: redProgressSSTicketAcquired, Complete: f.SSTicketAcquired},
 		{ID: redProgressSilphScopeAcquired, Complete: f.SilphScopeAcquired},
 		{ID: redProgressPokeFluteAcquired, Complete: f.PokeFluteAcquired},
 		{ID: redProgressFuchsiaProgressionComplete, Complete: f.FuchsiaProgressionComplete},
