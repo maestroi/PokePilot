@@ -672,7 +672,27 @@
     $("detail-decision").textContent = run.decision || (run.question ? "Waiting for planner response" : "Waiting for first decision");
     $("detail-frame").textContent = Number(run.frame || 0).toLocaleString();
     $("detail-round").textContent = run.stats && (run.stats.round ?? run.stats.rounds) != null ? String(run.stats.round ?? run.stats.rounds) : "—";
+    const settings = kv([
+      ["how", howText(run)], ["starter", starterOf(run)], ["goal", goalOf(run)],
+      ["model", run.planner === "llm" ? llmProfileLabel(run) : ""],
+      ["reasoning", run.planner === "llm" ? reasoningEffortLabel(run) : ""],
+      ["walk to", run.planner === "scripted" ? (run.dest || "—") : ""], ["seed", String(run.seed)],
+      ["keep going", run.endless ? (run.random_seed ? "yes, random seed" : "yes, same seed") : ""],
+      ["queued", fmtWhen(run.queued_at)], ["ended", fmtWhen(run.ended_at)],
+      ["round cap", run.planner === "llm" ? (run.max_rounds ? String(run.max_rounds) : "none (goal-driven)") : ""]
+    ]);
+    const stateRows = run.status === "done"
+      ? [["ended", run.reason || "done"], ["detail", run.detail || ""], ["last map", tileLabel(run)], ["frame", String(run.frame)], ["fps", fpsLabel(run)], ["attempts", String(run.attempts)]]
+      : [["status", run.status], ["map", tileLabel(run)], ["frame", String(run.frame)], ["fps", fpsLabel(run)], ["attempt", String(run.attempts)], ["so far", run.stop_so_far || ""]];
+    ensureWatchBlocks();
+    paintHTML($("detail-settings"), `<h3>Settings</h3>${settings}`);
+    const outcomeTitle = run.status === "done" ? "<h3>Outcome</h3>" : "<h3>Current state</h3>";
+    paintHTML($("detail-now"), `${outcomeTitle}${kv(stateRows)}`);
+    paintBlock($("detail-plan"), planHTML(run));
+    paintBlock($("detail-play"), playHTML(run));
     paintHTML($("detail-party"), partyHTML(run));
+    paintHTML($("screen-event"), lastEventHTML(run));
+    bindPlanRaw();
   }
 
   function planHTML(run) {
@@ -731,6 +751,7 @@
     document.querySelectorAll("[data-console-view]").forEach((panel) => { panel.hidden = panel.dataset.consoleView !== activeView; });
     document.querySelectorAll("[role=tab][data-view]").forEach((tab) => { tab.setAttribute("aria-selected", String(tab.dataset.view === activeView)); });
     if (updateHash) history.replaceState(null, "", `${location.pathname}${location.search}#${activeView}`);
+    if (window.scrollX) window.scrollTo({ left: 0, top: window.scrollY });
   }
   function renderVersions() {
     const wall = snap.wall_version || "";

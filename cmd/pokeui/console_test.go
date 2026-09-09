@@ -120,6 +120,28 @@ func TestUIFollowsWatchingFirstReference(t *testing.T) {
 	}
 }
 
+func TestUIDetailDeckRetainsDebuggingInformation(t *testing.T) {
+	html := string(indexHTML)
+	js := string(uiJS)
+	if strings.Contains(html, `id="detail-body" hidden`) {
+		t.Error("current run detail deck must remain visible")
+	}
+	for _, want := range []string{`<h3>Settings</h3>`, `<h3>Outcome</h3>`, `planHTML(run)`, `playHTML(run)`, `partyHTML(run)`, `lastEventHTML(run)`} {
+		if !strings.Contains(js, want) {
+			t.Errorf("current run detail deck missing %q", want)
+		}
+	}
+}
+
+func TestUIReplayActionStaysVisibleWhenRecordingIsMissing(t *testing.T) {
+	js := string(inspectorJS)
+	for _, want := range []string{`replayButton.hidden=false`, `replayButton.disabled=true`, `Generate replay`, `Available after this run finishes`, `run.gbrun`} {
+		if !strings.Contains(js, want) {
+			t.Errorf("missing-recording replay state missing %q", want)
+		}
+	}
+}
+
 func TestUIConsoleStylesheetIsServed(t *testing.T) {
 	h := handler("http://wall.invalid")
 	req := httptest.NewRequest(http.MethodGet, "/console.css", nil)

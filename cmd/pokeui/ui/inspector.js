@@ -125,11 +125,11 @@
     const state=(status&&status.state)||"missing"; replayButton.hidden=false; replayButton.disabled=false; video.hidden=true; scrubberWrap.hidden=true;
     if(state==="ready"){replayStatus.textContent=status.size?`Ready · ${fmtSize(status.size)}`:"Ready"; replayButton.hidden=true; const src=`/v1/runs/${escURL(runID)}/replay/video`; if(video.dataset.run!==runID){video.src=src;video.dataset.run=runID;video.load()} video.hidden=false;scrubberWrap.hidden=false;return}
     if(state==="generating"){replayStatus.textContent="Generating deterministic replay…";replayButton.disabled=true;stopReplayPoll();replayPoll=setTimeout(()=>loadReplayStatus(runID),1500);return}
-    if(state==="disabled"){replayStatus.textContent=status.error||"Replay service unavailable";replayButton.hidden=true;return}
+    if(state==="disabled"){replayStatus.textContent=status.error||"Replay service unavailable";replayButton.textContent="Generate replay";replayButton.disabled=true;return}
     if(state==="error"){replayStatus.textContent=status.error||"Replay generation failed";replayButton.textContent="Retry replay";return}
     replayStatus.textContent="Ready to generate from the recorded run.";replayButton.textContent="Generate replay";
   }
-  async function loadReplayStatus(id) { try { const status=await json(`/v1/runs/${escURL(id)}/replay/status`); if(id===runID)renderReplay(status); } catch(err){if(id===runID){replayStatus.textContent=err.message;replayButton.hidden=true}} }
+  async function loadReplayStatus(id) { try { const status=await json(`/v1/runs/${escURL(id)}/replay/status`); if(id===runID)renderReplay(status); } catch(err){if(id===runID){replayStatus.textContent=err.message;replayButton.hidden=false;replayButton.disabled=true}} }
   async function selectRun(id) {
     stopReplayPoll(); runID=id; debug=null; reproSource=null; checkpoints=[]; events=[]; selectedEvent=-1; followingLive=true; returnLive.hidden=true; evidence.hidden=true; video.pause();video.removeAttribute("src");video.dataset.run="";video.hidden=true;scrubber.value="0";scrubberWrap.hidden=true;
     if(!id){track.innerHTML='<p class="empty">Select a run to browse recorded events.</p>';story.innerHTML='<p class="empty">Select a run to browse its recorded events.</p>';replayButton.hidden=true;return}
@@ -137,8 +137,8 @@
     try{
       const [debugView,artifactView,checkpointView,sourceView]=await Promise.all([json(`/v1/runs/${escURL(id)}/debug`),json(`/v1/runs/${escURL(id)}/artifacts`),json(`/v1/runs/${escURL(id)}/checkpoints`).catch(()=>({checkpoints:[]})),json(`/v1/runs/${escURL(id)}/repro-source`).catch(()=>null)]);
       if(id!==runID)return; debug=debugView;reproSource=sourceView;checkpoints=checkpointView.checkpoints||[];events=normalizeEvents(debugView,checkpointView);selectedEvent=events.length-1;renderTimeline();renderStory();renderStoryActions();renderMeta();renderArtifacts(artifactView);
-      const replayable=(artifactView.artifacts||[]).some((a)=>a.replayable); if(replayable)await loadReplayStatus(id); else{replayButton.hidden=true;replayStatus.textContent="No run recording is available."}
-    }catch(err){if(id===runID){track.innerHTML=`<p class="empty">Timeline unavailable: ${html(err.message)}</p>`;story.innerHTML=`<p class="empty">Run Story unavailable: ${html(err.message)}</p>`;replayButton.hidden=true}}
+      const replayable=(artifactView.artifacts||[]).some((a)=>a.replayable); if(replayable)await loadReplayStatus(id); else{replayButton.hidden=false;replayButton.disabled=true;replayButton.textContent="Generate replay";replayStatus.textContent=(debugView.run&&debugView.run.status)!=="done"?"Available after this run finishes and uploads its recording.":"This run has no run.gbrun recording to replay."}
+    }catch(err){if(id===runID){track.innerHTML=`<p class="empty">Timeline unavailable: ${html(err.message)}</p>`;story.innerHTML=`<p class="empty">Run Story unavailable: ${html(err.message)}</p>`;replayButton.hidden=false;replayButton.disabled=true;replayStatus.textContent=err.message}}
   }
   async function startFromCheckpoint(name, button) {
     // The wall marks a checkpoint replayable only when paired agent knowledge exists.
