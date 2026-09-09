@@ -214,14 +214,15 @@ func uploadNewObjectivePairs(client *farm.Client, runID string, attempt int, dir
 		if err := uploadCheckpoint(client, runID, attempt, arts); err != nil {
 			continue
 		}
-		uploaded[st] = struct{}{}
 
 		badge, majorState, majorKnowledge, err := promoteBadgeCheckpointFiles(dir, st, kn)
 		if err != nil {
+			uploaded[st] = struct{}{}
 			log.Printf("farm: %s: promote major checkpoint from %s: %v", runID, st, err)
 			continue
 		}
 		if badge == 0 {
+			uploaded[st] = struct{}{}
 			continue
 		}
 		majorArts, err := artifactsForFiles([]string{majorKnowledge, majorState}, dir)
@@ -230,13 +231,15 @@ func uploadNewObjectivePairs(client *farm.Client, runID string, attempt int, dir
 			continue
 		}
 		if err := uploadCheckpoint(client, runID, attempt, majorArts); err != nil {
-			// Leave the files without the marker. The next scan retries this
-			// same first post-badge pair instead of moving the milestone.
+			// Do not mark the ordinary source as fully uploaded yet. The next
+			// scan reuses this exact first post-badge pair, so a transient wall
+			// outage cannot advance the milestone to a later risky checkpoint.
 			continue
 		}
 		if err := os.WriteFile(majorPromotionMarker(dir, badge), []byte(st+"\n"), 0o644); err != nil {
 			log.Printf("farm: %s: mark major badge %d checkpoint: %v", runID, badge, err)
 		}
+		uploaded[st] = struct{}{}
 	}
 }
 
