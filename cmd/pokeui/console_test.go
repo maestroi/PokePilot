@@ -142,6 +142,19 @@ func TestUIReplayActionStaysVisibleWhenRecordingIsMissing(t *testing.T) {
 	}
 }
 
+func TestUIGameFrameFitsInsideFixedStage(t *testing.T) {
+	css := string(consoleCSS)
+	rule := regexp.MustCompile(`\.game-monitor \.lcd img\{[^}]+\}`).FindString(css)
+	if rule == "" {
+		t.Fatal("console.css missing a game-frame sizing rule")
+	}
+	for _, want := range []string{"position:absolute", "inset:0", "object-fit:contain", "object-position:center"} {
+		if !strings.Contains(rule, want) {
+			t.Errorf("game-frame rule %q missing %q", rule, want)
+		}
+	}
+}
+
 func TestUIConsoleStylesheetIsServed(t *testing.T) {
 	h := handler("http://wall.invalid")
 	req := httptest.NewRequest(http.MethodGet, "/console.css", nil)
