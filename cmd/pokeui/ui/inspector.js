@@ -11,7 +11,7 @@
       <div class="timeline-legend"><span>○ Decision</span><span>□ Checkpoint</span><span>○ Progress</span><span>○ Failure</span></div>
     </section>
     <section id="run-story" class="story-bay" aria-labelledby="story-title">
-      <header><div><span class="section-kicker">Chronology</span><h2 id="story-title">Run Story</h2></div><span class="inspect-status">Recorded events</span></header>
+      <header><div><span class="section-kicker">Chronology</span><h2 id="story-title">Run Story <small>Recorded events</small></h2></div><div id="pp-story-actions" class="story-header-actions"><button type="button" class="quiet-button" data-evidence>Evidence</button></div></header>
       <div id="pp-story" class="story-list"><p class="empty">Select a run to browse its recorded events.</p></div>
     </section>
     <aside id="evidence-drawer" class="evidence-drawer" aria-labelledby="evidence-title" hidden>
@@ -92,18 +92,23 @@
   function renderStory() {
     if (!events.length) { story.innerHTML = '<p class="empty">No recorded events. Raw run evidence may still be available.</p>'; return; }
     story.innerHTML = events.map((event,index) => {
-      const kind=eventKind(event), when=eventFrame(event)?`frame ${eventFrame(event).toLocaleString()}`:(eventRound(event)?`round ${eventRound(event)}`:"recorded"), cp=event.checkpoint;
-      const restart = cp ? `<button type="button" class="quiet-button" data-repro="${html(cp)}" ${event.replayable?"":"disabled"}>Start a new run from here</button>` : "";
-      const fail = kind === "failure" ? '<button type="button" class="primary-action" data-investigate-event>Investigate with AI</button>' : "";
-      return `<div class="story-entry" tabindex="0" role="button" data-event-index="${index}" aria-current="${index===selectedEvent}"><span class="story-when">${html(when)}</span><span class="story-symbol">${markerSymbol(kind)}</span><span class="story-copy"><strong>${html(eventTitle(event))}</strong><span>${html(eventDetail(event))}</span></span><span class="story-actions">${restart}${fail}<button type="button" class="quiet-button" data-evidence>Evidence</button></span>${index===selectedEvent?`<div class="story-detail">${html(eventDetail(event))}</div>`:""}</div>`;
+      const kind=eventKind(event), when=eventFrame(event)?`frame ${eventFrame(event).toLocaleString()}`:(eventRound(event)?`round ${eventRound(event)}`:"recorded");
+      return `<div class="story-entry" tabindex="0" role="button" data-event-index="${index}" aria-current="${index===selectedEvent}"><span class="story-when">${html(when)}</span><span class="story-symbol">${markerSymbol(kind)}</span><span class="story-copy"><strong>${html(eventTitle(event))}</strong><span>${html(eventDetail(event))}</span></span>${index===selectedEvent?`<div class="story-detail">${html(eventDetail(event))}</div>`:""}</div>`;
     }).join("");
+  }
+  function renderStoryActions() {
+    const host=byID("pp-story-actions"), event=events[selectedEvent];
+    if(!host)return;
+    const restart=event&&event.checkpoint?`<button type="button" class="quiet-button" data-repro="${html(event.checkpoint)}" ${event.replayable?"":"disabled"}>Start a new run from here</button>`:"";
+    const failure=event&&eventKind(event)==="failure"?'<button type="button" class="primary-action" data-investigate-event>Investigate with AI</button>':"";
+    host.innerHTML=`${failure}${restart}<button type="button" class="quiet-button" data-evidence>Evidence</button>`;
   }
   function selectEvent(index) {
     if (!Number.isInteger(index) || index < 0 || index >= events.length) return;
     selectedEvent = index; followingLive = false; returnLive.hidden = false;
     const maxFrame = Math.max(0, ...events.map(eventFrame));
     if (!video.hidden && video.duration > 0 && maxFrame > 0) video.currentTime = video.duration * eventFrame(events[index]) / maxFrame;
-    renderTimeline(); renderStory();
+    renderTimeline(); renderStory(); renderStoryActions();
     story.querySelector(`[data-event-index="${index}"]`)?.scrollIntoView({block:"nearest",behavior:"smooth"});
   }
   function renderMeta() {
@@ -131,7 +136,7 @@
     track.innerHTML='<p class="empty">Loading recorded events…</p>'; story.innerHTML='<p class="empty">Loading Run Story…</p>'; replayButton.hidden=false;replayButton.disabled=true;replayStatus.textContent="Loading…";
     try{
       const [debugView,artifactView,checkpointView,sourceView]=await Promise.all([json(`/v1/runs/${escURL(id)}/debug`),json(`/v1/runs/${escURL(id)}/artifacts`),json(`/v1/runs/${escURL(id)}/checkpoints`).catch(()=>({checkpoints:[]})),json(`/v1/runs/${escURL(id)}/repro-source`).catch(()=>null)]);
-      if(id!==runID)return; debug=debugView;reproSource=sourceView;checkpoints=checkpointView.checkpoints||[];events=normalizeEvents(debugView,checkpointView);selectedEvent=events.length-1;renderTimeline();renderStory();renderMeta();renderArtifacts(artifactView);
+      if(id!==runID)return; debug=debugView;reproSource=sourceView;checkpoints=checkpointView.checkpoints||[];events=normalizeEvents(debugView,checkpointView);selectedEvent=events.length-1;renderTimeline();renderStory();renderStoryActions();renderMeta();renderArtifacts(artifactView);
       const replayable=(artifactView.artifacts||[]).some((a)=>a.replayable); if(replayable)await loadReplayStatus(id); else{replayButton.hidden=true;replayStatus.textContent="No run recording is available."}
     }catch(err){if(id===runID){track.innerHTML=`<p class="empty">Timeline unavailable: ${html(err.message)}</p>`;story.innerHTML=`<p class="empty">Run Story unavailable: ${html(err.message)}</p>`;replayButton.hidden=true}}
   }
@@ -150,7 +155,7 @@
   replayButton.addEventListener("click",async()=>{replayButton.disabled=true;replayStatus.textContent="Starting replay generation…";try{renderReplay(await json(`/v1/runs/${escURL(runID)}/replay/render`,{method:"POST"}))}catch(err){replayStatus.textContent=err.message;replayButton.disabled=false}});
   scrubber.addEventListener("input",()=>{if(video.duration>0)video.currentTime=video.duration*Number(scrubber.value)/1000});
   video.addEventListener("timeupdate",()=>{if(video.duration>0)scrubber.value=String(Math.round(1000*video.currentTime/video.duration))});
-  returnLive.addEventListener("click",()=>{followingLive=true;returnLive.hidden=true;if(events.length){selectedEvent=events.length-1;renderTimeline();renderStory()}});
+  returnLive.addEventListener("click",()=>{followingLive=true;returnLive.hidden=true;if(events.length){selectedEvent=events.length-1;renderTimeline();renderStory();renderStoryActions()}});
   investigate.addEventListener("click",()=>investigateRun(investigate));
   byID("pp-close-evidence").addEventListener("click",()=>{evidence.hidden=true});
   window.addEventListener("pokefarm-select-run",(event)=>{const id=(event.detail&&event.detail.runId)||"";if(id!==runID)selectRun(id)});

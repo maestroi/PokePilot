@@ -98,6 +98,28 @@ func TestUIReplayTimelineIsSeekable(t *testing.T) {
 	}
 }
 
+func TestUIFollowsWatchingFirstReference(t *testing.T) {
+	html := string(indexHTML)
+	js := string(uiJS)
+	inspector := string(inspectorJS)
+	if strings.Contains(html, "brand-mark") {
+		t.Error("header must use the restrained PokeFarm wordmark without an invented logo")
+	}
+	for _, want := range []string{`Run state`, `id="detail-location"`, `id="detail-objective"`, `id="detail-decision"`, `id="detail-frame"`, `id="detail-round"`} {
+		if !strings.Contains(html, want) {
+			t.Errorf("watching-first state strip missing %q", want)
+		}
+	}
+	for _, want := range []string{`detail-location`, `detail-objective`, `detail-decision`, `detail-frame`, `detail-round`} {
+		if !strings.Contains(js, want) {
+			t.Errorf("dashboard renderer missing %q", want)
+		}
+	}
+	if !strings.Contains(inspector, `id="pp-story-actions"`) {
+		t.Error("Run Story must keep contextual actions in its header")
+	}
+}
+
 func TestUIConsoleStylesheetIsServed(t *testing.T) {
 	h := handler("http://wall.invalid")
 	req := httptest.NewRequest(http.MethodGet, "/console.css", nil)
@@ -129,7 +151,7 @@ func TestUISeparatesSettingsFromState(t *testing.T) {
 	if !strings.Contains(html, `id="detail-chips"`) {
 		t.Error("index missing detail badge row")
 	}
-	for _, want := range []string{`settingChips`, `statusChip`, `<h3>Settings</h3>`, `Outcome`, `histFilter`, `ended_at`, `random_seed`} {
+	for _, want := range []string{`settingChips`, `statusChip`, `detail-objective`, `histFilter`, `ended_at`, `random_seed`} {
 		if !strings.Contains(js, want) {
 			t.Errorf("ui.js missing %q", want)
 		}
@@ -140,7 +162,7 @@ func TestUISeparatesSettingsFromState(t *testing.T) {
 // and decision: a one-line emulator trace is not the plan.
 func TestUIShowsLatestPlan(t *testing.T) {
 	js := string(uiJS)
-	for _, want := range []string{`run.question`, `run.decision`, `<h3>Plan</h3>`} {
+	for _, want := range []string{`run.question`, `run.decision`, `detail-decision`} {
 		if !strings.Contains(js, want) {
 			t.Errorf("ui.js missing %q", want)
 		}

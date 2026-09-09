@@ -16,7 +16,7 @@ FORM: Broadcast-control-room direction, fifth grounded candidate, watching-first
 </head>
 <body>
 <header class="console-bar">
-  <div class="brand"><span class="brand-mark" aria-hidden="true"></span><div><strong>PokéFarm</strong><span>Operator console</span></div></div>
+  <div class="brand"><strong>PokéFarm</strong><span>Operator console</span></div>
   <nav class="console-tabs" aria-label="Console sections" role="tablist">
     <button type="button" role="tab" aria-selected="true" data-view="live">Live</button>
     <button type="button" role="tab" aria-selected="false" data-view="runs">Runs</button>
@@ -35,12 +35,12 @@ FORM: Broadcast-control-room direction, fifth grounded candidate, watching-first
     <section id="view-live" class="console-view" data-console-view="live" aria-labelledby="selected-heading">
       <div id="selected-run" class="selected-run">
         <div id="watch" hidden>
-          <header class="run-header"><div class="run-heading"><span class="live-kicker">Selected run</span><h2 id="selected-heading"><span id="detail-title">Choose a run</span></h2><div class="chips" id="detail-chips"></div></div><div class="run-header-actions"><button type="button" class="quiet-button" id="copy-run-id">Copy run ID</button><button type="button" class="danger-button" id="selected-cancel" hidden>Cancel run</button><button type="button" class="icon-button" id="detail-close" aria-label="Clear selected run">×</button></div></header>
+          <header class="run-header"><div class="run-heading"><span class="live-kicker">Run state</span><h2 id="selected-heading"><span id="detail-title">Choose a run</span></h2><div class="chips" id="detail-chips"></div></div><div class="state-cell"><span>Location</span><strong id="detail-location">—</strong></div><div class="state-cell objective-cell"><span>Objective</span><strong id="detail-objective">—</strong></div><div class="state-cell decision-cell"><span>Latest decision</span><strong id="detail-decision">—</strong></div><div class="state-cell number-cell"><span>Frame</span><strong id="detail-frame">—</strong></div><div class="state-cell number-cell"><span>Round</span><strong id="detail-round">—</strong></div><div class="run-header-actions"><button type="button" class="quiet-button" id="copy-run-id" aria-label="Copy run ID">Copy</button><button type="button" class="danger-button" id="selected-cancel" hidden>Cancel</button><button type="button" class="icon-button" id="detail-close" aria-label="Clear selected run">×</button></div></header>
           <div id="visual-stage" class="visual-stage">
             <section class="monitor game-monitor" aria-labelledby="game-title"><header><h3 id="game-title">Game</h3><span id="game-state-label">Live frame</span></header><div class="lcd" id="detail-lcd"><span class="idle">Waiting for a frame</span></div></section>
             <section class="monitor map-panel" id="detail-map-panel" hidden aria-labelledby="map-title"><header><h3 id="map-title">Semantic map</h3><span id="detail-map-status"></span></header><div class="map-scroll"><canvas id="detail-map" role="img" aria-label="Current map with player, sprites and movement trail"></canvas></div><div class="map-legend"><span><b>@</b> player</span><span><b>■</b> sprite</span><span><b>·</b> trail</span><span><b>W</b> warp</span><span><b>#</b> blocked</span></div></section>
           </div>
-          <section class="state-deck" aria-label="Current run state"><div id="detail-body"></div><div id="detail-party"></div><div id="screen-event"></div></section>
+          <section class="state-deck" aria-label="Current run state"><div id="detail-body" hidden></div><div id="detail-party"></div><div id="screen-event" hidden></div></section>
         </div>
         <section id="run-inspector" class="inspect" aria-label="Run timeline and evidence"><section id="run-timeline" class="timeline-bay" aria-labelledby="timeline-title"><header><div><span class="section-kicker">Playback</span><h2 id="timeline-title">Run timeline</h2></div></header><p class="empty">Select a run to browse recorded events.</p></section><section id="run-story" class="story-bay" aria-labelledby="story-title"><header><div><span class="section-kicker">Chronology</span><h2 id="story-title">Run Story</h2></div></header><p class="empty">Decisions, checkpoints, progress, and outcomes will appear here.</p></section><aside id="evidence-drawer" class="evidence-drawer" aria-labelledby="evidence-title" hidden><h2 id="evidence-title">Evidence</h2></aside></section>
       </div>
