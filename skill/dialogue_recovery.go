@@ -35,6 +35,12 @@ type DialogueRecoveryResult struct {
 	Stop DialogueRecoveryStop
 	// Text is the box still on screen at the stop; "" when it cleared.
 	Text string
+	// LastText is the last non-empty page this recovery displayed, even when
+	// Stop is DialogueRecovered and the box has since closed. A closed box
+	// can still be identified this way — a known-impassable notice
+	// (Saffron's gate guards) always ends on the same final page, right
+	// before the loop pages it away for good.
+	LastText string
 	// Presses is the number of A presses the loop sent. It is zero whenever
 	// the loop stopped before its first press — in particular on a choice
 	// that was up on entry.
@@ -69,7 +75,16 @@ func recoverDialogue(m frameClock, budget int) DialogueRecoveryResult {
 	// box led into one), or the box is closed and the player is
 	// controllable. Checking the battle first is what lets a cutscene box
 	// that ends in a battle stop the loop the frame the battle starts.
+	// lastText tracks the most recent non-empty page this recovery displayed,
+	// captured as a side effect of done's look at each snapshot. The
+	// typewriter effect means a box's text starts empty and fills in over
+	// several frames, so only the last non-empty read reflects what the
+	// player actually saw on the page the loop is about to close.
+	lastText := ""
 	done := func(mm *state.Mem) bool {
+		if d := state.DecodeDialogue(mm); d != nil && d.Text != "" {
+			lastText = d.Text
+		}
 		return state.DecodeBattle(mm) != nil ||
 			(state.DecodeDialogue(mm) == nil && state.Controllable(mm))
 	}
@@ -85,9 +100,10 @@ func recoverDialogue(m frameClock, budget int) DialogueRecoveryResult {
 	final, presses := advanceCore(m, budget, done, stopBeforeA)
 
 	res := DialogueRecoveryResult{
-		Presses: presses,
-		Final:   state.Decode(&final),
-		Sprites: state.DecodeSprites(&final),
+		Presses:  presses,
+		Final:    state.Decode(&final),
+		Sprites:  state.DecodeSprites(&final),
+		LastText: lastText,
 	}
 	switch {
 	case state.DecodeBattle(&final) != nil:

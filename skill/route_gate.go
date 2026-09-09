@@ -2,11 +2,35 @@ package skill
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 )
+
+// ErrRouteGateClosed reports that the box which interrupted the walk is a
+// known story gate that a text-box recovery can never open: the guard's
+// notice always reads the same and is never a choice, so retrying the walk
+// only meets it again. The caller decides what to do with it (route
+// elsewhere, or fetch whatever the gate needs first).
+type ErrRouteGateClosed struct {
+	Text string
+}
+
+func (e *ErrRouteGateClosed) Error() string {
+	return fmt.Sprintf("skill: Travel: known route gate is closed: %q", e.Text)
+}
+
+// knownClosedRouteGateText reports whether text is a known story-gate notice
+// that always blocks the same way and is never resolved by paging it closed
+// again. Measured: the Saffron gate guards ask for a drink from the Celadon
+// Department Store before letting the player through; walking into any of
+// them before that reads "Oh wait there, the road's closed." every time.
+func knownClosedRouteGateText(text string) bool {
+	normalized := strings.ToLower(strings.Join(strings.Fields(text), " "))
+	return strings.Contains(normalized, "the road's closed")
+}
 
 // AnswerKnownRouteGate answers a choice only when the active travel/interact
 // skill owns that transition. It is intentionally not objective-boundary

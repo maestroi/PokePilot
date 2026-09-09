@@ -326,6 +326,15 @@ func travel(m *emu.Emu, policy MovePolicy, maxBattles int, goTo func() error, re
 				// text that was on screen.
 				return res, fmt.Errorf("skill: Travel: text box did not clear within the recovery budget: %q", rec.Text)
 			case DialogueRecovered:
+				if knownClosedRouteGateText(rec.LastText) {
+					// The guard's notice already closed (it is never a
+					// choice), but walking forward only meets the same guard
+					// again — retrying would just burn the whole recovery
+					// budget re-reading it. Report the typed outcome now so
+					// the caller replans instead of burning the next 9
+					// recoveries on "still interrupted by a text box".
+					return res, &ErrRouteGateClosed{Text: rec.LastText}
+				}
 				if blk := blackout(); blk {
 					// The box that just closed was the blackout's own text:
 					// poison fainted the last mon out of it while walking.

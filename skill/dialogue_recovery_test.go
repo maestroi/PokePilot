@@ -395,6 +395,36 @@ func TestTravelBoundsDialogueRecoveries(t *testing.T) {
 	}
 }
 
+// TestTravelStopsOnKnownClosedRouteGate: a Saffron gate guard's notice pages
+// closed like any other box (DialogueRecovered, never a choice), but walking
+// forward only meets the same guard again. Before this fix Travel spent its
+// whole recovery budget re-reading the identical notice (run
+// run-27upfk3ik8i8f1o0c895fgojf7, round 18, ROUTE_5_GATE); it must instead
+// stop after the first recovery with the typed outcome.
+func TestTravelStopsOnKnownClosedRouteGate(t *testing.T) {
+	var gotos int
+	goTo := func() error {
+		gotos++
+		return ErrDialogueInterrupted
+	}
+	recoverBox := func() DialogueRecoveryResult {
+		return DialogueRecoveryResult{Stop: DialogueRecovered, LastText: "Oh wait there, the road's closed."}
+	}
+
+	res, err := travel(nil, nil, 5, goTo, recoverBox, func() bool { return false }, noBattles)
+
+	var gate *ErrRouteGateClosed
+	if !errors.As(err, &gate) {
+		t.Fatalf("err = %v, want *ErrRouteGateClosed", err)
+	}
+	if gotos != 1 {
+		t.Fatalf("GoTo called %d times, want 1 (no retry against a known-closed gate)", gotos)
+	}
+	if res.Dialogues != 1 {
+		t.Fatalf("Dialogues = %d, want 1", res.Dialogues)
+	}
+}
+
 // TestTravelStopsOnBlackoutAfterRecoveredBox: the non-battle blackout. Poison
 // fainted the last mon out of it while walking: no battle ever fired, the
 // death surfaced as an ordinary text box, and the game set the blackout bit
