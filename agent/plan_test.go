@@ -178,3 +178,68 @@ func (p *rawStrategist) Next(_ Observation, offered []Objective) (Objective, err
 func (p *rawStrategist) Strategize(_ Observation, _ []Objective, _ string) (Plan, error) {
 	return p.plan, nil
 }
+
+// TestRunPlanningFallsBackToCheapChooserOnUnresolvedPlanStep covers the farm
+// failure where a strategist kept naming a plan step that was never on the
+// offered menu (stale, invented, or a formatting near-miss) until its retry
+// budget ran out — MEASURED across run-permx767dvp9scvb1rs158xz,
+// run-11dgixnaxktf1uax2xvdmdc5z, run-2isumqfgwygzx19ovjpobmorlw and
+// run-1dvuxv760j2as3rac0c68gcm2m, all of which ended the run with
+// reason:error instead of degrading. Because hallucinatingStrategist has no
+// StrategizeRetry (not a StrategicFeedbackPlanner), strategizeWithRetries
+// cannot even re-ask; choose must still recognize ErrPlanStepUnresolved and
+// fall back to the plain chooser for this round rather than propagating the
+// error and killing the run.
+type hallucinatingStrategist struct{ fast int }
+
+func (p *hallucinatingStrategist) Next(_ Observation, offered []Objective) (Objective, error) {
+	p.fast++
+	return offered[0], nil
+}
+func (p *hallucinatingStrategist) Strategize(_ Observation, _ []Objective, _ string) (Plan, error) {
+	return Plan{Goal: "reach pewter", Steps: []string{"go to pewter gym, fleeing wild battles"}}, nil
+}
+
+func TestRunPlanningFallsBackToCheapChooserOnUnresolvedPlanStep(t *testing.T) {
+	offered := []Objective{{Kind: KindGoTo, Place: "pewter city"}}
+	p := &hallucinatingStrategist{}
+	r := newRunPlanning(Plan{})
+
+	obj, fromPlan, err, _ := r.choose(nil, 1, p, Observation{Round: 1}, offered)
+	if err != nil {
+		t.Fatalf("choose returned an error instead of degrading: %v", err)
+	}
+	if fromPlan {
+		t.Fatal("fallback objective reported as coming from the plan")
+	}
+	if obj.String() != "go to pewter city" {
+		t.Fatalf("obj = %q, want the offered fallback objective", obj.String())
+	}
+	if p.fast != 1 {
+		t.Fatalf("cheap chooser calls = %d, want 1", p.fast)
+	}
+	if r.Stats.FastCalls != 1 {
+		t.Fatalf("FastCalls = %d, want 1", r.Stats.FastCalls)
+	}
+	// The strategist is still installed as nothing (r.Plan never became
+	// active), so the next round asks the strategist again rather than
+	// being stuck on the rejected plan.
+	if r.Plan.Active() {
+		t.Fatalf("plan should not be active after a rejected strategize: %+v", r.Plan)
+	}
+}
+
+// TestRunPlanningKeepsHardStopForStructurallyInvalidPlans confirms the
+// fallback is scoped to ErrPlanStepUnresolved only: a plan that is
+// structurally broken (here, a menu index used as a step, which
+// validateStrategicPlan rejects before ever calling Chosen) still stops the
+// run, because that failure means the strategist's OWN output contract is
+// broken, not that it named something outside this round's menu.
+func TestRunPlanningKeepsHardStopForStructurallyInvalidPlans(t *testing.T) {
+	offered := []Objective{{Kind: KindGoTo, Place: "route 1"}}
+	p := &rawStrategist{plan: Plan{Goal: "cheat", Steps: []string{"1"}}}
+	r := newRunPlanning(Plan{})
+	if _, _, err, _ := r.choose(nil, 1, p, Observation{Round: 1}, offered); err == nil {
+		t.Fatal("Run accepted a custom strategist plan made of a menu index")
+	}
+}

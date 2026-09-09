@@ -68,6 +68,15 @@ func TestChosenMatches(t *testing.T) {
 		// parenthetical and retry.
 		{"go to viridian pokemon center  (unvisited adjacent map)", 1},
 		{"take the charmander starter  (starts the run)", 0},
+		// A re-ask's feedback quotes the offered menu back as "N: sentence"
+		// lines, and the model sometimes echoes that numeral prefix back as
+		// if it were part of its answer. MEASURED 2026-09-08 on
+		// run-16om5de3gn5u21q5ehht4ga6db, round 60: the model's final ask
+		// replied exactly "5: go to pewter pokemon center" and the run died
+		// on that alone with no retries left, despite the sentence itself
+		// being the correct, currently-offered choice.
+		{"5: go to viridian pokemon center", 1},
+		{"2: Talk at (3,1)", 2},
 	}
 	for _, c := range cases {
 		got, err := agent.Chosen(objs, c.s)
@@ -94,6 +103,15 @@ func TestChosenRejects(t *testing.T) {
 		{"index 0", "0"},
 		{"out-of-range index", "4"},
 		{"near miss, one character off", "go to viridian pokebon center"},
+		// A numeral-colon prefix that does not resolve to an offered
+		// sentence once stripped must still reject, not fall through to a
+		// coincidental match.
+		{"numeral prefix on an unoffered sentence", "9: go to atlantis"},
+		// A hallucination invented whole cloth (not a near miss of
+		// anything offered), matching the shape seen live: "go to pewter
+		// gym" and "go to vermilion city" when only "go to pewter city"
+		// was offered and neither was reachable this round.
+		{"unoffered destination", "go to pewter gym, fleeing wild battles"},
 	}
 	for _, c := range cases {
 		_, err := agent.Chosen(objs, c.s)
