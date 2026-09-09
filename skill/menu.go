@@ -37,6 +37,18 @@ const twoOptionConsumedFrames = 120
 // since the cursor wraps and never reads as stuck). Callers gate on
 // FontLoaded; SelectMenuItem does not.
 func SelectMenuItem(m *emu.Emu, index int) error {
+	// The menu needs one settle window before it will accept input at all:
+	// a caller that just detected the menu opening (a predicate that fires
+	// the instant wFontLoaded/wMaxMenuItem look right) can call in mid-render.
+	// Every entry NOT already under the cursor gets this settle for free (a
+	// Down/Up tap is always followed by one before the next read), but the
+	// wanted entry already under the cursor took zero loop iterations and
+	// used to go straight to a bare Tap(A) — the confirming press landed
+	// before the menu was ready to see it and nothing happened. Shop.go's
+	// selectListEntry hit this exact race (MEASURED 2026-09-02, see its
+	// comment); this is the same fix at the shared menu helper so every
+	// caller gets it, not just the mart's item list.
+	m.StepFrames(talkSettle)
 	var mem state.Mem
 	state.Snapshot(m, &mem)
 	menu := state.DecodeMenu(&mem)

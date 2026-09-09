@@ -68,7 +68,16 @@ const (
 	EventGotPokeballsFromOak   Event = 36
 	EventGotPokedex            Event = 37
 	EventOakAppearedInPallet   Event = 39
-	EventGotOaksParcel         Event = 57
+	// Set by OaksLabOak1Text's .check_got_parcel (pokered/scripts/OaksLab.asm)
+	// when the player HANDS the parcel TO Oak, not when the clerk hands it to
+	// the player (that is EventGotOaksParcel, index 57, one higher). It is
+	// also ViridianMartCheckParcelDeliveredScript's own gate
+	// (pokered/scripts/ViridianMart.asm): until this is set, the Viridian
+	// Mart clerk always shows "Hi there! Nice day, isn't it?"-style flavor
+	// text instead of BUY/SELL/QUIT, however many times the mart is talked
+	// to or re-entered.
+	EventOakGotParcel  Event = 56
+	EventGotOaksParcel Event = 57
 	// Set by Route22Rival1AfterBattleScript (pokered/scripts/Route22.asm:167),
 	// the only setter in the decomp; it is what unlocks Oak's .give_poke_balls.
 	EventBeatRoute22Rival1stBattle Event = 1317
@@ -90,6 +99,7 @@ var eventNames = map[Event]string{
 	EventGotPokeballsFromOak:       "GotPokeballsFromOak",
 	EventGotPokedex:                "GotPokedex",
 	EventOakAppearedInPallet:       "OakAppearedInPallet",
+	EventOakGotParcel:              "OakGotParcel",
 	EventGotOaksParcel:             "GotOaksParcel",
 	EventBeatRoute22Rival1stBattle: "BeatRoute22Rival1stBattle",
 	EventBeatChampionRival:         "BeatChampionRival",
