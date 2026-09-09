@@ -454,8 +454,11 @@ func walkWithinMap(m *emu.Emu, romData []byte, dest Destination) error {
 			return steps, nil
 		}, func(steps []world.Step) error { return WalkPath(m, steps) },
 		func() { m.StepFrames(npcWaitFrames) })
-	if err == nil || err == planErr {
-		return err
+	if err == nil {
+		return nil
+	}
+	if err == planErr {
+		return arriveBesideBlockedDestination(m, romData, dest, planErr)
 	}
 	x, y := playerXY(m)
 	if errors.Is(err, ErrBattleInterrupted) {
@@ -467,4 +470,31 @@ func walkWithinMap(m *emu.Emu, romData []byte, dest Destination) error {
 			cur, eb.At.X, eb.At.Y, maxWalkRetries, err)
 	}
 	return fmt.Errorf("skill: GoTo: walk on map %02x at (%d,%d): %w", cur, x, y, err)
+}
+
+// arriveBesideBlockedDestination is the last resort when walkAround's whole
+// retry budget still finds no path to dest. A trainer that intercepts the
+// player on the way in stays wherever the fight leaves it for the rest of
+// the run — nothing here ever asks it to move again — so if dest is the
+// tile a live sprite is actually standing on, the dead end is permanent.
+// Landing beside it instead of failing forever matches the "stand beside a
+// live object" contract besideDestination already gives every other
+// approach in this package (TalkAt, Pickup). A dest blocked by real map
+// geometry, with no sprite on it, is a genuine bug elsewhere rather than an
+// interception, so that case still surfaces planErr unchanged.
+func arriveBesideBlockedDestination(m *emu.Emu, romData []byte, dest Destination, planErr error) error {
+	if !spriteBlockers(m)[[2]int{int(dest.X), int(dest.Y)}] {
+		return planErr
+	}
+	beside, ok, err := besideDestination(m, romData, dest.X, dest.Y)
+	if err != nil {
+		return planErr
+	}
+	if !ok {
+		return nil
+	}
+	if err := walkWithinMap(m, romData, beside); err != nil {
+		return planErr
+	}
+	return nil
 }
