@@ -15,6 +15,8 @@ import (
 	"github.com/maestroi/pokepilot/farm"
 )
 
+const majorCheckpointPrefix = "major-badge-"
+
 func (w *Wall) handleCheckpoint(res http.ResponseWriter, req *http.Request) {
 	id := req.PathValue("id")
 	var incoming struct {
@@ -128,10 +130,12 @@ func (w *Wall) handleCheckpoint(res http.ResponseWriter, req *http.Request) {
 	writeJSON(res, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// handleCheckpointResume returns a checkpoint only for a lease that follows a
-// stale-worker loss. Ordinary error retries intentionally keep their existing
-// fresh-game/fresh-seed semantics: resuming a deterministic code failure would
-// merely replay the same failure and hide the fact that the retry is new.
+// handleCheckpointResume has two recovery tiers. A lease after worker loss
+// resumes from the newest ordinary objective boundary, preserving the exact
+// work that runner had completed. An endless run retrying a gameplay/code
+// error instead rolls back to the newest durable major checkpoint, so a bad
+// later decision does not erase badges already secured. Non-endless error
+// retries intentionally retain their historical fresh-game semantics.
 func (w *Wall) handleCheckpointResume(res http.ResponseWriter, id string, requestedAttempt int) {
 	if w.dumpsDir == "" {
 		res.WriteHeader(http.StatusNoContent)
@@ -159,16 +163,29 @@ func (w *Wall) handleCheckpointResume(res http.ResponseWriter, id string, reques
 		return
 	}
 	previous := attempt - 1
-	lostPrefix := fmt.Sprintf("attempt %d failed: no heartbeat for ", previous)
+	retryPrefix := fmt.Sprintf("attempt %d failed: ", previous)
+	lostPrefix := retryPrefix + "no heartbeat for "
 	planner := t.Planner
-	eligible := previous > 0 && strings.HasPrefix(t.Detail, lostPrefix)
+	lostRetry := previous > 0 && strings.HasPrefix(t.Detail, lostPrefix)
+	majorRetry := previous > 0 && t.Endless && planner == "llm" && strings.HasPrefix(t.Detail, retryPrefix) && !lostRetry
 	w.mu.Unlock()
-	if !eligible {
+
+	var (
+		cp  farm.ResumeCheckpoint
+		err error
+	)
+	switch {
+	case lostRetry:
+		cp, err = latestResumeCheckpoint(checkpointAttemptDir(w.dumpsDir, id, previous), planner)
+		if err == nil {
+			cp.Attempt = previous
+		}
+	case majorRetry:
+		cp, err = latestMajorResumeCheckpoint(w.dumpsDir, id, previous)
+	default:
 		res.WriteHeader(http.StatusNoContent)
 		return
 	}
-
-	cp, err := latestResumeCheckpoint(checkpointAttemptDir(w.dumpsDir, id, previous), planner)
 	if err != nil {
 		if !os.IsNotExist(err) {
 			log.Printf("pokewall: %s attempt %d resume checkpoint: %v", id, previous, err)
@@ -178,7 +195,6 @@ func (w *Wall) handleCheckpointResume(res http.ResponseWriter, id string, reques
 		res.WriteHeader(http.StatusNoContent)
 		return
 	}
-	cp.Attempt = previous
 	writeJSON(res, http.StatusOK, cp)
 }
 
@@ -210,34 +226,7 @@ func latestResumeCheckpoint(dir, planner string) (farm.ResumeCheckpoint, error) 
 	// planner reason from a world it does not remember, so prefer consistency
 	// over squeezing out the final partial objective.
 	if planner == "llm" {
-		for i := len(objective) - 1; i >= 0; i-- {
-			stateName := objective[i]
-			base := strings.TrimSuffix(stateName, ".state")
-			knowledgeName := ""
-			for _, name := range names {
-				if strings.HasPrefix(name, base+".knowledge-v") && strings.HasSuffix(name, ".json") {
-					if knowledgeName == "" || name > knowledgeName {
-						knowledgeName = name
-					}
-				}
-			}
-			if knowledgeName == "" {
-				continue
-			}
-			stateArt, err := checkpointArtifact(dir, stateName, "application/octet-stream")
-			if err != nil {
-				continue
-			}
-			knowledgeArt, err := checkpointArtifact(dir, knowledgeName, "application/json")
-			if err != nil {
-				continue
-			}
-			if err := farm.ValidateFinishArtifacts(farm.FinishReport{Artifacts: []farm.Artifact{stateArt, knowledgeArt}}); err != nil {
-				continue
-			}
-			return farm.ResumeCheckpoint{State: stateArt, Knowledge: &knowledgeArt}, nil
-		}
-		return farm.ResumeCheckpoint{}, os.ErrNotExist
+		return latestPairedCheckpoint(dir, objective, names)
 	}
 
 	// Scripted runs have no agent knowledge, so their latest periodic emulator
@@ -253,6 +242,71 @@ func latestResumeCheckpoint(dir, planner string) (farm.ResumeCheckpoint, error) 
 		return farm.ResumeCheckpoint{}, err
 	}
 	return farm.ResumeCheckpoint{State: stateArt}, nil
+}
+
+func latestMajorResumeCheckpoint(dumpsDir, runID string, throughAttempt int) (farm.ResumeCheckpoint, error) {
+	for attempt := throughAttempt; attempt >= 1; attempt-- {
+		dir := checkpointAttemptDir(dumpsDir, runID, attempt)
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return farm.ResumeCheckpoint{}, err
+		}
+		var states, names []string
+		for _, e := range entries {
+			if e.IsDir() {
+				continue
+			}
+			name := e.Name()
+			names = append(names, name)
+			if strings.HasPrefix(name, majorCheckpointPrefix) && strings.HasSuffix(name, ".state") {
+				states = append(states, name)
+			}
+		}
+		sort.Strings(states)
+		cp, err := latestPairedCheckpoint(dir, states, names)
+		if err == nil {
+			cp.Attempt = attempt
+			return cp, nil
+		}
+		if !os.IsNotExist(err) {
+			return farm.ResumeCheckpoint{}, err
+		}
+	}
+	return farm.ResumeCheckpoint{}, os.ErrNotExist
+}
+
+func latestPairedCheckpoint(dir string, states, names []string) (farm.ResumeCheckpoint, error) {
+	for i := len(states) - 1; i >= 0; i-- {
+		stateName := states[i]
+		base := strings.TrimSuffix(stateName, ".state")
+		knowledgeName := ""
+		for _, name := range names {
+			if strings.HasPrefix(name, base+".knowledge-v") && strings.HasSuffix(name, ".json") {
+				if knowledgeName == "" || name > knowledgeName {
+					knowledgeName = name
+				}
+			}
+		}
+		if knowledgeName == "" {
+			continue
+		}
+		stateArt, err := checkpointArtifact(dir, stateName, "application/octet-stream")
+		if err != nil {
+			continue
+		}
+		knowledgeArt, err := checkpointArtifact(dir, knowledgeName, "application/json")
+		if err != nil {
+			continue
+		}
+		if err := farm.ValidateFinishArtifacts(farm.FinishReport{Artifacts: []farm.Artifact{stateArt, knowledgeArt}}); err != nil {
+			continue
+		}
+		return farm.ResumeCheckpoint{State: stateArt, Knowledge: &knowledgeArt}, nil
+	}
+	return farm.ResumeCheckpoint{}, os.ErrNotExist
 }
 
 func checkpointArtifact(dir, name, mediaType string) (farm.Artifact, error) {
@@ -278,7 +332,7 @@ func retainCheckpointWindow(dir string) error {
 	if err != nil {
 		return err
 	}
-	var periodic, objective []string
+	var periodic, objective, major []string
 	files := map[string]struct{}{}
 	for _, e := range entries {
 		name := e.Name()
@@ -288,10 +342,13 @@ func retainCheckpointWindow(dir string) error {
 			periodic = append(periodic, name)
 		case strings.HasPrefix(name, "round-") && strings.HasSuffix(name, ".state"):
 			objective = append(objective, name)
+		case strings.HasPrefix(name, majorCheckpointPrefix) && strings.HasSuffix(name, ".state"):
+			major = append(major, name)
 		}
 	}
 	sort.Strings(periodic)
 	sort.Strings(objective)
+	sort.Strings(major)
 	drop := func(names []string, keep int, sidecar func(string) string) {
 		if keep < 0 {
 			keep = 0
@@ -307,10 +364,7 @@ func retainCheckpointWindow(dir string) error {
 			}
 		}
 	}
-	drop(periodic, checkpointPeriodicKeep, func(name string) string {
-		return strings.TrimSuffix(name, ".state") + ".json"
-	})
-	drop(objective, checkpointObjectiveKeep, func(name string) string {
+	knowledgeSidecar := func(name string) string {
 		base := strings.TrimSuffix(name, ".state")
 		for f := range files {
 			if strings.HasPrefix(f, base+".knowledge-v") && strings.HasSuffix(f, ".json") {
@@ -318,6 +372,14 @@ func retainCheckpointWindow(dir string) error {
 			}
 		}
 		return ""
+	}
+	drop(periodic, checkpointPeriodicKeep, func(name string) string {
+		return strings.TrimSuffix(name, ".state") + ".json"
 	})
+	drop(objective, checkpointObjectiveKeep, knowledgeSidecar)
+	// Major checkpoints never compete with the short objective flight
+	// recorder. Keep a separate small ring so an hours-long campaign can roll
+	// back across recent badges without unbounded storage growth.
+	drop(major, checkpointMajorKeep, knowledgeSidecar)
 	return nil
 }
