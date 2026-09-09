@@ -68,6 +68,58 @@ func TestUploadNewObjectivePairsPromotesFirstPostBadgeCheckpoint(t *testing.T) {
 	}
 }
 
+func TestMajorPromotionRetryStaysOnFirstPostBadgeCheckpoint(t *testing.T) {
+	dir := t.TempDir()
+	writeMajorTestPair(t, dir, "round-010-frame-0000001000-beat-the-gym-leader-here.state", "pre-gym", 0)
+	writeMajorTestPair(t, dir, "round-011-frame-0000001100-heal-the-party.state", "first-post-gym", 1)
+	writeMajorTestPair(t, dir, "round-012-frame-0000001200-go-to-route-25.state", "later", 1)
+
+	var majorAttempts []string
+	failMajor := true
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var report farm.CheckpointReport
+		if err := json.NewDecoder(r.Body).Decode(&report); err != nil {
+			t.Errorf("decode checkpoint: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		stateName := ""
+		for _, a := range report.Artifacts {
+			if strings.HasSuffix(a.Name, ".state") {
+				stateName = a.Name
+				break
+			}
+		}
+		if strings.HasPrefix(stateName, majorCheckpointStatePrefix) {
+			majorAttempts = append(majorAttempts, stateName)
+			if failMajor {
+				failMajor = false
+				http.Error(w, "temporary wall failure", http.StatusServiceUnavailable)
+				return
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	}))
+	defer srv.Close()
+
+	client := farm.NewClient(srv.URL)
+	uploaded := map[string]struct{}{}
+	uploadNewObjectivePairs(client, "endless", 1, dir, uploaded)
+	uploadNewObjectivePairs(client, "endless", 1, dir, uploaded)
+
+	want := "major-badge-01-round-011-frame-0000001100-heal-the-party.state"
+	if len(majorAttempts) != 2 {
+		t.Fatalf("major attempts = %v, want failed attempt plus retry", majorAttempts)
+	}
+	if majorAttempts[0] != want || majorAttempts[1] != want {
+		t.Fatalf("major promotion drifted after retry: %v, want both %q", majorAttempts, want)
+	}
+	if _, err := os.Stat(majorPromotionMarker(dir, 1)); err != nil {
+		t.Fatalf("promotion marker missing after retry: %v", err)
+	}
+}
+
 func TestSeedMajorPromotionMarkersPreventsResumeDrift(t *testing.T) {
 	dir := t.TempDir()
 	major := "major-badge-02-round-050-frame-0000005000-go-to-pokemon-center.state"
