@@ -48,6 +48,8 @@ type Graph struct {
 	entryComps     map[Edge][]int    // components an edge's entry port touches (on e.To)
 	warps          map[uint8][]rom.Warp
 	tiles          map[uint8]dim
+	connections    map[Edge]rom.Connection
+	reachable      map[uint8]map[int][]int
 }
 
 // BuildGraph builds a MAP-level graph over every parseable map. Nodes are map
@@ -99,13 +101,19 @@ func BuildGraph(romData []byte) (*Graph, error) {
 		entryComps:     make(map[Edge][]int),
 		warps:          make(map[uint8][]rom.Warp, len(headers)),
 		tiles:          make(map[uint8]dim, len(headers)),
+		connections:    make(map[Edge]rom.Connection),
+		reachable:      make(map[uint8]map[int][]int),
 	}
 	for id, h := range headers {
 		g.Edges[id] = nil // a node exists for every valid map, even edge-less ones
+		for _, c := range h.Connections {
+			g.connections[Edge{Kind: EdgeConnection, From: id, To: c.MapID, Dir: c.Dir}] = c
+		}
 		g.warps[id] = h.Warps
 		g.tiles[id] = dim{w: int(h.WidthBlocks) * 2, h: int(h.HeightBlocks) * 2}
 		if grid, err := Build(romData, h); err == nil {
 			g.comps[id] = components(grid)
+			g.reachable[id] = componentReachability(grid, g.comps[id])
 		}
 		// else: this map's block data is corrupt and Build fails; it has no
 		// walkable grid, so its edges are not component-constrained (canExit
@@ -181,7 +189,7 @@ func BuildGraph(romData []byte) (*Graph, error) {
 	for _, es := range g.Edges {
 		for _, e := range es {
 			g.exitComps[e] = g.exitPortComps(e)
-			g.entryComps[e] = g.entryPortComps(e)
+			g.entryComps[e] = g.expandComponents(e.To, g.entryPortComps(e))
 		}
 	}
 	return g, nil
@@ -241,6 +249,9 @@ func (g *Graph) exitPortComps(e Edge) []int {
 	d := g.tiles[e.From]
 	switch e.Kind {
 	case EdgeConnection:
+		if _, ok := g.connections[e]; ok {
+			return g.connectionPortComps(e, false)
+		}
 		return edgeLineComps(comps, d.w, d.h, e.Dir)
 	case EdgeWarp:
 		return tileOrNeighbourComps(comps, d.w, d.h, int(e.WarpX), int(e.WarpY))
@@ -259,6 +270,9 @@ func (g *Graph) entryPortComps(e Edge) []int {
 	d := g.tiles[e.To]
 	switch e.Kind {
 	case EdgeConnection:
+		if _, ok := g.connections[e]; ok {
+			return g.connectionPortComps(e, true)
+		}
 		return edgeLineComps(comps, d.w, d.h, uint8(oppositeDir(int(e.Dir))))
 	case EdgeWarp:
 		dx, dy, ok := g.destWarpTile(e)
@@ -268,6 +282,44 @@ func (g *Graph) entryPortComps(e Edge) []int {
 		return tileOrNeighbourComps(comps, d.w, d.h, dx, dy)
 	}
 	return nil
+}
+
+// A connection covers only the overlapping seam, not the entire destination
+// edge. Both sides must be standable at the ROM-aligned coordinates.
+func (g *Graph) connectionPortComps(e Edge, arrival bool) []int {
+	c := g.connections[e]
+	src, dst := g.tiles[e.From], g.tiles[e.To]
+	n := src.w
+	if e.Dir >= dirWest {
+		n = src.h
+	}
+	var out []int
+	seen := map[int]bool{}
+	for i := 0; i < n; i++ {
+		j := i + int(c.Offset)
+		sx, sy, tx, ty := i, 0, j, dst.h-1
+		switch e.Dir {
+		case dirSouth:
+			sy, ty = src.h-1, 0
+		case dirWest:
+			sx, sy, tx, ty = 0, i, dst.w-1, j
+		case dirEast:
+			sx, sy, tx, ty = src.w-1, i, 0, j
+		}
+		a, b := standingComponentAt(g, e.From, sx, sy), standingComponentAt(g, e.To, tx, ty)
+		if len(a) == 0 || len(b) == 0 {
+			continue
+		}
+		v := a[0]
+		if arrival {
+			v = b[0]
+		}
+		if !seen[v] {
+			seen[v] = true
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 // destWarpTile finds the destination warp tile on e.To for a warp edge: the

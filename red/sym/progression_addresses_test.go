@@ -8,6 +8,7 @@ func TestProgressionAddressesMatchSymbolFile(t *testing.T) {
 		name string
 		got  uint16
 	}{
+		{"wMtMoonB2FCurScript", MtMoonB2FCurScript},
 		{"wTileInFrontOfPlayer", TileInFrontOfPlayer},
 		{"wFieldMoves", FieldMoves},
 		{"wNumFieldMoves", NumFieldMoves},

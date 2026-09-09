@@ -24,6 +24,7 @@ func TestCatalogIDsAreUniqueAndSafe(t *testing.T) {
 func TestCatalogContainsQualificationRoadmap(t *testing.T) {
 	want := map[string]int{
 		"opening-brock":              0,
+		"mt-moon-cerulean":           0,
 		"misty":                      0,
 		"rocket-hideout":             0,
 		"pokemon-tower":              0,
@@ -57,9 +58,9 @@ func TestSelectProfiles(t *testing.T) {
 		want    []string
 	}{
 		{profile: "skills", want: []string{"rom-short"}},
-		{profile: "milestones", want: []string{"opening-brock", "misty", "rocket-hideout", "pokemon-tower"}},
+		{profile: "milestones", want: []string{"opening-brock", "mt-moon-cerulean", "misty", "rocket-hideout", "pokemon-tower"}},
 		{profile: "full", want: []string{"fresh-hall-of-fame"}},
-		{profile: "", want: []string{"opening-brock", "misty", "rocket-hideout", "pokemon-tower"}},
+		{profile: "", want: []string{"opening-brock", "mt-moon-cerulean", "misty", "rocket-hideout", "pokemon-tower"}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.profile, func(t *testing.T) {

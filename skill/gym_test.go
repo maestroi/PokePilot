@@ -56,7 +56,12 @@ const mistyLeadLevel = 24
 // as long, and the retreat line takes a detour every time the lead drops
 // below half HP. A run that exhausts this many detours cannot reach the
 // level and is reported, not retried.
-const mistyMaxHealDetours = 12
+//
+// RAISED from 12: the leg only became walkable end to end once Mt. Moon's
+// gate and Route 4's one-way ledges were modelled, and the first run that
+// actually completed the heal cycle finished level 23 of 24 with the old
+// budget spent — 47 battles over 12 detours, a few battles short.
+const mistyMaxHealDetours = 16
 
 // diagFatalf fails the test with the failure diagnostic bundle appended to
 // the message: map id, player tile, controllable, in battle, the decoded
@@ -344,12 +349,42 @@ func TestGymCascadeBadge(t *testing.T) {
 	}
 	t.Logf("on Route 3: battles on the road so far=%d", battles-battlesBeforeRoad)
 
-	// The training ground is Route 4's east half — the grass cells at
-	// (60..73, 8..11) sit a few steps from (60,8), and its L9-12 wilds are
-	// the fastest grind available before Cerulean. Reaching it crosses the
-	// Route 3 -> Route 4 seam; if that seam is the wall S8-7 measured, this
-	// leg is where the run stops.
-	grindSpot := skill.Destination{Map: 0x0F, X: 60, Y: 8}
+	// Mt. Moon's deepest floor is owned progression, not geometry. Its
+	// Super Nerd stands on one of the two tiles the fossil corridor
+	// narrows to and steps aside only once a fossil is taken, so Route 4's
+	// east half is not walkable from here until this runs; Travel says so
+	// with a missing can_exit_mt_moon rather than a dead end. A campaign
+	// reaches it through the planner's progression objective, and a
+	// journey test calls the same Red-owned skill.
+	// TestMtMoonFossilOpensTheEasternExit replays it from a checkpoint.
+	for attempt := 0; ; attempt++ {
+		err := skill.MtMoonFossil(e, romData, policy)
+		if err == nil {
+			break
+		}
+		if !errors.Is(err, skill.ErrBlackedOut) || attempt >= 2 {
+			diagFatalf(t, e, err, "Mt. Moon fossil progression: %v", err)
+		}
+		t.Logf("Mt. Moon leg blacked out (attempt %d): resuming", attempt+1)
+		settleBlackout(t, e)
+	}
+
+	// The training ground is Route 4's grass, (64..73, 10..15), whose L9-12
+	// wilds are the fastest grind available before Cerulean. Reaching it
+	// crosses the Route 3 -> Route 4 seam; if that seam is the wall S8-7
+	// measured, this leg is where the run stops.
+	//
+	// The tile is on the CERULEAN side of Route 4's ledges, which matters
+	// once the grind starts healing. Route 4 runs one way east: its drop is
+	// a ledge, so the road back up does not exist, MEASURED both ways —
+	//
+	//	PROBE_MAP=0x0f PROBE_AT=60,8  PROBE_TO=89,10 -> 30 steps
+	//	PROBE_MAP=0x0f PROBE_AT=89,10 PROBE_TO=60,8  -> world: no path
+	//	PROBE_MAP=0x0f PROBE_AT=89,10 PROBE_TO=68,13 -> 25 steps
+	//
+	// — so a grind spot above the drop can be reached on the way in and
+	// never again after the first heal detour to Cerulean.
+	grindSpot := skill.Destination{Map: 0x0F, X: 68, Y: 13}
 	for attempt := 0; ; attempt++ {
 		_, err := skill.Travel(e, romData, grindSpot, policy, 10)
 		if err == nil {
@@ -426,9 +461,13 @@ func TestGymCascadeBadge(t *testing.T) {
 	}
 	t.Logf("trained the lead to level %d on Route 4 in %d battles (HP %d/%d, status=%#02x)", lead.Level, totalBattles, lead.HP, lead.MaxHP, lead.Status)
 
-	// Leave the grind healthy: a statused or half-HP lead would black out
-	// on the short walk to the gym and take the run down with it.
-	if lead.Status != 0 || int(lead.HP)*2 < int(lead.MaxHP) {
+	// Leave the grind at full strength, which is also what the approach
+	// below asserts: a statused or hurt lead would black out on the short
+	// walk to the gym and take the run down with it. The looser half-HP
+	// line this used to draw could not be reached from the same state the
+	// assertion demands — the first run to finish the grind stopped here at
+	// 64/70, healthy by that line and not by the next one.
+	if lead.Status != 0 || int(lead.HP) != int(lead.MaxHP) {
 		if _, err := skill.Travel(e, romData, ceruleanCenter, policy, 5); err != nil {
 			diagFatalf(t, e, err, "Travel to the Cerulean Center before the gym: %v", err)
 		}

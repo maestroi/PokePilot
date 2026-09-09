@@ -73,7 +73,7 @@ func TestWarpTargetTargetsReachableTile(t *testing.T) {
 		h, g := gateFixture(t, tc.from)
 		e := gateEdge(t, h, tc.from, tc.to)
 
-		wx, wy, steps, push, err := warpTarget(h, e, g, 5, 1, nil)
+		wx, wy, steps, push, err := warpTarget(h, e, g, 5, 1, nil, warpTestROM(t))
 		if err != nil {
 			t.Fatalf("map %#04x: warpTarget from (5,1): %v", tc.from, err)
 		}
@@ -106,7 +106,7 @@ func TestWarpTargetSkipsSolidWarpFromAdjacentTile(t *testing.T) {
 		h, g := gateFixture(t, tc.from)
 		e := gateEdge(t, h, tc.from, tc.to)
 
-		wx, wy, _, _, err := warpTarget(h, e, g, 4, 1, nil)
+		wx, wy, _, _, err := warpTarget(h, e, g, 4, 1, nil, warpTestROM(t))
 		if err != nil {
 			t.Fatalf("map %#04x: warpTarget from saved-state tile (4,1): %v", tc.from, err)
 		}
@@ -131,7 +131,7 @@ func TestWarpTargetConsultsCurrentBlockers(t *testing.T) {
 		e := gateEdge(t, h, tc.from, tc.to)
 
 		blocked := map[[2]int]bool{{5, 1}: true}
-		if _, _, _, _, err := warpTarget(h, e, g, 4, 2, blocked); err == nil {
+		if _, _, _, _, err := warpTarget(h, e, g, 4, 2, blocked, warpTestROM(t)); err == nil {
 			t.Errorf("map %#04x: selection succeeded with the only approach (5,1) blocked", tc.from)
 		}
 		got, err := selectWarp(t, h, e, g, 4, 2)
@@ -147,9 +147,18 @@ func TestWarpTargetConsultsCurrentBlockers(t *testing.T) {
 // selectWarp runs one warpTarget selection and returns the chosen tile.
 func selectWarp(t *testing.T, h rom.MapHeader, e world.Edge, g *world.Grid, sx, sy int) ([2]int, error) {
 	t.Helper()
-	wx, wy, _, _, err := warpTarget(h, e, g, sx, sy, nil)
+	wx, wy, _, _, err := warpTarget(h, e, g, sx, sy, nil, warpTestROM(t))
 	if err != nil {
 		return [2]int{}, err
 	}
 	return [2]int{wx, wy}, nil
+}
+
+func warpTestROM(t *testing.T) []byte {
+	t.Helper()
+	data, err := os.ReadFile(os.Getenv("POKEMON_RED_ROM"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
 }

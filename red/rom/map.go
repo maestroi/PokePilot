@@ -48,6 +48,9 @@ type Object struct {
 type Connection struct {
 	Dir   uint8
 	MapID uint8
+	// Offset adjusts the coordinate along the seam on arrival (X for
+	// north/south, Y for east/west). Written by the connection macro.
+	Offset int8
 }
 
 // MapHeader is one map's static header plus its object data.
@@ -180,8 +183,23 @@ func ParseMap(rom []byte, mapID uint8) (MapHeader, error) {
 		if err != nil {
 			return h, mapErr(mapID, err)
 		}
-		h.Connections = append(h.Connections, Connection{Dir: uint8(dir), MapID: dest})
-		if err := r.skip(10); err != nil {
+		if err := r.skip(6); err != nil {
+			return h, mapErr(mapID, err)
+		}
+		y, err := r.byte()
+		if err != nil {
+			return h, mapErr(mapID, err)
+		}
+		x, err := r.byte()
+		if err != nil {
+			return h, mapErr(mapID, err)
+		}
+		offset := int8(y)
+		if dir < 2 {
+			offset = int8(x)
+		}
+		h.Connections = append(h.Connections, Connection{Dir: uint8(dir), MapID: dest, Offset: offset})
+		if err := r.skip(2); err != nil {
 			return h, mapErr(mapID, err)
 		}
 	}

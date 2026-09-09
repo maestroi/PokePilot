@@ -76,7 +76,10 @@ const (
 	// the elite-four goal stops on. Index read out of
 	// testdata/event_constants.asm by parseEventConstants (see
 	// TestEventIndicesMatchDecomp), never hand-counted.
-	EventBeatChampionRival Event = 2305
+	EventBeatChampionRival   Event = 2305
+	EventBeatMtMoonSuperNerd Event = 1401
+	EventGotDomeFossil       Event = 1406
+	EventGotHelixFossil      Event = 1407
 )
 
 var eventNames = map[Event]string{

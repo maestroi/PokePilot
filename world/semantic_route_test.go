@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	gameruntime "github.com/maestroi/pokepilot/game"
+	"github.com/maestroi/pokepilot/red/rom"
 )
 
 func TestSemanticRouteReportsMissingCapabilityThenUnlocks(t *testing.T) {
@@ -45,6 +46,52 @@ func TestSemanticRouteReportsMissingCapabilityThenUnlocks(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, []Edge{e12, e23}) {
 		t.Fatalf("route = %v, want [%v %v]", got, e12, e23)
+	}
+}
+
+// TestSemanticGateStaysSubjectToComponentReachability separates the two
+// things a capability can mean. An ACTION (Cut, Surf, Strength) creates
+// traversal, so a satisfied one is a pivot: routing may take its port even
+// though ordinary walking cannot reach it. A GATE creates nothing — something
+// merely stops standing in the way — so satisfying it must not make the far
+// map's disconnected rooms look adjacent.
+//
+// The graph here is Mt. Moon B2F in miniature: two components on the map the
+// gated edge leaves from, and a start in the component the port is NOT in.
+// Satisfying the gate must still leave that unroutable; the same edge marked
+// as an action is the pivot case, and is expected to route.
+func TestSemanticGateStaysSubjectToComponentReachability(t *testing.T) {
+	gated := Edge{Kind: EdgeWarp, From: 1, To: 2, WarpX: 0, WarpY: 0}
+	g := &Graph{
+		componentAware: true,
+		Edges:          map[uint8][]Edge{1: {gated}, 2: {}},
+		// Map 1 is two rooms: the port's room (component 1) and the room
+		// the player stands in (component 2), with no walk between them.
+		comps:      map[uint8][][]int{1: {{1, 0, 2}}, 2: {{1}}},
+		tiles:      map[uint8]dim{1: {w: 3, h: 1}, 2: {w: 1, h: 1}},
+		warps:      map[uint8][]rom.Warp{1: {{X: 0, Y: 0, DestMap: 2}}, 2: {{X: 0, Y: 0, DestMap: 1}}},
+		exitComps:  map[Edge][]int{gated: {1}},
+		entryComps: map[Edge][]int{gated: {1}},
+	}
+	prereqs := RoutePrerequisites{
+		Capabilities: gameruntime.NewCapabilitySet("can_pass"),
+		Transitions: map[Edge]gameruntime.Transition{gated: {
+			ID:       "gate",
+			Requires: []gameruntime.CapabilityID{"can_pass"},
+			Gate:     true,
+		}},
+	}
+	if _, err := FindRouteAtDestinationWithCapabilities(g, 1, 2, 2, 0, 0, 0, nil, prereqs); !errors.Is(err, ErrNoRoute) {
+		t.Fatalf("satisfied gate routed out of a room the port is not in: %v", err)
+	}
+
+	action := prereqs
+	action.Transitions = map[Edge]gameruntime.Transition{gated: {
+		ID:       "action",
+		Requires: []gameruntime.CapabilityID{"can_pass"},
+	}}
+	if _, err := FindRouteAtDestinationWithCapabilities(g, 1, 2, 2, 0, 0, 0, nil, action); err != nil {
+		t.Fatalf("satisfied action is a pivot and must route: %v", err)
 	}
 }
 

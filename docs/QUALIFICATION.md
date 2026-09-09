@@ -40,6 +40,7 @@ The current catalog lives in `qualification/catalog.go`.
 | --- | --- | --- | --- |
 | focused | `rom-short` | verified ROM | runnable |
 | milestone | `opening-brock` | generated/cached `forest_north_gate` fixture | runnable |
+| milestone | `mt-moon-cerulean` | generated/cached `mt_moon_b2f` fixture | runnable |
 | milestone | `misty` | generated/cached `post_boulder` fixture | runnable |
 | milestone | `rocket-hideout` | private `rocket-hideout/start.state` | runnable |
 | milestone | `pokemon-tower` | private `pokemon-tower/start.state` | runnable |
@@ -52,6 +53,16 @@ The current catalog lives in `qualification/catalog.go`.
 | full | `fresh-hall-of-fame` | fresh emulator boot | runner available; product completion blocked by #39 |
 
 Future milestones stay in the catalog with their blocker instead of being silently skipped and presented as green coverage.
+
+`mt-moon-cerulean` is the regression barrier for the farm defect that stalled
+run `run-17rjs2d1uf1kw3` for eighty rounds. Mt. Moon B2F's fossil corridor is
+two tiles wide, its Super Nerd stands on one of them, and he steps aside only
+after a fossil is taken — so the crossing is progression, not geometry. The
+case starts from the `mt_moon_b2f` fixture and asserts the whole transaction:
+the exit refuses with a named missing `can_exit_mt_moon` capability, the owned
+objective satisfies it, a second run of the objective buys no second fossil,
+and Cerulean is then ordinary travel. `misty` crosses the same gate as part of
+its longer road.
 
 The Brock and Misty journey tests use the existing versioned fixture system. `pokequal` points `POKEPILOT_FIXTURE_DIR` inside the run output, so the exact start fixture used by that qualification run remains beside its evidence. Rocket Hideout and Pokémon Tower start from preserved private corpus states because their focused story journeys do not have committed save-state fixtures.
 

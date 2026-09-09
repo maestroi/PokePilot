@@ -37,6 +37,7 @@ const (
 // game concepts, not event ids, WRAM bits, or item bytes. Every field is
 // deterministically re-derived from the current RAM/bag state.
 type StoryFacts struct {
+	MtMoonFossilAcquired       bool
 	PokedexAcquired            bool
 	SilphScopeAcquired         bool
 	PokeFluteAcquired          bool
@@ -71,6 +72,7 @@ var route23BadgeCheckEvents = [...]Event{
 func DecodeStoryFacts(m *Mem, inv InventoryState) StoryFacts {
 	progress := DecodeProgress(m)
 	facts := StoryFacts{
+		MtMoonFossilAcquired:       HasEvent(m, EventBeatMtMoonSuperNerd) && (HasEvent(m, EventGotDomeFossil) || HasEvent(m, EventGotHelixFossil)) && m.U8(sym.MtMoonB2FCurScript) == 0,
 		PokedexAcquired:            HasEvent(m, EventGotPokedex),
 		SilphScopeAcquired:         inventoryHasItem(inv, silphScopeItemID),
 		PokeFluteAcquired:          inventoryHasItem(inv, pokeFluteItemID),

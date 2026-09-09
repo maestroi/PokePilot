@@ -42,15 +42,18 @@ func TestRouteLeg7Gate(t *testing.T) {
 	}
 }
 
-// TestRouteLeg7RoadDetours is the component check in action. The gate door
-// (8,5) on Route 22 sits in a sealed component: under every collision sub-tile
-// rule it is either solid or cut off from the road the player walks. So a
-// query rooted at the road (where the player enters Route 22) must NOT take
-// the gate leg — it detours the long way around — even though the
-// graph-level FindRoute (no position) offers the gate. This is the tile-level
-// truth S10-11 flagged for the emulator; named here so the graph's optimism is
-// on the record.
-func TestRouteLeg7RoadDetours(t *testing.T) {
+// TestRouteLeg7RoadReachesTheGate is directed reachability in action. The
+// gate door (8,5) on Route 22 is in a component that no WALK reaches from the
+// road the player enters on — measured in both directions:
+//
+//	PROBE_MAP=0x21 PROBE_AT=39,6 PROBE_TO=8,5 -> 69 steps, one ledge hop
+//
+// The game joins the two with ledges, so the League gate is on foot from
+// Viridian exactly as the endgame requires. Before hops were modelled this
+// query answered with a fourteen-leg loop out to Cerulean and back, and the
+// assertion here pinned that loop as correct; the road takes the gate in two
+// legs, and the direct N-edge connection stays phantom either way.
+func TestRouteLeg7RoadReachesTheGate(t *testing.T) {
 	g := loadGraph(t)
 	x, y, ok := g.walkableEdgeTile(0x21, dirEast)
 	if !ok {
@@ -60,8 +63,11 @@ func TestRouteLeg7RoadDetours(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FindRouteAt(0x21, 0x22) from the road: %v", err)
 	}
-	if routeVisits(route, 0xC1) {
-		t.Fatalf("route from the road takes the sealed gate door: %+v", route)
+	if !routeVisits(route, 0xC1) {
+		t.Fatalf("route from the road does not take the gate 0xC1: %+v", route)
+	}
+	if len(route) != 2 {
+		t.Fatalf("route from the road is not the two-leg gate path: %+v", route)
 	}
 }
 

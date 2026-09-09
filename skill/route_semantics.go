@@ -13,6 +13,7 @@ const (
 	capCanSurf         gameruntime.CapabilityID = "can_surf"
 	capCanMoveBoulders gameruntime.CapabilityID = "can_move_boulders"
 	capCanClearSnorlax gameruntime.CapabilityID = "can_clear_snorlax"
+	capCanExitMtMoon   gameruntime.CapabilityID = "can_exit_mt_moon"
 )
 
 const (
@@ -20,6 +21,12 @@ const (
 	semanticVermilionCityMap uint8 = 0x05
 	semanticCinnabarMap      uint8 = 0x08
 	semanticRoute21Map       uint8 = 0x20
+
+	// The ladder out of Mt. Moon B2F's fossil corridor
+	// (pokered/data/maps/objects/MtMoonB2F.asm: warp_event 5, 7).
+	mtMoonB2FMap       uint8 = 0x3D
+	mtMoonB2FExitWarpX uint8 = 5
+	mtMoonB2FExitWarpY uint8 = 7
 )
 
 // redRouteCapabilities is the Red adapter projection from RAM/party mechanics
@@ -44,7 +51,11 @@ func redRouteCapabilities(romData []byte, mem *state.Mem) gameruntime.Capability
 	}
 
 	inv := state.DecodeInventory(mem)
-	if state.DecodeStoryFacts(mem, inv).PokeFluteAcquired {
+	facts := state.DecodeStoryFacts(mem, inv)
+	if facts.MtMoonFossilAcquired {
+		caps[capCanExitMtMoon] = true
+	}
+	if facts.PokeFluteAcquired {
 		caps[capCanClearSnorlax] = true
 	}
 	return caps
@@ -71,6 +82,16 @@ func redRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, bool) {
 		return (edge.From == a && edge.To == b) || (edge.From == b && edge.To == a)
 	}
 	switch {
+	case edge.From == mtMoonB2FMap && edge.Kind == world.EdgeWarp &&
+		edge.WarpX == mtMoonB2FExitWarpX && edge.WarpY == mtMoonB2FExitWarpY:
+		// A gate, not an action: nothing is performed to open the fossil
+		// corridor, its Super Nerd simply stops standing in it. B2F's rooms
+		// are disconnected from one another, so treating this ladder as a
+		// pivot once the story flag is set would route between rooms that
+		// share nothing but a floor.
+		t := semanticTransition("red:mt_moon_exit", edge, capCanExitMtMoon)
+		t.Gate = true
+		return t, true
 	case pair(semanticVermilionCityMap, vermilionGymMap):
 		return semanticTransition("red:vermilion_gym_cut", edge, capCanCut), true
 	case pair(semanticPalletTownMap, semanticRoute21Map),

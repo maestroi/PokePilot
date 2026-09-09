@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/maestroi/pokepilot/emu"
+	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/skill"
@@ -88,10 +89,16 @@ func TestTravelNonsenseDestination(t *testing.T) {
 // checkpoint (Oak's lab, Pallet Town) is the start: from the pallet_town
 // checkpoint's frame phase the same grass throws zero encounters
 // deterministically (MEASURED, see TestTravelPalletToViridian), so no
-// battle — and no re-plan — could be observed. On this walk the battle
-// fires at (14,7) on Route 1 and a win leaves the player on that tile, so
-// each recorded re-read must name exactly that world, and the journey must
-// still arrive.
+// battle — and no re-plan — could be observed. On this walk the grass
+// throws at least one, and each re-read must name the world the player is
+// actually standing in when it happens: Route 1, on a tile a walk can
+// stand on. The journey must still arrive.
+//
+// Which tile that is is not an assertion this test can own. The encounter
+// RNG is seeded from rDIV (pokered/engine/math/random.asm), so any change to
+// how many frames movement waits moves the battle to a different tile: this
+// once pinned (14,7) and a one-frame-per-step change in StepOnce moved it to
+// (8,28) with nothing about re-planning altered.
 func TestTravelReplansFromTheWorldAfterEachBattle(t *testing.T) {
 	e := fixture.Load(t, "post_starter")
 	dest, ok := skill.Place("viridian city")
@@ -109,17 +116,26 @@ func TestTravelReplansFromTheWorldAfterEachBattle(t *testing.T) {
 	if len(res.Replans) != res.Battles {
 		t.Fatalf("Replans = %d, want %d (one re-read after each battle)", len(res.Replans), res.Battles)
 	}
+	route1, err := rom.ParseMap(e.ROM(), 0x0C)
+	if err != nil {
+		t.Fatalf("parse Route 1: %v", err)
+	}
+	grid, err := world.Build(e.ROM(), route1)
+	if err != nil {
+		t.Fatalf("build Route 1: %v", err)
+	}
 	for i, rp := range res.Replans {
-		// Every wild battle on this route is on Route 1; a re-read that
-		// named any other map would be planning from a stale world.
+		// Every wild battle on this route is on Route 1, and a win leaves
+		// the player standing where it fired. A re-read that named another
+		// map, or a tile no walk can occupy, would be a stale world rather
+		// than the one RAM holds.
 		if rp.Map != 0x0C {
 			t.Errorf("Replans[%d].Map = %#04x, want 0x0C (Route 1)", i, rp.Map)
+			continue
 		}
-	}
-	// The first battle fires at (14,7) and a win leaves the player there,
-	// so the first re-read is exact: the world at that moment.
-	if rp := res.Replans[0]; rp.X != 14 || rp.Y != 7 {
-		t.Errorf("Replans[0] = (map %#04x, %d, %d), want (0x0C, 14, 7)", rp.Map, rp.X, rp.Y)
+		if !grid.Walkable(int(rp.X), int(rp.Y)) {
+			t.Errorf("Replans[%d] = (%d,%d), which is not a tile the player can stand on", i, rp.X, rp.Y)
+		}
 	}
 	if got := e.Peek8(sym.CurMap); got != 0x01 {
 		t.Fatalf("wCurMap = %#04x after the journey, want Viridian City (0x01), at (%d,%d)",

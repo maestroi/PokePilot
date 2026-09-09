@@ -31,12 +31,22 @@ var (
 // ponytail: the 60/40-frame budgets below are empirical, measured on this
 // ROM (one tile of movement, then the step animation settling). Tighten
 // them only with a measurement, not a guess.
+// hopSettleBudget covers a whole ledge jump, which the ROM drives itself:
+// MEASURED on the Pewter City ledge at (22,28), 42 frames from the press to
+// wJoyIgnore clearing again.
 const (
 	stepMoveBudget   = 60
 	stepSettleBudget = 40
+	hopSettleBudget  = 120
 )
 
 func buttonFor(s world.Step) (emu.Button, bool) {
+	if s.DX == 0 && (s.DY == 2 || s.DY == -2) {
+		s.DY /= 2
+	}
+	if s.DY == 0 && (s.DX == 2 || s.DX == -2) {
+		s.DX /= 2
+	}
 	switch s {
 	case world.StepUp:
 		return emu.Up, true
@@ -54,6 +64,27 @@ func playerXY(m *emu.Emu) (uint8, uint8) {
 	return m.Peek8(sym.XCoord), m.Peek8(sym.YCoord)
 }
 
+// idle reports that the game is not executing any movement: the walk
+// animation has finished, no scripted sequence is running, and the ROM has
+// observed the release of every button.
+//
+// hJoyHeld is the load-bearing half. The overworld loop polls the joypad
+// again a frame or two AFTER a step's coordinate lands, so a step that
+// returns the instant the coordinate changes leaves the direction still
+// held into that poll and the game starts a second step nobody asked for.
+// On an ordinary tile that overrun is invisible — the next step is usually
+// the same direction anyway. On a ledge it arms a two-tile scripted jump
+// (HandleLedges, pokered/engine/overworld/ledges.asm) whose two simulated
+// inputs are then consumed while WE believe a fresh step is starting: they
+// are spent turning and settling instead of walking, and the player is left
+// standing ON the ledge tile with the hop half done. MEASURED in the Pewter
+// City descent at (22,28): wJoyIgnore was already 0xff and the simulated
+// index already exhausted on the first frame of the step that was supposed
+// to press the hop.
+func idle(m *emu.Emu) bool {
+	return m.Peek8(sym.WalkCounter) == 0 && m.Peek8(sym.JoyIgnore) == 0 && m.Peek8(sym.JoyHeld) == 0
+}
+
 // StepOnce attempts a single tile of movement. It returns nil when the
 // player's tile coordinate actually changed in the requested direction.
 //
@@ -62,6 +93,11 @@ func playerXY(m *emu.Emu) (uint8, uint8) {
 // exits after a few frames with the player still on the same tile. A
 // direction press may also only turn the player in place, so a timed-out
 // attempt is retried once before the step is treated as blocked.
+//
+// A step then ends idle (see idle above), so the next one begins from a
+// game that is doing nothing rather than from one already halfway into a
+// move of its own. A ledge hop is one step of two tiles: the ROM drives
+// both of them, so the same idle wait is what makes the landing observable.
 func StepOnce(m *emu.Emu, s world.Step) error {
 	btn, ok := buttonFor(s)
 	if !ok {
@@ -83,15 +119,26 @@ func StepOnce(m *emu.Emu, s world.Step) error {
 		return &ErrBlocked{Step: s, At: struct{ X, Y uint8 }{startX, startY}}
 	}
 
-	if _, err := m.StepUntil(stepSettleBudget, func(m *emu.Emu) bool {
-		return m.Peek8(sym.WalkCounter) == 0
-	}); err != nil {
-		return fmt.Errorf("skill: step %s: walk animation unsettled after %d frames", s, stepSettleBudget)
+	settleBudget := stepSettleBudget
+	if absInt(s.DX)+absInt(s.DY) == 2 {
+		settleBudget = hopSettleBudget
 	}
+	// A timeout here is not this step's failure to report. The game can be
+	// busy with something that is not movement at all — a wild encounter's
+	// screen transition holds the joypad long before the battle is legible
+	// in RAM — and detecting an interruption belongs to the caller, which
+	// re-reads the state after every step. The wait exists only so that a
+	// held direction does not leak into the next press; where it cannot be
+	// satisfied, the coordinate below is still the honest answer.
+	_, _ = m.StepUntil(settleBudget, idle)
 
+	// The step is over; report where it actually ended. A hop that the ROM
+	// only carried one tile lands here as an ordinary blocked step whose
+	// destination is the landing tile, which is what walkAround re-plans
+	// around.
 	x, y := playerXY(m)
 	if int(x) != int(startX)+s.DX || int(y) != int(startY)+s.DY {
-		return &ErrBlocked{Step: s, At: struct{ X, Y uint8 }{x, y}}
+		return &ErrBlocked{Step: s, At: struct{ X, Y uint8 }{startX, startY}}
 	}
 	return nil
 }

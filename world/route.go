@@ -80,7 +80,7 @@ func FindRouteAtDestination(g *Graph, from, to uint8, x, y, tx, ty int, blockedH
 // game-specific effect before the edge is traversed.
 func findRouteAtDestinationAllowingSemantic(g *Graph, from, to uint8, x, y, tx, ty int, blockedHere map[Edge]bool, semantic map[Edge]bool) ([]Edge, error) {
 	first := componentSetAt(g, from, x, y)
-	target := componentSetAt(g, to, tx, ty)
+	target := standingComponentAt(g, to, tx, ty)
 	if !g.componentAware || len(first) == 0 || len(target) == 0 {
 		// Missing component data is not evidence that a detour is required.
 		// Preserve the old map-level behavior in that case.
@@ -90,6 +90,10 @@ func findRouteAtDestinationAllowingSemantic(g *Graph, from, to uint8, x, y, tx, 
 }
 
 func componentSetAt(g *Graph, mapID uint8, x, y int) []int {
+	return g.expandComponents(mapID, standingComponentAt(g, mapID, x, y))
+}
+
+func standingComponentAt(g *Graph, mapID uint8, x, y int) []int {
 	if !g.componentAware {
 		return nil
 	}

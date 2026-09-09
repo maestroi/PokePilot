@@ -114,6 +114,8 @@ func plannerRouteBlockage(destination PlaceID, blocked *world.RouteBlockedError)
 
 func redRoutePrerequisiteLink(id CapabilityID) (RoutePrerequisiteLink, bool) {
 	switch gameruntime.CapabilityID(id) {
+	case "can_exit_mt_moon":
+		return RoutePrerequisiteLink{Capability: id, Progress: redProgressMtMoonFossilAcquired}, true
 	case "can_cut":
 		return RoutePrerequisiteLink{Capability: id, FieldCapability: "cut"}, true
 	case "can_surf":

@@ -44,6 +44,20 @@ type Transition struct {
 	ChoiceRequired bool           `json:"choice_required,omitempty"`
 	Consumes       []ResourceCost `json:"consumes,omitempty"`
 	Effects        []ProgressID   `json:"effects,omitempty"`
+
+	// Gate marks a transition whose capability is a PRECONDITION on an
+	// otherwise ordinary edge, rather than an action that brings the edge
+	// into existence. Cutting a tree, surfing off a shore or pushing a
+	// boulder each create traversal where walking had none, so satisfying
+	// them must let routing pivot to a port the walking topology cannot
+	// reach. A gate creates nothing: something in the world has to stop
+	// standing in the way, and until it does the edge is simply unusable.
+	//
+	// The distinction is not cosmetic. Treating a satisfied gate as a pivot
+	// makes every disconnected room on the far side of the edge look
+	// adjacent to the near side, which is how a story flag turns into a
+	// route through a wall.
+	Gate bool `json:"gate,omitempty"`
 }
 
 // TransitionBlockage is structured evidence that a known transition exists

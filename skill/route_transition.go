@@ -29,6 +29,21 @@ func (x *redRouteTransitionExecutor) ExecuteTransition(edge world.Edge, transiti
 		return world.TransitionExecutionResult{}, fmt.Errorf("skill: nil Red semantic transition executor")
 	}
 	switch transition.ID {
+	case "red:mt_moon_exit":
+		// A gate has nothing to execute: the corridor opens when the Super
+		// Nerd is beaten and paid, which is the fossil objective's job. All
+		// that is owed here is a re-read of the world immediately before the
+		// step, so a route planned against stale capabilities reports the
+		// missing prerequisite instead of walking into him.
+		var mem state.Mem
+		state.Snapshot(x.m, &mem)
+		if !state.DecodeStoryFacts(&mem, state.DecodeInventory(&mem)).MtMoonFossilAcquired {
+			return world.TransitionExecutionResult{}, &gameruntime.TransitionBlockage{
+				Transition: transition,
+				Missing:    []gameruntime.CapabilityID{capCanExitMtMoon},
+			}
+		}
+		return world.TransitionExecutionResult{}, nil
 	case "red:vermilion_gym_cut":
 		opened, err := cutThroughReachableTree(x.m, x.romData)
 		if err != nil {

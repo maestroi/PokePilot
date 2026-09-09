@@ -65,6 +65,7 @@ const (
 	ToggleableObjectFlags uint16 = 0xD5A6
 	ToggleableObjectList  uint16 = 0xD5CE
 	EventFlags            uint16 = 0xD747
+	MtMoonB2FCurScript    uint16 = 0xD607
 	StatusFlags1          uint16 = 0xD728 // wStatusFlags1: Strength active lives in bit 0
 	StatusFlags4          uint16 = 0xD72E // wStatusFlags4
 	// The Vermilion Gym script seeds these with the live trash-can puzzle.
@@ -197,6 +198,11 @@ const (
 
 // HRAM joypad mirrors, in Gen 1 bit order:
 // A=0x01 B=0x02 Select=0x04 Start=0x08 Right=0x10 Left=0x20 Up=0x40 Down=0x80
+//
+// JoyHeld is the ROM's view of the pad, not ours: it stays set for a frame
+// or two after a release, and while a scripted sequence such as a ledge jump
+// is running the ROM writes its own simulated input there. Zero means the
+// game is being asked for nothing.
 const (
 	JoyLast     uint16 = 0xFFB1
 	JoyReleased uint16 = 0xFFB2

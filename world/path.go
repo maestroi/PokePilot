@@ -6,7 +6,7 @@ import (
 )
 
 // Step is one tile of movement.
-type Step struct{ DX, DY int } // exactly one of DX/DY is -1 or +1
+type Step struct{ DX, DY int } // one axis is +/-1 (walk) or +/-2 (directed hop)
 
 var (
 	StepUp    = Step{0, -1}
@@ -17,6 +17,9 @@ var (
 
 // String returns the step's direction name.
 func (s Step) String() string {
+	if iabs(s.DX)+iabs(s.DY) == 2 && (s.DX == 0 || s.DY == 0) {
+		return "hop " + (Step{s.DX / 2, s.DY / 2}).String()
+	}
 	switch s {
 	case StepUp:
 		return "up"
@@ -104,11 +107,15 @@ func FindPath(g *Grid, sx, sy, dx, dy int, blocked map[[2]int]bool) ([]Step, err
 			return stepsBetween(parent, start, c), nil
 		}
 		for _, s := range stepDirs {
-			n := [2]int{cur.x + s.DX, cur.y + s.DY}
-			if closed[n] || blocked[n] || !g.Passable(cur.x, cur.y, n[0], n[1]) {
+			s, ok := g.Movement(cur.x, cur.y, s, blocked)
+			if !ok {
 				continue
 			}
-			ng := cur.g + 1
+			n := [2]int{cur.x + s.DX, cur.y + s.DY}
+			if closed[n] {
+				continue
+			}
+			ng := cur.g + iabs(s.DX) + iabs(s.DY)
 			if old, seen := cost[n]; seen && ng >= old {
 				continue
 			}
@@ -149,10 +156,11 @@ func FindPathAdjacent(g *Grid, sx, sy, tx, ty int, blocked map[[2]int]bool) ([]S
 		cur := queue[0]
 		queue = queue[1:]
 		for _, s := range stepDirs {
-			n := [2]int{cur[0] + s.DX, cur[1] + s.DY}
-			if !g.InBounds(n[0], n[1]) || !g.Passable(cur[0], cur[1], n[0], n[1]) || blocked[n] {
+			s, ok := g.Movement(cur[0], cur[1], s, blocked)
+			if !ok {
 				continue
 			}
+			n := [2]int{cur[0] + s.DX, cur[1] + s.DY}
 			if _, seen := dist[n]; seen {
 				continue
 			}

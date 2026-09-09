@@ -174,11 +174,16 @@ func TestS86NewDestinations(t *testing.T) {
 // The 1F floor is connected separately: Route 4's cave-entrance warp (18,5)
 // reaches it and it ladders down to B1F.
 //
-// NOTE (RUNNOTES S8-6): a full emulator WALK of the descent currently fails
-// on Mt. Moon 1F — world.Build mislabels grid cell (9,22) as walkable (the
-// ROM blocks the step; no sprite is there), so the intra-map BFS dead-ends.
-// That is a localized collision-grid defect, not a routing failure, tracked
-// separately; this test pins the routing, which is correct.
+// The S8-6 note that used to hang here — 1F cell (9,22) mislabelled walkable,
+// so a walk of the descent dead-ends — no longer describes this code. The
+// tile is walkable and the STEP onto it is what the ROM refuses, through the
+// tileset's tile-pair collision table, which world.Build now reads:
+//
+//	PROBE_MAP=0x3b PROBE_AT=10,22 PROBE_TO=9,22   -> world: no path
+//	PROBE_MAP=0x3b PROBE_AT=14,34 PROBE_TO=17,11  -> 60 steps
+//
+// 1F walks from the Route 4 entrance to each of its three ladders, and
+// TestMtMoonToCeruleanReplay walks the descent on the emulator.
 func TestRouteThroughMtMoon(t *testing.T) {
 	romPath := os.Getenv("POKEMON_RED_ROM")
 	if romPath == "" {

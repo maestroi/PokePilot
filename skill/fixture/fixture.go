@@ -194,6 +194,32 @@ func init() {
 	// Pewter's east exit — locked until EVENT_BEAT_BROCK — is open.
 	Register("post_boulder", postBoulder)
 
+	// mt_moon_b2f: post_boulder plus the road east to Mt. Moon's deepest
+	// floor, ending at (21,16) — one step off the B1F ladder's landing
+	// (21,17) and 89 steps short of the Super Nerd's trigger tile (13,8).
+	// It is the checkpoint the Cerulean crossing needs: his sprite sits on
+	// (12,8) and the corridor's only other tile is (13,8), so a state on
+	// this side of him is the smallest one that can ask whether the exit
+	// is passable. The lead arrives at Brock level, which Mt. Moon's wilds
+	// and the Rockets on the way in do not outclass.
+	Register("mt_moon_b2f", func(e *emu.Emu) error {
+		if err := postBoulder(e); err != nil {
+			return err
+		}
+		policy := skill.StatAwareMove(e.ROM())
+		route3, err := place("route 3")
+		if err != nil {
+			return err
+		}
+		if _, err := Travel(e, route3, policy, maxBattles); err != nil {
+			return fmt.Errorf("fixture mt_moon_b2f: travel to Route 3: %w", err)
+		}
+		if _, err := Travel(e, skill.Destination{Map: 0x3D, X: 21, Y: 16}, policy, maxBattles); err != nil {
+			return fmt.Errorf("fixture mt_moon_b2f: travel into Mt. Moon B2F: %w", err)
+		}
+		return nil
+	})
+
 	// post_pokeballs: post_errand state plus the five POKE_BALLs Oak gives
 	// after the Route 22 rival battle: EVENT_BEAT_ROUTE22_RIVAL_1ST_BATTLE
 	// and EVENT_GOT_POKEBALLS_FROM_OAK set, 5x POKE_BALL in the bag. Ends

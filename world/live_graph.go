@@ -24,6 +24,10 @@ func (g *Graph) WithMapGrid(mapID uint8, grid *Grid) (*Graph, error) {
 	}
 
 	out := *g
+	out.reachable = make(map[uint8]map[int][]int, len(g.reachable))
+	for id, r := range g.reachable {
+		out.reachable[id] = r
+	}
 	out.comps = make(map[uint8][][]int, len(g.comps))
 	for id, c := range g.comps {
 		out.comps[id] = c
@@ -42,6 +46,7 @@ func (g *Graph) WithMapGrid(mapID uint8, grid *Grid) (*Graph, error) {
 	}
 
 	out.comps[mapID] = components(grid)
+	out.reachable[mapID] = componentReachability(grid, out.comps[mapID])
 	out.tiles[mapID] = dim{w: grid.Width, h: grid.Height}
 
 	for _, edges := range out.Edges {
@@ -49,8 +54,8 @@ func (g *Graph) WithMapGrid(mapID uint8, grid *Grid) (*Graph, error) {
 			if e.From == mapID {
 				out.exitComps[e] = out.exitPortComps(e)
 			}
-			if e.To == mapID {
-				out.entryComps[e] = out.entryPortComps(e)
+			if e.To == mapID || e.From == mapID {
+				out.entryComps[e] = out.expandComponents(e.To, out.entryPortComps(e))
 			}
 		}
 	}

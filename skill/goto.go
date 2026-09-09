@@ -371,9 +371,16 @@ var places = map[string]Destination{
 	"cerulean gym": {Map: 0x41, X: 4, Y: 3},
 }
 
+// interactionPlaces names targets owned by compound actions. They resolve via
+// Place, but are not standalone travel objectives in PlaceNames.
+var interactionPlaces = map[string]Destination{}
+
 // Place maps a friendly name to a Destination.
 func Place(name string) (Destination, bool) {
 	d, ok := places[name]
+	if !ok {
+		d, ok = interactionPlaces[name]
+	}
 	return d, ok
 }
 

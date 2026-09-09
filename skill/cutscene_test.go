@@ -1,6 +1,7 @@
 package skill_test
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/maestroi/pokepilot/emu"
@@ -41,7 +42,13 @@ func TestCutsceneEnduresOakGate(t *testing.T) {
 		world.StepRight, world.StepRight, // (8,2) -> (10,2)
 		world.StepUp, // (10,2) -> (10,1): the gate fires at y==1
 	}
-	if err := skill.WalkPath(e, path); err != nil {
+	// The last step walks INTO the gate, so the gate's text box may open
+	// before that step has finished settling: WalkPath then reports the
+	// interruption it is supposed to report. Whether the box is legible
+	// before or after the step returns is frame timing, not the subject
+	// here — the gate firing at all is the premise, and it is asserted
+	// below.
+	if err := skill.WalkPath(e, path); err != nil && !errors.Is(err, skill.ErrDialogueInterrupted) {
 		t.Fatalf("WalkPath to the north exit: %v", err)
 	}
 

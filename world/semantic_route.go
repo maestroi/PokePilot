@@ -155,10 +155,15 @@ func FindRoutePlanAtDestinationWithCapabilities(
 	allowed := make(map[Edge]bool)
 	allSemantic := make(map[Edge]bool, len(prereqs.Transitions))
 	for edge, transition := range prereqs.Transitions {
-		allSemantic[edge] = true
+		// A gate is a precondition on ordinary geometry, not an action that
+		// creates traversal, so it is never a pivot: satisfied or not, the
+		// component rules below still decide whether its port is reachable.
+		if !transition.Gate {
+			allSemantic[edge] = true
+		}
 		if blockage, ok := gameruntime.EvaluateTransition(transition, prereqs.Capabilities); !ok {
 			denied[edge] = blockage
-		} else {
+		} else if !transition.Gate {
 			allowed[edge] = true
 		}
 	}

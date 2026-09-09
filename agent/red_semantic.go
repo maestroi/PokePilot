@@ -14,6 +14,7 @@ import (
 // runtime only knows that Objective.Progress should become true in
 // Observation.Story; Red owns what each goal means and how to prove it.
 const (
+	redProgressMtMoonFossilAcquired       ProgressID = "mt_moon_fossil_acquired"
 	redProgressPokedexAcquired            ProgressID = "pokedex_acquired"
 	redProgressSilphScopeAcquired         ProgressID = "silph_scope_acquired"
 	redProgressPokeFluteAcquired          ProgressID = "poke_flute_acquired"
@@ -84,6 +85,7 @@ func redStarter(id skill.Starter) (skill.Starter, bool) {
 
 func redProgressState(f state.StoryFacts) ProgressState {
 	return ProgressState{
+		{ID: redProgressMtMoonFossilAcquired, Complete: f.MtMoonFossilAcquired},
 		{ID: redProgressPokedexAcquired, Complete: f.PokedexAcquired},
 		{ID: redProgressSilphScopeAcquired, Complete: f.SilphScopeAcquired},
 		{ID: redProgressPokeFluteAcquired, Complete: f.PokeFluteAcquired},

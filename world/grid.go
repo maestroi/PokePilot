@@ -74,6 +74,7 @@ type Grid struct {
 	// matches an entry in either direction), so both orders are stored and
 	// callers need not normalise.
 	tilePairs map[[2]uint8]bool
+	ledges    []rom.Ledge
 }
 
 // Passable reports whether a step from (fx,fy) to (tx,ty) is one the game
@@ -213,6 +214,7 @@ func BuildFromBlocksForTraversal(romData []byte, h rom.MapHeader, blocks []byte,
 		collisionTile: make([]uint8, width*height),
 		fieldTile:     make([]uint8, width*height),
 		tilePairs:     tilePairsForTraversal(romData, h.Tileset, mode),
+		ledges:        rom.Ledges(romData, h.Tileset),
 	}
 	if width == 0 || height == 0 {
 		return g, nil
@@ -291,4 +293,23 @@ func BuildFromBlocksForTraversal(romData []byte, h rom.MapHeader, blocks []byte,
 	}
 
 	return g, nil
+}
+
+// Movement returns the displacement for an input, including directed hops.
+// Obstacles are current observations; neither a landing nor the intervening
+// tile may contain an object. Ordinary movement retains Passable's contract.
+func (g *Grid) Movement(x, y int, input Step, blocked map[[2]int]bool) (Step, bool) {
+	nx, ny := x+input.DX, y+input.DY
+	if blocked[[2]int{nx, ny}] {
+		return Step{}, false
+	}
+	from, _ := g.Tile(x, y)
+	over, _ := g.Tile(nx, ny)
+	for _, l := range g.ledges {
+		if input.DX == l.DX && input.DY == l.DY && from == l.From && over == l.Over {
+			tx, ty := nx+input.DX, ny+input.DY
+			return Step{2 * input.DX, 2 * input.DY}, g.Walkable(tx, ty) && !blocked[[2]int{tx, ty}]
+		}
+	}
+	return input, g.Passable(x, y, nx, ny)
 }

@@ -82,7 +82,7 @@ func Traverse(m *emu.Emu, romData []byte, e world.Edge) error {
 				// fact about where the player stands right now, never a property
 				// of the map or the warp, so it is never cached.
 				x, y := playerXY(m)
-				_, _, steps, p, err := warpTarget(h, e, grid, int(x), int(y), blocked)
+				_, _, steps, p, err := warpTarget(h, e, grid, int(x), int(y), blocked, romData)
 				if err != nil {
 					unwalkable = fmt.Errorf("skill: Traverse: no reachable warp to %02x from (%d,%d) on map %02x (edge tile %d,%d): %v: %w",
 						e.To, x, y, e.From, e.WarpX, e.WarpY, err, ErrLegUnwalkable)
@@ -262,20 +262,45 @@ func waitForPositionStable(m *emu.Emu, budget, stableFrames int) error {
 // A 0xFF (LAST_MAP) destination means "the map you came from." The graph
 // resolved it when it built e: if e's own tile is a 0xFF warp, every 0xFF
 // warp on this map resolves to e.To, so all of them lead to the target.
-func warpTarget(h rom.MapHeader, e world.Edge, g *world.Grid, sx, sy int, blocked map[[2]int]bool) (wx, wy int, steps []world.Step, push world.Step, err error) {
+func warpTarget(h rom.MapHeader, e world.Edge, g *world.Grid, sx, sy int, blocked map[[2]int]bool, romData []byte) (wx, wy int, steps []world.Step, push world.Step, err error) {
 	lastMapDest, haveLastMap := uint8(0), false
+	var targetWarp uint8
+	haveTarget := false
 	for _, w := range h.Warps {
+		if w.X == e.WarpX && w.Y == e.WarpY {
+			targetWarp, haveTarget = w.DestWarpID, true
+		}
 		if int(w.X) == int(e.WarpX) && int(w.Y) == int(e.WarpY) && w.DestMap == 0xFF {
 			lastMapDest, haveLastMap = e.To, true
 		}
 	}
 	warpTile := make(map[[2]int]bool, len(h.Warps))
+	approachBlocked := make(map[[2]int]bool, len(blocked)+len(h.Warps))
+	for p, b := range blocked {
+		approachBlocked[p] = b
+	}
 	for _, w := range h.Warps {
 		warpTile[[2]int{int(w.X), int(w.Y)}] = true
+		if int(w.X) != sx || int(w.Y) != sy {
+			approachBlocked[[2]int{int(w.X), int(w.Y)}] = true
+		}
 	}
 
 	var candidates []rom.Warp
+	destHeader, destErr := rom.ParseMap(romData, e.To)
 	for _, w := range h.Warps {
+		// Equal destination maps do not make ladders interchangeable: their
+		// landing warps can be in disconnected rooms on the same floor.
+		equivalent := w.DestWarpID == targetWarp
+		// Paired door tiles can name adjacent landing tiles. Preserve this
+		// measured door equivalence, but never substitute a remote ladder.
+		if !equivalent && destErr == nil && int(targetWarp) < len(destHeader.Warps) && int(w.DestWarpID) < len(destHeader.Warps) {
+			a, b := destHeader.Warps[targetWarp], destHeader.Warps[w.DestWarpID]
+			equivalent = absInt(int(w.X)-int(e.WarpX))+absInt(int(w.Y)-int(e.WarpY)) == 1 && absInt(int(a.X)-int(b.X))+absInt(int(a.Y)-int(b.Y)) == 1
+		}
+		if !haveTarget || !equivalent {
+			continue
+		}
 		dest := w.DestMap
 		if dest == 0xFF {
 			if !haveLastMap || lastMapDest != e.To {
@@ -304,7 +329,10 @@ func warpTarget(h rom.MapHeader, e world.Edge, g *world.Grid, sx, sy int, blocke
 		if g.Walkable(wx, wy) != useWalkable {
 			continue
 		}
-		steps, push, err = world.FindPathAdjacent(g, sx, sy, wx, wy, blocked)
+		if blocked[[2]int{wx, wy}] {
+			continue
+		}
+		steps, push, err = world.FindPathAdjacent(g, sx, sy, wx, wy, approachBlocked)
 		if err != nil {
 			reasons = append(reasons, fmt.Sprintf("warp (%d,%d): %v", wx, wy, err))
 			continue
