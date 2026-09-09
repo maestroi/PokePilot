@@ -154,6 +154,42 @@ func selectWarp(t *testing.T, h rom.MapHeader, e world.Edge, g *world.Grid, sx, 
 	return [2]int{wx, wy}, nil
 }
 
+// TestWarpTargetPicksAxisPerpendicularToPairedDoor pins the Route 9 gate
+// failure (map 0x54, farm run run-38igz7xygpylu1ebe510c9m46z round 9): the
+// gate's east doors (7,4) and (7,5) are a Y pair (stacked, same X), and
+// measured against the live ROM, that tile only fires a map flip when
+// entered along X (east/west) — walking onto it along Y (its own pair axis)
+// crosses no map even with a clean multi-tile run-up. From due north of the
+// door at (7,0), the only walkable route in is around to the west side, so
+// the chosen warp tile must be (7,4)/(7,5) approached via a west-side
+// neighbour (push along X), never straight down (push along Y).
+func TestWarpTargetPicksAxisPerpendicularToPairedDoor(t *testing.T) {
+	romData, err := os.ReadFile(os.Getenv("POKEMON_RED_ROM"))
+	if err != nil {
+		t.Skipf("POKEMON_RED_ROM not set: %v", err)
+	}
+	h, err := rom.ParseMap(romData, 0x54)
+	if err != nil {
+		t.Fatalf("ParseMap 0x54: %v", err)
+	}
+	g, err := world.Build(romData, h)
+	if err != nil {
+		t.Fatalf("Build 0x54: %v", err)
+	}
+	e := world.Edge{Kind: world.EdgeWarp, From: 0x54, To: 0x16, WarpX: 7, WarpY: 4}
+
+	wx, wy, _, push, err := warpTarget(h, e, g, 2, 3, nil, romData)
+	if err != nil {
+		t.Fatalf("warpTarget from (2,3): %v", err)
+	}
+	if wx != 7 || (wy != 4 && wy != 5) {
+		t.Fatalf("chose warp tile (%d,%d), want the east door (7,4) or (7,5)", wx, wy)
+	}
+	if push.DY != 0 || push.DX == 0 {
+		t.Errorf("push = %+v, want a horizontal push (DX!=0, DY=0): this door is a Y pair and only fires entered along X", push)
+	}
+}
+
 func warpTestROM(t *testing.T) []byte {
 	t.Helper()
 	data, err := os.ReadFile(os.Getenv("POKEMON_RED_ROM"))

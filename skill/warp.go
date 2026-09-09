@@ -313,6 +313,39 @@ func warpTarget(h rom.MapHeader, e world.Edge, g *world.Grid, sx, sy int, blocke
 		}
 	}
 
+	// A paired door's two tiles are a 1-tile-wide sliver stacked along one
+	// axis (the Route 9 gate's east doors sit at (7,4) and (7,5), a Y pair;
+	// the forest gate's doors sit side by side, an X pair). The tile only
+	// fires when entered along the OTHER axis, matching the door graphic's
+	// face: measured on the Route 9 gate, walking onto (7,4)/(7,5) from north
+	// or south (varying Y, the pair's own axis) crosses no map even with a
+	// clean multi-tile run-up, while the same tiles fire immediately when
+	// entered from east or west (varying X) — including re-entering the
+	// exact tile the player just arrived on, one push away, so this is not
+	// about distance or "just warped" cooldown (2026-09-09, farm run
+	// run-38igz7xygpylu1ebe510c9m46z round 9). A lone warp with no sibling
+	// candidate carries no axis evidence and keeps the old any-direction
+	// approach (solid stairs use this).
+	pairAxis := -1 // -1 unconstrained, 0 = X pair (approach via Y), 1 = Y pair (approach via X)
+	if len(candidates) > 1 {
+		x0, y0 := candidates[0].X, candidates[0].Y
+		varyX, varyY := false, false
+		for _, c := range candidates[1:] {
+			if c.X != x0 {
+				varyX = true
+			}
+			if c.Y != y0 {
+				varyY = true
+			}
+		}
+		switch {
+		case varyX && !varyY:
+			pairAxis = 0
+		case varyY && !varyX:
+			pairAxis = 1
+		}
+	}
+
 	var reasons []string
 	// Prefer warp tiles the collision grid says can actually be entered.
 	// Some stairs are intentionally solid and still activate on a push, so
@@ -332,10 +365,24 @@ func warpTarget(h rom.MapHeader, e world.Edge, g *world.Grid, sx, sy int, blocke
 		if blocked[[2]int{wx, wy}] {
 			continue
 		}
-		steps, push, err = world.FindPathAdjacent(g, sx, sy, wx, wy, approachBlocked)
-		if err != nil {
-			reasons = append(reasons, fmt.Sprintf("warp (%d,%d): %v", wx, wy, err))
-			continue
+		if pairAxis < 0 {
+			steps, push, err = world.FindPathAdjacent(g, sx, sy, wx, wy, approachBlocked)
+			if err != nil {
+				reasons = append(reasons, fmt.Sprintf("warp (%d,%d): %v", wx, wy, err))
+				continue
+			}
+		} else {
+			var neighbors [][2]int
+			if pairAxis == 0 { // X pair: fires walking north/south into it
+				neighbors = [][2]int{{wx, wy - 1}, {wx, wy + 1}}
+			} else { // Y pair: fires walking east/west into it
+				neighbors = [][2]int{{wx - 1, wy}, {wx + 1, wy}}
+			}
+			steps, push, err = findPathToOneOf(g, sx, sy, wx, wy, neighbors, approachBlocked)
+			if err != nil {
+				reasons = append(reasons, fmt.Sprintf("warp (%d,%d): %v", wx, wy, err))
+				continue
+			}
 		}
 		if routeCrossesWarp(steps, sx, sy, warpTile) {
 			reasons = append(reasons, fmt.Sprintf("warp (%d,%d): every route steps on another warp tile", wx, wy))
@@ -347,6 +394,33 @@ func warpTarget(h rom.MapHeader, e world.Edge, g *world.Grid, sx, sy int, blocke
 		return 0, 0, nil, world.Step{}, fmt.Errorf("%s", strings.Join(reasons, "; "))
 	}
 	return 0, 0, nil, world.Step{}, fmt.Errorf("no warp on map %02x leads to %02x", e.From, e.To)
+}
+
+// findPathToOneOf finds the shortest walk from (sx,sy) to any one of the
+// given candidate neighbours of (tx,ty), then returns that walk plus the
+// final push from the neighbour into (tx,ty). Ties break toward the earlier
+// entry in neighbors, matching FindPathAdjacent's fixed tie-break order.
+func findPathToOneOf(g *world.Grid, sx, sy, tx, ty int, neighbors [][2]int, blocked map[[2]int]bool) ([]world.Step, world.Step, error) {
+	var bestSteps []world.Step
+	var bestNeighbor [2]int
+	found := false
+	for _, n := range neighbors {
+		if !g.InBounds(n[0], n[1]) || !g.Walkable(n[0], n[1]) || blocked[n] {
+			continue
+		}
+		steps, err := world.FindPath(g, sx, sy, n[0], n[1], blocked)
+		if err != nil {
+			continue
+		}
+		if !found || len(steps) < len(bestSteps) {
+			bestSteps, bestNeighbor, found = steps, n, true
+		}
+	}
+	if !found {
+		return nil, world.Step{}, world.ErrNoPath
+	}
+	push := world.Step{DX: tx - bestNeighbor[0], DY: ty - bestNeighbor[1]}
+	return bestSteps, push, nil
 }
 
 // routeCrossesWarp reports whether the walk given by steps from (sx,sy)
