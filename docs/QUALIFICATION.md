@@ -167,3 +167,24 @@ When the farm finds a real defect:
 5. add/enable the corresponding catalog case and positive postcondition;
 6. run the case directly, then the milestone profile;
 7. return to endless exploration only after the regression barrier is green.
+
+### Trainer interruption during destination wait
+
+`TestTrainerArrivalReplay` preserves the regression from
+`run-2txl3quu7z1p8juj7uehiayj5`, round 119. Download the private artifact
+`round-119-frame-0000814784-go-to-cerulean-gym--fleeing-wild-battles.state`
+from that run's inspector into the private corpus, for example
+`trainer-arrival/start.state`. The test verifies its SHA-256 before replaying
+both TravelFlee and the complete objective transaction:
+
+```bash
+POKEMON_RED_ROM="$PWD/roms/pokemon_red.gb" \
+POKEPILOT_TRAINER_ARRIVAL_STATE="$POKEPILOT_QUALIFICATION_CORPUS/trainer-arrival/start.state" \
+go test ./agent -run '^TestTrainerArrivalReplay$' -v
+```
+
+Both gym trainers must be handled and the objective must complete in a
+controllable overworld beside the live sprite occupying the destination.
+The short suite independently checks interruptions during NPC waits and
+rejects adjacent arrival without live occupancy, across maps, during battle,
+or while uncontrollable. No save-state or ROM bytes are committed.

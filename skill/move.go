@@ -151,7 +151,6 @@ func StepOnce(m *emu.Emu, s world.Step) error {
 // movement, the recovery layer may press A only while ordinary text is
 // active. It never answers a choice.
 func WalkPath(m *emu.Emu, path []world.Step) error {
-	var mem state.Mem
 	for _, step := range path {
 		stepErr := StepOnce(m, step)
 
@@ -161,16 +160,25 @@ func WalkPath(m *emu.Emu, path []world.Step) error {
 		// that as collision sent a Route 1 investigation chasing a
 		// pathfinding bug that did not exist — the tile was walkable and
 		// a Pidgey was on the screen.
-		state.Snapshot(m, &mem)
-		if state.DecodeBattle(&mem) != nil {
-			return ErrBattleInterrupted
-		}
-		if state.DecodeDialogue(&mem) != nil {
-			return ErrDialogueInterrupted
+		if err := movementInterruption(m); err != nil {
+			return err
 		}
 		if stepErr != nil {
 			return stepErr
 		}
+	}
+	return nil
+}
+
+// movementInterruption reads Red's live mode without advancing gameplay.
+func movementInterruption(m *emu.Emu) error {
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	if state.DecodeBattle(&mem) != nil {
+		return ErrBattleInterrupted
+	}
+	if state.DecodeDialogue(&mem) != nil {
+		return ErrDialogueInterrupted
 	}
 	return nil
 }
@@ -259,7 +267,7 @@ func blockedDestination(e *ErrBlocked) [2]int {
 //     its 16-frame animation, so a sprite mid-step can straddle two tiles:
 //     the snapshot may report the tile it is leaving, not the one it is
 //     entering.
-func walkAround(readBlocked func() map[[2]int]bool, plan func(blocked map[[2]int]bool) ([]world.Step, error), walk func([]world.Step) error, wait func()) error {
+func walkAround(interrupted func() error, readBlocked func() map[[2]int]bool, plan func(blocked map[[2]int]bool) ([]world.Step, error), walk func([]world.Step) error, wait func()) error {
 	unexplainedMisses := map[[2]int]int{}
 	learnedBlocked := map[[2]int]bool{}
 	stagnantRetries := 0
@@ -267,6 +275,12 @@ func walkAround(readBlocked func() map[[2]int]bool, plan func(blocked map[[2]int
 	emptyBlockedMisses := 0
 
 	for {
+		// Waiting advances the game too: an encounter may start without a step.
+		if interrupted != nil {
+			if err := interrupted(); err != nil {
+				return err
+			}
+		}
 		liveBlocked := readBlocked()
 		blocked := mergeBlockers(liveBlocked, learnedBlocked)
 		steps, err := plan(blocked)

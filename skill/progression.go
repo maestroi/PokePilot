@@ -219,7 +219,7 @@ func walkOpenVermilion(m *emu.Emu, romData []byte, dest Destination) error {
 	}
 
 	var planErr error
-	err = walkAround(func() map[[2]int]bool { return spriteBlockers(m) },
+	err = walkAround(func() error { return movementInterruption(m) }, func() map[[2]int]bool { return spriteBlockers(m) },
 		func(blocked map[[2]int]bool) ([]world.Step, error) {
 			x, y := playerXY(m)
 			steps, err := world.FindPath(grid, int(x), int(y), int(dest.X), int(dest.Y), blocked)

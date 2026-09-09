@@ -336,7 +336,7 @@ func walkLab(m *emu.Emu, romData []byte, tx, ty int, blocked map[[2]int]bool) er
 	// planErr is the "no path at all" case: already described in full, so
 	// it is returned as-is rather than re-wrapped as a walk failure.
 	var planErr error
-	err = walkAround(func() map[[2]int]bool { return mergeBlockers(spriteBlockers(m), blocked) },
+	err = walkAround(func() error { return movementInterruption(m) }, func() map[[2]int]bool { return mergeBlockers(spriteBlockers(m), blocked) },
 		func(blocked map[[2]int]bool) ([]world.Step, error) {
 			x, y := playerXY(m)
 			steps, err := world.FindPath(grid, int(x), int(y), tx, ty, blocked)

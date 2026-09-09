@@ -75,7 +75,7 @@ func Traverse(m *emu.Emu, romData []byte, e world.Edge) error {
 	switch e.Kind {
 	case world.EdgeWarp:
 		var unwalkable error
-		err := walkAround(func() map[[2]int]bool { return spriteBlockers(m) },
+		err := walkAround(func() error { return movementInterruption(m) }, func() map[[2]int]bool { return spriteBlockers(m) },
 			func(blocked map[[2]int]bool) ([]world.Step, error) {
 				// The tile is re-chosen on every re-plan, from wherever the
 				// interrupted walk stopped: which warp tile is reachable is a
@@ -113,7 +113,7 @@ func Traverse(m *emu.Emu, romData []byte, e world.Edge) error {
 		// it: an NPC standing in a one-tile gap can make the nearest edge
 		// tile unreachable while another one on the same edge is fine.
 		var unwalkable error
-		err := walkAround(func() map[[2]int]bool { return spriteBlockers(m) },
+		err := walkAround(func() error { return movementInterruption(m) }, func() map[[2]int]bool { return spriteBlockers(m) },
 			func(blocked map[[2]int]bool) ([]world.Step, error) {
 				x, y := playerXY(m)
 				tx, ty, err := edgeTarget(grid, e.Dir, int(x), int(y), blocked)

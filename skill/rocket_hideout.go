@@ -281,7 +281,7 @@ func crossGameCornerSecretWarp(m *emu.Emu, romData []byte) error {
 	applyLiveOpenBlock(grid, 2, 8)
 
 	var push world.Step
-	err = walkAround(func() map[[2]int]bool { return spriteBlockers(m) },
+	err = walkAround(func() error { return movementInterruption(m) }, func() map[[2]int]bool { return spriteBlockers(m) },
 		func(blocked map[[2]int]bool) ([]world.Step, error) {
 			x, y := playerXY(m)
 			steps, p, err := world.FindPathAdjacent(grid, int(x), int(y), int(gameCornerWarpX), int(gameCornerWarpY), blocked)
@@ -344,7 +344,7 @@ func walkRocketBossDoor(m *emu.Emu, romData []byte) error {
 	// closed $2d block, so use the live-open shape for this one walk.
 	applyLiveOpenBlock(grid, 5, 12)
 
-	return walkAround(func() map[[2]int]bool { return spriteBlockers(m) },
+	return walkAround(func() error { return movementInterruption(m) }, func() map[[2]int]bool { return spriteBlockers(m) },
 		func(blocked map[[2]int]bool) ([]world.Step, error) {
 			x, y := playerXY(m)
 			return world.FindPath(grid, int(x), int(y), int(giovanniStand.X), int(giovanniStand.Y), blocked)
