@@ -24,6 +24,12 @@ const (
 	talkOpenBudget = 120 // frames for a text box to open after pressing A
 	talkSettle     = 40  // frames stepped after each A press while the box is up
 	talkPressCap   = 30  // A presses before Talk gives up on a stubborn box
+
+	// talkPostBoxSettle bounds the wait for controllable after the main box
+	// closes. It must cover an item-received jingle chaining in behind
+	// ordinary dialogue (see Talk), not just wJoyIgnore's usual few-frame
+	// lag, so it is well above talkSettle.
+	talkPostBoxSettle = 400
 )
 
 // directionTo maps a tile orthogonally adjacent to (sx,sy) to the step
@@ -112,17 +118,23 @@ func Talk(m *emu.Emu) (int, error) {
 		m.StepFrames(talkSettle)
 	}
 
-	// The box is down, but the game may still be settling: wJoyIgnore can
-	// clear a few frames after wFontLoaded. Wait for controllable rather
+	// The box is down, but the game may still be settling. Most dialogue
+	// only needs wJoyIgnore to clear a few frames after wFontLoaded, but a
+	// dialogue that grants an item (e.g. a fossil) chains straight into a
+	// second, auto-advancing box for the "received ITEM" jingle: wFontLoaded
+	// goes 0 -> 1 -> 0 again before wJoyIgnore clears, with no A press to
+	// drive it. talkSettle (40 frames) covers only the first kind. Measured
+	// on the Mt. Moon fossil pickup (run-2y4141hnsdqiz2viev38nfu77z,
+	// round-038): 274 frames from box-close to controllable. Wait rather
 	// than asserting on the very next frame.
 	var mem state.Mem
 	state.Snapshot(m, &mem)
 	if !state.Controllable(&mem) {
-		if _, err := m.StepUntil(talkSettle, func(m *emu.Emu) bool {
+		if _, err := m.StepUntil(talkPostBoxSettle, func(m *emu.Emu) bool {
 			state.Snapshot(m, &mem)
 			return state.Controllable(&mem)
 		}); err != nil {
-			return presses, fmt.Errorf("skill: Talk: not controllable %d frames after the box closed", talkSettle)
+			return presses, fmt.Errorf("skill: Talk: not controllable %d frames after the box closed", talkPostBoxSettle)
 		}
 	}
 	return presses, nil
