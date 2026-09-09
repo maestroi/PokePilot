@@ -1,6 +1,29 @@
 package rom
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
+
+// ErrInvalidMapID identifies a slot that is not a playable Red map. Unused
+// slots still have entries in the ROM pointer tables; their bytes can parse
+// successfully and invent incoming warps if treated as real headers.
+var ErrInvalidMapID = errors.New("invalid Red map id")
+
+// Defined by pokered/constants/map_constants.asm. Keep this adapter fact out
+// of generic routing: even a readable header is not evidence a slot is used.
+func validMapID(id uint8) bool {
+	if id >= 0xf8 {
+		return false
+	}
+	switch id {
+	case 0x0b, 0x69, 0x6a, 0x6b, 0x6d, 0x6e, 0x6f, 0x70,
+		0x72, 0x73, 0x74, 0x75, 0xcc, 0xcd, 0xce, 0xe7,
+		0xed, 0xee, 0xf1, 0xf2, 0xf3, 0xf4:
+		return false
+	}
+	return true
+}
 
 // Banked symbol addresses from pokered.sym, written bank:addr.
 const (
@@ -121,6 +144,9 @@ func mapErr(mapID uint8, err error) error {
 func ParseMap(rom []byte, mapID uint8) (MapHeader, error) {
 	var h MapHeader
 	h.ID = mapID
+	if !validMapID(mapID) {
+		return h, fmt.Errorf("map %02x: %w", mapID, ErrInvalidMapID)
+	}
 
 	bankOff, err := bankedOffset(mapHeaderBanksBank, mapHeaderBanksAddr)
 	if err != nil {
