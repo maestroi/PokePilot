@@ -51,6 +51,9 @@ func TestIssueConfigReachesWallOnly(t *testing.T) {
 	if !strings.Contains(runner, "POKEPILOT_LLM_GPU_URL: ${POKEPILOT_LLM_GPU_URL:-http://192.168.50.81:8002/v1}") {
 		t.Error("runner must default Auto/GPU to the LAN GPU endpoint")
 	}
+	if !strings.Contains(runner, "POKEPILOT_LLM_GPU_RECOVERY_REASONING_EFFORT: ${POKEPILOT_LLM_GPU_RECOVERY_REASONING_EFFORT:-off}") {
+		t.Error("runner must keep GPU recovery reasoning off unless overridden")
+	}
 	img := string(dockerfile)
 	if strings.Contains(img, "issues-api") || strings.Contains(img, "AGENT_ORCHESTRATOR") {
 		t.Error("issue settings must not be baked into the image")
