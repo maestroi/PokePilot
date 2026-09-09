@@ -15,6 +15,7 @@ func redProgressionKnown(id ProgressID) bool {
 	switch id {
 	case redProgressPokedexAcquired,
 		redProgressMtMoonFossilAcquired,
+		redProgressSSTicketAcquired,
 		redProgressSilphScopeAcquired,
 		redProgressPokeFluteAcquired,
 		redProgressFuchsiaProgressionComplete:
@@ -28,7 +29,7 @@ func redProgressionKnown(id ProgressID) bool {
 // objective shape. Availability is Red knowledge; the planner only sees the
 // semantic state change requested by each objective.
 func redProgressionObjectives(obs Observation) []Objective {
-	out := make([]Objective, 0, 4)
+	out := make([]Objective, 0, 5)
 	if skill.MtMoonProgressionAvailable(obs.Map) && !obs.Story.Has(redProgressMtMoonFossilAcquired) {
 		out = append(out, Objective{Kind: KindProgress, Progress: redProgressMtMoonFossilAcquired, Note: "(defeat Mt. Moon's Super Nerd and choose the Dome Fossil to open the eastern exit)"})
 	}
@@ -38,6 +39,13 @@ func redProgressionObjectives(obs Observation) []Objective {
 			Kind:     KindProgress,
 			Progress: redProgressPokedexAcquired,
 			Note:     "(deliver Oak's parcel and acquire the Pokedex)",
+		})
+	}
+	if skill.BillProgressionAvailable(obs.Map) && !obs.Story.Has(redProgressSSTicketAcquired) {
+		out = append(out, Objective{
+			Kind:     KindProgress,
+			Progress: redProgressSSTicketAcquired,
+			Note:     "(help Bill at the end of Route 25 and obtain the S.S. Ticket, opening Cerulean's robbed-house route south)",
 		})
 	}
 	if skill.RocketHideoutAvailable(obs.Map) && !obs.Story.Has(redProgressSilphScopeAcquired) {
@@ -78,6 +86,8 @@ func executeRedProgression(m *emu.Emu, romData []byte, o Objective) error {
 		return skill.MtMoonFossil(m, romData, policy)
 	case redProgressPokedexAcquired:
 		return skill.OaksParcel(m, romData, policy)
+	case redProgressSSTicketAcquired:
+		return skill.Bill(m, romData, policy)
 	case redProgressSilphScopeAcquired:
 		return skill.RocketHideout(m, romData, policy)
 	case redProgressPokeFluteAcquired:
