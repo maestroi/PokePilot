@@ -23,7 +23,12 @@ const (
 	faceTurnBudget = 60  // frames for a direction tap to register as a turn
 	talkOpenBudget = 120 // frames for a text box to open after pressing A
 	talkSettle     = 40  // frames stepped after each A press while the box is up
-	talkPressCap   = 30  // A presses before Talk gives up on a stubborn box
+	talkPressCap   = 30  // consecutive no-progress A presses before Talk gives up
+
+	// talkPressBudget is a backstop on TOTAL A presses so a box whose text
+	// keeps changing can still not run forever. Bill's S.S. Ticket speech
+	// needed ~40 (run-2axaf02lt07e25vpblunugp6u round 54); 256 is headroom.
+	talkPressBudget = 256
 
 	// talkPostBoxSettle bounds the wait for controllable after the main box
 	// closes. It must cover an item-received jingle chaining in behind
@@ -100,6 +105,10 @@ func Face(m *emu.Emu, tx, ty uint8) error {
 // before, during and after the measured dialogue). The press count is
 // timing-dependent, so Talk is a bounded poll and callers must not assert
 // a specific count.
+//
+// Give-up is consecutive pages with no text change, not a total press
+// count: a long typewriter speech (Bill's S.S. Ticket) is still progress,
+// while a jammed box looks like the same screen forever.
 func Talk(m *emu.Emu) (int, error) {
 	m.Tap(emu.A, 3, 7)
 	if _, err := m.StepUntil(talkOpenBudget, func(m *emu.Emu) bool {
@@ -109,13 +118,28 @@ func Talk(m *emu.Emu) (int, error) {
 	}
 
 	presses := 1
+	unchanged := 0
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	prev := state.ScreenText(&mem)
 	for m.Peek8(sym.FontLoaded) != 0 {
-		if presses >= talkPressCap {
-			return presses, fmt.Errorf("skill: Talk: text box still open after %d A presses", talkPressCap)
+		if presses >= talkPressBudget {
+			return presses, fmt.Errorf("skill: Talk: text box still open after %d A presses", presses)
 		}
 		m.Tap(emu.A, 3, 7)
 		presses++
 		m.StepFrames(talkSettle)
+		if m.Peek8(sym.FontLoaded) == 0 {
+			break
+		}
+		state.Snapshot(m, &mem)
+		text := state.ScreenText(&mem)
+		var stuck bool
+		unchanged, stuck = dialoguePagingStuck(unchanged, prev, text)
+		if stuck {
+			return presses, fmt.Errorf("skill: Talk: text box still open after %d A presses", presses)
+		}
+		prev = text
 	}
 
 	// The box is down, but the game may still be settling. Most dialogue
@@ -127,7 +151,6 @@ func Talk(m *emu.Emu) (int, error) {
 	// on the Mt. Moon fossil pickup (run-2y4141hnsdqiz2viev38nfu77z,
 	// round-038): 274 frames from box-close to controllable. Wait rather
 	// than asserting on the very next frame.
-	var mem state.Mem
 	state.Snapshot(m, &mem)
 	if !state.Controllable(&mem) {
 		if _, err := m.StepUntil(talkPostBoxSettle, func(m *emu.Emu) bool {
@@ -138,6 +161,21 @@ func Talk(m *emu.Emu) (int, error) {
 		}
 	}
 	return presses, nil
+}
+
+// dialoguePagingStuck reports whether Talk should give up. The farm's Bill
+// S.S. Ticket speech (run-2axaf02lt07e25vpblunugp6u round 54) was still
+// drawing its last paragraph when a total-press cap fired; A was making
+// progress the whole time. Frozen text is the stuck signal. A key-item
+// jingle also freezes one line for a few settles, so the cap is consecutive
+// unchanged pages, not a handful.
+func dialoguePagingStuck(unchanged int, prev, next string) (int, bool) {
+	if next == prev {
+		unchanged++
+	} else {
+		unchanged = 0
+	}
+	return unchanged, unchanged >= talkPressCap
 }
 
 // TalkAt approaches a map object by its ROM home coordinate, refreshes its
