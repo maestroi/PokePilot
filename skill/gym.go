@@ -52,6 +52,26 @@ func GymAt(mapID uint8) (GymInfo, bool) {
 const gymBattleWaitBudget = 10000
 const gymPostBattleBudget = 3000
 
+// reachLeaderSide corrects a landing beside a blocked stand tile. dest (the
+// Place table's stand tile) is chosen adjacent to the leader, but Travel's
+// occupied-destination fallback (arriveBesideBlockedDestination) only
+// promises "beside dest" when a live sprite — a trainer that intercepted the
+// player on the way in — is parked on it. That can land the player beside
+// dest without landing beside the leader, so Face's fixed leader coordinates
+// fail. Measured live on Cerulean Gym (run-2yp4k6zhtsvo53m94ijbznoz1z round
+// 83): arrived at (5,3), one tile off from Misty at (4,2).
+func reachLeaderSide(m *emu.Emu, romData []byte, g GymInfo, policy MovePolicy) error {
+	dest, ok, err := besideDestination(m, romData, g.LeaderX, g.LeaderY)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return nil
+	}
+	_, err = Travel(m, romData, dest, policy, 20)
+	return err
+}
+
 // Gym executes the complete challenge available where the player stands.
 // Brock and Misty may begin from their cities or inside their gyms; Koga begins
 // inside his gym. Surge may begin in Vermilion City: Gym then owns the exterior
@@ -100,6 +120,9 @@ func Gym(m *emu.Emu, romData []byte, policy MovePolicy) (state.BattleResult, err
 	}
 	if res.BlackedOut {
 		return 0, fmt.Errorf("skill: Gym: %w approaching %s (%d battles)", ErrBlackedOut, g.Leader, res.Battles)
+	}
+	if err := reachLeaderSide(m, romData, g, policy); err != nil {
+		return 0, fmt.Errorf("skill: Gym: approach %s: %w", g.Leader, err)
 	}
 	if err := Face(m, g.LeaderX, g.LeaderY); err != nil {
 		return 0, fmt.Errorf("skill: Gym: face %s: %w", g.Leader, err)
