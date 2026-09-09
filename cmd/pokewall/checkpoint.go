@@ -179,6 +179,12 @@ func (w *Wall) handleCheckpointResume(res http.ResponseWriter, id string, reques
 		cp, err = latestResumeCheckpoint(checkpointAttemptDir(w.dumpsDir, id, previous), planner)
 		if err == nil {
 			cp.Attempt = previous
+		} else if os.IsNotExist(err) && planner == "llm" {
+			// A worker can disappear immediately after loading a major
+			// checkpoint, before it has emitted a fresh round-* pair. Falling
+			// back through the durable ring avoids turning that infrastructure
+			// loss into an accidental full campaign reset.
+			cp, err = latestMajorResumeCheckpoint(w.dumpsDir, id, previous)
 		}
 	case majorRetry:
 		cp, err = latestMajorResumeCheckpoint(w.dumpsDir, id, previous)
