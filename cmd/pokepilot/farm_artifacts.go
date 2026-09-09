@@ -228,16 +228,17 @@ func uploadNewObjectivePairs(client *farm.Client, runID string, attempt int, dir
 		majorArts, err := artifactsForFiles([]string{majorKnowledge, majorState}, dir)
 		if err != nil {
 			log.Printf("farm: %s: read major badge %d checkpoint: %v", runID, badge, err)
-			continue
+			return
 		}
 		if err := uploadCheckpoint(client, runID, attempt, majorArts); err != nil {
-			// Do not mark the ordinary source as fully uploaded yet. The next
-			// scan reuses this exact first post-badge pair, so a transient wall
-			// outage cannot advance the milestone to a later risky checkpoint.
-			continue
+			// Do not mark the ordinary source as fully uploaded yet. Return
+			// immediately so a later post-badge state in this same scan cannot
+			// steal the milestone while the wall is transiently unavailable.
+			return
 		}
 		if err := os.WriteFile(majorPromotionMarker(dir, badge), []byte(st+"\n"), 0o644); err != nil {
 			log.Printf("farm: %s: mark major badge %d checkpoint: %v", runID, badge, err)
+			return
 		}
 		uploaded[st] = struct{}{}
 	}
