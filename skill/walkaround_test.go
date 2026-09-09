@@ -27,7 +27,7 @@ type walkAroundProbe struct {
 }
 
 func (p *walkAroundProbe) run() error {
-	return walkAround(
+	return walkAround(nil,
 		func() map[[2]int]bool {
 			i := p.readCalls
 			p.readCalls++
@@ -94,7 +94,7 @@ func TestWalkAroundLearnsRepeatedUnexplainedBlock(t *testing.T) {
 	walks := 0
 	waits := 0
 
-	err := walkAround(
+	err := walkAround(nil,
 		func() map[[2]int]bool { return map[[2]int]bool{} },
 		func(blocked map[[2]int]bool) ([]world.Step, error) {
 			snap := map[[2]int]bool{}
@@ -196,7 +196,7 @@ func TestWalkAroundGivesUpAfterMaxRetries(t *testing.T) {
 // see what this one missed.
 func TestWalkAroundRetriesPlanFailureWithEmptySnapshot(t *testing.T) {
 	planCalls := 0
-	err := walkAround(
+	err := walkAround(nil,
 		func() map[[2]int]bool { return map[[2]int]bool{} },
 		func(blocked map[[2]int]bool) ([]world.Step, error) {
 			planCalls++
@@ -222,7 +222,7 @@ func TestWalkAroundRetriesPlanFailureWithEmptySnapshot(t *testing.T) {
 func TestWalkAroundGivesUpOnPersistentEmptySnapshotFailure(t *testing.T) {
 	wantErr := errors.New("world: no path")
 	planCalls := 0
-	err := walkAround(
+	err := walkAround(nil,
 		func() map[[2]int]bool { return map[[2]int]bool{} },
 		func(blocked map[[2]int]bool) ([]world.Step, error) {
 			planCalls++
@@ -249,5 +249,29 @@ func TestWalkAroundDoesNotRetryOtherFailures(t *testing.T) {
 	}
 	if p.walks != 1 {
 		t.Errorf("walked %d times, want 1: a battle is not re-planned around", p.walks)
+	}
+}
+
+// A trainer can engage while we wait for a sprite, without another step.
+func TestWalkAroundInterruptionDuringNPCWait(t *testing.T) {
+	for _, interruption := range []error{ErrBattleInterrupted, ErrDialogueInterrupted} {
+		t.Run(interruption.Error(), func(t *testing.T) {
+			waiting := false
+			plans := 0
+			err := walkAround(func() error {
+				if waiting {
+					return interruption
+				}
+				return nil
+			},
+				func() map[[2]int]bool { return map[[2]int]bool{{1, 1}: true} },
+				func(map[[2]int]bool) ([]world.Step, error) { plans++; return nil, world.ErrNoPath },
+				func([]world.Step) error { t.Fatal("must not walk"); return nil },
+				func() { waiting = true },
+			)
+			if !errors.Is(err, interruption) || plans != 1 {
+				t.Fatalf("err=%v plans=%d; want interruption after first wait", err, plans)
+			}
+		})
 	}
 }

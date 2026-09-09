@@ -111,6 +111,16 @@ func (a *redObjectiveAdapter) SettlePostcondition(o Objective) {
 
 func (a *redObjectiveAdapter) VerifyPostcondition(o Objective, final Observation, _ ObjectiveResult) error {
 	_, err := objectivePostcondition(o, final)
+	if o.Kind == KindGoTo && errors.Is(err, ErrObjectivePostconditionFailed) {
+		dest, ok := skill.Place(o.Place)
+		if ok {
+			var mem state.Mem
+			state.Snapshot(a.m, &mem)
+			if redOccupiedDestinationArrival(final, dest, state.DecodeSprites(&mem)) {
+				return nil
+			}
+		}
+	}
 	return err
 }
 
@@ -120,4 +130,28 @@ func (a *redObjectiveAdapter) CaptureFailure(o Objective, err error) error {
 
 func executeObjective(m *emu.Emu, romData []byte, o Objective) (ObjectiveResult, error) {
 	return Execute(m, romData, o)
+}
+
+// redOccupiedDestinationArrival mirrors GoTo's adjacent-arrival fallback.
+// Only current sprite RAM is evidence; static object homes are not occupancy.
+func redOccupiedDestinationArrival(final Observation, dest skill.Destination, sprites []state.SpriteState) bool {
+	if !final.Controllable || final.InBattle || final.Map != dest.Map {
+		return false
+	}
+	dx, dy := int(final.X)-int(dest.X), int(final.Y)-int(dest.Y)
+	if dx < 0 {
+		dx = -dx
+	}
+	if dy < 0 {
+		dy = -dy
+	}
+	if dx+dy != 1 {
+		return false
+	}
+	for _, sprite := range sprites {
+		if sprite.X == int(dest.X) && sprite.Y == int(dest.Y) {
+			return true
+		}
+	}
+	return false
 }

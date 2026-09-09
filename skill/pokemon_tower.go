@@ -290,7 +290,7 @@ func walkRocketB4FLiveTo(m *emu.Emu, romData []byte, dest Destination) error {
 	}
 	applyLiveOpenBlock(grid, 5, 12)
 
-	return walkAround(func() map[[2]int]bool { return spriteBlockers(m) },
+	return walkAround(func() error { return movementInterruption(m) }, func() map[[2]int]bool { return spriteBlockers(m) },
 		func(blocked map[[2]int]bool) ([]world.Step, error) {
 			x, y := playerXY(m)
 			return world.FindPath(grid, int(x), int(y), int(dest.X), int(dest.Y), blocked)
