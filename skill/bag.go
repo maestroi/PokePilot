@@ -209,6 +209,15 @@ func bagPosition(m *emu.Emu) int {
 // boundary where wCurrentMenuItem stops moving and wListScrollOffset takes
 // over.
 func selectBagEntry(m *emu.Emu, idx int) error {
+	// Settle before reading the cursor, same fix and same reason as
+	// SelectMenuItem/shop.go's selectListEntry: a caller that just detected
+	// the list opening can call in mid-render, and the wanted entry already
+	// under the cursor takes zero loop iterations below, so without this it
+	// goes straight to a bare Tap(A) that lands before the list is ready to
+	// see it. MEASURED via TeachTMHM: TM34 on a one-item bag ("USE/TOSS
+	// prompt did not appear") reproduced from round-030 of
+	// run-1dvuxv760j2as3rac0c68gcm2m and was fixed by this settle alone.
+	m.StepFrames(talkSettle)
 	const stuckLimit = 5
 	stuck := 0
 	for pos := bagPosition(m); pos != idx; {
