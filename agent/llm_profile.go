@@ -57,13 +57,14 @@ func LLMProfileLabel(p LLMProfile) string {
 func defaultLLMConfigFromEnv() LLMConfig {
 	p := NewLLMPlanner()
 	return LLMConfig{
-		BaseURL:         p.BaseURL,
-		Model:           p.Model,
-		Token:           p.Token,
-		NoThink:         p.NoThink,
-		MaxTokens:       p.MaxTokens,
-		Timeout:         p.Timeout,
-		ReasoningEffort: p.ReasoningEffort,
+		BaseURL:                 p.BaseURL,
+		Model:                   p.Model,
+		Token:                   p.Token,
+		NoThink:                 p.NoThink,
+		MaxTokens:               p.MaxTokens,
+		Timeout:                 p.Timeout,
+		ReasoningEffort:         p.ReasoningEffort,
+		RecoveryReasoningEffort: p.RecoveryReasoningEffort,
 	}
 }
 

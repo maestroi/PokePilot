@@ -637,6 +637,52 @@ func TestLLMPlannerPromptCarriesMovesAndHistory(t *testing.T) {
 	}
 }
 
+// TestStrategistPromptDropsExecutionNoiseKeepsEvidence: MEASURED 2026-09-09,
+// the full Observation ran the strategist prompt to ~14.6k tokens on a
+// mid-run state, almost entirely fields sequencing never uses (raw
+// LeadMoves/Bag/RecentDialogue, the full Story flag list, raw
+// WildGrass/FieldCapabilities already distilled elsewhere). The chooser
+// keeps the full Observation (asserted above); the strategist gets the
+// trimmed view — this locks in that the cut removes only the noise and
+// keeps every field docs/ADAPTIVE-REASONING.md (§16) names as the
+// strategist's required evidence: full failure tally, walls heard, the
+// badge/event list, money, respawn point, and rounds remaining.
+func TestStrategistPromptDropsExecutionNoiseKeepsEvidence(t *testing.T) {
+	var body string
+	srv := startModelServer(t, `{"choices":[{"message":{"content":"{\"goal\":\"g\",\"steps\":[\"go to pallet town\"]}"}}]}`, &body)
+	obs := llmObs()
+	obs.Failures = []agent.Failure{{Objective: "go to route 1", Last: "blocked"}}
+	obs.Requirements = []agent.Requirement{{Text: "need cut", Times: 2}}
+	obs.RespawnPlace = "pallet town"
+	obs.RoundsLeft = 5
+
+	if _, err := llmPlanner(srv).Strategize(obs, llmOffered(), "initial"); err != nil {
+		t.Fatalf("Strategize: %v", err)
+	}
+	for _, want := range []string{
+		`\"Failures\"`, `\"Last\":\"blocked\"`,
+		`\"Requirements\"`, `need cut`,
+		`\"RespawnPlace\":\"pallet town\"`,
+		`\"RoundsLeft\":5`,
+		`\"Badges\"`, `\"Events\"`, `\"Money\":3000`,
+		`\"History\"`, `take the charmander starter`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("strategist prompt missing required evidence %q:\n%s", want, body)
+		}
+	}
+	// "pokeball" itself may still surface through DecisionContext.Economy's
+	// derived Inventory list (a real resupply-decision input, not raw
+	// dump) — only the raw Observation.Bag field and its key must be gone.
+	for _, unwanted := range []string{
+		`\"LeadMoves\"`, `\"Bag\":[{`, `\"RecentDialogue\"`,
+	} {
+		if strings.Contains(body, unwanted) {
+			t.Errorf("strategist prompt still carries execution-noise field %q", unwanted)
+		}
+	}
+}
+
 // TestLLMPlannerPromptCarriesIntentBack is the prompt half of the round
 // trip: the intent the run carries (what the planner said last round, and
 // how old it is) must actually reach the model — asserted on the captured

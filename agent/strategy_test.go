@@ -42,20 +42,32 @@ func TestStrategicMemoryDetectsPingPongMapLoop(t *testing.T) {
 	}
 }
 
-func TestStrategicMemoryCreditsMapAfterItLeavesRecentWindow(t *testing.T) {
+// TestStrategicMemoryNeverRecreditsAnAlreadySeenMap locks in the fix for a
+// production bug: StrategicMemory used to forget a map once it fell out of
+// a fixed 4-entry window, so a cycle through more than four maps read as
+// endless fresh exploration and the stall watchdog never fired. MEASURED
+// 2026-09-09 on a live run: 48 rounds cycling six maps at 0/8 badges, never
+// once escalating to stagnation/stuck. A map must count as progress only
+// the first time this run ever stands on it.
+func TestStrategicMemoryNeverRecreditsAnAlreadySeenMap(t *testing.T) {
 	var m StrategicMemory
 	base := Observation{Party: []PartyMon{{Level: 12}}}
-	for _, mapID := range []uint8{1, 2, 3, 4, 5} {
+	for _, mapID := range []uint8{1, 2, 3, 4, 5, 6} {
 		obs := base
 		obs.Map = mapID
 		if !m.ObserveProgress(obs) {
 			t.Fatalf("new map %d did not count as progress", mapID)
 		}
 	}
-	obs := base
-	obs.Map = 1
-	if !m.ObserveProgress(obs) {
-		t.Fatal("map outside recent window should count as fresh local progress")
+	for _, mapID := range []uint8{1, 2, 3, 4, 5, 6} {
+		obs := base
+		obs.Map = mapID
+		if m.ObserveProgress(obs) {
+			t.Fatalf("re-entering already-seen map %d counted as progress again", mapID)
+		}
+	}
+	if m.NoProgress != 6 {
+		t.Fatalf("NoProgress = %d, want 6 after a full loop through six already-seen maps", m.NoProgress)
 	}
 }
 

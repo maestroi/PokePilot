@@ -5,11 +5,6 @@ import (
 	"strings"
 )
 
-// ponytail: a fixed 4-map window; a cycle longer than this still reads as
-// progress. Widen the window (or track visit counts per map) if a run is seen
-// looping through five or more maps.
-const recentMapWindow = 4
-
 // StrategicMemory is derived run state used to detect long-horizon stalls.
 // It deliberately stores no planner-authored strategy text. Observation.Intent
 // remains chooser-authored context; the persistent multi-step Plan is owned and
@@ -22,11 +17,22 @@ const recentMapWindow = 4
 // rounds without opening any new part of the game. After the same threshold,
 // ReplanReason asks the planner to re-evaluate that approach; it does not force
 // the planner to stop training or prescribe a route.
+//
+// seenMaps was previously a fixed 4-entry rolling window (ponytail: "a cycle
+// longer than this still reads as progress"). MEASURED 2026-09-09 on a live
+// run: 48 rounds cycling Viridian/Route 2/Route 1/Pallet Town/Reds
+// House/Oak's Lab (six maps) at 0/8 badges, and replan_reasons never once
+// showed stagnation or stuck — the window was smaller than the cycle, so
+// every re-entry read as fresh exploration and the recovery escalation
+// never fired. A map, once seen this run, must never count as progress
+// again regardless of how much has happened since; the map domain is a
+// single byte, so tracking every map ever seen costs nothing worth
+// bounding.
 type StrategicMemory struct {
 	NoProgress      int
 	NoWorldProgress int
 	last            progressMark
-	recentMaps      []uint8
+	seenMaps        map[uint8]bool
 }
 
 type progressMark struct {
@@ -39,9 +45,10 @@ type progressMark struct {
 // ObserveProgress updates both long-horizon counters using only facts already
 // visible to the planner. Badge, event and party-level growth are measurable
 // progress. World progress is deliberately narrower: badge/event growth or a
-// map not present in the recent-map window. Local movement counts only when the
-// current map has not appeared in that window, so A->B->A->B (or a four-map
-// cycle) cannot reset either strategic counter forever.
+// map never stood on before this run. Local movement counts only the first
+// time a map is entered, so any cycle through already-seen maps — A->B->A->B
+// or a longer loop through six maps — cannot reset either strategic counter
+// forever.
 func (m *StrategicMemory) ObserveProgress(obs Observation) bool {
 	mark := progressMark{
 		badges: len(obs.Badges),
@@ -49,8 +56,11 @@ func (m *StrategicMemory) ObserveProgress(obs Observation) bool {
 		level:  maxPartyLevel(obs),
 		set:    true,
 	}
-	mapProgress := !containsMap(m.recentMaps, obs.Map)
-	m.rememberMap(obs.Map)
+	mapProgress := !m.seenMaps[obs.Map]
+	if m.seenMaps == nil {
+		m.seenMaps = map[uint8]bool{}
+	}
+	m.seenMaps[obs.Map] = true
 
 	if !m.last.set {
 		m.last = mark
@@ -73,23 +83,6 @@ func (m *StrategicMemory) ObserveProgress(obs Observation) bool {
 	}
 	m.last = mark
 	return progressed
-}
-
-func containsMap(maps []uint8, id uint8) bool {
-	for _, seen := range maps {
-		if seen == id {
-			return true
-		}
-	}
-	return false
-}
-
-func (m *StrategicMemory) rememberMap(id uint8) {
-	m.recentMaps = append(m.recentMaps, id)
-	if len(m.recentMaps) > recentMapWindow {
-		copy(m.recentMaps, m.recentMaps[len(m.recentMaps)-recentMapWindow:])
-		m.recentMaps = m.recentMaps[:recentMapWindow]
-	}
 }
 
 func maxPartyLevel(obs Observation) int {

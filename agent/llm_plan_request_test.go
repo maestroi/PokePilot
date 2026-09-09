@@ -81,3 +81,67 @@ func TestStrategistReasoningEffortOffDisablesThinking(t *testing.T) {
 		t.Fatalf("enable_thinking=%v, want false", ctk["enable_thinking"])
 	}
 }
+
+// TestStrategistRecoveryReasonEscalatesReasoning locks in the recovery
+// tier: a run that is off by default (bounded selection, no derivation
+// needed) should still reason for real once something is going wrong —
+// isRecoveryReplan's reasons are exactly run.go's evidence of that, not a
+// routine plan_exhausted/story_changed replan.
+func TestStrategistRecoveryReasonEscalatesReasoning(t *testing.T) {
+	for _, reason := range []string{"stagnation", "stuck", "objective_failed", "blackout", "train_retreat"} {
+		var request map[string]any
+		client := &http.Client{Transport: strategicRoundTrip(func(r *http.Request) (*http.Response, error) {
+			data, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := json.Unmarshal(data, &request); err != nil {
+				t.Fatal(err)
+			}
+			body := `{"model":"test-model","choices":[{"message":{"content":"{\"goal\":\"go north\",\"steps\":[\"go to route 1\"]}"},"finish_reason":"stop"}]}`
+			return &http.Response{StatusCode: 200, Status: "200 OK", Body: io.NopCloser(bytes.NewBufferString(body)), Header: make(http.Header)}, nil
+		})}
+		p := &LLMPlanner{BaseURL: "http://unused", Model: "test-model", Client: client, ReasoningEffort: "off", RecoveryReasoningEffort: "medium"}
+		offered := []Objective{{Kind: KindGoTo, Place: "route 1"}}
+		if _, err := p.Strategize(Observation{Round: 3}, offered, reason); err != nil {
+			t.Fatalf("reason %q: Strategize: %v", reason, err)
+		}
+		if got := request["reasoning_effort"]; got != "medium" {
+			t.Errorf("reason %q: reasoning_effort=%v, want medium", reason, got)
+		}
+		if _, present := request["chat_template_kwargs"]; present {
+			t.Errorf("reason %q: still disabled thinking despite recovery escalation: %+v", reason, request["chat_template_kwargs"])
+		}
+	}
+}
+
+// TestStrategistNonRecoveryReasonStaysOff is the control: a routine replan
+// (plan finished, story advanced) must not accidentally escalate.
+func TestStrategistNonRecoveryReasonStaysOff(t *testing.T) {
+	for _, reason := range []string{"plan_exhausted", "story_changed", "badge_changed", "new_requirement", "initial"} {
+		var request map[string]any
+		client := &http.Client{Transport: strategicRoundTrip(func(r *http.Request) (*http.Response, error) {
+			data, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := json.Unmarshal(data, &request); err != nil {
+				t.Fatal(err)
+			}
+			body := `{"model":"test-model","choices":[{"message":{"content":"{\"goal\":\"go north\",\"steps\":[\"go to route 1\"]}"},"finish_reason":"stop"}]}`
+			return &http.Response{StatusCode: 200, Status: "200 OK", Body: io.NopCloser(bytes.NewBufferString(body)), Header: make(http.Header)}, nil
+		})}
+		p := &LLMPlanner{BaseURL: "http://unused", Model: "test-model", Client: client, ReasoningEffort: "off", RecoveryReasoningEffort: "medium"}
+		offered := []Objective{{Kind: KindGoTo, Place: "route 1"}}
+		if _, err := p.Strategize(Observation{Round: 3}, offered, reason); err != nil {
+			t.Fatalf("reason %q: Strategize: %v", reason, err)
+		}
+		if _, present := request["reasoning_effort"]; present {
+			t.Errorf("reason %q: escalated when it should have stayed off: reasoning_effort=%v", reason, request["reasoning_effort"])
+		}
+		ctk, ok := request["chat_template_kwargs"].(map[string]any)
+		if !ok || ctk["enable_thinking"] != false {
+			t.Errorf("reason %q: thinking not disabled: %+v", reason, request["chat_template_kwargs"])
+		}
+	}
+}

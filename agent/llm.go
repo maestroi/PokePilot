@@ -106,9 +106,27 @@ type LLMPlanner struct {
 	// disables thinking outright via chat_template_kwargs
 	// {"enable_thinking": false} — the same mechanism NoThink gives the
 	// chooser — for when even "low" still reasons too long on a big
-	// real-run prompt. Defaults to "medium" in NewLLMPlanner;
-	// POKEPILOT_LLM_REASONING_EFFORT overrides it.
+	// real-run prompt. Defaults to "off" in NewLLMPlanner — with the
+	// trimmed strategist prompt (strategicObservation), this is a bounded
+	// selection over presented objectives, not open reasoning, and
+	// RouteBlockages/Requirements already do the one derivation
+	// (prerequisite lookup) the task needs. POKEPILOT_LLM_REASONING_EFFORT
+	// overrides it. See RecoveryReasoningEffort for when this run has
+	// stopped making progress: that is a different regime, and "off"
+	// should not apply to it uniformly.
 	ReasoningEffort string
+
+	// RecoveryReasoningEffort overrides ReasoningEffort for one strategist
+	// call when the replan reason is itself evidence something is going
+	// wrong (isRecoveryReplan): stagnation, stuck, objective_failed,
+	// blackout, train_retreat. A stalled run is exactly the case where
+	// "off"'s lookup-not-derivation assumption stops holding — the
+	// strategist needs to actually reconsider the approach, not just
+	// re-sequence the same menu. Defaults to "medium" in NewLLMPlanner;
+	// POKEPILOT_LLM_RECOVERY_REASONING_EFFORT overrides it. Only takes
+	// effect when ReasoningEffort is "off"; a run already reasoning at
+	// low/medium/high has no separate recovery tier.
+	RecoveryReasoningEffort string
 
 	// MaxTokens caps one reply's completion tokens. Zero means
 	// maxReplyTokens. Raise it for a reasoning model: the think block is
@@ -235,7 +253,7 @@ func (p *LLMPlanner) StrategicPromptHash() string {
 // POKEPILOT_LLM_URL and POKEPILOT_LLM_MODEL when set. The bearer
 // token comes from llm_token (the name used in .env).
 func NewLLMPlanner() *LLMPlanner {
-	p := &LLMPlanner{BaseURL: defaultLLMBaseURL, Model: defaultLLMModel, ReasoningEffort: "medium"}
+	p := &LLMPlanner{BaseURL: defaultLLMBaseURL, Model: defaultLLMModel, ReasoningEffort: "off", RecoveryReasoningEffort: "medium"}
 	if v := os.Getenv("POKEPILOT_LLM_URL"); v != "" {
 		p.BaseURL = v
 	}
@@ -259,8 +277,24 @@ func NewLLMPlanner() *LLMPlanner {
 	if v := os.Getenv("POKEPILOT_LLM_REASONING_EFFORT"); v != "" {
 		p.ReasoningEffort = v
 	}
+	if v := os.Getenv("POKEPILOT_LLM_RECOVERY_REASONING_EFFORT"); v != "" {
+		p.RecoveryReasoningEffort = v
+	}
 	return p
 }
+
+// recoveryReplanReasons are the replan reasons run.go raises when something
+// is going wrong, not merely when a plan finished or the world moved on:
+// see agent/run.go's planning.request calls and recoverableFailureReplan.
+var recoveryReplanReasons = map[string]bool{
+	"stagnation":       true,
+	"stuck":            true,
+	"objective_failed": true,
+	"blackout":         true,
+	"train_retreat":    true,
+}
+
+func isRecoveryReplan(reason string) bool { return recoveryReplanReasons[reason] }
 
 // Next posts the observation and the offered objectives to the model and
 // returns the offered objective the model picked. It never guesses: a
@@ -586,8 +620,56 @@ func (p *LLMPlanner) strategicSystemMessage() string {
 	return s
 }
 
+// strategicObservation is Observation cut down to what docs/ADAPTIVE-REASONING.md
+// (§16) names as the strategist's non-scrolling evidence: full failure
+// tally, every wall heard with its Times, the badge/event list, money and
+// respawn point, and rounds remaining — plus the location/party/prerequisite
+// facts a sequencing decision actually turns on. MEASURED 2026-09-09: the
+// full Observation ran the strategist prompt to ~14.6k tokens on a
+// mid-run state, dominated by fields sequencing never uses: raw
+// WildGrass/FieldCapabilities (already distilled into DecisionContext.Training
+// and RouteBlockages.missing), LeadMoves/LeadPP/Bag (battle and menu
+// execution, owned by skill), RecentDialogue/MapObjects/MartStock (flavor
+// or execution detail), the full Story flag list (Events already carries the
+// near-term ones; late-game flags are noise against an early-game goal), and
+// raw X/Y/Facing/Controllable/InBattle/BlackedOut (execution state the
+// runtime already gated the plan request on, not sequencing evidence).
+// The chooser's prompt is untouched: its job and its measured cost are
+// different, and there is no measurement showing it over-pays for the full
+// Observation the way the strategist does.
+type strategicObservation struct {
+	Location     PlaceID
+	MapName      string
+	Party        []PartyMon
+	Badges       []string
+	Money        uint32
+	RespawnPlace PlaceID
+	Events       []string
+	RoundsLeft   int
+	History      []RoundRecord
+	Failures     []Failure
+
+	Requirements    []Requirement
+	RouteBlockages  []RouteBlockage
+	DecisionContext *DecisionContext `json:",omitempty"`
+}
+
 func strategicUserPrompt(obs Observation, offered []Objective, reason string) string {
-	obsJSON, err := json.Marshal(obs)
+	obsJSON, err := json.Marshal(strategicObservation{
+		Location:        obs.Location,
+		MapName:         obs.MapName,
+		Party:           obs.Party,
+		Badges:          obs.Badges,
+		Money:           obs.Money,
+		RespawnPlace:    obs.RespawnPlace,
+		Events:          obs.Events,
+		RoundsLeft:      obs.RoundsLeft,
+		History:         obs.History,
+		Failures:        obs.Failures,
+		Requirements:    obs.Requirements,
+		RouteBlockages:  obs.RouteBlockages,
+		DecisionContext: decisionContextFor(obs),
+	})
 	if err != nil {
 		obsJSON = []byte("{}")
 	}
@@ -806,8 +888,19 @@ func (p *LLMPlanner) askPlan(obs Observation, offered []Objective, reason, feedb
 	// thinking outright via the chat-template argument instead of asking
 	// the reasoning_effort field to shrink it. reasoning_effort is meaningless
 	// once thinking is off, so it is not sent alongside enable_thinking:false.
-	strategistNoThink := p.ReasoningEffort == "off"
+	//
+	// A recovery-triggered replan (isRecoveryReplan) overrides that: the
+	// run has stopped making progress, which is exactly when "off"'s
+	// lookup-not-derivation assumption stops holding, so this one call
+	// escalates to RecoveryReasoningEffort instead.
 	effort := p.ReasoningEffort
+	if effort == "off" && isRecoveryReplan(reason) {
+		effort = p.RecoveryReasoningEffort
+		if effort == "" {
+			effort = "medium"
+		}
+	}
+	strategistNoThink := effort == "off"
 	if strategistNoThink {
 		effort = ""
 	}

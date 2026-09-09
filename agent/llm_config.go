@@ -17,13 +17,13 @@ type LLMConfig struct {
 	NoThink   bool
 	MaxTokens int
 	Timeout   time.Duration
-	// ReasoningEffort carries LLMPlanner.ReasoningEffort through the
-	// config path. Farm runs build their planner via
-	// NewLLMPlannerFromConfig, never NewLLMPlanner, so its "medium"
-	// default must be set here too or the strategist silently reverts to
-	// sending no reasoning_effort field at all — the broken path
-	// documented on LLMPlanner.ReasoningEffort.
-	ReasoningEffort string
+	// ReasoningEffort and RecoveryReasoningEffort carry the matching
+	// LLMPlanner fields through the config path. Farm runs build their
+	// planner via NewLLMPlannerFromConfig, never NewLLMPlanner, so the
+	// same defaults must be applied here too or the strategist silently
+	// reverts to "off" with no recovery escalation at all.
+	ReasoningEffort         string
+	RecoveryReasoningEffort string
 }
 
 // NewLLMPlannerFromConfig constructs a planner without reading process
@@ -32,16 +32,21 @@ type LLMConfig struct {
 func NewLLMPlannerFromConfig(c LLMConfig) *LLMPlanner {
 	effort := c.ReasoningEffort
 	if effort == "" {
-		effort = "medium"
+		effort = "off"
+	}
+	recovery := c.RecoveryReasoningEffort
+	if recovery == "" {
+		recovery = "medium"
 	}
 	return &LLMPlanner{
-		BaseURL:         c.BaseURL,
-		Model:           c.Model,
-		Token:           c.Token,
-		NoThink:         c.NoThink,
-		MaxTokens:       c.MaxTokens,
-		Timeout:         c.Timeout,
-		ReasoningEffort: effort,
+		BaseURL:                 c.BaseURL,
+		Model:                   c.Model,
+		Token:                   c.Token,
+		NoThink:                 c.NoThink,
+		MaxTokens:               c.MaxTokens,
+		Timeout:                 c.Timeout,
+		ReasoningEffort:         effort,
+		RecoveryReasoningEffort: recovery,
 	}
 }
 
@@ -78,6 +83,9 @@ func OptionalLLMConfigFromEnv(prefix string, defaults LLMConfig) (LLMConfig, boo
 	}
 	if v := strings.TrimSpace(os.Getenv(prefix + "REASONING_EFFORT")); v != "" {
 		c.ReasoningEffort = v
+	}
+	if v := strings.TrimSpace(os.Getenv(prefix + "RECOVERY_REASONING_EFFORT")); v != "" {
+		c.RecoveryReasoningEffort = v
 	}
 	return c, true
 }
