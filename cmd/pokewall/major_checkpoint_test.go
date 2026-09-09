@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/maestroi/pokepilot/farm"
 )
@@ -101,6 +102,53 @@ func TestEndlessMajorCheckpointFallsBackAcrossAttempts(t *testing.T) {
 	}
 	if cp == nil || cp.Attempt != 1 || cp.State.Name != state.Name {
 		t.Fatalf("attempt 3 resume = %+v, want attempt-1 major %s", cp, state.Name)
+	}
+}
+
+func TestLostEndlessRetryWithoutFreshObjectiveFallsBackToMajor(t *testing.T) {
+	w := NewWall(t.TempDir())
+	srv := httptest.NewServer(w.Handler())
+	defer srv.Close()
+	client := farm.NewClient(srv.URL)
+	ctx := context.Background()
+	enqueueViaHTTP(t, srv.URL, farm.Spec{RunID: "campaign", Planner: "llm", Goal: "beat the game", Endless: true})
+
+	first, err := client.Lease(ctx)
+	if err != nil || first == nil || first.Attempt != 1 {
+		t.Fatalf("lease 1 = %+v, %v", first, err)
+	}
+	state, knowledge := majorWallPair(1, 20, "durable-badge")
+	if err := client.Checkpoint(ctx, farm.CheckpointReport{RunID: "campaign", Attempt: 1, Artifacts: []farm.Artifact{state, knowledge}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.Finish(ctx, farm.FinishReport{RunID: "campaign", Attempt: 1, Reason: "error", Detail: "failure after badge"}); err != nil {
+		t.Fatal(err)
+	}
+
+	second, err := client.Lease(ctx)
+	if err != nil || second == nil || second.Attempt != 2 {
+		t.Fatalf("lease 2 = %+v, %v", second, err)
+	}
+	// This worker has loaded the major checkpoint but disappears before it
+	// writes any round-* pair for attempt 2.
+	w.mu.Lock()
+	w.tiles["campaign"].Status = statusRunning
+	w.tiles["campaign"].lastUpdate = time.Now().Add(-time.Minute)
+	w.mu.Unlock()
+	if got := w.reapStale(time.Now()); len(got) != 1 || got[0] != "campaign" {
+		t.Fatalf("reaped = %v", got)
+	}
+
+	third, err := client.Lease(ctx)
+	if err != nil || third == nil || third.Attempt != 3 {
+		t.Fatalf("lease 3 = %+v, %v", third, err)
+	}
+	cp, err := client.ResumeCheckpoint(ctx, "campaign", third.Attempt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cp == nil || cp.Attempt != 1 || cp.State.Name != state.Name {
+		t.Fatalf("lost attempt resume = %+v, want attempt-1 major %s", cp, state.Name)
 	}
 }
 
