@@ -14,6 +14,17 @@ const (
 	PlanStepCap  = 320
 )
 
+// ErrPlanStepUnresolved marks a plan step that failed to resolve against
+// this round's offered menu (Chosen found no match) — a content mismatch:
+// the model named something not currently offered, whether stale (a prior
+// round's menu), invented, or a formatting near-miss Chosen couldn't
+// recover. It is distinct from a structurally invalid plan (empty goal, a
+// menu index used as a step, an oversized field): those indicate the
+// strategist itself is malfunctioning and stay a hard stop, while an
+// unresolved step still has a working single-objective chooser underneath
+// it to fall back on for this round. See choose in plan.go.
+var ErrPlanStepUnresolved = errors.New("agent: strategist: plan step does not resolve")
+
 // Plan is the strategist's bounded, multi-round commitment. Steps are exact
 // Objective.String() sentences, never menu indexes: Offer is rebuilt every
 // round and indexes are not stable across observations.
@@ -87,7 +98,7 @@ func validateStrategicPlan(p Plan, offered []Objective, round int) (Plan, error)
 		}
 		obj, err := Chosen(offered, step)
 		if err != nil {
-			return Plan{}, fmt.Errorf("agent: strategist: plan step %d does not resolve: %w", i+1, err)
+			return Plan{}, fmt.Errorf("agent: strategist: plan step %d does not resolve: %w: %w", i+1, ErrPlanStepUnresolved, err)
 		}
 		canonical = append(canonical, obj.String())
 	}
@@ -251,9 +262,17 @@ func (r *runPlanning) install(plan Plan, reason string) {
 }
 
 // choose implements the tier order: strategist when a replan is required,
-// then a zero-call plan step, then the legacy cheap chooser only when no
-// strategist is available. A strategist-produced plan is guaranteed to have
-// at least one currently resolvable step by validateStrategicPlan.
+// then a zero-call plan step, then the legacy cheap chooser — either
+// because no strategist is available, or because the strategist exhausted
+// its retries this round without producing a resolvable plan. The latter
+// is a round-scoped degrade, not a run failure: a strategist that keeps
+// offering a sentence that isn't on this round's menu (a stale plan step,
+// or a hallucinated one) still has a working single-objective chooser
+// underneath it, and that chooser asks a far more constrained question
+// (pick one menu index) that the same failure mode does not reach. The
+// strategist gets another chance next round via r.pending, which this
+// leaves untouched. A strategist-produced plan is guaranteed to have at
+// least one currently resolvable step by validateStrategicPlan.
 func (r *runPlanning) choose(log io.Writer, round int, p Planner, obs Observation, offered []Objective) (Objective, bool, error, int) {
 	sp, strategic := p.(StrategicPlanner)
 	for {
@@ -268,7 +287,25 @@ func (r *runPlanning) choose(log io.Writer, round int, p Planner, obs Observatio
 			}
 			plan, err, retries := strategizeWithRetries(log, round, sp, obs, offered, reason)
 			if err != nil {
-				return Objective{}, false, err, retries
+				if !errors.Is(err, ErrPlanStepUnresolved) {
+					return Objective{}, false, err, retries
+				}
+				// The strategist itself is fine — every re-ask above quoted
+				// the actual offered menu back at it — but it kept naming
+				// something not on it (stale, invented, or a formatting
+				// near-miss Chosen couldn't recover) until the retry budget
+				// ran out. That is a round-scoped failure, not a run one:
+				// fall back to the single-objective chooser, which asks a
+				// far more constrained question (pick one menu index) that
+				// this failure mode does not reach. The strategist gets
+				// another chance next round; r.pending is untouched.
+				if log != nil {
+					fmt.Fprintf(log, "round %d: strategist exhausted retries (%v); falling back to the single-objective planner for this round\n", round, err)
+				}
+				r.Stats.FastCalls++
+				obj, ferr, fretries := planWithRetries(log, round, p, obs, offered)
+				r.sync()
+				return obj, false, ferr, retries + fretries
 			}
 			r.install(plan, reason)
 			obj, skipped, ok := resolvePlanStep(&r.Plan, offered)

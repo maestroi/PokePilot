@@ -73,6 +73,26 @@ func Chosen(offered []Objective, s string) (Objective, error) {
 			}
 		}
 	}
+	// A rejection re-ask quotes the offered menu back as "N: sentence"
+	// lines (offeredList), and a model told to answer with the sentence
+	// sometimes echoes that numeral prefix back too, reading it as part of
+	// its own answer rather than menu decoration. MEASURED 2026-09-09
+	// (run-16om5de3gn5u21q5ehht4ga6db, round 60, ask 3 of 3): the model
+	// replied exactly "5: go to pewter pokemon center", which is offered
+	// item 5 verbatim once the prefix is stripped — and the run died on
+	// this alone with no strategist retries left. Stripping one leading
+	// "digits:" and retrying is safe: it only succeeds when the remainder
+	// exactly matches an offered objective, so it never invents a match.
+	if i := strings.Index(s, ":"); i > 0 {
+		if _, err := strconv.Atoi(strings.TrimSpace(s[:i])); err == nil {
+			base := strings.ToLower(strings.TrimSpace(s[i+1:]))
+			for _, o := range offered {
+				if strings.ToLower(o.String()) == base {
+					return o, nil
+				}
+			}
+		}
+	}
 	return Objective{}, fmt.Errorf("agent: %q is not one of the offered objectives; offered: %s", s, offeredList(offered))
 }
 
