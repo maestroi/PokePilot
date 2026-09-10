@@ -20,6 +20,7 @@ const (
 	redProgressSilphScopeAcquired         ProgressID = "silph_scope_acquired"
 	redProgressPokeFluteAcquired          ProgressID = "poke_flute_acquired"
 	redProgressFuchsiaProgressionComplete ProgressID = "fuchsia_progression_complete"
+	redProgressSilphRescueComplete        ProgressID = "silph_rescue_complete"
 )
 
 func semanticPlace(name string) PlaceID {
@@ -95,6 +96,7 @@ func redProgressState(f state.StoryFacts) ProgressState {
 		{ID: ProgressSaffronGateOpen, Complete: f.SaffronGateOpen},
 		{ID: ProgressCardKeyOwned, Complete: f.CardKeyOwned},
 		{ID: ProgressSilphCoCleared, Complete: f.SilphCoCleared},
+		{ID: redProgressSilphRescueComplete, Complete: f.SilphRescueComplete},
 		{ID: ProgressMansionSwitchOn, Complete: f.MansionSwitchOn},
 		{ID: ProgressSecretKeyOwned, Complete: f.SecretKeyOwned},
 		{ID: ProgressViridianGymOpen, Complete: f.ViridianGymOpen},
