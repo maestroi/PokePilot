@@ -14,12 +14,12 @@ func setSkillTestEvent(mem *state.Mem, event state.Event) {
 
 func TestCinnabarQuizSpecsMatchROMHiddenEvents(t *testing.T) {
 	want := []cinnabarQuizSpec{
-		{Index: 1, TargetX: 15, TargetY: 7, CorrectAnswer: false},
-		{Index: 2, TargetX: 10, TargetY: 1, CorrectAnswer: true},
-		{Index: 3, TargetX: 9, TargetY: 7, CorrectAnswer: true},
-		{Index: 4, TargetX: 9, TargetY: 13, CorrectAnswer: true},
-		{Index: 5, TargetX: 1, TargetY: 13, CorrectAnswer: false},
-		{Index: 6, TargetX: 1, TargetY: 7, CorrectAnswer: true},
+		{Index: 1, TargetX: 15, TargetY: 7, AnswerMenuIndex: 0},
+		{Index: 2, TargetX: 10, TargetY: 1, AnswerMenuIndex: 1},
+		{Index: 3, TargetX: 9, TargetY: 7, AnswerMenuIndex: 1},
+		{Index: 4, TargetX: 9, TargetY: 13, AnswerMenuIndex: 1},
+		{Index: 5, TargetX: 1, TargetY: 13, AnswerMenuIndex: 0},
+		{Index: 6, TargetX: 1, TargetY: 7, AnswerMenuIndex: 1},
 	}
 	if len(cinnabarQuizSpecs) != len(want) {
 		t.Fatalf("quiz count = %d, want %d", len(cinnabarQuizSpecs), len(want))
@@ -30,6 +30,23 @@ func TestCinnabarQuizSpecsMatchROMHiddenEvents(t *testing.T) {
 		}
 		if got.TargetY+1 == got.TargetY {
 			t.Fatalf("quiz %d has invalid south-side stand", got.Index)
+		}
+	}
+}
+
+func TestCinnabarQuizAnswerIndexMapsToYesNoChoice(t *testing.T) {
+	for _, tc := range []struct {
+		index uint8
+		yes   bool
+		ok    bool
+	}{
+		{index: 0, yes: true, ok: true},
+		{index: 1, yes: false, ok: true},
+		{index: 2, yes: false, ok: false},
+	} {
+		yes, ok := cinnabarQuizAnswerYes(cinnabarQuizSpec{AnswerMenuIndex: tc.index})
+		if yes != tc.yes || ok != tc.ok {
+			t.Fatalf("answer index %d => yes=%v ok=%v, want yes=%v ok=%v", tc.index, yes, ok, tc.yes, tc.ok)
 		}
 	}
 }

@@ -26,22 +26,24 @@ const (
 )
 
 type cinnabarQuizSpec struct {
-	Index         uint8
-	TargetX       uint8
-	TargetY       uint8
-	CorrectAnswer bool
+	Index           uint8
+	TargetX         uint8
+	TargetY         uint8
+	AnswerMenuIndex uint8
 }
 
 // hidden_events.asm is the authoritative table for both terminal coordinates
-// and the correct YES/NO answer. Keeping those together prevents question text
-// changes from turning the controller into a blind text parser.
+// and the expected YesNoChoice cursor index. Its TRUE/FALSE macro argument is
+// not semantic truth: it is compared directly with wCurrentMenuItem, where
+// index 0 is YES and index 1 is NO. Keeping the raw index avoids accidentally
+// inverting all six answers when driving the typed YES/NO controller.
 var cinnabarQuizSpecs = [...]cinnabarQuizSpec{
-	{Index: 1, TargetX: 15, TargetY: 7, CorrectAnswer: false},
-	{Index: 2, TargetX: 10, TargetY: 1, CorrectAnswer: true},
-	{Index: 3, TargetX: 9, TargetY: 7, CorrectAnswer: true},
-	{Index: 4, TargetX: 9, TargetY: 13, CorrectAnswer: true},
-	{Index: 5, TargetX: 1, TargetY: 13, CorrectAnswer: false},
-	{Index: 6, TargetX: 1, TargetY: 7, CorrectAnswer: true},
+	{Index: 1, TargetX: 15, TargetY: 7, AnswerMenuIndex: 0},
+	{Index: 2, TargetX: 10, TargetY: 1, AnswerMenuIndex: 1},
+	{Index: 3, TargetX: 9, TargetY: 7, AnswerMenuIndex: 1},
+	{Index: 4, TargetX: 9, TargetY: 13, AnswerMenuIndex: 1},
+	{Index: 5, TargetX: 1, TargetY: 13, AnswerMenuIndex: 0},
+	{Index: 6, TargetX: 1, TargetY: 7, AnswerMenuIndex: 1},
 }
 
 var blaineGym = GymInfo{
@@ -68,6 +70,17 @@ func cinnabarQuizGateEvent(index uint8) (state.Event, bool) {
 func cinnabarQuizGateOpen(mem *state.Mem, index uint8) bool {
 	event, ok := cinnabarQuizGateEvent(index)
 	return ok && state.HasEvent(mem, event)
+}
+
+func cinnabarQuizAnswerYes(quiz cinnabarQuizSpec) (bool, bool) {
+	switch quiz.AnswerMenuIndex {
+	case 0:
+		return true, true
+	case 1:
+		return false, true
+	default:
+		return false, false
+	}
 }
 
 // CinnabarGymReady is the durable Secret Key prerequisite. The island map
@@ -196,8 +209,8 @@ func EnterCinnabarGym(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	return nil
 }
 
-// OpenCinnabarGym answers each still-closed quiz from the ROM-declared answer
-// bit. Movement between machines uses the live WRAM collision grid, so each
+// OpenCinnabarGym answers each still-closed quiz from the ROM-declared menu
+// index. Movement between machines uses the live WRAM collision grid, so each
 // newly replaced gate block becomes ordinary topology immediately. If a
 // trainer intercepts the route and its win opens that gate, the event check
 // simply skips the corresponding quiz.
@@ -254,6 +267,10 @@ func answerCinnabarQuiz(m *emu.Emu, quiz cinnabarQuizSpec) error {
 	if px != quiz.TargetX || py != quiz.TargetY+1 {
 		return fmt.Errorf("skill: OpenCinnabarGym: quiz %d requires stand (%d,%d), at (%d,%d)", quiz.Index, quiz.TargetX, quiz.TargetY+1, px, py)
 	}
+	yes, ok := cinnabarQuizAnswerYes(quiz)
+	if !ok {
+		return fmt.Errorf("skill: OpenCinnabarGym: quiz %d has invalid answer menu index %d", quiz.Index, quiz.AnswerMenuIndex)
+	}
 	if err := Face(m, quiz.TargetX, quiz.TargetY); err != nil {
 		return fmt.Errorf("skill: OpenCinnabarGym: face quiz %d: %w", quiz.Index, err)
 	}
@@ -280,7 +297,7 @@ func answerCinnabarQuiz(m *emu.Emu, quiz cinnabarQuizSpec) error {
 			if answered {
 				return fmt.Errorf("skill: OpenCinnabarGym: quiz %d opened a second unexpected two-option prompt", quiz.Index)
 			}
-			if err := AnswerYesNo(m, quiz.CorrectAnswer); err != nil {
+			if err := AnswerYesNo(m, yes); err != nil {
 				return fmt.Errorf("skill: OpenCinnabarGym: answer quiz %d: %w", quiz.Index, err)
 			}
 			answered = true
