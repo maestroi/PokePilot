@@ -106,6 +106,7 @@ func (s *replayServer) handler() http.Handler {
 	mux.HandleFunc("POST /v1/runs/{id}/replay/render", s.handleReplayRender)
 	mux.HandleFunc("GET /v1/runs/{id}/replay/video", s.handleReplayVideo)
 	mux.HandleFunc("GET /v1/runs/{id}/artifacts/{name}/content", s.handleArtifactContent)
+	mux.HandleFunc("DELETE /v1/runs/{id}/artifacts", s.handleArtifactDelete)
 	return mux
 }
 
