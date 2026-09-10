@@ -3,27 +3,25 @@ package skill
 import (
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 )
 
 // DismissableObjectiveMenu reports a menu that an objective lifecycle may
-// safely back out of with B. Most ordinary menus are trivially dismissable.
-// The special case is a two-option-shaped screen: the generic decoder also
-// matches a short scrolling bag list because both have wMaxMenuItem==1 and a
-// live cursor. A live item list (wListMenuID==3) is still a bag/menu, not a
-// yes/no question, so it remains recoverable.
+// safely back out of with B. Gameplay questions are intentionally excluded:
+// a two-option prompt belongs to the skill that encountered it, while ordinary
+// cursor/list/party/PC surfaces are safe cancellation boundaries.
 //
-// This helper deliberately knows nothing about story or route choices. A
-// gameplay question belongs to the skill that encountered it; lifecycle
-// cleanup may only undo UI state whose meaning is unambiguously "back".
+// The typed interaction decoder also distinguishes short scrolling item lists
+// from two-option prompts even when both have wMaxMenuItem==1, so this layer no
+// longer needs to inspect a raw list-menu ID itself.
 func DismissableObjectiveMenu(mem *state.Mem) bool {
-	if !state.MenuUp(mem) {
+	switch state.DecodeInteraction(mem).Kind {
+	case state.InteractionMenu, state.InteractionListMenu, state.InteractionElevatorMenu,
+		state.InteractionItemMenu, state.InteractionPartyMenu, state.InteractionPCMenu,
+		state.InteractionPCPokemonList:
+		return true
+	default:
 		return false
 	}
-	if state.DecodeTwoOptionMenu(mem) == nil {
-		return true
-	}
-	return mem.U8(sym.ListMenuID) == itemListMenuID
 }
 
 // CloseOpenMenuToOverworld backs out of a menu that a finished objective
