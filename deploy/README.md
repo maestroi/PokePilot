@@ -1,8 +1,10 @@
 # PokePilot farm
 
-One image, four service roles: `pokepilot` (runner), `pokewall` (orchestrator),
-`pokeui` (private operator console), and `pokeui -spectator` (public read-only
-watch surface). The ROM is never in the image; runners bind-mount it at runtime.
+One PokePilot image provides four service roles: `pokepilot` (runner), `pokewall`
+(orchestrator), `pokeui` (private operator console), and `pokeui -spectator`
+(public read-only watch surface). A separate internal LiteLLM service routes LLM
+requests to the available inference machines. The ROM is never in an image;
+runners bind-mount it at runtime.
 
 ## Use the wall
 
@@ -24,6 +26,43 @@ overlay. The private operator process proxies `/v1/dashboard`, `/v1/triage`,
 server-side route table and sanitized `/v1/watch` contract; see
 `docs/SPECTATOR.md`.
 
+## LLM routing
+
+The farm runs LiteLLM as an internal-only gateway. PokePilot still stores the
+existing `llm_profile` values in run specs, but those values now express resource
+intent rather than physical IP addresses:
+
+| Operator choice | Wire profile | Route |
+| --- | --- | --- |
+| Auto | `auto` | 7900 XTX → 4090 → LAN |
+| Reserve 4090 | `gpu` | 7900 XTX only |
+| Reserve all GPUs | `default` | LAN only |
+
+The Operations tab can set the default for new runs on that Operator browser.
+The New Run form can override it per run. Already-running or already-leased runs
+keep the route they started with; cancel/requeue one if a GPU must be freed
+immediately.
+
+Default physical backends are:
+
+```text
+7900 XTX  qwen3.8-27B  http://192.168.50.130:8002/v1
+4090      qwen3.8-27B  http://192.168.50.81:8002/v1
+LAN CPU   qwen 4B      http://192.168.50.204:8002/v1
+```
+
+The known LAN model id in the repository is `qwen3.5-4b`; override
+`POKEPILOT_LITELLM_LAN_MODEL` if the server's `/v1/models` endpoint exposes a
+different qwen-4b id. Backend URLs/models are configurable with
+`POKEPILOT_LITELLM_7900_*`, `POKEPILOT_LITELLM_4090_*`, and
+`POKEPILOT_LITELLM_LAN_*`.
+
+Runners normally call `http://litellm:4000/v1`. The direct LAN endpoint remains
+configured as a transport fallback for Auto/LAN profiles if the gateway service
+itself is unavailable. Explicit dedicated-GPU mode has no LAN fallback by
+design. Set `POKEPILOT_LLM_GATEWAY_URL` empty to return to the historical direct
+endpoint routing path.
+
 ## Local single-node Swarm
 
 Needs Docker Swarm on this machine and `roms/pokemon_red.gb` (or
@@ -31,7 +70,7 @@ Needs Docker Swarm on this machine and `roms/pokemon_red.gb` (or
 `make run-llm`.
 
 ```sh
-make farm-up                 # build + deploy wall, operator UI, spectator UI, and 2 runners
+make farm-up                 # build + deploy farm, LiteLLM, operator/spectator UIs, and 2 runners
 # Operator UI: http://localhost:18080/
 # Spectator:   http://localhost:18081/
 make farm-down
@@ -41,12 +80,12 @@ Override the published ports with `FARM_WALL_PORT` and `FARM_SPECTATOR_PORT`.
 If a hostname is public, route it only to the spectator port; keep the operator
 port private because its HTTP UI can mutate runs even when MCP is disabled.
 
-`--resolve-image never` uses the image `make farm-image` loaded locally.
-A multi-node Swarm cannot see that image store: CI on `main` publishes
-`ghcr.io/maestroi/pokepilot` (`.github/workflows/publish-farm.yml`).
-Rollout is a timer on the manager (`deploy/pull-latest.sh`) that pins
-services to the new digest. Keep Traefik hosts, node bind-mounts, and
-tokens out of git.
+`--resolve-image never` uses the PokePilot image `make farm-image` loaded
+locally. LiteLLM uses its separately pinned upstream image. A multi-node Swarm
+cannot see a manager's local PokePilot image store: CI on `main` publishes
+`ghcr.io/maestroi/pokepilot` (`.github/workflows/publish-farm.yml`). Rollout is a
+timer on the manager (`deploy/pull-latest.sh`) that pins services to the new
+digest. Keep Traefik hosts, node bind-mounts, and tokens out of git.
 
 ## Issue handoff (optional)
 
