@@ -32,6 +32,9 @@ var indexHTML []byte
 //go:embed ui/ui.js
 var uiJS []byte
 
+//go:embed ui/behavior.js
+var behaviorJS []byte
+
 //go:embed ui/console.css
 var consoleCSS []byte
 
@@ -96,6 +99,11 @@ func handlerWithServices(wallBase, replayBase, token string) http.Handler {
 		res.Header().Set("Content-Type", "text/javascript; charset=utf-8")
 		res.Header().Set("Cache-Control", "no-store")
 		res.Write(uiJS) //nolint:errcheck // best effort
+	})
+	mux.HandleFunc("GET /behavior.js", func(res http.ResponseWriter, req *http.Request) {
+		res.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+		res.Header().Set("Cache-Control", "no-store")
+		res.Write(behaviorJS) //nolint:errcheck // best effort
 	})
 	mux.HandleFunc("GET /console.css", func(res http.ResponseWriter, req *http.Request) {
 		res.Header().Set("Content-Type", "text/css; charset=utf-8")

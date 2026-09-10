@@ -3,6 +3,8 @@
   const frameMs = 50; // 20 fps; a tight /frame loop burned the Chrome tab
   const slowFrameMs = 500; // phones on data: 2 fps still shows progress, 40x less traffic
   const narrow = () => window.matchMedia("(max-width: 700px)").matches;
+  const railMedia = window.matchMedia("(max-width: 760px)");
+  const { partitionOperations, drawerPresentation } = window.PokeConsoleBehavior;
   const short = (v) => String(v || "").slice(0, 7); // display SHAs short; JSON keeps the full one
   let snap = { now: 0, runs: [], workers: [] };
   let groups = [];
@@ -24,6 +26,7 @@
   let histPage = 0;
   const fpsSamples = new Map();
   const fpsLive = new Map();
+  let railRestoreFocus = null;
 
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({
@@ -834,12 +837,14 @@
 
   function renderOperations() {
     const runs = snap.runs || [];
+    const operationRuns = partitionOperations(runs, RECENT_OPERATIONS_LIMIT);
     const workers = [...(snap.workers || [])].sort((a, b) => String(a.addr || "").localeCompare(String(b.addr || "")));
     const health = $("operations-health");
     const workerBay = $("operations-workers");
+    const active = $("operations-active");
     const queue = $("operations-queue");
     const recent = $("operations-recent");
-    if (!health || !workerBay || !queue || !recent) return;
+    if (!health || !workerBay || !active || !queue || !recent) return;
 
     const freshAge = lastFreshAt ? Math.max(0, Math.floor((Date.now() - lastFreshAt) / 1000)) : 0;
     const idle = workers.filter((worker) => !worker.run_id).length;
@@ -862,8 +867,16 @@
     }).join("");
     paintHTML($("workers"), workerRows || `<p class="empty">No workers are currently reporting to the wall.</p>`);
 
-    const waiting = runs.filter((run) => run.status === "queued" || run.status === "leased")
-      .sort((a, b) => Number(a.queued_at || 0) - Number(b.queued_at || 0));
+    const activeRows = operationRuns.active.map((run) => {
+      const worker = workers.find((candidate) => candidate.run_id === run.run_id);
+      const goal = run.goal || run.dest || "No goal or destination supplied";
+      const round = run.stats && (run.stats.round ?? run.stats.rounds);
+      const progress = `frame ${Number(run.frame || 0).toLocaleString()}${round != null ? ` · round ${round}` : ""} · attempt ${run.attempts || 1}`;
+      return `<button type="button" class="operation-row operation-run" data-run="${esc(run.run_id)}"><span><strong class="operation-mono">${esc(run.run_id)}</strong><small>${esc(worker && worker.addr ? `Worker ${worker.addr}` : "Assigned worker unavailable")}</small></span><span><strong>${esc(goal)}</strong><small>${esc(progress)}</small></span><span><strong>${esc(tileLabel(run))}</strong><small>Current location</small></span></button>`;
+    }).join("");
+    paintHTML(active, `<header><h3 id="operations-active-title">Active attempts</h3><p>${operationRuns.active.length} running</p></header>${activeRows || `<p class="empty">No attempts are currently running.</p>`}`);
+
+    const waiting = operationRuns.waiting;
     const queueRows = waiting.map((run) => {
       const worker = workers.find((candidate) => candidate.run_id === run.run_id);
       const goal = run.goal || run.dest || "No goal or destination supplied";
@@ -872,15 +885,46 @@
     }).join("");
     paintHTML(queue, `<header><h3 id="operations-queue-title">Queue and leases</h3><p>${waiting.length} waiting</p></header>${queueRows || `<p class="empty">No queued or leased runs.</p>`}`);
 
-    const terminal = runs.filter((run) => run.status === "done")
-      .sort((a, b) => Number(b.ended_at || 0) - Number(a.ended_at || 0))
-      .slice(0, RECENT_OPERATIONS_LIMIT);
+    const terminal = operationRuns.recent;
     const recentRows = terminal.map((run) => {
       const reason = run.reason || "done";
       const detail = run.detail || "No terminal detail reported";
       return `<button type="button" class="operation-row operation-run" data-run="${esc(run.run_id)}"><span><strong class="operation-mono">${esc(run.run_id)}</strong><small>${esc(fmtWhen(run.ended_at) || "End time unavailable")}</small></span><span><strong>${esc(reason)}</strong><small>${esc(detail)}</small></span><span class="operation-outcome">${statusChip(run)}</span></button>`;
     }).join("");
     paintHTML(recent, `<header><h3 id="operations-recent-title">Recent outcomes</h3><p>Latest ${RECENT_OPERATIONS_LIMIT}</p></header>${recentRows || `<p class="empty">No terminal outcomes yet.</p>`}`);
+  }
+
+  function applyRailState(open, restoreFocus = false) {
+    const rail = $("run-rail");
+    const trigger = $("rail-toggle");
+    const state = drawerPresentation(open, railMedia.matches, restoreFocus);
+    rail.classList.toggle("open", state.open && railMedia.matches);
+    rail.inert = state.inert;
+    if (state.ariaHidden === "true") rail.setAttribute("aria-hidden", "true");
+    else rail.removeAttribute("aria-hidden");
+    trigger.setAttribute("aria-expanded", String(state.open && railMedia.matches));
+    if (!railMedia.matches) {
+      railRestoreFocus = null;
+      return;
+    }
+    if (state.focus === "selected-or-close") {
+      if (document.activeElement && !rail.contains(document.activeElement)) railRestoreFocus = document.activeElement;
+      requestAnimationFrame(() => {
+        const selectedCard = rail.querySelector("article.selected[data-run]");
+        (selectedCard || $("rail-close")).focus();
+      });
+      return;
+    }
+    if (state.focus === "restore-trigger") {
+      const target = railRestoreFocus && document.contains(railRestoreFocus) ? railRestoreFocus : trigger;
+      target.focus();
+    }
+    railRestoreFocus = null;
+  }
+
+  function syncRailBreakpoint() {
+    const focusWasInside = $("run-rail").contains(document.activeElement);
+    applyRailState(false, railMedia.matches && focusWasInside);
   }
 
   function selectRun(id) {
@@ -1004,8 +1048,14 @@
       setView(tabs[next].dataset.view);
     });
   });
-  $("rail-toggle").addEventListener("click", () => { $("run-rail").classList.add("open"); $("rail-toggle").setAttribute("aria-expanded", "true"); });
-  $("rail-close").addEventListener("click", () => { $("run-rail").classList.remove("open"); $("rail-toggle").setAttribute("aria-expanded", "false"); });
+  $("rail-toggle").addEventListener("click", () => applyRailState(true));
+  $("rail-close").addEventListener("click", () => applyRailState(false, true));
+  railMedia.addEventListener("change", syncRailBreakpoint);
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key !== "Escape" || !railMedia.matches || !$("run-rail").classList.contains("open")) return;
+    ev.preventDefault();
+    applyRailState(false, true);
+  });
   $("copy-run-id").addEventListener("click", async () => {
     if (!selected) return;
     try { await navigator.clipboard.writeText(selected); $("copy-run-id").textContent = "Copied"; setTimeout(() => { $("copy-run-id").textContent = "Copy run ID"; }, 1200); }
@@ -1062,10 +1112,10 @@
       catch (e) { cardErr = { id, text: "wall unreachable" }; }
       await refresh(); return;
     }
-    const pick = ev.target.closest("[data-run]"); if (pick && !ev.target.closest("[data-cancel]")) { selectRun(pick.getAttribute("data-run")); $("run-rail").classList.remove("open"); }
+    const pick = ev.target.closest("[data-run]"); if (pick && !ev.target.closest("[data-cancel]")) { selectRun(pick.getAttribute("data-run")); applyRailState(false, true); }
   });
 
   fetch("/v1/version", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).then((v) => { if (v && v.version) { consoleVersion = v.version; renderVersions(); } }).catch(() => {});
   window.addEventListener("beforeunload", cleanupFrameURLs, { once: true });
-  setView(activeView, false); fillDefaults(); refresh(); setInterval(refresh, pollMs);
+  syncRailBreakpoint(); setView(activeView, false); fillDefaults(); refresh(); setInterval(refresh, pollMs);
 })();

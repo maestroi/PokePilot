@@ -1,12 +1,13 @@
 (() => {
   "use strict";
 
+  const { timelineLayout, replayPresentation } = window.PokeConsoleBehavior;
   const root = document.getElementById("run-inspector");
   if (!root) return;
   root.innerHTML = `
     <section id="run-timeline" class="timeline-bay" aria-labelledby="timeline-title">
       <header><div><span class="section-kicker">Playback</span><h2 id="timeline-title">Run timeline</h2></div><div class="timeline-toolbar"><button id="pp-return-live" class="quiet-button" type="button" hidden>Return to live</button><span id="pp-transport-status" class="inspect-status"></span></div></header>
-      <div id="pp-timeline-track" class="timeline-track" role="group" aria-label="Recorded run events"></div>
+      <div class="timeline-scroll"><div id="pp-timeline-track" class="timeline-track" role="group" aria-label="Recorded run events"></div></div>
       <div class="timeline-legend"><span>○ Decision</span><span>□ Checkpoint</span><span>○ Progress</span><span>○ Failure</span></div>
     </section>
     <section id="run-story" class="story-bay" aria-labelledby="story-title">
@@ -51,6 +52,10 @@
   let events = [];
   let selectedEvent = -1;
   let replayPoll = 0;
+  let replayReadyStatus = null;
+  let playbackFailed = false;
+  let replayPlaying = false;
+  let replayLoadCleanup = () => {};
   let followingLive = true;
   let runFinished = false;
   let runTotalFrame = 0;
@@ -132,11 +137,12 @@
   }
   function markerSymbol(kind) { return kind === "checkpoint" ? "□" : kind === "failure" ? "!" : kind === "progress" ? "✓" : "○"; }
   function renderTimeline() {
-    if (!events.length) { track.innerHTML = '<p class="empty">No semantic events were persisted for this run.</p>'; return; }
-    const max = timelineFrameTotal();
+    if (!events.length) { track.style.width = "100%"; track.innerHTML = '<p class="empty">No semantic events were persisted for this run.</p>'; return; }
+    const layout = timelineLayout(events.length, 36, 32);
+    track.style.width = layout.width;
     track.innerHTML = events.map((event, index) => {
-      const kind = eventKind(event), at = eventFrame(event) ? Math.max(2, Math.min(98, 100 * eventFrame(event) / max)) : Math.max(2, 100 * index / Math.max(1, events.length - 1));
-      return `<button type="button" class="timeline-marker ${kind}" style="left:${at}%" data-event-index="${index}" aria-label="${html(eventTitle(event))}" aria-current="${index===selectedEvent}">${markerSymbol(kind)}</button>`;
+      const kind = eventKind(event);
+      return `<button type="button" class="timeline-marker ${kind}" style="left:${layout.positions[index]}px" data-event-index="${index}" aria-label="${html(eventTitle(event))}" aria-current="${index===selectedEvent}">${markerSymbol(kind)}</button>`;
     }).join("");
   }
   function renderStory() {
@@ -194,15 +200,63 @@
     artifactBody.innerHTML=list.map((a)=>`<tr><td>${html(a.name)}</td><td>${html(a.media_type||"binary")}</td><td>${fmtSize(a.size)}</td><td title="${html(a.sha256)}">${html((a.sha256||"—").slice(0,12))}</td><td><a href="/v1/runs/${escURL(runID)}/artifacts/${escURL(a.name)}/content" download="${html(a.name)}">Download</a></td></tr>`).join("");
   }
   function clearReplayVideo() {
+    replayLoadCleanup();
+    replayLoadCleanup=()=>{};
     video.pause();
     video.removeAttribute("src");
     video.dataset.run="";
     video.hidden=true;
+    replayPlaying=false;
+    video.load();
+  }
+  function applyReplayPresentation(state) {
+    const presentation = replayPresentation(state);
+    lcd.hidden = presentation.lcdHidden;
+    video.hidden = presentation.videoHidden;
+    replayPanel.hidden = presentation.panelHidden;
+    return presentation;
+  }
+  function loadReplayVideo(id, src) {
+    replayLoadCleanup();
+    const onCanPlay=()=>{
+      if(id!==runID||video.dataset.run!==id)return;
+      video.removeEventListener("canplay",onCanPlay);
+      replayPlaying=true;
+      applyReplayPresentation("playing");
+      transportStatus.textContent="Replay · native video controls";
+    };
+    const onError=()=>{
+      if(id!==runID||video.dataset.run!==id)return;
+      replayLoadCleanup();
+      video.pause();
+      video.removeAttribute("src");
+      video.dataset.run="";
+      video.hidden=true;
+      replayPlaying=false;
+      video.load();
+      playbackFailed=true;
+      const presentation=applyReplayPresentation("error");
+      replayStatus.textContent="Replay could not be played by this browser. The last recorded frame is still shown.";
+      replayButton.hidden=false;
+      replayButton.disabled=false;
+      replayButton.textContent=presentation.retry?"Reload replay":"Generate replay";
+      transportStatus.textContent="Replay unavailable · showing last recorded frame";
+    };
+    replayLoadCleanup=()=>{
+      video.removeEventListener("canplay",onCanPlay);
+      video.removeEventListener("error",onError);
+    };
+    video.addEventListener("canplay",onCanPlay,{once:true});
+    video.addEventListener("error",onError,{once:true});
+    video.src=src;
+    video.dataset.run=id;
     video.load();
   }
   function resetGameMedia() {
     stopReplayPoll();
     clearReplayVideo();
+    replayReadyStatus=null;
+    playbackFailed=false;
     replayPanel.hidden=true;
     replayStatus.textContent="";
     replayButton.hidden=false;
@@ -210,23 +264,32 @@
     replayButton.textContent="Generate replay";
     lcd.hidden=false;
   }
-  function renderReplay(status) {
+  function renderReplay(status, forceReload=false) {
     const state=(status&&status.state)||"missing";
     stopReplayPoll();
-    if(state!=="ready") clearReplayVideo();
+    if(state!=="ready"){
+      clearReplayVideo();
+      replayReadyStatus=null;
+      playbackFailed=false;
+    }
     lcd.hidden=false;
     replayPanel.hidden=false;
     replayButton.hidden=false;
     replayButton.disabled=false;
     if(state==="ready"){
-      replayPanel.hidden=true;
+      replayReadyStatus=status;
+      playbackFailed=false;
+      if(!forceReload&&video.dataset.run===runID&&replayPlaying){
+        applyReplayPresentation("playing");
+        transportStatus.textContent="Replay · native video controls";
+        return;
+      }
+      applyReplayPresentation("loading");
       replayStatus.textContent=status.size?`Ready · ${fmtSize(status.size)}`:"Ready";
       replayButton.hidden=true;
       const src=`/v1/runs/${escURL(runID)}/replay/video`;
-      if(video.dataset.run!==runID){video.src=src;video.dataset.run=runID;video.load()}
-      lcd.hidden=true;
-      video.hidden=false;
-      transportStatus.textContent="Replay · native video controls";
+      if(forceReload||video.dataset.run!==runID)loadReplayVideo(runID,src);
+      transportStatus.textContent="Loading replay…";
       return;
     }
     if(state==="generating"){
@@ -289,6 +352,12 @@
   root.addEventListener("keydown",(event)=>{if((event.key==="Enter"||event.key===" ")&&event.target.matches(".story-entry")){event.preventDefault();selectEvent(Number(event.target.dataset.eventIndex));}});
   replayButton.addEventListener("click",async()=>{
     const id=runID;
+    if(playbackFailed&&replayReadyStatus){
+      replayButton.disabled=true;
+      replayStatus.textContent="Reloading replay…";
+      renderReplay(replayReadyStatus,true);
+      return;
+    }
     replayButton.disabled=true;
     replayStatus.textContent="Starting replay generation…";
     try{const status=await json(`/v1/runs/${escURL(id)}/replay/render`,{method:"POST"});if(id===runID)renderReplay(status)}

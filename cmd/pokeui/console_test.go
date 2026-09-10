@@ -61,6 +61,7 @@ func TestUIRunConsoleHasWatchingFirstWorkspace(t *testing.T) {
 		`id="analytics-outcomes"`,
 		`id="operations-health"`,
 		`id="operations-workers"`,
+		`id="operations-active"`,
 		`id="operations-queue"`,
 		`id="operations-recent"`,
 	} {
@@ -156,13 +157,16 @@ func TestUIOperationsAreOwnedByDashboardRender(t *testing.T) {
 	for _, want := range []string{
 		`operations-health`,
 		`operations-workers`,
+		`operations-active`,
 		`operations-queue`,
 		`operations-recent`,
 		`snap.runs`,
 		`snap.workers`,
-		`status === "queued"`,
 		`status === "leased"`,
-		`status === "done"`,
+		`partitionOperations`,
+		`operationRuns.active`,
+		`operationRuns.waiting`,
+		`operationRuns.recent`,
 		`data-run=`,
 		`RECENT_OPERATIONS_LIMIT`,
 		`ended_at`,
@@ -249,7 +253,7 @@ func TestUIOperationsPaintOnceAndPreserveUnchangedRows(t *testing.T) {
 		t.Fatal("renderOperations bounds")
 	}
 	operations := js[start : start+end]
-	for _, target := range []string{`health`, `$(` + `"workers"` + `)`, `queue`, `recent`} {
+	for _, target := range []string{`health`, `$(` + `"workers"` + `)`, `active`, `queue`, `recent`} {
 		if !strings.Contains(operations, `paintHTML(`+target) {
 			t.Errorf("renderOperations must paint-guard %s", target)
 		}
