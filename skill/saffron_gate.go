@@ -141,6 +141,10 @@ func buySaffronGuardDrink(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if err := SelectInteractionIndex(m, 0); err != nil { // FRESH WATER is the first/cheapest entry.
 		return fmt.Errorf("skill: OpenSaffronGate: select FRESH WATER: %w", err)
 	}
+	// SelectMenuItem proves the cursor before A but intentionally returns as
+	// soon as the confirm tap is sent. Give the vending handler one ordinary
+	// settle window to consume that A before interpreting any remaining menu.
+	m.StepFrames(talkSettle)
 	if err := driveSaffronInteraction(m, saffronGateInteractionBudget, func(mm *state.Mem) bool {
 		_, count := bagEntry(mm, freshWaterItem)
 		return count > 0 && state.Controllable(mm)
