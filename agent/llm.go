@@ -706,7 +706,7 @@ type chatRequest struct {
 	// ChatTemplateKwargs are arguments for the server's chat template. Only
 	// ever set from NoThink; omitted otherwise, so the request a server sees
 	// is unchanged unless someone asked for this.
-	ChatTemplateKwargs map[string]any  `json:"chat_template_kwargs,omitempty"`
+	ChatTemplateKwargs map[string]any `json:"chat_template_kwargs,omitempty"`
 	// ExtraBody repeats ChatTemplateKwargs for LiteLLM's openai/ provider,
 	// which builds the upstream request with the OpenAI SDK and strips
 	// unknown top-level fields. extra_body is merged into the llama.cpp JSON.
