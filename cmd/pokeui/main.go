@@ -132,7 +132,7 @@ func handlerWithServices(wallBase, replayBase, token string) http.Handler {
 	mux.HandleFunc("POST /v1/specs", proxy(wallBase, false))
 	mux.HandleFunc("POST /v1/triage/{key}/investigate", proxy(wallBase, false))
 	mux.HandleFunc("POST /v1/runs/{id}/cancel", proxy(wallBase, false))
-	mux.HandleFunc("DELETE /v1/runs/{id}", proxy(wallBase, false))
+	mux.HandleFunc("DELETE /v1/runs/{id}", deleteRunHandler(wallBase, replayBase))
 	mux.HandleFunc("GET /frame", proxy(wallBase, true))
 	mountRunInspectorRoutes(mux, wallBase, replayBase)
 	if token = strings.TrimSpace(token); token != "" {
