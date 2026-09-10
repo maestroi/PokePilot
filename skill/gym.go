@@ -78,7 +78,10 @@ func reachLeaderSide(m *emu.Emu, romData []byte, g GymInfo, policy MovePolicy) e
 // Cut prerequisite, the internal trash-can gate, the leader battle, and the
 // Thunder Badge postcondition. Sabrina's approach uses the generic same-map
 // warp-maze motor because her rooms are connected by teleport pads rather than
-// ordinary walkable geometry.
+// ordinary walkable geometry. Cinnabar begins inside the Gym after the Secret
+// Key door: its six quiz gates are opened from typed YES/NO interactions and
+// positively verified event bits before ordinary live-map routing reaches
+// Blaine.
 func Gym(m *emu.Emu, romData []byte, policy MovePolicy) (state.BattleResult, error) {
 	if policy == nil {
 		return 0, fmt.Errorf("skill: Gym: nil policy")
@@ -111,6 +114,11 @@ func Gym(m *emu.Emu, romData []byte, policy MovePolicy) (state.BattleResult, err
 		res, err = travelOpenVermilion(m, romData, dest, policy, 20)
 	} else if cur == saffronGymMap {
 		res, err = travelIntraMapWarpMaze(m, romData, dest, policy, 30)
+	} else if cur == cinnabarGymMap {
+		if err := OpenCinnabarGym(m, romData, policy); err != nil {
+			return 0, fmt.Errorf("skill: Gym: open %s's quiz gates: %w", g.Leader, err)
+		}
+		res, err = Travel(m, romData, dest, policy, cinnabarGymTravelBattles)
 	} else {
 		// Travel, not walkWithinMap: gym trainers can engage by line of sight
 		// on the way to the leader, and Travel resolves those battles before
