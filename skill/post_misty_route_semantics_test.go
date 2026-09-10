@@ -19,7 +19,7 @@ func TestBillProgressionAvailableAfterMistyAndBlackout(t *testing.T) {
 	}
 }
 
-func TestRedRouteCapabilitiesProjectSSTicketGate(t *testing.T) {
+func TestRedRouteCapabilitiesProjectSSTicketGates(t *testing.T) {
 	mem := new(state.Mem)
 	mem[sym.NumBagItems] = 1
 	mem[sym.BagItems] = ssTicketItem
@@ -28,9 +28,12 @@ func TestRedRouteCapabilitiesProjectSSTicketGate(t *testing.T) {
 	if !caps.Has(capCanPassCeruleanRobbedHouse) {
 		t.Fatalf("S.S. Ticket did not project robbed-house capability: %v", caps)
 	}
+	if !caps.Has(capCanBoardSSAnne) {
+		t.Fatalf("S.S. Ticket did not project S.S. Anne boarding capability: %v", caps)
+	}
 }
 
-func TestPostMistyRouteTransitionsExposeBillAndCutGates(t *testing.T) {
+func TestPostMistyRouteTransitionsExposeBillShipAndCutGates(t *testing.T) {
 	billEdge := world.Edge{
 		Kind:  world.EdgeWarp,
 		From:  semanticCeruleanCityMap,
@@ -52,6 +55,31 @@ func TestPostMistyRouteTransitionsExposeBillAndCutGates(t *testing.T) {
 	rear.WarpY = 9
 	if transition, ok := redRouteTransitionForEdge(rear); ok && transition.ID == "red:cerulean_robbed_house" {
 		t.Fatalf("Cerulean rear hole incorrectly classified as Bill gate: %+v", transition)
+	}
+
+	for _, x := range []uint8{vermilionDockWarpX1, vermilionDockWarpX2} {
+		shipEdge := world.Edge{
+			Kind:  world.EdgeWarp,
+			From:  semanticVermilionCityMap,
+			To:    semanticVermilionDockMap,
+			WarpX: x,
+			WarpY: vermilionDockWarpY,
+		}
+		ship, ok := redRouteTransitionForEdge(shipEdge)
+		if !ok {
+			t.Fatalf("Vermilion dock warp x=%d has no semantic ticket transition", x)
+		}
+		if !ship.Gate || ship.ID != "red:ss_anne_ticket" || len(ship.Requires) != 1 || ship.Requires[0] != capCanBoardSSAnne {
+			t.Fatalf("S.S. Anne gate x=%d = %+v", x, ship)
+		}
+
+		// Exiting the dock must remain routable without re-checking the ticket,
+		// especially during the post-HM01 departure script.
+		reverse := shipEdge
+		reverse.From, reverse.To = reverse.To, reverse.From
+		if transition, ok := redRouteTransitionForEdge(reverse); ok && transition.ID == "red:ss_anne_ticket" {
+			t.Fatalf("reverse dock edge incorrectly classified as ticket gate: %+v", transition)
+		}
 	}
 
 	route9Edge := world.Edge{Kind: world.EdgeConnection, From: semanticCeruleanCityMap, To: semanticRoute9Map}
