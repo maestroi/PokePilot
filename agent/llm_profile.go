@@ -1,10 +1,14 @@
 package agent
 
-import "strings"
+import (
+	"os"
+	"strings"
+)
 
-// LLMProfile selects which endpoint family a leased run uses. Workers expose
-// the default/LAN endpoint via POKEPILOT_LLM_* and an optional GPU endpoint
-// via POKEPILOT_LLM_GPU_* or, for older deploys, POKEPILOT_LLM_FALLBACK_*.
+// LLMProfile selects which inference resource family a leased run may use.
+// The profile expresses operator intent; when POKEPILOT_LLM_GATEWAY_URL is set
+// the gateway owns the physical endpoints and failover order. Without a
+// gateway, the historical direct LAN/GPU environment remains supported.
 type LLMProfile string
 
 const (
@@ -13,8 +17,14 @@ const (
 	LLMProfileAuto    LLMProfile = "auto"
 )
 
+const (
+	gatewayModelAuto = "pokepilot-auto"
+	gatewayModelGPU  = "pokepilot-7900xtx"
+	gatewayModelLAN  = "pokepilot-lan"
+)
+
 // NormalizeLLMProfile maps queue/form values onto the three supported modes.
-// Empty and unknown values mean default (primary env only).
+// Empty and unknown values mean default (LAN-only / primary env only).
 func NormalizeLLMProfile(s string) LLMProfile {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case string(LLMProfileGPU):
@@ -41,15 +51,16 @@ func NormalizeReasoningEffort(s string) string {
 	}
 }
 
-// LLMProfileLabel renders a profile for operator surfaces.
+// LLMProfileLabel renders the resource intent without coupling generic runtime
+// code to a particular graphics-card model.
 func LLMProfileLabel(p LLMProfile) string {
 	switch p {
 	case LLMProfileGPU:
-		return "GPU"
+		return "Dedicated GPU only"
 	case LLMProfileAuto:
-		return "Auto (GPU → LAN)"
+		return "Auto (GPU pool → LAN)"
 	default:
-		return "Default (LAN)"
+		return "LAN only"
 	}
 }
 
@@ -68,7 +79,7 @@ func defaultLLMConfigFromEnv() LLMConfig {
 	}
 }
 
-// gpuLLMConfigFromEnv reads an optional GPU endpoint. POKEPILOT_LLM_GPU_*
+// gpuLLMConfigFromEnv reads an optional direct GPU endpoint. POKEPILOT_LLM_GPU_*
 // wins; POKEPILOT_LLM_FALLBACK_* is the legacy slot farm deploys use.
 func gpuLLMConfigFromEnv(defaults LLMConfig) (LLMConfig, bool) {
 	if c, ok := OptionalLLMConfigFromEnv("POKEPILOT_LLM_GPU_", defaults); ok {
@@ -77,19 +88,53 @@ func gpuLLMConfigFromEnv(defaults LLMConfig) (LLMConfig, bool) {
 	return OptionalLLMConfigFromEnv("POKEPILOT_LLM_FALLBACK_", defaults)
 }
 
+// gatewayLLMConfigFromEnv maps a profile onto a logical model group on the
+// inference gateway. Only URL enables gateway mode. The common gateway config
+// controls transport settings; per-profile MODEL vars can rename aliases
+// without teaching PokePilot about physical endpoints.
+func gatewayLLMConfigFromEnv(profile LLMProfile, defaults LLMConfig) (LLMConfig, bool) {
+	c, ok := OptionalLLMConfigFromEnv("POKEPILOT_LLM_GATEWAY_", defaults)
+	if !ok {
+		return LLMConfig{}, false
+	}
+
+	model := gatewayModelLAN
+	modelEnv := "POKEPILOT_LLM_GATEWAY_LAN_MODEL"
+	switch profile {
+	case LLMProfileGPU:
+		model = gatewayModelGPU
+		modelEnv = "POKEPILOT_LLM_GATEWAY_GPU_MODEL"
+	case LLMProfileAuto:
+		model = gatewayModelAuto
+		modelEnv = "POKEPILOT_LLM_GATEWAY_AUTO_MODEL"
+	}
+	if override := strings.TrimSpace(os.Getenv(modelEnv)); override != "" {
+		model = override
+	}
+	c.Model = model
+	return c, true
+}
+
 // ResolveLLMEndpoints maps a profile onto primary and optional fallback
-// endpoint configs. Auto matches make run-llm-auto: GPU primary with the
-// default/LAN endpoint as transport fallback.
+// endpoint configs. In gateway mode all profiles use one gateway endpoint and
+// the logical model group owns failover. Without a gateway, Auto preserves the
+// historical direct behavior: GPU primary with default/LAN transport fallback.
 func ResolveLLMEndpoints(profile LLMProfile) (primary LLMConfig, fallback *LLMConfig) {
 	return ResolveLLMEndpointsWithEffort(profile, "")
 }
 
 // ResolveLLMEndpointsWithEffort is ResolveLLMEndpoints plus a per-run
-// reasoning_effort override (low/medium/high). Empty defers to the
-// environment/"medium" default on both endpoints; a run-specified value
-// wins over POKEPILOT_LLM_REASONING_EFFORT and POKEPILOT_LLM_GPU_*.
+// reasoning_effort override. A run-specified value wins over endpoint defaults
+// in either direct or gateway mode.
 func ResolveLLMEndpointsWithEffort(profile LLMProfile, reasoningEffort string) (primary LLMConfig, fallback *LLMConfig) {
 	lan := defaultLLMConfigFromEnv()
+	if gateway, ok := gatewayLLMConfigFromEnv(profile, lan); ok {
+		if reasoningEffort != "" {
+			gateway.ReasoningEffort = reasoningEffort
+		}
+		return gateway, nil
+	}
+
 	gpu, hasGPU := gpuLLMConfigFromEnv(lan)
 	if reasoningEffort != "" {
 		lan.ReasoningEffort = reasoningEffort
