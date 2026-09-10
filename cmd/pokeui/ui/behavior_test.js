@@ -31,6 +31,7 @@ class FakeTarget {
     this.tabIndex = 0;
     this.duration = 0;
     this.currentTime = 0;
+    this.playbackRate = 1;
     this.parent = null;
     this.attributes = new Map();
     this.classList = { contains: () => false };
@@ -101,11 +102,19 @@ function createInspectorHarness() {
     "pp-return-live", "pp-game-video", "evidence-drawer", "pp-meta", "pp-debug",
     "pp-artifacts", "pp-art-table", "pp-art-empty", "pp-investigate",
     "pp-investigate-status", "pp-story-actions", "pp-timeline-action",
-    "pp-timeline-selection", "pp-close-evidence",
+    "pp-timeline-selection", "pp-close-evidence", "pp-replay-tools",
+    "pp-playback-rate",
   ];
   const elements = Object.fromEntries(ids.map((id) => [id, new FakeTarget(id)]));
+  elements["pp-playback-rate"].value = "1";
+  const store = new Map();
+  const localStorage = {
+    getItem: (key) => (store.has(key) ? store.get(key) : null),
+    setItem: (key, value) => { store.set(key, String(value)); },
+  };
   const window = new FakeTarget("window");
   window.PokeConsoleBehavior = behavior;
+  window.localStorage = localStorage;
   const documentElement = new FakeTarget("html");
   const document = {
     documentElement,
@@ -152,6 +161,7 @@ function createInspectorHarness() {
   const context = {
     window,
     document,
+    localStorage,
     fetch,
     console,
     encodeURIComponent,
@@ -172,6 +182,7 @@ function createInspectorHarness() {
     requests,
     semanticEvents,
     timers,
+    storage: localStorage,
     select(runID) {
       selectedRun = runID;
       window.emit("pokefarm-select-run", { detail: { runId: runID } });
@@ -370,6 +381,36 @@ test("video readiness and failure execute LCD fallback DOM wiring", async () => 
   assert.equal(harness.elements["pp-replay-panel"].hidden, false);
   assert.equal(harness.elements["pp-replay"].textContent, "Reload replay");
   assert.match(harness.elements["pp-replay-status"].textContent, /could not be played/);
+});
+
+test("finished replay applies stored playback rate and remembers a new one", async () => {
+  const harness = createInspectorHarness();
+  harness.storage.setItem("pokepilot.replayPlaybackRate", "8");
+  harness.select("finished");
+  await flushAsync();
+  await flushAsync();
+  harness.elements["pp-replay"].emit("click");
+  await flushAsync();
+  harness.timers.shift()();
+  await flushAsync();
+  await flushAsync();
+
+  const video = harness.elements["pp-game-video"];
+  video.emit("canplay");
+  assert.equal(video.hidden, false);
+  assert.equal(harness.elements["pp-replay-tools"].hidden, false);
+  assert.equal(video.playbackRate, 8);
+  assert.equal(harness.elements["pp-playback-rate"].value, "8");
+
+  harness.elements["pp-playback-rate"].value = "16";
+  harness.elements["pp-playback-rate"].emit("change");
+  assert.equal(video.playbackRate, 16);
+  assert.equal(harness.storage.getItem("pokepilot.replayPlaybackRate"), "16");
+
+  harness.select("active");
+  await flushAsync();
+  await flushAsync();
+  assert.equal(harness.elements["pp-replay-tools"].hidden, true);
 });
 
 test("timeline click, video seek, and Return to live execute inspector event wiring", async () => {
