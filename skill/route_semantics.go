@@ -94,7 +94,13 @@ func redRouteCapabilities(romData []byte, mem *state.Mem) gameruntime.Capability
 	}
 	if facts.SSTicketAcquired {
 		caps[capCanPassCeruleanRobbedHouse] = true
-		caps[capCanBoardSSAnne] = true
+		// Receiving HM01 is the point of no return for the ship: the next
+		// dock exit runs the departure script, after which Vermilion's guard
+		// refuses harbor access. Do not let the immutable ROM graph advertise
+		// stale S.S. Anne destinations once that progression is complete.
+		if !facts.HM01Acquired {
+			caps[capCanBoardSSAnne] = true
+		}
 	}
 	if facts.PokeFluteAcquired {
 		caps[capCanClearSnorlax] = true
