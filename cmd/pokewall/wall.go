@@ -105,6 +105,10 @@ type Tile struct {
 	// run.gbrun recording. History uses it so the console can mark a
 	// row without opening the inspector.
 	ReplayAvailable bool
+	// ResumeFromRunID is the settled endless parent whose latest major
+	// checkpoint this run should continue from on attempt 1. Empty for a
+	// brand-new campaign, including the successor of a successful `done`.
+	ResumeFromRunID string
 }
 
 // tileRow is a plain-value snapshot of a Tile, taken under w.mu so the
@@ -147,6 +151,7 @@ type tileRow struct {
 	Detail          string           `json:"detail"`
 	Issue           *IssueLink       `json:"issue,omitempty"`
 	ReplayAvailable bool             `json:"replay_available,omitempty"`
+	ResumeFromRunID string           `json:"resume_from_run_id,omitempty"`
 }
 
 // Wall owns the spec queue, the tile map, cancel flags, the optional dump
@@ -231,6 +236,7 @@ type persistedTile struct {
 	Finished        bool           `json:"finished"`
 	WorkerAddrs     []string       `json:"worker_addrs,omitempty"`
 	ReplayAvailable bool           `json:"replay_available,omitempty"`
+	ResumeFromRunID string         `json:"resume_from_run_id,omitempty"`
 }
 
 // persistedState is the wall's whole on-disk memory: run order, tiles, and
@@ -288,6 +294,7 @@ func (w *Wall) marshalStateLocked() ([]byte, error) {
 			Finished:        t.Finished,
 			WorkerAddrs:     append([]string(nil), t.workerAddrs...),
 			ReplayAvailable: t.ReplayAvailable,
+			ResumeFromRunID: t.ResumeFromRunID,
 		}
 	}
 	return json.Marshal(ps)
@@ -374,6 +381,7 @@ func (w *Wall) loadState() {
 			Finished:        pt.Finished,
 			workerAddrs:     append([]string(nil), pt.WorkerAddrs...),
 			ReplayAvailable: pt.ReplayAvailable,
+			ResumeFromRunID: pt.ResumeFromRunID,
 			lastUpdate:      now,
 		}
 	}
@@ -542,6 +550,7 @@ func (w *Wall) applySpec(runID string, spec farm.Spec) {
 	t.workerAddrs = nil
 	t.lastFrame = nil
 	t.Finished = false
+	t.ResumeFromRunID = ""
 }
 
 // handleLease hands out the oldest queued spec exactly once; 204 when the
@@ -991,6 +1000,7 @@ func (w *Wall) snapshot() dashboardView {
 			Detail:          t.Detail,
 			Issue:           issueLinkFor(t, w.issueLinks),
 			ReplayAvailable: t.ReplayAvailable,
+			ResumeFromRunID: t.ResumeFromRunID,
 		})
 	}
 	return dashboardView{Now: now.Unix(), WallVersion: w.Version, Runs: rows, Workers: workers}
@@ -1426,7 +1436,9 @@ func newRunID() string {
 }
 
 // enqueueNextLocked queues a successor for an endless run. Caller holds w.mu.
-// The new run copies settings; the seed is either kept or rolled.
+// The new run copies settings; the seed is either kept or rolled. A successor
+// of a failed campaign keeps the parent's run id so attempt 1 can resume from
+// the latest major checkpoint; a successful `done` starts a fresh campaign.
 func (w *Wall) enqueueNextLocked(prev *Tile) {
 	id := newRunID()
 	for w.tiles[id] != nil {
@@ -1435,6 +1447,10 @@ func (w *Wall) enqueueNextLocked(prev *Tile) {
 	seed := prev.Seed
 	if prev.RandomSeed {
 		seed = rand.Int64()
+	}
+	resumeFrom := ""
+	if prev.Reason != "done" {
+		resumeFrom = prev.RunID
 	}
 	w.order = append(w.order, id)
 	w.tiles[id] = &Tile{}
@@ -1454,6 +1470,7 @@ func (w *Wall) enqueueNextLocked(prev *Tile) {
 		Endless:         true,
 		RandomSeed:      prev.RandomSeed,
 	})
+	w.tiles[id].ResumeFromRunID = resumeFrom
 }
 
 // reapStale handles leased or running runs whose lastUpdate is older than

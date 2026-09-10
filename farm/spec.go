@@ -38,8 +38,10 @@ type Spec struct {
 	// asks the runner to use its built-in frame safety limit.
 	MaxFrames int `json:"max_frames"`
 	// Endless asks the wall to queue a successor when this run settles,
-	// so idle workers keep picking up work. RandomSeed picks a fresh
-	// seed on each successor; otherwise the seed is copied.
+	// so idle workers keep picking up work. A successor of a failed
+	// campaign resumes from the parent's latest major checkpoint; a
+	// successful `done` starts fresh. RandomSeed picks a fresh seed on
+	// each successor; otherwise the seed is copied.
 	Endless    bool `json:"endless,omitempty"`
 	RandomSeed bool `json:"random_seed,omitempty"`
 }

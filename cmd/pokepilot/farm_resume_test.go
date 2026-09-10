@@ -51,6 +51,20 @@ func TestRunFarmLLMWiresResumeIntoAgentBudget(t *testing.T) {
 	}
 }
 
+func TestPrepareFarmAttemptLooksUpResumeOnFirstAttempt(t *testing.T) {
+	src, err := os.ReadFile("farm_resume.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(src)
+	if strings.Contains(text, "spec.Attempt > 1") {
+		t.Fatal("endless successors are attempt 1; resume lookup must not skip them")
+	}
+	if !strings.Contains(text, "planner == \"llm\" && dir != \"\"") {
+		t.Fatal("LLM resume lookup is no longer wired")
+	}
+}
+
 func runnerResumeArtifact(name string, data []byte, mediaType string) farm.Artifact {
 	sum := sha256.Sum256(data)
 	return farm.Artifact{Name: name, MediaType: mediaType, SHA256: hex.EncodeToString(sum[:]), Data: data}
