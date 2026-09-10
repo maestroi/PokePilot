@@ -48,12 +48,31 @@ func TestIssueConfigReachesWallOnly(t *testing.T) {
 			break
 		}
 	}
-	if !strings.Contains(runner, "POKEPILOT_LLM_GPU_URL: ${POKEPILOT_LLM_GPU_URL:-http://192.168.50.81:8002/v1}") {
-		t.Error("runner must default Auto/GPU to the LAN GPU endpoint")
+
+	// Inference topology: LiteLLM is the normal entry point, the dedicated
+	// 7900 XTX is the direct GPU escape hatch, and direct LAN is the gateway
+	// outage safety net. The 4090 is gateway-owned overflow, never the default
+	// direct GPU, so Operator can reserve it for coding.
+	for _, want := range []string{
+		"POKEPILOT_LLM_GATEWAY_URL: ${POKEPILOT_LLM_GATEWAY_URL:-http://litellm:4000/v1}",
+		"POKEPILOT_LLM_URL: ${POKEPILOT_LLM_URL:-http://192.168.50.204:8002/v1}",
+		"POKEPILOT_LLM_GPU_URL: ${POKEPILOT_LLM_GPU_URL:-http://192.168.50.130:8002/v1}",
+		"POKEPILOT_LLM_GPU_RECOVERY_REASONING_EFFORT: ${POKEPILOT_LLM_GPU_RECOVERY_REASONING_EFFORT:-off}",
+	} {
+		if !strings.Contains(runner, want) {
+			t.Errorf("runner missing inference setting %q", want)
+		}
 	}
-	if !strings.Contains(runner, "POKEPILOT_LLM_GPU_RECOVERY_REASONING_EFFORT: ${POKEPILOT_LLM_GPU_RECOVERY_REASONING_EFFORT:-off}") {
-		t.Error("runner must keep GPU recovery reasoning off unless overridden")
+	for _, want := range []string{
+		"POKEPILOT_LITELLM_7900_URL: ${POKEPILOT_LITELLM_7900_URL:-http://192.168.50.130:8002/v1}",
+		"POKEPILOT_LITELLM_4090_URL: ${POKEPILOT_LITELLM_4090_URL:-http://192.168.50.81:8002/v1}",
+		"POKEPILOT_LITELLM_LAN_URL: ${POKEPILOT_LITELLM_LAN_URL:-http://192.168.50.204:8002/v1}",
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("stack missing LiteLLM backend %q", want)
+		}
 	}
+
 	img := string(dockerfile)
 	if strings.Contains(img, "issues-api") || strings.Contains(img, "AGENT_ORCHESTRATOR") {
 		t.Error("issue settings must not be baked into the image")
