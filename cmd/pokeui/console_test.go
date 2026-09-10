@@ -615,6 +615,97 @@ func TestUIGameFrameFitsInsideFixedStage(t *testing.T) {
 	}
 }
 
+func TestUIVisualStageCollapsesBeforePersistentRailClipsIt(t *testing.T) {
+	css := string(consoleCSS)
+	start := strings.Index(css, `@media(max-width:1140px) and (min-width:761px)`)
+	end := strings.Index(css, `@media(max-width:760px)`)
+	if start < 0 || end <= start {
+		t.Fatal("console must collapse the three-bay stage before the persistent rail clips it")
+	}
+	responsive := css[start:end]
+	for _, want := range []string{
+		`.visual-stage{height:auto;grid-template-columns:minmax(0,1fr) minmax(0,1.12fr)}`,
+		`.game-state-monitor{grid-column:1/-1}`,
+	} {
+		if !strings.Contains(responsive, want) {
+			t.Errorf("wide-tablet stage contract missing %q", want)
+		}
+	}
+}
+
+func TestUINarrowHeaderKeepsPrimaryActionVisible(t *testing.T) {
+	css := string(consoleCSS)
+	start := strings.Index(css, `@media(max-width:760px)`)
+	if start < 0 {
+		t.Fatal("console missing narrow layout")
+	}
+	narrow := css[start:]
+	for _, want := range []string{
+		`.system-summary{display:none}`,
+		`.console-tabs{width:100%;min-width:0`,
+	} {
+		if !strings.Contains(narrow, want) {
+			t.Errorf("narrow header contract missing %q", want)
+		}
+	}
+	if !regexp.MustCompile(`\.console-bar\{[^}]*grid-template-columns:minmax\(0,1fr\) auto`).MatchString(narrow) {
+		t.Error("narrow header must reserve a shrink-safe brand track beside the primary action")
+	}
+}
+
+func TestUIFirstViewportIncludesRunStory(t *testing.T) {
+	css := string(consoleCSS)
+	stage := regexp.MustCompile(`\.visual-stage\{[^}]*height:clamp\((\d+)px,(\d+)vh,(\d+)px\)`).FindStringSubmatch(css)
+	if stage == nil {
+		t.Fatal("visual stage must use a bounded viewport-aware height")
+	}
+	vh, _ := strconv.Atoi(stage[2])
+	max, _ := strconv.Atoi(stage[3])
+	if vh > 42 || max > 380 {
+		t.Fatalf("visual stage clamp %q leaves no room for timeline and Run Story at 1440x900", stage[0])
+	}
+	deck := regexp.MustCompile(`\.state-deck\{[^}]+\}`).FindString(css)
+	for _, want := range []string{"max-height:", "overflow:auto"} {
+		if !strings.Contains(deck, want) {
+			t.Errorf("secondary state deck %q missing %q", deck, want)
+		}
+	}
+}
+
+func TestUISemanticMapUsesStableDarkModeTokens(t *testing.T) {
+	css := string(consoleCSS)
+	ui := string(uiJS)
+	seen := map[string]string{}
+	for _, token := range []string{"--map-ground", "--map-wall", "--map-grass", "--map-water", "--map-trail", "--map-player", "--map-sprite", "--map-warp"} {
+		match := regexp.MustCompile(regexp.QuoteMeta(token) + `:(#[0-9a-fA-F]{6})`).FindStringSubmatch(css)
+		if match == nil {
+			t.Errorf("console.css missing concrete semantic map token %s", token)
+			continue
+		}
+		if previous := seen[match[1]]; previous != "" {
+			t.Errorf("semantic map tokens %s and %s share %s; map roles must remain distinguishable", previous, token, match[1])
+		}
+		seen[match[1]] = token
+		if !strings.Contains(ui, `mapColor("`+token+`"`) {
+			t.Errorf("map renderer does not consume %s", token)
+		}
+	}
+}
+
+func TestUIPartyAlwaysRendersSixAccessibleSlots(t *testing.T) {
+	ui := string(uiJS)
+	for _, want := range []string{
+		`Array.from({length:6}`,
+		`partyMembers[index]`,
+		`Empty slot`,
+		`aria-label="Party slot ${index + 1}: Empty slot"`,
+	} {
+		if !strings.Contains(ui, want) {
+			t.Errorf("six-slot party contract missing %q", want)
+		}
+	}
+}
+
 func TestUIConsoleStylesheetIsServed(t *testing.T) {
 	h := handler("http://wall.invalid")
 	req := httptest.NewRequest(http.MethodGet, "/console.css", nil)

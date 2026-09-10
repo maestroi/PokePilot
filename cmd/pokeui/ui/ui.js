@@ -345,14 +345,14 @@
     if (!ctx) return false;
     ctx.imageSmoothingEnabled = false;
     const colors = {
-      ground: mapColor("--lcd-dark", "#0f380f"),
-      wall: mapColor("--panel-2", "#252e1f"),
-      grass: mapColor("--line", "#3a4530"),
-      water: mapColor("--bezel-dark", "#5c5638"),
-      warp: mapColor("--amber", "#c4a035"),
-      trail: mapColor("--bezel", "#8b8355"),
-      sprite: mapColor("--amber", "#c4a035"),
-      player: mapColor("--lcd", "#9bbc0f")
+      ground: mapColor("--map-ground", "#102229"),
+      wall: mapColor("--map-wall", "#40515d"),
+      grass: mapColor("--map-grass", "#28543c"),
+      water: mapColor("--map-water", "#1e5f78"),
+      warp: mapColor("--map-warp", "#c999ef"),
+      trail: mapColor("--map-trail", "#61e2ee"),
+      sprite: mapColor("--map-sprite", "#efb24f"),
+      player: mapColor("--map-player", "#f2fbff")
     };
     for (let y = 0; y < asset.height; y++) {
       for (let x = 0; x < asset.width; x++) {
@@ -370,7 +370,7 @@
     if (trail.length > 1) {
       ctx.strokeStyle = colors.trail;
       ctx.lineWidth = Math.max(1, Math.floor(px / 3));
-      ctx.globalAlpha = 0.55;
+      ctx.globalAlpha = 0.85;
       ctx.beginPath();
       trail.forEach((p, i) => {
         const x = (Number(p[0]) + 0.5) * px;
@@ -784,14 +784,18 @@
     const p = r.player;
     if (!p) return "";
     const badges = (p.badges && p.badges.length) ? p.badges.join(", ") : "no badges";
-    const rows = (p.party || []).map((m) => {
+    const partyMembers = Array.isArray(p.party) ? p.party.slice(0, 6) : [];
+    const rows = Array.from({length:6}, (_, index) => {
+      const m = partyMembers[index];
+      if (!m) return `<div class="party-row party-empty" aria-label="Party slot ${index + 1}: Empty slot"><span class="pname">Empty slot</span><span class="slot-number">${index + 1}/6</span></div>`;
       const max = m.max_hp || 0, hp = m.hp || 0;
       const pct = max ? Math.max(0, Math.min(100, (100 * hp) / max)) : 0;
       const cls = (!max || hp === 0 || pct < 20) ? "low" : (pct < 50 ? "mid" : "");
       const status = m.status ? `<span class="pstatus">${esc(m.status)}</span>` : "";
       return `<div class="party-row"><span class="pname">${esc(m.name)}</span><span>Lv.${esc(m.level)}</span><span class="php">${hp}/${max}</span>${status}<div class="party-hp ${cls}"><i style="width:${pct}%"></i></div></div>`;
     }).join("");
-    return `<div class="block"><h3>Party</h3><div class="party-sum">₽${esc(p.money)} · ${esc(badges)}</div>${rows ? `<div class="party-grid">${rows}</div>` : `<p class="pempty">no Pokémon yet</p>`}</div>`;
+    const empty = partyMembers.length ? "" : `<span class="pempty">no Pokémon yet</span>`;
+    return `<div class="block"><h3>Party</h3><div class="party-sum">₽${esc(p.money)} · ${esc(badges)}</div>${empty}<div class="party-grid">${rows}</div></div>`;
   }
 
   function lastEventHTML(run) {
