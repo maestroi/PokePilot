@@ -13,9 +13,10 @@ func TestOperatorExposesLLMRoutingPolicies(t *testing.T) {
 		`Reserve 4090 · 7900 XTX only`,
 		`Reserve all GPUs · LAN only`,
 		`pokefarm-llm-default-profile`,
-		`data-llm-default="auto"`,
-		`data-llm-default="gpu"`,
-		`data-llm-default="default"`,
+		`auto: { label: "Auto"`,
+		`gpu: { label: "Reserve 4090"`,
+		`default: { label: "Reserve all GPUs"`,
+		`data-llm-default=`,
 		`Active or already-leased runs keep their current route.`,
 	} {
 		if !strings.Contains(page, want) {
