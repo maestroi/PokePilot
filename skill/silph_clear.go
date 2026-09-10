@@ -44,12 +44,12 @@ const (
 
 	// 11F's one Card Key block is block-coordinate (3,6). Its four game
 	// cells include Giovanni's two coordinate triggers, (6,13) and (7,12).
-	silph11FDoorBlockX                   = 3
-	silph11FDoorBlockY                   = 6
-	silphGiovanniTriggerX          uint8 = 6
-	silphGiovanniTriggerY          uint8 = 13
-	silphGiovanniAltTriggerX       uint8 = 7
-	silphGiovanniAltTriggerY       uint8 = 12
+	silph11FDoorBlockX             = 3
+	silph11FDoorBlockY             = 6
+	silphGiovanniTriggerX    uint8 = 6
+	silphGiovanniTriggerY    uint8 = 13
+	silphGiovanniAltTriggerX uint8 = 7
+	silphGiovanniAltTriggerY uint8 = 12
 
 	silphPresidentX uint8 = 7
 	silphPresidentY uint8 = 5
