@@ -37,6 +37,15 @@ func TestRedRouteCapabilitiesProjectPokeFluteStoryFact(t *testing.T) {
 	}
 }
 
+func TestRedRouteCapabilitiesProjectSaffronGateOpen(t *testing.T) {
+	mem := new(state.Mem)
+	mem[sym.StatusFlags1] = 1 << 6 // BIT_GAVE_SAFFRON_GUARDS_DRINK
+	caps := redRouteCapabilities(nil, mem)
+	if !caps.Has(capCanEnterSaffron) {
+		t.Fatalf("BIT_GAVE_SAFFRON_GUARDS_DRINK set but %q not projected: %v", capCanEnterSaffron, caps)
+	}
+}
+
 func TestRedRouteTransitionsMapRepresentativeGates(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -47,6 +56,8 @@ func TestRedRouteTransitionsMapRepresentativeGates(t *testing.T) {
 		{"surf", world.Edge{Kind: world.EdgeConnection, From: semanticRoute21Map, To: semanticCinnabarMap}, capCanSurf},
 		{"story", world.Edge{Kind: world.EdgeConnection, From: route12Map, To: route13Map}, capCanClearSnorlax},
 		{"strength", world.Edge{Kind: world.EdgeWarp, From: victoryRoad1FMap, To: victoryRoad2FMap}, capCanMoveBoulders},
+		{"saffron border", world.Edge{Kind: world.EdgeConnection, From: semanticSaffronCityMap, To: semanticRoute5Map}, capCanEnterSaffron},
+		{"saffron guardhouse", world.Edge{Kind: world.EdgeWarp, From: route5GateMap, To: semanticRoute5Map, WarpX: 3, WarpY: 5}, capCanEnterSaffron},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			transition, ok := redRouteTransitionForEdge(tc.edge)

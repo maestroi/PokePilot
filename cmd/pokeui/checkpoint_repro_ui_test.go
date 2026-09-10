@@ -8,11 +8,11 @@ import (
 func TestRunInspectorOffersCheckpointRepro(t *testing.T) {
 	js := string(inspectorJS)
 	for _, want := range []string{
-		"Run from checkpoint",
+		"Start a new run from here",
 		"/checkpoints",
 		"/repro`",
 		"repro source",
-		"currently deployed runner build",
+		"paired agent knowledge",
 	} {
 		if !strings.Contains(js, want) {
 			t.Errorf("inspector.js missing %q", want)

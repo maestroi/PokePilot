@@ -140,3 +140,38 @@ func TestReplayCheckpointReturnsNoContentForOrdinaryRun(t *testing.T) {
 		t.Fatalf("ordinary run replay checkpoint = %+v", cp)
 	}
 }
+
+func TestMajorCheckpointWithPairedKnowledgeIsReplayable(t *testing.T) {
+	dumps := t.TempDir()
+	w := NewWall(dumps)
+	const runID = "major-checkpoint-run"
+	dir := checkpointAttemptDir(dumps, runID, 1)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	state, knowledge := majorWallPair(2, 29, "major-state")
+	for _, artifact := range []farm.Artifact{state, knowledge} {
+		if err := os.WriteFile(filepath.Join(dir, artifact.Name), artifact.Data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	views, err := w.checkpointViews(runID, 1, "llm")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(views) != 1 {
+		t.Fatalf("major checkpoint views = %+v", views)
+	}
+	view := views[0]
+	if view.Kind != "major" || view.Round != 29 || view.Frame != 2900 || !view.HasKnowledge || !view.Replayable {
+		t.Fatalf("major checkpoint view = %+v", view)
+	}
+	cp, err := w.replayCheckpoint(runID, 1, "llm", state.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cp.Knowledge == nil || cp.Knowledge.Name != knowledge.Name {
+		t.Fatalf("major replay checkpoint = %+v", cp)
+	}
+}

@@ -3,6 +3,8 @@
   const frameMs = 50; // 20 fps; a tight /frame loop burned the Chrome tab
   const slowFrameMs = 500; // phones on data: 2 fps still shows progress, 40x less traffic
   const narrow = () => window.matchMedia("(max-width: 700px)").matches;
+  const railMedia = window.matchMedia("(max-width: 760px)");
+  const { partitionOperations, drawerTransition, applyTabView, wireTabNavigation } = window.PokeConsoleBehavior;
   const short = (v) => String(v || "").slice(0, 7); // display SHAs short; JSON keeps the full one
   let snap = { now: 0, runs: [], workers: [] };
   let groups = [];
@@ -10,14 +12,21 @@
   let selected = "";
   let cardErr = "";
   let wallDown = false;
+  let activeView = (location.hash || "#live").slice(1);
+  let selectionEstablished = false;
+  let lastFreshAt = 0;
+  let semanticContext = null;
   const investigating = new Set();
   const pumps = new Map();
+  const lastFrameURLs = new Map();
   const mapAssets = new Map();
   const histFilter = { outcome: "", how: "", starter: "" };
   const HIST_PAGE = 25;
+  const RECENT_OPERATIONS_LIMIT = 12;
   let histPage = 0;
   const fpsSamples = new Map();
   const fpsLive = new Map();
+  let railRestoreFocus = null;
 
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({
@@ -176,8 +185,17 @@
   function tileLabel(r) {
     return mapLabel(r.map) + " (" + r.x + "," + r.y + ")";
   }
+  const CHIP_KINDS = new Set([
+    "starter", "how", "seed", "goal", "loop", "replay",
+    "running", "queued", "leased", "busy", "idle",
+    "outcome-done", "outcome-stuck", "outcome-budget",
+    "outcome-error", "outcome-lost", "outcome-cancelled"
+  ]);
+  function safeChipKind(kind) {
+    return CHIP_KINDS.has(kind) ? ` ${kind}` : "";
+  }
   function chip(kind, text) {
-    return `<span class="chip ${kind}">${esc(text)}</span>`;
+    return `<span class="chip${safeChipKind(kind)}">${esc(text)}</span>`;
   }
   function settingChips(r, compact) {
     let html = chip("starter", starterOf(r))
@@ -231,6 +249,16 @@
     if (r.status === "done") return chip("outcome-" + out, out || "done");
     return chip(r.status, r.status);
   }
+  function completionSignature(run) {
+    return JSON.stringify([
+      run.status || "",
+      Number(run.ended_at || 0),
+      run.reason || "",
+      run.detail || "",
+      Boolean(run.replay_available),
+      Number(run.attempts || 0)
+    ]);
+  }
   function kv(rows) {
     const body = rows.filter((row) => row[1] !== "" && row[1] != null)
       .map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("");
@@ -270,7 +298,12 @@
     syncPlannerFields();
   }
 
-  function liveRuns() { return (snap.runs || []).filter((r) => r.status !== "done"); }
+  function liveRuns() {
+    return [...(snap.runs || [])].sort((a, b) => {
+      const aDone = a.status === "done" ? 1 : 0, bDone = b.status === "done" ? 1 : 0;
+      return aDone - bDone || Number(b.ended_at || b.queued_at || 0) - Number(a.ended_at || a.queued_at || 0);
+    }).slice(0, 30);
+  }
   function doneRuns() { return (snap.runs || []).filter((r) => r.status === "done"); }
   function filteredHistory() {
     return doneRuns().filter((r) => {
@@ -315,14 +348,14 @@
     if (!ctx) return false;
     ctx.imageSmoothingEnabled = false;
     const colors = {
-      ground: mapColor("--lcd-dark", "#0f380f"),
-      wall: mapColor("--panel-2", "#252e1f"),
-      grass: mapColor("--line", "#3a4530"),
-      water: mapColor("--bezel-dark", "#5c5638"),
-      warp: mapColor("--amber", "#c4a035"),
-      trail: mapColor("--bezel", "#8b8355"),
-      sprite: mapColor("--amber", "#c4a035"),
-      player: mapColor("--lcd", "#9bbc0f")
+      ground: mapColor("--map-ground", "#102229"),
+      wall: mapColor("--map-wall", "#40515d"),
+      grass: mapColor("--map-grass", "#28543c"),
+      water: mapColor("--map-water", "#1e5f78"),
+      warp: mapColor("--map-warp", "#c999ef"),
+      trail: mapColor("--map-trail", "#61e2ee"),
+      sprite: mapColor("--map-sprite", "#efb24f"),
+      player: mapColor("--map-player", "#f2fbff")
     };
     for (let y = 0; y < asset.height; y++) {
       for (let x = 0; x < asset.width; x++) {
@@ -340,7 +373,7 @@
     if (trail.length > 1) {
       ctx.strokeStyle = colors.trail;
       ctx.lineWidth = Math.max(1, Math.floor(px / 3));
-      ctx.globalAlpha = 0.55;
+      ctx.globalAlpha = 0.85;
       ctx.beginPath();
       trail.forEach((p, i) => {
         const x = (Number(p[0]) + 0.5) * px;
@@ -370,7 +403,7 @@
     return true;
   }
   let mapRenderSerial = 0;
-  function renderMap(run) {
+  function renderMap(run, contextLabel = "") {
     const panel = $("detail-map-panel");
     const status = $("detail-map-status");
     const canvas = $("detail-map");
@@ -380,7 +413,7 @@
       return;
     }
     panel.hidden = false;
-    status.textContent = tileLabel(run);
+    status.textContent = contextLabel ? `${contextLabel} · ${tileLabel(run)}` : tileLabel(run);
     loadMapAsset(run.map).then((asset) => {
       if (serial !== mapRenderSerial || selected !== run.run_id) return;
       const paint = () => {
@@ -445,6 +478,8 @@
           const r = await fetch("/frame?run=" + encodeURIComponent(id), { cache: "no-store" });
           if (r.ok) {
             const url = URL.createObjectURL(await r.blob());
+            if (stop) { URL.revokeObjectURL(url); break; }
+            revokeLastFrameURL(id);
             paintFrame(id, url);
             if (blobUrl) URL.revokeObjectURL(blobUrl);
             blobUrl = url;
@@ -453,10 +488,16 @@
         const wait = tick - (Date.now() - started);
         if (wait > 0) await sleep(wait);
       }
+      if (blobUrl) URL.revokeObjectURL(blobUrl);
     })();
   }
 
   const lastOnce = new Set();
+  function revokeLastFrameURL(id) {
+    const url = lastFrameURLs.get(id);
+    if (url) URL.revokeObjectURL(url);
+    lastFrameURLs.delete(id);
+  }
   function fetchLast(id) {
     if (lastOnce.has(id)) return;
     const has = [...document.querySelectorAll(".lcd")].some((lcd) => lcd.dataset.frameRun === id && lcd.querySelector("img"));
@@ -466,7 +507,12 @@
       try {
         const r = await fetch("/frame?run=" + encodeURIComponent(id), { cache: "no-store" });
         if (!r.ok) { lastOnce.delete(id); return; }
-        paintFrame(id, URL.createObjectURL(await r.blob()));
+        const url = URL.createObjectURL(await r.blob());
+        const displayed = [...document.querySelectorAll(".lcd")].some((lcd) => lcd.dataset.frameRun === id);
+        if (!displayed) { URL.revokeObjectURL(url); lastOnce.delete(id); return; }
+        revokeLastFrameURL(id);
+        lastFrameURLs.set(id, url);
+        paintFrame(id, url);
       } catch (e) { lastOnce.delete(id); }
     })();
   }
@@ -481,7 +527,21 @@
       if (want.has(id)) continue;
       stop(); pumps.delete(id);
     }
+    const known = new Set((snap.runs || []).map((run) => run.run_id));
+    const displayed = new Set([...document.querySelectorAll(".lcd")].map((lcd) => lcd.dataset.frameRun).filter(Boolean));
+    for (const id of lastFrameURLs.keys()) {
+      if (!known.has(id) || !displayed.has(id)) {
+        revokeLastFrameURL(id);
+        lastOnce.delete(id);
+      }
+    }
     if (sel && sel.status === "done") fetchLast(sel.run_id);
+  }
+
+  function cleanupFrameURLs() {
+    for (const stop of pumps.values()) stop();
+    pumps.clear();
+    for (const id of [...lastFrameURLs.keys()]) revokeLastFrameURL(id);
   }
 
   function renderLive() {
@@ -524,20 +584,6 @@
     }
     el.querySelectorAll("article").forEach((art) => { if (!seen.has(art.dataset.run)) art.remove(); });
     for (const r of runs) { const art = el.querySelector('article[data-run="' + CSS.escape(r.run_id) + '"]'); if (art) el.appendChild(art); }
-  }
-
-  function renderWorkers() {
-    const ws = snap.workers || [];
-    const el = $("workers");
-    if (!ws.length) { el.innerHTML = `<p class="empty">No workers</p>`; return; }
-    const byVer = {};
-    for (const w of ws) { const v = w.version || "unknown"; byVer[v] = (byVer[v] || 0) + 1; }
-    const summary = Object.entries(byVer).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([v, n]) => `${n} × ${short(v)}`).join(", ");
-    el.innerHTML = `<p class="ver-summary">${esc(summary)}</p>` + ws.map((w) => {
-      const busy = Boolean(w.run_id);
-      const job = busy ? `on <b>${esc(w.run_id)}</b>` : "waiting for a lease";
-      return `<div class="worker">${chip(busy ? "busy" : "idle", busy ? "busy" : "idle")}<span class="addr">${esc(w.addr)}</span>${w.version ? `<span class="ver">${esc(short(w.version))}</span>` : ""}<span class="job">${job}</span><span class="ago">${esc(w.seen_ago)} ago</span></div>`;
-    }).join("");
   }
 
   function filterBtn(group, value, label) {
@@ -600,8 +646,14 @@
     if (holding(el)) return false;
     const self = el.scrollTop;
     const inner = [...el.querySelectorAll("pre, .trace, .plan-q")].map((n) => n.scrollTop);
+    const active = document.activeElement;
+    const focusRun = active && el.contains(active) ? active.getAttribute("data-run") : "";
     el.innerHTML = html;
     el._paint = html;
+    if (focusRun) {
+      const restore = el.querySelector('[data-run="' + CSS.escape(focusRun) + '"]');
+      if (restore) restore.focus();
+    }
     el.scrollTop = self;
     el.querySelectorAll("pre, .trace, .plan-q").forEach((n, i) => { if (inner[i] != null) n.scrollTop = inner[i]; });
     return true;
@@ -631,6 +683,17 @@
     $("detail-body").innerHTML = `<div id="detail-settings" class="block compact"></div><div id="detail-now" class="block compact"></div><div id="detail-plan" class="block scroll" hidden></div><div id="detail-play" class="block scroll" hidden></div>`;
   }
 
+  function goalProgressHTML(run) {
+    const stats = run && run.stats;
+    if (!stats || !stats.goal_summary) return "";
+    const current = Number(stats.goal_current || 0);
+    const target = Number(stats.goal_target || 0);
+    const complete = Boolean(stats.goal_complete);
+    const value = complete ? 100 : (target > 0 ? Math.max(0, Math.min(100, 100 * current / target)) : 0);
+    const count = target > 0 ? `${current} / ${target}` : (complete ? "complete" : "in progress");
+    return `<span class="goal-strip-summary">${esc(stats.goal_summary)}</span><span class="goal-strip-count">${esc(count)}</span><progress class="goal-progress" max="100" value="${value.toFixed(0)}" aria-label="Goal progress">${value.toFixed(0)}%</progress>`;
+  }
+
   function bindPlanRaw() {
     const raw = $("detail-plan") && $("detail-plan").querySelector(".plan-raw");
     if (!raw) return;
@@ -644,32 +707,55 @@
 
   function renderDetail() {
     const pane = $("watch");
-    const run = (snap.runs || []).find((r) => r.run_id === selected);
-    if (!run) {
+    const liveRun = (snap.runs || []).find((r) => r.run_id === selected);
+    if (!liveRun) {
       pane.hidden = true; $("detail-map-panel").hidden = true;
-      clearPaint($("detail-body")); clearPaint($("detail-party")); clearPaint($("screen-event"));
+      clearPaint($("detail-body")); paintBlock($("detail-goal"), ""); clearPaint($("detail-party")); clearPaint($("screen-event"));
       return;
     }
+    const context = semanticContext && semanticContext.runId === selected ? semanticContext : null;
+    const event = context && context.event;
+    const hasEventPosition = event && event.map != null && event.x != null && event.y != null;
+    const run = hasEventPosition ? {...liveRun, map:event.map, x:event.x, y:event.y, sprites:event.sprites||[], trail:event.trail||[]} : liveRun;
+    const semanticLabel = context ? (context.label || "Semantic state from nearest persisted event") : "";
+    const mapLabel = context && !hasEventPosition
+      ? "No map snapshot for this checkpoint · showing last known state"
+      : semanticLabel;
     pane.hidden = false;
     $("detail-title").textContent = run.run_id;
-    paintHTML($("detail-chips"), statusChip(run) + replayChip(run) + settingChips(run) + issueBadge(run.issue));
+    $("game-state-label").textContent = liveRun.status === "done" ? "Last recorded frame" : "Live frame";
+    const cancel = $("selected-cancel");
+    cancel.hidden = liveRun.status === "done";
+    cancel.dataset.cancel = run.run_id;
+    paintHTML($("detail-chips"), statusChip(run) + replayChip(run) + issueBadge(run.issue));
     fillLcd($("detail-lcd"), run);
-    renderMap(run);
+    renderMap(run, mapLabel);
+    $("detail-location").textContent = context
+      ? `${mapLabel} · ${tileLabel(run)}`
+      : tileLabel(run);
+    $("detail-objective").textContent = goalOf(run) || (run.planner === "scripted" ? `Walk to ${run.dest || "destination"}` : "Free play");
+    $("detail-decision").textContent = event
+      ? (event.decision || event.message || event.progress || event.question || event.type || "Persisted event")
+      : run.decision || (run.question ? "Waiting for planner response" : "Waiting for first decision");
+    $("detail-frame").textContent = Number((event && event.frame) || run.frame || 0).toLocaleString();
+    $("detail-round").textContent = run.stats && (run.stats.round ?? run.stats.rounds) != null ? String(run.stats.round ?? run.stats.rounds) : "—";
     const settings = kv([
       ["how", howText(run)], ["starter", starterOf(run)], ["goal", goalOf(run)],
       ["model", run.planner === "llm" ? llmProfileLabel(run) : ""],
       ["reasoning", run.planner === "llm" ? reasoningEffortLabel(run) : ""],
       ["walk to", run.planner === "scripted" ? (run.dest || "—") : ""], ["seed", String(run.seed)],
       ["keep going", run.endless ? (run.random_seed ? "yes, random seed" : "yes, same seed") : ""],
-      ["queued", fmtWhen(run.queued_at)], ["ended", fmtWhen(run.ended_at)], ["fps", run.fps ? String(run.fps) : ""],
-      ["round cap", run.planner === "llm" ? (run.max_rounds ? String(run.max_rounds) : "none (goal-driven)") : ""], ["max frames", run.max_frames ? String(run.max_frames) : ""]
+      ["queued", fmtWhen(run.queued_at)], ["ended", fmtWhen(run.ended_at)],
+      ["round cap", run.planner === "llm" ? (run.max_rounds ? String(run.max_rounds) : "none (goal-driven)") : ""]
     ]);
     const stateRows = run.status === "done"
       ? [["ended", run.reason || "done"], ["detail", run.detail || ""], ["last map", tileLabel(run)], ["frame", String(run.frame)], ["fps", fpsLabel(run)], ["attempts", String(run.attempts)]]
       : [["status", run.status], ["map", tileLabel(run)], ["frame", String(run.frame)], ["fps", fpsLabel(run)], ["attempt", String(run.attempts)], ["so far", run.stop_so_far || ""]];
     ensureWatchBlocks();
+    paintBlock($("detail-goal"), goalProgressHTML(run));
     paintHTML($("detail-settings"), `<h3>Settings</h3>${settings}`);
-    paintHTML($("detail-now"), `<h3>${run.status === "done" ? "Outcome" : "Now"}</h3>${kv(stateRows)}`);
+    const outcomeTitle = run.status === "done" ? "<h3>Outcome</h3>" : "<h3>Current state</h3>";
+    paintHTML($("detail-now"), `${outcomeTitle}${kv(stateRows)}`);
     paintBlock($("detail-plan"), planHTML(run));
     paintBlock($("detail-play"), playHTML(run));
     paintHTML($("detail-party"), partyHTML(run));
@@ -701,23 +787,27 @@
   }
 
   function partyHTML(r) {
-    const p = r.player;
-    if (!p) return "";
-    const badges = (p.badges && p.badges.length) ? p.badges.join(", ") : "no badges";
-    const rows = (p.party || []).map((m) => {
+    const p = r.player || null;
+    const badges = (p && p.badges && p.badges.length) ? p.badges.join(", ") : "no badges";
+    const partyMembers = p && Array.isArray(p.party) ? p.party.slice(0, 6) : [];
+    const rows = Array.from({length:6}, (_, index) => {
+      const m = partyMembers[index];
+      if (!m) return `<div class="party-row party-empty" aria-label="Party slot ${index + 1}: Empty slot"><span class="pname">Empty slot</span><span class="slot-number">${index + 1}/6</span></div>`;
       const max = m.max_hp || 0, hp = m.hp || 0;
       const pct = max ? Math.max(0, Math.min(100, (100 * hp) / max)) : 0;
       const cls = (!max || hp === 0 || pct < 20) ? "low" : (pct < 50 ? "mid" : "");
       const status = m.status ? `<span class="pstatus">${esc(m.status)}</span>` : "";
       return `<div class="party-row"><span class="pname">${esc(m.name)}</span><span>Lv.${esc(m.level)}</span><span class="php">${hp}/${max}</span>${status}<div class="party-hp ${cls}"><i style="width:${pct}%"></i></div></div>`;
     }).join("");
-    return `<div class="block"><h3>Party</h3><div class="party-sum">₽${esc(p.money)} · ${esc(badges)}</div>${rows ? `<div class="party-grid">${rows}</div>` : `<p class="pempty">no Pokémon yet</p>`}</div>`;
+    const empty = p && !partyMembers.length ? `<span class="pempty">no Pokémon yet</span>` : "";
+    const summary = p ? `₽${esc(p.money)} · ${esc(badges)}` : "Player telemetry unavailable";
+    return `<div class="block"><h3>Party</h3><div class="party-sum">${summary}</div>${empty}<div class="party-grid">${rows}</div></div>`;
   }
 
   function lastEventHTML(run) {
     if (!run.trace) return "";
     const title = run.question || run.decision ? "Last event" : "Trace";
-    return `<div class="block scroll screen-event-card"><h3>${title}</h3><pre class="trace">${esc(run.trace)}</pre></div>`;
+    return `<div class="screen-event-card"><h3>${title}</h3><pre class="trace">${esc(run.trace)}</pre></div>`;
   }
 
   function renderCounts() {
@@ -725,13 +815,134 @@
     $("n-running").textContent = runs.filter((r) => r.status === "running").length;
     $("n-queued").textContent = runs.filter((r) => r.status === "queued" || r.status === "leased").length;
     $("n-idle").textContent = workers.filter((w) => !w.run_id).length;
+    $("n-failures").textContent = (groups || []).filter((g) => { const state = g.issue && g.issue.status; return state !== "resolved" && state !== "fixed"; }).length;
+  }
+  function setView(view, updateHash = true) {
+    const valid = ["live", "runs", "failures", "analytics", "operations", "tools"];
+    const nextView = valid.includes(view) ? view : "live";
+    const changed = nextView !== activeView;
+    activeView = nextView;
+    applyTabView(
+      document.querySelectorAll("[role=tab][data-view]"),
+      document.querySelectorAll("[data-console-view]"),
+      activeView,
+    );
+    if (updateHash) history.replaceState(null, "", `${location.pathname}${location.search}#${activeView}`);
+    if (window.scrollX) window.scrollTo({ left: 0, top: window.scrollY });
+    if (changed && activeView === "operations") renderOperations();
+    if (changed) window.dispatchEvent(new CustomEvent("pokefarm-console-view", { detail: { view: activeView } }));
   }
   function renderVersions() {
     const wall = snap.wall_version || "";
     $("versions").textContent = ["console", short(consoleVersion), "wall", short(wall)].filter(Boolean).join(" · ");
   }
+
+  function renderOperations() {
+    const runs = snap.runs || [];
+    const operationRuns = partitionOperations(runs, RECENT_OPERATIONS_LIMIT);
+    const workers = [...(snap.workers || [])].sort((a, b) => String(a.addr || "").localeCompare(String(b.addr || "")));
+    const health = $("operations-health");
+    const workerBay = $("operations-workers");
+    const active = $("operations-active");
+    const queue = $("operations-queue");
+    const recent = $("operations-recent");
+    if (!health || !workerBay || !active || !queue || !recent) return;
+
+    const freshAge = lastFreshAt ? Math.max(0, Math.floor((Date.now() - lastFreshAt) / 1000)) : 0;
+    const idle = workers.filter((worker) => !worker.run_id).length;
+    const wallState = wallDown
+      ? (lastFreshAt ? `Connection stale · last dashboard ${freshAge}s ago` : "Disconnected · no dashboard received")
+      : `Connected · dashboard received ${freshAge}s ago`;
+    const versions = [
+      consoleVersion ? `console ${short(consoleVersion)}` : "console version unavailable",
+      snap.wall_version ? `wall ${short(snap.wall_version)}` : "wall version unavailable"
+    ].join(" · ");
+    paintHTML(health, `<header><h3 id="operations-health-title">System health</h3></header><div class="operation-facts"><div><span>Wall</span><strong class="${wallDown ? "operation-bad" : "operation-good"}">${esc(wallState)}</strong></div><div><span>Workers</span><strong>${workers.length ? `${idle} available · ${workers.length} reporting` : "No workers reporting"}</strong></div><div><span>Builds</span><strong class="operation-mono">${esc(versions)}</strong></div></div>`);
+
+    $("worker-summary").textContent = workers.length ? `${idle} available · ${workers.length - idle} assigned` : "No workers reporting";
+    const workerRows = workers.map((worker) => {
+      const busy = Boolean(worker.run_id);
+      const tag = busy ? "button" : "div";
+      const attrs = busy ? ` type="button" data-run="${esc(worker.run_id)}"` : "";
+      const assignment = busy ? worker.run_id : "Waiting for a lease";
+      return `<${tag}${attrs} class="operation-row operation-worker"><span class="operation-status">${chip(busy ? "busy" : "idle", busy ? "busy" : "idle")}</span><span><strong>${esc(worker.addr || "Address unavailable")}</strong><small>${esc(worker.version ? `revision ${short(worker.version)}` : "revision unavailable")}</small></span><span><strong>${esc(assignment)}</strong><small>${esc(worker.seen_ago ? `seen ${worker.seen_ago} ago` : "last seen unavailable")}</small></span></${tag}>`;
+    }).join("");
+    paintHTML($("workers"), workerRows || `<p class="empty">No workers are currently reporting to the wall.</p>`);
+
+    const activeRows = operationRuns.active.map((run) => {
+      const worker = workers.find((candidate) => candidate.run_id === run.run_id);
+      const goal = run.goal || run.dest || "No goal or destination supplied";
+      const round = run.stats && (run.stats.round ?? run.stats.rounds);
+      const progress = `frame ${Number(run.frame || 0).toLocaleString()}${round != null ? ` · round ${round}` : ""} · attempt ${run.attempts || 1}`;
+      return `<button type="button" class="operation-row operation-run" data-run="${esc(run.run_id)}"><span><strong class="operation-mono">${esc(run.run_id)}</strong><small>${esc(worker && worker.addr ? `Worker ${worker.addr}` : "Assigned worker unavailable")}</small></span><span><strong>${esc(goal)}</strong><small>${esc(progress)}</small></span><span><strong>${esc(tileLabel(run))}</strong><small>Current location</small></span></button>`;
+    }).join("");
+    paintHTML(active, `<header><h3 id="operations-active-title">Active attempts</h3><p>${operationRuns.active.length} running</p></header>${activeRows || `<p class="empty">No attempts are currently running.</p>`}`);
+
+    const waiting = operationRuns.waiting;
+    const queueRows = waiting.map((run) => {
+      const worker = workers.find((candidate) => candidate.run_id === run.run_id);
+      const goal = run.goal || run.dest || "No goal or destination supplied";
+      const lease = worker ? `Worker ${worker.addr}` : (run.status === "leased" ? "Lease assigned · worker not reported" : "Awaiting lease");
+      return `<button type="button" class="operation-row operation-run" data-run="${esc(run.run_id)}"><span><strong class="operation-mono">${esc(run.run_id)}</strong><small>${esc(fmtWhen(run.queued_at) || "Queued time unavailable")}</small></span><span><strong>${esc(goal)}</strong><small>${esc(run.status)}</small></span><span><strong>${esc(lease)}</strong><small>${run.status === "leased" ? "leased work" : "queued work"}</small></span></button>`;
+    }).join("");
+    paintHTML(queue, `<header><h3 id="operations-queue-title">Queue and leases</h3><p>${waiting.length} waiting</p></header>${queueRows || `<p class="empty">No queued or leased runs.</p>`}`);
+
+    const terminal = operationRuns.recent;
+    const recentRows = terminal.map((run) => {
+      const reason = run.reason || "done";
+      const detail = run.detail || "No terminal detail reported";
+      return `<button type="button" class="operation-row operation-run" data-run="${esc(run.run_id)}"><span><strong class="operation-mono">${esc(run.run_id)}</strong><small>${esc(fmtWhen(run.ended_at) || "End time unavailable")}</small></span><span><strong>${esc(reason)}</strong><small>${esc(detail)}</small></span><span class="operation-outcome">${statusChip(run)}</span></button>`;
+    }).join("");
+    paintHTML(recent, `<header><h3 id="operations-recent-title">Recent outcomes</h3><p>Latest ${RECENT_OPERATIONS_LIMIT}</p></header>${recentRows || `<p class="empty">No terminal outcomes yet.</p>`}`);
+  }
+
+  function applyRailTransition(action, focusInside = false) {
+    const rail = $("run-rail");
+    const trigger = $("rail-toggle");
+    const state = drawerTransition({ open: rail.classList.contains("open") }, action, railMedia.matches, focusInside);
+    rail.classList.toggle("open", state.open && railMedia.matches);
+    rail.inert = state.inert;
+    if (state.ariaHidden === "true") rail.setAttribute("aria-hidden", "true");
+    else rail.removeAttribute("aria-hidden");
+    trigger.setAttribute("aria-expanded", String(state.open && railMedia.matches));
+    if (!railMedia.matches) {
+      railRestoreFocus = null;
+      return;
+    }
+    if (state.focus === "selected-or-close") {
+      if (document.activeElement && !rail.contains(document.activeElement)) railRestoreFocus = document.activeElement;
+      requestAnimationFrame(() => {
+        const selectedCard = rail.querySelector("article.selected[data-run]");
+        (selectedCard || $("rail-close")).focus();
+      });
+      return;
+    }
+    if (state.focus === "restore-trigger") {
+      const target = railRestoreFocus && document.contains(railRestoreFocus) ? railRestoreFocus : trigger;
+      target.focus();
+    }
+    railRestoreFocus = null;
+  }
+
+  function syncRailBreakpoint() {
+    const focusWasInside = $("run-rail").contains(document.activeElement);
+    applyRailTransition("breakpoint", focusWasInside);
+  }
+
+  function activateRunPick(pick, input) {
+    selectRun(pick.getAttribute("data-run"));
+    applyRailTransition(input === "keyboard" ? "select-keyboard" : "select-click");
+  }
+
   function selectRun(id) {
-    selected = id; render();
+    selected = id;
+    semanticContext = null;
+    if (id) {
+      localStorage.setItem("pokefarm-selected-run", id);
+      const url = new URL(location.href); url.searchParams.set("run", id); history.replaceState(null, "", url);
+      setView("live", false);
+    }
+    render();
     window.dispatchEvent(new CustomEvent("pokefarm-select-run", { detail: { runId: id } }));
     if (!id || !narrow()) return;
     const run = (snap.runs || []).find((r) => r.run_id === id);
@@ -744,7 +955,19 @@
     const id = (ev.detail && ev.detail.runId) || "";
     if (id === selected) return;
     selected = id;
+    semanticContext = null;
+    if (id) {
+      localStorage.setItem("pokefarm-selected-run", id);
+      const url = new URL(location.href); url.searchParams.set("run", id); history.replaceState(null, "", url);
+      setView("live", false);
+    }
     render();
+  });
+  window.addEventListener("pokefarm-semantic-event", (ev) => {
+    const detail = ev.detail || {};
+    if (detail.runId !== selected) return;
+    semanticContext = detail.event ? detail : null;
+    renderDetail();
   });
 
   function renderFailures() {
@@ -754,20 +977,39 @@
     el.innerHTML = active.map((g) => {
       const issue = g.issue; let action = "";
       if (!issue || !issue.issue_id) { if (g.outbox === "error") action = `<span class="chip">report failed</span>`; else if (g.outbox === "pending") action = `<span class="chip">pending report</span>`; }
-      else if (issue.status === "open" || issue.status === "diagnosed") { const busy = investigating.has(g.key); action = `<button type="button" class="fail-act" data-investigate="${esc(g.key)}" ${busy ? "disabled" : ""}>Investigate now</button>`; }
+      else if (issue.status === "open" || issue.status === "diagnosed") { const busy = investigating.has(g.key); action = `<button type="button" class="fail-act" data-investigate="${esc(g.key)}" ${busy ? "disabled" : ""}>Investigate with AI</button>`; }
       return `<div class="fail-card"><div class="fail-pat">${esc(g.pattern)}</div><div class="fail-ex">${esc(g.example || "")} · ${g.count} run${g.count === 1 ? "" : "s"}</div><div class="fail-meta">${issueBadge(issue)}${action}</div></div>`;
     }).join("");
   }
 
   function render() {
+    document.documentElement.dataset.selectedRun = selected;
     $("banner").hidden = !wallDown; $("queue-toggle").disabled = wallDown; $("spec-form").querySelector(".submit").disabled = wallDown;
-    renderCounts(); renderVersions(); renderLive(); renderFailures(); renderWorkers(); renderHistory(); renderDetail(); syncPumps();
+    const connection = document.querySelector(".connection");
+    connection.classList.toggle("connected", !wallDown);
+    connection.classList.toggle("disconnected", wallDown);
+    $("connection-label").textContent = wallDown ? `Stale · ${Math.max(0, Math.floor((Date.now() - lastFreshAt) / 1000))}s` : "Connected";
+    renderCounts(); renderVersions(); renderLive(); renderFailures(); renderHistory(); renderDetail();
+    if (activeView === "operations") renderOperations();
+    syncPumps();
+    const run = (snap.runs || []).find((candidate) => candidate.run_id === selected);
+    if (run) window.dispatchEvent(new CustomEvent("pokefarm-run-lifecycle", { detail: { runId: run.run_id, status: run.status, frame: run.frame, replayAvailable: Boolean(run.replay_available), completionSignature: completionSignature(run) } }));
+    setView(activeView, false);
   }
 
   async function refresh() {
     try {
       const res = await fetch("/v1/dashboard", { cache: "no-store" }); if (!res.ok) throw new Error("bad");
-      snap = await res.json(); wallDown = false;
+      snap = await res.json(); wallDown = false; lastFreshAt = Date.now();
+      if (!selectionEstablished) {
+        const runs = snap.runs || [];
+        const requested = new URL(location.href).searchParams.get("run") || "";
+        const remembered = localStorage.getItem("pokefarm-selected-run") || "";
+        const candidate = [requested, runs.find((r) => r.status === "running")?.run_id, remembered, runs[0]?.run_id].find((id) => id && runs.some((r) => r.run_id === id));
+        selected = candidate || "";
+        selectionEstablished = true;
+        if (selected) window.dispatchEvent(new CustomEvent("pokefarm-select-run", { detail: { runId: selected } }));
+      }
       try { const tr = await fetch("/v1/triage", { cache: "no-store" }); if (tr.ok) groups = await tr.json(); } catch (e) { groups = groups || []; }
       updateFpsLive();
     } catch (e) { wallDown = true; }
@@ -781,8 +1023,7 @@
     new ResizeObserver(() => {
       clearTimeout(timer);
       timer = setTimeout(() => {
-        const run = (snap.runs || []).find((r) => r.run_id === selected);
-        if (run) renderMap(run);
+        renderDetail();
       }, 50);
     }).observe(scroll);
   })();
@@ -798,12 +1039,29 @@
     canvas.title = hit ? `sprite slot ${hit.slot || "?"} · picture ${hexMap(hit.picture || 0)}` : "";
   });
 
-  $("queue-toggle").addEventListener("click", () => {
-    const q = $("queue"); q.hidden = !q.hidden; $("queue-toggle").setAttribute("aria-expanded", String(!q.hidden)); if (!q.hidden) fillDefaults();
+  $("queue-toggle").addEventListener("click", () => { setView("tools"); fillDefaults(); $("queue-toggle").setAttribute("aria-expanded", "true"); });
+  const tabs = [...document.querySelectorAll("[role=tab][data-view]")];
+  wireTabNavigation(tabs, setView);
+  $("rail-toggle").addEventListener("click", () => applyRailTransition("open"));
+  $("rail-close").addEventListener("click", () => applyRailTransition("close"));
+  railMedia.addEventListener("change", syncRailBreakpoint);
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key !== "Escape" || !railMedia.matches || !$("run-rail").classList.contains("open")) return;
+    ev.preventDefault();
+    applyRailTransition("escape");
+  });
+  $("copy-run-id").addEventListener("click", async () => {
+    if (!selected) return;
+    try { await navigator.clipboard.writeText(selected); $("copy-run-id").textContent = "Copied"; setTimeout(() => { $("copy-run-id").textContent = "Copy run ID"; }, 1200); }
+    catch (_) { $("copy-run-id").textContent = "Select the run ID to copy"; }
   });
   $("spec-form").planner.addEventListener("change", syncPlannerFields);
   $("spec-form").endless.addEventListener("change", syncPlannerFields);
-  $("detail-close").addEventListener("click", () => { selected = ""; render(); });
+  $("detail-close").addEventListener("click", () => {
+    selected = ""; localStorage.removeItem("pokefarm-selected-run");
+    const url = new URL(location.href); url.searchParams.delete("run"); history.replaceState(null, "", url);
+    render(); window.dispatchEvent(new CustomEvent("pokefarm-select-run", { detail: { runId: "" } }));
+  });
 
   $("spec-form").addEventListener("submit", async (ev) => {
     ev.preventDefault(); const err = $("form-error"); err.textContent = ""; const f = ev.target; const planner = f.planner.value;
@@ -813,14 +1071,14 @@
       const body = await res.json().catch(() => ({}));
       if (res.status === 409) { err.textContent = "run already active"; return; }
       if (!res.ok) { err.textContent = body.error || "could not queue"; return; }
-      fillDefaults(); $("queue").hidden = true; $("queue-toggle").setAttribute("aria-expanded", "false"); await refresh();
+      const queuedID = spec.run_id; fillDefaults(); $("queue-toggle").setAttribute("aria-expanded", "false"); await refresh(); selectRun(queuedID);
     } catch (e) { err.textContent = "wall unreachable"; }
   });
 
   document.body.addEventListener("keydown", (ev) => {
     if (ev.key !== "Enter" && ev.key !== " ") return;
     const pick = ev.target.closest("article[data-run]");
-    if (pick && ev.target === pick) { ev.preventDefault(); selectRun(pick.getAttribute("data-run")); }
+    if (pick && ev.target === pick) { ev.preventDefault(); activateRunPick(pick, "keyboard"); }
   });
 
   document.body.addEventListener("click", async (ev) => {
@@ -848,9 +1106,10 @@
       catch (e) { cardErr = { id, text: "wall unreachable" }; }
       await refresh(); return;
     }
-    const pick = ev.target.closest("[data-run]"); if (pick && !ev.target.closest("[data-cancel]")) selectRun(pick.getAttribute("data-run"));
+    const pick = ev.target.closest("[data-run]"); if (pick && !ev.target.closest("[data-cancel]")) activateRunPick(pick, "click");
   });
 
   fetch("/v1/version", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).then((v) => { if (v && v.version) { consoleVersion = v.version; renderVersions(); } }).catch(() => {});
-  refresh(); setInterval(refresh, pollMs);
+  window.addEventListener("beforeunload", cleanupFrameURLs, { once: true });
+  syncRailBreakpoint(); setView(activeView, false); fillDefaults(); refresh(); setInterval(refresh, pollMs);
 })();
