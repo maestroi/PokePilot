@@ -23,6 +23,7 @@ const (
 	redProgressFuchsiaProgressionComplete ProgressID = "fuchsia_progression_complete"
 	redProgressSilphRescueComplete        ProgressID = "silph_rescue_complete"
 	redProgressVolcanoBadge               ProgressID = "volcano_badge"
+	redProgressEarthBadge                 ProgressID = "earth_badge"
 )
 
 func semanticPlace(name string) PlaceID {
@@ -112,9 +113,10 @@ func redProgressState(f state.StoryFacts) ProgressState {
 
 func redProgressStateFromRAM(mem *state.Mem, _ state.InventoryState, f state.StoryFacts) ProgressState {
 	progress := redProgressState(f)
-	progress = append(progress, ProgressFact{
-		ID:       redProgressVolcanoBadge,
-		Complete: state.DecodeProgress(mem).Has(state.BadgeVolcano),
-	})
+	badges := state.DecodeProgress(mem)
+	progress = append(progress,
+		ProgressFact{ID: redProgressVolcanoBadge, Complete: badges.Has(state.BadgeVolcano)},
+		ProgressFact{ID: redProgressEarthBadge, Complete: badges.Has(state.BadgeEarth)},
+	)
 	return progress
 }
