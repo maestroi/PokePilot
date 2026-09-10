@@ -59,10 +59,15 @@ type Observation struct {
 
 // MapObject is one observable object on the current map. Item is a semantic
 // item name when Kind is "item"; unknown Red item bytes are never exposed.
+// Trainer fields are populated from the trainer's standard ROM header plus
+// live event flags. Challengeable is deliberately false for boss/story
+// classes whose fought bit is not their complete semantic postcondition.
 type MapObject struct {
-	X, Y uint8
-	Kind string
-	Item string
+	X, Y          uint8
+	Kind          string
+	Item          string
+	Challengeable bool
+	Defeated      bool
 }
 
 type Move struct {
@@ -294,6 +299,12 @@ func Observe(m *emu.Emu, romData []byte) Observation {
 	for i, object := range objects {
 		if hidden[uint8(i+1)] {
 			continue
+		}
+		if object.Kind == "trainer" {
+			if status, err := skill.TrainerStatusAt(romData, &mem, obs.Map, object.X, object.Y); err == nil {
+				object.Challengeable = status.Challengeable
+				object.Defeated = status.Defeated
+			}
 		}
 		if object.Kind == "item" && !reachableOnFoot(romData, obs.Map, obs.X, obs.Y, object.X, object.Y) {
 			continue
