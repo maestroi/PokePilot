@@ -137,6 +137,20 @@ func TestUIReplayLivesInGameBay(t *testing.T) {
 			t.Errorf("inspector must not create detached replay transport %q", stale)
 		}
 	}
+	for _, want := range []string{
+		`id="pp-playback-rate"`,
+		`id="pp-replay-tools"`,
+		`value="8"`,
+		`value="16"`,
+		`playbackRate`,
+	} {
+		if !strings.Contains(inspector, want) {
+			t.Errorf("inspector replay speed missing %q", want)
+		}
+	}
+	if strings.Contains(inspector, `type="range"`) {
+		t.Error("finished replay must use native video controls without a duplicate range input")
+	}
 }
 
 func TestUIStatsBelongToAnalytics(t *testing.T) {

@@ -5,6 +5,29 @@
   const liveStatuses = new Set(["leased", "running"]);
   const frameMs = 50; // 20 fps; same cap as the operator console
   const replayStatusTTL = 10000;
+  const playbackRates = [1, 2, 4, 8, 16];
+  const playbackRateKey = "pokepilot.replayPlaybackRate";
+
+  function normalizePlaybackRate(value) {
+    const n = Number(value);
+    return playbackRates.includes(n) ? n : 1;
+  }
+
+  function readStoredPlaybackRate(storage) {
+    try {
+      return normalizePlaybackRate(storage && storage.getItem(playbackRateKey));
+    } catch (_) {
+      return 1;
+    }
+  }
+
+  function writeStoredPlaybackRate(storage, value) {
+    const rate = normalizePlaybackRate(value);
+    try {
+      if (storage) storage.setItem(playbackRateKey, String(rate));
+    } catch (_) {}
+    return rate;
+  }
   const query = new URLSearchParams(window.location.search);
   let selectedRunID = query.get("run") || "";
   let selectionPinned = query.has("run");
@@ -416,6 +439,9 @@
       video.load();
     }
     video.playbackRate = Number($("playback-rate").value || 1);
+    video.oncanplay = () => {
+      video.playbackRate = Number($("playback-rate").value || 1);
+    };
     video.onerror = () => showEmpty(completedSummary(run));
   }
 
@@ -541,8 +567,10 @@
     showEmpty(run.status === "queued" || run.status === "leased" ? "Waiting for the live game screen…" : "No captured frame is available for this run.");
   }
 
+  $("playback-rate").value = String(readStoredPlaybackRate(window.localStorage));
   $("playback-rate").addEventListener("change", () => {
-    $("replay").playbackRate = Number($("playback-rate").value || 1);
+    const rate = writeStoredPlaybackRate(window.localStorage, $("playback-rate").value);
+    $("replay").playbackRate = rate;
   });
 
   $("copy-link").addEventListener("click", async () => {

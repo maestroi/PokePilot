@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const { timelineLayout, replayPresentation } = window.PokeConsoleBehavior;
+  const { timelineLayout, replayPresentation, normalizePlaybackRate, readStoredPlaybackRate, writeStoredPlaybackRate } = window.PokeConsoleBehavior;
   const root = document.getElementById("run-inspector");
   if (!root) return;
   root.innerHTML = `
@@ -25,6 +25,15 @@
   if (!mediaHost || !lcd) return;
   mediaHost.insertAdjacentHTML("beforeend", `
     <video id="pp-game-video" controls preload="metadata" aria-label="Finished run replay" hidden></video>
+    <div id="pp-replay-tools" class="replay-tools" hidden>
+      <label>Speed <select id="pp-playback-rate">
+        <option value="1">1×</option>
+        <option value="2">2×</option>
+        <option value="4">4×</option>
+        <option value="8">8×</option>
+        <option value="16">16×</option>
+      </select></label>
+    </div>
     <div id="pp-replay-panel" class="game-replay-panel" hidden>
       <span id="pp-replay-status" class="inspect-status" role="status" aria-live="polite"></span>
       <button id="pp-replay" class="quiet-button" type="button">Generate replay</button>
@@ -37,6 +46,8 @@
   const transportStatus = byID("pp-transport-status");
   const returnLive = byID("pp-return-live");
   const video = byID("pp-game-video");
+  const replayTools = byID("pp-replay-tools");
+  const playbackSelect = byID("pp-playback-rate");
   const evidence = byID("evidence-drawer");
   const meta = byID("pp-meta");
   const debugPre = byID("pp-debug");
@@ -217,6 +228,12 @@
     const list=Array.isArray(data&&data.artifacts)?data.artifacts:[]; artifactEmpty.hidden=Boolean(list.length); artifactTable.hidden=!list.length;
     artifactBody.innerHTML=list.map((a)=>`<tr><td>${html(a.name)}</td><td>${html(a.media_type||"binary")}</td><td>${fmtSize(a.size)}</td><td title="${html(a.sha256)}">${html((a.sha256||"—").slice(0,12))}</td><td><a href="/v1/runs/${escURL(runID)}/artifacts/${escURL(a.name)}/content" download="${html(a.name)}">Download</a></td></tr>`).join("");
   }
+  function syncSelectFromStorage() {
+    playbackSelect.value = String(readStoredPlaybackRate(window.localStorage));
+  }
+  function applyPlaybackRate() {
+    video.playbackRate = normalizePlaybackRate(playbackSelect.value);
+  }
   function clearReplayVideo() {
     replayLoadCleanup();
     replayLoadCleanup=()=>{};
@@ -224,6 +241,7 @@
     video.removeAttribute("src");
     video.dataset.run="";
     video.hidden=true;
+    replayTools.hidden=true;
     replayPlaying=false;
     video.load();
   }
@@ -232,15 +250,18 @@
     lcd.hidden = presentation.lcdHidden;
     video.hidden = presentation.videoHidden;
     replayPanel.hidden = presentation.panelHidden;
+    replayTools.hidden = state !== "playing";
     return presentation;
   }
   function loadReplayVideo(id, src) {
     replayLoadCleanup();
+    syncSelectFromStorage();
     const onCanPlay=()=>{
       if(id!==runID||video.dataset.run!==id)return;
       video.removeEventListener("canplay",onCanPlay);
       replayPlaying=true;
       applyReplayPresentation("playing");
+      applyPlaybackRate();
       transportStatus.textContent="Replay · native video controls";
     };
     const onError=()=>{
@@ -275,6 +296,7 @@
     clearReplayVideo();
     replayReadyStatus=null;
     playbackFailed=false;
+    replayTools.hidden=true;
     replayPanel.hidden=true;
     replayStatus.textContent="";
     replayButton.hidden=false;
@@ -299,6 +321,7 @@
       playbackFailed=false;
       if(!forceReload&&video.dataset.run===runID&&replayPlaying){
         applyReplayPresentation("playing");
+        applyPlaybackRate();
         transportStatus.textContent="Replay · native video controls";
         return;
       }
@@ -380,6 +403,11 @@
     replayStatus.textContent="Starting replay generation…";
     try{const status=await json(`/v1/runs/${escURL(id)}/replay/render`,{method:"POST"});if(id===runID)renderReplay(status)}
     catch(err){if(id===runID){renderReplay({state:"error",error:err.message})}}
+  });
+  syncSelectFromStorage();
+  playbackSelect.addEventListener("change",()=>{
+    writeStoredPlaybackRate(window.localStorage, playbackSelect.value);
+    applyPlaybackRate();
   });
   video.addEventListener("seeked",()=>{
     if(!runFinished||video.dataset.run!==runID)return;
