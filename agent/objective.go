@@ -68,6 +68,9 @@ func (o Objective) Validate() error {
 		if o.Level < 1 || o.Level > 100 {
 			return fmt.Errorf("agent: %s: level %d out of range 1..100", o, o.Level)
 		}
+		if o.Slot < 0 || o.Slot > 5 {
+			return fmt.Errorf("agent: %s: party slot %d out of range 0..5", o, o.Slot)
+		}
 	case KindCatch:
 		if strings.TrimSpace(string(o.Species)) == "" {
 			return fmt.Errorf("agent: %s: empty species id", o)
@@ -110,6 +113,12 @@ func (o Objective) String() string {
 	case KindProgress:
 		return "progress " + string(o.Progress)
 	case KindTrain:
+		if o.Species != "" {
+			return fmt.Sprintf("train %s to level %d", strings.ToUpper(string(o.Species)), o.Level)
+		}
+		if o.Slot > 0 {
+			return fmt.Sprintf("train party slot %d to level %d", o.Slot, o.Level)
+		}
 		return fmt.Sprintf("train the lead to level %d", o.Level)
 	case KindHeal:
 		if o.Place != "" {
