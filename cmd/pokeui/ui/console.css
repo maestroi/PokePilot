@@ -25,3 +25,9 @@ html,body{overflow-x:hidden}.console-shell,.console-content,.console-view,#selec
 @media(max-width:1350px) and (min-width:761px){.console-bar{grid-template-columns:220px 1fr auto}.system-summary{display:none}.run-header{grid-template-columns:minmax(180px,1fr) minmax(120px,.7fr) minmax(130px,.8fr) minmax(200px,1.4fr) 84px 65px}.run-header-actions{grid-column:1/-1;border-top:1px solid var(--line);justify-content:flex-start}.visual-stage{height:400px}}
 @media(max-width:900px){.hist{grid-template-columns:minmax(170px,1fr) minmax(120px,.7fr)}.hist-where,.hist-out{grid-column:auto}.run-header{overflow:visible}}
 @media(max-width:760px){.visual-stage{height:auto}#detail-body{grid-template-columns:1fr}#detail-plan,#detail-play{grid-row:auto}.hist-row{grid-template-columns:minmax(0,1fr)}.hist-del{min-height:36px;border-left:0;border-top:1px solid var(--line)}.hist{grid-template-columns:1fr}.hist-outcome{white-space:normal}}
+.timeline-track .timeline-marker{width:24px;height:24px;border:0;background:transparent;transform:translateX(-12px)}
+.timeline-track .timeline-marker:before{content:"";position:absolute;top:0;bottom:0;left:10px;width:4px;background:var(--cyan)}
+.timeline-track .timeline-marker.checkpoint:before{background:var(--amber)}
+.timeline-track .timeline-marker.failure:before{background:var(--red)}
+.timeline-track .timeline-marker.progress:before{background:var(--green)}
+.timeline-track .timeline-marker[aria-current=true]:before{width:5px;background:#fff;box-shadow:4px 0 0 rgba(255,255,255,.18)}

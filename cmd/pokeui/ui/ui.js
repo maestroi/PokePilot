@@ -16,6 +16,7 @@
   let semanticContext = null;
   const investigating = new Set();
   const pumps = new Map();
+  const lastFrameURLs = new Map();
   const mapAssets = new Map();
   const histFilter = { outcome: "", how: "", starter: "" };
   const HIST_PAGE = 25;
@@ -454,6 +455,8 @@
           const r = await fetch("/frame?run=" + encodeURIComponent(id), { cache: "no-store" });
           if (r.ok) {
             const url = URL.createObjectURL(await r.blob());
+            if (stop) { URL.revokeObjectURL(url); break; }
+            revokeLastFrameURL(id);
             paintFrame(id, url);
             if (blobUrl) URL.revokeObjectURL(blobUrl);
             blobUrl = url;
@@ -462,10 +465,16 @@
         const wait = tick - (Date.now() - started);
         if (wait > 0) await sleep(wait);
       }
+      if (blobUrl) URL.revokeObjectURL(blobUrl);
     })();
   }
 
   const lastOnce = new Set();
+  function revokeLastFrameURL(id) {
+    const url = lastFrameURLs.get(id);
+    if (url) URL.revokeObjectURL(url);
+    lastFrameURLs.delete(id);
+  }
   function fetchLast(id) {
     if (lastOnce.has(id)) return;
     const has = [...document.querySelectorAll(".lcd")].some((lcd) => lcd.dataset.frameRun === id && lcd.querySelector("img"));
@@ -475,7 +484,12 @@
       try {
         const r = await fetch("/frame?run=" + encodeURIComponent(id), { cache: "no-store" });
         if (!r.ok) { lastOnce.delete(id); return; }
-        paintFrame(id, URL.createObjectURL(await r.blob()));
+        const url = URL.createObjectURL(await r.blob());
+        const displayed = [...document.querySelectorAll(".lcd")].some((lcd) => lcd.dataset.frameRun === id);
+        if (!displayed) { URL.revokeObjectURL(url); lastOnce.delete(id); return; }
+        revokeLastFrameURL(id);
+        lastFrameURLs.set(id, url);
+        paintFrame(id, url);
       } catch (e) { lastOnce.delete(id); }
     })();
   }
@@ -490,7 +504,21 @@
       if (want.has(id)) continue;
       stop(); pumps.delete(id);
     }
+    const known = new Set((snap.runs || []).map((run) => run.run_id));
+    const displayed = new Set([...document.querySelectorAll(".lcd")].map((lcd) => lcd.dataset.frameRun).filter(Boolean));
+    for (const id of lastFrameURLs.keys()) {
+      if (!known.has(id) || !displayed.has(id)) {
+        revokeLastFrameURL(id);
+        lastOnce.delete(id);
+      }
+    }
     if (sel && sel.status === "done") fetchLast(sel.run_id);
+  }
+
+  function cleanupFrameURLs() {
+    for (const stop of pumps.values()) stop();
+    pumps.clear();
+    for (const id of [...lastFrameURLs.keys()]) revokeLastFrameURL(id);
   }
 
   function renderLive() {
@@ -827,6 +855,8 @@
     connection.classList.toggle("disconnected", wallDown);
     $("connection-label").textContent = wallDown ? `Stale · ${Math.max(0, Math.floor((Date.now() - lastFreshAt) / 1000))}s` : "Connected";
     renderCounts(); renderVersions(); renderLive(); renderFailures(); renderWorkers(); renderHistory(); renderDetail(); syncPumps();
+    const run = (snap.runs || []).find((candidate) => candidate.run_id === selected);
+    if (run) window.dispatchEvent(new CustomEvent("pokefarm-run-lifecycle", { detail: { runId: run.run_id, status: run.status, frame: run.frame } }));
     setView(activeView, false);
   }
 
@@ -856,8 +886,7 @@
     new ResizeObserver(() => {
       clearTimeout(timer);
       timer = setTimeout(() => {
-        const run = (snap.runs || []).find((r) => r.run_id === selected);
-        if (run) renderMap(run);
+        renderDetail();
       }, 50);
     }).observe(scroll);
   })();
@@ -951,5 +980,6 @@
   });
 
   fetch("/v1/version", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).then((v) => { if (v && v.version) { consoleVersion = v.version; renderVersions(); } }).catch(() => {});
+  window.addEventListener("beforeunload", cleanupFrameURLs, { once: true });
   setView(activeView, false); fillDefaults(); refresh(); setInterval(refresh, pollMs);
 })();

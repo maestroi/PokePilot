@@ -53,6 +53,11 @@
   let replayPoll = 0;
   let followingLive = true;
   let runFinished = false;
+  let runTotalFrame = 0;
+  let lifecycleStatus = "";
+  let runLoadInFlight = false;
+  let finishedReloadPending = false;
+  let runLoadSerial = 0;
   const escURL = encodeURIComponent;
   const text = (v) => v === undefined || v === null || v === "" ? "—" : String(v);
   const html = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -89,10 +94,13 @@
     for (const cp of cps) timeline.push({...cp, kind:"checkpoint", type:"checkpoint", checkpoint:cp.name});
     return timeline.sort((a,b) => eventFrame(a)-eventFrame(b) || eventRound(a)-eventRound(b) || eventKind(a).localeCompare(eventKind(b)));
   }
+  function timelineFrameTotal() {
+    return Math.max(1,runTotalFrame,...events.map(eventFrame));
+  }
   function markerSymbol(kind) { return kind === "checkpoint" ? "□" : kind === "failure" ? "!" : kind === "progress" ? "✓" : "○"; }
   function renderTimeline() {
     if (!events.length) { track.innerHTML = '<p class="empty">No semantic events were persisted for this run.</p>'; return; }
-    const max = Math.max(1, ...events.map(eventFrame));
+    const max = timelineFrameTotal();
     track.innerHTML = events.map((event, index) => {
       const kind = eventKind(event), at = eventFrame(event) ? Math.max(2, Math.min(98, 100 * eventFrame(event) / max)) : Math.max(2, 100 * index / Math.max(1, events.length - 1));
       return `<button type="button" class="timeline-marker ${kind}" style="left:${at}%" data-event-index="${index}" aria-label="${html(eventTitle(event))}" aria-current="${index===selectedEvent}">${markerSymbol(kind)}</button>`;
@@ -125,7 +133,7 @@
   function selectEvent(index, seekVideo=true, nearest=false) {
     if (!Number.isInteger(index) || index < 0 || index >= events.length) return;
     selectedEvent = index; followingLive = false; returnLive.hidden = runFinished;
-    const maxFrame = Math.max(0, ...events.map(eventFrame));
+    const maxFrame = timelineFrameTotal();
     if (seekVideo && !video.hidden && video.duration > 0 && maxFrame > 0) video.currentTime = video.duration * eventFrame(events[index]) / maxFrame;
     publishSemanticEvent(index, nearest);
     transportStatus.textContent = nearest ? "Semantic state from nearest persisted event" : (runFinished ? "Replay event" : "Browsing recorded event");
@@ -134,8 +142,7 @@
   }
   function nearestEventIndex(time) {
     if (!events.length || !(video.duration > 0)) return -1;
-    const maxFrame = Math.max(0, ...events.map(eventFrame));
-    if (maxFrame <= 0) return Math.max(0, selectedEvent);
+    const maxFrame = timelineFrameTotal();
     const frame = maxFrame * time / video.duration;
     let nearest = 0;
     for (let i=1;i<events.length;i++) {
@@ -210,19 +217,25 @@
     replayButton.textContent="Generate replay";
   }
   async function loadReplayStatus(id) { try { const status=await json(`/v1/runs/${escURL(id)}/replay/status`); if(id===runID)renderReplay(status); } catch(err){if(id===runID)renderReplay({state:"error",error:err.message})} }
-  async function selectRun(id) {
-    resetGameMedia(); runID=id; debug=null; reproSource=null; checkpoints=[]; events=[]; selectedEvent=-1; followingLive=true; runFinished=false; returnLive.hidden=true; evidence.hidden=true; transportStatus.textContent="";
+  async function selectRun(id, reload=false) {
+    if(id===runID&&runLoadInFlight){if(reload)finishedReloadPending=true;return}
+    const changed=id!==runID;
+    const serial=++runLoadSerial;
+    runLoadInFlight=true;
+    resetGameMedia(); runID=id; debug=null; reproSource=null; checkpoints=[]; events=[]; selectedEvent=-1; followingLive=true; runFinished=false; returnLive.hidden=true; evidence.hidden=true; transportStatus.textContent="";investigate.disabled=false;investigateStatus.textContent="";
+    if(changed){lifecycleStatus="";runTotalFrame=0}
     window.dispatchEvent(new CustomEvent("pokefarm-semantic-event",{detail:{runId:id,event:null}}));
-    if(!id){track.innerHTML='<p class="empty">Select a run to browse recorded events.</p>';story.innerHTML='<p class="empty">Select a run to browse its recorded events.</p>';replayButton.hidden=true;return}
+    if(!id){track.innerHTML='<p class="empty">Select a run to browse recorded events.</p>';story.innerHTML='<p class="empty">Select a run to browse its recorded events.</p>';replayButton.hidden=true;runLoadInFlight=false;return}
     track.innerHTML='<p class="empty">Loading recorded events…</p>'; story.innerHTML='<p class="empty">Loading Run Story…</p>'; replayButton.hidden=false;replayButton.disabled=true;replayStatus.textContent="Loading…";
     try{
       const [debugView,artifactView,checkpointView,sourceView]=await Promise.all([json(`/v1/runs/${escURL(id)}/debug`),json(`/v1/runs/${escURL(id)}/artifacts`),json(`/v1/runs/${escURL(id)}/checkpoints`).catch(()=>({checkpoints:[]})),json(`/v1/runs/${escURL(id)}/repro-source`).catch(()=>null)]);
-      if(id!==runID)return; debug=debugView;reproSource=sourceView;checkpoints=checkpointView.checkpoints||[];events=normalizeEvents(debugView,checkpointView);selectedEvent=events.length-1;runFinished=(debugView.run&&debugView.run.status)==="done";renderTimeline();renderStory();renderStoryActions();renderMeta();renderArtifacts(artifactView);
+      if(id!==runID||serial!==runLoadSerial)return; debug=debugView;reproSource=sourceView;checkpoints=checkpointView.checkpoints||[];events=normalizeEvents(debugView,checkpointView);selectedEvent=events.length-1;const debugStatus=String(debugView.run&&debugView.run.status||"");runFinished=debugStatus==="done";if(!lifecycleStatus)lifecycleStatus=debugStatus;runTotalFrame=Math.max(runTotalFrame,Number(debugView.run&&debugView.run.frame||0));renderTimeline();renderStory();renderStoryActions();renderMeta();renderArtifacts(artifactView);
       const replayable=(artifactView.artifacts||[]).some((a)=>a.replayable);
       if(!runFinished){resetGameMedia();transportStatus.textContent=replayable?"Following live":"Following live · Available after this run finishes and uploads its recording.";return}
       if(replayable)await loadReplayStatus(id);
       else{renderReplay({state:"missing",error:"This run has no run.gbrun recording to replay."});replayButton.disabled=true}
     }catch(err){if(id===runID){track.innerHTML=`<p class="empty">Timeline unavailable: ${html(err.message)}</p>`;story.innerHTML=`<p class="empty">Run Story unavailable: ${html(err.message)}</p>`;replayButton.hidden=false;replayButton.disabled=true;replayStatus.textContent=err.message}}
+    finally{if(serial===runLoadSerial){runLoadInFlight=false;if(finishedReloadPending&&id===runID){finishedReloadPending=false;selectRun(id,true)}}}
   }
   async function startFromCheckpoint(name, button) {
     // The wall marks a checkpoint replayable only when paired agent knowledge exists.
@@ -230,8 +243,9 @@
     try{const queued=await json(`/v1/runs/${escURL(runID)}/repro`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({checkpoint:name})});button.textContent=`Queued ${queued.run_id}`;window.dispatchEvent(new CustomEvent("pokefarm-select-run",{detail:{runId:queued.run_id}}));}catch(err){button.textContent=err.message;button.disabled=false}
   }
   async function investigateRun(button) {
-    if(!runID)return;button.disabled=true;investigateStatus.textContent="Finding this run's failure group…";
-    try{const groups=await json("/v1/triage");const group=(Array.isArray(groups)?groups:[]).find((g)=>(g.run_ids||[]).includes(runID));if(!group)throw new Error("No actionable failure group is linked to this run.");await json(`/v1/triage/${escURL(group.key)}/investigate`,{method:"POST"});investigateStatus.textContent="Investigation queued with this run and its evidence.";}catch(err){investigateStatus.textContent=err.message;button.disabled=false}
+    const targetRunID=runID;
+    if(!targetRunID)return;button.disabled=true;investigateStatus.textContent="Finding this run's failure group…";
+    try{const groups=await json("/v1/triage");if(targetRunID!==runID)return;const group=(Array.isArray(groups)?groups:[]).find((g)=>(g.run_ids||[]).includes(targetRunID));if(!group)throw new Error("No actionable failure group is linked to this run.");await json(`/v1/triage/${escURL(group.key)}/investigate`,{method:"POST"});if(targetRunID!==runID)return;investigateStatus.textContent="Investigation queued with this run and its evidence.";}catch(err){if(targetRunID!==runID)return;investigateStatus.textContent=err.message;button.disabled=false}
   }
 
   root.addEventListener("click",(event)=>{const marker=event.target.closest("[data-event-index]");if(marker&&!event.target.closest("[data-repro],[data-evidence],[data-investigate-event]")){selectEvent(Number(marker.dataset.eventIndex));return}const repro=event.target.closest("[data-repro]");if(repro){startFromCheckpoint(repro.dataset.repro,repro);return}if(event.target.closest("[data-evidence]")){evidence.hidden=false;return}if(event.target.closest("[data-investigate-event]")){evidence.hidden=false;investigateRun(investigate);}});
@@ -259,6 +273,7 @@
   investigate.addEventListener("click",()=>investigateRun(investigate));
   byID("pp-close-evidence").addEventListener("click",()=>{evidence.hidden=true});
   window.addEventListener("pokefarm-select-run",(event)=>{const id=(event.detail&&event.detail.runId)||"";if(id!==runID)selectRun(id)});
-  window.addEventListener("beforeunload",stopReplayPoll,{once:true});
+  window.addEventListener("pokefarm-run-lifecycle",(event)=>{const detail=event.detail||{};if(detail.runId!==runID)return;runTotalFrame=Math.max(runTotalFrame,Number(detail.frame||0));const status=String(detail.status||"");const previousStatus=lifecycleStatus;lifecycleStatus=status;if(previousStatus&&previousStatus!=="done"&&status==="done")selectRun(runID,true)});
+  window.addEventListener("beforeunload",()=>{stopReplayPoll();clearReplayVideo()},{once:true});
   if (document.documentElement.dataset.selectedRun) selectRun(document.documentElement.dataset.selectedRun);
 })();

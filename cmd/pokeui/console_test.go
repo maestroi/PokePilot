@@ -244,6 +244,91 @@ func TestUISemanticReplayContextIsTruthful(t *testing.T) {
 	}
 }
 
+func TestUIReloadsInspectorWhenSelectedRunFinishes(t *testing.T) {
+	ui := string(uiJS)
+	inspector := string(inspectorJS)
+	for _, want := range []string{`pokefarm-run-lifecycle`, `runId: run.run_id`, `status: run.status`, `frame: run.frame`} {
+		if !strings.Contains(ui, want) {
+			t.Errorf("dashboard lifecycle publication missing %q", want)
+		}
+	}
+	for _, want := range []string{`pokefarm-run-lifecycle`, `previousStatus!=="done"&&status==="done"`, `runLoadInFlight`, `finishedReloadPending`} {
+		if !strings.Contains(inspector, want) {
+			t.Errorf("inspector lifecycle reload missing %q", want)
+		}
+	}
+}
+
+func TestUIReplayUsesRunTotalFrameForVideoMapping(t *testing.T) {
+	inspector := string(inspectorJS)
+	for _, want := range []string{`runTotalFrame`, `timelineFrameTotal()`, `debugView.run`, `detail.frame`} {
+		if !strings.Contains(inspector, want) {
+			t.Errorf("replay total-frame mapping missing %q", want)
+		}
+	}
+}
+
+func TestUISemanticContextSurvivesMapResize(t *testing.T) {
+	ui := string(uiJS)
+	start := strings.Index(ui, "function watchMapSize")
+	if start < 0 {
+		t.Fatal("map resize handler start")
+	}
+	end := strings.Index(ui[start:], `$("detail-map").addEventListener`)
+	if end < 0 {
+		t.Fatal("map resize handler bounds")
+	}
+	resize := ui[start : start+end]
+	if !strings.Contains(resize, "renderDetail()") {
+		t.Error("map resize must repaint through renderDetail so semanticContext is preserved")
+	}
+	if strings.Contains(resize, "renderMap(run)") {
+		t.Error("map resize must not bypass active semanticContext")
+	}
+}
+
+func TestUIInvestigateCapturesSelectedRun(t *testing.T) {
+	inspector := string(inspectorJS)
+	for _, want := range []string{`const targetRunID=runID`, `includes(targetRunID)`, `targetRunID!==runID`} {
+		if !strings.Contains(inspector, want) {
+			t.Errorf("investigation stale-response guard missing %q", want)
+		}
+	}
+	start := strings.Index(inspector, "async function investigateRun")
+	if start < 0 {
+		t.Fatal("investigateRun start")
+	}
+	end := strings.Index(inspector[start:], "root.addEventListener")
+	if end < 0 {
+		t.Fatal("investigateRun bounds")
+	}
+	if strings.Contains(inspector[start:start+end], `includes(runID)`) {
+		t.Error("investigateRun must not read mutable runID after awaiting triage")
+	}
+}
+
+func TestUITimelineMarkersHaveAccessibleHitTargets(t *testing.T) {
+	css := string(consoleCSS)
+	rule := regexp.MustCompile(`\.timeline-track \.timeline-marker\{[^}]+\}`).FindString(css)
+	for _, want := range []string{"width:24px", "height:24px"} {
+		if !strings.Contains(rule, want) {
+			t.Errorf("timeline marker hit-target rule %q missing %q", rule, want)
+		}
+	}
+	if !strings.Contains(css, `.timeline-track .timeline-marker:before`) {
+		t.Error("timeline marker must use a pseudo-element for the thin visible tick")
+	}
+}
+
+func TestUIRevokesFrameObjectURLs(t *testing.T) {
+	ui := string(uiJS)
+	for _, want := range []string{`lastFrameURLs`, `revokeLastFrameURL`, `URL.revokeObjectURL(blobUrl)`, `cleanupFrameURLs`, `beforeunload`, `if (stop) { URL.revokeObjectURL(url); break; }`, `displayed.has(id)`} {
+		if !strings.Contains(ui, want) {
+			t.Errorf("frame object URL cleanup missing %q", want)
+		}
+	}
+}
+
 func TestUIGameFrameFitsInsideFixedStage(t *testing.T) {
 	css := string(consoleCSS)
 	rule := regexp.MustCompile(`\.game-monitor \.lcd img\{[^}]+\}`).FindString(css)
