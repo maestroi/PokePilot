@@ -87,6 +87,15 @@ func TestResolveLLMEndpointsGatewayProfiles(t *testing.T) {
 	}
 }
 
+func TestResolveLLMEndpointsGatewayRecoveryEffort(t *testing.T) {
+	t.Setenv("POKEPILOT_LLM_GATEWAY_URL", "http://litellm:4000/v1")
+	t.Setenv("POKEPILOT_LLM_GATEWAY_RECOVERY_REASONING_EFFORT", "off")
+	primary, _ := ResolveLLMEndpoints(LLMProfileGPU)
+	if primary.RecoveryReasoningEffort != "off" {
+		t.Fatalf("gateway recovery effort = %q, want off (blackout must not silently escalate to medium)", primary.RecoveryReasoningEffort)
+	}
+}
+
 func TestResolveLLMEndpointsGatewayModelOverrides(t *testing.T) {
 	t.Setenv("POKEPILOT_LLM_GATEWAY_URL", "http://litellm:4000/v1")
 	t.Setenv("POKEPILOT_LLM_GATEWAY_AUTO_MODEL", "custom-auto")

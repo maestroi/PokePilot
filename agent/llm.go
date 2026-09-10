@@ -707,7 +707,13 @@ type chatRequest struct {
 	// ever set from NoThink; omitted otherwise, so the request a server sees
 	// is unchanged unless someone asked for this.
 	ChatTemplateKwargs map[string]any  `json:"chat_template_kwargs,omitempty"`
-	ResponseFormat     *responseFormat `json:"response_format,omitempty"`
+	// ExtraBody repeats ChatTemplateKwargs for LiteLLM's openai/ provider,
+	// which builds the upstream request with the OpenAI SDK and strips
+	// unknown top-level fields. extra_body is merged into the llama.cpp JSON.
+	// The farm gateway uses hosted_vllm/ so the top-level field is forwarded
+	// too. Direct llama.cpp ignores ExtraBody and honours ChatTemplateKwargs.
+	ExtraBody      map[string]any  `json:"extra_body,omitempty"`
+	ResponseFormat *responseFormat `json:"response_format,omitempty"`
 	// ReasoningEffort is the OpenAI-style top-level field this llama.cpp
 	// build honours. PROBED 2026-09-08 against this exact server: with the
 	// field omitted, three consecutive trivial one-line prompts each failed
@@ -936,8 +942,10 @@ func (p *LLMPlanner) askRequest(system, user, schemaName string, schema map[stri
 		}
 	}
 	var templateKwargs map[string]any
+	var extraBody map[string]any
 	if noThink {
 		templateKwargs = map[string]any{"enable_thinking": false}
+		extraBody = map[string]any{"chat_template_kwargs": templateKwargs}
 	}
 	reqBody, err := json.Marshal(chatRequest{
 		Model:       p.Model,
@@ -948,6 +956,7 @@ func (p *LLMPlanner) askRequest(system, user, schemaName string, schema map[stri
 			{Role: "user", Content: user},
 		},
 		ChatTemplateKwargs: templateKwargs,
+		ExtraBody:          extraBody,
 		ReasoningEffort:    reasoningEffort,
 		ResponseFormat: &responseFormat{
 			Type:       "json_schema",

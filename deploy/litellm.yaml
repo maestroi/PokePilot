@@ -30,7 +30,7 @@ model_list:
     litellm_params:
       model: os.environ/POKEPILOT_LITELLM_LAN_MODEL
       api_base: os.environ/POKEPILOT_LITELLM_LAN_URL
-      api_key: local
+      api_key: os.environ/POKEPILOT_LITELLM_LAN_KEY
       allowed_openai_params: ["reasoning_effort", "chat_template_kwargs"]
 
 router_settings:
@@ -45,6 +45,9 @@ router_settings:
 
 litellm_settings:
   request_timeout: 300
-  # PokePilot sends vLLM/OpenAI-compatible extension fields such as
-  # chat_template_kwargs. Do not silently throw them away at the gateway.
+  # PokePilot sends llama.cpp extension fields such as chat_template_kwargs.
+  # The backends must be hosted_vllm/*, not openai/*: the OpenAI SDK provider
+  # strips unknown top-level fields even with allowed_openai_params, which
+  # leaves Qwen 3.8 on its default xhigh thinking path. openai_like/* is
+  # unmapped on the LiteLLM 1.99 proxy chat route.
   drop_params: false

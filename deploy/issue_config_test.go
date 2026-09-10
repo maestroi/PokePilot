@@ -55,9 +55,10 @@ func TestIssueConfigReachesWallOnly(t *testing.T) {
 	// direct GPU, so Operator can reserve it for coding.
 	for _, want := range []string{
 		"POKEPILOT_LLM_GATEWAY_URL: ${POKEPILOT_LLM_GATEWAY_URL:-http://litellm:4000/v1}",
-		"POKEPILOT_LLM_URL: ${POKEPILOT_LLM_URL:-http://192.168.50.204:8002/v1}",
+		"POKEPILOT_LLM_URL: ${POKEPILOT_LLM_URL:-http://192.168.50.204:8000/v1}",
 		"POKEPILOT_LLM_GPU_URL: ${POKEPILOT_LLM_GPU_URL:-http://192.168.50.130:8002/v1}",
 		"POKEPILOT_LLM_GPU_RECOVERY_REASONING_EFFORT: ${POKEPILOT_LLM_GPU_RECOVERY_REASONING_EFFORT:-off}",
+		"POKEPILOT_LLM_GATEWAY_RECOVERY_REASONING_EFFORT: ${POKEPILOT_LLM_GATEWAY_RECOVERY_REASONING_EFFORT:-off}",
 	} {
 		if !strings.Contains(runner, want) {
 			t.Errorf("runner missing inference setting %q", want)
@@ -66,7 +67,13 @@ func TestIssueConfigReachesWallOnly(t *testing.T) {
 	for _, want := range []string{
 		"POKEPILOT_LITELLM_7900_URL: ${POKEPILOT_LITELLM_7900_URL:-http://192.168.50.130:8002/v1}",
 		"POKEPILOT_LITELLM_4090_URL: ${POKEPILOT_LITELLM_4090_URL:-http://192.168.50.81:8002/v1}",
-		"POKEPILOT_LITELLM_LAN_URL: ${POKEPILOT_LITELLM_LAN_URL:-http://192.168.50.204:8002/v1}",
+		"POKEPILOT_LITELLM_LAN_URL: ${POKEPILOT_LITELLM_LAN_URL:-http://192.168.50.204:8000/v1}",
+		"POKEPILOT_LITELLM_LAN_KEY: ${POKEPILOT_LITELLM_LAN_KEY:-${llm_token:-}}",
+		// hosted_vllm/ forwards chat_template_kwargs; openai/ drops them and
+		// leaves Qwen 3.8 on its default xhigh thinking path.
+		"POKEPILOT_LITELLM_7900_MODEL: ${POKEPILOT_LITELLM_7900_MODEL:-hosted_vllm/qwen3.8-27b}",
+		"POKEPILOT_LITELLM_4090_MODEL: ${POKEPILOT_LITELLM_4090_MODEL:-hosted_vllm/qwen3.8-27b}",
+		"POKEPILOT_LITELLM_LAN_MODEL: ${POKEPILOT_LITELLM_LAN_MODEL:-hosted_vllm/qwen3.5-4b}",
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("stack missing LiteLLM backend %q", want)

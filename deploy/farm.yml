@@ -117,13 +117,15 @@ services:
     command: ["--config", "/app/config.yaml", "--host", "0.0.0.0", "--port", "4000"]
     environment:
       POKEPILOT_LITELLM_7900_URL: ${POKEPILOT_LITELLM_7900_URL:-http://192.168.50.130:8002/v1}
-      POKEPILOT_LITELLM_7900_MODEL: ${POKEPILOT_LITELLM_7900_MODEL:-openai/qwen3.8-27b}
+      POKEPILOT_LITELLM_7900_MODEL: ${POKEPILOT_LITELLM_7900_MODEL:-hosted_vllm/qwen3.8-27b}
       POKEPILOT_LITELLM_4090_URL: ${POKEPILOT_LITELLM_4090_URL:-http://192.168.50.81:8002/v1}
-      POKEPILOT_LITELLM_4090_MODEL: ${POKEPILOT_LITELLM_4090_MODEL:-openai/qwen3.8-27b}
-      POKEPILOT_LITELLM_LAN_URL: ${POKEPILOT_LITELLM_LAN_URL:-http://192.168.50.204:8002/v1}
+      POKEPILOT_LITELLM_4090_MODEL: ${POKEPILOT_LITELLM_4090_MODEL:-hosted_vllm/qwen3.8-27b}
+      POKEPILOT_LITELLM_LAN_URL: ${POKEPILOT_LITELLM_LAN_URL:-http://192.168.50.204:8000/v1}
+      POKEPILOT_LITELLM_LAN_KEY: ${POKEPILOT_LITELLM_LAN_KEY:-${llm_token:-}}
       # The existing LAN server is qwen3.5-4b in this repo's defaults; override
       # this if its /v1/models endpoint exposes a different qwen-4b model id.
-      POKEPILOT_LITELLM_LAN_MODEL: ${POKEPILOT_LITELLM_LAN_MODEL:-openai/qwen3.5-4b}
+      # hosted_vllm (not openai/) forwards chat_template_kwargs to llama.cpp.
+      POKEPILOT_LITELLM_LAN_MODEL: ${POKEPILOT_LITELLM_LAN_MODEL:-hosted_vllm/qwen3.5-4b}
     configs:
       - source: litellm_config
         target: /app/config.yaml
@@ -157,7 +159,7 @@ services:
       # LiteLLM itself is unavailable. Default/LAN profile therefore still
       # cannot touch a GPU even when the gateway is down.
       llm_token: ${llm_token:-}
-      POKEPILOT_LLM_URL: ${POKEPILOT_LLM_URL:-http://192.168.50.204:8002/v1}
+      POKEPILOT_LLM_URL: ${POKEPILOT_LLM_URL:-http://192.168.50.204:8000/v1}
       POKEPILOT_LLM_MODEL: ${POKEPILOT_LLM_MODEL:-qwen3.5-4b}
       POKEPILOT_LLM_NO_THINK: ${POKEPILOT_LLM_NO_THINK:-}
       POKEPILOT_LLM_MAX_TOKENS: ${POKEPILOT_LLM_MAX_TOKENS:-}
@@ -172,6 +174,8 @@ services:
       POKEPILOT_LLM_GATEWAY_AUTO_MODEL: ${POKEPILOT_LLM_GATEWAY_AUTO_MODEL:-pokepilot-auto}
       POKEPILOT_LLM_GATEWAY_GPU_MODEL: ${POKEPILOT_LLM_GATEWAY_GPU_MODEL:-pokepilot-7900xtx}
       POKEPILOT_LLM_GATEWAY_LAN_MODEL: ${POKEPILOT_LLM_GATEWAY_LAN_MODEL:-pokepilot-lan}
+      POKEPILOT_LLM_GATEWAY_NO_THINK: ${POKEPILOT_LLM_GATEWAY_NO_THINK:-1}
+      POKEPILOT_LLM_GATEWAY_RECOVERY_REASONING_EFFORT: ${POKEPILOT_LLM_GATEWAY_RECOVERY_REASONING_EFFORT:-off}
       # Direct endpoint variables remain for backwards compatibility and as an
       # escape hatch when POKEPILOT_LLM_GATEWAY_URL is explicitly blank.
       POKEPILOT_LLM_FALLBACK_URL: ${POKEPILOT_LLM_FALLBACK_URL:-}
