@@ -95,13 +95,13 @@ func TestArtifactDeleteRequiresConfiguredStoreForRemoteArtifacts(t *testing.T) {
 
 func TestRecordingRunPrefixRejectsBroadOrMalformedKeys(t *testing.T) {
 	cases := map[string]bool{
-		"runs/run-abc/attempt-1/run.gbrun": true,
-		"runs/run-abc/attempt-12/run.gbrun": true,
-		"runs/run.gbrun": false,
-		"runs/run-abc/run.gbrun": false,
-		"runs/run-abc/attempt-x/run.gbrun": false,
-		"other/run-abc/attempt-1/run.gbrun": false,
-		"runs/a/b/attempt-1/run.gbrun": false,
+		"runs/run-abc/attempt-1/run.gbrun":    true,
+		"runs/run-abc/attempt-12/run.gbrun":   true,
+		"runs/run.gbrun":                      false,
+		"runs/run-abc/run.gbrun":              false,
+		"runs/run-abc/attempt-x/run.gbrun":    false,
+		"other/run-abc/attempt-1/run.gbrun":   false,
+		"runs/a/b/attempt-1/run.gbrun":        false,
 		"runs/run-abc/attempt-1/../run.gbrun": false,
 	}
 	for key, wantOK := range cases {
