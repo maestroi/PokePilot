@@ -101,12 +101,6 @@ func currentPartyTrainingEstimate(mem *state.Mem, romData []byte, mapID uint8, s
 	return estimateTraining(romData, mon.Species, currentXP, mon.Level, slots, targetLevel, budget)
 }
 
-func currentPartyTrainingEstimateFromEmu(m *emu.Emu, romData []byte, slot, targetLevel, budget int) (TrainingEstimate, error) {
-	var mem state.Mem
-	state.Snapshot(m, &mem)
-	return currentPartyTrainingEstimate(&mem, romData, m.Peek8(sym.CurMap), slot, targetLevel, budget)
-}
-
 // resolveTrainingPartySlot makes a species-targeted objective resilient to a
 // prior party reorder. Slot is retained as a fast-path/hint and as a fallback
 // for legacy lead objectives that do not carry Species.
@@ -137,9 +131,10 @@ func resolveTrainingPartySlot(mem *state.Mem, o Objective) (int, error) {
 }
 
 // executeTrainingObjective temporarily promotes the requested party member to
-// slot 0 because Red only awards battle XP to participating slots. Once the
-// bounded training session is over, it swaps the original lead back so party
-// development does not silently replace the run's carry.
+// slot 0 because Red only awards battle XP to participating slots. A clean or
+// progress-making session swaps the original lead back afterward. Retreats and
+// blackouts deliberately keep the trained member active: Run's established
+// recovery bookkeeping reads the active mon's ending level before replanning.
 func executeTrainingObjective(m *emu.Emu, romData []byte, o Objective, result ObjectiveResult) (ObjectiveResult, error) {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
@@ -162,9 +157,11 @@ func executeTrainingObjective(m *emu.Emu, romData []byte, o Objective, result Ob
 	train, trainErr := skill.Train(m, romData, int(o.Level), skill.StatAwareMove(romData), trainSessionBattleBudget)
 	result.Train = &train
 
-	if promoted {
-		// A swap is symmetric: after PromoteToLead(slot), the original lead is
-		// now at slot. Evolution of the trained mon does not change that.
+	// PromoteToLead is a symmetric swap: the original lead is still at the
+	// same partner slot. Restore it whenever Train left a normal controllable
+	// state. Do not restore retreat/blackout endings; Run intentionally reads
+	// the active trained mon's level to decide whether recovery is progressing.
+	if promoted && !train.Retreated && !train.BlackedOut {
 		if restoreErr := skill.PromoteToLead(m, slot); restoreErr != nil {
 			if trainErr != nil {
 				return result, fmt.Errorf("agent: %s: train failed after %d battles: %v; restore original lead: %w", o, train.Battles, trainErr, restoreErr)
