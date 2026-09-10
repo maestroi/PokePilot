@@ -19,6 +19,7 @@ func redProgressionKnown(id ProgressID) bool {
 		redProgressSilphScopeAcquired,
 		redProgressPokeFluteAcquired,
 		redProgressFuchsiaProgressionComplete,
+		redProgressSilphRescueComplete,
 		ProgressSaffronGateOpen,
 		ProgressCardKeyOwned:
 		return true
@@ -31,7 +32,7 @@ func redProgressionKnown(id ProgressID) bool {
 // objective shape. Availability is Red knowledge; the planner only sees the
 // semantic state change requested by each objective.
 func redProgressionObjectives(obs Observation) []Objective {
-	out := make([]Objective, 0, 7)
+	out := make([]Objective, 0, 8)
 	if skill.MtMoonProgressionAvailable(obs.Map) && !obs.Story.Has(redProgressMtMoonFossilAcquired) {
 		out = append(out, Objective{Kind: KindProgress, Progress: redProgressMtMoonFossilAcquired, Note: "(defeat Mt. Moon's Super Nerd and choose the Dome Fossil to open the eastern exit)"})
 	}
@@ -93,6 +94,16 @@ func redProgressionObjectives(obs Observation) []Objective {
 			Note:     "(enter Silph Co, follow the stair topology to 5F, and collect the Card Key for the locked-door phase)",
 		})
 	}
+	if obs.Story.Has(redProgressFuchsiaProgressionComplete) &&
+		obs.Story.Has(ProgressSaffronGateOpen) &&
+		(obs.Story.Has(ProgressCardKeyOwned) || obs.Story.Has(ProgressSilphCoCleared)) &&
+		!obs.Story.Has(redProgressSilphRescueComplete) {
+		out = append(out, Objective{
+			Kind:     KindProgress,
+			Progress: redProgressSilphRescueComplete,
+			Note:     "(open the required Silph doors, take the 3F/7F warp route, defeat the rival and Giovanni, then receive the president's Master Ball reward)",
+		})
+	}
 	return out
 }
 
@@ -118,6 +129,8 @@ func executeRedProgression(m *emu.Emu, romData []byte, o Objective) error {
 		return skill.OpenSaffronGate(m, romData, policy)
 	case ProgressCardKeyOwned:
 		return skill.AcquireSilphCardKey(m, romData, policy)
+	case redProgressSilphRescueComplete:
+		return skill.ClearSilphCo(m, romData, policy)
 	default:
 		return fmt.Errorf("agent: %s: unknown Red progression goal %q", o, o.Progress)
 	}
