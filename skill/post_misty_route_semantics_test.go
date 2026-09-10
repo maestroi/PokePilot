@@ -33,6 +33,22 @@ func TestRedRouteCapabilitiesProjectSSTicketGates(t *testing.T) {
 	}
 }
 
+func TestRedRouteCapabilitiesRetireSSAnneAfterHM01(t *testing.T) {
+	mem := new(state.Mem)
+	mem[sym.NumBagItems] = 2
+	mem[sym.BagItems] = ssTicketItem
+	mem[sym.BagItems+1] = 1
+	mem[sym.BagItems+2] = hm01Item
+	mem[sym.BagItems+3] = 1
+	caps := redRouteCapabilities(nil, mem)
+	if !caps.Has(capCanPassCeruleanRobbedHouse) {
+		t.Fatalf("HM01 should not invalidate Bill's permanent Cerulean gate: %v", caps)
+	}
+	if caps.Has(capCanBoardSSAnne) {
+		t.Fatalf("HM01 left stale S.S. Anne boarding capability enabled: %v", caps)
+	}
+}
+
 func TestPostMistyRouteTransitionsExposeBillShipAndCutGates(t *testing.T) {
 	billEdge := world.Edge{
 		Kind:  world.EdgeWarp,
