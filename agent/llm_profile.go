@@ -116,9 +116,11 @@ func gatewayLLMConfigFromEnv(profile LLMProfile, defaults LLMConfig) (LLMConfig,
 }
 
 // ResolveLLMEndpoints maps a profile onto primary and optional fallback
-// endpoint configs. In gateway mode all profiles use one gateway endpoint and
-// the logical model group owns failover. Without a gateway, Auto preserves the
-// historical direct behavior: GPU primary with default/LAN transport fallback.
+// endpoint configs. In gateway mode the logical model group owns resource
+// failover. LAN-capable profiles retain the direct LAN endpoint as a final
+// transport fallback in case the gateway service itself is unavailable.
+// Without a gateway, Auto preserves the historical direct behavior: GPU
+// primary with default/LAN transport fallback.
 func ResolveLLMEndpoints(profile LLMProfile) (primary LLMConfig, fallback *LLMConfig) {
 	return ResolveLLMEndpointsWithEffort(profile, "")
 }
@@ -128,16 +130,22 @@ func ResolveLLMEndpoints(profile LLMProfile) (primary LLMConfig, fallback *LLMCo
 // in either direct or gateway mode.
 func ResolveLLMEndpointsWithEffort(profile LLMProfile, reasoningEffort string) (primary LLMConfig, fallback *LLMConfig) {
 	lan := defaultLLMConfigFromEnv()
+	if reasoningEffort != "" {
+		lan.ReasoningEffort = reasoningEffort
+	}
 	if gateway, ok := gatewayLLMConfigFromEnv(profile, lan); ok {
 		if reasoningEffort != "" {
 			gateway.ReasoningEffort = reasoningEffort
 		}
-		return gateway, nil
+		if profile == LLMProfileGPU {
+			return gateway, nil
+		}
+		fb := lan
+		return gateway, &fb
 	}
 
 	gpu, hasGPU := gpuLLMConfigFromEnv(lan)
 	if reasoningEffort != "" {
-		lan.ReasoningEffort = reasoningEffort
 		gpu.ReasoningEffort = reasoningEffort
 	}
 	switch profile {
