@@ -18,7 +18,8 @@ func redProgressionKnown(id ProgressID) bool {
 		redProgressSSTicketAcquired,
 		redProgressSilphScopeAcquired,
 		redProgressPokeFluteAcquired,
-		redProgressFuchsiaProgressionComplete:
+		redProgressFuchsiaProgressionComplete,
+		ProgressSaffronGateOpen:
 		return true
 	default:
 		return false
@@ -29,7 +30,7 @@ func redProgressionKnown(id ProgressID) bool {
 // objective shape. Availability is Red knowledge; the planner only sees the
 // semantic state change requested by each objective.
 func redProgressionObjectives(obs Observation) []Objective {
-	out := make([]Objective, 0, 5)
+	out := make([]Objective, 0, 6)
 	if skill.MtMoonProgressionAvailable(obs.Map) && !obs.Story.Has(redProgressMtMoonFossilAcquired) {
 		out = append(out, Objective{Kind: KindProgress, Progress: redProgressMtMoonFossilAcquired, Note: "(defeat Mt. Moon's Super Nerd and choose the Dome Fossil to open the eastern exit)"})
 	}
@@ -73,6 +74,14 @@ func redProgressionObjectives(obs Observation) []Objective {
 			Note:     "(reach Fuchsia, earn Soul Badge, and acquire Surf + Strength)",
 		})
 	}
+	if obs.Story.Has(redProgressFuchsiaProgressionComplete) &&
+		!obs.Story.Has(ProgressSaffronGateOpen) {
+		out = append(out, Objective{
+			Kind:     KindProgress,
+			Progress: ProgressSaffronGateOpen,
+			Note:     "(open Saffron access; reuse a guard drink or buy Fresh Water from the Celadon roof vending machine and give it to the Route 7 guard)",
+		})
+	}
 	return out
 }
 
@@ -94,6 +103,8 @@ func executeRedProgression(m *emu.Emu, romData []byte, o Objective) error {
 		return skill.PokemonTower(m, romData, policy)
 	case redProgressFuchsiaProgressionComplete:
 		return skill.FuchsiaProgression(m, romData, policy)
+	case ProgressSaffronGateOpen:
+		return skill.OpenSaffronGate(m, romData, policy)
 	default:
 		return fmt.Errorf("agent: %s: unknown Red progression goal %q", o, o.Progress)
 	}
