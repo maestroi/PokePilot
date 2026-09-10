@@ -31,3 +31,43 @@ html,body{overflow-x:hidden}.console-shell,.console-content,.console-view,#selec
 .timeline-track .timeline-marker.failure:before{background:var(--red)}
 .timeline-track .timeline-marker.progress:before{background:var(--green)}
 .timeline-track .timeline-marker[aria-current=true]:before{width:5px;background:#fff;box-shadow:4px 0 0 rgba(255,255,255,.18)}
+
+/* Fleet operations: snapshot facts and run deep links, not campaign analytics. */
+.operations-grid{display:grid;grid-template-columns:minmax(260px,.7fr) minmax(480px,1.3fr);gap:8px}
+.ops-bay{min-width:0;overflow:hidden;border:1px solid var(--line);background:var(--bay)}
+.ops-bay>header{min-height:43px;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 12px;border-bottom:1px solid var(--line);background:#0e151d}
+.ops-bay>header h3{margin:0;font-size:13px}.ops-bay>header p{margin:0;color:var(--muted);font-size:11px}
+#operations-queue,#operations-recent{grid-column:1/-1}
+.operation-facts{display:grid}.operation-facts>div{display:grid;grid-template-columns:80px minmax(0,1fr);gap:12px;padding:10px 12px;border-bottom:1px solid var(--line)}
+.operation-facts>div:last-child{border-bottom:0}.operation-facts span,.operation-row small{color:var(--muted);font-size:11px}.operation-facts strong{font-size:12px;overflow-wrap:anywhere}
+.operation-good{color:var(--green)}.operation-bad{color:var(--red)}.operation-mono{font-family:var(--mono)}
+.operation-row{width:100%;min-width:0;display:grid;grid-template-columns:minmax(190px,.7fr) minmax(240px,1.3fr) minmax(180px,.7fr);gap:12px;align-items:center;padding:9px 12px;border:0;border-bottom:1px solid var(--line);border-radius:0;background:transparent;color:var(--text);text-align:left}
+.operation-row:last-child{border-bottom:0}button.operation-row:hover{background:var(--bay2)}button.operation-row:focus-visible{position:relative;z-index:1;outline-offset:-3px}
+.operation-row>span{min-width:0}.operation-row strong,.operation-row small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.operation-row strong{font-size:12px}
+.operation-worker{grid-template-columns:auto minmax(180px,1fr) minmax(180px,1fr)}.operation-status{align-self:start}.operation-outcome{display:flex;justify-content:flex-end}
+
+/* Selected-run progress is rendered by ui.js from the existing dashboard snapshot. */
+#detail-goal{grid-column:1/-1}.goal-progress-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px}.goal-progress-head strong{min-width:0;overflow-wrap:anywhere}.goal-progress-head span{flex:none;color:var(--green);font:700 11px var(--mono)}
+.goal-progress{display:block;width:100%;height:5px;margin-top:7px;border:0;background:var(--bg);accent-color:var(--green)}.goal-progress::-webkit-progress-bar{background:var(--bg)}.goal-progress::-webkit-progress-value{background:var(--green)}.goal-progress::-moz-progress-bar{background:var(--green)}
+
+/* Aggregate campaign analytics live only in Analytics. */
+.outcome-stats{border:1px solid var(--line);background:var(--bay)}
+.outcome-stats .ops-inner{display:grid;gap:1px;background:var(--line)}
+.outcome-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 14px;background:var(--bay)}
+.outcome-head h2{margin:0;font-size:17px}.outcome-note{max-width:72ch;color:var(--muted);font-size:12px}.outcome-section-note{margin-bottom:8px}
+.outcome-summary{display:grid;grid-template-columns:repeat(3,minmax(150px,1fr));background:var(--line);gap:1px}
+.outcome-summary-item{min-width:0;padding:10px 12px;background:var(--bay)}
+.outcome-summary-item .k{color:var(--muted);font-size:10px;font-weight:800;letter-spacing:.05em;text-transform:uppercase}
+.outcome-summary-item .v{margin-top:2px;color:var(--text);font:750 17px var(--mono)}.outcome-summary-item .s{margin-top:3px;color:var(--muted);font-size:11px}
+.outcome-grid{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line)}
+.outcome-block{min-width:0;padding:11px 12px;background:var(--bay)}.outcome-block h3{margin:0 0 9px;color:var(--muted);font-size:11px;letter-spacing:.06em;text-transform:uppercase}
+.outcome-bars{display:grid;gap:6px}.outcome-bar-row{display:grid;grid-template-columns:5.7rem minmax(0,1fr) auto;gap:8px;align-items:center;font-size:12px}
+.outcome-bar-label{overflow:hidden;color:var(--muted);text-overflow:ellipsis;white-space:nowrap}.outcome-track{width:100%;height:7px;border:0;background:var(--bg);accent-color:var(--cyan)}
+.outcome-track::-webkit-progress-bar{background:var(--bg)}.outcome-track::-webkit-progress-value{background:var(--cyan)}.outcome-track::-moz-progress-bar{background:var(--cyan)}
+.outcome-bar-n{color:var(--text);font:12px/1 var(--mono)}.endless-wrap{overflow:auto;border:1px solid var(--line)}
+.endless-table{width:100%;min-width:760px;border-collapse:collapse;font-size:12px}.endless-table th,.endless-table td{padding:8px 9px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+.endless-table th{position:sticky;top:0;background:var(--bay2);color:var(--muted);font-size:10px;letter-spacing:.04em;text-transform:uppercase}.endless-table tr:last-child td{border-bottom:0}
+.endless-goal{max-width:36rem;color:var(--text);white-space:normal}.endless-key{color:var(--muted);font-family:var(--mono)}.endless-reasons{color:var(--muted);white-space:nowrap}
+.outcome-empty,.outcome-error{margin:0;color:var(--muted)}.outcome-error{color:var(--err-ink)}
+@media(max-width:900px){.operations-grid{grid-template-columns:1fr}.operations-grid>.ops-bay{grid-column:1}.operation-row{grid-template-columns:minmax(150px,.8fr) minmax(180px,1.2fr)}.operation-row>span:last-child{grid-column:1/-1}.operation-worker{grid-template-columns:auto minmax(0,1fr)}.operation-worker>span:last-child{grid-column:2}.outcome-summary{grid-template-columns:repeat(2,minmax(130px,1fr))}}
+@media(max-width:600px){.operation-row,.operation-worker{grid-template-columns:1fr}.operation-row>span:last-child,.operation-worker>span:last-child{grid-column:1}.operation-status{margin-bottom:-5px}.outcome-summary,.outcome-grid{grid-template-columns:1fr}.outcome-bar-row{grid-template-columns:5rem minmax(0,1fr);}.outcome-bar-n{grid-column:2}}

@@ -20,6 +20,7 @@
   const mapAssets = new Map();
   const histFilter = { outcome: "", how: "", starter: "" };
   const HIST_PAGE = 25;
+  const RECENT_OPERATIONS_LIMIT = 12;
   let histPage = 0;
   const fpsSamples = new Map();
   const fpsLive = new Map();
@@ -675,7 +676,18 @@
 
   function ensureWatchBlocks() {
     if ($("detail-settings")) return;
-    $("detail-body").innerHTML = `<div id="detail-settings" class="block compact"></div><div id="detail-now" class="block compact"></div><div id="detail-plan" class="block scroll" hidden></div><div id="detail-play" class="block scroll" hidden></div>`;
+    $("detail-body").innerHTML = `<div id="detail-goal" class="block compact" hidden></div><div id="detail-settings" class="block compact"></div><div id="detail-now" class="block compact"></div><div id="detail-plan" class="block scroll" hidden></div><div id="detail-play" class="block scroll" hidden></div>`;
+  }
+
+  function goalProgressHTML(run) {
+    const stats = run && run.stats;
+    if (!stats || !stats.goal_summary) return "";
+    const current = Number(stats.goal_current || 0);
+    const target = Number(stats.goal_target || 0);
+    const complete = Boolean(stats.goal_complete);
+    const value = complete ? 100 : (target > 0 ? Math.max(0, Math.min(100, 100 * current / target)) : 0);
+    const count = target > 0 ? `${current} / ${target}` : (complete ? "complete" : "in progress");
+    return `<h3>Goal progress</h3><div class="goal-progress-head"><strong>${esc(stats.goal_summary)}</strong><span>${esc(count)}</span></div><progress class="goal-progress" max="100" value="${value.toFixed(0)}" aria-label="Goal progress">${value.toFixed(0)}%</progress>`;
   }
 
   function bindPlanRaw() {
@@ -733,6 +745,7 @@
       ? [["ended", run.reason || "done"], ["detail", run.detail || ""], ["last map", tileLabel(run)], ["frame", String(run.frame)], ["fps", fpsLabel(run)], ["attempts", String(run.attempts)]]
       : [["status", run.status], ["map", tileLabel(run)], ["frame", String(run.frame)], ["fps", fpsLabel(run)], ["attempt", String(run.attempts)], ["so far", run.stop_so_far || ""]];
     ensureWatchBlocks();
+    paintBlock($("detail-goal"), goalProgressHTML(run));
     paintHTML($("detail-settings"), `<h3>Settings</h3>${settings}`);
     const outcomeTitle = run.status === "done" ? "<h3>Outcome</h3>" : "<h3>Current state</h3>";
     paintHTML($("detail-now"), `${outcomeTitle}${kv(stateRows)}`);
@@ -809,6 +822,58 @@
     const wall = snap.wall_version || "";
     $("versions").textContent = ["console", short(consoleVersion), "wall", short(wall)].filter(Boolean).join(" · ");
   }
+
+  function renderOperations() {
+    const runs = snap.runs || [];
+    const workers = [...(snap.workers || [])].sort((a, b) => String(a.addr || "").localeCompare(String(b.addr || "")));
+    const health = $("operations-health");
+    const workerBay = $("operations-workers");
+    const queue = $("operations-queue");
+    const recent = $("operations-recent");
+    if (!health || !workerBay || !queue || !recent) return;
+
+    const freshAge = lastFreshAt ? Math.max(0, Math.floor((Date.now() - lastFreshAt) / 1000)) : 0;
+    const idle = workers.filter((worker) => !worker.run_id).length;
+    const wallState = wallDown
+      ? (lastFreshAt ? `Connection stale · last dashboard ${freshAge}s ago` : "Disconnected · no dashboard received")
+      : `Connected · dashboard received ${freshAge}s ago`;
+    const versions = [
+      consoleVersion ? `console ${short(consoleVersion)}` : "console version unavailable",
+      snap.wall_version ? `wall ${short(snap.wall_version)}` : "wall version unavailable"
+    ].join(" · ");
+    health.innerHTML = `<header><h3 id="operations-health-title">System health</h3></header><div class="operation-facts"><div><span>Wall</span><strong class="${wallDown ? "operation-bad" : "operation-good"}">${esc(wallState)}</strong></div><div><span>Workers</span><strong>${workers.length ? `${idle} available · ${workers.length} reporting` : "No workers reporting"}</strong></div><div><span>Builds</span><strong class="operation-mono">${esc(versions)}</strong></div></div>`;
+
+    $("worker-summary").textContent = workers.length ? `${idle} available · ${workers.length - idle} assigned` : "No workers reporting";
+    const workerRows = workers.map((worker) => {
+      const busy = Boolean(worker.run_id);
+      const tag = busy ? "button" : "div";
+      const attrs = busy ? ` type="button" data-run="${esc(worker.run_id)}"` : "";
+      const assignment = busy ? worker.run_id : "Waiting for a lease";
+      return `<${tag}${attrs} class="operation-row operation-worker"><span class="operation-status">${chip(busy ? "busy" : "idle", busy ? "busy" : "idle")}</span><span><strong>${esc(worker.addr || "Address unavailable")}</strong><small>${esc(worker.version ? `revision ${short(worker.version)}` : "revision unavailable")}</small></span><span><strong>${esc(assignment)}</strong><small>${esc(worker.seen_ago ? `seen ${worker.seen_ago} ago` : "last seen unavailable")}</small></span></${tag}>`;
+    }).join("");
+    $("workers").innerHTML = workerRows || `<p class="empty">No workers are currently reporting to the wall.</p>`;
+
+    const waiting = runs.filter((run) => run.status === "queued" || run.status === "leased")
+      .sort((a, b) => Number(a.queued_at || 0) - Number(b.queued_at || 0));
+    const queueRows = waiting.map((run) => {
+      const worker = workers.find((candidate) => candidate.run_id === run.run_id);
+      const goal = run.goal || run.dest || "No goal or destination supplied";
+      const lease = worker ? `Worker ${worker.addr}` : (run.status === "leased" ? "Lease assigned · worker not reported" : "Awaiting lease");
+      return `<button type="button" class="operation-row operation-run" data-run="${esc(run.run_id)}"><span><strong class="operation-mono">${esc(run.run_id)}</strong><small>${esc(fmtWhen(run.queued_at) || "Queued time unavailable")}</small></span><span><strong>${esc(goal)}</strong><small>${esc(run.status)}</small></span><span><strong>${esc(lease)}</strong><small>${run.status === "leased" ? "leased work" : "queued work"}</small></span></button>`;
+    }).join("");
+    queue.innerHTML = `<header><h3 id="operations-queue-title">Queue and leases</h3><p>${waiting.length} waiting</p></header>${queueRows || `<p class="empty">No queued or leased runs.</p>`}`;
+
+    const terminal = runs.filter((run) => run.status === "done")
+      .sort((a, b) => Number(b.ended_at || 0) - Number(a.ended_at || 0))
+      .slice(0, RECENT_OPERATIONS_LIMIT);
+    const recentRows = terminal.map((run) => {
+      const reason = run.reason || "done";
+      const detail = run.detail || "No terminal detail reported";
+      return `<button type="button" class="operation-row operation-run" data-run="${esc(run.run_id)}"><span><strong class="operation-mono">${esc(run.run_id)}</strong><small>${esc(fmtWhen(run.ended_at) || "End time unavailable")}</small></span><span><strong>${esc(reason)}</strong><small>${esc(detail)}</small></span><span class="operation-outcome">${statusChip(run)}</span></button>`;
+    }).join("");
+    recent.innerHTML = `<header><h3 id="operations-recent-title">Recent outcomes</h3><p>Latest ${RECENT_OPERATIONS_LIMIT}</p></header>${recentRows || `<p class="empty">No terminal outcomes yet.</p>`}`;
+  }
+
   function selectRun(id) {
     selected = id;
     semanticContext = null;
@@ -864,7 +929,7 @@
     connection.classList.toggle("connected", !wallDown);
     connection.classList.toggle("disconnected", wallDown);
     $("connection-label").textContent = wallDown ? `Stale · ${Math.max(0, Math.floor((Date.now() - lastFreshAt) / 1000))}s` : "Connected";
-    renderCounts(); renderVersions(); renderLive(); renderFailures(); renderWorkers(); renderHistory(); renderDetail(); syncPumps();
+    renderCounts(); renderVersions(); renderLive(); renderFailures(); renderWorkers(); renderHistory(); renderDetail(); renderOperations(); syncPumps();
     const run = (snap.runs || []).find((candidate) => candidate.run_id === selected);
     if (run) window.dispatchEvent(new CustomEvent("pokefarm-run-lifecycle", { detail: { runId: run.run_id, status: run.status, frame: run.frame, replayAvailable: Boolean(run.replay_available), completionSignature: completionSignature(run) } }));
     setView(activeView, false);

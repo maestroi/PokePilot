@@ -142,6 +142,121 @@ func TestUIStatsBelongToAnalytics(t *testing.T) {
 	}
 }
 
+func TestUIOperationsAreOwnedByDashboardRender(t *testing.T) {
+	js := string(uiJS)
+	start := strings.Index(js, "function renderOperations")
+	if start < 0 {
+		t.Fatal("ui.js must render Operations from its dashboard snapshot")
+	}
+	end := strings.Index(js[start:], "\n  function ")
+	if end < 0 {
+		t.Fatal("renderOperations bounds")
+	}
+	operations := js[start : start+end]
+	for _, want := range []string{
+		`operations-health`,
+		`operations-workers`,
+		`operations-queue`,
+		`operations-recent`,
+		`snap.runs`,
+		`snap.workers`,
+		`status === "queued"`,
+		`status === "leased"`,
+		`status === "done"`,
+		`data-run=`,
+		`RECENT_OPERATIONS_LIMIT`,
+		`ended_at`,
+		`queued_at`,
+		`run.goal || run.dest`,
+		`run.reason`,
+		`run.detail`,
+	} {
+		if !strings.Contains(operations, want) {
+			t.Errorf("renderOperations missing %q", want)
+		}
+	}
+	render := strings.Index(js, "function render()")
+	refresh := strings.Index(js, "async function refresh()")
+	if render < 0 || refresh <= render || !strings.Contains(js[render:refresh], "renderOperations()") {
+		t.Error("main dashboard render pass must call renderOperations")
+	}
+}
+
+func TestUIOperationsUseTruthfulRowsAndDeepLinks(t *testing.T) {
+	js := string(uiJS)
+	start := strings.Index(js, "function renderOperations")
+	if start < 0 {
+		t.Fatal("renderOperations start")
+	}
+	end := strings.Index(js[start:], "\n  function ")
+	if end < 0 {
+		t.Fatal("renderOperations bounds")
+	}
+	operations := js[start : start+end]
+	for _, want := range []string{
+		`wallDown`,
+		`lastFreshAt`,
+		`consoleVersion`,
+		`snap.wall_version`,
+		`worker.run_id`,
+		`worker.seen_ago`,
+		`class="operation-row`,
+	} {
+		if !strings.Contains(operations, want) {
+			t.Errorf("operations truth/deep-link contract missing %q", want)
+		}
+	}
+	for _, forbidden := range []string{"Badge distribution", "Objective wins", "Endless experiments", "service healthy"} {
+		if strings.Contains(operations, forbidden) {
+			t.Errorf("Operations contains campaign or invented health content %q", forbidden)
+		}
+	}
+}
+
+func TestUIStatsOwnOnlyAggregateAnalytics(t *testing.T) {
+	js := string(statsJS)
+	if strings.Contains(js, `createElement("style")`) {
+		t.Error("stats.js must not inject styles; console.css owns presentation")
+	}
+	if strings.Contains(js, `/v1/dashboard`) {
+		t.Error("stats.js must not poll the dashboard; ui.js owns the snapshot")
+	}
+	if strings.Contains(js, `live-goal-progress`) {
+		t.Error("stats.js must not render selected-run goal progress")
+	}
+	for _, want := range []string{
+		"Completed attempts",
+		"Objective wins",
+		"Badge distribution",
+		"Terminal outcomes",
+		"Retry failures",
+		"No progress data",
+		"Endless experiments",
+	} {
+		if !strings.Contains(js, want) {
+			t.Errorf("Analytics lost aggregate campaign statistic %q", want)
+		}
+	}
+	css := string(consoleCSS)
+	for _, want := range []string{`.outcome-stats`, `.outcome-summary`, `.outcome-grid`, `.endless-table`} {
+		if !strings.Contains(css, want) {
+			t.Errorf("console.css missing Analytics style %q", want)
+		}
+	}
+}
+
+func TestUISelectedGoalProgressUsesExistingSnapshot(t *testing.T) {
+	ui := string(uiJS)
+	for _, want := range []string{`goalProgressHTML`, `goal_summary`, `goal_current`, `goal_target`, `goal_complete`, `detail-goal`} {
+		if !strings.Contains(ui, want) {
+			t.Errorf("ui.js selected-run goal progress missing %q", want)
+		}
+	}
+	if strings.Count(ui, `fetch("/v1/dashboard"`) != 1 {
+		t.Error("ui.js must keep one dashboard polling owner")
+	}
+}
+
 func TestUIRunConsoleUsesContextualActions(t *testing.T) {
 	js := string(inspectorJS)
 	for _, want := range []string{
