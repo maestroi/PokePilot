@@ -23,6 +23,7 @@ func TestNormalizeLLMProfile(t *testing.T) {
 }
 
 func TestResolveLLMEndpointsProfiles(t *testing.T) {
+	t.Setenv("POKEPILOT_LLM_GATEWAY_URL", "")
 	t.Setenv("POKEPILOT_LLM_URL", "http://lan.example/v1")
 	t.Setenv("POKEPILOT_LLM_MODEL", "lan-model")
 	t.Setenv("llm_token", "lan-token")
@@ -49,7 +50,61 @@ func TestResolveLLMEndpointsProfiles(t *testing.T) {
 	}
 }
 
+func TestResolveLLMEndpointsGatewayProfiles(t *testing.T) {
+	t.Setenv("POKEPILOT_LLM_URL", "http://direct-lan.example/v1")
+	t.Setenv("POKEPILOT_LLM_MODEL", "direct-model")
+	t.Setenv("llm_token", "direct-token")
+	t.Setenv("POKEPILOT_LLM_GATEWAY_URL", "http://litellm:4000/v1")
+	t.Setenv("POKEPILOT_LLM_GATEWAY_TOKEN", "gateway-token")
+	t.Setenv("POKEPILOT_LLM_GATEWAY_TIMEOUT", "45s")
+
+	for _, tc := range []struct {
+		profile LLMProfile
+		model   string
+	}{
+		{LLMProfileAuto, "pokepilot-auto"},
+		{LLMProfileGPU, "pokepilot-7900xtx"},
+		{LLMProfileDefault, "pokepilot-lan"},
+	} {
+		primary, fb := ResolveLLMEndpoints(tc.profile)
+		if primary.BaseURL != "http://litellm:4000/v1" || primary.Model != tc.model {
+			t.Fatalf("%s gateway = %+v, want model %q", tc.profile, primary, tc.model)
+		}
+		if primary.Token != "gateway-token" {
+			t.Fatalf("%s gateway token = %q", tc.profile, primary.Token)
+		}
+		if primary.Timeout.String() != "45s" {
+			t.Fatalf("%s gateway timeout = %s", tc.profile, primary.Timeout)
+		}
+		if fb != nil {
+			t.Fatalf("%s gateway fallback = %+v, want gateway-owned failover", tc.profile, fb)
+		}
+	}
+}
+
+func TestResolveLLMEndpointsGatewayModelOverrides(t *testing.T) {
+	t.Setenv("POKEPILOT_LLM_GATEWAY_URL", "http://litellm:4000/v1")
+	t.Setenv("POKEPILOT_LLM_GATEWAY_AUTO_MODEL", "custom-auto")
+	t.Setenv("POKEPILOT_LLM_GATEWAY_GPU_MODEL", "custom-dedicated")
+	t.Setenv("POKEPILOT_LLM_GATEWAY_LAN_MODEL", "custom-lan")
+
+	for _, tc := range []struct {
+		profile LLMProfile
+		model   string
+	}{
+		{LLMProfileAuto, "custom-auto"},
+		{LLMProfileGPU, "custom-dedicated"},
+		{LLMProfileDefault, "custom-lan"},
+	} {
+		primary, _ := ResolveLLMEndpoints(tc.profile)
+		if primary.Model != tc.model {
+			t.Fatalf("%s gateway model = %q, want %q", tc.profile, primary.Model, tc.model)
+		}
+	}
+}
+
 func TestResolveLLMEndpointsPrefersGPUPrefix(t *testing.T) {
+	t.Setenv("POKEPILOT_LLM_GATEWAY_URL", "")
 	t.Setenv("POKEPILOT_LLM_URL", "http://lan.example/v1")
 	t.Setenv("POKEPILOT_LLM_MODEL", "lan-model")
 	t.Setenv("POKEPILOT_LLM_GPU_URL", "http://explicit-gpu/v1")
@@ -64,6 +119,7 @@ func TestResolveLLMEndpointsPrefersGPUPrefix(t *testing.T) {
 }
 
 func TestResolveLLMEndpointsAutoWithoutGPUFallsBackToDefault(t *testing.T) {
+	t.Setenv("POKEPILOT_LLM_GATEWAY_URL", "")
 	for _, key := range []string{
 		"POKEPILOT_LLM_GPU_URL", "POKEPILOT_LLM_GPU_MODEL",
 		"POKEPILOT_LLM_FALLBACK_URL", "POKEPILOT_LLM_FALLBACK_MODEL",
@@ -81,6 +137,7 @@ func TestResolveLLMEndpointsAutoWithoutGPUFallsBackToDefault(t *testing.T) {
 }
 
 func TestResolveLLMEndpointsGPUWithoutGPUDoesNotUseLAN(t *testing.T) {
+	t.Setenv("POKEPILOT_LLM_GATEWAY_URL", "")
 	for _, key := range []string{
 		"POKEPILOT_LLM_GPU_URL", "POKEPILOT_LLM_GPU_MODEL",
 		"POKEPILOT_LLM_FALLBACK_URL", "POKEPILOT_LLM_FALLBACK_MODEL",
