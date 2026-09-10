@@ -81,7 +81,9 @@ func reachLeaderSide(m *emu.Emu, romData []byte, g GymInfo, policy MovePolicy) e
 // ordinary walkable geometry. Cinnabar begins inside the Gym after the Secret
 // Key door: its six quiz gates are opened from typed YES/NO interactions and
 // positively verified event bits before ordinary live-map routing reaches
-// Blaine.
+// Blaine. Viridian may begin in the city once its story-open fact is set; the
+// interior uses the same explicit forced-movement graph semantics as Rocket
+// Hideout so arrow tiles are not mistaken for ordinary walkable cells.
 func Gym(m *emu.Emu, romData []byte, policy MovePolicy) (state.BattleResult, error) {
 	if policy == nil {
 		return 0, fmt.Errorf("skill: Gym: nil policy")
@@ -98,6 +100,12 @@ func Gym(m *emu.Emu, romData []byte, policy MovePolicy) (state.BattleResult, err
 
 	if cur == vermilionCity {
 		if err := EnterVermilionGym(m, romData, policy); err != nil {
+			return 0, fmt.Errorf("skill: Gym: reach %s: %w", g.Leader, err)
+		}
+		cur = m.Peek8(sym.CurMap)
+	}
+	if cur == viridianCityMap {
+		if err := EnterViridianGym(m, romData, policy); err != nil {
 			return 0, fmt.Errorf("skill: Gym: reach %s: %w", g.Leader, err)
 		}
 		cur = m.Peek8(sym.CurMap)
@@ -119,6 +127,8 @@ func Gym(m *emu.Emu, romData []byte, policy MovePolicy) (state.BattleResult, err
 			return 0, fmt.Errorf("skill: Gym: open %s's quiz gates: %w", g.Leader, err)
 		}
 		res, err = Travel(m, romData, dest, policy, cinnabarGymTravelBattles)
+	} else if cur == viridianGymMap {
+		res, err = travelViridianGymToLeader(m, romData, policy)
 	} else {
 		// Travel, not walkWithinMap: gym trainers can engage by line of sight
 		// on the way to the leader, and Travel resolves those battles before
@@ -133,8 +143,13 @@ func Gym(m *emu.Emu, romData []byte, policy MovePolicy) (state.BattleResult, err
 	if res.BlackedOut {
 		return 0, fmt.Errorf("skill: Gym: %w approaching %s (%d battles)", ErrBlackedOut, g.Leader, res.Battles)
 	}
-	if err := reachLeaderSide(m, romData, g, policy); err != nil {
-		return 0, fmt.Errorf("skill: Gym: approach %s: %w", g.Leader, err)
+	// The Viridian spinner planner already ends on a verified tile beside
+	// Giovanni. Running ordinary Travel again here could step onto another
+	// forced arrow tile and invalidate that postcondition.
+	if cur != viridianGymMap {
+		if err := reachLeaderSide(m, romData, g, policy); err != nil {
+			return 0, fmt.Errorf("skill: Gym: approach %s: %w", g.Leader, err)
+		}
 	}
 	if err := Face(m, g.LeaderX, g.LeaderY); err != nil {
 		return 0, fmt.Errorf("skill: Gym: face %s: %w", g.Leader, err)
