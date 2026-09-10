@@ -51,14 +51,31 @@ func AnswerTwoOption(m *emu.Emu, index int) error {
 	return selectTwoOption(m, index)
 }
 
-// AnswerYesNo explicitly answers a yes/no-shaped prompt. Gen I places the
-// affirmative entry at index 0 and the negative/cancel entry at index 1.
+// AnswerYesNo explicitly answers a semantic YES/NO prompt. It selects by the
+// decoded option labels, not by a fixed index: Gen I has both YES/NO and
+// NO/YES layouts. Non-yes/no two-option menus (HEAL/CANCEL, directions,
+// TRADE/CANCEL) are rejected without input.
 func AnswerYesNo(m *emu.Emu, yes bool) error {
-	index := 1
-	if yes {
-		index = 0
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	got := state.DecodeInteraction(&mem)
+	if got.Kind != state.InteractionTwoOption {
+		return fmt.Errorf("skill: AnswerYesNo: %w: got %q text=%q", ErrUnexpectedInteraction, got.Kind, got.Text)
 	}
-	return AnswerTwoOption(m, index)
+	want := "NO"
+	if yes {
+		want = "YES"
+	}
+	if !((got.Options[0] == "YES" && got.Options[1] == "NO") ||
+		(got.Options[0] == "NO" && got.Options[1] == "YES")) {
+		return fmt.Errorf("skill: AnswerYesNo: %w: two-option menu is %q/%q, not YES/NO",
+			ErrUnexpectedInteraction, got.Options[0], got.Options[1])
+	}
+	index := 0
+	if got.Options[1] == want {
+		index = 1
+	}
+	return selectTwoOption(m, index)
 }
 
 // SelectInteractionIndex selects a semantic menu entry by zero-based index.
