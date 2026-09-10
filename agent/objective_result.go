@@ -185,12 +185,15 @@ func classifyObjectiveOutcome(_ Objective, err error, final Observation) Outcome
 	}
 
 	var blocked *skill.ErrBlocked
+	var gate *skill.ErrRouteGateClosed
 	knownBlockage := errors.Is(err, world.ErrNoPath) ||
 		errors.Is(err, world.ErrNoRoute) ||
 		errors.Is(err, skill.ErrLegUnwalkable) ||
 		errors.Is(err, skill.ErrNoDialogue) ||
 		errors.Is(err, skill.ErrDialogueInterrupted) ||
-		errors.As(err, &blocked)
+		errors.Is(err, skill.ErrFieldMovePrerequisite) ||
+		errors.As(err, &blocked) ||
+		errors.As(err, &gate)
 	if knownBlockage {
 		if stableObjectiveBoundary(final) {
 			return OutcomeBlocked
