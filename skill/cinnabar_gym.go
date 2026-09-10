@@ -26,10 +26,10 @@ const (
 )
 
 type cinnabarQuizSpec struct {
-	Index          uint8
-	TargetX        uint8
-	TargetY        uint8
-	CorrectAnswer  bool
+	Index         uint8
+	TargetX       uint8
+	TargetY       uint8
+	CorrectAnswer bool
 }
 
 // hidden_events.asm is the authoritative table for both terminal coordinates
