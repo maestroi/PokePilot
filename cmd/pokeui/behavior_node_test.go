@@ -14,7 +14,7 @@ func TestConsoleBehaviorJavaScript(t *testing.T) {
 	if err != nil {
 		t.Fatalf("locate node: %v", err)
 	}
-	cmd := exec.Command(node, "--test", "ui/behavior_test.js")
+	cmd := exec.Command(node, "--test", "ui/behavior_test.js", "ui/run_cleanup_test.js")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("console behavior tests: %v\n%s", err, output)
