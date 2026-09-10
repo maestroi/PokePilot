@@ -213,6 +213,88 @@ func TestUIOperationsUseTruthfulRowsAndDeepLinks(t *testing.T) {
 	}
 }
 
+func TestUIChipClassesAreAllowlisted(t *testing.T) {
+	js := string(uiJS)
+	for _, want := range []string{
+		`const CHIP_KINDS = new Set`,
+		`function safeChipKind`,
+		`CHIP_KINDS.has(kind)`,
+		`chip${safeChipKind(kind)}`,
+	} {
+		if !strings.Contains(js, want) {
+			t.Errorf("safe chip class contract missing %q", want)
+		}
+	}
+	for _, unsafe := range []string{`class="chip ${kind}`, `class="chip ${esc(kind)}`} {
+		if strings.Contains(js, unsafe) {
+			t.Errorf("chip class still accepts arbitrary token through %q", unsafe)
+		}
+	}
+	// The payload documents the stored-XSS shape this contract must reject:
+	// reason = `x" onmouseover="alert(1)` may be text, never class markup.
+	malicious := `x" onmouseover="alert(1)`
+	if strings.Contains(js, `CHIP_KINDS.add(`+malicious) {
+		t.Fatal("malicious reason unexpectedly allowlisted")
+	}
+}
+
+func TestUIOperationsPaintOnceAndPreserveUnchangedRows(t *testing.T) {
+	js := string(uiJS)
+	start := strings.Index(js, "function renderOperations")
+	if start < 0 {
+		t.Fatal("renderOperations start")
+	}
+	end := strings.Index(js[start:], "\n  function ")
+	if end < 0 {
+		t.Fatal("renderOperations bounds")
+	}
+	operations := js[start : start+end]
+	for _, target := range []string{`health`, `$(` + `"workers"` + `)`, `queue`, `recent`} {
+		if !strings.Contains(operations, `paintHTML(`+target) {
+			t.Errorf("renderOperations must paint-guard %s", target)
+		}
+	}
+	if strings.Contains(operations, ".innerHTML =") {
+		t.Error("renderOperations bypasses paintHTML and replaces focused rows")
+	}
+	if strings.Contains(js, "function renderWorkers") {
+		t.Error("worker region has a second renderer outside renderOperations")
+	}
+	if strings.Count(js, `renderOperations();`) != 2 {
+		t.Error("Operations should render only for active dashboard refreshes and newly-opened tab")
+	}
+}
+
+func TestUIPaintHTMLRestoresFocusedRunAfterChangedSnapshot(t *testing.T) {
+	js := string(uiJS)
+	start := strings.Index(js, "function paintHTML")
+	end := strings.Index(js[start:], "\n  function ")
+	if start < 0 || end < 0 {
+		t.Fatal("paintHTML bounds")
+	}
+	paint := js[start : start+end]
+	for _, want := range []string{`document.activeElement`, `focusRun`, `CSS.escape(focusRun)`, `.focus()`} {
+		if !strings.Contains(paint, want) {
+			t.Errorf("paintHTML focus restoration missing %q", want)
+		}
+	}
+}
+
+func TestUIOperationsCollapseBeforeRailCanClipThem(t *testing.T) {
+	css := string(consoleCSS)
+	if !strings.Contains(css, `@media(max-width:1100px){.operations-grid{grid-template-columns:1fr}`) {
+		t.Error("Operations must collapse while the persistent desktop rail still constrains content")
+	}
+	for _, want := range []string{
+		`.operation-row{grid-template-columns:minmax(0,.8fr) minmax(0,1.2fr)`,
+		`overflow-wrap:anywhere`,
+	} {
+		if !strings.Contains(css, want) {
+			t.Errorf("responsive Operations styles missing %q", want)
+		}
+	}
+}
+
 func TestUIStatsOwnOnlyAggregateAnalytics(t *testing.T) {
 	js := string(statsJS)
 	if strings.Contains(js, `createElement("style")`) {
@@ -242,6 +324,23 @@ func TestUIStatsOwnOnlyAggregateAnalytics(t *testing.T) {
 		if !strings.Contains(css, want) {
 			t.Errorf("console.css missing Analytics style %q", want)
 		}
+	}
+}
+
+func TestUIStatsPauseWhileAnalyticsIsHidden(t *testing.T) {
+	stats := string(statsJS)
+	for _, want := range []string{
+		`function analyticsVisible`,
+		`if(!analyticsVisible())return`,
+		`pokefarm-console-view`,
+		`detail.view==="analytics"`,
+	} {
+		if !strings.Contains(stats, want) {
+			t.Errorf("hidden Analytics polling contract missing %q", want)
+		}
+	}
+	if !strings.Contains(string(uiJS), `pokefarm-console-view`) {
+		t.Error("view owner must notify Analytics when its tab opens")
 	}
 }
 
@@ -768,7 +867,7 @@ func TestUIRendersPlayerRoster(t *testing.T) {
 		}
 	}
 	start := strings.Index(js, "function renderLive")
-	end := strings.Index(js, "function renderWorkers")
+	end := strings.Index(js, "function filterBtn")
 	if start < 0 || end <= start {
 		t.Fatal("renderLive bounds")
 	}

@@ -3,6 +3,10 @@
 
   const card=document.getElementById("analytics-outcomes");
   if(!card)return;
+  function analyticsVisible(){
+    const panel=card.closest("[data-console-view]");
+    return !panel||!panel.hidden;
+  }
   card.className="ops-card outcome-stats";
   card.innerHTML=`
     <div class="ops-inner">
@@ -68,6 +72,7 @@
   }
 
   async function refresh(){
+    if(!analyticsVisible())return;
     try{
       const res=await fetch("/v1/stats",{cache:"no-store"});
       if(!res.ok)throw new Error(`HTTP ${res.status}`);
@@ -77,6 +82,10 @@
     }
   }
 
+  window.addEventListener("pokefarm-console-view",(ev)=>{
+    const detail=ev.detail||{};
+    if(detail.view==="analytics")refresh();
+  });
   refresh();
   setInterval(refresh,3000);
 })();

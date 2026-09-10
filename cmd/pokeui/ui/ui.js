@@ -182,8 +182,17 @@
   function tileLabel(r) {
     return mapLabel(r.map) + " (" + r.x + "," + r.y + ")";
   }
+  const CHIP_KINDS = new Set([
+    "starter", "how", "seed", "goal", "loop", "replay",
+    "running", "queued", "leased", "busy", "idle",
+    "outcome-done", "outcome-stuck", "outcome-budget",
+    "outcome-error", "outcome-lost", "outcome-cancelled"
+  ]);
+  function safeChipKind(kind) {
+    return CHIP_KINDS.has(kind) ? ` ${kind}` : "";
+  }
   function chip(kind, text) {
-    return `<span class="chip ${kind}">${esc(text)}</span>`;
+    return `<span class="chip${safeChipKind(kind)}">${esc(text)}</span>`;
   }
   function settingChips(r, compact) {
     let html = chip("starter", starterOf(r))
@@ -574,20 +583,6 @@
     for (const r of runs) { const art = el.querySelector('article[data-run="' + CSS.escape(r.run_id) + '"]'); if (art) el.appendChild(art); }
   }
 
-  function renderWorkers() {
-    const ws = snap.workers || [];
-    const el = $("workers");
-    if (!ws.length) { el.innerHTML = `<p class="empty">No workers</p>`; return; }
-    const byVer = {};
-    for (const w of ws) { const v = w.version || "unknown"; byVer[v] = (byVer[v] || 0) + 1; }
-    const summary = Object.entries(byVer).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([v, n]) => `${n} × ${short(v)}`).join(", ");
-    el.innerHTML = `<p class="ver-summary">${esc(summary)}</p>` + ws.map((w) => {
-      const busy = Boolean(w.run_id);
-      const job = busy ? `on <b>${esc(w.run_id)}</b>` : "waiting for a lease";
-      return `<div class="worker">${chip(busy ? "busy" : "idle", busy ? "busy" : "idle")}<span class="addr">${esc(w.addr)}</span>${w.version ? `<span class="ver">${esc(short(w.version))}</span>` : ""}<span class="job">${job}</span><span class="ago">${esc(w.seen_ago)} ago</span></div>`;
-    }).join("");
-  }
-
   function filterBtn(group, value, label) {
     const on = histFilter[group] === value;
     return `<button type="button" class="filter" data-filter-group="${group}" data-filter-value="${esc(value)}" aria-pressed="${on}">${esc(label)}</button>`;
@@ -648,8 +643,14 @@
     if (holding(el)) return false;
     const self = el.scrollTop;
     const inner = [...el.querySelectorAll("pre, .trace, .plan-q")].map((n) => n.scrollTop);
+    const active = document.activeElement;
+    const focusRun = active && el.contains(active) ? active.getAttribute("data-run") : "";
     el.innerHTML = html;
     el._paint = html;
+    if (focusRun) {
+      const restore = el.querySelector('[data-run="' + CSS.escape(focusRun) + '"]');
+      if (restore) restore.focus();
+    }
     el.scrollTop = self;
     el.querySelectorAll("pre, .trace, .plan-q").forEach((n, i) => { if (inner[i] != null) n.scrollTop = inner[i]; });
     return true;
@@ -808,7 +809,9 @@
   }
   function setView(view, updateHash = true) {
     const valid = ["live", "runs", "failures", "analytics", "operations", "tools"];
-    activeView = valid.includes(view) ? view : "live";
+    const nextView = valid.includes(view) ? view : "live";
+    const changed = nextView !== activeView;
+    activeView = nextView;
     document.querySelectorAll("[data-console-view]").forEach((panel) => { panel.hidden = panel.dataset.consoleView !== activeView; });
     document.querySelectorAll("[role=tab][data-view]").forEach((tab) => {
       const active = tab.dataset.view === activeView;
@@ -817,6 +820,8 @@
     });
     if (updateHash) history.replaceState(null, "", `${location.pathname}${location.search}#${activeView}`);
     if (window.scrollX) window.scrollTo({ left: 0, top: window.scrollY });
+    if (changed && activeView === "operations") renderOperations();
+    if (changed) window.dispatchEvent(new CustomEvent("pokefarm-console-view", { detail: { view: activeView } }));
   }
   function renderVersions() {
     const wall = snap.wall_version || "";
@@ -841,7 +846,7 @@
       consoleVersion ? `console ${short(consoleVersion)}` : "console version unavailable",
       snap.wall_version ? `wall ${short(snap.wall_version)}` : "wall version unavailable"
     ].join(" · ");
-    health.innerHTML = `<header><h3 id="operations-health-title">System health</h3></header><div class="operation-facts"><div><span>Wall</span><strong class="${wallDown ? "operation-bad" : "operation-good"}">${esc(wallState)}</strong></div><div><span>Workers</span><strong>${workers.length ? `${idle} available · ${workers.length} reporting` : "No workers reporting"}</strong></div><div><span>Builds</span><strong class="operation-mono">${esc(versions)}</strong></div></div>`;
+    paintHTML(health, `<header><h3 id="operations-health-title">System health</h3></header><div class="operation-facts"><div><span>Wall</span><strong class="${wallDown ? "operation-bad" : "operation-good"}">${esc(wallState)}</strong></div><div><span>Workers</span><strong>${workers.length ? `${idle} available · ${workers.length} reporting` : "No workers reporting"}</strong></div><div><span>Builds</span><strong class="operation-mono">${esc(versions)}</strong></div></div>`);
 
     $("worker-summary").textContent = workers.length ? `${idle} available · ${workers.length - idle} assigned` : "No workers reporting";
     const workerRows = workers.map((worker) => {
@@ -851,7 +856,7 @@
       const assignment = busy ? worker.run_id : "Waiting for a lease";
       return `<${tag}${attrs} class="operation-row operation-worker"><span class="operation-status">${chip(busy ? "busy" : "idle", busy ? "busy" : "idle")}</span><span><strong>${esc(worker.addr || "Address unavailable")}</strong><small>${esc(worker.version ? `revision ${short(worker.version)}` : "revision unavailable")}</small></span><span><strong>${esc(assignment)}</strong><small>${esc(worker.seen_ago ? `seen ${worker.seen_ago} ago` : "last seen unavailable")}</small></span></${tag}>`;
     }).join("");
-    $("workers").innerHTML = workerRows || `<p class="empty">No workers are currently reporting to the wall.</p>`;
+    paintHTML($("workers"), workerRows || `<p class="empty">No workers are currently reporting to the wall.</p>`);
 
     const waiting = runs.filter((run) => run.status === "queued" || run.status === "leased")
       .sort((a, b) => Number(a.queued_at || 0) - Number(b.queued_at || 0));
@@ -861,7 +866,7 @@
       const lease = worker ? `Worker ${worker.addr}` : (run.status === "leased" ? "Lease assigned · worker not reported" : "Awaiting lease");
       return `<button type="button" class="operation-row operation-run" data-run="${esc(run.run_id)}"><span><strong class="operation-mono">${esc(run.run_id)}</strong><small>${esc(fmtWhen(run.queued_at) || "Queued time unavailable")}</small></span><span><strong>${esc(goal)}</strong><small>${esc(run.status)}</small></span><span><strong>${esc(lease)}</strong><small>${run.status === "leased" ? "leased work" : "queued work"}</small></span></button>`;
     }).join("");
-    queue.innerHTML = `<header><h3 id="operations-queue-title">Queue and leases</h3><p>${waiting.length} waiting</p></header>${queueRows || `<p class="empty">No queued or leased runs.</p>`}`;
+    paintHTML(queue, `<header><h3 id="operations-queue-title">Queue and leases</h3><p>${waiting.length} waiting</p></header>${queueRows || `<p class="empty">No queued or leased runs.</p>`}`);
 
     const terminal = runs.filter((run) => run.status === "done")
       .sort((a, b) => Number(b.ended_at || 0) - Number(a.ended_at || 0))
@@ -871,7 +876,7 @@
       const detail = run.detail || "No terminal detail reported";
       return `<button type="button" class="operation-row operation-run" data-run="${esc(run.run_id)}"><span><strong class="operation-mono">${esc(run.run_id)}</strong><small>${esc(fmtWhen(run.ended_at) || "End time unavailable")}</small></span><span><strong>${esc(reason)}</strong><small>${esc(detail)}</small></span><span class="operation-outcome">${statusChip(run)}</span></button>`;
     }).join("");
-    recent.innerHTML = `<header><h3 id="operations-recent-title">Recent outcomes</h3><p>Latest ${RECENT_OPERATIONS_LIMIT}</p></header>${recentRows || `<p class="empty">No terminal outcomes yet.</p>`}`;
+    paintHTML(recent, `<header><h3 id="operations-recent-title">Recent outcomes</h3><p>Latest ${RECENT_OPERATIONS_LIMIT}</p></header>${recentRows || `<p class="empty">No terminal outcomes yet.</p>`}`);
   }
 
   function selectRun(id) {
@@ -929,7 +934,9 @@
     connection.classList.toggle("connected", !wallDown);
     connection.classList.toggle("disconnected", wallDown);
     $("connection-label").textContent = wallDown ? `Stale · ${Math.max(0, Math.floor((Date.now() - lastFreshAt) / 1000))}s` : "Connected";
-    renderCounts(); renderVersions(); renderLive(); renderFailures(); renderWorkers(); renderHistory(); renderDetail(); renderOperations(); syncPumps();
+    renderCounts(); renderVersions(); renderLive(); renderFailures(); renderHistory(); renderDetail();
+    if (activeView === "operations") renderOperations();
+    syncPumps();
     const run = (snap.runs || []).find((candidate) => candidate.run_id === selected);
     if (run) window.dispatchEvent(new CustomEvent("pokefarm-run-lifecycle", { detail: { runId: run.run_id, status: run.status, frame: run.frame, replayAvailable: Boolean(run.replay_available), completionSignature: completionSignature(run) } }));
     setView(activeView, false);
