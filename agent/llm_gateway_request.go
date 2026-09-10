@@ -44,7 +44,7 @@ func isGatewayModelAlias(model string) bool {
 	}
 
 	for _, candidate := range []struct {
-		envName string
+		envName  string
 		fallback string
 	}{
 		{"POKEPILOT_LLM_GATEWAY_AUTO_MODEL", gatewayModelAuto},
