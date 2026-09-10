@@ -156,6 +156,9 @@ func goToWithTransitionExecutor(m *emu.Emu, romData []byte, dest Destination, ex
 		if err := abortIfBattle(m); err != nil {
 			return err
 		}
+		if err := waitOutScriptedMovement(m); err != nil {
+			return err
+		}
 		cur := m.Peek8(sym.CurMap)
 		x, y := playerXY(m)
 
@@ -171,7 +174,6 @@ func goToWithTransitionExecutor(m *emu.Emu, romData []byte, dest Destination, ex
 		if err != nil {
 			return fmt.Errorf("skill: GoTo: overlay live topology for map %02x: %w", cur, err)
 		}
-
 		blockedHere := map[world.Edge]bool{}
 		for k := range failed {
 			if k.m == cur && k.x == x && k.y == y {
@@ -407,6 +409,47 @@ func PlaceNames() []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+// scriptedMovementBudget bounds waitOutScriptedMovement: a map script that
+// holds wJoyIgnore while it drives the player itself (VermilionDock's SS
+// Anne departure animation plus its own forced walk off the dock is the
+// measured case: several ~120-frame delay loops for the smoke/horn/erase
+// sequence, then a separate 3-tile simulated-joypad walk). It is a budget,
+// not a prediction: exceeding it is an error carrying the same diagnostics
+// Cutscene reports on timeout.
+const scriptedMovementBudget = 4000
+
+// waitOutScriptedMovement lets a map script that is driving the player
+// itself finish before GoTo reads position or presses a direction.
+//
+// wJoyIgnore blocks our input exactly the way it blocks the pad during such
+// a script, so a press GoTo sends while one is running does nothing: the
+// tile-level walker sees the coordinate never change, reports the leg
+// unwalkable, and GoTo permanently bans a leg that was never geometrically
+// blocked. MEASURED on run-1xn9x6r8ubsh81iuw08xdoysxi round 28: landing back
+// on the Vermilion dock after S.S. Anne sails fires
+// VermilionDockSSAnneLeavesScript, which sets wJoyIgnore and does not clear
+// it — clearing is the OWN later walk-out script's job — so GoTo tried to
+// walk off the dock mid-cutscene, banned the only warp back to Vermilion
+// City as unwalkable, and failed the whole run with "no route" once every
+// edge was exhausted.
+//
+// This is deliberately generic: any map script that force-walks the player
+// (Route 22's rival intro, the Oak's Parcel hand-over, ...) holds control
+// the same way, and GoTo should wait it out rather than fight it, no matter
+// which script it is. A battle or a text box is a different, already-handled
+// condition, so this only waits when neither is up.
+func waitOutScriptedMovement(m *emu.Emu) error {
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	if state.Controllable(&mem) || state.DecodeDialogue(&mem) != nil || state.DecodeBattle(&mem) != nil {
+		return nil
+	}
+	if err := Cutscene(m, scriptedMovementBudget, func(*state.Mem) bool { return true }); err != nil {
+		return fmt.Errorf("skill: GoTo: %w", err)
+	}
+	return nil
 }
 
 // abortIfBattle returns an error wrapping ErrBattle when a battle is active,
