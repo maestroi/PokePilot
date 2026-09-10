@@ -247,7 +247,7 @@ func TestUISemanticReplayContextIsTruthful(t *testing.T) {
 func TestUIReloadsInspectorWhenSelectedRunFinishes(t *testing.T) {
 	ui := string(uiJS)
 	inspector := string(inspectorJS)
-	for _, want := range []string{`pokefarm-run-lifecycle`, `runId: run.run_id`, `status: run.status`, `frame: run.frame`, `completionSignature: completionSignature(run)`} {
+	for _, want := range []string{`pokefarm-run-lifecycle`, `runId: run.run_id`, `status: run.status`, `frame: run.frame`, `replayAvailable: Boolean(run.replay_available)`, `completionSignature: completionSignature(run)`} {
 		if !strings.Contains(ui, want) {
 			t.Errorf("dashboard lifecycle publication missing %q", want)
 		}
@@ -257,7 +257,7 @@ func TestUIReloadsInspectorWhenSelectedRunFinishes(t *testing.T) {
 			t.Errorf("inspector lifecycle reload missing %q", want)
 		}
 	}
-	if !strings.Contains(inspector, `if(changed){lifecycleStatus="";completionSignature="";finishedReloadPending=false;runTotalFrame=0}`) {
+	if !strings.Contains(inspector, `if(changed){stopFinalizeRetry();lifecycleStatus="";completionSignature="";finishedReloadPending=false;dashboardReplayAvailable=false;runTotalFrame=0}`) {
 		t.Error("switching runs must discard a pending completion reload owned by the previous run")
 	}
 }
@@ -273,9 +273,14 @@ func TestUICompletionSignatureTracksReportEnrichment(t *testing.T) {
 		t.Fatal("completionSignature bounds")
 	}
 	signature := ui[start : start+end]
-	for _, want := range []string{`run.status`, `run.ended_at`, `run.reason`, `run.detail`, `run.replay_available`, `issue.issue_id`, `issue.status`, `issue.occurrence_count`} {
+	for _, want := range []string{`run.status`, `run.ended_at`, `run.reason`, `run.detail`, `run.replay_available`, `run.attempts`} {
 		if !strings.Contains(signature, want) {
 			t.Errorf("completion signature missing report-backed fact %q", want)
+		}
+	}
+	for _, unrelated := range []string{`run.issue`, `issue.issue_id`, `issue.status`, `issue.occurrence_count`, `issue.resolution`, `issue.fixed_revision`} {
+		if strings.Contains(signature, unrelated) {
+			t.Errorf("completion signature contains unrelated triage fact %q", unrelated)
 		}
 	}
 	if strings.Contains(signature, `run.frame`) {
@@ -287,6 +292,29 @@ func TestUICompletionSignatureTracksReportEnrichment(t *testing.T) {
 		if !strings.Contains(inspector, want) {
 			t.Errorf("inspector completion enrichment handling missing %q", want)
 		}
+	}
+}
+
+func TestUIFinalizedReplayEvidenceSettlesWithBoundedRetry(t *testing.T) {
+	inspector := string(inspectorJS)
+	for _, want := range []string{
+		`const FINALIZE_RETRY_LIMIT=5`,
+		`const FINALIZE_RETRY_MS=750`,
+		`dashboardReplayAvailable`,
+		`finishEvidence`,
+		`!replayable||!finishEvidence`,
+		`scheduleFinalizeRetry(id)`,
+		`finalizeRetryCount>=FINALIZE_RETRY_LIMIT`,
+		`stopFinalizeRetry()`,
+		`clearTimeout(finalizeRetryTimer)`,
+		`if(!dashboardReplayAvailable)return`,
+	} {
+		if !strings.Contains(inspector, want) {
+			t.Errorf("bounded finalized replay settle missing %q", want)
+		}
+	}
+	if !strings.Contains(inspector, `if(changed)resetGameMedia();else stopReplayPoll()`) {
+		t.Error("same-run evidence refresh must preserve already-ready replay media")
 	}
 }
 

@@ -59,6 +59,11 @@
   let runLoadInFlight = false;
   let finishedReloadPending = false;
   let runLoadSerial = 0;
+  let dashboardReplayAvailable = false;
+  let finalizeRetryTimer = 0;
+  let finalizeRetryCount = 0;
+  const FINALIZE_RETRY_LIMIT=5;
+  const FINALIZE_RETRY_MS=750;
   const escURL = encodeURIComponent;
   const text = (v) => v === undefined || v === null || v === "" ? "—" : String(v);
   const html = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -71,6 +76,33 @@
     return body;
   }
   function stopReplayPoll() { if (replayPoll) clearTimeout(replayPoll); replayPoll = 0; }
+  function stopFinalizeRetry(reset=true) {
+    if(finalizeRetryTimer)clearTimeout(finalizeRetryTimer);
+    finalizeRetryTimer=0;
+    if(reset)finalizeRetryCount=0;
+  }
+  function showFinalizeStatus(message) {
+    if(video.dataset.run===runID&&!video.hidden)return;
+    lcd.hidden=false;
+    replayPanel.hidden=false;
+    replayButton.hidden=true;
+    replayStatus.textContent=message;
+  }
+  function scheduleFinalizeRetry(id) {
+    if(!dashboardReplayAvailable)return;
+    if(id!==runID||finalizeRetryTimer)return;
+    if(finalizeRetryCount>=FINALIZE_RETRY_LIMIT){
+      showFinalizeStatus("Replay evidence is still unavailable. Refresh this page to check again.");
+      return;
+    }
+    finalizeRetryCount++;
+    showFinalizeStatus(`Finalizing replay evidence… retry ${finalizeRetryCount} of ${FINALIZE_RETRY_LIMIT}`);
+    finalizeRetryTimer=setTimeout(()=>{
+      finalizeRetryTimer=0;
+      if(id!==runID||!dashboardReplayAvailable)return;
+      selectRun(id,true);
+    },FINALIZE_RETRY_MS);
+  }
   function eventFrame(event) { return Number(event.frame || 0); }
   function eventRound(event) { return Number(event.round || 0); }
   function eventKind(event) {
@@ -223,8 +255,9 @@
     const changed=id!==runID;
     const serial=++runLoadSerial;
     runLoadInFlight=true;
-    resetGameMedia(); runID=id; debug=null; reproSource=null; checkpoints=[]; events=[]; selectedEvent=-1; followingLive=true; runFinished=false; returnLive.hidden=true; evidence.hidden=true; transportStatus.textContent="";investigate.disabled=false;investigateStatus.textContent="";
-    if(changed){lifecycleStatus="";completionSignature="";finishedReloadPending=false;runTotalFrame=0}
+    if(changed)resetGameMedia();else stopReplayPoll();
+    runID=id; debug=null; reproSource=null; checkpoints=[]; events=[]; selectedEvent=-1; followingLive=true; runFinished=false; returnLive.hidden=true; evidence.hidden=true; transportStatus.textContent="";investigate.disabled=false;investigateStatus.textContent="";
+    if(changed){stopFinalizeRetry();lifecycleStatus="";completionSignature="";finishedReloadPending=false;dashboardReplayAvailable=false;runTotalFrame=0}
     window.dispatchEvent(new CustomEvent("pokefarm-semantic-event",{detail:{runId:id,event:null}}));
     if(!id){track.innerHTML='<p class="empty">Select a run to browse recorded events.</p>';story.innerHTML='<p class="empty">Select a run to browse its recorded events.</p>';replayButton.hidden=true;runLoadInFlight=false;return}
     track.innerHTML='<p class="empty">Loading recorded events…</p>'; story.innerHTML='<p class="empty">Loading Run Story…</p>'; replayButton.hidden=false;replayButton.disabled=true;replayStatus.textContent="Loading…";
@@ -232,7 +265,10 @@
       const [debugView,artifactView,checkpointView,sourceView]=await Promise.all([json(`/v1/runs/${escURL(id)}/debug`),json(`/v1/runs/${escURL(id)}/artifacts`),json(`/v1/runs/${escURL(id)}/checkpoints`).catch(()=>({checkpoints:[]})),json(`/v1/runs/${escURL(id)}/repro-source`).catch(()=>null)]);
       if(id!==runID||serial!==runLoadSerial)return; debug=debugView;reproSource=sourceView;checkpoints=checkpointView.checkpoints||[];events=normalizeEvents(debugView,checkpointView);selectedEvent=events.length-1;const debugStatus=String(debugView.run&&debugView.run.status||"");runFinished=debugStatus==="done";if(!lifecycleStatus)lifecycleStatus=debugStatus;runTotalFrame=Math.max(runTotalFrame,Number(debugView.run&&debugView.run.frame||0));renderTimeline();renderStory();renderStoryActions();renderMeta();renderArtifacts(artifactView);
       const replayable=(artifactView.artifacts||[]).some((a)=>a.replayable);
+      const finishEvidence=Boolean(debugView&&debugView.finish);
       if(!runFinished){resetGameMedia();transportStatus.textContent=replayable?"Following live":"Following live · Available after this run finishes and uploads its recording.";return}
+      if(dashboardReplayAvailable&&(!replayable||!finishEvidence)){scheduleFinalizeRetry(id);return}
+      stopFinalizeRetry();
       if(replayable)await loadReplayStatus(id);
       else{renderReplay({state:"missing",error:"This run has no run.gbrun recording to replay."});replayButton.disabled=true}
     }catch(err){if(id===runID){track.innerHTML=`<p class="empty">Timeline unavailable: ${html(err.message)}</p>`;story.innerHTML=`<p class="empty">Run Story unavailable: ${html(err.message)}</p>`;replayButton.hidden=false;replayButton.disabled=true;replayStatus.textContent=err.message}}
@@ -281,13 +317,14 @@
     const status=String(detail.status||"");
     const previousStatus=lifecycleStatus;
     lifecycleStatus=status;
-    if(status!=="done"){completionSignature="";return}
+    dashboardReplayAvailable=Boolean(detail.replayAvailable);
+    if(status!=="done"){stopFinalizeRetry();completionSignature="";return}
     const signature=String(detail.completionSignature||"");
     const signatureChanged=signature!==completionSignature;
     completionSignature=signature;
     if(previousStatus===""||!signature||!signatureChanged)return;
     selectRun(runID,true);
   });
-  window.addEventListener("beforeunload",()=>{stopReplayPoll();clearReplayVideo()},{once:true});
+  window.addEventListener("beforeunload",()=>{stopReplayPoll();stopFinalizeRetry();clearReplayVideo()},{once:true});
   if (document.documentElement.dataset.selectedRun) selectRun(document.documentElement.dataset.selectedRun);
 })();
