@@ -6,7 +6,7 @@ const {
   partitionOperations,
   timelineLayout,
   replayPresentation,
-  drawerPresentation,
+  drawerTransition,
 } = require("./behavior.js");
 
 test("operations partition queued, active, and recent attempts", () => {
@@ -59,20 +59,54 @@ test("ready replay preserves LCD until media can play and restores it on error",
   });
 });
 
-test("drawer state is inert only while closed on mobile", () => {
-  assert.deepEqual(drawerPresentation(false, true, true), {
-    open: false,
-    inert: true,
-    ariaHidden: "true",
-    focus: "restore-trigger",
-  });
-  assert.deepEqual(drawerPresentation(true, true), {
+test("drawer open and Escape transitions carry focus intent", () => {
+  assert.equal(typeof drawerTransition, "function");
+  const opened = drawerTransition({ open: false }, "open", true);
+  assert.deepEqual(opened, {
     open: true,
     inert: false,
     ariaHidden: "false",
     focus: "selected-or-close",
   });
-  assert.deepEqual(drawerPresentation(false, false), {
+  assert.deepEqual(drawerTransition(opened, "escape", true), {
+    open: false,
+    inert: true,
+    ariaHidden: "true",
+    focus: "restore-trigger",
+  });
+});
+
+test("keyboard and click selection share the mobile close transition", () => {
+  assert.equal(typeof drawerTransition, "function");
+  const opened = drawerTransition({ open: false }, "open", true);
+  const keyboard = drawerTransition(opened, "select-keyboard", true);
+  const click = drawerTransition(opened, "select-click", true);
+
+  assert.deepEqual(keyboard, click);
+  assert.deepEqual(keyboard, {
+    open: false,
+    inert: true,
+    ariaHidden: "true",
+    focus: "restore-trigger",
+  });
+});
+
+test("drawer breakpoint transition toggles inert without closing desktop rail", () => {
+  assert.equal(typeof drawerTransition, "function");
+  const mobile = drawerTransition({ open: false }, "breakpoint", true);
+  assert.deepEqual(mobile, {
+    open: false,
+    inert: true,
+    ariaHidden: "true",
+    focus: "none",
+  });
+  assert.deepEqual(drawerTransition(mobile, "breakpoint", false), {
+    open: false,
+    inert: false,
+    ariaHidden: "false",
+    focus: "none",
+  });
+  assert.deepEqual(drawerTransition({ open: false }, "select-keyboard", false), {
     open: false,
     inert: false,
     ariaHidden: "false",

@@ -53,10 +53,24 @@
     };
   }
 
+  function drawerTransition(current, action, mobile, focusInside) {
+    if (!mobile) return drawerPresentation(false, false, false);
+    const wasOpen = Boolean(current && current.open);
+    if (action === "open") return drawerPresentation(true, true, false);
+    const closes = action === "close"
+      || action === "escape"
+      || action === "select-keyboard"
+      || action === "select-click";
+    if (closes) return drawerPresentation(false, true, wasOpen);
+    if (action === "breakpoint") return drawerPresentation(false, true, Boolean(focusInside));
+    return drawerPresentation(wasOpen, true, false);
+  }
+
   return {
     partitionOperations,
     timelineLayout,
     replayPresentation,
     drawerPresentation,
+    drawerTransition,
   };
 });

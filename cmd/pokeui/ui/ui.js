@@ -4,7 +4,7 @@
   const slowFrameMs = 500; // phones on data: 2 fps still shows progress, 40x less traffic
   const narrow = () => window.matchMedia("(max-width: 700px)").matches;
   const railMedia = window.matchMedia("(max-width: 760px)");
-  const { partitionOperations, drawerPresentation } = window.PokeConsoleBehavior;
+  const { partitionOperations, drawerTransition } = window.PokeConsoleBehavior;
   const short = (v) => String(v || "").slice(0, 7); // display SHAs short; JSON keeps the full one
   let snap = { now: 0, runs: [], workers: [] };
   let groups = [];
@@ -894,10 +894,10 @@
     paintHTML(recent, `<header><h3 id="operations-recent-title">Recent outcomes</h3><p>Latest ${RECENT_OPERATIONS_LIMIT}</p></header>${recentRows || `<p class="empty">No terminal outcomes yet.</p>`}`);
   }
 
-  function applyRailState(open, restoreFocus = false) {
+  function applyRailTransition(action, focusInside = false) {
     const rail = $("run-rail");
     const trigger = $("rail-toggle");
-    const state = drawerPresentation(open, railMedia.matches, restoreFocus);
+    const state = drawerTransition({ open: rail.classList.contains("open") }, action, railMedia.matches, focusInside);
     rail.classList.toggle("open", state.open && railMedia.matches);
     rail.inert = state.inert;
     if (state.ariaHidden === "true") rail.setAttribute("aria-hidden", "true");
@@ -924,7 +924,12 @@
 
   function syncRailBreakpoint() {
     const focusWasInside = $("run-rail").contains(document.activeElement);
-    applyRailState(false, railMedia.matches && focusWasInside);
+    applyRailTransition("breakpoint", focusWasInside);
+  }
+
+  function activateRunPick(pick, input) {
+    selectRun(pick.getAttribute("data-run"));
+    applyRailTransition(input === "keyboard" ? "select-keyboard" : "select-click");
   }
 
   function selectRun(id) {
@@ -1048,13 +1053,13 @@
       setView(tabs[next].dataset.view);
     });
   });
-  $("rail-toggle").addEventListener("click", () => applyRailState(true));
-  $("rail-close").addEventListener("click", () => applyRailState(false, true));
+  $("rail-toggle").addEventListener("click", () => applyRailTransition("open"));
+  $("rail-close").addEventListener("click", () => applyRailTransition("close"));
   railMedia.addEventListener("change", syncRailBreakpoint);
   document.addEventListener("keydown", (ev) => {
     if (ev.key !== "Escape" || !railMedia.matches || !$("run-rail").classList.contains("open")) return;
     ev.preventDefault();
-    applyRailState(false, true);
+    applyRailTransition("escape");
   });
   $("copy-run-id").addEventListener("click", async () => {
     if (!selected) return;
@@ -1084,7 +1089,7 @@
   document.body.addEventListener("keydown", (ev) => {
     if (ev.key !== "Enter" && ev.key !== " ") return;
     const pick = ev.target.closest("article[data-run]");
-    if (pick && ev.target === pick) { ev.preventDefault(); selectRun(pick.getAttribute("data-run")); }
+    if (pick && ev.target === pick) { ev.preventDefault(); activateRunPick(pick, "keyboard"); }
   });
 
   document.body.addEventListener("click", async (ev) => {
@@ -1112,7 +1117,7 @@
       catch (e) { cardErr = { id, text: "wall unreachable" }; }
       await refresh(); return;
     }
-    const pick = ev.target.closest("[data-run]"); if (pick && !ev.target.closest("[data-cancel]")) { selectRun(pick.getAttribute("data-run")); applyRailState(false, true); }
+    const pick = ev.target.closest("[data-run]"); if (pick && !ev.target.closest("[data-cancel]")) activateRunPick(pick, "click");
   });
 
   fetch("/v1/version", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).then((v) => { if (v && v.version) { consoleVersion = v.version; renderVersions(); } }).catch(() => {});
