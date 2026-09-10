@@ -73,10 +73,12 @@ func reachLeaderSide(m *emu.Emu, romData []byte, g GymInfo, policy MovePolicy) e
 }
 
 // Gym executes the complete challenge available where the player stands.
-// Brock and Misty may begin from their cities or inside their gyms; Koga begins
-// inside his gym. Surge may begin in Vermilion City: Gym then owns the exterior
+// Brock and Misty may begin from their cities; Koga and Sabrina begin inside
+// their gyms. Surge may begin in Vermilion City: Gym then owns the exterior
 // Cut prerequisite, the internal trash-can gate, the leader battle, and the
-// Thunder Badge postcondition.
+// Thunder Badge postcondition. Sabrina's approach uses the generic same-map
+// warp-maze motor because her rooms are connected by teleport pads rather than
+// ordinary walkable geometry.
 func Gym(m *emu.Emu, romData []byte, policy MovePolicy) (state.BattleResult, error) {
 	if policy == nil {
 		return 0, fmt.Errorf("skill: Gym: nil policy")
@@ -107,6 +109,8 @@ func Gym(m *emu.Emu, romData []byte, policy MovePolicy) (state.BattleResult, err
 			return 0, fmt.Errorf("skill: Gym: open %s's gate: %w", g.Leader, err)
 		}
 		res, err = travelOpenVermilion(m, romData, dest, policy, 20)
+	} else if cur == saffronGymMap {
+		res, err = travelIntraMapWarpMaze(m, romData, dest, policy, 30)
 	} else {
 		// Travel, not walkWithinMap: gym trainers can engage by line of sight
 		// on the way to the leader, and Travel resolves those battles before
