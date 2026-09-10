@@ -251,6 +251,11 @@ func (w *Wall) checkpointViews(runID string, attempt int, planner string) ([]che
 	for _, name := range names {
 		view := checkpointView{Name: name}
 		switch {
+		case strings.HasPrefix(name, "major-badge-"):
+			view.Kind = "major"
+			view.Round, view.Frame = majorCheckpointNumbers(name)
+			view.HasKnowledge = matchingKnowledgeName(dir, name) != ""
+			view.Replayable = planner != "llm" || view.HasKnowledge
 		case strings.HasPrefix(name, "round-"):
 			view.Kind = "objective"
 			view.Round, view.Frame = objectiveNumbers(name)
@@ -339,6 +344,12 @@ func matchingKnowledgeName(dir, stateName string) string {
 
 func objectiveNumbers(name string) (round int, frame uint64) {
 	_, _ = fmt.Sscanf(name, "round-%d-frame-%d-", &round, &frame)
+	return round, frame
+}
+
+func majorCheckpointNumbers(name string) (round int, frame uint64) {
+	var badge int
+	_, _ = fmt.Sscanf(name, "major-badge-%d-round-%d-frame-%d-", &badge, &round, &frame)
 	return round, frame
 }
 

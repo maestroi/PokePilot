@@ -6,9 +6,9 @@
   if (!root) return;
   root.innerHTML = `
     <section id="run-timeline" class="timeline-bay" aria-labelledby="timeline-title">
-      <header><div><span class="section-kicker">Playback</span><h2 id="timeline-title">Run timeline</h2></div><div class="timeline-toolbar"><button id="pp-return-live" class="quiet-button" type="button" hidden>Return to live</button><span id="pp-transport-status" class="inspect-status"></span></div></header>
+      <header><div><span class="section-kicker">Playback</span><h2 id="timeline-title">Run timeline</h2><span id="pp-timeline-selection" class="timeline-selection"></span></div><div class="timeline-toolbar"><span id="pp-timeline-action" class="timeline-action"></span><button id="pp-return-live" class="quiet-button" type="button" hidden>Return to live</button><span id="pp-transport-status" class="inspect-status"></span></div></header>
       <div class="timeline-scroll"><div id="pp-timeline-track" class="timeline-track" role="group" aria-label="Recorded run events"></div></div>
-      <div class="timeline-legend"><span>○ Decision</span><span>□ Checkpoint</span><span>○ Progress</span><span>○ Failure</span></div>
+      <div class="timeline-legend"><span>○ Decision</span><span>■ Restartable checkpoint</span><span>□ Evidence only</span><span>● Progress</span><span>◆ Failure</span></div>
     </section>
     <section id="run-story" class="story-bay" aria-labelledby="story-title">
       <header><div><span class="section-kicker">Chronology</span><h2 id="story-title">Run Story <small>Recorded events</small></h2></div><div id="pp-story-actions" class="story-header-actions"><button type="button" class="quiet-button" data-evidence>Evidence</button></div></header>
@@ -126,6 +126,12 @@
     const values = [event.question && event.decision ? event.question : "", event.message, event.progress].filter(Boolean);
     return values.join(" · ") || (event.checkpoint ? (event.replayable ? "Paired agent knowledge is available." : "This checkpoint cannot start an LLM run.") : "No additional semantic detail was persisted.");
   }
+  function compactFrame(frame) {
+    const value=Number(frame||0);
+    if(value>=1000000)return `${(value/1000000).toFixed(value>=10000000?0:1)}m`;
+    if(value>=1000)return `${(value/1000).toFixed(value>=100000?0:1)}k`;
+    return String(value);
+  }
   function normalizeEvents(debugView, checkpointView) {
     const timeline = Array.isArray(debugView && debugView.timeline) ? debugView.timeline.map((event) => ({...event})) : [];
     const cps = Array.isArray(checkpointView && checkpointView.checkpoints) ? checkpointView.checkpoints : [];
@@ -137,13 +143,22 @@
   }
   function markerSymbol(kind) { return kind === "checkpoint" ? "□" : kind === "failure" ? "!" : kind === "progress" ? "✓" : "○"; }
   function renderTimeline() {
-    if (!events.length) { track.style.width = "100%"; track.innerHTML = '<p class="empty">No semantic events were persisted for this run.</p>'; return; }
-    const layout = timelineLayout(events.length, 36, 32);
-    track.style.width = layout.width;
-    track.innerHTML = events.map((event, index) => {
+    const selection=byID("pp-timeline-selection");
+    if (!events.length) { track.style.width = "100%"; track.innerHTML = '<p class="empty">No semantic events were persisted for this run.</p>'; if(selection)selection.textContent=""; return; }
+    const layout = timelineLayout(events, timelineFrameTotal());
+    track.style.width = "100%";
+    track.style.setProperty("--timeline-lanes",layout.laneCount);
+    track.style.minHeight=`${72+(layout.laneCount-1)*16}px`;
+    const ticks=[0,25,50,75,100].map((percent)=>`<span style="left:${percent}%"><i></i>${compactFrame(layout.totalFrames*percent/100)}</span>`).join("");
+    const markers=events.map((event, index) => {
       const kind = eventKind(event);
-      return `<button type="button" class="timeline-marker ${kind}" style="left:${layout.positions[index]}px" data-event-index="${index}" aria-label="${html(eventTitle(event))}" aria-current="${index===selectedEvent}">${markerSymbol(kind)}</button>`;
+      const availability=event.checkpoint?(event.replayable?" restartable":" evidence-only"):"";
+      const accessibility=event.checkpoint?(event.replayable?"Restartable checkpoint":"Evidence-only checkpoint"):eventTitle(event);
+      return `<button type="button" class="timeline-marker ${kind}${availability}" style="left:${layout.positions[index]}%;--lane-offset:${layout.lanes[index]*16}px" data-event-index="${index}" aria-label="${html(`${accessibility} · frame ${eventFrame(event).toLocaleString()} · ${eventTitle(event)}`)}" aria-current="${index===selectedEvent}">${markerSymbol(kind)}</button>`;
     }).join("");
+    track.innerHTML=`<div class="timeline-ruler" aria-hidden="true">${ticks}</div><div class="timeline-axis">${markers}</div>`;
+    const event=events[selectedEvent];
+    if(selection)selection.textContent=event?`Frame ${eventFrame(event).toLocaleString()} · ${eventTitle(event)}`:`${layout.totalFrames.toLocaleString()} frames`;
   }
   function renderStory() {
     if (!events.length) { story.innerHTML = '<p class="empty">No recorded events. Raw run evidence may still be available.</p>'; return; }
@@ -153,11 +168,14 @@
     }).join("");
   }
   function renderStoryActions() {
-    const host=byID("pp-story-actions"), event=events[selectedEvent];
+    const host=byID("pp-story-actions"), timelineAction=byID("pp-timeline-action"), event=events[selectedEvent];
     if(!host)return;
-    const restart=event&&event.checkpoint?`<button type="button" class="quiet-button" data-repro="${html(event.checkpoint)}" ${event.replayable?"":"disabled"}>Start a new run from here</button>`:"";
     const failure=event&&eventKind(event)==="failure"?'<button type="button" class="primary-action" data-investigate-event>Investigate with AI</button>':"";
-    host.innerHTML=`${failure}${restart}<button type="button" class="quiet-button" data-evidence>Evidence</button>`;
+    host.innerHTML=`${failure}<button type="button" class="quiet-button" data-evidence>Evidence</button>`;
+    if(!timelineAction)return;
+    if(event&&event.checkpoint&&event.replayable)timelineAction.innerHTML=`<button type="button" class="quiet-button restart-action" data-repro="${html(event.checkpoint)}">Start a new run from here</button>`;
+    else if(event&&event.checkpoint)timelineAction.innerHTML='<span class="checkpoint-note">Evidence only · no paired agent knowledge</span>';
+    else timelineAction.innerHTML="";
   }
   function publishSemanticEvent(index, nearest) {
     const event = events[index];

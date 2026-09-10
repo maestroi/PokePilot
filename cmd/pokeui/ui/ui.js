@@ -718,6 +718,9 @@
     const hasEventPosition = event && event.map != null && event.x != null && event.y != null;
     const run = hasEventPosition ? {...liveRun, map:event.map, x:event.x, y:event.y, sprites:event.sprites||[], trail:event.trail||[]} : liveRun;
     const semanticLabel = context ? (context.label || "Semantic state from nearest persisted event") : "";
+    const mapLabel = context && !hasEventPosition
+      ? "No map snapshot for this checkpoint · showing last known state"
+      : semanticLabel;
     pane.hidden = false;
     $("detail-title").textContent = run.run_id;
     $("game-state-label").textContent = liveRun.status === "done" ? "Last recorded frame" : "Live frame";
@@ -726,9 +729,9 @@
     cancel.dataset.cancel = run.run_id;
     paintHTML($("detail-chips"), statusChip(run) + replayChip(run) + issueBadge(run.issue));
     fillLcd($("detail-lcd"), run);
-    renderMap(context && !hasEventPosition ? null : run, semanticLabel);
+    renderMap(run, mapLabel);
     $("detail-location").textContent = context
-      ? `${semanticLabel} · ${hasEventPosition ? tileLabel(run) : "location not persisted"}`
+      ? `${mapLabel} · ${tileLabel(run)}`
       : tileLabel(run);
     $("detail-objective").textContent = goalOf(run) || (run.planner === "scripted" ? `Walk to ${run.dest || "destination"}` : "Free play");
     $("detail-decision").textContent = event
@@ -804,7 +807,7 @@
   function lastEventHTML(run) {
     if (!run.trace) return "";
     const title = run.question || run.decision ? "Last event" : "Trace";
-    return `<div class="block scroll screen-event-card"><h3>${title}</h3><pre class="trace">${esc(run.trace)}</pre></div>`;
+    return `<div class="screen-event-card"><h3>${title}</h3><pre class="trace">${esc(run.trace)}</pre></div>`;
   }
 
   function renderCounts() {

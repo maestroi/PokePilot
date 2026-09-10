@@ -20,16 +20,20 @@
     return { waiting, active, recent };
   }
 
-  function timelineLayout(count, minimumSpacing, horizontalPadding) {
-    const total = Math.max(0, Number(count) || 0);
-    const spacing = Math.max(1, Number(minimumSpacing) || 1);
-    const padding = Math.max(0, Number(horizontalPadding) || 0);
-    const start = padding / 2;
-    const pixels = total > 0 ? (total - 1) * spacing + padding : 0;
-    return {
-      width: `max(100%, ${pixels}px)`,
-      positions: Array.from({ length: total }, (_, index) => start + index * spacing),
-    };
+  function timelineLayout(events, totalFrames) {
+    const list = Array.isArray(events) ? events : [];
+    const maximum = Math.max(1, Number(totalFrames) || 0, ...list.map((event) => Number(event && event.frame) || 0));
+    const positions = list.map((event) => Math.max(0, Math.min(100, 100 * (Number(event && event.frame) || 0) / maximum)));
+    const lanes = [];
+    const laneEnds = [];
+    const collisionDistance = 1.75;
+    for (const position of positions) {
+      let lane = laneEnds.findIndex((end) => position - end >= collisionDistance);
+      if (lane < 0) lane = laneEnds.length;
+      lanes.push(lane);
+      laneEnds[lane] = position;
+    }
+    return { positions, lanes, laneCount: Math.max(1, laneEnds.length), totalFrames: maximum };
   }
 
   function replayPresentation(state) {

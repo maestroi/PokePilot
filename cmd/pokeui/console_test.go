@@ -408,8 +408,10 @@ func TestUIFollowsWatchingFirstReference(t *testing.T) {
 	html := string(indexHTML)
 	js := string(uiJS)
 	inspector := string(inspectorJS)
-	if strings.Contains(html, "brand-mark") {
-		t.Error("header must use the restrained PokeFarm wordmark without an invented logo")
+	for _, want := range []string{`class="brand-mark"`, `aria-hidden="true"`, `<strong>PokéFarm</strong>`, `<span>Operator console</span>`} {
+		if !strings.Contains(html, want) {
+			t.Errorf("header must restore the established PokéFarm mark and wordmark, missing %q", want)
+		}
 	}
 	for _, want := range []string{`Run state`, `id="detail-location"`, `id="detail-objective"`, `id="detail-decision"`, `id="detail-frame"`, `id="detail-round"`} {
 		if !strings.Contains(html, want) {
@@ -464,6 +466,31 @@ func TestUISemanticReplayContextIsTruthful(t *testing.T) {
 	for _, want := range []string{`pokefarm-semantic-event`, `Semantic state from nearest persisted event`, `renderMap`} {
 		if !strings.Contains(ui, want) {
 			t.Errorf("dashboard semantic context missing %q", want)
+		}
+	}
+	for _, want := range []string{`No map snapshot for this checkpoint`, `showing last known state`} {
+		if !strings.Contains(ui, want) {
+			t.Errorf("dashboard map fallback missing %q", want)
+		}
+	}
+	if strings.Contains(ui, `renderMap(context && !hasEventPosition ? null : run`) {
+		t.Error("selecting a locationless checkpoint must not hide the semantic map")
+	}
+}
+
+func TestUITimelineCommunicatesScaleAndCheckpointRestartability(t *testing.T) {
+	inspector := string(inspectorJS)
+	for _, want := range []string{
+		`id="pp-timeline-action"`,
+		`id="pp-timeline-selection"`,
+		`timelineLayout(events, timelineFrameTotal())`,
+		`Start a new run from here`,
+		`Evidence only`,
+		`Restartable checkpoint`,
+		`--timeline-lanes`,
+	} {
+		if !strings.Contains(inspector, want) {
+			t.Errorf("timeline clarity contract missing %q", want)
 		}
 	}
 }
@@ -679,7 +706,7 @@ func TestUIFirstViewportIncludesRunStory(t *testing.T) {
 		t.Errorf("secondary state deck %q must not create a shallow outer scroll trap", deck)
 	}
 	body := regexp.MustCompile(`#detail-body\{[^}]+\}`).FindString(css)
-	if !strings.Contains(body, "height:124px") {
+	if !strings.Contains(body, "height:260px") {
 		t.Errorf("secondary detail band %q must reserve enough height for useful values", body)
 	}
 	html := string(indexHTML)
@@ -713,7 +740,7 @@ func TestUIDetailGridHeightFollowsResponsiveRows(t *testing.T) {
 	}
 	tablet := css[tabletStart:narrowStart]
 	for _, want := range []string{
-		`#detail-body{height:auto;grid-template-columns:repeat(2,minmax(0,1fr));grid-auto-rows:124px}`,
+		`#detail-body{height:auto;grid-template-columns:repeat(2,minmax(0,1fr));grid-auto-rows:260px}`,
 	} {
 		if !strings.Contains(tablet, want) {
 			t.Errorf("tablet detail grid missing %q", want)
@@ -724,7 +751,7 @@ func TestUIDetailGridHeightFollowsResponsiveRows(t *testing.T) {
 		`#detail-body{height:auto;grid-template-columns:1fr;grid-auto-rows:auto}`,
 		`.compact{height:auto;min-height:112px;max-height:180px;overflow:auto}`,
 		`.block.scroll{min-height:140px;max-height:220px;overflow:auto}`,
-		`#screen-event .block{max-height:180px}`,
+		`.screen-event-card{align-items:flex-start;flex-wrap:wrap}`,
 	} {
 		if !strings.Contains(narrow, want) {
 			t.Errorf("narrow detail flow missing %q", want)
@@ -965,6 +992,9 @@ func TestUIWatchUsesPairedVisualStageAndCompactStateDeck(t *testing.T) {
 	if !strings.Contains(scroll, "max-height:") || !strings.Contains(scroll, "overflow:auto") {
 		t.Errorf(".block.scroll %q must cap height and scroll", scroll)
 	}
+	if !strings.Contains(css, `#detail-plan .plan-q{max-height:none;overflow:visible}`) {
+		t.Error("Plan question must use the panel's overflow instead of creating a nested scrollbar")
+	}
 	js := string(uiJS)
 	for _, want := range []string{`class="block compact"`, `class="block scroll"`, `fpsLabel`, `updateFpsLive`, `paintHTML`, `holding`} {
 		if !strings.Contains(js, want) {
@@ -975,8 +1005,31 @@ func TestUIWatchUsesPairedVisualStageAndCompactStateDeck(t *testing.T) {
 	if !strings.Contains(grid, "grid-template-columns") {
 		t.Errorf(".visual-stage %q must pair the game and semantic map", grid)
 	}
+	if strings.Contains(js, `block scroll screen-event-card`) {
+		t.Error("last event must not reuse the four-column scroll block height")
+	}
+	eventCard := regexp.MustCompile(`\.screen-event-card\{[^}]+\}`).FindString(css)
+	if !strings.Contains(eventCard, "display:flex") {
+		t.Errorf("last event strip %q must sit on one compact row", eventCard)
+	}
 	if !strings.Contains(string(indexHTML), `id="detail-party"`) {
 		t.Error("party must sit outside #detail-body so it does not take a 1fr track")
+	}
+}
+
+func TestUIUsesSoftOperatorPalette(t *testing.T) {
+	css := string(consoleCSS)
+	for _, want := range []string{
+		`--bg:#11141c`,
+		`--shell:#0c0e14`,
+		`--bay:#1a2030`,
+		`--bay-2:#222a3c`,
+		`--text:#e8ebd9`,
+		`--muted:#a8b3c6`,
+	} {
+		if !strings.Contains(css, want) {
+			t.Errorf("soft operator palette missing %q", want)
+		}
 	}
 }
 

@@ -20,7 +20,7 @@ class FakeTarget {
     this.id = id;
     this.listeners = new Map();
     this.dataset = {};
-    this.style = {};
+    this.style = { setProperty(name, value) { this[name] = String(value); } };
     this.hidden = false;
     this.disabled = false;
     this.textContent = "";
@@ -97,7 +97,8 @@ function createInspectorHarness() {
     "pp-replay", "pp-replay-status", "pp-replay-panel", "pp-transport-status",
     "pp-return-live", "pp-game-video", "evidence-drawer", "pp-meta", "pp-debug",
     "pp-artifacts", "pp-art-table", "pp-art-empty", "pp-investigate",
-    "pp-investigate-status", "pp-story-actions", "pp-close-evidence",
+    "pp-investigate-status", "pp-story-actions", "pp-timeline-action",
+    "pp-timeline-selection", "pp-close-evidence",
   ];
   const elements = Object.fromEntries(ids.map((id) => [id, new FakeTarget(id)]));
   const window = new FakeTarget("window");
@@ -192,17 +193,18 @@ test("operations partition queued, active, and recent attempts", () => {
   assert.deepEqual(groups.recent.map((run) => run.run_id), ["done-new"]);
 });
 
-test("timeline layout grows and keeps dense markers apart", () => {
-  const layout = timelineLayout(20, 36, 32);
+test("timeline layout uses run frames and separates colliding markers into lanes", () => {
+  const layout = timelineLayout([
+    { frame: 0 },
+    { frame: 25 },
+    { frame: 25 },
+    { frame: 100 },
+  ], 100);
 
-  assert.equal(layout.width, "max(100%, 716px)");
-  assert.equal(layout.positions.length, 20);
-  for (let index = 1; index < layout.positions.length; index++) {
-    assert.ok(
-      layout.positions[index] - layout.positions[index - 1] >= 36,
-      `markers ${index - 1} and ${index} overlap`,
-    );
-  }
+  assert.deepEqual(layout.positions, [0, 25, 25, 100]);
+  assert.deepEqual(layout.lanes, [0, 0, 1, 0]);
+  assert.equal(layout.laneCount, 2);
+  assert.equal(layout.totalFrames, 100);
 });
 
 test("ready replay preserves LCD until media can play and restores it on error", () => {
