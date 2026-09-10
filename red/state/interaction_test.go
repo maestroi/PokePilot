@@ -23,9 +23,28 @@ func TestDecodeInteractionDialogue(t *testing.T) {
 
 func TestDecodeInteractionTwoOption(t *testing.T) {
 	m := twoOptionFixture(1, 0, 1, 1, 8, 12, menuCursorTile)
+	m[sym.TwoOptionMenuID] = yesNoMenuID
 	got := DecodeInteraction(m)
 	if got.Kind != InteractionTwoOption || got.Current != 1 || got.Max != 1 {
 		t.Fatalf("DecodeInteraction = %+v, want live two-option index 1", got)
+	}
+	if got.Options != [2]string{"YES", "NO"} {
+		t.Fatalf("two-option labels = %q, want YES/NO", got.Options)
+	}
+}
+
+func TestDecodeInteractionNoYesOrdering(t *testing.T) {
+	m := twoOptionFixture(1, 0, 1, 0, 8, 12, menuCursorTile)
+	m[sym.TwoOptionMenuID] = noYesMenuID | 0x80 // second-option-default bit
+	got := DecodeInteraction(m)
+	if got.Options != [2]string{"NO", "YES"} {
+		t.Fatalf("NO/YES labels = %q, want NO/YES", got.Options)
+	}
+}
+
+func TestTwoOptionLabelsRejectUnknownLayout(t *testing.T) {
+	if got := twoOptionLabels(0x7f); got != [2]string{} {
+		t.Fatalf("unknown two-option labels = %q, want empty labels", got)
 	}
 }
 
