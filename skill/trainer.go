@@ -162,11 +162,11 @@ func ordinaryTrainerClass(opponent uint8) bool {
 	class := opponent - opponentOffset
 	switch class {
 	case 0x00, // NOBODY
-		0x19, // RIVAL1
-		0x1a, // PROF_OAK
-		0x1b, // CHIEF
-		0x1d, // GIOVANNI
-		0x21, // BRUNO
+		0x19,                                     // RIVAL1
+		0x1a,                                     // PROF_OAK
+		0x1b,                                     // CHIEF
+		0x1d,                                     // GIOVANNI
+		0x21,                                     // BRUNO
 		0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, // gym leaders
 		0x2a, 0x2b, // RIVAL2 / RIVAL3
 		0x2c, // LORELEI
