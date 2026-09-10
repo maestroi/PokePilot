@@ -47,8 +47,10 @@ func TestUIRunConsoleHasWatchingFirstWorkspace(t *testing.T) {
 		`data-view="live"`,
 		`data-view="runs"`,
 		`data-view="failures"`,
+		`data-view="analytics"`,
 		`data-view="operations"`,
 		`data-view="tools"`,
+		`data-console-view="analytics"`,
 		`id="system-summary"`,
 		`id="run-rail"`,
 		`id="selected-run"`,
@@ -56,10 +58,39 @@ func TestUIRunConsoleHasWatchingFirstWorkspace(t *testing.T) {
 		`id="run-timeline"`,
 		`id="run-story"`,
 		`id="evidence-drawer"`,
+		`id="analytics-outcomes"`,
+		`id="operations-health"`,
+		`id="operations-workers"`,
+		`id="operations-queue"`,
+		`id="operations-recent"`,
 	} {
 		if !strings.Contains(html, want) {
 			t.Errorf("operator console missing %q", want)
 		}
+	}
+}
+
+func TestUIReplayLivesInGameBay(t *testing.T) {
+	html := string(indexHTML)
+	inspector := string(inspectorJS)
+	if !strings.Contains(html, `id="detail-game-media"`) {
+		t.Fatal("Game bay must expose one live/replay media host")
+	}
+	if !strings.Contains(inspector, `detail-game-media`) {
+		t.Error("inspector must mount replay into the Game bay")
+	}
+	if strings.Contains(inspector, `id="pp-video"`) {
+		t.Error("inspector must not create a second detached replay video")
+	}
+}
+
+func TestUIStatsBelongToAnalytics(t *testing.T) {
+	js := string(statsJS)
+	if !strings.Contains(js, `analytics-outcomes`) {
+		t.Error("stats.js must render campaign statistics in Analytics")
+	}
+	if strings.Contains(js, `run-outcomes`) {
+		t.Error("stats.js must not render campaign statistics in Operations")
 	}
 }
 
