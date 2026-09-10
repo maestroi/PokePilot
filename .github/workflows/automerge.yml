@@ -1,0 +1,106 @@
+# Squash-merge non-draft same-repo PRs into main once ROM-free Tests pass.
+#
+# GitHub auto-merge enabled by GITHUB_TOKEN is attributed to github-actions[bot],
+# which does not fire the push workflows that publish the farm image. After a
+# successful Tests run we therefore merge if needed and always dispatch
+# publish-farm for PRs that landed on main.
+name: Automerge
+
+on:
+  pull_request:
+    types: [opened, ready_for_review, reopened, synchronize]
+  workflow_run:
+    workflows: ["Tests"]
+    types: [completed]
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+concurrency:
+  group: automerge-${{ github.event.pull_request.number || github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
+jobs:
+  enable:
+    name: Enable auto-merge
+    if: >
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.base.ref == 'main' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Queue squash auto-merge
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          if ! out="$(gh pr merge "$PR" --squash --delete-branch --auto 2>&1)"; then
+            printf '%s\n' "$out"
+            if grep -qiE 'already enabled|already merged' <<<"$out"; then
+              exit 0
+            fi
+            exit 1
+          fi
+          printf '%s\n' "$out"
+
+  merge:
+    name: Merge and publish farm
+    if: >
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Squash-merge passing PR and dispatch farm publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          pr_json="$(gh api -H 'Accept: application/vnd.github+json' \
+            "/repos/${REPO}/commits/${HEAD_SHA}/pulls")"
+          pr_number="$(jq -r --arg repo "$REPO" '
+            [.[]
+              | select(.state=="open" or .merged_at != null)
+              | select(.base.ref=="main")
+              | select(.draft==false)
+              | select(.head.repo.full_name==$repo)
+            ] | first | .number // empty
+          ' <<<"$pr_json")"
+          if [[ -z "${pr_number}" ]]; then
+            echo "No same-repo PR into main for ${HEAD_SHA}; nothing to merge."
+            exit 0
+          fi
+
+          state="$(gh pr view "$pr_number" --json state,isDraft,baseRefName,headRepository --jq \
+            '{state,isDraft,baseRefName,head:.headRepository.nameWithOwner}')"
+          echo "PR #${pr_number}: ${state}"
+
+          if [[ "$(jq -r .state <<<"$state")" != "MERGED" ]]; then
+            merged_now=0
+            for attempt in 1 2 3 4 5 6; do
+              if gh pr merge "$pr_number" --squash --delete-branch; then
+                merged_now=1
+                break
+              fi
+              echo "Merge attempt ${attempt} did not land; retrying..."
+              sleep 10
+            done
+            if [[ "$merged_now" -ne 1 ]]; then
+              echo "PR #${pr_number} stayed unmerged after retries."
+              exit 1
+            fi
+          fi
+
+          merged="$(gh pr view "$pr_number" --json state --jq .state)"
+          if [[ "$merged" == "MERGED" ]]; then
+            gh workflow run publish-farm.yml --ref main
+            echo "Dispatched Publish farm image for main after #${pr_number}."
+          fi
