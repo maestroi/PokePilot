@@ -26,10 +26,10 @@ const (
 
 	// 3F pad (11,11) lands on 7F's pad (5,3), immediately west of the rival
 	// encounter. The closed Card Key block is block-coordinate (4,4).
-	silph3FTo7FWarpX uint8 = 11
-	silph3FTo7FWarpY uint8 = 11
-	silph3FDoorBlockX      = 4
-	silph3FDoorBlockY      = 4
+	silph3FTo7FWarpX  uint8 = 11
+	silph3FTo7FWarpY  uint8 = 11
+	silph3FDoorBlockX       = 4
+	silph3FDoorBlockY       = 4
 
 	// The rival appears at home coordinate (3,7) and is triggered from either
 	// (3,2) or (3,3). After the fight, the pad at (5,7) lands on 11F (3,2).
@@ -44,12 +44,12 @@ const (
 
 	// 11F's one Card Key block is block-coordinate (3,6). Its four game
 	// cells include Giovanni's two coordinate triggers, (6,13) and (7,12).
-	silph11FDoorBlockX             = 3
-	silph11FDoorBlockY             = 6
-	silphGiovanniTriggerX    uint8 = 6
-	silphGiovanniTriggerY    uint8 = 13
-	silphGiovanniAltTriggerX uint8 = 7
-	silphGiovanniAltTriggerY uint8 = 12
+	silph11FDoorBlockX                   = 3
+	silph11FDoorBlockY                   = 6
+	silphGiovanniTriggerX          uint8 = 6
+	silphGiovanniTriggerY          uint8 = 13
+	silphGiovanniAltTriggerX       uint8 = 7
+	silphGiovanniAltTriggerY       uint8 = 12
 
 	silphPresidentX uint8 = 7
 	silphPresidentY uint8 = 5
