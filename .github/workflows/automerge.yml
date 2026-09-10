@@ -35,10 +35,18 @@ jobs:
       - name: Queue squash auto-merge
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
         run: |
           set -euo pipefail
-          gh pr merge "$PR" --squash --delete-branch --auto
+          if ! out="$(gh pr merge "$PR" --squash --delete-branch --auto 2>&1)"; then
+            printf '%s\n' "$out"
+            if grep -qiE 'already enabled|already merged' <<<"$out"; then
+              exit 0
+            fi
+            exit 1
+          fi
+          printf '%s\n' "$out"
 
   merge:
     name: Merge and publish farm
@@ -51,6 +59,7 @@ jobs:
       - name: Squash-merge passing PR and dispatch farm publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
           REPO: ${{ github.repository }}
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
