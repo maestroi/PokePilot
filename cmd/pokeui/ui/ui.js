@@ -746,7 +746,7 @@
     $("n-failures").textContent = (groups || []).filter((g) => { const state = g.issue && g.issue.status; return state !== "resolved" && state !== "fixed"; }).length;
   }
   function setView(view, updateHash = true) {
-    const valid = ["live", "runs", "failures", "operations", "tools"];
+    const valid = ["live", "runs", "failures", "analytics", "operations", "tools"];
     activeView = valid.includes(view) ? view : "live";
     document.querySelectorAll("[data-console-view]").forEach((panel) => { panel.hidden = panel.dataset.consoleView !== activeView; });
     document.querySelectorAll("[role=tab][data-view]").forEach((tab) => { tab.setAttribute("aria-selected", String(tab.dataset.view === activeView)); });
