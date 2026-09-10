@@ -20,6 +20,10 @@
 # The wall publishes no host ports; in-network debugging is still
 # http://wall:8080 (HTML table + /frame).
 
+configs:
+  litellm_config:
+    file: ./litellm.yaml
+
 services:
   wall:
     image: ${FARM_IMAGE:-pokepilot-farm:local}
@@ -105,6 +109,27 @@ services:
     deploy:
       replicas: 1
 
+  litellm:
+    # Internal inference gateway. It is intentionally not published on a host
+    # port: Operator chooses resource intent and runners call this service over
+    # the swarm network. Physical endpoint/fallback policy stays here.
+    image: ${LITELLM_IMAGE:-ghcr.io/berriai/litellm:v1.99.1}
+    command: ["--config", "/app/config.yaml", "--host", "0.0.0.0", "--port", "4000"]
+    environment:
+      POKEPILOT_LITELLM_7900_URL: ${POKEPILOT_LITELLM_7900_URL:-http://192.168.50.130:8002/v1}
+      POKEPILOT_LITELLM_7900_MODEL: ${POKEPILOT_LITELLM_7900_MODEL:-openai/qwen3.8-27b}
+      POKEPILOT_LITELLM_4090_URL: ${POKEPILOT_LITELLM_4090_URL:-http://192.168.50.81:8002/v1}
+      POKEPILOT_LITELLM_4090_MODEL: ${POKEPILOT_LITELLM_4090_MODEL:-openai/qwen3.8-27b}
+      POKEPILOT_LITELLM_LAN_URL: ${POKEPILOT_LITELLM_LAN_URL:-http://192.168.50.204:8002/v1}
+      # The existing LAN server is qwen3.5-4b in this repo's defaults; override
+      # this if its /v1/models endpoint exposes a different qwen-4b model id.
+      POKEPILOT_LITELLM_LAN_MODEL: ${POKEPILOT_LITELLM_LAN_MODEL:-openai/qwen3.5-4b}
+    configs:
+      - source: litellm_config
+        target: /app/config.yaml
+    deploy:
+      replicas: 1
+
   runner:
     image: ${FARM_IMAGE:-pokepilot-farm:local}
     # -http :8099 binds all interfaces inside the container. The runners
@@ -128,24 +153,34 @@ services:
       POKEPILOT_S3_ACCESS_KEY: ${POKEPILOT_S3_ACCESS_KEY:-}
       POKEPILOT_S3_SECRET_KEY: ${POKEPILOT_S3_SECRET_KEY:-}
       POKEPILOT_S3_TIMEOUT: ${POKEPILOT_S3_TIMEOUT:-60s}
-      # Same names make run-llm exports from .env. farm-up sources that
-      # file so the runners can reach the model; empty means no bearer
-      # token (and the compiled URL/model defaults). The optional fallback
-      # family is passed through unchanged; statsPlanner only uses it after
-      # a primary transport failure and then pins it for the run.
+      # Direct LAN remains configured as the last-resort transport fallback if
+      # LiteLLM itself is unavailable. Default/LAN profile therefore still
+      # cannot touch a GPU even when the gateway is down.
       llm_token: ${llm_token:-}
-      POKEPILOT_LLM_URL: ${POKEPILOT_LLM_URL:-}
-      POKEPILOT_LLM_MODEL: ${POKEPILOT_LLM_MODEL:-}
+      POKEPILOT_LLM_URL: ${POKEPILOT_LLM_URL:-http://192.168.50.204:8002/v1}
+      POKEPILOT_LLM_MODEL: ${POKEPILOT_LLM_MODEL:-qwen3.5-4b}
       POKEPILOT_LLM_NO_THINK: ${POKEPILOT_LLM_NO_THINK:-}
       POKEPILOT_LLM_MAX_TOKENS: ${POKEPILOT_LLM_MAX_TOKENS:-}
       POKEPILOT_LLM_TIMEOUT: ${POKEPILOT_LLM_TIMEOUT:-}
+      # Gateway model groups express Operator intent:
+      #   auto    -> 7900 XTX -> 4090 -> LAN
+      #   gpu     -> 7900 XTX only (reserve the 4090)
+      #   default -> LAN only (reserve both GPUs)
+      POKEPILOT_LLM_GATEWAY_URL: ${POKEPILOT_LLM_GATEWAY_URL:-http://litellm:4000/v1}
+      POKEPILOT_LLM_GATEWAY_TOKEN: ${POKEPILOT_LLM_GATEWAY_TOKEN:-}
+      POKEPILOT_LLM_GATEWAY_TIMEOUT: ${POKEPILOT_LLM_GATEWAY_TIMEOUT:-300s}
+      POKEPILOT_LLM_GATEWAY_AUTO_MODEL: ${POKEPILOT_LLM_GATEWAY_AUTO_MODEL:-pokepilot-auto}
+      POKEPILOT_LLM_GATEWAY_GPU_MODEL: ${POKEPILOT_LLM_GATEWAY_GPU_MODEL:-pokepilot-7900xtx}
+      POKEPILOT_LLM_GATEWAY_LAN_MODEL: ${POKEPILOT_LLM_GATEWAY_LAN_MODEL:-pokepilot-lan}
+      # Direct endpoint variables remain for backwards compatibility and as an
+      # escape hatch when POKEPILOT_LLM_GATEWAY_URL is explicitly blank.
       POKEPILOT_LLM_FALLBACK_URL: ${POKEPILOT_LLM_FALLBACK_URL:-}
       POKEPILOT_LLM_FALLBACK_MODEL: ${POKEPILOT_LLM_FALLBACK_MODEL:-}
       POKEPILOT_LLM_FALLBACK_TOKEN: ${POKEPILOT_LLM_FALLBACK_TOKEN:-}
       POKEPILOT_LLM_FALLBACK_NO_THINK: ${POKEPILOT_LLM_FALLBACK_NO_THINK:-}
       POKEPILOT_LLM_FALLBACK_MAX_TOKENS: ${POKEPILOT_LLM_FALLBACK_MAX_TOKENS:-}
       POKEPILOT_LLM_FALLBACK_TIMEOUT: ${POKEPILOT_LLM_FALLBACK_TIMEOUT:-}
-      POKEPILOT_LLM_GPU_URL: ${POKEPILOT_LLM_GPU_URL:-http://192.168.50.81:8002/v1}
+      POKEPILOT_LLM_GPU_URL: ${POKEPILOT_LLM_GPU_URL:-http://192.168.50.130:8002/v1}
       POKEPILOT_LLM_GPU_MODEL: ${POKEPILOT_LLM_GPU_MODEL:-qwen3.8-27b}
       POKEPILOT_LLM_GPU_TOKEN: ${POKEPILOT_LLM_GPU_TOKEN:-}
       POKEPILOT_LLM_GPU_NO_THINK: ${POKEPILOT_LLM_GPU_NO_THINK:-1}
