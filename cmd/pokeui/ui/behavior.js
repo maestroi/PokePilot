@@ -46,6 +46,30 @@
     return { lcdHidden: false, videoHidden: true, panelHidden: true, retry: false };
   }
 
+  const playbackRates = [1, 2, 4, 8, 16];
+  const playbackRateKey = "pokepilot.replayPlaybackRate";
+
+  function normalizePlaybackRate(value) {
+    const n = Number(value);
+    return playbackRates.includes(n) ? n : 1;
+  }
+
+  function readStoredPlaybackRate(storage) {
+    try {
+      return normalizePlaybackRate(storage && storage.getItem(playbackRateKey));
+    } catch (_) {
+      return 1;
+    }
+  }
+
+  function writeStoredPlaybackRate(storage, value) {
+    const rate = normalizePlaybackRate(value);
+    try {
+      if (storage) storage.setItem(playbackRateKey, String(rate));
+    } catch (_) {}
+    return rate;
+  }
+
   function drawerPresentation(open, mobile, restoreFocus) {
     const visible = Boolean(open);
     const offCanvas = Boolean(mobile) && !visible;
@@ -100,6 +124,9 @@
     partitionOperations,
     timelineLayout,
     replayPresentation,
+    normalizePlaybackRate,
+    readStoredPlaybackRate,
+    writeStoredPlaybackRate,
     drawerPresentation,
     drawerTransition,
     applyTabView,

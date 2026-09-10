@@ -10,6 +10,9 @@ const {
   partitionOperations,
   timelineLayout,
   replayPresentation,
+  normalizePlaybackRate,
+  readStoredPlaybackRate,
+  writeStoredPlaybackRate,
   drawerTransition,
   applyTabView,
   wireTabNavigation,
@@ -226,6 +229,31 @@ test("ready replay preserves LCD until media can play and restores it on error",
     panelHidden: false,
     retry: true,
   });
+});
+
+test("playback rate helpers normalize, persist, and ignore storage failures", () => {
+  assert.equal(normalizePlaybackRate(8), 8);
+  assert.equal(normalizePlaybackRate("16"), 16);
+  assert.equal(normalizePlaybackRate(3), 1);
+  assert.equal(normalizePlaybackRate("nope"), 1);
+
+  const store = new Map();
+  const storage = {
+    getItem: (key) => (store.has(key) ? store.get(key) : null),
+    setItem: (key, value) => { store.set(key, String(value)); },
+  };
+  assert.equal(readStoredPlaybackRate(storage), 1);
+  assert.equal(writeStoredPlaybackRate(storage, 4), 4);
+  assert.equal(storage.getItem("pokepilot.replayPlaybackRate"), "4");
+  assert.equal(readStoredPlaybackRate(storage), 4);
+  assert.equal(writeStoredPlaybackRate(storage, 99), 1);
+
+  const exploding = {
+    getItem() { throw new Error("blocked"); },
+    setItem() { throw new Error("blocked"); },
+  };
+  assert.equal(readStoredPlaybackRate(exploding), 1);
+  assert.equal(writeStoredPlaybackRate(exploding, 8), 8);
 });
 
 test("drawer open and Escape transitions carry focus intent", () => {
