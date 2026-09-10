@@ -665,9 +665,31 @@ func TestUIFirstViewportIncludesRunStory(t *testing.T) {
 		t.Fatalf("visual stage clamp %q leaves no room for timeline and Run Story at 1440x900", stage[0])
 	}
 	deck := regexp.MustCompile(`\.state-deck\{[^}]+\}`).FindString(css)
-	for _, want := range []string{"max-height:", "overflow:auto"} {
-		if !strings.Contains(deck, want) {
-			t.Errorf("secondary state deck %q missing %q", deck, want)
+	if strings.Contains(deck, "overflow:auto") || strings.Contains(deck, "max-height:") {
+		t.Errorf("secondary state deck %q must not create a shallow outer scroll trap", deck)
+	}
+	body := regexp.MustCompile(`#detail-body\{[^}]+\}`).FindString(css)
+	if !strings.Contains(body, "height:124px") {
+		t.Errorf("secondary detail band %q must reserve enough height for useful values", body)
+	}
+	html := string(indexHTML)
+	header := regexp.MustCompile(`(?s)<header class="run-header".*?</header>`).FindString(html)
+	if !strings.Contains(header, `id="detail-goal"`) {
+		t.Error("goal progress must live in the state strip instead of consuming a detail-deck row")
+	}
+}
+
+func TestUIStackedGameMediaHasARatioAwareHeightCap(t *testing.T) {
+	css := string(consoleCSS)
+	start := strings.Index(css, `@media(max-width:760px)`)
+	if start < 0 {
+		t.Fatal("console missing stacked narrow layout")
+	}
+	narrow := css[start:]
+	game := regexp.MustCompile(`\.game-monitor\{[^}]+\}`).FindString(narrow)
+	for _, want := range []string{"height:min(", "52vh", "calc(90vw + 21px)", "max-height:430px"} {
+		if !strings.Contains(game, want) {
+			t.Errorf("stacked Game bay %q missing %q", game, want)
 		}
 	}
 }
@@ -702,6 +724,24 @@ func TestUIPartyAlwaysRendersSixAccessibleSlots(t *testing.T) {
 	} {
 		if !strings.Contains(ui, want) {
 			t.Errorf("six-slot party contract missing %q", want)
+		}
+	}
+}
+
+func TestUIPartyTelemetryAbsenceStillRendersSlots(t *testing.T) {
+	ui := string(uiJS)
+	start := strings.Index(ui, "function partyHTML")
+	end := strings.Index(ui[start:], "\n  function ")
+	if start < 0 || end < 0 {
+		t.Fatal("partyHTML bounds")
+	}
+	party := ui[start : start+end]
+	if strings.Contains(party, `if (!p) return ""`) {
+		t.Error("missing player telemetry must not blank the stable Game State bay")
+	}
+	for _, want := range []string{`Player telemetry unavailable`, `Array.from({length:6}`, `Empty slot`} {
+		if !strings.Contains(party, want) {
+			t.Errorf("missing-player party state missing %q", want)
 		}
 	}
 }

@@ -677,7 +677,7 @@
 
   function ensureWatchBlocks() {
     if ($("detail-settings")) return;
-    $("detail-body").innerHTML = `<div id="detail-goal" class="block compact" hidden></div><div id="detail-settings" class="block compact"></div><div id="detail-now" class="block compact"></div><div id="detail-plan" class="block scroll" hidden></div><div id="detail-play" class="block scroll" hidden></div>`;
+    $("detail-body").innerHTML = `<div id="detail-settings" class="block compact"></div><div id="detail-now" class="block compact"></div><div id="detail-plan" class="block scroll" hidden></div><div id="detail-play" class="block scroll" hidden></div>`;
   }
 
   function goalProgressHTML(run) {
@@ -688,7 +688,7 @@
     const complete = Boolean(stats.goal_complete);
     const value = complete ? 100 : (target > 0 ? Math.max(0, Math.min(100, 100 * current / target)) : 0);
     const count = target > 0 ? `${current} / ${target}` : (complete ? "complete" : "in progress");
-    return `<h3>Goal progress</h3><div class="goal-progress-head"><strong>${esc(stats.goal_summary)}</strong><span>${esc(count)}</span></div><progress class="goal-progress" max="100" value="${value.toFixed(0)}" aria-label="Goal progress">${value.toFixed(0)}%</progress>`;
+    return `<span class="goal-strip-summary">${esc(stats.goal_summary)}</span><span class="goal-strip-count">${esc(count)}</span><progress class="goal-progress" max="100" value="${value.toFixed(0)}" aria-label="Goal progress">${value.toFixed(0)}%</progress>`;
   }
 
   function bindPlanRaw() {
@@ -707,7 +707,7 @@
     const liveRun = (snap.runs || []).find((r) => r.run_id === selected);
     if (!liveRun) {
       pane.hidden = true; $("detail-map-panel").hidden = true;
-      clearPaint($("detail-body")); clearPaint($("detail-party")); clearPaint($("screen-event"));
+      clearPaint($("detail-body")); paintBlock($("detail-goal"), ""); clearPaint($("detail-party")); clearPaint($("screen-event"));
       return;
     }
     const context = semanticContext && semanticContext.runId === selected ? semanticContext : null;
@@ -781,10 +781,9 @@
   }
 
   function partyHTML(r) {
-    const p = r.player;
-    if (!p) return "";
-    const badges = (p.badges && p.badges.length) ? p.badges.join(", ") : "no badges";
-    const partyMembers = Array.isArray(p.party) ? p.party.slice(0, 6) : [];
+    const p = r.player || null;
+    const badges = (p && p.badges && p.badges.length) ? p.badges.join(", ") : "no badges";
+    const partyMembers = p && Array.isArray(p.party) ? p.party.slice(0, 6) : [];
     const rows = Array.from({length:6}, (_, index) => {
       const m = partyMembers[index];
       if (!m) return `<div class="party-row party-empty" aria-label="Party slot ${index + 1}: Empty slot"><span class="pname">Empty slot</span><span class="slot-number">${index + 1}/6</span></div>`;
@@ -794,8 +793,9 @@
       const status = m.status ? `<span class="pstatus">${esc(m.status)}</span>` : "";
       return `<div class="party-row"><span class="pname">${esc(m.name)}</span><span>Lv.${esc(m.level)}</span><span class="php">${hp}/${max}</span>${status}<div class="party-hp ${cls}"><i style="width:${pct}%"></i></div></div>`;
     }).join("");
-    const empty = partyMembers.length ? "" : `<span class="pempty">no Pokémon yet</span>`;
-    return `<div class="block"><h3>Party</h3><div class="party-sum">₽${esc(p.money)} · ${esc(badges)}</div>${empty}<div class="party-grid">${rows}</div></div>`;
+    const empty = p && !partyMembers.length ? `<span class="pempty">no Pokémon yet</span>` : "";
+    const summary = p ? `₽${esc(p.money)} · ${esc(badges)}` : "Player telemetry unavailable";
+    return `<div class="block"><h3>Party</h3><div class="party-sum">${summary}</div>${empty}<div class="party-grid">${rows}</div></div>`;
   }
 
   function lastEventHTML(run) {
