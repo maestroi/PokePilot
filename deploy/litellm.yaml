@@ -10,24 +10,28 @@ model_list:
       model: os.environ/POKEPILOT_LITELLM_7900_MODEL
       api_base: os.environ/POKEPILOT_LITELLM_7900_URL
       api_key: local
+      allowed_openai_params: ["reasoning_effort", "chat_template_kwargs"]
 
   - model_name: pokepilot-7900xtx
     litellm_params:
       model: os.environ/POKEPILOT_LITELLM_7900_MODEL
       api_base: os.environ/POKEPILOT_LITELLM_7900_URL
       api_key: local
+      allowed_openai_params: ["reasoning_effort", "chat_template_kwargs"]
 
   - model_name: pokepilot-4090
     litellm_params:
       model: os.environ/POKEPILOT_LITELLM_4090_MODEL
       api_base: os.environ/POKEPILOT_LITELLM_4090_URL
       api_key: local
+      allowed_openai_params: ["reasoning_effort", "chat_template_kwargs"]
 
   - model_name: pokepilot-lan
     litellm_params:
       model: os.environ/POKEPILOT_LITELLM_LAN_MODEL
       api_base: os.environ/POKEPILOT_LITELLM_LAN_URL
       api_key: local
+      allowed_openai_params: ["reasoning_effort", "chat_template_kwargs"]
 
 router_settings:
   # The backend servers are already local and PokePilot has its own bounded

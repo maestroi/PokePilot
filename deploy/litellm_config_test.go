@@ -21,6 +21,7 @@ func TestLiteLLMRoutingConfig(t *testing.T) {
 		"POKEPILOT_LITELLM_7900_URL",
 		"POKEPILOT_LITELLM_4090_URL",
 		"POKEPILOT_LITELLM_LAN_URL",
+		`allowed_openai_params: ["reasoning_effort", "chat_template_kwargs"]`,
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("litellm.yaml missing %q", want)
