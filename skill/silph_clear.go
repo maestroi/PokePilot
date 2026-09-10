@@ -33,21 +33,21 @@ const (
 
 	// The rival appears at home coordinate (3,7) and is triggered from either
 	// (3,2) or (3,3). After the fight, the pad at (5,7) lands on 11F (3,2).
-	silphRivalHomeX uint8 = 3
-	silphRivalHomeY uint8 = 7
-	silphRivalTriggerX uint8 = 3
-	silphRivalTriggerY uint8 = 3
+	silphRivalHomeX       uint8 = 3
+	silphRivalHomeY       uint8 = 7
+	silphRivalTriggerX    uint8 = 3
+	silphRivalTriggerY    uint8 = 3
 	silphRivalAltTriggerX uint8 = 3
 	silphRivalAltTriggerY uint8 = 2
-	silph7FTo11FWarpX uint8 = 5
-	silph7FTo11FWarpY uint8 = 7
+	silph7FTo11FWarpX     uint8 = 5
+	silph7FTo11FWarpY     uint8 = 7
 
 	// 11F's one Card Key block is block-coordinate (3,6). Its four game
 	// cells include Giovanni's two coordinate triggers, (6,13) and (7,12).
-	silph11FDoorBlockX = 3
-	silph11FDoorBlockY = 6
-	silphGiovanniTriggerX uint8 = 6
-	silphGiovanniTriggerY uint8 = 13
+	silph11FDoorBlockX             = 3
+	silph11FDoorBlockY             = 6
+	silphGiovanniTriggerX    uint8 = 6
+	silphGiovanniTriggerY    uint8 = 13
 	silphGiovanniAltTriggerX uint8 = 7
 	silphGiovanniAltTriggerY uint8 = 12
 
@@ -55,11 +55,11 @@ const (
 	silphPresidentY uint8 = 5
 
 	silphStoryTravelBattles = 160
-	silphStoryDriveBudget    = 12000
+	silphStoryDriveBudget   = 12000
 )
 
 var (
-	silph3FTo7FEdge = world.Edge{Kind: world.EdgeWarp, From: silphCo3FMap, To: silphCo7FMap, WarpX: silph3FTo7FWarpX, WarpY: silph3FTo7FWarpY}
+	silph3FTo7FEdge  = world.Edge{Kind: world.EdgeWarp, From: silphCo3FMap, To: silphCo7FMap, WarpX: silph3FTo7FWarpX, WarpY: silph3FTo7FWarpY}
 	silph7FTo11FEdge = world.Edge{Kind: world.EdgeWarp, From: silphCo7FMap, To: silphCo11FMap, WarpX: silph7FTo11FWarpX, WarpY: silph7FTo11FWarpY}
 )
 
