@@ -21,6 +21,7 @@ func redProgressionKnown(id ProgressID) bool {
 		redProgressPokeFluteAcquired,
 		redProgressFuchsiaProgressionComplete,
 		redProgressSilphRescueComplete,
+		redProgressVolcanoBadge,
 		ProgressSaffronGateOpen,
 		ProgressCardKeyOwned,
 		ProgressSecretKeyOwned:
@@ -34,7 +35,7 @@ func redProgressionKnown(id ProgressID) bool {
 // objective shape. Availability is Red knowledge; the planner only sees the
 // semantic state change requested by each objective.
 func redProgressionObjectives(obs Observation) []Objective {
-	out := make([]Objective, 0, 10)
+	out := make([]Objective, 0, 11)
 	if skill.MtMoonProgressionAvailable(obs.Map) && !obs.Story.Has(redProgressMtMoonFossilAcquired) {
 		out = append(out, Objective{Kind: KindProgress, Progress: redProgressMtMoonFossilAcquired, Note: "(defeat Mt. Moon's Super Nerd and choose the Dome Fossil to open the eastern exit)"})
 	}
@@ -122,6 +123,13 @@ func redProgressionObjectives(obs Observation) []Objective {
 			Note:     "(Surf south from Pallet through Route 21, enter Pokemon Mansion, solve its live statue-gate topology, and collect the Secret Key)",
 		})
 	}
+	if obs.Story.Has(ProgressSecretKeyOwned) && !obs.Story.Has(redProgressVolcanoBadge) {
+		out = append(out, Objective{
+			Kind:     KindProgress,
+			Progress: redProgressVolcanoBadge,
+			Note:     "(unlock Cinnabar Gym with the Secret Key, answer the six quiz gates from their ROM-declared YES/NO semantics, defeat Blaine, and verify the Volcano Badge)",
+		})
+	}
 	return out
 }
 
@@ -153,6 +161,8 @@ func executeRedProgression(m *emu.Emu, romData []byte, o Objective) error {
 		return skill.ClearSilphCo(m, romData, policy)
 	case ProgressSecretKeyOwned:
 		return skill.AcquireCinnabarSecretKey(m, romData, policy)
+	case redProgressVolcanoBadge:
+		return skill.CinnabarProgression(m, romData, policy)
 	default:
 		return fmt.Errorf("agent: %s: unknown Red progression goal %q", o, o.Progress)
 	}
