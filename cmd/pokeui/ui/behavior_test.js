@@ -106,6 +106,19 @@ test("drawer breakpoint transition toggles inert without closing desktop rail", 
     ariaHidden: "false",
     focus: "none",
   });
+  const focusedMobile = drawerTransition({ open: false }, "breakpoint", true, true);
+  assert.deepEqual(focusedMobile, {
+    open: false,
+    inert: true,
+    ariaHidden: "true",
+    focus: "restore-trigger",
+  });
+  assert.deepEqual(drawerTransition(focusedMobile, "breakpoint", false), {
+    open: false,
+    inert: false,
+    ariaHidden: "false",
+    focus: "none",
+  });
   assert.deepEqual(drawerTransition({ open: false }, "select-keyboard", false), {
     open: false,
     inert: false,
