@@ -15,6 +15,39 @@ func hasOfferedKind(objs []Objective, kind Kind) bool {
 	return false
 }
 
+func hasJourneyTo(objs []Objective, place PlaceID) bool {
+	for _, o := range objs {
+		if o.Kind == KindGoTo && o.Place == place {
+			return true
+		}
+	}
+	return false
+}
+
+// TestOfferWithholdsVermilionGymJourneyUntilInside: farm run
+// run-2p2b5kf4qza0o1cv5vo5swhzxr offered "go to vermilion gym" as a plain
+// journey while Cut was already learned and usable, so RouteBlockages never
+// flagged it. GoTo/Traverse has no walkable edge onto the gym map either
+// way — the door is behind a Cut tree only EnterVermilionGym (invoked by
+// the KindGym objective) knows how to clear — so GoTo oscillated between
+// Vermilion City's neighboring routes until it gave up with
+// ErrNavigationStalled. The journey must stay withheld until the player is
+// already standing on the gym map.
+func TestOfferWithholdsVermilionGymJourneyUntilInside(t *testing.T) {
+	known := NewKnowledge(nil)
+	known.Visited[0x5c] = true
+
+	obs := Observation{Map: 0x05, MapName: "VERMILION_CITY", PartyCount: 1}
+	if hasJourneyTo(Offer(obs, known), "vermilion gym") {
+		t.Fatal("Vermilion City offered a plain journey to the gym before entering it")
+	}
+
+	obs = Observation{Map: 0x5c, MapName: "VERMILION_GYM", PartyCount: 1}
+	if !hasJourneyTo(Offer(obs, known), "vermilion gym") {
+		t.Fatal("already inside the gym, the journey to its own stand tile must still be offered")
+	}
+}
+
 func TestOfferPewterCitySurfacesBrockUntilBoulderBadge(t *testing.T) {
 	obs := Observation{Map: 0x02, MapName: "PEWTER_CITY", PartyCount: 1}
 	known := NewKnowledge(nil)
