@@ -749,7 +749,11 @@
     const valid = ["live", "runs", "failures", "analytics", "operations", "tools"];
     activeView = valid.includes(view) ? view : "live";
     document.querySelectorAll("[data-console-view]").forEach((panel) => { panel.hidden = panel.dataset.consoleView !== activeView; });
-    document.querySelectorAll("[role=tab][data-view]").forEach((tab) => { tab.setAttribute("aria-selected", String(tab.dataset.view === activeView)); });
+    document.querySelectorAll("[role=tab][data-view]").forEach((tab) => {
+      const active = tab.dataset.view === activeView;
+      tab.setAttribute("aria-selected", String(active));
+      tab.tabIndex = active ? 0 : -1;
+    });
     if (updateHash) history.replaceState(null, "", `${location.pathname}${location.search}#${activeView}`);
     if (window.scrollX) window.scrollTo({ left: 0, top: window.scrollY });
   }
@@ -852,7 +856,21 @@
   });
 
   $("queue-toggle").addEventListener("click", () => { setView("tools"); fillDefaults(); $("queue-toggle").setAttribute("aria-expanded", "true"); });
-  document.querySelectorAll("[role=tab][data-view]").forEach((tab) => tab.addEventListener("click", () => setView(tab.dataset.view)));
+  const tabs = [...document.querySelectorAll("[role=tab][data-view]")];
+  tabs.forEach((tab, index) => {
+    tab.addEventListener("click", () => setView(tab.dataset.view));
+    tab.addEventListener("keydown", (ev) => {
+      let next;
+      if (ev.key === "ArrowLeft") next = (index - 1 + tabs.length) % tabs.length;
+      else if (ev.key === "ArrowRight") next = (index + 1) % tabs.length;
+      else if (ev.key === "Home") next = 0;
+      else if (ev.key === "End") next = tabs.length - 1;
+      else return;
+      ev.preventDefault();
+      tabs[next].focus();
+      setView(tabs[next].dataset.view);
+    });
+  });
   $("rail-toggle").addEventListener("click", () => { $("run-rail").classList.add("open"); $("rail-toggle").setAttribute("aria-expanded", "true"); });
   $("rail-close").addEventListener("click", () => { $("run-rail").classList.remove("open"); $("rail-toggle").setAttribute("aria-expanded", "false"); });
   $("copy-run-id").addEventListener("click", async () => {

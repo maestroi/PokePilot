@@ -70,6 +70,46 @@ func TestUIRunConsoleHasWatchingFirstWorkspace(t *testing.T) {
 	}
 }
 
+func TestUIGameMediaKeepsStableFrameBox(t *testing.T) {
+	css := string(consoleCSS)
+	host := regexp.MustCompile(`\.game-media\{[^}]+\}`).FindString(css)
+	for _, want := range []string{"position:relative", "flex:1", "min-height:0"} {
+		if !strings.Contains(host, want) {
+			t.Errorf(".game-media rule %q missing %q", host, want)
+		}
+	}
+	lcd := regexp.MustCompile(`\.game-media>\.lcd\{[^}]+\}`).FindString(css)
+	for _, want := range []string{"position:relative", "flex:1", "width:100%", "height:100%"} {
+		if !strings.Contains(lcd, want) {
+			t.Errorf(".game-media>.lcd rule %q missing %q", lcd, want)
+		}
+	}
+}
+
+func TestUITabsUseAccessibleKeyboardNavigation(t *testing.T) {
+	html := string(indexHTML)
+	for i, view := range []string{"live", "runs", "failures", "analytics", "operations", "tools"} {
+		tabIndex := `-1`
+		if i == 0 {
+			tabIndex = `0`
+		}
+		tab := `id="tab-` + view + `" aria-controls="view-` + view + `" tabindex="` + tabIndex + `"`
+		if !strings.Contains(html, tab) {
+			t.Errorf("%s tab missing %q", view, tab)
+		}
+		panel := `id="view-` + view + `" class="console-view" role="tabpanel" aria-labelledby="tab-` + view + `"`
+		if !strings.Contains(html, panel) {
+			t.Errorf("%s panel missing %q", view, panel)
+		}
+	}
+	js := string(uiJS)
+	for _, want := range []string{`"ArrowLeft"`, `"ArrowRight"`, `"Home"`, `"End"`, "tab.tabIndex", "tabs[next].focus()", "setView(tabs[next].dataset.view)"} {
+		if !strings.Contains(js, want) {
+			t.Errorf("tab keyboard navigation missing %q", want)
+		}
+	}
+}
+
 func TestUIReplayLivesInGameBay(t *testing.T) {
 	html := string(indexHTML)
 	inspector := string(inspectorJS)
