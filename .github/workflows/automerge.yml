@@ -1,4 +1,5 @@
-# Squash-merge non-draft same-repo PRs into main once ROM-free Tests pass.
+# Squash-merge maestroi's non-draft same-repo PRs into main once ROM-free
+# Tests pass. Everyone else's PRs stay manual.
 #
 # GitHub auto-merge enabled by GITHUB_TOKEN is attributed to github-actions[bot],
 # which does not fire the push workflows that publish the farm image. After a
@@ -8,7 +9,7 @@ name: Automerge
 
 on:
   pull_request:
-    types: [opened, ready_for_review, reopened, synchronize]
+    types: [opened, ready_for_review, reopened, synchronize, auto_merge_enabled]
   workflow_run:
     workflows: ["Tests"]
     types: [completed]
@@ -29,7 +30,8 @@ jobs:
       github.event_name == 'pull_request' &&
       github.event.pull_request.draft == false &&
       github.event.pull_request.base.ref == 'main' &&
-      github.event.pull_request.head.repo.full_name == github.repository
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.user.login == 'maestroi'
     runs-on: ubuntu-latest
     steps:
       - name: Queue squash auto-merge
@@ -42,6 +44,30 @@ jobs:
           if ! out="$(gh pr merge "$PR" --squash --delete-branch --auto 2>&1)"; then
             printf '%s\n' "$out"
             if grep -qiE 'already enabled|already merged' <<<"$out"; then
+              exit 0
+            fi
+            exit 1
+          fi
+          printf '%s\n' "$out"
+
+  disable:
+    name: Keep others manual
+    if: >
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.base.ref == 'main' &&
+      github.event.pull_request.user.login != 'maestroi'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Disable auto-merge
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          if ! out="$(gh pr merge "$PR" --disable-auto 2>&1)"; then
+            printf '%s\n' "$out"
+            if grep -qiE 'not enabled|disabled' <<<"$out"; then
               exit 0
             fi
             exit 1
@@ -61,21 +87,23 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           REPO: ${{ github.repository }}
+          ALLOWED_AUTHOR: maestroi
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           set -euo pipefail
           pr_json="$(gh api -H 'Accept: application/vnd.github+json' \
             "/repos/${REPO}/commits/${HEAD_SHA}/pulls")"
-          pr_number="$(jq -r --arg repo "$REPO" '
+          pr_number="$(jq -r --arg repo "$REPO" --arg author "$ALLOWED_AUTHOR" '
             [.[]
               | select(.state=="open" or .merged_at != null)
               | select(.base.ref=="main")
               | select(.draft==false)
               | select(.head.repo.full_name==$repo)
+              | select(.user.login==$author)
             ] | first | .number // empty
           ' <<<"$pr_json")"
           if [[ -z "${pr_number}" ]]; then
-            echo "No same-repo PR into main for ${HEAD_SHA}; nothing to merge."
+            echo "No ${ALLOWED_AUTHOR} PR into main for ${HEAD_SHA}; skipping auto-merge."
             exit 0
           fi
 
