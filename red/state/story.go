@@ -48,17 +48,17 @@ type StoryFacts struct {
 	PokeFluteAcquired          bool
 	FuchsiaProgressionComplete bool
 
-	SaffronGateOpen          bool
-	CardKeyOwned             bool
-	SilphCoRivalDefeated     bool
-	SilphCoCleared           bool
-	MasterBallAwarded        bool
-	SilphRescueComplete      bool
-	MansionSwitchOn          bool
-	SecretKeyOwned           bool
-	ViridianGymOpen          bool
-	Route22RivalResolved     bool
-	Route23BadgeChecksPassed int
+	SaffronGateOpen            bool
+	CardKeyOwned               bool
+	SilphCoRivalDefeated       bool
+	SilphCoCleared             bool
+	MasterBallAwarded          bool
+	SilphRescueComplete        bool
+	MansionSwitchOn            bool
+	SecretKeyOwned             bool
+	ViridianGymOpen            bool
+	Route22RivalResolved       bool
+	Route23BadgeChecksPassed   int
 	Route23BadgeChecksComplete bool
 	LeagueChallengeStarted     bool
 	LeagueChampionDefeated     bool
