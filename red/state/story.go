@@ -18,7 +18,8 @@ const (
 
 // These event ids stay private to the Red story decoder. Agent/planner code
 // consumes StoryFacts instead of learning raw event-bit numbers. The values
-// are checked against the vendored event_constants.asm in story_test.go.
+// are checked against the vendored event_constants.asm in story_test.go and
+// silph_story_test.go.
 const (
 	eventViridianGymOpen            Event = 0x028
 	eventMansionSwitchOn            Event = 0x278
@@ -30,6 +31,8 @@ const (
 	eventPassedMarshBadgeCheck      Event = 0x534
 	eventPassedVolcanoBadgeCheck    Event = 0x535
 	eventPassedEarthBadgeCheck      Event = 0x536
+	eventBeatSilphCoRival           Event = 0x740
+	eventGotMasterBall              Event = 0x78d
 	eventBeatSilphCoGiovanni        Event = 0x78f
 	eventAutowalkedIntoLoreleisRoom Event = 0x8e6
 )
@@ -47,7 +50,10 @@ type StoryFacts struct {
 
 	SaffronGateOpen            bool
 	CardKeyOwned               bool
+	SilphCoRivalDefeated       bool
 	SilphCoCleared             bool
+	MasterBallAwarded          bool
+	SilphRescueComplete        bool
 	MansionSwitchOn            bool
 	SecretKeyOwned             bool
 	ViridianGymOpen            bool
@@ -82,7 +88,9 @@ func DecodeStoryFacts(m *Mem, inv InventoryState) StoryFacts {
 		FuchsiaProgressionComplete: progress.Has(BadgeSoul) && inventoryHasItem(inv, hm03ItemID) && inventoryHasItem(inv, hm04ItemID),
 		SaffronGateOpen:            m.U8(sym.StatusFlags1)&saffronGuardsDrinkMask != 0,
 		CardKeyOwned:               inventoryHasItem(inv, cardKeyItemID),
+		SilphCoRivalDefeated:       HasEvent(m, eventBeatSilphCoRival),
 		SilphCoCleared:             HasEvent(m, eventBeatSilphCoGiovanni),
+		MasterBallAwarded:          HasEvent(m, eventGotMasterBall),
 		MansionSwitchOn:            HasEvent(m, eventMansionSwitchOn),
 		SecretKeyOwned:             inventoryHasItem(inv, secretKeyItemID),
 		ViridianGymOpen:            HasEvent(m, eventViridianGymOpen),
@@ -90,6 +98,7 @@ func DecodeStoryFacts(m *Mem, inv InventoryState) StoryFacts {
 		LeagueChallengeStarted:     HasEvent(m, eventAutowalkedIntoLoreleisRoom),
 		LeagueChampionDefeated:     HasEvent(m, EventBeatChampionRival),
 	}
+	facts.SilphRescueComplete = facts.SilphCoCleared && facts.MasterBallAwarded
 	for _, event := range route23BadgeCheckEvents {
 		if HasEvent(m, event) {
 			facts.Route23BadgeChecksPassed++
