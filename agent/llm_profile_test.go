@@ -59,12 +59,13 @@ func TestResolveLLMEndpointsGatewayProfiles(t *testing.T) {
 	t.Setenv("POKEPILOT_LLM_GATEWAY_TIMEOUT", "45s")
 
 	for _, tc := range []struct {
-		profile LLMProfile
-		model   string
+		profile      LLMProfile
+		model        string
+		wantFallback bool
 	}{
-		{LLMProfileAuto, "pokepilot-auto"},
-		{LLMProfileGPU, "pokepilot-7900xtx"},
-		{LLMProfileDefault, "pokepilot-lan"},
+		{LLMProfileAuto, "pokepilot-auto", true},
+		{LLMProfileGPU, "pokepilot-7900xtx", false},
+		{LLMProfileDefault, "pokepilot-lan", true},
 	} {
 		primary, fb := ResolveLLMEndpoints(tc.profile)
 		if primary.BaseURL != "http://litellm:4000/v1" || primary.Model != tc.model {
@@ -76,8 +77,12 @@ func TestResolveLLMEndpointsGatewayProfiles(t *testing.T) {
 		if primary.Timeout.String() != "45s" {
 			t.Fatalf("%s gateway timeout = %s", tc.profile, primary.Timeout)
 		}
-		if fb != nil {
-			t.Fatalf("%s gateway fallback = %+v, want gateway-owned failover", tc.profile, fb)
+		if tc.wantFallback {
+			if fb == nil || fb.BaseURL != "http://direct-lan.example/v1" || fb.Model != "direct-model" {
+				t.Fatalf("%s gateway fallback = %+v, want direct LAN safety fallback", tc.profile, fb)
+			}
+		} else if fb != nil {
+			t.Fatalf("%s gateway fallback = %+v, want nil", tc.profile, fb)
 		}
 	}
 }
