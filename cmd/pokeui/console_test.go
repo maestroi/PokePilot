@@ -1017,18 +1017,24 @@ func TestUIWatchUsesPairedVisualStageAndCompactStateDeck(t *testing.T) {
 	}
 }
 
-func TestUIUsesSoftOperatorPalette(t *testing.T) {
+func TestUIUsesCalmNavyPalette(t *testing.T) {
 	css := string(consoleCSS)
 	for _, want := range []string{
-		`--bg:#11141c`,
-		`--shell:#0c0e14`,
-		`--bay:#1a2030`,
-		`--bay-2:#222a3c`,
-		`--text:#e8ebd9`,
-		`--muted:#a8b3c6`,
+		`--bg:#121720`,
+		`--shell:#0f141c`,
+		`--bay:#181f2a`,
+		`--bay-2:#202836`,
+		`--line:#2b3545`,
+		`--line-strong:#414d60`,
+		`--text:#dfe4de`,
+		`--cyan:#82a8cf`,
+		`--green:#70b58b`,
+		`.run-rail{`,
+		`background:#101620`,
+		`.timeline-bay{border-color:var(--line);background:var(--bay)}`,
 	} {
 		if !strings.Contains(css, want) {
-			t.Errorf("soft operator palette missing %q", want)
+			t.Errorf("calm navy palette missing %q", want)
 		}
 	}
 }
