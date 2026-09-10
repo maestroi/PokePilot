@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/maestroi/pokepilot/red/state"
+	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/skill"
 	"github.com/maestroi/pokepilot/skill/fixture"
 )
@@ -68,13 +69,13 @@ func TestChallengeTrainerExplicitInteractionAndIdempotence(t *testing.T) {
 		t.Fatal("ChallengeTrainer returned success without the trainer fought flag")
 	}
 
-	x, y := after.U8(0xD362), after.U8(0xD361) // wXCoord / wYCoord
+	x, y := after.U8(sym.XCoord), after.U8(sym.YCoord)
 	if err := skill.ChallengeTrainer(e, e.ROM(), 10, 6, policy); err != nil {
 		t.Fatalf("idempotent ChallengeTrainer: %v", err)
 	}
 	var repeat state.Mem
 	state.Snapshot(e, &repeat)
-	if repeat.U8(0xD362) != x || repeat.U8(0xD361) != y {
-		t.Fatalf("already-defeated challenge moved player: (%d,%d) -> (%d,%d)", x, y, repeat.U8(0xD362), repeat.U8(0xD361))
+	if repeat.U8(sym.XCoord) != x || repeat.U8(sym.YCoord) != y {
+		t.Fatalf("already-defeated challenge moved player: (%d,%d) -> (%d,%d)", x, y, repeat.U8(sym.XCoord), repeat.U8(sym.YCoord))
 	}
 }
