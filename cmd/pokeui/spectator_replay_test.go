@@ -186,8 +186,25 @@ func TestSpectatorOnlyPublishesNoteworthyReadyReplays(t *testing.T) {
 		t.Fatalf("blocked public replay routes reached replay service: %d -> %d", beforeBlocked, got)
 	}
 
+	html := string(watchHTML)
+	for _, want := range []string{
+		`id="playback-rate"`,
+		`value="1"`, `value="2"`, `value="4"`, `value="8"`, `value="16"`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Errorf("watch.html missing playback speed %q", want)
+		}
+	}
 	src := string(watchJS)
-	for _, want := range []string{"/v1/watch/runs/", "/replay/status", "/replay/video", "playback-rate", "completedSummary"} {
+	for _, want := range []string{
+		"/v1/watch/runs/",
+		"/replay/status",
+		"/replay/video",
+		"playback-rate",
+		"pokepilot.replayPlaybackRate",
+		"playbackRate",
+		"completedSummary",
+	} {
 		if !strings.Contains(src, want) {
 			t.Errorf("watch.js missing spectator replay behavior %q", want)
 		}
