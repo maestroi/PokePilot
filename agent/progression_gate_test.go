@@ -67,6 +67,7 @@ func TestJourneyProgressionBlockedUsesSemanticLateGameFacts(t *testing.T) {
 		fact  ProgressID
 	}{
 		{name: "Saffron", mapID: saffronCityMap, fact: ProgressSaffronGateOpen},
+		{name: "Saffron Gym", mapID: saffronGymMap, fact: redProgressSilphRescueComplete},
 		{name: "Cinnabar Gym", mapID: cinnabarGymMap, fact: ProgressSecretKeyOwned},
 		{name: "Viridian Gym", mapID: viridianGymMap, fact: ProgressViridianGymOpen},
 	}
@@ -82,5 +83,30 @@ func TestJourneyProgressionBlockedUsesSemanticLateGameFacts(t *testing.T) {
 				t.Fatalf("map %#02x should open after semantic prerequisite", tc.mapID)
 			}
 		})
+	}
+}
+
+func TestOfferSuppressesSaffronGymUntilSilphRescue(t *testing.T) {
+	known := NewKnowledge(map[uint8][]uint8{saffronCityMap: {saffronGymMap}})
+	known.SawMap(saffronCityMap)
+	obs := Observation{
+		Map:        saffronCityMap,
+		MapName:    "SAFFRON_CITY",
+		PartyCount: 1,
+		Party:      []PartyMon{{Level: 35, HP: 100, MaxHP: 100}},
+		Story: ProgressState{
+			{ID: ProgressSaffronGateOpen, Complete: true},
+		},
+	}
+
+	plain, flee := offeredJourneyTo(obs, known, "saffron gym")
+	if plain || flee {
+		t.Fatalf("pre-Silph-rescue Saffron Gym = plain:%v flee:%v, want both suppressed", plain, flee)
+	}
+
+	obs.Story = append(obs.Story, ProgressFact{ID: redProgressSilphRescueComplete, Complete: true})
+	plain, flee = offeredJourneyTo(obs, known, "saffron gym")
+	if !plain || !flee {
+		t.Fatalf("post-Silph-rescue Saffron Gym = plain:%v flee:%v, want both offered", plain, flee)
 	}
 }
