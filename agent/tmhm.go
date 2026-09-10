@@ -9,12 +9,17 @@ import (
 	"github.com/maestroi/pokepilot/skill"
 )
 
-// offerWithTMHM extends the portable objective menu with Red-owned progression
-// goals and owned machines. Neither concern is reconstructed by generic Offer.
+// offerWithTMHM extends the portable objective menu with Red-owned progression,
+// targeted party training, and owned machines. Generic Offer retains its
+// portable lead-training action; this adapter can additionally prove whether
+// each concrete Red party member is trainable in the current grass.
 func offerWithTMHM(m *emu.Emu, romData []byte, obs Observation, known *Knowledge) []Objective {
 	out := OfferWithProgression(obs, known, newRedObjectiveAdapter(m, romData))
 	var mem state.Mem
 	state.Snapshot(m, &mem)
+	out = insertPartyTrainingObjectives(obs, known, out, func(slot, targetLevel int) (TrainingEstimate, error) {
+		return currentPartyTrainingEstimate(&mem, romData, obs.Map, slot, targetLevel, trainSessionBattleBudget)
+	})
 	return appendTMHMObjectives(romData, state.DecodeParty(&mem), state.DecodeInventory(&mem), out)
 }
 

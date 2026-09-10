@@ -74,29 +74,7 @@ func executeRedOwned(m *emu.Emu, romData []byte, o Objective) (result ObjectiveR
 		return result, nil
 
 	case KindTrain:
-		if estimate, err := currentTrainingEstimateFromEmu(m, romData, m.Peek8(sym.CurMap), int(o.Level), trainSessionBattleBudget); err == nil && estimate.Viability == TrainingOutsideBudget {
-			result.Outcome = OutcomeBlocked
-			return result, fmt.Errorf("agent: %s: %w", o, &TrainingInefficientError{Estimate: estimate})
-		}
-		train, err := skill.Train(m, romData, int(o.Level), skill.StatAwareMove(romData), trainSessionBattleBudget)
-		result.Train = &train
-		if err != nil {
-			return result, fmt.Errorf("agent: %s: train failed after %d battles: %w", o, train.Battles, err)
-		}
-		if train.Reached {
-			return result, nil
-		}
-		result.Outcome = OutcomeBlocked
-		switch {
-		case train.Retreated:
-			return result, fmt.Errorf("agent: %s: %w (ended level %d)", o, skill.ErrTrainRetreat, train.EndLevel)
-		case train.BlackedOut:
-			return result, fmt.Errorf("agent: %s: %w before reaching level %d (ended level %d after %d battles)", o, skill.ErrBlackedOut, o.Level, train.EndLevel, train.Battles)
-		case train.EndLevel > train.StartLevel:
-			return result, fmt.Errorf("agent: %s: %w (target %d, ended level %d after %d battles)", o, skill.ErrTrainProgress, o.Level, train.EndLevel, train.Battles)
-		default:
-			return result, fmt.Errorf("agent: %s: target level %d not reached (ended level %d after %d battles)", o, o.Level, train.EndLevel, train.Battles)
-		}
+		return executeTrainingObjective(m, romData, o, result)
 
 	case KindHeal:
 		if o.Place != "" {
