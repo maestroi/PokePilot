@@ -371,14 +371,17 @@ test("video readiness and failure execute LCD fallback DOM wiring", async () => 
   await flushAsync();
 
   const video = harness.elements["pp-game-video"];
+  assert.equal(harness.elements["pp-replay-tools"].hidden, true);
   video.emit("canplay");
   assert.equal(harness.elements["detail-lcd"].hidden, true);
   assert.equal(video.hidden, false);
+  assert.equal(harness.elements["pp-replay-tools"].hidden, false);
 
   video.emit("error");
   assert.equal(harness.elements["detail-lcd"].hidden, false);
   assert.equal(video.hidden, true);
   assert.equal(harness.elements["pp-replay-panel"].hidden, false);
+  assert.equal(harness.elements["pp-replay-tools"].hidden, true);
   assert.equal(harness.elements["pp-replay"].textContent, "Reload replay");
   assert.match(harness.elements["pp-replay-status"].textContent, /could not be played/);
 });
@@ -396,6 +399,7 @@ test("finished replay applies stored playback rate and remembers a new one", asy
   await flushAsync();
 
   const video = harness.elements["pp-game-video"];
+  assert.equal(harness.elements["pp-replay-tools"].hidden, true);
   video.emit("canplay");
   assert.equal(video.hidden, false);
   assert.equal(harness.elements["pp-replay-tools"].hidden, false);

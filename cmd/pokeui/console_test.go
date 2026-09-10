@@ -142,7 +142,6 @@ func TestUIReplayLivesInGameBay(t *testing.T) {
 		`id="pp-replay-tools"`,
 		`value="8"`,
 		`value="16"`,
-		`pokepilot.replayPlaybackRate`,
 		`playbackRate`,
 	} {
 		if !strings.Contains(inspector, want) {

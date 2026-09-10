@@ -229,7 +229,6 @@
     artifactBody.innerHTML=list.map((a)=>`<tr><td>${html(a.name)}</td><td>${html(a.media_type||"binary")}</td><td>${fmtSize(a.size)}</td><td title="${html(a.sha256)}">${html((a.sha256||"—").slice(0,12))}</td><td><a href="/v1/runs/${escURL(runID)}/artifacts/${escURL(a.name)}/content" download="${html(a.name)}">Download</a></td></tr>`).join("");
   }
   function syncSelectFromStorage() {
-    // Shared with spectator via pokepilot.replayPlaybackRate.
     playbackSelect.value = String(readStoredPlaybackRate(window.localStorage));
   }
   function applyPlaybackRate() {
