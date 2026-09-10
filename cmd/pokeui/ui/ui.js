@@ -236,6 +236,22 @@
     if (r.status === "done") return chip("outcome-" + out, out || "done");
     return chip(r.status, r.status);
   }
+  function completionSignature(run) {
+    const issue = run.issue || {};
+    return JSON.stringify([
+      run.status || "",
+      Number(run.ended_at || 0),
+      run.reason || "",
+      run.detail || "",
+      Boolean(run.replay_available),
+      Number(run.attempts || 0),
+      issue.issue_id || "",
+      issue.status || "",
+      Number(issue.occurrence_count || 0),
+      issue.resolution || "",
+      issue.fixed_revision || ""
+    ]);
+  }
   function kv(rows) {
     const body = rows.filter((row) => row[1] !== "" && row[1] != null)
       .map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("");
@@ -856,7 +872,7 @@
     $("connection-label").textContent = wallDown ? `Stale · ${Math.max(0, Math.floor((Date.now() - lastFreshAt) / 1000))}s` : "Connected";
     renderCounts(); renderVersions(); renderLive(); renderFailures(); renderWorkers(); renderHistory(); renderDetail(); syncPumps();
     const run = (snap.runs || []).find((candidate) => candidate.run_id === selected);
-    if (run) window.dispatchEvent(new CustomEvent("pokefarm-run-lifecycle", { detail: { runId: run.run_id, status: run.status, frame: run.frame } }));
+    if (run) window.dispatchEvent(new CustomEvent("pokefarm-run-lifecycle", { detail: { runId: run.run_id, status: run.status, frame: run.frame, completionSignature: completionSignature(run) } }));
     setView(activeView, false);
   }
 

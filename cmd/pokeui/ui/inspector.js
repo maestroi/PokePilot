@@ -55,6 +55,7 @@
   let runFinished = false;
   let runTotalFrame = 0;
   let lifecycleStatus = "";
+  let completionSignature = "";
   let runLoadInFlight = false;
   let finishedReloadPending = false;
   let runLoadSerial = 0;
@@ -223,7 +224,7 @@
     const serial=++runLoadSerial;
     runLoadInFlight=true;
     resetGameMedia(); runID=id; debug=null; reproSource=null; checkpoints=[]; events=[]; selectedEvent=-1; followingLive=true; runFinished=false; returnLive.hidden=true; evidence.hidden=true; transportStatus.textContent="";investigate.disabled=false;investigateStatus.textContent="";
-    if(changed){lifecycleStatus="";runTotalFrame=0}
+    if(changed){lifecycleStatus="";completionSignature="";finishedReloadPending=false;runTotalFrame=0}
     window.dispatchEvent(new CustomEvent("pokefarm-semantic-event",{detail:{runId:id,event:null}}));
     if(!id){track.innerHTML='<p class="empty">Select a run to browse recorded events.</p>';story.innerHTML='<p class="empty">Select a run to browse its recorded events.</p>';replayButton.hidden=true;runLoadInFlight=false;return}
     track.innerHTML='<p class="empty">Loading recorded events…</p>'; story.innerHTML='<p class="empty">Loading Run Story…</p>'; replayButton.hidden=false;replayButton.disabled=true;replayStatus.textContent="Loading…";
@@ -273,7 +274,20 @@
   investigate.addEventListener("click",()=>investigateRun(investigate));
   byID("pp-close-evidence").addEventListener("click",()=>{evidence.hidden=true});
   window.addEventListener("pokefarm-select-run",(event)=>{const id=(event.detail&&event.detail.runId)||"";if(id!==runID)selectRun(id)});
-  window.addEventListener("pokefarm-run-lifecycle",(event)=>{const detail=event.detail||{};if(detail.runId!==runID)return;runTotalFrame=Math.max(runTotalFrame,Number(detail.frame||0));const status=String(detail.status||"");const previousStatus=lifecycleStatus;lifecycleStatus=status;if(previousStatus&&previousStatus!=="done"&&status==="done")selectRun(runID,true)});
+  window.addEventListener("pokefarm-run-lifecycle",(event)=>{
+    const detail=event.detail||{};
+    if(detail.runId!==runID)return;
+    runTotalFrame=Math.max(runTotalFrame,Number(detail.frame||0));
+    const status=String(detail.status||"");
+    const previousStatus=lifecycleStatus;
+    lifecycleStatus=status;
+    if(status!=="done"){completionSignature="";return}
+    const signature=String(detail.completionSignature||"");
+    const signatureChanged=signature!==completionSignature;
+    completionSignature=signature;
+    if(previousStatus===""||!signature||!signatureChanged)return;
+    selectRun(runID,true);
+  });
   window.addEventListener("beforeunload",()=>{stopReplayPoll();clearReplayVideo()},{once:true});
   if (document.documentElement.dataset.selectedRun) selectRun(document.documentElement.dataset.selectedRun);
 })();

@@ -247,14 +247,45 @@ func TestUISemanticReplayContextIsTruthful(t *testing.T) {
 func TestUIReloadsInspectorWhenSelectedRunFinishes(t *testing.T) {
 	ui := string(uiJS)
 	inspector := string(inspectorJS)
-	for _, want := range []string{`pokefarm-run-lifecycle`, `runId: run.run_id`, `status: run.status`, `frame: run.frame`} {
+	for _, want := range []string{`pokefarm-run-lifecycle`, `runId: run.run_id`, `status: run.status`, `frame: run.frame`, `completionSignature: completionSignature(run)`} {
 		if !strings.Contains(ui, want) {
 			t.Errorf("dashboard lifecycle publication missing %q", want)
 		}
 	}
-	for _, want := range []string{`pokefarm-run-lifecycle`, `previousStatus!=="done"&&status==="done"`, `runLoadInFlight`, `finishedReloadPending`} {
+	for _, want := range []string{`pokefarm-run-lifecycle`, `previousStatus`, `signatureChanged`, `signature!==completionSignature`, `runLoadInFlight`, `finishedReloadPending`} {
 		if !strings.Contains(inspector, want) {
 			t.Errorf("inspector lifecycle reload missing %q", want)
+		}
+	}
+	if !strings.Contains(inspector, `if(changed){lifecycleStatus="";completionSignature="";finishedReloadPending=false;runTotalFrame=0}`) {
+		t.Error("switching runs must discard a pending completion reload owned by the previous run")
+	}
+}
+
+func TestUICompletionSignatureTracksReportEnrichment(t *testing.T) {
+	ui := string(uiJS)
+	start := strings.Index(ui, "function completionSignature")
+	if start < 0 {
+		t.Fatal("ui.js missing completionSignature")
+	}
+	end := strings.Index(ui[start:], "\n  }")
+	if end < 0 {
+		t.Fatal("completionSignature bounds")
+	}
+	signature := ui[start : start+end]
+	for _, want := range []string{`run.status`, `run.ended_at`, `run.reason`, `run.detail`, `run.replay_available`, `issue.issue_id`, `issue.status`, `issue.occurrence_count`} {
+		if !strings.Contains(signature, want) {
+			t.Errorf("completion signature missing report-backed fact %q", want)
+		}
+	}
+	if strings.Contains(signature, `run.frame`) {
+		t.Error("completion signature must not change with ordinary frame/dashboard refreshes")
+	}
+
+	inspector := string(inspectorJS)
+	for _, want := range []string{`if(status!=="done")`, `completionSignature=signature`, `previousStatus===""`, `selectRun(runID,true)`} {
+		if !strings.Contains(inspector, want) {
+			t.Errorf("inspector completion enrichment handling missing %q", want)
 		}
 	}
 }
