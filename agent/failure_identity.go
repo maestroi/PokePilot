@@ -288,6 +288,13 @@ func failureCauseFor(err error) (FailureCauseID, []string) {
 	if errors.Is(err, skill.ErrDialogueInterrupted) {
 		return "dialogue_interrupted", nil
 	}
+	if errors.Is(err, skill.ErrFieldMovePrerequisite) {
+		return "field_move_prerequisite_missing", nil
+	}
+	var gate *skill.ErrRouteGateClosed
+	if errors.As(err, &gate) {
+		return "route_gate_closed", nil
+	}
 	var blocked *skill.ErrBlocked
 	if errors.As(err, &blocked) {
 		return "blocked_step", nil

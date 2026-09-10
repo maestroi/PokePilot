@@ -17,6 +17,17 @@ func TestFailureCauseUsesTypedSentinelNotProse(t *testing.T) {
 	}
 }
 
+func TestFailureCauseGatedPathUsesTypedIdentity(t *testing.T) {
+	cause, ctx := failureCauseFor(fmt.Errorf("agent: go to route 9: %w", &skill.ErrRouteGateClosed{Text: "Oh wait there, the road's closed."}))
+	if cause != "route_gate_closed" || len(ctx) != 0 {
+		t.Fatalf("cause=%q context=%v, want route_gate_closed", cause, ctx)
+	}
+	cause, ctx = failureCauseFor(fmt.Errorf("%w: CUT requires the Cascade Badge", skill.ErrFieldMovePrerequisite))
+	if cause != "field_move_prerequisite_missing" || len(ctx) != 0 {
+		t.Fatalf("cause=%q context=%v, want field_move_prerequisite_missing", cause, ctx)
+	}
+}
+
 func TestFailureCauseCarriesSemanticRoutePrerequisites(t *testing.T) {
 	err := &world.RouteBlockedError{Blockages: []gameruntime.TransitionBlockage{
 		{Missing: []gameruntime.CapabilityID{"can_surf", "can_clear_snorlax"}},

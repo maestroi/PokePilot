@@ -1,12 +1,18 @@
 package skill
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 )
+
+// ErrFieldMovePrerequisite reports that a field move cannot be used or
+// prepared from the current party/progress: the required badge or HM is
+// missing. That is a stable, replan-able blockage, not a controller fault.
+var ErrFieldMovePrerequisite = errors.New("skill: field move prerequisite is missing")
 
 // FieldMove identifies one progression-relevant Gen 1 out-of-battle move.
 // It is deliberately separate from the raw move ID and wFieldMoves menu ID:
@@ -198,13 +204,13 @@ func EnsureFieldMove(m *emu.Emu, move FieldMove) (int, error) {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
 	if !state.DecodeProgress(&mem).Has(spec.Badge) {
-		return -1, fmt.Errorf("skill: %s requires the %s Badge", spec.Name, spec.Badge)
+		return -1, fmt.Errorf("%w: %s requires the %s Badge", ErrFieldMovePrerequisite, spec.Name, spec.Badge)
 	}
 	if slot := partyMoveSlot(&mem, spec.MoveID); slot >= 0 {
 		return slot, nil
 	}
 	if _, qty := bagEntry(&mem, spec.HMItem); qty == 0 {
-		return -1, fmt.Errorf("skill: %s requires HM item %#02x in the bag", spec.Name, spec.HMItem)
+		return -1, fmt.Errorf("%w: %s requires HM item %#02x in the bag", ErrFieldMovePrerequisite, spec.Name, spec.HMItem)
 	}
 
 	result, err := TeachTMHM(m, spec.HMItem, true)

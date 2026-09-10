@@ -409,9 +409,16 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 	}
 
 	if g, ok := skill.GymAt(obs.Map); ok && !hasBadge(obs, g.Badge) {
-		gym := Objective{Kind: KindGym, Place: g.Place}
-		if _, lost := known.Failures[gymLossFailureKey(g.Place)]; !lost {
-			out = append(out, gym)
+		// Journeys to g.Place are already withheld via semanticBlocked, but
+		// KindGym is a local verb. Offering it while the gym interior is
+		// gated from here lets the planner copy an illegal challenge into a
+		// plan (measured: Vermilion City, missing can_cut). Already standing
+		// on the gym map is the one case the exterior gate no longer applies.
+		if obs.Map == g.Map || !semanticBlocked[string(g.Place)] {
+			gym := Objective{Kind: KindGym, Place: g.Place}
+			if _, lost := known.Failures[gymLossFailureKey(g.Place)]; !lost {
+				out = append(out, gym)
+			}
 		}
 	}
 

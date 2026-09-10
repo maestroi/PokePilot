@@ -110,6 +110,26 @@ func TestClassifyObjectiveOutcomeGameplayRecovery(t *testing.T) {
 	}
 }
 
+func TestClassifyObjectiveOutcomeGatedPathIsBlocked(t *testing.T) {
+	clean := Observation{Controllable: true}
+	gate := fmt.Errorf("agent: go to route 9: %w", &skill.ErrRouteGateClosed{Text: "Oh wait there, the road's closed."})
+	if got := classifyObjectiveOutcome(Objective{Kind: KindGoTo, Place: "route 9"}, gate, clean); got != OutcomeBlocked {
+		t.Fatalf("closed route gate = %q, want blocked so the run replans", got)
+	}
+	if got := classifyObjectiveOutcome(Objective{Kind: KindGoTo, Place: "route 9"}, gate, Observation{}); got != OutcomeStabilizationFailed {
+		t.Fatalf("closed route gate on a dirty boundary = %q, want stabilization_failed", got)
+	}
+
+	cut := fmt.Errorf("agent: beat the gym leader here: skill: Gym: reach LT. SURGE: skill: EnterVermilionGym: %w",
+		fmt.Errorf("%w: CUT requires the Cascade Badge", skill.ErrFieldMovePrerequisite))
+	if got := classifyObjectiveOutcome(Objective{Kind: KindGym, Place: "vermilion gym"}, cut, clean); got != OutcomeBlocked {
+		t.Fatalf("missing field-move badge = %q, want blocked so the run replans", got)
+	}
+	if actionFor(OutcomeBlocked) != actionReplan {
+		t.Fatal("blocked must replan")
+	}
+}
+
 func TestClassifyObjectiveOutcomeDoesNotParseLegacyGameplayProse(t *testing.T) {
 	clean := Observation{Controllable: true}
 	legacy := []struct {
