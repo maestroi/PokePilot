@@ -16,6 +16,7 @@ func redProgressionKnown(id ProgressID) bool {
 	case redProgressPokedexAcquired,
 		redProgressMtMoonFossilAcquired,
 		redProgressSSTicketAcquired,
+		redProgressHM01Acquired,
 		redProgressSilphScopeAcquired,
 		redProgressPokeFluteAcquired,
 		redProgressFuchsiaProgressionComplete,
@@ -32,7 +33,7 @@ func redProgressionKnown(id ProgressID) bool {
 // objective shape. Availability is Red knowledge; the planner only sees the
 // semantic state change requested by each objective.
 func redProgressionObjectives(obs Observation) []Objective {
-	out := make([]Objective, 0, 8)
+	out := make([]Objective, 0, 9)
 	if skill.MtMoonProgressionAvailable(obs.Map) && !obs.Story.Has(redProgressMtMoonFossilAcquired) {
 		out = append(out, Objective{Kind: KindProgress, Progress: redProgressMtMoonFossilAcquired, Note: "(defeat Mt. Moon's Super Nerd and choose the Dome Fossil to open the eastern exit)"})
 	}
@@ -49,6 +50,13 @@ func redProgressionObjectives(obs Observation) []Objective {
 			Kind:     KindProgress,
 			Progress: redProgressSSTicketAcquired,
 			Note:     "(help Bill at the end of Route 25 and obtain the S.S. Ticket, opening Cerulean's robbed-house route south)",
+		})
+	}
+	if obs.Story.Has(redProgressSSTicketAcquired) && !obs.Story.Has(redProgressHM01Acquired) {
+		out = append(out, Objective{
+			Kind:     KindProgress,
+			Progress: redProgressHM01Acquired,
+			Note:     "(go to Vermilion, board the S.S. Anne with the ticket, defeat the scripted rival on 2F, and receive HM01 Cut from the Captain)",
 		})
 	}
 	if skill.RocketHideoutAvailable(obs.Map) && !obs.Story.Has(redProgressSilphScopeAcquired) {
@@ -119,6 +127,8 @@ func executeRedProgression(m *emu.Emu, romData []byte, o Objective) error {
 		return skill.OaksParcel(m, romData, policy)
 	case redProgressSSTicketAcquired:
 		return skill.Bill(m, romData, policy)
+	case redProgressHM01Acquired:
+		return skill.SSAnneHM01(m, romData, policy)
 	case redProgressSilphScopeAcquired:
 		return skill.RocketHideout(m, romData, policy)
 	case redProgressPokeFluteAcquired:

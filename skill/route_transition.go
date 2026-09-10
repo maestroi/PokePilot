@@ -60,6 +60,21 @@ func (x *redRouteTransitionExecutor) ExecuteTransition(edge world.Edge, transiti
 		}
 		return world.TransitionExecutionResult{}, nil
 
+	case "red:ss_anne_ticket":
+		// The sailor performs the actual ticket presentation in Vermilion's
+		// map script. This gate only verifies the durable bag prerequisite at
+		// the last possible moment, so a route planned before Bill completed
+		// cannot walk into the harbor guard on stale capabilities.
+		var mem state.Mem
+		state.Snapshot(x.m, &mem)
+		if !state.DecodeStoryFacts(&mem, state.DecodeInventory(&mem)).SSTicketAcquired {
+			return world.TransitionExecutionResult{}, &gameruntime.TransitionBlockage{
+				Transition: transition,
+				Missing:    []gameruntime.CapabilityID{capCanBoardSSAnne},
+			}
+		}
+		return world.TransitionExecutionResult{}, nil
+
 	case "red:route9_cut":
 		// The actual tree is inside Route 9 and is still handled by Travel's
 		// live Cut recovery. This gate only proves that recovery is possible

@@ -12,6 +12,7 @@ const (
 	ssTicketItemID   uint8 = 0x3f
 	silphScopeItemID uint8 = 0x48
 	pokeFluteItemID  uint8 = 0x49
+	hm01ItemID       uint8 = 0xc4
 	hm03ItemID       uint8 = 0xc6
 	hm04ItemID       uint8 = 0xc7
 )
@@ -44,6 +45,7 @@ type StoryFacts struct {
 	MtMoonFossilAcquired       bool
 	PokedexAcquired            bool
 	SSTicketAcquired           bool
+	HM01Acquired               bool
 	SilphScopeAcquired         bool
 	PokeFluteAcquired          bool
 	FuchsiaProgressionComplete bool
@@ -83,6 +85,7 @@ func DecodeStoryFacts(m *Mem, inv InventoryState) StoryFacts {
 		MtMoonFossilAcquired:       HasEvent(m, EventBeatMtMoonSuperNerd) && (HasEvent(m, EventGotDomeFossil) || HasEvent(m, EventGotHelixFossil)) && m.U8(sym.MtMoonB2FCurScript) == 0,
 		PokedexAcquired:            HasEvent(m, EventGotPokedex),
 		SSTicketAcquired:           inventoryHasItem(inv, ssTicketItemID),
+		HM01Acquired:               inventoryHasItem(inv, hm01ItemID),
 		SilphScopeAcquired:         inventoryHasItem(inv, silphScopeItemID),
 		PokeFluteAcquired:          inventoryHasItem(inv, pokeFluteItemID),
 		FuchsiaProgressionComplete: progress.Has(BadgeSoul) && inventoryHasItem(inv, hm03ItemID) && inventoryHasItem(inv, hm04ItemID),

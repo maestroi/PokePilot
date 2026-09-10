@@ -15,6 +15,7 @@ const (
 	capCanClearSnorlax            gameruntime.CapabilityID = "can_clear_snorlax"
 	capCanExitMtMoon              gameruntime.CapabilityID = "can_exit_mt_moon"
 	capCanPassCeruleanRobbedHouse gameruntime.CapabilityID = "can_pass_cerulean_robbed_house"
+	capCanBoardSSAnne             gameruntime.CapabilityID = "can_board_ss_anne"
 	capCanEnterSaffron            gameruntime.CapabilityID = "can_enter_saffron"
 )
 
@@ -49,6 +50,14 @@ const (
 	ceruleanTrashedHouseMap        uint8 = 0x3e
 	ceruleanTrashedHouseFrontWarpX uint8 = 27
 	ceruleanTrashedHouseFrontWarpY uint8 = 11
+
+	// Vermilion's harbor guard checks the S.S. Ticket immediately before
+	// these two city -> dock warps. The reverse dock -> city edge remains
+	// open, including after HM01 starts the departure sequence.
+	semanticVermilionDockMap uint8 = 0x5E
+	vermilionDockWarpY       uint8 = 31
+	vermilionDockWarpX1      uint8 = 18
+	vermilionDockWarpX2      uint8 = 19
 
 	// The ladder out of Mt. Moon B2F's fossil corridor
 	// (pokered/data/maps/objects/MtMoonB2F.asm: warp_event 5, 7).
@@ -85,6 +94,7 @@ func redRouteCapabilities(romData []byte, mem *state.Mem) gameruntime.Capability
 	}
 	if facts.SSTicketAcquired {
 		caps[capCanPassCeruleanRobbedHouse] = true
+		caps[capCanBoardSSAnne] = true
 	}
 	if facts.PokeFluteAcquired {
 		caps[capCanClearSnorlax] = true
@@ -134,6 +144,16 @@ func redRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, bool) {
 		// the house's rear hole then changes walkable component and opens the
 		// real road south to Route 5. This is a precondition, not an action.
 		t := semanticTransition("red:cerulean_robbed_house", edge, capCanPassCeruleanRobbedHouse)
+		t.Gate = true
+		return t, true
+	case edge.From == semanticVermilionCityMap && edge.To == semanticVermilionDockMap &&
+		edge.Kind == world.EdgeWarp && edge.WarpY == vermilionDockWarpY &&
+		(edge.WarpX == vermilionDockWarpX1 || edge.WarpX == vermilionDockWarpX2):
+		// The sailor one row north of the harbor warps checks S.S. Ticket and
+		// pushes the player back when it is absent. Represent that scripted
+		// guard as a gate on the forward warp so reachability can explain why
+		// the ship is inaccessible instead of repeatedly walking into text.
+		t := semanticTransition("red:ss_anne_ticket", edge, capCanBoardSSAnne)
 		t.Gate = true
 		return t, true
 	case pair(semanticCeruleanCityMap, semanticRoute9Map):

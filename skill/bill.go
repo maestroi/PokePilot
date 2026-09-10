@@ -62,6 +62,12 @@ func Bill(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if _, count := bagEntry(&mem, ssTicketItem); count > 0 {
 		return nil
 	}
+	// Bill's final human-form conversation awards a new distinct key item.
+	// Reserve the slot before entering either half of the scripted rescue so
+	// a full bag cannot finish the cutscene yet fail the progression reward.
+	if err := EnsureBagSpaceFor(m, ssTicketItem); err != nil {
+		return fmt.Errorf("skill: Bill: make room for S.S. Ticket: %w", err)
+	}
 
 	// Pokemon-form Bill is object slot 1. Approach him explicitly before
 	// helpBill: that helper intentionally owns the unusual choice + scripted

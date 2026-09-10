@@ -118,8 +118,15 @@ func redRoutePrerequisiteLink(id CapabilityID) (RoutePrerequisiteLink, bool) {
 		return RoutePrerequisiteLink{Capability: id, Progress: redProgressMtMoonFossilAcquired}, true
 	case "can_pass_cerulean_robbed_house":
 		return RoutePrerequisiteLink{Capability: id, Progress: redProgressSSTicketAcquired}, true
+	case "can_board_ss_anne":
+		return RoutePrerequisiteLink{Capability: id, Progress: redProgressSSTicketAcquired}, true
 	case "can_cut":
-		return RoutePrerequisiteLink{Capability: id, FieldCapability: "cut"}, true
+		// Cut has two useful planner-facing facts: HM01 is the durable story
+		// acquisition, while the field capability says whether the current
+		// party/badge state can actually prepare or use it. Keeping both lets
+		// the strategist choose the S.S. Anne objective when the HM is absent
+		// without pretending ownership alone guarantees a compatible user.
+		return RoutePrerequisiteLink{Capability: id, FieldCapability: "cut", Progress: redProgressHM01Acquired}, true
 	case "can_surf":
 		return RoutePrerequisiteLink{Capability: id, FieldCapability: "surf"}, true
 	case "can_move_boulders":
