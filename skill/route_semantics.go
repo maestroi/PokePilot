@@ -44,7 +44,6 @@ const (
 	// connection declared on both headers.
 	route5GateMap uint8 = 0x46
 	route6GateMap uint8 = 0x49
-	route7GateMap uint8 = 0x4C
 	route8GateMap uint8 = 0x4F
 
 	ceruleanTrashedHouseMap        uint8 = 0x3e
