@@ -10,7 +10,7 @@ disagree, the runner plan wins and this file is stale.
 S5c-1 below is deliberately NOT a runner task — it is a by-hand measurement,
 and the runner plan starts at S5c-2.
 
-Slice 5's goal (`docs/SLICE5-PLAN.md`) is the Boulder Badge. `skill.Gym` landed
+Slice 5's goal (`docs/archive/SLICE5-PLAN.md`) is the Boulder Badge. `skill.Gym` landed
 (`eba1a16`) and `TestGymBoulderBadge` reaches the badge — but only because the
 **test** hand-drives three things production code cannot do. This slice moves
 what belongs in production into production, and states plainly what does not
@@ -51,7 +51,7 @@ interruption. They are not the same size.
   `crossGate` is its own proof. **It closes here.**
 - **Dialogue recovery** cannot be done safely without a predicate that tells a
   question from a statement, which does not exist yet — see
-  `docs/SLICE6-PLAN.md` S6-5. Pressing A blindly is what `dismissDialogue`
+  `docs/archive/SLICE6-PLAN.md` S6-5. Pressing A blindly is what `dismissDialogue`
   does, and shipping that is worse than not shipping it. **It moves to Slice
   6**, and `TestTravelToPewter` moves with it.
 
@@ -74,7 +74,7 @@ milestone and an autonomous one.
 **Run by hand. This is a measurement, not an agent-runner task.**
 
 A task whose text says "find out why" spends its whole budget finding out —
-this project has paid that bill three times (`docs/SLICE5-PLAN.md`, process
+this project has paid that bill three times (`docs/archive/SLICE5-PLAN.md`, process
 note).
 
 Restore `TestTravelToPewter` verbatim from `RUNNOTES.md` (plus the `red/state`
@@ -89,7 +89,7 @@ It is **expected to fail**. The deliverable is the list of what stops it and
 where, in order — gate, text box, sprite, or something not predicted here.
 Record each stop's map, tile and typed error at the top of this file.
 
-Then mark the test `t.Skip` with a pointer to `docs/SLICE6-PLAN.md` rather
+Then mark the test `t.Skip` with a pointer to `docs/archive/SLICE6-PLAN.md` rather
 than deleting it again. A deleted test is how this milestone got lost once
 already.
 
@@ -101,7 +101,7 @@ question without reading a grid into context.
 
 ## S5c-2: `ErrReplanExhausted`
 
-Task 1 of `docs/plans/2026-08-27-llm-world-model-recovery.md`, unchanged.
+Task 1 of `docs/archive/2026-08-27-llm-world-model-recovery.md`, unchanged.
 
 `skill/goto.go:88` wraps only `ErrLegUnwalkable`, so exhausting the re-plan
 budget is indistinguishable from one recoverable leg. Small, pure, no ROM.

@@ -253,7 +253,7 @@ higher-level area itself, so a model that does not is the finding, not a code
 gap; or (b) make the mismatch more legible in the observation (e.g. surface
 the level gap explicitly) without gating or blocking anything — a nudge, not
 a rule. Given this project's standing rule against seeding Pokémon knowledge
-into Go (`docs/plans/2026-08-31-run-keeps-a-plan-design.md`, "What this does
+into Go (`docs/archive/2026-08-31-run-keeps-a-plan-design.md`, "What this does
 NOT do"), (b) is the more in-pattern option if this gets picked up, but no
 measurement has been taken yet — the first step is confirming with a live run
 whether a stuck-at-level streak actually correlates with an outlevelled wild

@@ -68,7 +68,7 @@ const menuCursorTile = 0xED
 //
 //  1. The screen holds drawn text: wFontLoaded != 0 in the overworld, or
 //     wIsInBattle != 0 in a battle. wFontLoaded is MEASURED to stay 0 for
-//     an entire battle (docs/SLICE3-PLAN.md Addendum 2): DisplayTwoOptionMenu
+//     an entire battle (docs/archive/SLICE3-PLAN.md Addendum 2): DisplayTwoOptionMenu
 //     does not set it, and battle text does not go through the overworld
 //     text engine, so the wild-battle "Use next #MON?" prompt (core.asm
 //     DoUseNextMonDialogue) would otherwise be undecodable. The staleness

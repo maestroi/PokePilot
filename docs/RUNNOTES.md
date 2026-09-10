@@ -38,7 +38,7 @@ here.
 
 **NO recall-vs-derivation reading is possible from these runs, and none is
 offered.** No completion rate, no capability claim. The real measurement
-moves to slice 7 (docs/superpowers/specs/2026-08-29-slice7-design.md) after
+moves to slice 7 (docs/archive/2026-08-29-slice7-design.md) after
 the goal, reply validation and rejection recovery land.
 
 ### For the next task
@@ -537,7 +537,7 @@ Measurement task — no fixes, no new Kinds, no sight-line avoidance. The
 question is what `skill.Travel` does when a stationary trainer's line of sight
 engages the player while it is walking Route 3, and whether the defeated
 trainers re-arm on a return crossing. (Slice 8 candidate item 1,
-docs/SLICE8-CANDIDATES.md.)
+docs/archive/SLICE8-CANDIDATES.md.)
 
 ### Setup constraint (why the measurement ran the whole Brock journey first)
 Route 3 is reachable only from Pewter City's east edge, and
@@ -618,7 +618,7 @@ sight lines. Encounter tile → trainer:
 Party: lead entered Route 3 at L16 (HP 46/50) and ended at **L19 (HP 35/57)**.
 
 ### Two discrepancies found (reported, not fixed)
-- **The design doc's trainer count is wrong.** SLICE8-CANDIDATES.md item 1 says
+- **The design doc's trainer count is wrong.** docs/archive/SLICE8-CANDIDATES.md item 1 says
   Route 3 has "seven" trainers, but the ROM object file has **eight** OPP_
   trainer objects (the doc's own list shows eight). Measured 6 of 8 engaged.
 - **The vendored decomp's map dimensions do not match this ROM.**

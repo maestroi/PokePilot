@@ -532,7 +532,7 @@ Measurement task — no fixes, no new Kinds, no sight-line avoidance. The
 question is what `skill.Travel` does when a stationary trainer's line of sight
 engages the player while it is walking Route 3, and whether the defeated
 trainers re-arm on a return crossing. (Slice 8 candidate item 1,
-docs/SLICE8-CANDIDATES.md.)
+docs/archive/SLICE8-CANDIDATES.md.)
 
 ### Setup constraint (why the measurement ran the whole Brock journey first)
 Route 3 is reachable only from Pewter City's east edge, and
@@ -613,7 +613,7 @@ sight lines. Encounter tile → trainer:
 Party: lead entered Route 3 at L16 (HP 46/50) and ended at **L19 (HP 35/57)**.
 
 ### Two discrepancies found (reported, not fixed)
-- **The design doc's trainer count is wrong.** SLICE8-CANDIDATES.md item 1 says
+- **The design doc's trainer count is wrong.** docs/archive/SLICE8-CANDIDATES.md item 1 says
   Route 3 has "seven" trainers, but the ROM object file has **eight** OPP_
   trainer objects (the doc's own list shows eight). Measured 6 of 8 engaged.
 - **The vendored decomp's map dimensions do not match this ROM.**
@@ -2093,7 +2093,7 @@ prompting.
   warps). Time ~557µs → ~2.6ms/op (~4.7x) from the per-map component flood fill.
 
 ### The seven unreachable maps: 0 came back
-Per `docs/GRAPH-GAPS.md` Q2, all seven (`0x45`, `0x4B`, `0x4E`, `0xAD`, `0xE7`,
+Per `docs/archive/GRAPH-GAPS.md` Q2, all seven (`0x45`, `0x4B`, `0x4E`, `0xAD`, `0xE7`,
 `0xEF`, `0xF0`) are dead data (unused `_COPY` maps, garbage headers, sealed
 rooms with empty `def_warp_events`) — none share `0xC1`'s 0xFF-warp shape, so
 this task's resolver change does not touch them. Reach is exactly the two
@@ -2206,7 +2206,7 @@ add no plan slot to v5 yet, since the recommendation is redesign-first).
 the same rubber-stamping measured for `Intent`; design against it by showing
 the break point + what changed, not the old plan as a prior.
 
-**Files touched:** `docs/plans/2026-08-31-run-keeps-a-plan-design.md` (added a
+**Files touched:** `docs/archive/2026-08-31-run-keeps-a-plan-design.md` (added a
 "Measured: plan lifetime (S11-2)" section after the cost-arithmetic section;
 marked open question 1 ANSWERED). No `.go` file touched; docs only.
 

@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go stdlib, existing embedded HTML/JS (`emu/watch.go`, `cmd/pokeui/ui`).
 
-**Design doc:** `docs/plans/2026-09-02-player-roster-ui-design.md`
+**Design doc:** `docs/archive/2026-09-02-player-roster-ui-design.md`
 
 **Commits:** If you are run by agent-runner, leave the tree dirty — do not commit. Otherwise commit after each task with the listed paths only (never `git add -A`).
 

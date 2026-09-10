@@ -12,7 +12,7 @@ tense by construction), a `Knowledge` (what has been *seen*), and `History`
 (what happened, last `historyCap` = 6 rounds). None of them is a plan. Every
 round the model answers "what now?" from a rebuilt menu, greedily, forever.
 
-`docs/SLICE9-CANDIDATES.md` §2 named this: *"There is no slot anywhere for a
+`docs/archive/SLICE9-CANDIDATES.md` §2 named this: *"There is no slot anywhere for a
 plan. That is the gap, and it is goal-agnostic."*
 
 Slice 9's answer was `Intent` — one sentence the model attaches to its choice,

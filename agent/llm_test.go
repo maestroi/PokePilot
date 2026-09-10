@@ -644,7 +644,7 @@ func TestLLMPlannerPromptCarriesMovesAndHistory(t *testing.T) {
 // WildGrass/FieldCapabilities already distilled elsewhere). The chooser
 // keeps the full Observation (asserted above); the strategist gets the
 // trimmed view — this locks in that the cut removes only the noise and
-// keeps every field docs/ADAPTIVE-REASONING.md (§16) names as the
+// keeps every field docs/archive/ADAPTIVE-REASONING.md (§16) names as the
 // strategist's required evidence: full failure tally, walls heard, the
 // badge/event list, money, respawn point, and rounds remaining.
 func TestStrategistPromptDropsExecutionNoiseKeepsEvidence(t *testing.T) {

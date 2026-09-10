@@ -170,10 +170,18 @@ Details in `deploy/README.md`.
 | `docs/DESIGN.md` | The technical design and the GomeBoy investigation |
 | `docs/AGENT.md` | The agent loop, ROM facts, badgerun, farm evidence |
 | `docs/POKERED.md` | Question → file map for the vendored decomp |
+| `docs/DEVELOPMENT.md` | ROM-free vs ROM-backed workflow |
+| `docs/QUALIFICATION.md` | ROM-backed qualification catalog and private corpus |
+| `docs/MCP.md` | Remote MCP control plane |
+| `docs/SPECTATOR.md` | Public read-only spectator mode |
+| `docs/RAM_FORENSICS.md` | Failure RAM capture |
+| `docs/S3_ARTIFACT_STORAGE.md` | Farm artifact object storage |
+| `docs/RUN_INSPECTOR.md` | Run inspector, artifacts, and deterministic replay |
 | `docs/ROAD-TO-ELITE-FOUR.md` | Everything between Cerulean City and the Pokémon League |
-| `RUNNOTES.md` | Per-slice run notes |
-| `docs/plans/` | Active slice plans |
-| `docs/archive/` | Implemented slice plans and designs |
+| `docs/RUNNOTES.md` | Permanent per-task measurements |
+| `RUNNOTES.md` | Short handoff for the next task |
+| `docs/plans/` | In-flight implementation plans only |
+| `docs/archive/` | Implemented plans, designs, slice notes, and issue writeups |
 
 ## House rules
 

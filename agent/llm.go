@@ -620,7 +620,7 @@ func (p *LLMPlanner) strategicSystemMessage() string {
 	return s
 }
 
-// strategicObservation is Observation cut down to what docs/ADAPTIVE-REASONING.md
+// strategicObservation is Observation cut down to what docs/archive/ADAPTIVE-REASONING.md
 // (§16) names as the strategist's non-scrolling evidence: full failure
 // tally, every wall heard with its Times, the badge/event list, money and
 // respawn point, and rounds remaining — plus the location/party/prerequisite

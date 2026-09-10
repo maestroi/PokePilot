@@ -3,7 +3,7 @@
 Question asked: how should PokePilot balance fast non-reasoning inference
 against slow reasoning inference?
 
-**Read `docs/plans/2026-08-31-run-keeps-a-plan-design.md` first.** It already
+**Read `docs/archive/2026-08-31-run-keeps-a-plan-design.md` first.** It already
 proposes the two-cadence strategist/execution shape, and its Open Questions
 are the real agenda. This document does not replace it. What is new here is
 §6 (rewiring the existing stuck/failure detectors from *stop* to *escalate*,
@@ -555,6 +555,6 @@ model.
     the current observation; the strategist cannot.
 17. **Can better deterministic understanding reduce strategic calls?** Yes,
     and it is the cheapest lever available: mart stock, train feasibility,
-    encounter-band vs. lead level, and the graph gaps in `GRAPH-GAPS.md`.
+    encounter-band vs. lead level, and the graph gaps in `docs/archive/GRAPH-GAPS.md`.
     Every wall the code can predict is a replan the model never has to pay
     for.

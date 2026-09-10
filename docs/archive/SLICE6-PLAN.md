@@ -7,7 +7,7 @@ truth and verification commands live there. This file is the map: what the
 slice is for, what order the tasks go in, and why. If the two disagree, the
 runner plan wins and this file is stale.
 
-Depends on `docs/SLICE5-CLOSEOUT-PLAN.md` (runner plan
+Depends on `docs/archive/SLICE5-CLOSEOUT-PLAN.md` (runner plan
 `db45f28c-0998-4c13-8c00-25349535c694`) finishing green.
 
 ## The goal, and why it is this goal
