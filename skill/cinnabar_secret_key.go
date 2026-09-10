@@ -11,12 +11,12 @@ import (
 )
 
 const (
-	cinnabarIslandMap       uint8 = 0x08
-	pokemonMansion1FMap     uint8 = 0xa5
+	cinnabarIslandMap        uint8 = 0x08
+	pokemonMansion1FMap      uint8 = 0xa5
 	cinnabarPokemonCenterMap uint8 = 0xab
-	pokemonMansion2FMap     uint8 = 0xd6
-	pokemonMansion3FMap     uint8 = 0xd7
-	pokemonMansionB1FMap    uint8 = 0xd8
+	pokemonMansion2FMap      uint8 = 0xd6
+	pokemonMansion3FMap      uint8 = 0xd7
+	pokemonMansionB1FMap     uint8 = 0xd8
 
 	mansionSecretKeyItem uint8 = 0x2b
 	mansionSecretKeyX    uint8 = 5
@@ -35,17 +35,17 @@ type mansionSwitchSpec struct {
 }
 
 var (
-	mansion1FSwitch = mansionSwitchSpec{Map: pokemonMansion1FMap, TargetX: 5, TargetY: 2, StandX: 5, StandY: 3}
-	mansion2FSwitch = mansionSwitchSpec{Map: pokemonMansion2FMap, TargetX: 11, TargetY: 2, StandX: 11, StandY: 3}
-	mansion3FSwitch = mansionSwitchSpec{Map: pokemonMansion3FMap, TargetX: 5, TargetY: 10, StandX: 5, StandY: 11}
+	mansion1FSwitch    = mansionSwitchSpec{Map: pokemonMansion1FMap, TargetX: 5, TargetY: 2, StandX: 5, StandY: 3}
+	mansion2FSwitch    = mansionSwitchSpec{Map: pokemonMansion2FMap, TargetX: 11, TargetY: 2, StandX: 11, StandY: 3}
+	mansion3FSwitch    = mansionSwitchSpec{Map: pokemonMansion3FMap, TargetX: 5, TargetY: 10, StandX: 5, StandY: 11}
 	mansionB1FSwitches = []mansionSwitchSpec{
 		{Map: pokemonMansionB1FMap, TargetX: 3, TargetY: 20, StandX: 3, StandY: 21},
 		{Map: pokemonMansionB1FMap, TargetX: 25, TargetY: 18, StandX: 25, StandY: 19},
 	}
-	mansion1FTo2FWarp = world.Edge{Kind: world.EdgeWarp, From: pokemonMansion1FMap, To: pokemonMansion2FMap, WarpX: 5, WarpY: 10}
-	mansion2FTo3FWarp = world.Edge{Kind: world.EdgeWarp, From: pokemonMansion2FMap, To: pokemonMansion3FMap, WarpX: 7, WarpY: 10}
+	mansion1FTo2FWarp  = world.Edge{Kind: world.EdgeWarp, From: pokemonMansion1FMap, To: pokemonMansion2FMap, WarpX: 5, WarpY: 10}
+	mansion2FTo3FWarp  = world.Edge{Kind: world.EdgeWarp, From: pokemonMansion2FMap, To: pokemonMansion3FMap, WarpX: 7, WarpY: 10}
 	mansion1FToB1FWarp = world.Edge{Kind: world.EdgeWarp, From: pokemonMansion1FMap, To: pokemonMansionB1FMap, WarpX: 21, WarpY: 23}
-	mansionDropHoles = [][2]uint8{{16, 14}, {17, 14}}
+	mansionDropHoles   = [][2]uint8{{16, 14}, {17, 14}}
 )
 
 func init() {
@@ -54,30 +54,16 @@ func init() {
 	places["cinnabar pokemon center"] = Destination{Map: cinnabarPokemonCenterMap, X: 3, Y: 4}
 }
 
-// CinnabarSecretKeyOwned is the durable story postcondition for the first #35
-// phase. The semantic decoder derives it from the current bag, so a resumed
-// checkpoint never depends on remembering whether the pickup dialogue played.
 func CinnabarSecretKeyOwned(mem *state.Mem) bool {
 	return state.DecodeStoryFacts(mem, state.DecodeInventory(mem)).SecretKeyOwned
 }
 
-// CinnabarSecretKeyReady makes the #34 -> #35 handoff explicit. Reaching the
-// Mansion is only offered after the complete Saffron slice (Silph rescue plus
-// Marsh Badge), while FuchsiaProgressionComplete proves the run owns Surf and
-// the Soul Badge needed to use it.
 func CinnabarSecretKeyReady(mem *state.Mem) bool {
 	facts := state.DecodeStoryFacts(mem, state.DecodeInventory(mem))
 	progress := state.DecodeProgress(mem)
 	return facts.FuchsiaProgressionComplete && facts.SilphRescueComplete && progress.Has(state.BadgeMarsh)
 }
 
-// AcquireCinnabarSecretKey reaches Cinnabar by the supported Pallet -> Route
-// 21 Surf corridor, enters Pokemon Mansion, follows live switch-driven
-// collision, takes the required 3F fall, and collects the basement Secret Key.
-//
-// The operation is resumable from any ordinary checkpoint. It reconstructs
-// switch state and the key postcondition from RAM on every call; it never
-// assumes a remembered statue sequence or patches immutable collision data.
 func AcquireCinnabarSecretKey(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if policy == nil {
 		return fmt.Errorf("skill: AcquireCinnabarSecretKey: nil policy")
@@ -92,9 +78,6 @@ func AcquireCinnabarSecretKey(m *emu.Emu, romData []byte, policy MovePolicy) err
 	}
 
 	if !onCinnabarSecretKeySlice(m.Peek8(sym.CurMap)) {
-		// Force the supported sea route instead of allowing the global graph to
-		// choose the Seafoam/Route 20 side. Route 21 already owns a semantic
-		// Surf transition that positively enters surfing mode from live RAM.
 		if _, err := TravelFlee(m, romData, Destination{Map: semanticPalletTownMap, X: 5, Y: 6}, policy, mansionTravelBattles); err != nil {
 			return fmt.Errorf("skill: AcquireCinnabarSecretKey: reach Pallet for Route 21: %w", err)
 		}
@@ -192,8 +175,7 @@ func ensureMansionWarpReachable(m *emu.Emu, romData []byte, edge world.Edge, sw 
 		return fmt.Errorf("switch for map %#04x requested while on %#04x", sw.Map, m.Peek8(sym.CurMap))
 	}
 	if !mansionTileReachable(m, romData, sw.StandX, sw.StandY) {
-		return fmt.Errorf("neither warp (%d,%d) nor switch stand (%d,%d) is reachable on map %#04x",
-			edge.WarpX, edge.WarpY, sw.StandX, sw.StandY, sw.Map)
+		return fmt.Errorf("neither warp (%d,%d) nor switch stand (%d,%d) is reachable on map %#04x", edge.WarpX, edge.WarpY, sw.StandX, sw.StandY, sw.Map)
 	}
 	if err := setMansionSwitch(m, romData, sw, !currentMansionSwitchOn(m), policy); err != nil {
 		return err
@@ -208,7 +190,6 @@ func dropMansion3FTo1F(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if m.Peek8(sym.CurMap) != pokemonMansion3FMap {
 		return fmt.Errorf("drop requested on map %#04x, want Mansion 3F", m.Peek8(sym.CurMap))
 	}
-
 	findHole := func() (uint8, uint8, bool) {
 		for _, hole := range mansionDropHoles {
 			if mansionTileReachable(m, romData, hole[0], hole[1]) {
@@ -217,7 +198,6 @@ func dropMansion3FTo1F(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		}
 		return 0, 0, false
 	}
-
 	hx, hy, ok := findHole()
 	if !ok {
 		if !mansionTileReachable(m, romData, mansion3FSwitch.StandX, mansion3FSwitch.StandY) {
@@ -250,10 +230,6 @@ func dropMansion3FTo1F(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if !ok {
 		return fmt.Errorf("invalid step %s into Mansion drop hole", step)
 	}
-
-	// Do not call Face here. Face is allowed to walk onto a passable tile;
-	// for a dungeon-warp hole that would start the fall before this function
-	// has armed its positive destination check.
 	m.Press(btn)
 	crossed := false
 	for i := 0; i < mansionDropBudget; i++ {
@@ -284,7 +260,6 @@ func solveMansionBasementForKey(m *emu.Emu, romData []byte, policy MovePolicy) e
 	if m.Peek8(sym.CurMap) != pokemonMansionB1FMap {
 		return fmt.Errorf("basement solver on map %#04x, want Mansion B1F", m.Peek8(sym.CurMap))
 	}
-
 	type attemptKey struct {
 		SwitchOn bool
 		X, Y     uint8
@@ -297,7 +272,6 @@ func solveMansionBasementForKey(m *emu.Emu, romData []byte, policy MovePolicy) e
 			}
 			return nil
 		}
-
 		before := currentMansionSwitchOn(m)
 		toggled := false
 		for _, sw := range mansionB1FSwitches {
@@ -349,10 +323,6 @@ func mansionTargetReachable(m *emu.Emu, romData []byte, tx, ty uint8) bool {
 	return err == nil
 }
 
-// setMansionSwitch uses the ROM's semantic YES/NO surface and verifies the
-// global EVENT_MANSION_SWITCH_ON state afterward. The switches are hidden
-// events that only fire while facing up, so every spec includes its exact
-// south-side standing tile instead of allowing a generic adjacent approach.
 func setMansionSwitch(m *emu.Emu, romData []byte, sw mansionSwitchSpec, want bool, policy MovePolicy) error {
 	if m.Peek8(sym.CurMap) != sw.Map {
 		return fmt.Errorf("Mansion switch (%d,%d) belongs to map %#04x, current map %#04x", sw.TargetX, sw.TargetY, sw.Map, m.Peek8(sym.CurMap))
@@ -360,7 +330,6 @@ func setMansionSwitch(m *emu.Emu, romData []byte, sw mansionSwitchSpec, want boo
 	if currentMansionSwitchOn(m) == want {
 		return nil
 	}
-
 	arrived := false
 	for attempt := 0; attempt < mansionSwitchStandAttempts; attempt++ {
 		if _, err := TravelFlee(m, romData, Destination{Map: sw.Map, X: sw.StandX, Y: sw.StandY}, policy, mansionTravelBattles); err != nil {
@@ -377,7 +346,6 @@ func setMansionSwitch(m *emu.Emu, romData []byte, sw mansionSwitchSpec, want boo
 		px, py := playerXY(m)
 		return fmt.Errorf("Mansion switch stand (%d,%d) stayed occupied; stopped at (%d,%d)", sw.StandX, sw.StandY, px, py)
 	}
-
 	if err := Face(m, sw.TargetX, sw.TargetY); err != nil {
 		return fmt.Errorf("face Mansion switch (%d,%d): %w", sw.TargetX, sw.TargetY, err)
 	}
@@ -385,19 +353,15 @@ func setMansionSwitch(m *emu.Emu, romData []byte, sw mansionSwitchSpec, want boo
 		return fmt.Errorf("facing Mansion switch moved player off required stand to (%d,%d)", px, py)
 	}
 	m.Tap(emu.A, 3, 7)
-
 	answered := false
 	for frame := 0; frame < mansionSwitchDriveBudget; frame++ {
 		var mem state.Mem
 		state.Snapshot(m, &mem)
 		facts := state.DecodeStoryFacts(&mem, state.DecodeInventory(&mem))
 		if answered && facts.MansionSwitchOn == want && state.Controllable(&mem) {
-			// Give the current-map callback a frame to apply the event-driven
-			// ReplaceTileBlock operations before the next reachability query.
 			m.StepFrames(2)
 			return nil
 		}
-
 		interaction := state.DecodeInteraction(&mem)
 		switch interaction.Kind {
 		case state.InteractionTwoOption:
