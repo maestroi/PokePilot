@@ -15,6 +15,7 @@ const (
 	capCanClearSnorlax            gameruntime.CapabilityID = "can_clear_snorlax"
 	capCanExitMtMoon              gameruntime.CapabilityID = "can_exit_mt_moon"
 	capCanPassCeruleanRobbedHouse gameruntime.CapabilityID = "can_pass_cerulean_robbed_house"
+	capCanEnterSaffron            gameruntime.CapabilityID = "can_enter_saffron"
 )
 
 const (
@@ -24,6 +25,27 @@ const (
 	semanticCinnabarMap      uint8 = 0x08
 	semanticRoute9Map        uint8 = 0x14
 	semanticRoute21Map       uint8 = 0x20
+	semanticSaffronCityMap   uint8 = 0x0A
+	semanticRoute5Map        uint8 = 0x10
+	semanticRoute6Map        uint8 = 0x11
+	semanticRoute7Map        uint8 = 0x12
+	semanticRoute8Map        uint8 = 0x13
+
+	// The four guardhouses ringing Saffron (map type GATE) each block
+	// passage until BIT_GAVE_SAFFRON_GUARDS_DRINK is set; giving any one
+	// guard a drink sets the flag and opens all four permanently
+	// (pokered/scripts/Route5Gate.asm and its Route6/7/8 siblings). Each
+	// guardhouse's own warps all resolve back to its route (its object data
+	// has no warp into Saffron; Saffron's own warp list has no warp into any
+	// guardhouse either), so the guardhouse is a self-contained room that
+	// bridges two ends of the SAME route map, and the guard blocks crossing
+	// it on foot-collision coordinates the static block map does not
+	// encode. The real border crossing into Saffron is the plain map
+	// connection declared on both headers.
+	route5GateMap uint8 = 0x46
+	route6GateMap uint8 = 0x49
+	route7GateMap uint8 = 0x4C
+	route8GateMap uint8 = 0x4F
 
 	ceruleanTrashedHouseMap        uint8 = 0x3e
 	ceruleanTrashedHouseFrontWarpX uint8 = 27
@@ -67,6 +89,9 @@ func redRouteCapabilities(romData []byte, mem *state.Mem) gameruntime.Capability
 	}
 	if facts.PokeFluteAcquired {
 		caps[capCanClearSnorlax] = true
+	}
+	if facts.SaffronGateOpen {
+		caps[capCanEnterSaffron] = true
 	}
 	return caps
 }
@@ -118,6 +143,23 @@ func redRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, bool) {
 		// so reachability reports Cut up front; Travel's existing live-tree
 		// recovery performs the actual Cut after entering Route 9.
 		t := semanticTransition("red:route9_cut", edge, capCanCut)
+		t.Gate = true
+		return t, true
+	case pair(semanticSaffronCityMap, semanticRoute5Map),
+		pair(semanticSaffronCityMap, semanticRoute6Map),
+		pair(semanticSaffronCityMap, semanticRoute7Map),
+		pair(semanticSaffronCityMap, semanticRoute8Map),
+		pair(route5GateMap, semanticRoute5Map),
+		pair(route6GateMap, semanticRoute6Map),
+		pair(route7GateMap, semanticRoute7Map),
+		pair(route8GateMap, semanticRoute8Map):
+		// Both the route's plain border connection into Saffron and its
+		// guardhouse's interior floor are ordinary geometry; the guard
+		// standing in the doorway is the precondition, not the router's
+		// business to route around by picking a longer real edge. Without
+		// the drink flag this must fail closed as a missing capability, not
+		// walk the agent up to the guard's dialogue to discover it live.
+		t := semanticTransition("red:saffron_guard_drink", edge, capCanEnterSaffron)
 		t.Gate = true
 		return t, true
 	case pair(semanticVermilionCityMap, vermilionGymMap):
