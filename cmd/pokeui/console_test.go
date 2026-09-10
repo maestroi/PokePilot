@@ -694,6 +694,34 @@ func TestUIStackedGameMediaHasARatioAwareHeightCap(t *testing.T) {
 	}
 }
 
+func TestUIDetailGridHeightFollowsResponsiveRows(t *testing.T) {
+	css := string(consoleCSS)
+	tabletStart := strings.Index(css, `@media(max-width:1140px) and (min-width:761px)`)
+	narrowStart := strings.Index(css, `@media(max-width:760px)`)
+	if tabletStart < 0 || narrowStart <= tabletStart {
+		t.Fatal("responsive detail-grid breakpoints missing")
+	}
+	tablet := css[tabletStart:narrowStart]
+	for _, want := range []string{
+		`#detail-body{height:auto;grid-template-columns:repeat(2,minmax(0,1fr));grid-auto-rows:124px}`,
+	} {
+		if !strings.Contains(tablet, want) {
+			t.Errorf("tablet detail grid missing %q", want)
+		}
+	}
+	narrow := css[narrowStart:]
+	for _, want := range []string{
+		`#detail-body{height:auto;grid-template-columns:1fr;grid-auto-rows:auto}`,
+		`.compact{height:auto;min-height:112px;max-height:180px;overflow:auto}`,
+		`.block.scroll{min-height:140px;max-height:220px;overflow:auto}`,
+		`#screen-event .block{max-height:180px}`,
+	} {
+		if !strings.Contains(narrow, want) {
+			t.Errorf("narrow detail flow missing %q", want)
+		}
+	}
+}
+
 func TestUISemanticMapUsesStableDarkModeTokens(t *testing.T) {
 	css := string(consoleCSS)
 	ui := string(uiJS)
