@@ -40,7 +40,7 @@ func TestCinnabarQuizGateEventsAreTheSixLiveGateBits(t *testing.T) {
 		if !ok {
 			t.Fatalf("gate %d has no event", index)
 		}
-		want := state.Event(0x2a8 + index)
+		want := state.Event(0x2a8) + state.Event(index)
 		if event != want {
 			t.Fatalf("gate %d event = %#x, want %#x", index, uint16(event), uint16(want))
 		}
