@@ -51,6 +51,12 @@ func executeRedOwned(m *emu.Emu, romData []byte, o Objective) (result ObjectiveR
 		}
 		return result, nil
 
+	case KindTrainer:
+		if err := skill.ChallengeTrainer(m, romData, o.X, o.Y, skill.StatAwareMove(romData)); err != nil {
+			return result, fmt.Errorf("agent: %s: %w", o, err)
+		}
+		return result, nil
+
 	case KindStarter:
 		starter, ok := redStarter(o.Starter)
 		if !ok {
