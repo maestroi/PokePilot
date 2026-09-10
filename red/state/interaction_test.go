@@ -49,7 +49,7 @@ func TestDecodeInteractionListUsesScrollOffset(t *testing.T) {
 func TestDecodeInteractionStaleListIDDoesNotHideChoice(t *testing.T) {
 	m := twoOptionFixture(1, 0, 1, 0, 8, 12, menuCursorTile)
 	m[sym.ListMenuID] = itemListMenuID // stale after closing the bag
-	m[sym.MenuWatchedKeys] = 3          // live DisplayTwoOptionMenu controller
+	m[sym.MenuWatchedKeys] = 3         // live DisplayTwoOptionMenu controller
 	got := DecodeInteraction(m)
 	if got.Kind != InteractionTwoOption {
 		t.Fatalf("DecodeInteraction kind = %q, want two_option despite stale list id", got.Kind)
