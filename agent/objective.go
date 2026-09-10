@@ -26,6 +26,7 @@ const (
 	_ // legacy KindPokemonTower numeric slot
 	_ // legacy KindFuchsiaProgression numeric slot
 	KindProgress
+	KindTrainer
 )
 
 // Objective carries semantic planner arguments. Game-specific encodings stay
@@ -102,6 +103,8 @@ func (o Objective) String() string {
 		return "go to " + o.Place
 	case KindTalk:
 		return fmt.Sprintf("talk at (%d,%d)", o.X, o.Y)
+	case KindTrainer:
+		return fmt.Sprintf("challenge trainer at (%d,%d)", o.X, o.Y)
 	case KindStarter:
 		return "take the " + starterName(o.Starter) + " starter"
 	case KindProgress:
