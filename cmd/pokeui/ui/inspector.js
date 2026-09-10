@@ -5,8 +5,7 @@
   if (!root) return;
   root.innerHTML = `
     <section id="run-timeline" class="timeline-bay" aria-labelledby="timeline-title">
-      <header><div><span class="section-kicker">Playback</span><h2 id="timeline-title">Run timeline</h2></div><div class="timeline-toolbar"><button id="pp-return-live" class="quiet-button" type="button" hidden>Return to live</button><button id="pp-replay" class="quiet-button" type="button">Generate replay</button><span id="pp-replay-status" class="inspect-status"></span></div></header>
-      <video id="pp-video" controls preload="metadata" hidden></video><label id="pp-scrubber-wrap" class="replay-scrubber" hidden><span>Replay position</span><input id="pp-scrubber" type="range" min="0" max="1000" value="0"></label>
+      <header><div><span class="section-kicker">Playback</span><h2 id="timeline-title">Run timeline</h2></div><div class="timeline-toolbar"><button id="pp-return-live" class="quiet-button" type="button" hidden>Return to live</button><span id="pp-transport-status" class="inspect-status"></span></div></header>
       <div id="pp-timeline-track" class="timeline-track" role="group" aria-label="Recorded run events"></div>
       <div class="timeline-legend"><span>○ Decision</span><span>□ Checkpoint</span><span>○ Progress</span><span>○ Failure</span></div>
     </section>
@@ -20,14 +19,23 @@
     </aside>`;
 
   const byID = (id) => document.getElementById(id);
+  const mediaHost = byID("detail-game-media");
+  const lcd = byID("detail-lcd");
+  if (!mediaHost || !lcd) return;
+  mediaHost.insertAdjacentHTML("beforeend", `
+    <video id="pp-game-video" controls preload="metadata" aria-label="Finished run replay" hidden></video>
+    <div id="pp-replay-panel" class="game-replay-panel" hidden>
+      <span id="pp-replay-status" class="inspect-status" role="status" aria-live="polite"></span>
+      <button id="pp-replay" class="quiet-button" type="button">Generate replay</button>
+    </div>`);
   const track = byID("pp-timeline-track");
   const story = byID("pp-story");
   const replayButton = byID("pp-replay");
   const replayStatus = byID("pp-replay-status");
+  const replayPanel = byID("pp-replay-panel");
+  const transportStatus = byID("pp-transport-status");
   const returnLive = byID("pp-return-live");
-  const video = byID("pp-video");
-  const scrubber = byID("pp-scrubber");
-  const scrubberWrap = byID("pp-scrubber-wrap");
+  const video = byID("pp-game-video");
   const evidence = byID("evidence-drawer");
   const meta = byID("pp-meta");
   const debugPre = byID("pp-debug");
@@ -44,6 +52,7 @@
   let selectedEvent = -1;
   let replayPoll = 0;
   let followingLive = true;
+  let runFinished = false;
   const escURL = encodeURIComponent;
   const text = (v) => v === undefined || v === null || v === "" ? "—" : String(v);
   const html = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -103,13 +112,36 @@
     const failure=event&&eventKind(event)==="failure"?'<button type="button" class="primary-action" data-investigate-event>Investigate with AI</button>':"";
     host.innerHTML=`${failure}${restart}<button type="button" class="quiet-button" data-evidence>Evidence</button>`;
   }
-  function selectEvent(index) {
+  function publishSemanticEvent(index, nearest) {
+    const event = events[index];
+    if (!event) return;
+    window.dispatchEvent(new CustomEvent("pokefarm-semantic-event", {detail:{
+      runId:runID,
+      event,
+      nearest,
+      label:nearest ? "Semantic state from nearest persisted event" : "Persisted semantic event"
+    }}));
+  }
+  function selectEvent(index, seekVideo=true, nearest=false) {
     if (!Number.isInteger(index) || index < 0 || index >= events.length) return;
-    selectedEvent = index; followingLive = false; returnLive.hidden = false;
+    selectedEvent = index; followingLive = false; returnLive.hidden = runFinished;
     const maxFrame = Math.max(0, ...events.map(eventFrame));
-    if (!video.hidden && video.duration > 0 && maxFrame > 0) video.currentTime = video.duration * eventFrame(events[index]) / maxFrame;
+    if (seekVideo && !video.hidden && video.duration > 0 && maxFrame > 0) video.currentTime = video.duration * eventFrame(events[index]) / maxFrame;
+    publishSemanticEvent(index, nearest);
+    transportStatus.textContent = nearest ? "Semantic state from nearest persisted event" : (runFinished ? "Replay event" : "Browsing recorded event");
     renderTimeline(); renderStory(); renderStoryActions();
     story.querySelector(`[data-event-index="${index}"]`)?.scrollIntoView({block:"nearest",behavior:"smooth"});
+  }
+  function nearestEventIndex(time) {
+    if (!events.length || !(video.duration > 0)) return -1;
+    const maxFrame = Math.max(0, ...events.map(eventFrame));
+    if (maxFrame <= 0) return Math.max(0, selectedEvent);
+    const frame = maxFrame * time / video.duration;
+    let nearest = 0;
+    for (let i=1;i<events.length;i++) {
+      if (Math.abs(eventFrame(events[i])-frame) < Math.abs(eventFrame(events[nearest])-frame)) nearest=i;
+    }
+    return nearest;
   }
   function renderMeta() {
     const run = (debug && debug.run) || {}, finish=(debug&&debug.finish)||{}, summary=(debug&&debug.summary)||{};
@@ -121,23 +153,75 @@
     const list=Array.isArray(data&&data.artifacts)?data.artifacts:[]; artifactEmpty.hidden=Boolean(list.length); artifactTable.hidden=!list.length;
     artifactBody.innerHTML=list.map((a)=>`<tr><td>${html(a.name)}</td><td>${html(a.media_type||"binary")}</td><td>${fmtSize(a.size)}</td><td title="${html(a.sha256)}">${html((a.sha256||"—").slice(0,12))}</td><td><a href="/v1/runs/${escURL(runID)}/artifacts/${escURL(a.name)}/content" download="${html(a.name)}">Download</a></td></tr>`).join("");
   }
-  function renderReplay(status) {
-    const state=(status&&status.state)||"missing"; replayButton.hidden=false; replayButton.disabled=false; video.hidden=true; scrubberWrap.hidden=true;
-    if(state==="ready"){replayStatus.textContent=status.size?`Ready · ${fmtSize(status.size)}`:"Ready"; replayButton.hidden=true; const src=`/v1/runs/${escURL(runID)}/replay/video`; if(video.dataset.run!==runID){video.src=src;video.dataset.run=runID;video.load()} video.hidden=false;scrubberWrap.hidden=false;return}
-    if(state==="generating"){replayStatus.textContent="Generating deterministic replay…";replayButton.disabled=true;stopReplayPoll();replayPoll=setTimeout(()=>loadReplayStatus(runID),1500);return}
-    if(state==="disabled"){replayStatus.textContent=status.error||"Replay service unavailable";replayButton.textContent="Generate replay";replayButton.disabled=true;return}
-    if(state==="error"){replayStatus.textContent=status.error||"Replay generation failed";replayButton.textContent="Retry replay";return}
-    replayStatus.textContent="Ready to generate from the recorded run.";replayButton.textContent="Generate replay";
+  function clearReplayVideo() {
+    video.pause();
+    video.removeAttribute("src");
+    video.dataset.run="";
+    video.hidden=true;
+    video.load();
   }
-  async function loadReplayStatus(id) { try { const status=await json(`/v1/runs/${escURL(id)}/replay/status`); if(id===runID)renderReplay(status); } catch(err){if(id===runID){replayStatus.textContent=err.message;replayButton.hidden=false;replayButton.disabled=true}} }
+  function resetGameMedia() {
+    stopReplayPoll();
+    clearReplayVideo();
+    replayPanel.hidden=true;
+    replayStatus.textContent="";
+    replayButton.hidden=false;
+    replayButton.disabled=false;
+    replayButton.textContent="Generate replay";
+    lcd.hidden=false;
+  }
+  function renderReplay(status) {
+    const state=(status&&status.state)||"missing";
+    stopReplayPoll();
+    if(state!=="ready") clearReplayVideo();
+    lcd.hidden=false;
+    replayPanel.hidden=false;
+    replayButton.hidden=false;
+    replayButton.disabled=false;
+    if(state==="ready"){
+      replayPanel.hidden=true;
+      replayStatus.textContent=status.size?`Ready · ${fmtSize(status.size)}`:"Ready";
+      replayButton.hidden=true;
+      const src=`/v1/runs/${escURL(runID)}/replay/video`;
+      if(video.dataset.run!==runID){video.src=src;video.dataset.run=runID;video.load()}
+      lcd.hidden=true;
+      video.hidden=false;
+      transportStatus.textContent="Replay · native video controls";
+      return;
+    }
+    if(state==="generating"){
+      replayStatus.textContent=status.progress||"Generating deterministic replay…";
+      replayButton.disabled=true;
+      replayPoll=setTimeout(()=>loadReplayStatus(runID),1500);
+      return;
+    }
+    if(state==="disabled"){
+      replayStatus.textContent=status.error||"Replay generation is unavailable for this console.";
+      replayButton.textContent="Generate replay";
+      replayButton.disabled=true;
+      return;
+    }
+    if(state==="error"){
+      replayStatus.textContent=status.error||"Replay generation failed";
+      replayButton.textContent="Retry replay";
+      return;
+    }
+    replayStatus.textContent=status.error||"Ready to generate from the recorded run.";
+    replayButton.textContent="Generate replay";
+  }
+  async function loadReplayStatus(id) { try { const status=await json(`/v1/runs/${escURL(id)}/replay/status`); if(id===runID)renderReplay(status); } catch(err){if(id===runID)renderReplay({state:"error",error:err.message})} }
   async function selectRun(id) {
-    stopReplayPoll(); runID=id; debug=null; reproSource=null; checkpoints=[]; events=[]; selectedEvent=-1; followingLive=true; returnLive.hidden=true; evidence.hidden=true; video.pause();video.removeAttribute("src");video.dataset.run="";video.hidden=true;scrubber.value="0";scrubberWrap.hidden=true;
+    resetGameMedia(); runID=id; debug=null; reproSource=null; checkpoints=[]; events=[]; selectedEvent=-1; followingLive=true; runFinished=false; returnLive.hidden=true; evidence.hidden=true; transportStatus.textContent="";
+    window.dispatchEvent(new CustomEvent("pokefarm-semantic-event",{detail:{runId:id,event:null}}));
     if(!id){track.innerHTML='<p class="empty">Select a run to browse recorded events.</p>';story.innerHTML='<p class="empty">Select a run to browse its recorded events.</p>';replayButton.hidden=true;return}
     track.innerHTML='<p class="empty">Loading recorded events…</p>'; story.innerHTML='<p class="empty">Loading Run Story…</p>'; replayButton.hidden=false;replayButton.disabled=true;replayStatus.textContent="Loading…";
     try{
       const [debugView,artifactView,checkpointView,sourceView]=await Promise.all([json(`/v1/runs/${escURL(id)}/debug`),json(`/v1/runs/${escURL(id)}/artifacts`),json(`/v1/runs/${escURL(id)}/checkpoints`).catch(()=>({checkpoints:[]})),json(`/v1/runs/${escURL(id)}/repro-source`).catch(()=>null)]);
-      if(id!==runID)return; debug=debugView;reproSource=sourceView;checkpoints=checkpointView.checkpoints||[];events=normalizeEvents(debugView,checkpointView);selectedEvent=events.length-1;renderTimeline();renderStory();renderStoryActions();renderMeta();renderArtifacts(artifactView);
-      const replayable=(artifactView.artifacts||[]).some((a)=>a.replayable); if(replayable)await loadReplayStatus(id); else{replayButton.hidden=false;replayButton.disabled=true;replayButton.textContent="Generate replay";replayStatus.textContent=(debugView.run&&debugView.run.status)!=="done"?"Available after this run finishes and uploads its recording.":"This run has no run.gbrun recording to replay."}
+      if(id!==runID)return; debug=debugView;reproSource=sourceView;checkpoints=checkpointView.checkpoints||[];events=normalizeEvents(debugView,checkpointView);selectedEvent=events.length-1;runFinished=(debugView.run&&debugView.run.status)==="done";renderTimeline();renderStory();renderStoryActions();renderMeta();renderArtifacts(artifactView);
+      const replayable=(artifactView.artifacts||[]).some((a)=>a.replayable);
+      if(!runFinished){resetGameMedia();transportStatus.textContent=replayable?"Following live":"Following live · Available after this run finishes and uploads its recording.";return}
+      if(replayable)await loadReplayStatus(id);
+      else{renderReplay({state:"missing",error:"This run has no run.gbrun recording to replay."});replayButton.disabled=true}
     }catch(err){if(id===runID){track.innerHTML=`<p class="empty">Timeline unavailable: ${html(err.message)}</p>`;story.innerHTML=`<p class="empty">Run Story unavailable: ${html(err.message)}</p>`;replayButton.hidden=false;replayButton.disabled=true;replayStatus.textContent=err.message}}
   }
   async function startFromCheckpoint(name, button) {
@@ -152,10 +236,26 @@
 
   root.addEventListener("click",(event)=>{const marker=event.target.closest("[data-event-index]");if(marker&&!event.target.closest("[data-repro],[data-evidence],[data-investigate-event]")){selectEvent(Number(marker.dataset.eventIndex));return}const repro=event.target.closest("[data-repro]");if(repro){startFromCheckpoint(repro.dataset.repro,repro);return}if(event.target.closest("[data-evidence]")){evidence.hidden=false;return}if(event.target.closest("[data-investigate-event]")){evidence.hidden=false;investigateRun(investigate);}});
   root.addEventListener("keydown",(event)=>{if((event.key==="Enter"||event.key===" ")&&event.target.matches(".story-entry")){event.preventDefault();selectEvent(Number(event.target.dataset.eventIndex));}});
-  replayButton.addEventListener("click",async()=>{replayButton.disabled=true;replayStatus.textContent="Starting replay generation…";try{renderReplay(await json(`/v1/runs/${escURL(runID)}/replay/render`,{method:"POST"}))}catch(err){replayStatus.textContent=err.message;replayButton.disabled=false}});
-  scrubber.addEventListener("input",()=>{if(video.duration>0)video.currentTime=video.duration*Number(scrubber.value)/1000});
-  video.addEventListener("timeupdate",()=>{if(video.duration>0)scrubber.value=String(Math.round(1000*video.currentTime/video.duration))});
-  returnLive.addEventListener("click",()=>{followingLive=true;returnLive.hidden=true;if(events.length){selectedEvent=events.length-1;renderTimeline();renderStory();renderStoryActions()}});
+  replayButton.addEventListener("click",async()=>{
+    const id=runID;
+    replayButton.disabled=true;
+    replayStatus.textContent="Starting replay generation…";
+    try{const status=await json(`/v1/runs/${escURL(id)}/replay/render`,{method:"POST"});if(id===runID)renderReplay(status)}
+    catch(err){if(id===runID){renderReplay({state:"error",error:err.message})}}
+  });
+  video.addEventListener("seeked",()=>{
+    if(!runFinished||video.dataset.run!==runID)return;
+    const index=nearestEventIndex(video.currentTime);
+    if(index>=0)selectEvent(index,false,true);
+  });
+  returnLive.addEventListener("click",()=>{
+    if(runFinished)return;
+    followingLive=true;
+    returnLive.hidden=true;
+    transportStatus.textContent="Following live";
+    window.dispatchEvent(new CustomEvent("pokefarm-semantic-event",{detail:{runId:runID,event:null}}));
+    if(events.length){selectedEvent=events.length-1;renderTimeline();renderStory();renderStoryActions()}
+  });
   investigate.addEventListener("click",()=>investigateRun(investigate));
   byID("pp-close-evidence").addEventListener("click",()=>{evidence.hidden=true});
   window.addEventListener("pokefarm-select-run",(event)=>{const id=(event.detail&&event.detail.runId)||"";if(id!==runID)selectRun(id)});

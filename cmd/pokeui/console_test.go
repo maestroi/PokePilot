@@ -122,6 +122,14 @@ func TestUIReplayLivesInGameBay(t *testing.T) {
 	if strings.Contains(inspector, `id="pp-video"`) {
 		t.Error("inspector must not create a second detached replay video")
 	}
+	if !strings.Contains(inspector, `id="pp-game-video"`) {
+		t.Error("inspector must mount the replay video in the stable Game media host")
+	}
+	for _, stale := range []string{`id="pp-scrubber"`, `type="range"`, `replay-scrubber`} {
+		if strings.Contains(inspector, stale) {
+			t.Errorf("inspector must not create detached replay transport %q", stale)
+		}
+	}
 }
 
 func TestUIStatsBelongToAnalytics(t *testing.T) {
@@ -162,10 +170,13 @@ func TestUIInspectorCannotMissInitialRunSelection(t *testing.T) {
 
 func TestUIReplayTimelineIsSeekable(t *testing.T) {
 	js := string(inspectorJS)
-	for _, want := range []string{`id="pp-scrubber"`, `type="range"`, `video.currentTime`, `video.duration`} {
+	for _, want := range []string{`id="pp-game-video"`, `video.currentTime`, `video.duration`, `nearestEventIndex`, `Semantic state from nearest persisted event`} {
 		if !strings.Contains(js, want) {
 			t.Errorf("replay transport missing %q", want)
 		}
+	}
+	if strings.Contains(js, `type="range"`) {
+		t.Error("finished replay must use native video controls without a duplicate range input")
 	}
 }
 
@@ -206,9 +217,29 @@ func TestUIDetailDeckRetainsDebuggingInformation(t *testing.T) {
 
 func TestUIReplayActionStaysVisibleWhenRecordingIsMissing(t *testing.T) {
 	js := string(inspectorJS)
-	for _, want := range []string{`replayButton.hidden=false`, `replayButton.disabled=true`, `Generate replay`, `Available after this run finishes`, `run.gbrun`} {
+	for _, want := range []string{`"missing"`, `"generating"`, `"ready"`, `"error"`, `"disabled"`, `renderReplay({state:"missing"`, `replayButton.hidden=false`, `replayButton.disabled=true`, `Generate replay`, `Retry replay`, `Available after this run finishes`, `run.gbrun`} {
 		if !strings.Contains(js, want) {
-			t.Errorf("missing-recording replay state missing %q", want)
+			t.Errorf("replay state contracts missing %q", want)
+		}
+	}
+	for _, want := range []string{`detail-lcd`, `removeAttribute("src")`, `stopReplayPoll()`, `id!==runID`} {
+		if !strings.Contains(js, want) {
+			t.Errorf("replay cleanup contract missing %q", want)
+		}
+	}
+}
+
+func TestUISemanticReplayContextIsTruthful(t *testing.T) {
+	inspector := string(inspectorJS)
+	ui := string(uiJS)
+	for _, want := range []string{`pokefarm-semantic-event`, `nearest persisted event`, `followingLive`} {
+		if !strings.Contains(inspector, want) {
+			t.Errorf("inspector replay semantics missing %q", want)
+		}
+	}
+	for _, want := range []string{`pokefarm-semantic-event`, `Semantic state from nearest persisted event`, `renderMap`} {
+		if !strings.Contains(ui, want) {
+			t.Errorf("dashboard semantic context missing %q", want)
 		}
 	}
 }

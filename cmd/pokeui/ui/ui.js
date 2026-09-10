@@ -13,6 +13,7 @@
   let activeView = (location.hash || "#live").slice(1);
   let selectionEstablished = false;
   let lastFreshAt = 0;
+  let semanticContext = null;
   const investigating = new Set();
   const pumps = new Map();
   const mapAssets = new Map();
@@ -378,7 +379,7 @@
     return true;
   }
   let mapRenderSerial = 0;
-  function renderMap(run) {
+  function renderMap(run, contextLabel = "") {
     const panel = $("detail-map-panel");
     const status = $("detail-map-status");
     const canvas = $("detail-map");
@@ -388,7 +389,7 @@
       return;
     }
     panel.hidden = false;
-    status.textContent = tileLabel(run);
+    status.textContent = contextLabel ? `${contextLabel} · ${tileLabel(run)}` : tileLabel(run);
     loadMapAsset(run.map).then((asset) => {
       if (serial !== mapRenderSerial || selected !== run.run_id) return;
       const paint = () => {
@@ -652,25 +653,34 @@
 
   function renderDetail() {
     const pane = $("watch");
-    const run = (snap.runs || []).find((r) => r.run_id === selected);
-    if (!run) {
+    const liveRun = (snap.runs || []).find((r) => r.run_id === selected);
+    if (!liveRun) {
       pane.hidden = true; $("detail-map-panel").hidden = true;
       clearPaint($("detail-body")); clearPaint($("detail-party")); clearPaint($("screen-event"));
       return;
     }
+    const context = semanticContext && semanticContext.runId === selected ? semanticContext : null;
+    const event = context && context.event;
+    const hasEventPosition = event && event.map != null && event.x != null && event.y != null;
+    const run = hasEventPosition ? {...liveRun, map:event.map, x:event.x, y:event.y, sprites:event.sprites||[], trail:event.trail||[]} : liveRun;
+    const semanticLabel = context ? (context.label || "Semantic state from nearest persisted event") : "";
     pane.hidden = false;
     $("detail-title").textContent = run.run_id;
-    $("game-state-label").textContent = run.status === "done" ? "Last recorded frame" : "Live frame";
+    $("game-state-label").textContent = liveRun.status === "done" ? "Last recorded frame" : "Live frame";
     const cancel = $("selected-cancel");
-    cancel.hidden = run.status === "done";
+    cancel.hidden = liveRun.status === "done";
     cancel.dataset.cancel = run.run_id;
     paintHTML($("detail-chips"), statusChip(run) + replayChip(run) + issueBadge(run.issue));
     fillLcd($("detail-lcd"), run);
-    renderMap(run);
-    $("detail-location").textContent = tileLabel(run);
+    renderMap(context && !hasEventPosition ? null : run, semanticLabel);
+    $("detail-location").textContent = context
+      ? `${semanticLabel} · ${hasEventPosition ? tileLabel(run) : "location not persisted"}`
+      : tileLabel(run);
     $("detail-objective").textContent = goalOf(run) || (run.planner === "scripted" ? `Walk to ${run.dest || "destination"}` : "Free play");
-    $("detail-decision").textContent = run.decision || (run.question ? "Waiting for planner response" : "Waiting for first decision");
-    $("detail-frame").textContent = Number(run.frame || 0).toLocaleString();
+    $("detail-decision").textContent = event
+      ? (event.decision || event.message || event.progress || event.question || event.type || "Persisted event")
+      : run.decision || (run.question ? "Waiting for planner response" : "Waiting for first decision");
+    $("detail-frame").textContent = Number((event && event.frame) || run.frame || 0).toLocaleString();
     $("detail-round").textContent = run.stats && (run.stats.round ?? run.stats.rounds) != null ? String(run.stats.round ?? run.stats.rounds) : "—";
     const settings = kv([
       ["how", howText(run)], ["starter", starterOf(run)], ["goal", goalOf(run)],
@@ -763,6 +773,7 @@
   }
   function selectRun(id) {
     selected = id;
+    semanticContext = null;
     if (id) {
       localStorage.setItem("pokefarm-selected-run", id);
       const url = new URL(location.href); url.searchParams.set("run", id); history.replaceState(null, "", url);
@@ -781,12 +792,19 @@
     const id = (ev.detail && ev.detail.runId) || "";
     if (id === selected) return;
     selected = id;
+    semanticContext = null;
     if (id) {
       localStorage.setItem("pokefarm-selected-run", id);
       const url = new URL(location.href); url.searchParams.set("run", id); history.replaceState(null, "", url);
       setView("live", false);
     }
     render();
+  });
+  window.addEventListener("pokefarm-semantic-event", (ev) => {
+    const detail = ev.detail || {};
+    if (detail.runId !== selected) return;
+    semanticContext = detail.event ? detail : null;
+    renderDetail();
   });
 
   function renderFailures() {
