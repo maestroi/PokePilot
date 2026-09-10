@@ -242,8 +242,9 @@ func heartbeatLoop(client *farm.Client, runID string, snap func() farm.Heartbeat
 // runFarm is the farm loop: lease a spec, validate it before gameplay, run
 // it exactly as main.go runs from flags, report why it stopped, and lease
 // again. bootState is the SaveState taken right after BootToOverworld; fresh
-// leases restore it before applying their seed. A lease following a lost
-// worker may instead restore the latest durable objective checkpoint.
+// leases restore it before applying their seed. A lease may instead restore a
+// durable checkpoint: the latest objective after worker loss, or the latest
+// major badge checkpoint after an endless error retry or failed successor.
 //
 // The emulator is single-goroutine: everything that steps or reads it runs
 // on this goroutine. The heartbeat goroutine sees only the plain snapshot.

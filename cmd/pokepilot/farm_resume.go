@@ -15,10 +15,12 @@ import (
 const farmResumeMarker = ".farm-resume"
 
 // prepareFarmAttempt restores either an explicitly queued repro checkpoint, a
-// durable checkpoint from the immediately previous lost worker, or the ordinary
-// boot state. Worker-loss resume remains best-effort. Explicit repro is strict:
-// silently falling back to boot would produce a green-looking verification run
-// that never exercised the failure checkpoint it was created to test.
+// durable checkpoint from the wall (lost worker, endless error retry, or
+// endless successor of a failed campaign), or the ordinary boot state.
+// Worker-loss and successor resume remain best-effort. Explicit repro is
+// strict: silently falling back to boot would produce a green-looking
+// verification run that never exercised the failure checkpoint it was created
+// to test.
 func prepareFarmAttempt(m *emu.Emu, client *farm.Client, spec farm.Spec, planner string, bootState []byte, checkpointDir string) (dir string, burn int, err error) {
 	dir = checkpointDir
 	explicitRepro := spec.Attempt == 1 && strings.HasPrefix(spec.RunID, "replay-")
@@ -67,8 +69,10 @@ func prepareFarmAttempt(m *emu.Emu, client *farm.Client, spec farm.Spec, planner
 
 	// LLM objective checkpoints are a paired emulator state + knowledge
 	// snapshot, so they are safe to continue across process/build boundaries.
-	// Scripted runs keep their historic fresh retry behavior for now.
-	if planner == "llm" && spec.Attempt > 1 && dir != "" {
+	// Attempt 1 also asks: endless successors of a failed campaign resume
+	// from the parent's latest major checkpoint, and ordinary first leases
+	// get 204 and boot. Scripted runs keep their historic fresh retry.
+	if planner == "llm" && dir != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), farmHTTPTimeout)
 		cp, lookupErr := client.ResumeCheckpoint(ctx, spec.RunID, spec.Attempt)
 		cancel()

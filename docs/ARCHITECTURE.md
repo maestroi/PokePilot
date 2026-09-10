@@ -260,7 +260,9 @@ endless run discovers failure
 ```
 
 A bug that can be reproduced from a checkpoint in seconds must not require a
-multi-hour fresh campaign to verify forever.
+multi-hour fresh campaign to verify forever. Failed endless successors therefore
+resume from the parent's latest major (post-badge) checkpoint so the live farm
+can rediscover the same defect; a successful `done` still starts a new campaign.
 
 Qualification should be layered:
 
