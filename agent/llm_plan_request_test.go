@@ -80,6 +80,18 @@ func TestStrategistReasoningEffortOffDisablesThinking(t *testing.T) {
 	if enabled, ok := ctk["enable_thinking"].(bool); !ok || enabled {
 		t.Fatalf("enable_thinking=%v, want false", ctk["enable_thinking"])
 	}
+	// LiteLLM's openai/ provider uses the OpenAI SDK, which strips unknown
+	// top-level fields even when allowed_openai_params lists them. extra_body
+	// is merged into the upstream llama.cpp JSON, so thinking-off must live
+	// there as well as at the top level (direct llama.cpp honours the latter).
+	extra, ok := request["extra_body"].(map[string]any)
+	if !ok {
+		t.Fatalf("extra_body missing; LiteLLM will drop chat_template_kwargs, got %+v", request)
+	}
+	extraCTK, ok := extra["chat_template_kwargs"].(map[string]any)
+	if !ok || extraCTK["enable_thinking"] != false {
+		t.Fatalf("extra_body.chat_template_kwargs=%v, want enable_thinking:false", extra["chat_template_kwargs"])
+	}
 }
 
 // TestStrategistRecoveryReasonEscalatesReasoning locks in the recovery
@@ -111,6 +123,9 @@ func TestStrategistRecoveryReasonEscalatesReasoning(t *testing.T) {
 		}
 		if _, present := request["chat_template_kwargs"]; present {
 			t.Errorf("reason %q: still disabled thinking despite recovery escalation: %+v", reason, request["chat_template_kwargs"])
+		}
+		if _, present := request["extra_body"]; present {
+			t.Errorf("reason %q: extra_body still disabling thinking: %+v", reason, request["extra_body"])
 		}
 	}
 }

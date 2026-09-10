@@ -48,14 +48,19 @@ Default physical backends are:
 ```text
 7900 XTX  qwen3.8-27B  http://192.168.50.130:8002/v1
 4090      qwen3.8-27B  http://192.168.50.81:8002/v1
-LAN CPU   qwen 4B      http://192.168.50.204:8002/v1
+LAN CPU   qwen 4B      http://192.168.50.204:8000/v1  (bearer llm_token)
 ```
 
 The known LAN model id in the repository is `qwen3.5-4b`; override
 `POKEPILOT_LITELLM_LAN_MODEL` if the server's `/v1/models` endpoint exposes a
-different qwen-4b id. Backend URLs/models are configurable with
+different qwen-4b id. The LAN llama.cpp server listens on `:8000` and
+requires the same bearer as `.env`'s `llm_token` (`POKEPILOT_LITELLM_LAN_KEY`).
+Backend URLs/models are configurable with
 `POKEPILOT_LITELLM_7900_*`, `POKEPILOT_LITELLM_4090_*`, and
-`POKEPILOT_LITELLM_LAN_*`.
+`POKEPILOT_LITELLM_LAN_*`. Model ids must use the `hosted_vllm/` prefix so
+LiteLLM forwards `chat_template_kwargs` (`enable_thinking: false`). The
+`openai/` prefix uses the OpenAI SDK and drops that field, which leaves
+Qwen 3.8 on its default `xhigh` thinking path.
 
 Runners normally call `http://litellm:4000/v1`. The direct LAN endpoint remains
 configured as a transport fallback for Auto/LAN profiles if the gateway service
