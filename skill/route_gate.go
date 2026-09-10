@@ -47,18 +47,15 @@ func knownClosedRouteGateText(text string) bool {
 func AnswerKnownRouteGate(m *emu.Emu) (bool, error) {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if state.DecodeTwoOptionMenu(&mem) == nil {
+	interaction := state.DecodeInteraction(&mem)
+	if interaction.Kind != state.InteractionTwoOption {
 		return false, nil
 	}
-	text := ""
-	if d := state.DecodeDialogue(&mem); d != nil {
-		text = d.Text
-	}
-	index, ok := talkApproachChoiceIndex(m.Peek8(sym.CurMap), text)
+	index, ok := talkApproachChoiceIndex(m.Peek8(sym.CurMap), interaction.Text)
 	if !ok {
 		return false, nil
 	}
-	if err := selectTwoOption(m, index); err != nil {
+	if err := AnswerTwoOption(m, index); err != nil {
 		return false, fmt.Errorf("answer route-gate choice: %w", err)
 	}
 	rec := RecoverDialogue(m, dialogueRecoveryBudget)
