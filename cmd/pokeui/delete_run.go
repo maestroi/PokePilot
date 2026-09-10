@@ -41,7 +41,7 @@ func deleteRunHandler(wallBase, replayBase string) http.HandlerFunc {
 		}
 		defer cleanup.Body.Close()
 		if cleanup.StatusCode < 200 || cleanup.StatusCode >= 300 {
-			copyHeader(res.Header(), cleanup.Header, "Content-Type", "Cache-Control")
+			copyDeleteHeaders(res.Header(), cleanup.Header, "Content-Type", "Cache-Control")
 			res.WriteHeader(cleanup.StatusCode)
 			_, _ = io.Copy(res, cleanup.Body)
 			return
@@ -49,6 +49,14 @@ func deleteRunHandler(wallBase, replayBase string) http.HandlerFunc {
 		_, _ = io.Copy(io.Discard, cleanup.Body)
 
 		wallDelete(res, req)
+	}
+}
+
+func copyDeleteHeaders(dst, src http.Header, names ...string) {
+	for _, name := range names {
+		if value := src.Get(name); value != "" {
+			dst.Set(name, value)
+		}
 	}
 }
 
