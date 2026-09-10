@@ -104,9 +104,15 @@ func TestUITabsUseAccessibleKeyboardNavigation(t *testing.T) {
 		}
 	}
 	js := string(uiJS)
-	for _, want := range []string{`"ArrowLeft"`, `"ArrowRight"`, `"Home"`, `"End"`, "tab.tabIndex", "tabs[next].focus()", "setView(tabs[next].dataset.view)"} {
+	for _, want := range []string{"applyTabView", "wireTabNavigation(tabs, setView)"} {
 		if !strings.Contains(js, want) {
 			t.Errorf("tab keyboard navigation missing %q", want)
+		}
+	}
+	behavior := string(behaviorJS)
+	for _, want := range []string{`"ArrowLeft"`, `"ArrowRight"`, `"Home"`, `"End"`, "tab.tabIndex", "tabs[next].focus()", "activate(tabs[next].dataset.view)"} {
+		if !strings.Contains(behavior, want) {
+			t.Errorf("shared tab keyboard navigation missing %q", want)
 		}
 	}
 }

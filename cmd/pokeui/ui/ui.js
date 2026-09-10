@@ -4,7 +4,7 @@
   const slowFrameMs = 500; // phones on data: 2 fps still shows progress, 40x less traffic
   const narrow = () => window.matchMedia("(max-width: 700px)").matches;
   const railMedia = window.matchMedia("(max-width: 760px)");
-  const { partitionOperations, drawerTransition } = window.PokeConsoleBehavior;
+  const { partitionOperations, drawerTransition, applyTabView, wireTabNavigation } = window.PokeConsoleBehavior;
   const short = (v) => String(v || "").slice(0, 7); // display SHAs short; JSON keeps the full one
   let snap = { now: 0, runs: [], workers: [] };
   let groups = [];
@@ -819,12 +819,11 @@
     const nextView = valid.includes(view) ? view : "live";
     const changed = nextView !== activeView;
     activeView = nextView;
-    document.querySelectorAll("[data-console-view]").forEach((panel) => { panel.hidden = panel.dataset.consoleView !== activeView; });
-    document.querySelectorAll("[role=tab][data-view]").forEach((tab) => {
-      const active = tab.dataset.view === activeView;
-      tab.setAttribute("aria-selected", String(active));
-      tab.tabIndex = active ? 0 : -1;
-    });
+    applyTabView(
+      document.querySelectorAll("[role=tab][data-view]"),
+      document.querySelectorAll("[data-console-view]"),
+      activeView,
+    );
     if (updateHash) history.replaceState(null, "", `${location.pathname}${location.search}#${activeView}`);
     if (window.scrollX) window.scrollTo({ left: 0, top: window.scrollY });
     if (changed && activeView === "operations") renderOperations();
@@ -1039,20 +1038,7 @@
 
   $("queue-toggle").addEventListener("click", () => { setView("tools"); fillDefaults(); $("queue-toggle").setAttribute("aria-expanded", "true"); });
   const tabs = [...document.querySelectorAll("[role=tab][data-view]")];
-  tabs.forEach((tab, index) => {
-    tab.addEventListener("click", () => setView(tab.dataset.view));
-    tab.addEventListener("keydown", (ev) => {
-      let next;
-      if (ev.key === "ArrowLeft") next = (index - 1 + tabs.length) % tabs.length;
-      else if (ev.key === "ArrowRight") next = (index + 1) % tabs.length;
-      else if (ev.key === "Home") next = 0;
-      else if (ev.key === "End") next = tabs.length - 1;
-      else return;
-      ev.preventDefault();
-      tabs[next].focus();
-      setView(tabs[next].dataset.view);
-    });
-  });
+  wireTabNavigation(tabs, setView);
   $("rail-toggle").addEventListener("click", () => applyRailTransition("open"));
   $("rail-close").addEventListener("click", () => applyRailTransition("close"));
   railMedia.addEventListener("change", syncRailBreakpoint);

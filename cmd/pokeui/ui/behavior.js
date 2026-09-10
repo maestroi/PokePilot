@@ -66,11 +66,39 @@
     return drawerPresentation(wasOpen, true, false);
   }
 
+  function applyTabView(tabs, panels, view) {
+    for (const panel of panels) panel.hidden = panel.dataset.consoleView !== view;
+    for (const tab of tabs) {
+      const active = tab.dataset.view === view;
+      tab.setAttribute("aria-selected", String(active));
+      tab.tabIndex = active ? 0 : -1;
+    }
+  }
+
+  function wireTabNavigation(tabs, activate) {
+    tabs.forEach((tab, index) => {
+      tab.addEventListener("click", () => activate(tab.dataset.view));
+      tab.addEventListener("keydown", (event) => {
+        let next;
+        if (event.key === "ArrowLeft") next = (index - 1 + tabs.length) % tabs.length;
+        else if (event.key === "ArrowRight") next = (index + 1) % tabs.length;
+        else if (event.key === "Home") next = 0;
+        else if (event.key === "End") next = tabs.length - 1;
+        else return;
+        event.preventDefault();
+        tabs[next].focus();
+        activate(tabs[next].dataset.view);
+      });
+    });
+  }
+
   return {
     partitionOperations,
     timelineLayout,
     replayPresentation,
     drawerPresentation,
     drawerTransition,
+    applyTabView,
+    wireTabNavigation,
   };
 });
