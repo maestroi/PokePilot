@@ -38,7 +38,11 @@ func TestEliteFourProgressionWaitsForIndigoAndStopsAtHallOfFame(t *testing.T) {
 	}
 
 	done := championOnly
-	done.Story = append(done.Story, ProgressFact{ID: ProgressMainStoryComplete, Complete: true})
+	done.Story = ProgressState{
+		{ID: redProgressIndigoPlateauReady, Complete: true},
+		{ID: ProgressLeagueChampionDefeated, Complete: true},
+		{ID: ProgressMainStoryComplete, Complete: true},
+	}
 	if got := redProgressionObjectives(done); offeredProgressID(got, ProgressMainStoryComplete) {
 		t.Fatalf("Elite Four progression re-offered after Hall of Fame completion: %v", got)
 	}
