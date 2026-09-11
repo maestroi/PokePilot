@@ -138,13 +138,16 @@ func UseItem(m *emu.Emu, item uint8) error {
 	}
 	m.Tap(emu.A, 3, 7)
 
-	// The bag list is identified from wTileMap like the other battle menus:
-	// CANCEL is drawn by the list menu and appears on no other battle screen
-	// (measured against a live battle; wFontLoaded/wMaxMenuItem are useless
-	// here — the list menu sets wMaxMenuItem to the window size, not the
-	// entry count).
-	if _, err := m.StepUntil(bagMenuBudget, func(m *emu.Emu) bool { return battleScreenHas(m, bagMenuMarker) }); err != nil {
-		return fmt.Errorf("skill: UseItem: bag list did not open within %d frames", bagMenuBudget)
+	// The bag list is identified by wListMenuID, the game's own flag for an
+	// item list menu, set in DisplayBagMenu the moment the list opens. The
+	// CANCEL screen marker used here before is only drawn when the
+	// four-entry window reaches the end of the list, so a bag holding more
+	// than four item types never shows it and the wait timed out on a list
+	// that was open (run-30wscw8elg16m1ubfbhwhlusa8).
+	if _, err := m.StepUntil(bagMenuBudget, func(m *emu.Emu) bool { return m.Peek8(sym.ListMenuID) == itemListMenuID }); err != nil {
+		state.Snapshot(m, &mem)
+		return fmt.Errorf("skill: UseItem: bag list did not open within %d frames: wFontLoaded=%#04x wListMenuID=%#04x",
+			bagMenuBudget, mem.U8(sym.FontLoaded), mem.U8(sym.ListMenuID))
 	}
 
 	if err := selectBagEntry(m, idx); err != nil {
@@ -179,9 +182,6 @@ func UseItem(m *emu.Emu, item uint8) error {
 		m.Tap(emu.A, 3, 7)
 	}
 }
-
-// bagMenuMarker identifies the battle bag list in wTileMap.
-const bagMenuMarker = "CANCEL"
 
 // bagEntry reports the index of the bag's entry for item and its quantity.
 // The battle bag lists the bag's entries in order, so the list position is
