@@ -75,6 +75,7 @@ func TestSelectProfiles(t *testing.T) {
 				if cases[i].ID != tc.want[i] {
 					t.Fatalf("case %d=%q, want %q; all=%v", i, cases[i].ID, tc.want[i], caseIDs(cases))
 				}
+			}
 		})
 	}
 }
