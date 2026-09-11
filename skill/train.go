@@ -359,6 +359,27 @@ func PromoteToLead(m *emu.Emu, index int) error {
 	// in RAM, so "Max == 7" matched the overworld on the first attempt and
 	// the taps went to the player sprite instead of a menu.
 
+	// A checkpoint can be captured mid this very function's own earlier
+	// attempt, with a stale start/party/option menu still on screen — its
+	// footer can read SAVE/EXIT and a plausible Max well before the resumed
+	// session's HandleMenuInput is actually polling, since neither ever ran
+	// on THIS session; Controllable() does not see it (menu state is not
+	// among the flags it checks), so the entry gate above lets it through.
+	// Measured: pressing A into that stale menu does not select PKMN, it
+	// soft-locks the screen blank forever, because the read cursor/labels
+	// are leftovers, not a fact this session ever produced. B closes any
+	// depth of menu nesting one level at a time and is a no-op on a clean
+	// overworld, so drive back to a definite blank baseline first.
+	for i := 0; i < 10; i++ {
+		var s state.Mem
+		state.Snapshot(m, &s)
+		if state.ScreenText(&s) == "" {
+			break
+		}
+		m.Tap(emu.B, 3, 7)
+		m.StepFrames(20)
+	}
+
 	// START menu: seven entries (POKEDex PKMN ITEM name SAVE OPTIONS EXIT),
 	// opened with the START button (A talks to sprites in the overworld),
 	// drawn straight into wTileMap rather than as a text box.
