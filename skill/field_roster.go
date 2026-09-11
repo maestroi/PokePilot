@@ -16,6 +16,7 @@ var (
 	ErrFieldRosterPrerequisite = errors.New("skill: field roster prerequisite is missing")
 	ErrFieldRosterNoRecovery   = errors.New("skill: no roster change can restore the required field capability")
 	ErrFieldRosterCatch        = errors.New("skill: failed to acquire a compatible field-move Pokemon")
+	ErrFieldRosterNoBalls      = errors.New("skill: catch recovery needs a POKE BALL but none is available")
 )
 
 // CoreProgressionFieldMoves is the field-move invariant late-game story
@@ -450,7 +451,7 @@ func RepairFieldCapabilities(m *emu.Emu, romData []byte, policy MovePolicy, requ
 		state.Snapshot(m, &mem)
 		_, balls := bagEntry(&mem, ItemPokeBall)
 		if balls <= 0 {
-			return fmt.Errorf("%w: compatible wild species %#02x exists on map %#04x but no POKE BALL is available", ErrFieldRosterCatch, candidate.Species, candidate.Map)
+			return fmt.Errorf("%w: compatible wild species %#02x exists on map %#04x but no POKE BALL is available", ErrFieldRosterNoBalls, candidate.Species, candidate.Map)
 		}
 		if _, err := TravelFlee(m, romData, candidate.Destination, policy, pcTravelBattles); err != nil {
 			return fmt.Errorf("%w: reach map %#04x for species %#02x: %v", ErrFieldRosterCatch, candidate.Map, candidate.Species, err)

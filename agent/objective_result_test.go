@@ -103,6 +103,7 @@ func TestClassifyObjectiveOutcomeGameplayRecovery(t *testing.T) {
 		skill.ErrCantAfford,
 		skill.ErrNotInStock,
 		skill.ErrBagNotRisen,
+		skill.ErrFieldRosterNoBalls,
 	} {
 		if got := classifyObjectiveOutcome(o, err, clean); got != OutcomeBlocked {
 			t.Errorf("%v = %q, want blocked", err, got)

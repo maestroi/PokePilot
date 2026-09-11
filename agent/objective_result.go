@@ -180,7 +180,8 @@ func classifyObjectiveOutcome(_ Objective, err error, final Observation) Outcome
 		errors.Is(err, ErrTrainingInefficient) ||
 		errors.Is(err, skill.ErrCantAfford) ||
 		errors.Is(err, skill.ErrNotInStock) ||
-		errors.Is(err, skill.ErrBagNotRisen) {
+		errors.Is(err, skill.ErrBagNotRisen) ||
+		errors.Is(err, skill.ErrFieldRosterNoBalls) {
 		return OutcomeBlocked
 	}
 
