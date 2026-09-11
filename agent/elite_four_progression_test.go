@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/maestroi/pokepilot/red/state"
+	"github.com/maestroi/pokepilot/red/sym"
 )
 
 func TestOfferEliteFourProgressionAfterIndigoReady(t *testing.T) {
@@ -56,5 +57,14 @@ func TestRedProgressStateProjectsMainStoryCompletion(t *testing.T) {
 	}
 	if !progress.Has(ProgressLeagueChampionDefeated) {
 		t.Fatal("Champion fact did not remain visible after main story completion")
+	}
+}
+
+func TestIndigoExteriorRemainsReadyAfterLeagueBlackout(t *testing.T) {
+	var mem state.Mem
+	mem[sym.CurMap] = redIndigoPlateauMap
+	progress := redProgressStateFromRAM(&mem, state.InventoryState{}, state.StoryFacts{})
+	if !progress.Has(redProgressIndigoPlateauReady) {
+		t.Fatal("Indigo Plateau exterior did not preserve League readiness for blackout retry")
 	}
 }
