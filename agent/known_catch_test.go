@@ -5,11 +5,24 @@ import (
 	"testing"
 
 	"github.com/maestroi/pokepilot/skill"
-	"github.com/maestroi/pokepilot/skill/fixture"
 )
 
+func knownCatchTestWild(t *testing.T) wildGrassLookup {
+	t.Helper()
+	pidgey, ok := redSpeciesID(SpeciesID("pidgey"))
+	if !ok {
+		t.Fatal("pidgey Red species id missing")
+	}
+	rattata, ok := redSpeciesID(SpeciesID("rattata"))
+	if !ok {
+		t.Fatal("rattata Red species id missing")
+	}
+	return func(_ []byte, _ uint8) ([]skill.WildSpecies, error) {
+		return []skill.WildSpecies{{ID: pidgey}, {ID: rattata}}, nil
+	}
+}
+
 func TestAppendKnownCatchObjectivesOffersVisitedHabitatAwayFromGrass(t *testing.T) {
-	e := fixture.Load(t, "post_pokeballs")
 	route1, ok := skill.Place("route 1")
 	if !ok {
 		t.Fatal("route 1 place missing")
@@ -29,7 +42,7 @@ func TestAppendKnownCatchObjectivesOffersVisitedHabitatAwayFromGrass(t *testing.
 		Bag:        []Item{{Name: "pokeball", Quantity: 5}},
 	}
 
-	got := appendKnownCatchObjectives(e.ROM(), obs, known, nil)
+	got := appendKnownCatchObjectivesWithWild(nil, obs, known, nil, knownCatchTestWild(t))
 	if len(got) == 0 {
 		t.Fatal("no known-habitat catch objectives offered")
 	}
@@ -56,21 +69,49 @@ func TestAppendKnownCatchObjectivesOffersVisitedHabitatAwayFromGrass(t *testing.
 }
 
 func TestAppendKnownCatchObjectivesRequiresBallsAndOpenPartySlot(t *testing.T) {
-	e := fixture.Load(t, "post_pokeballs")
 	route1, ok := skill.Place("route 1")
 	if !ok {
 		t.Fatal("route 1 place missing")
 	}
 	known := NewKnowledge(nil)
 	known.SawMap(route1.Map)
+	wildFor := knownCatchTestWild(t)
 
 	base := Observation{Map: 0xff, PartyCount: 1, Party: []PartyMon{{Species: SpeciesID("charmander")}}}
-	if got := appendKnownCatchObjectives(e.ROM(), base, known, nil); len(got) != 0 {
+	if got := appendKnownCatchObjectivesWithWild(nil, base, known, nil, wildFor); len(got) != 0 {
 		t.Fatalf("without balls got %d catch objectives, want 0", len(got))
 	}
 	base.Bag = []Item{{Name: "pokeball", Quantity: 5}}
 	base.PartyCount = 6
-	if got := appendKnownCatchObjectives(e.ROM(), base, known, nil); len(got) != 0 {
+	if got := appendKnownCatchObjectivesWithWild(nil, base, known, nil, wildFor); len(got) != 0 {
 		t.Fatalf("with full party got %d catch objectives, want 0", len(got))
+	}
+}
+
+func TestAppendKnownCatchObjectivesDoesNotRevealUnvisitedHabitat(t *testing.T) {
+	route1, ok := skill.Place("route 1")
+	if !ok {
+		t.Fatal("route 1 place missing")
+	}
+	known := NewKnowledge(nil)
+	obs := Observation{
+		Map:        0xff,
+		PartyCount: 1,
+		Party:      []PartyMon{{Species: SpeciesID("charmander")}},
+		Bag:        []Item{{Name: "pokeball", Quantity: 5}},
+	}
+	called := false
+	wildFor := func(_ []byte, mapID uint8) ([]skill.WildSpecies, error) {
+		called = true
+		if mapID != route1.Map {
+			t.Fatalf("wild lookup map = %#x, want Route 1 %#x", mapID, route1.Map)
+		}
+		return nil, nil
+	}
+	if got := appendKnownCatchObjectivesWithWild(nil, obs, known, nil, wildFor); len(got) != 0 {
+		t.Fatalf("unvisited habitat produced %d catch objectives, want 0", len(got))
+	}
+	if called {
+		t.Fatal("wild lookup called for an unvisited habitat")
 	}
 }
