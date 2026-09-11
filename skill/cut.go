@@ -216,7 +216,6 @@ func vermilionCutCandidates(grid *world.Grid) []cutCandidate {
 				out = append(out, cutCandidate{x: x, y: y, d: d})
 			}
 		}
-	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].d != out[j].d {
 			return out[i].d < out[j].d
@@ -254,7 +253,7 @@ func EnterVermilionGym(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if policy == nil {
 		return fmt.Errorf("skill: EnterVermilionGym: nil policy")
 	}
-	if err := RepairFieldCapabilities(m, romData, policy, []FieldMove{FieldCut}); err != nil {
+	if err := RepairUtilityFieldCapability(m, romData, policy, FieldCut); err != nil {
 		return fmt.Errorf("skill: EnterVermilionGym: prepare Cut carrier: %w", err)
 	}
 
