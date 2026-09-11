@@ -166,10 +166,20 @@ func (c *issueClient) Investigate(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusAccepted {
-		return issueHTTPError(resp.StatusCode, body)
+	if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusCreated || resp.StatusCode == http.StatusAccepted {
+		return nil
 	}
-	return nil
+	if issueAlreadyInvestigating(resp.StatusCode, body) {
+		return nil
+	}
+	return issueHTTPError(resp.StatusCode, body)
+}
+
+func issueAlreadyInvestigating(statusCode int, body []byte) bool {
+	if statusCode != http.StatusConflict {
+		return false
+	}
+	return strings.Contains(strings.ToLower(string(body)), "investigating")
 }
 
 func writeIssueMultipart(mw *multipart.Writer, manifest issueReportManifest, artifacts []farm.Artifact) error {
@@ -538,6 +548,11 @@ func (w *Wall) handleInvestigate(res http.ResponseWriter, req *http.Request) {
 	w.mu.Unlock()
 	if !ok || link.IssueID == "" {
 		writeJSON(res, http.StatusNotFound, map[string]string{"error": "unknown failure group " + key})
+		return
+	}
+	switch strings.ToLower(strings.TrimSpace(link.Status)) {
+	case "investigating", "in_progress", "in-progress":
+		writeJSON(res, http.StatusOK, link)
 		return
 	}
 	ctx, cancel := context.WithTimeout(req.Context(), defaultIssueTimeout)

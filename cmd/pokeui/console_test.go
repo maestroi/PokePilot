@@ -28,6 +28,18 @@ func TestUIFramePumpIsCapped(t *testing.T) {
 	}
 }
 
+// The live PNG is ~2KB. A 500ms phone interval was a slideshow for no
+// bandwidth reason; phones use the same 20 fps cap as desktop.
+func TestUIFramePumpDoesNotThrottlePhones(t *testing.T) {
+	src := string(uiJS)
+	if strings.Contains(src, "slowFrameMs") {
+		t.Fatal("ui.js still has a slower phone frame interval")
+	}
+	if strings.Contains(src, "narrow() ?") {
+		t.Fatal("ui.js still picks a different frame interval on narrow viewports")
+	}
+}
+
 func TestUIDoesNotKeepPumpingFinishedRuns(t *testing.T) {
 	src := string(uiJS)
 	// The live pump set is only running cards. A selected done run used

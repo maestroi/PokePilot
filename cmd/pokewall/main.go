@@ -34,9 +34,9 @@ func main() {
 	publishDir := flag.String("publish", "", "if set, also publish the dashboard (grid + live frames) to this directory for the browser-facing relay")
 	publishEvery := flag.Duration("publish-every", 2*time.Second, "how often the published dashboard is refreshed")
 	stateFile := flag.String("state", "", "if set, persist the tile map and queue here so a wall restart does not forget active runs")
-	issuesAPI := flag.String("issues-api", "", "Agent Orchestrator API base (e.g. http://192.168.50.81:8080)")
+	issuesAPI := flag.String("issues-api", "", "Agent Orchestrator API base (e.g. https://orchestrator.labstack.cc)")
 	issuesProject := flag.String("issues-project", "", "Agent Orchestrator project UUID for PokePilot")
-	issuesUI := flag.String("issues-ui", "", "Agent Orchestrator UI base (e.g. http://192.168.50.81:8081)")
+	issuesUI := flag.String("issues-ui", "", "Agent Orchestrator UI base (e.g. https://orchestrator.labstack.cc)")
 	issuesTimeout := flag.Duration("issues-timeout", defaultIssueTimeout, "timeout for Agent Orchestrator issue HTTP calls")
 	flag.Parse()
 

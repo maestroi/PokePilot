@@ -98,30 +98,54 @@ Qualifying farm failures can be filed automatically with Agent Orchestrator.
 This is off unless all three values are set in `.env` (or the environment
 `make farm-up` inherits). Empty values leave the farm unchanged.
 
-These URLs are one operator's LAN, not image or stack defaults:
+The public Agent Orchestrator host is the same for API and UI — the UI
+proxies `/api` to the controller. These are operator-provided values, not
+image defaults:
 
 ```
-AGENT_ORCHESTRATOR_API=http://192.168.50.81:8080
-AGENT_ORCHESTRATOR_UI=http://192.168.50.81:8081
+AGENT_ORCHESTRATOR_API=https://orchestrator.labstack.cc
+AGENT_ORCHESTRATOR_UI=https://orchestrator.labstack.cc
 AGENT_ORCHESTRATOR_POKEPILOT_PROJECT_ID=<pokePilot project uuid>
 ```
 
-Both services stay LAN-only. This slice adds no authentication secret.
+This slice adds no authentication secret.
 
 Reachability from a wall task (alpine's busybox `wget`; `curl` is equivalent
-from any host that can see that LAN):
+from any host that can see that hostname):
 
 ```sh
 docker exec "$(docker ps --filter name=pokefarm_wall --format '{{.ID}}' | head -1)" \
-  wget -qO- http://192.168.50.81:8080/api/health
+  wget -qO- https://orchestrator.labstack.cc/api/health
 ```
 
 Look up the PokePilot project UUID:
 
 ```sh
-curl -sS http://192.168.50.81:8080/api/projects
+curl -sS https://orchestrator.labstack.cc/api/projects
 ```
 
 Use the matching project's `id`. A linked issue number in the farm console is
 not proof of a PokePilot defect: Agent Orchestrator may classify the
 occurrence as expected game/RNG behavior or external infrastructure.
+
+## Local qwagent triage (optional)
+
+A user systemd timer can offer one unused `GET /v1/triage` group to local
+`qwagent` (`opencode run --auto --model qwen3.8-27b/qwen3.8-27b`) every 30
+minutes. The picker is deterministic; the model only reproduces, patches, and
+opens a PR. It never merges and never writes `main`.
+
+```sh
+make qwagent-triage-install   # units + zsh helpers; timer stays off
+qwtriage-on                   # enable the 30-minute timer
+qwtriage-off                  # disable and stop
+qwtriage-once                 # one attempt, timer unchanged
+qwtriage-status
+qwtriage-logs
+./deploy/qwagent-triage.sh --dry-run   # print the next key; do not claim
+```
+
+Needs `POKEPILOT_MCP_TOKEN` in `~/.config/pokepilot/env`, `gh` auth, Qwen on
+`127.0.0.1:8002`, and `roms/pokemon_red.gb` in the worktree or
+`~/.config/pokepilot/pokemon_red.gb`. Open PRs are titled
+`fix(farm): … [triage:<key>]` so a later tick skips that key.

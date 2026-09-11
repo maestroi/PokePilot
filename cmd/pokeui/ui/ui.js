@@ -1,7 +1,6 @@
 (function () {
   const pollMs = 2000;
-  const frameMs = 50; // 20 fps; a tight /frame loop burned the Chrome tab
-  const slowFrameMs = 500; // phones on data: 2 fps still shows progress, 40x less traffic
+  const frameMs = 50; // 20 fps on phone and desktop; the PNG is ~2KB
   const narrow = () => window.matchMedia("(max-width: 700px)").matches;
   const railMedia = window.matchMedia("(max-width: 760px)");
   const { partitionOperations, drawerTransition, applyTabView, wireTabNavigation } = window.PokeConsoleBehavior;
@@ -469,7 +468,6 @@
     pumps.set(id, () => { stop = true; });
     (async function loop() {
       let blobUrl = "";
-      const tick = narrow() ? slowFrameMs : frameMs;
       while (!stop) {
         await whenVisible();
         if (stop) break;
@@ -485,7 +483,7 @@
             blobUrl = url;
           }
         } catch (e) {}
-        const wait = tick - (Date.now() - started);
+        const wait = frameMs - (Date.now() - started);
         if (wait > 0) await sleep(wait);
       }
       if (blobUrl) URL.revokeObjectURL(blobUrl);

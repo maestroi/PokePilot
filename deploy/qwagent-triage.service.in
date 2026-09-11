@@ -1,0 +1,9 @@
+[Unit]
+Description=PokePilot qwagent farm-triage attempt
+
+[Service]
+Type=oneshot
+Nice=10
+EnvironmentFile=-%h/.config/pokepilot/env
+Environment=PATH=%h/.opencode/bin:%h/go/bin:%h/.local/bin:/usr/local/go/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=@@POKEPILOT_ROOT@@/deploy/qwagent-triage.sh

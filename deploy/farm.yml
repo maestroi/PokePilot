@@ -31,8 +31,9 @@ services:
     # active runs (their heartbeats resume within a second of its return);
     # the reaper then clears any run whose runner truly died.
     # Issue handoff is off unless the operator supplies all three
-    # Agent Orchestrator values. Empty interpolation is a disabled
-    # triple, not a partial one; pokewall rejects a mix.
+    # Agent Orchestrator values (API/UI: https://orchestrator.labstack.cc).
+    # Empty interpolation is a disabled triple, not a partial one;
+    # pokewall rejects a mix.
     command:
       - pokewall
       - -http

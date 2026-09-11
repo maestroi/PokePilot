@@ -25,9 +25,9 @@ export FARM_WALL_PORT
 FARM_STATE_DIR ?= /tmp/pokefarm-state
 export FARM_STATE_DIR
 # Optional Agent Orchestrator issue handoff (wall only). Empty values
-# leave reporting disabled. LAN examples, not defaults:
-#   AGENT_ORCHESTRATOR_API=http://192.168.50.81:8080
-#   AGENT_ORCHESTRATOR_UI=http://192.168.50.81:8081
+# leave reporting disabled. Public-host examples, not image defaults:
+#   AGENT_ORCHESTRATOR_API=https://orchestrator.labstack.cc
+#   AGENT_ORCHESTRATOR_UI=https://orchestrator.labstack.cc
 #   AGENT_ORCHESTRATOR_POKEPILOT_PROJECT_ID=<project uuid>
 
 # A model served locally instead of the LAN box .env points at. It is the
@@ -73,7 +73,7 @@ AUTO_LLM_FALLBACK_URL ?= http://192.168.50.204:8000/v1
 AUTO_LLM_FALLBACK_MODEL ?= qwen3.5-4b
 AUTO_LLM_FALLBACK_TIMEOUT ?= 60s
 
-.PHONY: run run-60 run-0 run-llm run-llm-local run-llm-auto test test-short test-race test-farm test-agent test-state fmt-check vet verify farm-image farm-up farm-down
+.PHONY: run run-60 run-0 run-llm run-llm-local run-llm-auto test test-short test-race test-farm test-agent test-state fmt-check vet verify farm-image farm-up farm-down qwagent-triage-install
 
 require-rom = @test -f "$(POKEMON_RED_ROM)" || { \
 	echo "POKEMON_RED_ROM not found: $(POKEMON_RED_ROM)"; \
@@ -200,3 +200,18 @@ farm-up: farm-image
 farm-down:
 	docker rm -f pokefarm_ui >/dev/null 2>&1 || true
 	docker stack rm pokefarm
+
+# Opt-in local qwagent loop against GET /v1/triage. Installs user systemd
+# units and zsh helpers; does not enable the timer.
+qwagent-triage-install:
+	mkdir -p "$(HOME)/.config/systemd/user"
+	sed 's|@@POKEPILOT_ROOT@@|$(CURDIR)|g' deploy/qwagent-triage.service.in \
+		> "$(HOME)/.config/systemd/user/qwagent-triage.service"
+	cp deploy/qwagent-triage.timer "$(HOME)/.config/systemd/user/qwagent-triage.timer"
+	systemctl --user daemon-reload
+	@marker='# PokePilot qwagent-triage helpers'; \
+	if [ -f "$(HOME)/.zshrc" ] && ! grep -q "$$marker" "$(HOME)/.zshrc"; then \
+		printf '\n%s\nsource %s/deploy/qwagent-triage.zsh\n' "$$marker" "$(CURDIR)" >> "$(HOME)/.zshrc"; \
+		echo "appended source line to ~/.zshrc (open a new shell)"; \
+	fi
+	@echo "timer installed but not enabled. qwtriage-on to start, qwtriage-off to stop."

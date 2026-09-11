@@ -47,6 +47,10 @@ func TestIssueConfigReachesWallOnly(t *testing.T) {
 			t.Error("LAN Agent Orchestrator examples must not be stack defaults")
 			break
 		}
+		if strings.Contains(line, "AGENT_ORCHESTRATOR") && strings.Contains(line, "orchestrator.labstack.cc") && !strings.Contains(line, "${AGENT_ORCHESTRATOR") {
+			t.Error("Agent Orchestrator host must stay an operator-provided env value, not a baked stack default")
+			break
+		}
 	}
 
 	// Inference topology: runners normally bypass LiteLLM and call the 7900 XTX

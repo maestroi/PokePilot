@@ -256,6 +256,69 @@ func TestInvestigateNow(t *testing.T) {
 	}
 }
 
+func TestInvestigateAlreadyInvestigatingIsOK(t *testing.T) {
+	var called atomic.Bool
+	ao := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/investigate") {
+			called.Store(true)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			_, _ = w.Write([]byte(`{"error":"invalid state: cannot investigate issue in status investigating"}`))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(ao.Close)
+	w := wallWithFinished(failedTile("run-a", "still on map 0x0c at (10,35)"))
+	key, _ := failureIdentity(normalizeDetail("still on map 0x0c at (10,35)"))
+	w.issues = newIssueClient(ao.URL, "p", "http://ui", time.Second)
+	w.mu.Lock()
+	w.issueLinks[key] = IssueLink{IssueID: "id-1", IssueNumber: 42, IssueURL: "http://ui/issues/id-1", Status: "open"}
+	w.mu.Unlock()
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/triage/"+key+"/investigate", nil)
+	res := httptest.NewRecorder()
+	w.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("investigate = %d: %s", res.Code, res.Body.String())
+	}
+	if !called.Load() {
+		t.Fatal("orchestrator investigate was not called")
+	}
+	w.mu.Lock()
+	got := w.issueLinks[key]
+	w.mu.Unlock()
+	if got.Status != "investigating" {
+		t.Fatalf("status = %q, want investigating", got.Status)
+	}
+}
+
+func TestInvestigateSkipsOrchestratorWhenAlreadyInvestigating(t *testing.T) {
+	var called atomic.Bool
+	ao := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called.Store(true)
+		http.Error(w, "should not be called", http.StatusInternalServerError)
+	}))
+	t.Cleanup(ao.Close)
+	w := wallWithFinished(failedTile("run-a", "still on map 0x0c at (10,35)"))
+	key, _ := failureIdentity(normalizeDetail("still on map 0x0c at (10,35)"))
+	w.issues = newIssueClient(ao.URL, "p", "http://ui", time.Second)
+	w.mu.Lock()
+	link := IssueLink{IssueID: "id-1", IssueNumber: 42, IssueURL: "http://ui/issues/id-1", Status: "investigating"}
+	w.issueLinks[key] = link
+	w.mu.Unlock()
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/triage/"+key+"/investigate", nil)
+	res := httptest.NewRecorder()
+	w.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("investigate = %d: %s", res.Code, res.Body.String())
+	}
+	if called.Load() {
+		t.Fatal("already-investigating must not re-trigger orchestrator")
+	}
+}
+
 func TestParseIssueFlags(t *testing.T) {
 	c, err := parseIssueFlags("", "", "")
 	if err != nil || c != nil {
