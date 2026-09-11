@@ -15,7 +15,7 @@ import (
 // It answers the question the trace cannot: not "what happened next" but
 // "what is this model DOING with its rounds" — how often it re-picks an
 // objective it already picked (Repeats), what it keeps picking
-// (Choices), how long it is thinking, what it is spending, and how many
+// (Choices), how long each model call takes, what it is spending, and how many
 // replies never resolved at all.
 //
 // Repeats is the headline number. A run that wanders looks fine line by
@@ -64,10 +64,13 @@ type statsPlanner struct {
 	push func(any)      // emu.TraceStats
 	snap *heartbeatSnap // farm heartbeat; nil on the local (non-farm) run
 
-	stats   runStats
-	counts  map[string]int
-	offered int           // summed over calls, for the average
-	elapsed time.Duration // summed over calls, for the average
+	stats             runStats
+	counts            map[string]int
+	offered           int           // summed over calls, for the average
+	elapsed           time.Duration // summed over calls, for the average
+	successfulCalls   int
+	successfulElapsed time.Duration
+	rejectedElapsed   time.Duration
 
 	// runGoalStatus is the last authoritative deterministic status delivered
 	// by agent.Run. The stats decorator consumes it; it never evaluates the
@@ -241,6 +244,15 @@ func (s *statsPlanner) recordCall(call agent.LLMCall) {
 	s.stats.LastSeconds = took.Seconds()
 	s.stats.AvgOffered = float64(s.offered) / float64(s.stats.Calls)
 	s.stats.AvgSeconds = s.elapsed.Seconds() / float64(s.stats.Calls)
+	if err != nil {
+		s.stats.Rejected++
+		s.rejectedElapsed += took
+		s.stats.RejectedAvgSeconds = s.rejectedElapsed.Seconds() / float64(s.stats.Rejected)
+	} else {
+		s.successfulCalls++
+		s.successfulElapsed += took
+		s.stats.SuccessfulAvgSeconds = s.successfulElapsed.Seconds() / float64(s.successfulCalls)
+	}
 	s.stats.Round, s.stats.RoundsLeft = obs.Round, obs.RoundsLeft
 	s.stats.Intent, s.stats.IntentAge = obs.Intent, obs.IntentAge
 	route := s.router.Route()
@@ -253,17 +265,13 @@ func (s *statsPlanner) recordCall(call agent.LLMCall) {
 	if call.Strategic {
 		s.stats.StrategicCalls++
 		s.stats.StrategicSeconds += took.Seconds()
-		if err != nil {
-			s.stats.Rejected++
-		}
+		s.stats.StrategicAvgSeconds = s.stats.StrategicSeconds / float64(s.stats.StrategicCalls)
 		s.publish()
 		return
 	}
 
 	s.stats.FastCalls++
-	if err != nil {
-		s.stats.Rejected++
-	} else {
+	if err == nil {
 		s.stats.Rounds++
 		name := o.String()
 		if s.counts[name] > 0 {
