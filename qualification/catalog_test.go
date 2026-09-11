@@ -34,7 +34,7 @@ func TestCatalogContainsQualificationRoadmap(t *testing.T) {
 		"viridian-giovanni":          36,
 		"victory-road-indigo":        37,
 		"elite-four-champion":        0,
-		"fresh-hall-of-fame":         39,
+		"fresh-hall-of-fame":         0,
 	}
 	got := map[string]Case{}
 	for _, c := range Catalog() {
@@ -95,8 +95,10 @@ func TestSelectAllExcludesFutureUnavailableMilestones(t *testing.T) {
 			t.Errorf("Select(all) included future case %q", forbidden)
 		}
 	}
-	if !hasCase(cases, "elite-four-champion") {
-		t.Error("Select(all) omitted runnable elite-four-champion milestone")
+	for _, required := range []string{"elite-four-champion", "fresh-hall-of-fame"} {
+		if !hasCase(cases, required) {
+			t.Errorf("Select(all) omitted runnable %s case", required)
+		}
 	}
 }
 

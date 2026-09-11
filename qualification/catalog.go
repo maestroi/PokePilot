@@ -177,11 +177,10 @@ func Catalog() []Case {
 		},
 		{
 			ID:          "fresh-hall-of-fame",
-			Description: "fresh-save unattended campaign through Hall of Fame",
+			Description: "fresh-save unattended eight-badge campaign through Hall of Fame",
 			Layer:       LayerFull,
 			Runner:      RunnerFullRun,
 			Available:   true,
-			BlockedBy:   39,
 		},
 	}
 }

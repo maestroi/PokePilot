@@ -35,13 +35,22 @@ func TestListDoesNotNeedROM(t *testing.T) {
 	if err := run(config{list: true, out: "unused"}, &out); err != nil {
 		t.Fatal(err)
 	}
+	text := out.String()
 	for _, id := range []string{"rom-short", "opening-brock", "rocket-hideout", "fresh-hall-of-fame"} {
-		if !strings.Contains(out.String(), id) {
-			t.Errorf("list missing %q: %s", id, out.String())
+		if !strings.Contains(text, id) {
+			t.Errorf("list missing %q: %s", id, text)
 		}
 	}
-	if !strings.Contains(out.String(), "blocked #33") || !strings.Contains(out.String(), "runner ready; product blocked #39") {
-		t.Fatalf("list does not distinguish future/product blockers: %s", out.String())
+	if !strings.Contains(text, "blocked #33") {
+		t.Fatalf("list no longer exposes pending milestone blockers: %s", text)
+	}
+	if strings.Contains(text, "product blocked #39") {
+		t.Fatalf("fresh full qualification still reported as product-blocked: %s", text)
+	}
+	for _, line := range strings.Split(text, "\n") {
+		if strings.Contains(line, "fresh-hall-of-fame") && !strings.Contains(line, "ready") {
+			t.Fatalf("fresh-hall-of-fame is not listed ready: %s", line)
+		}
 	}
 }
 

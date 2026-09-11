@@ -22,21 +22,35 @@ func TestDefaultGoalStopsDeterministically(t *testing.T) {
 		t.Fatalf("default goal %q is prompt-only prose; a run using it can never stop on success", defaultGoal)
 	}
 
+	eightBadges := []string{"Boulder", "Cascade", "Thunder", "Rainbow", "Soul", "Marsh", "Volcano", "Earth"}
 	// Reachable through the portable planner contract: the Red adapter maps
 	// the Hall of Fame completion state to this fact, while goal evaluation
-	// itself knows nothing about Red event labels or event-bit encodings.
-	done := agent.Observation{Story: agent.ProgressState{{ID: agent.ProgressMainStoryComplete, Complete: true}}}
+	// itself knows nothing about Red event labels or event-bit encodings. #39
+	// additionally requires the full eight-badge campaign state.
+	done := agent.Observation{
+		Badges: eightBadges,
+		Story:  agent.ProgressState{{ID: agent.ProgressMainStoryComplete, Complete: true}},
+	}
 	if status := agent.EvaluateGoal(g, done); !status.Complete {
-		t.Fatalf("default goal not complete once Hall of Fame is reached: %+v", status)
+		t.Fatalf("default goal not complete once the eight-badge Hall of Fame run is reached: %+v", status)
 	}
 	// The Champion battle event lands before Oak escorts the player into the
 	// Hall of Fame, so it must not terminate the run early.
-	championOnly := agent.Observation{Story: agent.ProgressState{{ID: agent.ProgressLeagueChampionDefeated, Complete: true}}}
+	championOnly := agent.Observation{
+		Badges: eightBadges,
+		Story:  agent.ProgressState{{ID: agent.ProgressLeagueChampionDefeated, Complete: true}},
+	}
 	if status := agent.EvaluateGoal(g, championOnly); status.Complete {
 		t.Fatalf("default goal completed on Champion event before Hall of Fame: %+v", status)
 	}
-	// And it must not complete early: eight badges is not a finished game.
-	eight := agent.Observation{Badges: []string{"Boulder", "Cascade", "Thunder", "Rainbow", "Soul", "Marsh", "Volcano", "Earth"}}
+	// Hall of Fame without the complete badge campaign is also insufficient for
+	// the fresh-save integration gate.
+	endingOnly := agent.Observation{Story: agent.ProgressState{{ID: agent.ProgressMainStoryComplete, Complete: true}}}
+	if status := agent.EvaluateGoal(g, endingOnly); status.Complete {
+		t.Fatalf("default goal completed from ending fact without eight badges: %+v", status)
+	}
+	// And eight badges alone is not a finished game.
+	eight := agent.Observation{Badges: eightBadges}
 	if status := agent.EvaluateGoal(g, eight); status.Complete {
 		t.Fatalf("default goal complete on badges alone: %+v", status)
 	}
