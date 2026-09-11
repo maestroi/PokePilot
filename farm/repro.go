@@ -9,9 +9,11 @@ import (
 )
 
 const (
-	// FailureReproArtifactName is the small, ROM-free contract handed to a
-	// fixer alongside the pre-objective checkpoint that reproduced a structured
-	// farm failure. The ROM remains local to the fixer/qualification host.
+	// FailureReproArtifactName is the suffix used by the small, ROM-free
+	// contract handed to a fixer alongside the pre-objective checkpoint that
+	// reproduced a structured farm failure. The actual artifact keeps the
+	// checkpoint's round prefix so the wall automatically includes it with the
+	// matching objective-failure evidence.
 	FailureReproArtifactName = "failure-repro.json"
 	failureReproVersion      = 1
 )
@@ -29,9 +31,10 @@ type FailureReproCheckpoint struct {
 }
 
 // FailureReproBundle is an executable handoff for one structured objective
-// failure. A fixer downloads this JSON and the named checkpoint, keeps its ROM
-// local, then runs cmd/pokerepro. The canonical failure identity is preserved
-// verbatim so the observed outcome/cause can be compared without parsing prose.
+// failure. A fixer keeps its ROM local and runs the suggested cmd/pokerepro
+// command to materialize the exact checkpoint and paired agent knowledge. The
+// canonical failure identity is preserved verbatim so diagnosis never depends
+// on parsing human error prose.
 type FailureReproBundle struct {
 	Version          int                    `json:"version"`
 	RunID            string                 `json:"run_id"`
@@ -64,10 +67,11 @@ func NewFailureReproArtifact(report FinishReport, f ObjectiveFailure) (Artifact,
 	if checkpoint == nil {
 		return Artifact{}, nil
 	}
+	attempt := maxInt(1, report.Attempt)
 	bundle := FailureReproBundle{
 		Version:          failureReproVersion,
 		RunID:            report.RunID,
-		Attempt:          maxInt(1, report.Attempt),
+		Attempt:          attempt,
 		ObservedRevision: firstNonEmpty(strings.TrimSpace(f.Build), strings.TrimSpace(report.RunnerVersion)),
 		Fingerprint:      f.Fingerprint,
 		Checkpoint: FailureReproCheckpoint{
@@ -78,26 +82,30 @@ func NewFailureReproArtifact(report FinishReport, f ObjectiveFailure) (Artifact,
 			ObjectKey: checkpoint.ObjectKey,
 			Size:      checkpoint.Size,
 		},
-		Identity:         *f.Identity,
-		Diagnostic:       strings.TrimSpace(f.Error),
-		SuggestedCommand: "go run ./cmd/pokerepro -bundle " + FailureReproArtifactName,
+		Identity:   *f.Identity,
+		Diagnostic: strings.TrimSpace(f.Error),
+		SuggestedCommand: fmt.Sprintf(
+			"go run ./cmd/pokerepro -run %q -attempt %d -checkpoint %q",
+			report.RunID, attempt, checkpoint.Name,
+		),
 	}
 	data, err := json.MarshalIndent(bundle, "", "  ")
 	if err != nil {
 		return Artifact{}, fmt.Errorf("farm: encode failure repro: %w", err)
 	}
 	sum := sha256.Sum256(data)
+	name := strings.TrimSuffix(checkpoint.Name, ".state") + "." + FailureReproArtifactName
 	return Artifact{
-		Name:      FailureReproArtifactName,
+		Name:      name,
 		MediaType: "application/json",
 		SHA256:    hex.EncodeToString(sum[:]),
 		Data:      data,
 	}, nil
 }
 
-// DecodeFailureRepro validates a fixer handoff before it is allowed to drive an
-// emulator. In particular the embedded fingerprint must still agree with the
-// canonical identity.
+// DecodeFailureRepro validates a fixer handoff before it is used for a local
+// reproduction. In particular the embedded fingerprint must still agree with
+// the canonical identity.
 func DecodeFailureRepro(data []byte) (FailureReproBundle, error) {
 	var bundle FailureReproBundle
 	if err := json.Unmarshal(data, &bundle); err != nil {
