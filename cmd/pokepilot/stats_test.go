@@ -42,6 +42,34 @@ func TestStatsPlannerTally(t *testing.T) {
 	}
 }
 
+func TestStatsPlannerLatencyBreakdown(t *testing.T) {
+	s := newStatsPlanner("", "", "", nil, nil, nil)
+	obs := agent.Observation{Round: 7}
+	picked := agent.Objective{Kind: agent.KindGoTo, Place: "route 1"}
+
+	s.recordCall(agent.LLMCall{Observation: obs, Offered: 4, Objective: picked, Duration: 2 * time.Second})
+	s.recordCall(agent.LLMCall{Observation: obs, Offered: 4, Err: errors.New("bad reply"), Duration: 6 * time.Second})
+	s.recordCall(agent.LLMCall{Observation: obs, Offered: 4, Strategic: true, Duration: 10 * time.Second})
+	s.recordCall(agent.LLMCall{Observation: obs, Offered: 4, Strategic: true, Err: errors.New("bad plan"), Duration: 14 * time.Second})
+
+	got := s.stats
+	if got.LastSeconds != 14 || got.AvgSeconds != 8 {
+		t.Fatalf("last/all avg = %.1f/%.1f, want 14.0/8.0", got.LastSeconds, got.AvgSeconds)
+	}
+	if got.SuccessfulAvgSeconds != 6 {
+		t.Fatalf("successful avg = %.1f, want 6.0", got.SuccessfulAvgSeconds)
+	}
+	if got.RejectedAvgSeconds != 10 {
+		t.Fatalf("rejected avg = %.1f, want 10.0", got.RejectedAvgSeconds)
+	}
+	if got.StrategicAvgSeconds != 12 || got.StrategicCalls != 2 {
+		t.Fatalf("strategic avg/calls = %.1f/%d, want 12.0/2", got.StrategicAvgSeconds, got.StrategicCalls)
+	}
+	if got.Rejected != 2 {
+		t.Fatalf("rejected = %d, want 2", got.Rejected)
+	}
+}
+
 // TestStatsPlannerPushesToSnap: the same tally the watch page renders is
 // what the heartbeat carries, so the console and the runner's own page show
 // one number. A sample tick between asks must not blank it, and a new lease
