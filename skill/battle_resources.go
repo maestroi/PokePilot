@@ -204,9 +204,11 @@ func UseBattleMedicine(m *emu.Emu, item uint8, slot int) error {
 	}
 	m.Tap(emu.A, 3, 7)
 	if _, err := m.StepUntil(bagMenuBudget, func(m *emu.Emu) bool {
-		return battleScreenHas(m, bagMenuMarker)
+		return m.Peek8(sym.ListMenuID) == itemListMenuID
 	}); err != nil {
-		return fmt.Errorf("skill: UseBattleMedicine: bag list did not open within %d frames", bagMenuBudget)
+		state.Snapshot(m, &mem)
+		return fmt.Errorf("skill: UseBattleMedicine: bag list did not open within %d frames: wFontLoaded=%#04x wListMenuID=%#04x",
+			bagMenuBudget, mem.U8(sym.FontLoaded), mem.U8(sym.ListMenuID))
 	}
 	if err := selectBagEntry(m, idx); err != nil {
 		return fmt.Errorf("skill: UseBattleMedicine: %w", err)
