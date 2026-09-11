@@ -6,6 +6,13 @@ const (
 	// wStatusFlags1 bit 6 is BIT_GAVE_SAFFRON_GUARDS_DRINK.
 	saffronGuardsDrinkMask uint8 = 1 << 6
 
+	// wElite4Flags lives at 0xd734. HallOfFameResetEventsAndSaveScript sets
+	// BIT_UNUSED_BEAT_ELITE_4 (bit 0) immediately before resetting the Indigo
+	// event range and saving. Despite the historical name, this is the only
+	// durable RAM fact that survives the ending's event reset.
+	elite4FlagsAddr       uint16 = 0xd734
+	elite4CompletedMask   uint8  = 1 << 0
+
 	// Item ids from pokered/constants/item_constants.asm.
 	secretKeyItemID  uint8 = 0x2b
 	cardKeyItemID    uint8 = 0x30
@@ -35,7 +42,12 @@ const (
 	eventBeatSilphCoRival           Event = 0x740
 	eventGotMasterBall              Event = 0x78d
 	eventBeatSilphCoGiovanni        Event = 0x78f
+	eventBeatLorelei                Event = 0x8e1
 	eventAutowalkedIntoLoreleisRoom Event = 0x8e6
+	eventBeatBruno                  Event = 0x8e9
+	eventBeatAgatha                 Event = 0x8f1
+	eventBeatLanceTrainer           Event = 0x8f9
+	eventBeatLance                  Event = 0x8fe
 )
 
 // StoryFacts is Red's semantic progression projection. It deliberately names
@@ -63,7 +75,12 @@ type StoryFacts struct {
 	Route23BadgeChecksPassed   int
 	Route23BadgeChecksComplete bool
 	LeagueChallengeStarted     bool
+	LeagueLoreleiDefeated      bool
+	LeagueBrunoDefeated        bool
+	LeagueAgathaDefeated       bool
+	LeagueLanceDefeated        bool
 	LeagueChampionDefeated     bool
+	MainStoryComplete          bool
 }
 
 var route23BadgeCheckEvents = [...]Event{
@@ -81,6 +98,7 @@ var route23BadgeCheckEvents = [...]Event{
 // same checkpoint always reconstructs the same facts after resume.
 func DecodeStoryFacts(m *Mem, inv InventoryState) StoryFacts {
 	progress := DecodeProgress(m)
+	mainStoryComplete := m.U8(elite4FlagsAddr)&elite4CompletedMask != 0
 	facts := StoryFacts{
 		MtMoonFossilAcquired:       HasEvent(m, EventBeatMtMoonSuperNerd) && (HasEvent(m, EventGotDomeFossil) || HasEvent(m, EventGotHelixFossil)) && m.U8(sym.MtMoonB2FCurScript) == 0,
 		PokedexAcquired:            HasEvent(m, EventGotPokedex),
@@ -99,7 +117,12 @@ func DecodeStoryFacts(m *Mem, inv InventoryState) StoryFacts {
 		ViridianGymOpen:            HasEvent(m, eventViridianGymOpen),
 		Route22RivalResolved:       HasEvent(m, eventBeatRoute22Rival2ndBattle),
 		LeagueChallengeStarted:     HasEvent(m, eventAutowalkedIntoLoreleisRoom),
-		LeagueChampionDefeated:     HasEvent(m, EventBeatChampionRival),
+		LeagueLoreleiDefeated:      HasEvent(m, eventBeatLorelei) || mainStoryComplete,
+		LeagueBrunoDefeated:        HasEvent(m, eventBeatBruno) || mainStoryComplete,
+		LeagueAgathaDefeated:       HasEvent(m, eventBeatAgatha) || mainStoryComplete,
+		LeagueLanceDefeated:        HasEvent(m, eventBeatLance) || mainStoryComplete,
+		LeagueChampionDefeated:     HasEvent(m, EventBeatChampionRival) || mainStoryComplete,
+		MainStoryComplete:          mainStoryComplete,
 	}
 	facts.SilphRescueComplete = facts.SilphCoCleared && facts.MasterBallAwarded
 	for _, event := range route23BadgeCheckEvents {
@@ -108,7 +131,7 @@ func DecodeStoryFacts(m *Mem, inv InventoryState) StoryFacts {
 		}
 	}
 	facts.Route23BadgeChecksComplete = facts.Route23BadgeChecksPassed == len(route23BadgeCheckEvents)
-	if facts.LeagueChampionDefeated {
+	if facts.LeagueLoreleiDefeated || facts.LeagueBrunoDefeated || facts.LeagueAgathaDefeated || facts.LeagueLanceDefeated || facts.LeagueChampionDefeated || facts.MainStoryComplete {
 		facts.LeagueChallengeStarted = true
 	}
 	return facts
