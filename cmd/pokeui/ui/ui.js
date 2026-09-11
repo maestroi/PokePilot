@@ -786,7 +786,7 @@
       + row("repeat picks", `${s.repeats} of ${s.rounds}`, s.rounds > 3 && s.repeats * 2 >= s.rounds)
       + row("call latency", `${seconds(s.last_seconds)} last / ${seconds(s.avg_seconds)} all avg`)
       + row("latency avg", `${average(s.successful_avg_seconds)} ok / ${average(s.rejected_avg_seconds)} rejected / ${average(s.strategic_avg_seconds)} strategist`)
-      + row("offered", `${Number(s.avg_offered || 0).toFixed(1)} avg`)
+      + row("offered", `${s.avg_offered.toFixed(1)} avg`)
       + row("tokens", `${s.prompt_tokens} / ${s.completion_tokens}`)
       + row("rejected", String(s.rejected), s.rejected > 0)
       + row("transport", String(s.transport), s.transport > 0)
