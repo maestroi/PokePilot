@@ -49,14 +49,10 @@ func TestRedProgressionStopsRainbowBadgeStageAfterErika(t *testing.T) {
 	}
 }
 
-func TestRocketHideoutWaitsForRainbowBadge(t *testing.T) {
+func TestRainbowStageDoesNotSuppressRocketHideout(t *testing.T) {
 	obs := postSurgeObservation(0x06)
-	if hasProgressObjective(redProgressionObjectives(obs), redProgressSilphScopeAcquired) {
-		t.Fatal("Rocket Hideout was offered before the post-Surge Rainbow Badge stage completed")
-	}
-	obs.Story = append(obs.Story, ProgressFact{ID: redProgressRainbowBadge, Complete: true})
 	if !hasProgressObjective(redProgressionObjectives(obs), redProgressSilphScopeAcquired) {
-		t.Fatal("Rocket Hideout was not offered from Celadon after the Rainbow Badge")
+		t.Fatal("adding the Rainbow Badge stage suppressed the independently available Rocket Hideout objective")
 	}
 }
 
