@@ -10,11 +10,11 @@ func TestNormalizeLLMProfile(t *testing.T) {
 		in   string
 		want LLMProfile
 	}{
-		{"", LLMProfileDefault},
+		{"", LLMProfileAuto},
 		{"default", LLMProfileDefault},
 		{"GPU", LLMProfileGPU},
 		{"auto", LLMProfileAuto},
-		{"weird", LLMProfileDefault},
+		{"weird", LLMProfileAuto},
 	} {
 		if got := NormalizeLLMProfile(tc.in); got != tc.want {
 			t.Fatalf("NormalizeLLMProfile(%q) = %q, want %q", tc.in, got, tc.want)
@@ -27,9 +27,12 @@ func TestResolveLLMEndpointsProfiles(t *testing.T) {
 	t.Setenv("POKEPILOT_LLM_URL", "http://lan.example/v1")
 	t.Setenv("POKEPILOT_LLM_MODEL", "lan-model")
 	t.Setenv("llm_token", "lan-token")
-	t.Setenv("POKEPILOT_LLM_FALLBACK_URL", "http://gpu.example/v1")
-	t.Setenv("POKEPILOT_LLM_FALLBACK_MODEL", "gpu-model")
-	t.Setenv("POKEPILOT_LLM_FALLBACK_TOKEN", "gpu-token")
+	t.Setenv("POKEPILOT_LLM_GPU_URL", "http://7900.example/v1")
+	t.Setenv("POKEPILOT_LLM_GPU_MODEL", "7900-model")
+	t.Setenv("POKEPILOT_LLM_GPU_TOKEN", "7900-token")
+	t.Setenv("POKEPILOT_LLM_4090_URL", "http://4090.example/v1")
+	t.Setenv("POKEPILOT_LLM_4090_MODEL", "4090-model")
+	t.Setenv("POKEPILOT_LLM_4090_TOKEN", "4090-token")
 
 	primary, fb := ResolveLLMEndpoints(LLMProfileDefault)
 	if primary.BaseURL != "http://lan.example/v1" || primary.Model != "lan-model" || fb != nil {
@@ -37,16 +40,16 @@ func TestResolveLLMEndpointsProfiles(t *testing.T) {
 	}
 
 	primary, fb = ResolveLLMEndpoints(LLMProfileGPU)
-	if primary.BaseURL != "http://gpu.example/v1" || primary.Model != "gpu-model" || fb != nil {
-		t.Fatalf("gpu = primary %+v fallback %v", primary, fb)
+	if primary.BaseURL != "http://4090.example/v1" || primary.Model != "4090-model" || fb != nil {
+		t.Fatalf("gpu/4090 = primary %+v fallback %v", primary, fb)
 	}
 
 	primary, fb = ResolveLLMEndpoints(LLMProfileAuto)
-	if primary.BaseURL != "http://gpu.example/v1" || primary.Model != "gpu-model" || fb == nil {
-		t.Fatalf("auto primary = %+v fallback %v", primary, fb)
+	if primary.BaseURL != "http://7900.example/v1" || primary.Model != "7900-model" || fb == nil {
+		t.Fatalf("auto/7900 primary = %+v fallback %v", primary, fb)
 	}
 	if fb.BaseURL != "http://lan.example/v1" || fb.Model != "lan-model" || fb.Token != "lan-token" {
-		t.Fatalf("auto fallback = %+v", fb)
+		t.Fatalf("auto CPU fallback = %+v", fb)
 	}
 }
 
@@ -64,7 +67,7 @@ func TestResolveLLMEndpointsGatewayProfiles(t *testing.T) {
 		wantFallback bool
 	}{
 		{LLMProfileAuto, "pokepilot-auto", true},
-		{LLMProfileGPU, "pokepilot-7900xtx", false},
+		{LLMProfileGPU, "pokepilot-4090", false},
 		{LLMProfileDefault, "pokepilot-lan", true},
 	} {
 		primary, fb := ResolveLLMEndpoints(tc.profile)
@@ -99,7 +102,7 @@ func TestResolveLLMEndpointsGatewayRecoveryEffort(t *testing.T) {
 func TestResolveLLMEndpointsGatewayModelOverrides(t *testing.T) {
 	t.Setenv("POKEPILOT_LLM_GATEWAY_URL", "http://litellm:4000/v1")
 	t.Setenv("POKEPILOT_LLM_GATEWAY_AUTO_MODEL", "custom-auto")
-	t.Setenv("POKEPILOT_LLM_GATEWAY_GPU_MODEL", "custom-dedicated")
+	t.Setenv("POKEPILOT_LLM_GATEWAY_GPU_MODEL", "custom-4090")
 	t.Setenv("POKEPILOT_LLM_GATEWAY_LAN_MODEL", "custom-lan")
 
 	for _, tc := range []struct {
@@ -107,7 +110,7 @@ func TestResolveLLMEndpointsGatewayModelOverrides(t *testing.T) {
 		model   string
 	}{
 		{LLMProfileAuto, "custom-auto"},
-		{LLMProfileGPU, "custom-dedicated"},
+		{LLMProfileGPU, "custom-4090"},
 		{LLMProfileDefault, "custom-lan"},
 	} {
 		primary, _ := ResolveLLMEndpoints(tc.profile)
@@ -117,22 +120,39 @@ func TestResolveLLMEndpointsGatewayModelOverrides(t *testing.T) {
 	}
 }
 
-func TestResolveLLMEndpointsPrefersGPUPrefix(t *testing.T) {
+func TestResolveLLMEndpointsPrefers7900GPUPrefix(t *testing.T) {
 	t.Setenv("POKEPILOT_LLM_GATEWAY_URL", "")
 	t.Setenv("POKEPILOT_LLM_URL", "http://lan.example/v1")
 	t.Setenv("POKEPILOT_LLM_MODEL", "lan-model")
-	t.Setenv("POKEPILOT_LLM_GPU_URL", "http://explicit-gpu/v1")
-	t.Setenv("POKEPILOT_LLM_GPU_MODEL", "explicit-gpu-model")
+	t.Setenv("POKEPILOT_LLM_GPU_URL", "http://explicit-7900/v1")
+	t.Setenv("POKEPILOT_LLM_GPU_MODEL", "explicit-7900-model")
 	t.Setenv("POKEPILOT_LLM_FALLBACK_URL", "http://legacy-gpu/v1")
 	t.Setenv("POKEPILOT_LLM_FALLBACK_MODEL", "legacy-gpu-model")
 
-	primary, _ := ResolveLLMEndpoints(LLMProfileGPU)
-	if primary.BaseURL != "http://explicit-gpu/v1" || primary.Model != "explicit-gpu-model" {
-		t.Fatalf("gpu primary = %+v, want explicit GPU env", primary)
+	primary, _ := ResolveLLMEndpoints(LLMProfileAuto)
+	if primary.BaseURL != "http://explicit-7900/v1" || primary.Model != "explicit-7900-model" {
+		t.Fatalf("auto/7900 primary = %+v, want explicit GPU env", primary)
 	}
 }
 
-func TestResolveLLMEndpointsAutoWithoutGPUFallsBackToDefault(t *testing.T) {
+func TestResolveLLMEndpoints4090IsExplicit(t *testing.T) {
+	t.Setenv("POKEPILOT_LLM_GATEWAY_URL", "")
+	t.Setenv("POKEPILOT_LLM_URL", "http://lan.example/v1")
+	t.Setenv("POKEPILOT_LLM_MODEL", "lan-model")
+	t.Setenv("POKEPILOT_LLM_GPU_URL", "http://7900.example/v1")
+	t.Setenv("POKEPILOT_LLM_4090_URL", "http://4090.example/v1")
+	t.Setenv("POKEPILOT_LLM_4090_MODEL", "4090-model")
+
+	primary, fb := ResolveLLMEndpoints(LLMProfileGPU)
+	if primary.BaseURL != "http://4090.example/v1" || primary.Model != "4090-model" {
+		t.Fatalf("gpu/4090 primary = %+v", primary)
+	}
+	if fb != nil {
+		t.Fatalf("gpu/4090 fallback = %+v, want nil", fb)
+	}
+}
+
+func TestResolveLLMEndpointsAutoWithout7900FallsBackToCPU(t *testing.T) {
 	t.Setenv("POKEPILOT_LLM_GATEWAY_URL", "")
 	for _, key := range []string{
 		"POKEPILOT_LLM_GPU_URL", "POKEPILOT_LLM_GPU_MODEL",
@@ -146,27 +166,27 @@ func TestResolveLLMEndpointsAutoWithoutGPUFallsBackToDefault(t *testing.T) {
 
 	primary, fb := ResolveLLMEndpoints(LLMProfileAuto)
 	if primary.BaseURL != "http://lan.example/v1" || fb != nil {
-		t.Fatalf("auto without gpu = primary %+v fallback %v", primary, fb)
+		t.Fatalf("auto without 7900 = primary %+v fallback %v", primary, fb)
 	}
 }
 
-func TestResolveLLMEndpointsGPUWithoutGPUDoesNotUseLAN(t *testing.T) {
+func TestResolveLLMEndpoints4090WithoutEndpointDoesNotUseOtherResources(t *testing.T) {
 	t.Setenv("POKEPILOT_LLM_GATEWAY_URL", "")
 	for _, key := range []string{
-		"POKEPILOT_LLM_GPU_URL", "POKEPILOT_LLM_GPU_MODEL",
-		"POKEPILOT_LLM_FALLBACK_URL", "POKEPILOT_LLM_FALLBACK_MODEL",
+		"POKEPILOT_LLM_4090_URL", "POKEPILOT_LLM_4090_MODEL",
 	} {
 		os.Unsetenv(key)
 	}
 	t.Setenv("POKEPILOT_LLM_URL", "http://lan.example/v1")
 	t.Setenv("POKEPILOT_LLM_MODEL", "lan-model")
+	t.Setenv("POKEPILOT_LLM_GPU_URL", "http://7900.example/v1")
 	t.Setenv("llm_token", "")
 
 	primary, fb := ResolveLLMEndpoints(LLMProfileGPU)
-	if primary.BaseURL == "http://lan.example/v1" || primary.Model == "lan-model" {
-		t.Fatalf("gpu without gpu endpoint = %+v, must not silently use LAN", primary)
+	if primary.BaseURL != "" || primary.Model != "" {
+		t.Fatalf("4090 without endpoint = %+v, must not silently use 7900 or CPU", primary)
 	}
 	if fb != nil {
-		t.Fatalf("gpu fallback = %+v, want nil", fb)
+		t.Fatalf("4090 fallback = %+v, want nil", fb)
 	}
 }
