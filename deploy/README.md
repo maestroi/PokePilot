@@ -2,9 +2,10 @@
 
 One PokePilot image provides four service roles: `pokepilot` (runner), `pokewall`
 (orchestrator), `pokeui` (private operator console), and `pokeui -spectator`
-(public read-only watch surface). A separate internal LiteLLM service routes LLM
-requests to the available inference machines. The ROM is never in an image;
-runners bind-mount it at runtime.
+(public read-only watch surface). The farm also keeps a separate internal
+LiteLLM service available for routing experiments, but normal runners call the
+inference hosts directly. The ROM is never in an image; runners bind-mount it
+at runtime.
 
 ## Use the wall
 
@@ -28,20 +29,20 @@ server-side route table and sanitized `/v1/watch` contract; see
 
 ## LLM routing
 
-The farm runs LiteLLM as an internal-only gateway. PokePilot still stores the
-existing `llm_profile` values in run specs, but those values now express resource
-intent rather than physical IP addresses:
+Normal farm routing is deliberately simple and direct. PokePilot keeps the
+existing `llm_profile` wire values for queued/history compatibility, but the
+operator-facing meanings are now:
 
 | Operator choice | Wire profile | Route |
 | --- | --- | --- |
-| Auto | `auto` | 7900 XTX → 4090 → LAN |
-| Reserve 4090 | `gpu` | 7900 XTX only |
-| Reserve all GPUs | `default` | LAN only |
+| 7900 XTX (default) | `auto` | direct 7900 XTX → CPU/LAN after a transport failure or 120s request timeout |
+| RTX 4090 | `gpu` | direct 4090 only |
+| CPU only | `default` | direct LAN CPU only |
 
-The Operations tab can set the default for new runs on that Operator browser.
-The New Run form can override it per run. Already-running or already-leased runs
-keep the route they started with; cancel/requeue one if a GPU must be freed
-immediately.
+The 4090 is never borrowed automatically. The Operations tab can set the
+default for new runs on that Operator browser and the New Run form can override
+it per run. Already-running or already-leased runs keep the route they started
+with; cancel/requeue one if a GPU must be freed immediately.
 
 Default physical backends are:
 
@@ -51,22 +52,21 @@ Default physical backends are:
 LAN CPU   qwen 4B      http://192.168.50.204:8000/v1  (bearer llm_token)
 ```
 
-The known LAN model id in the repository is `qwen3.5-4b`; override
-`POKEPILOT_LITELLM_LAN_MODEL` if the server's `/v1/models` endpoint exposes a
-different qwen-4b id. The LAN llama.cpp server listens on `:8000` and
-requires the same bearer as `.env`'s `llm_token` (`POKEPILOT_LITELLM_LAN_KEY`).
-Backend URLs/models are configurable with
-`POKEPILOT_LITELLM_7900_*`, `POKEPILOT_LITELLM_4090_*`, and
-`POKEPILOT_LITELLM_LAN_*`. Model ids must use the `hosted_vllm/` prefix so
-LiteLLM forwards `chat_template_kwargs` (`enable_thinking: false`). The
-`openai/` prefix uses the OpenAI SDK and drops that field, which leaves
-Qwen 3.8 on its default `xhigh` thinking path.
+The normal direct endpoint variables are `POKEPILOT_LLM_GPU_*` for the 7900,
+`POKEPILOT_LLM_4090_*` for the 4090, and the historical `POKEPILOT_LLM_*`
+variables for CPU/LAN. The farm defaults the 7900 request timeout to `120s`;
+the existing failover router then pins the run to CPU/LAN if that direct GPU
+ask times out (or encounters another transport-level failure).
 
-Runners normally call `http://litellm:4000/v1`. The direct LAN endpoint remains
-configured as a transport fallback for Auto/LAN profiles if the gateway service
-itself is unavailable. Explicit dedicated-GPU mode has no LAN fallback by
-design. Set `POKEPILOT_LLM_GATEWAY_URL` empty to return to the historical direct
-endpoint routing path.
+LiteLLM is still deployed and its backend definitions remain in
+`deploy/litellm.yaml`, but `POKEPILOT_LLM_GATEWAY_URL` is empty by default so it
+is not in the hot path. Set it explicitly to `http://litellm:4000/v1` to
+re-enable the gateway for an experiment. The known LAN model id in the
+repository is `qwen3.5-4b`; override `POKEPILOT_LITELLM_LAN_MODEL` if the
+server's `/v1/models` endpoint exposes a different qwen-4b id. LiteLLM model ids
+use the `hosted_vllm/` prefix so it forwards `chat_template_kwargs`
+(`enable_thinking: false`); the `openai/` prefix uses the OpenAI SDK and drops
+that field, which leaves Qwen 3.8 on its default `xhigh` thinking path.
 
 ## Local single-node Swarm
 

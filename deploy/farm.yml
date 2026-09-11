@@ -110,9 +110,9 @@ services:
       replicas: 1
 
   litellm:
-    # Internal inference gateway. It is intentionally not published on a host
-    # port: Operator chooses resource intent and runners call this service over
-    # the swarm network. Physical endpoint/fallback policy stays here.
+    # Parked internal inference gateway. It stays deployed/configured so it can
+    # be re-enabled for routing experiments, but runners bypass it unless
+    # POKEPILOT_LLM_GATEWAY_URL is explicitly set.
     image: ${LITELLM_IMAGE:-ghcr.io/berriai/litellm:v1.99.1}
     command: ["--config", "/app/config.yaml", "--host", "0.0.0.0", "--port", "4000"]
     environment:
@@ -155,42 +155,58 @@ services:
       POKEPILOT_S3_ACCESS_KEY: ${POKEPILOT_S3_ACCESS_KEY:-}
       POKEPILOT_S3_SECRET_KEY: ${POKEPILOT_S3_SECRET_KEY:-}
       POKEPILOT_S3_TIMEOUT: ${POKEPILOT_S3_TIMEOUT:-60s}
-      # Direct LAN remains configured as the last-resort transport fallback if
-      # LiteLLM itself is unavailable. Default/LAN profile therefore still
-      # cannot touch a GPU even when the gateway is down.
+
+      # Direct CPU/LAN endpoint. This is selectable explicitly and is also the
+      # safety fallback for the normal 7900 XTX route after a transport failure
+      # (including the 120s primary request timeout below).
       llm_token: ${llm_token:-}
       POKEPILOT_LLM_URL: ${POKEPILOT_LLM_URL:-http://192.168.50.204:8000/v1}
       POKEPILOT_LLM_MODEL: ${POKEPILOT_LLM_MODEL:-qwen3.5-4b}
       POKEPILOT_LLM_NO_THINK: ${POKEPILOT_LLM_NO_THINK:-}
       POKEPILOT_LLM_MAX_TOKENS: ${POKEPILOT_LLM_MAX_TOKENS:-}
       POKEPILOT_LLM_TIMEOUT: ${POKEPILOT_LLM_TIMEOUT:-}
-      # Gateway model groups express Operator intent:
-      #   auto    -> 7900 XTX -> 4090 -> LAN
-      #   gpu     -> 7900 XTX only (reserve the 4090)
-      #   default -> LAN only (reserve both GPUs)
-      POKEPILOT_LLM_GATEWAY_URL: ${POKEPILOT_LLM_GATEWAY_URL:-http://litellm:4000/v1}
+
+      # LiteLLM is opt-in for experiments. Empty by default means the direct
+      # host routes below are used with no proxy/load-balancer in the hot path.
+      POKEPILOT_LLM_GATEWAY_URL: ${POKEPILOT_LLM_GATEWAY_URL:-}
       POKEPILOT_LLM_GATEWAY_TOKEN: ${POKEPILOT_LLM_GATEWAY_TOKEN:-}
       POKEPILOT_LLM_GATEWAY_TIMEOUT: ${POKEPILOT_LLM_GATEWAY_TIMEOUT:-300s}
       POKEPILOT_LLM_GATEWAY_AUTO_MODEL: ${POKEPILOT_LLM_GATEWAY_AUTO_MODEL:-pokepilot-auto}
-      POKEPILOT_LLM_GATEWAY_GPU_MODEL: ${POKEPILOT_LLM_GATEWAY_GPU_MODEL:-pokepilot-7900xtx}
+      POKEPILOT_LLM_GATEWAY_GPU_MODEL: ${POKEPILOT_LLM_GATEWAY_GPU_MODEL:-pokepilot-4090}
       POKEPILOT_LLM_GATEWAY_LAN_MODEL: ${POKEPILOT_LLM_GATEWAY_LAN_MODEL:-pokepilot-lan}
       POKEPILOT_LLM_GATEWAY_NO_THINK: ${POKEPILOT_LLM_GATEWAY_NO_THINK:-1}
       POKEPILOT_LLM_GATEWAY_RECOVERY_REASONING_EFFORT: ${POKEPILOT_LLM_GATEWAY_RECOVERY_REASONING_EFFORT:-off}
-      # Direct endpoint variables remain for backwards compatibility and as an
-      # escape hatch when POKEPILOT_LLM_GATEWAY_URL is explicitly blank.
+
+      # Stable run-spec values keep backwards compatibility while the physical
+      # routes are now hardcoded/direct:
+      #   auto    -> 7900 XTX -> CPU/LAN on transport failure or 120s timeout
+      #   gpu     -> RTX 4090 only (manual selection)
+      #   default -> CPU/LAN only (manual selection)
+      # The 7900 keeps the historical POKEPILOT_LLM_GPU_* prefix.
+      POKEPILOT_LLM_GPU_URL: ${POKEPILOT_LLM_GPU_URL:-http://192.168.50.130:8002/v1}
+      POKEPILOT_LLM_GPU_MODEL: ${POKEPILOT_LLM_GPU_MODEL:-qwen3.8-27b}
+      POKEPILOT_LLM_GPU_TOKEN: ${POKEPILOT_LLM_GPU_TOKEN:-}
+      POKEPILOT_LLM_GPU_NO_THINK: ${POKEPILOT_LLM_GPU_NO_THINK:-1}
+      POKEPILOT_LLM_GPU_MAX_TOKENS: ${POKEPILOT_LLM_GPU_MAX_TOKENS:-1024}
+      POKEPILOT_LLM_GPU_TIMEOUT: ${POKEPILOT_LLM_GPU_TIMEOUT:-120s}
+      POKEPILOT_LLM_GPU_RECOVERY_REASONING_EFFORT: ${POKEPILOT_LLM_GPU_RECOVERY_REASONING_EFFORT:-off}
+
+      # Explicit 4090 route; never chosen by auto/direct fallback policy.
+      POKEPILOT_LLM_4090_URL: ${POKEPILOT_LLM_4090_URL:-http://192.168.50.81:8002/v1}
+      POKEPILOT_LLM_4090_MODEL: ${POKEPILOT_LLM_4090_MODEL:-qwen3.8-27b}
+      POKEPILOT_LLM_4090_TOKEN: ${POKEPILOT_LLM_4090_TOKEN:-}
+      POKEPILOT_LLM_4090_NO_THINK: ${POKEPILOT_LLM_4090_NO_THINK:-1}
+      POKEPILOT_LLM_4090_MAX_TOKENS: ${POKEPILOT_LLM_4090_MAX_TOKENS:-1024}
+      POKEPILOT_LLM_4090_TIMEOUT: ${POKEPILOT_LLM_4090_TIMEOUT:-300s}
+      POKEPILOT_LLM_4090_RECOVERY_REASONING_EFFORT: ${POKEPILOT_LLM_4090_RECOVERY_REASONING_EFFORT:-off}
+
+      # Legacy direct 7900 slot retained for old local deployments.
       POKEPILOT_LLM_FALLBACK_URL: ${POKEPILOT_LLM_FALLBACK_URL:-}
       POKEPILOT_LLM_FALLBACK_MODEL: ${POKEPILOT_LLM_FALLBACK_MODEL:-}
       POKEPILOT_LLM_FALLBACK_TOKEN: ${POKEPILOT_LLM_FALLBACK_TOKEN:-}
       POKEPILOT_LLM_FALLBACK_NO_THINK: ${POKEPILOT_LLM_FALLBACK_NO_THINK:-}
       POKEPILOT_LLM_FALLBACK_MAX_TOKENS: ${POKEPILOT_LLM_FALLBACK_MAX_TOKENS:-}
       POKEPILOT_LLM_FALLBACK_TIMEOUT: ${POKEPILOT_LLM_FALLBACK_TIMEOUT:-}
-      POKEPILOT_LLM_GPU_URL: ${POKEPILOT_LLM_GPU_URL:-http://192.168.50.130:8002/v1}
-      POKEPILOT_LLM_GPU_MODEL: ${POKEPILOT_LLM_GPU_MODEL:-qwen3.8-27b}
-      POKEPILOT_LLM_GPU_TOKEN: ${POKEPILOT_LLM_GPU_TOKEN:-}
-      POKEPILOT_LLM_GPU_NO_THINK: ${POKEPILOT_LLM_GPU_NO_THINK:-1}
-      POKEPILOT_LLM_GPU_MAX_TOKENS: ${POKEPILOT_LLM_GPU_MAX_TOKENS:-1024}
-      POKEPILOT_LLM_GPU_TIMEOUT: ${POKEPILOT_LLM_GPU_TIMEOUT:-300s}
-      POKEPILOT_LLM_GPU_RECOVERY_REASONING_EFFORT: ${POKEPILOT_LLM_GPU_RECOVERY_REASONING_EFFORT:-off}
     volumes:
       - ${POKEMON_RED_ROM}:/rom/pokemon_red.gb:ro
     deploy:
