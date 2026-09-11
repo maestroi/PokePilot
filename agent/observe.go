@@ -295,6 +295,12 @@ func Observe(m *emu.Emu, romData []byte) Observation {
 
 	objects := MapObjects(romData, obs.Map)
 	hidden := state.HiddenObjectIDs(&mem)
+	// Object filtering used to parse and rebuild this immutable map once per
+	// item/person, and personReachable could build it a second time. One
+	// observation sees one settled map, so construct the collision grid once
+	// and reuse it for every reachability question. A failed build remains
+	// fail-open exactly as before.
+	objectGrid := mapObjectReachabilityGrid(romData, obs.Map)
 	obs.MapObjects = make([]MapObject, 0, len(objects))
 	for i, object := range objects {
 		if hidden[uint8(i+1)] {
@@ -306,10 +312,10 @@ func Observe(m *emu.Emu, romData []byte) Observation {
 				object.Defeated = status.Defeated
 			}
 		}
-		if object.Kind == "item" && !reachableOnFoot(romData, obs.Map, obs.X, obs.Y, object.X, object.Y) {
+		if object.Kind == "item" && objectGrid != nil && !reachableOnGrid(objectGrid, obs.X, obs.Y, object.X, object.Y) {
 			continue
 		}
-		if object.Kind == "person" && !personReachable(romData, obs.Map, obs.X, obs.Y, object.X, object.Y) {
+		if object.Kind == "person" && objectGrid != nil && !personReachableOnGrid(objectGrid, obs.X, obs.Y, object.X, object.Y) {
 			continue
 		}
 		obs.MapObjects = append(obs.MapObjects, object)
@@ -321,32 +327,32 @@ func unroutablePlaces(m *emu.Emu, romData []byte) []string {
 	return routeAvailabilityFor(m, romData).Unroutable
 }
 
-func reachableOnFoot(romData []byte, mapID, px, py, x, y uint8) bool {
-	if (px == x && (py == y+1 || py+1 == y)) || (py == y && (px == x+1 || px+1 == x)) {
-		return true
-	}
+func mapObjectReachabilityGrid(romData []byte, mapID uint8) *world.Grid {
 	h, err := rom.ParseMap(romData, mapID)
 	if err != nil {
-		return true
+		return nil
 	}
 	g, err := world.Build(romData, h)
 	if err != nil {
+		return nil
+	}
+	return g
+}
+
+func adjacent(px, py, x, y uint8) bool {
+	return (px == x && (py == y+1 || py+1 == y)) || (py == y && (px == x+1 || px+1 == x))
+}
+
+func reachableOnGrid(g *world.Grid, px, py, x, y uint8) bool {
+	if adjacent(px, py, x, y) {
 		return true
 	}
-	_, _, err = world.FindPathAdjacent(g, int(px), int(py), int(x), int(y), nil)
+	_, _, err := world.FindPathAdjacent(g, int(px), int(py), int(x), int(y), nil)
 	return err == nil
 }
 
-func personReachable(romData []byte, mapID, px, py, x, y uint8) bool {
-	if reachableOnFoot(romData, mapID, px, py, x, y) {
-		return true
-	}
-	h, err := rom.ParseMap(romData, mapID)
-	if err != nil {
-		return true
-	}
-	g, err := world.Build(romData, h)
-	if err != nil {
+func personReachableOnGrid(g *world.Grid, px, py, x, y uint8) bool {
+	if reachableOnGrid(g, px, py, x, y) {
 		return true
 	}
 	for _, s := range []world.Step{world.StepUp, world.StepDown, world.StepLeft, world.StepRight} {
@@ -363,6 +369,25 @@ func personReachable(romData []byte, mapID, px, py, x, y uint8) bool {
 		}
 	}
 	return false
+}
+
+func reachableOnFoot(romData []byte, mapID, px, py, x, y uint8) bool {
+	if adjacent(px, py, x, y) {
+		return true
+	}
+	g := mapObjectReachabilityGrid(romData, mapID)
+	if g == nil {
+		return true
+	}
+	return reachableOnGrid(g, px, py, x, y)
+}
+
+func personReachable(romData []byte, mapID, px, py, x, y uint8) bool {
+	g := mapObjectReachabilityGrid(romData, mapID)
+	if g == nil {
+		return true
+	}
+	return personReachableOnGrid(g, px, py, x, y)
 }
 
 func observedMoveDealsDamage(mv rom.Move) bool {
