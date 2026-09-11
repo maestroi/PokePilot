@@ -19,6 +19,10 @@ func TestDecodeStoryFacts(t *testing.T) {
 		eventBeatRoute22Rival2ndBattle,
 		eventBeatSilphCoGiovanni,
 		eventAutowalkedIntoLoreleisRoom,
+		eventBeatLorelei,
+		eventBeatBruno,
+		eventBeatAgatha,
+		eventBeatLance,
 		EventBeatChampionRival,
 	} {
 		setTestEvent(&mem, event)
@@ -40,8 +44,11 @@ func TestDecodeStoryFacts(t *testing.T) {
 	if got.Route23BadgeChecksPassed != len(route23BadgeCheckEvents) || !got.Route23BadgeChecksComplete {
 		t.Fatalf("Route 23 facts = %+v", got)
 	}
-	if !got.LeagueChallengeStarted || !got.LeagueChampionDefeated {
+	if !got.LeagueChallengeStarted || !got.LeagueLoreleiDefeated || !got.LeagueBrunoDefeated || !got.LeagueAgathaDefeated || !got.LeagueLanceDefeated || !got.LeagueChampionDefeated {
 		t.Fatalf("League facts = %+v", got)
+	}
+	if got.MainStoryComplete {
+		t.Fatalf("Champion event alone completed the main story before Hall of Fame: %+v", got)
 	}
 }
 
@@ -57,6 +64,22 @@ func TestDecodeStoryFactsRoute23PartialAndChampionImpliesLeagueStarted(t *testin
 	}
 	if !got.LeagueChallengeStarted || !got.LeagueChampionDefeated {
 		t.Fatalf("Champion should imply League started: %+v", got)
+	}
+	if got.MainStoryComplete {
+		t.Fatalf("Champion event should not imply Hall of Fame completion: %+v", got)
+	}
+}
+
+func TestDecodeStoryFactsHallOfFameBitSurvivesIndigoEventReset(t *testing.T) {
+	var mem Mem
+	mem[elite4FlagsAddr] |= elite4CompletedMask
+
+	got := DecodeStoryFacts(&mem, InventoryState{})
+	if !got.MainStoryComplete {
+		t.Fatalf("durable Elite Four bit did not project main-story completion: %+v", got)
+	}
+	if !got.LeagueChallengeStarted || !got.LeagueLoreleiDefeated || !got.LeagueBrunoDefeated || !got.LeagueAgathaDefeated || !got.LeagueLanceDefeated || !got.LeagueChampionDefeated {
+		t.Fatalf("Hall of Fame completion did not preserve monotonic League semantics after event reset: %+v", got)
 	}
 }
 
@@ -77,7 +100,13 @@ func TestStoryEventIndicesMatchDecomp(t *testing.T) {
 		{"EVENT_PASSED_VOLCANOBADGE_CHECK", eventPassedVolcanoBadgeCheck},
 		{"EVENT_PASSED_EARTHBADGE_CHECK", eventPassedEarthBadgeCheck},
 		{"EVENT_BEAT_SILPH_CO_GIOVANNI", eventBeatSilphCoGiovanni},
+		{"EVENT_BEAT_LORELEIS_ROOM_TRAINER_0", eventBeatLorelei},
 		{"EVENT_AUTOWALKED_INTO_LORELEIS_ROOM", eventAutowalkedIntoLoreleisRoom},
+		{"EVENT_BEAT_BRUNOS_ROOM_TRAINER_0", eventBeatBruno},
+		{"EVENT_BEAT_AGATHAS_ROOM_TRAINER_0", eventBeatAgatha},
+		{"EVENT_BEAT_LANCES_ROOM_TRAINER_0", eventBeatLanceTrainer},
+		{"EVENT_BEAT_LANCE", eventBeatLance},
+		{"EVENT_BEAT_CHAMPION_RIVAL", EventBeatChampionRival},
 	}
 	for _, pair := range pairs {
 		want, ok := events[pair.label]
