@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -29,6 +30,38 @@ func TestMainWiresFarmMode(t *testing.T) {
 	}
 	if !strings.Contains(text, "runFarm(") {
 		t.Fatal("main() never calls runFarm")
+	}
+}
+
+func TestEnableFarmRAMForensicsSetsAndRestores(t *testing.T) {
+	orig, had := os.LookupEnv(agent.RAMForensicsDirEnv)
+	_ = os.Unsetenv(agent.RAMForensicsDirEnv)
+	t.Cleanup(func() {
+		if had {
+			_ = os.Setenv(agent.RAMForensicsDirEnv, orig)
+			return
+		}
+		_ = os.Unsetenv(agent.RAMForensicsDirEnv)
+	})
+
+	dir := t.TempDir()
+	restore := enableFarmRAMForensics(dir)
+	want := filepath.Join(dir, "ram")
+	if got := os.Getenv(agent.RAMForensicsDirEnv); got != want {
+		t.Fatalf("POKEPILOT_RAM_DIR = %q, want %q", got, want)
+	}
+	restore()
+	if _, still := os.LookupEnv(agent.RAMForensicsDirEnv); still {
+		t.Fatal("POKEPILOT_RAM_DIR still set after restore")
+	}
+}
+
+func TestEnableFarmRAMForensicsRespectsOperator(t *testing.T) {
+	t.Setenv(agent.RAMForensicsDirEnv, "/tmp/operator-ram")
+	restore := enableFarmRAMForensics(t.TempDir())
+	defer restore()
+	if got := os.Getenv(agent.RAMForensicsDirEnv); got != "/tmp/operator-ram" {
+		t.Fatalf("operator override lost: %q", got)
 	}
 }
 

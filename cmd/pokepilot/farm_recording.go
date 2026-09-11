@@ -157,6 +157,7 @@ func finishRunWithRecording(m *emu.Emu, client *farm.Client, spec farm.Spec, rea
 	} else {
 		report.Artifacts = checkpointArtifacts
 	}
+	report.Artifacts = appendRAMForensics(report.Artifacts, checkpointDir, report.RunID)
 
 	failures, terminal := drainObjectiveFailureTelemetry(reason, client.Version, checkpointDir)
 	if terminal != nil {

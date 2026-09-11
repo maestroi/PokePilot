@@ -123,6 +123,63 @@ func placeHops(hops map[uint8]int, name string) int {
 	return h
 }
 
+func hasUnvisitedNeighbor(id uint8, known *Knowledge) bool {
+	for _, n := range known.Adjacency[id] {
+		if !known.Visited[n] {
+			return true
+		}
+	}
+	return false
+}
+
+// selectJourneyPlaces keeps the travel menu bounded without dropping the
+// visited frontier: maps already stood on that still border an unvisited
+// neighbor. Unvisited discovery fills next, then nearby hinterland. The old
+// unvisited-then-nearest trim hid Route 3 behind Pallet/Viridian once eight
+// closer names existed (run-1w32fl3ssna3h2y7f2butfdwbr).
+func selectJourneyPlaces(placeNames []string, known *Knowledge, hops map[uint8]int) []string {
+	if known == nil || len(known.Adjacency) == 0 || len(placeNames) <= journeyPlaceLimit {
+		return placeNames
+	}
+	var frontier, unvisited, hinterland []string
+	for _, name := range placeNames {
+		d, ok := skill.Place(name)
+		switch {
+		case !ok:
+			hinterland = append(hinterland, name)
+		case !known.Visited[d.Map]:
+			unvisited = append(unvisited, name)
+		case hasUnvisitedNeighbor(d.Map, known):
+			frontier = append(frontier, name)
+		default:
+			hinterland = append(hinterland, name)
+		}
+	}
+	byHops := func(names []string) {
+		sort.SliceStable(names, func(i, j int) bool {
+			return placeHops(hops, names[i]) < placeHops(hops, names[j])
+		})
+	}
+	byHops(frontier)
+	byHops(unvisited)
+	byHops(hinterland)
+
+	out := make([]string, 0, journeyPlaceLimit)
+	appendCapped := func(names []string) {
+		for _, name := range names {
+			if len(out) >= journeyPlaceLimit {
+				return
+			}
+			out = append(out, name)
+		}
+	}
+	appendCapped(frontier)
+	appendCapped(unvisited)
+	appendCapped(hinterland)
+	sort.Strings(out)
+	return out
+}
+
 func (k *Knowledge) SawDialogue(lines []string, place string, x, y uint8) {
 	for _, line := range lines {
 		low := strings.ToLower(line)
@@ -336,16 +393,7 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 		}
 	}
 	if len(known.Adjacency) > 0 && len(placeNames) > journeyPlaceLimit {
-		sort.SliceStable(placeNames, func(i, j int) bool {
-			mi, _ := skill.Place(placeNames[i])
-			mj, _ := skill.Place(placeNames[j])
-			if vi, vj := known.Visited[mi.Map], known.Visited[mj.Map]; vi != vj {
-				return !vi
-			}
-			return placeHops(hops, placeNames[i]) < placeHops(hops, placeNames[j])
-		})
-		placeNames = placeNames[:journeyPlaceLimit]
-		sort.Strings(placeNames)
+		placeNames = selectJourneyPlaces(placeNames, known, hops)
 	}
 	for _, name := range placeNames {
 		d, _ := skill.Place(name)

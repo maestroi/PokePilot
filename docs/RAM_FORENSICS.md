@@ -11,14 +11,15 @@ POKEPILOT_RAM_DIR=./artifacts/ram \
   go run ./cmd/pokepilot -planner llm -fps 0
 ```
 
-Each gameplay failure writes a pair such as:
+Each gameplay failure writes a trio such as:
 
 ```text
 failure-frame-0000048123-go-to-route-3.ram
+failure-frame-0000048123-go-to-route-3.state
 failure-frame-0000048123-go-to-route-3.json
 ```
 
-The `.ram` file is exactly 65,536 bytes: one byte for every address from `0x0000` through `0xFFFF`. The JSON sidecar records the frame, objective, original error, map/tile, controllability, battle state, and decoded menu cursor fields.
+The `.ram` file is exactly 65,536 bytes: one byte for every address from `0x0000` through `0xFFFF`. The `.state` file is a checked save state (`Emu.SaveStateChecked`) of the same instant, replayable with `TestDebugProbe` (`skill/debug_probe_test.go`, see `.claude/skills/gomeboy-forensics`) to step forward instruction-by-instruction. The JSON sidecar records the frame, objective, original error, map/tile, controllability, battle state, and decoded menu cursor fields.
 
 Capture happens inside `agent.Execute` on the error return, before `agent.Run` calls its between-round dialogue recovery. That keeps transient menu and map-transition state from being erased before it can be inspected. Objective validation errors are not captured because no gameplay happened.
 
@@ -38,6 +39,7 @@ replan signal — the moment no observable progress has been made for
 
 ```text
 stall-frame-0000051004-explore.ram
+stall-frame-0000051004-explore.state
 stall-frame-0000051004-explore.json
 ```
 
@@ -46,17 +48,21 @@ intent, and its `error` is the replan reason. One capture per stall episode,
 not per stalled round; observable progress re-arms it.
 
 `failure-` and `stall-` files are separate eviction rings, each holding
-`POKEPILOT_RAM_KEEP` pairs, so a burst of objective failures cannot evict the
+`POKEPILOT_RAM_KEEP` bundles, so a burst of objective failures cannot evict the
 rarer stall evidence.
 
 Forensic failures are best-effort. An inability to write evidence is logged but never replaces the gameplay error that the planner receives.
 
-By default PokePilot keeps the latest 32 RAM/JSON pairs in the directory. Override that bounded ring with `POKEPILOT_RAM_KEEP`:
+By default PokePilot keeps the latest 32 RAM/JSON/state bundles in the directory. Override that bounded ring with `POKEPILOT_RAM_KEEP`:
 
 ```sh
 POKEPILOT_RAM_DIR=./artifacts/ram POKEPILOT_RAM_KEEP=8 \
   go run ./cmd/pokepilot -planner llm -fps 0
 ```
+
+## Farm runs upload bundles automatically
+
+A farm worker (`cmd/pokepilot -planner llm` under a lease) points `POKEPILOT_RAM_DIR` at `<checkpoint-dir>/ram` itself, unless the operator already set the env var, so failure and stall bundles ride along with the rest of the run's checkpoint artifacts without needing anyone to go find them on the box by hand. Each complete bundle is uploaded as its own occurrence artifact on the same 200ms poll that ships objective checkpoints (`cmd/pokepilot/farm_artifacts.go`), and again as part of the run's Finish report — a bundle still being written (a sibling file not yet flushed) is skipped, never rejected. The `ram/` subdirectory lives inside the checkpoint dir, so it is cleaned up the same way (removed for the normal ephemeral per-run dir, left in place if `-checkpoint-dir` names a fixed operator directory).
 
 ## Compare captures
 

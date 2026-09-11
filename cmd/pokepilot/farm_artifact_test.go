@@ -190,6 +190,9 @@ func TestFarmLLMBudgetReceivesCheckpointDir(t *testing.T) {
 	if !strings.Contains(text, "CheckpointDir: checkpointDir") {
 		t.Fatal("runFarmLLM does not pass CheckpointDir into agent.Budget")
 	}
+	if !strings.Contains(text, "enableFarmRAMForensics(checkpointDir)") {
+		t.Fatal("runOne does not point POKEPILOT_RAM_DIR at the checkpoint ram dir")
+	}
 	resumeSrc, err := os.ReadFile("farm_resume.go")
 	if err != nil {
 		t.Fatal(err)
@@ -361,4 +364,85 @@ func namesOf(arts []farm.Artifact) []string {
 		out[i] = a.Name
 	}
 	return out
+}
+
+func writeRAMBundle(t *testing.T, dir, base string, ram, state, meta []byte) {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, data := range map[string][]byte{
+		base + ".ram":   ram,
+		base + ".state": state,
+		base + ".json":  meta,
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestCollectRAMForensicsSkipsIncompleteBundles(t *testing.T) {
+	dir := t.TempDir()
+	writeRAMBundle(t, dir, "failure-frame-0000000001-goto", []byte("ram-a"), []byte("state-a"), []byte(`{"k":1}`))
+	if err := os.WriteFile(filepath.Join(dir, "failure-frame-0000000002-goto.ram"), []byte("partial"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := collectRAMForensicsArtifacts(dir)
+	if err != nil {
+		t.Fatalf("collect: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("artifacts = %d, want 3 from the complete bundle: %v", len(got), namesOf(got))
+	}
+	want := []string{
+		"failure-frame-0000000001-goto.json",
+		"failure-frame-0000000001-goto.ram",
+		"failure-frame-0000000001-goto.state",
+	}
+	for i, name := range want {
+		if got[i].Name != name {
+			t.Fatalf("artifact %d name = %q, want %q (got %v)", i, got[i].Name, name, namesOf(got))
+		}
+	}
+}
+
+func TestFinishIncludesRAMForensicsBundles(t *testing.T) {
+	dir, err := os.MkdirTemp("", "pokefarm-checkpoints-test-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writePair(t, dir, "round-001-frame-0000000100-goto.state", []byte("s"), []byte("{}"))
+	writeRAMBundle(t, ramForensicsDir(dir), "stall-frame-0000000500-explore", []byte("ram"), []byte("state"), []byte(`{"kind":"planner_stall"}`))
+
+	var report farm.FinishReport
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&report); err != nil {
+			t.Errorf("decode finish: %v", err)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	client := farm.NewClient(srv.URL)
+	client.Version = "abc123"
+	finishLeasedRun(nil, client, farm.Spec{RunID: "r1", Attempt: 1}, "error", "stuck", 7, dir)
+	names := namesOf(report.Artifacts)
+	for _, want := range []string{
+		"stall-frame-0000000500-explore.json",
+		"stall-frame-0000000500-explore.ram",
+		"stall-frame-0000000500-explore.state",
+	} {
+		found := false
+		for _, name := range names {
+			if name == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("finish artifacts missing %s: %v", want, names)
+		}
+	}
 }
