@@ -195,6 +195,13 @@ func BuildGraph(romData []byte) (*Graph, error) {
 	return g, nil
 }
 
+// Components is the exported form of components, for callers outside this
+// package that need to know which tiles of a map are actually reachable from
+// one another (e.g. a same-map destination picker) rather than just walkable.
+func Components(grid *Grid) [][]int {
+	return components(grid)
+}
+
 // components labels each walkable tile of grid with a 1-based component id
 // (0 = not walkable) via 4-directional flood fill. A map with disconnected
 // walkable regions (a ledge, a wall, a gate) gets one id per region.

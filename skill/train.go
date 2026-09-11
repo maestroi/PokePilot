@@ -151,6 +151,16 @@ func Train(m *emu.Emu, romData []byte, targetLevel int, policy MovePolicy, maxBa
 	if len(grass) == 0 {
 		return res, fmt.Errorf("skill: Train: no walkable tall grass on map %#04x", now.Map)
 	}
+	// Route 12's Snorlax landing (measured on run-38idgcmuefzc8318nkez371h49)
+	// splits its grass into components a raw nearest-tile search can't tell
+	// apart: grindPair picked the closest grass by air distance, which sat in
+	// a component the player's standing tile has no walkable route into, and
+	// GoTo failed several rounds later with "world: no route". Restrict the
+	// candidates to the player's own component first, using the same
+	// Passable-based labeling the map graph router already trusts.
+	if grass = grassInPlayerComponent(grass, grid, int(now.X), int(now.Y)); len(grass) == 0 {
+		return res, fmt.Errorf("skill: Train: no tall grass reachable from (%d,%d) on map %#04x without leaving it", now.X, now.Y, now.Map)
+	}
 	a, b, ok := grindPair(grass, grid, int(now.X), int(now.Y), spriteBlockers(m))
 	if !ok {
 		return res, fmt.Errorf("skill: Train: map %#04x has no two walkable grass cells close enough to grind between", now.Map)
@@ -564,6 +574,29 @@ func grassCells(romData []byte, mapID uint8) ([]cell, *world.Grid, error) {
 // while (15,14), (14,15) and (16,14) sat free. A blocked snapshot is only an
 // observation, not a guarantee — the sprite can step back on before GoTo
 // walks — but it costs nothing to not pick the one tile known to be taken.
+// grassInPlayerComponent restricts grass to the tiles actually reachable from
+// (px,py) without leaving the map: Walkable alone (what grassCells already
+// filtered on) says a tile is standable, not that a walk from here reaches
+// it. Component labeling accounts for the tile-pair collisions that split a
+// map's grass across walls a raw distance search can't see.
+func grassInPlayerComponent(grass []cell, grid *world.Grid, px, py int) []cell {
+	if !grid.InBounds(px, py) {
+		return grass
+	}
+	comps := world.Components(grid)
+	want := comps[py][px]
+	if want == 0 {
+		return grass
+	}
+	out := make([]cell, 0, len(grass))
+	for _, c := range grass {
+		if comps[c.y][c.x] == want {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
 func grindPair(grass []cell, grid *world.Grid, px, py int, blocked map[[2]int]bool) (cell, cell, bool) {
 	if len(blocked) > 0 {
 		free := make([]cell, 0, len(grass))
