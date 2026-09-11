@@ -33,7 +33,7 @@ func TestCatalogContainsQualificationRoadmap(t *testing.T) {
 		"cinnabar-blaine":            35,
 		"viridian-giovanni":          36,
 		"victory-road-indigo":        37,
-		"elite-four-champion":        38,
+		"elite-four-champion":        0,
 		"fresh-hall-of-fame":         39,
 	}
 	got := map[string]Case{}
@@ -58,9 +58,9 @@ func TestSelectProfiles(t *testing.T) {
 		want    []string
 	}{
 		{profile: "skills", want: []string{"rom-short"}},
-		{profile: "milestones", want: []string{"opening-brock", "mt-moon-cerulean", "misty", "rocket-hideout", "pokemon-tower"}},
+		{profile: "milestones", want: []string{"opening-brock", "mt-moon-cerulean", "misty", "rocket-hideout", "pokemon-tower", "elite-four-champion"}},
 		{profile: "full", want: []string{"fresh-hall-of-fame"}},
-		{profile: "", want: []string{"opening-brock", "mt-moon-cerulean", "misty", "rocket-hideout", "pokemon-tower"}},
+		{profile: "", want: []string{"opening-brock", "mt-moon-cerulean", "misty", "rocket-hideout", "pokemon-tower", "elite-four-champion"}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.profile, func(t *testing.T) {
@@ -90,10 +90,13 @@ func TestSelectAllExcludesFutureUnavailableMilestones(t *testing.T) {
 			t.Fatalf("Select returned unavailable case %+v", c)
 		}
 	}
-	for _, forbidden := range []string{"fuchsia-koga-surf-strength", "silph-sabrina", "cinnabar-blaine", "viridian-giovanni", "victory-road-indigo", "elite-four-champion"} {
+	for _, forbidden := range []string{"fuchsia-koga-surf-strength", "silph-sabrina", "cinnabar-blaine", "viridian-giovanni", "victory-road-indigo"} {
 		if hasCase(cases, forbidden) {
 			t.Errorf("Select(all) included future case %q", forbidden)
 		}
+	}
+	if !hasCase(cases, "elite-four-champion") {
+		t.Error("Select(all) omitted runnable elite-four-champion milestone")
 	}
 }
 
