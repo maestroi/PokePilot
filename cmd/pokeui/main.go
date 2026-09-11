@@ -87,6 +87,13 @@ func handler(wallBase string) http.Handler {
 func operatorIndexPage() []byte {
 	page := bytes.Replace(indexHTML, goalInputHTML, goalPresetHTML, 1)
 	page = bytes.Replace(page, []byte(`<script src="/ui.js"></script>`), []byte("<script src=\"/dashboard_paging.js\"></script>\n<script src=\"/ui.js\"></script>"), 1)
+	// Raw string literals do not need quote escapes. Keep a compatibility
+	// replacement for any source page where the legacy escaped needle above did
+	// not match, and guarantee the paging shim runs before ui.js.
+	if !bytes.Contains(page, []byte(`<script src="/dashboard_paging.js"></script>`)) {
+		page = bytes.Replace(page, []byte(`<script src="/ui.js"></script>`), []byte(`<script src="/dashboard_paging.js"></script>
+<script src="/ui.js"></script>`), 1)
+	}
 	page = bytes.Replace(page, []byte("</head>"), []byte("<link rel=\"stylesheet\" href=\"/llm_metrics.css\">\n</head>"), 1)
 	extra := []byte("<script src=\"/frame_policy.js\"></script>\n<script src=\"/stats.js\"></script>\n<script src=\"/llm_metrics.js\"></script>\n<script src=\"/inspector.js\"></script>\n</body>")
 	return bytes.Replace(page, []byte("</body>"), extra, 1)
