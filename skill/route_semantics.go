@@ -16,14 +16,20 @@ const (
 	capCanExitMtMoon              gameruntime.CapabilityID = "can_exit_mt_moon"
 	capCanPassCeruleanRobbedHouse gameruntime.CapabilityID = "can_pass_cerulean_robbed_house"
 	capCanBoardSSAnne             gameruntime.CapabilityID = "can_board_ss_anne"
+	capCanLeaveViridianNorth      gameruntime.CapabilityID = "can_leave_viridian_north"
+	capCanLeavePewterEast         gameruntime.CapabilityID = "can_leave_pewter_east"
 	capCanEnterSaffron            gameruntime.CapabilityID = "can_enter_saffron"
 )
 
 const (
 	semanticPalletTownMap    uint8 = 0x00
+	semanticViridianCityMap  uint8 = 0x01
+	semanticPewterCityMap    uint8 = 0x02
 	semanticCeruleanCityMap  uint8 = 0x03
 	semanticVermilionCityMap uint8 = 0x05
 	semanticCinnabarMap      uint8 = 0x08
+	semanticRoute2Map        uint8 = 0x0D
+	semanticRoute3Map        uint8 = 0x0E
 	semanticRoute9Map        uint8 = 0x14
 	semanticRoute21Map       uint8 = 0x20
 	semanticSaffronCityMap   uint8 = 0x0A
@@ -89,6 +95,12 @@ func redRouteCapabilities(romData []byte, mem *state.Mem) gameruntime.Capability
 
 	inv := state.DecodeInventory(mem)
 	facts := state.DecodeStoryFacts(mem, inv)
+	if facts.PokedexAcquired {
+		caps[capCanLeaveViridianNorth] = true
+	}
+	if state.DecodeProgress(mem).Has(state.BadgeBoulder) {
+		caps[capCanLeavePewterEast] = true
+	}
 	if facts.MtMoonFossilAcquired {
 		caps[capCanExitMtMoon] = true
 	}
@@ -132,6 +144,23 @@ func redRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, bool) {
 		return (edge.From == a && edge.To == b) || (edge.From == b && edge.To == a)
 	}
 	switch {
+	case edge.From == semanticViridianCityMap && edge.To == semanticRoute2Map && edge.Kind == world.EdgeConnection:
+		// Viridian's old man physically blocks the north road until Oak's
+		// parcel/Pokedex story has completed. This must be an EDGE gate, not
+		// only a "Route 2" destination filter: once a farther place becomes
+		// known, routing to Pewter/Forest would otherwise plan straight through
+		// the still-closed road.
+		t := semanticTransition("red:viridian_north_pokedex", edge, capCanLeaveViridianNorth)
+		t.Gate = true
+		return t, true
+	case edge.From == semanticPewterCityMap && edge.To == semanticRoute3Map && edge.Kind == world.EdgeConnection:
+		// The Pewter east-exit NPC blocks Route 3 until Brock is beaten. Like
+		// Viridian's old man, the lock belongs to the edge so every downstream
+		// destination inherits it; filtering only the named Route 3 waypoint
+		// is not enough once Mt. Moon/Cerulean are known.
+		t := semanticTransition("red:pewter_east_boulder", edge, capCanLeavePewterEast)
+		t.Gate = true
+		return t, true
 	case edge.From == mtMoonB2FMap && edge.Kind == world.EdgeWarp &&
 		edge.WarpX == mtMoonB2FExitWarpX && edge.WarpY == mtMoonB2FExitWarpY:
 		// A gate, not an action: nothing is performed to open the fossil
