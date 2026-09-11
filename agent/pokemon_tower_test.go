@@ -1,6 +1,10 @@
 package agent
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/maestroi/pokepilot/red/state"
+)
 
 func TestPokemonTowerUsesSemanticProgressionObjective(t *testing.T) {
 	o := Objective{Kind: KindProgress, Progress: redProgressPokeFluteAcquired}
@@ -39,6 +43,7 @@ func TestOfferPokemonTowerProgressionRequiresScopeAndStopsAfterFlute(t *testing.
 			Map:        mapID,
 			PartyCount: 1,
 			Party:      []PartyMon{{Level: 30, HP: 80, MaxHP: 80}},
+			Badges:     []string{state.BadgeThunder.String()},
 			Story:      ProgressState{{ID: redProgressSilphScopeAcquired, Complete: true}},
 		}
 		if got := countProgress(OfferWithProgression(obs, known, planner), redProgressPokeFluteAcquired); got != 1 {
@@ -63,6 +68,7 @@ func TestOfferPokemonTowerProgressionRequiresScopeAndStopsAfterFlute(t *testing.
 		Map:        0x00,
 		PartyCount: 1,
 		Party:      []PartyMon{{Level: 30, HP: 80, MaxHP: 80}},
+		Badges:     []string{state.BadgeThunder.String()},
 		Story:      ProgressState{{ID: redProgressSilphScopeAcquired, Complete: true}},
 	}
 	if got := countProgress(OfferWithProgression(outside, known, planner), redProgressPokeFluteAcquired); got != 0 {
