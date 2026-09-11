@@ -6,9 +6,11 @@ import (
 )
 
 // LLMProfile selects which inference resource family a leased run may use.
-// The profile expresses operator intent; when POKEPILOT_LLM_GATEWAY_URL is set
-// the gateway owns the physical endpoints and failover order. Without a
-// gateway, the historical direct LAN/GPU environment remains supported.
+// The wire values are intentionally kept stable because they are persisted in
+// run specs: "auto" is the normal 7900 XTX path, "gpu" is the explicitly
+// selected 4090, and "default" is CPU/LAN only. LiteLLM remains supported when
+// POKEPILOT_LLM_GATEWAY_URL is explicitly configured, but is no longer needed
+// for the normal farm path.
 type LLMProfile string
 
 const (
@@ -19,20 +21,24 @@ const (
 
 const (
 	gatewayModelAuto = "pokepilot-auto"
-	gatewayModelGPU  = "pokepilot-7900xtx"
+	gatewayModelGPU  = "pokepilot-4090"
 	gatewayModelLAN  = "pokepilot-lan"
 )
 
 // NormalizeLLMProfile maps queue/form values onto the three supported modes.
-// Empty and unknown values mean default (LAN-only / primary env only).
+// Empty and unknown values mean auto, which is the farm's normal 7900 XTX
+// route. The persisted names predate the current hardware policy, so callers
+// should use LLMProfileLabel for human-readable names.
 func NormalizeLLMProfile(s string) LLMProfile {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case string(LLMProfileGPU):
 		return LLMProfileGPU
-	case string(LLMProfileAuto):
+	case string(LLMProfileDefault):
+		return LLMProfileDefault
+	case string(LLMProfileAuto), "":
 		return LLMProfileAuto
 	default:
-		return LLMProfileDefault
+		return LLMProfileAuto
 	}
 }
 
@@ -51,20 +57,21 @@ func NormalizeReasoningEffort(s string) string {
 	}
 }
 
-// LLMProfileLabel renders the resource intent without coupling generic runtime
-// code to a particular graphics-card model.
+// LLMProfileLabel renders the current hardware policy while keeping the stable
+// persisted profile values out of the operator-facing UI.
 func LLMProfileLabel(p LLMProfile) string {
 	switch p {
 	case LLMProfileGPU:
-		return "Dedicated GPU only"
-	case LLMProfileAuto:
-		return "Auto (GPU pool → LAN)"
+		return "RTX 4090"
+	case LLMProfileDefault:
+		return "CPU only"
 	default:
-		return "LAN only"
+		return "7900 XTX (CPU fallback)"
 	}
 }
 
-// defaultLLMConfigFromEnv reads the primary POKEPILOT_LLM_* endpoint.
+// defaultLLMConfigFromEnv reads the primary POKEPILOT_LLM_* endpoint. In the
+// farm deployment this is the CPU/LAN model.
 func defaultLLMConfigFromEnv() LLMConfig {
 	p := NewLLMPlanner()
 	return LLMConfig{
@@ -79,8 +86,8 @@ func defaultLLMConfigFromEnv() LLMConfig {
 	}
 }
 
-// gpuLLMConfigFromEnv reads an optional direct GPU endpoint. POKEPILOT_LLM_GPU_*
-// wins; POKEPILOT_LLM_FALLBACK_* is the legacy slot farm deploys use.
+// gpuLLMConfigFromEnv reads the direct 7900 XTX endpoint. POKEPILOT_LLM_GPU_*
+// wins; POKEPILOT_LLM_FALLBACK_* is the legacy slot older farm deploys use.
 func gpuLLMConfigFromEnv(defaults LLMConfig) (LLMConfig, bool) {
 	if c, ok := OptionalLLMConfigFromEnv("POKEPILOT_LLM_GPU_", defaults); ok {
 		return c, true
@@ -88,10 +95,17 @@ func gpuLLMConfigFromEnv(defaults LLMConfig) (LLMConfig, bool) {
 	return OptionalLLMConfigFromEnv("POKEPILOT_LLM_FALLBACK_", defaults)
 }
 
+// gpu4090LLMConfigFromEnv reads the explicitly selected direct RTX 4090
+// endpoint. It deliberately has its own prefix so reserving/selecting the 4090
+// never changes the normal 7900 XTX route.
+func gpu4090LLMConfigFromEnv(defaults LLMConfig) (LLMConfig, bool) {
+	return OptionalLLMConfigFromEnv("POKEPILOT_LLM_4090_", defaults)
+}
+
 // gatewayLLMConfigFromEnv maps a profile onto a logical model group on the
-// inference gateway. Only URL enables gateway mode. The common gateway config
-// controls transport settings; per-profile MODEL vars can rename aliases
-// without teaching PokePilot about physical endpoints.
+// optional inference gateway. Only URL enables gateway mode. Keeping this path
+// means LiteLLM can be re-enabled for experiments without making it the farm's
+// normal request path.
 func gatewayLLMConfigFromEnv(profile LLMProfile, defaults LLMConfig) (LLMConfig, bool) {
 	c, ok := OptionalLLMConfigFromEnv("POKEPILOT_LLM_GATEWAY_", defaults)
 	if !ok {
@@ -116,11 +130,11 @@ func gatewayLLMConfigFromEnv(profile LLMProfile, defaults LLMConfig) (LLMConfig,
 }
 
 // ResolveLLMEndpoints maps a profile onto primary and optional fallback
-// endpoint configs. In gateway mode the logical model group owns resource
-// failover. LAN-capable profiles retain the direct LAN endpoint as a final
-// transport fallback in case the gateway service itself is unavailable.
-// Without a gateway, Auto preserves the historical direct behavior: GPU
-// primary with default/LAN transport fallback.
+// endpoint configs. With the gateway disabled (the farm default), Auto goes
+// directly to the 7900 XTX and uses CPU/LAN only after a transport failure or
+// the primary request timeout. GPU is the explicitly selected 4090 and Default
+// is CPU only. If an operator explicitly enables the gateway, the historical
+// logical model groups remain available.
 func ResolveLLMEndpoints(profile LLMProfile) (primary LLMConfig, fallback *LLMConfig) {
 	return ResolveLLMEndpointsWithEffort(profile, "")
 }
@@ -144,25 +158,28 @@ func ResolveLLMEndpointsWithEffort(profile LLMProfile, reasoningEffort string) (
 		return gateway, &fb
 	}
 
-	gpu, hasGPU := gpuLLMConfigFromEnv(lan)
+	gpu7900, has7900 := gpuLLMConfigFromEnv(lan)
+	gpu4090, has4090 := gpu4090LLMConfigFromEnv(lan)
 	if reasoningEffort != "" {
-		gpu.ReasoningEffort = reasoningEffort
+		gpu7900.ReasoningEffort = reasoningEffort
+		gpu4090.ReasoningEffort = reasoningEffort
 	}
 	switch profile {
 	case LLMProfileGPU:
-		if hasGPU {
-			return gpu, nil
+		if has4090 {
+			return gpu4090, nil
 		}
-		// GPU-only with no GPU endpoint configured must not silently become
-		// the LAN model. An empty config fails the first ask instead.
+		// An explicitly selected 4090 must never silently become another
+		// resource family when that endpoint is not configured.
 		return LLMConfig{}, nil
-	case LLMProfileAuto:
-		if hasGPU {
-			fb := lan
-			return gpu, &fb
-		}
+	case LLMProfileDefault:
 		return lan, nil
-	default:
+	default: // Auto is the normal direct 7900 XTX route.
+		if has7900 {
+			fb := lan
+			return gpu7900, &fb
+		}
+		// Older/local deployments without a GPU endpoint remain usable.
 		return lan, nil
 	}
 }
