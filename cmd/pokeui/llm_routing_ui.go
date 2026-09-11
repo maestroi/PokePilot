@@ -42,29 +42,20 @@ func init() {
     }`)
 	uiJS = bytes.Replace(uiJS, oldLabels, newLabels, 1)
 
-	oldStats := []byte(`    const modelLine = (s.model ? s.model : "—") + (s.backend ? " · " + s.backend : "");
-    const nums = row("round", s.round + (s.rounds_left ? ` + "` (${s.rounds_left} left)`" + ` : ""))
-      + row("model", modelLine)
-      + row("repeat picks", ` + "`${s.repeats} of ${s.rounds}`" + `, s.rounds > 3 && s.repeats * 2 >= s.rounds)
-      + row("call latency", ` + "`${seconds(s.last_seconds)} last / ${seconds(s.avg_seconds)} all avg`" + `)
-      + row("latency avg", ` + "`${average(s.successful_avg_seconds)} ok / ${average(s.rejected_avg_seconds)} rejected / ${average(s.strategic_avg_seconds)} strategist`" + `)
-      + row("offered", ` + "`${s.avg_offered.toFixed(1)} avg`" + `)
-      + row("tokens", ` + "`${s.prompt_tokens} / ${s.completion_tokens}`" + `)`)
-	newStats := []byte(`    const modelLine = (s.model ? s.model : "—") + (s.backend ? " · " + s.backend : "");
-    const servedBy = s.endpoint ? row("served by", ` + "`${s.response_model || s.model || "—"} @ ${s.endpoint}`" + `) : "";
-    const cached = s.last_cached_prompt_tokens ? ` + "` · ${s.last_cached_prompt_tokens} cached`" + ` : "";
-    const timingRows = row("last call tokens", ` + "`${s.last_prompt_tokens || 0} prompt / ${s.last_completion_tokens || 0} completion${cached}`" + `)
-      + (s.timing_source ? row("prefill", ` + "`${(Number(s.prefill_ms || 0) / 1000).toFixed(2)}s · ${Number(s.prefill_tps || 0).toFixed(0)} tok/s`" + `) : "")
-      + (s.timing_source ? row("decode", ` + "`${(Number(s.decode_ms || 0) / 1000).toFixed(2)}s · ${Number(s.decode_tps || 0).toFixed(1)} tok/s`" + `) : "")
-      + (s.timing_source ? row("server overhead", ` + "`${(Number(s.overhead_ms || 0) / 1000).toFixed(2)}s · ${s.timing_source}`" + `) : "");
-    const nums = row("round", s.round + (s.rounds_left ? ` + "` (${s.rounds_left} left)`" + ` : ""))
-      + row("model", modelLine)
-      + servedBy
-      + row("repeat picks", ` + "`${s.repeats} of ${s.rounds}`" + `, s.rounds > 3 && s.repeats * 2 >= s.rounds)
-      + row("call latency", ` + "`${seconds(s.last_seconds)} last / ${seconds(s.avg_seconds)} all avg`" + `)
-      + row("latency avg", ` + "`${average(s.successful_avg_seconds)} ok / ${average(s.rejected_avg_seconds)} rejected / ${average(s.strategic_avg_seconds)} strategist`" + `)
-      + timingRows
-      + row("offered", ` + "`${s.avg_offered.toFixed(1)} avg`" + `)
-      + row("tokens", ` + "`${s.prompt_tokens} / ${s.completion_tokens}`" + `)`)
-	uiJS = bytes.Replace(uiJS, oldStats, newStats, 1)
+	// Keep cumulative token spend, but add the last call's real serving data.
+	// OpenAI-compatible servers supply usage; llama.cpp additionally supplies
+	// the timings object used for prefill/decode rates below.
+	modelLine := []byte("    const modelLine = (s.model ? s.model : \"—\") + (s.backend ? \" · \" + s.backend : \"\");\n")
+	modelTelemetry := []byte("    const modelLine = (s.model ? s.model : \"—\") + (s.backend ? \" · \" + s.backend : \"\");\n" +
+		"    const servedBy = s.endpoint ? row(\"served by\", `${s.response_model || s.model || \"—\"} @ ${s.endpoint}`) : \"\";\n" +
+		"    const cached = s.last_cached_prompt_tokens ? ` · ${s.last_cached_prompt_tokens} cached` : \"\";\n" +
+		"    const timingRows = row(\"last call tokens\", `${s.last_prompt_tokens || 0} prompt / ${s.last_completion_tokens || 0} completion${cached}`)\n" +
+		"      + (s.timing_source ? row(\"prefill\", `${(Number(s.prefill_ms || 0) / 1000).toFixed(2)}s · ${Number(s.prefill_tps || 0).toFixed(0)} tok/s`) : \"\")\n" +
+		"      + (s.timing_source ? row(\"decode\", `${(Number(s.decode_ms || 0) / 1000).toFixed(2)}s · ${Number(s.decode_tps || 0).toFixed(1)} tok/s`) : \"\")\n" +
+		"      + (s.timing_source ? row(\"server overhead\", `${(Number(s.overhead_ms || 0) / 1000).toFixed(2)}s · ${s.timing_source}`) : \"\");\n")
+	uiJS = bytes.Replace(uiJS, modelLine, modelTelemetry, 1)
+
+	modelRow := []byte("      + row(\"model\", modelLine)\n      + row(\"repeat picks\",")
+	telemetryRows := []byte("      + row(\"model\", modelLine)\n      + servedBy\n      + timingRows\n      + row(\"repeat picks\",")
+	uiJS = bytes.Replace(uiJS, modelRow, telemetryRows, 1)
 }
