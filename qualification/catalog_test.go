@@ -34,7 +34,7 @@ func TestCatalogContainsQualificationRoadmap(t *testing.T) {
 		"viridian-giovanni":          36,
 		"victory-road-indigo":        37,
 		"elite-four-champion":        0,
-		"fresh-hall-of-fame":         39,
+		"fresh-hall-of-fame":         0,
 	}
 	got := map[string]Case{}
 	for _, c := range Catalog() {
@@ -73,9 +73,8 @@ func TestSelectProfiles(t *testing.T) {
 			}
 			for i := range tc.want {
 				if cases[i].ID != tc.want[i] {
-					t.Fatalf("case %d=%q, want %q; all=%v", i, cases[i].ID, tc.want[i], caseIDs(cases))
+					t.Fatalf("case %d=%q, want %q; all=%v", i, cases[i].ID, caseIDs(cases), tc.want)
 				}
-			}
 		})
 	}
 }
@@ -95,8 +94,10 @@ func TestSelectAllExcludesFutureUnavailableMilestones(t *testing.T) {
 			t.Errorf("Select(all) included future case %q", forbidden)
 		}
 	}
-	if !hasCase(cases, "elite-four-champion") {
-		t.Error("Select(all) omitted runnable elite-four-champion milestone")
+	for _, required := range []string{"elite-four-champion", "fresh-hall-of-fame"} {
+		if !hasCase(cases, required) {
+			t.Errorf("Select(all) omitted runnable %s case", required)
+		}
 	}
 }
 
