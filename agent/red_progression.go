@@ -17,6 +17,7 @@ func redProgressionKnown(id ProgressID) bool {
 		redProgressMtMoonFossilAcquired,
 		redProgressSSTicketAcquired,
 		redProgressHM01Acquired,
+		redProgressRainbowBadge,
 		redProgressSilphScopeAcquired,
 		redProgressPokeFluteAcquired,
 		redProgressFuchsiaProgressionComplete,
@@ -75,7 +76,7 @@ func redVermilionGymRecoveryAvailable(obs Observation) bool {
 // objective shape. Availability is Red knowledge; the planner only sees the
 // semantic state change requested by each objective.
 func redProgressionObjectives(obs Observation) []Objective {
-	out := make([]Objective, 0, 14)
+	out := make([]Objective, 0, 15)
 	if skill.MtMoonProgressionAvailable(obs.Map) && !obs.Story.Has(redProgressMtMoonFossilAcquired) {
 		out = append(out, Objective{Kind: KindProgress, Progress: redProgressMtMoonFossilAcquired, Note: "(defeat Mt. Moon's Super Nerd and choose the Dome Fossil to open the eastern exit)"})
 	}
@@ -106,6 +107,13 @@ func redProgressionObjectives(obs Observation) []Objective {
 			Kind:  KindGym,
 			Place: "vermilion gym",
 			Note:  "(prepare a compatible Cut carrier through the party/PC/catch recovery path, clear the exterior tree, and challenge Lt. Surge)",
+		})
+	}
+	if hasBadge(obs, state.BadgeThunder) && !obs.Story.Has(redProgressRainbowBadge) {
+		out = append(out, Objective{
+			Kind:     KindProgress,
+			Progress: redProgressRainbowBadge,
+			Note:     "(repair or retain a Cut carrier, travel from Vermilion through Cerulean, Route 9, Rock Tunnel, Lavender, and the Underground Path to Celadon, heal, then defeat Erika for the Rainbow Badge; Flash is optional)",
 		})
 	}
 	if skill.RocketHideoutAvailable(obs.Map) && !obs.Story.Has(redProgressSilphScopeAcquired) {
@@ -208,6 +216,8 @@ func executeRedProgression(m *emu.Emu, romData []byte, o Objective) error {
 		return skill.Bill(m, romData, policy)
 	case redProgressHM01Acquired:
 		return skill.SSAnneHM01(m, romData, policy)
+	case redProgressRainbowBadge:
+		return skill.PostSurgeCeladonProgression(m, romData, policy)
 	case redProgressSilphScopeAcquired:
 		return skill.RocketHideout(m, romData, policy)
 	case redProgressPokeFluteAcquired:
