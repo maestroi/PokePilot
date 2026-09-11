@@ -132,10 +132,18 @@ func EvaluateGoal(g Goal, obs Observation) GoalStatus {
 	case GoalNone:
 		return GoalStatus{Summary: "no deterministic goal"}
 	case GoalEliteFour:
-		if obs.Story.Has(ProgressMainStoryComplete) {
-			return GoalStatus{Complete: true, Summary: "Hall of Fame reached after defeating the Elite Four and Champion", Current: 1, Target: 1}
+		n := len(obs.Badges)
+		// A Hall of Fame bit is the authoritative ending fact, but #39's full
+		// campaign contract also requires the complete eight-badge journey. This
+		// prevents a synthetic/corrupt late-game state from qualifying as a
+		// fresh autonomous completion while keeping the predicate portable.
+		if n >= 8 && obs.Story.Has(ProgressMainStoryComplete) {
+			return GoalStatus{Complete: true, Summary: "Hall of Fame reached after the eight-badge campaign, Elite Four and Champion", Current: 8, Target: 8}
 		}
-		return GoalStatus{Summary: fmt.Sprintf("beat the Elite Four and Champion and reach the Hall of Fame; badges %d/8", len(obs.Badges)), Current: len(obs.Badges), Target: 8}
+		if obs.Story.Has(ProgressMainStoryComplete) {
+			return GoalStatus{Summary: fmt.Sprintf("Hall of Fame reached but campaign badges are only %d/8", n), Current: n, Target: 8}
+		}
+		return GoalStatus{Summary: fmt.Sprintf("beat the Elite Four and Champion and reach the Hall of Fame; badges %d/8", n), Current: n, Target: 8}
 	case GoalBadges:
 		n := len(obs.Badges)
 		return GoalStatus{Complete: n >= g.Count, Summary: fmt.Sprintf("badges %d/%d", n, g.Count), Current: n, Target: g.Count}
