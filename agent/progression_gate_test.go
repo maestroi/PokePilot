@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/maestroi/pokepilot/red/state"
+	"github.com/maestroi/pokepilot/skill"
 )
 
 func TestJourneyProgressionBlockedRoute3UntilBoulderBadge(t *testing.T) {
@@ -83,6 +84,55 @@ func TestJourneyProgressionBlockedUsesSemanticLateGameFacts(t *testing.T) {
 				t.Fatalf("map %#02x should open after semantic prerequisite", tc.mapID)
 			}
 		})
+	}
+}
+
+func TestPlaceProgressionBlockedSnorlaxWaypointsUntilPokeFlute(t *testing.T) {
+	obs := Observation{}
+	for _, place := range []string{"route 12 snorlax", "route 12 south of snorlax"} {
+		if !placeProgressionBlocked(obs, place) {
+			t.Fatalf("%q should be blocked before the Poké Flute", place)
+		}
+	}
+	if placeProgressionBlocked(obs, "route 13") {
+		t.Fatal("unrelated place should not be blocked")
+	}
+
+	obs.Story = ProgressState{{ID: redProgressPokeFluteAcquired, Complete: true}}
+	for _, place := range []string{"route 12 snorlax", "route 12 south of snorlax"} {
+		if placeProgressionBlocked(obs, place) {
+			t.Fatalf("%q should be available after the Poké Flute", place)
+		}
+	}
+}
+
+func TestOfferSuppressesRoute12SnorlaxUntilPokeFlute(t *testing.T) {
+	dest, ok := skill.Place("route 12 snorlax")
+	if !ok {
+		t.Fatal("route 12 snorlax place missing")
+	}
+	route12Map := dest.Map
+
+	known := NewKnowledge(map[uint8][]uint8{route12Map: {}})
+	known.SawMap(route12Map)
+	obs := Observation{
+		Map:        route12Map,
+		MapName:    "ROUTE_12",
+		X:          9,
+		Y:          62,
+		PartyCount: 1,
+		Party:      []PartyMon{{Level: 30, HP: 80, MaxHP: 80}},
+	}
+
+	plain, flee := offeredJourneyTo(obs, known, "route 12 snorlax")
+	if plain || flee {
+		t.Fatalf("pre-Poké-Flute route 12 snorlax = plain:%v flee:%v, want both suppressed", plain, flee)
+	}
+
+	obs.Story = ProgressState{{ID: redProgressPokeFluteAcquired, Complete: true}}
+	plain, flee = offeredJourneyTo(obs, known, "route 12 snorlax")
+	if !plain || !flee {
+		t.Fatalf("post-Poké-Flute route 12 snorlax = plain:%v flee:%v, want both offered", plain, flee)
 	}
 }
 
