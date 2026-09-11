@@ -216,6 +216,7 @@ func vermilionCutCandidates(grid *world.Grid) []cutCandidate {
 				out = append(out, cutCandidate{x: x, y: y, d: d})
 			}
 		}
+	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].d != out[j].d {
 			return out[i].d < out[j].d
