@@ -562,6 +562,14 @@ func annotate(out []Objective, known *Knowledge) []Objective {
 	for i := range out {
 		name := out[i].String()
 		done, failed := known.Completed[name], known.Failures[name].Times
+		// KindGym.String() is place-agnostic ("beat the gym leader here"), so
+		// Completed[name] is the count of ALL gyms ever cleared this run, not
+		// this one. Offer only ever offers a gym while its own badge is still
+		// missing (see !hasBadge above), so a "done Nx" here is always about a
+		// different gym and falsely reads as "already beaten here".
+		if out[i].Kind == KindGym {
+			done = 0
+		}
 		history := ""
 		switch {
 		case done > 0 && failed > 0:

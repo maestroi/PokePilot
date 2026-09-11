@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/maestroi/pokepilot/red/state"
@@ -88,6 +89,31 @@ func TestOfferStillSurfacesGymWhenRouteBlockagesOmitIt(t *testing.T) {
 	if !hasOfferedKind(Offer(obs, known), KindGym) {
 		t.Fatal("empty RouteBlockages withheld the Vermilion gym; Offer must fail open")
 	}
+}
+
+// TestOfferGymDoneCountNeverCarriesOverFromAnotherGym: KindGym.String() is
+// place-agnostic ("beat the gym leader here"), so Knowledge.Completed keys
+// every gym win under the same name. Run run-16t6dsg2uzgrs showed "beat the
+// gym leader here (done 2x)" for Vermilion after only clearing Brock and
+// Misty — the planner read that as "already beaten here", which was false.
+// A gym is only ever offered before its own badge is earned, so the done
+// count for an offered KindGym must always read as unset.
+func TestOfferGymDoneCountNeverCarriesOverFromAnotherGym(t *testing.T) {
+	known := NewKnowledge(nil)
+	known.Done(Objective{Kind: KindGym, Place: "pewter city"})
+	known.Done(Objective{Kind: KindGym, Place: "cerulean city"})
+
+	obs := Observation{Map: 0x05, MapName: "VERMILION_CITY", PartyCount: 1}
+	for _, o := range Offer(obs, known) {
+		if o.Kind != KindGym {
+			continue
+		}
+		if strings.Contains(o.Note, "done") {
+			t.Fatalf("Vermilion gym objective falsely claims prior completion: note=%q", o.Note)
+		}
+		return
+	}
+	t.Fatal("Vermilion City did not offer the gym challenge")
 }
 
 func TestOfferKeepsGymWhenAlreadyInsideABlockedGymMap(t *testing.T) {
