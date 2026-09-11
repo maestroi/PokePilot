@@ -3,10 +3,42 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
+  FAILURE_PATTERN_CAP,
+  normalizeFailureDetail,
+  bugGroupRuns,
   eligibleRuns,
   ageDescription,
   deleteRuns,
 } = require("./run_cleanup.js");
+
+test("normalizeFailureDetail matches pokewall triage normalization", () => {
+  assert.equal(
+    normalizeFailureDetail("still on map 0x0c at (10,35) after 180 frames"),
+    "still on map <hex> at (<n>,<n>) after <n> frames",
+  );
+  assert.equal(
+    normalizeFailureDetail("still on map 0x21 at (4,22) after 240 frames"),
+    "still on map <hex> at (<n>,<n>) after <n> frames",
+  );
+  assert.equal(normalizeFailureDetail("x".repeat(FAILURE_PATTERN_CAP + 20)).length, FAILURE_PATTERN_CAP);
+});
+
+test("bugGroupRuns selects every finished error/lost run in one triage pattern", () => {
+  const pattern = normalizeFailureDetail("still on map 0x0c at (10,35)");
+  const runs = [
+    { run_id: "new-error", status: "done", reason: "error", detail: "still on map 0x21 at (4,22)", ended_at: 30 },
+    { run_id: "old-lost", status: "done", reason: "lost", detail: "still on map 0x0c at (10,35)", ended_at: 10 },
+    { run_id: "other-bug", status: "done", reason: "error", detail: "agent: blacked out", ended_at: 20 },
+    { run_id: "success", status: "done", reason: "done", detail: "still on map 0x21 at (4,22)", ended_at: 40 },
+    { run_id: "active", status: "running", reason: "error", detail: "still on map 0x21 at (4,22)", ended_at: 0 },
+  ];
+
+  assert.deepEqual(
+    bugGroupRuns(runs, pattern).map((run) => run.run_id),
+    ["old-lost", "new-error"],
+  );
+  assert.deepEqual(bugGroupRuns(runs, ""), []);
+});
 
 test("eligibleRuns selects only finished runs older than the cutoff", () => {
   const now = 10_000;
