@@ -32,6 +32,9 @@ var indexHTML []byte
 //go:embed ui/ui.js
 var uiJS []byte
 
+//go:embed ui/frame_policy.js
+var framePolicyJS []byte
+
 //go:embed ui/behavior.js
 var behaviorJS []byte
 
@@ -81,7 +84,7 @@ func handler(wallBase string) http.Handler {
 func operatorIndexPage() []byte {
 	page := bytes.Replace(indexHTML, goalInputHTML, goalPresetHTML, 1)
 	page = bytes.Replace(page, []byte("</head>"), []byte("<link rel=\"stylesheet\" href=\"/llm_metrics.css\">\n</head>"), 1)
-	extra := []byte("<script src=\"/stats.js\"></script>\n<script src=\"/llm_metrics.js\"></script>\n<script src=\"/inspector.js\"></script>\n</body>")
+	extra := []byte("<script src=\"/frame_policy.js\"></script>\n<script src=\"/stats.js\"></script>\n<script src=\"/llm_metrics.js\"></script>\n<script src=\"/inspector.js\"></script>\n</body>")
 	return bytes.Replace(page, []byte("</body>"), extra, 1)
 }
 
@@ -106,6 +109,11 @@ func handlerWithServices(wallBase, replayBase, token string) http.Handler {
 		res.Header().Set("Content-Type", "text/javascript; charset=utf-8")
 		res.Header().Set("Cache-Control", "no-store")
 		res.Write(uiJS) //nolint:errcheck // best effort
+	})
+	mux.HandleFunc("GET /frame_policy.js", func(res http.ResponseWriter, req *http.Request) {
+		res.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+		res.Header().Set("Cache-Control", "no-store")
+		res.Write(framePolicyJS) //nolint:errcheck // best effort
 	})
 	mux.HandleFunc("GET /behavior.js", func(res http.ResponseWriter, req *http.Request) {
 		res.Header().Set("Content-Type", "text/javascript; charset=utf-8")

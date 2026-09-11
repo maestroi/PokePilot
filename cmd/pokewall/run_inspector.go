@@ -183,15 +183,7 @@ func (w *Wall) loadRunInspection(runID string) (tileRow, *farm.FinishReport, err
 	if runID == "" {
 		return tileRow{}, nil, fs.ErrNotExist
 	}
-	var run tileRow
-	found := false
-	for _, candidate := range w.snapshot().Runs {
-		if candidate.RunID == runID {
-			run = candidate
-			found = true
-			break
-		}
-	}
+	run, found := w.snapshotRun(runID)
 	report, err := w.loadLatestFinishReport(runID)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return tileRow{}, nil, err
@@ -219,12 +211,11 @@ func (w *Wall) loadLatestFinishReport(runID string) (*farm.FinishReport, error) 
 	if w.dumpsDir == "" {
 		return nil, fs.ErrNotExist
 	}
-	paths, err := filepath.Glob(filepath.Join(w.dumpsDir, safeBase(runID)+"*.json"))
+	paths, err := filepath.Glob(filepath.Join(w.dumpsDir, safeBase(runID)+"-attempt-*.json"))
 	if err != nil {
 		return nil, err
 	}
-	// The historical attempt-1 filename may not share safeBase exactly when
-	// safeDumpName applies extra clipping, so include it explicitly.
+	// Attempt 1 keeps the historical exact filename.
 	first := filepath.Join(w.dumpsDir, safeDumpName(runID))
 	if _, err := os.Stat(first); err == nil {
 		paths = append(paths, first)

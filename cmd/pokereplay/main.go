@@ -287,6 +287,13 @@ func (s *replayServer) render(runID string, recording artifactRef, cacheKey stri
 		s.setJob(cacheKey, replayStatus{RunID: runID, State: "error", ObjectKey: cacheKey, Error: clipError(err)})
 	}
 
+	release, err := acquireReplayRender(ctx)
+	if err != nil {
+		setError(fmt.Errorf("wait for replay render slot: %w", err))
+		return
+	}
+	defer release()
+
 	dir, err := os.MkdirTemp("", "pokereplay-*")
 	if err != nil {
 		setError(err)
@@ -301,9 +308,11 @@ func (s *replayServer) render(runID string, recording artifactRef, cacheKey stri
 	}
 
 	cmd := exec.CommandContext(ctx, s.streamBinary, s.streamArgs(recordingPath, videoPath)...)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		setError(fmt.Errorf("gomeboy replay render: %w: %s", err, strings.TrimSpace(string(output))))
+	output := &replayOutputTail{}
+	cmd.Stdout = output
+	cmd.Stderr = output
+	if err := cmd.Run(); err != nil {
+		setError(fmt.Errorf("gomeboy replay render: %w: %s", err, strings.TrimSpace(output.String())))
 		return
 	}
 	file, err := os.Open(videoPath)
@@ -395,6 +404,7 @@ func (s *replayServer) setJob(key string, status replayStatus) {
 	s.mu.Lock()
 	s.jobs[key] = status
 	s.mu.Unlock()
+	scheduleReplayJobExpiry(s, key, status)
 }
 
 func replayCacheKey(runID string, recording artifactRef) string {
