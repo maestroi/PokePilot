@@ -42,7 +42,7 @@ func routeBlockedOn(obs Observation, destination PlaceID, capability CapabilityI
 			if missing == capability {
 				return true
 			}
-	}
+		}
 	}
 	return false
 }
