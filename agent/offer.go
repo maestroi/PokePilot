@@ -466,7 +466,16 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 		// gated from here lets the planner copy an illegal challenge into a
 		// plan (measured: Vermilion City, missing can_cut). Already standing
 		// on the gym map is the one case the exterior gate no longer applies.
-		if obs.Map == g.Map || !semanticBlocked[string(g.Place)] {
+		//
+		// Viridian is different in kind, not degree: its door needs seven
+		// badges, a story gate EnterViridianGym cannot clear itself the way
+		// EnterVermilionGym clears its Cut prerequisite. Offering the
+		// challenge before then is a guaranteed run-ending failure (measured:
+		// run-2uhibnzs9erjg189xy4o2jtxo0 round 5, 30 sibling runs), so it
+		// stays behind the same journeyProgressionBlocked fact GoTo already
+		// uses for this map.
+		gymGated := g.Map == viridianGymMap && journeyProgressionBlocked(obs, g.Map)
+		if !gymGated && (obs.Map == g.Map || !semanticBlocked[string(g.Place)]) {
 			gym := Objective{Kind: KindGym, Place: g.Place}
 			if _, lost := known.Failures[gymLossFailureKey(g.Place)]; !lost {
 				out = append(out, gym)
