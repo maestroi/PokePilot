@@ -23,6 +23,7 @@ func redProgressionKnown(id ProgressID) bool {
 		redProgressSilphRescueComplete,
 		redProgressVolcanoBadge,
 		redProgressEarthBadge,
+		redProgressIndigoPlateauReady,
 		ProgressSaffronGateOpen,
 		ProgressCardKeyOwned,
 		ProgressSecretKeyOwned:
@@ -41,7 +42,7 @@ func routeBlockedOn(obs Observation, destination PlaceID, capability CapabilityI
 			if missing == capability {
 				return true
 			}
-		}
+	}
 	}
 	return false
 }
@@ -74,7 +75,7 @@ func redVermilionGymRecoveryAvailable(obs Observation) bool {
 // objective shape. Availability is Red knowledge; the planner only sees the
 // semantic state change requested by each objective.
 func redProgressionObjectives(obs Observation) []Objective {
-	out := make([]Objective, 0, 13)
+	out := make([]Objective, 0, 14)
 	if skill.MtMoonProgressionAvailable(obs.Map) && !obs.Story.Has(redProgressMtMoonFossilAcquired) {
 		out = append(out, Objective{Kind: KindProgress, Progress: redProgressMtMoonFossilAcquired, Note: "(defeat Mt. Moon's Super Nerd and choose the Dome Fossil to open the eastern exit)"})
 	}
@@ -183,6 +184,13 @@ func redProgressionObjectives(obs Observation) []Objective {
 			Note:     "(return to Viridian so the seven-badge story gate opens the Gym, traverse its forced arrow tiles, defeat Giovanni, and verify all eight badges)",
 		})
 	}
+	if obs.Story.Has(redProgressEarthBadge) && !obs.Story.Has(redProgressIndigoPlateauReady) {
+		out = append(out, Objective{
+			Kind:     KindProgress,
+			Progress: redProgressIndigoPlateauReady,
+			Note:     "(defeat the final Route 22 rival, pass Route 23's seven badge checks and three Surf bands, solve Victory Road's live Strength puzzles, then heal in the Indigo Plateau lobby)",
+		})
+	}
 	return out
 }
 
@@ -218,6 +226,8 @@ func executeRedProgression(m *emu.Emu, romData []byte, o Objective) error {
 		return skill.CinnabarProgression(m, romData, policy)
 	case redProgressEarthBadge:
 		return skill.ViridianProgression(m, romData, policy)
+	case redProgressIndigoPlateauReady:
+		return skill.VictoryRoadProgression(m, romData, policy)
 	default:
 		return fmt.Errorf("agent: %s: unknown Red progression goal %q", o, o.Progress)
 	}
