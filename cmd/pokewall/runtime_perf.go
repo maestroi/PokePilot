@@ -7,44 +7,66 @@ import (
 )
 
 // Heartbeats are high-frequency telemetry, not lifecycle transitions. Persist
-// the first heartbeat of a generation immediately, then at most once per
-// interval while it remains active. Lease/finish/delete paths still call
-// saveState synchronously. This preserves restart semantics while avoiding a
-// complete historical-catalog rewrite every second.
+// the first heartbeat of every runner generation immediately, then at most
+// once per interval while runs remain active. Lease/finish/delete paths still
+// call saveState synchronously. This preserves restart semantics while avoiding
+// a complete historical-catalog rewrite every second.
 const heartbeatStateFlushInterval = 5 * time.Second
+
+type heartbeatGeneration struct {
+	queuedAt int64
+	attempt  int
+}
 
 type persistenceCoordinator struct {
 	writeMu sync.Mutex
 
 	heartbeatMu   sync.Mutex
 	lastHeartbeat time.Time
+	seen          map[string]heartbeatGeneration
 }
 
 var persistenceCoordinators sync.Map // *Wall -> *persistenceCoordinator
 
 func persistenceFor(w *Wall) *persistenceCoordinator {
 	if w == nil {
-		return &persistenceCoordinator{}
+		return &persistenceCoordinator{seen: make(map[string]heartbeatGeneration)}
 	}
 	if existing, ok := persistenceCoordinators.Load(w); ok {
 		return existing.(*persistenceCoordinator)
 	}
-	created := &persistenceCoordinator{}
+	created := &persistenceCoordinator{seen: make(map[string]heartbeatGeneration)}
 	actual, _ := persistenceCoordinators.LoadOrStore(w, created)
 	return actual.(*persistenceCoordinator)
 }
 
-// saveHeartbeatState keeps the first running snapshot durable and throttles
-// later telemetry-only saves. It deliberately performs no background work:
-// tests and short-lived wall processes cannot leave a timer trying to write a
-// state directory after it has been removed.
-func (w *Wall) saveHeartbeatState(force bool) {
+// saveStateSoon is the heartbeat persistence path. The old implementation
+// synchronously serialized the entire run history on every 1 Hz heartbeat.
+// This one notices newly-running generations and preserves their first state
+// synchronously; subsequent telemetry across the wall is coalesced to one
+// durable snapshot per interval. It deliberately starts no background timer.
+func (w *Wall) saveStateSoon() {
 	if w == nil || w.statePath == "" {
 		return
 	}
 	p := persistenceFor(w)
-	now := time.Now()
+
+	force := false
+	w.mu.Lock()
 	p.heartbeatMu.Lock()
+	for id, t := range w.tiles {
+		if t == nil || t.Finished || t.Status != statusRunning {
+			continue
+		}
+		gen := heartbeatGeneration{queuedAt: t.QueuedAt.UnixNano(), attempt: t.Attempts + 1}
+		if p.seen[id] != gen {
+			p.seen[id] = gen
+			force = true
+		}
+	}
+	w.mu.Unlock()
+
+	now := time.Now()
 	due := force || p.lastHeartbeat.IsZero() || now.Sub(p.lastHeartbeat) >= heartbeatStateFlushInterval
 	if due {
 		p.lastHeartbeat = now
