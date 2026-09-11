@@ -42,14 +42,53 @@ func TestMatchingRunsUsesExactTriagePattern(t *testing.T) {
 	}
 }
 
+func groupWithIssue(key string, issue int64, pattern string) triageGroup {
+	group := triageGroup{Key: key, Pattern: pattern, Count: 2}
+	group.Issue = &struct {
+		IssueNumber int64  `json:"issue_number"`
+		Status      string `json:"status"`
+		Resolution  string `json:"resolution"`
+	}{IssueNumber: issue, Status: "fixed", Resolution: "fixed"}
+	return group
+}
+
+func TestSelectTriageGroupAcceptsIssueNumber(t *testing.T) {
+	groups := []triageGroup{
+		groupWithIssue("aaaaaaaaaaaaaaaa", 231, "first"),
+		groupWithIssue("bbbbbbbbbbbbbbbb", 232, "second"),
+	}
+	got, err := selectTriageGroup(groups, "", 232)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Key != "bbbbbbbbbbbbbbbb" {
+		t.Fatalf("key = %q, want bbbbbbbbbbbbbbbb", got.Key)
+	}
+}
+
+func TestSelectTriageGroupExplainsIssueNumberPassedAsKey(t *testing.T) {
+	_, err := selectTriageGroup(nil, "232", 0)
+	if err == nil || !strings.Contains(err.Error(), "use -issue 232") {
+		t.Fatalf("error = %v, want -issue hint", err)
+	}
+}
+
+func TestSelectTriageGroupRejectsAmbiguousSelector(t *testing.T) {
+	_, err := selectTriageGroup(nil, "abc", 232)
+	if err == nil || !strings.Contains(err.Error(), "either -key or -issue") {
+		t.Fatalf("error = %v, want selector conflict", err)
+	}
+}
+
 func TestRunDryRunAndApplyDeleteThroughOperatorAPI(t *testing.T) {
 	pattern := normalizeFailureDetail("still on map 0x0c at (10,35)")
+	group := groupWithIssue("abc123", 232, pattern)
 	var mu sync.Mutex
 	var deleted []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/triage":
-			_ = json.NewEncoder(w).Encode([]triageGroup{{Key: "abc123", Pattern: pattern, Count: 2}})
+			_ = json.NewEncoder(w).Encode([]triageGroup{group})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/dashboard" && r.URL.Query().Get("status") == "done":
 			_ = json.NewEncoder(w).Encode(cleanupDashboard{Runs: []cleanupRun{
 				{RunID: "run-a", Status: "done", Reason: "error", Detail: "still on map 0x0c at (10,35)"},
@@ -69,10 +108,10 @@ func TestRunDryRunAndApplyDeleteThroughOperatorAPI(t *testing.T) {
 	defer server.Close()
 
 	var dry bytes.Buffer
-	if err := run(context.Background(), server.Client(), server.URL, "abc123", false, &dry); err != nil {
+	if err := run(context.Background(), server.Client(), server.URL, "", 232, false, &dry); err != nil {
 		t.Fatalf("dry run: %v", err)
 	}
-	if !strings.Contains(dry.String(), "matching finished runs: 2") || !strings.Contains(dry.String(), "dry run only") {
+	if !strings.Contains(dry.String(), "triage abc123 · issue #232") || !strings.Contains(dry.String(), "matching finished runs: 2") || !strings.Contains(dry.String(), "dry run only") {
 		t.Fatalf("dry output = %q", dry.String())
 	}
 	if len(deleted) != 0 {
@@ -80,7 +119,7 @@ func TestRunDryRunAndApplyDeleteThroughOperatorAPI(t *testing.T) {
 	}
 
 	var applied bytes.Buffer
-	if err := run(context.Background(), server.Client(), server.URL, "abc123", true, &applied); err != nil {
+	if err := run(context.Background(), server.Client(), server.URL, "", 232, true, &applied); err != nil {
 		t.Fatalf("apply run: %v", err)
 	}
 	mu.Lock()
@@ -90,7 +129,7 @@ func TestRunDryRunAndApplyDeleteThroughOperatorAPI(t *testing.T) {
 	if strings.Join(gotDeleted, ",") != "run-a,run-b" {
 		t.Fatalf("deleted = %v, want run-a,run-b", gotDeleted)
 	}
-	if !strings.Contains(applied.String(), "deleted: 2") {
+	if !strings.Contains(applied.String(), "Deleting 2 / 2") || !strings.Contains(applied.String(), "deleted: 2") {
 		t.Fatalf("apply output = %q", applied.String())
 	}
 }

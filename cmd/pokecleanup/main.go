@@ -33,8 +33,9 @@ type triageGroup struct {
 	Count   int    `json:"count"`
 	Example string `json:"example"`
 	Issue   *struct {
-		Status     string `json:"status"`
-		Resolution string `json:"resolution"`
+		IssueNumber int64  `json:"issue_number"`
+		Status      string `json:"status"`
+		Resolution  string `json:"resolution"`
 	} `json:"issue,omitempty"`
 }
 
@@ -53,6 +54,13 @@ type cleanupDashboard struct {
 type deleteFailure struct {
 	RunID string
 	Err   error
+}
+
+type deleteProgress struct {
+	Completed int
+	Total     int
+	Deleted   int
+	Failed    int
 }
 
 func normalizeFailureDetail(detail string) string {
@@ -101,34 +109,47 @@ func getJSON(ctx context.Context, client *http.Client, endpoint string, out any)
 	return nil
 }
 
-func planCleanup(ctx context.Context, client *http.Client, base, key string) (triageGroup, []cleanupRun, error) {
-	base = strings.TrimRight(strings.TrimSpace(base), "/")
+func selectTriageGroup(groups []triageGroup, key string, issueNumber int64) (triageGroup, error) {
 	key = strings.TrimSpace(key)
+	if key != "" && issueNumber > 0 {
+		return triageGroup{}, errors.New("use either -key or -issue, not both")
+	}
+	if key == "" && issueNumber <= 0 {
+		return triageGroup{}, errors.New("triage key or issue number is required")
+	}
+	for _, candidate := range groups {
+		if key != "" && candidate.Key == key {
+			return candidate, nil
+		}
+		if issueNumber > 0 && candidate.Issue != nil && candidate.Issue.IssueNumber == issueNumber {
+			return candidate, nil
+		}
+	}
+	if issueNumber > 0 {
+		return triageGroup{}, fmt.Errorf("issue #%d has no triage failure group", issueNumber)
+	}
+	if _, err := fmt.Sscan(key, new(int64)); err == nil && len(key) < 16 {
+		return triageGroup{}, fmt.Errorf("triage key %q not found; if %q is an issue number, use -issue %s", key, key, key)
+	}
+	return triageGroup{}, fmt.Errorf("triage key %q not found", key)
+}
+
+func planCleanup(ctx context.Context, client *http.Client, base, key string, issueNumber int64) (triageGroup, []cleanupRun, error) {
+	base = strings.TrimRight(strings.TrimSpace(base), "/")
 	if base == "" {
 		return triageGroup{}, nil, errors.New("base URL is required")
-	}
-	if key == "" {
-		return triageGroup{}, nil, errors.New("triage key is required")
 	}
 
 	var groups []triageGroup
 	if err := getJSON(ctx, client, base+"/v1/triage", &groups); err != nil {
 		return triageGroup{}, nil, err
 	}
-	var group triageGroup
-	found := false
-	for _, candidate := range groups {
-		if candidate.Key == key {
-			group = candidate
-			found = true
-			break
-		}
-	}
-	if !found {
-		return triageGroup{}, nil, fmt.Errorf("triage key %q not found", key)
+	group, err := selectTriageGroup(groups, key, issueNumber)
+	if err != nil {
+		return triageGroup{}, nil, err
 	}
 	if group.Pattern == "" {
-		return triageGroup{}, nil, fmt.Errorf("triage key %q has no failure pattern", key)
+		return triageGroup{}, nil, fmt.Errorf("triage key %q has no failure pattern", group.Key)
 	}
 
 	var dashboard cleanupDashboard
@@ -161,7 +182,7 @@ func deleteOne(ctx context.Context, client *http.Client, base, runID string) err
 	return nil
 }
 
-func deleteRuns(ctx context.Context, client *http.Client, base string, runs []cleanupRun, concurrency int) ([]string, []deleteFailure) {
+func deleteRuns(ctx context.Context, client *http.Client, base string, runs []cleanupRun, concurrency int, onProgress func(deleteProgress)) ([]string, []deleteFailure) {
 	if concurrency < 1 {
 		concurrency = 1
 	}
@@ -172,20 +193,24 @@ func deleteRuns(ctx context.Context, client *http.Client, base string, runs []cl
 	var mu sync.Mutex
 	deleted := make([]string, 0, len(runs))
 	failures := make([]deleteFailure, 0)
+	completed := 0
 	var wg sync.WaitGroup
 	for i := 0; i < concurrency; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for run := range jobs {
-				if err := deleteOne(ctx, client, base, run.RunID); err != nil {
-					mu.Lock()
-					failures = append(failures, deleteFailure{RunID: run.RunID, Err: err})
-					mu.Unlock()
-					continue
-				}
+				err := deleteOne(ctx, client, base, run.RunID)
 				mu.Lock()
-				deleted = append(deleted, run.RunID)
+				if err != nil {
+					failures = append(failures, deleteFailure{RunID: run.RunID, Err: err})
+				} else {
+					deleted = append(deleted, run.RunID)
+				}
+				completed++
+				if onProgress != nil {
+					onProgress(deleteProgress{Completed: completed, Total: len(runs), Deleted: len(deleted), Failed: len(failures)})
+				}
 				mu.Unlock()
 			}
 		}()
@@ -219,12 +244,16 @@ func issueState(group triageGroup) string {
 	return "linked"
 }
 
-func run(ctx context.Context, client *http.Client, base, key string, apply bool, out io.Writer) error {
-	group, runs, err := planCleanup(ctx, client, base, key)
+func run(ctx context.Context, client *http.Client, base, key string, issueNumber int64, apply bool, out io.Writer) error {
+	group, runs, err := planCleanup(ctx, client, base, key, issueNumber)
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "triage %s · %s · %d recorded occurrence(s)\n", group.Key, issueState(group), group.Count)
+	issueLabel := ""
+	if group.Issue != nil && group.Issue.IssueNumber > 0 {
+		issueLabel = fmt.Sprintf(" · issue #%d", group.Issue.IssueNumber)
+	}
+	fmt.Fprintf(out, "triage %s%s · %s · %d recorded occurrence(s)\n", group.Key, issueLabel, issueState(group), group.Count)
 	fmt.Fprintf(out, "pattern: %s\n", group.Pattern)
 	fmt.Fprintf(out, "matching finished runs: %d\n", len(runs))
 	for _, run := range runs {
@@ -238,7 +267,13 @@ func run(ctx context.Context, client *http.Client, base, key string, apply bool,
 		return nil
 	}
 
-	deleted, failures := deleteRuns(ctx, client, base, runs, deleteConcurrency)
+	deleted, failures := deleteRuns(ctx, client, base, runs, deleteConcurrency, func(progress deleteProgress) {
+		fmt.Fprintf(out, "\rDeleting %d / %d · %d deleted", progress.Completed, progress.Total, progress.Deleted)
+		if progress.Failed > 0 {
+			fmt.Fprintf(out, " · %d failed", progress.Failed)
+		}
+	})
+	fmt.Fprintln(out)
 	fmt.Fprintf(out, "deleted: %d\n", len(deleted))
 	if len(failures) == 0 {
 		return nil
@@ -256,11 +291,12 @@ func run(ctx context.Context, client *http.Client, base, key string, apply bool,
 func main() {
 	base := flag.String("url", "https://pokemon.labstack.cc", "private PokePilot operator URL")
 	key := flag.String("key", "", "triage failure key to clean")
+	issueNumber := flag.Int64("issue", 0, "Agent Orchestrator issue number whose triage group should be cleaned")
 	yes := flag.Bool("yes", false, "permanently delete matching finished runs and their S3/replay artifacts")
 	flag.Parse()
 
 	client := &http.Client{Timeout: 35 * time.Second}
-	if err := run(context.Background(), client, *base, *key, *yes, os.Stdout); err != nil {
+	if err := run(context.Background(), client, *base, *key, *issueNumber, *yes, os.Stdout); err != nil {
 		fmt.Fprintln(os.Stderr, "pokecleanup:", err)
 		os.Exit(1)
 	}
