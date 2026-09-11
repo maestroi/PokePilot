@@ -54,7 +54,7 @@ func TestFailureReproArtifactRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewFailureReproArtifact: %v", err)
 	}
-	if artifact.Name != FailureReproArtifactName || len(artifact.Data) == 0 {
+	if artifact.Name != "round-007-frame-0000012345-go-to-route-9."+FailureReproArtifactName || len(artifact.Data) == 0 {
 		t.Fatalf("artifact = %+v", artifact)
 	}
 	bundle, err := DecodeFailureRepro(artifact.Data)
@@ -67,8 +67,9 @@ func TestFailureReproArtifactRoundTrip(t *testing.T) {
 	if bundle.Fingerprint != fp || bundle.Checkpoint.Name != failure.Checkpoint || bundle.Checkpoint.SHA256 != strings.Repeat("a", 64) {
 		t.Fatalf("bundle identity/checkpoint = %+v", bundle)
 	}
-	if bundle.SuggestedCommand != "go run ./cmd/pokerepro -bundle "+FailureReproArtifactName {
-		t.Fatalf("command = %q", bundle.SuggestedCommand)
+	wantCommand := `go run ./cmd/pokerepro -run "run-repro" -attempt 2 -checkpoint "round-007-frame-0000012345-go-to-route-9.state"`
+	if bundle.SuggestedCommand != wantCommand {
+		t.Fatalf("command = %q, want %q", bundle.SuggestedCommand, wantCommand)
 	}
 }
 
