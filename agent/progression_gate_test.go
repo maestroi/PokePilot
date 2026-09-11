@@ -101,15 +101,15 @@ func TestPlaceProgressionBlockedSnorlaxWaypointsUntilPokeFlute(t *testing.T) {
 	obs.Story = ProgressState{{ID: redProgressPokeFluteAcquired, Complete: true}}
 	for _, place := range []string{"route 12 snorlax", "route 12 south of snorlax"} {
 		if placeProgressionBlocked(obs, place) {
-			t.Fatalf("%q should be available after the Poké Flute", place)
+			t.Fatalf("%q should no longer be progression-blocked after the Poké Flute", place)
 		}
 	}
 }
 
-func TestOfferSuppressesRoute12SnorlaxUntilPokeFlute(t *testing.T) {
+func TestOfferNeverAdvertisesRoute12SnorlaxInteractionAsJourney(t *testing.T) {
 	dest, ok := skill.Place("route 12 snorlax")
 	if !ok {
-		t.Fatal("route 12 snorlax place missing")
+		t.Fatal("route 12 snorlax interaction missing")
 	}
 	route12Map := dest.Map
 
@@ -124,15 +124,15 @@ func TestOfferSuppressesRoute12SnorlaxUntilPokeFlute(t *testing.T) {
 		Party:      []PartyMon{{Level: 30, HP: 80, MaxHP: 80}},
 	}
 
-	plain, flee := offeredJourneyTo(obs, known, "route 12 snorlax")
-	if plain || flee {
-		t.Fatalf("pre-Poké-Flute route 12 snorlax = plain:%v flee:%v, want both suppressed", plain, flee)
-	}
-
-	obs.Story = ProgressState{{ID: redProgressPokeFluteAcquired, Complete: true}}
-	plain, flee = offeredJourneyTo(obs, known, "route 12 snorlax")
-	if !plain || !flee {
-		t.Fatalf("post-Poké-Flute route 12 snorlax = plain:%v flee:%v, want both offered", plain, flee)
+	for _, story := range []ProgressState{
+		nil,
+		{{ID: redProgressPokeFluteAcquired, Complete: true}},
+	} {
+		obs.Story = story
+		plain, flee := offeredJourneyTo(obs, known, "route 12 snorlax")
+		if plain || flee {
+			t.Fatalf("story-owned Route 12 Snorlax interaction = plain:%v flee:%v, want both suppressed", plain, flee)
+		}
 	}
 }
 
