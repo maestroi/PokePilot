@@ -130,15 +130,13 @@ func (w *Wall) handleCheckpoint(res http.ResponseWriter, req *http.Request) {
 	writeJSON(res, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// handleCheckpointResume has three recovery tiers. A lease after worker loss
-// resumes from the newest ordinary objective boundary, preserving the exact
-// work that runner had completed. An endless run retrying a gameplay/code
-// error instead rolls back to the newest durable major checkpoint, so a bad
-// later decision does not erase badges already secured. An endless successor
-// of a failed campaign starts from that same major checkpoint, so the next
-// attempt can rediscover the live defect instead of replaying the intro.
-// Non-endless error retries intentionally retain their historical fresh-game
-// semantics.
+// handleCheckpointResume keeps endless campaigns close to their latest safe
+// progress. Worker loss first resumes the exact previous attempt. Gameplay or
+// code retries and failed endless successors prefer the newest consistent
+// objective state+knowledge pair anywhere in the current lineage. Durable
+// major badge checkpoints are only the fallback when no ordinary objective
+// checkpoint is available. Non-endless error retries intentionally retain
+// their historical fresh-game semantics.
 func (w *Wall) handleCheckpointResume(res http.ResponseWriter, id string, requestedAttempt int) {
 	if w.dumpsDir == "" {
 		res.WriteHeader(http.StatusNoContent)
@@ -170,7 +168,7 @@ func (w *Wall) handleCheckpointResume(res http.ResponseWriter, id string, reques
 	lostPrefix := retryPrefix + "no heartbeat for "
 	planner := t.Planner
 	lostRetry := previous > 0 && strings.HasPrefix(t.Detail, lostPrefix)
-	majorRetry := previous > 0 && t.Endless && planner == "llm" && strings.HasPrefix(t.Detail, retryPrefix) && !lostRetry
+	endlessRetry := previous > 0 && t.Endless && planner == "llm" && strings.HasPrefix(t.Detail, retryPrefix) && !lostRetry
 	lineageRetry := previous == 0 && t.Endless && planner == "llm" && t.ResumeFromRunID != ""
 	resumeParent := t.ResumeFromRunID
 	w.mu.Unlock()
@@ -185,16 +183,24 @@ func (w *Wall) handleCheckpointResume(res http.ResponseWriter, id string, reques
 		if err == nil {
 			cp.Attempt = previous
 		} else if os.IsNotExist(err) && planner == "llm" {
-			// A worker can disappear immediately after loading a major
-			// checkpoint, before it has emitted a fresh round-* pair. Falling
-			// back through the durable ring avoids turning that infrastructure
-			// loss into an accidental full campaign reset.
+			// The lost worker may have disappeared before writing a fresh
+			// objective pair. Prefer the newest older ordinary checkpoint in
+			// the lineage, and only then fall back to a durable badge snapshot.
+			cp, err = w.latestLineageResumeCheckpoint(id, planner)
+			if os.IsNotExist(err) {
+				cp, err = w.latestLineageMajorCheckpoint(id)
+			}
+		}
+	case endlessRetry:
+		cp, err = w.latestLineageResumeCheckpoint(id, planner)
+		if os.IsNotExist(err) {
 			cp, err = w.latestLineageMajorCheckpoint(id)
 		}
-	case majorRetry:
-		cp, err = w.latestLineageMajorCheckpoint(id)
 	case lineageRetry:
-		cp, err = w.latestLineageMajorCheckpoint(resumeParent)
+		cp, err = w.latestLineageResumeCheckpoint(resumeParent, planner)
+		if os.IsNotExist(err) {
+			cp, err = w.latestLineageMajorCheckpoint(resumeParent)
+		}
 	default:
 		res.WriteHeader(http.StatusNoContent)
 		return
@@ -255,6 +261,38 @@ func latestResumeCheckpoint(dir, planner string) (farm.ResumeCheckpoint, error) 
 		return farm.ResumeCheckpoint{}, err
 	}
 	return farm.ResumeCheckpoint{State: stateArt}, nil
+}
+
+func (w *Wall) latestLineageResumeCheckpoint(startID, planner string) (farm.ResumeCheckpoint, error) {
+	seen := map[string]struct{}{}
+	id := startID
+	for id != "" {
+		if _, dup := seen[id]; dup {
+			break
+		}
+		seen[id] = struct{}{}
+		w.mu.Lock()
+		t := w.tiles[id]
+		through := 0
+		parent := ""
+		if t != nil {
+			through = t.Attempts
+			parent = t.ResumeFromRunID
+		}
+		w.mu.Unlock()
+		for attempt := through; attempt >= 1; attempt-- {
+			cp, err := latestResumeCheckpoint(checkpointAttemptDir(w.dumpsDir, id, attempt), planner)
+			if err == nil {
+				cp.Attempt = attempt
+				return cp, nil
+			}
+			if !os.IsNotExist(err) {
+				return farm.ResumeCheckpoint{}, err
+			}
+		}
+		id = parent
+	}
+	return farm.ResumeCheckpoint{}, os.ErrNotExist
 }
 
 func (w *Wall) latestLineageMajorCheckpoint(startID string) (farm.ResumeCheckpoint, error) {
