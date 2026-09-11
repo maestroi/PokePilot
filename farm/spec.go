@@ -122,7 +122,7 @@ type Heartbeat struct {
 
 // LLMStats is the planner tally a runner pushes on its heartbeats: round
 // progress, how often it re-picks an objective it already picked (Repeats —
-// the wander signal), think time, spend, and the replies that never
+// the wander signal), call latency, spend, and the replies that never
 // resolved. The wall carries it verbatim for the console; the field names
 // are the same JSON keys the runner's watch page renders, so both surfaces
 // show one number.
@@ -139,9 +139,12 @@ type LLMStats struct {
 	Rejected int `json:"rejected"`
 	Repeats  int `json:"repeats"`
 
-	AvgOffered  float64 `json:"avg_offered"`
-	LastSeconds float64 `json:"last_seconds"`
-	AvgSeconds  float64 `json:"avg_seconds"`
+	AvgOffered           float64 `json:"avg_offered"`
+	LastSeconds          float64 `json:"last_seconds"`
+	AvgSeconds           float64 `json:"avg_seconds"`
+	SuccessfulAvgSeconds float64 `json:"successful_avg_seconds,omitempty"`
+	RejectedAvgSeconds   float64 `json:"rejected_avg_seconds,omitempty"`
+	StrategicAvgSeconds  float64 `json:"strategic_avg_seconds,omitempty"`
 
 	PromptTokens     int `json:"prompt_tokens"`
 	CompletionTokens int `json:"completion_tokens"`
