@@ -74,3 +74,18 @@ func TestSemanticSurfRouteTransitionRealROM(t *testing.T) {
 		t.Fatalf("map after Surf transition=%02x, want %02x", got, edge.To)
 	}
 }
+
+// POKEPILOT_VIRIDIAN_NORTH_GATE_TEST_STATE is a controllable Viridian City
+// checkpoint with the Pokedex already acquired (Oak's parcel delivered), which
+// is exactly the farm-observed failure from issue #230: run-38fyc293s9mqhlc9u7o8m22t5
+// died at (23,26) trying to cross Route 2 with "no Red executor owns semantic
+// transition \"red:viridian_north_pokedex\"" despite the capability already
+// being satisfied, because that pure story gate (and its Pewter sibling) had
+// no executor case at all and fell into the default "unowned" branch.
+func TestViridianNorthGateExecutesOnceCapableRealROM(t *testing.T) {
+	m := loadPreparedFieldActionState(t, "POKEPILOT_VIRIDIAN_NORTH_GATE_TEST_STATE")
+	edge, transition := preparedSemanticEdge(t, m, "red:viridian_north_pokedex")
+	if _, err := world.ExecuteTransition(newRedRouteTransitionExecutor(m, m.ROM(), nil), edge, transition); err != nil {
+		t.Fatalf("execute viridian_north_pokedex gate with Pokedex already acquired: %v", err)
+	}
+}
