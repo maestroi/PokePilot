@@ -341,6 +341,8 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 	seed := spec.Seed
 	preparedDir, burn, err := prepareFarmAttempt(m, client, spec, planner, bootState, checkpointDir)
 	checkpointDir = preparedDir
+	restoreRAM := enableFarmRAMForensics(checkpointDir)
+	defer restoreRAM()
 	if err != nil {
 		log.Printf("farm: %s: prepare attempt: %v", spec.RunID, err)
 		finishRun(m, client, spec, "error", err.Error(), 0, checkpointDir, nil, nil)
@@ -675,6 +677,20 @@ func planQuestion(offered []agent.Objective) string {
 		fmt.Fprintf(&b, "%d: %s", i+1, o)
 	}
 	return b.String()
+}
+
+// enableFarmRAMForensics points POKEPILOT_RAM_DIR at <checkpoint-dir>/ram for
+// this lease unless the operator already set it. The previous value is
+// restored so the next lease on this worker does not inherit a deleted path.
+func enableFarmRAMForensics(checkpointDir string) func() {
+	if checkpointDir == "" {
+		return func() {}
+	}
+	if _, had := os.LookupEnv(agent.RAMForensicsDirEnv); had {
+		return func() {}
+	}
+	_ = os.Setenv(agent.RAMForensicsDirEnv, ramForensicsDir(checkpointDir))
+	return func() { _ = os.Unsetenv(agent.RAMForensicsDirEnv) }
 }
 
 // finishRun sends the Finish dump for one accepted run. Every accepted

@@ -126,6 +126,7 @@ func runCheckpointUploader(client *farm.Client, runID string, attempt int, dir s
 		// the stage and accidentally drift the rollback point toward a fault.
 		seedMajorPromotionMarkers(dir)
 		uploaded := map[string]struct{}{}
+		uploadedRAM := map[string]struct{}{}
 		for {
 			select {
 			case <-stop:
@@ -135,6 +136,7 @@ func runCheckpointUploader(client *farm.Client, runID string, attempt int, dir s
 				_ = evictPeriodicCheckpoints(dir, periodicCheckpointKeep)
 			case <-time.After(200 * time.Millisecond):
 				uploadNewObjectivePairs(client, runID, attempt, dir, uploaded)
+				uploadNewRAMBundles(client, runID, attempt, ramForensicsDir(dir), uploadedRAM)
 			}
 		}
 	}()
@@ -519,6 +521,126 @@ func checkArtifactName(name string) error {
 	return nil
 }
 
+// ramForensicsDir is the subdirectory of a run's checkpoint ring that
+// runOne points POKEPILOT_RAM_DIR at, so agent.CaptureStall and the
+// objective-failure capture's .ram/.state/.json bundles ride along with the
+// rest of the checkpoint ring instead of needing a separate operator-set
+// directory to be found and copied off by hand.
+func ramForensicsDir(checkpointDir string) string {
+	if checkpointDir == "" {
+		return ""
+	}
+	return filepath.Join(checkpointDir, "ram")
+}
+
+// ramForensicsBases returns the base names (without extension), sorted, of
+// complete .ram/.state/.json forensic bundles in dir. A bundle still being
+// written by captureRAM (agent/forensics.go writes the three files in that
+// order) is skipped until a later poll sees all three.
+func ramForensicsBases(dir string) ([]string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	files := map[string]struct{}{}
+	var rams []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		files[e.Name()] = struct{}{}
+		if strings.HasSuffix(e.Name(), ".ram") {
+			rams = append(rams, strings.TrimSuffix(e.Name(), ".ram"))
+		}
+	}
+	sort.Strings(rams)
+	var bases []string
+	for _, base := range rams {
+		if _, ok := files[base+".state"]; !ok {
+			continue
+		}
+		if _, ok := files[base+".json"]; !ok {
+			continue
+		}
+		if err := checkArtifactName(base + ".ram"); err != nil {
+			return nil, err
+		}
+		bases = append(bases, base)
+	}
+	return bases, nil
+}
+
+// collectRAMForensicsArtifacts gathers every complete forensic bundle in dir
+// for the Finish report. Unlike collectCheckpointArtifacts's .state/knowledge
+// pairing, a missing sibling here just means the bundle is still being
+// written (or was partially evicted) and is skipped rather than rejected:
+// forensic evidence is best-effort, and one incomplete bundle must never
+// fail the whole Finish upload.
+func collectRAMForensicsArtifacts(dir string) ([]farm.Artifact, error) {
+	bases, err := ramForensicsBases(dir)
+	if err != nil || len(bases) == 0 {
+		return nil, err
+	}
+	want := make([]string, 0, len(bases)*3)
+	for _, base := range bases {
+		want = append(want, base+".json", base+".state", base+".ram")
+	}
+	arts, err := artifactsForFiles(want, dir)
+	if err != nil {
+		return nil, err
+	}
+	sort.Slice(arts, func(i, j int) bool { return arts[i].Name < arts[j].Name })
+	return arts, nil
+}
+
+func appendRAMForensics(arts []farm.Artifact, checkpointDir, runID string) []farm.Artifact {
+	ramArts, err := collectRAMForensicsArtifacts(ramForensicsDir(checkpointDir))
+	if err != nil {
+		log.Printf("farm: %s: collect ram forensics: %v", runID, err)
+		return arts
+	}
+	if len(ramArts) == 0 {
+		return arts
+	}
+	candidate := append(append([]farm.Artifact(nil), arts...), ramArts...)
+	if err := farm.ValidateFinishArtifacts(farm.FinishReport{Artifacts: candidate}); err != nil {
+		log.Printf("farm: %s: omit ram forensics: %v", runID, err)
+		return arts
+	}
+	return candidate
+}
+
+// uploadNewRAMBundles uploads each complete forensic bundle in dir not yet
+// recorded in uploaded, as its own checkpoint report. It runs off the same
+// poll tick as uploadNewObjectivePairs so a worker that crashes mid-run
+// still gets its failure/stall evidence off the box, not just the tail sent
+// at Finish.
+func uploadNewRAMBundles(client *farm.Client, runID string, attempt int, dir string, uploaded map[string]struct{}) {
+	if dir == "" {
+		return
+	}
+	bases, err := ramForensicsBases(dir)
+	if err != nil {
+		return
+	}
+	for _, base := range bases {
+		if _, ok := uploaded[base]; ok {
+			continue
+		}
+		arts, err := artifactsForFiles([]string{base + ".json", base + ".state", base + ".ram"}, dir)
+		if err != nil {
+			continue
+		}
+		if err := uploadCheckpoint(client, runID, attempt, arts); err != nil {
+			continue
+		}
+		uploaded[base] = struct{}{}
+	}
+}
+
 func removeCheckpointDir(dir string) {
 	if dir == "" {
 		return
@@ -537,6 +659,7 @@ func sendFinish(client *farm.Client, report farm.FinishReport, checkpointDir str
 	} else {
 		report.Artifacts = arts
 	}
+	report.Artifacts = appendRAMForensics(report.Artifacts, checkpointDir, report.RunID)
 	ctx, cancel := context.WithTimeout(context.Background(), farmFinishTimeout)
 	defer cancel()
 	if err := client.Finish(ctx, report); err != nil {

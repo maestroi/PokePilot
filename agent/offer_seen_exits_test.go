@@ -88,6 +88,57 @@ func TestOfferNarrowsTravelMenuToNearestPlaces(t *testing.T) {
 	}
 }
 
+// TestOfferKeepsVisitedFrontierWhenNearPlacesFillTheCap pins run-1w32fl3ssna3h2y7f2butfdwbr:
+// Route 3 was visited, then a trainer blackout suppressed it; once the gate lifted,
+// the 8-place trim still preferred Pallet/Oak/Viridian (near, already walked) over
+// Route 3 (the visited door onto unvisited Route 4). Unvisited-first is discovery,
+// but it must not erase the visited frontier.
+func TestOfferKeepsVisitedFrontierWhenNearPlacesFillTheCap(t *testing.T) {
+	chain := []uint8{0x00, 0x0C, 0x01, 0x0D, 0x02, 0x0E, 0x0F, 0x03}
+	adjacency := map[uint8][]uint8{}
+	for i, m := range chain {
+		if i > 0 {
+			adjacency[m] = append(adjacency[m], chain[i-1])
+		}
+		if i < len(chain)-1 {
+			adjacency[m] = append(adjacency[m], chain[i+1])
+		}
+	}
+	adjacency[0x00] = append(adjacency[0x00], 0x28, 0x25) // Oak's lab, Red's house
+	adjacency[0x28] = []uint8{0x00}
+	adjacency[0x25] = []uint8{0x00}
+	adjacency[0x01] = append(adjacency[0x01], 0x29, 0x2A, 0x21) // center, mart, Route 22
+	adjacency[0x29] = []uint8{0x01}
+	adjacency[0x2A] = []uint8{0x01}
+	adjacency[0x21] = []uint8{0x01}
+	adjacency[0x02] = append(adjacency[0x02], 0x3A, 0x36)
+	adjacency[0x3A] = []uint8{0x02}
+	adjacency[0x36] = []uint8{0x02}
+
+	known := NewKnowledge(adjacency)
+	for _, m := range []uint8{0x00, 0x0C, 0x01, 0x0D, 0x02, 0x0E, 0x29, 0x2A, 0x3A, 0x36, 0x28, 0x25, 0x21} {
+		known.SawMap(m)
+	}
+
+	offered := Offer(Observation{
+		Map: 0x0C, MapName: "ROUTE_1", X: 5, Y: 14, PartyCount: 1,
+		Badges: []string{state.BadgeBoulder.String()},
+		Events: []string{state.EventGotPokedex.String()},
+	}, known)
+	if !offersPlace(offered, "route 3") {
+		t.Fatal("visited Route 3, the door onto still-unvisited Route 4, dropped off the Route 1 travel menu")
+	}
+	places := map[string]bool{}
+	for _, o := range offered {
+		if o.Kind == KindGoTo {
+			places[o.Place] = true
+		}
+	}
+	if len(places) > journeyPlaceLimit {
+		t.Errorf("travel menu held %d places, want at most %d", len(places), journeyPlaceLimit)
+	}
+}
+
 func offersPlace(objs []Objective, place string) bool {
 	for _, o := range objs {
 		if o.Kind == KindGoTo && o.Place == place {
