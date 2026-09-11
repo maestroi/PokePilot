@@ -11,13 +11,13 @@ import (
 )
 
 const (
-	route22Map             uint8 = 0x21
-	route23Map             uint8 = 0x22
-	indigoPlateauMap       uint8 = 0x09
-	indigoPlateauLobbyMap  uint8 = 0xAE
-	route23NorthCaveY            = 31
-	victoryRoadTravelBattles     = 64
-	victoryRoadWarpBudget        = 1800
+	route22Map               uint8 = 0x21
+	route23Map               uint8 = 0x22
+	indigoPlateauMap         uint8 = 0x09
+	indigoPlateauLobbyMap    uint8 = 0xAE
+	route23NorthCaveY              = 31
+	victoryRoadTravelBattles       = 64
+	victoryRoadWarpBudget          = 1800
 )
 
 var route23SurfBarrierRows = [...]int{101, 92, 81}
