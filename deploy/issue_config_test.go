@@ -49,16 +49,20 @@ func TestIssueConfigReachesWallOnly(t *testing.T) {
 		}
 	}
 
-	// Inference topology: LiteLLM is the normal entry point, the dedicated
-	// 7900 XTX is the direct GPU escape hatch, and direct LAN is the gateway
-	// outage safety net. The 4090 is gateway-owned overflow, never the default
-	// direct GPU, so Operator can reserve it for coding.
+	// Inference topology: runners normally bypass LiteLLM and call the 7900 XTX
+	// directly. The stable "auto" profile uses CPU/LAN only after a transport
+	// failure or the 120s 7900 request timeout. The 4090 and CPU are explicit
+	// selectable routes. LiteLLM remains deployed but its gateway URL is opt-in.
 	for _, want := range []string{
-		"POKEPILOT_LLM_GATEWAY_URL: ${POKEPILOT_LLM_GATEWAY_URL:-http://litellm:4000/v1}",
+		"POKEPILOT_LLM_GATEWAY_URL: ${POKEPILOT_LLM_GATEWAY_URL:-}",
 		"POKEPILOT_LLM_URL: ${POKEPILOT_LLM_URL:-http://192.168.50.204:8000/v1}",
 		"POKEPILOT_LLM_GPU_URL: ${POKEPILOT_LLM_GPU_URL:-http://192.168.50.130:8002/v1}",
+		"POKEPILOT_LLM_GPU_TIMEOUT: ${POKEPILOT_LLM_GPU_TIMEOUT:-120s}",
 		"POKEPILOT_LLM_GPU_RECOVERY_REASONING_EFFORT: ${POKEPILOT_LLM_GPU_RECOVERY_REASONING_EFFORT:-off}",
-		"POKEPILOT_LLM_GATEWAY_RECOVERY_REASONING_EFFORT: ${POKEPILOT_LLM_GATEWAY_RECOVERY_REASONING_EFFORT:-off}",
+		"POKEPILOT_LLM_4090_URL: ${POKEPILOT_LLM_4090_URL:-http://192.168.50.81:8002/v1}",
+		"POKEPILOT_LLM_4090_MODEL: ${POKEPILOT_LLM_4090_MODEL:-qwen3.8-27b}",
+		"POKEPILOT_LLM_4090_RECOVERY_REASONING_EFFORT: ${POKEPILOT_LLM_4090_RECOVERY_REASONING_EFFORT:-off}",
+		"POKEPILOT_LLM_GATEWAY_GPU_MODEL: ${POKEPILOT_LLM_GATEWAY_GPU_MODEL:-pokepilot-4090}",
 	} {
 		if !strings.Contains(runner, want) {
 			t.Errorf("runner missing inference setting %q", want)
@@ -76,7 +80,7 @@ func TestIssueConfigReachesWallOnly(t *testing.T) {
 		"POKEPILOT_LITELLM_LAN_MODEL: ${POKEPILOT_LITELLM_LAN_MODEL:-hosted_vllm/qwen3.5-4b}",
 	} {
 		if !strings.Contains(s, want) {
-			t.Errorf("stack missing LiteLLM backend %q", want)
+			t.Errorf("stack missing parked LiteLLM backend %q", want)
 		}
 	}
 
