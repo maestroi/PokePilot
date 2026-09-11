@@ -65,10 +65,11 @@ func appendKnownCatchObjectives(romData []byte, obs Observation, known *Knowledg
 			if !ok || owned[sp] || alreadyOffered[sp] {
 				continue
 			}
-		candidate := knownCatchHabitat{Species: sp, Place: place, Hops: distance}
-		prev, exists := best[sp]
-		if !exists || candidate.Hops < prev.Hops || (candidate.Hops == prev.Hops && candidate.Place < prev.Place) {
-			best[sp] = candidate
+			candidate := knownCatchHabitat{Species: sp, Place: place, Hops: distance}
+			prev, exists := best[sp]
+			if !exists || candidate.Hops < prev.Hops || (candidate.Hops == prev.Hops && candidate.Place < prev.Place) {
+				best[sp] = candidate
+			}
 		}
 	}
 
