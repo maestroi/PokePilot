@@ -251,12 +251,16 @@ func (w *Wall) handleRuntimeDelete(res http.ResponseWriter, req *http.Request) {
 	runID := req.PathValue("id")
 	run, ok := w.snapshotRun(runID)
 	if ok && run.Status == statusDone {
+		if w.runArtifactsProtected(runID) {
+			writeJSON(res, http.StatusConflict, map[string]string{"error": "run is still required by an active resume lineage: " + runID})
+			return
+		}
 		attempts := run.Attempts
 		if attempts < 1 {
 			attempts = 1
 		}
-		if err := w.deleteLocalFinishDumps(runID, attempts); err != nil {
-			writeJSON(res, http.StatusInternalServerError, map[string]string{"error": "delete local finish dumps: " + err.Error()})
+		if err := w.deleteLocalRunArtifacts(runID, attempts); err != nil {
+			writeJSON(res, http.StatusInternalServerError, map[string]string{"error": "delete local run artifacts: " + err.Error()})
 			return
 		}
 	}

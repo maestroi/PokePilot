@@ -34,6 +34,8 @@ func main() {
 	publishDir := flag.String("publish", "", "if set, also publish the dashboard (grid + live frames) to this directory for the browser-facing relay")
 	publishEvery := flag.Duration("publish-every", 2*time.Second, "how often the published dashboard is refreshed")
 	stateFile := flag.String("state", "", "if set, persist the tile map and queue here so a wall restart does not forget active runs")
+	artifactRetention := flag.Duration("artifact-retention", defaultArtifactRetention, "how long finished-run dumps/checkpoints are kept locally; <=0 disables automatic retention")
+	artifactRetentionEvery := flag.Duration("artifact-retention-every", defaultArtifactSweepEvery, "how often local finished-run artifacts are expired")
 	issuesAPI := flag.String("issues-api", "", "Agent Orchestrator API base (e.g. https://orchestrator.labstack.cc)")
 	issuesProject := flag.String("issues-project", "", "Agent Orchestrator project UUID for PokePilot")
 	issuesUI := flag.String("issues-ui", "", "Agent Orchestrator UI base (e.g. https://orchestrator.labstack.cc)")
@@ -71,6 +73,9 @@ func main() {
 	// The reaper runs whether or not state is persisted: a run whose runner
 	// died must not sit "running" on the grid forever.
 	go wall.RunReaper(5 * time.Second)
+	if *artifactRetention > 0 {
+		go wall.RunArtifactRetention(*artifactRetentionEvery, *artifactRetention)
+	}
 	if *publishDir != "" {
 		if err := os.MkdirAll(filepath.Join(*publishDir, "live"), 0o755); err != nil {
 			log.Fatalf("pokewall: cannot create publish directory %s: %v", *publishDir, err)
