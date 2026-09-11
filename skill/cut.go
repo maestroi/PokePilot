@@ -254,8 +254,8 @@ func EnterVermilionGym(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if policy == nil {
 		return fmt.Errorf("skill: EnterVermilionGym: nil policy")
 	}
-	if _, err := TeachCut(m); err != nil {
-		return fmt.Errorf("skill: EnterVermilionGym: %w", err)
+	if err := RepairFieldCapabilities(m, romData, policy, []FieldMove{FieldCut}); err != nil {
+		return fmt.Errorf("skill: EnterVermilionGym: prepare Cut carrier: %w", err)
 	}
 
 	h, err := rom.ParseMap(romData, vermilionCity)
