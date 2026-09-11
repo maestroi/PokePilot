@@ -2,7 +2,6 @@ package agent
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/rom"
@@ -119,19 +118,7 @@ func executeRedOwned(m *emu.Emu, romData []byte, o Objective) (result ObjectiveR
 		return result, gymOutcomeErr(o, gym)
 
 	case KindCatch:
-		species, ok := redSpeciesID(o.Species)
-		if !ok {
-			return result, fmt.Errorf("agent: %s: unknown Red species %q", o, o.Species)
-		}
-		caught, err := skill.Catch(m, romData, []uint8{species}, skill.StatAwareMove(romData), 5)
-		if err != nil {
-			return result, fmt.Errorf("agent: %s: %w", o, err)
-		}
-		if caught.Outcome == skill.OutcomeCaught {
-			return result, nil
-		}
-		result.Outcome = OutcomeBlocked
-		return result, fmt.Errorf("agent: %s: no %s caught (outcome %s, balls=%d, encounters=%d)", o, strings.ToUpper(string(o.Species)), catchOutcomeName(caught.Outcome), caught.BallsThrown, caught.Encounters)
+		return executeCatchObjective(m, romData, o, result)
 
 	case KindPickup:
 		item, ok := adapter.resolveItemID(o.Item)

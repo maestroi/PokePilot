@@ -10,12 +10,15 @@ import (
 )
 
 // offerWithTMHM extends the portable objective menu with Red-owned progression,
-// opportunistic pickup context, targeted party training, and owned machines.
-// Generic Offer retains its portable lead-training and pickup actions; this
-// adapter can additionally prove whether each concrete Red party member is
-// trainable and whether a machine pickup is immediately useful.
+// opportunistic pickup context, targeted party training, known-habitat catch
+// transitions, and owned machines. Generic Offer retains its portable
+// lead-training and pickup actions; this adapter can additionally prove whether
+// each concrete Red party member is trainable, which already-observed species
+// can be hunted on a reachable map, and whether a machine pickup is immediately
+// useful.
 func offerWithTMHM(m *emu.Emu, romData []byte, obs Observation, known *Knowledge) []Objective {
 	out := OfferWithProgression(obs, known, newRedObjectiveAdapter(m, romData))
+	out = appendKnownCatchObjectives(romData, obs, known, out)
 	var mem state.Mem
 	state.Snapshot(m, &mem)
 	party := state.DecodeParty(&mem)
