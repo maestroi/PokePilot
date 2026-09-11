@@ -79,7 +79,7 @@
     const s = r.stats;
     if (!s || r.planner === "scripted") return "";
     const left = s.rounds_left ? ` (${s.rounds_left} left)` : "";
-    return `round ${s.round}${left} · rep ${s.repeats}/${s.rounds} · think ${s.avg_seconds.toFixed(1)}s avg`;
+    return `round ${s.round}${left} · rep ${s.repeats}/${s.rounds} · call ${Number(s.avg_seconds || 0).toFixed(1)}s avg`;
   }
 
   // Decomp map constants, same inventory as red/state/map_names.go.
@@ -778,8 +778,19 @@
     const s = run.stats;
     if (!s || run.planner === "scripted") return "";
     const row = (k, v, warn) => `<div class="prow"><span>${esc(k)}</span><span${warn ? ' class="pwarn"' : ""}>${esc(v)}</span></div>`;
+    const seconds = (value) => Number(value || 0).toFixed(1) + "s";
+    const average = (value) => Number(value || 0) > 0 ? seconds(value) : "—";
     const modelLine = (s.model ? s.model : "—") + (s.backend ? " · " + s.backend : "");
-    const nums = row("round", s.round + (s.rounds_left ? ` (${s.rounds_left} left)` : "")) + row("model", modelLine) + row("repeat picks", `${s.repeats} of ${s.rounds}`, s.rounds > 3 && s.repeats * 2 >= s.rounds) + row("think", `${s.last_seconds.toFixed(1)}s / ${s.avg_seconds.toFixed(1)}s avg`) + row("offered", `${s.avg_offered.toFixed(1)} avg`) + row("tokens", `${s.prompt_tokens} / ${s.completion_tokens}`) + row("rejected", String(s.rejected), s.rejected > 0) + row("transport", String(s.transport), s.transport > 0) + row("fallbacks", String(s.fallbacks), s.fallbacks > 0);
+    const nums = row("round", s.round + (s.rounds_left ? ` (${s.rounds_left} left)` : ""))
+      + row("model", modelLine)
+      + row("repeat picks", `${s.repeats} of ${s.rounds}`, s.rounds > 3 && s.repeats * 2 >= s.rounds)
+      + row("call latency", `${seconds(s.last_seconds)} last / ${seconds(s.avg_seconds)} all avg`)
+      + row("latency avg", `${average(s.successful_avg_seconds)} ok / ${average(s.rejected_avg_seconds)} rejected / ${average(s.strategic_avg_seconds)} strategist`)
+      + row("offered", `${Number(s.avg_offered || 0).toFixed(1)} avg`)
+      + row("tokens", `${s.prompt_tokens} / ${s.completion_tokens}`)
+      + row("rejected", String(s.rejected), s.rejected > 0)
+      + row("transport", String(s.transport), s.transport > 0)
+      + row("fallbacks", String(s.fallbacks), s.fallbacks > 0);
     const intent = s.intent ? `<p class="pintent">"${esc(s.intent)}" (${s.intent_age} rounds)</p>` : "";
     const top = (s.choices && s.choices[0]) ? s.choices[0].count : 1;
     const choices = (s.choices || []).map((c) => `<div class="pchoice"><div class="pbar" style="width:${(100 * c.count) / top}%"></div><span>${esc(c.objective)}</span><span class="n">${c.count}</span></div>`).join("");
