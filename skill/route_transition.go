@@ -29,6 +29,35 @@ func (x *redRouteTransitionExecutor) ExecuteTransition(edge world.Edge, transiti
 		return world.TransitionExecutionResult{}, fmt.Errorf("skill: nil Red semantic transition executor")
 	}
 	switch transition.ID {
+	case "red:viridian_north_pokedex":
+		// Viridian's old man steps aside once Oak's Pokedex story completes.
+		// Nothing is performed here; re-read the semantic story fact
+		// immediately before traversal so a route planned on stale
+		// capabilities cannot walk into the still-blocked road.
+		var mem state.Mem
+		state.Snapshot(x.m, &mem)
+		if !redRouteCapabilities(x.romData, &mem).Has(capCanLeaveViridianNorth) {
+			return world.TransitionExecutionResult{}, &gameruntime.TransitionBlockage{
+				Transition: transition,
+				Missing:    []gameruntime.CapabilityID{capCanLeaveViridianNorth},
+			}
+		}
+		return world.TransitionExecutionResult{}, nil
+
+	case "red:pewter_east_boulder":
+		// The Pewter east-exit NPC steps aside once Brock is beaten. Like
+		// Viridian's old man, this gate performs nothing; only the
+		// last-moment capability re-check matters.
+		var mem state.Mem
+		state.Snapshot(x.m, &mem)
+		if !redRouteCapabilities(x.romData, &mem).Has(capCanLeavePewterEast) {
+			return world.TransitionExecutionResult{}, &gameruntime.TransitionBlockage{
+				Transition: transition,
+				Missing:    []gameruntime.CapabilityID{capCanLeavePewterEast},
+			}
+		}
+		return world.TransitionExecutionResult{}, nil
+
 	case "red:mt_moon_exit":
 		// A gate has nothing to execute: the corridor opens when the Super
 		// Nerd is beaten and paid, which is the fossil objective's job. All
