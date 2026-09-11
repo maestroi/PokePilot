@@ -493,6 +493,25 @@ func HasGrass(romData []byte, mapID uint8) (bool, error) {
 	return len(grass) > 0, nil
 }
 
+// HasReachableGrass reports whether the player standing at (px,py) on mapID
+// can reach tall grass without leaving the map — the same component check
+// Train itself enforces (grassInPlayerComponent). A map-wide HasGrass lies
+// exactly where Train's own docs already record the failure: Route 12's
+// Snorlax landing splits its grass into a component the player's side has
+// no walkable route into, and offering "train" there burns a round on a
+// guaranteed failure every single time. Callers that decide whether to
+// offer Train (or size a training estimate) should use this, not HasGrass.
+func HasReachableGrass(romData []byte, mapID uint8, px, py uint8) (bool, error) {
+	grass, grid, err := grassCells(romData, mapID)
+	if err != nil {
+		return false, err
+	}
+	if len(grass) == 0 {
+		return false, nil
+	}
+	return len(grassInPlayerComponent(grass, grid, int(px), int(py))) > 0, nil
+}
+
 // grassCells returns the walkable cells of mapID that stand on the
 // tileset's grass tile — the cells where the game actually rolls wild
 // encounters — along with the map's collision grid (nil when the map has

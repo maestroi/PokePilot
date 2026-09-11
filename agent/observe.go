@@ -257,7 +257,7 @@ func Observe(m *emu.Emu, romData []byte) Observation {
 		})
 	}
 
-	if grass, err := skill.HasGrass(romData, obs.Map); err == nil {
+	if grass, err := skill.HasReachableGrass(romData, obs.Map, obs.X, obs.Y); err == nil {
 		obs.HasGrass = grass
 	}
 	routes := routeAvailabilityFor(m, romData)
