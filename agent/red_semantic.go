@@ -7,6 +7,7 @@ import (
 	gameruntime "github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
+	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/skill"
 )
 
@@ -24,6 +25,9 @@ const (
 	redProgressSilphRescueComplete        ProgressID = "silph_rescue_complete"
 	redProgressVolcanoBadge               ProgressID = "volcano_badge"
 	redProgressEarthBadge                 ProgressID = "earth_badge"
+	redProgressIndigoPlateauReady         ProgressID = "indigo_plateau_ready"
+
+	redIndigoPlateauLobbyMap uint8 = 0xAE
 )
 
 func semanticPlace(name string) PlaceID {
@@ -114,9 +118,11 @@ func redProgressState(f state.StoryFacts) ProgressState {
 func redProgressStateFromRAM(mem *state.Mem, _ state.InventoryState, f state.StoryFacts) ProgressState {
 	progress := redProgressState(f)
 	badges := state.DecodeProgress(mem)
+	indigoReady := mem.U8(sym.CurMap) == redIndigoPlateauLobbyMap || f.LeagueChallengeStarted || f.LeagueChampionDefeated
 	progress = append(progress,
 		ProgressFact{ID: redProgressVolcanoBadge, Complete: badges.Has(state.BadgeVolcano)},
 		ProgressFact{ID: redProgressEarthBadge, Complete: badges.Has(state.BadgeEarth)},
+		ProgressFact{ID: redProgressIndigoPlateauReady, Complete: indigoReady},
 	)
 	return progress
 }
