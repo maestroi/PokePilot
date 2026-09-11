@@ -73,7 +73,7 @@ func TestSelectProfiles(t *testing.T) {
 			}
 			for i := range tc.want {
 				if cases[i].ID != tc.want[i] {
-					t.Fatalf("case %d=%q, want %q; all=%v", i, cases[i].ID, caseIDs(cases), tc.want)
+					t.Fatalf("case %d=%q, want %q; all=%v", i, cases[i].ID, tc.want[i], caseIDs(cases))
 				}
 		})
 	}
