@@ -275,17 +275,6 @@ func PromoteToLead(m *emu.Emu, index int) error {
 	want := party.Mons[index].Species
 	partyMax := int(party.Count) - 1
 
-	waitFor := func(budget int, what string, pred func(*state.Mem) bool) error {
-		if _, err := m.StepUntil(budget, func(m *emu.Emu) bool {
-			var s state.Mem
-			state.Snapshot(m, &s)
-			return pred(&s)
-		}); err != nil {
-			return fmt.Errorf("skill: PromoteToLead: %s did not appear within %d frames: %w", what, budget, err)
-		}
-		return nil
-	}
-	tap := func(b emu.Button) { m.Tap(b, 3, 7) }
 	onScreen := func(s *state.Mem, marker string) bool {
 		return strings.Contains(state.ScreenText(s), marker)
 	}
@@ -373,14 +362,23 @@ func PromoteToLead(m *emu.Emu, index int) error {
 	// START menu: seven entries (POKEDex PKMN ITEM name SAVE OPTIONS EXIT),
 	// opened with the START button (A talks to sprites in the overworld),
 	// drawn straight into wTileMap rather than as a text box.
-	tap(emu.Start)
+	//
+	// Re-press until it is actually up, like every other start-menu caller
+	// (bag, cut, field item, fuchsia): a checkpoint can be captured mid
+	// map-entry, and the game is not in the overworld input loop for ~50
+	// frames after resume, so a START fired in that window is swallowed and a
+	// single tap times out. The gate is "not in a battle", never Controllable:
+	// Controllable is false throughout the settle (wJoyIgnore is set) and
+	// would abort the very retry meant to ride it out.
 	// Require a valid Max (6 or 7) in the SAME snapshot as the labels: the
 	// footer text is drawn before wMaxMenuItem is written, so reading Max
 	// from an earlier frame could give a stale count and pick the wrong entry.
-	if err := waitFor(500, "start menu", func(s *state.Mem) bool {
-		mx := state.DecodeMenu(s).Max
-		return onScreen(s, "SAVE") && onScreen(s, "EXIT") && (mx == 6 || mx == 7)
-	}); err != nil {
+	if err := pressKeyUntil(emu.Start, 500, "start menu",
+		func(s *state.Mem) bool { return s.U8(sym.IsInBattle) == 0 },
+		func(s *state.Mem) bool {
+			mx := state.DecodeMenu(s).Max
+			return onScreen(s, "SAVE") && onScreen(s, "EXIT") && (mx == 6 || mx == 7)
+		}); err != nil {
 		return err
 	}
 	// PKMN is the second entry when the POKéDEX is present (7 items) and the
