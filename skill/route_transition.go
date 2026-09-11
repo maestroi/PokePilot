@@ -107,6 +107,9 @@ func (x *redRouteTransitionExecutor) ExecuteTransition(edge world.Edge, transiti
 	case "red:victory_road_strength":
 		return x.executeVictoryRoadStrength(edge)
 	default:
+		if result, ok, err := x.executeAuditedRouteTransition(edge, transition); ok {
+			return result, err
+		}
 		return world.TransitionExecutionResult{}, fmt.Errorf("skill: no Red executor owns semantic transition %q", transition.ID)
 	}
 }
