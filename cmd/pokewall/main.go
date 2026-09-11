@@ -63,9 +63,10 @@ func main() {
 		wall.SetStatePath(*stateFile)
 	}
 	if client != nil {
-		// Start after state restore so a restart can reuse persisted issue/outbox
-		// identities before the first objective-failure dump is scanned.
-		go wall.RunObjectiveFailureReporter(defaultObjectiveFailureReportEvery)
+		// Start after state restore so restart recovery can reuse persisted
+		// issue/outbox identities during the one-time dump recovery scan. New
+		// finish dumps are delivered by commit events rather than polling.
+		go wall.RunObjectiveFailureEvents(defaultObjectiveFailureReportEvery)
 	}
 	// The reaper runs whether or not state is persisted: a run whose runner
 	// died must not sit "running" on the grid forever.
@@ -83,7 +84,7 @@ func main() {
 
 	server := &http.Server{
 		Addr:              *httpAddr,
-		Handler:           operatorHTTPHandler(wall),
+		Handler:           runtimeOperatorHTTPHandler(wall),
 		ReadHeaderTimeout: serverReadHeaderTimeout,
 		IdleTimeout:       serverIdleTimeout,
 	}
