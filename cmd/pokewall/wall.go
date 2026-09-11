@@ -738,8 +738,10 @@ func (w *Wall) handleCancel(res http.ResponseWriter, req *http.Request) {
 }
 
 // handleDelete drops a finished run from the wall's memory. Active runs
-// are 409 — cancel those. Unknown IDs are 404. Finish dumps on disk are
-// left alone; this only removes the history row.
+// are 409 — cancel those. A finished run that is still an ancestor of an
+// active resume lineage is also 409 because forgetting that tile would
+// break lineage traversal. Unknown IDs are 404. Local artifacts are owned
+// by the runtime wrapper/retention policy; this removes the history row.
 func (w *Wall) handleDelete(res http.ResponseWriter, req *http.Request) {
 	id := req.PathValue("id")
 	w.mu.Lock()
@@ -752,6 +754,11 @@ func (w *Wall) handleDelete(res http.ResponseWriter, req *http.Request) {
 	if !t.Finished {
 		w.mu.Unlock()
 		writeJSON(res, http.StatusConflict, map[string]string{"error": "run still active: " + id})
+		return
+	}
+	if _, protected := w.liveCheckpointLineageLocked()[id]; protected {
+		w.mu.Unlock()
+		writeJSON(res, http.StatusConflict, map[string]string{"error": "run is still required by an active resume lineage: " + id})
 		return
 	}
 	delete(w.tiles, id)

@@ -1129,8 +1129,9 @@ func (c *checkpointRing) write(m *emu.Emu, round int, obj Objective, k *Knowledg
 	return c.evict()
 }
 
-// evict keeps only the newest keep states in the ring's directory. A state
-// and the knowledge file beside it are ONE checkpoint: evicting the state
+// evict keeps only the newest keep round-* states. Periodic and major-badge
+// snapshots share the directory but are owned by the farm retention windows.
+// A round state and the knowledge file beside it are ONE checkpoint: evicting the state
 // evicts its knowledge too, and a knowledge file whose state is gone is
 // orphaned — its save state no longer exists to pair with — so it is
 // dropped as well. Knowledge without a state is exactly the "claims to know
@@ -1143,23 +1144,29 @@ func (c *checkpointRing) evict() error {
 	names := make([]string, 0, len(entries))
 	stateSet := map[string]bool{}
 	for _, en := range entries {
-		if strings.HasSuffix(en.Name(), ".state") {
-			names = append(names, en.Name())
-			stateSet[en.Name()] = true
+		name := en.Name()
+		// The agent ring owns only objective-boundary checkpoints. The farm
+		// flight recorder deliberately shares this directory for periodic and
+		// major-badge snapshots, but those have independent retention windows.
+		if strings.HasPrefix(name, "round-") && strings.HasSuffix(name, ".state") {
+			names = append(names, name)
+			stateSet[name] = true
 		}
 	}
-	// A knowledge file whose state is still in the ring belongs to it; only
-	// a knowledge file with NO state beside it is orphaned and dropped.
+	// Only round-* knowledge belongs to this ring. In particular, never
+	// classify a major-badge sidecar as orphaned just because its state is
+	// managed by the farm retention window rather than stateSet above.
 	for _, en := range entries {
-		if !isKnowledgeName(en.Name()) {
+		name := en.Name()
+		if !strings.HasPrefix(name, "round-") || !isKnowledgeName(name) {
 			continue
 		}
-		base := strings.TrimSuffix(strings.TrimSuffix(en.Name(), ".json"), fmt.Sprintf(".knowledge-v%d", memoryVersion))
+		base := strings.TrimSuffix(strings.TrimSuffix(name, ".json"), fmt.Sprintf(".knowledge-v%d", memoryVersion))
 		if stateSet[base+".state"] {
 			continue
 		}
-		if err := os.Remove(filepath.Join(c.dir, en.Name())); err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("evict %s: %w", en.Name(), err)
+		if err := os.Remove(filepath.Join(c.dir, name)); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("evict %s: %w", name, err)
 		}
 	}
 	sort.Strings(names)
