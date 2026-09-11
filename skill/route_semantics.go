@@ -120,6 +120,7 @@ func redRouteCapabilities(romData []byte, mem *state.Mem) gameruntime.Capability
 	if facts.SaffronGateOpen {
 		caps[capCanEnterSaffron] = true
 	}
+	addAuditedRedRouteCapabilities(mem, caps)
 	return caps
 }
 
@@ -140,6 +141,9 @@ func semanticTransition(id string, edge world.Edge, requires ...gameruntime.Capa
 // portable transition model. The router never sees these map ids; they are
 // adapter facts attached to ordinary geometric edges.
 func redRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, bool) {
+	if transition, ok := redAuditedRouteTransitionForEdge(edge); ok {
+		return transition, true
+	}
 	pair := func(a, b uint8) bool {
 		return (edge.From == a && edge.To == b) || (edge.From == b && edge.To == a)
 	}
@@ -216,7 +220,9 @@ func redRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, bool) {
 		t := semanticTransition("red:saffron_guard_drink", edge, capCanEnterSaffron)
 		t.Gate = true
 		return t, true
-	case pair(semanticVermilionCityMap, vermilionGymMap):
+	case edge.From == semanticVermilionCityMap && edge.To == vermilionGymMap:
+		// Cut is only an entry prerequisite. Leaving the Gym must never be
+		// blocked by the party losing/replacing its Cut carrier later.
 		return semanticTransition("red:vermilion_gym_cut", edge, capCanCut), true
 	case pair(semanticPalletTownMap, semanticRoute21Map),
 		pair(semanticRoute21Map, semanticCinnabarMap):
