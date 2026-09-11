@@ -10,8 +10,8 @@ const (
 	// BIT_UNUSED_BEAT_ELITE_4 (bit 0) immediately before resetting the Indigo
 	// event range and saving. Despite the historical name, this is the only
 	// durable RAM fact that survives the ending's event reset.
-	elite4FlagsAddr       uint16 = 0xd734
-	elite4CompletedMask   uint8  = 1 << 0
+	elite4FlagsAddr     uint16 = 0xd734
+	elite4CompletedMask uint8  = 1 << 0
 
 	// Item ids from pokered/constants/item_constants.asm.
 	secretKeyItemID  uint8 = 0x2b
