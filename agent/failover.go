@@ -18,8 +18,8 @@ type LLMCall struct {
 	Duration    time.Duration
 }
 
-// LLMRoute is the currently pinned endpoint and the number of primary-to-
-// fallback transitions made this run.
+// LLMRoute is the endpoint used for the most recent ask and the number of
+// primary-to-fallback transitions made this run.
 type LLMRoute struct {
 	Backend   string
 	Model     string
@@ -27,25 +27,30 @@ type LLMRoute struct {
 }
 
 // FailoverPlanner routes asks between a primary LLM endpoint and an optional
-// fallback. It switches only when the active primary planner's Transport
-// counter rises during an ask; content/model/schema rejections stay on the
-// same backend. Once switched, fallback remains pinned for the run.
+// fallback. Every ask retries primary first; it only reaches for fallback
+// when that ask's Transport counter rises (primary unreachable this call),
+// and the next ask tries primary again. Content/model/schema rejections stay
+// on the same backend within one ask. Primary is never pinned away: a
+// restart blip or one dropped connection costs that single call, not the
+// rest of the run.
 type FailoverPlanner struct {
 	Primary  *LLMPlanner
 	Fallback *LLMPlanner
 	OnCall   func(LLMCall)
 
-	active    *LLMPlanner
-	backend   string
-	failovers int
+	// lastBackend/lastModel describe only the most recent ask, for Route()
+	// reporting; they do not steer where the next ask starts.
+	lastBackend string
+	lastModel   string
+	failovers   int
 }
 
 func NewFailoverPlanner(primary, fallback *LLMPlanner) *FailoverPlanner {
 	return &FailoverPlanner{
-		Primary:  primary,
-		Fallback: fallback,
-		active:   primary,
-		backend:  "primary",
+		Primary:     primary,
+		Fallback:    fallback,
+		lastBackend: "primary",
+		lastModel:   primary.Model,
 	}
 }
 
@@ -66,19 +71,18 @@ func (p *FailoverPlanner) StrategizeRetry(obs Observation, offered []Objective, 
 }
 
 func (p *FailoverPlanner) askPlan(obs Observation, offered []Objective, reason string, retry *Retry) (Plan, error) {
-	active := p.active
-	p.syncContext(active)
+	active := p.Primary
+	p.lastBackend, p.lastModel = "primary", p.Primary.Model
 	plan, err, transport := p.callPlan(active, obs, offered, reason, retry)
-	if transport && active == p.Primary && p.Fallback != nil {
+	if transport && p.Fallback != nil {
 		p.failovers++
-		p.active = p.Fallback
-		p.backend = "fallback"
 		if p.Primary.Log != nil {
 			fmt.Fprintf(p.Primary.Log,
-				"  llm route: primary %s at %s had a strategist transport failure; pinning fallback %s at %s for the rest of the run\n",
+				"  llm route: primary %s at %s had a strategist transport failure; using fallback %s at %s for this call\n",
 				p.Primary.Model, p.Primary.BaseURL, p.Fallback.Model, p.Fallback.BaseURL)
 		}
 		active = p.Fallback
+		p.lastBackend, p.lastModel = "fallback", p.Fallback.Model
 		p.syncContext(active)
 		plan, err, transport = p.callPlan(active, obs, offered, reason, retry)
 	}
@@ -114,19 +118,18 @@ func (p *FailoverPlanner) callPlan(active *LLMPlanner, obs Observation, offered 
 }
 
 func (p *FailoverPlanner) ask(obs Observation, offered []Objective, retry *Retry) (Objective, error) {
-	active := p.active
-	p.syncContext(active)
+	active := p.Primary
+	p.lastBackend, p.lastModel = "primary", p.Primary.Model
 	o, err, transport := p.call(active, obs, offered, retry)
-	if transport && active == p.Primary && p.Fallback != nil {
+	if transport && p.Fallback != nil {
 		p.failovers++
-		p.active = p.Fallback
-		p.backend = "fallback"
 		if p.Primary.Log != nil {
 			fmt.Fprintf(p.Primary.Log,
-				"  llm route: primary %s at %s had a transport failure; pinning fallback %s at %s for the rest of the run\n",
+				"  llm route: primary %s at %s had a transport failure; using fallback %s at %s for this call\n",
 				p.Primary.Model, p.Primary.BaseURL, p.Fallback.Model, p.Fallback.BaseURL)
 		}
 		active = p.Fallback
+		p.lastBackend, p.lastModel = "fallback", p.Fallback.Model
 		p.syncContext(active)
 		o, err, transport = p.call(active, obs, offered, retry)
 	}
@@ -174,15 +177,7 @@ func (p *FailoverPlanner) syncContext(active *LLMPlanner) {
 }
 
 func (p *FailoverPlanner) Route() LLMRoute {
-	active := p.active
-	if active == nil {
-		active = p.Primary
-	}
-	model := ""
-	if active != nil {
-		model = active.Model
-	}
-	return LLMRoute{Backend: p.backend, Model: model, Failovers: p.failovers}
+	return LLMRoute{Backend: p.lastBackend, Model: p.lastModel, Failovers: p.failovers}
 }
 
 func (p *FailoverPlanner) Health() LLMHealth {

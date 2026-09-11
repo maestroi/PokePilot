@@ -54,8 +54,9 @@ const strategicReplanAfter = 4
 //
 // Endpoint selection is deliberately not another stats concern. The optional
 // POKEPILOT_LLM_FALLBACK_* endpoint is configured here, then agent's
-// FailoverPlanner owns transport-only failover and permanent pinning. Its
-// per-endpoint call hook is the only routing seam statsPlanner needs.
+// FailoverPlanner owns transport-only, per-call failover: it retries primary
+// every ask and only reaches for fallback on that ask's transport failure.
+// Its per-endpoint call hook is the only routing seam statsPlanner needs.
 type statsPlanner struct {
 	inner  *agent.LLMPlanner
 	router *agent.FailoverPlanner

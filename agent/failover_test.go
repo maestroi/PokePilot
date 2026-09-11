@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-func TestFailoverPlannerFallsBackOnTransportAndPinsFallback(t *testing.T) {
+func TestFailoverPlannerRetriesPrimaryEveryCall(t *testing.T) {
 	primaryServer := brokenLLMServer(t)
 	defer primaryServer.Close()
 
@@ -55,16 +55,16 @@ func TestFailoverPlannerFallsBackOnTransportAndPinsFallback(t *testing.T) {
 
 	obs.Round = 2
 	if _, err := p.Next(obs, offered); err != nil {
-		t.Fatalf("second Next on pinned fallback: %v", err)
+		t.Fatalf("second Next retrying primary: %v", err)
 	}
 	if fallbackCalls.Load() != 2 {
 		t.Fatalf("fallback calls after second round = %d, want 2", fallbackCalls.Load())
 	}
-	if primary.Health.Transport != 1 {
-		t.Fatalf("primary was retried after failover: transport=%d", primary.Health.Transport)
+	if primary.Health.Transport != 2 {
+		t.Fatalf("primary was not retried on the second call: transport=%d, want 2", primary.Health.Transport)
 	}
-	if route := p.Route(); route.Failovers != 1 || route.Backend != "fallback" {
-		t.Fatalf("fallback did not stay pinned: %+v", route)
+	if route := p.Route(); route.Failovers != 2 || route.Backend != "fallback" {
+		t.Fatalf("route after second failover = %+v, want 2 failovers still on fallback", route)
 	}
 }
 
