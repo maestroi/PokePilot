@@ -98,7 +98,10 @@
     }
 
     async function refreshSnapshot() {
-      const response = await root.fetch("/v1/dashboard", { cache: "no-store" });
+      // Bulk cleanup is an explicit operator action, so it may fetch the full
+      // finished catalog. The normal 2s console poll is intercepted separately
+      // and stays active-only plus one paged history slice.
+      const response = await root.fetch("/v1/dashboard?status=done", { cache: "no-store" });
       if (!response.ok) throw new Error(`dashboard returned ${response.status}`);
       snapshot = await response.json();
       render();
