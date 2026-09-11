@@ -69,7 +69,7 @@ func TestEvaluateGoalUsesObservableState(t *testing.T) {
 	}
 
 	g, _ = ParseGoal("item:potion")
-	obs = Observation{Bag: []Item{{Name: "POTION", Quantity: 2}}
+	obs = Observation{Bag: []Item{{Name: "POTION", Quantity: 2}}}
 	if got := EvaluateGoal(g, obs); !got.Complete {
 		t.Fatalf("item status = %+v", got)
 	}
