@@ -373,6 +373,22 @@ func PromoteToLead(m *emu.Emu, index int) error {
 	// Require a valid Max (6 or 7) in the SAME snapshot as the labels: the
 	// footer text is drawn before wMaxMenuItem is written, so reading Max
 	// from an earlier frame could give a stale count and pick the wrong entry.
+	//
+	// Right after a resume or a menu close the overworld tilemap can still be
+	// showing the start menu's SAVE/EXIT text for ~30 frames while it redraws.
+	// The "menu already open" check in the press below reads that text, so a
+	// stale tilemap makes it skip the Start press and send A to the player
+	// sprite instead. Let the overworld settle first: step until the menu text
+	// clears (stale tilemap) or the budget elapses (the menu is genuinely open
+	// and stays up, in which case the press below correctly skips Start).
+	for i := 0; i < 6; i++ {
+		var s state.Mem
+		state.Snapshot(m, &s)
+		if !onScreen(&s, "SAVE") || !onScreen(&s, "EXIT") {
+			break
+		}
+		m.StepFrames(10)
+	}
 	if err := pressKeyUntil(emu.Start, 500, "start menu",
 		func(s *state.Mem) bool { return s.U8(sym.IsInBattle) == 0 },
 		func(s *state.Mem) bool {
