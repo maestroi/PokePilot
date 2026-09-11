@@ -33,9 +33,10 @@ func TestParseGoalRejectsInvalidTargets(t *testing.T) {
 	}
 }
 
-func TestEliteFourRequiresHallOfFameProgressFact(t *testing.T) {
+func TestEliteFourRequiresEightBadgesAndHallOfFame(t *testing.T) {
 	g, _ := ParseGoal("elite-four")
-	obs := Observation{Badges: []string{"1", "2", "3", "4", "5", "6", "7", "8"}}
+	eight := []string{"1", "2", "3", "4", "5", "6", "7", "8"}
+	obs := Observation{Badges: eight}
 	if got := EvaluateGoal(g, obs); got.Complete {
 		t.Fatal("eight badges alone completed elite-four goal")
 	}
@@ -49,7 +50,14 @@ func TestEliteFourRequiresHallOfFameProgressFact(t *testing.T) {
 
 	obs.Story = append(obs.Story, ProgressFact{ID: ProgressMainStoryComplete, Complete: true})
 	if got := EvaluateGoal(g, obs); !got.Complete {
-		t.Fatal("main-story completion fact did not complete elite-four goal")
+		t.Fatal("eight badges plus main-story completion did not complete elite-four goal")
+	}
+
+	// #39 is a fresh-campaign qualification, so a synthetic ending flag without
+	// the badge journey must not qualify even though the ending itself occurred.
+	mainStoryOnly := Observation{Story: ProgressState{{ID: ProgressMainStoryComplete, Complete: true}}}
+	if got := EvaluateGoal(g, mainStoryOnly); got.Complete {
+		t.Fatalf("main-story bit without eight badges qualified the full campaign: %+v", got)
 	}
 }
 
@@ -61,7 +69,7 @@ func TestEvaluateGoalUsesObservableState(t *testing.T) {
 	}
 
 	g, _ = ParseGoal("item:potion")
-	obs = Observation{Bag: []Item{{Name: "POTION", Quantity: 2}}}
+	obs = Observation{Bag: []Item{{Name: "POTION", Quantity: 2}}
 	if got := EvaluateGoal(g, obs); !got.Complete {
 		t.Fatalf("item status = %+v", got)
 	}
@@ -73,26 +81,33 @@ func TestEvaluateGoalUsesObservableState(t *testing.T) {
 	}
 }
 
-// The elite-four predicate is intentionally pinned to the semantic fact that
-// crosses the game-adapter boundary. Falling back to Observation.Events here
-// would make a Red event spelling part of the generic planner contract again.
+// The elite-four predicate is intentionally pinned to portable semantic facts
+// crossing the game-adapter boundary. Falling back to Observation.Events here
+// would make Red event spelling part of the generic planner contract again.
 func TestEvaluateGoalEliteFourCompletesOnSemanticProgress(t *testing.T) {
 	g, err := ParseGoal("elite-four")
 	if err != nil {
 		t.Fatalf("ParseGoal: %v", err)
 	}
+	eight := []string{"Boulder", "Cascade", "Thunder", "Rainbow", "Soul", "Marsh", "Volcano", "Earth"}
 
-	done := Observation{Story: ProgressState{{ID: ProgressMainStoryComplete, Complete: true}}}
+	done := Observation{
+		Badges: eight,
+		Story:  ProgressState{{ID: ProgressMainStoryComplete, Complete: true}},
+	}
 	if got := EvaluateGoal(g, done); !got.Complete {
-		t.Fatalf("elite-four not complete with main-story progress set: %+v", got)
+		t.Fatalf("elite-four not complete with eight badges + main-story progress set: %+v", got)
 	}
 
-	championOnly := Observation{Story: ProgressState{{ID: ProgressLeagueChampionDefeated, Complete: true}}}
+	championOnly := Observation{
+		Badges: eight,
+		Story:  ProgressState{{ID: ProgressLeagueChampionDefeated, Complete: true}},
+	}
 	if got := EvaluateGoal(g, championOnly); got.Complete {
 		t.Fatalf("elite-four completed before Hall of Fame: %+v", got)
 	}
 
-	legacyOnly := Observation{Events: []string{"BeatChampionRival"}}
+	legacyOnly := Observation{Badges: eight, Events: []string{"BeatChampionRival"}}
 	if got := EvaluateGoal(g, legacyOnly); got.Complete {
 		t.Fatalf("elite-four completed from legacy Red event text: %+v", got)
 	}
