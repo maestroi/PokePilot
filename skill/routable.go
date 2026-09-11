@@ -11,10 +11,9 @@ import (
 )
 
 // RoutePlanner answers GoTo's first question — "is there a route from where
-// the player stands to there?" — without walking a step. It is GoTo's own
-// planning pass (BuildGraph, overlay the current map's live WRAM geometry,
-// component-aware routing) hoisted so one graph build can answer for many
-// destinations.
+// the player stands to there?" — without walking a step. It overlays the
+// current map's live WRAM geometry on the cached immutable ROM graph, then one
+// component-aware routing snapshot can answer for many destinations.
 //
 // It exists because the menu was offering journeys the router cannot start.
 // MEASURED 2026-09-07 on run-3t5kvlk55zvbjkkkno3ses4g6: from Mt. Moon 1F's
@@ -35,12 +34,12 @@ type RoutePlanner struct {
 }
 
 // NewRoutePlanner captures the route geometry and semantic permissions as they
-// stand right now: the static graph with the current map's live block geometry
-// overlaid, the player's tile, and Red's adapter projection of route
+// stand right now: the cached static graph with the current map's live block
+// geometry overlaid, the player's tile, and Red's adapter projection of route
 // capabilities. The world router consumes only the semantic prerequisite
 // contract; Red map ids, badges, HMs, and story encoding stay in skill.
 func NewRoutePlanner(m *emu.Emu, romData []byte) (*RoutePlanner, error) {
-	g, err := world.BuildGraph(romData)
+	g, err := cachedRouteGraph(romData)
 	if err != nil {
 		return nil, fmt.Errorf("skill: RoutePlanner: build graph: %w", err)
 	}
