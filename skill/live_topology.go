@@ -9,7 +9,13 @@ import (
 	"github.com/maestroi/pokepilot/world"
 )
 
-const liveMapBorderBlocks = 3
+const (
+	liveMapBorderBlocks = 3
+	// IsNextTileShoreOrWater in the Red ROM accepts $14 as the ordinary
+	// water tile. Land collision lists intentionally exclude it, so a Surf
+	// traversal grid must add it back after decoding the shared map blocks.
+	surfWaterTile uint8 = 0x14
+)
 
 func readLiveMapBlocks(peek func(uint16) uint8, widthBlocks, heightBlocks int) ([]byte, error) {
 	if widthBlocks < 0 || heightBlocks < 0 {
@@ -61,5 +67,26 @@ func liveMapGridForTraversal(m *emu.Emu, romData []byte, h rom.MapHeader, mode w
 	if err != nil {
 		return nil, err
 	}
-	return world.BuildFromBlocksForTraversal(romData, h, blocks, mode)
+	grid, err := world.BuildFromBlocksForTraversal(romData, h, blocks, mode)
+	if err != nil {
+		return nil, err
+	}
+	if mode == world.TraversalWater {
+		// BuildFromBlocksForTraversal swaps the ROM's tile-pair collision table,
+		// but the base collision list is shared with land movement and does not
+		// itself include water. The actual game permits $14 while surfing, so
+		// project that same semantic fact into live pathfinding. Checking both
+		// top-left field-action and bottom-left collision subtiles covers the
+		// two tile contracts the decoder deliberately keeps separate.
+		for y := 0; y < grid.Height; y++ {
+			for x := 0; x < grid.Width; x++ {
+				field, fieldOK := grid.FieldTile(x, y)
+				collision, collisionOK := grid.Tile(x, y)
+				if (fieldOK && field == surfWaterTile) || (collisionOK && collision == surfWaterTile) {
+					grid.Set(x, y, true)
+				}
+			}
+		}
+	}
+	return grid, nil
 }
