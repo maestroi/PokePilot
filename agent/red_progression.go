@@ -116,7 +116,7 @@ func redProgressionObjectives(obs Observation) []Objective {
 			Note:     "(repair or retain a Cut carrier, travel from Vermilion through Cerulean, Route 9, Rock Tunnel, Lavender, and the Underground Path to Celadon, heal, then defeat Erika for the Rainbow Badge; Flash is optional)",
 		})
 	}
-	if obs.Story.Has(redProgressRainbowBadge) && skill.RocketHideoutAvailable(obs.Map) && !obs.Story.Has(redProgressSilphScopeAcquired) {
+	if skill.RocketHideoutAvailable(obs.Map) && !obs.Story.Has(redProgressSilphScopeAcquired) {
 		out = append(out, Objective{
 			Kind:     KindProgress,
 			Progress: redProgressSilphScopeAcquired,
