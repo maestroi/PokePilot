@@ -69,6 +69,9 @@ func PostSurgeCeladonProgression(m *emu.Emu, romData []byte, policy MovePolicy) 
 	if err != nil {
 		return fmt.Errorf("skill: PostSurgeCeladonProgression: Erika: %w", err)
 	}
+	if outcome == state.ResultLost {
+		return fmt.Errorf("skill: PostSurgeCeladonProgression: %w against Erika", ErrTrainerBlackedOut)
+	}
 	if outcome != state.ResultWon {
 		return fmt.Errorf("skill: PostSurgeCeladonProgression: Erika battle ended with outcome %d", outcome)
 	}
