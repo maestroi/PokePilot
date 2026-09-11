@@ -23,11 +23,17 @@ func TestDefaultGoalStopsDeterministically(t *testing.T) {
 	}
 
 	// Reachable through the portable planner contract: the Red adapter maps
-	// its story state to this fact, while goal evaluation itself knows nothing
-	// about Red event labels or event-bit encodings.
-	done := agent.Observation{Story: agent.ProgressState{{ID: agent.ProgressLeagueChampionDefeated, Complete: true}}}
+	// the Hall of Fame completion state to this fact, while goal evaluation
+	// itself knows nothing about Red event labels or event-bit encodings.
+	done := agent.Observation{Story: agent.ProgressState{{ID: agent.ProgressMainStoryComplete, Complete: true}}}
 	if status := agent.EvaluateGoal(g, done); !status.Complete {
-		t.Fatalf("default goal not complete once the Champion is beaten: %+v", status)
+		t.Fatalf("default goal not complete once Hall of Fame is reached: %+v", status)
+	}
+	// The Champion battle event lands before Oak escorts the player into the
+	// Hall of Fame, so it must not terminate the run early.
+	championOnly := agent.Observation{Story: agent.ProgressState{{ID: agent.ProgressLeagueChampionDefeated, Complete: true}}}
+	if status := agent.EvaluateGoal(g, championOnly); status.Complete {
+		t.Fatalf("default goal completed on Champion event before Hall of Fame: %+v", status)
 	}
 	// And it must not complete early: eight badges is not a finished game.
 	eight := agent.Observation{Badges: []string{"Boulder", "Cascade", "Thunder", "Rainbow", "Soul", "Marsh", "Volcano", "Earth"}}
