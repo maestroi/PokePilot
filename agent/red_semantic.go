@@ -27,6 +27,7 @@ const (
 	redProgressEarthBadge                 ProgressID = "earth_badge"
 	redProgressIndigoPlateauReady         ProgressID = "indigo_plateau_ready"
 
+	redIndigoPlateauMap      uint8 = 0x09
 	redIndigoPlateauLobbyMap uint8 = 0xAE
 )
 
@@ -119,7 +120,8 @@ func redProgressState(f state.StoryFacts) ProgressState {
 func redProgressStateFromRAM(mem *state.Mem, _ state.InventoryState, f state.StoryFacts) ProgressState {
 	progress := redProgressState(f)
 	badges := state.DecodeProgress(mem)
-	indigoReady := mem.U8(sym.CurMap) == redIndigoPlateauLobbyMap || f.LeagueChallengeStarted || f.LeagueChampionDefeated || f.MainStoryComplete
+	mapID := mem.U8(sym.CurMap)
+	indigoReady := mapID == redIndigoPlateauMap || mapID == redIndigoPlateauLobbyMap || f.LeagueChallengeStarted || f.LeagueChampionDefeated || f.MainStoryComplete
 	progress = append(progress,
 		ProgressFact{ID: redProgressVolcanoBadge, Complete: badges.Has(state.BadgeVolcano)},
 		ProgressFact{ID: redProgressEarthBadge, Complete: badges.Has(state.BadgeEarth)},
