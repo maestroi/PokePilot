@@ -2,6 +2,7 @@ package agent
 
 import (
 	"errors"
+	"fmt"
 	"reflect"
 	"sort"
 	"strings"
@@ -160,5 +161,28 @@ func TestFailureTallyOutlivesHistory(t *testing.T) {
 	k.Done(route2)
 	if got := k.FailureList(); len(got) != 0 {
 		t.Fatalf("FailureList = %+v after success, want empty", got)
+	}
+}
+
+// TestFailureLastIsBoundedLikeHistory: a navigation-stall error carries a
+// full map-hop trace that can run to hundreds of characters. Failures.Last
+// used to store it verbatim, duplicating what History's Outcome already
+// bounds via conciseObjectiveError and bloating the strategist prompt on
+// every replan. It must go through the same trim.
+func TestFailureLastIsBoundedLikeHistory(t *testing.T) {
+	k := NewKnowledge(nil)
+	route2 := Objective{Kind: KindGoTo, Place: "route 2"}
+	trace := strings.Repeat("11(14,26) -> ", 40) + "3e(2,7)"
+	k.Failed(route2, fmt.Errorf("agent: %s: skill: GoTo: skill: navigation made no progress: repeated map 3e at (2,7); trace: %s", route2, trace))
+
+	got := k.FailureList()
+	if len(got) != 1 {
+		t.Fatalf("FailureList = %+v, want one failure", got)
+	}
+	if len(got[0].Last) > 320 {
+		t.Fatalf("Last = %d chars, want it capped like History's Outcome text", len(got[0].Last))
+	}
+	if strings.Contains(got[0].Last, "agent: go to route 2: ") {
+		t.Fatalf("Last = %q, want the redundant objective prefix stripped", got[0].Last)
 	}
 }

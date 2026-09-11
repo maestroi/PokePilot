@@ -58,7 +58,11 @@ func (k *Knowledge) Failed(o Objective, err error) {
 		name = trainerName
 	}
 	f := k.Failures[name]
-	f.Objective, f.Times, f.Last = name, f.Times+1, err.Error()
+	// conciseObjectiveError is also what History's Outcome text uses: this
+	// keeps the planner-facing size bounded and the two representations of
+	// "the same failure" from disagreeing, instead of Failures carrying the
+	// full raw error (route-stall traces run to hundreds of characters).
+	f.Objective, f.Times, f.Last = name, f.Times+1, conciseObjectiveError(o, err)
 	k.Failures[name] = f
 }
 
