@@ -41,6 +41,12 @@ var consoleCSS []byte
 //go:embed ui/stats.js
 var statsJS []byte
 
+//go:embed ui/llm_metrics.js
+var llmMetricsJS []byte
+
+//go:embed ui/llm_metrics.css
+var llmMetricsCSS []byte
+
 //go:embed ui/inspector.js
 var inspectorJS []byte
 
@@ -74,7 +80,8 @@ func handler(wallBase string) http.Handler {
 
 func operatorIndexPage() []byte {
 	page := bytes.Replace(indexHTML, goalInputHTML, goalPresetHTML, 1)
-	extra := []byte("<script src=\"/stats.js\"></script>\n<script src=\"/inspector.js\"></script>\n</body>")
+	page = bytes.Replace(page, []byte("</head>"), []byte("<link rel=\"stylesheet\" href=\"/llm_metrics.css\">\n</head>"), 1)
+	extra := []byte("<script src=\"/stats.js\"></script>\n<script src=\"/llm_metrics.js\"></script>\n<script src=\"/inspector.js\"></script>\n</body>")
 	return bytes.Replace(page, []byte("</body>"), extra, 1)
 }
 
@@ -110,10 +117,20 @@ func handlerWithServices(wallBase, replayBase, token string) http.Handler {
 		res.Header().Set("Cache-Control", "no-store")
 		res.Write(consoleCSS) //nolint:errcheck // best effort
 	})
+	mux.HandleFunc("GET /llm_metrics.css", func(res http.ResponseWriter, req *http.Request) {
+		res.Header().Set("Content-Type", "text/css; charset=utf-8")
+		res.Header().Set("Cache-Control", "no-store")
+		res.Write(llmMetricsCSS) //nolint:errcheck // best effort
+	})
 	mux.HandleFunc("GET /stats.js", func(res http.ResponseWriter, req *http.Request) {
 		res.Header().Set("Content-Type", "text/javascript; charset=utf-8")
 		res.Header().Set("Cache-Control", "no-store")
 		res.Write(statsJS) //nolint:errcheck // best effort
+	})
+	mux.HandleFunc("GET /llm_metrics.js", func(res http.ResponseWriter, req *http.Request) {
+		res.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+		res.Header().Set("Cache-Control", "no-store")
+		res.Write(llmMetricsJS) //nolint:errcheck // best effort
 	})
 	mux.HandleFunc("GET /inspector.js", func(res http.ResponseWriter, req *http.Request) {
 		res.Header().Set("Content-Type", "text/javascript; charset=utf-8")

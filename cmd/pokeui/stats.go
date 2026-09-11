@@ -36,6 +36,29 @@ type statsRun struct {
 }
 
 type statsLLM struct {
+	Calls    int `json:"calls"`
+	Rounds   int `json:"rounds"`
+	Rejected int `json:"rejected"`
+	Repeats  int `json:"repeats"`
+
+	AvgSeconds           float64 `json:"avg_seconds"`
+	SuccessfulAvgSeconds float64 `json:"successful_avg_seconds"`
+	RejectedAvgSeconds   float64 `json:"rejected_avg_seconds"`
+	StrategicAvgSeconds  float64 `json:"strategic_avg_seconds"`
+
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	Transport        int `json:"transport"`
+	Fallbacks        int `json:"fallbacks"`
+	Failovers        int `json:"failovers"`
+
+	Backend       string `json:"backend"`
+	Model         string `json:"model"`
+	ResponseModel string `json:"response_model"`
+
+	StrategicCalls int `json:"strategic_calls"`
+	FastCalls      int `json:"fast_calls"`
+
 	GoalSummary  string `json:"goal_summary"`
 	GoalCurrent  int    `json:"goal_current"`
 	GoalTarget   int    `json:"goal_target"`
@@ -68,6 +91,62 @@ type farmOutcomeStats struct {
 	TerminalReasons          []outcomeCount           `json:"terminal_reasons"`
 	BadgeDistribution        []badgeBucket            `json:"badge_distribution"`
 	EndlessExperiments       []endlessExperimentStats `json:"endless_experiments"`
+	LLM                      llmAggregateStats        `json:"llm"`
+}
+
+type llmAggregateStats struct {
+	TrackedRuns          int               `json:"tracked_runs"`
+	Calls                int               `json:"calls"`
+	Rounds               int               `json:"rounds"`
+	Rejected             int               `json:"rejected"`
+	Repeats              int               `json:"repeats"`
+	AvgSeconds           float64           `json:"avg_seconds"`
+	SuccessfulAvgSeconds float64           `json:"successful_avg_seconds"`
+	RejectedAvgSeconds   float64           `json:"rejected_avg_seconds"`
+	StrategicAvgSeconds  float64           `json:"strategic_avg_seconds"`
+	PromptTokens         int64             `json:"prompt_tokens"`
+	CompletionTokens     int64             `json:"completion_tokens"`
+	Transport            int               `json:"transport"`
+	Fallbacks            int               `json:"fallbacks"`
+	Failovers            int               `json:"failovers"`
+	StrategicCalls       int               `json:"strategic_calls"`
+	FastCalls            int               `json:"fast_calls"`
+	Profiles             []llmProfileStats `json:"profiles"`
+	LatestModels         []llmModelStats   `json:"latest_models"`
+}
+
+type llmProfileStats struct {
+	Profile          string  `json:"profile"`
+	Runs             int     `json:"runs"`
+	Calls            int     `json:"calls"`
+	Rejected         int     `json:"rejected"`
+	AvgSeconds       float64 `json:"avg_seconds"`
+	PromptTokens     int64   `json:"prompt_tokens"`
+	CompletionTokens int64   `json:"completion_tokens"`
+	Transport        int     `json:"transport"`
+	Fallbacks        int     `json:"fallbacks"`
+}
+
+type llmModelStats struct {
+	Name    string `json:"name"`
+	Backend string `json:"backend,omitempty"`
+	Runs    int    `json:"runs"`
+}
+
+type llmWeightSums struct {
+	allSeconds       float64
+	successSeconds   float64
+	successCalls     int
+	rejectedSeconds  float64
+	rejectedCalls    int
+	strategicSeconds float64
+	strategicCalls   int
+}
+
+type llmProfileAccumulator struct {
+	stats         llmProfileStats
+	latencySum    float64
+	latencyWeight int
 }
 
 type endlessExperimentStats struct {
@@ -132,11 +211,15 @@ func summarizeOutcomes(runs []statsRun) farmOutcomeStats {
 	reasons := map[string]int{}
 	badges := make([]int, 9)
 	groups := map[string]*endlessExperimentStats{}
+	profiles := map[string]*llmProfileAccumulator{}
+	models := map[string]*llmModelStats{}
+	var llmWeights llmWeightSums
 
 	for _, run := range runs {
 		attempts := completedAttempts(run)
 		out.CompletedAttempts += attempts
 		out.RetryableFailureAttempts += retryableFailures(run, attempts)
+		addLLMStats(&out.LLM, &llmWeights, profiles, models, run)
 
 		settled := isSettled(run)
 		if settled {
@@ -189,6 +272,7 @@ func summarizeOutcomes(runs []statsRun) farmOutcomeStats {
 		}
 	}
 
+	finalizeLLMStats(&out.LLM, llmWeights, profiles, models)
 	out.TerminalReasons = sortedCounts(reasons)
 	out.BadgeDistribution = make([]badgeBucket, 0, len(badges))
 	for i, count := range badges {
@@ -206,6 +290,117 @@ func summarizeOutcomes(runs []statsRun) farmOutcomeStats {
 		return a.Key < b.Key
 	})
 	return out
+}
+
+func addLLMStats(out *llmAggregateStats, weights *llmWeightSums, profiles map[string]*llmProfileAccumulator, models map[string]*llmModelStats, run statsRun) {
+	s := run.Stats
+	if s == nil || s.Calls <= 0 {
+		return
+	}
+	out.TrackedRuns++
+	out.Calls += s.Calls
+	out.Rounds += s.Rounds
+	out.Rejected += s.Rejected
+	out.Repeats += s.Repeats
+	out.PromptTokens += int64(s.PromptTokens)
+	out.CompletionTokens += int64(s.CompletionTokens)
+	out.Transport += s.Transport
+	out.Fallbacks += s.Fallbacks
+	out.Failovers += s.Failovers
+	out.StrategicCalls += s.StrategicCalls
+	out.FastCalls += s.FastCalls
+	weights.allSeconds += s.AvgSeconds * float64(s.Calls)
+
+	successCalls := s.Calls - s.Rejected
+	if successCalls > 0 && s.SuccessfulAvgSeconds > 0 {
+		weights.successSeconds += s.SuccessfulAvgSeconds * float64(successCalls)
+		weights.successCalls += successCalls
+	}
+	if s.Rejected > 0 && s.RejectedAvgSeconds > 0 {
+		weights.rejectedSeconds += s.RejectedAvgSeconds * float64(s.Rejected)
+		weights.rejectedCalls += s.Rejected
+	}
+	if s.StrategicCalls > 0 && s.StrategicAvgSeconds > 0 {
+		weights.strategicSeconds += s.StrategicAvgSeconds * float64(s.StrategicCalls)
+		weights.strategicCalls += s.StrategicCalls
+	}
+
+	profile := strings.TrimSpace(run.LLMProfile)
+	if profile == "" {
+		profile = "legacy"
+	}
+	p := profiles[profile]
+	if p == nil {
+		p = &llmProfileAccumulator{stats: llmProfileStats{Profile: profile}}
+		profiles[profile] = p
+	}
+	p.stats.Runs++
+	p.stats.Calls += s.Calls
+	p.stats.Rejected += s.Rejected
+	p.stats.PromptTokens += int64(s.PromptTokens)
+	p.stats.CompletionTokens += int64(s.CompletionTokens)
+	p.stats.Transport += s.Transport
+	p.stats.Fallbacks += s.Fallbacks
+	p.latencySum += s.AvgSeconds * float64(s.Calls)
+	p.latencyWeight += s.Calls
+
+	model := strings.TrimSpace(s.ResponseModel)
+	if model == "" {
+		model = strings.TrimSpace(s.Model)
+	}
+	if model != "" {
+		backend := strings.TrimSpace(s.Backend)
+		key := model + "\x1f" + backend
+		m := models[key]
+		if m == nil {
+			m = &llmModelStats{Name: model, Backend: backend}
+			models[key] = m
+		}
+		m.Runs++
+	}
+}
+
+func finalizeLLMStats(out *llmAggregateStats, weights llmWeightSums, profiles map[string]*llmProfileAccumulator, models map[string]*llmModelStats) {
+	if out.Calls > 0 {
+		out.AvgSeconds = weights.allSeconds / float64(out.Calls)
+	}
+	if weights.successCalls > 0 {
+		out.SuccessfulAvgSeconds = weights.successSeconds / float64(weights.successCalls)
+	}
+	if weights.rejectedCalls > 0 {
+		out.RejectedAvgSeconds = weights.rejectedSeconds / float64(weights.rejectedCalls)
+	}
+	if weights.strategicCalls > 0 {
+		out.StrategicAvgSeconds = weights.strategicSeconds / float64(weights.strategicCalls)
+	}
+
+	out.Profiles = make([]llmProfileStats, 0, len(profiles))
+	for _, p := range profiles {
+		if p.latencyWeight > 0 {
+			p.stats.AvgSeconds = p.latencySum / float64(p.latencyWeight)
+		}
+		out.Profiles = append(out.Profiles, p.stats)
+	}
+	sort.Slice(out.Profiles, func(i, j int) bool {
+		if out.Profiles[i].Calls != out.Profiles[j].Calls {
+			return out.Profiles[i].Calls > out.Profiles[j].Calls
+		}
+		return out.Profiles[i].Profile < out.Profiles[j].Profile
+	})
+
+	out.LatestModels = make([]llmModelStats, 0, len(models))
+	for _, m := range models {
+		out.LatestModels = append(out.LatestModels, *m)
+	}
+	sort.Slice(out.LatestModels, func(i, j int) bool {
+		if out.LatestModels[i].Runs != out.LatestModels[j].Runs {
+			return out.LatestModels[i].Runs > out.LatestModels[j].Runs
+		}
+		if out.LatestModels[i].Name != out.LatestModels[j].Name {
+			return out.LatestModels[i].Name < out.LatestModels[j].Name
+		}
+		return out.LatestModels[i].Backend < out.LatestModels[j].Backend
+	})
 }
 
 func addRunToEndless(g *endlessExperimentStats, run statsRun, attempts int) {

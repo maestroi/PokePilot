@@ -15,6 +15,15 @@
         <div class="outcome-note" id="outcome-status">Loading…</div>
       </div>
       <div class="outcome-summary" id="outcome-kpis"></div>
+      <div class="outcome-block llm-analytics">
+        <div class="llm-analytics-head"><div><h3>LLM workload</h3><div class="llm-analytics-note">Call latency is weighted by completed endpoint calls. Token totals and rejection/retry counters are cumulative across run snapshots currently retained by the farm.</div></div><div class="outcome-note" id="llm-status"></div></div>
+        <div class="llm-summary" id="llm-kpis"></div>
+        <div class="llm-latency-strip" id="llm-latency"></div>
+        <div class="llm-analytics-grid">
+          <section class="llm-analytics-pane"><h4>Routing profiles</h4><div id="llm-profiles"></div></section>
+          <section class="llm-analytics-pane"><h4>Latest serving models</h4><div id="llm-models"></div></section>
+        </div>
+      </div>
       <div class="outcome-grid">
         <div class="outcome-block"><h3>Badge distribution</h3><div id="outcome-badges"></div></div>
         <div class="outcome-block"><h3>Terminal outcomes</h3><div id="outcome-reasons"></div></div>
@@ -25,6 +34,16 @@
   const pct=(n,d)=>d?`${(100*n/d).toFixed(n&&n<d?1:0)}%`:"—";
   const nfmt=(n)=>Number(n||0).toLocaleString();
   const ratio=(n,d)=>d?`${nfmt(n)} / ${nfmt(d)} · ${pct(n,d)}`:"No tracked runs";
+  const seconds=(n)=>Number(n||0)>0?`${Number(n).toFixed(1)}s`:"—";
+  const profileLabel=(profile)=>{
+    switch(String(profile||"").toLowerCase()){
+      case "auto": return "7900 XTX → CPU";
+      case "gpu": return "RTX 4090";
+      case "default": return "CPU only";
+      case "legacy": return "Legacy / unspecified";
+      default: return profile||"Unknown";
+    }
+  };
 
   function renderKpis(s){
     const missing=Math.max(0,(s.settled_runs||0)-(s.usable_progress_runs||0));
@@ -37,6 +56,48 @@
       ["No progress data",nfmt(missing),"settled runs without a usable final player snapshot"],
     ];
     document.getElementById("outcome-kpis").innerHTML=cells.map(([k,v,sub])=>`<div class="outcome-summary-item"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div><div class="s">${esc(sub)}</div></div>`).join("");
+  }
+
+  function renderLLM(llm){
+    llm=llm||{};
+    const tracked=Number(llm.tracked_runs||0);
+    const calls=Number(llm.calls||0);
+    const rounds=Number(llm.rounds||0);
+    const rejected=Number(llm.rejected||0);
+    const repeats=Number(llm.repeats||0);
+    document.getElementById("llm-status").textContent=tracked?`${nfmt(tracked)} run snapshots · ${nfmt(calls)} calls`:"No LLM telemetry yet";
+    const cells=[
+      ["Calls",nfmt(calls),`${nfmt(tracked)} run snapshots with call telemetry`],
+      ["Average call",seconds(llm.avg_seconds),"endpoint wall-clock latency, weighted by call count"],
+      ["Rejected",calls?`${nfmt(rejected)} · ${pct(rejected,calls)}`:"—","reply/validation/transport errors counted by the runner"],
+      ["Token spend",`${nfmt(llm.prompt_tokens)} / ${nfmt(llm.completion_tokens)}`,"prompt / completion tokens"],
+    ];
+    document.getElementById("llm-kpis").innerHTML=cells.map(([k,v,sub])=>`<div class="llm-summary-item"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div><div class="s">${esc(sub)}</div></div>`).join("");
+    const latency=[
+      ["successful avg",seconds(llm.successful_avg_seconds)],
+      ["rejected avg",seconds(llm.rejected_avg_seconds)],
+      ["strategist avg",seconds(llm.strategic_avg_seconds)],
+      ["planner mix",`${nfmt(llm.fast_calls)} fast · ${nfmt(llm.strategic_calls)} strategist`],
+      ["repeat picks",rounds?`${nfmt(repeats)} / ${nfmt(rounds)} · ${pct(repeats,rounds)}`:"—"],
+      ["reliability",`${nfmt(llm.transport)} transport · ${nfmt(llm.fallbacks)} fallbacks · ${nfmt(llm.failovers)} failovers`],
+    ];
+    document.getElementById("llm-latency").innerHTML=latency.map(([k,v])=>`<span>${esc(k)} <b>${esc(v)}</b></span>`).join("");
+
+    const profiles=llm.profiles||[];
+    const profileEl=document.getElementById("llm-profiles");
+    if(!profiles.length){
+      profileEl.innerHTML='<p class="outcome-empty">No routing-profile telemetry yet.</p>';
+    }else{
+      profileEl.innerHTML=`<div class="llm-table-wrap"><table class="llm-table"><thead><tr><th>Profile</th><th class="num">Runs</th><th class="num">Calls</th><th class="num">Avg call</th><th class="num">Rejected</th><th class="num">Prompt</th><th class="num">Completion</th><th class="num">Fallbacks</th></tr></thead><tbody>${profiles.map((p)=>`<tr><td>${esc(profileLabel(p.profile))}</td><td class="num">${nfmt(p.runs)}</td><td class="num">${nfmt(p.calls)}</td><td class="num">${esc(seconds(p.avg_seconds))}</td><td class="num">${p.calls?esc(`${nfmt(p.rejected)} · ${pct(p.rejected,p.calls)}`):"—"}</td><td class="num">${nfmt(p.prompt_tokens)}</td><td class="num">${nfmt(p.completion_tokens)}</td><td class="num">${nfmt(p.fallbacks)}</td></tr>`).join("")}</tbody></table></div>`;
+    }
+
+    const models=llm.latest_models||[];
+    const modelEl=document.getElementById("llm-models");
+    if(!models.length){
+      modelEl.innerHTML='<p class="outcome-empty">No serving-model snapshots yet.</p>';
+    }else{
+      modelEl.innerHTML=`<div class="llm-model-list">${models.map((m)=>`<div class="llm-model-row"><div><strong title="${esc(m.name)}">${esc(m.name)}</strong><span>${esc(m.backend||"backend not reported")}</span></div><em>${nfmt(m.runs)} run${Number(m.runs)===1?"":"s"}</em></div>`).join("")}</div>`;
+    }
   }
 
   function renderBars(target,rows,label,total){
@@ -64,6 +125,7 @@
 
   function render(s){
     renderKpis(s);
+    renderLLM(s.llm);
     const badgeRows=(s.badge_distribution||[]).filter((r)=>r.count>0);
     renderBars("outcome-badges",badgeRows,(r)=>`${r.badges} badge${r.badges===1?"":"s"}`,s.usable_progress_runs||0);
     renderBars("outcome-reasons",s.terminal_reasons||[],(r)=>r.name,s.settled_runs||0);
