@@ -8,8 +8,8 @@ import (
 
 const (
 	maxConcurrentReplayRenders = 1
-	maxReplayProcessLogBytes    = 64 << 10
-	replayJobRetention          = 30 * time.Minute
+	maxReplayProcessLogBytes   = 64 << 10
+	replayJobRetention         = 30 * time.Minute
 )
 
 var replayRenderSlots = make(chan struct{}, maxConcurrentReplayRenders)
