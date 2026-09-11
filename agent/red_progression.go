@@ -24,6 +24,7 @@ func redProgressionKnown(id ProgressID) bool {
 		redProgressVolcanoBadge,
 		redProgressEarthBadge,
 		redProgressIndigoPlateauReady,
+		ProgressMainStoryComplete,
 		ProgressSaffronGateOpen,
 		ProgressCardKeyOwned,
 		ProgressSecretKeyOwned:
@@ -75,7 +76,7 @@ func redVermilionGymRecoveryAvailable(obs Observation) bool {
 // objective shape. Availability is Red knowledge; the planner only sees the
 // semantic state change requested by each objective.
 func redProgressionObjectives(obs Observation) []Objective {
-	out := make([]Objective, 0, 14)
+	out := make([]Objective, 0, 15)
 	if skill.MtMoonProgressionAvailable(obs.Map) && !obs.Story.Has(redProgressMtMoonFossilAcquired) {
 		out = append(out, Objective{Kind: KindProgress, Progress: redProgressMtMoonFossilAcquired, Note: "(defeat Mt. Moon's Super Nerd and choose the Dome Fossil to open the eastern exit)"})
 	}
@@ -191,6 +192,13 @@ func redProgressionObjectives(obs Observation) []Objective {
 			Note:     "(defeat the final Route 22 rival, pass Route 23's seven badge checks and three Surf bands, solve Victory Road's live Strength puzzles, then heal in the Indigo Plateau lobby)",
 		})
 	}
+	if obs.Story.Has(redProgressIndigoPlateauReady) && !obs.Story.Has(ProgressMainStoryComplete) {
+		out = append(out, Objective{
+			Kind:     KindProgress,
+			Progress: ProgressMainStoryComplete,
+			Note:     "(heal before committing, defeat Lorelei, Bruno, Agatha, Lance and the Champion in sequence, then advance the ending until the Hall of Fame completion state is durably recorded)",
+		})
+	}
 	return out
 }
 
@@ -228,6 +236,8 @@ func executeRedProgression(m *emu.Emu, romData []byte, o Objective) error {
 		return skill.ViridianProgression(m, romData, policy)
 	case redProgressIndigoPlateauReady:
 		return skill.VictoryRoadProgression(m, romData, policy)
+	case ProgressMainStoryComplete:
+		return skill.EliteFourProgression(m, romData, policy)
 	default:
 		return fmt.Errorf("agent: %s: unknown Red progression goal %q", o, o.Progress)
 	}
