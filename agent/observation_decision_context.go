@@ -36,15 +36,22 @@ type CatchDecisionContext struct {
 
 // MarshalJSON keeps Observation's existing wire shape byte-for-byte for its
 // original fields and adds DecisionContext only when there is relevant local
-// encounter or economy information. llmUserPrompt already json.Marshal's
-// Observation, so this reaches every planner without another prompt layer.
+// encounter or economy information. Runtime route blockage state deliberately
+// stays complete so Offer can fail closed on every semantic progression gate;
+// only this planner-facing projection is capped to keep the prompt bounded.
+// llmUserPrompt already json.Marshal's Observation, so this reaches every
+// planner without another prompt layer.
 func (o Observation) MarshalJSON() ([]byte, error) {
 	type plain Observation
+	wire := plain(o)
+	if len(wire.RouteBlockages) > routeBlockageCap {
+		wire.RouteBlockages = append([]RouteBlockage(nil), wire.RouteBlockages[:routeBlockageCap]...)
+	}
 	return json.Marshal(struct {
 		plain
 		DecisionContext *DecisionContext `json:",omitempty"`
 	}{
-		plain:           plain(o),
+		plain:           wire,
 		DecisionContext: decisionContextFor(o),
 	})
 }

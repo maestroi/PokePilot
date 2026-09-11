@@ -6,10 +6,15 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	gameruntime "github.com/maestroi/pokepilot/game"
+	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/skill"
 	"github.com/maestroi/pokepilot/world"
 )
 
+// routeBlockageCap bounds the planner-facing JSON projection. Runtime keeps
+// every semantic blockage so Offer can never re-offer a progression-locked
+// destination merely because an unrelated set of blocked places filled this
+// prompt budget first.
 const routeBlockageCap = 12
 
 // RoutePrerequisiteLink connects a missing portable route capability to
@@ -19,12 +24,14 @@ type RoutePrerequisiteLink struct {
 	Capability      CapabilityID `json:"capability"`
 	FieldCapability CapabilityID `json:"field_capability,omitempty"`
 	Progress        ProgressID   `json:"progress,omitempty"`
+	Badge           string       `json:"badge,omitempty"`
 }
 
-// RouteBlockage is the bounded planner-facing projection of a structured
+// RouteBlockage is the planner-facing projection of a structured
 // world.RouteBlockedError. Destination is the requested semantic place;
 // Transitions and Missing preserve semantic identities without leaking map IDs
-// or parsing error prose.
+// or parsing error prose. Observation JSON applies routeBlockageCap, while the
+// runtime copy remains complete for objective filtering.
 type RouteBlockage struct {
 	Destination   PlaceID                 `json:"destination"`
 	Transitions   []string                `json:"transitions,omitempty"`
@@ -70,11 +77,14 @@ func collectRouteAvailability(planner routeReachability, names []string) routeAv
 		out.Unroutable = append(out.Unroutable, name)
 
 		var blocked *world.RouteBlockedError
-		if !errors.As(err, &blocked) || len(out.Blockages) >= routeBlockageCap {
+		if !errors.As(err, &blocked) {
 			continue
 		}
 		blockage := plannerRouteBlockage(semanticPlace(name), blocked)
 		if len(blockage.Missing) != 0 {
+			// Do not cap here. Offer consumes the runtime Observation and needs
+			// the COMPLETE semantic-blocked set. The JSON boundary is where the
+			// prompt is bounded; see Observation.MarshalJSON.
 			out.Blockages = append(out.Blockages, blockage)
 		}
 	}
@@ -114,6 +124,10 @@ func plannerRouteBlockage(destination PlaceID, blocked *world.RouteBlockedError)
 
 func redRoutePrerequisiteLink(id CapabilityID) (RoutePrerequisiteLink, bool) {
 	switch gameruntime.CapabilityID(id) {
+	case "can_leave_viridian_north":
+		return RoutePrerequisiteLink{Capability: id, Progress: redProgressPokedexAcquired}, true
+	case "can_leave_pewter_east":
+		return RoutePrerequisiteLink{Capability: id, Badge: state.BadgeBoulder.String()}, true
 	case "can_exit_mt_moon":
 		return RoutePrerequisiteLink{Capability: id, Progress: redProgressMtMoonFossilAcquired}, true
 	case "can_pass_cerulean_robbed_house":
@@ -133,6 +147,8 @@ func redRoutePrerequisiteLink(id CapabilityID) (RoutePrerequisiteLink, bool) {
 		return RoutePrerequisiteLink{Capability: id, FieldCapability: "strength"}, true
 	case "can_clear_snorlax":
 		return RoutePrerequisiteLink{Capability: id, Progress: redProgressPokeFluteAcquired}, true
+	case "can_enter_saffron":
+		return RoutePrerequisiteLink{Capability: id, Progress: ProgressSaffronGateOpen}, true
 	default:
 		// Unknown capabilities stay explicit in Missing. Not having a known
 		// preparation link is evidence we do not know a recipe yet.

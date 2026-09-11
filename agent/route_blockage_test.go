@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	gameruntime "github.com/maestroi/pokepilot/game"
+	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/skill"
 	"github.com/maestroi/pokepilot/world"
 )
@@ -101,6 +102,26 @@ func TestPlannerRouteBlockageKeepsUnknownPrerequisiteHonest(t *testing.T) {
 	}
 }
 
+func TestRedRoutePrerequisiteLinksCoverStoryGates(t *testing.T) {
+	for _, tc := range []struct {
+		cap      CapabilityID
+		progress ProgressID
+		badge    string
+	}{
+		{cap: "can_leave_viridian_north", progress: redProgressPokedexAcquired},
+		{cap: "can_leave_pewter_east", badge: state.BadgeBoulder.String()},
+		{cap: "can_enter_saffron", progress: ProgressSaffronGateOpen},
+	} {
+		link, ok := redRoutePrerequisiteLink(tc.cap)
+		if !ok {
+			t.Fatalf("capability %q has no planner prerequisite link", tc.cap)
+		}
+		if link.Progress != tc.progress || link.Badge != tc.badge {
+			t.Fatalf("capability %q link = %+v, want progress=%q badge=%q", tc.cap, link, tc.progress, tc.badge)
+		}
+	}
+}
+
 func TestRouteBlockagesArePlannerVisibleAndBounded(t *testing.T) {
 	obs := Observation{RouteBlockages: []RouteBlockage{{
 		Destination:   "cinnabar island",
@@ -131,8 +152,22 @@ func TestRouteBlockagesArePlannerVisibleAndBounded(t *testing.T) {
 		}
 	}
 	got := collectRouteAvailability(planner, names)
-	if len(got.Blockages) > routeBlockageCap {
-		t.Fatalf("blockage prompt grew to %d entries, cap is %d", len(got.Blockages), routeBlockageCap)
+	if len(got.Blockages) != len(names) {
+		t.Fatalf("runtime blockages = %d, want all %d semantic blockers retained", len(got.Blockages), len(names))
+	}
+
+	encoded, err = json.Marshal(Observation{RouteBlockages: got.Blockages})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var projected struct {
+		RouteBlockages []RouteBlockage
+	}
+	if err := json.Unmarshal(encoded, &projected); err != nil {
+		t.Fatal(err)
+	}
+	if len(projected.RouteBlockages) != routeBlockageCap {
+		t.Fatalf("planner JSON contains %d blockages, want cap %d", len(projected.RouteBlockages), routeBlockageCap)
 	}
 }
 
@@ -147,5 +182,35 @@ func TestOfferAlwaysWithholdsSemanticBlockedDestination(t *testing.T) {
 	}
 	if offersPlace(Offer(obs, known), "vermilion gym") {
 		t.Fatal("semantic-blocked destination was offered as an immediate GoTo")
+	}
+}
+
+func TestOfferWithholdsSemanticBlockedDestinationBeyondPlannerCap(t *testing.T) {
+	names := make([]string, 0, routeBlockageCap+1)
+	planner := fakeRouteReachability{}
+	for _, name := range skill.PlaceNames() {
+		d, ok := skill.Place(name)
+		if !ok {
+			continue
+		}
+		names = append(names, name)
+		planner[d] = blockedRoute("portable:gate", "can_surf")
+		if len(names) == routeBlockageCap+1 {
+			break
+		}
+	}
+	if len(names) <= routeBlockageCap {
+		t.Fatalf("not enough place fixtures to exercise cap: %d", len(names))
+	}
+
+	got := collectRouteAvailability(planner, names)
+	last := names[len(names)-1]
+	destination, _ := skill.Place(last)
+	known := NewKnowledge(map[uint8][]uint8{destination.Map: {destination.Map}})
+	known.SawMap(destination.Map)
+	obs := Observation{Map: destination.Map, MapName: "TEST", PartyCount: 1, Unroutable: got.Unroutable, RouteBlockages: got.Blockages}
+
+	if offersPlace(Offer(obs, known), last) {
+		t.Fatalf("semantic blocker beyond planner JSON cap leaked back into Offer: %q", last)
 	}
 }
