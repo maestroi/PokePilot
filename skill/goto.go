@@ -85,17 +85,29 @@ func formatNavigationTrace(trace []navigationState) string {
 	return strings.Join(parts, " -> ")
 }
 
-// blockImmediateReverse returns hard plus every first-hop edge that would
-// return to the map just left. hard is not mutated: the reverse ban is a
-// PREFERENCE (don't bounce), while hard is measured geometry (this leg is
-// unwalkable from this tile), and the caller drops one without the other.
-func blockImmediateReverse(g *world.Graph, hard map[world.Edge]bool, current, previous uint8) map[world.Edge]bool {
+// blockVisitedMaps returns hard plus every first-hop edge that would return to
+// a map this GoTo call has already departed from. hard is not mutated: the
+// reverse ban is a PREFERENCE (don't bounce), while hard is measured geometry
+// (this leg is unwalkable from this tile), and the caller drops one without
+// the other.
+//
+// Banning only the single immediately-previous map (the original rule) misses
+// longer bounce cycles: Cerulean City <-> Cerulean's trashed house <-> Route 4
+// each look like "not the map I just left" from the other's perspective, so a
+// route that treats either building as a component bridge can tick between
+// the two forever, one hop of "progress" at a time, until the navigation
+// guard's exact-position repeat happens to catch it (measured on
+// run-dicjjitksq5s3txp8m0nzn4k9 round 16: 13 transitions bouncing
+// 03->0f->03->3e->03->0f->03->3e before the guard fired). Banning every
+// already-visited map as a preference closes the whole cycle, not just its
+// last link.
+func blockVisitedMaps(g *world.Graph, hard map[world.Edge]bool, current uint8, visited map[uint8]bool) map[world.Edge]bool {
 	blocked := make(map[world.Edge]bool, len(hard))
 	for e := range hard {
 		blocked[e] = true
 	}
 	for _, e := range g.Edges[current] {
-		if e.To == previous {
+		if visited[e.To] {
 			blocked[e] = true
 		}
 	}
@@ -143,14 +155,32 @@ func goToWithTransitionExecutor(m *emu.Emu, romData []byte, dest Destination, ex
 	}
 	failed := map[legAt]bool{}
 
-	// A bound on re-plans. Each ban is a distinct (leg, tile), so this
-	// terminates on its own, but an unattended run should not discover a
-	// pathological map by walking it for an hour.
+	// deadEnds bans an edge from an entire map, not just the one tile it was
+	// taken from. It exists for the case legAt cannot cover: a connection
+	// that always lands in a walkable component with no recorded onward
+	// edge, no matter which tile of the origin map the crossing starts from.
+	// Cerulean City <-> Route 4 <-> Cerulean's trashed house is this in the
+	// wild (run-dicjjitksq5s3txp8m0nzn4k9 round 16): the crossing into Route
+	// 4 landed in the same dead-end component whether the walk to the border
+	// started at (0,19), (27,12), or (20,0), so a tile-scoped ban never
+	// matched the next attempt and the loop ran the full 17-transition guard
+	// budget before failing. A ban keyed by (edge, origin map) survives every
+	// tile the walker happens to approach from.
+	type legFromMap struct {
+		e world.Edge
+		m uint8
+	}
+	deadEnds := map[legFromMap]bool{}
+
+	// A bound on re-plans. Each ban is a distinct (leg, tile) or (leg, map),
+	// so this terminates on its own, but an unattended run should not
+	// discover a pathological map by walking it for an hour.
 	const maxReplans = 8
 	replans := 0
 	semanticExecutions := 0
-	var previousMap uint8
-	havePreviousMap := false
+	visitedMaps := map[uint8]bool{}
+	var lastLeg legAt
+	haveLastLeg := false
 
 	for {
 		if err := abortIfBattle(m); err != nil {
@@ -180,9 +210,14 @@ func goToWithTransitionExecutor(m *emu.Emu, romData []byte, dest Destination, ex
 				blockedHere[k.e] = true
 			}
 		}
+		for k := range deadEnds {
+			if k.m == cur {
+				blockedHere[k.e] = true
+			}
+		}
 		preferred := blockedHere
-		if havePreviousMap && dest.Map != previousMap {
-			preferred = blockImmediateReverse(routeGraph, blockedHere, cur, previousMap)
+		if len(visitedMaps) > 0 && !visitedMaps[dest.Map] {
+			preferred = blockVisitedMaps(routeGraph, blockedHere, cur, visitedMaps)
 		}
 
 		var mem state.Mem
@@ -201,6 +236,26 @@ func goToWithTransitionExecutor(m *emu.Emu, romData []byte, dest Destination, ex
 		// with the preference dropped and the measured bans kept. The
 		// navigation guard still catches a real oscillation.
 		if errors.Is(err, world.ErrNoRoute) && len(preferred) > len(blockedHere) {
+			// The leg that brought us here landed in a component with no
+			// forward route: it walked, so it never became an
+			// ErrLegUnwalkable ban, but it is exactly as much a dead end as
+			// one. Cerulean City <-> Route 4 <-> Cerulean's trashed house is
+			// this in the wild (run-dicjjitksq5s3txp8m0nzn4k9 round 16):
+			// crossing into Route 4 always lands in a component with zero
+			// recorded onward edges, so every replan from there says "go
+			// back", and every replan back at Cerulean says "try Route 4
+			// again", forever. Banning the entry leg at its origin tile,
+			// the same way an unwalkable leg is banned, means the next visit
+			// to that tile plans around it instead of repeating it.
+			if haveLastLeg {
+				k := legFromMap{e: lastLeg.e, m: lastLeg.m}
+				if !deadEnds[k] {
+					if replans++; replans > maxReplans {
+						return newReplanExhaustedError(maxReplans, cur, x, y, dest, err)
+					}
+					deadEnds[k] = true
+				}
+			}
 			route, err = world.FindRoutePlanAtDestinationWithCapabilities(
 				routeGraph, cur, dest.Map, int(x), int(y), int(dest.X), int(dest.Y), blockedHere, prereqs,
 			)
@@ -241,7 +296,8 @@ func goToWithTransitionExecutor(m *emu.Emu, romData []byte, dest Destination, ex
 			}
 			return fmt.Errorf("skill: GoTo: %w", err)
 		}
-		previousMap, havePreviousMap = e.From, true
+		visitedMaps[e.From] = true
+		lastLeg, haveLastLeg = legAt{e: e, m: cur, x: x, y: y}, true
 		nowX, nowY := playerXY(m)
 		if err := guard.observe(navigationState{
 			Map: m.Peek8(sym.CurMap), X: nowX, Y: nowY,
