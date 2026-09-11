@@ -373,6 +373,22 @@ func PromoteToLead(m *emu.Emu, index int) error {
 	// Require a valid Max (6 or 7) in the SAME snapshot as the labels: the
 	// footer text is drawn before wMaxMenuItem is written, so reading Max
 	// from an earlier frame could give a stale count and pick the wrong entry.
+	//
+	// A checkpoint can also be captured mid start-menu CLOSE: wTileMap still
+	// shows the menu for a few frames after the game has begun closing it, so
+	// the "menu up" check below matches the stale tiles and the PKMN pick
+	// presses A into the overworld ("left the expected screen"). Settle first:
+	// step until the start menu is off screen. A closing menu clears on its
+	// own (measured ~6 frames), and the START press then opens a fresh one; a
+	// genuinely open menu stays up and the START press finds it already up.
+	for i := 0; i < 100; i++ {
+		var s state.Mem
+		state.Snapshot(m, &s)
+		if !(onScreen(&s, "SAVE") && onScreen(&s, "EXIT")) {
+			break
+		}
+		m.StepFrame()
+	}
 	if err := pressKeyUntil(emu.Start, 500, "start menu",
 		func(s *state.Mem) bool { return s.U8(sym.IsInBattle) == 0 },
 		func(s *state.Mem) bool {
