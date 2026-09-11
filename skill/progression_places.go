@@ -16,14 +16,13 @@ func init() {
 	// trash-can door; Gym opens that door before Travel approaches it.
 	places["vermilion gym"] = Destination{Map: 0x5C, X: 5, Y: 2}
 
-	// The dock is a one-tile corridor between the city warp at (14,0) and
-	// the S.S. Anne warp at (14,2).
-	places["vermilion dock"] = Destination{Map: 0x5E, X: 14, Y: 1}
-	// S.S. Anne 1F lands at (26,0)/(27,0); one row inside is safe floor.
-	places["ss anne 1f"] = Destination{Map: 0x5F, X: 26, Y: 1}
-	// The 1F stair enters 2F at (2,4). Stand one tile to its right so a
-	// destination does not immediately re-trigger the stair warp.
-	places["ss anne 2f"] = Destination{Map: 0x60, X: 3, Y: 4}
-	// The captain is object 1 at (4,2); (4,3) is the interaction tile below.
-	places["ss anne captain's room"] = Destination{Map: 0x65, X: 4, Y: 3}
+	// The dock and ship floors are implementation waypoints of SSAnneHM01.
+	// Boarding is ticket/script gated and the 2F/captain path owns a mandatory
+	// rival plus the HM handoff, so exposing these as ordinary journeys can
+	// strand the strategist mid-story. Place still resolves interactionPlaces
+	// for the compound skill, while PlaceNames no longer advertises them.
+	interactionPlaces["vermilion dock"] = Destination{Map: 0x5E, X: 14, Y: 1}
+	interactionPlaces["ss anne 1f"] = Destination{Map: 0x5F, X: 26, Y: 1}
+	interactionPlaces["ss anne 2f"] = Destination{Map: 0x60, X: 3, Y: 4}
+	interactionPlaces["ss anne captain's room"] = Destination{Map: 0x65, X: 4, Y: 3}
 }
