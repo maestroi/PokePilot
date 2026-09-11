@@ -33,7 +33,7 @@
     return match?`${match[1]} prompt · ${match[2]} completion`:clean(value);
   };
   const latencyBreakdown=(value)=>{
-    const useful=clean(value).split("/").map((item)=>item.trim()).filter((item)=>item&&!/^—\b/.test(item));
+    const useful=clean(value).split("/").map((item)=>item.trim()).filter((item)=>item&&!item.startsWith("—"));
     return useful.length?useful.join(" · "):"—";
   };
   const normalize=(label,value)=>{
