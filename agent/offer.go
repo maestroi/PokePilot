@@ -307,7 +307,7 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 		if !knownMaps[d.Map] {
 			continue
 		}
-		if journeyProgressionBlocked(obs, d.Map) {
+		if journeyProgressionBlocked(obs, d.Map) || placeProgressionBlocked(obs, name) {
 			continue
 		}
 		if d.Map == obs.Map && d.X == obs.X && d.Y == obs.Y {

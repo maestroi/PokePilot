@@ -12,6 +12,25 @@ const (
 	vermilionGymMap uint8 = 0x5c
 )
 
+// placeProgressionBlocked gates named waypoints that sit on the far side of
+// a story obstacle within the player's own map, where journeyProgressionBlocked's
+// per-map check can't help: route12Map is also the map the player is
+// standing on, so it is never itself blocked. The static route graph has no
+// notion of the sleeping Snorlax sprite either (see world grid decode), so
+// RoutePlanner.Reachability reports both waypoints as reachable and GoTo
+// discovers the obstacle only at execution time, forever failing with "no
+// path" and getting re-offered every round.
+// MEASURED 2026-09-11 on run-1pwifxdtjnwa52ecxjcvvmh6ch (and 9 sibling
+// runs): "go to route 12 snorlax" / "go to route 12 south of snorlax" looped
+// for rounds 18-22 with badges 2/8, well before the Poké Flute exists.
+func placeProgressionBlocked(obs Observation, placeName string) bool {
+	switch placeName {
+	case "route 12 snorlax", "route 12 south of snorlax":
+		return !obs.Story.Has(redProgressPokeFluteAcquired)
+	}
+	return false
+}
+
 func journeyProgressionBlocked(obs Observation, destinationMap uint8) bool {
 	switch destinationMap {
 	case route3Map:
