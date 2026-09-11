@@ -7,16 +7,17 @@ import (
 )
 
 // Heartbeats are high-frequency telemetry, not lifecycle transitions. Persist
-// at most once per interval while a run is active; lease/finish/delete paths
-// still call saveState synchronously. This keeps restart recovery reasonably
-// fresh without serializing the complete historical catalog every second.
+// the first heartbeat of a generation immediately, then at most once per
+// interval while it remains active. Lease/finish/delete paths still call
+// saveState synchronously. This preserves restart semantics while avoiding a
+// complete historical-catalog rewrite every second.
 const heartbeatStateFlushInterval = 5 * time.Second
 
 type persistenceCoordinator struct {
 	writeMu sync.Mutex
 
-	scheduleMu sync.Mutex
-	pending    bool
+	heartbeatMu   sync.Mutex
+	lastHeartbeat time.Time
 }
 
 var persistenceCoordinators sync.Map // *Wall -> *persistenceCoordinator
@@ -33,28 +34,25 @@ func persistenceFor(w *Wall) *persistenceCoordinator {
 	return actual.(*persistenceCoordinator)
 }
 
-// saveStateSoon coalesces heartbeat-only persistence. The first heartbeat in
-// a window schedules the flush; later heartbeats do not push the deadline out,
-// so a continuously running attempt is still checkpointed to wall state.
-func (w *Wall) saveStateSoon() {
+// saveHeartbeatState keeps the first running snapshot durable and throttles
+// later telemetry-only saves. It deliberately performs no background work:
+// tests and short-lived wall processes cannot leave a timer trying to write a
+// state directory after it has been removed.
+func (w *Wall) saveHeartbeatState(force bool) {
 	if w == nil || w.statePath == "" {
 		return
 	}
 	p := persistenceFor(w)
-	p.scheduleMu.Lock()
-	if p.pending {
-		p.scheduleMu.Unlock()
-		return
+	now := time.Now()
+	p.heartbeatMu.Lock()
+	due := force || p.lastHeartbeat.IsZero() || now.Sub(p.lastHeartbeat) >= heartbeatStateFlushInterval
+	if due {
+		p.lastHeartbeat = now
 	}
-	p.pending = true
-	p.scheduleMu.Unlock()
-
-	time.AfterFunc(heartbeatStateFlushInterval, func() {
-		p.scheduleMu.Lock()
-		p.pending = false
-		p.scheduleMu.Unlock()
+	p.heartbeatMu.Unlock()
+	if due {
 		w.saveState()
-	})
+	}
 }
 
 // serializeStateWrite ensures snapshots reach disk in the same order they are
