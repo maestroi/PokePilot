@@ -13,7 +13,7 @@ import (
 	"github.com/maestroi/pokepilot/farm"
 )
 
-func TestEndlessErrorRetryUsesLatestMajorCheckpoint(t *testing.T) {
+func TestEndlessErrorRetryUsesLatestObjectiveCheckpoint(t *testing.T) {
 	w := NewWall(t.TempDir())
 	srv := httptest.NewServer(w.Handler())
 	defer srv.Close()
@@ -27,7 +27,7 @@ func TestEndlessErrorRetryUsesLatestMajorCheckpoint(t *testing.T) {
 	}
 	major1State, major1Knowledge := majorWallPair(1, 40, "badge-one")
 	major2State, major2Knowledge := majorWallPair(2, 80, "badge-two")
-	newerOrdinaryState := wallResumeArtifact("round-099-frame-0000009900-go-to-route-9.state", []byte("later-risky-state"), "application/octet-stream")
+	newerOrdinaryState := wallResumeArtifact("round-099-frame-0000009900-go-to-route-9.state", []byte("later-safe-state"), "application/octet-stream")
 	newerOrdinaryKnowledge := wallResumeArtifact("round-099-frame-0000009900-go-to-route-9.knowledge-v4.json", []byte(`{"intent":"later"}`), "application/json")
 	if err := client.Checkpoint(ctx, farm.CheckpointReport{
 		RunID: "campaign", Attempt: 1,
@@ -52,16 +52,19 @@ func TestEndlessErrorRetryUsesLatestMajorCheckpoint(t *testing.T) {
 		t.Fatal(err)
 	}
 	if cp == nil {
-		t.Fatal("endless error retry did not receive a major checkpoint")
+		t.Fatal("endless error retry did not receive the latest objective checkpoint")
 	}
 	if cp.Attempt != 1 {
 		t.Fatalf("source attempt = %d, want 1", cp.Attempt)
 	}
-	if cp.State.Name != major2State.Name || string(cp.State.Data) != "badge-two" {
-		t.Fatalf("resume state = %+v, want latest major %s", cp.State, major2State.Name)
+	if cp.State.Name != newerOrdinaryState.Name || string(cp.State.Data) != "later-safe-state" {
+		t.Fatalf("resume state = %+v, want latest objective %s", cp.State, newerOrdinaryState.Name)
 	}
-	if cp.State.Name == newerOrdinaryState.Name {
-		t.Fatal("error retry used the risky latest objective instead of a major checkpoint")
+	if cp.Knowledge == nil || cp.Knowledge.Name != newerOrdinaryKnowledge.Name {
+		t.Fatalf("resume knowledge = %+v, want %s", cp.Knowledge, newerOrdinaryKnowledge.Name)
+	}
+	if cp.State.Name == major2State.Name {
+		t.Fatal("error retry rolled back to the older badge checkpoint despite a newer consistent objective")
 	}
 }
 
@@ -197,7 +200,7 @@ func TestMajorCheckpointRetentionHasIndependentThreeBadgeRing(t *testing.T) {
 	}
 }
 
-func TestEndlessSuccessorAfterErrorUsesParentMajorCheckpoint(t *testing.T) {
+func TestEndlessSuccessorAfterErrorFallsBackToParentMajorCheckpoint(t *testing.T) {
 	w := NewWall(t.TempDir())
 	srv := httptest.NewServer(w.Handler())
 	defer srv.Close()
@@ -212,14 +215,14 @@ func TestEndlessSuccessorAfterErrorUsesParentMajorCheckpoint(t *testing.T) {
 		t.Fatal(err)
 	}
 	if cp == nil {
-		t.Fatal("endless successor started from boot instead of the parent major checkpoint")
+		t.Fatal("endless successor started from boot instead of the parent major checkpoint fallback")
 	}
 	if cp.State.Name != majorState.Name || string(cp.State.Data) != "badge-two" {
 		t.Fatalf("successor resume = %+v, want parent major %s", cp.State, majorState.Name)
 	}
 }
 
-func TestEndlessSuccessorAfterFailedUsesParentMajorCheckpoint(t *testing.T) {
+func TestEndlessSuccessorAfterFailedUsesLatestParentObjectiveCheckpoint(t *testing.T) {
 	w := NewWall(t.TempDir())
 	srv := httptest.NewServer(w.Handler())
 	defer srv.Close()
@@ -230,9 +233,12 @@ func TestEndlessSuccessorAfterFailedUsesParentMajorCheckpoint(t *testing.T) {
 	if err != nil || first == nil {
 		t.Fatalf("lease 1 = %+v, %v", first, err)
 	}
-	state, knowledge := majorWallPair(1, 40, "badge-one")
+	majorState, majorKnowledge := majorWallPair(1, 40, "badge-one")
+	ordinaryState := wallResumeArtifact("round-055-frame-0000005500-route-12.state", []byte("latest-progress"), "application/octet-stream")
+	ordinaryKnowledge := wallResumeArtifact("round-055-frame-0000005500-route-12.knowledge-v4.json", []byte(`{"intent":"continue route 12"}`), "application/json")
 	if err := client.Checkpoint(ctx, farm.CheckpointReport{
-		RunID: "campaign", Attempt: 1, Artifacts: []farm.Artifact{state, knowledge},
+		RunID: "campaign", Attempt: 1,
+		Artifacts: []farm.Artifact{majorState, majorKnowledge, ordinaryState, ordinaryKnowledge},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -245,8 +251,11 @@ func TestEndlessSuccessorAfterFailedUsesParentMajorCheckpoint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cp == nil || cp.State.Name != state.Name {
-		t.Fatalf("failed successor resume = %+v, want parent major %s", cp, state.Name)
+	if cp == nil || cp.State.Name != ordinaryState.Name {
+		t.Fatalf("failed successor resume = %+v, want latest parent objective %s", cp, ordinaryState.Name)
+	}
+	if cp.Knowledge == nil || cp.Knowledge.Name != ordinaryKnowledge.Name {
+		t.Fatalf("failed successor knowledge = %+v, want %s", cp.Knowledge, ordinaryKnowledge.Name)
 	}
 }
 
@@ -281,7 +290,7 @@ func TestEndlessSuccessorAfterDoneStartsFresh(t *testing.T) {
 	}
 }
 
-func TestEndlessSuccessorWithoutMajorStartsFresh(t *testing.T) {
+func TestEndlessSuccessorWithoutMajorUsesParentObjectiveCheckpoint(t *testing.T) {
 	w := NewWall(t.TempDir())
 	srv := httptest.NewServer(w.Handler())
 	defer srv.Close()
@@ -308,8 +317,11 @@ func TestEndlessSuccessorWithoutMajorStartsFresh(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cp != nil {
-		t.Fatalf("pre-badge successor unexpectedly resumed %+v", cp)
+	if cp == nil || cp.State.Name != ordinary.Name {
+		t.Fatalf("pre-badge successor resume = %+v, want parent objective %s", cp, ordinary.Name)
+	}
+	if cp.Knowledge == nil || cp.Knowledge.Name != ordinaryK.Name {
+		t.Fatalf("pre-badge successor knowledge = %+v, want %s", cp.Knowledge, ordinaryK.Name)
 	}
 }
 
@@ -328,7 +340,7 @@ func TestEndlessSuccessorErrorRetryFallsBackToParentMajor(t *testing.T) {
 	}
 	retry, err := client.Lease(ctx)
 	if err != nil || retry == nil || retry.RunID != next.RunID || retry.Attempt != 2 {
-		t.Fatalf("successor retry lease = %+v, %v", retry, err)
+		t.Fatalf("successor retry lease = %+v, %v, want %s attempt 2", retry, err, next.RunID)
 	}
 	cp, err := client.ResumeCheckpoint(ctx, retry.RunID, retry.Attempt)
 	if err != nil {
