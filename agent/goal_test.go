@@ -33,19 +33,23 @@ func TestParseGoalRejectsInvalidTargets(t *testing.T) {
 	}
 }
 
-func TestEliteFourRequiresChampionProgressFact(t *testing.T) {
+func TestEliteFourRequiresHallOfFameProgressFact(t *testing.T) {
 	g, _ := ParseGoal("elite-four")
 	obs := Observation{Badges: []string{"1", "2", "3", "4", "5", "6", "7", "8"}}
 	if got := EvaluateGoal(g, obs); got.Complete {
 		t.Fatal("eight badges alone completed elite-four goal")
 	}
 
-	// Goal evaluation consumes the portable progression contract, not a Red
-	// event label. The Red adapter is responsible for projecting its story
-	// state into this semantic fact.
+	// Beating the Champion is intentionally not the final goal fact: Red sets
+	// that event before Oak escorts the player into the Hall of Fame.
 	obs.Story = ProgressState{{ID: ProgressLeagueChampionDefeated, Complete: true}}
+	if got := EvaluateGoal(g, obs); got.Complete {
+		t.Fatal("champion progress fact completed elite-four goal before Hall of Fame")
+	}
+
+	obs.Story = append(obs.Story, ProgressFact{ID: ProgressMainStoryComplete, Complete: true})
 	if got := EvaluateGoal(g, obs); !got.Complete {
-		t.Fatal("champion progress fact did not complete elite-four goal")
+		t.Fatal("main-story completion fact did not complete elite-four goal")
 	}
 }
 
@@ -78,9 +82,14 @@ func TestEvaluateGoalEliteFourCompletesOnSemanticProgress(t *testing.T) {
 		t.Fatalf("ParseGoal: %v", err)
 	}
 
-	done := Observation{Story: ProgressState{{ID: ProgressLeagueChampionDefeated, Complete: true}}}
+	done := Observation{Story: ProgressState{{ID: ProgressMainStoryComplete, Complete: true}}}
 	if got := EvaluateGoal(g, done); !got.Complete {
-		t.Fatalf("elite-four not complete with champion progress set: %+v", got)
+		t.Fatalf("elite-four not complete with main-story progress set: %+v", got)
+	}
+
+	championOnly := Observation{Story: ProgressState{{ID: ProgressLeagueChampionDefeated, Complete: true}}}
+	if got := EvaluateGoal(g, championOnly); got.Complete {
+		t.Fatalf("elite-four completed before Hall of Fame: %+v", got)
 	}
 
 	legacyOnly := Observation{Events: []string{"BeatChampionRival"}}
@@ -89,6 +98,6 @@ func TestEvaluateGoalEliteFourCompletesOnSemanticProgress(t *testing.T) {
 	}
 
 	if got := EvaluateGoal(g, Observation{Badges: []string{"Boulder"}}); got.Complete {
-		t.Fatalf("elite-four complete without the champion progress fact: %+v", got)
+		t.Fatalf("elite-four complete without the main-story progress fact: %+v", got)
 	}
 }

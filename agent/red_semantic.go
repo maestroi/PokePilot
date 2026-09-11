@@ -28,6 +28,7 @@ const (
 	redProgressEarthBadge                 ProgressID = "earth_badge"
 	redProgressIndigoPlateauReady         ProgressID = "indigo_plateau_ready"
 
+	redIndigoPlateauMap      uint8 = 0x09
 	redIndigoPlateauLobbyMap uint8 = 0xAE
 )
 
@@ -113,13 +114,15 @@ func redProgressState(f state.StoryFacts) ProgressState {
 		{ID: ProgressRoute23BadgeChecks, Complete: f.Route23BadgeChecksComplete, Value: f.Route23BadgeChecksPassed},
 		{ID: ProgressLeagueChallengeStarted, Complete: f.LeagueChallengeStarted},
 		{ID: ProgressLeagueChampionDefeated, Complete: f.LeagueChampionDefeated},
+		{ID: ProgressMainStoryComplete, Complete: f.MainStoryComplete},
 	}
 }
 
 func redProgressStateFromRAM(mem *state.Mem, _ state.InventoryState, f state.StoryFacts) ProgressState {
 	progress := redProgressState(f)
 	badges := state.DecodeProgress(mem)
-	indigoReady := mem.U8(sym.CurMap) == redIndigoPlateauLobbyMap || f.LeagueChallengeStarted || f.LeagueChampionDefeated
+	mapID := mem.U8(sym.CurMap)
+	indigoReady := mapID == redIndigoPlateauMap || mapID == redIndigoPlateauLobbyMap || f.LeagueChallengeStarted || f.LeagueChampionDefeated || f.MainStoryComplete
 	progress = append(progress,
 		ProgressFact{ID: redProgressRainbowBadge, Complete: badges.Has(state.BadgeRainbow)},
 		ProgressFact{ID: redProgressVolcanoBadge, Complete: badges.Has(state.BadgeVolcano)},

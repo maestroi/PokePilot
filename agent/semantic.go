@@ -30,6 +30,7 @@ const (
 	ProgressRoute23BadgeChecks     ProgressID = "route_23_badge_checks"
 	ProgressLeagueChallengeStarted ProgressID = "league_challenge_started"
 	ProgressLeagueChampionDefeated ProgressID = "league_champion_defeated"
+	ProgressMainStoryComplete      ProgressID = "main_story_complete"
 )
 
 const (
