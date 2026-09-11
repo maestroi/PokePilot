@@ -527,8 +527,35 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 		}
 	}
 
+	if o := lastResortEscapeNote(out, journeys, obs.RespawnPlace); o != "" {
+		for i := range out {
+			if out[i].Kind == KindTrain {
+				out[i] = appendObjectiveNote(out[i], o)
+			}
+		}
+	}
+
 	candidates := append(out, journeys...)
 	return annotate(filterTrainerLossBlocked(candidates, known), known)
+}
+
+// lastResortEscapeNote reports the note to attach to a KindTrain objective
+// when it is the only progress-shaped thing Offer found this round: no
+// journey, no gym, no trainer challenge, no talk, no catch, no story
+// progression. It never claims this IS the right move, only that it is a
+// legal one — fighting without fleeing or retreating, even to a loss,
+// forces a respawn instead of repeating the same failed local objective.
+func lastResortEscapeNote(out, journeys []Objective, respawn PlaceID) string {
+	if len(journeys) != 0 || respawn == "" {
+		return ""
+	}
+	for _, o := range out {
+		switch o.Kind {
+		case KindGoTo, KindGym, KindTrainer, KindTalk, KindCatch, KindProgress:
+			return ""
+		}
+	}
+	return fmt.Sprintf("(no reachable journey or challenge this round; fighting here without fleeing or retreating, even to a loss, forces a respawn at %s)", strings.ToUpper(string(respawn)))
 }
 
 func annotate(out []Objective, known *Knowledge) []Objective {

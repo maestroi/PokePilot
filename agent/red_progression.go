@@ -117,21 +117,32 @@ func redProgressionObjectives(obs Observation) []Objective {
 			Note:     "(repair or retain a Cut carrier, travel from Vermilion through Cerulean, Route 9, Rock Tunnel, Lavender, and the Underground Path to Celadon, heal, then defeat Erika for the Rainbow Badge; Flash is optional)",
 		})
 	}
-	if skill.RocketHideoutAvailable(obs.Map) && !obs.Story.Has(redProgressSilphScopeAcquired) {
-		out = append(out, Objective{
-			Kind:     KindProgress,
-			Progress: redProgressSilphScopeAcquired,
-			Note:     "(clear the Rocket Hideout and acquire the Silph Scope)",
-		})
-	}
-	if skill.PokemonTowerAvailable(obs.Map) &&
-		obs.Story.Has(redProgressSilphScopeAcquired) &&
-		!obs.Story.Has(redProgressPokeFluteAcquired) {
-		out = append(out, Objective{
-			Kind:     KindProgress,
-			Progress: redProgressPokeFluteAcquired,
-			Note:     "(clear Pokemon Tower and acquire the Poke Flute)",
-		})
+	// Silph Scope and the Poke Flute sit on the Celadon/Lavender leg of the
+	// vanilla critical path, which comes AFTER Lt. Surge: Erika (Rainbow
+	// Badge, below) already requires the Thunder Badge for the same reason.
+	// Without this gate the strategist can chase "acquire the Poke Flute"
+	// while Surge — reachable, free, Cut already usable — was never
+	// attempted, and Route 12's Snorlax then walls it in with nothing to
+	// fight (measured: run-g9ojxmtgvrff1ezck9g7t1o7x, 2/8 badges, stuck at
+	// ROUTE_12 (9,62), zero reachable battle to even force a blackout back
+	// to a Center).
+	if hasBadge(obs, state.BadgeThunder) {
+		if skill.RocketHideoutAvailable(obs.Map) && !obs.Story.Has(redProgressSilphScopeAcquired) {
+			out = append(out, Objective{
+				Kind:     KindProgress,
+				Progress: redProgressSilphScopeAcquired,
+				Note:     "(clear the Rocket Hideout and acquire the Silph Scope)",
+			})
+		}
+		if obs.Story.Has(redProgressSilphScopeAcquired) &&
+			skill.PokemonTowerAvailable(obs.Map) &&
+			!obs.Story.Has(redProgressPokeFluteAcquired) {
+			out = append(out, Objective{
+				Kind:     KindProgress,
+				Progress: redProgressPokeFluteAcquired,
+				Note:     "(clear Pokemon Tower and acquire the Poke Flute)",
+			})
+		}
 	}
 	if skill.FuchsiaProgressionAvailable(obs.Map) &&
 		obs.Story.Has(redProgressPokeFluteAcquired) &&

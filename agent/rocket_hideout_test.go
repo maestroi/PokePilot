@@ -1,6 +1,10 @@
 package agent
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/maestroi/pokepilot/red/state"
+)
 
 func TestRocketHideoutUsesSemanticProgressionObjective(t *testing.T) {
 	o := Objective{Kind: KindProgress, Progress: redProgressSilphScopeAcquired}
@@ -25,7 +29,12 @@ func TestOfferRocketHideoutProgressionUntilScopeObtained(t *testing.T) {
 	planner := &redObjectiveAdapter{}
 
 	for _, mapID := range []uint8{0x06, 0x85, 0x87, 0xC7, 0xC8, 0xC9, 0xCA} {
-		obs := Observation{Map: mapID, PartyCount: 1, Party: []PartyMon{{Level: 30, HP: 80, MaxHP: 80}}}
+		obs := Observation{
+			Map:        mapID,
+			PartyCount: 1,
+			Party:      []PartyMon{{Level: 30, HP: 80, MaxHP: 80}},
+			Badges:     []string{state.BadgeThunder.String()},
+		}
 		got := OfferWithProgression(obs, known, planner)
 		count := 0
 		for _, o := range got {
@@ -42,6 +51,7 @@ func TestOfferRocketHideoutProgressionUntilScopeObtained(t *testing.T) {
 		Map:        0x06,
 		PartyCount: 1,
 		Party:      []PartyMon{{Level: 30, HP: 80, MaxHP: 80}},
+		Badges:     []string{state.BadgeThunder.String()},
 		Story:      ProgressState{{ID: redProgressSilphScopeAcquired, Complete: true}},
 	}
 	for _, o := range OfferWithProgression(withScope, known, planner) {

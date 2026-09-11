@@ -658,6 +658,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 	// still logs the dead end once instead of every round.
 	lastUnroutable := ""
 	stuck := 0
+	var dead deadPosition
 	consecFailures := 0 // consecutive failed objectives; a success resets it
 	lastFailKey := ""
 	retreatStreak := 0           // consecutive train retreats ending at the SAME level; capped like any other failure streak
@@ -753,6 +754,18 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 				}
 				break
 			}
+		}
+
+		// Same tile, no newly completed objective: the short stuck detector
+		// never sees failed rounds, so a boxed-in tile with only "no path"
+		// retries would otherwise burn the full strategist/stagnation budget.
+		if dead.observe(last, len(known.Completed)) >= deadPositionAfter {
+			res.Stop = StopStuck
+			if budget.Log != nil {
+				fmt.Fprintf(budget.Log, "dead-position watchdog: %d rounds at map %#04x (%d,%d) with no completed objective\n",
+					dead.streak, last.Map, last.X, last.Y)
+			}
+			break
 		}
 
 		// The walls the game has stated stay visible every round: Knowledge
