@@ -51,3 +51,21 @@ func TestOperatorLLMRoutingKeepsWireProfilesStable(t *testing.T) {
 		}
 	}
 }
+
+func TestOperatorShowsPerCallInferenceTelemetry(t *testing.T) {
+	js := string(uiJS)
+	for _, want := range []string{
+		`row("served by"`,
+		`row("last call tokens"`,
+		`row("prefill"`,
+		`row("decode"`,
+		`row("server overhead"`,
+		`s.prefill_tps`,
+		`s.decode_tps`,
+		`s.last_cached_prompt_tokens`,
+	} {
+		if !strings.Contains(js, want) {
+			t.Errorf("ui.js missing inference telemetry %q", want)
+		}
+	}
+}

@@ -64,13 +64,16 @@ type statsPlanner struct {
 	push func(any)      // emu.TraceStats
 	snap *heartbeatSnap // farm heartbeat; nil on the local (non-farm) run
 
-	stats             runStats
-	counts            map[string]int
-	offered           int           // summed over calls, for the average
-	elapsed           time.Duration // summed over calls, for the average
-	successfulCalls   int
-	successfulElapsed time.Duration
-	rejectedElapsed   time.Duration
+	stats                runStats
+	counts               map[string]int
+	offered              int           // summed over calls, for the average
+	elapsed              time.Duration // summed over calls, for the average
+	successfulCalls      int
+	successfulElapsed    time.Duration
+	rejectedElapsed      time.Duration
+	seenPromptTokens     int
+	seenCompletionTokens int
+	lastTelemetrySeq     uint64
 
 	// runGoalStatus is the last authoritative deterministic status delivered
 	// by agent.Run. The stats decorator consumes it; it never evaluates the
@@ -95,12 +98,13 @@ func newStatsPlanner(profile, reasoningEffort, goal string, m *emu.Emu, push fun
 	}
 
 	s := &statsPlanner{
-		inner:           inner,
-		emu:             m,
-		push:            push,
-		snap:            snap,
-		counts:          map[string]int{},
-		baseExtraSystem: inner.ExtraSystem,
+		inner:            inner,
+		emu:              m,
+		push:             push,
+		snap:             snap,
+		counts:           map[string]int{},
+		baseExtraSystem:  inner.ExtraSystem,
+		lastTelemetrySeq: currentLLMTelemetrySeq(),
 	}
 	s.router = agent.NewFailoverPlanner(inner, fallback)
 	s.router.OnCall = s.recordCall
@@ -261,6 +265,39 @@ func (s *statsPlanner) recordCall(call agent.LLMCall) {
 	h := s.router.Health()
 	s.stats.PromptTokens, s.stats.CompletionTokens = h.PromptTokens, h.CompletionTokens
 	s.stats.Transport, s.stats.Fallbacks = h.Transport, h.Fallbacks
+	// The cumulative counters are useful for spend, but they cannot be divided
+	// by LastSeconds to infer throughput. Keep an explicit delta for this ask.
+	s.stats.LastPromptTokens = h.PromptTokens - s.seenPromptTokens
+	s.stats.LastCompletionTokens = h.CompletionTokens - s.seenCompletionTokens
+	if s.stats.LastPromptTokens < 0 {
+		s.stats.LastPromptTokens = 0
+	}
+	if s.stats.LastCompletionTokens < 0 {
+		s.stats.LastCompletionTokens = 0
+	}
+	s.seenPromptTokens, s.seenCompletionTokens = h.PromptTokens, h.CompletionTokens
+
+	// The transport observer sees the raw OpenAI-compatible response envelope.
+	// Generic servers give us endpoint/model/usage; llama.cpp additionally
+	// reports exact prefill/decode timings and rates in its timings object.
+	if telemetry, ok := latestLLMTelemetryAfter(s.lastTelemetrySeq); ok {
+		s.lastTelemetrySeq = telemetry.Seq
+		s.stats.Endpoint = telemetry.Endpoint
+		s.stats.ResponseModel = telemetry.ResponseModel
+		if telemetry.PromptTokens > 0 {
+			s.stats.LastPromptTokens = telemetry.PromptTokens
+		}
+		if telemetry.CompletionTokens > 0 {
+			s.stats.LastCompletionTokens = telemetry.CompletionTokens
+		}
+		s.stats.LastCachedPromptTokens = telemetry.CachedPromptTokens
+		s.stats.PrefillMS = telemetry.PrefillMS
+		s.stats.PrefillTPS = telemetry.PrefillTPS
+		s.stats.DecodeMS = telemetry.DecodeMS
+		s.stats.DecodeTPS = telemetry.DecodeTPS
+		s.stats.OverheadMS = telemetry.OverheadMS
+		s.stats.TimingSource = telemetry.TimingSource
+	}
 
 	if call.Strategic {
 		s.stats.StrategicCalls++

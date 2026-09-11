@@ -158,6 +158,24 @@ type LLMStats struct {
 	Model     string `json:"model,omitempty"`
 	Failovers int    `json:"failovers,omitempty"`
 
+	// Per-call serving telemetry is intentionally separate from the cumulative
+	// PromptTokens/CompletionTokens above. Endpoint is the actual HTTP origin.
+	// ResponseModel is what the server reported. The token counts describe only
+	// the most recent ask. Prefill/decode fields come from llama.cpp's optional
+	// top-level timings object; generic OpenAI-compatible servers can omit them
+	// while still reporting per-call token usage.
+	Endpoint               string  `json:"endpoint,omitempty"`
+	ResponseModel          string  `json:"response_model,omitempty"`
+	LastPromptTokens       int     `json:"last_prompt_tokens,omitempty"`
+	LastCompletionTokens   int     `json:"last_completion_tokens,omitempty"`
+	LastCachedPromptTokens int     `json:"last_cached_prompt_tokens,omitempty"`
+	PrefillMS              float64 `json:"prefill_ms,omitempty"`
+	PrefillTPS             float64 `json:"prefill_tps,omitempty"`
+	DecodeMS               float64 `json:"decode_ms,omitempty"`
+	DecodeTPS              float64 `json:"decode_tps,omitempty"`
+	OverheadMS             float64 `json:"overhead_ms,omitempty"`
+	TimingSource           string  `json:"timing_source,omitempty"`
+
 	Intent    string `json:"intent"`
 	IntentAge int    `json:"intent_age"`
 
