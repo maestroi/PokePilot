@@ -16,11 +16,11 @@ const (
 	championsRoomMap uint8 = 0x78
 	hallOfFameMap    uint8 = 0x76
 
-	leagueTravelBattles   = 8
-	leagueWarpBudget      = 600
-	leagueRoomSettleBudget = 12000
+	leagueTravelBattles      = 8
+	leagueWarpBudget         = 600
+	leagueRoomSettleBudget   = 12000
 	leagueBattleSettleBudget = 12000
-	leagueEndingBudget    = 120000
+	leagueEndingBudget       = 120000
 )
 
 var (
@@ -165,6 +165,19 @@ func prepareLeagueChallenge(m *emu.Emu, romData []byte, policy MovePolicy) error
 	return nil
 }
 
+func recoverLeagueBlackout(m *emu.Emu, romData []byte, policy MovePolicy) error {
+	if got := m.Peek8(sym.CurMap); got != indigoPlateauMap {
+		return fmt.Errorf("skill: EliteFourProgression: League blackout recovery started on map %#02x, want Indigo Plateau %#02x", got, indigoPlateauMap)
+	}
+	if _, err := TravelFlee(m, romData, indigoLobbyNurse, policy, leagueTravelBattles); err != nil {
+		return fmt.Errorf("skill: EliteFourProgression: return to Indigo lobby after blackout: %w", err)
+	}
+	if got := m.Peek8(sym.CurMap); got != indigoPlateauLobbyMap {
+		return fmt.Errorf("skill: EliteFourProgression: blackout recovery arrived on map %#02x, want lobby %#02x", got, indigoPlateauLobbyMap)
+	}
+	return nil
+}
+
 func fightChampion(m *emu.Emu, policy MovePolicy) error {
 	facts := currentLeagueFacts(m)
 	if facts.MainStoryComplete {
@@ -245,6 +258,11 @@ func EliteFourProgression(m *emu.Emu, romData []byte, policy MovePolicy) error {
 			return nil
 		}
 		switch m.Peek8(sym.CurMap) {
+		case indigoPlateauMap:
+			if err := recoverLeagueBlackout(m, romData, policy); err != nil {
+				return err
+			}
+
 		case indigoPlateauLobbyMap:
 			if err := prepareLeagueChallenge(m, romData, policy); err != nil {
 				return err
