@@ -5,6 +5,7 @@ import (
 
 	gameruntime "github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/state"
+	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
 )
 
@@ -156,7 +157,7 @@ func (x *redRouteTransitionExecutor) clearRoute16Snorlax() (bool, error) {
 	if x.policy == nil {
 		return false, fmt.Errorf("%w: Route 16 Snorlax", ErrRouteTransitionNeedsBattlePolicy)
 	}
-	if before.U8(0xD35E) != route16Map { // wCurMap; kept local to avoid another adapter dependency
+	if before.U8(sym.CurMap) != route16Map {
 		return false, fmt.Errorf("skill: Route 16 Snorlax transition started outside Route 16")
 	}
 
