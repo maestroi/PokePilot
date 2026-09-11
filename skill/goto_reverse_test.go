@@ -6,7 +6,7 @@ import (
 	"github.com/maestroi/pokepilot/world"
 )
 
-func TestBlockImmediateReverseChoosesForestDetour(t *testing.T) {
+func TestBlockVisitedMapsChoosesForestDetour(t *testing.T) {
 	north := world.Edge{Kind: world.EdgeConnection, From: 0x0D, To: 0x02, Dir: 0}
 	reverseLeft := world.Edge{Kind: world.EdgeWarp, From: 0x32, To: 0x0D, WarpX: 4, WarpY: 7}
 	reverseRight := world.Edge{Kind: world.EdgeWarp, From: 0x32, To: 0x0D, WarpX: 5, WarpY: 7}
@@ -29,7 +29,7 @@ func TestBlockImmediateReverseChoosesForestDetour(t *testing.T) {
 		t.Fatalf("premise: unblocked route = %+v, want immediate reverse then north", without)
 	}
 
-	blocked := blockImmediateReverse(g, nil, 0x32, 0x0D)
+	blocked := blockVisitedMaps(g, nil, 0x32, map[uint8]bool{0x0D: true})
 	if !blocked[reverseLeft] || !blocked[reverseRight] {
 		t.Fatalf("paired reverse edges not both blocked: %+v", blocked)
 	}
@@ -52,13 +52,13 @@ func TestBlockImmediateReverseChoosesForestDetour(t *testing.T) {
 	}
 }
 
-// TestBlockImmediateReverseDeadEndKeepsHardBans is the Mt Moon Pokemon Center
+// TestBlockVisitedMapsDeadEndKeepsHardBans is the Mt Moon Pokemon Center
 // case: every warp out of map 0x44 lands back on Route 4, so the reverse ban
 // bans the whole map and GoTo dies on "world: no route" one step after the
 // router deliberately routed through the building. The ban is a preference,
 // so GoTo drops it and re-plans with only the measured bans — which this
-// checks stayed intact, since blockImmediateReverse must not mutate them.
-func TestBlockImmediateReverseDeadEndKeepsHardBans(t *testing.T) {
+// checks stayed intact, since blockVisitedMaps must not mutate them.
+func TestBlockVisitedMapsDeadEndKeepsHardBans(t *testing.T) {
 	route4 := uint8(0x0F)
 	center := uint8(0x44)
 	left := world.Edge{Kind: world.EdgeWarp, From: center, To: route4, WarpX: 3, WarpY: 7}
@@ -71,7 +71,7 @@ func TestBlockImmediateReverseDeadEndKeepsHardBans(t *testing.T) {
 	}}
 
 	hard := map[world.Edge]bool{onward: true} // a measured-unwalkable leg
-	preferred := blockImmediateReverse(g, hard, center, route4)
+	preferred := blockVisitedMaps(g, hard, center, map[uint8]bool{route4: true})
 
 	if len(hard) != 1 || !hard[onward] {
 		t.Fatalf("hard bans were mutated: %+v", hard)
