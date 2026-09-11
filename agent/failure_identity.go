@@ -273,6 +273,9 @@ func failureCauseFor(err error) (FailureCauseID, []string) {
 	if errors.Is(err, skill.ErrBagNotRisen) {
 		return "bag_not_risen", nil
 	}
+	if errors.Is(err, skill.ErrFieldRosterNoBalls) {
+		return "no_pokeball", nil
+	}
 	if errors.Is(err, world.ErrNoPath) {
 		return "no_path", nil
 	}

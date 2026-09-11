@@ -28,6 +28,15 @@ func TestFailureCauseGatedPathUsesTypedIdentity(t *testing.T) {
 	}
 }
 
+func TestFailureCauseCatchBlockedOnMissingBall(t *testing.T) {
+	err := fmt.Errorf("%w: compatible wild species %#02x exists on map %#04x but no POKE BALL is available",
+		skill.ErrFieldRosterNoBalls, 0xb9, 0x17)
+	cause, ctx := failureCauseFor(err)
+	if cause != "no_pokeball" || len(ctx) != 0 {
+		t.Fatalf("cause=%q context=%v, want no_pokeball", cause, ctx)
+	}
+}
+
 func TestFailureCauseCarriesSemanticRoutePrerequisites(t *testing.T) {
 	err := &world.RouteBlockedError{Blockages: []gameruntime.TransitionBlockage{
 		{Missing: []gameruntime.CapabilityID{"can_surf", "can_clear_snorlax"}},
