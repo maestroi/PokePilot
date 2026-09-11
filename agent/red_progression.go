@@ -32,11 +32,49 @@ func redProgressionKnown(id ProgressID) bool {
 	}
 }
 
+func routeBlockedOn(obs Observation, destination PlaceID, capability CapabilityID) bool {
+	for _, blockage := range obs.RouteBlockages {
+		if blockage.Destination != destination {
+			continue
+		}
+		for _, missing := range blockage.Missing {
+			if missing == capability {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func observedFieldCapability(obs Observation, name CapabilityID) (FieldCapability, bool) {
+	for _, cap := range obs.FieldCapabilities {
+		if cap.Name == name {
+			return cap, true
+		}
+	}
+	return FieldCapability{}, false
+}
+
+// redVermilionGymRecoveryAvailable closes the gap between route legality and
+// roster recovery. Generic Offer must hide a gym behind a missing semantic
+// capability, but Red can still surface the atomic Surge challenge when Cut is
+// already unlocked and #107's party/PC/catch repair path can prepare a carrier.
+func redVermilionGymRecoveryAvailable(obs Observation) bool {
+	if obs.Map != 0x05 || hasBadge(obs, state.BadgeThunder) {
+		return false
+	}
+	if !routeBlockedOn(obs, "vermilion gym", "can_cut") {
+		return false
+	}
+	cut, ok := observedFieldCapability(obs, "cut")
+	return ok && cut.BadgeOwned && cut.HMOwned
+}
+
 // redProgressionObjectives exposes Red story opportunities as one portable
 // objective shape. Availability is Red knowledge; the planner only sees the
 // semantic state change requested by each objective.
 func redProgressionObjectives(obs Observation) []Objective {
-	out := make([]Objective, 0, 12)
+	out := make([]Objective, 0, 13)
 	if skill.MtMoonProgressionAvailable(obs.Map) && !obs.Story.Has(redProgressMtMoonFossilAcquired) {
 		out = append(out, Objective{Kind: KindProgress, Progress: redProgressMtMoonFossilAcquired, Note: "(defeat Mt. Moon's Super Nerd and choose the Dome Fossil to open the eastern exit)"})
 	}
@@ -60,6 +98,13 @@ func redProgressionObjectives(obs Observation) []Objective {
 			Kind:     KindProgress,
 			Progress: redProgressHM01Acquired,
 			Note:     "(go to Vermilion, board the S.S. Anne with the ticket, defeat the scripted rival on 2F, and receive HM01 Cut from the Captain)",
+		})
+	}
+	if redVermilionGymRecoveryAvailable(obs) {
+		out = append(out, Objective{
+			Kind:  KindGym,
+			Place: "vermilion gym",
+			Note:  "(prepare a compatible Cut carrier through the party/PC/catch recovery path, clear the exterior tree, and challenge Lt. Surge)",
 		})
 	}
 	if skill.RocketHideoutAvailable(obs.Map) && !obs.Story.Has(redProgressSilphScopeAcquired) {

@@ -30,11 +30,19 @@ type TMHMResult struct {
 	Consumed bool // true only when a consumable TM quantity fell by one
 }
 
+func preferBenchUtilityHM(item uint8, required bool) bool {
+	return required && (item == hm01Item || item == fieldHM05Item)
+}
+
 // DecideTMHM chooses the best compatible recipient and, for a full move set,
 // the best replaceable slot. When required is false, a machine is recommended
 // only when it improves the whole move-set score materially. Required is for
 // progression capabilities such as Cut/Surf/Strength: compatibility and HM
 // permanence still apply, but a field requirement may justify a score loss.
+// Cut and Flash are low-value permanent utility moves, so when either is
+// required and a compatible bench member exists, keep it off the lead even if
+// the lead would lose slightly less battle score. With no bench alternative,
+// progression still wins and the lead remains a legal fallback.
 func DecideTMHM(romData []byte, party state.PartyState, item uint8, required bool) (TMHMDecision, error) {
 	machine, err := rom.LookupTMHM(romData, item)
 	if err != nil {
@@ -43,6 +51,8 @@ func DecideTMHM(romData []byte, party state.PartyState, item uint8, required boo
 
 	best := TMHMDecision{Machine: machine, PartySlot: -1, ReplaceSlot: -1}
 	bestGain := -1 << 30
+	bestCarrierPriority := -1
+	preferBench := preferBenchUtilityHM(item, required)
 	compatible := 0
 	for slot, mon := range party.Mons {
 		canLearn, err := rom.CanLearnTMHM(romData, mon.Species, item)
@@ -103,8 +113,14 @@ func DecideTMHM(romData []byte, party state.PartyState, item uint8, required boo
 		if !required && gain < minMoveLearningImprovement {
 			continue
 		}
-		if best.PartySlot < 0 || gain > bestGain {
+		carrierPriority := 0
+		if preferBench && slot > 0 {
+			carrierPriority = 1
+		}
+		if best.PartySlot < 0 || carrierPriority > bestCarrierPriority ||
+			(carrierPriority == bestCarrierPriority && gain > bestGain) {
 			bestGain = gain
+			bestCarrierPriority = carrierPriority
 			best = TMHMDecision{
 				Machine: machine, PartySlot: slot, ReplaceSlot: candidateSlot,
 				BeforeScore: before, AfterScore: candidateAfter,
@@ -129,6 +145,9 @@ func DecideTMHM(romData []byte, party state.PartyState, item uint8, required boo
 	why := "material move-set improvement"
 	if required {
 		why = "required progression capability"
+	}
+	if preferBench && best.PartySlot > 0 {
+		why = "required utility field capability on a bench carrier"
 	}
 	best.Reason = fmt.Sprintf("%s: party slot %d score %d->%d, %s", why, best.PartySlot, best.BeforeScore, best.AfterScore, placement)
 	return best, nil
