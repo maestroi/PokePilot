@@ -16,6 +16,8 @@ type knownCatchHabitat struct {
 	Hops    int
 }
 
+type wildGrassLookup func([]byte, uint8) ([]skill.WildSpecies, error)
+
 // appendKnownCatchObjectives turns already-observed wild tables into strategic
 // catch transitions. Offer intentionally exposes only immediately local catch
 // actions because it has no ROM adapter. The Red-owned offer path does have
@@ -25,7 +27,11 @@ type knownCatchHabitat struct {
 //
 // This does not reveal unseen habitats: only Knowledge.Visited maps are read.
 func appendKnownCatchObjectives(romData []byte, obs Observation, known *Knowledge, out []Objective) []Objective {
-	if known == nil || !hasBalls(obs) || obs.PartyCount >= 6 {
+	return appendKnownCatchObjectivesWithWild(romData, obs, known, out, skill.WildGrass)
+}
+
+func appendKnownCatchObjectivesWithWild(romData []byte, obs Observation, known *Knowledge, out []Objective, wildFor wildGrassLookup) []Objective {
+	if known == nil || wildFor == nil || !hasBalls(obs) || obs.PartyCount >= 6 {
 		return out
 	}
 
@@ -56,12 +62,16 @@ func appendKnownCatchObjectives(romData []byte, obs Observation, known *Knowledg
 		if !ok {
 			continue
 		}
-		wild, err := skill.WildGrass(romData, mapID)
+		wild, err := wildFor(romData, mapID)
 		if err != nil || len(wild) == 0 {
 			continue
 		}
 		for _, encounter := range wild {
-			sp, ok := SpeciesByName(encounter.Name)
+			name, ok := SpeciesName(encounter.ID)
+			if !ok {
+				continue
+			}
+			sp, ok := SpeciesByName(name)
 			if !ok || owned[sp] || alreadyOffered[sp] {
 				continue
 			}
