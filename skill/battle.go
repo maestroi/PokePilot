@@ -808,15 +808,30 @@ func battleScreenHas(m *emu.Emu, marker string) bool {
 	return strings.Contains(state.ScreenText(&mem), marker)
 }
 
-// settleAfterBattle advances any end-of-battle text boxes and waits until
-// the player is controllable again. It returns an error if the player is
-// still not controllable after the budget.
+// settleStableFrames is how many consecutive controllable frames the game must
+// show before a battle end is considered settled. The first controllable frame
+// after the last text box dismisses is a transient blip: the overworld is
+// half-rebuilt and the game is about to run a ~30-frame settling script
+// (wJoyIgnore=0xff) in which a START press is consumed instead of opening the
+// menu. Requiring controllable to persist rides out the blip (measured: a
+// 9-frame blip then a 29-frame settle, run-22gbpsnbc8g1x2pmo91ltgpil3).
+const settleStableFrames = 20
+
+// settleAfterBattle advances any end-of-battle text boxes and waits until the
+// player is controllable again. It returns an error if the player is still not
+// controllable after the budget.
 func settleAfterBattle(m *emu.Emu, mem *state.Mem) error {
 	startFrame := m.FrameCount()
+	stable := 0
 	for int(m.FrameCount()-startFrame) < settleBudget {
 		state.Snapshot(m, mem)
 		if state.Controllable(mem) {
-			return nil
+			stable++
+			if stable >= settleStableFrames {
+				return nil
+			}
+		} else {
+			stable = 0
 		}
 		if m.Peek8(sym.FontLoaded) != 0 {
 			m.Tap(emu.A, 3, 7)
