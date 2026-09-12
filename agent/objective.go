@@ -188,6 +188,12 @@ func starterName(s skill.Starter) string {
 	return fmt.Sprintf("unknown starter %d", int(s))
 }
 
+// A few Red-owned agent modules still register item vocabulary during package
+// init (economy catalog, PP restorers and TM/HMs). Keep their legacy map names
+// as aliases to red/data's canonical maps so those registrations remain one
+// source of truth during the incremental profile migration.
+var itemTable, itemByID = reddata.LegacyMutableItemTables()
+
 // Red adapter vocabulary is centralized in red/data so the profile and the
 // executor cannot silently diverge on raw species/item indexes.
 func SpeciesCount() int { return reddata.SpeciesCount() }
