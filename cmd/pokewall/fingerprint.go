@@ -41,6 +41,27 @@ type IssueLink struct {
 	UpdatedAt            int64  `json:"updated_at,omitempty"`
 	Fingerprint          string `json:"fingerprint,omitempty"`
 	Stale                bool   `json:"stale,omitempty"`
+
+	// Verification is PokePilot-local evidence that a remotely fixed issue
+	// stayed fixed. Agent Orchestrator remains the source of truth for Status,
+	// Resolution and FixedRevision; these fields never mutate its lifecycle.
+	VerificationState            string `json:"verification_state,omitempty"`
+	VerificationRevision         string `json:"verification_revision,omitempty"`
+	VerificationStartedAt        int64  `json:"verification_started_at,omitempty"`
+	VerificationOccurrenceCount  int64  `json:"verification_occurrence_count,omitempty"`
+	VerificationRequiredRuns     int    `json:"verification_required_runs,omitempty"`
+	VerificationCleanRuns        int    `json:"verification_clean_runs,omitempty"`
+	VerificationQuietSeconds     int64  `json:"verification_quiet_seconds,omitempty"`
+	VerificationVerifiedAt       int64  `json:"verification_verified_at,omitempty"`
+	VerificationLastCleanRun     string `json:"verification_last_clean_run,omitempty"`
+	VerificationLastCleanAt      int64  `json:"verification_last_clean_at,omitempty"`
+	VerificationPlanner          string `json:"verification_planner,omitempty"`
+	VerificationStarter          string `json:"verification_starter,omitempty"`
+	VerificationGoal             string `json:"verification_goal,omitempty"`
+	VerificationHasBaseline      bool   `json:"verification_has_baseline,omitempty"`
+	VerificationBaselineBadges   int    `json:"verification_baseline_badges,omitempty"`
+	VerificationBaselineEvents   int    `json:"verification_baseline_events,omitempty"`
+	VerificationBaselineMaps     int    `json:"verification_baseline_maps,omitempty"`
 }
 
 type outboxEntry struct {
