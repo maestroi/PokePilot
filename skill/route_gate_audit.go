@@ -105,6 +105,21 @@ func (x *redRouteTransitionExecutor) executeAuditedRouteTransition(edge world.Ed
 		}
 		return world.TransitionExecutionResult{}, true, nil
 
+	case "red:route12_snorlax_access":
+		// This is a pure precondition used to stop the static graph from
+		// entering Route 12 through Route 11/Lavender before the Poké Flute.
+		// The actual wake/battle remains owned by red:route12_snorlax once the
+		// later Fuchsia progression intentionally crosses the corridor.
+		var mem state.Mem
+		state.Snapshot(x.m, &mem)
+		if !redRouteCapabilities(x.romData, &mem).Has(capCanClearSnorlax) {
+			return world.TransitionExecutionResult{}, true, &gameruntime.TransitionBlockage{
+				Transition: transition,
+				Missing:    []gameruntime.CapabilityID{capCanClearSnorlax},
+			}
+		}
+		return world.TransitionExecutionResult{}, true, nil
+
 	case "red:route16_snorlax_bicycle":
 		var mem state.Mem
 		state.Snapshot(x.m, &mem)

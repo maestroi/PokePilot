@@ -26,17 +26,19 @@ const (
 	semanticViridianCityMap  uint8 = 0x01
 	semanticPewterCityMap    uint8 = 0x02
 	semanticCeruleanCityMap  uint8 = 0x03
+	semanticLavenderTownMap  uint8 = 0x04
 	semanticVermilionCityMap uint8 = 0x05
 	semanticCinnabarMap      uint8 = 0x08
+	semanticSaffronCityMap   uint8 = 0x0A
 	semanticRoute2Map        uint8 = 0x0D
 	semanticRoute3Map        uint8 = 0x0E
-	semanticRoute9Map        uint8 = 0x14
-	semanticRoute21Map       uint8 = 0x20
-	semanticSaffronCityMap   uint8 = 0x0A
 	semanticRoute5Map        uint8 = 0x10
 	semanticRoute6Map        uint8 = 0x11
 	semanticRoute7Map        uint8 = 0x12
 	semanticRoute8Map        uint8 = 0x13
+	semanticRoute9Map        uint8 = 0x14
+	semanticRoute11Map       uint8 = 0x16
+	semanticRoute21Map       uint8 = 0x20
 
 	// The four guardhouses ringing Saffron (map type GATE) each block
 	// passage until BIT_GAVE_SAFFRON_GUARDS_DRINK is set; giving any one
@@ -227,7 +229,20 @@ func redRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, bool) {
 	case pair(semanticPalletTownMap, semanticRoute21Map),
 		pair(semanticRoute21Map, semanticCinnabarMap):
 		return semanticTransition("red:route21_surf", edge, capCanSurf), true
+	case edge.To == route12Map &&
+		(edge.From == semanticRoute11Map || edge.From == semanticLavenderTownMap):
+		// Route 12's Snorlax is a live object at (10,62), inside the map rather
+		// than on either connection. The immutable graph therefore sees a fake
+		// Route 11 -> Route 12 -> Lavender shortcut before the Poké Flute and
+		// can strand Red beside the sleeper. Treat entering this corridor from
+		// either early-game side as a precondition gate. The reverse edges stay
+		// open so a legacy/pre-fix checkpoint already on Route 12 can escape.
+		t := semanticTransition("red:route12_snorlax_access", edge, capCanClearSnorlax)
+		t.Gate = true
+		return t, true
 	case pair(route12Map, route13Map):
+		// Once the Poké Flute exists this action owns the actual wake/battle
+		// before the Fuchsia route continues south.
 		return semanticTransition("red:route12_snorlax", edge, capCanClearSnorlax), true
 	case pair(victoryRoad1FMap, victoryRoad2FMap),
 		pair(victoryRoad2FMap, victoryRoad3FMap):

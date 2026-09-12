@@ -3,26 +3,29 @@ package agent
 import "github.com/maestroi/pokepilot/red/state"
 
 const (
+	lavenderTownMap uint8 = 0x04
+	celadonCityMap  uint8 = 0x06
+	fuchsiaCityMap  uint8 = 0x07
 	saffronCityMap  uint8 = 0x0a
 	route2Map       uint8 = 0x0d
-	viridianGymMap  uint8 = 0x2d
 	route3Map       uint8 = 0x0e
+	route9Map       uint8 = 0x14
+	route10Map      uint8 = 0x15
+	route12Map      uint8 = 0x17
+	route13Map      uint8 = 0x18
+	route14Map      uint8 = 0x19
+	route15Map      uint8 = 0x1a
+	viridianGymMap  uint8 = 0x2d
+	vermilionGymMap uint8 = 0x5c
 	cinnabarGymMap  uint8 = 0xa6
 	saffronGymMap   uint8 = 0xb2
-	vermilionGymMap uint8 = 0x5c
 )
 
 // placeProgressionBlocked gates named waypoints that sit on the far side of
 // a story obstacle within the player's own map, where journeyProgressionBlocked's
-// per-map check can't help: route12Map is also the map the player is
-// standing on, so it is never itself blocked. The static route graph has no
-// notion of the sleeping Snorlax sprite either (see world grid decode), so
-// RoutePlanner.Reachability reports both waypoints as reachable and GoTo
-// discovers the obstacle only at execution time, forever failing with "no
-// path" and getting re-offered every round.
-// MEASURED 2026-09-11 on run-1pwifxdtjnwa52ecxjcvvmh6ch (and 9 sibling
-// runs): "go to route 12 snorlax" / "go to route 12 south of snorlax" looped
-// for rounds 18-22 with badges 2/8, well before the Poké Flute exists.
+// per-map check can't help. Route 12's sleeping Snorlax is a live object rather
+// than static collision, so these interaction waypoints must stay unavailable
+// until the Poké Flute story fact is durable.
 func placeProgressionBlocked(obs Observation, placeName string) bool {
 	switch placeName {
 	case "route 12 snorlax", "route 12 south of snorlax":
@@ -37,6 +40,22 @@ func journeyProgressionBlocked(obs Observation, destinationMap uint8) bool {
 		return !hasBadge(obs, state.BadgeBoulder)
 	case route2Map:
 		return !observedEvent(obs, state.EventGotPokedex.String())
+
+	// Keep the campaign on its intended post-Cerulean critical path. Once
+	// HM01 exists the ROM technically allows Red to wander toward Rock Tunnel
+	// before fighting Surge, but doing so hides the still-missing third badge
+	// behind long travel and lets the strategist invent later-game plans. The
+	// compound Thunder-Badge objective owns recovery back to Vermilion instead.
+	case route9Map, route10Map, lavenderTownMap, celadonCityMap:
+		return !hasBadge(obs, state.BadgeThunder)
+
+	// Route 12 is not an alternate early-game road to Lavender/Fuchsia. The
+	// Snorlax at (10,62) blocks the corridor until Pokémon Tower yields the
+	// Poké Flute. Routes 13-15 and Fuchsia are the next slice after that gate;
+	// Surf/Strength are acquired in Fuchsia, not prerequisites for Route 12.
+	case route12Map, route13Map, route14Map, route15Map, fuchsiaCityMap:
+		return !obs.Story.Has(redProgressPokeFluteAcquired)
+
 	case saffronCityMap:
 		return !obs.Story.Has(ProgressSaffronGateOpen)
 	case saffronGymMap:
@@ -46,11 +65,8 @@ func journeyProgressionBlocked(obs Observation, destinationMap uint8) bool {
 	case viridianGymMap:
 		return !obs.Story.Has(ProgressViridianGymOpen)
 	case vermilionGymMap:
-		// The gym door is behind a Cut tree only EnterVermilionGym knows how
-		// to clear (skill/cut.go); plain GoTo/Traverse has no edge onto this
-		// map and stalls oscillating between Vermilion City's neighboring
-		// routes (measured: run-2p2b5kf4qza0o1cv5vo5swhzxr). "beat the gym
-		// leader here" (KindGym) is the only offered way in from outside.
+		// The exterior tree is owned by the atomic/compound Surge progression,
+		// not plain GoTo. Keep generic travel out of the gym from outside.
 		return obs.Map != vermilionGymMap
 	}
 	return false
