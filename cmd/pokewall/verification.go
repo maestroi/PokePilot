@@ -55,7 +55,7 @@ func (w *Wall) refreshIssueVerifications(now time.Time) {
 	links, tiles := w.verificationSnapshot()
 	changed := false
 	for key, link := range links {
-		next, ok := w.refreshOneIssueVerification(link, tiles, now)
+		next, ok := w.refreshOneIssueVerification(key, link, tiles, now)
 		if !ok || next == link {
 			continue
 		}
@@ -94,7 +94,7 @@ func (w *Wall) verificationSnapshot() (map[string]IssueLink, []verificationTile)
 	return links, tiles
 }
 
-func (w *Wall) refreshOneIssueVerification(link IssueLink, tiles []verificationTile, now time.Time) (IssueLink, bool) {
+func (w *Wall) refreshOneIssueVerification(key string, link IssueLink, tiles []verificationTile, now time.Time) (IssueLink, bool) {
 	if link.IssueID == "" {
 		return link, false
 	}
@@ -146,11 +146,14 @@ func (w *Wall) refreshOneIssueVerification(link IssueLink, tiles []verificationT
 		if err != nil {
 			continue
 		}
-		if report.RunnerVersion == "" {
-			// Legacy dumps cannot prove which runner build was exercised.
+		runnerRevision := strings.TrimSpace(report.RunnerVersion)
+		if runnerRevision == "" || runnerRevision != link.VerificationRevision {
+			// A run only verifies the fix if it actually exercised the exact
+			// revision Agent Orchestrator marked fixed. This deliberately ignores
+			// stale workers still draining an older image during a rollout.
 			continue
 		}
-		if verificationReportReproduces(link, report) {
+		if verificationReportReproduces(key, report) {
 			link.VerificationState = verificationRegressed
 			link.VerificationCleanRuns = 0
 			link.VerificationLastCleanRun = ""
@@ -302,25 +305,15 @@ func verificationReportHadOpportunity(link IssueLink, report farm.FinishReport) 
 	return p.Maps > link.VerificationBaselineMaps
 }
 
-func verificationReportReproduces(link IssueLink, report farm.FinishReport) bool {
+func verificationReportReproduces(issueKey string, report farm.FinishReport) bool {
 	if report.Detail == "" || (report.Reason != "error" && report.Reason != "lost") {
 		return false
 	}
-	key, _ := failureIdentity(normalizeDetail(report.Detail))
-	return key != "" && key == verificationKeyForLink(link)
-}
-
-func verificationKeyForLink(link IssueLink) string {
-	// Structured fingerprints already carry a stable key marker in Detail, but
-	// IssueLink intentionally stores only the full fingerprint. The caller's
-	// map key is unavailable here, so derive the legacy key from the full
-	// sha256 fingerprint when possible.
-	const prefix = "sha256:"
-	fp := strings.ToLower(strings.TrimSpace(link.Fingerprint))
-	if strings.HasPrefix(fp, prefix) && len(fp) >= len(prefix)+16 {
-		return fp[len(prefix) : len(prefix)+16]
+	if key, _, ok := farm.ParseFailureDetailMarker(report.Detail); ok {
+		return key == issueKey
 	}
-	return ""
+	key, _ := failureIdentity(normalizeDetail(report.Detail))
+	return key != "" && key == issueKey
 }
 
 func (w *Wall) loadVerificationFinish(tile verificationTile) (farm.FinishReport, error) {
