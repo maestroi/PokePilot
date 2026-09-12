@@ -15,3 +15,8 @@ deploy/farm.swarm.yml
 deploy/SWARM.md
 deploy/swarm.sh
 repro-*
+
+# Vue/Vite frontend workspace. Production assets will be generated during the
+# build and embedded by Go once the migration reaches the integration stage.
+/web/node_modules/
+/web/dist/
