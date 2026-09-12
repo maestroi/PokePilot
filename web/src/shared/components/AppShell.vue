@@ -52,7 +52,7 @@ const sidebarOpen = ref(false)
             >
               <DialogPanel class="relative mr-14 flex w-full max-w-72 flex-1">
                 <div class="flex grow flex-col overflow-y-auto border-r border-white/10 bg-[#090e16] px-5 pb-5">
-                  <div class="flex h-16 shrink-0 items-center gap-3 border-b border-white/8">
+                  <div class="flex h-16 shrink-0 items-center gap-3 border-b border-white/10">
                     <span class="size-2.5 rounded-sm bg-cyan-300 shadow-[0_0_18px_rgba(85,215,255,0.45)]" aria-hidden="true" />
                     <div>
                       <strong class="block text-sm tracking-wide text-white">PokéPilot</strong>
@@ -66,14 +66,14 @@ const sidebarOpen = ref(false)
                           :href="item.href"
                           :class="[
                             item.current
-                              ? 'bg-white/7 text-white ring-1 ring-white/8'
+                              ? 'bg-white/10 text-white ring-1 ring-white/10'
                               : 'text-slate-400 hover:bg-white/5 hover:text-white',
                             'flex items-center justify-between rounded-md px-3 py-2 text-sm font-semibold transition-colors'
                           ]"
                           @click="sidebarOpen = false"
                         >
                           <span>{{ item.name }}</span>
-                          <span v-if="item.badge !== undefined" class="rounded-full bg-white/8 px-2 py-0.5 text-[11px] font-medium text-slate-300">{{ item.badge }}</span>
+                          <span v-if="item.badge !== undefined" class="rounded-full bg-white/10 px-2 py-0.5 text-[11px] font-medium text-slate-300">{{ item.badge }}</span>
                         </a>
                       </li>
                     </ul>
@@ -90,7 +90,7 @@ const sidebarOpen = ref(false)
       </TransitionRoot>
 
       <aside class="fixed inset-y-0 left-0 z-40 hidden w-64 border-r border-white/10 bg-[#090e16] lg:flex lg:flex-col">
-        <div class="flex h-16 shrink-0 items-center gap-3 border-b border-white/8 px-5">
+        <div class="flex h-16 shrink-0 items-center gap-3 border-b border-white/10 px-5">
           <span class="size-2.5 rounded-sm bg-cyan-300 shadow-[0_0_18px_rgba(85,215,255,0.45)]" aria-hidden="true" />
           <div>
             <strong class="block text-sm tracking-wide text-white">PokéPilot</strong>
@@ -104,13 +104,13 @@ const sidebarOpen = ref(false)
                 :href="item.href"
                 :class="[
                   item.current
-                    ? 'bg-white/7 text-white ring-1 ring-white/8'
+                    ? 'bg-white/10 text-white ring-1 ring-white/10'
                     : 'text-slate-400 hover:bg-white/5 hover:text-white',
                   'flex items-center justify-between rounded-md px-3 py-2 text-sm font-semibold transition-colors'
                 ]"
               >
                 <span>{{ item.name }}</span>
-                <span v-if="item.badge !== undefined" class="rounded-full bg-white/8 px-2 py-0.5 text-[11px] font-medium text-slate-300">{{ item.badge }}</span>
+                <span v-if="item.badge !== undefined" class="rounded-full bg-white/10 px-2 py-0.5 text-[11px] font-medium text-slate-300">{{ item.badge }}</span>
               </a>
             </li>
           </ul>
@@ -137,7 +137,7 @@ const sidebarOpen = ref(false)
               <h1 class="truncate text-base font-semibold text-white sm:text-lg">{{ title }}</h1>
               <span
                 :class="[
-                  mode === 'private' ? 'border-cyan-300/20 bg-cyan-300/8 text-cyan-200' : 'border-emerald-300/20 bg-emerald-300/8 text-emerald-200',
+                  mode === 'private' ? 'border-cyan-300/20 bg-cyan-300/10 text-cyan-200' : 'border-emerald-300/20 bg-emerald-300/10 text-emerald-200',
                   'hidden rounded-full border px-2 py-0.5 text-[10px] font-semibold tracking-[0.08em] uppercase sm:inline'
                 ]"
               >
