@@ -65,6 +65,13 @@ func findReachableWildFieldCandidate(m *emu.Emu, romData []byte, target FieldMov
 		if err != nil {
 			continue
 		}
+		hasGrass, err := HasReachableGrass(romData, dest.Map, dest.X, dest.Y)
+		if err != nil {
+			return wildFieldCandidate{}, false, err
+		}
+		if !hasGrass {
+			continue
+		}
 
 		wild, err := WildGrass(romData, dest.Map)
 		if err != nil {
