@@ -146,114 +146,119 @@ async function cancelSelected(): Promise<void> {
         </button>
       </template>
 
-      <div v-if="selectedRun" class="grid grid-cols-1 gap-3 2xl:grid-cols-[13rem_minmax(0,2fr)_minmax(20rem,0.9fr)]">
+      <div v-if="selectedRun" class="grid grid-cols-1 gap-3 2xl:grid-cols-[12rem_minmax(0,1fr)]">
         <aside class="space-y-3">
           <Panel title="Runs" description="Active first, then recent." compact>
-            <div v-if="activeRuns.length" class="mb-3">
-              <span class="mb-1.5 block text-[10px] font-semibold tracking-[0.08em] text-slate-600 uppercase">Active</span>
-              <div class="space-y-1.5">
-                <button
-                  v-for="run in activeRuns"
-                  :key="run.run_id"
-                  type="button"
-                  :class="[
-                    selectedRun.run_id === run.run_id ? 'bg-cyan-300/10 ring-cyan-300/20' : 'bg-black/10 ring-white/8 hover:bg-white/5',
-                    'w-full rounded-md px-2.5 py-2 text-left ring-1 transition-colors'
-                  ]"
-                  @click="selectRun(run)"
-                >
-                  <div class="flex items-center justify-between gap-2">
-                    <span class="truncate font-mono text-[11px] text-slate-300" :title="run.run_id">{{ shortID(run.run_id, 14) }}</span>
-                    <span :class="['size-1.5 shrink-0 rounded-full', run.status === 'running' ? 'bg-emerald-300' : 'bg-amber-300']" />
-                  </div>
-                  <p class="mt-1 truncate text-[10px] text-slate-600" :title="goalLabel(run)">{{ goalLabel(run) }}</p>
-                </button>
+            <div class="max-h-[44rem] overflow-y-auto pr-0.5">
+              <div v-if="activeRuns.length" class="mb-3">
+                <span class="mb-1.5 block text-[10px] font-semibold tracking-[0.08em] text-slate-600 uppercase">Active</span>
+                <div class="space-y-1.5">
+                  <button
+                    v-for="run in activeRuns"
+                    :key="run.run_id"
+                    type="button"
+                    :class="[
+                      selectedRun.run_id === run.run_id ? 'bg-cyan-300/10 ring-cyan-300/20' : 'bg-black/10 ring-white/8 hover:bg-white/5',
+                      'w-full rounded-md px-2.5 py-2 text-left ring-1 transition-colors'
+                    ]"
+                    @click="selectRun(run)"
+                  >
+                    <div class="flex items-center justify-between gap-2">
+                      <span class="truncate font-mono text-[11px] text-slate-300" :title="run.run_id">{{ shortID(run.run_id, 14) }}</span>
+                      <span :class="['size-1.5 shrink-0 rounded-full', run.status === 'running' ? 'bg-emerald-300' : 'bg-amber-300']" />
+                    </div>
+                    <p class="mt-1 truncate text-[10px] text-slate-600" :title="goalLabel(run)">{{ goalLabel(run) }}</p>
+                  </button>
+                </div>
               </div>
-            </div>
 
-            <div v-if="recentRuns.length">
-              <span class="mb-1.5 block text-[10px] font-semibold tracking-[0.08em] text-slate-600 uppercase">Recent</span>
-              <div class="space-y-1.5">
-                <button
-                  v-for="run in recentRuns"
-                  :key="run.run_id"
-                  type="button"
-                  :class="[
-                    selectedRun.run_id === run.run_id ? 'bg-white/8 ring-cyan-300/20' : 'bg-black/10 ring-white/8 hover:bg-white/5',
-                    'w-full rounded-md px-2.5 py-2 text-left ring-1 transition-colors'
-                  ]"
-                  @click="selectRun(run)"
-                >
-                  <span class="block truncate font-mono text-[11px] text-slate-400" :title="run.run_id">{{ shortID(run.run_id, 14) }}</span>
-                  <p class="mt-1 truncate text-[10px] text-slate-600">{{ run.reason || 'done' }}</p>
-                </button>
+              <div v-if="recentRuns.length">
+                <span class="mb-1.5 block text-[10px] font-semibold tracking-[0.08em] text-slate-600 uppercase">Recent</span>
+                <div class="space-y-1.5">
+                  <button
+                    v-for="run in recentRuns"
+                    :key="run.run_id"
+                    type="button"
+                    :class="[
+                      selectedRun.run_id === run.run_id ? 'bg-white/8 ring-cyan-300/20' : 'bg-black/10 ring-white/8 hover:bg-white/5',
+                      'w-full rounded-md px-2.5 py-2 text-left ring-1 transition-colors'
+                    ]"
+                    @click="selectRun(run)"
+                  >
+                    <span class="block truncate font-mono text-[11px] text-slate-400" :title="run.run_id">{{ shortID(run.run_id, 14) }}</span>
+                    <p class="mt-1 truncate text-[10px] text-slate-600">{{ run.reason || 'done' }}</p>
+                  </button>
+                </div>
               </div>
             </div>
           </Panel>
         </aside>
 
-        <div class="space-y-3">
-          <Panel title="Game monitor" :description="goalLabel(selectedRun)" compact>
-            <template #actions>
-              <div class="flex items-center gap-2">
-                <StatusBadge :tone="statusTone(selectedRun.status)">{{ selectedRun.status }}</StatusBadge>
-                <button v-if="isCancelable" type="button" :disabled="canceling" class="inline-flex items-center gap-1 rounded-md bg-rose-400/8 px-2 py-1 text-[11px] font-semibold text-rose-200 ring-1 ring-rose-300/15 hover:bg-rose-400/15 disabled:opacity-50" @click="cancelSelected">
-                  <NoSymbolIcon class="size-3.5" aria-hidden="true" /> {{ canceling ? 'Canceling…' : 'Cancel' }}
-                </button>
-              </div>
-            </template>
+        <div class="min-w-0 space-y-3">
+          <div class="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1.35fr)_minmax(18rem,0.65fr)] 2xl:grid-cols-[minmax(0,1.35fr)_minmax(17rem,0.62fr)_minmax(18rem,0.7fr)]">
+            <Panel title="Game monitor" :description="goalLabel(selectedRun)" compact>
+              <template #actions>
+                <div class="flex items-center gap-2">
+                  <StatusBadge :tone="statusTone(selectedRun.status)">{{ selectedRun.status }}</StatusBadge>
+                  <button v-if="isCancelable" type="button" :disabled="canceling" class="inline-flex items-center gap-1 rounded-md bg-rose-400/8 px-2 py-1 text-[11px] font-semibold text-rose-200 ring-1 ring-rose-300/15 hover:bg-rose-400/15 disabled:opacity-50" @click="cancelSelected">
+                    <NoSymbolIcon class="size-3.5" aria-hidden="true" /> {{ canceling ? 'Canceling…' : 'Cancel' }}
+                  </button>
+                </div>
+              </template>
 
-            <div class="relative grid min-h-72 place-items-center overflow-hidden rounded-md border border-white/10 bg-black/45 sm:min-h-[30rem]">
-              <img v-if="frameURL" :src="frameURL" :alt="`Live frame for ${selectedRun.run_id}`" class="max-h-[72vh] w-full object-contain [image-rendering:pixelated]" />
-              <div v-else class="px-6 py-12 text-center">
-                <span :class="['mx-auto block size-2 rounded-full', frameEnabled ? 'animate-pulse bg-emerald-300' : 'bg-slate-600']" />
-                <p class="mt-3 text-sm font-medium text-slate-300">{{ frameEnabled ? 'Waiting for a live frame' : 'Run is not currently streaming' }}</p>
-                <p v-if="frameError" class="mt-1 text-xs text-amber-300/80">{{ frameError }}</p>
+              <div class="relative grid h-[clamp(18rem,40vh,26rem)] place-items-center overflow-hidden rounded-md border border-white/10 bg-black/45">
+                <img v-if="frameURL" :src="frameURL" :alt="`Live frame for ${selectedRun.run_id}`" class="h-full w-full object-contain [image-rendering:pixelated]" />
+                <div v-else class="px-6 py-12 text-center">
+                  <span :class="['mx-auto block size-2 rounded-full', frameEnabled ? 'animate-pulse bg-emerald-300' : 'bg-slate-600']" />
+                  <p class="mt-3 text-sm font-medium text-slate-300">{{ frameEnabled ? 'Waiting for a live frame' : 'Run is not currently streaming' }}</p>
+                  <p v-if="frameError" class="mt-1 text-xs text-amber-300/80">{{ frameError }}</p>
+                </div>
+                <div v-if="frameURL && frameState === 'error'" class="absolute right-3 bottom-3 rounded-md bg-black/70 px-2 py-1 text-[10px] text-amber-200 ring-1 ring-amber-300/20">Last frame · reconnecting</div>
               </div>
-              <div v-if="frameURL && frameState === 'error'" class="absolute right-3 bottom-3 rounded-md bg-black/70 px-2 py-1 text-[10px] text-amber-200 ring-1 ring-amber-300/20">Last frame · reconnecting</div>
-            </div>
-          </Panel>
+            </Panel>
 
-          <div class="grid grid-cols-1 gap-3 xl:grid-cols-2">
-            <Panel title="Party" :description="`${party.length} Pokémon · ₽${Number(selectedRun.player?.money || 0).toLocaleString()}`" compact>
-              <div v-if="party.length" class="space-y-2">
-                <div v-for="(mon, index) in party" :key="`${mon.name}-${index}`" class="rounded-md border border-white/8 bg-black/10 p-2.5">
-                  <div class="flex items-baseline justify-between gap-3"><strong class="truncate text-xs text-slate-200">{{ mon.name || 'Unknown' }}</strong><span class="font-mono text-[10px] text-slate-600">Lv {{ mon.level }}</span></div>
-                  <div class="mt-2 h-1.5 overflow-hidden rounded-full bg-white/8"><div class="h-full rounded-full bg-emerald-400" :style="{ width: `${hpPercent(mon)}%` }" /></div>
+            <Panel title="Semantic map" description="Collision grid, trail, objects, and player." compact>
+              <SemanticMap :map="selectedRun.map" :x="selectedRun.x" :y="selectedRun.y" :trail="selectedRun.trail" :sprites="selectedRun.sprites" />
+            </Panel>
+
+            <Panel title="Party" :description="`${party.length} Pokémon · ₽${Number(selectedRun.player?.money || 0).toLocaleString()}`" compact class="xl:col-span-2 2xl:col-span-1">
+              <div v-if="party.length" class="max-h-[22rem] divide-y divide-white/8 overflow-y-auto">
+                <div v-for="(mon, index) in party" :key="`${mon.name}-${index}`" class="py-2 first:pt-0 last:pb-0">
+                  <div class="flex items-baseline justify-between gap-3">
+                    <strong class="truncate text-xs text-slate-200">{{ mon.name || 'Unknown' }}</strong>
+                    <span class="font-mono text-[10px] text-slate-600">Lv {{ mon.level }}</span>
+                  </div>
+                  <div class="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white/8"><div class="h-full rounded-full bg-emerald-400" :style="{ width: `${hpPercent(mon)}%` }" /></div>
                   <div class="mt-1 flex justify-between font-mono text-[10px] text-slate-600"><span>{{ mon.hp }}/{{ mon.max_hp }} HP</span><span>{{ mon.status || 'healthy' }}</span></div>
                 </div>
               </div>
               <p v-else class="py-5 text-center text-xs text-slate-600">Party data not available yet.</p>
               <div v-if="badges.length" class="mt-3 flex flex-wrap gap-1.5 border-t border-white/8 pt-3"><StatusBadge v-for="badge in badges" :key="badge" tone="warning">{{ badge }}</StatusBadge></div>
             </Panel>
+          </div>
 
+          <div class="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(18rem,0.75fr)_minmax(0,1.25fr)]">
             <Panel title="Objective" :description="selectedRun.stats?.goal_summary || selectedRun.stop_so_far || goalLabel(selectedRun)" compact>
               <div class="h-2 overflow-hidden rounded-full bg-white/8"><div class="h-full rounded-full bg-cyan-300 transition-[width]" :style="{ width: `${goalProgress}%` }" /></div>
               <div class="mt-2 flex justify-between font-mono text-[10px] text-slate-600">
                 <span v-if="selectedRun.stats?.goal_target">{{ selectedRun.stats.goal_current || 0 }} / {{ selectedRun.stats.goal_target }}</span><span v-else>goal-driven</span><span>{{ goalProgress.toFixed(0) }}%</span>
               </div>
-              <dl class="mt-3 divide-y divide-white/8 text-xs">
-                <div class="flex items-center justify-between gap-3 py-2"><dt class="text-slate-600">Round</dt><dd class="font-mono text-slate-400">{{ selectedRun.stats?.round ?? '—' }}</dd></div>
-                <div class="flex items-center justify-between gap-3 py-2"><dt class="text-slate-600">Frame</dt><dd class="font-mono text-slate-400">{{ Number(selectedRun.frame || 0).toLocaleString() }}</dd></div>
-                <div class="flex items-center justify-between gap-3 py-2"><dt class="text-slate-600">Route</dt><dd class="text-right text-slate-400">{{ llmProfileLabel(selectedRun) }}</dd></div>
-                <div class="flex items-center justify-between gap-3 py-2 last:pb-0"><dt class="text-slate-600">Location</dt><dd class="font-mono text-right text-slate-400">{{ location(selectedRun) }}</dd></div>
+              <dl class="mt-2 grid grid-cols-2 gap-x-4 text-xs">
+                <div class="flex items-center justify-between gap-3 border-t border-white/8 py-2"><dt class="text-slate-600">Round</dt><dd class="font-mono text-slate-400">{{ selectedRun.stats?.round ?? '—' }}</dd></div>
+                <div class="flex items-center justify-between gap-3 border-t border-white/8 py-2"><dt class="text-slate-600">Frame</dt><dd class="font-mono text-slate-400">{{ Number(selectedRun.frame || 0).toLocaleString() }}</dd></div>
+                <div class="col-span-2 flex items-center justify-between gap-3 border-t border-white/8 py-2"><dt class="text-slate-600">Route</dt><dd class="text-right text-slate-400">{{ llmProfileLabel(selectedRun) }}</dd></div>
+                <div class="col-span-2 flex items-center justify-between gap-3 border-t border-white/8 py-2 last:pb-0"><dt class="text-slate-600">Location</dt><dd class="font-mono text-right text-slate-400">{{ location(selectedRun) }}</dd></div>
               </dl>
             </Panel>
+
+            <Panel title="Planner" description="Latest model-facing choice and resolved objective." compact>
+              <div class="grid gap-3 xl:grid-cols-2">
+                <div><span class="text-[10px] font-semibold tracking-[0.08em] text-slate-600 uppercase">Question</span><p class="mt-1 max-h-32 overflow-auto whitespace-pre-wrap text-xs leading-5 text-slate-400">{{ selectedRun.question || 'No planner question yet.' }}</p></div>
+                <div class="xl:border-l xl:border-white/8 xl:pl-3"><span class="text-[10px] font-semibold tracking-[0.08em] text-cyan-300/70 uppercase">Decision</span><p class="mt-1 max-h-32 overflow-auto whitespace-pre-wrap text-xs leading-5 text-slate-300">{{ selectedRun.decision || 'Waiting for a decision.' }}</p></div>
+              </div>
+              <details v-if="selectedRun.trace || selectedRun.raw" class="mt-3 border-t border-white/8 pt-3"><summary class="cursor-pointer text-[10px] font-semibold tracking-[0.08em] text-slate-600 uppercase">Raw / trace</summary><pre class="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded-md bg-black/20 p-2 font-mono text-[9px] leading-4 text-slate-600">{{ selectedRun.raw || selectedRun.trace }}</pre></details>
+            </Panel>
           </div>
-        </div>
-
-        <div class="space-y-3">
-          <Panel title="Semantic map" description="Collision grid, recent trail, live objects, and player position." compact>
-            <SemanticMap :map="selectedRun.map" :x="selectedRun.x" :y="selectedRun.y" :trail="selectedRun.trail" :sprites="selectedRun.sprites" />
-          </Panel>
-
-          <Panel title="Planner" description="Latest model-facing choice and resolved objective." compact>
-            <div class="space-y-3">
-              <div><span class="text-[10px] font-semibold tracking-[0.08em] text-slate-600 uppercase">Question</span><p class="mt-1 max-h-40 overflow-auto whitespace-pre-wrap text-xs leading-5 text-slate-400">{{ selectedRun.question || 'No planner question yet.' }}</p></div>
-              <div class="border-t border-white/8 pt-3"><span class="text-[10px] font-semibold tracking-[0.08em] text-cyan-300/70 uppercase">Decision</span><p class="mt-1 whitespace-pre-wrap text-xs leading-5 text-slate-300">{{ selectedRun.decision || 'Waiting for a decision.' }}</p></div>
-              <details v-if="selectedRun.trace || selectedRun.raw" class="border-t border-white/8 pt-3"><summary class="cursor-pointer text-[10px] font-semibold tracking-[0.08em] text-slate-600 uppercase">Raw / trace</summary><pre class="mt-2 max-h-56 overflow-auto whitespace-pre-wrap rounded-md bg-black/20 p-2 font-mono text-[9px] leading-4 text-slate-600">{{ selectedRun.raw || selectedRun.trace }}</pre></details>
-            </div>
-          </Panel>
 
           <div v-if="actionError" class="border-l-4 border-rose-400 bg-rose-400/10 p-3 text-sm text-rose-100" role="alert">{{ actionError }}</div>
         </div>
@@ -262,6 +267,7 @@ async function cancelSelected(): Promise<void> {
       <div v-else class="py-16 text-center">
         <p class="text-sm font-medium text-slate-300">No run selected</p>
         <p class="mt-1 text-xs text-slate-600">Queue a run from Tools or choose one from the Runs archive.</p>
+        <a href="#tools" class="mt-4 inline-flex rounded-md bg-cyan-500 px-3 py-2 text-xs font-semibold text-white hover:bg-cyan-400">Start a run</a>
       </div>
     </ResourceState>
 

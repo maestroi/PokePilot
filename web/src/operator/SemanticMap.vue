@@ -104,8 +104,8 @@ onMounted(draw)
 </script>
 
 <template>
-  <div class="relative overflow-hidden rounded-md border border-white/10 bg-black/30">
-    <canvas ref="canvas" class="aspect-square w-full [image-rendering:pixelated]" aria-label="Semantic map" />
+  <div class="relative grid h-[clamp(15rem,30vh,22rem)] place-items-center overflow-hidden rounded-md border border-white/10 bg-black/30 p-2">
+    <canvas ref="canvas" class="max-h-full max-w-full [image-rendering:pixelated]" aria-label="Semantic map" />
     <div class="pointer-events-none absolute top-2 left-2 rounded-md bg-black/70 px-2 py-1 font-mono text-[10px] text-slate-300 ring-1 ring-white/10">
       map 0x{{ Number(map || 0).toString(16).padStart(2, '0') }} · {{ x }},{{ y }}
     </div>
