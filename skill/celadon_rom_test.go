@@ -75,16 +75,15 @@ func TestBadgeFourMapsContainCutFieldTiles(t *testing.T) {
 			count := 0
 			for y := 0; y < g.Height; y++ {
 				for x := 0; x < g.Width; x++ {
-					tile, ok := g.FieldTile(x, y)
-					if ok && cutRouteTile(h.Tileset, tile) {
+					if cellCutRouteTile(g, h.Tileset, x, y) {
 						count++
 					}
 				}
 			}
 			if count == 0 {
-				t.Fatalf("map %02x has no field-action Cut tiles; Cut-aware routing cannot open its gate", tc.mapID)
+				t.Fatalf("map %02x has no Cut-tree subtiles; Cut-aware routing cannot open its gate", tc.mapID)
 			}
-			t.Logf("map %02x exposes %d field-action Cut tile(s)", tc.mapID, count)
+			t.Logf("map %02x exposes %d Cut-tree cell(s)", tc.mapID, count)
 		})
 	}
 }
