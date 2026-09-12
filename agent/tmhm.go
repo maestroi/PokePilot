@@ -97,13 +97,19 @@ func normalizeObjectiveBoundary(m *emu.Emu) error {
 		}
 		if state.DecodeDialogue(&mem) != nil {
 			res := skill.RecoverDialogue(m, roundRecoveryBudget)
-			if res.Stop != skill.DialogueRecovered {
-				if res.Stop == skill.DialogueChoiceRequired {
-					return ErrObjectiveBoundaryChoice
-				}
+			switch res.Stop {
+			case skill.DialogueRecovered:
+				continue
+			case skill.DialogueMenuOpen:
+				// The text page legitimately transitioned into a menu. Recovery
+				// must not press A there, but that is not a dirty boundary by
+				// itself: loop once more so the typed menu cleanup above owns it.
+				continue
+			case skill.DialogueChoiceRequired:
+				return ErrObjectiveBoundaryChoice
+			default:
 				return fmt.Errorf("%w: leftover dialogue did not recover: %s", ErrObjectiveBoundaryDirty, recoveryStopName(res.Stop))
 			}
-			continue
 		}
 		return fmt.Errorf("%w: player is not controllable and no recoverable menu or dialogue is open", ErrObjectiveBoundaryDirty)
 	}

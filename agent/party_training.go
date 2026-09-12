@@ -129,6 +129,30 @@ func resolveTrainingPartySlot(mem *state.Mem, o Objective) (int, error) {
 	return o.Slot, nil
 }
 
+// promoteToLeadStable gives the verified party-swap primitive one recovery
+// attempt when a menu transition wins the race against PromoteToLead's source-
+// screen guard. The failure is not ignored: we only retry after proving the
+// leftover surface is a dismissable menu and unwinding it to the overworld.
+// This covers checkpoints/transition frames where the old menu disappears
+// before the next party screen has finished drawing, without making unknown
+// interaction failures broadly recoverable.
+func promoteToLeadStable(m *emu.Emu, slot int) error {
+	if err := skill.PromoteToLead(m, slot); err != nil {
+		var mem state.Mem
+		state.Snapshot(m, &mem)
+		if !skill.DismissableObjectiveMenu(&mem) {
+			return err
+		}
+		if cleanupErr := skill.CloseOpenMenuToOverworld(m); cleanupErr != nil {
+			return fmt.Errorf("%v; recover interrupted party menu: %w", err, cleanupErr)
+		}
+		if retryErr := skill.PromoteToLead(m, slot); retryErr != nil {
+			return fmt.Errorf("%v; retry after menu recovery: %w", err, retryErr)
+		}
+	}
+	return nil
+}
+
 // executeTrainingObjective temporarily promotes the requested party member to
 // slot 0 because Red only awards battle XP to participating slots. A clean or
 // progress-making session swaps the original lead back afterward. Retreats and
@@ -148,7 +172,7 @@ func executeTrainingObjective(m *emu.Emu, romData []byte, o Objective, result Ob
 
 	promoted := slot > 0
 	if promoted {
-		if err := skill.PromoteToLead(m, slot); err != nil {
+		if err := promoteToLeadStable(m, slot); err != nil {
 			return result, fmt.Errorf("agent: %s: promote target to lead: %w", o, err)
 		}
 	}
@@ -161,7 +185,7 @@ func executeTrainingObjective(m *emu.Emu, romData []byte, o Objective, result Ob
 	// state. Do not restore retreat/blackout endings; Run intentionally reads
 	// the active trained mon's level to decide whether recovery is progressing.
 	if promoted && !train.Retreated && !train.BlackedOut {
-		if restoreErr := skill.PromoteToLead(m, slot); restoreErr != nil {
+		if restoreErr := promoteToLeadStable(m, slot); restoreErr != nil {
 			if trainErr != nil {
 				return result, fmt.Errorf("agent: %s: train failed after %d battles: %v; restore original lead: %w", o, train.Battles, trainErr, restoreErr)
 			}
