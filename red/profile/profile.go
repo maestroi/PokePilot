@@ -175,13 +175,10 @@ func semanticLocation(mapName string) game.PlaceID {
 	return game.CanonicalID(strings.ReplaceAll(mapName, "_", " "))
 }
 
-// ProjectStory converts Red's decoded story facts into the portable progress
-// vocabulary. It is exported so Red-owned execution code and tests can use the
-// same projection as DecodeObservation without duplicating profile semantics.
-func ProjectStory(mem *state.Mem, facts state.StoryFacts) game.ProgressState {
-	badges := state.DecodeProgress(mem)
-	mapID := mem.U8(sym.CurMap)
-	indigoReady := mapID == indigoPlateauMap || mapID == indigoPlateauLobbyMap || facts.LeagueChallengeStarted || facts.LeagueChampionDefeated || facts.MainStoryComplete
+// ProjectStoryFacts converts Red's decoded story facts into portable progress
+// without reading badge/map state. It preserves the historical facts-only
+// projection used by Red-owned execution helpers.
+func ProjectStoryFacts(facts state.StoryFacts) game.ProgressState {
 	return game.ProgressState{
 		{ID: ProgressMtMoonFossilAcquired, Complete: facts.MtMoonFossilAcquired},
 		{ID: ProgressPokedexAcquired, Complete: facts.PokedexAcquired},
@@ -202,10 +199,21 @@ func ProjectStory(mem *state.Mem, facts state.StoryFacts) game.ProgressState {
 		{ID: ProgressLeagueChallengeStarted, Complete: facts.LeagueChallengeStarted},
 		{ID: ProgressLeagueChampionDefeated, Complete: facts.LeagueChampionDefeated},
 		{ID: ProgressMainStoryComplete, Complete: facts.MainStoryComplete},
-		{ID: ProgressThunderBadge, Complete: badges.Has(state.BadgeThunder)},
-		{ID: ProgressRainbowBadge, Complete: badges.Has(state.BadgeRainbow)},
-		{ID: ProgressVolcanoBadge, Complete: badges.Has(state.BadgeVolcano)},
-		{ID: ProgressEarthBadge, Complete: badges.Has(state.BadgeEarth)},
-		{ID: ProgressIndigoPlateauReady, Complete: indigoReady},
 	}
+}
+
+// ProjectStory extends ProjectStoryFacts with RAM-backed badges and map-aware
+// league readiness for the full observation path.
+func ProjectStory(mem *state.Mem, facts state.StoryFacts) game.ProgressState {
+	progress := ProjectStoryFacts(facts)
+	badges := state.DecodeProgress(mem)
+	mapID := mem.U8(sym.CurMap)
+	indigoReady := mapID == indigoPlateauMap || mapID == indigoPlateauLobbyMap || facts.LeagueChallengeStarted || facts.LeagueChampionDefeated || facts.MainStoryComplete
+	return append(progress,
+		game.ProgressFact{ID: ProgressThunderBadge, Complete: badges.Has(state.BadgeThunder)},
+		game.ProgressFact{ID: ProgressRainbowBadge, Complete: badges.Has(state.BadgeRainbow)},
+		game.ProgressFact{ID: ProgressVolcanoBadge, Complete: badges.Has(state.BadgeVolcano)},
+		game.ProgressFact{ID: ProgressEarthBadge, Complete: badges.Has(state.BadgeEarth)},
+		game.ProgressFact{ID: ProgressIndigoPlateauReady, Complete: indigoReady},
+	)
 }
