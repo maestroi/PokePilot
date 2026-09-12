@@ -11,10 +11,15 @@ import (
 	"github.com/maestroi/pokepilot/world"
 )
 
+// pokemonCenterPCY is the tile the player stands on to use the PC; the PC
+// terminal itself sits one row up at pokemonCenterPCFaceY and is solid.
+// MEASURED on run-39nani97cwabo2y8cozb42u2ca's Vermilion Pokecenter (map
+// 0x59): (13,3) decodes as collision tile 0x52 (impassable), while (13,4) is
+// walkable and carries the distinct "facing PC" field tile.
 const (
 	pokemonCenterPCX     uint8 = 13
-	pokemonCenterPCY     uint8 = 3
-	pokemonCenterPCFaceY uint8 = 2
+	pokemonCenterPCY     uint8 = 4
+	pokemonCenterPCFaceY uint8 = 3
 	pcTravelBattles            = 80
 	pcTransitionBudget         = 3000
 	pcCloseBudget              = 120
