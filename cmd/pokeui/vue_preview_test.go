@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
@@ -16,7 +17,7 @@ func requireVueBuild(t *testing.T) {
 		"ui/vue/spectator/spectator.html",
 	} {
 		if _, err := fs.Stat(vueWebAssets, name); err != nil {
-			if err == fs.ErrNotExist || strings.Contains(err.Error(), "file does not exist") {
+			if errors.Is(err, fs.ErrNotExist) {
 				t.Skip("Vue assets are not built; run `cd web && npm run build` to exercise embed integration")
 			}
 			t.Fatalf("stat %s: %v", name, err)
