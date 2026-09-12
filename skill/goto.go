@@ -247,9 +247,46 @@ func goToWithTransitionExecutor(m *emu.Emu, romData []byte, dest Destination, ex
 			// again", forever. Banning the entry leg at its origin tile,
 			// the same way an unwalkable leg is banned, means the next visit
 			// to that tile plans around it instead of repeating it.
-			if haveLastLeg {
+			// Only a WARP is safe to blame permanently. A warp has one fixed
+			// source tile, so its outcome never depends on where the player
+			// approached from — if it led nowhere once, it leads nowhere
+			// every time (the PC case above). A CONNECTION crosses a whole
+			// map edge and mirrors the player's position on landing, so
+			// where exactly you cross determines which component you land
+			// in: Route 4's landing tile from Cerulean's border sits in an
+			// isolated pocket with no recorded edge onward except back to
+			// Cerulean, but crossing at a different tile on that same
+			// border can land somewhere else entirely (this run's "go to
+			// route 2, fleeing wild battles" succeeded 4 times before
+			// failing here — the crossing point, not the map, is what
+			// varies). Banning the whole connection after one bad crossing
+			// forecloses every future crossing, good tile or not.
+			//
+			// Never ban the last edge a map has left either way: deadEnds
+			// is keyed by (edge, edge.From), so banning lastLeg forbids
+			// leaving lastLeg.m by that edge for the rest of this call; if
+			// every other edge FROM lastLeg.m is already banned too, this
+			// ban would seal lastLeg.m with no way out at all, which can
+			// never be correct — the player got there somehow, and the
+			// same walk back out must stay legal. MEASURED on
+			// run-3w2ibusy813gfmnierudpllie round 6: Route 24 has exactly
+			// two edges (Cerulean, Route 25); Route 25 was already banned
+			// as a real dead end, and banning the Cerulean edge next — fired
+			// while standing back on Cerulean, which still had plenty of its
+			// OWN untried edges and was never the problem — sealed Route 24
+			// completely. The next visit to Route 24 then had nowhere at
+			// all to go, and "go to route 2" died on "world: no route" even
+			// though Route 24 -> Cerulean was the one genuinely open door.
+			if haveLastLeg && lastLeg.e.Kind == world.EdgeWarp {
 				k := legFromMap{e: lastLeg.e, m: lastLeg.m}
-				if !deadEnds[k] {
+				sealsMap := true
+				for _, e := range routeGraph.Edges[lastLeg.m] {
+					if e != lastLeg.e && !deadEnds[legFromMap{e: e, m: lastLeg.m}] {
+						sealsMap = false
+						break
+					}
+				}
+				if !deadEnds[k] && !sealsMap {
 					if replans++; replans > maxReplans {
 						return newReplanExhaustedError(maxReplans, cur, x, y, dest, err)
 					}
