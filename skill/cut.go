@@ -212,6 +212,16 @@ func reachableBeside(grid *world.Grid, sx, sy, tx, ty int, blocked map[[2]int]bo
 		if !grid.InBounds(x, y) || !grid.Walkable(x, y) {
 			continue
 		}
+		if x == vermilionGymX && y == vermilionGymY {
+			// The gym door itself is never a safe "beside" tile: stepping
+			// there re-triggers the warp instead of merely standing next to
+			// the candidate, which sends the walker back inside the gym
+			// before it ever gets to look at (let alone cut) the candidate.
+			// Only reachable from the yard side of the door (approaching from
+			// the street, the candidate's other neighbours already win on
+			// path length), so this only ever excludes a real dead end.
+			continue
+		}
 		steps, err := world.FindPath(grid, sx, sy, x, y, blocked)
 		if err == nil && len(steps) < bestLen {
 			bestLen, found = len(steps), true
