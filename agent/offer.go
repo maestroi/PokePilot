@@ -407,10 +407,13 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 	}
 
 	if hasBalls(obs) && obs.HasGrass {
+		owned := pokedexOwnedSet(obs)
 		for _, w := range obs.WildGrass {
-			if sp, ok := SpeciesByName(w.Name); ok {
-				out = append(out, Objective{Kind: KindCatch, Species: sp})
+			sp, ok := SpeciesByName(w.Name)
+			if !ok || owned[sp] {
+				continue
 			}
+			out = append(out, Objective{Kind: KindCatch, Species: sp})
 		}
 	}
 

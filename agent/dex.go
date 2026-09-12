@@ -363,6 +363,43 @@ func joinReq(a, b string) string {
 	}
 }
 
+func annotateDexRouteRequirements(cat DexCatalog, blockages []RouteBlockage) DexCatalog {
+	missing := map[PlaceID][]CapabilityID{}
+	for _, b := range blockages {
+		if b.Destination == "" || len(b.Missing) == 0 {
+			continue
+		}
+		missing[b.Destination] = append([]CapabilityID(nil), b.Missing...)
+	}
+	annotate := func(entries []DexEntry) {
+		for i := range entries {
+			for j, src := range entries[i].Sources {
+				need, ok := missing[src.Place]
+				if !ok {
+					continue
+				}
+				req := src.Requirement
+				for _, id := range need {
+					req = joinReq(req, string(id))
+				}
+				entries[i].Sources[j].Requirement = req
+			}
+		}
+	}
+	annotate(cat.Owned)
+	annotate(cat.Targets)
+	annotate(cat.Unavailable)
+	return cat
+}
+
+func pokedexOwnedSet(obs Observation) map[SpeciesID]bool {
+	out := speciesSet(obs.PokedexOwned)
+	for _, e := range obs.Dex.Owned {
+		out[e.Species] = true
+	}
+	return out
+}
+
 func evolutionItem(id uint8) ItemID {
 	if name, ok := ItemName(id); ok {
 		return ItemID(name)

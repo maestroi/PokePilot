@@ -151,6 +151,23 @@ func TestAssembleDexCatalogIsDeterministic(t *testing.T) {
 	}
 }
 
+func TestAnnotateDexRouteRequirementsUsesLiveBlockages(t *testing.T) {
+	cat := DexCatalog{
+		Targets: []DexEntry{{
+			Species: "ekans",
+			Dex:     23,
+			Sources: []DexSource{{Kind: AcquireWildGrass, Place: "route 4"}},
+		}},
+	}
+	got := annotateDexRouteRequirements(cat, []RouteBlockage{{
+		Destination: "route 4",
+		Missing:     []CapabilityID{"can_leave_pewter_east"},
+	}})
+	if got.Targets[0].Sources[0].Requirement != "can_leave_pewter_east" {
+		t.Fatalf("requirement = %q, want can_leave_pewter_east from the live route blockage", got.Targets[0].Sources[0].Requirement)
+	}
+}
+
 func wantOwned(id SpeciesID) []SpeciesID { return []SpeciesID{id} }
 
 func hasDex(entries []DexEntry, id SpeciesID) bool {

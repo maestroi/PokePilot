@@ -795,3 +795,35 @@ func TestOfferWithholdsTrainBelowTheRetreatLine(t *testing.T) {
 		}
 	}
 }
+
+func TestOfferDoesNotCatchSpeciesAlreadyOwnedInPokedex(t *testing.T) {
+	known := agent.NewKnowledge(nil)
+	obs := agent.Observation{
+		Map:        0x0c,
+		MapName:    "ROUTE_1",
+		HasGrass:   true,
+		PartyCount: 1,
+		Party:      []agent.PartyMon{{Species: agent.SpeciesID("charmander"), Level: 8, HP: 20, MaxHP: 20}},
+		Bag:        []agent.Item{{Name: "pokeball", Quantity: 5}},
+		WildGrass: []agent.WildSpecies{
+			{Name: "pidgey", MinLevel: 2, MaxLevel: 5, Slots: 6},
+			{Name: "rattata", MinLevel: 2, MaxLevel: 4, Slots: 4},
+		},
+		PokedexOwned: []agent.SpeciesID{"pidgey"},
+	}
+	got := agent.Offer(obs, known)
+	for _, o := range got {
+		if o.Kind == agent.KindCatch && o.Species == "pidgey" {
+			t.Fatalf("offered catch of dex-owned pidgey: %+v", got)
+		}
+	}
+	foundRattata := false
+	for _, o := range got {
+		if o.Kind == agent.KindCatch && o.Species == "rattata" {
+			foundRattata = true
+		}
+	}
+	if !foundRattata {
+		t.Fatalf("offers = %v, want catch rattata still available", got)
+	}
+}

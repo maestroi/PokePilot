@@ -52,6 +52,9 @@ type Observation struct {
 	// context only and must never be treated as ownership.
 	PokedexOwned []SpeciesID
 	PokedexSeen  []SpeciesID
+	// Dex is the runtime catalog Offer uses. It stays off the planner JSON
+	// contract: DecisionContext.Dex carries only the counts.
+	Dex DexCatalog `json:"-"`
 
 	WildGrass  []WildSpecies
 	HasGrass   bool
@@ -272,6 +275,9 @@ func ObserveChecked(m *emu.Emu, romData []byte) (Observation, error) {
 	routes := routeAvailabilityFor(m, romData)
 	obs.Unroutable = routes.Unroutable
 	obs.RouteBlockages = routes.Blockages
+	if cat, err := BuildDexCatalog(romData, obs.PokedexOwned, obs.PokedexSeen); err == nil {
+		obs.Dex = annotateDexRouteRequirements(cat, obs.RouteBlockages)
+	}
 	obs.WildGrass = []WildSpecies{}
 	if wild, err := skill.WildGrass(romData, obs.Map); err == nil {
 		for _, w := range wild {

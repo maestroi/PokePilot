@@ -2,6 +2,7 @@ package agent_test
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/maestroi/pokepilot/agent"
@@ -78,6 +79,35 @@ func TestObservationJSONStatesCatchDoesNotDamageWantedTarget(t *testing.T) {
 	ctx := got.DecisionContext.Catch
 	if ctx.WantedTargetsAttacked || ctx.WantedTargetsWeakened || !ctx.BallsThrownAtFullHP {
 		t.Fatalf("catch context = %+v, want no attack, no weakening, full-HP throws", *ctx)
+	}
+}
+
+func TestObservationJSONKeepsDexCatalogOutOfThePrompt(t *testing.T) {
+	obs := agent.Observation{
+		PokedexOwned: []agent.SpeciesID{"charmander"},
+		Dex: agent.DexCatalog{
+			Owned:   []agent.DexEntry{{Species: "charmander", Dex: 4}},
+			Targets: []agent.DexEntry{{Species: "pidgey", Dex: 16, Sources: []agent.DexSource{{Kind: agent.AcquireWildGrass, Place: "route 1"}}}},
+		},
+	}
+	b, err := json.Marshal(obs)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	if strings.Contains(string(b), `"wild_grass"`) {
+		t.Fatalf("planner JSON embeds the full Dex catalog: %s", b)
+	}
+	var got struct {
+		DecisionContext *agent.DecisionContext
+	}
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+	if got.DecisionContext == nil || got.DecisionContext.Dex == nil {
+		t.Fatalf("DecisionContext.Dex = %#v, want owned/target counts", got.DecisionContext)
+	}
+	if got.DecisionContext.Dex.Owned != 1 || got.DecisionContext.Dex.Targets != 1 {
+		t.Fatalf("dex context = %+v, want owned=1 targets=1", *got.DecisionContext.Dex)
 	}
 }
 

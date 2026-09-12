@@ -66,6 +66,10 @@ func TestBuildDexCatalogFromROM(t *testing.T) {
 	assertTarget("wartortle", agent.AcquireLevelEvo)
 	assertTarget("vileplume", agent.AcquireItemEvo)
 	assertTarget("mr.mime", agent.AcquireInGameTrade)
+	assertTarget("eevee", agent.AcquireGift)
+	assertTarget("lapras", agent.AcquireGift)
+	assertTarget("snorlax", agent.AcquireStatic)
+	assertTarget("omanyte", agent.AcquireFossil)
 
 	if entry := unavailableOf(cat, "alakazam"); entry.Unavailable != agent.UnavailableTradeEvolution {
 		t.Fatalf("alakazam unavailable = %q, want %q", entry.Unavailable, agent.UnavailableTradeEvolution)
