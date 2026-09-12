@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import AppShell, { type AppNavItem } from '../shared/components/AppShell.vue'
+import AppShell from '../shared/components/AppShell.vue'
 import Panel from '../shared/components/Panel.vue'
 import ResourceState from '../shared/components/ResourceState.vue'
 import StatusBadge from '../shared/components/StatusBadge.vue'
+import type { AppNavItem } from '../shared/types'
 
 const navigation: AppNavItem[] = [
   { name: 'Live', href: '#live' },
