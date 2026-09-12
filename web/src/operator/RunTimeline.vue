@@ -34,7 +34,7 @@ function eventRound(event: TimelineRow): number {
 }
 
 function eventKind(event: TimelineRow): 'decision' | 'checkpoint' | 'progress' | 'failure' | 'event' {
-  const value = `${text(event.kind)} ${text(event.type)}`.toLowerCase()
+  const value = `${text(event.kind)} ${text(event.type)} ${text(event.message)} ${text(event.detail)}`.toLowerCase()
   if (value.includes('fail') || value.includes('lost') || value.includes('error')) return 'failure'
   if (value.includes('checkpoint')) return 'checkpoint'
   if (value.includes('progress') || value.includes('finish')) return 'progress'
@@ -50,9 +50,9 @@ function eventTitle(event: TimelineRow): string {
   const kind = eventKind(event)
   const checkpoint = text(event.checkpoint) || text(event.name)
   if (kind === 'checkpoint' && checkpoint) return checkpoint
-  if (kind === 'decision') return text(event.decision) || 'Planner decision'
-  if (kind === 'failure') return text(event.message) || text(event.detail) || 'Run failed'
-  if (kind === 'progress') return text(event.message) || 'Progress recorded'
+  if (kind === 'decision') return 'Planner decision'
+  if (kind === 'failure') return 'Run failed'
+  if (kind === 'progress') return text(event.type).toLowerCase().includes('finish') ? 'Run finished' : 'Progress recorded'
   return text(event.message) || humanize(text(event.type) || text(event.kind) || 'Recorded event')
 }
 
@@ -62,12 +62,14 @@ function eventDetail(event: TimelineRow): string {
   const message = text(event.message)
   const detail = text(event.detail)
   const progress = text(event.progress)
-  if (question && decision) return question
+  const kind = eventKind(event)
+  if (kind === 'decision') return decision || question || message || 'A planner decision was persisted.'
+  if (kind === 'failure') return detail || message || question || 'The run stopped with a failure.'
+  if (kind === 'progress') return progress || message || detail || 'Run progress was persisted.'
   if (detail && detail !== eventTitle(event)) return detail
   if (message && message !== eventTitle(event)) return message
-  if (progress) return progress
   if (question) return question
-  if (eventKind(event) === 'checkpoint') {
+  if (kind === 'checkpoint') {
     return event.replayable ? 'Restartable checkpoint with paired agent state.' : 'Persisted checkpoint evidence.'
   }
   return 'No additional semantic detail was persisted.'
@@ -136,7 +138,7 @@ function when(event: TimelineRow): string {
         <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Playback</span>
         <h3 class="mt-0.5 text-sm font-semibold text-slate-200">Run timeline</h3>
       </div>
-      <span class="font-mono text-[10px] text-slate-500">
+      <span class="max-w-full truncate font-mono text-[10px] text-slate-500 xl:max-w-xl">
         {{ selected ? `${when(selected)} · ${eventTitle(selected)}` : `${layout.totalFrames.toLocaleString()} frames` }}
       </span>
     </div>
