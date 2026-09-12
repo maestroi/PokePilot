@@ -1,0 +1,98 @@
+:root {
+  color-scheme: dark;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  background: #070b11;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  min-width: 320px;
+  background:
+    radial-gradient(circle at 20% 0%, rgba(45, 116, 150, 0.12), transparent 34rem),
+    #070b11;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+.poke-app {
+  min-height: 100vh;
+}
+
+.poke-shell {
+  width: min(1600px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 20px 0 32px;
+}
+
+.poke-shell__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.poke-shell__identity {
+  min-width: 0;
+}
+
+.poke-shell__eyebrow {
+  display: block;
+  margin-bottom: 3px;
+  color: #55d7ff;
+  font: 600 11px/1.2 "SFMono-Regular", Consolas, monospace;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.poke-shell__title {
+  margin: 0;
+  color: #f1f7fc;
+  font-size: clamp(19px, 2vw, 26px);
+  line-height: 1.15;
+}
+
+.poke-shell__subtitle {
+  margin: 5px 0 0;
+  color: #8ea1b4;
+  font-size: 13px;
+}
+
+.poke-grid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.poke-bay {
+  border: 1px solid #1c2b3a;
+  background: rgba(10, 16, 25, 0.92);
+}
+
+@media (max-width: 700px) {
+  .poke-shell {
+    width: min(100% - 20px, 1600px);
+    padding-top: 12px;
+  }
+
+  .poke-shell__header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
