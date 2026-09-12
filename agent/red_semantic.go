@@ -94,8 +94,7 @@ func redStarter(id skill.Starter) (skill.Starter, bool) {
 }
 
 func redProgressState(f state.StoryFacts) ProgressState {
-	var mem state.Mem
-	return redprofile.ProjectStory(&mem, f)
+	return redprofile.ProjectStoryFacts(f)
 }
 
 func redProgressStateFromRAM(mem *state.Mem, _ state.InventoryState, f state.StoryFacts) ProgressState {
