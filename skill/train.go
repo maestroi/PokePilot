@@ -425,8 +425,15 @@ func PromoteToLead(m *emu.Emu, index int) error {
 	}); err != nil {
 		return err
 	}
-	// Select the current lead; its option menu (STATUS SWITCH CANCEL with no
-	// field moves known) is a text box.
+	// Select the current lead; its option menu is a text box listing any
+	// field-usable moves it knows (CUT, SURF, DIG, ...), then STATUS, SWITCH,
+	// CANCEL — wFieldMoves/wNumFieldMoves (populated by this selection, see
+	// UseFieldMove's fieldMoveMenuIndex) name exactly how many entries come
+	// first, since a mon that leveled up mid-Train can gain a field move and
+	// push SWITCH's slot past the traditionally-assumed 1: a Rattata that
+	// learns Dig while training turns STATUS/SWITCH/CANCEL into
+	// DIG/STATUS/SWITCH/CANCEL, and a press hardcoded at index 1 lands on
+	// STATUS instead ("left the expected screen" on the restore swap).
 	if err := pick(0, 600, "party screen", func(s *state.Mem) bool {
 		return onScreen(s, "Choose")
 	}, func(s *state.Mem) bool {
@@ -434,9 +441,18 @@ func PromoteToLead(m *emu.Emu, index int) error {
 	}); err != nil {
 		return err
 	}
-	// SWITCH is the middle entry: STATUS SWITCH CANCEL. Selecting it enters
+	// wNumFieldMoves lags wFieldMoves by a frame (same class of write-order
+	// lag documented throughout this function), so count the zero-terminated
+	// wFieldMoves array directly instead — it is already populated by the
+	// party-screen selection above.
+	numFieldMoves := 0
+	for numFieldMoves < 4 && m.Peek8(sym.FieldMoves+uint16(numFieldMoves)) != 0 {
+		numFieldMoves++
+	}
+	switchIndex := numFieldMoves + 1
+	// SWITCH follows the field-move entries and STATUS. Selecting it enters
 	// swap mode; the footer changes to "Move POKéMON where?".
-	if err := pick(1, 600, "option menu", func(s *state.Mem) bool {
+	if err := pick(switchIndex, 600, "option menu", func(s *state.Mem) bool {
 		return onScreen(s, "SWITCH")
 	}, func(s *state.Mem) bool {
 		return onScreen(s, "where?") && state.DecodeMenu(s).Max == partyMax
