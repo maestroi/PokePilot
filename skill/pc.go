@@ -306,12 +306,22 @@ func DepositPartyMon(m *emu.Emu, romData []byte, policy MovePolicy, slot int) er
 		_ = closePCToOverworld(m)
 		return fmt.Errorf("skill: Bill's PC: confirm DEPOSIT: %w", err)
 	}
-	// A successful transfer does not return to the WITHDRAW/DEPOSIT/RELEASE
-	// menu directly: the game leaves the party list up (so another deposit
-	// can be picked without reopening it) and B is what backs out from there.
+	// A successful transfer usually does not return to the WITHDRAW/DEPOSIT/
+	// RELEASE menu directly: the game leaves the party list up (so another
+	// deposit can be picked without reopening it) and B is what backs out
+	// from there. But depositing down to the last remaining party Pokemon
+	// leaves nothing more that could be deposited, so — exactly like
+	// WithdrawBoxMon's withdrawnUp for an emptied box — the game skips the
+	// list and returns straight to billsPCMenuScreen instead. MEASURED via
+	// skill/zz_repro_scratch_test.go: a 2-Pokemon party depositing down to 1
+	// landed on billsPCMenuScreen with "You can't deposit the last POKéMON!"
+	// stuck on screen forever, because this predicate only accepted the list.
 	depositedListUp := func(mem *state.Mem) bool {
 		p, b := state.DecodeParty(mem), state.DecodeBox(mem)
-		return pcPokemonListUp(mem) && p.Count+1 == partyBefore && b.Count == boxBefore+1
+		if p.Count+1 != partyBefore || b.Count != boxBefore+1 {
+			return false
+		}
+		return pcPokemonListUp(mem) || billsPCMenuScreen(mem)
 	}
 	if err := pcAdvanceUntil(m, depositConfirmUp, depositedListUp, "post-deposit party list"); err != nil {
 		_ = closePCToOverworld(m)
