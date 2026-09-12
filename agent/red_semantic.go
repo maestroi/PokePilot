@@ -19,6 +19,7 @@ const (
 	redProgressPokedexAcquired            ProgressID = "pokedex_acquired"
 	redProgressSSTicketAcquired           ProgressID = "ss_ticket_acquired"
 	redProgressHM01Acquired               ProgressID = "hm01_acquired"
+	redProgressThunderBadge               ProgressID = "thunder_badge"
 	redProgressRainbowBadge               ProgressID = "rainbow_badge"
 	redProgressSilphScopeAcquired         ProgressID = "silph_scope_acquired"
 	redProgressPokeFluteAcquired          ProgressID = "poke_flute_acquired"
@@ -124,6 +125,7 @@ func redProgressStateFromRAM(mem *state.Mem, _ state.InventoryState, f state.Sto
 	mapID := mem.U8(sym.CurMap)
 	indigoReady := mapID == redIndigoPlateauMap || mapID == redIndigoPlateauLobbyMap || f.LeagueChallengeStarted || f.LeagueChampionDefeated || f.MainStoryComplete
 	progress = append(progress,
+		ProgressFact{ID: redProgressThunderBadge, Complete: badges.Has(state.BadgeThunder)},
 		ProgressFact{ID: redProgressRainbowBadge, Complete: badges.Has(state.BadgeRainbow)},
 		ProgressFact{ID: redProgressVolcanoBadge, Complete: badges.Has(state.BadgeVolcano)},
 		ProgressFact{ID: redProgressEarthBadge, Complete: badges.Has(state.BadgeEarth)},
