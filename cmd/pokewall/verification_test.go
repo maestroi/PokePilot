@@ -55,10 +55,16 @@ func TestIssueVerificationCountsOnlyRunsPastFailureProgress(t *testing.T) {
 		QueuedAt: baseTime.Add(2 * time.Minute), EndedAt: baseTime.Add(30 * time.Minute),
 		Attempts: 1, Finished: true, Status: statusDone, Reason: "budget",
 	}
+	staleWorker := &Tile{
+		RunID: "run-stale-worker", Planner: "llm", Starter: "squirtle", Goal: "badges:3",
+		QueuedAt: baseTime.Add(3 * time.Minute), EndedAt: baseTime.Add(40 * time.Minute),
+		Attempts: 1, Finished: true, Status: statusDone, Reason: "budget",
+	}
 	w.mu.Lock()
-	w.order = append(w.order, irrelevant.RunID, relevant.RunID)
+	w.order = append(w.order, irrelevant.RunID, relevant.RunID, staleWorker.RunID)
 	w.tiles[irrelevant.RunID] = irrelevant
 	w.tiles[relevant.RunID] = relevant
+	w.tiles[staleWorker.RunID] = staleWorker
 	w.mu.Unlock()
 	writeVerificationDump(t, dir, irrelevant.RunID, farm.FinishReport{
 		RunID: irrelevant.RunID, Attempt: 1, Reason: "budget", RunnerVersion: "build-fixed",
@@ -67,6 +73,10 @@ func TestIssueVerificationCountsOnlyRunsPastFailureProgress(t *testing.T) {
 	writeVerificationDump(t, dir, relevant.RunID, farm.FinishReport{
 		RunID: relevant.RunID, Attempt: 1, Reason: "budget", RunnerVersion: "build-fixed",
 		ProgressFinal: &farm.Progress{Badges: 2, Events: 21, Maps: 8},
+	})
+	writeVerificationDump(t, dir, staleWorker.RunID, farm.FinishReport{
+		RunID: staleWorker.RunID, Attempt: 1, Reason: "budget", RunnerVersion: "build-old",
+		ProgressFinal: &farm.Progress{Badges: 3, Events: 25, Maps: 10},
 	})
 
 	w.refreshIssueVerifications(baseTime.Add(time.Hour))
