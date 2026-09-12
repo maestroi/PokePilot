@@ -50,6 +50,13 @@ services:
       - "${AGENT_ORCHESTRATOR_UI:-}"
     deploy:
       replicas: 1
+      # 2G is a blast-radius cap (page cache + catalog), not the working set.
+      # pokewall is ~256-340MB RSS; cgroup usage looks huge because dumps stay cached.
+      resources:
+        reservations:
+          memory: 256M
+        limits:
+          memory: 2G
     volumes:
       # Bind mount, NOT a named volume: on this host a named volume handed
       # to a swarm task comes up EMPTY on every task rollover (measured:
@@ -212,3 +219,10 @@ services:
       - ${POKEMON_RED_ROM}:/rom/pokemon_red.gb:ro
     deploy:
       replicas: 2
+      # 1G is a fence, not the steady-state budget. A healthy runner is 10-50MB;
+      # Finish used to reload the whole checkpoint ring and spike to a few GB.
+      resources:
+        reservations:
+          memory: 128M
+        limits:
+          memory: 1G

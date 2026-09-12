@@ -155,12 +155,15 @@ func UseItem(m *emu.Emu, item uint8) error {
 	}
 
 	// Postcondition: the count dropped by one, read back from RAM — a nil
-	// return is not evidence the item was used. The drop is NOT immediate:
-	// the game writes it only as the "used X!" text and (for a ball) the
-	// catch sequence resolve, and that text does not auto-advance. So each
-	// pass taps A to drive it along, exactly as waitBattleMainMenu does, and
-	// stops the instant the count is observed to have dropped — before any
-	// A can land on the FIGHT menu the sequence returns to.
+	// return is not evidence the item was used. For ordinary battle items the
+	// effect text needs A presses before the count changes. Poké Balls are a
+	// special case in the ROM: ItemUseBall calls AddPartyMon -> AskName BEFORE
+	// its final RemoveItemFromInventory, so a successful catch can show the
+	// "give a nickname?" choice while the count is still unchanged. Blind A
+	// there accepts YES, opens the naming keyboard on 'A', and subsequent A
+	// presses produce the pathological AAAAAAAAAA names seen in farm runs.
+	// Intercept only that exact prompt before every reflex A and choose NO;
+	// then keep driving the item routine until the count proves consumption.
 	start := m.FrameCount()
 	for {
 		var mem state.Mem
@@ -168,10 +171,17 @@ func UseItem(m *emu.Emu, item uint8) error {
 		if _, after := bagEntry(&mem, item); after == before-1 {
 			return nil
 		}
+		if pokemonNicknamePrompt(&mem) {
+			if err := selectTwoOption(m, 1); err != nil {
+				return fmt.Errorf("skill: UseItem: decline caught-Pokemon nickname prompt: %w", err)
+			}
+			continue
+		}
 		if state.DecodeBattle(&mem) == nil {
-			// A successful catch ends the battle; the drop is observed at the
-			// result text, before this point. Ending without it means the
-			// item was not consumed — stop rather than tap A in the overworld.
+			// A successful catch normally finishes ItemUseBall only after its
+			// nickname choice and inventory removal. Ending without the count
+			// drop means the item was not consumed — stop rather than tap A in
+			// the overworld.
 			x, y := playerXY(m)
 			return fmt.Errorf("skill: UseItem: battle ended on map %02x at (%d,%d) without the count for %#02x dropping from %d", m.Peek8(sym.CurMap), x, y, item, before)
 		}

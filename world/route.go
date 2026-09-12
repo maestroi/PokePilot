@@ -170,6 +170,18 @@ func findRoute(g *Graph, from, to uint8, blockedHere map[Edge]bool, first, targe
 				continue
 			}
 			nextEntry := g.entryComps[e]
+			if semantic[e] {
+				// The static graph's landing component for e.To was computed from
+				// pristine ROM collision. A semantic pivot (Cut, Surf, a switch...)
+				// can permanently rewrite that map's tile collision at the exact
+				// spot it lands (VermilionGymSetDoorTile, a cut tree), so the
+				// precomputed component is not authoritative once the action is
+				// taken. Treat the landing as unconstrained, same as a caller who
+				// does not know its component (canExit already treats nil this
+				// way); the live map, rebuilt fresh once the walker actually
+				// stands there, is what execution trusts anyway.
+				nextEntry = nil
+			}
 			key := routeStateIdentity(g, e.To, nextEntry, e)
 			if seen[key] {
 				continue
@@ -180,7 +192,11 @@ func findRoute(g *Graph, from, to uint8, blockedHere map[Edge]bool, first, targe
 	}
 	expand(from, -1, first)
 	for i := 0; i < len(nodes); i++ {
-		if nodes[i].edge.To == to && (len(target) == 0 || shareComp(nodes[i].entry, target)) {
+		// nodes[i].entry == nil means a semantic pivot deliberately discarded
+		// the static landing component (see expand above): "unknown" must not
+		// read as "elsewhere," the same rule canExit already applies for an
+		// edge whose entry component isn't known.
+		if nodes[i].edge.To == to && (len(target) == 0 || nodes[i].entry == nil || shareComp(nodes[i].entry, target)) {
 			var route []Edge
 			for j := i; j >= 0; j = nodes[j].prev {
 				route = append([]Edge{nodes[j].edge}, route...)

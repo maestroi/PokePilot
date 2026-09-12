@@ -79,8 +79,11 @@ func AnswerYesNo(m *emu.Emu, yes bool) error {
 }
 
 // SelectInteractionIndex selects a semantic menu entry by zero-based index.
-// Scrolling list menus use absolute list positions (scroll offset + cursor),
-// while ordinary/party/PC cursor menus use their direct menu index.
+// Scrolling list menus use absolute list positions (scroll offset + cursor).
+// Party menus deliberately use SelectPartySlot rather than SelectMenuItem:
+// PartyMenuInit stores wMaxMenuItem as the last valid index (count-1), while
+// ordinary cursor menus store a count. Sending a party menu through the
+// generic helper made the final party member unreachable.
 func SelectInteractionIndex(m *emu.Emu, index int) error {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
@@ -90,7 +93,9 @@ func SelectInteractionIndex(m *emu.Emu, index int) error {
 		return AnswerTwoOption(m, index)
 	case state.InteractionListMenu, state.InteractionElevatorMenu, state.InteractionItemMenu, state.InteractionPCPokemonList:
 		return selectListEntry(m, index)
-	case state.InteractionMenu, state.InteractionPartyMenu, state.InteractionPCMenu:
+	case state.InteractionPartyMenu:
+		return SelectPartySlot(m, index)
+	case state.InteractionMenu, state.InteractionPCMenu:
 		return SelectMenuItem(m, index)
 	default:
 		return fmt.Errorf("skill: SelectInteractionIndex: %w: got %q text=%q", ErrUnexpectedInteraction, got.Kind, got.Text)

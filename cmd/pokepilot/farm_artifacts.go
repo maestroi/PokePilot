@@ -24,7 +24,11 @@ const (
 	// periodicCheckpointFrames is five minutes at 60 fps.
 	periodicCheckpointFrames = 18_000
 	// periodicCheckpointKeep is the local flight-recorder window.
-	periodicCheckpointKeep  = 12
+	periodicCheckpointKeep = 12
+	// objectiveCheckpointKeep is the same local window for ordinary
+	// objective pairs. They are already uploaded incrementally; keeping
+	// every one until Finish is what ballooned runner RSS into gigabytes.
+	objectiveCheckpointKeep = 12
 	checkpointUploadTimeout = 2 * time.Second
 	farmFinishTimeout       = 30 * time.Second
 
@@ -136,6 +140,7 @@ func runCheckpointUploader(client *farm.Client, runID string, attempt int, dir s
 				_ = evictPeriodicCheckpoints(dir, periodicCheckpointKeep)
 			case <-time.After(200 * time.Millisecond):
 				uploadNewObjectivePairs(client, runID, attempt, dir, uploaded)
+				_ = evictObjectiveCheckpoints(dir, objectiveCheckpointKeep)
 				uploadNewRAMBundles(client, runID, attempt, ramForensicsDir(dir), uploadedRAM)
 			}
 		}
@@ -348,6 +353,40 @@ func uploadCheckpoint(client *farm.Client, runID string, attempt int, arts []far
 	ctx, cancel := context.WithTimeout(context.Background(), checkpointUploadTimeout)
 	defer cancel()
 	return client.Checkpoint(ctx, farm.CheckpointReport{RunID: runID, Attempt: attempt, Artifacts: arts})
+}
+
+func evictObjectiveCheckpoints(dir string, keep int) error {
+	if dir == "" || keep <= 0 {
+		return nil
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	var states []string
+	knowledge := map[string]string{}
+	for _, e := range entries {
+		name := e.Name()
+		if strings.HasSuffix(name, ".state") && strings.HasPrefix(name, "round-") && !strings.HasPrefix(name, majorCheckpointStatePrefix) {
+			states = append(states, name)
+			continue
+		}
+		if strings.Contains(name, "knowledge-v") && strings.HasSuffix(name, ".json") {
+			knowledge[knowledgeBase(name)+".state"] = name
+		}
+	}
+	sort.Strings(states)
+	drop := len(states) - keep
+	if drop <= 0 {
+		return nil
+	}
+	for _, name := range states[:drop] {
+		_ = os.Remove(filepath.Join(dir, name))
+		if kn, ok := knowledge[name]; ok {
+			_ = os.Remove(filepath.Join(dir, kn))
+		}
+	}
+	return nil
 }
 
 func evictPeriodicCheckpoints(dir string, keep int) error {
@@ -653,12 +692,8 @@ func removeCheckpointDir(dir string) {
 
 func sendFinish(client *farm.Client, report farm.FinishReport, checkpointDir string) {
 	defer removeCheckpointDir(checkpointDir)
-	arts, err := collectCheckpointArtifacts(checkpointDir)
-	if err != nil {
-		log.Printf("farm: %s: collect checkpoints: %v", report.RunID, err)
-	} else {
-		report.Artifacts = arts
-	}
+	// Checkpoints are uploaded incrementally during the run. Reloading the
+	// whole local ring here is what pushed runner RSS into gigabytes.
 	report.Artifacts = appendRAMForensics(report.Artifacts, checkpointDir, report.RunID)
 	ctx, cancel := context.WithTimeout(context.Background(), farmFinishTimeout)
 	defer cancel()

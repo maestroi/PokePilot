@@ -111,18 +111,27 @@ func RepairUtilityFieldCapability(m *emu.Emu, romData []byte, policy MovePolicy,
 			"wild species %#02x cannot be added without stranding the required field capability", candidate.Species)
 	}
 
-	state.Snapshot(m, &mem)
-	_, balls := bagEntry(&mem, ItemPokeBall)
-	if balls <= 0 {
+	// A catch requirement is an inventory prerequisite, not a planner choice.
+	// Top the reserve up deterministically before leaving for the wild target.
+	// If money is tight the inventory layer buys as many as it can and only
+	// blocks when it cannot secure even one ball.
+	balls, stockErr := EnsureProgressionPokeBalls(m, romData, policy)
+	if stockErr != nil {
 		if canPrepareHere {
 			if _, err := EnsureFieldMove(m, target); err != nil {
 				return fmt.Errorf("skill: RepairUtilityFieldCapability: fallback teach %s to lead: %w", target, err)
 			}
 			return nil
 		}
-		return fmt.Errorf("%w: compatible wild species %#02x exists on map %#04x but no POKE BALL is available", ErrFieldRosterNoBalls, candidate.Species, candidate.Map)
+		return fmt.Errorf("%w: compatible wild species %#02x exists on map %#04x but catch inventory recovery failed: %w",
+			ErrFieldRosterNoBalls, candidate.Species, candidate.Map, stockErr)
 	}
 
+	// Restocking can travel away from the original map, but it does not change
+	// the party. Re-read it anyway so room-making is based on live state rather
+	// than on the snapshot taken before the recovery transaction.
+	state.Snapshot(m, &mem)
+	party = state.DecodeParty(&mem)
 	if party.Count >= gen1PartyCapacity {
 		if err := DepositPartyMon(m, romData, policy, depositSlot); err != nil {
 			return fmt.Errorf("skill: RepairUtilityFieldCapability: make room for wild species %#02x: %w", candidate.Species, err)

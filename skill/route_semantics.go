@@ -222,9 +222,16 @@ func redRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, bool) {
 		t := semanticTransition("red:saffron_guard_drink", edge, capCanEnterSaffron)
 		t.Gate = true
 		return t, true
-	case edge.From == semanticVermilionCityMap && edge.To == vermilionGymMap:
-		// Cut is only an entry prerequisite. Leaving the Gym must never be
-		// blocked by the party losing/replacing its Cut carrier later.
+	case pair(semanticVermilionCityMap, vermilionGymMap):
+		// The same Cut tree sits on both sides of this warp in the immutable
+		// ROM collision: entering blocks on it exactly as leaving does, since
+		// the static graph never sees the tree as cut (that state lives only
+		// in the currently-loaded map's live WRAM, not in the precomputed
+		// components used for the far side of a multi-map route). Treating
+		// only city->gym as the pivot left comp3 (yard around (12,19)) and
+		// comp1 (the street) provably disconnected when leaving, so
+		// PostSurgeCeladonProgression died with "world: no route" right after
+		// Surge on every run (run-3djisxgsy3dgzpnsde2inzyuh round 7).
 		return semanticTransition("red:vermilion_gym_cut", edge, capCanCut), true
 	case pair(semanticPalletTownMap, semanticRoute21Map),
 		pair(semanticRoute21Map, semanticCinnabarMap):

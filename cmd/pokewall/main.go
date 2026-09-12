@@ -69,6 +69,10 @@ func main() {
 		// issue/outbox identities during the one-time dump recovery scan. New
 		// finish dumps are delivered by commit events rather than polling.
 		go wall.RunObjectiveFailureEvents(defaultObjectiveFailureReportEvery)
+		// Verification is also restart-safe: it derives evidence from persisted
+		// issue links, run history, and immutable finish dumps. It does not change
+		// Agent Orchestrator status; a later recurrence still reopens there.
+		go wall.RunIssueVerification(defaultIssueVerificationEvery)
 	}
 	// The reaper runs whether or not state is persisted: a run whose runner
 	// died must not sit "running" on the grid forever.
