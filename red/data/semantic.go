@@ -3,9 +3,7 @@
 // as planner-facing identities.
 package data
 
-import (
-	"github.com/maestroi/pokepilot/game"
-)
+import "github.com/maestroi/pokepilot/game"
 
 var speciesTable = map[string]uint8{
 	"rhydon": 0x01, "kangaskhan": 0x02, "nidoran♂": 0x03, "clefairy": 0x04,
@@ -105,4 +103,13 @@ func Item(raw uint8) (game.ItemID, bool) {
 func ItemRaw(id game.ItemID) (uint8, bool) {
 	raw, ok := itemTable[game.CanonicalID(string(id))]
 	return raw, ok
+}
+
+// LegacyMutableItemTables exposes the canonical Red item maps only to the
+// existing Red-owned agent initializers that register economy and TM/HM
+// vocabulary. The returned maps are the package's actual maps, so those
+// one-time init registrations are immediately visible through Item/ItemRaw.
+// New profile code should prefer the typed lookup helpers above.
+func LegacyMutableItemTables() (map[string]uint8, map[uint8]string) {
+	return itemTable, itemByID
 }
