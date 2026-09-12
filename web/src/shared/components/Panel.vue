@@ -11,7 +11,7 @@ withDefaults(defineProps<{
 
 <template>
   <section class="poke-panel overflow-hidden rounded-lg">
-    <header class="flex items-start justify-between gap-4 border-b border-white/8 px-4 py-3 sm:px-5">
+    <header class="flex items-start justify-between gap-4 border-b border-white/10 px-4 py-3 sm:px-5">
       <div class="min-w-0">
         <h2 class="text-sm font-semibold text-white">{{ title }}</h2>
         <p v-if="description" class="mt-0.5 text-xs leading-5 text-slate-500">{{ description }}</p>
