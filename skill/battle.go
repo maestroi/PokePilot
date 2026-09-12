@@ -350,6 +350,23 @@ func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
 			// "Which move should be forgotten?" follows a deliberate YES on
 			// TryingToLearn. Re-evaluate from live RAM so an HM rejection can
 			// remove that move from consideration without guessing a cursor path.
+			//
+			// The "forgotten?" marker can land on screen a frame or two before
+			// the four-move list itself has been drawn: the box still holds
+			// the previous menu's stale wMaxMenuItem while the text scrolls
+			// in. Treating that transitional frame as the real list made
+			// selectForgetSlot press A against a menu that was not the one it
+			// thought it was, and the genuine list's first appearance right
+			// after then read as a "reappeared" ROM rejection of a move (here
+			// SCRATCH) the ROM never actually rejected — which starved every
+			// later replacement candidate down to "no legal strategic
+			// replacement remains". The real list always reports
+			// wNumMovesMinusOne == 3 for a full four-move set (see
+			// selectForgetSlot), so wait for that shape before acting.
+			if state.DecodeMenu(&mem).Max != 3 {
+				m.StepFrame()
+				continue
+			}
 			bs := state.DecodeBattle(&mem)
 			if bs == nil {
 				continue // the battle ended while the menu was up
