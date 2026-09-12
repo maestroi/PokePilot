@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { ArrowTopRightOnSquareIcon } from '@heroicons/vue/20/solid'
+import { ArrowTopRightOnSquareIcon, PlayIcon } from '@heroicons/vue/20/solid'
 import AppShell from '../shared/components/AppShell.vue'
 import type { AppNavItem } from '../shared/types'
 import AnalyticsView from './AnalyticsView.vue'
@@ -80,6 +80,14 @@ onUnmounted(() => window.removeEventListener('hashchange', syncHash))
     :navigation="navigation"
   >
     <template #actions>
+      <a
+        v-if="activeView === 'live'"
+        href="#tools"
+        class="inline-flex items-center gap-1.5 rounded-md bg-cyan-500 px-2.5 py-1.5 text-[11px] font-semibold text-white shadow-sm hover:bg-cyan-400"
+      >
+        <PlayIcon class="size-3.5" aria-hidden="true" />
+        New run
+      </a>
       <a
         :href="legacyURL"
         class="hidden items-center gap-1.5 rounded-md bg-white/6 px-2.5 py-1.5 text-[11px] font-semibold text-slate-400 ring-1 ring-white/8 hover:bg-white/10 hover:text-white sm:inline-flex"
