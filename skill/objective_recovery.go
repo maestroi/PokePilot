@@ -37,13 +37,13 @@ func CloseOpenMenuToOverworld(m *emu.Emu) error {
 	for layer := 0; layer < maxLayers; layer++ {
 		var mem state.Mem
 		state.Snapshot(m, &mem)
-		if state.Controllable(&mem) && state.DecodeInteraction(&mem).Kind == state.InteractionNone {
+		interaction := state.DecodeInteraction(&mem)
+		if state.Controllable(&mem) && interaction.Kind == state.InteractionNone {
 			return nil
 		}
 		if state.DecodeBattle(&mem) != nil {
 			return fmt.Errorf("skill: CloseOpenMenuToOverworld: battle owns the screen")
 		}
-		interaction := state.DecodeInteraction(&mem)
 		switch interaction.Kind {
 		case state.InteractionMenu, state.InteractionListMenu, state.InteractionElevatorMenu,
 			state.InteractionItemMenu, state.InteractionPartyMenu, state.InteractionPCMenu,
@@ -56,7 +56,16 @@ func CloseOpenMenuToOverworld(m *emu.Emu) error {
 		case state.InteractionDialogue:
 			return fmt.Errorf("skill: CloseOpenMenuToOverworld: dialogue remains open: %q", interaction.Text)
 		case state.InteractionNone:
-			return fmt.Errorf("skill: CloseOpenMenuToOverworld: no menu is open but player is not controllable")
+			// Menu teardown can clear the tilemap/font a few frames before
+			// overworld control is restored. Wait without input for either
+			// controllability or a newly decoded owner instead of treating
+			// that legitimate in-flight state as a dirty boundary.
+			_, _ = m.StepUntil(interactionTransitionFrames, func(e *emu.Emu) bool {
+				var next state.Mem
+				state.Snapshot(e, &next)
+				return state.Controllable(&next) || state.DecodeInteraction(&next).Kind != state.InteractionNone || state.DecodeBattle(&next) != nil
+			})
+			continue
 		default:
 			return fmt.Errorf("skill: CloseOpenMenuToOverworld: unsupported interaction %q", interaction.Kind)
 		}
