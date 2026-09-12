@@ -48,6 +48,14 @@ type Observation struct {
 	Intent     string
 	IntentAge  int
 
+	// PokedexOwned is the Dex-mode completion set. Seen is supporting
+	// context only and must never be treated as ownership.
+	PokedexOwned []SpeciesID
+	PokedexSeen  []SpeciesID
+	// Dex is the runtime catalog Offer uses. It stays off the planner JSON
+	// contract: DecisionContext.Dex carries only the counts.
+	Dex DexCatalog `json:"-"`
+
 	WildGrass  []WildSpecies
 	HasGrass   bool
 	Training   *TrainingEstimate `json:"training,omitempty"`
@@ -188,7 +196,10 @@ func ObserveChecked(m *emu.Emu, romData []byte) (Observation, error) {
 		History:           []RoundRecord{},
 		Failures:          []Failure{},
 		Requirements:      []Requirement{},
+		PokedexOwned:      []SpeciesID{},
+		PokedexSeen:       []SpeciesID{},
 	}
+	obs.PokedexOwned, obs.PokedexSeen = ProjectPokedex(romData, gs.Pokedex)
 	for i, mon := range base.Party {
 		obs.Party[i] = PartyMon{
 			Species:    SpeciesID(mon.Species),
@@ -264,6 +275,9 @@ func ObserveChecked(m *emu.Emu, romData []byte) (Observation, error) {
 	routes := routeAvailabilityFor(m, romData)
 	obs.Unroutable = routes.Unroutable
 	obs.RouteBlockages = routes.Blockages
+	if cat, err := BuildDexCatalog(romData, obs.PokedexOwned, obs.PokedexSeen); err == nil {
+		obs.Dex = annotateDexRouteRequirements(cat, obs.RouteBlockages)
+	}
 	obs.WildGrass = []WildSpecies{}
 	if wild, err := skill.WildGrass(romData, obs.Map); err == nil {
 		for _, w := range wild {

@@ -115,3 +115,34 @@ func TestAppendKnownCatchObjectivesDoesNotRevealUnvisitedHabitat(t *testing.T) {
 		t.Fatal("wild lookup called for an unvisited habitat")
 	}
 }
+
+func TestAppendKnownCatchObjectivesSkipsPokedexOwned(t *testing.T) {
+	route1, ok := skill.Place("route 1")
+	if !ok {
+		t.Fatal("route 1 place missing")
+	}
+	known := NewKnowledge(nil)
+	known.SawMap(route1.Map)
+	obs := Observation{
+		Map:          0xff,
+		PartyCount:   1,
+		Party:        []PartyMon{{Species: SpeciesID("charmander")}},
+		Bag:          []Item{{Name: "pokeball", Quantity: 5}},
+		PokedexOwned: []SpeciesID{"pidgey"},
+	}
+	got := appendKnownCatchObjectivesWithWild(nil, obs, known, nil, knownCatchTestWild(t))
+	for _, o := range got {
+		if o.Species == "pidgey" {
+			t.Fatalf("known-habitat catch offered dex-owned pidgey: %+v", got)
+		}
+	}
+	foundRattata := false
+	for _, o := range got {
+		if o.Species == "rattata" {
+			foundRattata = true
+		}
+	}
+	if !foundRattata {
+		t.Fatalf("known-habitat catches = %+v, want rattata still offered", got)
+	}
+}

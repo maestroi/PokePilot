@@ -197,6 +197,8 @@ func TestObserveJSONRoundTrip(t *testing.T) {
 			{Power: 0, Type: "normal"},
 		},
 		Bag:            []agent.Item{{Name: "pokeball", Quantity: 5}},
+		PokedexOwned:   []agent.SpeciesID{"charmander"},
+		PokedexSeen:    []agent.SpeciesID{"charmander", "pidgey"},
 		RecentDialogue: []string{"OAK: Oh! You're awake!"},
 		History:        []agent.RoundRecord{{Objective: "take the charmander starter", Outcome: "done"}},
 	}

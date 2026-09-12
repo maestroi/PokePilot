@@ -36,12 +36,7 @@ func appendKnownCatchObjectivesWithWild(romData []byte, obs Observation, known *
 	}
 
 	alreadyOffered := map[SpeciesID]bool{}
-	owned := map[SpeciesID]bool{}
-	for _, mon := range obs.Party {
-		if mon.Species != "" {
-			owned[mon.Species] = true
-		}
-	}
+	owned := pokedexOwnedSet(obs)
 	for _, o := range out {
 		if o.Kind == KindCatch && o.Species != "" {
 			alreadyOffered[o.Species] = true

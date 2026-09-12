@@ -10,6 +10,15 @@ type DecisionContext struct {
 	Training *TrainingDecisionContext `json:",omitempty"`
 	Catch    *CatchDecisionContext    `json:",omitempty"`
 	Economy  *EconomyDecisionContext  `json:",omitempty"`
+	Dex      *DexDecisionContext      `json:",omitempty"`
+}
+
+// DexDecisionContext is the prompt-sized Dex catalog: counts only. The full
+// source list stays on Observation.Dex for Offer.
+type DexDecisionContext struct {
+	Owned       int
+	Targets     int
+	Unavailable int
 }
 
 // TrainingDecisionContext puts the lead and the current map's wild level band
@@ -87,7 +96,14 @@ func decisionContextFor(o Observation) *DecisionContext {
 	}
 
 	ctx.Economy = plannerEconomyContext(o)
-	if ctx.Training == nil && ctx.Catch == nil && ctx.Economy == nil {
+	if n := len(o.Dex.Owned) + len(o.Dex.Targets) + len(o.Dex.Unavailable); n > 0 {
+		ctx.Dex = &DexDecisionContext{
+			Owned:       len(o.Dex.Owned),
+			Targets:     len(o.Dex.Targets),
+			Unavailable: len(o.Dex.Unavailable),
+		}
+	}
+	if ctx.Training == nil && ctx.Catch == nil && ctx.Economy == nil && ctx.Dex == nil {
 		return nil
 	}
 	return ctx
