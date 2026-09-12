@@ -54,6 +54,12 @@ async function requestJSON<T>(path: string, init: RequestInit = {}): Promise<T> 
   return response.json() as Promise<T>
 }
 
+function newRunID(): string {
+  const values = new Uint32Array(2)
+  crypto.getRandomValues(values)
+  return `run-${values[0].toString(36)}${values[1].toString(36)}`
+}
+
 export function getDashboard(params: DashboardQuery = {}, signal?: AbortSignal): Promise<DashboardSnapshot> {
   return requestJSON<DashboardSnapshot>(`/v1/dashboard${queryString(params)}`, { signal })
 }
@@ -68,6 +74,7 @@ export async function getTriage(signal?: AbortSignal): Promise<TriageGroup[]> {
 }
 
 export function createRun(spec: RunSpec, signal?: AbortSignal): Promise<Record<string, unknown>> {
+  if (!spec.run_id.trim()) spec.run_id = newRunID()
   return requestJSON<Record<string, unknown>>('/v1/specs', {
     method: 'POST',
     body: JSON.stringify(spec),
