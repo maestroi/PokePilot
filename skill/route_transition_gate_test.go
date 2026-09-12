@@ -6,6 +6,7 @@ import (
 	gameruntime "github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
+	"github.com/maestroi/pokepilot/world"
 )
 
 func TestEvaluateRedRouteGateUsesDeclaredRequirements(t *testing.T) {
@@ -40,7 +41,7 @@ func TestEvaluateRedRouteGateUsesDeclaredRequirements(t *testing.T) {
 }
 
 func TestSaffronGuardTransitionIsGenericPassiveGate(t *testing.T) {
-	edge := worldEdgeForSaffronGateTest()
+	edge := world.Edge{Kind: world.EdgeWarp, From: route7GateMap, To: semanticRoute7Map}
 	transition, ok := redRouteTransitionForEdge(edge)
 	if !ok {
 		t.Fatalf("Saffron edge %+v has no semantic transition", edge)
