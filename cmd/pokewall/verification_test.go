@@ -106,7 +106,7 @@ func TestIssueVerificationBecomesVerifiedAfterTenRelevantRunsAndQuietWindow(t *t
 		tile := &Tile{
 			RunID: id, Planner: "llm", Goal: baseline.Goal,
 			QueuedAt: start.Add(time.Duration(i+1) * time.Minute),
-			EndedAt: start.Add(time.Duration(i+1) * time.Minute).Add(20 * time.Minute),
+			EndedAt:  start.Add(time.Duration(i+1) * time.Minute).Add(20 * time.Minute),
 			Attempts: 1, Finished: true, Status: statusDone, Reason: "budget",
 		}
 		w.mu.Lock()
