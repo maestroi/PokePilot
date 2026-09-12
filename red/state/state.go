@@ -7,6 +7,7 @@ type GameState struct {
 	Party     PartyState
 	Inventory InventoryState
 	Progress  ProgressState
+	Pokedex   PokedexState
 	Battle    *BattleState
 	Menu      MenuState
 	Dialogue  *DialogueState
@@ -20,6 +21,7 @@ func Decode(m *Mem) GameState {
 		Party:     DecodeParty(m),
 		Inventory: DecodeInventory(m),
 		Progress:  DecodeProgress(m),
+		Pokedex:   DecodePokedex(m),
 		Battle:    DecodeBattle(m),
 		Menu:      DecodeMenu(m),
 		Dialogue:  DecodeDialogue(m),
