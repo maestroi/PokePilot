@@ -24,6 +24,36 @@ const speciesCaterpie uint8 = 0x7B
 // per wanted encounter — one try is not evidence either way, several are.
 const catchAttempts = 5
 
+type testRAMPeeker interface {
+	Peek8(uint16) uint8
+}
+
+// partyNickname decodes one fixed-length wPartyMonNicks entry. This stays in
+// the ROM-backed catch test rather than state.DecodeParty because nicknames
+// are presentation data, but the regression needs the raw positive fact: a
+// newly caught species must keep the ROM-provided species name.
+func partyNickname(t *testing.T, m testRAMPeeker, slot int) string {
+	t.Helper()
+	// pokered.sym: wPartyMon1Nick / wPartyMonNicks = 0xd2b5; NAME_LENGTH = 11.
+	const (
+		partyMonNicks = uint16(0xd2b5)
+		nameLength    = 11
+	)
+	addr := partyMonNicks + uint16(slot*nameLength)
+	name := make([]byte, 0, nameLength-1)
+	for i := 0; i < nameLength; i++ {
+		b := m.Peek8(addr + uint16(i))
+		if b == 0x50 { // Gen 1 string terminator '@'.
+			break
+		}
+		if b < 0x80 || b > 0x99 {
+			t.Fatalf("party nickname slot %d contains unexpected encoded byte %#02x at offset %d", slot, b, i)
+		}
+		name = append(name, 'A'+(b-0x80))
+	}
+	return string(name)
+}
+
 // TestCatchCaterpie is S6-3: from the post_pokeballs fixture (five POKE
 // BALLs in the bag), travel to Viridian Forest and Catch a Caterpie. The
 // positive postcondition is that state.DecodeParty reports ONE MORE member
@@ -97,6 +127,9 @@ func TestCatchCaterpie(t *testing.T) {
 			if newMon.Species != speciesCaterpie {
 				t.Fatalf("postcondition: new member is species %#02x, want CATERPIE (%#02x): %+v",
 					newMon.Species, speciesCaterpie, newMon)
+			}
+			if got, want := partyNickname(t, m, int(partyBefore.Count)), "CATERPIE"; got != want {
+				t.Fatalf("postcondition: caught Pokemon nickname = %q, want default species name %q", got, want)
 			}
 			if q := bagQty(t, m, skill.ItemPokeBall); q != 5-res.BallsThrown {
 				t.Fatalf("postcondition: bag holds %d POKE BALLs, want %d (5 minus %d thrown)",
