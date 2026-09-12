@@ -19,6 +19,26 @@ var vueWebAssets embed.FS
 
 const vuePreviewPrefix = "/next/"
 
+// withVuePreview keeps the legacy handler authoritative at every existing URL
+// while reserving /next/ for the incremental Vue migration. Target selects the
+// private operator or public spectator build subtree; the two trees are never
+// exposed through the same HTTP surface.
+func withVuePreview(next http.Handler, target string) http.Handler {
+	preview := http.NewServeMux()
+	mountVuePreview(preview, target)
+	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+		if req.URL.Path == strings.TrimSuffix(vuePreviewPrefix, "/") {
+			http.Redirect(res, req, vuePreviewPrefix, http.StatusTemporaryRedirect)
+			return
+		}
+		if strings.HasPrefix(req.URL.Path, vuePreviewPrefix) {
+			preview.ServeHTTP(res, req)
+			return
+		}
+		next.ServeHTTP(res, req)
+	})
+}
+
 func mountVuePreview(mux *http.ServeMux, target string) {
 	entry := target + ".html"
 	mux.HandleFunc("GET "+vuePreviewPrefix+"{$}", func(res http.ResponseWriter, req *http.Request) {
