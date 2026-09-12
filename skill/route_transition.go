@@ -119,6 +119,48 @@ func (x *redRouteTransitionExecutor) ExecuteTransition(edge world.Edge, transiti
 		return world.TransitionExecutionResult{}, nil
 
 	case "red:vermilion_gym_cut":
+		if edge.From == vermilionGymMap {
+			// Leaving: the tree stands outside, on Vermilion City's side of
+			// this door, so cutThroughReachableTree (which only ever looks at
+			// the CURRENT map, and only recognizes the exact overworld/gym
+			// tree tile ids) finds nothing while still inside the gym, and
+			// still misses this one live tile-ID quirk once outside. Cross
+			// the door ourselves first, then reuse EnterVermilionGym's own
+			// tree finder — already proven against this exact tree — to clear
+			// whatever still blocks the yard the door lands in, so the exit
+			// this transition promised is the one the walker actually gets.
+			// Measured on run-3djisxgsy3dgzpnsde2inzyuh round 7: the
+			// one-directional gate only ever cut the tree on entry, so every
+			// later GoTo leaving the Gym found the same tree still standing
+			// and reported "world: no route" trying to reach Celadon.
+			if err := Traverse(x.m, x.romData, edge); err != nil {
+				return world.TransitionExecutionResult{}, fmt.Errorf("Cut gate: leave gym: %w", err)
+			}
+			h, err := rom.ParseMap(x.romData, vermilionCity)
+			if err != nil {
+				return world.TransitionExecutionResult{}, fmt.Errorf("Cut gate: leave gym: parse city: %w", err)
+			}
+			grid, err := world.Build(x.romData, h)
+			if err != nil {
+				return world.TransitionExecutionResult{}, fmt.Errorf("Cut gate: leave gym: build city: %w", err)
+			}
+			tree, err := findVermilionGymTree(x.m, x.romData, grid, x.policy)
+			if err != nil {
+				// No verifiable tree left standing is the idempotent
+				// already-cut case (a later run through the same door, or a
+				// route that lands beside a tree some earlier leg already
+				// removed): Traverse already delivered the crossing this
+				// transition promised, so report it and let ordinary
+				// geometry take it from here instead of failing the leg.
+				return world.TransitionExecutionResult{Changed: true}, nil
+			}
+			if err := CutAhead(x.m); err != nil {
+				return world.TransitionExecutionResult{}, fmt.Errorf("Cut gate: leave gym: cut tree at (%d,%d): %w", tree.x, tree.y, err)
+			}
+			// Traverse already performed the crossing; report Changed so the
+			// caller re-plans from the new position instead of traversing e again.
+			return world.TransitionExecutionResult{Changed: true}, nil
+		}
 		opened, err := cutThroughReachableTree(x.m, x.romData)
 		if err != nil {
 			return world.TransitionExecutionResult{}, fmt.Errorf("Cut gate: %w", err)

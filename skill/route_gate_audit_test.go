@@ -101,12 +101,17 @@ func TestGymCutGatesAreEntryOnly(t *testing.T) {
 		t.Fatalf("leaving Celadon Gym was Cut-gated: %+v", transition)
 	}
 
+	// Unlike Celadon, the same tree sits on both sides of Vermilion's door in
+	// the immutable ROM collision (measured on run-3djisxgsy3dgzpnsde2inzyuh
+	// round 7): leaving lands on the untouched yard side exactly as entering
+	// starts from the untouched street side, so both directions need the
+	// pivot or GoTo reports "world: no route" trying to leave after Surge.
 	requireTransition(t,
 		world.Edge{Kind: world.EdgeWarp, From: semanticVermilionCityMap, To: vermilionGymMap},
 		"red:vermilion_gym_cut", capCanCut)
-	if transition, ok := redRouteTransitionForEdge(world.Edge{Kind: world.EdgeWarp, From: vermilionGymMap, To: semanticVermilionCityMap}); ok && transition.ID == "red:vermilion_gym_cut" {
-		t.Fatalf("leaving Vermilion Gym was Cut-gated: %+v", transition)
-	}
+	requireTransition(t,
+		world.Edge{Kind: world.EdgeWarp, From: vermilionGymMap, To: semanticVermilionCityMap},
+		"red:vermilion_gym_cut", capCanCut)
 }
 
 func TestCompoundStoryTargetsStayOutOfJourneyVocabulary(t *testing.T) {
