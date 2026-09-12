@@ -24,9 +24,34 @@ func newRedRouteTransitionExecutor(m *emu.Emu, romData []byte, policy MovePolicy
 	return &redRouteTransitionExecutor{m: m, romData: romData, policy: policy}
 }
 
+// evaluateRedRouteGate is the execution-side mirror of semantic routing for
+// passive gates. Gate=true means the transition owns no action: its declared
+// Requires are the whole contract, so execution only has to re-read live
+// capabilities immediately before traversal. Keeping this generic prevents a
+// newly declared gate from being routable but failing later because no
+// transition-ID-specific executor case was added.
+func evaluateRedRouteGate(romData []byte, mem *state.Mem, transition gameruntime.Transition) (*gameruntime.TransitionBlockage, bool) {
+	if !transition.Gate {
+		return nil, false
+	}
+	blockage, usable := gameruntime.EvaluateTransition(transition, redRouteCapabilities(romData, mem))
+	if usable {
+		return nil, true
+	}
+	return &blockage, true
+}
+
 func (x *redRouteTransitionExecutor) ExecuteTransition(edge world.Edge, transition gameruntime.Transition) (world.TransitionExecutionResult, error) {
 	if x == nil || x.m == nil {
 		return world.TransitionExecutionResult{}, fmt.Errorf("skill: nil Red semantic transition executor")
+	}
+	if transition.Gate {
+		var mem state.Mem
+		state.Snapshot(x.m, &mem)
+		if blockage, _ := evaluateRedRouteGate(x.romData, &mem, transition); blockage != nil {
+			return world.TransitionExecutionResult{}, blockage
+		}
+		return world.TransitionExecutionResult{}, nil
 	}
 	switch transition.ID {
 	case "red:viridian_north_pokedex":
