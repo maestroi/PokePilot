@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ExclamationTriangleIcon, SignalSlashIcon } from '@heroicons/vue/20/solid'
-
-type ResourceState = 'loading' | 'ready' | 'refreshing' | 'stale' | 'empty' | 'error'
+import type { ResourceState } from '../resource'
 
 withDefaults(defineProps<{
   state: ResourceState
@@ -30,7 +29,7 @@ withDefaults(defineProps<{
         <p class="mt-1 text-sm leading-5 text-rose-200/75">
           {{ message || 'This section could not be loaded. Other parts of the page can keep working.' }}
         </p>
-        <slot name="actions" />
+        <div class="mt-3"><slot name="actions" /></div>
       </div>
     </div>
   </div>
@@ -41,7 +40,7 @@ withDefaults(defineProps<{
     </div>
     <h3 class="mt-3 text-sm font-semibold text-white">{{ title || 'Nothing to show yet' }}</h3>
     <p v-if="message" class="mx-auto mt-1 max-w-lg text-sm leading-5 text-slate-500">{{ message }}</p>
-    <slot name="actions" />
+    <div class="mt-3"><slot name="actions" /></div>
   </div>
 
   <div v-else class="relative" :aria-busy="state === 'refreshing'">
@@ -53,6 +52,7 @@ withDefaults(defineProps<{
           <p class="mt-0.5 text-sm leading-5 text-amber-100/70">
             {{ message || 'The latest refresh failed. Existing data stays visible while the connection recovers.' }}
           </p>
+          <div class="mt-2"><slot name="actions" /></div>
         </div>
       </div>
     </div>
