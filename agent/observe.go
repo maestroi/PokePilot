@@ -1,10 +1,12 @@
 package agent
 
 import (
+	"fmt"
+
 	"github.com/maestroi/pokepilot/emu"
+	"github.com/maestroi/pokepilot/profiles"
 	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/skill"
 	"github.com/maestroi/pokepilot/world"
 )
@@ -14,8 +16,8 @@ import (
 // but they do not cross the planner JSON contract: Location, party species,
 // respawn place and progression are semantic values.
 type Observation struct {
-	// Map is Red's internal map byte and remains runtime-only during the
-	// incremental adapter migration. Location is the portable planner identity.
+	// Map is the current profile's opaque native map id and remains runtime-only
+	// during the adapter migration. Location is the portable planner identity.
 	Map      uint8 `json:"-"`
 	Location PlaceID
 	MapName  string // display name retained for prompt/backward readability
@@ -131,41 +133,53 @@ type WildSpecies struct {
 	Slots    int
 }
 
-// Events remain a compact compatibility list while #137 migrates progression
-// verbs. Their raw bit/index encoding remains private to red/state.
-var knownEvents = []state.Event{
-	state.EventFollowedOakIntoLab,
-	state.EventOakAskedToChooseMon,
-	state.EventGotStarter,
-	state.EventBattledRivalInOaksLab,
-	state.EventGotPokeballsFromOak,
-	state.EventGotPokedex,
-	state.EventOakAppearedInPallet,
-	state.EventBeatChampionRival,
+// Observe returns a profile-decoded observation. Existing callers keep the
+// historical no-error signature; entry points that may receive arbitrary ROMs
+// should use ObserveChecked (Run does) so unsupported revisions are diagnosed
+// rather than panicking.
+func Observe(m *emu.Emu, romData []byte) Observation {
+	obs, err := ObserveChecked(m, romData)
+	if err != nil {
+		panic(err)
+	}
+	return obs
 }
 
-// Observe is Pokémon Red's projection into the portable planner contract.
-func Observe(m *emu.Emu, romData []byte) Observation {
+// ObserveChecked selects a concrete profile from the exact ROM identity before
+// reading semantic state. The remaining enrichment below is Red-owned planner
+// support that has not yet become a cross-game capability; importantly, normal
+// position/party/progress decoding no longer knows Red WRAM addresses here.
+func ObserveChecked(m *emu.Emu, romData []byte) (Observation, error) {
+	profile, _, err := profiles.Detect(romData)
+	if err != nil {
+		return Observation{}, fmt.Errorf("agent: observe: %w", err)
+	}
+	base, err := profile.DecodeObservation(m, romData)
+	if err != nil {
+		return Observation{}, fmt.Errorf("agent: observe %s@%s: %w", profile.ID(), profile.Revision(), err)
+	}
+
+	// Red execution enrichments still consume Red's structured state decoder;
+	// raw addresses are owned by red/state + red/profile, not this planner view.
 	var mem state.Mem
 	gs := state.Read(m, &mem)
-	mapName := state.MapName(gs.Player.MapID)
-
 	obs := Observation{
-		Map:               gs.Player.MapID,
-		Location:          semanticLocation(mapName),
-		MapName:           mapName,
-		X:                 gs.Player.X,
-		Y:                 gs.Player.Y,
-		Facing:            gs.Player.Facing.String(),
-		Controllable:      state.Controllable(&mem),
-		InBattle:          gs.Battle != nil,
-		PartyCount:        int(gs.Party.Count),
-		Money:             gs.Inventory.Money,
-		RespawnPlace:      semanticLocation(state.MapName(mem.U8(sym.LastBlackoutMap))),
-		Party:             make([]PartyMon, len(gs.Party.Mons)),
-		Badges:            []string{},
-		Events:            []string{},
-		Story:             redProgressState(state.DecodeStoryFacts(&mem, gs.Inventory)),
+		Map:               uint8(base.NativeMapID),
+		Location:          base.Location,
+		MapName:           base.MapName,
+		X:                 base.X,
+		Y:                 base.Y,
+		Facing:            base.Facing,
+		Controllable:      base.Controllable,
+		InBattle:          base.InBattle,
+		PartyCount:        len(base.Party),
+		Money:             base.Money,
+		RespawnPlace:      base.RespawnPlace,
+		Party:             make([]PartyMon, len(base.Party)),
+		Badges:            append([]string(nil), base.Badges...),
+		Events:            append([]string(nil), base.Events...),
+		Story:             append(ProgressState(nil), base.Story...),
+		BlackedOut:        base.BlackedOut,
 		LeadMoves:         []Move{},
 		LeadPP:            []uint8{},
 		Bag:               []Item{},
@@ -175,27 +189,14 @@ func Observe(m *emu.Emu, romData []byte) Observation {
 		Failures:          []Failure{},
 		Requirements:      []Requirement{},
 	}
-	for i, mon := range gs.Party.Mons {
-		experience, _ := state.PartyExperience(&mem, i)
+	for i, mon := range base.Party {
 		obs.Party[i] = PartyMon{
-			Species:    semanticSpeciesFromRed(mon.Species),
+			Species:    SpeciesID(mon.Species),
 			Level:      mon.Level,
-			Experience: experience,
+			Experience: mon.Experience,
 			HP:         mon.HP,
 			MaxHP:      mon.MaxHP,
-			Status:     mon.StatusName(),
-		}
-	}
-
-	obs.BlackedOut = mem.U8(sym.StatusFlags4)&(1<<5) != 0
-	for b := state.BadgeBoulder; b <= state.BadgeEarth; b++ {
-		if gs.Progress.Has(b) {
-			obs.Badges = append(obs.Badges, b.String())
-		}
-	}
-	for _, e := range knownEvents {
-		if state.HasEvent(&mem, e) {
-			obs.Events = append(obs.Events, e.String())
+			Status:     mon.Status,
 		}
 	}
 
@@ -320,7 +321,7 @@ func Observe(m *emu.Emu, romData []byte) Observation {
 		}
 		obs.MapObjects = append(obs.MapObjects, object)
 	}
-	return obs
+	return obs, nil
 }
 
 func unroutablePlaces(m *emu.Emu, romData []byte) []string {
