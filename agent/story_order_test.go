@@ -6,15 +6,6 @@ import (
 	"github.com/maestroi/pokepilot/red/state"
 )
 
-func hasProgressObjective(objs []Objective, id ProgressID) bool {
-	for _, o := range objs {
-		if o.Kind == KindProgress && o.Progress == id {
-			return true
-		}
-	}
-	return false
-}
-
 func TestRedProgressionKeepsThunderBadgeAheadOfLaterStory(t *testing.T) {
 	obs := Observation{
 		Map: route12Map,
