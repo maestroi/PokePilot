@@ -15,10 +15,32 @@ The small local/emulator utility UI intentionally stays outside this workspace a
 
 ## Development and builds
 
-Install and build from this directory:
+For hot-reload development, start the local farm first so `pokeui` owns the real APIs:
+
+```sh
+make farm-up
+```
+
+Then run the operator frontend from `web/`:
 
 ```sh
 npm install
+npm run dev
+```
+
+Open `http://localhost:5173/operator.html`. Vite proxies `/v1`, `/frame`, `/maps`, and `/legacy` to the private `pokeui` at `http://localhost:18080`, so the dev page uses the same backend as the deployed console.
+
+For the public read-only surface use:
+
+```sh
+npm run dev:spectator
+```
+
+and open `http://localhost:5173/spectator.html`; that mode proxies to `http://localhost:18081` instead. Set `POKEPILOT_DEV_BACKEND` before starting Vite to use a different local backend URL.
+
+Typecheck and build with:
+
+```sh
 npm run typecheck
 npm run build
 ```
