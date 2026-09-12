@@ -9,6 +9,15 @@ import (
 )
 
 func executeCatchObjective(m *emu.Emu, romData []byte, o Objective, result ObjectiveResult) (ObjectiveResult, error) {
+	species, ok := redSpeciesID(o.Species)
+	if !ok {
+		return result, fmt.Errorf("agent: %s: unknown Red species %q", o, o.Species)
+	}
+	if err := skill.EnsurePartySlot(m, romData, skill.StatAwareMove(romData), species); err != nil {
+		result.Outcome = OutcomeBlocked
+		return result, fmt.Errorf("agent: %s: %w", o, err)
+	}
+
 	if o.Place != "" {
 		dest, ok := skill.Place(string(o.Place))
 		if !ok {
@@ -29,10 +38,6 @@ func executeCatchObjective(m *emu.Emu, romData []byte, o Objective, result Objec
 		}
 	}
 
-	species, ok := redSpeciesID(o.Species)
-	if !ok {
-		return result, fmt.Errorf("agent: %s: unknown Red species %q", o, o.Species)
-	}
 	caught, err := skill.Catch(m, romData, []uint8{species}, skill.StatAwareMove(romData), 5)
 	if err != nil {
 		return result, fmt.Errorf("agent: %s: %w", o, err)
