@@ -56,10 +56,10 @@ type Profile struct{}
 
 func New() *Profile { return &Profile{} }
 
-func (*Profile) ID() game.GameID                  { return GameID }
-func (*Profile) Revision() game.RevisionID         { return Revision }
-func (*Profile) Detect(info game.ROMInfo) bool     { return info.SHA1 == sym.ROMSHA1 }
-func (*Profile) ROMParser() game.ROMParser         { return parser{} }
+func (*Profile) ID() game.GameID               { return GameID }
+func (*Profile) Revision() game.RevisionID     { return Revision }
+func (*Profile) Detect(info game.ROMInfo) bool { return info.SHA1 == sym.ROMSHA1 }
+func (*Profile) ROMParser() game.ROMParser     { return parser{} }
 
 func (*Profile) Symbols() game.SymbolTable {
 	return game.SymbolTable{
