@@ -56,9 +56,10 @@ type Profile struct{}
 
 func New() *Profile { return &Profile{} }
 
-func (*Profile) ID() game.GameID             { return GameID }
-func (*Profile) Revision() game.RevisionID    { return Revision }
-func (*Profile) Detect(info game.ROMInfo) bool { return info.SHA1 == sym.ROMSHA1 }
+func (*Profile) ID() game.GameID                  { return GameID }
+func (*Profile) Revision() game.RevisionID         { return Revision }
+func (*Profile) Detect(info game.ROMInfo) bool     { return info.SHA1 == sym.ROMSHA1 }
+func (*Profile) ROMParser() game.ROMParser         { return parser{} }
 
 func (*Profile) Symbols() game.SymbolTable {
 	return game.SymbolTable{
@@ -88,8 +89,6 @@ func (*Profile) Features() game.ProfileFeatures {
 		game.FeatureSemanticSpecies: true,
 	}
 }
-
-func (*Profile) ROMParser() game.ROMParser { return parser{} }
 
 type parser struct{}
 
@@ -128,20 +127,20 @@ func (*Profile) DecodeObservation(reader game.MemoryReader, _ []byte) (game.Prof
 	gs := state.Decode(&mem)
 	mapName := state.MapName(gs.Player.MapID)
 	obs := game.ProfileObservation{
-		NativeMapID:   uint16(gs.Player.MapID),
-		Location:      semanticLocation(mapName),
-		MapName:       mapName,
-		X:             gs.Player.X,
-		Y:             gs.Player.Y,
-		Facing:        gs.Player.Facing.String(),
-		Controllable:  state.Controllable(&mem),
-		InBattle:      gs.Battle != nil,
-		Party:         make([]game.ProfilePartyMon, len(gs.Party.Mons)),
-		Badges:        []string{},
-		Money:         gs.Inventory.Money,
-		RespawnPlace:  semanticLocation(state.MapName(mem.U8(sym.LastBlackoutMap))),
-		Events:        []string{},
-		BlackedOut:    mem.U8(sym.StatusFlags4)&(1<<5) != 0,
+		NativeMapID:  uint16(gs.Player.MapID),
+		Location:     semanticLocation(mapName),
+		MapName:      mapName,
+		X:            gs.Player.X,
+		Y:            gs.Player.Y,
+		Facing:       gs.Player.Facing.String(),
+		Controllable: state.Controllable(&mem),
+		InBattle:     gs.Battle != nil,
+		Party:        make([]game.ProfilePartyMon, len(gs.Party.Mons)),
+		Badges:       []string{},
+		Money:        gs.Inventory.Money,
+		RespawnPlace: semanticLocation(state.MapName(mem.U8(sym.LastBlackoutMap))),
+		Events:       []string{},
+		BlackedOut:   mem.U8(sym.StatusFlags4)&(1<<5) != 0,
 	}
 	for i, mon := range gs.Party.Mons {
 		species, ok := reddata.Species(mon.Species)
@@ -168,7 +167,7 @@ func (*Profile) DecodeObservation(reader game.MemoryReader, _ []byte) (game.Prof
 			obs.Events = append(obs.Events, event.String())
 		}
 	}
-	obs.Story = storyState(&mem, gs.Inventory, state.DecodeStoryFacts(&mem, gs.Inventory))
+	obs.Story = ProjectStory(&mem, state.DecodeStoryFacts(&mem, gs.Inventory))
 	return obs, nil
 }
 
@@ -176,7 +175,10 @@ func semanticLocation(mapName string) game.PlaceID {
 	return game.CanonicalID(strings.ReplaceAll(mapName, "_", " "))
 }
 
-func storyState(mem *state.Mem, _ state.InventoryState, facts state.StoryFacts) game.ProgressState {
+// ProjectStory converts Red's decoded story facts into the portable progress
+// vocabulary. It is exported so Red-owned execution code and tests can use the
+// same projection as DecodeObservation without duplicating profile semantics.
+func ProjectStory(mem *state.Mem, facts state.StoryFacts) game.ProgressState {
 	badges := state.DecodeProgress(mem)
 	mapID := mem.U8(sym.CurMap)
 	indigoReady := mapID == indigoPlateauMap || mapID == indigoPlateauLobbyMap || facts.LeagueChallengeStarted || facts.LeagueChampionDefeated || facts.MainStoryComplete
