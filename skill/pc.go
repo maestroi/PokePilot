@@ -416,3 +416,40 @@ func WithdrawBoxMon(m *emu.Emu, romData []byte, policy MovePolicy, boxIndex int)
 	}
 	return nil
 }
+
+// EnsurePartySlot makes room for one incoming catch when the party is full.
+// It deposits the safest surplus member into the active box and keeps every
+// core field-move the save has already unlocked. A full box is a structured
+// blockage, not a deposit attempt that would lose the catch.
+func EnsurePartySlot(m *emu.Emu, romData []byte, policy MovePolicy, incoming uint8) error {
+	if policy == nil {
+		return fmt.Errorf("skill: Bill's PC: nil move policy")
+	}
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	slot, err := planPartySlot(romData, state.DecodeParty(&mem), state.DecodeBox(&mem), state.Mon{Species: incoming}, OwnedCoreProgressionFieldMoves(&mem))
+	if err != nil {
+		return err
+	}
+	if slot < 0 {
+		return nil
+	}
+	return DepositPartyMon(m, romData, policy, slot)
+}
+
+func planPartySlot(romData []byte, party state.PartyState, box state.BoxState, incoming state.Mon, required []FieldMove) (int, error) {
+	if int(party.Count) < gen1PartyCapacity {
+		return -1, nil
+	}
+	if int(box.Count) >= gen1BoxCapacity {
+		return -1, fmt.Errorf("%w: box %d has %d Pokemon", ErrPCBoxFull, box.Number+1, box.Count)
+	}
+	slot, ok, err := chooseDepositSlotForIncoming(romData, party, incoming, required)
+	if err != nil {
+		return -1, err
+	}
+	if !ok || slot < 0 {
+		return -1, fmt.Errorf("%w: depositing any party member would drop a required field move", ErrFieldRosterNoRecovery)
+	}
+	return slot, nil
+}

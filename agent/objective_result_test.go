@@ -195,6 +195,29 @@ func TestObjectivePostconditionGoToExactDestination(t *testing.T) {
 	}
 }
 
+func TestObjectivePostconditionCatchUsesPokedexOwned(t *testing.T) {
+	o := Objective{Kind: KindCatch, Species: "pidgey"}
+	owned := Observation{PokedexOwned: []SpeciesID{"pidgey"}}
+	if out, err := objectivePostcondition(o, owned); err != nil || out != OutcomeCompleted {
+		t.Fatalf("owned catch = %q, %v; want completed", out, err)
+	}
+
+	out, err := objectivePostcondition(o, Observation{Party: []PartyMon{{Species: "pidgey"}}})
+	if out != OutcomePostconditionFailed || !errors.Is(err, ErrObjectivePostconditionFailed) {
+		t.Fatalf("party-only catch = %q, %v; want postcondition_failed", out, err)
+	}
+}
+
+func TestClassifyObjectiveOutcomePCStorageIsBlocked(t *testing.T) {
+	clean := Observation{Controllable: true}
+	if got := classifyObjectiveOutcome(Objective{Kind: KindCatch, Species: "pidgey"}, skill.ErrPCBoxFull, clean); got != OutcomeBlocked {
+		t.Fatalf("full box = %q, want blocked", got)
+	}
+	if got := classifyObjectiveOutcome(Objective{Kind: KindCatch, Species: "pidgey"}, skill.ErrFieldRosterNoRecovery, clean); got != OutcomeBlocked {
+		t.Fatalf("no safe deposit = %q, want blocked", got)
+	}
+}
+
 func TestObjectivePostconditionDefersToSkillForOtherKinds(t *testing.T) {
 	out, err := objectivePostcondition(Objective{Kind: KindUseItem, Item: "potion"}, Observation{})
 	if err != nil || out != OutcomeCompleted {

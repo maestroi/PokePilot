@@ -19,6 +19,7 @@ import (
 func offerWithTMHM(m *emu.Emu, romData []byte, obs Observation, known *Knowledge) []Objective {
 	out := OfferWithProgression(obs, known, newRedObjectiveAdapter(m, romData))
 	out = appendKnownCatchObjectives(romData, obs, known, out)
+	out = appendDexCatchObjectives(obs, known, out)
 	var mem state.Mem
 	state.Snapshot(m, &mem)
 	party := state.DecodeParty(&mem)

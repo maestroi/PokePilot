@@ -125,6 +125,13 @@ func objectivePostcondition(o Objective, final Observation) (Outcome, error) {
 				ErrObjectivePostconditionFailed, o, final.Map, final.X, final.Y, dest.Map, dest.X, dest.Y)
 		}
 		return OutcomeCompleted, nil
+	case KindCatch:
+		if !pokedexOwnedSet(final)[o.Species] {
+			return OutcomePostconditionFailed, fmt.Errorf(
+				"%w: %s finished but Pokédex does not own %s",
+				ErrObjectivePostconditionFailed, o, o.Species)
+		}
+		return OutcomeCompleted, nil
 	default:
 		return OutcomeCompleted, nil
 	}
@@ -181,7 +188,9 @@ func classifyObjectiveOutcome(_ Objective, err error, final Observation) Outcome
 		errors.Is(err, skill.ErrCantAfford) ||
 		errors.Is(err, skill.ErrNotInStock) ||
 		errors.Is(err, skill.ErrBagNotRisen) ||
-		errors.Is(err, skill.ErrFieldRosterNoBalls) {
+		errors.Is(err, skill.ErrFieldRosterNoBalls) ||
+		errors.Is(err, skill.ErrPCBoxFull) ||
+		errors.Is(err, skill.ErrFieldRosterNoRecovery) {
 		return OutcomeBlocked
 	}
 

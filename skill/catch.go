@@ -17,7 +17,9 @@ import (
 type CatchOutcome int
 
 const (
-	// OutcomeCaught: the party grew by one member of a wanted species.
+	// OutcomeCaught: a wanted species was acquired. That is proven by a
+	// new Pokédex-owned bit, a grown party, or a grown active box (Gen I
+	// sends the catch to Bill's PC when the party is already full).
 	OutcomeCaught CatchOutcome = iota
 	// OutcomeFled: every thrown ball broke and the Pokemon ran away.
 	OutcomeFled
@@ -111,9 +113,9 @@ var (
 // make a catch reliable; S6-6 should size the mart trip from ~3 balls per
 // catch plus a ~13% chance of losing all five on a given target.
 //
-// The postcondition for OutcomeCaught is positive: state.DecodeParty
-// reports one MORE member than before, and that member's species is in
-// want. A dropped bag count or an ended battle is not a catch.
+// The postcondition for OutcomeCaught is positive: the wanted species is
+// in the grown party, the grown active box, or newly marked Pokédex-owned.
+// A dropped bag count or an ended battle is not a catch.
 //
 // Both axes are bounded: at most maxBalls throws, and at most catchHuntCap
 // encounters met while hunting.
@@ -134,6 +136,9 @@ func Catch(m *emu.Emu, romData []byte, want []uint8, policy MovePolicy, maxBalls
 		return CatchResult{}, fmt.Errorf("skill: Catch: player not controllable on map %#04x", m.Peek8(sym.CurMap))
 	}
 	before := int(state.DecodeParty(&mem).Count)
+	boxBefore := int(state.DecodeBox(&mem).Count)
+	ownedBefore := append([]uint8(nil), state.DecodePokedex(&mem).Owned...)
+	wantDex := wantedDexNumbers(romData, want)
 	res := CatchResult{}
 
 	// The hunt ping-pongs the player between two nearby grass cells itself
@@ -194,7 +199,7 @@ func Catch(m *emu.Emu, romData []byte, want []uint8, policy MovePolicy, maxBalls
 			continue
 		}
 
-		return catchWanted(m, &mem, want, policy, before, res, maxBalls)
+		return catchWanted(m, &mem, want, wantDex, policy, before, boxBefore, ownedBefore, res, maxBalls)
 	}
 	return res, fmt.Errorf("%w: %d grass legs and %d encounters (map %#04x)",
 		ErrCatchHuntExhausted, legsSpent, res.Encounters, m.Peek8(sym.CurMap))
@@ -203,7 +208,7 @@ func Catch(m *emu.Emu, romData []byte, want []uint8, policy MovePolicy, maxBalls
 // catchWanted throws balls at the wanted target in progress and reports the
 // outcome. It never attacks: the only way the target takes damage here is a
 // bug, which OutcomeTargetFainted exists to name.
-func catchWanted(m *emu.Emu, mem *state.Mem, want []uint8, policy MovePolicy, partyBefore int, res CatchResult, maxBalls int) (CatchResult, error) {
+func catchWanted(m *emu.Emu, mem *state.Mem, want, wantDex []uint8, policy MovePolicy, partyBefore, boxBefore int, ownedBefore []uint8, res CatchResult, maxBalls int) (CatchResult, error) {
 	targetFainted := false
 	for res.BallsThrown < maxBalls && battleInFlight(m) {
 		if err := UseItem(m, ItemPokeBall); err != nil {
@@ -246,17 +251,17 @@ func catchWanted(m *emu.Emu, mem *state.Mem, want []uint8, policy MovePolicy, pa
 		return res, nil
 	}
 
-	// The battle ended. Settle the overworld, then classify from RAM:
-	// a catch is the party having GROWN by a wanted species — nothing
-	// else counts.
+	// The battle ended. Settle the overworld, then classify from RAM.
+	// Party growth is the common case; a full party sends the catch to
+	// the active box, and Dex mode treats a newly owned Pokédex bit as
+	// the portable postcondition.
 	if err := waitForBattleEnd(m); err != nil {
 		return res, err
 	}
 	state.Snapshot(m, mem)
-	party := state.DecodeParty(mem)
-	if int(party.Count) == partyBefore+1 && speciesIn(party.Mons[party.Count-1].Species, want) {
+	if species, ok := catchAcquiredWanted(partyBefore, state.DecodeParty(mem), boxBefore, state.DecodeBox(mem), ownedBefore, state.DecodePokedex(mem).Owned, want, wantDex); ok {
 		res.Outcome = OutcomeCaught
-		res.Species = party.Mons[party.Count-1].Species
+		res.Species = species
 		return res, nil
 	}
 	if targetFainted {
