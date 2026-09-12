@@ -42,7 +42,10 @@ const {
 
 const runs = computed(() => snapshot.value?.runs ?? [])
 const groupedRuns = computed(() => splitSpectatorRuns(runs.value))
-const selectedRun = computed(() => preferredRun(runs.value, selectedRunID.value))
+const selectedRun = computed(() => preferredRun(
+  runs.value,
+  selectionPinned.value ? selectedRunID.value : ''
+))
 const liveRunID = computed(() => isLiveRun(selectedRun.value) ? selectedRun.value?.run_id || '' : '')
 const frameEnabled = computed(() => Boolean(liveRunID.value))
 const { frameURL, state: frameState, error: frameError } = useFramePump(liveRunID, frameEnabled)
@@ -56,7 +59,7 @@ const summaryMetrics = computed(() => {
   return [
     { label: 'Live', value: summary.live, note: 'running + leased' },
     { label: 'Queued', value: summary.queued, note: 'waiting for a worker' },
-    { label: 'Highlights', value: summary.completed, note: 'public completed archive' }
+    { label: 'Completed', value: summary.completed, note: 'farm total' }
   ]
 })
 
