@@ -95,14 +95,14 @@ func (s SymbolTable) Lookup(name string) (MemorySymbol, bool) {
 type ProfileFeature string
 
 const (
-	FeatureMapParsing       ProfileFeature = "map_parsing"
-	FeatureInventory        ProfileFeature = "inventory"
-	FeatureStoryProgress    ProfileFeature = "story_progress"
-	FeatureBattles          ProfileFeature = "battles"
-	FeatureFieldMoves       ProfileFeature = "field_moves"
-	FeatureTrainerFlags     ProfileFeature = "trainer_flags"
-	FeatureBankedMemory     ProfileFeature = "banked_memory"
-	FeatureSemanticSpecies  ProfileFeature = "semantic_species"
+	FeatureMapParsing      ProfileFeature = "map_parsing"
+	FeatureInventory       ProfileFeature = "inventory"
+	FeatureStoryProgress   ProfileFeature = "story_progress"
+	FeatureBattles         ProfileFeature = "battles"
+	FeatureFieldMoves      ProfileFeature = "field_moves"
+	FeatureTrainerFlags    ProfileFeature = "trainer_flags"
+	FeatureBankedMemory    ProfileFeature = "banked_memory"
+	FeatureSemanticSpecies ProfileFeature = "semantic_species"
 )
 
 type ProfileFeatures map[ProfileFeature]bool
@@ -123,7 +123,7 @@ type ProfilePartyMon struct {
 // NativeMapID exists only as an opaque adapter handle for the current
 // incremental migration; it is intentionally excluded from planner JSON.
 type ProfileObservation struct {
-	NativeMapID uint16 `json:"-"`
+	NativeMapID uint16  `json:"-"`
 	Location    PlaceID `json:"location"`
 	MapName     string  `json:"map_name"`
 	X, Y        uint8
