@@ -27,7 +27,7 @@ const form = reactive<RunSpec>({
   goal: 'Earn the Boulder Badge.',
   llm_profile: 'auto',
   reasoning_effort: '',
-  fps: 0,
+  fps: 60,
   max_rounds: 0,
   max_frames: 0,
   endless: false,
@@ -81,25 +81,30 @@ async function submit(): Promise<void> {
       <form class="grid grid-cols-1 gap-4 sm:grid-cols-2" @submit.prevent="submit">
         <label class="block">
           <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Run id</span>
-          <input v-model="form.run_id" placeholder="optional — wall may assign one" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400" />
+          <input v-model="form.run_id" placeholder="Leave blank to generate one" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400" />
         </label>
 
         <label class="block">
-          <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Planner</span>
+          <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Mode</span>
           <select v-model="form.planner" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400">
-            <option value="llm">LLM</option>
-            <option value="scripted">Scripted</option>
+            <option value="llm">Play the game</option>
+            <option value="scripted">Walk to a place</option>
           </select>
         </label>
 
         <label class="block">
           <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Starter</span>
-          <input v-model="form.starter" placeholder="blank lets the run choose/default" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400" />
+          <select v-model="form.starter" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400">
+            <option value="">{{ isLLM ? 'Let LLM decide' : 'Default starter' }}</option>
+            <option value="squirtle">Squirtle</option>
+            <option value="charmander">Charmander</option>
+            <option value="bulbasaur">Bulbasaur</option>
+          </select>
         </label>
 
         <label v-if="!isLLM" class="block">
           <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Destination</span>
-          <input v-model="form.dest" placeholder="route / scripted destination" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400" />
+          <input v-model="form.dest" placeholder="viridian pokemon center" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400" />
         </label>
 
         <label v-if="isLLM" class="block sm:col-span-2">
@@ -112,16 +117,18 @@ async function submit(): Promise<void> {
         <label v-if="isLLM" class="block">
           <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">LLM profile</span>
           <select v-model="form.llm_profile" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400">
-            <option value="auto">Auto GPU → LAN</option>
-            <option value="gpu">GPU reserved</option>
-            <option value="default">LAN only</option>
+            <option value="auto">7900 XTX · default · CPU after 120s</option>
+            <option value="gpu">RTX 4090 · manual</option>
+            <option value="default">CPU only · manual</option>
           </select>
+          <span class="mt-1 block text-[11px] text-slate-600">Auto uses the normal farm routing policy; manual profiles pin the requested route.</span>
         </label>
 
         <label v-if="isLLM" class="block">
           <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Reasoning effort</span>
           <select v-model="form.reasoning_effort" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400">
-            <option value="">Endpoint default</option>
+            <option value="">Auto (endpoint default)</option>
+            <option value="off">Off</option>
             <option value="low">Low</option>
             <option value="medium">Medium</option>
             <option value="high">High</option>
