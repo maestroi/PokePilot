@@ -8,7 +8,9 @@
   },
   "scripts": {
     "dev": "vite --host 0.0.0.0",
-    "build": "vue-tsc --noEmit && vite build",
+    "build": "vue-tsc --noEmit && npm run build:operator && npm run build:spectator",
+    "build:operator": "vite build --mode operator",
+    "build:spectator": "vite build --mode spectator",
     "typecheck": "vue-tsc --noEmit",
     "preview": "vite preview --host 0.0.0.0"
   },

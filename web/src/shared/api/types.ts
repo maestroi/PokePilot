@@ -4,17 +4,50 @@ export interface DashboardIssueLink {
   issue_number?: number
   issue_url?: string
   status?: string
+  resolution?: string
   occurrence_count?: number
   fixed_revision?: string
   stale?: boolean
+}
+
+export interface PartyMon {
+  name: string
+  level: number
+  hp: number
+  max_hp: number
+  status?: string
+}
+
+export interface PlayerSnapshot {
+  money: number
+  badges?: string[]
+  party: PartyMon[]
+}
+
+export interface MapSprite {
+  x: number
+  y: number
+  picture_id?: number
+  slot?: number
 }
 
 export interface DashboardStats {
   round?: number
   rounds?: number
   rounds_left?: number
+  calls?: number
+  rejected?: number
   repeats?: number
   avg_seconds?: number
+  last_seconds?: number
+  prompt_tokens?: number
+  completion_tokens?: number
+  goal_summary?: string
+  goal_current?: number
+  goal_target?: number
+  goal_complete?: boolean
+  model?: string
+  backend?: string
   [key: string]: unknown
 }
 
@@ -42,8 +75,12 @@ export interface DashboardRun {
   trace?: string
   question?: string
   decision?: string
+  raw?: string
   stop_so_far?: string
+  sprites?: MapSprite[]
+  trail?: [number, number][]
   stats?: DashboardStats
+  player?: PlayerSnapshot
   attempts?: number
   error_attempts?: number
   loss_recoveries?: number
@@ -52,6 +89,7 @@ export interface DashboardRun {
   issue?: DashboardIssueLink
   replay_available?: boolean
   resume_from_run_id?: string
+  [key: string]: unknown
 }
 
 export interface DashboardWorker {
@@ -85,4 +123,51 @@ export interface DashboardQuery {
   outcome?: string
   how?: string
   starter?: string
+}
+
+export interface RunSpec {
+  run_id: string
+  seed: number
+  planner: string
+  starter: string
+  dest: string
+  goal: string
+  llm_profile: string
+  reasoning_effort: string
+  fps: number
+  max_rounds: number
+  max_frames: number
+  endless: boolean
+  random_seed: boolean
+}
+
+export interface TriageGroup {
+  pattern?: string
+  key: string
+  fingerprint?: string
+  count: number
+  runs?: string[]
+  examples?: string[]
+  detail?: string
+  latest_run_id?: string
+  issue?: DashboardIssueLink
+  [key: string]: unknown
+}
+
+export interface ReplayStatus {
+  run_id?: string
+  state: string
+  size?: number
+  error?: string
+  [key: string]: unknown
+}
+
+export interface RunArtifact {
+  name: string
+  media_type?: string
+  size?: number
+  location?: string
+  storage?: string
+  sha256?: string
+  [key: string]: unknown
 }
