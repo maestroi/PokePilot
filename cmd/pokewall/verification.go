@@ -235,11 +235,16 @@ func copyIssueVerification(dst *IssueLink, src IssueLink) {
 }
 
 func issueFixedForVerification(link IssueLink) bool {
-	if ignoredResolution(strings.ToLower(strings.TrimSpace(link.Resolution))) {
+	status := strings.ToLower(strings.TrimSpace(link.Status))
+	// Active status wins over an old fixed resolution. Agent Orchestrator may
+	// reopen an issue before clearing the previous resolution field.
+	if issueStatusActive(status) {
 		return false
 	}
-	status := strings.ToLower(strings.TrimSpace(link.Status))
 	resolution := strings.ToLower(strings.TrimSpace(link.Resolution))
+	if ignoredResolution(resolution) {
+		return false
+	}
 	fixedStatus := status == "resolved" || status == "closed" || status == "fixed" || status == "fixed-applied" || status == "fixed_applied"
 	fixedResolution := resolution == "fixed" || resolution == "fixed-applied" || resolution == "fixed_applied"
 	return (fixedStatus || fixedResolution) && strings.TrimSpace(link.FixedRevision) != ""
