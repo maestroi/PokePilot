@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -411,13 +412,35 @@ func (w *Wall) loadOccurrenceEvidence(e outboxEntry) (farm.FinishReport, []farm.
 	if e.Attempt > 1 {
 		name = fmt.Sprintf("%s-attempt-%d.json", safeBase(e.RunID), e.Attempt)
 	}
-	data, err := os.ReadFile(filepath.Join(w.dumpsDir, name))
+	path := filepath.Join(w.dumpsDir, name)
+	data, err := os.ReadFile(path)
+	if err != nil && e.Attempt > 1 && errors.Is(err, os.ErrNotExist) {
+		// Legacy/hand-built runners can omit FinishReport.Attempt on retries.
+		// handleFinish historically wrote those reports to run.json while the
+		// issue outbox inferred the real attempt from Tile.Attempts, so pending
+		// occurrences pointed at run-attempt-N.json that never existed. Fall
+		// back to the legacy filename so those already-persisted outbox entries
+		// self-heal after an upgrade.
+		path = filepath.Join(w.dumpsDir, safeDumpName(e.RunID))
+		data, err = os.ReadFile(path)
+	}
 	if err != nil {
 		return farm.FinishReport{}, nil, err
 	}
 	var dump farm.FinishReport
 	if err := json.Unmarshal(data, &dump); err != nil {
 		return farm.FinishReport{}, nil, err
+	}
+	if dump.RunID != "" && dump.RunID != e.RunID {
+		return farm.FinishReport{}, nil, fmt.Errorf("finish dump %s belongs to run %q, wanted %q", path, dump.RunID, e.RunID)
+	}
+	if dump.Attempt != 0 && e.Attempt > 0 && dump.Attempt != e.Attempt {
+		return farm.FinishReport{}, nil, fmt.Errorf("finish dump %s belongs to attempt %d, wanted %d", path, dump.Attempt, e.Attempt)
+	}
+	if dump.Attempt == 0 && e.Attempt > 0 {
+		// Normalize legacy reports before constructing evidence so the uploaded
+		// manifest records the actual attempt represented by this outbox entry.
+		dump.Attempt = e.Attempt
 	}
 	var arts []farm.Artifact
 	if len(dump.SaveState) > 0 {
