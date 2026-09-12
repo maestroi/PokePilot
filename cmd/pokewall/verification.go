@@ -24,16 +24,16 @@ const (
 )
 
 type verificationTile struct {
-	RunID     string
-	Planner   string
-	Starter   string
-	Goal      string
-	QueuedAt  time.Time
-	EndedAt   time.Time
-	Attempts  int
-	Finished  bool
-	Reason    string
-	Detail    string
+	RunID    string
+	Planner  string
+	Starter  string
+	Goal     string
+	QueuedAt time.Time
+	EndedAt  time.Time
+	Attempts int
+	Finished bool
+	Reason   string
+	Detail   string
 }
 
 // RunIssueVerification keeps local proof that a remotely fixed issue stayed
