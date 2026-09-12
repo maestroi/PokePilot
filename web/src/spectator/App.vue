@@ -15,7 +15,7 @@ import StatusBadge from '../shared/components/StatusBadge.vue'
     <div class="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
       <Panel title="Live run" description="Game frame, objective, party, progress, and public-safe run story.">
         <template #actions><StatusBadge tone="success">Read-only</StatusBadge></template>
-        <div class="grid aspect-[10/7] place-items-center rounded-md border border-white/8 bg-black/30">
+        <div class="grid aspect-[10/7] place-items-center rounded-md border border-white/10 bg-black/30">
           <div class="text-center">
             <div class="mx-auto size-10 rounded-lg border border-white/10 bg-white/5" />
             <p class="mt-3 text-sm font-medium text-slate-300">Live game surface</p>
@@ -27,7 +27,7 @@ import StatusBadge from '../shared/components/StatusBadge.vue'
       <div class="space-y-3">
         <Panel title="Run state" description="Shared presentation, public-safe data only.">
           <dl class="space-y-3">
-            <div v-for="fact in [['Objective', 'Waiting for a public run'], ['Location', '—'], ['Party', '—']]" :key="fact[0]" class="flex items-start justify-between gap-4 border-b border-white/8 pb-3 last:border-0 last:pb-0">
+            <div v-for="fact in [['Objective', 'Waiting for a public run'], ['Location', '—'], ['Party', '—']]" :key="fact[0]" class="flex items-start justify-between gap-4 border-b border-white/10 pb-3 last:border-0 last:pb-0">
               <dt class="text-xs font-medium text-slate-500">{{ fact[0] }}</dt>
               <dd class="text-right text-sm text-slate-300">{{ fact[1] }}</dd>
             </div>
