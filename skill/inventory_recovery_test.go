@@ -11,6 +11,8 @@ import (
 // TestEnsureProgressionPokeBallsRestocksAtCurrentMart pins the recovery path
 // that was missing from Surge progression: an empty bag at a usable mart is a
 // deterministic inventory problem, not a reason to bounce back to the LLM.
+// The fixture has ¥1587, so a ten-ball reserve is unaffordable at ¥200 each;
+// recovery must degrade to the largest affordable quantity (seven), not fail.
 func TestEnsureProgressionPokeBallsRestocksAtCurrentMart(t *testing.T) {
 	m := fixture.Load(t, "viridian_mart")
 	romData := m.ROM()
@@ -26,14 +28,14 @@ func TestEnsureProgressionPokeBallsRestocksAtCurrentMart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EnsureProgressionPokeBalls: %v", err)
 	}
-	if got != 5 {
-		t.Fatalf("EnsureProgressionPokeBalls returned %d, want 5", got)
+	if got != 7 {
+		t.Fatalf("EnsureProgressionPokeBalls returned %d, want 7", got)
 	}
 
 	var after state.Mem
 	state.Snapshot(m, &after)
-	if balls := countItem(&after, skill.ItemPokeBall); balls != 5 {
-		t.Fatalf("bag: POKE BALL = %d, want 5", balls)
+	if balls := countItem(&after, skill.ItemPokeBall); balls != 7 {
+		t.Fatalf("bag: POKE BALL = %d, want 7", balls)
 	}
 	if !state.Controllable(&after) {
 		t.Fatal("postcondition: player is not controllable after inventory recovery")
