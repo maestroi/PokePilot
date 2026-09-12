@@ -2,13 +2,7 @@
 import { ref } from 'vue'
 import { Dialog, DialogPanel, TransitionChild, TransitionRoot } from '@headlessui/vue'
 import { Bars3Icon, XMarkIcon } from '@heroicons/vue/24/outline'
-
-export type AppNavItem = {
-  name: string
-  href: string
-  current?: boolean
-  badge?: string | number
-}
+import type { AppNavItem } from '../types'
 
 withDefaults(defineProps<{
   eyebrow: string
