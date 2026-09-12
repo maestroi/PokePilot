@@ -1,0 +1,1 @@
+Run `cd web && npm run build` to generate the operator and spectator bundles embedded by pokeui.

@@ -16,7 +16,10 @@ deploy/SWARM.md
 deploy/swarm.sh
 repro-*
 
-# Vue/Vite frontend workspace. Production assets will be generated during the
-# build and embedded by Go once the migration reaches the integration stage.
+# Vue/Vite frontend workspace and generated assets. The placeholder keeps the
+# embed directory valid for Go-only development; production/CI replace it with
+# independently built operator and spectator bundles before compiling pokeui.
 /web/node_modules/
 /web/dist/
+/cmd/pokeui/ui/vue/*
+!/cmd/pokeui/ui/vue/placeholder.txt

@@ -10,10 +10,19 @@
 # *.sav and *.state out of the build context. Runners and the replay sidecar
 # receive the ROM by read-only bind mount at runtime.
 
+FROM node:22-alpine AS web
+
+WORKDIR /src/web
+COPY web/package.json ./
+RUN npm install --no-audit --no-fund
+COPY web/ ./
+RUN npm run build
+
 FROM golang:1.26 AS build
 
 WORKDIR /src
 COPY . .
+COPY --from=web /src/cmd/pokeui/ui/vue ./cmd/pokeui/ui/vue
 
 ARG GIT_SHA=dev
 ARG GIT_PR_NUMBER=0

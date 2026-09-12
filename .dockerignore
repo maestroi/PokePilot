@@ -8,3 +8,8 @@ skill/failure/
 # Root build binaries, if any were left behind by a local `go build`.
 /pokepilot
 /pokewall
+# Frontend dependencies/output are rebuilt deterministically inside the image.
+web/node_modules/
+web/dist/
+cmd/pokeui/ui/vue/operator/
+cmd/pokeui/ui/vue/spectator/
