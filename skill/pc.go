@@ -105,17 +105,37 @@ func ensureAtPokemonCenterPC(m *emu.Emu, romData []byte, policy MovePolicy) erro
 	return nil
 }
 
-func pcMainMenuUp(mem *state.Mem) bool {
+// pcMainMenuScreen is pcMainMenuUp without the live-cursor requirement; see
+// billsPCMenuScreen for why that requirement can be unreliable on a screen
+// reached by backing out of a nested menu rather than opening it fresh.
+func pcMainMenuScreen(mem *state.Mem) bool {
 	text := state.ScreenText(mem)
 	max := int(mem.U8(sym.MaxMenuItem))
-	return state.MenuUp(mem) && mem.U8(sym.TopMenuItemX) == 1 && mem.U8(sym.TopMenuItemY) == 2 &&
+	return mem.U8(sym.TopMenuItemX) == 1 && mem.U8(sym.TopMenuItemY) == 2 &&
 		max >= 2 && max <= 4 && strings.Contains(text, "LOG OFF") && strings.Contains(text, "PC")
 }
 
-func billsPCMenuUp(mem *state.Mem) bool {
+func pcMainMenuUp(mem *state.Mem) bool {
+	return state.MenuUp(mem) && pcMainMenuScreen(mem)
+}
+
+// billsPCMenuScreen is billsPCMenuUp without the live-cursor requirement.
+// MEASURED: returning to this menu from B-cancelling the party/box list after
+// a completed transfer leaves TopMenuItemX/Y, MaxMenuItem and the menu text
+// all correct and stable, but the cursor glyph state.MenuUp looks for is not
+// drawn for a long time (2900+ frames, no change) — the game only redraws it
+// on the next directional input, not merely because the frame count moved
+// on. pcCancelUntil uses this relaxed form as its arrival target so it does
+// not mistake "arrived, cursor not yet redrawn" for "still need to cancel
+// out further" and keep pressing B straight past the destination.
+func billsPCMenuScreen(mem *state.Mem) bool {
 	text := state.ScreenText(mem)
-	return state.MenuUp(mem) && mem.U8(sym.TopMenuItemX) == 1 && mem.U8(sym.TopMenuItemY) == 2 &&
+	return mem.U8(sym.TopMenuItemX) == 1 && mem.U8(sym.TopMenuItemY) == 2 &&
 		mem.U8(sym.MaxMenuItem) == 4 && strings.Contains(text, "WITHDRAW") && strings.Contains(text, "DEPOSIT")
+}
+
+func billsPCMenuUp(mem *state.Mem) bool {
+	return state.MenuUp(mem) && billsPCMenuScreen(mem)
 }
 
 func pcPokemonListUp(mem *state.Mem) bool {
@@ -131,8 +151,49 @@ func pcTransferConfirmUp(mem *state.Mem, action string) bool {
 }
 
 // pcAdvanceUntil advances only ordinary PC text while waiting for a known
-// semantic menu/state. It never presses A into an unknown menu.
-func pcAdvanceUntil(m *emu.Emu, pred func(*state.Mem) bool, what string) error {
+// semantic menu/state. It never presses A into an unknown menu — except when
+// from reports that the screen is still the one we departed from: a PC
+// confirmation message ("Accessed BILL's PC.", "... was deposited.") overlays
+// its text box without erasing the previous screen's item list, so its
+// cursor glyph stays on the tilemap and state.MenuUp keeps reporting a menu
+// is up long after there is only a dismissible message left to page. MEASURED
+// on the 321-run Vermilion Gym farm failure: after SelectMenuItem(0) chose
+// BILL's PC from the main list, the screen sat on "Accessed BILL's PC." with
+// pcMainMenuUp's own cursor/text still intact underneath, so the MenuUp
+// branch waited passively forever instead of paging the confirmation.
+// from may be nil when there is no known prior PC screen to distinguish from
+// (e.g. the very first wait, right after tapping the PC in the overworld).
+func pcAdvanceUntil(m *emu.Emu, from, pred func(*state.Mem) bool, what string) error {
+	var mem state.Mem
+	for spent := 0; spent < pcTransitionBudget; spent += talkSettle {
+		state.Snapshot(m, &mem)
+		if pred(&mem) {
+			return nil
+		}
+		switch {
+		case mem.U8(sym.FontLoaded) != 0 && from != nil && from(&mem):
+			m.Tap(emu.A, 3, 7)
+			m.StepFrames(talkSettle)
+		case state.MenuUp(&mem):
+			m.StepFrames(talkSettle)
+		case mem.U8(sym.FontLoaded) != 0:
+			m.Tap(emu.A, 3, 7)
+			m.StepFrames(talkSettle)
+		default:
+			m.StepFrames(talkSettle)
+		}
+	}
+	state.Snapshot(m, &mem)
+	return fmt.Errorf("skill: Bill's PC: %s did not appear: menu=%t screen=%q", what, state.MenuUp(&mem), state.ScreenText(&mem))
+}
+
+// pcCancelUntil backs out of real, currently-interactive PC menus with B
+// until pred matches. Unlike pcAdvanceUntil's from-gated A-press (for paging
+// a dismissible confirmation message stuck over a stale background list),
+// this is for a screen that is itself a live menu awaiting a choice: pressing
+// A there selects whatever is highlighted (e.g. reopens the transfer's
+// WITHDRAW/DEPOSIT/STATS/CANCEL popup on the party list), so only B is safe.
+func pcCancelUntil(m *emu.Emu, pred func(*state.Mem) bool, what string) error {
 	var mem state.Mem
 	for spent := 0; spent < pcTransitionBudget; spent += talkSettle {
 		state.Snapshot(m, &mem)
@@ -141,9 +202,7 @@ func pcAdvanceUntil(m *emu.Emu, pred func(*state.Mem) bool, what string) error {
 		}
 		switch {
 		case state.MenuUp(&mem):
-			m.StepFrames(talkSettle)
-		case mem.U8(sym.FontLoaded) != 0:
-			m.Tap(emu.A, 3, 7)
+			m.Tap(emu.B, 3, 7)
 			m.StepFrames(talkSettle)
 		default:
 			m.StepFrames(talkSettle)
@@ -158,20 +217,26 @@ func openBillsPC(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		return err
 	}
 	m.Tap(emu.A, 3, 7)
-	if err := pcAdvanceUntil(m, pcMainMenuUp, "PC main menu"); err != nil {
+	if err := pcAdvanceUntil(m, nil, pcMainMenuUp, "PC main menu"); err != nil {
 		return err
 	}
 	if err := SelectMenuItem(m, 0); err != nil {
 		return fmt.Errorf("skill: Bill's PC: select BILL/SOMEONE'S PC: %w", err)
 	}
-	if err := pcAdvanceUntil(m, billsPCMenuUp, "Bill's PC menu"); err != nil {
+	if err := pcAdvanceUntil(m, pcMainMenuUp, billsPCMenuUp, "Bill's PC menu"); err != nil {
 		return err
 	}
 	return nil
 }
 
 // closePCToOverworld backs out according to the live screen until the player
-// is stably controllable. B closes menus; A pages ordinary text.
+// is stably controllable. B closes menus; A pages ordinary text. A known PC
+// menu screen (pcMainMenuScreen/billsPCMenuScreen) is checked ahead of the
+// bare FontLoaded/press-A fallback even when state.MenuUp's cursor glyph
+// is not currently drawn there — see billsPCMenuScreen — so a menu reached by
+// backing out of a nested screen is closed with B rather than mistaken for
+// ordinary dismissible text and paged with A, which would select whatever
+// item the menu defaults to instead of leaving it.
 func closePCToOverworld(m *emu.Emu) error {
 	var mem state.Mem
 	for i := 0; i < pcCloseBudget; i++ {
@@ -183,7 +248,7 @@ func closePCToOverworld(m *emu.Emu) error {
 			if state.Controllable(&mem) {
 				return nil
 			}
-		case state.MenuUp(&mem):
+		case state.MenuUp(&mem), pcMainMenuScreen(&mem), billsPCMenuScreen(&mem):
 			m.Tap(emu.B, 3, 7)
 			m.StepFrames(talkSettle)
 		case mem.U8(sym.FontLoaded) != 0:
@@ -224,7 +289,7 @@ func DepositPartyMon(m *emu.Emu, romData []byte, policy MovePolicy, slot int) er
 		_ = closePCToOverworld(m)
 		return fmt.Errorf("skill: Bill's PC: select DEPOSIT: %w", err)
 	}
-	if err := pcAdvanceUntil(m, pcPokemonListUp, "party list for deposit"); err != nil {
+	if err := pcAdvanceUntil(m, billsPCMenuUp, pcPokemonListUp, "party list for deposit"); err != nil {
 		_ = closePCToOverworld(m)
 		return err
 	}
@@ -232,7 +297,8 @@ func DepositPartyMon(m *emu.Emu, romData []byte, policy MovePolicy, slot int) er
 		_ = closePCToOverworld(m)
 		return fmt.Errorf("skill: Bill's PC: select party slot %d for deposit: %w", slot, err)
 	}
-	if err := pcAdvanceUntil(m, func(mem *state.Mem) bool { return pcTransferConfirmUp(mem, "DEPOSIT") }, "DEPOSIT confirmation"); err != nil {
+	depositConfirmUp := func(mem *state.Mem) bool { return pcTransferConfirmUp(mem, "DEPOSIT") }
+	if err := pcAdvanceUntil(m, pcPokemonListUp, depositConfirmUp, "DEPOSIT confirmation"); err != nil {
 		_ = closePCToOverworld(m)
 		return err
 	}
@@ -240,10 +306,18 @@ func DepositPartyMon(m *emu.Emu, romData []byte, policy MovePolicy, slot int) er
 		_ = closePCToOverworld(m)
 		return fmt.Errorf("skill: Bill's PC: confirm DEPOSIT: %w", err)
 	}
-	if err := pcAdvanceUntil(m, func(mem *state.Mem) bool {
+	// A successful transfer does not return to the WITHDRAW/DEPOSIT/RELEASE
+	// menu directly: the game leaves the party list up (so another deposit
+	// can be picked without reopening it) and B is what backs out from there.
+	depositedListUp := func(mem *state.Mem) bool {
 		p, b := state.DecodeParty(mem), state.DecodeBox(mem)
-		return billsPCMenuUp(mem) && p.Count+1 == partyBefore && b.Count == boxBefore+1
-	}, "completed deposit"); err != nil {
+		return pcPokemonListUp(mem) && p.Count+1 == partyBefore && b.Count == boxBefore+1
+	}
+	if err := pcAdvanceUntil(m, depositConfirmUp, depositedListUp, "post-deposit party list"); err != nil {
+		_ = closePCToOverworld(m)
+		return err
+	}
+	if err := pcCancelUntil(m, billsPCMenuScreen, "completed deposit"); err != nil {
 		_ = closePCToOverworld(m)
 		return err
 	}
@@ -284,7 +358,7 @@ func WithdrawBoxMon(m *emu.Emu, romData []byte, policy MovePolicy, boxIndex int)
 		_ = closePCToOverworld(m)
 		return fmt.Errorf("skill: Bill's PC: select WITHDRAW: %w", err)
 	}
-	if err := pcAdvanceUntil(m, pcPokemonListUp, "box list for withdraw"); err != nil {
+	if err := pcAdvanceUntil(m, billsPCMenuUp, pcPokemonListUp, "box list for withdraw"); err != nil {
 		_ = closePCToOverworld(m)
 		return err
 	}
@@ -292,7 +366,8 @@ func WithdrawBoxMon(m *emu.Emu, romData []byte, policy MovePolicy, boxIndex int)
 		_ = closePCToOverworld(m)
 		return fmt.Errorf("skill: Bill's PC: select box index %d for withdraw: %w", boxIndex, err)
 	}
-	if err := pcAdvanceUntil(m, func(mem *state.Mem) bool { return pcTransferConfirmUp(mem, "WITHDRAW") }, "WITHDRAW confirmation"); err != nil {
+	withdrawConfirmUp := func(mem *state.Mem) bool { return pcTransferConfirmUp(mem, "WITHDRAW") }
+	if err := pcAdvanceUntil(m, pcPokemonListUp, withdrawConfirmUp, "WITHDRAW confirmation"); err != nil {
 		_ = closePCToOverworld(m)
 		return err
 	}
@@ -300,10 +375,21 @@ func WithdrawBoxMon(m *emu.Emu, romData []byte, policy MovePolicy, boxIndex int)
 		_ = closePCToOverworld(m)
 		return fmt.Errorf("skill: Bill's PC: confirm WITHDRAW: %w", err)
 	}
-	if err := pcAdvanceUntil(m, func(mem *state.Mem) bool {
+	// Withdrawing the box's last Pokemon leaves nothing for the list to show,
+	// so the game skips straight back to billsPCMenuUp instead of reopening
+	// the (now empty) list the way every other transfer count does.
+	withdrawnUp := func(mem *state.Mem) bool {
 		p, b := state.DecodeParty(mem), state.DecodeBox(mem)
-		return billsPCMenuUp(mem) && p.Count == partyBefore+1 && b.Count+1 == boxBefore
-	}, "completed withdraw"); err != nil {
+		if p.Count != partyBefore+1 || b.Count+1 != boxBefore {
+			return false
+		}
+		return pcPokemonListUp(mem) || billsPCMenuScreen(mem)
+	}
+	if err := pcAdvanceUntil(m, withdrawConfirmUp, withdrawnUp, "post-withdraw state"); err != nil {
+		_ = closePCToOverworld(m)
+		return err
+	}
+	if err := pcCancelUntil(m, billsPCMenuScreen, "completed withdraw"); err != nil {
 		_ = closePCToOverworld(m)
 		return err
 	}
