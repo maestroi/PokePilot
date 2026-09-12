@@ -13,11 +13,12 @@ import {
 import type { ReplayStatus, RunArtifact } from '../shared/api/types'
 import Panel from '../shared/components/Panel.vue'
 import StatusBadge from '../shared/components/StatusBadge.vue'
-import RunTimeline, { type TimelineRow } from './RunTimeline.vue'
+import RunTimeline from './RunTimeline.vue'
 
 const props = defineProps<{ runID: string }>()
 
 type Row = Record<string, any>
+type TimelineRow = Record<string, unknown>
 
 const loading = ref(false)
 const error = ref('')
