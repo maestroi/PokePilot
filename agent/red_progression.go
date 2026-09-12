@@ -17,6 +17,7 @@ func redProgressionKnown(id ProgressID) bool {
 		redProgressMtMoonFossilAcquired,
 		redProgressSSTicketAcquired,
 		redProgressHM01Acquired,
+		redProgressThunderBadge,
 		redProgressRainbowBadge,
 		redProgressSilphScopeAcquired,
 		redProgressPokeFluteAcquired,
@@ -61,7 +62,7 @@ func observedFieldCapability(obs Observation, name CapabilityID) (FieldCapabilit
 // redVermilionGymRecoveryAvailable closes the gap between route legality and
 // roster recovery. Generic Offer must hide a gym behind a missing semantic
 // capability, but Red can still surface the atomic Surge challenge when Cut is
-// already unlocked and #107's party/PC/catch repair path can prepare a carrier.
+// already unlocked and the party/PC/catch repair path can prepare a carrier.
 func redVermilionGymRecoveryAvailable(obs Observation) bool {
 	if obs.Map != 0x05 || hasBadge(obs, state.BadgeThunder) {
 		return false
@@ -103,6 +104,13 @@ func redProgressionObjectives(obs Observation) []Objective {
 			Note:     "(go to Vermilion, board the S.S. Anne with the ticket, defeat the scripted rival on 2F, and receive HM01 Cut from the Captain)",
 		})
 	}
+	if obs.Story.Has(redProgressHM01Acquired) && !obs.Story.Has(redProgressThunderBadge) {
+		out = append(out, Objective{
+			Kind:     KindProgress,
+			Progress: redProgressThunderBadge,
+			Note:     "(return to Vermilion from wherever the run currently is, repair or obtain a Cut carrier, clear the gym tree, solve the trash-can switches, defeat Lt. Surge, and verify the Thunder Badge before taking the Rock Tunnel/Lavender story leg)",
+		})
+	}
 	if redVermilionGymRecoveryAvailable(obs) {
 		out = append(out, Objective{
 			Kind:  KindGym,
@@ -110,23 +118,20 @@ func redProgressionObjectives(obs Observation) []Objective {
 			Note:  "(prepare a compatible Cut carrier through the party/PC/catch recovery path, clear the exterior tree, and challenge Lt. Surge)",
 		})
 	}
-	if hasBadge(obs, state.BadgeThunder) && !obs.Story.Has(redProgressRainbowBadge) {
+	if obs.Story.Has(redProgressThunderBadge) && !obs.Story.Has(redProgressRainbowBadge) {
 		out = append(out, Objective{
 			Kind:     KindProgress,
 			Progress: redProgressRainbowBadge,
-			Note:     "(repair or retain a Cut carrier, travel from Vermilion through Cerulean, Route 9, Rock Tunnel, Lavender, and the Underground Path to Celadon, heal, then defeat Erika for the Rainbow Badge; Flash is optional)",
+			Note:     "(after Surge, repair or retain a Cut carrier, travel through Cerulean and Route 9, cross Rock Tunnel to Lavender, continue through the Underground Path to Celadon, heal, then defeat Erika for the Rainbow Badge; Flash is optional for ROM-driven navigation)",
 		})
 	}
-	// Silph Scope and the Poke Flute sit on the Celadon/Lavender leg of the
-	// vanilla critical path, which comes AFTER Lt. Surge: Erika (Rainbow
-	// Badge, below) already requires the Thunder Badge for the same reason.
-	// Without this gate the strategist can chase "acquire the Poke Flute"
-	// while Surge — reachable, free, Cut already usable — was never
-	// attempted, and Route 12's Snorlax then walls it in with nothing to
-	// fight (measured: run-g9ojxmtgvrff1ezck9g7t1o7x, 2/8 badges, stuck at
-	// ROUTE_12 (9,62), zero reachable battle to even force a blackout back
-	// to a Center).
-	if hasBadge(obs, state.BadgeThunder) {
+	// Silph Scope and the Poké Flute are later than Surge. The intended
+	// critical path is Thunder Badge -> Rock Tunnel/Lavender/Celadon ->
+	// Rocket Hideout/Silph Scope -> Pokémon Tower/Poké Flute -> Route 12 ->
+	// Fuchsia, where Surf and Strength are finally acquired. Keeping these
+	// facts ordered prevents the strategist from treating Surf as a Route 12
+	// prerequisite or wandering into the sleeping Snorlax before the Flute.
+	if obs.Story.Has(redProgressThunderBadge) {
 		if skill.RocketHideoutAvailable(obs.Map) && !obs.Story.Has(redProgressSilphScopeAcquired) {
 			out = append(out, Objective{
 				Kind:     KindProgress,
@@ -140,7 +145,7 @@ func redProgressionObjectives(obs Observation) []Objective {
 			out = append(out, Objective{
 				Kind:     KindProgress,
 				Progress: redProgressPokeFluteAcquired,
-				Note:     "(clear Pokemon Tower and acquire the Poke Flute)",
+				Note:     "(clear Pokemon Tower in Lavender and acquire the Poke Flute; this is what opens Route 12's Snorlax corridor)",
 			})
 		}
 	}
@@ -150,7 +155,7 @@ func redProgressionObjectives(obs Observation) []Objective {
 		out = append(out, Objective{
 			Kind:     KindProgress,
 			Progress: redProgressFuchsiaProgressionComplete,
-			Note:     "(reach Fuchsia, earn Soul Badge, and acquire Surf + Strength)",
+			Note:     "(use the Poke Flute on Route 12, reach Fuchsia, earn Soul Badge, then acquire Surf + Strength in the Safari/Warden story)",
 		})
 	}
 	if obs.Story.Has(redProgressFuchsiaProgressionComplete) &&
@@ -235,6 +240,8 @@ func executeRedProgression(m *emu.Emu, romData []byte, o Objective) error {
 		return skill.Bill(m, romData, policy)
 	case redProgressHM01Acquired:
 		return skill.SSAnneHM01(m, romData, policy)
+	case redProgressThunderBadge:
+		return skill.SurgeProgression(m, romData, policy)
 	case redProgressRainbowBadge:
 		return skill.PostSurgeCeladonProgression(m, romData, policy)
 	case redProgressSilphScopeAcquired:
