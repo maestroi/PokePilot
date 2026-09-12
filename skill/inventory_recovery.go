@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	progressionPokeBallReserve = 5
+	progressionPokeBallReserve = 10
 	inventoryRecoveryBattles   = 100
 )
 
@@ -24,7 +24,7 @@ var ErrNoReachableStock = errors.New("skill: no reachable mart stocks the requir
 // there reaches the clerk through the counter, which is exactly the boundary
 // Buy expects.
 type standardMartRecoveryTarget struct {
-	name string
+	name  string
 	mapID uint8
 }
 
@@ -86,11 +86,11 @@ func nearestStockMart(romData []byte, mem *state.Mem, item uint8) (standardMartR
 	return best, found, nil
 }
 
-// EnsureItemStock tries to restore a deterministic reserve before a skill
-// consumes an item. target is the preferred quantity and minimum is the hard
-// quantity required to continue. This distinction matters for progression:
-// buying five balls is safer than entering a catch with one, but an otherwise
-// valid run should not be blocked merely because it can only afford two.
+// EnsureItemStock restores a deterministic reserve before a skill consumes an
+// item. target is the preferred quantity and minimum is the hard quantity
+// required to continue. This distinction matters for progression: a larger
+// catch reserve is safer, but an otherwise valid run should not be blocked
+// merely because it can only afford a smaller quantity.
 //
 // The function owns the whole recovery transaction: choose a reachable mart
 // that actually stocks the item according to the ROM, make bag space, travel
@@ -184,10 +184,17 @@ func EnsureItemStock(m *emu.Emu, romData []byte, policy MovePolicy, item uint8, 
 	return have, fmt.Errorf("skill: EnsureItemStock: item %#02x remains at %d, need at least %d", item, have, minimum)
 }
 
-// EnsureProgressionPokeBalls is the progression-facing reserve policy for a
-// deterministic catch recovery. Five balls is the preferred reserve; one is
-// the hard minimum. The caller receives the actual post-recovery count and can
-// bound its catch budget accordingly.
+// EnsureProgressionPokeBalls handles the hard zero-ball prerequisite for a
+// deterministic progression catch. If at least one ball is already present we
+// avoid an unnecessary shopping detour. When the bag is dry, recovery aims for
+// ten balls (Catch itself already caps utility catches at ten) and gracefully
+// falls back to the largest affordable quantity, with one ball as the hard
+// minimum needed to continue.
 func EnsureProgressionPokeBalls(m *emu.Emu, romData []byte, policy MovePolicy) (int, error) {
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	if have := itemCount(&mem, ItemPokeBall); have > 0 {
+		return have, nil
+	}
 	return EnsureItemStock(m, romData, policy, ItemPokeBall, progressionPokeBallReserve, 1)
 }
