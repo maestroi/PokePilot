@@ -100,7 +100,8 @@ export async function deleteRun(runID: string, signal?: AbortSignal): Promise<vo
 
 export async function getRun(runID: string, signal?: AbortSignal): Promise<DashboardRun> {
   const value = await requestJSON<DashboardRun | { run?: DashboardRun }>(`/v1/runs/${encodeURIComponent(runID)}`, { signal })
-  return 'run' in value && value.run ? value.run : value as DashboardRun
+  const wrapped = value as { run?: DashboardRun }
+  return wrapped.run ?? (value as DashboardRun)
 }
 
 export function getRunDebug(runID: string, signal?: AbortSignal): Promise<Record<string, unknown>> {
