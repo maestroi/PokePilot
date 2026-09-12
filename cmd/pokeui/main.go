@@ -266,10 +266,10 @@ func main() {
 	mcpToken := strings.TrimSpace(os.Getenv("POKEPILOT_MCP_TOKEN"))
 	var httpHandler http.Handler
 	if *spectator {
-		httpHandler = spectatorHandlerWithReplay(wallBase, replayBase)
+		httpHandler = spectatorSecurityHeaders(withVuePreview(spectatorHandlerWithReplay(wallBase, replayBase), "spectator"))
 		log.Printf("pokeui proxying %s on http://%s (public spectator mode; read-only; replay=%t)", *wall, *httpAddr, replayBase != "")
 	} else {
-		httpHandler = handlerWithServices(wallBase, replayBase, mcpToken)
+		httpHandler = withVuePreview(handlerWithServices(wallBase, replayBase, mcpToken), "operator")
 		log.Printf("pokeui proxying %s on http://%s (MCP=%t, replay=%t)", *wall, *httpAddr, mcpToken != "", replayBase != "")
 	}
 	server := &http.Server{
