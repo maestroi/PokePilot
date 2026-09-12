@@ -48,6 +48,11 @@ type Observation struct {
 	Intent     string
 	IntentAge  int
 
+	// PokedexOwned is the Dex-mode completion set. Seen is supporting
+	// context only and must never be treated as ownership.
+	PokedexOwned []SpeciesID
+	PokedexSeen  []SpeciesID
+
 	WildGrass  []WildSpecies
 	HasGrass   bool
 	Training   *TrainingEstimate `json:"training,omitempty"`
@@ -188,7 +193,10 @@ func ObserveChecked(m *emu.Emu, romData []byte) (Observation, error) {
 		History:           []RoundRecord{},
 		Failures:          []Failure{},
 		Requirements:      []Requirement{},
+		PokedexOwned:      []SpeciesID{},
+		PokedexSeen:       []SpeciesID{},
 	}
+	obs.PokedexOwned, obs.PokedexSeen = ProjectPokedex(romData, gs.Pokedex)
 	for i, mon := range base.Party {
 		obs.Party[i] = PartyMon{
 			Species:    SpeciesID(mon.Species),

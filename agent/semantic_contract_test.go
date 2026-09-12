@@ -30,14 +30,21 @@ func TestPlannerContractUsesSemanticIDs(t *testing.T) {
 	if species.Type != reflect.TypeOf(SpeciesID("")) {
 		t.Fatalf("PartyMon.Species type = %v, want SpeciesID", species.Type)
 	}
+	for _, field := range []string{"PokedexOwned", "PokedexSeen"} {
+		got, ok := observation.FieldByName(field)
+		if !ok || got.Type != reflect.TypeOf([]SpeciesID{}) {
+			t.Fatalf("Observation.%s type = %v, want []SpeciesID", field, got.Type)
+		}
+	}
 }
 
 func TestPlannerJSONHidesRawRedMapID(t *testing.T) {
 	obs := Observation{
-		Map:      0x24,
-		Location: "pallet town",
-		Party:    []PartyMon{{Species: "pidgey", Level: 5}},
-		Story:    ProgressState{{ID: ProgressSaffronGateOpen, Complete: true}},
+		Map:          0x24,
+		Location:     "pallet town",
+		Party:        []PartyMon{{Species: "pidgey", Level: 5}},
+		PokedexOwned: []SpeciesID{"charmander"},
+		Story:        ProgressState{{ID: ProgressSaffronGateOpen, Complete: true}},
 	}
 	b, err := json.Marshal(obs)
 	if err != nil {
@@ -47,7 +54,7 @@ func TestPlannerJSONHidesRawRedMapID(t *testing.T) {
 	if strings.Contains(text, `"Map":`) {
 		t.Fatalf("planner JSON exposes raw map id: %s", text)
 	}
-	for _, want := range []string{"pallet town", "pidgey", string(ProgressSaffronGateOpen)} {
+	for _, want := range []string{"pallet town", "pidgey", "charmander", string(ProgressSaffronGateOpen)} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("planner JSON %s does not contain semantic value %q", text, want)
 		}
