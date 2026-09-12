@@ -1,6 +1,8 @@
 package skill
 
 import (
+	"fmt"
+
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
 )
@@ -24,16 +26,42 @@ func DismissableObjectiveMenu(mem *state.Mem) bool {
 	}
 }
 
-// CloseOpenMenuToOverworld backs out of a menu that a finished objective
-// accidentally left open. The caller must first establish that the screen is
-// dismissable (see DismissableObjectiveMenu), not a battle or an unanswered
-// gameplay choice. B is a safe "back" operation for the former and could
-// answer/alter the latter.
-//
-// Objective execution owns this cleanup as part of finishing its transaction:
-// one failed bag/TM/party interaction must not poison the next objective with
-// a non-controllable start, but this layer never makes a gameplay decision to
-// achieve that invariant.
+// CloseOpenMenuToOverworld backs out of leftover menu layers to a controllable
+// overworld boundary. Every B press is preceded by a fresh typed interaction
+// decode and followed by a verified transition. This is intentionally not the
+// older "press B until controllable" loop: a B may expose a choice, battle, or
+// other owner-controlled surface, and another blind B there could make a real
+// gameplay decision.
 func CloseOpenMenuToOverworld(m *emu.Emu) error {
-	return closeToOverworld(m)
+	const maxLayers = 8
+	for layer := 0; layer < maxLayers; layer++ {
+		var mem state.Mem
+		state.Snapshot(m, &mem)
+		if state.Controllable(&mem) && state.DecodeInteraction(&mem).Kind == state.InteractionNone {
+			return nil
+		}
+		if state.DecodeBattle(&mem) != nil {
+			return fmt.Errorf("skill: CloseOpenMenuToOverworld: battle owns the screen")
+		}
+		interaction := state.DecodeInteraction(&mem)
+		switch interaction.Kind {
+		case state.InteractionMenu, state.InteractionListMenu, state.InteractionElevatorMenu,
+			state.InteractionItemMenu, state.InteractionPartyMenu, state.InteractionPCMenu,
+			state.InteractionPCPokemonList:
+			if err := CancelInteraction(m); err != nil {
+				return fmt.Errorf("skill: CloseOpenMenuToOverworld: cancel layer %d (%s): %w", layer, interaction.Kind, err)
+			}
+		case state.InteractionTwoOption:
+			return fmt.Errorf("skill: CloseOpenMenuToOverworld: choice remains open: %q", interaction.Text)
+		case state.InteractionDialogue:
+			return fmt.Errorf("skill: CloseOpenMenuToOverworld: dialogue remains open: %q", interaction.Text)
+		case state.InteractionNone:
+			return fmt.Errorf("skill: CloseOpenMenuToOverworld: no menu is open but player is not controllable")
+		default:
+			return fmt.Errorf("skill: CloseOpenMenuToOverworld: unsupported interaction %q", interaction.Kind)
+		}
+	}
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	return fmt.Errorf("skill: CloseOpenMenuToOverworld: menu cleanup exceeded %d layers; final=%+v", maxLayers, state.DecodeInteraction(&mem))
 }
