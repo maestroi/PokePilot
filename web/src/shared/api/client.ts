@@ -20,6 +20,17 @@ function queryString(params: DashboardQuery): string {
   return encoded ? `?${encoded}` : ''
 }
 
+async function errorDetail(response: Response): Promise<string> {
+  let detail = `${response.status} ${response.statusText}`.trim()
+  try {
+    const body = await response.json() as { error?: string }
+    if (body.error) detail = body.error
+  } catch {
+    // Keep the status text when the response is not JSON.
+  }
+  return detail || 'Request failed'
+}
+
 async function getJSON<T>(path: string, signal?: AbortSignal): Promise<T> {
   const response = await fetch(path, {
     method: 'GET',
@@ -28,20 +39,20 @@ async function getJSON<T>(path: string, signal?: AbortSignal): Promise<T> {
     signal
   })
 
-  if (!response.ok) {
-    let detail = `${response.status} ${response.statusText}`.trim()
-    try {
-      const body = await response.json() as { error?: string }
-      if (body.error) detail = body.error
-    } catch {
-      // Keep the status text when the response is not JSON.
-    }
-    throw new ApiError(detail || 'Request failed', response.status)
-  }
-
+  if (!response.ok) throw new ApiError(await errorDetail(response), response.status)
   return response.json() as Promise<T>
 }
 
 export function getDashboard(params: DashboardQuery = {}, signal?: AbortSignal): Promise<DashboardSnapshot> {
   return getJSON<DashboardSnapshot>(`/v1/dashboard${queryString(params)}`, signal)
+}
+
+export async function deleteRun(runID: string, signal?: AbortSignal): Promise<void> {
+  const response = await fetch(`/v1/runs/${encodeURIComponent(runID)}`, {
+    method: 'DELETE',
+    headers: { Accept: 'application/json' },
+    cache: 'no-store',
+    signal
+  })
+  if (!response.ok) throw new ApiError(await errorDetail(response), response.status)
 }
