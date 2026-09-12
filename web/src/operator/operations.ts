@@ -31,10 +31,10 @@ export function goalLabel(run: DashboardRun): string {
 
 export function llmProfileLabel(run: DashboardRun): string {
   switch ((run.llm_profile || '').toLowerCase()) {
-    case 'gpu': return 'GPU reserved'
-    case 'auto': return 'Auto GPU → LAN'
-    case 'default': return 'LAN only'
-    default: return run.planner === 'llm' ? 'Default' : 'Scripted'
+    case 'auto': return '7900 XTX · default · CPU after 120s'
+    case 'gpu': return 'RTX 4090 · manual'
+    case 'default': return 'CPU only · manual'
+    default: return run.planner === 'llm' ? 'Endpoint default' : 'Scripted'
   }
 }
 
