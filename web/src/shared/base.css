@@ -49,22 +49,21 @@ textarea {
   background: rgb(85 215 255 / 24%);
 }
 
-@layer components {
-  .poke-panel {
-    @apply border border-white/10 bg-white/[0.035] shadow-sm;
-  }
+.poke-panel {
+  border: 1px solid rgb(255 255 255 / 10%);
+  background: rgb(255 255 255 / 3.5%);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 18%);
+}
 
-  .poke-kicker {
-    @apply font-mono text-[11px] font-semibold tracking-[0.12em] uppercase;
-    color: var(--poke-cyan);
-  }
+.poke-kicker {
+  color: var(--poke-cyan);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
 
-  .poke-muted {
-    color: var(--poke-muted);
-  }
-
-  .poke-focus {
-    @apply focus-visible:outline-2 focus-visible:outline-offset-2;
-    --tw-outline-color: var(--poke-cyan);
-  }
+.poke-muted {
+  color: var(--poke-muted);
 }
