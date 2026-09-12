@@ -45,6 +45,18 @@ textarea {
   font: inherit;
 }
 
+select,
+option {
+  color: var(--poke-text);
+  background-color: var(--poke-panel-raised);
+}
+
+select:disabled,
+input:disabled,
+textarea:disabled {
+  color: var(--poke-dim);
+}
+
 ::selection {
   background: rgb(85 215 255 / 24%);
 }
