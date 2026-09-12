@@ -99,7 +99,7 @@ func Gym(m *emu.Emu, romData []byte, policy MovePolicy) (state.BattleResult, err
 	}
 
 	if cur == vermilionCity {
-		if err := EnterVermilionGym(m, romData, policy); err != nil {
+		if err := enterVermilionGymViaRouteGate(m, romData, policy); err != nil {
 			return 0, fmt.Errorf("skill: Gym: reach %s: %w", g.Leader, err)
 		}
 		cur = m.Peek8(sym.CurMap)
