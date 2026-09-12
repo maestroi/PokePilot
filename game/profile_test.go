@@ -12,8 +12,8 @@ type testProfile struct {
 	title    string
 }
 
-func (p testProfile) ID() GameID          { return p.id }
-func (p testProfile) Revision() RevisionID { return p.revision }
+func (p testProfile) ID() GameID               { return p.id }
+func (p testProfile) Revision() RevisionID     { return p.revision }
 func (p testProfile) Detect(info ROMInfo) bool { return info.Title == p.title }
 func (p testProfile) Symbols() SymbolTable {
 	out := SymbolTable{}
@@ -30,7 +30,7 @@ func (p testProfile) DecodeObservation(MemoryReader, []byte) (ProfileObservation
 
 type testParser struct{}
 
-func (testParser) MapName(uint16) (string, bool)   { return "test", true }
+func (testParser) MapName(uint16) (string, bool)    { return "test", true }
 func (testParser) Species(uint16) (SpeciesID, bool) { return "testmon", true }
 
 func testROM(title string) []byte {
