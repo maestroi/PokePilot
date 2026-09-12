@@ -18,11 +18,11 @@ withDefaults(defineProps<{
 <template>
   <div v-if="state === 'loading'" class="space-y-3" aria-label="Loading" aria-busy="true">
     <div v-for="row in rows" :key="row" class="animate-pulse">
-      <div class="h-3 rounded-sm bg-white/8" :class="row === rows ? 'w-2/3' : 'w-full'" />
+      <div class="h-3 rounded-sm bg-white/10" :class="row === rows ? 'w-2/3' : 'w-full'" />
     </div>
   </div>
 
-  <div v-else-if="state === 'error'" class="border-l-4 border-rose-400 bg-rose-400/8 p-4" role="alert">
+  <div v-else-if="state === 'error'" class="border-l-4 border-rose-400 bg-rose-400/10 p-4" role="alert">
     <div class="flex gap-3">
       <ExclamationTriangleIcon class="mt-0.5 size-5 shrink-0 text-rose-300" aria-hidden="true" />
       <div>
@@ -45,7 +45,7 @@ withDefaults(defineProps<{
   </div>
 
   <div v-else class="relative" :aria-busy="state === 'refreshing'">
-    <div v-if="state === 'stale'" class="mb-4 border-l-4 border-amber-400 bg-amber-400/8 p-3" role="status">
+    <div v-if="state === 'stale'" class="mb-4 border-l-4 border-amber-400 bg-amber-400/10 p-3" role="status">
       <div class="flex gap-3">
         <ExclamationTriangleIcon class="mt-0.5 size-5 shrink-0 text-amber-300" aria-hidden="true" />
         <div>
