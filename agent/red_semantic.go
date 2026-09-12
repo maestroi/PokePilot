@@ -5,29 +5,29 @@ import (
 	"strings"
 
 	gameruntime "github.com/maestroi/pokepilot/game"
+	reddata "github.com/maestroi/pokepilot/red/data"
+	redprofile "github.com/maestroi/pokepilot/red/profile"
 	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/skill"
 )
 
-// These IDs are Red adapter vocabulary, not generic planner kinds. The generic
-// runtime only knows that Objective.Progress should become true in
-// Observation.Story; Red owns what each goal means and how to prove it.
+// Keep the existing agent names as aliases while progression execution is
+// migrated. The concrete vocabulary is owned by the Red profile.
 const (
-	redProgressMtMoonFossilAcquired       ProgressID = "mt_moon_fossil_acquired"
-	redProgressPokedexAcquired            ProgressID = "pokedex_acquired"
-	redProgressSSTicketAcquired           ProgressID = "ss_ticket_acquired"
-	redProgressHM01Acquired               ProgressID = "hm01_acquired"
-	redProgressThunderBadge               ProgressID = "thunder_badge"
-	redProgressRainbowBadge               ProgressID = "rainbow_badge"
-	redProgressSilphScopeAcquired         ProgressID = "silph_scope_acquired"
-	redProgressPokeFluteAcquired          ProgressID = "poke_flute_acquired"
-	redProgressFuchsiaProgressionComplete ProgressID = "fuchsia_progression_complete"
-	redProgressSilphRescueComplete        ProgressID = "silph_rescue_complete"
-	redProgressVolcanoBadge               ProgressID = "volcano_badge"
-	redProgressEarthBadge                 ProgressID = "earth_badge"
-	redProgressIndigoPlateauReady         ProgressID = "indigo_plateau_ready"
+	redProgressMtMoonFossilAcquired       ProgressID = redprofile.ProgressMtMoonFossilAcquired
+	redProgressPokedexAcquired            ProgressID = redprofile.ProgressPokedexAcquired
+	redProgressSSTicketAcquired           ProgressID = redprofile.ProgressSSTicketAcquired
+	redProgressHM01Acquired               ProgressID = redprofile.ProgressHM01Acquired
+	redProgressThunderBadge               ProgressID = redprofile.ProgressThunderBadge
+	redProgressRainbowBadge               ProgressID = redprofile.ProgressRainbowBadge
+	redProgressSilphScopeAcquired         ProgressID = redprofile.ProgressSilphScopeAcquired
+	redProgressPokeFluteAcquired          ProgressID = redprofile.ProgressPokeFluteAcquired
+	redProgressFuchsiaProgressionComplete ProgressID = redprofile.ProgressFuchsiaProgressionComplete
+	redProgressSilphRescueComplete        ProgressID = redprofile.ProgressSilphRescueComplete
+	redProgressVolcanoBadge               ProgressID = redprofile.ProgressVolcanoBadge
+	redProgressEarthBadge                 ProgressID = redprofile.ProgressEarthBadge
+	redProgressIndigoPlateauReady         ProgressID = redprofile.ProgressIndigoPlateauReady
 
 	redIndigoPlateauMap      uint8 = 0x09
 	redIndigoPlateauLobbyMap uint8 = 0xAE
@@ -42,43 +42,41 @@ func semanticLocation(mapName string) PlaceID {
 }
 
 func semanticSpecies(name string) (SpeciesID, bool) {
-	name = gameruntime.CanonicalID(name)
-	if _, ok := speciesTable[name]; !ok {
+	id := SpeciesID(gameruntime.CanonicalID(name))
+	if _, ok := reddata.SpeciesRaw(id); !ok {
 		return "", false
 	}
-	return SpeciesID(name), true
+	return id, true
 }
 
 func semanticSpeciesFromRed(raw uint8) SpeciesID {
-	if name, ok := SpeciesName(raw); ok {
-		return SpeciesID(name)
+	if id, ok := reddata.Species(raw); ok {
+		return SpeciesID(id)
 	}
 	return SpeciesID("unknown")
 }
 
 func redSpeciesID(id SpeciesID) (uint8, bool) {
-	raw, ok := speciesTable[gameruntime.CanonicalID(string(id))]
-	return raw, ok
+	return reddata.SpeciesRaw(id)
 }
 
 func semanticItem(name string) (ItemID, bool) {
-	name = gameruntime.CanonicalID(name)
-	if _, ok := itemTable[name]; !ok {
+	id := ItemID(gameruntime.CanonicalID(name))
+	if _, ok := reddata.ItemRaw(id); !ok {
 		return "", false
 	}
-	return ItemID(name), true
+	return id, true
 }
 
 func semanticItemFromRed(raw uint8) ItemID {
-	if name, ok := ItemName(raw); ok {
-		return ItemID(name)
+	if id, ok := reddata.Item(raw); ok {
+		return ItemID(id)
 	}
 	return ItemID("unknown")
 }
 
 func redItemID(id ItemID) (uint8, bool) {
-	raw, ok := itemTable[gameruntime.CanonicalID(string(id))]
-	return raw, ok
+	return reddata.ItemRaw(id)
 }
 
 func machineItemID(machine rom.Machine) ItemID {
@@ -96,40 +94,10 @@ func redStarter(id skill.Starter) (skill.Starter, bool) {
 }
 
 func redProgressState(f state.StoryFacts) ProgressState {
-	return ProgressState{
-		{ID: redProgressMtMoonFossilAcquired, Complete: f.MtMoonFossilAcquired},
-		{ID: redProgressPokedexAcquired, Complete: f.PokedexAcquired},
-		{ID: redProgressSSTicketAcquired, Complete: f.SSTicketAcquired},
-		{ID: redProgressHM01Acquired, Complete: f.HM01Acquired},
-		{ID: redProgressSilphScopeAcquired, Complete: f.SilphScopeAcquired},
-		{ID: redProgressPokeFluteAcquired, Complete: f.PokeFluteAcquired},
-		{ID: redProgressFuchsiaProgressionComplete, Complete: f.FuchsiaProgressionComplete},
-		{ID: ProgressSaffronGateOpen, Complete: f.SaffronGateOpen},
-		{ID: ProgressCardKeyOwned, Complete: f.CardKeyOwned},
-		{ID: ProgressSilphCoCleared, Complete: f.SilphCoCleared},
-		{ID: redProgressSilphRescueComplete, Complete: f.SilphRescueComplete},
-		{ID: ProgressMansionSwitchOn, Complete: f.MansionSwitchOn},
-		{ID: ProgressSecretKeyOwned, Complete: f.SecretKeyOwned},
-		{ID: ProgressViridianGymOpen, Complete: f.ViridianGymOpen},
-		{ID: ProgressRoute22RivalResolved, Complete: f.Route22RivalResolved},
-		{ID: ProgressRoute23BadgeChecks, Complete: f.Route23BadgeChecksComplete, Value: f.Route23BadgeChecksPassed},
-		{ID: ProgressLeagueChallengeStarted, Complete: f.LeagueChallengeStarted},
-		{ID: ProgressLeagueChampionDefeated, Complete: f.LeagueChampionDefeated},
-		{ID: ProgressMainStoryComplete, Complete: f.MainStoryComplete},
-	}
+	var mem state.Mem
+	return redprofile.ProjectStory(&mem, f)
 }
 
 func redProgressStateFromRAM(mem *state.Mem, _ state.InventoryState, f state.StoryFacts) ProgressState {
-	progress := redProgressState(f)
-	badges := state.DecodeProgress(mem)
-	mapID := mem.U8(sym.CurMap)
-	indigoReady := mapID == redIndigoPlateauMap || mapID == redIndigoPlateauLobbyMap || f.LeagueChallengeStarted || f.LeagueChampionDefeated || f.MainStoryComplete
-	progress = append(progress,
-		ProgressFact{ID: redProgressThunderBadge, Complete: badges.Has(state.BadgeThunder)},
-		ProgressFact{ID: redProgressRainbowBadge, Complete: badges.Has(state.BadgeRainbow)},
-		ProgressFact{ID: redProgressVolcanoBadge, Complete: badges.Has(state.BadgeVolcano)},
-		ProgressFact{ID: redProgressEarthBadge, Complete: badges.Has(state.BadgeEarth)},
-		ProgressFact{ID: redProgressIndigoPlateauReady, Complete: indigoReady},
-	)
-	return progress
+	return redprofile.ProjectStory(mem, f)
 }
