@@ -104,7 +104,7 @@ func redProgressionObjectives(obs Observation) []Objective {
 			Note:     "(go to Vermilion, board the S.S. Anne with the ticket, defeat the scripted rival on 2F, and receive HM01 Cut from the Captain)",
 		})
 	}
-	if obs.Story.Has(redProgressHM01Acquired) && !obs.Story.Has(redProgressThunderBadge) {
+	if obs.Story.Has(redProgressHM01Acquired) && !hasBadge(obs, state.BadgeThunder) {
 		out = append(out, Objective{
 			Kind:     KindProgress,
 			Progress: redProgressThunderBadge,
@@ -118,7 +118,7 @@ func redProgressionObjectives(obs Observation) []Objective {
 			Note:  "(prepare a compatible Cut carrier through the party/PC/catch recovery path, clear the exterior tree, and challenge Lt. Surge)",
 		})
 	}
-	if obs.Story.Has(redProgressThunderBadge) && !obs.Story.Has(redProgressRainbowBadge) {
+	if hasBadge(obs, state.BadgeThunder) && !obs.Story.Has(redProgressRainbowBadge) {
 		out = append(out, Objective{
 			Kind:     KindProgress,
 			Progress: redProgressRainbowBadge,
@@ -131,7 +131,7 @@ func redProgressionObjectives(obs Observation) []Objective {
 	// Fuchsia, where Surf and Strength are finally acquired. Keeping these
 	// facts ordered prevents the strategist from treating Surf as a Route 12
 	// prerequisite or wandering into the sleeping Snorlax before the Flute.
-	if obs.Story.Has(redProgressThunderBadge) {
+	if hasBadge(obs, state.BadgeThunder) {
 		if skill.RocketHideoutAvailable(obs.Map) && !obs.Story.Has(redProgressSilphScopeAcquired) {
 			out = append(out, Objective{
 				Kind:     KindProgress,
