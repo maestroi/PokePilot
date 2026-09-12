@@ -2,7 +2,6 @@ package skill
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 
 	"github.com/maestroi/pokepilot/emu"
@@ -204,31 +203,6 @@ func CutAhead(m *emu.Emu) error {
 
 type cutCandidate struct{ x, y, d int }
 
-func vermilionCutCandidates(grid *world.Grid) []cutCandidate {
-	var out []cutCandidate
-	for y := 0; y < grid.Height; y++ {
-		for x := 0; x < grid.Width; x++ {
-			if grid.Walkable(x, y) {
-				continue
-			}
-			d := absInt(x-vermilionGymX) + absInt(y-vermilionGymY)
-			if d <= 12 {
-				out = append(out, cutCandidate{x: x, y: y, d: d})
-			}
-		}
-	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].d != out[j].d {
-			return out[i].d < out[j].d
-		}
-		if out[i].y != out[j].y {
-			return out[i].y < out[j].y
-		}
-		return out[i].x < out[j].x
-	})
-	return out
-}
-
 func reachableBeside(grid *world.Grid, sx, sy, tx, ty int, blocked map[[2]int]bool) (Destination, bool) {
 	bestLen := int(^uint(0) >> 1)
 	var best Destination
@@ -279,8 +253,9 @@ func EnterVermilionGym(m *emu.Emu, romData []byte, policy MovePolicy) error {
 }
 
 func findVermilionGymTree(m *emu.Emu, romData []byte, grid *world.Grid, policy MovePolicy) (cutCandidate, error) {
-	for _, c := range vermilionCutCandidates(grid) {
-		sx, sy := playerXY(m)
+	sx, sy := playerXY(m)
+	for _, c := range routeCutCandidates(grid, overworldTileset, int(sx), int(sy)) {
+		sx, sy = playerXY(m)
 		stand, ok := reachableBeside(grid, int(sx), int(sy), c.x, c.y, spriteBlockers(m))
 		if !ok {
 			continue
@@ -291,10 +266,10 @@ func findVermilionGymTree(m *emu.Emu, romData []byte, grid *world.Grid, policy M
 		if err := Face(m, uint8(c.x), uint8(c.y)); err != nil {
 			continue
 		}
-		m.StepFrames(2)
-		if m.Peek8(sym.TileInFrontOfPlayer) == cutTreeTile {
-			return c, nil
+		if !cuttableFrontTile(observeFrontTile(m)) {
+			continue
 		}
+		return cutCandidate{x: c.x, y: c.y, d: c.d}, nil
 	}
 	return cutCandidate{}, fmt.Errorf("skill: EnterVermilionGym: no reachable Cut tree found near gym warp (%d,%d)", vermilionGymX, vermilionGymY)
 }
