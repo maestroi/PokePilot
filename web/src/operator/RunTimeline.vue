@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-export type TimelineRow = Record<string, unknown>
+type TimelineRow = Record<string, unknown>
 
 const props = withDefaults(defineProps<{
   events: TimelineRow[]
@@ -25,7 +25,7 @@ function text(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
 }
 
-export function eventFrame(event: TimelineRow): number {
+function eventFrame(event: TimelineRow): number {
   return number(event.frame)
 }
 
