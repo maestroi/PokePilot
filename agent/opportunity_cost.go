@@ -283,20 +283,6 @@ func manhattan(x1, y1, x2, y2 int) int {
 	return absInt(x1-x2) + absInt(y1-y2)
 }
 
-func absInt(v int) int {
-	if v < 0 {
-		return -v
-	}
-	return v
-}
-
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
 func minFloat(a, b float64) float64 {
 	if a < b {
 		return a
