@@ -5,6 +5,7 @@ import { getStats } from '../shared/api/client'
 import Panel from '../shared/components/Panel.vue'
 import ResourceState from '../shared/components/ResourceState.vue'
 import { usePollingResource } from '../shared/composables/usePollingResource'
+import { HOSTED_API_PRICING_UPDATED, hostedApiEquivalentCosts } from '../shared/hostedApiPricing'
 
 type Row = Record<string, any>
 type StatsPayload = Record<string, any>
@@ -35,6 +36,15 @@ function pct(value: unknown, total: unknown): string {
 function seconds(value: unknown): string {
   const n = num(value)
   return n > 0 ? `${n.toFixed(1)}s` : '—'
+}
+
+function usd(value: unknown): string {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(num(value))
 }
 
 function array(value: unknown): Row[] {
@@ -71,6 +81,8 @@ const llmKpis = computed(() => [
   { label: 'Token spend', value: `${nfmt(llm.value.prompt_tokens)} / ${nfmt(llm.value.completion_tokens)}`, note: 'prompt / completion' }
 ])
 
+const hasTokenSpend = computed(() => num(llm.value.prompt_tokens) > 0 || num(llm.value.completion_tokens) > 0)
+const hostedApiEstimates = computed(() => hostedApiEquivalentCosts(llm.value.prompt_tokens, llm.value.completion_tokens))
 const badgeRows = computed(() => array(stats.value.badge_distribution).filter((row) => num(row.count) > 0))
 const reasonRows = computed(() => array(stats.value.terminal_reasons))
 const maxBadgeCount = computed(() => Math.max(1, ...badgeRows.value.map((row) => num(row.count))))
@@ -114,6 +126,27 @@ function retry(): void {
             <dt class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">{{ item.label }}</dt>
             <dd class="mt-1 font-mono text-lg font-semibold tabular-nums text-white">{{ item.value }}</dd>
             <p class="mt-1 text-[11px] leading-4 text-slate-600">{{ item.note }}</p>
+          </div>
+        </div>
+
+        <div v-if="hasTokenSpend" class="mt-3 overflow-hidden rounded-lg border border-white/10 bg-black/15">
+          <div class="flex flex-wrap items-start justify-between gap-2 border-b border-white/8 px-3 py-2.5">
+            <div>
+              <strong class="block text-xs font-semibold text-slate-200">If this ran on hosted APIs…</strong>
+              <span class="mt-0.5 block text-[10px] leading-4 text-slate-600">Equivalent cost for the token volume above using standard uncached text-token list pricing.</span>
+            </div>
+            <span class="rounded bg-white/5 px-2 py-1 text-[9px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Pricing {{ HOSTED_API_PRICING_UPDATED }}</span>
+          </div>
+          <div class="grid grid-cols-1 gap-px bg-white/8 sm:grid-cols-3">
+            <div v-for="estimate in hostedApiEstimates" :key="estimate.model" class="bg-[#0b111a] px-3 py-3">
+              <span class="block text-[9px] font-semibold tracking-[0.08em] text-slate-600 uppercase">{{ estimate.provider }}</span>
+              <strong class="mt-0.5 block text-xs text-slate-300">{{ estimate.model }}</strong>
+              <span class="mt-2 block font-mono text-xl font-semibold tabular-nums text-white">{{ usd(estimate.costUsd) }}</span>
+              <span class="mt-1 block font-mono text-[9px] text-slate-600">${{ estimate.inputPerMillion }}/M in · ${{ estimate.outputPerMillion }}/M out</span>
+            </div>
+          </div>
+          <div class="border-t border-white/8 px-3 py-2 text-[10px] text-slate-600">
+            Local inference: <strong class="font-mono font-medium text-slate-400">$0 hosted API spend</strong> · hardware and electricity are not included in this comparison.
           </div>
         </div>
 
