@@ -103,7 +103,12 @@ func TestPostMistyRouteTransitionsExposeBillShipAndCutGates(t *testing.T) {
 	if !ok {
 		t.Fatal("Cerulean -> Route 9 has no semantic Cut transition")
 	}
-	if !route9.Gate || len(route9.Requires) != 1 || route9.Requires[0] != capCanCut {
+	// Not a Gate: see TestRoute9CutIsPivotNotGate (run-1948e1rnco3sp1y9bbhdwp7eov).
+	// The immutable ROM collision splits Route 9 into a Cerulean-side and a
+	// Route 10-side static component, so a Gate here keeps the pre-cut
+	// landing component authoritative and strands Rock Tunnel/Lavender/
+	// Celadon behind it even once Cut is satisfied.
+	if route9.Gate || len(route9.Requires) != 1 || route9.Requires[0] != capCanCut {
 		t.Fatalf("Route 9 gate = %+v", route9)
 	}
 }
