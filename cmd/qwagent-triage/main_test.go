@@ -22,6 +22,21 @@ func TestPickCLI(t *testing.T) {
 	}
 }
 
+func TestPickCLILocalRepairAndRegression(t *testing.T) {
+	in := strings.NewReader(`[
+	  {"key":"fixed","count":9,"example":"old","run_ids":["old"]},
+	  {"key":"regressed","count":4,"example":"again","run_ids":["new"],"issue":{"status":"resolved","resolution":"fixed"}}
+	]`)
+	var out bytes.Buffer
+	err := run([]string{"pick", "--repaired", "fixed", "--regressed", "regressed"}, in, &out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), `"key": "regressed"`) {
+		t.Fatalf("output = %s", out.String())
+	}
+}
+
 func TestPickCLINothingFree(t *testing.T) {
 	in := strings.NewReader(`[
 	  {"key":"cafef00d","count":4,"example":"claimed","run_ids":["r1"],"issue":{"status":"resolved","resolution":"fixed"}}
