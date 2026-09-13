@@ -253,7 +253,7 @@ jobs:
           exit "$status"
 
       - name: Probe private failure/checkpoint states
-        if: always()
+        if: ${{ always() && steps.request.outcome == 'success' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -279,7 +279,7 @@ jobs:
           done
 
       - name: Copy safe private diagnostics
-        if: always()
+        if: ${{ always() && steps.request.outcome == 'success' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -297,7 +297,7 @@ jobs:
             -print0)
 
       - name: Upload safe debug diagnostics
-        if: always()
+        if: ${{ always() && steps.request.outcome == 'success' }}
         uses: actions/upload-artifact@v4
         with:
           name: rom-debug-${{ github.run_id }}-${{ github.run_attempt }}
@@ -306,7 +306,7 @@ jobs:
           retention-days: 14
 
       - name: Record replay location
-        if: always()
+        if: ${{ always() && steps.request.outcome == 'success' }}
         shell: bash
         run: |
           {
