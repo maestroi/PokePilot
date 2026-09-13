@@ -95,15 +95,16 @@ func clonePlayStyle(in PlayStyleProfile) PlayStyleProfile {
 }
 
 // DriveScore is safe decision telemetry: it explains the explicit objective
-// features, configured weights and opportunity cost used by the runtime, not
-// model reasoning. Value is the gross weighted drive value; Total is the net
-// value after Cost.Total is subtracted.
+// features, configured weights, natural-play context and opportunity cost used
+// by the runtime, not model reasoning. Value is the pre-cost value after the
+// Adventure routine adjustment; Total is the net value after Cost.Total.
 type DriveScore struct {
 	Value         float64
 	Total         float64
 	Contributions map[Drive]float64
 	Urgency       map[Drive]float64
 	Weighted      map[Drive]float64
+	Natural       NaturalPlaySignal
 	Cost          OpportunityCost
 }
 
@@ -125,6 +126,8 @@ func ScoreObjective(obs Observation, o Objective, profile PlayStyleProfile) Driv
 		weighted[drive] = part
 		value += part
 	}
+	natural := naturalPlaySignal(obs, o, profile)
+	value += natural.Net()
 	cost := opportunityCost(obs, o, profile)
 	return DriveScore{
 		Value:         value,
@@ -132,6 +135,7 @@ func ScoreObjective(obs Observation, o Objective, profile PlayStyleProfile) Driv
 		Contributions: contrib,
 		Urgency:       urgency,
 		Weighted:      weighted,
+		Natural:       natural,
 		Cost:          cost,
 	}
 }
@@ -240,7 +244,11 @@ func AnnotatePlayStyle(obs Observation, offered []Objective, profile PlayStylePr
 		if len(score.Weighted) == 0 {
 			continue
 		}
-		annotation := fmt.Sprintf("[%s %.2f: %s; %s]", profile.Name, score.Total, dominantDrives(score, 3), opportunityCostSummary(score.Cost))
+		parts := []string{dominantDrives(score, 3), opportunityCostSummary(score.Cost)}
+		if natural := naturalPlaySummary(score.Natural); natural != "" {
+			parts = append(parts, natural)
+		}
+		annotation := fmt.Sprintf("[%s %.2f: %s]", profile.Name, score.Total, strings.Join(parts, "; "))
 		if out[i].Note == "" {
 			out[i].Note = annotation
 		} else {
