@@ -28,6 +28,18 @@ func TestDecodeTilesContractions(t *testing.T) {
 	}
 }
 
+func TestDecodeNameStopsAtTerminator(t *testing.T) {
+	// GetDefaultName copies NAME_BUFFER_LENGTH bytes, so wPlayerName after
+	// picking the RED preset is RED@ plus the rest of the name list.
+	got := DecodeName([]byte{0x91, 0x84, 0x83, 0x50, 0x80, 0x92, 0x87, 0x50, 0x89, 0x80, 0x82})
+	if got != "RED" {
+		t.Fatalf("DecodeName(RED@ASH@JAC) = %q, want RED", got)
+	}
+	if got := DecodeName([]byte{0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x50}); got != "AAAAAAA" {
+		t.Fatalf("DecodeName(AAAAAAA@) = %q, want AAAAAAA", got)
+	}
+}
+
 func TestNormalizeDisplayText(t *testing.T) {
 	tests := []struct {
 		name string

@@ -22,6 +22,7 @@ const (
 	WalkCounter             uint16 = 0xCFC5
 	TileInFrontOfPlayer     uint16 = 0xCFC6 // wTileInFrontOfPlayer
 	PlayerName              uint16 = 0xD158
+	RivalName               uint16 = 0xD34A
 	SpritePlayerStateData1  uint16 = 0xC100
 	SpritePlayerFacing      uint16 = 0xC109 // wSpritePlayerStateData1 + 9, SPRITE_FACING_* values
 	SpriteStateData2        uint16 = 0xC200
