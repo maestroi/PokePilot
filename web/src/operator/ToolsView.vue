@@ -27,6 +27,8 @@ const form = reactive<RunSpec>({
   goal: 'Earn the Boulder Badge.',
   llm_profile: 'auto',
   play_style: 'adventure',
+  risk_tolerance: 'balanced',
+  wild_encounters: 'planner',
   reasoning_effort: '',
   fps: 60,
   max_rounds: 0,
@@ -61,6 +63,8 @@ async function submit(): Promise<void> {
       goal: isLLM.value ? form.goal.trim() : '',
       llm_profile: isLLM.value ? form.llm_profile : '',
       play_style: isLLM.value ? form.play_style : '',
+      risk_tolerance: isLLM.value ? form.risk_tolerance : '',
+      wild_encounters: isLLM.value ? form.wild_encounters : '',
       reasoning_effort: isLLM.value ? form.reasoning_effort : ''
     }
     const response = await createRun(spec)
@@ -124,7 +128,26 @@ async function submit(): Promise<void> {
             <option value="completionist">Completionist · explore and collect</option>
             <option value="team_builder">Team Builder · catches and training</option>
           </select>
-          <span class="mt-1 block text-[11px] text-slate-600">Changes gameplay priorities only; it does not change the LLM hardware route.</span>
+          <span class="mt-1 block text-[11px] text-slate-600">What the player values; independent from safety and encounter rules.</span>
+        </label>
+
+        <label v-if="isLLM" class="block">
+          <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Risk tolerance</span>
+          <select v-model="form.risk_tolerance" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400">
+            <option value="aggressive">Aggressive · push on longer</option>
+            <option value="balanced">Balanced · protect progress</option>
+            <option value="cautious">Cautious · heal early and often</option>
+          </select>
+          <span class="mt-1 block text-[11px] text-slate-600">Balanced and Cautious value PokéCenter recovery before avoidable blackouts.</span>
+        </label>
+
+        <label v-if="isLLM" class="block">
+          <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Wild encounters</span>
+          <select v-model="form.wild_encounters" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400">
+            <option value="planner">Planner decides · fight or flee</option>
+            <option value="fight">Fight every encounter · never flee</option>
+          </select>
+          <span class="mt-1 block text-[11px] text-slate-600">Fight every encounter forces travel battles, producing more natural training.</span>
         </label>
 
         <label v-if="isLLM" class="block">
@@ -154,8 +177,15 @@ async function submit(): Promise<void> {
         </label>
 
         <label class="block">
-          <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">FPS</span>
-          <input v-model.number="form.fps" type="number" min="0" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 font-mono text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400" />
+          <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Play speed</span>
+          <select v-model.number="form.fps" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400">
+            <option :value="60">1× · 60 FPS</option>
+            <option :value="120">2× · 120 FPS</option>
+            <option :value="240">4× · 240 FPS</option>
+            <option :value="480">8× · 480 FPS</option>
+            <option :value="0">Max · uncapped</option>
+          </select>
+          <span class="mt-1 block text-[11px] text-slate-600">Max keeps the existing 0 FPS wire value and runs as fast as the worker can emulate.</span>
         </label>
 
         <label class="block">
