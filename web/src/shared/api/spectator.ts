@@ -33,6 +33,10 @@ export interface SpectatorRun {
   starter?: string
   dest?: string
   goal?: string
+  fps?: number
+  play_style?: string
+  risk_tolerance?: string
+  wild_encounters?: string
   queued_at?: number
   ended_at?: number
   frame?: number
