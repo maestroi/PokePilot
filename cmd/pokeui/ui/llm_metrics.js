@@ -1,20 +1,83 @@
 (()=>{
   "use strict";
 
-  const root=document.getElementById("detail-play");
-  if(!root)return;
-
   const clean=(value)=>String(value??"").trim();
-  const directRows=(box)=>[...box.children].filter((node)=>node.classList&&node.classList.contains("prow"));
-  const parts=(row)=>{
-    const spans=row.querySelectorAll(":scope > span");
-    return {label:clean(spans[0]&&spans[0].textContent),value:clean(spans[1]&&spans[1].textContent)};
-  };
   const make=(tag,className,text)=>{
     const node=document.createElement(tag);
     if(className)node.className=className;
     if(text!=null)node.textContent=text;
     return node;
+  };
+
+  const apiPrices=[
+    {provider:"Anthropic",model:"Claude Sonnet 5",input:2,output:10},
+    {provider:"OpenAI",model:"GPT-5.6 Sol",input:4,output:20},
+    {provider:"Anthropic",model:"Claude Opus 5",input:5,output:25},
+  ];
+  const usd=(value)=>Number(value||0).toLocaleString("en-US",{style:"currency",currency:"USD",minimumFractionDigits:2,maximumFractionDigits:2});
+  const tokens=(value)=>{
+    const parsed=Number(clean(value).replaceAll(",",""));
+    return Number.isFinite(parsed)&&parsed>0?parsed:0;
+  };
+
+  function enhanceAnalytics(){
+    const kpis=document.getElementById("llm-kpis");
+    if(!kpis)return;
+    const spend=[...kpis.querySelectorAll(":scope > .llm-summary-item")].find((item)=>clean(item.querySelector(".k")?.textContent)==="Token spend");
+    const raw=clean(spend?.querySelector(".v")?.textContent);
+    const [promptRaw,completionRaw]=raw.split("/").map((item)=>item.trim());
+    const prompt=tokens(promptRaw);
+    const completion=tokens(completionRaw);
+    let panel=document.getElementById("llm-api-equivalent");
+    if(!prompt&&!completion){
+      if(panel)panel.hidden=true;
+      return;
+    }
+    if(!panel){
+      panel=make("section","llm-api-equivalent");
+      panel.id="llm-api-equivalent";
+      kpis.insertAdjacentElement("afterend",panel);
+    }
+    panel.hidden=false;
+    panel.replaceChildren();
+
+    const head=make("div","llm-api-head");
+    const headCopy=make("div","");
+    headCopy.append(make("strong","","If this ran on hosted APIs…"),make("span","","Equivalent cost for the token volume above using standard uncached text-token list pricing."));
+    head.append(headCopy,make("em","","Pricing Sep 2026"));
+    panel.append(head);
+
+    const grid=make("div","llm-api-grid");
+    for(const price of apiPrices){
+      const cost=(prompt/1_000_000)*price.input+(completion/1_000_000)*price.output;
+      const cell=make("div","llm-api-cost");
+      cell.append(
+        make("span","",price.provider),
+        make("strong","",price.model),
+        make("b","",usd(cost)),
+        make("small","",`$${price.input}/M in · $${price.output}/M out`),
+      );
+      grid.append(cell);
+    }
+    panel.append(grid);
+    const foot=make("div","llm-api-foot");
+    foot.append(document.createTextNode("Local inference: "),make("b","","$0 hosted API spend"),document.createTextNode(" · hardware and electricity are not included in this comparison."));
+    panel.append(foot);
+  }
+
+  const analyticsRoot=document.getElementById("llm-kpis");
+  if(analyticsRoot){
+    new MutationObserver(enhanceAnalytics).observe(analyticsRoot,{childList:true,subtree:true,characterData:true});
+    enhanceAnalytics();
+  }
+
+  const root=document.getElementById("detail-play");
+  if(!root)return;
+
+  const directRows=(box)=>[...box.children].filter((node)=>node.classList&&node.classList.contains("prow"));
+  const parts=(row)=>{
+    const spans=row.querySelectorAll(":scope > span");
+    return {label:clean(spans[0]&&spans[0].textContent),value:clean(spans[1]&&spans[1].textContent)};
   };
   const metricRow=(label,value,warn=false)=>{
     const row=make("div","llm-metric-row");
