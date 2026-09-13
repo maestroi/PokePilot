@@ -40,6 +40,9 @@ func farmRecordingMetadata(spec farm.Spec, planner, starter, dest, goal string, 
 	if spec.LLMProfile != "" {
 		metadata["llm_profile"] = spec.LLMProfile
 	}
+	if style := farm.PlayStyleForSpec(spec); style != "" {
+		metadata["play_style"] = style
+	}
 	return metadata
 }
 
