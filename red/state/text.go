@@ -34,6 +34,24 @@ func buildTextChars() map[byte]string {
 	return m
 }
 
+// nameTerminator is pokered's '@' string terminator (charmap $50). Print
+// routines stop here; bytes after it are leftover list/buffer data, not part
+// of the name.
+const nameTerminator = 0x50
+
+// DecodeName renders a Gen 1 name buffer (player, rival, nickname). It stops
+// at the '@' terminator so a stored "RED@" that still has "ASH@JACK" packed
+// behind it decodes as "RED", not the tile-dump "RED ASH JAC".
+func DecodeName(buf []byte) string {
+	for i, b := range buf {
+		if b == nameTerminator {
+			buf = buf[:i]
+			break
+		}
+	}
+	return DecodeTiles(buf)
+}
+
 // DecodeTiles renders a wTileMap snapshot to a string, trimmed and with
 // whitespace collapsed to single spaces.
 //

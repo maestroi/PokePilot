@@ -59,6 +59,7 @@ func TestAddressesMatchSymbolFile(t *testing.T) {
 		{"wPlayerDirection", PlayerDirection},
 		{"wWalkCounter", WalkCounter},
 		{"wPlayerName", PlayerName},
+		{"wRivalName", RivalName},
 		{"wPartyCount", PartyCount},
 		{"wPartySpecies", PartySpecies},
 		{"wPartyMon1", PartyMon1},

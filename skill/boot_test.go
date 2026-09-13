@@ -25,7 +25,7 @@ func openEmu(t *testing.T) *emu.Emu {
 
 func introNameMenuMem(current byte) *state.Mem {
 	m := new(state.Mem)
-	m[sym.FontLoaded] = 1
+	// Oak's name menus never set wFontLoaded; detection must not require it.
 	m[sym.MaxMenuItem] = 3
 	m[sym.CurrentMenuItem] = current
 	// NEW NAME in Pokemon Red's font tile IDs.
@@ -33,14 +33,24 @@ func introNameMenuMem(current byte) *state.Mem {
 	return m
 }
 
-func TestBootInputSelectsFirstPresetName(t *testing.T) {
+func TestIntroNameMenuDoesNotRequireFontLoaded(t *testing.T) {
+	m := introNameMenuMem(0)
+	if m[sym.FontLoaded] != 0 {
+		t.Fatalf("fixture FontLoaded = %d, want 0", m[sym.FontLoaded])
+	}
+	if !introNameMenu(m) {
+		t.Fatal("introNameMenu = false when NEW NAME is on screen with FontLoaded=0")
+	}
+}
+
+func TestBootInputSelectsAnimePresetNames(t *testing.T) {
 	tests := []struct {
 		current byte
 		want    emu.Button
 	}{
 		{current: 0, want: emu.Down},
-		{current: 1, want: emu.A},
-		{current: 2, want: emu.Up},
+		{current: 1, want: emu.Down},
+		{current: 2, want: emu.A},
 		{current: 3, want: emu.Up},
 	}
 
@@ -67,6 +77,24 @@ func TestBootInputDoesNotTreatOrdinaryMenuAsNameEntry(t *testing.T) {
 	}
 	if got := bootInput(m, 4); got != emu.A {
 		t.Fatalf("bootInput = %v, want A for ordinary intro text", got)
+	}
+}
+
+func TestDecodeBootedOverworldRequiresAshAndGary(t *testing.T) {
+	m := new(state.Mem)
+	copy(m[sym.PlayerName:], []byte{0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x50})
+	if _, err := decodeBootedOverworld(m); err == nil {
+		t.Fatal("decodeBootedOverworld(AAAAAAA) = nil, want error")
+	}
+
+	copy(m[sym.PlayerName:], []byte{0x80, 0x92, 0x87, 0x50}) // ASH
+	if _, err := decodeBootedOverworld(m); err == nil {
+		t.Fatal("decodeBootedOverworld(ASH, empty rival) = nil, want error")
+	}
+
+	copy(m[sym.RivalName:], []byte{0x86, 0x80, 0x91, 0x98, 0x50}) // GARY
+	if _, err := decodeBootedOverworld(m); err != nil {
+		t.Fatalf("decodeBootedOverworld(ASH, GARY) = %v, want nil", err)
 	}
 }
 
@@ -97,8 +125,11 @@ func TestBootToOverworld(t *testing.T) {
 	if !state.Controllable(&m) {
 		t.Errorf("Controllable = false, want true")
 	}
-	if got := state.DecodeTiles(m.Slice(sym.PlayerName, 11)); got != "RED" {
-		t.Errorf("player name = %q, want RED", got)
+	if got := state.DecodeName(m.Slice(sym.PlayerName, 11)); got != "ASH" {
+		t.Errorf("player name = %q, want ASH", got)
+	}
+	if got := state.DecodeName(m.Slice(sym.RivalName, 11)); got != "GARY" {
+		t.Errorf("rival name = %q, want GARY", got)
 	}
 }
 

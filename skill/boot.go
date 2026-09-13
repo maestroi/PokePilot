@@ -21,18 +21,26 @@ func atControllableOverworld(m *state.Mem) bool {
 // presets. Detect the menu from live RAM/text rather than frame timing so boot
 // never falls through into the naming keyboard just because the intro took a
 // slightly different number of frames.
+//
+// wFontLoaded is not part of the predicate: DisplayIntroNameTextBox draws
+// with PlaceString + HandleMenuInput and never goes through DisplayTextID, so
+// the oak-speech menus sit at FontLoaded=0. Requiring that flag made every
+// A-advance select NEW NAME and type AAAAAAA on the keyboard.
 func introNameMenu(m *state.Mem) bool {
-	if m.U8(sym.FontLoaded) == 0 || m.U8(sym.MaxMenuItem) != 3 {
+	if m.U8(sym.MaxMenuItem) != 3 {
 		return false
 	}
 	return strings.Contains(state.ScreenText(m), "NEW NAME")
 }
 
+// introPresetNameIndex is ASH on the player menu and GARY on the rival menu
+// (NEW NAME, RED/BLUE, ASH/GARY, JACK/JOHN). Those are the anime names.
+const introPresetNameIndex = 2
+
 // bootInput chooses the next deterministic input for the fresh-game intro.
 // The first four Start taps preserve the existing title/menu skip. Once a
-// player/rival name menu appears, steer to index 1 and select it: Pokemon Red's
-// first presets are RED and BLUE. Any other intro state is ordinary dialogue,
-// where A is the safe paging input.
+// player/rival name menu appears, steer to ASH / GARY. Any other intro state
+// is ordinary dialogue, where A is the safe paging input.
 func bootInput(m *state.Mem, iteration int) emu.Button {
 	if iteration < 4 {
 		return emu.Start
@@ -41,13 +49,14 @@ func bootInput(m *state.Mem, iteration int) emu.Button {
 		return emu.A
 	}
 
-	switch m.U8(sym.CurrentMenuItem) {
-	case 0:
+	current := m.U8(sym.CurrentMenuItem)
+	switch {
+	case current < introPresetNameIndex:
 		return emu.Down
-	case 1:
-		return emu.A
-	default:
+	case current > introPresetNameIndex:
 		return emu.Up
+	default:
+		return emu.A
 	}
 }
 
@@ -58,10 +67,12 @@ func bootInput(m *state.Mem, iteration int) emu.Button {
 //  1. StepFrames(300) to let the game boot.
 //  2. Loop up to 900 iterations. The first 4 iterations tap Start to clear the
 //     title/menu. Ordinary intro dialogue taps A. When Oak's player or rival
-//     name menu appears, detect it from RAM/text, move to preset index 1 and
-//     select it (RED / BLUE) instead of entering the naming keyboard.
+//     name menu appears, detect it from RAM/text, move to preset index 2 and
+//     select it (ASH / GARY) instead of entering the naming keyboard.
 //  3. Check the controllable-overworld predicate before every input and return
 //     as soon as it holds. The real overworld is reached around frame 3310.
+//  4. Verify the player is ASH and the rival is GARY. Reaching the bedroom
+//     named AAAAAAA is not success: that is the naming-keyboard failure mode.
 //
 // It returns the decoded game state at the overworld, or an error naming the
 // last decoded state if the overworld is not reached within budget.
@@ -74,7 +85,7 @@ func BootToOverworld(m *emu.Emu) (state.GameState, error) {
 	for i := 0; i < budget; i++ {
 		state.Snapshot(m, &mem)
 		if atControllableOverworld(&mem) {
-			return state.Decode(&mem), nil
+			return decodeBootedOverworld(&mem)
 		}
 		m.Tap(bootInput(&mem, i), 3, 7)
 	}
@@ -93,4 +104,21 @@ func BootToOverworld(m *emu.Emu) (state.GameState, error) {
 		budget, last.Player.MapID, last.Player.X, last.Player.Y,
 		last.World.Width, last.World.Height,
 		mem.U8(sym.FontLoaded), menuOpen, state.Controllable(&mem))
+}
+
+const (
+	introPlayerName = "ASH"
+	introRivalName  = "GARY"
+)
+
+func decodeBootedOverworld(mem *state.Mem) (state.GameState, error) {
+	player := state.DecodeName(mem.Slice(sym.PlayerName, 11))
+	if player != introPlayerName {
+		return state.GameState{}, fmt.Errorf("boot: reached overworld named %q, want %s", player, introPlayerName)
+	}
+	rival := state.DecodeName(mem.Slice(sym.RivalName, 11))
+	if rival != introRivalName {
+		return state.GameState{}, fmt.Errorf("boot: reached overworld with rival %q, want %s", rival, introRivalName)
+	}
+	return state.Decode(mem), nil
 }
