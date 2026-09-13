@@ -20,20 +20,26 @@ func TestStatsPlannerExplicitPlayStyleIsIndependentFromLLMProfile(t *testing.T) 
 	}
 }
 
-func TestFarmStatsPlannerConsumesLeasedPlayStyle(t *testing.T) {
+func TestFarmStatsPlannerConsumesLeasedRunPolicy(t *testing.T) {
 	var spec farm.Spec
-	if err := json.Unmarshal([]byte(`{"run_id":"style-farm","planner":"llm","play_style":"adventure"}`), &spec); err != nil {
+	if err := json.Unmarshal([]byte(`{"run_id":"style-farm","planner":"llm","play_style":"adventure","risk_tolerance":"cautious","wild_encounters":"fight"}`), &spec); err != nil {
 		t.Fatal(err)
 	}
 	p := newStatsPlanner("", "", "badges:1", nil, nil, &heartbeatSnap{})
 	if p.playStyle.Name != agent.PlayStyleAdventure {
 		t.Fatalf("leased style = %q, want adventure", p.playStyle.Name)
 	}
+	if p.riskTolerance != agent.RiskToleranceCautious {
+		t.Fatalf("leased risk = %q, want cautious", p.riskTolerance)
+	}
+	if p.wildEncounters != agent.WildEncountersFight {
+		t.Fatalf("leased wild policy = %q, want fight", p.wildEncounters)
+	}
 }
 
-func TestLegacyFarmSpecResetsToSpeedrun(t *testing.T) {
+func TestLegacyFarmSpecResetsToCompatibilityPolicy(t *testing.T) {
 	var styled farm.Spec
-	if err := json.Unmarshal([]byte(`{"run_id":"style-before","planner":"llm","play_style":"completionist"}`), &styled); err != nil {
+	if err := json.Unmarshal([]byte(`{"run_id":"style-before","planner":"llm","play_style":"completionist","risk_tolerance":"cautious","wild_encounters":"fight"}`), &styled); err != nil {
 		t.Fatal(err)
 	}
 	var legacy farm.Spec
@@ -44,15 +50,35 @@ func TestLegacyFarmSpecResetsToSpeedrun(t *testing.T) {
 	if p.playStyle.Name != agent.PlayStyleSpeedrun {
 		t.Fatalf("legacy leased style = %q, want speedrun", p.playStyle.Name)
 	}
+	if p.riskTolerance != agent.RiskToleranceAggressive {
+		t.Fatalf("legacy leased risk = %q, want aggressive", p.riskTolerance)
+	}
+	if p.wildEncounters != agent.WildEncountersPlanner {
+		t.Fatalf("legacy leased wild policy = %q, want planner", p.wildEncounters)
+	}
 }
 
-func TestLocalPlayStyleFlagFeedsStatsPlanner(t *testing.T) {
-	old := *localPlayStyle
+func TestLocalRunPolicyFlagsFeedStatsPlanner(t *testing.T) {
+	oldStyle := *localPlayStyle
+	oldRisk := *localRiskTolerance
+	oldWild := *localWildEncounters
 	*localPlayStyle = agent.PlayStyleCompletionist
-	t.Cleanup(func() { *localPlayStyle = old })
+	*localRiskTolerance = agent.RiskToleranceBalanced
+	*localWildEncounters = agent.WildEncountersFight
+	t.Cleanup(func() {
+		*localPlayStyle = oldStyle
+		*localRiskTolerance = oldRisk
+		*localWildEncounters = oldWild
+	})
 
 	p := newStatsPlanner("", "", "badges:1", nil, nil, nil)
 	if p.playStyle.Name != agent.PlayStyleCompletionist {
 		t.Fatalf("local style = %q, want completionist", p.playStyle.Name)
+	}
+	if p.riskTolerance != agent.RiskToleranceBalanced {
+		t.Fatalf("local risk = %q, want balanced", p.riskTolerance)
+	}
+	if p.wildEncounters != agent.WildEncountersFight {
+		t.Fatalf("local wild policy = %q, want fight", p.wildEncounters)
 	}
 }

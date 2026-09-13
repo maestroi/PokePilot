@@ -8,24 +8,36 @@ import (
 	"github.com/maestroi/pokepilot/farm"
 )
 
-func TestTileRowJSONExposesPlayStyle(t *testing.T) {
-	farm.RememberPlayStyle("style-row", "adventure")
+func rememberTestRunPolicy(runID, style, risk, wild string) {
+	farm.RememberPlayStyle(runID, style)
+	farm.RememberRiskTolerance(runID, risk)
+	farm.RememberWildEncounters(runID, wild)
+}
+
+func TestTileRowJSONExposesRunPolicy(t *testing.T) {
+	rememberTestRunPolicy("style-row", "adventure", "balanced", "fight")
 	b, err := json.Marshal(tileRow{RunID: "style-row", Planner: "llm"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(b), `"play_style":"adventure"`) {
-		t.Fatalf("tile row json = %s, want play_style", b)
+	for _, want := range []string{
+		`"play_style":"adventure"`,
+		`"risk_tolerance":"balanced"`,
+		`"wild_encounters":"fight"`,
+	} {
+		if !strings.Contains(string(b), want) {
+			t.Fatalf("tile row json = %s, want %s", b, want)
+		}
 	}
 }
 
-func TestPersistedTileRestoresPlayStyle(t *testing.T) {
-	farm.RememberPlayStyle("style-persist", "completionist")
+func TestPersistedTileRestoresRunPolicy(t *testing.T) {
+	rememberTestRunPolicy("style-persist", "completionist", "cautious", "planner")
 	b, err := json.Marshal(persistedTile{RunID: "style-persist", Planner: "llm"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	farm.RememberPlayStyle("style-persist", "")
+	rememberTestRunPolicy("style-persist", "", "", "")
 
 	var got persistedTile
 	if err := json.Unmarshal(b, &got); err != nil {
@@ -34,19 +46,37 @@ func TestPersistedTileRestoresPlayStyle(t *testing.T) {
 	if style := farm.PlayStyleForRun("style-persist"); style != "completionist" {
 		t.Fatalf("restored style = %q, want completionist", style)
 	}
+	if risk := farm.RiskToleranceForRun("style-persist"); risk != "cautious" {
+		t.Fatalf("restored risk = %q, want cautious", risk)
+	}
+	if wild := farm.WildEncountersForRun("style-persist"); wild != "planner" {
+		t.Fatalf("restored wild policy = %q, want planner", wild)
+	}
 }
 
-func TestResumedChildInheritsParentPlayStyle(t *testing.T) {
-	farm.RememberPlayStyle("style-parent-wall", "team_builder")
+func TestResumedChildInheritsParentRunPolicy(t *testing.T) {
+	rememberTestRunPolicy("style-parent-wall", "team_builder", "cautious", "fight")
 	row := tileRow{RunID: "style-child-wall", Planner: "llm", ResumeFromRunID: "style-parent-wall"}
 	b, err := json.Marshal(row)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(b), `"play_style":"team_builder"`) {
-		t.Fatalf("child row json = %s, want inherited play_style", b)
+	for _, want := range []string{
+		`"play_style":"team_builder"`,
+		`"risk_tolerance":"cautious"`,
+		`"wild_encounters":"fight"`,
+	} {
+		if !strings.Contains(string(b), want) {
+			t.Fatalf("child row json = %s, want %s", b, want)
+		}
 	}
 	if style := farm.PlayStyleForRun("style-child-wall"); style != "team_builder" {
 		t.Fatalf("child registry style = %q, want team_builder", style)
+	}
+	if risk := farm.RiskToleranceForRun("style-child-wall"); risk != "cautious" {
+		t.Fatalf("child registry risk = %q, want cautious", risk)
+	}
+	if wild := farm.WildEncountersForRun("style-child-wall"); wild != "fight" {
+		t.Fatalf("child registry wild = %q, want fight", wild)
 	}
 }

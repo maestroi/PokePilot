@@ -60,6 +60,8 @@ export interface DashboardRun {
   goal?: string
   llm_profile?: string
   play_style?: string
+  risk_tolerance?: string
+  wild_encounters?: string
   reasoning_effort?: string
   seed?: number
   fps?: number
@@ -135,6 +137,8 @@ export interface RunSpec {
   goal: string
   llm_profile: string
   play_style: string
+  risk_tolerance: string
+  wild_encounters: string
   reasoning_effort: string
   fps: number
   max_rounds: number

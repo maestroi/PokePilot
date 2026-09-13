@@ -6,47 +6,77 @@ import (
 	"github.com/maestroi/pokepilot/farm"
 )
 
-func playStyleForWallRun(runID, resumeFrom string) string {
-	if style := farm.PlayStyleForRun(runID); style != "" {
-		return style
-	}
-	if resumeFrom != "" {
-		farm.CopyPlayStyle(resumeFrom, runID)
-		return farm.PlayStyleForRun(runID)
-	}
-	return ""
+type wallRunPolicy struct {
+	PlayStyle      string
+	RiskTolerance  string
+	WildEncounters string
 }
 
-// MarshalJSON adds the optional gameplay policy to dashboard rows while
-// keeping tileRow's historical Go shape source-compatible.
+func runPolicyForWallRun(runID, resumeFrom string) wallRunPolicy {
+	if resumeFrom != "" {
+		farm.CopyRunPolicy(resumeFrom, runID)
+	}
+	return wallRunPolicy{
+		PlayStyle:      farm.PlayStyleForRun(runID),
+		RiskTolerance:  farm.RiskToleranceForRun(runID),
+		WildEncounters: farm.WildEncountersForRun(runID),
+	}
+}
+
+func playStyleForWallRun(runID, resumeFrom string) string {
+	return runPolicyForWallRun(runID, resumeFrom).PlayStyle
+}
+
+// MarshalJSON adds optional gameplay policy to dashboard rows while keeping
+// tileRow's historical Go shape source-compatible.
 func (r tileRow) MarshalJSON() ([]byte, error) {
 	type plain tileRow
+	policy := runPolicyForWallRun(r.RunID, r.ResumeFromRunID)
 	return json.Marshal(struct {
 		plain
-		PlayStyle string `json:"play_style,omitempty"`
-	}{plain: plain(r), PlayStyle: playStyleForWallRun(r.RunID, r.ResumeFromRunID)})
+		PlayStyle      string `json:"play_style,omitempty"`
+		RiskTolerance  string `json:"risk_tolerance,omitempty"`
+		WildEncounters string `json:"wild_encounters,omitempty"`
+	}{
+		plain:          plain(r),
+		PlayStyle:      policy.PlayStyle,
+		RiskTolerance:  policy.RiskTolerance,
+		WildEncounters: policy.WildEncounters,
+	})
 }
 
-// persistedTile carries play_style through a wall restart. Old state files
-// simply omit it and retain legacy Speedrun behavior.
+// persistedTile carries gameplay policy through a wall restart. Old state
+// files simply omit it and retain legacy compatibility behavior.
 func (p persistedTile) MarshalJSON() ([]byte, error) {
 	type plain persistedTile
+	policy := runPolicyForWallRun(p.RunID, p.ResumeFromRunID)
 	return json.Marshal(struct {
 		plain
-		PlayStyle string `json:"play_style,omitempty"`
-	}{plain: plain(p), PlayStyle: playStyleForWallRun(p.RunID, p.ResumeFromRunID)})
+		PlayStyle      string `json:"play_style,omitempty"`
+		RiskTolerance  string `json:"risk_tolerance,omitempty"`
+		WildEncounters string `json:"wild_encounters,omitempty"`
+	}{
+		plain:          plain(p),
+		PlayStyle:      policy.PlayStyle,
+		RiskTolerance:  policy.RiskTolerance,
+		WildEncounters: policy.WildEncounters,
+	})
 }
 
 func (p *persistedTile) UnmarshalJSON(data []byte) error {
 	type plain persistedTile
 	var in struct {
 		plain
-		PlayStyle string `json:"play_style,omitempty"`
+		PlayStyle      string `json:"play_style,omitempty"`
+		RiskTolerance  string `json:"risk_tolerance,omitempty"`
+		WildEncounters string `json:"wild_encounters,omitempty"`
 	}
 	if err := json.Unmarshal(data, &in); err != nil {
 		return err
 	}
 	*p = persistedTile(in.plain)
 	farm.RememberPlayStyle(p.RunID, in.PlayStyle)
+	farm.RememberRiskTolerance(p.RunID, in.RiskTolerance)
+	farm.RememberWildEncounters(p.RunID, in.WildEncounters)
 	return nil
 }
