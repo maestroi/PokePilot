@@ -25,6 +25,7 @@ import {
   shortRunID,
   splitSpectatorRuns
 } from './model'
+import { policyLabel } from '../shared/playstyle'
 
 interface ActivityItem {
   id: string
@@ -216,13 +217,6 @@ function hpPercent(run: SpectatorRun, index: number): number {
 
 function moneyLabel(run: SpectatorRun): string {
   return `₽${Number(run.player?.money || 0).toLocaleString()}`
-}
-
-function policyLabel(value: string): string {
-  return value
-    .replaceAll('_', ' ')
-    .replaceAll('-', ' ')
-    .replace(/\b\w/g, (letter) => letter.toUpperCase())
 }
 
 function activityTime(item: ActivityItem): string {

@@ -18,6 +18,7 @@ import {
   legacyRunURL,
   safeIssueURL
 } from './runs'
+import { isPlayStyleRun, playStyleLabel } from '../shared/playstyle'
 
 const PAGE_SIZE = 25
 const page = ref(0)
@@ -192,6 +193,7 @@ async function confirmDelete(): Promise<void> {
                 <td class="px-3 py-3">
                   <div class="flex flex-wrap gap-1.5">
                     <StatusBadge tone="neutral">{{ archiveHow(run) }}</StatusBadge>
+                    <StatusBadge v-if="isPlayStyleRun(run)" tone="info">{{ playStyleLabel(run) }}</StatusBadge>
                     <StatusBadge tone="info">{{ archiveStarter(run) }}</StatusBadge>
                   </div>
                 </td>
