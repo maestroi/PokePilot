@@ -83,9 +83,17 @@ func objectiveDistance(obs Observation, o Objective) (distance int, crossMap boo
 			return 0, false, true
 		}
 		return namedObjectiveDistance(obs, o.Place)
+	case KindCatch:
+		// Local catches happen in the current grass, but Red-owned offering can
+		// also expose a known-habitat catch whose Place means "travel there,
+		// then hunt". Cost that trip like the travel it actually contains.
+		if o.Place == "" {
+			return 0, false, true
+		}
+		return namedObjectiveDistance(obs, o.Place)
 	default:
-		// Catch, Train, Buy, UseItem, Starter and local Progress actions are
-		// performed where the player already is.
+		// Train, Buy, UseItem, Starter and local Progress actions are performed
+		// where the player already is.
 		return 0, false, true
 	}
 }
@@ -157,7 +165,7 @@ func opportunityBacktrack(obs Observation, o Objective) float64 {
 
 func opportunityTargetPlace(o Objective) (PlaceID, bool) {
 	switch o.Kind {
-	case KindGoTo, KindGym:
+	case KindGoTo, KindGym, KindCatch:
 		return o.Place, o.Place != ""
 	case KindHeal:
 		return o.Place, o.Place != ""
