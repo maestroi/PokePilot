@@ -24,11 +24,10 @@ export FARM_WALL_PORT
 # restarts only via this host bind mount.
 FARM_STATE_DIR ?= /tmp/pokefarm-state
 export FARM_STATE_DIR
-# Optional Agent Orchestrator issue handoff (wall only). Empty values
-# leave reporting disabled. Public-host examples, not image defaults:
-#   AGENT_ORCHESTRATOR_API=https://orchestrator.labstack.cc
-#   AGENT_ORCHESTRATOR_UI=https://orchestrator.labstack.cc
-#   AGENT_ORCHESTRATOR_POKEPILOT_PROJECT_ID=<project uuid>
+# GitHub farm issues. POKEPILOT_GITHUB_TOKEN is read from .env or
+# ~/.config/pokepilot/env by farm-up and reaches only the issue adapter.
+# A fine-grained token only needs Issues read/write for maestroi/PokePilot.
+# POKEPILOT_GITHUB_REPO defaults to maestroi/PokePilot in deploy/farm.yml.
 
 # A model served locally instead of the LAN box .env points at. It is the
 # same run as run-llm with the endpoint, the model name and the reply room
@@ -163,7 +162,7 @@ test-race:
 # Focused ROM-free loops for the areas changed most often. These are not
 # substitutes for verify; they keep edit/test cycles short before the full gate.
 test-farm:
-	POKEMON_RED_ROM= go test -short -count=1 ./farm ./artifactstore ./cmd/pokewall ./cmd/pokeui ./cmd/pokereplay ./deploy $(ARGS)
+	POKEMON_RED_ROM= go test -short -count=1 ./farm ./artifactstore ./cmd/pokewall ./cmd/pokeissues ./cmd/pokeui ./cmd/pokereplay ./deploy $(ARGS)
 
 test-agent:
 	POKEMON_RED_ROM= go test -short -count=1 ./agent ./cmd/pokepilot $(ARGS)
@@ -182,16 +181,16 @@ farm-up: farm-image
 	# A leftover standalone pokefarm_ui (from before it joined the stack)
 	# would hold the host port and block the new task.
 	docker rm -f pokefarm_ui >/dev/null 2>&1 || true
-	# llm_token (and optional POKEPILOT_LLM_*) live in .env for
-	# make run-llm. Source the same file here so farm runners get the
-	# key; docker stack deploy interpolates ${llm_token} from the env.
+	# Secrets and optional endpoint overrides live in .env or
+	# ~/.config/pokepilot/env. docker stack deploy interpolates them here;
+	# the GitHub token is passed only to the issue-adapter service.
 	$(load_env) \
 	docker stack deploy --resolve-image never -c deploy/farm.yml pokefarm
 	# The image tag does not change between builds, so the service spec is
 	# identical and Docker would not roll healthy tasks — a rebuilt image
-	# would never land. (Crash-looping tasks pick it up on their own; this
-	# is how the CGO fix slipped through.) Force the rollout.
+	# would never land. Force every PokePilot-image service that owns code.
 	docker service update --force --detach pokefarm_wall
+	docker service update --force --detach pokefarm_issues
 	docker service update --force --detach pokefarm_runner
 	docker service update --force --detach pokefarm_replay
 	docker service update --force --detach pokefarm_ui
