@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { ArrowTopRightOnSquareIcon, PlayIcon } from '@heroicons/vue/20/solid'
+import { getDashboard } from '../shared/api/client'
 import AppShell from '../shared/components/AppShell.vue'
+import { usePollingResource } from '../shared/composables/usePollingResource'
 import type { AppNavItem } from '../shared/types'
 import AnalyticsView from './AnalyticsView.vue'
 import FailuresView from './FailuresView.vue'
@@ -58,6 +60,16 @@ const legacyURL = computed(() => {
   return url.toString()
 })
 
+const fleet = usePollingResource(
+  (signal) => getDashboard({ active: true }, signal),
+  { intervalMs: 4000 }
+)
+
+const liveCount = computed(() => (fleet.data.value?.runs ?? []).filter((run) => run.status === 'running').length)
+const queuedCount = computed(() => (fleet.data.value?.runs ?? []).filter((run) => run.status === 'queued' || run.status === 'leased').length)
+const idleCount = computed(() => (fleet.data.value?.workers ?? []).filter((worker) => !worker.run_id).length)
+const connected = computed(() => fleet.state.value === 'ready' || fleet.state.value === 'refreshing' || fleet.state.value === 'stale')
+
 function syncHash(): void {
   const next = hashView()
   activeView.value = next
@@ -78,19 +90,37 @@ onUnmounted(() => window.removeEventListener('hashchange', syncHash))
     :subtitle="descriptions[activeView]"
     mode="private"
     :navigation="navigation"
+    :show-intro="activeView !== 'live'"
   >
+    <template #summary>
+      <span class="inline-flex items-center gap-1.5">
+        <span
+          :class="[
+            connected && fleet.state.value !== 'stale' ? 'border-[var(--poke-green)] bg-[var(--poke-green)]' : 'border-[var(--poke-amber)] bg-transparent',
+            'size-1.5 rounded-full border'
+          ]"
+          aria-hidden="true"
+        />
+        <b class="font-semibold text-[var(--poke-text)]">{{ connected ? (fleet.state.value === 'stale' ? 'Stale' : 'Connected') : 'Connecting' }}</b>
+      </span>
+      <span><b class="font-semibold text-[var(--poke-text)]">{{ liveCount }}</b> live</span>
+      <span><b class="font-semibold text-[var(--poke-text)]">{{ queuedCount }}</b> queued</span>
+      <span><b class="font-semibold text-[var(--poke-text)]">{{ idleCount }}</b> idle</span>
+      <span v-if="fleet.data.value?.wall_version" class="font-mono text-[10px] text-[var(--poke-dim)]">{{ fleet.data.value.wall_version.slice(0, 7) }}</span>
+    </template>
+
     <template #actions>
       <a
         v-if="activeView === 'live'"
         href="#tools"
-        class="inline-flex items-center gap-1.5 rounded-md bg-cyan-500 px-2.5 py-1.5 text-[11px] font-semibold text-white shadow-sm hover:bg-cyan-400"
+        class="inline-flex items-center gap-1 rounded-sm bg-[var(--poke-cyan)] px-2 py-1 text-[11px] font-bold text-[#101820] hover:brightness-110"
       >
         <PlayIcon class="size-3.5" aria-hidden="true" />
         New run
       </a>
       <a
         :href="legacyURL"
-        class="hidden items-center gap-1.5 rounded-md bg-white/6 px-2.5 py-1.5 text-[11px] font-semibold text-slate-400 ring-1 ring-white/8 hover:bg-white/10 hover:text-white sm:inline-flex"
+        class="hidden items-center gap-1 rounded-sm px-2 py-1 text-[11px] font-semibold text-[var(--poke-muted)] ring-1 ring-[var(--poke-border-strong)] hover:bg-white/5 hover:text-white sm:inline-flex"
         title="Temporary fallback while the Vue cutover is validated"
       >
         Legacy

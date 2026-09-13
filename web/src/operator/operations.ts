@@ -1,4 +1,4 @@
-import type { DashboardRun } from '../shared/api/types'
+import type { DashboardRun, DashboardStats } from '../shared/api/types'
 
 export type StatusTone = 'neutral' | 'info' | 'success' | 'warning' | 'danger'
 
@@ -76,4 +76,64 @@ export function ageLabel(unixSeconds: number | undefined, nowSeconds = Date.now(
 
 export function formatFrame(frame: number | undefined): string {
   return Number(frame || 0).toLocaleString()
+}
+
+export function howText(run: DashboardRun): string {
+  return run.planner === 'scripted' ? 'walk to a place' : 'play the game'
+}
+
+export function starterLabel(run: DashboardRun): string {
+  return run.starter || (run.planner === 'scripted' ? 'squirtle' : 'LLM picks')
+}
+
+export function reasoningEffortLabel(run: DashboardRun): string {
+  switch ((run.reasoning_effort || '').toLowerCase()) {
+    case 'off': return 'Off (no thinking)'
+    case 'low': return 'Low'
+    case 'medium': return 'Medium'
+    case 'high': return 'High (slowest)'
+    default: return 'Auto (endpoint default)'
+  }
+}
+
+export function tileLabel(run: Pick<DashboardRun, 'map' | 'x' | 'y'>): string {
+  const map = `0x${Number(run.map || 0).toString(16).padStart(2, '0')}`
+  return `${map} (${Number(run.x || 0)},${Number(run.y || 0)})`
+}
+
+export function formatWhen(unixSeconds: number | undefined, nowSeconds = Date.now() / 1000): string {
+  const value = Number(unixSeconds || 0)
+  if (!value) return ''
+  const elapsed = Math.max(0, Math.round(nowSeconds - value))
+  const relative = elapsed >= 86400
+    ? `${Math.floor(elapsed / 86400)}d ago`
+    : elapsed >= 3600
+      ? `${Math.floor(elapsed / 3600)}h ago`
+      : elapsed >= 60
+        ? `${Math.floor(elapsed / 60)}m ago`
+        : elapsed >= 5
+          ? `${elapsed}s ago`
+          : 'just now'
+  const clock = new Date(value * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  return `${clock} ${relative}`
+}
+
+export function fpsLabel(run: DashboardRun): string {
+  if (run.status === 'done' && run.ended_at && Number(run.frame || 0) > 0) {
+    const duration = Number(run.ended_at) - Number(run.queued_at || 0)
+    if (duration > 1) return (Number(run.frame) / duration).toFixed(1)
+  }
+  if (run.fps) return `${run.fps} target`
+  return ''
+}
+
+export function statsLine(run: DashboardRun): string {
+  const stats = run.stats
+  if (!stats || run.planner === 'scripted') return ''
+  const left = stats.rounds_left ? ` (${stats.rounds_left} left)` : ''
+  return `round ${stats.round ?? '—'}${left} · rep ${stats.repeats ?? 0}/${stats.rounds ?? 0} · call ${Number(stats.avg_seconds || 0).toFixed(1)}s avg`
+}
+
+export function statNumber(stats: DashboardStats | undefined, key: string): number {
+  return Number(stats?.[key] || 0)
 }

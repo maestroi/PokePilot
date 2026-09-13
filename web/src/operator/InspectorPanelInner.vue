@@ -166,15 +166,15 @@ watch(playbackRate, () => { void nextTick(applyPlaybackRate) })
 </script>
 
 <template>
-  <div class="space-y-3">
-    <Panel title="Run Inspector" description="Semantic timeline, persisted evidence, checkpoints, artifacts, and deterministic replay." compact>
+  <div class="space-y-2">
+    <Panel title="Run inspector" description="Semantic timeline, checkpoints, artifacts, and deterministic replay." compact>
       <template #actions>
-        <button type="button" class="inline-flex items-center gap-1.5 rounded-md bg-white/8 px-2.5 py-1.5 text-xs font-semibold text-slate-200 ring-1 ring-white/10 hover:bg-white/12" :disabled="loading" @click="load">
+        <button type="button" class="inline-flex items-center gap-1.5 rounded-sm bg-white/8 px-2 py-1 text-[11px] font-semibold text-slate-200 ring-1 ring-white/10 hover:bg-white/12" :disabled="loading" @click="load">
           <ArrowPathIcon class="size-3.5" aria-hidden="true" /> {{ loading ? 'Loading…' : 'Refresh' }}
         </button>
       </template>
 
-      <div v-if="error" class="mb-3 border-l-4 border-amber-400 bg-amber-400/10 p-3 text-sm text-amber-100">{{ error }}</div>
+      <div v-if="error" class="mb-2 border border-[var(--poke-amber)]/40 bg-[#332d20] p-2 text-[12px] text-[#ddc18c]">{{ error }}</div>
 
       <div class="grid grid-cols-1 gap-3 2xl:grid-cols-[minmax(0,1.45fr)_minmax(18rem,0.55fr)]">
         <RunTimeline :events="timeline" :total-frames="totalFrames" :selected-index="selectedEvent" @select="selectEvent" />
