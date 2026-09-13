@@ -55,6 +55,37 @@ export function statusTone(status: string | undefined): StatusTone {
   }
 }
 
+export function isLiveStatus(status: string | undefined): boolean {
+  const value = (status || '').toLowerCase()
+  return value === 'running' || value === 'leased'
+}
+
+export function gameMediaLabel(status: string | undefined): string {
+  switch ((status || '').toLowerCase()) {
+    case 'running': return 'Live'
+    case 'leased': return 'Leased · starting'
+    case 'queued': return 'Waiting for a worker'
+    case 'done': return 'Ended · last frame'
+    default: return 'Last recorded frame'
+  }
+}
+
+export function railStatusLabel(run: Pick<DashboardRun, 'status' | 'reason'>): string {
+  if (run.status === 'done') return 'ended'
+  return run.status || 'unknown'
+}
+
+export function railFacts(run: DashboardRun): string {
+  if (run.status === 'queued' || run.status === 'leased') return 'waiting for a worker'
+  if (run.status === 'done') {
+    const reason = (run.reason || 'ended').trim().replaceAll('_', ' ')
+    const age = run.ended_at ? ageLabel(run.ended_at) : ''
+    return age ? `ended · ${reason} · ${age} ago` : `ended · ${reason}`
+  }
+  const fps = fpsLabel(run)
+  return `live · frame ${run.frame ?? 0}${fps ? ` · ${fps} fps` : ''} · attempt ${run.attempts ?? 0}`
+}
+
 export function outcomeTone(run: DashboardRun): StatusTone {
   const outcome = (run.reason || '').toLowerCase()
   if (!outcome || outcome === 'done' || outcome.includes('complete') || outcome.includes('success')) return 'success'
