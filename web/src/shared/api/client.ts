@@ -1,3 +1,4 @@
+import type { BuildProvenance } from './build'
 import type {
   DashboardQuery,
   DashboardRun,
@@ -58,6 +59,10 @@ function newRunID(): string {
   const values = new Uint32Array(2)
   crypto.getRandomValues(values)
   return `run-${values[0].toString(36)}${values[1].toString(36)}`
+}
+
+export function getBuildProvenance(signal?: AbortSignal): Promise<BuildProvenance> {
+  return requestJSON<BuildProvenance>('/v1/build', { signal })
 }
 
 export function getDashboard(params: DashboardQuery = {}, signal?: AbortSignal): Promise<DashboardSnapshot> {
