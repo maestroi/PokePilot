@@ -12,6 +12,11 @@ func TestRedProgressionKeepsThunderBadgeAheadOfLaterStory(t *testing.T) {
 		Story: ProgressState{
 			{ID: redProgressHM01Acquired, Complete: true},
 		},
+		FieldCapabilities: []FieldCapability{{
+			Name:       "cut",
+			BadgeOwned: true,
+			HMOwned:    true,
+		}},
 	}
 	got := redProgressionObjectives(obs)
 	if !hasProgressObjective(got, redProgressThunderBadge) {

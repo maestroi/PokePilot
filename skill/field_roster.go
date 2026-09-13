@@ -19,6 +19,14 @@ var (
 	ErrFieldRosterNoBalls      = errors.New("skill: catch recovery needs a POKE BALL but none is available")
 )
 
+// missingFieldRosterPrerequisite is a stable gameplay blockage: the badge or
+// HM that would make a field move preparable is not owned yet. Wrap both
+// sentinels so roster diagnostics stay specific while the agent replans
+// through the existing field-move prerequisite policy.
+func missingFieldRosterPrerequisite(cap FieldCapability) error {
+	return fmt.Errorf("%w: %w: %s badge=%v HM=%v", ErrFieldMovePrerequisite, ErrFieldRosterPrerequisite, cap.Name, cap.BadgeOwned, cap.HMOwned)
+}
+
 // CoreProgressionFieldMoves is the field-move invariant late-game story
 // progression must preserve. Fly and Flash are useful, but Cut/Surf/Strength
 // are the moves that can make the remaining mandatory path physically
@@ -391,7 +399,7 @@ func RepairFieldCapabilities(m *emu.Emu, romData []byte, policy MovePolicy, requ
 		state.Snapshot(m, &mem)
 		cap := FieldCapabilityFor(&mem, target)
 		if !cap.BadgeOwned || !cap.HMOwned {
-			return fmt.Errorf("%w: %s badge=%v HM=%v", ErrFieldRosterPrerequisite, cap.Name, cap.BadgeOwned, cap.HMOwned)
+			return missingFieldRosterPrerequisite(cap)
 		}
 		if cap.Usable {
 			continue

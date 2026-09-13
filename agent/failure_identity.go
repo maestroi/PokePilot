@@ -291,7 +291,8 @@ func failureCauseFor(err error) (FailureCauseID, []string) {
 	if errors.Is(err, skill.ErrDialogueInterrupted) {
 		return "dialogue_interrupted", nil
 	}
-	if errors.Is(err, skill.ErrFieldMovePrerequisite) {
+	if errors.Is(err, skill.ErrFieldMovePrerequisite) ||
+		errors.Is(err, skill.ErrFieldRosterPrerequisite) {
 		return "field_move_prerequisite_missing", nil
 	}
 	var gate *skill.ErrRouteGateClosed

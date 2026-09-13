@@ -37,7 +37,7 @@ func RepairUtilityFieldCapability(m *emu.Emu, romData []byte, policy MovePolicy,
 	state.Snapshot(m, &mem)
 	cap := FieldCapabilityFor(&mem, target)
 	if !cap.BadgeOwned || !cap.HMOwned {
-		return fmt.Errorf("%w: %s badge=%v HM=%v", ErrFieldRosterPrerequisite, cap.Name, cap.BadgeOwned, cap.HMOwned)
+		return missingFieldRosterPrerequisite(cap)
 	}
 	if cap.Usable {
 		return nil

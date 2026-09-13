@@ -190,6 +190,7 @@ func classifyObjectiveOutcome(_ Objective, err error, final Observation) Outcome
 		errors.Is(err, skill.ErrBagNotRisen) ||
 		errors.Is(err, skill.ErrFieldRosterNoBalls) ||
 		errors.Is(err, skill.ErrPCBoxFull) ||
+		errors.Is(err, skill.ErrFieldRosterPrerequisite) ||
 		errors.Is(err, skill.ErrFieldRosterNoRecovery) {
 		return OutcomeBlocked
 	}

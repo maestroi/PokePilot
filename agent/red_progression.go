@@ -70,6 +70,13 @@ func redVermilionGymRecoveryAvailable(obs Observation) bool {
 	if !routeBlockedOn(obs, "vermilion gym", "can_cut") {
 		return false
 	}
+	return redCutFieldUnlocked(obs)
+}
+
+// redCutFieldUnlocked is the portable Cut gate: badge plus HM, not a named
+// gym order. Thunder Badge progression and Vermilion gym recovery both need
+// it; without the badge, Cut cannot be prepared or used.
+func redCutFieldUnlocked(obs Observation) bool {
 	cut, ok := observedFieldCapability(obs, "cut")
 	return ok && cut.BadgeOwned && cut.HMOwned
 }
@@ -104,7 +111,7 @@ func redProgressionObjectives(obs Observation) []Objective {
 			Note:     "(go to Vermilion, board the S.S. Anne with the ticket, defeat the scripted rival on 2F, and receive HM01 Cut from the Captain)",
 		})
 	}
-	if obs.Story.Has(redProgressHM01Acquired) && !hasBadge(obs, state.BadgeThunder) {
+	if obs.Story.Has(redProgressHM01Acquired) && redCutFieldUnlocked(obs) && !hasBadge(obs, state.BadgeThunder) {
 		out = append(out, Objective{
 			Kind:     KindProgress,
 			Progress: redProgressThunderBadge,
