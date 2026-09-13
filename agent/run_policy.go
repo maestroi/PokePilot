@@ -145,7 +145,7 @@ func riskRecoveryRecommended(obs Observation, threshold float64) bool {
 		if mon.MaxHP == 0 {
 			continue
 		}
-		if mon.HP == 0 || mon.Status != 0 {
+		if mon.HP == 0 || mon.Status != "" {
 			return true
 		}
 		if float64(mon.HP)/float64(mon.MaxHP) <= threshold {
