@@ -11,19 +11,6 @@ import (
 	"github.com/maestroi/pokepilot/farm"
 )
 
-// runStats is the statistics blob the watch page renders above the trace.
-// It answers the question the trace cannot: not "what happened next" but
-// "what is this model DOING with its rounds" — how often it re-picks an
-// objective it already picked (Repeats), what it keeps picking
-// (Choices), how long each model call takes, what it is spending, and how many
-// replies never resolved at all.
-//
-// Repeats is the headline number. A run that wanders looks fine line by
-// line — every round is a legal objective that succeeds — and only the
-// tally shows it walked between the same four places for eighteen rounds.
-// The tally's wire type lives in farm: it rides the heartbeat to the wall,
-// so the console and the watch page render one definition. The aliases keep
-// this file and its tests on the old names.
 type (
 	runStats    = farm.LLMStats
 	choiceCount = farm.ChoiceCount
@@ -31,22 +18,16 @@ type (
 
 const strategicReplanAfter = 4
 
-// statsPlanner wraps a planner and tallies what it chooses, pushing the
-// tally to the watch page after every ask. It is a decorator rather than
-// bookkeeping inside agent.Run because the numbers it wants are all in the
-// call it already wraps — the observation going in, the objective coming
-// out, the wall clock around it — so agent stays exactly as it was.
 type statsPlanner struct {
 	inner  *agent.LLMPlanner
 	router *agent.FailoverPlanner
 
-	emu  *emu.Emu       // for stall RAM captures; nil in unit tests
-	push func(any)      // emu.TraceStats
-	snap *heartbeatSnap // farm heartbeat; nil on the local (non-farm) run
+	emu  *emu.Emu
+	push func(any)
+	snap *heartbeatSnap
 
-	// playStyle is independent from llm_profile: llm_profile chooses hardware,
-	// playStyle chooses objective policy. Empty/legacy specs normalize to the
-	// exact Speedrun no-op profile.
+	// llm_profile chooses inference routing; playStyle chooses gameplay policy.
+	// They intentionally remain independent knobs.
 	playStyle agent.PlayStyleProfile
 
 	stats                runStats
@@ -70,10 +51,16 @@ type statsPlanner struct {
 	baseExtraSystem string
 }
 
-// newStatsPlanner preserves the historical constructor and therefore the
-// historical Speedrun behavior for local callers/tests that do not opt in.
+// newStatsPlanner remains source-compatible with existing local/tests. Farm
+// construction passes a heartbeat snap and consumes the play_style from the
+// lease that farm.Client just decoded. Local callers have no lease and retain
+// legacy Speedrun behavior.
 func newStatsPlanner(profile, reasoningEffort, goal string, m *emu.Emu, push func(any), snap *heartbeatSnap) *statsPlanner {
-	return newStatsPlannerWithPlayStyle(profile, reasoningEffort, "", goal, m, push, snap)
+	playStyle := ""
+	if snap != nil {
+		playStyle = farm.CurrentPlayStyle()
+	}
+	return newStatsPlannerWithPlayStyle(profile, reasoningEffort, playStyle, goal, m, push, snap)
 }
 
 func newStatsPlannerWithPlayStyle(profile, reasoningEffort, playStyle, goal string, m *emu.Emu, push func(any), snap *heartbeatSnap) *statsPlanner {
@@ -121,9 +108,6 @@ func (s *statsPlanner) NextRetry(obs agent.Observation, offered []agent.Objectiv
 }
 
 func (s *statsPlanner) ask(obs agent.Observation, offered []agent.Objective, retry *agent.Retry) (agent.Objective, error) {
-	// Farm recovery filters legality/availability first; play style only scores
-	// the menu that remains. This keeps profile policy from resurrecting a
-	// quarantined objective.
 	if s.snap != nil {
 		offered = farmRecoveryOffered(obs, offered)
 	}
