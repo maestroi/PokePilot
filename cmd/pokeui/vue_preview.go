@@ -2,6 +2,7 @@ package main
 
 import (
 	"embed"
+	"encoding/json"
 	"errors"
 	"io/fs"
 	"mime"
@@ -12,14 +13,14 @@ import (
 
 // vueWebAssets is populated by `cd web && npm run build` before production
 // pokeui compilation. A committed placeholder keeps ordinary Go-only builds
-// valid; in that case root transparently falls back to the legacy UI.
+// valid, but the browser surface now requires built Vue assets at runtime.
 //
 //go:embed ui/vue
 var vueWebAssets embed.FS
 
-// withVuePreview retains the historic helper name from the incremental
-// migration, but Vue is now the primary root UI. The old console remains at
-// /legacy/ as a temporary safety hatch while the cutover is validated.
+// withVuePreview retains its historic name for compatibility with existing
+// callers, but the migration is complete: Vue owns root and the legacy console
+// is no longer exposed as a browser fallback.
 func withVuePreview(next http.Handler, target string) http.Handler {
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 		switch {
@@ -27,24 +28,20 @@ func withVuePreview(next http.Handler, target string) http.Handler {
 			if serveVueFile(res, req, target, target+".html") {
 				return
 			}
-			next.ServeHTTP(res, req)
-			return
-		case req.Method == http.MethodGet && req.URL.Path == "/legacy":
-			http.Redirect(res, req, "/legacy/", http.StatusTemporaryRedirect)
-			return
-		case strings.HasPrefix(req.URL.Path, "/legacy/"):
-			clone := req.Clone(req.Context())
-			urlCopy := *req.URL
-			urlCopy.Path = "/" + strings.TrimPrefix(req.URL.Path, "/legacy/")
-			clone.URL = &urlCopy
-			next.ServeHTTP(res, clone)
+			res.Header().Set("Cache-Control", "no-store")
+			http.Error(res, "frontend assets unavailable; run the web build before starting pokeui", http.StatusServiceUnavailable)
 			return
 		case req.Method == http.MethodGet && (req.URL.Path == "/next" || req.URL.Path == "/next/"):
 			destination := "/"
 			if req.URL.RawQuery != "" {
 				destination += "?" + req.URL.RawQuery
 			}
-			http.Redirect(res, req, destination, http.StatusTemporaryRedirect)
+			http.Redirect(res, req, destination, http.StatusPermanentRedirect)
+			return
+		case req.Method == http.MethodGet && req.URL.Path == "/v1/build":
+			res.Header().Set("Content-Type", "application/json")
+			res.Header().Set("Cache-Control", "no-store")
+			_ = json.NewEncoder(res).Encode(currentBuildProvenance())
 			return
 		case req.Method == http.MethodGet && strings.HasPrefix(req.URL.Path, "/assets/"):
 			name := strings.TrimPrefix(req.URL.Path, "/")
