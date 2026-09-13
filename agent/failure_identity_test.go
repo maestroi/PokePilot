@@ -26,6 +26,10 @@ func TestFailureCauseGatedPathUsesTypedIdentity(t *testing.T) {
 	if cause != "field_move_prerequisite_missing" || len(ctx) != 0 {
 		t.Fatalf("cause=%q context=%v, want field_move_prerequisite_missing", cause, ctx)
 	}
+	cause, ctx = failureCauseFor(fmt.Errorf("%w: %w: CUT badge=false HM=true", skill.ErrFieldMovePrerequisite, skill.ErrFieldRosterPrerequisite))
+	if cause != "field_move_prerequisite_missing" || len(ctx) != 0 {
+		t.Fatalf("roster prerequisite cause=%q context=%v, want field_move_prerequisite_missing", cause, ctx)
+	}
 }
 
 func TestFailureCauseCatchBlockedOnMissingBall(t *testing.T) {

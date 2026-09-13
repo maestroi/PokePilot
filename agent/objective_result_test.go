@@ -104,6 +104,7 @@ func TestClassifyObjectiveOutcomeGameplayRecovery(t *testing.T) {
 		skill.ErrNotInStock,
 		skill.ErrBagNotRisen,
 		skill.ErrFieldRosterNoBalls,
+		skill.ErrFieldRosterPrerequisite,
 	} {
 		if got := classifyObjectiveOutcome(o, err, clean); got != OutcomeBlocked {
 			t.Errorf("%v = %q, want blocked", err, got)
@@ -125,6 +126,16 @@ func TestClassifyObjectiveOutcomeGatedPathIsBlocked(t *testing.T) {
 		fmt.Errorf("%w: CUT requires the Cascade Badge", skill.ErrFieldMovePrerequisite))
 	if got := classifyObjectiveOutcome(Objective{Kind: KindGym, Place: "vermilion gym"}, cut, clean); got != OutcomeBlocked {
 		t.Fatalf("missing field-move badge = %q, want blocked so the run replans", got)
+	}
+
+	// Farm run-1knjy11ahg0w63n4csckdmd4tz: progress thunder_badge died as
+	// unknown_failure because Cut repair reported a missing Cascade badge
+	// without the replan sentinel. A dirty start-menu boundary must still
+	// replan — stabilization_failed would stop the run.
+	roster := fmt.Errorf("skill: SurgeProgression: prepare Cut carrier: %w",
+		fmt.Errorf("%w: %w: CUT badge=false HM=true", skill.ErrFieldMovePrerequisite, skill.ErrFieldRosterPrerequisite))
+	if got := classifyObjectiveOutcome(Objective{Kind: KindProgress, Progress: redProgressThunderBadge}, roster, Observation{}); got != OutcomeBlocked {
+		t.Fatalf("missing Cut roster prerequisite = %q, want blocked so the run replans", got)
 	}
 	if actionFor(OutcomeBlocked) != actionReplan {
 		t.Fatal("blocked must replan")

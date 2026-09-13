@@ -44,3 +44,32 @@ func TestRedProgressionWithholdsSilphScopeAndPokeFluteBeforeThunderBadge(t *test
 		t.Errorf("Pokemon Tower offers Poke Flute progression %d times with the Thunder Badge, want 1", got)
 	}
 }
+
+// TestRedProgressionWithholdsThunderBadgeBeforeCascadeBadge: farm runs with
+// only the Boulder Badge repeatedly picked "progress thunder_badge" (offered
+// as soon as HM01 was in hand) and died preparing Cut. Gen I cannot use Cut
+// until its badge and HM are both owned, so the offer follows that
+// capability rather than a named gym order.
+func TestRedProgressionWithholdsThunderBadgeBeforeCascadeBadge(t *testing.T) {
+	base := Observation{
+		PartyCount: 1,
+		Party:      []PartyMon{{Level: 20, HP: 60, MaxHP: 60}},
+		Story:      ProgressState{{ID: redProgressHM01Acquired, Complete: true}},
+		FieldCapabilities: []FieldCapability{{
+			Name:    "cut",
+			HMOwned: true,
+		}},
+	}
+
+	without := base
+	without.FieldCapabilities[0].BadgeOwned = false
+	if got := countProgress(redProgressionObjectives(without), redProgressThunderBadge); got != 0 {
+		t.Errorf("offers thunder_badge progression %d times without Cut unlocked, want 0", got)
+	}
+
+	with := base
+	with.FieldCapabilities = []FieldCapability{{Name: "cut", BadgeOwned: true, HMOwned: true}}
+	if got := countProgress(redProgressionObjectives(with), redProgressThunderBadge); got != 1 {
+		t.Errorf("offers thunder_badge progression %d times with Cut unlocked, want 1", got)
+	}
+}
