@@ -59,6 +59,7 @@ export interface DashboardRun {
   dest?: string
   goal?: string
   llm_profile?: string
+  play_style?: string
   reasoning_effort?: string
   seed?: number
   fps?: number
@@ -133,6 +134,7 @@ export interface RunSpec {
   dest: string
   goal: string
   llm_profile: string
+  play_style: string
   reasoning_effort: string
   fps: number
   max_rounds: number
