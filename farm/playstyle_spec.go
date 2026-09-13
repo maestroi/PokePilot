@@ -14,6 +14,11 @@ import (
 // agent. The runner normalizes the value before constructing planner behavior.
 var playStyleByRun sync.Map // map[string]string
 
+var currentPlayStyle struct {
+	sync.RWMutex
+	value string
+}
+
 // RememberPlayStyle records the wire value for a run. Empty style removes the
 // extension, preserving the historical no-field encoding for legacy specs.
 func RememberPlayStyle(runID, style string) {
@@ -40,6 +45,23 @@ func PlayStyleForRun(runID string) string {
 }
 
 func PlayStyleForSpec(s Spec) string { return PlayStyleForRun(s.RunID) }
+
+// CurrentPlayStyle is the play style from the most recently decoded lease
+// spec in this process. A pokepilot worker leases and runs one spec at a time,
+// so the existing planner construction path can consume this without growing
+// every historical function signature. Decoding a legacy spec explicitly
+// resets it to empty/Speedrun.
+func CurrentPlayStyle() string {
+	currentPlayStyle.RLock()
+	defer currentPlayStyle.RUnlock()
+	return currentPlayStyle.value
+}
+
+func setCurrentPlayStyle(style string) {
+	currentPlayStyle.Lock()
+	currentPlayStyle.value = strings.ToLower(strings.TrimSpace(style))
+	currentPlayStyle.Unlock()
+}
 
 // CopyPlayStyle is used by orchestrators that spawn a logical successor run.
 // It is harmless when the parent is legacy/empty.
@@ -75,5 +97,6 @@ func (s *Spec) UnmarshalJSON(data []byte) error {
 	}
 	*s = Spec(in.plain)
 	RememberPlayStyle(s.RunID, in.PlayStyle)
+	setCurrentPlayStyle(in.PlayStyle)
 	return nil
 }
