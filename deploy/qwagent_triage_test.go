@@ -94,15 +94,42 @@ func TestPickOpenPRStillClaimsLocalRegression(t *testing.T) {
 	}
 }
 
-func TestPromptForbidsSkillSuite(t *testing.T) {
+func TestPromptLoadsNativeTriageSkill(t *testing.T) {
 	body, err := os.ReadFile(filepath.Join("qwagent-triage.prompt.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	s := string(body)
-	for _, want := range []string{"[triage:<key>]", "make test-short", "Do not call pokepilot_get_triage"} {
+	for _, want := range []string{
+		"[triage:<key>]",
+		"make test-short",
+		"Do not call pokepilot_get_triage",
+		"native OpenCode skill `pokefarm-triage`",
+		"`skill` tool",
+		"do not second-guess queue eligibility",
+	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("prompt missing %q", want)
+		}
+	}
+}
+
+func TestTriageSkillDocumentsLocalLifecycle(t *testing.T) {
+	body, err := os.ReadFile(filepath.Join("..", ".claude", "skills", "pokefarm-triage", "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(body)
+	for _, want := range []string{
+		"name: pokefarm-triage",
+		"Unattended qwagent triage",
+		"open PR containing `[triage:<key>]`",
+		"merged PR containing `[triage:<key>]`",
+		"runner_version",
+		"fail closed",
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("triage skill missing %q", want)
 		}
 	}
 }
