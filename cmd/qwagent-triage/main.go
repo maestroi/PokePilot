@@ -26,7 +26,7 @@ func main() {
 
 func run(args []string, stdin io.Reader, stdout io.Writer) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: qwagent-triage pick [--claimed title]...")
+		return fmt.Errorf("usage: qwagent-triage pick [--claimed title] [--repaired key] [--regressed key]...")
 	}
 	switch args[0] {
 	case "pick":
@@ -39,7 +39,11 @@ func run(args []string, stdin io.Reader, stdout io.Writer) error {
 func pickCmd(args []string, stdin io.Reader, stdout io.Writer) error {
 	fs := flag.NewFlagSet("pick", flag.ContinueOnError)
 	var claimed repeatFlags
+	var repaired repeatFlags
+	var regressed repeatFlags
 	fs.Var(&claimed, "claimed", "open PR title already claiming a triage key")
+	fs.Var(&repaired, "repaired", "triage key with a merged repair not present in the representative failing revision")
+	fs.Var(&regressed, "regressed", "triage key recurring on a revision that contains its merged repair")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -51,7 +55,7 @@ func pickCmd(args []string, stdin io.Reader, stdout io.Writer) error {
 	if err := json.Unmarshal(raw, &groups); err != nil {
 		return err
 	}
-	g, ok := deploy.Pick(groups, claimed)
+	g, ok := deploy.PickWithLocalState(groups, claimed, repaired, regressed)
 	if !ok {
 		return errNothing
 	}
