@@ -20,8 +20,8 @@ type Edge struct {
 	Kind  EdgeKind
 	From  uint8 // source map id
 	To    uint8 // destination map id, already resolved (never 0xFF)
-	WarpX uint8 // EdgeWarp only: the warp tile on the source map
-	WarpY uint8
+	WarpX uint8 // EdgeWarp: tile X; EdgeConnection: encoded band start (see ConnectionBand)
+	WarpY uint8 // EdgeWarp: tile Y; EdgeConnection: encoded band end
 	Dir   uint8 // EdgeConnection only: 0=north 1=south 2=west 3=east
 }
 
@@ -176,12 +176,7 @@ func BuildGraph(romData []byte) (*Graph, error) {
 			})
 		}
 		for _, c := range h.Connections {
-			g.Edges[id] = append(g.Edges[id], Edge{
-				Kind: EdgeConnection,
-				From: id,
-				To:   c.MapID,
-				Dir:  c.Dir,
-			})
+			g.Edges[id] = append(g.Edges[id], g.connectionEdges(id, c)...)
 		}
 	}
 
@@ -302,7 +297,8 @@ func (g *Graph) connectionPortComps(e Edge, arrival bool) []int {
 	}
 	var out []int
 	seen := map[int]bool{}
-	for i := 0; i < n; i++ {
+	start, end := connectionBandRange(e, n)
+	for i := start; i <= end; i++ {
 		j := i + int(c.Offset)
 		sx, sy, tx, ty := i, 0, j, dst.h-1
 		switch e.Dir {

@@ -116,7 +116,7 @@ func Traverse(m *emu.Emu, romData []byte, e world.Edge) error {
 		err := walkAround(func() error { return movementInterruption(m) }, func() map[[2]int]bool { return spriteBlockers(m) },
 			func(blocked map[[2]int]bool) ([]world.Step, error) {
 				x, y := playerXY(m)
-				tx, ty, err := edgeTarget(grid, e.Dir, int(x), int(y), blocked)
+				tx, ty, err := edgeTargetForConnection(grid, e, int(x), int(y), blocked)
 				if err != nil {
 					// Type it as ErrLegUnwalkable like the FindPath failure below:
 					// Route 2's ledge makes the north edge unreachable from the
