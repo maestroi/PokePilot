@@ -114,6 +114,23 @@ func TestGymCutGatesAreEntryOnly(t *testing.T) {
 		"red:vermilion_gym_cut", capCanCut)
 }
 
+// TestRoute9CutIsPivotNotGate is the Route 9 sibling of the Vermilion Gym
+// fix above: run-1948e1rnco3sp1y9bbhdwp7eov showed the immutable ROM
+// collision splits Route 9 into a Cerulean-side component and a Route
+// 10-side component joined only by the tree between them, so treating this
+// edge as a Gate (static pre-cut landing component) makes "route 9" itself
+// reachable but silently strands every destination past it — Rock Tunnel,
+// Lavender, and the Route 8/7 Underground Path detour around Saffron. It
+// must be a real pivot, exactly like red:vermilion_gym_cut.
+func TestRoute9CutIsPivotNotGate(t *testing.T) {
+	transition := requireTransition(t,
+		world.Edge{Kind: world.EdgeConnection, From: semanticCeruleanCityMap, To: semanticRoute9Map},
+		"red:route9_cut", capCanCut)
+	if transition.Gate {
+		t.Fatalf("red:route9_cut is a Gate: %+v; a static pre-cut component strands Rock Tunnel/Lavender/Celadon behind it", transition)
+	}
+}
+
 func TestCompoundStoryTargetsStayOutOfJourneyVocabulary(t *testing.T) {
 	public := map[string]bool{}
 	for _, name := range PlaceNames() {
