@@ -5,11 +5,11 @@ import (
 	"strings"
 )
 
-// NaturalPlaySignal is the Adventure-specific context layered on top of the
-// reusable drive score. It explains why an already-legal objective looks like
-// something a normal player would naturally do now: consolidate, inspect a
-// new frontier, talk to a new NPC, restock, improve the party, or take a cheap
-// nearby reward. It never creates legality and never bypasses progression.
+// NaturalPlaySignal is reusable context layered on top of the drive score. It
+// explains why an already-legal objective looks like something a player would
+// naturally do now. Profile scales decide how much exploration/optional work or
+// party development matters; this layer never creates legality or bypasses
+// progression.
 type NaturalPlaySignal struct {
 	Bonus         float64
 	RepeatPenalty float64
@@ -20,24 +20,36 @@ type NaturalPlaySignal struct {
 func (s NaturalPlaySignal) Net() float64 { return s.Bonus - s.RepeatPenalty }
 
 func naturalPlaySignal(obs Observation, o Objective, profile PlayStyleProfile) NaturalPlaySignal {
-	if profile.Name != "adventure" {
+	if profile.NaturalPlayScale <= 0 {
 		return NaturalPlaySignal{}
 	}
 
 	var s NaturalPlaySignal
-	add := func(tag string, bonus float64) {
+	addScaled := func(tag string, bonus, scale float64) {
+		bonus *= profile.NaturalPlayScale * scale
 		if bonus <= 0 {
 			return
 		}
 		s.Tags = appendNaturalTag(s.Tags, tag)
 		s.Bonus += bonus
 	}
+	add := func(tag string, bonus float64) { addScaled(tag, bonus, 1) }
 	penalize := func(tag string, penalty float64) {
 		if penalty <= 0 {
 			return
 		}
+		// Repetition remains bounded across profiles. Completionist may value
+		// more optional work, but it still must not retry the same interaction
+		// forever; Team Builder has the same rule for grinding one target.
+		scale := profile.NaturalPlayScale
+		if scale < 0.80 {
+			scale = 0.80
+		}
+		if scale > 1.20 {
+			scale = 1.20
+		}
 		s.Tags = appendNaturalTag(s.Tags, tag)
-		s.RepeatPenalty += penalty
+		s.RepeatPenalty += penalty * scale
 	}
 
 	switch o.Kind {
@@ -45,17 +57,15 @@ func naturalPlaySignal(obs Observation, o Objective, profile PlayStyleProfile) N
 		if partyHurt(obs) || leadOutOfPP(obs) {
 			add("consolidate-recovery", 0.30)
 		} else {
-			// Centers offer Heal even at full health. Adventure should not turn
-			// that harmless mechanic into a repeated sightseeing objective.
 			penalize("already-recovered", 0.35)
 		}
 
 	case KindTalk:
 		// Offer only exposes a person until Knowledge.Talked records success,
-		// so every KindTalk reaching the styled planner is a novel interaction.
-		add("new-npc", 0.18)
+		// so every KindTalk reaching the styled planner is novel.
+		addScaled("new-npc", 0.18, profile.ExplorationScale)
 		if distance, crossMap, located := objectiveDistance(obs, o); located && !crossMap && distance <= 3 {
-			add("nearby", 0.08)
+			addScaled("nearby", 0.08, profile.ExplorationScale)
 		}
 
 	case KindBuy:
@@ -66,24 +76,24 @@ func naturalPlaySignal(obs Observation, o Objective, profile PlayStyleProfile) N
 		note := strings.ToLower(o.Note)
 		switch {
 		case strings.Contains(note, "high-value preparation"):
-			add("high-value-item", 0.28)
+			addScaled("high-value-item", 0.28, profile.ExplorationScale)
 		case strings.Contains(note, "useful preparation"):
-			add("useful-item", 0.14)
+			addScaled("useful-item", 0.14, profile.ExplorationScale)
 		default:
-			add("optional-item", 0.05)
+			addScaled("optional-item", 0.05, profile.ExplorationScale)
 		}
 		if highImpactItem(o.Item) {
-			add("durable-upgrade", 0.12)
+			addScaled("durable-upgrade", 0.12, profile.PartyScale)
 		}
 		if distance, crossMap, located := objectiveDistance(obs, o); located && !crossMap && distance <= 4 {
-			add("nearby", 0.10)
+			addScaled("nearby", 0.10, profile.ExplorationScale)
 		}
 
 	case KindGoTo:
 		lowNote := strings.ToLower(o.Note)
 		lowPlace := strings.ToLower(string(o.Place))
 		if strings.Contains(lowNote, "unvisited adjacent map") {
-			add("frontier", 0.30)
+			addScaled("frontier", 0.30, profile.ExplorationScale)
 		}
 		if naturalCenterPlace(lowPlace) && (partyHurt(obs) || leadOutOfPP(obs)) {
 			add("recovery-stop", 0.28)
@@ -95,20 +105,26 @@ func naturalPlaySignal(obs Observation, o Objective, profile PlayStyleProfile) N
 		}
 
 	case KindCatch:
+		var bonus float64
 		switch {
 		case obs.PartyCount <= 2:
-			add("build-party", 0.30)
+			bonus = 0.30
 		case obs.PartyCount == 3:
-			add("build-party", 0.22)
+			bonus = 0.22
 		case obs.PartyCount == 4:
-			add("team-option", 0.10)
+			bonus = 0.10
 		default:
-			add("team-option", 0.03)
+			bonus = 0.03
 		}
+		tag := "team-option"
+		if obs.PartyCount <= 3 {
+			tag = "build-party"
+		}
+		addScaled(tag, bonus, profile.PartyScale)
 		if o.Place == "" {
-			add("local-encounter", 0.06)
+			addScaled("local-encounter", 0.06, profile.PartyScale)
 		} else {
-			add("known-habitat", 0.03)
+			addScaled("known-habitat", 0.03, profile.PartyScale)
 		}
 
 	case KindTrain:
@@ -116,28 +132,24 @@ func naturalPlaySignal(obs Observation, o Objective, profile PlayStyleProfile) N
 			gap := int(obs.Party[0].Level) - int(mon.Level)
 			switch {
 			case o.Species != "" && gap >= 4:
-				add("catch-up-party", 0.28)
+				addScaled("catch-up-party", 0.28, profile.PartyScale)
 			case o.Species != "" && gap >= 2:
-				add("catch-up-party", 0.20)
+				addScaled("catch-up-party", 0.20, profile.PartyScale)
 			case o.Species != "":
-				add("develop-party", 0.10)
+				addScaled("develop-party", 0.10, profile.PartyScale)
 			default:
-				add("prepare-lead", 0.05)
+				addScaled("prepare-lead", 0.05, profile.PartyScale)
 			}
 		}
 
 	case KindTrainer:
 		if naturalUnderlevelledParty(obs) {
-			add("useful-training", 0.12)
+			addScaled("useful-training", 0.12, profile.PartyScale)
 		} else {
-			add("route-trainer", 0.05)
+			addScaled("route-trainer", 0.05, profile.PartyScale)
 		}
 	}
 
-	// Optional actions should not become an endless rhythm merely because
-	// they have a positive Adventure flavor. Exact repeats in the short run
-	// history lose some appeal; one-shot NPCs/items/catches are normally
-	// removed by Knowledge/game state before this is even needed.
 	if repeats := recentNaturalObjectiveCount(obs, o); repeats > 0 && naturalRepeatSensitive(o) {
 		penalty := float64(repeats) * 0.08
 		if penalty > 0.24 {
@@ -146,9 +158,9 @@ func naturalPlaySignal(obs Observation, o Objective, profile PlayStyleProfile) N
 		penalize("recent-repeat", penalty)
 	}
 
-	// #275's fallback is deliberately layered after the ordinary Adventure
-	// routine. It can temporarily favor plausible alternate discovery and
-	// preparation, but it stays bounded and never removes the normal score.
+	// Adventure owns the targeted stalled-progression recovery policy from
+	// #275. Other profiles still share the same legal menu and scoring core;
+	// they can opt into this recovery policy later without another planner.
 	s.Stall = stallFallbackSignal(obs, o, profile)
 	if s.Stall.Context.Active {
 		s.Bonus += s.Stall.Bonus
