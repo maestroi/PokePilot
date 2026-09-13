@@ -10,10 +10,10 @@ import (
 // historical spectatorRun Go shape. Keeping it separate avoids accidentally
 // widening the public trust boundary when private wall rows gain new fields.
 type spectatorPresentationPolicy struct {
-	FPS             int
-	PlayStyle       string
-	RiskTolerance   string
-	WildEncounters  string
+	FPS            int
+	PlayStyle      string
+	RiskTolerance  string
+	WildEncounters string
 }
 
 const spectatorPresentationPolicyLimit = 256
