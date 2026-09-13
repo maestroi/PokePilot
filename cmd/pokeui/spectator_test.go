@@ -211,6 +211,48 @@ func TestSpectatorFramePumpIsTwentyFPS(t *testing.T) {
 	}
 }
 
+// Live farm dashboards no longer fit in spectator's 4MiB decode cap
+// (MEASURED 2026-09-13: 13.9MiB / 4030 runs). MCP already refuses to
+// ingest the unnarrowed catalog; the public watch poll has to do the
+// same or /v1/watch 502s and the page sits on "Spectator feed reconnecting".
+func TestSpectatorWatchNarrowsDashboardAtTheWall(t *testing.T) {
+	var unnarrowed atomic.Int32
+	wall := httptest.NewServer(http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+		if req.Method != http.MethodGet || req.URL.Path != "/v1/dashboard" {
+			http.NotFound(res, req)
+			return
+		}
+		q := req.URL.Query()
+		if q.Get("active") != "1" {
+			unnarrowed.Add(1)
+			http.Error(res, "unnarrowed dashboard requested", http.StatusInsufficientStorage)
+			return
+		}
+		res.Header().Set("Content-Type", "application/json")
+		res.Write([]byte(`{"now":1,"runs":[{"run_id":"live","status":"running","decision":"Travel north"}]}`))
+	}))
+	t.Cleanup(wall.Close)
+
+	ui := httptest.NewServer(spectatorHandler(wall.URL))
+	t.Cleanup(ui.Close)
+
+	res, err := http.Get(ui.URL + "/v1/watch")
+	if err != nil {
+		t.Fatalf("GET /v1/watch: %v", err)
+	}
+	body, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("GET /v1/watch = %d, want 200: %s", res.StatusCode, body)
+	}
+	if !bytes.Contains(body, []byte(`"run_id":"live"`)) {
+		t.Fatalf("watch snapshot missing live run: %s", body)
+	}
+	if got := unnarrowed.Load(); got != 0 {
+		t.Fatalf("spectator requested the unnarrowed dashboard %d time(s)", got)
+	}
+}
+
 func TestSpectatorHistoryIsBoundedButKeepsActiveRuns(t *testing.T) {
 	runs := make([]spectatorRun, 0, spectatorHistoryLimit+3)
 	runs = append(runs, spectatorRun{RunID: "active", Status: "running"})

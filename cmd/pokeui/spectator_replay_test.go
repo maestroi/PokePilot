@@ -216,6 +216,61 @@ func TestSpectatorOnlyPublishesNoteworthyReadyReplays(t *testing.T) {
 	}
 }
 
+func TestSpectatorReplayLookbackNarrowsFinishedHistoryAtTheWall(t *testing.T) {
+	var unnarrowed atomic.Int32
+	var doneLookbacks atomic.Int32
+	wall := httptest.NewServer(http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+		if req.Method != http.MethodGet || req.URL.Path != "/v1/dashboard" {
+			http.NotFound(res, req)
+			return
+		}
+		q := req.URL.Query()
+		switch {
+		case q.Get("active") == "1":
+			res.Header().Set("Content-Type", "application/json")
+			res.Write([]byte(`{"now":1,"runs":[{"run_id":"live","status":"running"}]}`))
+		case q.Get("status") == "done" && q.Get("limit") != "":
+			doneLookbacks.Add(1)
+			res.Header().Set("Content-Type", "application/json")
+			res.Write([]byte(`{"now":1,"runs":[{"run_id":"run-goal","status":"done","stats":{"goal_complete":true}}]}`))
+		default:
+			unnarrowed.Add(1)
+			http.Error(res, "unnarrowed dashboard requested", http.StatusInsufficientStorage)
+		}
+	}))
+	t.Cleanup(wall.Close)
+	replay := httptest.NewServer(http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+		if req.URL.Path == "/v1/runs/run-goal/replay/status" {
+			res.Header().Set("Content-Type", "application/json")
+			res.Write([]byte(`{"run_id":"run-goal","state":"ready","size":6}`))
+			return
+		}
+		http.NotFound(res, req)
+	}))
+	t.Cleanup(replay.Close)
+
+	ui := httptest.NewServer(spectatorHandlerWithReplay(wall.URL, replay.URL))
+	t.Cleanup(ui.Close)
+	res, err := http.Get(ui.URL + "/v1/watch")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("GET /v1/watch = %d: %s", res.StatusCode, body)
+	}
+	if !bytes.Contains(body, []byte("live")) || !bytes.Contains(body, []byte("run-goal")) {
+		t.Fatalf("replay snapshot = %s, want live run plus curated replay", body)
+	}
+	if got := unnarrowed.Load(); got != 0 {
+		t.Fatalf("replay spectator requested the unnarrowed dashboard %d time(s)", got)
+	}
+	if got := doneLookbacks.Load(); got != 1 {
+		t.Fatalf("done lookback requests = %d, want 1", got)
+	}
+}
+
 func TestSpectatorWithoutReplayServicePublishesOnlyActiveRuns(t *testing.T) {
 	wall := httptest.NewServer(http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 		res.Header().Set("Content-Type", "application/json")
