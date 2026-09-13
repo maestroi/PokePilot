@@ -26,9 +26,11 @@ type statsPlanner struct {
 	push func(any)
 	snap *heartbeatSnap
 
-	// llm_profile chooses inference routing; playStyle chooses gameplay policy.
-	// They intentionally remain independent knobs.
-	playStyle agent.PlayStyleProfile
+	// llm_profile chooses inference routing; these fields choose orthogonal
+	// gameplay policy. They intentionally remain independent knobs.
+	playStyle      agent.PlayStyleProfile
+	riskTolerance  string
+	wildEncounters string
 
 	stats                runStats
 	counts               map[string]int
@@ -52,18 +54,28 @@ type statsPlanner struct {
 }
 
 // newStatsPlanner remains source-compatible with existing local/tests. Farm
-// construction consumes the play_style from the lease farm.Client just
-// decoded; local construction consumes -play-style. Both default empty to the
-// exact historical Speedrun profile.
+// construction consumes run policy from the lease farm.Client just decoded;
+// local construction consumes the corresponding CLI flags. Empty values keep
+// the historical compatibility defaults.
 func newStatsPlanner(profile, reasoningEffort, goal string, m *emu.Emu, push func(any), snap *heartbeatSnap) *statsPlanner {
 	playStyle := localPlayStyleName()
+	riskTolerance := localRiskToleranceName()
+	wildEncounters := localWildEncountersName()
 	if snap != nil {
 		playStyle = farm.CurrentPlayStyle()
+		riskTolerance = farm.CurrentRiskTolerance()
+		wildEncounters = farm.CurrentWildEncounters()
 	}
-	return newStatsPlannerWithPlayStyle(profile, reasoningEffort, playStyle, goal, m, push, snap)
+	return newStatsPlannerWithRunPolicy(profile, reasoningEffort, playStyle, riskTolerance, wildEncounters, goal, m, push, snap)
 }
 
+// newStatsPlannerWithPlayStyle is kept for existing tests/callers that only
+// choose a play style. Empty risk/wild settings preserve the old behavior.
 func newStatsPlannerWithPlayStyle(profile, reasoningEffort, playStyle, goal string, m *emu.Emu, push func(any), snap *heartbeatSnap) *statsPlanner {
+	return newStatsPlannerWithRunPolicy(profile, reasoningEffort, playStyle, "", "", goal, m, push, snap)
+}
+
+func newStatsPlannerWithRunPolicy(profile, reasoningEffort, playStyle, riskTolerance, wildEncounters, goal string, m *emu.Emu, push func(any), snap *heartbeatSnap) *statsPlanner {
 	primaryCfg, fallbackCfg := agent.ResolveLLMEndpointsWithEffort(agent.NormalizeLLMProfile(profile), agent.NormalizeReasoningEffort(reasoningEffort))
 	inner := agent.NewLLMPlannerFromConfig(primaryCfg)
 	inner.Goal = goal
@@ -78,6 +90,8 @@ func newStatsPlannerWithPlayStyle(profile, reasoningEffort, playStyle, goal stri
 		push:             push,
 		snap:             snap,
 		playStyle:        agent.PlayStyle(playStyle),
+		riskTolerance:    agent.NormalizeRiskTolerance(riskTolerance),
+		wildEncounters:   agent.NormalizeWildEncounters(wildEncounters),
 		counts:           map[string]int{},
 		baseExtraSystem:  inner.ExtraSystem,
 		lastTelemetrySeq: currentLLMTelemetrySeq(),
@@ -107,11 +121,16 @@ func (s *statsPlanner) NextRetry(obs agent.Observation, offered []agent.Objectiv
 	return s.ask(obs, offered, &r)
 }
 
+func (s *statsPlanner) applyRunPolicy(obs agent.Observation, offered []agent.Objective) []agent.Objective {
+	offered = agent.ApplyRunPolicy(obs, offered, s.riskTolerance, s.wildEncounters)
+	return agent.AnnotatePlayStyle(obs, offered, s.playStyle)
+}
+
 func (s *statsPlanner) ask(obs agent.Observation, offered []agent.Objective, retry *agent.Retry) (agent.Objective, error) {
 	if s.snap != nil {
 		offered = farmRecoveryOffered(obs, offered)
 	}
-	offered = agent.AnnotatePlayStyle(obs, offered, s.playStyle)
+	offered = s.applyRunPolicy(obs, offered)
 	if retry == nil {
 		return s.router.Next(obs, offered)
 	}
@@ -120,13 +139,13 @@ func (s *statsPlanner) ask(obs agent.Observation, offered []agent.Objective, ret
 
 func (s *statsPlanner) Strategize(obs agent.Observation, offered []agent.Objective, reason string) (agent.Plan, error) {
 	s.prepareRunContext(obs)
-	offered = agent.AnnotatePlayStyle(obs, offered, s.playStyle)
+	offered = s.applyRunPolicy(obs, offered)
 	return s.router.Strategize(obs, offered, reason)
 }
 
 func (s *statsPlanner) StrategizeRetry(obs agent.Observation, offered []agent.Objective, reason string, r agent.Retry) (agent.Plan, error) {
 	s.prepareRunContext(obs)
-	offered = agent.AnnotatePlayStyle(obs, offered, s.playStyle)
+	offered = s.applyRunPolicy(obs, offered)
 	return s.router.StrategizeRetry(obs, offered, reason, r)
 }
 
