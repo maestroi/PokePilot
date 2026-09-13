@@ -9,7 +9,8 @@ name: Automerge
 
 on:
   pull_request:
-    types: [opened, ready_for_review, reopened, synchronize, auto_merge_enabled]
+    types:
+      [opened, ready_for_review, reopened, synchronize, auto_merge_enabled, closed]
   workflow_run:
     workflows: ["Tests"]
     types: [completed]
@@ -49,6 +50,27 @@ jobs:
             exit 1
           fi
           printf '%s\n' "$out"
+
+  publish_on_merge:
+    name: Publish farm on merge
+    # Backstop for the "merge" job below: that one depends on the Tests
+    # workflow_run event cascading, which can silently miss (e.g. run
+    # 4561b38/#302 landed on main without ever dispatching a rebuild).
+    # This fires directly off the PR-closed event instead, so a rebuild
+    # still happens even if the workflow_run trigger never delivers.
+    # publish-farm.yml's own concurrency group (cancel-in-progress) makes a
+    # duplicate dispatch from the other job harmless.
+    if: >
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.base.ref == 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch publish-farm
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: gh workflow run publish-farm.yml --ref main
 
   disable:
     name: Keep others manual
