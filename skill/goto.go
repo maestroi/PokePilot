@@ -52,6 +52,39 @@ type navigationGuard struct {
 	transitions int
 }
 
+// legAt bans an edge from the exact tile it was taken from. Route 2 is the
+// case that forced this: it connects Viridian to Pewter in one hop, but a
+// ledge splits it across its full width, so that connection is unwalkable
+// from the southern landing tile and perfectly walkable from the northern
+// band the Viridian Forest exit leads to. Banning the edge outright — which
+// this did until it was measured — makes the only real route to Pewter
+// unplannable, because that route ends on the very edge that failed. So the
+// ban is keyed by where it failed, and only the bans recorded at the
+// current tile are handed to the planner.
+type legAt struct {
+	e    world.Edge
+	m    uint8
+	x, y uint8
+}
+
+// legFromMap bans an edge from an entire map, not just the one tile it was
+// taken from. It exists for the case legAt cannot cover: a connection that
+// always lands in a walkable component with no recorded onward edge, no
+// matter which tile of the origin map the crossing starts from. Cerulean
+// City <-> Route 4 <-> Cerulean's trashed house is this in the wild
+// (run-dicjjitksq5s3txp8m0nzn4k9 round 16): the crossing into Route 4
+// landed in the same dead-end component whether the walk to the border
+// started at (0,19), (27,12), or (20,0), so a tile-scoped ban never matched
+// the next attempt and the loop ran the full 17-transition guard budget
+// before failing. A ban keyed by (edge, origin map) survives every tile the
+// walker happens to approach from. Only safe for warps: a warp has one
+// fixed source tile, so its outcome never depends on where the player
+// approached from.
+type legFromMap struct {
+	e world.Edge
+	m uint8
+}
+
 func newNavigationGuard(dest Destination, start navigationState) *navigationGuard {
 	return &navigationGuard{
 		dest:  dest,
@@ -114,6 +147,34 @@ func blockVisitedMaps(g *world.Graph, hard map[world.Edge]bool, current uint8, v
 	return blocked
 }
 
+// forcedRevisitBan decides whether a route computed WITHOUT the visited-maps
+// preference is forced back into a map this call already departed from —
+// evidence of a real bounce rather than a fresh route (see the goToWithTransitionExecutor
+// dead-end comment for the two shapes measured in the wild: a one-way room,
+// and a border crossing that always lands in the same isolated pocket
+// regardless of which tile it is crossed at). ok is false when there is
+// nothing to ban: no route, the first edge does not revisit, it is already
+// banned, or banning it would seal the map's only remaining exit.
+func forcedRevisitBan(g *world.Graph, retry []world.RouteStep, retryErr error, visitedMaps map[uint8]bool, deadEnds map[legFromMap]bool) (legFromMap, bool) {
+	if retryErr != nil || len(retry) == 0 {
+		return legFromMap{}, false
+	}
+	edge := retry[0].Edge
+	if !visitedMaps[edge.To] {
+		return legFromMap{}, false
+	}
+	forced := legFromMap{e: edge, m: edge.From}
+	if deadEnds[forced] {
+		return legFromMap{}, false
+	}
+	for _, e := range g.Edges[forced.m] {
+		if e != forced.e && !deadEnds[legFromMap{e: e, m: forced.m}] {
+			return forced, true
+		}
+	}
+	return legFromMap{}, false
+}
+
 func newReplanExhaustedError(max int, cur, x, y uint8, dest Destination, last error) error {
 	return fmt.Errorf("%w: %d re-plans from map %02x at (%d,%d) toward map %02x at (%d,%d), last leg: %w",
 		ErrReplanExhausted, max, cur, x, y, dest.Map, dest.X, dest.Y, last)
@@ -138,38 +199,7 @@ func goToWithTransitionExecutor(m *emu.Emu, romData []byte, dest Destination, ex
 		Map: m.Peek8(sym.CurMap), X: startX, Y: startY,
 	})
 
-	// Legs the map graph offers but the tile-level pathfinder cannot walk
-	// FROM A GIVEN TILE. Route 2 is the case that forced this: it connects
-	// Viridian to Pewter in one hop, but a ledge splits it across its full
-	// width, so that connection is unwalkable from the southern landing
-	// tile and perfectly walkable from the northern band the Viridian
-	// Forest exit leads to. Banning the edge outright — which this did
-	// until it was measured — makes the only real route to Pewter
-	// unplannable, because that route ends on the very edge that failed.
-	// So the ban is keyed by where it failed, and only the bans recorded
-	// at the current tile are handed to the planner.
-	type legAt struct {
-		e    world.Edge
-		m    uint8
-		x, y uint8
-	}
 	failed := map[legAt]bool{}
-
-	// deadEnds bans an edge from an entire map, not just the one tile it was
-	// taken from. It exists for the case legAt cannot cover: a connection
-	// that always lands in a walkable component with no recorded onward
-	// edge, no matter which tile of the origin map the crossing starts from.
-	// Cerulean City <-> Route 4 <-> Cerulean's trashed house is this in the
-	// wild (run-dicjjitksq5s3txp8m0nzn4k9 round 16): the crossing into Route
-	// 4 landed in the same dead-end component whether the walk to the border
-	// started at (0,19), (27,12), or (20,0), so a tile-scoped ban never
-	// matched the next attempt and the loop ran the full 17-transition guard
-	// budget before failing. A ban keyed by (edge, origin map) survives every
-	// tile the walker happens to approach from.
-	type legFromMap struct {
-		e world.Edge
-		m uint8
-	}
 	deadEnds := map[legFromMap]bool{}
 
 	// A bound on re-plans. Each ban is a distinct (leg, tile) or (leg, map),
@@ -179,8 +209,6 @@ func goToWithTransitionExecutor(m *emu.Emu, romData []byte, dest Destination, ex
 	replans := 0
 	semanticExecutions := 0
 	visitedMaps := map[uint8]bool{}
-	var lastLeg legAt
-	haveLastLeg := false
 
 	for {
 		if err := abortIfBattle(m); err != nil {
@@ -236,66 +264,58 @@ func goToWithTransitionExecutor(m *emu.Emu, romData []byte, dest Destination, ex
 		// with the preference dropped and the measured bans kept. The
 		// navigation guard still catches a real oscillation.
 		if errors.Is(err, world.ErrNoRoute) && len(preferred) > len(blockedHere) {
-			// The leg that brought us here landed in a component with no
-			// forward route: it walked, so it never became an
-			// ErrLegUnwalkable ban, but it is exactly as much a dead end as
-			// one. Cerulean City <-> Route 4 <-> Cerulean's trashed house is
-			// this in the wild (run-dicjjitksq5s3txp8m0nzn4k9 round 16):
-			// crossing into Route 4 always lands in a component with zero
-			// recorded onward edges, so every replan from there says "go
-			// back", and every replan back at Cerulean says "try Route 4
-			// again", forever. Banning the entry leg at its origin tile,
-			// the same way an unwalkable leg is banned, means the next visit
-			// to that tile plans around it instead of repeating it.
-			// Only a WARP is safe to blame permanently. A warp has one fixed
-			// source tile, so its outcome never depends on where the player
-			// approached from — if it led nowhere once, it leads nowhere
-			// every time (the PC case above). A CONNECTION crosses a whole
-			// map edge and mirrors the player's position on landing, so
-			// where exactly you cross determines which component you land
-			// in: Route 4's landing tile from Cerulean's border sits in an
-			// isolated pocket with no recorded edge onward except back to
-			// Cerulean, but crossing at a different tile on that same
-			// border can land somewhere else entirely (this run's "go to
-			// route 2, fleeing wild battles" succeeded 4 times before
-			// failing here — the crossing point, not the map, is what
-			// varies). Banning the whole connection after one bad crossing
-			// forecloses every future crossing, good tile or not.
+			// Dropping the "don't revisit" preference and re-planning with only
+			// the hard bans tells us what the ONLY forward move actually is. If
+			// that move re-enters a map this call already departed from, it is
+			// not a fresh route: it is the bounce the preference exists to
+			// prevent, forced through because nothing else was possible. That
+			// covers both shapes measured in the wild: a one-way room whose
+			// every warp lands back where we came from (Mt Moon Center,
+			// run-3uhjsoyo0gx3i12rdm7cjax5pl round 46), and a border crossing
+			// that always lands in the same isolated pocket no matter which tile
+			// of it you cross — MEASURED on Cerulean City <-> Route 4
+			// (run-11cb1z9tng81m1nslvpe4yp65m): crossing from Cerulean tile
+			// (0,18) landed at Route 4 (89,10) with no way onward but back, and
+			// after leaving and re-approaching from a DIFFERENT Cerulean tile
+			// (9,12), the crossing was offered again and landed in that same
+			// pocket — a tile-scoped ban never catches a fresh tile, so the walk
+			// kept finding new, unbanned ways back into the same dead end until
+			// the guard's exact-position repeat finally fired, 18 hops in.
+			// Banning the edge actually about to be retaken, from its own origin
+			// map, closes every tile of that origin at once — a connection's
+			// outcome usually depends on where it is crossed (Route 2's ledge
+			// splits walkable from unwalkable tiles on the very same edge), but
+			// a crossing we have MEASURED landing back in known territory needs
+			// no further benefit of the doubt.
 			//
-			// Never ban the last edge a map has left either way: deadEnds
-			// is keyed by (edge, edge.From), so banning lastLeg forbids
-			// leaving lastLeg.m by that edge for the rest of this call; if
-			// every other edge FROM lastLeg.m is already banned too, this
-			// ban would seal lastLeg.m with no way out at all, which can
-			// never be correct — the player got there somehow, and the
-			// same walk back out must stay legal. MEASURED on
-			// run-3w2ibusy813gfmnierudpllie round 6: Route 24 has exactly
-			// two edges (Cerulean, Route 25); Route 25 was already banned
-			// as a real dead end, and banning the Cerulean edge next — fired
-			// while standing back on Cerulean, which still had plenty of its
-			// OWN untried edges and was never the problem — sealed Route 24
-			// completely. The next visit to Route 24 then had nowhere at
-			// all to go, and "go to route 2" died on "world: no route" even
-			// though Route 24 -> Cerulean was the one genuinely open door.
-			if haveLastLeg && lastLeg.e.Kind == world.EdgeWarp {
-				k := legFromMap{e: lastLeg.e, m: lastLeg.m}
-				sealsMap := true
-				for _, e := range routeGraph.Edges[lastLeg.m] {
-					if e != lastLeg.e && !deadEnds[legFromMap{e: e, m: lastLeg.m}] {
-						sealsMap = false
-						break
-					}
-				}
-				if !deadEnds[k] && !sealsMap {
-					if replans++; replans > maxReplans {
-						return newReplanExhaustedError(maxReplans, cur, x, y, dest, err)
-					}
-					deadEnds[k] = true
-				}
-			}
-			route, err = world.FindRoutePlanAtDestinationWithCapabilities(
+			// Never ban a map's only remaining exit: deadEnds is keyed by (edge,
+			// edge.From), so banning one forbids leaving that map by that edge
+			// for the rest of this call; if every other edge from that map is
+			// already banned too, this ban would seal it with no way out at all,
+			// which can never be correct — the player got there somehow, and the
+			// same way back out must stay legal. MEASURED on
+			// run-3w2ibusy813gfmnierudpllie round 6: Route 24 has exactly two
+			// edges (Cerulean, Route 25); Route 25 was already banned as a real
+			// dead end, and banning the Cerulean edge next — fired while
+			// standing back on Cerulean, which still had plenty of its OWN
+			// untried edges and was never the problem — sealed Route 24
+			// completely. The next visit to Route 24 then had nowhere at all to
+			// go, and "go to route 2" died on "world: no route" even though
+			// Route 24 -> Cerulean was the one genuinely open door.
+			retry, retryErr := world.FindRoutePlanAtDestinationWithCapabilities(
 				routeGraph, cur, dest.Map, int(x), int(y), int(dest.X), int(dest.Y), blockedHere, prereqs,
 			)
+			if forced, ok := forcedRevisitBan(routeGraph, retry, retryErr, visitedMaps, deadEnds); ok {
+				if replans++; replans > maxReplans {
+					return newReplanExhaustedError(maxReplans, cur, x, y, dest, err)
+				}
+				deadEnds[forced] = true
+				blockedHere[forced.e] = true
+				retry, retryErr = world.FindRoutePlanAtDestinationWithCapabilities(
+					routeGraph, cur, dest.Map, int(x), int(y), int(dest.X), int(dest.Y), blockedHere, prereqs,
+				)
+			}
+			route, err = retry, retryErr
 		}
 		if err != nil {
 			return fmt.Errorf("skill: GoTo: no route from map %02x at (%d,%d) to map %02x at (%d,%d): %w",
@@ -334,7 +354,6 @@ func goToWithTransitionExecutor(m *emu.Emu, romData []byte, dest Destination, ex
 			return fmt.Errorf("skill: GoTo: %w", err)
 		}
 		visitedMaps[e.From] = true
-		lastLeg, haveLastLeg = legAt{e: e, m: cur, x: x, y: y}, true
 		nowX, nowY := playerXY(m)
 		if err := guard.observe(navigationState{
 			Map: m.Peek8(sym.CurMap), X: nowX, Y: nowY,
