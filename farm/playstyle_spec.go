@@ -6,97 +6,167 @@ import (
 	"sync"
 )
 
-// playStyleByRun extends the long-lived Spec wire without changing the legacy
-// struct layout used throughout the wall/runner code. The JSON methods below
-// round-trip play_style keyed by run_id; old payloads simply have no entry.
+// Optional run-policy fields extend the long-lived Spec wire without changing
+// the legacy struct layout used throughout the wall/runner code. The JSON
+// methods below round-trip them keyed by run_id; old payloads simply have no
+// entry and retain their compatibility defaults in the agent.
 //
 // This is intentionally wire policy, not planner policy: farm cannot import
-// agent. The runner normalizes the value before constructing planner behavior.
-var playStyleByRun sync.Map // map[string]string
+// agent. The runner normalizes values before constructing planner behavior.
+var (
+	playStyleByRun      sync.Map // map[string]string
+	riskToleranceByRun  sync.Map // map[string]string
+	wildEncountersByRun sync.Map // map[string]string
+)
 
-var currentPlayStyle struct {
+var currentRunPolicy struct {
 	sync.RWMutex
-	value string
+	playStyle      string
+	riskTolerance  string
+	wildEncounters string
 }
 
-// RememberPlayStyle records the wire value for a run. Empty style removes the
-// extension, preserving the historical no-field encoding for legacy specs.
-func RememberPlayStyle(runID, style string) {
+func rememberRunPolicyValue(store *sync.Map, runID, value string) {
 	runID = strings.TrimSpace(runID)
-	style = strings.ToLower(strings.TrimSpace(style))
+	value = strings.ToLower(strings.TrimSpace(value))
 	if runID == "" {
 		return
 	}
-	if style == "" {
-		playStyleByRun.Delete(runID)
+	if value == "" {
+		store.Delete(runID)
 		return
 	}
-	playStyleByRun.Store(runID, style)
+	store.Store(runID, value)
 }
 
-// PlayStyleForRun returns the selected wire profile, or empty for a legacy
-// spec. Empty deliberately means "use the agent's backwards-compatible
-// default", not Adventure.
-func PlayStyleForRun(runID string) string {
-	if v, ok := playStyleByRun.Load(strings.TrimSpace(runID)); ok {
+func runPolicyValue(store *sync.Map, runID string) string {
+	if v, ok := store.Load(strings.TrimSpace(runID)); ok {
 		return v.(string)
 	}
 	return ""
 }
 
+// RememberPlayStyle records the wire value for a run. Empty style removes the
+// extension, preserving the historical no-field encoding for legacy specs.
+func RememberPlayStyle(runID, style string) {
+	rememberRunPolicyValue(&playStyleByRun, runID, style)
+}
+
+func RememberRiskTolerance(runID, risk string) {
+	rememberRunPolicyValue(&riskToleranceByRun, runID, risk)
+}
+
+func RememberWildEncounters(runID, policy string) {
+	rememberRunPolicyValue(&wildEncountersByRun, runID, policy)
+}
+
+// PlayStyleForRun returns the selected wire profile, or empty for a legacy
+// spec. Empty deliberately means "use the agent's backwards-compatible
+// default", not Adventure.
+func PlayStyleForRun(runID string) string { return runPolicyValue(&playStyleByRun, runID) }
+
+func RiskToleranceForRun(runID string) string { return runPolicyValue(&riskToleranceByRun, runID) }
+
+func WildEncountersForRun(runID string) string { return runPolicyValue(&wildEncountersByRun, runID) }
+
 func PlayStyleForSpec(s Spec) string { return PlayStyleForRun(s.RunID) }
 
-// CurrentPlayStyle is the play style from the most recently decoded lease
-// spec in this process. A pokepilot worker leases and runs one spec at a time,
-// so the existing planner construction path can consume this without growing
-// every historical function signature. Decoding a legacy spec explicitly
-// resets it to empty/Speedrun.
+func RiskToleranceForSpec(s Spec) string { return RiskToleranceForRun(s.RunID) }
+
+func WildEncountersForSpec(s Spec) string { return WildEncountersForRun(s.RunID) }
+
+// Current* values come from the most recently decoded lease spec in this
+// process. A pokepilot worker leases and runs one spec at a time, so the
+// existing planner construction path can consume them without growing every
+// historical function signature. Decoding a legacy spec explicitly resets
+// the fields to their empty compatibility defaults.
 func CurrentPlayStyle() string {
-	currentPlayStyle.RLock()
-	defer currentPlayStyle.RUnlock()
-	return currentPlayStyle.value
+	currentRunPolicy.RLock()
+	defer currentRunPolicy.RUnlock()
+	return currentRunPolicy.playStyle
 }
 
-func setCurrentPlayStyle(style string) {
-	currentPlayStyle.Lock()
-	currentPlayStyle.value = strings.ToLower(strings.TrimSpace(style))
-	currentPlayStyle.Unlock()
+func CurrentRiskTolerance() string {
+	currentRunPolicy.RLock()
+	defer currentRunPolicy.RUnlock()
+	return currentRunPolicy.riskTolerance
 }
 
-// CopyPlayStyle is used by orchestrators that spawn a logical successor run.
-// It is harmless when the parent is legacy/empty.
+func CurrentWildEncounters() string {
+	currentRunPolicy.RLock()
+	defer currentRunPolicy.RUnlock()
+	return currentRunPolicy.wildEncounters
+}
+
+func setCurrentRunPolicy(playStyle, riskTolerance, wildEncounters string) {
+	currentRunPolicy.Lock()
+	currentRunPolicy.playStyle = strings.ToLower(strings.TrimSpace(playStyle))
+	currentRunPolicy.riskTolerance = strings.ToLower(strings.TrimSpace(riskTolerance))
+	currentRunPolicy.wildEncounters = strings.ToLower(strings.TrimSpace(wildEncounters))
+	currentRunPolicy.Unlock()
+}
+
+// CopyPlayStyle is retained for source compatibility with the play-style
+// feature. New callers that create a logical child should use CopyRunPolicy.
 func CopyPlayStyle(fromRunID, toRunID string) {
 	if style := PlayStyleForRun(fromRunID); style != "" {
 		RememberPlayStyle(toRunID, style)
 	}
 }
 
-// MarshalJSON adds play_style to Spec without forcing every existing Spec
-// literal in the repository to grow a field immediately.
+// CopyRunPolicy inherits only fields the child did not explicitly set. This
+// makes resumed/endless children retain the parent's gameplay behavior while
+// still allowing a caller to override one orthogonal knob.
+func CopyRunPolicy(fromRunID, toRunID string) {
+	if PlayStyleForRun(toRunID) == "" {
+		CopyPlayStyle(fromRunID, toRunID)
+	}
+	if RiskToleranceForRun(toRunID) == "" {
+		if risk := RiskToleranceForRun(fromRunID); risk != "" {
+			RememberRiskTolerance(toRunID, risk)
+		}
+	}
+	if WildEncountersForRun(toRunID) == "" {
+		if policy := WildEncountersForRun(fromRunID); policy != "" {
+			RememberWildEncounters(toRunID, policy)
+		}
+	}
+}
+
+// MarshalJSON adds optional run-policy fields to Spec without forcing every
+// existing Spec literal in the repository to grow fields immediately.
 func (s Spec) MarshalJSON() ([]byte, error) {
 	type plain Spec
 	return json.Marshal(struct {
 		plain
-		PlayStyle string `json:"play_style,omitempty"`
+		PlayStyle      string `json:"play_style,omitempty"`
+		RiskTolerance  string `json:"risk_tolerance,omitempty"`
+		WildEncounters string `json:"wild_encounters,omitempty"`
 	}{
-		plain:     plain(s),
-		PlayStyle: PlayStyleForRun(s.RunID),
+		plain:          plain(s),
+		PlayStyle:      PlayStyleForRun(s.RunID),
+		RiskTolerance:  RiskToleranceForRun(s.RunID),
+		WildEncounters: WildEncountersForRun(s.RunID),
 	})
 }
 
-// UnmarshalJSON accepts both old specs and the extended play_style wire and
-// remembers the extension by run_id for subsequent lease/recording use.
+// UnmarshalJSON accepts both old specs and the extended run-policy wire and
+// remembers extensions by run_id for subsequent lease/recording use.
 func (s *Spec) UnmarshalJSON(data []byte) error {
 	type plain Spec
 	var in struct {
 		plain
-		PlayStyle string `json:"play_style,omitempty"`
+		PlayStyle      string `json:"play_style,omitempty"`
+		RiskTolerance  string `json:"risk_tolerance,omitempty"`
+		WildEncounters string `json:"wild_encounters,omitempty"`
 	}
 	if err := json.Unmarshal(data, &in); err != nil {
 		return err
 	}
 	*s = Spec(in.plain)
 	RememberPlayStyle(s.RunID, in.PlayStyle)
-	setCurrentPlayStyle(in.PlayStyle)
+	RememberRiskTolerance(s.RunID, in.RiskTolerance)
+	RememberWildEncounters(s.RunID, in.WildEncounters)
+	setCurrentRunPolicy(in.PlayStyle, in.RiskTolerance, in.WildEncounters)
 	return nil
 }
