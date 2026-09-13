@@ -1,0 +1,323 @@
+name: Real-ROM Debug
+
+# Deliberately separate from normal CI. This runs only when explicitly
+# dispatched, or when a maintainer/agent pushes a branch under debug/.
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Debug mode
+        required: true
+        default: test
+        type: choice
+        options:
+          - test
+          - scripted
+          - llm
+      test_package:
+        description: Go package for test mode
+        required: true
+        default: ./skill
+        type: string
+      test_pattern:
+        description: Optional go test -run pattern
+        required: false
+        type: string
+      seed:
+        description: PokePilot seed for scripted/llm modes
+        required: true
+        default: "0"
+        type: string
+      starter:
+        description: Starter for scripted mode
+        required: true
+        default: squirtle
+        type: choice
+        options:
+          - squirtle
+          - charmander
+          - bulbasaur
+      destination:
+        description: Destination for scripted mode
+        required: true
+        default: viridian pokemon center
+        type: string
+      goal:
+        description: Structured goal for llm mode
+        required: true
+        default: elite-four
+        type: string
+      max_rounds:
+        description: LLM objective cap; 0 means no round cap
+        required: true
+        default: "40"
+        type: string
+  push:
+    branches:
+      - "debug/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rom-debug-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  debug:
+    runs-on: [self-hosted, linux, pokepilot-rom]
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout PokePilot
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Verify module graph
+        run: go mod download
+
+      - name: Resolve and verify ROM
+        id: rom
+        shell: bash
+        env:
+          CONFIGURED_ROM: ${{ vars.POKEMON_RED_ROM_PATH }}
+          ROM_URL: ${{ secrets.POKEPILOT_ROM_URL || vars.POKEPILOT_ROM_URL }}
+        run: |
+          set -euo pipefail
+          target="${CONFIGURED_ROM:-$HOME/.config/pokepilot/pokemon_red.gb}"
+          export POKEPILOT_ROM_URL="$ROM_URL"
+          rom="$(bash ./scripts/ensure-rom.sh "$target")"
+          echo "POKEMON_RED_ROM=$rom" >> "$GITHUB_ENV"
+          echo "path=$rom" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve debug request
+        id: request
+        shell: bash
+        env:
+          INPUT_MODE: ${{ inputs.mode }}
+          INPUT_TEST_PACKAGE: ${{ inputs.test_package }}
+          INPUT_TEST_PATTERN: ${{ inputs.test_pattern }}
+          INPUT_SEED: ${{ inputs.seed }}
+          INPUT_STARTER: ${{ inputs.starter }}
+          INPUT_DESTINATION: ${{ inputs.destination }}
+          INPUT_GOAL: ${{ inputs.goal }}
+          INPUT_MAX_ROUNDS: ${{ inputs.max_rounds }}
+          CONFIGURED_RESULTS: ${{ vars.POKEPILOT_DEBUG_RESULTS }}
+        run: |
+          set -euo pipefail
+
+          MODE="${INPUT_MODE:-test}"
+          TEST_PACKAGE="${INPUT_TEST_PACKAGE:-./skill}"
+          TEST_PATTERN="${INPUT_TEST_PATTERN:-}"
+          SEED="${INPUT_SEED:-0}"
+          STARTER="${INPUT_STARTER:-squirtle}"
+          DESTINATION="${INPUT_DESTINATION:-viridian pokemon center}"
+          GOAL="${INPUT_GOAL:-elite-four}"
+          MAX_ROUNDS="${INPUT_MAX_ROUNDS:-40}"
+
+          # Agents can trigger deterministic ROM debugging without workflow
+          # dispatch by pushing debug/<name> with this small control file.
+          # Parse only known KEY=value fields; never source/eval branch data.
+          if [[ "$GITHUB_EVENT_NAME" == "push" && -f .github/rom-debug.env ]]; then
+            while IFS='=' read -r key value; do
+              [[ -z "$key" || "$key" == \#* ]] && continue
+              case "$key" in
+                MODE) MODE="$value" ;;
+                TEST_PACKAGE) TEST_PACKAGE="$value" ;;
+                TEST_PATTERN) TEST_PATTERN="$value" ;;
+                SEED) SEED="$value" ;;
+                STARTER) STARTER="$value" ;;
+                DESTINATION) DESTINATION="$value" ;;
+                GOAL) GOAL="$value" ;;
+                MAX_ROUNDS) MAX_ROUNDS="$value" ;;
+                *) echo "rom-debug: unknown config key $key" >&2; exit 2 ;;
+              esac
+            done < .github/rom-debug.env
+          fi
+
+          case "$MODE" in
+            test|scripted|llm) ;;
+            *) echo "rom-debug: mode must be test, scripted, or llm" >&2; exit 2 ;;
+          esac
+          if [[ "$TEST_PACKAGE" != "./..." && ! "$TEST_PACKAGE" =~ ^\./[A-Za-z0-9_./-]+$ ]]; then
+            echo "rom-debug: invalid test package: $TEST_PACKAGE" >&2
+            exit 2
+          fi
+          if [[ ! "$SEED" =~ ^-?[0-9]+$ ]]; then
+            echo "rom-debug: seed must be an integer" >&2
+            exit 2
+          fi
+          if [[ ! "$MAX_ROUNDS" =~ ^[0-9]+$ ]]; then
+            echo "rom-debug: max rounds must be a non-negative integer" >&2
+            exit 2
+          fi
+          case "$STARTER" in
+            squirtle|charmander|bulbasaur) ;;
+            *) echo "rom-debug: invalid starter: $STARTER" >&2; exit 2 ;;
+          esac
+
+          safe="$RUNNER_TEMP/pokepilot-debug-safe"
+          results="${CONFIGURED_RESULTS:-$HOME/.local/state/pokepilot/debug}"
+          private="$results/${GITHUB_RUN_ID}-attempt-${GITHUB_RUN_ATTEMPT}"
+          rm -rf "$safe"
+          mkdir -p "$safe" "$private"
+
+          {
+            echo "MODE=$MODE"
+            echo "TEST_PACKAGE=$TEST_PACKAGE"
+            echo "TEST_PATTERN=$TEST_PATTERN"
+            echo "SEED=$SEED"
+            echo "STARTER=$STARTER"
+            echo "DESTINATION=$DESTINATION"
+            echo "GOAL=$GOAL"
+            echo "MAX_ROUNDS=$MAX_ROUNDS"
+            echo "SAFE_OUT=$safe"
+            echo "PRIVATE_OUT=$private"
+          } >> "$GITHUB_ENV"
+
+          {
+            echo "mode=$MODE"
+            echo "revision=$GITHUB_SHA"
+            echo "ref=$GITHUB_REF_NAME"
+            echo "test_package=$TEST_PACKAGE"
+            echo "test_pattern=$TEST_PATTERN"
+            echo "seed=$SEED"
+            echo "starter=$STARTER"
+            echo "destination=$DESTINATION"
+            echo "goal=$GOAL"
+            echo "max_rounds=$MAX_ROUNDS"
+          } > "$safe/request.txt"
+
+      - name: Run real-ROM debug request
+        id: execute
+        shell: bash
+        env:
+          OVERRIDE_LLM_URL: ${{ secrets.POKEPILOT_DEBUG_LLM_URL || vars.POKEPILOT_DEBUG_LLM_URL }}
+          OVERRIDE_LLM_MODEL: ${{ secrets.POKEPILOT_DEBUG_LLM_MODEL || vars.POKEPILOT_DEBUG_LLM_MODEL }}
+          OVERRIDE_LLM_TOKEN: ${{ secrets.POKEPILOT_DEBUG_LLM_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          # Match make run-llm: self-hosted runners may already have the model
+          # endpoint/token in their private per-user config.
+          if [[ -f "$HOME/.config/pokepilot/env" ]]; then
+            set -a
+            # shellcheck disable=SC1091
+            . "$HOME/.config/pokepilot/env"
+            set +a
+          fi
+          [[ -n "$OVERRIDE_LLM_URL" ]] && export POKEPILOT_LLM_URL="$OVERRIDE_LLM_URL"
+          [[ -n "$OVERRIDE_LLM_MODEL" ]] && export POKEPILOT_LLM_MODEL="$OVERRIDE_LLM_MODEL"
+          [[ -n "$OVERRIDE_LLM_TOKEN" ]] && export llm_token="$OVERRIDE_LLM_TOKEN"
+
+          set +e
+          case "$MODE" in
+            test)
+              args=(test -count=1 "$TEST_PACKAGE" -v)
+              if [[ -n "$TEST_PATTERN" ]]; then
+                args+=(-run "$TEST_PATTERN")
+              fi
+              go "${args[@]}" 2>&1 | tee "$SAFE_OUT/run.log"
+              status=${PIPESTATUS[0]}
+              ;;
+            scripted)
+              go run ./cmd/pokepilot \
+                -planner scripted -fps 0 -hold 0s -http 127.0.0.1:0 \
+                -seed "$SEED" -starter "$STARTER" -goto "$DESTINATION" \
+                2>&1 | tee "$SAFE_OUT/run.log"
+              status=${PIPESTATUS[0]}
+              ;;
+            llm)
+              if [[ -z "${POKEPILOT_LLM_URL:-}" || -z "${POKEPILOT_LLM_MODEL:-}" ]]; then
+                echo "rom-debug: llm mode needs POKEPILOT_LLM_URL and POKEPILOT_LLM_MODEL" | tee "$SAFE_OUT/run.log" >&2
+                status=2
+              else
+                mkdir -p "$PRIVATE_OUT/checkpoints"
+                go run ./cmd/pokepilot \
+                  -planner llm -fps 0 -http 127.0.0.1:0 \
+                  -seed "$SEED" -goal "$GOAL" -max-rounds "$MAX_ROUNDS" \
+                  -checkpoint-dir "$PRIVATE_OUT/checkpoints" \
+                  2>&1 | tee "$SAFE_OUT/run.log"
+                status=${PIPESTATUS[0]}
+              fi
+              ;;
+          esac
+          set -e
+
+          echo "$status" > "$SAFE_OUT/exit-code.txt"
+          exit "$status"
+
+      - name: Probe private failure/checkpoint states
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$SAFE_OUT/probes"
+          : > "$SAFE_OUT/state-index.txt"
+
+          mapfile -t states < <(
+            {
+              [[ -d skill/failure ]] && find skill/failure -type f -name '*.state' -printf '%T@ %p\n'
+              [[ -d "$PRIVATE_OUT" ]] && find "$PRIVATE_OUT" -type f -name '*.state' -printf '%T@ %p\n'
+            } | sort -rn | head -n 8 | cut -d' ' -f2-
+          )
+
+          n=0
+          for state_path in "${states[@]:-}"; do
+            [[ -n "$state_path" && -f "$state_path" ]] || continue
+            n=$((n + 1))
+            hash="$(sha256sum "$state_path" | awk '{print $1}')"
+            printf '%02d %s %s\n' "$n" "$hash" "$state_path" >> "$SAFE_OUT/state-index.txt"
+            PROBE_STATE="$(realpath "$state_path")" \
+              go test ./skill -run '^TestProbe$' -count=1 -v \
+              > "$SAFE_OUT/probes/state-$(printf '%02d' "$n").log" 2>&1 || true
+          done
+
+      - name: Copy safe private diagnostics
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ -d "$PRIVATE_OUT" ]] || exit 0
+          mkdir -p "$SAFE_OUT/private"
+          while IFS= read -r -d '' file; do
+            rel="${file#"$PRIVATE_OUT"/}"
+            mkdir -p "$SAFE_OUT/private/$(dirname "$rel")"
+            cp "$file" "$SAFE_OUT/private/$rel"
+          done < <(find "$PRIVATE_OUT" -type f \
+            ! -name '*.state' \
+            ! -name '*.sav' \
+            ! -name '*.gb' \
+            ! -name '*.gbc' \
+            -print0)
+
+      - name: Upload safe debug diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rom-debug-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/pokepilot-debug-safe
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Record replay location
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### Real-ROM debug'
+            echo
+            echo "Mode: \`$MODE\`"
+            echo
+            echo 'Private ROM/save-state material was not uploaded to GitHub.'
+            echo 'Replay checkpoints remain on the self-hosted runner at:'
+            echo
+            echo "\`$PRIVATE_OUT\`"
+            echo
+            echo 'The uploaded artifact contains the run log, request metadata, state hashes, and automatic `TestProbe` output for the newest states.'
+          } >> "$GITHUB_STEP_SUMMARY"
