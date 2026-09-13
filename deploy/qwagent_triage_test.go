@@ -58,6 +58,42 @@ func TestPickKeepsReopenedOverStaleResolution(t *testing.T) {
 	}
 }
 
+func TestPickLocalRepairSkipsHistoricalFailureWithoutIssue(t *testing.T) {
+	groups := []TriageGroup{
+		{Key: "fixed1", Count: 8, RunIDs: []string{"run-old"}},
+		{Key: "free1", Count: 2, RunIDs: []string{"run-new"}},
+	}
+	got, ok := PickWithLocalState(groups, nil, []string{"fixed1"}, nil)
+	if !ok {
+		t.Fatal("expected unrepaired group")
+	}
+	if got.Key != "free1" {
+		t.Fatalf("key = %q, want free1", got.Key)
+	}
+}
+
+func TestPickLocalRegressionOverridesStaleResolvedIssue(t *testing.T) {
+	groups := []TriageGroup{{
+		Key: "regressed1", Count: 9, RunIDs: []string{"run-post-fix"},
+		Issue: &TriageIssue{Status: "resolved", Resolution: "fixed"},
+	}}
+	got, ok := PickWithLocalState(groups, nil, nil, []string{"regressed1"})
+	if !ok {
+		t.Fatal("post-fix recurrence must be actionable even when issue sync is stale")
+	}
+	if got.Key != "regressed1" {
+		t.Fatalf("key = %q, want regressed1", got.Key)
+	}
+}
+
+func TestPickOpenPRStillClaimsLocalRegression(t *testing.T) {
+	groups := []TriageGroup{{Key: "regressed1", Count: 9}}
+	if _, ok := PickWithLocalState(groups,
+		[]string{"fix(farm): retry [triage:regressed1]"}, nil, []string{"regressed1"}); ok {
+		t.Fatal("open PR must claim a regression")
+	}
+}
+
 func TestPromptForbidsSkillSuite(t *testing.T) {
 	body, err := os.ReadFile(filepath.Join("qwagent-triage.prompt.md"))
 	if err != nil {
@@ -84,6 +120,11 @@ func TestScriptHasDryRunAndLock(t *testing.T) {
 		"continuing locally",
 		"Follow the attached farm triage packet",
 		"--file \"$POKEPILOT_TRIAGE_STATE/packet.md\"",
+		"--repaired",
+		"--regressed",
+		"merge-base --is-ancestor",
+		"/debug",
+		"runner_version",
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("script missing %q", want)
