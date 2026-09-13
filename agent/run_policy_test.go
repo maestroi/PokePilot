@@ -25,7 +25,7 @@ func TestFightWildEncounterPolicyClearsFleeAndDeduplicates(t *testing.T) {
 	}
 }
 
-func TestBalancedRiskAddsKnownCenterRecoveryBeforeTrainer(t *testing.T) {
+func TestBalancedRiskMarksKnownCenterRecoveryBeforeTrainer(t *testing.T) {
 	obs := Observation{Party: []PartyMon{{HP: 65, MaxHP: 100}}, PartyCount: 1}
 	offered := []Objective{
 		{Kind: KindGoTo, Place: "viridian pokemon center"},
@@ -35,27 +35,29 @@ func TestBalancedRiskAddsKnownCenterRecoveryBeforeTrainer(t *testing.T) {
 
 	legacy := ApplyRunPolicy(obs, offered, RiskToleranceAggressive, WildEncountersPlanner)
 	for _, o := range legacy {
-		if o.Kind == KindHeal {
-			t.Fatalf("aggressive compatibility policy unexpectedly synthesized heal: %#v", legacy)
+		if o.Note != "" {
+			t.Fatalf("aggressive compatibility policy unexpectedly annotated menu: %#v", legacy)
 		}
 	}
 
 	got := ApplyRunPolicy(obs, offered, RiskToleranceBalanced, WildEncountersPlanner)
-	heals := 0
+	centers := 0
 	trainerWarned := false
 	for _, o := range got {
-		switch o.Kind {
-		case KindHeal:
-			heals++
+		switch {
+		case o.Kind == KindGoTo && o.Place == "viridian pokemon center":
+			centers++
 			if !strings.Contains(o.Note, "balanced risk") {
-				t.Fatalf("balanced heal missing policy explanation: %#v", o)
+				t.Fatalf("balanced center journey missing policy explanation: %#v", o)
 			}
-		case KindTrainer:
+		case o.Kind == KindTrainer:
 			trainerWarned = strings.Contains(o.Note, "recovery stop")
+		case o.Kind == KindHeal:
+			t.Fatalf("risk policy invented a remote heal outside raw Offer: %#v", got)
 		}
 	}
-	if heals != 2 {
-		t.Fatalf("balanced policy synthesized %d heals, want fight/flee center variants: %#v", heals, got)
+	if centers != 2 {
+		t.Fatalf("balanced policy marked %d center journeys, want fight/flee variants: %#v", centers, got)
 	}
 	if !trainerWarned {
 		t.Fatalf("trainer objective was not warned about available recovery: %#v", got)
@@ -67,15 +69,13 @@ func TestCautiousRiskRecoversEarlierThanBalanced(t *testing.T) {
 	offered := []Objective{{Kind: KindGoTo, Place: "pewter pokemon center"}}
 
 	balanced := ApplyRunPolicy(obs, offered, RiskToleranceBalanced, WildEncountersPlanner)
-	for _, o := range balanced {
-		if o.Kind == KindHeal {
-			t.Fatalf("balanced risk should not recover at 80%% HP: %#v", balanced)
-		}
+	if balanced[0].Note != "" {
+		t.Fatalf("balanced risk should not prefer recovery at 80%% HP: %#v", balanced)
 	}
 
 	cautious := ApplyRunPolicy(obs, offered, RiskToleranceCautious, WildEncountersPlanner)
-	if len(cautious) < 2 || cautious[0].Kind != KindHeal {
-		t.Fatalf("cautious risk should add an early recovery at 80%% HP: %#v", cautious)
+	if !strings.Contains(cautious[0].Note, "cautious risk") {
+		t.Fatalf("cautious risk should prefer the legal center journey at 80%% HP: %#v", cautious)
 	}
 }
 
