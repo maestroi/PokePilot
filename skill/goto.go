@@ -147,6 +147,46 @@ func blockVisitedMaps(g *world.Graph, hard map[world.Edge]bool, current uint8, v
 	return blocked
 }
 
+// graphWithoutEdgesInto returns a shallow copy of g with every edge whose
+// destination is a visited map removed from every map's edge list, not just
+// the edges leaving `current`. It exists because FindRoutePlanAtDestination-
+// WithCapabilities (via findRoute) only enforces a blocked/preferred edge set
+// on the route's FIRST hop (see route.go's doc comment on FindRouteAvoiding):
+// a soft ban fed in as `preferred` stops the walker's very next step from
+// re-entering a visited map, but leaves the rest of the planned route free to
+// cross back into one two or more hops later. BFS happily returns that
+// "valid" full route since nothing downstream is banned, and GoTo, replanning
+// after every single hop, keeps finding a fresh detour that legally avoids
+// the immediate revisit while never actually making progress — the exact
+// bounce blockVisitedMaps's own doc comment says it exists to close.
+//
+// MEASURED on run-2498k01zo2so83g93atmvf8f6x round 4: "go to route 22" from
+// Route 4 (0f) plotted a full route that legally detoured through Cerulean's
+// trashed house, Route 24, Route 25, and Cerulean's badge house — none of
+// which lead anywhere near Route 22 — because each replan's first-hop-only
+// ban let it dodge the direct return to Route 4/Cerulean while the deeper
+// legs of each computed route still crossed back into them. Ten transitions
+// later it landed on the exact tile it started from and the navigation guard
+// fired. Removing visited-map edges from the WHOLE graph before planning
+// makes a detour-only route genuinely fail with ErrNoRoute when no real
+// forward path avoids revisiting, which hands off to the existing
+// forcedRevisitBan/safeForcedBan fallback below — the mechanism already
+// built to tell a real dead end from a revisit that is the only way through.
+func graphWithoutEdgesInto(g *world.Graph, visited map[uint8]bool) *world.Graph {
+	without := *g
+	without.Edges = make(map[uint8][]world.Edge, len(g.Edges))
+	for mapID, edges := range g.Edges {
+		filtered := make([]world.Edge, 0, len(edges))
+		for _, e := range edges {
+			if !visited[e.To] {
+				filtered = append(filtered, e)
+			}
+		}
+		without.Edges[mapID] = filtered
+	}
+	return &without
+}
+
 // forcedRevisitBan decides whether a route computed WITHOUT the visited-maps
 // preference is forced back into a map this call already departed from —
 // evidence of a real bounce rather than a fresh route (see the goToWithTransitionExecutor
@@ -281,16 +321,17 @@ func goToWithTransitionExecutor(m *emu.Emu, romData []byte, dest Destination, ex
 				blockedHere[k.e] = true
 			}
 		}
-		preferred := blockedHere
-		if len(visitedMaps) > 0 && !visitedMaps[dest.Map] {
-			preferred = blockVisitedMaps(routeGraph, blockedHere, cur, visitedMaps)
+		avoidingVisited := len(visitedMaps) > 0 && !visitedMaps[dest.Map]
+		planGraph := routeGraph
+		if avoidingVisited {
+			planGraph = graphWithoutEdgesInto(routeGraph, visitedMaps)
 		}
 
 		var mem state.Mem
 		state.Snapshot(m, &mem)
 		prereqs := redRoutePrerequisites(routeGraph, romData, &mem)
 		route, err := world.FindRoutePlanAtDestinationWithCapabilities(
-			routeGraph, cur, dest.Map, int(x), int(y), int(dest.X), int(dest.Y), preferred, prereqs,
+			planGraph, cur, dest.Map, int(x), int(y), int(dest.X), int(dest.Y), blockedHere, prereqs,
 		)
 		// A dead-end map's only exit IS the reverse. Route 4's Pokemon
 		// Center (map 0x44) has two warps and both land back on Route 4,
@@ -301,7 +342,7 @@ func goToWithTransitionExecutor(m *emu.Emu, romData []byte, dest Destination, ex
 		// one-way room is not a bounce, it is the only move, so retry
 		// with the preference dropped and the measured bans kept. The
 		// navigation guard still catches a real oscillation.
-		if errors.Is(err, world.ErrNoRoute) && len(preferred) > len(blockedHere) {
+		if errors.Is(err, world.ErrNoRoute) && avoidingVisited {
 			// Dropping the "don't revisit" preference and re-planning with only
 			// the hard bans tells us what the ONLY forward move actually is. If
 			// that move re-enters a map this call already departed from, it is
