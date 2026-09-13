@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 #
-# PokePilot farm image: one image with runner, wall, private/public UI, and
-# replay-sidecar entrypoints. See docs/RUN_INSPECTOR.md.
+# PokePilot farm image: one image with runner, wall, private/public UI, replay,
+# and GitHub issue-sink entrypoints. See docs/RUN_INSPECTOR.md.
 #
 # GomeBoy is pinned to the PokePilot-maintained GitHub fork in go.mod, so a
 # normal repository checkout is a complete build context.
@@ -32,6 +32,7 @@ RUN CGO_ENABLED=0 go build -ldflags "-X main.version=${GIT_SHA}" -o /out/pokepil
     CGO_ENABLED=0 go build -ldflags "-X main.version=${GIT_SHA}" -o /out/pokewall ./cmd/pokewall && \
     CGO_ENABLED=0 go build -ldflags "-X main.version=${GIT_SHA} -X main.buildPR=${GIT_PR_NUMBER} -X main.buildTitleB64=${GIT_PR_TITLE_B64} -X main.buildRepo=${GIT_REPOSITORY}" -o /out/pokeui ./cmd/pokeui && \
     CGO_ENABLED=0 go build -o /out/pokereplay ./cmd/pokereplay && \
+    CGO_ENABLED=0 go build -o /out/pokeissues ./cmd/pokeissues && \
     CGO_ENABLED=0 go build -o /out/gomeboy-stream github.com/maestroi/gomeboy/cmd/gomeboy-stream
 
 # FFmpeg is runtime-only and is used by gomeboy-stream to encode deterministic
@@ -43,5 +44,6 @@ COPY --from=build /out/pokepilot /usr/local/bin/pokepilot
 COPY --from=build /out/pokewall /usr/local/bin/pokewall
 COPY --from=build /out/pokeui /usr/local/bin/pokeui
 COPY --from=build /out/pokereplay /usr/local/bin/pokereplay
+COPY --from=build /out/pokeissues /usr/local/bin/pokeissues
 COPY --from=build /out/gomeboy-stream /usr/local/bin/gomeboy-stream
 RUN ln -s pokereplay /usr/local/bin/ffmpeg-vaapi
