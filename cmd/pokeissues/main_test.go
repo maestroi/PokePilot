@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -59,7 +60,7 @@ func (f *fakeGitHub) handler() http.Handler {
 		_ = json.NewEncoder(w).Encode(issue)
 	})
 	mux.HandleFunc("GET /repos/o/r/issues/{number}", func(w http.ResponseWriter, r *http.Request) {
-		n := mustNumber(tFromRequest(r), r.PathValue("number"))
+		n := mustNumber(r.PathValue("number"))
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		for _, issue := range f.issues {
@@ -71,7 +72,7 @@ func (f *fakeGitHub) handler() http.Handler {
 		testHTTPError(w, http.StatusNotFound, "not found")
 	})
 	mux.HandleFunc("PATCH /repos/o/r/issues/{number}", func(w http.ResponseWriter, r *http.Request) {
-		n := mustNumber(tFromRequest(r), r.PathValue("number"))
+		n := mustNumber(r.PathValue("number"))
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		for i := range f.issues {
@@ -86,13 +87,13 @@ func (f *fakeGitHub) handler() http.Handler {
 		testHTTPError(w, http.StatusNotFound, "not found")
 	})
 	mux.HandleFunc("GET /repos/o/r/issues/{number}/comments", func(w http.ResponseWriter, r *http.Request) {
-		n := mustNumber(tFromRequest(r), r.PathValue("number"))
+		n := mustNumber(r.PathValue("number"))
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		_ = json.NewEncoder(w).Encode(f.comments[n])
 	})
 	mux.HandleFunc("POST /repos/o/r/issues/{number}/comments", func(w http.ResponseWriter, r *http.Request) {
-		n := mustNumber(tFromRequest(r), r.PathValue("number"))
+		n := mustNumber(r.PathValue("number"))
 		var payload githubComment
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			testHTTPError(w, http.StatusBadRequest, err.Error())
@@ -108,19 +109,12 @@ func (f *fakeGitHub) handler() http.Handler {
 	return mux
 }
 
-// The fake mux helpers do not need testing.T if a malformed path reaches them;
-// panic is appropriate because every path is authored by the client under test.
-func tFromRequest(*http.Request) *testing.T { return nil }
-func mustNumber(_ *testing.T, raw string) int64 {
+func mustNumber(raw string) int64 {
 	var n int64
-	if _, err := fmtSscan(raw, &n); err != nil {
+	if _, err := fmt.Sscan(raw, &n); err != nil {
 		panic(err)
 	}
 	return n
-}
-
-func fmtSscan(raw string, n *int64) (int, error) {
-	return fmt.Sscan(raw, n)
 }
 
 func testHTTPError(w http.ResponseWriter, status int, message string) {
