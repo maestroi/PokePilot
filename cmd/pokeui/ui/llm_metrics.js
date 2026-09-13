@@ -8,6 +8,7 @@
     if(text!=null)node.textContent=text;
     return node;
   };
+  const css=(node,rules)=>{Object.assign(node.style,rules);return node};
 
   const apiPrices=[
     {provider:"Anthropic",model:"Claude Sonnet 5",input:2,output:10},
@@ -36,32 +37,36 @@
     if(!panel){
       panel=make("section","llm-api-equivalent");
       panel.id="llm-api-equivalent";
+      css(panel,{borderBottom:"1px solid var(--line)",background:"var(--bay-2)"});
       kpis.insertAdjacentElement("afterend",panel);
     }
     panel.hidden=false;
     panel.replaceChildren();
 
-    const head=make("div","llm-api-head");
+    const head=css(make("div","llm-api-head"),{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:"12px",padding:"8px 10px",borderBottom:"1px solid var(--line)"});
     const headCopy=make("div","");
-    headCopy.append(make("strong","","If this ran on hosted APIs…"),make("span","","Equivalent cost for the token volume above using standard uncached text-token list pricing."));
-    head.append(headCopy,make("em","","Pricing Sep 2026"));
+    const title=css(make("strong","","If this ran on hosted APIs…"),{display:"block",color:"var(--text)",fontSize:"11px"});
+    const note=css(make("span","","Equivalent cost for the token volume above using standard uncached text-token list pricing."),{display:"block",marginTop:"2px",color:"var(--muted)",fontSize:"9px"});
+    const date=css(make("em","","Pricing Sep 2026"),{flex:"0 0 auto",padding:"2px 5px",border:"1px solid var(--line)",color:"var(--faint)",fontFamily:"var(--mono)",fontSize:"8px",fontStyle:"normal",textTransform:"uppercase"});
+    headCopy.append(title,note);
+    head.append(headCopy,date);
     panel.append(head);
 
-    const grid=make("div","llm-api-grid");
+    const grid=css(make("div","llm-api-grid"),{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:"1px",background:"var(--line)"});
     for(const price of apiPrices){
       const cost=(prompt/1_000_000)*price.input+(completion/1_000_000)*price.output;
-      const cell=make("div","llm-api-cost");
-      cell.append(
-        make("span","",price.provider),
-        make("strong","",price.model),
-        make("b","",usd(cost)),
-        make("small","",`$${price.input}/M in · $${price.output}/M out`),
-      );
+      const cell=css(make("div","llm-api-cost"),{display:"grid",minWidth:"0",padding:"8px 10px",background:"var(--bay)"});
+      const provider=css(make("span","",price.provider),{color:"var(--faint)",fontSize:"8px",fontWeight:"800",letterSpacing:".05em",textTransform:"uppercase"});
+      const model=css(make("strong","",price.model),{marginTop:"1px",color:"var(--muted)",fontSize:"10px"});
+      const costNode=css(make("b","",usd(cost)),{marginTop:"5px",color:"var(--text)",fontFamily:"var(--mono)",fontSize:"16px"});
+      const rate=css(make("small","",`$${price.input}/M in · $${price.output}/M out`),{marginTop:"2px",color:"var(--faint)",fontFamily:"var(--mono)",fontSize:"8px"});
+      cell.append(provider,model,costNode,rate);
       grid.append(cell);
     }
     panel.append(grid);
-    const foot=make("div","llm-api-foot");
-    foot.append(document.createTextNode("Local inference: "),make("b","","$0 hosted API spend"),document.createTextNode(" · hardware and electricity are not included in this comparison."));
+    const foot=css(make("div","llm-api-foot"),{padding:"6px 10px",color:"var(--muted)",fontSize:"9px"});
+    const zero=css(make("b","","$0 hosted API spend"),{color:"var(--text)",fontFamily:"var(--mono)"});
+    foot.append(document.createTextNode("Local inference: "),zero,document.createTextNode(" · hardware and electricity are not included in this comparison."));
     panel.append(foot);
   }
 
