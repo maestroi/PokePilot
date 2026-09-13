@@ -24,7 +24,7 @@ type fakeGitHub struct {
 	commented       int
 	lastCreateTitle string
 	lastCreateBody  string
-	auth             []string
+	auth            []string
 }
 
 func newFakeGitHub() *fakeGitHub {
