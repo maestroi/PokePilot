@@ -30,10 +30,8 @@ services:
     # -state persists the tile map and queue, so a rolled wall remembers
     # active runs (their heartbeats resume within a second of its return);
     # the reaper then clears any run whose runner truly died.
-    # Issue handoff is off unless the operator supplies all three
-    # Agent Orchestrator values (API/UI: https://orchestrator.labstack.cc).
-    # Empty interpolation is a disabled triple, not a partial one;
-    # pokewall rejects a mix.
+    # PokéWall keeps its durable issue protocol, but the endpoint below is the
+    # in-stack GitHub adapter rather than the private Agent Orchestrator.
     command:
       - pokewall
       - -http
@@ -43,11 +41,11 @@ services:
       - -state
       - /var/lib/pokewall/state.json
       - -issues-api
-      - "${AGENT_ORCHESTRATOR_API:-}"
+      - "http://issues:8080"
       - -issues-project
-      - "${AGENT_ORCHESTRATOR_POKEPILOT_PROJECT_ID:-}"
+      - "pokepilot"
       - -issues-ui
-      - "${AGENT_ORCHESTRATOR_UI:-}"
+      - "https://github.com/${POKEPILOT_GITHUB_REPO:-maestroi/PokePilot}"
     deploy:
       replicas: 1
       # 2G is a blast-radius cap (page cache + catalog), not the working set.
@@ -63,6 +61,20 @@ services:
       # state written by one wall task is invisible to its replacement),
       # while bind-mounted host directories survive rollovers fine.
       - ${FARM_STATE_DIR}:/var/lib/pokewall
+
+  issues:
+    image: ${FARM_IMAGE:-pokepilot-farm:local}
+    # GitHub is now the farm issue system of record. Only this adapter receives
+    # the credential; PokéWall, runners, replay, and both UIs never see it.
+    command: ["pokeissues", "-http", ":8080"]
+    environment:
+      POKEPILOT_GITHUB_REPO: ${POKEPILOT_GITHUB_REPO:-maestroi/PokePilot}
+      POKEPILOT_GITHUB_TOKEN: ${POKEPILOT_GITHUB_TOKEN:-}
+      # Used only to put a useful private run/debug link in the public issue.
+      # The adapter never uploads save-state/frame/recording bytes to GitHub.
+      POKEPILOT_RUN_BASE_URL: ${POKEPILOT_RUN_BASE_URL:-https://pokemon.labstack.cc}
+    deploy:
+      replicas: 1
 
   replay:
     image: ${FARM_IMAGE:-pokepilot-farm:local}

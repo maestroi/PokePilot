@@ -36,10 +36,10 @@ func main() {
 	stateFile := flag.String("state", "", "if set, persist the tile map and queue here so a wall restart does not forget active runs")
 	artifactRetention := flag.Duration("artifact-retention", defaultArtifactRetention, "how long finished-run dumps/checkpoints are kept locally; <=0 disables automatic retention")
 	artifactRetentionEvery := flag.Duration("artifact-retention-every", defaultArtifactSweepEvery, "how often local finished-run artifacts are expired")
-	issuesAPI := flag.String("issues-api", "", "Agent Orchestrator API base (e.g. https://orchestrator.labstack.cc)")
-	issuesProject := flag.String("issues-project", "", "Agent Orchestrator project UUID for PokePilot")
-	issuesUI := flag.String("issues-ui", "", "Agent Orchestrator UI base (e.g. https://orchestrator.labstack.cc)")
-	issuesTimeout := flag.Duration("issues-timeout", defaultIssueTimeout, "timeout for Agent Orchestrator issue HTTP calls")
+	issuesAPI := flag.String("issues-api", "", "issue sink API base")
+	issuesProject := flag.String("issues-project", "", "issue sink project key")
+	issuesUI := flag.String("issues-ui", "", "issue UI base used for linked issue URLs")
+	issuesTimeout := flag.Duration("issues-timeout", defaultIssueTimeout, "timeout for issue sink HTTP calls")
 	flag.Parse()
 
 	if err := os.MkdirAll(*dumpsDir, 0o755); err != nil {
@@ -52,12 +52,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("pokewall: %v", err)
 	}
-	if client != nil {
-		if *issuesTimeout > 0 {
-			client.http.Timeout = *issuesTimeout
-		}
-		wall.SetIssueClient(client)
-	}
 	if *stateFile != "" {
 		if err := os.MkdirAll(filepath.Dir(*stateFile), 0o755); err != nil {
 			log.Fatalf("pokewall: cannot create state directory %s: %v", filepath.Dir(*stateFile), err)
@@ -65,13 +59,19 @@ func main() {
 		wall.SetStatePath(*stateFile)
 	}
 	if client != nil {
-		// Start after state restore so restart recovery can reuse persisted
-		// issue/outbox identities during the one-time dump recovery scan. New
-		// finish dumps are delivered by commit events rather than polling.
+		// Persisted remote IDs are only meaningful for the sink that minted them.
+		// Switching from Agent Orchestrator to GitHub (or between repositories)
+		// must not leave new occurrences quarantined against stale issue UUIDs.
+		if removed := wall.reconcileIssueSink(*issuesUI); removed > 0 {
+			log.Printf("pokewall: detached %d persisted issue link(s) from the previous sink", removed)
+		}
+		if *issuesTimeout > 0 {
+			client.http.Timeout = *issuesTimeout
+		}
+		// Start the outbox/status loops only after state restore and sink
+		// reconciliation so restart recovery uses one coherent identity set.
+		wall.SetIssueClient(client)
 		go wall.RunObjectiveFailureEvents(defaultObjectiveFailureReportEvery)
-		// Verification is also restart-safe: it derives evidence from persisted
-		// issue links, run history, and immutable finish dumps. It does not change
-		// Agent Orchestrator status; a later recurrence still reopens there.
 		go wall.RunIssueVerification(defaultIssueVerificationEvery)
 	}
 	// The reaper runs whether or not state is persisted: a run whose runner

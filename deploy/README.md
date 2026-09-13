@@ -1,11 +1,11 @@
 # PokePilot farm
 
-One PokePilot image provides four service roles: `pokepilot` (runner), `pokewall`
-(orchestrator), `pokeui` (private operator console), and `pokeui -spectator`
-(public read-only watch surface). The farm also keeps a separate internal
-LiteLLM service available for routing experiments, but normal runners call the
-inference hosts directly. The ROM is never in an image; runners bind-mount it
-at runtime.
+One PokePilot image provides five service roles: `pokepilot` (runner), `pokewall`
+(orchestrator), `pokeissues` (GitHub issue sink), `pokeui` (private operator
+console), and `pokeui -spectator` (public read-only watch surface). The farm also
+keeps a separate internal LiteLLM service available for routing experiments, but
+normal runners call the inference hosts directly. The ROM is never in an image;
+runners bind-mount it at runtime.
 
 ## Use the wall
 
@@ -75,7 +75,7 @@ Needs Docker Swarm on this machine and `roms/pokemon_red.gb` (or
 `make run-llm`.
 
 ```sh
-make farm-up                 # build + deploy farm, LiteLLM, operator/spectator UIs, and 2 runners
+make farm-up                 # build + deploy farm, issue adapter, LiteLLM, operator/spectator UIs, and 2 runners
 # Operator UI: http://localhost:18080/
 # Spectator:   http://localhost:18081/
 make farm-down
@@ -92,41 +92,43 @@ cannot see a manager's local PokePilot image store: CI on `main` publishes
 timer on the manager (`deploy/pull-latest.sh`) that pins services to the new
 digest. Keep Traefik hosts, node bind-mounts, and tokens out of git.
 
-## Issue handoff (optional)
+## GitHub issue handoff
 
-Qualifying farm failures can be filed automatically with Agent Orchestrator.
-This is off unless all three values are set in `.env` (or the environment
-`make farm-up` inherits). Empty values leave the farm unchanged.
+Qualifying farm failures are now filed directly in GitHub Issues through the
+in-stack `pokeissues` adapter. PokéWall still owns the durable outbox,
+fingerprinting, quarantine counters, regression detection, and status sync; the
+adapter only translates that protocol into GitHub operations.
 
-The public Agent Orchestrator host is the same for API and UI — the UI
-proxies `/api` to the controller. These are operator-provided values, not
-image defaults:
-
-```
-AGENT_ORCHESTRATOR_API=https://orchestrator.labstack.cc
-AGENT_ORCHESTRATOR_UI=https://orchestrator.labstack.cc
-AGENT_ORCHESTRATOR_POKEPILOT_PROJECT_ID=<pokePilot project uuid>
-```
-
-This slice adds no authentication secret.
-
-Reachability from a wall task (alpine's busybox `wget`; `curl` is equivalent
-from any host that can see that hostname):
+Set a fine-grained GitHub token in `.env` or `~/.config/pokepilot/env`:
 
 ```sh
-docker exec "$(docker ps --filter name=pokefarm_wall --format '{{.ID}}' | head -1)" \
-  wget -qO- https://orchestrator.labstack.cc/api/health
+POKEPILOT_GITHUB_TOKEN=<token with Issues: read/write on maestroi/PokePilot>
+# Optional; these are the stack defaults:
+POKEPILOT_GITHUB_REPO=maestroi/PokePilot
+POKEPILOT_RUN_BASE_URL=https://pokemon.labstack.cc
 ```
 
-Look up the PokePilot project UUID:
+Only the `issues` service receives `POKEPILOT_GITHUB_TOKEN`. The wall, runners,
+replay service, operator UI, and spectator never receive it.
 
-```sh
-curl -sS https://orchestrator.labstack.cc/api/projects
-```
+The adapter deliberately does **not** upload save states, screenshots,
+recordings, or raw trace/model payloads to the public repository. GitHub gets a
+safe issue summary, triage key/fingerprint, selected scalar evidence, run/debug
+link, and artifact name/size/hash metadata. The actual binary evidence remains
+in the existing PokePilot run store.
 
-Use the matching project's `id`. A linked issue number in the farm console is
-not proof of a PokePilot defect: Agent Orchestrator may classify the
-occurrence as expected game/RNG behavior or external infrastructure.
+Issue lifecycle maps cleanly back into the wall:
+
+- open GitHub issue → active failure group; equivalent farm occurrences stay
+  quarantined locally instead of creating duplicates;
+- closed as **completed** → resolved/fixed; a later recurrence reopens the same
+  GitHub issue and adds one idempotent regression comment;
+- closed as **not planned** → ignored/not-planned; later equivalent occurrences
+  stay quarantined rather than reopening it.
+
+The `Investigate` action in the operator console now adds one investigation
+request comment to the GitHub issue. The local qwagent loop still claims work
+from `/v1/triage`, so it does not depend on GitHub issue state to run.
 
 ## Local qwagent triage (optional)
 
