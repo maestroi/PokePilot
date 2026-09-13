@@ -175,6 +175,44 @@ func forcedRevisitBan(g *world.Graph, retry []world.RouteStep, retryErr error, v
 	return legFromMap{}, false
 }
 
+// safeForcedBan trials banning forced.e and reports whether the destination
+// is still reachable without it. blockedHere applies only to a route's first
+// hop by design (FindRouteAvoiding's doc comment: unwalkability from where
+// the caller currently stands is not a property of the edge everywhere
+// else), so adding forced.e to blockedHere alone is not a real ban for this
+// check — a route that leaves forced.m and later returns to it would see the
+// ban lifted on that later hop and route straight through the edge this is
+// supposed to be testing without. The trial instead removes forced.e from
+// forced.m's edge list outright, the same full-graph exclusion
+// graphWithoutSemanticEdges already uses for capability-denied edges. g and
+// blockedHere are not mutated.
+//
+// See the goToWithTransitionExecutor call site for why this check exists:
+// forced.e can be the only capability-free path to dest, in which case
+// banning it is never correct even though it looks exactly like the
+// dead-end bounces this ban mechanism was built for.
+func safeForcedBan(g *world.Graph, cur uint8, dest Destination, x, y uint8, blockedHere map[world.Edge]bool, forced legFromMap, prereqs world.RoutePrerequisites) ([]world.RouteStep, error, bool) {
+	without := *g
+	without.Edges = make(map[uint8][]world.Edge, len(g.Edges))
+	for mapID, edges := range g.Edges {
+		if mapID != forced.m {
+			without.Edges[mapID] = edges
+			continue
+		}
+		filtered := make([]world.Edge, 0, len(edges))
+		for _, e := range edges {
+			if e != forced.e {
+				filtered = append(filtered, e)
+			}
+		}
+		without.Edges[mapID] = filtered
+	}
+	route, err := world.FindRoutePlanAtDestinationWithCapabilities(
+		&without, cur, dest.Map, int(x), int(y), int(dest.X), int(dest.Y), blockedHere, prereqs,
+	)
+	return route, err, err == nil
+}
+
 func newReplanExhaustedError(max int, cur, x, y uint8, dest Destination, last error) error {
 	return fmt.Errorf("%w: %d re-plans from map %02x at (%d,%d) toward map %02x at (%d,%d), last leg: %w",
 		ErrReplanExhausted, max, cur, x, y, dest.Map, dest.X, dest.Y, last)
@@ -306,14 +344,34 @@ func goToWithTransitionExecutor(m *emu.Emu, romData []byte, dest Destination, ex
 				routeGraph, cur, dest.Map, int(x), int(y), int(dest.X), int(dest.Y), blockedHere, prereqs,
 			)
 			if forced, ok := forcedRevisitBan(routeGraph, retry, retryErr, visitedMaps, deadEnds); ok {
-				if replans++; replans > maxReplans {
-					return newReplanExhaustedError(maxReplans, cur, x, y, dest, err)
+				// Banning forced.e is only safe if the destination stays
+				// reachable without it. A crossing that always lands in a
+				// dead-end pocket has other capability-free routes to fall
+				// back on (that is what makes it a real dead end); a
+				// crossing that merely bridges two components of the SAME
+				// city on the way to the only remaining unblocked corridor
+				// looks identical from here (both are "the only forward move
+				// re-enters a map we departed"), but banning it strands the
+				// destination behind whatever gated pivot happens to still be
+				// in the graph (Route 9's Cut tree, in the wild:
+				// run-2f9zwq0xjhcvp2wvui3kzvw12q, where the S.S. Anne leg
+				// bounced Cerulean's trashed house <-> Cerulean City once,
+				// this ban then sealed the ungated Route 5/Underground Path
+				// leg to Vermilion, and the traveler failed on "missing
+				// capabilities [can_cut]" via Route 9 despite never needing
+				// Cut for this trip at all). safeForcedBan trials the ban
+				// before committing: if the destination is only reachable
+				// through a NEW missing capability (or not at all) once
+				// forced.e is gone, the revisit was real progress, not a
+				// bounce, so take it as-is instead of walling it off.
+				if afterBan, afterBanErr, ok := safeForcedBan(routeGraph, cur, dest, x, y, blockedHere, forced, prereqs); ok {
+					if replans++; replans > maxReplans {
+						return newReplanExhaustedError(maxReplans, cur, x, y, dest, err)
+					}
+					deadEnds[forced] = true
+					blockedHere[forced.e] = true
+					retry, retryErr = afterBan, afterBanErr
 				}
-				deadEnds[forced] = true
-				blockedHere[forced.e] = true
-				retry, retryErr = world.FindRoutePlanAtDestinationWithCapabilities(
-					routeGraph, cur, dest.Map, int(x), int(y), int(dest.X), int(dest.Y), blockedHere, prereqs,
-				)
 			}
 			route, err = retry, retryErr
 		}
