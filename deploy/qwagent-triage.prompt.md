@@ -3,10 +3,14 @@
 You are running unattended in a dedicated worktree. The shell already
 chose the failure. Do not call pokepilot_get_triage to pick another one.
 
-Read and follow `.claude/skills/pokefarm-triage/SKILL.md` and
-`docs/ARCHITECTURE.md`.
+First load the native OpenCode skill `pokefarm-triage` with the `skill` tool.
+OpenCode discovers it from `.claude/skills/pokefarm-triage/SKILL.md`. If the
+skill tool is unavailable, read that file directly instead. Then read and
+follow `docs/ARCHITECTURE.md`.
 
-The packet JSON is attached. Use its `key`, `run_id`, and `example`.
+The packet JSON is attached. Use its `key`, `run_id`, and `example`. The shell
+has already applied the local PokéWall + GitHub claim/repair/regression state
+machine; do not second-guess queue eligibility from stale Orchestrator status.
 
 Do:
 
