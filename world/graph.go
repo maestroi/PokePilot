@@ -23,6 +23,13 @@ type Edge struct {
 	WarpX uint8 // EdgeWarp only: the warp tile on the source map
 	WarpY uint8
 	Dir   uint8 // EdgeConnection only: 0=north 1=south 2=west 3=east
+
+	// Connection edges may be scoped to one contiguous source-border band.
+	// The index is X for north/south and Y for west/east. Zero-valued legacy
+	// edges remain unscoped when BandScoped is false.
+	BandStart  uint8
+	BandEnd    uint8
+	BandScoped bool
 }
 
 // Map-edge directions, matching rom.Connection.Dir and Edge.Dir.
@@ -176,12 +183,7 @@ func BuildGraph(romData []byte) (*Graph, error) {
 			})
 		}
 		for _, c := range h.Connections {
-			g.Edges[id] = append(g.Edges[id], Edge{
-				Kind: EdgeConnection,
-				From: id,
-				To:   c.MapID,
-				Dir:  c.Dir,
-			})
+			g.Edges[id] = append(g.Edges[id], g.connectionEdges(id, c)...)
 		}
 	}
 
@@ -302,7 +304,8 @@ func (g *Graph) connectionPortComps(e Edge, arrival bool) []int {
 	}
 	var out []int
 	seen := map[int]bool{}
-	for i := 0; i < n; i++ {
+	start, end := connectionBandRange(e, n)
+	for i := start; i <= end; i++ {
 		j := i + int(c.Offset)
 		sx, sy, tx, ty := i, 0, j, dst.h-1
 		switch e.Dir {

@@ -235,7 +235,7 @@ func (x *redRouteTransitionExecutor) executeSurf(edge world.Edge) (world.Transit
 	}
 	sx, sy := playerXY(x.m)
 	blocked := spriteBlockers(x.m)
-	tx, ty, err := edgeTarget(water, edge.Dir, int(sx), int(sy), blocked)
+	tx, ty, err := edgeTargetForConnection(water, edge, int(sx), int(sy), blocked)
 	if err != nil {
 		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf transition cannot reach %02x connection in water mode: %w", edge.To, err)
 	}
