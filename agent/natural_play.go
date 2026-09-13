@@ -14,6 +14,7 @@ type NaturalPlaySignal struct {
 	Bonus         float64
 	RepeatPenalty float64
 	Tags          []string
+	Stall         StallFallbackSignal
 }
 
 func (s NaturalPlaySignal) Net() float64 { return s.Bonus - s.RepeatPenalty }
@@ -145,6 +146,18 @@ func naturalPlaySignal(obs Observation, o Objective, profile PlayStyleProfile) N
 		penalize("recent-repeat", penalty)
 	}
 
+	// #275's fallback is deliberately layered after the ordinary Adventure
+	// routine. It can temporarily favor plausible alternate discovery and
+	// preparation, but it stays bounded and never removes the normal score.
+	s.Stall = stallFallbackSignal(obs, o, profile)
+	if s.Stall.Context.Active {
+		s.Bonus += s.Stall.Bonus
+		s.RepeatPenalty += s.Stall.Penalty
+		for _, tag := range s.Stall.Tags {
+			s.Tags = appendNaturalTag(s.Tags, tag)
+		}
+	}
+
 	return s
 }
 
@@ -220,12 +233,17 @@ func naturalPlaySummary(s NaturalPlaySignal) string {
 		return ""
 	}
 	labels := strings.Join(s.Tags, "+")
+	var base string
 	switch {
 	case s.Bonus > 0 && s.RepeatPenalty > 0:
-		return fmt.Sprintf("natural %+.2f-%0.2f %s", s.Bonus, s.RepeatPenalty, labels)
+		base = fmt.Sprintf("natural %+.2f-%0.2f %s", s.Bonus, s.RepeatPenalty, labels)
 	case s.Bonus > 0:
-		return fmt.Sprintf("natural %+.2f %s", s.Bonus, labels)
+		base = fmt.Sprintf("natural %+.2f %s", s.Bonus, labels)
 	default:
-		return fmt.Sprintf("natural -%.2f %s", s.RepeatPenalty, labels)
+		base = fmt.Sprintf("natural -%.2f %s", s.RepeatPenalty, labels)
 	}
+	if stall := stallFallbackSummary(s.Stall); stall != "" {
+		base += "; " + stall
+	}
+	return base
 }
