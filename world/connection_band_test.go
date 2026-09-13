@@ -99,15 +99,20 @@ func TestBuildGraphSplitsCeruleanRoute4BorderByLandingComponent(t *testing.T) {
 		if end < start {
 			t.Fatalf("invalid band %d..%d on %+v", start, end, e)
 		}
-		got := g.entryComps[e]
+
+		// entryComps is deliberately expanded through one-way movement such as
+		// ledges, so it may contain several components even when this band lands
+		// in exactly one of them. The invariant #307 cares about is the immediate
+		// seam landing identity, before directed reachability is applied.
+		got := g.connectionPortComps(e, true)
 		if len(got) > 1 {
-			t.Fatalf("band %d..%d aggregates multiple entry components %v", start, end, got)
+			t.Fatalf("band %d..%d aggregates multiple immediate landing components %v", start, end, got)
 		}
 		if len(got) == 1 {
 			entries[got[0]] = true
 		}
 	}
 	if len(entries) < 2 {
-		t.Fatalf("Cerulean -> Route 4 walkable bands land in only %d component(s): %v; want multiple", len(entries), entries)
+		t.Fatalf("Cerulean -> Route 4 walkable bands land in only %d immediate component(s): %v; want multiple", len(entries), entries)
 	}
 }
