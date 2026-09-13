@@ -63,7 +63,13 @@ replace_once(
 replace_once(
     "world/connection_band_test.go",
     '''\tif len(edges) != 3 {\n\t\tt.Fatalf("connectionEdges produced %d edges, want 3: %+v", len(edges), edges)\n\t}\n\n\twant := [][2]int{{0, 1}, {2, 3}, {5, 5}}\n\twantEntry := []int{2, 3, 4}\n''',
-    '''\tif len(edges) != 4 {\n\t\tt.Fatalf("connectionEdges produced %d edges, want 4: %+v", len(edges), edges)\n\t}\n\n\twant := [][2]int{{0, 1}, {2, 3}, {4, 4}, {5, 5}}\n\twantEntry := [][]int{{2}, {3}, nil, {4}}\n''',
+    '''\tif len(edges) != 4 {\n\t\tt.Fatalf("connectionEdges produced %d edges, want 4: %+v", len(edges), edges)\n\t}\n\n\twant := [][2]int{{0, 1}, {2, 3}, {4, 4}, {5, 5}}\n\twantExit := [][]int{{1}, {1}, nil, {1}}\n\twantEntry := [][]int{{2}, {3}, nil, {4}}\n''',
+)
+
+replace_once(
+    "world/connection_band_test.go",
+    '''\t\tif got := g.connectionPortComps(e, false); len(got) != 1 || got[0] != 1 {\n\t\t\tt.Errorf("edge %d exit components = %v, want [1]", i, got)\n\t\t}\n''',
+    '''\t\tgotExit := g.connectionPortComps(e, false)\n\t\twantExitComps := wantExit[i]\n\t\tif len(gotExit) != len(wantExitComps) || (len(gotExit) == 1 && gotExit[0] != wantExitComps[0]) {\n\t\t\tt.Errorf("edge %d exit components = %v, want %v", i, gotExit, wantExitComps)\n\t\t}\n''',
 )
 
 replace_once(
