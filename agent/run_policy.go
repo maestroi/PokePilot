@@ -42,8 +42,8 @@ func RiskTolerance(name string) RiskToleranceProfile {
 	case RiskToleranceCautious:
 		return RiskToleranceProfile{Name: RiskToleranceCautious, HealThreshold: 0.85}
 	default:
-		// 50% is the existing Offer threshold. Aggressive does not synthesize
-		// any extra recovery objectives, preserving old planner menus exactly.
+		// 50% is the existing Offer threshold. Aggressive does not add any
+		// recovery preference, preserving old planner menus exactly.
 		return RiskToleranceProfile{Name: RiskToleranceAggressive, HealThreshold: 0.50}
 	}
 }
@@ -64,7 +64,7 @@ func NormalizeWildEncounters(name string) string {
 
 // ApplyRunPolicy applies orthogonal run controls to an already-legal semantic
 // objective menu. It never creates a route or bypasses progression. Defensive
-// recovery is derived only from an already-offered Pokemon Center journey;
+// recovery only annotates an already-offered heal or Pokemon Center journey;
 // fight-everything simply removes the Flee execution variant.
 func ApplyRunPolicy(obs Observation, offered []Objective, riskTolerance, wildEncounters string) []Objective {
 	out := append([]Objective(nil), offered...)
@@ -86,39 +86,18 @@ func applyRiskTolerance(obs Observation, offered []Objective, profile RiskTolera
 	out := append([]Objective(nil), offered...)
 	hasRecovery := false
 	for i := range out {
-		if out[i].Kind != KindHeal {
-			continue
-		}
-		out[i] = appendObjectiveNote(out[i], note)
-		hasRecovery = true
-	}
-
-	// When ordinary Offer has not crossed its historical 50% hurt line yet,
-	// derive a Heal from a Center journey that is already known legal. This is
-	// what lets Balanced/Cautious recover between trainer battles without
-	// changing the compatibility menu for Aggressive/legacy runs.
-	if !hasRecovery {
-		seen := make(map[Objective]bool, len(out))
-		for _, o := range out {
-			seen[policyObjectiveKey(o)] = true
-		}
-		recovery := make([]Objective, 0, 2)
-		for _, o := range out {
-			if o.Kind != KindGoTo || !naturalCenterPlace(strings.ToLower(string(o.Place))) {
-				continue
-			}
-			heal := Objective{Kind: KindHeal, Place: o.Place, Flee: o.Flee, Note: o.Note}
-			heal = appendObjectiveNote(heal, note)
-			key := policyObjectiveKey(heal)
-			if seen[key] {
-				continue
-			}
-			seen[key] = true
-			recovery = append(recovery, heal)
-		}
-		if len(recovery) > 0 {
+		switch {
+		case out[i].Kind == KindHeal:
+			out[i] = appendObjectiveNote(out[i], note)
 			hasRecovery = true
-			out = append(recovery, out...)
+		case out[i].Kind == KindGoTo && naturalCenterPlace(strings.ToLower(string(out[i].Place))):
+			// Keep the objective itself exactly on the raw Offer menu. Persistent
+			// strategic plans are validated against that raw menu, so inventing a
+			// synthetic remote KindHeal here would make a good defensive plan look
+			// invalid. Going to the known Center is the legal first half; once
+			// there, ordinary Offer exposes the local Heal action.
+			out[i] = appendObjectiveNote(out[i], note)
+			hasRecovery = true
 		}
 	}
 
