@@ -1,10 +1,12 @@
 package main
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -77,6 +79,68 @@ func TestDeleteProtectsLiveResumeParent(t *testing.T) {
 	w.handleDelete(rec, req)
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("compat delete status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestInspectAndDashboardMarkLiveResumeParents(t *testing.T) {
+	w := NewWall("")
+	w.mu.Lock()
+	w.order = []string{"parent", "unrelated", "child"}
+	w.tiles["parent"] = &Tile{RunID: "parent", Status: statusDone, Finished: true, Attempts: 1}
+	w.tiles["unrelated"] = &Tile{RunID: "unrelated", Status: statusDone, Finished: true, Attempts: 1}
+	w.tiles["child"] = &Tile{RunID: "child", Status: statusRunning, Endless: true, ResumeFromRunID: "parent"}
+	w.mu.Unlock()
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/runs/parent", nil)
+	req.SetPathValue("id", "parent")
+	rec := httptest.NewRecorder()
+	w.handleRunInspect(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("inspect parent status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var parentView struct {
+		DeleteBlocked string `json:"delete_blocked"`
+		Run           struct {
+			ResumeProtected bool `json:"resume_protected"`
+		} `json:"run"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&parentView); err != nil {
+		t.Fatal(err)
+	}
+	if parentView.DeleteBlocked == "" || !strings.Contains(parentView.DeleteBlocked, "resume lineage") {
+		t.Fatalf("inspect parent delete_blocked=%q", parentView.DeleteBlocked)
+	}
+	if !parentView.Run.ResumeProtected {
+		t.Fatal("inspect parent should be resume_protected")
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/v1/runs/unrelated", nil)
+	req.SetPathValue("id", "unrelated")
+	rec = httptest.NewRecorder()
+	w.handleRunInspect(rec, req)
+	var otherView struct {
+		DeleteBlocked string `json:"delete_blocked"`
+		Run           struct {
+			ResumeProtected bool `json:"resume_protected"`
+		} `json:"run"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&otherView); err != nil {
+		t.Fatal(err)
+	}
+	if otherView.DeleteBlocked != "" || otherView.Run.ResumeProtected {
+		t.Fatalf("unrelated inspect blocked=%q protected=%v", otherView.DeleteBlocked, otherView.Run.ResumeProtected)
+	}
+
+	dash := w.runtimeDashboardSnapshot(runtimeDashboardQuery{status: statusDone})
+	protected := map[string]bool{}
+	for _, run := range dash.Runs {
+		protected[run.RunID] = run.ResumeProtected
+	}
+	if !protected["parent"] {
+		t.Fatal("dashboard parent should be resume_protected")
+	}
+	if protected["unrelated"] {
+		t.Fatal("dashboard unrelated run should be deletable")
 	}
 }
 

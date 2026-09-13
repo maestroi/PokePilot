@@ -88,9 +88,15 @@ func (w *Wall) handleRunInspect(res http.ResponseWriter, req *http.Request) {
 		writeRunInspectError(res, err)
 		return
 	}
+	if w.runArtifactsProtected(run.RunID) {
+		run.ResumeProtected = true
+	}
 	out := map[string]any{"run": run}
 	if report != nil {
 		out["finish"] = finishView(report)
+	}
+	if run.ResumeProtected {
+		out["delete_blocked"] = "run is still required by an active resume lineage: " + run.RunID
 	}
 	writeJSON(res, http.StatusOK, out)
 }

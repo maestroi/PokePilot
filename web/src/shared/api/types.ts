@@ -92,6 +92,7 @@ export interface DashboardRun {
   issue?: DashboardIssueLink
   replay_available?: boolean
   resume_from_run_id?: string
+  resume_protected?: boolean
   [key: string]: unknown
 }
 

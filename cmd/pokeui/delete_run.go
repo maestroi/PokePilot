@@ -53,8 +53,10 @@ func deleteRunHandler(wallBase, replayBase string) http.HandlerFunc {
 			return
 		}
 		var view struct {
-			Run struct {
-				Status string `json:"status"`
+			DeleteBlocked string `json:"delete_blocked"`
+			Run           struct {
+				Status          string `json:"status"`
+				ResumeProtected bool   `json:"resume_protected"`
 			} `json:"run"`
 		}
 		decodeErr := json.NewDecoder(inspect.Body).Decode(&view)
@@ -65,6 +67,14 @@ func deleteRunHandler(wallBase, replayBase string) http.HandlerFunc {
 		}
 		if view.Run.Status != "done" {
 			writeDeleteError(res, http.StatusConflict, "run still active: "+id)
+			return
+		}
+		if blocked := strings.TrimSpace(view.DeleteBlocked); blocked != "" {
+			writeDeleteError(res, http.StatusConflict, blocked)
+			return
+		}
+		if view.Run.ResumeProtected {
+			writeDeleteError(res, http.StatusConflict, "run is still required by an active resume lineage: "+id)
 			return
 		}
 

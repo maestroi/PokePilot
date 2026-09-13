@@ -56,6 +56,16 @@ func (w *Wall) tileRowLocked(t *Tile) tileRow {
 	}
 }
 
+func (w *Wall) tileRowWithLineageLocked(t *Tile, lineage map[string]struct{}) tileRow {
+	row := w.tileRowLocked(t)
+	if t != nil && t.Finished {
+		if _, ok := lineage[t.RunID]; ok {
+			row.ResumeProtected = true
+		}
+	}
+	return row
+}
+
 // snapshotFiltered applies status/limit while holding w.mu and before copying
 // heavyweight row fields. limit <= 0 means unlimited; status empty means all.
 func (w *Wall) snapshotFiltered(status string, limit int) dashboardView {
@@ -82,13 +92,14 @@ func (w *Wall) snapshotFiltered(status string, limit int) dashboardView {
 	if limit > 0 && limit < capHint {
 		capHint = limit
 	}
+	lineage := w.liveCheckpointLineageLocked()
 	rows := make([]tileRow, 0, capHint)
 	for i := len(w.order) - 1; i >= 0; i-- {
 		t := w.tiles[w.order[i]]
 		if t == nil || (status != "" && t.Status != status) {
 			continue
 		}
-		rows = append(rows, w.tileRowLocked(t))
+		rows = append(rows, w.tileRowWithLineageLocked(t, lineage))
 		if limit > 0 && len(rows) >= limit {
 			break
 		}
