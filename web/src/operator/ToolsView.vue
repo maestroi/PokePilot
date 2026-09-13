@@ -53,9 +53,12 @@ async function submit(): Promise<void> {
   error.value = ''
   createdRunID.value = ''
   try {
+    // Give new UI-created runs an ID before POST so optional run-scoped wire
+    // metadata (including play_style) stays attached through queue/lease.
+    const runID = form.run_id.trim() || `run-${crypto.randomUUID()}`
     const spec: RunSpec = {
       ...form,
-      run_id: form.run_id.trim(),
+      run_id: runID,
       starter: form.starter.trim(),
       dest: isLLM.value ? '' : form.dest.trim(),
       goal: isLLM.value ? form.goal.trim() : '',
