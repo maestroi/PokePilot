@@ -38,6 +38,14 @@ func TestCutRecoverableNavigationError(t *testing.T) {
 		ErrLegUnwalkable,
 		fmt.Errorf("wrapped: %w", ErrLegUnwalkable),
 		ErrReplanExhausted,
+		ErrNavigationStalled,
+		// run-1948e1rnco3sp1y9bbhdwp7eov: from just inside Route 9 with the
+		// tree still uncut, the capability-aware router can only find routes
+		// that leave and re-enter through the same border crossing, and GoTo
+		// walks that in a circle until this exact-position repeat guard
+		// fires. It is the same "stuck here, tree in the way" signal
+		// ErrNoPath already triggers Cut recovery for.
+		fmt.Errorf("skill: GoTo: %w", ErrNavigationStalled),
 	} {
 		if !cutRecoverableNavigationError(err) {
 			t.Errorf("cutRecoverableNavigationError(%v) = false, want true", err)
