@@ -35,16 +35,32 @@ var driveOrder = []Drive{
 	DriveSafety,
 }
 
-// PlayStyleProfile is policy over shared planner drives. It does not add,
-// remove, or bypass objectives; deterministic offering/progression continues
-// to own legality and prerequisites.
+const (
+	PlayStyleSpeedrun      = "speedrun"
+	PlayStyleAdventure     = "adventure"
+	PlayStyleCompletionist = "completionist"
+	PlayStyleTeamBuilder   = "team_builder"
+)
+
+// PlayStyleProfile is data-only policy over the shared planner. Besides drive
+// weights it controls how tolerant the mode is of detours and how strongly the
+// common natural-play layer values exploration/optional content versus party
+// development. Adding a profile should be a new value here, not a new planner.
 type PlayStyleProfile struct {
-	Name    string
-	Weights map[Drive]float64
+	Name             string
+	Weights          map[Drive]float64
+	DetourPenalty    float64
+	NaturalPlayScale float64
+	ExplorationScale float64
+	PartyScale       float64
 }
 
 var speedrunProfile = PlayStyleProfile{
-	Name: "speedrun",
+	Name:             PlayStyleSpeedrun,
+	DetourPenalty:    1.00,
+	NaturalPlayScale: 0,
+	ExplorationScale: 0.25,
+	PartyScale:       0.40,
 	Weights: map[Drive]float64{
 		DriveProgression: 1.00,
 		DriveExploration: 0.08,
@@ -59,7 +75,11 @@ var speedrunProfile = PlayStyleProfile{
 }
 
 var adventureProfile = PlayStyleProfile{
-	Name: "adventure",
+	Name:             PlayStyleAdventure,
+	DetourPenalty:    0.70,
+	NaturalPlayScale: 1.00,
+	ExplorationScale: 1.00,
+	PartyScale:       1.00,
 	Weights: map[Drive]float64{
 		DriveProgression: 1.00,
 		DriveExploration: 0.72,
@@ -73,21 +93,81 @@ var adventureProfile = PlayStyleProfile{
 	},
 }
 
-// PlayStyle returns a built-in profile. Unknown names deliberately fall back
-// to speedrun so adding the feature cannot silently alter existing runs.
-func PlayStyle(name string) PlayStyleProfile {
+var completionistProfile = PlayStyleProfile{
+	Name:             PlayStyleCompletionist,
+	DetourPenalty:    0.42,
+	NaturalPlayScale: 1.20,
+	ExplorationScale: 1.45,
+	PartyScale:       0.90,
+	Weights: map[Drive]float64{
+		DriveProgression: 0.72,
+		DriveExploration: 1.00,
+		DriveParty:       0.68,
+		DriveResources:   0.52,
+		DriveInteraction: 0.95,
+		DriveItems:       1.00,
+		DriveTraining:    0.58,
+		DrivePreparation: 0.72,
+		DriveSafety:      0.82,
+	},
+}
+
+var teamBuilderProfile = PlayStyleProfile{
+	Name:             PlayStyleTeamBuilder,
+	DetourPenalty:    0.65,
+	NaturalPlayScale: 1.05,
+	ExplorationScale: 0.55,
+	PartyScale:       1.55,
+	Weights: map[Drive]float64{
+		DriveProgression: 0.82,
+		DriveExploration: 0.32,
+		DriveParty:       1.00,
+		DriveResources:   0.55,
+		DriveInteraction: 0.25,
+		DriveItems:       0.72,
+		DriveTraining:    1.00,
+		DrivePreparation: 1.00,
+		DriveSafety:      0.85,
+	},
+}
+
+// NormalizePlayStyle returns the stable wire name. Empty and unknown values
+// deliberately resolve to Speedrun so old serialized specs retain the exact
+// pre-play-style behavior. Product surfaces may choose Adventure as their
+// default by writing it explicitly.
+func NormalizePlayStyle(name string) string {
 	switch strings.ToLower(strings.TrimSpace(name)) {
-	case "adventure":
-		return clonePlayStyle(adventureProfile)
-	case "", "speedrun":
+	case PlayStyleAdventure:
+		return PlayStyleAdventure
+	case PlayStyleCompletionist:
+		return PlayStyleCompletionist
+	case PlayStyleTeamBuilder, "team-builder", "teambuilder":
+		return PlayStyleTeamBuilder
+	case "", PlayStyleSpeedrun:
 		fallthrough
+	default:
+		return PlayStyleSpeedrun
+	}
+}
+
+// PlayStyle returns a cloned built-in profile so callers cannot mutate global
+// policy. Unknown/empty values retain the backwards-compatible Speedrun mode.
+func PlayStyle(name string) PlayStyleProfile {
+	switch NormalizePlayStyle(name) {
+	case PlayStyleAdventure:
+		return clonePlayStyle(adventureProfile)
+	case PlayStyleCompletionist:
+		return clonePlayStyle(completionistProfile)
+	case PlayStyleTeamBuilder:
+		return clonePlayStyle(teamBuilderProfile)
 	default:
 		return clonePlayStyle(speedrunProfile)
 	}
 }
 
 func clonePlayStyle(in PlayStyleProfile) PlayStyleProfile {
-	out := PlayStyleProfile{Name: in.Name, Weights: make(map[Drive]float64, len(in.Weights))}
+	out := in
+	out.Weights = make(map[Drive]float64, len(in.Weights))
 	for k, v := range in.Weights {
 		out.Weights[k] = v
 	}
@@ -97,7 +177,7 @@ func clonePlayStyle(in PlayStyleProfile) PlayStyleProfile {
 // DriveScore is safe decision telemetry: it explains the explicit objective
 // features, configured weights, natural-play context and opportunity cost used
 // by the runtime, not model reasoning. Value is the pre-cost value after the
-// Adventure routine adjustment; Total is the net value after Cost.Total.
+// natural-play adjustment; Total is the net value after Cost.Total.
 type DriveScore struct {
 	Value         float64
 	Total         float64
@@ -215,8 +295,8 @@ func driveUrgency(obs Observation) map[Drive]float64 {
 	}
 
 	// Repeated failures are evidence that tunnel vision is becoming less
-	// useful. This is intentionally a mild nudge; #275 owns the bounded
-	// stalled-progression fallback and its stronger escalation/reset rules.
+	// useful. This is intentionally a mild nudge; the bounded stalled-
+	// progression fallback owns the stronger escalation/reset rules.
 	failures := 0
 	for _, f := range obs.Failures {
 		failures += f.Times
@@ -232,11 +312,11 @@ func driveUrgency(obs Observation) map[Drive]float64 {
 }
 
 // AnnotatePlayStyle adds compact, inspectable drive hints to the lines the LLM
-// already sees. Speedrun is an exact no-op so existing prompts/runs stay
-// unchanged until Adventure is explicitly selected.
+// already sees. Speedrun is an exact no-op so old runs stay byte-for-byte
+// compatible until a non-Speedrun profile is explicitly selected.
 func AnnotatePlayStyle(obs Observation, offered []Objective, profile PlayStyleProfile) []Objective {
 	out := append([]Objective(nil), offered...)
-	if profile.Name == "" || profile.Name == "speedrun" {
+	if profile.Name == "" || profile.Name == PlayStyleSpeedrun {
 		return out
 	}
 	for i := range out {
@@ -285,9 +365,9 @@ func dominantDrives(score DriveScore, limit int) string {
 	return strings.Join(labels, "+")
 }
 
-// StyledLLMPlanner is the first opt-in Adventure seam. It preserves the
-// existing LLM planner, strategist, retry, goal, usage, and telemetry behavior
-// via embedding and only decorates the offered menu before model calls.
+// StyledLLMPlanner is the small standalone seam used by local/tests. Farm runs
+// use the same AnnotatePlayStyle function in statsPlanner so failover and
+// telemetry stay outside the policy layer.
 type StyledLLMPlanner struct {
 	*LLMPlanner
 	Profile PlayStyleProfile
@@ -301,7 +381,7 @@ func NewStyledLLMPlanner(inner *LLMPlanner, style string) *StyledLLMPlanner {
 }
 
 func NewAdventureLLMPlanner(inner *LLMPlanner) *StyledLLMPlanner {
-	return NewStyledLLMPlanner(inner, "adventure")
+	return NewStyledLLMPlanner(inner, PlayStyleAdventure)
 }
 
 func (p *StyledLLMPlanner) Next(obs Observation, offered []Objective) (Objective, error) {

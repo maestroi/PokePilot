@@ -37,20 +37,14 @@ func opportunityCost(obs Observation, o Objective, profile PlayStyleProfile) Opp
 
 	switch {
 	case located && !crossMap:
-		// A human normally takes a two-tile-or-less sidestep for free. Past
-		// that, charge gradually rather than introducing a magic cutoff.
 		if distance > 2 {
 			c.Travel = minFloat(0.55, float64(distance-2)/24.0*0.55)
 		}
 	case crossMap && strings.Contains(strings.ToLower(o.Note), "unvisited adjacent map"):
-		// The offerer already proved this is the current exploration frontier.
-		// It is a map transition, but not the same thing as crossing Kanto.
 		c.Travel = 0.12
 	case crossMap && located:
 		c.Travel = 0.42
 	case crossMap:
-		// Unknown semantic place. Keep it possible, but make the uncertainty
-		// visible rather than treating an unmeasurable trip as free.
 		c.Travel = 0.30
 		c.Uncertainty += 0.16
 	}
@@ -66,15 +60,9 @@ func opportunityCost(obs Observation, o Objective, profile PlayStyleProfile) Opp
 	return c
 }
 
-// objectiveDistance returns the exact lower-bound walking distance available
-// from planner state. Same-map objects and semantic destinations have concrete
-// coordinates. Cross-map routes deliberately do not claim a fake tile count:
-// the route planner owns the actual path and opportunityCost uses a bounded
-// cross-map travel estimate instead.
 func objectiveDistance(obs Observation, o Objective) (distance int, crossMap bool, located bool) {
 	switch o.Kind {
 	case KindTalk, KindTrainer, KindPickup:
-		// These interactions happen from an adjacent tile.
 		return maxInt(0, manhattan(int(obs.X), int(obs.Y), int(o.X), int(o.Y))-1), false, true
 	case KindGoTo, KindGym:
 		return namedObjectiveDistance(obs, o.Place)
@@ -84,16 +72,11 @@ func objectiveDistance(obs Observation, o Objective) (distance int, crossMap boo
 		}
 		return namedObjectiveDistance(obs, o.Place)
 	case KindCatch:
-		// Local catches happen in the current grass, but Red-owned offering can
-		// also expose a known-habitat catch whose Place means "travel there,
-		// then hunt". Cost that trip like the travel it actually contains.
 		if o.Place == "" {
 			return 0, false, true
 		}
 		return namedObjectiveDistance(obs, o.Place)
 	default:
-		// Train, Buy, UseItem, Starter and local Progress actions are performed
-		// where the player already is.
 		return 0, false, true
 	}
 }
@@ -143,16 +126,11 @@ func opportunityBacktrack(obs Observation, o Objective) float64 {
 	if !ok || place == "" || place == obs.Location {
 		return 0
 	}
-	// Recovery is not a frivolous backtrack. The safety drive already decides
-	// whether the heal is urgent; do not charge it again for returning home.
 	if o.Kind == KindHeal && (partyHurt(obs) || leadOutOfPP(obs)) {
 		return 0
 	}
 
 	needle := strings.ToLower(string(place))
-	// History is capped and oldest-first. Revisiting a place from the last few
-	// rounds is a useful signal for A<->B route oscillation, but a small one:
-	// story progression legitimately revisits towns too.
 	for i := len(obs.History) - 1; i >= 0 && i >= len(obs.History)-4; i-- {
 		line := strings.ToLower(obs.History[i].Objective)
 		if strings.HasPrefix(line, "go to "+needle) || strings.Contains(line, " at "+needle) {
@@ -196,9 +174,6 @@ func opportunityRouteUncertainty(obs Observation, o Objective, crossMap bool) fl
 }
 
 func opportunityDeferrability(o Objective) float64 {
-	// Optional local actions can usually be done later. Keep this deliberately
-	// small: the whole point of Adventure is that a cheap nearby opportunity
-	// should still beat postponing it indefinitely.
 	switch o.Kind {
 	case KindTalk, KindPickup:
 		return 0.02
@@ -220,9 +195,6 @@ func opportunityGoalPressure(obs Observation, o Objective) float64 {
 	if obs.RoundsLeft <= 0 || obs.RoundsLeft > 12 || !optionalOpportunity(o) {
 		return 0
 	}
-	// A fixed-budget experiment near its ceiling should become less willing
-	// to spend rounds on optional detours. Unlimited normal runs have
-	// RoundsLeft == 0 and therefore get no artificial urgency.
 	return float64(13-obs.RoundsLeft) / 12.0 * 0.25
 }
 
@@ -238,19 +210,12 @@ func optionalOpportunity(o Objective) bool {
 }
 
 func opportunityPenalty(profile PlayStyleProfile) float64 {
-	switch profile.Name {
-	case "adventure":
-		return 0.70
-	case "speedrun", "":
-		return 1.00
-	default:
-		return 0.85
+	if profile.DetourPenalty > 0 {
+		return profile.DetourPenalty
 	}
+	return 1.00
 }
 
-// highImpactItem lets reward value, rather than a special-case exemption from
-// cost, justify a larger detour. TMs/HMs are durable party/preparation assets;
-// ordinary consumables keep the baseline item value.
 func highImpactItem(item ItemID) bool {
 	name := strings.ToLower(strings.TrimSpace(string(item)))
 	return strings.HasPrefix(name, "tm") || strings.HasPrefix(name, "hm")

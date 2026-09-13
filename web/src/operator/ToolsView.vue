@@ -26,6 +26,7 @@ const form = reactive<RunSpec>({
   dest: '',
   goal: 'Earn the Boulder Badge.',
   llm_profile: 'auto',
+  play_style: 'adventure',
   reasoning_effort: '',
   fps: 60,
   max_rounds: 0,
@@ -52,13 +53,17 @@ async function submit(): Promise<void> {
   error.value = ''
   createdRunID.value = ''
   try {
+    // Give new UI-created runs an ID before POST so optional run-scoped wire
+    // metadata (including play_style) stays attached through queue/lease.
+    const runID = form.run_id.trim() || `run-${crypto.randomUUID()}`
     const spec: RunSpec = {
       ...form,
-      run_id: form.run_id.trim(),
+      run_id: runID,
       starter: form.starter.trim(),
       dest: isLLM.value ? '' : form.dest.trim(),
       goal: isLLM.value ? form.goal.trim() : '',
       llm_profile: isLLM.value ? form.llm_profile : '',
+      play_style: isLLM.value ? form.play_style : '',
       reasoning_effort: isLLM.value ? form.reasoning_effort : ''
     }
     const response = await createRun(spec)
@@ -112,6 +117,17 @@ async function submit(): Promise<void> {
           <select v-model="form.goal" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400">
             <option v-for="goal in goalOptions" :key="goal || 'free'" :value="goal">{{ goal || 'Free play (no automatic stop)' }}</option>
           </select>
+        </label>
+
+        <label v-if="isLLM" class="block">
+          <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Play style</span>
+          <select v-model="form.play_style" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400">
+            <option value="adventure">Adventure · natural play</option>
+            <option value="speedrun">Speedrun · progression first</option>
+            <option value="completionist">Completionist · explore and collect</option>
+            <option value="team_builder">Team Builder · catches and training</option>
+          </select>
+          <span class="mt-1 block text-[11px] text-slate-600">Changes gameplay priorities only; it does not change the LLM hardware route.</span>
         </label>
 
         <label v-if="isLLM" class="block">
