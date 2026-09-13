@@ -52,11 +52,11 @@ type statsPlanner struct {
 }
 
 // newStatsPlanner remains source-compatible with existing local/tests. Farm
-// construction passes a heartbeat snap and consumes the play_style from the
-// lease that farm.Client just decoded. Local callers have no lease and retain
-// legacy Speedrun behavior.
+// construction consumes the play_style from the lease farm.Client just
+// decoded; local construction consumes -play-style. Both default empty to the
+// exact historical Speedrun profile.
 func newStatsPlanner(profile, reasoningEffort, goal string, m *emu.Emu, push func(any), snap *heartbeatSnap) *statsPlanner {
-	playStyle := ""
+	playStyle := localPlayStyleName()
 	if snap != nil {
 		playStyle = farm.CurrentPlayStyle()
 	}
