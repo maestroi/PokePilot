@@ -43,7 +43,8 @@ func decideNaturalMove(romData []byte, type1, type2 uint8, current [4]uint8, off
 		d.Reason = "decline empty offered move"
 		return d
 	}
-	if _, err := rom.LookupMove(romData, offered); err != nil {
+	offeredMove, err := rom.LookupMove(romData, offered)
+	if err != nil {
 		d.Reason = fmt.Sprintf("decline undecodable offered move %d: %v", offered, err)
 		return d
 	}
@@ -56,8 +57,10 @@ func decideNaturalMove(romData []byte, type1, type2 uint8, current [4]uint8, off
 
 	d.BeforeScore = moveSetScore(romData, type1, type2, current)
 
-	// LearnMove does not ask a yes/no question when a slot is empty, but the
-	// generic decision still models that state for tests and future TM/HM use.
+	// LearnMove does not ask a yes/no question when a slot is empty, so the
+	// game will auto-learn even a move the full-set policy would hard-ignore.
+	// Model that forced state accurately; hard-ignore only applies when the
+	// four-slot prompt gives Battle an actual choice.
 	for slot, id := range current {
 		if id != 0 {
 			continue
@@ -70,7 +73,12 @@ func decideNaturalMove(romData []byte, type1, type2 uint8, current [4]uint8, off
 		return d
 	}
 
-	offeredMove, _ := rom.LookupMove(romData, offered)
+	if reason, ignore := hardIgnoreNaturalMove(offeredMove); ignore {
+		d.AfterScore = d.BeforeScore
+		d.Reason = fmt.Sprintf("decline move %d: %s", offered, reason)
+		return d
+	}
+
 	offeredDamages := moveDealsDamage(offeredMove)
 	currentDamagers := 0
 	hasReplaceableStatus := false
@@ -236,6 +244,24 @@ func moveLearningQuality(mv rom.Move, type1, type2 uint8) int {
 // status moves and could throw away a Pokémon's only real attack.
 func moveDealsDamage(mv rom.Move) bool {
 	return mv.Power > 0 || mv.Effect == rom.SpecialDamageEffect || mv.Effect == rom.SuperFangEffect || mv.Effect == rom.OHKOEffect
+}
+
+// hardIgnoreNaturalMove marks effects that are not merely low-value, but have
+// no strategic upside in Pokémon Red. Keep this list deliberately narrow:
+// situational moves still go through whole-set scoring and may be learned when
+// they genuinely improve a weak set.
+func hardIgnoreNaturalMove(mv rom.Move) (string, bool) {
+	if moveDealsDamage(mv) {
+		return "", false
+	}
+	switch mv.Effect {
+	case 0x55: // SPLASH_EFFECT
+		return "has no battle effect", true
+	case 0x2f: // FOCUS_ENERGY_EFFECT
+		return "Focus Energy is broken in Gen 1 and lowers critical-hit odds", true
+	default:
+		return "", false
+	}
 }
 
 // statusMoveBase groups effects by practical role. Exact live-battle value is

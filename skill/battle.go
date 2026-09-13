@@ -132,8 +132,9 @@ func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
 
 	// The move-learning episode is tracked across loop passes. lastForgetSlot
 	// is the slot just picked in the forget list; triedForgets records a move
-	// the ROM bounced as permanent. pendingLearn* is the positive postcondition:
-	// the offered move must appear in that exact party slot before Battle exits.
+	// the ROM explicitly bounced as an HM technique. pendingLearn* is the
+	// positive postcondition: the offered move must appear in that exact party
+	// slot before Battle exits.
 	var lastForgetSlot = -1
 	var triedForgets map[uint8]bool
 	pendingLearnMove := uint8(0)
@@ -346,10 +347,37 @@ func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
 				return menuError(m, "select FIGHT", err)
 			}
 
+		case moveLearnForgetRejected(lastForgetSlot, state.ScreenText(&mem)):
+			// IsMoveHM prints an explicit refusal before it jumps back to the
+			// forget list. Only this message proves that the selected slot was
+			// rejected. The list merely remaining visible after A is not proof:
+			// HandleMenuInput can leave the old tilemap on screen for a few
+			// frames while the accepted input is still being consumed.
+			bs := state.DecodeBattle(&mem)
+			if bs == nil {
+				continue
+			}
+			if triedForgets == nil {
+				triedForgets = map[uint8]bool{}
+			}
+			triedForgets[bs.Moves[lastForgetSlot].ID] = true
+			if zbatDebug {
+				fmt.Printf("zbat move-learn action=hm-rejected slot=%d move=%d\n", lastForgetSlot, bs.Moves[lastForgetSlot].ID)
+			}
+			lastForgetSlot = -1
+			pendingLearnSlot = -1
+			pendingLearnPartySlot = -1
+			m.Tap(emu.A, 3, 7)
+			if _, err := m.StepUntil(moveMenuBudget, func(m *emu.Emu) bool {
+				return !battleScreenHas(m, hmCantDeleteMarker)
+			}); err != nil {
+				return menuError(m, "dismiss HM move-forget refusal", err)
+			}
+
 		case forgetMenuUp(m):
 			// "Which move should be forgotten?" follows a deliberate YES on
-			// TryingToLearn. Re-evaluate from live RAM so an HM rejection can
-			// remove that move from consideration without guessing a cursor path.
+			// TryingToLearn. Re-evaluate from live RAM after a proven HM rejection
+			// so the rejected move can be removed from consideration.
 			//
 			// The "forgotten?" marker can land on screen a frame or two before
 			// the four-move list itself has been drawn: the box still holds
@@ -372,13 +400,13 @@ func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
 				continue // the battle ended while the menu was up
 			}
 			if lastForgetSlot >= 0 {
-				// The menu reappeared: the ROM rejected the last pick as an HM
-				// technique (or another permanent move), so remember the fact.
-				if triedForgets == nil {
-					triedForgets = map[uint8]bool{}
-				}
-				triedForgets[bs.Moves[lastForgetSlot].ID] = true
-				lastForgetSlot = -1
+				// We already pressed A on this list. It may remain drawn for a few
+				// frames before the ROM consumes that input. Do not press again and
+				// do not infer an HM rejection from the same pixels; wait for either
+				// party RAM to prove the learn succeeded or the explicit HM refusal
+				// above to prove it failed.
+				m.StepFrame()
+				continue
 			}
 			ids := [4]uint8{bs.Moves[0].ID, bs.Moves[1].ID, bs.Moves[2].ID, bs.Moves[3].ID}
 			offered := m.Peek8(sym.MoveNum)
@@ -601,6 +629,10 @@ const (
 	// forgetMenuMarker is on "Which move should be forgotten?", the move list
 	// printed after answering YES to the try-learn prompt.
 	forgetMenuMarker = "forgotten?"
+	// hmCantDeleteMarker is the explicit IsMoveHM refusal shown after the
+	// player selects an HM from the forget list. Only this message means the
+	// selected move was actually rejected.
+	hmCantDeleteMarker = "HM techniques"
 	// switchMenuMarker is the NORMAL_PARTY_MENU footer ("Choose a #MON."),
 	// which the VOLUNTARY mid-battle switch prints: core.asm .partyMenuWasSelected
 	// sets wPartyMenuTypeOrMessageID to NORMAL_PARTY_MENU, unlike the forced
@@ -671,6 +703,14 @@ func trainerSwitchPromptUp(m *emu.Emu) bool {
 // list is on screen — the menu that follows a YES on the try-learn prompt.
 func forgetMenuUp(m *emu.Emu) bool {
 	return battleScreenHas(m, forgetMenuMarker)
+}
+
+// moveLearnForgetRejected reports only an explicit HM refusal for the slot
+// Battle most recently selected. A still-visible forget list is deliberately
+// not enough: it can be the same frame sequence after the A press rather than
+// a fresh list reached after a rejection.
+func moveLearnForgetRejected(selectedSlot int, text string) bool {
+	return selectedSlot >= 0 && strings.Contains(text, hmCantDeleteMarker)
 }
 
 // forgetSlot is the conservative legacy replacement helper used by the Cut
