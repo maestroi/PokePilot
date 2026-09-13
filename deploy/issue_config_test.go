@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestIssueConfigReachesWallOnly(t *testing.T) {
+func TestIssueConfigUsesGitHubAdapter(t *testing.T) {
 	yml, err := os.ReadFile("farm.yml")
 	if err != nil {
 		t.Fatalf("read farm.yml: %v", err)
@@ -18,39 +18,44 @@ func TestIssueConfigReachesWallOnly(t *testing.T) {
 
 	s := string(yml)
 	wallIdx := strings.Index(s, "\n  wall:")
+	issuesIdx := strings.Index(s, "\n  issues:")
 	uiIdx := strings.Index(s, "\n  ui:")
 	runnerIdx := strings.Index(s, "\n  runner:")
-	if wallIdx < 0 || uiIdx < 0 || runnerIdx < 0 || !(wallIdx < uiIdx && uiIdx < runnerIdx) {
-		t.Fatalf("farm.yml service order: wall=%d ui=%d runner=%d", wallIdx, uiIdx, runnerIdx)
+	if wallIdx < 0 || issuesIdx < 0 || uiIdx < 0 || runnerIdx < 0 || !(wallIdx < issuesIdx && issuesIdx < uiIdx && uiIdx < runnerIdx) {
+		t.Fatalf("farm.yml service order: wall=%d issues=%d ui=%d runner=%d", wallIdx, issuesIdx, uiIdx, runnerIdx)
 	}
-	wall := s[wallIdx:uiIdx]
+	wall := s[wallIdx:issuesIdx]
+	issues := s[issuesIdx:uiIdx]
 	ui := s[uiIdx:runnerIdx]
 	runner := s[runnerIdx:]
 
-	for _, flag := range []string{
+	for _, want := range []string{
 		"-issues-api",
-		"${AGENT_ORCHESTRATOR_API:-}",
+		"http://issues:8080",
 		"-issues-project",
-		"${AGENT_ORCHESTRATOR_POKEPILOT_PROJECT_ID:-}",
+		"pokepilot",
 		"-issues-ui",
-		"${AGENT_ORCHESTRATOR_UI:-}",
+		"https://github.com/${POKEPILOT_GITHUB_REPO:-maestroi/PokePilot}",
 	} {
-		if !strings.Contains(wall, flag) {
-			t.Errorf("wall command missing %q", flag)
+		if !strings.Contains(wall, want) {
+			t.Errorf("wall command missing %q", want)
 		}
 	}
-	if strings.Contains(ui, "-issues-") || strings.Contains(runner, "-issues-") {
-		t.Error("issue flags must not reach ui or runner")
+	for _, want := range []string{
+		"command: [\"pokeissues\", \"-http\", \":8080\"]",
+		"POKEPILOT_GITHUB_REPO: ${POKEPILOT_GITHUB_REPO:-maestroi/PokePilot}",
+		"POKEPILOT_GITHUB_TOKEN: ${POKEPILOT_GITHUB_TOKEN:-}",
+		"POKEPILOT_RUN_BASE_URL: ${POKEPILOT_RUN_BASE_URL:-https://pokemon.labstack.cc}",
+	} {
+		if !strings.Contains(issues, want) {
+			t.Errorf("issues service missing %q", want)
+		}
 	}
-	for _, line := range strings.Split(s, "\n") {
-		if strings.Contains(line, "AGENT_ORCHESTRATOR") && strings.Contains(line, "192.168.50.81") {
-			t.Error("LAN Agent Orchestrator examples must not be stack defaults")
-			break
-		}
-		if strings.Contains(line, "AGENT_ORCHESTRATOR") && strings.Contains(line, "orchestrator.labstack.cc") && !strings.Contains(line, "${AGENT_ORCHESTRATOR") {
-			t.Error("Agent Orchestrator host must stay an operator-provided env value, not a baked stack default")
-			break
-		}
+	if strings.Contains(wall, "POKEPILOT_GITHUB_TOKEN") || strings.Contains(ui, "POKEPILOT_GITHUB_TOKEN") || strings.Contains(runner, "POKEPILOT_GITHUB_TOKEN") {
+		t.Error("GitHub credential must reach only the issues adapter")
+	}
+	if strings.Contains(s, "AGENT_ORCHESTRATOR") || strings.Contains(s, "orchestrator.labstack.cc") {
+		t.Error("farm stack must no longer depend on private Agent Orchestrator")
 	}
 
 	// Inference topology: runners normally bypass LiteLLM and call the 7900 XTX
@@ -89,7 +94,12 @@ func TestIssueConfigReachesWallOnly(t *testing.T) {
 	}
 
 	img := string(dockerfile)
-	if strings.Contains(img, "issues-api") || strings.Contains(img, "AGENT_ORCHESTRATOR") {
-		t.Error("issue settings must not be baked into the image")
+	for _, want := range []string{"go build -o /out/pokeissues ./cmd/pokeissues", "COPY --from=build /out/pokeissues /usr/local/bin/pokeissues"} {
+		if !strings.Contains(img, want) {
+			t.Errorf("farm image missing %q", want)
+		}
+	}
+	if strings.Contains(img, "POKEPILOT_GITHUB_TOKEN") {
+		t.Error("GitHub token must not be baked into the image")
 	}
 }
