@@ -16,8 +16,7 @@ export default defineConfig(({ mode, command }) => {
       proxy: {
         '/v1': devBackend,
         '/frame': devBackend,
-        '/maps': devBackend,
-        '/legacy': devBackend
+        '/maps': devBackend
       }
     } : undefined,
     build: {

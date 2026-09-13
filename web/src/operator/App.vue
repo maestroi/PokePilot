@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { ArrowTopRightOnSquareIcon, PlayIcon } from '@heroicons/vue/20/solid'
-import { getDashboard } from '../shared/api/client'
+import { PlayIcon } from '@heroicons/vue/20/solid'
+import { getBuildProvenance, getDashboard } from '../shared/api/client'
 import AppShell from '../shared/components/AppShell.vue'
 import { usePollingResource } from '../shared/composables/usePollingResource'
 import type { AppNavItem } from '../shared/types'
@@ -53,22 +53,32 @@ const navigation = computed<AppNavItem[]>(() => views.map((view) => ({
   href: `#${view}`,
   current: activeView.value === view
 })))
-const legacyURL = computed(() => {
-  const url = new URL('/legacy/', window.location.origin)
-  url.search = window.location.search
-  url.hash = activeView.value
-  return url.toString()
-})
 
 const fleet = usePollingResource(
   (signal) => getDashboard({ active: true }, signal),
   { intervalMs: 4000 }
+)
+const build = usePollingResource(
+  (signal) => getBuildProvenance(signal),
+  { intervalMs: 300000, isEmpty: (info) => !info.version }
 )
 
 const liveCount = computed(() => (fleet.data.value?.runs ?? []).filter((run) => run.status === 'running').length)
 const queuedCount = computed(() => (fleet.data.value?.runs ?? []).filter((run) => run.status === 'queued' || run.status === 'leased').length)
 const idleCount = computed(() => (fleet.data.value?.workers ?? []).filter((worker) => !worker.run_id).length)
 const connected = computed(() => fleet.state.value === 'ready' || fleet.state.value === 'refreshing' || fleet.state.value === 'stale')
+const buildHref = computed(() => build.data.value?.pr_url || build.data.value?.commit_url || '')
+const buildLabel = computed(() => {
+  const info = build.data.value
+  if (!info?.version) return ''
+  const short = info.version.slice(0, 7)
+  return info.pr_number ? `#${info.pr_number} · ${short}` : short
+})
+const buildTitle = computed(() => {
+  const info = build.data.value
+  if (!info) return ''
+  return info.title || (info.pr_number ? `Deployment from PR #${info.pr_number}` : `Deployment ${info.version}`)
+})
 
 function syncHash(): void {
   const next = hashView()
@@ -106,7 +116,18 @@ onUnmounted(() => window.removeEventListener('hashchange', syncHash))
       <span><b class="font-semibold text-[var(--poke-text)]">{{ liveCount }}</b> live</span>
       <span><b class="font-semibold text-[var(--poke-text)]">{{ queuedCount }}</b> queued</span>
       <span><b class="font-semibold text-[var(--poke-text)]">{{ idleCount }}</b> idle</span>
-      <span v-if="fleet.data.value?.wall_version" class="font-mono text-[10px] text-[var(--poke-dim)]">{{ fleet.data.value.wall_version.slice(0, 7) }}</span>
+      <span v-if="fleet.data.value?.wall_version" class="font-mono text-[10px] text-[var(--poke-dim)]" :title="`Wall ${fleet.data.value.wall_version}`">wall {{ fleet.data.value.wall_version.slice(0, 7) }}</span>
+      <a
+        v-if="buildHref && buildLabel"
+        :href="buildHref"
+        target="_blank"
+        rel="noopener"
+        class="font-mono text-[10px] text-[var(--poke-cyan)] hover:underline"
+        :title="buildTitle"
+      >
+        ui {{ buildLabel }}
+      </a>
+      <span v-else-if="buildLabel" class="font-mono text-[10px] text-[var(--poke-dim)]" :title="buildTitle">ui {{ buildLabel }}</span>
     </template>
 
     <template #actions>
@@ -117,14 +138,6 @@ onUnmounted(() => window.removeEventListener('hashchange', syncHash))
       >
         <PlayIcon class="size-3.5" aria-hidden="true" />
         New run
-      </a>
-      <a
-        :href="legacyURL"
-        class="hidden items-center gap-1 rounded-sm px-2 py-1 text-[11px] font-semibold text-[var(--poke-muted)] ring-1 ring-[var(--poke-border-strong)] hover:bg-white/5 hover:text-white sm:inline-flex"
-        title="Temporary fallback while the Vue cutover is validated"
-      >
-        Legacy
-        <ArrowTopRightOnSquareIcon class="size-3.5" aria-hidden="true" />
       </a>
     </template>
 
