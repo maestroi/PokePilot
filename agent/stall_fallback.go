@@ -67,6 +67,12 @@ func detectStallContext(obs Observation) StallContext {
 		}
 	}
 
+	maxRecentFailure := 0
+	for _, n := range recentFailed {
+		if n > maxRecentFailure {
+			maxRecentFailure = n
+		}
+	}
 	maxPersistentFailure := 0
 	for _, f := range obs.Failures {
 		if recentFailed[f.Objective] == 0 {
@@ -77,12 +83,16 @@ func detectStallContext(obs Observation) StallContext {
 		}
 	}
 
-	if maxPersistentFailure >= 2 {
-		ctx.Pressure += minFloat(0.40, 0.20+float64(maxPersistentFailure-1)*0.08)
+	if maxRecentFailure >= 2 {
+		ctx.Pressure += minFloat(0.32, 0.20+float64(maxRecentFailure-2)*0.06)
 		ctx.Reasons = appendStallReason(ctx.Reasons, "repeat-failure")
 	}
+	if maxPersistentFailure >= 2 {
+		ctx.Pressure += minFloat(0.22, 0.10+float64(maxPersistentFailure-2)*0.05)
+		ctx.Reasons = appendStallReason(ctx.Reasons, "persistent-failure")
+	}
 	if failedRecords >= 2 {
-		ctx.Pressure += minFloat(0.22, float64(failedRecords-1)*0.08)
+		ctx.Pressure += minFloat(0.18, float64(failedRecords-1)*0.06)
 		ctx.Reasons = appendStallReason(ctx.Reasons, "blocked-rounds")
 	}
 
@@ -117,6 +127,25 @@ func detectStallContext(obs Observation) StallContext {
 		ctx.Prerequisite = true
 		ctx.Reasons = appendStallReason(ctx.Reasons, "missing-capability")
 		break
+	}
+
+	// The runtime gives a recoverable structured failure one strategic replan
+	// before the same structured cause can become terminal. React on that first
+	// failure when the evidence is specific enough to suggest what kind of
+	// alternate search is appropriate. A generic one-off error still stays
+	// below the activation threshold.
+	if failedRecords == 1 {
+		switch {
+		case ctx.Prerequisite:
+			ctx.Pressure += 0.24
+			ctx.Reasons = appendStallReason(ctx.Reasons, "explicit-gate")
+		case ctx.Battle:
+			ctx.Pressure += 0.22
+			ctx.Reasons = appendStallReason(ctx.Reasons, "failed-battle")
+		case ctx.Navigation && (len(obs.Unroutable) > 0 || len(obs.RouteBlockages) > 0):
+			ctx.Pressure += 0.20
+			ctx.Reasons = appendStallReason(ctx.Reasons, "explicit-route-block")
+		}
 	}
 
 	// One transient failure is normal gameplay, not a mode switch.
@@ -177,8 +206,11 @@ func stallFallbackSignal(obs Observation, o Objective, profile PlayStyleProfile)
 
 	recentRepeats := recentObjectiveCount(obs.History, o.String())
 	failedTimes := recentFailureTimes(obs, o.String())
-	if failedTimes >= 2 {
-		penalize("stalled-retry", 0.20+ctx.Pressure*0.25)
+	if failedTimes >= 1 {
+		penalize("stalled-retry", 0.15+ctx.Pressure*0.25+float64(failedTimes-1)*0.05)
+	}
+	if ctx.Loop && o.Kind == KindGoTo && recentRepeats >= 2 {
+		penalize("loop-route", 0.16+ctx.Pressure*0.20)
 	}
 	if recentRepeats >= 2 && fallbackAlternative(o) {
 		penalize("exhausted-alternative", minFloat(0.36, float64(recentRepeats-1)*0.12))
