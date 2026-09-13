@@ -13,9 +13,13 @@ import {
   fpsLabel,
   formatFrame,
   formatWhen,
+  gameMediaLabel,
   goalLabel,
   howText,
+  isLiveStatus,
   llmProfileLabel,
+  railFacts,
+  railStatusLabel,
   reasoningEffortLabel,
   starterLabel,
   statNumber,
@@ -80,12 +84,10 @@ watch(selectedRunID, async (runID) => {
 }, { immediate: true })
 
 const selectedFrameID = computed(() => selectedRun.value?.run_id || '')
-const frameEnabled = computed(() => Boolean(selectedFrameID.value))
-const { frameURL, state: frameState, error: frameError } = useFramePump(selectedFrameID, frameEnabled)
-const isLiveFrame = computed(() => {
-  const status = selectedRun.value?.status
-  return status === 'running' || status === 'leased'
-})
+const isLiveFrame = computed(() => isLiveStatus(selectedRun.value?.status))
+const frameEnabled = computed(() => Boolean(selectedFrameID.value) && selectedRun.value?.status !== 'queued')
+const { frameURL, state: frameState, error: frameError } = useFramePump(selectedFrameID, frameEnabled, 50, isLiveFrame)
+const gameLabel = computed(() => gameMediaLabel(selectedRun.value?.status))
 
 const partySlots = computed<(PartyMon | null)[]>(() => {
   const members = selectedRun.value?.player?.party ?? []
@@ -207,10 +209,14 @@ function hpTone(mon: PartyMon): string {
   return 'bg-[var(--poke-green)]'
 }
 
-function railFacts(run: DashboardRun): string {
-  if (run.status === 'queued' || run.status === 'leased') return 'waiting for a worker'
-  const fps = fpsLabel(run)
-  return `frame ${run.frame ?? 0}${fps ? ` · ${fps} fps` : ''} · attempt ${run.attempts ?? 0}`
+function showActiveHeading(index: number): boolean {
+  return index === 0 && knownRuns.value[0]?.status !== 'done'
+}
+
+function showEndedHeading(index: number): boolean {
+  const run = knownRuns.value[index]
+  const previous = knownRuns.value[index - 1]
+  return run?.status === 'done' && previous?.status !== 'done'
 }
 
 function refresh(): void {
@@ -275,68 +281,107 @@ function warnPlay(stats: DashboardStats | undefined, key: string): boolean {
         </div>
         <div class="max-h-56 overflow-y-auto xl:max-h-none xl:h-[calc(100%-3rem)]">
           <p v-if="!knownRuns.length" class="px-2.5 py-3 text-[12px] text-[var(--poke-muted)]">No runs yet.</p>
-          <button
-            v-for="run in knownRuns"
-            :key="run.run_id"
-            type="button"
-            :class="[
-              selectedRun.run_id === run.run_id
-                ? 'border-l-[var(--poke-cyan)] bg-[#242f40]'
-                : 'border-l-transparent hover:bg-[var(--poke-panel)]',
-              'grid w-full grid-cols-[3.75rem_minmax(0,1fr)] gap-2 border-b border-[var(--poke-border)] border-l-2 px-1.5 py-1.5 text-left'
-            ]"
-            @click="selectRun(run)"
-          >
-            <span class="grid h-14 place-items-center overflow-hidden bg-[#0c1118]">
-              <img
-                v-if="run.status !== 'queued'"
-                :src="`/frame?run=${encodeURIComponent(run.run_id)}`"
-                alt=""
-                class="h-full w-full object-contain [image-rendering:pixelated]"
-              />
-              <span v-else class="font-mono text-[9px] text-[var(--poke-dim)]">{{ run.status }}</span>
-            </span>
-            <span class="min-w-0">
-              <span class="block truncate font-mono text-[10px] font-bold text-white" :title="run.run_id">{{ run.run_id }}</span>
-              <span class="mt-0.5 block truncate text-[10px] text-[var(--poke-muted)]">{{ tileLabel(run) }}</span>
-              <span class="block truncate text-[10px] text-[var(--poke-muted)]">{{ railFacts(run) }}</span>
-              <span v-if="statsLine(run)" class="block truncate text-[10px] text-[var(--poke-dim)]">{{ statsLine(run) }}</span>
-            </span>
-          </button>
+          <template v-for="(run, index) in knownRuns" :key="run.run_id">
+            <p v-if="showActiveHeading(index)" class="poke-kicker px-2.5 pt-2 pb-1">Active</p>
+            <p v-else-if="showEndedHeading(index)" class="poke-kicker px-2.5 pt-2 pb-1">Ended</p>
+            <button
+              type="button"
+              :class="[
+                selectedRun.run_id === run.run_id
+                  ? 'border-l-[var(--poke-cyan)] bg-[#242f40]'
+                  : 'border-l-transparent hover:bg-[var(--poke-panel)]',
+                'grid min-h-14 w-full grid-cols-[3.75rem_minmax(0,1fr)] gap-2 border-b border-[var(--poke-border)] border-l-2 px-1.5 py-1.5 text-left'
+              ]"
+              @click="selectRun(run)"
+            >
+              <span class="relative grid h-14 place-items-center overflow-hidden bg-[#0c1118]">
+                <img
+                  v-if="run.status !== 'queued'"
+                  :src="`/frame?run=${encodeURIComponent(run.run_id)}`"
+                  alt=""
+                  :class="[
+                    'h-full w-full object-contain [image-rendering:pixelated]',
+                    run.status === 'done' ? 'opacity-55 grayscale' : ''
+                  ]"
+                />
+                <span v-else class="font-mono text-[9px] text-[var(--poke-dim)]">{{ run.status }}</span>
+                <span
+                  v-if="run.status === 'running'"
+                  class="absolute top-1 left-1 size-1.5 rounded-full bg-[var(--poke-green)] motion-safe:animate-pulse"
+                  aria-hidden="true"
+                />
+              </span>
+              <span class="min-w-0">
+                <span class="flex items-center gap-1.5">
+                  <StatusBadge :tone="statusTone(run.status)">{{ railStatusLabel(run) }}</StatusBadge>
+                </span>
+                <span class="mt-0.5 block truncate font-mono text-[10px] font-bold text-white" :title="run.run_id">{{ run.run_id }}</span>
+                <span class="block truncate text-[10px] text-[var(--poke-muted)]">{{ tileLabel(run) }}</span>
+                <span
+                  :class="[
+                    run.status === 'running' ? 'text-[var(--poke-green)]' : 'text-[var(--poke-muted)]',
+                    'block truncate text-[10px]'
+                  ]"
+                >{{ railFacts(run) }}</span>
+                <span v-if="statsLine(run)" class="block truncate text-[10px] text-[var(--poke-dim)]">{{ statsLine(run) }}</span>
+              </span>
+            </button>
+          </template>
         </div>
       </aside>
 
       <div class="min-w-0 space-y-2">
         <div class="grid h-auto grid-cols-1 gap-px overflow-hidden border border-[var(--poke-border)] bg-[var(--poke-border)] xl:h-[clamp(300px,36vh,330px)] xl:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_minmax(13rem,0.55fr)]">
-          <section class="flex min-h-0 min-w-0 flex-col bg-[var(--poke-panel)]">
+          <section class="flex min-w-0 flex-col bg-[var(--poke-panel)] xl:min-h-0">
             <header class="flex h-8 shrink-0 items-center justify-between border-b border-[var(--poke-border)] bg-[#0f141c] px-2.5">
               <h3 class="text-xs font-semibold text-white">Game</h3>
-              <span class="font-mono text-[10px] text-[var(--poke-muted)]">{{ selectedRun.status === 'done' ? 'Last recorded frame' : 'Live frame' }}</span>
-            </header>
-            <div class="relative h-64 flex-1 bg-[#0c1118] xl:h-auto xl:min-h-0">
-              <div class="absolute inset-0 grid place-items-center">
-                <img
-                  v-if="frameURL"
-                  :src="frameURL"
-                  :alt="`Game frame for ${selectedRun.run_id}`"
-                  class="h-full w-full object-contain [image-rendering:pixelated]"
+              <span class="inline-flex items-center gap-1.5 font-mono text-[10px]">
+                <span
+                  v-if="isLiveFrame"
+                  class="size-1.5 rounded-full bg-[var(--poke-green)] motion-safe:animate-pulse"
+                  aria-hidden="true"
                 />
-                <div v-else class="px-4 text-center">
-                  <span :class="['mx-auto block size-1.5 rounded-full', isLiveFrame ? 'animate-pulse bg-[var(--poke-green)]' : 'bg-[var(--poke-dim)]']" />
+                <span :class="isLiveFrame ? 'font-semibold text-[var(--poke-green)]' : 'text-[var(--poke-muted)]'">{{ gameLabel }}</span>
+              </span>
+            </header>
+            <div class="relative aspect-[160/144] min-h-52 w-full max-h-[min(52vh,26.875rem)] overflow-hidden bg-[#0c1118] xl:aspect-auto xl:h-auto xl:max-h-none xl:min-h-0 xl:flex-1">
+              <img
+                v-if="frameURL"
+                :src="frameURL"
+                :alt="`Game frame for ${selectedRun.run_id}`"
+                class="absolute inset-0 h-full w-full object-contain object-center [image-rendering:pixelated]"
+              />
+              <div v-else class="absolute inset-0 grid place-items-center px-4 text-center">
+                <div>
+                  <span :class="['mx-auto block size-1.5 rounded-full', isLiveFrame ? 'bg-[var(--poke-green)] motion-safe:animate-pulse' : 'bg-[var(--poke-dim)]']" />
                   <p class="mt-2 text-[12px] text-[var(--poke-muted)]">{{ isLiveFrame ? 'Waiting for a live frame' : 'Last recorded frame unavailable.' }}</p>
                   <p v-if="frameError" class="mt-1 text-[11px] text-[var(--poke-amber)]">{{ frameError }}</p>
                 </div>
+              </div>
+              <div
+                v-if="frameURL"
+                :class="[
+                  isLiveFrame ? 'text-[var(--poke-green)]' : 'text-[var(--poke-muted)]',
+                  'absolute top-2 left-2 inline-flex items-center gap-1 bg-black/75 px-1.5 py-0.5 text-[10px] font-bold'
+                ]"
+              >
+                <span
+                  v-if="isLiveFrame"
+                  class="size-1.5 rounded-full bg-[var(--poke-green)] motion-safe:animate-pulse"
+                  aria-hidden="true"
+                />
+                {{ isLiveFrame ? 'Live' : 'Ended' }}
               </div>
               <div v-if="frameURL && frameState === 'error'" class="absolute right-2 bottom-2 bg-black/70 px-1.5 py-0.5 text-[10px] text-[var(--poke-amber)]">Last frame · reconnecting</div>
             </div>
           </section>
 
-          <section class="flex min-h-0 min-w-0 flex-col bg-[var(--poke-panel)]">
+          <section class="flex min-w-0 flex-col bg-[var(--poke-panel)] xl:min-h-0">
             <header class="flex h-8 shrink-0 items-center justify-between border-b border-[var(--poke-border)] bg-[#0f141c] px-2.5">
               <h3 class="text-xs font-semibold text-white">Semantic map</h3>
               <span class="font-mono text-[10px] text-[var(--poke-muted)]">{{ tileLabel(selectedRun) }}</span>
             </header>
-            <div class="h-64 flex-1 xl:h-auto xl:min-h-0">
+            <div class="h-64 min-h-52 xl:h-auto xl:min-h-0 xl:flex-1">
               <SemanticMap :map="selectedRun.map" :x="selectedRun.x" :y="selectedRun.y" :trail="selectedRun.trail" :sprites="selectedRun.sprites" />
             </div>
             <div class="flex flex-wrap gap-x-3 gap-y-0.5 border-t border-[var(--poke-border)] px-2.5 py-1 text-[10px] text-[var(--poke-muted)]">
@@ -380,8 +425,16 @@ function warnPlay(stats: DashboardStats | undefined, key: string): boolean {
           <div class="min-w-0 border-b border-[var(--poke-border)] px-2.5 py-1.5 xl:border-r xl:border-b-0">
             <span class="poke-kicker">Run state</span>
             <strong class="mt-0.5 block truncate font-mono text-[11px]" :title="selectedRun.run_id">{{ selectedRun.run_id }}</strong>
-            <div class="mt-1 flex flex-wrap gap-1">
+            <div class="mt-1 flex flex-wrap items-center gap-1">
               <StatusBadge :tone="statusTone(selectedRun.status)">{{ selectedRun.status }}</StatusBadge>
+              <span
+                v-if="isLiveFrame"
+                class="inline-flex items-center gap-1 text-[10px] font-semibold text-[var(--poke-green)]"
+              >
+                <span class="size-1.5 rounded-full bg-[var(--poke-green)] motion-safe:animate-pulse" aria-hidden="true" />
+                Live
+              </span>
+              <span v-else-if="selectedRun.status === 'done'" class="text-[10px] text-[var(--poke-muted)]">Ended</span>
               <StatusBadge v-if="selectedRun.replay_available" tone="success">replay</StatusBadge>
             </div>
           </div>

@@ -1,8 +1,13 @@
-import { onMounted, onScopeDispose, ref, shallowRef, watch, type Ref } from 'vue'
+import { nextTick, onMounted, onScopeDispose, ref, shallowRef, watch, type Ref } from 'vue'
 
 export type FramePumpState = 'idle' | 'loading' | 'ready' | 'error'
 
-export function useFramePump(runID: Ref<string>, enabled: Ref<boolean>, intervalMs = 50) {
+export function useFramePump(
+  runID: Ref<string>,
+  enabled: Ref<boolean>,
+  intervalMs = 50,
+  continuous?: Ref<boolean>
+) {
   const frameURL = shallowRef('')
   const state = ref<FramePumpState>('idle')
   const error = ref('')
@@ -10,6 +15,11 @@ export function useFramePump(runID: Ref<string>, enabled: Ref<boolean>, interval
   let serial = 0
   let timer: ReturnType<typeof setTimeout> | null = null
   let controller: AbortController | null = null
+  let stopVisibility: (() => void) | null = null
+
+  function isContinuous(): boolean {
+    return continuous ? continuous.value : true
+  }
 
   function releaseFrame(): void {
     if (!frameURL.value) return
@@ -23,10 +33,33 @@ export function useFramePump(runID: Ref<string>, enabled: Ref<boolean>, interval
     timer = null
     controller?.abort()
     controller = null
+    stopVisibility?.()
+    stopVisibility = null
+  }
+
+  function whenVisible(): Promise<void> {
+    if (typeof document === 'undefined' || !document.hidden) return Promise.resolve()
+    return new Promise((resolve) => {
+      const onChange = () => {
+        if (document.hidden) return
+        document.removeEventListener('visibilitychange', onChange)
+        if (stopVisibility === stop) stopVisibility = null
+        resolve()
+      }
+      const stop = () => {
+        document.removeEventListener('visibilitychange', onChange)
+        resolve()
+      }
+      stopVisibility = stop
+      document.addEventListener('visibilitychange', onChange)
+    })
   }
 
   async function tick(id: number): Promise<void> {
     if (id !== serial || !enabled.value || !runID.value) return
+    await whenVisible()
+    if (id !== serial || !enabled.value || !runID.value) return
+
     const currentRunID = runID.value
     const request = new AbortController()
     controller = request
@@ -46,6 +79,7 @@ export function useFramePump(runID: Ref<string>, enabled: Ref<boolean>, interval
       const nextURL = URL.createObjectURL(blob)
       const previousURL = frameURL.value
       frameURL.value = nextURL
+      await nextTick()
       if (previousURL) URL.revokeObjectURL(previousURL)
       error.value = ''
       state.value = 'ready'
@@ -55,7 +89,7 @@ export function useFramePump(runID: Ref<string>, enabled: Ref<boolean>, interval
         state.value = 'error'
       }
     } finally {
-      if (id === serial && enabled.value && runID.value === currentRunID) {
+      if (id === serial && enabled.value && runID.value === currentRunID && isContinuous()) {
         timer = setTimeout(() => void tick(id), Math.max(50, intervalMs))
       }
     }
