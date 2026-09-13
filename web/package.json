@@ -9,7 +9,8 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "dev:spectator": "vite --host 0.0.0.0 --mode spectator",
-    "build": "vue-tsc --noEmit && npm run build:operator && npm run build:spectator",
+    "test": "node --experimental-strip-types --test test/*.test.ts",
+    "build": "npm run test && vue-tsc --noEmit && npm run build:operator && npm run build:spectator",
     "build:operator": "vite build --mode operator",
     "build:spectator": "vite build --mode spectator",
     "typecheck": "vue-tsc --noEmit",
