@@ -95,12 +95,16 @@ func clonePlayStyle(in PlayStyleProfile) PlayStyleProfile {
 }
 
 // DriveScore is safe decision telemetry: it explains the explicit objective
-// features and configured weights used by the runtime, not model reasoning.
+// features, configured weights and opportunity cost used by the runtime, not
+// model reasoning. Value is the gross weighted drive value; Total is the net
+// value after Cost.Total is subtracted.
 type DriveScore struct {
+	Value         float64
 	Total         float64
 	Contributions map[Drive]float64
 	Urgency       map[Drive]float64
 	Weighted      map[Drive]float64
+	Cost          OpportunityCost
 }
 
 // ScoreObjective evaluates one already-legal objective against a play style.
@@ -110,18 +114,26 @@ func ScoreObjective(obs Observation, o Objective, profile PlayStyleProfile) Driv
 	contrib := objectiveDriveContributions(o)
 	urgency := driveUrgency(obs)
 	weighted := make(map[Drive]float64, len(contrib))
-	total := 0.0
-	for drive, value := range contrib {
+	value := 0.0
+	for drive, contribution := range contrib {
 		w := profile.Weights[drive]
 		u := urgency[drive]
 		if u == 0 {
 			u = 1
 		}
-		part := value * w * u
+		part := contribution * w * u
 		weighted[drive] = part
-		total += part
+		value += part
 	}
-	return DriveScore{Total: total, Contributions: contrib, Urgency: urgency, Weighted: weighted}
+	cost := opportunityCost(obs, o, profile)
+	return DriveScore{
+		Value:         value,
+		Total:         value - cost.Total,
+		Contributions: contrib,
+		Urgency:       urgency,
+		Weighted:      weighted,
+		Cost:          cost,
+	}
 }
 
 func objectiveDriveContributions(o Objective) map[Drive]float64 {
@@ -167,6 +179,10 @@ func objectiveDriveContributions(o Objective) map[Drive]float64 {
 	case KindPickup:
 		add(DriveItems, 1.00)
 		add(DriveExploration, 0.20)
+		if highImpactItem(o.Item) {
+			add(DriveItems, 0.45)
+			add(DrivePreparation, 0.55)
+		}
 	case KindUseItem:
 		add(DriveSafety, 0.80)
 		add(DriveResources, 0.20)
@@ -224,7 +240,7 @@ func AnnotatePlayStyle(obs Observation, offered []Objective, profile PlayStylePr
 		if len(score.Weighted) == 0 {
 			continue
 		}
-		annotation := fmt.Sprintf("[%s %.2f: %s]", profile.Name, score.Total, dominantDrives(score, 3))
+		annotation := fmt.Sprintf("[%s %.2f: %s; %s]", profile.Name, score.Total, dominantDrives(score, 3), opportunityCostSummary(score.Cost))
 		if out[i].Note == "" {
 			out[i].Note = annotation
 		} else {
