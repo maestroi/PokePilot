@@ -4,9 +4,11 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -28,7 +30,11 @@ var watchJS []byte
 const (
 	spectatorHistoryLimit   = 12
 	spectatorReplayCacheTTL = 30 * time.Second
+	spectatorDashboardLimit = 4 << 20
+	spectatorDoneLookback   = 64
 )
+
+var errSpectatorUnavailable = errors.New("spectator feed unavailable")
 
 type spectatorDashboard struct {
 	Now     int64            `json:"now"`
@@ -240,28 +246,18 @@ func spectatorSnapshotWithReplay(wallBase string, catalog *spectatorReplayCatalo
 		ctx, cancel := context.WithTimeout(req.Context(), proxyTimeout)
 		defer cancel()
 
-		up, err := http.NewRequestWithContext(ctx, http.MethodGet, wallBase+"/v1/dashboard", nil)
+		source, err := fetchSpectatorDashboard(ctx, client, wallBase, url.Values{"active": {"1"}})
 		if err != nil {
 			writeSpectatorUnavailable(res)
 			return
 		}
-		resp, err := client.Do(up)
-		if err != nil {
-			writeSpectatorUnavailable(res)
-			return
-		}
-		defer resp.Body.Close()
-
-		res.Header().Set("Cache-Control", "no-store")
-		if resp.StatusCode != http.StatusOK {
-			writeSpectatorUnavailable(res)
-			return
-		}
-
-		var source spectatorSourceDashboard
-		if err := json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&source); err != nil {
-			writeSpectatorUnavailable(res)
-			return
+		if catalog.enabled() {
+			if done, err := fetchSpectatorDashboard(ctx, client, wallBase, url.Values{
+				"status": {"done"},
+				"limit":  {strconv.Itoa(spectatorDoneLookback)},
+			}); err == nil {
+				source = mergeSpectatorSources(source, done)
+			}
 		}
 
 		all := make([]spectatorRun, 0, len(source.Runs))
@@ -274,9 +270,55 @@ func spectatorSnapshotWithReplay(wallBase string, catalog *spectatorReplayCatalo
 			Runs:    publicSpectatorRuns(ctx, source.Runs, catalog),
 		}
 
+		res.Header().Set("Cache-Control", "no-store")
 		res.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(res).Encode(snapshot) //nolint:errcheck // best effort
 	}
+}
+
+func fetchSpectatorDashboard(ctx context.Context, client *http.Client, wallBase string, q url.Values) (spectatorSourceDashboard, error) {
+	path := wallBase + "/v1/dashboard"
+	if encoded := q.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	up, err := http.NewRequestWithContext(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return spectatorSourceDashboard{}, err
+	}
+	resp, err := client.Do(up)
+	if err != nil {
+		return spectatorSourceDashboard{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return spectatorSourceDashboard{}, errSpectatorUnavailable
+	}
+	var source spectatorSourceDashboard
+	if err := json.NewDecoder(io.LimitReader(resp.Body, spectatorDashboardLimit)).Decode(&source); err != nil {
+		return spectatorSourceDashboard{}, err
+	}
+	return source, nil
+}
+
+func mergeSpectatorSources(parts ...spectatorSourceDashboard) spectatorSourceDashboard {
+	out := spectatorSourceDashboard{}
+	seen := make(map[string]struct{})
+	for _, part := range parts {
+		if part.Now > out.Now {
+			out.Now = part.Now
+		}
+		for _, run := range part.Runs {
+			if run.RunID == "" {
+				continue
+			}
+			if _, ok := seen[run.RunID]; ok {
+				continue
+			}
+			seen[run.RunID] = struct{}{}
+			out.Runs = append(out.Runs, run)
+		}
+	}
+	return out
 }
 
 // publicSpectatorRuns keeps every in-flight run, but finished runs are a
