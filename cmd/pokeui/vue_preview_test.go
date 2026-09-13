@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
@@ -14,10 +15,9 @@ func vueBuilt(t *testing.T, target string) bool {
 	return err == nil
 }
 
-func TestVueRootAndLegacyFallback(t *testing.T) {
+func TestVueRootRequiresFrontendAndLegacyIsGone(t *testing.T) {
 	legacy := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/" {
-			w.Header().Set("Content-Type", "text/html")
 			_, _ = w.Write([]byte("legacy-root"))
 			return
 		}
@@ -34,14 +34,14 @@ func TestVueRootAndLegacyFallback(t *testing.T) {
 		if got := root.Header().Get("Cache-Control"); got != "no-store" {
 			t.Fatalf("Vue HTML cache = %q", got)
 		}
-	} else if root.Body.String() != "legacy-root" {
-		t.Fatalf("Go-only fallback body = %q", root.Body.String())
+	} else if root.Code != http.StatusServiceUnavailable || strings.Contains(root.Body.String(), "legacy-root") {
+		t.Fatalf("missing frontend = %d %q", root.Code, root.Body.String())
 	}
 
 	fallback := httptest.NewRecorder()
 	h.ServeHTTP(fallback, httptest.NewRequest(http.MethodGet, "/legacy/", nil))
-	if fallback.Code != http.StatusOK || fallback.Body.String() != "legacy-root" {
-		t.Fatalf("legacy fallback = %d %q", fallback.Code, fallback.Body.String())
+	if fallback.Code != http.StatusNotFound {
+		t.Fatalf("legacy route = %d, want 404", fallback.Code)
 	}
 }
 
@@ -75,10 +75,32 @@ func TestVueNextRedirectsToRoot(t *testing.T) {
 	h := withVuePreview(http.NotFoundHandler(), "operator")
 	res := httptest.NewRecorder()
 	h.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/next/?run=abc", nil))
-	if res.Code != http.StatusTemporaryRedirect {
+	if res.Code != http.StatusPermanentRedirect {
 		t.Fatalf("status = %d", res.Code)
 	}
 	if got := res.Header().Get("Location"); got != "/?run=abc" {
 		t.Fatalf("location = %q", got)
+	}
+}
+
+func TestVueBuildProvenanceEndpoint(t *testing.T) {
+	oldVersion, oldPR, oldTitle := version, buildPR, buildTitleB64
+	defer func() { version, buildPR, buildTitleB64 = oldVersion, oldPR, oldTitle }()
+	version = "0123456789abcdef"
+	buildPR = "270"
+	buildTitleB64 = ""
+
+	h := withVuePreview(http.NotFoundHandler(), "operator")
+	res := httptest.NewRecorder()
+	h.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/v1/build", nil))
+	if res.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", res.Code, res.Body.String())
+	}
+	var got buildProvenance
+	if err := json.Unmarshal(res.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode build provenance: %v", err)
+	}
+	if got.Version != version || got.PRNumber != "270" || got.PRURL == "" || got.CommitURL == "" {
+		t.Fatalf("build provenance = %#v", got)
 	}
 }
