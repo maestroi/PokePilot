@@ -91,7 +91,7 @@ func TestAdventureUnreachableTransitionRaisesFrontierSearch(t *testing.T) {
 			Objective: failed.String(),
 			Outcome:   "blocked: no route",
 		}},
-		Failures:  []Failure{{Objective: failed.String(), Times: 1}},
+		Failures:   []Failure{{Objective: failed.String(), Times: 1}},
 		Unroutable: []string{"route 9"},
 	}
 	frontier := Objective{Kind: KindGoTo, Place: PlaceID("route 10"), Flee: true, Note: "(unvisited adjacent map)"}
@@ -202,7 +202,7 @@ func TestAdventureFreshProgressResetsOldStallPressure(t *testing.T) {
 			{Objective: failed, Outcome: "blocked: missing permission"},
 			{Objective: "progress obtained_permission", Outcome: "done"},
 		},
-		Failures: []Failure{{Objective: failed, Times: 2}},
+		Failures:     []Failure{{Objective: failed, Times: 2}},
 		Requirements: []Requirement{{Text: "You need permission."}},
 	}
 	ctx := detectStallContext(obs)
@@ -220,7 +220,7 @@ func TestAdventureAnnotationExplainsStallFallback(t *testing.T) {
 			Objective: failed.String(),
 			Outcome:   "blocked: no route",
 		}},
-		Failures:  []Failure{{Objective: failed.String(), Times: 1}},
+		Failures:   []Failure{{Objective: failed.String(), Times: 1}},
 		Unroutable: []string{"route 9"},
 	}
 	frontier := Objective{Kind: KindGoTo, Place: PlaceID("route 10"), Flee: true, Note: "(unvisited adjacent map)"}
