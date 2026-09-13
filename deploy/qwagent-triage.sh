@@ -72,17 +72,100 @@ gh_repo() {
 }
 
 pick_next() {
-	local triage titles pick_args status
+	local triage titles merged_prs pick_args status bin
+	local triage_file merged_file candidates ancestry_ready
 	if ! triage=$(curl -fsS -H "Authorization: Bearer ${POKEPILOT_MCP_TOKEN}" "${POKEPILOT_WALL}/v1/triage"); then
 		log "wall unreachable; skip"
 		return 2
 	fi
-	titles=$(gh pr list --repo "$(gh_repo)" --state open --limit 50 --json title --jq '.[].title' 2>/dev/null || true)
+	titles=$(gh pr list --repo "$(gh_repo)" --state open --limit 100 --json title --jq '.[].title' 2>/dev/null || true)
+	merged_prs=$(gh pr list --repo "$(gh_repo)" --state closed --limit 200 --json title,mergedAt,mergeCommit 2>/dev/null || printf '[]')
 	pick_args=(pick)
 	while IFS= read -r title; do
 		[ -z "$title" ] && continue
 		pick_args+=(--claimed "$title")
 	done <<<"$titles"
+
+	# A merged [triage:key] PR is the local fallback for Orchestrator issue
+	# state. Compare its merge commit with the build that produced the newest
+	# representative failure. Old-build failures stay suppressed; a failure
+	# from a build containing the repair is a concrete regression.
+	triage_file=$(mktemp)
+	merged_file=$(mktemp)
+	printf '%s' "$triage" >"$triage_file"
+	printf '%s' "$merged_prs" >"$merged_file"
+	candidates=$(python3 - "$triage_file" "$merged_file" <<'PY'
+import json
+import re
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as f:
+    groups = {str(g.get("key") or ""): g for g in json.load(f)}
+with open(sys.argv[2], encoding="utf-8") as f:
+    prs = json.load(f)
+
+marker = re.compile(r"\[triage:([^\]]+)\]")
+latest = {}
+for pr in prs:
+    merged_at = pr.get("mergedAt") or ""
+    if not merged_at:
+        continue
+    match = marker.search(pr.get("title") or "")
+    if not match:
+        continue
+    key = match.group(1).strip()
+    if key not in groups:
+        continue
+    merge_commit = pr.get("mergeCommit") or {}
+    merge_sha = merge_commit.get("oid") or ""
+    previous = latest.get(key)
+    if previous is None or merged_at > previous[0]:
+        latest[key] = (merged_at, merge_sha)
+
+for key, (_, merge_sha) in latest.items():
+    run_ids = groups[key].get("run_ids") or []
+    run_id = str(run_ids[0]) if run_ids else ""
+    print(f"{key}\t{run_id}\t{merge_sha}")
+PY
+)
+	rm -f "$triage_file" "$merged_file"
+
+	ancestry_ready=0
+	if [ -n "$candidates" ]; then
+		if git -C "$POKEPILOT_ROOT" fetch --quiet origin; then
+			ancestry_ready=1
+		else
+			log "git fetch failed; merged triage repairs remain suppressed this tick"
+		fi
+	fi
+
+	while IFS=$'\t' read -r key run_id merge_sha; do
+		[ -z "$key" ] && continue
+		if [ "$ancestry_ready" -ne 1 ] || [ -z "$run_id" ] || [ -z "$merge_sha" ]; then
+			pick_args+=(--repaired "$key")
+			continue
+		fi
+		local debug runner_version
+		if ! debug=$(curl -fsS -H "Authorization: Bearer ${POKEPILOT_MCP_TOKEN}" \
+			"${POKEPILOT_WALL}/v1/runs/${run_id}/debug"); then
+			log "cannot read representative run $run_id for $key; keep merged repair suppressed"
+			pick_args+=(--repaired "$key")
+			continue
+		fi
+		runner_version=$(printf '%s' "$debug" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(((d.get("finish") or {}).get("runner_version") or "").strip())')
+		if [ -z "$runner_version" ] || \
+			! git -C "$POKEPILOT_ROOT" cat-file -e "${merge_sha}^{commit}" 2>/dev/null || \
+			! git -C "$POKEPILOT_ROOT" cat-file -e "${runner_version}^{commit}" 2>/dev/null; then
+			pick_args+=(--repaired "$key")
+			continue
+		fi
+		if git -C "$POKEPILOT_ROOT" merge-base --is-ancestor "$merge_sha" "$runner_version"; then
+			pick_args+=(--regressed "$key")
+		else
+			pick_args+=(--repaired "$key")
+		fi
+	done <<<"$candidates"
+
 	# go run rewrites a child exit 2 into its own exit 1; build so idle stays 2.
 	bin="$POKEPILOT_TRIAGE_STATE/qwagent-triage"
 	(cd "$POKEPILOT_ROOT" && go build -o "$bin" ./cmd/qwagent-triage)
