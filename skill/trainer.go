@@ -196,6 +196,12 @@ func TrainerStatusAt(romData []byte, mem *state.Mem, mapID, homeX, homeY uint8) 
 	}, nil
 }
 
+// trainerBattleTransitionSettleBudget covers the screen-flash transition
+// between the pre-battle text closing and wIsInBattle actually setting.
+// Measured on Route 25 (run-3ugvnzgq3q8171rzws1srj3be1 round 8): ~195
+// frames; headroom for slower cries/music on other trainers.
+const trainerBattleTransitionSettleBudget = 400
+
 // ChallengeTrainer deliberately defeats the trainer whose ROM home coordinate
 // is (homeX,homeY) on the current map. It supports both encounter forms Red
 // uses for ordinary map trainers:
@@ -247,12 +253,26 @@ func ChallengeTrainer(m *emu.Emu, romData []byte, homeX, homeY uint8, policy Mov
 	if !live {
 		return fmt.Errorf("skill: ChallengeTrainer: trainer sprite %d disappeared but fought flag %#04x/%#02x is clear", target.objectID, target.flag.addr, target.flag.mask)
 	}
-	if err := Face(m, tx, ty); err != nil {
-		return fmt.Errorf("skill: ChallengeTrainer: face trainer at (%d,%d): %w", tx, ty, err)
+
+	// The trainer's own sight check runs on its schedule, not ours, and can
+	// fire at any point from here on: it opens the pre-battle text box and
+	// hands control to the encounter script, after which a direction tap no
+	// longer turns the player. Waiting on facing alone then times out for a
+	// turn the script has made impossible. Treat the box or battle opening
+	// as the trainer's own approach completing the same job Face was asked
+	// to do, whichever happens first.
+	var mem state.Mem
+	engaged := func() bool {
+		state.Snapshot(m, &mem)
+		return mem.U8(sym.FontLoaded) != 0 || state.DecodeBattle(&mem) != nil
+	}
+	if !engaged() {
+		if err := Face(m, tx, ty); err != nil && !engaged() {
+			return fmt.Errorf("skill: ChallengeTrainer: face trainer at (%d,%d): %w", tx, ty, err)
+		}
 	}
 
 	m.Tap(emu.A, 3, 7)
-	var mem state.Mem
 	if _, err := m.StepUntil(talkOpenBudget, func(m *emu.Emu) bool {
 		state.Snapshot(m, &mem)
 		return mem.U8(sym.FontLoaded) != 0 || state.DecodeBattle(&mem) != nil
@@ -270,7 +290,19 @@ func ChallengeTrainer(m *emu.Emu, romData []byte, homeX, homeY uint8, policy Mov
 		if !state.Controllable(&mem) {
 			return fmt.Errorf("skill: ChallengeTrainer: trainer dialogue neither started a battle nor returned control")
 		}
-		return fmt.Errorf("skill: ChallengeTrainer: trainer returned control without battle but fought flag %#04x/%#02x is clear", target.flag.addr, target.flag.mask)
+		// The pre-battle text closing reads as ordinary overworld idle
+		// (StartTrainerBattle clears wJoyIgnore before the screen-flash
+		// transition runs), so give that transition room before concluding
+		// the sighted engagement fizzled with no battle.
+		mem = advanceUntil(m, trainerBattleTransitionSettleBudget, func(mm *state.Mem) bool {
+			return state.DecodeBattle(mm) != nil || target.flag.setMem(mm)
+		})
+		if target.flag.setMem(&mem) {
+			return nil
+		}
+		if state.DecodeBattle(&mem) == nil {
+			return fmt.Errorf("skill: ChallengeTrainer: trainer returned control without battle but fought flag %#04x/%#02x is clear", target.flag.addr, target.flag.mask)
+		}
 	}
 
 	outcome, err := Battle(m, policy)
