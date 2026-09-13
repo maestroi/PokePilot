@@ -53,7 +53,7 @@ const emit = defineEmits<{
               </div>
               <div class="min-w-0 flex-1">
                 <DialogTitle class="text-sm font-semibold text-white">{{ title }}</DialogTitle>
-                <p class="mt-1 text-sm leading-6 text-slate-400">{{ message }}</p>
+                <p class="mt-2 text-sm leading-6 break-words whitespace-pre-wrap text-slate-400">{{ message }}</p>
               </div>
             </div>
 

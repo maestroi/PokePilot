@@ -101,6 +101,42 @@ func TestDeleteRunRetainsWallHistoryWhenArtifactPurgeFails(t *testing.T) {
 	}
 }
 
+func TestDeleteRunDoesNotPurgeArtifactsWhenLineageBlocked(t *testing.T) {
+	replayCalled := false
+	replay := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		replayCalled = true
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer replay.Close()
+	wall := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/v1/runs/run-1" {
+			t.Fatalf("unexpected wall request: %s %s", r.Method, r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"run":{"status":"done","resume_protected":true},"delete_blocked":"run is still required by an active resume lineage: run-1"}`))
+	}))
+	defer wall.Close()
+
+	ui := httptest.NewServer(handlerWithServices(wall.URL, replay.URL, ""))
+	defer ui.Close()
+	req, err := http.NewRequest(http.MethodDelete, ui.URL+"/v1/runs/run-1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusConflict {
+		t.Fatalf("DELETE protected run = %d, want 409; body=%s", res.StatusCode, body)
+	}
+	if replayCalled {
+		t.Fatal("replay cleanup was called for a live resume ancestor")
+	}
+}
+
 func TestDeleteActiveRunDoesNotTouchReplayStorage(t *testing.T) {
 	replayCalled := false
 	replay := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

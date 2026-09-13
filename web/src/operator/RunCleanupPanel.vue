@@ -15,7 +15,8 @@ import {
   deleteRuns,
   eligibleRuns,
   groupPattern,
-  isResolvedGroup
+  isResolvedGroup,
+  lineageBlockedRuns
 } from './runCleanup'
 
 const emit = defineEmits<{
@@ -34,16 +35,23 @@ const pendingKind = ref<'age' | 'bug' | ''>('')
 
 const selectedBug = computed(() => groups.value.find((group) => group.key === selectedBugKey.value) || null)
 const ageCandidates = computed(() => eligibleRuns(catalog.value?.runs, Number(catalog.value?.now || 0), selectedAge.value))
+const ageBlocked = computed(() => lineageBlockedRuns(catalog.value?.runs, Number(catalog.value?.now || 0), selectedAge.value))
 const bugCandidates = computed(() => selectedBug.value ? bugGroupRuns(catalog.value?.runs, groupPattern(selectedBug.value)) : [])
 const confirmCount = computed(() => pendingKind.value === 'bug' ? bugCandidates.value.length : ageCandidates.value.length)
-const confirmTitle = computed(() => pendingKind.value === 'bug' ? 'Delete matching failure runs?' : 'Delete older runs?')
+const confirmTitle = computed(() => {
+  if (busyKind.value) return 'Deleting runs'
+  return pendingKind.value === 'bug' ? 'Delete matching failure runs?' : 'Delete older runs?'
+})
 const confirmMessage = computed(() => {
   if (busyKind.value) return pendingKind.value === 'bug' ? bugStatus.value : ageStatus.value
+  const kept = ageBlocked.value.length
+    ? ` ${ageBlocked.value.length} older run${ageBlocked.value.length === 1 ? '' : 's'} stay because a live endless successor can still resume from them.`
+    : ''
   if (pendingKind.value === 'bug' && selectedBug.value) {
-    return `Delete all ${bugCandidates.value.length} finished run${bugCandidates.value.length === 1 ? '' : 's'} for ${selectedBug.value.key}? Pattern: ${groupPattern(selectedBug.value)}. This also permanently deletes their S3 artifacts and replay cache. This cannot be undone.`
+    return `Delete ${bugCandidates.value.length} finished run${bugCandidates.value.length === 1 ? '' : 's'} for ${selectedBug.value.key} that are not on a live resume chain? Pattern: ${groupPattern(selectedBug.value)}. This also permanently deletes their S3 artifacts and replay cache.`
   }
   if (pendingKind.value === 'age') {
-    return `Delete ${ageCandidates.value.length} finished run${ageCandidates.value.length === 1 ? '' : 's'} older than ${ageDescription(selectedAge.value)}? This also permanently deletes their S3 artifacts and replay cache. This cannot be undone.`
+    return `Delete ${ageCandidates.value.length} finished run${ageCandidates.value.length === 1 ? '' : 's'} older than ${ageDescription(selectedAge.value)} that are not on a live resume chain?${kept} This also permanently deletes their S3 artifacts and replay cache.`
   }
   return ''
 })
@@ -156,7 +164,13 @@ async function confirmPending(): Promise<void> {
             {{ busyKind === 'age' ? 'Deleting…' : (ageCandidates.length ? `Delete ${ageCandidates.length} older run${ageCandidates.length === 1 ? '' : 's'}` : 'Delete older runs') }}
           </button>
           <p class="text-xs text-slate-500" aria-live="polite">
-            {{ ageStatus || (catalog ? `${ageCandidates.length} finished run${ageCandidates.length === 1 ? '' : 's'} older than ${ageDescription(selectedAge)}.` : 'Loading finished history…') }}
+            {{ ageStatus || (catalog
+              ? (ageCandidates.length
+                ? `${ageCandidates.length} finished run${ageCandidates.length === 1 ? '' : 's'} older than ${ageDescription(selectedAge)} can be deleted${ageBlocked.length ? `; ${ageBlocked.length} stay for live resume` : ''}.`
+                : (ageBlocked.length
+                  ? `All ${ageBlocked.length} runs older than ${ageDescription(selectedAge)} are still required by a live endless successor.`
+                  : `No finished runs are older than ${ageDescription(selectedAge)}.`))
+              : 'Loading finished history…') }}
           </p>
         </div>
       </div>

@@ -159,6 +159,7 @@ type tileRow struct {
 	Issue           *IssueLink       `json:"issue,omitempty"`
 	ReplayAvailable bool             `json:"replay_available,omitempty"`
 	ResumeFromRunID string           `json:"resume_from_run_id,omitempty"`
+	ResumeProtected bool             `json:"resume_protected,omitempty"`
 }
 
 // Wall owns the spec queue, the tile map, cancel flags, the optional dump

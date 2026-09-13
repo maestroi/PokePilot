@@ -11,6 +11,7 @@ import {
   deleteRuns,
   eligibleRuns,
   groupPattern,
+  isLiveLineageError,
   isResolvedGroup,
   matchingRunsForGroups,
   normalizeFailureDetail
@@ -83,6 +84,24 @@ test('isResolvedGroup treats fixed/resolved issue metadata as historical', () =>
   assert.equal(isResolvedGroup({ key: 'fixed', count: 1, issue: { resolution: 'fixed' } }), true)
 })
 
+test('eligibleRuns skips runs still required by a live resume lineage', () => {
+  const now = 10_000
+  const runs = [
+    run({ run_id: 'old-free', ended_at: 1_000 }),
+    run({ run_id: 'old-protected', ended_at: 1_000, resume_protected: true }),
+    run({ run_id: 'fresh', ended_at: 9_000 })
+  ]
+  assert.deepEqual(
+    eligibleRuns(runs, now, 3_600).map((item) => item.run_id),
+    ['old-free']
+  )
+})
+
+test('isLiveLineageError recognizes the wall 409', () => {
+  assert.equal(isLiveLineageError('run is still required by an active resume lineage: run-1'), true)
+  assert.equal(isLiveLineageError('s3 unavailable'), false)
+})
+
 test('eligibleRuns selects only finished runs older than the cutoff', () => {
   const now = 10_000
   const runs = [
@@ -137,5 +156,17 @@ test('deleteRuns bounds concurrency and reports partial failures', async () => {
   assert.equal(progress.at(-1)?.completed, ids.length)
   assert.equal(progress.at(-1)?.deleted, 4)
   assert.equal(progress.at(-1)?.failed, 2)
+  assert.equal(progress.at(-1)?.skipped, 0)
   assert.match(cleanupResultText(result), /4 deleted · 2 failed/)
+})
+
+test('deleteRuns counts live-lineage 409s as skipped, not failed', async () => {
+  const result = await deleteRuns(['keep', 'gone'], async (id) => {
+    if (id === 'keep') throw new Error('run is still required by an active resume lineage: keep')
+  }, 2)
+
+  assert.deepEqual(result.deletedIds, ['gone'])
+  assert.deepEqual(result.skippedIds, ['keep'])
+  assert.deepEqual(result.failures, [])
+  assert.match(cleanupResultText(result), /kept because a live endless run/)
 })

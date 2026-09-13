@@ -142,6 +142,7 @@ func (w *Wall) runtimeDashboardSnapshot(query runtimeDashboardQuery) runtimeDash
 	outcomes := map[string]struct{}{}
 	hows := map[string]struct{}{}
 	starters := map[string]struct{}{}
+	lineage := w.liveCheckpointLineageLocked()
 	rows := make([]tileRow, 0, max(0, query.limit))
 	total := 0
 	for i := len(w.order) - 1; i >= 0; i-- {
@@ -177,7 +178,7 @@ func (w *Wall) runtimeDashboardSnapshot(query runtimeDashboardQuery) runtimeDash
 		if query.limit > 0 && len(rows) >= query.limit {
 			continue
 		}
-		rows = append(rows, w.tileRowLocked(t))
+		rows = append(rows, w.tileRowWithLineageLocked(t, lineage))
 	}
 	view := runtimeDashboardView{
 		Now: now.Unix(), WallVersion: w.Version, Runs: rows, Workers: workers, Total: total,

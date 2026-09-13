@@ -17,6 +17,7 @@ export interface DeleteProgress {
   completed: number
   total: number
   deleted: number
+  skipped: number
   failed: number
 }
 
@@ -27,7 +28,16 @@ export interface DeleteFailure {
 
 export interface DeleteRunsResult {
   deletedIds: string[]
+  skippedIds: string[]
   failures: DeleteFailure[]
+}
+
+export function isLiveLineageError(error: string): boolean {
+  return /resume lineage|still required by an active resume/i.test(error)
+}
+
+export function isDeletableFinishedRun(run: DashboardRun | null | undefined): boolean {
+  return Boolean(run && run.status === 'done' && !run.resume_protected)
 }
 
 export function normalizeFailureDetail(detail: string): string {
@@ -53,8 +63,7 @@ export function bugGroupRuns(runs: DashboardRun[] | null | undefined, pattern: s
   if (!wanted) return []
   return (Array.isArray(runs) ? runs : [])
     .filter((run) =>
-      run
-      && run.status === 'done'
+      isDeletableFinishedRun(run)
       && (run.reason === 'error' || run.reason === 'lost')
       && run.detail
       && normalizeFailureDetail(run.detail) === wanted)
@@ -74,13 +83,27 @@ export function matchingRunsForGroups(runs: DashboardRun[] | null | undefined, g
   return matched.sort((a, b) => Number(a.ended_at || 0) - Number(b.ended_at || 0))
 }
 
+function finishedBeforeCutoff(run: DashboardRun, cutoff: number): boolean {
+  return run.status === 'done' && Number(run.ended_at || 0) > 0 && Number(run.ended_at) <= cutoff
+}
+
 export function eligibleRuns(runs: DashboardRun[] | null | undefined, nowSeconds: number, ageSeconds: number): DashboardRun[] {
   const now = Number(nowSeconds) || 0
   const age = Number(ageSeconds) || 0
   if (now <= 0 || age <= 0) return []
   const cutoff = now - age
   return (Array.isArray(runs) ? runs : [])
-    .filter((run) => run && run.status === 'done' && Number(run.ended_at || 0) > 0 && Number(run.ended_at) <= cutoff)
+    .filter((run) => isDeletableFinishedRun(run) && finishedBeforeCutoff(run, cutoff))
+    .sort((a, b) => Number(a.ended_at) - Number(b.ended_at))
+}
+
+export function lineageBlockedRuns(runs: DashboardRun[] | null | undefined, nowSeconds: number, ageSeconds: number): DashboardRun[] {
+  const now = Number(nowSeconds) || 0
+  const age = Number(ageSeconds) || 0
+  if (now <= 0 || age <= 0) return []
+  const cutoff = now - age
+  return (Array.isArray(runs) ? runs : [])
+    .filter((run) => run && run.resume_protected && finishedBeforeCutoff(run, cutoff))
     .sort((a, b) => Number(a.ended_at) - Number(b.ended_at))
 }
 
@@ -98,6 +121,7 @@ export async function deleteRuns(
   const queue = ids.filter(Boolean)
   const workerCount = Math.max(1, Math.min(queue.length || 1, Number(concurrency) || 1))
   const deletedIds: string[] = []
+  const skippedIds: string[] = []
   const failures: DeleteFailure[] = []
   let cursor = 0
   let completed = 0
@@ -111,30 +135,42 @@ export async function deleteRuns(
         await deleteOne(id)
         deletedIds.push(id)
       } catch (error) {
-        failures.push({ id, error: error instanceof Error ? error.message : String(error) })
+        const message = error instanceof Error ? error.message : String(error)
+        if (isLiveLineageError(message)) skippedIds.push(id)
+        else failures.push({ id, error: message })
       } finally {
         completed++
-        onProgress?.({ completed, total: queue.length, deleted: deletedIds.length, failed: failures.length })
+        onProgress?.({
+          completed,
+          total: queue.length,
+          deleted: deletedIds.length,
+          skipped: skippedIds.length,
+          failed: failures.length
+        })
       }
     }
   }
 
   await Promise.all(Array.from({ length: workerCount }, () => worker()))
-  return { deletedIds, failures }
+  return { deletedIds, skippedIds, failures }
 }
 
 export function cleanupProgressText(progress: DeleteProgress): string {
+  const skipped = progress.skipped ? ` · ${progress.skipped} kept for live resume` : ''
   const failed = progress.failed ? ` · ${progress.failed} failed` : ''
-  return `Deleting ${progress.completed}/${progress.total} · ${progress.deleted} deleted${failed}`
+  return `Deleting ${progress.completed}/${progress.total} · ${progress.deleted} deleted${skipped}${failed}`
 }
 
 export function cleanupResultText(result: DeleteRunsResult): string {
+  const skipped = result.skippedIds.length
+    ? ` · ${result.skippedIds.length} kept because a live endless run can still resume from them`
+    : ''
   if (!result.failures.length) {
-    return `${result.deletedIds.length} run${result.deletedIds.length === 1 ? '' : 's'} deleted with artifacts.`
+    return `${result.deletedIds.length} run${result.deletedIds.length === 1 ? '' : 's'} deleted with artifacts${skipped}.`
   }
   const examples = result.failures.slice(0, 3).map((failure) => failure.id).join(', ')
   const extra = result.failures.length > 3 ? ', …' : ''
-  return `${result.deletedIds.length} deleted · ${result.failures.length} failed${examples ? ` (${examples}${extra})` : ''}. Failed runs were kept so cleanup can be retried.`
+  return `${result.deletedIds.length} deleted${skipped} · ${result.failures.length} failed${examples ? ` (${examples}${extra})` : ''}. Failed runs were kept so cleanup can be retried.`
 }
 
 export function groupCleanupLabel(group: TriageGroup): string {
