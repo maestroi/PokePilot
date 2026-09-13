@@ -26,8 +26,8 @@ const labels: Record<OperatorView, string> = {
 
 const descriptions: Record<OperatorView, string> = {
   live: 'Watch a selected run, inspect game state and semantic position, and open its persisted evidence and deterministic replay.',
-  runs: 'Search completed runs with server-side filters and paging.',
-  failures: 'Group, inspect, and investigate actionable run failures.',
+  runs: 'Search completed runs, then bulk-delete older history or every run that still matches one failure.',
+  failures: 'Group, inspect, investigate, and delete finished runs for a specific failure — including issues that are already solved.',
   analytics: 'Farm outcomes, badge progress, LLM workload, and endless-run experiments.',
   operations: 'Fleet health, workers, active attempts, queue/leases, and recent outcomes.',
   tools: 'Queue a new scripted or goal-driven run.'

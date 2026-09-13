@@ -8,6 +8,7 @@ import Panel from '../shared/components/Panel.vue'
 import ResourceState from '../shared/components/ResourceState.vue'
 import StatusBadge from '../shared/components/StatusBadge.vue'
 import { usePollingResource } from '../shared/composables/usePollingResource'
+import RunCleanupPanel from './RunCleanupPanel.vue'
 import {
   archiveHow,
   archiveOutcome,
@@ -106,6 +107,8 @@ async function confirmDelete(): Promise<void> {
 
 <template>
   <div class="space-y-3">
+    <RunCleanupPanel @changed="retry" />
+
     <Panel title="Runs" description="Completed run archive with server-side filtering and paging." compact>
       <template #actions>
         <button
@@ -259,9 +262,7 @@ async function confirmDelete(): Promise<void> {
       </div>
     </Panel>
 
-    <div v-if="deleteError" class="border-l-4 border-rose-400 bg-rose-400/10 p-3 text-sm text-rose-100" role="alert">
-      {{ deleteError }}
-    </div>
+    <p v-if="deleteError" class="text-sm text-rose-300" role="alert">{{ deleteError }}</p>
 
     <ConfirmDialog
       :open="Boolean(deleteTarget)"

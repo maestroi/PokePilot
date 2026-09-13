@@ -153,7 +153,9 @@ export interface TriageGroup {
   fingerprint?: string
   count: number
   runs?: string[]
+  run_ids?: string[]
   examples?: string[]
+  example?: string
   detail?: string
   latest_run_id?: string
   issue?: DashboardIssueLink
