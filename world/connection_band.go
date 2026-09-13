@@ -6,32 +6,24 @@ import "github.com/maestroi/pokepilot/red/rom"
 // component-scoped connection edge. North/south bands are X coordinates;
 // west/east bands are Y coordinates. Unscoped/hand-built connection edges
 // return ok=false and retain the historical whole-border behavior.
-//
-// Edge already has two bytes that are meaningful only for warps. Connection
-// edges encode start+1/end+1 in WarpX/WarpY, keeping Edge comparable (and all
-// existing map[Edge] routing/ban tables intact) without growing the generic
-// transition identity for one game's border detail. Zero remains the legacy
-// "whole border" representation used by hand-built tests and callers.
 func ConnectionBand(e Edge) (start, end int, ok bool) {
-	if e.Kind != EdgeConnection || e.WarpX == 0 || e.WarpY == 0 {
+	if e.Kind != EdgeConnection || !e.BandScoped {
 		return 0, 0, false
 	}
-	start, end = int(e.WarpX)-1, int(e.WarpY)-1
-	if start < 0 || end < start {
+	start, end = int(e.BandStart), int(e.BandEnd)
+	if end < start {
 		return 0, 0, false
 	}
 	return start, end, true
 }
 
 func encodeConnectionBand(e Edge, start, end int) (Edge, bool) {
-	// The +1 encoding reserves zero for an unscoped edge. Red's maps are far
-	// smaller than 255 tiles along a seam; fail closed to the aggregate edge if
-	// a future adapter ever exceeds what this compact identity can represent.
-	if start < 0 || end < start || end >= 255 {
+	if start < 0 || end < start || end > 255 {
 		return Edge{}, false
 	}
-	e.WarpX = uint8(start + 1)
-	e.WarpY = uint8(end + 1)
+	e.BandStart = uint8(start)
+	e.BandEnd = uint8(end)
+	e.BandScoped = true
 	return e, true
 }
 
@@ -65,7 +57,7 @@ type connectionComponentPair struct {
 func (g *Graph) connectionEdges(from uint8, c rom.Connection) []Edge {
 	base := Edge{Kind: EdgeConnection, From: from, To: c.MapID, Dir: c.Dir}
 	src, okSrc := g.tiles[from]
-	_, okDst := g.tiles[c.MapID]
+	dst, okDst := g.tiles[c.MapID]
 	if !okSrc || !okDst || g.comps[from] == nil || g.comps[c.MapID] == nil {
 		g.connections[base] = c
 		return []Edge{base}
@@ -98,13 +90,23 @@ func (g *Graph) connectionEdges(from uint8, c rom.Connection) []Edge {
 
 	for i := 0; i < n; i++ {
 		sx, sy, tx, ty := g.connectionSeamTile(base, c, i)
-		a := standingComponentAt(g, from, sx, sy)
-		b := standingComponentAt(g, c.MapID, tx, ty)
-		if len(a) == 0 || len(b) == 0 {
+		// Offset can leave part of the source edge outside the actual overlap;
+		// that is not a physical connection band. A tile that is in-bounds but
+		// non-walkable *is* retained with component 0 so semantic transitions
+		// such as Surf can still own it while ordinary canExit rejects it.
+		if sx < 0 || sy < 0 || sx >= src.w || sy >= src.h ||
+			tx < 0 || ty < 0 || tx >= dst.w || ty >= dst.h {
 			flush(i - 1)
 			continue
 		}
-		pair := connectionComponentPair{exit: a[0], entry: b[0]}
+		exitComp, entryComp := 0, 0
+		if a := standingComponentAt(g, from, sx, sy); len(a) > 0 {
+			exitComp = a[0]
+		}
+		if b := standingComponentAt(g, c.MapID, tx, ty); len(b) > 0 {
+			entryComp = b[0]
+		}
+		pair := connectionComponentPair{exit: exitComp, entry: entryComp}
 		if runStart < 0 {
 			runStart, runPair = i, pair
 			continue

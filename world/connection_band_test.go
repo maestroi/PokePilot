@@ -27,12 +27,13 @@ func TestConnectionEdgesSplitContiguousComponentPairs(t *testing.T) {
 	}
 	c := rom.Connection{Dir: dirNorth, MapID: 2}
 	edges := g.connectionEdges(1, c)
-	if len(edges) != 3 {
-		t.Fatalf("connectionEdges produced %d edges, want 3: %+v", len(edges), edges)
+	if len(edges) != 4 {
+		t.Fatalf("connectionEdges produced %d edges, want 4: %+v", len(edges), edges)
 	}
 
-	want := [][2]int{{0, 1}, {2, 3}, {5, 5}}
-	wantEntry := []int{2, 3, 4}
+	want := [][2]int{{0, 1}, {2, 3}, {4, 4}, {5, 5}}
+	wantExit := [][]int{{1}, {1}, nil, {1}}
+	wantEntry := [][]int{{2}, {3}, nil, {4}}
 	for i, e := range edges {
 		start, end, ok := ConnectionBand(e)
 		if !ok {
@@ -41,11 +42,15 @@ func TestConnectionEdgesSplitContiguousComponentPairs(t *testing.T) {
 		if start != want[i][0] || end != want[i][1] {
 			t.Errorf("edge %d band = %d..%d, want %d..%d", i, start, end, want[i][0], want[i][1])
 		}
-		if got := g.connectionPortComps(e, false); len(got) != 1 || got[0] != 1 {
-			t.Errorf("edge %d exit components = %v, want [1]", i, got)
+		gotExit := g.connectionPortComps(e, false)
+		wantExitComps := wantExit[i]
+		if len(gotExit) != len(wantExitComps) || (len(gotExit) == 1 && gotExit[0] != wantExitComps[0]) {
+			t.Errorf("edge %d exit components = %v, want %v", i, gotExit, wantExitComps)
 		}
-		if got := g.connectionPortComps(e, true); len(got) != 1 || got[0] != wantEntry[i] {
-			t.Errorf("edge %d entry components = %v, want [%d]", i, got, wantEntry[i])
+		got := g.connectionPortComps(e, true)
+		wantComps := wantEntry[i]
+		if len(got) != len(wantComps) || (len(got) == 1 && got[0] != wantComps[0]) {
+			t.Errorf("edge %d entry components = %v, want %v", i, got, wantComps)
 		}
 	}
 }

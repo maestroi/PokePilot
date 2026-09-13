@@ -20,9 +20,16 @@ type Edge struct {
 	Kind  EdgeKind
 	From  uint8 // source map id
 	To    uint8 // destination map id, already resolved (never 0xFF)
-	WarpX uint8 // EdgeWarp: tile X; EdgeConnection: encoded band start (see ConnectionBand)
-	WarpY uint8 // EdgeWarp: tile Y; EdgeConnection: encoded band end
+	WarpX uint8 // EdgeWarp only: the warp tile on the source map
+	WarpY uint8
 	Dir   uint8 // EdgeConnection only: 0=north 1=south 2=west 3=east
+
+	// Connection edges may be scoped to one contiguous source-border band.
+	// The index is X for north/south and Y for west/east. Zero-valued legacy
+	// edges remain unscoped when BandScoped is false.
+	BandStart  uint8
+	BandEnd    uint8
+	BandScoped bool
 }
 
 // Map-edge directions, matching rom.Connection.Dir and Edge.Dir.
