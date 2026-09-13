@@ -1,7 +1,16 @@
 import type { SpectatorRun } from '../shared/api/spectator'
+import {
+  normalizePlayStyle,
+  playSpeedLabel,
+  playStyleLabel,
+  playStyleTagline,
+  type PlayStyle
+} from '../shared/playstyle'
+
+export type SpectatorPlayStyle = PlayStyle
+export { normalizePlayStyle, playSpeedLabel, playStyleLabel, playStyleTagline }
 
 export type SpectatorTone = 'neutral' | 'info' | 'success' | 'warning' | 'danger'
-export type SpectatorPlayStyle = 'speedrun' | 'adventure' | 'completionist' | 'team_builder'
 
 export function isLiveRun(run: SpectatorRun | null | undefined): boolean {
   return Boolean(run && (run.status === 'running' || run.status === 'leased'))
@@ -70,55 +79,6 @@ export function goalProgress(run: SpectatorRun): number {
   const target = Number(stats.goal_target || 0)
   if (target <= 0) return 0
   return Math.max(0, Math.min(100, 100 * Number(stats.goal_current || 0) / target))
-}
-
-export function normalizePlayStyle(run: SpectatorRun | null | undefined): SpectatorPlayStyle {
-  switch ((run?.play_style || '').trim().toLowerCase()) {
-    case 'adventure':
-      return 'adventure'
-    case 'completionist':
-      return 'completionist'
-    case 'team_builder':
-    case 'team-builder':
-    case 'teambuilder':
-      return 'team_builder'
-    default:
-      return 'speedrun'
-  }
-}
-
-export function playStyleLabel(run: SpectatorRun | null | undefined): string {
-  switch (normalizePlayStyle(run)) {
-    case 'adventure':
-      return 'Adventure'
-    case 'completionist':
-      return 'Completionist'
-    case 'team_builder':
-      return 'Team Builder'
-    default:
-      return 'Speedrun'
-  }
-}
-
-export function playStyleTagline(run: SpectatorRun | null | undefined): string {
-  switch (normalizePlayStyle(run)) {
-    case 'adventure':
-      return 'Natural play · exploration and story'
-    case 'completionist':
-      return 'Optional content · items and interactions'
-    case 'team_builder':
-      return 'Party growth · catches and training'
-    default:
-      return 'Progression first · minimal detours'
-  }
-}
-
-export function playSpeedLabel(run: SpectatorRun | null | undefined): string {
-  const fps = Number(run?.fps ?? 0)
-  if (fps <= 0) return 'MAX'
-  const multiple = fps / 60
-  if (Number.isInteger(multiple)) return `${multiple}×`
-  return `${multiple.toFixed(1).replace(/\.0$/, '')}×`
 }
 
 export function runTitle(run: SpectatorRun): string {

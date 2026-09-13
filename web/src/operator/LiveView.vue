@@ -27,6 +27,13 @@ import {
   statusTone,
   tileLabel
 } from './operations'
+import {
+  isPlayStyleRun,
+  playSpeedLabel,
+  playStyleLabel,
+  playStyleTagline,
+  policyLabel
+} from '../shared/playstyle'
 
 const params = new URLSearchParams(window.location.search)
 const selectedRunID = ref(params.get('run') || '')
@@ -127,10 +134,16 @@ const settingsRows = computed(() => {
     ['starter', starterLabel(run)],
     ['goal', goalLabel(run)]
   ]
-  if (run.planner === 'llm') {
+  if (isPlayStyleRun(run)) {
+    rows.push(
+      ['play style', playStyleLabel(run)],
+      ['speed', playSpeedLabel(run)],
+      ['risk', policyLabel(run.risk_tolerance, 'balanced')],
+      ['wild encounters', policyLabel(run.wild_encounters, 'planner')]
+    )
     rows.push(['model', llmProfileLabel(run)], ['reasoning', reasoningEffortLabel(run)])
   } else {
-    rows.push(['walk to', run.dest || '—'])
+    rows.push(['speed', playSpeedLabel(run)], ['walk to', run.dest || '—'])
   }
   rows.push(
     ['seed', String(run.seed ?? 0)],
@@ -312,8 +325,9 @@ function warnPlay(stats: DashboardStats | undefined, key: string): boolean {
                 />
               </span>
               <span class="min-w-0">
-                <span class="flex items-center gap-1.5">
+                <span class="flex flex-wrap items-center gap-1">
                   <StatusBadge :tone="statusTone(run.status)">{{ railStatusLabel(run) }}</StatusBadge>
+                  <StatusBadge v-if="isPlayStyleRun(run)" tone="info">{{ playStyleLabel(run) }}</StatusBadge>
                 </span>
                 <span class="mt-0.5 block truncate font-mono text-[10px] font-bold text-white" :title="run.run_id">{{ run.run_id }}</span>
                 <span class="block truncate text-[10px] text-[var(--poke-muted)]">{{ tileLabel(run) }}</span>
@@ -427,6 +441,8 @@ function warnPlay(stats: DashboardStats | undefined, key: string): boolean {
             <strong class="mt-0.5 block truncate font-mono text-[11px]" :title="selectedRun.run_id">{{ selectedRun.run_id }}</strong>
             <div class="mt-1 flex flex-wrap items-center gap-1">
               <StatusBadge :tone="statusTone(selectedRun.status)">{{ selectedRun.status }}</StatusBadge>
+              <StatusBadge v-if="isPlayStyleRun(selectedRun)" tone="info">{{ playStyleLabel(selectedRun) }}</StatusBadge>
+              <span class="font-mono text-[10px] text-[var(--poke-muted)]">{{ playSpeedLabel(selectedRun) }}</span>
               <span
                 v-if="isLiveFrame"
                 class="inline-flex items-center gap-1 text-[10px] font-semibold text-[var(--poke-green)]"
@@ -437,6 +453,7 @@ function warnPlay(stats: DashboardStats | undefined, key: string): boolean {
               <span v-else-if="selectedRun.status === 'done'" class="text-[10px] text-[var(--poke-muted)]">Ended</span>
               <StatusBadge v-if="selectedRun.replay_available" tone="success">replay</StatusBadge>
             </div>
+            <p v-if="isPlayStyleRun(selectedRun)" class="mt-0.5 truncate text-[10px] text-[var(--poke-muted)]">{{ playStyleTagline(selectedRun) }}</p>
           </div>
           <div class="min-w-0 border-b border-[var(--poke-border)] px-2.5 py-1.5 xl:border-r xl:border-b-0">
             <span class="text-[9px] tracking-[0.04em] text-[var(--poke-muted)] uppercase">Location</span>
