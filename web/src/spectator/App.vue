@@ -145,11 +145,11 @@ function hpPercent(run: SpectatorRun, index: number): number {
           <Panel title="Game" :description="routeLabel(selectedRun)" compact>
             <template #actions><StatusBadge :tone="runTone(selectedRun)">{{ runStatusLabel(selectedRun) }}</StatusBadge></template>
 
-            <div class="relative grid min-h-72 place-items-center overflow-hidden rounded-md border border-white/10 bg-black/40 sm:min-h-[28rem]">
+            <div class="relative min-h-80 overflow-hidden rounded-md border border-white/10 bg-[#0c1118] sm:min-h-[28rem] lg:min-h-[32rem]">
               <video
                 v-if="replayURL"
                 :key="selectedRun.run_id"
-                class="max-h-[70vh] w-full object-contain [image-rendering:pixelated]"
+                class="absolute inset-0 h-full w-full object-contain object-center [image-rendering:pixelated]"
                 :src="replayURL"
                 controls
                 preload="metadata"
@@ -160,10 +160,10 @@ function hpPercent(run: SpectatorRun, index: number): number {
                 v-else-if="frameURL"
                 :src="frameURL"
                 :alt="`Live frame for ${selectedRun.run_id}`"
-                class="max-h-[70vh] w-full object-contain [image-rendering:pixelated]"
+                class="absolute inset-0 h-full w-full object-contain object-center [image-rendering:pixelated]"
               />
 
-              <div v-else class="px-6 py-12 text-center">
+              <div v-else class="absolute inset-0 grid place-items-center px-6 py-12 text-center">
                 <div class="mx-auto flex size-11 items-center justify-center rounded-lg border border-white/10 bg-white/5">
                   <span :class="['size-2 rounded-full', isLiveRun(selectedRun) ? 'animate-pulse bg-emerald-300' : 'bg-slate-600']" />
                 </div>

@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { Dialog, DialogPanel, TransitionChild, TransitionRoot } from '@headlessui/vue'
+import { Disclosure, DisclosureButton, DisclosurePanel } from '@headlessui/vue'
 import { Bars3Icon, XMarkIcon } from '@heroicons/vue/24/outline'
 import type { AppNavItem } from '../types'
 
@@ -10,148 +9,95 @@ withDefaults(defineProps<{
   subtitle: string
   mode: 'private' | 'public'
   navigation?: AppNavItem[]
+  showIntro?: boolean
 }>(), {
-  navigation: () => []
+  navigation: () => [],
+  showIntro: true
 })
-
-const sidebarOpen = ref(false)
 </script>
 
 <template>
-  <div class="min-h-screen bg-transparent text-white">
-    <template v-if="mode === 'private'">
-      <TransitionRoot as="template" :show="sidebarOpen">
-        <Dialog class="relative z-50 lg:hidden" @close="sidebarOpen = false">
-          <TransitionChild
-            as="template"
-            enter="transition-opacity ease-linear duration-200"
-            enter-from="opacity-0"
-            enter-to="opacity-100"
-            leave="transition-opacity ease-linear duration-200"
-            leave-from="opacity-100"
-            leave-to="opacity-0"
+  <div class="min-h-screen bg-transparent text-[var(--poke-text)]">
+    <Disclosure as="nav" class="sticky top-0 z-40 border-b border-[var(--poke-border)] bg-[#0f141c]" v-slot="{ open }">
+      <div class="flex h-11 items-center gap-2 px-2 sm:px-3">
+        <div class="flex min-w-0 items-center gap-2 border-r border-[var(--poke-border)] pr-3 sm:w-[13.125rem]">
+          <span class="size-2 shrink-0 rounded-sm bg-[var(--poke-cyan)]" aria-hidden="true" />
+          <div class="min-w-0 leading-tight">
+            <strong class="block truncate text-[15px] text-white">{{ mode === 'private' ? 'PokéFarm' : 'PokéPilot' }}</strong>
+            <span class="hidden text-[9px] tracking-[0.04em] text-[var(--poke-muted)] uppercase sm:block">
+              {{ mode === 'private' ? 'Operator console' : 'Spectator' }}
+            </span>
+          </div>
+        </div>
+
+        <div v-if="navigation.length" class="hidden min-w-0 flex-1 items-stretch self-stretch sm:flex">
+          <a
+            v-for="item in navigation"
+            :key="item.name"
+            :href="item.href"
+            :aria-current="item.current ? 'page' : undefined"
+            :class="[
+              item.current
+                ? 'border-[var(--poke-cyan)] text-white'
+                : 'border-transparent text-[var(--poke-muted)] hover:bg-[var(--poke-panel)] hover:text-white',
+              'inline-flex items-center border-b-2 px-2.5 text-[13px] font-semibold'
+            ]"
           >
-            <div class="fixed inset-0 bg-black/75" />
-          </TransitionChild>
-
-          <div class="fixed inset-0 flex">
-            <TransitionChild
-              as="template"
-              enter="transition ease-in-out duration-200 transform"
-              enter-from="-translate-x-full"
-              enter-to="translate-x-0"
-              leave="transition ease-in-out duration-200 transform"
-              leave-from="translate-x-0"
-              leave-to="-translate-x-full"
-            >
-              <DialogPanel class="relative mr-14 flex w-full max-w-72 flex-1">
-                <div class="flex grow flex-col overflow-y-auto border-r border-white/10 bg-[#090e16] px-5 pb-5">
-                  <div class="flex h-16 shrink-0 items-center gap-3 border-b border-white/10">
-                    <span class="size-2.5 rounded-sm bg-cyan-300 shadow-[0_0_18px_rgba(85,215,255,0.45)]" aria-hidden="true" />
-                    <div>
-                      <strong class="block text-sm tracking-wide text-white">PokéPilot</strong>
-                      <span class="block text-[10px] font-medium tracking-[0.14em] text-slate-500 uppercase">Operator</span>
-                    </div>
-                  </div>
-                  <nav class="mt-5 flex flex-1 flex-col">
-                    <ul role="list" class="space-y-1">
-                      <li v-for="item in navigation" :key="item.name">
-                        <a
-                          :href="item.href"
-                          :class="[
-                            item.current
-                              ? 'bg-white/10 text-white ring-1 ring-white/10'
-                              : 'text-slate-400 hover:bg-white/5 hover:text-white',
-                            'flex items-center justify-between rounded-md px-3 py-2 text-sm font-semibold transition-colors'
-                          ]"
-                          @click="sidebarOpen = false"
-                        >
-                          <span>{{ item.name }}</span>
-                          <span v-if="item.badge !== undefined" class="rounded-full bg-white/10 px-2 py-0.5 text-[11px] font-medium text-slate-300">{{ item.badge }}</span>
-                        </a>
-                      </li>
-                    </ul>
-                  </nav>
-                </div>
-                <button type="button" class="absolute top-4 left-full ml-3 rounded-md p-2 text-slate-300 hover:bg-white/10 hover:text-white" @click="sidebarOpen = false">
-                  <span class="sr-only">Close navigation</span>
-                  <XMarkIcon class="size-6" aria-hidden="true" />
-                </button>
-              </DialogPanel>
-            </TransitionChild>
-          </div>
-        </Dialog>
-      </TransitionRoot>
-
-      <aside class="fixed inset-y-0 left-0 z-40 hidden w-64 border-r border-white/10 bg-[#090e16] lg:flex lg:flex-col">
-        <div class="flex h-16 shrink-0 items-center gap-3 border-b border-white/10 px-5">
-          <span class="size-2.5 rounded-sm bg-cyan-300 shadow-[0_0_18px_rgba(85,215,255,0.45)]" aria-hidden="true" />
-          <div>
-            <strong class="block text-sm tracking-wide text-white">PokéPilot</strong>
-            <span class="block text-[10px] font-medium tracking-[0.14em] text-slate-500 uppercase">Operator</span>
-          </div>
+            {{ item.name }}
+            <span v-if="item.badge !== undefined" class="ml-1.5 rounded-full bg-white/10 px-1.5 py-px text-[10px] font-medium text-slate-300">{{ item.badge }}</span>
+          </a>
         </div>
-        <nav class="flex flex-1 flex-col overflow-y-auto px-3 py-5">
-          <ul role="list" class="space-y-1">
-            <li v-for="item in navigation" :key="item.name">
-              <a
-                :href="item.href"
-                :class="[
-                  item.current
-                    ? 'bg-white/10 text-white ring-1 ring-white/10'
-                    : 'text-slate-400 hover:bg-white/5 hover:text-white',
-                  'flex items-center justify-between rounded-md px-3 py-2 text-sm font-semibold transition-colors'
-                ]"
-              >
-                <span>{{ item.name }}</span>
-                <span v-if="item.badge !== undefined" class="rounded-full bg-white/10 px-2 py-0.5 text-[11px] font-medium text-slate-300">{{ item.badge }}</span>
-              </a>
-            </li>
-          </ul>
-        </nav>
-      </aside>
-    </template>
 
-    <div :class="mode === 'private' ? 'lg:pl-64' : ''">
-      <header class="sticky top-0 z-30 border-b border-white/10 bg-[#070b11]/90 backdrop-blur">
-        <div class="flex h-16 items-center gap-4 px-4 sm:px-6 lg:px-8">
-          <button v-if="mode === 'private'" type="button" class="-m-2 p-2 text-slate-400 hover:text-white lg:hidden" @click="sidebarOpen = true">
+        <div v-else class="min-w-0 flex-1">
+          <span class="poke-kicker block">{{ eyebrow }}</span>
+          <h1 class="truncate text-sm font-semibold text-white">{{ title }}</h1>
+        </div>
+
+        <div class="ml-auto hidden min-w-0 items-center gap-2.5 text-[11px] text-[var(--poke-muted)] lg:flex">
+          <slot name="summary" />
+        </div>
+
+        <div class="flex shrink-0 items-center gap-1.5">
+          <slot name="actions" />
+          <DisclosureButton
+            v-if="navigation.length"
+            class="inline-flex items-center justify-center rounded-sm p-1.5 text-[var(--poke-muted)] hover:bg-white/5 hover:text-white sm:hidden"
+          >
             <span class="sr-only">Open navigation</span>
-            <Bars3Icon class="size-6" aria-hidden="true" />
-          </button>
-
-          <div v-if="mode === 'public'" class="flex items-center gap-3">
-            <span class="size-2.5 rounded-sm bg-cyan-300 shadow-[0_0_18px_rgba(85,215,255,0.45)]" aria-hidden="true" />
-            <strong class="text-sm tracking-wide text-white">PokéPilot</strong>
-          </div>
-
-          <div class="min-w-0 flex-1">
-            <span class="poke-kicker block">{{ eyebrow }}</span>
-            <div class="flex min-w-0 items-baseline gap-3">
-              <h1 class="truncate text-base font-semibold text-white sm:text-lg">{{ title }}</h1>
-              <span
-                :class="[
-                  mode === 'private' ? 'border-cyan-300/20 bg-cyan-300/10 text-cyan-200' : 'border-emerald-300/20 bg-emerald-300/10 text-emerald-200',
-                  'hidden rounded-full border px-2 py-0.5 text-[10px] font-semibold tracking-[0.08em] uppercase sm:inline'
-                ]"
-              >
-                {{ mode === 'private' ? 'Private' : 'Read-only' }}
-              </span>
-            </div>
-          </div>
-
-          <div class="flex shrink-0 items-center gap-2">
-            <slot name="actions" />
-          </div>
+            <Bars3Icon v-if="!open" class="size-5" aria-hidden="true" />
+            <XMarkIcon v-else class="size-5" aria-hidden="true" />
+          </DisclosureButton>
         </div>
-      </header>
+      </div>
 
-      <main class="px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
-        <div class="mb-5 max-w-4xl">
-          <p class="text-sm leading-6 text-slate-400">{{ subtitle }}</p>
+      <DisclosurePanel v-if="navigation.length" class="border-t border-[var(--poke-border)] sm:hidden">
+        <a
+          v-for="item in navigation"
+          :key="item.name"
+          :href="item.href"
+          :aria-current="item.current ? 'page' : undefined"
+          :class="[
+            item.current
+              ? 'border-[var(--poke-cyan)] bg-[var(--poke-panel)] text-white'
+              : 'border-transparent text-[var(--poke-muted)] hover:bg-white/5 hover:text-white',
+            'block border-l-2 px-3 py-2 text-sm font-semibold'
+          ]"
+        >
+          {{ item.name }}
+        </a>
+        <div class="border-t border-[var(--poke-border)] px-3 py-2 text-[11px] text-[var(--poke-muted)]">
+          <slot name="summary" />
         </div>
-        <slot />
-      </main>
-    </div>
+      </DisclosurePanel>
+    </Disclosure>
+
+    <main class="px-2.5 py-2 sm:px-3">
+      <div v-if="showIntro && (title || subtitle)" class="mb-3 max-w-4xl">
+        <span v-if="eyebrow && navigation.length" class="poke-kicker block">{{ eyebrow }}</span>
+        <h1 v-if="navigation.length" class="text-xl font-semibold text-white">{{ title }}</h1>
+        <p v-if="subtitle" class="mt-1 max-w-[70ch] text-[13px] text-[var(--poke-muted)]">{{ subtitle }}</p>
+      </div>
+      <slot />
+    </main>
   </div>
 </template>

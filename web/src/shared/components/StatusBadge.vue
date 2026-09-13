@@ -15,7 +15,7 @@ const tones = {
 </script>
 
 <template>
-  <span :class="[tones[tone], 'inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold tracking-[0.06em] uppercase']">
+  <span :class="[tones[tone], 'inline-flex items-center rounded-full border px-1.5 py-px text-[9px] font-bold tracking-[0.04em] uppercase']">
     <slot />
   </span>
 </template>

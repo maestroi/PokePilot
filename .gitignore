@@ -23,3 +23,4 @@ repro-*
 /web/dist/
 /cmd/pokeui/ui/vue/*
 !/cmd/pokeui/ui/vue/placeholder.txt
+/tailwindpro
