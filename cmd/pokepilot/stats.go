@@ -126,6 +126,40 @@ func (s *statsPlanner) applyRunPolicy(obs agent.Observation, offered []agent.Obj
 	return agent.AnnotatePlayStyle(obs, offered, s.playStyle)
 }
 
+// boundRiskPlan keeps persistent planning from skipping the safety decision
+// that only becomes knowable after a battle or a fight-through travel leg.
+// A Balanced/Cautious plan may still batch harmless navigation/interactions,
+// but it stops at the first objective that can materially change party health;
+// the next round observes the real post-action HP/PP before committing again.
+func (s *statsPlanner) boundRiskPlan(plan agent.Plan, offered []agent.Objective) agent.Plan {
+	if s.riskTolerance == agent.RiskToleranceAggressive || len(plan.Steps) <= 1 {
+		return plan
+	}
+	for i, step := range plan.Steps {
+		o, err := agent.Chosen(offered, step)
+		if err != nil {
+			continue
+		}
+		risky := false
+		switch o.Kind {
+		case agent.KindTrainer, agent.KindGym, agent.KindTrain, agent.KindCatch:
+			risky = true
+		case agent.KindGoTo:
+			// Plain travel fights wild encounters. Fight-everything also turns
+			// any originally-fleeing journey into that form before planning.
+			risky = !o.Flee || s.wildEncounters == agent.WildEncountersFight
+		}
+		if !risky {
+			continue
+		}
+		if i+1 < len(plan.Steps) {
+			plan.Steps = append([]string(nil), plan.Steps[:i+1]...)
+		}
+		break
+	}
+	return plan
+}
+
 func (s *statsPlanner) ask(obs agent.Observation, offered []agent.Objective, retry *agent.Retry) (agent.Objective, error) {
 	if s.snap != nil {
 		offered = farmRecoveryOffered(obs, offered)
@@ -140,13 +174,21 @@ func (s *statsPlanner) ask(obs agent.Observation, offered []agent.Objective, ret
 func (s *statsPlanner) Strategize(obs agent.Observation, offered []agent.Objective, reason string) (agent.Plan, error) {
 	s.prepareRunContext(obs)
 	offered = s.applyRunPolicy(obs, offered)
-	return s.router.Strategize(obs, offered, reason)
+	plan, err := s.router.Strategize(obs, offered, reason)
+	if err != nil {
+		return plan, err
+	}
+	return s.boundRiskPlan(plan, offered), nil
 }
 
 func (s *statsPlanner) StrategizeRetry(obs agent.Observation, offered []agent.Objective, reason string, r agent.Retry) (agent.Plan, error) {
 	s.prepareRunContext(obs)
 	offered = s.applyRunPolicy(obs, offered)
-	return s.router.StrategizeRetry(obs, offered, reason, r)
+	plan, err := s.router.StrategizeRetry(obs, offered, reason, r)
+	if err != nil {
+		return plan, err
+	}
+	return s.boundRiskPlan(plan, offered), nil
 }
 
 func (s *statsPlanner) ObservePlanning(p agent.PlanningStats) {
