@@ -14,11 +14,11 @@ import (
 )
 
 const (
-	verdictObjectiveSucceeded       = "objective_succeeded"
-	verdictSameFailureReproduced    = "same_failure_reproduced"
-	verdictDifferentFailure         = "different_failure"
-	verdictContractUnavailable      = "deterministic_contract_unavailable"
-	verdictHarnessError             = "harness_error"
+	verdictObjectiveSucceeded    = "objective_succeeded"
+	verdictSameFailureReproduced = "same_failure_reproduced"
+	verdictDifferentFailure      = "different_failure"
+	verdictContractUnavailable   = "deterministic_contract_unavailable"
+	verdictHarnessError          = "harness_error"
 )
 
 type portableReproVerdict struct {
@@ -28,10 +28,10 @@ type portableReproVerdict struct {
 	Classification      string `json:"classification"`
 	SourceFingerprint   string `json:"source_fingerprint,omitempty"`
 	ObservedFingerprint string `json:"observed_fingerprint,omitempty"`
-	Objective            string `json:"objective,omitempty"`
-	Outcome              string `json:"outcome,omitempty"`
-	Cause                string `json:"cause,omitempty"`
-	Diagnostic           string `json:"diagnostic,omitempty"`
+	Objective           string `json:"objective,omitempty"`
+	Outcome             string `json:"outcome,omitempty"`
+	Cause               string `json:"cause,omitempty"`
+	Diagnostic          string `json:"diagnostic,omitempty"`
 }
 
 // verifyPortableBundle replays a structured objective failure directly through
@@ -45,7 +45,7 @@ func verifyPortableBundle(mat portableMaterialized, resultPath string) (portable
 		RunID:             mat.Manifest.RunID,
 		ObservedRevision:  mat.Manifest.ObservedRevision,
 		SourceFingerprint: mat.Manifest.Fingerprint,
-		Objective:          mat.Manifest.Objective,
+		Objective:         mat.Manifest.Objective,
 	}
 	write := func() error {
 		return writePortableReproVerdict(resultPath, mat.Dir, verdict)
