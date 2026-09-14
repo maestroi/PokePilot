@@ -11,6 +11,8 @@ import (
 
 // Knowledge is run-owned evidence. Game facts enter only after the player has
 // observed them; route adjacency is deterministic geometry rebuilt each run.
+// Completed/Failures keep string map keys for one-release API compatibility,
+// but every new write uses ObjectiveKey.ID rather than presentation text.
 type Knowledge struct {
 	Visited      map[uint8]bool
 	Places       map[string]bool
@@ -46,24 +48,49 @@ type Completion struct {
 
 const failureCap = 8
 
+func (k *Knowledge) completionCount(o Objective) int {
+	if k == nil {
+		return 0
+	}
+	if n, ok := k.Completed[objectiveStorageKey(o)]; ok {
+		return n
+	}
+	// v4 checkpoint compatibility. Gym's old display sentence was shared by
+	// every gym, so it cannot safely be attributed to this specific place.
+	if o.Kind == KindGym {
+		return 0
+	}
+	return k.Completed[o.String()]
+}
+
+func (k *Knowledge) ordinaryFailure(o Objective) (Failure, bool) {
+	if k == nil {
+		return Failure{}, false
+	}
+	if f, ok := k.Failures[objectiveStorageKey(o)]; ok {
+		return f, true
+	}
+	if o.Kind == KindGym {
+		return Failure{}, false
+	}
+	f, ok := k.Failures[o.String()]
+	return f, ok
+}
+
 func (k *Knowledge) Failed(o Objective, err error) {
 	if err == nil {
 		return
 	}
-	name := o.String()
-	if gymName, ok := gymLossFailureName(o, err); ok {
-		name = gymName
+	storage := objectiveStorageKey(o)
+	if _, ok := gymLossFailureName(o, err); ok {
+		storage = gymLossFailureKey(o.Place)
 	}
-	if trainerName, ok := trainerLossFailureName(o, err); ok {
-		name = trainerName
+	if _, ok := trainerLossFailureName(o, err); ok {
+		storage = trainerLossFailureKey(o)
 	}
-	f := k.Failures[name]
-	// conciseObjectiveError is also what History's Outcome text uses: this
-	// keeps the planner-facing size bounded and the two representations of
-	// "the same failure" from disagreeing, instead of Failures carrying the
-	// full raw error (route-stall traces run to hundreds of characters).
-	f.Objective, f.Times, f.Last = name, f.Times+1, conciseObjectiveError(o, err)
-	k.Failures[name] = f
+	f := k.Failures[storage]
+	f.Objective, f.Times, f.Last = o.String(), f.Times+1, conciseObjectiveError(o, err)
+	k.Failures[storage] = f
 }
 
 func (k *Knowledge) FailureList() []Failure {
@@ -132,11 +159,6 @@ func hasUnvisitedNeighbor(id uint8, known *Knowledge) bool {
 	return false
 }
 
-// selectJourneyPlaces keeps the travel menu bounded without dropping the
-// visited frontier: maps already stood on that still border an unvisited
-// neighbor. Unvisited discovery fills next, then nearby hinterland. The old
-// unvisited-then-nearest trim hid Route 3 behind Pallet/Viridian once eight
-// closer names existed (run-1w32fl3ssna3h2y7f2butfdwbr).
 func selectJourneyPlaces(placeNames []string, known *Knowledge, hops map[uint8]int) []string {
 	if known == nil || len(known.Adjacency) == 0 || len(placeNames) <= journeyPlaceLimit {
 		return placeNames
@@ -240,12 +262,25 @@ func (k *Knowledge) HeardRequirement(line, place string, x, y uint8) {
 }
 
 func (k *Knowledge) Done(o Objective) {
-	name := o.String()
-	k.Completed[name]++
-	delete(k.Failures, name)
+	storage := objectiveStorageKey(o)
+	legacy := o.String()
+	// Opportunistically fold a v4 presentation-keyed count into the canonical
+	// identity the first time the same semantic objective is completed again.
+	if old := k.Completed[legacy]; old > 0 && legacy != storage {
+		k.Completed[storage] += old
+		delete(k.Completed, legacy)
+	}
+	k.Completed[storage]++
+	delete(k.Failures, storage)
+	delete(k.Failures, legacy)
 	delete(k.Failures, trainerLossFailureKey(o))
+	delete(k.Failures, legacyTrainerLossFailureKey(o))
 	if o.Kind == KindGym && o.Place != "" {
 		delete(k.Failures, gymLossFailureKey(o.Place))
+		delete(k.Failures, legacyGymLossFailureKey(o.Place))
+		delete(k.Failures, gymRetryReadyKey(o.Place))
+		// v4 retry marker used the generic gym display sentence.
+		delete(k.Failures, (Objective{Kind: KindGym}).String())
 	}
 	if o.Kind == KindTrain {
 		k.clearGymLossFailures()
@@ -268,10 +303,19 @@ func (k *Knowledge) restore(mem memoryFile) {
 		k.Places[name] = true
 	}
 	for _, c := range mem.Completed {
-		k.Completed[c.Objective] = c.Times
+		if c.Key != (ObjectiveKey{}) {
+			k.Completed[c.Key.ID()] = c.Times
+		} else if c.Objective != "" {
+			k.Completed[c.Objective] = c.Times
+		}
 	}
 	for _, f := range mem.Failures {
-		k.Failures[f.Objective] = f
+		failure := Failure{Objective: f.Objective, Times: f.Times, Last: f.Last}
+		if f.Key != (ObjectiveKey{}) {
+			k.Failures[failureStorageKey(f.Key, f.Mode)] = failure
+		} else if f.Objective != "" {
+			k.Failures[f.Objective] = failure
+		}
 	}
 	for _, t := range mem.Talked {
 		k.TalkedTo(t.Map, t.X, t.Y)
@@ -310,10 +354,6 @@ func isAlnum(c byte) bool {
 // evidence. Named campaign progression is deliberately absent: production
 // composes those game-owned goals through OfferWithProgression.
 func Offer(obs Observation, known *Knowledge) []Objective {
-	// A trainer/gym-loss gate demands a Train recovery. If this map's grass
-	// cannot deliver one, fail-open the same retry-due path a successful
-	// rung would have created. Maps without a training estimate (cities,
-	// gyms, centers) stay locked so an unchanged commute cannot rechallenge.
 	if trainingUnviableHere(obs) {
 		known.releaseCombatLossGates()
 	}
@@ -387,7 +427,6 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 			if !unroutable[name] {
 				routable = append(routable, name)
 			}
-		}
 		if len(routable) > 0 {
 			placeNames = routable
 		}
@@ -464,32 +503,15 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 	}
 
 	if g, ok := skill.GymAt(obs.Map); ok && !hasBadge(obs, g.Badge) {
-		// Journeys to g.Place are already withheld via semanticBlocked, but
-		// KindGym is a local verb. Offering it while the gym interior is
-		// gated from here lets the planner copy an illegal challenge into a
-		// plan (measured: Vermilion City, missing can_cut). Already standing
-		// on the gym map is the one case the exterior gate no longer applies.
-		//
-		// Viridian is different in kind, not degree: its door needs seven
-		// badges, a story gate EnterViridianGym cannot clear itself the way
-		// EnterVermilionGym clears its Cut prerequisite. Offering the
-		// challenge before then is a guaranteed run-ending failure (measured:
-		// run-2uhibnzs9erjg189xy4o2jtxo0 round 5, 30 sibling runs), so it
-		// stays behind the same journeyProgressionBlocked fact GoTo already
-		// uses for this map.
 		gymGated := g.Map == viridianGymMap && journeyProgressionBlocked(obs, g.Map)
 		if !gymGated && (obs.Map == g.Map || !semanticBlocked[string(g.Place)]) {
 			gym := Objective{Kind: KindGym, Place: g.Place}
-			if _, lost := known.Failures[gymLossFailureKey(g.Place)]; !lost {
+			if !gymLossRecorded(known, g.Place) {
 				out = append(out, gym)
 			}
 		}
 	}
 
-	// Do not offer a Train transaction the executor can already prove cannot
-	// reach its target inside the same bounded session. Besides wasting a
-	// planner round, the executor rejects this before the first battle, so it
-	// cannot even serve as the last-resort respawn escape described below.
 	if obs.HasGrass && len(obs.Party) > 0 && !trainingUnviableHere(obs) {
 		lead := obs.Party[0]
 		if !skill.BelowRetreatLine(lead.HP, lead.MaxHP) {
@@ -524,7 +546,7 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 			}
 		case "trainer":
 			challenge := Objective{Kind: KindTrainer, X: object.X, Y: object.Y}
-			if object.Challengeable && !object.Defeated && known.Completed[challenge.String()] == 0 {
+			if object.Challengeable && !object.Defeated && known.completionCount(challenge) == 0 {
 				out = append(out, challenge)
 			}
 		case "item":
@@ -546,12 +568,6 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 	return annotate(filterTrainerLossBlocked(candidates, known), known)
 }
 
-// lastResortEscapeNote reports the note to attach to a KindTrain objective
-// when it is the only progress-shaped thing Offer found this round: no
-// journey, no gym, no trainer challenge, no talk, no catch, no story
-// progression. It never claims this IS the right move, only that it is a
-// legal one — fighting without fleeing or retreating, even to a loss,
-// forces a respawn instead of repeating the same failed local objective.
 func lastResortEscapeNote(out, journeys []Objective, respawn PlaceID) string {
 	if len(journeys) != 0 || respawn == "" {
 		return ""
@@ -567,16 +583,9 @@ func lastResortEscapeNote(out, journeys []Objective, respawn PlaceID) string {
 
 func annotate(out []Objective, known *Knowledge) []Objective {
 	for i := range out {
-		name := out[i].String()
-		done, failed := known.Completed[name], known.Failures[name].Times
-		// KindGym.String() is place-agnostic ("beat the gym leader here"), so
-		// Completed[name] is the count of ALL gyms ever cleared this run, not
-		// this one. Offer only ever offers a gym while its own badge is still
-		// missing (see !hasBadge above), so a "done Nx" here is always about a
-		// different gym and falsely reads as "already beaten here".
-		if out[i].Kind == KindGym {
-			done = 0
-		}
+		done := known.completionCount(out[i])
+		failure, _ := known.ordinaryFailure(out[i])
+		failed := failure.Times
 		history := ""
 		switch {
 		case done > 0 && failed > 0:
