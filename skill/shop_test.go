@@ -71,6 +71,23 @@ func TestBuyCantAfford(t *testing.T) {
 	}
 }
 
+// TestTalkStopsAtShopMenu is the triage regression for 081eb00e22e44d40: the
+// Viridian Mart clerk opens a BUY/SELL/QUIT menu, not a text box. Talk pages
+// ordinary dialogue; it must not walk that menu into a purchase. From the
+// viridian_mart fixture (player on the counter, facing the clerk), Talk opens
+// the shop and stops at the menu with ErrTalkMenu, leaving the surface up for
+// the owning layer to back out.
+func TestTalkStopsAtShopMenu(t *testing.T) {
+	m := fixture.Load(t, "viridian_mart")
+
+	presses, err := skill.Talk(m)
+	t.Logf("Talk: presses=%d err=%v", presses, err)
+	var menuErr *skill.ErrTalkMenu
+	if !errors.As(err, &menuErr) {
+		t.Fatalf("Talk: err = %v, want ErrTalkMenu", err)
+	}
+}
+
 func countItem(mem *state.Mem, id uint8) int {
 	for _, it := range state.DecodeInventory(mem).Items {
 		if it.ID == id {

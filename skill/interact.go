@@ -23,6 +23,34 @@ var ErrNoDialogue = errors.New("skill: A did not open a text box")
 // does not own. Callers must not retry a battle they did not start.
 var ErrTalkStartedBattle = errors.New("skill: A started a battle instead of a text box")
 
+// ErrTalkMenu reports that Talk opened a menu or a two-option choice rather
+// than ordinary dialogue and stopped before pressing A on it: A on such a
+// surface SELECTS, and Talk pages boxes, it does not operate menus or answer
+// choices. The surface is left up for the owning layer (the objective
+// boundary) to back out or resolve. A shop clerk is the canonical case: the
+// clerk opens a BUY/SELL/QUIT menu, not a text box.
+type ErrTalkMenu struct {
+	Text string
+}
+
+func (e *ErrTalkMenu) Error() string {
+	return fmt.Sprintf("skill: Talk: menu/choice is up, not dialogue; not selecting: %q", e.Text)
+}
+
+// talkMenuUp reports that what is on screen is a menu or a two-option choice
+// rather than ordinary dialogue. A on such a surface is a selection, not a
+// page turn, so Talk must stop before pressing A on it. It is the same live
+// evidence RecoverDialogue uses to refuse to operate a menu: a two-option
+// prompt by its flag, otherwise a cursor glyph on the tilemap.
+func talkMenuUp(m *emu.Emu) (bool, string) {
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	if state.DecodeTwoOptionMenu(&mem) != nil || state.MenuUp(&mem) {
+		return true, state.ScreenText(&mem)
+	}
+	return false, ""
+}
+
 // ponytail: the budgets below are empirical, measured on this ROM. The
 // A-press cadence in Talk matters: the same TV sign took 10 presses at a
 // 40-frame cadence and 6 at a 100-frame cadence, so each press is followed
@@ -118,6 +146,14 @@ func Face(m *emu.Emu, tx, ty uint8) error {
 // count: a long typewriter speech (Bill's S.S. Ticket) is still progress,
 // while a jammed box looks like the same screen forever.
 func Talk(m *emu.Emu) (int, error) {
+	// A on a menu is a selection, not a page turn. Talk pages ordinary
+	// dialogue; it does not operate menus or answer choices. A shop clerk
+	// opens a BUY/SELL/QUIT menu, not a text box, so a blind A walk pages the
+	// cursor into a purchase nobody asked for. Stop before the A that would
+	// select, and leave the surface up for the owning layer to resolve.
+	if menu, text := talkMenuUp(m); menu {
+		return 0, &ErrTalkMenu{Text: text}
+	}
 	m.Tap(emu.A, 3, 7)
 	if _, err := m.StepUntil(talkOpenBudget, func(m *emu.Emu) bool {
 		return m.Peek8(sym.FontLoaded) != 0
@@ -139,6 +175,9 @@ func Talk(m *emu.Emu) (int, error) {
 	for m.Peek8(sym.FontLoaded) != 0 {
 		if presses >= talkPressBudget {
 			return presses, fmt.Errorf("skill: Talk: text box still open after %d A presses", presses)
+		}
+		if menu, text := talkMenuUp(m); menu {
+			return presses, &ErrTalkMenu{Text: text}
 		}
 		m.Tap(emu.A, 3, 7)
 		presses++
