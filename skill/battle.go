@@ -191,8 +191,6 @@ func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
 				fmt.Printf("zbat EXIT f=%d inBattle=%#02x rawResult=%#02x\n",
 					m.FrameCount(), m.Peek8(sym.IsInBattle), m.Peek8(sym.BattleResult))
 			}
-			// The battle ended. Settle any end-of-battle text and wait
-			// until the player is controllable, then report the result.
 			if err := settleAfterBattle(m, &mem); err != nil {
 				return 0, err
 			}
@@ -200,10 +198,6 @@ func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
 			return state.DecodeBattleResult(&mem), nil
 		}
 
-		// One decision per iteration, and every branch re-reads the screen
-		// next time round. Waiting inside a branch for the next menu to
-		// appear is what made this brittle: a single missed transition
-		// turned into a hard error mid-fight instead of another look.
 		switch {
 		case moveMenuUp(m):
 			if disabledMoveRefusalUp(m) {
@@ -313,9 +307,6 @@ func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
 			}
 
 		case moveLearnForgetRejected(lastForgetSlot, state.ScreenText(&mem)):
-			// LearnMove's forget list belongs to wWhichPokemon, which can differ
-			// from the active battle mon after experience is awarded to a mon
-			// that participated earlier in the fight.
 			learner, learnerSlot, ok := naturalMoveLearner(&mem)
 			if !ok || lastForgetSlot >= len(learner.Moves) {
 				x, y := playerXY(m)
@@ -493,17 +484,17 @@ func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
 // overworld text engine. Gating on it made this whole state machine dead
 // code: the policy was never consulted and Battle degenerated into mashing A.
 const (
-	mainMenuMarker = "FIGHT"
-	moveMenuMarker = "TYPE/"
-	disabledMoveMarker = "move is disabled"
-	useNextMonMarker   = "Use next"
-	tryLearnMarker = "trying to learn"
-	abandonLearnMarker = "Abandon learning"
+	mainMenuMarker      = "FIGHT"
+	moveMenuMarker      = "TYPE/"
+	disabledMoveMarker  = "move is disabled"
+	useNextMonMarker    = "Use next"
+	tryLearnMarker      = "trying to learn"
+	abandonLearnMarker  = "Abandon learning"
 	trainerSwitchMarker = "change POK"
-	forgetMenuMarker = "forgotten?"
-	hmCantDeleteMarker = "HM techniques"
-	switchMenuMarker = "Choose"
-	switchBoxMarker = "SWITCH"
+	forgetMenuMarker    = "forgotten?"
+	hmCantDeleteMarker  = "HM techniques"
+	switchMenuMarker    = "Choose"
+	switchBoxMarker     = "SWITCH"
 )
 
 func mainMenuUp(m *emu.Emu) bool {
