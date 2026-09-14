@@ -35,6 +35,10 @@ type Result struct {
 	// badly" without having to re-derive that from Stop.
 	Err   error
 	Final Observation
+	// WatchdogRepro is populated only when a watchdog policy decision is what
+	// stopped the run. It captures the pre-decision semantic state so a newer
+	// checkout can replay that exact policy edge without a planner or ROM.
+	WatchdogRepro *WatchdogRepro
 	// GoalStatus is the final authoritative status for an opted-in
 	// deterministic goal. It is nil for free-text/prompt-only runs.
 	GoalStatus *GoalStatus
