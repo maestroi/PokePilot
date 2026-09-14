@@ -10,6 +10,11 @@ import (
 type Emu struct {
 	e *gomeboy.Emulator
 
+	// semanticROM is the verified base ROM PokePilot decoders should use.
+	// Experiment modes may run a byte-derived cartridge in GomeBoy while the
+	// game profile, map parser and battle data keep using this known identity.
+	semanticROM []byte
+
 	// Set by Watch. Nil unless a human is watching; see emu/watch.go.
 	spec        *gomeboy.Spectator
 	specEvery   int
@@ -65,7 +70,7 @@ func openModel(romPath string, model gomeboy.Model) (*Emu, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Emu{e: e}, nil
+	return &Emu{e: e, semanticROM: e.ROM()}, nil
 }
 
 // Close releases resources held by the emulator.
@@ -144,8 +149,14 @@ func (m *Emu) SnapshotMemory(dst []byte) (uint64, error) {
 	return m.e.SnapshotMemory(dst)
 }
 
-// ROM returns a caller-owned copy of the loaded ROM.
+// ROM returns a caller-owned copy of the semantic/base ROM. Normally this is
+// identical to the cartridge GomeBoy is running. Derived experiment ROMs keep
+// the verified base here so profile detection and ROM parsers retain the exact
+// supported revision identity.
 func (m *Emu) ROM() []byte {
+	if m.semanticROM != nil {
+		return append([]byte(nil), m.semanticROM...)
+	}
 	return m.e.ROM()
 }
 

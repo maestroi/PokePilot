@@ -109,12 +109,18 @@ async function submit(): Promise<void> {
 
         <label class="block">
           <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Starter</span>
-          <select v-model="form.starter" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400">
-            <option value="">{{ isLLM ? 'Let LLM decide' : 'Default starter' }}</option>
+          <input v-model="form.starter" list="starter-options" :placeholder="isLLM ? 'LLM decides, or type mewtwo / random' : 'squirtle, mewtwo, random…'" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400" />
+          <datalist id="starter-options">
             <option value="squirtle">Squirtle</option>
             <option value="charmander">Charmander</option>
             <option value="bulbasaur">Bulbasaur</option>
-          </select>
+            <option value="random">Random · reasonable pool</option>
+            <option value="random:basic">Random · base/unevolved pool</option>
+            <option value="random:any">Random · any non-glitch Gen I species</option>
+            <option value="mew">Mew</option>
+            <option value="mewtwo">Mewtwo</option>
+          </datalist>
+          <span class="mt-1 block text-[11px] text-slate-600">Type any Gen I Pokémon for a fixed starter, or use random, random:basic, or random:any. Random selection is deterministic from this run's seed.</span>
         </label>
 
         <label v-if="!isLLM" class="block">
