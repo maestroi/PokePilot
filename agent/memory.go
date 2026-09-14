@@ -2,6 +2,7 @@ package agent
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -9,76 +10,71 @@ import (
 	"strings"
 )
 
-// memoryVersion is written into every knowledge file and required back on
-// read. Bump it whenever the serialised shape changes: a reader that does
-// not understand the bytes must start clean, never half-load — the
-// fixture-cache rule (validate on write AND on read, version the filename),
-// learned the hard way. The version is in the file NAME as well, so a wrong
-// or old reader can tell at a glance which files it cannot claim.
-// Bumped to 3 when Requirements became located and counted
-// (agent.Requirement) rather than bare sentences, and to 4 when Completed
-// became counts rather than a set: an older file's fields would decode as
-// zero values, and a mismatched version is discarded cleanly instead.
-const memoryVersion = 4
+// Version 5 replaces presentation-string durable identity with ObjectiveKey
+// for completion/failure records and persisted plan steps. The loader retains
+// an explicit v4 migration path so existing checkpoints remain resumable.
+const (
+	memoryVersion       = 5
+	legacyMemoryVersion = 4
+)
 
-// knowledgeFileName is the ONLY way to name a knowledge file: from the base
-// name of the checkpoint state it was written beside. There is no function
-// that takes a bare knowledge path, so a knowledge file cannot be loaded
-// next to a save state it was not captured with — the pairing the whole
-// safety argument rests on is structural, not conventional.
+func knowledgeFileNameVersion(stateBase string, version int) string {
+	return fmt.Sprintf("%s.knowledge-v%d.json", stateBase, version)
+}
+
 func knowledgeFileName(stateBase string) string {
-	return fmt.Sprintf("%s.knowledge-v%d.json", stateBase, memoryVersion)
+	return knowledgeFileNameVersion(stateBase, memoryVersion)
 }
 
-// knowledgePathForState names the knowledge file paired with one state path.
-func knowledgePathForState(statePath string) string {
+func knowledgePathForStateVersion(statePath string, version int) string {
 	base := strings.TrimSuffix(filepath.Base(statePath), ".state")
-	return filepath.Join(filepath.Dir(statePath), knowledgeFileName(base))
+	return filepath.Join(filepath.Dir(statePath), knowledgeFileNameVersion(base, version))
 }
 
-// isKnowledgeName reports whether a checkpoint directory entry is a
-// knowledge file of any version (eviction must find them all).
+func knowledgePathForState(statePath string) string {
+	return knowledgePathForStateVersion(statePath, memoryVersion)
+}
+
 func isKnowledgeName(name string) bool {
 	return strings.HasSuffix(name, ".json") && strings.Contains(name, "knowledge-v")
 }
 
-// memoryFile is the serialised form of a run's knowledge, captured beside
-// the checkpoint save state it describes. It holds only what the game has
-// SHOWN the player: maps stood on, place names spoken or visited, objectives
-// completed, objects talked to, the raw requirement-shaped sentences the
-// game has said — plus the planner's carried intent and its age (S9-4). Deliberately NOT here: Adjacency, which is route geometry
-// rebuilt from the ROM by world.BuildGraph every run (it is large, and a
-// stale copy would outlive a map fix); and Observation, History and the
-// offered list, which are re-derived from the game state in one round.
-type memoryFile struct {
-	Version      int           `json:"version"`
-	Visited      []uint8       `json:"visited"`
-	Places       []string      `json:"places"`
-	Completed    []Completion  `json:"completed"`
-	Talked       []talkedKey   `json:"talked"`
-	Requirements []Requirement `json:"requirements,omitempty"`
-	// Failures is the tally History cannot hold (see Knowledge.Failures):
-	// additive, so a file written before it existed still restores, with
-	// an empty tally — which is exactly what a run that recorded none had.
-	Failures  []Failure `json:"failures,omitempty"`
-	Intent    string    `json:"intent,omitempty"`
-	IntentAge int       `json:"intent_age,omitempty"`
-	Plan      Plan      `json:"plan,omitempty"`
+type storedCompletion struct {
+	Key       ObjectiveKey `json:"key,omitempty"`
+	Objective string       `json:"objective,omitempty"` // v4 compatibility only
+	Times     int          `json:"times"`
 }
 
-// talkedKey is one "talked to this object" record: map-local coordinates are
-// not globally unique, so the map id travels with them (see Knowledge.Talked).
+type storedFailure struct {
+	Key       ObjectiveKey `json:"key,omitempty"`
+	Mode      string       `json:"mode,omitempty"`
+	Objective string       `json:"objective"`
+	Times     int          `json:"times"`
+	Last      string       `json:"last"`
+}
+
+// memoryFile is the serialised form of a run's knowledge, captured beside the
+// checkpoint save state it describes. Adjacency is deliberately rebuilt from
+// the ROM; observations/history/offers are re-derived after resume.
+type memoryFile struct {
+	Version      int                `json:"version"`
+	Visited      []uint8            `json:"visited"`
+	Places       []string           `json:"places"`
+	Completed    []storedCompletion `json:"completed"`
+	Talked       []talkedKey        `json:"talked"`
+	Requirements []Requirement      `json:"requirements,omitempty"`
+	Failures     []storedFailure    `json:"failures,omitempty"`
+	Intent       string             `json:"intent,omitempty"`
+	IntentAge    int                `json:"intent_age,omitempty"`
+	Plan         Plan               `json:"plan,omitempty"`
+}
+
 type talkedKey struct {
 	Map uint8 `json:"map"`
 	X   uint8 `json:"x"`
 	Y   uint8 `json:"y"`
 }
 
-// encodeMemoryFile renders the knowledge captured at this moment — plus the
-// intent sentence and its age the run is carrying — as the versioned on-disk
-// form. The struct IS the validation on write: every field has a fixed
-// type, the version is stamped, and there is no path by which an unknown
-// shape reaches the file.
 func encodeMemoryFile(k *Knowledge, intent string, intentAge int, plans ...Plan) ([]byte, error) {
 	mem := memoryFile{Version: memoryVersion, Intent: intent, IntentAge: intentAge}
 	if len(plans) > 0 {
@@ -90,8 +86,15 @@ func encodeMemoryFile(k *Knowledge, intent string, intentAge int, plans ...Plan)
 	for name := range k.Places {
 		mem.Places = append(mem.Places, name)
 	}
-	for name, times := range k.Completed {
-		mem.Completed = append(mem.Completed, Completion{Objective: name, Times: times})
+	for storage, times := range k.Completed {
+		entry := storedCompletion{Times: times}
+		if key, ok := parseObjectiveKeyID(storage); ok {
+			entry.Key = key
+		} else {
+			// A resumed v4 entry may not have been encountered again yet.
+			entry.Objective = storage
+		}
+		mem.Completed = append(mem.Completed, entry)
 	}
 	for mapID, tiles := range k.Talked {
 		for tile := range tiles {
@@ -99,17 +102,16 @@ func encodeMemoryFile(k *Knowledge, intent string, intentAge int, plans ...Plan)
 		}
 	}
 	mem.Requirements = append(mem.Requirements, k.Requirements...)
-	mem.Failures = append(mem.Failures, k.FailureList()...)
+	for storage, failure := range k.Failures {
+		entry := storedFailure{Objective: failure.Objective, Times: failure.Times, Last: failure.Last}
+		if key, mode, ok := parseFailureStorageKey(storage); ok {
+			entry.Key, entry.Mode = key, mode
+		}
+		mem.Failures = append(mem.Failures, entry)
+	}
 	return json.Marshal(mem)
 }
 
-// writeMemoryFile writes the knowledge captured at this moment beside the
-// checkpoint state at statePath. It is called from the same function that
-// wrote the state (checkpointRing.write), so the two cannot drift out of
-// step: a knowledge file always describes the save state beside it, and
-// never a game state that has not seen what it claims to know. The write is
-// atomic (temp file + rename) so a crash mid-write cannot leave a truncated
-// file beside a valid state for a reader to half-trust.
 func writeMemoryFile(statePath string, k *Knowledge, intent string, intentAge int, plans ...Plan) error {
 	data, err := encodeMemoryFile(k, intent, intentAge, plans...)
 	if err != nil {
@@ -121,7 +123,7 @@ func writeMemoryFile(statePath string, k *Knowledge, intent string, intentAge in
 		return fmt.Errorf("create temp knowledge file: %w", err)
 	}
 	tmpName := tmp.Name()
-	defer os.Remove(tmpName) // no-op once the rename has succeeded
+	defer os.Remove(tmpName)
 	if _, err := tmp.Write(data); err != nil {
 		tmp.Close()
 		return fmt.Errorf("write knowledge: %w", err)
@@ -135,9 +137,6 @@ func writeMemoryFile(statePath string, k *Knowledge, intent string, intentAge in
 	return nil
 }
 
-// ResumedMemory is what a checkpoint pair hands back to a run that starts
-// from it: the knowledge captured when the state was taken, and the intent
-// sentence (and its age) the run was carrying at that moment.
 type ResumedMemory struct {
 	Knowledge *Knowledge
 	Intent    string
@@ -145,22 +144,6 @@ type ResumedMemory struct {
 	Plan      Plan
 }
 
-// LoadCheckpointMemory reads the knowledge file paired with the checkpoint
-// state at statePath and folds it into a fresh Knowledge over the given
-// route geometry.
-//
-// The pairing is structural: the knowledge path is derived from the state
-// path (knowledgeFileName), so this function cannot be pointed at a
-// knowledge file whose save state it was not written beside. Restoring
-// knowledge onto a DIFFERENT game state would let the run "know" places
-// that save has never been; the pairing is the whole safety argument for
-// restoring knowledge at all.
-//
-// Every failure mode — missing file, wrong version, truncated bytes, pure
-// garbage — returns an EMPTY ResumedMemory (a clean start) and writes one
-// log line. It never returns a partial load and never panics: a knowledge
-// file that claims the run knows things this save state has not seen is
-// worse than no file at all.
 func LoadCheckpointMemory(statePath string, adjacency map[uint8][]uint8, log io.Writer) ResumedMemory {
 	empty := ResumedMemory{Knowledge: NewKnowledge(adjacency)}
 	base := filepath.Base(statePath)
@@ -168,24 +151,32 @@ func LoadCheckpointMemory(statePath string, adjacency map[uint8][]uint8, log io.
 		logMemory(log, "%s is not a checkpoint .state file; starting with empty knowledge", statePath)
 		return empty
 	}
-	data, err := os.ReadFile(knowledgePathForState(statePath))
+
+	path := knowledgePathForState(statePath)
+	data, err := os.ReadFile(path)
+	migratingV4 := false
+	if errors.Is(err, os.ErrNotExist) {
+		legacyPath := knowledgePathForStateVersion(statePath, legacyMemoryVersion)
+		if legacy, legacyErr := os.ReadFile(legacyPath); legacyErr == nil {
+			data, err, path, migratingV4 = legacy, nil, legacyPath, true
+		}
+	}
 	if err != nil {
 		logMemory(log, "no readable knowledge file beside %s (%v); starting with empty knowledge", statePath, err)
 		return empty
 	}
+
 	var mem memoryFile
 	if err := json.Unmarshal(data, &mem); err != nil {
 		logMemory(log, "knowledge file beside %s is unreadable (%v); starting with empty knowledge", statePath, err)
 		return empty
 	}
-	if mem.Version != memoryVersion {
-		logMemory(log, "knowledge file beside %s is version %d, want %d; starting with empty knowledge",
-			statePath, mem.Version, memoryVersion)
+	if mem.Version != memoryVersion && !(migratingV4 && mem.Version == legacyMemoryVersion) {
+		logMemory(log, "knowledge file %s is version %d, want %d (or migratable v%d); starting with empty knowledge",
+			path, mem.Version, memoryVersion, legacyMemoryVersion)
 		return empty
 	}
 	if len(mem.Intent) > IntentCap {
-		// An over-cap intent cannot have come from a WithArgs that passed
-		// validation; the file is not what we wrote.
 		logMemory(log, "knowledge file beside %s carries an intent of %d bytes, over the cap of %d; starting with empty knowledge",
 			statePath, len(mem.Intent), IntentCap)
 		return empty
@@ -194,13 +185,14 @@ func LoadCheckpointMemory(statePath string, adjacency map[uint8][]uint8, log io.
 		logMemory(log, "knowledge file beside %s carries an invalid plan (%v); starting with empty knowledge", statePath, err)
 		return empty
 	}
+	if migratingV4 {
+		logMemory(log, "migrating v4 presentation-keyed checkpoint memory beside %s; legacy plan sentences remain valid until the next strategic plan", statePath)
+	}
 	k := NewKnowledge(adjacency)
 	k.restore(mem)
 	return ResumedMemory{Knowledge: k, Intent: mem.Intent, IntentAge: mem.IntentAge, Plan: mem.Plan.clone()}
 }
 
-// logMemory writes the one line a failed knowledge load leaves behind. Nil
-// log means no logging, like every other log writer in this package.
 func logMemory(log io.Writer, format string, args ...any) {
 	if log != nil {
 		fmt.Fprintf(log, "agent: memory: "+format+"\n", args...)
