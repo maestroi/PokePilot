@@ -52,16 +52,16 @@ type BattleEvidence struct {
 }
 
 type ObjectiveResult struct {
-	Objective    Objective            `json:"objective"`
-	Outcome      Outcome              `json:"outcome"`
-	Summary      string               `json:"summary,omitempty"`
-	Failure      *gameruntime.Failure `json:"failure,omitempty"`
+	Objective Objective            `json:"objective"`
+	Outcome   Outcome              `json:"outcome"`
+	Summary   string               `json:"summary,omitempty"`
+	Failure   *gameruntime.Failure `json:"failure,omitempty"`
 	// Cause and CauseContext are retained as backwards-compatible flattened
 	// mirrors of Failure for existing farm/repro consumers.
-	Cause        FailureCauseID `json:"cause,omitempty"`
-	CauseContext []string       `json:"cause_context,omitempty"`
-	Initial      *FailureState  `json:"initial,omitempty"`
-	Final        Observation    `json:"final"`
+	Cause        FailureCauseID    `json:"cause,omitempty"`
+	CauseContext []string          `json:"cause_context,omitempty"`
+	Initial      *FailureState     `json:"initial,omitempty"`
+	Final        Observation       `json:"final"`
 	Travel       *TravelEvidence   `json:"travel,omitempty"`
 	Training     *TrainingEvidence `json:"train,omitempty"`
 	Battle       *BattleEvidence   `json:"gym_outcome,omitempty"`
