@@ -26,6 +26,8 @@ const (
 	ProgressSSTicketAcquired           game.ProgressID = "ss_ticket_acquired"
 	ProgressHM01Acquired               game.ProgressID = "hm01_acquired"
 	ProgressThunderBadge               game.ProgressID = "thunder_badge"
+	ProgressPostSurgeLavenderReached   game.ProgressID = "post_surge_lavender_reached"
+	ProgressPostSurgeCeladonReady      game.ProgressID = "post_surge_celadon_ready"
 	ProgressRainbowBadge               game.ProgressID = "rainbow_badge"
 	ProgressSilphScopeAcquired         game.ProgressID = "silph_scope_acquired"
 	ProgressPokeFluteAcquired          game.ProgressID = "poke_flute_acquired"
@@ -175,6 +177,58 @@ func semanticLocation(mapName string) game.PlaceID {
 	return game.CanonicalID(strings.ReplaceAll(mapName, "_", " "))
 }
 
+func postSurgeCeladonArea(mapID uint8) bool {
+	name := state.MapName(mapID)
+	return strings.HasPrefix(name, "CELADON_") ||
+		name == "GAME_CORNER" ||
+		strings.HasPrefix(name, "GAME_CORNER_") ||
+		strings.HasPrefix(name, "ROCKET_HIDEOUT_")
+}
+
+// postSurgeLavenderReached is geographic rather than a synthetic save flag.
+// It stays true across the westbound corridor and the relevant Lavender,
+// Saffron, and Celadon interiors, so a resumed stage never walks east merely
+// to replay the Lavender checkpoint after already making forward progress.
+func postSurgeLavenderReached(mapID uint8) bool {
+	name := state.MapName(mapID)
+	switch mapID {
+	case 0x04, // Lavender Town
+		0x13, // Route 8
+		0x4F, // Route 8 gate
+		0x50, // Underground Path Route 8
+		0x79, // Underground Path west-east
+		0x4D, // Underground Path Route 7
+		0x4E, // Underground Path Route 7 copy
+		0x4C, // Route 7 gate
+		0x12, // Route 7
+		0x0A: // Saffron City
+		return true
+	}
+	return strings.HasPrefix(name, "LAVENDER_") ||
+		strings.HasPrefix(name, "POKEMON_TOWER_") ||
+		name == "MR_FUJIS_HOUSE" ||
+		strings.HasPrefix(name, "SAFFRON_") ||
+		strings.HasPrefix(name, "SILPH_CO_") ||
+		postSurgeCeladonArea(mapID)
+}
+
+func partyCenterRecovered(party state.PartyState) bool {
+	if party.Count == 0 || len(party.Mons) == 0 {
+		return false
+	}
+	for _, mon := range party.Mons {
+		if mon.MaxHP == 0 || mon.HP != mon.MaxHP || mon.Status != 0 {
+			return false
+		}
+		for i, move := range mon.Moves {
+			if move != 0 && mon.PP[i] == 0 {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 // ProjectStoryFacts converts Red's decoded story facts into portable progress
 // without reading badge/map state. It preserves the historical facts-only
 // projection used by Red-owned execution helpers.
@@ -211,6 +265,8 @@ func ProjectStory(mem *state.Mem, facts state.StoryFacts) game.ProgressState {
 	indigoReady := mapID == indigoPlateauMap || mapID == indigoPlateauLobbyMap || facts.LeagueChallengeStarted || facts.LeagueChampionDefeated || facts.MainStoryComplete
 	return append(progress,
 		game.ProgressFact{ID: ProgressThunderBadge, Complete: badges.Has(state.BadgeThunder)},
+		game.ProgressFact{ID: ProgressPostSurgeLavenderReached, Complete: postSurgeLavenderReached(mapID)},
+		game.ProgressFact{ID: ProgressPostSurgeCeladonReady, Complete: postSurgeCeladonArea(mapID) && partyCenterRecovered(state.DecodeParty(mem))},
 		game.ProgressFact{ID: ProgressRainbowBadge, Complete: badges.Has(state.BadgeRainbow)},
 		game.ProgressFact{ID: ProgressVolcanoBadge, Complete: badges.Has(state.BadgeVolcano)},
 		game.ProgressFact{ID: ProgressEarthBadge, Complete: badges.Has(state.BadgeEarth)},
