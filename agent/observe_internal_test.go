@@ -76,10 +76,14 @@ func TestObservedPersonsAreReachable(t *testing.T) {
 	// is walkable from x=5 to x=10), on the same side as the west door.
 	westX, westY := uint8(9), uint8(3)
 
-	// Entering through the west door cannot reach the east wing's Old Amber,
-	// even though it has walkable tiles beside it and is not a counter case.
-	if !reachableOnFoot(romData, museum1F, scientist1X, scientist1Y+1, oldAmberX, oldAmberY) {
-		t.Fatal("Old Amber at (16,2) reported no walkable tile beside it at all; test assumption is wrong")
+	// The Old Amber sits in the east wing. From the east door it has a free
+	// side (measured: (17,2) and (16,3) are floor; the west-side (15,2) is
+	// scientist2's STAY home tile and not a valid standing spot). This
+	// establishes the amber is offerable at all, so the split assertion below
+	// is about the glass divider, not geometry.
+	const eastDoorX, eastDoorY = uint8(17), uint8(7)
+	if !reachableOnFoot(romData, museum1F, eastDoorX, eastDoorY, oldAmberX, oldAmberY) {
+		t.Fatal("Old Amber at (16,2) reported no walkable tile beside it from the east door; test assumption is wrong")
 	}
 	if personReachable(romData, museum1F, westX, westY, oldAmberX, oldAmberY) {
 		t.Error("Old Amber at (16,2) reported reachable from the west wing; it is behind the east door")
@@ -101,5 +105,52 @@ func TestObservedPersonsAreReachable(t *testing.T) {
 	}
 	if !personReachable(romData, viridianCenter, nurseX, nurseY+2, nurseX, nurseY) {
 		t.Error("nurse at (3,1) reported unreachable from her own counter approach tile (3,3)")
+	}
+}
+
+// TestObservedPersonsRespectStationaryBlockers pins the Mt. Moon Pokemon
+// Center clipboard (map 0x44). The clipboard at (7,2) has exactly one free
+// side, (7,3), which is the home tile of a STAY gentleman who never leaves it.
+// The static collision grid sees (7,3) as floor, so the old filter offered
+// "talk at (7,2)" — an objective no walk can complete — and runs looped on
+// "object 5 did not remain adjacent after 4 approaches" (run-ed01c5vw33n4).
+// The filter must treat STAY home tiles as permanently occupied.
+func TestObservedPersonsRespectStationaryBlockers(t *testing.T) {
+	path := os.Getenv("POKEMON_RED_ROM")
+	if path == "" {
+		t.Skip("POKEMON_RED_ROM not set")
+	}
+	romData, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read ROM: %v", err)
+	}
+	const mtMoonCenter = 0x44
+	clipboardX, clipboardY := uint8(7), uint8(2)
+	gentlemanX, gentlemanY := uint8(7), uint8(3)
+	px, py := uint8(6), uint8(3)
+
+	// Test assumptions: the raw collision grid has a free side on the
+	// clipboard (the gentleman's tile), so the only thing making it
+	// unreachable is the stationary blocker, not geometry — and the gentleman
+	// really is a STAY object.
+	g := mapObjectReachabilityGrid(romData, mtMoonCenter)
+	if g == nil {
+		t.Fatal("could not build the Mt. Moon center grid")
+	}
+	if !g.Walkable(int(gentlemanX), int(gentlemanY)) {
+		t.Fatalf("assumption wrong: (%d,%d) is not floor in the collision grid", gentlemanX, gentlemanY)
+	}
+	if !stationaryHomeTiles(romData, mtMoonCenter)[[2]int{int(gentlemanX), int(gentlemanY)}] {
+		t.Fatalf("assumption wrong: the gentleman at (%d,%d) is not a STAY object", gentlemanX, gentlemanY)
+	}
+
+	// The clipboard's only free side is the gentleman's home tile, so it can
+	// never be approached.
+	if personReachable(romData, mtMoonCenter, px, py, clipboardX, clipboardY) {
+		t.Error("clipboard at (7,2) reported reachable; its only free side is a stationary gentleman")
+	}
+	// The gentleman himself is reachable from the same position.
+	if !personReachable(romData, mtMoonCenter, px, py, gentlemanX, gentlemanY) {
+		t.Error("gentleman at (7,3) reported unreachable from (6,3)")
 	}
 }

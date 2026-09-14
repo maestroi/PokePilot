@@ -316,6 +316,7 @@ func ObserveChecked(m *emu.Emu, romData []byte) (Observation, error) {
 	// and reuse it for every reachability question. A failed build remains
 	// fail-open exactly as before.
 	objectGrid := mapObjectReachabilityGrid(romData, obs.Map)
+	stationary := stationaryHomeTiles(romData, obs.Map)
 	obs.MapObjects = make([]MapObject, 0, len(objects))
 	for i, object := range objects {
 		if hidden[uint8(i+1)] {
@@ -327,10 +328,10 @@ func ObserveChecked(m *emu.Emu, romData []byte) (Observation, error) {
 				object.Defeated = status.Defeated
 			}
 		}
-		if object.Kind == "item" && objectGrid != nil && !reachableOnGrid(objectGrid, obs.X, obs.Y, object.X, object.Y) {
+		if object.Kind == "item" && objectGrid != nil && !reachableOnGrid(objectGrid, obs.X, obs.Y, object.X, object.Y, stationary) {
 			continue
 		}
-		if object.Kind == "person" && objectGrid != nil && !personReachableOnGrid(objectGrid, obs.X, obs.Y, object.X, object.Y) {
+		if object.Kind == "person" && objectGrid != nil && !personReachableOnGrid(objectGrid, obs.X, obs.Y, object.X, object.Y, stationary) {
 			continue
 		}
 		obs.MapObjects = append(obs.MapObjects, object)
@@ -358,28 +359,48 @@ func adjacent(px, py, x, y uint8) bool {
 	return (px == x && (py == y+1 || py+1 == y)) || (py == y && (px == x+1 || px+1 == x))
 }
 
-func reachableOnGrid(g *world.Grid, px, py, x, y uint8) bool {
+// stationaryHomeTiles returns the home tiles of STAY objects on the map. A
+// STAY object never leaves its home tile, so that tile is occupied for the
+// whole game: a talk or pickup target whose only free side is one of them can
+// never be approached, and offering it would loop the run on a failure the
+// world makes impossible (measured: MT_MOON_POKECENTER clipboard at (7,2),
+// whose only floor side (7,3) is a stationary gentleman, run-ed01c5vw33n4).
+func stationaryHomeTiles(romData []byte, mapID uint8) map[[2]int]bool {
+	h, err := rom.ParseMap(romData, mapID)
+	if err != nil {
+		return nil
+	}
+	blocked := map[[2]int]bool{}
+	for _, o := range h.Objects {
+		if o.Movement == rom.MovementStay {
+			blocked[[2]int{int(o.X), int(o.Y)}] = true
+		}
+	}
+	return blocked
+}
+
+func reachableOnGrid(g *world.Grid, px, py, x, y uint8, blocked map[[2]int]bool) bool {
 	if adjacent(px, py, x, y) {
 		return true
 	}
-	_, _, err := world.FindPathAdjacent(g, int(px), int(py), int(x), int(y), nil)
+	_, _, err := world.FindPathAdjacent(g, int(px), int(py), int(x), int(y), blocked)
 	return err == nil
 }
 
-func personReachableOnGrid(g *world.Grid, px, py, x, y uint8) bool {
-	if reachableOnGrid(g, px, py, x, y) {
+func personReachableOnGrid(g *world.Grid, px, py, x, y uint8, blocked map[[2]int]bool) bool {
+	if reachableOnGrid(g, px, py, x, y, blocked) {
 		return true
 	}
 	for _, s := range []world.Step{world.StepUp, world.StepDown, world.StepLeft, world.StepRight} {
 		midX, midY := int(x)+s.DX, int(y)+s.DY
 		farX, farY := int(x)+2*s.DX, int(y)+2*s.DY
-		if g.Walkable(midX, midY) || !g.Walkable(farX, farY) {
+		if g.Walkable(midX, midY) || !g.Walkable(farX, farY) || blocked[[2]int{farX, farY}] {
 			continue
 		}
 		if farX == int(px) && farY == int(py) {
 			return true
 		}
-		if _, err := world.FindPath(g, int(px), int(py), farX, farY, nil); err == nil {
+		if _, err := world.FindPath(g, int(px), int(py), farX, farY, blocked); err == nil {
 			return true
 		}
 	}
@@ -394,7 +415,7 @@ func reachableOnFoot(romData []byte, mapID, px, py, x, y uint8) bool {
 	if g == nil {
 		return true
 	}
-	return reachableOnGrid(g, px, py, x, y)
+	return reachableOnGrid(g, px, py, x, y, stationaryHomeTiles(romData, mapID))
 }
 
 func personReachable(romData []byte, mapID, px, py, x, y uint8) bool {
@@ -402,7 +423,7 @@ func personReachable(romData []byte, mapID, px, py, x, y uint8) bool {
 	if g == nil {
 		return true
 	}
-	return personReachableOnGrid(g, px, py, x, y)
+	return personReachableOnGrid(g, px, py, x, y, stationaryHomeTiles(romData, mapID))
 }
 
 func observedMoveDealsDamage(mv rom.Move) bool {
