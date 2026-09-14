@@ -45,6 +45,9 @@ func executeRedOwned(m *emu.Emu, romData []byte, o Objective) (result ObjectiveR
 		return result, nil
 
 	case KindTalk:
+		if err := validateRedTalkObjective(romData, m.Peek8(sym.CurMap), o); err != nil {
+			return result, fmt.Errorf("agent: %s: %w", o, err)
+		}
 		presses, err := skill.TalkAt(m, romData, o.X, o.Y, skill.StatAwareMove(romData))
 		result.InteractionPresses = presses
 		if err != nil {
