@@ -18,10 +18,12 @@ func executeCatchObjective(m *emu.Emu, romData []byte, o Objective, result Objec
 		return result, fmt.Errorf("agent: %s: %w", o, err)
 	}
 
-	// Safari maps are deliberately not ordinary planner Place destinations:
-	// their paid finite session must own gate entry, routing, Safari Balls and
-	// exit/re-entry. Every other acquisition source keeps the normal travel wrapper.
-	if o.Place != "" && o.Intent != dexSafariIntent {
+	// Safari and Lapras' Silph route own semantics that an ordinary Place
+	// traversal cannot safely reproduce (finite Safari sessions; Card Key +
+	// rival-room routing respectively). Other acquisition sources keep the
+	// normal travel wrapper.
+	ownsTravel := o.Intent == dexSafariIntent || (o.Intent == dexGiftIntent && o.Species == "lapras")
+	if o.Place != "" && !ownsTravel {
 		dest, ok := skill.Place(string(o.Place))
 		if !ok {
 			return result, fmt.Errorf("agent: %s: unknown catch habitat %q", o, o.Place)
@@ -59,10 +61,14 @@ func executeCatchObjective(m *emu.Emu, romData []byte, o Objective, result Objec
 		}
 		caught, err = skill.SafariCatch(m, romData, mapID, []uint8{species}, skill.StatAwareMove(romData), 10)
 	case dexGiftIntent:
-		if o.Species != "eevee" {
+		switch o.Species {
+		case "eevee":
+			caught, err = skill.ReceiveEeveeGift(m, romData, skill.StatAwareMove(romData))
+		case "lapras":
+			caught, err = skill.ReceiveLaprasGift(m, romData, skill.StatAwareMove(romData))
+		default:
 			return result, fmt.Errorf("agent: %s: no scripted gift executor for %q", o, o.Species)
 		}
-		caught, err = skill.ReceiveEeveeGift(m, romData, skill.StatAwareMove(romData))
 	default:
 		caught, err = skill.Catch(m, romData, []uint8{species}, skill.StatAwareMove(romData), 5)
 	}
