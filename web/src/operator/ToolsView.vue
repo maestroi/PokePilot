@@ -223,20 +223,17 @@ async function submit(): Promise<void> {
       </form>
     </Panel>
 
-    <Panel title="After queueing" description="Use the returned run id to jump straight into the live operator view." compact>
-      <div v-if="createdRunID" class="space-y-3">
-        <div class="rounded-md border border-emerald-400/20 bg-emerald-400/8 px-3 py-2.5">
-          <div class="text-[10px] font-semibold tracking-[0.08em] text-emerald-300 uppercase">Queued</div>
-          <div class="mt-1 font-mono text-sm text-slate-100">{{ createdRunID }}</div>
-        </div>
-        <a :href="runURL(createdRunID)" class="inline-flex items-center gap-1.5 text-sm font-semibold text-cyan-300 hover:text-cyan-200">
-          Open live run
-          <ArrowRightIcon class="size-4" aria-hidden="true" />
+    <Panel title="Queued run" description="Jump straight into Live after the wall accepts the spec." compact>
+      <div v-if="createdRunID" class="rounded-md border border-emerald-300/15 bg-emerald-300/8 p-4">
+        <span class="text-[10px] font-semibold tracking-[0.08em] text-emerald-200 uppercase">Queued</span>
+        <p class="mt-2 break-all font-mono text-xs text-slate-200">{{ createdRunID }}</p>
+        <a :href="runURL(createdRunID)" class="mt-4 inline-flex items-center gap-1.5 rounded-md bg-white/8 px-2.5 py-1.5 text-xs font-semibold text-white ring-1 ring-white/10 hover:bg-white/12">
+          Open Live
+          <ArrowRightIcon class="size-3.5" aria-hidden="true" />
         </a>
       </div>
-      <div v-else class="space-y-2 text-xs leading-5 text-slate-500">
-        <p>The run appears in Active runs as soon as the wall accepts it.</p>
-        <p>When a worker leases it, live party, progress, planner choices, and frames become available.</p>
+      <div v-else class="py-8 text-center text-sm text-slate-500">
+        Queue a run to get a direct Live link here.
       </div>
     </Panel>
   </div>
