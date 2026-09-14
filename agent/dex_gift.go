@@ -6,7 +6,7 @@ import (
 )
 
 const (
-	dexGiftIntent     = "dex-gift"
+	dexGiftIntent         = "dex-gift"
 	dexGiftObjectiveLimit = 4
 )
 
@@ -44,8 +44,7 @@ func appendDexGiftObjectives(obs Observation, known *Knowledge, out []Objective)
 			if !dexGiftSourceExecutable(entry.Species, src) {
 				continue
 			}
-			distance, ok := dexCatchPlaceDistance(obs, src.Place, blocked, hops, adjacency)
-			if !ok {
+			if _, ok := dexCatchPlaceDistance(obs, src.Place, blocked, hops, adjacency); !ok {
 				continue
 			}
 			out = append(out, Objective{
@@ -57,7 +56,6 @@ func appendDexGiftObjectives(obs Observation, known *Knowledge, out []Objective)
 				Note: fmt.Sprintf("(dex gift: receive %s at %s; collection storage and nickname handling are verified)",
 					strings.ToUpper(string(entry.Species)), strings.ToUpper(string(src.Place))),
 			})
-			_ = distance // reachability/routing cost is the eligibility proof here.
 			already[entry.Species] = true
 			added++
 			break
