@@ -27,6 +27,9 @@ func redProgressionKnown(id ProgressID) bool {
 		redProgressSilphRescueComplete,
 		redProgressVolcanoBadge,
 		redProgressEarthBadge,
+		ProgressRoute22RivalResolved,
+		ProgressRoute23BadgeChecks,
+		redProgressVictoryRoadCleared,
 		redProgressIndigoPlateauReady,
 		ProgressMainStoryComplete,
 		ProgressSaffronGateOpen,
@@ -234,11 +237,32 @@ func redProgressionObjectives(obs Observation) []Objective {
 		})
 	}
 	if obs.Story.Has(redProgressEarthBadge) && !obs.Story.Has(redProgressIndigoPlateauReady) {
-		out = append(out, Objective{
-			Kind:     KindProgress,
-			Progress: redProgressIndigoPlateauReady,
-			Note:     "(defeat the final Route 22 rival, pass Route 23's seven badge checks and three Surf bands, solve Victory Road's live Strength puzzles, then heal in the Indigo Plateau lobby)",
-		})
+		switch {
+		case !obs.Story.Has(ProgressRoute22RivalResolved):
+			out = append(out, Objective{
+				Kind:     KindProgress,
+				Progress: ProgressRoute22RivalResolved,
+				Note:     "(travel to Route 22, defeat the final rival, and positively verify the second Route 22 rival event before entering the League approach)",
+			})
+		case !obs.Story.Has(ProgressRoute23BadgeChecks):
+			out = append(out, Objective{
+				Kind:     KindProgress,
+				Progress: ProgressRoute23BadgeChecks,
+				Note:     "(repair Surf, enter Route 23, cross its three live water bands, pass all seven badge checks, and end at the Victory Road 1F entry)",
+			})
+		case !obs.Story.Has(redProgressVictoryRoadCleared):
+			out = append(out, Objective{
+				Kind:     KindProgress,
+				Progress: redProgressVictoryRoadCleared,
+				Note:     "(repair Strength, solve Victory Road's live 1F/2F/3F boulder sequence, and finish with the final 2F east switch positively set)",
+			})
+		default:
+			out = append(out, Objective{
+				Kind:     KindProgress,
+				Progress: redProgressIndigoPlateauReady,
+				Note:     "(leave the cleared cave, reach the Indigo Plateau lobby nurse, and fully recover HP, status, and PP before committing to the League)",
+			})
+		}
 	}
 	if obs.Story.Has(redProgressIndigoPlateauReady) && !obs.Story.Has(ProgressMainStoryComplete) {
 		out = append(out, Objective{
@@ -290,8 +314,14 @@ func executeRedProgression(m *emu.Emu, romData []byte, o Objective) error {
 		return skill.CinnabarProgression(m, romData, policy)
 	case redProgressEarthBadge:
 		return skill.ViridianProgression(m, romData, policy)
+	case ProgressRoute22RivalResolved:
+		return skill.VictoryRoadResolveRival(m, romData, policy)
+	case ProgressRoute23BadgeChecks:
+		return skill.VictoryRoadReachCave(m, romData, policy)
+	case redProgressVictoryRoadCleared:
+		return skill.VictoryRoadClearCave(m, romData, policy)
 	case redProgressIndigoPlateauReady:
-		return skill.VictoryRoadProgression(m, romData, policy)
+		return skill.VictoryRoadPrepareIndigo(m, romData, policy)
 	case ProgressMainStoryComplete:
 		return skill.EliteFourProgression(m, romData, policy)
 	default:
