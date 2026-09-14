@@ -1,0 +1,21 @@
+name: Label farm issues
+
+on:
+  issues:
+    types: [opened, reopened, edited]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  label:
+    if: contains(github.event.issue.body, '<!-- pokepilot-generated:github-issues-v1 -->')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Add bug label
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE: ${{ github.event.issue.number }}
+        run: gh issue edit "$ISSUE" --repo "$GH_REPO" --add-label bug
