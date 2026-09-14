@@ -1,4 +1,4 @@
-import { normalizeAssetName } from './pokemonAssets'
+import { normalizeAssetName } from './pokemonAssets.ts'
 
 const BADGE_SPRITE_ROOT = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/badges'
 
