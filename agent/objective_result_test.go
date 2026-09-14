@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/maestroi/pokepilot/emu"
-	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/skill"
 	"github.com/maestroi/pokepilot/world"
 )
@@ -221,7 +220,6 @@ func TestObjectivePostconditionCatchUsesPokedexOwned(t *testing.T) {
 }
 
 func TestVerifyObjectivePostconditionRepresentativeEvidence(t *testing.T) {
-	won := state.ResultWon
 	cases := []struct {
 		name    string
 		o       Objective
@@ -260,7 +258,7 @@ func TestVerifyObjectivePostconditionRepresentativeEvidence(t *testing.T) {
 			o:       Objective{Kind: KindGym},
 			initial: Observation{Badges: []string{"boulder"}},
 			final:   Observation{Controllable: true, Badges: []string{"boulder", "cascade"}},
-			result:  ObjectiveResult{GymOutcome: &won},
+			result:  ObjectiveResult{Battle: &BattleEvidence{Result: "won", Won: true}},
 		},
 		{
 			name:    "pickup",

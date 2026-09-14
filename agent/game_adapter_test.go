@@ -4,6 +4,8 @@ import (
 	"errors"
 	"reflect"
 	"testing"
+
+	gameruntime "github.com/maestroi/pokepilot/game"
 )
 
 type fakeObjectiveGame struct {
@@ -93,6 +95,28 @@ func (f *fakeObjectiveGame) VerifyPostcondition(o Objective, initial, final Obse
 		return errors.New("fake game did not reach ROOM_B")
 	}
 	return nil
+}
+
+func (f *fakeObjectiveGame) NormalizeFailure(phase gameruntime.FailurePhase, err error, _ Observation) gameruntime.Failure {
+	out := OutcomeUnknownFailure
+	switch {
+	case phase == gameruntime.FailurePhaseInitialObservation || phase == gameruntime.FailurePhaseFinalObservation:
+		out = OutcomeControllerUncertain
+	case errors.Is(err, ErrObjectiveBoundaryChoice):
+		out = OutcomeChoiceRequired
+	case errors.Is(err, ErrObjectiveBoundaryDirty):
+		out = OutcomeStabilizationFailed
+	case errors.Is(err, ErrObjectivePostconditionUnavailable):
+		out = OutcomePostconditionUnavailable
+	case errors.Is(err, ErrObjectivePostconditionFailed):
+		out = OutcomePostconditionFailed
+	}
+	return gameruntime.Failure{
+		Phase:       phase,
+		Class:       failureClassForOutcome(out),
+		Cause:       "fake_failure",
+		Recoverable: actionFor(out) == actionReplan,
+	}
 }
 
 func (f *fakeObjectiveGame) CaptureFailure(Objective, error) error {

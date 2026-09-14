@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"sort"
 )
 
 type failureQuarantineEntry struct {
@@ -23,20 +24,38 @@ func recoveryStateKey(obs Observation) string {
 	return fmt.Sprintf("%x", sum[:8])
 }
 
+// normalizedFailureKey fingerprints transaction phase, portable class, stable
+// cause id and structured context. Native error prose is deliberately absent.
+func normalizedFailureKey(result ObjectiveResult) string {
+	failure := normalizedFailure(result)
+	context := append([]string(nil), failure.Context...)
+	sort.Strings(context)
+	data, _ := json.Marshal(struct {
+		Phase   string   `json:"phase,omitempty"`
+		Class   string   `json:"class,omitempty"`
+		Cause   string   `json:"cause,omitempty"`
+		Context []string `json:"context,omitempty"`
+	}{
+		Phase:   string(failure.Phase),
+		Class:   string(failure.Class),
+		Cause:   failure.Cause,
+		Context: context,
+	})
+	sum := sha256.Sum256(data)
+	return fmt.Sprintf("%x", sum[:8])
+}
+
 func recoverableFailureKey(obj Objective, result ObjectiveResult) string {
-	cause := result.Cause
-	if cause == "" {
-		cause = FailureCauseID("outcome:" + string(result.Outcome))
-	}
-	return obj.String() + "|" + string(cause) + "|" + recoveryStateKey(result.Final)
+	return obj.String() + "|" + normalizedFailureKey(result) + "|" + recoveryStateKey(result.Final)
 }
 
 func (q failureQuarantine) record(result ObjectiveResult) {
 	if q == nil || actionFor(result.Outcome) != actionReplan {
 		return
 	}
+	failure := normalizedFailure(result)
 	q[result.Objective.String()] = failureQuarantineEntry{
-		Cause: result.Cause, StateKey: recoveryStateKey(result.Final),
+		Cause: FailureCauseID(failure.Cause), StateKey: recoveryStateKey(result.Final),
 	}
 }
 

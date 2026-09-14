@@ -17,6 +17,29 @@ func Execute(m *emu.Emu, romData []byte, o Objective) (ObjectiveResult, error) {
 	return executeObjectiveWithAdapter(newRedObjectiveAdapter(m, romData), o)
 }
 
+func travelEvidenceFromRed(travel skill.TravelResult) *TravelEvidence {
+	return &TravelEvidence{
+		Battles:    travel.Battles,
+		Flees:      travel.Flees,
+		Dialogues:  travel.Dialogues,
+		BlackedOut: travel.BlackedOut,
+		Replans:    len(travel.Replans),
+	}
+}
+
+func battleEvidenceFromRed(result state.BattleResult) *BattleEvidence {
+	name := "unknown"
+	switch result {
+	case state.ResultWon:
+		name = "won"
+	case state.ResultLost:
+		name = "lost"
+	case state.ResultDraw:
+		name = "draw"
+	}
+	return &BattleEvidence{Result: name, Won: result == state.ResultWon}
+}
+
 // executeRedOwned is the Red adapter's action dispatcher. All semantic entity
 // ids are translated here, immediately before a Red skill consumes its native
 // numeric/index representation.
@@ -39,7 +62,7 @@ func executeRedOwned(m *emu.Emu, romData []byte, o Objective) (result ObjectiveR
 		} else {
 			travel, err = skill.Travel(m, romData, dest, skill.StatAwareMove(romData), 40)
 		}
-		result.Travel = &travel
+		result.Travel = travelEvidenceFromRed(travel)
 		if err != nil {
 			return result, fmt.Errorf("agent: %s: %w", o, err)
 		}
@@ -109,7 +132,7 @@ func executeRedOwned(m *emu.Emu, romData []byte, o Objective) (result ObjectiveR
 			} else {
 				travel, err = skill.Travel(m, romData, dest, skill.StatAwareMove(romData), 40)
 			}
-			result.Travel = &travel
+			result.Travel = travelEvidenceFromRed(travel)
 			if err != nil {
 				return result, fmt.Errorf("agent: %s: %w", o, err)
 			}
@@ -129,7 +152,7 @@ func executeRedOwned(m *emu.Emu, romData []byte, o Objective) (result ObjectiveR
 		if err != nil {
 			return result, fmt.Errorf("agent: %s: %w", o, err)
 		}
-		result.GymOutcome = &gym
+		result.Battle = battleEvidenceFromRed(gym)
 		if gym == state.ResultWon {
 			return result, nil
 		}
@@ -184,7 +207,7 @@ func executeRedOwned(m *emu.Emu, romData []byte, o Objective) (result ObjectiveR
 				return result, fmt.Errorf("agent: %s: evolution supply purchase must request exactly one stone", o)
 			}
 			travel, err := skill.BuyEvolutionStone(m, romData, item, skill.StatAwareMove(romData))
-			result.Travel = &travel
+			result.Travel = travelEvidenceFromRed(travel)
 			if err != nil {
 				return result, fmt.Errorf("agent: %s: %w", o, err)
 			}

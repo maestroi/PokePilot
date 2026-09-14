@@ -129,6 +129,17 @@ func resolveTrainingPartySlot(mem *state.Mem, o Objective) (int, error) {
 	return o.Slot, nil
 }
 
+func trainingEvidenceFromRed(train skill.TrainResult) *TrainingEvidence {
+	return &TrainingEvidence{
+		StartLevel: train.StartLevel,
+		EndLevel:   train.EndLevel,
+		Battles:    train.Battles,
+		BlackedOut: train.BlackedOut,
+		Reached:    train.Reached,
+		Retreated:  train.Retreated,
+	}
+}
+
 // promoteToLeadStable gives the verified party-swap primitive one recovery
 // attempt when a menu transition wins the race against PromoteToLead's source-
 // screen guard. The failure is not ignored: we only retry after proving the
@@ -178,7 +189,7 @@ func executeTrainingObjective(m *emu.Emu, romData []byte, o Objective, result Ob
 	}
 
 	train, trainErr := skill.Train(m, romData, int(o.Level), skill.StatAwareMove(romData), trainSessionBattleBudget)
-	result.Train = &train
+	result.Train = trainingEvidenceFromRed(train)
 
 	// PromoteToLead is a symmetric swap: the original lead is still at the
 	// same partner slot. Restore it whenever Train left a normal controllable

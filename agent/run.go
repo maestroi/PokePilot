@@ -6,7 +6,6 @@ import (
 	"os"
 
 	"github.com/maestroi/pokepilot/emu"
-	"github.com/maestroi/pokepilot/skill"
 	"github.com/maestroi/pokepilot/world"
 )
 
@@ -156,8 +155,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 		res.Rounds = round
 
 		if execErr != nil {
-			blackedOut := errors.Is(execErr, skill.ErrBlackedOut)
-			retreated := errors.Is(execErr, skill.ErrTrainRetreat)
+			blackedOut := failureIsBlackout(objectiveResult)
 			if blackedOut {
 				last.BlackedOut = true
 				objectiveResult.Summary += fmt.Sprintf(" (respawned in %s, money %d -> %d)",
@@ -166,8 +164,8 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 			res.Outcomes = append(res.Outcomes, objectiveResult)
 			outcome := objectiveResult.HistoryText()
 
-			known.Failed(obj, execErr)
-			known.notePartyCombatChange(before, last, execErr)
+			known.FailedResult(objectiveResult, execErr)
+			known.notePartyCombatResult(before, last, objectiveResult)
 			history = appendHistory(history, RoundRecord{Objective: obj.String(), Outcome: outcome})
 			last.History = history
 			last.RecentDialogue = tape.recent()
@@ -204,7 +202,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 				leadLevel = last.Party[0].Level
 			}
 			failure := engine.failures.recoverable(
-				obj, objectiveResult, blackedOut, retreated, engine.planning.hasStrategist(p), leadLevel,
+				obj, objectiveResult, engine.planning.hasStrategist(p), leadLevel,
 			)
 			if failure.ReplanReason != "" {
 				engine.planning.request(failure.ReplanReason)
@@ -231,7 +229,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 		engine.planning.success(fromPlan)
 		notifyPlanning(p, engine.planning.snapshot())
 		known.Done(obj)
-		known.notePartyCombatChange(before, last, nil)
+		known.notePartyCombatResult(before, last, objectiveResult)
 		if obj.Kind == KindTalk {
 			known.TalkedTo(before.Map, obj.X, obj.Y)
 		}

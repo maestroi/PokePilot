@@ -42,7 +42,7 @@ func executeCatchObjective(m *emu.Emu, romData []byte, o Objective, result Objec
 		} else {
 			travel, err = skill.Travel(m, romData, dest, skill.StatAwareMove(romData), 40)
 		}
-		result.Travel = &travel
+		result.Travel = travelEvidenceFromRed(travel)
 		if err != nil {
 			return result, fmt.Errorf("agent: %s: travel to catch habitat: %w", o, err)
 		}
