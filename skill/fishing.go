@@ -176,9 +176,18 @@ func castRodOnce(m *emu.Emu, rod uint8) (bool, error) {
 		if state.DecodeBattle(&mem) != nil {
 			return true, nil
 		}
-		if useTossPrompt(&mem) == nil {
-			actionStarted = true
+		if p := useTossPrompt(&mem); p != nil {
+			// This exact prompt is known and its cursor was already verified on
+			// USE. Menu transitions can leave it visible for a few frames after
+			// the first A; re-confirming USE is safe and avoids misclassifying
+			// that race as an unknown choice prompt.
+			if p.Index != 0 {
+				return false, fmt.Errorf("USE/TOSS cursor moved off USE while resolving rod use")
+			}
+			m.Tap(emu.A, 3, 7)
+			continue
 		}
+		actionStarted = true
 		if state.DecodeTwoOptionMenu(&mem) != nil {
 			return false, fmt.Errorf("unexpected choice prompt while resolving rod use")
 		}
