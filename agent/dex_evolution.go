@@ -7,13 +7,17 @@ import (
 	"github.com/maestroi/pokepilot/skill"
 )
 
-const dexEvolutionLimit = 6
+const (
+	dexEvolutionLimit        = 6
+	dexEvolutionSupplyIntent = "dex-evolution-supply"
+	dexEvolutionStoneShop    = PlaceID("celadon mart 4f stones")
+)
 
 // appendDexEvolutionObjectives turns ROM-derived evolution sources into the
-// existing deterministic training/item objectives. The executor owns the
-// mechanics; this layer only offers evolutions whose base Pokemon is currently
-// in the party and whose immediate prerequisite is available.
-func appendDexEvolutionObjectives(obs Observation, out []Objective) []Objective {
+// existing deterministic training/item objectives. When a purchasable stone
+// is the only missing immediate prerequisite, it first offers a bounded supply
+// purchase; the next observation then offers the verified item evolution.
+func appendDexEvolutionObjectives(obs Observation, known *Knowledge, out []Objective) []Objective {
 	if len(obs.Dex.Targets) == 0 || len(obs.Party) == 0 {
 		return out
 	}
@@ -63,8 +67,22 @@ func appendDexEvolutionObjectives(obs Observation, out []Objective) []Objective 
 						strings.ToUpper(string(src.From)), strings.ToUpper(string(entry.Species))),
 				}
 			case AcquireItemEvo:
-				if src.Item == "" || bagItemQuantity(obs.Bag, src.Item) == 0 {
+				if src.Item == "" {
 					continue
+				}
+				if bagItemQuantity(obs.Bag, src.Item) == 0 {
+					if !dexEvolutionStonePurchaseAvailable(obs, known, src.Item) {
+						continue
+					}
+					o = Objective{
+						Kind:   KindBuy,
+						Item:   src.Item,
+						Qty:    1,
+						Intent: dexEvolutionSupplyIntent,
+						Note: fmt.Sprintf("(dex evolution supply: buy one %s for %s -> %s at Celadon Mart 4F)",
+							strings.ToUpper(string(src.Item)), strings.ToUpper(string(src.From)), strings.ToUpper(string(entry.Species))),
+					}
+					break
 				}
 				o = Objective{
 					Kind:   KindUseItem,
@@ -90,6 +108,41 @@ func appendDexEvolutionObjectives(obs Observation, out []Objective) []Objective 
 		}
 	}
 	return out
+}
+
+func dexEvolutionStonePurchaseAvailable(obs Observation, known *Knowledge, item ItemID) bool {
+	if !purchasableDexEvolutionStone(item) || len(obs.Bag) >= bagItemCapacity {
+		return false
+	}
+	spec, ok := ItemEconomy(string(item))
+	if !ok || spec.Category != InventoryEvolution || spec.UnitPrice == 0 {
+		return false
+	}
+	ctx := EconomyContext(obs)
+	if ctx == nil || ctx.SpendableMoney < spec.UnitPrice {
+		return false
+	}
+
+	blocked := dexCatchBlockedPlaces(obs)
+	hops := map[uint8]int{}
+	var adjacency map[uint8][]uint8
+	if known != nil {
+		adjacency = known.Adjacency
+		hops = mapHops(adjacency, obs.Map)
+	}
+	_, reachable := dexCatchPlaceDistance(obs, dexEvolutionStoneShop, blocked, hops, adjacency)
+	return reachable
+}
+
+func purchasableDexEvolutionStone(item ItemID) bool {
+	switch strings.ToLower(strings.TrimSpace(string(item))) {
+	case "fire stone", "thunder stone", "water stone", "leaf stone":
+		return true
+	default:
+		// Moon Stones are finite pickups in Red; never pretend a Mart can sell
+		// them just because they are item-evolution inputs.
+		return false
+	}
 }
 
 func partySpeciesSlot(party []PartyMon, species SpeciesID) (int, PartyMon, bool) {
