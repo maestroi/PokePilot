@@ -163,11 +163,19 @@ func (s *Spec) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &in); err != nil {
 		return err
 	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	_, goalProvided := fields["goal"]
+
 	*s = Spec(in.plain)
 	RememberPlayStyle(s.RunID, in.PlayStyle)
 	RememberRiskTolerance(s.RunID, in.RiskTolerance)
 	RememberWildEncounters(s.RunID, in.WildEncounters)
 	setCurrentRunPolicy(in.PlayStyle, in.RiskTolerance, in.WildEncounters)
-	ApplyPlayStyleDefaultGoal(s)
+	if !goalProvided {
+		ApplyPlayStyleDefaultGoal(s)
+	}
 	return nil
 }
