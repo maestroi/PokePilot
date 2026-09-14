@@ -21,6 +21,7 @@ func offerWithTMHM(m *emu.Emu, romData []byte, obs Observation, known *Knowledge
 	out = filterRedProgressionStageObjectives(obs, out)
 	out = filterRedScriptedTalkObjectives(obs, out)
 	out = filterRedServiceTalkObjectives(romData, obs, out)
+	out = appendRedNPCRewardObjectives(obs, known, out)
 	out = appendKnownCatchObjectives(romData, obs, known, out)
 	out = appendDexCatchObjectives(obs, known, out)
 	out = appendDexGiftObjectives(obs, known, out)
@@ -73,9 +74,10 @@ func filterRedScriptedTalkObjectives(obs Observation, out []Objective) []Objecti
 // filterRedServiceTalkObjectives removes actors whose A-button interaction is
 // owned by another semantic action instead of ordinary NPC dialogue. The ROM's
 // TX_SCRIPT_* dispatch bytes identify nurses, Mart clerks, cable-club staff and
-// other built-in services without maintaining a coordinate list. The Mt. Moon
-// salesman is a text_asm choice rather than a TX_SCRIPT_* service, so his paid
-// MAGIKARP transaction remains the explicit Red-owned choice case below.
+// other built-in services without maintaining a coordinate list. Custom
+// text_asm choice actors are classified separately: fishing gurus and Oak's
+// aides are owned by semantic reward objectives, while paid/other choice actors
+// are suppressed until their owning verb executes them deliberately.
 func filterRedServiceTalkObjectives(romData []byte, obs Observation, out []Objective) []Objective {
 	special := map[[2]uint8]bool{}
 	if actors, err := rom.SpecialInteractionActors(romData, obs.Map); err == nil {
@@ -100,12 +102,14 @@ func filterRedServiceTalkObjectives(romData []byte, obs Observation, out []Objec
 }
 
 // redOwnedChoiceActor identifies Red NPCs whose interaction immediately asks a
-// gameplay choice that generic KindTalk does not own. Keep this list at the
-// game-adapter seam: the core concept is "choice-owned interaction", while the
-// concrete map/object identities are game facts.
+// gameplay choice that generic KindTalk does not own. Keep this classification
+// at the game-adapter seam: the core concept is "choice-owned interaction",
+// while the concrete map/object identities are Red facts.
 func redOwnedChoiceActor(mapID, x, y uint8) bool {
-	return mapID == mtMoonPokecenterMapID &&
-		x == mtMoonMagikarpSalesmanHomeX && y == mtMoonMagikarpSalesmanHomeY
+	if mapID == mtMoonPokecenterMapID && x == mtMoonMagikarpSalesmanHomeX && y == mtMoonMagikarpSalesmanHomeY {
+		return true
+	}
+	return redChoiceInteractionActor(mapID, x, y)
 }
 
 func appendTMHMObjectives(romData []byte, party state.PartyState, inventory state.InventoryState, out []Objective) []Objective {
