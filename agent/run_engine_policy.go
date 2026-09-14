@@ -8,7 +8,7 @@ type runEngine struct {
 	planning   *runPlanning
 	watchdogs  *runWatchdogPolicy
 	failures   *runFailurePolicy
-	quarantine *failureQuarantine
+	quarantine failureQuarantine
 }
 
 func newRunEngine(budget Budget, resumed Plan, initial Observation, known *Knowledge) *runEngine {
