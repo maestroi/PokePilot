@@ -54,11 +54,47 @@ func TestAppendDexGiftObjectivesSuppressesOwnedEevee(t *testing.T) {
 	}
 }
 
+func TestAppendDexGiftObjectivesOffersLaprasWithCardKey(t *testing.T) {
+	dest, ok := skill.Place("silph co lapras")
+	if !ok {
+		t.Fatal("silph co lapras place missing")
+	}
+	obs := Observation{
+		Map: dest.Map,
+		Bag: []Item{{Name: "card key", Quantity: 1}},
+		Dex: DexCatalog{Targets: []DexEntry{{
+			Species: "lapras",
+			Sources: []DexSource{{Kind: AcquireGift, Place: "silph co lapras", Requirement: "card_key"}},
+		}}},
+	}
+	got := appendDexGiftObjectives(obs, NewKnowledge(nil), nil)
+	if len(got) != 1 || got[0].Species != "lapras" || got[0].Place != "silph co lapras" || got[0].Intent != dexGiftIntent {
+		t.Fatalf("Lapras gift objectives = %+v, want executable Lapras", got)
+	}
+}
+
+func TestAppendDexGiftObjectivesRequiresCardKeyForLapras(t *testing.T) {
+	dest, ok := skill.Place("silph co lapras")
+	if !ok {
+		t.Fatal("silph co lapras place missing")
+	}
+	obs := Observation{
+		Map: dest.Map,
+		Dex: DexCatalog{Targets: []DexEntry{{
+			Species: "lapras",
+			Sources: []DexSource{{Kind: AcquireGift, Place: "silph co lapras", Requirement: "card_key"}},
+		}}},
+	}
+	if got := appendDexGiftObjectives(obs, NewKnowledge(nil), nil); len(got) != 0 {
+		t.Fatalf("Lapras without Card Key objectives = %+v, want none", got)
+	}
+}
+
 func TestAppendDexGiftObjectivesDoesNotInventUnimplementedGiftExecution(t *testing.T) {
 	obs := Observation{
 		Dex: DexCatalog{Targets: []DexEntry{{
-			Species: "lapras",
-			Sources: []DexSource{{Kind: AcquireGift, Place: "silph co"}},
+			Species: "hitmonlee",
+			Sources: []DexSource{{Kind: AcquireGift, Place: "fighting dojo"}},
 		}}},
 	}
 	if got := appendDexGiftObjectives(obs, NewKnowledge(nil), nil); len(got) != 0 {
@@ -66,14 +102,22 @@ func TestAppendDexGiftObjectivesDoesNotInventUnimplementedGiftExecution(t *testi
 	}
 }
 
-func TestRedScriptedSourcesLocatesEeveeGift(t *testing.T) {
-	for _, scripted := range redScriptedSources() {
-		if scripted.internal == 0x66 {
-			if scripted.source.Kind != AcquireGift || scripted.source.Place != "celadon mansion eevee" {
-				t.Fatalf("Eevee source = %+v", scripted.source)
-			}
-			return
-		}
+func TestRedScriptedSourcesLocatesExecutableGifts(t *testing.T) {
+	want := map[uint8]DexSource{
+		0x66: {Kind: AcquireGift, Place: "celadon mansion eevee"},
+		0x13: {Kind: AcquireGift, Place: "silph co lapras", Requirement: "card_key"},
 	}
-	t.Fatal("Eevee scripted source missing")
+	for _, scripted := range redScriptedSources() {
+		expected, ok := want[scripted.internal]
+		if !ok {
+			continue
+		}
+		if scripted.source.Kind != expected.Kind || scripted.source.Place != expected.Place || scripted.source.Requirement != expected.Requirement {
+			t.Fatalf("scripted source %#02x = %+v, want %+v", scripted.internal, scripted.source, expected)
+		}
+		delete(want, scripted.internal)
+	}
+	if len(want) != 0 {
+		t.Fatalf("missing scripted gift sources: %+v", want)
+	}
 }
