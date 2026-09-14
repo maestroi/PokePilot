@@ -45,7 +45,9 @@ func executeRedOwned(m *emu.Emu, romData []byte, o Objective) (result ObjectiveR
 		return result, nil
 
 	case KindTalk:
-		if _, err := skill.TalkAt(m, romData, o.X, o.Y, skill.StatAwareMove(romData)); err != nil {
+		presses, err := skill.TalkAt(m, romData, o.X, o.Y, skill.StatAwareMove(romData))
+		result.InteractionPresses = presses
+		if err != nil {
 			return result, fmt.Errorf("agent: %s: %w", o, err)
 		}
 		return result, nil
@@ -139,17 +141,23 @@ func executeRedOwned(m *emu.Emu, romData []byte, o Objective) (result ObjectiveR
 			return result, fmt.Errorf("agent: %s: unknown Red item %q", o, o.Item)
 		}
 		if o.Intent == "dex-evolution" {
-			return executeDexEvolutionItem(m, romData, o, result)
+			used, err := executeDexEvolutionItem(m, romData, o, result)
+			if err == nil {
+				used.ItemEffectVerified = true
+			}
+			return used, err
 		}
 		if _, err := rom.LookupTMHM(romData, item); err == nil {
 			if _, err := skill.TeachTMHMToSlot(m, item, false, o.Slot); err != nil {
 				return result, fmt.Errorf("agent: %s: %w", o, err)
 			}
+			result.ItemEffectVerified = true
 			return result, nil
 		}
 		if err := skill.UseFieldItem(m, item, o.Slot); err != nil {
 			return result, fmt.Errorf("agent: %s: %w", o, err)
 		}
+		result.ItemEffectVerified = true
 		return result, nil
 
 	case KindBuy:

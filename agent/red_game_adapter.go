@@ -112,8 +112,8 @@ func (a *redObjectiveAdapter) SettlePostcondition(o Objective) error {
 	return settleObjectivePostcondition(a.m, o)
 }
 
-func (a *redObjectiveAdapter) VerifyPostcondition(o Objective, final Observation, _ ObjectiveResult) error {
-	_, err := objectivePostcondition(o, final)
+func (a *redObjectiveAdapter) VerifyPostcondition(o Objective, initial, final Observation, result ObjectiveResult) error {
+	_, err := verifyObjectivePostcondition(o, initial, final, result)
 	if o.Kind == KindGoTo && errors.Is(err, ErrObjectivePostconditionFailed) {
 		dest, ok := skill.Place(o.Place)
 		if ok {

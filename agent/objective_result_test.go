@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/maestroi/pokepilot/emu"
+	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/skill"
 	"github.com/maestroi/pokepilot/world"
 )
@@ -208,14 +209,110 @@ func TestObjectivePostconditionGoToExactDestination(t *testing.T) {
 
 func TestObjectivePostconditionCatchUsesPokedexOwned(t *testing.T) {
 	o := Objective{Kind: KindCatch, Species: "pidgey"}
-	owned := Observation{PokedexOwned: []SpeciesID{"pidgey"}}
+	owned := Observation{Controllable: true, PokedexOwned: []SpeciesID{"pidgey"}}
 	if out, err := objectivePostcondition(o, owned); err != nil || out != OutcomeCompleted {
 		t.Fatalf("owned catch = %q, %v; want completed", out, err)
 	}
 
-	out, err := objectivePostcondition(o, Observation{Party: []PartyMon{{Species: "pidgey"}}})
+	out, err := objectivePostcondition(o, Observation{Controllable: true, Party: []PartyMon{{Species: "pidgey"}}})
 	if out != OutcomePostconditionFailed || !errors.Is(err, ErrObjectivePostconditionFailed) {
 		t.Fatalf("party-only catch = %q, %v; want postcondition_failed", out, err)
+	}
+}
+
+func TestVerifyObjectivePostconditionRepresentativeEvidence(t *testing.T) {
+	won := state.ResultWon
+	cases := []struct {
+		name    string
+		o       Objective
+		initial Observation
+		final   Observation
+		result  ObjectiveResult
+	}{
+		{
+			name: "talk",
+			o:    Objective{Kind: KindTalk, X: 4, Y: 5},
+			final: Observation{Controllable: true},
+			result: ObjectiveResult{InteractionPresses: 2},
+		},
+		{
+			name: "trainer",
+			o:    Objective{Kind: KindTrainer, X: 7, Y: 8},
+			final: Observation{Controllable: true, MapObjects: []MapObject{{X: 7, Y: 8, Kind: "trainer", Defeated: true}}},
+		},
+		{
+			name: "starter",
+			o:    Objective{Kind: KindStarter, Starter: skill.StarterSquirtle},
+			final: Observation{Controllable: true, Party: []PartyMon{{Species: "squirtle", Level: 5}}},
+		},
+		{
+			name: "train",
+			o:    Objective{Kind: KindTrain, Slot: 1, Level: 20},
+			final: Observation{Controllable: true, Party: []PartyMon{{Level: 25}, {Level: 20}}},
+		},
+		{
+			name: "heal",
+			o:    Objective{Kind: KindHeal},
+			final: Observation{Controllable: true, Party: []PartyMon{{HP: 30, MaxHP: 30}, {HP: 22, MaxHP: 22}}},
+		},
+		{
+			name:    "gym",
+			o:       Objective{Kind: KindGym},
+			initial: Observation{Badges: []string{"boulder"}},
+			final:   Observation{Controllable: true, Badges: []string{"boulder", "cascade"}},
+			result:  ObjectiveResult{GymOutcome: &won},
+		},
+		{
+			name:    "pickup",
+			o:       Objective{Kind: KindPickup, Item: "potion", X: 3, Y: 4},
+			initial: Observation{Bag: []Item{{Name: "potion", Quantity: 1}}},
+			final:   Observation{Controllable: true, Bag: []Item{{Name: "potion", Quantity: 2}}},
+		},
+		{
+			name:   "item",
+			o:      Objective{Kind: KindUseItem, Item: "potion", Slot: 0},
+			final:  Observation{Controllable: true},
+			result: ObjectiveResult{ItemEffectVerified: true},
+		},
+		{
+			name:    "buy",
+			o:       Objective{Kind: KindBuy, Item: "poke ball", Qty: 3},
+			initial: Observation{Bag: []Item{{Name: "poke ball", Quantity: 2}}},
+			final:   Observation{Controllable: true, Bag: []Item{{Name: "poke ball", Quantity: 5}}},
+		},
+		{
+			name: "progress",
+			o:    Objective{Kind: KindProgress, Progress: ProgressID("door_unlocked")},
+			final: Observation{Controllable: true, Story: ProgressState{{ID: ProgressID("door_unlocked"), Complete: true}}},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			out, err := verifyObjectivePostcondition(tc.o, tc.initial, tc.final, tc.result)
+			if err != nil || out != OutcomeCompleted {
+				t.Fatalf("postcondition = %q, %v; want completed", out, err)
+			}
+		})
+	}
+}
+
+func TestVerifyObjectivePostconditionFailsClosedWithoutEvidence(t *testing.T) {
+	stable := Observation{Controllable: true}
+	out, err := verifyObjectivePostcondition(
+		Objective{Kind: KindUseItem, Item: "potion", Slot: 0},
+		Observation{}, stable, ObjectiveResult{},
+	)
+	if out != OutcomePostconditionFailed || !errors.Is(err, ErrObjectivePostconditionFailed) {
+		t.Fatalf("item without effect evidence = %q, %v; want postcondition_failed", out, err)
+	}
+
+	out, err = verifyObjectivePostcondition(Objective{Kind: Kind(250)}, Observation{}, stable, ObjectiveResult{})
+	if out != OutcomePostconditionUnavailable || !errors.Is(err, ErrObjectivePostconditionUnavailable) {
+		t.Fatalf("unknown kind = %q, %v; want fail-closed postcondition_unavailable", out, err)
+	}
+	if actionFor(out) != actionStop {
+		t.Fatal("missing verifier must be terminal")
 	}
 }
 
@@ -229,10 +326,10 @@ func TestClassifyObjectiveOutcomePCStorageIsBlocked(t *testing.T) {
 	}
 }
 
-func TestObjectivePostconditionDefersToSkillForOtherKinds(t *testing.T) {
-	out, err := objectivePostcondition(Objective{Kind: KindUseItem, Item: "potion"}, Observation{})
-	if err != nil || out != OutcomeCompleted {
-		t.Fatalf("UseItem postcondition = %q, %v; want skill-owned completed", out, err)
+func TestObjectivePostconditionNoLongerDefersUnknownKindsToExecutorNil(t *testing.T) {
+	out, err := objectivePostcondition(Objective{Kind: KindUseItem, Item: "potion"}, Observation{Controllable: true})
+	if out != OutcomePostconditionFailed || !errors.Is(err, ErrObjectivePostconditionFailed) {
+		t.Fatalf("UseItem without evidence = %q, %v; want postcondition_failed", out, err)
 	}
 }
 

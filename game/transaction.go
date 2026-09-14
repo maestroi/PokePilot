@@ -48,9 +48,10 @@ type Adapter[Objective any, Observation any, Result any] interface {
 	SettlePostcondition(Objective) error
 
 	// VerifyPostcondition checks the positive semantic success contract against
-	// the final settled observation. A nil error means the objective's claimed
-	// success is true in the world now.
-	VerifyPostcondition(Objective, Observation, Result) error
+	// the initial and final settled observations plus structured execution
+	// evidence. A nil error means the objective's claimed success is positively
+	// proven in the world now; executor nil alone is never sufficient evidence.
+	VerifyPostcondition(Objective, Observation, Observation, Result) error
 }
 
 // Transaction is the raw lifecycle evidence for one objective. It deliberately
@@ -121,7 +122,7 @@ func ExecuteTransaction[Objective any, Observation any, Result any](
 		tx.SettleErr == nil &&
 		tx.FinishBoundaryErr == nil &&
 		tx.FinalObservationErr == nil {
-		tx.PostconditionErr = a.VerifyPostcondition(o, tx.Final, tx.Result)
+		tx.PostconditionErr = a.VerifyPostcondition(o, tx.Initial, tx.Final, tx.Result)
 	}
 
 	return tx
