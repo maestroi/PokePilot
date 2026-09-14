@@ -5,6 +5,7 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
+	"github.com/maestroi/pokepilot/red/sym"
 )
 
 const (
@@ -53,7 +54,7 @@ func ReceiveLaprasGift(m *emu.Emu, romData []byte, policy MovePolicy) (CatchResu
 		if err := resolveSilphRival(m, romData, policy); err != nil {
 			return CatchResult{}, fmt.Errorf("skill: ReceiveLaprasGift: resolve Silph rival: %w", err)
 		}
-	} else if m.Peek8(0xd35e) != silphCo7FMap { // wCurMap; use the same live check as the Silph route below.
+	} else if m.Peek8(sym.CurMap) != silphCo7FMap {
 		if err := reachSilphRivalRoom(m, romData, policy); err != nil {
 			return CatchResult{}, fmt.Errorf("skill: ReceiveLaprasGift: return to rival room: %w", err)
 		}
