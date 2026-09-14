@@ -105,9 +105,10 @@ func (k *runKnowledgePolicy) roundBoundary(round int, obs Observation, known *Kn
 }
 
 type runRoundBoundaryDecision struct {
-	Stop       Stop
-	GoalStatus *GoalStatus
-	Watchdog   runWatchdogDecision
+	Stop          Stop
+	GoalStatus    *GoalStatus
+	Watchdog      runWatchdogDecision
+	PolicyApplied bool
 }
 
 // beginRound centralizes the ordering of all pre-planner policy. That ordering
@@ -121,6 +122,7 @@ func (e *runEngine) beginRound(p Planner, round int, obs Observation, known *Kno
 	if decision.Stop != StopUnset {
 		return decision
 	}
+	decision.PolicyApplied = true
 
 	var maps []uint8
 	if seenMaps != nil {
