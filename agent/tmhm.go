@@ -37,7 +37,8 @@ func offerWithTMHM(m *emu.Emu, romData []byte, obs Observation, known *Knowledge
 	out = insertPartyTrainingObjectives(obs, known, out, func(slot, targetLevel int) (TrainingEstimate, error) {
 		return currentPartyTrainingEstimate(&mem, romData, obs.Map, slot, targetLevel, trainSessionBattleBudget)
 	})
-	return appendTMHMObjectives(romData, party, state.DecodeInventory(&mem), out)
+	out = appendTMHMObjectives(romData, party, state.DecodeInventory(&mem), out)
+	return prioritizeDexCleanupObjectives(obs, known, out)
 }
 
 const (
