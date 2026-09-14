@@ -41,11 +41,12 @@ func main() {
 	planner := flag.String("planner", "scripted", "how to choose objectives: scripted or llm")
 	seed := flag.Int64("seed", 0, "diverge this run's luck by burning seed-derived idle frames after boot; 0 replays bit-identically")
 	maxRounds := flag.Int("max-rounds", llmMaxRounds, "optional emergency objective cap for one llm run; 0 means no round cap")
-	goal := flag.String("goal", defaultGoal, "structured goal: badges:N | reach:<place> | level:N | item:<name> | elite-four")
+	goal := flag.String("goal", defaultGoal, "structured goal: badges:N | reach:<place> | level:N | item:<name> | elite-four | dex")
 	checkpointDir := flag.String("checkpoint-dir", "", "directory for the per-objective save-state ring")
 	llmProfile := flag.String("llm-profile", "", "llm endpoint routing: default, gpu, or auto (GPU primary with LAN fallback)")
 	resume := flag.String("resume", "", "resume an llm run from a round checkpoint, checkpoint directory, or run directory")
 	flag.Parse()
+	*goal = resolveLocalGoal(*goal)
 
 	romPath := os.Getenv("POKEMON_RED_ROM")
 	if romPath == "" {
