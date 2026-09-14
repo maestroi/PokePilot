@@ -82,12 +82,14 @@ func TestCeladonProgressionPlaces(t *testing.T) {
 		"route 10":                   {Map: 0x15, X: 11, Y: 20},
 		"rock tunnel 1f":             {Map: 0x52, X: 15, Y: 4},
 		"lavender town":              {Map: 0x04, X: 3, Y: 6},
+		"lavender pokemon center":    {Map: 0x8D, X: 3, Y: 3},
 		"route 8":                    {Map: 0x13, X: 13, Y: 4},
 		"underground path route 8":   {Map: 0x50, X: 4, Y: 5},
 		"underground path west east": {Map: 0x79, X: 46, Y: 2},
 		"underground path route 7":   {Map: 0x4D, X: 4, Y: 5},
 		"route 7":                    {Map: 0x12, X: 5, Y: 12},
 		"celadon city":               {Map: 0x06, X: 41, Y: 10},
+		"celadon pokemon center":     {Map: 0x85, X: 3, Y: 3},
 		"celadon gym":                {Map: 0x86, X: 4, Y: 4},
 	}
 	for name, dest := range want {
@@ -99,5 +101,66 @@ func TestCeladonProgressionPlaces(t *testing.T) {
 		if got != dest {
 			t.Errorf("Place(%q) = %+v, want %+v", name, got, dest)
 		}
+	}
+}
+
+func TestPostSurgeCeladonTravelStagesAtLavender(t *testing.T) {
+	lavender, ok := Place("lavender town")
+	if !ok {
+		t.Fatal(`Place("lavender town") missing`)
+	}
+	center, ok := Place("celadon pokemon center")
+	if !ok {
+		t.Fatal(`Place("celadon pokemon center") missing`)
+	}
+
+	var got []Destination
+	err := travelPostSurgeCeladon(0x03, func(dest Destination) (TravelResult, error) {
+		got = append(got, dest)
+		return TravelResult{}, nil
+	})
+	if err != nil {
+		t.Fatalf("travelPostSurgeCeladon: %v", err)
+	}
+	if len(got) != 2 || got[0] != lavender || got[1] != center {
+		t.Fatalf("travel legs = %+v, want Lavender then Celadon Center", got)
+	}
+}
+
+// Issue #330 failed on Route 8 (map 0x13) after the old single TravelFlee call
+// had accumulated ten legitimate dialogue recoveries since Cerulean. A retry
+// from there must keep going west; walking back to Lavender merely to reset the
+// counter would turn the semantic objective into a backtracking loop.
+func TestPostSurgeCeladonTravelResumeAfterLavenderSkipsBacktrack(t *testing.T) {
+	center, ok := Place("celadon pokemon center")
+	if !ok {
+		t.Fatal(`Place("celadon pokemon center") missing`)
+	}
+
+	var got []Destination
+	err := travelPostSurgeCeladon(0x13, func(dest Destination) (TravelResult, error) {
+		got = append(got, dest)
+		return TravelResult{}, nil
+	})
+	if err != nil {
+		t.Fatalf("travelPostSurgeCeladon: %v", err)
+	}
+	if len(got) != 1 || got[0] != center {
+		t.Fatalf("travel legs = %+v, want only Celadon Center from Route 8", got)
+	}
+}
+
+func TestPostSurgeCeladonTravelPreservesLegFailure(t *testing.T) {
+	boom := errors.New("route failed")
+	calls := 0
+	err := travelPostSurgeCeladon(0x03, func(dest Destination) (TravelResult, error) {
+		calls++
+		return TravelResult{}, boom
+	})
+	if !errors.Is(err, boom) {
+		t.Fatalf("err = %v, want wrapped leg failure", err)
+	}
+	if calls != 1 {
+		t.Fatalf("travel called %d times, want 1 after first-leg failure", calls)
 	}
 }
