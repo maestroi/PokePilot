@@ -73,12 +73,12 @@ func TestMemoryRoundTrip(t *testing.T) {
 			t.Errorf("Places missing %q", name)
 		}
 	}
-	for _, s := range []string{
-		Objective{Kind: KindProgress, Progress: redProgressPokedexAcquired}.String(),
-		Objective{Kind: KindTalk, X: 6, Y: 3}.String(),
+	for _, objective := range []Objective{
+		{Kind: KindProgress, Progress: redProgressPokedexAcquired},
+		{Kind: KindTalk, X: 6, Y: 3},
 	} {
-		if got.Knowledge.Completed[s] == 0 {
-			t.Errorf("Completed missing %q", s)
+		if got.Knowledge.completionCount(objective) == 0 {
+			t.Errorf("Completed missing semantic objective %q", objective)
 		}
 	}
 	if len(got.Knowledge.Talked[0x28]) != 1 || !got.Knowledge.Talked[0x28][[2]uint8{6, 3}] {
