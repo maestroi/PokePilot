@@ -182,7 +182,7 @@ func (f *runFailurePolicy) recoverable(obj Objective, result ObjectiveResult, st
 	if strategic {
 		f.consecutive++
 		reason, key, terminal := recoverableFailureReplan(
-			f.escalated, obj, result, f.consecutive, f.maxConsecutive,
+			f.escalated, obj, result, blackedOut, retreated, f.consecutive, f.maxConsecutive,
 		)
 		if terminal {
 			return runFailureDecision{Stop: StopFailed}
