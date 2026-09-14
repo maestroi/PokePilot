@@ -427,6 +427,7 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 			if !unroutable[name] {
 				routable = append(routable, name)
 			}
+		}
 		if len(routable) > 0 {
 			placeNames = routable
 		}
