@@ -25,8 +25,9 @@ import {
   shortRunID,
   splitSpectatorRuns
 } from './model'
+import PartyProgress from './PartyProgress.vue'
 import { policyLabel } from '../shared/playstyle'
-import { bagItemsLabel, bagMeter, dexDetail, dexMeter, milestonesLabel } from '../shared/playerProgress'
+import { bagMeter, dexMeter } from '../shared/playerProgress'
 
 interface ActivityItem {
   id: string
@@ -458,24 +459,7 @@ function activityTime(item: ActivityItem): string {
             </div>
             <p v-else class="py-5 text-center text-sm text-slate-500">Party data is not available yet.</p>
 
-            <div v-if="selectedRun.player?.badges?.length" class="mt-3 flex flex-wrap gap-1.5 border-t border-white/8 pt-3">
-              <StatusBadge v-for="badge in selectedRun.player.badges" :key="badge" tone="warning">{{ badge }}</StatusBadge>
-            </div>
-
-            <div v-if="bagMeter(selectedRun.player) || dexMeter(selectedRun.player)" class="mt-3 space-y-1 border-t border-white/8 pt-3 text-xs leading-5">
-              <p v-if="bagMeter(selectedRun.player)" class="min-w-0 truncate" :title="bagItemsLabel(selectedRun.player)">
-                <span class="text-slate-500">Bag {{ bagMeter(selectedRun.player) }}</span>
-                <span class="text-slate-300"> {{ bagItemsLabel(selectedRun.player) }}</span>
-              </p>
-              <p v-if="dexDetail(selectedRun.player)" class="min-w-0 truncate">
-                <span class="text-slate-500">Dex {{ dexMeter(selectedRun.player) }}</span>
-                <span class="text-slate-300"> {{ dexDetail(selectedRun.player) }}</span>
-              </p>
-              <p class="min-w-0 truncate" :title="milestonesLabel(selectedRun.player)">
-                <span class="text-slate-500">Milestones</span>
-                <span class="text-slate-300"> {{ milestonesLabel(selectedRun.player) }}</span>
-              </p>
-            </div>
+            <PartyProgress :run="selectedRun" />
           </Panel>
 
           <Panel title="Activity" description="A lightweight watch feed built from public run changes." compact>
