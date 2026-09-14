@@ -71,6 +71,39 @@ func filterRedScriptedTalkObjectives(obs Observation, out []Objective) []Objecti
 	return filtered
 }
 
+// redGenericTalkOwnedElsewhere is the single Red ownership test shared by the
+// offer filter and the executor. The offer filter is the normal path, but the
+// executor must enforce the same boundary as a last line of defense for stale
+// checkpoints, direct/repro objectives, or future callers that bypass Offer.
+// Generic Talk is never allowed to enter a known service or gameplay choice.
+func redGenericTalkOwnedElsewhere(romData []byte, mapID, x, y uint8) bool {
+	if redOwnedChoiceActor(mapID, x, y) {
+		return true
+	}
+	actors, err := rom.SpecialInteractionActors(romData, mapID)
+	if err != nil {
+		return false
+	}
+	for _, actor := range actors {
+		if actor.X == x && actor.Y == y {
+			return true
+		}
+	}
+	return false
+}
+
+// validateRedTalkObjective fails before controller input when a generic Talk
+// targets an interaction owned by a semantic service/choice action. Wrapping
+// ErrNoDialogue deliberately maps this to the existing recoverable "blocked"
+// outcome: the boundary is still stable and Run can replan instead of turning
+// a stale/unsafe Talk objective into a terminal unanswered choice.
+func validateRedTalkObjective(romData []byte, mapID uint8, o Objective) error {
+	if o.Kind != KindTalk || !redGenericTalkOwnedElsewhere(romData, mapID, o.X, o.Y) {
+		return nil
+	}
+	return fmt.Errorf("interaction at (%d,%d) is owned by a semantic action, not generic talk: %w", o.X, o.Y, skill.ErrNoDialogue)
+}
+
 // filterRedServiceTalkObjectives removes actors whose A-button interaction is
 // owned by another semantic action instead of ordinary NPC dialogue. The ROM's
 // TX_SCRIPT_* dispatch bytes identify nurses, Mart clerks, cable-club staff and
@@ -79,22 +112,10 @@ func filterRedScriptedTalkObjectives(obs Observation, out []Objective) []Objecti
 // aides are owned by semantic reward objectives, while paid/other choice actors
 // are suppressed until their owning verb executes them deliberately.
 func filterRedServiceTalkObjectives(romData []byte, obs Observation, out []Objective) []Objective {
-	special := map[[2]uint8]bool{}
-	if actors, err := rom.SpecialInteractionActors(romData, obs.Map); err == nil {
-		for _, actor := range actors {
-			special[[2]uint8{actor.X, actor.Y}] = true
-		}
-	}
-
 	filtered := make([]Objective, 0, len(out))
 	for _, o := range out {
-		if o.Kind == KindTalk {
-			if special[[2]uint8{o.X, o.Y}] {
-				continue
-			}
-			if redOwnedChoiceActor(obs.Map, o.X, o.Y) {
-				continue
-			}
+		if o.Kind == KindTalk && redGenericTalkOwnedElsewhere(romData, obs.Map, o.X, o.Y) {
+			continue
 		}
 		filtered = append(filtered, o)
 	}
