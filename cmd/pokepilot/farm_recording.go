@@ -194,6 +194,7 @@ func finishRunWithRecording(m *emu.Emu, client *farm.Client, spec farm.Spec, rea
 		}
 	}
 	appendFailureReproArtifacts(&report, failures)
+	appendWatchdogReproArtifact(&report, checkpointDir)
 
 	if len(recording) > 0 {
 		remote, configured, uploadErr := uploadFarmRecording(spec, recording)
