@@ -171,8 +171,8 @@ func TestPublishPortableReproCreatesReleaseAndAssetIdempotently(t *testing.T) {
 
 func TestRenderPortableReproUsesOfflineBundleCommand(t *testing.T) {
 	asset := portableReproAsset{
-		Name: "repro-issue-41-deadbeef.zip",
-		URL: "https://github.test/o/r/releases/download/farm-repros/repro-issue-41-deadbeef.zip",
+		Name:   "repro-issue-41-deadbeef.zip",
+		URL:    "https://github.test/o/r/releases/download/farm-repros/repro-issue-41-deadbeef.zip",
 		SHA256: strings.Repeat("f", 64), Size: 123,
 	}
 	body := renderPortableReproAsset(asset)
