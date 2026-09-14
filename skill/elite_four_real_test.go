@@ -11,8 +11,10 @@ import (
 )
 
 // TestEliteFourProgressionQualification is the private checkpoint qualification
-// for #38. Public CI has neither the commercial ROM nor the derived checkpoint,
-// so it skips there; the self-hosted qualification runner supplies both.
+// for the staged League path. Public CI has neither the commercial ROM nor the
+// derived checkpoint, so it skips there; the self-hosted qualification runner
+// supplies both. Each bounded stage must positively commit its own semantic
+// fact before the next stage is allowed to run.
 func TestEliteFourProgressionQualification(t *testing.T) {
 	if testing.Short() {
 		t.Skip("ROM-backed qualification")
@@ -47,15 +49,37 @@ func TestEliteFourProgressionQualification(t *testing.T) {
 		t.Fatal("checkpoint already has main-story completion")
 	}
 
-	if err := EliteFourProgression(m, m.ROM(), StatAwareMove(m.ROM())); err != nil {
-		t.Fatalf("EliteFourProgression: %v", err)
+	policy := StatAwareMove(m.ROM())
+	stages := []struct {
+		name string
+		run  func() error
+		done func(state.StoryFacts) bool
+	}{
+		{"LeagueStartChallenge", func() error { return LeagueStartChallenge(m, m.ROM(), policy) }, func(f state.StoryFacts) bool { return f.LeagueChallengeStarted }},
+		{"LeagueDefeatLorelei", func() error { return LeagueDefeatLorelei(m, m.ROM(), policy) }, func(f state.StoryFacts) bool { return f.LeagueLoreleiDefeated }},
+		{"LeagueDefeatBruno", func() error { return LeagueDefeatBruno(m, m.ROM(), policy) }, func(f state.StoryFacts) bool { return f.LeagueBrunoDefeated }},
+		{"LeagueDefeatAgatha", func() error { return LeagueDefeatAgatha(m, m.ROM(), policy) }, func(f state.StoryFacts) bool { return f.LeagueAgathaDefeated }},
+		{"LeagueDefeatLance", func() error { return LeagueDefeatLance(m, m.ROM(), policy) }, func(f state.StoryFacts) bool { return f.LeagueLanceDefeated }},
+		{"LeagueDefeatChampion", func() error { return LeagueDefeatChampion(m, m.ROM(), policy) }, func(f state.StoryFacts) bool { return f.LeagueChampionDefeated }},
+		{"LeagueFinishHallOfFame", func() error { return LeagueFinishHallOfFame(m) }, func(f state.StoryFacts) bool { return f.MainStoryComplete }},
+	}
+	for _, stage := range stages {
+		if err := stage.run(); err != nil {
+			t.Fatalf("%s: %v", stage.name, err)
+		}
+		var afterStage state.Mem
+		state.Snapshot(m, &afterStage)
+		facts := state.DecodeStoryFacts(&afterStage, state.DecodeInventory(&afterStage))
+		if !stage.done(facts) {
+			t.Fatalf("%s did not commit its semantic postcondition: %+v", stage.name, facts)
+		}
 	}
 
 	var after state.Mem
 	state.Snapshot(m, &after)
 	afterFacts := state.DecodeStoryFacts(&after, state.DecodeInventory(&after))
 	if !afterFacts.MainStoryComplete {
-		t.Fatalf("main story not complete after League progression: %+v", afterFacts)
+		t.Fatalf("main story not complete after staged League progression: %+v", afterFacts)
 	}
 	if !afterFacts.LeagueChampionDefeated {
 		t.Fatalf("Champion semantic did not remain true after Hall of Fame reset: %+v", afterFacts)
