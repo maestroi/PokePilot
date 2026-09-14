@@ -180,6 +180,7 @@ func EvaluateGoal(g Goal, obs Observation) GoalStatus {
 			if strings.EqualFold(item.Name, g.Target) && item.Quantity > 0 {
 				return GoalStatus{Complete: true, Summary: fmt.Sprintf("have %s x%d", item.Name, item.Quantity), Current: item.Quantity, Target: 1}
 			}
+		}
 		return GoalStatus{Summary: fmt.Sprintf("acquire %s", g.Target), Target: 1}
 	default:
 		return GoalStatus{Summary: "unknown goal"}
