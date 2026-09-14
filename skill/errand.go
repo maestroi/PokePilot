@@ -60,6 +60,15 @@ const route22AfterBattleBudget = 10000
 // Route 22's own. 40 is headroom, in the style of parcelRouteMaxBattles.
 const route22MaxBattles = 40
 
+// route22Trigger is the coordinate-trigger tile for the Route 22 rival
+// battle. Route22DefaultScript (pokered/scripts/Route22.asm:58) fires when
+// EVENT_ROUTE22_RIVAL_WANTS_BATTLE is set and the player stands on (29,4)
+// or (29,5). This is the tile GetPokeBalls must land on to start the
+// cutscene; it is deliberately NOT the "route 22" Place destination, which
+// is the safe approach tile (27,5) used by generic navigation (GoTo) that
+// does not own the battle.
+var route22Trigger = Destination{Map: 0x21, X: 29, Y: 5}
+
 // pokeballTalkBudget bounds the .give_poke_balls talk: CheckAndSetEvent,
 // GiveItem, and the two-box explanation (OaksLab.asm:1022-1029). It is a
 // budget, not a prediction; exhausting it is an error carrying the map,
@@ -293,10 +302,7 @@ func GetPokeBalls(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	// in the decomp (Route22.asm:167), so if it is not set the battle must
 	// be fought and won; there is no other way to reach .give_poke_balls.
 	if !state.HasEvent(&mem, state.EventBeatRoute22Rival1stBattle) {
-		dest, ok := Place("route 22")
-		if !ok {
-			return fmt.Errorf("skill: GetPokeBalls: Place \"route 22\" not found")
-		}
+		dest := route22Trigger
 		if _, err := Travel(m, romData, dest, policy, route22MaxBattles); err != nil {
 			if m.Peek8(sym.CurMap) != dest.Map {
 				return fmt.Errorf("skill: GetPokeBalls: %w", err)

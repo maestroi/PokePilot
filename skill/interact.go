@@ -15,6 +15,14 @@ import (
 // ErrNoDialogue reports that pressing A did not open a text box.
 var ErrNoDialogue = errors.New("skill: A did not open a text box")
 
+// ErrTalkStartedBattle reports that pressing A started a battle instead of
+// opening a text box. The Route 22 rival is encoded as a plain person
+// text-script, but standing beside him and pressing A runs his
+// trainer-battle script, which never opens a dialogue box. Classifying that
+// as ErrNoDialogue hides the real outcome: the objective leaked a battle it
+// does not own. Callers must not retry a battle they did not start.
+var ErrTalkStartedBattle = errors.New("skill: A started a battle instead of a text box")
+
 // ponytail: the budgets below are empirical, measured on this ROM. The
 // A-press cadence in Talk matters: the same TV sign took 10 presses at a
 // 40-frame cadence and 6 at a 100-frame cadence, so each press is followed
@@ -114,6 +122,12 @@ func Talk(m *emu.Emu) (int, error) {
 	if _, err := m.StepUntil(talkOpenBudget, func(m *emu.Emu) bool {
 		return m.Peek8(sym.FontLoaded) != 0
 	}); err != nil {
+		// No dialogue box opened. If a battle started in the meantime, that is
+		// a distinct outcome from "nothing happened": the objective leaked a
+		// battle it does not own, and retrying would fight it blind.
+		if m.Peek8(sym.IsInBattle) != 0 {
+			return 0, ErrTalkStartedBattle
+		}
 		return 0, ErrNoDialogue
 	}
 
