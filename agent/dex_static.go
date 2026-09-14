@@ -45,7 +45,12 @@ func staticObjectiveQuarantined(known *Knowledge, objective Objective) bool {
 	if known == nil {
 		return false
 	}
-	failure, ok := known.Failures[objective.String()]
+	failure, ok := known.Failures[objectiveStorageKey(objective)]
+	if !ok {
+		// One-release compatibility for v4 checkpoint memory and tests that
+		// still seed the old presentation-keyed map directly.
+		failure, ok = known.Failures[objective.String()]
+	}
 	if !ok {
 		return false
 	}
