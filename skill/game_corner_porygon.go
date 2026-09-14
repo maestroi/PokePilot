@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	gameCornerMap          uint8 = 0x87
+	porygonGameCornerMap   uint8 = 0x87
 	gameCornerPrizeRoomMap uint8 = 0x89
 	celadonDinerMap        uint8 = 0x8A
 
@@ -36,7 +36,7 @@ const (
 
 func init() {
 	interactionPlaces[gameCornerCoinCasePlace] = Destination{Map: celadonDinerMap, X: 0, Y: 2}
-	interactionPlaces[gameCornerCoinClerkPlace] = Destination{Map: gameCornerMap, X: 5, Y: 7}
+	interactionPlaces[gameCornerCoinClerkPlace] = Destination{Map: porygonGameCornerMap, X: 5, Y: 7}
 	interactionPlaces[gameCornerPorygonPlace] = Destination{Map: gameCornerPrizeRoomMap, X: 4, Y: 3}
 }
 
@@ -46,7 +46,7 @@ func PorygonPrizePlace() string { return gameCornerPorygonPlace }
 // IsGameCornerDexActor keeps the coin clerk out of generic Talk. Buying coins
 // is a money-spending YES/NO transaction owned by the Porygon acquisition path.
 func IsGameCornerDexActor(mapID, x, y uint8) bool {
-	return mapID == gameCornerMap && x == coinClerkX && y == coinClerkY
+	return mapID == porygonGameCornerMap && x == coinClerkX && y == coinClerkY
 }
 
 // MaxPorygonCoinBudget is the worst-case cash required when the Coin Case is
