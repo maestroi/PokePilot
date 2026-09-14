@@ -75,6 +75,9 @@ type Grid struct {
 	// callers need not normalise.
 	tilePairs map[[2]uint8]bool
 	ledges    []rom.Ledge
+	// counterTiles are this map's tileset's 3 counter-tile ids (tileset
+	// entry +7..+9), 0xff where unused. See IsCounterTile.
+	counterTiles [3]uint8
 }
 
 // Passable reports whether a step from (fx,fy) to (tx,ty) is one the game
@@ -155,6 +158,32 @@ func (g *Grid) FieldTile(x, y int) (uint8, bool) {
 		return 0, false
 	}
 	return g.fieldTile[y*g.Width+x], true
+}
+
+// IsCounterTile reports whether the collision tile at (x, y) is one of this
+// map's tileset's counter tiles — the ones IsSpriteOrSignInFrontOfPlayer's
+// extendRangeOverCounter (pokered.sym home/overworld.asm:1118,
+// wTilesetTalkingOverTiles) lets a player talk across even though the tile
+// itself is not walkable. A Pokemon Center or Mart counter is built from
+// these: the clerk stands two tiles from the player, with the counter tile
+// between, never one tile away as an ordinary NPC does.
+//
+// MEASURED on Pewter Pokemon Center (map 0x3a): the nurse's counter tile ids
+// (0x18,0x19,0x1e) sit in the bottom-left/collision subtile at (3,2), not
+// the top-left/field subtile (which reads 0x08, unrelated) — despite the
+// field subtile being what CUT and other field actions compare. The
+// counter's blocking behavior and its talk-range id are the same subtile.
+func (g *Grid) IsCounterTile(x, y int) bool {
+	t, ok := g.Tile(x, y)
+	if !ok {
+		return false
+	}
+	for _, c := range g.counterTiles {
+		if c == t {
+			return true
+		}
+	}
+	return false
 }
 
 // Set sets the walkability of the game-tile coordinate (x, y).
@@ -238,6 +267,7 @@ func BuildFromBlocksForTraversal(romData []byte, h rom.MapHeader, blocks []byte,
 	tsBank := romData[entryOff]
 	blockPtr := uint16(romData[entryOff+1]) | uint16(romData[entryOff+2])<<8
 	collPtr := uint16(romData[entryOff+5]) | uint16(romData[entryOff+6])<<8
+	g.counterTiles = [3]uint8{romData[entryOff+7], romData[entryOff+8], romData[entryOff+9]}
 
 	// Read the tileset's walkable-tile list. The list lives in bank 0 (the
 	// Home section); the game dereferences it with no bank switch.
