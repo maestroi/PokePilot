@@ -168,7 +168,7 @@ func handlerWithServices(wallBase, replayBase, token string) http.Handler {
 		json.NewEncoder(res).Encode(map[string]string{"version": version}) //nolint:errcheck
 	})
 	mux.HandleFunc("GET /v1/dashboard", proxy(wallBase, true))
-	mux.HandleFunc("GET /v1/stats", statsHandler(wallBase))
+	mux.HandleFunc("GET /v1/stats", outcomesStatsHandler(wallBase))
 	mux.HandleFunc("GET /v1/triage", proxy(wallBase, true))
 	mux.HandleFunc("POST /v1/specs", proxy(wallBase, false))
 	mux.HandleFunc("POST /v1/triage/{key}/investigate", proxy(wallBase, false))

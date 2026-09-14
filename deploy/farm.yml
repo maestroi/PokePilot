@@ -40,6 +40,8 @@ services:
       - /var/lib/pokewall/dumps
       - -state
       - /var/lib/pokewall/state.json
+      - -catalog
+      - /var/lib/pokewall/catalog.db
       - -issues-api
       - "http://issues:8080"
       - -issues-project

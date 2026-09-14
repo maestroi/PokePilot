@@ -113,3 +113,7 @@ includes the latest persisted planner question/decision, finish trace tail, and
 early/final progress snapshots. It does **not** fabricate a decision for every
 historical frame. A future semantic event stream can add arbitrary frame-level
 LLM/state inspection without changing the artifact/replay ownership model above.
+
+## Run catalog
+
+Production PokéWall keeps finished run metadata in `/var/lib/pokewall/catalog.db`. SQLite is the query index; finish dumps/checkpoints remain artifacts with their normal retention policy. RAM and `state.json` keep only live runs plus any finished resume ancestors still required by an active child.
