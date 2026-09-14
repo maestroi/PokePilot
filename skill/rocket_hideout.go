@@ -47,18 +47,12 @@ var (
 )
 
 // RocketHideoutAvailable reports whether the Rocket Hideout story objective
-// is actionable from the player's current map. Celadon's Pokemon Center is
-// included because a blackout from one of the Rocket fights respawns there;
-// the next round must be able to resume the same objective rather than lose
-// the story verb exactly when recovery is needed most.
+// is actionable from the player's current map. Keep it available throughout
+// the Celadon progression area so a run that just defeated Erika can continue
+// directly from CELADON_GYM instead of losing the Silph Scope story objective.
+// This also preserves resumability from Celadon interiors and Hideout floors.
 func RocketHideoutAvailable(mapID uint8) bool {
-	switch mapID {
-	case celadonCityMap, celadonPokemonCenterMap, gameCornerMap,
-		rocketHideoutB1FMap, rocketHideoutB2FMap, rocketHideoutB3FMap, rocketHideoutB4FMap:
-		return true
-	default:
-		return false
-	}
+	return postSurgeCeladonArea(mapID)
 }
 
 // RocketHideout clears the Celadon Game Corner hideout and collects the
