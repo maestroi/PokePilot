@@ -71,12 +71,15 @@ func (f *fakeAdapter) SettlePostcondition(string) error {
 	return f.settleErr
 }
 
-func (f *fakeAdapter) VerifyPostcondition(_ string, observation string, _ string) error {
+func (f *fakeAdapter) VerifyPostcondition(_ string, initial, final, _ string) error {
 	f.calls = append(f.calls, "verify")
 	if f.verifyErr != nil {
 		return f.verifyErr
 	}
-	if observation != "room-b" {
+	if initial != "room-a" {
+		return errors.New("verifier did not receive initial observation")
+	}
+	if final != "room-b" {
 		return errors.New("not in room-b")
 	}
 	return nil

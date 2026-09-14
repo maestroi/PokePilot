@@ -77,14 +77,17 @@ func (f *fakeObjectiveGame) SettlePostcondition(Objective) error {
 	return f.settleErr
 }
 
-func (f *fakeObjectiveGame) VerifyPostcondition(o Objective, final Observation, _ ObjectiveResult) error {
+func (f *fakeObjectiveGame) VerifyPostcondition(o Objective, initial, final Observation, result ObjectiveResult) error {
 	f.calls = append(f.calls, "verify")
 	if f.verifyErr != nil {
 		return f.verifyErr
 	}
 	if o.Kind == KindProgress {
-		_, err := objectivePostcondition(o, final)
+		_, err := verifyObjectivePostcondition(o, initial, final, result)
 		return err
+	}
+	if initial.MapName != "ROOM_A" {
+		return errors.New("fake game did not receive initial ROOM_A state")
 	}
 	if final.MapName != "ROOM_B" || !final.Controllable {
 		return errors.New("fake game did not reach ROOM_B")

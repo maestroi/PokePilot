@@ -36,8 +36,15 @@ type ObjectiveResult struct {
 	Travel       *skill.TravelResult `json:"travel,omitempty"`
 	Train        *skill.TrainResult  `json:"train,omitempty"`
 	GymOutcome   *state.BattleResult `json:"gym_outcome,omitempty"`
-	Recovered    bool                `json:"recovered,omitempty"`
-	Terminal     bool                `json:"terminal,omitempty"`
+	// InteractionPresses is positive evidence that a talk objective actually
+	// opened and paged dialogue. Zero is not success evidence.
+	InteractionPresses int `json:"interaction_presses,omitempty"`
+	// ItemEffectVerified is set only after a field-item/TM/HM/evolution helper
+	// has independently verified the requested effect. This lets postcondition
+	// policy distinguish semantic evidence from a bare nil executor error.
+	ItemEffectVerified bool `json:"item_effect_verified,omitempty"`
+	Recovered          bool `json:"recovered,omitempty"`
+	Terminal           bool `json:"terminal,omitempty"`
 }
 
 var (
@@ -95,26 +102,34 @@ func finalizeObjectiveResult(o Objective, result ObjectiveResult, final Observat
 	return result
 }
 
+// objectivePostcondition is retained as the compact final-state helper used by
+// focused navigation/progression/catch tests. Runtime verification uses
+// verifyObjectivePostcondition so before/after deltas and structured execution
+// evidence are available for every executable kind.
 func objectivePostcondition(o Objective, final Observation) (Outcome, error) {
+	return verifyObjectivePostcondition(o, Observation{}, final, ObjectiveResult{})
+}
+
+// verifyObjectivePostcondition positively proves success for every executable
+// objective kind. The default is deliberately fail-closed: adding a new kind
+// without a verifier can never inherit success from a nil executor error.
+func verifyObjectivePostcondition(o Objective, initial, final Observation, result ObjectiveResult) (Outcome, error) {
+	if !stableObjectiveBoundary(final) {
+		return OutcomePostconditionUnavailable, fmt.Errorf(
+			"%w: %s ended at %s (%d,%d), controllable=%v inBattle=%v",
+			ErrObjectivePostconditionUnavailable, o, final.Location, final.X, final.Y, final.Controllable, final.InBattle)
+	}
+
 	switch o.Kind {
 	case KindProgress:
-		if !final.Controllable || final.InBattle {
-			return OutcomePostconditionUnavailable, fmt.Errorf(
-				"%w: %s ended at %s (%d,%d), controllable=%v inBattle=%v",
-				ErrObjectivePostconditionUnavailable, o, final.Location, final.X, final.Y, final.Controllable, final.InBattle)
-		}
 		if !final.Story.Has(o.Progress) {
 			return OutcomePostconditionFailed, fmt.Errorf(
 				"%w: %s finished but progression fact %q is false",
 				ErrObjectivePostconditionFailed, o, o.Progress)
 		}
 		return OutcomeCompleted, nil
+
 	case KindGoTo:
-		if !final.Controllable || final.InBattle {
-			return OutcomePostconditionUnavailable, fmt.Errorf(
-				"%w: %s ended on map %02x at (%d,%d), controllable=%v inBattle=%v",
-				ErrObjectivePostconditionUnavailable, o, final.Map, final.X, final.Y, final.Controllable, final.InBattle)
-		}
 		dest, ok := skill.Place(string(o.Place))
 		if !ok {
 			return OutcomePostconditionFailed, fmt.Errorf("%w: destination %q no longer resolves", ErrObjectivePostconditionFailed, o.Place)
@@ -125,6 +140,96 @@ func objectivePostcondition(o Objective, final Observation) (Outcome, error) {
 				ErrObjectivePostconditionFailed, o, final.Map, final.X, final.Y, dest.Map, dest.X, dest.Y)
 		}
 		return OutcomeCompleted, nil
+
+	case KindTalk:
+		if result.InteractionPresses <= 0 {
+			return OutcomePostconditionFailed, fmt.Errorf(
+				"%w: %s returned without evidence that dialogue opened and was paged",
+				ErrObjectivePostconditionFailed, o)
+		}
+		return OutcomeCompleted, nil
+
+	case KindTrainer:
+		for _, object := range final.MapObjects {
+			if object.X == o.X && object.Y == o.Y && object.Kind == "trainer" && object.Defeated {
+				return OutcomeCompleted, nil
+			}
+		}
+		return OutcomePostconditionFailed, fmt.Errorf(
+			"%w: %s finished but trainer (%d,%d) is not observably defeated",
+			ErrObjectivePostconditionFailed, o, o.X, o.Y)
+
+	case KindStarter:
+		want := SpeciesID(starterName(o.Starter))
+		for _, mon := range final.Party {
+			if mon.Species == want {
+				return OutcomeCompleted, nil
+			}
+		}
+		return OutcomePostconditionFailed, fmt.Errorf(
+			"%w: %s finished but party does not contain starter %s",
+			ErrObjectivePostconditionFailed, o, want)
+
+	case KindTrain:
+		if o.Intent == "dex-evolution" {
+			if o.Slot < 0 || o.Slot >= len(final.Party) {
+				return OutcomePostconditionFailed, fmt.Errorf(
+					"%w: %s target slot %d is absent from final party of %d",
+					ErrObjectivePostconditionFailed, o, o.Slot, len(final.Party))
+			}
+			if final.Party[o.Slot].Level < o.Level {
+				return OutcomePostconditionFailed, fmt.Errorf(
+					"%w: %s finished at level %d in slot %d, want at least %d",
+					ErrObjectivePostconditionFailed, o, final.Party[o.Slot].Level, o.Slot, o.Level)
+			}
+			return OutcomeCompleted, nil
+		}
+		if o.Species != "" {
+			for _, mon := range final.Party {
+				if mon.Species == o.Species && mon.Level >= o.Level {
+					return OutcomeCompleted, nil
+				}
+			}
+			return OutcomePostconditionFailed, fmt.Errorf(
+				"%w: %s finished but %s is not in the party at level %d+",
+				ErrObjectivePostconditionFailed, o, o.Species, o.Level)
+		}
+		if o.Slot < 0 || o.Slot >= len(final.Party) || final.Party[o.Slot].Level < o.Level {
+			got := uint8(0)
+			if o.Slot >= 0 && o.Slot < len(final.Party) {
+				got = final.Party[o.Slot].Level
+			}
+			return OutcomePostconditionFailed, fmt.Errorf(
+				"%w: %s finished with slot %d at level %d, want at least %d",
+				ErrObjectivePostconditionFailed, o, o.Slot, got, o.Level)
+		}
+		return OutcomeCompleted, nil
+
+	case KindHeal:
+		if len(final.Party) == 0 {
+			return OutcomePostconditionFailed, fmt.Errorf("%w: %s finished with an empty party", ErrObjectivePostconditionFailed, o)
+		}
+		for i, mon := range final.Party {
+			if mon.MaxHP == 0 || mon.HP != mon.MaxHP || mon.Status != "" {
+				return OutcomePostconditionFailed, fmt.Errorf(
+					"%w: %s left party slot %d at %d/%d HP status=%q",
+					ErrObjectivePostconditionFailed, o, i, mon.HP, mon.MaxHP, mon.Status)
+			}
+		}
+		return OutcomeCompleted, nil
+
+	case KindGym:
+		if result.GymOutcome == nil || *result.GymOutcome != state.ResultWon {
+			return OutcomePostconditionFailed, fmt.Errorf(
+				"%w: %s has no verified winning battle result", ErrObjectivePostconditionFailed, o)
+		}
+		if len(final.Badges) <= len(initial.Badges) {
+			return OutcomePostconditionFailed, fmt.Errorf(
+				"%w: %s won but badge count did not increase (%d -> %d)",
+				ErrObjectivePostconditionFailed, o, len(initial.Badges), len(final.Badges))
+		}
+		return OutcomeCompleted, nil
+
 	case KindCatch:
 		if !pokedexOwnedSet(final)[o.Species] {
 			return OutcomePostconditionFailed, fmt.Errorf(
@@ -132,8 +237,40 @@ func objectivePostcondition(o Objective, final Observation) (Outcome, error) {
 				ErrObjectivePostconditionFailed, o, o.Species)
 		}
 		return OutcomeCompleted, nil
-	default:
+
+	case KindPickup:
+		before := bagItemQuantity(initial.Bag, o.Item)
+		after := bagItemQuantity(final.Bag, o.Item)
+		if after != before+1 {
+			return OutcomePostconditionFailed, fmt.Errorf(
+				"%w: %s finished but bag quantity changed %d -> %d, want %d",
+				ErrObjectivePostconditionFailed, o, before, after, before+1)
+		}
 		return OutcomeCompleted, nil
+
+	case KindUseItem:
+		if !result.ItemEffectVerified {
+			return OutcomePostconditionFailed, fmt.Errorf(
+				"%w: %s returned without verified item/TM/HM effect evidence",
+				ErrObjectivePostconditionFailed, o)
+		}
+		return OutcomeCompleted, nil
+
+	case KindBuy:
+		before := bagItemQuantity(initial.Bag, o.Item)
+		after := bagItemQuantity(final.Bag, o.Item)
+		want := before + o.Qty
+		if after != want {
+			return OutcomePostconditionFailed, fmt.Errorf(
+				"%w: %s finished but bag quantity changed %d -> %d, want %d",
+				ErrObjectivePostconditionFailed, o, before, after, want)
+		}
+		return OutcomeCompleted, nil
+
+	default:
+		return OutcomePostconditionUnavailable, fmt.Errorf(
+			"%w: no positive verifier registered for executable objective kind %d",
+			ErrObjectivePostconditionUnavailable, int(o.Kind))
 	}
 }
 
