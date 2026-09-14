@@ -96,6 +96,17 @@ func (a *redObjectiveAdapter) resolveItemID(id ItemID) (uint8, bool) {
 }
 
 func (a *redObjectiveAdapter) NormalizeBoundary() error {
+	// Boundary cleanup stays fail-closed for arbitrary choices. The one safe
+	// exception is a known route-gate prompt left behind by interrupted travel:
+	// declining it with NO is reversible and does not spend money or advance
+	// the prior objective. If recognized, normalize any closing text normally.
+	declined, err := skill.DeclineKnownRouteGate(a.m)
+	if err != nil {
+		return fmt.Errorf("cancel leftover route gate: %w", err)
+	}
+	if declined {
+		return normalizeObjectiveBoundary(a.m)
+	}
 	return normalizeObjectiveBoundary(a.m)
 }
 
