@@ -26,6 +26,14 @@ const (
 	trainWildBank        uint8  = 0x03
 	trainWildAddr        uint16 = 0x4EEB
 	trainTilesetEntryLen        = 12
+	// FIRST_INDOOR_MAP (pokered/constants/map_constants.asm:68): maps at or
+	// above this id are indoor (caves, buildings) and roll grass encounters
+	// on every walkable tile, not just the tileset's grass tile.
+	trainFirstIndoorMap uint8 = 0x25
+	// FOREST tileset (pokered/constants/tileset_constants.asm:9): the one
+	// tileset whose "indoor" maps (Viridian Forest, Safari Zone) keep the
+	// grass-tile rule instead of rolling on every tile.
+	trainForestTileset uint8 = 3
 )
 
 // TrainResult reports what a grind session did.
@@ -538,17 +546,21 @@ func grassCells(romData []byte, mapID uint8) ([]cell, *world.Grid, error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("skill: Train: map %#04x: %w", mapID, err)
 	}
-	// The game rolls grass encounters only where BOTH the tile underfoot
-	// matches the tileset's grass id AND the map's wild data has a
-	// non-zero grass rate (pokered/engine/battle/wild_encounters.asm).
-	// The tile match alone lies: Pallet Town's top edge stands on its
-	// tileset's grass tile but points at NothingWildMons, so the game stays
-	// quiet there and a session would ping-pong those tiles forever.
+	// The game rolls a grass encounter where the map's wild data has a
+	// non-zero grass rate AND the tile underfoot is an encounter tile: the
+	// tileset's grass tile on outdoor maps, but EVERY tile on indoor maps
+	// (caves, buildings) whose tileset is not FOREST. The FOREST tileset
+	// (Viridian Forest, Safari Zone) keeps the grass-tile rule even though
+	// its map id is "indoor". The grass rate alone lies: Pallet Town's top
+	// edge stands on its tileset's grass tile but points at NothingWildMons,
+	// so the game stays quiet there and a session would ping-pong those tiles
+	// forever. (pokered/engine/battle/wild_encounters.asm:38-48.)
 	if rate, err := wildGrassRate(romData, mapID); err != nil {
 		return nil, nil, err
 	} else if rate == 0 {
 		return nil, nil, nil
 	}
+	allTiles := mapID >= trainFirstIndoorMap && h.Tileset != trainForestTileset
 	tsOff, err := bankedOff(trainTilesetsBank, trainTilesetsAddr)
 	if err != nil {
 		return nil, nil, err
@@ -575,6 +587,12 @@ func grassCells(romData []byte, mapID uint8) ([]cell, *world.Grid, error) {
 	for y := 0; y < grid.Height; y++ {
 		for x := 0; x < grid.Width; x++ {
 			if !grid.Walkable(x, y) {
+				continue
+			}
+			// Indoor non-FOREST maps roll on every walkable tile; only
+			// outdoor and FOREST maps require the grass-tile match.
+			if allTiles {
+				out = append(out, cell{x, y})
 				continue
 			}
 			bx, by := x/2, y/2
