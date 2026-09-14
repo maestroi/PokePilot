@@ -44,6 +44,11 @@ type githubReleaseAsset struct {
 	BrowserDownloadURL string `json:"browser_download_url"`
 }
 
+type githubIssueComment struct {
+	ID   int64  `json:"id"`
+	Body string `json:"body"`
+}
+
 type portableReproBlob struct {
 	asset portableReproAsset
 	data  []byte
@@ -304,10 +309,13 @@ func (c *githubClient) ensurePortableReproLink(ctx context.Context, issue *githu
 	marker := portableReproMarker(manifest.ExternalID)
 	section := marker + "\n" + renderPortableReproAsset(asset)
 	if strings.Contains(issue.Body, externalIDMarker(manifest.ExternalID)) {
-		if strings.Contains(issue.Body, marker) {
+		body := stripLegacyReproDetails(issue.Body)
+		if !strings.Contains(body, marker) {
+			body = strings.TrimSpace(body) + "\n\n" + section
+		}
+		if body == issue.Body {
 			return nil
 		}
-		body := truncateUTF8(issue.Body, 60<<10) + "\n\n" + section
 		if err := c.doJSON(ctx, http.MethodPatch, c.repoPath("issues", strconv.FormatInt(issue.Number, 10)), map[string]string{"body": body}, nil); err != nil {
 			return err
 		}
@@ -316,22 +324,50 @@ func (c *githubClient) ensurePortableReproLink(ctx context.Context, issue *githu
 	}
 
 	path := c.repoPath("issues", strconv.FormatInt(issue.Number, 10), "comments")
+	var occurrence *githubIssueComment
 	for page := 1; ; page++ {
-		var comments []githubComment
+		var comments []githubIssueComment
 		if err := c.doJSON(ctx, http.MethodGet, path+"?per_page=100&page="+strconv.Itoa(page), nil, &comments); err != nil {
 			return err
 		}
-		for _, comment := range comments {
+		for i := range comments {
+			comment := &comments[i]
+			if strings.Contains(comment.Body, externalIDMarker(manifest.ExternalID)) {
+				copy := *comment
+				occurrence = &copy
+				break
+			}
 			if strings.Contains(comment.Body, marker) {
 				return nil
 			}
 		}
-		if len(comments) < 100 {
+		if occurrence != nil || len(comments) < 100 {
 			break
 		}
 	}
-	body := marker + "\n### Portable repro bundle\n\nNew farm occurrence: `" + markdownCode(manifest.ExternalID) + "`.\n\n" + renderPortableReproAsset(asset)
+	if occurrence != nil {
+		body := stripLegacyReproDetails(occurrence.Body)
+		if !strings.Contains(body, marker) {
+			body = strings.TrimSpace(body) + "\n\n" + section
+		}
+		if body == occurrence.Body {
+			return nil
+		}
+		return c.doJSON(ctx, http.MethodPatch, c.repoPath("issues", "comments", strconv.FormatInt(occurrence.ID, 10)), map[string]string{"body": body}, nil)
+	}
+
+	body := externalIDMarker(manifest.ExternalID) + "\n### Farm regression recurrence\n\n" + section
 	return c.doJSON(ctx, http.MethodPost, path, map[string]string{"body": body}, nil)
+}
+
+func stripLegacyReproDetails(body string) string {
+	cut := len(body)
+	for _, heading := range []string{"\n## Reproduce\n", "\n## Captured artifacts\n"} {
+		if i := strings.Index(body, heading); i >= 0 && i < cut {
+			cut = i
+		}
+	}
+	return strings.TrimSpace(body[:cut])
 }
 
 func renderPortableReproAsset(asset portableReproAsset) string {
@@ -342,8 +378,9 @@ func renderPortableReproAsset(asset portableReproAsset) string {
 	fmt.Fprintf(&b, "- **Bytes:** %d\n", asset.Size)
 	b.WriteString("- **Contents:** exact checkpoint state + paired agent knowledge + bounded repro metadata; **no ROM**.\n\n")
 	b.WriteString("```bash\n")
-	fmt.Fprintf(&b, "go run ./cmd/pokerepro -bundle %s -play\n", shellArg(asset.URL))
-	b.WriteString("```\n")
+	fmt.Fprintf(&b, "go run ./cmd/pokerepro -bundle %s\n", shellArg(asset.URL))
+	b.WriteString("```\n\n")
+	b.WriteString("This verifies and materializes the exact checkpoint locally. Add `-play` only when you want to launch the current checkout from it.\n")
 	return b.String()
 }
 
