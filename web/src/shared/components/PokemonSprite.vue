@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { browserPokemonAssetUrl } from '../pokemonAssetProxy'
 import { pokemonDexNumber, pokemonSpriteUrl } from '../pokemonAssets'
 
 const props = withDefaults(defineProps<{
@@ -12,7 +13,7 @@ const props = withDefaults(defineProps<{
 })
 
 const failed = ref(false)
-const src = computed(() => pokemonSpriteUrl(props.name))
+const src = computed(() => browserPokemonAssetUrl(pokemonSpriteUrl(props.name)))
 const dex = computed(() => pokemonDexNumber(props.name))
 const boxStyle = computed(() => ({ width: `${props.size}px`, height: `${props.size}px` }))
 
