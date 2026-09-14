@@ -119,7 +119,7 @@ func TestRunFailurePolicyConsecutiveFailuresAndSuccessReset(t *testing.T) {
 
 func TestRunFailurePolicyTrainingRetreatUsesLevelStreak(t *testing.T) {
 	policy := newRunFailurePolicy(2)
-	obj := Objective{Kind: KindTrain, Species: 25, Level: 10}
+	obj := Objective{Kind: KindTrain, Species: SpeciesID("pikachu"), Level: 10}
 	result := ObjectiveResult{Objective: obj, Outcome: OutcomeBlocked, Cause: FailureCauseID("train_retreat")}
 
 	if got := policy.recoverable(obj, result, false, true, false, 7); got.Stop != StopUnset || !got.Recovered {
