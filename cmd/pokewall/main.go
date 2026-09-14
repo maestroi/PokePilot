@@ -33,7 +33,8 @@ func main() {
 	dumpsDir := flag.String("dumps", "/var/lib/pokewall/dumps", "directory for durable finish dumps")
 	publishDir := flag.String("publish", "", "if set, also publish the dashboard (grid + live frames) to this directory for the browser-facing relay")
 	publishEvery := flag.Duration("publish-every", 2*time.Second, "how often the published dashboard is refreshed")
-	stateFile := flag.String("state", "", "if set, persist the tile map and queue here so a wall restart does not forget active runs")
+	stateFile := flag.String("state", "", "if set, persist live tiles, queue, issue links and outbox here so a wall restart does not forget active runs")
+	catalogPath := flag.String("catalog", "", "if set, persist the queryable run history in SQLite; finished tiles then leave RAM")
 	artifactRetention := flag.Duration("artifact-retention", defaultArtifactRetention, "how long finished-run dumps/checkpoints are kept locally; <=0 disables automatic retention")
 	artifactRetentionEvery := flag.Duration("artifact-retention-every", defaultArtifactSweepEvery, "how often local finished-run artifacts are expired")
 	issuesAPI := flag.String("issues-api", "", "issue sink API base")
@@ -57,6 +58,13 @@ func main() {
 			log.Fatalf("pokewall: cannot create state directory %s: %v", filepath.Dir(*stateFile), err)
 		}
 		wall.SetStatePath(*stateFile)
+	}
+	if *catalogPath != "" {
+		if err := wall.SetCatalogPath(*catalogPath); err != nil {
+			log.Fatalf("pokewall: open catalog %s: %v", *catalogPath, err)
+		}
+		defer wall.CloseCatalog() //nolint:errcheck // process exit closes the file descriptor too
+		go wall.RunCatalogSettlementSweep(5 * time.Second)
 	}
 	if client != nil {
 		// Persisted remote IDs are only meaningful for the sink that minted them.
@@ -93,7 +101,7 @@ func main() {
 
 	server := &http.Server{
 		Addr:              *httpAddr,
-		Handler:           runtimeOperatorHTTPHandler(wall),
+		Handler:           wall.catalogHTTPHandler(runtimeOperatorHTTPHandler(wall)),
 		ReadHeaderTimeout: serverReadHeaderTimeout,
 		IdleTimeout:       serverIdleTimeout,
 	}

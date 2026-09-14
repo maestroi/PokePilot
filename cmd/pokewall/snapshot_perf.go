@@ -113,10 +113,12 @@ func (w *Wall) snapshotRun(runID string) (tileRow, bool) {
 		return tileRow{}, false
 	}
 	w.mu.Lock()
-	defer w.mu.Unlock()
 	t := w.tiles[runID]
-	if t == nil {
-		return tileRow{}, false
+	if t != nil {
+		row := w.tileRowLocked(t)
+		w.mu.Unlock()
+		return row, true
 	}
-	return w.tileRowLocked(t), true
+	w.mu.Unlock()
+	return w.catalogSnapshotRun(runID)
 }

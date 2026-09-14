@@ -542,7 +542,7 @@ func (w *Wall) catalogHistorySnapshot(query runtimeDashboardQuery) (runtimeDashb
 
 func (c *runCatalog) historyFacets() (*runtimeHistoryFacets, error) {
 	load := func(column string) ([]string, error) {
-		rows, err := c.db.Query(`SELECT DISTINCT ` + column + ` FROM runs WHERE status=? AND ` + column + ` <> '' ORDER BY ` + column, statusDone)
+		rows, err := c.db.Query(`SELECT DISTINCT `+column+` FROM runs WHERE status=? AND `+column+` <> '' ORDER BY `+column, statusDone)
 		if err != nil {
 			return nil, err
 		}

@@ -227,5 +227,8 @@ func (w *Wall) expireLocalArtifacts(now time.Time, maxAge time.Duration) error {
 	if stateChanged {
 		w.saveState()
 	}
+	if err := w.expireCatalogArtifacts(now, maxAge); err != nil {
+		errs = append(errs, err)
+	}
 	return errors.Join(errs...)
 }
