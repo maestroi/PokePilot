@@ -1,5 +1,3 @@
-import { normalizeAssetName } from './pokemonAssets.ts'
-
 const BADGE_SPRITE_ROOT = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/badges'
 
 const KANTO_BADGES = [
@@ -42,8 +40,17 @@ const HM_BY_MOVE: Record<string, string> = {
 
 export type MilestoneVisualKind = 'badge' | 'item' | 'story'
 
+function normalizeProgressName(value: string): string {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[.'’]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
+
 export function badgeName(value: string): string | null {
-  const normalized = normalizeAssetName(value).replace(/-badge$/, '')
+  const normalized = normalizeProgressName(value).replace(/-badge$/, '')
   const badge = KANTO_BADGES.find((entry) => normalized === entry.slug || normalized.includes(entry.slug))
   return badge?.name || null
 }
@@ -64,7 +71,7 @@ export function milestoneBadgeName(value: string): string | null {
 }
 
 export function milestoneItemName(value: string): string | null {
-  const normalized = normalizeAssetName(value)
+  const normalized = normalizeProgressName(value)
   const machine = normalized.match(/(?:^|-)(tm|hm)-?(\d{1,2})(?:-|$)/)
   if (machine) return `${machine[1].toUpperCase()}${machine[2].padStart(2, '0')}`
 
