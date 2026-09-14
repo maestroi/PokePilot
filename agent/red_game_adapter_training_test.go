@@ -3,8 +3,6 @@ package agent
 import (
 	"errors"
 	"testing"
-
-	"github.com/maestroi/pokepilot/skill"
 )
 
 func TestRedTrainingPostconditionAllowsEvolutionAtTarget(t *testing.T) {
@@ -23,7 +21,7 @@ func TestRedTrainingPostconditionAllowsEvolutionAtTarget(t *testing.T) {
 			{Species: "metapod", Level: 7},
 		},
 	}
-	result := ObjectiveResult{Train: &skill.TrainResult{StartLevel: 6, EndLevel: 7, Reached: true}}
+	result := ObjectiveResult{Training: &TrainingEvidence{StartLevel: 6, EndLevel: 7, Reached: true}}
 
 	if _, err := verifyObjectivePostcondition(o, initial, final, result); !errors.Is(err, ErrObjectivePostconditionFailed) {
 		t.Fatalf("generic verifier = %v, want species mismatch before Red-specific evolution proof", err)
@@ -50,7 +48,7 @@ func TestRedTrainingEvolutionFallbackRequiresReachedEvidence(t *testing.T) {
 			{Species: "metapod", Level: 7},
 		},
 	}
-	result := ObjectiveResult{Train: &skill.TrainResult{StartLevel: 6, EndLevel: 7, Reached: false}}
+	result := ObjectiveResult{Training: &TrainingEvidence{StartLevel: 6, EndLevel: 7, Reached: false}}
 
 	adapter := &redObjectiveAdapter{}
 	if err := adapter.VerifyPostcondition(o, initial, final, result); !errors.Is(err, ErrObjectivePostconditionFailed) {
@@ -74,7 +72,7 @@ func TestRedTrainingEvolutionFallbackResolvesStaleSlotHint(t *testing.T) {
 			{Species: "metapod", Level: 7},
 		},
 	}
-	result := ObjectiveResult{Train: &skill.TrainResult{StartLevel: 6, EndLevel: 7, Reached: true}}
+	result := ObjectiveResult{Training: &TrainingEvidence{StartLevel: 6, EndLevel: 7, Reached: true}}
 
 	if !redTrainingReachedThroughEvolution(o, initial, final, result) {
 		t.Fatal("evolution fallback did not mirror species-based slot resolution")
