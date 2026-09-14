@@ -90,11 +90,56 @@ func TestAppendDexGiftObjectivesRequiresCardKeyForLapras(t *testing.T) {
 	}
 }
 
+func TestAppendDexGiftObjectivesOffersOnlyOneFightingDojoChoice(t *testing.T) {
+	dest, ok := skill.Place("fighting dojo hitmonlee")
+	if !ok {
+		t.Fatal("fighting dojo hitmonlee place missing")
+	}
+	obs := Observation{
+		Map: dest.Map,
+		Dex: DexCatalog{Targets: []DexEntry{
+			{
+				Species: "hitmonlee",
+				Sources: []DexSource{{Kind: AcquireGift, Place: "fighting dojo hitmonlee", ExclusiveGroup: "fighting_dojo"}},
+			},
+			{
+				Species: "hitmonchan",
+				Sources: []DexSource{{Kind: AcquireGift, Place: "fighting dojo hitmonchan", ExclusiveGroup: "fighting_dojo"}},
+			},
+		}},
+	}
+	got := appendDexGiftObjectives(obs, NewKnowledge(nil), nil)
+	if len(got) != 1 {
+		t.Fatalf("Dojo gift objectives = %+v, want exactly one exclusive branch", got)
+	}
+	if got[0].Species != "hitmonlee" || got[0].Place != "fighting dojo hitmonlee" || got[0].Intent != dexGiftIntent {
+		t.Fatalf("Dojo gift objective = %+v, want first deterministic branch", got[0])
+	}
+}
+
+func TestAppendDexGiftObjectivesSuppressesConsumedFightingDojoChoice(t *testing.T) {
+	dest, ok := skill.Place("fighting dojo hitmonchan")
+	if !ok {
+		t.Fatal("fighting dojo hitmonchan place missing")
+	}
+	obs := Observation{
+		Map:          dest.Map,
+		PokedexOwned: []SpeciesID{"hitmonlee"},
+		Dex: DexCatalog{Targets: []DexEntry{{
+			Species: "hitmonchan",
+			Sources: []DexSource{{Kind: AcquireGift, Place: "fighting dojo hitmonchan", ExclusiveGroup: "fighting_dojo"}},
+		}}},
+	}
+	if got := appendDexGiftObjectives(obs, NewKnowledge(nil), nil); len(got) != 0 {
+		t.Fatalf("consumed Dojo choice objectives = %+v, want none", got)
+	}
+}
+
 func TestAppendDexGiftObjectivesDoesNotInventUnimplementedGiftExecution(t *testing.T) {
 	obs := Observation{
 		Dex: DexCatalog{Targets: []DexEntry{{
-			Species: "hitmonlee",
-			Sources: []DexSource{{Kind: AcquireGift, Place: "fighting dojo"}},
+			Species: "porygon",
+			Sources: []DexSource{{Kind: AcquireGift, Requirement: "game_corner"}},
 		}}},
 	}
 	if got := appendDexGiftObjectives(obs, NewKnowledge(nil), nil); len(got) != 0 {
@@ -106,13 +151,15 @@ func TestRedScriptedSourcesLocatesExecutableGifts(t *testing.T) {
 	want := map[uint8]DexSource{
 		0x66: {Kind: AcquireGift, Place: "celadon mansion eevee"},
 		0x13: {Kind: AcquireGift, Place: "silph co lapras", Requirement: "card_key"},
+		0x2B: {Kind: AcquireGift, Place: "fighting dojo hitmonlee", ExclusiveGroup: "fighting_dojo"},
+		0x2C: {Kind: AcquireGift, Place: "fighting dojo hitmonchan", ExclusiveGroup: "fighting_dojo"},
 	}
 	for _, scripted := range redScriptedSources() {
 		expected, ok := want[scripted.internal]
 		if !ok {
 			continue
 		}
-		if scripted.source.Kind != expected.Kind || scripted.source.Place != expected.Place || scripted.source.Requirement != expected.Requirement {
+		if scripted.source.Kind != expected.Kind || scripted.source.Place != expected.Place || scripted.source.Requirement != expected.Requirement || scripted.source.ExclusiveGroup != expected.ExclusiveGroup {
 			t.Fatalf("scripted source %#02x = %+v, want %+v", scripted.internal, scripted.source, expected)
 		}
 		delete(want, scripted.internal)
