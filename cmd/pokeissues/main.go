@@ -81,6 +81,7 @@ type artifactMeta struct {
 	MediaType string
 	Size      int64
 	SHA256    string
+	Data      []byte
 }
 
 type reproCheckpoint struct {
@@ -275,7 +276,12 @@ func readArtifactMeta(part *multipart.Part) (artifactMeta, error) {
 		return artifactMeta{}, fmt.Errorf("unsafe artifact name %q", name)
 	}
 	h := sha256.New()
-	n, err := io.Copy(h, io.LimitReader(part, maxArtifactBytes+1))
+	var retained bytes.Buffer
+	writer := io.Writer(h)
+	if isPortableReproCandidate(name) {
+		writer = io.MultiWriter(h, &retained)
+	}
+	n, err := io.Copy(writer, io.LimitReader(part, maxArtifactBytes+1))
 	if err != nil {
 		return artifactMeta{}, err
 	}
@@ -287,6 +293,7 @@ func readArtifactMeta(part *multipart.Part) (artifactMeta, error) {
 		MediaType: part.Header.Get("Content-Type"),
 		Size:      n,
 		SHA256:    hex.EncodeToString(h.Sum(nil)),
+		Data:      retained.Bytes(),
 	}, nil
 }
 
@@ -337,6 +344,9 @@ func (c *githubClient) report(ctx context.Context, manifest issueReportManifest,
 			existing.State = "open"
 			existing.StateReason = "reopened"
 		}
+		if err := c.attachPortableRepro(ctx, &existing, manifest, artifacts); err != nil {
+			return out, false, err
+		}
 		return reportResponse(existing, manifest.ExternalID, true), false, nil
 	}
 
@@ -344,6 +354,9 @@ func (c *githubClient) report(ctx context.Context, manifest issueReportManifest,
 	payload := map[string]any{"title": manifest.Title, "body": body}
 	var created githubIssue
 	if err := c.doJSON(ctx, http.MethodPost, c.repoPath("issues"), payload, &created); err != nil {
+		return out, false, err
+	}
+	if err := c.attachPortableRepro(ctx, &created, manifest, artifacts); err != nil {
 		return out, false, err
 	}
 	return reportResponse(created, manifest.ExternalID, false), true, nil

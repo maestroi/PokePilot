@@ -99,10 +99,14 @@ in-stack `pokeissues` adapter. PokéWall still owns the durable outbox,
 fingerprinting, quarantine counters, regression detection, and status sync; the
 adapter only translates that protocol into GitHub operations.
 
-Set a fine-grained GitHub token in `.env` or `~/.config/pokepilot/env`:
+Set a fine-grained GitHub token in `.env` or `~/.config/pokepilot/env`, restrict
+it to `maestroi/PokePilot`, and grant **Issues: read/write** plus **Contents:
+read/write**. Contents write is used only for the long-lived `farm-repros`
+prerelease and its portable repro ZIP assets; no Actions or Workflows permission
+is required.
 
 ```sh
-POKEPILOT_GITHUB_TOKEN=<token with Issues: read/write on maestroi/PokePilot>
+POKEPILOT_GITHUB_TOKEN=<token with Issues + Contents read/write on maestroi/PokePilot>
 # Optional; these are the stack defaults:
 POKEPILOT_GITHUB_REPO=maestroi/PokePilot
 POKEPILOT_RUN_BASE_URL=https://pokemon.labstack.cc
@@ -111,11 +115,21 @@ POKEPILOT_RUN_BASE_URL=https://pokemon.labstack.cc
 Only the `issues` service receives `POKEPILOT_GITHUB_TOKEN`. The wall, runners,
 replay service, operator UI, and spectator never receive it.
 
-The adapter deliberately does **not** upload save states, screenshots,
-recordings, or raw trace/model payloads to the public repository. GitHub gets a
-safe issue summary, triage key/fingerprint, selected scalar evidence, run/debug
-link, and artifact name/size/hash metadata. The actual binary evidence remains
-in the existing PokePilot run store.
+GitHub gets a safe issue summary, triage key/fingerprint, selected scalar
+evidence, run/debug link, and artifact name/size/hash metadata. When a failure
+has a replayable objective checkpoint, `pokeissues` additionally publishes one
+content-addressed, ROM-free ZIP under the `farm-repros` prerelease. That bundle
+contains only the exact `round-*.state`, its paired `knowledge-vN.json`, bounded
+repro metadata, and the matching `failure-repro.json` contract when present.
+It deliberately excludes the ROM, credentials, recordings, screenshots, raw
+model exchanges, and unrelated run artifacts. Because this repository is
+public, the portable repro ZIP is public too; deeper/full binary evidence still
+remains in the PokePilot run store.
+
+The issue links the ZIP and includes an offline command such as
+`go run ./cmd/pokerepro -bundle <github-release-asset-url> -play`. That path
+verifies the embedded state/knowledge hashes and does not need access to
+`pokemon.labstack.cc`.
 
 Issue lifecycle maps cleanly back into the wall:
 
