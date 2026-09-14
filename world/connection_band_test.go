@@ -99,15 +99,19 @@ func TestBuildGraphSplitsCeruleanRoute4BorderByLandingComponent(t *testing.T) {
 		if end < start {
 			t.Fatalf("invalid band %d..%d on %+v", start, end, e)
 		}
-		got := g.entryComps[e]
+		// Check the immediate seam landing, not g.entryComps. BuildGraph expands
+		// entryComps through directed movement (for example Route 4's one-way
+		// ledges), so one literal landing component can correctly become a set
+		// such as [2 1 4] without this border band aggregating multiple tiles.
+		got := g.entryPortComps(e)
 		if len(got) > 1 {
-			t.Fatalf("band %d..%d aggregates multiple entry components %v", start, end, got)
+			t.Fatalf("band %d..%d aggregates multiple raw entry components %v", start, end, got)
 		}
 		if len(got) == 1 {
 			entries[got[0]] = true
 		}
 	}
 	if len(entries) < 2 {
-		t.Fatalf("Cerulean -> Route 4 walkable bands land in only %d component(s): %v; want multiple", len(entries), entries)
+		t.Fatalf("Cerulean -> Route 4 walkable bands land in only %d raw component(s): %v; want multiple", len(entries), entries)
 	}
 }
