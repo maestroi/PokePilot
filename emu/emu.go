@@ -39,9 +39,29 @@ type Emu struct {
 	nextFrame time.Time
 }
 
-// Open loads a ROM from disk. It performs no other disk I/O.
+// Open loads a ROM using the cartridge-inferred hardware model. It performs
+// no other disk I/O. Keep this behavior for diagnostics and historical states
+// that were created before production runs moved to CGB hardware.
 func Open(romPath string) (*Emu, error) {
-	e, err := gomeboy.New(gomeboy.WithROM(romPath), gomeboy.Headless())
+	return openModel(romPath, gomeboy.ModelAuto)
+}
+
+// OpenCGB loads a ROM as if it were inserted into a Game Boy Color. Original
+// DMG games such as Pokemon Red keep their normal game logic while GomeBoy
+// applies the CGB's built-in colorization palettes to rendered frames.
+func OpenCGB(romPath string) (*Emu, error) {
+	return openModel(romPath, gomeboy.ModelCGB)
+}
+
+func openModel(romPath string, model gomeboy.Model) (*Emu, error) {
+	opts := []gomeboy.Option{
+		gomeboy.WithROM(romPath),
+		gomeboy.Headless(),
+	}
+	if model != gomeboy.ModelAuto {
+		opts = append(opts, gomeboy.WithModel(model))
+	}
+	e, err := gomeboy.New(opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -112,8 +132,8 @@ func (m *Emu) Peek16(addr uint16) uint16 {
 	return m.e.Peek16(addr)
 }
 
-// PeekInto fills dst with len(dst) bytes starting at addr, without side
-// effects and without allocating.
+// PeekInto fills dst with len(dst) bytes starting at addr, without
+// side effects and without allocating.
 func (m *Emu) PeekInto(addr uint16, dst []byte) {
 	m.e.PeekInto(addr, dst)
 }
