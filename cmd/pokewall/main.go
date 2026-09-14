@@ -101,7 +101,7 @@ func main() {
 
 	server := &http.Server{
 		Addr:              *httpAddr,
-		Handler:           wall.catalogHTTPHandler(runtimeOperatorHTTPHandler(wall)),
+		Handler:           wall.catalogOperatorCompatibility(wall.catalogHTTPHandler(runtimeOperatorHTTPHandler(wall))),
 		ReadHeaderTimeout: serverReadHeaderTimeout,
 		IdleTimeout:       serverIdleTimeout,
 	}
