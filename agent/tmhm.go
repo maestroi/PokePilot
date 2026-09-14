@@ -18,6 +18,7 @@ import (
 // useful.
 func offerWithTMHM(m *emu.Emu, romData []byte, obs Observation, known *Knowledge) []Objective {
 	out := OfferWithProgression(obs, known, newRedObjectiveAdapter(m, romData))
+	out = filterRedProgressionStageObjectives(obs, out)
 	out = filterRedScriptedTalkObjectives(obs, out)
 	out = filterRedServiceTalkObjectives(romData, obs, out)
 	out = appendKnownCatchObjectives(romData, obs, known, out)
