@@ -17,6 +17,7 @@ var (
 	playStyleByRun      sync.Map // map[string]string
 	riskToleranceByRun  sync.Map // map[string]string
 	wildEncountersByRun sync.Map // map[string]string
+	goalProvidedByRun   sync.Map // map[string]bool; keeps explicit goal:"" distinct from omission
 )
 
 var currentRunPolicy struct {
@@ -44,6 +45,23 @@ func runPolicyValue(store *sync.Map, runID string) string {
 		return v.(string)
 	}
 	return ""
+}
+
+func rememberRunGoalProvided(runID string, provided bool) {
+	runID = strings.TrimSpace(runID)
+	if runID == "" {
+		return
+	}
+	if !provided {
+		goalProvidedByRun.Delete(runID)
+		return
+	}
+	goalProvidedByRun.Store(runID, true)
+}
+
+func runGoalProvided(runID string) bool {
+	_, ok := goalProvidedByRun.Load(strings.TrimSpace(runID))
+	return ok
 }
 
 // RememberPlayStyle records the wire value for a run. Empty style removes the
@@ -131,13 +149,18 @@ func CopyRunPolicy(fromRunID, toRunID string) {
 			RememberWildEncounters(toRunID, policy)
 		}
 	}
+	if !runGoalProvided(toRunID) && runGoalProvided(fromRunID) {
+		rememberRunGoalProvided(toRunID, true)
+	}
 }
 
 // MarshalJSON adds optional run-policy fields to Spec without forcing every
-// existing Spec literal in the repository to grow fields immediately.
+// existing Spec literal in the repository to grow fields immediately. An
+// explicitly supplied empty goal is re-inserted after normal omitempty
+// encoding so Free play survives wall -> runner leases.
 func (s Spec) MarshalJSON() ([]byte, error) {
 	type plain Spec
-	return json.Marshal(struct {
+	data, err := json.Marshal(struct {
 		plain
 		PlayStyle      string `json:"play_style,omitempty"`
 		RiskTolerance  string `json:"risk_tolerance,omitempty"`
@@ -148,6 +171,15 @@ func (s Spec) MarshalJSON() ([]byte, error) {
 		RiskTolerance:  RiskToleranceForRun(s.RunID),
 		WildEncounters: WildEncountersForRun(s.RunID),
 	})
+	if err != nil || s.Goal != "" || !runGoalProvided(s.RunID) {
+		return data, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return nil, err
+	}
+	fields["goal"] = json.RawMessage(`""`)
+	return json.Marshal(fields)
 }
 
 // UnmarshalJSON accepts both old specs and the extended run-policy wire and
@@ -173,6 +205,7 @@ func (s *Spec) UnmarshalJSON(data []byte) error {
 	RememberPlayStyle(s.RunID, in.PlayStyle)
 	RememberRiskTolerance(s.RunID, in.RiskTolerance)
 	RememberWildEncounters(s.RunID, in.WildEncounters)
+	rememberRunGoalProvided(s.RunID, goalProvided)
 	setCurrentRunPolicy(in.PlayStyle, in.RiskTolerance, in.WildEncounters)
 	if !goalProvided {
 		ApplyPlayStyleDefaultGoal(s)
