@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
 	"net/http"
 	"sort"
 	"strings"
@@ -213,16 +212,8 @@ func (w *Wall) catalogTriage() ([]triageGroup, error) {
 func (w *Wall) handleCatalogTriage(res http.ResponseWriter) {
 	groups, err := w.catalogTriage()
 	if err != nil {
-		if errors.Is(err, sqlErrClosed()) {
-			writeJSON(res, http.StatusServiceUnavailable, map[string]string{"error": "catalog unavailable"})
-			return
-		}
 		writeJSON(res, http.StatusInternalServerError, map[string]string{"error": "query catalog triage: " + err.Error()})
 		return
 	}
 	writeJSON(res, http.StatusOK, groups)
 }
-
-// sqlErrClosed is isolated for testability without exposing database/sql in
-// the rest of the compatibility wrapper.
-func sqlErrClosed() error { return errors.New("sql: database is closed") }
