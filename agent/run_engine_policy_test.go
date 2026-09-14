@@ -1,6 +1,10 @@
 package agent
 
-import "testing"
+import (
+	"testing"
+
+	gameruntime "github.com/maestroi/pokepilot/game"
+)
 
 func TestRunWatchdogStagnationReplansOnceThenStops(t *testing.T) {
 	known := NewKnowledge(nil)
@@ -120,15 +124,19 @@ func TestRunFailurePolicyStrategicFailureReplansOncePerStructuredState(t *testin
 	result := ObjectiveResult{
 		Objective: obj,
 		Outcome:   OutcomeBlocked,
-		Cause:     FailureCauseID("route_prerequisite_missing"),
-		Final:     Observation{Map: 1, X: 2, Y: 3},
+		Failure: &gameruntime.Failure{
+			Class:       gameruntime.FailureClassBlocked,
+			Cause:       "route_prerequisite_missing",
+			Recoverable: true,
+		},
+		Final: Observation{Map: 1, X: 2, Y: 3},
 	}
 
-	first := policy.recoverable(obj, result, false, false, true, 0)
+	first := policy.recoverable(obj, result, true, 0)
 	if first.Stop != StopUnset || first.ReplanReason != "objective_failed" || !first.Recovered {
 		t.Fatalf("first failure = %+v; want recovered strategic replan", first)
 	}
-	second := policy.recoverable(obj, result, false, false, true, 0)
+	second := policy.recoverable(obj, result, true, 0)
 	if second.Stop != StopFailed {
 		t.Fatalf("same structured failure = %+v; want StopFailed", second)
 	}
@@ -138,17 +146,35 @@ func TestRunFailurePolicyConsecutiveFailuresAndSuccessReset(t *testing.T) {
 	policy := newRunFailurePolicy(2)
 	firstObj := Objective{Kind: KindGoTo, Place: "route 1"}
 	secondObj := Objective{Kind: KindGoTo, Place: "route 2"}
-	first := ObjectiveResult{Objective: firstObj, Outcome: OutcomeBlocked, Cause: FailureCauseID("blocked_a"), Final: Observation{Map: 1}}
-	second := ObjectiveResult{Objective: secondObj, Outcome: OutcomeBlocked, Cause: FailureCauseID("blocked_b"), Final: Observation{Map: 2}}
+	first := ObjectiveResult{
+		Objective: firstObj,
+		Outcome:   OutcomeBlocked,
+		Failure: &gameruntime.Failure{
+			Class:       gameruntime.FailureClassBlocked,
+			Cause:       "blocked_a",
+			Recoverable: true,
+		},
+		Final: Observation{Map: 1},
+	}
+	second := ObjectiveResult{
+		Objective: secondObj,
+		Outcome:   OutcomeBlocked,
+		Failure: &gameruntime.Failure{
+			Class:       gameruntime.FailureClassBlocked,
+			Cause:       "blocked_b",
+			Recoverable: true,
+		},
+		Final: Observation{Map: 2},
+	}
 
-	if got := policy.recoverable(firstObj, first, false, false, false, 0); got.Stop != StopUnset || !got.Recovered {
+	if got := policy.recoverable(firstObj, first, false, 0); got.Stop != StopUnset || !got.Recovered {
 		t.Fatalf("first failure = %+v; want recovered", got)
 	}
 	policy.success()
-	if got := policy.recoverable(secondObj, second, false, false, false, 0); got.Stop != StopUnset || !got.Recovered {
+	if got := policy.recoverable(secondObj, second, false, 0); got.Stop != StopUnset || !got.Recovered {
 		t.Fatalf("failure after success = %+v; success should reset streak", got)
 	}
-	if got := policy.recoverable(firstObj, first, false, false, false, 0); got.Stop != StopFailed {
+	if got := policy.recoverable(firstObj, first, false, 0); got.Stop != StopFailed {
 		t.Fatalf("second consecutive failure = %+v; want StopFailed at budget", got)
 	}
 }
@@ -156,15 +182,23 @@ func TestRunFailurePolicyConsecutiveFailuresAndSuccessReset(t *testing.T) {
 func TestRunFailurePolicyTrainingRetreatUsesLevelStreak(t *testing.T) {
 	policy := newRunFailurePolicy(2)
 	obj := Objective{Kind: KindTrain, Species: SpeciesID("pikachu"), Level: 10}
-	result := ObjectiveResult{Objective: obj, Outcome: OutcomeBlocked, Cause: FailureCauseID("train_retreat")}
+	result := ObjectiveResult{
+		Objective: obj,
+		Outcome:   OutcomeBlocked,
+		Failure: &gameruntime.Failure{
+			Class:       gameruntime.FailureClassBlocked,
+			Cause:       "train_retreat",
+			Recoverable: true,
+		},
+	}
 
-	if got := policy.recoverable(obj, result, false, true, false, 7); got.Stop != StopUnset || !got.Recovered {
+	if got := policy.recoverable(obj, result, false, 7); got.Stop != StopUnset || !got.Recovered {
 		t.Fatalf("first retreat = %+v; want recovered", got)
 	}
-	if got := policy.recoverable(obj, result, false, true, false, 8); got.Stop != StopUnset || !got.Recovered {
+	if got := policy.recoverable(obj, result, false, 8); got.Stop != StopUnset || !got.Recovered {
 		t.Fatalf("retreat after level gain = %+v; want streak reset", got)
 	}
-	if got := policy.recoverable(obj, result, false, true, false, 8); got.Stop != StopFailed {
+	if got := policy.recoverable(obj, result, false, 8); got.Stop != StopFailed {
 		t.Fatalf("same-level retreat = %+v; want StopFailed at streak budget", got)
 	}
 }
