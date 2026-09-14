@@ -18,10 +18,22 @@ export interface PartyMon {
   status?: string
 }
 
+export interface BagItem {
+  name: string
+  quantity: number
+}
+
 export interface PlayerSnapshot {
   money: number
   badges?: string[]
   party: PartyMon[]
+  bag_used?: number
+  bag_capacity?: number
+  bag?: BagItem[]
+  dex_owned?: number
+  dex_seen?: number
+  dex_total?: number
+  milestones?: string[]
 }
 
 export interface MapSprite {

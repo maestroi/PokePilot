@@ -34,6 +34,7 @@ import {
   playStyleTagline,
   policyLabel
 } from '../shared/playstyle'
+import { bagItemsLabel, bagMeter, dexDetail, dexMeter, milestonesLabel } from '../shared/playerProgress'
 
 const params = new URLSearchParams(window.location.search)
 const selectedRunID = ref(params.get('run') || '')
@@ -101,6 +102,12 @@ const partySlots = computed<(PartyMon | null)[]>(() => {
   return Array.from({ length: 6 }, (_, index) => members[index] || null)
 })
 const badges = computed(() => selectedRun.value?.player?.badges ?? [])
+const bagLabel = computed(() => bagMeter(selectedRun.value?.player))
+const dexLabel = computed(() => dexMeter(selectedRun.value?.player))
+const dexInfo = computed(() => dexDetail(selectedRun.value?.player))
+const bagList = computed(() => bagItemsLabel(selectedRun.value?.player))
+const milestoneList = computed(() => milestonesLabel(selectedRun.value?.player))
+const showProgressLists = computed(() => Boolean(bagLabel.value || dexLabel.value))
 const goalProgress = computed(() => {
   const stats = selectedRun.value?.stats
   if (stats?.goal_complete) return 100
@@ -410,26 +417,47 @@ function warnPlay(stats: DashboardStats | undefined, key: string): boolean {
           <section class="flex min-h-0 min-w-0 flex-col bg-[var(--poke-panel)]">
             <header class="flex h-8 shrink-0 items-center justify-between border-b border-[var(--poke-border)] bg-[#0f141c] px-2.5">
               <h3 class="text-xs font-semibold text-white">Game state</h3>
-              <span class="font-mono text-[10px] text-[var(--poke-amber)]">₽{{ Number(selectedRun.player?.money || 0).toLocaleString() }} · {{ badges.length ? badges.join(', ') : 'no badges' }}</span>
+              <span class="flex max-w-[70%] flex-wrap justify-end gap-x-1.5 font-mono text-[10px] text-[var(--poke-amber)]">
+                <span>₽{{ Number(selectedRun.player?.money || 0).toLocaleString() }}</span>
+                <span v-if="bagLabel">bag {{ bagLabel }}</span>
+                <span v-if="dexLabel">dex {{ dexLabel }}</span>
+                <span>{{ badges.length ? badges.join(', ') : 'no badges' }}</span>
+              </span>
             </header>
-            <div class="grid min-h-52 flex-1 grid-cols-2 gap-px overflow-auto bg-[var(--poke-border)] xl:min-h-0">
-              <div
-                v-for="(mon, index) in partySlots"
-                :key="index"
-                :class="[mon ? 'bg-[var(--poke-panel)]' : 'bg-[var(--poke-panel)] text-[var(--poke-dim)]', 'grid min-h-[38px] grid-cols-[minmax(0,1fr)_auto] content-center gap-x-1.5 gap-y-0.5 px-1.5 py-1 text-[10px]']"
-              >
-                <template v-if="mon">
-                  <strong class="truncate text-[var(--poke-text)]">{{ mon.name }}</strong>
-                  <span>Lv.{{ mon.level }}</span>
-                  <span>{{ mon.hp }}/{{ mon.max_hp }}</span>
-                  <span v-if="mon.status" class="text-[var(--poke-red)]">{{ mon.status }}</span>
-                  <span v-else />
-                  <div class="col-span-2 h-0.5 bg-[#263240]"><div :class="['h-full', hpTone(mon)]" :style="{ width: `${hpPercent(mon)}%` }" /></div>
-                </template>
-                <template v-else>
-                  <span>Empty slot</span>
-                  <span class="font-mono">{{ index + 1 }}/6</span>
-                </template>
+            <div class="flex min-h-52 flex-1 flex-col overflow-auto xl:min-h-0">
+              <div class="grid flex-1 grid-cols-2 gap-px bg-[var(--poke-border)]">
+                <div
+                  v-for="(mon, index) in partySlots"
+                  :key="index"
+                  :class="[mon ? 'bg-[var(--poke-panel)]' : 'bg-[var(--poke-panel)] text-[var(--poke-dim)]', 'grid min-h-[38px] grid-cols-[minmax(0,1fr)_auto] content-center gap-x-1.5 gap-y-0.5 px-1.5 py-1 text-[10px]']"
+                >
+                  <template v-if="mon">
+                    <strong class="truncate text-[var(--poke-text)]">{{ mon.name }}</strong>
+                    <span>Lv.{{ mon.level }}</span>
+                    <span>{{ mon.hp }}/{{ mon.max_hp }}</span>
+                    <span v-if="mon.status" class="text-[var(--poke-red)]">{{ mon.status }}</span>
+                    <span v-else />
+                    <div class="col-span-2 h-0.5 bg-[#263240]"><div :class="['h-full', hpTone(mon)]" :style="{ width: `${hpPercent(mon)}%` }" /></div>
+                  </template>
+                  <template v-else>
+                    <span>Empty slot</span>
+                    <span class="font-mono">{{ index + 1 }}/6</span>
+                  </template>
+                </div>
+              </div>
+              <div v-if="showProgressLists" class="space-y-0.5 border-t border-[var(--poke-border)] bg-[#0f141c] px-1.5 py-1 text-[10px] leading-4">
+                <p v-if="bagLabel" class="min-w-0 truncate" :title="bagList">
+                  <span class="text-[var(--poke-muted)]">Bag {{ bagLabel }}</span>
+                  <span class="text-[var(--poke-text)]"> {{ bagList }}</span>
+                </p>
+                <p v-if="dexInfo" class="min-w-0 truncate">
+                  <span class="text-[var(--poke-muted)]">Dex {{ dexLabel }}</span>
+                  <span class="text-[var(--poke-text)]"> {{ dexInfo }}</span>
+                </p>
+                <p class="min-w-0 truncate" :title="milestoneList">
+                  <span class="text-[var(--poke-muted)]">Milestones</span>
+                  <span class="text-[var(--poke-text)]"> {{ milestoneList }}</span>
+                </p>
               </div>
             </div>
           </section>

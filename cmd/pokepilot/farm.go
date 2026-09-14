@@ -18,7 +18,9 @@ import (
 	"github.com/maestroi/pokepilot/agent"
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/farm"
+	redprofile "github.com/maestroi/pokepilot/red/profile"
 	"github.com/maestroi/pokepilot/red/state"
+	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/skill"
 )
 
@@ -416,10 +418,21 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 // send. It runs on the stepping goroutine (via the composed OnSample
 // callback or the initial call), so it may read emulator memory; mem is
 // hoisted and reused rather than allocated per sample.
-func playerSnapshot(g state.GameState) *farm.Player {
+func livePlayer(m *emu.Emu, mem *state.Mem) *farm.Player {
+	g := state.Read(m, mem)
+	return playerSnapshot(g, state.DecodeStoryFacts(mem, g.Inventory))
+}
+
+func playerSnapshot(g state.GameState, facts state.StoryFacts) *farm.Player {
 	p := &farm.Player{
-		Money: g.Inventory.Money,
-		Party: make([]farm.PartyMon, len(g.Party.Mons)),
+		Money:       g.Inventory.Money,
+		Party:       make([]farm.PartyMon, len(g.Party.Mons)),
+		BagUsed:     len(g.Inventory.Items),
+		BagCapacity: state.BagCapacity,
+		DexOwned:    len(g.Pokedex.Owned),
+		DexSeen:     len(g.Pokedex.Seen),
+		DexTotal:    sym.PokedexCount,
+		Milestones:  redprofile.MajorMilestoneLabels(facts),
 	}
 	for b := state.BadgeBoulder; b <= state.BadgeEarth; b++ {
 		if g.Progress.Has(b) {
@@ -439,6 +452,16 @@ func playerSnapshot(g state.GameState) *farm.Player {
 			Status: mon.StatusName(),
 		}
 	}
+	if n := len(g.Inventory.Items); n > 0 {
+		p.Bag = make([]farm.BagItem, n)
+		for i, it := range g.Inventory.Items {
+			name, ok := agent.ItemName(it.ID)
+			if !ok {
+				name = fmt.Sprintf("item 0x%02x", it.ID)
+			}
+			p.Bag[i] = farm.BagItem{Name: name, Quantity: int(it.Quantity)}
+		}
+	}
 	return p
 }
 
@@ -452,7 +475,7 @@ func sampleHeartbeat(m *emu.Emu, runID string, snap *heartbeatSnap, mem *state.M
 		Y:           g.Player.Y,
 		WorkerAddrs: addrs,
 		Trail:       trail.add(g.Player.MapID, g.Player.X, g.Player.Y),
-		Player:      playerSnapshot(g),
+		Player:      playerSnapshot(g, state.DecodeStoryFacts(mem, g.Inventory)),
 	}
 	for _, sp := range state.DecodeSprites(mem) {
 		if sp.X < 0 || sp.Y < 0 || sp.X > 255 || sp.Y > 255 {

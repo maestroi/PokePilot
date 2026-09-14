@@ -26,6 +26,7 @@ import {
   splitSpectatorRuns
 } from './model'
 import { policyLabel } from '../shared/playstyle'
+import { bagItemsLabel, bagMeter, dexDetail, dexMeter, milestonesLabel } from '../shared/playerProgress'
 
 interface ActivityItem {
   id: string
@@ -150,6 +151,19 @@ watch(runs, (nextRuns) => {
     if (afterParty.length > beforeParty.length) {
       const joined = afterParty.slice(beforeParty.length).map((mon) => mon.name).filter(Boolean)
       pushActivity(run.run_id, 'Pokémon joined', joined.join(', ') || `${afterParty.length}/6 party`)
+    }
+
+    const beforeDex = Number(previous.player?.dex_owned || 0)
+    const afterDex = Number(run.player?.dex_owned || 0)
+    if (afterDex > beforeDex) {
+      pushActivity(run.run_id, 'Pokédex', `${afterDex} owned`)
+    }
+
+    const beforeMilestones = previous.player?.milestones || []
+    const afterMilestones = run.player?.milestones || []
+    if (afterMilestones.length > beforeMilestones.length) {
+      const earned = afterMilestones.filter((beat) => !beforeMilestones.includes(beat))
+      pushActivity(run.run_id, 'Milestone', earned.join(', ') || afterMilestones[afterMilestones.length - 1] || 'Progress')
     }
 
     if (previous.status !== 'done' && run.status === 'done') {
@@ -319,7 +333,7 @@ function activityTime(item: ActivityItem): string {
             </div>
           </div>
 
-          <div class="grid grid-cols-4 gap-px overflow-hidden rounded-lg bg-white/10 ring-1 ring-white/10 lg:min-w-[28rem]">
+          <div class="grid grid-cols-3 gap-px overflow-hidden rounded-lg bg-white/10 ring-1 ring-white/10 sm:grid-cols-6 lg:min-w-[36rem]">
             <div class="bg-[#0b1119] px-3 py-2.5 text-center">
               <div class="text-[9px] font-semibold tracking-[0.1em] text-slate-500 uppercase">Badges</div>
               <div class="mt-1 font-mono text-lg font-semibold text-white">{{ selectedRun.player?.badges?.length || 0 }}</div>
@@ -327,6 +341,14 @@ function activityTime(item: ActivityItem): string {
             <div class="bg-[#0b1119] px-3 py-2.5 text-center">
               <div class="text-[9px] font-semibold tracking-[0.1em] text-slate-500 uppercase">Party</div>
               <div class="mt-1 font-mono text-lg font-semibold text-white">{{ selectedRun.player?.party?.length || 0 }}/6</div>
+            </div>
+            <div class="bg-[#0b1119] px-3 py-2.5 text-center">
+              <div class="text-[9px] font-semibold tracking-[0.1em] text-slate-500 uppercase">Bag</div>
+              <div class="mt-1 font-mono text-lg font-semibold text-white">{{ bagMeter(selectedRun.player) || '—' }}</div>
+            </div>
+            <div class="bg-[#0b1119] px-3 py-2.5 text-center">
+              <div class="text-[9px] font-semibold tracking-[0.1em] text-slate-500 uppercase">Dex</div>
+              <div class="mt-1 font-mono text-lg font-semibold text-white">{{ dexMeter(selectedRun.player) || '—' }}</div>
             </div>
             <div class="bg-[#0b1119] px-3 py-2.5 text-center">
               <div class="text-[9px] font-semibold tracking-[0.1em] text-slate-500 uppercase">Money</div>
@@ -438,6 +460,21 @@ function activityTime(item: ActivityItem): string {
 
             <div v-if="selectedRun.player?.badges?.length" class="mt-3 flex flex-wrap gap-1.5 border-t border-white/8 pt-3">
               <StatusBadge v-for="badge in selectedRun.player.badges" :key="badge" tone="warning">{{ badge }}</StatusBadge>
+            </div>
+
+            <div v-if="bagMeter(selectedRun.player) || dexMeter(selectedRun.player)" class="mt-3 space-y-1 border-t border-white/8 pt-3 text-xs leading-5">
+              <p v-if="bagMeter(selectedRun.player)" class="min-w-0 truncate" :title="bagItemsLabel(selectedRun.player)">
+                <span class="text-slate-500">Bag {{ bagMeter(selectedRun.player) }}</span>
+                <span class="text-slate-300"> {{ bagItemsLabel(selectedRun.player) }}</span>
+              </p>
+              <p v-if="dexDetail(selectedRun.player)" class="min-w-0 truncate">
+                <span class="text-slate-500">Dex {{ dexMeter(selectedRun.player) }}</span>
+                <span class="text-slate-300"> {{ dexDetail(selectedRun.player) }}</span>
+              </p>
+              <p class="min-w-0 truncate" :title="milestonesLabel(selectedRun.player)">
+                <span class="text-slate-500">Milestones</span>
+                <span class="text-slate-300"> {{ milestonesLabel(selectedRun.player) }}</span>
+              </p>
             </div>
           </Panel>
 

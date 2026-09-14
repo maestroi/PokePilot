@@ -30,7 +30,7 @@ func TestSpectatorServesReadOnlySanitizedSurface(t *testing.T) {
 					"seed":999,"queued_at":100,"frame":456,"map":12,"x":15,"y":9,
 					"trace":"private trace","question":"private question","decision":"Travel to Pewter City","raw":"private raw exchange","stop_so_far":"No badge yet",
 					"stats":{"round":3,"rounds_left":7,"calls":4,"rounds":3,"rejected":1,"repeats":1,"last_seconds":2.5,"avg_seconds":2.0,"model":"private-model","backend":"fallback","prompt_tokens":5000},
-					"player":{"money":1200,"badges":["Boulder"],"party":[{"name":"BULBASAUR","level":12,"hp":25,"max_hp":31}]},
+					"player":{"money":1200,"badges":["Boulder"],"party":[{"name":"BULBASAUR","level":12,"hp":25,"max_hp":31}],"bag_used":2,"bag_capacity":20,"bag":[{"name":"pokeball","quantity":5}],"dex_owned":1,"dex_seen":3,"dex_total":151,"milestones":["Pokédex"]},
 					"sprites":[{"x":8,"y":3,"picture_id":61,"slot":4}],"trail":[[12,11],[5,11]],
 					"attempts":1,"reason":"","detail":"private failure detail","issue":{"number":42}
 				}]
@@ -108,7 +108,7 @@ func TestSpectatorServesReadOnlySanitizedSurface(t *testing.T) {
 			t.Errorf("public snapshot leaked %q: %s", secret, watchBody)
 		}
 	}
-	for _, want := range []string{"run-1", "bulbasaur", "Get the Boulder Badge", "Travel to Pewter City", "BULBASAUR", "Boulder"} {
+	for _, want := range []string{"run-1", "bulbasaur", "Get the Boulder Badge", "Travel to Pewter City", "BULBASAUR", "Boulder", "pokeball", "Pokédex", "bag_used", "dex_owned"} {
 		if !bytes.Contains(watchBody, []byte(want)) {
 			t.Errorf("public snapshot missing %q: %s", want, watchBody)
 		}

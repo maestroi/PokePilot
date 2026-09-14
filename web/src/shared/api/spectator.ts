@@ -6,10 +6,22 @@ export interface SpectatorPartyMon {
   status?: string
 }
 
+export interface SpectatorBagItem {
+  name: string
+  quantity: number
+}
+
 export interface SpectatorPlayer {
   money: number
   badges?: string[]
   party: SpectatorPartyMon[]
+  bag_used?: number
+  bag_capacity?: number
+  bag?: SpectatorBagItem[]
+  dex_owned?: number
+  dex_seen?: number
+  dex_total?: number
+  milestones?: string[]
 }
 
 export interface SpectatorStats {

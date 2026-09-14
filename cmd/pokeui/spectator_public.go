@@ -15,10 +15,21 @@ func (run spectatorRun) MarshalJSON() ([]byte, error) {
 		MaxHP  uint16 `json:"max_hp"`
 		Status string `json:"status,omitempty"`
 	}
+	type publicBagItem struct {
+		Name     string `json:"name"`
+		Quantity int    `json:"quantity"`
+	}
 	type publicPlayer struct {
-		Money  uint32           `json:"money"`
-		Badges []string         `json:"badges,omitempty"`
-		Party  []publicPartyMon `json:"party"`
+		Money       uint32           `json:"money"`
+		Badges      []string         `json:"badges,omitempty"`
+		Party       []publicPartyMon `json:"party"`
+		BagUsed     int              `json:"bag_used,omitempty"`
+		BagCapacity int              `json:"bag_capacity,omitempty"`
+		Bag         []publicBagItem  `json:"bag,omitempty"`
+		DexOwned    int              `json:"dex_owned,omitempty"`
+		DexSeen     int              `json:"dex_seen,omitempty"`
+		DexTotal    int              `json:"dex_total,omitempty"`
+		Milestones  []string         `json:"milestones,omitempty"`
 	}
 	type publicSprite struct {
 		X uint8 `json:"x"`
@@ -55,9 +66,15 @@ func (run spectatorRun) MarshalJSON() ([]byte, error) {
 	var player *publicPlayer
 	if run.Player != nil {
 		player = &publicPlayer{
-			Money:  run.Player.Money,
-			Badges: append([]string(nil), run.Player.Badges...),
-			Party:  make([]publicPartyMon, len(run.Player.Party)),
+			Money:       run.Player.Money,
+			Badges:      append([]string(nil), run.Player.Badges...),
+			Party:       make([]publicPartyMon, len(run.Player.Party)),
+			BagUsed:     run.Player.BagUsed,
+			BagCapacity: run.Player.BagCapacity,
+			DexOwned:    run.Player.DexOwned,
+			DexSeen:     run.Player.DexSeen,
+			DexTotal:    run.Player.DexTotal,
+			Milestones:  append([]string(nil), run.Player.Milestones...),
 		}
 		for i, mon := range run.Player.Party {
 			player.Party[i] = publicPartyMon{
@@ -66,6 +83,12 @@ func (run spectatorRun) MarshalJSON() ([]byte, error) {
 				HP:     mon.HP,
 				MaxHP:  mon.MaxHP,
 				Status: mon.Status,
+			}
+		}
+		if len(run.Player.Bag) > 0 {
+			player.Bag = make([]publicBagItem, len(run.Player.Bag))
+			for i, item := range run.Player.Bag {
+				player.Bag[i] = publicBagItem{Name: item.Name, Quantity: item.Quantity}
 			}
 		}
 	}
