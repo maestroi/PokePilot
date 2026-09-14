@@ -18,6 +18,7 @@ import (
 // useful.
 func offerWithTMHM(m *emu.Emu, romData []byte, obs Observation, known *Knowledge) []Objective {
 	out := OfferWithProgression(obs, known, newRedObjectiveAdapter(m, romData))
+	out = filterRedScriptedTalkObjectives(obs, out)
 	out = appendKnownCatchObjectives(romData, obs, known, out)
 	out = appendDexCatchObjectives(obs, known, out)
 	var mem state.Mem
@@ -28,6 +29,37 @@ func offerWithTMHM(m *emu.Emu, romData []byte, obs Observation, known *Knowledge
 		return currentPartyTrainingEstimate(&mem, romData, obs.Map, slot, targetLevel, trainSessionBattleBudget)
 	})
 	return appendTMHMObjectives(romData, party, state.DecodeInventory(&mem), out)
+}
+
+const (
+	route22MapID      uint8 = 0x21
+	route22RivalHomeX uint8 = 25
+	route22RivalHomeY uint8 = 5
+)
+
+// filterRedScriptedTalkObjectives removes Red map objects that look like plain
+// people in ROM data but are actually owned by map scripts rather than the A
+// button interaction path. Route 22's rival is the first measured case: his
+// object home is (25,5), but both rival encounters are coordinate-triggered
+// story sequences. The first one starts when the player steps on (29,4)/(29,5)
+// and is already driven by GetPokeBalls; trying to TalkAt the moving sprite can
+// reach him at (28,5) and then fail because A correctly opens no dialogue.
+//
+// Keep this filter in the Red adapter instead of generic Offer: script-owned
+// actors are game facts, while the portable objective layer should remain able
+// to offer ordinary people on arbitrary games/maps.
+func filterRedScriptedTalkObjectives(obs Observation, out []Objective) []Objective {
+	if obs.Map != route22MapID {
+		return out
+	}
+	filtered := make([]Objective, 0, len(out))
+	for _, o := range out {
+		if o.Kind == KindTalk && o.X == route22RivalHomeX && o.Y == route22RivalHomeY {
+			continue
+		}
+		filtered = append(filtered, o)
+	}
+	return filtered
 }
 
 func appendTMHMObjectives(romData []byte, party state.PartyState, inventory state.InventoryState, out []Objective) []Objective {
