@@ -64,6 +64,7 @@ func TestReplacedBlockCells(t *testing.T) {
 				if got[i] != tt.want[i] {
 					t.Errorf("cell %d = %v, want %v", i, got[i], tt.want[i])
 				}
+			}
 		})
 	}
 }
