@@ -52,9 +52,7 @@ func verifyPortableBundle(mat portableMaterialized, resultPath string) (portable
 	}
 
 	if mat.FailureReproPath == "" {
-		verdict.Classification = verdictContractUnavailable
-		verdict.Diagnostic = "portable bundle has no structured failure-repro contract; checkpoint-only replay cannot prove a run-level/planner failure"
-		return verdict, write()
+		return verifySyntheticFailureBudget(mat, resultPath, verdict)
 	}
 	failureData, err := os.ReadFile(mat.FailureReproPath)
 	if err != nil {
