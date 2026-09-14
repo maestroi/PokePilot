@@ -1,0 +1,254 @@
+name: Farm Repro Replay
+
+on:
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: Farm issue number containing a portable repro bundle
+        required: true
+        type: string
+      replay_timeout_minutes:
+        description: Maximum time to replay the checkpoint on this revision
+        required: true
+        default: "20"
+        type: string
+
+permissions:
+  contents: read
+  issues: read
+
+concurrency:
+  group: farm-repro-${{ github.ref }}-${{ inputs.issue_number }}
+  cancel-in-progress: false
+
+jobs:
+  replay:
+    runs-on: [self-hosted, linux, pokepilot-rom]
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout PokePilot
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Verify module graph
+        run: go mod download
+
+      - name: Resolve and verify ROM
+        shell: bash
+        env:
+          CONFIGURED_ROM: ${{ vars.POKEMON_RED_ROM_PATH }}
+          ROM_URL: ${{ secrets.POKEPILOT_ROM_URL || vars.POKEPILOT_ROM_URL }}
+        run: |
+          set -euo pipefail
+          target="${CONFIGURED_ROM:-$HOME/.config/pokepilot/pokemon_red.gb}"
+          export POKEPILOT_ROM_URL="$ROM_URL"
+          rom="$(bash ./scripts/ensure-rom.sh "$target")"
+          echo "POKEMON_RED_ROM=$rom" >> "$GITHUB_ENV"
+
+      - name: Resolve farm repro bundle
+        id: request
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_ISSUE: ${{ inputs.issue_number }}
+          INPUT_TIMEOUT: ${{ inputs.replay_timeout_minutes }}
+          CONFIGURED_RESULTS: ${{ vars.POKEPILOT_DEBUG_RESULTS }}
+        run: |
+          set -euo pipefail
+
+          issue="${INPUT_ISSUE:-}"
+          timeout_minutes="${INPUT_TIMEOUT:-20}"
+          if [[ ! "$issue" =~ ^[1-9][0-9]*$ ]]; then
+            echo "farm-repro: issue_number must be a positive integer" >&2
+            exit 2
+          fi
+          if [[ ! "$timeout_minutes" =~ ^[1-9][0-9]*$ ]] || (( timeout_minutes > 60 )); then
+            echo "farm-repro: replay_timeout_minutes must be between 1 and 60" >&2
+            exit 2
+          fi
+
+          safe="$RUNNER_TEMP/pokepilot-farm-repro-safe"
+          results="${CONFIGURED_RESULTS:-$HOME/.local/state/pokepilot/debug}"
+          private="$results/farm-repro-${GITHUB_RUN_ID}-attempt-${GITHUB_RUN_ATTEMPT}"
+          rm -rf "$safe"
+          mkdir -p "$safe" "$private"
+
+          issue_json="$safe/issue.json"
+          curl --fail --silent --show-error --location \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/issues/${issue}" \
+            > "$issue_json"
+
+          body="$safe/issue-body.txt"
+          jq -r '.body // ""' "$issue_json" > "$body"
+          bundle_url="$(grep -Eo "https://github\\.com/maestroi/PokePilot/releases/download/farm-repros/repro-issue-${issue}-[A-Za-z0-9._-]+\\.zip" "$body" | tail -n 1 || true)"
+          if [[ -z "$bundle_url" ]]; then
+            echo "farm-repro: issue #$issue has no trusted farm-repros bundle URL" >&2
+            exit 2
+          fi
+
+          {
+            echo "ISSUE_NUMBER=$issue"
+            echo "REPLAY_TIMEOUT_MINUTES=$timeout_minutes"
+            echo "BUNDLE_URL=$bundle_url"
+            echo "SAFE_OUT=$safe"
+            echo "PRIVATE_OUT=$private"
+          } >> "$GITHUB_ENV"
+
+          {
+            echo "issue=$issue"
+            echo "revision=$GITHUB_SHA"
+            echo "ref=$GITHUB_REF_NAME"
+            echo "bundle_url=$bundle_url"
+            echo "timeout_minutes=$timeout_minutes"
+          } > "$safe/request.txt"
+
+          echo "bundle_url=$bundle_url" >> "$GITHUB_OUTPUT"
+
+      - name: Replay checkpoint on current checkout
+        id: replay
+        if: ${{ steps.request.outcome == 'success' }}
+        shell: bash
+        env:
+          OVERRIDE_LLM_URL: ${{ secrets.POKEPILOT_DEBUG_LLM_URL || vars.POKEPILOT_DEBUG_LLM_URL }}
+          OVERRIDE_LLM_MODEL: ${{ secrets.POKEPILOT_DEBUG_LLM_MODEL || vars.POKEPILOT_DEBUG_LLM_MODEL }}
+          OVERRIDE_LLM_TOKEN: ${{ secrets.POKEPILOT_DEBUG_LLM_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [[ -f "$HOME/.config/pokepilot/env" ]]; then
+            set -a
+            # shellcheck disable=SC1091
+            . "$HOME/.config/pokepilot/env"
+            set +a
+          fi
+          [[ -n "$OVERRIDE_LLM_URL" ]] && export POKEPILOT_LLM_URL="$OVERRIDE_LLM_URL"
+          [[ -n "$OVERRIDE_LLM_MODEL" ]] && export POKEPILOT_LLM_MODEL="$OVERRIDE_LLM_MODEL"
+          [[ -n "$OVERRIDE_LLM_TOKEN" ]] && export llm_token="$OVERRIDE_LLM_TOKEN"
+
+          set +e
+          timeout --signal=TERM --kill-after=30s "${REPLAY_TIMEOUT_MINUTES}m" \
+            go run ./cmd/pokerepro \
+              -bundle "$BUNDLE_URL" \
+              -out "$PRIVATE_OUT/repro" \
+              -play \
+            2>&1 | tee "$SAFE_OUT/run.log"
+          status=${PIPESTATUS[0]}
+          set -e
+
+          echo "$status" > "$SAFE_OUT/exit-code.txt"
+          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+          # A reproduced gameplay failure is evidence, not an infrastructure
+          # failure. Classification happens in the next step and is uploaded.
+          exit 0
+
+      - name: Classify replay result
+        id: classify
+        if: ${{ always() && steps.request.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          status="$(cat "$SAFE_OUT/exit-code.txt" 2>/dev/null || echo 125)"
+          manifest="$PRIVATE_OUT/repro/repro.json"
+          source_fingerprint=""
+          source_revision=""
+          run_id=""
+          objective=""
+          diagnostic=""
+          if [[ -f "$manifest" ]]; then
+            source_fingerprint="$(jq -r '.fingerprint // ""' "$manifest")"
+            source_revision="$(jq -r '.observed_revision // ""' "$manifest")"
+            run_id="$(jq -r '.run_id // ""' "$manifest")"
+            objective="$(jq -r '.objective // ""' "$manifest")"
+            diagnostic="$(jq -r '.diagnostic // ""' "$manifest")"
+          fi
+
+          observed_fingerprint=""
+          if [[ -f "$SAFE_OUT/run.log" ]]; then
+            marker="$(grep -Eo 'failure-id:[a-p]{64}' "$SAFE_OUT/run.log" | tail -n 1 || true)"
+            if [[ -n "$marker" ]]; then
+              encoded="${marker#failure-id:}"
+              observed_fingerprint="sha256:$(printf '%s' "$encoded" | tr 'abcdefghijklmnop' '0123456789abcdef')"
+            fi
+          fi
+
+          if [[ ! -f "$manifest" ]]; then
+            classification="harness_error"
+          elif [[ -n "$observed_fingerprint" && "$observed_fingerprint" == "$source_fingerprint" ]]; then
+            classification="same_failure_reproduced"
+          elif [[ -n "$observed_fingerprint" ]]; then
+            classification="different_failure"
+          elif [[ "$status" == "0" ]]; then
+            classification="completed_without_process_error"
+          elif [[ "$status" == "124" || "$status" == "137" ]]; then
+            classification="timeout"
+          else
+            classification="replay_failed_unclassified"
+          fi
+
+          jq -n \
+            --argjson issue "$ISSUE_NUMBER" \
+            --arg revision "$GITHUB_SHA" \
+            --arg ref "$GITHUB_REF_NAME" \
+            --arg bundle_url "$BUNDLE_URL" \
+            --arg classification "$classification" \
+            --argjson exit_code "$status" \
+            --arg source_fingerprint "$source_fingerprint" \
+            --arg observed_fingerprint "$observed_fingerprint" \
+            --arg source_revision "$source_revision" \
+            --arg run_id "$run_id" \
+            --arg objective "$objective" \
+            --arg diagnostic "$diagnostic" \
+            '{
+              issue: $issue,
+              revision: $revision,
+              ref: $ref,
+              bundle_url: $bundle_url,
+              classification: $classification,
+              exit_code: $exit_code,
+              source_fingerprint: $source_fingerprint,
+              observed_fingerprint: $observed_fingerprint,
+              source_revision: $source_revision,
+              run_id: $run_id,
+              objective: $objective,
+              source_diagnostic: $diagnostic
+            }' > "$SAFE_OUT/repro-result.json"
+
+          echo "classification=$classification" >> "$GITHUB_OUTPUT"
+          {
+            echo '### Farm repro replay'
+            echo
+            echo "Issue: #$ISSUE_NUMBER"
+            echo "Revision: \`$GITHUB_SHA\`"
+            echo "Classification: **$classification**"
+            echo "Process exit: \`$status\`"
+            [[ -n "$source_fingerprint" ]] && echo "Source fingerprint: \`$source_fingerprint\`"
+            [[ -n "$observed_fingerprint" ]] && echo "Observed fingerprint: \`$observed_fingerprint\`"
+            echo
+            echo 'The ROM and materialized save-state remain on the self-hosted runner and are not uploaded.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload replay diagnostics
+        if: ${{ always() && steps.request.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: farm-repro-${{ inputs.issue_number }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/pokepilot-farm-repro-safe
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Fail on harness errors
+        if: ${{ always() && steps.classify.outputs.classification == 'harness_error' }}
+        shell: bash
+        run: |
+          echo "farm-repro: portable bundle could not be materialized" >&2
+          exit 1
