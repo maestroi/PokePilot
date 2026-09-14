@@ -24,6 +24,23 @@ func hasStaticBalls(obs Observation) bool {
 	return false
 }
 
+func staticSpeciesID(raw uint8) (SpeciesID, bool) {
+	switch raw {
+	case 0x84:
+		return "snorlax", true
+	case 0x4A:
+		return "articuno", true
+	case 0x4B:
+		return "zapdos", true
+	case 0x49:
+		return "moltres", true
+	case 0x83:
+		return "mewtwo", true
+	default:
+		return "", false
+	}
+}
+
 func staticObjectiveQuarantined(known *Knowledge, objective Objective) bool {
 	if known == nil {
 		return false
@@ -50,7 +67,7 @@ func appendDexStaticObjectives(obs Observation, known *Knowledge, out []Objectiv
 
 	sites := map[SpeciesID]skill.StaticCaptureSite{}
 	for _, site := range skill.StaticCaptureSites() {
-		id, ok := redSpeciesName(site.Species)
+		id, ok := staticSpeciesID(site.Species)
 		if ok {
 			sites[id] = site
 		}
