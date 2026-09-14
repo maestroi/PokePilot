@@ -9,6 +9,11 @@ const (
 	BoxSpecies    uint16 = 0xDA81
 	BoxMon1       uint16 = 0xDA96
 	BoxMonSize    uint16 = 0x21 // BOXMON_STRUCT_LENGTH
+
+	// DisplayChangeBoxMenu fills this 12-byte scratch array with the current
+	// Pokémon count of every Bill's PC box. It is only authoritative while
+	// the Change Box menu is open; callers must not retain it afterwards.
+	BoxMonCounts uint16 = 0xCD3D
 )
 
 // Offsets within one boxed-mon struct. Boxed mons do not carry calculated
