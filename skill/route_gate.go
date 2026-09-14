@@ -64,3 +64,39 @@ func AnswerKnownRouteGate(m *emu.Emu) (bool, error) {
 	}
 	return true, nil
 }
+
+// routeGateCleanupChoiceIndex returns a semantically reversible answer only
+// for a choice already classified as a known route gate. Unlike
+// AnswerKnownRouteGate, cleanup must not buy a ticket or advance a transition
+// owned by the previous objective, so Museum admission is cancelled with NO.
+// Unknown choices remain fail-closed.
+func routeGateCleanupChoiceIndex(mapID uint8, text string) (int, bool) {
+	if _, ok := talkApproachChoiceIndex(mapID, text); !ok {
+		return 0, false
+	}
+	return 1, true
+}
+
+// DeclineKnownRouteGate restores a clean objective boundary when an interrupted
+// travel left a known route-gate choice open. It only selects the reversible
+// NO path; it never spends money or accepts an unknown gameplay choice.
+func DeclineKnownRouteGate(m *emu.Emu) (bool, error) {
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	interaction := state.DecodeInteraction(&mem)
+	if interaction.Kind != state.InteractionTwoOption {
+		return false, nil
+	}
+	index, ok := routeGateCleanupChoiceIndex(m.Peek8(sym.CurMap), interaction.Text)
+	if !ok {
+		return false, nil
+	}
+	if err := AnswerTwoOption(m, index); err != nil {
+		return false, fmt.Errorf("decline route-gate choice: %w", err)
+	}
+	rec := RecoverDialogue(m, dialogueRecoveryBudget)
+	if rec.Stop != DialogueRecovered {
+		return false, fmt.Errorf("route-gate cancellation did not clear (%d): %q", rec.Stop, rec.Text)
+	}
+	return true, nil
+}
