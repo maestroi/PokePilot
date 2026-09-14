@@ -26,6 +26,7 @@ func offerWithTMHM(m *emu.Emu, romData []byte, obs Observation, known *Knowledge
 	out = appendDexCatchObjectives(obs, known, out)
 	out = appendDexGiftObjectives(obs, known, out)
 	out = appendDexTradeObjectives(romData, obs, known, out)
+	out = appendDexFossilObjectives(obs, known, out)
 	out = appendDexEvolutionObjectives(obs, known, out)
 	var mem state.Mem
 	state.Snapshot(m, &mem)
@@ -131,6 +132,9 @@ func redOwnedChoiceActor(mapID, x, y uint8) bool {
 	if mapID == mtMoonPokecenterMapID && x == mtMoonMagikarpSalesmanHomeX && y == mtMoonMagikarpSalesmanHomeY {
 		return true
 	}
+	if skill.IsFossilRevivalActor(mapID, x, y) {
+		return true
+	}
 	return redChoiceInteractionActor(mapID, x, y)
 }
 
@@ -206,9 +210,6 @@ func normalizeObjectiveBoundary(m *emu.Emu) error {
 			case skill.DialogueRecovered:
 				continue
 			case skill.DialogueMenuOpen:
-				// The text page legitimately transitioned into a menu. Recovery
-				// must not press A there, but that is not a dirty boundary by
-				// itself: loop once more so the typed menu cleanup above owns it.
 				continue
 			case skill.DialogueChoiceRequired:
 				return ErrObjectiveBoundaryChoice
