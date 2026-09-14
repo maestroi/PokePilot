@@ -40,13 +40,16 @@ func executeCatchObjective(m *emu.Emu, romData []byte, o Objective, result Objec
 
 	var caught skill.CatchResult
 	var err error
-	if o.Intent == dexFishingIntent {
+	switch o.Intent {
+	case dexFishingIntent:
 		rod, ok := redItemID(o.Item)
 		if !ok {
 			return result, fmt.Errorf("agent: %s: unknown fishing rod %q", o, o.Item)
 		}
 		caught, err = skill.Fish(m, romData, rod, []uint8{species}, skill.StatAwareMove(romData), 5)
-	} else {
+	case dexWaterIntent:
+		caught, err = skill.CatchWater(m, romData, []uint8{species}, skill.StatAwareMove(romData), 5)
+	default:
 		caught, err = skill.Catch(m, romData, []uint8{species}, skill.StatAwareMove(romData), 5)
 	}
 	if err != nil {
