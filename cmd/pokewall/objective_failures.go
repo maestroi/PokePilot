@@ -176,7 +176,8 @@ func (w *Wall) reportObjectiveFailure(dump farm.FinishReport, f farm.ObjectiveFa
 	}
 
 	observedRevision := observedObjectiveFailureRevision(dump, f)
-	evidence, _ := json.Marshal(map[string]any{
+	runContext, hasRunContext, runContextErr := farm.DecodeRunContext(dump)
+	evidenceValues := map[string]any{
 		"classification":       classification,
 		"disposition":          string(disposition),
 		"run_id":               dump.RunID,
@@ -210,20 +211,62 @@ func (w *Wall) reportObjectiveFailure(dump farm.FinishReport, f farm.ObjectiveFa
 		"prior_issue_status":   prior.Status,
 		"prior_resolution":     prior.Resolution,
 		"prior_fixed_revision": prior.FixedRevision,
-	})
+	}
+	if hasRunContext {
+		evidenceValues["planner"] = runContext.Planner
+		evidenceValues["starter"] = runContext.Starter
+		evidenceValues["dest"] = runContext.Dest
+		evidenceValues["goal"] = runContext.Goal
+		evidenceValues["llm_profile"] = runContext.LLMProfile
+		evidenceValues["reasoning_effort"] = runContext.ReasoningEffort
+		evidenceValues["play_style"] = runContext.PlayStyle
+		evidenceValues["risk_tolerance"] = runContext.RiskTolerance
+		evidenceValues["wild_encounters"] = runContext.WildEncounters
+		evidenceValues["seed"] = runContext.Seed
+	}
+	if runContextErr != nil {
+		evidenceValues["run_context_error"] = runContextErr.Error()
+	}
+	evidence, _ := json.Marshal(evidenceValues)
+
+	contextSuffix := ""
+	if hasRunContext {
+		parts := make([]string, 0, 6)
+		if runContext.PlayStyle != "" {
+			parts = append(parts, "play_style="+runContext.PlayStyle)
+		}
+		if runContext.RiskTolerance != "" {
+			parts = append(parts, "risk_tolerance="+runContext.RiskTolerance)
+		}
+		if runContext.WildEncounters != "" {
+			parts = append(parts, "wild_encounters="+runContext.WildEncounters)
+		}
+		if runContext.LLMProfile != "" {
+			parts = append(parts, "llm_profile="+runContext.LLMProfile)
+		}
+		if runContext.ReasoningEffort != "" {
+			parts = append(parts, "reasoning_effort="+runContext.ReasoningEffort)
+		}
+		if runContext.Planner != "" {
+			parts = append(parts, "planner="+runContext.Planner)
+		}
+		if len(parts) > 0 {
+			contextSuffix = " Run context: " + strings.Join(parts, ", ") + "."
+		}
+	}
 
 	titlePrefix := "[farm] objective failure: "
-	summary := fmt.Sprintf("%s failed %d time(s) on map 0x%02x; recovered=%d terminal=%d; run ended %s.",
-		f.Objective, f.Count, f.Map, f.RecoveredCount, f.TerminalCount, dump.Reason)
+	summary := fmt.Sprintf("%s failed %d time(s) on map 0x%02x; recovered=%d terminal=%d; run ended %s.%s",
+		f.Objective, f.Count, f.Map, f.RecoveredCount, f.TerminalCount, dump.Reason, contextSuffix)
 	if f.Blocking {
 		titlePrefix = "[farm][progression-blocker] "
-		summary = fmt.Sprintf("Progression blocker candidate: %s failed %d time(s) on map 0x%02x (recovered=%d terminal=%d) with no later major progress; run ended %s. Last error: %s",
-			f.Objective, f.Count, f.Map, f.RecoveredCount, f.TerminalCount, dump.Reason, f.Error)
+		summary = fmt.Sprintf("Progression blocker candidate: %s failed %d time(s) on map 0x%02x (recovered=%d terminal=%d) with no later major progress; run ended %s. Last error: %s%s",
+			f.Objective, f.Count, f.Map, f.RecoveredCount, f.TerminalCount, dump.Reason, f.Error, contextSuffix)
 	}
 	if disposition == occurrenceRegression {
 		titlePrefix = "[farm][regression] "
-		summary = fmt.Sprintf("Regression candidate: fingerprint %s reproduced on revision %q after issue %d was resolved at revision %q. Objective: %s. Last error: %s",
-			fp, observedRevision, prior.IssueNumber, prior.FixedRevision, f.Objective, f.Error)
+		summary = fmt.Sprintf("Regression candidate: fingerprint %s reproduced on revision %q after issue %d was resolved at revision %q. Objective: %s. Last error: %s%s",
+			fp, observedRevision, prior.IssueNumber, prior.FixedRevision, f.Objective, f.Error, contextSuffix)
 	}
 	observedAt := f.ObservedAt
 	if observedAt.IsZero() {
@@ -305,7 +348,7 @@ func objectiveFailureEvidenceArtifacts(dump farm.FinishReport, f farm.ObjectiveF
 	var recording *farm.Artifact
 	for _, a := range dump.Artifacts {
 		switch {
-		case a.Name == farm.ObjectiveFailureArtifactName:
+		case a.Name == farm.ObjectiveFailureArtifactName || a.Name == farm.RunContextArtifactName:
 			essential = append(essential, a)
 		case strings.HasPrefix(a.Name, prefix):
 			essential = append(essential, a)
