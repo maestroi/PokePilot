@@ -18,11 +18,19 @@ type githubCompareResult struct {
 	Status string `json:"status"`
 }
 
+type githubIssueClosure struct {
+	ClosedAt time.Time `json:"closed_at"`
+}
+
 // fixedRevisionAtClose resolves the default-branch head that existed when a
 // completed GitHub issue was closed. Using the closure instant freezes the
 // baseline: sampling the current head when a later recurrence arrives would
 // incorrectly classify a failure on that current head as stale.
-func (c *githubClient) fixedRevisionAtClose(ctx context.Context, issue githubIssue) (string, error) {
+func (c *githubClient) fixedRevisionAtClose(ctx context.Context, issueNumber int64) (string, error) {
+	var issue githubIssueClosure
+	if err := c.doJSON(ctx, http.MethodGet, c.repoPath("issues", strconv.FormatInt(issueNumber, 10)), nil, &issue); err != nil {
+		return "", err
+	}
 	if issue.ClosedAt.IsZero() {
 		return "", nil
 	}
@@ -62,8 +70,8 @@ func (c *githubClient) observedRevisionPredatesFix(ctx context.Context, observed
 	}
 }
 
-func (c *githubClient) staleRecurrence(ctx context.Context, issue githubIssue, observedRevision string) (fixedRevision string, stale bool, err error) {
-	fixedRevision, err = c.fixedRevisionAtClose(ctx, issue)
+func (c *githubClient) staleRecurrence(ctx context.Context, issueNumber int64, observedRevision string) (fixedRevision string, stale bool, err error) {
+	fixedRevision, err = c.fixedRevisionAtClose(ctx, issueNumber)
 	if err != nil || fixedRevision == "" || strings.TrimSpace(observedRevision) == "" {
 		return fixedRevision, false, err
 	}
