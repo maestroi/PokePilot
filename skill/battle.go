@@ -369,9 +369,10 @@ func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
 			if triedForgets == nil {
 				triedForgets = map[uint8]bool{}
 			}
-			triedForgets[bs.Moves[lastForgetSlot].ID] = true
+			moveID := learningMoveID(&mem, bs, lastForgetSlot)
+			triedForgets[moveID] = true
 			if zbatDebug {
-				fmt.Printf("zbat move-learn action=hm-rejected slot=%d move=%d\n", lastForgetSlot, bs.Moves[lastForgetSlot].ID)
+				fmt.Printf("zbat move-learn action=hm-rejected slot=%d move=%d\n", lastForgetSlot, moveID)
 			}
 			lastForgetSlot = -1
 			pendingLearnSlot = -1
@@ -417,9 +418,8 @@ func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
 				m.StepFrame()
 				continue
 			}
-			ids := [4]uint8{bs.Moves[0].ID, bs.Moves[1].ID, bs.Moves[2].ID, bs.Moves[3].ID}
 			offered := m.Peek8(sym.MoveNum)
-			decision := decideNaturalMove(m.ROM(), bs.ActiveType1, bs.ActiveType2, ids, offered, triedForgets)
+			decision, partySlot := decideNaturalMoveFromPartyRAM(m.ROM(), &mem, bs, offered, triedForgets)
 			if !decision.Learn || decision.ReplaceSlot < 0 {
 				x, y := playerXY(m)
 				return 0, fmt.Errorf("skill: Battle: map %02x at (%d,%d): accepted natural move %d but no legal strategic replacement remains: %s",
@@ -431,7 +431,7 @@ func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
 			slot := decision.ReplaceSlot
 			pendingLearnMove = offered
 			pendingLearnSlot = slot
-			pendingLearnPartySlot = int(m.Peek8(sym.PlayerMonNumber))
+			pendingLearnPartySlot = partySlot
 			if err := selectForgetSlot(m, slot); err != nil {
 				return menuError(m, "select move to forget", err)
 			}
@@ -497,9 +497,8 @@ func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
 			if pendingTryLearn {
 				bs := state.DecodeBattle(&s)
 				if bs != nil {
-					ids := [4]uint8{bs.Moves[0].ID, bs.Moves[1].ID, bs.Moves[2].ID, bs.Moves[3].ID}
 					offered := m.Peek8(sym.MoveNum)
-					decision := decideNaturalMove(m.ROM(), bs.ActiveType1, bs.ActiveType2, ids, offered, nil)
+					decision, _ := decideNaturalMoveFromPartyRAM(m.ROM(), &s, bs, offered, nil)
 					if !decision.Learn {
 						choice = 1 // NO: then confirm Abandon learning on the next prompt
 					}
