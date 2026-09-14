@@ -147,8 +147,8 @@ func (a *redObjectiveAdapter) NormalizeFailure(phase gameruntime.FailurePhase, e
 // prove the stronger game-specific fact from semantic training evidence plus
 // the same party slot that held the requested species before execution.
 func redTrainingReachedThroughEvolution(o Objective, initial, final Observation, result ObjectiveResult) bool {
-	if o.Kind != KindTrain || o.Species == "" || result.Training == nil || !result.Training.Reached ||
-		result.Training.EndLevel < int(o.Level) || !stableObjectiveBoundary(final) {
+	if o.Kind != KindTrain || o.Species == "" || result.Train == nil || !result.Train.Reached ||
+		result.Train.EndLevel < int(o.Level) || !stableObjectiveBoundary(final) {
 		return false
 	}
 
