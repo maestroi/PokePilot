@@ -143,6 +143,15 @@ func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
 	forcedChoiceVisits := 0
 	itemUses := 0
 	voluntarySwitches := 0
+	// pendingTryLearn remembers that the "<NAME> is trying to learn <MOVE>"
+	// text was seen. That message is long enough to scroll off the 4-line
+	// battle text box before the YES/NO cursor is drawn (the cursor appears
+	// only after PrintText finishes the whole message), so by the time the
+	// prompt is actually answerable the "trying to learn" marker is gone and
+	// twoOptionPromptUp no longer matches. Without this flag the loop falls
+	// to the default blind-Tap(A) branch, which confirms YES and strands the
+	// policy on the forget menu with no legal replacement.
+	pendingTryLearn := false
 
 	for {
 		if int(m.FrameCount()-startFrame) > battleFrameCap {
@@ -462,13 +471,21 @@ func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
 				return menuError(m, "confirm decline of natural move", err)
 			}
 
-		case twoOptionPromptUp(m):
+		case twoOptionPromptUp(m) || (pendingTryLearn && twoOptionCursorUp(m)):
 			// "Use next #MON?" is always YES. A natural move prompt is now a
 			// scored decision: YES only if the resulting four-move set improves;
 			// otherwise NO proceeds to the explicit abandon confirmation above.
+			//
+			// The case is also entered via pendingTryLearn when the "trying to
+			// learn" text has scrolled off but its YES/NO cursor is up: the
+			// marker is gone, so twoOptionPromptUp alone would miss it and the
+			// default branch would blind-confirm YES.
 			var s state.Mem
 			state.Snapshot(m, &s)
 			text := state.ScreenText(&s)
+			if strings.Contains(text, tryLearnMarker) {
+				pendingTryLearn = true
+			}
 			if state.DecodeTwoOptionMenu(&s) == nil {
 				// The try-learn text has a <CONT> before the menu. A is required
 				// to reveal the offered move and draw the cursor; UseNextMon has
@@ -477,26 +494,29 @@ func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
 				continue
 			}
 			choice := 0 // YES for Use next #MON?
-			if strings.Contains(text, tryLearnMarker) {
+			if pendingTryLearn {
 				bs := state.DecodeBattle(&s)
-				if bs == nil {
-					continue
-				}
-				ids := [4]uint8{bs.Moves[0].ID, bs.Moves[1].ID, bs.Moves[2].ID, bs.Moves[3].ID}
-				offered := m.Peek8(sym.MoveNum)
-				decision := decideNaturalMove(m.ROM(), bs.ActiveType1, bs.ActiveType2, ids, offered, nil)
-				if !decision.Learn {
-					choice = 1 // NO: then confirm Abandon learning on the next prompt
-				}
-				if zbatDebug {
-					action := "learn"
+				if bs != nil {
+					ids := [4]uint8{bs.Moves[0].ID, bs.Moves[1].ID, bs.Moves[2].ID, bs.Moves[3].ID}
+					offered := m.Peek8(sym.MoveNum)
+					decision := decideNaturalMove(m.ROM(), bs.ActiveType1, bs.ActiveType2, ids, offered, nil)
 					if !decision.Learn {
-						action = "decline"
+						choice = 1 // NO: then confirm Abandon learning on the next prompt
 					}
-					fmt.Printf("zbat move-learn action=%s offered=%d reason=%s\n", action, offered, decision.Reason)
+					if zbatDebug {
+						action := "learn"
+						if !decision.Learn {
+							action = "decline"
+						}
+						fmt.Printf("zbat move-learn action=%s offered=%d reason=%s\n", action, offered, decision.Reason)
+					}
+					pendingTryLearn = false
 				}
 			}
-			if err := SelectMenuItem(m, choice); err != nil {
+			// selectTwoOption, not SelectMenuItem: DisplayTwoOptionMenu stores
+			// the last valid index (1) in wMaxMenuItem, so SelectMenuItem's
+			// exclusive index>=Max guard would reject the NO (index 1) answer.
+			if err := selectTwoOption(m, choice); err != nil {
 				return menuError(m, "answer two-option prompt", err)
 			}
 
@@ -687,6 +707,16 @@ func twoOptionPromptUp(m *emu.Emu) bool {
 	state.Snapshot(m, &mem)
 	t := state.ScreenText(&mem)
 	return strings.Contains(t, useNextMonMarker) || strings.Contains(t, tryLearnMarker)
+}
+
+// twoOptionCursorUp reports that a two-option YES/NO cursor is actually drawn,
+// regardless of which prompt it belongs to. It is the positive fact that a
+// two-option prompt is answerable, used to recover the try-learn prompt once
+// its "trying to learn" text has scrolled off the box.
+func twoOptionCursorUp(m *emu.Emu) bool {
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	return state.DecodeTwoOptionMenu(&mem) != nil
 }
 
 func abandonLearnPromptUp(m *emu.Emu) bool {
