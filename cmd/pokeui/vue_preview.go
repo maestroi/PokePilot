@@ -11,6 +11,8 @@ import (
 	"strings"
 )
 
+const pokemonSpriteImageOrigin = "https://raw.githubusercontent.com"
+
 // vueWebAssets is populated by `cd web && npm run build` before production
 // pokeui compilation. A committed placeholder keeps ordinary Go-only builds
 // valid, but the browser surface now requires built Vue assets at runtime.
@@ -23,6 +25,9 @@ var vueWebAssets embed.FS
 // is no longer exposed as a browser fallback.
 func withVuePreview(next http.Handler, target string) http.Handler {
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+		if target == "spectator" {
+			allowPokemonSpriteImages(res.Header())
+		}
 		switch {
 		case req.Method == http.MethodGet && req.URL.Path == "/":
 			if serveVueFile(res, req, target, target+".html") {
@@ -53,6 +58,15 @@ func withVuePreview(next http.Handler, target string) http.Handler {
 			next.ServeHTTP(res, req)
 		}
 	})
+}
+
+func allowPokemonSpriteImages(headers http.Header) {
+	const imageDirective = "img-src 'self' data: blob:"
+	csp := headers.Get("Content-Security-Policy")
+	if csp == "" || strings.Contains(csp, pokemonSpriteImageOrigin) || !strings.Contains(csp, imageDirective) {
+		return
+	}
+	headers.Set("Content-Security-Policy", strings.Replace(csp, imageDirective, imageDirective+" "+pokemonSpriteImageOrigin, 1))
 }
 
 func serveVueFile(res http.ResponseWriter, req *http.Request, target, name string) bool {
