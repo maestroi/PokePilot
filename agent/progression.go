@@ -7,6 +7,19 @@ type ProgressionPlanner interface {
 	ProgressionObjectives(Observation) []Objective
 }
 
+type progressionObjectiveProvider struct {
+	planner ProgressionPlanner
+}
+
+func (progressionObjectiveProvider) Family() ObjectiveFamily { return ObjectiveFamilyProgression }
+
+func (p progressionObjectiveProvider) Provide(ctx *objectiveOfferContext) objectiveProviderResult {
+	if p.planner == nil || ctx == nil {
+		return objectiveProviderResult{}
+	}
+	return objectiveProviderResult{Candidates: p.planner.ProgressionObjectives(ctx.obs)}
+}
+
 // withoutKnownUnroutableJourneys removes only travel objectives the live route
 // planner has positively rejected. Generic Offer deliberately fails open when
 // every journey is reported unroutable because a bad live-map overlay must not
@@ -31,31 +44,45 @@ func withoutKnownUnroutableJourneys(out []Objective, unroutable []string) []Obje
 	return filtered
 }
 
-// OfferWithProgression composes generic actions with game-owned progression
-// goals. Offer keeps journeys last; progression is a local verb, so insert it
-// immediately before the first journey instead of appending it after travel.
-func OfferWithProgression(obs Observation, known *Knowledge, p ProgressionPlanner) []Objective {
-	out := Offer(obs, known)
+// OfferWithProgressionEvidence composes the portable provider menu with one
+// game-owned progression provider. Progression stays immediately before travel,
+// preserving deterministic historical ordering while letting play styles swap
+// or compose progression providers without duplicating generic mechanics.
+func OfferWithProgressionEvidence(obs Observation, known *Knowledge, p ProgressionPlanner) ObjectiveOffer {
+	base := OfferWithEvidence(obs, known)
 	if p == nil {
-		return out
+		return base
 	}
-	progress := annotate(p.ProgressionObjectives(obs), known)
+	if known == nil {
+		known = NewKnowledge(nil)
+	}
+	ctx := newObjectiveOfferContext(obs, known)
+	provided := (progressionObjectiveProvider{planner: p}).Provide(ctx)
+	progress := annotate(provided.Candidates, known)
+	base.Blocked = append(base.Blocked, provided.Blocked...)
 	if len(progress) == 0 {
-		return out
+		return base
 	}
-	out = withoutKnownUnroutableJourneys(out, obs.Unroutable)
-	journeyAt := len(out)
-	for i, o := range out {
+
+	base.Candidates = withoutKnownUnroutableJourneys(base.Candidates, obs.Unroutable)
+	journeyAt := len(base.Candidates)
+	for i, o := range base.Candidates {
 		if o.Kind == KindGoTo {
 			journeyAt = i
 			break
 		}
 	}
-	combined := make([]Objective, 0, len(out)+len(progress))
-	combined = append(combined, out[:journeyAt]...)
+	combined := make([]Objective, 0, len(base.Candidates)+len(progress))
+	combined = append(combined, base.Candidates[:journeyAt]...)
 	combined = append(combined, progress...)
-	combined = append(combined, out[journeyAt:]...)
-	return combined
+	combined = append(combined, base.Candidates[journeyAt:]...)
+	base.Candidates = combined
+	return base
+}
+
+// OfferWithProgression is the presentation-compatible candidate-only API.
+func OfferWithProgression(obs Observation, known *Knowledge, p ProgressionPlanner) []Objective {
+	return OfferWithProgressionEvidence(obs, known, p).Candidates
 }
 
 func (a *redObjectiveAdapter) ProgressionObjectives(obs Observation) []Objective {
