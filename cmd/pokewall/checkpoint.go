@@ -130,13 +130,13 @@ func (w *Wall) handleCheckpoint(res http.ResponseWriter, req *http.Request) {
 	writeJSON(res, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// handleCheckpointResume keeps endless campaigns close to their latest safe
-// progress. Worker loss first resumes the exact previous attempt. Gameplay or
-// code retries and failed endless successors prefer the newest consistent
-// objective state+knowledge pair anywhere in the current lineage. Durable
-// major badge checkpoints are only the fallback when no ordinary objective
-// checkpoint is available. Non-endless error retries intentionally retain
-// their historical fresh-game semantics.
+// handleCheckpointResume keeps retries close to safe progress without restoring
+// directly into the state that just failed. Worker loss first resumes the exact
+// previous attempt. Endless gameplay/code retries and failed successors prefer
+// the newest consistent objective state+knowledge pair anywhere in the lineage,
+// with durable badge checkpoints as their fallback. Ordinary LLM retries use
+// only the newest durable post-gym checkpoint, so a stuck run skips completed
+// gyms without being restored immediately beside the fault that triggered it.
 func (w *Wall) handleCheckpointResume(res http.ResponseWriter, id string, requestedAttempt int) {
 	if w.dumpsDir == "" {
 		res.WriteHeader(http.StatusNoContent)
@@ -169,6 +169,7 @@ func (w *Wall) handleCheckpointResume(res http.ResponseWriter, id string, reques
 	planner := t.Planner
 	lostRetry := previous > 0 && strings.HasPrefix(t.Detail, lostPrefix)
 	endlessRetry := previous > 0 && t.Endless && planner == "llm" && strings.HasPrefix(t.Detail, retryPrefix) && !lostRetry
+	gymRetry := previous > 0 && !t.Endless && planner == "llm" && strings.HasPrefix(t.Detail, retryPrefix) && !lostRetry
 	lineageRetry := previous == 0 && t.Endless && planner == "llm" && t.ResumeFromRunID != ""
 	resumeParent := t.ResumeFromRunID
 	w.mu.Unlock()
@@ -196,6 +197,8 @@ func (w *Wall) handleCheckpointResume(res http.ResponseWriter, id string, reques
 		if os.IsNotExist(err) {
 			cp, err = w.latestLineageMajorCheckpoint(id)
 		}
+	case gymRetry:
+		cp, err = w.latestLineageMajorCheckpoint(id)
 	case lineageRetry:
 		cp, err = w.latestLineageResumeCheckpoint(resumeParent, planner)
 		if os.IsNotExist(err) {
