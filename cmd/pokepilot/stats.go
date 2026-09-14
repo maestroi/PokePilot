@@ -93,7 +93,7 @@ func newStatsPlannerWithRunPolicy(profile, reasoningEffort, playStyle, riskToler
 		riskTolerance:    agent.NormalizeRiskTolerance(riskTolerance),
 		wildEncounters:   agent.NormalizeWildEncounters(wildEncounters),
 		counts:           map[string]int{},
-		baseExtraSystem:  inner.ExtraSystem,
+		baseExtraSystem:  appendSystemNote(inner.ExtraSystem, agent.PlayStyleSystemNote(playStyle)),
 		lastTelemetrySeq: currentLLMTelemetrySeq(),
 	}
 	s.router = agent.NewFailoverPlanner(inner, fallback)
@@ -106,7 +106,12 @@ func (s *statsPlanner) wirePlannerLogs(log io.Writer, snap *heartbeatSnap) {
 		s.inner.Log = log
 	}
 	if snap != nil {
-		s.inner.PromptLog = rawWriter{snap: snap, start: true}
+		s.inner.PromptLog = policyRawWriter{
+			snap:           snap,
+			playStyle:      s.playStyle.Name,
+			riskTolerance:  s.riskTolerance,
+			wildEncounters: s.wildEncounters,
+		}
 		s.inner.ReplyLog = rawWriter{snap: snap}
 	}
 }
