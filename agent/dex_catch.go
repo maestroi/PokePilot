@@ -9,9 +9,9 @@ import (
 )
 
 const (
-	dexCatchLimit          = 8
-	dexFishingIntent       = "dex-fishing"
-	dexGlobalFishingPlace  = PlaceID("vermilion city")
+	dexCatchLimit         = 8
+	dexFishingIntent      = "dex-fishing"
+	dexGlobalFishingPlace = PlaceID("vermilion city")
 )
 
 type dexCatchHabitat struct {
