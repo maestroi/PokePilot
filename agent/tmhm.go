@@ -39,6 +39,10 @@ const (
 	route22MapID      uint8 = 0x21
 	route22RivalHomeX uint8 = 25
 	route22RivalHomeY uint8 = 5
+
+	mtMoonPokecenterMapID       uint8 = 0x44
+	mtMoonMagikarpSalesmanHomeX uint8 = 10
+	mtMoonMagikarpSalesmanHomeY uint8 = 6
 )
 
 // filterRedScriptedTalkObjectives removes Red map objects that look like plain
@@ -66,26 +70,36 @@ func filterRedScriptedTalkObjectives(obs Observation, out []Objective) []Objecti
 	return filtered
 }
 
-// filterRedServiceTalkObjectives removes service actors whose A-button script
-// opens a semantic menu rather than ordinary NPC dialogue. The measured case
-// is a Mart clerk: generic Talk keeps pressing A while FontLoaded is set, so a
-// clerk offered as KindTalk can walk through BUY -> first item -> quantity and
-// end on the purchase confirmation without the planner ever choosing KindBuy.
-// Shopping is owned by KindBuy/skill.Buy; the clerk itself is not completion
-// coverage and must not be exposed as a generic talk target.
+// filterRedServiceTalkObjectives removes actors whose A-button interaction is
+// owned by another semantic action instead of ordinary NPC dialogue. Mart
+// clerks open shopping menus owned by KindBuy/skill.Buy. The Mt. Moon salesman
+// opens a paid YES/NO transaction that can grant MAGIKARP and set a one-time
+// event; generic KindTalk must neither spend the money nor leave that gameplay
+// choice open. These are Red adapter facts, not portable planner exceptions.
 func filterRedServiceTalkObjectives(romData []byte, obs Observation, out []Objective) []Objective {
-	clerkX, clerkY, err := rom.MartClerkPosition(romData, obs.Map)
-	if err != nil {
-		return out
-	}
+	clerkX, clerkY, clerkErr := rom.MartClerkPosition(romData, obs.Map)
 	filtered := make([]Objective, 0, len(out))
 	for _, o := range out {
-		if o.Kind == KindTalk && o.X == clerkX && o.Y == clerkY {
-			continue
+		if o.Kind == KindTalk {
+			if clerkErr == nil && o.X == clerkX && o.Y == clerkY {
+				continue
+			}
+			if redOwnedChoiceActor(obs.Map, o.X, o.Y) {
+				continue
+			}
 		}
 		filtered = append(filtered, o)
 	}
 	return filtered
+}
+
+// redOwnedChoiceActor identifies Red NPCs whose interaction immediately asks a
+// gameplay choice that generic KindTalk does not own. Keep this list at the
+// game-adapter seam: the core concept is "choice-owned interaction", while the
+// concrete map/object identities are game facts.
+func redOwnedChoiceActor(mapID, x, y uint8) bool {
+	return mapID == mtMoonPokecenterMapID &&
+		x == mtMoonMagikarpSalesmanHomeX && y == mtMoonMagikarpSalesmanHomeY
 }
 
 func appendTMHMObjectives(romData []byte, party state.PartyState, inventory state.InventoryState, out []Objective) []Objective {
