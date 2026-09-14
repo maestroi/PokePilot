@@ -161,6 +161,16 @@ func finishRunWithRecording(m *emu.Emu, client *farm.Client, spec farm.Spec, rea
 		report.Artifacts = checkpointArtifacts
 	}
 	report.Artifacts = appendRAMForensics(report.Artifacts, checkpointDir, report.RunID)
+	if runContextArtifact, err := farm.NewRunContextArtifact(spec); err != nil {
+		log.Printf("farm: %s: run context telemetry: %v", report.RunID, err)
+	} else {
+		candidate := append(append([]farm.Artifact(nil), report.Artifacts...), runContextArtifact)
+		if err := farm.ValidateFinishArtifacts(farm.FinishReport{Artifacts: candidate, SeedBurn: report.SeedBurn}); err != nil {
+			log.Printf("farm: %s: omit %s: %v", report.RunID, runContextArtifact.Name, err)
+		} else {
+			report.Artifacts = candidate
+		}
+	}
 
 	failures, terminal := drainObjectiveFailureTelemetry(reason, client.Version, checkpointDir)
 	if terminal != nil {
