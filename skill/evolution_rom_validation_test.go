@@ -163,7 +163,7 @@ func TestDexMoonStoneEvolutionSetsPokedexOwned(t *testing.T) {
 	if slot < 0 {
 		t.Fatalf("caught Jigglypuff missing from party: %+v", party.Mons)
 	}
-	if err := skill.UseEvolutionItem(e, romData, slot, itemMoonStone); err != nil {
+	if err := skill.UseEvolutionItem(e, romData, itemMoonStone, slot, speciesWigglytuff); err != nil {
 		t.Fatalf("UseEvolutionItem(Jigglypuff, Moon Stone): %v", err)
 	}
 
