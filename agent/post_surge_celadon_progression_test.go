@@ -21,38 +21,79 @@ func postSurgeObservation(mapID uint8) Observation {
 		Map:     mapID,
 		Badges:  []string{state.BadgeBoulder.String(), state.BadgeCascade.String(), state.BadgeThunder.String()},
 		Story:   ProgressState{{ID: redProgressHM01Acquired, Complete: true}},
-		MapName: "VERMILION_CITY",
+		MapName: state.MapName(mapID),
 	}
 }
 
-func TestRedProgressionOffersRainbowBadgeStageAfterSurge(t *testing.T) {
+func TestRedProgressionOffersLavenderStageFirstAfterSurge(t *testing.T) {
 	obs := postSurgeObservation(0x05)
-	if !hasProgressObjective(redProgressionObjectives(obs), redProgressRainbowBadge) {
-		t.Fatal("post-Surge observation did not offer the Rainbow Badge progression stage")
+	got := redProgressionObjectives(obs)
+	if !hasProgressObjective(got, redProgressPostSurgeLavenderReached) {
+		t.Fatal("post-Surge observation did not offer the Lavender checkpoint stage")
+	}
+	if hasProgressObjective(got, redProgressPostSurgeCeladonReady) || hasProgressObjective(got, redProgressRainbowBadge) {
+		t.Fatalf("later post-Surge stages leaked before Lavender completion: %v", got)
 	}
 }
 
-func TestRedProgressionKeepsRainbowBadgeStageAvailableAwayFromVermilion(t *testing.T) {
-	for _, mapID := range []uint8{0x03, 0x14, 0x15, 0x52, 0x04, 0x13, 0x12, 0x06, 0x85} {
-		obs := postSurgeObservation(mapID)
-		if !hasProgressObjective(redProgressionObjectives(obs), redProgressRainbowBadge) {
-			t.Errorf("map %#04x lost the resumable Rainbow Badge progression stage", mapID)
-		}
+func TestRedProgressionAdvancesFromLavenderToCeladonRecovery(t *testing.T) {
+	obs := postSurgeObservation(0x04)
+	obs.Story = append(obs.Story, ProgressFact{ID: redProgressPostSurgeLavenderReached, Complete: true})
+	got := redProgressionObjectives(obs)
+	if !hasProgressObjective(got, redProgressPostSurgeCeladonReady) {
+		t.Fatal("Lavender-complete observation did not offer the Celadon recovery stage")
+	}
+	if hasProgressObjective(got, redProgressPostSurgeLavenderReached) || hasProgressObjective(got, redProgressRainbowBadge) {
+		t.Fatalf("wrong post-Surge stage set after Lavender: %v", got)
 	}
 }
 
-func TestRedProgressionStopsRainbowBadgeStageAfterErika(t *testing.T) {
+func TestRedProgressionOffersErikaOnlyAfterCeladonReady(t *testing.T) {
+	obs := postSurgeObservation(0x85)
+	obs.Story = append(obs.Story,
+		ProgressFact{ID: redProgressPostSurgeLavenderReached, Complete: true},
+		ProgressFact{ID: redProgressPostSurgeCeladonReady, Complete: true},
+	)
+	got := redProgressionObjectives(obs)
+	if !hasProgressObjective(got, redProgressRainbowBadge) {
+		t.Fatal("Celadon-ready observation did not offer the Erika/Rainbow stage")
+	}
+	if hasProgressObjective(got, redProgressPostSurgeLavenderReached) || hasProgressObjective(got, redProgressPostSurgeCeladonReady) {
+		t.Fatalf("completed post-Surge travel stages were re-offered: %v", got)
+	}
+}
+
+func TestRedProgressionStopsPostSurgeStagesAfterErika(t *testing.T) {
 	obs := postSurgeObservation(0x06)
 	obs.Story = append(obs.Story, ProgressFact{ID: redProgressRainbowBadge, Complete: true})
-	if hasProgressObjective(redProgressionObjectives(obs), redProgressRainbowBadge) {
-		t.Fatal("Rainbow Badge progression was re-offered after completion")
+	got := redProgressionObjectives(obs)
+	for _, id := range []ProgressID{redProgressPostSurgeLavenderReached, redProgressPostSurgeCeladonReady, redProgressRainbowBadge} {
+		if hasProgressObjective(got, id) {
+			t.Fatalf("post-Surge progression stage %q was re-offered after Erika", id)
+		}
 	}
 }
 
 func TestRainbowStageDoesNotSuppressRocketHideout(t *testing.T) {
 	obs := postSurgeObservation(0x06)
+	obs.Story = append(obs.Story,
+		ProgressFact{ID: redProgressPostSurgeLavenderReached, Complete: true},
+		ProgressFact{ID: redProgressPostSurgeCeladonReady, Complete: true},
+	)
 	if !hasProgressObjective(redProgressionObjectives(obs), redProgressSilphScopeAcquired) {
-		t.Fatal("adding the Rainbow Badge stage suppressed the independently available Rocket Hideout objective")
+		t.Fatal("adding the bounded Rainbow stage suppressed the independently available Rocket Hideout objective")
+	}
+}
+
+func TestPostSurgeStageIDsAreAcceptedByRedAdapter(t *testing.T) {
+	for _, id := range []ProgressID{
+		redProgressPostSurgeLavenderReached,
+		redProgressPostSurgeCeladonReady,
+		redProgressRainbowBadge,
+	} {
+		if !redProgressionKnown(id) {
+			t.Fatalf("post-Surge semantic progression ID %q is not accepted by the Red adapter", id)
+		}
 	}
 }
 
@@ -62,8 +103,5 @@ func TestRainbowBadgeProgressIsProjectedFromRAM(t *testing.T) {
 	progress := redProgressStateFromRAM(&mem, state.InventoryState{}, state.StoryFacts{})
 	if !progress.Has(redProgressRainbowBadge) {
 		t.Fatal("Rainbow Badge bit was not projected into semantic progression state")
-	}
-	if !redProgressionKnown(redProgressRainbowBadge) {
-		t.Fatal("Rainbow Badge semantic progression ID is not accepted by the Red adapter")
 	}
 }
