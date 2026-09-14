@@ -10,9 +10,9 @@ import (
 const redNPCRewardIntent = "npc-choice-reward"
 
 const (
-	pewterGymMapID       uint8 = 0x36
-	pewterGymGuideHomeX  uint8 = 7
-	pewterGymGuideHomeY  uint8 = 10
+	pewterGymMapID      uint8 = 0x36
+	pewterGymGuideHomeX uint8 = 7
+	pewterGymGuideHomeY uint8 = 10
 )
 
 // appendRedNPCRewardObjectives turns Red's known YES/NO item handoffs into
