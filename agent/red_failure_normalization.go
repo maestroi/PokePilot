@@ -196,11 +196,14 @@ func failureCauseFor(err error) (FailureCauseID, []string) {
 	if errors.Is(err, skill.ErrFieldItemNoEffect) {
 		return "field_item_no_effect", nil
 	}
-	if errors.Is(err, skill.ErrBlackedOut) {
-		return "blacked_out", nil
+	if errors.Is(err, skill.ErrTrainerBlackedOut) {
+		return "trainer_blacked_out", nil
 	}
 	if errors.Is(err, skill.ErrCatchBlackout) {
 		return "catch_blackout", nil
+	}
+	if errors.Is(err, skill.ErrBlackedOut) {
+		return "blacked_out", nil
 	}
 	if errors.Is(err, skill.ErrCatchHuntExhausted) {
 		return "catch_hunt_exhausted", nil
