@@ -18,7 +18,17 @@ func TestPlayStyleSystemNoteDescribesEveryExplicitProfile(t *testing.T) {
 	}{
 		{PlayStyleSpeedrun, []string{"PLAY STYLE: SPEEDRUN", "direct required progression", "optional exploration"}},
 		{PlayStyleAdventure, []string{"PLAY STYLE: ADVENTURE", "nearby exploration", "natural"}},
-		{PlayStyleCompletionist, []string{"PLAY STYLE: COMPLETIONIST", "unvisited areas", "unseen NPCs", "reachable items", "unbeaten trainers"}},
+		{PlayStyleCompletionist, []string{
+			"PLAY STYLE: COMPLETIONIST",
+			"not yet owned in the Pokédex",
+			"regardless of battle usefulness or party fullness",
+			"capture stock",
+			"unvisited areas",
+			"unseen NPCs",
+			"collect reachable items",
+			"unbeaten trainers",
+			"explicit run goal still determines when the run ends",
+		}},
 		{PlayStyleTeamBuilder, []string{"PLAY STYLE: TEAM BUILDER", "building and developing", "catch-up training", "party"}},
 	}
 
