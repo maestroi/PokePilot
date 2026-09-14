@@ -140,8 +140,13 @@ func estimateTraining(romData []byte, leadSpecies uint8, currentXP uint32, curre
 	}
 	estimate.XPRemaining = targetXP - currentXP
 
-	var totalXP uint64
-	var count int
+	var (
+		equalXP         uint64
+		weightedXP      uint64
+		weightTotal     uint64
+		count           uint64
+		completeWeights = true
+	)
 	for _, slot := range slots {
 		if slot.ID == 0 || slot.Level == 0 {
 			continue
@@ -150,16 +155,31 @@ func estimateTraining(romData []byte, leadSpecies uint8, currentXP uint32, curre
 		if err != nil {
 			return TrainingEstimate{}, fmt.Errorf("agent: training wild species %#02x: %w", slot.ID, err)
 		}
-		totalXP += uint64(rom.WildBattleExperience(wildXP.BaseYield, slot.Level))
+		xp := uint64(rom.WildBattleExperience(wildXP.BaseYield, slot.Level))
+		equalXP += xp
 		count++
+		if slot.Chance == 0 {
+			completeWeights = false
+			continue
+		}
+		weightedXP += xp * uint64(slot.Chance)
+		weightTotal += uint64(slot.Chance)
 	}
-	if count == 0 || totalXP == 0 {
+	if count == 0 || equalXP == 0 {
 		estimate.Viability = TrainingOutsideBudget
 		return estimate, nil
 	}
-	// Round the ten-slot arithmetic mean to nearest whole XP. The encounter
-	// slots themselves already carry Red's rarity weighting.
-	estimate.XPPerEncounter = uint32((totalXP + uint64(count)/2) / uint64(count))
+
+	// Red does not choose its ten wild slots uniformly. WildGrassSlots carries
+	// the exact probability mass from data/wild/probabilities.asm, so use that
+	// distribution when it is available. Synthetic callers/tests created before
+	// Chance was exposed may omit it; preserve their old equal-slot semantics
+	// rather than silently treating zero as zero probability.
+	if completeWeights && weightTotal > 0 {
+		estimate.XPPerEncounter = uint32((weightedXP + weightTotal/2) / weightTotal)
+	} else {
+		estimate.XPPerEncounter = uint32((equalXP + count/2) / count)
+	}
 	if estimate.XPPerEncounter == 0 {
 		estimate.Viability = TrainingOutsideBudget
 		return estimate, nil
