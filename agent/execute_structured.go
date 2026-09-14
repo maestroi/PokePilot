@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
@@ -51,6 +52,16 @@ func executeRedOwned(m *emu.Emu, romData []byte, o Objective) (result ObjectiveR
 		presses, err := skill.TalkAt(m, romData, o.X, o.Y, skill.StatAwareMove(romData))
 		result.InteractionPresses = presses
 		if err != nil {
+			var menuErr *skill.ErrTalkMenu
+			if errors.As(err, &menuErr) {
+				declined, declineErr := declineUnexpectedGenericTalkChoice(m)
+				if declineErr != nil {
+					return result, fmt.Errorf("agent: %s: recover unexpected generic talk choice: %w", o, declineErr)
+				}
+				if declined {
+					return result, nil
+				}
+			}
 			return result, fmt.Errorf("agent: %s: %w", o, err)
 		}
 		return result, nil
