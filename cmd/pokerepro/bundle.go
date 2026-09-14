@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/maestroi/pokepilot/agent"
 	"github.com/maestroi/pokepilot/farm"
 )
 
@@ -25,11 +26,12 @@ const (
 )
 
 type portableMaterialized struct {
-	Manifest         farm.PortableReproManifest
-	Dir              string
-	StatePath        string
-	KnowledgePath    string
-	FailureReproPath string
+	Manifest          farm.PortableReproManifest
+	Dir               string
+	StatePath         string
+	KnowledgePath     string
+	FailureReproPath  string
+	WatchdogReproPath string
 }
 
 func runPortableBundle(ctx context.Context, source, out string, play bool) error {
@@ -137,12 +139,30 @@ func materializePortableBundle(ctx context.Context, source, out string) (portabl
 		}
 	}
 
+	watchdogReproPath := ""
+	if watchdogData, ok, err := portableZipFileOptional(zr, agent.WatchdogReproArtifactName); err != nil {
+		return mat, err
+	} else if ok {
+		var watchdog agent.WatchdogRepro
+		if err := json.Unmarshal(watchdogData, &watchdog); err != nil {
+			return mat, fmt.Errorf("decode %s: %w", agent.WatchdogReproArtifactName, err)
+		}
+		if _, err := agent.ReplayWatchdogRepro(watchdog); err != nil {
+			return mat, fmt.Errorf("validate %s: %w", agent.WatchdogReproArtifactName, err)
+		}
+		watchdogReproPath = filepath.Join(dir, agent.WatchdogReproArtifactName)
+		if err := os.WriteFile(watchdogReproPath, watchdogData, 0o644); err != nil {
+			return mat, fmt.Errorf("write %s: %w", agent.WatchdogReproArtifactName, err)
+		}
+	}
+
 	return portableMaterialized{
-		Manifest:         manifest,
-		Dir:              dir,
-		StatePath:        statePath,
-		KnowledgePath:    knowledgePath,
-		FailureReproPath: failureReproPath,
+		Manifest:          manifest,
+		Dir:               dir,
+		StatePath:         statePath,
+		KnowledgePath:     knowledgePath,
+		FailureReproPath:  failureReproPath,
+		WatchdogReproPath: watchdogReproPath,
 	}, nil
 }
 
@@ -152,6 +172,9 @@ func printPortableMaterialized(mat portableMaterialized) {
 	fmt.Printf("  knowledge: %s\n", mat.KnowledgePath)
 	if mat.FailureReproPath != "" {
 		fmt.Printf("  failure:   %s\n", mat.FailureReproPath)
+	}
+	if mat.WatchdogReproPath != "" {
+		fmt.Printf("  watchdog:  %s\n", mat.WatchdogReproPath)
 	}
 	if mat.Manifest.ObservedRevision != "" {
 		fmt.Printf("  observed:  %s\n", mat.Manifest.ObservedRevision)
