@@ -23,6 +23,13 @@ const farmResumeMarker = ".farm-resume"
 // to test.
 func prepareFarmAttempt(m *emu.Emu, client *farm.Client, spec farm.Spec, planner string, bootState []byte, checkpointDir string) (dir string, burn int, err error) {
 	dir = checkpointDir
+	// Reconstruct the cartridge before loading any state. Checked checkpoints
+	// include the effective ROM SHA-256, so an exact starter request + seed
+	// replays cleanly while an accidental mismatch is rejected by GomeBoy.
+	if err := prepareStarterExperiment(m, spec); err != nil {
+		return dir, 0, fmt.Errorf("starter experiment: %w", err)
+	}
+
 	explicitRepro := spec.Attempt == 1 && strings.HasPrefix(spec.RunID, "replay-")
 	var repro *farm.ResumeCheckpoint
 	if explicitRepro {
@@ -92,6 +99,10 @@ func prepareFarmAttempt(m *emu.Emu, client *farm.Client, spec farm.Spec, planner
 		}
 	}
 
+	// bootState is the runner's raw post-boot state captured from the verified
+	// base ROM. Raw states intentionally do not bind a ROM hash; the only code
+	// bytes this experiment changes are later Oak Lab immediates, so restoring
+	// that pre-starter state onto the derived cartridge is deterministic.
 	if err := m.LoadState(bootState); err != nil {
 		return dir, 0, fmt.Errorf("load state: %w", err)
 	}
