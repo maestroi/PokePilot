@@ -71,6 +71,12 @@ func naturalPlaySignal(obs Observation, o Objective, profile PlayStyleProfile) N
 	case KindBuy:
 		// KindBuy exists only for EconomyContext purchases with ShouldBuy=true.
 		add("needed-resupply", 0.25)
+		if spec, ok := ItemEconomy(string(o.Item)); ok && spec.Category == InventoryCapture && len(obs.Dex.Targets) > 0 {
+			// Capture stock is completion infrastructure while obtainable Dex
+			// entries remain. Scale this like exploration rather than party power:
+			// a boxed new species is still durable Completionist progress.
+			addScaled("dex-supplies", 0.30, profile.ExplorationScale)
+		}
 
 	case KindPickup:
 		note := strings.ToLower(o.Note)
@@ -99,12 +105,22 @@ func naturalPlaySignal(obs Observation, o Objective, profile PlayStyleProfile) N
 			add("recovery-stop", 0.28)
 		}
 		if naturalMartPlace(lowPlace) {
-			if economy := EconomyContext(obs); economy != nil && economy.ResupplyNeeded {
+			if len(obs.Dex.Targets) > 0 && normalBallStock(obs) < minimumCaptureStock {
+				// EconomyContext intentionally asks for capture resupply only while
+				// standing near wild encounters. A completion run must also be able
+				// to decide to visit a Mart before leaving town with no balls.
+				addScaled("capture-resupply", 0.35, profile.ExplorationScale)
+			} else if economy := EconomyContext(obs); economy != nil && economy.ResupplyNeeded {
 				add("resupply-stop", 0.24)
 			}
 		}
 
 	case KindCatch:
+		if o.Species != "" && !pokedexOwnedSet(obs)[o.Species] {
+			// Dex ownership, not party usefulness or party capacity, is the
+			// completion signal. Catch execution can box a species when needed.
+			addScaled("new-dex-entry", 0.35, profile.ExplorationScale)
+		}
 		var bonus float64
 		switch {
 		case obs.PartyCount <= 2:
