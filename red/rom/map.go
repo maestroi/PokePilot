@@ -67,6 +67,12 @@ type Object struct {
 	TrainerSet   uint8
 }
 
+// Object event movement encodings (constants/map_object_constants.asm).
+const (
+	MovementWalk uint8 = 0xFE // the object patrols its range
+	MovementStay uint8 = 0xFF // the object never leaves its home tile
+)
+
 // Connection links this map to an adjacent map. Dir: 0=north 1=south 2=west 3=east.
 type Connection struct {
 	Dir   uint8
