@@ -8,16 +8,16 @@ func (k *Knowledge) FailedResult(result ObjectiveResult, nativeErr error) {
 		return
 	}
 	o := result.Objective
-	name := o.String()
+	storage := objectiveStorageKey(o)
 	if result.Battle != nil && !result.Battle.Won && o.Kind == KindGym && o.Place != "" {
-		name = gymLossFailureKey(o.Place)
+		storage = gymLossFailureKey(o.Place)
 	}
 	if failureCauseIs(result, "trainer_blacked_out") {
-		name = trainerLossFailureKey(o)
+		storage = trainerLossFailureKey(o)
 	}
-	f := k.Failures[name]
-	f.Objective, f.Times, f.Last = name, f.Times+1, conciseObjectiveError(o, nativeErr)
-	k.Failures[name] = f
+	f := k.Failures[storage]
+	f.Objective, f.Times, f.Last = o.String(), f.Times+1, conciseObjectiveError(o, nativeErr)
+	k.Failures[storage] = f
 }
 
 // notePartyCombatResult releases combat-loss gates only from semantic party

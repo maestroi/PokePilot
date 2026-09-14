@@ -46,7 +46,7 @@ func normalizedFailureKey(result ObjectiveResult) string {
 }
 
 func recoverableFailureKey(obj Objective, result ObjectiveResult) string {
-	return obj.String() + "|" + normalizedFailureKey(result) + "|" + recoveryStateKey(result.Final)
+	return objectiveStorageKey(obj) + "|" + normalizedFailureKey(result) + "|" + recoveryStateKey(result.Final)
 }
 
 func (q failureQuarantine) record(result ObjectiveResult) {
@@ -54,7 +54,7 @@ func (q failureQuarantine) record(result ObjectiveResult) {
 		return
 	}
 	failure := normalizedFailure(result)
-	q[result.Objective.String()] = failureQuarantineEntry{
+	q[objectiveStorageKey(result.Objective)] = failureQuarantineEntry{
 		Cause: FailureCauseID(failure.Cause), StateKey: recoveryStateKey(result.Final),
 	}
 }
@@ -70,13 +70,14 @@ func (q failureQuarantine) filter(obs Observation, offered []Objective) []Object
 	stateKey := recoveryStateKey(obs)
 	out := make([]Objective, 0, len(offered))
 	for _, o := range offered {
-		entry, ok := q[o.String()]
+		key := objectiveStorageKey(o)
+		entry, ok := q[key]
 		if !ok {
 			out = append(out, o)
 			continue
 		}
 		if entry.StateKey != stateKey {
-			delete(q, o.String())
+			delete(q, key)
 			out = append(out, o)
 			continue
 		}
@@ -89,7 +90,7 @@ func (q failureQuarantine) filter(obs Observation, offered []Objective) []Object
 
 func (q failureQuarantine) clear(o Objective) {
 	if q != nil {
-		delete(q, o.String())
+		delete(q, objectiveStorageKey(o))
 	}
 }
 
