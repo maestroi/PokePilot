@@ -51,6 +51,12 @@ func failureCauseIs(result ObjectiveResult, cause string) bool {
 	return string(result.Cause) == cause
 }
 
+func failureIsBlackout(result ObjectiveResult) bool {
+	return failureCauseIs(result, "blacked_out") ||
+		failureCauseIs(result, "trainer_blacked_out") ||
+		failureCauseIs(result, "catch_blackout")
+}
+
 func normalizedFailure(result ObjectiveResult) gameruntime.Failure {
 	if result.Failure != nil {
 		return *result.Failure
