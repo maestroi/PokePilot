@@ -88,8 +88,8 @@ func testPortableBundle(t *testing.T, badHash bool) []byte {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 	for name, data := range map[string][]byte{
-		"repro.json": manifestData,
-		stateName:    state,
+		"repro.json":  manifestData,
+		stateName:     state,
 		knowledgeName: knowledge,
 	} {
 		w, err := zw.Create(name)
