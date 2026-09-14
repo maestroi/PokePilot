@@ -105,7 +105,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 		}
 		last.Failures = known.FailureList()
 		now := offerWithTMHM(m, romData, last, known)
-		now = engine.quarantine.filter(last, now)
+		now = engine.failures.filter(last, now)
 		if len(now) == 0 {
 			res.Stop = StopError
 			res.Err = errors.New("agent: Run: nothing is possible from here")
@@ -191,7 +191,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 				res.Stop = StopError
 				res.Err = fmt.Errorf("agent: objective %s returned error with completed outcome: %w", obj, execErr)
 			case actionReplan:
-				engine.quarantine.record(objectiveResult)
+				engine.failures.record(objectiveResult)
 			}
 			if res.Stop != StopUnset {
 				break
@@ -225,7 +225,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 
 		res.Outcomes = append(res.Outcomes, objectiveResult)
 		res.Completed = append(res.Completed, obj)
-		engine.quarantine.clear(obj)
+		engine.failures.clear(obj)
 		engine.planning.success(fromPlan)
 		notifyPlanning(p, engine.planning.snapshot())
 		known.Done(obj)
