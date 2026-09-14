@@ -10,8 +10,8 @@ import (
 
 const (
 	cinnabarFossilRoomMap uint8 = 0xAA
-	fossilScientistX     uint8 = 5
-	fossilScientistY     uint8 = 2
+	fossilScientistX      uint8 = 5
+	fossilScientistY      uint8 = 2
 
 	oldAmberItem    uint8 = 0x1F
 	domeFossilItem  uint8 = 0x29
