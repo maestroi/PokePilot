@@ -6,9 +6,8 @@ import (
 	"strings"
 
 	"github.com/maestroi/pokepilot/emu"
-	"github.com/maestroi/pokepilot/red/state"
+	gameruntime "github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/skill"
-	"github.com/maestroi/pokepilot/world"
 )
 
 type Outcome string
@@ -25,17 +24,47 @@ const (
 	OutcomeUnknownFailure           Outcome = "unknown_failure"
 )
 
+// TravelEvidence is the portable semantic subset of a game adapter's travel
+// result. Adapter-native route/controller details stay behind the adapter seam.
+type TravelEvidence struct {
+	Battles    int  `json:"battles,omitempty"`
+	Flees      int  `json:"flees,omitempty"`
+	Dialogues  int  `json:"dialogues,omitempty"`
+	BlackedOut bool `json:"blacked_out,omitempty"`
+	Replans    int  `json:"replans,omitempty"`
+}
+
+// TrainingEvidence is the portable semantic summary of one training session.
+type TrainingEvidence struct {
+	StartLevel int  `json:"start_level,omitempty"`
+	EndLevel   int  `json:"end_level,omitempty"`
+	Battles    int  `json:"battles,omitempty"`
+	BlackedOut bool `json:"blacked_out,omitempty"`
+	Reached    bool `json:"reached,omitempty"`
+	Retreated  bool `json:"retreated,omitempty"`
+}
+
+// BattleEvidence avoids exposing a concrete game's battle enum through the
+// portable objective result while retaining positive win evidence.
+type BattleEvidence struct {
+	Result string `json:"result,omitempty"`
+	Won    bool   `json:"won,omitempty"`
+}
+
 type ObjectiveResult struct {
-	Objective    Objective           `json:"objective"`
-	Outcome      Outcome             `json:"outcome"`
-	Summary      string              `json:"summary,omitempty"`
-	Cause        FailureCauseID      `json:"cause,omitempty"`
-	CauseContext []string            `json:"cause_context,omitempty"`
-	Initial      *FailureState       `json:"initial,omitempty"`
-	Final        Observation         `json:"final"`
-	Travel       *skill.TravelResult `json:"travel,omitempty"`
-	Train        *skill.TrainResult  `json:"train,omitempty"`
-	GymOutcome   *state.BattleResult `json:"gym_outcome,omitempty"`
+	Objective    Objective            `json:"objective"`
+	Outcome      Outcome              `json:"outcome"`
+	Summary      string               `json:"summary,omitempty"`
+	Failure      *gameruntime.Failure `json:"failure,omitempty"`
+	// Cause and CauseContext are retained as backwards-compatible flattened
+	// mirrors of Failure for existing farm/repro consumers.
+	Cause        FailureCauseID `json:"cause,omitempty"`
+	CauseContext []string       `json:"cause_context,omitempty"`
+	Initial      *FailureState  `json:"initial,omitempty"`
+	Final        Observation    `json:"final"`
+	Travel       *TravelEvidence   `json:"travel,omitempty"`
+	Training     *TrainingEvidence `json:"train,omitempty"`
+	Battle       *BattleEvidence   `json:"gym_outcome,omitempty"`
 	// InteractionPresses is positive evidence that a talk objective actually
 	// opened and paged dialogue. Zero is not success evidence.
 	InteractionPresses int `json:"interaction_presses,omitempty"`
@@ -88,14 +117,28 @@ func finalizeObjectiveResult(o Objective, result ObjectiveResult, final Observat
 		if result.Outcome == "" {
 			result.Outcome = OutcomeCompleted
 		}
-	} else if result.Outcome == "" || result.Outcome == OutcomeCompleted {
-		result.Outcome = classifyObjectiveOutcome(o, err, final)
+	} else {
+		if result.Failure == nil {
+			out := result.Outcome
+			if out == "" || out == OutcomeCompleted {
+				out = OutcomeUnknownFailure
+			}
+			failure := gameruntime.Failure{
+				Class:       failureClassForOutcome(out),
+				Cause:       "unclassified_error",
+				Recoverable: actionFor(out) == actionReplan,
+			}
+			result.Failure = &failure
+		}
+		if result.Outcome == "" || result.Outcome == OutcomeCompleted {
+			result.Outcome = outcomeForFailureClass(result.Failure.Class)
+		}
+		result.Cause = FailureCauseID(result.Failure.Cause)
+		result.CauseContext = append([]string(nil), result.Failure.Context...)
 	}
-	if err != nil {
-		result.Cause, result.CauseContext = failureCauseFor(err)
-	} else if result.Outcome != OutcomeCompleted && result.Cause == "" {
-		// A skill may return an explicit semantic outcome without a low-level
-		// error. Keep it distinguishable without inventing error prose.
+	if err == nil && result.Outcome != OutcomeCompleted && result.Cause == "" {
+		// A game adapter may return an explicit semantic outcome without a
+		// low-level error. Keep it distinguishable without inventing prose.
 		result.Cause = FailureCauseID("outcome:" + string(result.Outcome))
 	}
 	result.Summary = outcomeSummary(o, result.Outcome, final, err)
@@ -219,7 +262,7 @@ func verifyObjectivePostcondition(o Objective, initial, final Observation, resul
 		return OutcomeCompleted, nil
 
 	case KindGym:
-		if result.GymOutcome == nil || *result.GymOutcome != state.ResultWon {
+		if result.Battle == nil || !result.Battle.Won {
 			return OutcomePostconditionFailed, fmt.Errorf(
 				"%w: %s has no verified winning battle result", ErrObjectivePostconditionFailed, o)
 		}
@@ -272,96 +315,6 @@ func verifyObjectivePostcondition(o Objective, initial, final Observation, resul
 			"%w: no positive verifier registered for executable objective kind %d",
 			ErrObjectivePostconditionUnavailable, int(o.Kind))
 	}
-}
-
-func classifyObjectiveOutcome(_ Objective, err error, final Observation) Outcome {
-	if err == nil {
-		return OutcomeCompleted
-	}
-
-	if errors.Is(err, ErrObjectiveBoundaryChoice) {
-		return OutcomeChoiceRequired
-	}
-	var choice *skill.ErrDialogueChoice
-	if errors.As(err, &choice) || errors.Is(err, skill.ErrFieldItemPrompt) {
-		return OutcomeChoiceRequired
-	}
-
-	// A dirty finish dominates the error that caused it. errors.Join keeps the
-	// original typed controller fault too, so this check must precede every
-	// recoverable class or an unsafe boundary could be mislabeled blocked.
-	if errors.Is(err, ErrObjectiveBoundaryDirty) || errors.Is(err, skill.ErrShopStabilization) {
-		return OutcomeStabilizationFailed
-	}
-
-	if errors.Is(err, ErrObjectivePostconditionFailed) {
-		return OutcomePostconditionFailed
-	}
-	if errors.Is(err, ErrObjectivePostconditionUnavailable) {
-		return OutcomePostconditionUnavailable
-	}
-
-	if recoverableControllerFault(err) {
-		if stableObjectiveBoundary(final) {
-			return OutcomeBlocked
-		}
-		return OutcomeControllerUncertain
-	}
-
-	if errors.Is(err, skill.ErrBattle) || errors.Is(err, skill.ErrBattleInterrupted) {
-		return OutcomeOwnershipFailure
-	}
-
-	if errors.Is(err, skill.ErrFieldItemNoEffect) {
-		return OutcomePostconditionFailed
-	}
-
-	if errors.Is(err, skill.ErrBlackedOut) ||
-		errors.Is(err, skill.ErrCatchBlackout) ||
-		errors.Is(err, skill.ErrCatchHuntExhausted) ||
-		errors.Is(err, skill.ErrTrainRetreat) ||
-		errors.Is(err, skill.ErrTrainProgress) ||
-		errors.Is(err, ErrTrainingInefficient) ||
-		errors.Is(err, skill.ErrCantAfford) ||
-		errors.Is(err, skill.ErrNotInStock) ||
-		errors.Is(err, skill.ErrBagNotRisen) ||
-		errors.Is(err, skill.ErrFieldRosterNoBalls) ||
-		errors.Is(err, skill.ErrPCBoxFull) ||
-		errors.Is(err, skill.ErrFieldRosterPrerequisite) ||
-		errors.Is(err, skill.ErrFieldRosterNoRecovery) {
-		return OutcomeBlocked
-	}
-
-	var blocked *skill.ErrBlocked
-	var gate *skill.ErrRouteGateClosed
-	knownBlockage := errors.Is(err, world.ErrNoPath) ||
-		errors.Is(err, world.ErrNoRoute) ||
-		errors.Is(err, skill.ErrLegUnwalkable) ||
-		errors.Is(err, skill.ErrNoDialogue) ||
-		errors.Is(err, skill.ErrDialogueInterrupted) ||
-		errors.Is(err, skill.ErrFieldMovePrerequisite) ||
-		errors.As(err, &blocked) ||
-		errors.As(err, &gate)
-	if knownBlockage {
-		if stableObjectiveBoundary(final) {
-			return OutcomeBlocked
-		}
-		return OutcomeStabilizationFailed
-	}
-
-	return OutcomeUnknownFailure
-}
-
-func recoverableControllerFault(err error) bool {
-	return errors.Is(err, emu.ErrFrameDeadline) ||
-		errors.Is(err, skill.ErrNavigationStalled) ||
-		errors.Is(err, skill.ErrReplanExhausted) ||
-		errors.Is(err, skill.ErrMenuStuck) ||
-		errors.Is(err, skill.ErrCutsceneTimeout) ||
-		errors.Is(err, skill.ErrForcedChoiceStuck) ||
-		errors.Is(err, skill.ErrPickupMenu) ||
-		errors.Is(err, skill.ErrShopMenuTimeout) ||
-		errors.Is(err, skill.ErrShopControllerStalled)
 }
 
 func stableObjectiveBoundary(final Observation) bool {
