@@ -8,7 +8,7 @@ func TestBuildDexCompletionReportClassifiesFinalCatalog(t *testing.T) {
 			{Species: "mewtwo", Dex: 150, Owned: true, Sources: []DexSource{{Kind: AcquireStatic}}},
 			{Species: "bulbasaur", Dex: 1, Owned: true, Sources: []DexSource{{Kind: AcquireStarter}}},
 		},
-		Targets: []DexEntry{{Species: "pidgey", Dex: 16, Sources: []DexSource{{Kind: AcquireWildGrass, Place: "route 1"}}}},
+		Targets:     []DexEntry{{Species: "pidgey", Dex: 16, Sources: []DexSource{{Kind: AcquireWildGrass, Place: "route 1"}}}},
 		Unavailable: []DexEntry{{Species: "alakazam", Dex: 65, Unavailable: UnavailableTradeEvolution, Sources: []DexSource{{Kind: AcquireTradeEvo, From: "kadabra"}}}},
 	}}
 	outcomes := []ObjectiveResult{{
