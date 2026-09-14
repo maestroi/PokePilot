@@ -20,7 +20,7 @@ func executeCatchObjective(m *emu.Emu, romData []byte, o Objective, result Objec
 
 	// Safari maps are deliberately not ordinary planner Place destinations:
 	// their paid finite session must own gate entry, routing, Safari Balls and
-	// exit/re-entry. Every other catch source keeps the normal travel wrapper.
+	// exit/re-entry. Every other acquisition source keeps the normal travel wrapper.
 	if o.Place != "" && o.Intent != dexSafariIntent {
 		dest, ok := skill.Place(string(o.Place))
 		if !ok {
@@ -58,6 +58,11 @@ func executeCatchObjective(m *emu.Emu, romData []byte, o Objective, result Objec
 			return result, fmt.Errorf("agent: %s: unknown Safari habitat %q", o, o.Place)
 		}
 		caught, err = skill.SafariCatch(m, romData, mapID, []uint8{species}, skill.StatAwareMove(romData), 10)
+	case dexGiftIntent:
+		if o.Species != "eevee" {
+			return result, fmt.Errorf("agent: %s: no scripted gift executor for %q", o, o.Species)
+		}
+		caught, err = skill.ReceiveEeveeGift(m, romData, skill.StatAwareMove(romData))
 	default:
 		caught, err = skill.Catch(m, romData, []uint8{species}, skill.StatAwareMove(romData), 5)
 	}
@@ -68,6 +73,6 @@ func executeCatchObjective(m *emu.Emu, romData []byte, o Objective, result Objec
 		return result, nil
 	}
 	result.Outcome = OutcomeBlocked
-	return result, fmt.Errorf("agent: %s: no %s caught (outcome %s, balls=%d, encounters=%d)",
+	return result, fmt.Errorf("agent: %s: no %s acquired (outcome %s, balls=%d, encounters=%d)",
 		o, strings.ToUpper(string(o.Species)), catchOutcomeName(caught.Outcome), caught.BallsThrown, caught.Encounters)
 }
