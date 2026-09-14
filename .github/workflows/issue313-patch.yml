@@ -22,7 +22,7 @@ jobs:
           go-version-file: go.mod
 
       - name: Wire catalog into production paths
-        shell: python
+        shell: python {0}
         run: |
           from pathlib import Path
 
@@ -133,11 +133,9 @@ jobs:
 )''',
           )
 
-          # The direct file creation uses JSON escaping; normalize the raw JSON
-          # prefix emitted by /v1/outcomes.
           replace(
               "cmd/pokewall/catalog.go",
-              '_, _ = io.WriteString(res, `\\{\\"runs\\":\\[`)',
+              r'_, _ = io.WriteString(res, `{\"runs\":[`)',
               '_, _ = io.WriteString(res, `{"runs":[`)',
           )
 
