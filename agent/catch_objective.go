@@ -13,9 +13,9 @@ func executeCatchObjective(m *emu.Emu, romData []byte, o Objective, result Objec
 	if !ok {
 		return result, fmt.Errorf("agent: %s: unknown Red species %q", o, o.Species)
 	}
-	// Ordinary catches/gifts/fossils add a party member and therefore need
-	// collection storage preflight. NPC trades replace one party member with
-	// another, so a deposit there is unnecessary and could remove the exact
+	// Ordinary catches/gifts/fossils/prizes add a party member and therefore
+	// need collection storage preflight. NPC trades replace one party member
+	// with another, so a deposit there is unnecessary and could remove the exact
 	// give-species the trade planner selected.
 	if o.Intent != dexTradeIntent {
 		if err := skill.EnsurePartySlotForCollection(m, romData, skill.StatAwareMove(romData), species); err != nil {
@@ -24,12 +24,9 @@ func executeCatchObjective(m *emu.Emu, romData []byte, o Objective, result Objec
 		}
 	}
 
-	// Safari, NPC trades, fossils and Lapras' Silph route own semantics that an
-	// ordinary Place traversal cannot safely reproduce (finite Safari sessions;
-	// moving trade NPCs + offer menus; fossil leave/re-enter lifecycle; Card Key
-	// + rival-room routing respectively). Other acquisition sources keep the
-	// normal travel wrapper.
-	ownsTravel := o.Intent == dexSafariIntent || o.Intent == dexTradeIntent || o.Intent == dexFossilIntent || (o.Intent == dexGiftIntent && o.Species == "lapras")
+	// Safari, NPC trades, fossils, Game Corner Porygon and Lapras' Silph route
+	// own semantics that an ordinary Place traversal cannot safely reproduce.
+	ownsTravel := o.Intent == dexSafariIntent || o.Intent == dexTradeIntent || o.Intent == dexFossilIntent || o.Intent == dexGameCornerIntent || (o.Intent == dexGiftIntent && o.Species == "lapras")
 	if o.Place != "" && !ownsTravel {
 		dest, ok := skill.Place(string(o.Place))
 		if !ok {
@@ -82,6 +79,11 @@ func executeCatchObjective(m *emu.Emu, romData []byte, o Objective, result Objec
 		caught, err = skill.InGameTrade(m, romData, species, skill.StatAwareMove(romData))
 	case dexFossilIntent:
 		caught, err = skill.ReviveFossil(m, romData, species, skill.StatAwareMove(romData))
+	case dexGameCornerIntent:
+		if o.Species != "porygon" {
+			return result, fmt.Errorf("agent: %s: Game Corner executor only owns Porygon", o)
+		}
+		caught, err = skill.ReceivePorygonPrize(m, romData, skill.StatAwareMove(romData))
 	default:
 		caught, err = skill.Catch(m, romData, []uint8{species}, skill.StatAwareMove(romData), 5)
 	}
