@@ -168,5 +168,6 @@ func (s *Spec) UnmarshalJSON(data []byte) error {
 	RememberRiskTolerance(s.RunID, in.RiskTolerance)
 	RememberWildEncounters(s.RunID, in.WildEncounters)
 	setCurrentRunPolicy(in.PlayStyle, in.RiskTolerance, in.WildEncounters)
+	ApplyPlayStyleDefaultGoal(s)
 	return nil
 }
