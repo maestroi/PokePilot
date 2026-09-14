@@ -177,7 +177,7 @@ func newRunFailurePolicy(maxConsecutive int) *runFailurePolicy {
 // concrete game/controller error identity.
 func (f *runFailurePolicy) recoverable(obj Objective, result ObjectiveResult, strategic bool, leadLevel uint8) runFailureDecision {
 	failureKey := recoverableFailureKey(obj, result)
-	blackedOut := failureCauseIs(result, "blacked_out")
+	blackedOut := failureIsBlackout(result)
 	retreated := failureCauseIs(result, "train_retreat")
 	if strategic {
 		f.consecutive++
