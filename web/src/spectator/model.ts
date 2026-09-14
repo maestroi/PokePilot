@@ -1,14 +1,15 @@
 import type { SpectatorRun } from '../shared/api/spectator'
 import {
   normalizePlayStyle,
-  playSpeedLabel,
+  playSpeedLabel as configuredPlaySpeedLabel,
   playStyleLabel,
   playStyleTagline,
   type PlayStyle
 } from '../shared/playstyle'
+import { averageRunSpeed, formatRunSpeed, runTimingSummary } from '../shared/runTiming'
 
 export type SpectatorPlayStyle = PlayStyle
-export { normalizePlayStyle, playSpeedLabel, playStyleLabel, playStyleTagline }
+export { normalizePlayStyle, playStyleLabel, playStyleTagline }
 
 export type SpectatorTone = 'neutral' | 'info' | 'success' | 'warning' | 'danger'
 
@@ -58,9 +59,16 @@ export function runStatusLabel(run: SpectatorRun): string {
   return (run.highlight || run.reason || run.status || 'unknown').replaceAll('_', ' ')
 }
 
+export function playSpeedLabel(run: SpectatorRun): string {
+  const speed = averageRunSpeed(run)
+  return speed == null ? configuredPlaySpeedLabel(run) : `${formatRunSpeed(speed)} avg`
+}
+
 export function routeLabel(run: SpectatorRun): string {
   const route = [run.starter, run.dest].filter(Boolean).join(' → ')
-  return route || run.goal || 'Pokémon Red run'
+  const base = route || run.goal || 'Pokémon Red run'
+  const timing = runTimingSummary(run)
+  return timing ? `${base} · ${timing}` : base
 }
 
 export function objectiveLabel(run: SpectatorRun): string {
