@@ -29,13 +29,13 @@ var redCustomChoiceActors = []struct {
 }{
 	{mapID: 0x04, x: 15, y: 9}, // Lavender little girl: flavor YES/NO.
 	{mapID: pewterGymMapID, x: pewterGymGuideHomeX, y: pewterGymGuideHomeY}, // Pewter Gym guide: flavor YES/NO.
-	{mapID: 0x48, x: 2, y: 3},  // Daycare gentleman: deposit/withdraw party member and money.
-	{mapID: 0x9B, x: 2, y: 3},  // Warden: Gold Teeth/Fuchsia progression state machine.
-	{mapID: 0x9C, x: 6, y: 2},  // Safari gate worker: paid Safari session lifecycle.
-	{mapID: 0x9C, x: 1, y: 4},  // Safari gate worker: flavor YES/NO explanation.
-	{mapID: 0xAA, x: 5, y: 2},  // Cinnabar scientist: fossil revival transaction.
-	{mapID: 0xAA, x: 7, y: 6},  // Cinnabar scientist: in-game Pokemon trade.
-	{mapID: 0xE5, x: 5, y: 3},  // Name Rater: rename service/menu.
+	{mapID: 0x48, x: 2, y: 3}, // Daycare gentleman: deposit/withdraw party member and money.
+	{mapID: 0x9B, x: 2, y: 3}, // Warden: Gold Teeth/Fuchsia progression state machine.
+	{mapID: 0x9C, x: 6, y: 2}, // Safari gate worker: paid Safari session lifecycle.
+	{mapID: 0x9C, x: 1, y: 4}, // Safari gate worker: flavor YES/NO explanation.
+	{mapID: 0xAA, x: 5, y: 2}, // Cinnabar scientist: fossil revival transaction.
+	{mapID: 0xAA, x: 7, y: 6}, // Cinnabar scientist: in-game Pokemon trade.
+	{mapID: 0xE5, x: 5, y: 3}, // Name Rater: rename service/menu.
 }
 
 // appendRedNPCRewardObjectives turns Red's known YES/NO item handoffs into
