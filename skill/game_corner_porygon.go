@@ -14,11 +14,11 @@ const (
 	gameCornerPrizeRoomMap uint8 = 0x89
 	celadonDinerMap        uint8 = 0x8A
 
-	coinCaseItem   uint8 = 0x45
-	porygonSpecies uint8 = 0xAA
-	porygonCost          = 9999
-	coinPurchaseSize     = 50
-	coinPurchaseYen      = 1000
+	coinCaseItem     uint8 = 0x45
+	porygonSpecies   uint8 = 0xAA
+	porygonCost            = 9999
+	coinPurchaseSize       = 50
+	coinPurchaseYen        = 1000
 
 	coinCaseGiverX uint8 = 0
 	coinCaseGiverY uint8 = 1
@@ -29,9 +29,9 @@ const (
 )
 
 const (
-	gameCornerCoinCasePlace = "celadon diner coin case"
+	gameCornerCoinCasePlace  = "celadon diner coin case"
 	gameCornerCoinClerkPlace = "game corner coin clerk"
-	gameCornerPorygonPlace = "game corner porygon prize"
+	gameCornerPorygonPlace   = "game corner porygon prize"
 )
 
 func init() {
