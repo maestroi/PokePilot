@@ -2,7 +2,10 @@
 import { computed } from 'vue'
 import { ArrowPathIcon } from '@heroicons/vue/20/solid'
 import { getDashboard } from '../shared/api/client'
+import type { DashboardRun } from '../shared/api/types'
+import BadgeIcon from '../shared/components/BadgeIcon.vue'
 import Panel from '../shared/components/Panel.vue'
+import PokemonSprite from '../shared/components/PokemonSprite.vue'
 import ResourceState from '../shared/components/ResourceState.vue'
 import StatusBadge from '../shared/components/StatusBadge.vue'
 import { usePollingResource } from '../shared/composables/usePollingResource'
@@ -59,6 +62,22 @@ const metrics = computed(() => [
   { label: 'Waiting', value: runs.value.waiting.length, note: 'queued + leased' },
   { label: 'Wall build', value: shortRevision(activeData.value?.wall_version), note: 'current revision', mono: true }
 ])
+
+function leadMon(run: DashboardRun) {
+  return run.player?.party?.[0]
+}
+
+function runBadges(run: DashboardRun): string[] {
+  return run.player?.badges ?? []
+}
+
+function dexProgressLabel(run: DashboardRun): string {
+  const owned = Number(run.player?.dex_owned || 0)
+  const total = Number(run.player?.dex_total || 0)
+  if (total > 0) return `${owned}/${total}`
+  if (owned > 0) return String(owned)
+  return '—'
+}
 
 function refreshActive(): void {
   void retryActive()
@@ -146,6 +165,8 @@ function refreshRecent(): void {
               <thead>
                 <tr>
                   <th class="px-3 py-2 text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase sm:px-4">Run</th>
+                  <th class="px-3 py-2 text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Pokémon</th>
+                  <th class="px-3 py-2 text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Progress</th>
                   <th class="px-3 py-2 text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Goal</th>
                   <th class="px-3 py-2 text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Route</th>
                   <th class="px-3 py-2 text-right text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Round</th>
@@ -154,7 +175,32 @@ function refreshRecent(): void {
               </thead>
               <tbody class="divide-y divide-white/8">
                 <tr v-for="run in runs.active" :key="run.run_id">
-                  <td class="px-3 py-2.5 sm:px-4"><div class="flex items-center gap-2"><span class="size-1.5 rounded-full bg-emerald-300 shadow-[0_0_10px_rgba(110,231,183,0.45)]" /><span class="font-mono text-xs text-slate-300" :title="run.run_id">{{ shortID(run.run_id) }}</span></div></td>
+                  <td class="px-3 py-2.5 sm:px-4">
+                    <div class="flex items-center gap-2">
+                      <span class="size-1.5 rounded-full bg-emerald-300 shadow-[0_0_10px_rgba(110,231,183,0.45)]" />
+                      <span class="font-mono text-xs text-slate-300" :title="run.run_id">{{ shortID(run.run_id) }}</span>
+                    </div>
+                  </td>
+                  <td class="px-3 py-2">
+                    <div v-if="leadMon(run)" class="flex min-w-[9rem] items-center gap-2">
+                      <PokemonSprite :name="leadMon(run)?.name || ''" :size="34" />
+                      <div class="min-w-0">
+                        <div class="truncate text-[11px] font-semibold text-slate-300">{{ leadMon(run)?.name }}</div>
+                        <div class="font-mono text-[9px] text-slate-600">Lv {{ leadMon(run)?.level }} · {{ run.player?.party?.length || 0 }}/6</div>
+                      </div>
+                    </div>
+                    <span v-else class="text-xs text-slate-600">—</span>
+                  </td>
+                  <td class="px-3 py-2">
+                    <div class="min-w-[8rem]">
+                      <div class="flex h-5 items-center gap-0.5">
+                        <BadgeIcon v-for="badge in runBadges(run).slice(0, 4)" :key="badge" :name="badge" :size="18" />
+                        <span v-if="runBadges(run).length > 4" class="ml-0.5 font-mono text-[9px] text-slate-600">+{{ runBadges(run).length - 4 }}</span>
+                        <span v-if="!runBadges(run).length" class="text-[10px] text-slate-700">no badges</span>
+                      </div>
+                      <div class="mt-0.5 font-mono text-[9px] text-slate-500">Dex {{ dexProgressLabel(run) }}</div>
+                    </div>
+                  </td>
                   <td class="max-w-md truncate px-3 py-2.5 text-xs text-slate-300" :title="goalLabel(run)">{{ goalLabel(run) }}</td>
                   <td class="px-3 py-2.5 text-xs whitespace-nowrap text-slate-500">{{ llmProfileLabel(run) }}</td>
                   <td class="px-3 py-2.5 text-right font-mono text-xs tabular-nums text-slate-400">{{ run.stats?.round ?? '—' }}</td>
@@ -206,6 +252,7 @@ function refreshRecent(): void {
               <tr>
                 <th class="px-3 py-2 text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase sm:px-4">Run</th>
                 <th class="px-3 py-2 text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Outcome</th>
+                <th class="px-3 py-2 text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Progress</th>
                 <th class="px-3 py-2 text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Goal</th>
                 <th class="px-3 py-2 text-right text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Attempts</th>
                 <th class="px-3 py-2 text-right text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase sm:pr-4">Ended</th>
@@ -213,8 +260,21 @@ function refreshRecent(): void {
             </thead>
             <tbody class="divide-y divide-white/8">
               <tr v-for="run in recentRuns" :key="run.run_id">
-                <td class="px-3 py-2.5 font-mono text-xs whitespace-nowrap text-slate-300 sm:px-4" :title="run.run_id">{{ shortID(run.run_id) }}</td>
+                <td class="px-3 py-2 sm:px-4" :title="run.run_id">
+                  <div class="flex min-w-[8rem] items-center gap-2">
+                    <PokemonSprite v-if="leadMon(run)" :name="leadMon(run)?.name || ''" :size="30" :fainted="Number(leadMon(run)?.hp || 0) <= 0" />
+                    <span class="font-mono text-xs whitespace-nowrap text-slate-300">{{ shortID(run.run_id) }}</span>
+                  </div>
+                </td>
                 <td class="px-3 py-2.5"><StatusBadge :tone="outcomeTone(run)">{{ outcomeLabel(run) }}</StatusBadge></td>
+                <td class="px-3 py-2">
+                  <div class="flex items-center gap-2 whitespace-nowrap">
+                    <div class="flex items-center gap-0.5">
+                      <BadgeIcon v-for="badge in runBadges(run).slice(0, 3)" :key="badge" :name="badge" :size="17" />
+                    </div>
+                    <span class="font-mono text-[9px] text-slate-500">Dex {{ dexProgressLabel(run) }}</span>
+                  </div>
+                </td>
                 <td class="max-w-lg truncate px-3 py-2.5 text-xs text-slate-400" :title="goalLabel(run)">{{ goalLabel(run) }}</td>
                 <td class="px-3 py-2.5 text-right font-mono text-xs tabular-nums text-slate-500">{{ run.attempts || 1 }}</td>
                 <td class="px-3 py-2.5 text-right font-mono text-xs whitespace-nowrap text-slate-500 sm:pr-4">{{ ageLabel(run.ended_at, recentData?.now || nowSeconds) }} ago</td>

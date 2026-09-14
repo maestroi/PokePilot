@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { SpectatorRun } from '../shared/api/spectator'
+import BadgeIcon from '../shared/components/BadgeIcon.vue'
 import ItemIcon from '../shared/components/ItemIcon.vue'
+import MilestoneIcon from '../shared/components/MilestoneIcon.vue'
 import { itemDisplayName } from '../shared/pokemonAssets'
 import { bagMeter, dexMeter } from '../shared/playerProgress'
 import {
@@ -58,19 +60,22 @@ const milestones = computed(() => props.run.player?.milestones || [])
 
 <template>
   <div v-if="run.player?.badges?.length" class="mt-3 border-t border-white/8 pt-3">
-    <div class="mb-2 flex items-center gap-2">
-      <span class="pokeball-mark"><span /></span>
-      <span class="text-[9px] font-black tracking-[0.11em] text-slate-500 uppercase">Gym badges</span>
+    <div class="mb-2 flex items-center justify-between gap-2">
+      <div class="flex items-center gap-2">
+        <span class="pokeball-mark"><span /></span>
+        <span class="text-[9px] font-black tracking-[0.11em] text-slate-500 uppercase">Gym badges</span>
+      </div>
+      <span class="font-mono text-[9px] text-slate-600">{{ run.player.badges.length }}/8</span>
     </div>
-    <div class="flex flex-wrap gap-1.5">
-      <span
+    <div class="grid grid-cols-2 gap-1.5 sm:grid-cols-4 xl:grid-cols-8">
+      <div
         v-for="badge in run.player.badges"
         :key="badge"
-        class="badge-chip inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[9px] font-bold tracking-[0.05em] uppercase"
+        class="badge-tile flex min-w-0 items-center gap-2 rounded-md px-2 py-1.5"
       >
-        <span class="size-1.5 rounded-full bg-amber-300 shadow-[0_0_8px_rgba(252,211,77,.45)]" />
-        {{ badge }}
-      </span>
+        <BadgeIcon :name="badge" :size="30" />
+        <span class="min-w-0 truncate text-[9px] font-bold tracking-[0.04em] text-amber-100/80 uppercase">{{ badge }}</span>
+      </div>
     </div>
   </div>
 
@@ -162,15 +167,16 @@ const milestones = computed(() => props.run.player?.milestones || [])
         </div>
         <span class="font-mono text-[10px] text-slate-500">{{ milestones.length }}</span>
       </div>
-      <div v-if="milestones.length" class="mt-3 flex flex-wrap gap-1.5">
-        <span
+      <div v-if="milestones.length" class="mt-3 grid gap-1.5 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+        <div
           v-for="milestone in milestones"
           :key="milestone"
-          class="milestone-chip inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-[10px] text-slate-300"
+          class="milestone-chip flex min-w-0 items-center gap-2 rounded-md px-2 py-1.5"
+          :title="milestone"
         >
-          <span class="mini-ball"><span /></span>
-          {{ milestone }}
-        </span>
+          <MilestoneIcon :name="milestone" :size="24" />
+          <span class="min-w-0 flex-1 truncate text-[10px] text-slate-300">{{ milestone }}</span>
+        </div>
       </div>
       <p v-else class="mt-3 text-xs text-slate-600">No major milestones yet.</p>
     </section>
@@ -217,10 +223,12 @@ const milestones = computed(() => props.run.player?.milestones || [])
   background: linear-gradient(90deg, rgb(254 240 138), rgb(74 222 128));
 }
 
-.badge-chip {
-  border: 1px solid rgba(250, 204, 21, 0.16);
-  background: rgba(113, 63, 18, 0.14);
-  color: rgb(253 230 138);
+.badge-tile {
+  border: 1px solid rgba(250, 204, 21, 0.14);
+  background:
+    radial-gradient(circle at 15% 50%, rgba(250, 204, 21, 0.09), transparent 3rem),
+    rgba(113, 63, 18, 0.1);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.025);
 }
 
 .milestone-chip {
@@ -228,21 +236,18 @@ const milestones = computed(() => props.run.player?.milestones || [])
   background: rgba(255, 255, 255, 0.035);
 }
 
-.pokeball-mark,
-.mini-ball {
+.pokeball-mark {
   position: relative;
   display: inline-block;
   flex: none;
+  width: 1.3rem;
+  height: 1.3rem;
   border: 1px solid rgba(148, 163, 184, 0.42);
   border-radius: 9999px;
   background: linear-gradient(to bottom, rgb(185 28 28) 0 44%, rgb(30 41 59) 44% 56%, rgb(226 232 240) 56% 100%);
 }
 
-.pokeball-mark { width: 1.3rem; height: 1.3rem; }
-.mini-ball { width: 0.8rem; height: 0.8rem; }
-
-.pokeball-mark > span,
-.mini-ball > span {
+.pokeball-mark > span {
   position: absolute;
   top: 50%;
   left: 50%;
