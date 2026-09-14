@@ -1,6 +1,7 @@
 package farm
 
 import (
+	"bytes"
 	"encoding/json"
 	"testing"
 )
@@ -68,5 +69,31 @@ func TestSpecDecodeAppliesPlayStyleDefaultGoal(t *testing.T) {
 	}
 	if explicit.Goal != "badges:4" {
 		t.Fatalf("decoded explicit goal = %q, want badges:4", explicit.Goal)
+	}
+}
+
+func TestSpecWirePreservesExplicitFreePlay(t *testing.T) {
+	var first Spec
+	if err := json.Unmarshal([]byte(`{"run_id":"decoded-free-play","planner":"llm","play_style":"completionist","goal":""}`), &first); err != nil {
+		t.Fatal(err)
+	}
+	if first.Goal != "" {
+		t.Fatalf("explicit free-play goal = %q, want empty", first.Goal)
+	}
+
+	wire, err := json.Marshal(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(wire, []byte(`"goal":""`)) {
+		t.Fatalf("free-play wire = %s, want explicit empty goal", wire)
+	}
+
+	var leased Spec
+	if err := json.Unmarshal(wire, &leased); err != nil {
+		t.Fatal(err)
+	}
+	if leased.Goal != "" {
+		t.Fatalf("leased free-play goal = %q, want empty", leased.Goal)
 	}
 }
