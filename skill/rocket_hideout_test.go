@@ -6,7 +6,9 @@ func TestRocketHideoutAvailable(t *testing.T) {
 	for _, mapID := range []uint8{
 		celadonCityMap,
 		celadonPokemonCenterMap,
+		celadonGymMap,
 		gameCornerMap,
+		0x89, // Game Corner Prize Room
 		rocketHideoutB1FMap,
 		rocketHideoutB2FMap,
 		rocketHideoutB3FMap,
@@ -16,7 +18,7 @@ func TestRocketHideoutAvailable(t *testing.T) {
 			t.Errorf("RocketHideoutAvailable(%#04x) = false, want true", mapID)
 		}
 	}
-	for _, mapID := range []uint8{0x00, 0x04, 0x86} {
+	for _, mapID := range []uint8{0x00, 0x04} {
 		if RocketHideoutAvailable(mapID) {
 			t.Errorf("RocketHideoutAvailable(%#04x) = true, want false", mapID)
 		}
@@ -62,7 +64,6 @@ func TestReplacedBlockCells(t *testing.T) {
 				if got[i] != tt.want[i] {
 					t.Errorf("cell %d = %v, want %v", i, got[i], tt.want[i])
 				}
-			}
 		})
 	}
 }
