@@ -7,34 +7,34 @@ import (
 	"github.com/maestroi/pokepilot/skill"
 )
 
-// trainerLossFailurePrefix marks failures where the objective reached a
-// mandatory trainer battle and the party blacked out. These are different
-// from ordinary ErrBlackedOut failures: a poison wipe or a lost wild battle
-// does not prove that retrying the same route will hit the same unavoidable
-// opponent again.
-const trainerLossFailurePrefix = "trainer loss while attempting "
+// legacyTrainerLossFailurePrefix is retained only for v4/string-keyed
+// checkpoint migration. New state uses failureModeTrainerLoss + ObjectiveKey.
+const legacyTrainerLossFailurePrefix = "trainer loss while attempting "
 
-// trainerLossFailureKey gives a trainer loss a stable logical objective
-// identity. Travel's fight/flee variants intentionally collapse to the same
-// key: fleeing changes only wild encounters, while a trainer cannot be fled,
-// so both variants hit the same blocker. KindGym is scoped by its internal
-// Place so a loss to a gym trainer in Pewter does not disable Cerulean.
-func trainerLossFailureKey(o Objective) string {
+func trainerLossObjective(o Objective) Objective {
 	base := o
-	base.Note, base.Intent = "", ""
+	base.Note = ""
 	if base.Kind == KindGoTo || (base.Kind == KindHeal && base.Place != "") {
 		base.Flee = false
 	}
-	if base.Kind == KindGym && base.Place != "" {
-		return trainerLossFailurePrefix + "beat the gym leader at " + strings.ToUpper(base.Place)
-	}
-	return trainerLossFailurePrefix + base.String()
+	return base
 }
 
-// trainerLossFailureName classifies only the typed trainer-blackout outcome.
-// ErrTrainerBlackedOut still unwraps to ErrBlackedOut for Run's existing
-// recoverable-blackout handling, but this narrower type is the evidence that
-// a specific mandatory trainer beat the unchanged party.
+// trainerLossFailureKey gives a trainer loss a stable logical objective
+// identity. Travel's fight/flee variants intentionally collapse to the same
+// key: fleeing changes only wild encounters, while a trainer cannot be fled.
+func trainerLossFailureKey(o Objective) string {
+	return failureStorageKey(trainerLossObjective(o).Key(), failureModeTrainerLoss)
+}
+
+func legacyTrainerLossFailureKey(o Objective) string {
+	base := trainerLossObjective(o)
+	if base.Kind == KindGym && base.Place != "" {
+		return legacyTrainerLossFailurePrefix + "beat the gym leader at " + strings.ToUpper(base.Place)
+	}
+	return legacyTrainerLossFailurePrefix + base.String()
+}
+
 func trainerLossFailureName(o Objective, err error) (string, bool) {
 	if err == nil || !errors.Is(err, skill.ErrTrainerBlackedOut) {
 		return "", false
@@ -42,18 +42,34 @@ func trainerLossFailureName(o Objective, err error) (string, bool) {
 	return trainerLossFailureKey(o), true
 }
 
+func trainerLossRecorded(k *Knowledge, o Objective) bool {
+	if k == nil {
+		return false
+	}
+	if _, ok := k.Failures[trainerLossFailureKey(o)]; ok {
+		return true
+	}
+	_, ok := k.Failures[legacyTrainerLossFailureKey(o)]
+	return ok
+}
+
 func (k *Knowledge) clearTrainerLossFailures() {
+	if k == nil {
+		return
+	}
 	for name := range k.Failures {
-		if strings.HasPrefix(name, trainerLossFailurePrefix) {
+		if _, mode, ok := parseFailureStorageKey(name); ok && mode == failureModeTrainerLoss {
+			delete(k.Failures, name)
+			continue
+		}
+		if strings.HasPrefix(name, legacyTrainerLossFailurePrefix) {
 			delete(k.Failures, name)
 		}
 	}
 }
 
-// notePartyCombatChange lifts trainer-loss and gym-loss recovery gates when
-// the settled world got stronger, or when the demanded recovery action is
-// typed-impossible in this area. Travel/heal with an unchanged party must
-// not call this with a matching observation: that is the #67 commute loop.
+// notePartyCombatChange is retained for direct legacy callers/tests; live Run
+// uses notePartyCombatResult. Both release the same structured recovery gates.
 func (k *Knowledge) notePartyCombatChange(before, after Observation, execErr error) {
 	if k == nil {
 		return
@@ -92,12 +108,7 @@ func trainingUnviableHere(obs Observation) bool {
 }
 
 // ppRecoveryDue reports whether Offer already proved that attacking PP needs
-// recovery by constructing a recovery objective. This deliberately consumes
-// Offer's factual result rather than re-decoding move semantics here: a Center
-// heal carries the PP reason on its note, and a finite Ether/Elixer objective
-// exists only when leadOutOfPP was true. If neither recovery path is actually
-// available, this returns false so the planner is not left with an artificially
-// empty menu.
+// recovery by constructing a recovery objective.
 func ppRecoveryDue(out []Objective) bool {
 	for _, o := range out {
 		if o.Kind == KindHeal && strings.Contains(o.Note, "lead has no PP") {
@@ -115,39 +126,16 @@ func ppRecoveryDue(out []Objective) bool {
 	return false
 }
 
-// filterTrainerLossBlocked removes objectives that are currently disproved by
-// observed combat outcomes. Mandatory-trainer and gym-leader losses stay
-// blocked until a material combat-readiness change (Train success/shortfall,
-// incidental level/party growth, or Train proving the current grass cannot
-// recover the party). Gym recovery adds one bounded phase: after that change,
-// another Train objective is withheld until the ready gym retry is actually
-// attempted. If the retry loses, the scoped gym-loss marker returns and
-// training becomes legal again; if it wins, Knowledge.Done consumes the
-// ready marker. This prevents an LLM from climbing L10 -> L12 -> ... -> L22
-// without ever testing whether the last material change was already enough.
-//
-// The same final filter also handles PP recovery. If Offer has constructed a
-// Center/Ether recovery because every real attacking move is exhausted, Train
-// and Gym are withheld until that resource is restored. Status PP (for example
-// GROWL) is not a reason to enter another combat objective that cannot deal
-// damage.
 func filterTrainerLossBlocked(out []Objective, known *Knowledge) []Objective {
 	retryPlace, retryDue := gymRetryPending(known)
 	ppDue := ppRecoveryDue(out)
 	filtered := make([]Objective, 0, len(out))
 	for _, o := range out {
-		if _, blocked := known.Failures[trainerLossFailureKey(o)]; blocked {
+		if trainerLossRecorded(known, o) {
 			continue
 		}
-		// Offer normally removes a gym whose scoped leader-loss marker exists
-		// before this filter runs. Keep the same invariant here too: recovery
-		// filtering is also used directly in tests and should never allow an
-		// unchanged leader rechallenge merely because it was handed a raw
-		// candidate list.
-		if o.Kind == KindGym && o.Place != "" {
-			if _, blocked := known.Failures[gymLossFailureKey(o.Place)]; blocked {
-				continue
-			}
+		if o.Kind == KindGym && o.Place != "" && gymLossRecorded(known, o.Place) {
+			continue
 		}
 		if ppDue && (o.Kind == KindTrain || o.Kind == KindGym) {
 			continue
