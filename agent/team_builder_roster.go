@@ -85,7 +85,7 @@ func teamBuilderRosterSignal(obs Observation, o Objective, profile PlayStyleProf
 			}
 
 		case KindGoTo:
-			if naturalMartPlace(string(o.Place)) && normalBallStock(obs) < minimumCaptureStock {
+			if naturalMartPlace(string(o.Place)) && normalBallStock(obs) < minimumCaptureStock && captureResupplyAffordable(obs) {
 				add("roster-resupply", 0.34*fillScale)
 			}
 		}
