@@ -17,7 +17,7 @@ func redScriptedSources() []scriptedDexSource {
 		{0x5A, DexSource{Kind: AcquireFossil, ExclusiveGroup: "mt_moon_fossil", Requirement: "dome_fossil"}},  // Kabuto
 		{0xAB, DexSource{Kind: AcquireFossil, Requirement: "old_amber"}},                                      // Aerodactyl
 		{0x66, DexSource{Kind: AcquireGift, Place: "celadon mansion eevee"}},                                  // Eevee
-		{0x13, DexSource{Kind: AcquireGift}},                                                                  // Lapras
+		{0x13, DexSource{Kind: AcquireGift, Place: "silph co lapras", Requirement: "card_key"}},              // Lapras
 		{0x2B, DexSource{Kind: AcquireGift, ExclusiveGroup: "fighting_dojo"}},                                 // Hitmonlee
 		{0x2C, DexSource{Kind: AcquireGift, ExclusiveGroup: "fighting_dojo"}},                                 // Hitmonchan
 		{0xAA, DexSource{Kind: AcquireGift, Requirement: "game_corner"}},                                      // Porygon
