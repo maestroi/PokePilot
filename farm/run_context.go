@@ -17,16 +17,16 @@ const RunContextArtifactName = "run-context.json"
 // planner/objective failures. These are intentionally the semantic behavior
 // inputs, not every execution limit on Spec.
 type RunContext struct {
-	Planner          string `json:"planner,omitempty"`
-	Starter          string `json:"starter,omitempty"`
-	Dest             string `json:"dest,omitempty"`
-	Goal             string `json:"goal,omitempty"`
-	LLMProfile       string `json:"llm_profile,omitempty"`
-	ReasoningEffort  string `json:"reasoning_effort,omitempty"`
-	PlayStyle        string `json:"play_style,omitempty"`
-	RiskTolerance    string `json:"risk_tolerance,omitempty"`
-	WildEncounters   string `json:"wild_encounters,omitempty"`
-	Seed             int64  `json:"seed"`
+	Planner         string `json:"planner,omitempty"`
+	Starter         string `json:"starter,omitempty"`
+	Dest            string `json:"dest,omitempty"`
+	Goal            string `json:"goal,omitempty"`
+	LLMProfile      string `json:"llm_profile,omitempty"`
+	ReasoningEffort string `json:"reasoning_effort,omitempty"`
+	PlayStyle       string `json:"play_style,omitempty"`
+	RiskTolerance   string `json:"risk_tolerance,omitempty"`
+	WildEncounters  string `json:"wild_encounters,omitempty"`
+	Seed            int64  `json:"seed"`
 }
 
 // RunContextForSpec snapshots policy extensions while the runner still owns
