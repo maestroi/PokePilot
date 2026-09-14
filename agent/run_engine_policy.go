@@ -172,16 +172,17 @@ func newRunFailurePolicy(maxConsecutive int) *runFailurePolicy {
 	}
 }
 
-// recoverable applies the historical Run retry policy without touching an
-// emulator. The caller has already established that actionFor(result.Outcome)
-// is actionReplan; this method decides whether that replan/retry budget is
-// still available.
-func (f *runFailurePolicy) recoverable(obj Objective, result ObjectiveResult, blackedOut, retreated, strategic bool, leadLevel uint8) runFailureDecision {
+// recoverable applies the historical retry policy using only the adapter's
+// normalized failure record and semantic result state. It never inspects a
+// concrete game/controller error identity.
+func (f *runFailurePolicy) recoverable(obj Objective, result ObjectiveResult, strategic bool, leadLevel uint8) runFailureDecision {
 	failureKey := recoverableFailureKey(obj, result)
+	blackedOut := failureCauseIs(result, "blacked_out")
+	retreated := failureCauseIs(result, "train_retreat")
 	if strategic {
 		f.consecutive++
 		reason, key, terminal := recoverableFailureReplan(
-			f.escalated, obj, result, blackedOut, retreated, f.consecutive, f.maxConsecutive,
+			f.escalated, obj, result, f.consecutive, f.maxConsecutive,
 		)
 		if terminal {
 			return runFailureDecision{Stop: StopFailed}
