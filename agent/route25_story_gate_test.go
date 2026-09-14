@@ -16,7 +16,7 @@ func TestJourneyProgressionBlockedRoute25UntilBillTicket(t *testing.T) {
 
 func TestOfferLeavesPreBillRoute25ToBillProgression(t *testing.T) {
 	known := NewKnowledge(map[uint8][]uint8{
-		0x23: {route25Map},
+		0x23:       {route25Map},
 		route25Map: {0x23},
 	})
 	known.SawMap(0x23)
