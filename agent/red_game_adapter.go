@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
+	gameruntime "github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/skill"
@@ -135,15 +136,19 @@ func (a *redObjectiveAdapter) VerifyPostcondition(o Objective, initial, final Ob
 	return err
 }
 
+func (a *redObjectiveAdapter) NormalizeFailure(phase gameruntime.FailurePhase, err error, final Observation) gameruntime.Failure {
+	return normalizeRedFailure(phase, err, final)
+}
+
 // redTrainingReachedThroughEvolution is the Red-specific fallback for ordinary
 // species-targeted training. A session may legitimately replace the target
 // species with its evolution while reaching the requested level. The generic
 // verifier intentionally treats that species mismatch as a failure; Red can
-// prove the stronger game-specific fact from TrainResult plus the same party
-// slot that held the requested species before execution.
+// prove the stronger game-specific fact from semantic training evidence plus
+// the same party slot that held the requested species before execution.
 func redTrainingReachedThroughEvolution(o Objective, initial, final Observation, result ObjectiveResult) bool {
-	if o.Kind != KindTrain || o.Species == "" || result.Train == nil || !result.Train.Reached ||
-		result.Train.EndLevel < int(o.Level) || !stableObjectiveBoundary(final) {
+	if o.Kind != KindTrain || o.Species == "" || result.Training == nil || !result.Training.Reached ||
+		result.Training.EndLevel < int(o.Level) || !stableObjectiveBoundary(final) {
 		return false
 	}
 
