@@ -21,7 +21,10 @@ func executeCatchObjective(m *emu.Emu, romData []byte, o Objective, result Objec
 	// Safari and Lapras' Silph route own semantics that an ordinary Place
 	// traversal cannot safely reproduce (finite Safari sessions; Card Key +
 	// rival-room routing respectively). Other acquisition sources keep the
-	// normal travel wrapper.
+	// normal travel wrapper. Fighting Dojo deliberately uses ordinary travel:
+	// TravelFlee fights mandatory trainers while fleeing wild encounters, so it
+	// can clear the dojo on the way to the selected prize without a second
+	// scripted battle route.
 	ownsTravel := o.Intent == dexSafariIntent || (o.Intent == dexGiftIntent && o.Species == "lapras")
 	if o.Place != "" && !ownsTravel {
 		dest, ok := skill.Place(string(o.Place))
@@ -66,6 +69,8 @@ func executeCatchObjective(m *emu.Emu, romData []byte, o Objective, result Objec
 			caught, err = skill.ReceiveEeveeGift(m, romData, skill.StatAwareMove(romData))
 		case "lapras":
 			caught, err = skill.ReceiveLaprasGift(m, romData, skill.StatAwareMove(romData))
+		case "hitmonlee", "hitmonchan":
+			caught, err = skill.ReceiveFightingDojoGift(m, romData, skill.StatAwareMove(romData), species)
 		default:
 			return result, fmt.Errorf("agent: %s: no scripted gift executor for %q", o, o.Species)
 		}

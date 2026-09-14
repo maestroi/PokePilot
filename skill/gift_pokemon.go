@@ -11,10 +11,11 @@ import (
 const giftPokemonBudget = 6000
 
 type giftPokemonSpec struct {
-	Name    string
-	Map     uint8
-	X, Y    uint8
-	Species uint8
+	Name          string
+	Map           uint8
+	X, Y          uint8
+	Species       uint8
+	ConfirmChoice bool
 }
 
 func giftPokemonAlreadyOwned(mem *state.Mem, romData []byte, species uint8) bool {
@@ -31,8 +32,10 @@ func giftPokemonAlreadyOwned(mem *state.Mem, romData []byte, species uint8) bool
 // receiveGiftPokemonAt drives one GivePokemon-backed map interaction. Generic
 // Talk is intentionally not used: GivePokemon may ask whether to nickname the
 // gift, and blindly paging that two-option menu with A accepts YES and enters
-// the naming keyboard. This helper recognizes that exact choice, selects NO,
-// and positively verifies the species through party, active box, or Pokédex.
+// the naming keyboard. For gifts that first ask whether Red wants the Pokemon,
+// ConfirmChoice makes the first verified two-option selection YES and the
+// later GivePokemon nickname selection NO. Success is positively verified via
+// party, active box, or Pokédex ownership.
 func receiveGiftPokemonAt(m *emu.Emu, romData []byte, policy MovePolicy, spec giftPokemonSpec) (CatchResult, error) {
 	if policy == nil {
 		return CatchResult{}, fmt.Errorf("skill: %s: nil policy", spec.Name)
@@ -61,11 +64,22 @@ func receiveGiftPokemonAt(m *emu.Emu, romData []byte, policy MovePolicy, spec gi
 	m.Tap(emu.A, 3, 7)
 
 	res := CatchResult{}
+	confirmed := !spec.ConfirmChoice
 	for spent := 0; spent < giftPokemonBudget; spent += 10 {
 		var mem state.Mem
 		state.Snapshot(m, &mem)
 
 		if state.DecodeTwoOptionMenu(&mem) != nil {
+			if !confirmed {
+				// Choice-backed gifts such as the Fighting Dojo balls ask whether
+				// Red wants this Pokemon before GivePokemon runs. Accept exactly
+				// that first prompt, then treat every later choice as nickname.
+				if err := selectTwoOption(m, 0); err != nil {
+					return res, fmt.Errorf("skill: %s: accept gift choice: %w", spec.Name, err)
+				}
+				confirmed = true
+				continue
+			}
 			// GivePokemon's nickname prompt defaults to YES. Keep canonical
 			// species names for deterministic collection runs.
 			if err := selectTwoOption(m, 1); err != nil {

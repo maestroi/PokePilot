@@ -10,22 +10,22 @@ type scriptedDexSource struct {
 
 func redScriptedSources() []scriptedDexSource {
 	return []scriptedDexSource{
-		{0xB0, DexSource{Kind: AcquireStarter, ExclusiveGroup: "starter"}},                                    // Charmander
-		{0xB1, DexSource{Kind: AcquireStarter, ExclusiveGroup: "starter"}},                                    // Squirtle
-		{0x99, DexSource{Kind: AcquireStarter, ExclusiveGroup: "starter"}},                                    // Bulbasaur
-		{0x62, DexSource{Kind: AcquireFossil, ExclusiveGroup: "mt_moon_fossil", Requirement: "helix_fossil"}}, // Omanyte
-		{0x5A, DexSource{Kind: AcquireFossil, ExclusiveGroup: "mt_moon_fossil", Requirement: "dome_fossil"}},  // Kabuto
-		{0xAB, DexSource{Kind: AcquireFossil, Requirement: "old_amber"}},                                      // Aerodactyl
-		{0x66, DexSource{Kind: AcquireGift, Place: "celadon mansion eevee"}},                                  // Eevee
-		{0x13, DexSource{Kind: AcquireGift, Place: "silph co lapras", Requirement: "card_key"}},               // Lapras
-		{0x2B, DexSource{Kind: AcquireGift, ExclusiveGroup: "fighting_dojo"}},                                 // Hitmonlee
-		{0x2C, DexSource{Kind: AcquireGift, ExclusiveGroup: "fighting_dojo"}},                                 // Hitmonchan
-		{0xAA, DexSource{Kind: AcquireGift, Requirement: "game_corner"}},                                      // Porygon
-		{0x84, DexSource{Kind: AcquireStatic, Requirement: "poke_flute"}},                                     // Snorlax
-		{0x4A, DexSource{Kind: AcquireStatic}},                                                                // Articuno
-		{0x4B, DexSource{Kind: AcquireStatic}},                                                                // Zapdos
-		{0x49, DexSource{Kind: AcquireStatic}},                                                                // Moltres
-		{0x83, DexSource{Kind: AcquireStatic}},                                                                // Mewtwo
+		{0xB0, DexSource{Kind: AcquireStarter, ExclusiveGroup: "starter"}},                                       // Charmander
+		{0xB1, DexSource{Kind: AcquireStarter, ExclusiveGroup: "starter"}},                                       // Squirtle
+		{0x99, DexSource{Kind: AcquireStarter, ExclusiveGroup: "starter"}},                                       // Bulbasaur
+		{0x62, DexSource{Kind: AcquireFossil, ExclusiveGroup: "mt_moon_fossil", Requirement: "helix_fossil"}},    // Omanyte
+		{0x5A, DexSource{Kind: AcquireFossil, ExclusiveGroup: "mt_moon_fossil", Requirement: "dome_fossil"}},     // Kabuto
+		{0xAB, DexSource{Kind: AcquireFossil, Requirement: "old_amber"}},                                         // Aerodactyl
+		{0x66, DexSource{Kind: AcquireGift, Place: "celadon mansion eevee"}},                                     // Eevee
+		{0x13, DexSource{Kind: AcquireGift, Place: "silph co lapras", Requirement: "card_key"}},                  // Lapras
+		{0x2B, DexSource{Kind: AcquireGift, Place: "fighting dojo hitmonlee", ExclusiveGroup: "fighting_dojo"}},  // Hitmonlee
+		{0x2C, DexSource{Kind: AcquireGift, Place: "fighting dojo hitmonchan", ExclusiveGroup: "fighting_dojo"}}, // Hitmonchan
+		{0xAA, DexSource{Kind: AcquireGift, Requirement: "game_corner"}},                                         // Porygon
+		{0x84, DexSource{Kind: AcquireStatic, Requirement: "poke_flute"}},                                        // Snorlax
+		{0x4A, DexSource{Kind: AcquireStatic}},                                                                   // Articuno
+		{0x4B, DexSource{Kind: AcquireStatic}},                                                                   // Zapdos
+		{0x49, DexSource{Kind: AcquireStatic}},                                                                   // Moltres
+		{0x83, DexSource{Kind: AcquireStatic}},                                                                   // Mewtwo
 	}
 }
 

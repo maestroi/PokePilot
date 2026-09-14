@@ -13,8 +13,10 @@ const (
 // appendDexGiftObjectives exposes only scripted gifts with a deterministic
 // executor. Scripted sources may be present in the catalog before their menu
 // mechanics are implemented; keeping this allow-list explicit prevents the
-// planner from inventing execution for Dojo/Porygon merely because the catalog
-// knows those species are locally obtainable.
+// planner from inventing execution for Porygon merely because the catalog
+// knows it is locally obtainable. Mutually exclusive gift groups expose only
+// one deterministic objective per observation so a multi-step plan cannot
+// queue both branches of a one-time choice.
 func appendDexGiftObjectives(obs Observation, known *Knowledge, out []Objective) []Objective {
 	if len(obs.Dex.Targets) == 0 {
 		return out
@@ -36,11 +38,15 @@ func appendDexGiftObjectives(obs Observation, known *Knowledge, out []Objective)
 	}
 
 	added := 0
+	exclusiveOffered := map[string]bool{}
 	for _, entry := range obs.Dex.Targets {
 		if added >= dexGiftObjectiveLimit || owned[entry.Species] || already[entry.Species] {
 			continue
 		}
 		for _, src := range entry.Sources {
+			if src.ExclusiveGroup != "" && exclusiveOffered[src.ExclusiveGroup] {
+				continue
+			}
 			if !dexGiftSourceExecutable(obs, entry.Species, src) {
 				continue
 			}
@@ -56,6 +62,9 @@ func appendDexGiftObjectives(obs Observation, known *Knowledge, out []Objective)
 				Note: fmt.Sprintf("(dex gift: receive %s at %s; collection storage and nickname handling are verified)",
 					strings.ToUpper(string(entry.Species)), strings.ToUpper(string(src.Place))),
 			})
+			if src.ExclusiveGroup != "" {
+				exclusiveOffered[src.ExclusiveGroup] = true
+			}
 			already[entry.Species] = true
 			added++
 			break
@@ -68,6 +77,7 @@ func dexGiftSourceExecutable(obs Observation, species SpeciesID, src DexSource) 
 	if src.Kind != AcquireGift {
 		return false
 	}
+	owned := pokedexOwnedSet(obs)
 	switch species {
 	case "eevee":
 		return src.Place == "celadon mansion eevee" && src.Requirement == ""
@@ -76,6 +86,10 @@ func dexGiftSourceExecutable(obs Observation, species SpeciesID, src DexSource) 
 		// so owning it is a durable prerequisite for the dedicated rival-room
 		// route and stronger evidence than a coarse map reachability guess.
 		return src.Place == "silph co lapras" && src.Requirement == "card_key" && bagItemQuantity(obs.Bag, ItemID("card key")) > 0
+	case "hitmonlee":
+		return src.Place == "fighting dojo hitmonlee" && src.ExclusiveGroup == "fighting_dojo" && !owned["hitmonchan"]
+	case "hitmonchan":
+		return src.Place == "fighting dojo hitmonchan" && src.ExclusiveGroup == "fighting_dojo" && !owned["hitmonlee"]
 	default:
 		return false
 	}
