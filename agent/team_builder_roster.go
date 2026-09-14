@@ -68,13 +68,16 @@ func teamBuilderRosterSignal(obs Observation, o Objective, profile PlayStyleProf
 			}
 
 		case KindTrain:
-			// Training remains legal and can still win when necessary, but it
-			// should not consume the whole run while three roster slots are empty.
-			penalty := 0.42 + float64(missing-1)*0.04
-			if penalty > 0.58 {
-				penalty = 0.58
+			// A two-member early team can still need catch-up training to function.
+			// Once there are three usable members, however, continuing to polish
+			// the same core should lose to filling the remaining roster slots.
+			if count >= 3 {
+				penalty := 0.42 + float64(missing-1)*0.04
+				if penalty > 0.58 {
+					penalty = 0.58
+				}
+				penalize("fill-roster-first", penalty*fillScale)
 			}
-			penalize("fill-roster-first", penalty*fillScale)
 
 		case KindBuy:
 			if spec, ok := ItemEconomy(string(o.Item)); ok && spec.Category == InventoryCapture {
