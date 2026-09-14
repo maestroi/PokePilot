@@ -31,14 +31,18 @@ func pcChangeBoxSavePrompt(mem *state.Mem) bool {
 	return strings.Contains(text, "SAVE") && strings.Contains(text, "BOX")
 }
 
-// pcChangeBoxMenuUp identifies DisplayChangeBoxMenu from its own menu geometry.
-// It is the only 12-entry menu rooted at (12,1) in this PC flow. The menu also
-// fills wBoxMonCounts, which is consumed only while this predicate is true.
-func pcChangeBoxMenuUp(mem *state.Mem) bool {
-	return state.MenuUp(mem) &&
-		mem.U8(sym.TopMenuItemX) == 12 &&
+// pcChangeBoxMenuScreen identifies DisplayChangeBoxMenu from geometry alone.
+// The cursor glyph can lag the menu data by a render window; recognizing the
+// screen before state.MenuUp becomes true prevents pcAdvanceUntil from treating
+// that mid-render menu as ordinary text and pressing A into it.
+func pcChangeBoxMenuScreen(mem *state.Mem) bool {
+	return mem.U8(sym.TopMenuItemX) == 12 &&
 		mem.U8(sym.TopMenuItemY) == 1 &&
 		mem.U8(sym.MaxMenuItem) == gen1BoxCount-1
+}
+
+func pcChangeBoxMenuUp(mem *state.Mem) bool {
+	return state.MenuUp(mem) && pcChangeBoxMenuScreen(mem)
 }
 
 func pcBoxCounts(mem *state.Mem) [gen1BoxCount]uint8 {
@@ -73,13 +77,16 @@ func selectPCBox(m *emu.Emu, index int) error {
 	if index < 0 || index >= gen1BoxCount {
 		return fmt.Errorf("skill: Bill's PC: box index %d out of range 0..%d", index, gen1BoxCount-1)
 	}
-	m.StepFrames(talkSettle)
-	var mem state.Mem
-	state.Snapshot(m, &mem)
-	if !pcChangeBoxMenuUp(&mem) {
-		return fmt.Errorf("skill: Bill's PC: Change Box menu is not open")
+	if _, err := m.StepUntil(menuSettleFrames, func(m *emu.Emu) bool {
+		var mem state.Mem
+		state.Snapshot(m, &mem)
+		return pcChangeBoxMenuUp(&mem)
+	}); err != nil {
+		return fmt.Errorf("skill: Bill's PC: Change Box menu cursor did not become interactive: %w", err)
 	}
 
+	var mem state.Mem
+	state.Snapshot(m, &mem)
 	const stuckLimit = 5
 	stuck := 0
 	current := int(mem.U8(sym.CurrentMenuItem))
@@ -143,7 +150,7 @@ func SwitchToNextNonFullBox(m *emu.Emu, romData []byte, policy MovePolicy) error
 	if err := selectTwoOption(m, 0); err != nil { // YES
 		return cleanup(fmt.Errorf("skill: Bill's PC: confirm Change Box save: %w", err))
 	}
-	if err := pcAdvanceUntil(m, pcChangeBoxSavePrompt, pcChangeBoxMenuUp, "Change Box menu"); err != nil {
+	if err := pcAdvanceUntil(m, pcChangeBoxSavePrompt, pcChangeBoxMenuScreen, "Change Box menu"); err != nil {
 		return cleanup(err)
 	}
 
