@@ -15,6 +15,7 @@ const (
 	route13Map      uint8 = 0x18
 	route14Map      uint8 = 0x19
 	route15Map      uint8 = 0x1a
+	route25Map      uint8 = 0x24
 	viridianGymMap  uint8 = 0x2d
 	vermilionGymMap uint8 = 0x5c
 	cinnabarGymMap  uint8 = 0xa6
@@ -40,6 +41,17 @@ func journeyProgressionBlocked(obs Observation, destinationMap uint8) bool {
 		return !hasBadge(obs, state.BadgeBoulder)
 	case route2Map:
 		return !observedEvent(obs, state.EventGotPokedex.String())
+
+	// Route 25's named generic destination is the far Bill-side tile. Before
+	// the S.S. Ticket is acquired, reaching that side owns the Nugget Bridge /
+	// Route 25 trainer corridor plus Bill's scripted rescue. The atomic Bill
+	// progression already owns that traversal and can fight mandatory trainers;
+	// plain GoTo cannot, and farm runs repeatedly died trying to path from the
+	// west landing at (0,9) straight to (44,3). Once Bill has been completed,
+	// the corridor has already been proven traversable and ordinary exploration
+	// can safely advertise Route 25 again.
+	case route25Map:
+		return !obs.Story.Has(redProgressSSTicketAcquired)
 
 	// Keep the campaign on its intended post-Cerulean critical path. Once
 	// HM01 exists the ROM technically allows Red to wander toward Rock Tunnel
