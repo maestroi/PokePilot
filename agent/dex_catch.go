@@ -12,7 +12,10 @@ const (
 	dexCatchLimit         = 8
 	dexFishingIntent      = "dex-fishing"
 	dexWaterIntent        = "dex-water"
+	dexSafariIntent       = "dex-safari"
 	dexGlobalFishingPlace = PlaceID("vermilion city")
+	dexSafariAccessPlace  = PlaceID("fuchsia city")
+	dexSafariFee          = 500
 )
 
 type dexCatchHabitat struct {
@@ -24,12 +27,13 @@ type dexCatchHabitat struct {
 }
 
 // appendDexCatchObjectives turns executable catalog sources into bounded
-// travel-then-acquire objectives. Grass hunts use Catch directly; fishing and
-// Surf water use deterministic Red-owned acquisition skills. Safari, statics,
-// gifts, and trades remain catalog facts until their execution skills exist.
-// Story gates still apply: a source behind a blocked transition is not offered.
+// travel-then-acquire objectives. Grass hunts use Catch directly; fishing,
+// Surf water and Safari grass use deterministic Red-owned acquisition skills.
+// Statics, gifts and trades remain catalog facts until their execution skills
+// exist. Story gates still apply: a source behind a blocked transition is not
+// offered.
 func appendDexCatchObjectives(obs Observation, known *Knowledge, out []Objective) []Objective {
-	if !hasBalls(obs) || len(obs.Dex.Targets) == 0 {
+	if len(obs.Dex.Targets) == 0 {
 		return out
 	}
 
@@ -95,6 +99,9 @@ func appendDexCatchObjectives(obs Observation, known *Knowledge, out []Objective
 		case dexWaterIntent:
 			note = fmt.Sprintf("(dex Surf hunt at %s; travel and verified Surf entry included)",
 				strings.ToUpper(string(candidate.Place)))
+		case dexSafariIntent:
+			note = fmt.Sprintf("(dex Safari hunt at %s; paid session, Safari Balls and exit/re-entry are owned by execution)",
+				strings.ToUpper(string(candidate.Place)))
 		}
 		out = append(out, Objective{
 			Kind:    KindCatch,
@@ -121,6 +128,10 @@ func dexCatchSource(obs Observation, species SpeciesID, src DexSource, blocked m
 	if ok {
 		return dexCatchHabitat{Species: species, Place: place, Hops: distance, Intent: dexWaterIntent}, true
 	}
+	place, distance, ok = dexCatchSafariSource(obs, src, blocked, hops, adjacency)
+	if ok {
+		return dexCatchHabitat{Species: species, Place: place, Hops: distance, Intent: dexSafariIntent}, true
+	}
 	return dexCatchHabitat{}, false
 }
 
@@ -143,20 +154,22 @@ func dexCatchMethodRank(candidate dexCatchHabitat) int {
 		return 1
 	case dexWaterIntent:
 		return 2
+	case dexSafariIntent:
+		return 3
 	default:
 		return 0
 	}
 }
 
 func dexCatchGrassSource(obs Observation, src DexSource, blocked map[PlaceID]bool, hops map[uint8]int, adjacency map[uint8][]uint8) (PlaceID, int, bool) {
-	if src.Kind != AcquireWildGrass || src.Requirement != "" || src.Place == "" {
+	if !hasBalls(obs) || src.Kind != AcquireWildGrass || src.Requirement != "" || src.Place == "" {
 		return "", 0, false
 	}
 	return dexCatchPlace(obs, src.Place, blocked, hops, adjacency)
 }
 
 func dexCatchFishingSource(obs Observation, src DexSource, blocked map[PlaceID]bool, hops map[uint8]int, adjacency map[uint8][]uint8) (PlaceID, int, ItemID, bool) {
-	if src.Kind != AcquireFishing {
+	if !hasBalls(obs) || src.Kind != AcquireFishing {
 		return "", 0, "", false
 	}
 	rod, ok := dexFishingRod(src.Requirement)
@@ -178,10 +191,45 @@ func dexCatchFishingSource(obs Observation, src DexSource, blocked map[PlaceID]b
 }
 
 func dexCatchWaterSource(obs Observation, src DexSource, blocked map[PlaceID]bool, hops map[uint8]int, adjacency map[uint8][]uint8) (PlaceID, int, bool) {
-	if src.Kind != AcquireWildWater || src.Requirement != "surf" || src.Place == "" || !dexSurfAvailable(obs) {
+	if !hasBalls(obs) || src.Kind != AcquireWildWater || src.Requirement != "surf" || src.Place == "" || !dexSurfAvailable(obs) {
 		return "", 0, false
 	}
 	return dexCatchPlace(obs, src.Place, blocked, hops, adjacency)
+}
+
+func dexCatchSafariSource(obs Observation, src DexSource, blocked map[PlaceID]bool, hops map[uint8]int, adjacency map[uint8][]uint8) (PlaceID, int, bool) {
+	if src.Kind != AcquireWildGrass || src.Place == "" || strings.TrimSpace(src.Requirement) != "safari_zone" {
+		return "", 0, false
+	}
+	mapID, ok := dexPlaceMapID(src.Place)
+	if !ok || !safariRequirement(mapID) {
+		return "", 0, false
+	}
+	inside := safariRequirement(obs.Map)
+	if !inside && obs.Money < dexSafariFee {
+		return "", 0, false
+	}
+	if inside {
+		return src.Place, 0, true
+	}
+	// Safari maps are intentionally not ordinary Place destinations because
+	// a paid finite session must own their routing. Use Fuchsia City as the
+	// planner-facing access cost; SafariCatch owns the gate and habitat travel.
+	distance, ok := dexCatchPlaceDistance(obs, dexSafariAccessPlace, blocked, hops, adjacency)
+	if !ok {
+		return "", 0, false
+	}
+	return src.Place, distance, true
+}
+
+func dexPlaceMapID(place PlaceID) (uint8, bool) {
+	for i := 0; i <= 0xff; i++ {
+		id := uint8(i)
+		if mapPlace(id) == place {
+			return id, true
+		}
+	}
+	return 0, false
 }
 
 func dexSurfAvailable(obs Observation) bool {
@@ -202,7 +250,7 @@ func dexFishingRod(requirement string) (ItemID, bool) {
 	case "super_rod":
 		return ItemID("super rod"), true
 	default:
-		// Combined requirements such as "super_rod+safari_zone" are not
+		// Combined requirements such as "super_rod,safari_zone" are not
 		// executable by ordinary fishing; Safari owns a different battle mode.
 		return "", false
 	}
@@ -221,13 +269,16 @@ func dexCatchPlaceDistance(obs Observation, place PlaceID, blocked map[PlaceID]b
 	if !ok {
 		return 0, false
 	}
+	// If Red is already on this map, no progression transition is being
+	// attempted. Current-map collection must remain executable even when a
+	// synthetic/recovered observation does not carry every historical gate fact.
+	if dest.Map == obs.Map {
+		return 0, true
+	}
 	if journeyProgressionBlocked(obs, dest.Map) || placeProgressionBlocked(obs, string(place)) {
 		return 0, false
 	}
 	distance, reachable := hops[dest.Map]
-	if dest.Map == obs.Map {
-		distance, reachable = 0, true
-	}
 	if len(adjacency) > 0 && !reachable {
 		return 0, false
 	}

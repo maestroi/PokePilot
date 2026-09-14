@@ -18,7 +18,10 @@ func executeCatchObjective(m *emu.Emu, romData []byte, o Objective, result Objec
 		return result, fmt.Errorf("agent: %s: %w", o, err)
 	}
 
-	if o.Place != "" {
+	// Safari maps are deliberately not ordinary planner Place destinations:
+	// their paid finite session must own gate entry, routing, Safari Balls and
+	// exit/re-entry. Every other catch source keeps the normal travel wrapper.
+	if o.Place != "" && o.Intent != dexSafariIntent {
 		dest, ok := skill.Place(string(o.Place))
 		if !ok {
 			return result, fmt.Errorf("agent: %s: unknown catch habitat %q", o, o.Place)
@@ -49,6 +52,12 @@ func executeCatchObjective(m *emu.Emu, romData []byte, o Objective, result Objec
 		caught, err = skill.Fish(m, romData, rod, []uint8{species}, skill.StatAwareMove(romData), 5)
 	case dexWaterIntent:
 		caught, err = skill.CatchWater(m, romData, []uint8{species}, skill.StatAwareMove(romData), 5)
+	case dexSafariIntent:
+		mapID, ok := dexPlaceMapID(o.Place)
+		if !ok || !safariRequirement(mapID) {
+			return result, fmt.Errorf("agent: %s: unknown Safari habitat %q", o, o.Place)
+		}
+		caught, err = skill.SafariCatch(m, romData, mapID, []uint8{species}, skill.StatAwareMove(romData), 10)
 	default:
 		caught, err = skill.Catch(m, romData, []uint8{species}, skill.StatAwareMove(romData), 5)
 	}
