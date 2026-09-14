@@ -855,8 +855,11 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 
 		before := last
 		objectiveResult, execErr := executeObjectiveResult(m, romData, obj)
-		last = observeAfter(m, romData, budget.Log)
-		objectiveResult.Final = last
+		// Finish normalization, the final semantic observation, postcondition
+		// verification and outcome classification all belong to the transaction.
+		// Run consumes that exact final observation; it must not re-observe or
+		// send recovery input after the transaction has already been finalized.
+		last = objectiveResult.Final
 		res.Rounds = round
 
 		if execErr != nil {
@@ -867,8 +870,11 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 			blackedOut := errors.Is(execErr, skill.ErrBlackedOut)
 			retreated := errors.Is(execErr, skill.ErrTrainRetreat)
 			if blackedOut {
+				// BlackedOut is a planner-facing annotation on Run's copy of the
+				// final observation. Do not rewrite ObjectiveResult.Final: that
+				// field is transaction evidence and must stay byte-for-byte tied
+				// to the state used for postcondition/outcome policy.
 				last.BlackedOut = true
-				objectiveResult.Final = last
 				objectiveResult.Summary += fmt.Sprintf(" (respawned in %s, money %d -> %d)",
 					last.RespawnPlace, before.Money, last.Money)
 			}

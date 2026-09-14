@@ -12,12 +12,15 @@ type fakeObjectiveGame struct {
 
 	initialObserveErr error
 	finalObserveErr   error
+	startBoundaryErr  error
+	finishBoundaryErr error
 	executeResult     ObjectiveResult
 	executeErr        error
 	settleErr         error
 	verifyErr         error
 
-	observeCalls int
+	observeCalls   int
+	normalizeCalls int
 }
 
 func (f *fakeObjectiveGame) Observe() (Observation, error) {
@@ -41,14 +44,13 @@ func (f *fakeObjectiveGame) Validate(_ Objective, initial Observation) error {
 }
 
 func (f *fakeObjectiveGame) NormalizeBoundary() error {
-	if len(f.calls) > 0 && f.calls[len(f.calls)-1] == "settle" {
-		f.calls = append(f.calls, "normalize-finish")
-	} else if countCall(f.calls, "normalize-start") == 0 {
+	f.normalizeCalls++
+	if f.normalizeCalls == 1 {
 		f.calls = append(f.calls, "normalize-start")
-	} else {
-		f.calls = append(f.calls, "normalize-finish")
+		return f.startBoundaryErr
 	}
-	return nil
+	f.calls = append(f.calls, "normalize-finish")
+	return f.finishBoundaryErr
 }
 
 func (f *fakeObjectiveGame) ExecuteOwned(o Objective) (ObjectiveResult, error) {
@@ -161,8 +163,55 @@ func TestObjectiveRuntimePreservesAdapterBlockedOutcome(t *testing.T) {
 	if got.Outcome != OutcomeBlocked {
 		t.Fatalf("Outcome = %q, want blocked", got.Outcome)
 	}
+	if got.Final.MapName != "ROOM_B" {
+		t.Fatalf("Final = %+v, want transaction-owned ROOM_B observation", got.Final)
+	}
 	if countCall(adapter.calls, "verify") != 0 {
 		t.Fatalf("verify called after blocked execution: %#v", adapter.calls)
+	}
+}
+
+func TestObjectiveRuntimeDirtyFinishPreservesFinalAndStops(t *testing.T) {
+	adapter := &fakeObjectiveGame{
+		obs:               Observation{MapName: "ROOM_A", Controllable: true},
+		finishBoundaryErr: ErrObjectiveBoundaryDirty,
+	}
+	o := Objective{Kind: KindGoTo, Place: "room-b"}
+
+	got, err := executeObjectiveWithAdapter(adapter, o)
+	if !errors.Is(err, ErrObjectiveBoundaryDirty) {
+		t.Fatalf("error = %v, want dirty-boundary identity", err)
+	}
+	if got.Outcome != OutcomeStabilizationFailed {
+		t.Fatalf("Outcome = %q, want stabilization_failed", got.Outcome)
+	}
+	if got.Final.MapName != "ROOM_B" || got.Final.X != 2 || got.Final.Y != 3 {
+		t.Fatalf("Final = %+v, want transaction final observation preserved", got.Final)
+	}
+	if countCall(adapter.calls, "verify") != 0 {
+		t.Fatalf("verify called after dirty finish: %#v", adapter.calls)
+	}
+}
+
+func TestObjectiveRuntimeChoiceFinishPreservesFinalAndRequiresChoice(t *testing.T) {
+	adapter := &fakeObjectiveGame{
+		obs:               Observation{MapName: "ROOM_A", Controllable: true},
+		finishBoundaryErr: ErrObjectiveBoundaryChoice,
+	}
+	o := Objective{Kind: KindGoTo, Place: "room-b"}
+
+	got, err := executeObjectiveWithAdapter(adapter, o)
+	if !errors.Is(err, ErrObjectiveBoundaryChoice) {
+		t.Fatalf("error = %v, want choice-boundary identity", err)
+	}
+	if got.Outcome != OutcomeChoiceRequired {
+		t.Fatalf("Outcome = %q, want choice_required", got.Outcome)
+	}
+	if got.Final.MapName != "ROOM_B" || got.Final.X != 2 || got.Final.Y != 3 {
+		t.Fatalf("Final = %+v, want transaction final observation preserved", got.Final)
+	}
+	if countCall(adapter.calls, "verify") != 0 {
+		t.Fatalf("verify called while a choice remains open: %#v", adapter.calls)
 	}
 }
 
