@@ -39,10 +39,49 @@ for name in "${SERVICES[@]}"; do
 	*@*) cur=${img##*@} ;;
 	*) cur= ;;
 	esac
-	if [ "$cur" = "$WANT" ]; then
-		echo "pokefarm-pull: $svc already $WANT"
+
+	# The service spec can already point at WANT while a failed/paused Swarm
+	# rollout leaves an older task alive indefinitely. Looking only at .Spec made
+	# the timer print "already current" forever while old runners kept leasing
+	# work and reporting pre-fix failures. Inspect the actual Running tasks too.
+	running=0
+	stale_running=0
+	while IFS='|' read -r current_state task_image; do
+		case "$current_state" in
+		Running\ *) ;;
+		*) continue ;;
+		esac
+		running=$((running + 1))
+		case "$task_image" in
+		*@*) task_digest=${task_image##*@} ;;
+		*) task_digest= ;;
+		esac
+		if [ "$task_digest" != "$WANT" ]; then
+			stale_running=$((stale_running + 1))
+		fi
+	done < <(docker service ps --no-trunc --format '{{.CurrentState}}|{{.Image}}' "$svc" 2>/dev/null || true)
+
+	if [ "$cur" = "$WANT" ] && [ "$running" -gt 0 ] && [ "$stale_running" -eq 0 ]; then
+		echo "pokefarm-pull: $svc already $WANT ($running running task(s))"
 		continue
 	fi
+
+	if [ "$cur" = "$WANT" ]; then
+		update_state=$(docker service inspect "$svc" --format '{{if .UpdateStatus}}{{.UpdateStatus.State}}{{end}}' 2>/dev/null || true)
+		if [ "$update_state" = "updating" ]; then
+			echo "pokefarm-pull: $svc rollout still updating ($stale_running stale of $running running task(s)); defer force-roll"
+			continue
+		fi
+		if [ "$running" -eq 0 ]; then
+			echo "pokefarm-pull: $svc spec is $WANT but has no Running tasks; force-roll"
+		else
+			echo "pokefarm-pull: $svc spec is $WANT but $stale_running/$running Running task(s) are stale; force-roll"
+		fi
+		docker service update --force --detach --with-registry-auth --image "$DIGEST_REF" "$svc" >/dev/null
+		updated=$((updated + 1))
+		continue
+	fi
+
 	echo "pokefarm-pull: $svc $img -> $DIGEST_REF"
 	docker service update --detach --with-registry-auth --image "$DIGEST_REF" "$svc" >/dev/null
 	updated=$((updated + 1))
