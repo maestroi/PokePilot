@@ -32,7 +32,6 @@ func redScriptedSources() []scriptedDexSource {
 type exclusiveChoice struct {
 	Group        string
 	Alternatives [][]SpeciesID
-	KeepIfOwned  SpeciesID // if this species is still owned, do not forfeit (Eevee)
 }
 
 func redExclusiveChoices() []exclusiveChoice {
@@ -60,8 +59,12 @@ func redExclusiveChoices() []exclusiveChoice {
 			},
 		},
 		{
-			Group:       "eevee_stone",
-			KeepIfOwned: "eevee",
+			// Red has one one-time Eevee gift. Pokédex ownership of Eevee is
+			// historical and stays set after it evolves, so it cannot be used as
+			// evidence that another Eevee individual still exists. Once one of
+			// these three branches is owned, the other two are forfeited for a
+			// native single-save completion run.
+			Group: "eevee_stone",
 			Alternatives: [][]SpeciesID{
 				{"flareon"},
 				{"jolteon"},
@@ -78,9 +81,6 @@ func redEventOnly() map[SpeciesID]bool {
 func forfeitedSpecies(owned map[SpeciesID]bool, choices []exclusiveChoice) map[SpeciesID]string {
 	out := map[SpeciesID]string{}
 	for _, choice := range choices {
-		if choice.KeepIfOwned != "" && owned[choice.KeepIfOwned] {
-			continue
-		}
 		chosen := -1
 		for i, alt := range choice.Alternatives {
 			if intersects(owned, alt) {
