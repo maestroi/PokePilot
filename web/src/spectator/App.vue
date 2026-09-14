@@ -5,6 +5,7 @@ import { getSpectatorSnapshot, spectatorReplayVideoURL } from '../shared/api/spe
 import type { SpectatorRun } from '../shared/api/spectator'
 import AppShell from '../shared/components/AppShell.vue'
 import Panel from '../shared/components/Panel.vue'
+import PokemonPartyCard from '../shared/components/PokemonPartyCard.vue'
 import StatusBadge from '../shared/components/StatusBadge.vue'
 import { useFramePump } from '../shared/composables/useFramePump'
 import { usePollingResource } from '../shared/composables/usePollingResource'
@@ -224,12 +225,6 @@ async function fullscreenPlayer(): Promise<void> {
   }
 }
 
-function hpPercent(run: SpectatorRun, index: number): number {
-  const mon = run.player?.party?.[index]
-  if (!mon || mon.max_hp <= 0) return 0
-  return Math.max(0, Math.min(100, 100 * mon.hp / mon.max_hp))
-}
-
 function moneyLabel(run: SpectatorRun): string {
   return `₽${Number(run.player?.money || 0).toLocaleString()}`
 }
@@ -443,19 +438,16 @@ function activityTime(item: ActivityItem): string {
                 normalizePlayStyle(selectedRun) === 'team_builder' ? 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-3' : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'
               ]"
             >
-              <div v-for="(mon, index) in selectedRun.player.party" :key="`${mon.name}-${index}`" class="mode-party-card rounded-lg border bg-black/15 p-3">
-                <div class="flex items-baseline justify-between gap-3">
-                  <strong class="truncate text-sm text-white">{{ mon.name || 'Unknown' }}</strong>
-                  <span class="font-mono text-[11px] text-slate-500">Lv {{ mon.level }}</span>
-                </div>
-                <div class="mt-2 h-1.5 overflow-hidden rounded-full bg-white/8">
-                  <div class="h-full rounded-full bg-emerald-400 transition-[width]" :style="{ width: `${hpPercent(selectedRun, index)}%` }" />
-                </div>
-                <div class="mt-1.5 flex justify-between font-mono text-[10px] text-slate-500">
-                  <span>{{ mon.hp }}/{{ mon.max_hp }} HP</span>
-                  <span>{{ mon.status || 'healthy' }}</span>
-                </div>
-              </div>
+              <PokemonPartyCard
+                v-for="(mon, index) in selectedRun.player.party"
+                :key="`${mon.name}-${index}`"
+                :name="mon.name"
+                :level="mon.level"
+                :hp="mon.hp"
+                :max-hp="mon.max_hp"
+                :status="mon.status"
+                :lead="index === 0"
+              />
             </div>
             <p v-else class="py-5 text-center text-sm text-slate-500">Party data is not available yet.</p>
 
@@ -637,7 +629,6 @@ function activityTime(item: ActivityItem): string {
   background: var(--mode-accent);
 }
 
-.mode-party-card,
 .mode-metric {
   border-color: var(--mode-border);
 }
