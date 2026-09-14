@@ -10,15 +10,18 @@ const (
 	npcTradeSize           = 3 + npcTradeNameLen
 )
 
-// NPCTrade is one TradeMons row: the species the player must give and the
-// species the NPC returns. Dialog and nickname stay in the ROM; Dex mode
-// only needs the species pair.
+// NPCTrade is one TradeMons row: Index is the stable wWhichTrade value, Give
+// is the species the player must select, and Get is the species the NPC
+// returns. Dialog and nickname stay ROM-owned.
 type NPCTrade struct {
-	Give uint8
-	Get  uint8
+	Index int
+	Give  uint8
+	Get   uint8
 }
 
-// NPCTrades reads the ROM's in-game trade table in table order.
+// NPCTrades reads the ROM's in-game trade table in table order while
+// preserving the original row index. Scripts write that index to wWhichTrade,
+// so callers must not renumber rows if a patched/unused row is skipped.
 func NPCTrades(romData []byte) ([]NPCTrade, error) {
 	off, err := bankedOffset(tradeMonsBank, tradeMonsAddr)
 	if err != nil {
@@ -35,7 +38,7 @@ func NPCTrades(romData []byte) ([]NPCTrade, error) {
 		if give == 0 || get == 0 {
 			continue
 		}
-		out = append(out, NPCTrade{Give: give, Get: get})
+		out = append(out, NPCTrade{Index: i, Give: give, Get: get})
 	}
 	return out, nil
 }
