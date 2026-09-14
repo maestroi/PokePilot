@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { SpectatorRun } from '../shared/api/spectator'
-import StatusBadge from '../shared/components/StatusBadge.vue'
+import ItemIcon from '../shared/components/ItemIcon.vue'
+import { itemDisplayName } from '../shared/pokemonAssets'
 import { bagMeter, dexMeter } from '../shared/playerProgress'
 import {
   averageRunSpeed,
@@ -25,20 +26,20 @@ const timingMetrics = computed(() => {
     {
       label: 'Game time',
       value: gameTime > 0 ? formatDuration(gameTime) : '—',
-      note: 'at native 1× speed'
+      note: 'native Game Boy · 1×'
     },
     {
-      label: 'Elapsed',
+      label: 'Real time',
       value: elapsed > 0 ? formatDuration(elapsed) : '—',
       note: run.status === 'done' ? 'wall-clock total' : 'wall clock so far'
     },
     {
-      label: 'Avg speed',
+      label: 'Pace',
       value: formatRunSpeed(averageRunSpeed(run)),
-      note: 'game time ÷ elapsed'
+      note: 'game time ÷ real time'
     },
     {
-      label: 'Thinking',
+      label: 'Planner',
       value: thinking > 0 ? formatDuration(thinking) : '—',
       note: `${Number(run.stats?.calls || 0).toLocaleString()} model calls`
     }
@@ -56,21 +57,37 @@ const milestones = computed(() => props.run.player?.milestones || [])
 </script>
 
 <template>
-  <div v-if="run.player?.badges?.length" class="mt-3 flex flex-wrap gap-1.5 border-t border-white/8 pt-3">
-    <StatusBadge v-for="badge in run.player.badges" :key="badge" tone="warning">{{ badge }}</StatusBadge>
+  <div v-if="run.player?.badges?.length" class="mt-3 border-t border-white/8 pt-3">
+    <div class="mb-2 flex items-center gap-2">
+      <span class="pokeball-mark"><span /></span>
+      <span class="text-[9px] font-black tracking-[0.11em] text-slate-500 uppercase">Gym badges</span>
+    </div>
+    <div class="flex flex-wrap gap-1.5">
+      <span
+        v-for="badge in run.player.badges"
+        :key="badge"
+        class="badge-chip inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[9px] font-bold tracking-[0.05em] uppercase"
+      >
+        <span class="size-1.5 rounded-full bg-amber-300 shadow-[0_0_8px_rgba(252,211,77,.45)]" />
+        {{ badge }}
+      </span>
+    </div>
   </div>
 
   <section v-if="Number(run.frame || 0) > 0" class="mt-3 border-t border-white/8 pt-3">
     <div class="mb-2 flex flex-wrap items-baseline justify-between gap-2">
-      <div>
-        <div class="text-[9px] font-semibold tracking-[0.1em] text-slate-500 uppercase">Run pace</div>
-        <p class="mt-0.5 text-[10px] text-slate-600">Measured from emulated Game Boy frames, not the configured FPS target.</p>
+      <div class="flex items-center gap-2">
+        <span class="pokeball-mark"><span /></span>
+        <div>
+          <div class="text-[9px] font-black tracking-[0.1em] text-slate-500 uppercase">Run pace</div>
+          <p class="mt-0.5 text-[10px] text-slate-600">Native Game Boy time compared with the real run.</p>
+        </div>
       </div>
       <span class="font-mono text-[10px] text-slate-600">frame {{ Number(run.frame || 0).toLocaleString() }}</span>
     </div>
     <div class="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-      <div v-for="metric in timingMetrics" :key="metric.label" class="rounded-lg border border-white/8 bg-black/15 px-3 py-2.5">
-        <div class="text-[9px] font-semibold tracking-[0.09em] text-slate-500 uppercase">{{ metric.label }}</div>
+      <div v-for="metric in timingMetrics" :key="metric.label" class="poke-stat rounded-lg border border-white/8 px-3 py-2.5">
+        <div class="text-[9px] font-bold tracking-[0.09em] text-slate-500 uppercase">{{ metric.label }}</div>
         <div class="mt-1 font-mono text-lg font-semibold text-white">{{ metric.value }}</div>
         <div class="mt-0.5 text-[10px] text-slate-600">{{ metric.note }}</div>
       </div>
@@ -81,61 +98,159 @@ const milestones = computed(() => props.run.player?.milestones || [])
     v-if="bagMeter(run.player) || dexMeter(run.player) || milestones.length"
     class="mt-3 grid gap-2 border-t border-white/8 pt-3 lg:grid-cols-3"
   >
-    <section v-if="bagMeter(run.player)" class="min-w-0 rounded-lg border border-white/8 bg-black/15 p-3">
-      <div class="flex items-baseline justify-between gap-3">
-        <div class="text-[9px] font-semibold tracking-[0.1em] text-slate-500 uppercase">Bag</div>
-        <strong class="font-mono text-xs text-slate-300">{{ bagMeter(run.player) }}</strong>
+    <section v-if="bagMeter(run.player)" class="poke-panel bag-panel min-w-0 overflow-hidden rounded-lg border p-3">
+      <div class="flex items-center justify-between gap-3">
+        <div class="flex items-center gap-2">
+          <span class="pokeball-mark"><span /></span>
+          <div>
+            <div class="text-[9px] font-black tracking-[0.11em] text-slate-400 uppercase">Bag</div>
+            <div class="text-[9px] text-slate-600">Trainer inventory</div>
+          </div>
+        </div>
+        <strong class="rounded bg-black/20 px-2 py-1 font-mono text-[10px] text-slate-300 ring-1 ring-white/8">{{ bagMeter(run.player) }}</strong>
       </div>
-      <div v-if="bag.length" class="mt-2 flex flex-wrap gap-1.5">
-        <span
+      <div v-if="bag.length" class="mt-3 grid gap-1.5 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+        <div
           v-for="item in bag"
           :key="item.name"
-          class="rounded-md bg-white/5 px-2 py-1 text-[10px] text-slate-300 ring-1 ring-white/8"
+          class="flex min-w-0 items-center gap-2 rounded-md bg-black/20 p-1.5 ring-1 ring-white/7"
+          :title="itemDisplayName(item.name)"
         >
-          <span class="capitalize">{{ item.name }}</span>
-          <strong class="ml-1 font-mono text-slate-500">×{{ item.quantity }}</strong>
-        </span>
+          <ItemIcon :name="item.name" :size="28" />
+          <span class="min-w-0 flex-1 truncate text-[10px] font-medium text-slate-300">{{ itemDisplayName(item.name) }}</span>
+          <strong class="shrink-0 rounded bg-black/25 px-1.5 py-0.5 font-mono text-[9px] text-slate-500">×{{ item.quantity }}</strong>
+        </div>
       </div>
-      <p v-else class="mt-2 text-xs text-slate-600">Empty</p>
+      <p v-else class="mt-3 text-xs text-slate-600">The bag is empty.</p>
     </section>
 
-    <section v-if="dexMeter(run.player)" class="min-w-0 rounded-lg border border-white/8 bg-black/15 p-3">
-      <div class="flex items-baseline justify-between gap-3">
-        <div class="text-[9px] font-semibold tracking-[0.1em] text-slate-500 uppercase">Pokédex</div>
-        <span class="font-mono text-[10px] text-slate-500">{{ Number(run.player?.dex_seen || 0) }} seen</span>
-      </div>
-      <div class="mt-2 flex items-end gap-1.5">
-        <strong class="font-mono text-xl text-white">{{ Number(run.player?.dex_owned || 0) }}</strong>
-        <span class="pb-0.5 font-mono text-xs text-slate-500">/ {{ Number(run.player?.dex_total || 0) }} owned</span>
-      </div>
-      <div class="mt-2 h-1.5 overflow-hidden rounded-full bg-white/8">
-        <div class="mode-progress h-full rounded-full transition-[width]" :style="{ width: `${dexPercent}%` }" />
-      </div>
-      <div class="mt-1.5 flex justify-between font-mono text-[10px] text-slate-600">
-        <span>{{ dexPercent.toFixed(1) }}% complete</span>
-        <span>{{ Math.max(0, Number(run.player?.dex_total || 0) - Number(run.player?.dex_owned || 0)) }} left</span>
+    <section v-if="dexMeter(run.player)" class="poke-panel dex-panel relative min-w-0 overflow-hidden rounded-lg border p-3">
+      <div class="dex-glow absolute -right-8 -top-8 size-28 rounded-full" />
+      <div class="relative">
+        <div class="flex items-center justify-between gap-3">
+          <div class="flex items-center gap-2">
+            <span class="dex-lens grid size-6 place-items-center rounded-full"><span class="size-2 rounded-full bg-cyan-200" /></span>
+            <div>
+              <div class="text-[9px] font-black tracking-[0.11em] text-red-100/85 uppercase">Pokédex</div>
+              <div class="text-[9px] text-red-100/45">Kanto collection</div>
+            </div>
+          </div>
+          <span class="font-mono text-[10px] text-red-100/55">{{ Number(run.player?.dex_seen || 0) }} seen</span>
+        </div>
+        <div class="mt-3 flex items-end gap-1.5">
+          <strong class="font-mono text-2xl text-white">{{ Number(run.player?.dex_owned || 0) }}</strong>
+          <span class="pb-1 font-mono text-xs text-red-100/55">/ {{ Number(run.player?.dex_total || 0) }} owned</span>
+        </div>
+        <div class="mt-2 h-2 overflow-hidden rounded-full bg-black/25 ring-1 ring-white/10">
+          <div class="dex-progress h-full rounded-full transition-[width]" :style="{ width: `${dexPercent}%` }" />
+        </div>
+        <div class="mt-1.5 flex justify-between font-mono text-[10px] text-red-100/50">
+          <span>{{ dexPercent.toFixed(1) }}% complete</span>
+          <span>{{ Math.max(0, Number(run.player?.dex_total || 0) - Number(run.player?.dex_owned || 0)) }} left</span>
+        </div>
       </div>
     </section>
 
-    <section class="min-w-0 rounded-lg border border-white/8 bg-black/15 p-3">
-      <div class="flex items-baseline justify-between gap-3">
-        <div class="text-[9px] font-semibold tracking-[0.1em] text-slate-500 uppercase">Milestones</div>
+    <section class="poke-panel milestone-panel min-w-0 overflow-hidden rounded-lg border p-3">
+      <div class="flex items-center justify-between gap-3">
+        <div class="flex items-center gap-2">
+          <span class="pokeball-mark"><span /></span>
+          <div>
+            <div class="text-[9px] font-black tracking-[0.11em] text-slate-400 uppercase">Milestones</div>
+            <div class="text-[9px] text-slate-600">Journey collection</div>
+          </div>
+        </div>
         <span class="font-mono text-[10px] text-slate-500">{{ milestones.length }}</span>
       </div>
-      <div v-if="milestones.length" class="mt-2 flex flex-wrap gap-1.5">
+      <div v-if="milestones.length" class="mt-3 flex flex-wrap gap-1.5">
         <span
           v-for="milestone in milestones"
           :key="milestone"
-          class="rounded-md bg-white/5 px-2 py-1 text-[10px] text-slate-300 ring-1 ring-white/8"
-        >{{ milestone }}</span>
+          class="milestone-chip inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-[10px] text-slate-300"
+        >
+          <span class="mini-ball"><span /></span>
+          {{ milestone }}
+        </span>
       </div>
-      <p v-else class="mt-2 text-xs text-slate-600">No major milestones yet.</p>
+      <p v-else class="mt-3 text-xs text-slate-600">No major milestones yet.</p>
     </section>
   </div>
 </template>
 
 <style scoped>
-.mode-progress {
-  background: var(--mode-accent);
+.poke-stat,
+.poke-panel {
+  border-color: rgba(148, 163, 184, 0.11);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent 48%),
+    rgba(0, 0, 0, 0.15);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.025);
+}
+
+.bag-panel {
+  border-top-color: rgba(96, 165, 250, 0.28);
+}
+
+.milestone-panel {
+  border-top-color: rgba(250, 204, 21, 0.24);
+}
+
+.dex-panel {
+  border-color: rgba(248, 113, 113, 0.32);
+  background:
+    linear-gradient(145deg, rgba(127, 29, 29, 0.76), rgba(69, 10, 10, 0.5)),
+    #22090c;
+}
+
+.dex-glow {
+  background: rgba(248, 113, 113, 0.13);
+  filter: blur(4px);
+}
+
+.dex-lens {
+  border: 2px solid rgba(224, 242, 254, 0.35);
+  background: rgb(14 116 144 / 0.75);
+  box-shadow: 0 0 10px rgba(34, 211, 238, 0.25);
+}
+
+.dex-progress {
+  background: linear-gradient(90deg, rgb(254 240 138), rgb(74 222 128));
+}
+
+.badge-chip {
+  border: 1px solid rgba(250, 204, 21, 0.16);
+  background: rgba(113, 63, 18, 0.14);
+  color: rgb(253 230 138);
+}
+
+.milestone-chip {
+  border: 1px solid rgba(148, 163, 184, 0.11);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.pokeball-mark,
+.mini-ball {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  border: 1px solid rgba(148, 163, 184, 0.42);
+  border-radius: 9999px;
+  background: linear-gradient(to bottom, rgb(185 28 28) 0 44%, rgb(30 41 59) 44% 56%, rgb(226 232 240) 56% 100%);
+}
+
+.pokeball-mark { width: 1.3rem; height: 1.3rem; }
+.mini-ball { width: 0.8rem; height: 0.8rem; }
+
+.pokeball-mark > span,
+.mini-ball > span {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 31%;
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  border: 1px solid rgb(71 85 105);
+  border-radius: 9999px;
+  background: rgb(226 232 240);
 }
 </style>
