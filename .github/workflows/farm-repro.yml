@@ -32,6 +32,10 @@ jobs:
     steps:
       - name: Checkout PokePilot
         uses: actions/checkout@v4
+        with:
+          # Agent-triggered repro branches add one control-file commit on top
+          # of the revision being tested. We need that parent available below.
+          fetch-depth: 2
 
       - name: Set up Go
         uses: actions/setup-go@v5
