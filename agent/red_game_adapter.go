@@ -114,6 +114,10 @@ func (a *redObjectiveAdapter) SettlePostcondition(o Objective) error {
 
 func (a *redObjectiveAdapter) VerifyPostcondition(o Objective, initial, final Observation, result ObjectiveResult) error {
 	_, err := verifyObjectivePostcondition(o, initial, final, result)
+	if o.Kind == KindTrain && o.Intent != "dex-evolution" && errors.Is(err, ErrObjectivePostconditionFailed) &&
+		redTrainingReachedThroughEvolution(o, initial, final, result) {
+		return nil
+	}
 	if o.Kind == KindGoTo && errors.Is(err, ErrObjectivePostconditionFailed) {
 		dest, ok := skill.Place(o.Place)
 		if ok {
@@ -125,6 +129,35 @@ func (a *redObjectiveAdapter) VerifyPostcondition(o Objective, initial, final Ob
 		}
 	}
 	return err
+}
+
+// redTrainingReachedThroughEvolution is the Red-specific fallback for ordinary
+// species-targeted training. A session may legitimately replace the target
+// species with its evolution while reaching the requested level. The generic
+// verifier intentionally treats that species mismatch as a failure; Red can
+// prove the stronger game-specific fact from TrainResult plus the same party
+// slot that held the requested species before execution.
+func redTrainingReachedThroughEvolution(o Objective, initial, final Observation, result ObjectiveResult) bool {
+	if o.Kind != KindTrain || o.Species == "" || result.Train == nil || !result.Train.Reached ||
+		result.Train.EndLevel < int(o.Level) || !stableObjectiveBoundary(final) {
+		return false
+	}
+
+	slot := -1
+	if o.Slot >= 0 && o.Slot < len(initial.Party) && initial.Party[o.Slot].Species == o.Species {
+		slot = o.Slot
+	} else {
+		for i, mon := range initial.Party {
+			if mon.Species == o.Species {
+				slot = i
+				break
+			}
+		}
+	}
+	if slot < 0 || slot >= len(final.Party) {
+		return false
+	}
+	return final.Party[slot].Level >= o.Level && final.Party[slot].Species != ""
 }
 
 func (a *redObjectiveAdapter) CaptureFailure(o Objective, err error) error {
