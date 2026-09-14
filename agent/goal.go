@@ -11,6 +11,7 @@ type GoalKind uint8
 const (
 	GoalNone GoalKind = iota
 	GoalEliteFour
+	GoalDex
 	GoalBadges
 	GoalReach
 	GoalLevel
@@ -37,6 +38,9 @@ func ParseGoal(raw string) (Goal, error) {
 	}
 	if strings.EqualFold(raw, "elite-four") || strings.EqualFold(raw, "elite four") {
 		return Goal{Kind: GoalEliteFour}, nil
+	}
+	if strings.EqualFold(raw, "dex") || strings.EqualFold(raw, "pokedex") || strings.EqualFold(raw, "pokédex") {
+		return Goal{Kind: GoalDex}, nil
 	}
 	kind, arg, ok := strings.Cut(raw, ":")
 	if !ok || strings.TrimSpace(arg) == "" {
@@ -87,6 +91,8 @@ func plannerGoalPreset(raw string) (Goal, bool) {
 		return Goal{Kind: GoalBadges, Count: 8}, true
 	case "beat the elite four and champion", "beat the elite four and the champion":
 		return Goal{Kind: GoalEliteFour}, true
+	case "complete the obtainable pokedex", "complete the obtainable pokédex", "complete the pokedex", "complete the pokédex":
+		return Goal{Kind: GoalDex}, true
 	default:
 		return Goal{}, false
 	}
@@ -100,7 +106,8 @@ func PlannerGoal(raw string) (Goal, bool, error) {
 	if g, ok := plannerGoalPreset(raw); ok {
 		return g, true, nil
 	}
-	if strings.EqualFold(raw, "elite-four") || strings.EqualFold(raw, "elite four") {
+	if strings.EqualFold(raw, "elite-four") || strings.EqualFold(raw, "elite four") ||
+		strings.EqualFold(raw, "dex") || strings.EqualFold(raw, "pokedex") || strings.EqualFold(raw, "pokédex") {
 		g, err := ParseGoal(raw)
 		return g, true, err
 	}
@@ -144,6 +151,8 @@ func EvaluateGoal(g Goal, obs Observation) GoalStatus {
 			return GoalStatus{Summary: fmt.Sprintf("Hall of Fame reached but campaign badges are only %d/8", n), Current: n, Target: 8}
 		}
 		return GoalStatus{Summary: fmt.Sprintf("beat the Elite Four and Champion and reach the Hall of Fame; badges %d/8", n), Current: n, Target: 8}
+	case GoalDex:
+		return evaluateDexGoal(obs)
 	case GoalBadges:
 		n := len(obs.Badges)
 		return GoalStatus{Complete: n >= g.Count, Summary: fmt.Sprintf("badges %d/%d", n, g.Count), Current: n, Target: g.Count}
@@ -171,10 +180,39 @@ func EvaluateGoal(g Goal, obs Observation) GoalStatus {
 			if strings.EqualFold(item.Name, g.Target) && item.Quantity > 0 {
 				return GoalStatus{Complete: true, Summary: fmt.Sprintf("have %s x%d", item.Name, item.Quantity), Current: item.Quantity, Target: 1}
 			}
-		}
 		return GoalStatus{Summary: fmt.Sprintf("acquire %s", g.Target), Target: 1}
 	default:
 		return GoalStatus{Summary: "unknown goal"}
+	}
+}
+
+// evaluateDexGoal deliberately evaluates the ROM/save-derived catalog rather
+// than a hard-coded 151 count. Targets are species still obtainable by this
+// save; Unavailable entries are excluded from the denominator and can never
+// keep the run alive. A zero-sized catalog is treated as unavailable evidence,
+// not as a completed Dex, so an observation/build failure cannot false-positive.
+func evaluateDexGoal(obs Observation) GoalStatus {
+	owned := len(obs.Dex.Owned)
+	remaining := len(obs.Dex.Targets)
+	unavailable := len(obs.Dex.Unavailable)
+	target := owned + remaining
+	if target == 0 {
+		return GoalStatus{Summary: "Pokédex catalog unavailable; completion cannot be evaluated"}
+	}
+
+	complete := remaining == 0
+	if complete {
+		return GoalStatus{
+			Complete: true,
+			Summary:  fmt.Sprintf("Pokédex complete: %d/%d obtainable owned; %d unavailable", owned, target, unavailable),
+			Current:  owned,
+			Target:   target,
+		}
+	}
+	return GoalStatus{
+		Summary: fmt.Sprintf("Pokédex owned %d/%d obtainable; %d remaining; %d unavailable", owned, target, remaining, unavailable),
+		Current: owned,
+		Target:  target,
 	}
 }
 
