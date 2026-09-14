@@ -6,7 +6,6 @@ import {
   playStyleTagline,
   type PlayStyle
 } from '../shared/playstyle'
-import { runTimingSummary } from '../shared/runTiming'
 
 export type SpectatorPlayStyle = PlayStyle
 export { normalizePlayStyle, playStyleLabel, playStyleTagline }
@@ -60,18 +59,12 @@ export function runStatusLabel(run: SpectatorRun): string {
 }
 
 export function playSpeedLabel(run: SpectatorRun): string {
-  // This label is the configured run speed, not the observed end-to-end pace.
-  // Observed pace already appears in runTimingSummary and includes planner
-  // thinking / wall time, so substituting it here makes e.g. 120 FPS stop
-  // reading as the configured 2× setting.
   return configuredPlaySpeedLabel(run)
 }
 
 export function routeLabel(run: SpectatorRun): string {
   const route = [run.starter, run.dest].filter(Boolean).join(' → ')
-  const base = route || run.goal || 'Pokémon Red run'
-  const timing = runTimingSummary(run)
-  return timing ? `${base} · ${timing}` : base
+  return route || run.goal || 'Pokémon Red run'
 }
 
 export function objectiveLabel(run: SpectatorRun): string {

@@ -6,12 +6,10 @@ import ItemIcon from '../shared/components/ItemIcon.vue'
 import MilestoneIcon from '../shared/components/MilestoneIcon.vue'
 import { itemDisplayName } from '../shared/pokemonAssets'
 import { bagMeter, dexMeter } from '../shared/playerProgress'
+import { playSpeedLabel } from '../shared/playstyle'
 import {
-  averageRunSpeed,
   elapsedRunSeconds,
   formatDuration,
-  formatRunSpeed,
-  gameTimeSeconds,
   thinkingTimeSeconds
 } from '../shared/runTiming'
 
@@ -21,24 +19,19 @@ const props = defineProps<{
 
 const timingMetrics = computed(() => {
   const run = props.run
-  const gameTime = gameTimeSeconds(run)
   const elapsed = elapsedRunSeconds(run)
   const thinking = thinkingTimeSeconds(run)
+  const fps = Number(run.fps || 0)
   return [
     {
-      label: 'Game time',
-      value: gameTime > 0 ? formatDuration(gameTime) : '—',
-      note: 'native Game Boy · 1×'
+      label: 'Configured speed',
+      value: playSpeedLabel(run),
+      note: fps > 0 ? `${fps} FPS emulator target` : 'uncapped emulator target'
     },
     {
       label: 'Real time',
       value: elapsed > 0 ? formatDuration(elapsed) : '—',
       note: run.status === 'done' ? 'wall-clock total' : 'wall clock so far'
-    },
-    {
-      label: 'Overall pace',
-      value: formatRunSpeed(averageRunSpeed(run)),
-      note: 'game time ÷ real time · includes planner waits'
     },
     {
       label: 'Planner',
@@ -84,13 +77,13 @@ const milestones = computed(() => props.run.player?.milestones || [])
       <div class="flex items-center gap-2">
         <span class="pokeball-mark"><span /></span>
         <div>
-          <div class="text-[9px] font-black tracking-[0.1em] text-slate-500 uppercase">Run pace</div>
-          <p class="mt-0.5 text-[10px] text-slate-600">Native Game Boy time compared with the real run.</p>
+          <div class="text-[9px] font-black tracking-[0.1em] text-slate-500 uppercase">Run timing</div>
+          <p class="mt-0.5 text-[10px] text-slate-600">Configured emulator speed and real wall-clock runtime.</p>
         </div>
       </div>
       <span class="font-mono text-[10px] text-slate-600">frame {{ Number(run.frame || 0).toLocaleString() }}</span>
     </div>
-    <div class="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+    <div class="grid gap-2 sm:grid-cols-3">
       <div v-for="metric in timingMetrics" :key="metric.label" class="poke-stat rounded-lg border border-white/8 px-3 py-2.5">
         <div class="text-[9px] font-bold tracking-[0.09em] text-slate-500 uppercase">{{ metric.label }}</div>
         <div class="mt-1 font-mono text-lg font-semibold text-white">{{ metric.value }}</div>
