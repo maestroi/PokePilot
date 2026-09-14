@@ -49,6 +49,7 @@ func main() {
 	runID := flag.String("run", "", "source farm run ID")
 	attempt := flag.Int("attempt", 0, "source attempt; 0 selects the latest attempt")
 	checkpoint := flag.String("checkpoint", "latest", "checkpoint state name or latest")
+	bundle := flag.String("bundle", "", "portable repro ZIP path or public GitHub release-asset URL; does not require wall access")
 	out := flag.String("out", "", "directory to materialize the checkpoint into")
 	play := flag.Bool("play", false, "launch the current checkout from the materialized checkpoint")
 	token := flag.String("token", os.Getenv("POKEPILOT_TOKEN"), "bearer token for an authenticated wall; defaults to $POKEPILOT_TOKEN, then the pokepilot MCP token in ~/.claude.json")
@@ -58,8 +59,17 @@ func main() {
 		*token = claudeToken()
 	}
 
+	if strings.TrimSpace(*bundle) != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), localFetchTimeout)
+		defer cancel()
+		if err := runPortableBundle(ctx, *bundle, *out, *play); err != nil {
+			log.Fatalf("pokerepro: portable bundle: %v", err)
+		}
+		return
+	}
+
 	if strings.TrimSpace(*runID) == "" {
-		log.Fatal("pokerepro: -run is required")
+		log.Fatal("pokerepro: -run is required unless -bundle is provided")
 	}
 	if *attempt < 0 {
 		log.Fatal("pokerepro: -attempt cannot be negative")
