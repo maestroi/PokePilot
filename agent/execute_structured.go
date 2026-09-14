@@ -140,7 +140,7 @@ func executeRedOwned(m *emu.Emu, romData []byte, o Objective) (result ObjectiveR
 		return executeCatchObjective(m, romData, o, result)
 
 	case KindPickup:
-		item, ok := adapter.resolveItemID(o.Item)
+		item, ok := adapter.resolvePickupItemID(m.Peek8(sym.CurMap), o)
 		if !ok {
 			return result, fmt.Errorf("agent: %s: unknown Red item %q", o, o.Item)
 		}
