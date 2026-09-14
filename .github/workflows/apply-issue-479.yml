@@ -2,8 +2,7 @@ name: Apply issue 479 fix
 
 on:
   push:
-    branches:
-      - fix/issue-479-party-move-learning
+    branches: [fix/issue-479-party-move-learning]
 
 permissions:
   contents: write
@@ -14,138 +13,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - name: Apply canonical party-RAM move learning fix
-        shell: bash
+      - name: Apply fix
         run: |
-          python - <<'PY'
-          from pathlib import Path
-
-          path = Path('skill/battle.go')
-          text = path.read_text()
-
-          replacements = [
-          ('''\t\t\tif triedForgets == nil {\n\t\t\t\ttriedForgets = map[uint8]bool{}\n\t\t\t}\n\t\t\ttriedForgets[bs.Moves[lastForgetSlot].ID] = true\n\t\t\tif zbatDebug {\n\t\t\t\tfmt.Printf("zbat move-learn action=hm-rejected slot=%d move=%d\\n", lastForgetSlot, bs.Moves[lastForgetSlot].ID)\n\t\t\t}\n''', '''\t\t\tif triedForgets == nil {\n\t\t\t\ttriedForgets = map[uint8]bool{}\n\t\t\t}\n\t\t\t// Move learning runs inside GainExperience, where wBattleMonMoves can\n\t\t\t// lag behind the party struct. The ROM's forget menu operates on the\n\t\t\t// party mon, so use that canonical move id for HM rejection tracking.\n\t\t\tmoveID := learningMoveID(&mem, bs, lastForgetSlot)\n\t\t\ttriedForgets[moveID] = true\n\t\t\tif zbatDebug {\n\t\t\t\tfmt.Printf("zbat move-learn action=hm-rejected slot=%d move=%d\\n", lastForgetSlot, moveID)\n\t\t\t}\n'''),
-          ('''\t\t\tids := [4]uint8{bs.Moves[0].ID, bs.Moves[1].ID, bs.Moves[2].ID, bs.Moves[3].ID}\n\t\t\toffered := m.Peek8(sym.MoveNum)\n\t\t\tdecision := decideNaturalMove(m.ROM(), bs.ActiveType1, bs.ActiveType2, ids, offered, triedForgets)\n\t\t\tif !decision.Learn || decision.ReplaceSlot < 0 {\n''', '''\t\t\toffered := m.Peek8(sym.MoveNum)\n\t\t\tdecision, partySlot := decideNaturalMoveFromPartyRAM(m.ROM(), &mem, bs, offered, triedForgets)\n\t\t\tif !decision.Learn || decision.ReplaceSlot < 0 {\n'''),
-          ('''\t\t\tpendingLearnPartySlot = int(m.Peek8(sym.PlayerMonNumber))\n''', '''\t\t\tpendingLearnPartySlot = partySlot\n'''),
-          ('''\t\t\t\tif bs != nil {\n\t\t\t\t\tids := [4]uint8{bs.Moves[0].ID, bs.Moves[1].ID, bs.Moves[2].ID, bs.Moves[3].ID}\n\t\t\t\t\toffered := m.Peek8(sym.MoveNum)\n\t\t\t\t\tdecision := decideNaturalMove(m.ROM(), bs.ActiveType1, bs.ActiveType2, ids, offered, nil)\n''', '''\t\t\t\tif bs != nil {\n\t\t\t\t\toffered := m.Peek8(sym.MoveNum)\n\t\t\t\t\tdecision, _ := decideNaturalMoveFromPartyRAM(m.ROM(), &s, bs, offered, nil)\n'''),
-          ]
-
-          for old, new in replacements:
-              count = text.count(old)
-              if count != 1:
-                  raise SystemExit(f'expected exactly one match, got {count}: {old[:80]!r}')
-              text = text.replace(old, new, 1)
-          path.write_text(text)
-
-          Path('skill/move_learning_live.go').write_text(r'''package skill
-
-import (
-    "github.com/maestroi/pokepilot/red/state"
-    "github.com/maestroi/pokepilot/red/sym"
-)
-
-// learningMonSnapshot returns the canonical move set used by Red's level-up
-// learning code. During GainExperience the battle copy (wBattleMonMoves) can
-// lag behind wPartyMons; the try-learn and forget menus operate on the party
-// struct, so strategic replacement decisions must use that same source.
-func learningMonSnapshot(mem *state.Mem, bs *state.BattleState) (moves [4]uint8, type1, type2 uint8, partySlot int) {
-    partySlot = int(mem.U8(sym.PlayerMonNumber))
-    party := state.DecodeParty(mem)
-    if partySlot >= 0 && partySlot < len(party.Mons) {
-        mon := party.Mons[partySlot]
-        return mon.Moves, mon.Type1, mon.Type2, partySlot
-    }
-
-    // Defensive fallback for malformed/transitional party bookkeeping. Normal
-    // move-learning paths always have a valid wPlayerMonNumber.
-    if bs != nil {
-        for i := range bs.Moves {
-            moves[i] = bs.Moves[i].ID
-        }
-        return moves, bs.ActiveType1, bs.ActiveType2, partySlot
-    }
-    return moves, 0, 0, partySlot
-}
-
-func decideNaturalMoveFromPartyRAM(romData []byte, mem *state.Mem, bs *state.BattleState, offered uint8, blocked map[uint8]bool) (MoveLearningDecision, int) {
-    moves, type1, type2, partySlot := learningMonSnapshot(mem, bs)
-    return decideNaturalMove(romData, type1, type2, moves, offered, blocked), partySlot
-}
-
-func learningMoveID(mem *state.Mem, bs *state.BattleState, slot int) uint8 {
-    moves, _, _, _ := learningMonSnapshot(mem, bs)
-    if slot < 0 || slot >= len(moves) {
-        return 0
-    }
-    return moves[slot]
-}
-''')
-
-          Path('skill/move_learning_live_test.go').write_text(r'''package skill
-
-import (
-    "testing"
-
-    "github.com/maestroi/pokepilot/red/state"
-    "github.com/maestroi/pokepilot/red/sym"
-)
-
-func TestLearningMonSnapshotPrefersPartyRAMOverStaleBattleCopy(t *testing.T) {
-    var mem state.Mem
-    mem[sym.PartyCount] = 1
-    mem[sym.PlayerMonNumber] = 0
-    base := sym.PartyMon1
-    mem[base+sym.MonType1] = 0x16
-    mem[base+sym.MonType2] = 0x03
-    want := [4]uint8{33, 45, 73, 22}
-    copy(mem.Slice(base+sym.MonMoves, 4), want[:])
-
-    // Reproduce #479's shape: the live battle copy claims slot 2 is empty,
-    // while the party struct that the ROM's learn-move menu operates on is full.
-    bs := &state.BattleState{
-        ActiveType1: 0x01,
-        ActiveType2: 0x02,
-        Moves: [4]state.Move{{ID: 33}, {ID: 45}, {ID: 0}, {ID: 22}},
-    }
-
-    got, type1, type2, slot := learningMonSnapshot(&mem, bs)
-    if got != want {
-        t.Fatalf("moves=%v want party RAM %v", got, want)
-    }
-    if type1 != 0x16 || type2 != 0x03 || slot != 0 {
-        t.Fatalf("types/slot=(%#x,%#x,%d), want (0x16,0x03,0)", type1, type2, slot)
-    }
-    if id := learningMoveID(&mem, bs, 2); id != 73 {
-        t.Fatalf("slot 2 move=%d want 73 from party RAM", id)
-    }
-}
-
-func TestLearningMonSnapshotFallsBackToBattleWhenPartySlotInvalid(t *testing.T) {
-    var mem state.Mem
-    mem[sym.PartyCount] = 1
-    mem[sym.PlayerMonNumber] = 5
-    bs := &state.BattleState{
-        ActiveType1: 0x09,
-        ActiveType2: 0x0a,
-        Moves: [4]state.Move{{ID: 10}, {ID: 20}, {ID: 30}, {ID: 40}},
-    }
-    got, type1, type2, _ := learningMonSnapshot(&mem, bs)
-    if got != [4]uint8{10, 20, 30, 40} || type1 != 0x09 || type2 != 0x0a {
-        t.Fatalf("fallback=(%v,%#x,%#x)", got, type1, type2)
-    }
-}
-''')
-          PY
-
+          echo 'CmZyb20gcGF0aGxpYiBpbXBvcnQgUGF0aAoKcGF0aCA9IFBhdGgoInNraWxsL2JhdHRsZS5nbyIpCnRleHQgPSBwYXRoLnJlYWRfdGV4dCgpCgpyZXBsYWNlbWVudHMgPSBbCigoJycnCQkJaWYgdHJpZWRGb3JnZXRzID09IG5pbCB7CgkJCQl0cmllZEZvcmdldHMgPSBtYXBbdWludDhdYm9vbHt9CgkJCX0KCQkJdHJpZWRGb3JnZXRzW2JzLk1vdmVzW2xhc3RGb3JnZXRTbG90XS5JRF0gPSB0cnVlCgkJCWlmIHpiYXREZWJ1ZyB7CgkJCQlmbXQuUHJpbnRmKCJ6YmF0IG1vdmUtbGVhcm4gYWN0aW9uPWhtLXJlamVjdGVkIHNsb3Q9JWQgbW92ZT0lZFxuIiwgbGFzdEZvcmdldFNsb3QsIGJzLk1vdmVzW2xhc3RGb3JnZXRTbG90XS5JRCkKCQkJfQonJycsCicnJwkJCWlmIHRyaWVkRm9yZ2V0cyA9PSBuaWwgewoJCQkJdHJpZWRGb3JnZXRzID0gbWFwW3VpbnQ4XWJvb2x7fQoJCQl9CgkJCS8vIE1vdmUgbGVhcm5pbmcgcnVucyBpbnNpZGUgR2FpbkV4cGVyaWVuY2UsIHdoZXJlIHdCYXR0bGVNb25Nb3ZlcyBjYW4KCQkJLy8gbGFnIGJlaGluZCB0aGUgcGFydHkgc3RydWN0LiBUaGUgUk9NJ3MgZm9yZ2V0IG1lbnUgb3BlcmF0ZXMgb24gdGhlCgkJCS8vIHBhcnR5IG1vbiwgc28gdXNlIHRoYXQgY2Fub25pY2FsIG1vdmUgaWQgZm9yIEhNIHJlamVjdGlvbiB0cmFja2luZy4KCQkJbW92ZUlEIDo9IGxlYXJuaW5nTW92ZUlEKCZtZW0sIGJzLCBsYXN0Rm9yZ2V0U2xvdCkKCQkJdHJpZWRGb3JnZXRzW21vdmVJRF0gPSB0cnVlCgkJCWlmIHpiYXREZWJ1ZyB7CgkJCQlmbXQuUHJpbnRmKCJ6YmF0IG1vdmUtbGVhcm4gYWN0aW9uPWhtLXJlamVjdGVkIHNsb3Q9JWQgbW92ZT0lZFxuIiwgbGFzdEZvcmdldFNsb3QsIG1vdmVJRCkKCQkJfQonJykKKSwKKCcnJwkJCWlkcyA6PSBbNF11aW50OHtic0uTW92ZXNbMF0uSUQsIGJzLk1vdmVzWzFdLklELCBicy5Nb3Zlc1syXS5JRCwgYnMuTW92ZXNbM10uSUR9CgkJCW9mZmVyZWQgOj0gbS5QZWVrOChzeW0uTW92ZU51bSkKCQkJZGVjaXNpb24gOj0gZGVjaWRlTmF0dXJhbE1vdmUobS5ST00oKSwgYnMuQWN0aXZlVHlwZTEsIGJzLkFjdGl2ZVR5cGUyLCBpZHMsIG9mZmVyZWQsIHRyaWVkRm9yZ2V0cykKCQkJaWYgIWRlY2lzaW9uLkxlYXJuIHx8IGRlY2lzaW9uLlJlcGxhY2VTbG90IDwgMCB7CicnJywKJycnCQkJb2ZmZXJlZCA6PSBtLlBlZWs4KHN5bS5Nb3ZlTnVtKQoJCQlkZWNpc2lvbiwgcGFydHlTbG90IDo9IGRlY2lkZU5hdHVyYWxNb3ZlRnJvbVBhcnR5UkFNKG0uUk9NKCksICZtZW0sIGJzLCBvZmZlcmVkLCB0cmllZEZvcmdldHMpCgkJCWlmICFkZWNpc2lvbi5MZWFybiB8fCBkZWNpc2lvbi5SZXBsYWNlU2xvdCA8IDAgewoJycnCiksCignJycJCQlwZW5kaW5nTGVhcm5QYXJ0eVNsb3QgPSBpbnQobS5QZWVrOChzeW0uUGxheWVyTW9uTnVtYmVyKSkKJycnLAonJycJCQlwZW5kaW5nTGVhcm5QYXJ0eVNsb3QgPSBwYXJ0eVNsb3QKJycnCiksCignJycJCQkJaWYgYnMgIT0gbmlsIHsKCQkJCQlpZHMgOj0gWzRddWludDh7YnMuTW92ZXNbMF0uSUQsIGJzLk1vdmVzWzFdLklELCBicy5Nb3Zlc1syXS5JRCwgYnMuTW92ZXNbM10uSUR9CgkJCQkJb2ZmZXJlZCA6PSBtLlBlZWs4KHN5bS5Nb3ZlTnVtKQoJCQkJCWRlY2lzaW9uIDo9IGRlY2lkZU5hdHVyYWxNb3ZlKG0uUk9NKCksIGJzLkFjdGl2ZVR5cGUxLCBicy5BY3RpdmVUeXBlMiwgaWRzLCBvZmZlcmVkLCBuaWwpCicnJywKJycnCQkJCWlmIGJzICE9IG5pbCB7CgkJCQkJb2ZmZXJlZCA6PSBtLlBlZWs4KHN5bS5Nb3ZlTnVtKQoJCQkJCWRlY2lzaW9uLCBfIDo9IGRlY2lkZU5hdHVyYWxNb3ZlRnJvbVBhcnR5UkFNKG0uUk9NKCksICZzLCBicywgb2ZmZXJlZCwgbmlsKQoJycnCiksCl0KCmZvciBvbGQsIG5ldyBpbiByZXBsYWNlbWVudHM6CiAgICBjb3VudCA9IHRleHQuY291bnQob2xkKQogICAgaWYgY291bnQgIT0gMToKICAgICAgICByYWlzZSBTeXN0ZW1FeGl0KGYiZXhwZWN0ZWQgZXhhY3RseSBvbmUgbWF0Y2gsIGdvdCB7Y291bnR9OiB7b2xkWzo4MF0hcn0iKQogICAgdGV4dCA9IHRleHQucmVwbGFjZShvbGQsIG5ldywgMSkKcGF0aC53cml0ZV90ZXh0KHRleHQpCgpQYXRoKCJza2lsbC9tb3ZlX2xlYXJuaW5nX2xpdmUuZ28iKS53cml0ZV90ZXh0KCcnJ3BhY2thZ2Ugc2tpbGwKCmltcG9ydCAoCgkiZ2l0aHViLmNvbS9tYWVzdHJvaS9wb2tlcGlsb3QvcmVkL3N0YXRlIgoJImdpdGh1Yi5jb20vbWFlc3Ryb2kvcG9rZXBpbG90L3JlZC9zeW0iCikKCi8vIGxlYXJuaW5nTW9uU25hcHNob3QgcmV0dXJucyB0aGUgY2Fub25pY2FsIG1vdmUgc2V0IHVzZWQgYnkgUmVkJ3MgbGV2ZWwtdXAKLy8gbGVhcm5pbmcgY29kZS4gRHVyaW5nIEdhaW5FeHBlcmllbmNlIHRoZSBiYXR0bGUgY29weSAod0JhdHRsZU1vbk1vdmVzKSBjYW4KLy8gbGFnIGJlaGluZCB3UGFydHlNb25zOyB0aGUgdHJ5LWxlYXJuIGFuZCBmb3JnZXQgbWVudXMgb3BlcmF0ZSBvbiB0aGUgcGFydHkKLy8gc3RydWN0LCBzbyBzdHJhdGVnaWMgcmVwbGFjZW1lbnQgZGVjaXNpb25zIG11c3QgdXNlIHRoYXQgc2FtZSBzb3VyY2UuCmZ1bmMgbGVhcm5pbmdNb25TbmFwc2hvdChtZW0gKnN0YXRlLk1lbSwgYnMgKnN0YXRlLkJhdHRsZVN0YXRlKSAobW92ZXMgWzRddWludDgsIHR5cGUxLCB0eXBlMiB1aW50OCwgcGFydHlTbG90IGludCkgewoJcGFydHlTbG90ID0gaW50KG1lbS5VOChzeW0uUGxheWVyTW9uTnVtYmVyKSkKCXBhcnR5IDo9IHN0YXRlLkRlY29kZVBhcnR5KG1lbSkKCWlmIHBhcnR5U2xvdCA+PSAwICYmIHBhcnR5U2xvdCA8IGxlbihwYXJ0eS5Nb25zKSB7CgkJbW9uIDo9IHBhcnR5Lk1vbnNbcGFydHlTbG90XQoJCXJldHVybiBtb24uTW92ZXMsIG1vbi5UeXBlMSwgbW9uLlR5cGUyLCBwYXJ0eVNsb3QKCX0KCi8vIERlZmVuc2l2ZSBmYWxsYmFjayBmb3IgbWFsZm9ybWVkL3RyYW5zaXRpb25hbCBwYXJ0eSBib29ra2VlcGluZy4gTm9ybWFsCi8vIG1vdmUtbGVhcm5pbmcgcGF0aHMgYWx3YXlzIGhhdmUgYSB2YWxpZCB3UGxheWVyTW9uTnVtYmVyLgoJaWYgYnMgIT0gbmlsIHsKCQlmb3IgaSA6PSByYW5nZSBi cy5Nb3ZlcyB7CgkJCW1vdmVzW2ldID0gYnMuTW92ZXNbaV0uSUQKCQl9CgkJcmV0dXJuIG1vdmVzLCBicy5BY3RpdmVUeXBlMSwgYnMuQWN0aXZlVHlwZTIsIHBhcnR5U2xvdAoJfQoJcmV0dXJuIG1vdmVzLCAwLCAwLCBwYXJ0eVNsb3QKfQoKZnVuYyBkZWNpZGVOYXR1cmFsTW92ZUZyb21QYXJ0eVJBTShyb21EYXRhIFtdYnl0ZSwgbWVtICpzdGF0ZS5NZW0sIGJzICpzdGF0ZS5CYXR0bGVTdGF0ZSwgb2ZmZXJlZCB1aW50OCwgYmxvY2tlZCBtYXBbdWludDhdYm9vbCkgKE1vdmVMZWFybmluZ0RlY2lzaW9uLCBpbnQpIHsKCW1vdmVzLCB0eXBlMSwgdHlwZTIsIHBhcnR5U2xvdCA6PSBsZWFybmluZ01vblNuYXBzaG90KG1lbSwgYnMpCglyZXR1cm4gZGVjaWRlTmF0dXJhbE1vdmUocm9tRGF0YSwgdHlwZTEsIHR5cGUyLCBtb3Zlcywgb2ZmZXJlZCwgYmxvY2tlZCksIHBhcnR5U2xvdAp9CgpmdW5jIGxlYXJuaW5nTW92ZUlEKG1lbSAqc3RhdGUuTWVtLCBicyAqc3RhdGUuQmF0dGxlU3RhdGUsIHNsb3QgaW50KSB1aW50OCB7Cgltb3ZlcywgXywgXywgXyA6PSBsZWFybmluZ01vblNuYXBzaG90KG1lbSwgYnMpCglpZiBzbG90IDwgMCB8fCBzbG90ID49IGxlbihtb3ZlcykgewoJCXJldHVybiAwCgl9CglyZXR1cm4gbW92ZXNbc2xvdF0KfQo nJycpCgpQYXRoKCJza2lsbC9tb3ZlX2xlYXJuaW5nX2xpdmVfdGVzdC5nbyIpLndyaXRlX3RleHQoJycncGFja2FnZSBza2lsbAoKaW1wb3J0ICgKCSJ0ZXN0aW5nIgoKCSJnaXRodWIuY29tL21hZXN0cm9pL3Bva2VwaWxvdC9yZWQvc3RhdGUiCgkiZ2l0aHViLmNvbS9tYWVzdHJvaS9wb2tlcGlsb3QvcmVkL3N5bSIKKQoKZnVuYyBUZXN0TGVhcm5pbmdNb25TbmFwc2hvdFByZWZlcnNQYXJ0eVJBTU92ZXJTdGFsZUJhdHRsZUNvcHkodCAqdGVzdGluZy5UKSB7Cgl2YXIgbWVtIHN0YXRlLk1lbQoJbWVtW3N5bS5QYXJ0eUNvdW50XSA9IDEKCW1lbVtzeW0uUGxheWVyTW9uTnVtYmVyXSA9IDAKCWJhc2UgOj0gc3ltLlBhcnR5TW9uMQoJbWVtW2Jhc2Urc3ltLk1vblR5cGUxXSA9IDB4MTYKCW1lbVtiYXNlK3N5bS5Nb25UeXBlMl0gPSAweDAzCgl3YW50IDo9IFs0XXVpbnQ4ezMzLCA0NSwgNzMsIDIyfQoJY29weShtZW0uU2xpY2UoYmFzZStzeW0uTW9uTW92ZXMsIDQpLCB3YW50WzpdKQoKCS8vIFJlcHJvZHVjZSAjNDc5J3Mgc2hhcGU6IHRoZSBsaXZlIGJhdHRsZSBjb3B5IGNsYWltcyBzbG90IDIgaXMgZW1wdHksCgkvLyB3aGlsZSB0aGUgcGFydHkgc3RydWN0IHRoYXQgdGhlIFJPTSdzIGxlYXJuLW1vdmUgbWVudSBvcGVyYXRlcyBvbiBpcyBmdWxsLgoJYnMgOj0gJnN0YXRlLkJhdHRsZVN0YXRlewoJCUFjdGl2ZVR5cGUxOiAweDAxLAoJCUFjdGl2ZVR5cGUyOiAweDAyLAoJCU1vdmVzOiBbNF1zdGF0ZS5Nb3Zle3tJRDogMzN9LCB7SUQ6IDQ1fSwge0lEOiAwfSwge0lEOiAyMn19LAoJfQoKCWdvdCwgdHlwZTEsIHR5cGUyLCBzbG90IDo9IGxlYXJuaW5nTW9uU25hcHNob3QoJm1lbSwgYnMpCglpZiBnb3QgIT0gd2FudCB7CgkJdC5GYXRhbGYoIm1vdmVzPSV2IHdhbnQgcGFydHkgUkFNICV2IiwgZ290LCB3YW50KQoJfQoJaWYgdHlwZTEgIT0gMHgxNiB8fCB0eXBlMiAhPSAweDAzIHx8IHNsb3QgIT0gMCB7CgkJdC5GYXRhbGYoInR5cGVzL3Nsb3Q9KCV4LCV4LCVkKSwgd2FudCAoMHgxNiww eDAzLDApIiwgdHlwZTEsIHR5cGUyLCBzbG90KQoJfQoJaWYgaWQgOj0gbGVhcm5pbmdNb3ZlSUQoJm1lbSwgYnMsIDIpOyBpZCAhPSA3MyB7CgkJdC5GYXRhbGYoInNsb3QgMiBtb3ZlPSVkIHdhbnQgNzMgZnJvbSBwYXJ0eSBSQU0iLCBpZCkKCX0KfQoKZnVuYyBUZXN0TGVhcm5pbmdNb25TbmFwc2hvdEZhbGxzQmFja1RvQmF0dGxlV2hlblBhcnR5U2xvdEludmFsaWQodCAqdGVzdGluZy5UKSB7Cgl2YXIgbWVtIHN0YXRlLk1lbQoJbWVtW3N5bS5QYXJ0eUNvdW50XSA9IDEKCW1lbVtzeW0uUGxheWVyTW9uTnVtYmVyXSA9IDUKCWJzIDo9ICZzdGF0ZS5CYXR0bGVTdGF0ZXsKCQlBY3RpdmVUeXBlMTogMHgwOSwKCQlBY3RpdmVUeXBlMjogMHgwYSwKCQlNb3ZlczogWzRdc3RhdGUuTW92ZXt7SUQ6IDEwfSwge0lEOiAyMH0sIHtJRDogMzB9LCB7SUQ6IDQwfX0sCgl9Cglnb3QsIHR5cGUxLCB0eXBlMiwgXyA6PSBsZWFybmluZ01vblNuYXBzaG90KCZtZW0sIGJzKQoJaWYgZ290ICE9IFs0XXVpbnQ4ezEwLCAyMCwgMzAsIDQwfSB8fCB0eXBlMSAhPSAweDA5IHx8IHR5cGUyICE9IDB4MGEgewoJCXQuRmF0YWxmKCJmYWxsYmFjaz0oJXYsJXgsJXgpIiwgZ290LCB0eXBlMSwgdHlwZTIpCgl9Cn0KJycnKQo=' | base64 -d > /tmp/apply_issue_479.py
+          python /tmp/apply_issue_479.py
           gofmt -w skill/battle.go skill/move_learning_live.go skill/move_learning_live_test.go
           go test ./skill -run 'TestLearningMonSnapshot|TestMoveLearning'
       - name: Commit fix
-        shell: bash
         run: |
           git config user.name 'PokePilot Fix Bot'
           git config user.email 'actions@users.noreply.github.com'
