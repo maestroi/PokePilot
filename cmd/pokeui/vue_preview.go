@@ -48,6 +48,9 @@ func withVuePreview(next http.Handler, target string) http.Handler {
 			res.Header().Set("Cache-Control", "no-store")
 			_ = json.NewEncoder(res).Encode(currentBuildProvenance())
 			return
+		case req.Method == http.MethodGet && strings.HasPrefix(req.URL.Path, "/poke-assets/"):
+			servePokemonAsset(res, req)
+			return
 		case req.Method == http.MethodGet && strings.HasPrefix(req.URL.Path, "/assets/"):
 			name := strings.TrimPrefix(req.URL.Path, "/")
 			if !serveVueFile(res, req, target, name) {
