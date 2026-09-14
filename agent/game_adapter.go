@@ -9,16 +9,16 @@ import (
 
 // ObjectiveGameAdapter is the seam between the game-agnostic objective
 // transaction runtime and one concrete game implementation. The runtime owns
-// lifecycle and normalized ObjectiveResult policy; the adapter owns game facts,
-// state inspection, controller mechanics, and positive postcondition evidence.
-//
-// Objective/Observation/ObjectiveResult are still the existing agent types in
-// this first migration step. Moving their remaining Red-shaped identifiers to a
-// portable semantic vocabulary is intentionally a later change; the important
-// invariant established here is that transaction ordering no longer depends on
-// an emulator or Pokémon Red implementation.
+// lifecycle ordering; the adapter owns game facts, state inspection,
+// controller mechanics, positive postcondition evidence, and translation of
+// native errors into the portable failure vocabulary.
 type ObjectiveGameAdapter interface {
 	gameruntime.Adapter[Objective, Observation, ObjectiveResult]
+
+	// NormalizeFailure translates one native adapter/runtime error at a known
+	// transaction phase. Generic recovery policy must depend only on the
+	// returned record, never on the native error identity.
+	NormalizeFailure(gameruntime.FailurePhase, error, Observation) gameruntime.Failure
 
 	// CaptureFailure persists game-specific forensic evidence. It is diagnostic
 	// only: a capture error must never replace the gameplay/runtime error.
@@ -26,8 +26,9 @@ type ObjectiveGameAdapter interface {
 }
 
 // executeObjectiveWithAdapter is the agent-facing transaction boundary. The
-// portable game package owns lifecycle ordering; this layer maps that evidence
-// into PokePilot's stable ObjectiveResult/Outcome/error contract.
+// portable game package owns lifecycle ordering; this layer attaches the game
+// adapter's normalized failure record while preserving the native error for
+// diagnostics and forensics.
 func executeObjectiveWithAdapter(a ObjectiveGameAdapter, o Objective) (ObjectiveResult, error) {
 	tx := gameruntime.ExecuteTransaction[Objective, Observation, ObjectiveResult](a, o)
 	result := tx.Result
@@ -38,50 +39,61 @@ func executeObjectiveWithAdapter(a ObjectiveGameAdapter, o Objective) (Objective
 	}
 
 	if tx.InitialObservationErr != nil {
-		result.Outcome = OutcomeControllerUncertain
 		retErr := fmt.Errorf("agent: %s: initial observation unavailable: %w", o, tx.InitialObservationErr)
+		attachNormalizedFailure(a, &result, gameruntime.FailurePhaseInitialObservation, tx.InitialObservationErr, tx.Final)
 		result = finalizeObjectiveResult(o, result, tx.Final, retErr)
 		reportObjectiveCaptureFailure(a, o, retErr)
 		return result, retErr
 	}
 
 	if tx.ValidationErr != nil {
+		attachNormalizedFailure(a, &result, gameruntime.FailurePhaseValidation, tx.ValidationErr, tx.Final)
 		result = finalizeObjectiveResult(o, result, tx.Final, tx.ValidationErr)
 		return result, tx.ValidationErr
 	}
 
 	if tx.StartBoundaryErr != nil {
 		retErr := fmt.Errorf("agent: %s: objective start invariant: %w", o, tx.StartBoundaryErr)
+		phase, native := gameruntime.FailurePhaseStartBoundary, tx.StartBoundaryErr
 		if tx.FinalObservationErr != nil {
-			result.Outcome = OutcomeControllerUncertain
+			phase, native = gameruntime.FailurePhaseFinalObservation, tx.FinalObservationErr
 			retErr = errors.Join(retErr, fmt.Errorf("agent: %s: observation after start-boundary failure unavailable: %w", o, tx.FinalObservationErr))
 		}
+		attachNormalizedFailure(a, &result, phase, native, tx.Final)
 		result = finalizeObjectiveResult(o, result, tx.Final, retErr)
 		reportObjectiveCaptureFailure(a, o, retErr)
 		return result, retErr
 	}
 
 	primary := tx.ExecutionErr
+	failurePhase := gameruntime.FailurePhaseExecution
+	failureNative := tx.ExecutionErr
 	if primary == nil && tx.SettleErr != nil {
+		failurePhase = gameruntime.FailurePhaseSettle
 		primary = fmt.Errorf("agent: %s: postcondition settle: %w",
 			o, errors.Join(ErrObjectivePostconditionUnavailable, tx.SettleErr))
+		failureNative = primary
 	}
 	if primary == nil && tx.PostconditionErr != nil {
+		failurePhase = gameruntime.FailurePhasePostcondition
 		primary = fmt.Errorf("agent: %s: %w", o, tx.PostconditionErr)
+		failureNative = primary
 	}
 
 	retErr := objectiveBoundaryError(o, primary, tx.FinishBoundaryErr)
 	if tx.FinishBoundaryErr != nil {
-		// A dirty finish is stronger than any semantic blocked result produced
-		// by the owned action. The planner must never receive an unsettled game
-		// as ordinary gameplay blockage.
+		// A dirty finish dominates the owned action's semantic failure. Preserve
+		// the joined native error for diagnostics but normalize at the finish
+		// boundary phase so generic policy cannot treat it as ordinary blockage.
+		failurePhase = gameruntime.FailurePhaseFinishBoundary
+		failureNative = retErr
 		result.Outcome = ""
 	}
 	if tx.FinalObservationErr != nil {
 		// Without a trustworthy final observation, generic policy cannot safely
-		// treat an otherwise recoverable execution/boundary failure as ordinary
-		// blockage. Observation uncertainty is therefore terminal.
-		result.Outcome = OutcomeControllerUncertain
+		// reason from an otherwise recoverable failure.
+		failurePhase = gameruntime.FailurePhaseFinalObservation
+		failureNative = tx.FinalObservationErr
 		obsErr := fmt.Errorf("agent: %s: final observation unavailable: %w", o, tx.FinalObservationErr)
 		if retErr == nil {
 			retErr = obsErr
@@ -89,11 +101,32 @@ func executeObjectiveWithAdapter(a ObjectiveGameAdapter, o Objective) (Objective
 			retErr = errors.Join(retErr, obsErr)
 		}
 	}
+	if retErr != nil {
+		attachNormalizedFailure(a, &result, failurePhase, failureNative, tx.Final)
+	}
 	result = finalizeObjectiveResult(o, result, tx.Final, retErr)
 	if retErr != nil {
 		reportObjectiveCaptureFailure(a, o, retErr)
 	}
 	return result, retErr
+}
+
+func attachNormalizedFailure(a ObjectiveGameAdapter, result *ObjectiveResult, phase gameruntime.FailurePhase, err error, final Observation) {
+	if result == nil || err == nil {
+		return
+	}
+	failure := a.NormalizeFailure(phase, err, final)
+	// Some adapter-owned actions can provide a stronger semantic outcome than
+	// the native error type alone (for example a resolved-but-lost gym battle).
+	// Keep that evidence when normalization has only an unknown fallback.
+	if result.Outcome != "" && result.Outcome != OutcomeCompleted && failure.Class == gameruntime.FailureClassUnknown {
+		failure.Class = failureClassForOutcome(result.Outcome)
+		failure.Recoverable = actionFor(result.Outcome) == actionReplan
+		if failure.Cause == "" || failure.Cause == "unknown_error" {
+			failure.Cause = "outcome:" + string(result.Outcome)
+		}
+	}
+	result.Failure = &failure
 }
 
 func reportObjectiveCaptureFailure(a ObjectiveGameAdapter, o Objective, err error) {
