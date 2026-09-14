@@ -24,7 +24,7 @@ func offerWithTMHM(m *emu.Emu, romData []byte, obs Observation, known *Knowledge
 	out = appendKnownCatchObjectives(romData, obs, known, out)
 	out = appendDexCatchObjectives(obs, known, out)
 	out = appendDexGiftObjectives(obs, known, out)
-	out = appendDexEvolutionObjectives(obs, out)
+	out = appendDexEvolutionObjectives(obs, known, out)
 	var mem state.Mem
 	state.Snapshot(m, &mem)
 	party := state.DecodeParty(&mem)

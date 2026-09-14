@@ -165,6 +165,17 @@ func executeRedOwned(m *emu.Emu, romData []byte, o Objective) (result ObjectiveR
 		if !ok {
 			return result, fmt.Errorf("agent: %s: unknown Red item %q", o, o.Item)
 		}
+		if o.Intent == dexEvolutionSupplyIntent {
+			if o.Qty != 1 {
+				return result, fmt.Errorf("agent: %s: evolution supply purchase must request exactly one stone", o)
+			}
+			travel, err := skill.BuyEvolutionStone(m, romData, item, skill.StatAwareMove(romData))
+			result.Travel = &travel
+			if err != nil {
+				return result, fmt.Errorf("agent: %s: %w", o, err)
+			}
+			return result, nil
+		}
 		if err := skill.Buy(m, item, o.Qty); err != nil {
 			return result, fmt.Errorf("agent: %s: %w", o, err)
 		}
