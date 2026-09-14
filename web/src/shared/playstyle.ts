@@ -23,6 +23,13 @@ export function normalizePlayStyle(run: PlayStyleSource | null | undefined): Pla
   }
 }
 
+export function defaultGoalForPlayStyle(run: PlayStyleSource | PlayStyle | null | undefined): string {
+  const source = typeof run === 'string' ? { play_style: run } : run
+  return normalizePlayStyle(source) === 'completionist'
+    ? 'Complete the obtainable Pokédex.'
+    : 'Beat the Elite Four and Champion.'
+}
+
 export function playStyleLabel(run: PlayStyleSource | null | undefined): string {
   switch (normalizePlayStyle(run)) {
     case 'adventure':

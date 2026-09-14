@@ -1,6 +1,10 @@
 package main
 
-import "flag"
+import (
+	"flag"
+
+	"github.com/maestroi/pokepilot/farm"
+)
 
 // Gameplay policy is intentionally separate from -llm-profile: the latter
 // chooses inference hardware, while these flags choose how the run behaves.
@@ -30,4 +34,23 @@ func localWildEncountersName() string {
 		return ""
 	}
 	return *localWildEncounters
+}
+
+// resolveLocalGoal keeps an explicitly supplied -goal authoritative. Without
+// one, an explicit play style supplies its own terminal default; a legacy
+// command with no play style retains main.go's historical elite-four default.
+func resolveLocalGoal(current string) string {
+	explicit := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "goal" {
+			explicit = true
+		}
+	})
+	if explicit {
+		return current
+	}
+	if goal := farm.DefaultGoalForPlayStyle(localPlayStyleName()); goal != "" {
+		return goal
+	}
+	return current
 }

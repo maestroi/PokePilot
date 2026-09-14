@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
+  defaultGoalForPlayStyle,
   isPlayStyleRun,
   normalizePlayStyle,
   playSpeedLabel,
@@ -17,6 +18,13 @@ test('play style labels match the public spectator names', () => {
   assert.equal(playStyleLabel({ play_style: 'team-builder' }), 'Team Builder')
   assert.equal(playStyleLabel({}), 'Speedrun')
   assert.equal(playStyleTagline({ play_style: 'adventure' }), 'Natural play · exploration and story')
+})
+
+test('play styles have terminal goal defaults', () => {
+  assert.equal(defaultGoalForPlayStyle('speedrun'), 'Beat the Elite Four and Champion.')
+  assert.equal(defaultGoalForPlayStyle('adventure'), 'Beat the Elite Four and Champion.')
+  assert.equal(defaultGoalForPlayStyle('team_builder'), 'Beat the Elite Four and Champion.')
+  assert.equal(defaultGoalForPlayStyle('completionist'), 'Complete the obtainable Pokédex.')
 })
 
 test('scripted runs are not assigned a play style', () => {

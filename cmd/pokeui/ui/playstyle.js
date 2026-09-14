@@ -46,6 +46,17 @@
     "adventure",
   );
 
+  const defaultGoalForPlayStyle = (style) =>
+    style === "completionist"
+      ? "Complete the obtainable Pokédex."
+      : "Beat the Elite Four and Champion.";
+
+  const applyPlayStyleGoal = () => {
+    if (form.elements.goal) form.elements.goal.value = defaultGoalForPlayStyle(playStyle.value);
+  };
+  applyPlayStyleGoal();
+  playStyle.addEventListener("change", applyPlayStyleGoal);
+
   const riskTolerance = addPolicySelect(
     "risk_tolerance",
     "Risk tolerance",

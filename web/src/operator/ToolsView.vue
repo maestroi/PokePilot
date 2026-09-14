@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { ArrowRightIcon, PlayIcon } from '@heroicons/vue/20/solid'
 import { createRun } from '../shared/api/client'
 import type { RunSpec } from '../shared/api/types'
+import { defaultGoalForPlayStyle } from '../shared/playstyle'
 import Panel from '../shared/components/Panel.vue'
 
 const goalOptions = [
@@ -25,7 +26,7 @@ const form = reactive<RunSpec>({
   planner: 'llm',
   starter: '',
   dest: '',
-  goal: 'Earn the Boulder Badge.',
+  goal: defaultGoalForPlayStyle('adventure'),
   llm_profile: 'auto',
   play_style: 'adventure',
   risk_tolerance: 'balanced',
@@ -42,6 +43,13 @@ const submitting = ref(false)
 const error = ref('')
 const createdRunID = ref('')
 const isLLM = computed(() => form.planner === 'llm')
+
+watch(
+  () => form.play_style,
+  () => {
+    form.goal = defaultGoalForPlayStyle({ play_style: form.play_style })
+  }
+)
 
 function runURL(runID: string): string {
   const url = new URL('/', window.location.origin)
@@ -119,6 +127,7 @@ async function submit(): Promise<void> {
           <select v-model="form.goal" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400">
             <option v-for="goal in goalOptions" :key="goal || 'free'" :value="goal">{{ goal || 'Free play (no automatic stop)' }}</option>
           </select>
+          <span class="mt-1 block text-[11px] text-slate-600">Defaults from the selected play style; you can still override it here.</span>
         </label>
 
         <label v-if="isLLM" class="block">
@@ -129,7 +138,7 @@ async function submit(): Promise<void> {
             <option value="completionist">Completionist · explore and collect</option>
             <option value="team_builder">Team Builder · catches and training</option>
           </select>
-          <span class="mt-1 block text-[11px] text-slate-600">What the player values; independent from safety and encounter rules.</span>
+          <span class="mt-1 block text-[11px] text-slate-600">What the player values; changing it selects that style's default goal.</span>
         </label>
 
         <label v-if="isLLM" class="block">
