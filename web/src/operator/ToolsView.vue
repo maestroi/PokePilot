@@ -15,6 +15,7 @@ const goalOptions = [
   'Earn 7 badges.',
   'Earn all 8 badges.',
   'Beat the Elite Four and Champion.',
+  'Complete the obtainable Pokédex.',
   ''
 ]
 
