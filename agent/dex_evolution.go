@@ -14,11 +14,17 @@ const (
 )
 
 // appendDexEvolutionObjectives turns ROM-derived evolution sources into the
-// existing deterministic training/item objectives. When a purchasable stone
-// is the only missing immediate prerequisite, it first offers a bounded supply
-// purchase; the next observation then offers the verified item evolution.
+// existing deterministic training/item objectives. Repeatable bases needed by
+// branched families are acquired first when no suitable individual is in the
+// party. When a purchasable stone is the only missing immediate prerequisite,
+// it offers a bounded supply purchase; the next observation then offers the
+// verified item evolution.
 func appendDexEvolutionObjectives(obs Observation, known *Knowledge, out []Objective) []Objective {
-	if len(obs.Dex.Targets) == 0 || len(obs.Party) == 0 {
+	if len(obs.Dex.Targets) == 0 {
+		return out
+	}
+	out = appendDexDuplicateEvolutionBaseObjectives(obs, known, out)
+	if len(obs.Party) == 0 {
 		return out
 	}
 
