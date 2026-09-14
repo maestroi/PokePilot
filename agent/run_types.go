@@ -155,12 +155,12 @@ type Budget struct {
 	MaxFrames int
 	Goal      string
 
-	StuckAfter                  int
-	StagnationAfter             int
-	MaxConsecutiveFailures      int
-	Log                         io.Writer
-	CheckpointDir               string
-	CheckpointKeep              int
-	ResumeFrom                  string
-	Cancel                      <-chan struct{}
+	StuckAfter             int
+	StagnationAfter        int
+	MaxConsecutiveFailures int
+	Log                    io.Writer
+	CheckpointDir          string
+	CheckpointKeep         int
+	ResumeFrom             string
+	Cancel                 <-chan struct{}
 }
