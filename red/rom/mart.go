@@ -33,18 +33,41 @@ func MartItems(rom []byte, mapID uint8) ([]uint8, error) {
 	if err != nil {
 		return nil, mapErr(mapID, err)
 	}
+	_, items, ok := martClerk(rom, h)
+	if !ok {
+		return nil, mapErr(mapID, fmt.Errorf("no object carries a mart script"))
+	}
+	return items, nil
+}
 
+// MartClerkPosition returns the ROM home coordinate of the object whose text
+// script owns the current map's Mart shelf. A Mart clerk is a service actor,
+// not an ordinary talk NPC: generic Talk must never page through its BUY/SELL
+// menus as if they were dialogue.
+func MartClerkPosition(rom []byte, mapID uint8) (uint8, uint8, error) {
+	h, err := ParseMap(rom, mapID)
+	if err != nil {
+		return 0, 0, mapErr(mapID, err)
+	}
+	obj, _, ok := martClerk(rom, h)
+	if !ok {
+		return 0, 0, mapErr(mapID, fmt.Errorf("no object carries a mart script"))
+	}
+	return obj.X, obj.Y, nil
+}
+
+func martClerk(rom []byte, h MapHeader) (Object, []uint8, bool) {
 	for _, table := range textPointerTables(rom, h) {
 		for _, obj := range h.Objects {
 			if obj.TextID == 0 || obj.TextID&0xC0 != 0 {
 				continue // no text, or a trainer/item entry
 			}
 			if items, ok := martScriptAt(rom, table, int(obj.TextID)-1); ok {
-				return items, nil
+				return obj, items, true
 			}
 		}
 	}
-	return nil, mapErr(mapID, fmt.Errorf("no object carries a mart script"))
+	return Object{}, nil, false
 }
 
 // textPointerTables returns the file offsets of a map's text pointer tables:
