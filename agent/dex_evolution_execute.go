@@ -9,6 +9,32 @@ import (
 	"github.com/maestroi/pokepilot/skill"
 )
 
+func executeDexEvolutionTraining(m *emu.Emu, romData []byte, o Objective, result ObjectiveResult) (ObjectiveResult, error) {
+	from, ok := redSpeciesID(o.Species)
+	if !ok {
+		return result, fmt.Errorf("agent: %s: unknown Red species %q", o, o.Species)
+	}
+	to, ok := levelEvolutionTarget(romData, from)
+	if !ok {
+		return result, fmt.Errorf("agent: %s: species %q has no level evolution", o, o.Species)
+	}
+
+	trained, err := executeTrainingObjective(m, romData, o, result)
+	if err != nil {
+		return trained, err
+	}
+	wantDex, err := rom.InternalSpeciesDexNumber(romData, to)
+	if err != nil {
+		return trained, fmt.Errorf("agent: %s: evolution target %#02x: %w", o, to, err)
+	}
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	if !dexNumberOwned(state.DecodePokedex(&mem).Owned, wantDex) {
+		return trained, fmt.Errorf("agent: %s: reached level %d but expected evolution Pokédex #%d is not owned", o, o.Level, wantDex)
+	}
+	return trained, nil
+}
+
 func executeDexEvolutionItem(m *emu.Emu, romData []byte, o Objective, result ObjectiveResult) (ObjectiveResult, error) {
 	adapter := newRedObjectiveAdapter(m, romData)
 	item, ok := adapter.resolveItemID(o.Item)
@@ -33,6 +59,19 @@ func executeDexEvolutionItem(m *emu.Emu, romData []byte, o Objective, result Obj
 	return result, nil
 }
 
+func levelEvolutionTarget(romData []byte, from uint8) (uint8, bool) {
+	evos, err := rom.Evolutions(romData)
+	if err != nil {
+		return 0, false
+	}
+	for _, evo := range evos {
+		if evo.Method == rom.EvoLevel && evo.From == from {
+			return evo.To, true
+		}
+	}
+	return 0, false
+}
+
 func itemEvolutionTarget(romData []byte, from, item uint8) (uint8, bool) {
 	evos, err := rom.Evolutions(romData)
 	if err != nil {
@@ -44,4 +83,13 @@ func itemEvolutionTarget(romData []byte, from, item uint8) (uint8, bool) {
 		}
 	}
 	return 0, false
+}
+
+func dexNumberOwned(owned []uint8, want uint8) bool {
+	for _, dex := range owned {
+		if dex == want {
+			return true
+		}
+	}
+	return false
 }
