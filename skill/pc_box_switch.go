@@ -11,8 +11,8 @@ import (
 )
 
 const (
-	gen1BoxCount       = 12
-	pcBoxSwitchBudget  = 10000
+	gen1BoxCount      = 12
+	pcBoxSwitchBudget = 10000
 )
 
 // ErrPCAllBoxesFull reports that Bill's PC cannot make storage room because
@@ -65,6 +65,47 @@ func nextNonFullBox(counts [gen1BoxCount]uint8, current int) (int, bool) {
 	return -1, false
 }
 
+// selectPCBox drives DisplayChangeBoxMenu's inclusive cursor semantics. Unlike
+// the ordinary menus handled by SelectMenuItem, ChangeBox stores 11 in
+// wMaxMenuItem to mean "last valid index 11", not "11 items". A dedicated
+// step-and-verify helper is therefore required so Box 12 remains selectable.
+func selectPCBox(m *emu.Emu, index int) error {
+	if index < 0 || index >= gen1BoxCount {
+		return fmt.Errorf("skill: Bill's PC: box index %d out of range 0..%d", index, gen1BoxCount-1)
+	}
+	m.StepFrames(talkSettle)
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	if !pcChangeBoxMenuUp(&mem) {
+		return fmt.Errorf("skill: Bill's PC: Change Box menu is not open")
+	}
+
+	const stuckLimit = 5
+	stuck := 0
+	current := int(mem.U8(sym.CurrentMenuItem))
+	for current != index {
+		previous := current
+		btn := emu.Down
+		if current > index {
+			btn = emu.Up
+		}
+		m.Tap(btn, 3, 7)
+		if _, err := m.StepUntil(menuSettleFrames, func(m *emu.Emu) bool {
+			return int(m.Peek8(sym.CurrentMenuItem)) != previous
+		}); err != nil {
+			stuck++
+			if stuck >= stuckLimit {
+				return fmt.Errorf("skill: Bill's PC: Change Box cursor stuck at %d, wanted %d: %w", previous, index, ErrMenuStuck)
+			}
+		} else {
+			stuck = 0
+		}
+		current = int(m.Peek8(sym.CurrentMenuItem))
+	}
+	m.Tap(emu.A, 3, 7)
+	return nil
+}
+
 // SwitchToNextNonFullBox changes Bill's active PC box through the real PC UI.
 // It never writes box data or wCurrentBoxNum directly. Selection is based on
 // the twelve counts the ROM itself builds for DisplayChangeBoxMenu, and success
@@ -113,7 +154,7 @@ func SwitchToNextNonFullBox(m *emu.Emu, romData []byte, policy MovePolicy) error
 	if !ok {
 		return cleanup(fmt.Errorf("%w: each of %d boxes has %d Pokemon", ErrPCAllBoxesFull, gen1BoxCount, gen1BoxCapacity))
 	}
-	if err := SelectMenuItem(m, target); err != nil {
+	if err := selectPCBox(m, target); err != nil {
 		return cleanup(fmt.Errorf("skill: Bill's PC: select box %d: %w", target+1, err))
 	}
 
@@ -135,9 +176,8 @@ func SwitchToNextNonFullBox(m *emu.Emu, romData []byte, policy MovePolicy) error
 			return nil
 		}
 		// The box-selection menu is live while the selected A press is being
-		// consumed; do not add input. Save warning/result text is driven by the
-		// ChangeBox routine itself after selection, so ordinary frame stepping is
-		// safest here.
+		// consumed; do not add input. ChangeBox handles its own save after the
+		// selection, so ordinary frame stepping is safest here.
 		m.StepFrames(talkSettle)
 	}
 	state.Snapshot(m, &after)
