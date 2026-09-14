@@ -28,9 +28,9 @@ func executeCatchObjective(m *emu.Emu, romData []byte, o Objective, result Objec
 			err    error
 		)
 		if o.Flee {
-			travel, err = skill.TravelFlee(m, romData, dest, skill.StatAwareMove(romData), 20)
+			travel, err = skill.TravelFlee(m, romData, dest, skill.StatAwareMove(romData), 40)
 		} else {
-			travel, err = skill.Travel(m, romData, dest, skill.StatAwareMove(romData), 20)
+			travel, err = skill.Travel(m, romData, dest, skill.StatAwareMove(romData), 40)
 		}
 		result.Travel = &travel
 		if err != nil {
