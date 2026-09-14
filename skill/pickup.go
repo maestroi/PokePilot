@@ -57,6 +57,11 @@ var ErrPickupMenu = errors.New("skill: Pickup: a two-option menu appeared while 
 // The postcondition is the bag: Pickup succeeds only when the count for want
 // rose. A text box opening is not evidence.
 //
+// A small ROM-owned exception exists for scripted NPC item rewards (the three
+// fishing gurus and Oak's aides). Those interactions deliberately reuse the
+// same semantic objective/postcondition as Pickup, but their YES choice is
+// owned by receiveChoiceReward rather than this generic item-ball path.
+//
 // The approach uses Travel, not Approach: ground items sit in tall grass
 // (the forest's antidote), and Approach aborts on the first wild battle by
 // design — a pickup objective there would fail on every retry. Travel fights
@@ -68,6 +73,10 @@ var ErrPickupMenu = errors.New("skill: Pickup: a two-option menu appeared while 
 // Teeth safe from the Gen I 20-stack bag limit without teaching their story
 // meaning to this generic primitive. Existing stacks need no free slot.
 func Pickup(m *emu.Emu, romData []byte, x, y uint8, want uint8, policy MovePolicy) error {
+	if reward, ok := choiceRewardAt(m.Peek8(sym.CurMap), x, y, want); ok {
+		return receiveChoiceReward(m, romData, reward, policy)
+	}
+
 	var mem state.Mem
 	state.Snapshot(m, &mem)
 	before := bagCount(state.DecodeInventory(&mem).Items, want)
