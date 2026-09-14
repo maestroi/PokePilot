@@ -36,9 +36,9 @@ const timingMetrics = computed(() => {
       note: run.status === 'done' ? 'wall-clock total' : 'wall clock so far'
     },
     {
-      label: 'Pace',
+      label: 'Overall pace',
       value: formatRunSpeed(averageRunSpeed(run)),
-      note: 'game time ÷ real time'
+      note: 'game time ÷ real time · includes planner waits'
     },
     {
       label: 'Planner',
