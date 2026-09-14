@@ -20,6 +20,18 @@ const goalOptions = [
   ''
 ]
 
+type StarterMode =
+  | 'default'
+  | 'squirtle'
+  | 'charmander'
+  | 'bulbasaur'
+  | 'random'
+  | 'random:basic'
+  | 'random:any'
+  | 'mew'
+  | 'mewtwo'
+  | 'specific'
+
 const form = reactive<RunSpec>({
   run_id: '',
   seed: 0,
@@ -42,7 +54,10 @@ const form = reactive<RunSpec>({
 const submitting = ref(false)
 const error = ref('')
 const createdRunID = ref('')
+const starterMode = ref<StarterMode>('default')
+const specificStarter = ref('')
 const isLLM = computed(() => form.planner === 'llm')
+const isSpecificStarter = computed(() => starterMode.value === 'specific')
 
 watch(
   () => form.play_style,
@@ -50,6 +65,12 @@ watch(
     form.goal = defaultGoalForPlayStyle({ play_style: form.play_style })
   }
 )
+
+function starterRequest(): string {
+  if (starterMode.value === 'specific') return specificStarter.value.trim()
+  if (starterMode.value === 'default') return isLLM.value ? '' : 'squirtle'
+  return starterMode.value
+}
 
 function runURL(runID: string): string {
   const url = new URL('/', window.location.origin)
@@ -60,14 +81,19 @@ function runURL(runID: string): string {
 
 async function submit(): Promise<void> {
   if (submitting.value) return
-  submitting.value = true
   error.value = ''
+  if (isSpecificStarter.value && !specificStarter.value.trim()) {
+    error.value = 'Enter the Gen I Pokémon you want to use as the starter.'
+    return
+  }
+
+  submitting.value = true
   createdRunID.value = ''
   try {
     const spec: RunSpec = {
       ...form,
       run_id: form.run_id.trim(),
-      starter: form.starter.trim(),
+      starter: starterRequest(),
       dest: isLLM.value ? '' : form.dest.trim(),
       goal: isLLM.value ? form.goal.trim() : '',
       llm_profile: isLLM.value ? form.llm_profile : '',
@@ -109,18 +135,31 @@ async function submit(): Promise<void> {
 
         <label class="block">
           <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Starter</span>
-          <input v-model="form.starter" list="starter-options" :placeholder="isLLM ? 'LLM decides, or type mewtwo / random' : 'squirtle, mewtwo, random…'" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400" />
-          <datalist id="starter-options">
-            <option value="squirtle">Squirtle</option>
-            <option value="charmander">Charmander</option>
-            <option value="bulbasaur">Bulbasaur</option>
-            <option value="random">Random · reasonable pool</option>
-            <option value="random:basic">Random · base/unevolved pool</option>
-            <option value="random:any">Random · any non-glitch Gen I species</option>
-            <option value="mew">Mew</option>
-            <option value="mewtwo">Mewtwo</option>
-          </datalist>
-          <span class="mt-1 block text-[11px] text-slate-600">Type any Gen I Pokémon for a fixed starter, or use random, random:basic, or random:any. Random selection is deterministic from this run's seed.</span>
+          <select v-model="starterMode" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400">
+            <optgroup label="Default">
+              <option value="default">{{ isLLM ? 'Let LLM decide' : 'Default · Squirtle' }}</option>
+            </optgroup>
+            <optgroup label="Vanilla starters">
+              <option value="squirtle">Squirtle</option>
+              <option value="charmander">Charmander</option>
+              <option value="bulbasaur">Bulbasaur</option>
+            </optgroup>
+            <optgroup label="Starter experiments">
+              <option value="random">Random · reasonable pool</option>
+              <option value="random:basic">Random · basic / unevolved pool</option>
+              <option value="random:any">Random · any non-glitch Gen I Pokémon</option>
+              <option value="mew">Mew</option>
+              <option value="mewtwo">Mewtwo</option>
+              <option value="specific">Specific Pokémon…</option>
+            </optgroup>
+          </select>
+          <span class="mt-1 block text-[11px] text-slate-600">Random choices are deterministic from the run seed. Pick Specific Pokémon for any other Gen I species.</span>
+        </label>
+
+        <label v-if="isSpecificStarter" class="block">
+          <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Specific Pokémon</span>
+          <input v-model="specificStarter" placeholder="e.g. pikachu, dragonite, snorlax" autocomplete="off" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400" />
+          <span class="mt-1 block text-[11px] text-slate-600">Enter any valid Generation I Pokémon name.</span>
         </label>
 
         <label v-if="!isLLM" class="block">
