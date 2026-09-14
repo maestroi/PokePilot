@@ -52,8 +52,17 @@ func main() {
 	bundle := flag.String("bundle", "", "portable repro ZIP path or public GitHub release-asset URL; does not require wall access")
 	out := flag.String("out", "", "directory to materialize the checkpoint into")
 	play := flag.Bool("play", false, "launch the current checkout from the materialized checkpoint")
+	verify := flag.Bool("verify", false, "deterministically replay the captured structured failure without an LLM; requires -bundle")
+	resultPath := flag.String("result", "", "write deterministic replay verdict JSON here; defaults to <out>/repro-result.json")
 	token := flag.String("token", os.Getenv("POKEPILOT_TOKEN"), "bearer token for an authenticated wall; defaults to $POKEPILOT_TOKEN, then the pokepilot MCP token in ~/.claude.json")
 	flag.Parse()
+
+	if *verify && *play {
+		log.Fatal("pokerepro: -verify and -play are mutually exclusive")
+	}
+	if *verify && strings.TrimSpace(*bundle) == "" {
+		log.Fatal("pokerepro: -verify requires -bundle")
+	}
 
 	if strings.TrimSpace(*token) == "" {
 		*token = claudeToken()
@@ -62,6 +71,26 @@ func main() {
 	if strings.TrimSpace(*bundle) != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), localFetchTimeout)
 		defer cancel()
+		if *verify {
+			mat, err := materializePortableBundle(ctx, *bundle, *out)
+			if err != nil {
+				log.Fatalf("pokerepro: portable bundle: %v", err)
+			}
+			printPortableMaterialized(mat)
+			verdict, err := verifyPortableBundle(mat, *resultPath)
+			if err != nil {
+				log.Fatalf("pokerepro: deterministic replay: %v", err)
+			}
+			fmt.Printf("deterministic replay: %s", verdict.Classification)
+			if verdict.ObservedFingerprint != "" {
+				fmt.Printf(" (%s)", verdict.ObservedFingerprint)
+			}
+			fmt.Println()
+			if verdict.Classification != verdictObjectiveSucceeded {
+				os.Exit(1)
+			}
+			return
+		}
 		if err := runPortableBundle(ctx, *bundle, *out, *play); err != nil {
 			log.Fatalf("pokerepro: portable bundle: %v", err)
 		}
@@ -182,7 +211,7 @@ func fetchCheckpoint(ctx context.Context, hc *http.Client, wall, runID string, a
 		case !c.Replayable || !c.HasKnowledge:
 			continue
 		case want == "" || want == "latest":
-			if state == "" || c.Name > state { // names sort by round, zero-padded
+			if state == "" || c.Name > state {
 				state = c.Name
 			}
 		case c.Name == want:

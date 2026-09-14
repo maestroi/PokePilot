@@ -89,8 +89,6 @@ jobs:
                 *) echo "farm-repro: unknown config key $key" >&2; exit 2 ;;
               esac
             done < .github/farm-repro.env
-            # The trigger commit carries only the control file; its parent is
-            # the actual code revision being tested.
             target_revision="$(git rev-parse HEAD^1)"
           fi
 
@@ -141,103 +139,59 @@ jobs:
             echo "timeout_minutes=$timeout_minutes"
           } > "$safe/request.txt"
 
-      - name: Replay checkpoint on current checkout
+      - name: Deterministically replay captured failure
         id: replay
         if: ${{ steps.request.outcome == 'success' }}
+        continue-on-error: true
         shell: bash
-        env:
-          OVERRIDE_LLM_URL: ${{ secrets.POKEPILOT_DEBUG_LLM_URL || vars.POKEPILOT_DEBUG_LLM_URL }}
-          OVERRIDE_LLM_MODEL: ${{ secrets.POKEPILOT_DEBUG_LLM_MODEL || vars.POKEPILOT_DEBUG_LLM_MODEL }}
-          OVERRIDE_LLM_TOKEN: ${{ secrets.POKEPILOT_DEBUG_LLM_TOKEN }}
         run: |
           set -euo pipefail
-
-          if [[ -f "$HOME/.config/pokepilot/env" ]]; then
-            set -a
-            # shellcheck disable=SC1091
-            . "$HOME/.config/pokepilot/env"
-            set +a
-          fi
-          [[ -n "$OVERRIDE_LLM_URL" ]] && export POKEPILOT_LLM_URL="$OVERRIDE_LLM_URL"
-          [[ -n "$OVERRIDE_LLM_MODEL" ]] && export POKEPILOT_LLM_MODEL="$OVERRIDE_LLM_MODEL"
-          [[ -n "$OVERRIDE_LLM_TOKEN" ]] && export llm_token="$OVERRIDE_LLM_TOKEN"
-
           set +e
           timeout --signal=TERM --kill-after=30s "${REPLAY_TIMEOUT_MINUTES}m" \
             go run ./cmd/pokerepro \
               -bundle "$BUNDLE_URL" \
               -out "$PRIVATE_OUT/repro" \
-              -play \
+              -verify \
+              -result "$SAFE_OUT/repro-result.json" \
             2>&1 | tee "$SAFE_OUT/run.log"
           status=${PIPESTATUS[0]}
           set -e
-
           echo "$status" > "$SAFE_OUT/exit-code.txt"
-          # A gameplay failure is evidence, not a workflow infrastructure error.
-          exit 0
+          exit "$status"
 
-      - name: Classify replay result
+      - name: Finalize replay result
         id: classify
         if: ${{ always() && steps.request.outcome == 'success' }}
         shell: bash
         run: |
           set -euo pipefail
-
           status="$(cat "$SAFE_OUT/exit-code.txt" 2>/dev/null || echo 125)"
-          manifest="$PRIVATE_OUT/repro/repro.json"
-          source_fingerprint=""
-          source_revision=""
-          run_id=""
-          objective=""
-          diagnostic=""
-          if [[ -f "$manifest" ]]; then
-            source_fingerprint="$(jq -r '.fingerprint // ""' "$manifest")"
-            source_revision="$(jq -r '.observed_revision // ""' "$manifest")"
-            run_id="$(jq -r '.run_id // ""' "$manifest")"
-            objective="$(jq -r '.objective // ""' "$manifest")"
-            diagnostic="$(jq -r '.diagnostic // ""' "$manifest")"
-          fi
 
-          observed_fingerprint=""
-          if [[ -f "$SAFE_OUT/run.log" ]]; then
-            marker="$(grep -Eo 'failure-id:[a-p]{64}' "$SAFE_OUT/run.log" | tail -n 1 || true)"
-            if [[ -n "$marker" ]]; then
-              encoded="${marker#failure-id:}"
-              observed_fingerprint="sha256:$(printf '%s' "$encoded" | tr 'abcdefghijklmnop' '0123456789abcdef')"
-            fi
-          fi
-
-          if [[ ! -f "$manifest" ]]; then
+          if [[ ! -f "$SAFE_OUT/repro-result.json" ]]; then
             classification="harness_error"
-          elif [[ -n "$observed_fingerprint" && "$observed_fingerprint" == "$source_fingerprint" ]]; then
-            classification="same_failure_reproduced"
-          elif [[ -n "$observed_fingerprint" ]]; then
-            classification="different_failure"
-          elif [[ "$status" == "0" ]]; then
-            classification="completed_without_process_error"
-          elif [[ "$status" == "124" || "$status" == "137" ]]; then
-            classification="timeout"
-          else
-            classification="replay_failed_unclassified"
+            if [[ "$status" == "124" || "$status" == "137" ]]; then
+              classification="timeout"
+            fi
+            jq -n \
+              --argjson issue "$ISSUE_NUMBER" \
+              --arg classification "$classification" \
+              --argjson exit_code "$status" \
+              '{issue:$issue,classification:$classification,exit_code:$exit_code}' \
+              > "$SAFE_OUT/repro-result.json"
           fi
 
-          jq -n \
-            --argjson issue "$ISSUE_NUMBER" \
+          tmp="$SAFE_OUT/repro-result.tmp.json"
+          jq \
             --arg revision "$TARGET_REVISION" \
             --arg trigger_revision "$GITHUB_SHA" \
             --arg ref "$GITHUB_REF_NAME" \
             --arg bundle_url "$BUNDLE_URL" \
-            --arg classification "$classification" \
             --argjson exit_code "$status" \
-            --arg source_fingerprint "$source_fingerprint" \
-            --arg observed_fingerprint "$observed_fingerprint" \
-            --arg source_revision "$source_revision" \
-            --arg run_id "$run_id" \
-            --arg objective "$objective" \
-            --arg diagnostic "$diagnostic" \
-            '{issue:$issue,revision:$revision,trigger_revision:$trigger_revision,ref:$ref,bundle_url:$bundle_url,classification:$classification,exit_code:$exit_code,source_fingerprint:$source_fingerprint,observed_fingerprint:$observed_fingerprint,source_revision:$source_revision,run_id:$run_id,objective:$objective,source_diagnostic:$diagnostic}' \
-            > "$SAFE_OUT/repro-result.json"
+            '. + {revision:$revision,trigger_revision:$trigger_revision,ref:$ref,bundle_url:$bundle_url,exit_code:$exit_code}' \
+            "$SAFE_OUT/repro-result.json" > "$tmp"
+          mv "$tmp" "$SAFE_OUT/repro-result.json"
 
+          classification="$(jq -r '.classification' "$SAFE_OUT/repro-result.json")"
           echo "classification=$classification" >> "$GITHUB_OUTPUT"
           {
             echo '### Farm repro replay'
@@ -246,10 +200,12 @@ jobs:
             echo "Revision under test: \`$TARGET_REVISION\`"
             echo "Classification: **$classification**"
             echo "Process exit: \`$status\`"
-            [[ -n "$source_fingerprint" ]] && echo "Source fingerprint: \`$source_fingerprint\`"
-            [[ -n "$observed_fingerprint" ]] && echo "Observed fingerprint: \`$observed_fingerprint\`"
+            source_fp="$(jq -r '.source_fingerprint // empty' "$SAFE_OUT/repro-result.json")"
+            observed_fp="$(jq -r '.observed_fingerprint // empty' "$SAFE_OUT/repro-result.json")"
+            [[ -n "$source_fp" ]] && echo "Source fingerprint: \`$source_fp\`"
+            [[ -n "$observed_fp" ]] && echo "Observed fingerprint: \`$observed_fp\`"
             echo
-            echo 'The ROM and materialized save-state remain on the self-hosted runner and are not uploaded.'
+            echo 'Green means the captured structured objective succeeded on this revision. Any reproduced/different/timeout/missing-contract/harness result is red.'
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload replay diagnostics
@@ -261,9 +217,15 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Fail on harness errors
-        if: ${{ always() && steps.classify.outputs.classification == 'harness_error' }}
+      - name: Enforce replay verdict
+        if: ${{ always() && steps.request.outcome == 'success' }}
         shell: bash
         run: |
-          echo "farm-repro: portable bundle could not be materialized" >&2
+          set -euo pipefail
+          classification="$(jq -r '.classification // "harness_error"' "$SAFE_OUT/repro-result.json")"
+          if [[ "$classification" == "objective_succeeded" ]]; then
+            echo "farm-repro: captured objective succeeds on $TARGET_REVISION"
+            exit 0
+          fi
+          echo "farm-repro: replay verdict is $classification" >&2
           exit 1

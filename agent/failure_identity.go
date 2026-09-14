@@ -97,6 +97,8 @@ func failureKindName(k Kind) string {
 		return "go_to"
 	case KindTalk:
 		return "talk"
+	case KindTrainer:
+		return "trainer"
 	case KindStarter:
 		return "starter"
 	case KindTrain:
