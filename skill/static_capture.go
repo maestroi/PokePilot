@@ -15,14 +15,14 @@ const (
 	staticGreatBall  uint8 = 0x03
 	staticPokeBall   uint8 = 0x04
 
-	staticSnorlax    uint8 = 0x84
-	staticArticuno   uint8 = 0x4A
-	staticZapdos     uint8 = 0x4B
-	staticMoltres    uint8 = 0x49
-	staticMewtwo     uint8 = 0x83
-	staticRetryCount       = 6
-	staticBallBudget       = 12
-	staticStartBudget      = 1200
+	staticSnorlax     uint8 = 0x84
+	staticArticuno    uint8 = 0x4A
+	staticZapdos      uint8 = 0x4B
+	staticMoltres     uint8 = 0x49
+	staticMewtwo      uint8 = 0x83
+	staticRetryCount        = 6
+	staticBallBudget        = 12
+	staticStartBudget       = 1200
 )
 
 // StaticCaptureSite describes a one-time Red encounter. Place is an
