@@ -25,26 +25,31 @@ const (
 // it to fall back on for this round. See choose in plan.go.
 var ErrPlanStepUnresolved = errors.New("agent: strategist: plan step does not resolve")
 
-// Plan is the strategist's bounded, multi-round commitment. Steps are exact
-// Objective.String() sentences, never menu indexes: Offer is rebuilt every
-// round and indexes are not stable across observations.
+// Plan is the strategist's bounded, multi-round commitment. Steps remain the
+// human-readable sentences the strategist emitted, for prompt/telemetry
+// compatibility. StepKeys is the durable semantic identity captured when a
+// fresh plan is validated. New checkpoints resolve by StepKeys; legacy plans
+// without StepKeys retain the historical sentence-resolution fallback.
 type Plan struct {
-	Goal  string   `json:"goal,omitempty"`
-	Steps []string `json:"steps,omitempty"`
-	Step  int      `json:"step,omitempty"`
-	Round int      `json:"round,omitempty"`
+	Goal     string         `json:"goal,omitempty"`
+	Steps    []string       `json:"steps,omitempty"`
+	StepKeys []ObjectiveKey `json:"step_keys,omitempty"`
+	Step     int            `json:"step,omitempty"`
+	Round    int            `json:"round,omitempty"`
 }
 
 func (p Plan) Active() bool { return p.Step >= 0 && p.Step < len(p.Steps) }
 
 func (p Plan) clone() Plan {
 	p.Steps = append([]string(nil), p.Steps...)
+	p.StepKeys = append([]ObjectiveKey(nil), p.StepKeys...)
 	return p
 }
 
 // validateStoredPlan checks only the durable shape. A resumed step may be
 // stale by design; Run resolves it against the freshly rebuilt menu and skips
-// it rather than treating an old checkpoint as corrupt.
+// it rather than treating an old checkpoint as corrupt. StepKeys may be absent
+// only for a migrated legacy checkpoint.
 func validateStoredPlan(p Plan) error {
 	if len(p.Goal) > PlanGoalCap {
 		return fmt.Errorf("plan goal is %d bytes, over cap %d", len(p.Goal), PlanGoalCap)
@@ -55,6 +60,9 @@ func validateStoredPlan(p Plan) error {
 	if p.Step < 0 || p.Step > len(p.Steps) {
 		return fmt.Errorf("plan step %d is outside 0..%d", p.Step, len(p.Steps))
 	}
+	if len(p.StepKeys) != 0 && len(p.StepKeys) != len(p.Steps) {
+		return fmt.Errorf("plan has %d display steps but %d semantic step keys", len(p.Steps), len(p.StepKeys))
+	}
 	for i, step := range p.Steps {
 		if strings.TrimSpace(step) == "" {
 			return fmt.Errorf("plan step %d is empty", i)
@@ -62,14 +70,22 @@ func validateStoredPlan(p Plan) error {
 		if len(step) > PlanStepCap {
 			return fmt.Errorf("plan step %d is %d bytes, over cap %d", i, len(step), PlanStepCap)
 		}
+		if len(p.StepKeys) != 0 {
+			if err := p.StepKeys[i].Objective().Validate(); err != nil {
+				return fmt.Errorf("plan step %d has invalid semantic key: %w", i, err)
+			}
+			if len(p.StepKeys[i].Intent) > IntentCap {
+				return fmt.Errorf("plan step %d intent is %d bytes, over cap %d", i, len(p.StepKeys[i].Intent), IntentCap)
+			}
+		}
 	}
 	return nil
 }
 
 // validateStrategicPlan canonicalizes a fresh model plan against the menu the
-// strategist actually saw. This is intentionally exact: the model may select
-// only deterministic objectives already exposed by Offer, and the runtime
-// never fuzzy-matches or invents a missing action.
+// strategist actually saw. The model still selects by the exact displayed
+// sentence, but once that sentence resolves the runtime captures ObjectiveKey
+// and no durable state depends on the wording afterward.
 func validateStrategicPlan(p Plan, offered []Objective, round int) (Plan, error) {
 	p.Goal = strings.TrimSpace(p.Goal)
 	if p.Goal == "" {
@@ -85,6 +101,7 @@ func validateStrategicPlan(p Plan, offered []Objective, round int) (Plan, error)
 		return Plan{}, fmt.Errorf("agent: strategist: plan has %d steps, over cap %d", len(p.Steps), MaxPlanSteps)
 	}
 	canonical := make([]string, 0, len(p.Steps))
+	keys := make([]ObjectiveKey, 0, len(p.Steps))
 	for i, raw := range p.Steps {
 		step := strings.TrimSpace(raw)
 		if step == "" {
@@ -101,8 +118,9 @@ func validateStrategicPlan(p Plan, offered []Objective, round int) (Plan, error)
 			return Plan{}, fmt.Errorf("agent: strategist: plan step %d does not resolve: %w: %w", i+1, ErrPlanStepUnresolved, err)
 		}
 		canonical = append(canonical, obj.String())
+		keys = append(keys, obj.Key())
 	}
-	return Plan{Goal: p.Goal, Steps: canonical, Step: 0, Round: round}, nil
+	return Plan{Goal: p.Goal, Steps: canonical, StepKeys: keys, Step: 0, Round: round}, nil
 }
 
 // StrategicPlanner is optional. Scripted and simple test planners retain the
@@ -154,18 +172,23 @@ func strategizeWithRetries(log io.Writer, round int, p StrategicPlanner, obs Obs
 	return plan, err, retries
 }
 
-// resolvePlanStep advances past stale steps and returns the first sentence
-// that still resolves against the current menu. Resolution failure is a skip,
-// not a failure: a prerequisite may have disappeared because the step is
-// already satisfied.
+// resolvePlanStep advances past stale steps and returns the first objective
+// that still resolves against the current menu. New plans resolve by semantic
+// key, so changing presentation wording cannot invalidate a checkpoint. Plans
+// loaded from v4 checkpoint memory have no StepKeys and use the old sentence
+// resolver until they are replaced by the next strategic plan.
 func resolvePlanStep(plan *Plan, offered []Objective) (Objective, int, bool) {
 	if plan == nil {
 		return Objective{}, 0, false
 	}
 	skipped := 0
+	semantic := len(plan.StepKeys) == len(plan.Steps) && len(plan.StepKeys) != 0
 	for plan.Step < len(plan.Steps) {
-		obj, err := Chosen(offered, plan.Steps[plan.Step])
-		if err == nil {
+		if semantic {
+			if obj, ok := resolveObjectiveKey(offered, plan.StepKeys[plan.Step]); ok {
+				return obj, skipped, true
+			}
+		} else if obj, err := Chosen(offered, plan.Steps[plan.Step]); err == nil {
 			return obj, skipped, true
 		}
 		plan.Step++
