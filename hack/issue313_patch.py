@@ -1,41 +1,49 @@
 from pathlib import Path
 
 
-def replace(path: str, old: str, new: str) -> None:
-    p = Path(path)
-    text = p.read_text()
+def replace_once(text: str, old: str, new: str, label: str) -> str:
+    if new in text:
+        return text
     if old not in text:
-        raise SystemExit(f"expected text not found in {path}: {old[:160]!r}")
-    p.write_text(text.replace(old, new, 1))
+        raise SystemExit(f"missing anchor for {label}")
+    return text.replace(old, new, 1)
 
 
-replace(
-    "cmd/pokewall/main.go",
-    '\tstateFile := flag.String("state", "", "if set, persist the tile map and queue here so a wall restart does not forget active runs")\n\tartifactRetention :=',
-    '\tstateFile := flag.String("state", "", "if set, persist live tiles, queue, issue links and outbox here so a wall restart does not forget active runs")\n\tcatalogPath := flag.String("catalog", "", "if set, persist the queryable run history in SQLite; finished tiles then leave RAM")\n\tartifactRetention :=',
+p = Path("cmd/pokewall/main.go")
+text = p.read_text()
+text = replace_once(
+    text,
+    'stateFile := flag.String("state", "", "if set, persist the tile map and queue here so a wall restart does not forget active runs")',
+    'stateFile := flag.String("state", "", "if set, persist live tiles, queue, issue links and outbox here so a wall restart does not forget active runs")\n\tcatalogPath := flag.String("catalog", "", "if set, persist the queryable run history in SQLite; finished tiles then leave RAM")',
+    "catalog flag",
 )
-
-replace(
-    "cmd/pokewall/main.go",
-    '\tif client != nil {\n',
-    '\tif *catalogPath != "" {\n\t\tif err := wall.SetCatalogPath(*catalogPath); err != nil {\n\t\t\tlog.Fatalf("pokewall: open catalog %s: %v", *catalogPath, err)\n\t\t}\n\t\tdefer wall.CloseCatalog() //nolint:errcheck // process exit closes the file descriptor too\n\t\tgo wall.RunCatalogSettlementSweep(5 * time.Second)\n\t}\n\tif client != nil {\n',
+text = replace_once(
+    text,
+    '\tif client != nil {',
+    '\tif *catalogPath != "" {\n\t\tif err := wall.SetCatalogPath(*catalogPath); err != nil {\n\t\t\tlog.Fatalf("pokewall: open catalog %s: %v", *catalogPath, err)\n\t\t}\n\t\tdefer wall.CloseCatalog() //nolint:errcheck // process exit closes the file descriptor too\n\t\tgo wall.RunCatalogSettlementSweep(5 * time.Second)\n\t}\n\tif client != nil {',
+    "catalog startup",
 )
-
-replace(
-    "cmd/pokewall/main.go",
-    '\t\tHandler:           runtimeOperatorHTTPHandler(wall),\n',
-    '\t\tHandler:           wall.catalogHTTPHandler(runtimeOperatorHTTPHandler(wall)),\n',
+text = replace_once(
+    text,
+    'Handler:           runtimeOperatorHTTPHandler(wall),',
+    'Handler:           wall.catalogHTTPHandler(runtimeOperatorHTTPHandler(wall)),',
+    "catalog handler",
 )
+p.write_text(text)
 
-replace(
-    "cmd/pokeui/main.go",
-    '\tmux.HandleFunc("GET /v1/stats", statsHandler(wallBase))\n',
-    '\tmux.HandleFunc("GET /v1/stats", outcomesStatsHandler(wallBase))\n',
+p = Path("cmd/pokeui/main.go")
+text = p.read_text()
+text = replace_once(
+    text,
+    'mux.HandleFunc("GET /v1/stats", statsHandler(wallBase))',
+    'mux.HandleFunc("GET /v1/stats", outcomesStatsHandler(wallBase))',
+    "stats outcomes route",
 )
+p.write_text(text)
 
-replace(
-    "cmd/pokewall/snapshot_perf.go",
-    '''func (w *Wall) snapshotRun(runID string) (tileRow, bool) {
+p = Path("cmd/pokewall/snapshot_perf.go")
+text = p.read_text()
+old = '''func (w *Wall) snapshotRun(runID string) (tileRow, bool) {
 \trunID = strings.TrimSpace(runID)
 \tif runID == "" {
 \t\treturn tileRow{}, false
@@ -47,9 +55,8 @@ replace(
 \t\treturn tileRow{}, false
 \t}
 \treturn w.tileRowLocked(t), true
-}
-''',
-    '''func (w *Wall) snapshotRun(runID string) (tileRow, bool) {
+}'''
+new = '''func (w *Wall) snapshotRun(runID string) (tileRow, bool) {
 \trunID = strings.TrimSpace(runID)
 \tif runID == "" {
 \t\treturn tileRow{}, false
@@ -63,60 +70,65 @@ replace(
 \t}
 \tw.mu.Unlock()
 \treturn w.catalogSnapshotRun(runID)
-}
-''',
-)
+}'''
+text = replace_once(text, old, new, "snapshot catalog fallback")
+p.write_text(text)
 
-replace(
-    "cmd/pokewall/artifact_retention.go",
-    '''\tif stateChanged {
+p = Path("cmd/pokewall/artifact_retention.go")
+text = p.read_text()
+old = '''\tif stateChanged {
 \t\tw.saveState()
 \t}
 \treturn errors.Join(errs...)
-}
-''',
-    '''\tif stateChanged {
+}'''
+new = '''\tif stateChanged {
 \t\tw.saveState()
 \t}
 \tif err := w.expireCatalogArtifacts(now, maxAge); err != nil {
 \t\terrs = append(errs, err)
 \t}
 \treturn errors.Join(errs...)
-}
-''',
-)
+}'''
+text = replace_once(text, old, new, "catalog artifact retention")
+p.write_text(text)
 
-replace(
-    "deploy/farm.yml",
-    '''      - -state
-      - /var/lib/pokewall/state.json
-      - -issues-api
-''',
-    '''      - -state
-      - /var/lib/pokewall/state.json
-      - -catalog
-      - /var/lib/pokewall/catalog.db
-      - -issues-api
-''',
+p = Path("deploy/farm.yml")
+text = p.read_text()
+text = replace_once(
+    text,
+    '      - /var/lib/pokewall/state.json\n      - -issues-api',
+    '      - /var/lib/pokewall/state.json\n      - -catalog\n      - /var/lib/pokewall/catalog.db\n      - -issues-api',
+    "farm catalog flag",
 )
+p.write_text(text)
 
-replace(
-    "go.mod",
-    '''\tgithub.com/modelcontextprotocol/go-sdk v1.7.0
-)''',
-    '''\tgithub.com/modelcontextprotocol/go-sdk v1.7.0
-\tmodernc.org/sqlite v1.58.0
-)''',
+p = Path("go.mod")
+text = p.read_text()
+text = replace_once(
+    text,
+    '\tgithub.com/modelcontextprotocol/go-sdk v1.7.0\n)',
+    '\tgithub.com/modelcontextprotocol/go-sdk v1.7.0\n\tmodernc.org/sqlite v1.58.0\n)',
+    "sqlite module",
 )
+p.write_text(text)
 
-replace(
-    "cmd/pokewall/catalog.go",
-    r'_, _ = io.WriteString(res, `{\"runs\":[`)',
-    '_, _ = io.WriteString(res, `{"runs":[`)',
+p = Path("cmd/pokewall/catalog.go")
+text = p.read_text()
+text = replace_once(
+    text,
+    'io.WriteString(res, `\\{\\"runs\\":\\[`)',
+    'io.WriteString(res, `{"runs":[`)',
+    "outcomes JSON prefix",
 )
+p.write_text(text)
 
 p = Path("docs/RUN_INSPECTOR.md")
 text = p.read_text()
-note = '''\n## Run catalog\n\nProduction PokéWall keeps finished run metadata in `/var/lib/pokewall/catalog.db`. SQLite is the query index; finish dumps/checkpoints remain artifacts with their normal retention policy. RAM and `state.json` keep only live runs plus any finished resume ancestors still required by an active child.\n'''
 if "## Run catalog" not in text:
-    p.write_text(text.rstrip() + note + "\n")
+    text = text.rstrip() + '''
+
+## Run catalog
+
+Production PokéWall keeps finished run metadata in `/var/lib/pokewall/catalog.db`. SQLite is the query index; finish dumps/checkpoints remain artifacts with their normal retention policy. RAM and `state.json` keep only live runs plus any finished resume ancestors still required by an active child.
+'''
+    p.write_text(text)
