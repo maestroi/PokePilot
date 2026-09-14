@@ -1,0 +1,154 @@
+name: Apply issue 479 fix
+
+on:
+  push:
+    branches:
+      - fix/issue-479-party-move-learning
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Apply canonical party-RAM move learning fix
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('skill/battle.go')
+          text = path.read_text()
+
+          replacements = [
+          ('''\t\t\tif triedForgets == nil {\n\t\t\t\ttriedForgets = map[uint8]bool{}\n\t\t\t}\n\t\t\ttriedForgets[bs.Moves[lastForgetSlot].ID] = true\n\t\t\tif zbatDebug {\n\t\t\t\tfmt.Printf("zbat move-learn action=hm-rejected slot=%d move=%d\\n", lastForgetSlot, bs.Moves[lastForgetSlot].ID)\n\t\t\t}\n''', '''\t\t\tif triedForgets == nil {\n\t\t\t\ttriedForgets = map[uint8]bool{}\n\t\t\t}\n\t\t\t// Move learning runs inside GainExperience, where wBattleMonMoves can\n\t\t\t// lag behind the party struct. The ROM's forget menu operates on the\n\t\t\t// party mon, so use that canonical move id for HM rejection tracking.\n\t\t\tmoveID := learningMoveID(&mem, bs, lastForgetSlot)\n\t\t\ttriedForgets[moveID] = true\n\t\t\tif zbatDebug {\n\t\t\t\tfmt.Printf("zbat move-learn action=hm-rejected slot=%d move=%d\\n", lastForgetSlot, moveID)\n\t\t\t}\n'''),
+          ('''\t\t\tids := [4]uint8{bs.Moves[0].ID, bs.Moves[1].ID, bs.Moves[2].ID, bs.Moves[3].ID}\n\t\t\toffered := m.Peek8(sym.MoveNum)\n\t\t\tdecision := decideNaturalMove(m.ROM(), bs.ActiveType1, bs.ActiveType2, ids, offered, triedForgets)\n\t\t\tif !decision.Learn || decision.ReplaceSlot < 0 {\n''', '''\t\t\toffered := m.Peek8(sym.MoveNum)\n\t\t\tdecision, partySlot := decideNaturalMoveFromPartyRAM(m.ROM(), &mem, bs, offered, triedForgets)\n\t\t\tif !decision.Learn || decision.ReplaceSlot < 0 {\n'''),
+          ('''\t\t\tpendingLearnPartySlot = int(m.Peek8(sym.PlayerMonNumber))\n''', '''\t\t\tpendingLearnPartySlot = partySlot\n'''),
+          ('''\t\t\t\tif bs != nil {\n\t\t\t\t\tids := [4]uint8{bs.Moves[0].ID, bs.Moves[1].ID, bs.Moves[2].ID, bs.Moves[3].ID}\n\t\t\t\t\toffered := m.Peek8(sym.MoveNum)\n\t\t\t\t\tdecision := decideNaturalMove(m.ROM(), bs.ActiveType1, bs.ActiveType2, ids, offered, nil)\n''', '''\t\t\t\tif bs != nil {\n\t\t\t\t\toffered := m.Peek8(sym.MoveNum)\n\t\t\t\t\tdecision, _ := decideNaturalMoveFromPartyRAM(m.ROM(), &s, bs, offered, nil)\n'''),
+          ]
+
+          for old, new in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected exactly one match, got {count}: {old[:80]!r}')
+              text = text.replace(old, new, 1)
+          path.write_text(text)
+
+          Path('skill/move_learning_live.go').write_text(r'''package skill
+
+import (
+    "github.com/maestroi/pokepilot/red/state"
+    "github.com/maestroi/pokepilot/red/sym"
+)
+
+// learningMonSnapshot returns the canonical move set used by Red's level-up
+// learning code. During GainExperience the battle copy (wBattleMonMoves) can
+// lag behind wPartyMons; the try-learn and forget menus operate on the party
+// struct, so strategic replacement decisions must use that same source.
+func learningMonSnapshot(mem *state.Mem, bs *state.BattleState) (moves [4]uint8, type1, type2 uint8, partySlot int) {
+    partySlot = int(mem.U8(sym.PlayerMonNumber))
+    party := state.DecodeParty(mem)
+    if partySlot >= 0 && partySlot < len(party.Mons) {
+        mon := party.Mons[partySlot]
+        return mon.Moves, mon.Type1, mon.Type2, partySlot
+    }
+
+    // Defensive fallback for malformed/transitional party bookkeeping. Normal
+    // move-learning paths always have a valid wPlayerMonNumber.
+    if bs != nil {
+        for i := range bs.Moves {
+            moves[i] = bs.Moves[i].ID
+        }
+        return moves, bs.ActiveType1, bs.ActiveType2, partySlot
+    }
+    return moves, 0, 0, partySlot
+}
+
+func decideNaturalMoveFromPartyRAM(romData []byte, mem *state.Mem, bs *state.BattleState, offered uint8, blocked map[uint8]bool) (MoveLearningDecision, int) {
+    moves, type1, type2, partySlot := learningMonSnapshot(mem, bs)
+    return decideNaturalMove(romData, type1, type2, moves, offered, blocked), partySlot
+}
+
+func learningMoveID(mem *state.Mem, bs *state.BattleState, slot int) uint8 {
+    moves, _, _, _ := learningMonSnapshot(mem, bs)
+    if slot < 0 || slot >= len(moves) {
+        return 0
+    }
+    return moves[slot]
+}
+''')
+
+          Path('skill/move_learning_live_test.go').write_text(r'''package skill
+
+import (
+    "testing"
+
+    "github.com/maestroi/pokepilot/red/state"
+    "github.com/maestroi/pokepilot/red/sym"
+)
+
+func TestLearningMonSnapshotPrefersPartyRAMOverStaleBattleCopy(t *testing.T) {
+    var mem state.Mem
+    mem[sym.PartyCount] = 1
+    mem[sym.PlayerMonNumber] = 0
+    base := sym.PartyMon1
+    mem[base+sym.MonType1] = 0x16
+    mem[base+sym.MonType2] = 0x03
+    want := [4]uint8{33, 45, 73, 22}
+    copy(mem.Slice(base+sym.MonMoves, 4), want[:])
+
+    // Reproduce #479's shape: the live battle copy claims slot 2 is empty,
+    // while the party struct that the ROM's learn-move menu operates on is full.
+    bs := &state.BattleState{
+        ActiveType1: 0x01,
+        ActiveType2: 0x02,
+        Moves: [4]state.Move{{ID: 33}, {ID: 45}, {ID: 0}, {ID: 22}},
+    }
+
+    got, type1, type2, slot := learningMonSnapshot(&mem, bs)
+    if got != want {
+        t.Fatalf("moves=%v want party RAM %v", got, want)
+    }
+    if type1 != 0x16 || type2 != 0x03 || slot != 0 {
+        t.Fatalf("types/slot=(%#x,%#x,%d), want (0x16,0x03,0)", type1, type2, slot)
+    }
+    if id := learningMoveID(&mem, bs, 2); id != 73 {
+        t.Fatalf("slot 2 move=%d want 73 from party RAM", id)
+    }
+}
+
+func TestLearningMonSnapshotFallsBackToBattleWhenPartySlotInvalid(t *testing.T) {
+    var mem state.Mem
+    mem[sym.PartyCount] = 1
+    mem[sym.PlayerMonNumber] = 5
+    bs := &state.BattleState{
+        ActiveType1: 0x09,
+        ActiveType2: 0x0a,
+        Moves: [4]state.Move{{ID: 10}, {ID: 20}, {ID: 30}, {ID: 40}},
+    }
+    got, type1, type2, _ := learningMonSnapshot(&mem, bs)
+    if got != [4]uint8{10, 20, 30, 40} || type1 != 0x09 || type2 != 0x0a {
+        t.Fatalf("fallback=(%v,%#x,%#x)", got, type1, type2)
+    }
+}
+''')
+          PY
+
+          gofmt -w skill/battle.go skill/move_learning_live.go skill/move_learning_live_test.go
+          go test ./skill -run 'TestLearningMonSnapshot|TestMoveLearning'
+      - name: Commit fix
+        shell: bash
+        run: |
+          git config user.name 'PokePilot Fix Bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add skill/battle.go skill/move_learning_live.go skill/move_learning_live_test.go
+          git commit -m 'fix: use party RAM for natural move learning'
+          git push origin HEAD:${GITHUB_REF_NAME}
