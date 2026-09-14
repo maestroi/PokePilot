@@ -230,29 +230,29 @@ func TestVerifyObjectivePostconditionRepresentativeEvidence(t *testing.T) {
 		result  ObjectiveResult
 	}{
 		{
-			name: "talk",
-			o:    Objective{Kind: KindTalk, X: 4, Y: 5},
-			final: Observation{Controllable: true},
+			name:   "talk",
+			o:      Objective{Kind: KindTalk, X: 4, Y: 5},
+			final:  Observation{Controllable: true},
 			result: ObjectiveResult{InteractionPresses: 2},
 		},
 		{
-			name: "trainer",
-			o:    Objective{Kind: KindTrainer, X: 7, Y: 8},
+			name:  "trainer",
+			o:     Objective{Kind: KindTrainer, X: 7, Y: 8},
 			final: Observation{Controllable: true, MapObjects: []MapObject{{X: 7, Y: 8, Kind: "trainer", Defeated: true}}},
 		},
 		{
-			name: "starter",
-			o:    Objective{Kind: KindStarter, Starter: skill.StarterSquirtle},
+			name:  "starter",
+			o:     Objective{Kind: KindStarter, Starter: skill.StarterSquirtle},
 			final: Observation{Controllable: true, Party: []PartyMon{{Species: "squirtle", Level: 5}}},
 		},
 		{
-			name: "train",
-			o:    Objective{Kind: KindTrain, Slot: 1, Level: 20},
+			name:  "train",
+			o:     Objective{Kind: KindTrain, Slot: 1, Level: 20},
 			final: Observation{Controllable: true, Party: []PartyMon{{Level: 25}, {Level: 20}}},
 		},
 		{
-			name: "heal",
-			o:    Objective{Kind: KindHeal},
+			name:  "heal",
+			o:     Objective{Kind: KindHeal},
 			final: Observation{Controllable: true, Party: []PartyMon{{HP: 30, MaxHP: 30}, {HP: 22, MaxHP: 22}}},
 		},
 		{
@@ -281,8 +281,8 @@ func TestVerifyObjectivePostconditionRepresentativeEvidence(t *testing.T) {
 			final:   Observation{Controllable: true, Bag: []Item{{Name: "poke ball", Quantity: 5}}},
 		},
 		{
-			name: "progress",
-			o:    Objective{Kind: KindProgress, Progress: ProgressID("door_unlocked")},
+			name:  "progress",
+			o:     Objective{Kind: KindProgress, Progress: ProgressID("door_unlocked")},
 			final: Observation{Controllable: true, Story: ProgressState{{ID: ProgressID("door_unlocked"), Complete: true}}},
 		},
 	}
