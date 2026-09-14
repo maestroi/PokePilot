@@ -95,6 +95,14 @@ func selectTwoOption(m *emu.Emu, index int) error {
 		return fmt.Errorf("skill: selectTwoOption: index %d out of range 0..1", index)
 	}
 
+	// DecodeTwoOptionMenu becomes true as soon as the script has installed the
+	// menu state, a few frames before the joypad loop is ready to consume Up or
+	// Down. Starting the cursor loop inside that render window makes five valid
+	// Down taps look like a permanently stuck cursor. This is the same opening
+	// race SelectMenuItem already handles. It is especially visible when a
+	// restored farm checkpoint begins on an already-open Museum admission box.
+	m.StepFrames(talkSettle)
+
 	var mem state.Mem
 	state.Snapshot(m, &mem)
 	prompt := state.DecodeTwoOptionMenu(&mem)
