@@ -55,13 +55,20 @@ func fightOnly(m *emu.Emu, policy MovePolicy) resolveBattle {
 	}
 }
 
+// guaranteedWildFleeAttempts is the first attempt count that makes escape
+// deterministic even from the worst possible wild-battle escape quotient.
+// TryRunningFromBattle increments wNumRunAttempts before each roll and adds 30
+// to the 8-bit quotient for every prior attempt; on attempt 10 the ninth add
+// must overflow even from quotient 0, and the ROM branches directly to
+// .canEscape. Five attempts is only probabilistic and caused issue #395.
+const guaranteedWildFleeAttempts = 10
+
 // fleeThenFight resolves an interrupting battle by fleeing it first and only
 // falling back to a fight when the game refuses the flee — which it does for
 // trainer battles (Flee returns ErrTrainerBattle). This is S8-7's policy:
-// wild encounters are fled (S8-4 measured they succeed on the first attempt
-// in this ROM, and fleeing skips the damage and the level-up math), while
-// trainer battles are fought because they cannot be fled. fleeAttempts bounds
-// one battle's flee retries.
+// wild encounters are fled, while trainer battles are fought because they
+// cannot be fled. fleeAttempts bounds one battle's flee retries; callers that
+// need deterministic wild escape should use guaranteedWildFleeAttempts.
 func fleeThenFight(m *emu.Emu, policy MovePolicy, fleeAttempts int) resolveBattle {
 	return func() (battleResolution, error) {
 		if err := Flee(m, fleeAttempts); err != nil {
@@ -236,7 +243,9 @@ func Travel(m *emu.Emu, romData []byte, dest Destination, policy MovePolicy, max
 
 // TravelFlee is Travel with S8-7's fight/flee policy: wild encounters are
 // fled instead of fought (skipping the damage and the level-up math), while
-// trainer battles are fought because they cannot be fled. It returns the same
+// trainer battles are fought because they cannot be fled. Wild RUN retries
+// use guaranteedWildFleeAttempts so a faster encounter cannot fail merely
+// because five probabilistic rolls were unlucky. It returns the same
 // TravelResult as Travel, with Flees counting the fled wilds and Battles the
 // fought trainers (and any wild a flee refused). maxBattles bounds total
 // engagements (flees and fights alike), exactly as it bounds fights in
@@ -249,7 +258,7 @@ func TravelFlee(m *emu.Emu, romData []byte, dest Destination, policy MovePolicy,
 		cutAwareGoTo(m, romData, dest, policy),
 		func() DialogueRecoveryResult { return RecoverDialogue(m, dialogueRecoveryBudget) },
 		func() bool { return m.Peek8(sym.StatusFlags4)&blackoutBit != 0 },
-		fleeThenFight(m, policy, 5),
+		fleeThenFight(m, policy, guaranteedWildFleeAttempts),
 	)
 }
 
