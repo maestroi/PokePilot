@@ -151,14 +151,23 @@ func SwitchToNextNonFullBox(m *emu.Emu, romData []byte, policy MovePolicy) error
 	}
 
 	// After YES the ROM proceeds directly into DisplayChangeBoxMenu; there is
-	// no text to page. Wait passively so a queued A cannot select the current
-	// box while the new menu is still rendering.
+	// no text to page. Wait passively for the screen first so a queued A cannot
+	// select the current box while the new menu is still rendering.
 	var menu state.Mem
 	if _, err := m.StepUntil(pcTransitionBudget, func(m *emu.Emu) bool {
 		state.Snapshot(m, &menu)
 		return pcChangeBoxMenuScreen(&menu)
 	}); err != nil {
 		return cleanup(fmt.Errorf("skill: Bill's PC: Change Box menu did not appear: %w", err))
+	}
+	// DisplayChangeBoxMenu writes its geometry before GetMonCountsForAllBoxes.
+	// The live cursor proves the routine finished, so only then is the 12-byte
+	// count scratch buffer authoritative.
+	if _, err := m.StepUntil(pcTransitionBudget, func(m *emu.Emu) bool {
+		state.Snapshot(m, &menu)
+		return pcChangeBoxMenuUp(&menu)
+	}); err != nil {
+		return cleanup(fmt.Errorf("skill: Bill's PC: Change Box menu did not become interactive: %w", err))
 	}
 	state.Snapshot(m, &menu)
 	counts := pcBoxCounts(&menu)
