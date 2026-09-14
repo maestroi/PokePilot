@@ -77,6 +77,7 @@ func dexGiftSourceExecutable(obs Observation, species SpeciesID, src DexSource) 
 	if src.Kind != AcquireGift {
 		return false
 	}
+	owned := pokedexOwnedSet(obs)
 	switch species {
 	case "eevee":
 		return src.Place == "celadon mansion eevee" && src.Requirement == ""
@@ -86,9 +87,9 @@ func dexGiftSourceExecutable(obs Observation, species SpeciesID, src DexSource) 
 		// route and stronger evidence than a coarse map reachability guess.
 		return src.Place == "silph co lapras" && src.Requirement == "card_key" && bagItemQuantity(obs.Bag, ItemID("card key")) > 0
 	case "hitmonlee":
-		return src.Place == "fighting dojo hitmonlee" && src.ExclusiveGroup == "fighting_dojo"
+		return src.Place == "fighting dojo hitmonlee" && src.ExclusiveGroup == "fighting_dojo" && !owned["hitmonchan"]
 	case "hitmonchan":
-		return src.Place == "fighting dojo hitmonchan" && src.ExclusiveGroup == "fighting_dojo"
+		return src.Place == "fighting dojo hitmonchan" && src.ExclusiveGroup == "fighting_dojo" && !owned["hitmonlee"]
 	default:
 		return false
 	}
