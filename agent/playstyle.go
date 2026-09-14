@@ -207,6 +207,7 @@ func ScoreObjective(obs Observation, o Objective, profile PlayStyleProfile) Driv
 		value += part
 	}
 	natural := naturalPlaySignal(obs, o, profile)
+	natural = mergeNaturalPlaySignal(natural, teamBuilderRosterSignal(obs, o, profile))
 	value += natural.Net()
 	cost := opportunityCost(obs, o, profile)
 	return DriveScore{
