@@ -347,8 +347,12 @@ func TestHeartbeatCancelClosesOnce(t *testing.T) {
 
 func TestPlayerSnapshotNamesParty(t *testing.T) {
 	g := state.GameState{
-		Inventory: state.InventoryState{Money: 1840},
-		Progress:  state.ProgressState{Badges: 0x01},
+		Inventory: state.InventoryState{
+			Money: 1840,
+			Items: []state.BagItem{{ID: 0x04, Quantity: 5}, {ID: 0xFE, Quantity: 1}},
+		},
+		Progress: state.ProgressState{Badges: 0x01},
+		Pokedex:  state.PokedexState{Owned: []uint8{7}, Seen: []uint8{7, 16}},
 		Party: state.PartyState{
 			Count: 1,
 			Mons: []state.Mon{{
@@ -356,7 +360,7 @@ func TestPlayerSnapshotNamesParty(t *testing.T) {
 			}},
 		},
 	}
-	got := playerSnapshot(g)
+	got := playerSnapshot(g, state.StoryFacts{PokedexAcquired: true, SSTicketAcquired: true})
 	if got == nil {
 		t.Fatal("playerSnapshot returned nil")
 	}
@@ -365,6 +369,18 @@ func TestPlayerSnapshotNamesParty(t *testing.T) {
 	}
 	if len(got.Badges) != 1 || got.Badges[0] != "Boulder" {
 		t.Fatalf("badges = %v, want [Boulder]", got.Badges)
+	}
+	if got.BagUsed != 2 || got.BagCapacity != 20 {
+		t.Fatalf("bag = %d/%d, want 2/20", got.BagUsed, got.BagCapacity)
+	}
+	if len(got.Bag) != 2 || got.Bag[0] != (farm.BagItem{Name: "pokeball", Quantity: 5}) || got.Bag[1] != (farm.BagItem{Name: "item 0xfe", Quantity: 1}) {
+		t.Fatalf("bag items = %+v, want pokeball x5 and item 0xfe x1", got.Bag)
+	}
+	if got.DexOwned != 1 || got.DexSeen != 2 || got.DexTotal != 151 {
+		t.Fatalf("dex = %d owned / %d seen / %d total, want 1/2/151", got.DexOwned, got.DexSeen, got.DexTotal)
+	}
+	if len(got.Milestones) != 2 || got.Milestones[0] != "Pokédex" || got.Milestones[1] != "S.S. Ticket" {
+		t.Fatalf("milestones = %v, want [Pokédex S.S. Ticket]", got.Milestones)
 	}
 	if len(got.Party) != 1 {
 		t.Fatalf("party len = %d, want 1", len(got.Party))
@@ -376,14 +392,17 @@ func TestPlayerSnapshotNamesParty(t *testing.T) {
 
 	unknown := playerSnapshot(state.GameState{
 		Party: state.PartyState{Count: 1, Mons: []state.Mon{{Species: 0xFE, Level: 5, HP: 1, MaxHP: 1}}},
-	})
+	}, state.StoryFacts{})
 	if unknown == nil || len(unknown.Party) != 1 || unknown.Party[0].Name != "species 0xfe" {
 		t.Fatalf("unknown species = %+v, want name species 0xfe", unknown)
 	}
 
-	empty := playerSnapshot(state.GameState{Inventory: state.InventoryState{Money: 3000}})
+	empty := playerSnapshot(state.GameState{Inventory: state.InventoryState{Money: 3000}}, state.StoryFacts{})
 	if empty == nil || empty.Party == nil || len(empty.Party) != 0 || empty.Money != 3000 {
 		t.Fatalf("empty party = %+v, want non-nil player with party []", empty)
+	}
+	if empty.BagCapacity != 20 || empty.DexTotal != 151 || len(empty.Bag) != 0 || len(empty.Milestones) != 0 {
+		t.Fatalf("empty progress = %+v, want capacity 20, dex 151, no bag or milestones", empty)
 	}
 }
 

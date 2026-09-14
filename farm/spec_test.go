@@ -135,11 +135,16 @@ func TestHeartbeatCarriesPlayer(t *testing.T) {
 	want := Heartbeat{
 		RunID: "r1", Frame: 100,
 		Player: &Player{
-			Money:  1840,
-			Badges: []string{"Boulder"},
-			Party: []PartyMon{{
-				Name: "squirtle", Level: 8, HP: 12, MaxHP: 35, Status: "poisoned",
-			}},
+			Money:       1840,
+			Badges:      []string{"Boulder"},
+			Party:       []PartyMon{{Name: "squirtle", Level: 8, HP: 12, MaxHP: 35, Status: "poisoned"}},
+			BagUsed:     1,
+			BagCapacity: 20,
+			Bag:         []BagItem{{Name: "pokeball", Quantity: 5}},
+			DexOwned:    1,
+			DexSeen:     2,
+			DexTotal:    151,
+			Milestones:  []string{"Pokédex"},
 		},
 	}
 	b, err := json.Marshal(want)
@@ -153,7 +158,7 @@ func TestHeartbeatCarriesPlayer(t *testing.T) {
 	if !reflect.DeepEqual(got.Player, want.Player) {
 		t.Fatalf("player round trip = %+v, want %+v", got.Player, want.Player)
 	}
-	for _, field := range []string{`"player"`, `"money"`, `"badges"`, `"party"`, `"name"`, `"level"`, `"hp"`, `"max_hp"`, `"status"`} {
+	for _, field := range []string{`"player"`, `"money"`, `"badges"`, `"party"`, `"name"`, `"level"`, `"hp"`, `"max_hp"`, `"status"`, `"bag_used"`, `"bag_capacity"`, `"bag"`, `"dex_owned"`, `"dex_seen"`, `"dex_total"`, `"milestones"`} {
 		if !contains(string(b), field) {
 			t.Errorf("marshaled heartbeat missing %s: %s", field, b)
 		}

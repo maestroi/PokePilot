@@ -66,13 +66,29 @@ type PartyMon struct {
 	Status string `json:"status,omitempty"`
 }
 
+// BagItem is one semantic bag entry. Names come from the game adapter;
+// unknown item bytes stay displayable and never cross this boundary as IDs.
+type BagItem struct {
+	Name     string `json:"name"`
+	Quantity int    `json:"quantity"`
+}
+
 // Player is a live trainer snapshot the runner decodes from RAM. Nil on
 // older runners and before the first sample. An empty Party is a real
-// pre-starter snapshot and must still be sent.
+// pre-starter snapshot and must still be sent. Bag, Dex, and milestone
+// fields are omitted by older runners; missing capacity/total means hide
+// those meters rather than render 0/0.
 type Player struct {
-	Money  uint32     `json:"money"`
-	Badges []string   `json:"badges,omitempty"`
-	Party  []PartyMon `json:"party"`
+	Money       uint32     `json:"money"`
+	Badges      []string   `json:"badges,omitempty"`
+	Party       []PartyMon `json:"party"`
+	BagUsed     int        `json:"bag_used,omitempty"`
+	BagCapacity int        `json:"bag_capacity,omitempty"`
+	Bag         []BagItem  `json:"bag,omitempty"`
+	DexOwned    int        `json:"dex_owned,omitempty"`
+	DexSeen     int        `json:"dex_seen,omitempty"`
+	DexTotal    int        `json:"dex_total,omitempty"`
+	Milestones  []string   `json:"milestones,omitempty"`
 }
 
 // Heartbeat is the small, frequent status push a runner sends while a

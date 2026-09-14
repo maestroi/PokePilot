@@ -91,7 +91,7 @@ func main() {
 	tracer := newDialogueTracer()
 	m.OnSample(func(m *emu.Emu) {
 		tracer.sample(m)
-		m.TracePlayer(playerSnapshot(state.Read(m, &watchMem)))
+		m.TracePlayer(livePlayer(m, &watchMem))
 	})
 	fmt.Printf("%s\nwatch: http://%s\n\n", version, served)
 
