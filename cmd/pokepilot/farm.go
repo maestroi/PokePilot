@@ -72,17 +72,11 @@ func seedBurn(seed int64) int {
 	return rand.New(rand.NewPCG(uint64(seed), 0)).IntN(600) // up to ten seconds of game time
 }
 
-// starterFromName is the same mapping runScripted uses, as a lookup.
+// starterFromName resolves the public starter request into Oak's physical
+// starter ball. Fixed/random experiments use the middle ball after its species
+// is patched for this run; canonical starters keep their historic slots.
 func starterFromName(name string) (skill.Starter, bool) {
-	switch name {
-	case "charmander":
-		return skill.StarterCharmander, true
-	case "squirtle":
-		return skill.StarterSquirtle, true
-	case "bulbasaur":
-		return skill.StarterBulbasaur, true
-	}
-	return 0, false
+	return skill.StarterFromRequest(name)
 }
 
 // heartbeatSnap is the plain, mutex-protected status the heartbeat goroutine
@@ -288,7 +282,7 @@ func runFarm(m *emu.Emu, client *farm.Client, bootState []byte, watchPort int, c
 }
 
 // leaseSpec asks the wall for the next spec under a bounded deadline. A nil
-// spec (204) means none is ready yet.
+// spec (204) means none ready yet.
 func leaseSpec(client *farm.Client) (*farm.Spec, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), farmHTTPTimeout)
 	defer cancel()
@@ -312,10 +306,11 @@ func pingWorker(client *farm.Client, addrs []string) {
 // be known, and a scripted spec must name a starter and destination we can
 // resolve. An llm spec may name a starter (empty lets the model pick); dest is unused.
 func validateSpec(planner, starter, dest string) error {
+	const starterHelp = "use a canonical starter, any Gen I Pokemon (for example mewtwo), or random[:reasonable|basic|any]"
 	switch planner {
 	case "scripted":
 		if _, ok := starterFromName(starter); !ok {
-			return fmt.Errorf("unknown starter %q: want charmander, squirtle or bulbasaur", starter)
+			return fmt.Errorf("unknown starter %q: %s", starter, starterHelp)
 		}
 		if _, ok := skill.Place(dest); !ok {
 			return fmt.Errorf("unknown destination %q", dest)
@@ -323,7 +318,7 @@ func validateSpec(planner, starter, dest string) error {
 	case "llm":
 		if starter != "" {
 			if _, ok := starterFromName(starter); !ok {
-				return fmt.Errorf("unknown starter %q: want charmander, squirtle or bulbasaur", starter)
+				return fmt.Errorf("unknown starter %q: %s", starter, starterHelp)
 			}
 		}
 	default:
@@ -744,17 +739,11 @@ func finishRun(m *emu.Emu, client *farm.Client, spec farm.Spec, reason, detail s
 }
 
 // farmStarterFor maps a spec's starter name onto the typed skill.Starter the
-// objective layer now carries. The conversion lives at the CLI/spec boundary
-// rather than inside agent: since S6-7 an Objective's Starter is typed, so
-// agent no longer parses names. Unknown and empty keep the historic default
-// (Squirtle) so an older spec that omits the field behaves as it always did.
+// objective layer carries. Fixed/random experiment requests resolve to the
+// patched middle ball; canonical names preserve their original physical slot.
 func farmStarterFor(name string) skill.Starter {
-	switch name {
-	case "charmander":
-		return skill.StarterCharmander
-	case "bulbasaur":
-		return skill.StarterBulbasaur
-	default:
-		return skill.StarterSquirtle
+	if starter, ok := starterFromName(name); ok {
+		return starter
 	}
+	return skill.StarterSquirtle
 }
