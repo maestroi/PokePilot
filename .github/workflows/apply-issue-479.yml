@@ -26,11 +26,9 @@ jobs:
           pairs = [
               ('\t\t\ttriedForgets[bs.Moves[lastForgetSlot].ID] = true\n', '\t\t\tmoveID := learningMoveID(&mem, bs, lastForgetSlot)\n\t\t\ttriedForgets[moveID] = true\n'),
               ('\t\t\t\tfmt.Printf("zbat move-learn action=hm-rejected slot=%d move=%d\\n", lastForgetSlot, bs.Moves[lastForgetSlot].ID)\n', '\t\t\t\tfmt.Printf("zbat move-learn action=hm-rejected slot=%d move=%d\\n", lastForgetSlot, moveID)\n'),
-              ('\t\t\tids := [4]uint8{bs.Moves[0].ID, bs.Moves[1].ID, bs.Moves[2].ID, bs.Moves[3].ID}\n', ''),
-              ('\t\t\tdecision := decideNaturalMove(m.ROM(), bs.ActiveType1, bs.ActiveType2, ids, offered, triedForgets)\n', '\t\t\tdecision, partySlot := decideNaturalMoveFromPartyRAM(m.ROM(), &mem, bs, offered, triedForgets)\n'),
+              ('\t\t\tids := [4]uint8{bs.Moves[0].ID, bs.Moves[1].ID, bs.Moves[2].ID, bs.Moves[3].ID}\n\t\t\toffered := m.Peek8(sym.MoveNum)\n\t\t\tdecision := decideNaturalMove(m.ROM(), bs.ActiveType1, bs.ActiveType2, ids, offered, triedForgets)\n', '\t\t\toffered := m.Peek8(sym.MoveNum)\n\t\t\tdecision, partySlot := decideNaturalMoveFromPartyRAM(m.ROM(), &mem, bs, offered, triedForgets)\n'),
               ('\t\t\tpendingLearnPartySlot = int(m.Peek8(sym.PlayerMonNumber))\n', '\t\t\tpendingLearnPartySlot = partySlot\n'),
-              ('\t\t\t\t\tids := [4]uint8{bs.Moves[0].ID, bs.Moves[1].ID, bs.Moves[2].ID, bs.Moves[3].ID}\n', ''),
-              ('\t\t\t\t\tdecision := decideNaturalMove(m.ROM(), bs.ActiveType1, bs.ActiveType2, ids, offered, nil)\n', '\t\t\t\t\tdecision, _ := decideNaturalMoveFromPartyRAM(m.ROM(), &s, bs, offered, nil)\n'),
+              ('\t\t\t\t\tids := [4]uint8{bs.Moves[0].ID, bs.Moves[1].ID, bs.Moves[2].ID, bs.Moves[3].ID}\n\t\t\t\t\toffered := m.Peek8(sym.MoveNum)\n\t\t\t\t\tdecision := decideNaturalMove(m.ROM(), bs.ActiveType1, bs.ActiveType2, ids, offered, nil)\n', '\t\t\t\t\toffered := m.Peek8(sym.MoveNum)\n\t\t\t\t\tdecision, _ := decideNaturalMoveFromPartyRAM(m.ROM(), &s, bs, offered, nil)\n'),
           ]
           for old, new in pairs:
               if s.count(old) != 1:
