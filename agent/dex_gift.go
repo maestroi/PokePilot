@@ -13,8 +13,8 @@ const (
 // appendDexGiftObjectives exposes only scripted gifts with a deterministic
 // executor. Scripted sources may be present in the catalog before their menu
 // mechanics are implemented; keeping this allow-list explicit prevents the
-// planner from inventing execution for Lapras/Dojo/Porygon merely because the
-// catalog knows those species are locally obtainable.
+// planner from inventing execution for Dojo/Porygon merely because the catalog
+// knows those species are locally obtainable.
 func appendDexGiftObjectives(obs Observation, known *Knowledge, out []Objective) []Objective {
 	if len(obs.Dex.Targets) == 0 {
 		return out
@@ -41,7 +41,7 @@ func appendDexGiftObjectives(obs Observation, known *Knowledge, out []Objective)
 			continue
 		}
 		for _, src := range entry.Sources {
-			if !dexGiftSourceExecutable(entry.Species, src) {
+			if !dexGiftSourceExecutable(obs, entry.Species, src) {
 				continue
 			}
 			if _, ok := dexCatchPlaceDistance(obs, src.Place, blocked, hops, adjacency); !ok {
@@ -64,8 +64,19 @@ func appendDexGiftObjectives(obs Observation, known *Knowledge, out []Objective)
 	return out
 }
 
-func dexGiftSourceExecutable(species SpeciesID, src DexSource) bool {
-	// Eevee is the first scripted gift with a dedicated execution contract.
-	// Add later gifts here only together with their concrete skill path.
-	return species == "eevee" && src.Kind == AcquireGift && src.Place == "celadon mansion eevee"
+func dexGiftSourceExecutable(obs Observation, species SpeciesID, src DexSource) bool {
+	if src.Kind != AcquireGift {
+		return false
+	}
+	switch species {
+	case "eevee":
+		return src.Place == "celadon mansion eevee" && src.Requirement == ""
+	case "lapras":
+		// Card Key is acquired inside Silph only after Saffron access is open,
+		// so owning it is a durable prerequisite for the dedicated rival-room
+		// route and stronger evidence than a coarse map reachability guess.
+		return src.Place == "silph co lapras" && src.Requirement == "card_key" && bagItemQuantity(obs.Bag, ItemID("card key")) > 0
+	default:
+		return false
+	}
 }
