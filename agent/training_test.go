@@ -163,7 +163,7 @@ func TestFailureStateTracksCumulativeExperience(t *testing.T) {
 	}
 }
 
-func TestTrainingOfferCarriesOutsideBudgetEvidence(t *testing.T) {
+func TestTrainingOfferWithholdsOutsideBudgetLeadTraining(t *testing.T) {
 	obs := Observation{
 		Map:        0,
 		PartyCount: 1,
@@ -178,17 +178,37 @@ func TestTrainingOfferCarriesOutsideBudgetEvidence(t *testing.T) {
 			SessionBudget: 20, Viability: TrainingOutsideBudget,
 		},
 	}
-	offers := Offer(obs, NewKnowledge(map[uint8][]uint8{}))
-	for _, offer := range offers {
-		if offer.Kind != KindTrain {
-			continue
+	for _, offer := range Offer(obs, NewKnowledge(map[uint8][]uint8{})) {
+		if offer.Kind == KindTrain {
+			t.Fatalf("outside-budget training was offered: %+v", offer)
 		}
-		if !strings.Contains(offer.Note, "outside current session budget") || !strings.Contains(offer.Note, "~61 encounters") {
-			t.Fatalf("training note = %q, want quantitative outside-budget evidence", offer.Note)
-		}
-		return
 	}
-	t.Fatal("training objective was not offered")
+}
+
+func TestTrainingOfferKeepsViableLeadTraining(t *testing.T) {
+	obs := Observation{
+		Map:        0,
+		PartyCount: 1,
+		Party: []PartyMon{{
+			Species: "pidgey", Level: 16, HP: 20, MaxHP: 20,
+		}},
+		HasGrass:  true,
+		WildGrass: []WildSpecies{{Name: "pidgey", MinLevel: 14, MaxLevel: 16, Slots: 10}},
+		Training: &TrainingEstimate{
+			CurrentLevel: 16, TargetLevel: 18, XPRemaining: 500,
+			XPPerEncounter: 100, EstimatedEncounters: 5,
+			SessionBudget: 20, Viability: TrainingViable,
+		},
+	}
+	for _, offer := range Offer(obs, NewKnowledge(map[uint8][]uint8{})) {
+		if offer.Kind == KindTrain && offer.Level == 18 {
+			if !strings.Contains(offer.Note, "training viable") {
+				t.Fatalf("training note = %q, want viability evidence", offer.Note)
+			}
+			return
+		}
+	}
+	t.Fatal("viable lead training objective was not offered")
 }
 
 func TestTrainingInefficiencyClassifiesAsRecoverableBlockage(t *testing.T) {

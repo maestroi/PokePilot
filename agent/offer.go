@@ -486,7 +486,11 @@ func Offer(obs Observation, known *Knowledge) []Objective {
 		}
 	}
 
-	if obs.HasGrass && len(obs.Party) > 0 {
+	// Do not offer a Train transaction the executor can already prove cannot
+	// reach its target inside the same bounded session. Besides wasting a
+	// planner round, the executor rejects this before the first battle, so it
+	// cannot even serve as the last-resort respawn escape described below.
+	if obs.HasGrass && len(obs.Party) > 0 && !trainingUnviableHere(obs) {
 		lead := obs.Party[0]
 		if !skill.BelowRetreatLine(lead.HP, lead.MaxHP) {
 			if target := int(lead.Level) + trainStep; target <= 100 {
