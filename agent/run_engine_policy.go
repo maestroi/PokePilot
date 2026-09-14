@@ -54,6 +54,9 @@ type runWatchdogPolicy struct {
 	stuckEscalated         bool
 	stuck                  int
 	dead                   deadPosition
+
+	reproDir string
+	round    int
 }
 
 func newRunWatchdogPolicy(budget Budget, initial Observation, known *Knowledge) *runWatchdogPolicy {
@@ -69,6 +72,7 @@ func newRunWatchdogPolicy(budget Budget, initial Observation, known *Knowledge) 
 		stuckAfter:      stuckAfter,
 		stagnationAfter: stagnationAfter,
 		majorProgress:   majorProgressMarkOf(initial, known),
+		reproDir:        budget.CheckpointDir,
 	}
 }
 
@@ -76,6 +80,8 @@ func newRunWatchdogPolicy(budget Budget, initial Observation, known *Knowledge) 
 // watchdog in the same order Run historically did. It is deliberately ROM-
 // free: callers provide only the settled semantic observation and knowledge.
 func (w *runWatchdogPolicy) roundBoundary(round int, obs Observation, known *Knowledge, completed int, strategic bool) runWatchdogDecision {
+	w.round = round
+	repro := w.captureRoundBoundary(round, obs, known, completed, strategic)
 	decision := runWatchdogDecision{}
 	current := majorProgressMarkOf(obs, known)
 	if w.majorProgress.absorb(current) {
@@ -92,6 +98,7 @@ func (w *runWatchdogPolicy) roundBoundary(round int, obs Observation, known *Kno
 			if !replanOnce(&w.stagnationEscalated) {
 				decision.Stop = StopStuck
 				decision.Cause = runWatchdogStagnationRecurred
+				persistWatchdogRepro(w.reproDir, repro, decision)
 				return decision
 			}
 			decision.ReplanReason = "stagnation"
@@ -99,6 +106,7 @@ func (w *runWatchdogPolicy) roundBoundary(round int, obs Observation, known *Kno
 		} else {
 			decision.Stop = StopStuck
 			decision.Cause = runWatchdogStagnation
+			persistWatchdogRepro(w.reproDir, repro, decision)
 			return decision
 		}
 	}
@@ -107,6 +115,7 @@ func (w *runWatchdogPolicy) roundBoundary(round int, obs Observation, known *Kno
 	if decision.DeadStreak >= deadPositionAfter {
 		decision.Stop = StopStuck
 		decision.Cause = runWatchdogDeadPosition
+		persistWatchdogRepro(w.reproDir, repro, decision)
 	}
 	return decision
 }
@@ -115,6 +124,7 @@ func (w *runWatchdogPolicy) roundBoundary(round int, obs Observation, known *Kno
 // transaction. A material semantic change resets both its counter and its
 // one-shot strategic escalation.
 func (w *runWatchdogPolicy) successfulObjective(before, after Observation, strategic bool) runWatchdogDecision {
+	repro := w.captureSuccessfulObjective(w.round, before, after, strategic)
 	decision := runWatchdogDecision{}
 	if sameProgress(before, after) {
 		w.stuck++
@@ -129,6 +139,7 @@ func (w *runWatchdogPolicy) successfulObjective(before, after Observation, strat
 		if !replanOnce(&w.stuckEscalated) {
 			decision.Stop = StopStuck
 			decision.Cause = runWatchdogShortStuck
+			persistWatchdogRepro(w.reproDir, repro, decision)
 			return decision
 		}
 		decision.ReplanReason = "stuck"
@@ -137,6 +148,7 @@ func (w *runWatchdogPolicy) successfulObjective(before, after Observation, strat
 	}
 	decision.Stop = StopStuck
 	decision.Cause = runWatchdogShortStuck
+	persistWatchdogRepro(w.reproDir, repro, decision)
 	return decision
 }
 
