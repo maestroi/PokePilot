@@ -105,10 +105,12 @@ func naturalPlaySignal(obs Observation, o Objective, profile PlayStyleProfile) N
 			add("recovery-stop", 0.28)
 		}
 		if naturalMartPlace(lowPlace) {
-			if len(obs.Dex.Targets) > 0 && normalBallStock(obs) < minimumCaptureStock {
+			if len(obs.Dex.Targets) > 0 && normalBallStock(obs) < minimumCaptureStock && captureResupplyAffordable(obs) {
 				// EconomyContext intentionally asks for capture resupply only while
 				// standing near wild encounters. A completion run must also be able
-				// to decide to visit a Mart before leaving town with no balls.
+				// to decide to visit a Mart before leaving town with no balls, but
+				// only when at least one normal ball is actually affordable after
+				// current progression reserves.
 				addScaled("capture-resupply", 0.35, profile.ExplorationScale)
 			} else if economy := EconomyContext(obs); economy != nil && economy.ResupplyNeeded {
 				add("resupply-stop", 0.24)
@@ -203,6 +205,15 @@ func naturalCenterPlace(place string) bool {
 }
 
 func naturalMartPlace(place string) bool { return strings.Contains(place, "mart") }
+
+func captureResupplyAffordable(obs Observation) bool {
+	economy := EconomyContext(obs)
+	if economy == nil {
+		return false
+	}
+	ball, ok := ItemEconomy("pokeball")
+	return ok && economy.SpendableMoney >= ball.UnitPrice
+}
 
 func naturalTrainingTarget(obs Observation, o Objective) (PartyMon, bool) {
 	if o.Kind != KindTrain || len(obs.Party) == 0 {
