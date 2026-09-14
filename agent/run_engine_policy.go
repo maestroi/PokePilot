@@ -1,18 +1,22 @@
 package agent
 
-// runEngine owns the mutable policy state that used to live as a cluster of
-// counters and booleans inside Run. Gameplay mutation still belongs to the
-// objective transaction/adapter; this type only coordinates portable run
-// policy around those transactions.
+// runEngine owns the mutable portable policy state around objective
+// transactions. Gameplay mutation still belongs to the transaction/adapter;
+// this type coordinates run-level planning, completion, knowledge deltas,
+// watchdogs, retries, and quarantine.
 type runEngine struct {
+	goal       *runGoalPolicy
+	knowledge  *runKnowledgePolicy
 	planning   *runPlanning
 	watchdogs  *runWatchdogPolicy
 	failures   *runFailurePolicy
 	quarantine failureQuarantine
 }
 
-func newRunEngine(budget Budget, resumed Plan, initial Observation, known *Knowledge) *runEngine {
+func newRunEngine(budget Budget, resumed Plan, initial Observation, known *Knowledge, goal *runGoalPolicy) *runEngine {
 	return &runEngine{
+		goal:       goal,
+		knowledge:  newRunKnowledgePolicy(initial, known),
 		planning:   newRunPlanning(resumed),
 		watchdogs:  newRunWatchdogPolicy(budget, initial, known),
 		failures:   newRunFailurePolicy(budget.MaxConsecutiveFailures),
