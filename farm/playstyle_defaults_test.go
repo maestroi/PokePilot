@@ -1,6 +1,9 @@
 package farm
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+)
 
 func TestDefaultGoalForPlayStyle(t *testing.T) {
 	for _, tc := range []struct {
@@ -47,5 +50,23 @@ func TestApplyPlayStyleDefaultGoal(t *testing.T) {
 	ApplyPlayStyleDefaultGoal(&scripted)
 	if scripted.Goal != "" {
 		t.Fatalf("scripted spec acquired goal %q", scripted.Goal)
+	}
+}
+
+func TestSpecDecodeAppliesPlayStyleDefaultGoal(t *testing.T) {
+	var completionist Spec
+	if err := json.Unmarshal([]byte(`{"run_id":"decoded-completionist","planner":"llm","play_style":"completionist"}`), &completionist); err != nil {
+		t.Fatal(err)
+	}
+	if completionist.Goal != DefaultDexGoal {
+		t.Fatalf("decoded completionist goal = %q, want %q", completionist.Goal, DefaultDexGoal)
+	}
+
+	var explicit Spec
+	if err := json.Unmarshal([]byte(`{"run_id":"decoded-explicit","planner":"llm","play_style":"completionist","goal":"badges:4"}`), &explicit); err != nil {
+		t.Fatal(err)
+	}
+	if explicit.Goal != "badges:4" {
+		t.Fatalf("decoded explicit goal = %q, want badges:4", explicit.Goal)
 	}
 }
