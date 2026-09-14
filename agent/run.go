@@ -27,7 +27,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 	default:
 	}
 
-	runGoal, deterministicGoal, err := resolveRunGoal(p, budget.Goal)
+	goalPolicy, err := newRunGoalPolicy(p, budget)
 	if err != nil {
 		return Result{Stop: StopError, Err: err}
 	}
@@ -74,11 +74,9 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 	m.AlsoSample(tape.sample)
 	var history []RoundRecord
 	last := Observe(m, romData)
-	engine := newRunEngine(budget, resumedPlan, last, known)
+	engine := newRunEngine(budget, resumedPlan, last, known, goalPolicy)
 	notifyPlanning(p, engine.planning.snapshot())
 
-	knownRequirementCount := len(known.Requirements)
-	observedBadges, observedEvents := len(last.Badges), len(last.Events)
 	early := progressOf(last, known, 0)
 	res.ProgressEarly = &early
 	lastUnroutable := ""
@@ -90,51 +88,16 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 		default:
 		}
 
-		// Completion has precedence over watchdogs, budget edges, and another
-		// planner call. A state that satisfies the deterministic goal is done
-		// even when the objective that reached it also exposed a later fault.
-		if deterministicGoal {
-			status := evaluateRunGoal(p, runGoal, last, round, budget.MaxRounds, intent, intentAge)
-			res.GoalStatus = &status
-			if status.Complete {
-				res.Stop = StopDone
-				break
-			}
+		boundary := engine.beginRound(p, round, last, known, tape.seenMaps, intent, intentAge)
+		if boundary.GoalStatus != nil {
+			res.GoalStatus = boundary.GoalStatus
 		}
-		if roundCapReached(round, budget.MaxRounds) {
-			res.Stop = StopBudget
-			break
+		if boundary.PolicyApplied {
+			logUnroutable(budget.Log, round, last, &lastUnroutable)
+			logWatchdogDecision(budget.Log, round, boundary.Watchdog, last)
 		}
-
-		// Knowledge update policy remains explicit at the round boundary. The
-		// engine carries planning/watchdog/failure state; deterministic game
-		// facts remain owned by Knowledge and the adapter observation.
-		noteObservation(known, last)
-		if len(known.Requirements) > knownRequirementCount {
-			engine.planning.request("new_requirement")
-			knownRequirementCount = len(known.Requirements)
-		}
-		if round > 1 && len(last.Badges) > observedBadges {
-			engine.planning.request("badge_changed")
-		}
-		if round > 1 && len(last.Events) > observedEvents {
-			engine.planning.request("story_changed")
-		}
-		observedBadges, observedEvents = len(last.Badges), len(last.Events)
-		for _, id := range tape.seenMaps() {
-			known.SawMap(id)
-		}
-		logUnroutable(budget.Log, round, last, &lastUnroutable)
-
-		watchdog := engine.watchdogs.roundBoundary(
-			round, last, known, len(known.Completed), engine.planning.hasStrategist(p),
-		)
-		if watchdog.ReplanReason != "" {
-			engine.planning.request(watchdog.ReplanReason)
-		}
-		logWatchdogDecision(budget.Log, round, watchdog, last)
-		if watchdog.Stop != StopUnset {
-			res.Stop = watchdog.Stop
+		if boundary.Stop != StopUnset {
+			res.Stop = boundary.Stop
 			break
 		}
 
@@ -159,19 +122,11 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 		res.ReplyRetries += retries
 		notifyPlanning(p, engine.planning.snapshot())
 		if errors.Is(err, ErrDone) {
-			if deterministicGoal {
-				status := GoalStatus{}
-				if res.GoalStatus != nil {
-					status = *res.GoalStatus
-				} else {
-					status = evaluateRunGoal(p, runGoal, last, round, budget.MaxRounds, intent, intentAge)
-					res.GoalStatus = &status
-				}
-				res.Stop = StopError
-				res.Err = incompleteGoalError(status)
-				break
+			done := engine.goal.plannerDone(p, last, round, intent, intentAge, res.GoalStatus)
+			if done.Status != nil {
+				res.GoalStatus = done.Status
 			}
-			res.Stop = StopDone
+			res.Stop, res.Err = done.Stop, done.Err
 			break
 		}
 		if err != nil {
@@ -218,14 +173,14 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 			last.RecentDialogue = tape.recent()
 			logRound(budget.Log, round, obj, outcome, last)
 
-			if deterministicGoal {
-				status := evaluateRunGoal(p, runGoal, last, round, budget.MaxRounds, intent, intentAge)
-				res.GoalStatus = &status
-				if status.Complete {
-					markLastOutcomeRecovered(&res)
-					res.Stop = StopDone
-					break
-				}
+			goal := engine.goal.afterObjective(p, last, round, intent, intentAge)
+			if goal.Status != nil {
+				res.GoalStatus = goal.Status
+			}
+			if goal.Stop == StopDone {
+				markLastOutcomeRecovered(&res)
+				res.Stop = StopDone
+				break
 			}
 
 			action := actionFor(objectiveResult.Outcome)
@@ -286,16 +241,16 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 		last.RecentDialogue = tape.recent()
 		logRound(budget.Log, round, obj, objectiveResult.HistoryText(), last)
 
-		if deterministicGoal {
-			status := evaluateRunGoal(p, runGoal, last, round, budget.MaxRounds, intent, intentAge)
-			res.GoalStatus = &status
-			if status.Complete {
-				res.Stop = StopDone
-				break
-			}
+		goal := engine.goal.afterObjective(p, last, round, intent, intentAge)
+		if goal.Status != nil {
+			res.GoalStatus = goal.Status
+		}
+		if goal.Stop == StopDone {
+			res.Stop = StopDone
+			break
 		}
 
-		watchdog = engine.watchdogs.successfulObjective(before, last, engine.planning.hasStrategist(p))
+		watchdog := engine.watchdogs.successfulObjective(before, last, engine.planning.hasStrategist(p))
 		if watchdog.ReplanReason != "" {
 			engine.planning.request(watchdog.ReplanReason)
 			notifyPlanning(p, engine.planning.snapshot())
@@ -312,9 +267,8 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 
 	res.Final = last
 	res.Planning = engine.planning.snapshot()
-	if deterministicGoal {
-		status := evaluateRunGoal(p, runGoal, last, res.Rounds, budget.MaxRounds, intent, intentAge)
-		res.GoalStatus = &status
+	if status := engine.goal.evaluate(p, last, res.Rounds, intent, intentAge); status != nil {
+		res.GoalStatus = status
 	}
 	final := progressOf(last, known, res.Rounds)
 	res.ProgressFinal = &final
