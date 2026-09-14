@@ -219,11 +219,23 @@ func TalkAt(m *emu.Emu, romData []byte, homeX, homeY uint8, policy MovePolicy) (
 			tx, ty = liveX, liveY
 		}
 		px, py := playerXY(m)
+		faceX, faceY := tx, ty
 		if _, ok := directionTo(px, py, tx, ty); !ok {
-			m.StepFrames(npcWaitFrames)
-			continue
+			// Not ordinarily adjacent — check whether we're at a counter
+			// approach instead (two tiles away, counter tile between) before
+			// treating this as the NPC having wandered off.
+			cg, err := liveMapGrid(m, romData, h)
+			cx, cy, counterOK := uint8(0), uint8(0), false
+			if err == nil {
+				cx, cy, counterOK = counterFacing(cg, px, py, tx, ty)
+			}
+			if !counterOK {
+				m.StepFrames(npcWaitFrames)
+				continue
+			}
+			faceX, faceY = cx, cy
 		}
-		if err := Face(m, tx, ty); err != nil {
+		if err := Face(m, faceX, faceY); err != nil {
 			m.StepFrames(npcWaitFrames)
 			continue
 		}
@@ -326,6 +338,71 @@ const (
 	maxTalkApproachChoices = 1
 )
 
+// counterSteps are the 4 orthogonal directions counterBeside and
+// counterFacing search, kept as a package value so both read the same order.
+var counterSteps = []world.Step{world.StepUp, world.StepDown, world.StepLeft, world.StepRight}
+
+// counterBeside finds where to stand to talk to a target that lives behind a
+// Gen 1 service counter — a Pokemon Center nurse or Mart clerk, whom
+// besideDestination can never place the player next to because the tile
+// beside them is the counter itself, not floor. The game's
+// IsSpriteOrSignInFrontOfPlayer (pokered.sym home/overworld.asm:1118)
+// extends talk range to two tiles when the tile directly in front is one of
+// the tileset's counter tiles, so the player instead stands two tiles from
+// the target in a straight line, with the counter tile between.
+//
+// ok is false when no direction has a counter tile at the target with a
+// walkable, reachable standing tile beyond it — the target is genuinely not
+// a counter NPC, and the caller's ordinary "no path" error stands.
+func counterBeside(m *emu.Emu, romData []byte, targetX, targetY uint8) (Destination, bool, error) {
+	cur := m.Peek8(sym.CurMap)
+	h, err := rom.ParseMap(romData, cur)
+	if err != nil {
+		return Destination{}, false, fmt.Errorf("parse map %#04x: %w", cur, err)
+	}
+	grid, err := liveMapGrid(m, romData, h)
+	if err != nil {
+		return Destination{}, false, fmt.Errorf("build map %#04x: %w", cur, err)
+	}
+	blocked := spriteBlockers(m)
+	sx, sy := playerXY(m)
+	for _, s := range counterSteps {
+		cx, cy := int(targetX)+s.DX, int(targetY)+s.DY
+		if !grid.IsCounterTile(cx, cy) {
+			continue
+		}
+		standX, standY := int(targetX)+2*s.DX, int(targetY)+2*s.DY
+		if !grid.InBounds(standX, standY) || !grid.Walkable(standX, standY) || blocked[[2]int{standX, standY}] {
+			continue
+		}
+		if _, err := world.FindPath(grid, int(sx), int(sy), standX, standY, blocked); err != nil {
+			continue
+		}
+		return Destination{Map: cur, X: uint8(standX), Y: uint8(standY)}, true, nil
+	}
+	return Destination{}, false, nil
+}
+
+// counterFacing reports the counter tile between the player at (px,py) and a
+// talk target at (tx,ty), when the player already stands in the counter
+// approach counterBeside picks: two tiles from the target in a straight
+// line, with a counter tile between. Facing that tile (one step away, within
+// Face's ordinary adjacency) is what makes the target talkable, exactly as
+// standing at the counter tile itself would be for an ordinary neighbour.
+func counterFacing(g *world.Grid, px, py, tx, ty uint8) (uint8, uint8, bool) {
+	for _, s := range counterSteps {
+		if int(px)+2*s.DX != int(tx) || int(py)+2*s.DY != int(ty) {
+			continue
+		}
+		mx, my := int(px)+s.DX, int(py)+s.DY
+		if !g.IsCounterTile(mx, my) {
+			continue
+		}
+		return uint8(mx), uint8(my), true
+	}
+	return 0, 0, false
+}
+
 // talkApproachChoiceIndex classifies the tiny set of choices that are part of
 // reaching a talk target rather than the target conversation itself. Keep this
 // deliberately specific: blindly answering generic YES/NO prompts has lost
@@ -377,7 +454,14 @@ func talkBeside(m *emu.Emu, romData []byte, tx, ty uint8, policy MovePolicy) err
 	}
 	dest, ok, err := besideDestination(m, romData, tx, ty)
 	if err != nil {
-		return fmt.Errorf("skill: TalkAt: %w", err)
+		// No ordinary neighbour of (tx,ty) is walkable — the target may be a
+		// nurse or clerk standing behind a counter, which has no adjacent
+		// floor tile by design. Try the counter approach before giving up.
+		var counterErr error
+		dest, ok, counterErr = counterBeside(m, romData, tx, ty)
+		if counterErr != nil || !ok {
+			return fmt.Errorf("skill: TalkAt: %w", err)
+		}
 	}
 	if !ok {
 		return nil
