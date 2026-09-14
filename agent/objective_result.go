@@ -63,7 +63,7 @@ type ObjectiveResult struct {
 	Initial      *FailureState     `json:"initial,omitempty"`
 	Final        Observation       `json:"final"`
 	Travel       *TravelEvidence   `json:"travel,omitempty"`
-	Training     *TrainingEvidence `json:"train,omitempty"`
+	Train        *TrainingEvidence `json:"train,omitempty"`
 	Battle       *BattleEvidence   `json:"gym_outcome,omitempty"`
 	// InteractionPresses is positive evidence that a talk objective actually
 	// opened and paged dialogue. Zero is not success evidence.
