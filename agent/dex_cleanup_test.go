@@ -19,7 +19,7 @@ func hallOfFameDexObservation(targets ...DexEntry) Observation {
 
 func TestDexCleanupDoesNotChangePreHallOfFameOffers(t *testing.T) {
 	obs := Observation{
-		Dex: DexCatalog{Targets: []DexEntry{{Species: "vaporeon"}}},
+		Dex:   DexCatalog{Targets: []DexEntry{{Species: "vaporeon"}}},
 		Party: []PartyMon{{Species: "eevee", Level: 25}},
 	}
 	offered := []Objective{
