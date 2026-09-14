@@ -59,6 +59,7 @@ const (
 	NumBagItems    uint16 = 0xD31D
 	BagItems       uint16 = 0xD31E
 	PlayerMoney    uint16 = 0xD347 // 3 bytes, binary-coded decimal
+	PlayerCoins    uint16 = 0xD5A4 // 2 bytes, binary-coded decimal; Coin Case max is 9999
 	ObtainedBadges uint16 = 0xD356
 	// ToggleableObjectFlags is the 256-bit global hidden-object array;
 	// ToggleableObjectList maps the current map's 1-based object IDs to
@@ -113,7 +114,7 @@ const (
 	EnemyMonMaxHP    uint16 = 0xCFF4 // wEnemyMonMaxHP
 	EnemyMonAttack   uint16 = 0xCFF6 // wEnemyMonAttack
 	EnemyMonDefense  uint16 = 0xCFF8 // wEnemyMonDefense
-	EnemyMonSpecial  uint16 = 0xCFFC // wEnemyMonSpecial
+	EnemyMonSpecial uint16 = 0xCFFC // wEnemyMonSpecial
 	// PlayerDisabledMove is wPlayerDisabledMove. The high nibble is the
 	// disabled move slot encoded as 1..4 (0 means none); the low nibble is
 	// the remaining disable-turn count.
