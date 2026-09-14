@@ -58,6 +58,42 @@ func TestRunWatchdogMajorProgressResetsStagnationEscalation(t *testing.T) {
 	}
 }
 
+func TestRunWatchdogDexOwnershipResetsStagnationWithFullParty(t *testing.T) {
+	known := NewKnowledge(nil)
+	initial := Observation{
+		Map:          1,
+		X:            1,
+		Y:            1,
+		PartyCount:   6,
+		PokedexOwned: []SpeciesID{SpeciesID("bulbasaur")},
+	}
+	known.SawMap(initial.Map)
+	policy := newRunWatchdogPolicy(Budget{StagnationAfter: 1}, initial, known)
+
+	obs := initial
+	obs.X = 2
+	first := policy.roundBoundary(2, obs, known, 0, true)
+	if first.ReplanReason != "stagnation" {
+		t.Fatalf("first decision = %+v; want stagnation replan", first)
+	}
+
+	// Catching a new species with a full party sends it to storage, so the
+	// party dimensions do not change. The owned Dex count is nevertheless
+	// real Completionist/Dex progress and must reset the watchdog.
+	obs.X = 3
+	obs.PokedexOwned = append(obs.PokedexOwned, SpeciesID("pidgey"))
+	progress := policy.roundBoundary(3, obs, known, 0, true)
+	if !progress.MajorProgress || progress.Stop != StopUnset {
+		t.Fatalf("dex progress decision = %+v; want reset", progress)
+	}
+
+	obs.X = 4
+	again := policy.roundBoundary(4, obs, known, 0, true)
+	if again.ReplanReason != "stagnation" || again.Stop != StopUnset {
+		t.Fatalf("post-dex-progress decision = %+v; want a fresh replan budget", again)
+	}
+}
+
 func TestRunWatchdogShortStuckReplansOnceThenStops(t *testing.T) {
 	obs := Observation{Map: 1, X: 1, Y: 1, PartyCount: 1}
 	policy := newRunWatchdogPolicy(Budget{StuckAfter: 2}, obs, NewKnowledge(nil))

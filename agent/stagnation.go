@@ -32,12 +32,16 @@ func roundsLeft(round, maxRounds int) int {
 // Maps comes from Knowledge.Visited, so traversing a genuinely new area is
 // progress even when an objective enters and leaves it within one round.
 // MaxLevel makes productive training count without making damage/healing a
-// false reset. PartyCount makes catching a new party member count.
+// false reset. PartyCount makes catching a new party member count. DexOwned
+// also counts successful collection when the party is already full and the
+// newly caught species is sent to storage, which is essential progress for
+// Dex and Completionist runs.
 type majorProgressMark struct {
 	Badges     int
 	Events     int
 	Maps       int
 	PartyCount int
+	DexOwned   int
 	MaxLevel   uint8
 }
 
@@ -46,6 +50,7 @@ func majorProgressMarkOf(obs Observation, k *Knowledge) majorProgressMark {
 		Badges:     len(obs.Badges),
 		Events:     len(obs.Events),
 		PartyCount: obs.PartyCount,
+		DexOwned:   len(obs.PokedexOwned),
 	}
 	if k != nil {
 		mark.Maps = len(k.Visited)
@@ -81,6 +86,10 @@ func (m *majorProgressMark) absorb(next majorProgressMark) bool {
 		m.PartyCount = next.PartyCount
 		advanced = true
 	}
+	if next.DexOwned > m.DexOwned {
+		m.DexOwned = next.DexOwned
+		advanced = true
+	}
 	if next.MaxLevel > m.MaxLevel {
 		m.MaxLevel = next.MaxLevel
 		advanced = true
@@ -89,6 +98,6 @@ func (m *majorProgressMark) absorb(next majorProgressMark) bool {
 }
 
 func (m majorProgressMark) String() string {
-	return fmt.Sprintf("%d badge(s), %d event(s), %d map(s), party %d, max level %d",
-		m.Badges, m.Events, m.Maps, m.PartyCount, m.MaxLevel)
+	return fmt.Sprintf("%d badge(s), %d event(s), %d map(s), party %d, dex owned %d, max level %d",
+		m.Badges, m.Events, m.Maps, m.PartyCount, m.DexOwned, m.MaxLevel)
 }
