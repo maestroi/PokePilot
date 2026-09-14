@@ -13,8 +13,8 @@ const (
 	fossilScientistX     uint8 = 5
 	fossilScientistY     uint8 = 2
 
-	oldAmberItem   uint8 = 0x1F
-	domeFossilItem uint8 = 0x29
+	oldAmberItem    uint8 = 0x1F
+	domeFossilItem  uint8 = 0x29
 	helixFossilItem uint8 = 0x2A
 
 	kabutoSpecies     uint8 = 0x5A
