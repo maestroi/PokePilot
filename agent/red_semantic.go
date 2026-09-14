@@ -20,6 +20,8 @@ const (
 	redProgressSSTicketAcquired           ProgressID = redprofile.ProgressSSTicketAcquired
 	redProgressHM01Acquired               ProgressID = redprofile.ProgressHM01Acquired
 	redProgressThunderBadge               ProgressID = redprofile.ProgressThunderBadge
+	redProgressPostSurgeLavenderReached   ProgressID = redprofile.ProgressPostSurgeLavenderReached
+	redProgressPostSurgeCeladonReady      ProgressID = redprofile.ProgressPostSurgeCeladonReady
 	redProgressRainbowBadge               ProgressID = redprofile.ProgressRainbowBadge
 	redProgressSilphScopeAcquired         ProgressID = redprofile.ProgressSilphScopeAcquired
 	redProgressPokeFluteAcquired          ProgressID = redprofile.ProgressPokeFluteAcquired
