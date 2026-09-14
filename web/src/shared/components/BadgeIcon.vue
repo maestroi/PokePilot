@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { browserPokemonAssetUrl } from '../pokemonAssetProxy'
 import { badgeName, badgeSpriteUrl } from '../pokemonProgressAssets'
 
 const props = withDefaults(defineProps<{
@@ -10,7 +11,7 @@ const props = withDefaults(defineProps<{
 })
 
 const failed = ref(false)
-const src = computed(() => badgeSpriteUrl(props.name))
+const src = computed(() => browserPokemonAssetUrl(badgeSpriteUrl(props.name)))
 const label = computed(() => badgeName(props.name) || props.name || 'Badge')
 const boxStyle = computed(() => ({ width: `${props.size}px`, height: `${props.size}px` }))
 
