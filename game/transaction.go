@@ -13,8 +13,10 @@ package game
 // ownership.
 type Adapter[Objective any, Observation any, Result any] interface {
 	// Observe returns a stable semantic observation. It must not expose raw
-	// addresses or require the generic runtime to understand game memory.
-	Observe() Observation
+	// addresses or require the generic runtime to understand game memory. An
+	// error means the adapter could not produce trustworthy semantic state; the
+	// runtime must not guess from a zero/partial observation.
+	Observe() (Observation, error)
 
 	// Validate rejects malformed objective arguments or unsatisfied adapter-
 	// visible prerequisites before gameplay input is sent. The initial semantic
@@ -41,8 +43,9 @@ type Adapter[Objective any, Observation any, Result any] interface {
 	// SettlePostcondition may passively wait for a successful action's state to
 	// become readable before the finish boundary is normalized. It must not
 	// send gameplay input. This is where an emulator-backed adapter may step
-	// frames through a warp/fade without making a decision.
-	SettlePostcondition(Objective)
+	// frames through a warp/fade without making a decision. An error means the
+	// bounded passive settle did not produce trustworthy inspectable state.
+	SettlePostcondition(Objective) error
 
 	// VerifyPostcondition checks the positive semantic success contract against
 	// the final settled observation. A nil error means the objective's claimed
@@ -51,7 +54,7 @@ type Adapter[Objective any, Observation any, Result any] interface {
 }
 
 // Transaction is the raw lifecycle evidence for one objective. It deliberately
-// keeps validation, start-boundary, execution, finish-boundary, and semantic
+// keeps observation, validation, boundary, execution, settle, and semantic
 // postcondition failures separate. The caller can preserve its own typed error
 // identities and normalized Outcome vocabulary without teaching this package
 // game-specific error classes.
@@ -60,11 +63,14 @@ type Transaction[Result any, Observation any] struct {
 	Initial Observation
 	Final   Observation
 
-	ValidationErr     error
-	StartBoundaryErr  error
-	ExecutionErr      error
-	FinishBoundaryErr error
-	PostconditionErr  error
+	InitialObservationErr error
+	ValidationErr         error
+	StartBoundaryErr      error
+	ExecutionErr          error
+	SettleErr             error
+	FinishBoundaryErr     error
+	FinalObservationErr   error
+	PostconditionErr      error
 }
 
 // ExecuteTransaction runs one objective through the portable lifecycle:
@@ -72,15 +78,19 @@ type Transaction[Result any, Observation any] struct {
 //	observe -> validate -> normalize start -> bounded owned execution
 //	-> passive settle -> normalize finish -> observe -> verify postcondition
 //
-// Finish normalization still runs after an execution failure so the objective
-// owns the state it leaves behind. Postcondition verification runs only after a
-// successful action and a clean finish boundary.
+// Finish normalization still runs after execution or settle failure so the
+// objective owns the state it leaves behind. Postcondition verification runs
+// only after successful execution, successful settle, a clean finish boundary,
+// and a trustworthy final observation.
 func ExecuteTransaction[Objective any, Observation any, Result any](
 	a Adapter[Objective, Observation, Result],
 	o Objective,
 ) Transaction[Result, Observation] {
 	var tx Transaction[Result, Observation]
-	tx.Initial = a.Observe()
+	tx.Initial, tx.InitialObservationErr = a.Observe()
+	if tx.InitialObservationErr != nil {
+		return tx
+	}
 
 	if err := a.Validate(o, tx.Initial); err != nil {
 		tx.ValidationErr = err
@@ -90,7 +100,7 @@ func ExecuteTransaction[Objective any, Observation any, Result any](
 
 	if err := a.NormalizeBoundary(); err != nil {
 		tx.StartBoundaryErr = err
-		tx.Final = a.Observe()
+		tx.Final, tx.FinalObservationErr = a.Observe()
 		return tx
 	}
 
@@ -101,13 +111,16 @@ func ExecuteTransaction[Objective any, Observation any, Result any](
 	})
 
 	if tx.ExecutionErr == nil {
-		a.SettlePostcondition(o)
+		tx.SettleErr = a.SettlePostcondition(o)
 	}
 
 	tx.FinishBoundaryErr = a.NormalizeBoundary()
-	tx.Final = a.Observe()
+	tx.Final, tx.FinalObservationErr = a.Observe()
 
-	if tx.ExecutionErr == nil && tx.FinishBoundaryErr == nil {
+	if tx.ExecutionErr == nil &&
+		tx.SettleErr == nil &&
+		tx.FinishBoundaryErr == nil &&
+		tx.FinalObservationErr == nil {
 		tx.PostconditionErr = a.VerifyPostcondition(o, tx.Final, tx.Result)
 	}
 

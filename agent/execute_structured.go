@@ -165,9 +165,9 @@ func executeRedOwned(m *emu.Emu, romData []byte, o Objective) (result ObjectiveR
 	return result, fmt.Errorf("agent: unknown objective kind %d", int(o.Kind))
 }
 
-func settleObjectivePostcondition(m *emu.Emu, o Objective) {
+func settleObjectivePostcondition(m *emu.Emu, o Objective) error {
 	if o.Kind != KindGoTo {
-		return
+		return nil
 	}
 	ready := func(em *emu.Emu) bool {
 		var mem state.Mem
@@ -175,7 +175,15 @@ func settleObjectivePostcondition(m *emu.Emu, o Objective) {
 		return state.Controllable(&mem) && state.DecodeBattle(&mem) == nil
 	}
 	if ready(m) {
-		return
+		return nil
 	}
-	_, _ = m.StepUntil(objectivePostconditionSettleBudget, ready)
+	if _, err := m.StepUntil(objectivePostconditionSettleBudget, ready); err != nil {
+		// StepUntil checks before each frame, so the predicate may become true
+		// on the final stepped frame. Re-check once before reporting timeout.
+		if ready(m) {
+			return nil
+		}
+		return fmt.Errorf("postcondition state did not settle: %w", err)
+	}
+	return nil
 }

@@ -10,18 +10,29 @@ type fakeAdapter struct {
 	calls []string
 	obs   string
 
-	validateErr error
-	startErr    error
-	executeErr  error
-	finishErr   error
-	verifyErr   error
+	initialObserveErr error
+	finalObserveErr   error
+	validateErr       error
+	startErr          error
+	executeErr        error
+	settleErr         error
+	finishErr         error
+	verifyErr         error
 
+	observeCalls   int
 	normalizeCalls int
 }
 
-func (f *fakeAdapter) Observe() string {
+func (f *fakeAdapter) Observe() (string, error) {
 	f.calls = append(f.calls, "observe")
-	return f.obs
+	f.observeCalls++
+	if f.observeCalls == 1 && f.initialObserveErr != nil {
+		return f.obs, f.initialObserveErr
+	}
+	if f.observeCalls > 1 && f.finalObserveErr != nil {
+		return f.obs, f.finalObserveErr
+	}
+	return f.obs, nil
 }
 
 func (f *fakeAdapter) Validate(_ string, observation string) error {
@@ -55,8 +66,9 @@ func (f *fakeAdapter) WithinObjectiveBudget(_ string, fn func() error) error {
 	return fn()
 }
 
-func (f *fakeAdapter) SettlePostcondition(string) {
+func (f *fakeAdapter) SettlePostcondition(string) error {
 	f.calls = append(f.calls, "settle")
+	return f.settleErr
 }
 
 func (f *fakeAdapter) VerifyPostcondition(_ string, observation string, _ string) error {
@@ -74,7 +86,7 @@ func TestExecuteTransactionOwnsPortableLifecycle(t *testing.T) {
 	adapter := &fakeAdapter{obs: "room-a"}
 	tx := ExecuteTransaction[string, string, string](adapter, "travel-room-b")
 
-	if tx.ValidationErr != nil || tx.StartBoundaryErr != nil || tx.ExecutionErr != nil || tx.FinishBoundaryErr != nil || tx.PostconditionErr != nil {
+	if tx.InitialObservationErr != nil || tx.ValidationErr != nil || tx.StartBoundaryErr != nil || tx.ExecutionErr != nil || tx.SettleErr != nil || tx.FinishBoundaryErr != nil || tx.FinalObservationErr != nil || tx.PostconditionErr != nil {
 		t.Fatalf("transaction errors: %+v", tx)
 	}
 	if tx.Initial != "room-a" {
@@ -148,7 +160,55 @@ func TestExecuteTransactionPostconditionFailureIsSeparate(t *testing.T) {
 	if !errors.Is(tx.PostconditionErr, postErr) {
 		t.Fatalf("PostconditionErr = %v, want %v", tx.PostconditionErr, postErr)
 	}
-	if tx.ExecutionErr != nil || tx.FinishBoundaryErr != nil {
-		t.Fatalf("execution/boundary errors = %v / %v", tx.ExecutionErr, tx.FinishBoundaryErr)
+	if tx.ExecutionErr != nil || tx.SettleErr != nil || tx.FinishBoundaryErr != nil || tx.FinalObservationErr != nil {
+		t.Fatalf("execution/settle/boundary/observation errors = %v / %v / %v / %v", tx.ExecutionErr, tx.SettleErr, tx.FinishBoundaryErr, tx.FinalObservationErr)
+	}
+}
+
+func TestExecuteTransactionInitialObservationFailureStopsBeforeValidation(t *testing.T) {
+	observeErr := errors.New("cannot decode state")
+	adapter := &fakeAdapter{obs: "room-a", initialObserveErr: observeErr}
+	tx := ExecuteTransaction[string, string, string](adapter, "travel-room-b")
+
+	if !errors.Is(tx.InitialObservationErr, observeErr) {
+		t.Fatalf("InitialObservationErr = %v, want %v", tx.InitialObservationErr, observeErr)
+	}
+	want := []string{"observe"}
+	if !reflect.DeepEqual(adapter.calls, want) {
+		t.Fatalf("calls = %#v, want %#v", adapter.calls, want)
+	}
+}
+
+func TestExecuteTransactionSettleFailureStillOwnsFinishBoundary(t *testing.T) {
+	settleErr := errors.New("transition never settled")
+	adapter := &fakeAdapter{obs: "room-a", settleErr: settleErr}
+	tx := ExecuteTransaction[string, string, string](adapter, "travel-room-b")
+
+	if !errors.Is(tx.SettleErr, settleErr) {
+		t.Fatalf("SettleErr = %v, want %v", tx.SettleErr, settleErr)
+	}
+	if tx.PostconditionErr != nil {
+		t.Fatalf("PostconditionErr = %v, want nil after settle failure", tx.PostconditionErr)
+	}
+	want := []string{"observe", "validate", "normalize-start", "budget", "execute", "settle", "normalize-finish", "observe"}
+	if !reflect.DeepEqual(adapter.calls, want) {
+		t.Fatalf("calls = %#v, want %#v", adapter.calls, want)
+	}
+}
+
+func TestExecuteTransactionFinalObservationFailureSkipsVerification(t *testing.T) {
+	observeErr := errors.New("final state unreadable")
+	adapter := &fakeAdapter{obs: "room-a", finalObserveErr: observeErr}
+	tx := ExecuteTransaction[string, string, string](adapter, "travel-room-b")
+
+	if !errors.Is(tx.FinalObservationErr, observeErr) {
+		t.Fatalf("FinalObservationErr = %v, want %v", tx.FinalObservationErr, observeErr)
+	}
+	if tx.PostconditionErr != nil {
+		t.Fatalf("PostconditionErr = %v, want nil when final observation failed", tx.PostconditionErr)
+	}
+	want := []string{"observe", "validate", "normalize-start", "budget", "execute", "settle", "normalize-finish", "observe"}
+	if !reflect.DeepEqual(adapter.calls, want) {
+		t.Fatalf("calls = %#v, want %#v", adapter.calls, want)
 	}
 }
