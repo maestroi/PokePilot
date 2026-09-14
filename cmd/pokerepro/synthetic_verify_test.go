@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/maestroi/pokepilot/agent"
+	"github.com/maestroi/pokepilot/farm"
 )
 
 func TestUnderlyingObjectiveFromDiagnosticMatchesExactOfferedSentence(t *testing.T) {
@@ -52,8 +53,11 @@ func TestUnderlyingObjectiveFromDiagnosticReturnsUnavailableWhenMenuChanged(t *t
 
 func TestSyntheticFailureBudgetNonWrapperStaysContractUnavailable(t *testing.T) {
 	verdict, err := verifySyntheticFailureBudget(portableMaterialized{
-		Manifest: syntheticManifest("make progress toward run goal", "stagnation watchdog stopped the run"),
-		Dir:      t.TempDir(),
+		Manifest: farm.PortableReproManifest{
+			Objective:  "make progress toward run goal",
+			Diagnostic: "stagnation watchdog stopped the run",
+		},
+		Dir: t.TempDir(),
 	}, "", portableReproVerdict{})
 	if err != nil {
 		t.Fatal(err)
@@ -64,33 +68,4 @@ func TestSyntheticFailureBudgetNonWrapperStaysContractUnavailable(t *testing.T) 
 	if !strings.Contains(verdict.Diagnostic, "no structured failure-repro contract") {
 		t.Fatalf("diagnostic=%q", verdict.Diagnostic)
 	}
-}
-
-func syntheticManifest(objective, diagnostic string) (m struct {
-	Version          int    `json:"version"`
-	IssueNumber      int64  `json:"issue_number,omitempty"`
-	RunID            string `json:"run_id"`
-	Attempt          int    `json:"attempt"`
-	ObservedRevision string `json:"observed_revision,omitempty"`
-	Fingerprint      string `json:"fingerprint,omitempty"`
-	ExternalID       string `json:"external_id,omitempty"`
-	Checkpoint       struct {
-		Name   string `json:"name"`
-		SHA256 string `json:"sha256"`
-		Size   int64  `json:"size"`
-	} `json:"checkpoint"`
-	Knowledge struct {
-		Name   string `json:"name"`
-		SHA256 string `json:"sha256"`
-		Size   int64  `json:"size"`
-	} `json:"knowledge"`
-	Planner    string `json:"planner,omitempty"`
-	Goal       string `json:"goal,omitempty"`
-	LLMProfile string `json:"llm_profile,omitempty"`
-	Objective  string `json:"objective,omitempty"`
-	Diagnostic string `json:"diagnostic,omitempty"`
-}) {
-	m.Objective = objective
-	m.Diagnostic = diagnostic
-	return m
 }
