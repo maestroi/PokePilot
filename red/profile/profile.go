@@ -264,7 +264,7 @@ func ProjectStory(mem *state.Mem, facts state.StoryFacts) game.ProgressState {
 	badges := state.DecodeProgress(mem)
 	mapID := mem.U8(sym.CurMap)
 	leaguePastLobby := facts.LeagueChallengeStarted || facts.LeagueChampionDefeated || facts.MainStoryComplete
-	victoryRoadCleared := state.VictoryRoadCleared(mem) || leaguePastLobby
+	victoryRoadCleared := victoryRoadClearedForProgress(mem, facts)
 	indigoReady := leaguePastLobby || (mapID == indigoPlateauLobbyMap && partyCenterRecovered(state.DecodeParty(mem)))
 	return append(progress,
 		game.ProgressFact{ID: ProgressThunderBadge, Complete: badges.Has(state.BadgeThunder)},
