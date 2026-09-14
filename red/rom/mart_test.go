@@ -40,6 +40,25 @@ func TestMartItemsViridian(t *testing.T) {
 	}
 }
 
+func TestMartClerkPositionViridian(t *testing.T) {
+	path := os.Getenv("POKEMON_RED_ROM")
+	if path == "" {
+		t.Skip("POKEMON_RED_ROM not set")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read ROM: %v", err)
+	}
+
+	x, y, err := MartClerkPosition(data, 0x2A) // VIRIDIAN_MART
+	if err != nil {
+		t.Fatalf("MartClerkPosition(viridian mart) = %v, want nil", err)
+	}
+	if x != 0 || y != 5 {
+		t.Fatalf("Viridian Mart clerk = (%d,%d), want (0,5)", x, y)
+	}
+}
+
 // The Pewter Mart (0x38) DOES stock a POTION (pokered/data/items/marts.asm):
 // the fix must keep offering it there. The shelf is read, not assumed.
 func TestMartItemsPewterStocksPotion(t *testing.T) {
@@ -78,5 +97,8 @@ func TestMartItemsNonMartMap(t *testing.T) {
 
 	if _, err := MartItems(rom, 0x00); err == nil { // PALLET_TOWN
 		t.Error("MartItems(pallet town) = nil error, want an error: no mart script on this map")
+	}
+	if _, _, err := MartClerkPosition(rom, 0x00); err == nil {
+		t.Error("MartClerkPosition(pallet town) = nil error, want an error: no mart script on this map")
 	}
 }

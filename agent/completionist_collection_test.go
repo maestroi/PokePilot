@@ -25,12 +25,25 @@ func TestCompletionistRewardsMissingDexCatchWithFullParty(t *testing.T) {
 
 func TestCompletionistRewardsMartWhenDexTargetsNeedCaptureStock(t *testing.T) {
 	obs := Observation{
+		Money:      200,
 		PartyCount: 1,
 		Dex:        DexCatalog{Targets: []DexEntry{{Species: "rattata"}}},
 	}
 	signal := naturalPlaySignal(obs, Objective{Kind: KindGoTo, Place: PlaceID("viridian mart")}, PlayStyle(PlayStyleCompletionist))
 	if !naturalSignalHasTag(signal, "capture-resupply") {
 		t.Fatalf("completionist Mart signal = %+v, want capture-resupply", signal)
+	}
+}
+
+func TestCompletionistDoesNotRewardUnaffordableMartResupply(t *testing.T) {
+	obs := Observation{
+		Money:      187,
+		PartyCount: 1,
+		Dex:        DexCatalog{Targets: []DexEntry{{Species: "rattata"}}},
+	}
+	signal := naturalPlaySignal(obs, Objective{Kind: KindGoTo, Place: PlaceID("viridian mart")}, PlayStyle(PlayStyleCompletionist))
+	if naturalSignalHasTag(signal, "capture-resupply") {
+		t.Fatalf("completionist Mart signal = %+v, should not reward capture resupply with only ¥%d", signal, obs.Money)
 	}
 }
 

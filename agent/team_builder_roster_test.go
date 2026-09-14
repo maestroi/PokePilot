@@ -61,13 +61,13 @@ func TestTeamBuilderRosterPressureStopsAtSix(t *testing.T) {
 
 func TestTeamBuilderValuesCaptureSuppliesUntilRosterIsFull(t *testing.T) {
 	profile := PlayStyle(PlayStyleTeamBuilder)
-	obs := Observation{PartyCount: 4, Party: []PartyMon{{Species: "charmeleon", Level: 20}}}
+	obs := Observation{Money: 200, PartyCount: 4, Party: []PartyMon{{Species: "charmeleon", Level: 20}}}
 
 	mart := ScoreObjective(obs, Objective{Kind: KindGoTo, Place: "viridian mart"}, profile)
 	if !naturalSignalHasTag(mart.Natural, "roster-resupply") {
 		t.Fatalf("Team Builder Mart signal = %+v, want roster-resupply", mart.Natural)
 	}
-	buy := ScoreObjective(obs, Objective{Kind: KindBuy, Item: "pokeball", Qty: 5}, profile)
+	buy := ScoreObjective(obs, Objective{Kind: KindBuy, Item: "pokeball", Qty: 1}, profile)
 	if !naturalSignalHasTag(buy.Natural, "roster-supplies") {
 		t.Fatalf("Team Builder ball purchase signal = %+v, want roster-supplies", buy.Natural)
 	}
@@ -80,6 +80,16 @@ func TestTeamBuilderValuesCaptureSuppliesUntilRosterIsFull(t *testing.T) {
 	mart = ScoreObjective(obs, Objective{Kind: KindGoTo, Place: "viridian mart"}, profile)
 	if naturalSignalHasTag(mart.Natural, "roster-resupply") {
 		t.Fatalf("full roster Mart signal = %+v, still has roster-resupply", mart.Natural)
+	}
+}
+
+func TestTeamBuilderDoesNotRewardUnaffordableMartResupply(t *testing.T) {
+	profile := PlayStyle(PlayStyleTeamBuilder)
+	obs := Observation{Money: 187, PartyCount: 4, Party: []PartyMon{{Species: "charmeleon", Level: 20}}}
+
+	mart := ScoreObjective(obs, Objective{Kind: KindGoTo, Place: "viridian mart"}, profile)
+	if naturalSignalHasTag(mart.Natural, "roster-resupply") {
+		t.Fatalf("Team Builder Mart signal = %+v, should not reward resupply with only ¥%d", mart.Natural, obs.Money)
 	}
 }
 

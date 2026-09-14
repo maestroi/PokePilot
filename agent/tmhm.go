@@ -19,6 +19,7 @@ import (
 func offerWithTMHM(m *emu.Emu, romData []byte, obs Observation, known *Knowledge) []Objective {
 	out := OfferWithProgression(obs, known, newRedObjectiveAdapter(m, romData))
 	out = filterRedScriptedTalkObjectives(obs, out)
+	out = filterRedServiceTalkObjectives(romData, obs, out)
 	out = appendKnownCatchObjectives(romData, obs, known, out)
 	out = appendDexCatchObjectives(obs, known, out)
 	out = appendDexEvolutionObjectives(obs, out)
@@ -56,6 +57,28 @@ func filterRedScriptedTalkObjectives(obs Observation, out []Objective) []Objecti
 	filtered := make([]Objective, 0, len(out))
 	for _, o := range out {
 		if o.Kind == KindTalk && o.X == route22RivalHomeX && o.Y == route22RivalHomeY {
+			continue
+		}
+		filtered = append(filtered, o)
+	}
+	return filtered
+}
+
+// filterRedServiceTalkObjectives removes service actors whose A-button script
+// opens a semantic menu rather than ordinary NPC dialogue. The measured case
+// is a Mart clerk: generic Talk keeps pressing A while FontLoaded is set, so a
+// clerk offered as KindTalk can walk through BUY -> first item -> quantity and
+// end on the purchase confirmation without the planner ever choosing KindBuy.
+// Shopping is owned by KindBuy/skill.Buy; the clerk itself is not completion
+// coverage and must not be exposed as a generic talk target.
+func filterRedServiceTalkObjectives(romData []byte, obs Observation, out []Objective) []Objective {
+	clerkX, clerkY, err := rom.MartClerkPosition(romData, obs.Map)
+	if err != nil {
+		return out
+	}
+	filtered := make([]Objective, 0, len(out))
+	for _, o := range out {
+		if o.Kind == KindTalk && o.X == clerkX && o.Y == clerkY {
 			continue
 		}
 		filtered = append(filtered, o)
