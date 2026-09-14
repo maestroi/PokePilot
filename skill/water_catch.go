@@ -80,6 +80,15 @@ func CatchWater(m *emu.Emu, romData []byte, want []uint8, policy MovePolicy, max
 	}
 
 	now := currentWorld(m)
+	// A map can contain multiple disconnected bodies of water. grindPair's
+	// nearest-cell choice is intentionally geometric, so filter the candidate
+	// set to the component reachable from Red's current Surf position first;
+	// otherwise a closer but isolated pond can be selected deterministically
+	// and every hunt leg will fail even though usable water exists nearby.
+	water = grassInPlayerComponent(water, grid, int(now.X), int(now.Y))
+	if len(water) == 0 {
+		return res, fmt.Errorf("skill: CatchWater: map %#04x has no Surf water cells reachable from (%d,%d)", mapID, now.X, now.Y)
+	}
 	a, b, ok := grindPair(water, grid, int(now.X), int(now.Y), spriteBlockers(m))
 	if !ok {
 		return res, fmt.Errorf("skill: CatchWater: map %#04x has no two reachable Surf water cells close enough to hunt between", mapID)
