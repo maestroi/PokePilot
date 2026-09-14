@@ -31,6 +31,12 @@ func redProgressionKnown(id ProgressID) bool {
 		ProgressRoute23BadgeChecks,
 		redProgressVictoryRoadCleared,
 		redProgressIndigoPlateauReady,
+		ProgressLeagueChallengeStarted,
+		redProgressLeagueLoreleiDefeated,
+		redProgressLeagueBrunoDefeated,
+		redProgressLeagueAgathaDefeated,
+		redProgressLeagueLanceDefeated,
+		ProgressLeagueChampionDefeated,
 		ProgressMainStoryComplete,
 		ProgressSaffronGateOpen,
 		ProgressCardKeyOwned,
@@ -265,11 +271,50 @@ func redProgressionObjectives(obs Observation) []Objective {
 		}
 	}
 	if obs.Story.Has(redProgressIndigoPlateauReady) && !obs.Story.Has(ProgressMainStoryComplete) {
-		out = append(out, Objective{
-			Kind:     KindProgress,
-			Progress: ProgressMainStoryComplete,
-			Note:     "(heal before committing, defeat Lorelei, Bruno, Agatha, Lance and the Champion in sequence, then advance the ending until the Hall of Fame completion state is durably recorded)",
-		})
+		switch {
+		case !obs.Story.Has(ProgressLeagueChallengeStarted):
+			out = append(out, Objective{
+				Kind:     KindProgress,
+				Progress: ProgressLeagueChallengeStarted,
+				Note:     "(from the recovered Indigo checkpoint, enter Lorelei's room and positively commit the League challenge before any Elite Four battle)",
+			})
+		case !obs.Story.Has(redProgressLeagueLoreleiDefeated):
+			out = append(out, Objective{
+				Kind:     KindProgress,
+				Progress: redProgressLeagueLoreleiDefeated,
+				Note:     "(defeat Lorelei and stop once her room-completion fact is committed)",
+			})
+		case !obs.Story.Has(redProgressLeagueBrunoDefeated):
+			out = append(out, Objective{
+				Kind:     KindProgress,
+				Progress: redProgressLeagueBrunoDefeated,
+				Note:     "(advance from the completed Lorelei room, defeat Bruno, and stop at Bruno's committed completion fact)",
+			})
+		case !obs.Story.Has(redProgressLeagueAgathaDefeated):
+			out = append(out, Objective{
+				Kind:     KindProgress,
+				Progress: redProgressLeagueAgathaDefeated,
+				Note:     "(advance from the completed Bruno room, defeat Agatha, and stop at Agatha's committed completion fact)",
+			})
+		case !obs.Story.Has(redProgressLeagueLanceDefeated):
+			out = append(out, Objective{
+				Kind:     KindProgress,
+				Progress: redProgressLeagueLanceDefeated,
+				Note:     "(advance from the completed Agatha room, defeat Lance, and stop at Lance's committed completion fact)",
+			})
+		case !obs.Story.Has(ProgressLeagueChampionDefeated):
+			out = append(out, Objective{
+				Kind:     KindProgress,
+				Progress: ProgressLeagueChampionDefeated,
+				Note:     "(advance from Lance's completed room, defeat the Champion, and positively verify the Champion victory event without folding the ending into this battle transaction)",
+			})
+		default:
+			out = append(out, Objective{
+				Kind:     KindProgress,
+				Progress: ProgressMainStoryComplete,
+				Note:     "(advance only the post-Champion Oak and Hall of Fame scripts until the durable main-story completion bit is recorded)",
+			})
+		}
 	}
 	return out
 }
@@ -322,8 +367,20 @@ func executeRedProgression(m *emu.Emu, romData []byte, o Objective) error {
 		return skill.VictoryRoadClearCave(m, romData, policy)
 	case redProgressIndigoPlateauReady:
 		return skill.VictoryRoadPrepareIndigo(m, romData, policy)
+	case ProgressLeagueChallengeStarted:
+		return skill.LeagueStartChallenge(m, romData, policy)
+	case redProgressLeagueLoreleiDefeated:
+		return skill.LeagueDefeatLorelei(m, romData, policy)
+	case redProgressLeagueBrunoDefeated:
+		return skill.LeagueDefeatBruno(m, romData, policy)
+	case redProgressLeagueAgathaDefeated:
+		return skill.LeagueDefeatAgatha(m, romData, policy)
+	case redProgressLeagueLanceDefeated:
+		return skill.LeagueDefeatLance(m, romData, policy)
+	case ProgressLeagueChampionDefeated:
+		return skill.LeagueDefeatChampion(m, romData, policy)
 	case ProgressMainStoryComplete:
-		return skill.EliteFourProgression(m, romData, policy)
+		return skill.LeagueFinishHallOfFame(m)
 	default:
 		return fmt.Errorf("agent: %s: unknown Red progression goal %q", o, o.Progress)
 	}
