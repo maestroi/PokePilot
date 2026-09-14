@@ -98,6 +98,9 @@ func (w *Wall) reportObjectiveFailureDump(path string) (retry bool, retErr error
 	if err != nil {
 		return false, err
 	}
+	if synthetic, ok := terminalRunFailure(dump, failures); ok {
+		failures = append(failures, synthetic)
+	}
 	for _, failure := range failures {
 		if err := w.reportObjectiveFailure(dump, failure); err != nil {
 			if isRetryableIssueError(err) {
@@ -107,6 +110,59 @@ func (w *Wall) reportObjectiveFailureDump(path string) (retry bool, retErr error
 		}
 	}
 	return false, nil
+}
+
+// terminalRunFailure bridges run-level watchdog stops into the same durable
+// issue pipeline as structured objective failures. A StopStuck has no error by
+// design, so older code produced an empty-detail finish dump that never became
+// an issue even though the runtime had explicitly declared the run unable to
+// make progress. StopFailed normally has terminal objective telemetry already;
+// the synthetic fallback covers older runners and telemetry gaps without
+// duplicating a more specific terminal failure.
+func terminalRunFailure(dump farm.FinishReport, failures []farm.ObjectiveFailure) (farm.ObjectiveFailure, bool) {
+	for _, failure := range failures {
+		if failure.Blocking || failure.TerminalCount > 0 {
+			return farm.ObjectiveFailure{}, false
+		}
+	}
+
+	reason := strings.ToLower(strings.TrimSpace(dump.Reason))
+	var objective, failureText, cause string
+	switch reason {
+	case "stuck":
+		objective = "make progress toward run goal"
+		failureText = "stagnation watchdog stopped the run"
+		cause = "stagnation"
+	case "failed":
+		objective = "recover from repeated objective failures"
+		failureText = "failure recovery budget was exhausted"
+		cause = "failure-budget"
+	default:
+		return farm.ObjectiveFailure{}, false
+	}
+
+	round := 0
+	mapID := uint8(0)
+	if dump.ProgressFinal != nil {
+		round = dump.ProgressFinal.Round
+		mapID = dump.ProgressFinal.Map
+	}
+	if detail := strings.TrimSpace(dump.Detail); detail != "" {
+		failureText += ": " + detail
+	}
+	return farm.ObjectiveFailure{
+		Objective:     objective,
+		Error:         failureText,
+		Count:         1,
+		FirstRound:    round,
+		LastRound:     round,
+		Map:           mapID,
+		TerminalCount: 1,
+		Blocking:      true,
+		Build:         strings.TrimSpace(dump.RunnerVersion),
+		Outcome:       reason,
+		Cause:         cause,
+	}, true
 }
 
 func objectiveFailurePattern(f farm.ObjectiveFailure) string {
