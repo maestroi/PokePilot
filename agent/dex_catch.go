@@ -11,6 +11,7 @@ import (
 const (
 	dexCatchLimit         = 8
 	dexFishingIntent      = "dex-fishing"
+	dexWaterIntent        = "dex-water"
 	dexGlobalFishingPlace = PlaceID("vermilion city")
 )
 
@@ -23,11 +24,10 @@ type dexCatchHabitat struct {
 }
 
 // appendDexCatchObjectives turns executable catalog sources into bounded
-// travel-then-acquire objectives. Grass hunts use Catch directly. Fishing uses
-// an owned rod and a deterministic shoreline skill. Water/Surf, Safari,
-// statics, gifts, and trades remain catalog facts until their execution skills
-// exist. Story gates still apply: a source behind a blocked transition is not
-// offered.
+// travel-then-acquire objectives. Grass hunts use Catch directly; fishing and
+// Surf water use deterministic Red-owned acquisition skills. Safari, statics,
+// gifts, and trades remain catalog facts until their execution skills exist.
+// Story gates still apply: a source behind a blocked transition is not offered.
 func appendDexCatchObjectives(obs Observation, known *Knowledge, out []Objective) []Objective {
 	if !hasBalls(obs) || len(obs.Dex.Targets) == 0 {
 		return out
@@ -88,9 +88,13 @@ func appendDexCatchObjectives(obs Observation, known *Knowledge, out []Objective
 
 	for _, candidate := range candidates {
 		note := fmt.Sprintf("(dex target: %s; travel included)", strings.ToUpper(string(candidate.Place)))
-		if candidate.Intent == dexFishingIntent {
+		switch candidate.Intent {
+		case dexFishingIntent:
 			note = fmt.Sprintf("(dex fishing: %s at %s; travel included)",
 				strings.ToUpper(string(candidate.Rod)), strings.ToUpper(string(candidate.Place)))
+		case dexWaterIntent:
+			note = fmt.Sprintf("(dex Surf hunt at %s; travel and verified Surf entry included)",
+				strings.ToUpper(string(candidate.Place)))
 		}
 		out = append(out, Objective{
 			Kind:    KindCatch,
@@ -113,6 +117,10 @@ func dexCatchSource(obs Observation, species SpeciesID, src DexSource, blocked m
 	if ok {
 		return dexCatchHabitat{Species: species, Place: place, Hops: distance, Intent: dexFishingIntent, Rod: rod}, true
 	}
+	place, distance, ok = dexCatchWaterSource(obs, src, blocked, hops, adjacency)
+	if ok {
+		return dexCatchHabitat{Species: species, Place: place, Hops: distance, Intent: dexWaterIntent}, true
+	}
 	return dexCatchHabitat{}, false
 }
 
@@ -130,10 +138,14 @@ func betterDexCatchHabitat(candidate, previous dexCatchHabitat) bool {
 }
 
 func dexCatchMethodRank(candidate dexCatchHabitat) int {
-	if candidate.Intent == dexFishingIntent {
+	switch candidate.Intent {
+	case dexFishingIntent:
 		return 1
+	case dexWaterIntent:
+		return 2
+	default:
+		return 0
 	}
-	return 0
 }
 
 func dexCatchGrassSource(obs Observation, src DexSource, blocked map[PlaceID]bool, hops map[uint8]int, adjacency map[uint8][]uint8) (PlaceID, int, bool) {
@@ -163,6 +175,22 @@ func dexCatchFishingSource(obs Observation, src DexSource, blocked map[PlaceID]b
 		return "", 0, "", false
 	}
 	return place, distance, rod, true
+}
+
+func dexCatchWaterSource(obs Observation, src DexSource, blocked map[PlaceID]bool, hops map[uint8]int, adjacency map[uint8][]uint8) (PlaceID, int, bool) {
+	if src.Kind != AcquireWildWater || src.Requirement != "surf" || src.Place == "" || !dexSurfAvailable(obs) {
+		return "", 0, false
+	}
+	return dexCatchPlace(obs, src.Place, blocked, hops, adjacency)
+}
+
+func dexSurfAvailable(obs Observation) bool {
+	for _, capability := range obs.FieldCapabilities {
+		if strings.EqualFold(string(capability.Name), "surf") {
+			return capability.Usable || capability.Preparable
+		}
+	}
+	return false
 }
 
 func dexFishingRod(requirement string) (ItemID, bool) {
