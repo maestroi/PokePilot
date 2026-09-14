@@ -7,42 +7,98 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"sync"
+	"time"
 )
 
-// outcomesStatsHandler reads the wall's narrow, streaming outcomes feed rather
-// than the full dashboard. Aggregation stays O(group/profile/model cardinality)
-// instead of O(total historical runs).
-func outcomesStatsHandler(wallBase string) http.HandlerFunc {
-	client := &http.Client{Timeout: proxyTimeout}
-	return func(res http.ResponseWriter, req *http.Request) {
-		ctx, cancel := context.WithTimeout(req.Context(), proxyTimeout)
-		defer cancel()
+const (
+	outcomeStatsTimeout  = 30 * time.Second
+	outcomeStatsCacheTTL = 30 * time.Second
+)
 
+type outcomeStatsCache struct {
+	sync.Mutex
+	payload      []byte
+	refreshAfter time.Time
+	stale        bool
+}
+
+// outcomesStatsHandler reads the wall's narrow, streaming outcomes feed rather
+// than the full dashboard. The catalog-backed feed can take longer than the
+// normal operator proxy budget because it walks historical run rows, so stats
+// get their own timeout and a short shared cache. The cache also coalesces the
+// browser's polling requests and lets the page keep showing the last good
+// snapshot when a refresh temporarily fails.
+func outcomesStatsHandler(wallBase string) http.HandlerFunc {
+	return outcomesStatsHandlerWithPolicy(wallBase, outcomeStatsTimeout, outcomeStatsCacheTTL)
+}
+
+func outcomesStatsHandlerWithPolicy(wallBase string, timeout, cacheTTL time.Duration) http.HandlerFunc {
+	client := &http.Client{Timeout: timeout}
+	var cache outcomeStatsCache
+
+	return func(res http.ResponseWriter, req *http.Request) {
+		cache.Lock()
+		defer cache.Unlock()
+
+		now := time.Now()
+		if len(cache.payload) > 0 && now.Before(cache.refreshAfter) {
+			writeOutcomeStats(res, cache.payload, cache.stale)
+			return
+		}
+
+		serveFailure := func() {
+			if len(cache.payload) == 0 {
+				writeUnreachable(res)
+				return
+			}
+			cache.stale = true
+			cache.refreshAfter = time.Now().Add(cacheTTL)
+			writeOutcomeStats(res, cache.payload, true)
+		}
+
+		ctx, cancel := context.WithTimeout(req.Context(), timeout)
+		defer cancel()
 		up, err := http.NewRequestWithContext(ctx, http.MethodGet, wallBase+"/v1/outcomes", nil)
 		if err != nil {
-			writeUnreachable(res)
+			serveFailure()
 			return
 		}
 		resp, err := client.Do(up)
 		if err != nil {
-			writeUnreachable(res)
+			serveFailure()
 			return
 		}
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
-			writeUnreachable(res)
+			serveFailure()
 			return
 		}
 
 		stats, err := summarizeOutcomeStream(json.NewDecoder(resp.Body))
 		if err != nil {
-			writeUnreachable(res)
+			serveFailure()
 			return
 		}
-		res.Header().Set("Content-Type", "application/json")
-		res.Header().Set("Cache-Control", "no-store")
-		_ = json.NewEncoder(res).Encode(stats)
+		payload, err := json.Marshal(stats)
+		if err != nil {
+			serveFailure()
+			return
+		}
+		cache.payload = payload
+		cache.refreshAfter = time.Now().Add(cacheTTL)
+		cache.stale = false
+		writeOutcomeStats(res, payload, false)
 	}
+}
+
+func writeOutcomeStats(res http.ResponseWriter, payload []byte, stale bool) {
+	res.Header().Set("Content-Type", "application/json")
+	res.Header().Set("Cache-Control", "no-store")
+	if stale {
+		res.Header().Set("X-PokePilot-Stats-Stale", "true")
+	}
+	_, _ = res.Write(payload)
 }
 
 func summarizeOutcomeStream(dec *json.Decoder) (farmOutcomeStats, error) {
