@@ -36,6 +36,8 @@ test('scripted runs are not assigned a play style', () => {
 test('play speed uses the same public multipliers', () => {
   assert.equal(playSpeedLabel({ fps: 60 }), '1×')
   assert.equal(playSpeedLabel({ fps: 120 }), '2×')
+  assert.equal(playSpeedLabel({ fps: 240 }), '4×')
+  assert.equal(playSpeedLabel({ fps: 480 }), '8×')
   assert.equal(playSpeedLabel({ fps: 0 }), 'MAX')
   assert.equal(playSpeedLabel({}), 'MAX')
 })
