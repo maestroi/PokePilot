@@ -298,9 +298,23 @@ func (w *Wall) latestLineageResumeCheckpoint(startID, planner string) (farm.Resu
 	return farm.ResumeCheckpoint{}, os.ErrNotExist
 }
 
+func majorCheckpointBadge(name string) (int, bool) {
+	if !strings.HasPrefix(name, majorCheckpointPrefix) || !strings.HasSuffix(name, ".state") {
+		return 0, false
+	}
+	var badge int
+	if _, err := fmt.Sscanf(name, "major-badge-%d-", &badge); err != nil || badge < 1 || badge > 8 {
+		return 0, false
+	}
+	return badge, true
+}
+
 func (w *Wall) latestLineageMajorCheckpoint(startID string) (farm.ResumeCheckpoint, error) {
 	seen := map[string]struct{}{}
 	id := startID
+	bestBadge := 0
+	var best farm.ResumeCheckpoint
+	found := false
 	for id != "" {
 		if _, dup := seen[id]; dup {
 			break
@@ -318,18 +332,28 @@ func (w *Wall) latestLineageMajorCheckpoint(startID string) (farm.ResumeCheckpoi
 		if through > 0 {
 			cp, err := latestMajorResumeCheckpoint(w.dumpsDir, id, through)
 			if err == nil {
-				return cp, nil
-			}
-			if !os.IsNotExist(err) {
+				badge, ok := majorCheckpointBadge(cp.State.Name)
+				if ok && (!found || badge > bestBadge) {
+					best = cp
+					bestBadge = badge
+					found = true
+				}
+			} else if !os.IsNotExist(err) {
 				return farm.ResumeCheckpoint{}, err
 			}
 		}
 		id = parent
 	}
+	if found {
+		return best, nil
+	}
 	return farm.ResumeCheckpoint{}, os.ErrNotExist
 }
 
 func latestMajorResumeCheckpoint(dumpsDir, runID string, throughAttempt int) (farm.ResumeCheckpoint, error) {
+	bestBadge := 0
+	var best farm.ResumeCheckpoint
+	found := false
 	for attempt := throughAttempt; attempt >= 1; attempt-- {
 		dir := checkpointAttemptDir(dumpsDir, runID, attempt)
 		entries, err := os.ReadDir(dir)
@@ -353,12 +377,21 @@ func latestMajorResumeCheckpoint(dumpsDir, runID string, throughAttempt int) (fa
 		sort.Strings(states)
 		cp, err := latestPairedCheckpoint(dir, states, names)
 		if err == nil {
-			cp.Attempt = attempt
-			return cp, nil
+			badge, ok := majorCheckpointBadge(cp.State.Name)
+			if ok && (!found || badge > bestBadge) {
+				cp.Attempt = attempt
+				best = cp
+				bestBadge = badge
+				found = true
+			}
+			continue
 		}
 		if !os.IsNotExist(err) {
 			return farm.ResumeCheckpoint{}, err
 		}
+	}
+	if found {
+		return best, nil
 	}
 	return farm.ResumeCheckpoint{}, os.ErrNotExist
 }
