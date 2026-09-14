@@ -21,13 +21,16 @@ func newRedObjectiveAdapter(m *emu.Emu, romData []byte) *redObjectiveAdapter {
 	return &redObjectiveAdapter{m: m, romData: romData}
 }
 
-func (a *redObjectiveAdapter) Observe() Observation {
-	obs := Observe(a.m, a.romData)
+func (a *redObjectiveAdapter) Observe() (Observation, error) {
+	obs, err := ObserveChecked(a.m, a.romData)
+	if err != nil {
+		return Observation{}, err
+	}
 	var mem state.Mem
 	state.Snapshot(a.m, &mem)
 	inv := state.DecodeInventory(&mem)
 	obs.Story = redProgressStateFromRAM(&mem, inv, state.DecodeStoryFacts(&mem, inv))
-	return obs
+	return obs, nil
 }
 
 func (a *redObjectiveAdapter) Validate(o Objective, _ Observation) error {
@@ -105,8 +108,8 @@ func (a *redObjectiveAdapter) WithinObjectiveBudget(o Objective, fn func() error
 	return err
 }
 
-func (a *redObjectiveAdapter) SettlePostcondition(o Objective) {
-	settleObjectivePostcondition(a.m, o)
+func (a *redObjectiveAdapter) SettlePostcondition(o Objective) error {
+	return settleObjectivePostcondition(a.m, o)
 }
 
 func (a *redObjectiveAdapter) VerifyPostcondition(o Objective, final Observation, _ ObjectiveResult) error {

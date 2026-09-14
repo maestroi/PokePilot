@@ -32,8 +32,18 @@ func executeObjectiveWithAdapter(a ObjectiveGameAdapter, o Objective) (Objective
 	tx := gameruntime.ExecuteTransaction[Objective, Observation, ObjectiveResult](a, o)
 	result := tx.Result
 	result.Objective = o
-	initial := FailureStateFor(tx.Initial)
-	result.Initial = &initial
+	if tx.InitialObservationErr == nil {
+		initial := FailureStateFor(tx.Initial)
+		result.Initial = &initial
+	}
+
+	if tx.InitialObservationErr != nil {
+		result.Outcome = OutcomeControllerUncertain
+		retErr := fmt.Errorf("agent: %s: initial observation unavailable: %w", o, tx.InitialObservationErr)
+		result = finalizeObjectiveResult(o, result, tx.Final, retErr)
+		reportObjectiveCaptureFailure(a, o, retErr)
+		return result, retErr
+	}
 
 	if tx.ValidationErr != nil {
 		result = finalizeObjectiveResult(o, result, tx.Final, tx.ValidationErr)
@@ -42,12 +52,20 @@ func executeObjectiveWithAdapter(a ObjectiveGameAdapter, o Objective) (Objective
 
 	if tx.StartBoundaryErr != nil {
 		retErr := fmt.Errorf("agent: %s: objective start invariant: %w", o, tx.StartBoundaryErr)
+		if tx.FinalObservationErr != nil {
+			result.Outcome = OutcomeControllerUncertain
+			retErr = errors.Join(retErr, fmt.Errorf("agent: %s: observation after start-boundary failure unavailable: %w", o, tx.FinalObservationErr))
+		}
 		result = finalizeObjectiveResult(o, result, tx.Final, retErr)
 		reportObjectiveCaptureFailure(a, o, retErr)
 		return result, retErr
 	}
 
 	primary := tx.ExecutionErr
+	if primary == nil && tx.SettleErr != nil {
+		primary = fmt.Errorf("agent: %s: postcondition settle: %w",
+			o, errors.Join(ErrObjectivePostconditionUnavailable, tx.SettleErr))
+	}
 	if primary == nil && tx.PostconditionErr != nil {
 		primary = fmt.Errorf("agent: %s: %w", o, tx.PostconditionErr)
 	}
@@ -58,6 +76,18 @@ func executeObjectiveWithAdapter(a ObjectiveGameAdapter, o Objective) (Objective
 		// by the owned action. The planner must never receive an unsettled game
 		// as ordinary gameplay blockage.
 		result.Outcome = ""
+	}
+	if tx.FinalObservationErr != nil {
+		// Without a trustworthy final observation, generic policy cannot safely
+		// treat an otherwise recoverable execution/boundary failure as ordinary
+		// blockage. Observation uncertainty is therefore terminal.
+		result.Outcome = OutcomeControllerUncertain
+		obsErr := fmt.Errorf("agent: %s: final observation unavailable: %w", o, tx.FinalObservationErr)
+		if retErr == nil {
+			retErr = obsErr
+		} else {
+			retErr = errors.Join(retErr, obsErr)
+		}
 	}
 	result = finalizeObjectiveResult(o, result, tx.Final, retErr)
 	if retErr != nil {

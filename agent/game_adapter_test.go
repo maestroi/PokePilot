@@ -10,14 +10,26 @@ type fakeObjectiveGame struct {
 	calls []string
 	obs   Observation
 
-	executeResult ObjectiveResult
-	executeErr    error
-	verifyErr     error
+	initialObserveErr error
+	finalObserveErr   error
+	executeResult     ObjectiveResult
+	executeErr        error
+	settleErr         error
+	verifyErr         error
+
+	observeCalls int
 }
 
-func (f *fakeObjectiveGame) Observe() Observation {
+func (f *fakeObjectiveGame) Observe() (Observation, error) {
 	f.calls = append(f.calls, "observe")
-	return f.obs
+	f.observeCalls++
+	if f.observeCalls == 1 && f.initialObserveErr != nil {
+		return f.obs, f.initialObserveErr
+	}
+	if f.observeCalls > 1 && f.finalObserveErr != nil {
+		return f.obs, f.finalObserveErr
+	}
+	return f.obs, nil
 }
 
 func (f *fakeObjectiveGame) Validate(_ Objective, initial Observation) error {
@@ -58,8 +70,9 @@ func (f *fakeObjectiveGame) WithinObjectiveBudget(_ Objective, fn func() error) 
 	return fn()
 }
 
-func (f *fakeObjectiveGame) SettlePostcondition(Objective) {
+func (f *fakeObjectiveGame) SettlePostcondition(Objective) error {
 	f.calls = append(f.calls, "settle")
+	return f.settleErr
 }
 
 func (f *fakeObjectiveGame) VerifyPostcondition(o Objective, final Observation, _ ObjectiveResult) error {
@@ -150,5 +163,71 @@ func TestObjectiveRuntimePreservesAdapterBlockedOutcome(t *testing.T) {
 	}
 	if countCall(adapter.calls, "verify") != 0 {
 		t.Fatalf("verify called after blocked execution: %#v", adapter.calls)
+	}
+}
+
+func TestObjectiveRuntimeInitialObservationFailureIsControllerUncertain(t *testing.T) {
+	observeErr := errors.New("cannot decode semantic state")
+	adapter := &fakeObjectiveGame{
+		obs:               Observation{MapName: "ROOM_A"},
+		initialObserveErr: observeErr,
+	}
+	o := Objective{Kind: KindGoTo, Place: "room-b"}
+
+	got, err := executeObjectiveWithAdapter(adapter, o)
+	if !errors.Is(err, observeErr) {
+		t.Fatalf("error = %v, want observation error identity", err)
+	}
+	if got.Outcome != OutcomeControllerUncertain {
+		t.Fatalf("Outcome = %q, want controller_uncertain", got.Outcome)
+	}
+	if got.Initial != nil {
+		t.Fatalf("Initial = %+v, want nil when initial observation was unavailable", got.Initial)
+	}
+	if countCall(adapter.calls, "validate") != 0 || countCall(adapter.calls, "execute") != 0 {
+		t.Fatalf("gameplay continued after failed initial observation: %#v", adapter.calls)
+	}
+}
+
+func TestObjectiveRuntimeSettleFailureIsPostconditionUnavailable(t *testing.T) {
+	settleErr := errors.New("warp never settled")
+	adapter := &fakeObjectiveGame{
+		obs:       Observation{MapName: "ROOM_A", Controllable: true},
+		settleErr: settleErr,
+	}
+	o := Objective{Kind: KindGoTo, Place: "room-b"}
+
+	got, err := executeObjectiveWithAdapter(adapter, o)
+	if !errors.Is(err, settleErr) {
+		t.Fatalf("error = %v, want settle error identity", err)
+	}
+	if got.Outcome != OutcomePostconditionUnavailable {
+		t.Fatalf("Outcome = %q, want postcondition_unavailable", got.Outcome)
+	}
+	if countCall(adapter.calls, "verify") != 0 {
+		t.Fatalf("verify called after settle failure: %#v", adapter.calls)
+	}
+	if countCall(adapter.calls, "normalize-finish") != 1 || countCall(adapter.calls, "observe") != 2 {
+		t.Fatalf("settle failure did not still own finish boundary/final observation: %#v", adapter.calls)
+	}
+}
+
+func TestObjectiveRuntimeFinalObservationFailureIsControllerUncertain(t *testing.T) {
+	observeErr := errors.New("final state unreadable")
+	adapter := &fakeObjectiveGame{
+		obs:             Observation{MapName: "ROOM_A", Controllable: true},
+		finalObserveErr: observeErr,
+	}
+	o := Objective{Kind: KindGoTo, Place: "room-b"}
+
+	got, err := executeObjectiveWithAdapter(adapter, o)
+	if !errors.Is(err, observeErr) {
+		t.Fatalf("error = %v, want observation error identity", err)
+	}
+	if got.Outcome != OutcomeControllerUncertain {
+		t.Fatalf("Outcome = %q, want controller_uncertain", got.Outcome)
+	}
+	if countCall(adapter.calls, "verify") != 0 {
+		t.Fatalf("verify called without a trustworthy final observation: %#v", adapter.calls)
 	}
 }
