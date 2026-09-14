@@ -24,6 +24,31 @@ func victoryRoadStageState(m *emu.Emu, policy MovePolicy) (state.Mem, state.Stor
 	return mem, facts, nil
 }
 
+// victoryRoadClearBoundary mirrors the profile's semantic clear fact for skill
+// preconditions. Route 23 resets the live boulder events, so the final switch
+// proves completion inside the cave while a position north of the cave/at
+// Indigo proves a successful exit afterward. If the run backtracks south, the
+// fact intentionally becomes false because the puzzle has reset.
+func victoryRoadClearBoundary(mem *state.Mem, facts state.StoryFacts) bool {
+	if facts.LeagueChallengeStarted || facts.LeagueChampionDefeated || facts.MainStoryComplete {
+		return true
+	}
+	if state.VictoryRoadCleared(mem) {
+		return true
+	}
+	if !facts.Route23BadgeChecksComplete {
+		return false
+	}
+	switch mem.U8(sym.CurMap) {
+	case indigoPlateauMap, indigoPlateauLobbyMap:
+		return true
+	case route23Map:
+		return int(mem.U8(sym.YCoord)) <= route23NorthCaveY
+	default:
+		return false
+	}
+}
+
 // VictoryRoadResolveRival owns only the final Route 22 rival transaction. The
 // completion event is already projected as route_22_rival_resolved, so a
 // checkpoint after the battle resumes at the Route 23 stage without replay.
@@ -84,14 +109,11 @@ func VictoryRoadReachCave(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if err != nil {
 		return err
 	}
-	if facts.LeagueChallengeStarted {
+	if facts.LeagueChallengeStarted || facts.Route23BadgeChecksComplete {
 		return nil
 	}
 	if !facts.Route22RivalResolved {
 		return fmt.Errorf("%w: Route 22 rival must be resolved before Route 23", ErrFieldMovePrerequisite)
-	}
-	if facts.Route23BadgeChecksComplete && (inVictoryRoad(m.Peek8(sym.CurMap)) || state.VictoryRoadCleared(snapshotMem(m))) {
-		return nil
 	}
 	if err := RepairFieldCapabilities(m, romData, policy, []FieldMove{FieldSurf}); err != nil {
 		return fmt.Errorf("skill: VictoryRoadReachCave: prepare Surf: %w", err)
@@ -108,14 +130,14 @@ func VictoryRoadReachCave(m *emu.Emu, romData []byte, policy MovePolicy) error {
 
 // VictoryRoadClearCave owns the live Strength puzzle chain only. On the normal
 // path it starts at 1F from VictoryRoadReachCave; on a resumed/backtracked run
-// it can re-establish the entry first. Completion is the final 2F east-switch
-// event exposed by state.VictoryRoadCleared.
+// it can re-establish the entry first. Completion is the final 2F east switch
+// or a verified post-cave position before the Route 23 reset can erase it.
 func VictoryRoadClearCave(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	mem, facts, err := victoryRoadStageState(m, policy)
 	if err != nil {
 		return err
 	}
-	if state.VictoryRoadCleared(&mem) || facts.LeagueChallengeStarted {
+	if victoryRoadClearBoundary(&mem, facts) {
 		return nil
 	}
 	if !facts.Route23BadgeChecksComplete {
@@ -136,8 +158,9 @@ func VictoryRoadClearCave(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		return fmt.Errorf("skill: VictoryRoadClearCave: %w", err)
 	}
 	state.Snapshot(m, &mem)
-	if !state.VictoryRoadCleared(&mem) {
-		return fmt.Errorf("skill: VictoryRoadClearCave: final 2F east-switch event is still false")
+	facts = state.DecodeStoryFacts(&mem, state.DecodeInventory(&mem))
+	if !victoryRoadClearBoundary(&mem, facts) {
+		return fmt.Errorf("skill: VictoryRoadClearCave: final cave-clear boundary is still false")
 	}
 	return nil
 }
@@ -156,8 +179,8 @@ func VictoryRoadPrepareIndigo(m *emu.Emu, romData []byte, policy MovePolicy) err
 	if mem.U8(sym.CurMap) == indigoPlateauLobbyMap && allPartyCenterRecovered(&mem) {
 		return nil
 	}
-	if !state.VictoryRoadCleared(&mem) {
-		return fmt.Errorf("%w: Victory Road final switch must be cleared before Indigo recovery", ErrFieldMovePrerequisite)
+	if !victoryRoadClearBoundary(&mem, facts) {
+		return fmt.Errorf("%w: Victory Road must be cleared before Indigo recovery", ErrFieldMovePrerequisite)
 	}
 	if err := prepareIndigoLobby(m, romData, policy); err != nil {
 		return fmt.Errorf("skill: VictoryRoadPrepareIndigo: %w", err)
@@ -167,10 +190,4 @@ func VictoryRoadPrepareIndigo(m *emu.Emu, romData []byte, policy MovePolicy) err
 		return fmt.Errorf("skill: VictoryRoadPrepareIndigo: lobby recovery postcondition failed")
 	}
 	return nil
-}
-
-func snapshotMem(m *emu.Emu) *state.Mem {
-	var mem state.Mem
-	state.Snapshot(m, &mem)
-	return &mem
 }
