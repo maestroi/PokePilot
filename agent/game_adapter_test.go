@@ -102,6 +102,7 @@ func countCall(calls []string, want string) int {
 	for _, call := range calls {
 		if call == want {
 			n++
+		}
 	}
 	return n
 }
