@@ -1,4 +1,5 @@
 import type { DashboardRun, DashboardStats } from '../shared/api/types'
+import { runTimingSummary } from '../shared/runTiming'
 
 export type StatusTone = 'neutral' | 'info' | 'success' | 'warning' | 'danger'
 
@@ -77,13 +78,15 @@ export function railStatusLabel(run: Pick<DashboardRun, 'status' | 'reason'>): s
 
 export function railFacts(run: DashboardRun): string {
   if (run.status === 'queued' || run.status === 'leased') return 'waiting for a worker'
+  const timing = runTimingSummary(run)
   if (run.status === 'done') {
     const reason = (run.reason || 'ended').trim().replaceAll('_', ' ')
     const age = run.ended_at ? ageLabel(run.ended_at) : ''
-    return age ? `ended · ${reason} · ${age} ago` : `ended · ${reason}`
+    const ended = age ? `ended · ${reason} · ${age} ago` : `ended · ${reason}`
+    return timing ? `${ended} · ${timing}` : ended
   }
   const fps = fpsLabel(run)
-  return `live · frame ${run.frame ?? 0}${fps ? ` · ${fps} fps` : ''} · attempt ${run.attempts ?? 0}`
+  return `live${timing ? ` · ${timing}` : ''} · frame ${run.frame ?? 0}${fps ? ` · ${fps} fps` : ''} · attempt ${run.attempts ?? 0}`
 }
 
 export function outcomeTone(run: DashboardRun): StatusTone {
