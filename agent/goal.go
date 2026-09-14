@@ -11,11 +11,11 @@ type GoalKind uint8
 const (
 	GoalNone GoalKind = iota
 	GoalEliteFour
-	GoalDex
 	GoalBadges
 	GoalReach
 	GoalLevel
 	GoalItem
+	GoalDex
 )
 
 type Goal struct {
