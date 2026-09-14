@@ -13,7 +13,7 @@ func executeCatchObjective(m *emu.Emu, romData []byte, o Objective, result Objec
 	if !ok {
 		return result, fmt.Errorf("agent: %s: unknown Red species %q", o, o.Species)
 	}
-	if err := skill.EnsurePartySlot(m, romData, skill.StatAwareMove(romData), species); err != nil {
+	if err := skill.EnsurePartySlotForCollection(m, romData, skill.StatAwareMove(romData), species); err != nil {
 		result.Outcome = OutcomeBlocked
 		return result, fmt.Errorf("agent: %s: %w", o, err)
 	}
