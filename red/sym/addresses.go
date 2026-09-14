@@ -114,7 +114,7 @@ const (
 	EnemyMonMaxHP    uint16 = 0xCFF4 // wEnemyMonMaxHP
 	EnemyMonAttack   uint16 = 0xCFF6 // wEnemyMonAttack
 	EnemyMonDefense  uint16 = 0xCFF8 // wEnemyMonDefense
-	EnemyMonSpecial uint16 = 0xCFFC // wEnemyMonSpecial
+	EnemyMonSpecial  uint16 = 0xCFFC // wEnemyMonSpecial
 	// PlayerDisabledMove is wPlayerDisabledMove. The high nibble is the
 	// disabled move slot encoded as 1..4 (0 means none); the low nibble is
 	// the remaining disable-turn count.
