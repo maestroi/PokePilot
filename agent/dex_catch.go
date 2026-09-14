@@ -269,13 +269,16 @@ func dexCatchPlaceDistance(obs Observation, place PlaceID, blocked map[PlaceID]b
 	if !ok {
 		return 0, false
 	}
+	// If Red is already on this map, no progression transition is being
+	// attempted. Current-map collection must remain executable even when a
+	// synthetic/recovered observation does not carry every historical gate fact.
+	if dest.Map == obs.Map {
+		return 0, true
+	}
 	if journeyProgressionBlocked(obs, dest.Map) || placeProgressionBlocked(obs, string(place)) {
 		return 0, false
 	}
 	distance, reachable := hops[dest.Map]
-	if dest.Map == obs.Map {
-		distance, reachable = 0, true
-	}
 	if len(adjacency) > 0 && !reachable {
 		return 0, false
 	}
