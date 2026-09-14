@@ -33,7 +33,7 @@ func (a *redObjectiveAdapter) Observe() (Observation, error) {
 	return obs, nil
 }
 
-func (a *redObjectiveAdapter) Validate(o Objective, _ Observation) error {
+func (a *redObjectiveAdapter) Validate(o Objective, obs Observation) error {
 	if err := o.Validate(); err != nil {
 		return err
 	}
@@ -64,7 +64,11 @@ func (a *redObjectiveAdapter) Validate(o Objective, _ Observation) error {
 		if _, ok := redSpeciesID(o.Species); !ok {
 			return fmt.Errorf("agent: %s: unknown Red species %q", o, o.Species)
 		}
-	case KindPickup, KindUseItem, KindBuy:
+	case KindPickup:
+		if _, ok := a.resolvePickupItemID(obs.Map, o); !ok {
+			return fmt.Errorf("agent: %s: unknown Red item %q", o, o.Item)
+		}
+	case KindUseItem, KindBuy:
 		if _, ok := a.resolveItemID(o.Item); !ok {
 			return fmt.Errorf("agent: %s: unknown Red item %q", o, o.Item)
 		}
