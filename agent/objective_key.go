@@ -2,6 +2,7 @@ package agent
 
 import (
 	"encoding/json"
+	"strings"
 
 	"github.com/maestroi/pokepilot/skill"
 )
@@ -102,4 +103,18 @@ func failureStorageKey(key ObjectiveKey, mode string) string {
 		return key.ID()
 	}
 	return mode + ":" + key.ID()
+}
+
+func parseFailureStorageKey(id string) (ObjectiveKey, string, bool) {
+	if key, ok := parseObjectiveKeyID(id); ok {
+		return key, "", true
+	}
+	for _, mode := range []string{failureModeGymLoss, failureModeGymRetry, failureModeTrainerLoss} {
+		prefix := mode + ":"
+		if strings.HasPrefix(id, prefix) {
+			key, ok := parseObjectiveKeyID(strings.TrimPrefix(id, prefix))
+			return key, mode, ok
+		}
+	}
+	return ObjectiveKey{}, "", false
 }
