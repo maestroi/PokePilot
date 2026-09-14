@@ -1,5 +1,6 @@
 import type { DashboardRun, DashboardStats } from '../shared/api/types'
-import { runTimingSummary } from '../shared/runTiming'
+import { playSpeedLabel } from '../shared/playstyle'
+import { GAME_BOY_FPS, formatRunSpeed, runTimingSummary } from '../shared/runTiming'
 
 export type StatusTone = 'neutral' | 'info' | 'success' | 'warning' | 'danger'
 
@@ -86,7 +87,7 @@ export function railFacts(run: DashboardRun): string {
     return timing ? `${ended} · ${timing}` : ended
   }
   const fps = fpsLabel(run)
-  return `live${timing ? ` · ${timing}` : ''} · frame ${run.frame ?? 0}${fps ? ` · ${fps} fps` : ''} · attempt ${run.attempts ?? 0}`
+  return `live${timing ? ` · ${timing}` : ''} · frame ${run.frame ?? 0}${fps ? ` · ${fps}` : ''} · attempt ${run.attempts ?? 0}`
 }
 
 export function outcomeTone(run: DashboardRun): StatusTone {
@@ -155,10 +156,15 @@ export function formatWhen(unixSeconds: number | undefined, nowSeconds = Date.no
 export function fpsLabel(run: DashboardRun): string {
   if (run.status === 'done' && run.ended_at && Number(run.frame || 0) > 0) {
     const duration = Number(run.ended_at) - Number(run.queued_at || 0)
-    if (duration > 1) return (Number(run.frame) / duration).toFixed(1)
+    if (duration > 1) {
+      const framesPerSecond = Number(run.frame) / duration
+      return `${formatRunSpeed(framesPerSecond / GAME_BOY_FPS)} avg · ${framesPerSecond.toFixed(1)} FPS`
+    }
   }
-  if (run.fps) return `${run.fps} target`
-  return ''
+
+  const speed = playSpeedLabel(run)
+  if (speed === 'MAX') return 'MAX · uncapped'
+  return `${speed} target · ${Number(run.fps || 0)} FPS`
 }
 
 export function statsLine(run: DashboardRun): string {
