@@ -73,6 +73,9 @@ func executeRedOwned(m *emu.Emu, romData []byte, o Objective) (result ObjectiveR
 		return result, nil
 
 	case KindTrain:
+		if o.Intent == "dex-evolution" {
+			return executeDexEvolutionTraining(m, romData, o, result)
+		}
 		return executeTrainingObjective(m, romData, o, result)
 
 	case KindHeal:
@@ -134,6 +137,9 @@ func executeRedOwned(m *emu.Emu, romData []byte, o Objective) (result ObjectiveR
 		item, ok := adapter.resolveItemID(o.Item)
 		if !ok {
 			return result, fmt.Errorf("agent: %s: unknown Red item %q", o, o.Item)
+		}
+		if o.Intent == "dex-evolution" {
+			return executeDexEvolutionItem(m, romData, o, result)
 		}
 		if _, err := rom.LookupTMHM(romData, item); err == nil {
 			if _, err := skill.TeachTMHMToSlot(m, item, false, o.Slot); err != nil {
