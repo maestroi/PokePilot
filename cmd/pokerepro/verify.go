@@ -15,6 +15,7 @@ import (
 
 const (
 	verdictObjectiveSucceeded    = "objective_succeeded"
+	verdictWatchdogSucceeded     = "watchdog_succeeded"
 	verdictSameFailureReproduced = "same_failure_reproduced"
 	verdictDifferentFailure      = "different_failure"
 	verdictContractUnavailable   = "deterministic_contract_unavailable"
@@ -34,11 +35,8 @@ type portableReproVerdict struct {
 	Diagnostic          string `json:"diagnostic,omitempty"`
 }
 
-// verifyPortableBundle replays a structured objective failure directly through
-// agent.Execute. No planner is constructed and no model endpoint/token is read:
-// the bundle's pre-objective state plus failure-repro contract are the complete
-// inputs. Gameplay failures are returned as verdicts, not infrastructure
-// errors, so callers can always upload the machine-readable result.
+// verifyPortableBundle prefers an exact structured objective replay and falls
+// back to a captured watchdog policy transition. Neither path asks a planner.
 func verifyPortableBundle(mat portableMaterialized, resultPath string) (portableReproVerdict, error) {
 	verdict := portableReproVerdict{
 		Issue:             mat.Manifest.IssueNumber,
@@ -51,9 +49,47 @@ func verifyPortableBundle(mat portableMaterialized, resultPath string) (portable
 		return writePortableReproVerdict(resultPath, mat.Dir, verdict)
 	}
 
+	if mat.FailureReproPath == "" && mat.WatchdogReproPath != "" {
+		watchdogData, err := os.ReadFile(mat.WatchdogReproPath)
+		if err != nil {
+			verdict.Classification = verdictHarnessError
+			verdict.Diagnostic = err.Error()
+			_ = write()
+			return verdict, fmt.Errorf("read watchdog repro: %w", err)
+		}
+		var watchdog agent.WatchdogRepro
+		if err := json.Unmarshal(watchdogData, &watchdog); err != nil {
+			verdict.Classification = verdictHarnessError
+			verdict.Diagnostic = err.Error()
+			_ = write()
+			return verdict, fmt.Errorf("decode watchdog repro: %w", err)
+		}
+		replayed, err := agent.ReplayWatchdogRepro(watchdog)
+		if err != nil {
+			verdict.Classification = verdictHarnessError
+			verdict.Diagnostic = err.Error()
+			_ = write()
+			return verdict, err
+		}
+		verdict.Outcome = replayed.StopName
+		verdict.Cause = replayed.Cause
+		switch {
+		case replayed.Stop == agent.StopUnset:
+			verdict.Classification = verdictWatchdogSucceeded
+			verdict.Diagnostic = fmt.Sprintf("captured watchdog no longer stops at %s", watchdog.Boundary)
+		case replayed.StopName == watchdog.ExpectedStop && replayed.Cause == watchdog.ExpectedCause:
+			verdict.Classification = verdictSameFailureReproduced
+			verdict.Diagnostic = fmt.Sprintf("watchdog still stops with %s/%s", replayed.StopName, replayed.Cause)
+		default:
+			verdict.Classification = verdictDifferentFailure
+			verdict.Diagnostic = fmt.Sprintf("watchdog changed: expected %s/%s, got %s/%s", watchdog.ExpectedStop, watchdog.ExpectedCause, replayed.StopName, replayed.Cause)
+		}
+		return verdict, write()
+	}
+
 	if mat.FailureReproPath == "" {
 		verdict.Classification = verdictContractUnavailable
-		verdict.Diagnostic = "portable bundle has no structured failure-repro contract; checkpoint-only replay cannot prove a run-level/planner failure"
+		verdict.Diagnostic = "portable bundle has no structured failure-repro or watchdog-repro contract; checkpoint-only replay cannot prove a run-level/planner failure"
 		return verdict, write()
 	}
 	failureData, err := os.ReadFile(mat.FailureReproPath)
