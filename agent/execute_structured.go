@@ -73,6 +73,9 @@ func executeRedOwned(m *emu.Emu, romData []byte, o Objective) (result ObjectiveR
 		return result, nil
 
 	case KindTrain:
+		if o.Intent == "dex-evolution" {
+			return executeDexEvolutionTraining(m, romData, o, result)
+		}
 		return executeTrainingObjective(m, romData, o, result)
 
 	case KindHeal:
