@@ -62,10 +62,11 @@ func TestDialogueTapeSeenMapsDrains(t *testing.T) {
 	}
 }
 
-// TestObserveAfterClosesALeftoverTextBox is the check behind the mart
-// stall: an objective that ends with a box still up made every later round
-// fail on "not controllable", because no objective's job is to close one.
-func TestObserveAfterClosesALeftoverTextBox(t *testing.T) {
+// TestNormalizeObjectiveBoundaryClosesALeftoverTextBox keeps the original
+// mart-stall regression at the layer that now owns it. A finished objective
+// may leave ordinary dialogue open, but finish normalization — not Run after
+// transaction finalization — must close it before the final observation.
+func TestNormalizeObjectiveBoundaryClosesALeftoverTextBox(t *testing.T) {
 	e := fixture.Load(t, "post_starter")
 	// Stand on the lab's approach tile (5,3), directly below Oak.
 	dest, ok := skill.Place("oak's lab")
@@ -87,8 +88,11 @@ func TestObserveAfterClosesALeftoverTextBox(t *testing.T) {
 		t.Fatal("setup did not leave a text box open; the test proves nothing")
 	}
 
-	if obs := observeAfter(e, e.ROM(), nil); !obs.Controllable {
-		t.Fatal("observeAfter left the box open; every objective after this one refuses to start")
+	if err := normalizeObjectiveBoundary(e); err != nil {
+		t.Fatalf("normalize objective boundary: %v", err)
+	}
+	if obs := Observe(e, e.ROM()); !obs.Controllable {
+		t.Fatal("finish normalization left the box open; the transaction cannot own a stable final state")
 	}
 }
 
