@@ -29,6 +29,7 @@ const (
 	redProgressSilphRescueComplete        ProgressID = redprofile.ProgressSilphRescueComplete
 	redProgressVolcanoBadge               ProgressID = redprofile.ProgressVolcanoBadge
 	redProgressEarthBadge                 ProgressID = redprofile.ProgressEarthBadge
+	redProgressVictoryRoadCleared         ProgressID = redprofile.ProgressVictoryRoadCleared
 	redProgressIndigoPlateauReady         ProgressID = redprofile.ProgressIndigoPlateauReady
 
 	redIndigoPlateauMap      uint8 = 0x09

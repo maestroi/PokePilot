@@ -41,6 +41,7 @@ const (
 	ProgressViridianGymOpen            game.ProgressID = "viridian_gym_open"
 	ProgressRoute22RivalResolved       game.ProgressID = "route_22_rival_resolved"
 	ProgressRoute23BadgeChecks         game.ProgressID = "route_23_badge_checks"
+	ProgressVictoryRoadCleared         game.ProgressID = "victory_road_cleared"
 	ProgressLeagueChallengeStarted     game.ProgressID = "league_challenge_started"
 	ProgressLeagueChampionDefeated     game.ProgressID = "league_champion_defeated"
 	ProgressMainStoryComplete          game.ProgressID = "main_story_complete"
@@ -257,12 +258,17 @@ func ProjectStoryFacts(facts state.StoryFacts) game.ProgressState {
 }
 
 // ProjectStory extends ProjectStoryFacts with RAM-backed badges and map-aware
-// league readiness for the full observation path.
+// bounded-stage facts for the full observation path.
 func ProjectStory(mem *state.Mem, facts state.StoryFacts) game.ProgressState {
 	progress := ProjectStoryFacts(facts)
 	badges := state.DecodeProgress(mem)
 	mapID := mem.U8(sym.CurMap)
-	indigoReady := mapID == indigoPlateauMap || mapID == indigoPlateauLobbyMap || facts.LeagueChallengeStarted || facts.LeagueChampionDefeated || facts.MainStoryComplete
+	leaguePastLobby := facts.LeagueChallengeStarted || facts.LeagueChampionDefeated || facts.MainStoryComplete
+	victoryRoadCleared := victoryRoadClearedForProgress(mem, facts)
+	// The exterior map is retained as a ready state because Red can respawn a
+	// League blackout there after restoring the party. Initial preparation is
+	// stricter: inside the lobby, readiness requires a fully recovered party.
+	indigoReady := leaguePastLobby || mapID == indigoPlateauMap || (mapID == indigoPlateauLobbyMap && partyCenterRecovered(state.DecodeParty(mem)))
 	return append(progress,
 		game.ProgressFact{ID: ProgressThunderBadge, Complete: badges.Has(state.BadgeThunder)},
 		game.ProgressFact{ID: ProgressPostSurgeLavenderReached, Complete: postSurgeLavenderReached(mapID)},
@@ -270,6 +276,7 @@ func ProjectStory(mem *state.Mem, facts state.StoryFacts) game.ProgressState {
 		game.ProgressFact{ID: ProgressRainbowBadge, Complete: badges.Has(state.BadgeRainbow)},
 		game.ProgressFact{ID: ProgressVolcanoBadge, Complete: badges.Has(state.BadgeVolcano)},
 		game.ProgressFact{ID: ProgressEarthBadge, Complete: badges.Has(state.BadgeEarth)},
+		game.ProgressFact{ID: ProgressVictoryRoadCleared, Complete: victoryRoadCleared},
 		game.ProgressFact{ID: ProgressIndigoPlateauReady, Complete: indigoReady},
 	)
 }
