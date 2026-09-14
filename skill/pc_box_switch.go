@@ -33,8 +33,7 @@ func pcChangeBoxSavePrompt(mem *state.Mem) bool {
 
 // pcChangeBoxMenuScreen identifies DisplayChangeBoxMenu from geometry alone.
 // The cursor glyph can lag the menu data by a render window; recognizing the
-// screen before state.MenuUp becomes true prevents pcAdvanceUntil from treating
-// that mid-render menu as ordinary text and pressing A into it.
+// screen before state.MenuUp becomes true avoids sending input during render.
 func pcChangeBoxMenuScreen(mem *state.Mem) bool {
 	return mem.U8(sym.TopMenuItemX) == 12 &&
 		mem.U8(sym.TopMenuItemY) == 1 &&
@@ -77,7 +76,7 @@ func selectPCBox(m *emu.Emu, index int) error {
 	if index < 0 || index >= gen1BoxCount {
 		return fmt.Errorf("skill: Bill's PC: box index %d out of range 0..%d", index, gen1BoxCount-1)
 	}
-	if _, err := m.StepUntil(menuSettleFrames, func(m *emu.Emu) bool {
+	if _, err := m.StepUntil(pcTransitionBudget, func(m *emu.Emu) bool {
 		var mem state.Mem
 		state.Snapshot(m, &mem)
 		return pcChangeBoxMenuUp(&mem)
@@ -129,7 +128,7 @@ func SwitchToNextNonFullBox(m *emu.Emu, romData []byte, policy MovePolicy) error
 		return nil
 	}
 	current := int(active.Number)
-	if current < 0 || current >= gen1BoxCount {
+	if current >= gen1BoxCount {
 		return fmt.Errorf("skill: Bill's PC: active box number %d is outside 0..%d", current, gen1BoxCount-1)
 	}
 
@@ -150,11 +149,17 @@ func SwitchToNextNonFullBox(m *emu.Emu, romData []byte, policy MovePolicy) error
 	if err := selectTwoOption(m, 0); err != nil { // YES
 		return cleanup(fmt.Errorf("skill: Bill's PC: confirm Change Box save: %w", err))
 	}
-	if err := pcAdvanceUntil(m, pcChangeBoxSavePrompt, pcChangeBoxMenuScreen, "Change Box menu"); err != nil {
-		return cleanup(err)
-	}
 
+	// After YES the ROM proceeds directly into DisplayChangeBoxMenu; there is
+	// no text to page. Wait passively so a queued A cannot select the current
+	// box while the new menu is still rendering.
 	var menu state.Mem
+	if _, err := m.StepUntil(pcTransitionBudget, func(m *emu.Emu) bool {
+		state.Snapshot(m, &menu)
+		return pcChangeBoxMenuScreen(&menu)
+	}); err != nil {
+		return cleanup(fmt.Errorf("skill: Bill's PC: Change Box menu did not appear: %w", err))
+	}
 	state.Snapshot(m, &menu)
 	counts := pcBoxCounts(&menu)
 	target, ok := nextNonFullBox(counts, current)
@@ -182,9 +187,6 @@ func SwitchToNextNonFullBox(m *emu.Emu, romData []byte, policy MovePolicy) error
 			}
 			return nil
 		}
-		// The box-selection menu is live while the selected A press is being
-		// consumed; do not add input. ChangeBox handles its own save after the
-		// selection, so ordinary frame stepping is safest here.
 		m.StepFrames(talkSettle)
 	}
 	state.Snapshot(m, &after)
