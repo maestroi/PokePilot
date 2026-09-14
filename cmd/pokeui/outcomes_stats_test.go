@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -89,5 +91,68 @@ func TestOutcomesStatsHandlerServesStaleCacheWhenWallFails(t *testing.T) {
 	}
 	if second.Body.String() != first.Body.String() {
 		t.Fatalf("stale body=%q, want cached %q", second.Body.String(), first.Body.String())
+	}
+}
+
+func TestOutcomesStatsHandlerWarmsAfterBrowserRequestEnds(t *testing.T) {
+	var calls int32
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var startedOnce sync.Once
+	wall := httptest.NewServer(http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+		atomic.AddInt32(&calls, 1)
+		startedOnce.Do(func() { close(started) })
+		<-release
+		_ = json.NewEncoder(res).Encode(map[string]any{"runs": []statsRun{
+			{RunID: "done-1", Status: "done", Attempts: 1, Reason: "goal"},
+		}})
+	}))
+	defer wall.Close()
+
+	handler := outcomesStatsHandlerWithPolicyAndWait(wall.URL, time.Second, time.Minute, 10*time.Millisecond)
+	ctx, cancel := context.WithCancel(context.Background())
+	first := httptest.NewRecorder()
+	handler.ServeHTTP(first, httptest.NewRequest(http.MethodGet, "/v1/stats", nil).WithContext(ctx))
+	if first.Code != http.StatusOK {
+		t.Fatalf("first status=%d body=%s", first.Code, first.Body.String())
+	}
+	if first.Header().Get("X-PokePilot-Stats-Warming") != "true" {
+		t.Fatalf("warming header=%q", first.Header().Get("X-PokePilot-Stats-Warming"))
+	}
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("background outcomes refresh never started")
+	}
+
+	// Ending the browser request must not cancel the in-flight wall scan.
+	cancel()
+	close(release)
+
+	deadline := time.Now().Add(time.Second)
+	for {
+		res := httptest.NewRecorder()
+		handler.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/v1/stats", nil))
+		if res.Code != http.StatusOK {
+			t.Fatalf("follow-up status=%d body=%s", res.Code, res.Body.String())
+		}
+		if res.Header().Get("X-PokePilot-Stats-Warming") == "" {
+			var got farmOutcomeStats
+			if err := json.Unmarshal(res.Body.Bytes(), &got); err != nil {
+				t.Fatal(err)
+			}
+			if got.SettledRuns != 1 || got.CompletedAttempts != 1 {
+				t.Fatalf("stats=%#v", got)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("background outcomes refresh did not populate the cache")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	if got := atomic.LoadInt32(&calls); got != 1 {
+		t.Fatalf("outcomes calls=%d, want one coalesced background refresh", got)
 	}
 }
