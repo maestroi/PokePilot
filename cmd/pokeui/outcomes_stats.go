@@ -12,8 +12,14 @@ import (
 )
 
 const (
-	outcomeStatsTimeout  = 30 * time.Second
-	outcomeStatsCacheTTL = 30 * time.Second
+	// The catalog projection is deliberately allowed to finish independently of
+	// a browser request. A cold production catalog has thousands of historical
+	// rows; tying the refresh to req.Context meant a proxy/browser disconnect
+	// cancelled the only refresh before it could ever populate the cache.
+	outcomeStatsTimeout     = 2 * time.Minute
+	outcomeStatsCacheTTL    = 30 * time.Second
+	outcomeStatsInitialWait = 2 * time.Second
+	outcomeStatsRetryDelay  = 5 * time.Second
 )
 
 type outcomeStatsCache struct {
@@ -21,75 +27,165 @@ type outcomeStatsCache struct {
 	payload      []byte
 	refreshAfter time.Time
 	stale        bool
+	refreshing   bool
+	ready        chan struct{}
+	lastErr      error
 }
 
 // outcomesStatsHandler reads the wall's narrow, streaming outcomes feed rather
-// than the full dashboard. The catalog-backed feed can take longer than the
-// normal operator proxy budget because it walks historical run rows, so stats
-// get their own timeout and a short shared cache. The cache also coalesces the
-// browser's polling requests and lets the page keep showing the last good
-// snapshot when a refresh temporarily fails.
+// than the full dashboard. Refresh work is detached from the browser request:
+// once one poll starts a catalog scan, later polls either use the last snapshot
+// or briefly report a warming snapshot while the same background scan finishes.
+// This prevents a slow cold scan from turning the three-second browser poll into
+// an endless chain of cancelled scans and 502s.
 func outcomesStatsHandler(wallBase string) http.HandlerFunc {
-	return outcomesStatsHandlerWithPolicy(wallBase, outcomeStatsTimeout, outcomeStatsCacheTTL)
+	return outcomesStatsHandlerWithPolicyAndWait(
+		wallBase,
+		outcomeStatsTimeout,
+		outcomeStatsCacheTTL,
+		outcomeStatsInitialWait,
+	)
 }
 
 func outcomesStatsHandlerWithPolicy(wallBase string, timeout, cacheTTL time.Duration) http.HandlerFunc {
+	wait := outcomeStatsInitialWait
+	if timeout > 0 && timeout < wait {
+		wait = timeout
+	}
+	return outcomesStatsHandlerWithPolicyAndWait(wallBase, timeout, cacheTTL, wait)
+}
+
+func outcomesStatsHandlerWithPolicyAndWait(wallBase string, timeout, cacheTTL, initialWait time.Duration) http.HandlerFunc {
 	client := &http.Client{Timeout: timeout}
 	var cache outcomeStatsCache
 
-	return func(res http.ResponseWriter, req *http.Request) {
-		cache.Lock()
-		defer cache.Unlock()
-
-		now := time.Now()
-		if len(cache.payload) > 0 && now.Before(cache.refreshAfter) {
-			writeOutcomeStats(res, cache.payload, cache.stale)
-			return
+	startRefreshLocked := func() chan struct{} {
+		if cache.refreshing {
+			return cache.ready
 		}
+		ready := make(chan struct{})
+		cache.refreshing = true
+		cache.ready = ready
 
-		serveFailure := func() {
-			if len(cache.payload) == 0 {
-				writeUnreachable(res)
-				return
+		go func() {
+			payload, err := loadOutcomeStats(client, wallBase, timeout)
+			now := time.Now()
+
+			cache.Lock()
+			defer cache.Unlock()
+			if err == nil {
+				cache.payload = payload
+				cache.refreshAfter = now.Add(cacheTTL)
+				cache.stale = false
+				cache.lastErr = nil
+			} else {
+				cache.stale = len(cache.payload) > 0
+				cache.lastErr = err
+				delay := cacheTTL
+				if delay <= 0 {
+					delay = outcomeStatsRetryDelay
+				}
+				cache.refreshAfter = now.Add(delay)
 			}
-			cache.stale = true
-			cache.refreshAfter = time.Now().Add(cacheTTL)
-			writeOutcomeStats(res, cache.payload, true)
-		}
-
-		ctx, cancel := context.WithTimeout(req.Context(), timeout)
-		defer cancel()
-		up, err := http.NewRequestWithContext(ctx, http.MethodGet, wallBase+"/v1/outcomes", nil)
-		if err != nil {
-			serveFailure()
-			return
-		}
-		resp, err := client.Do(up)
-		if err != nil {
-			serveFailure()
-			return
-		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			serveFailure()
-			return
-		}
-
-		stats, err := summarizeOutcomeStream(json.NewDecoder(resp.Body))
-		if err != nil {
-			serveFailure()
-			return
-		}
-		payload, err := json.Marshal(stats)
-		if err != nil {
-			serveFailure()
-			return
-		}
-		cache.payload = payload
-		cache.refreshAfter = time.Now().Add(cacheTTL)
-		cache.stale = false
-		writeOutcomeStats(res, payload, false)
+			cache.refreshing = false
+			close(ready)
+			cache.ready = nil
+		}()
+		return ready
 	}
+
+	return func(res http.ResponseWriter, req *http.Request) {
+		now := time.Now()
+
+		cache.Lock()
+		payload := append([]byte(nil), cache.payload...)
+		stale := cache.stale
+		refreshAfter := cache.refreshAfter
+		lastErr := cache.lastErr
+
+		// A fresh snapshot never waits on the wall.
+		if len(payload) > 0 && now.Before(refreshAfter) && !stale {
+			cache.Unlock()
+			writeOutcomeStats(res, payload, false)
+			return
+		}
+
+		var ready chan struct{}
+		if cache.refreshing {
+			ready = cache.ready
+		} else if refreshAfter.IsZero() || !now.Before(refreshAfter) {
+			ready = startRefreshLocked()
+		}
+		cache.Unlock()
+
+		// Once any good snapshot exists, never make a browser poll wait for a
+		// refresh. The previous value is explicitly marked stale until the
+		// background scan replaces it.
+		if len(payload) > 0 {
+			writeOutcomeStats(res, payload, true)
+			return
+		}
+
+		// A recent failed cold refresh gets a short backoff instead of spawning a
+		// new full catalog scan on every three-second browser poll.
+		if ready == nil && lastErr != nil {
+			writeUnreachable(res)
+			return
+		}
+
+		// Give a fast/cached wall a chance to answer the first request normally.
+		// If it is genuinely cold, release the browser after a small bounded wait
+		// while the detached scan continues to completion in the background.
+		if ready != nil && initialWait > 0 {
+			timer := time.NewTimer(initialWait)
+			defer timer.Stop()
+			select {
+			case <-ready:
+				cache.Lock()
+				payload = append([]byte(nil), cache.payload...)
+				stale = cache.stale
+				lastErr = cache.lastErr
+				cache.Unlock()
+				if len(payload) > 0 {
+					writeOutcomeStats(res, payload, stale)
+					return
+				}
+				if lastErr != nil {
+					writeUnreachable(res)
+					return
+				}
+			case <-timer.C:
+				// The refresh owns a background context, so returning here does not
+				// cancel it. A later poll will pick up the completed snapshot.
+			}
+		}
+
+		writeOutcomeStatsWarming(res)
+	}
+}
+
+func loadOutcomeStats(client *http.Client, wallBase string, timeout time.Duration) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	up, err := http.NewRequestWithContext(ctx, http.MethodGet, wallBase+"/v1/outcomes", nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := client.Do(up)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("outcomes status %d", resp.StatusCode)
+	}
+
+	stats, err := summarizeOutcomeStream(json.NewDecoder(resp.Body))
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(stats)
 }
 
 func writeOutcomeStats(res http.ResponseWriter, payload []byte, stale bool) {
@@ -99,6 +195,16 @@ func writeOutcomeStats(res http.ResponseWriter, payload []byte, stale bool) {
 		res.Header().Set("X-PokePilot-Stats-Stale", "true")
 	}
 	_, _ = res.Write(payload)
+}
+
+func writeOutcomeStatsWarming(res http.ResponseWriter) {
+	payload, err := json.Marshal(farmOutcomeStats{})
+	if err != nil {
+		writeUnreachable(res)
+		return
+	}
+	res.Header().Set("X-PokePilot-Stats-Warming", "true")
+	writeOutcomeStats(res, payload, true)
 }
 
 func summarizeOutcomeStream(dec *json.Decoder) (farmOutcomeStats, error) {
