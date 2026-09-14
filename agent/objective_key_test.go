@@ -59,16 +59,16 @@ func TestLoadCheckpointMemoryMigratesV4PlanAndKnowledge(t *testing.T) {
 		t.Fatal(err)
 	}
 	legacy := map[string]any{
-		"version": 4,
-		"visited": []uint8{1},
-		"places": []string{"route 1"},
+		"version":   4,
+		"visited":   []uint8{1},
+		"places":    []string{"route 1"},
 		"completed": []map[string]any{{"Objective": "go to route 1", "Times": 2}},
-		"talked": []any{},
-		"failures": []map[string]any{{"Objective": "train the lead to level 12", "Times": 1, "Last": "target not reached"}},
+		"talked":    []any{},
+		"failures":  []map[string]any{{"Objective": "train the lead to level 12", "Times": 1, "Last": "target not reached"}},
 		"plan": map[string]any{
-			"goal": "old plan",
+			"goal":  "old plan",
 			"steps": []string{"go to route 1"},
-			"step": 0,
+			"step":  0,
 		},
 	}
 	data, err := json.Marshal(legacy)
