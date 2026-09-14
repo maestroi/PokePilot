@@ -2,7 +2,7 @@ package skill
 
 import "testing"
 
-func TestWildGrassSlotsPreservesROMOrderAndLevels(t *testing.T) {
+func TestWildGrassSlotsPreservesROMOrderLevelsAndChances(t *testing.T) {
 	// WildDataPointers is at 03:4EEB. Point map 0 at 03:5000 and build the
 	// normal one-byte rate plus ten (level,species) slots there.
 	romData := make([]byte, 0xd000+1+2*wildSlots)
@@ -28,10 +28,18 @@ func TestWildGrassSlotsPreservesROMOrderAndLevels(t *testing.T) {
 	if len(got) != wildSlots {
 		t.Fatalf("len(WildGrassSlots) = %d, want %d", len(got), wildSlots)
 	}
+	var chanceTotal uint16
 	for i, slot := range got {
 		if slot.ID != uint8(i+1) || slot.Level != uint8(i+2) {
 			t.Fatalf("slot %d = %+v, want species=%d level=%d", i, slot, i+1, i+2)
 		}
+		if slot.Chance != redWildEncounterChances[i] {
+			t.Fatalf("slot %d chance = %d, want %d", i, slot.Chance, redWildEncounterChances[i])
+		}
+		chanceTotal += slot.Chance
+	}
+	if chanceTotal != 256 {
+		t.Fatalf("wild slot chance total = %d, want 256", chanceTotal)
 	}
 }
 

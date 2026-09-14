@@ -95,6 +95,31 @@ func TestTrainingEstimateExpensiveNearBudget(t *testing.T) {
 	}
 }
 
+func TestTrainingEstimateWeightsRareHighLevelSlots(t *testing.T) {
+	romData := trainingFixtureROM(t, 100)
+	currentXP, _ := rom.ExperienceAtLevel(rom.GrowthMediumFast, 16)
+	chances := [...]uint16{51, 51, 39, 25, 25, 25, 13, 13, 11, 3}
+	slots := make([]skill.WildEncounterSlot, len(chances))
+	for i, chance := range chances {
+		slots[i] = skill.WildEncounterSlot{ID: 2, Level: 4, Chance: chance}
+	}
+	// Slot 9 is only 3/256 of encounters. An equal-slot arithmetic mean
+	// overweights this outlier by more than 8x and incorrectly puts the L16
+	// -> L18 target inside a 20-battle session.
+	slots[9].Level = 50
+
+	got, err := estimateTraining(romData, 1, currentXP, 16, slots, 18, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Viability != TrainingOutsideBudget {
+		t.Fatalf("weighted rare-slot estimate = %+v, want outside_budget", got)
+	}
+	if got.EstimatedEncounters <= got.SessionBudget {
+		t.Fatalf("weighted rare-slot estimate = %+v, want encounters above session budget", got)
+	}
+}
+
 func TestTrainingEstimateNearTargetUsesCurrentProgress(t *testing.T) {
 	romData := trainingFixtureROM(t, 50)
 	targetXP, _ := rom.ExperienceAtLevel(rom.GrowthMediumFast, 18)
