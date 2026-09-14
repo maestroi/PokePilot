@@ -7,50 +7,111 @@ import (
 	"github.com/maestroi/pokepilot/red/sym"
 )
 
-func TestOfferEliteFourProgressionAfterIndigoReady(t *testing.T) {
-	obs := Observation{
+func leagueStageObservation() Observation {
+	return Observation{
 		Map:        0xAE,
 		PartyCount: 1,
 		Story: ProgressState{
 			{ID: redProgressIndigoPlateauReady, Complete: true},
-			{ID: ProgressMainStoryComplete, Complete: false},
 		},
 	}
-	if got := redProgressionObjectives(obs); !offeredProgressID(got, ProgressMainStoryComplete) {
-		t.Fatalf("Elite Four progression missing from prepared Indigo state: %v", got)
+}
+
+func TestOfferEliteFourStagesInOrderAfterIndigoReady(t *testing.T) {
+	obs := leagueStageObservation()
+	stages := []ProgressID{
+		ProgressLeagueChallengeStarted,
+		redProgressLeagueLoreleiDefeated,
+		redProgressLeagueBrunoDefeated,
+		redProgressLeagueAgathaDefeated,
+		redProgressLeagueLanceDefeated,
+		ProgressLeagueChampionDefeated,
+		ProgressMainStoryComplete,
+	}
+	for i, want := range stages {
+		got := redProgressionObjectives(obs)
+		if !offeredProgressID(got, want) {
+			t.Fatalf("League stage %q missing at step %d: %v", want, i, got)
+		}
+		for _, later := range stages[i+1:] {
+			if offeredProgressID(got, later) {
+				t.Fatalf("later League stage %q leaked before %q: %v", later, want, got)
+			}
+		}
+		obs.Story = append(obs.Story, ProgressFact{ID: want, Complete: true})
+	}
+	if got := redProgressionObjectives(obs); offeredProgressID(got, ProgressMainStoryComplete) {
+		t.Fatalf("Hall of Fame stage re-offered after main-story completion: %v", got)
 	}
 }
 
-func TestEliteFourProgressionWaitsForIndigoAndStopsAtHallOfFame(t *testing.T) {
+func TestEliteFourStagesWaitForIndigoReadiness(t *testing.T) {
 	before := Observation{Map: 0x01, PartyCount: 1}
-	if got := redProgressionObjectives(before); offeredProgressID(got, ProgressMainStoryComplete) {
-		t.Fatalf("Elite Four progression offered before Indigo readiness: %v", got)
-	}
-
-	championOnly := before
-	championOnly.Story = ProgressState{
-		{ID: redProgressIndigoPlateauReady, Complete: true},
-		{ID: ProgressLeagueChampionDefeated, Complete: true},
-		{ID: ProgressMainStoryComplete, Complete: false},
-	}
-	if got := redProgressionObjectives(championOnly); !offeredProgressID(got, ProgressMainStoryComplete) {
-		t.Fatalf("Champion-only state must keep the Hall of Fame progression active: %v", got)
-	}
-
-	done := championOnly
-	done.Story = ProgressState{
-		{ID: redProgressIndigoPlateauReady, Complete: true},
-		{ID: ProgressLeagueChampionDefeated, Complete: true},
-		{ID: ProgressMainStoryComplete, Complete: true},
-	}
-	if got := redProgressionObjectives(done); offeredProgressID(got, ProgressMainStoryComplete) {
-		t.Fatalf("Elite Four progression re-offered after Hall of Fame completion: %v", got)
+	for _, id := range []ProgressID{
+		ProgressLeagueChallengeStarted,
+		redProgressLeagueLoreleiDefeated,
+		redProgressLeagueBrunoDefeated,
+		redProgressLeagueAgathaDefeated,
+		redProgressLeagueLanceDefeated,
+		ProgressLeagueChampionDefeated,
+		ProgressMainStoryComplete,
+	} {
+		if got := redProgressionObjectives(before); offeredProgressID(got, id) {
+			t.Fatalf("League stage %q offered before Indigo readiness: %v", id, got)
+		}
 	}
 }
 
-func TestRedProgressionAcceptsMainStoryCompletionFact(t *testing.T) {
-	if !redProgressionKnown(ProgressMainStoryComplete) {
-		t.Fatal("main_story_complete is not registered as executable Red progression")
+func TestChampionCompletionKeepsHallOfFameStageActive(t *testing.T) {
+	obs := leagueStageObservation()
+	obs.Story = append(obs.Story,
+		ProgressFact{ID: ProgressLeagueChallengeStarted, Complete: true},
+		ProgressFact{ID: redProgressLeagueLoreleiDefeated, Complete: true},
+		ProgressFact{ID: redProgressLeagueBrunoDefeated, Complete: true},
+		ProgressFact{ID: redProgressLeagueAgathaDefeated, Complete: true},
+		ProgressFact{ID: redProgressLeagueLanceDefeated, Complete: true},
+		ProgressFact{ID: ProgressLeagueChampionDefeated, Complete: true},
+	)
+	if got := redProgressionObjectives(obs); !offeredProgressID(got, ProgressMainStoryComplete) {
+		t.Fatalf("Champion victory must leave the Hall of Fame stage active: %v", got)
+	}
+}
+
+func TestRedProgressionAcceptsAllLeagueStageFacts(t *testing.T) {
+	for _, id := range []ProgressID{
+		ProgressLeagueChallengeStarted,
+		redProgressLeagueLoreleiDefeated,
+		redProgressLeagueBrunoDefeated,
+		redProgressLeagueAgathaDefeated,
+		redProgressLeagueLanceDefeated,
+		ProgressLeagueChampionDefeated,
+		ProgressMainStoryComplete,
+	} {
+		if !redProgressionKnown(id) {
+			t.Fatalf("League progression fact %q is not registered as executable Red progression", id)
+		}
+	}
+}
+
+func TestRedProgressStateProjectsIndividualLeagueFacts(t *testing.T) {
+	facts := state.StoryFacts{
+		LeagueChallengeStarted: true,
+		LeagueLoreleiDefeated:  true,
+		LeagueBrunoDefeated:    true,
+		LeagueAgathaDefeated:   true,
+		LeagueLanceDefeated:    true,
+	}
+	progress := redProgressState(facts)
+	for _, id := range []ProgressID{
+		ProgressLeagueChallengeStarted,
+		redProgressLeagueLoreleiDefeated,
+		redProgressLeagueBrunoDefeated,
+		redProgressLeagueAgathaDefeated,
+		redProgressLeagueLanceDefeated,
+	} {
+		if !progress.Has(id) {
+			t.Fatalf("League fact %q did not project into semantic progress: %v", id, progress)
+		}
 	}
 }
 

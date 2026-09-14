@@ -13,7 +13,9 @@ import (
 )
 
 // Keep the existing agent names as aliases while progression execution is
-// migrated. The concrete vocabulary is owned by the Red profile.
+// migrated. The concrete vocabulary is owned by the Red profile where it
+// already exists; League room facts remain adapter-local until that migration
+// is complete.
 const (
 	redProgressMtMoonFossilAcquired       ProgressID = redprofile.ProgressMtMoonFossilAcquired
 	redProgressPokedexAcquired            ProgressID = redprofile.ProgressPokedexAcquired
@@ -31,6 +33,10 @@ const (
 	redProgressEarthBadge                 ProgressID = redprofile.ProgressEarthBadge
 	redProgressVictoryRoadCleared         ProgressID = redprofile.ProgressVictoryRoadCleared
 	redProgressIndigoPlateauReady         ProgressID = redprofile.ProgressIndigoPlateauReady
+	redProgressLeagueLoreleiDefeated      ProgressID = "league_lorelei_defeated"
+	redProgressLeagueBrunoDefeated        ProgressID = "league_bruno_defeated"
+	redProgressLeagueAgathaDefeated       ProgressID = "league_agatha_defeated"
+	redProgressLeagueLanceDefeated        ProgressID = "league_lance_defeated"
 
 	redIndigoPlateauMap      uint8 = 0x09
 	redIndigoPlateauLobbyMap uint8 = 0xAE
@@ -96,10 +102,19 @@ func redStarter(id skill.Starter) (skill.Starter, bool) {
 	return id, true
 }
 
+func appendRedLeagueProgress(progress ProgressState, f state.StoryFacts) ProgressState {
+	return append(progress,
+		ProgressFact{ID: redProgressLeagueLoreleiDefeated, Complete: f.LeagueLoreleiDefeated},
+		ProgressFact{ID: redProgressLeagueBrunoDefeated, Complete: f.LeagueBrunoDefeated},
+		ProgressFact{ID: redProgressLeagueAgathaDefeated, Complete: f.LeagueAgathaDefeated},
+		ProgressFact{ID: redProgressLeagueLanceDefeated, Complete: f.LeagueLanceDefeated},
+	)
+}
+
 func redProgressState(f state.StoryFacts) ProgressState {
-	return redprofile.ProjectStoryFacts(f)
+	return appendRedLeagueProgress(redprofile.ProjectStoryFacts(f), f)
 }
 
 func redProgressStateFromRAM(mem *state.Mem, _ state.InventoryState, f state.StoryFacts) ProgressState {
-	return redprofile.ProjectStory(mem, f)
+	return appendRedLeagueProgress(redprofile.ProjectStory(mem, f), f)
 }
