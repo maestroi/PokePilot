@@ -12,13 +12,16 @@ on:
         required: true
         default: "20"
         type: string
+  push:
+    branches:
+      - "debug/farm-repro/**"
 
 permissions:
   contents: read
   issues: read
 
 concurrency:
-  group: farm-repro-${{ github.ref }}-${{ inputs.issue_number }}
+  group: farm-repro-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -64,6 +67,30 @@ jobs:
 
           issue="${INPUT_ISSUE:-}"
           timeout_minutes="${INPUT_TIMEOUT:-20}"
+          target_revision="$GITHUB_SHA"
+
+          # Agents with repository write access can trigger the same trusted
+          # replay path by pushing a debug/farm-repro/* branch containing this
+          # tiny control file. Parse only known fields; never source/eval it.
+          if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
+            if [[ ! -f .github/farm-repro.env ]]; then
+              echo "farm-repro: debug branch is missing .github/farm-repro.env" >&2
+              exit 2
+            fi
+            while IFS='=' read -r key value; do
+              [[ -z "$key" || "$key" == \#* ]] && continue
+              case "$key" in
+                ISSUE_NUMBER) issue="$value" ;;
+                REPLAY_TIMEOUT_MINUTES) timeout_minutes="$value" ;;
+                *) echo "farm-repro: unknown config key $key" >&2; exit 2 ;;
+              esac
+            done < .github/farm-repro.env
+            # The trigger commit only carries the control file. Record its
+            # parent as the code revision under test so results still point at
+            # the actual main/fix revision being replayed.
+            target_revision="$(git rev-parse HEAD^1)"
+          fi
+
           if [[ ! "$issue" =~ ^[1-9][0-9]*$ ]]; then
             echo "farm-repro: issue_number must be a positive integer" >&2
             exit 2
@@ -99,13 +126,15 @@ jobs:
             echo "ISSUE_NUMBER=$issue"
             echo "REPLAY_TIMEOUT_MINUTES=$timeout_minutes"
             echo "BUNDLE_URL=$bundle_url"
+            echo "TARGET_REVISION=$target_revision"
             echo "SAFE_OUT=$safe"
             echo "PRIVATE_OUT=$private"
           } >> "$GITHUB_ENV"
 
           {
             echo "issue=$issue"
-            echo "revision=$GITHUB_SHA"
+            echo "revision=$target_revision"
+            echo "trigger_revision=$GITHUB_SHA"
             echo "ref=$GITHUB_REF_NAME"
             echo "bundle_url=$bundle_url"
             echo "timeout_minutes=$timeout_minutes"
@@ -197,7 +226,8 @@ jobs:
 
           jq -n \
             --argjson issue "$ISSUE_NUMBER" \
-            --arg revision "$GITHUB_SHA" \
+            --arg revision "$TARGET_REVISION" \
+            --arg trigger_revision "$GITHUB_SHA" \
             --arg ref "$GITHUB_REF_NAME" \
             --arg bundle_url "$BUNDLE_URL" \
             --arg classification "$classification" \
@@ -211,6 +241,7 @@ jobs:
             '{
               issue: $issue,
               revision: $revision,
+              trigger_revision: $trigger_revision,
               ref: $ref,
               bundle_url: $bundle_url,
               classification: $classification,
@@ -228,7 +259,7 @@ jobs:
             echo '### Farm repro replay'
             echo
             echo "Issue: #$ISSUE_NUMBER"
-            echo "Revision: \`$GITHUB_SHA\`"
+            echo "Revision under test: \`$TARGET_REVISION\`"
             echo "Classification: **$classification**"
             echo "Process exit: \`$status\`"
             [[ -n "$source_fingerprint" ]] && echo "Source fingerprint: \`$source_fingerprint\`"
@@ -241,7 +272,7 @@ jobs:
         if: ${{ always() && steps.request.outcome == 'success' }}
         uses: actions/upload-artifact@v4
         with:
-          name: farm-repro-${{ inputs.issue_number }}-${{ github.run_id }}-${{ github.run_attempt }}
+          name: farm-repro-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/pokepilot-farm-repro-safe
           if-no-files-found: error
           retention-days: 14
