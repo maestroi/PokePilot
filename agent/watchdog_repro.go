@@ -1,11 +1,15 @@
 package agent
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 )
 
 const WatchdogReproVersion = 1
+const WatchdogReproArtifactName = "watchdog-repro.json"
 
 const (
 	WatchdogBoundaryRound     = "round_boundary"
@@ -123,6 +127,18 @@ func (w *runWatchdogPolicy) reproState() WatchdogPolicyState {
 func (r *WatchdogRepro) recordExpected(d runWatchdogDecision) {
 	r.ExpectedStop = stopReplayName(d.Stop)
 	r.ExpectedCause = watchdogCauseName(d.Cause)
+}
+
+func persistWatchdogRepro(dir string, repro WatchdogRepro, decision runWatchdogDecision) {
+	if dir == "" || decision.Stop == StopUnset {
+		return
+	}
+	repro.recordExpected(decision)
+	data, err := json.MarshalIndent(repro, "", "  ")
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(filepath.Join(dir, WatchdogReproArtifactName), append(data, '\n'), 0o644)
 }
 
 // ReplayWatchdogRepro re-runs only the captured policy transition. It neither
