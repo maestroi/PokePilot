@@ -189,7 +189,7 @@ func executeTrainingObjective(m *emu.Emu, romData []byte, o Objective, result Ob
 	}
 
 	train, trainErr := skill.Train(m, romData, int(o.Level), skill.StatAwareMove(romData), trainSessionBattleBudget)
-	result.Training = trainingEvidenceFromRed(train)
+	result.Train = trainingEvidenceFromRed(train)
 
 	// PromoteToLead is a symmetric swap: the original lead is still at the
 	// same partner slot. Restore it whenever Train left a normal controllable
