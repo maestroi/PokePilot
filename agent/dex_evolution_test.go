@@ -30,7 +30,7 @@ func TestAppendDexEvolutionObjectivesOffersLevelEvolutionForPartyBase(t *testing
 func TestAppendDexEvolutionObjectivesRetriesCancelledLevelEvolutionAtNextLevel(t *testing.T) {
 	obs := Observation{
 		HasGrass: true,
-		Party: []PartyMon{{Species: "caterpie", Level: 7, HP: 20, MaxHP: 20}},
+		Party:    []PartyMon{{Species: "caterpie", Level: 7, HP: 20, MaxHP: 20}},
 		Dex: DexCatalog{Targets: []DexEntry{{
 			Species: "metapod",
 			Sources: []DexSource{{Kind: AcquireLevelEvo, From: "caterpie", Level: 7}},
@@ -67,9 +67,9 @@ func TestAppendDexEvolutionObjectivesOffersOwnedStoneOnCorrectSlot(t *testing.T)
 
 func TestAppendDexEvolutionObjectivesRequiresImmediatePrerequisiteAndSuppressesOwned(t *testing.T) {
 	obs := Observation{
-		HasGrass:    true,
+		HasGrass:     true,
 		PokedexOwned: []SpeciesID{"metapod"},
-		Party:       []PartyMon{{Species: "caterpie", Level: 6, HP: 20, MaxHP: 20}},
+		Party:        []PartyMon{{Species: "caterpie", Level: 6, HP: 20, MaxHP: 20}},
 		Dex: DexCatalog{
 			Owned: []DexEntry{{Species: "metapod"}},
 			Targets: []DexEntry{
