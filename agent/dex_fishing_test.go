@@ -15,7 +15,7 @@ func TestAppendDexCatchObjectivesOffersFishingWithOwnedRod(t *testing.T) {
 		},
 		Dex: DexCatalog{Targets: []DexEntry{{
 			Species: "magikarp",
-			Sources: []DexSource{{Kind: AcquireFishing, Place: "route 6", Requirement: "old_rod"}},
+			Sources: []DexSource{{Kind: AcquireFishing, Place: "vermilion city", Requirement: "old_rod"}},
 		}}},
 	}
 
@@ -24,7 +24,7 @@ func TestAppendDexCatchObjectivesOffersFishingWithOwnedRod(t *testing.T) {
 		t.Fatalf("fishing objectives = %+v, want one", got)
 	}
 	o := got[0]
-	if o.Kind != KindCatch || o.Species != "magikarp" || o.Place != "route 6" || o.Item != "old rod" || o.Intent != dexFishingIntent || !o.Flee {
+	if o.Kind != KindCatch || o.Species != "magikarp" || o.Place != "vermilion city" || o.Item != "old rod" || o.Intent != dexFishingIntent || !o.Flee {
 		t.Fatalf("fishing objective = %+v", o)
 	}
 	if !strings.Contains(strings.ToLower(o.Note), "dex fishing") || !strings.Contains(strings.ToLower(o.Note), "old rod") {
@@ -69,12 +69,12 @@ func TestAppendDexCatchObjectivesRequiresOwnedRodAndSkipsSafariFishing(t *testin
 }
 
 func TestAppendDexCatchObjectivesPrefersGrassAtEqualDistance(t *testing.T) {
-	route6, ok := skill.Place("route 6")
+	vermilion, ok := skill.Place("vermilion city")
 	if !ok {
-		t.Fatal("route 6 place missing")
+		t.Fatal("vermilion city place missing")
 	}
 	obs := Observation{
-		Map: route6.Map,
+		Map: vermilion.Map,
 		Bag: []Item{
 			{Name: "pokeball", Quantity: 5},
 			{Name: "super rod", Quantity: 1},
@@ -82,8 +82,8 @@ func TestAppendDexCatchObjectivesPrefersGrassAtEqualDistance(t *testing.T) {
 		Dex: DexCatalog{Targets: []DexEntry{{
 			Species: "slowpoke",
 			Sources: []DexSource{
-				{Kind: AcquireFishing, Place: "route 6", Requirement: "super_rod"},
-				{Kind: AcquireWildGrass, Place: "route 6"},
+				{Kind: AcquireFishing, Place: "vermilion city", Requirement: "super_rod"},
+				{Kind: AcquireWildGrass, Place: "vermilion city"},
 			},
 		}}},
 	}
