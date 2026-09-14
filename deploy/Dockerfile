@@ -32,8 +32,12 @@ RUN CGO_ENABLED=0 go build -ldflags "-X main.version=${GIT_SHA}" -o /out/pokepil
     CGO_ENABLED=0 go build -ldflags "-X main.version=${GIT_SHA}" -o /out/pokewall ./cmd/pokewall && \
     CGO_ENABLED=0 go build -ldflags "-X main.version=${GIT_SHA} -X main.buildPR=${GIT_PR_NUMBER} -X main.buildTitleB64=${GIT_PR_TITLE_B64} -X main.buildRepo=${GIT_REPOSITORY}" -o /out/pokeui ./cmd/pokeui && \
     CGO_ENABLED=0 go build -o /out/pokereplay ./cmd/pokereplay && \
-    CGO_ENABLED=0 go build -o /out/pokeissues ./cmd/pokeissues && \
-    CGO_ENABLED=0 go build -o /out/gomeboy-stream github.com/maestroi/gomeboy/cmd/gomeboy-stream
+    CGO_ENABLED=0 go build -o /out/pokeissues ./cmd/pokeissues
+
+# Keep the replay renderer on the v1.1.0 core used by PokePilot, plus the
+# one-line model-selection fix that makes CGB recordings replay as CGB while
+# historical DMG recordings continue to replay as DMG.
+RUN GOBIN=/out CGO_ENABLED=0 go install github.com/maestroi/gomeboy/cmd/gomeboy-stream@26c3dbd668c2351ade5d3ca57019a2a0882255f8
 
 # FFmpeg is runtime-only and is used by gomeboy-stream to encode deterministic
 # .gbrun replays into cached MP4s. intel-media-driver is the userspace half of
