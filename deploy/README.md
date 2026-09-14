@@ -121,8 +121,12 @@ Issue lifecycle maps cleanly back into the wall:
 
 - open GitHub issue → active failure group; equivalent farm occurrences stay
   quarantined locally instead of creating duplicates;
-- closed as **completed** → resolved/fixed; a later recurrence reopens the same
-  GitHub issue and adds one idempotent regression comment;
+- closed as **completed** → resolved/fixed; the adapter freezes the default-
+  branch revision at the issue's close time as `fixed_revision`. A later
+  occurrence from a strict ancestor of that revision is retained as a stale
+  recurrence without reopening the issue. An occurrence on the fixed revision
+  itself, a newer/diverged revision, or one whose ancestry cannot be proven
+  reopens the same issue and adds one idempotent regression comment;
 - closed as **not planned** → ignored/not-planned; later equivalent occurrences
   stay quarantined rather than reopening it.
 
