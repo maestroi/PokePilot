@@ -71,17 +71,23 @@ func filterRedScriptedTalkObjectives(obs Observation, out []Objective) []Objecti
 }
 
 // filterRedServiceTalkObjectives removes actors whose A-button interaction is
-// owned by another semantic action instead of ordinary NPC dialogue. Mart
-// clerks open shopping menus owned by KindBuy/skill.Buy. The Mt. Moon salesman
-// opens a paid YES/NO transaction that can grant MAGIKARP and set a one-time
-// event; generic KindTalk must neither spend the money nor leave that gameplay
-// choice open. These are Red adapter facts, not portable planner exceptions.
+// owned by another semantic action instead of ordinary NPC dialogue. The ROM's
+// TX_SCRIPT_* dispatch bytes identify nurses, Mart clerks, cable-club staff and
+// other built-in services without maintaining a coordinate list. The Mt. Moon
+// salesman is a text_asm choice rather than a TX_SCRIPT_* service, so his paid
+// MAGIKARP transaction remains the explicit Red-owned choice case below.
 func filterRedServiceTalkObjectives(romData []byte, obs Observation, out []Objective) []Objective {
-	clerkX, clerkY, clerkErr := rom.MartClerkPosition(romData, obs.Map)
+	special := map[[2]uint8]bool{}
+	if actors, err := rom.SpecialInteractionActors(romData, obs.Map); err == nil {
+		for _, actor := range actors {
+			special[[2]uint8{actor.X, actor.Y}] = true
+		}
+	}
+
 	filtered := make([]Objective, 0, len(out))
 	for _, o := range out {
 		if o.Kind == KindTalk {
-			if clerkErr == nil && o.X == clerkX && o.Y == clerkY {
+			if special[[2]uint8{o.X, o.Y}] {
 				continue
 			}
 			if redOwnedChoiceActor(obs.Map, o.X, o.Y) {
