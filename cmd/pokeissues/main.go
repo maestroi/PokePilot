@@ -83,6 +83,11 @@ type artifactMeta struct {
 	SHA256    string
 }
 
+type reproCheckpoint struct {
+	State     artifactMeta
+	Knowledge artifactMeta
+}
+
 type githubIssue struct {
 	Number      int64           `json:"number"`
 	State       string          `json:"state"`
@@ -526,6 +531,7 @@ func renderIssueBody(runBase string, manifest issueReportManifest, artifacts []a
 	b.WriteString(markdownSafeText(truncateUTF8(manifest.Summary, maxSummaryBytes)))
 	b.WriteString("\n")
 	renderEvidence(&b, manifest.Evidence)
+	renderReproduction(&b, runBase, manifest, artifacts)
 	renderArtifacts(&b, artifacts)
 	return truncateUTF8(b.String(), 62<<10)
 }
@@ -538,6 +544,7 @@ func renderOccurrenceComment(runBase string, manifest issueReportManifest, artif
 	b.WriteString("\n")
 	b.WriteString(markdownSafeText(truncateUTF8(manifest.Summary, 8<<10)))
 	b.WriteString("\n")
+	renderReproduction(&b, runBase, manifest, artifacts)
 	renderArtifacts(&b, artifacts)
 	return truncateUTF8(b.String(), 60<<10)
 }
@@ -606,6 +613,70 @@ func renderEvidence(b *strings.Builder, raw json.RawMessage) {
 	}
 }
 
+func renderReproduction(b *strings.Builder, runBase string, manifest issueReportManifest, artifacts []artifactMeta) {
+	checkpoint, ok := findReproCheckpoint(artifacts)
+	if !ok {
+		return
+	}
+	runID := evidenceString(manifest.Evidence, "run_id")
+	if runID == "" {
+		return
+	}
+	attempt := evidenceInt(manifest.Evidence, "attempt")
+
+	b.WriteString("\n## Reproduce\n\n")
+	fmt.Fprintf(b, "- **Checkpoint:** `%s`\n", markdownCode(checkpoint.State.Name))
+	fmt.Fprintf(b, "- **Knowledge:** `%s`\n", markdownCode(checkpoint.Knowledge.Name))
+	fmt.Fprintf(b, "- **State SHA-256:** `%s`\n", checkpoint.State.SHA256)
+	fmt.Fprintf(b, "- **Knowledge SHA-256:** `%s`\n", checkpoint.Knowledge.SHA256)
+	if runBase == "" {
+		b.WriteString("\nThe exact checkpoint pair is retained in the private PokePilot run store. Set `POKEPILOT_RUN_BASE_URL` on `pokeissues` to emit a ready-to-run fetch command.\n")
+		return
+	}
+
+	b.WriteString("\nThe state bytes stay private. `pokerepro` fetches this exact checkpoint and its paired knowledge through the authenticated Run Inspector API.\n\n")
+	b.WriteString("```bash\n")
+	fmt.Fprintf(b, "go run ./cmd/pokerepro -wall %s -run %s", shellArg(runBase), shellArg(runID))
+	if attempt > 0 {
+		fmt.Fprintf(b, " -attempt %d", attempt)
+	}
+	fmt.Fprintf(b, " -checkpoint %s -play\n", shellArg(checkpoint.State.Name))
+	b.WriteString("```\n")
+}
+
+func findReproCheckpoint(artifacts []artifactMeta) (reproCheckpoint, bool) {
+	byName := make(map[string]artifactMeta, len(artifacts))
+	for _, artifact := range artifacts {
+		byName[artifact.Name] = artifact
+	}
+
+	var best reproCheckpoint
+	for _, state := range artifacts {
+		if !strings.HasPrefix(state.Name, "round-") || !strings.HasSuffix(state.Name, ".state") {
+			continue
+		}
+		stem := strings.TrimSuffix(state.Name, ".state")
+		var knowledge artifactMeta
+		found := false
+		for name, candidate := range byName {
+			if !strings.HasPrefix(name, stem+".knowledge-v") || !strings.HasSuffix(name, ".json") {
+				continue
+			}
+			if !found || name > knowledge.Name {
+				knowledge = candidate
+				found = true
+			}
+		}
+		if !found {
+			continue
+		}
+		if best.State.Name == "" || state.Name > best.State.Name {
+			best = reproCheckpoint{State: state, Knowledge: knowledge}
+		}
+	}
+	return best, best.State.Name != ""
+}
+
 func renderArtifacts(b *strings.Builder, artifacts []artifactMeta) {
 	if len(artifacts) == 0 {
 		return
@@ -625,6 +696,29 @@ func evidenceString(raw json.RawMessage, key string) string {
 	}
 	value, _ := values[key].(string)
 	return strings.TrimSpace(value)
+}
+
+func evidenceInt(raw json.RawMessage, key string) int {
+	var values map[string]any
+	if len(raw) == 0 || json.Unmarshal(raw, &values) != nil {
+		return 0
+	}
+	switch value := values[key].(type) {
+	case float64:
+		return int(value)
+	case string:
+		n, _ := strconv.Atoi(strings.TrimSpace(value))
+		return n
+	default:
+		return 0
+	}
+}
+
+func shellArg(s string) string {
+	if s == "" {
+		return "''"
+	}
+	return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'"
 }
 
 func fingerprintMarker(fingerprint string) string {
