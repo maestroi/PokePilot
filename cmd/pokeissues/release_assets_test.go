@@ -169,6 +169,19 @@ func TestPublishPortableReproCreatesReleaseAndAssetIdempotently(t *testing.T) {
 	}
 }
 
+func TestStripLegacyReproDetailsKeepsIssueSignalOnly(t *testing.T) {
+	body := "summary\n\n## Evidence\n\nimportant\n\n## Reproduce\n\nold wall command\n\n## Captured artifacts\n\nlarge table"
+	got := stripLegacyReproDetails(body)
+	if got != "summary\n\n## Evidence\n\nimportant" {
+		t.Fatalf("trimmed body = %q", got)
+	}
+	for _, unwanted := range []string{"## Reproduce", "## Captured artifacts", "old wall command", "large table"} {
+		if strings.Contains(got, unwanted) {
+			t.Fatalf("trimmed body still contains %q: %s", unwanted, got)
+		}
+	}
+}
+
 func TestRenderPortableReproUsesOfflineBundleCommand(t *testing.T) {
 	asset := portableReproAsset{
 		Name:   "repro-issue-41-deadbeef.zip",
@@ -181,10 +194,14 @@ func TestRenderPortableReproUsesOfflineBundleCommand(t *testing.T) {
 		asset.URL,
 		asset.SHA256,
 		"no ROM",
-		"go run ./cmd/pokerepro -bundle '" + asset.URL + "' -play",
+		"go run ./cmd/pokerepro -bundle '" + asset.URL + "'",
+		"Add `-play` only when you want to launch the current checkout",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("body missing %q:\n%s", want, body)
 		}
+	}
+	if strings.Contains(body, "-bundle '"+asset.URL+"' -play") {
+		t.Fatalf("bundle command should materialize by default, got:\n%s", body)
 	}
 }
