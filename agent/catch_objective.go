@@ -81,6 +81,10 @@ func executeCatchObjective(m *emu.Emu, romData []byte, o Objective, result Objec
 		return result, fmt.Errorf("agent: %s: %w", o, err)
 	}
 	if caught.Outcome == skill.OutcomeCaught {
+		// Catch skills have already proved party growth, box growth, or a newly
+		// owned Dex bit. Preserve that structured evidence because a deliberate
+		// duplicate catch starts with its Pokédex bit already set.
+		result.CatchVerified = true
 		return result, nil
 	}
 	result.Outcome = OutcomeBlocked
