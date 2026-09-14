@@ -4,6 +4,8 @@ import (
 	"errors"
 	"os"
 	"testing"
+
+	"github.com/maestroi/gomeboy/pkg/gomeboy"
 )
 
 const testROM = "/home/maestro/Documents/projects/gomeboy/tests/roms/little-things-gb/firstwhite.gb"
@@ -26,6 +28,29 @@ func TestOpenAndStep(t *testing.T) {
 	m.StepFrames(10)
 	if got := m.FrameCount(); got != 10 {
 		t.Fatalf("FrameCount() = %d, want 10", got)
+	}
+}
+
+func TestOpenCGBSelectsGameBoyColorHardware(t *testing.T) {
+	if _, err := os.Stat(testROM); err != nil {
+		t.Skipf("test ROM not present: %v", err)
+	}
+	m, err := OpenCGB(testROM)
+	if err != nil {
+		t.Fatalf("OpenCGB: %v", err)
+	}
+	defer m.Close()
+
+	state, err := m.SaveStateChecked()
+	if err != nil {
+		t.Fatalf("SaveStateChecked: %v", err)
+	}
+	meta, err := gomeboy.InspectCheckedState(state)
+	if err != nil {
+		t.Fatalf("InspectCheckedState: %v", err)
+	}
+	if meta.Model != gomeboy.ModelCGB {
+		t.Fatalf("model = %s, want %s", meta.Model, gomeboy.ModelCGB)
 	}
 }
 

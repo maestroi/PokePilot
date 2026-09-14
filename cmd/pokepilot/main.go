@@ -78,7 +78,7 @@ func main() {
 		}
 	}
 
-	m, err := emu.Open(romPath)
+	m, err := emu.OpenCGB(romPath)
 	if err != nil {
 		log.Fatalf("open ROM: %v", err)
 	}
