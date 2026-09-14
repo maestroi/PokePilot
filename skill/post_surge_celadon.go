@@ -2,6 +2,7 @@ package skill
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
@@ -29,6 +30,7 @@ var postSurgeCeladonTravelLegs = []postSurgeCeladonTravelLeg{
 // there, the router can take the short legal route to Celadon instead of being
 // forced east to Lavender first.
 func postSurgePastLavender(mapID uint8) bool {
+	name := state.MapName(mapID)
 	switch mapID {
 	case 0x04, // Lavender Town
 		0x8D, // Lavender Pokemon Center
@@ -45,18 +47,28 @@ func postSurgePastLavender(mapID uint8) bool {
 		0x85, // Celadon Pokemon Center
 		0x86: // Celadon Gym
 		return true
-	default:
-		return false
 	}
+	return strings.HasPrefix(name, "LAVENDER_") ||
+		strings.HasPrefix(name, "POKEMON_TOWER_") ||
+		name == "MR_FUJIS_HOUSE" ||
+		strings.HasPrefix(name, "SAFFRON_") ||
+		strings.HasPrefix(name, "SILPH_CO_") ||
+		postSurgeCeladonArea(mapID)
 }
 
-// travelPostSurgeCeladon breaks the unusually long badge-three -> badge-four
-// walk into semantic legs. Travel intentionally caps dialogue recoveries per
-// call to catch a route looping on the same box; the full Cerulean -> Route 9
-// -> Rock Tunnel -> Lavender -> Route 8 -> Underground Path -> Celadon journey
-// can legitimately encounter more boxes than that cap. Resetting the bounded
-// recovery budget at Lavender keeps the generic anti-loop guard strict while
-// still allowing the story route to complete.
+func postSurgeCeladonArea(mapID uint8) bool {
+	name := state.MapName(mapID)
+	return strings.HasPrefix(name, "CELADON_") ||
+		name == "GAME_CORNER" ||
+		strings.HasPrefix(name, "GAME_CORNER_") ||
+		strings.HasPrefix(name, "ROCKET_HIDEOUT_")
+}
+
+// travelPostSurgeCeladon is retained as the composed journey helper used by
+// the milestone qualification tests. Runtime progression now invokes the two
+// travel legs as separate objective transactions so planner feedback and
+// failure attribution happen at Lavender and Celadon instead of only after
+// the entire badge-three -> badge-four route.
 func travelPostSurgeCeladon(currentMap uint8, travel func(Destination) (TravelResult, error)) error {
 	legs := postSurgeCeladonTravelLegs
 	if postSurgePastLavender(currentMap) {
@@ -74,82 +86,140 @@ func travelPostSurgeCeladon(currentMap uint8, travel func(Destination) (TravelRe
 	return nil
 }
 
-// PostSurgeCeladonProgression owns the long handoff from the Thunder Badge to
-// the Rainbow Badge as one resumable story action. The route planner is left to
-// choose the concrete legal path, which means the normal semantic Saffron guard
-// gate sends this journey back through Cerulean, Route 9, Rock Tunnel, Lavender,
-// and the Route 8/7 Underground Path instead of letting the planner invent a
-// shortcut through Saffron.
-//
-// Flash is deliberately not a prerequisite: Rock Tunnel darkness changes the
-// presentation, not the collision topology PokePilot navigates from ROM data.
-// Cut is a real prerequisite twice (Route 9 and Celadon Gym), so the stage
-// repairs a compatible carrier before committing to the route. Blackouts are
-// returned to the caller; because the semantic objective remains incomplete,
-// the next round can resume it from whatever Pokemon Center the game selected.
-func PostSurgeCeladonProgression(m *emu.Emu, romData []byte, policy MovePolicy) error {
+func postSurgePrerequisites(m *emu.Emu, policy MovePolicy) (state.Mem, error) {
 	if policy == nil {
-		return fmt.Errorf("skill: PostSurgeCeladonProgression: nil policy")
+		return state.Mem{}, fmt.Errorf("skill: PostSurgeCeladonProgression: nil policy")
 	}
-
 	var mem state.Mem
 	state.Snapshot(m, &mem)
 	badges := state.DecodeProgress(&mem)
 	if badges.Has(state.BadgeRainbow) {
-		return nil
+		return mem, nil
 	}
 	if !badges.Has(state.BadgeThunder) {
-		return fmt.Errorf("skill: PostSurgeCeladonProgression: Thunder Badge is required")
+		return state.Mem{}, fmt.Errorf("skill: PostSurgeCeladonProgression: Thunder Badge is required")
 	}
+	return mem, nil
+}
 
-	// A Cut carrier that survived Surge is normally still present. Keep this
-	// explicit anyway: party training/storage is allowed to change the roster,
-	// and losing the carrier between Vermilion and Route 9 must be recoverable
-	// rather than turning into another opaque navigation stall.
-	if err := RepairUtilityFieldCapability(m, romData, policy, FieldCut); err != nil {
-		return fmt.Errorf("skill: PostSurgeCeladonProgression: prepare Cut carrier: %w", err)
-	}
-
-	// The complete post-Surge journey is much longer than an ordinary Travel
-	// call. Stage it at Lavender so legitimate trainer/script dialogue across
-	// several maps does not consume Travel's per-call anti-loop recovery budget.
-	// On a retry from Route 8 or later, travelPostSurgeCeladon skips Lavender so
-	// the objective remains resumable and never walks backward just to reset a
-	// counter.
-	state.Snapshot(m, &mem)
-	currentMap := state.DecodePlayer(&mem).MapID
-	if err := travelPostSurgeCeladon(currentMap, func(dest Destination) (TravelResult, error) {
-		return TravelFlee(m, romData, dest, policy, postSurgeCeladonTravelEngagements)
-	}); err != nil {
+// PostSurgeReachLavender owns only the first bounded story leg after Surge:
+// repair/retain Cut and cross Route 9 + Rock Tunnel to Lavender. A resumed run
+// already on the west side of Lavender satisfies the stage without walking
+// backward just to replay its checkpoint.
+func PostSurgeReachLavender(m *emu.Emu, romData []byte, policy MovePolicy) error {
+	mem, err := postSurgePrerequisites(m, policy)
+	if err != nil {
 		return err
 	}
+	if state.DecodeProgress(&mem).Has(state.BadgeRainbow) {
+		return nil
+	}
+	currentMap := state.DecodePlayer(&mem).MapID
+	if postSurgePastLavender(currentMap) {
+		return nil
+	}
+	if err := RepairUtilityFieldCapability(m, romData, policy, FieldCut); err != nil {
+		return fmt.Errorf("skill: PostSurgeReachLavender: prepare Cut carrier: %w", err)
+	}
+	lavender, ok := Place("lavender town")
+	if !ok {
+		return fmt.Errorf("skill: PostSurgeReachLavender: lavender town place missing")
+	}
+	if _, err := TravelFlee(m, romData, lavender, policy, postSurgeCeladonTravelEngagements); err != nil {
+		return fmt.Errorf("skill: PostSurgeReachLavender: reach Lavender Town: %w", err)
+	}
+	return nil
+}
+
+// PostSurgeReachCeladon owns the second bounded leg: from Lavender or later,
+// traverse Route 8/7's Underground Path to the Celadon Center and recover the
+// party. Keeping recovery in this stage gives the next Erika transaction a
+// clean, positively observable starting state.
+func PostSurgeReachCeladon(m *emu.Emu, romData []byte, policy MovePolicy) error {
+	mem, err := postSurgePrerequisites(m, policy)
+	if err != nil {
+		return err
+	}
+	if state.DecodeProgress(&mem).Has(state.BadgeRainbow) {
+		return nil
+	}
+	currentMap := state.DecodePlayer(&mem).MapID
+	if !postSurgePastLavender(currentMap) {
+		return fmt.Errorf("skill: PostSurgeReachCeladon: Lavender stage is incomplete from map %#04x", currentMap)
+	}
+	center, ok := Place("celadon pokemon center")
+	if !ok {
+		return fmt.Errorf("skill: PostSurgeReachCeladon: celadon pokemon center place missing")
+	}
+	if _, err := TravelFlee(m, romData, center, policy, postSurgeCeladonTravelEngagements); err != nil {
+		return fmt.Errorf("skill: PostSurgeReachCeladon: reach Celadon Pokemon Center: %w", err)
+	}
 	if err := Heal(m); err != nil {
-		return fmt.Errorf("skill: PostSurgeCeladonProgression: heal in Celadon: %w", err)
+		return fmt.Errorf("skill: PostSurgeReachCeladon: heal in Celadon: %w", err)
+	}
+	return nil
+}
+
+// PostSurgeDefeatErika is the final local stage. It revalidates Cut because
+// party/storage work can change the carrier between transactions, then owns
+// only the short Center/city -> Celadon Gym approach and Erika battle.
+func PostSurgeDefeatErika(m *emu.Emu, romData []byte, policy MovePolicy) error {
+	mem, err := postSurgePrerequisites(m, policy)
+	if err != nil {
+		return err
+	}
+	if state.DecodeProgress(&mem).Has(state.BadgeRainbow) {
+		return nil
+	}
+	currentMap := state.DecodePlayer(&mem).MapID
+	if !postSurgeCeladonArea(currentMap) {
+		return fmt.Errorf("skill: PostSurgeDefeatErika: Celadon-ready stage is incomplete from map %#04x", currentMap)
+	}
+	if err := RepairUtilityFieldCapability(m, romData, policy, FieldCut); err != nil {
+		return fmt.Errorf("skill: PostSurgeDefeatErika: prepare Cut carrier: %w", err)
 	}
 
-	// Gym is intentionally started from the city alias so it owns Celadon's
-	// exterior Cut tree and all trainer interruptions on the approach to Erika.
 	city, ok := Place("celadon city")
 	if !ok {
-		return fmt.Errorf("skill: PostSurgeCeladonProgression: celadon city place missing")
+		return fmt.Errorf("skill: PostSurgeDefeatErika: celadon city place missing")
 	}
 	if _, err := TravelFlee(m, romData, city, policy, 10); err != nil {
-		return fmt.Errorf("skill: PostSurgeCeladonProgression: leave Center for Celadon City: %w", err)
+		return fmt.Errorf("skill: PostSurgeDefeatErika: leave Center for Celadon City: %w", err)
 	}
 	outcome, err := Gym(m, romData, policy)
 	if err != nil {
-		return fmt.Errorf("skill: PostSurgeCeladonProgression: Erika: %w", err)
+		return fmt.Errorf("skill: PostSurgeDefeatErika: Erika: %w", err)
 	}
 	if outcome == state.ResultLost {
-		return fmt.Errorf("skill: PostSurgeCeladonProgression: %w against Erika", ErrTrainerBlackedOut)
+		return fmt.Errorf("skill: PostSurgeDefeatErika: %w against Erika", ErrTrainerBlackedOut)
 	}
 	if outcome != state.ResultWon {
-		return fmt.Errorf("skill: PostSurgeCeladonProgression: Erika battle ended with outcome %d", outcome)
+		return fmt.Errorf("skill: PostSurgeDefeatErika: Erika battle ended with outcome %d", outcome)
 	}
 
 	state.Snapshot(m, &mem)
 	if !state.DecodeProgress(&mem).Has(state.BadgeRainbow) {
-		return fmt.Errorf("skill: PostSurgeCeladonProgression: Rainbow Badge missing after Erika")
+		return fmt.Errorf("skill: PostSurgeDefeatErika: Rainbow Badge missing after Erika")
+	}
+	return nil
+}
+
+// PostSurgeCeladonProgression remains as a composed milestone helper for ROM
+// qualification and callers outside the objective runtime. The runtime offers
+// the three functions above as separate semantic progression stages.
+func PostSurgeCeladonProgression(m *emu.Emu, romData []byte, policy MovePolicy) error {
+	stages := []struct {
+		name string
+		run  func(*emu.Emu, []byte, MovePolicy) error
+	}{
+		{name: "reach Lavender", run: PostSurgeReachLavender},
+		{name: "reach and recover in Celadon", run: PostSurgeReachCeladon},
+		{name: "defeat Erika", run: PostSurgeDefeatErika},
+	}
+	for _, stage := range stages {
+		if err := stage.run(m, romData, policy); err != nil {
+			return fmt.Errorf("skill: PostSurgeCeladonProgression: %s: %w", stage.name, err)
+		}
 	}
 	return nil
 }

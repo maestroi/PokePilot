@@ -18,6 +18,8 @@ func redProgressionKnown(id ProgressID) bool {
 		redProgressSSTicketAcquired,
 		redProgressHM01Acquired,
 		redProgressThunderBadge,
+		redProgressPostSurgeLavenderReached,
+		redProgressPostSurgeCeladonReady,
 		redProgressRainbowBadge,
 		redProgressSilphScopeAcquired,
 		redProgressPokeFluteAcquired,
@@ -126,11 +128,26 @@ func redProgressionObjectives(obs Observation) []Objective {
 		})
 	}
 	if hasBadge(obs, state.BadgeThunder) && !obs.Story.Has(redProgressRainbowBadge) {
-		out = append(out, Objective{
-			Kind:     KindProgress,
-			Progress: redProgressRainbowBadge,
-			Note:     "(after Surge, repair or retain a Cut carrier, travel through Cerulean and Route 9, cross Rock Tunnel to Lavender, continue through the Underground Path to Celadon, heal, then defeat Erika for the Rainbow Badge; Flash is optional for ROM-driven navigation)",
-		})
+		switch {
+		case !obs.Story.Has(redProgressPostSurgeLavenderReached):
+			out = append(out, Objective{
+				Kind:     KindProgress,
+				Progress: redProgressPostSurgeLavenderReached,
+				Note:     "(repair or retain a Cut carrier, travel through Cerulean and Route 9, then cross Rock Tunnel to the Lavender checkpoint; Flash is optional for ROM-driven navigation)",
+			})
+		case !obs.Story.Has(redProgressPostSurgeCeladonReady):
+			out = append(out, Objective{
+				Kind:     KindProgress,
+				Progress: redProgressPostSurgeCeladonReady,
+				Note:     "(from Lavender or later, continue through Route 8/7's Underground Path to the Celadon Pokemon Center and fully recover the party before Erika)",
+			})
+		default:
+			out = append(out, Objective{
+				Kind:     KindProgress,
+				Progress: redProgressRainbowBadge,
+				Note:     "(from a recovered Celadon state, revalidate the Cut carrier, take the short gym approach, defeat Erika, and verify the Rainbow Badge)",
+			})
+		}
 	}
 	// Silph Scope and the Poké Flute are later than Surge. The intended
 	// critical path is Thunder Badge -> Rock Tunnel/Lavender/Celadon ->
@@ -249,8 +266,12 @@ func executeRedProgression(m *emu.Emu, romData []byte, o Objective) error {
 		return skill.SSAnneHM01(m, romData, policy)
 	case redProgressThunderBadge:
 		return skill.SurgeProgression(m, romData, policy)
+	case redProgressPostSurgeLavenderReached:
+		return skill.PostSurgeReachLavender(m, romData, policy)
+	case redProgressPostSurgeCeladonReady:
+		return skill.PostSurgeReachCeladon(m, romData, policy)
 	case redProgressRainbowBadge:
-		return skill.PostSurgeCeladonProgression(m, romData, policy)
+		return skill.PostSurgeDefeatErika(m, romData, policy)
 	case redProgressSilphScopeAcquired:
 		return skill.RocketHideout(m, romData, policy)
 	case redProgressPokeFluteAcquired:
