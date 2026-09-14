@@ -9,6 +9,9 @@ func TestParseGoal(t *testing.T) {
 	}{
 		{"", GoalNone},
 		{"elite-four", GoalEliteFour},
+		{"dex", GoalDex},
+		{"pokedex", GoalDex},
+		{"pokédex", GoalDex},
 		{"badges:8", GoalBadges},
 		{"reach:Cerulean City", GoalReach},
 		{"level:25", GoalLevel},
@@ -30,6 +33,73 @@ func TestParseGoalRejectsInvalidTargets(t *testing.T) {
 		if _, err := ParseGoal(in); err == nil {
 			t.Fatalf("ParseGoal(%q) unexpectedly succeeded", in)
 		}
+	}
+}
+
+func TestPlannerGoalRecognizesDexPreset(t *testing.T) {
+	for _, raw := range []string{
+		"dex",
+		"Complete the obtainable Pokedex.",
+		"Complete the obtainable Pokédex.",
+	} {
+		g, deterministic, err := PlannerGoal(raw)
+		if err != nil {
+			t.Fatalf("PlannerGoal(%q): %v", raw, err)
+		}
+		if !deterministic {
+			t.Fatalf("PlannerGoal(%q) resolved as prompt-only", raw)
+		}
+		if g.Kind != GoalDex {
+			t.Fatalf("PlannerGoal(%q).Kind = %v, want GoalDex", raw, g.Kind)
+		}
+	}
+}
+
+func TestEvaluateDexGoalUsesCatalogTargets(t *testing.T) {
+	g, err := ParseGoal("dex")
+	if err != nil {
+		t.Fatalf("ParseGoal: %v", err)
+	}
+
+	obs := Observation{Dex: DexCatalog{
+		Owned: []DexEntry{
+			{Species: "bulbasaur", Owned: true},
+			{Species: "ivysaur", Owned: true},
+		},
+		Targets: []DexEntry{
+			{Species: "venusaur"},
+			{Species: "pikachu"},
+		},
+		Unavailable: []DexEntry{
+			{Species: "mew", Unavailable: UnavailableEventOnly},
+		},
+	}}
+	status := EvaluateGoal(g, obs)
+	if status.Complete {
+		t.Fatalf("Dex goal completed with remaining targets: %+v", status)
+	}
+	if status.Current != 2 || status.Target != 4 {
+		t.Fatalf("Dex progress = %d/%d, want 2/4", status.Current, status.Target)
+	}
+
+	obs.Dex.Owned = append(obs.Dex.Owned, obs.Dex.Targets...)
+	obs.Dex.Targets = nil
+	status = EvaluateGoal(g, obs)
+	if !status.Complete {
+		t.Fatalf("Dex goal did not complete when all obtainable targets were owned: %+v", status)
+	}
+	if status.Current != 4 || status.Target != 4 {
+		t.Fatalf("completed Dex progress = %d/%d, want 4/4", status.Current, status.Target)
+	}
+}
+
+func TestEvaluateDexGoalNeverCompletesWithoutCatalog(t *testing.T) {
+	g, err := ParseGoal("dex")
+	if err != nil {
+		t.Fatalf("ParseGoal: %v", err)
+	}
+	if got := EvaluateGoal(g, Observation{}); got.Complete {
+		t.Fatalf("empty Dex catalog falsely completed goal: %+v", got)
 	}
 }
 
