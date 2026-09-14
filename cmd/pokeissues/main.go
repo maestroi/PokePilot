@@ -317,6 +317,17 @@ func (c *githubClient) report(ctx context.Context, manifest issueReportManifest,
 	}
 	if found {
 		if strings.EqualFold(existing.State, "closed") && !strings.EqualFold(existing.StateReason, "not_planned") {
+			fixedRevision, stale, gateErr := c.staleRecurrence(ctx, existing.Number, manifest.ObservedRevision)
+			if gateErr == nil && stale {
+				if err := c.ensureStaleOccurrenceComment(ctx, existing.Number, manifest, artifacts, fixedRevision); err != nil {
+					return out, false, err
+				}
+				result := reportResponse(existing, manifest.ExternalID, true)
+				result.Automation.Warning = fmt.Sprintf("stale occurrence on revision %s predates resolution baseline %s; issue left closed", manifest.ObservedRevision, fixedRevision)
+				return result, false, nil
+			}
+			// If the closure baseline or ancestry lookup fails, preserve the old
+			// fail-open behavior: a possible real regression is safer to reopen.
 			if err := c.reopenIssue(ctx, existing.Number); err != nil {
 				return out, false, err
 			}
@@ -421,6 +432,11 @@ func (c *githubClient) getIssueStatus(ctx context.Context, id string) (issueStat
 			out.Resolution = "not_planned"
 		} else {
 			out.Resolution = "fixed"
+			// Publish the same frozen baseline PokéWall uses for regression
+			// diagnostics. Failure to resolve it must not break lifecycle sync.
+			if fixedRevision, err := c.fixedRevisionAtClose(ctx, issue.Number); err == nil {
+				out.FixedRevision = fixedRevision
+			}
 		}
 	}
 	return out, nil
