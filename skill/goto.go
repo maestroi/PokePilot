@@ -495,14 +495,19 @@ var places = map[string]Destination{
 	// (8,71) sits in the open band of Route 2's south edge (x7-9), the
 	// landing zone of the crossing from Viridian City's north edge (x17-19).
 	"route 2": {Map: 0x0D, X: 8, Y: 71},
-	// 0x21 is Route 22. (29,5) is the coordinate trigger of the Route 22
-	// rival battle: Route22DefaultScript (pokered/scripts/Route22.asm:58)
-	// fires when EVENT_ROUTE22_RIVAL_WANTS_BATTLE is set and the player
-	// stands on (29,4) or (29,5); the rival object's home tile is (25,5).
-	// Measured 2026-08-28 (PROBE_MAP=0x21 PROBE_AT=29,5): standable and
-	// reachable from the Viridian City connection on the east edge; the
-	// only other exit is the warp at (8,5) to Route 22 Gate.
-	"route 22": {Map: 0x21, X: 29, Y: 5},
+	// 0x21 is Route 22. (27,5) is the safe approach tile: the coordinate
+	// trigger of the Route 22 rival battle is (29,4)/(29,5) —
+	// Route22DefaultScript (pokered/scripts/Route22.asm:58) fires when
+	// EVENT_ROUTE22_RIVAL_WANTS_BATTLE is set and the player stands on
+	// either, starting the trainer battle with no dialogue box. The rival
+	// object's home tile is (25,5) and its live position is (28,5). Landing
+	// a journey on the trigger tile leaked the battle into the current
+	// objective's boundary (run-2222o8lxtextzndtjyqs9hz0q). (27,5) is
+	// walkable, adjacent to the rival (so TalkAt and the progression
+	// approach both work from here), and reachable from the Viridian City
+	// connection on the east edge. Measured 2026-09-14 (PROBE_MAP=0x21
+	// PROBE_AT=29,5): row y=5 is open x21..x35.
+	"route 22": {Map: 0x21, X: 27, Y: 5},
 	// (14,8) is open plaza directly below the center door warp at (14,7).
 	"pewter city": {Map: 0x02, X: 14, Y: 8},
 	// 0x3a is the Pewter center, reached from Pewter City's door warp at
