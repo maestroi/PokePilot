@@ -69,6 +69,18 @@ func fleeMenuFromMem(mem *state.Mem) fleeMenuKind {
 	}
 }
 
+// fleeWaitInputFromMem chooses the only recovery input Flee may send while
+// waiting for a RUN-capable menu. Encounter text needs A to advance. A move
+// menu needs B: it means the previous A crossed the render boundary and hit
+// FIGHT before waitFleeMenu could observe the main menu. Backing out restores
+// the menu Flee owns instead of selecting a move and accidentally fighting.
+func fleeWaitInputFromMem(mem *state.Mem) emu.Button {
+	if strings.Contains(state.ScreenText(mem), moveMenuMarker) {
+		return emu.B
+	}
+	return emu.A
+}
+
 // safariRunCursor reports the exact live Safari menu state for RUN. It is
 // kept separate from the emulator driver so ROM-free tests can pin the menu
 // semantics directly.
@@ -106,8 +118,9 @@ func safariRunNextInput(mem *state.Mem) (btn emu.Button, done bool) {
 }
 
 // waitFleeMenu advances encounter text/animations until either battle menu
-// that Flee understands is positively rendered. It stops before sending A on
-// top of the menu itself.
+// that Flee understands is positively rendered. If an A press crosses the
+// render boundary and opens FIGHT's move menu before the next snapshot, it
+// backs out with B and resumes waiting rather than accidentally taking turns.
 func waitFleeMenu(m *emu.Emu) (fleeMenuKind, error) {
 	start := m.FrameCount()
 	for {
@@ -119,7 +132,7 @@ func waitFleeMenu(m *emu.Emu) (fleeMenuKind, error) {
 		if int(m.FrameCount()-start) > bagMainMenuBudget {
 			return fleeMenuNone, fmt.Errorf("skill: Flee: battle RUN menu did not open within %d frames", bagMainMenuBudget)
 		}
-		m.Tap(emu.A, 3, 7)
+		m.Tap(fleeWaitInputFromMem(&mem), 3, 7)
 	}
 }
 
