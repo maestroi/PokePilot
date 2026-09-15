@@ -17,7 +17,7 @@ func controlPlaneModelExperimentHTTPHandler(w *Wall, fallback http.Handler) http
 		return modelExperimentHTTPHandler(w, fallback)
 	}
 	controller := &modelExperimentController{
-		wall: w,
+		wall:     w,
 		fallback: fallback,
 		state: modelExperimentState{
 			Runs:        map[string]runExperimentMeta{},
