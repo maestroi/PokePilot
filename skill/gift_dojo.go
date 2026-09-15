@@ -17,13 +17,16 @@ const (
 	hitmonchanGiftY       uint8 = 1
 )
 
+func fightingDojoGiftDestination(x, y uint8) Destination {
+	return Destination{Map: fightingDojoMap, X: x, Y: y + 1}
+}
+
 func init() {
-	// Keep the mutually exclusive prize balls interaction-owned. Ordinary
-	// routing may reach the adjacent stand tiles (and resolve the dojo's trainer
-	// battles on the way), but only this skill is allowed to answer the prize
-	// confirmation and consume one branch of the choice.
-	interactionPlaces["fighting dojo hitmonlee"] = Destination{Map: fightingDojoMap, X: hitmonleeGiftX, Y: hitmonleeGiftY + 1}
-	interactionPlaces["fighting dojo hitmonchan"] = Destination{Map: fightingDojoMap, X: hitmonchanGiftX, Y: hitmonchanGiftY + 1}
+	// Keep the mutually exclusive prize balls interaction-owned. The dedicated
+	// gift skill owns travel to the adjacent stand tile (and any trainer battles
+	// on the way), then answers the prize confirmation exactly once.
+	interactionPlaces["fighting dojo hitmonlee"] = fightingDojoGiftDestination(hitmonleeGiftX, hitmonleeGiftY)
+	interactionPlaces["fighting dojo hitmonchan"] = fightingDojoGiftDestination(hitmonchanGiftX, hitmonchanGiftY)
 }
 
 // ReceiveFightingDojoGift consumes exactly one Fighting Dojo prize. The ROM
@@ -32,6 +35,10 @@ func init() {
 // latter. Once either species is owned the other branch is permanently
 // unavailable in this save, matching the catalog's fighting_dojo exclusivity.
 func ReceiveFightingDojoGift(m *emu.Emu, romData []byte, policy MovePolicy, species uint8) (CatchResult, error) {
+	if policy == nil {
+		return CatchResult{}, fmt.Errorf("skill: ReceiveFightingDojoGift: nil policy")
+	}
+
 	var (
 		x, y  uint8
 		other uint8
@@ -53,6 +60,13 @@ func ReceiveFightingDojoGift(m *emu.Emu, romData []byte, policy MovePolicy, spec
 	}
 	if giftPokemonAlreadyOwned(&mem, romData, other) {
 		return CatchResult{}, fmt.Errorf("skill: %s: the mutually exclusive Fighting Dojo prize was already consumed", name)
+	}
+
+	// Like Eevee, Dojo gift objectives skip agent-level habitat travel because
+	// scripted gifts own their route. Finish that contract here instead of
+	// requiring the executor to have been entered on map 0xB1 already.
+	if _, err := TravelFlee(m, romData, fightingDojoGiftDestination(x, y), policy, 40); err != nil {
+		return CatchResult{}, fmt.Errorf("skill: %s: reach gift: %w", name, err)
 	}
 
 	return receiveGiftPokemonAt(m, romData, policy, giftPokemonSpec{
