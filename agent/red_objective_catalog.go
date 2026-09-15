@@ -3,9 +3,14 @@ package agent
 import (
 	"sort"
 
+	redprofile "github.com/maestroi/pokepilot/red/profile"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/skill"
 )
+
+func init() {
+	registerObjectiveCatalogProvider(redprofile.GameID, &redObjectiveAdapter{})
+}
 
 // ObjectiveCatalog makes Red's world vocabulary available to generic provider
 // policy without requiring those providers to call Red-oriented skill discovery
