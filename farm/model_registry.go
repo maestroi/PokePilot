@@ -61,8 +61,15 @@ type InferenceIdentity struct {
 	EngineConfig  string `json:"engine_config,omitempty"`
 }
 
-func LoadModelRegistry(path string) (ModelRegistry, error) {
-	data, err := os.ReadFile(path)
+// LoadModelRegistry accepts either the historical JSON file path or a
+// postgres:// / postgresql:// DSN. Keeping the file form makes local tests and
+// single-process development cheap while production can use one shared source
+// of truth for selectable model deployments.
+func LoadModelRegistry(source string) (ModelRegistry, error) {
+	if isPostgresRegistrySource(source) {
+		return loadModelRegistryPostgres(source)
+	}
+	data, err := os.ReadFile(source)
 	if err != nil {
 		return ModelRegistry{}, fmt.Errorf("read model registry: %w", err)
 	}
