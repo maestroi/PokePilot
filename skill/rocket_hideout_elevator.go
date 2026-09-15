@@ -80,10 +80,12 @@ func acquireRocketLiftKey(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	return nil
 }
 
-// ascendRocketHideoutToB1F walks the stair-side route in reverse after the
-// Lift Key is collected. B2F/B3F still need spinner-aware routing in reverse;
-// ordinary graph walking cannot safely infer the forced arrow movement.
-func ascendRocketHideoutToB1F(m *emu.Emu, romData []byte, policy MovePolicy) error {
+// reachRocketB2FElevatorFloor returns from the stair-side B4F branch only as
+// far as B2F. B2F has its own elevator, so climbing one floor farther to B1F
+// is unnecessary and can cross B1F's runtime-replaced door using stale ROM
+// collision. A B1F resume descends through the stair on the same side of that
+// door, preserving resumability without depending on the mutable block.
+func reachRocketB2FElevatorFloor(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	for {
 		switch m.Peek8(sym.CurMap) {
 		case rocketHideoutB4FMap:
@@ -98,32 +100,41 @@ func ascendRocketHideoutToB1F(m *emu.Emu, romData []byte, policy MovePolicy) err
 				return fmt.Errorf("skill: RocketHideout: reverse B3F spinner floor: %w", err)
 			}
 		case rocketHideoutB2FMap:
-			if err := travelRocketWarp(m, policy, func() error {
-				return walkRocketSpinnerWarp(m, romData, rocketHideoutB2FMap, rocketHideoutB1FMap, 27, 8)
-			}); err != nil {
-				return fmt.Errorf("skill: RocketHideout: reverse B2F spinner floor: %w", err)
-			}
-		case rocketHideoutB1FMap:
 			return nil
+		case rocketHideoutB1FMap:
+			// B1F's callback replaces block (y=8,x=12), splitting the static
+			// collision map around game y=16/17. Use the B2F stair on the same
+			// side as the live player instead of trying to cross that mutable
+			// block on the way to B1F's elevator.
+			_, y := playerXY(m)
+			warpX, warpY := uint8(23), uint8(2)
+			if y >= 18 {
+				warpX, warpY = 21, 24
+			}
+			edge := world.Edge{Kind: world.EdgeWarp, From: rocketHideoutB1FMap, To: rocketHideoutB2FMap, WarpX: warpX, WarpY: warpY}
+			if err := travelRocketWarp(m, policy, func() error { return Traverse(m, romData, edge) }); err != nil {
+				return fmt.Errorf("skill: RocketHideout: B1F -> B2F for elevator: %w", err)
+			}
 		default:
-			return fmt.Errorf("skill: RocketHideout: cannot return to B1F from map %#04x", m.Peek8(sym.CurMap))
+			return fmt.Errorf("skill: RocketHideout: cannot reach B2F elevator floor from map %#04x", m.Peek8(sym.CurMap))
 		}
 	}
 }
 
-func enterRocketElevatorFromB1F(m *emu.Emu, romData []byte, policy MovePolicy) error {
+func enterRocketElevatorFromB2F(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if m.Peek8(sym.CurMap) == rocketHideoutElevatorMap {
 		return nil
 	}
-	if got := m.Peek8(sym.CurMap); got != rocketHideoutB1FMap {
-		return fmt.Errorf("skill: RocketHideout: elevator entrance requested on map %#04x, want B1F %#04x", got, rocketHideoutB1FMap)
+	if got := m.Peek8(sym.CurMap); got != rocketHideoutB2FMap {
+		return fmt.Errorf("skill: RocketHideout: elevator entrance requested on map %#04x, want B2F %#04x", got, rocketHideoutB2FMap)
 	}
-	edge := world.Edge{Kind: world.EdgeWarp, From: rocketHideoutB1FMap, To: rocketHideoutElevatorMap, WarpX: 24, WarpY: 19}
-	if err := travelRocketWarp(m, policy, func() error { return Traverse(m, romData, edge) }); err != nil {
-		return fmt.Errorf("skill: RocketHideout: enter B1F elevator: %w", err)
+	if err := travelRocketWarp(m, policy, func() error {
+		return walkRocketSpinnerWarp(m, romData, rocketHideoutB2FMap, rocketHideoutElevatorMap, 24, 19)
+	}); err != nil {
+		return fmt.Errorf("skill: RocketHideout: enter B2F elevator: %w", err)
 	}
 	if got := m.Peek8(sym.CurMap); got != rocketHideoutElevatorMap {
-		return fmt.Errorf("skill: RocketHideout: B1F elevator entrance reached map %#04x, want %#04x", got, rocketHideoutElevatorMap)
+		return fmt.Errorf("skill: RocketHideout: B2F elevator entrance reached map %#04x, want %#04x", got, rocketHideoutElevatorMap)
 	}
 	return nil
 }
@@ -166,18 +177,18 @@ func reachRocketGuardSide(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		if reachable {
 			return nil
 		}
-		if err := ascendRocketHideoutToB1F(m, romData, policy); err != nil {
+		if err := reachRocketB2FElevatorFloor(m, romData, policy); err != nil {
 			return err
 		}
-		if err := enterRocketElevatorFromB1F(m, romData, policy); err != nil {
+		if err := enterRocketElevatorFromB2F(m, romData, policy); err != nil {
 			return err
 		}
 		return rideRocketElevatorToB4F(m, romData, policy)
 	case rocketHideoutB3FMap, rocketHideoutB2FMap, rocketHideoutB1FMap:
-		if err := ascendRocketHideoutToB1F(m, romData, policy); err != nil {
+		if err := reachRocketB2FElevatorFloor(m, romData, policy); err != nil {
 			return err
 		}
-		if err := enterRocketElevatorFromB1F(m, romData, policy); err != nil {
+		if err := enterRocketElevatorFromB2F(m, romData, policy); err != nil {
 			return err
 		}
 		return rideRocketElevatorToB4F(m, romData, policy)

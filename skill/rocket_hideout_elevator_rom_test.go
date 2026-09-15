@@ -45,48 +45,67 @@ func TestRocketB4FLockedDoorRequiresElevatorForGuards(t *testing.T) {
 	}
 }
 
-func TestRocketHideoutReverseSpinnerRoutesToB1F(t *testing.T) {
+func TestRocketHideoutReverseSpinnerRoutesToB2F(t *testing.T) {
 	romData := rocketHideoutROM(t)
+	h, err := rom.ParseMap(romData, rocketHideoutB3FMap)
+	if err != nil {
+		t.Fatalf("ParseMap(B3F): %v", err)
+	}
+	grid, err := world.Build(romData, h)
+	if err != nil {
+		t.Fatalf("Build(B3F): %v", err)
+	}
+	actions, err := planRocketSpinner(grid.Width, grid.Height, grid.Walkable, 19, 17, 25, 6, rocketB3FSpins, nil)
+	if err != nil {
+		t.Fatalf("reverse B3F spinner plan: %v", err)
+	}
+	if len(actions) == 0 {
+		t.Fatal("reverse B3F spinner plan was empty away from B2F warp")
+	}
+}
 
-	for _, tc := range []struct {
-		name        string
-		mapID       uint8
-		sx, sy      int
-		warpX       int
-		warpY       int
-		transitions map[rocketPoint]rocketPoint
-	}{
-		{
-			name:  "B3F back to B2F",
-			mapID: rocketHideoutB3FMap,
-			sx:    19, sy: 17,
-			warpX: 25, warpY: 6,
-			transitions: rocketB3FSpins,
-		},
-		{
-			name:  "B2F back to B1F",
-			mapID: rocketHideoutB2FMap,
-			sx:    21, sy: 9,
-			warpX: 27, warpY: 8,
-			transitions: rocketB2FSpins,
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			h, err := rom.ParseMap(romData, tc.mapID)
-			if err != nil {
-				t.Fatalf("ParseMap(%02x): %v", tc.mapID, err)
-			}
-			grid, err := world.Build(romData, h)
-			if err != nil {
-				t.Fatalf("Build(%02x): %v", tc.mapID, err)
-			}
-			actions, err := planRocketSpinner(grid.Width, grid.Height, grid.Walkable, tc.sx, tc.sy, tc.warpX, tc.warpY, tc.transitions, nil)
-			if err != nil {
-				t.Fatalf("reverse spinner plan: %v", err)
-			}
-			if len(actions) == 0 {
-				t.Fatal("reverse spinner plan was empty away from target warp")
-			}
-		})
+// Issue #570 failed after the Lift Key route unnecessarily climbed from B2F
+// to B1F and then planned through B1F's runtime-replaced door using immutable
+// ROM collision. B2F already owns an elevator entrance. Prove that the
+// spinner-aware planner can reach it directly from the B3F stair arrival area.
+func TestRocketHideoutB2FSpinnerRoutesToElevator(t *testing.T) {
+	romData := rocketHideoutROM(t)
+	h, err := rom.ParseMap(romData, rocketHideoutB2FMap)
+	if err != nil {
+		t.Fatalf("ParseMap(B2F): %v", err)
+	}
+	grid, err := world.Build(romData, h)
+	if err != nil {
+		t.Fatalf("Build(B2F): %v", err)
+	}
+
+	const (
+		startX = 21
+		startY = 9
+		warpX  = 24
+		warpY  = 19
+	)
+	actions, err := planRocketSpinner(grid.Width, grid.Height, grid.Walkable, startX, startY, warpX, warpY, rocketB2FSpins, nil)
+	if err != nil {
+		t.Fatalf("B2F elevator spinner plan: %v", err)
+	}
+	if len(actions) == 0 {
+		t.Fatal("B2F elevator spinner plan was empty away from elevator warp")
+	}
+
+	at := rocketPoint{startX, startY}
+	for _, action := range actions {
+		at = action.Landing
+	}
+	dx := at.x - warpX
+	if dx < 0 {
+		dx = -dx
+	}
+	dy := at.y - warpY
+	if dy < 0 {
+		dy = -dy
+	}
+	if dx+dy != 1 {
+		t.Fatalf("B2F elevator spinner plan ended at (%d,%d), not beside warp (%d,%d)", at.x, at.y, warpX, warpY)
 	}
 }
