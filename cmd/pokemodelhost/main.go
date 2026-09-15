@@ -283,7 +283,7 @@ func (s *lifecycleService) watchProcess(generation uint64, cmd *exec.Cmd) {
 	err := cmd.Wait()
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if generation != s.generation || s.state == "ready" {
+	if generation != s.generation {
 		return
 	}
 	s.state = "failed"
