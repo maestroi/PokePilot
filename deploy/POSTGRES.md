@@ -52,19 +52,22 @@ docker stack deploy --resolve-image never \
 
 The database port is not published to the host. Other services reach it over the Swarm overlay network as `postgres:5432`.
 
+PokéWall receives `POKEPILOT_MODEL_REGISTRY=postgres-env://POKEPILOT_DATABASE_URL`. That indirection is deliberate: the existing startup logger may print the registry source on an error, so the source contains only an environment-variable name and never database credentials.
+
 ## Option B: separate PostgreSQL VM outside the Swarm
 
-Run PostgreSQL 14+ on a dedicated VM with its own persistent disk/backups, apply `deploy/postgres/001_control_plane.sql`, and set only:
+Run PostgreSQL 14+ on a dedicated VM with its own persistent disk/backups and apply `deploy/postgres/001_control_plane.sql`. Configure PokéWall with the same secret-safe indirection:
 
 ```sh
-POKEPILOT_MODEL_REGISTRY=postgres://pokepilot:<url-encoded-password>@<db-host>:5432/pokepilot?sslmode=require
+POKEPILOT_MODEL_REGISTRY=postgres-env://POKEPILOT_DATABASE_URL
+POKEPILOT_DATABASE_URL=postgres://pokepilot:<url-encoded-password>@<db-host>:5432/pokepilot?sslmode=require
 ```
 
 In that topology you do **not** deploy `deploy/postgres.yml`; the farm only connects to the external database. Prefer a private network plus TLS/firewall rules that allow the PokéWall host and nothing else.
 
 ## What is stored there now
 
-The first migration moves the selectable model deployment registry into PostgreSQL. `farm.LoadModelRegistry` accepts either a JSON file (development/backward compatibility) or a PostgreSQL DSN, so the existing `/v1/models` and experiment code does not need a second configuration format.
+The first migration moves the selectable model deployment registry into PostgreSQL. `farm.LoadModelRegistry` accepts a JSON file (development/backward compatibility), a PostgreSQL DSN, or the recommended `postgres-env://ENV_NAME` source, so the existing `/v1/models` and experiment code does not need a second configuration format.
 
 The initial schema seeds the deployments that were previously represented by `deploy/models.example.json`. Update their revision, quantization and engine-version fields to the exact deployed artifacts before using results as reproducible benchmarks.
 
