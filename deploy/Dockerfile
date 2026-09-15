@@ -50,4 +50,10 @@ COPY --from=build /out/pokeui /usr/local/bin/pokeui
 COPY --from=build /out/pokereplay /usr/local/bin/pokereplay
 COPY --from=build /out/pokeissues /usr/local/bin/pokeissues
 COPY --from=build /out/gomeboy-stream /usr/local/bin/gomeboy-stream
-RUN ln -s pokereplay /usr/local/bin/ffmpeg-vaapi
+# The manager-side updater is deliberately only a stable bootstrap. Changing
+# rollout behavior and LiteLLM config travel inside the exact image digest so
+# a stale host copy cannot keep the farm pinned to old deployment logic.
+COPY deploy/rollout-latest.sh /usr/local/share/pokepilot/deploy/rollout-latest.sh
+COPY deploy/litellm.yaml /usr/local/share/pokepilot/deploy/litellm.yaml
+RUN chmod +x /usr/local/share/pokepilot/deploy/rollout-latest.sh && \
+    ln -s pokereplay /usr/local/bin/ffmpeg-vaapi
