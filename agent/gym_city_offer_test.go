@@ -25,6 +25,10 @@ func hasJourneyTo(objs []Objective, place PlaceID) bool {
 	return false
 }
 
+func redOffered(obs Observation, known *Knowledge) []Objective {
+	return OfferWithProgression(obs, known, &redObjectiveAdapter{})
+}
+
 // TestOfferWithholdsVermilionGymJourneyUntilInside: farm run
 // run-2p2b5kf4qza0o1cv5vo5swhzxr offered "go to vermilion gym" as a plain
 // journey while Cut was already learned and usable, so RouteBlockages never
@@ -39,12 +43,12 @@ func TestOfferWithholdsVermilionGymJourneyUntilInside(t *testing.T) {
 	known.Visited[0x5c] = true
 
 	obs := Observation{Map: 0x05, MapName: "VERMILION_CITY", PartyCount: 1}
-	if hasJourneyTo(Offer(obs, known), "vermilion gym") {
+	if hasJourneyTo(redOffered(obs, known), "vermilion gym") {
 		t.Fatal("Vermilion City offered a plain journey to the gym before entering it")
 	}
 
 	obs = Observation{Map: 0x5c, MapName: "VERMILION_GYM", PartyCount: 1}
-	if !hasJourneyTo(Offer(obs, known), "vermilion gym") {
+	if !hasJourneyTo(redOffered(obs, known), "vermilion gym") {
 		t.Fatal("already inside the gym, the journey to its own stand tile must still be offered")
 	}
 }
@@ -52,12 +56,12 @@ func TestOfferWithholdsVermilionGymJourneyUntilInside(t *testing.T) {
 func TestOfferPewterCitySurfacesBrockUntilBoulderBadge(t *testing.T) {
 	obs := Observation{Map: 0x02, MapName: "PEWTER_CITY", PartyCount: 1}
 	known := NewKnowledge(nil)
-	if !hasOfferedKind(Offer(obs, known), KindGym) {
+	if !hasOfferedKind(redOffered(obs, known), KindGym) {
 		t.Fatal("Pewter City did not offer the Brock gym challenge before the Boulder Badge")
 	}
 
 	obs.Badges = []string{state.BadgeBoulder.String()}
-	if hasOfferedKind(Offer(obs, known), KindGym) {
+	if hasOfferedKind(redOffered(obs, known), KindGym) {
 		t.Fatal("Pewter City still offered Brock after the Boulder Badge was observed")
 	}
 }
@@ -104,7 +108,7 @@ func TestOfferGymDoneCountNeverCarriesOverFromAnotherGym(t *testing.T) {
 	known.Done(Objective{Kind: KindGym, Place: "cerulean city"})
 
 	obs := Observation{Map: 0x05, MapName: "VERMILION_CITY", PartyCount: 1}
-	for _, o := range Offer(obs, known) {
+	for _, o := range redOffered(obs, known) {
 		if o.Kind != KindGym {
 			continue
 		}
