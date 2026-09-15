@@ -84,33 +84,40 @@ func TestRecoverableFailureCauseVocabulary(t *testing.T) {
 	}
 }
 
-func TestFailureQuarantineSuppressesSameStateAndExpiresOnWorldChange(t *testing.T) {
+func TestFailurePolicySuppressesSameStateAndExpiresOnWorldChange(t *testing.T) {
 	failed := Objective{Kind: KindGoTo, Place: "route 1"}
 	other := Objective{Kind: KindGoTo, Place: "pallet town"}
 	obs := Observation{Location: "viridian city", X: 10, Y: 12, Controllable: true, Money: 100}
-	q := newFailureQuarantine()
-	q.record(ObjectiveResult{Objective: failed, Outcome: OutcomeBlocked, Cause: "navigation_stalled", Final: obs})
+	policy := newRunFailurePolicy(3)
+	result := ObjectiveResult{Objective: failed, Outcome: OutcomeBlocked, Cause: "navigation_stalled", Final: obs}
+	policy.record(result)
 
-	got := q.filter(obs, []Objective{failed, other})
-	if len(got) != 1 || got[0].String() != other.String() {
+	fingerprint := fingerprintRecoverableFailure(failed, result)
+	entry := policy.quarantine[objectiveStorageKey(failed)]
+	if entry.Fingerprint != fingerprint.Key {
+		t.Fatalf("quarantine fingerprint = %q, retry fingerprint = %q", entry.Fingerprint, fingerprint.Key)
+	}
+
+	got := policy.filter(obs, []Objective{failed, other})
+	if len(got) != 1 || got[0].Key() != other.Key() {
 		t.Fatalf("same-state filter = %+v, want only %s", got, other)
 	}
 
 	changed := obs
 	changed.Money++
-	got = q.filter(changed, []Objective{failed, other})
+	got = policy.filter(changed, []Objective{failed, other})
 	if len(got) != 2 {
 		t.Fatalf("changed-state filter = %+v, want both objectives", got)
 	}
 }
 
-func TestFailureQuarantineFailsOpenWhenNoAlternativeExists(t *testing.T) {
+func TestFailurePolicyFailsOpenWhenNoAlternativeExists(t *testing.T) {
 	failed := Objective{Kind: KindGoTo, Place: "route 1"}
 	obs := Observation{Location: "viridian city", X: 10, Y: 12, Controllable: true}
-	q := newFailureQuarantine()
-	q.record(ObjectiveResult{Objective: failed, Outcome: OutcomeBlocked, Cause: "navigation_stalled", Final: obs})
-	got := q.filter(obs, []Objective{failed})
-	if len(got) != 1 || got[0].String() != failed.String() {
+	policy := newRunFailurePolicy(3)
+	policy.record(ObjectiveResult{Objective: failed, Outcome: OutcomeBlocked, Cause: "navigation_stalled", Final: obs})
+	got := policy.filter(obs, []Objective{failed})
+	if len(got) != 1 || got[0].Key() != failed.Key() {
 		t.Fatalf("single-option filter = %+v, want fail-open", got)
 	}
 }

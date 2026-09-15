@@ -119,34 +119,6 @@ func (p *cheapPlanningTestPlanner) Next(_ Observation, offered []Objective) (Obj
 	return offered[0], nil
 }
 
-func TestRecoverableFailureReplansOnceThenStopsOnSameStructuredCause(t *testing.T) {
-	seen := map[string]bool{}
-	obj := Objective{Kind: KindGoTo, Place: "route 1"}
-	result := ObjectiveResult{Outcome: OutcomeBlocked, Cause: FailureCauseID("route_prerequisite_missing")}
-	reason, key, terminal := recoverableFailureReplan(seen, obj, result, false, false, 1, 3)
-	if terminal || reason != "objective_failed" || key == "" {
-		t.Fatalf("first = reason %q key %q terminal %v", reason, key, terminal)
-	}
-	seen[key] = true
-	_, _, terminal = recoverableFailureReplan(seen, obj, result, false, false, 2, 3)
-	if !terminal {
-		t.Fatal("same objective/cause after a strategic replan did not become terminal")
-	}
-}
-
-func TestRecoverableFailureNamesBlackoutAndRetreatReplans(t *testing.T) {
-	obj := Objective{Kind: KindTrain, Level: 12}
-	result := ObjectiveResult{Outcome: OutcomeBlocked, Cause: FailureCauseID("battle_blackout")}
-	reason, _, terminal := recoverableFailureReplan(map[string]bool{}, obj, result, true, false, 1, 3)
-	if terminal || reason != "blackout" {
-		t.Fatalf("blackout = %q terminal=%v", reason, terminal)
-	}
-	reason, _, terminal = recoverableFailureReplan(map[string]bool{}, obj, result, false, true, 1, 3)
-	if terminal || reason != "train_retreat" {
-		t.Fatalf("retreat = %q terminal=%v", reason, terminal)
-	}
-}
-
 func TestReplanOnceStopsSecondWatchdogEdgeUntilProgressReset(t *testing.T) {
 	escalated := false
 	if !replanOnce(&escalated) {

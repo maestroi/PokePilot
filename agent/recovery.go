@@ -7,14 +7,20 @@ import (
 	"sort"
 )
 
-type failureQuarantineEntry struct {
-	Cause    FailureCauseID
-	StateKey string
+// recoverableFailureFingerprint is the one semantic identity used by retry,
+// strategic escalation, repeat detection and same-state quarantine. The key is
+// derived only from canonical objective identity, normalized failure facts and
+// planner-relevant world state; native error prose never participates.
+type recoverableFailureFingerprint struct {
+	Key          string
+	ObjectiveKey string
+	StateKey     string
 }
 
-type failureQuarantine map[string]failureQuarantineEntry
-
-func newFailureQuarantine() failureQuarantine { return failureQuarantine{} }
+type failureQuarantineEntry struct {
+	Fingerprint string
+	StateKey    string
+}
 
 // recoveryStateKey hashes only FailureState's semantic, planner-relevant
 // fields. Raw RAM/map encodings and diagnostic prose never decide retry policy.
@@ -45,39 +51,56 @@ func normalizedFailureKey(result ObjectiveResult) string {
 	return fmt.Sprintf("%x", sum[:8])
 }
 
-func recoverableFailureKey(obj Objective, result ObjectiveResult) string {
-	return objectiveStorageKey(obj) + "|" + normalizedFailureKey(result) + "|" + recoveryStateKey(result.Final)
+func fingerprintRecoverableFailure(obj Objective, result ObjectiveResult) recoverableFailureFingerprint {
+	objectiveKey := objectiveStorageKey(obj)
+	stateKey := recoveryStateKey(result.Final)
+	return recoverableFailureFingerprint{
+		ObjectiveKey: objectiveKey,
+		StateKey:     stateKey,
+		Key:          objectiveKey + "|" + normalizedFailureKey(result) + "|" + stateKey,
+	}
 }
 
-func (q failureQuarantine) record(result ObjectiveResult) {
-	if q == nil || actionFor(result.Outcome) != actionReplan {
+// recoverableFailureKey remains the compact compatibility helper used by
+// diagnostics/tests; all live recovery decisions consume the fingerprint above.
+func recoverableFailureKey(obj Objective, result ObjectiveResult) string {
+	return fingerprintRecoverableFailure(obj, result).Key
+}
+
+// record quarantines the exact objective/failure/world fingerprint after a
+// recoverable failure. The entry lives inside runFailurePolicy so quarantine,
+// repeat detection and retry budgets cannot drift into separate state machines.
+func (f *runFailurePolicy) record(result ObjectiveResult) {
+	if f == nil || actionFor(result.Outcome) != actionReplan {
 		return
 	}
-	failure := normalizedFailure(result)
-	q[objectiveStorageKey(result.Objective)] = failureQuarantineEntry{
-		Cause: FailureCauseID(failure.Cause), StateKey: recoveryStateKey(result.Final),
+	fingerprint := fingerprintRecoverableFailure(result.Objective, result)
+	f.quarantine[fingerprint.ObjectiveKey] = failureQuarantineEntry{
+		Fingerprint: fingerprint.Key,
+		StateKey:    fingerprint.StateKey,
 	}
 }
 
-// filter suppresses an exact failed objective while the relevant semantic
-// state is unchanged and alternatives exist. A material state change expires
-// the quarantine automatically. If every option is quarantined it fails open;
-// the repeated-failure budget then provides the hard loop ceiling.
-func (q failureQuarantine) filter(obs Observation, offered []Objective) []Objective {
-	if q == nil || len(q) == 0 || len(offered) <= 1 {
+// filter suppresses an exact failed objective while planner-relevant state is
+// unchanged and alternatives exist. A material state change naturally expires
+// the entry because it changes StateKey; no string/error heuristic is needed.
+// If every option is quarantined it fails open, leaving the bounded retry policy
+// as the final loop ceiling.
+func (f *runFailurePolicy) filter(obs Observation, offered []Objective) []Objective {
+	if f == nil || len(f.quarantine) == 0 || len(offered) <= 1 {
 		return offered
 	}
 	stateKey := recoveryStateKey(obs)
 	out := make([]Objective, 0, len(offered))
 	for _, o := range offered {
 		key := objectiveStorageKey(o)
-		entry, ok := q[key]
+		entry, ok := f.quarantine[key]
 		if !ok {
 			out = append(out, o)
 			continue
 		}
 		if entry.StateKey != stateKey {
-			delete(q, key)
+			delete(f.quarantine, key)
 			out = append(out, o)
 			continue
 		}
@@ -88,9 +111,9 @@ func (q failureQuarantine) filter(obs Observation, offered []Objective) []Object
 	return out
 }
 
-func (q failureQuarantine) clear(o Objective) {
-	if q != nil {
-		delete(q, objectiveStorageKey(o))
+func (f *runFailurePolicy) clear(o Objective) {
+	if f != nil {
+		delete(f.quarantine, objectiveStorageKey(o))
 	}
 }
 

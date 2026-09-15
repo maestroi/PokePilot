@@ -3,24 +3,22 @@ package agent
 // runEngine owns the mutable portable policy state around objective
 // transactions. Gameplay mutation still belongs to the transaction/adapter;
 // this type coordinates run-level planning, completion, knowledge deltas,
-// watchdogs, retries, and quarantine.
+// watchdogs and one unified recoverable-failure policy.
 type runEngine struct {
-	goal       *runGoalPolicy
-	knowledge  *runKnowledgePolicy
-	planning   *runPlanning
-	watchdogs  *runWatchdogPolicy
-	failures   *runFailurePolicy
-	quarantine failureQuarantine
+	goal      *runGoalPolicy
+	knowledge *runKnowledgePolicy
+	planning  *runPlanning
+	watchdogs *runWatchdogPolicy
+	failures  *runFailurePolicy
 }
 
 func newRunEngine(budget Budget, resumed Plan, initial Observation, known *Knowledge, goal *runGoalPolicy) *runEngine {
 	return &runEngine{
-		goal:       goal,
-		knowledge:  newRunKnowledgePolicy(initial, known),
-		planning:   newRunPlanning(resumed),
-		watchdogs:  newRunWatchdogPolicy(budget, initial, known),
-		failures:   newRunFailurePolicy(budget.MaxConsecutiveFailures),
-		quarantine: newFailureQuarantine(),
+		goal:      goal,
+		knowledge: newRunKnowledgePolicy(initial, known),
+		planning:  newRunPlanning(resumed),
+		watchdogs: newRunWatchdogPolicy(budget, initial, known),
+		failures:  newRunFailurePolicy(budget.MaxConsecutiveFailures),
 	}
 }
 
@@ -153,6 +151,10 @@ type runFailureDecision struct {
 	Recovered    bool
 }
 
+// runFailurePolicy owns all recoverable-failure state: same-world quarantine,
+// repeat detection, strategic escalation and blackout/training retry budgets.
+// Every path keys off fingerprintRecoverableFailure, so these mechanisms cannot
+// disagree about whether two failures are the same semantic event.
 type runFailurePolicy struct {
 	maxConsecutive   int
 	consecutive      int
@@ -160,6 +162,7 @@ type runFailurePolicy struct {
 	retreatStreak    int
 	lastRetreatLevel uint8
 	escalated        map[string]bool
+	quarantine       map[string]failureQuarantineEntry
 }
 
 func newRunFailurePolicy(maxConsecutive int) *runFailurePolicy {
@@ -169,26 +172,31 @@ func newRunFailurePolicy(maxConsecutive int) *runFailurePolicy {
 	return &runFailurePolicy{
 		maxConsecutive: maxConsecutive,
 		escalated:      map[string]bool{},
+		quarantine:     map[string]failureQuarantineEntry{},
 	}
 }
 
-// recoverable applies the historical retry policy using only the adapter's
+// recoverable applies the bounded retry policy using only the adapter's
 // normalized failure record and semantic result state. It never inspects a
 // concrete game/controller error identity.
 func (f *runFailurePolicy) recoverable(obj Objective, result ObjectiveResult, strategic bool, leadLevel uint8) runFailureDecision {
-	failureKey := recoverableFailureKey(obj, result)
+	fingerprint := fingerprintRecoverableFailure(obj, result)
+	failureKey := fingerprint.Key
 	blackedOut := failureIsBlackout(result)
 	retreated := failureCauseIs(result, "train_retreat")
 	if strategic {
 		f.consecutive++
-		reason, key, terminal := recoverableFailureReplan(
-			f.escalated, obj, result, blackedOut, retreated, f.consecutive, f.maxConsecutive,
-		)
-		if terminal {
+		if f.escalated[failureKey] || f.consecutive > f.maxConsecutive {
 			return runFailureDecision{Stop: StopFailed}
 		}
-		f.escalated[key] = true
+		f.escalated[failureKey] = true
 		f.lastFailKey = failureKey
+		reason := "objective_failed"
+		if blackedOut {
+			reason = "blackout"
+		} else if retreated {
+			reason = "train_retreat"
+		}
 		return runFailureDecision{ReplanReason: reason, Recovered: true}
 	}
 
