@@ -1,4 +1,4 @@
-package deploy
+package deploy_test
 
 import (
 	"os"
