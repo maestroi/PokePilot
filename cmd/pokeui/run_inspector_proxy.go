@@ -10,7 +10,9 @@ import (
 // mountRunInspectorRoutes keeps the browser on one origin while preserving
 // service ownership: pokewall answers metadata/debug/checkpoint repro reads and
 // writes, pokereplay owns S3 bytes and derived video, and pokeui only
-// allowlists/proxies the two surfaces.
+// allowlists/proxies the two surfaces. Destructive worker controls are also
+// allowlisted here because this function is mounted only by the private
+// operator surface, never by the public spectator relay.
 func mountRunInspectorRoutes(mux *http.ServeMux, wallBase, replayBase string) {
 	mux.HandleFunc("GET /v1/runs/{id}", proxy(wallBase, true))
 	mux.HandleFunc("GET /v1/runs/{id}/debug", proxy(wallBase, true))
@@ -18,6 +20,7 @@ func mountRunInspectorRoutes(mux *http.ServeMux, wallBase, replayBase string) {
 	mux.HandleFunc("GET /v1/runs/{id}/checkpoints", proxy(wallBase, true))
 	mux.HandleFunc("POST /v1/runs/{id}/repro", proxy(wallBase, true))
 	mux.HandleFunc("GET /v1/runs/{id}/repro-source", proxy(wallBase, true))
+	mux.HandleFunc("POST /v1/workers/{addr}/force-end", proxy(wallBase, false))
 
 	replayBase = strings.TrimRight(strings.TrimSpace(replayBase), "/")
 	if replayBase == "" {
