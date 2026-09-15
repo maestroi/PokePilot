@@ -57,6 +57,11 @@ func (a *redObjectiveAdapter) Validate(o Objective, obs Observation) error {
 		if o.Starter > skill.StarterBulbasaur {
 			return fmt.Errorf("agent: %s: unsupported Red starter %d", o, int(o.Starter))
 		}
+		if o.Species != "" {
+			if _, ok := redSpeciesID(o.Species); !ok {
+				return fmt.Errorf("agent: %s: unknown Red starter species %q", o, o.Species)
+			}
+		}
 	case KindProgress:
 		if !redProgressionKnown(o.Progress) {
 			return fmt.Errorf("agent: %s: unknown Red progression goal %q", o, o.Progress)
@@ -129,6 +134,10 @@ func (a *redObjectiveAdapter) SettlePostcondition(o Objective) error {
 }
 
 func (a *redObjectiveAdapter) VerifyPostcondition(o Objective, initial, final Observation, result ObjectiveResult) error {
+	if o.Kind == KindStarter && o.Species != "" {
+		return verifyRedStarterSpeciesPostcondition(o, final)
+	}
+
 	_, err := verifyObjectivePostcondition(o, initial, final, result)
 	if err == nil && o.Kind == KindHeal {
 		if ppErr := verifyRedHealPPPostcondition(initial, final); ppErr != nil {
@@ -150,6 +159,25 @@ func (a *redObjectiveAdapter) VerifyPostcondition(o Objective, initial, final Ob
 		}
 	}
 	return err
+}
+
+// verifyRedStarterSpeciesPostcondition handles patched starter experiments.
+// Starter selects the physical Oak ball, while Species records the semantic
+// Pokemon that the patched cartridge promises to put in the party.
+func verifyRedStarterSpeciesPostcondition(o Objective, final Observation) error {
+	if !stableObjectiveBoundary(final) {
+		return fmt.Errorf(
+			"%w: %s ended at %s (%d,%d), controllable=%v inBattle=%v",
+			ErrObjectivePostconditionUnavailable, o, final.Location, final.X, final.Y, final.Controllable, final.InBattle)
+	}
+	for _, mon := range final.Party {
+		if mon.Species == o.Species {
+			return nil
+		}
+	}
+	return fmt.Errorf(
+		"%w: %s finished but party does not contain starter %s",
+		ErrObjectivePostconditionFailed, o, o.Species)
 }
 
 // verifyRedHealPPPostcondition closes the positive-evidence gap for Center
