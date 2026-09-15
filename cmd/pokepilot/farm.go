@@ -568,7 +568,6 @@ func runFarmScripted(m *emu.Emu, starter, dest string, seed int64) (string, stri
 // wall's cooperative stop.
 func runFarmLLM(m *emu.Emu, starter, goal, llmProfile, reasoningEffort string, maxRounds, maxFrames int, seed int64, cancel <-chan struct{}, snap *heartbeatSnap, checkpointDir string) (string, string, *farm.Progress, *farm.Progress) {
 	resumeFrom := farmResumePath(checkpointDir)
-	var setupOutcomes []agent.ObjectiveResult
 	// When the spec names a starter, the farm takes it before handing control
 	// to the model — the same reason badgerun does (a model that knows Pokemon
 	// always picks Squirtle otherwise). A resumed state is already past that
@@ -579,9 +578,8 @@ func runFarmLLM(m *emu.Emu, starter, goal, llmProfile, reasoningEffort string, m
 			return "error", fmt.Sprintf("starter objective: %v", objErr), nil, nil
 		}
 		starterResult, execErr := executeScriptedObjective(m, starterObj)
-		setupOutcomes = append(setupOutcomes, starterResult)
 		if execErr != nil {
-			captureScriptedObjectiveTelemetry(agent.StopError, setupOutcomes, execErr)
+			captureScriptedObjectiveTelemetry(agent.StopError, []agent.ObjectiveResult{starterResult}, execErr)
 			return "error", scriptedObjectiveDetail(starterResult, execErr), nil, nil
 		}
 	}
@@ -598,9 +596,6 @@ func runFarmLLM(m *emu.Emu, starter, goal, llmProfile, reasoningEffort string, m
 		CheckpointDir: checkpointDir,
 		ResumeFrom:    resumeFrom,
 	})
-	if len(setupOutcomes) > 0 {
-		res.Outcomes = append(setupOutcomes, res.Outcomes...)
-	}
 	captureObjectiveFailureTelemetry(res)
 
 	fmt.Printf("\nrun stopped: %s after %d round(s)\n", stopName(res.Stop), res.Rounds)
