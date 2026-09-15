@@ -35,7 +35,7 @@ type recoveryState struct {
 	InBattle     bool                   `json:"in_battle,omitempty"`
 	Money        uint32                 `json:"money,omitempty"`
 	Party        []FailurePartyMember   `json:"party,omitempty"`
-	LeadPP       []uint8                 `json:"lead_pp,omitempty"`
+	LeadPP       []uint8                `json:"lead_pp,omitempty"`
 	Inventory    []FailureInventoryItem `json:"inventory,omitempty"`
 	Badges       []string               `json:"badges,omitempty"`
 	Capabilities []FailureCapability    `json:"capabilities,omitempty"`
