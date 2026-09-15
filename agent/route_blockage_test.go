@@ -46,7 +46,7 @@ func TestCollectRouteAvailabilityPreservesSemanticBlockages(t *testing.T) {
 		route13:   blockedRoute("red:route12_snorlax", "can_clear_snorlax"),
 		mtMoon:    world.ErrNoRoute,
 	}
-	got := collectRouteAvailability(planner, []string{"route 13", "mt moon 1f", "vermilion city", "vermilion gym"})
+	got := collectRouteAvailability(planner, []string{"route 13", "mt moon 1f", "vermilion city", "vermilion gym"}, redRoutePrerequisiteLink)
 	if len(got.Unroutable) != 4 {
 		t.Fatalf("unroutable = %v, want four unavailable destinations", got.Unroutable)
 	}
