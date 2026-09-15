@@ -72,7 +72,10 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 	tape := &dialogueTape{}
 	m.AlsoSample(tape.sample)
 	var history []RoundRecord
-	last := Observe(m, romData)
+	last, err := observeRunInitial(m, romData)
+	if err != nil {
+		return Result{Stop: StopError, Err: err}
+	}
 	engine := newRunEngine(budget, resumedPlan, last, known, goalPolicy)
 	notifyPlanning(p, engine.planning.snapshot())
 
@@ -274,6 +277,14 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 		res.PromptTokens, res.CompletionTokens = up.Usage()
 	}
 	return res
+}
+
+func observeRunInitial(m *emu.Emu, romData []byte) (Observation, error) {
+	obs, err := ObserveChecked(m, romData)
+	if err != nil {
+		return Observation{}, fmt.Errorf("agent: Run: initial observation: %w", err)
+	}
+	return obs, nil
 }
 
 func progressOf(obs Observation, k *Knowledge, round int) Progress {

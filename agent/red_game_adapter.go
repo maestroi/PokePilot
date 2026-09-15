@@ -130,6 +130,11 @@ func (a *redObjectiveAdapter) SettlePostcondition(o Objective) error {
 
 func (a *redObjectiveAdapter) VerifyPostcondition(o Objective, initial, final Observation, result ObjectiveResult) error {
 	_, err := verifyObjectivePostcondition(o, initial, final, result)
+	if err == nil && o.Kind == KindHeal {
+		if ppErr := verifyRedHealPPPostcondition(initial, final); ppErr != nil {
+			return ppErr
+		}
+	}
 	if o.Kind == KindTrain && o.Intent != "dex-evolution" && errors.Is(err, ErrObjectivePostconditionFailed) &&
 		redTrainingReachedThroughEvolution(o, initial, final, result) {
 		return nil
@@ -145,6 +150,20 @@ func (a *redObjectiveAdapter) VerifyPostcondition(o Objective, initial, final Ob
 		}
 	}
 	return err
+}
+
+// verifyRedHealPPPostcondition closes the positive-evidence gap for Center
+// healing. Heal objectives are offered for exhausted attacking PP even when HP
+// and status are already perfect, so the runtime must prove PP became usable
+// rather than accepting a nil executor error plus unchanged full HP.
+func verifyRedHealPPPostcondition(initial, final Observation) error {
+	if !leadOutOfPP(initial) {
+		return nil
+	}
+	if len(final.LeadPP) == 0 || leadOutOfPP(final) {
+		return fmt.Errorf("%w: heal finished but lead still has no usable PP", ErrObjectivePostconditionFailed)
+	}
+	return nil
 }
 
 func (a *redObjectiveAdapter) NormalizeFailure(phase gameruntime.FailurePhase, err error, final Observation) gameruntime.Failure {

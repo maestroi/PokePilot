@@ -127,7 +127,8 @@ func ppRecoveryDue(out []Objective) bool {
 }
 
 func filterTrainerLossBlocked(out []Objective, known *Knowledge) []Objective {
-	retryPlace, retryDue := gymRetryPending(known)
+	retryPlaces := gymRetryPlaces(known)
+	retryDue := len(retryPlaces) > 0
 	ppDue := ppRecoveryDue(out)
 	filtered := make([]Objective, 0, len(out))
 	for _, o := range out {
@@ -144,10 +145,11 @@ func filterTrainerLossBlocked(out []Objective, known *Knowledge) []Objective {
 			continue
 		}
 		if retryDue {
+			place := strings.ToLower(string(o.Place))
 			switch {
-			case o.Kind == KindGym:
+			case o.Kind == KindGym && retryPlaces[place]:
 				o = appendObjectiveNote(o, "(retry due after successful training; test the stronger party now)")
-			case o.Kind == KindGoTo && retryPlace != "" && strings.EqualFold(o.Place, retryPlace):
+			case o.Kind == KindGoTo && retryPlaces[place]:
 				o = appendObjectiveNote(o, "(return for gym retry after successful training)")
 			}
 		}
