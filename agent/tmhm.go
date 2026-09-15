@@ -9,15 +9,21 @@ import (
 	"github.com/maestroi/pokepilot/skill"
 )
 
-// offerWithTMHM extends the portable objective menu with Red-owned progression,
-// opportunistic pickup context, targeted party training, known-habitat catch
-// transitions, and owned machines. Generic Offer retains its portable
-// lead-training and pickup actions; this adapter can additionally prove whether
-// each concrete Red party member is trainable, which already-observed species
-// can be hunted on a reachable map, and whether a machine pickup is immediately
-// useful.
+// offerWithTMHM is the candidate-only compatibility facade for Red-owned
+// enrichment. Production Run uses offerWithTMHMEvidence so the provider
+// pipeline's structured blocked/prerequisite evidence is not discarded before
+// planning.
 func offerWithTMHM(m *emu.Emu, romData []byte, obs Observation, known *Knowledge) []Objective {
-	out := OfferWithProgression(obs, known, newRedObjectiveAdapter(m, romData))
+	return offerWithTMHMEvidence(m, romData, obs, known).Candidates
+}
+
+// offerWithTMHMEvidence extends the portable objective offer with Red-owned
+// progression, opportunistic pickup context, targeted party training,
+// known-habitat catch transitions, and owned machines while preserving the
+// portable providers' structured block evidence alongside the enriched menu.
+func offerWithTMHMEvidence(m *emu.Emu, romData []byte, obs Observation, known *Knowledge) ObjectiveOffer {
+	offer := OfferWithProgressionEvidence(obs, known, newRedObjectiveAdapter(m, romData))
+	out := offer.Candidates
 	out = filterRedProgressionStageObjectives(obs, out)
 	out = filterRedScriptedTalkObjectives(obs, out)
 	out = filterRedServiceTalkObjectives(romData, obs, out)
@@ -38,7 +44,8 @@ func offerWithTMHM(m *emu.Emu, romData []byte, obs Observation, known *Knowledge
 		return currentPartyTrainingEstimate(&mem, romData, obs.Map, slot, targetLevel, trainSessionBattleBudget)
 	})
 	out = appendTMHMObjectives(romData, party, state.DecodeInventory(&mem), out)
-	return prioritizeDexCleanupObjectives(obs, known, out)
+	offer.Candidates = prioritizeDexCleanupObjectives(obs, known, out)
+	return offer
 }
 
 const (
