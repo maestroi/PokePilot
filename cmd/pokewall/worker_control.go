@@ -12,12 +12,13 @@ import (
 )
 
 const (
-	defaultWorkerControlPort = "8100"
-	workerForceEndTimeout    = 2 * time.Second
-	maxWorkerControlError    = 4 << 10
+	defaultWorkerControlPort      = "8100"
+	workerForceEndTimeout         = 2 * time.Second
+	workerForceEndAttemptTimeout  = 750 * time.Millisecond
+	maxWorkerControlError         = 4 << 10
 )
 
-type workerTerminator func(context.Context, string) error
+type workerTerminator func(context.Context, []string) error
 
 // workerControlHTTPHandler adds destructive worker lifecycle actions around the
 // normal operator/runtime handler. Runner protocol compatibility remains in the
@@ -50,10 +51,14 @@ func (w *Wall) handleForceEndWorker(res http.ResponseWriter, req *http.Request, 
 		return
 	}
 	runID := worker.RunID
+	addrs := append([]string(nil), worker.Addrs...)
+	if len(addrs) == 0 {
+		addrs = []string{addr}
+	}
 	w.mu.Unlock()
 
 	ctx, cancel := context.WithTimeout(req.Context(), workerForceEndTimeout)
-	err := terminate(ctx, addr)
+	err := terminate(ctx, addrs)
 	cancel()
 	if err != nil {
 		writeJSON(res, http.StatusBadGateway, map[string]string{"error": "force end worker: " + err.Error()})
@@ -93,7 +98,27 @@ func (w *Wall) handleForceEndWorker(res http.ResponseWriter, req *http.Request, 
 	})
 }
 
-func requestWorkerForceEnd(ctx context.Context, workerAddr string) error {
+func requestWorkerForceEnd(ctx context.Context, workerAddrs []string) error {
+	failures := make([]string, 0, len(workerAddrs))
+	for _, workerAddr := range workerAddrs {
+		attemptCtx, cancel := context.WithTimeout(ctx, workerForceEndAttemptTimeout)
+		err := requestWorkerForceEndAt(attemptCtx, workerAddr)
+		cancel()
+		if err == nil {
+			return nil
+		}
+		failures = append(failures, fmt.Sprintf("%s: %v", workerAddr, err))
+		if ctx.Err() != nil {
+			break
+		}
+	}
+	if len(failures) == 0 {
+		return fmt.Errorf("worker reported no reachable addresses")
+	}
+	return fmt.Errorf("no worker address accepted force-end: %s", strings.Join(failures, "; "))
+}
+
+func requestWorkerForceEndAt(ctx context.Context, workerAddr string) error {
 	host, _, err := net.SplitHostPort(workerAddr)
 	if err != nil {
 		return fmt.Errorf("invalid worker address %q: %w", workerAddr, err)
@@ -107,7 +132,7 @@ func requestWorkerForceEnd(ctx context.Context, workerAddr string) error {
 	if err != nil {
 		return err
 	}
-	resp, err := (&http.Client{Timeout: workerForceEndTimeout}).Do(req)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err
 	}
