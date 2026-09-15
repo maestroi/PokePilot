@@ -8,6 +8,15 @@ import (
 	"github.com/maestroi/pokepilot/skill"
 )
 
+func catchObjectiveOwnsTravel(o Objective) bool {
+	switch o.Intent {
+	case dexSafariIntent, dexTradeIntent, dexFossilIntent, dexGameCornerIntent, dexStaticIntent, dexGiftIntent:
+		return true
+	default:
+		return false
+	}
+}
+
 func executeCatchObjective(m *emu.Emu, romData []byte, o Objective, result ObjectiveResult) (ObjectiveResult, error) {
 	species, ok := redSpeciesID(o.Species)
 	if !ok {
@@ -24,10 +33,14 @@ func executeCatchObjective(m *emu.Emu, romData []byte, o Objective, result Objec
 		}
 	}
 
-	// Safari, NPC trades, fossils, Game Corner Porygon, finite statics and
-	// Lapras' Silph route own semantics that an ordinary Place traversal cannot
-	// safely reproduce.
-	ownsTravel := o.Intent == dexSafariIntent || o.Intent == dexTradeIntent || o.Intent == dexFossilIntent || o.Intent == dexGameCornerIntent || o.Intent == dexStaticIntent || (o.Intent == dexGiftIntent && o.Species == "lapras")
+	// Scripted acquisition sources own the route needed to reach the exact
+	// interaction. Generic Place traversal is only appropriate for ordinary
+	// wild/fishing/water habitats. In particular, every Dex gift executor owns
+	// its travel: Eevee reaches the Celadon Mansion room, Lapras reaches its
+	// Silph floor, and the Fighting Dojo gifts reach their prize tiles. Letting
+	// only Lapras own travel made Eevee/Hitmon objectives try a bogus generic
+	// "catch habitat" route before their scripted executor ever ran.
+	ownsTravel := catchObjectiveOwnsTravel(o)
 	if o.Place != "" && !ownsTravel {
 		dest, ok := skill.Place(string(o.Place))
 		if !ok {
