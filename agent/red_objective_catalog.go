@@ -3,6 +3,7 @@ package agent
 import (
 	"sort"
 
+	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/skill"
 )
 
@@ -33,7 +34,7 @@ func redObjectiveCatalog(obs Observation) ObjectiveCatalog {
 			NativeMap: destination.Map,
 			X:         destination.X,
 			Y:         destination.Y,
-			Center:    isCenterNameForRed(destination.Map),
+			Center:    isCenter(state.MapName(destination.Map)),
 		})
 	}
 
@@ -88,52 +89,4 @@ func redObjectiveCatalog(obs Observation) ObjectiveCatalog {
 		return catalog.Destinations[i].Place < catalog.Destinations[j].Place
 	})
 	return normalizeObjectiveCatalog(catalog)
-}
-
-func isCenterNameForRed(mapID uint8) bool {
-	for _, name := range skill.PlaceNames() {
-		destination, ok := skill.Place(name)
-		if ok && destination.Map == mapID && isCenterFromPlaceName(name) {
-			return true
-		}
-	}
-	return false
-}
-
-func isCenterFromPlaceName(name string) bool {
-	// Red's place vocabulary names every healing destination as a Pokemon
-	// Center. This helper stays Red-owned; generic provider code only sees the
-	// resulting Center boolean.
-	for _, marker := range []string{"pokecenter", "pokemon center"} {
-		if containsFold(name, marker) {
-			return true
-		}
-	}
-	return false
-}
-
-func containsFold(s, want string) bool {
-	if len(want) == 0 {
-		return true
-	}
-	for i := 0; i+len(want) <= len(s); i++ {
-		match := true
-		for j := range want {
-			a, b := s[i+j], want[j]
-			if a >= 'A' && a <= 'Z' {
-				a += 'a' - 'A'
-			}
-			if b >= 'A' && b <= 'Z' {
-				b += 'a' - 'A'
-			}
-			if a != b {
-				match = false
-				break
-			}
-		}
-		if match {
-			return true
-		}
-	}
-	return false
 }
