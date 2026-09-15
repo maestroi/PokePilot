@@ -42,13 +42,13 @@ func NewKnowledge(topology any) *Knowledge {
 		panic(fmt.Sprintf("agent: unsupported knowledge topology %T", topology))
 	}
 	return &Knowledge{
-		Visited:        map[LocationID]bool{},
-		Places:         map[string]bool{},
-		Completed:      map[string]int{},
-		Talked:         map[LocationID]map[[2]uint8]bool{},
-		Adjacency:      resolved.Adjacency,
-		Requirements:   []Requirement{},
-		Failures:       map[string]Failure{},
+		Visited:         map[LocationID]bool{},
+		Places:          map[string]bool{},
+		Completed:       map[string]int{},
+		Talked:          map[LocationID]map[[2]uint8]bool{},
+		Adjacency:       resolved.Adjacency,
+		Requirements:    []Requirement{},
+		Failures:        map[string]Failure{},
 		nativeLocations: resolved.NativeLocations,
 	}
 }
