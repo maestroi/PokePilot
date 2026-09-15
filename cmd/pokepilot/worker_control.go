@@ -7,7 +7,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"strings"
 	"sync"
 	"time"
 )
@@ -23,11 +22,7 @@ const (
 // the only caller and pokeui exposes only pokewall's authenticated/operator
 // action, never this runner endpoint directly.
 func startWorkerControlServer() error {
-	port := strings.TrimSpace(os.Getenv("POKEPILOT_WORKER_CONTROL_PORT"))
-	if port == "" {
-		port = defaultWorkerControlPort
-	}
-	listener, err := net.Listen("tcp", net.JoinHostPort("", port))
+	listener, err := net.Listen("tcp", net.JoinHostPort("", defaultWorkerControlPort))
 	if err != nil {
 		return err
 	}
