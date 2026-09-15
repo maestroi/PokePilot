@@ -42,8 +42,19 @@ func (cp *controlPlane) persistFinish(w *Wall, report farm.FinishReport) error {
 			attempt = 1
 		}
 	}
-	safe := sanitizeFinishReport(report)
-	raw, err := json.Marshal(safe)
+
+	durable, err := durabilizeFinishReport(report, attempt)
+	if err != nil {
+		return err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			durable.cleanupUploads()
+		}
+	}()
+
+	raw, err := json.Marshal(durable.report)
 	if err != nil {
 		return err
 	}
@@ -52,24 +63,30 @@ func (cp *controlPlane) persistFinish(w *Wall, report farm.FinishReport) error {
 		return err
 	}
 	defer tx.Rollback() //nolint:errcheck
-	if _, err := tx.Exec(`INSERT INTO run_attempts(run_id,attempt,reason,detail,runner_version,seed_burn,report_json,finished_at) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,NOW()) ON CONFLICT(run_id,attempt) DO UPDATE SET reason=EXCLUDED.reason,detail=EXCLUDED.detail,runner_version=EXCLUDED.runner_version,seed_burn=EXCLUDED.seed_burn,report_json=EXCLUDED.report_json,finished_at=NOW()`, report.RunID, attempt, report.Reason, report.Detail, report.RunnerVersion, report.SeedBurn, string(raw)); err != nil {
+	if _, err := tx.Exec(`INSERT INTO run_attempts(run_id,attempt,reason,detail,runner_version,seed_burn,report_json,finished_at) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,NOW()) ON CONFLICT(run_id,attempt) DO UPDATE SET reason=EXCLUDED.reason,detail=EXCLUDED.detail,runner_version=EXCLUDED.runner_version,seed_burn=EXCLUDED.seed_burn,report_json=EXCLUDED.report_json,finished_at=NOW()`, durable.report.RunID, attempt, durable.report.Reason, durable.report.Detail, durable.report.RunnerVersion, durable.report.SeedBurn, string(raw)); err != nil {
 		return fmt.Errorf("persist run attempt: %w", err)
 	}
-	for _, art := range report.Artifacts {
-		meta := art
-		meta.Data = nil
-		metaRaw, _ := json.Marshal(meta)
-		if _, err := tx.Exec(`INSERT INTO artifacts(run_id,attempt,kind,name,media_type,sha256,store,bucket,object_key,size,metadata_json) VALUES($1,$2,'finish',$3,$4,$5,$6,$7,$8,$9,$10::jsonb) ON CONFLICT(run_id,attempt,kind,name) DO UPDATE SET media_type=EXCLUDED.media_type,sha256=EXCLUDED.sha256,store=EXCLUDED.store,bucket=EXCLUDED.bucket,object_key=EXCLUDED.object_key,size=EXCLUDED.size,metadata_json=EXCLUDED.metadata_json`, report.RunID, attempt, art.Name, art.MediaType, art.SHA256, art.Store, art.Bucket, art.ObjectKey, art.Size, string(metaRaw)); err != nil {
-			return fmt.Errorf("persist artifact %s: %w", art.Name, err)
+	for _, p := range durable.artifacts {
+		metaRaw, _ := json.Marshal(p.meta)
+		var inline any
+		if p.inline != nil {
+			inline = p.inline
+		}
+		if _, err := tx.Exec(`INSERT INTO artifacts(run_id,attempt,kind,name,media_type,sha256,store,bucket,object_key,size,metadata_json,inline_data) VALUES($1,$2,'finish',$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11) ON CONFLICT(run_id,attempt,kind,name) DO UPDATE SET media_type=EXCLUDED.media_type,sha256=EXCLUDED.sha256,store=EXCLUDED.store,bucket=EXCLUDED.bucket,object_key=EXCLUDED.object_key,size=EXCLUDED.size,metadata_json=EXCLUDED.metadata_json,inline_data=EXCLUDED.inline_data`, durable.report.RunID, attempt, p.meta.Name, p.meta.MediaType, p.meta.SHA256, p.meta.Store, p.meta.Bucket, p.meta.ObjectKey, checkpointArtifactSize(p.meta, p.inline), string(metaRaw), inline); err != nil {
+			return fmt.Errorf("persist artifact %s: %w", p.meta.Name, err)
 		}
 	}
-	if err := cp.persistObjectiveFailuresTx(tx, report, attempt); err != nil {
+	if err := cp.persistObjectiveFailuresTx(tx, durable.report, attempt); err != nil {
 		return err
 	}
-	if err := cp.persistStrategicRecordsTx(tx, w, report.RunID, attempt); err != nil {
+	if err := cp.persistStrategicRecordsTx(tx, w, durable.report.RunID, attempt); err != nil {
 		return err
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	committed = true
+	return nil
 }
 
 func (cp *controlPlane) persistStrategicRecordsTx(tx *sql.Tx, w *Wall, runID string, attempt int) error {
