@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -51,14 +52,16 @@ type modelExperimentState struct {
 }
 
 type modelExperimentController struct {
-	wall     *Wall
-	fallback http.Handler
-	registry farm.ModelRegistry
-	mu       sync.Mutex
-	leaseMu  sync.Mutex
-	state    modelExperimentState
-	path     string
-	client   *http.Client
+	wall           *Wall
+	fallback       http.Handler
+	registrySource string
+	registry       farm.ModelRegistry
+	registryMu     sync.RWMutex
+	mu             sync.Mutex
+	leaseMu        sync.Mutex
+	state          modelExperimentState
+	path           string
+	client         *http.Client
 }
 
 type deploymentView struct {
@@ -94,6 +97,7 @@ func modelExperimentHTTPHandler(w *Wall, fallback http.Handler) http.Handler {
 		controller.loadState()
 	}
 	if path := strings.TrimSpace(os.Getenv("POKEPILOT_MODEL_REGISTRY")); path != "" {
+		controller.registrySource = path
 		registry, err := farm.LoadModelRegistry(path)
 		if err != nil {
 			logModelExperiment("model registry %s: %v", path, err)
@@ -104,6 +108,7 @@ func modelExperimentHTTPHandler(w *Wall, fallback http.Handler) http.Handler {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/models", controller.handleModels)
+	mux.HandleFunc("PATCH /v1/models/{id}", controller.handlePatchModel)
 	mux.HandleFunc("POST /v1/experiments", controller.handleCreateExperiment)
 	mux.HandleFunc("GET /v1/experiments", controller.handleExperiments)
 	mux.HandleFunc("GET /v1/experiments/{id}", controller.handleExperiment)
@@ -120,7 +125,7 @@ func logModelExperiment(format string, args ...any) {
 }
 
 func (c *modelExperimentController) handleModels(w http.ResponseWriter, _ *http.Request) {
-	deployments := c.registry.EnabledDeployments()
+	deployments := c.enabledDeployments()
 	views := make([]deploymentView, 0, len(deployments))
 	statuses := map[string]modelHostStatus{}
 	queued := c.queuedByDeployment()
@@ -155,6 +160,57 @@ func (c *modelExperimentController) handleModels(w http.ResponseWriter, _ *http.
 		views = append(views, view)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"deployments": views, "hosts": statuses})
+}
+
+func (c *modelExperimentController) handlePatchModel(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimSpace(r.PathValue("id"))
+	if id == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "deployment id is required"})
+		return
+	}
+	if strings.TrimSpace(c.registrySource) == "" {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "model registry is not configured"})
+		return
+	}
+	var body struct {
+		MaxParallelWorkers int `json:"max_parallel_workers"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxSmallControlBody)).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON: " + err.Error()})
+		return
+	}
+	updated, err := farm.UpdateDeploymentParallelLimit(c.registrySource, id, body.MaxParallelWorkers)
+	if errors.Is(err, farm.ErrDeploymentNotFound) {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+		return
+	}
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	c.registryMu.Lock()
+	_ = c.registry.SetParallelLimit(id, body.MaxParallelWorkers)
+	c.registryMu.Unlock()
+	writeJSON(w, http.StatusOK, deploymentView{ModelDeployment: updated, State: "ready"})
+}
+
+func (c *modelExperimentController) enabledDeployments() []farm.ModelDeployment {
+	c.registryMu.RLock()
+	defer c.registryMu.RUnlock()
+	return c.registry.EnabledDeployments()
+}
+
+func (c *modelExperimentController) deployment(id string) (farm.ModelDeployment, bool) {
+	c.registryMu.RLock()
+	defer c.registryMu.RUnlock()
+	return c.registry.Deployment(id)
+}
+
+func (c *modelExperimentController) liveParallelLimit(id string) int {
+	if d, ok := c.deployment(id); ok {
+		return d.ParallelLimit()
+	}
+	return 1
 }
 
 func (c *modelExperimentController) handleSpec(w http.ResponseWriter, r *http.Request) {
@@ -216,7 +272,7 @@ func (c *modelExperimentController) handleLease(w http.ResponseWriter, r *http.R
 		return
 	}
 	if meta.Inference.ControlURL != "" {
-		status, code, err := c.hostAction(meta.Inference, "/v1/leases/acquire", map[string]any{"run_id": spec.RunID, "deployment_id": meta.Deployment, "max_parallel_workers": meta.MaxParallelWorkers})
+		status, code, err := c.hostAction(meta.Inference, "/v1/leases/acquire", map[string]any{"run_id": spec.RunID, "deployment_id": meta.Deployment, "max_parallel_workers": c.liveParallelLimit(meta.Deployment)})
 		if err != nil || code >= 300 || status.State != "ready" || status.DeploymentID != meta.Deployment {
 			c.requeueLease(spec.RunID)
 			writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "deployment lost readiness while leasing", "deployment": meta.Deployment, "status": status})
@@ -226,7 +282,7 @@ func (c *modelExperimentController) handleLease(w http.ResponseWriter, r *http.R
 	spec.LLMDeployment = meta.Deployment
 	spec.Inference = &meta.Inference
 	spec.ExperimentID, spec.ExperimentArm, spec.ExperimentCase = meta.ExperimentID, meta.ExperimentArm, meta.ExperimentCase
-	spec.LLMProfile = compatibilityProfile(c.registry, meta.Deployment, spec.LLMProfile)
+	spec.LLMProfile = c.compatibilityProfile(meta.Deployment, spec.LLMProfile)
 	writeJSON(w, http.StatusOK, spec)
 }
 
@@ -273,10 +329,7 @@ func (c *modelExperimentController) prepareNextDeployment() bool {
 }
 
 func (c *modelExperimentController) deploymentAtCapacity(meta runExperimentMeta) bool {
-	limit := meta.MaxParallelWorkers
-	if limit <= 0 {
-		limit = 1
-	}
+	limit := c.liveParallelLimit(meta.Deployment)
 	c.wall.mu.Lock()
 	activeIDs := make([]string, 0)
 	for runID, tile := range c.wall.tiles {
@@ -427,7 +480,7 @@ func (c *modelExperimentController) handleCreateExperiment(w http.ResponseWriter
 		return
 	}
 	for _, arm := range []*farm.ExperimentArm{&request.ArmA, &request.ArmB} {
-		d, ok := c.registry.Deployment(arm.Deployment)
+		d, ok := c.deployment(arm.Deployment)
 		if !ok || !d.Enabled {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "deployment " + arm.Deployment + " is unavailable"})
 			return
@@ -740,7 +793,7 @@ func tileBoulderSuccess(tile Tile) bool {
 }
 
 func (c *modelExperimentController) resolveRunMeta(raw map[string]any, deployment, experimentID, arm, caseID string) (runExperimentMeta, error) {
-	d, ok := c.registry.Deployment(deployment)
+	d, ok := c.deployment(deployment)
 	if !ok || !d.Enabled {
 		return runExperimentMeta{}, fmt.Errorf("deployment %q is unavailable", deployment)
 	}
@@ -772,14 +825,14 @@ func (c *modelExperimentController) resolveRunMeta(raw map[string]any, deploymen
 func (c *modelExperimentController) applyDeployment(raw map[string]any, meta runExperimentMeta) {
 	raw["llm_deployment"] = meta.Deployment
 	raw["inference"] = meta.Inference
-	raw["llm_profile"] = compatibilityProfile(c.registry, meta.Deployment, stringValue(raw["llm_profile"]))
+	raw["llm_profile"] = c.compatibilityProfile(meta.Deployment, stringValue(raw["llm_profile"]))
 	if meta.ExperimentID != "" {
 		raw["experiment_id"], raw["experiment_arm"], raw["experiment_case"] = meta.ExperimentID, meta.ExperimentArm, meta.ExperimentCase
 	}
 }
 
-func compatibilityProfile(registry farm.ModelRegistry, deployment, fallback string) string {
-	if d, ok := registry.Deployment(deployment); ok {
+func (c *modelExperimentController) compatibilityProfile(deployment, fallback string) string {
+	if d, ok := c.deployment(deployment); ok {
 		return d.CompatibilityProfile()
 	}
 	return fallback
