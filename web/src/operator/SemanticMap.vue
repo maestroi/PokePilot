@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { MapSprite } from '../shared/api/types'
 
 interface MapWarp {
@@ -37,6 +37,14 @@ const frame = ref<HTMLElement | null>(null)
 const canvas = ref<HTMLCanvasElement | null>(null)
 const loading = ref(false)
 const error = ref('')
+let savedDebug = false
+try {
+  savedDebug = window.localStorage.getItem('pokepilot.map.debug') === '1'
+} catch {
+  // Storage may be unavailable in hardened/private browser contexts.
+}
+const localDebug = ref(new URLSearchParams(window.location.search).get('debug') === '1' || savedDebug)
+const debugEnabled = computed(() => props.debug || localDebug.value)
 let payload: MapPayload | null = null
 let serial = 0
 let observer: ResizeObserver | null = null
@@ -94,7 +102,7 @@ function draw(): void {
   if (availW < 8 || availH < 8) return
 
   const fitPx = Math.floor(Math.min(availW / width, availH / height))
-  const px = Math.max(props.debug ? 18 : 6, fitPx)
+  const px = Math.max(debugEnabled.value ? 18 : 6, fitPx)
   node.width = width * px
   node.height = height * px
   const ctx = node.getContext('2d')
@@ -125,7 +133,7 @@ function draw(): void {
     }
   }
 
-  if (props.debug) {
+  if (debugEnabled.value) {
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.10)'
     ctx.lineWidth = 1
     ctx.beginPath()
@@ -175,7 +183,7 @@ function draw(): void {
     const pad = Math.max(1, Math.floor(px / 4))
     ctx.fillStyle = colors.sprite
     ctx.fillRect(x * px + pad, y * px + pad, Math.max(2, px - pad * 2), Math.max(2, px - pad * 2))
-    if (props.debug) {
+    if (debugEnabled.value) {
       const slot = Number(sprite.slot)
       const slotLabel = Number.isFinite(slot) && slot > 0 ? String(slot) : '?'
       drawDebugText(ctx, `S${slotLabel}/${hexByte(sprite.picture_id)}`, (x + 0.5) * px, (y + 0.5) * px, px)
@@ -189,7 +197,7 @@ function draw(): void {
     ctx.beginPath()
     ctx.arc((playerX + 0.5) * px, (playerY + 0.5) * px, Math.max(2, px * 0.42), 0, Math.PI * 2)
     ctx.fill()
-    if (props.debug) {
+    if (debugEnabled.value) {
       drawDebugText(ctx, `@${playerX},${playerY}`, (playerX + 0.5) * px, (playerY + 0.5) * px, px)
     }
   }
@@ -216,7 +224,14 @@ async function loadMap(): Promise<void> {
 }
 
 watch(() => props.map, () => { void loadMap() }, { immediate: true })
-watch([() => props.x, () => props.y, () => props.trail, () => props.sprites, () => props.debug], () => requestAnimationFrame(draw), { deep: true })
+watch([() => props.x, () => props.y, () => props.trail, () => props.sprites, () => debugEnabled.value], () => requestAnimationFrame(draw), { deep: true })
+watch(localDebug, (enabled) => {
+  try {
+    window.localStorage.setItem('pokepilot.map.debug', enabled ? '1' : '0')
+  } catch {
+    // Debug mode still works for the current page when storage is unavailable.
+  }
+})
 
 onMounted(() => {
   observer = new ResizeObserver(() => requestAnimationFrame(draw))
@@ -234,11 +249,27 @@ onUnmounted(() => {
   <div
     ref="frame"
     :class="[
-      debug ? 'place-items-start overflow-auto' : 'place-items-center overflow-hidden',
+      debugEnabled ? 'place-items-start overflow-auto' : 'place-items-center overflow-hidden',
       'relative grid h-full min-h-0 w-full bg-[#0c1118] p-1.5'
     ]"
   >
     <canvas ref="canvas" class="max-w-none shrink-0 [image-rendering:pixelated]" aria-label="Semantic map" />
+    <button
+      type="button"
+      :aria-pressed="debugEnabled"
+      :title="debugEnabled ? 'Hide map debug labels' : 'Show map debug labels'"
+      :class="[
+        debugEnabled ? 'bg-[var(--poke-cyan)] text-[#101820]' : 'bg-black/75 text-[var(--poke-muted)] hover:text-white',
+        'sticky top-1 right-1 ml-auto rounded-sm px-1.5 py-0.5 font-mono text-[9px] font-bold ring-1 ring-white/10'
+      ]"
+      @click="localDebug = !localDebug"
+    >
+      {{ debugEnabled ? 'DEBUG ON' : 'DEBUG' }}
+    </button>
+    <div v-if="debugEnabled" class="pointer-events-none sticky bottom-1 left-1 mr-auto bg-black/80 px-1.5 py-1 font-mono text-[9px] leading-3 text-[var(--poke-muted)] ring-1 ring-white/10">
+      <div><span class="text-white">S#/PP</span> sprite slot / picture ID</div>
+      <div><span class="text-white">→MM</span> warp destination map</div>
+    </div>
     <div v-if="loading" class="pointer-events-none absolute right-1.5 bottom-1.5 bg-black/70 px-1.5 py-0.5 text-[10px] text-[var(--poke-muted)]">Loading map…</div>
     <div v-else-if="error" class="pointer-events-none absolute right-1.5 bottom-1.5 max-w-[80%] bg-[#352529] px-1.5 py-0.5 text-[10px] text-[#e4b5b7]">{{ error }}</div>
   </div>
