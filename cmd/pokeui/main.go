@@ -56,6 +56,9 @@ var llmMetricsCSS []byte
 //go:embed ui/inspector.js
 var inspectorJS []byte
 
+//go:embed ui/model_experiments.js
+var modelExperimentsJS []byte
+
 // The operator used to expose Goal as an unrestricted text box even though
 // only structured syntax had a deterministic stop condition. Keep the prompt
 // human-readable, but constrain normal UI runs to the finite presets the agent
@@ -95,7 +98,7 @@ func operatorIndexPage() []byte {
 <script src="/ui.js"></script>`), 1)
 	}
 	page = bytes.Replace(page, []byte("</head>"), []byte("<link rel=\"stylesheet\" href=\"/llm_metrics.css\">\n</head>"), 1)
-	extra := []byte("<script src=\"/frame_policy.js\"></script>\n<script src=\"/stats.js\"></script>\n<script src=\"/llm_metrics.js\"></script>\n<script src=\"/inspector.js\"></script>\n</body>")
+	extra := []byte("<script src=\"/frame_policy.js\"></script>\n<script src=\"/stats.js\"></script>\n<script src=\"/llm_metrics.js\"></script>\n<script src=\"/inspector.js\"></script>\n<script src=\"/model_experiments.js\"></script>\n</body>")
 	return bytes.Replace(page, []byte("</body>"), extra, 1)
 }
 
@@ -161,6 +164,11 @@ func handlerWithServices(wallBase, replayBase, token string) http.Handler {
 		res.Header().Set("Cache-Control", "no-store")
 		res.Write(inspectorJS) //nolint:errcheck // best effort
 	})
+	mux.HandleFunc("GET /model_experiments.js", func(res http.ResponseWriter, req *http.Request) {
+		res.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+		res.Header().Set("Cache-Control", "no-store")
+		res.Write(modelExperimentsJS) //nolint:errcheck // best effort
+	})
 	mountMaps(mux)
 	mux.HandleFunc("GET /v1/version", func(res http.ResponseWriter, req *http.Request) {
 		res.Header().Set("Content-Type", "application/json")
@@ -170,6 +178,10 @@ func handlerWithServices(wallBase, replayBase, token string) http.Handler {
 	mux.HandleFunc("GET /v1/dashboard", proxy(wallBase, true))
 	mux.HandleFunc("GET /v1/stats", outcomesStatsHandler(wallBase))
 	mux.HandleFunc("GET /v1/triage", proxy(wallBase, true))
+	mux.HandleFunc("GET /v1/models", proxy(wallBase, true))
+	mux.HandleFunc("GET /v1/experiments", proxy(wallBase, true))
+	mux.HandleFunc("GET /v1/experiments/{id}", proxy(wallBase, true))
+	mux.HandleFunc("POST /v1/experiments", proxy(wallBase, false))
 	mux.HandleFunc("POST /v1/specs", proxy(wallBase, false))
 	mux.HandleFunc("POST /v1/triage/{key}/investigate", proxy(wallBase, false))
 	mux.HandleFunc("POST /v1/runs/{id}/cancel", proxy(wallBase, false))
