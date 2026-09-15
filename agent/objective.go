@@ -110,6 +110,9 @@ func (o Objective) String() string {
 	case KindTrainer:
 		return fmt.Sprintf("challenge trainer at (%d,%d)", o.X, o.Y)
 	case KindStarter:
+		if o.Species != "" {
+			return "take the " + string(o.Species) + " starter"
+		}
 		return "take the " + starterName(o.Starter) + " starter"
 	case KindProgress:
 		return "progress " + string(o.Progress)

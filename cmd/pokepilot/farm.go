@@ -391,9 +391,9 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 	var progEarly, progFinal *farm.Progress
 	switch planner {
 	case "scripted":
-		reason, detail, progEarly, progFinal = runFarmScripted(m, starter, dest)
+		reason, detail, progEarly, progFinal = runFarmScripted(m, starter, dest, seed)
 	case "llm":
-		reason, detail, progEarly, progFinal = runFarmLLM(m, starter, goal, spec.LLMProfile, spec.ReasoningEffort, maxRounds, maxFrames, cancel, snap, checkpointDir)
+		reason, detail, progEarly, progFinal = runFarmLLM(m, starter, goal, spec.LLMProfile, spec.ReasoningEffort, maxRounds, maxFrames, seed, cancel, snap, checkpointDir)
 	}
 
 	// Stop and join the heartbeat before TraceTail/SaveState/Finish.
@@ -524,25 +524,40 @@ func workerAddrs(port int) []string {
 
 // runFarmScripted mirrors runScripted: take the starter, walk to the
 // destination. It returns the finish reason instead of keeping the server
-// alive, because the wall decides what happens next.
-func runFarmScripted(m *emu.Emu, starter, dest string) (string, string, *farm.Progress, *farm.Progress) {
-	which, _ := starterFromName(starter) // validated before gameplay
+// alive, because the wall decides what happens next. Both actions cross the
+// same objective transaction boundary as planner-selected gameplay.
+func runFarmScripted(m *emu.Emu, starter, dest string, seed int64) (string, string, *farm.Progress, *farm.Progress) {
+	starterObj, err := starterObjectiveForRequest(starter, seed)
+	if err != nil {
+		return "error", fmt.Sprintf("starter objective: %v", err), nil, nil
+	}
+	results := make([]agent.ObjectiveResult, 0, 2)
 
 	fmt.Printf("getting the %s starter (this includes the rival battle)...\n", starter)
-	if err := skill.GetStarter(m, m.ROM(), which, skill.StatAwareMove(m.ROM())); err != nil {
-		return "error", fmt.Sprintf("get starter: %v", err), nil, nil
+	starterResult, err := executeScriptedObjective(m, starterObj)
+	results = append(results, starterResult)
+	if err != nil {
+		captureScriptedObjectiveTelemetry(agent.StopError, results, err)
+		return "error", scriptedObjectiveDetail(starterResult, err), nil, nil
 	}
 
 	target, ok := skill.Place(dest)
 	if !ok {
-		return "error", fmt.Sprintf("unknown destination %q", dest), nil, nil
+		err := fmt.Errorf("unknown destination %q", dest)
+		captureScriptedObjectiveTelemetry(agent.StopError, results, err)
+		return "error", err.Error(), nil, nil
 	}
 	fmt.Printf("walking to %q (map %02x, %d,%d)...\n", dest, target.Map, target.X, target.Y)
 	start := time.Now()
-	if err := skill.GoTo(m, m.ROM(), target); err != nil {
-		return "error", fmt.Sprintf("GoTo: %v", err), nil, nil
+	travelObj := agent.Objective{Kind: agent.KindGoTo, Place: agent.PlaceID(dest)}
+	travelResult, err := executeScriptedObjective(m, travelObj)
+	results = append(results, travelResult)
+	if err != nil {
+		captureScriptedObjectiveTelemetry(agent.StopError, results, err)
+		return "error", scriptedObjectiveDetail(travelResult, err), nil, nil
 	}
 	fmt.Printf("arrived at %q after %s\n", dest, time.Since(start).Round(time.Millisecond))
+	captureScriptedObjectiveTelemetry(agent.StopDone, results, nil)
 	// Scripted runs do not go through the agent loop, so they carry no
 	// progress samples: the pair is the agent run's measurement.
 	return "done", "", nil, nil
@@ -551,15 +566,21 @@ func runFarmScripted(m *emu.Emu, starter, dest string) (string, string, *farm.Pr
 // runFarmLLM mirrors runLLM's diagnostics and objective list; the only
 // differences are that the budget comes from the spec and cancel is the
 // wall's cooperative stop.
-func runFarmLLM(m *emu.Emu, starter, goal, llmProfile, reasoningEffort string, maxRounds, maxFrames int, cancel <-chan struct{}, snap *heartbeatSnap, checkpointDir string) (string, string, *farm.Progress, *farm.Progress) {
+func runFarmLLM(m *emu.Emu, starter, goal, llmProfile, reasoningEffort string, maxRounds, maxFrames int, seed int64, cancel <-chan struct{}, snap *heartbeatSnap, checkpointDir string) (string, string, *farm.Progress, *farm.Progress) {
 	resumeFrom := farmResumePath(checkpointDir)
 	// When the spec names a starter, the farm takes it before handing control
 	// to the model — the same reason badgerun does (a model that knows Pokemon
 	// always picks Squirtle otherwise). A resumed state is already past that
-	// setup, so replaying GetStarter would corrupt the continuation.
+	// setup, so replaying the starter objective would corrupt the continuation.
 	if starter != "" && resumeFrom == "" {
-		if err := skill.GetStarter(m, m.ROM(), farmStarterFor(starter), skill.StatAwareMove(m.ROM())); err != nil {
-			return "error", fmt.Sprintf("get starter %s: %v", starter, err), nil, nil
+		starterObj, objErr := starterObjectiveForRequest(starter, seed)
+		if objErr != nil {
+			return "error", fmt.Sprintf("starter objective: %v", objErr), nil, nil
+		}
+		starterResult, execErr := executeScriptedObjective(m, starterObj)
+		if execErr != nil {
+			captureScriptedObjectiveTelemetry(agent.StopError, []agent.ObjectiveResult{starterResult}, execErr)
+			return "error", scriptedObjectiveDetail(starterResult, execErr), nil, nil
 		}
 	}
 	fmt.Println("planner: llm — the model picks from a menu rebuilt every round")
@@ -575,6 +596,7 @@ func runFarmLLM(m *emu.Emu, starter, goal, llmProfile, reasoningEffort string, m
 		CheckpointDir: checkpointDir,
 		ResumeFrom:    resumeFrom,
 	})
+	captureObjectiveFailureTelemetry(res)
 
 	fmt.Printf("\nrun stopped: %s after %d round(s)\n", stopName(res.Stop), res.Rounds)
 	for i, o := range res.Completed {
