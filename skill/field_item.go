@@ -137,25 +137,8 @@ func UseFieldItem(m *emu.Emu, item uint8, slot int) error {
 	}
 
 	wantMax, itemIndex := startMenuShape(&mem)
-	drawn := func(m *emu.Emu) bool {
-		return m.Peek8(sym.FontLoaded) != 0 && int(m.Peek8(sym.MaxMenuItem)) == wantMax
-	}
-	for attempt := 0; attempt < 5; attempt++ {
-		if _, err := m.StepUntil(10, drawn); err == nil {
-			break
-		}
-		m.Tap(emu.Start, 3, 7)
-		if _, err := m.StepUntil(startMenuDrawBudget, drawn); err == nil {
-			break
-		}
-	}
-	state.Snapshot(m, &mem)
-	if !drawn(m) {
-		return fmt.Errorf("skill: UseFieldItem: start menu did not finish drawing: wFontLoaded=%#04x wCurrentMenuItem=%#04x wMaxMenuItem=%#04x (want max %d from pokedex flag)",
-			mem.U8(sym.FontLoaded), mem.U8(sym.CurrentMenuItem), mem.U8(sym.MaxMenuItem), wantMax)
-	}
-	if err := SelectMenuItem(m, itemIndex); err != nil {
-		return fmt.Errorf("skill: UseFieldItem: select ITEM (index %d): %w", itemIndex, err)
+	if err := openStartMenuEntry(m, itemIndex, wantMax); err != nil {
+		return fmt.Errorf("skill: UseFieldItem: open ITEM: %w", err)
 	}
 
 	if _, err := m.StepUntil(bagMenuBudget, func(m *emu.Emu) bool {
