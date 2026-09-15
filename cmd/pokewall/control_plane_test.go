@@ -1,6 +1,7 @@
 package main
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -43,5 +44,26 @@ func TestSanitizeFinishReportKeepsMetadataNotPayloadBytes(t *testing.T) {
 	}
 	if got.Artifacts[0].Store != "s3" || got.Artifacts[0].ObjectKey == "" || got.Artifacts[0].SHA256 != "abc" {
 		t.Fatalf("artifact metadata lost: %+v", got.Artifacts[0])
+	}
+}
+
+func TestExperimentPersistWriteOrderIsStable(t *testing.T) {
+	state := modelExperimentState{
+		Runs: map[string]runExperimentMeta{
+			"z-run": {RunID: "z-run"},
+			"a-run": {RunID: "a-run"},
+			"m-run": {RunID: "m-run"},
+		},
+		Experiments: map[string]experimentRecord{
+			"exp-z": {ID: "exp-z"},
+			"exp-a": {ID: "exp-a"},
+		},
+	}
+	runs, experiments := experimentPersistWriteOrder(state)
+	if want := []string{"a-run", "m-run", "z-run"}; !slices.Equal(runs, want) {
+		t.Fatalf("run persist order = %v, want %v", runs, want)
+	}
+	if want := []string{"exp-a", "exp-z"}; !slices.Equal(experiments, want) {
+		t.Fatalf("experiment persist order = %v, want %v", experiments, want)
 	}
 }

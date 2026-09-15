@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -94,6 +95,19 @@ func (cp *controlPlane) loadExperimentState(c *modelExperimentController) error 
 	return exps.Err()
 }
 
+func experimentPersistWriteOrder(state modelExperimentState) (runIDs, experimentIDs []string) {
+	return sortedMapKeys(state.Runs), sortedMapKeys(state.Experiments)
+}
+
+func sortedMapKeys[T any](m map[string]T) []string {
+	keys := make([]string, 0, len(m))
+	for key := range m {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
 func (cp *controlPlane) persistExperimentController(w *Wall) error {
 	v, ok := wallExperimentControllers.Load(w)
 	if !ok {
@@ -113,18 +127,26 @@ func (cp *controlPlane) persistExperimentController(w *Wall) error {
 	}
 	c.mu.Unlock()
 
+	// Sweep and HTTP finish both persist the same rows. Unordered map
+	// iteration let two transactions lock experiment_runs in opposite
+	// orders and Postgres reported deadlock.
+	cp.experimentPersist.Lock()
+	defer cp.experimentPersist.Unlock()
 	tx, err := cp.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback() //nolint:errcheck
-	for id, meta := range state.Runs {
+	runIDs, experimentIDs := experimentPersistWriteOrder(state)
+	for _, id := range runIDs {
+		meta := state.Runs[id]
 		raw, _ := json.Marshal(meta)
 		if _, err := tx.Exec(`INSERT INTO experiment_runs(run_id,experiment_id,experiment_arm,experiment_case,deployment_id,comparable_hash,metadata_json) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb) ON CONFLICT(run_id) DO UPDATE SET experiment_id=EXCLUDED.experiment_id,experiment_arm=EXCLUDED.experiment_arm,experiment_case=EXCLUDED.experiment_case,deployment_id=EXCLUDED.deployment_id,comparable_hash=EXCLUDED.comparable_hash,metadata_json=EXCLUDED.metadata_json`, id, meta.ExperimentID, meta.ExperimentArm, meta.ExperimentCase, meta.Deployment, meta.ComparableHash, string(raw)); err != nil {
 			return err
 		}
 	}
-	for id, record := range state.Experiments {
+	for _, id := range experimentIDs {
+		record := state.Experiments[id]
 		recordRaw, _ := json.Marshal(record)
 		requestRaw, _ := json.Marshal(record.Request)
 		if _, err := tx.Exec(`INSERT INTO experiments(id,name,created_at,request_json,record_json) VALUES($1,$2,$3,$4::jsonb,$5::jsonb) ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name,request_json=EXCLUDED.request_json,record_json=EXCLUDED.record_json`, id, record.Name, record.CreatedAt, string(requestRaw), string(recordRaw)); err != nil {
