@@ -33,9 +33,6 @@ services:
       - source: postgres_control_plane_init
         target: /docker-entrypoint-initdb.d/001_control_plane.sql
     healthcheck:
-      # Hardcoded role/db names: `${...}` in Swarm healthchecks is interpolated
-      # at deploy time on the manager (empty), which made pg_isready use "-d"
-      # or "root" as the role.
       test: ["CMD-SHELL", "pg_isready -U pokepilot -d pokepilot"]
       interval: 5s
       timeout: 5s
@@ -58,9 +55,25 @@ services:
           memory: 1G
 
   wall:
+    # Replace farm.yml's legacy state/catalog command completely. In this
+    # overlay PostgreSQL is the only durable structured store; /tmp/pokewall is
+    # merely a process-local compatibility/debug cache and may disappear on any
+    # task rollover.
+    command:
+      - pokewall
+      - -http
+      - ":8080"
+      - -dumps
+      - /tmp/pokewall
+      - -issues-api
+      - "http://issues:8080"
+      - -issues-project
+      - "pokepilot"
+      - -issues-ui
+      - "https://github.com/${POKEPILOT_GITHUB_REPO:-maestroi/PokePilot}"
     environment:
-      # The source value is intentionally credential-free because the existing
-      # startup error log includes it. farm.LoadModelRegistry resolves the real
-      # DSN from POKEPILOT_DATABASE_URL inside the process.
+      # The source value is intentionally credential-free because startup error
+      # logs may include it. Both the model registry and PokéWall control plane
+      # resolve the real DSN from POKEPILOT_DATABASE_URL inside the process.
       POKEPILOT_MODEL_REGISTRY: postgres-env://POKEPILOT_DATABASE_URL
       POKEPILOT_DATABASE_URL: ${POKEPILOT_DATABASE_URL:?POKEPILOT_DATABASE_URL is required}
