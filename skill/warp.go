@@ -68,6 +68,9 @@ func Traverse(m *emu.Emu, romData []byte, e world.Edge) error {
 	if err != nil {
 		return fmt.Errorf("skill: Traverse: build live map %02x: %w", e.From, err)
 	}
+	if err := prepareElevatorEdge(m, h, e, grid); err != nil {
+		return fmt.Errorf("skill: Traverse: prepare elevator edge %02x->%02x: %w", e.From, e.To, err)
+	}
 
 	// Position is re-read inside each plan below, not here: a re-plan
 	// around an NPC starts from wherever the interrupted walk stopped.
@@ -286,9 +289,18 @@ func warpTarget(h rom.MapHeader, e world.Edge, g *world.Grid, sx, sy int, blocke
 		}
 	}
 
+	_, _, _, elevatorEdge := rom.ElevatorFloorForDestination(e.From, e.To)
 	var candidates []rom.Warp
 	destHeader, destErr := rom.ParseMap(romData, e.To)
 	for _, w := range h.Warps {
+		// Elevator scripts rewrite every door's live destination after the
+		// floor choice, so their immutable ROM DestMap/DestWarpID values are
+		// not candidate filters. prepareElevatorEdge positively verified the
+		// live table before this point.
+		if elevatorEdge {
+			candidates = append(candidates, w)
+			continue
+		}
 		// Equal destination maps do not make ladders interchangeable: their
 		// landing warps can be in disconnected rooms on the same floor.
 		equivalent := w.DestWarpID == targetWarp
