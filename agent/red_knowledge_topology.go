@@ -11,6 +11,13 @@ func init() {
 	registerKnowledgeTopologyProvider(redprofile.GameID, &redObjectiveAdapter{})
 }
 
+func redLocationID(id uint8) LocationID {
+	if name := state.MapName(id); name != "" {
+		return LocationID(semanticPlace(name))
+	}
+	return LocationID(fmt.Sprintf("pokemon-red/map/%02x", id))
+}
+
 func (a *redObjectiveAdapter) KnowledgeTopology(native map[uint8][]uint8) KnowledgeTopology {
 	topology := KnowledgeTopology{
 		Adjacency:       map[LocationID][]LocationID{},
@@ -20,13 +27,7 @@ func (a *redObjectiveAdapter) KnowledgeTopology(native map[uint8][]uint8) Knowle
 		if known := topology.NativeLocations[id]; known != "" {
 			return known
 		}
-		name := state.MapName(id)
-		var semantic LocationID
-		if name != "" {
-			semantic = LocationID(semanticPlace(name))
-		} else {
-			semantic = LocationID(fmt.Sprintf("pokemon-red/map/%02x", id))
-		}
+		semantic := redLocationID(id)
 		topology.NativeLocations[id] = semantic
 		return semantic
 	}
