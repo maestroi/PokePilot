@@ -177,8 +177,6 @@ func (k *Knowledge) SawMap(id any) {
 	switch value := id.(type) {
 	case LocationID:
 		k.SawLocation(value)
-	case PlaceID:
-		k.SawLocation(LocationID(value))
 	case string:
 		k.SawLocation(LocationID(value))
 	case uint8:
@@ -374,8 +372,6 @@ func (k *Knowledge) TalkedTo(location any, x, y uint8) {
 	switch value := location.(type) {
 	case LocationID:
 		k.TalkedAt(value, x, y)
-	case PlaceID:
-		k.TalkedAt(LocationID(value), x, y)
 	case string:
 		k.TalkedAt(LocationID(value), x, y)
 	case uint8:
