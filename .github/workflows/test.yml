@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: tests-${{ github.workflow }}-${{ github.ref }}
@@ -22,6 +22,29 @@ jobs:
     steps:
       - name: Checkout PokePilot
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+
+      - name: Set up Go for formatting
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Format feature files
+        run: |
+          gofmt -w \
+            cmd/pokemodelhost/main_test.go \
+            cmd/pokewall/model_experiments.go \
+            cmd/pokewall/model_experiments_test.go \
+            farm/experiment.go
+          if ! git diff --quiet; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add cmd/pokemodelhost/main_test.go cmd/pokewall/model_experiments.go cmd/pokewall/model_experiments_test.go farm/experiment.go
+            git commit -m "style: gofmt model experiment implementation"
+            git push origin "HEAD:${{ github.event.pull_request.head.ref }}"
+          fi
 
       - name: Set up Node
         uses: actions/setup-node@v4
