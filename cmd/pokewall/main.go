@@ -102,7 +102,7 @@ func main() {
 	baseHandler := wall.outcomesCompatibility(wall.catalogOperatorCompatibility(wall.catalogHTTPHandler(workerControlHTTPHandler(wall, runtimeOperatorHTTPHandler(wall)))))
 	server := &http.Server{
 		Addr:              *httpAddr,
-		Handler:           modelExperimentHTTPHandler(wall, baseHandler),
+		Handler:           archiveHTTPHandler(wall, modelExperimentHTTPHandler(wall, baseHandler)),
 		ReadHeaderTimeout: serverReadHeaderTimeout,
 		IdleTimeout:       serverIdleTimeout,
 	}
