@@ -3,6 +3,10 @@ import type {
   DashboardQuery,
   DashboardRun,
   DashboardSnapshot,
+  ExperimentList,
+  ExperimentRequest,
+  ExperimentView,
+  ModelRegistrySnapshot,
   ReplayStatus,
   RunArtifact,
   RunSpec,
@@ -83,6 +87,28 @@ export function createRun(spec: RunSpec, signal?: AbortSignal): Promise<Record<s
   return requestJSON<Record<string, unknown>>('/v1/specs', {
     method: 'POST',
     body: JSON.stringify(spec),
+    signal
+  })
+}
+
+export async function getModels(signal?: AbortSignal): Promise<ModelRegistrySnapshot> {
+  const value = await requestJSON<ModelRegistrySnapshot | { deployments?: ModelRegistrySnapshot['deployments'] }>('/v1/models', { signal })
+  return { deployments: value.deployments || [], hosts: 'hosts' in value ? value.hosts : undefined }
+}
+
+export async function getExperiments(signal?: AbortSignal): Promise<ExperimentView[]> {
+  const value = await requestJSON<ExperimentList | ExperimentView[]>('/v1/experiments', { signal })
+  return Array.isArray(value) ? value : value.experiments || []
+}
+
+export function getExperiment(id: string, signal?: AbortSignal): Promise<ExperimentView> {
+  return requestJSON<ExperimentView>(`/v1/experiments/${encodeURIComponent(id)}`, { signal })
+}
+
+export function createExperiment(request: ExperimentRequest, signal?: AbortSignal): Promise<ExperimentView> {
+  return requestJSON<ExperimentView>('/v1/experiments', {
+    method: 'POST',
+    body: JSON.stringify(request),
     signal
   })
 }

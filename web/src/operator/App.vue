@@ -29,7 +29,7 @@ const descriptions: Record<OperatorView, string> = {
   runs: 'Search completed runs, then bulk-delete older history or every run that still matches one failure.',
   failures: 'Group, inspect, investigate, and delete finished runs for a specific failure — including issues that are already solved.',
   analytics: 'Farm outcomes, badge progress, LLM workload, and endless-run experiments.',
-  operations: 'Fleet health, workers, active attempts, queue/leases, and recent outcomes.',
+  operations: 'Fleet health, workers, LLM deployments, paired experiments, and recent outcomes.',
   tools: 'Queue a new scripted or goal-driven run.'
 }
 

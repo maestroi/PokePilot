@@ -71,6 +71,11 @@ export interface DashboardRun {
   dest?: string
   goal?: string
   llm_profile?: string
+  llm_deployment?: string
+  inference?: InferenceIdentity
+  experiment_id?: string
+  experiment_arm?: string
+  experiment_case?: string
   play_style?: string
   risk_tolerance?: string
   wild_encounters?: string
@@ -141,6 +146,116 @@ export interface DashboardQuery {
   starter?: string
 }
 
+export interface InferenceIdentity {
+  deployment_id: string
+  label?: string
+  model_id: string
+  revision?: string
+  artifact?: string
+  quantization?: string
+  compute: string
+  endpoint: string
+  api_model: string
+  control_url?: string
+  token_env?: string
+  engine?: string
+  engine_version?: string
+  engine_config?: string
+}
+
+export type DeploymentState = 'ready' | 'available' | 'loading' | 'busy' | 'failed' | 'unavailable' | string
+
+export interface ModelDeployment {
+  id: string
+  label: string
+  model_id: string
+  revision?: string
+  artifact?: string
+  quantization?: string
+  compute: string
+  endpoint: string
+  api_model: string
+  enabled: boolean
+  control_url?: string
+  engine?: string
+  engine_version?: string
+  engine_config?: string
+  legacy_profile?: string
+  state: DeploymentState
+  loaded_deployment?: string
+  active_leases?: number
+  error?: string
+}
+
+export interface ModelRegistrySnapshot {
+  deployments: ModelDeployment[]
+  hosts?: Record<string, unknown>
+}
+
+export interface ExperimentArm {
+  name: string
+  deployment: string
+}
+
+export interface ExperimentRequest {
+  name: string
+  arm_a: ExperimentArm
+  arm_b: ExperimentArm
+  goal: string
+  starter?: string
+  seeds?: number[]
+  seed_count?: number
+  play_style?: string
+  risk_tolerance?: string
+  wild_encounters?: string
+  reasoning_effort?: string
+  fps?: number
+  max_rounds?: number
+  max_frames?: number
+}
+
+export interface ExperimentArmSummary {
+  runs?: number
+  done?: number
+  boulder_successes?: number
+  success_rate?: number
+  rounds?: number
+  frames?: number
+  strategic_calls?: number
+  avg_strategic_call_seconds?: number
+  p50_strategic_call_seconds?: number
+  p95_strategic_call_seconds?: number
+  prompt_tokens?: number
+  completion_tokens?: number
+  rejected?: number
+  transport_errors?: number
+  fallbacks?: number
+  plan_executions?: number
+  steps_skipped?: number
+}
+
+export interface ExperimentPairedSummary {
+  a_wins?: number
+  ties?: number
+  b_wins?: number
+}
+
+export interface ExperimentView {
+  id: string
+  name: string
+  created_at?: string
+  total_pairs?: number
+  request?: ExperimentRequest
+  run_ids?: string[]
+  arm_a?: ExperimentArmSummary
+  arm_b?: ExperimentArmSummary
+  paired?: ExperimentPairedSummary
+}
+
+export interface ExperimentList {
+  experiments: ExperimentView[]
+}
+
 export interface RunSpec {
   run_id: string
   seed: number
@@ -149,6 +264,7 @@ export interface RunSpec {
   dest: string
   goal: string
   llm_profile: string
+  llm_deployment?: string
   play_style: string
   risk_tolerance: string
   wild_encounters: string
