@@ -26,6 +26,17 @@ jobs:
           node-version: '22.12.0'
           cache: npm
           cache-dependency-path: web/package-lock.json
+      - name: Normalize patch target formatting
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('farm/experiment.go')
+          s = p.read_text()
+          s = s.replace('\tFPS             int           `json:"fps,omitempty"`', '\tFPS             int    `json:"fps,omitempty"`')
+          s = s.replace('\tMaxRounds       int           `json:"max_rounds,omitempty"`', '\tMaxRounds       int    `json:"max_rounds,omitempty"`')
+          s = s.replace('\tMaxFrames       int           `json:"max_frames,omitempty"`', '\tMaxFrames       int    `json:"max_frames,omitempty"`')
+          p.write_text(s)
+          PY
       - name: Apply implementation
         run: python3 .github/apply_model_worker_concurrency.py
       - name: Format Go
