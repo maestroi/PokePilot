@@ -58,7 +58,8 @@ jobs:
     # workflow_run event cascading, which can silently miss (e.g. run
     # 4561b38/#302 landed on main without ever dispatching a rebuild).
     # This fires directly off the PR-closed event instead, so a rebuild
-    # still happens even if the workflow_run trigger never delivers.
+    # still happens even if the workflow_run trigger delivers a user-driven
+    # merge. GITHUB_TOKEN-driven merges are handled by the merge job itself.
     # publish-farm.yml's own concurrency group (cancel-in-progress) makes a
     # duplicate dispatch from the other job harmless.
     if: >
@@ -75,12 +76,20 @@ jobs:
 
   close_triage_issues:
     name: Close repaired farm issues
+    # User-driven merges emit pull_request:closed and take this path. A merge
+    # performed by this workflow's GITHUB_TOKEN does not recursively emit a
+    # new workflow run, so the workflow_run merge job below invokes the same
+    # closer directly after it lands the PR.
     if: >
       github.event_name == 'pull_request' &&
       github.event.pull_request.merged == true &&
       github.event.pull_request.base.ref == 'main'
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout PokePilot
+        uses: actions/checkout@v4
+        with:
+          ref: main
       - name: Close issues matching merged triage keys
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -88,49 +97,7 @@ jobs:
           REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
           MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
-        run: |
-          set -euo pipefail
-
-          # Autonomous repair PRs traditionally put [triage:key] in the
-          # title, while manual/interactive repair PRs often keep it in the
-          # body. Both are part of the PR's repair contract, so scan both and
-          # deduplicate before matching generated farm issues.
-          pr_text="$(gh pr view "$PR" --json title,body --jq '[.title, (.body // "")] | join("\n")')"
-          mapfile -t keys < <(
-            grep -oE '\[triage:[A-Za-z0-9._-]+\]' <<<"$pr_text" \
-              | sed -E 's/^\[triage:([^]]+)\]$/\1/' \
-              | sort -u \
-              || true
-          )
-          if (( ${#keys[@]} == 0 )); then
-            echo "PR #${PR} has no triage key in its title or body; nothing to close."
-            exit 0
-          fi
-
-          for key in "${keys[@]}"; do
-            marker="- **Triage key:** \`${key}\`"
-            mapfile -t issues < <(
-              gh api --paginate "/repos/${REPO}/issues?state=open&per_page=100" \
-                | jq -r --arg marker "$marker" '
-                    .[]
-                    | select(.pull_request == null)
-                    | select((.body // "") | contains($marker))
-                    | .number
-                  '
-            )
-
-            if (( ${#issues[@]} == 0 )); then
-              echo "No open farm issue matches triage key ${key}."
-              continue
-            fi
-
-            for issue in "${issues[@]}"; do
-              gh issue comment "$issue" --body \
-                "Repair merged in #${PR} at \`${MERGE_SHA}\` with \`[triage:${key}]\`. Closing this farm fingerprint automatically; a recurrence from a runner containing the repair is still eligible to reopen as a regression through the revision gate."
-              gh issue close "$issue" --reason completed
-              echo "Closed issue #${issue} for triage key ${key}."
-            done
-          done
+        run: bash .github/scripts/close-triage-issues.sh
 
   disable:
     name: Keep others manual
@@ -164,7 +131,11 @@ jobs:
       github.event.workflow_run.event == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - name: Squash-merge passing PR and dispatch farm publish
+      - name: Checkout lifecycle helper
+        uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Squash-merge passing PR, close its farm issues, and publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
@@ -211,6 +182,9 @@ jobs:
 
           merged="$(gh pr view "$pr_number" --json state --jq .state)"
           if [[ "$merged" == "MERGED" ]]; then
+            merge_sha="$(gh api "/repos/${REPO}/pulls/${pr_number}" --jq .merge_commit_sha)"
+            PR="$pr_number" MERGE_SHA="$merge_sha" REPO="$REPO" \
+              bash .github/scripts/close-triage-issues.sh
             gh workflow run publish-farm.yml --ref main
-            echo "Dispatched Publish farm image for main after #${pr_number}."
+            echo "Closed matching farm issues and dispatched Publish farm image after #${pr_number}."
           fi
