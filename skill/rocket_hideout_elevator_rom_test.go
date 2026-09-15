@@ -49,24 +49,24 @@ func TestRocketHideoutReverseSpinnerRoutesToB1F(t *testing.T) {
 	romData := rocketHideoutROM(t)
 
 	for _, tc := range []struct {
-		name       string
-		mapID      uint8
-		sx, sy     int
-		warpX      int
-		warpY      int
+		name        string
+		mapID       uint8
+		sx, sy      int
+		warpX       int
+		warpY       int
 		transitions map[rocketPoint]rocketPoint
 	}{
 		{
-			name: "B3F back to B2F",
+			name:  "B3F back to B2F",
 			mapID: rocketHideoutB3FMap,
-			sx: 19, sy: 17,
+			sx:    19, sy: 17,
 			warpX: 25, warpY: 6,
 			transitions: rocketB3FSpins,
 		},
 		{
-			name: "B2F back to B1F",
+			name:  "B2F back to B1F",
 			mapID: rocketHideoutB2FMap,
-			sx: 21, sy: 9,
+			sx:    21, sy: 9,
 			warpX: 27, warpY: 8,
 			transitions: rocketB2FSpins,
 		},
