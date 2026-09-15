@@ -36,6 +36,19 @@ const (
 	silphScopeX   uint8 = 25
 	silphScopeY   uint8 = 2
 
+	// B1F's dynamic door (RocketHideoutB1FDoorCallbackScript) sits between
+	// the elevator landing and both of B1F's own exits (GAME_CORNER and the
+	// B2F stairs); it opens only once EVENT_BEAT_ROCKET_HIDEOUT_1_TRAINER_4
+	// is set, by fighting the Rocket5 grunt at (28,18).
+	// pokered/data/maps/objects/RocketHideoutB1F.asm.
+	rocketB1FTrainer5X         uint8       = 28
+	rocketB1FTrainer5Y         uint8       = 18
+	rocketB1FGameCornerWarpX   uint8       = 21
+	rocketB1FGameCornerWarpY   uint8       = 2
+	rocketB1FStairsWarpX       uint8       = 23
+	rocketB1FStairsWarpY       uint8       = 2
+	eventBeatRocketB1FTrainer4 state.Event = 1653
+
 	storyBattleSettleBudget = 5000
 )
 

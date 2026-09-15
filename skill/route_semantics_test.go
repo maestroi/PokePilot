@@ -73,3 +73,46 @@ func TestRedRouteTransitionsMapRepresentativeGates(t *testing.T) {
 		})
 	}
 }
+
+// TestRedRouteTransitionGatesRocketB1FDoor is the regression for the
+// stuck "go to celadon city" farm runs whose elevator ride into Rocket
+// Hideout B1F lands beside the door RocketHideoutB1FDoorCallbackScript keeps
+// locked until Rocket5 ((28,18)) is beaten: GoTo's plain FindPath saw the
+// live-collision wall, banned both exits as unwalkable, and the only
+// remaining move was back into the elevator — an endless cb<->c7 bounce
+// (measured on run-xwsj1xbe1ftyt4v1493l1u1l). Both of B1F's exits behind that
+// door (the Game Corner warp and the B2F stair warp) must carry the action
+// transition with no capability requirement, since nothing but reaching the
+// grunt gates the fight; B1F's OTHER, ungated B2F warp (the south one at
+// (21,24)) and the elevator edges must not.
+func TestRedRouteTransitionGatesRocketB1FDoor(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		edge world.Edge
+		want bool
+	}{
+		{"game corner exit", world.Edge{Kind: world.EdgeWarp, From: rocketHideoutB1FMap, To: gameCornerMap, WarpX: rocketB1FGameCornerWarpX, WarpY: rocketB1FGameCornerWarpY}, true},
+		{"b2f stair exit", world.Edge{Kind: world.EdgeWarp, From: rocketHideoutB1FMap, To: rocketHideoutB2FMap, WarpX: rocketB1FStairsWarpX, WarpY: rocketB1FStairsWarpY}, true},
+		{"b2f south warp, ungated", world.Edge{Kind: world.EdgeWarp, From: rocketHideoutB1FMap, To: rocketHideoutB2FMap, WarpX: 21, WarpY: 24}, false},
+		{"elevator entry", world.Edge{Kind: world.EdgeWarp, From: rocketHideoutB1FMap, To: rocketHideoutElevatorMap, WarpX: 24, WarpY: 19}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			transition, ok := redRouteTransitionForEdge(tc.edge)
+			if ok != tc.want {
+				t.Fatalf("redRouteTransitionForEdge(%+v) ok=%v, want %v (transition=%+v)", tc.edge, ok, tc.want, transition)
+			}
+			if !tc.want {
+				return
+			}
+			if transition.ID != "red:rocket_b1f_trainer_door" {
+				t.Fatalf("transition ID = %q, want red:rocket_b1f_trainer_door", transition.ID)
+			}
+			if transition.Gate {
+				t.Fatalf("transition is a Gate; want an action (nothing precedes fighting Rocket5)")
+			}
+			if len(transition.Requires) != 0 {
+				t.Fatalf("Requires = %v, want none: fighting Rocket5 needs no prior item/badge", transition.Requires)
+			}
+		})
+	}
+}
