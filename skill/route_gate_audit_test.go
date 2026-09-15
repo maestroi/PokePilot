@@ -93,25 +93,36 @@ func TestSouthernSeaRouteRequiresSurf(t *testing.T) {
 	}
 }
 
-func TestGymCutGatesAreEntryOnly(t *testing.T) {
-	requireTransition(t,
-		world.Edge{Kind: world.EdgeWarp, From: celadonCityMap, To: celadonGymMap},
-		"red:celadon_gym_cut", capCanCut)
-	if transition, ok := redRouteTransitionForEdge(world.Edge{Kind: world.EdgeWarp, From: celadonGymMap, To: celadonCityMap}); ok && transition.ID == "red:celadon_gym_cut" {
-		t.Fatalf("leaving Celadon Gym was Cut-gated: %+v", transition)
+func TestGymCutGatesAreBidirectionalPivots(t *testing.T) {
+	// Issue #525 reproduced the same static-component trap at Celadon that
+	// Vermilion already handles: a run resumed inside map 0x86 could not route
+	// from Erika's gym back to the Center because the immutable city collision
+	// still splits the gym landing yard from the street. Both directions must
+	// therefore be action pivots, not pure gates.
+	for _, edge := range []world.Edge{
+		{Kind: world.EdgeWarp, From: celadonCityMap, To: celadonGymMap},
+		{Kind: world.EdgeWarp, From: celadonGymMap, To: celadonCityMap},
+	} {
+		transition := requireTransition(t, edge, "red:celadon_gym_cut", capCanCut)
+		if transition.Gate {
+			t.Fatalf("Celadon Gym Cut transition was a pure gate instead of a pivot: %+v", transition)
+		}
 	}
 
-	// Unlike Celadon, the same tree sits on both sides of Vermilion's door in
-	// the immutable ROM collision (measured on run-3djisxgsy3dgzpnsde2inzyuh
-	// round 7): leaving lands on the untouched yard side exactly as entering
-	// starts from the untouched street side, so both directions need the
-	// pivot or GoTo reports "world: no route" trying to leave after Surge.
-	requireTransition(t,
-		world.Edge{Kind: world.EdgeWarp, From: semanticVermilionCityMap, To: vermilionGymMap},
-		"red:vermilion_gym_cut", capCanCut)
-	requireTransition(t,
-		world.Edge{Kind: world.EdgeWarp, From: vermilionGymMap, To: semanticVermilionCityMap},
-		"red:vermilion_gym_cut", capCanCut)
+	// The same tree sits on both sides of Vermilion's door in the immutable
+	// ROM collision (measured on run-3djisxgsy3dgzpnsde2inzyuh round 7):
+	// leaving lands on the untouched yard side exactly as entering starts from
+	// the untouched street side, so both directions need the pivot or GoTo
+	// reports "world: no route" trying to leave after Surge.
+	for _, edge := range []world.Edge{
+		{Kind: world.EdgeWarp, From: semanticVermilionCityMap, To: vermilionGymMap},
+		{Kind: world.EdgeWarp, From: vermilionGymMap, To: semanticVermilionCityMap},
+	} {
+		transition := requireTransition(t, edge, "red:vermilion_gym_cut", capCanCut)
+		if transition.Gate {
+			t.Fatalf("Vermilion Gym Cut transition was a pure gate instead of a pivot: %+v", transition)
+		}
+	}
 }
 
 // TestRoute9CutIsPivotNotGate is the Route 9 sibling of the Vermilion Gym
