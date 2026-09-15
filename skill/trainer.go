@@ -8,6 +8,7 @@ import (
 	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
+	"github.com/maestroi/pokepilot/world"
 )
 
 var (
@@ -178,9 +179,40 @@ func ordinaryTrainerClass(opponent uint8) bool {
 	}
 }
 
+// genericTrainerReachable reports whether the current player component can
+// reach a tile beside this trainer. Generic trainer objectives are local map
+// interactions, so offering a trainer on the far side of a stationary blocker
+// (notably Route 12's Snorlax split) only creates a deterministic no-path
+// failure. A map-build failure stays fail-open so observation does not hide
+// trainers because of incomplete geometry.
+func genericTrainerReachable(romData []byte, mem *state.Mem, h rom.MapHeader, homeX, homeY uint8) bool {
+	if mem == nil || mem.U8(sym.CurMap) != h.ID {
+		return true
+	}
+	g, err := world.Build(romData, h)
+	if err != nil {
+		return true
+	}
+
+	hidden := state.HiddenObjectIDs(mem)
+	blocked := map[[2]int]bool{}
+	for i, object := range h.Objects {
+		if hidden[uint8(i+1)] || object.Movement != rom.MovementStay {
+			continue
+		}
+		blocked[[2]int{int(object.X), int(object.Y)}] = true
+	}
+	_, _, err = world.FindPathAdjacent(g,
+		int(mem.U8(sym.XCoord)), int(mem.U8(sym.YCoord)),
+		int(homeX), int(homeY), blocked)
+	return err == nil
+}
+
 // TrainerStatusAt reports whether a standard trainer object is already
 // defeated and whether it is safe to expose as a generic challenge. It is a
-// pure ROM+RAM observation: no movement or button press occurs.
+// pure ROM+RAM observation: no movement or button press occurs. For trainers
+// on the current map, Challengeable also requires an approach path from the
+// player's current connected component.
 func TrainerStatusAt(romData []byte, mem *state.Mem, mapID, homeX, homeY uint8) (TrainerStatus, error) {
 	h, err := rom.ParseMap(romData, mapID)
 	if err != nil {
@@ -192,7 +224,7 @@ func TrainerStatusAt(romData []byte, mem *state.Mem, mapID, homeX, homeY uint8) 
 	}
 	return TrainerStatus{
 		Defeated:      target.flag.setMem(mem),
-		Challengeable: ordinaryTrainerClass(target.object.TrainerClass),
+		Challengeable: ordinaryTrainerClass(target.object.TrainerClass) && genericTrainerReachable(romData, mem, h, homeX, homeY),
 	}, nil
 }
 
