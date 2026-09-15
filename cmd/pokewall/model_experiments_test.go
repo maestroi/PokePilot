@@ -319,6 +319,80 @@ func TestWorkerCapPatchRejectsInvalidLimit(t *testing.T) {
 	}
 }
 
+func TestDeploymentCapHonorsTileWithoutExperimentMeta(t *testing.T) {
+	registry := writeModelRegistry(t, []farm.ModelDeployment{
+		{ID: "model-a", ModelID: "a", Compute: "gpu-a", Endpoint: "http://a/v1", APIModel: "a", Enabled: true, MaxParallelWorkers: 1},
+		{ID: "model-b", ModelID: "b", Compute: "gpu-b", Endpoint: "http://b/v1", APIModel: "b", Enabled: true, MaxParallelWorkers: 1},
+	})
+	t.Setenv("POKEPILOT_MODEL_REGISTRY", registry)
+	w := NewWall("")
+	raw := w.Handler()
+	for _, spec := range []map[string]any{
+		{"run_id": "a-1", "planner": "llm", "llm_deployment": "model-a"},
+		{"run_id": "a-2", "planner": "llm", "llm_deployment": "model-a"},
+		{"run_id": "b-1", "planner": "llm", "llm_deployment": "model-b"},
+	} {
+		if res := requestJSON(t, raw, http.MethodPost, "/v1/specs", spec); res.Code != http.StatusOK {
+			t.Fatalf("enqueue %s = %d %s", spec["run_id"], res.Code, res.Body.String())
+		}
+	}
+	w.mu.Lock()
+	if w.tiles["a-1"] == nil || w.tiles["a-1"].LLMDeployment != "model-a" {
+		w.mu.Unlock()
+		t.Fatalf("tile a-1 deployment = %+v", w.tiles["a-1"])
+	}
+	w.mu.Unlock()
+
+	h := modelExperimentHTTPHandler(w, raw)
+	first := requestJSON(t, h, http.MethodPost, "/v1/lease", map[string]any{})
+	var leased farm.Spec
+	if first.Code != http.StatusOK || json.Unmarshal(first.Body.Bytes(), &leased) != nil || leased.RunID != "a-1" || leased.LLMDeployment != "model-a" {
+		t.Fatalf("first lease = %d %s", first.Code, first.Body.String())
+	}
+	second := requestJSON(t, h, http.MethodPost, "/v1/lease", map[string]any{})
+	var skipped farm.Spec
+	if second.Code != http.StatusOK || json.Unmarshal(second.Body.Bytes(), &skipped) != nil || skipped.RunID != "b-1" {
+		t.Fatalf("second lease should skip saturated model-a: %d %s", second.Code, second.Body.String())
+	}
+	blocked := requestJSON(t, h, http.MethodPost, "/v1/lease", map[string]any{})
+	if blocked.Code != http.StatusNoContent {
+		t.Fatalf("third lease = %d %s, want queued model-a run to wait", blocked.Code, blocked.Body.String())
+	}
+}
+
+func TestDeploymentCapSurvivesLostExperimentSidecar(t *testing.T) {
+	registry := writeModelRegistry(t, []farm.ModelDeployment{
+		{ID: "model-a", ModelID: "a", Compute: "gpu-a", Endpoint: "http://a/v1", APIModel: "a", Enabled: true, MaxParallelWorkers: 1},
+	})
+	t.Setenv("POKEPILOT_MODEL_REGISTRY", registry)
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "wall.json")
+	w := NewWall("")
+	w.SetStatePath(statePath)
+	h := modelExperimentHTTPHandler(w, w.Handler())
+	for _, spec := range []map[string]any{
+		{"run_id": "a-1", "planner": "llm", "llm_deployment": "model-a"},
+		{"run_id": "a-2", "planner": "llm", "llm_deployment": "model-a"},
+	} {
+		if res := requestJSON(t, h, http.MethodPost, "/v1/specs", spec); res.Code != http.StatusOK {
+			t.Fatalf("enqueue = %d %s", res.Code, res.Body.String())
+		}
+	}
+	first := requestJSON(t, h, http.MethodPost, "/v1/lease", map[string]any{})
+	var leased farm.Spec
+	if first.Code != http.StatusOK || json.Unmarshal(first.Body.Bytes(), &leased) != nil || leased.RunID != "a-1" {
+		t.Fatalf("first lease = %d %s", first.Code, first.Body.String())
+	}
+
+	restarted := NewWall("")
+	restarted.SetStatePath(statePath)
+	h2 := modelExperimentHTTPHandler(restarted, restarted.Handler())
+	blocked := requestJSON(t, h2, http.MethodPost, "/v1/lease", map[string]any{})
+	if blocked.Code != http.StatusNoContent {
+		t.Fatalf("lease after sidecar-less restart = %d %s, want queued while ceiling is 1", blocked.Code, blocked.Body.String())
+	}
+}
+
 func TestExperimentRejectsConcurrencyAboveDeploymentLimit(t *testing.T) {
 	registry := writeModelRegistry(t, []farm.ModelDeployment{
 		{ID: "a", ModelID: "a", Compute: "a", Endpoint: "http://a/v1", APIModel: "a", Enabled: true, MaxParallelWorkers: 1},

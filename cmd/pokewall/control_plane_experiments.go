@@ -26,10 +26,8 @@ func controlPlaneModelExperimentHTTPHandler(w *Wall, fallback http.Handler) http
 		},
 		client: &http.Client{Timeout: 2 * time.Second},
 	}
-	if err := cp.loadExperimentState(controller); err != nil {
-		log.Printf("pokewall: load experiments from PostgreSQL: %v", err)
-	}
 	if source := strings.TrimSpace(os.Getenv("POKEPILOT_MODEL_REGISTRY")); source != "" {
+		controller.registrySource = source
 		registry, err := farm.LoadModelRegistry(source)
 		if err != nil {
 			logModelExperiment("model registry %s: %v", source, err)
@@ -37,10 +35,16 @@ func controlPlaneModelExperimentHTTPHandler(w *Wall, fallback http.Handler) http
 			controller.registry = registry
 		}
 	}
+	if err := cp.loadExperimentState(controller); err != nil {
+		log.Printf("pokewall: load experiments from PostgreSQL: %v", err)
+	}
+	controller.backfillRunsFromExperiments()
+	controller.attachDeploymentsToTiles()
 	wallExperimentControllers.Store(w, controller)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/models", controller.handleModels)
+	mux.HandleFunc("PATCH /v1/models/{id}", controller.handlePatchModel)
 	mux.HandleFunc("POST /v1/experiments", controller.handleCreateExperiment)
 	mux.HandleFunc("GET /v1/experiments", controller.handleExperiments)
 	mux.HandleFunc("GET /v1/experiments/{id}", controller.handleExperiment)
