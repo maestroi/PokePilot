@@ -4,9 +4,6 @@ import (
 	"errors"
 	"sort"
 
-	"github.com/maestroi/pokepilot/emu"
-	gameruntime "github.com/maestroi/pokepilot/game"
-	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/skill"
 	"github.com/maestroi/pokepilot/world"
 )
@@ -27,15 +24,13 @@ type RoutePrerequisiteLink struct {
 	Badge           string       `json:"badge,omitempty"`
 }
 
-// RouteBlockage is the planner-facing projection of a structured
-// world.RouteBlockedError. Destination is the requested semantic place;
-// Transitions and Missing preserve semantic identities without leaking map IDs
-// or parsing error prose. Observation JSON applies routeBlockageCap, while the
-// runtime copy remains complete for objective filtering.
+// RouteBlockage is the planner-facing projection of either a structured
+// world.RouteBlockedError or an adapter-owned semantic story requirement.
+// Destination is always portable; native map ids never cross this contract.
 type RouteBlockage struct {
 	Destination   PlaceID                 `json:"destination"`
 	Transitions   []string                `json:"transitions,omitempty"`
-	Missing       []CapabilityID          `json:"missing"`
+	Missing       []CapabilityID          `json:"missing,omitempty"`
 	Prerequisites []RoutePrerequisiteLink `json:"prerequisites,omitempty"`
 }
 
@@ -48,17 +43,9 @@ type routeReachability interface {
 	Reachability(skill.Destination) error
 }
 
-func routeAvailabilityFor(m *emu.Emu, romData []byte) routeAvailability {
-	planner, err := skill.NewRoutePlanner(m, romData)
-	if err != nil {
-		// nil means the question was never reliably asked. Offer deliberately
-		// fails open on that distinction.
-		return routeAvailability{}
-	}
-	return collectRouteAvailability(planner, skill.PlaceNames())
-}
+type routePrerequisiteLinker func(CapabilityID) (RoutePrerequisiteLink, bool)
 
-func collectRouteAvailability(planner routeReachability, names []string) routeAvailability {
+func collectRouteAvailability(planner routeReachability, names []string, link routePrerequisiteLinker) routeAvailability {
 	if planner == nil {
 		return routeAvailability{}
 	}
@@ -80,7 +67,7 @@ func collectRouteAvailability(planner routeReachability, names []string) routeAv
 		if !errors.As(err, &blocked) {
 			continue
 		}
-		blockage := plannerRouteBlockage(semanticPlace(name), blocked)
+		blockage := plannerRouteBlockage(semanticPlace(name), blocked, link)
 		if len(blockage.Missing) != 0 {
 			// Do not cap here. Offer consumes the runtime Observation and needs
 			// the COMPLETE semantic-blocked set. The JSON boundary is where the
@@ -91,7 +78,7 @@ func collectRouteAvailability(planner routeReachability, names []string) routeAv
 	return out
 }
 
-func plannerRouteBlockage(destination PlaceID, blocked *world.RouteBlockedError) RouteBlockage {
+func plannerRouteBlockage(destination PlaceID, blocked *world.RouteBlockedError, link routePrerequisiteLinker) RouteBlockage {
 	result := RouteBlockage{Destination: destination, Transitions: []string{}, Missing: []CapabilityID{}}
 	if blocked == nil {
 		return result
@@ -114,44 +101,12 @@ func plannerRouteBlockage(destination PlaceID, blocked *world.RouteBlockedError)
 	}
 	sort.Strings(result.Transitions)
 	sort.Slice(result.Missing, func(i, j int) bool { return result.Missing[i] < result.Missing[j] })
-	for _, id := range result.Missing {
-		if link, ok := redRoutePrerequisiteLink(id); ok {
-			result.Prerequisites = append(result.Prerequisites, link)
+	if link != nil {
+		for _, id := range result.Missing {
+			if prerequisite, ok := link(id); ok {
+				result.Prerequisites = append(result.Prerequisites, prerequisite)
+			}
 		}
 	}
 	return result
-}
-
-func redRoutePrerequisiteLink(id CapabilityID) (RoutePrerequisiteLink, bool) {
-	switch gameruntime.CapabilityID(id) {
-	case "can_leave_viridian_north":
-		return RoutePrerequisiteLink{Capability: id, Progress: redProgressPokedexAcquired}, true
-	case "can_leave_pewter_east":
-		return RoutePrerequisiteLink{Capability: id, Badge: state.BadgeBoulder.String()}, true
-	case "can_exit_mt_moon":
-		return RoutePrerequisiteLink{Capability: id, Progress: redProgressMtMoonFossilAcquired}, true
-	case "can_pass_cerulean_robbed_house":
-		return RoutePrerequisiteLink{Capability: id, Progress: redProgressSSTicketAcquired}, true
-	case "can_board_ss_anne":
-		return RoutePrerequisiteLink{Capability: id, Progress: redProgressSSTicketAcquired}, true
-	case "can_cut":
-		// Cut has two useful planner-facing facts: HM01 is the durable story
-		// acquisition, while the field capability says whether the current
-		// party/badge state can actually prepare or use it. Keeping both lets
-		// the strategist choose the S.S. Anne objective when the HM is absent
-		// without pretending ownership alone guarantees a compatible user.
-		return RoutePrerequisiteLink{Capability: id, FieldCapability: "cut", Progress: redProgressHM01Acquired}, true
-	case "can_surf":
-		return RoutePrerequisiteLink{Capability: id, FieldCapability: "surf"}, true
-	case "can_move_boulders":
-		return RoutePrerequisiteLink{Capability: id, FieldCapability: "strength"}, true
-	case "can_clear_snorlax":
-		return RoutePrerequisiteLink{Capability: id, Progress: redProgressPokeFluteAcquired}, true
-	case "can_enter_saffron":
-		return RoutePrerequisiteLink{Capability: id, Progress: ProgressSaffronGateOpen}, true
-	default:
-		// Unknown capabilities stay explicit in Missing. Not having a known
-		// preparation link is evidence we do not know a recipe yet.
-		return RoutePrerequisiteLink{}, false
-	}
 }
