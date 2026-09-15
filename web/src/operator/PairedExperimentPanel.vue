@@ -72,11 +72,21 @@ function seconds(value: number | undefined): string {
   return `${Number(value || 0).toFixed(2)}s`
 }
 
+function workerLimit(deploymentID: string): number {
+  return Math.max(1, Number(deployments.value.find((deployment) => deployment.id === deploymentID)?.max_parallel_workers || 1))
+}
+
 async function submit(): Promise<void> {
   if (submitting.value) return
   error.value = ''
   if (!form.arm_a || !form.arm_b || form.arm_a === form.arm_b) {
     error.value = 'Choose two different deployments for Arm A and Arm B.'
+    return
+  }
+  const armALimit = workerLimit(form.arm_a)
+  const armBLimit = workerLimit(form.arm_b)
+  if (Number(form.arm_a_workers) < 1 || Number(form.arm_a_workers) > armALimit || Number(form.arm_b_workers) < 1 || Number(form.arm_b_workers) > armBLimit) {
+    error.value = `Worker count exceeds deployment capacity (A max ${armALimit}, B max ${armBLimit}).`
     return
   }
   submitting.value = true
@@ -147,12 +157,12 @@ const metrics = computed(() => {
       </label>
       <label class="block">
         <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Arm A workers</span>
-        <input v-model.number="form.arm_a_workers" type="number" min="1" max="16" :class="fieldClass" />
+        <input v-model.number="form.arm_a_workers" type="number" min="1" :max="workerLimit(form.arm_a)" :class="fieldClass" />
         <span class="mt-1 block text-[10px] text-slate-600">1 keeps this arm at maximum per-run model speed.</span>
       </label>
       <label class="block">
         <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Arm B workers</span>
-        <input v-model.number="form.arm_b_workers" type="number" min="1" max="16" :class="fieldClass" />
+        <input v-model.number="form.arm_b_workers" type="number" min="1" :max="workerLimit(form.arm_b)" :class="fieldClass" />
         <span class="mt-1 block text-[10px] text-slate-600">Runs above the cap remain queued.</span>
       </label>
       <div class="hidden xl:block"></div>

@@ -124,8 +124,9 @@ func (c *modelExperimentController) handleModels(w http.ResponseWriter, _ *http.
 	views := make([]deploymentView, 0, len(deployments))
 	statuses := map[string]modelHostStatus{}
 	queued := c.queuedByDeployment()
+	active := c.activeByDeployment()
 	for _, d := range deployments {
-		view := deploymentView{ModelDeployment: d, State: "ready", Queued: queued[d.ID]}
+		view := deploymentView{ModelDeployment: d, State: "ready", ActiveLeases: active[d.ID], Queued: queued[d.ID]}
 		if d.ControlURL != "" {
 			status, err := c.hostStatus(d)
 			if err != nil {
@@ -133,7 +134,10 @@ func (c *modelExperimentController) handleModels(w http.ResponseWriter, _ *http.
 				view.Error = err.Error()
 			} else {
 				statuses[d.ControlURL] = status
-				view.Loaded, view.ActiveLeases, view.Error = status.DeploymentID, status.ActiveLeases, status.Error
+				view.Loaded, view.Error = status.DeploymentID, status.Error
+				if status.ActiveLeases > view.ActiveLeases {
+					view.ActiveLeases = status.ActiveLeases
+				}
 				switch {
 				case status.State == "loading" && status.DeploymentID == d.ID:
 					view.State = "loading"
@@ -290,6 +294,24 @@ func (c *modelExperimentController) deploymentAtCapacity(meta runExperimentMeta)
 	return active >= limit
 }
 
+func (c *modelExperimentController) activeByDeployment() map[string]int {
+	c.wall.mu.Lock()
+	activeIDs := make([]string, 0)
+	for runID, tile := range c.wall.tiles {
+		if tile != nil && !tile.Finished && (tile.Status == statusLeased || tile.Status == statusRunning) {
+			activeIDs = append(activeIDs, runID)
+		}
+	}
+	c.wall.mu.Unlock()
+	out := map[string]int{}
+	for _, runID := range activeIDs {
+		if meta, ok := c.runMeta(runID); ok {
+			out[meta.Deployment]++
+		}
+	}
+	return out
+}
+
 func (c *modelExperimentController) queuedByDeployment() map[string]int {
 	c.wall.mu.Lock()
 	queue := append([]string(nil), c.wall.queue...)
@@ -404,11 +426,19 @@ func (c *modelExperimentController) handleCreateExperiment(w http.ResponseWriter
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "arm_a and arm_b must select two distinct deployments"})
 		return
 	}
-	for _, id := range []string{request.ArmA.Deployment, request.ArmB.Deployment} {
-		d, ok := c.registry.Deployment(id)
+	for _, arm := range []*farm.ExperimentArm{&request.ArmA, &request.ArmB} {
+		d, ok := c.registry.Deployment(arm.Deployment)
 		if !ok || !d.Enabled {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "deployment " + id + " is unavailable"})
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "deployment " + arm.Deployment + " is unavailable"})
 			return
+		}
+		limit := d.ParallelLimit()
+		if arm.MaxParallelWorkers < 0 || arm.MaxParallelWorkers > limit {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("deployment %s allows at most %d parallel worker(s)", arm.Deployment, limit)})
+			return
+		}
+		if arm.MaxParallelWorkers == 0 {
+			arm.MaxParallelWorkers = limit
 		}
 	}
 	seeds := append([]int64(nil), request.Seeds...)
@@ -724,6 +754,9 @@ func (c *modelExperimentController) resolveRunMeta(raw map[string]any, deploymen
 	}
 	if parallel == 0 {
 		parallel = d.ParallelLimit()
+	}
+	if parallel > d.ParallelLimit() {
+		return runExperimentMeta{}, fmt.Errorf("deployment %q allows at most %d parallel worker(s)", deployment, d.ParallelLimit())
 	}
 	comparable := farm.ComparableRunConfig{
 		GitRevision: c.wall.Version, ROMIdentity: strings.TrimSpace(os.Getenv("POKEPILOT_ROM_SHA256")), PromptIdentity: strings.TrimSpace(os.Getenv("POKEPILOT_PROMPT_SHA256")),

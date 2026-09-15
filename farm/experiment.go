@@ -11,21 +11,20 @@ type ExperimentArm struct {
 // runs. Every seed produces exactly one run per arm with identical gameplay
 // settings; only Deployment differs.
 type ExperimentRequest struct {
-	Name               string        `json:"name"`
-	ArmA               ExperimentArm `json:"arm_a"`
-	ArmB               ExperimentArm `json:"arm_b"`
-	Goal               string        `json:"goal"`
-	Starter            string        `json:"starter,omitempty"`
-	Seeds              []int64       `json:"seeds,omitempty"`
-	SeedCount          int           `json:"seed_count,omitempty"`
-	PlayStyle          string        `json:"play_style,omitempty"`
-	RiskTolerance      string        `json:"risk_tolerance,omitempty"`
-	WildEncounters     string        `json:"wild_encounters,omitempty"`
-	ReasoningEffort    string        `json:"reasoning_effort,omitempty"`
-	FPS                int           `json:"fps,omitempty"`
-	MaxRounds          int           `json:"max_rounds,omitempty"`
-	MaxFrames          int           `json:"max_frames,omitempty"`
-	MaxParallelWorkers int           `json:"max_parallel_workers,omitempty"`
+	Name            string        `json:"name"`
+	ArmA            ExperimentArm `json:"arm_a"`
+	ArmB            ExperimentArm `json:"arm_b"`
+	Goal            string        `json:"goal"`
+	Starter         string        `json:"starter,omitempty"`
+	Seeds           []int64       `json:"seeds,omitempty"`
+	SeedCount       int           `json:"seed_count,omitempty"`
+	PlayStyle       string        `json:"play_style,omitempty"`
+	RiskTolerance   string        `json:"risk_tolerance,omitempty"`
+	WildEncounters  string        `json:"wild_encounters,omitempty"`
+	ReasoningEffort string        `json:"reasoning_effort,omitempty"`
+	FPS             int           `json:"fps,omitempty"`
+	MaxRounds       int           `json:"max_rounds,omitempty"`
+	MaxFrames       int           `json:"max_frames,omitempty"`
 }
 
 // ExperimentRunMeta is copied onto each generated run and persisted by the

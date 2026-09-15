@@ -190,6 +190,22 @@ func TestDeploymentWorkerCapQueuesAndSkipsToFreeModel(t *testing.T) {
 	if leaseA.Code != http.StatusOK || json.Unmarshal(leaseA.Body.Bytes(), &first) != nil || first.RunID != "a-1" {
 		t.Fatalf("first lease = %d %s", leaseA.Code, leaseA.Body.String())
 	}
+	models := requestJSON(t, h, http.MethodGet, "/v1/models", nil)
+	var modelSnapshot struct {
+		Deployments []deploymentView `json:"deployments"`
+	}
+	if models.Code != http.StatusOK || json.Unmarshal(models.Body.Bytes(), &modelSnapshot) != nil {
+		t.Fatalf("models = %d %s", models.Code, models.Body.String())
+	}
+	foundModelA := false
+	for _, deployment := range modelSnapshot.Deployments {
+		if deployment.ID == "model-a" {
+			foundModelA = deployment.ActiveLeases == 1 && deployment.Queued == 1
+		}
+	}
+	if !foundModelA {
+		t.Fatalf("model-a should report 1 active / 1 queued: %s", models.Body.String())
+	}
 	leaseB := requestJSON(t, h, http.MethodPost, "/v1/lease", map[string]any{})
 	var second farm.Spec
 	if leaseB.Code != http.StatusOK || json.Unmarshal(leaseB.Body.Bytes(), &second) != nil || second.RunID != "b-1" {
@@ -209,7 +225,7 @@ func TestDeploymentWorkerCapQueuesAndSkipsToFreeModel(t *testing.T) {
 func TestExperimentArmConcurrencyIsPartOfComparability(t *testing.T) {
 	registry := writeModelRegistry(t, []farm.ModelDeployment{
 		{ID: "a", ModelID: "a", Compute: "a", Endpoint: "http://a/v1", APIModel: "a", Enabled: true},
-		{ID: "b", ModelID: "b", Compute: "b", Endpoint: "http://b/v1", APIModel: "b", Enabled: true},
+		{ID: "b", ModelID: "b", Compute: "b", Endpoint: "http://b/v1", APIModel: "b", Enabled: true, MaxParallelWorkers: 2},
 	})
 	t.Setenv("POKEPILOT_MODEL_REGISTRY", registry)
 	w := NewWall("")
@@ -230,5 +246,23 @@ func TestExperimentArmConcurrencyIsPartOfComparability(t *testing.T) {
 	}
 	if len(view.Pairs) != 1 || view.Pairs[0].Comparable {
 		t.Fatalf("different concurrency must not be marked comparable: %#v", view.Pairs)
+	}
+}
+
+func TestExperimentRejectsConcurrencyAboveDeploymentLimit(t *testing.T) {
+	registry := writeModelRegistry(t, []farm.ModelDeployment{
+		{ID: "a", ModelID: "a", Compute: "a", Endpoint: "http://a/v1", APIModel: "a", Enabled: true, MaxParallelWorkers: 1},
+		{ID: "b", ModelID: "b", Compute: "b", Endpoint: "http://b/v1", APIModel: "b", Enabled: true, MaxParallelWorkers: 2},
+	})
+	t.Setenv("POKEPILOT_MODEL_REGISTRY", registry)
+	w := NewWall("")
+	h := modelExperimentHTTPHandler(w, w.Handler())
+	created := requestJSON(t, h, http.MethodPost, "/v1/experiments", farm.ExperimentRequest{
+		ArmA:  farm.ExperimentArm{Deployment: "a", MaxParallelWorkers: 2},
+		ArmB:  farm.ExperimentArm{Deployment: "b", MaxParallelWorkers: 1},
+		Seeds: []int64{1}, Goal: "Earn the Boulder Badge.",
+	})
+	if created.Code != http.StatusBadRequest {
+		t.Fatalf("create = %d %s, want 400", created.Code, created.Body.String())
 	}
 }
