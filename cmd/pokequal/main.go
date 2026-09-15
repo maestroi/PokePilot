@@ -325,7 +325,12 @@ func runRedSkillCase(cfg config, c qualification.Case, caseDir string) ([]string
 		return evidence, checkpointHash, fmt.Errorf("pokequal: %s load checkpoint: %w", c.ID, err)
 	}
 	romBytes := m.ROM()
-	initial := agent.Observe(m, romBytes)
+	initial, err := readQualificationObservation(c.ID, "initial", func() (agent.Observation, error) {
+		return agent.ObserveChecked(m, romBytes)
+	})
+	if err != nil {
+		return evidence, checkpointHash, err
+	}
 	initialPath := filepath.Join(caseDir, "initial-observation.json")
 	if err := writeJSON(initialPath, initial); err == nil {
 		evidence = append(evidence, relativeEvidence(cfg.out, initialPath))
@@ -345,10 +350,14 @@ func runRedSkillCase(cfg config, c qualification.Case, caseDir string) ([]string
 		actionErr = fmt.Errorf("unknown Red qualification action %q", c.Action)
 	}
 
-	final := agent.Observe(m, romBytes)
-	finalPath := filepath.Join(caseDir, "final-observation.json")
-	if err := writeJSON(finalPath, final); err == nil {
-		evidence = append(evidence, relativeEvidence(cfg.out, finalPath))
+	final, finalObserveErr := readQualificationObservation(c.ID, "final", func() (agent.Observation, error) {
+		return agent.ObserveChecked(m, romBytes)
+	})
+	if finalObserveErr == nil {
+		finalPath := filepath.Join(caseDir, "final-observation.json")
+		if err := writeJSON(finalPath, final); err == nil {
+			evidence = append(evidence, relativeEvidence(cfg.out, finalPath))
+		}
 	}
 	if checked, saveErr := m.SaveStateChecked(); saveErr == nil {
 		finalState := filepath.Join(caseDir, "final.state")
@@ -357,13 +366,13 @@ func runRedSkillCase(cfg config, c qualification.Case, caseDir string) ([]string
 		}
 	}
 	logPath := filepath.Join(caseDir, "run.log")
-	logText := fmt.Sprintf("case=%s\naction=%s\ncheckpoint_sha256=%s\naction_error=%v\nfinal_location=%s\nfinal_xy=%d,%d\n",
-		c.ID, c.Action, checkpointHash, actionErr, final.Location, final.X, final.Y)
+	logText := fmt.Sprintf("case=%s\naction=%s\ncheckpoint_sha256=%s\naction_error=%v\nobservation_error=%v\nfinal_location=%s\nfinal_xy=%d,%d\n",
+		c.ID, c.Action, checkpointHash, actionErr, finalObserveErr, final.Location, final.X, final.Y)
 	if err := os.WriteFile(logPath, []byte(logText), 0o600); err == nil {
 		evidence = append(evidence, relativeEvidence(cfg.out, logPath))
 	}
-	if actionErr != nil {
-		return evidence, checkpointHash, actionErr
+	if err := errors.Join(actionErr, finalObserveErr); err != nil {
+		return evidence, checkpointHash, err
 	}
 	if err := verifyExpectation(c.Expect, final); err != nil {
 		return evidence, checkpointHash, fmt.Errorf("pokequal: %s postcondition: %w", c.ID, err)
@@ -432,7 +441,12 @@ func runFullCase(cfg config, caseDir string, stdout io.Writer) ([]string, error)
 		Log:           logWriter,
 		CheckpointDir: checkpointDir,
 	})
-	final := agent.Observe(m, m.ROM())
+	final, err := readQualificationObservation("full run", "final", func() (agent.Observation, error) {
+		return agent.ObserveChecked(m, m.ROM())
+	})
+	if err != nil {
+		return evidence, err
+	}
 	goal, structured, goalErr := agent.PlannerGoalStatus("elite-four", final)
 	if !structured && goalErr == nil {
 		goalErr = fmt.Errorf("elite-four goal was not recognized as structured")
