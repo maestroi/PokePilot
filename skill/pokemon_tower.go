@@ -180,7 +180,11 @@ func towerBattleResolver(m *emu.Emu, policy MovePolicy) resolveBattle {
 			return battleResolution{}, fmt.Errorf("skill: PokemonTower: battle resolver called outside battle")
 		}
 		if b.Kind == state.BattleWild && !pokemonTowerMarowakBattle(mem.U8(sym.CurMap), b) {
-			if err := Flee(m, 5); err != nil {
+			// Use the same deterministic escape bound as TravelFlee. Five tries
+			// is only probabilistic (issue #395); a failed fifth roll would turn
+			// an ordinary Tower encounter into an untyped unknown_failure and
+			// terminate progression even though nothing is actually blocked.
+			if err := Flee(m, guaranteedWildFleeAttempts); err != nil {
 				if !errors.Is(err, ErrTrainerBattle) {
 					return battleResolution{}, fmt.Errorf("skill: PokemonTower: flee wild encounter: %w", err)
 				}
