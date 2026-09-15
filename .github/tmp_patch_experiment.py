@@ -1,0 +1,283 @@
+from pathlib import Path
+
+
+def replace(path: str, old: str, new: str) -> None:
+    p = Path(path)
+    text = p.read_text()
+    if old not in text:
+        raise SystemExit(f"target not found in {path}: {old[:80]!r}")
+    p.write_text(text.replace(old, new, 1))
+
+
+replace(
+    "agent/failover.go",
+    '''type LLMCall struct {
+\tObservation Observation
+\tOffered     int
+\tObjective   Objective
+\tPlan        Plan
+\tStrategic   bool
+\tErr         error
+\tDuration    time.Duration
+}''',
+    '''type LLMCall struct {
+\tObservation       Observation
+\tOffered           int
+\tOfferedObjectives []string
+\tReplanReason      string
+\tObjective         Objective
+\tPlan              Plan
+\tStrategic         bool
+\tErr               error
+\tDuration          time.Duration
+}''',
+)
+replace(
+    "agent/failover.go",
+    '''\t\tp.OnCall(LLMCall{
+\t\t\tObservation: obs,
+\t\t\tOffered:     len(offered),
+\t\t\tPlan:        plan,
+\t\t\tStrategic:   true,
+\t\t\tErr:         err,
+\t\t\tDuration:    time.Since(start),
+\t\t})''',
+    '''\t\tp.OnCall(LLMCall{
+\t\t\tObservation:       obs,
+\t\t\tOffered:           len(offered),
+\t\t\tOfferedObjectives: objectiveStrings(offered),
+\t\t\tReplanReason:      reason,
+\t\t\tPlan:              plan,
+\t\t\tStrategic:         true,
+\t\t\tErr:               err,
+\t\t\tDuration:          time.Since(start),
+\t\t})''',
+)
+replace(
+    "agent/failover.go",
+    '''func (p *FailoverPlanner) Usage() (prompt, completion int) {
+\th := p.Health()
+\treturn h.PromptTokens, h.CompletionTokens
+}''',
+    '''func (p *FailoverPlanner) Usage() (prompt, completion int) {
+\th := p.Health()
+\treturn h.PromptTokens, h.CompletionTokens
+}
+
+func objectiveStrings(offered []Objective) []string {
+\tout := make([]string, len(offered))
+\tfor i := range offered {
+\t\tout[i] = offered[i].String()
+\t}
+\treturn out
+}''',
+)
+replace(
+    "farm/spec.go",
+    '''\tStrategicSeconds float64        `json:"strategic_seconds,omitempty"`
+
+\t// Goal* is present only when LLMPlanner.Goal opted into the structured''',
+    '''\tStrategicSeconds        float64               `json:"strategic_seconds,omitempty"`
+\tStrategicRecords        []StrategicCallRecord `json:"strategic_records,omitempty"`
+\tStrategicRecordsDropped int                   `json:"strategic_records_dropped,omitempty"`
+
+\t// Goal* is present only when LLMPlanner.Goal opted into the structured''',
+)
+replace(
+    "cmd/pokepilot/stats.go",
+    '''import (
+\t"fmt"''',
+    '''import (
+\t"encoding/json"
+\t"fmt"''',
+)
+replace(
+    "cmd/pokepilot/stats.go",
+    '''\tif call.Strategic {
+\t\ts.stats.StrategicCalls++
+\t\ts.stats.StrategicSeconds += took.Seconds()
+\t\ts.stats.StrategicAvgSeconds = s.stats.StrategicSeconds / float64(s.stats.StrategicCalls)
+\t\ts.publish()
+\t\treturn
+\t}''',
+    '''\tif call.Strategic {
+\t\ts.stats.StrategicCalls++
+\t\ts.stats.StrategicSeconds += took.Seconds()
+\t\ts.stats.StrategicAvgSeconds = s.stats.StrategicSeconds / float64(s.stats.StrategicCalls)
+\t\tobservation, _ := json.Marshal(obs)
+\t\trecord := farm.StrategicCallRecord{
+\t\t\tObservation:      observation,
+\t\t\tOffered:          append([]string(nil), call.OfferedObjectives...),
+\t\t\tReplanReason:     call.ReplanReason,
+\t\t\tPlanGoal:         call.Plan.Goal,
+\t\t\tPlanSteps:        append([]string(nil), call.Plan.Steps...),
+\t\t\tRejected:         err != nil,
+\t\t\tDurationSeconds:  took.Seconds(),
+\t\t\tBackend:          s.stats.Backend,
+\t\t\tModel:            s.stats.Model,
+\t\t\tPromptTokens:     s.stats.LastPromptTokens,
+\t\t\tCompletionTokens: s.stats.LastCompletionTokens,
+\t\t\tPrefillTPS:       s.stats.PrefillTPS,
+\t\t\tDecodeTPS:        s.stats.DecodeTPS,
+\t\t}
+\t\tif err != nil {
+\t\t\trecord.Error = err.Error()
+\t\t}
+\t\tconst maxStrategicRecords = 64
+\t\tif len(s.stats.StrategicRecords) < maxStrategicRecords {
+\t\t\ts.stats.StrategicRecords = append(s.stats.StrategicRecords, record)
+\t\t} else {
+\t\t\ts.stats.StrategicRecordsDropped++
+\t\t}
+\t\ts.publish()
+\t\treturn
+\t}''',
+)
+
+p = Path("cmd/pokewall/model_experiments.go")
+text = p.read_text()
+start = text.index("type armAggregate struct {")
+end = text.index("\ntype pairResult struct {", start)
+text = text[:start] + '''type armAggregate struct {
+\tRuns                    int            `json:"runs"`
+\tDone                    int            `json:"done"`
+\tBoulderSuccesses        int            `json:"boulder_successes"`
+\tSuccessRate             float64        `json:"success_rate"`
+\tBadges                  int            `json:"badges"`
+\tRounds                  int            `json:"rounds"`
+\tFrames                  uint64         `json:"frames"`
+\tCalls                   int            `json:"calls"`
+\tStrategicCalls          int            `json:"strategic_calls"`
+\tStrategicRejected       int            `json:"strategic_rejected"`
+\tPlanStepsProduced       int            `json:"plan_steps_produced"`
+\tPlanExecutions          int            `json:"plan_executions"`
+\tStepsSkipped            int            `json:"steps_skipped"`
+\tPlanExecutionFraction   float64        `json:"plan_execution_fraction"`
+\tRejected                int            `json:"rejected"`
+\tTransportErrors         int            `json:"transport_errors"`
+\tFallbacks               int            `json:"fallbacks"`
+\tPromptTokens            int            `json:"prompt_tokens"`
+\tCompletionTokens        int            `json:"completion_tokens"`
+\tStrategicSeconds        float64        `json:"strategic_seconds"`
+\tAvgStrategicCall        float64        `json:"avg_strategic_call_seconds"`
+\tP50StrategicCall        float64        `json:"p50_strategic_call_seconds"`
+\tP95StrategicCall        float64        `json:"p95_strategic_call_seconds"`
+\tAvgPrefillTPS           float64        `json:"avg_prefill_tps"`
+\tAvgDecodeTPS            float64        `json:"avg_decode_tps"`
+\tBlackouts               int            `json:"blackouts"`
+\tObjectiveFailures       int            `json:"objective_failures"`
+\tStagnationReplans       int            `json:"stagnation_replans"`
+\tPlanExhaustionReplans   int            `json:"plan_exhaustion_replans"`
+\tReplanReasons           map[string]int `json:"replan_reasons,omitempty"`
+\tFinalStopReasons        map[string]int `json:"final_stop_reasons,omitempty"`
+\tStrategicRecordsDropped int            `json:"strategic_records_dropped,omitempty"`
+\tlatencies               []float64
+\tprefillSum              float64
+\tprefillSamples          int
+\tdecodeSum               float64
+\tdecodeSamples           int
+}
+''' + text[end:]
+p.write_text(text)
+
+replace(
+    "cmd/pokewall/model_experiments.go",
+    '''func accumulateArm(out *armAggregate, tile Tile) {
+\tout.Runs++''',
+    '''func accumulateArm(out *armAggregate, tile Tile) {
+\tout.Runs++
+\tif out.ReplanReasons == nil {
+\t\tout.ReplanReasons = map[string]int{}
+\t}
+\tif out.FinalStopReasons == nil {
+\t\tout.FinalStopReasons = map[string]int{}
+\t}
+\tif tile.Status == statusDone && tile.Reason != "" {
+\t\tout.FinalStopReasons[tile.Reason]++
+\t}''',
+)
+replace(
+    "cmd/pokewall/model_experiments.go",
+    '''\t\tout.StrategicSeconds += s.StrategicSeconds
+\t\tout.AvgPrefillTPS += s.PrefillTPS
+\t\tout.AvgDecodeTPS += s.DecodeTPS
+\t}
+}''',
+    '''\t\tout.StrategicSeconds += s.StrategicSeconds
+\t\tout.StrategicRecordsDropped += s.StrategicRecordsDropped
+\t\tfor reason, count := range s.ReplanReasons {
+\t\t\tout.ReplanReasons[reason] += count
+\t\t}
+\t\tout.Blackouts += s.ReplanReasons["blackout"]
+\t\tout.ObjectiveFailures += s.ReplanReasons["objective_failed"]
+\t\tout.StagnationReplans += s.ReplanReasons["stagnation"] + s.ReplanReasons["stuck"]
+\t\tout.PlanExhaustionReplans += s.ReplanReasons["plan_exhausted"] + s.ReplanReasons["plan_exhaustion"]
+\t\tfor _, record := range s.StrategicRecords {
+\t\t\tout.latencies = append(out.latencies, record.DurationSeconds)
+\t\t\tout.PlanStepsProduced += len(record.PlanSteps)
+\t\t\tif record.Rejected {
+\t\t\t\tout.StrategicRejected++
+\t\t\t}
+\t\t\tif record.PrefillTPS > 0 {
+\t\t\t\tout.prefillSum += record.PrefillTPS
+\t\t\t\tout.prefillSamples++
+\t\t\t}
+\t\t\tif record.DecodeTPS > 0 {
+\t\t\t\tout.decodeSum += record.DecodeTPS
+\t\t\t\tout.decodeSamples++
+\t\t\t}
+\t\t}
+\t}
+}''',
+)
+replace(
+    "cmd/pokewall/model_experiments.go",
+    '''func finalizeArm(out *armAggregate) {
+\tif out.Done > 0 {
+\t\tout.SuccessRate = float64(out.BoulderSuccesses) / float64(out.Done)
+\t}
+\tif out.StrategicCalls > 0 {
+\t\tout.AvgStrategicCall = out.StrategicSeconds / float64(out.StrategicCalls)
+\t}
+\tif out.Runs > 0 {
+\t\tout.AvgPrefillTPS /= float64(out.Runs)
+\t\tout.AvgDecodeTPS /= float64(out.Runs)
+\t}
+}''',
+    '''func finalizeArm(out *armAggregate) {
+\tif out.Done > 0 {
+\t\tout.SuccessRate = float64(out.BoulderSuccesses) / float64(out.Done)
+\t}
+\tif out.StrategicCalls > 0 {
+\t\tout.AvgStrategicCall = out.StrategicSeconds / float64(out.StrategicCalls)
+\t}
+\tif total := out.PlanExecutions + out.StepsSkipped; total > 0 {
+\t\tout.PlanExecutionFraction = float64(out.PlanExecutions) / float64(total)
+\t}
+\tif len(out.latencies) > 0 {
+\t\tsort.Float64s(out.latencies)
+\t\tout.P50StrategicCall = percentile(out.latencies, 0.50)
+\t\tout.P95StrategicCall = percentile(out.latencies, 0.95)
+\t}
+\tif out.prefillSamples > 0 {
+\t\tout.AvgPrefillTPS = out.prefillSum / float64(out.prefillSamples)
+\t}
+\tif out.decodeSamples > 0 {
+\t\tout.AvgDecodeTPS = out.decodeSum / float64(out.decodeSamples)
+\t}
+}
+
+func percentile(sorted []float64, p float64) float64 {
+\tif len(sorted) == 0 {
+\t\treturn 0
+\t}
+\tif p <= 0 {
+\t\treturn sorted[0]
+\t}
+\tif p >= 1 {
+\t\treturn sorted[len(sorted)-1]
+\t}
+\tindex := int(float64(len(sorted)-1)*p + 0.5)
+\treturn sorted[index]
+}''',
+)
