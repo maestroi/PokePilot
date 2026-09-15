@@ -37,8 +37,20 @@ func StatAwareMove(romData []byte) MovePolicy {
 		haveEval := false
 		fallbackAttack := -1
 		defenseDown := -1
+		residualDamage := -1
+		residualQuality := -1
+		lowestPP := -1
+		lowestPPLeft := int(^uint(0) >> 1)
 
 		for _, i := range usable {
+			// If none of the decoded moves can make HP progress, consume the
+			// shortest remaining resource first. That reaches Red's legal
+			// STRUGGLE fallback sooner instead of spending dozens of turns on a
+			// high-PP stat move that has already bottomed out.
+			if pp := int(b.Moves[i].PP); pp < lowestPPLeft {
+				lowestPP, lowestPPLeft = i, pp
+			}
+
 			mv, err := rom.LookupMove(romData, b.Moves[i].ID)
 			if err != nil {
 				if fallbackAttack < 0 {
@@ -58,21 +70,29 @@ func StatAwareMove(romData []byte) MovePolicy {
 				if !haveEval || combat.BetterMove(eval, bestEval) {
 					bestAttack, bestEval, haveEval = i, eval, true
 				}
+			case mv.Effect == rom.LeechSeedEffect || mv.Effect == rom.PoisonEffect:
+				// These zero-power moves still create eventual HP progress. Prefer
+				// them over pure debuffs when direct damage is temporarily gone
+				// (for example Tackle disabled with Vine Whip at 0 PP).
+				quality := statusMoveBase(mv.Effect)
+				if quality > residualQuality {
+					residualDamage, residualQuality = i, quality
+				}
 			case mv.Effect == rom.DefenseDown1Effect && defenseDown < 0:
 				defenseDown = i
 			}
 		}
 
-		// Only spend a turn on setup while we are actually behind, and only
-		// while we can afford it. Below half HP the damage race is on and
-		// another non-damaging turn loses it.
+		// Only spend a turn on setup while we are actually behind, only while
+		// we can afford it, and only when a direct attack exists to benefit.
+		// Without an attack, repeatedly lowering Defense cannot end the fight.
 		//
 		// Lowering the opponent's ATTACK was tried here too and removed.
 		// MEASURED: it cost Charmander three extra turns and did not save
 		// Bulbasaur, because Gen 1 critical hits ignore stat stages entirely.
 		behind := b.OffenceStage() < 0
 		healthy := b.ActiveMaxHP == 0 || b.ActiveHP*2 > b.ActiveMaxHP
-		if behind && healthy && defenseDown >= 0 {
+		if bestAttack >= 0 && behind && healthy && defenseDown >= 0 {
 			if zbatDebug {
 				fmt.Printf("zbat policy=setup slot=%d reason=physical-offence-stage-%d\n", defenseDown, b.OffenceStage())
 			}
@@ -86,6 +106,18 @@ func StatAwareMove(romData []byte) MovePolicy {
 		}
 		if fallbackAttack >= 0 {
 			return fallbackAttack
+		}
+		if residualDamage >= 0 {
+			if zbatDebug {
+				fmt.Printf("zbat policy=residual slot=%d reason=no-direct-damage\n", residualDamage)
+			}
+			return residualDamage
+		}
+		if lowestPP >= 0 {
+			if zbatDebug {
+				fmt.Printf("zbat policy=exhaust slot=%d pp=%d reason=no-hp-progress-move\n", lowestPP, lowestPPLeft)
+			}
+			return lowestPP
 		}
 		return usable[0]
 	}
