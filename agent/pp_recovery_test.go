@@ -88,13 +88,16 @@ func TestOfferKnownCenterForHealthyPPExhaustedParty(t *testing.T) {
 	if fieldMap == center.Map {
 		fieldMap = 0xfd
 	}
-	known := NewKnowledge(map[uint8][]uint8{
-		fieldMap:   []uint8{center.Map},
-		center.Map: []uint8{fieldMap},
-	})
-	known.Visited[center.Map] = true
+	fieldLocation := LocationID("test/route")
+	centerLocation := redLocationID(center.Map)
+	known := NewKnowledge(KnowledgeTopology{Adjacency: map[LocationID][]LocationID{
+		fieldLocation:  {centerLocation},
+		centerLocation: {fieldLocation},
+	}})
+	known.SawLocation(centerLocation)
 	obs := Observation{
 		Map:        fieldMap,
+		Location:   PlaceID(fieldLocation),
 		MapName:    "ROUTE_TEST",
 		PartyCount: 1,
 		Party:      []PartyMon{{HP: 20, MaxHP: 20}},
