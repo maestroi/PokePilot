@@ -66,9 +66,13 @@ func rocketSpinnerTransitions(mapID uint8) map[rocketPoint]rocketPoint {
 // adjacent to the exit warp so Traverse can own the final warp step.
 func planRocketSpinner(width, height int, walkable func(int, int) bool, sx, sy, warpX, warpY int, transitions map[rocketPoint]rocketPoint, blocked map[[2]int]bool) ([]rocketSpinAction, error) {
 	start := rocketPoint{sx, sy}
-	if sx < 0 || sy < 0 || sx >= width || sy >= height || !walkable(sx, sy) {
-		return nil, fmt.Errorf("skill: RocketHideout: spinner start (%d,%d) is not walkable", sx, sy)
+	if sx < 0 || sy < 0 || sx >= width || sy >= height {
+		return nil, fmt.Errorf("skill: RocketHideout: spinner start (%d,%d) is outside the map", sx, sy)
 	}
+	// Warp arrivals are allowed to stand on a collision-solid stair tile. The
+	// player is already there, so requiring the start itself to be walkable
+	// rejects a valid B2F/B3F resume before the first input. Only cells we
+	// actually enter (and forced-movement landings) need to be walkable.
 	adjacent := func(p rocketPoint) bool {
 		dx := p.x - warpX
 		if dx < 0 {
