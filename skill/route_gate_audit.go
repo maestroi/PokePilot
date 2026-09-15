@@ -55,6 +55,17 @@ func redAuditedRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, 
 	}
 
 	switch {
+	case rocketElevatorFloorEdge(edge):
+		// Rocket Hideout's floor-side elevator coordinates are not ordinary
+		// door warps. ExtraWarpCheck routes B1F/B2F/B4F through
+		// IsWarpTileInFrontOfPlayer: Red must step onto the warp while facing
+		// a direction whose NEXT field tile is in that direction's carpet
+		// table. Generic Traverse chooses the geometrically nearest adjacent
+		// side and can therefore land on (24,15) sideways without warping
+		// (issue #577). Give these three edges an execution semantic so the
+		// carpet-aware controller owns the approach before ordinary traversal.
+		return semanticTransition("red:rocket_hideout_elevator_carpet", edge), true
+
 	case edge.Kind == world.EdgeWarp && edge.From == celadonCityMap && edge.To == celadonMart5FMap &&
 		edge.WarpX == celadonInaccessibleMartWarpX && edge.WarpY == celadonInaccessibleMartWarpY:
 		// pokered/data/maps/objects/CeladonCity.asm declares this warp but
@@ -120,6 +131,15 @@ func redAuditedRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, 
 
 func (x *redRouteTransitionExecutor) executeAuditedRouteTransition(edge world.Edge, transition gameruntime.Transition) (world.TransitionExecutionResult, bool, error) {
 	switch transition.ID {
+	case "red:rocket_hideout_elevator_carpet":
+		if err := traverseRocketElevatorFloorWarp(x.m, x.romData, edge); err != nil {
+			return world.TransitionExecutionResult{}, true, err
+		}
+		// The semantic executor performs the map crossing itself. Report a
+		// change so Travel re-plans on the elevator map instead of traversing
+		// the same raw edge a second time.
+		return world.TransitionExecutionResult{Changed: true}, true, nil
+
 	case "red:cycling_road_bicycle":
 		var mem state.Mem
 		state.Snapshot(x.m, &mem)
