@@ -150,7 +150,27 @@ const maxDialogueRecoveries = 30
 // distinct, and a defeated trainer never re-triggers, so the same box text
 // appearing this many times in a row is a loop, while a run of distinct boxes
 // (Rock Tunnel's Hikers) is legitimate progress.
+//
+// "In a row" is bounded by sameBoxStallFrames, not just by text equality: a
+// box whose trigger tile resets on exit (Pokemon Tower 5F's purified-zone
+// heal, which reruns on every fresh entry) can legitimately recur several
+// times while the walk is genuinely re-planning around an unrelated battle,
+// not stuck. MEASURED on run-3anwzvms26fjy32alh211qa4fn's round-001 state
+// (skill.PokemonTower, "ASH's POKéMON are fully healed!" on POKEMON_TOWER_5F):
+// a recovery with real walking and a trainer battle in between the previous
+// same-text recovery measured 1504 frames; the box's own first-entry cost
+// (walk in, fade, heal, text, fade out) measured 466. A recurrence within
+// sameBoxStallFrames of the last one is the box refiring with essentially no
+// intervening progress — the actual stuck case this guard exists for.
 const maxSameBoxRepeats = 3
+
+// sameBoxStallFrames bounds how soon the SAME box text may recur and still
+// count toward maxSameBoxRepeats. See maxSameBoxRepeats for the measurement;
+// 600 sits above the 466-frame single-entry cost and comfortably below the
+// 1504-frame genuinely-active recurrence, so a real stall (near-zero walking
+// between hits) still counts while a walk that is actually covering ground
+// does not.
+const sameBoxStallFrames = 600
 
 // maxRouteCuts bounds field-move recovery inside one Travel call. Route 9 and
 // the Celadon Gym approach each need one tree; four leaves room for a route
@@ -279,6 +299,7 @@ func TravelFlee(m *emu.Emu, romData []byte, dest Destination, policy MovePolicy,
 func travel(m *emu.Emu, policy MovePolicy, maxBattles int, goTo func() error, recoverBox func() DialogueRecoveryResult, blackout func() bool, resolveBattle resolveBattle) (TravelResult, error) {
 	var res TravelResult
 	var lastBoxText string
+	var lastBoxFrame uint64
 	var sameBoxRepeats int
 	for {
 		err := goTo()
@@ -387,12 +408,21 @@ func travel(m *emu.Emu, policy MovePolicy, maxBattles int, goTo func() error, re
 				// and a defeated trainer never re-triggers), so only a run of
 				// the same text trips the guard — not the total count.
 				if t := rec.LastText; t != "" {
-					if t == lastBoxText {
+					// m is nil in tests that drive this loop with fakes
+					// instead of an emulator; frame-gating is meaningless
+					// there, so every same-text recurrence still counts,
+					// matching this guard's behavior before the gate existed.
+					var now uint64
+					if m != nil {
+						now = m.FrameCount()
+					}
+					if t == lastBoxText && now-lastBoxFrame < sameBoxStallFrames {
 						sameBoxRepeats++
 					} else {
 						sameBoxRepeats = 1
 						lastBoxText = t
 					}
+					lastBoxFrame = now
 					if sameBoxRepeats >= maxSameBoxRepeats {
 						return res, fmt.Errorf("skill: Travel: looping on the same text box after %d repeats: %q",
 							sameBoxRepeats, t)

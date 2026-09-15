@@ -305,7 +305,7 @@ func crossGameCornerSecretWarp(m *emu.Emu, romData []byte) error {
 	applyLiveOpenBlock(grid, 2, 8)
 
 	var push world.Step
-	err = walkAround(func() error { return movementInterruption(m) }, func() map[[2]int]bool { return spriteBlockers(m) },
+	err = walkAroundAvoidingObjects(func() error { return movementInterruption(m) }, m, h,
 		func(blocked map[[2]int]bool) ([]world.Step, error) {
 			x, y := playerXY(m)
 			steps, p, err := world.FindPathAdjacent(grid, int(x), int(y), int(gameCornerWarpX), int(gameCornerWarpY), blocked)
@@ -377,7 +377,7 @@ func walkRocketBossDoor(m *emu.Emu, romData []byte) error {
 	// Giovanni's real tile (giovanniX,giovanniY) instead, which has three
 	// open neighbors; fightStoryTrainerAt's talkBeside then closes the final
 	// step the same way it does for every other story trainer.
-	return walkAround(func() error { return movementInterruption(m) }, func() map[[2]int]bool { return spriteBlockers(m) },
+	return walkAroundAvoidingObjects(func() error { return movementInterruption(m) }, m, h,
 		func(blocked map[[2]int]bool) ([]world.Step, error) {
 			x, y := playerXY(m)
 			steps, _, err := world.FindPathAdjacent(grid, int(x), int(y), int(giovanniX), int(giovanniY), blocked)

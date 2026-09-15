@@ -152,7 +152,7 @@ func traverseIntraMapWarp(m *emu.Emu, romData []byte, e world.Edge) error {
 
 	var push world.Step
 	var unwalkable error
-	err = walkAround(func() error { return movementInterruption(m) }, func() map[[2]int]bool { return spriteBlockers(m) },
+	err = walkAroundAvoidingObjects(func() error { return movementInterruption(m) }, m, h,
 		func(blocked map[[2]int]bool) ([]world.Step, error) {
 			x, y := playerXY(m)
 			_, _, steps, p, err := warpTarget(h, e, grid, int(x), int(y), blocked, romData)
