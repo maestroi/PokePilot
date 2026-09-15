@@ -69,7 +69,9 @@ func rocketB4FBossRoomReachable(m *emu.Emu, romData []byte) (bool, error) {
 		return false, err
 	}
 	x, y := playerXY(m)
-	_, err = world.FindPath(grid, int(x), int(y), int(giovanniStand.X), int(giovanniStand.Y), spriteBlockers(m))
+	// giovanniStand (25,4) is never itself walkable; route adjacent to
+	// Giovanni's real tile instead (see walkRocketBossDoor).
+	_, _, err = world.FindPathAdjacent(grid, int(x), int(y), int(giovanniX), int(giovanniY), spriteBlockers(m))
 	if err == nil {
 		return true, nil
 	}

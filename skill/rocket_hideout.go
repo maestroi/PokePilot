@@ -368,10 +368,20 @@ func walkRocketBossDoor(m *emu.Emu, romData []byte) error {
 	// closed $2d block, so use the live-open shape for this one walk.
 	applyLiveOpenBlock(grid, 5, 12)
 
+	// giovanniStand (25,4) is the desk tile in front of Giovanni and is not
+	// itself walkable, and its only walkable neighbor is (25,3) — Giovanni's
+	// own object tile, which is sprite-blocked while he's still standing
+	// there (MEASURED: routing adjacent to giovanniStand instead walks
+	// straight into his live sprite and learns that as a permanent blocker,
+	// making the whole room falsely unreachable). Route adjacent to
+	// Giovanni's real tile (giovanniX,giovanniY) instead, which has three
+	// open neighbors; fightStoryTrainerAt's talkBeside then closes the final
+	// step the same way it does for every other story trainer.
 	return walkAround(func() error { return movementInterruption(m) }, func() map[[2]int]bool { return spriteBlockers(m) },
 		func(blocked map[[2]int]bool) ([]world.Step, error) {
 			x, y := playerXY(m)
-			return world.FindPath(grid, int(x), int(y), int(giovanniStand.X), int(giovanniStand.Y), blocked)
+			steps, _, err := world.FindPathAdjacent(grid, int(x), int(y), int(giovanniX), int(giovanniY), blocked)
+			return steps, err
 		}, func(steps []world.Step) error { return WalkPath(m, steps) },
 		func() { m.StepFrames(npcWaitFrames) })
 }
