@@ -32,6 +32,7 @@ jobs:
           from pathlib import Path
           p = Path('farm/experiment.go')
           s = p.read_text()
+          s = s.replace('\tReasoningEffort string        `json:"reasoning_effort,omitempty"`', '\tReasoningEffort string `json:"reasoning_effort,omitempty"`')
           s = s.replace('\tFPS             int           `json:"fps,omitempty"`', '\tFPS             int    `json:"fps,omitempty"`')
           s = s.replace('\tMaxRounds       int           `json:"max_rounds,omitempty"`', '\tMaxRounds       int    `json:"max_rounds,omitempty"`')
           s = s.replace('\tMaxFrames       int           `json:"max_frames,omitempty"`', '\tMaxFrames       int    `json:"max_frames,omitempty"`')
