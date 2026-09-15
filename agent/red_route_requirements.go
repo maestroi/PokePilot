@@ -35,7 +35,7 @@ func routeAvailabilityFor(m *emu.Emu, romData []byte) routeAvailability {
 	if err != nil {
 		return routeAvailability{}
 	}
-	return collectRouteAvailability(planner, skill.PlaceNames(), redRoutePrerequisiteLink)
+	return collectRouteAvailability(planner, redRouteAvailabilityPlaceNames(), redRoutePrerequisiteLink)
 }
 
 func (a *redObjectiveAdapter) RouteRequirements(obs Observation) []RouteBlockage {
