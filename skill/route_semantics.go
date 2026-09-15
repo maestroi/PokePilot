@@ -260,6 +260,20 @@ func redRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, bool) {
 	case pair(victoryRoad1FMap, victoryRoad2FMap),
 		pair(victoryRoad2FMap, victoryRoad3FMap):
 		return semanticTransition("red:victory_road_strength", edge, capCanMoveBoulders), true
+	case edge.From == rocketHideoutB1FMap && edge.Kind == world.EdgeWarp &&
+		((edge.To == gameCornerMap && edge.WarpX == rocketB1FGameCornerWarpX && edge.WarpY == rocketB1FGameCornerWarpY) ||
+			(edge.To == rocketHideoutB2FMap && edge.WarpX == rocketB1FStairsWarpX && edge.WarpY == rocketB1FStairsWarpY)):
+		// RocketHideoutB1FDoorCallbackScript (pokered
+		// scripts/RocketHideoutB1F.asm) replaces the block at (24,16)/(25,16)
+		// between a Door block and a Floor block, keyed on
+		// EVENT_BEAT_ROCKET_HIDEOUT_1_TRAINER_4. The elevator lands on the
+		// SAME side of that door as the guarding grunt (Rocket5, (28,18)):
+		// MEASURED, the live collision grid marks those two tiles solid
+		// before the fight and walkable immediately after, with no map
+		// reload needed. No item or badge gates the fight itself, so this
+		// action has no Requires — it is always performable from here, same
+		// as the B4F guards' fightStoryTrainerAt.
+		return semanticTransition("red:rocket_b1f_trainer_door", edge), true
 	default:
 		return gameruntime.Transition{}, false
 	}

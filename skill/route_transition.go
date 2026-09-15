@@ -202,6 +202,9 @@ func (x *redRouteTransitionExecutor) ExecuteTransition(edge world.Edge, transiti
 
 	case "red:victory_road_strength":
 		return x.executeVictoryRoadStrength(edge)
+
+	case "red:rocket_b1f_trainer_door":
+		return x.executeRocketB1FTrainerDoor()
 	default:
 		if result, ok, err := x.executeAuditedRouteTransition(edge, transition); ok {
 			return result, err
@@ -294,6 +297,32 @@ func (x *redRouteTransitionExecutor) executeRoute12Snorlax() (world.TransitionEx
 	state.Snapshot(x.m, &after)
 	if !state.HasEvent(&after, eventBeatRoute12Snorlax) {
 		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Route 12 Snorlax transition completed without EVENT_BEAT_ROUTE12_SNORLAX")
+	}
+	return world.TransitionExecutionResult{Changed: true}, nil
+}
+
+// executeRocketB1FTrainerDoor fights the Rocket5 grunt whose defeat flips
+// RocketHideoutB1FDoorCallbackScript's block replacement, opening the only
+// passage from the elevator landing to B1F's Game Corner and B2F-stair exits.
+func (x *redRouteTransitionExecutor) executeRocketB1FTrainerDoor() (world.TransitionExecutionResult, error) {
+	var before state.Mem
+	state.Snapshot(x.m, &before)
+	if state.HasEvent(&before, eventBeatRocketB1FTrainer4) {
+		return world.TransitionExecutionResult{}, nil
+	}
+	if x.policy == nil {
+		return world.TransitionExecutionResult{}, fmt.Errorf("%w: Rocket Hideout B1F door", ErrRouteTransitionNeedsBattlePolicy)
+	}
+	if got := x.m.Peek8(sym.CurMap); got != rocketHideoutB1FMap {
+		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Rocket B1F door transition on map %#04x, want B1F %#04x", got, rocketHideoutB1FMap)
+	}
+	if err := ChallengeTrainer(x.m, x.romData, rocketB1FTrainer5X, rocketB1FTrainer5Y, x.policy); err != nil {
+		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Rocket B1F door: fight Rocket5: %w", err)
+	}
+	var after state.Mem
+	state.Snapshot(x.m, &after)
+	if !state.HasEvent(&after, eventBeatRocketB1FTrainer4) {
+		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Rocket B1F door transition completed without EVENT_BEAT_ROCKET_HIDEOUT_1_TRAINER_4")
 	}
 	return world.TransitionExecutionResult{Changed: true}, nil
 }
