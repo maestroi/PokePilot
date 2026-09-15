@@ -178,7 +178,7 @@ CREATE INDEX IF NOT EXISTS dataset_manifests_created_idx ON dataset_manifests(cr
 
 type controlPlane struct{ db *sql.DB }
 
-var wallControlPlanes sync.Map // *Wall -> *controlPlane
+var wallControlPlanes sync.Map         // *Wall -> *controlPlane
 var wallExperimentControllers sync.Map // *Wall -> *modelExperimentController
 
 func controlPlaneFor(w *Wall) *controlPlane {
