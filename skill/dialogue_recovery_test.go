@@ -395,6 +395,57 @@ func TestTravelBoundsDialogueRecoveries(t *testing.T) {
 	}
 }
 
+// TestTravelDistinctBoxesAreProgress: a run of DISTINCT boxes (Rock Tunnel's
+// Hikers each page their own pre-battle text) is legitimate progress, not a
+// loop. The guard must not count total boxes, or a trainer-dense route breaks
+// a real journey (run-1b1qp3ebw40rw85ddq9uoe7mi: 12 distinct Hikers/Youngster
+// texts tripped the old flat count of 10).
+func TestTravelDistinctBoxesAreProgress(t *testing.T) {
+	texts := []string{"box A", "box B", "box C", "box D", "box E"}
+	i := 0
+	goTo := func() error {
+		i++
+		if i <= len(texts) {
+			return ErrDialogueInterrupted
+		}
+		return nil
+	}
+	recoverBox := func() DialogueRecoveryResult {
+		return DialogueRecoveryResult{Stop: DialogueRecovered, LastText: texts[i-1]}
+	}
+
+	res, err := travel(nil, nil, 5, goTo, recoverBox, func() bool { return false }, noBattles)
+
+	if err != nil {
+		t.Fatalf("travel: %v, want distinct boxes to be legitimate progress", err)
+	}
+	if res.Dialogues != len(texts) {
+		t.Fatalf("Dialogues = %d, want %d", res.Dialogues, len(texts))
+	}
+}
+
+// TestTravelDetectsSameBoxLoop: the SAME box text recovered repeatedly is a
+// loop (the walk keeps meeting the box it cannot get past). The detector trips
+// on the repeated text, well before the total-count backstop.
+func TestTravelDetectsSameBoxLoop(t *testing.T) {
+	goTo := func() error { return ErrDialogueInterrupted }
+	recoverBox := func() DialogueRecoveryResult {
+		return DialogueRecoveryResult{Stop: DialogueRecovered, LastText: "Hiker: come here, but I will fight you."}
+	}
+
+	res, err := travel(nil, nil, 5, goTo, recoverBox, func() bool { return false }, noBattles)
+
+	if err == nil {
+		t.Fatal("travel = nil error, want the same-box loop detector to trip")
+	}
+	if res.Dialogues != maxSameBoxRepeats {
+		t.Fatalf("Dialogues = %d, want %d", res.Dialogues, maxSameBoxRepeats)
+	}
+	if !strings.Contains(err.Error(), "looping on the same text box") {
+		t.Fatalf("err = %q, want the same-box loop named", err)
+	}
+}
+
 // TestTravelStopsOnKnownClosedRouteGate: a Saffron gate guard's notice pages
 // closed like any other box (DialogueRecovered, never a choice), but walking
 // forward only meets the same guard again. Before this fix Travel spent its

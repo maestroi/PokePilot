@@ -136,11 +136,21 @@ const (
 	worldStableFrames = 100
 )
 
-// maxDialogueRecoveries bounds how many text boxes Travel recovers on one
-// journey. A route has a bounded number of signs and gate NPCs; a journey
-// that recovers this many is looping on a box, not paging through the
-// world.
-const maxDialogueRecoveries = 10
+// maxDialogueRecoveries is a backstop on the total text boxes recovered on
+// one journey. It is NOT the loop detector (that is maxSameBoxRepeats): a
+// trainer-dense route (Rock Tunnel's Hikers) legitimately pages a dozen or
+// more distinct pre-battle boxes, so a low flat count breaks a real journey.
+// The backstop only catches a pathological journey that recovers an unbounded
+// number of boxes.
+const maxDialogueRecoveries = 30
+
+// maxSameBoxRepeats is the loop detector: the same text box recovered this
+// many times in a row means the walk keeps meeting the box it cannot get
+// past, not paging through the world. A route's signs and gate NPCs are
+// distinct, and a defeated trainer never re-triggers, so the same box text
+// appearing this many times in a row is a loop, while a run of distinct boxes
+// (Rock Tunnel's Hikers) is legitimate progress.
+const maxSameBoxRepeats = 3
 
 // maxRouteCuts bounds field-move recovery inside one Travel call. Route 9 and
 // the Celadon Gym approach each need one tree; four leaves room for a route
@@ -268,6 +278,8 @@ func TravelFlee(m *emu.Emu, romData []byte, dest Destination, policy MovePolicy,
 // and the tests drive the loop with fakes instead of an emulator.
 func travel(m *emu.Emu, policy MovePolicy, maxBattles int, goTo func() error, recoverBox func() DialogueRecoveryResult, blackout func() bool, resolveBattle resolveBattle) (TravelResult, error) {
 	var res TravelResult
+	var lastBoxText string
+	var sameBoxRepeats int
 	for {
 		err := goTo()
 		if err == nil {
@@ -368,6 +380,23 @@ func travel(m *emu.Emu, policy MovePolicy, maxBattles int, goTo func() error, re
 					// arrival: treat it exactly like a lost battle.
 					res.BlackedOut = true
 					return res, ErrBlackedOut
+				}
+				// The same box text recovered repeatedly is a loop: the walk
+				// keeps meeting the box it cannot get past. Distinct boxes are
+				// legitimate progress (a route's signs and gate NPCs differ,
+				// and a defeated trainer never re-triggers), so only a run of
+				// the same text trips the guard — not the total count.
+				if t := rec.LastText; t != "" {
+					if t == lastBoxText {
+						sameBoxRepeats++
+					} else {
+						sameBoxRepeats = 1
+						lastBoxText = t
+					}
+					if sameBoxRepeats >= maxSameBoxRepeats {
+						return res, fmt.Errorf("skill: Travel: looping on the same text box after %d repeats: %q",
+							sameBoxRepeats, t)
+					}
 				}
 				// recovered: the box is closed; the next pass re-plans from
 				// where the walk stopped.
