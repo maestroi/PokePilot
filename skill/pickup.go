@@ -10,8 +10,9 @@ import (
 )
 
 // approachViaTravel walks to a walkable tile orthogonally adjacent to
-// (targetX, targetY) on the current map, resolving the wild battles that
-// interrupt the way. It is a no-op when the player is already adjacent.
+// (targetX, targetY) on the current map, fleeing wild battles that interrupt
+// the way. Trainer battles still fall back to Battle because they cannot be
+// fled. It is a no-op when the player is already adjacent.
 func approachViaTravel(m *emu.Emu, romData []byte, targetX, targetY uint8, policy MovePolicy) error {
 	dest, ok, err := besideDestination(m, romData, targetX, targetY)
 	if err != nil {
@@ -20,7 +21,7 @@ func approachViaTravel(m *emu.Emu, romData []byte, targetX, targetY uint8, polic
 	if !ok {
 		return nil
 	}
-	_, err = Travel(m, romData, dest, policy, 20)
+	_, err = TravelFlee(m, romData, dest, policy, 20)
 	if errors.Is(err, ErrForcedChoiceStuck) {
 		// A trainer can interrupt a forest/item approach after a failed RUN
 		// attempt and leave Battle on the forced party-choice screen. The
@@ -31,7 +32,7 @@ func approachViaTravel(m *emu.Emu, romData []byte, targetX, targetY uint8, polic
 		if recoverErr := recoverForcedChoiceBattle(m, policy); recoverErr != nil {
 			return fmt.Errorf("skill: Pickup: recover trainer battle while approaching (%d,%d): %w", targetX, targetY, recoverErr)
 		}
-		_, err = Travel(m, romData, dest, policy, 20)
+		_, err = TravelFlee(m, romData, dest, policy, 20)
 	}
 	if err != nil {
 		return fmt.Errorf("skill: Pickup: approach beside (%d,%d) on map %#04x: %w", targetX, targetY, dest.Map, err)
@@ -62,11 +63,13 @@ var ErrPickupMenu = errors.New("skill: Pickup: a two-option menu appeared while 
 // same semantic objective/postcondition as Pickup, but their YES choice is
 // owned by receiveChoiceReward rather than this generic item-ball path.
 //
-// The approach uses Travel, not Approach: ground items sit in tall grass
+// The approach uses TravelFlee, not Approach: ground items sit in tall grass
 // (the forest's antidote), and Approach aborts on the first wild battle by
-// design — a pickup objective there would fail on every retry. Travel fights
-// through the encounters; a blackout ends the approach as ErrBlackedOut,
-// which is a recoverable outcome for the caller, not a dead end.
+// design — a pickup objective there would fail on every retry. Wild encounters
+// are logistics noise for an item pickup, so they are fled; trainer battles,
+// which cannot be fled, are fought with policy. A trainer blackout ends the
+// approach as ErrBlackedOut, which is a recoverable outcome for the caller,
+// not a dead end.
 //
 // Immediately before touching the ball, Pickup also guarantees capacity for
 // a new distinct stack. That makes story-critical ground items such as Gold
