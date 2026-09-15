@@ -1,6 +1,7 @@
 package skill
 
 import (
+	"errors"
 	"testing"
 
 	gameruntime "github.com/maestroi/pokepilot/game"
@@ -51,7 +52,7 @@ func TestSafeForcedBanIncludesPreviouslyCommittedDeadEnds(t *testing.T) {
 
 	forced := legFromMap{e: forcedEdge, m: current}
 	deadEnds := map[legFromMap]bool{
-		{e: staleDeadEnd, m: detour}: true,
+		legFromMap{e: staleDeadEnd, m: detour}: true,
 	}
 	dest := Destination{Map: destMap}
 
@@ -66,17 +67,11 @@ func TestSafeForcedBanIncludesPreviouslyCommittedDeadEnds(t *testing.T) {
 		t.Fatal("cumulative ban trial approved a route that depends on an already-banned downstream edge")
 	}
 	var blocked *world.RouteBlockedError
-	if err == nil || !errorsAs(err, &blocked) {
+	if err == nil || !errors.As(err, &blocked) {
 		t.Fatalf("cumulative trial error = %v, want RouteBlockedError", err)
 	}
 	missing := blocked.MissingCapabilities()
 	if len(missing) != 1 || missing[0] != "can_clear_snorlax" {
 		t.Fatalf("missing capabilities = %v, want [can_clear_snorlax]", missing)
 	}
-}
-
-// errorsAs is a tiny package-local seam so the regression stays focused on
-// routing semantics without adding another import solely for one assertion.
-func errorsAs(err error, target any) bool {
-	return asError(err, target)
 }
