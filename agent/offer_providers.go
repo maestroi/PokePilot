@@ -38,7 +38,7 @@ type ObjectiveBlockEvidence struct {
 // keeps returning Candidates for API compatibility; callers that need gating
 // evidence can use OfferWithEvidence.
 type ObjectiveOffer struct {
-	Candidates []Objective             `json:"candidates"`
+	Candidates []Objective              `json:"candidates"`
 	Blocked    []ObjectiveBlockEvidence `json:"blocked,omitempty"`
 }
 
