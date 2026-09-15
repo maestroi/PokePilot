@@ -31,6 +31,18 @@ const (
 	pokeFluteItem  uint8 = 0x49
 	marowakSpecies uint8 = 0x91
 
+	// pokemonTower6FRareCandy is a ground item ball, not story loot, but it
+	// sits in the one-tile-wide gap connecting 6F's upper and lower corridor
+	// halves (pokered/data/maps/objects/PokemonTower6F.asm: object_event 6,
+	// 8, ..., RARE_CANDY) and Pickup's own contract never walks a ball's
+	// tile, only approaches it (see Pickup's doc comment). MEASURED on
+	// rom.ParseMap map 0x93: with that tile treated as occupied, no route
+	// exists at all from 6F's entrance to its exit warp — the ball must be
+	// collected to open the only path through, not merely to loot it.
+	pokemonTower6FRareCandyX uint8 = 6
+	pokemonTower6FRareCandyY uint8 = 8
+	rareCandyItem            uint8 = 0x28
+
 	pokemonTowerTravelEngagements = 60
 	mrFujiRescueBudget            = 15000
 )
@@ -121,6 +133,21 @@ func PokemonTower(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		}
 		if err := Heal(m); err != nil {
 			return fmt.Errorf("skill: PokemonTower: heal at Lavender Pokemon Center: %w", err)
+		}
+	}
+
+	state.Snapshot(m, &mem)
+	if _, count := bagEntry(&mem, rareCandyItem); count < 1 {
+		// Pickup approaches within the CURRENT map only; it does not cross
+		// maps on its own. Reach 6F's own 5F-side warp landing first (always
+		// walkable and always reachable, whatever floor the climb resumes
+		// from), then Pickup's local approach can find a tile beside the ball.
+		sixFLanding := Destination{Map: pokemonTower6FMap, X: 18, Y: 9}
+		if _, err := travelPokemonTower(m, romData, sixFLanding, policy, pokemonTowerTravelEngagements); err != nil {
+			return fmt.Errorf("skill: PokemonTower: reach 6F for the Rare Candy: %w", err)
+		}
+		if err := Pickup(m, romData, pokemonTower6FRareCandyX, pokemonTower6FRareCandyY, rareCandyItem, policy); err != nil {
+			return fmt.Errorf("skill: PokemonTower: collect 6F's Rare Candy (blocks the only route through): %w", err)
 		}
 	}
 
