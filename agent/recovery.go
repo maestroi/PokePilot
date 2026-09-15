@@ -152,6 +152,21 @@ func recoverableFailureKey(obj Objective, result ObjectiveResult) string {
 	return fingerprintRecoverableFailure(obj, result).Key
 }
 
+func routePolicySibling(o Objective) (Objective, bool) {
+	switch o.Kind {
+	case KindGoTo:
+	case KindHeal:
+		if o.Place == "" {
+			return Objective{}, false
+		}
+	default:
+		return Objective{}, false
+	}
+	sibling := o
+	sibling.Flee = !o.Flee
+	return sibling, true
+}
+
 // record quarantines the exact objective/failure/world fingerprint after a
 // recoverable failure. The entry lives inside runFailurePolicy so quarantine,
 // repeat detection and retry budgets cannot drift into separate state machines.
@@ -163,6 +178,22 @@ func (f *runFailurePolicy) record(result ObjectiveResult) {
 	f.quarantine[fingerprint.ObjectiveKey] = failureQuarantineEntry{
 		Fingerprint: fingerprint.Key,
 		StateKey:    fingerprint.StateKey,
+	}
+
+	// A missing route prerequisite is a property of the destination and the
+	// current world state, not of how wild encounters are handled while walking.
+	// Quarantine the plain/flee sibling together so recovery cannot immediately
+	// retry the same impossible route under the other travel policy.
+	if failureCauseIs(result, "route_prerequisite_missing") {
+		if sibling, ok := routePolicySibling(result.Objective); ok {
+			siblingResult := result
+			siblingResult.Objective = sibling
+			siblingFingerprint := fingerprintRecoverableFailure(sibling, siblingResult)
+			f.quarantine[siblingFingerprint.ObjectiveKey] = failureQuarantineEntry{
+				Fingerprint: siblingFingerprint.Key,
+				StateKey:    siblingFingerprint.StateKey,
+			}
+		}
 	}
 }
 
