@@ -180,10 +180,12 @@ export interface ModelDeployment {
   engine?: string
   engine_version?: string
   engine_config?: string
+  max_parallel_workers?: number
   legacy_profile?: string
   state: DeploymentState
   loaded_deployment?: string
   active_leases?: number
+  queued?: number
   error?: string
 }
 
@@ -195,6 +197,7 @@ export interface ModelRegistrySnapshot {
 export interface ExperimentArm {
   name: string
   deployment: string
+  max_parallel_workers?: number
 }
 
 export interface ExperimentRequest {
@@ -225,6 +228,8 @@ export interface ExperimentArmSummary {
   avg_strategic_call_seconds?: number
   p50_strategic_call_seconds?: number
   p95_strategic_call_seconds?: number
+  avg_prefill_tps?: number
+  avg_decode_tps?: number
   prompt_tokens?: number
   completion_tokens?: number
   rejected?: number

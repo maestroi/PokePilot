@@ -2,7 +2,7 @@
   "deployments": [
     {
       "id": "qwen38-27b-7900",
-      "label": "Qwen 3.8 27B · 7900 XTX",
+      "label": "Qwen 3.8 27B \u00b7 7900 XTX",
       "model_id": "qwen3.8-27b",
       "revision": "sha256:22200efcd98a7aeeaf83f59b0f1400b055d9e0437900e26b930ef2d42a3eb3f9",
       "artifact": "/srv/llm/models/Qwen3.8-27B-Q4_K_S.gguf",
@@ -14,11 +14,12 @@
       "engine": "llama.cpp",
       "engine_version": "0.4.0-dev (build 10884, commit 434ddbbc0)",
       "engine_config": "7900-pinned-rocm-mtp-4slot",
-      "legacy_profile": "auto"
+      "legacy_profile": "auto",
+      "max_parallel_workers": 1
     },
     {
       "id": "qwen35-4b-4090",
-      "label": "Qwen 3.5 4B · RTX 4090",
+      "label": "Qwen 3.5 4B \u00b7 RTX 4090",
       "model_id": "qwen3.5-4b",
       "revision": "sha256:13c16f426047e2de38cd075bdade4a7bcbc8c774384876f677740cda65f8a983",
       "artifact": "/home/maestro/.local/share/models/pokepilot-cpu/Qwen_Qwen3.5-4B-Q4_K_M.gguf",
@@ -32,11 +33,12 @@
       "engine": "llama.cpp",
       "engine_version": "1 (dd1ea52) LM Studio CUDA12 2.29.1",
       "engine_config": "4090-switchable",
-      "legacy_profile": "gpu"
+      "legacy_profile": "gpu",
+      "max_parallel_workers": 1
     },
     {
       "id": "qwen35-9b-4090",
-      "label": "Qwen 3.5 9B · RTX 4090",
+      "label": "Qwen 3.5 9B \u00b7 RTX 4090",
       "model_id": "qwen3.5-9b",
       "revision": "sha256:d784ce9eda1a5a7b51e8f705a9e6310844bf4f173654d115823c775fdea56d43",
       "artifact": "/home/maestro/.local/share/models/pokepilot-cpu/Qwen_Qwen3.5-9B-Q4_K_M.gguf",
@@ -50,7 +52,8 @@
       "engine": "llama.cpp",
       "engine_version": "1 (dd1ea52) LM Studio CUDA12 2.29.1",
       "engine_config": "4090-switchable",
-      "legacy_profile": "gpu"
+      "legacy_profile": "gpu",
+      "max_parallel_workers": 1
     }
   ]
 }

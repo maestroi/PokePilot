@@ -20,21 +20,22 @@ type ModelRegistry struct {
 // environment variable containing a bearer token; the token itself is never
 // carried in the registry, run spec, dashboard or persisted experiment data.
 type ModelDeployment struct {
-	ID            string `json:"id"`
-	Label         string `json:"label"`
-	ModelID       string `json:"model_id"`
-	Revision      string `json:"revision,omitempty"`
-	Artifact      string `json:"artifact,omitempty"`
-	Quantization  string `json:"quantization,omitempty"`
-	Compute       string `json:"compute"`
-	Endpoint      string `json:"endpoint"`
-	APIModel      string `json:"api_model"`
-	Enabled       bool   `json:"enabled"`
-	ControlURL    string `json:"control_url,omitempty"`
-	TokenEnv      string `json:"token_env,omitempty"`
-	Engine        string `json:"engine,omitempty"`
-	EngineVersion string `json:"engine_version,omitempty"`
-	EngineConfig  string `json:"engine_config,omitempty"`
+	ID                 string `json:"id"`
+	Label              string `json:"label"`
+	ModelID            string `json:"model_id"`
+	Revision           string `json:"revision,omitempty"`
+	Artifact           string `json:"artifact,omitempty"`
+	Quantization       string `json:"quantization,omitempty"`
+	Compute            string `json:"compute"`
+	Endpoint           string `json:"endpoint"`
+	APIModel           string `json:"api_model"`
+	Enabled            bool   `json:"enabled"`
+	ControlURL         string `json:"control_url,omitempty"`
+	TokenEnv           string `json:"token_env,omitempty"`
+	Engine             string `json:"engine,omitempty"`
+	EngineVersion      string `json:"engine_version,omitempty"`
+	EngineConfig       string `json:"engine_config,omitempty"`
+	MaxParallelWorkers int    `json:"max_parallel_workers,omitempty"`
 	// LegacyProfile is only the compatibility adapter used by existing
 	// runners to choose the already-configured compute endpoint. New operator
 	// and experiment code selects ID, never this value.
@@ -45,20 +46,21 @@ type ModelDeployment struct {
 // copied into a run at enqueue time. Friendly labels are included for display
 // but are never sufficient for reproducibility on their own.
 type InferenceIdentity struct {
-	DeploymentID  string `json:"deployment_id"`
-	Label         string `json:"label,omitempty"`
-	ModelID       string `json:"model_id"`
-	Revision      string `json:"revision,omitempty"`
-	Artifact      string `json:"artifact,omitempty"`
-	Quantization  string `json:"quantization,omitempty"`
-	Compute       string `json:"compute"`
-	Endpoint      string `json:"endpoint"`
-	APIModel      string `json:"api_model"`
-	ControlURL    string `json:"control_url,omitempty"`
-	TokenEnv      string `json:"token_env,omitempty"`
-	Engine        string `json:"engine,omitempty"`
-	EngineVersion string `json:"engine_version,omitempty"`
-	EngineConfig  string `json:"engine_config,omitempty"`
+	DeploymentID       string `json:"deployment_id"`
+	Label              string `json:"label,omitempty"`
+	ModelID            string `json:"model_id"`
+	Revision           string `json:"revision,omitempty"`
+	Artifact           string `json:"artifact,omitempty"`
+	Quantization       string `json:"quantization,omitempty"`
+	Compute            string `json:"compute"`
+	Endpoint           string `json:"endpoint"`
+	APIModel           string `json:"api_model"`
+	ControlURL         string `json:"control_url,omitempty"`
+	TokenEnv           string `json:"token_env,omitempty"`
+	Engine             string `json:"engine,omitempty"`
+	EngineVersion      string `json:"engine_version,omitempty"`
+	EngineConfig       string `json:"engine_config,omitempty"`
+	MaxParallelWorkers int    `json:"max_parallel_workers,omitempty"`
 }
 
 const postgresRegistryEnvPrefix = "postgres-env://"
@@ -124,6 +126,9 @@ func (r ModelRegistry) Validate() error {
 		if strings.TrimSpace(d.APIModel) == "" {
 			return fmt.Errorf("model registry: deployment %q has empty api_model", id)
 		}
+		if d.MaxParallelWorkers < 0 {
+			return fmt.Errorf("model registry: deployment %q has invalid max_parallel_workers %d", id, d.MaxParallelWorkers)
+		}
 		switch p := strings.TrimSpace(d.LegacyProfile); p {
 		case "", "auto", "gpu", "default":
 		default:
@@ -166,7 +171,17 @@ func (d ModelDeployment) Identity() InferenceIdentity {
 		Compute: d.Compute, Endpoint: d.Endpoint, APIModel: d.APIModel,
 		ControlURL: d.ControlURL, TokenEnv: d.TokenEnv, Engine: d.Engine,
 		EngineVersion: d.EngineVersion, EngineConfig: d.EngineConfig,
+		MaxParallelWorkers: d.ParallelLimit(),
 	}
+}
+
+// ParallelLimit returns the deployment worker cap. Zero is intentionally
+// backwards-compatible and means one active worker at a time.
+func (d ModelDeployment) ParallelLimit() int {
+	if d.MaxParallelWorkers <= 0 {
+		return 1
+	}
+	return d.MaxParallelWorkers
 }
 
 // CompatibilityProfile maps a deployment onto the stable llm_profile wire

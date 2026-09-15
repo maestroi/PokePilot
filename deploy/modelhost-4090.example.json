@@ -18,7 +18,17 @@
       "engine": "llama.cpp",
       "engine_version": "replace-with-server-version",
       "command": "/usr/local/bin/llama-server",
-      "args": ["-m", "/srv/models/qwen3.5-4b/model.gguf", "--alias", "pokepilot-4090", "--host", "0.0.0.0", "--port", "8002"]
+      "args": [
+        "-m",
+        "/srv/models/qwen3.5-4b/model.gguf",
+        "--alias",
+        "pokepilot-4090",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8002"
+      ],
+      "max_parallel_workers": 1
     },
     {
       "deployment_id": "qwen35-9b-4090",
@@ -32,7 +42,17 @@
       "engine": "llama.cpp",
       "engine_version": "replace-with-server-version",
       "command": "/usr/local/bin/llama-server",
-      "args": ["-m", "/srv/models/qwen3.5-9b/model.gguf", "--alias", "pokepilot-4090", "--host", "0.0.0.0", "--port", "8002"]
+      "args": [
+        "-m",
+        "/srv/models/qwen3.5-9b/model.gguf",
+        "--alias",
+        "pokepilot-4090",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8002"
+      ],
+      "max_parallel_workers": 1
     }
   ]
 }

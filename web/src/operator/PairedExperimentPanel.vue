@@ -34,6 +34,8 @@ const form = reactive({
   name: 'Brock · 27B vs 4B',
   arm_a: '',
   arm_b: '',
+  arm_a_workers: 1,
+  arm_b_workers: 1,
   goal: 'Earn the Boulder Badge.',
   starter: '',
   seed_count: 20,
@@ -82,8 +84,8 @@ async function submit(): Promise<void> {
     const seeds = parseSeeds(form.seeds)
     created.value = await createExperiment({
       name: form.name.trim() || 'Brock · 27B vs 4B',
-      arm_a: { name: 'A', deployment: form.arm_a },
-      arm_b: { name: 'B', deployment: form.arm_b },
+      arm_a: { name: 'A', deployment: form.arm_a, max_parallel_workers: Number(form.arm_a_workers || 1) },
+      arm_b: { name: 'B', deployment: form.arm_b, max_parallel_workers: Number(form.arm_b_workers || 1) },
       goal: form.goal.trim() || 'Earn the Boulder Badge.',
       starter: form.starter,
       seeds,
@@ -116,6 +118,7 @@ const metrics = computed(() => {
     { label: 'Frames', a: String(a.frames || 0), b: String(b.frames || 0) },
     { label: 'Strategic calls', a: String(a.strategic_calls || 0), b: String(b.strategic_calls || 0) },
     { label: 'Avg / p50 / p95', a: `${seconds(a.avg_strategic_call_seconds)} / ${seconds(a.p50_strategic_call_seconds)} / ${seconds(a.p95_strategic_call_seconds)}`, b: `${seconds(b.avg_strategic_call_seconds)} / ${seconds(b.p50_strategic_call_seconds)} / ${seconds(b.p95_strategic_call_seconds)}` },
+    { label: 'Prefill / decode TPS', a: `${Number(a.avg_prefill_tps || 0).toFixed(1)} / ${Number(a.avg_decode_tps || 0).toFixed(1)}`, b: `${Number(b.avg_prefill_tps || 0).toFixed(1)} / ${Number(b.avg_decode_tps || 0).toFixed(1)}` },
     { label: 'Prompt / completion', a: `${a.prompt_tokens || 0} / ${a.completion_tokens || 0}`, b: `${b.prompt_tokens || 0} / ${b.completion_tokens || 0}` },
     { label: 'Rejects / transport / fallbacks', a: `${a.rejected || 0} / ${a.transport_errors || 0} / ${a.fallbacks || 0}`, b: `${b.rejected || 0} / ${b.transport_errors || 0} / ${b.fallbacks || 0}` },
     { label: 'Plan exec / skipped', a: `${a.plan_executions || 0} / ${a.steps_skipped || 0}`, b: `${b.plan_executions || 0} / ${b.steps_skipped || 0}` }
@@ -142,6 +145,17 @@ const metrics = computed(() => {
           <option v-for="deployment in deployments" :key="`b-${deployment.id}`" :value="deployment.id" :disabled="deployment.enabled === false">{{ deploymentOptionLabel(deployment) }}</option>
         </select>
       </label>
+      <label class="block">
+        <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Arm A workers</span>
+        <input v-model.number="form.arm_a_workers" type="number" min="1" max="16" :class="fieldClass" />
+        <span class="mt-1 block text-[10px] text-slate-600">1 keeps this arm at maximum per-run model speed.</span>
+      </label>
+      <label class="block">
+        <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Arm B workers</span>
+        <input v-model.number="form.arm_b_workers" type="number" min="1" max="16" :class="fieldClass" />
+        <span class="mt-1 block text-[10px] text-slate-600">Runs above the cap remain queued.</span>
+      </label>
+      <div class="hidden xl:block"></div>
       <label class="block sm:col-span-2 xl:col-span-3">
         <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Goal</span>
         <input v-model="form.goal" :class="fieldClass" />
@@ -216,7 +230,7 @@ const metrics = computed(() => {
       </label>
       <div class="sm:col-span-2 xl:col-span-3 flex flex-col gap-3 border-t border-white/8 pt-3 sm:flex-row sm:items-center sm:justify-between">
         <p v-if="error" class="text-sm text-rose-300" role="alert">{{ error }}</p>
-        <p v-else class="text-[11px] text-slate-600">Each seed queues one Arm A run and one Arm B run with the same gameplay spec.</p>
+        <p v-else class="text-[11px] text-slate-600">Each seed queues one run per arm. 1 vs 1 is the fair benchmark default; higher caps trade per-run TPS for aggregate throughput.</p>
         <button type="submit" :disabled="submitting" class="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-md bg-cyan-500 px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-cyan-400 disabled:cursor-wait disabled:opacity-60">
           <PlayIcon class="size-4" aria-hidden="true" />
           {{ submitting ? 'Queueing pairs…' : 'Start paired experiment' }}
