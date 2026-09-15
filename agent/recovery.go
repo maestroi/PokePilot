@@ -17,9 +17,17 @@ type recoverableFailureFingerprint struct {
 	StateKey     string
 }
 
+type recoveryStateScope uint8
+
+const (
+	recoveryStateScopeObjective recoveryStateScope = iota
+	recoveryStateScopeRoutePrerequisite
+)
+
 type failureQuarantineEntry struct {
 	Fingerprint string
 	StateKey    string
+	StateScope  recoveryStateScope
 }
 
 // recoveryState is the objective-scoped semantic projection used by retry
@@ -115,6 +123,43 @@ func recoveryStateKey(o Objective, obs Observation) string {
 	return fmt.Sprintf("%x", sum[:8])
 }
 
+// routePrerequisiteStateKey deliberately excludes position and local boundary
+// state. A missing portable route capability is not repaired by walking to a
+// different tile or completing an unrelated local objective; retry becomes
+// meaningful only after badges, field capabilities, or story progress change.
+//
+// This scope is intentionally narrower than the ordinary KindGoTo recovery
+// state. Geometry/navigation failures still include Location/X/Y, because a
+// different component or approach can make those succeed.
+func routePrerequisiteStateKey(obs Observation) string {
+	full := FailureStateFor(obs)
+	data, _ := json.Marshal(struct {
+		Badges       []string              `json:"badges,omitempty"`
+		Capabilities []FailureCapability   `json:"capabilities,omitempty"`
+		Progress     []FailureProgressFact `json:"progress,omitempty"`
+	}{
+		Badges:       full.Badges,
+		Capabilities: full.Capabilities,
+		Progress:     full.Progress,
+	})
+	sum := sha256.Sum256(data)
+	return fmt.Sprintf("%x", sum[:8])
+}
+
+func recoveryStateScopeFor(result ObjectiveResult) recoveryStateScope {
+	if failureCauseIs(result, "route_prerequisite_missing") {
+		return recoveryStateScopeRoutePrerequisite
+	}
+	return recoveryStateScopeObjective
+}
+
+func recoveryStateKeyForScope(o Objective, obs Observation, scope recoveryStateScope) string {
+	if scope == recoveryStateScopeRoutePrerequisite {
+		return routePrerequisiteStateKey(obs)
+	}
+	return recoveryStateKey(o, obs)
+}
+
 // normalizedFailureKey fingerprints transaction phase, portable class, stable
 // cause id and structured context. Native error prose is deliberately absent.
 func normalizedFailureKey(result ObjectiveResult) string {
@@ -138,7 +183,8 @@ func normalizedFailureKey(result ObjectiveResult) string {
 
 func fingerprintRecoverableFailure(obj Objective, result ObjectiveResult) recoverableFailureFingerprint {
 	objectiveKey := objectiveStorageKey(obj)
-	stateKey := recoveryStateKey(obj, result.Final)
+	scope := recoveryStateScopeFor(result)
+	stateKey := recoveryStateKeyForScope(obj, result.Final, scope)
 	return recoverableFailureFingerprint{
 		ObjectiveKey: objectiveKey,
 		StateKey:     stateKey,
@@ -175,15 +221,18 @@ func (f *runFailurePolicy) record(result ObjectiveResult) {
 		return
 	}
 	fingerprint := fingerprintRecoverableFailure(result.Objective, result)
+	scope := recoveryStateScopeFor(result)
 	f.quarantine[fingerprint.ObjectiveKey] = failureQuarantineEntry{
 		Fingerprint: fingerprint.Key,
 		StateKey:    fingerprint.StateKey,
+		StateScope:  scope,
 	}
 
 	// A missing route prerequisite is a property of the destination and the
-	// current world state, not of how wild encounters are handled while walking.
-	// Quarantine the plain/flee sibling together so recovery cannot immediately
-	// retry the same impossible route under the other travel policy.
+	// current semantic route state, not of position or how wild encounters are
+	// handled while walking. Quarantine the plain/flee sibling together so
+	// recovery cannot immediately retry the same impossible route under the
+	// other travel policy, and retain both entries across unrelated movement.
 	if failureCauseIs(result, "route_prerequisite_missing") {
 		if sibling, ok := routePolicySibling(result.Objective); ok {
 			siblingResult := result
@@ -192,6 +241,7 @@ func (f *runFailurePolicy) record(result ObjectiveResult) {
 			f.quarantine[siblingFingerprint.ObjectiveKey] = failureQuarantineEntry{
 				Fingerprint: siblingFingerprint.Key,
 				StateKey:    siblingFingerprint.StateKey,
+				StateScope:  scope,
 			}
 		}
 	}
@@ -213,7 +263,7 @@ func (f *runFailurePolicy) filter(obs Observation, offered []Objective) []Object
 			out = append(out, o)
 			continue
 		}
-		if entry.StateKey != recoveryStateKey(o, obs) {
+		if entry.StateKey != recoveryStateKeyForScope(o, obs, entry.StateScope) {
 			delete(f.quarantine, key)
 			out = append(out, o)
 			continue
