@@ -176,7 +176,10 @@ CREATE TABLE IF NOT EXISTS dataset_manifests (
 CREATE INDEX IF NOT EXISTS dataset_manifests_created_idx ON dataset_manifests(created_at DESC);
 `
 
-type controlPlane struct{ db *sql.DB }
+type controlPlane struct {
+	db                *sql.DB
+	experimentPersist sync.Mutex
+}
 
 var wallControlPlanes sync.Map         // *Wall -> *controlPlane
 var wallExperimentControllers sync.Map // *Wall -> *modelExperimentController
