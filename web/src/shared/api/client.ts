@@ -129,6 +129,14 @@ export function cancelRun(runID: string, signal?: AbortSignal): Promise<Record<s
   })
 }
 
+export function forceEndWorker(addr: string, signal?: AbortSignal): Promise<Record<string, unknown>> {
+  return requestJSON<Record<string, unknown>>(`/v1/workers/${encodeURIComponent(addr)}/force-end`, {
+    method: 'POST',
+    body: '{}',
+    signal
+  })
+}
+
 export async function deleteRun(runID: string, signal?: AbortSignal): Promise<void> {
   await requestJSON<Record<string, unknown>>(`/v1/runs/${encodeURIComponent(runID)}`, {
     method: 'DELETE',

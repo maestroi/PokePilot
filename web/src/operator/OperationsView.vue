@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { ArrowPathIcon } from '@heroicons/vue/20/solid'
-import { getDashboard } from '../shared/api/client'
-import type { DashboardRun } from '../shared/api/types'
+import { forceEndWorker, getDashboard } from '../shared/api/client'
+import type { DashboardRun, DashboardWorker } from '../shared/api/types'
 import BadgeIcon from '../shared/components/BadgeIcon.vue'
+import ConfirmDialog from '../shared/components/ConfirmDialog.vue'
 import Panel from '../shared/components/Panel.vue'
 import PokemonSprite from '../shared/components/PokemonSprite.vue'
 import ResourceState from '../shared/components/ResourceState.vue'
@@ -58,6 +59,19 @@ const connectionLabel = computed(() => activeState.value === 'stale' ? 'Stale' :
 const activeUpdatedLabel = computed(() => activeUpdatedAt.value ? new Date(activeUpdatedAt.value).toLocaleTimeString() : '—')
 const nowSeconds = computed(() => activeData.value?.now || Date.now() / 1000)
 
+const forceEndTarget = ref<DashboardWorker | null>(null)
+const forceEndBusy = ref(false)
+const workerActionError = ref('')
+const forceEndTitle = computed(() => forceEndTarget.value ? `Force end ${forceEndTarget.value.addr}?` : 'Force end worker?')
+const forceEndMessage = computed(() => {
+  const worker = forceEndTarget.value
+  if (!worker) return ''
+  if (worker.run_id) {
+    return `This immediately terminates the worker and cancels active run ${shortID(worker.run_id)}. The run becomes terminal: it will not be retried and an endless successor will not be created.\n\nAny in-process work on this worker is abandoned. Runs still waiting in the shared farm queue stay queued for healthy workers.`
+  }
+  return 'This immediately terminates the idle worker. Any in-process background work on that worker is abandoned. Runs waiting in the shared farm queue stay queued for healthy workers.'
+})
+
 const metrics = computed(() => [
   { label: 'Workers', value: workers.value.length, note: `${idleWorkers.value} available` },
   { label: 'Active', value: runs.value.active.length, note: 'running attempts' },
@@ -87,6 +101,32 @@ function refreshActive(): void {
 
 function refreshRecent(): void {
   void retryRecent()
+}
+
+function requestForceEnd(worker: DashboardWorker): void {
+  workerActionError.value = ''
+  forceEndTarget.value = worker
+}
+
+function closeForceEnd(): void {
+  if (!forceEndBusy.value) forceEndTarget.value = null
+}
+
+async function confirmForceEnd(): Promise<void> {
+  const worker = forceEndTarget.value
+  if (!worker || forceEndBusy.value) return
+  forceEndBusy.value = true
+  workerActionError.value = ''
+  try {
+    await forceEndWorker(worker.addr)
+    forceEndTarget.value = null
+    void retryActive()
+    void retryRecent()
+  } catch (error) {
+    workerActionError.value = error instanceof Error ? error.message : String(error)
+  } finally {
+    forceEndBusy.value = false
+  }
 }
 </script>
 
@@ -144,7 +184,8 @@ function refreshRecent(): void {
                   <th class="px-3 py-2 text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">State</th>
                   <th class="px-3 py-2 text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Run</th>
                   <th class="px-3 py-2 text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Seen</th>
-                  <th class="px-3 py-2 text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase sm:pr-4">Build</th>
+                  <th class="px-3 py-2 text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Build</th>
+                  <th class="px-3 py-2 text-right text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase sm:pr-4">Action</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-white/8">
@@ -153,12 +194,22 @@ function refreshRecent(): void {
                   <td class="px-3 py-2.5"><StatusBadge :tone="worker.run_id ? 'info' : 'success'">{{ worker.run_id ? 'Busy' : 'Available' }}</StatusBadge></td>
                   <td class="px-3 py-2.5 font-mono text-xs whitespace-nowrap text-slate-400" :title="worker.run_id || ''">{{ shortID(worker.run_id) }}</td>
                   <td class="px-3 py-2.5 text-xs whitespace-nowrap text-slate-500">{{ worker.seen_ago || '—' }}</td>
-                  <td class="px-3 py-2.5 font-mono text-xs whitespace-nowrap text-slate-500 sm:pr-4">{{ shortRevision(worker.version) }}</td>
+                  <td class="px-3 py-2.5 font-mono text-xs whitespace-nowrap text-slate-500">{{ shortRevision(worker.version) }}</td>
+                  <td class="px-3 py-2.5 text-right sm:pr-4">
+                    <button
+                      type="button"
+                      class="rounded-md bg-rose-400/8 px-2.5 py-1.5 text-[11px] font-semibold whitespace-nowrap text-rose-300 ring-1 ring-rose-400/20 hover:bg-rose-400/15"
+                      @click="requestForceEnd(worker)"
+                    >
+                      Force end
+                    </button>
+                  </td>
                 </tr>
               </tbody>
             </table>
           </div>
           <p v-else class="py-6 text-center text-sm text-slate-500">No workers are reporting.</p>
+          <p v-if="workerActionError" class="mt-3 text-xs text-rose-300">Force end failed: {{ workerActionError }}</p>
         </Panel>
 
         <Panel title="Active attempts" description="Runs currently executing on a worker." compact class="xl:col-span-2">
@@ -291,5 +342,16 @@ function refreshRecent(): void {
         </div>
       </ResourceState>
     </Panel>
+
+    <ConfirmDialog
+      :open="forceEndTarget !== null"
+      :title="forceEndTitle"
+      :message="forceEndMessage"
+      confirm-label="Force end worker"
+      :busy="forceEndBusy"
+      danger
+      @close="closeForceEnd"
+      @confirm="confirmForceEnd"
+    />
   </div>
 </template>
