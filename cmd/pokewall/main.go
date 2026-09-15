@@ -71,6 +71,9 @@ func main() {
 			if err := cp.migrateCheckpointArtifacts(); err != nil {
 				log.Fatalf("pokewall: migrate PostgreSQL checkpoint storage: %v", err)
 			}
+			if err := cp.rebuildFinishCache(wall); err != nil {
+				log.Fatalf("pokewall: rebuild finish cache from PostgreSQL: %v", err)
+			}
 		}
 		defer wall.CloseControlPlane() //nolint:errcheck
 		go wall.RunCatalogSettlementSweep(5 * time.Second)
