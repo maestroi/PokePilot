@@ -12,6 +12,7 @@ import (
 func TestForceEndWorkerTerminatesAndCancelsActiveRun(t *testing.T) {
 	w := NewWall("")
 	addr := "10.0.1.23:8099"
+	altAddr := "10.0.2.23:8099"
 	runID := "run-force-end"
 
 	w.mu.Lock()
@@ -23,15 +24,15 @@ func TestForceEndWorkerTerminatesAndCancelsActiveRun(t *testing.T) {
 		lastUpdate: time.Now(),
 	}
 	w.workers[addr] = &workerInfo{
-		Addrs:    []string{addr},
+		Addrs:    []string{addr, altAddr},
 		RunID:    runID,
 		LastSeen: time.Now(),
 	}
 	w.mu.Unlock()
 
-	terminated := ""
-	handler := workerControlHTTPHandlerWithTerminator(w, http.NotFoundHandler(), func(_ context.Context, got string) error {
-		terminated = got
+	var terminated []string
+	handler := workerControlHTTPHandlerWithTerminator(w, http.NotFoundHandler(), func(_ context.Context, got []string) error {
+		terminated = append([]string(nil), got...)
 		return nil
 	})
 	req := httptest.NewRequest(http.MethodPost, "/v1/workers/"+url.PathEscape(addr)+"/force-end", nil)
@@ -41,8 +42,8 @@ func TestForceEndWorkerTerminatesAndCancelsActiveRun(t *testing.T) {
 	if res.Code != http.StatusOK {
 		t.Fatalf("force-end = %d: %s", res.Code, res.Body.String())
 	}
-	if terminated != addr {
-		t.Fatalf("terminated worker = %q, want %q", terminated, addr)
+	if len(terminated) != 2 || terminated[0] != addr || terminated[1] != altAddr {
+		t.Fatalf("terminated addresses = %v, want [%s %s]", terminated, addr, altAddr)
 	}
 
 	w.mu.Lock()
@@ -79,7 +80,7 @@ func TestForceEndWorkerFailureLeavesWorkerAndRunUntouched(t *testing.T) {
 	w.workers[addr] = &workerInfo{Addrs: []string{addr}, RunID: runID, LastSeen: time.Now()}
 	w.mu.Unlock()
 
-	handler := workerControlHTTPHandlerWithTerminator(w, http.NotFoundHandler(), func(context.Context, string) error {
+	handler := workerControlHTTPHandlerWithTerminator(w, http.NotFoundHandler(), func(context.Context, []string) error {
 		return context.DeadlineExceeded
 	})
 	req := httptest.NewRequest(http.MethodPost, "/v1/workers/"+url.PathEscape(addr)+"/force-end", nil)
