@@ -31,7 +31,7 @@ func legacyLocationID(id uint8) LocationID {
 	return LocationID(fmt.Sprintf("legacy-map/%02x", id))
 }
 
-func legacyKnowledgeTopology(adjacency map[uint8][]uint8) KnowledgeTopology {
+func rawLegacyKnowledgeTopology(adjacency map[uint8][]uint8) KnowledgeTopology {
 	topology := KnowledgeTopology{
 		Adjacency:       map[LocationID][]LocationID{},
 		NativeLocations: map[uint8]LocationID{},
@@ -46,6 +46,20 @@ func legacyKnowledgeTopology(adjacency map[uint8][]uint8) KnowledgeTopology {
 		}
 	}
 	return normalizeKnowledgeTopology(topology)
+}
+
+// legacyKnowledgeTopology is the one-release compatibility path for callers
+// that still provide only a native byte graph. With exactly one registered
+// game adapter, native bytes can be translated without ambiguity and the
+// resulting Knowledge remains semantic. If multiple games are registered,
+// callers must provide a GameID or a semantic KnowledgeTopology explicitly.
+func legacyKnowledgeTopology(adjacency map[uint8][]uint8) KnowledgeTopology {
+	if len(knowledgeTopologyProviders) == 1 {
+		for _, provider := range knowledgeTopologyProviders {
+			return normalizeKnowledgeTopology(provider.KnowledgeTopology(adjacency))
+		}
+	}
+	return rawLegacyKnowledgeTopology(adjacency)
 }
 
 func normalizeKnowledgeTopology(t KnowledgeTopology) KnowledgeTopology {
@@ -92,16 +106,7 @@ func knowledgeTopologyFor(id game.GameID, native map[uint8][]uint8) KnowledgeTop
 		if provider := knowledgeTopologyProviders[id]; provider != nil {
 			return normalizeKnowledgeTopology(provider.KnowledgeTopology(native))
 		}
-		return legacyKnowledgeTopology(native)
-	}
-	// One-release compatibility for synthetic callers that still pass the old
-	// byte-map topology without a GameID. Mirror objectiveCatalogProviderFor:
-	// with exactly one registered game there is no ambiguity, so translate the
-	// native graph through that adapter and keep Knowledge itself semantic.
-	if len(knowledgeTopologyProviders) == 1 {
-		for _, provider := range knowledgeTopologyProviders {
-			return normalizeKnowledgeTopology(provider.KnowledgeTopology(native))
-		}
+		return rawLegacyKnowledgeTopology(native)
 	}
 	return legacyKnowledgeTopology(native)
 }
