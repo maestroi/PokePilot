@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -65,6 +66,29 @@ func TestLifecycleRejectsSwitchWhileRunActive(t *testing.T) {
 	resp, _ = post("/v1/load", loadRequest{DeploymentID: "qwen-9b"})
 	if resp.StatusCode != http.StatusAccepted {
 		t.Fatalf("second load status = %d", resp.StatusCode)
+	}
+}
+
+func TestProductionHostConfigLoads(t *testing.T) {
+	cfg, err := loadConfig(filepath.Join("..", "..", "deploy", "modelhost-4090.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.HostID != "inference-4090" || cfg.Listen != "192.168.50.81:8091" {
+		t.Fatalf("host config = %#v", cfg)
+	}
+	seen := map[string]bool{}
+	for _, model := range cfg.Models {
+		seen[model.DeploymentID] = true
+		if model.APIModel != "pokepilot-4090" {
+			t.Fatalf("%s api_model = %q", model.DeploymentID, model.APIModel)
+		}
+		if model.Command == "" || len(model.Args) == 0 {
+			t.Fatalf("%s missing launch command", model.DeploymentID)
+		}
+	}
+	if !seen["qwen35-4b-4090"] {
+		t.Fatal("missing 4B deployment")
 	}
 }
 

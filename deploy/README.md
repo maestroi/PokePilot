@@ -29,34 +29,46 @@ server-side route table and sanitized `/v1/watch` contract; see
 
 ## LLM routing
 
-Normal farm routing is deliberately simple and direct. PokePilot keeps the
-existing `llm_profile` wire values for queued/history compatibility, but the
-operator-facing meanings are now:
+When `POKEPILOT_MODEL_REGISTRY` is set (the farm stack mounts
+`deploy/models.json` at `/etc/pokepilot/models.json`), the operator Tools form
+selects a first-class **deployment** instead of a legacy LLM profile. Each
+deployment copies immutable inference identity onto the run. Switchable hosts
+are owned by `pokemodelhost`; the wall waits until that host reports `ready`
+before handing a runner lease, and it will not switch models while a lease is
+active.
+
+The existing `llm_profile` wire values remain the compatibility adapter for
+queued/history runs and for installations with no registry:
 
 | Operator choice | Wire profile | Route |
 | --- | --- | --- |
-| 7900 XTX (default) | `auto` | direct 7900 XTX → CPU/LAN after a transport failure or 120s request timeout |
-| RTX 4090 | `gpu` | direct 4090 only |
+| Deployment `qwen38-27b-7900` / 7900 XTX (default) | `auto` | direct 7900 XTX → CPU/LAN after a transport failure or 120s request timeout |
+| Deployment `qwen35-4b-4090` / `qwen35-9b-4090` / RTX 4090 | `gpu` | direct 4090 only (`api_model` `pokepilot-4090`) |
 | CPU only | `default` | direct LAN CPU only |
 
-The 4090 is never borrowed automatically. The Operations tab can set the
-default for new runs on that Operator browser and the New Run form can override
-it per run. Already-running or already-leased runs keep the route they started
-with; cancel/requeue one if a GPU must be freed immediately.
+The 4090 is never borrowed automatically. `pokemodelhost` on that machine is
+the sole owner of port 8002 and launches every selectable 4090 model with the
+stable alias `pokepilot-4090`. Already-running or already-leased runs keep the
+route they started with; cancel/requeue one if a GPU must be freed immediately.
 
 Default physical backends are:
 
 ```text
 7900 XTX  qwen3.8-27B  http://192.168.50.130:8002/v1
-4090      qwen3.8-27B  http://192.168.50.81:8002/v1
+4090      switchable   http://192.168.50.81:8002/v1  (alias pokepilot-4090; control http://192.168.50.81:8091)
 LAN CPU   qwen 4B      http://192.168.50.204:8000/v1  (bearer llm_token)
 ```
+
+Set `POKEPILOT_MODELHOST_TOKEN` in `.env` or `~/.config/pokepilot/env`. The
+token is never stored in the registry, run spec, or git. The 4090 control port
+is LAN-only.
 
 The normal direct endpoint variables are `POKEPILOT_LLM_GPU_*` for the 7900,
 `POKEPILOT_LLM_4090_*` for the 4090, and the historical `POKEPILOT_LLM_*`
 variables for CPU/LAN. The farm defaults the 7900 request timeout to `120s`;
 the existing failover router then pins the run to CPU/LAN if that direct GPU
-ask times out (or encounters another transport-level failure).
+ask times out (or encounters another transport-level failure). The 4090
+compatibility route uses `POKEPILOT_LLM_4090_MODEL=pokepilot-4090`.
 
 LiteLLM is still deployed and its backend definitions remain in
 `deploy/litellm.yaml`, but `POKEPILOT_LLM_GATEWAY_URL` is empty by default so it

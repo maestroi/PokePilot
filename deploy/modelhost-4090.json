@@ -1,0 +1,74 @@
+{
+  "host_id": "inference-4090",
+  "compute": "RTX 4090",
+  "listen": "192.168.50.81:8091",
+  "token_env": "POKEPILOT_MODELHOST_TOKEN",
+  "load_timeout": "3m",
+  "poll_every": "500ms",
+  "models": [
+    {
+      "deployment_id": "qwen35-4b-4090",
+      "model_id": "qwen3.5-4b",
+      "revision": "sha256:13c16f426047e2de38cd075bdade4a7bcbc8c774384876f677740cda65f8a983",
+      "artifact": "/home/maestro/.local/share/models/pokepilot-cpu/Qwen_Qwen3.5-4B-Q4_K_M.gguf",
+      "quantization": "Q4_K_M",
+      "endpoint": "http://127.0.0.1:8002/v1",
+      "health_url": "http://127.0.0.1:8002/v1/models",
+      "api_model": "pokepilot-4090",
+      "engine": "llama.cpp",
+      "engine_version": "1 (dd1ea52) LM Studio CUDA12 2.29.1",
+      "command": "/home/maestro/.lmstudio/extensions/backends/llama.cpp-linux-x86_64-nvidia-cuda12-avx2-2.29.1/llama-server",
+      "env": {
+        "LD_LIBRARY_PATH": "/home/maestro/.lmstudio/extensions/backends/vendor/linux-llama-cuda12-vendor-v1"
+      },
+      "args": [
+        "--model", "/home/maestro/.local/share/models/pokepilot-cpu/Qwen_Qwen3.5-4B-Q4_K_M.gguf",
+        "--no-mmproj",
+        "--alias", "pokepilot-4090",
+        "--host", "0.0.0.0",
+        "--port", "8002",
+        "--ctx-size", "32768",
+        "--gpu-layers", "all",
+        "--flash-attn", "on",
+        "--cache-type-k", "q8_0",
+        "--cache-type-v", "q8_0",
+        "--batch-size", "2048",
+        "--ubatch-size", "512",
+        "--parallel", "1",
+        "--metrics"
+      ]
+    },
+    {
+      "deployment_id": "qwen35-9b-4090",
+      "model_id": "qwen3.5-9b",
+      "revision": "sha256:d784ce9eda1a5a7b51e8f705a9e6310844bf4f173654d115823c775fdea56d43",
+      "artifact": "/home/maestro/.local/share/models/pokepilot-cpu/Qwen_Qwen3.5-9B-Q4_K_M.gguf",
+      "quantization": "Q4_K_M",
+      "endpoint": "http://127.0.0.1:8002/v1",
+      "health_url": "http://127.0.0.1:8002/v1/models",
+      "api_model": "pokepilot-4090",
+      "engine": "llama.cpp",
+      "engine_version": "1 (dd1ea52) LM Studio CUDA12 2.29.1",
+      "command": "/home/maestro/.lmstudio/extensions/backends/llama.cpp-linux-x86_64-nvidia-cuda12-avx2-2.29.1/llama-server",
+      "env": {
+        "LD_LIBRARY_PATH": "/home/maestro/.lmstudio/extensions/backends/vendor/linux-llama-cuda12-vendor-v1"
+      },
+      "args": [
+        "--model", "/home/maestro/.local/share/models/pokepilot-cpu/Qwen_Qwen3.5-9B-Q4_K_M.gguf",
+        "--no-mmproj",
+        "--alias", "pokepilot-4090",
+        "--host", "0.0.0.0",
+        "--port", "8002",
+        "--ctx-size", "32768",
+        "--gpu-layers", "all",
+        "--flash-attn", "on",
+        "--cache-type-k", "q8_0",
+        "--cache-type-v", "q8_0",
+        "--batch-size", "2048",
+        "--ubatch-size", "512",
+        "--parallel", "1",
+        "--metrics"
+      ]
+    }
+  ]
+}

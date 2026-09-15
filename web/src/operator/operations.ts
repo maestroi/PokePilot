@@ -32,6 +32,11 @@ export function goalLabel(run: DashboardRun): string {
 }
 
 export function llmProfileLabel(run: DashboardRun): string {
+  const identity = run.inference
+  if (identity?.label) {
+    return identity.compute ? `${identity.label}` : identity.label
+  }
+  if (run.llm_deployment) return run.llm_deployment
   switch ((run.llm_profile || '').toLowerCase()) {
     case 'auto': return '7900 XTX · default · CPU after 120s'
     case 'gpu': return 'RTX 4090 · manual'

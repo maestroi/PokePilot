@@ -54,6 +54,15 @@ func TestIssueConfigUsesGitHubAdapter(t *testing.T) {
 	if strings.Contains(wall, "POKEPILOT_GITHUB_TOKEN") || strings.Contains(ui, "POKEPILOT_GITHUB_TOKEN") || strings.Contains(runner, "POKEPILOT_GITHUB_TOKEN") {
 		t.Error("GitHub credential must reach only the issues adapter")
 	}
+	for _, want := range []string{
+		"POKEPILOT_MODEL_REGISTRY: /etc/pokepilot/models.json",
+		"POKEPILOT_MODELHOST_TOKEN: ${POKEPILOT_MODELHOST_TOKEN:-}",
+		"file: ./models.json",
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("stack missing model registry setting %q", want)
+		}
+	}
 	if strings.Contains(s, "AGENT_ORCHESTRATOR") || strings.Contains(s, "orchestrator.labstack.cc") {
 		t.Error("farm stack must no longer depend on private Agent Orchestrator")
 	}
@@ -69,7 +78,7 @@ func TestIssueConfigUsesGitHubAdapter(t *testing.T) {
 		"POKEPILOT_LLM_GPU_TIMEOUT: ${POKEPILOT_LLM_GPU_TIMEOUT:-120s}",
 		"POKEPILOT_LLM_GPU_RECOVERY_REASONING_EFFORT: ${POKEPILOT_LLM_GPU_RECOVERY_REASONING_EFFORT:-off}",
 		"POKEPILOT_LLM_4090_URL: ${POKEPILOT_LLM_4090_URL:-http://192.168.50.81:8002/v1}",
-		"POKEPILOT_LLM_4090_MODEL: ${POKEPILOT_LLM_4090_MODEL:-qwen3.8-27b}",
+		"POKEPILOT_LLM_4090_MODEL: ${POKEPILOT_LLM_4090_MODEL:-pokepilot-4090}",
 		"POKEPILOT_LLM_4090_RECOVERY_REASONING_EFFORT: ${POKEPILOT_LLM_4090_RECOVERY_REASONING_EFFORT:-off}",
 		"POKEPILOT_LLM_GATEWAY_GPU_MODEL: ${POKEPILOT_LLM_GATEWAY_GPU_MODEL:-pokepilot-4090}",
 	} {
@@ -85,7 +94,7 @@ func TestIssueConfigUsesGitHubAdapter(t *testing.T) {
 		// hosted_vllm/ forwards chat_template_kwargs; openai/ drops them and
 		// leaves Qwen 3.8 on its default xhigh thinking path.
 		"POKEPILOT_LITELLM_7900_MODEL: ${POKEPILOT_LITELLM_7900_MODEL:-hosted_vllm/qwen3.8-27b}",
-		"POKEPILOT_LITELLM_4090_MODEL: ${POKEPILOT_LITELLM_4090_MODEL:-hosted_vllm/qwen3.8-27b}",
+		"POKEPILOT_LITELLM_4090_MODEL: ${POKEPILOT_LITELLM_4090_MODEL:-hosted_vllm/pokepilot-4090}",
 		"POKEPILOT_LITELLM_LAN_MODEL: ${POKEPILOT_LITELLM_LAN_MODEL:-hosted_vllm/qwen3.5-4b}",
 	} {
 		if !strings.Contains(s, want) {

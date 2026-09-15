@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import { ArrowRightIcon, PlayIcon } from '@heroicons/vue/20/solid'
-import { createRun } from '../shared/api/client'
-import type { RunSpec } from '../shared/api/types'
+import { createRun, getModels } from '../shared/api/client'
+import type { ModelDeployment, RunSpec } from '../shared/api/types'
 import { defaultGoalForPlayStyle } from '../shared/playstyle'
 import Panel from '../shared/components/Panel.vue'
+import { usePollingResource } from '../shared/composables/usePollingResource'
+import { DEFAULT_ARM_A, deploymentOptionLabel, deploymentSelectable, preferredDeployment } from './llmDeployments'
 
 const goalOptions = [
   'Earn the Boulder Badge.',
@@ -40,6 +42,7 @@ const form = reactive<RunSpec>({
   dest: '',
   goal: defaultGoalForPlayStyle('adventure'),
   llm_profile: 'auto',
+  llm_deployment: '',
   play_style: 'adventure',
   risk_tolerance: 'balanced',
   wild_encounters: 'planner',
@@ -50,6 +53,22 @@ const form = reactive<RunSpec>({
   endless: false,
   random_seed: false
 })
+
+const { data: modelsData } = usePollingResource(
+  (signal) => getModels(signal),
+  { intervalMs: 5000, isEmpty: (snapshot) => snapshot.deployments.length === 0 }
+)
+const deployments = computed<ModelDeployment[]>(() => modelsData.value?.deployments ?? [])
+const hasDeployments = computed(() => deployments.value.length > 0)
+const selectedDeployment = computed(() => deployments.value.find((deployment) => deployment.id === form.llm_deployment))
+
+watch(deployments, (next) => {
+  if (!next.length) {
+    form.llm_deployment = ''
+    return
+  }
+  form.llm_deployment = preferredDeployment(next, form.llm_deployment || DEFAULT_ARM_A)
+}, { immediate: true })
 
 const submitting = ref(false)
 const error = ref('')
@@ -96,7 +115,8 @@ async function submit(): Promise<void> {
       starter: starterRequest(),
       dest: isLLM.value ? '' : form.dest.trim(),
       goal: isLLM.value ? form.goal.trim() : '',
-      llm_profile: isLLM.value ? form.llm_profile : '',
+      llm_profile: isLLM.value && !hasDeployments.value ? form.llm_profile : '',
+      llm_deployment: isLLM.value && hasDeployments.value ? form.llm_deployment : undefined,
       play_style: isLLM.value ? form.play_style : '',
       risk_tolerance: isLLM.value ? form.risk_tolerance : '',
       wild_encounters: isLLM.value ? form.wild_encounters : '',
@@ -205,7 +225,25 @@ async function submit(): Promise<void> {
           <span class="mt-1 block text-[11px] text-slate-600">Fight every encounter forces travel battles, producing more natural training.</span>
         </label>
 
-        <label v-if="isLLM" class="block">
+        <label v-if="isLLM && hasDeployments" class="block sm:col-span-2">
+          <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Deployment</span>
+          <select v-model="form.llm_deployment" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400">
+            <option
+              v-for="deployment in deployments"
+              :key="deployment.id"
+              :value="deployment.id"
+              :disabled="!deploymentSelectable(deployment)"
+            >
+              {{ deploymentOptionLabel(deployment) }}
+            </option>
+          </select>
+          <span class="mt-1 block text-[11px] text-slate-600">
+            {{ selectedDeployment ? `${selectedDeployment.model_id} on ${selectedDeployment.compute}` : 'Model identity plus compute placement.' }}
+            Unavailable, failed, or busy hosts stay listed but cannot be queued until they are ready.
+          </span>
+        </label>
+
+        <label v-else-if="isLLM" class="block">
           <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">LLM profile</span>
           <select v-model="form.llm_profile" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400">
             <option value="auto">7900 XTX · default · CPU after 120s</option>
