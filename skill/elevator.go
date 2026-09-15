@@ -29,6 +29,18 @@ func prepareElevatorEdge(m *emu.Emu, h rom.MapHeader, e world.Edge, grid *world.
 		return fmt.Errorf("skill: elevator transition %02x->%02x is not a warp edge", e.From, e.To)
 	}
 
+	// Idempotent: a resumed round can re-enter Traverse for an edge whose
+	// floor choice a PRIOR attempt already made. MEASURED (run
+	// run-1e5adrg1q06ekjpj56w7sz0xc): re-opening DisplayElevatorFloorMenu and
+	// re-selecting the same floor when the live door table already points
+	// there corrupts something in the menu-close/shake sequencing that then
+	// blocks the walk out — the identical crossing succeeds immediately when
+	// this redundant re-selection is skipped. If the doors are already armed
+	// for this destination, there is nothing left to do.
+	if elevatorWarpEntriesMatch(m, h, floor) {
+		return nil
+	}
+
 	// Reach the control panel without ever stepping on a door warp. A path
 	// through one of those tiles would leave the elevator before the choice is
 	// made, reproducing the exact failure this controller is preventing.
