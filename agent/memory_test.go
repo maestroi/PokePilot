@@ -61,12 +61,13 @@ func TestMemoryRoundTrip(t *testing.T) {
 	got := LoadCheckpointMemory(statePath, map[uint8][]uint8{0x09: {0x0a}}, &log)
 
 	for _, id := range []uint8{0x01, 0x03} {
-		if !got.Knowledge.Visited[id] {
-			t.Errorf("Visited missing %02x", id)
+		location := legacyLocationID(id)
+		if !got.Knowledge.Visited[location] {
+			t.Errorf("Visited missing %q", location)
 		}
 	}
 	if len(got.Knowledge.Visited) != 2 {
-		t.Errorf("Visited = %v, want exactly 0x01 and 0x03", got.Knowledge.Visited)
+		t.Errorf("Visited = %v, want exactly native 0x01 and 0x03 semantic ids", got.Knowledge.Visited)
 	}
 	for _, name := range []string{"pallet town", "viridian city"} {
 		if !got.Knowledge.Places[name] {
@@ -81,11 +82,13 @@ func TestMemoryRoundTrip(t *testing.T) {
 			t.Errorf("Completed missing semantic objective %q", objective)
 		}
 	}
-	if len(got.Knowledge.Talked[0x28]) != 1 || !got.Knowledge.Talked[0x28][[2]uint8{6, 3}] {
-		t.Errorf("Talked[0x28] = %v, want (6,3)", got.Knowledge.Talked[0x28])
+	talked28 := legacyLocationID(0x28)
+	if len(got.Knowledge.Talked[talked28]) != 1 || !got.Knowledge.Talked[talked28][[2]uint8{6, 3}] {
+		t.Errorf("Talked[%q] = %v, want (6,3)", talked28, got.Knowledge.Talked[talked28])
 	}
-	if len(got.Knowledge.Talked[0x36]) != 1 || !got.Knowledge.Talked[0x36][[2]uint8{7, 10}] {
-		t.Errorf("Talked[0x36] = %v, want (7,10)", got.Knowledge.Talked[0x36])
+	talked36 := legacyLocationID(0x36)
+	if len(got.Knowledge.Talked[talked36]) != 1 || !got.Knowledge.Talked[talked36][[2]uint8{7, 10}] {
+		t.Errorf("Talked[%q] = %v, want (7,10)", talked36, got.Knowledge.Talked[talked36])
 	}
 	if got.Intent != intent || got.IntentAge != age {
 		t.Errorf("Intent/Age = (%q, %d), want (%q, %d)", got.Intent, got.IntentAge, intent, age)
@@ -100,8 +103,9 @@ func TestMemoryRoundTrip(t *testing.T) {
 	if wall.Place != "ROUTE_23" || wall.X != 4 || wall.Y != 57 || wall.Times != 1 {
 		t.Errorf("Requirement = %+v, want it located at ROUTE_23 (4,57), heard once", wall)
 	}
-	if len(got.Knowledge.Adjacency) != 1 || len(got.Knowledge.Adjacency[0x09]) != 1 || got.Knowledge.Adjacency[0x09][0] != 0x0a {
-		t.Errorf("Adjacency = %v, want the caller's geometry, not the file's", got.Knowledge.Adjacency)
+	from, to := legacyLocationID(0x09), legacyLocationID(0x0a)
+	if len(got.Knowledge.Adjacency) != 1 || len(got.Knowledge.Adjacency[from]) != 1 || got.Knowledge.Adjacency[from][0] != to {
+		t.Errorf("Adjacency = %v, want the caller's semantic geometry, not the file's", got.Knowledge.Adjacency)
 	}
 	if log.Len() != 0 {
 		t.Errorf("clean load logged %q, want silence", log.String())
@@ -127,7 +131,7 @@ func TestMemoryCorruptedFiles(t *testing.T) {
 		name string
 		data []byte
 	}{
-		{"wrong version", []byte(`{"version": 999, "visited": [1, 3], "places": ["pallet town"], "completed": ["take a starter"], "talked": [{"map": 40, "x": 6, "y": 3}]}`)},
+		{"wrong version", []byte(`{"version": 999, "visited": ["map-a"], "places": ["pallet town"]}`)},
 		{"truncated", goodBytes[:len(goodBytes)/2]},
 		{"garbage", []byte("this is not json at all \x00\x01")},
 	}
