@@ -155,11 +155,11 @@ func routePrerequisiteStateKey(obs Observation) string {
 func trainerBlackoutStateKey(obs Observation) string {
 	full := FailureStateFor(obs)
 	data, _ := json.Marshal(struct {
-		Party        []FailurePartyMember   `json:"party,omitempty"`
-		LeadPP       []uint8                `json:"lead_pp,omitempty"`
-		Badges       []string               `json:"badges,omitempty"`
-		Capabilities []FailureCapability    `json:"capabilities,omitempty"`
-		Progress     []FailureProgressFact  `json:"progress,omitempty"`
+		Party        []FailurePartyMember  `json:"party,omitempty"`
+		LeadPP       []uint8               `json:"lead_pp,omitempty"`
+		Badges       []string              `json:"badges,omitempty"`
+		Capabilities []FailureCapability   `json:"capabilities,omitempty"`
+		Progress     []FailureProgressFact `json:"progress,omitempty"`
 	}{
 		Party:        full.Party,
 		LeadPP:       append([]uint8(nil), obs.LeadPP...),
