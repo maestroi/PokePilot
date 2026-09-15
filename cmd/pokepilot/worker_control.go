@@ -18,20 +18,18 @@ const (
 	workerControlHeaderWait  = 5 * time.Second
 )
 
-// The worker control listener is intentionally private to the farm overlay.
-// It is never published by the stack or proxied by the spectator surface.
-// Pokewall uses it only for the explicit operator "force end" action.
-func init() {
-	if strings.TrimSpace(os.Getenv("POKEPILOT_ORCH_URL")) == "" {
-		return
-	}
+// startWorkerControlServer exposes a private, overlay-only hard-stop endpoint
+// for this farm worker. The stack publishes no host port for it; pokewall is
+// the only caller and pokeui exposes only pokewall's authenticated/operator
+// action, never this runner endpoint directly.
+func startWorkerControlServer() error {
 	port := strings.TrimSpace(os.Getenv("POKEPILOT_WORKER_CONTROL_PORT"))
 	if port == "" {
 		port = defaultWorkerControlPort
 	}
 	listener, err := net.Listen("tcp", net.JoinHostPort("", port))
 	if err != nil {
-		log.Fatalf("farm: worker control listen: %v", err)
+		return err
 	}
 	server := &http.Server{
 		Handler:           newWorkerControlHandler(os.Exit),
@@ -43,6 +41,7 @@ func init() {
 		}
 	}()
 	log.Printf("farm: worker control listening on %s", listener.Addr())
+	return nil
 }
 
 func newWorkerControlHandler(exit func(int)) http.Handler {
