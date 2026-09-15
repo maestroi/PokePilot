@@ -264,9 +264,7 @@ func (trainingObjectiveProvider) Provide(ctx *objectiveOfferContext) objectivePr
 	if g, ok := skill.GymAt(obs.Map); ok && !hasBadge(obs, g.Badge) {
 		gym := Objective{Kind: KindGym, Place: g.Place}
 		switch {
-		case g.Map == viridianGymMap && journeyProgressionBlocked(obs, g.Map):
-			blocked = append(blocked, blockEvidence(ObjectiveFamilyTraining, "progression_gate", &gym, g.Place, "story_progression"))
-		case obs.Map != g.Map && ctx.semanticBlocked[string(g.Place)]:
+		case routePlaceBlocked(obs, g.Place):
 			blocked = append(blocked, blockEvidence(ObjectiveFamilyTraining, "route_prerequisite", &gym, g.Place, "route_requirement"))
 		case gymLossRecorded(known, g.Place):
 			blocked = append(blocked, blockEvidence(ObjectiveFamilyTraining, "combat_readiness", &gym, g.Place, "material_party_progress"))
@@ -357,13 +355,10 @@ func (travelObjectiveProvider) Provide(ctx *objectiveOfferContext) objectiveProv
 		switch {
 		case !ctx.knownMaps[d.Map]:
 			continue
-		case journeyProgressionBlocked(obs, d.Map) || placeProgressionBlocked(obs, name):
-			blocked = append(blocked, blockEvidence(ObjectiveFamilyTravel, "progression_gate", nil, place, "story_progression"))
+		case routePlaceBlocked(obs, place):
+			blocked = append(blocked, blockEvidence(ObjectiveFamilyTravel, "route_prerequisite", nil, place, "route_requirement"))
 			continue
 		case d.Map == obs.Map && d.X == obs.X && d.Y == obs.Y:
-			continue
-		case ctx.semanticBlocked[name]:
-			blocked = append(blocked, blockEvidence(ObjectiveFamilyTravel, "route_prerequisite", nil, place, "route_requirement"))
 			continue
 		default:
 			placeNames = append(placeNames, name)

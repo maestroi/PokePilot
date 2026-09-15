@@ -11,8 +11,8 @@ import (
 )
 
 func offeredJourneyTo(obs Observation, known *Knowledge, place string) (plain, flee bool) {
-	for _, o := range Offer(obs, known) {
-		if o.Kind != KindGoTo || o.Place != place {
+	for _, o := range OfferWithProgression(obs, known, &redObjectiveAdapter{}) {
+		if o.Kind != KindGoTo || o.Place != PlaceID(place) {
 			continue
 		}
 		if o.Flee {

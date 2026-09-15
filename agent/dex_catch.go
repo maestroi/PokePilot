@@ -270,13 +270,10 @@ func dexCatchPlaceDistance(obs Observation, place PlaceID, blocked map[PlaceID]b
 		return 0, false
 	}
 	// If Red is already on this map, no progression transition is being
-	// attempted. Current-map collection must remain executable even when a
-	// synthetic/recovered observation does not carry every historical gate fact.
+	// attempted. Current-map collection remains executable unless the adapter
+	// explicitly blocks this semantic waypoint (for example Route 12 Snorlax).
 	if dest.Map == obs.Map {
 		return 0, true
-	}
-	if journeyProgressionBlocked(obs, dest.Map) || placeProgressionBlocked(obs, string(place)) {
-		return 0, false
 	}
 	distance, reachable := hops[dest.Map]
 	if len(adjacency) > 0 && !reachable {
@@ -291,6 +288,15 @@ func dexCatchBlockedPlaces(obs Observation) map[PlaceID]bool {
 		out[PlaceID(name)] = true
 	}
 	for _, blockage := range obs.RouteBlockages {
+		if blockage.Destination != "" {
+			out[blockage.Destination] = true
+		}
+	}
+	// Dex acquisition is Red-owned today, so consume the same adapter route
+	// requirements as the generic offer pipeline even when this helper is
+	// exercised directly in a unit test without OfferWithProgressionEvidence.
+	adapter := &redObjectiveAdapter{}
+	for _, blockage := range adapter.RouteRequirements(obs) {
 		if blockage.Destination != "" {
 			out[blockage.Destination] = true
 		}

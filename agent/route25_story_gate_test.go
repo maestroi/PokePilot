@@ -29,7 +29,7 @@ func TestOfferLeavesPreBillRoute25ToBillProgression(t *testing.T) {
 		Party:      []PartyMon{{Level: 18, HP: 50, MaxHP: 50}},
 	}
 
-	for _, objective := range Offer(obs, known) {
+	for _, objective := range redOffered(obs, known) {
 		if objective.Kind == KindGoTo && objective.Place == "route 25" {
 			t.Fatalf("pre-Bill generic Route 25 journey leaked into Offer: %+v", objective)
 		}
@@ -48,7 +48,7 @@ func TestOfferLeavesPreBillRoute25ToBillProgression(t *testing.T) {
 
 	obs.Story = ProgressState{{ID: redProgressSSTicketAcquired, Complete: true}}
 	plain, flee := false, false
-	for _, objective := range Offer(obs, known) {
+	for _, objective := range redOffered(obs, known) {
 		if objective.Kind != KindGoTo || objective.Place != "route 25" {
 			continue
 		}
