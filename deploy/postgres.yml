@@ -77,3 +77,13 @@ services:
       # resolve the real DSN from POKEPILOT_DATABASE_URL inside the process.
       POKEPILOT_MODEL_REGISTRY: postgres-env://POKEPILOT_DATABASE_URL
       POKEPILOT_DATABASE_URL: ${POKEPILOT_DATABASE_URL:?POKEPILOT_DATABASE_URL is required}
+      # PostgreSQL holds metadata/small structured JSON only. Checkpoint states
+      # and other binary payloads are written to the same S3-compatible object
+      # store used by runners/replay, so production cannot fall back to durable
+      # node-local files.
+      POKEPILOT_S3_ENDPOINT: ${POKEPILOT_S3_ENDPOINT:?POKEPILOT_S3_ENDPOINT is required}
+      POKEPILOT_S3_BUCKET: ${POKEPILOT_S3_BUCKET:?POKEPILOT_S3_BUCKET is required}
+      POKEPILOT_S3_REGION: ${POKEPILOT_S3_REGION:-us-east-1}
+      POKEPILOT_S3_ACCESS_KEY: ${POKEPILOT_S3_ACCESS_KEY:?POKEPILOT_S3_ACCESS_KEY is required}
+      POKEPILOT_S3_SECRET_KEY: ${POKEPILOT_S3_SECRET_KEY:?POKEPILOT_S3_SECRET_KEY is required}
+      POKEPILOT_S3_TIMEOUT: ${POKEPILOT_S3_TIMEOUT:-60s}
