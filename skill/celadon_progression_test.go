@@ -87,7 +87,7 @@ func TestCeladonProgressionPlaces(t *testing.T) {
 		"underground path route 8":   {Map: 0x50, X: 4, Y: 5},
 		"underground path west east": {Map: 0x79, X: 46, Y: 2},
 		"underground path route 7":   {Map: 0x4D, X: 4, Y: 5},
-		"route 7":                    {Map: 0x12, X: 5, Y: 12},
+		"route 7":                    {Map: 0x12, X: 5, Y: 14},
 		"celadon city":               {Map: 0x06, X: 41, Y: 10},
 		"celadon pokemon center":     {Map: 0x85, X: 3, Y: 3},
 		"celadon gym":                {Map: 0x86, X: 4, Y: 4},
