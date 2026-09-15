@@ -23,17 +23,17 @@ import (
 const modelExperimentStateFile = "model-experiments.json"
 
 type runExperimentMeta struct {
-	RunID           string                 `json:"run_id"`
-	Deployment      string                 `json:"deployment"`
-	Inference       farm.InferenceIdentity `json:"inference"`
-	ExperimentID    string                 `json:"experiment_id,omitempty"`
-	ExperimentArm   string                 `json:"experiment_arm,omitempty"`
-	ExperimentCase  string                 `json:"experiment_case,omitempty"`
-	Comparable      farm.ComparableRunConfig `json:"comparable"`
-	ComparableHash  string                 `json:"comparable_hash"`
-	PlayStyle       string                 `json:"play_style,omitempty"`
-	RiskTolerance   string                 `json:"risk_tolerance,omitempty"`
-	WildEncounters  string                 `json:"wild_encounters,omitempty"`
+	RunID          string                   `json:"run_id"`
+	Deployment     string                   `json:"deployment"`
+	Inference      farm.InferenceIdentity   `json:"inference"`
+	ExperimentID   string                   `json:"experiment_id,omitempty"`
+	ExperimentArm  string                   `json:"experiment_arm,omitempty"`
+	ExperimentCase string                   `json:"experiment_case,omitempty"`
+	Comparable     farm.ComparableRunConfig `json:"comparable"`
+	ComparableHash string                   `json:"comparable_hash"`
+	PlayStyle      string                   `json:"play_style,omitempty"`
+	RiskTolerance  string                   `json:"risk_tolerance,omitempty"`
+	WildEncounters string                   `json:"wild_encounters,omitempty"`
 }
 
 type experimentRecord struct {
@@ -83,7 +83,7 @@ type modelHostStatus struct {
 func modelExperimentHTTPHandler(w *Wall, fallback http.Handler) http.Handler {
 	controller := &modelExperimentController{
 		wall: w, fallback: fallback,
-		state: modelExperimentState{Runs: map[string]runExperimentMeta{}, Experiments: map[string]experimentRecord{}},
+		state:  modelExperimentState{Runs: map[string]runExperimentMeta{}, Experiments: map[string]experimentRecord{}},
 		client: &http.Client{Timeout: 2 * time.Second},
 	}
 	if w.dumpsDir != "" {
@@ -429,26 +429,26 @@ func (c *modelExperimentController) handleExperiment(w http.ResponseWriter, r *h
 }
 
 type armAggregate struct {
-	Runs              int     `json:"runs"`
-	Done              int     `json:"done"`
-	BoulderSuccesses  int     `json:"boulder_successes"`
-	SuccessRate       float64 `json:"success_rate"`
-	Badges            int     `json:"badges"`
-	Rounds            int     `json:"rounds"`
-	Frames            uint64  `json:"frames"`
-	Calls             int     `json:"calls"`
-	StrategicCalls    int     `json:"strategic_calls"`
-	PlanExecutions    int     `json:"plan_executions"`
-	StepsSkipped      int     `json:"steps_skipped"`
-	Rejected          int     `json:"rejected"`
-	TransportErrors   int     `json:"transport_errors"`
-	Fallbacks         int     `json:"fallbacks"`
-	PromptTokens      int     `json:"prompt_tokens"`
-	CompletionTokens  int     `json:"completion_tokens"`
-	StrategicSeconds  float64 `json:"strategic_seconds"`
-	AvgStrategicCall  float64 `json:"avg_strategic_call_seconds"`
-	AvgPrefillTPS     float64 `json:"avg_last_prefill_tps"`
-	AvgDecodeTPS      float64 `json:"avg_last_decode_tps"`
+	Runs             int     `json:"runs"`
+	Done             int     `json:"done"`
+	BoulderSuccesses int     `json:"boulder_successes"`
+	SuccessRate      float64 `json:"success_rate"`
+	Badges           int     `json:"badges"`
+	Rounds           int     `json:"rounds"`
+	Frames           uint64  `json:"frames"`
+	Calls            int     `json:"calls"`
+	StrategicCalls   int     `json:"strategic_calls"`
+	PlanExecutions   int     `json:"plan_executions"`
+	StepsSkipped     int     `json:"steps_skipped"`
+	Rejected         int     `json:"rejected"`
+	TransportErrors  int     `json:"transport_errors"`
+	Fallbacks        int     `json:"fallbacks"`
+	PromptTokens     int     `json:"prompt_tokens"`
+	CompletionTokens int     `json:"completion_tokens"`
+	StrategicSeconds float64 `json:"strategic_seconds"`
+	AvgStrategicCall float64 `json:"avg_strategic_call_seconds"`
+	AvgPrefillTPS    float64 `json:"avg_last_prefill_tps"`
+	AvgDecodeTPS     float64 `json:"avg_last_decode_tps"`
 }
 
 type pairResult struct {
@@ -479,8 +479,12 @@ func (c *modelExperimentController) experimentView(record experimentRecord) map[
 		idA, idB := caseID+"-a", caseID+"-b"
 		tA, okA := tiles[idA]
 		tB, okB := tiles[idB]
-		if okA { accumulateArm(&armA, tA) }
-		if okB { accumulateArm(&armB, tB) }
+		if okA {
+			accumulateArm(&armA, tA)
+		}
+		if okB {
+			accumulateArm(&armB, tB)
+		}
 		metaA, haveMetaA := c.runMeta(idA)
 		metaB, haveMetaB := c.runMeta(idB)
 		pair := pairResult{Seed: seed, StatusA: tA.Status, StatusB: tB.Status, SuccessA: tileBoulderSuccess(tA), SuccessB: tileBoulderSuccess(tB)}
@@ -490,16 +494,20 @@ func (c *modelExperimentController) experimentView(record experimentRecord) map[
 		} else if tA.Status == statusDone && tB.Status == statusDone {
 			switch {
 			case pair.SuccessA && !pair.SuccessB:
-				pair.Winner = "a"; winsA++
+				pair.Winner = "a"
+				winsA++
 			case pair.SuccessB && !pair.SuccessA:
-				pair.Winner = "b"; winsB++
+				pair.Winner = "b"
+				winsB++
 			default:
-				pair.Winner = "tie"; ties++
+				pair.Winner = "tie"
+				ties++
 			}
 		}
 		pairs = append(pairs, pair)
 	}
-	finalizeArm(&armA); finalizeArm(&armB)
+	finalizeArm(&armA)
+	finalizeArm(&armB)
 	return map[string]any{
 		"id": record.ID, "name": record.Name, "created_at": record.CreatedAt, "request": record.Request,
 		"total_pairs": len(record.Request.Seeds), "arm_a": armA, "arm_b": armB,
@@ -509,29 +517,53 @@ func (c *modelExperimentController) experimentView(record experimentRecord) map[
 
 func accumulateArm(out *armAggregate, tile Tile) {
 	out.Runs++
-	if tile.Status == statusDone { out.Done++ }
-	if tileBoulderSuccess(tile) { out.BoulderSuccesses++ }
-	if tile.Player != nil { out.Badges += len(tile.Player.Badges) }
+	if tile.Status == statusDone {
+		out.Done++
+	}
+	if tileBoulderSuccess(tile) {
+		out.BoulderSuccesses++
+	}
+	if tile.Player != nil {
+		out.Badges += len(tile.Player.Badges)
+	}
 	out.Frames += tile.Frame
 	if tile.Stats != nil {
 		s := tile.Stats
-		out.Rounds += s.Rounds; out.Calls += s.Calls; out.StrategicCalls += s.StrategicCalls
-		out.PlanExecutions += s.PlanExecutions; out.StepsSkipped += s.StepsSkipped; out.Rejected += s.Rejected
-		out.TransportErrors += s.Transport; out.Fallbacks += s.Fallbacks; out.PromptTokens += s.PromptTokens; out.CompletionTokens += s.CompletionTokens
-		out.StrategicSeconds += s.StrategicSeconds; out.AvgPrefillTPS += s.PrefillTPS; out.AvgDecodeTPS += s.DecodeTPS
+		out.Rounds += s.Rounds
+		out.Calls += s.Calls
+		out.StrategicCalls += s.StrategicCalls
+		out.PlanExecutions += s.PlanExecutions
+		out.StepsSkipped += s.StepsSkipped
+		out.Rejected += s.Rejected
+		out.TransportErrors += s.Transport
+		out.Fallbacks += s.Fallbacks
+		out.PromptTokens += s.PromptTokens
+		out.CompletionTokens += s.CompletionTokens
+		out.StrategicSeconds += s.StrategicSeconds
+		out.AvgPrefillTPS += s.PrefillTPS
+		out.AvgDecodeTPS += s.DecodeTPS
 	}
 }
 
 func finalizeArm(out *armAggregate) {
-	if out.Done > 0 { out.SuccessRate = float64(out.BoulderSuccesses) / float64(out.Done) }
-	if out.StrategicCalls > 0 { out.AvgStrategicCall = out.StrategicSeconds / float64(out.StrategicCalls) }
-	if out.Runs > 0 { out.AvgPrefillTPS /= float64(out.Runs); out.AvgDecodeTPS /= float64(out.Runs) }
+	if out.Done > 0 {
+		out.SuccessRate = float64(out.BoulderSuccesses) / float64(out.Done)
+	}
+	if out.StrategicCalls > 0 {
+		out.AvgStrategicCall = out.StrategicSeconds / float64(out.StrategicCalls)
+	}
+	if out.Runs > 0 {
+		out.AvgPrefillTPS /= float64(out.Runs)
+		out.AvgDecodeTPS /= float64(out.Runs)
+	}
 }
 
 func tileBoulderSuccess(tile Tile) bool {
 	if tile.Player != nil {
 		for _, badge := range tile.Player.Badges {
-			if strings.EqualFold(badge, "boulder") || strings.EqualFold(badge, "boulder badge") { return true }
+			if strings.EqualFold(badge, "boulder") || strings.EqualFold(badge, "boulder badge") {
+				return true
+			}
 		}
 	}
 	return tile.Stats != nil && tile.Stats.GoalComplete && strings.Contains(strings.ToLower(tile.Stats.GoalSummary), "boulder")
@@ -539,9 +571,13 @@ func tileBoulderSuccess(tile Tile) bool {
 
 func (c *modelExperimentController) resolveRunMeta(raw map[string]any, deployment, experimentID, arm, caseID string) (runExperimentMeta, error) {
 	d, ok := c.registry.Deployment(deployment)
-	if !ok || !d.Enabled { return runExperimentMeta{}, fmt.Errorf("deployment %q is unavailable", deployment) }
+	if !ok || !d.Enabled {
+		return runExperimentMeta{}, fmt.Errorf("deployment %q is unavailable", deployment)
+	}
 	runID, _ := raw["run_id"].(string)
-	if strings.TrimSpace(runID) == "" { return runExperimentMeta{}, fmt.Errorf("run_id is required") }
+	if strings.TrimSpace(runID) == "" {
+		return runExperimentMeta{}, fmt.Errorf("run_id is required")
+	}
 	comparable := farm.ComparableRunConfig{
 		GitRevision: c.wall.Version, ROMIdentity: strings.TrimSpace(os.Getenv("POKEPILOT_ROM_SHA256")), PromptIdentity: strings.TrimSpace(os.Getenv("POKEPILOT_PROMPT_SHA256")),
 		Seed: int64Number(raw["seed"]), Starter: stringValue(raw["starter"]), Goal: stringValue(raw["goal"]), PlayStyle: stringValue(raw["play_style"]),
@@ -557,25 +593,36 @@ func (c *modelExperimentController) applyDeployment(raw map[string]any, meta run
 	raw["llm_deployment"] = meta.Deployment
 	raw["inference"] = meta.Inference
 	raw["llm_profile"] = compatibilityProfile(c.registry, meta.Deployment, stringValue(raw["llm_profile"]))
-	if meta.ExperimentID != "" { raw["experiment_id"], raw["experiment_arm"], raw["experiment_case"] = meta.ExperimentID, meta.ExperimentArm, meta.ExperimentCase }
+	if meta.ExperimentID != "" {
+		raw["experiment_id"], raw["experiment_arm"], raw["experiment_case"] = meta.ExperimentID, meta.ExperimentArm, meta.ExperimentCase
+	}
 }
 
 func compatibilityProfile(registry farm.ModelRegistry, deployment, fallback string) string {
-	if d, ok := registry.Deployment(deployment); ok { return d.CompatibilityProfile() }
+	if d, ok := registry.Deployment(deployment); ok {
+		return d.CompatibilityProfile()
+	}
 	return fallback
 }
 
 func (c *modelExperimentController) runMeta(runID string) (runExperimentMeta, bool) {
-	c.mu.Lock(); defer c.mu.Unlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	meta, ok := c.state.Runs[runID]
 	return meta, ok
 }
 
-func (c *modelExperimentController) hostStatus(d farm.ModelDeployment) (modelHostStatus, error) { return c.hostStatusIdentity(d.Identity()) }
+func (c *modelExperimentController) hostStatus(d farm.ModelDeployment) (modelHostStatus, error) {
+	return c.hostStatusIdentity(d.Identity())
+}
 func (c *modelExperimentController) hostStatusIdentity(identity farm.InferenceIdentity) (modelHostStatus, error) {
 	status, code, err := c.hostAction(identity, "/v1/status", nil)
-	if err != nil { return status, err }
-	if code < 200 || code >= 300 { return status, fmt.Errorf("model host status returned %d", code) }
+	if err != nil {
+		return status, err
+	}
+	if code < 200 || code >= 300 {
+		return status, fmt.Errorf("model host status returned %d", code)
+	}
 	return status, nil
 }
 
@@ -583,52 +630,109 @@ func (c *modelExperimentController) hostAction(identity farm.InferenceIdentity, 
 	var status modelHostStatus
 	method := http.MethodGet
 	var reader io.Reader
-	if body != nil { method = http.MethodPost; encoded, _ := json.Marshal(body); reader = bytes.NewReader(encoded) }
+	if body != nil {
+		method = http.MethodPost
+		encoded, _ := json.Marshal(body)
+		reader = bytes.NewReader(encoded)
+	}
 	req, err := http.NewRequest(method, strings.TrimRight(identity.ControlURL, "/")+path, reader)
-	if err != nil { return status, 0, err }
-	if body != nil { req.Header.Set("Content-Type", "application/json") }
-	if identity.TokenEnv != "" { if token := strings.TrimSpace(os.Getenv(identity.TokenEnv)); token != "" { req.Header.Set("Authorization", "Bearer "+token) } }
+	if err != nil {
+		return status, 0, err
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	if identity.TokenEnv != "" {
+		if token := strings.TrimSpace(os.Getenv(identity.TokenEnv)); token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+	}
 	resp, err := c.client.Do(req)
-	if err != nil { return status, 0, err }
+	if err != nil {
+		return status, 0, err
+	}
 	defer resp.Body.Close()
 	data, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if resp.StatusCode >= 200 && resp.StatusCode < 300 { _ = json.Unmarshal(data, &status); return status, resp.StatusCode, nil }
-	var wrapped struct { Status modelHostStatus `json:"status"`; Error string `json:"error"` }
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		_ = json.Unmarshal(data, &status)
+		return status, resp.StatusCode, nil
+	}
+	var wrapped struct {
+		Status modelHostStatus `json:"status"`
+		Error  string          `json:"error"`
+	}
 	_ = json.Unmarshal(data, &wrapped)
-	if wrapped.Status.State != "" { status = wrapped.Status }
-	if wrapped.Error != "" { return status, resp.StatusCode, fmt.Errorf("%s", wrapped.Error) }
+	if wrapped.Status.State != "" {
+		status = wrapped.Status
+	}
+	if wrapped.Error != "" {
+		return status, resp.StatusCode, fmt.Errorf("%s", wrapped.Error)
+	}
 	return status, resp.StatusCode, fmt.Errorf("model host returned %d", resp.StatusCode)
 }
 
 func (c *modelExperimentController) forwardBody(w http.ResponseWriter, r *http.Request, body []byte) {
-	clone := r.Clone(r.Context()); clone.Body = io.NopCloser(bytes.NewReader(body)); clone.ContentLength = int64(len(body))
+	clone := r.Clone(r.Context())
+	clone.Body = io.NopCloser(bytes.NewReader(body))
+	clone.ContentLength = int64(len(body))
 	c.fallback.ServeHTTP(w, clone)
 }
 
 func copyRecorder(w http.ResponseWriter, rec *httptest.ResponseRecorder) {
-	for key, values := range rec.Header() { for _, value := range values { w.Header().Add(key, value) } }
-	w.WriteHeader(rec.Code); _, _ = w.Write(rec.Body.Bytes())
+	for key, values := range rec.Header() {
+		for _, value := range values {
+			w.Header().Add(key, value)
+		}
+	}
+	w.WriteHeader(rec.Code)
+	_, _ = w.Write(rec.Body.Bytes())
 }
 
 func stringValue(v any) string { s, _ := v.(string); return s }
-func intNumber(v any) int { return int(int64Number(v)) }
+func intNumber(v any) int      { return int(int64Number(v)) }
 func int64Number(v any) int64 {
-	switch n := v.(type) { case float64: return int64(n); case int: return int64(n); case int64: return n; case json.Number: out, _ := n.Int64(); return out }
+	switch n := v.(type) {
+	case float64:
+		return int64(n)
+	case int:
+		return int64(n)
+	case int64:
+		return n
+	case json.Number:
+		out, _ := n.Int64()
+		return out
+	}
 	return 0
 }
 
 func (c *modelExperimentController) loadState() {
-	data, err := os.ReadFile(c.path); if err != nil { return }
+	data, err := os.ReadFile(c.path)
+	if err != nil {
+		return
+	}
 	var state modelExperimentState
-	if json.Unmarshal(data, &state) != nil { return }
-	if state.Runs == nil { state.Runs = map[string]runExperimentMeta{} }
-	if state.Experiments == nil { state.Experiments = map[string]experimentRecord{} }
+	if json.Unmarshal(data, &state) != nil {
+		return
+	}
+	if state.Runs == nil {
+		state.Runs = map[string]runExperimentMeta{}
+	}
+	if state.Experiments == nil {
+		state.Experiments = map[string]experimentRecord{}
+	}
 	c.state = state
 }
 
 func (c *modelExperimentController) persistLocked() {
-	if c.path == "" { return }
-	data, err := json.MarshalIndent(c.state, "", "  "); if err != nil { return }
+	if c.path == "" {
+		return
+	}
+	data, err := json.MarshalIndent(c.state, "", "  ")
+	if err != nil {
+		return
+	}
 	tmp := c.path + ".tmp"
-	if os.WriteFile(tmp, data, 0o644) == nil { _ = os.Rename(tmp, c.path) }
+	if os.WriteFile(tmp, data, 0o644) == nil {
+		_ = os.Rename(tmp, c.path)
+	}
 }
