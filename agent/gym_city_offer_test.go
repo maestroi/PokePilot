@@ -84,8 +84,10 @@ func TestOfferGymDoneCountNeverCarriesOverFromAnotherGym(t *testing.T) {
 	known.Done(Objective{Kind: KindGym, Place: "pewter city"})
 	known.Done(Objective{Kind: KindGym, Place: "cerulean city"})
 
+	// This test is intentionally about generic objective identity annotation,
+	// not Red's compound Cut-owned entry gate, so use portable Offer directly.
 	obs := Observation{Map: 0x05, MapName: "VERMILION_CITY", PartyCount: 1}
-	for _, o := range redOffered(obs, known) {
+	for _, o := range Offer(obs, known) {
 		if o.Kind != KindGym {
 			continue
 		}
