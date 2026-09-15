@@ -12,6 +12,14 @@ import (
 const (
 	capCanRideCyclingRoad gameruntime.CapabilityID = "can_ride_cycling_road"
 
+	// Red's Celadon City object table contains a historical/unused warp at
+	// (39,19) directly to the department store 5F. The decomp explicitly marks
+	// it "inaccessible": there is no door there in the playable map. Keep a
+	// never-projected capability for that one phantom edge so semantic routing
+	// cannot use the wall as a shortcut while the raw ROM warp table remains
+	// intact for destination-warp indexing.
+	capCanUseInaccessibleWarp gameruntime.CapabilityID = "can_use_inaccessible_warp"
+
 	bicycleItem uint8 = 0x06
 
 	route16Map       uint8 = 0x1B
@@ -21,6 +29,10 @@ const (
 	route20Map       uint8 = 0x1F
 	route16Gate1FMap uint8 = 0xBA
 	route18Gate1FMap uint8 = 0xBE
+
+	celadonMart5FMap                 uint8 = 0x88
+	celadonInaccessibleMartWarpX     uint8 = 39
+	celadonInaccessibleMartWarpY     uint8 = 19
 
 	eventFightRoute16Snorlax state.Event = 0x4C8
 	eventBeatRoute16Snorlax  state.Event = 0x4C9
@@ -43,6 +55,16 @@ func redAuditedRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, 
 	}
 
 	switch {
+	case edge.Kind == world.EdgeWarp && edge.From == celadonCityMap && edge.To == celadonMart5FMap &&
+		edge.WarpX == celadonInaccessibleMartWarpX && edge.WarpY == celadonInaccessibleMartWarpY:
+		// pokered/data/maps/objects/CeladonCity.asm declares this warp but
+		// annotates it "; inaccessible". Static collision leaves a walkable
+		// component beside the coordinate, so the generic graph can mistake the
+		// wall for a solid stair and route through it. A permanent semantic gate
+		// removes only this source edge while preserving the real way to 5F via
+		// the department-store entrance, stairs/elevator, and all raw warp ids.
+		return bikeGate("red:celadon_inaccessible_mart_warp", capCanUseInaccessibleWarp)
+
 	case edge.Kind == world.EdgeWarp && edge.From == route16Map && edge.To == route16Gate1FMap &&
 		edge.WarpX == 24 && (edge.WarpY == 10 || edge.WarpY == 11):
 		// The east entrance to Route 16's lower gate is reached from Celadon.
