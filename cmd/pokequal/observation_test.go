@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -24,7 +25,7 @@ func TestReadQualificationObservationReturnsPhaseTaggedErrors(t *testing.T) {
 			if !strings.Contains(err.Error(), "pokequal: rocket-hideout "+phase+" observation") {
 				t.Fatalf("err = %q, want scope and phase", err)
 			}
-			if obs != (agent.Observation{}) {
+			if !reflect.DeepEqual(obs, agent.Observation{}) {
 				t.Fatalf("obs = %+v, want zero observation on failure", obs)
 			}
 		})
