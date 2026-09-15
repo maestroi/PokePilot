@@ -7,9 +7,6 @@ import (
 	"github.com/maestroi/pokepilot/skill"
 )
 
-// ObjectiveFamily is the stable category of one objective provider. Families
-// describe why an action is offered, not the concrete game implementation that
-// supplied it.
 type ObjectiveFamily string
 
 const (
@@ -22,10 +19,6 @@ const (
 	ObjectiveFamilyExploration ObjectiveFamily = "exploration"
 )
 
-// ObjectiveBlockEvidence is structured evidence for an action family that was
-// considered but is not currently actionable. It is deliberately semantic and
-// compact so future planners/play styles can reason over prerequisites without
-// parsing notes or error strings.
 type ObjectiveBlockEvidence struct {
 	Family      ObjectiveFamily `json:"family"`
 	Reason      string          `json:"reason"`
@@ -34,9 +27,6 @@ type ObjectiveBlockEvidence struct {
 	Requirement string          `json:"requirement,omitempty"`
 }
 
-// ObjectiveOffer is the deterministic result of provider composition. Offer
-// keeps returning Candidates for API compatibility; callers that need gating
-// evidence can use OfferWithEvidence.
 type ObjectiveOffer struct {
 	Candidates []Objective              `json:"candidates"`
 	Blocked    []ObjectiveBlockEvidence `json:"blocked,omitempty"`
@@ -53,41 +43,44 @@ type objectiveProviderResult struct {
 }
 
 type objectiveOfferContext struct {
-	obs             Observation
-	known           *Knowledge
-	catalog         ObjectiveCatalog
-	knownMaps       map[uint8]bool
-	adjacentMaps    map[uint8]bool
-	hops            map[uint8]int
-	semanticBlocked map[string]bool
-	unroutable      map[string]bool
+	obs               Observation
+	known             *Knowledge
+	catalog           ObjectiveCatalog
+	currentLocation   LocationID
+	knownLocations    map[LocationID]bool
+	adjacentLocations map[LocationID]bool
+	hops              map[LocationID]int
+	semanticBlocked   map[string]bool
+	unroutable        map[string]bool
 }
 
 func newObjectiveOfferContext(obs Observation, known *Knowledge) *objectiveOfferContext {
 	catalog := objectiveCatalogForObservation(obs)
+	current := observationLocation(obs, known)
 	ctx := &objectiveOfferContext{
-		obs:             obs,
-		known:           known,
-		catalog:         catalog,
-		knownMaps:       map[uint8]bool{obs.Map: true},
-		adjacentMaps:    map[uint8]bool{},
-		hops:            mapHops(known.Adjacency, obs.Map),
-		semanticBlocked: map[string]bool{},
-		unroutable:      map[string]bool{},
+		obs:               obs,
+		known:             known,
+		catalog:           catalog,
+		currentLocation:   current,
+		knownLocations:    map[LocationID]bool{current: true},
+		adjacentLocations: map[LocationID]bool{},
+		hops:              mapHops(known.Adjacency, current),
+		semanticBlocked:   map[string]bool{},
+		unroutable:        map[string]bool{},
 	}
-	for m := range known.Visited {
-		ctx.knownMaps[m] = true
-		for _, n := range known.Adjacency[m] {
-			ctx.knownMaps[n] = true
+	for location := range known.Visited {
+		ctx.knownLocations[location] = true
+		for _, neighbor := range known.Adjacency[location] {
+			ctx.knownLocations[neighbor] = true
 		}
 	}
-	for _, n := range known.Adjacency[obs.Map] {
-		ctx.knownMaps[n] = true
-		ctx.adjacentMaps[n] = true
+	for _, neighbor := range known.Adjacency[current] {
+		ctx.knownLocations[neighbor] = true
+		ctx.adjacentLocations[neighbor] = true
 	}
 	for name := range known.Places {
-		if destination, ok := catalog.destination(PlaceID(name)); ok {
-			ctx.knownMaps[destination.NativeMap] = true
+		if destination, ok := catalog.destination(PlaceID(name)); ok && destination.Location != "" {
+			ctx.knownLocations[destination.Location] = true
 		}
 	}
 	for _, blockage := range obs.RouteBlockages {
@@ -120,10 +113,6 @@ var defaultObjectiveProviders = []objectiveProvider{
 	travelObjectiveProvider{},
 }
 
-// OfferWithEvidence composes the portable provider set in one explicit order.
-// Providers own candidate construction and prerequisite evidence; this pipeline
-// owns only ordering, shared recovery filters, annotation, and the bounded
-// travel-last convention.
 func OfferWithEvidence(obs Observation, known *Knowledge) ObjectiveOffer {
 	if known == nil {
 		known = NewKnowledge(nil)
@@ -144,7 +133,6 @@ func OfferWithEvidence(obs Observation, known *Knowledge) ObjectiveOffer {
 			local = append(local, result.Candidates...)
 		}
 	}
-
 	if note := lastResortEscapeNote(local, journeys, obs.RespawnPlace); note != "" {
 		for i := range local {
 			if local[i].Kind == KindTrain {
@@ -178,22 +166,17 @@ func (wildCollectionProvider) Family() ObjectiveFamily { return ObjectiveFamilyC
 func (wildCollectionProvider) Provide(ctx *objectiveOfferContext) objectiveProviderResult {
 	obs := ctx.obs
 	if !obs.HasGrass {
-		return objectiveProviderResult{Blocked: []ObjectiveBlockEvidence{
-			blockEvidence(ObjectiveFamilyCollection, "no_local_habitat", nil, "", "tall_grass"),
-		}}
+		return objectiveProviderResult{Blocked: []ObjectiveBlockEvidence{blockEvidence(ObjectiveFamilyCollection, "no_local_habitat", nil, "", "tall_grass")}}
 	}
 	if !hasBalls(obs) {
-		return objectiveProviderResult{Blocked: []ObjectiveBlockEvidence{
-			blockEvidence(ObjectiveFamilyCollection, "missing_resource", nil, "", "pokeball"),
-		}}
+		return objectiveProviderResult{Blocked: []ObjectiveBlockEvidence{blockEvidence(ObjectiveFamilyCollection, "missing_resource", nil, "", "pokeball")}}
 	}
 	owned := pokedexOwnedSet(obs)
 	out := make([]Objective, 0, len(ctx.catalog.LocalEncounters))
 	for _, encounter := range ctx.catalog.LocalEncounters {
-		if encounter.Species == "" || owned[encounter.Species] {
-			continue
+		if encounter.Species != "" && !owned[encounter.Species] {
+			out = append(out, Objective{Kind: KindCatch, Species: encounter.Species})
 		}
-		out = append(out, Objective{Kind: KindCatch, Species: encounter.Species})
 	}
 	return objectiveProviderResult{Candidates: out}
 }
@@ -213,20 +196,16 @@ func (recoveryObjectiveProvider) Provide(ctx *objectiveOfferContext) objectivePr
 		}
 		out = append(out, heal)
 	} else if partyHurt(obs) || ppExhausted {
-		if name, ok := nearestKnownCenter(obs, known, ctx.knownMaps, ctx.catalog); ok {
+		if name, ok := nearestKnownCenter(obs, known, ctx.knownLocations, ctx.catalog); ok {
 			note := ""
 			if ppExhausted {
 				note = "(lead has no PP; Center restores PP without spending finite items)"
 			}
-			out = append(out,
-				Objective{Kind: KindHeal, Place: name, Note: note},
-				Objective{Kind: KindHeal, Place: name, Flee: true, Note: note},
-			)
+			out = append(out, Objective{Kind: KindHeal, Place: name, Note: note}, Objective{Kind: KindHeal, Place: name, Flee: true, Note: note})
 		} else {
 			blocked = append(blocked, blockEvidence(ObjectiveFamilyRecovery, "no_known_center", nil, "", "pokemon_center"))
 		}
 	}
-
 	for _, it := range obs.Bag {
 		want, ok := fieldMedStatus[it.Name]
 		if !ok || it.Quantity < 1 {
@@ -242,15 +221,9 @@ func (recoveryObjectiveProvider) Provide(ctx *objectiveOfferContext) objectivePr
 	if ppExhausted && len(obs.Party) > 0 && !ctx.catalog.CurrentCenter {
 		for _, it := range obs.Bag {
 			id, ok := ppRestoreItems[it.Name]
-			if !ok || it.Quantity < 1 {
-				continue
+			if ok && it.Quantity > 0 {
+				out = append(out, Objective{Kind: KindUseItem, Item: id, Slot: 0, Note: "(finite PP recovery; prefer a known Center when the detour is practical)"})
 			}
-			out = append(out, Objective{
-				Kind: KindUseItem,
-				Item: id,
-				Slot: 0,
-				Note: "(finite PP recovery; prefer a known Center when the detour is practical)",
-			})
 		}
 	}
 	return objectiveProviderResult{Candidates: out, Blocked: blocked}
@@ -277,7 +250,6 @@ func (trainingObjectiveProvider) Provide(ctx *objectiveOfferContext) objectivePr
 			out = append(out, gym)
 		}
 	}
-
 	if obs.HasGrass && len(obs.Party) > 0 {
 		lead := obs.Party[0]
 		switch {
@@ -287,11 +259,7 @@ func (trainingObjectiveProvider) Provide(ctx *objectiveOfferContext) objectivePr
 			blocked = append(blocked, blockEvidence(ObjectiveFamilyTraining, "party_needs_recovery", nil, "", "healing"))
 		default:
 			if target := int(lead.Level) + trainStep; target <= 100 {
-				out = append(out, Objective{
-					Kind:  KindTrain,
-					Level: uint8(target),
-					Note:  trainingChoiceNote(lead, obs.WildGrass, obs.Training),
-				})
+				out = append(out, Objective{Kind: KindTrain, Level: uint8(target), Note: trainingChoiceNote(lead, obs.WildGrass, obs.Training)})
 			}
 		}
 	}
@@ -307,7 +275,6 @@ func (economyObjectiveProvider) Provide(ctx *objectiveOfferContext) objectivePro
 	}
 	obs := ctx.obs
 	if len(obs.MartStock) == 0 {
-		obs.MartStock = make([]string, 0, len(ctx.catalog.Shop.Items))
 		for _, item := range ctx.catalog.Shop.Items {
 			obs.MartStock = append(obs.MartStock, item.Name)
 		}
@@ -318,11 +285,10 @@ func (economyObjectiveProvider) Provide(ctx *objectiveOfferContext) objectivePro
 	}
 	out := make([]Objective, 0, len(economy.Purchases))
 	for _, advice := range economy.Purchases {
-		if !advice.ShouldBuy || advice.SuggestedQty < 1 {
-			continue
-		}
-		if item, ok := ctx.catalog.shopItem(advice.Item); ok {
-			out = append(out, Objective{Kind: KindBuy, Item: item, Qty: advice.SuggestedQty})
+		if advice.ShouldBuy && advice.SuggestedQty > 0 {
+			if item, ok := ctx.catalog.shopItem(advice.Item); ok {
+				out = append(out, Objective{Kind: KindBuy, Item: item, Qty: advice.SuggestedQty})
+			}
 		}
 	}
 	return objectiveProviderResult{Candidates: out}
@@ -332,12 +298,12 @@ type explorationObjectiveProvider struct{}
 
 func (explorationObjectiveProvider) Family() ObjectiveFamily { return ObjectiveFamilyExploration }
 func (explorationObjectiveProvider) Provide(ctx *objectiveOfferContext) objectiveProviderResult {
-	obs, known := ctx.obs, ctx.known
+	known := ctx.known
 	out := make([]Objective, 0, len(ctx.catalog.Interactables))
 	for _, object := range ctx.catalog.Interactables {
 		switch object.Kind {
 		case CatalogInteractablePerson:
-			if !known.Talked[obs.Map][[2]uint8{object.X, object.Y}] {
+			if !known.Talked[ctx.currentLocation][[2]uint8{object.X, object.Y}] {
 				out = append(out, Objective{Kind: KindTalk, X: object.X, Y: object.Y})
 			}
 		case CatalogInteractableTrainer:
@@ -362,15 +328,14 @@ func (travelObjectiveProvider) Provide(ctx *objectiveOfferContext) objectiveProv
 	placeNames := make([]string, 0, len(ctx.catalog.Destinations))
 	blocked := make([]ObjectiveBlockEvidence, 0, len(ctx.semanticBlocked))
 	for _, destination := range ctx.catalog.Destinations {
-		name := string(destination.Place)
-		place := destination.Place
+		name, place := string(destination.Place), destination.Place
 		switch {
-		case !ctx.knownMaps[destination.NativeMap]:
+		case destination.Location == "" || !ctx.knownLocations[destination.Location]:
 			continue
 		case routePlaceBlocked(obs, place):
 			blocked = append(blocked, blockEvidence(ObjectiveFamilyTravel, "route_prerequisite", nil, place, "route_requirement"))
 			continue
-		case destination.NativeMap == obs.Map && destination.X == obs.X && destination.Y == obs.Y:
+		case destination.Location == ctx.currentLocation && destination.X == obs.X && destination.Y == obs.Y:
 			continue
 		default:
 			placeNames = append(placeNames, name)
@@ -385,14 +350,12 @@ func (travelObjectiveProvider) Provide(ctx *objectiveOfferContext) objectiveProv
 			}
 			routable = append(routable, name)
 		}
-		// Preserve the historical fail-open rule: a faulty live route overlay
-		// cannot erase every journey from the generic menu.
 		if len(routable) > 0 {
 			placeNames = routable
 		}
 	}
 	if len(known.Adjacency) > 0 && len(placeNames) > journeyPlaceLimit {
-		placeNames = selectJourneyPlaces(placeNames, known, ctx.hops)
+		placeNames = selectJourneyPlaces(placeNames, known, ctx.hops, ctx.catalog)
 	}
 	out := make([]Objective, 0, 2*len(placeNames))
 	for _, name := range placeNames {
@@ -402,7 +365,7 @@ func (travelObjectiveProvider) Provide(ctx *objectiveOfferContext) objectiveProv
 		}
 		plain := Objective{Kind: KindGoTo, Place: destination.Place}
 		flee := Objective{Kind: KindGoTo, Place: destination.Place, Flee: true}
-		if ctx.adjacentMaps[destination.NativeMap] && !known.Visited[destination.NativeMap] {
+		if ctx.adjacentLocations[destination.Location] && !known.Visited[destination.Location] {
 			plain.Note = "(unvisited adjacent map)"
 			flee.Note = "(unvisited adjacent map)"
 		}
@@ -411,8 +374,6 @@ func (travelObjectiveProvider) Provide(ctx *objectiveOfferContext) objectiveProv
 	return objectiveProviderResult{Candidates: out, Blocked: blocked}
 }
 
-// deterministicProviderNames is test/diagnostic evidence that provider order
-// is explicit rather than incidental map iteration.
 func deterministicProviderNames(providers []objectiveProvider) []string {
 	out := make([]string, 0, len(providers))
 	for _, provider := range providers {
