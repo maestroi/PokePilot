@@ -1,130 +1,48 @@
 #!/usr/bin/env bash
-# Pin pokefarm Swarm services to the digest currently tagged :latest.
-# Safe to commit: image name and stack name only, no hosts, tokens, or ROM.
+# Stable host bootstrap for the PokePilot farm updater.
+#
+# This file is the only deployment logic installed on the Swarm manager. It
+# deliberately does not know how to roll individual services. Instead it pulls
+# :latest, extracts the authoritative rollout script from that exact image
+# digest, and runs it. Future rollout fixes therefore arrive with the image and
+# cannot be blocked by an old /usr/local/sbin/pokefarm-pull copy.
 set -euo pipefail
 
 IMAGE=${FARM_IMAGE_REPO:-ghcr.io/maestroi/pokepilot}
-STACK=${FARM_STACK:-pokefarm}
-# Replay is a device-bound sidecar on the iGPU worker, not a Swarm service.
-# When FARM_REPLAY_HOST is set (manager unit), roll that container to :latest
-# too. Without it this script used to print "pokefarm_replay not deployed; skip"
-# forever while pokeui required newer replay APIs (DELETE /artifacts).
-SERVICES=(wall issues ui spectator runner)
-
-if ! docker service inspect "${STACK}_wall" >/dev/null 2>&1; then
-	echo "pokefarm-pull: stack ${STACK} not deployed; skip"
-	exit 0
-fi
+BUNDLE_PATH=/usr/local/share/pokepilot/deploy
 
 docker pull "${IMAGE}:latest"
 DIGEST_REF=$(docker image inspect "${IMAGE}:latest" --format '{{index .RepoDigests 0}}')
-if [ -z "${DIGEST_REF}" ]; then
-	echo "pokefarm-pull: ${IMAGE}:latest has no RepoDigest after pull" >&2
+if [ -z "${DIGEST_REF}" ] || [[ "${DIGEST_REF}" != *@* ]]; then
+	echo "pokefarm-pull: ${IMAGE}:latest has no usable RepoDigest (${DIGEST_REF:-empty})" >&2
 	exit 1
 fi
-WANT=${DIGEST_REF##*@}
 
-updated=0
-for name in "${SERVICES[@]}"; do
-	svc="${STACK}_${name}"
-	# New service roles can land in the stack file before an operator has run
-	# the next docker stack deploy. Skip those rather than making the timer fail;
-	# once the service exists, it joins the normal digest rollout automatically.
-	if ! docker service inspect "$svc" >/dev/null 2>&1; then
-		echo "pokefarm-pull: $svc not deployed; skip"
-		continue
+tmpdir=$(mktemp -d)
+cid=
+cleanup() {
+	if [ -n "$cid" ]; then
+		docker rm -f "$cid" >/dev/null 2>&1 || true
 	fi
-	img=$(docker service inspect "$svc" --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}')
-	case "$img" in
-	*@*) cur=${img##*@} ;;
-	*) cur= ;;
-	esac
+	rm -rf "$tmpdir"
+}
+trap cleanup EXIT
 
-	# The service spec can already point at WANT while a failed/paused Swarm
-	# rollout leaves an older task alive indefinitely. Looking only at .Spec made
-	# the timer print "already current" forever while old runners kept leasing
-	# work and reporting pre-fix failures. Inspect the actual Running tasks too.
-	running=0
-	stale_running=0
-	while IFS='|' read -r current_state task_image; do
-		case "$current_state" in
-		Running\ *) ;;
-		*) continue ;;
-		esac
-		running=$((running + 1))
-		case "$task_image" in
-		*@*) task_digest=${task_image##*@} ;;
-		*) task_digest= ;;
-		esac
-		if [ "$task_digest" != "$WANT" ]; then
-			stale_running=$((stale_running + 1))
-		fi
-	done < <(docker service ps --no-trunc --format '{{.CurrentState}}|{{.Image}}' "$svc" 2>/dev/null || true)
+# Supply an explicit command because the farm image intentionally has no
+# default CMD. docker cp works against a stopped container, so nothing from the
+# image is executed during extraction.
+cid=$(docker create "$DIGEST_REF" /bin/true)
+docker cp "${cid}:${BUNDLE_PATH}/." "$tmpdir/"
+docker rm -f "$cid" >/dev/null
+cid=
 
-	if [ "$cur" = "$WANT" ] && [ "$running" -gt 0 ] && [ "$stale_running" -eq 0 ]; then
-		echo "pokefarm-pull: $svc already $WANT ($running running task(s))"
-		continue
-	fi
-
-	if [ "$cur" = "$WANT" ]; then
-		update_state=$(docker service inspect "$svc" --format '{{if .UpdateStatus}}{{.UpdateStatus.State}}{{end}}' 2>/dev/null || true)
-		if [ "$update_state" = "updating" ]; then
-			echo "pokefarm-pull: $svc rollout still updating ($stale_running stale of $running running task(s)); defer force-roll"
-			continue
-		fi
-		if [ "$running" -eq 0 ]; then
-			echo "pokefarm-pull: $svc spec is $WANT but has no Running tasks; force-roll"
-		else
-			echo "pokefarm-pull: $svc spec is $WANT but $stale_running/$running Running task(s) are stale; force-roll"
-		fi
-		docker service update --force --detach --with-registry-auth --image "$DIGEST_REF" "$svc" >/dev/null
-		updated=$((updated + 1))
-		continue
-	fi
-
-	echo "pokefarm-pull: $svc $img -> $DIGEST_REF"
-	docker service update --detach --with-registry-auth --image "$DIGEST_REF" "$svc" >/dev/null
-	updated=$((updated + 1))
-done
-
-if [ "$updated" -eq 0 ]; then
-	echo "pokefarm-pull: already current ($WANT)"
-else
-	echo "pokefarm-pull: updated $updated service(s) to $WANT"
+ROLLOUT="$tmpdir/rollout-latest.sh"
+if [ ! -f "$ROLLOUT" ]; then
+	echo "pokefarm-pull: ${DIGEST_REF} is missing ${BUNDLE_PATH}/rollout-latest.sh" >&2
+	exit 1
 fi
+chmod +x "$ROLLOUT"
 
-if [ -n "${FARM_REPLAY_HOST:-}" ]; then
-	echo "pokefarm-pull: updating replay sidecar on $FARM_REPLAY_HOST"
-	ssh -o BatchMode=yes -o ConnectTimeout=15 "$FARM_REPLAY_HOST" \
-		"FARM_IMAGE=${DIGEST_REF} /usr/local/sbin/pokefarm-replay-up" \
-		|| echo "pokefarm-pull: replay sidecar update failed" >&2
-fi
-
-# litellm.yaml only names env vars (os.environ/POKEPILOT_LITELLM_*); the
-# actual physical URLs/models live in the litellm service's own env, not in
-# this file, so rolling its config here needs no secrets. A merged PR that
-# changes routing/thinking behavior (e.g. #203) must reach the running
-# gateway on its own, the way image changes already do above, or the fix
-# only ever takes effect on the next manual `make farm-up`.
-LITELLM_SVC="${STACK}_litellm"
-LITELLM_YAML="$(dirname "$0")/litellm.yaml"
-if docker service inspect "$LITELLM_SVC" >/dev/null 2>&1 && [ -f "$LITELLM_YAML" ]; then
-	CUR_CONFIG=$(docker service inspect "$LITELLM_SVC" \
-		--format '{{(index .Spec.TaskTemplate.ContainerSpec.Configs 0).ConfigName}}')
-	TARGET=$(docker service inspect "$LITELLM_SVC" \
-		--format '{{(index .Spec.TaskTemplate.ContainerSpec.Configs 0).File.Name}}')
-	WANT_HASH=$(sha256sum "$LITELLM_YAML" | cut -c1-12)
-	NEW_CONFIG="${STACK}_litellm_yaml_${WANT_HASH}"
-	if [ "$CUR_CONFIG" = "$NEW_CONFIG" ]; then
-		echo "pokefarm-pull: $LITELLM_SVC config already $NEW_CONFIG"
-	else
-		docker config create "$NEW_CONFIG" "$LITELLM_YAML" >/dev/null
-		echo "pokefarm-pull: $LITELLM_SVC $CUR_CONFIG -> $NEW_CONFIG"
-		docker service update --detach \
-			--config-rm "$CUR_CONFIG" \
-			--config-add "source=${NEW_CONFIG},target=${TARGET}" \
-			"$LITELLM_SVC" >/dev/null
-	fi
-elif [ -f "$LITELLM_YAML" ]; then
-	echo "pokefarm-pull: $LITELLM_SVC not deployed; skip"
-fi
+# Pin the rollout to the same immutable digest whose script we just extracted.
+# This prevents a moving :latest tag from changing between bootstrap and roll.
+FARM_IMAGE_DIGEST_REF="$DIGEST_REF" "$ROLLOUT"
