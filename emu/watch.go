@@ -237,7 +237,10 @@ tickTrace();
 
 // capture refreshes what Watch serves, if watching is on and enough frames
 // have passed. Errors are ignored: a dropped preview frame must never affect
-// emulation.
+// emulation. Uniform frames are transition/fade frames in Pokemon Red; if a
+// planner request starts on one of them the emulator stops stepping and that
+// otherwise leaves spectators staring at a blank screen for the whole think.
+// Keep the last informative frame instead while still sampling trace state.
 func (m *Emu) capture() {
 	if m.spec == nil || m.specEvery <= 0 {
 		return
@@ -246,8 +249,23 @@ func (m *Emu) capture() {
 		return
 	}
 	m.lastCapture = m.e.FrameCount()
-	_ = m.spec.Capture(m.e)
+	if !uniformRGBFrame(m.e.Frame().RGB) {
+		_ = m.spec.Capture(m.e)
+	}
 	m.sampleTrace()
+}
+
+func uniformRGBFrame(rgb []byte) bool {
+	if len(rgb) < 6 || len(rgb)%3 != 0 {
+		return false
+	}
+	r, g, b := rgb[0], rgb[1], rgb[2]
+	for i := 3; i < len(rgb); i += 3 {
+		if rgb[i] != r || rgb[i+1] != g || rgb[i+2] != b {
+			return false
+		}
+	}
+	return true
 }
 
 // Pace throttles emulation to about fps frames per second, so a human can
