@@ -46,6 +46,28 @@ func TestPlanRocketSpinnerUsesForcedLanding(t *testing.T) {
 	}
 }
 
+func TestPlanRocketSpinnerAllowsSolidWarpArrival(t *testing.T) {
+	const width, height = 5, 3
+	walkableCells := map[rocketPoint]bool{
+		{1, 1}: true,
+		{3, 1}: true,
+	}
+	walkable := func(x, y int) bool { return walkableCells[rocketPoint{x, y}] }
+	transitions := map[rocketPoint]rocketPoint{{1, 1}: {3, 1}}
+
+	// A warp may deposit Red on a stair tile that the collision grid marks
+	// solid. Planning must allow the already-occupied start and validate only
+	// the cells the next input enters. This is the B2F/B3F Rocket Hideout
+	// handoff shape after Traverse arrives from the previous floor.
+	actions, err := planRocketSpinner(width, height, walkable, 0, 1, 4, 1, transitions, nil)
+	if err != nil {
+		t.Fatalf("planRocketSpinner from solid warp arrival: %v", err)
+	}
+	if len(actions) != 1 || !actions[0].Forced || actions[0].Enter != (rocketPoint{1, 1}) || actions[0].Landing != (rocketPoint{3, 1}) {
+		t.Fatalf("actions = %+v, want one forced action (1,1)->(3,1)", actions)
+	}
+}
+
 func TestPlanRocketSpinnerDoesNotPretendArrowEntryIsOrdinary(t *testing.T) {
 	const width, height = 5, 3
 	walkableCells := map[rocketPoint]bool{
