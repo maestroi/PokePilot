@@ -2,6 +2,7 @@ package skill
 
 import (
 	"github.com/maestroi/pokepilot/emu"
+	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 )
 
@@ -10,6 +11,13 @@ import (
 // walkAround and world.FindPath use. The snapshot is a fresh observation of
 // where sprites ARE right now; it is not merged into or cached against
 // anything.
+//
+// Sprite RAM only tracks objects near the player, mirroring the hardware's
+// own OAM limit: an object several tiles away is not "empty," it is simply
+// not decoded yet. A plan from far away sees no blocker there and walks
+// straight for it; liveBlockers is the fix for planning across that
+// distance, this is the raw, distance-limited observation for callers that
+// are already close (grinding, fishing, an adjacent interaction).
 func spriteBlockers(m *emu.Emu) map[[2]int]bool {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
@@ -18,6 +26,38 @@ func spriteBlockers(m *emu.Emu) map[[2]int]bool {
 		blocked[[2]int{s.X, s.Y}] = true
 	}
 	return blocked
+}
+
+// stationaryObjectBlockers returns the home tiles of every MovementStay
+// object on h: an NPC that never leaves its home tile occupies it whether or
+// not the player is currently close enough for sprite RAM to have decoded it.
+// A toggled-hidden object (an already-picked-up ball, a defeated Giovanni)
+// costs nothing worse than a route that avoids a tile that turned out to be
+// open; a MovementWalk object is not included, since its live position is
+// exactly what spriteBlockers reports when in range and this layer has no
+// better answer for it out of range.
+func stationaryObjectBlockers(h rom.MapHeader) map[[2]int]bool {
+	blocked := map[[2]int]bool{}
+	for _, o := range h.Objects {
+		if o.Movement == rom.MovementStay {
+			blocked[[2]int{int(o.X), int(o.Y)}] = true
+		}
+	}
+	return blocked
+}
+
+// liveBlockers is spriteBlockers widened with h's stationary objects, for
+// callers that plan a route across a distance the player has not yet
+// crossed: MEASURED on Pokemon Tower 5F (run-3anwzvms26fjy32alh211qa4fn and
+// run-27a3sz93t4z9t3vgoljp7oofcc), a Channeler at (17,7) invisible to
+// spriteBlockers from (11,9) let the planner repeatedly choose a route
+// straight through his tile, discover the live collision once close, detour
+// all the way back through Pokemon Tower 5F's purified-zone clearing (whose
+// auto-heal box retriggers on every fresh entry), and repeat — tripping
+// Travel's same-box loop guard on a walk that was never actually stuck, just
+// oscillating between two routes neither snapshot alone ruled out.
+func liveBlockers(m *emu.Emu, h rom.MapHeader) map[[2]int]bool {
+	return mergeBlockers(spriteBlockers(m), stationaryObjectBlockers(h))
 }
 
 // mergeBlockers returns the union of live and fixed blockers as a new map

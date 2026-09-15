@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
+	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
@@ -360,4 +361,30 @@ func walkAround(interrupted func() error, readBlocked func() map[[2]int]bool, pl
 		}
 		return nil
 	}
+}
+
+// walkAroundAvoidingObjects is walkAround with liveBlockers(m, h) as a
+// PREFERENCE rather than a hard wall: a stationary object's tile is real
+// geometry the router should route around when it can, but treating it as
+// always-occupied can turn a corridor that is merely narrow into one this
+// layer believes has no path at all, when the live game would have let the
+// walk pass beside it. If the preferring attempt fails with no path found at
+// all, this retries once against the narrower live-only snapshot before
+// giving up — the behavior every caller had before liveBlockers existed.
+//
+// MEASURED on Pokemon Tower 6F (run-3anwzvms26fjy32alh211qa4fn,
+// run-27a3sz93t4z9t3vgoljp7oofcc): liveBlockers alone fixes 5F's
+// Channeler-oscillation loop but turns the 6F exit warp's only route into
+// "world: no route", because a different Channeler's home tile sits close
+// enough to the corridor that unconditionally marking it occupied removes
+// the only path the live game actually allows.
+func walkAroundAvoidingObjects(interrupted func() error, m *emu.Emu, h rom.MapHeader, plan func(blocked map[[2]int]bool) ([]world.Step, error), walk func([]world.Step) error, wait func()) error {
+	err := walkAround(interrupted, func() map[[2]int]bool { return liveBlockers(m, h) }, plan, walk, wait)
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, world.ErrNoPath) && !errors.Is(err, ErrLegUnwalkable) {
+		return err
+	}
+	return walkAround(interrupted, func() map[[2]int]bool { return spriteBlockers(m) }, plan, walk, wait)
 }
