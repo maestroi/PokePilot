@@ -25,6 +25,74 @@ func TestFightWildEncounterPolicyClearsFleeAndDeduplicates(t *testing.T) {
 	}
 }
 
+func TestRunPolicySuppressesRepeatedSuccessfulTravelLoop(t *testing.T) {
+	obs := Observation{History: []RoundRecord{
+		{Objective: "go to route 22, fleeing wild battles", Outcome: "done"},
+		{Objective: "go to viridian city", Outcome: "done"},
+		{Objective: "go to route 22", Outcome: "done"},
+		{Objective: "go to viridian city", Outcome: "done"},
+	}}
+	frontier := Objective{Kind: KindGoTo, Place: "route 2", Flee: true, Note: "(unvisited adjacent map)"}
+	offered := []Objective{
+		{Kind: KindGoTo, Place: "route 22"},
+		{Kind: KindGoTo, Place: "route 22", Flee: true},
+		{Kind: KindGoTo, Place: "viridian city"},
+		frontier,
+	}
+
+	got := ApplyRunPolicy(obs, offered, RiskToleranceAggressive, WildEncountersPlanner)
+	if len(got) != 1 || got[0].String() != frontier.String() {
+		t.Fatalf("repeated travel loop policy = %#v, want only frontier %q", got, frontier.String())
+	}
+}
+
+func TestRunPolicySuppressesRepeatedOptionalPurchaseButKeepsRecovery(t *testing.T) {
+	buy := Objective{Kind: KindBuy, Item: ItemID("parlyz heal"), Qty: 3}
+	heal := Objective{Kind: KindHeal}
+	progress := Objective{Kind: KindProgress, Progress: ProgressID("deliver_oaks_parcel")}
+	obs := Observation{History: []RoundRecord{
+		{Objective: buy.String(), Outcome: "done"},
+		{Objective: "talk at (5,5)", Outcome: "done"},
+		{Objective: buy.String(), Outcome: "done"},
+	}}
+
+	got := ApplyRunPolicy(obs, []Objective{buy, heal, progress}, RiskToleranceAggressive, WildEncountersPlanner)
+	if len(got) != 2 {
+		t.Fatalf("optional purchase loop policy = %#v, want heal + progress", got)
+	}
+	for _, objective := range got {
+		if objective.Kind == KindBuy {
+			t.Fatalf("repeated optional purchase survived loop guard: %#v", got)
+		}
+	}
+}
+
+func TestRunPolicyDoesNotSuppressOneSuccessfulObjective(t *testing.T) {
+	travel := Objective{Kind: KindGoTo, Place: "route 22", Flee: true}
+	other := Objective{Kind: KindTalk, X: 4, Y: 4}
+	obs := Observation{History: []RoundRecord{{Objective: travel.String(), Outcome: "done"}}}
+	got := ApplyRunPolicy(obs, []Objective{travel, other}, RiskToleranceAggressive, WildEncountersPlanner)
+	if len(got) != 2 {
+		t.Fatalf("single success changed menu: %#v", got)
+	}
+}
+
+func TestRunPolicyLoopGuardNeverEmptiesLegalMenu(t *testing.T) {
+	route22 := Objective{Kind: KindGoTo, Place: "route 22"}
+	viridian := Objective{Kind: KindGoTo, Place: "viridian city"}
+	obs := Observation{History: []RoundRecord{
+		{Objective: route22.String(), Outcome: "done"},
+		{Objective: viridian.String(), Outcome: "done"},
+		{Objective: route22.String(), Outcome: "done"},
+		{Objective: viridian.String(), Outcome: "done"},
+	}}
+	offered := []Objective{route22, viridian}
+	got := ApplyRunPolicy(obs, offered, RiskToleranceAggressive, WildEncountersPlanner)
+	if len(got) != len(offered) {
+		t.Fatalf("loop guard removed every legal option: %#v", got)
+	}
+}
+
 func TestBalancedRiskMarksKnownCenterRecoveryBeforeTrainer(t *testing.T) {
 	obs := Observation{Party: []PartyMon{{HP: 65, MaxHP: 100}}, PartyCount: 1}
 	offered := []Objective{
