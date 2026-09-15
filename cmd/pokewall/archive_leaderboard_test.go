@@ -19,29 +19,29 @@ func TestArchiveDashboardFiltersAndSortsBeforePagination(t *testing.T) {
 			t.Fatalf("fallback offset = %q, want stripped for full-set sort", got)
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
-			"now": 1000,
+			"now":   1000,
 			"total": 3,
 			"runs": []any{
 				map[string]any{
 					"run_id": "slow-success", "status": "done", "reason": "done", "goal": "Earn the Boulder Badge", "play_style": "speedrun",
 					"frame": 900.0, "ended_at": 900.0,
-					"inference": map[string]any{"model_id": "qwen-9b", "deployment_id": "qwen-9b-4090", "compute": "RTX 4090"},
+					"inference":      map[string]any{"model_id": "qwen-9b", "deployment_id": "qwen-9b-4090", "compute": "RTX 4090"},
 					"llm_deployment": "qwen-9b-4090",
-					"stats": map[string]any{"rounds": 12.0, "strategic_seconds": 8.0, "goal_complete": true},
+					"stats":          map[string]any{"rounds": 12.0, "strategic_seconds": 8.0, "goal_complete": true},
 				},
 				map[string]any{
 					"run_id": "fast-success", "status": "done", "reason": "done", "goal": "Earn the Boulder Badge", "play_style": "speedrun",
 					"frame": 300.0, "ended_at": 800.0,
-					"inference": map[string]any{"model_id": "qwen-4b", "deployment_id": "qwen-4b-4090", "compute": "RTX 4090"},
+					"inference":      map[string]any{"model_id": "qwen-4b", "deployment_id": "qwen-4b-4090", "compute": "RTX 4090"},
 					"llm_deployment": "qwen-4b-4090",
-					"stats": map[string]any{"rounds": 18.0, "strategic_seconds": 5.0, "goal_complete": true},
+					"stats":          map[string]any{"rounds": 18.0, "strategic_seconds": 5.0, "goal_complete": true},
 				},
 				map[string]any{
 					"run_id": "failed", "status": "done", "reason": "budget", "goal": "Earn the Boulder Badge", "play_style": "adventure",
 					"frame": 100.0, "ended_at": 700.0,
-					"inference": map[string]any{"model_id": "qwen-4b", "deployment_id": "qwen-4b-4090", "compute": "RTX 4090"},
+					"inference":      map[string]any{"model_id": "qwen-4b", "deployment_id": "qwen-4b-4090", "compute": "RTX 4090"},
 					"llm_deployment": "qwen-4b-4090",
-					"stats": map[string]any{"rounds": 20.0, "strategic_seconds": 6.0, "goal_complete": false},
+					"stats":          map[string]any{"rounds": 20.0, "strategic_seconds": 6.0, "goal_complete": false},
 				},
 			},
 			"history_facets": map[string]any{"outcomes": []string{"budget", "done"}, "hows": []string{"play"}, "starters": []string{"squirtle"}},
@@ -81,7 +81,7 @@ func TestArchiveDashboardFiltersAndSortsBeforePagination(t *testing.T) {
 func TestArchiveDashboardFiltersModelDeploymentExperimentAndCompute(t *testing.T) {
 	fallback := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{
-			"now": 1000,
+			"now":   1000,
 			"total": 2,
 			"runs": []any{
 				map[string]any{
@@ -126,9 +126,9 @@ func TestArchiveLeaseCapturesExecutionStartAndRuntime(t *testing.T) {
 		case "/v1/dashboard":
 			started := controller.startedAt("runtime-run")
 			writeJSON(w, http.StatusOK, map[string]any{
-				"now": started + 10,
+				"now":   started + 10,
 				"total": 1,
-				"runs": []any{map[string]any{"run_id": "runtime-run", "status": "done", "reason": "done", "ended_at": float64(started + 10)}},
+				"runs":  []any{map[string]any{"run_id": "runtime-run", "status": "done", "reason": "done", "ended_at": float64(started + 10)}},
 			})
 		default:
 			t.Fatalf("unexpected path %s", r.URL.Path)
