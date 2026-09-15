@@ -27,6 +27,24 @@ func TestFleeMenuFromMemRecognizesSafariBattleMenu(t *testing.T) {
 	}
 }
 
+func TestFleeWaitInputBacksOutOfAccidentallyOpenedMoveMenu(t *testing.T) {
+	text := newFakeRAM()
+	openTextBox(text, "A wild NIDORAN appeared")
+	if got := fleeWaitInputFromMem(text); got != emu.A {
+		t.Fatalf("encounter text input = %v, want A", got)
+	}
+
+	moveMenu := newFakeRAM()
+	openTextBox(moveMenu, "TYPE NORMAL")
+	// textTile intentionally only supports letters in the shared fake helper.
+	// Red's charmap renders '/' as tile 0xf3, so write that one glyph exactly
+	// as the live move menu does to produce the production marker "TYPE/".
+	moveMenu[sym.TileMap+4] = 0xf3
+	if got := fleeWaitInputFromMem(moveMenu); got != emu.B {
+		t.Fatalf("move-menu recovery input = %v, want B", got)
+	}
+}
+
 func TestSafariRunNextInputUsesLiveMenuState(t *testing.T) {
 	mem := newFakeRAM()
 	openTextBox(mem, "BALL BAIT THROW ROCK RUN")
