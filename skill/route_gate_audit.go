@@ -83,10 +83,14 @@ func redAuditedRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, 
 		// seam and remains required through the Cinnabar connection.
 		return semanticTransition("red:southern_sea_surf", edge, capCanSurf), true
 
-	case edge.Kind == world.EdgeWarp && edge.From == celadonCityMap && edge.To == celadonGymMap:
-		// Erika's door is behind the Cut tree in Celadon City. Make the named
-		// gym destination inherit that field prerequisite instead of relying on
-		// an execution-time no-path failure.
+	case edge.Kind == world.EdgeWarp && pair(celadonCityMap, celadonGymMap):
+		// Erika's door is behind the Cut tree in Celadon City. The immutable
+		// graph sees the gym landing yard and the city street as disconnected
+		// until that tree is removed. This is true in both directions: a run
+		// resumed inside Celadon Gym otherwise cannot route back to the Center
+		// and dies with "world: no route" from map 0x86. Model the door as the
+		// same bidirectional pivot used for Vermilion Gym; the reverse executor
+		// crosses the door first, then clears the city-side tree.
 		return semanticTransition("red:celadon_gym_cut", edge, capCanCut), true
 	}
 	return gameruntime.Transition{}, false
@@ -154,6 +158,20 @@ func (x *redRouteTransitionExecutor) executeAuditedRouteTransition(edge world.Ed
 		return result, true, err
 
 	case "red:celadon_gym_cut":
+		if edge.From == celadonGymMap {
+			// Leaving starts inside the building while the tree that separates
+			// the landing yard from the city street is outside. Cross the warp
+			// first so the generic live Cut recovery can see and clear that tree.
+			// Traverse already performs the promised edge, so always report a
+			// state change and let Travel re-plan from the city side afterwards.
+			if err := Traverse(x.m, x.romData, edge); err != nil {
+				return world.TransitionExecutionResult{}, true, fmt.Errorf("Celadon Gym Cut gate: leave gym: %w", err)
+			}
+			if _, err := cutThroughReachableTree(x.m, x.romData); err != nil {
+				return world.TransitionExecutionResult{}, true, fmt.Errorf("Celadon Gym Cut gate: clear city-side tree: %w", err)
+			}
+			return world.TransitionExecutionResult{Changed: true}, true, nil
+		}
 		opened, err := cutThroughReachableTree(x.m, x.romData)
 		if err != nil {
 			return world.TransitionExecutionResult{}, true, fmt.Errorf("Celadon Gym Cut gate: %w", err)
