@@ -48,6 +48,12 @@ func (a *redObjectiveAdapter) RouteRequirements(obs Observation) []RouteBlockage
 func redRouteRequirements(obs Observation) []RouteBlockage {
 	out := make([]RouteBlockage, 0, 24)
 	blockMap := func(mapID uint8, transition string, prerequisite RoutePrerequisiteLink) {
+		// A route requirement governs entry. If a checkpoint/resume is already
+		// inside the map, local actions must remain available so recovery cannot
+		// strand the player behind a gate that is now physically behind them.
+		if mapID == obs.Map {
+			return
+		}
 		for _, name := range skill.PlaceNames() {
 			destination, ok := skill.Place(name)
 			if !ok || destination.Map != mapID {
