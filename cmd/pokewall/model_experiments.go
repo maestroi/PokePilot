@@ -429,26 +429,43 @@ func (c *modelExperimentController) handleExperiment(w http.ResponseWriter, r *h
 }
 
 type armAggregate struct {
-	Runs             int     `json:"runs"`
-	Done             int     `json:"done"`
-	BoulderSuccesses int     `json:"boulder_successes"`
-	SuccessRate      float64 `json:"success_rate"`
-	Badges           int     `json:"badges"`
-	Rounds           int     `json:"rounds"`
-	Frames           uint64  `json:"frames"`
-	Calls            int     `json:"calls"`
-	StrategicCalls   int     `json:"strategic_calls"`
-	PlanExecutions   int     `json:"plan_executions"`
-	StepsSkipped     int     `json:"steps_skipped"`
-	Rejected         int     `json:"rejected"`
-	TransportErrors  int     `json:"transport_errors"`
-	Fallbacks        int     `json:"fallbacks"`
-	PromptTokens     int     `json:"prompt_tokens"`
-	CompletionTokens int     `json:"completion_tokens"`
-	StrategicSeconds float64 `json:"strategic_seconds"`
-	AvgStrategicCall float64 `json:"avg_strategic_call_seconds"`
-	AvgPrefillTPS    float64 `json:"avg_last_prefill_tps"`
-	AvgDecodeTPS     float64 `json:"avg_last_decode_tps"`
+	Runs                    int            `json:"runs"`
+	Done                    int            `json:"done"`
+	BoulderSuccesses        int            `json:"boulder_successes"`
+	SuccessRate             float64        `json:"success_rate"`
+	Badges                  int            `json:"badges"`
+	Rounds                  int            `json:"rounds"`
+	Frames                  uint64         `json:"frames"`
+	Calls                   int            `json:"calls"`
+	StrategicCalls          int            `json:"strategic_calls"`
+	StrategicRejected       int            `json:"strategic_rejected"`
+	PlanStepsProduced       int            `json:"plan_steps_produced"`
+	PlanExecutions          int            `json:"plan_executions"`
+	StepsSkipped            int            `json:"steps_skipped"`
+	PlanExecutionFraction   float64        `json:"plan_execution_fraction"`
+	Rejected                int            `json:"rejected"`
+	TransportErrors         int            `json:"transport_errors"`
+	Fallbacks               int            `json:"fallbacks"`
+	PromptTokens            int            `json:"prompt_tokens"`
+	CompletionTokens        int            `json:"completion_tokens"`
+	StrategicSeconds        float64        `json:"strategic_seconds"`
+	AvgStrategicCall        float64        `json:"avg_strategic_call_seconds"`
+	P50StrategicCall        float64        `json:"p50_strategic_call_seconds"`
+	P95StrategicCall        float64        `json:"p95_strategic_call_seconds"`
+	AvgPrefillTPS           float64        `json:"avg_prefill_tps"`
+	AvgDecodeTPS            float64        `json:"avg_decode_tps"`
+	Blackouts               int            `json:"blackouts"`
+	ObjectiveFailures       int            `json:"objective_failures"`
+	StagnationReplans       int            `json:"stagnation_replans"`
+	PlanExhaustionReplans   int            `json:"plan_exhaustion_replans"`
+	ReplanReasons           map[string]int `json:"replan_reasons,omitempty"`
+	FinalStopReasons        map[string]int `json:"final_stop_reasons,omitempty"`
+	StrategicRecordsDropped int            `json:"strategic_records_dropped,omitempty"`
+	latencies               []float64
+	prefillSum              float64
+	prefillSamples          int
+	decodeSum               float64
+	decodeSamples           int
 }
 
 type pairResult struct {
@@ -517,6 +534,15 @@ func (c *modelExperimentController) experimentView(record experimentRecord) map[
 
 func accumulateArm(out *armAggregate, tile Tile) {
 	out.Runs++
+	if out.ReplanReasons == nil {
+		out.ReplanReasons = map[string]int{}
+	}
+	if out.FinalStopReasons == nil {
+		out.FinalStopReasons = map[string]int{}
+	}
+	if tile.Status == statusDone && tile.Reason != "" {
+		out.FinalStopReasons[tile.Reason]++
+	}
 	if tile.Status == statusDone {
 		out.Done++
 	}
@@ -540,8 +566,29 @@ func accumulateArm(out *armAggregate, tile Tile) {
 		out.PromptTokens += s.PromptTokens
 		out.CompletionTokens += s.CompletionTokens
 		out.StrategicSeconds += s.StrategicSeconds
-		out.AvgPrefillTPS += s.PrefillTPS
-		out.AvgDecodeTPS += s.DecodeTPS
+		out.StrategicRecordsDropped += s.StrategicRecordsDropped
+		for reason, count := range s.ReplanReasons {
+			out.ReplanReasons[reason] += count
+		}
+		out.Blackouts += s.ReplanReasons["blackout"]
+		out.ObjectiveFailures += s.ReplanReasons["objective_failed"]
+		out.StagnationReplans += s.ReplanReasons["stagnation"] + s.ReplanReasons["stuck"]
+		out.PlanExhaustionReplans += s.ReplanReasons["plan_exhausted"] + s.ReplanReasons["plan_exhaustion"]
+		for _, record := range s.StrategicRecords {
+			out.latencies = append(out.latencies, record.DurationSeconds)
+			out.PlanStepsProduced += len(record.PlanSteps)
+			if record.Rejected {
+				out.StrategicRejected++
+			}
+			if record.PrefillTPS > 0 {
+				out.prefillSum += record.PrefillTPS
+				out.prefillSamples++
+			}
+			if record.DecodeTPS > 0 {
+				out.decodeSum += record.DecodeTPS
+				out.decodeSamples++
+			}
+		}
 	}
 }
 
@@ -552,10 +599,34 @@ func finalizeArm(out *armAggregate) {
 	if out.StrategicCalls > 0 {
 		out.AvgStrategicCall = out.StrategicSeconds / float64(out.StrategicCalls)
 	}
-	if out.Runs > 0 {
-		out.AvgPrefillTPS /= float64(out.Runs)
-		out.AvgDecodeTPS /= float64(out.Runs)
+	if total := out.PlanExecutions + out.StepsSkipped; total > 0 {
+		out.PlanExecutionFraction = float64(out.PlanExecutions) / float64(total)
 	}
+	if len(out.latencies) > 0 {
+		sort.Float64s(out.latencies)
+		out.P50StrategicCall = percentile(out.latencies, 0.50)
+		out.P95StrategicCall = percentile(out.latencies, 0.95)
+	}
+	if out.prefillSamples > 0 {
+		out.AvgPrefillTPS = out.prefillSum / float64(out.prefillSamples)
+	}
+	if out.decodeSamples > 0 {
+		out.AvgDecodeTPS = out.decodeSum / float64(out.decodeSamples)
+	}
+}
+
+func percentile(sorted []float64, p float64) float64 {
+	if len(sorted) == 0 {
+		return 0
+	}
+	if p <= 0 {
+		return sorted[0]
+	}
+	if p >= 1 {
+		return sorted[len(sorted)-1]
+	}
+	index := int(float64(len(sorted)-1)*p + 0.5)
+	return sorted[index]
 }
 
 func tileBoulderSuccess(tile Tile) bool {
