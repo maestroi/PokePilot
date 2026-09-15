@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -159,6 +160,32 @@ func TestPeriodicCheckpointKeep(t *testing.T) {
 	}
 	if states[0] != periodicStateName(4*periodicCheckpointFrames) {
 		t.Fatalf("oldest kept = %s, want the 4th of 15", states[0])
+	}
+}
+
+func TestObjectiveLatestAndEvictionFollowFrameNotRoundNumber(t *testing.T) {
+	dir := t.TempDir()
+	// The carried-over resume source has the highest round number but the
+	// oldest frame; it must lose both the "latest" selection and the ring.
+	writePair(t, dir, "round-041-frame-0001639091-talk.state", []byte("carried"), []byte(`{}`))
+	newest := fmt.Sprintf("round-%03d-frame-000164000%d-goto.state", objectiveCheckpointKeep, objectiveCheckpointKeep)
+	for i := 1; i <= objectiveCheckpointKeep; i++ {
+		writePair(t, dir, fmt.Sprintf("round-%03d-frame-000164000%d-goto.state", i, i), []byte("s"), []byte(`{}`))
+	}
+	if got := latestObjectiveState(dir); got != newest {
+		t.Fatalf("latest = %s, want %s", got, newest)
+	}
+	if err := evictObjectiveCheckpoints(dir, objectiveCheckpointKeep); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if strings.Contains(e.Name(), "round-041-") {
+			t.Fatalf("carried-over oldest frame was not evicted: %s", e.Name())
+		}
 	}
 }
 

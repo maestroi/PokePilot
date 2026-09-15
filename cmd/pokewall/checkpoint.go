@@ -220,6 +220,22 @@ func (w *Wall) handleCheckpointResume(res http.ResponseWriter, id string, reques
 	writeJSON(res, http.StatusOK, cp)
 }
 
+// objectiveFrame is the cumulative emulator frame embedded in an objective
+// checkpoint name. Round numbers restart on every resume, so the frame is the
+// monotonic progress signal across carried-over and attempt-local checkpoints.
+func objectiveFrame(name string) uint64 {
+	_, frame := objectiveNumbers(name)
+	return frame
+}
+
+// sortByFrame orders objective checkpoints by progress. Stable ordering keeps
+// filename order for equal frames, matching the previous behavior.
+func sortByFrame(names []string) {
+	sort.SliceStable(names, func(i, j int) bool {
+		return objectiveFrame(names[i]) < objectiveFrame(names[j])
+	})
+}
+
 func latestResumeCheckpoint(dir, planner string) (farm.ResumeCheckpoint, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -240,7 +256,7 @@ func latestResumeCheckpoint(dir, planner string) (farm.ResumeCheckpoint, error) 
 			periodic = append(periodic, name)
 		}
 	}
-	sort.Strings(objective)
+	sortByFrame(objective)
 	sort.Strings(periodic)
 
 	// LLM state and learned knowledge must come from one objective boundary.
@@ -465,7 +481,7 @@ func retainCheckpointWindow(dir string) error {
 		}
 	}
 	sort.Strings(periodic)
-	sort.Strings(objective)
+	sortByFrame(objective)
 	sort.Strings(major)
 	drop := func(names []string, keep int, sidecar func(string) string) {
 		if keep < 0 {
