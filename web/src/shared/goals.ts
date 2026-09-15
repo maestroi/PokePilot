@@ -1,5 +1,3 @@
-import { defaultGoalForPlayStyle } from './playstyle'
-
 export const GOAL_OPTIONS = [
   'Earn the Boulder Badge.',
   'Earn 2 badges.',
@@ -16,5 +14,7 @@ export const GOAL_OPTIONS = [
 
 export function nextGoalForPlayStyle(currentGoal: string, playStyle: string, explicitlySelected: boolean): string {
   if (explicitlySelected) return currentGoal
-  return defaultGoalForPlayStyle(playStyle)
+  return String(playStyle || '').trim().toLowerCase() === 'completionist'
+    ? 'Complete the obtainable Pokédex.'
+    : 'Beat the Elite Four and Champion.'
 }
