@@ -62,8 +62,11 @@ func RocketHideoutAvailable(mapID uint8) bool {
 // place.
 //
 // The sequence is deliberately resumable. It may start in Celadon, the Game
-// Corner, or any hideout floor; already-defeated trainers are harmless and a
-// B4F resume from inside the boss room goes straight to Giovanni/the item.
+// Corner, any hideout floor, or the hideout elevator. The stair route reaches
+// B4F's Lift Key Rocket first; after collecting the key the run backtracks to
+// B1F and uses the elevator to enter the otherwise-disconnected guard side.
+// Already-defeated trainers are harmless and a B4F resume from inside the boss
+// room goes straight to Giovanni/the item.
 func RocketHideout(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if policy == nil {
 		return fmt.Errorf("skill: RocketHideout: nil policy")
@@ -90,7 +93,7 @@ func RocketHideout(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		}
 	}
 
-	if cur < rocketHideoutB1FMap || cur > rocketHideoutB4FMap {
+	if cur < rocketHideoutB1FMap || cur > rocketHideoutElevatorMap {
 		if cur != gameCornerMap {
 			if _, err := Travel(m, romData, gameCornerStand, policy, 20); err != nil {
 				return fmt.Errorf("skill: RocketHideout: reach Game Corner: %w", err)
@@ -114,27 +117,41 @@ func RocketHideout(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		}
 	}
 
-	if m.Peek8(sym.CurMap) != rocketHideoutB4FMap {
-		if err := descendRocketHideout(m, romData, policy); err != nil {
-			return fmt.Errorf("skill: RocketHideout: descend to B4F: %w", err)
+	// The ordinary stair descent reaches B4F on the west/north side of the
+	// locked boss door. The two guards are on the elevator side and are not
+	// walkably connected while block $2d is present. Collect the Lift Key from
+	// the third B4F Rocket first, then use the legal elevator route to them.
+	if !rocketBagHas(m, liftKeyItem) {
+		if m.Peek8(sym.CurMap) == rocketHideoutElevatorMap {
+			return fmt.Errorf("skill: RocketHideout: resumed inside elevator without Lift Key")
+		}
+		if m.Peek8(sym.CurMap) != rocketHideoutB4FMap {
+			if err := descendRocketHideout(m, romData, policy); err != nil {
+				return fmt.Errorf("skill: RocketHideout: descend to B4F Lift Key side: %w", err)
+			}
+		}
+		if err := acquireRocketLiftKey(m, romData, policy); err != nil {
+			return err
 		}
 	}
 
-	// Both guards are south of the boss-room door and can be approached with
-	// the ordinary static grid. Once both trainer flags are set, the ROM only
-	// replaces the door block on map load, so deliberately leave/re-enter B4F
-	// before using the live-open collision override north of it.
+	if err := reachRocketGuardSide(m, romData, policy); err != nil {
+		return err
+	}
+
 	if err := fightStoryTrainerAt(m, romData, rocketGuard1X, rocketGuard1Y, "B4F guard 1", policy); err != nil {
 		return err
 	}
 	if err := fightStoryTrainerAt(m, romData, rocketGuard2X, rocketGuard2Y, "B4F guard 2", policy); err != nil {
 		return err
 	}
-	if _, err := Travel(m, romData, rocketB3FReturn, policy, 20); err != nil {
-		return fmt.Errorf("skill: RocketHideout: reload B4F door via B3F: %w", err)
-	}
-	if _, err := Travel(m, romData, rocketB4FEntry, policy, 20); err != nil {
-		return fmt.Errorf("skill: RocketHideout: re-enter B4F after guards: %w", err)
+
+	// The ROM evaluates the two guard flags only when B4F loads. The locked
+	// door still separates the guards from the B3F stair, so reload via the
+	// same elevator that legally reached this side rather than trying to walk
+	// through the closed door back to B3F.
+	if err := reloadRocketB4FViaElevator(m, romData, policy); err != nil {
+		return err
 	}
 
 	return finishRocketBossRoom(m, romData, policy)
