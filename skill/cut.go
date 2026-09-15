@@ -106,15 +106,8 @@ func selectFieldMoveUser(m *emu.Emu, index int) error {
 }
 
 func openStartMenuEntry(m *emu.Emu, entry, wantMax int) error {
-	drawn := func(m *emu.Emu) bool {
-		return m.Peek8(sym.FontLoaded) != 0 && int(m.Peek8(sym.MaxMenuItem)) == wantMax
-	}
-	for attempt := 0; attempt < 5 && !drawn(m); attempt++ {
-		m.Tap(emu.Start, 3, 7)
-		_, _ = m.StepUntil(startMenuDrawBudget, drawn)
-	}
-	if !drawn(m) {
-		return fmt.Errorf("skill: start menu did not finish drawing")
+	if err := waitForStartMenu(m, wantMax); err != nil {
+		return err
 	}
 	return SelectMenuItem(m, entry)
 }
