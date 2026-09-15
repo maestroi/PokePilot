@@ -141,6 +141,25 @@ func redHasBadge(obs Observation, badge state.Badge) bool {
 	return false
 }
 
+// These compatibility probes are intentionally Red-owned. Older focused tests
+// ask the historical map-based question directly; production generic offering
+// no longer calls either helper and consumes semantic RouteBlockage values.
+func journeyProgressionBlocked(obs Observation, destinationMap uint8) bool {
+	augmented := observationWithRouteRequirements(obs, redRouteRequirements(obs))
+	for _, blockage := range augmented.RouteBlockages {
+		destination, ok := skill.Place(string(blockage.Destination))
+		if ok && destination.Map == destinationMap {
+			return true
+		}
+	}
+	return false
+}
+
+func placeProgressionBlocked(obs Observation, placeName string) bool {
+	augmented := observationWithRouteRequirements(obs, redRouteRequirements(obs))
+	return routePlaceBlocked(augmented, PlaceID(placeName))
+}
+
 func redRoutePrerequisiteLink(id CapabilityID) (RoutePrerequisiteLink, bool) {
 	switch gameruntime.CapabilityID(id) {
 	case "can_leave_viridian_north":
