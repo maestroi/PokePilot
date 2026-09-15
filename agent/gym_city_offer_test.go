@@ -31,7 +31,7 @@ func redOffered(obs Observation, known *Knowledge) []Objective {
 
 func TestOfferWithholdsVermilionGymJourneyUntilInside(t *testing.T) {
 	known := NewKnowledge(nil)
-	known.Visited[0x5c] = true
+	known.Visited[LocationID("vermilion gym")] = true
 
 	obs := Observation{Map: 0x05, MapName: "VERMILION_CITY", PartyCount: 1}
 	if hasJourneyTo(redOffered(obs, known), "vermilion gym") {
