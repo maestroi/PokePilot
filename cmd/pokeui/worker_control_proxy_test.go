@@ -13,7 +13,8 @@ func TestWorkerForceEndIsProxiedOnlyByOperator(t *testing.T) {
 	wall := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hits.Add(1)
 		if r.Method != http.MethodPost || r.URL.Path != "/v1/workers/10.0.1.23:8099/force-end" {
-			t.Fatalf("unexpected upstream request: %s %s", r.Method, r.URL.Path)
+			http.Error(w, "unexpected upstream request", http.StatusBadRequest)
+			return
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"status":"force-ended"}`))
