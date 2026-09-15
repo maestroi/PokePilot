@@ -325,6 +325,30 @@ func warpTarget(h rom.MapHeader, e world.Edge, g *world.Grid, sx, sy int, blocke
 		}
 	}
 
+	// The player may already be standing on one of this destination's warp
+	// tiles: a resumed checkpoint whose previous leg warped in and landed
+	// exactly on the door back out (Rocket Hideout's B4F<->elevator alcove,
+	// measured). Red only re-fires a warp by tile ID on the step that ARRIVES
+	// on it (IsPlayerStandingOnDoorTileOrWarpTile, pokered
+	// engine/overworld/doors.asm); shuffling to a neighboring tile of the same
+	// door is not an arrival and never fires it, so this would otherwise walk
+	// back and forth between the pad's tiles forever. wMovementFlags'
+	// BIT_STANDING_ON_WARP is set once on entering a map already on a warp
+	// tile (pokered engine/overworld/player_state.asm) and stays set until a
+	// collision — bumping a wall — fires the warp through ExtraWarpCheck
+	// instead (pokered home/overworld.asm). Reproduce that: push toward
+	// whichever neighbor is not walkable rather than walking anywhere.
+	for _, w := range candidates {
+		if int(w.X) != sx || int(w.Y) != sy {
+			continue
+		}
+		for _, s := range []world.Step{world.StepUp, world.StepDown, world.StepLeft, world.StepRight} {
+			if !g.Walkable(sx+s.DX, sy+s.DY) {
+				return sx, sy, nil, s, nil
+			}
+		}
+	}
+
 	var reasons []string
 	// Prefer warp tiles the collision grid says can actually be entered.
 	// Some stairs are intentionally solid and still activate on a push, so
