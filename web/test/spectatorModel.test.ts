@@ -1,9 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import type { SpectatorRun } from '../src/shared/api/spectator.ts'
-import { preferredRun } from '../src/spectator/model.ts'
+import { preferredRun, type SelectableSpectatorRun } from '../src/spectator/preferredRun.ts'
 
-function run(run_id: string, status: string, queued_at: number): SpectatorRun {
+function run(run_id: string, status: string, queued_at: number): SelectableSpectatorRun {
   return { run_id, status, queued_at }
 }
 
