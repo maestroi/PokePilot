@@ -353,16 +353,19 @@ func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
 			// rejected. The list merely remaining visible after A is not proof:
 			// HandleMenuInput can leave the old tilemap on screen for a few
 			// frames while the accepted input is still being consumed.
-			bs := state.DecodeBattle(&mem)
-			if bs == nil {
+			if state.DecodeBattle(&mem) == nil {
+				continue
+			}
+			lm, ok := learningMon(&mem)
+			if !ok {
 				continue
 			}
 			if triedForgets == nil {
 				triedForgets = map[uint8]bool{}
 			}
-			triedForgets[bs.Moves[lastForgetSlot].ID] = true
+			triedForgets[lm.Moves[lastForgetSlot]] = true
 			if zbatDebug {
-				fmt.Printf("zbat move-learn action=hm-rejected slot=%d move=%d\n", lastForgetSlot, bs.Moves[lastForgetSlot].ID)
+				fmt.Printf("zbat move-learn action=hm-rejected slot=%d move=%d\n", lastForgetSlot, lm.Moves[lastForgetSlot])
 			}
 			lastForgetSlot = -1
 			pendingLearnSlot = -1
@@ -395,8 +398,7 @@ func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
 				m.StepFrame()
 				continue
 			}
-			bs := state.DecodeBattle(&mem)
-			if bs == nil {
+			if state.DecodeBattle(&mem) == nil {
 				continue // the battle ended while the menu was up
 			}
 			if lastForgetSlot >= 0 {
@@ -408,9 +410,12 @@ func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
 				m.StepFrame()
 				continue
 			}
-			ids := [4]uint8{bs.Moves[0].ID, bs.Moves[1].ID, bs.Moves[2].ID, bs.Moves[3].ID}
+			lm, ok := learningMon(&mem)
+			if !ok {
+				continue
+			}
 			offered := m.Peek8(sym.MoveNum)
-			decision := decideNaturalMove(m.ROM(), bs.ActiveType1, bs.ActiveType2, ids, offered, triedForgets)
+			decision := decideNaturalMove(m.ROM(), lm.Type1, lm.Type2, lm.Moves, offered, triedForgets)
 			if !decision.Learn || decision.ReplaceSlot < 0 {
 				x, y := playerXY(m)
 				return 0, fmt.Errorf("skill: Battle: map %02x at (%d,%d): accepted natural move %d but no legal strategic replacement remains: %s",
@@ -422,7 +427,7 @@ func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
 			slot := decision.ReplaceSlot
 			pendingLearnMove = offered
 			pendingLearnSlot = slot
-			pendingLearnPartySlot = int(m.Peek8(sym.PlayerMonNumber))
+			pendingLearnPartySlot = int(m.Peek8(sym.WhichPokemon))
 			if err := selectForgetSlot(m, slot); err != nil {
 				return menuError(m, "select move to forget", err)
 			}
@@ -478,13 +483,15 @@ func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
 			}
 			choice := 0 // YES for Use next #MON?
 			if strings.Contains(text, tryLearnMarker) {
-				bs := state.DecodeBattle(&s)
-				if bs == nil {
+				if state.DecodeBattle(&s) == nil {
 					continue
 				}
-				ids := [4]uint8{bs.Moves[0].ID, bs.Moves[1].ID, bs.Moves[2].ID, bs.Moves[3].ID}
+				lm, ok := learningMon(&s)
+				if !ok {
+					continue
+				}
 				offered := m.Peek8(sym.MoveNum)
-				decision := decideNaturalMove(m.ROM(), bs.ActiveType1, bs.ActiveType2, ids, offered, nil)
+				decision := decideNaturalMove(m.ROM(), lm.Type1, lm.Type2, lm.Moves, offered, nil)
 				if !decision.Learn {
 					choice = 1 // NO: then confirm Abandon learning on the next prompt
 				}
@@ -855,6 +862,22 @@ func firstLivePartySlot(mem *state.Mem) int {
 		}
 	}
 	return -1
+}
+
+// learningMon returns the party mon the ROM is currently offering a level-up
+// move to. The ROM names it in wWhichPokemon, which is NOT necessarily the
+// active mon (wPlayerMonNumber): GainExperience processes every mon with the
+// gain-exp flag set, so a benched mon that was sent out and survived can be
+// the one learning. The strategic decision and the end-of-battle verification
+// must both target this mon, not the active one. ok is false only if
+// wWhichPokemon is out of range, which the ROM never produces here.
+func learningMon(mem *state.Mem) (mon state.Mon, ok bool) {
+	party := state.DecodeParty(mem)
+	slot := int(mem.U8(sym.WhichPokemon))
+	if slot < 0 || slot >= len(party.Mons) {
+		return state.Mon{}, false
+	}
+	return party.Mons[slot], true
 }
 
 // battleScreenHas reports whether marker appears in the text the game has

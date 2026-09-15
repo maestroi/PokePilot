@@ -142,6 +142,13 @@ const (
 	// out in battle (InitBattleVariables zeroes it; SwitchPlayerMon and
 	// ChooseNextMon write it).
 	PlayerMonNumber uint16 = 0xCC2F
+	// WhichPokemon is wWhichPokemon: the party slot the ROM is currently
+	// processing. During a level-up move-learn prompt this is the mon
+	// LEARNING the move, which is not necessarily the active mon
+	// (PlayerMonNumber): GainExperience processes every mon with the
+	// gain-exp flag set, so a benched mon that was sent out and survived
+	// can be the one offered the move.
+	WhichPokemon uint16 = 0xCF92
 	MaxMenuItem     uint16 = 0xCC28
 	// MoveNum is wMoveNum: LearnMove keeps the currently offered natural
 	// move here while TryingToLearn / WhichMoveToForget are on screen.
