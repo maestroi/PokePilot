@@ -2,11 +2,21 @@ package farm
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"sort"
 	"strings"
 )
+
+// ErrDeploymentNotFound is returned when a registry mutation names an unknown
+// deployment id.
+var ErrDeploymentNotFound = errors.New("model registry: deployment not found")
+
+// MaxParallelWorkersLimit is the operator-facing ceiling. Farm runs spend most
+// of their time emulating, so one inference process can interleave several
+// runners; this bound only stops a typo from requesting hundreds of leases.
+const MaxParallelWorkersLimit = 32
 
 // ModelRegistry is the declarative set of inference deployments available to
 // PokePilot. It deliberately separates model identity from compute placement:
@@ -182,6 +192,86 @@ func (d ModelDeployment) ParallelLimit() int {
 		return 1
 	}
 	return d.MaxParallelWorkers
+}
+
+// SetParallelLimit updates one deployment's live worker cap in memory.
+func (r *ModelRegistry) SetParallelLimit(id string, n int) error {
+	if n < 1 || n > MaxParallelWorkersLimit {
+		return fmt.Errorf("model registry: max_parallel_workers must be between 1 and %d", MaxParallelWorkersLimit)
+	}
+	id = strings.TrimSpace(id)
+	for i := range r.Deployments {
+		if r.Deployments[i].ID == id {
+			r.Deployments[i].MaxParallelWorkers = n
+			return nil
+		}
+	}
+	return fmt.Errorf("%w: %s", ErrDeploymentNotFound, id)
+}
+
+// SaveModelRegistry writes a JSON registry file.
+func SaveModelRegistry(path string, registry ModelRegistry) error {
+	if err := registry.Validate(); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(registry, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode model registry: %w", err)
+	}
+	if err := os.WriteFile(path, append(data, '\n'), 0o644); err != nil {
+		return fmt.Errorf("write model registry: %w", err)
+	}
+	return nil
+}
+
+// UpdateDeploymentParallelLimit persists a new worker cap to the registry
+// source (JSON file or Postgres) and returns the updated deployment.
+func UpdateDeploymentParallelLimit(source, id string, n int) (ModelDeployment, error) {
+	registry, err := LoadModelRegistry(source)
+	if err != nil {
+		return ModelDeployment{}, err
+	}
+	if err := registry.SetParallelLimit(id, n); err != nil {
+		return ModelDeployment{}, err
+	}
+	pathOrDSN, postgres, err := registryPersistTarget(source)
+	if err != nil {
+		return ModelDeployment{}, err
+	}
+	if postgres {
+		if err := updatePostgresParallelLimit(pathOrDSN, id, n); err != nil {
+			return ModelDeployment{}, err
+		}
+	} else if err := SaveModelRegistry(pathOrDSN, registry); err != nil {
+		return ModelDeployment{}, err
+	}
+	updated, _ := registry.Deployment(id)
+	return updated, nil
+}
+
+func registryPersistTarget(source string) (string, bool, error) {
+	source = strings.TrimSpace(source)
+	if strings.HasPrefix(strings.ToLower(source), postgresRegistryEnvPrefix) {
+		envName := strings.TrimSpace(source[len(postgresRegistryEnvPrefix):])
+		if envName == "" {
+			return "", true, fmt.Errorf("model registry: postgres environment variable name is empty")
+		}
+		dsn := strings.TrimSpace(os.Getenv(envName))
+		if dsn == "" {
+			return "", true, fmt.Errorf("model registry: environment variable %s is empty", envName)
+		}
+		if !isPostgresRegistrySource(dsn) {
+			return "", true, fmt.Errorf("model registry: environment variable %s is not a postgres DSN", envName)
+		}
+		return dsn, true, nil
+	}
+	if isPostgresRegistrySource(source) {
+		return source, true, nil
+	}
+	if source == "" {
+		return "", false, fmt.Errorf("model registry: source is empty")
+	}
+	return source, false, nil
 }
 
 // CompatibilityProfile maps a deployment onto the stable llm_profile wire

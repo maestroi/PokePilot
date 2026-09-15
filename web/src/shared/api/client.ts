@@ -6,6 +6,7 @@ import type {
   ExperimentList,
   ExperimentRequest,
   ExperimentView,
+  ModelDeployment,
   ModelRegistrySnapshot,
   ReplayStatus,
   RunArtifact,
@@ -94,6 +95,14 @@ export function createRun(spec: RunSpec, signal?: AbortSignal): Promise<Record<s
 export async function getModels(signal?: AbortSignal): Promise<ModelRegistrySnapshot> {
   const value = await requestJSON<ModelRegistrySnapshot | { deployments?: ModelRegistrySnapshot['deployments'] }>('/v1/models', { signal })
   return { deployments: value.deployments || [], hosts: 'hosts' in value ? value.hosts : undefined }
+}
+
+export function patchDeploymentWorkers(id: string, maxParallelWorkers: number, signal?: AbortSignal): Promise<ModelDeployment> {
+  return requestJSON<ModelDeployment>(`/v1/models/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ max_parallel_workers: maxParallelWorkers }),
+    signal
+  })
 }
 
 export async function getExperiments(signal?: AbortSignal): Promise<ExperimentView[]> {

@@ -98,3 +98,29 @@ ORDER BY compute, label, id`)
 	}
 	return registry, nil
 }
+
+func updatePostgresParallelLimit(dsn, id string, n int) error {
+	db, err := sql.Open("postgres", strings.TrimSpace(dsn))
+	if err != nil {
+		return fmt.Errorf("open model registry postgres: %w", err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(modelRegistryPostgresSchema); err != nil {
+		return fmt.Errorf("ensure model registry schema: %w", err)
+	}
+	res, err := db.Exec(
+		`UPDATE model_deployments SET max_parallel_workers = $1, updated_at = NOW() WHERE id = $2`,
+		n, strings.TrimSpace(id),
+	)
+	if err != nil {
+		return fmt.Errorf("update model registry postgres: %w", err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("update model registry postgres: %w", err)
+	}
+	if affected == 0 {
+		return fmt.Errorf("%w: %s", ErrDeploymentNotFound, id)
+	}
+	return nil
+}

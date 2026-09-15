@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { getModels } from '../shared/api/client'
+import { computed, reactive, ref, watch } from 'vue'
+import { getModels, patchDeploymentWorkers } from '../shared/api/client'
 import Panel from '../shared/components/Panel.vue'
 import ResourceState from '../shared/components/ResourceState.vue'
 import StatusBadge from '../shared/components/StatusBadge.vue'
 import { usePollingResource } from '../shared/composables/usePollingResource'
 import { deploymentIdentity, deploymentStateLabel, deploymentStateTone } from './llmDeployments'
+
+const fieldClass = 'mt-1 block w-20 rounded-md border-0 bg-white/6 px-2 py-1.5 text-right font-mono text-xs text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400'
 
 const {
   data,
@@ -18,6 +20,17 @@ const {
 )
 
 const deployments = computed(() => data.value?.deployments ?? [])
+const drafts = reactive<Record<string, number>>({})
+const savingID = ref('')
+const saveError = ref('')
+
+watch(deployments, (list) => {
+  for (const deployment of list) {
+    if (drafts[deployment.id] === undefined) {
+      drafts[deployment.id] = Number(deployment.max_parallel_workers || 1)
+    }
+  }
+}, { immediate: true })
 
 function loadedNote(deployment: (typeof deployments.value)[number]): string {
   if (deployment.loaded_deployment && deployment.loaded_deployment !== deployment.id) {
@@ -28,6 +41,21 @@ function loadedNote(deployment: (typeof deployments.value)[number]): string {
   const queued = Number(deployment.queued || 0)
   const queueNote = queued ? ` · ${queued} queued` : ''
   return `${active}/${limit} workers${queueNote}`
+}
+
+async function saveWorkers(id: string): Promise<void> {
+  if (savingID.value) return
+  saveError.value = ''
+  savingID.value = id
+  try {
+    const updated = await patchDeploymentWorkers(id, Number(drafts[id] || 1))
+    drafts[id] = Number(updated.max_parallel_workers || 1)
+    void retry()
+  } catch (cause) {
+    saveError.value = cause instanceof Error ? cause.message : 'Unable to update worker cap'
+  } finally {
+    savingID.value = ''
+  }
 }
 </script>
 
@@ -56,14 +84,27 @@ function loadedNote(deployment: (typeof deployments.value)[number]): string {
               <p class="mt-1 break-all font-mono text-[11px] text-slate-500">{{ deploymentIdentity(deployment) || deployment.id }}</p>
               <p class="mt-1 text-[11px] text-slate-500">{{ deployment.compute }} · {{ deployment.endpoint }}</p>
             </div>
-            <div class="shrink-0 text-[11px] text-slate-500 sm:max-w-[16rem] sm:text-right">
+            <div class="shrink-0 text-[11px] text-slate-500 sm:text-right">
               <p v-if="loadedNote(deployment)">{{ loadedNote(deployment) }}</p>
+              <label class="mt-2 flex items-center justify-end gap-2">
+                <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Workers</span>
+                <input v-model.number="drafts[deployment.id]" type="number" min="1" max="32" :class="fieldClass" />
+                <button
+                  type="button"
+                  class="inline-flex items-center rounded-md bg-white/10 px-2 py-1 text-[11px] font-semibold text-white ring-1 ring-white/10 hover:bg-white/15 disabled:opacity-50"
+                  :disabled="savingID === deployment.id || Number(drafts[deployment.id] || 0) === Number(deployment.max_parallel_workers || 1)"
+                  @click="saveWorkers(deployment.id)"
+                >
+                  Apply
+                </button>
+              </label>
               <p v-if="deployment.error" class="text-rose-300">{{ deployment.error }}</p>
             </div>
           </div>
         </li>
       </ul>
-      <p class="mt-3 text-[11px] text-slate-600">Each deployment queues above its worker cap instead of oversubscribing inference. Free capacity on other models keeps leasing independently.</p>
+      <p v-if="saveError" class="mt-2 text-[11px] text-rose-300">{{ saveError }}</p>
+      <p class="mt-3 text-[11px] text-slate-600">The worker cap is how many farm runs may share this model. Requests are not continuous, so one process can interleave several runners. Keep 1 for benchmark 1v1s.</p>
     </ResourceState>
   </Panel>
 </template>

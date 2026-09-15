@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { ApiError, createExperiment, createRun, getBuildProvenance, getDashboard, getModels } from '../src/shared/api/client.ts'
+import { ApiError, createExperiment, createRun, getBuildProvenance, getDashboard, getModels, patchDeploymentWorkers } from '../src/shared/api/client.ts'
 
 const originalFetch = globalThis.fetch
 
@@ -71,6 +71,9 @@ test('model and experiment clients hit the wall routes', async () => {
     if (String(input) === '/v1/models') {
       return new Response(JSON.stringify({ deployments: [{ id: 'qwen38-27b-7900', enabled: true, state: 'ready' }] }), { status: 200 })
     }
+    if (init?.method === 'PATCH') {
+      return new Response(JSON.stringify({ id: 'qwen38-27b-7900', max_parallel_workers: 2 }), { status: 200 })
+    }
     return new Response(JSON.stringify({ id: 'exp-1', name: 'Brock · 27B vs 4B', total_pairs: 2 }), { status: 201 })
   }
 
@@ -84,5 +87,7 @@ test('model and experiment clients hit the wall routes', async () => {
     seed_count: 2
   })
   assert.equal(experiment.id, 'exp-1')
-  assert.deepEqual(seen, ['GET /v1/models', 'POST /v1/experiments'])
+  const patched = await patchDeploymentWorkers('qwen38-27b-7900', 2)
+  assert.equal(patched.max_parallel_workers, 2)
+  assert.deepEqual(seen, ['GET /v1/models', 'POST /v1/experiments', 'PATCH /v1/models/qwen38-27b-7900'])
 })

@@ -237,10 +237,6 @@ func (s *lifecycleService) requestLoad(deploymentID, leaseRunID string, requeste
 	if limit <= 0 {
 		limit = hardLimit
 	}
-	if limit > hardLimit {
-		status := s.statusLocked()
-		return status, http.StatusBadRequest, fmt.Errorf("deployment %q allows at most %d parallel worker(s)", deploymentID, hardLimit)
-	}
 	if current, ok := s.leases[leaseRunID]; leaseRunID != "" && ok && current != deploymentID {
 		status := s.statusLocked()
 		return status, http.StatusConflict, fmt.Errorf("run %q already leases deployment %q", leaseRunID, current)
