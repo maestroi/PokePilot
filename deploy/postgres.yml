@@ -1,0 +1,62 @@
+# PostgreSQL control-plane overlay for deploy/farm.yml.
+#
+# Deploy with both files:
+#   docker stack deploy --resolve-image never \
+#     -c deploy/farm.yml -c deploy/postgres.yml pokefarm
+#
+# Before the first deploy, label exactly one Swarm node (or a dedicated VM
+# joined to the Swarm) as the database owner:
+#   docker node update --label-add pokepilot.db=true <node-name>
+#
+# FARM_DB_DIR must point at durable storage on that node. The database is never
+# scheduled on an unlabeled worker and never uses a Swarm named volume.
+
+configs:
+  postgres_control_plane_init:
+    file: ./postgres/001_control_plane.sql
+
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:18-alpine}
+    environment:
+      POSTGRES_DB: ${POKEPILOT_DB_NAME:-pokepilot}
+      POSTGRES_USER: ${POKEPILOT_DB_USER:-pokepilot}
+      POSTGRES_PASSWORD: ${POKEPILOT_DB_PASSWORD:?POKEPILOT_DB_PASSWORD is required}
+      # PostgreSQL 18 moved the image's persistent volume root to
+      # /var/lib/postgresql. Keep PGDATA explicit so an image update cannot
+      # silently write outside the bind mount.
+      PGDATA: /var/lib/postgresql/18/docker
+    volumes:
+      - ${FARM_DB_DIR:?FARM_DB_DIR is required}:/var/lib/postgresql
+    configs:
+      - source: postgres_control_plane_init
+        target: /docker-entrypoint-initdb.d/001_control_plane.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.pokepilot.db == true
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 10
+        window: 2m
+      resources:
+        reservations:
+          memory: 256M
+        limits:
+          memory: 1G
+
+  wall:
+    environment:
+      # The existing model experiment controller calls farm.LoadModelRegistry;
+      # it now accepts this Postgres DSN in addition to a JSON file path.
+      # Keep the complete DSN in .env / ~/.config/pokepilot/env so passwords
+      # containing URL-special characters can be encoded correctly.
+      POKEPILOT_MODEL_REGISTRY: ${POKEPILOT_DATABASE_URL:?POKEPILOT_DATABASE_URL is required}
