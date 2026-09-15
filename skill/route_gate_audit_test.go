@@ -42,6 +42,31 @@ func requireTransition(t *testing.T, edge world.Edge, id string, requires ...gam
 	return transition
 }
 
+func TestCeladonInaccessibleMartWarpIsPermanentGate(t *testing.T) {
+	edge := world.Edge{
+		Kind:  world.EdgeWarp,
+		From:  celadonCityMap,
+		To:    celadonMart5FMap,
+		WarpX: celadonInaccessibleMartWarpX,
+		WarpY: celadonInaccessibleMartWarpY,
+	}
+	transition := requireTransition(t, edge, "red:celadon_inaccessible_mart_warp", capCanUseInaccessibleWarp)
+	if !transition.Gate {
+		t.Fatalf("inaccessible Celadon wall warp was modeled as an executable pivot: %+v", transition)
+	}
+	if caps := redRouteCapabilities(nil, new(state.Mem)); caps.Has(capCanUseInaccessibleWarp) {
+		t.Fatalf("inaccessible warp capability must never be projected: %v", caps)
+	}
+
+	// The real Game Corner door immediately west remains ordinary topology;
+	// only the source warp explicitly marked inaccessible by the Red decomp is
+	// suppressed.
+	realDoor := world.Edge{Kind: world.EdgeWarp, From: celadonCityMap, To: gameCornerMap, WarpX: 28, WarpY: 19}
+	if got, ok := redRouteTransitionForEdge(realDoor); ok && got.ID == "red:celadon_inaccessible_mart_warp" {
+		t.Fatalf("real Game Corner warp was suppressed: %+v", got)
+	}
+}
+
 func TestCyclingRoadModelsOnlyTheBikeCorridor(t *testing.T) {
 	east := requireTransition(t,
 		world.Edge{Kind: world.EdgeWarp, From: route16Map, To: route16Gate1FMap, WarpX: 24, WarpY: 10},
