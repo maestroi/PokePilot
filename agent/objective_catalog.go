@@ -3,6 +3,8 @@ package agent
 import (
 	"sort"
 	"strings"
+
+	"github.com/maestroi/pokepilot/skill"
 )
 
 // ObjectiveCatalog is the typed, game-supplied world vocabulary consumed by
@@ -23,7 +25,7 @@ type ObjectiveCatalog struct {
 }
 
 type CatalogStarter struct {
-	Starter uint8
+	Starter skill.Starter
 	Species SpeciesID
 }
 
