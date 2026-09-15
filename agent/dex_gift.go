@@ -87,9 +87,20 @@ func dexGiftSourceExecutable(obs Observation, species SpeciesID, src DexSource) 
 		// route and stronger evidence than a coarse map reachability guess.
 		return src.Place == "silph co lapras" && src.Requirement == "card_key" && bagItemQuantity(obs.Bag, ItemID("card key")) > 0
 	case "hitmonlee":
-		return src.Place == "fighting dojo hitmonlee" && src.ExclusiveGroup == "fighting_dojo" && !owned["hitmonchan"]
+		// The Dojo is inside Saffron. Map-hop reachability alone can include
+		// Saffron's interior maps before the guards have accepted a drink, so
+		// do not offer the one-time prize until the semantic gate is open.
+		return src.Place == "fighting dojo hitmonlee" &&
+			src.Requirement == dexRequirementSaffronGateOpen &&
+			src.ExclusiveGroup == "fighting_dojo" &&
+			obs.Story.Has(ProgressSaffronGateOpen) &&
+			!owned["hitmonchan"]
 	case "hitmonchan":
-		return src.Place == "fighting dojo hitmonchan" && src.ExclusiveGroup == "fighting_dojo" && !owned["hitmonlee"]
+		return src.Place == "fighting dojo hitmonchan" &&
+			src.Requirement == dexRequirementSaffronGateOpen &&
+			src.ExclusiveGroup == "fighting_dojo" &&
+			obs.Story.Has(ProgressSaffronGateOpen) &&
+			!owned["hitmonlee"]
 	default:
 		return false
 	}
