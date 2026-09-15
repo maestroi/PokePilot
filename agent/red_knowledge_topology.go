@@ -13,7 +13,7 @@ func init() {
 
 func redLocationID(id uint8) LocationID {
 	if name := state.MapName(id); name != "" {
-		return LocationID(semanticPlace(name))
+		return LocationID(semanticLocation(name))
 	}
 	return LocationID(fmt.Sprintf("pokemon-red/map/%02x", id))
 }
