@@ -104,7 +104,7 @@ func TestFailurePolicySuppressesSameStateAndExpiresOnWorldChange(t *testing.T) {
 	}
 
 	changed := obs
-	changed.Money++
+	changed.X++
 	got = policy.filter(changed, []Objective{failed, other})
 	if len(got) != 2 {
 		t.Fatalf("changed-state filter = %+v, want both objectives", got)
@@ -126,8 +126,8 @@ func TestRecoverableFailureFingerprintChangesWithRelevantState(t *testing.T) {
 	obj := Objective{Kind: KindGoTo, Place: "route 1"}
 	a := ObjectiveResult{Objective: obj, Outcome: OutcomeBlocked, Cause: "navigation_stalled", Final: Observation{Location: "viridian city", X: 1, Y: 2, Controllable: true, Money: 100}}
 	b := a
-	b.Final.Money = 200
+	b.Final.X++
 	if recoverableFailureKey(obj, a) == recoverableFailureKey(obj, b) {
-		t.Fatal("money change did not change failure state fingerprint")
+		t.Fatal("position change did not change travel failure state fingerprint")
 	}
 }
