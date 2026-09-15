@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"sort"
@@ -325,6 +326,31 @@ func (s *statsPlanner) recordCall(call agent.LLMCall) {
 		s.stats.StrategicCalls++
 		s.stats.StrategicSeconds += took.Seconds()
 		s.stats.StrategicAvgSeconds = s.stats.StrategicSeconds / float64(s.stats.StrategicCalls)
+		observation, _ := json.Marshal(obs)
+		record := farm.StrategicCallRecord{
+			Observation:      observation,
+			Offered:          append([]string(nil), call.OfferedObjectives...),
+			ReplanReason:     call.ReplanReason,
+			PlanGoal:         call.Plan.Goal,
+			PlanSteps:        append([]string(nil), call.Plan.Steps...),
+			Rejected:         err != nil,
+			DurationSeconds:  took.Seconds(),
+			Backend:          s.stats.Backend,
+			Model:            s.stats.Model,
+			PromptTokens:     s.stats.LastPromptTokens,
+			CompletionTokens: s.stats.LastCompletionTokens,
+			PrefillTPS:       s.stats.PrefillTPS,
+			DecodeTPS:        s.stats.DecodeTPS,
+		}
+		if err != nil {
+			record.Error = err.Error()
+		}
+		const maxStrategicRecords = 64
+		if len(s.stats.StrategicRecords) < maxStrategicRecords {
+			s.stats.StrategicRecords = append(s.stats.StrategicRecords, record)
+		} else {
+			s.stats.StrategicRecordsDropped++
+		}
 		s.publish()
 		return
 	}

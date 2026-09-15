@@ -99,9 +99,10 @@ func main() {
 		log.Printf("pokewall listening on http://%s (dumps in %s)", *httpAddr, *dumpsDir)
 	}
 
+	baseHandler := wall.outcomesCompatibility(wall.catalogOperatorCompatibility(wall.catalogHTTPHandler(runtimeOperatorHTTPHandler(wall))))
 	server := &http.Server{
 		Addr:              *httpAddr,
-		Handler:           wall.outcomesCompatibility(wall.catalogOperatorCompatibility(wall.catalogHTTPHandler(runtimeOperatorHTTPHandler(wall)))),
+		Handler:           modelExperimentHTTPHandler(wall, baseHandler),
 		ReadHeaderTimeout: serverReadHeaderTimeout,
 		IdleTimeout:       serverIdleTimeout,
 	}

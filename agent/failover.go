@@ -9,13 +9,15 @@ import (
 // primary transport failure followed by a fallback therefore produces two
 // calls; a model-reply retry is likewise one call each time Run re-asks.
 type LLMCall struct {
-	Observation Observation
-	Offered     int
-	Objective   Objective
-	Plan        Plan
-	Strategic   bool
-	Err         error
-	Duration    time.Duration
+	Observation       Observation
+	Offered           int
+	OfferedObjectives []string
+	ReplanReason      string
+	Objective         Objective
+	Plan              Plan
+	Strategic         bool
+	Err               error
+	Duration          time.Duration
 }
 
 // LLMRoute is the endpoint used for the most recent ask and the number of
@@ -106,12 +108,14 @@ func (p *FailoverPlanner) callPlan(active *LLMPlanner, obs Observation, offered 
 	}
 	if p.OnCall != nil {
 		p.OnCall(LLMCall{
-			Observation: obs,
-			Offered:     len(offered),
-			Plan:        plan,
-			Strategic:   true,
-			Err:         err,
-			Duration:    time.Since(start),
+			Observation:       obs,
+			Offered:           len(offered),
+			OfferedObjectives: objectiveStrings(offered),
+			ReplanReason:      reason,
+			Plan:              plan,
+			Strategic:         true,
+			Err:               err,
+			Duration:          time.Since(start),
 		})
 	}
 	return plan, err, active.Health.Transport > beforeTransport
@@ -199,4 +203,12 @@ func (p *FailoverPlanner) Health() LLMHealth {
 func (p *FailoverPlanner) Usage() (prompt, completion int) {
 	h := p.Health()
 	return h.PromptTokens, h.CompletionTokens
+}
+
+func objectiveStrings(offered []Objective) []string {
+	out := make([]string, len(offered))
+	for i := range offered {
+		out[i] = offered[i].String()
+	}
+	return out
 }

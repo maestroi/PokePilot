@@ -23,6 +23,15 @@ type Spec struct {
 	// never how. Empty means no goal (the pre-Goal prompt).
 	Goal       string `json:"goal,omitempty"`
 	LLMProfile string `json:"llm_profile,omitempty"`
+	// LLMDeployment is the first-class deployment selection. LLMProfile is
+	// retained only as a compatibility adapter for older queued runs/runners.
+	LLMDeployment string             `json:"llm_deployment,omitempty"`
+	Inference     *InferenceIdentity `json:"inference,omitempty"`
+	// Paired experiment identity is optional for ordinary runs. Case is shared
+	// by the A/B pair for one seed.
+	ExperimentID   string `json:"experiment_id,omitempty"`
+	ExperimentArm  string `json:"experiment_arm,omitempty"`
+	ExperimentCase string `json:"experiment_case,omitempty"`
 	// ReasoningEffort overrides the strategist's reasoning_effort field for
 	// this run: "low", "medium", or "high". Empty means the endpoint's
 	// configured default (POKEPILOT_LLM_REASONING_EFFORT, or "medium").
@@ -195,17 +204,19 @@ type LLMStats struct {
 	Intent    string `json:"intent"`
 	IntentAge int    `json:"intent_age"`
 
-	StrategicCalls   int            `json:"strategic_calls,omitempty"`
-	FastCalls        int            `json:"fast_calls,omitempty"`
-	PlanExecutions   int            `json:"plan_executions,omitempty"`
-	StepsSkipped     int            `json:"steps_skipped,omitempty"`
-	PlanGoal         string         `json:"plan_goal,omitempty"`
-	PlanSteps        []string       `json:"plan_steps,omitempty"`
-	PlanStep         int            `json:"plan_step,omitempty"`
-	PlanRound        int            `json:"plan_round,omitempty"`
-	LastReplanReason string         `json:"last_replan_reason,omitempty"`
-	ReplanReasons    map[string]int `json:"replan_reasons,omitempty"`
-	StrategicSeconds float64        `json:"strategic_seconds,omitempty"`
+	StrategicCalls          int                   `json:"strategic_calls,omitempty"`
+	FastCalls               int                   `json:"fast_calls,omitempty"`
+	PlanExecutions          int                   `json:"plan_executions,omitempty"`
+	StepsSkipped            int                   `json:"steps_skipped,omitempty"`
+	PlanGoal                string                `json:"plan_goal,omitempty"`
+	PlanSteps               []string              `json:"plan_steps,omitempty"`
+	PlanStep                int                   `json:"plan_step,omitempty"`
+	PlanRound               int                   `json:"plan_round,omitempty"`
+	LastReplanReason        string                `json:"last_replan_reason,omitempty"`
+	ReplanReasons           map[string]int        `json:"replan_reasons,omitempty"`
+	StrategicSeconds        float64               `json:"strategic_seconds,omitempty"`
+	StrategicRecords        []StrategicCallRecord `json:"strategic_records,omitempty"`
+	StrategicRecordsDropped int                   `json:"strategic_records_dropped,omitempty"`
 
 	// Goal* is present only when LLMPlanner.Goal opted into the structured
 	// deterministic syntax. Summary is the human/model-facing status; the

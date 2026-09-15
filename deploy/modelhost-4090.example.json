@@ -1,0 +1,38 @@
+{
+  "host_id": "inference-4090",
+  "compute": "RTX 4090",
+  "listen": ":8091",
+  "token_env": "POKEPILOT_MODELHOST_TOKEN",
+  "load_timeout": "3m",
+  "poll_every": "500ms",
+  "models": [
+    {
+      "deployment_id": "qwen35-4b-4090",
+      "model_id": "qwen3.5-4b",
+      "revision": "replace-with-model-revision-or-sha256",
+      "artifact": "/srv/models/qwen3.5-4b/model.gguf",
+      "quantization": "replace-with-quantization",
+      "endpoint": "http://127.0.0.1:8002/v1",
+      "health_url": "http://127.0.0.1:8002/v1/models",
+      "api_model": "pokepilot-4090",
+      "engine": "llama.cpp",
+      "engine_version": "replace-with-server-version",
+      "command": "/usr/local/bin/llama-server",
+      "args": ["-m", "/srv/models/qwen3.5-4b/model.gguf", "--alias", "pokepilot-4090", "--host", "0.0.0.0", "--port", "8002"]
+    },
+    {
+      "deployment_id": "qwen35-9b-4090",
+      "model_id": "qwen3.5-9b",
+      "revision": "replace-with-model-revision-or-sha256",
+      "artifact": "/srv/models/qwen3.5-9b/model.gguf",
+      "quantization": "replace-with-quantization",
+      "endpoint": "http://127.0.0.1:8002/v1",
+      "health_url": "http://127.0.0.1:8002/v1/models",
+      "api_model": "pokepilot-4090",
+      "engine": "llama.cpp",
+      "engine_version": "replace-with-server-version",
+      "command": "/usr/local/bin/llama-server",
+      "args": ["-m", "/srv/models/qwen3.5-9b/model.gguf", "--alias", "pokepilot-4090", "--host", "0.0.0.0", "--port", "8002"]
+    }
+  ]
+}
