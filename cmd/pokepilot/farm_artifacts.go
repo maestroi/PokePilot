@@ -375,7 +375,7 @@ func evictObjectiveCheckpoints(dir string, keep int) error {
 			knowledge[knowledgeBase(name)+".state"] = name
 		}
 	}
-	sort.Strings(states)
+	sortByFrame(states)
 	drop := len(states) - keep
 	if drop <= 0 {
 		return nil
@@ -387,6 +387,26 @@ func evictObjectiveCheckpoints(dir string, keep int) error {
 		}
 	}
 	return nil
+}
+
+// objectiveFrame is the cumulative emulator frame embedded in an objective
+// checkpoint name. Round numbers restart on every resume, so a carried-over
+// resume source (round-041) can sort after the attempt's own newer rounds
+// (round-016) while holding an older frame; the frame is the only monotonic
+// progress signal in the name. Non-objective names parse as frame 0 and sort
+// first, which keeps them out of "latest" selection.
+func objectiveFrame(name string) uint64 {
+	var round, frame int
+	_, _ = fmt.Sscanf(name, "round-%d-frame-%d-", &round, &frame)
+	return uint64(frame)
+}
+
+// sortByFrame orders objective checkpoints by progress. Stable, so equal
+// frames keep filename order.
+func sortByFrame(names []string) {
+	sort.SliceStable(names, func(i, j int) bool {
+		return objectiveFrame(names[i]) < objectiveFrame(names[j])
+	})
 }
 
 func evictPeriodicCheckpoints(dir string, keep int) error {
@@ -431,7 +451,7 @@ func latestObjectiveState(dir string) string {
 	if len(states) == 0 {
 		return ""
 	}
-	sort.Strings(states)
+	sortByFrame(states)
 	return states[len(states)-1]
 }
 
