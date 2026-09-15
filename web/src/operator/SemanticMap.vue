@@ -1,11 +1,19 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { MapSprite } from '../shared/api/types'
+
+interface MapWarp {
+  x: number
+  y: number
+  dest: number
+}
 
 interface MapPayload {
   width?: number
   height?: number
   cells?: string | string[]
+  warps?: MapWarp[]
+  connections?: string[]
   fallback?: boolean
 }
 
@@ -15,18 +23,28 @@ const props = withDefaults(defineProps<{
   y?: number
   trail?: [number, number][]
   sprites?: MapSprite[]
+  debug?: boolean
 }>(), {
   map: 0,
   x: 0,
   y: 0,
   trail: () => [],
-  sprites: () => []
+  sprites: () => [],
+  debug: false
 })
 
 const frame = ref<HTMLElement | null>(null)
 const canvas = ref<HTMLCanvasElement | null>(null)
 const loading = ref(false)
 const error = ref('')
+let savedDebug = false
+try {
+  savedDebug = window.localStorage.getItem('pokepilot.map.debug') === '1'
+} catch {
+  // Storage may be unavailable in hardened/private browser contexts.
+}
+const localDebug = ref(new URLSearchParams(window.location.search).get('debug') === '1' || savedDebug)
+const debugEnabled = computed(() => props.debug || localDebug.value)
 let payload: MapPayload | null = null
 let serial = 0
 let observer: ResizeObserver | null = null
@@ -50,6 +68,26 @@ function token(name: string, fallback: string): string {
   return value || fallback
 }
 
+function hexByte(value: unknown): string {
+  const n = Number(value)
+  return Number.isFinite(n) ? Math.max(0, n).toString(16).padStart(2, '0').slice(-2).toUpperCase() : '--'
+}
+
+function drawDebugText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, px: number): void {
+  const fontSize = Math.max(7, Math.floor(px * 0.38))
+  ctx.font = `700 ${fontSize}px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  const metrics = ctx.measureText(text)
+  const padX = Math.max(2, Math.floor(px * 0.12))
+  const boxW = metrics.width + padX * 2
+  const boxH = fontSize + 3
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.82)'
+  ctx.fillRect(x - boxW / 2, y - boxH / 2, boxW, boxH)
+  ctx.fillStyle = '#f8fbff'
+  ctx.fillText(text, x, y + 0.5)
+}
+
 function draw(): void {
   const node = canvas.value
   const box = frame.value
@@ -63,7 +101,8 @@ function draw(): void {
   const availH = Math.max(1, box.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom))
   if (availW < 8 || availH < 8) return
 
-  const px = Math.max(6, Math.floor(Math.min(availW / width, availH / height)))
+  const fitPx = Math.floor(Math.min(availW / width, availH / height))
+  const px = Math.max(debugEnabled.value ? 18 : 6, fitPx)
   node.width = width * px
   node.height = height * px
   const ctx = node.getContext('2d')
@@ -91,6 +130,28 @@ function draw(): void {
         ctx.lineWidth = Math.max(1, Math.floor(px / 4))
         ctx.strokeRect(x * px + 1, y * px + 1, Math.max(1, px - 2), Math.max(1, px - 2))
       }
+    }
+  }
+
+  if (debugEnabled.value) {
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.10)'
+    ctx.lineWidth = 1
+    ctx.beginPath()
+    for (let x = 1; x < width; x++) {
+      ctx.moveTo(x * px + 0.5, 0)
+      ctx.lineTo(x * px + 0.5, height * px)
+    }
+    for (let y = 1; y < height; y++) {
+      ctx.moveTo(0, y * px + 0.5)
+      ctx.lineTo(width * px, y * px + 0.5)
+    }
+    ctx.stroke()
+
+    for (const warp of data.warps || []) {
+      const x = Number(warp.x)
+      const y = Number(warp.y)
+      if (x < 0 || y < 0 || x >= width || y >= height) continue
+      drawDebugText(ctx, `→${hexByte(warp.dest)}`, (x + 0.5) * px, (y + 0.5) * px, px)
     }
   }
 
@@ -122,6 +183,11 @@ function draw(): void {
     const pad = Math.max(1, Math.floor(px / 4))
     ctx.fillStyle = colors.sprite
     ctx.fillRect(x * px + pad, y * px + pad, Math.max(2, px - pad * 2), Math.max(2, px - pad * 2))
+    if (debugEnabled.value) {
+      const slot = Number(sprite.slot)
+      const slotLabel = Number.isFinite(slot) && slot > 0 ? String(slot) : '?'
+      drawDebugText(ctx, `S${slotLabel}/${hexByte(sprite.picture_id)}`, (x + 0.5) * px, (y + 0.5) * px, px)
+    }
   }
 
   const playerX = Number(props.x || 0)
@@ -131,6 +197,9 @@ function draw(): void {
     ctx.beginPath()
     ctx.arc((playerX + 0.5) * px, (playerY + 0.5) * px, Math.max(2, px * 0.42), 0, Math.PI * 2)
     ctx.fill()
+    if (debugEnabled.value) {
+      drawDebugText(ctx, `@${playerX},${playerY}`, (playerX + 0.5) * px, (playerY + 0.5) * px, px)
+    }
   }
 }
 
@@ -155,7 +224,14 @@ async function loadMap(): Promise<void> {
 }
 
 watch(() => props.map, () => { void loadMap() }, { immediate: true })
-watch([() => props.x, () => props.y, () => props.trail, () => props.sprites], () => requestAnimationFrame(draw), { deep: true })
+watch([() => props.x, () => props.y, () => props.trail, () => props.sprites, () => debugEnabled.value], () => requestAnimationFrame(draw), { deep: true })
+watch(localDebug, (enabled) => {
+  try {
+    window.localStorage.setItem('pokepilot.map.debug', enabled ? '1' : '0')
+  } catch {
+    // Debug mode still works for the current page when storage is unavailable.
+  }
+})
 
 onMounted(() => {
   observer = new ResizeObserver(() => requestAnimationFrame(draw))
@@ -172,9 +248,35 @@ onUnmounted(() => {
 <template>
   <div
     ref="frame"
-    class="relative grid h-full min-h-0 w-full place-items-center overflow-hidden bg-[#0c1118] p-1.5"
+    :class="[
+      debugEnabled ? 'place-items-start overflow-auto' : 'place-items-center overflow-hidden',
+      'relative grid h-full min-h-0 w-full bg-[#0c1118] p-1.5'
+    ]"
   >
-    <canvas ref="canvas" class="max-h-full max-w-full [image-rendering:pixelated]" aria-label="Semantic map" />
+    <canvas
+      ref="canvas"
+      :class="[
+        debugEnabled ? 'max-w-none' : 'max-h-full max-w-full',
+        'shrink-0 [image-rendering:pixelated]'
+      ]"
+      aria-label="Semantic map"
+    />
+    <button
+      type="button"
+      :aria-pressed="debugEnabled"
+      :title="debugEnabled ? 'Hide map debug labels' : 'Show map debug labels'"
+      :class="[
+        debugEnabled ? 'bg-[var(--poke-cyan)] text-[#101820]' : 'bg-black/75 text-[var(--poke-muted)] hover:text-white',
+        'absolute top-2 right-2 z-10 rounded-sm px-1.5 py-0.5 font-mono text-[9px] font-bold ring-1 ring-white/10'
+      ]"
+      @click="localDebug = !localDebug"
+    >
+      {{ debugEnabled ? 'DEBUG ON' : 'DEBUG' }}
+    </button>
+    <div v-if="debugEnabled" class="pointer-events-none absolute bottom-2 left-2 z-10 bg-black/80 px-1.5 py-1 font-mono text-[9px] leading-3 text-[var(--poke-muted)] ring-1 ring-white/10">
+      <div><span class="text-white">S#/PP</span> sprite slot / picture ID</div>
+      <div><span class="text-white">→MM</span> warp destination map</div>
+    </div>
     <div v-if="loading" class="pointer-events-none absolute right-1.5 bottom-1.5 bg-black/70 px-1.5 py-0.5 text-[10px] text-[var(--poke-muted)]">Loading map…</div>
     <div v-else-if="error" class="pointer-events-none absolute right-1.5 bottom-1.5 max-w-[80%] bg-[#352529] px-1.5 py-0.5 text-[10px] text-[#e4b5b7]">{{ error }}</div>
   </div>
