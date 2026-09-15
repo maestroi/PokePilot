@@ -148,7 +148,7 @@ func gymOutcomeErr(o Objective, outcome state.BattleResult) error {
 	if outcome == state.ResultWon {
 		return nil
 	}
-	return fmt.Errorf("agent: %s: lost to the gym leader (blacked out to the center)", o)
+	return fmt.Errorf("agent: %s: %w (blacked out to the center)", o, errGymLeaderLost)
 }
 
 func catchOutcomeName(o skill.CatchOutcome) string {

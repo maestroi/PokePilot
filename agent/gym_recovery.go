@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"errors"
 	"sort"
 	"strings"
 )
@@ -31,11 +32,12 @@ func legacyGymLossFailureKey(place string) string {
 	return legacyGymLossFailurePrefix + strings.ToUpper(place)
 }
 
+// gymLossFailureName is a compatibility adapter for legacy direct callers of
+// Knowledge.Failed. Live Run records gym losses from ObjectiveResult.Battle via
+// FailedResult; this path recognizes only the typed sentinel emitted by
+// gymOutcomeErr and never infers semantics from error prose.
 func gymLossFailureName(o Objective, err error) (string, bool) {
-	if o.Kind != KindGym || o.Place == "" || err == nil {
-		return "", false
-	}
-	if !strings.Contains(err.Error(), "lost to the gym leader") {
+	if o.Kind != KindGym || o.Place == "" || !errors.Is(err, errGymLeaderLost) {
 		return "", false
 	}
 	return gymLossFailureKey(o.Place), true
