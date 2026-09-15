@@ -28,13 +28,15 @@ func TestKnowledgeTopologySupportsNonByteSemanticLocations(t *testing.T) {
 }
 
 func TestMemoryV6SerializationIsDeterministic(t *testing.T) {
+	mapA := LocationID("region/bank-1/map-a")
+	mapB := LocationID("region/bank-2/map-b")
 	topology := KnowledgeTopology{Adjacency: map[LocationID][]LocationID{
-		"region/bank-2/map-b": {"region/bank-1/map-a"},
-		"region/bank-1/map-a": {"region/bank-2/map-b"},
+		mapB: {mapA},
+		mapA: {mapB},
 	}}
 	build := func(reverse bool) *Knowledge {
 		k := NewKnowledge(topology)
-		locations := []LocationID{"region/bank-1/map-a", "region/bank-2/map-b"}
+		locations := []LocationID{mapA, mapB}
 		places := []string{"beta place", "alpha place"}
 		if reverse {
 			locations[0], locations[1] = locations[1], locations[0]
@@ -46,8 +48,9 @@ func TestMemoryV6SerializationIsDeterministic(t *testing.T) {
 		for _, place := range places {
 			k.Places[place] = true
 		}
-		k.TalkedAt(locations[0], 8, 4)
-		k.TalkedAt(locations[1], 2, 9)
+		// Keep semantic content fixed while only changing insertion order above.
+		k.TalkedAt(mapA, 8, 4)
+		k.TalkedAt(mapB, 2, 9)
 		k.Completed["z-objective"] = 2
 		k.Completed["a-objective"] = 1
 		k.Failures["z-failure"] = Failure{Objective: "z", Times: 2, Last: "later"}
