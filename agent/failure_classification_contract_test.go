@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/skill"
 )
 
@@ -63,7 +64,7 @@ func TestTrainerLossClassificationRequiresTypedOrStructuredCause(t *testing.T) {
 
 func TestGymOutcomeErrorCarriesTypedLossSignal(t *testing.T) {
 	gym := Objective{Kind: KindGym, Place: "pewter gym"}
-	err := gymOutcomeErr(gym, 2) // state.ResultLost; keep this test independent of prose.
+	err := gymOutcomeErr(gym, state.ResultLost)
 	if err == nil {
 		t.Fatal("lost gym battle returned nil")
 	}
