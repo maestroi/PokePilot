@@ -119,7 +119,7 @@ func redNativeMapForLocation(known *Knowledge, location LocationID) (uint8, bool
 			if semantic == location {
 				return native, true
 			}
-	}
+		}
 	}
 	for i := 0; i <= 0xff; i++ {
 		id := uint8(i)
