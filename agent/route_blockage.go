@@ -45,9 +45,13 @@ type routeReachability interface {
 
 type routePrerequisiteLinker func(CapabilityID) (RoutePrerequisiteLink, bool)
 
-func collectRouteAvailability(planner routeReachability, names []string, link routePrerequisiteLinker) routeAvailability {
+func collectRouteAvailability(planner routeReachability, names []string, links ...routePrerequisiteLinker) routeAvailability {
 	if planner == nil {
 		return routeAvailability{}
+	}
+	var link routePrerequisiteLinker
+	if len(links) > 0 {
+		link = links[0]
 	}
 	names = append([]string(nil), names...)
 	sort.Strings(names)
@@ -78,10 +82,14 @@ func collectRouteAvailability(planner routeReachability, names []string, link ro
 	return out
 }
 
-func plannerRouteBlockage(destination PlaceID, blocked *world.RouteBlockedError, link routePrerequisiteLinker) RouteBlockage {
+func plannerRouteBlockage(destination PlaceID, blocked *world.RouteBlockedError, links ...routePrerequisiteLinker) RouteBlockage {
 	result := RouteBlockage{Destination: destination, Transitions: []string{}, Missing: []CapabilityID{}}
 	if blocked == nil {
 		return result
+	}
+	var link routePrerequisiteLinker
+	if len(links) > 0 {
+		link = links[0]
 	}
 	transitionSeen := map[string]bool{}
 	missingSeen := map[CapabilityID]bool{}
