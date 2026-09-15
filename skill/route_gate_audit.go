@@ -30,9 +30,9 @@ const (
 	route16Gate1FMap uint8 = 0xBA
 	route18Gate1FMap uint8 = 0xBE
 
-	celadonMart5FMap                 uint8 = 0x88
-	celadonInaccessibleMartWarpX     uint8 = 39
-	celadonInaccessibleMartWarpY     uint8 = 19
+	celadonMart5FMap             uint8 = 0x88
+	celadonInaccessibleMartWarpX uint8 = 39
+	celadonInaccessibleMartWarpY uint8 = 19
 
 	eventFightRoute16Snorlax state.Event = 0x4C8
 	eventBeatRoute16Snorlax  state.Event = 0x4C9
