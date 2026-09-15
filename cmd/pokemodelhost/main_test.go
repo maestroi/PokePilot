@@ -119,3 +119,39 @@ func TestLifecycleBearerAuth(t *testing.T) {
 		t.Fatalf("authorized status = %d", resp.StatusCode)
 	}
 }
+
+func TestLifecycleEnforcesParallelWorkerLimit(t *testing.T) {
+	health := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
+	defer health.Close()
+	service, err := newLifecycleService(hostConfig{
+		HostID: "gpu", Compute: "test", PollEvery: "1ms", LoadTimeout: "1s",
+		Models: []hostModel{{DeploymentID: "m", ModelID: "m", Endpoint: health.URL, HealthURL: health.URL, APIModel: "m", MaxParallelWorkers: 2}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(service.handler())
+	defer server.Close()
+	acquire := func(run string) int {
+		data, _ := json.Marshal(leaseRequest{RunID: run, DeploymentID: "m", MaxParallelWorkers: 2})
+		resp, err := http.Post(server.URL+"/v1/leases/acquire", "application/json", bytes.NewReader(data))
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	if code := acquire("one"); code != http.StatusAccepted {
+		t.Fatalf("first acquire = %d", code)
+	}
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) && service.status().State != "ready" {
+		time.Sleep(time.Millisecond)
+	}
+	if code := acquire("two"); code != http.StatusOK {
+		t.Fatalf("second acquire = %d", code)
+	}
+	if code := acquire("three"); code != http.StatusTooManyRequests {
+		t.Fatalf("third acquire = %d, want 429", code)
+	}
+}

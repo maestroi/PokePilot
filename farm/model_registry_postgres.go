@@ -26,10 +26,13 @@ CREATE TABLE IF NOT EXISTS model_deployments (
 	engine TEXT NOT NULL DEFAULT '',
 	engine_version TEXT NOT NULL DEFAULT '',
 	engine_config TEXT NOT NULL DEFAULT '',
+	max_parallel_workers INTEGER NOT NULL DEFAULT 1,
 	legacy_profile TEXT NOT NULL DEFAULT '',
 	created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 	updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+ALTER TABLE model_deployments
+	ADD COLUMN IF NOT EXISTS max_parallel_workers INTEGER NOT NULL DEFAULT 1;
 CREATE INDEX IF NOT EXISTS model_deployments_enabled_compute_idx
 	ON model_deployments(enabled, compute, label, id);
 `
@@ -66,7 +69,7 @@ func loadModelRegistryPostgres(dsn string) (ModelRegistry, error) {
 	rows, err := db.Query(`
 SELECT id, label, model_id, revision, artifact, quantization, compute, endpoint,
        api_model, enabled, control_url, token_env, engine, engine_version,
-       engine_config, legacy_profile
+       engine_config, max_parallel_workers, legacy_profile
 FROM model_deployments
 ORDER BY compute, label, id`)
 	if err != nil {
@@ -81,7 +84,7 @@ ORDER BY compute, label, id`)
 			&d.ID, &d.Label, &d.ModelID, &d.Revision, &d.Artifact,
 			&d.Quantization, &d.Compute, &d.Endpoint, &d.APIModel, &d.Enabled,
 			&d.ControlURL, &d.TokenEnv, &d.Engine, &d.EngineVersion,
-			&d.EngineConfig, &d.LegacyProfile,
+			&d.EngineConfig, &d.MaxParallelWorkers, &d.LegacyProfile,
 		); err != nil {
 			return ModelRegistry{}, fmt.Errorf("scan model registry postgres: %w", err)
 		}

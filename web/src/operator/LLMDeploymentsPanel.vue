@@ -23,11 +23,11 @@ function loadedNote(deployment: (typeof deployments.value)[number]): string {
   if (deployment.loaded_deployment && deployment.loaded_deployment !== deployment.id) {
     return `currently loaded: ${deployment.loaded_deployment}`
   }
-  if (deployment.active_leases) {
-    const noun = deployment.active_leases === 1 ? 'lease' : 'leases'
-    return `${deployment.active_leases} active ${noun}`
-  }
-  return ''
+  const active = Number(deployment.active_leases || 0)
+  const limit = Number(deployment.max_parallel_workers || 1)
+  const queued = Number(deployment.queued || 0)
+  const queueNote = queued ? ` · ${queued} queued` : ''
+  return `${active}/${limit} workers${queueNote}`
 }
 </script>
 
@@ -63,7 +63,7 @@ function loadedNote(deployment: (typeof deployments.value)[number]): string {
           </div>
         </li>
       </ul>
-      <p class="mt-3 text-[11px] text-slate-600">Busy hosts keep incompatible runs queued. Loading finishes before a worker lease is handed out.</p>
+      <p class="mt-3 text-[11px] text-slate-600">Each deployment queues above its worker cap instead of oversubscribing inference. Free capacity on other models keeps leasing independently.</p>
     </ResourceState>
   </Panel>
 </template>

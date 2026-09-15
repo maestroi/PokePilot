@@ -2,8 +2,9 @@ package farm
 
 // ExperimentArm identifies one deployment in a paired benchmark.
 type ExperimentArm struct {
-	Name       string `json:"name"`
-	Deployment string `json:"deployment"`
+	Name               string `json:"name"`
+	Deployment         string `json:"deployment"`
+	MaxParallelWorkers int    `json:"max_parallel_workers,omitempty"`
 }
 
 // ExperimentRequest is the operator wire contract for creating matched A/B
@@ -38,17 +39,18 @@ type ExperimentRunMeta struct {
 // is hashed by the wall; equality means the two arms differed only in model
 // deployment/identity.
 type ComparableRunConfig struct {
-	GitRevision     string `json:"git_revision,omitempty"`
-	ROMIdentity     string `json:"rom_identity,omitempty"`
-	PromptIdentity  string `json:"prompt_identity,omitempty"`
-	Seed            int64  `json:"seed"`
-	Starter         string `json:"starter,omitempty"`
-	Goal            string `json:"goal"`
-	PlayStyle       string `json:"play_style,omitempty"`
-	RiskTolerance   string `json:"risk_tolerance,omitempty"`
-	WildEncounters  string `json:"wild_encounters,omitempty"`
-	ReasoningEffort string `json:"reasoning_effort,omitempty"`
-	FPS             int    `json:"fps,omitempty"`
-	MaxRounds       int    `json:"max_rounds,omitempty"`
-	MaxFrames       int    `json:"max_frames,omitempty"`
+	GitRevision        string `json:"git_revision,omitempty"`
+	ROMIdentity        string `json:"rom_identity,omitempty"`
+	PromptIdentity     string `json:"prompt_identity,omitempty"`
+	Seed               int64  `json:"seed"`
+	Starter            string `json:"starter,omitempty"`
+	Goal               string `json:"goal"`
+	PlayStyle          string `json:"play_style,omitempty"`
+	RiskTolerance      string `json:"risk_tolerance,omitempty"`
+	WildEncounters     string `json:"wild_encounters,omitempty"`
+	ReasoningEffort    string `json:"reasoning_effort,omitempty"`
+	FPS                int    `json:"fps,omitempty"`
+	MaxRounds          int    `json:"max_rounds,omitempty"`
+	MaxFrames          int    `json:"max_frames,omitempty"`
+	MaxParallelWorkers int    `json:"max_parallel_workers,omitempty"`
 }

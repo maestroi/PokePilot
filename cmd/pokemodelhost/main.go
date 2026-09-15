@@ -31,34 +31,36 @@ type hostConfig struct {
 }
 
 type hostModel struct {
-	DeploymentID string            `json:"deployment_id"`
-	ModelID      string            `json:"model_id"`
-	Revision     string            `json:"revision,omitempty"`
-	Artifact     string            `json:"artifact,omitempty"`
-	Quantization string            `json:"quantization,omitempty"`
-	Endpoint     string            `json:"endpoint"`
-	HealthURL    string            `json:"health_url,omitempty"`
-	APIModel     string            `json:"api_model"`
-	Engine       string            `json:"engine,omitempty"`
-	Version      string            `json:"engine_version,omitempty"`
-	Command      string            `json:"command,omitempty"`
-	Args         []string          `json:"args,omitempty"`
-	Env          map[string]string `json:"env,omitempty"`
+	DeploymentID       string            `json:"deployment_id"`
+	ModelID            string            `json:"model_id"`
+	Revision           string            `json:"revision,omitempty"`
+	Artifact           string            `json:"artifact,omitempty"`
+	Quantization       string            `json:"quantization,omitempty"`
+	Endpoint           string            `json:"endpoint"`
+	HealthURL          string            `json:"health_url,omitempty"`
+	APIModel           string            `json:"api_model"`
+	Engine             string            `json:"engine,omitempty"`
+	Version            string            `json:"engine_version,omitempty"`
+	MaxParallelWorkers int               `json:"max_parallel_workers,omitempty"`
+	Command            string            `json:"command,omitempty"`
+	Args               []string          `json:"args,omitempty"`
+	Env                map[string]string `json:"env,omitempty"`
 }
 
 type hostStatus struct {
-	HostID       string     `json:"host_id"`
-	Compute      string     `json:"compute"`
-	State        string     `json:"state"`
-	DeploymentID string     `json:"deployment_id,omitempty"`
-	ModelID      string     `json:"model_id,omitempty"`
-	Endpoint     string     `json:"endpoint,omitempty"`
-	APIModel     string     `json:"api_model,omitempty"`
-	Health       string     `json:"health"`
-	ActiveLeases int        `json:"active_leases"`
-	LeaseRunIDs  []string   `json:"lease_run_ids,omitempty"`
-	Error        string     `json:"error,omitempty"`
-	Since        *time.Time `json:"since,omitempty"`
+	HostID             string     `json:"host_id"`
+	Compute            string     `json:"compute"`
+	State              string     `json:"state"`
+	DeploymentID       string     `json:"deployment_id,omitempty"`
+	ModelID            string     `json:"model_id,omitempty"`
+	Endpoint           string     `json:"endpoint,omitempty"`
+	APIModel           string     `json:"api_model,omitempty"`
+	Health             string     `json:"health"`
+	ActiveLeases       int        `json:"active_leases"`
+	MaxParallelWorkers int        `json:"max_parallel_workers,omitempty"`
+	LeaseRunIDs        []string   `json:"lease_run_ids,omitempty"`
+	Error              string     `json:"error,omitempty"`
+	Since              *time.Time `json:"since,omitempty"`
 }
 
 type lifecycleService struct {
@@ -90,6 +92,9 @@ func newLifecycleService(cfg hostConfig) (*lifecycleService, error) {
 		}
 		if _, exists := models[id]; exists {
 			return nil, fmt.Errorf("duplicate deployment_id %q", id)
+		}
+		if model.MaxParallelWorkers < 0 {
+			return nil, fmt.Errorf("deployment %q has invalid max_parallel_workers %d", id, model.MaxParallelWorkers)
 		}
 		models[id] = model
 	}
@@ -154,8 +159,9 @@ type loadRequest struct {
 }
 
 type leaseRequest struct {
-	RunID        string `json:"run_id"`
-	DeploymentID string `json:"deployment_id"`
+	RunID              string `json:"run_id"`
+	DeploymentID       string `json:"deployment_id"`
+	MaxParallelWorkers int    `json:"max_parallel_workers,omitempty"`
 }
 
 func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
@@ -172,7 +178,7 @@ func (s *lifecycleService) handleLoad(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &in) {
 		return
 	}
-	status, code, err := s.requestLoad(strings.TrimSpace(in.DeploymentID), "")
+	status, code, err := s.requestLoad(strings.TrimSpace(in.DeploymentID), "", 0)
 	if err != nil {
 		writeJSON(w, code, map[string]any{"error": err.Error(), "status": status})
 		return
@@ -191,7 +197,7 @@ func (s *lifecycleService) handleAcquire(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "run_id is required"})
 		return
 	}
-	status, code, err := s.requestLoad(in.DeploymentID, in.RunID)
+	status, code, err := s.requestLoad(in.DeploymentID, in.RunID, in.MaxParallelWorkers)
 	if err != nil {
 		writeJSON(w, code, map[string]any{"error": err.Error(), "status": status})
 		return
@@ -215,13 +221,25 @@ func (s *lifecycleService) handleRelease(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, s.status())
 }
 
-func (s *lifecycleService) requestLoad(deploymentID, leaseRunID string) (hostStatus, int, error) {
+func (s *lifecycleService) requestLoad(deploymentID, leaseRunID string, requestedLimit int) (hostStatus, int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	model, ok := s.models[deploymentID]
 	if !ok {
 		status := s.statusLocked()
 		return status, http.StatusNotFound, fmt.Errorf("deployment %q is not approved on this host", deploymentID)
+	}
+	hardLimit := model.MaxParallelWorkers
+	if hardLimit <= 0 {
+		hardLimit = 1
+	}
+	limit := requestedLimit
+	if limit <= 0 {
+		limit = hardLimit
+	}
+	if limit > hardLimit {
+		status := s.statusLocked()
+		return status, http.StatusBadRequest, fmt.Errorf("deployment %q allows at most %d parallel worker(s)", deploymentID, hardLimit)
 	}
 	if current, ok := s.leases[leaseRunID]; leaseRunID != "" && ok && current != deploymentID {
 		status := s.statusLocked()
@@ -232,6 +250,10 @@ func (s *lifecycleService) requestLoad(deploymentID, leaseRunID string) (hostSta
 		return status, http.StatusConflict, fmt.Errorf("host busy: %d active run lease(s) use %q", len(s.leases), s.loaded)
 	}
 	if leaseRunID != "" {
+		if _, already := s.leases[leaseRunID]; !already && len(s.leases) >= limit {
+			status := s.statusLocked()
+			return status, http.StatusTooManyRequests, fmt.Errorf("deployment %q is at its %d-worker concurrency limit", deploymentID, limit)
+		}
 		s.leases[leaseRunID] = deploymentID
 	}
 	if s.loaded == deploymentID && (s.state == "ready" || s.state == "loading") {
@@ -352,6 +374,10 @@ func (s *lifecycleService) statusLocked() hostStatus {
 	}
 	if model, ok := s.models[s.loaded]; ok {
 		status.DeploymentID, status.ModelID, status.Endpoint, status.APIModel = model.DeploymentID, model.ModelID, model.Endpoint, model.APIModel
+		status.MaxParallelWorkers = model.MaxParallelWorkers
+		if status.MaxParallelWorkers <= 0 {
+			status.MaxParallelWorkers = 1
+		}
 	}
 	if s.state == "ready" {
 		status.Health = "ready"
