@@ -22,6 +22,7 @@ type recoveryStateScope uint8
 const (
 	recoveryStateScopeObjective recoveryStateScope = iota
 	recoveryStateScopeRoutePrerequisite
+	recoveryStateScopeTrainerBlackout
 )
 
 type failureQuarantineEntry struct {
@@ -146,18 +147,49 @@ func routePrerequisiteStateKey(obs Observation) string {
 	return fmt.Sprintf("%x", sum[:8])
 }
 
+// trainerBlackoutStateKey treats a trainer interception during travel as the
+// combat failure it actually is. Ordinary GoTo failures intentionally ignore
+// party drift, but a blackout can become retryable after training, evolution,
+// PP recovery, or other material party progress even when the destination and
+// route state are unchanged.
+func trainerBlackoutStateKey(obs Observation) string {
+	full := FailureStateFor(obs)
+	data, _ := json.Marshal(struct {
+		Party        []FailurePartyMember  `json:"party,omitempty"`
+		LeadPP       []uint8               `json:"lead_pp,omitempty"`
+		Badges       []string              `json:"badges,omitempty"`
+		Capabilities []FailureCapability   `json:"capabilities,omitempty"`
+		Progress     []FailureProgressFact `json:"progress,omitempty"`
+	}{
+		Party:        full.Party,
+		LeadPP:       append([]uint8(nil), obs.LeadPP...),
+		Badges:       full.Badges,
+		Capabilities: full.Capabilities,
+		Progress:     full.Progress,
+	})
+	sum := sha256.Sum256(data)
+	return fmt.Sprintf("%x", sum[:8])
+}
+
 func recoveryStateScopeFor(result ObjectiveResult) recoveryStateScope {
 	if failureCauseIs(result, "route_prerequisite_missing") {
 		return recoveryStateScopeRoutePrerequisite
+	}
+	if failureCauseIs(result, "trainer_blacked_out") {
+		return recoveryStateScopeTrainerBlackout
 	}
 	return recoveryStateScopeObjective
 }
 
 func recoveryStateKeyForScope(o Objective, obs Observation, scope recoveryStateScope) string {
-	if scope == recoveryStateScopeRoutePrerequisite {
+	switch scope {
+	case recoveryStateScopeRoutePrerequisite:
 		return routePrerequisiteStateKey(obs)
+	case recoveryStateScopeTrainerBlackout:
+		return trainerBlackoutStateKey(obs)
+	default:
+		return recoveryStateKey(o, obs)
 	}
-	return recoveryStateKey(o, obs)
 }
 
 // normalizedFailureKey fingerprints transaction phase, portable class, stable
