@@ -87,19 +87,23 @@ jobs:
           GH_REPO: ${{ github.repository }}
           REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
-          PR_TITLE: ${{ github.event.pull_request.title }}
           MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
         run: |
           set -euo pipefail
 
+          # Autonomous repair PRs traditionally put [triage:key] in the
+          # title, while manual/interactive repair PRs often keep it in the
+          # body. Both are part of the PR's repair contract, so scan both and
+          # deduplicate before matching generated farm issues.
+          pr_text="$(gh pr view "$PR" --json title,body --jq '[.title, (.body // "")] | join("\n")')"
           mapfile -t keys < <(
-            grep -oE '\[triage:[A-Za-z0-9._-]+\]' <<<"$PR_TITLE" \
+            grep -oE '\[triage:[A-Za-z0-9._-]+\]' <<<"$pr_text" \
               | sed -E 's/^\[triage:([^]]+)\]$/\1/' \
               | sort -u \
               || true
           )
           if (( ${#keys[@]} == 0 )); then
-            echo "PR #${PR} has no triage key; nothing to close."
+            echo "PR #${PR} has no triage key in its title or body; nothing to close."
             exit 0
           fi
 
