@@ -290,7 +290,87 @@ function activityTime(item: ActivityItem): string {
     </div>
 
     <div v-else-if="snapshot && !selectedRun" class="grid min-h-[65vh] place-items-center px-3 py-12">
-      <div class="max-w-xl text-center">
+      <div
+        v-if="selectionPinned && selectedRunID"
+        class="w-full max-w-3xl rounded-2xl border border-amber-300/20 bg-[#151922] p-5 shadow-2xl shadow-black/20 sm:p-7"
+      >
+        <div class="text-center">
+          <div class="mx-auto flex size-12 items-center justify-center rounded-full bg-amber-300/10 ring-1 ring-amber-300/20">
+            <span class="size-2.5 rounded-full bg-amber-300" />
+          </div>
+          <h2 class="mt-4 text-xl font-semibold text-white">This run is no longer available</h2>
+          <p class="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-400">
+            The selected session may have ended unexpectedly, been cleaned up, or be temporarily missing from the public spectator feed.
+          </p>
+          <div class="mx-auto mt-4 max-w-xl rounded-lg bg-black/20 px-3 py-2 ring-1 ring-white/8">
+            <div class="text-[9px] font-semibold tracking-[0.08em] text-slate-600 uppercase">Requested run</div>
+            <div class="mt-1 break-all font-mono text-[11px] text-slate-400">{{ selectedRunID }}</div>
+          </div>
+        </div>
+
+        <div v-if="groupedRuns.live.length || groupedRuns.recent.length" class="mt-6 grid gap-4 md:grid-cols-2">
+          <section v-if="groupedRuns.live.length">
+            <div class="mb-2 flex items-center justify-between gap-3">
+              <h3 class="text-xs font-semibold text-slate-300">Available now</h3>
+              <span class="text-[10px] text-slate-600">{{ groupedRuns.live.length }} run{{ groupedRuns.live.length === 1 ? '' : 's' }}</span>
+            </div>
+            <div class="space-y-1.5">
+              <button
+                v-for="run in groupedRuns.live.slice(0, 4)"
+                :key="run.run_id"
+                type="button"
+                class="w-full rounded-md bg-black/10 px-3 py-2 text-left ring-1 ring-white/8 transition-colors hover:bg-white/5 hover:ring-white/15"
+                @click="selectRun(run)"
+              >
+                <div class="flex items-center justify-between gap-3">
+                  <strong class="truncate text-xs text-slate-300">{{ runTitle(run) }}</strong>
+                  <StatusBadge :tone="runTone(run)">{{ runStatusLabel(run) }}</StatusBadge>
+                </div>
+                <div class="mt-1 flex items-center justify-between gap-3 text-[10px] text-slate-600">
+                  <span class="truncate">{{ routeLabel(run) }}</span>
+                  <span class="shrink-0 font-mono">{{ playSpeedLabel(run) }}</span>
+                </div>
+              </button>
+            </div>
+          </section>
+
+          <section v-if="groupedRuns.recent.length">
+            <div class="mb-2 flex items-center justify-between gap-3">
+              <h3 class="text-xs font-semibold text-slate-300">Recent runs</h3>
+              <span class="text-[10px] text-slate-600">{{ groupedRuns.recent.length }} saved</span>
+            </div>
+            <div class="space-y-1.5">
+              <button
+                v-for="run in groupedRuns.recent.slice(0, 4)"
+                :key="run.run_id"
+                type="button"
+                class="w-full rounded-md bg-black/10 px-3 py-2 text-left ring-1 ring-white/8 transition-colors hover:bg-white/5 hover:ring-white/15"
+                @click="selectRun(run)"
+              >
+                <div class="flex items-center justify-between gap-3">
+                  <strong class="truncate text-xs text-slate-300">{{ runTitle(run) }}</strong>
+                  <StatusBadge :tone="runTone(run)">{{ runStatusLabel(run) }}</StatusBadge>
+                </div>
+                <p class="mt-1 truncate text-[10px] text-slate-600">{{ shortRunID(run.run_id) }} · {{ routeLabel(run) }}</p>
+              </button>
+            </div>
+          </section>
+        </div>
+
+        <div v-else class="mt-6 rounded-lg border border-white/8 bg-black/10 px-4 py-4 text-center">
+          <p class="text-sm text-slate-400">No other public runs are available right now.</p>
+          <p class="mt-1 text-xs text-slate-600">The page will keep checking in case this session reappears or another run starts.</p>
+        </div>
+
+        <div class="mt-5 flex justify-center">
+          <button type="button" class="inline-flex items-center gap-2 rounded-md bg-white/8 px-3 py-2 text-sm font-semibold text-white ring-1 ring-white/10 hover:bg-white/12" @click="refresh">
+            <ArrowPathIcon class="size-4" aria-hidden="true" />
+            Refresh status
+          </button>
+        </div>
+      </div>
+
+      <div v-else class="max-w-xl text-center">
         <span class="mx-auto block size-2.5 animate-pulse rounded-full bg-cyan-300" />
         <h2 class="mt-4 text-xl font-semibold text-white">No public run is live yet</h2>
         <p class="mt-2 text-sm leading-6 text-slate-400">The page is connected and will pick up the next run automatically.</p>
