@@ -3,6 +3,7 @@ import { computed, reactive, ref, watch } from 'vue'
 import { PlayIcon } from '@heroicons/vue/20/solid'
 import { createExperiment, getExperiments, getModels } from '../shared/api/client'
 import type { ExperimentView, ModelDeployment } from '../shared/api/types'
+import { GOAL_OPTIONS } from '../shared/goals'
 import Panel from '../shared/components/Panel.vue'
 import ResourceState from '../shared/components/ResourceState.vue'
 import { usePollingResource } from '../shared/composables/usePollingResource'
@@ -168,7 +169,10 @@ const metrics = computed(() => {
       <div class="hidden xl:block"></div>
       <label class="block sm:col-span-2 xl:col-span-3">
         <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Goal</span>
-        <input v-model="form.goal" :class="fieldClass" />
+        <select v-model="form.goal" :class="fieldClass">
+          <option v-for="goal in GOAL_OPTIONS" :key="goal || 'free'" :value="goal">{{ goal || 'Free play (no automatic stop)' }}</option>
+        </select>
+        <span class="mt-1 block text-[10px] text-slate-600">Paired benchmarks keep the selected goal independent from starter and play-style choices.</span>
       </label>
       <label class="block">
         <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Starter</span>
