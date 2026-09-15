@@ -55,8 +55,8 @@ services:
 
   wall:
     environment:
-      # The existing model experiment controller calls farm.LoadModelRegistry;
-      # it now accepts this Postgres DSN in addition to a JSON file path.
-      # Keep the complete DSN in .env / ~/.config/pokepilot/env so passwords
-      # containing URL-special characters can be encoded correctly.
-      POKEPILOT_MODEL_REGISTRY: ${POKEPILOT_DATABASE_URL:?POKEPILOT_DATABASE_URL is required}
+      # The source value is intentionally credential-free because the existing
+      # startup error log includes it. farm.LoadModelRegistry resolves the real
+      # DSN from POKEPILOT_DATABASE_URL inside the process.
+      POKEPILOT_MODEL_REGISTRY: postgres-env://POKEPILOT_DATABASE_URL
+      POKEPILOT_DATABASE_URL: ${POKEPILOT_DATABASE_URL:?POKEPILOT_DATABASE_URL is required}
