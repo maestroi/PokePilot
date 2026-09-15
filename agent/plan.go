@@ -364,20 +364,6 @@ func (r *runPlanning) choose(log io.Writer, round int, p Planner, obs Observatio
 	}
 }
 
-func recoverableFailureReplan(seen map[string]bool, obj Objective, result ObjectiveResult, blackedOut, retreated bool, consecutive, maxConsecutive int) (reason, key string, terminal bool) {
-	key = recoverableFailureKey(obj, result)
-	if seen[key] || consecutive > maxConsecutive {
-		return "", key, true
-	}
-	reason = "objective_failed"
-	if blackedOut {
-		reason = "blackout"
-	} else if retreated {
-		reason = "train_retreat"
-	}
-	return reason, key, false
-}
-
 // replanOnce converts a watchdog edge into one strategic replan opportunity.
 // The second edge before observable progress is terminal.
 func replanOnce(escalated *bool) bool {
