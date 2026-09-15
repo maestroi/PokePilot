@@ -88,8 +88,20 @@ func registerKnowledgeTopologyProvider(id game.GameID, provider KnowledgeTopolog
 }
 
 func knowledgeTopologyFor(id game.GameID, native map[uint8][]uint8) KnowledgeTopology {
-	if provider := knowledgeTopologyProviders[id]; provider != nil {
-		return normalizeKnowledgeTopology(provider.KnowledgeTopology(native))
+	if id != "" {
+		if provider := knowledgeTopologyProviders[id]; provider != nil {
+			return normalizeKnowledgeTopology(provider.KnowledgeTopology(native))
+		}
+		return legacyKnowledgeTopology(native)
+	}
+	// One-release compatibility for synthetic callers that still pass the old
+	// byte-map topology without a GameID. Mirror objectiveCatalogProviderFor:
+	// with exactly one registered game there is no ambiguity, so translate the
+	// native graph through that adapter and keep Knowledge itself semantic.
+	if len(knowledgeTopologyProviders) == 1 {
+		for _, provider := range knowledgeTopologyProviders {
+			return normalizeKnowledgeTopology(provider.KnowledgeTopology(native))
+		}
 	}
 	return legacyKnowledgeTopology(native)
 }
