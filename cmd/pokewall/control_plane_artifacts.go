@@ -17,10 +17,10 @@ type durableArtifact struct {
 }
 
 type durableFinish struct {
-	report   farm.FinishReport
+	report    farm.FinishReport
 	artifacts []durableArtifact
-	uploaded []string
-	store    *artifactstore.S3
+	uploaded  []string
+	store     *artifactstore.S3
 }
 
 func (d *durableFinish) cleanupUploads() {
