@@ -56,26 +56,43 @@ func (redSemanticObservationAdapter) Observe(m *emu.Emu, romData []byte, profile
 		lead := gs.Party.Mons[0]
 		hasDamagingMove := false
 		for _, id := range lead.Moves {
-			if id == 0 { continue }
+			if id == 0 {
+				continue
+			}
 			mv, err := rom.LookupMove(romData, id)
-			if err == nil && observedMoveDealsDamage(mv) { hasDamagingMove = true; break }
+			if err == nil && observedMoveDealsDamage(mv) {
+				hasDamagingMove = true
+				break
+			}
 		}
 		for slot, id := range lead.Moves {
-			if id == 0 { continue }
+			if id == 0 {
+				continue
+			}
 			mv, err := rom.LookupMove(romData, id)
-			if err != nil { continue }
+			if err != nil {
+				continue
+			}
 			obs.LeadMoves = append(obs.LeadMoves, Move{Power: mv.Power, Type: redMoveTypeNames[mv.Type]})
 			pp := lead.PP[slot]
-			if hasDamagingMove && !observedMoveDealsDamage(mv) { pp = 0 }
+			if hasDamagingMove && !observedMoveDealsDamage(mv) {
+				pp = 0
+			}
 			obs.LeadPP = append(obs.LeadPP, pp)
 		}
 	}
 
 	for _, it := range gs.Inventory.Items {
-		if it.ID == 0 || it.Quantity == 0 { continue }
+		if it.ID == 0 || it.Quantity == 0 {
+			continue
+		}
 		name, ok := ItemName(it.ID)
 		if !ok {
-			if machine, err := rom.LookupTMHM(romData, it.ID); err == nil { name = string(machineItemID(machine)) } else { name = "unknown" }
+			if machine, err := rom.LookupTMHM(romData, it.ID); err == nil {
+				name = string(machineItemID(machine))
+			} else {
+				name = "unknown"
+			}
 		}
 		obs.Bag = append(obs.Bag, Item{Name: name, Quantity: int(it.Quantity)})
 	}
@@ -87,25 +104,40 @@ func (redSemanticObservationAdapter) Observe(m *emu.Emu, romData []byte, profile
 			Preparable: cap.Usable || skill.CanPrepareFieldMove(romData, &mem, cap.Move),
 		})
 	}
-	if grass, err := skill.HasReachableGrass(romData, obs.Map, obs.X, obs.Y); err == nil { obs.HasGrass = grass }
+	if grass, err := skill.HasReachableGrass(romData, obs.Map, obs.X, obs.Y); err == nil {
+		obs.HasGrass = grass
+	}
 	routes := routeAvailabilityFor(m, romData)
 	obs.Unroutable, obs.RouteBlockages = routes.Unroutable, routes.Blockages
-	if cat, err := BuildDexCatalog(romData, obs.PokedexOwned, obs.PokedexSeen); err == nil { obs.Dex = annotateDexRouteRequirements(cat, obs.RouteBlockages) }
+	if cat, err := BuildDexCatalog(romData, obs.PokedexOwned, obs.PokedexSeen); err == nil {
+		obs.Dex = annotateDexRouteRequirements(cat, obs.RouteBlockages)
+	}
 	obs.WildGrass = []WildSpecies{}
 	if wild, err := skill.WildGrass(romData, obs.Map); err == nil {
 		for _, w := range wild {
-			name, ok := SpeciesName(w.ID); if !ok { continue }
+			name, ok := SpeciesName(w.ID)
+			if !ok {
+				continue
+			}
 			obs.WildGrass = append(obs.WildGrass, WildSpecies{Name: name, MinLevel: w.MinLevel, MaxLevel: w.MaxLevel, Slots: w.Slots})
 		}
 	}
 	if len(gs.Party.Mons) > 0 && obs.HasGrass {
 		target := int(gs.Party.Mons[0].Level) + trainStep
-		if target <= 100 { if estimate, err := currentTrainingEstimate(&mem, romData, obs.Map, target, trainSessionBattleBudget); err == nil { obs.Training = &estimate } }
+		if target <= 100 {
+			if estimate, err := currentTrainingEstimate(&mem, romData, obs.Map, target, trainSessionBattleBudget); err == nil {
+				obs.Training = &estimate
+			}
+		}
 	}
 
 	obs.MartStock = []string{}
 	if items, err := rom.MartItems(romData, obs.Map); err == nil {
-		for _, id := range items { if name, ok := ItemName(id); ok { obs.MartStock = append(obs.MartStock, name) } }
+		for _, id := range items {
+			if name, ok := ItemName(id); ok {
+				obs.MartStock = append(obs.MartStock, name)
+			}
+		}
 	}
 
 	objects := MapObjects(romData, obs.Map)
@@ -114,77 +146,135 @@ func (redSemanticObservationAdapter) Observe(m *emu.Emu, romData []byte, profile
 	stationary := stationaryHomeTiles(romData, obs.Map)
 	obs.MapObjects = make([]MapObject, 0, len(objects))
 	for i, object := range objects {
-		if hidden[uint8(i+1)] { continue }
-		if object.Kind == "trainer" {
-			if status, err := skill.TrainerStatusAt(romData, &mem, obs.Map, object.X, object.Y); err == nil { object.Challengeable, object.Defeated = status.Challengeable, status.Defeated }
-			if objectGrid != nil && !personReachableOnGrid(objectGrid, obs.X, obs.Y, object.X, object.Y, stationary) { continue }
+		if hidden[uint8(i+1)] {
+			continue
 		}
-		if object.Kind == "item" && objectGrid != nil && !reachableOnGrid(objectGrid, obs.X, obs.Y, object.X, object.Y, stationary) { continue }
-		if object.Kind == "person" && objectGrid != nil && !personReachableOnGrid(objectGrid, obs.X, obs.Y, object.X, object.Y, stationary) { continue }
+		if object.Kind == "trainer" {
+			if status, err := skill.TrainerStatusAt(romData, &mem, obs.Map, object.X, object.Y); err == nil {
+				object.Challengeable, object.Defeated = status.Challengeable, status.Defeated
+			}
+			if objectGrid != nil && !personReachableOnGrid(objectGrid, obs.X, obs.Y, object.X, object.Y, stationary) {
+				continue
+			}
+		}
+		if object.Kind == "item" && objectGrid != nil && !reachableOnGrid(objectGrid, obs.X, obs.Y, object.X, object.Y, stationary) {
+			continue
+		}
+		if object.Kind == "person" && objectGrid != nil && !personReachableOnGrid(objectGrid, obs.X, obs.Y, object.X, object.Y, stationary) {
+			continue
+		}
 		obs.MapObjects = append(obs.MapObjects, object)
 	}
 	return obs, nil
 }
 
-func unroutablePlaces(m *emu.Emu, romData []byte) []string { return routeAvailabilityFor(m, romData).Unroutable }
+func unroutablePlaces(m *emu.Emu, romData []byte) []string {
+	return routeAvailabilityFor(m, romData).Unroutable
+}
 
 func mapObjectReachabilityGrid(romData []byte, mapID uint8) *world.Grid {
-	h, err := rom.ParseMap(romData, mapID); if err != nil { return nil }
-	g, err := world.Build(romData, h); if err != nil { return nil }
+	h, err := rom.ParseMap(romData, mapID)
+	if err != nil {
+		return nil
+	}
+	g, err := world.Build(romData, h)
+	if err != nil {
+		return nil
+	}
 	return g
 }
 
-func adjacent(px, py, x, y uint8) bool { return (px == x && (py == y+1 || py+1 == y)) || (py == y && (px == x+1 || px+1 == x)) }
+func adjacent(px, py, x, y uint8) bool {
+	return (px == x && (py == y+1 || py+1 == y)) || (py == y && (px == x+1 || px+1 == x))
+}
 
 func stationaryHomeTiles(romData []byte, mapID uint8) map[[2]int]bool {
-	h, err := rom.ParseMap(romData, mapID); if err != nil { return nil }
+	h, err := rom.ParseMap(romData, mapID)
+	if err != nil {
+		return nil
+	}
 	blocked := map[[2]int]bool{}
-	for _, o := range h.Objects { if o.Movement == rom.MovementStay { blocked[[2]int{int(o.X), int(o.Y)}] = true } }
+	for _, o := range h.Objects {
+		if o.Movement == rom.MovementStay {
+			blocked[[2]int{int(o.X), int(o.Y)}] = true
+		}
+	}
 	return blocked
 }
 
 func reachableOnGrid(g *world.Grid, px, py, x, y uint8, blocked map[[2]int]bool) bool {
-	if adjacent(px, py, x, y) { return true }
+	if adjacent(px, py, x, y) {
+		return true
+	}
 	_, _, err := world.FindPathAdjacent(g, int(px), int(py), int(x), int(y), blocked)
 	return err == nil
 }
 
 func personReachableOnGrid(g *world.Grid, px, py, x, y uint8, blocked map[[2]int]bool) bool {
-	if reachableOnGrid(g, px, py, x, y, blocked) { return true }
+	if reachableOnGrid(g, px, py, x, y, blocked) {
+		return true
+	}
 	for _, s := range []world.Step{world.StepUp, world.StepDown, world.StepLeft, world.StepRight} {
 		midX, midY := int(x)+s.DX, int(y)+s.DY
 		farX, farY := int(x)+2*s.DX, int(y)+2*s.DY
-		if g.Walkable(midX, midY) || !g.Walkable(farX, farY) || blocked[[2]int{farX, farY}] { continue }
-		if farX == int(px) && farY == int(py) { return true }
-		if _, err := world.FindPath(g, int(px), int(py), farX, farY, blocked); err == nil { return true }
+		if g.Walkable(midX, midY) || !g.Walkable(farX, farY) || blocked[[2]int{farX, farY}] {
+			continue
+		}
+		if farX == int(px) && farY == int(py) {
+			return true
+		}
+		if _, err := world.FindPath(g, int(px), int(py), farX, farY, blocked); err == nil {
+			return true
+		}
 	}
 	return false
 }
 
 func reachableOnFoot(romData []byte, mapID, px, py, x, y uint8) bool {
-	if adjacent(px, py, x, y) { return true }
-	g := mapObjectReachabilityGrid(romData, mapID); if g == nil { return true }
+	if adjacent(px, py, x, y) {
+		return true
+	}
+	g := mapObjectReachabilityGrid(romData, mapID)
+	if g == nil {
+		return true
+	}
 	return reachableOnGrid(g, px, py, x, y, stationaryHomeTiles(romData, mapID))
 }
 
 func personReachable(romData []byte, mapID, px, py, x, y uint8) bool {
-	g := mapObjectReachabilityGrid(romData, mapID); if g == nil { return true }
+	g := mapObjectReachabilityGrid(romData, mapID)
+	if g == nil {
+		return true
+	}
 	return personReachableOnGrid(g, px, py, x, y, stationaryHomeTiles(romData, mapID))
 }
 
-func observedMoveDealsDamage(mv rom.Move) bool { return mv.Power > 0 || mv.Effect == rom.SpecialDamageEffect || mv.Effect == rom.SuperFangEffect || mv.Effect == rom.OHKOEffect }
+func observedMoveDealsDamage(mv rom.Move) bool {
+	return mv.Power > 0 || mv.Effect == rom.SpecialDamageEffect || mv.Effect == rom.SuperFangEffect || mv.Effect == rom.OHKOEffect
+}
 
 func MapObjects(romData []byte, mapID uint8) []MapObject {
-	h, err := rom.ParseMap(romData, mapID); if err != nil { return []MapObject{} }
+	h, err := rom.ParseMap(romData, mapID)
+	if err != nil {
+		return []MapObject{}
+	}
 	out := make([]MapObject, 0, len(h.Objects))
 	for _, o := range h.Objects {
 		mo := MapObject{X: o.X, Y: o.Y}
 		switch {
 		case o.TextID&0x80 != 0:
 			mo.Kind = "item"
-			if name, ok := ItemName(o.ItemID); ok { mo.Item = name } else if machine, err := rom.LookupTMHM(romData, o.ItemID); err == nil { mo.Item = string(machineItemID(machine)) } else { mo.Item = "unknown" }
-		case o.TextID&0x40 != 0: mo.Kind = "trainer"
-		default: mo.Kind = "person"
+			if name, ok := ItemName(o.ItemID); ok {
+				mo.Item = name
+			} else if machine, err := rom.LookupTMHM(romData, o.ItemID); err == nil {
+				mo.Item = string(machineItemID(machine))
+			} else {
+				mo.Item = "unknown"
+			}
+		case o.TextID&0x40 != 0:
+			mo.Kind = "trainer"
+		default:
+			mo.Kind = "person"
 		}
 		out = append(out, mo)
 	}
