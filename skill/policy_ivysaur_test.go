@@ -20,9 +20,9 @@ func ivysaurPolicy(t *testing.T) MovePolicy {
 	t.Helper()
 	return StatAwareMove(fakeROM(t,
 		rom.Move{ID: moveVineWhip, Power: 35, Type: typeGrassIvysaur},
-		rom.Move{ID: moveGrowl, Power: 0},
-		rom.Move{ID: moveLeechSeed, Power: 0},
-		rom.Move{ID: movePoisonPowder, Power: 0},
+		rom.Move{ID: moveGrowl, Power: 0, Effect: rom.AttackDown1Effect},
+		rom.Move{ID: moveLeechSeed, Power: 0, Effect: rom.LeechSeedEffect},
+		rom.Move{ID: movePoisonPowder, Power: 0, Effect: rom.PoisonEffect},
 		tackle,
 	))
 }
@@ -71,5 +71,28 @@ func TestStatAwareMoveIvysaurUsesVineWhipWhenTackleIsDisabled(t *testing.T) {
 
 	if got := p(b); got != 3 {
 		t.Fatalf("policy chose slot %d, want 3 (VINE WHIP): TACKLE is disabled and status moves must not replace damage", got)
+	}
+}
+
+// Issue #447's Route 3 Jigglypuff state had exactly this resource shape:
+// Tackle was disabled, Vine Whip had 0 PP, Growl had 40 PP and Leech Seed had
+// 10 PP. The old fallback returned usable[0] and spammed Growl, a legal action
+// that can stop changing battle state once Attack bottoms out, until the whole
+// fight hit Battle's 60000-frame cap. Leech Seed is the only selectable move
+// here that can still reduce HP over time, so it owns the no-direct-damage
+// fallback.
+func TestStatAwareMoveIvysaurUsesLeechSeedWhenOnlyDamageIsUnavailable(t *testing.T) {
+	p := ivysaurPolicy(t)
+	b := battleWith(state.StatStageNeutral, state.StatStageNeutral, 14, 60,
+		tackle.ID, moveGrowl, moveLeechSeed, moveVineWhip)
+	b.ActiveType1, b.ActiveType2 = typeGrassIvysaur, typePoisonIvysaur
+	b.DisabledMove = 1
+	b.Moves[0].PP = 12
+	b.Moves[1].PP = 40
+	b.Moves[2].PP = 10
+	b.Moves[3].PP = 0
+
+	if got := p(b); got != 2 {
+		t.Fatalf("policy chose slot %d, want 2 (LEECH SEED): direct damage is unavailable and Growl cannot end the fight", got)
 	}
 }

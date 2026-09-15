@@ -27,6 +27,13 @@ const (
 	// goes out.
 	AttackDown1Effect uint8 = 18
 
+	// PoisonEffect and LeechSeedEffect are the two zero-power effects that
+	// can still make deterministic HP progress after they land. They matter
+	// when every ordinary damaging move is temporarily unavailable: unlike a
+	// stat-only move, either can end the battle without waiting for Struggle.
+	PoisonEffect    uint8 = 0x42
+	LeechSeedEffect uint8 = 0x54
+
 	// These effect ids are the non-ordinary damage paths in Red's battle
 	// engine. Super Fang and SPECIAL_DAMAGE_EFFECT are listed in
 	// SetDamageEffects and skip CalculateDamage entirely. OHKO moves also
