@@ -27,6 +27,20 @@ func TestFleeMenuFromMemRecognizesSafariBattleMenu(t *testing.T) {
 	}
 }
 
+func TestFleeWaitInputBacksOutOfAccidentallyOpenedMoveMenu(t *testing.T) {
+	text := newFakeRAM()
+	openTextBox(text, "A wild NIDORAN appeared")
+	if got := fleeWaitInputFromMem(text); got != emu.A {
+		t.Fatalf("encounter text input = %v, want A", got)
+	}
+
+	moveMenu := newFakeRAM()
+	openTextBox(moveMenu, "TACKLE TYPE/NORMAL")
+	if got := fleeWaitInputFromMem(moveMenu); got != emu.B {
+		t.Fatalf("move-menu recovery input = %v, want B", got)
+	}
+}
+
 func TestSafariRunNextInputUsesLiveMenuState(t *testing.T) {
 	mem := newFakeRAM()
 	openTextBox(mem, "BALL BAIT THROW ROCK RUN")
