@@ -109,6 +109,9 @@ func main() {
 	report(m, "booted")
 
 	if orchURL := os.Getenv("POKEPILOT_ORCH_URL"); orchURL != "" {
+		if err := startWorkerControlServer(); err != nil {
+			log.Fatalf("farm: worker control: %v", err)
+		}
 		bootState, err := m.SaveState()
 		if err != nil {
 			log.Fatalf("save boot state: %v", err)
