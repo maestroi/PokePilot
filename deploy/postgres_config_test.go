@@ -18,6 +18,7 @@ func TestPostgresControlPlaneIsPinnedToDurableNode(t *testing.T) {
 		"${FARM_DB_DIR:?FARM_DB_DIR is required}:/var/lib/postgresql",
 		"PGDATA: /var/lib/postgresql/18/docker",
 		"POKEPILOT_MODEL_REGISTRY: postgres-env://POKEPILOT_DATABASE_URL",
+		"pg_isready -U pokepilot -d pokepilot",
 	} {
 		if !strings.Contains(text, required) {
 			t.Fatalf("postgres.yml must contain %q", required)

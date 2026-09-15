@@ -21,7 +21,8 @@ docker node ls -q | xargs -n1 docker node inspect --format '{{.Description.Hostn
 Create the persistent host directory **on that labeled node**. Prefer a real VM/dataset path rather than `/tmp`:
 
 ```sh
-sudo install -d -o 999 -g 999 /srv/pokepilot/postgres
+# postgres:18-alpine runs as uid/gid 70. The Debian image uses 999.
+sudo install -d -o 70 -g 70 /srv/pokepilot/postgres
 ```
 
 Put the database settings in `.env` or `~/.config/pokepilot/env`. Use a URL-safe password or URL-encode it in the DSN:

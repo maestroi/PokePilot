@@ -27,12 +27,16 @@ services:
       # silently write outside the bind mount.
       PGDATA: /var/lib/postgresql/18/docker
     volumes:
+      # postgres:18-alpine writes as uid/gid 70; the host directory must match.
       - ${FARM_DB_DIR:?FARM_DB_DIR is required}:/var/lib/postgresql
     configs:
       - source: postgres_control_plane_init
         target: /docker-entrypoint-initdb.d/001_control_plane.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      # Hardcoded role/db names: `${...}` in Swarm healthchecks is interpolated
+      # at deploy time on the manager (empty), which made pg_isready use "-d"
+      # or "root" as the role.
+      test: ["CMD-SHELL", "pg_isready -U pokepilot -d pokepilot"]
       interval: 5s
       timeout: 5s
       retries: 12
