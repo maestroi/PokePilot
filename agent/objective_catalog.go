@@ -74,12 +74,23 @@ type CatalogInteractable struct {
 	Defeated      bool
 }
 
-// objectiveCatalogForObservation preserves the adapter catalog when present
-// and fills local semantic facts directly from Observation for lightweight
-// tests and future adapters that have not opted into every catalog family yet.
-// It never consults Red map tables or skill discovery.
+func objectiveCatalogEmpty(c ObjectiveCatalog) bool {
+	return len(c.Starters) == 0 && len(c.Destinations) == 0 && len(c.Challenges) == 0 &&
+		len(c.LocalEncounters) == 0 && c.Shop == nil && len(c.Interactables) == 0 && !c.CurrentCenter
+}
+
+// objectiveCatalogForObservation preserves an explicitly attached catalog. For
+// older synthetic callers that do not attach one, it asks the registered game
+// adapter rather than reconstructing Red world data inside generic providers.
+// With exactly one registered game, an empty GameID remains unambiguous for one
+// release; multi-game callers must identify their game explicitly.
 func objectiveCatalogForObservation(obs Observation) ObjectiveCatalog {
 	catalog := obs.Catalog
+	if objectiveCatalogEmpty(catalog) {
+		if provider, ok := objectiveCatalogProviderFor(obs.GameID); ok {
+			catalog = provider.ObjectiveCatalog(obs)
+		}
+	}
 	if len(catalog.LocalEncounters) == 0 {
 		for _, wild := range obs.WildGrass {
 			name := strings.ToLower(strings.TrimSpace(wild.Name))
