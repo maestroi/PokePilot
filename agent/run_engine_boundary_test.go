@@ -64,8 +64,9 @@ func TestRunKnowledgePolicyRequestsReplanOnlyForNewSemanticFacts(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("replan reasons = %v; want %v", got, want)
 	}
-	if !known.Visited[2] || !known.Visited[3] {
-		t.Fatalf("visited = %v; want current and sampled maps recorded", known.Visited)
+	current, sampled := known.locationForNative(2), known.locationForNative(3)
+	if !known.Visited[current] || !known.Visited[sampled] {
+		t.Fatalf("visited = %v; want current %q and sampled %q recorded", known.Visited, current, sampled)
 	}
 
 	got = policy.roundBoundary(3, changed, known, nil)
@@ -93,7 +94,7 @@ func TestRunEngineBeginRoundCompletionSkipsKnowledgeAndWatchdogs(t *testing.T) {
 	if called {
 		t.Fatal("beginRound consumed sampled maps after terminal goal completion")
 	}
-	if known.Visited[2] {
+	if known.Visited[known.locationForNative(2)] {
 		t.Fatal("terminal goal completion mutated knowledge before stopping")
 	}
 }
