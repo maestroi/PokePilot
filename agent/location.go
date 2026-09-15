@@ -27,8 +27,25 @@ func (t KnowledgeTopology) locationForNative(id uint8) LocationID {
 	return legacyLocationID(id)
 }
 
-func legacyLocationID(id uint8) LocationID {
+func rawLegacyLocationID(id uint8) LocationID {
 	return LocationID(fmt.Sprintf("legacy-map/%02x", id))
+}
+
+// legacyLocationID is the compatibility translation for synthetic callers
+// that still carry only a native byte map. With exactly one registered game
+// adapter, resolve that byte through the adapter so the rest of generic
+// knowledge still sees the same semantic LocationID as the catalog. Once more
+// than one game is registered, callers must identify their game explicitly.
+func legacyLocationID(id uint8) LocationID {
+	if len(knowledgeTopologyProviders) == 1 {
+		for _, provider := range knowledgeTopologyProviders {
+			topology := provider.KnowledgeTopology(map[uint8][]uint8{id: nil})
+			if location := topology.NativeLocations[id]; location != "" {
+				return location
+			}
+		}
+	}
+	return rawLegacyLocationID(id)
 }
 
 func rawLegacyKnowledgeTopology(adjacency map[uint8][]uint8) KnowledgeTopology {
@@ -37,10 +54,10 @@ func rawLegacyKnowledgeTopology(adjacency map[uint8][]uint8) KnowledgeTopology {
 		NativeLocations: map[uint8]LocationID{},
 	}
 	for from, neighbors := range adjacency {
-		fromID := legacyLocationID(from)
+		fromID := rawLegacyLocationID(from)
 		topology.NativeLocations[from] = fromID
 		for _, native := range neighbors {
-			toID := legacyLocationID(native)
+			toID := rawLegacyLocationID(native)
 			topology.NativeLocations[native] = toID
 			topology.Adjacency[fromID] = append(topology.Adjacency[fromID], toID)
 		}
