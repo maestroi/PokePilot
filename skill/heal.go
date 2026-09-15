@@ -19,6 +19,13 @@ import (
 // starter flow.
 const healMenuBudget = 3000
 
+// healFaceSettleBudget bounds the short input-lock tail after turning toward
+// the counter. Face completes as soon as the decoded facing changes; it does
+// not promise that wJoyIgnore has cleared. Pressing A during that tail is
+// silently ignored by the overworld. Issue #547 captured exactly that state
+// after a successful turn: wJoyIgnore=0x0003 and no nurse dialogue opened.
+const healFaceSettleBudget = 120
+
 // healRunBudget bounds the YES path after the prompt is answered: the "I
 // need your Pokemon" box, the nurse turning to the healing machine,
 // HealParty, the machine animation, the "fighting fit" box, the bow, and
@@ -159,6 +166,21 @@ func Heal(m *emu.Emu) error {
 	x, y := playerXY(m)
 	if err := Face(m, uint8(int(x)+step.DX), uint8(int(y)+step.DY)); err != nil {
 		return fmt.Errorf("skill: Heal: face the counter %s from (%d,%d): %w", step, x, y, err)
+	}
+
+	// Face promises the requested facing, not that the turn's input lock has
+	// finished. Wait for actual overworld controllability before the A press;
+	// otherwise the nurse interaction can be lost while wJoyIgnore is still
+	// non-zero (the #547 checkpoint ended with 0x0003 after exactly this race).
+	state.Snapshot(m, &mem)
+	if !state.Controllable(&mem) {
+		if _, err := m.StepUntil(healFaceSettleBudget, func(m *emu.Emu) bool {
+			state.Snapshot(m, &mem)
+			return state.Controllable(&mem)
+		}); err != nil {
+			return fmt.Errorf("skill: Heal: input did not settle after facing the counter within %d frames: map=%#04x at (%d,%d) wJoyIgnore=%#04x",
+				healFaceSettleBudget, mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord), mem.U16BE(sym.JoyIgnore))
+		}
 	}
 
 	if err := openNurseMenu(m); err != nil {
