@@ -23,8 +23,7 @@ function newest(runs: SpectatorRun[], field: 'queued_at' | 'ended_at'): Spectato
 export function preferredRun(runs: SpectatorRun[], selectedRunID = ''): SpectatorRun | null {
   if (!runs.length) return null
   if (selectedRunID) {
-    const selected = runs.find((run) => run.run_id === selectedRunID)
-    if (selected) return selected
+    return runs.find((run) => run.run_id === selectedRunID) || null
   }
   return newest(runs.filter((run) => run.status === 'running'), 'queued_at')
     || newest(runs.filter((run) => run.status === 'leased'), 'queued_at')
