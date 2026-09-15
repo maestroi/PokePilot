@@ -69,7 +69,15 @@ func verifySyntheticFailureBudget(mat portableMaterialized, resultPath string, v
 		}
 	}
 	memory := agent.LoadCheckpointMemory(mat.StatePath, adjacency, nil)
-	obs := agent.Observe(m, m.ROM())
+	obs, err := readReproObservation("checkpoint", func() (agent.Observation, error) {
+		return agent.ObserveChecked(m, m.ROM())
+	})
+	if err != nil {
+		verdict.Classification = verdictHarnessError
+		verdict.Diagnostic = err.Error()
+		_ = writePortableReproVerdict(resultPath, mat.Dir, verdict)
+		return verdict, err
+	}
 	offered := agent.Offer(obs, memory.Knowledge)
 	obj, ok, matchErr := underlyingObjectiveFromDiagnostic(mat.Manifest.Diagnostic, offered)
 	if matchErr != nil {
