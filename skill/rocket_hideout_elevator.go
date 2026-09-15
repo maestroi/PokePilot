@@ -56,6 +56,29 @@ func rocketB4FGuardsReachable(m *emu.Emu, romData []byte) (bool, error) {
 	return false, err
 }
 
+func rocketB4FBossRoomReachable(m *emu.Emu, romData []byte) (bool, error) {
+	if got := m.Peek8(sym.CurMap); got != rocketHideoutB4FMap {
+		return false, fmt.Errorf("skill: RocketHideout: boss-room probe on map %#04x, want B4F %#04x", got, rocketHideoutB4FMap)
+	}
+	h, err := rom.ParseMap(romData, rocketHideoutB4FMap)
+	if err != nil {
+		return false, err
+	}
+	grid, err := liveMapGrid(m, romData, h)
+	if err != nil {
+		return false, err
+	}
+	x, y := playerXY(m)
+	_, err = world.FindPath(grid, int(x), int(y), int(giovanniStand.X), int(giovanniStand.Y), spriteBlockers(m))
+	if err == nil {
+		return true, nil
+	}
+	if errors.Is(err, world.ErrNoPath) {
+		return false, nil
+	}
+	return false, err
+}
+
 // acquireRocketLiftKey completes the mandatory stair-side B4F branch. The
 // third Rocket reveals the Lift Key as a ground object only after his
 // after-battle script runs, so defeating him and picking up the item are one
@@ -102,10 +125,6 @@ func reachRocketB2FElevatorFloor(m *emu.Emu, romData []byte, policy MovePolicy) 
 		case rocketHideoutB2FMap:
 			return nil
 		case rocketHideoutB1FMap:
-			// B1F's callback replaces block (y=8,x=12), splitting the static
-			// collision map around game y=16/17. Use the B2F stair on the same
-			// side as the live player instead of trying to cross that mutable
-			// block on the way to B1F's elevator.
 			_, y := playerXY(m)
 			warpX, warpY := uint8(23), uint8(2)
 			if y >= 18 {
@@ -159,10 +178,6 @@ func rideRocketElevatorToB4F(m *emu.Emu, romData []byte, policy MovePolicy) erro
 	return nil
 }
 
-// reachRocketGuardSide resumes from any normal post-key Hideout location and
-// guarantees B4F is loaded on the elevator/guard side. A B4F resume uses live
-// connectivity rather than coordinates, so an already-open boss door remains
-// valid and does not force an unnecessary stair backtrack.
 func reachRocketGuardSide(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if !rocketBagHas(m, liftKeyItem) {
 		return fmt.Errorf("skill: RocketHideout: guard side requires Lift Key")
@@ -199,14 +214,22 @@ func reachRocketGuardSide(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	}
 }
 
-// reloadRocketB4FViaElevator applies RocketHideoutB4FDoorCallbackScript after
-// both guard flags are set. The locked door prevents the guard side from
-// reaching the B3F stair, so the elevator is not merely an optimization: it is
-// the legal exit/re-entry path that causes the ROM to replace block $2d with
-// the open floor block.
+// reloadRocketB4FViaElevator ensures the live B4F boss door callback has been
+// applied after both guards are beaten. Some battle/script paths apply the
+// callback immediately without a map reload; in that case the live map is
+// already authoritative and leaving through the elevator is both unnecessary
+// and can fail from the guard-side landing. Only reload when the boss room is
+// still disconnected in the live block buffer.
 func reloadRocketB4FViaElevator(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if got := m.Peek8(sym.CurMap); got != rocketHideoutB4FMap {
 		return fmt.Errorf("skill: RocketHideout: B4F reload requested on map %#04x", got)
+	}
+	open, err := rocketB4FBossRoomReachable(m, romData)
+	if err != nil {
+		return fmt.Errorf("skill: RocketHideout: inspect live B4F boss door: %w", err)
+	}
+	if open {
+		return nil
 	}
 	edge := world.Edge{Kind: world.EdgeWarp, From: rocketHideoutB4FMap, To: rocketHideoutElevatorMap, WarpX: 24, WarpY: 15}
 	if err := travelRocketWarp(m, policy, func() error { return Traverse(m, romData, edge) }); err != nil {
