@@ -61,8 +61,32 @@ type InferenceIdentity struct {
 	EngineConfig  string `json:"engine_config,omitempty"`
 }
 
-func LoadModelRegistry(path string) (ModelRegistry, error) {
-	data, err := os.ReadFile(path)
+const postgresRegistryEnvPrefix = "postgres-env://"
+
+// LoadModelRegistry accepts the historical JSON file path, a Postgres DSN, or
+// the production-safe form postgres-env://ENV_NAME. The env indirection is
+// preferred in services whose startup errors log the source string, because it
+// keeps credentials out of logs while preserving JSON compatibility locally.
+func LoadModelRegistry(source string) (ModelRegistry, error) {
+	source = strings.TrimSpace(source)
+	if strings.HasPrefix(strings.ToLower(source), postgresRegistryEnvPrefix) {
+		envName := strings.TrimSpace(source[len(postgresRegistryEnvPrefix):])
+		if envName == "" {
+			return ModelRegistry{}, fmt.Errorf("model registry: postgres environment variable name is empty")
+		}
+		dsn := strings.TrimSpace(os.Getenv(envName))
+		if dsn == "" {
+			return ModelRegistry{}, fmt.Errorf("model registry: environment variable %s is empty", envName)
+		}
+		if !isPostgresRegistrySource(dsn) {
+			return ModelRegistry{}, fmt.Errorf("model registry: environment variable %s is not a postgres DSN", envName)
+		}
+		return loadModelRegistryPostgres(dsn)
+	}
+	if isPostgresRegistrySource(source) {
+		return loadModelRegistryPostgres(source)
+	}
+	data, err := os.ReadFile(source)
 	if err != nil {
 		return ModelRegistry{}, fmt.Errorf("read model registry: %w", err)
 	}
