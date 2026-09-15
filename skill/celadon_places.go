@@ -33,8 +33,12 @@ func init() {
 	// stays in the corridor and does not immediately re-trigger the warp.
 	places["underground path west east"] = Destination{Map: 0x79, X: 46, Y: 2}
 	places["underground path route 7"] = Destination{Map: 0x4D, X: 4, Y: 5}
-	// Route 7's underground door is (5,13); one row above is the route side.
-	places["route 7"] = Destination{Map: 0x12, X: 5, Y: 12}
+	// Route 7's underground door is warp (5,13). Exiting that building lands
+	// at (5,14), the stable route-side tile immediately south of the warp.
+	// Targeting (5,12) put GoTo on the far side of the door: from the actual
+	// arrival at (5,14), stepping onto (5,13) re-enters the building, so the
+	// old target was not reachable within Route 7 (issue #548).
+	places["route 7"] = Destination{Map: 0x12, X: 5, Y: 14}
 
 	// Celadon's canonical fly warp is (41,10), next to the Pokemon Center.
 	places["celadon city"] = Destination{Map: 0x06, X: 41, Y: 10}
