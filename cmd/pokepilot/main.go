@@ -168,21 +168,20 @@ func watchPort(served string) int {
 }
 
 func runScripted(m *emu.Emu, starter, dest string, hold time.Duration, served string) {
-	var which skill.Starter
 	switch starter {
-	case "charmander":
-		which = skill.StarterCharmander
-	case "squirtle":
-		which = skill.StarterSquirtle
-	case "bulbasaur":
-		which = skill.StarterBulbasaur
+	case "charmander", "squirtle", "bulbasaur":
 	default:
 		log.Fatalf("unknown starter %q: want charmander, squirtle or bulbasaur", starter)
 	}
 
+	starterObj, err := starterObjectiveForRequest(starter, 0)
+	if err != nil {
+		log.Fatalf("starter objective: %v", err)
+	}
 	fmt.Printf("getting the %s starter (this includes the rival battle)...\n", starter)
-	if err := skill.GetStarter(m, m.ROM(), which, skill.StatAwareMove(m.ROM())); err != nil {
-		log.Fatalf("get starter: %v", err)
+	starterResult, err := executeScriptedObjective(m, starterObj)
+	if err != nil {
+		log.Fatalf("get starter: %s", scriptedObjectiveDetail(starterResult, err))
 	}
 	report(m, "got starter")
 
@@ -193,10 +192,10 @@ func runScripted(m *emu.Emu, starter, dest string, hold time.Duration, served st
 
 	fmt.Printf("walking to %q (map %02x, %d,%d)...\n", dest, target.Map, target.X, target.Y)
 	start := time.Now()
-	err := skill.GoTo(m, m.ROM(), target)
+	travelResult, err := executeScriptedObjective(m, agent.Objective{Kind: agent.KindGoTo, Place: agent.PlaceID(dest)})
 	report(m, fmt.Sprintf("after GoTo (%s)", time.Since(start).Round(time.Millisecond)))
 	if err != nil {
-		fmt.Printf("\nGoTo failed: %v\n", err)
+		fmt.Printf("\nGoTo failed: %s\n", scriptedObjectiveDetail(travelResult, err))
 	} else {
 		fmt.Println("\narrived.")
 	}
