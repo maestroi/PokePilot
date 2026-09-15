@@ -29,13 +29,14 @@ func spriteBlockers(m *emu.Emu) map[[2]int]bool {
 }
 
 // stationaryObjectBlockers returns the home tiles of every MovementStay
-// object on h: an NPC that never leaves its home tile occupies it whether or
-// not the player is currently close enough for sprite RAM to have decoded it.
-// A toggled-hidden object (an already-picked-up ball, a defeated Giovanni)
-// costs nothing worse than a route that avoids a tile that turned out to be
-// open; a MovementWalk object is not included, since its live position is
-// exactly what spriteBlockers reports when in range and this layer has no
-// better answer for it out of range.
+// object on h — NPC or ground item alike. Pickup's own doc comment already
+// establishes that an item ball is solid: it "walks to the tile adjacent to
+// an item ball, faces it and takes it," never walks onto one. A toggled-
+// hidden object (a defeated Giovanni, an already-collected ball) costs
+// nothing worse than a route that avoids a tile that turned out to be open;
+// a MovementWalk object is not included, since its live position is exactly
+// what spriteBlockers reports when in range and this layer has no better
+// answer for it out of range.
 func stationaryObjectBlockers(h rom.MapHeader) map[[2]int]bool {
 	blocked := map[[2]int]bool{}
 	for _, o := range h.Objects {
