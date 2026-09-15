@@ -90,21 +90,61 @@ func TestAppendDexGiftObjectivesRequiresCardKeyForLapras(t *testing.T) {
 	}
 }
 
-func TestAppendDexGiftObjectivesOffersOnlyOneFightingDojoChoice(t *testing.T) {
+func TestAppendDexGiftObjectivesRequiresSaffronAccessForFightingDojo(t *testing.T) {
 	dest, ok := skill.Place("fighting dojo hitmonlee")
 	if !ok {
 		t.Fatal("fighting dojo hitmonlee place missing")
 	}
 	obs := Observation{
 		Map: dest.Map,
+		Dex: DexCatalog{Targets: []DexEntry{{
+			Species: "hitmonlee",
+			Sources: []DexSource{{
+				Kind:           AcquireGift,
+				Place:          "fighting dojo hitmonlee",
+				Requirement:    dexRequirementSaffronGateOpen,
+				ExclusiveGroup: "fighting_dojo",
+			}},
+		}}},
+	}
+
+	if got := appendDexGiftObjectives(obs, NewKnowledge(nil), nil); len(got) != 0 {
+		t.Fatalf("closed-Saffron Dojo gift objectives = %+v, want none", got)
+	}
+
+	obs.Story = ProgressState{{ID: ProgressSaffronGateOpen, Complete: true}}
+	got := appendDexGiftObjectives(obs, NewKnowledge(nil), nil)
+	if len(got) != 1 || got[0].Species != "hitmonlee" || got[0].Intent != dexGiftIntent {
+		t.Fatalf("open-Saffron Dojo gift objectives = %+v, want Hitmonlee gift", got)
+	}
+}
+
+func TestAppendDexGiftObjectivesOffersOnlyOneFightingDojoChoice(t *testing.T) {
+	dest, ok := skill.Place("fighting dojo hitmonlee")
+	if !ok {
+		t.Fatal("fighting dojo hitmonlee place missing")
+	}
+	obs := Observation{
+		Map:   dest.Map,
+		Story: ProgressState{{ID: ProgressSaffronGateOpen, Complete: true}},
 		Dex: DexCatalog{Targets: []DexEntry{
 			{
 				Species: "hitmonlee",
-				Sources: []DexSource{{Kind: AcquireGift, Place: "fighting dojo hitmonlee", ExclusiveGroup: "fighting_dojo"}},
+				Sources: []DexSource{{
+					Kind:           AcquireGift,
+					Place:          "fighting dojo hitmonlee",
+					Requirement:    dexRequirementSaffronGateOpen,
+					ExclusiveGroup: "fighting_dojo",
+				}},
 			},
 			{
 				Species: "hitmonchan",
-				Sources: []DexSource{{Kind: AcquireGift, Place: "fighting dojo hitmonchan", ExclusiveGroup: "fighting_dojo"}},
+				Sources: []DexSource{{
+					Kind:           AcquireGift,
+					Place:          "fighting dojo hitmonchan",
+					Requirement:    dexRequirementSaffronGateOpen,
+					ExclusiveGroup: "fighting_dojo",
+				}},
 			},
 		}},
 	}
@@ -125,9 +165,15 @@ func TestAppendDexGiftObjectivesSuppressesConsumedFightingDojoChoice(t *testing.
 	obs := Observation{
 		Map:          dest.Map,
 		PokedexOwned: []SpeciesID{"hitmonlee"},
+		Story:        ProgressState{{ID: ProgressSaffronGateOpen, Complete: true}},
 		Dex: DexCatalog{Targets: []DexEntry{{
 			Species: "hitmonchan",
-			Sources: []DexSource{{Kind: AcquireGift, Place: "fighting dojo hitmonchan", ExclusiveGroup: "fighting_dojo"}},
+			Sources: []DexSource{{
+				Kind:           AcquireGift,
+				Place:          "fighting dojo hitmonchan",
+				Requirement:    dexRequirementSaffronGateOpen,
+				ExclusiveGroup: "fighting_dojo",
+			}},
 		}}},
 	}
 	if got := appendDexGiftObjectives(obs, NewKnowledge(nil), nil); len(got) != 0 {
@@ -151,8 +197,18 @@ func TestRedScriptedSourcesLocatesExecutableGifts(t *testing.T) {
 	want := map[uint8]DexSource{
 		0x66: {Kind: AcquireGift, Place: "celadon mansion eevee"},
 		0x13: {Kind: AcquireGift, Place: "silph co lapras", Requirement: "card_key"},
-		0x2B: {Kind: AcquireGift, Place: "fighting dojo hitmonlee", ExclusiveGroup: "fighting_dojo"},
-		0x2C: {Kind: AcquireGift, Place: "fighting dojo hitmonchan", ExclusiveGroup: "fighting_dojo"},
+		0x2B: {
+			Kind:           AcquireGift,
+			Place:          "fighting dojo hitmonlee",
+			Requirement:    dexRequirementSaffronGateOpen,
+			ExclusiveGroup: "fighting_dojo",
+		},
+		0x2C: {
+			Kind:           AcquireGift,
+			Place:          "fighting dojo hitmonchan",
+			Requirement:    dexRequirementSaffronGateOpen,
+			ExclusiveGroup: "fighting_dojo",
+		},
 	}
 	for _, scripted := range redScriptedSources() {
 		expected, ok := want[scripted.internal]
