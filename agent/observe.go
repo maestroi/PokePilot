@@ -13,9 +13,11 @@ import (
 // but they do not cross the planner JSON contract: Location, party species,
 // respawn place and progression are semantic values.
 type Observation struct {
-	// Map is the current profile's opaque native map id and remains runtime-only
-	// during the adapter migration. Location is the portable planner identity.
-	Map      uint8 `json:"-"`
+	// GameID selects game-owned catalogs/capabilities without branching on a
+	// concrete game in generic policy. Map is the profile's opaque native map
+	// id during the final location migration; Location is the portable identity.
+	GameID   game.GameID `json:"-"`
+	Map      uint8       `json:"-"`
 	Location PlaceID
 	MapName  string
 	X, Y     uint8
@@ -47,7 +49,8 @@ type Observation struct {
 
 	PokedexOwned []SpeciesID
 	PokedexSeen  []SpeciesID
-	Dex          DexCatalog `json:"-"`
+	Dex          DexCatalog       `json:"-"`
+	Catalog      ObjectiveCatalog `json:"-"`
 
 	WildGrass  []WildSpecies
 	HasGrass   bool
@@ -167,6 +170,9 @@ func ObserveChecked(m *emu.Emu, romData []byte) (Observation, error) {
 	obs, err := adapter.Observe(m, romData, profile)
 	if err != nil {
 		return Observation{}, fmt.Errorf("agent: observe %s@%s: %w", profile.ID(), profile.Revision(), err)
+	}
+	if obs.GameID == "" {
+		obs.GameID = profile.ID()
 	}
 	return obs, nil
 }

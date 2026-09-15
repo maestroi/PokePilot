@@ -1,11 +1,6 @@
 package agent
 
-import (
-	"strings"
-
-	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/skill"
-)
+import "strings"
 
 var fieldMedStatus = map[string]string{
 	"potion":       "",
@@ -27,7 +22,7 @@ func medReaches(mon PartyMon, wantStatus string) bool {
 	return mon.Status == wantStatus
 }
 
-func nearestKnownCenter(obs Observation, known *Knowledge, knownMaps map[uint8]bool) (string, bool) {
+func nearestKnownCenter(obs Observation, known *Knowledge, knownMaps map[uint8]bool, catalog ObjectiveCatalog) (PlaceID, bool) {
 	dist := map[uint8]int{obs.Map: 0}
 	for queue := []uint8{obs.Map}; len(queue) > 0; queue = queue[1:] {
 		for _, next := range known.Adjacency[queue[0]] {
@@ -37,18 +32,17 @@ func nearestKnownCenter(obs Observation, known *Knowledge, knownMaps map[uint8]b
 			}
 		}
 	}
-	best, bestDist := "", 0
-	for _, name := range skill.PlaceNames() {
-		d, _ := skill.Place(name)
-		if d.Map == obs.Map || !knownMaps[d.Map] || !isCenter(state.MapName(d.Map)) {
+	best, bestDist := PlaceID(""), 0
+	for _, destination := range catalog.Destinations {
+		if !destination.Center || destination.NativeMap == obs.Map || !knownMaps[destination.NativeMap] {
 			continue
 		}
-		hops, reachable := dist[d.Map]
+		hops, reachable := dist[destination.NativeMap]
 		if !reachable {
 			continue
 		}
-		if best == "" || hops < bestDist {
-			best, bestDist = name, hops
+		if best == "" || hops < bestDist || (hops == bestDist && destination.Place < best) {
+			best, bestDist = destination.Place, hops
 		}
 	}
 	return best, best != ""

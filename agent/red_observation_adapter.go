@@ -216,6 +216,7 @@ func (redSemanticObservationAdapter) Observe(m *emu.Emu, romData []byte, profile
 		}
 		obs.MapObjects = append(obs.MapObjects, object)
 	}
+	obs.Catalog = redObjectiveCatalog(obs)
 	return obs, nil
 }
 
