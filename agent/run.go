@@ -103,12 +103,15 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 			break
 		}
 
-		if reqs := known.Requirements; len(reqs) > 0 {
-			last.Requirements = append([]Requirement{}, reqs...)
-		}
+		// Requirements has two sources with different lifetimes: durable facts
+		// learned from dialogue and ephemeral provider block evidence. Rebuild the
+		// slice every round so a material state change naturally removes provider
+		// blockers instead of turning them into stale durable knowledge.
+		last.Requirements = append([]Requirement(nil), known.Requirements...)
 		last.Failures = known.FailureList()
-		now := offerWithTMHM(m, romData, last, known)
-		now = engine.failures.filter(last, now)
+		offer := offerWithTMHMEvidence(m, romData, last, known)
+		last.Requirements = append(last.Requirements, providerBlockRequirements(offer.Blocked)...)
+		now := engine.failures.filter(last, offer.Candidates)
 		if len(now) == 0 {
 			res.Stop = StopError
 			res.Err = errors.New("agent: Run: nothing is possible from here")
