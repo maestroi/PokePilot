@@ -47,7 +47,8 @@ type Observation struct {
 
 	PokedexOwned []SpeciesID
 	PokedexSeen  []SpeciesID
-	Dex          DexCatalog `json:"-"`
+	Dex          DexCatalog        `json:"-"`
+	Catalog      ObjectiveCatalog  `json:"-"`
 
 	WildGrass  []WildSpecies
 	HasGrass   bool
