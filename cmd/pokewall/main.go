@@ -67,6 +67,11 @@ func main() {
 		if err := wall.SetControlPlaneDatabase(*databaseURL); err != nil {
 			log.Fatalf("pokewall: open PostgreSQL control plane: %v", err)
 		}
+		if cp := controlPlaneFor(wall); cp != nil {
+			if err := cp.migrateCheckpointArtifacts(); err != nil {
+				log.Fatalf("pokewall: migrate PostgreSQL checkpoint storage: %v", err)
+			}
+		}
 		defer wall.CloseControlPlane() //nolint:errcheck
 		go wall.RunCatalogSettlementSweep(5 * time.Second)
 		go wall.RunControlPlaneSweep(2 * time.Second)
@@ -132,7 +137,7 @@ func main() {
 	modelHandler := controlPlaneModelExperimentHTTPHandler(wall, baseHandler)
 	handler := archiveHTTPHandler(wall, modelHandler)
 	if postgresMode {
-		handler = wall.controlPlaneHTTPHandler(handler)
+		handler = wall.controlPlaneCheckpointHTTPHandler(wall.controlPlaneHTTPHandler(handler))
 	}
 	server := &http.Server{
 		Addr:              *httpAddr,
