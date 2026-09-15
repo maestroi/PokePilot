@@ -77,9 +77,6 @@ func redRouteRequirements(obs Observation) []RouteBlockage {
 		for _, mapID := range []uint8{route12Map, route13Map, route14Map, route15Map, fuchsiaCityMap} {
 			blockMap(mapID, "red:story:poke_flute", prerequisite)
 		}
-		// These waypoints can also be considered while already on Route 12;
-		// keep the live Snorlax interaction/far-side target story-owned until
-		// the flute fact is durable.
 		out = append(out,
 			redStoryRouteBlockage("route 12 snorlax", "red:story:route12_snorlax", prerequisite),
 			redStoryRouteBlockage("route 12 south of snorlax", "red:story:route12_snorlax", prerequisite),
@@ -141,23 +138,43 @@ func redHasBadge(obs Observation, badge state.Badge) bool {
 	return false
 }
 
-// These compatibility probes are intentionally Red-owned. Older focused tests
-// ask the historical map-based question directly; production generic offering
-// no longer calls either helper and consumes semantic RouteBlockage values.
+// These native-map probes are retained for Red-focused compatibility tests.
+// Production generic providers no longer call them; they consume the semantic
+// RouteBlockage values emitted above.
 func journeyProgressionBlocked(obs Observation, destinationMap uint8) bool {
-	augmented := observationWithRouteRequirements(obs, redRouteRequirements(obs))
-	for _, blockage := range augmented.RouteBlockages {
-		destination, ok := skill.Place(string(blockage.Destination))
-		if ok && destination.Map == destinationMap {
-			return true
-		}
+	switch destinationMap {
+	case route3Map:
+		return !redHasBadge(obs, state.BadgeBoulder)
+	case route2Map:
+		return !observedEvent(obs, state.EventGotPokedex.String())
+	case route25Map:
+		return !obs.Story.Has(redProgressSSTicketAcquired)
+	case route9Map, route10Map, lavenderTownMap, celadonCityMap:
+		return !redHasBadge(obs, state.BadgeThunder)
+	case route12Map, route13Map, route14Map, route15Map, fuchsiaCityMap:
+		return !obs.Story.Has(redProgressPokeFluteAcquired)
+	case saffronCityMap:
+		return !obs.Story.Has(ProgressSaffronGateOpen)
+	case saffronGymMap:
+		return !obs.Story.Has(redProgressSilphRescueComplete)
+	case cinnabarGymMap:
+		return !obs.Story.Has(ProgressSecretKeyOwned)
+	case viridianGymMap:
+		return !obs.Story.Has(ProgressViridianGymOpen)
+	case vermilionGymMap:
+		return obs.Map != vermilionGymMap
+	default:
+		return false
 	}
-	return false
 }
 
 func placeProgressionBlocked(obs Observation, placeName string) bool {
-	augmented := observationWithRouteRequirements(obs, redRouteRequirements(obs))
-	return routePlaceBlocked(augmented, PlaceID(placeName))
+	switch placeName {
+	case "route 12 snorlax", "route 12 south of snorlax":
+		return !obs.Story.Has(redProgressPokeFluteAcquired)
+	default:
+		return false
+	}
 }
 
 func redRoutePrerequisiteLink(id CapabilityID) (RoutePrerequisiteLink, bool) {
