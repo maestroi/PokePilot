@@ -35,7 +35,11 @@ func TestFleeWaitInputBacksOutOfAccidentallyOpenedMoveMenu(t *testing.T) {
 	}
 
 	moveMenu := newFakeRAM()
-	openTextBox(moveMenu, "TACKLE TYPE/NORMAL")
+	openTextBox(moveMenu, "TYPE NORMAL")
+	// textTile intentionally only supports letters in the shared fake helper.
+	// Red's charmap renders '/' as tile 0xf3, so write that one glyph exactly
+	// as the live move menu does to produce the production marker "TYPE/".
+	moveMenu[sym.TileMap+4] = 0xf3
 	if got := fleeWaitInputFromMem(moveMenu); got != emu.B {
 		t.Fatalf("move-menu recovery input = %v, want B", got)
 	}
