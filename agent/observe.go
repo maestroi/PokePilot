@@ -327,6 +327,13 @@ func ObserveChecked(m *emu.Emu, romData []byte) (Observation, error) {
 				object.Challengeable = status.Challengeable
 				object.Defeated = status.Defeated
 			}
+			// ChallengeTrainer approaches through TalkAt, so a trainer in a
+			// disconnected component is just as unreachable as an ordinary
+			// person. Measured on Route 12: the player at (9,62) was offered
+			// trainer (14,31), then failed every attempt trying to reach (13,31).
+			if objectGrid != nil && !personReachableOnGrid(objectGrid, obs.X, obs.Y, object.X, object.Y, stationary) {
+				continue
+			}
 		}
 		if object.Kind == "item" && objectGrid != nil && !reachableOnGrid(objectGrid, obs.X, obs.Y, object.X, object.Y, stationary) {
 			continue
