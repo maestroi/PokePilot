@@ -40,8 +40,8 @@ func TestAdapterCatalogFeedsGenericProviders(t *testing.T) {
 		MartStock:  []string{"pokeball"},
 	}
 	catalog := ObjectiveCatalog{
-		Destinations: []CatalogDestination{{Place: "beta", NativeMap: 2, X: 3, Y: 4}},
-		Challenges:   []CatalogChallenge{{Place: "alpha gym", NativeMap: 1}},
+		Destinations: []CatalogDestination{{Place: "beta", Location: "beta", X: 3, Y: 4}},
+		Challenges:   []CatalogChallenge{{Place: "alpha gym", Location: "alpha"}},
 		LocalEncounters: []CatalogEncounter{{
 			Species: "catalogmon", MinLevel: 2, MaxLevel: 4, Slots: 1,
 		}},
@@ -52,8 +52,11 @@ func TestAdapterCatalogFeedsGenericProviders(t *testing.T) {
 			{Kind: CatalogInteractableItem, X: 8, Y: 9, Item: "potion"},
 		},
 	}
-	known := NewKnowledge(map[uint8][]uint8{1: {2}, 2: {1}})
-	known.SawMap(1)
+	known := NewKnowledge(KnowledgeTopology{Adjacency: map[LocationID][]LocationID{
+		"alpha": {"beta"},
+		"beta":  {"alpha"},
+	}})
+	known.SawLocation("alpha")
 
 	got := OfferWithProgressionEvidence(obs, known, catalogTestPlanner{catalog: catalog}).Candidates
 	for _, want := range []Objective{
@@ -101,12 +104,14 @@ func TestCatalogCurrentCenterControlsRecoveryProvider(t *testing.T) {
 }
 
 func TestCatalogNormalizationKeepsOffersDeterministic(t *testing.T) {
-	obs := Observation{Map: 1, PartyCount: 1}
+	obs := Observation{Map: 1, Location: "alpha", PartyCount: 1}
 	obs.Catalog = ObjectiveCatalog{Destinations: []CatalogDestination{
-		{Place: "zeta", NativeMap: 2},
-		{Place: "beta", NativeMap: 2},
+		{Place: "zeta", Location: "beta"},
+		{Place: "beta", Location: "beta"},
 	}}
-	known := NewKnowledge(map[uint8][]uint8{1: {2}})
+	known := NewKnowledge(KnowledgeTopology{Adjacency: map[LocationID][]LocationID{
+		"alpha": {"beta"},
+	}})
 	first := OfferWithEvidence(obs, known)
 	second := OfferWithEvidence(obs, known)
 	if !reflect.DeepEqual(first, second) {

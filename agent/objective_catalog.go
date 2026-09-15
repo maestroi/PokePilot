@@ -8,12 +8,8 @@ import (
 )
 
 // ObjectiveCatalog is the typed, game-supplied world vocabulary consumed by
-// generic objective providers. Provider policy decides when an opportunity is
-// useful; adapters decide which destinations, starters, challenges, encounters,
-// shops and interactables exist in the active game.
-//
-// NativeMap is a temporary compatibility handle for Knowledge's v5 uint8 map
-// graph. #538 replaces that last native-map dependency with semantic locations.
+// generic objective providers. Destinations and challenges carry semantic area
+// identity only; native map coordinates stay inside the concrete adapter.
 type ObjectiveCatalog struct {
 	Starters        []CatalogStarter
 	Destinations    []CatalogDestination
@@ -30,16 +26,16 @@ type CatalogStarter struct {
 }
 
 type CatalogDestination struct {
-	Place     PlaceID
-	NativeMap uint8
-	X, Y      uint8
-	Center    bool
+	Place    PlaceID
+	Location LocationID
+	X, Y     uint8
+	Center   bool
 }
 
 type CatalogChallenge struct {
-	Place     PlaceID
-	NativeMap uint8
-	Complete  bool
+	Place    PlaceID
+	Location LocationID
+	Complete bool
 }
 
 type CatalogEncounter struct {
@@ -79,11 +75,6 @@ func objectiveCatalogEmpty(c ObjectiveCatalog) bool {
 		len(c.LocalEncounters) == 0 && c.Shop == nil && len(c.Interactables) == 0 && !c.CurrentCenter
 }
 
-// objectiveCatalogForObservation preserves an explicitly attached catalog. For
-// older synthetic callers that do not attach one, it asks the registered game
-// adapter rather than reconstructing Red world data inside generic providers.
-// With exactly one registered game, an empty GameID remains unambiguous for one
-// release; multi-game callers must identify their game explicitly.
 func objectiveCatalogForObservation(obs Observation) ObjectiveCatalog {
 	catalog := obs.Catalog
 	if objectiveCatalogEmpty(catalog) {
@@ -147,8 +138,8 @@ func normalizeObjectiveCatalog(c ObjectiveCatalog) ObjectiveCatalog {
 		if c.Destinations[i].Place != c.Destinations[j].Place {
 			return c.Destinations[i].Place < c.Destinations[j].Place
 		}
-		if c.Destinations[i].NativeMap != c.Destinations[j].NativeMap {
-			return c.Destinations[i].NativeMap < c.Destinations[j].NativeMap
+		if c.Destinations[i].Location != c.Destinations[j].Location {
+			return c.Destinations[i].Location < c.Destinations[j].Location
 		}
 		if c.Destinations[i].Y != c.Destinations[j].Y {
 			return c.Destinations[i].Y < c.Destinations[j].Y

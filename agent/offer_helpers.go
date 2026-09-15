@@ -22,22 +22,15 @@ func medReaches(mon PartyMon, wantStatus string) bool {
 	return mon.Status == wantStatus
 }
 
-func nearestKnownCenter(obs Observation, known *Knowledge, knownMaps map[uint8]bool, catalog ObjectiveCatalog) (PlaceID, bool) {
-	dist := map[uint8]int{obs.Map: 0}
-	for queue := []uint8{obs.Map}; len(queue) > 0; queue = queue[1:] {
-		for _, next := range known.Adjacency[queue[0]] {
-			if _, seen := dist[next]; !seen {
-				dist[next] = dist[queue[0]] + 1
-				queue = append(queue, next)
-			}
-		}
-	}
+func nearestKnownCenter(obs Observation, known *Knowledge, knownLocations map[LocationID]bool, catalog ObjectiveCatalog) (PlaceID, bool) {
+	current := observationLocation(obs, known)
+	dist := mapHops(known.Adjacency, current)
 	best, bestDist := PlaceID(""), 0
 	for _, destination := range catalog.Destinations {
-		if !destination.Center || destination.NativeMap == obs.Map || !knownMaps[destination.NativeMap] {
+		if !destination.Center || destination.Location == "" || destination.Location == current || !knownLocations[destination.Location] {
 			continue
 		}
-		hops, reachable := dist[destination.NativeMap]
+		hops, reachable := dist[destination.Location]
 		if !reachable {
 			continue
 		}

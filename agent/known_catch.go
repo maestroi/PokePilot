@@ -25,7 +25,8 @@ type wildGrassLookup func([]byte, uint8) ([]skill.WildSpecies, error)
 // table Observation showed on that map and offer a bounded, executable
 // "travel there, then hunt" objective from later maps.
 //
-// This does not reveal unseen habitats: only Knowledge.Visited maps are read.
+// This does not reveal unseen habitats: only Knowledge.Visited locations are
+// projected back through Red's adapter before ROM lookup.
 func appendKnownCatchObjectives(romData []byte, obs Observation, known *Knowledge, out []Objective) []Objective {
 	return appendKnownCatchObjectivesWithWild(romData, obs, known, out, skill.WildGrass)
 }
@@ -43,14 +44,18 @@ func appendKnownCatchObjectivesWithWild(romData []byte, obs Observation, known *
 		}
 	}
 
-	hops := mapHops(known.Adjacency, obs.Map)
+	adjacency := known.nativeAdjacency()
+	hops := mapHops(adjacency, obs.Map)
 	best := map[SpeciesID]knownCatchHabitat{}
-	for mapID := range known.Visited {
-		if mapID == obs.Map {
+	seenNative := map[uint8]bool{}
+	for location := range known.Visited {
+		mapID, ok := redNativeMapForLocation(known, location)
+		if !ok || seenNative[mapID] || mapID == obs.Map {
 			continue // local catches already came from Offer.
 		}
+		seenNative[mapID] = true
 		distance, reachable := hops[mapID]
-		if len(known.Adjacency) > 0 && !reachable {
+		if len(adjacency) > 0 && !reachable {
 			continue
 		}
 		place, ok := catchPlaceOnMap(mapID)
@@ -106,6 +111,23 @@ func appendKnownCatchObjectivesWithWild(romData []byte, obs Observation, known *
 		})
 	}
 	return out
+}
+
+func redNativeMapForLocation(known *Knowledge, location LocationID) (uint8, bool) {
+	if known != nil {
+		for native, semantic := range known.nativeLocations {
+			if semantic == location {
+				return native, true
+			}
+		}
+	}
+	for i := 0; i <= 0xff; i++ {
+		id := uint8(i)
+		if redLocationID(id) == location {
+			return id, true
+		}
+	}
+	return 0, false
 }
 
 func catchPlaceOnMap(mapID uint8) (PlaceID, bool) {

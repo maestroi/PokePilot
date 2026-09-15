@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/maestroi/pokepilot/emu"
+	"github.com/maestroi/pokepilot/profiles"
 	"github.com/maestroi/pokepilot/world"
 )
 
@@ -30,18 +31,23 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 	if err != nil {
 		return Result{Stop: StopError, Err: err}
 	}
+	profile, _, err := profiles.Detect(romData)
+	if err != nil {
+		return Result{Stop: StopError, Err: fmt.Errorf("agent: Run: detect game profile: %w", err)}
+	}
 	graph, err := world.BuildGraph(romData)
 	if err != nil {
 		return Result{Stop: StopError, Err: fmt.Errorf("agent: Run: build map graph: %w", err)}
 	}
-	adjacency := make(map[uint8][]uint8, len(graph.Edges))
+	nativeAdjacency := make(map[uint8][]uint8, len(graph.Edges))
 	for from, edges := range graph.Edges {
 		for _, e := range edges {
-			adjacency[from] = append(adjacency[from], e.To)
+			nativeAdjacency[from] = append(nativeAdjacency[from], e.To)
 		}
 	}
+	topology := knowledgeTopologyFor(profile.ID(), nativeAdjacency)
 
-	known := NewKnowledge(adjacency)
+	known := NewKnowledge(topology)
 	intent, intentAge := "", 0
 	resumedPlan := Plan{}
 	if budget.ResumeFrom != "" {
@@ -52,7 +58,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 		if err := m.LoadState(stateBytes); err != nil {
 			return Result{Stop: StopError, Err: fmt.Errorf("agent: Run: resume %s: LoadState: %w", budget.ResumeFrom, err)}
 		}
-		mem := LoadCheckpointMemory(budget.ResumeFrom, adjacency, budget.Log)
+		mem := LoadCheckpointMemory(budget.ResumeFrom, topology, budget.Log)
 		known = mem.Knowledge
 		intent, intentAge = mem.Intent, mem.IntentAge
 		resumedPlan = mem.Plan.clone()
@@ -237,7 +243,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 		known.Done(obj)
 		known.notePartyCombatResult(before, last, objectiveResult)
 		if obj.Kind == KindTalk {
-			known.TalkedTo(before.Map, obj.X, obj.Y)
+			known.TalkedAt(observationLocation(before, known), obj.X, obj.Y)
 		}
 		engine.failures.success()
 		history = appendHistory(history, RoundRecord{Objective: obj.String(), Outcome: objectiveResult.HistoryText()})
@@ -302,7 +308,7 @@ func progressOf(obs Observation, k *Knowledge, round int) Progress {
 }
 
 func noteObservation(k *Knowledge, obs Observation) {
-	k.SawMap(obs.Map)
+	k.SawLocation(observationLocation(obs, k))
 	k.SawDialogue(obs.RecentDialogue, obs.MapName, obs.X, obs.Y)
 }
 

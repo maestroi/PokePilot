@@ -12,9 +12,6 @@ func init() {
 	registerObjectiveCatalogProvider(redprofile.GameID, &redObjectiveAdapter{})
 }
 
-// ObjectiveCatalog makes Red's world vocabulary available to generic provider
-// policy without requiring those providers to call Red-oriented skill discovery
-// helpers themselves.
 func (a *redObjectiveAdapter) ObjectiveCatalog(obs Observation) ObjectiveCatalog {
 	return redObjectiveCatalog(obs)
 }
@@ -35,19 +32,19 @@ func redObjectiveCatalog(obs Observation) ObjectiveCatalog {
 			continue
 		}
 		catalog.Destinations = append(catalog.Destinations, CatalogDestination{
-			Place:     PlaceID(name),
-			NativeMap: destination.Map,
-			X:         destination.X,
-			Y:         destination.Y,
-			Center:    isCenter(state.MapName(destination.Map)),
+			Place:    PlaceID(name),
+			Location: redLocationID(destination.Map),
+			X:        destination.X,
+			Y:        destination.Y,
+			Center:   isCenter(state.MapName(destination.Map)),
 		})
 	}
 
 	if gym, ok := skill.GymAt(obs.Map); ok {
 		catalog.Challenges = append(catalog.Challenges, CatalogChallenge{
-			Place:     gym.Place,
-			NativeMap: gym.Map,
-			Complete:  hasBadge(obs, gym.Badge),
+			Place:    gym.Place,
+			Location: redLocationID(gym.Map),
+			Complete: hasBadge(obs, gym.Badge),
 		})
 	}
 
@@ -88,8 +85,6 @@ func redObjectiveCatalog(obs Observation) ObjectiveCatalog {
 		catalog.Interactables = append(catalog.Interactables, entry)
 	}
 
-	// PlaceNames is stable today, but the adapter contract promises deterministic
-	// provider input independently of Red table iteration details.
 	sort.SliceStable(catalog.Destinations, func(i, j int) bool {
 		return catalog.Destinations[i].Place < catalog.Destinations[j].Place
 	})

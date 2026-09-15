@@ -81,7 +81,7 @@ func appendDexStaticObjectives(obs Observation, known *Knowledge, out []Objectiv
 	var adjacency map[uint8][]uint8
 	var hops map[uint8]int
 	if known != nil {
-		adjacency = known.Adjacency
+		adjacency = known.nativeAdjacency()
 		hops = mapHops(adjacency, obs.Map)
 	}
 

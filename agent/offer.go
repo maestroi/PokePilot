@@ -9,30 +9,80 @@ import (
 	"github.com/maestroi/pokepilot/skill"
 )
 
-// Knowledge is run-owned evidence. Game facts enter only after the player has
-// observed them; route adjacency is deterministic geometry rebuilt each run.
-// Completed/Failures keep string map keys for one-release API compatibility,
-// but every new write uses ObjectiveKey.ID rather than presentation text.
+// Knowledge is run-owned evidence. Durable geographic knowledge is keyed by
+// semantic LocationID rather than a game's native map representation. Native
+// map translation is retained only as a runtime compatibility table for old
+// checkpoints and transient emulator samples; it is never serialized.
 type Knowledge struct {
-	Visited      map[uint8]bool
+	Visited      map[LocationID]bool
 	Places       map[string]bool
 	Completed    map[string]int
 	Failures     map[string]Failure
-	Talked       map[uint8]map[[2]uint8]bool
-	Adjacency    map[uint8][]uint8
+	Talked       map[LocationID]map[[2]uint8]bool
+	Adjacency    map[LocationID][]LocationID
 	Requirements []Requirement
+
+	nativeLocations map[uint8]LocationID
 }
 
-func NewKnowledge(adjacency map[uint8][]uint8) *Knowledge {
-	return &Knowledge{
-		Visited:      map[uint8]bool{},
-		Places:       map[string]bool{},
-		Completed:    map[string]int{},
-		Talked:       map[uint8]map[[2]uint8]bool{},
-		Adjacency:    adjacency,
-		Requirements: []Requirement{},
-		Failures:     map[string]Failure{},
+// NewKnowledge accepts semantic topology in production and the historical
+// map[uint8][]uint8 shape as a one-release compatibility shim for tests/tools.
+// Regardless of input, the Knowledge object itself contains semantic keys.
+func NewKnowledge(topology any) *Knowledge {
+	resolved := KnowledgeTopology{Adjacency: map[LocationID][]LocationID{}, NativeLocations: map[uint8]LocationID{}}
+	switch value := topology.(type) {
+	case nil:
+	case KnowledgeTopology:
+		resolved = normalizeKnowledgeTopology(value)
+	case map[LocationID][]LocationID:
+		resolved = normalizeKnowledgeTopology(KnowledgeTopology{Adjacency: value})
+	case map[uint8][]uint8:
+		resolved = legacyKnowledgeTopology(value)
+	default:
+		panic(fmt.Sprintf("agent: unsupported knowledge topology %T", topology))
 	}
+	return &Knowledge{
+		Visited:         map[LocationID]bool{},
+		Places:          map[string]bool{},
+		Completed:       map[string]int{},
+		Talked:          map[LocationID]map[[2]uint8]bool{},
+		Adjacency:       resolved.Adjacency,
+		Requirements:    []Requirement{},
+		Failures:        map[string]Failure{},
+		nativeLocations: resolved.NativeLocations,
+	}
+}
+
+func (k *Knowledge) locationForNative(id uint8) LocationID {
+	if k != nil {
+		if location := k.nativeLocations[id]; location != "" {
+			return location
+		}
+	}
+	return legacyLocationID(id)
+}
+
+func (k *Knowledge) nativeAdjacency() map[uint8][]uint8 {
+	out := map[uint8][]uint8{}
+	if k == nil || len(k.nativeLocations) == 0 {
+		return out
+	}
+	inverse := make(map[LocationID]uint8, len(k.nativeLocations))
+	for native, semantic := range k.nativeLocations {
+		inverse[semantic] = native
+	}
+	for from, neighbors := range k.Adjacency {
+		fromNative, ok := inverse[from]
+		if !ok {
+			continue
+		}
+		for _, to := range neighbors {
+			if toNative, ok := inverse[to]; ok {
+				out[fromNative] = append(out[fromNative], toNative)
+			}
+		}
+	}
+	return out
 }
 
 type Failure struct {
@@ -55,8 +105,6 @@ func (k *Knowledge) completionCount(o Objective) int {
 	if n, ok := k.Completed[objectiveStorageKey(o)]; ok {
 		return n
 	}
-	// v4 checkpoint compatibility. Gym's old display sentence was shared by
-	// every gym, so it cannot safely be attributed to this specific place.
 	if o.Kind == KindGym {
 		return 0
 	}
@@ -117,13 +165,34 @@ type Requirement struct {
 	Times int
 }
 
-func (k *Knowledge) SawMap(id uint8) { k.Visited[id] = true }
+func (k *Knowledge) SawLocation(id LocationID) {
+	if k != nil && id != "" {
+		k.Visited[id] = true
+	}
+}
+
+// SawMap is retained for old tests and transient native sampler output. New
+// runtime policy records Observation.Location through SawLocation.
+func (k *Knowledge) SawMap(id any) {
+	switch value := id.(type) {
+	case LocationID:
+		k.SawLocation(value)
+	case string:
+		k.SawLocation(LocationID(value))
+	case uint8:
+		k.SawLocation(k.locationForNative(value))
+	case int:
+		if value >= 0 && value <= 0xff {
+			k.SawLocation(k.locationForNative(uint8(value)))
+		}
+	}
+}
 
 const journeyPlaceLimit = 8
 
-func mapHops(adjacency map[uint8][]uint8, from uint8) map[uint8]int {
-	hops := map[uint8]int{from: 0}
-	frontier := []uint8{from}
+func mapHops[K comparable](adjacency map[K][]K, from K) map[K]int {
+	hops := map[K]int{from: 0}
+	frontier := []K{from}
 	for len(frontier) > 0 {
 		cur := frontier[0]
 		frontier = frontier[1:]
@@ -138,19 +207,19 @@ func mapHops(adjacency map[uint8][]uint8, from uint8) map[uint8]int {
 	return hops
 }
 
-func placeHops(hops map[uint8]int, name string) int {
-	d, ok := skill.Place(name)
-	if !ok {
+func placeHops(hops map[LocationID]int, name string, catalog ObjectiveCatalog) int {
+	destination, ok := catalog.destination(PlaceID(name))
+	if !ok || destination.Location == "" {
 		return 1 << 30
 	}
-	h, ok := hops[d.Map]
+	h, ok := hops[destination.Location]
 	if !ok {
 		return 1 << 30
 	}
 	return h
 }
 
-func hasUnvisitedNeighbor(id uint8, known *Knowledge) bool {
+func hasUnvisitedNeighbor(id LocationID, known *Knowledge) bool {
 	for _, n := range known.Adjacency[id] {
 		if !known.Visited[n] {
 			return true
@@ -159,19 +228,19 @@ func hasUnvisitedNeighbor(id uint8, known *Knowledge) bool {
 	return false
 }
 
-func selectJourneyPlaces(placeNames []string, known *Knowledge, hops map[uint8]int) []string {
+func selectJourneyPlaces(placeNames []string, known *Knowledge, hops map[LocationID]int, catalog ObjectiveCatalog) []string {
 	if known == nil || len(known.Adjacency) == 0 || len(placeNames) <= journeyPlaceLimit {
 		return placeNames
 	}
 	var frontier, unvisited, hinterland []string
 	for _, name := range placeNames {
-		d, ok := skill.Place(name)
+		destination, ok := catalog.destination(PlaceID(name))
 		switch {
-		case !ok:
+		case !ok || destination.Location == "":
 			hinterland = append(hinterland, name)
-		case !known.Visited[d.Map]:
+		case !known.Visited[destination.Location]:
 			unvisited = append(unvisited, name)
-		case hasUnvisitedNeighbor(d.Map, known):
+		case hasUnvisitedNeighbor(destination.Location, known):
 			frontier = append(frontier, name)
 		default:
 			hinterland = append(hinterland, name)
@@ -179,7 +248,11 @@ func selectJourneyPlaces(placeNames []string, known *Knowledge, hops map[uint8]i
 	}
 	byHops := func(names []string) {
 		sort.SliceStable(names, func(i, j int) bool {
-			return placeHops(hops, names[i]) < placeHops(hops, names[j])
+			left, right := placeHops(hops, names[i], catalog), placeHops(hops, names[j], catalog)
+			if left != right {
+				return left < right
+			}
+			return names[i] < names[j]
 		})
 	}
 	byHops(frontier)
@@ -264,8 +337,6 @@ func (k *Knowledge) HeardRequirement(line, place string, x, y uint8) {
 func (k *Knowledge) Done(o Objective) {
 	storage := objectiveStorageKey(o)
 	legacy := o.String()
-	// Opportunistically fold a v4 presentation-keyed count into the canonical
-	// identity the first time the same semantic objective is completed again.
 	if old := k.Completed[legacy]; old > 0 && legacy != storage {
 		k.Completed[storage] += old
 		delete(k.Completed, legacy)
@@ -279,7 +350,6 @@ func (k *Knowledge) Done(o Objective) {
 		delete(k.Failures, gymLossFailureKey(o.Place))
 		delete(k.Failures, legacyGymLossFailureKey(o.Place))
 		delete(k.Failures, gymRetryReadyKey(o.Place))
-		// v4 retry marker used the generic gym display sentence.
 		delete(k.Failures, (Objective{Kind: KindGym}).String())
 	}
 	if o.Kind == KindTrain {
@@ -288,16 +358,34 @@ func (k *Knowledge) Done(o Objective) {
 	}
 }
 
-func (k *Knowledge) TalkedTo(mapID, x, y uint8) {
-	if k.Talked[mapID] == nil {
-		k.Talked[mapID] = map[[2]uint8]bool{}
+func (k *Knowledge) TalkedAt(location LocationID, x, y uint8) {
+	if location == "" {
+		return
 	}
-	k.Talked[mapID][[2]uint8{x, y}] = true
+	if k.Talked[location] == nil {
+		k.Talked[location] = map[[2]uint8]bool{}
+	}
+	k.Talked[location][[2]uint8{x, y}] = true
+}
+
+func (k *Knowledge) TalkedTo(location any, x, y uint8) {
+	switch value := location.(type) {
+	case LocationID:
+		k.TalkedAt(value, x, y)
+	case string:
+		k.TalkedAt(LocationID(value), x, y)
+	case uint8:
+		k.TalkedAt(k.locationForNative(value), x, y)
+	case int:
+		if value >= 0 && value <= 0xff {
+			k.TalkedAt(k.locationForNative(uint8(value)), x, y)
+		}
+	}
 }
 
 func (k *Knowledge) restore(mem memoryFile) {
 	for _, id := range mem.Visited {
-		k.Visited[id] = true
+		k.SawLocation(id)
 	}
 	for _, name := range mem.Places {
 		k.Places[name] = true
@@ -318,7 +406,7 @@ func (k *Knowledge) restore(mem memoryFile) {
 		}
 	}
 	for _, t := range mem.Talked {
-		k.TalkedTo(t.Map, t.X, t.Y)
+		k.TalkedAt(t.Location, t.X, t.Y)
 	}
 	for _, r := range mem.Requirements {
 		k.HeardRequirement(r.Text, r.Place, r.X, r.Y)

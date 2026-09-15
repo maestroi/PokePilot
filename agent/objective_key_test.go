@@ -75,7 +75,7 @@ func TestLoadCheckpointMemoryMigratesV4PlanAndKnowledge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	legacyPath := knowledgePathForStateVersion(statePath, legacyMemoryVersion)
+	legacyPath := knowledgePathForStateVersion(statePath, legacyPresentationVersion)
 	if err := os.WriteFile(legacyPath, data, 0o644); err != nil {
 		t.Fatal(err)
 	}

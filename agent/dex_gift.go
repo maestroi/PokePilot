@@ -33,7 +33,7 @@ func appendDexGiftObjectives(obs Observation, known *Knowledge, out []Objective)
 	hops := map[uint8]int{}
 	var adjacency map[uint8][]uint8
 	if known != nil {
-		adjacency = known.Adjacency
+		adjacency = known.nativeAdjacency()
 		hops = mapHops(adjacency, obs.Map)
 	}
 
