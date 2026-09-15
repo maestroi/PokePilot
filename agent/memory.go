@@ -7,15 +7,18 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
-// Version 5 replaces presentation-string durable identity with ObjectiveKey
-// for completion/failure records and persisted plan steps. The loader retains
-// an explicit v4 migration path so existing checkpoints remain resumable.
+// Version 6 replaces native uint8 map identity with semantic LocationID for
+// durable visited/talked evidence. v5 and v4 remain explicitly migratable: v5
+// already carries ObjectiveKey records, while v4 may still use presentation
+// strings for objective identity.
 const (
-	memoryVersion       = 5
-	legacyMemoryVersion = 4
+	memoryVersion              = 6
+	legacyObjectiveKeyVersion  = 5
+	legacyPresentationVersion  = 4
 )
 
 func knowledgeFileNameVersion(stateBase string, version int) string {
@@ -41,7 +44,7 @@ func isKnowledgeName(name string) bool {
 
 type storedCompletion struct {
 	Key       ObjectiveKey `json:"key,omitempty"`
-	Objective string       `json:"objective,omitempty"` // v4 compatibility only
+	Objective string       `json:"objective,omitempty"`
 	Times     int          `json:"times"`
 }
 
@@ -53,12 +56,11 @@ type storedFailure struct {
 	Last      string       `json:"last"`
 }
 
-// memoryFile is the serialised form of a run's knowledge, captured beside the
-// checkpoint save state it describes. Adjacency is deliberately rebuilt from
-// the ROM; observations/history/offers are re-derived after resume.
+// memoryFile is the v6 serialised form. Adjacency and native-map translation
+// are rebuilt from the active adapter/ROM on resume and are never persisted.
 type memoryFile struct {
 	Version      int                `json:"version"`
-	Visited      []uint8            `json:"visited"`
+	Visited      []LocationID       `json:"visited"`
 	Places       []string           `json:"places"`
 	Completed    []storedCompletion `json:"completed"`
 	Talked       []talkedKey        `json:"talked"`
@@ -70,6 +72,28 @@ type memoryFile struct {
 }
 
 type talkedKey struct {
+	Location LocationID `json:"location"`
+	X        uint8      `json:"x"`
+	Y        uint8      `json:"y"`
+}
+
+// legacyMemoryFile matches v4/v5 geography. Objective records intentionally
+// reuse the current structures because they already contain both canonical and
+// presentation compatibility fields.
+type legacyMemoryFile struct {
+	Version      int                `json:"version"`
+	Visited      []uint8            `json:"visited"`
+	Places       []string           `json:"places"`
+	Completed    []storedCompletion `json:"completed"`
+	Talked       []legacyTalkedKey  `json:"talked"`
+	Requirements []Requirement      `json:"requirements,omitempty"`
+	Failures     []storedFailure    `json:"failures,omitempty"`
+	Intent       string             `json:"intent,omitempty"`
+	IntentAge    int                `json:"intent_age,omitempty"`
+	Plan         Plan               `json:"plan,omitempty"`
+}
+
+type legacyTalkedKey struct {
 	Map uint8 `json:"map"`
 	X   uint8 `json:"x"`
 	Y   uint8 `json:"y"`
@@ -83,26 +107,52 @@ func encodeMemoryFile(k *Knowledge, intent string, intentAge int, plans ...Plan)
 	for id := range k.Visited {
 		mem.Visited = append(mem.Visited, id)
 	}
+	sort.Slice(mem.Visited, func(i, j int) bool { return mem.Visited[i] < mem.Visited[j] })
+
 	for name := range k.Places {
 		mem.Places = append(mem.Places, name)
 	}
-	for storage, times := range k.Completed {
-		entry := storedCompletion{Times: times}
+	sort.Strings(mem.Places)
+
+	completionKeys := make([]string, 0, len(k.Completed))
+	for storage := range k.Completed {
+		completionKeys = append(completionKeys, storage)
+	}
+	sort.Strings(completionKeys)
+	for _, storage := range completionKeys {
+		entry := storedCompletion{Times: k.Completed[storage]}
 		if key, ok := parseObjectiveKeyID(storage); ok {
 			entry.Key = key
 		} else {
-			// A resumed v4 entry may not have been encountered again yet.
 			entry.Objective = storage
 		}
 		mem.Completed = append(mem.Completed, entry)
 	}
-	for mapID, tiles := range k.Talked {
+
+	for location, tiles := range k.Talked {
 		for tile := range tiles {
-			mem.Talked = append(mem.Talked, talkedKey{Map: mapID, X: tile[0], Y: tile[1]})
+			mem.Talked = append(mem.Talked, talkedKey{Location: location, X: tile[0], Y: tile[1]})
 		}
 	}
+	sort.Slice(mem.Talked, func(i, j int) bool {
+		if mem.Talked[i].Location != mem.Talked[j].Location {
+			return mem.Talked[i].Location < mem.Talked[j].Location
+		}
+		if mem.Talked[i].Y != mem.Talked[j].Y {
+			return mem.Talked[i].Y < mem.Talked[j].Y
+		}
+		return mem.Talked[i].X < mem.Talked[j].X
+	})
+
 	mem.Requirements = append(mem.Requirements, k.Requirements...)
-	for storage, failure := range k.Failures {
+
+	failureKeys := make([]string, 0, len(k.Failures))
+	for storage := range k.Failures {
+		failureKeys = append(failureKeys, storage)
+	}
+	sort.Strings(failureKeys)
+	for _, storage := range failureKeys {
+		failure := k.Failures[storage]
 		entry := storedFailure{Objective: failure.Objective, Times: failure.Times, Last: failure.Last}
 		if key, mode, ok := parseFailureStorageKey(storage); ok {
 			entry.Key, entry.Mode = key, mode
@@ -144,8 +194,28 @@ type ResumedMemory struct {
 	Plan      Plan
 }
 
-func LoadCheckpointMemory(statePath string, adjacency map[uint8][]uint8, log io.Writer) ResumedMemory {
-	empty := ResumedMemory{Knowledge: NewKnowledge(adjacency)}
+func migrateLegacyMemory(legacy legacyMemoryFile, k *Knowledge) memoryFile {
+	mem := memoryFile{
+		Version:      memoryVersion,
+		Places:       append([]string(nil), legacy.Places...),
+		Completed:    append([]storedCompletion(nil), legacy.Completed...),
+		Requirements: append([]Requirement(nil), legacy.Requirements...),
+		Failures:     append([]storedFailure(nil), legacy.Failures...),
+		Intent:       legacy.Intent,
+		IntentAge:    legacy.IntentAge,
+		Plan:         legacy.Plan.clone(),
+	}
+	for _, native := range legacy.Visited {
+		mem.Visited = append(mem.Visited, k.locationForNative(native))
+	}
+	for _, talked := range legacy.Talked {
+		mem.Talked = append(mem.Talked, talkedKey{Location: k.locationForNative(talked.Map), X: talked.X, Y: talked.Y})
+	}
+	return mem
+}
+
+func LoadCheckpointMemory(statePath string, topology any, log io.Writer) ResumedMemory {
+	empty := ResumedMemory{Knowledge: NewKnowledge(topology)}
 	base := filepath.Base(statePath)
 	if !strings.HasSuffix(base, ".state") {
 		logMemory(log, "%s is not a checkpoint .state file; starting with empty knowledge", statePath)
@@ -154,11 +224,15 @@ func LoadCheckpointMemory(statePath string, adjacency map[uint8][]uint8, log io.
 
 	path := knowledgePathForState(statePath)
 	data, err := os.ReadFile(path)
-	migratingV4 := false
+	version := memoryVersion
 	if errors.Is(err, os.ErrNotExist) {
-		legacyPath := knowledgePathForStateVersion(statePath, legacyMemoryVersion)
-		if legacy, legacyErr := os.ReadFile(legacyPath); legacyErr == nil {
-			data, err, path, migratingV4 = legacy, nil, legacyPath, true
+		for _, legacyVersion := range []int{legacyObjectiveKeyVersion, legacyPresentationVersion} {
+			legacyPath := knowledgePathForStateVersion(statePath, legacyVersion)
+			legacy, legacyErr := os.ReadFile(legacyPath)
+			if legacyErr == nil {
+				data, err, path, version = legacy, nil, legacyPath, legacyVersion
+				break
+			}
 		}
 	}
 	if err != nil {
@@ -166,29 +240,39 @@ func LoadCheckpointMemory(statePath string, adjacency map[uint8][]uint8, log io.
 		return empty
 	}
 
+	k := NewKnowledge(topology)
 	var mem memoryFile
-	if err := json.Unmarshal(data, &mem); err != nil {
-		logMemory(log, "knowledge file beside %s is unreadable (%v); starting with empty knowledge", statePath, err)
-		return empty
+	if version == memoryVersion {
+		if err := json.Unmarshal(data, &mem); err != nil {
+			logMemory(log, "knowledge file beside %s is unreadable (%v); starting with empty knowledge", statePath, err)
+			return empty
+		}
+		if mem.Version != memoryVersion {
+			logMemory(log, "knowledge file %s is version %d, want %d; starting with empty knowledge", path, mem.Version, memoryVersion)
+			return empty
+		}
+	} else {
+		var legacy legacyMemoryFile
+		if err := json.Unmarshal(data, &legacy); err != nil {
+			logMemory(log, "legacy knowledge file beside %s is unreadable (%v); starting with empty knowledge", statePath, err)
+			return empty
+		}
+		if legacy.Version != version {
+			logMemory(log, "knowledge file %s is version %d, expected legacy v%d; starting with empty knowledge", path, legacy.Version, version)
+			return empty
+		}
+		mem = migrateLegacyMemory(legacy, k)
+		logMemory(log, "migrating v%d checkpoint geography to semantic locations beside %s", version, statePath)
 	}
-	if mem.Version != memoryVersion && !(migratingV4 && mem.Version == legacyMemoryVersion) {
-		logMemory(log, "knowledge file %s is version %d, want %d (or migratable v%d); starting with empty knowledge",
-			path, mem.Version, memoryVersion, legacyMemoryVersion)
-		return empty
-	}
+
 	if len(mem.Intent) > IntentCap {
-		logMemory(log, "knowledge file beside %s carries an intent of %d bytes, over the cap of %d; starting with empty knowledge",
-			statePath, len(mem.Intent), IntentCap)
+		logMemory(log, "knowledge file beside %s carries an intent of %d bytes, over the cap of %d; starting with empty knowledge", statePath, len(mem.Intent), IntentCap)
 		return empty
 	}
 	if err := validateStoredPlan(mem.Plan); err != nil {
 		logMemory(log, "knowledge file beside %s carries an invalid plan (%v); starting with empty knowledge", statePath, err)
 		return empty
 	}
-	if migratingV4 {
-		logMemory(log, "migrating v4 presentation-keyed checkpoint memory beside %s; legacy plan sentences remain valid until the next strategic plan", statePath)
-	}
-	k := NewKnowledge(adjacency)
 	k.restore(mem)
 	return ResumedMemory{Knowledge: k, Intent: mem.Intent, IntentAge: mem.IntentAge, Plan: mem.Plan.clone()}
 }
