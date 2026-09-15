@@ -6,31 +6,15 @@ import {
   playStyleTagline,
   type PlayStyle
 } from '../shared/playstyle'
+import { preferredRun } from './preferredRun'
 
 export type SpectatorPlayStyle = PlayStyle
-export { normalizePlayStyle, playStyleLabel, playStyleTagline }
+export { normalizePlayStyle, playStyleLabel, playStyleTagline, preferredRun }
 
 export type SpectatorTone = 'neutral' | 'info' | 'success' | 'warning' | 'danger'
 
 export function isLiveRun(run: SpectatorRun | null | undefined): boolean {
   return Boolean(run && (run.status === 'running' || run.status === 'leased'))
-}
-
-function newest(runs: SpectatorRun[], field: 'queued_at' | 'ended_at'): SpectatorRun | null {
-  return [...runs].sort((a, b) => Number(b[field] || 0) - Number(a[field] || 0))[0] || null
-}
-
-export function preferredRun(runs: SpectatorRun[], selectedRunID = ''): SpectatorRun | null {
-  if (!runs.length) return null
-  if (selectedRunID) {
-    return runs.find((run) => run.run_id === selectedRunID) || null
-  }
-  return newest(runs.filter((run) => run.status === 'running'), 'queued_at')
-    || newest(runs.filter((run) => run.status === 'leased'), 'queued_at')
-    || newest(runs.filter((run) => run.status === 'queued'), 'queued_at')
-    || newest(runs.filter((run) => run.status === 'done'), 'ended_at')
-    || runs[runs.length - 1]
-    || null
 }
 
 export function splitSpectatorRuns(runs: SpectatorRun[]) {
