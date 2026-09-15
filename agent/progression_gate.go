@@ -50,7 +50,7 @@ func routeBlockageIdentity(blockage RouteBlockage) string {
 }
 
 func routePlaceBlocked(obs Observation, place PlaceID) bool {
-	if place == "" {
+	if place == "" || obs.Location == place {
 		return false
 	}
 	for _, blockage := range obs.RouteBlockages {
