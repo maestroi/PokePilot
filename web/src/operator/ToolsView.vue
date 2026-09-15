@@ -3,24 +3,11 @@ import { computed, reactive, ref, watch } from 'vue'
 import { ArrowRightIcon, PlayIcon } from '@heroicons/vue/20/solid'
 import { createRun, getModels } from '../shared/api/client'
 import type { ModelDeployment, RunSpec } from '../shared/api/types'
+import { GOAL_OPTIONS, nextGoalForPlayStyle } from '../shared/goals'
 import { defaultGoalForPlayStyle } from '../shared/playstyle'
 import Panel from '../shared/components/Panel.vue'
 import { usePollingResource } from '../shared/composables/usePollingResource'
 import { DEFAULT_ARM_A, deploymentOptionLabel, deploymentSelectable, preferredDeployment } from './llmDeployments'
-
-const goalOptions = [
-  'Earn the Boulder Badge.',
-  'Earn 2 badges.',
-  'Earn 3 badges.',
-  'Earn 4 badges.',
-  'Earn 5 badges.',
-  'Earn 6 badges.',
-  'Earn 7 badges.',
-  'Earn all 8 badges.',
-  'Beat the Elite Four and Champion.',
-  'Complete the obtainable Pokédex.',
-  ''
-]
 
 type StarterMode =
   | 'default'
@@ -75,15 +62,20 @@ const error = ref('')
 const createdRunID = ref('')
 const starterMode = ref<StarterMode>('default')
 const specificStarter = ref('')
+const goalExplicitlySelected = ref(false)
 const isLLM = computed(() => form.planner === 'llm')
 const isSpecificStarter = computed(() => starterMode.value === 'specific')
 
 watch(
   () => form.play_style,
   () => {
-    form.goal = defaultGoalForPlayStyle({ play_style: form.play_style })
+    form.goal = nextGoalForPlayStyle(form.goal, form.play_style, goalExplicitlySelected.value)
   }
 )
+
+function markGoalExplicitlySelected(): void {
+  goalExplicitlySelected.value = true
+}
 
 function starterRequest(): string {
   if (starterMode.value === 'specific') return specificStarter.value.trim()
@@ -189,10 +181,10 @@ async function submit(): Promise<void> {
 
         <label v-if="isLLM" class="block sm:col-span-2">
           <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Goal</span>
-          <select v-model="form.goal" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400">
-            <option v-for="goal in goalOptions" :key="goal || 'free'" :value="goal">{{ goal || 'Free play (no automatic stop)' }}</option>
+          <select v-model="form.goal" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400" @change="markGoalExplicitlySelected">
+            <option v-for="goal in GOAL_OPTIONS" :key="goal || 'free'" :value="goal">{{ goal || 'Free play (no automatic stop)' }}</option>
           </select>
-          <span class="mt-1 block text-[11px] text-slate-600">Defaults from the selected play style; you can still override it here.</span>
+          <span class="mt-1 block text-[11px] text-slate-600">Defaults from play style until you choose a goal here; an explicit goal stays selected.</span>
         </label>
 
         <label v-if="isLLM" class="block">
@@ -203,7 +195,7 @@ async function submit(): Promise<void> {
             <option value="completionist">Completionist · explore and collect</option>
             <option value="team_builder">Team Builder · catches and training</option>
           </select>
-          <span class="mt-1 block text-[11px] text-slate-600">What the player values; changing it selects that style's default goal.</span>
+          <span class="mt-1 block text-[11px] text-slate-600">What the player values; changing it updates the goal only until you explicitly pick one.</span>
         </label>
 
         <label v-if="isLLM" class="block">

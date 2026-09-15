@@ -9,6 +9,7 @@ import ResourceState from '../shared/components/ResourceState.vue'
 import StatusBadge from '../shared/components/StatusBadge.vue'
 import { usePollingResource } from '../shared/composables/usePollingResource'
 import RunCleanupPanel from './RunCleanupPanel.vue'
+import { DELETE_CONCURRENCY, cleanupProgressText, cleanupResultText, deleteRuns } from './runCleanup'
 import {
   archiveHow,
   archiveOutcome,
@@ -64,9 +65,13 @@ const successOnly = ref(false)
 const sortKey = ref('finished')
 const sortDirection = ref('desc')
 const expanded = ref<Set<string>>(new Set())
+const selectedRunIDs = ref<Set<string>>(new Set())
 const deleteTarget = ref<DashboardRun | null>(null)
 const deleting = ref(false)
 const deleteError = ref('')
+const deleteSelectedOpen = ref(false)
+const deletingSelected = ref(false)
+const deleteSelectedStatus = ref('')
 
 const resource = usePollingResource(
   (signal) => {
@@ -97,6 +102,8 @@ const resource = usePollingResource(
 )
 
 const rows = computed(() => resource.data.value?.runs ?? [])
+const selectedCount = computed(() => selectedRunIDs.value.size)
+const allVisibleSelected = computed(() => rows.value.length > 0 && rows.value.every((run) => selectedRunIDs.value.has(run.run_id)))
 const total = computed(() => Number(resource.data.value?.total || 0))
 const facets = computed<ArchiveFacets>(() => {
   const raw = resource.data.value?.history_facets as unknown as Partial<ArchiveFacets> | undefined
@@ -182,6 +189,65 @@ function toggleExpanded(runID: string): void {
   expanded.value = next
 }
 
+function toggleRunSelection(runID: string): void {
+  const next = new Set(selectedRunIDs.value)
+  if (next.has(runID)) next.delete(runID)
+  else next.add(runID)
+  selectedRunIDs.value = next
+}
+
+function toggleVisibleSelection(): void {
+  const next = new Set(selectedRunIDs.value)
+  if (allVisibleSelected.value) {
+    for (const run of rows.value) next.delete(run.run_id)
+  } else {
+    for (const run of rows.value) next.add(run.run_id)
+  }
+  selectedRunIDs.value = next
+}
+
+function clearSelection(): void {
+  selectedRunIDs.value = new Set()
+  deleteSelectedStatus.value = ''
+}
+
+function requestDeleteSelected(): void {
+  if (!selectedCount.value || deletingSelected.value) return
+  deleteSelectedStatus.value = ''
+  deleteSelectedOpen.value = true
+}
+
+function closeDeleteSelected(): void {
+  if (!deletingSelected.value) deleteSelectedOpen.value = false
+}
+
+async function confirmDeleteSelected(): Promise<void> {
+  const ids = [...selectedRunIDs.value]
+  if (!ids.length || deletingSelected.value) return
+  deletingSelected.value = true
+  deleteSelectedStatus.value = 'Preparing selected runs…'
+  try {
+    const result = await deleteRuns(
+      ids,
+      (id) => deleteRun(id),
+      DELETE_CONCURRENCY,
+      (progress) => {
+        deleteSelectedStatus.value = cleanupProgressText(progress)
+      }
+    )
+    const next = new Set(selectedRunIDs.value)
+    for (const id of result.deletedIds) next.delete(id)
+    selectedRunIDs.value = next
+    deleteSelectedStatus.value = cleanupResultText(result)
+    deleteSelectedOpen.value = false
+    await resource.retry()
+  } catch (cause) {
+    deleteSelectedStatus.value = `Delete failed: ${cause instanceof Error ? cause.message : String(cause)}`
+  } finally {
+    deletingSelected.value = false
+  }
+}
+
 function requestDelete(run: DashboardRun): void {
   deleteError.value = ''
   deleteTarget.value = run
@@ -198,6 +264,9 @@ async function confirmDelete(): Promise<void> {
   deleteError.value = ''
   try {
     await deleteRun(run.run_id)
+    const next = new Set(selectedRunIDs.value)
+    next.delete(run.run_id)
+    selectedRunIDs.value = next
     deleteTarget.value = null
     if (rows.value.length === 1 && page.value > 0) page.value--
     else await resource.retry()
@@ -291,6 +360,24 @@ function experimentLabel(run: DashboardRun): string {
     <Panel title="Runs" description="Finished-run database and lightweight model leaderboard. Filters and sorting apply across the full server-side archive." compact>
       <template #actions>
         <div class="flex flex-wrap items-center justify-end gap-2">
+          <span v-if="selectedCount" class="text-xs font-semibold text-slate-400">{{ selectedCount }} selected</span>
+          <button
+            v-if="selectedCount"
+            type="button"
+            class="rounded-md bg-white/6 px-2.5 py-1.5 text-xs font-semibold text-slate-300 ring-1 ring-white/8 hover:bg-white/10"
+            @click="clearSelection"
+          >
+            Clear selection
+          </button>
+          <button
+            v-if="selectedCount"
+            type="button"
+            class="inline-flex items-center gap-1.5 rounded-md bg-rose-400/10 px-2.5 py-1.5 text-xs font-semibold text-rose-200 ring-1 ring-rose-300/15 hover:bg-rose-400/15"
+            @click="requestDeleteSelected"
+          >
+            <TrashIcon class="size-3.5" aria-hidden="true" />
+            Delete selected
+          </button>
           <button
             type="button"
             class="rounded-md bg-cyan-400/10 px-2.5 py-1.5 text-xs font-semibold text-cyan-100 ring-1 ring-cyan-300/20 hover:bg-cyan-400/15"
@@ -431,10 +518,19 @@ function experimentLabel(run: DashboardRun): string {
         </template>
 
         <div class="-mx-3 mt-4 overflow-x-auto sm:-mx-4">
-          <table class="min-w-[1180px] divide-y divide-white/10 text-left">
+          <table class="min-w-[1220px] divide-y divide-white/10 text-left">
             <thead>
               <tr>
-                <th class="px-3 py-2 text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase sm:px-4">Finished</th>
+                <th class="w-10 px-3 py-2 sm:pl-4">
+                  <input
+                    type="checkbox"
+                    :checked="allVisibleSelected"
+                    :aria-label="allVisibleSelected ? 'Deselect visible runs' : 'Select visible runs'"
+                    class="size-4 rounded border-white/15 bg-white/8 text-cyan-400 focus:ring-cyan-400"
+                    @change="toggleVisibleSelection"
+                  >
+                </th>
+                <th class="px-3 py-2 text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Finished</th>
                 <th class="px-3 py-2 text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Run / setup</th>
                 <th class="px-3 py-2 text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Progress</th>
                 <th class="px-3 py-2 text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Model</th>
@@ -446,7 +542,16 @@ function experimentLabel(run: DashboardRun): string {
             <tbody class="divide-y divide-white/8">
               <template v-for="run in rows" :key="run.run_id">
                 <tr class="align-top hover:bg-white/[0.025]">
-                  <td class="px-3 py-3 text-xs whitespace-nowrap text-slate-500 sm:px-4">
+                  <td class="w-10 px-3 py-3 sm:pl-4">
+                    <input
+                      type="checkbox"
+                      :checked="selectedRunIDs.has(run.run_id)"
+                      :aria-label="`Select ${run.run_id}`"
+                      class="size-4 rounded border-white/15 bg-white/8 text-cyan-400 focus:ring-cyan-400"
+                      @change="toggleRunSelection(run.run_id)"
+                    >
+                  </td>
+                  <td class="px-3 py-3 text-xs whitespace-nowrap text-slate-500">
                     <div>{{ archiveWhen(run) }}</div>
                     <div class="mt-1 font-mono text-[10px] text-slate-600">{{ formatSeconds(runtimeSeconds(run)) }} runtime</div>
                   </td>
@@ -517,7 +622,7 @@ function experimentLabel(run: DashboardRun): string {
                   </td>
                 </tr>
                 <tr v-if="expanded.has(run.run_id)" class="bg-white/[0.018]">
-                  <td colspan="7" class="px-3 py-4 sm:px-4">
+                  <td colspan="8" class="px-3 py-4 sm:px-4">
                     <div class="grid gap-x-8 gap-y-4 text-xs sm:grid-cols-2 xl:grid-cols-4">
                       <dl class="space-y-1.5">
                         <div class="flex gap-3"><dt class="w-24 shrink-0 text-slate-600">Goal</dt><dd class="text-slate-300">{{ run.goal || '—' }}</dd></div>
@@ -580,6 +685,7 @@ function experimentLabel(run: DashboardRun): string {
     </Panel>
 
     <p v-if="deleteError" class="text-sm text-rose-300" role="alert">{{ deleteError }}</p>
+    <p v-if="deleteSelectedStatus" class="text-sm text-slate-400" aria-live="polite">{{ deleteSelectedStatus }}</p>
 
     <ConfirmDialog
       :open="Boolean(deleteTarget)"
@@ -590,6 +696,17 @@ function experimentLabel(run: DashboardRun): string {
       danger
       @close="closeDelete"
       @confirm="confirmDelete"
+    />
+
+    <ConfirmDialog
+      :open="deleteSelectedOpen"
+      title="Delete selected runs?"
+      :message="`Delete ${selectedCount} selected run${selectedCount === 1 ? '' : 's'} and their associated stored run data? This cannot be undone.`"
+      :confirm-label="`Delete ${selectedCount} run${selectedCount === 1 ? '' : 's'}`"
+      :busy="deletingSelected"
+      danger
+      @close="closeDeleteSelected"
+      @confirm="confirmDeleteSelected"
     />
   </div>
 </template>
