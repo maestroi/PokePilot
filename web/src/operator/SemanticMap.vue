@@ -253,20 +253,27 @@ onUnmounted(() => {
       'relative grid h-full min-h-0 w-full bg-[#0c1118] p-1.5'
     ]"
   >
-    <canvas ref="canvas" class="max-w-none shrink-0 [image-rendering:pixelated]" aria-label="Semantic map" />
+    <canvas
+      ref="canvas"
+      :class="[
+        debugEnabled ? 'max-w-none' : 'max-h-full max-w-full',
+        'shrink-0 [image-rendering:pixelated]'
+      ]"
+      aria-label="Semantic map"
+    />
     <button
       type="button"
       :aria-pressed="debugEnabled"
       :title="debugEnabled ? 'Hide map debug labels' : 'Show map debug labels'"
       :class="[
         debugEnabled ? 'bg-[var(--poke-cyan)] text-[#101820]' : 'bg-black/75 text-[var(--poke-muted)] hover:text-white',
-        'sticky top-1 right-1 ml-auto rounded-sm px-1.5 py-0.5 font-mono text-[9px] font-bold ring-1 ring-white/10'
+        'absolute top-2 right-2 z-10 rounded-sm px-1.5 py-0.5 font-mono text-[9px] font-bold ring-1 ring-white/10'
       ]"
       @click="localDebug = !localDebug"
     >
       {{ debugEnabled ? 'DEBUG ON' : 'DEBUG' }}
     </button>
-    <div v-if="debugEnabled" class="pointer-events-none sticky bottom-1 left-1 mr-auto bg-black/80 px-1.5 py-1 font-mono text-[9px] leading-3 text-[var(--poke-muted)] ring-1 ring-white/10">
+    <div v-if="debugEnabled" class="pointer-events-none absolute bottom-2 left-2 z-10 bg-black/80 px-1.5 py-1 font-mono text-[9px] leading-3 text-[var(--poke-muted)] ring-1 ring-white/10">
       <div><span class="text-white">S#/PP</span> sprite slot / picture ID</div>
       <div><span class="text-white">→MM</span> warp destination map</div>
     </div>
