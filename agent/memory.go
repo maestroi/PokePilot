@@ -16,9 +16,9 @@ import (
 // already carries ObjectiveKey records, while v4 may still use presentation
 // strings for objective identity.
 const (
-	memoryVersion              = 6
-	legacyObjectiveKeyVersion  = 5
-	legacyPresentationVersion  = 4
+	memoryVersion             = 6
+	legacyObjectiveKeyVersion = 5
+	legacyPresentationVersion = 4
 )
 
 func knowledgeFileNameVersion(stateBase string, version int) string {
