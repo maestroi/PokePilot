@@ -184,6 +184,29 @@ func (f *runFailurePolicy) recoverable(obj Objective, result ObjectiveResult, st
 	failureKey := fingerprint.Key
 	blackedOut := failureIsBlackout(result)
 	retreated := failureCauseIs(result, "train_retreat")
+	trainProgress := failureCauseIs(result, "train_progress_shortfall")
+	catchMiss := failureCauseIs(result, "catch_hunt_exhausted")
+
+	// These are successful bounded gameplay sessions whose requested terminal
+	// condition simply was not reached. A training shortfall explicitly means
+	// the lead gained a level; a catch-hunt exhaustion means the controller
+	// completed the whole stochastic hunt budget without seeing the requested
+	// species. Neither is evidence that recovery itself is broken, so neither
+	// may consume the fatal consecutive-failure budget. Same-state quarantine
+	// still suppresses the exact objective when alternatives exist, and the
+	// independent stagnation watchdog remains the ceiling when no alternative
+	// can make progress.
+	if trainProgress || catchMiss {
+		f.consecutive = 0
+		f.lastFailKey = ""
+		f.retreatStreak, f.lastRetreatLevel = 0, 0
+		decision := runFailureDecision{Recovered: true}
+		if strategic {
+			decision.ReplanReason = "objective_failed"
+		}
+		return decision
+	}
+
 	if strategic {
 		f.consecutive++
 		if f.escalated[failureKey] || f.consecutive > f.maxConsecutive {
