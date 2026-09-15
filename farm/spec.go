@@ -23,6 +23,15 @@ type Spec struct {
 	// never how. Empty means no goal (the pre-Goal prompt).
 	Goal       string `json:"goal,omitempty"`
 	LLMProfile string `json:"llm_profile,omitempty"`
+	// LLMDeployment is the first-class deployment selection. LLMProfile is
+	// retained only as a compatibility adapter for older queued runs/runners.
+	LLMDeployment string             `json:"llm_deployment,omitempty"`
+	Inference     *InferenceIdentity `json:"inference,omitempty"`
+	// Paired experiment identity is optional for ordinary runs. Case is shared
+	// by the A/B pair for one seed.
+	ExperimentID   string `json:"experiment_id,omitempty"`
+	ExperimentArm  string `json:"experiment_arm,omitempty"`
+	ExperimentCase string `json:"experiment_case,omitempty"`
 	// ReasoningEffort overrides the strategist's reasoning_effort field for
 	// this run: "low", "medium", or "high". Empty means the endpoint's
 	// configured default (POKEPILOT_LLM_REASONING_EFFORT, or "medium").
