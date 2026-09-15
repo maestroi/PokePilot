@@ -6,16 +6,15 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 )
 
 const (
-	defaultWorkerControlPort      = "8100"
-	workerForceEndTimeout         = 2 * time.Second
-	workerForceEndAttemptTimeout  = 750 * time.Millisecond
-	maxWorkerControlError         = 4 << 10
+	defaultWorkerControlPort     = "8100"
+	workerForceEndTimeout        = 2 * time.Second
+	workerForceEndAttemptTimeout = 750 * time.Millisecond
+	maxWorkerControlError        = 4 << 10
 )
 
 type workerTerminator func(context.Context, []string) error
@@ -123,11 +122,7 @@ func requestWorkerForceEndAt(ctx context.Context, workerAddr string) error {
 	if err != nil {
 		return fmt.Errorf("invalid worker address %q: %w", workerAddr, err)
 	}
-	port := strings.TrimSpace(os.Getenv("POKEPILOT_WORKER_CONTROL_PORT"))
-	if port == "" {
-		port = defaultWorkerControlPort
-	}
-	target := "http://" + net.JoinHostPort(host, port) + "/v1/worker/force-end"
+	target := "http://" + net.JoinHostPort(host, defaultWorkerControlPort) + "/v1/worker/force-end"
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, nil)
 	if err != nil {
 		return err
