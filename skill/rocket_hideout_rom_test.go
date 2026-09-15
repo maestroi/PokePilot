@@ -30,7 +30,6 @@ func TestRocketHideoutTargetsAreWalkable(t *testing.T) {
 		{"game corner stand", gameCornerStand},
 		{"B3F return", rocketB3FReturn},
 		{"B4F entry", rocketB4FEntry},
-		{"Giovanni stand", giovanniStand},
 	} {
 		t.Run(d.name, func(t *testing.T) {
 			h, err := rom.ParseMap(romData, d.dest.Map)
@@ -74,16 +73,35 @@ func TestRocketBossDoorNeedsLiveOverride(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseMap(B4F): %v", err)
 	}
-	g, err := world.Build(romData, h)
+	// RocketHideoutB4FDoorCallbackScript writes block $2d (door block) at
+	// bc=(5,12) while the two guards are unbeaten. This ROM's compiled B4F
+	// map already ships that cell as $0e (MEASURED), so build the closed
+	// state explicitly instead of assuming world.Build's raw bytes reflect
+	// it.
+	blocks, err := rom.Blocks(romData, h)
 	if err != nil {
-		t.Fatalf("Build(B4F): %v", err)
+		t.Fatalf("Blocks(B4F): %v", err)
+	}
+	closedBlocks := append([]byte(nil), blocks...)
+	closedBlocks[5*int(h.WidthBlocks)+12] = 0x2d
+	g, err := world.BuildFromBlocks(romData, h, closedBlocks)
+	if err != nil {
+		t.Fatalf("BuildFromBlocks(B4F closed): %v", err)
 	}
 
-	if _, err := world.FindPath(g, int(rocketB4FEntry.X), int(rocketB4FEntry.Y), int(giovanniStand.X), int(giovanniStand.Y), nil); err == nil {
-		t.Fatal("static B4F grid reaches Giovanni through the closed boss door; live-door regression is no longer pinned")
+	// rocketB4FEntry (the west/stair side) is not walkably connected to the
+	// guards' side at all, door or no door (RocketHideout's own comment on
+	// reachRocketGuardSide); the only foot route to Giovanni starts from the
+	// elevator's B4F landing tile (25,15), one of its own def_warp_events.
+	// giovanniStand (25,4) is the desk tile in front of Giovanni, not itself
+	// walkable (MEASURED: only (25,3), Giovanni's own tile, borders it), so
+	// route to a tile adjacent to it, the same as walkRocketBossDoor does.
+	const elevatorLandingX, elevatorLandingY = 25, 15
+	if _, _, err := world.FindPathAdjacent(g, elevatorLandingX, elevatorLandingY, int(giovanniStand.X), int(giovanniStand.Y), nil); err == nil {
+		t.Fatal("closed-door B4F grid reaches Giovanni through the boss door; live-door regression is no longer pinned")
 	}
 	applyLiveOpenBlock(g, 5, 12)
-	if _, err := world.FindPath(g, int(rocketB4FEntry.X), int(rocketB4FEntry.Y), int(giovanniStand.X), int(giovanniStand.Y), nil); err != nil {
+	if _, _, err := world.FindPathAdjacent(g, elevatorLandingX, elevatorLandingY, int(giovanniStand.X), int(giovanniStand.Y), nil); err != nil {
 		t.Fatalf("Giovanni still unreachable after live boss-door override: %v", err)
 	}
 }
