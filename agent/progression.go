@@ -45,12 +45,15 @@ func withoutKnownUnroutableJourneys(out []Objective, unroutable []string) []Obje
 }
 
 // OfferWithProgressionEvidence composes the portable provider menu with one
-// game-owned progression provider. If that planner also supplies semantic
-// route requirements, project them before generic providers run so travel,
-// training and collection all consume the same adapter-owned gate evidence.
+// game-owned progression provider. Adapter-owned route requirements and typed
+// objective catalogs are projected before generic providers run, so provider
+// policy never has to discover Red maps, gyms, starters, shops or encounters.
 func OfferWithProgressionEvidence(obs Observation, known *Knowledge, p ProgressionPlanner) ObjectiveOffer {
 	if requirements, ok := p.(RouteRequirementProvider); ok && requirements != nil {
 		obs = observationWithRouteRequirements(obs, requirements.RouteRequirements(obs))
+	}
+	if catalogs, ok := p.(ObjectiveCatalogProvider); ok && catalogs != nil {
+		obs.Catalog = catalogs.ObjectiveCatalog(obs)
 	}
 	base := OfferWithEvidence(obs, known)
 	if p == nil {
