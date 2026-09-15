@@ -169,18 +169,37 @@ func BuildGraph(romData []byte) (*Graph, error) {
 	}
 
 	for id, h := range headers {
-		for _, w := range h.Warps {
-			to, ok := resolve(id, w)
-			if !ok {
-				continue
+		if elevator, ok := rom.LookupElevator(id); ok {
+			// Elevator door destinations are not static ROM topology. The map
+			// script first points both doors back to the floor the player came
+			// from, then DisplayElevatorFloorMenu rewrites them to the selected
+			// floor. Advertise every selectable floor as a real graph edge and
+			// let traversal own the menu choice before stepping through it.
+			for _, w := range h.Warps {
+				for _, floor := range elevator.Floors {
+					g.Edges[id] = append(g.Edges[id], Edge{
+						Kind:  EdgeWarp,
+						From:  id,
+						To:    floor.MapID,
+						WarpX: w.X,
+						WarpY: w.Y,
+					})
+				}
 			}
-			g.Edges[id] = append(g.Edges[id], Edge{
-				Kind:  EdgeWarp,
-				From:  id,
-				To:    to,
-				WarpX: w.X,
-				WarpY: w.Y,
-			})
+		} else {
+			for _, w := range h.Warps {
+				to, ok := resolve(id, w)
+				if !ok {
+					continue
+				}
+				g.Edges[id] = append(g.Edges[id], Edge{
+					Kind:  EdgeWarp,
+					From:  id,
+					To:    to,
+					WarpX: w.X,
+					WarpY: w.Y,
+				})
+			}
 		}
 		for _, c := range h.Connections {
 			g.Edges[id] = append(g.Edges[id], g.connectionEdges(id, c)...)
@@ -332,21 +351,26 @@ func (g *Graph) connectionPortComps(e Edge, arrival bool) []int {
 	return out
 }
 
-// destWarpTile finds the destination warp tile on e.To for a warp edge: the
-// warp on e.From at (e.WarpX, e.WarpY) names a DestWarpID, and the warp at that
-// index on e.To is where the player lands.
+// destWarpTile finds the destination warp tile on e.To for a warp edge. Most
+// edges get the destination index from their immutable source warp. Elevators
+// are different: their menu writes a selected destination index into live
+// wWarpEntries, so the adapter table is the authoritative arrival port.
 func (g *Graph) destWarpTile(e Edge) (int, int, bool) {
 	var destID int
-	found := false
-	for _, w := range g.warps[e.From] {
-		if int(w.X) == int(e.WarpX) && int(w.Y) == int(e.WarpY) {
-			destID = int(w.DestWarpID)
-			found = true
-			break
+	if _, floor, _, ok := rom.ElevatorFloorForDestination(e.From, e.To); ok {
+		destID = int(floor.DestWarpID)
+	} else {
+		found := false
+		for _, w := range g.warps[e.From] {
+			if int(w.X) == int(e.WarpX) && int(w.Y) == int(e.WarpY) {
+				destID = int(w.DestWarpID)
+				found = true
+				break
+			}
 		}
-	}
-	if !found {
-		return 0, 0, false
+		if !found {
+			return 0, 0, false
+		}
 	}
 	dest := g.warps[e.To]
 	if destID >= len(dest) {
