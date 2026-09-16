@@ -3,6 +3,7 @@ export interface SelectableSpectatorRun {
   status: string
   queued_at?: number
   ended_at?: number
+  featured?: boolean
 }
 
 function newest<T extends SelectableSpectatorRun>(runs: T[], field: 'queued_at' | 'ended_at'): T | null {
@@ -14,7 +15,8 @@ export function preferredRun<T extends SelectableSpectatorRun>(runs: T[], select
   if (selectedRunID) {
     return runs.find((run) => run.run_id === selectedRunID) || null
   }
-  return newest(runs.filter((run) => run.status === 'running'), 'queued_at')
+  return runs.find((run) => run.featured)
+    || newest(runs.filter((run) => run.status === 'running'), 'queued_at')
     || newest(runs.filter((run) => run.status === 'leased'), 'queued_at')
     || newest(runs.filter((run) => run.status === 'queued'), 'queued_at')
     || newest(runs.filter((run) => run.status === 'done'), 'ended_at')
