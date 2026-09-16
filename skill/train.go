@@ -68,6 +68,11 @@ var ErrTrainRetreat = errors.New("skill: Train: stopped while the party was aliv
 // materially changed each session; that is the fact the gate cares about.
 var ErrTrainProgress = errors.New("skill: Train: target level not reached, but the lead gained at least one level")
 
+// ErrNoEncounterPhase marks a bounded Train session that exhausted its walking
+// budget before it saw enough wild encounters. The detailed diagnostic still
+// carries legs/rate/map evidence, but callers must key policy on errors.Is.
+var ErrNoEncounterPhase = errors.New("skill: Train: no-encounter phase")
+
 // retreatLineNum/Den: a session stops when the lead's HP is below this
 // fraction of its max, and refuses to start from below it. MEASURED on
 // Route 2 (post_errand, one-mon L7 lead, type-aware policy): three
@@ -836,10 +841,11 @@ func ceilSqrt(n int) int {
 // the roll is hRandomAdd against the grass rate, sampled once per step onto
 // grass, and hRandomAdd advances with rDIV every frame, so a dry stretch is
 // a property of WHEN the steps land as much as of how many there are.
-// Callers that retry after a no-encounter phase match on its stable prefix.
+// Policy callers use errors.Is(err, ErrNoEncounterPhase); the diagnostic prose
+// remains intentionally descriptive rather than a control-flow contract.
 func NoEncounterDiagnostic(legs, battles, want int, mapID uint8, rate uint8, species int) error {
-	return fmt.Errorf("skill: Train: no-encounter phase after %d legs: %d encounters (want %d battles) on map %#04x, grass rate %d/256, %d species in wild table",
-		legs, battles, want, mapID, rate, species)
+	return fmt.Errorf("%w after %d legs: %d encounters (want %d battles) on map %#04x, grass rate %d/256, %d species in wild table",
+		ErrNoEncounterPhase, legs, battles, want, mapID, rate, species)
 }
 
 // wildSlots is how many (level, species) pairs a grass record carries.
