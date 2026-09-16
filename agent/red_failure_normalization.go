@@ -131,6 +131,19 @@ func failureCauseFor(err error) (FailureCauseID, []string) {
 		return "", nil
 	}
 
+	// ErrReplanExhausted must classify before RouteBlockedError below: goto.go
+	// wraps the LAST leg's error into the exhaustion message (newReplanExhaustedError),
+	// and that last leg can legitimately be a genuine capability gate even
+	// when every earlier re-plan in the same call failed on transient
+	// leg_unwalkable/no_path facts (a live NPC parked on a one-tile connection
+	// band, MEASURED on Route 13: run-1ttew0yypzkgt2p7r4bm5c61ur round 6).
+	// errors.As walks the whole %w tree, so checking RouteBlockedError first
+	// would mislabel that controller/pathing exhaustion as a missing badge/HM,
+	// and the route-prerequisite quarantine scope then never expires because
+	// the capability it is waiting on was never actually the problem.
+	if errors.Is(err, skill.ErrReplanExhausted) {
+		return "route_replan_exhausted", nil
+	}
 	var routeBlocked *world.RouteBlockedError
 	if errors.As(err, &routeBlocked) {
 		missing := routeBlocked.MissingCapabilities()
@@ -174,9 +187,6 @@ func failureCauseFor(err error) (FailureCauseID, []string) {
 	}
 	if errors.Is(err, skill.ErrShopControllerStalled) {
 		return "shop_controller_stalled", nil
-	}
-	if errors.Is(err, skill.ErrReplanExhausted) {
-		return "route_replan_exhausted", nil
 	}
 	if errors.Is(err, skill.ErrMenuStuck) {
 		return "menu_stuck", nil
