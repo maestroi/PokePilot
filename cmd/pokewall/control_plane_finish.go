@@ -31,10 +31,9 @@ func sanitizeFinishReport(report farm.FinishReport) farm.FinishReport {
 }
 
 func (cp *controlPlane) persistFinish(w *Wall, report farm.FinishReport) error {
-	// The runner does not need to carry a duplicate screenshot in its finish
-	// JSON: handleFinish already captures one final /frame.png from the worker.
-	// Snapshot those bytes before the completed tile is evicted into the run
-	// catalog so the durable finish artifact can keep the history thumbnail.
+	// Normal HTTP finishes have already had a frame attached before the inner
+	// catalog handler can evict the completed tile. Keep this RAM fallback for
+	// direct/internal callers that persist a freshly settled run themselves.
 	if len(report.FramePNG) == 0 {
 		w.mu.Lock()
 		if t := w.tiles[report.RunID]; t != nil && t.Finished && len(t.lastFrame) > 0 {
@@ -156,6 +155,9 @@ func (w *Wall) controlPlaneHTTPHandler(next http.Handler) http.Handler {
 			}
 			var parsed farm.FinishReport
 			if json.Unmarshal(data, &parsed) == nil {
+				if len(parsed.FramePNG) == 0 {
+					parsed.FramePNG = w.captureFinishFrame(parsed.RunID)
+				}
 				finish = &parsed
 			}
 			req.Body = io.NopCloser(bytes.NewReader(data))
