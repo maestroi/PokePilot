@@ -198,19 +198,17 @@ func redRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, bool) {
 		t.Gate = true
 		return t, true
 	case pair(semanticCeruleanCityMap, semanticRoute9Map):
-		// Same class of bug as red:vermilion_gym_cut (run-3djisxgsy3dgzpnsde2inzyuh
-		// round 7): the immutable ROM collision splits Route 9 into a component
-		// touching the Cerulean border and a separate component touching the
-		// Route 10 border, joined only by the (currently uncut) tree between
-		// them. Marking this a Gate keeps the static, pre-cut landing
-		// component authoritative, so the router can reach "route 9" as a bare
-		// destination but never anything past it — reproduced in
-		// run-1948e1rnco3sp1y9bbhdwp7eov, where PostSurgeCeladonProgression
-		// reported "world: no route" through Route 9/Rock Tunnel/Lavender and
-		// fell back to routing through the still-closed Saffron guard. Treat
-		// it as a real pivot instead: once can_cut is satisfied the landing
-		// component is unconstrained, exactly like the Gym door.
-		return semanticTransition("red:route9_cut", edge, capCanCut), true
+		// The immutable ROM collision splits Route 9 into a Cerulean-side
+		// component and a Route 10-side component, joined only by the live Cut
+		// tree. Once can_cut is available this semantic action must act as a
+		// pivot so routing can cross that static split. But the connection
+		// itself is not the tree: a player already on the Cerulean-side
+		// component can leave Route 9 again without Cut. Issue #815 exposed the
+		// old all-or-nothing behavior by stranding a checkpoint at Route 9
+		// (0,0) while recovery tried to return to Route 4.
+		t := semanticTransition("red:route9_cut", edge, capCanCut)
+		t.PivotOnly = true
+		return t, true
 	case pair(semanticSaffronCityMap, semanticRoute5Map),
 		pair(semanticSaffronCityMap, semanticRoute6Map),
 		pair(semanticSaffronCityMap, semanticRoute7Map),

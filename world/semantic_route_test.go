@@ -95,6 +95,61 @@ func TestSemanticGateStaysSubjectToComponentReachability(t *testing.T) {
 	}
 }
 
+func TestMissingPivotOnlyCapabilityFallsBackToOrdinaryGeometry(t *testing.T) {
+	pivot := Edge{Kind: EdgeWarp, From: 1, To: 2, WarpX: 0, WarpY: 0}
+	g := &Graph{
+		componentAware: true,
+		Edges:          map[uint8][]Edge{1: {pivot}, 2: {}},
+		// Component 1 can reach the underlying edge normally; component 2 can
+		// reach it only when the semantic action is available as a pivot.
+		comps:      map[uint8][][]int{1: {{1, 0, 2}}, 2: {{1}}},
+		tiles:      map[uint8]dim{1: {w: 3, h: 1}, 2: {w: 1, h: 1}},
+		warps:      map[uint8][]rom.Warp{1: {{X: 0, Y: 0, DestMap: 2}}, 2: {{X: 0, Y: 0, DestMap: 1}}},
+		exitComps:  map[Edge][]int{pivot: {1}},
+		entryComps: map[Edge][]int{pivot: {1}},
+	}
+	prereqs := RoutePrerequisites{
+		Transitions: map[Edge]gameruntime.Transition{pivot: {
+			ID:        "optional_component_pivot",
+			Requires:  []gameruntime.CapabilityID{"can_pivot"},
+			PivotOnly: true,
+		}},
+	}
+
+	// Already on the edge's ordinary component: the missing capability must
+	// not remove a physically reachable escape edge, and execution must not
+	// receive a semantic transition it cannot satisfy.
+	plan, err := FindRoutePlanAtDestinationWithCapabilities(g, 1, 2, 0, 0, 0, 0, nil, prereqs)
+	if err != nil {
+		t.Fatalf("ordinary pivot-only fallback: %v", err)
+	}
+	if len(plan) != 1 || plan[0].Edge != pivot || plan[0].Transition != nil {
+		t.Fatalf("ordinary pivot-only plan = %+v, want one ordinary edge", plan)
+	}
+
+	// From the disconnected component the capability is still genuinely
+	// required, so preserve the structured prerequisite diagnosis.
+	_, err = FindRoutePlanAtDestinationWithCapabilities(g, 1, 2, 2, 0, 0, 0, nil, prereqs)
+	var blocked *RouteBlockedError
+	if !errors.As(err, &blocked) {
+		t.Fatalf("disconnected pivot-only error = %T %v, want *RouteBlockedError", err, err)
+	}
+	if got, want := blocked.MissingCapabilities(), []gameruntime.CapabilityID{"can_pivot"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("missing = %v, want %v", got, want)
+	}
+
+	// Once the capability exists the same edge becomes an executable pivot and
+	// may bridge the static component split.
+	prereqs.Capabilities = gameruntime.NewCapabilitySet("can_pivot")
+	plan, err = FindRoutePlanAtDestinationWithCapabilities(g, 1, 2, 2, 0, 0, 0, nil, prereqs)
+	if err != nil {
+		t.Fatalf("enabled pivot-only route: %v", err)
+	}
+	if len(plan) != 1 || plan[0].Transition == nil || plan[0].Transition.ID != "optional_component_pivot" {
+		t.Fatalf("enabled pivot-only plan = %+v, want executable transition", plan)
+	}
+}
+
 func TestSemanticRouteDoesNotInventPrerequisiteForGeometricFailure(t *testing.T) {
 	gated := Edge{Kind: EdgeConnection, From: 9, To: 10, Dir: dirEast}
 	g := &Graph{Edges: map[uint8][]Edge{
