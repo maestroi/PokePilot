@@ -1,13 +1,6 @@
 package world
 
-import (
-	"fmt"
-
-	"github.com/maestroi/pokepilot/red/rom"
-)
-
-// maxMapID is the highest map id present in the Red ROM header tables.
-const maxMapID = 0xF7
+import "fmt"
 
 type EdgeKind uint8
 
@@ -24,15 +17,11 @@ type Edge struct {
 	WarpY uint8
 	Dir   uint8 // EdgeConnection only: 0=north 1=south 2=west 3=east
 
-	// Connection edges may be scoped to one contiguous source-border band.
-	// The index is X for north/south and Y for west/east. Zero-valued legacy
-	// edges remain unscoped when BandScoped is false.
 	BandStart  uint8
 	BandEnd    uint8
 	BandScoped bool
 }
 
-// Map-edge directions, matching rom.Connection.Dir and Edge.Dir.
 const (
 	dirNorth = 0
 	dirSouth = 1
@@ -40,52 +29,33 @@ const (
 	dirEast  = 3
 )
 
-// dim is a map's size in game tiles (WidthBlocks*2, HeightBlocks*2).
 type dim struct{ w, h int }
 
 type Graph struct {
 	Edges map[uint8][]Edge
 
-	// Component-aware routing data, populated by BuildGraph. componentAware is
-	// false for hand-built graphs (tests), in which case FindRoute* imposes no
-	// component or walkability constraint and behaves exactly as before.
 	componentAware bool
-	comps          map[uint8][][]int // per-map component labels, 0 = not walkable
-	exitComps      map[Edge][]int    // components an edge's exit port touches (on e.From)
-	entryComps     map[Edge][]int    // components an edge's entry port touches (on e.To)
-	warps          map[uint8][]rom.Warp
+	comps          map[uint8][][]int
+	exitComps      map[Edge][]int
+	entryComps     map[Edge][]int
+	warps          map[uint8][]Warp
 	tiles          map[uint8]dim
-	connections    map[Edge]rom.Connection
+	connections    map[Edge]Connection
 	reachable      map[uint8]map[int][]int
+	warpDestIDs    map[Edge]uint8
 }
 
-// BuildGraph builds a MAP-level graph over every parseable map. Nodes are map
-// ids; edges are warps and edge connections. Tile arrival coordinates are not
-// stored: they are resolved at execution time from live RAM.
-//
-// A warp whose DestMap is 0xFF means "the map you came from". It is resolved
-// statically to the unique map that has a warp back to the source, excluding
-// any map the source already reaches via an explicit warp (that direction is
-// covered by its own edge). If zero or more than one candidate remains the
-// edge is dropped rather than guessed, so no edge ever has To == 0xFF.
-func BuildGraph(romData []byte) (*Graph, error) {
-	headers := make(map[uint8]rom.MapHeader)
-	for id := uint8(0); id <= maxMapID; id++ {
-		h, err := rom.ParseMap(romData, id)
-		if err != nil {
-			continue // invalid map id: skip, do not fail the build
-		}
-		headers[id] = h
-	}
-	if len(headers) == 0 {
-		return nil, fmt.Errorf("no parseable maps in ROM of %d bytes", len(romData))
+// BuildGraph builds a map-level graph from game-agnostic adapter topology.
+// Native ROM parsing, valid-map ranges, elevator menus and collision table
+// formats are deliberately absent from this package.
+func BuildGraph(maps map[uint8]MapTopology) (*Graph, error) {
+	if len(maps) == 0 {
+		return nil, fmt.Errorf("world: no maps supplied to graph builder")
 	}
 
-	// warpTo[A] is the set of maps that have a warp (any DestWarpID) to A.
 	warpTo := make(map[uint8]map[uint8]bool)
-	// explicit[A] is the set of maps A reaches via a non-0xFF warp.
 	explicit := make(map[uint8]map[uint8]bool)
-	for id, h := range headers {
+	for id, h := range maps {
 		for _, w := range h.Warps {
 			if warpTo[w.DestMap] == nil {
 				warpTo[w.DestMap] = make(map[uint8]bool)
@@ -101,41 +71,38 @@ func BuildGraph(romData []byte) (*Graph, error) {
 	}
 
 	g := &Graph{
-		Edges:          make(map[uint8][]Edge, len(headers)),
+		Edges:          make(map[uint8][]Edge, len(maps)),
 		componentAware: true,
-		comps:          make(map[uint8][][]int, len(headers)),
+		comps:          make(map[uint8][][]int, len(maps)),
 		exitComps:      make(map[Edge][]int),
 		entryComps:     make(map[Edge][]int),
-		warps:          make(map[uint8][]rom.Warp, len(headers)),
-		tiles:          make(map[uint8]dim, len(headers)),
-		connections:    make(map[Edge]rom.Connection),
+		warps:          make(map[uint8][]Warp, len(maps)),
+		tiles:          make(map[uint8]dim, len(maps)),
+		connections:    make(map[Edge]Connection),
 		reachable:      make(map[uint8]map[int][]int),
+		warpDestIDs:    make(map[Edge]uint8),
 	}
-	for id, h := range headers {
-		g.Edges[id] = nil // a node exists for every valid map, even edge-less ones
+	for id, h := range maps {
+		g.Edges[id] = nil
 		for _, c := range h.Connections {
 			g.connections[Edge{Kind: EdgeConnection, From: id, To: c.MapID, Dir: c.Dir}] = c
 		}
-		g.warps[id] = h.Warps
-		g.tiles[id] = dim{w: int(h.WidthBlocks) * 2, h: int(h.HeightBlocks) * 2}
-		if grid, err := Build(romData, h); err == nil {
-			g.comps[id] = components(grid)
-			g.reachable[id] = componentReachability(grid, g.comps[id])
+		g.warps[id] = append([]Warp(nil), h.Warps...)
+		g.tiles[id] = dim{w: h.Width, h: h.Height}
+		if h.Grid != nil {
+			g.comps[id] = components(h.Grid)
+			g.reachable[id] = componentReachability(h.Grid, g.comps[id])
 		}
-		// else: this map's block data is corrupt and Build fails; it has no
-		// walkable grid, so its edges are not component-constrained (canExit
-		// returns true when the map has no grid). ParseMap still accepted the
-		// header, so the node and its edges exist.
 	}
 
-	resolve := func(a uint8, w rom.Warp) (uint8, bool) {
+	resolve := func(a uint8, w Warp) (uint8, bool) {
 		if w.DestMap != 0xFF {
 			return w.DestMap, true
 		}
 		n, dest := 0, uint8(0)
 		for b := range warpTo[a] {
 			if explicit[a][b] {
-				continue // a already warps explicitly to b
+				continue
 			}
 			n++
 			dest = b
@@ -144,10 +111,6 @@ func BuildGraph(romData []byte) (*Graph, error) {
 			return dest, true
 		}
 		if n > 1 {
-			// A gate shared by several maps (the Route 22 gate 0xC1 sits between
-			// Route 22 and Route 23: every door's DestMap is 0xFF and both routes
-			// warp back to it). Disambiguate by geometry: a door leads to the
-			// candidate on the side it faces. See candidateSide.
 			if d := nearestDir(int(w.X), int(w.Y), g.tiles[a].w, g.tiles[a].h); d >= 0 {
 				var match uint8
 				matched := 0
@@ -165,25 +128,16 @@ func BuildGraph(romData []byte) (*Graph, error) {
 				}
 			}
 		}
-		return 0, false // zero or ambiguous: drop, do not guess
+		return 0, false
 	}
 
-	for id, h := range headers {
-		if elevator, ok := rom.LookupElevator(id); ok {
-			// Elevator door destinations are not static ROM topology. The map
-			// script first points both doors back to the floor the player came
-			// from, then DisplayElevatorFloorMenu rewrites them to the selected
-			// floor. Advertise every selectable floor as a real graph edge and
-			// let traversal own the menu choice before stepping through it.
+	for id, h := range maps {
+		if len(h.Elevator) > 0 {
 			for _, w := range h.Warps {
-				for _, floor := range elevator.Floors {
-					g.Edges[id] = append(g.Edges[id], Edge{
-						Kind:  EdgeWarp,
-						From:  id,
-						To:    floor.MapID,
-						WarpX: w.X,
-						WarpY: w.Y,
-					})
+				for _, floor := range h.Elevator {
+					e := Edge{Kind: EdgeWarp, From: id, To: floor.MapID, WarpX: w.X, WarpY: w.Y}
+					g.Edges[id] = append(g.Edges[id], e)
+					g.warpDestIDs[e] = floor.DestWarpID
 				}
 			}
 		} else {
@@ -192,13 +146,9 @@ func BuildGraph(romData []byte) (*Graph, error) {
 				if !ok {
 					continue
 				}
-				g.Edges[id] = append(g.Edges[id], Edge{
-					Kind:  EdgeWarp,
-					From:  id,
-					To:    to,
-					WarpX: w.X,
-					WarpY: w.Y,
-				})
+				e := Edge{Kind: EdgeWarp, From: id, To: to, WarpX: w.X, WarpY: w.Y}
+				g.Edges[id] = append(g.Edges[id], e)
+				g.warpDestIDs[e] = w.DestWarpID
 			}
 		}
 		for _, c := range h.Connections {
@@ -206,7 +156,6 @@ func BuildGraph(romData []byte) (*Graph, error) {
 		}
 	}
 
-	// Port component sets, for the component-aware leg predicate in FindRoute*.
 	for _, es := range g.Edges {
 		for _, e := range es {
 			g.exitComps[e] = g.exitPortComps(e)
@@ -216,16 +165,11 @@ func BuildGraph(romData []byte) (*Graph, error) {
 	return g, nil
 }
 
-// Components is the exported form of components, for callers outside this
-// package that need to know which tiles of a map are actually reachable from
-// one another (e.g. a same-map destination picker) rather than just walkable.
+// Components labels each walkable tile with a 1-based component id.
 func Components(grid *Grid) [][]int {
 	return components(grid)
 }
 
-// components labels each walkable tile of grid with a 1-based component id
-// (0 = not walkable) via 4-directional flood fill. A map with disconnected
-// walkable regions (a ledge, a wall, a gate) gets one id per region.
 func components(grid *Grid) [][]int {
 	w, h := grid.Width, grid.Height
 	comps := make([][]int, h)
@@ -248,12 +192,6 @@ func components(grid *Grid) [][]int {
 					if nx < 0 || ny < 0 || nx >= w || ny >= h {
 						continue
 					}
-					// Passable, not Walkable: a tile-pair collision separates two
-					// regions of a cave as completely as a wall does, and a
-					// component flood that walks through one tells the route graph
-					// a journey exists that the walker will then refuse to walk.
-					// Seeding still uses Walkable above — that asks "can the player
-					// stand here", which is a property of the tile alone.
 					if !grid.Passable(c[0], c[1], nx, ny) || comps[ny][nx] != 0 {
 						continue
 					}
@@ -266,9 +204,6 @@ func components(grid *Grid) [][]int {
 	return comps
 }
 
-// exitPortComps returns the components that edge e's exit port touches on
-// e.From: for a connection, the walkable tiles on the map edge in e.Dir; for a
-// warp, the warp tile (or its walkable neighbours, as with a solid stair).
 func (g *Graph) exitPortComps(e Edge) []int {
 	comps := g.comps[e.From]
 	if comps == nil {
@@ -287,9 +222,6 @@ func (g *Graph) exitPortComps(e Edge) []int {
 	return nil
 }
 
-// entryPortComps returns the components that edge e's entry port touches on
-// e.To: for a connection, the walkable tiles on the opposite map edge; for a
-// warp, the destination warp tile (or its walkable neighbours).
 func (g *Graph) entryPortComps(e Edge) []int {
 	comps := g.comps[e.To]
 	if comps == nil {
@@ -312,8 +244,6 @@ func (g *Graph) entryPortComps(e Edge) []int {
 	return nil
 }
 
-// A connection covers only the overlapping seam, not the entire destination
-// edge. Both sides must be standable at the ROM-aligned coordinates.
 func (g *Graph) connectionPortComps(e Edge, arrival bool) []int {
 	c := g.connections[e]
 	src, dst := g.tiles[e.From], g.tiles[e.To]
@@ -351,36 +281,18 @@ func (g *Graph) connectionPortComps(e Edge, arrival bool) []int {
 	return out
 }
 
-// destWarpTile finds the destination warp tile on e.To for a warp edge. Most
-// edges get the destination index from their immutable source warp. Elevators
-// are different: their menu writes a selected destination index into live
-// wWarpEntries, so the adapter table is the authoritative arrival port.
 func (g *Graph) destWarpTile(e Edge) (int, int, bool) {
-	var destID int
-	if _, floor, _, ok := rom.ElevatorFloorForDestination(e.From, e.To); ok {
-		destID = int(floor.DestWarpID)
-	} else {
-		found := false
-		for _, w := range g.warps[e.From] {
-			if int(w.X) == int(e.WarpX) && int(w.Y) == int(e.WarpY) {
-				destID = int(w.DestWarpID)
-				found = true
-				break
-			}
-		}
-		if !found {
-			return 0, 0, false
-		}
+	destID, ok := g.warpDestIDs[e]
+	if !ok {
+		return 0, 0, false
 	}
 	dest := g.warps[e.To]
-	if destID >= len(dest) {
+	if int(destID) >= len(dest) {
 		return 0, 0, false
 	}
 	return int(dest[destID].X), int(dest[destID].Y), true
 }
 
-// edgeLineComps returns the components of the walkable tiles on a map's edge
-// in the given direction.
 func edgeLineComps(comps [][]int, w, h int, dir uint8) []int {
 	seen := make(map[int]bool)
 	var out []int
@@ -412,9 +324,6 @@ func edgeLineComps(comps [][]int, w, h int, dir uint8) []int {
 	return out
 }
 
-// tileOrNeighbourComps returns the component of (x, y) if walkable, else the
-// components of its walkable 4-neighbours (the player pushes a solid stair
-// from an adjacent tile).
 func tileOrNeighbourComps(comps [][]int, w, h int, x, y int) []int {
 	seen := make(map[int]bool)
 	var out []int
@@ -438,8 +347,6 @@ func tileOrNeighbourComps(comps [][]int, w, h int, x, y int) []int {
 	return out
 }
 
-// nearestDir returns the direction (dirNorth/...) from (x, y) toward the
-// nearest map edge, or -1 if the nearest edge is a tie (ambiguous).
 func nearestDir(x, y, w, h int) int {
 	type cand struct{ dir, d int }
 	cands := []cand{
@@ -466,7 +373,6 @@ func nearestDir(x, y, w, h int) int {
 	return dir
 }
 
-// oppositeDir maps a direction to the one pointing the other way.
 func oppositeDir(d int) int {
 	switch d {
 	case dirNorth:
@@ -481,10 +387,6 @@ func oppositeDir(d int) int {
 	return -1
 }
 
-// candidateSide returns the side of map m that cand is on (a dir* constant),
-// computed from cand's warp(s) to m: the door on cand that leads to m faces
-// toward m, so cand lies on the opposite side. Returns -1 if ambiguous (no
-// door, a tie, or doors facing different ways).
 func (g *Graph) candidateSide(cand, m uint8) int {
 	side := -1
 	for _, cw := range g.warps[cand] {
