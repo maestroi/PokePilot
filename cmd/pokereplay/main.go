@@ -6,6 +6,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -28,7 +29,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/maestroi/gomeboy/pkg/gomeboy"
 	"github.com/maestroi/pokepilot/artifactstore"
+	redstarter "github.com/maestroi/pokepilot/red/starter"
 )
 
 const (
@@ -66,6 +69,11 @@ type replayStatus struct {
 	Error     string `json:"error,omitempty"`
 }
 
+type replayIdentity struct {
+	ROMSHA256 string
+	Metadata  map[string]string
+}
+
 type replayServer struct {
 	wallBase     string
 	romPath      string
@@ -78,6 +86,9 @@ type replayServer struct {
 
 	mu   sync.Mutex
 	jobs map[string]replayStatus // cache object key -> latest local render state
+
+	parseRecording func([]byte) (replayIdentity, error)
+	deriveROM      func([]byte, map[string]string, string) ([]byte, error)
 }
 
 func newReplayServer(wallBase, romPath, streamBinary string, store *artifactstore.S3) *replayServer {
@@ -306,8 +317,13 @@ func (s *replayServer) render(runID string, recording artifactRef, cacheKey stri
 		setError(err)
 		return
 	}
+	romPath, err := s.prepareStreamROM(dir, recordingPath)
+	if err != nil {
+		setError(err)
+		return
+	}
 
-	cmd := exec.CommandContext(ctx, s.streamBinary, s.streamArgs(recordingPath, videoPath)...)
+	cmd := exec.CommandContext(ctx, s.streamBinary, s.streamArgs(romPath, recordingPath, videoPath)...)
 	output := &replayOutputTail{}
 	cmd.Stdout = output
 	cmd.Stderr = output
@@ -543,6 +559,55 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(value)
+}
+
+func cartridgeForRecording(base []byte, metadata map[string]string, wantSHA256 string) ([]byte, error) {
+	return redstarter.ReplayROM(base, metadata, wantSHA256)
+}
+
+func parseRecordingIdentity(data []byte) (replayIdentity, error) {
+	rec, err := gomeboy.ParseRecording(data)
+	if err != nil {
+		return replayIdentity{}, err
+	}
+	return replayIdentity{ROMSHA256: rec.ROMSHA256, Metadata: rec.Metadata}, nil
+}
+
+func (s *replayServer) prepareStreamROM(workDir, recordingPath string) (string, error) {
+	data, err := os.ReadFile(recordingPath)
+	if err != nil {
+		return "", err
+	}
+	parse := s.parseRecording
+	if parse == nil {
+		parse = parseRecordingIdentity
+	}
+	ident, err := parse(data)
+	if err != nil {
+		// The existing render tests (and a corrupt download) still invoke
+		// gomeboy-stream; let that command report the recording problem.
+		return s.romPath, nil
+	}
+	base, err := os.ReadFile(s.romPath)
+	if err != nil {
+		return "", fmt.Errorf("read replay ROM: %w", err)
+	}
+	derive := s.deriveROM
+	if derive == nil {
+		derive = cartridgeForRecording
+	}
+	derived, err := derive(base, ident.Metadata, ident.ROMSHA256)
+	if err != nil {
+		return "", err
+	}
+	if bytes.Equal(derived, base) {
+		return s.romPath, nil
+	}
+	path := pathJoinOS(workDir, "replay.gb")
+	if err := os.WriteFile(path, derived, 0o644); err != nil {
+		return "", err
+	}
+	return path, nil
 }
 
 // pathJoinOS is intentionally tiny: temp paths are local filesystem paths,
