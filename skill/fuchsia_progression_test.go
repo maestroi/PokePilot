@@ -85,6 +85,23 @@ func TestNeedsSafariRewards(t *testing.T) {
 	}
 }
 
+func TestSafariGateJoinChoiceIndex(t *testing.T) {
+	const prompt = "MONEY ¥43868  YES  NO\nWould you like to join the hunt?"
+
+	if got, ok := safariGateJoinChoiceIndex(safariZoneGateMap, prompt, true); !ok || got != 0 {
+		t.Fatalf("enter Safari choice = (%d,%v), want YES index 0", got, ok)
+	}
+	if got, ok := safariGateJoinChoiceIndex(safariZoneGateMap, prompt, false); !ok || got != 1 {
+		t.Fatalf("leave Safari choice = (%d,%v), want NO index 1", got, ok)
+	}
+	if _, ok := safariGateJoinChoiceIndex(fuchsiaCityMap, prompt, false); ok {
+		t.Fatal("Safari prompt text outside the gate map must not be auto-answered")
+	}
+	if _, ok := safariGateJoinChoiceIndex(safariZoneGateMap, "Would you like to leave early?", false); ok {
+		t.Fatal("unrelated Safari gate choices must not be auto-answered")
+	}
+}
+
 func setTestBag(mem *state.Mem, entries ...[2]uint8) {
 	mem[sym.NumBagItems] = uint8(len(entries))
 	for i, entry := range entries {
