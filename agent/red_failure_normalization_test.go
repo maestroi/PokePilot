@@ -2,10 +2,12 @@ package agent
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 
 	gameruntime "github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/skill"
+	"github.com/maestroi/pokepilot/world"
 )
 
 func TestNormalizeRedFailureRepresentativeClasses(t *testing.T) {
@@ -63,6 +65,31 @@ func TestNormalizeRedFailureRepresentativeClasses(t *testing.T) {
 				t.Fatalf("failure = %+v; want phase=%q class=%q cause=%q recoverable=%v", got, tc.phase, tc.class, tc.cause, tc.recoverable)
 			}
 		})
+	}
+}
+
+// TestReplanExhaustedTakesPrecedenceOverWrappedRouteBlockedError reproduces
+// MEASURED run-1ttew0yypzkgt2p7r4bm5c61ur round 6: a live NPC parked on a
+// one-tile Route 13 connection band made every early re-plan fail on
+// leg_unwalkable, but the LAST leg tried before the budget ran out happened
+// to be a genuinely capability-gated route, wrapped verbatim into
+// ErrReplanExhausted by newReplanExhaustedError (skill/goto.go). Before this
+// fix, failureCauseFor's errors.As(&RouteBlockedError) matched through that
+// wrapped tree first and mislabeled a transient re-plan exhaustion as
+// "route_prerequisite_missing" — which then quarantined the objective under
+// recoveryScopeRoutePrerequisite, a scope that only expires once the "missing"
+// capability becomes true. It was never actually missing, so the quarantine
+// never expired.
+func TestReplanExhaustedTakesPrecedenceOverWrappedRouteBlockedError(t *testing.T) {
+	routeBlocked := &world.RouteBlockedError{Blockages: []gameruntime.TransitionBlockage{
+		{Missing: []gameruntime.CapabilityID{"surf"}},
+	}}
+	exhausted := fmt.Errorf("%w: 8 re-plans from map 18 at (11,4) toward map 05 at (11,4), last leg: %w",
+		skill.ErrReplanExhausted, routeBlocked)
+
+	cause, ctx := failureCauseFor(exhausted)
+	if cause != "route_replan_exhausted" {
+		t.Fatalf("cause = %q, ctx = %v; want route_replan_exhausted (got the shadowed route_prerequisite_missing)", cause, ctx)
 	}
 }
 
