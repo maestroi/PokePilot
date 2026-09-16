@@ -8,7 +8,7 @@ import (
 
 func TestSpectatorControlMigrationCreatesDurableState(t *testing.T) {
 	for _, table := range []string{"spectator_run_settings", "spectator_state"} {
-		if !strings.Contains(controlPlaneMigration002, "TABLE IF NOT EXISTS "+table) {
+		if !strings.Contains(controlPlaneMigration003, "TABLE IF NOT EXISTS "+table) {
 			t.Fatalf("spectator migration missing %s", table)
 		}
 	}
