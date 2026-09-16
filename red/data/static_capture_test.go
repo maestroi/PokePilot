@@ -4,12 +4,12 @@ import "testing"
 
 func TestStaticCaptureSitesOwnRedFacts(t *testing.T) {
 	want := map[uint8]struct {
-		mapID             uint8
-		x, y              uint8
-		standX, standY    uint8
-		requirement       string
-		wakeItem          uint8
-		preferMasterBall  bool
+		mapID            uint8
+		x, y             uint8
+		standX, standY   uint8
+		requirement      string
+		wakeItem         uint8
+		preferMasterBall bool
 	}{
 		0x84: {mapID: 0x1B, x: 26, y: 10, standX: 27, standY: 10, requirement: "poke_flute", wakeItem: 0x49},
 		0x4A: {mapID: 0xA2, x: 6, y: 1, standX: 6, standY: 2},
