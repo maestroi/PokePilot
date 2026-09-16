@@ -17,6 +17,23 @@ func catchObjectiveOwnsTravel(o Objective) bool {
 	}
 }
 
+// redFishingRodID resolves the three fishing-only key items without widening
+// the generic planner/executor item whitelist. The rods are intentionally
+// observation/progression vocabulary, but dex fishing owns their use and may
+// therefore translate them at this narrow execution boundary.
+func redFishingRodID(id ItemID) (uint8, bool) {
+	switch strings.ToLower(strings.TrimSpace(string(id))) {
+	case "old rod", "good rod", "super rod":
+		spec, ok := ItemEconomy(string(id))
+		if !ok {
+			return 0, false
+		}
+		return spec.ID, true
+	default:
+		return 0, false
+	}
+}
+
 func executeCatchObjective(m *emu.Emu, romData []byte, o Objective, result ObjectiveResult) (ObjectiveResult, error) {
 	species, ok := redSpeciesID(o.Species)
 	if !ok {
@@ -65,7 +82,7 @@ func executeCatchObjective(m *emu.Emu, romData []byte, o Objective, result Objec
 	var err error
 	switch o.Intent {
 	case dexFishingIntent:
-		rod, ok := redItemID(o.Item)
+		rod, ok := redFishingRodID(o.Item)
 		if !ok {
 			return result, fmt.Errorf("agent: %s: unknown fishing rod %q", o, o.Item)
 		}
