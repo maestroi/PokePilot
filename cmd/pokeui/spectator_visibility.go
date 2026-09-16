@@ -75,6 +75,15 @@ func (c *spectatorControlCache) get(ctx context.Context) (wallSpectatorControl, 
 func spectatorVisibilityHTTPHandler(wallBase string, next http.Handler) http.Handler {
 	cache := newSpectatorControlCache(wallBase)
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+		protected := req.Method == http.MethodGet && (
+			req.URL.Path == "/v1/watch" ||
+			req.URL.Path == "/frame" ||
+			strings.HasPrefix(req.URL.Path, "/v1/watch/runs/"))
+		if !protected {
+			next.ServeHTTP(res, req)
+			return
+		}
+
 		control, err := cache.get(req.Context())
 		if err != nil {
 			writeSpectatorControlUnavailable(res)
@@ -82,16 +91,16 @@ func spectatorVisibilityHTTPHandler(wallBase string, next http.Handler) http.Han
 		}
 
 		switch {
-		case req.Method == http.MethodGet && req.URL.Path == "/v1/watch":
+		case req.URL.Path == "/v1/watch":
 			serveControlledSpectatorSnapshot(res, req, next, control)
 			return
-		case req.Method == http.MethodGet && req.URL.Path == "/frame":
+		case req.URL.Path == "/frame":
 			runID := strings.TrimSpace(req.URL.Query().Get("run"))
 			if runID != "" && !spectatorRunVisible(control, runID) {
 				http.NotFound(res, req)
 				return
 			}
-		case req.Method == http.MethodGet && strings.HasPrefix(req.URL.Path, "/v1/watch/runs/"):
+		case strings.HasPrefix(req.URL.Path, "/v1/watch/runs/"):
 			if runID, ok := spectatorRunIDFromPublicPath(req.URL.Path); ok && !spectatorRunVisible(control, runID) {
 				http.NotFound(res, req)
 				return
