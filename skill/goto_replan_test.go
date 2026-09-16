@@ -4,6 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+
+	gameruntime "github.com/maestroi/pokepilot/game"
+	"github.com/maestroi/pokepilot/world"
 )
 
 // TestReplanExhaustedKeepsBothIdentities pins the S5c-2 contract: the
@@ -22,5 +25,28 @@ func TestReplanExhaustedKeepsBothIdentities(t *testing.T) {
 	}
 	if !errors.Is(err, ErrLegUnwalkable) {
 		t.Fatalf("missing ErrLegUnwalkable cause: %v", err)
+	}
+}
+
+// TestRouteFailureIsSpuriousCapabilityGate pins the fix for
+// run-t047j1rjrshy3ob28cwqwr7pn: a *world.RouteBlockedError reported right
+// after this same GoTo call already banned a leg for ErrLegUnwalkable must be
+// treated as replan exhaustion, not as real prerequisite evidence — a
+// RouteBlockedError with no leg banned this call, or any error with a leg
+// banned, must NOT be reclassified.
+func TestRouteFailureIsSpuriousCapabilityGate(t *testing.T) {
+	blocked := &world.RouteBlockedError{Blockages: []gameruntime.TransitionBlockage{{
+		Transition: gameruntime.Transition{ID: "red:cycling_road_bicycle"},
+		Missing:    []gameruntime.CapabilityID{"can_ride_cycling_road"},
+	}}}
+
+	if !routeFailureIsSpuriousCapabilityGate(blocked, true) {
+		t.Fatalf("RouteBlockedError after a same-call leg ban must be treated as spurious")
+	}
+	if routeFailureIsSpuriousCapabilityGate(blocked, false) {
+		t.Fatalf("RouteBlockedError with no leg ever banned this call is real prerequisite evidence, not spurious")
+	}
+	if routeFailureIsSpuriousCapabilityGate(world.ErrNoRoute, true) {
+		t.Fatalf("a plain no-route error is not a capability gate and must not be reclassified")
 	}
 }
