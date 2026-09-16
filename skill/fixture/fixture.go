@@ -465,7 +465,7 @@ func trainInForest(e *emu.Emu, romData []byte, policy skill.MovePolicy, safeSpot
 		}
 		res, err := skill.Train(e, romData, forestGrindLevel, policy, forestTrainBattleBudget)
 		if err != nil {
-			if strings.Contains(err.Error(), "no-encounter phase") && phaseRetries < forestMaxPhaseRetries {
+			if errors.Is(err, skill.ErrNoEncounterPhase) && phaseRetries < forestMaxPhaseRetries {
 				phaseRetries++
 				e.StepFrames(phaseShiftFrames)
 				continue

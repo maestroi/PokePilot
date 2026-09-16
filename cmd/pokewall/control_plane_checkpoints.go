@@ -18,7 +18,13 @@ import (
 	"github.com/maestroi/pokepilot/farm"
 )
 
-var errStoredCheckpointNotFound = errors.New("stored checkpoint not found")
+var (
+	errStoredCheckpointNotFound     = errors.New("stored checkpoint not found")
+	errCheckpointStale              = errors.New("stale checkpoint")
+	errCheckpointRunFinished        = errors.New("checkpoint run already finished")
+	errCheckpointArtifactInvalid    = errors.New("invalid checkpoint artifact")
+	errCheckpointStorageUnavailable = errors.New("checkpoint artifact storage unavailable")
+)
 
 // Migration 2 adds the only artifact payload column PostgreSQL is allowed to
 // carry: small structured JSON. Emulator state/RAM/video/replay bytes are
@@ -58,6 +64,21 @@ func checkpointRequestRunID(path string) (string, bool) {
 	return id, true
 }
 
+func checkpointHTTPStatus(err error) int {
+	switch {
+	case errors.Is(err, errStoredCheckpointNotFound):
+		return http.StatusNotFound
+	case errors.Is(err, errCheckpointStale), errors.Is(err, errCheckpointRunFinished):
+		return http.StatusConflict
+	case errors.Is(err, errCheckpointStorageUnavailable):
+		return http.StatusServiceUnavailable
+	case errors.Is(err, errCheckpointArtifactInvalid):
+		return http.StatusBadRequest
+	default:
+		return http.StatusInternalServerError
+	}
+}
+
 // controlPlaneCheckpointHTTPHandler replaces PokéWall's file-backed checkpoint
 // route in PostgreSQL mode. Small JSON sidecars are stored inline in Postgres;
 // binary/large payloads are written to S3 and only their references are stored.
@@ -91,18 +112,7 @@ func (w *Wall) controlPlaneCheckpointHTTPHandler(next http.Handler) http.Handler
 			return
 		}
 		if err := w.storeControlPlaneCheckpoint(incoming.CheckpointReport); err != nil {
-			status := http.StatusInternalServerError
-			switch {
-			case errors.Is(err, errStoredCheckpointNotFound):
-				status = http.StatusNotFound
-			case strings.Contains(err.Error(), "stale checkpoint"), strings.Contains(err.Error(), "finished"):
-				status = http.StatusConflict
-			case strings.Contains(err.Error(), "S3 is required"):
-				status = http.StatusServiceUnavailable
-			case strings.Contains(err.Error(), "artifact"):
-				status = http.StatusBadRequest
-			}
-			writeJSON(res, status, map[string]string{"error": err.Error()})
+			writeJSON(res, checkpointHTTPStatus(err), map[string]string{"error": err.Error()})
 			return
 		}
 		writeJSON(res, http.StatusOK, map[string]string{"status": "ok"})
@@ -115,7 +125,7 @@ func (w *Wall) storeControlPlaneCheckpoint(report farm.CheckpointReport) error {
 		return errors.New("PostgreSQL control plane is not configured")
 	}
 	if err := farm.ValidateFinishArtifacts(farm.FinishReport{Artifacts: report.Artifacts}); err != nil {
-		return err
+		return fmt.Errorf("%w: %v", errCheckpointArtifactInvalid, err)
 	}
 
 	w.mu.Lock()
@@ -126,18 +136,18 @@ func (w *Wall) storeControlPlaneCheckpoint(report farm.CheckpointReport) error {
 	}
 	if t.Finished {
 		w.mu.Unlock()
-		return fmt.Errorf("run already finished: %s", report.RunID)
+		return fmt.Errorf("%w: %s", errCheckpointRunFinished, report.RunID)
 	}
 	attempt := t.Attempts + 1
 	if report.Attempt != 0 && report.Attempt != attempt {
 		w.mu.Unlock()
-		return fmt.Errorf("stale checkpoint: run is on attempt %d, report claims %d", attempt, report.Attempt)
+		return fmt.Errorf("%w: run is on attempt %d, report claims %d", errCheckpointStale, attempt, report.Attempt)
 	}
 	w.mu.Unlock()
 
 	store, configured, storeErr := artifactstore.S3FromEnv()
 	if storeErr != nil {
-		return fmt.Errorf("checkpoint S3: %w", storeErr)
+		return fmt.Errorf("%w: checkpoint S3: %v", errCheckpointStorageUnavailable, storeErr)
 	}
 	type persisted struct {
 		meta   farm.Artifact
@@ -166,7 +176,7 @@ func (w *Wall) storeControlPlaneCheckpoint(report farm.CheckpointReport) error {
 		} else {
 			if !configured || store == nil {
 				cleanupUploads()
-				return fmt.Errorf("S3 is required for checkpoint artifact %s", art.Name)
+				return fmt.Errorf("%w: S3 is required for checkpoint artifact %s", errCheckpointStorageUnavailable, art.Name)
 			}
 			key := checkpointObjectKey(report.RunID, attempt, art.Name)
 			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -192,7 +202,7 @@ func (w *Wall) storeControlPlaneCheckpoint(report farm.CheckpointReport) error {
 	w.mu.Unlock()
 	if !stillCurrent {
 		cleanupUploads()
-		return fmt.Errorf("stale checkpoint: run is no longer on attempt %d", attempt)
+		return fmt.Errorf("%w: run is no longer on attempt %d", errCheckpointStale, attempt)
 	}
 
 	tx, err := cp.db.Begin()
