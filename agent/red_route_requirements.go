@@ -212,6 +212,8 @@ func redRoutePrerequisiteLink(id CapabilityID) (RoutePrerequisiteLink, bool) {
 		return RoutePrerequisiteLink{Capability: id, FieldCapability: "strength"}, true
 	case "can_clear_snorlax":
 		return RoutePrerequisiteLink{Capability: id, Progress: redProgressPokeFluteAcquired}, true
+	case "can_ride_cycling_road":
+		return RoutePrerequisiteLink{Capability: id, Progress: redProgressBicycleAcquired}, true
 	case "can_enter_saffron":
 		return RoutePrerequisiteLink{Capability: id, Progress: ProgressSaffronGateOpen}, true
 	default:
