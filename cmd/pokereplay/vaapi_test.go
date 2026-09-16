@@ -1,12 +1,126 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 )
+
+func TestCartridgeForRecordingAppliesPatchBytes(t *testing.T) {
+	base := []byte{0x10, 0xb1, 0x20, 0xb1}
+	want := []byte{0x10, 0x83, 0x20, 0x83}
+	sum := sha256.Sum256(want)
+	got, err := cartridgeForRecording(base, map[string]string{
+		"starter":         "mewtwo",
+		"rom_patch_bytes": "0x1:b1>83,0x3:b1>83",
+	}, hex.EncodeToString(sum[:]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(want) {
+		t.Fatalf("cartridgeForRecording = %x, want %x", got, want)
+	}
+}
+
+func TestCartridgeForRecordingKeepsVanillaROM(t *testing.T) {
+	base := []byte{0x10, 0xb1, 0x20}
+	sum := sha256.Sum256(base)
+	got, err := cartridgeForRecording(base, map[string]string{"starter": "squirtle"}, hex.EncodeToString(sum[:]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(base) {
+		t.Fatalf("vanilla cartridge mutated: %x", got)
+	}
+}
+
+func TestPrepareStreamROMFallsBackForNonRecordingBytes(t *testing.T) {
+	dir := t.TempDir()
+	rom := filepath.Join(dir, "pokemon-red.gb")
+	if err := os.WriteFile(rom, []byte("rom"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	recording := filepath.Join(dir, "run.gbrun")
+	if err := os.WriteFile(recording, []byte("not a zip"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := newReplayServer("", rom, "", nil)
+	got, err := s.prepareStreamROM(dir, recording)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != rom {
+		t.Fatalf("prepareStreamROM = %q, want vanilla %q", got, rom)
+	}
+}
+
+func TestPrepareStreamROMWritesDerivedCartridge(t *testing.T) {
+	dir := t.TempDir()
+	base := []byte{0x10, 0xb1, 0x20, 0xb1}
+	derived := []byte{0x10, 0x83, 0x20, 0x83}
+	rom := filepath.Join(dir, "pokemon-red.gb")
+	if err := os.WriteFile(rom, base, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	recording := filepath.Join(dir, "run.gbrun")
+	if err := os.WriteFile(recording, []byte("not parsed here"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := newReplayServer("", rom, "", nil)
+	s.deriveROM = func(baseROM []byte, metadata map[string]string, wantSHA string) ([]byte, error) {
+		t.Fatal("deriveROM should not run for unparseable recordings")
+		return nil, nil
+	}
+	got, err := s.prepareStreamROM(dir, recording)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != rom {
+		t.Fatalf("unparseable recording used %q", got)
+	}
+
+	s.deriveROM = func(baseROM []byte, metadata map[string]string, wantSHA string) ([]byte, error) {
+		if string(baseROM) != string(base) {
+			t.Fatalf("base ROM = %x", baseROM)
+		}
+		if metadata["rom_patch_bytes"] != "0x1:b1>83,0x3:b1>83" {
+			t.Fatalf("metadata = %#v", metadata)
+		}
+		if wantSHA != hex.EncodeToString(sha256Sum(derived)) {
+			t.Fatalf("wantSHA = %q", wantSHA)
+		}
+		return append([]byte(nil), derived...), nil
+	}
+	s.parseRecording = func(data []byte) (replayIdentity, error) {
+		return replayIdentity{
+			ROMSHA256: hex.EncodeToString(sha256Sum(derived)),
+			Metadata:  map[string]string{"starter": "mewtwo", "rom_patch_bytes": "0x1:b1>83,0x3:b1>83"},
+		}, nil
+	}
+	got, err = s.prepareStreamROM(dir, recording)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == rom {
+		t.Fatal("expected a derived ROM path, got the vanilla ROM")
+	}
+	body, err := os.ReadFile(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != string(derived) {
+		t.Fatalf("derived ROM = %x, want %x", body, derived)
+	}
+}
+
+func sha256Sum(b []byte) []byte {
+	sum := sha256.Sum256(b)
+	return sum[:]
+}
 
 func TestRewriteFFmpegVAAPI(t *testing.T) {
 	in := []string{
@@ -45,7 +159,7 @@ func TestStreamArgsUseVAAPIWhenEnabled(t *testing.T) {
 		vaapi:        true,
 		ffmpegVAAPI:  "/usr/local/bin/ffmpeg-vaapi",
 	}
-	got := s.streamArgs("/tmp/run.gbrun", "/tmp/replay.mp4")
+	got := s.streamArgs("/rom/pokemon_red.gb", "/tmp/run.gbrun", "/tmp/replay.mp4")
 	want := []string{
 		"-rom", "/rom/pokemon_red.gb",
 		"-recording", "/tmp/run.gbrun",
@@ -62,7 +176,7 @@ func TestStreamArgsUseVAAPIWhenEnabled(t *testing.T) {
 
 func TestStreamArgsStaySoftwareWhenVAAPIOff(t *testing.T) {
 	s := &replayServer{romPath: "/rom/x.gb", streamBinary: "gomeboy-stream"}
-	got := s.streamArgs("/tmp/run.gbrun", "/tmp/replay.mp4")
+	got := s.streamArgs("/rom/x.gb", "/tmp/run.gbrun", "/tmp/replay.mp4")
 	want := []string{
 		"-rom", "/rom/x.gb",
 		"-recording", "/tmp/run.gbrun",

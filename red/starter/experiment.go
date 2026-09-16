@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"strconv"
 	"strings"
@@ -275,4 +276,78 @@ func findUniqueMiddleSlotCompare(rom []byte) (int, error) {
 		return 0, fmt.Errorf("signature not found")
 	}
 	return found, nil
+}
+
+// ReplayROM reconstructs the cartridge a recording was captured against.
+// Recorded rom_patch_bytes are preferred because they are the exact deltas
+// the runner applied. If those are missing, a starter experiment request is
+// re-resolved and patched onto the verified base image. The result must match
+// wantSHA256 when that identity is known.
+func ReplayROM(base []byte, metadata map[string]string, wantSHA256 string) ([]byte, error) {
+	wantSHA256 = strings.ToLower(strings.TrimSpace(wantSHA256))
+	if wantSHA256 != "" && romSHA256Hex(base) == wantSHA256 {
+		return append([]byte(nil), base...), nil
+	}
+
+	out := append([]byte(nil), base...)
+	var err error
+	switch {
+	case strings.TrimSpace(metadata["rom_patch_bytes"]) != "":
+		out, err = applyRecordedPatches(base, metadata["rom_patch_bytes"])
+	case strings.TrimSpace(metadata["starter"]) != "":
+		seed, _ := strconv.ParseInt(strings.TrimSpace(metadata["seed"]), 10, 64)
+		var sel Selection
+		sel, err = Resolve(metadata["starter"], seed)
+		if err != nil {
+			return nil, err
+		}
+		out, _, err = Patch(base, sel)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if wantSHA256 != "" && romSHA256Hex(out) != wantSHA256 {
+		return nil, fmt.Errorf("starter: derived ROM sha256 %s, want %s", romSHA256Hex(out), wantSHA256)
+	}
+	return out, nil
+}
+
+func applyRecordedPatches(base []byte, spec string) ([]byte, error) {
+	out := append([]byte(nil), base...)
+	for i, part := range strings.Split(spec, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		colon := strings.IndexByte(part, ':')
+		gt := strings.LastIndexByte(part, '>')
+		if colon < 2 || gt <= colon+1 {
+			return nil, fmt.Errorf("starter: invalid rom_patch_bytes %q", part)
+		}
+		offset, err := strconv.ParseUint(strings.TrimPrefix(part[:colon], "0x"), 16, 32)
+		if err != nil {
+			return nil, fmt.Errorf("starter: invalid rom_patch_bytes offset %q: %w", part, err)
+		}
+		from, err := strconv.ParseUint(part[colon+1:gt], 16, 8)
+		if err != nil {
+			return nil, fmt.Errorf("starter: invalid rom_patch_bytes from %q: %w", part, err)
+		}
+		to, err := strconv.ParseUint(part[gt+1:], 16, 8)
+		if err != nil {
+			return nil, fmt.Errorf("starter: invalid rom_patch_bytes to %q: %w", part, err)
+		}
+		if int(offset) >= len(out) {
+			return nil, fmt.Errorf("starter: patch %d offset %#x outside ROM", i, offset)
+		}
+		if out[offset] != byte(from) {
+			return nil, fmt.Errorf("starter: patch %d offset %#x: have %#02x, recorded from %#02x", i, offset, out[offset], from)
+		}
+		out[offset] = byte(to)
+	}
+	return out, nil
+}
+
+func romSHA256Hex(rom []byte) string {
+	sum := sha256.Sum256(rom)
+	return hex.EncodeToString(sum[:])
 }

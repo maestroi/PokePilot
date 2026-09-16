@@ -50,9 +50,12 @@ func (s *replayServer) encoderName() string {
 	return "libx264"
 }
 
-func (s *replayServer) streamArgs(recordingPath, videoPath string) []string {
+func (s *replayServer) streamArgs(romPath, recordingPath, videoPath string) []string {
+	if romPath == "" {
+		romPath = s.romPath
+	}
 	args := []string{
-		"-rom", s.romPath,
+		"-rom", romPath,
 		"-recording", recordingPath,
 		"-output", videoPath,
 		"-format", "mp4",

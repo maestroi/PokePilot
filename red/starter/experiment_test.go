@@ -1,6 +1,10 @@
 package starter
 
 import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
 	"os"
 	"testing"
 )
@@ -105,5 +109,84 @@ func TestPatchSupportedROMChangesOnlyOakStarterBytes(t *testing.T) {
 	}
 	if info.BaseSHA1 == info.EffectiveSHA1 {
 		t.Fatal("patched ROM hash did not change")
+	}
+}
+
+func TestReplayROMLeavesVanillaCartridgeUnchanged(t *testing.T) {
+	base := []byte{0x10, 0xb1, 0x20}
+	got, err := ReplayROM(base, map[string]string{"starter": "squirtle"}, sha256Hex(base))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, base) {
+		t.Fatalf("vanilla ReplayROM mutated the cartridge: %x", got)
+	}
+}
+
+func TestReplayROMAppliesRecordedPatchBytes(t *testing.T) {
+	base := []byte{0x10, 0xb1, 0x20, 0xb1}
+	want := []byte{0x10, 0x83, 0x20, 0x83}
+	got, err := ReplayROM(base, map[string]string{
+		"starter":         "mewtwo",
+		"rom_patch_bytes": "0x1:b1>83,0x3:b1>83",
+	}, sha256Hex(want))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("ReplayROM = %x, want %x", got, want)
+	}
+}
+
+func TestReplayROMRejectsPatchFromMismatch(t *testing.T) {
+	base := []byte{0x10, 0xaa, 0x20}
+	_, err := ReplayROM(base, map[string]string{"rom_patch_bytes": "0x1:b1>83"}, sha256Hex([]byte{0x10, 0x83, 0x20}))
+	if err == nil {
+		t.Fatal("expected error when recorded From byte does not match the base ROM")
+	}
+}
+
+func TestReplayROMReconstructsMewtwoFromStarterMetadata(t *testing.T) {
+	path := os.Getenv("POKEMON_RED_ROM")
+	if path == "" {
+		t.Skip("POKEMON_RED_ROM not set")
+	}
+	base, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sel, err := Resolve("mewtwo", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, info, err := Patch(base, sel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(info.Changes) == 0 {
+		t.Fatal("expected Mewtwo patch changes")
+	}
+	got, err := ReplayROM(base, map[string]string{"starter": "mewtwo", "seed": "0"}, sha256Hex(want))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatal("ReplayROM(starter=mewtwo) did not reconstruct the recorded cartridge")
+	}
+}
+
+func sha256Hex(b []byte) string {
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
+}
+
+func TestReplayROMRejectsSHAMismatch(t *testing.T) {
+	base := []byte{0x10, 0xb1}
+	_, err := ReplayROM(base, nil, sha256Hex([]byte("other")))
+	if err == nil {
+		t.Fatal("expected sha256 mismatch error")
+	}
+	if got := fmt.Sprintf("%v", err); got == "" {
+		t.Fatal("error message was empty")
 	}
 }
