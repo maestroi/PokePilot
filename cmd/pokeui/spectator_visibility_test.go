@@ -27,10 +27,11 @@ func TestSpectatorVisibilityFiltersFeedAndMarksFeatured(t *testing.T) {
 			"now": 123,
 			"runs": []map[string]any{
 				{"run_id": "run-hidden", "status": "running"},
+				{"run_id": "run-queued", "status": "queued"},
 				{"run_id": "run-public", "status": "running"},
 				{"run_id": "run-finished", "status": "done"},
 			},
-			"summary": map[string]int{"live": 2, "completed": 1},
+			"summary": map[string]int{"live": 2, "queued": 1, "completed": 1},
 		}) //nolint:errcheck
 	})
 
@@ -53,10 +54,13 @@ func TestSpectatorVisibilityFiltersFeedAndMarksFeatured(t *testing.T) {
 		t.Fatalf("decode response: %v", err)
 	}
 	if len(got.Runs) != 2 {
-		t.Fatalf("runs = %+v, want 2 visible runs", got.Runs)
+		t.Fatalf("runs = %+v, want only visible watchable runs", got.Runs)
 	}
 	if got.Runs[0].RunID != "run-public" || !got.Runs[0].Featured {
 		t.Fatalf("first visible run = %+v, want featured public run", got.Runs[0])
+	}
+	if got.Runs[1].RunID != "run-finished" {
+		t.Fatalf("second visible run = %+v, want finished public run", got.Runs[1])
 	}
 	if got.FeaturedRunID != "run-public" {
 		t.Fatalf("featured_run_id = %q", got.FeaturedRunID)
