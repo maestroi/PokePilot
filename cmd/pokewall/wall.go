@@ -51,6 +51,10 @@ type Tile struct {
 	Dest            string
 	Goal            string
 	LLMProfile      string
+	LLMDeployment   string
+	ExperimentID    string
+	ExperimentArm   string
+	ExperimentCase  string
 	ReasoningEffort string
 	Seed            int64
 	FPS             int
@@ -129,6 +133,10 @@ type tileRow struct {
 	Dest            string           `json:"dest"`
 	Goal            string           `json:"goal,omitempty"`
 	LLMProfile      string           `json:"llm_profile,omitempty"`
+	LLMDeployment   string           `json:"llm_deployment,omitempty"`
+	ExperimentID    string           `json:"experiment_id,omitempty"`
+	ExperimentArm   string           `json:"experiment_arm,omitempty"`
+	ExperimentCase  string           `json:"experiment_case,omitempty"`
 	ReasoningEffort string           `json:"reasoning_effort,omitempty"`
 	Seed            int64            `json:"seed"`
 	FPS             int              `json:"fps"`
@@ -217,6 +225,10 @@ type persistedTile struct {
 	Dest            string         `json:"dest,omitempty"`
 	Goal            string         `json:"goal,omitempty"`
 	LLMProfile      string         `json:"llm_profile,omitempty"`
+	LLMDeployment   string         `json:"llm_deployment,omitempty"`
+	ExperimentID    string         `json:"experiment_id,omitempty"`
+	ExperimentArm   string         `json:"experiment_arm,omitempty"`
+	ExperimentCase  string         `json:"experiment_case,omitempty"`
 	ReasoningEffort string         `json:"reasoning_effort,omitempty"`
 	Seed            int64          `json:"seed"`
 	FPS             int            `json:"fps"`
@@ -274,6 +286,10 @@ func (w *Wall) persistedStateLocked() persistedState {
 			Dest:            t.Dest,
 			Goal:            t.Goal,
 			LLMProfile:      t.LLMProfile,
+			LLMDeployment:   t.LLMDeployment,
+			ExperimentID:    t.ExperimentID,
+			ExperimentArm:   t.ExperimentArm,
+			ExperimentCase:  t.ExperimentCase,
 			ReasoningEffort: t.ReasoningEffort,
 			Seed:            t.Seed,
 			FPS:             t.FPS,
@@ -371,6 +387,10 @@ func (w *Wall) loadState() {
 			Dest:            pt.Dest,
 			Goal:            pt.Goal,
 			LLMProfile:      pt.LLMProfile,
+			LLMDeployment:   pt.LLMDeployment,
+			ExperimentID:    pt.ExperimentID,
+			ExperimentArm:   pt.ExperimentArm,
+			ExperimentCase:  pt.ExperimentCase,
 			ReasoningEffort: pt.ReasoningEffort,
 			Seed:            pt.Seed,
 			FPS:             pt.FPS,
@@ -539,6 +559,10 @@ func (w *Wall) applySpec(runID string, spec farm.Spec) {
 	t.Dest = spec.Dest
 	t.Goal = spec.Goal
 	t.LLMProfile = spec.LLMProfile
+	t.LLMDeployment = spec.LLMDeployment
+	t.ExperimentID = spec.ExperimentID
+	t.ExperimentArm = spec.ExperimentArm
+	t.ExperimentCase = spec.ExperimentCase
 	t.ReasoningEffort = spec.ReasoningEffort
 	t.Seed = spec.Seed
 	t.FPS = spec.FPS
@@ -595,6 +619,10 @@ func (w *Wall) handleLease(res http.ResponseWriter, req *http.Request) {
 		Dest:            t.Dest,
 		Goal:            t.Goal,
 		LLMProfile:      t.LLMProfile,
+		LLMDeployment:   t.LLMDeployment,
+		ExperimentID:    t.ExperimentID,
+		ExperimentArm:   t.ExperimentArm,
+		ExperimentCase:  t.ExperimentCase,
 		ReasoningEffort: t.ReasoningEffort,
 		FPS:             t.FPS,
 		MaxRounds:       t.MaxRounds,
@@ -1443,6 +1471,10 @@ func (w *Wall) enqueueNextLocked(prev *Tile) {
 		Dest:            prev.Dest,
 		Goal:            prev.Goal,
 		LLMProfile:      prev.LLMProfile,
+		LLMDeployment:   prev.LLMDeployment,
+		ExperimentID:    prev.ExperimentID,
+		ExperimentArm:   prev.ExperimentArm,
+		ExperimentCase:  prev.ExperimentCase,
 		ReasoningEffort: prev.ReasoningEffort,
 		FPS:             prev.FPS,
 		MaxRounds:       prev.MaxRounds,

@@ -54,8 +54,10 @@ func restorePersistedState(w *Wall, ps persistedState) {
 		w.order = append(w.order, id)
 		w.tiles[id] = &Tile{
 			RunID: pt.RunID, Status: pt.Status, Planner: pt.Planner, Starter: pt.Starter,
-			Dest: pt.Dest, Goal: pt.Goal, LLMProfile: pt.LLMProfile, ReasoningEffort: pt.ReasoningEffort,
-			Seed: pt.Seed, FPS: pt.FPS, MaxRounds: pt.MaxRounds, MaxFrames: pt.MaxFrames,
+			Dest: pt.Dest, Goal: pt.Goal, LLMProfile: pt.LLMProfile, LLMDeployment: pt.LLMDeployment,
+			ExperimentID: pt.ExperimentID, ExperimentArm: pt.ExperimentArm, ExperimentCase: pt.ExperimentCase,
+			ReasoningEffort: pt.ReasoningEffort,
+			Seed:            pt.Seed, FPS: pt.FPS, MaxRounds: pt.MaxRounds, MaxFrames: pt.MaxFrames,
 			Endless: pt.Endless, RandomSeed: pt.RandomSeed,
 			QueuedAt: timeFromUnix(pt.QueuedAt), EndedAt: timeFromUnix(pt.EndedAt),
 			Attempts: pt.Attempts, ErrorAttempts: pt.ErrorAttempts, LossRecoveries: pt.LossRecoveries,

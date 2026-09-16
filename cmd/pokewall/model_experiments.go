@@ -74,13 +74,14 @@ type deploymentView struct {
 }
 
 type modelHostStatus struct {
-	State              string `json:"state"`
-	DeploymentID       string `json:"deployment_id,omitempty"`
-	ModelID            string `json:"model_id,omitempty"`
-	Health             string `json:"health,omitempty"`
-	ActiveLeases       int    `json:"active_leases,omitempty"`
-	MaxParallelWorkers int    `json:"max_parallel_workers,omitempty"`
-	Error              string `json:"error,omitempty"`
+	State              string   `json:"state"`
+	DeploymentID       string   `json:"deployment_id,omitempty"`
+	ModelID            string   `json:"model_id,omitempty"`
+	Health             string   `json:"health,omitempty"`
+	ActiveLeases       int      `json:"active_leases,omitempty"`
+	MaxParallelWorkers int      `json:"max_parallel_workers,omitempty"`
+	LeaseRunIDs        []string `json:"lease_run_ids,omitempty"`
+	Error              string   `json:"error,omitempty"`
 }
 
 // modelExperimentHTTPHandler adds #723/#724 operator behavior around the wall
@@ -105,6 +106,8 @@ func modelExperimentHTTPHandler(w *Wall, fallback http.Handler) http.Handler {
 			controller.registry = registry
 		}
 	}
+	controller.backfillRunsFromExperiments()
+	controller.attachDeploymentsToTiles()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/models", controller.handleModels)
@@ -125,6 +128,7 @@ func logModelExperiment(format string, args ...any) {
 }
 
 func (c *modelExperimentController) handleModels(w http.ResponseWriter, _ *http.Request) {
+	c.reconcileHostLeases()
 	deployments := c.enabledDeployments()
 	views := make([]deploymentView, 0, len(deployments))
 	statuses := map[string]modelHostStatus{}
@@ -266,7 +270,7 @@ func (c *modelExperimentController) handleLease(w http.ResponseWriter, r *http.R
 		copyRecorder(w, capture)
 		return
 	}
-	meta, ok := c.runMeta(spec.RunID)
+	meta, ok := c.bindingForRun(spec.RunID, spec.LLMDeployment)
 	if !ok {
 		copyRecorder(w, capture)
 		return
@@ -274,6 +278,7 @@ func (c *modelExperimentController) handleLease(w http.ResponseWriter, r *http.R
 	if meta.Inference.ControlURL != "" {
 		status, code, err := c.hostAction(meta.Inference, "/v1/leases/acquire", map[string]any{"run_id": spec.RunID, "deployment_id": meta.Deployment, "max_parallel_workers": c.liveParallelLimit(meta.Deployment)})
 		if err != nil || code >= 300 || status.State != "ready" || status.DeploymentID != meta.Deployment {
+			c.releaseHostLease(spec.RunID, meta.Inference)
 			c.requeueLease(spec.RunID)
 			writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "deployment lost readiness while leasing", "deployment": meta.Deployment, "status": status})
 			return
@@ -291,6 +296,7 @@ func (c *modelExperimentController) handleLease(w http.ResponseWriter, r *http.R
 // reports loading. Queued specs whose host is busy are skipped in favor of a
 // runnable deployment.
 func (c *modelExperimentController) prepareNextDeployment() bool {
+	c.reconcileHostLeases()
 	c.wall.mu.Lock()
 	queue := append([]string(nil), c.wall.queue...)
 	c.wall.mu.Unlock()
@@ -298,7 +304,7 @@ func (c *modelExperimentController) prepareNextDeployment() bool {
 		return true // let the normal lease handler produce 204
 	}
 	for _, runID := range queue {
-		meta, ok := c.runMeta(runID)
+		meta, ok := c.bindingForRun(runID, c.tileDeployment(runID))
 		if !ok {
 			c.moveQueueFront(runID)
 			return true
@@ -329,18 +335,13 @@ func (c *modelExperimentController) prepareNextDeployment() bool {
 }
 
 func (c *modelExperimentController) deploymentAtCapacity(meta runExperimentMeta) bool {
-	limit := c.liveParallelLimit(meta.Deployment)
-	c.wall.mu.Lock()
-	activeIDs := make([]string, 0)
-	for runID, tile := range c.wall.tiles {
-		if tile != nil && !tile.Finished && (tile.Status == statusLeased || tile.Status == statusRunning) {
-			activeIDs = append(activeIDs, runID)
-		}
+	if strings.TrimSpace(meta.Deployment) == "" {
+		return false
 	}
-	c.wall.mu.Unlock()
+	limit := c.liveParallelLimit(meta.Deployment)
 	active := 0
-	for _, runID := range activeIDs {
-		if other, ok := c.runMeta(runID); ok && other.Deployment == meta.Deployment {
+	for _, dep := range c.liveDeployments(true) {
+		if dep == meta.Deployment {
 			active++
 		}
 	}
@@ -348,34 +349,91 @@ func (c *modelExperimentController) deploymentAtCapacity(meta runExperimentMeta)
 }
 
 func (c *modelExperimentController) activeByDeployment() map[string]int {
-	c.wall.mu.Lock()
-	activeIDs := make([]string, 0)
-	for runID, tile := range c.wall.tiles {
-		if tile != nil && !tile.Finished && (tile.Status == statusLeased || tile.Status == statusRunning) {
-			activeIDs = append(activeIDs, runID)
-		}
-	}
-	c.wall.mu.Unlock()
 	out := map[string]int{}
-	for _, runID := range activeIDs {
-		if meta, ok := c.runMeta(runID); ok {
-			out[meta.Deployment]++
-		}
+	for _, dep := range c.liveDeployments(true) {
+		out[dep]++
 	}
 	return out
 }
 
 func (c *modelExperimentController) queuedByDeployment() map[string]int {
-	c.wall.mu.Lock()
-	queue := append([]string(nil), c.wall.queue...)
-	c.wall.mu.Unlock()
 	out := map[string]int{}
-	for _, runID := range queue {
-		if meta, ok := c.runMeta(runID); ok {
-			out[meta.Deployment]++
+	for _, dep := range c.liveDeployments(false) {
+		out[dep]++
+	}
+	return out
+}
+
+func (c *modelExperimentController) liveDeployments(active bool) []string {
+	c.wall.mu.Lock()
+	type pending struct {
+		runID      string
+		deployment string
+	}
+	var rows []pending
+	if active {
+		for runID, tile := range c.wall.tiles {
+			if tile == nil || tile.Finished || (tile.Status != statusLeased && tile.Status != statusRunning) {
+				continue
+			}
+			rows = append(rows, pending{runID: runID, deployment: tile.LLMDeployment})
+		}
+	} else {
+		for _, runID := range c.wall.queue {
+			deployment := ""
+			if tile := c.wall.tiles[runID]; tile != nil {
+				deployment = tile.LLMDeployment
+			}
+			rows = append(rows, pending{runID: runID, deployment: deployment})
+		}
+	}
+	c.wall.mu.Unlock()
+
+	out := make([]string, 0, len(rows))
+	for _, row := range rows {
+		dep := row.deployment
+		if dep == "" {
+			if meta, ok := c.runMeta(row.runID); ok {
+				dep = meta.Deployment
+			}
+		}
+		if dep != "" {
+			out = append(out, dep)
 		}
 	}
 	return out
+}
+
+func (c *modelExperimentController) tileDeployment(runID string) string {
+	c.wall.mu.Lock()
+	defer c.wall.mu.Unlock()
+	if tile := c.wall.tiles[runID]; tile != nil {
+		return tile.LLMDeployment
+	}
+	return ""
+}
+
+func (c *modelExperimentController) bindingForRun(runID, deployment string) (runExperimentMeta, bool) {
+	if meta, ok := c.runMeta(runID); ok {
+		return meta, true
+	}
+	deployment = strings.TrimSpace(deployment)
+	if deployment == "" {
+		deployment = c.tileDeployment(runID)
+	}
+	if deployment == "" {
+		return runExperimentMeta{}, false
+	}
+	if d, ok := c.deployment(deployment); ok {
+		c.wall.mu.Lock()
+		expID, expArm, expCase := "", "", ""
+		if tile := c.wall.tiles[runID]; tile != nil {
+			expID, expArm, expCase = tile.ExperimentID, tile.ExperimentArm, tile.ExperimentCase
+		}
+		c.wall.mu.Unlock()
+		return runExperimentMeta{RunID: runID, Deployment: d.ID, Inference: d.Identity(), ExperimentID: expID, ExperimentArm: expArm, ExperimentCase: expCase, MaxParallelWorkers: d.ParallelLimit()}, true
+	}
+	return runExperimentMeta{RunID: runID, Deployment: deployment}, true
 }
 
 func (c *modelExperimentController) requeueLease(runID string) {
@@ -420,8 +478,8 @@ func (c *modelExperimentController) handleFinish(w http.ResponseWriter, r *http.
 	if capture.Code < 200 || capture.Code >= 300 {
 		return
 	}
-	if meta, ok := c.runMeta(runID); ok && meta.Inference.ControlURL != "" {
-		_, _, _ = c.hostAction(meta.Inference, "/v1/leases/release", map[string]string{"run_id": runID, "deployment_id": meta.Deployment})
+	if meta, ok := c.bindingForRun(runID, ""); ok && meta.Inference.ControlURL != "" {
+		c.releaseHostLease(runID, meta.Inference)
 	}
 }
 
@@ -441,14 +499,20 @@ func (c *modelExperimentController) handleDashboard(w http.ResponseWriter, r *ht
 		for _, item := range runs {
 			run, _ := item.(map[string]any)
 			runID, _ := run["run_id"].(string)
-			if meta, ok := c.runMeta(runID); ok {
+			if meta, ok := c.bindingForRun(runID, stringValue(run["llm_deployment"])); ok {
 				run["llm_deployment"] = meta.Deployment
 				run["inference"] = meta.Inference
-				run["experiment_id"] = meta.ExperimentID
-				run["experiment_arm"] = meta.ExperimentArm
-				run["experiment_case"] = meta.ExperimentCase
-				run["comparable_hash"] = meta.ComparableHash
-				run["max_parallel_workers"] = meta.MaxParallelWorkers
+				if meta.ExperimentID != "" {
+					run["experiment_id"] = meta.ExperimentID
+					run["experiment_arm"] = meta.ExperimentArm
+					run["experiment_case"] = meta.ExperimentCase
+				}
+				if meta.ComparableHash != "" {
+					run["comparable_hash"] = meta.ComparableHash
+				}
+				if meta.MaxParallelWorkers > 0 {
+					run["max_parallel_workers"] = meta.MaxParallelWorkers
+				}
 			}
 		}
 	}
@@ -843,6 +907,105 @@ func (c *modelExperimentController) runMeta(runID string) (runExperimentMeta, bo
 	defer c.mu.Unlock()
 	meta, ok := c.state.Runs[runID]
 	return meta, ok
+}
+
+func (c *modelExperimentController) backfillRunsFromExperiments() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, record := range c.state.Experiments {
+		for _, runID := range record.RunIDs {
+			if _, ok := c.state.Runs[runID]; ok {
+				continue
+			}
+			arm := record.Request.ArmA
+			armKey := "a"
+			if strings.HasSuffix(runID, "-b") {
+				arm = record.Request.ArmB
+				armKey = "b"
+			}
+			if strings.TrimSpace(arm.Deployment) == "" {
+				continue
+			}
+			meta := runExperimentMeta{RunID: runID, Deployment: arm.Deployment, ExperimentID: record.ID, ExperimentArm: armKey, ExperimentCase: strings.TrimSuffix(strings.TrimSuffix(runID, "-a"), "-b"), MaxParallelWorkers: arm.MaxParallelWorkers}
+			if d, ok := c.deployment(arm.Deployment); ok {
+				meta.Inference = d.Identity()
+				if meta.MaxParallelWorkers <= 0 {
+					meta.MaxParallelWorkers = d.ParallelLimit()
+				}
+			}
+			c.state.Runs[runID] = meta
+		}
+	}
+}
+
+func (c *modelExperimentController) attachDeploymentsToTiles() {
+	c.mu.Lock()
+	runs := make(map[string]runExperimentMeta, len(c.state.Runs))
+	for id, meta := range c.state.Runs {
+		runs[id] = meta
+	}
+	c.mu.Unlock()
+
+	c.wall.mu.Lock()
+	defer c.wall.mu.Unlock()
+	for id, meta := range runs {
+		tile := c.wall.tiles[id]
+		if tile == nil || meta.Deployment == "" {
+			continue
+		}
+		if tile.LLMDeployment == "" {
+			tile.LLMDeployment = meta.Deployment
+		}
+		if tile.ExperimentID == "" {
+			tile.ExperimentID, tile.ExperimentArm, tile.ExperimentCase = meta.ExperimentID, meta.ExperimentArm, meta.ExperimentCase
+		}
+	}
+}
+
+func (c *modelExperimentController) liveHostLeaseRunIDs() map[string]struct{} {
+	c.wall.mu.Lock()
+	defer c.wall.mu.Unlock()
+	out := make(map[string]struct{})
+	for runID, tile := range c.wall.tiles {
+		if tile == nil || tile.Finished {
+			continue
+		}
+		if tile.Status == statusLeased || tile.Status == statusRunning {
+			out[runID] = struct{}{}
+		}
+	}
+	return out
+}
+
+func (c *modelExperimentController) releaseHostLease(runID string, identity farm.InferenceIdentity) {
+	if strings.TrimSpace(runID) == "" || strings.TrimSpace(identity.ControlURL) == "" {
+		return
+	}
+	_, _, _ = c.hostAction(identity, "/v1/leases/release", map[string]string{"run_id": runID, "deployment_id": identity.DeploymentID})
+}
+
+func (c *modelExperimentController) reconcileHostLeases() {
+	live := c.liveHostLeaseRunIDs()
+	seen := map[string]struct{}{}
+	for _, d := range c.enabledDeployments() {
+		if strings.TrimSpace(d.ControlURL) == "" {
+			continue
+		}
+		if _, ok := seen[d.ControlURL]; ok {
+			continue
+		}
+		seen[d.ControlURL] = struct{}{}
+		status, err := c.hostStatusIdentity(d.Identity())
+		if err != nil {
+			continue
+		}
+		for _, runID := range status.LeaseRunIDs {
+			if _, ok := live[runID]; ok {
+				continue
+			}
+			c.releaseHostLease(runID, d.Identity())
+		}
+	}
 }
 
 func (c *modelExperimentController) hostStatus(d farm.ModelDeployment) (modelHostStatus, error) {
