@@ -3,13 +3,14 @@ package agent
 import (
 	"sort"
 
-	redprofile "github.com/maestroi/pokepilot/red/profile"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/skill"
 )
 
 func init() {
-	registerObjectiveCatalogProvider(redprofile.GameID, &redObjectiveAdapter{})
+	for _, id := range gen1Games {
+		registerObjectiveCatalogProvider(id, &redObjectiveAdapter{})
+	}
 }
 
 func (a *redObjectiveAdapter) ObjectiveCatalog(obs Observation) ObjectiveCatalog {
@@ -33,7 +34,7 @@ func redObjectiveCatalog(obs Observation) ObjectiveCatalog {
 		}
 		catalog.Destinations = append(catalog.Destinations, CatalogDestination{
 			Place:    PlaceID(name),
-			Location: redLocationID(destination.Map),
+			Location: redLocationID(obs.GameID, destination.Map),
 			X:        destination.X,
 			Y:        destination.Y,
 			Center:   isCenter(state.MapName(destination.Map)),
@@ -43,7 +44,7 @@ func redObjectiveCatalog(obs Observation) ObjectiveCatalog {
 	if gym, ok := skill.GymAt(obs.Map); ok {
 		catalog.Challenges = append(catalog.Challenges, CatalogChallenge{
 			Place:    gym.Place,
-			Location: redLocationID(gym.Map),
+			Location: redLocationID(obs.GameID, gym.Map),
 			Complete: hasBadge(obs, gym.Badge),
 		})
 	}

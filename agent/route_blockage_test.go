@@ -172,7 +172,7 @@ func TestRouteBlockagesArePlannerVisibleAndBounded(t *testing.T) {
 }
 
 func TestOfferAlwaysWithholdsSemanticBlockedDestination(t *testing.T) {
-	known := NewKnowledge(map[uint8][]uint8{0x05: {0x5c}, 0x5c: {0x05}})
+	known := testKnowledge(map[uint8][]uint8{0x05: {0x5c}, 0x5c: {0x05}})
 	known.SawMap(0x05)
 	known.SawMap(0x5c)
 	obs := Observation{
@@ -206,7 +206,7 @@ func TestOfferWithholdsSemanticBlockedDestinationBeyondPlannerCap(t *testing.T) 
 	got := collectRouteAvailability(planner, names)
 	last := names[len(names)-1]
 	destination, _ := skill.Place(last)
-	known := NewKnowledge(map[uint8][]uint8{destination.Map: {destination.Map}})
+	known := testKnowledge(map[uint8][]uint8{destination.Map: {destination.Map}})
 	known.SawMap(destination.Map)
 	obs := Observation{Map: destination.Map, MapName: "TEST", PartyCount: 1, Unroutable: got.Unroutable, RouteBlockages: got.Blockages}
 

@@ -3,6 +3,7 @@ package agent
 import (
 	"testing"
 
+	redprofile "github.com/maestroi/pokepilot/red/profile"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/skill"
 )
@@ -16,8 +17,8 @@ func TestOfferKeepsVisitedDestinationsBeyondTheCurrentMap(t *testing.T) {
 	far := mustPlaceForTravelFocusTest(t, "route 3")
 
 	known := NewKnowledge(nil)
-	known.SawLocation(redLocationID(far.Map))
-	obs := Observation{
+	known.SawLocation(redLocationID(redprofile.GameID, far.Map))
+	obs := Observation{GameID: testGameID,
 		Map:    here.Map,
 		X:      here.X,
 		Y:      here.Y,

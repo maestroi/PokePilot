@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sync"
 
+	blueprofile "github.com/maestroi/pokepilot/blue/profile"
 	"github.com/maestroi/pokepilot/game"
 	redprofile "github.com/maestroi/pokepilot/red/profile"
 )
@@ -21,6 +22,7 @@ func Builtin() (*game.Registry, error) {
 	builtinOnce.Do(func() {
 		builtin, builtinErr = game.NewRegistry(
 			redprofile.New(),
+			blueprofile.New(),
 		)
 	})
 	return builtin, builtinErr

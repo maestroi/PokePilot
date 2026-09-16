@@ -3,19 +3,21 @@ package agent
 import (
 	"fmt"
 
-	redprofile "github.com/maestroi/pokepilot/red/profile"
+	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/state"
 )
 
 func init() {
-	registerKnowledgeTopologyProvider(redprofile.GameID, &redObjectiveAdapter{})
+	for _, id := range gen1Games {
+		registerKnowledgeTopologyProvider(id, &redObjectiveAdapter{gameID: id})
+	}
 }
 
-func redLocationID(id uint8) LocationID {
-	if name := state.MapName(id); name != "" {
+func redLocationID(id game.GameID, native uint8) LocationID {
+	if name := state.MapName(native); name != "" {
 		return LocationID(semanticLocation(name))
 	}
-	return LocationID(fmt.Sprintf("pokemon-red/map/%02x", id))
+	return LocationID(fmt.Sprintf("%s/map/%02x", id, native))
 }
 
 func (a *redObjectiveAdapter) KnowledgeTopology(native map[uint8][]uint8) KnowledgeTopology {
@@ -27,7 +29,7 @@ func (a *redObjectiveAdapter) KnowledgeTopology(native map[uint8][]uint8) Knowle
 		if known := topology.NativeLocations[id]; known != "" {
 			return known
 		}
-		semantic := redLocationID(id)
+		semantic := redLocationID(a.gameID, id)
 		topology.NativeLocations[id] = semantic
 		return semantic
 	}

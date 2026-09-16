@@ -11,11 +11,11 @@ func TestOfferMarksUnvisitedAdjacentJourney(t *testing.T) {
 	adj := map[uint8][]uint8{
 		0x02: {0x0d, 0x0e, 0x36, 0x3a},
 	}
-	known := NewKnowledge(adj)
+	known := testKnowledge(adj)
 	for _, id := range []uint8{0x02, 0x0d, 0x36, 0x3a} {
 		known.SawMap(id)
 	}
-	obs := Observation{
+	obs := Observation{GameID: testGameID,
 		Map:        0x02,
 		MapName:    "PEWTER_CITY",
 		X:          14,
@@ -48,12 +48,12 @@ func TestOfferMarksUnvisitedAdjacentJourney(t *testing.T) {
 }
 
 func TestOfferPutsLocalWildBandOnTrainChoiceAndKeepsHistory(t *testing.T) {
-	known := NewKnowledge(map[uint8][]uint8{0x0d: {0x02}})
+	known := testKnowledge(map[uint8][]uint8{0x0d: {0x02}})
 	known.SawMap(0x0d)
 	train := Objective{Kind: KindTrain, Level: 22}.String()
 	known.Failures[train] = Failure{Objective: train, Times: 1, Last: "target not reached"}
 
-	obs := Observation{
+	obs := Observation{GameID: testGameID,
 		Map:        0x0d,
 		MapName:    "ROUTE_2",
 		PartyCount: 1,

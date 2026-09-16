@@ -16,6 +16,10 @@ const objectiveFrameBudget uint64 = 500_000
 type redObjectiveAdapter struct {
 	m       *emu.Emu
 	romData []byte
+	// gameID is set only on instances bound at registration. Execution helpers
+	// build from an emulator and ROM and never need it: the caller already
+	// selected this adapter through the per-game registry lookup.
+	gameID gameruntime.GameID
 }
 
 func newRedObjectiveAdapter(m *emu.Emu, romData []byte) *redObjectiveAdapter {

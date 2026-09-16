@@ -55,16 +55,19 @@ the bit.
 
 ## Getting started
 
-Requires Go 1.26 and a Pokémon Red ROM for gameplay. GomeBoy is pinned in
-`go.mod` to the PokePilot-maintained fork at `github.com/maestroi/gomeboy`, so
-a normal fresh clone has no dependency on a developer-local filesystem path.
+Requires Go 1.26 and a Pokémon Red or Blue ROM for gameplay. GomeBoy is pinned
+in `go.mod` to the PokePilot-maintained fork at `github.com/maestroi/gomeboy`,
+so a normal fresh clone has no dependency on a developer-local filesystem path.
 ROM-free verification also works without a ROM.
 
 ```sh
-export POKEMON_RED_ROM=roms/pokemon_red.gb   # roms/ is gitignored
+export POKEPILOT_ROM=roms/pokemon_red.gb     # roms/ is gitignored
 make run                                      # scripted: boot, take the starter, walk to -goto
 make run ARGS='-goto "pallet town"'
 ```
+
+`POKEMON_RED_ROM` still works as the path variable; the game is identified from
+the ROM bytes, so pointing either variable at a Blue image runs Blue.
 
 The screen is served at `http://localhost:8099` for humans to watch.
 

@@ -1,5 +1,5 @@
-// Command pokepilot boots Pokemon Red, serves the screen over HTTP so a
-// human can watch, and drives the deterministic skills built so far.
+// Command pokepilot boots a supported Pokemon Gen I ROM (Red or Blue), serves
+// the screen over HTTP so a human can watch, and drives the built skills.
 package main
 
 import (
@@ -48,9 +48,15 @@ func main() {
 	flag.Parse()
 	*goal = resolveLocalGoal(*goal)
 
-	romPath := os.Getenv("POKEMON_RED_ROM")
+	// POKEPILOT_ROM is the generic path; POKEMON_RED_ROM stays supported
+	// because deploy/ and the docs set it. Which game the ROM is comes from
+	// the bytes via profiles.Detect, not from this variable's name.
+	romPath := os.Getenv("POKEPILOT_ROM")
 	if romPath == "" {
-		log.Fatal("POKEMON_RED_ROM is not set; point it at a Pokemon Red ROM")
+		romPath = os.Getenv("POKEMON_RED_ROM")
+	}
+	if romPath == "" {
+		log.Fatal("POKEPILOT_ROM is not set; point it at a supported Pokemon Gen I ROM (POKEMON_RED_ROM still works)")
 	}
 
 	resumeFrom := ""

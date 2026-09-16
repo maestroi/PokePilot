@@ -39,7 +39,7 @@ func TestTrainerLossBlocksSameJourneyUntilTraining(t *testing.T) {
 	// trainers ON Route 3, so model the state where both scripted exits are
 	// genuinely open — a run standing in Pewter with a badge has long since
 	// been handed the Pokedex.
-	obs := Observation{
+	obs := Observation{GameID: testGameID,
 		Map: 0x02, MapName: "PEWTER_CITY", X: 15, Y: 17, PartyCount: 1,
 		Party:  []PartyMon{{Level: 10, HP: 30, MaxHP: 30}},
 		Badges: []string{state.BadgeBoulder.String()},
@@ -83,7 +83,7 @@ func TestTrainerLossNormalizesFleeVariantAndIgnoresOrdinaryBlackout(t *testing.T
 	if !ok {
 		t.Fatal("route 3 missing from place table")
 	}
-	obs := Observation{
+	obs := Observation{GameID: testGameID,
 		Map: 0x02, MapName: "PEWTER_CITY", X: 15, Y: 17, PartyCount: 1,
 		Party:  []PartyMon{{Level: 10, HP: 30, MaxHP: 30}},
 		Badges: []string{state.BadgeBoulder.String()},
@@ -119,7 +119,7 @@ func TestTrainerLossUnlocksOnIncidentalLevelGain(t *testing.T) {
 	if !ok {
 		t.Fatal("route 3 missing from place table")
 	}
-	obs := Observation{
+	obs := Observation{GameID: testGameID,
 		Map: 0x02, MapName: "PEWTER_CITY", X: 15, Y: 17, PartyCount: 1,
 		Party:  []PartyMon{{Level: 16, HP: 48, MaxHP: 48}},
 		Badges: []string{state.BadgeBoulder.String()},
@@ -146,7 +146,7 @@ func TestTrainerLossUnlocksWhenLocalTrainingIsOutsideBudget(t *testing.T) {
 	if !ok {
 		t.Fatal("route 3 missing from place table")
 	}
-	obs := Observation{
+	obs := Observation{GameID: testGameID,
 		Map: 0x0c, MapName: "ROUTE_1", X: 10, Y: 20, PartyCount: 1,
 		Party:    []PartyMon{{Level: 16, HP: 48, MaxHP: 48}},
 		Badges:   []string{state.BadgeBoulder.String()},
@@ -175,7 +175,7 @@ func TestTrainerLossUnlocksOnTrainProgressShortfall(t *testing.T) {
 	if !ok {
 		t.Fatal("route 3 missing from place table")
 	}
-	obs := Observation{
+	obs := Observation{GameID: testGameID,
 		Map: 0x02, MapName: "PEWTER_CITY", X: 15, Y: 17, PartyCount: 1,
 		Party:  []PartyMon{{Level: 16, HP: 48, MaxHP: 48}},
 		Badges: []string{state.BadgeBoulder.String()},
@@ -202,7 +202,7 @@ func TestTrainerLossGateSurvivesCheckpointMemory(t *testing.T) {
 	if !ok {
 		t.Fatal("route 3 missing from place table")
 	}
-	obs := Observation{
+	obs := Observation{GameID: testGameID,
 		Map: 0x02, MapName: "PEWTER_CITY", X: 15, Y: 17, PartyCount: 1,
 		Party:  []PartyMon{{Level: 10, HP: 30, MaxHP: 30}},
 		Badges: []string{state.BadgeBoulder.String()},

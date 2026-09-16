@@ -34,7 +34,7 @@ func TestAppendKnownCatchObjectivesOffersVisitedHabitatAwayFromGrass(t *testing.
 
 	known := NewKnowledge(nil)
 	known.SawMap(route1.Map)
-	obs := Observation{
+	obs := Observation{GameID: testGameID,
 		Map:        pewterCenter.Map,
 		MapName:    "PEWTER_POKECENTER",
 		PartyCount: 1,
@@ -77,7 +77,7 @@ func TestAppendKnownCatchObjectivesRequiresBallsAndOpenPartySlot(t *testing.T) {
 	known.SawMap(route1.Map)
 	wildFor := knownCatchTestWild(t)
 
-	base := Observation{Map: 0xff, PartyCount: 1, Party: []PartyMon{{Species: SpeciesID("charmander")}}}
+	base := Observation{GameID: testGameID, Map: 0xff, PartyCount: 1, Party: []PartyMon{{Species: SpeciesID("charmander")}}}
 	if got := appendKnownCatchObjectivesWithWild(nil, base, known, nil, wildFor); len(got) != 0 {
 		t.Fatalf("without balls got %d catch objectives, want 0", len(got))
 	}
@@ -94,7 +94,7 @@ func TestAppendKnownCatchObjectivesDoesNotRevealUnvisitedHabitat(t *testing.T) {
 		t.Fatal("route 1 place missing")
 	}
 	known := NewKnowledge(nil)
-	obs := Observation{
+	obs := Observation{GameID: testGameID,
 		Map:        0xff,
 		PartyCount: 1,
 		Party:      []PartyMon{{Species: SpeciesID("charmander")}},
@@ -123,7 +123,7 @@ func TestAppendKnownCatchObjectivesSkipsPokedexOwned(t *testing.T) {
 	}
 	known := NewKnowledge(nil)
 	known.SawMap(route1.Map)
-	obs := Observation{
+	obs := Observation{GameID: testGameID,
 		Map:          0xff,
 		PartyCount:   1,
 		Party:        []PartyMon{{Species: SpeciesID("charmander")}},

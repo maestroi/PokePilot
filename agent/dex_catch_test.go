@@ -90,7 +90,7 @@ func TestAppendDexCatchObjectivesPicksNearestSourceAndStaysBounded(t *testing.T)
 			},
 		}}},
 	}
-	known := NewKnowledge(map[uint8][]uint8{route1.Map: {route2.Map}, route2.Map: {route1.Map}})
+	known := testKnowledge(map[uint8][]uint8{route1.Map: {route2.Map}, route2.Map: {route1.Map}})
 	got := appendDexCatchObjectives(obs, known, nil)
 	if len(got) != 1 || got[0].Place != "route 1" {
 		t.Fatalf("nearest habitat = %+v, want route 1", got)

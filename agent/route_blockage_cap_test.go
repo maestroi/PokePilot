@@ -38,9 +38,9 @@ func TestSemanticRouteBlockerBeyondPromptCapStillFiltersOffer(t *testing.T) {
 	names = append(names, target)
 	planner[targetDest] = blockedRoute("portable:gate", "can_surf")
 
-	known := NewKnowledge(map[uint8][]uint8{targetDest.Map: {targetDest.Map}})
+	known := testKnowledge(map[uint8][]uint8{targetDest.Map: {targetDest.Map}})
 	known.SawMap(targetDest.Map)
-	base := Observation{Map: targetDest.Map, MapName: "VIRIDIAN_CITY", X: 0, Y: 0, PartyCount: 1}
+	base := Observation{GameID: testGameID, Map: targetDest.Map, MapName: "VIRIDIAN_CITY", X: 0, Y: 0, PartyCount: 1}
 	if !offersPlace(Offer(base, known), target) {
 		t.Fatalf("test fixture invalid: %q is not offered before route availability is applied", target)
 	}

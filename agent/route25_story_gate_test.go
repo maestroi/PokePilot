@@ -3,7 +3,7 @@ package agent
 import "testing"
 
 func TestJourneyProgressionBlockedRoute25UntilBillTicket(t *testing.T) {
-	obs := Observation{}
+	obs := Observation{GameID: testGameID}
 	if !journeyProgressionBlocked(obs, route25Map) {
 		t.Fatal("Route 25 should stay behind Bill progression before the S.S. Ticket")
 	}
@@ -15,12 +15,12 @@ func TestJourneyProgressionBlockedRoute25UntilBillTicket(t *testing.T) {
 }
 
 func TestOfferLeavesPreBillRoute25ToBillProgression(t *testing.T) {
-	known := NewKnowledge(map[uint8][]uint8{
+	known := testKnowledge(map[uint8][]uint8{
 		0x23:       {route25Map},
 		route25Map: {0x23},
 	})
 	known.SawMap(0x23)
-	obs := Observation{
+	obs := Observation{GameID: testGameID,
 		Map:        0x23,
 		MapName:    "ROUTE_24",
 		X:          10,

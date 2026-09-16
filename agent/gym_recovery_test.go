@@ -22,7 +22,7 @@ func offeredGym(obs Observation, known *Knowledge) (Objective, bool) {
 }
 
 func pewterGymObservation() Observation {
-	return Observation{
+	return Observation{GameID: testGameID,
 		Map: 0x36, MapName: "PEWTER_GYM", X: 4, Y: 2, PartyCount: 1,
 		Party: []PartyMon{{Level: 9, HP: 28, MaxHP: 28}},
 	}
@@ -78,7 +78,7 @@ func TestGymLossRequiresTrainingBeforeRechallenge(t *testing.T) {
 
 	// The gate is scoped to the gym that beat the party. A Brock loss must
 	// not globally disable a different legal gym challenge.
-	cerulean := Observation{
+	cerulean := Observation{GameID: testGameID,
 		Map: 0x41, MapName: "CERULEAN_GYM", X: 4, Y: 3, PartyCount: 1,
 		Party:  []PartyMon{{Level: 9, HP: 28, MaxHP: 28}},
 		Badges: []string{"Boulder"},

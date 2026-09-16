@@ -7,7 +7,7 @@ import "testing"
 // "go to viridian city" was the most-picked objective of the run and every
 // pick died on `world: no route` from Mt. Moon 1F's (5,5) ladder landing.
 func TestOfferWithholdsUnroutableJourneys(t *testing.T) {
-	known := NewKnowledge(map[uint8][]uint8{
+	known := testKnowledge(map[uint8][]uint8{
 		0x3B: {0x0F},
 		0x0F: {0x3B, 0x03},
 	})
@@ -15,7 +15,7 @@ func TestOfferWithholdsUnroutableJourneys(t *testing.T) {
 	known.SawMap(0x0F)
 	known.SawMap(0x01)
 
-	obs := Observation{Map: 0x3B, MapName: "MT_MOON_1F", X: 5, Y: 5, PartyCount: 1}
+	obs := Observation{GameID: testGameID, Map: 0x3B, MapName: "MT_MOON_1F", X: 5, Y: 5, PartyCount: 1}
 	if !offersPlace(Offer(obs, known), "viridian city") {
 		t.Fatal("test assumption wrong: Viridian is not on the menu even before the router is consulted")
 	}
@@ -33,11 +33,11 @@ func TestOfferWithholdsUnroutableJourneys(t *testing.T) {
 // question was never put to the router (no ROM, a graph that failed to
 // build). That is not evidence, and it must never empty the menu.
 func TestOfferFailsOpenWhenRoutabilityWasNeverAsked(t *testing.T) {
-	known := NewKnowledge(map[uint8][]uint8{0x3B: {0x0F}, 0x0F: {0x3B}})
+	known := testKnowledge(map[uint8][]uint8{0x3B: {0x0F}, 0x0F: {0x3B}})
 	known.SawMap(0x3B)
 	known.SawMap(0x0F)
 
-	obs := Observation{Map: 0x3B, MapName: "MT_MOON_1F", X: 5, Y: 5, PartyCount: 1}
+	obs := Observation{GameID: testGameID, Map: 0x3B, MapName: "MT_MOON_1F", X: 5, Y: 5, PartyCount: 1}
 	obs.Unroutable = nil
 	if !offersPlace(Offer(obs, known), "route 4") {
 		t.Error("a nil Unroutable withheld a place; it must fail open")
@@ -49,7 +49,7 @@ func TestOfferFailsOpenWhenRoutabilityWasNeverAsked(t *testing.T) {
 func TestLogUnroutableRecordsOncePerChange(t *testing.T) {
 	var buf writerFunc
 	prev := ""
-	obs := Observation{Map: 0x3B, X: 5, Y: 5, Unroutable: []string{"cerulean city", "viridian city"}}
+	obs := Observation{GameID: testGameID, Map: 0x3B, X: 5, Y: 5, Unroutable: []string{"cerulean city", "viridian city"}}
 
 	logUnroutable(&buf, 7, obs, &prev)
 	logUnroutable(&buf, 8, obs, &prev) // unchanged: silent
@@ -87,12 +87,12 @@ func (w *writerFunc) Write(p []byte) (int, error) {
 // destination on that map at once. Filtering on it must not be able to leave
 // the planner with nothing to pick.
 func TestOfferNeverEmptiesTheMenuOnUnroutability(t *testing.T) {
-	known := NewKnowledge(map[uint8][]uint8{0x3B: {0x0F, 0x3C}, 0x0F: {0x3B}, 0x3C: {0x3B}})
+	known := testKnowledge(map[uint8][]uint8{0x3B: {0x0F, 0x3C}, 0x0F: {0x3B}, 0x3C: {0x3B}})
 	known.SawMap(0x3B)
 	known.SawMap(0x0F)
 	known.SawMap(0x3C)
 
-	obs := Observation{Map: 0x3B, MapName: "MT_MOON_1F", X: 5, Y: 5, PartyCount: 1}
+	obs := Observation{GameID: testGameID, Map: 0x3B, MapName: "MT_MOON_1F", X: 5, Y: 5, PartyCount: 1}
 	all := Offer(obs, known)
 
 	// The router claims nothing at all is reachable.

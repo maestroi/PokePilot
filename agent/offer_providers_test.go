@@ -45,8 +45,8 @@ func TestOfferWithEvidenceIsDeterministic(t *testing.T) {
 	obs := Observation{Map: 0x00, MapName: "PALLET_TOWN", X: 4, Y: 7, PartyCount: 1}
 	adjacency := map[uint8][]uint8{0x00: {0x0c}, 0x0c: {0x00}}
 
-	first := OfferWithEvidence(obs, NewKnowledge(adjacency))
-	second := OfferWithEvidence(obs, NewKnowledge(adjacency))
+	first := OfferWithEvidence(obs, testKnowledge(adjacency))
+	second := OfferWithEvidence(obs, testKnowledge(adjacency))
 	if !reflect.DeepEqual(first, second) {
 		t.Fatalf("provider pipeline is not deterministic:\nfirst=%+v\nsecond=%+v", first, second)
 	}

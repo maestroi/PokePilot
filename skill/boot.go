@@ -81,11 +81,27 @@ func BootToOverworld(m *emu.Emu) (state.GameState, error) {
 
 	m.StepFrames(300)
 
+	// expectedNames learns each preset name from the menus as the boot drives
+	// them, in the order Oak asks (player, then rival). Decoding the selection
+	// back out of RAM proves the boot picked presets rather than typing.
+	var expectedNames []string
+
 	const budget = 900
 	for i := 0; i < budget; i++ {
 		state.Snapshot(m, &mem)
 		if atControllableOverworld(&mem) {
-			return decodeBootedOverworld(&mem)
+			return decodeBootedOverworld(&mem, expectedNames)
+		}
+		// The cursor rests on the selected preset for several frames while A is
+		// pressed, so this is the robust moment to read the tilemap. Deduping
+		// against the last entry keeps one capture per menu.
+		if introNameMenu(&mem) && mem.U8(sym.CurrentMenuItem) == introPresetNameIndex {
+			if names := presetMenuNames(state.ScreenText(&mem)); len(names) >= introPresetNameIndex {
+				name := names[introPresetNameIndex-1]
+				if n := len(expectedNames); n == 0 || expectedNames[n-1] != name {
+					expectedNames = append(expectedNames, name)
+				}
+			}
 		}
 		m.Tap(bootInput(&mem, i), 3, 7)
 	}
@@ -106,19 +122,55 @@ func BootToOverworld(m *emu.Emu) (state.GameState, error) {
 		mem.U8(sym.FontLoaded), menuOpen, state.Controllable(&mem))
 }
 
-const (
-	introPlayerName = "ASH"
-	introRivalName  = "GARY"
-)
-
-func decodeBootedOverworld(mem *state.Mem) (state.GameState, error) {
-	player := state.DecodeName(mem.Slice(sym.PlayerName, 11))
-	if player != introPlayerName {
-		return state.GameState{}, fmt.Errorf("boot: reached overworld named %q, want %s", player, introPlayerName)
+// presetMenuNames extracts the built-in name entries shown on one of Oak's
+// preset-name menus. The tilemap flattens to
+//
+//	"NAME NEW NAME <preset1> <preset2> <preset3> <prompt sentence>"
+//
+// so the entries are the uppercase words following NEW NAME. Reading them from
+// the game keeps the boot version-agnostic: Red and Blue swap their presets,
+// and any other Gen I revision would differ again without a code change here.
+func presetMenuNames(screenText string) []string {
+	fields := strings.Fields(screenText)
+	for i := 0; i+1 < len(fields); i++ {
+		if fields[i] != "NEW" || fields[i+1] != "NAME" {
+			continue
+		}
+		var names []string
+		for _, field := range fields[i+2:] {
+			if !isPresetWord(field) {
+				break
+			}
+			names = append(names, field)
+		}
+		return names
 	}
-	rival := state.DecodeName(mem.Slice(sym.RivalName, 11))
-	if rival != introRivalName {
-		return state.GameState{}, fmt.Errorf("boot: reached overworld with rival %q, want %s", rival, introRivalName)
+	return nil
+}
+
+func isPresetWord(field string) bool {
+	if len(field) < 2 {
+		return false
+	}
+	for _, r := range field {
+		if r < 'A' || r > 'Z' {
+			return false
+		}
+	}
+	return true
+}
+
+// decodeBootedOverworld verifies the party names against the presets the boot
+// selected. A typed name instead (the historical failure mode was "AAAAAAA")
+// means the boot answered NEW NAME and fell into the naming keyboard.
+func decodeBootedOverworld(mem *state.Mem, expectedNames []string) (state.GameState, error) {
+	for i, addr := range []uint16{sym.PlayerName, sym.RivalName} {
+		if i >= len(expectedNames) {
+			break
+		}
+		if got := state.DecodeName(mem.Slice(addr, 11)); got != expectedNames[i] {
+			return state.GameState{}, fmt.Errorf("boot: reached overworld with name %q, want preset %q", got, expectedNames[i])
+		}
 	}
 	return state.Decode(mem), nil
 }
