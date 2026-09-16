@@ -146,6 +146,9 @@ func main() {
 		handler = wall.controlPlaneCheckpointHTTPHandler(wall.controlPlaneHTTPHandler(handler))
 	}
 	handler = spectatorControlHTTPHandler(wall, handler)
+	if postgresMode {
+		handler = wall.controlPlaneFrameHTTPHandler(handler)
+	}
 	server := &http.Server{
 		Addr:              *httpAddr,
 		Handler:           handler,
