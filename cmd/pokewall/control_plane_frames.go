@@ -12,6 +12,29 @@ import (
 	"github.com/maestroi/pokepilot/farm"
 )
 
+// captureFinishFrame snapshots the screen while the runner is still attached
+// to the active tile. The finish handler also performs its own final fetch for
+// the in-memory history cache; this copy belongs to PostgreSQL persistence and
+// must happen before the catalog can evict the completed tile.
+func (w *Wall) captureFinishFrame(runID string) []byte {
+	w.mu.Lock()
+	t := w.tiles[runID]
+	var addrs []string
+	var cached []byte
+	if t != nil && !t.Finished {
+		addrs = append([]string(nil), t.workerAddrs...)
+		cached = append([]byte(nil), t.lastFrame...)
+	}
+	w.mu.Unlock()
+
+	if len(addrs) > 0 {
+		if data, err := fetchRunnerFrame(addrs); err == nil && len(data) > 0 {
+			return data
+		}
+	}
+	return cached
+}
+
 // storedFinalFrame returns the newest durable finish screenshot for a run that
 // is still present in completed-run history. New screenshots are stored inline
 // in PostgreSQL; older rows may point at S3 and are materialized through the
