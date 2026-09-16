@@ -13,10 +13,10 @@ import (
 
 func TestMediaTimelineLoadsInlineArtifact(t *testing.T) {
 	artifact, err := farm.NewMediaTimelineArtifact(farm.MediaTimeline{
-		Run:      farm.MediaRunSummary{RunID: "run-1", Status: "done"},
-		EndFrame: 120,
+		Run:       farm.MediaRunSummary{RunID: "run-1", Status: "done"},
+		EndFrame:  120,
 		Snapshots: []farm.MediaSnapshot{{Frame: 60, Round: 1}},
-		Events: []farm.MediaEvent{{Type: "run_finished", Frame: 120, Evidence: "run:done"}},
+		Events:    []farm.MediaEvent{{Type: "run_finished", Frame: 120, Evidence: "run:done"}},
 	})
 	if err != nil {
 		t.Fatal(err)
