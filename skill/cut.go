@@ -8,6 +8,7 @@ import (
 	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
+	redworld "github.com/maestroi/pokepilot/red/worldmap"
 	"github.com/maestroi/pokepilot/world"
 )
 
@@ -206,13 +207,6 @@ func reachableBeside(grid *world.Grid, sx, sy, tx, ty int, blocked map[[2]int]bo
 			continue
 		}
 		if x == vermilionGymX && y == vermilionGymY {
-			// The gym door itself is never a safe "beside" tile: stepping
-			// there re-triggers the warp instead of merely standing next to
-			// the candidate, which sends the walker back inside the gym
-			// before it ever gets to look at (let alone cut) the candidate.
-			// Only reachable from the yard side of the door (approaching from
-			// the street, the candidate's other neighbours already win on
-			// path length), so this only ever excludes a real dead end.
 			continue
 		}
 		steps, err := world.FindPath(grid, sx, sy, x, y, blocked)
@@ -239,7 +233,7 @@ func EnterVermilionGym(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if err != nil {
 		return fmt.Errorf("skill: EnterVermilionGym: parse city: %w", err)
 	}
-	grid, err := world.Build(romData, h)
+	grid, err := redworld.Build(romData, h)
 	if err != nil {
 		return fmt.Errorf("skill: EnterVermilionGym: build city: %w", err)
 	}
