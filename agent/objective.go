@@ -31,11 +31,14 @@ const (
 )
 
 // Objective carries semantic planner arguments. Game-specific encodings stay
-// behind the adapter boundary: Place/Species/Item/Progress are semantic IDs,
-// never Red ROM/RAM bytes or named campaign verbs.
+// behind the adapter boundary: Place/Location/Species/Item/Progress are
+// semantic IDs, never Red ROM/RAM bytes or named campaign verbs. Location is
+// intentionally presentation-hidden: coordinate-local interactions need it for
+// durable identity, while the model still sees the same concise objective text.
 type Objective struct {
 	Kind     Kind
 	Place    PlaceID
+	Location LocationID
 	X, Y     uint8
 	Starter  skill.Starter
 	Progress ProgressID
