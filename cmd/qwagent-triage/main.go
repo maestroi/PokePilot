@@ -66,6 +66,9 @@ func pickCmd(args []string, stdin io.Reader, stdout io.Writer) error {
 		"count":       g.Count,
 		"fingerprint": g.Fingerprint,
 	}
+	if g.Issue != nil && g.Issue.IssueNumber > 0 {
+		out["issue_number"] = g.Issue.IssueNumber
+	}
 	enc := json.NewEncoder(stdout)
 	enc.SetIndent("", "  ")
 	return enc.Encode(out)

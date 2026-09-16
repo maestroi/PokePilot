@@ -3,6 +3,7 @@ package deploy
 import "strings"
 
 type TriageIssue struct {
+	IssueNumber     int64  `json:"issue_number"`
 	Status          string `json:"status"`
 	Resolution      string `json:"resolution"`
 	OccurrenceCount int64  `json:"occurrence_count"`
