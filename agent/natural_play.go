@@ -188,6 +188,7 @@ func naturalPlaySignal(obs Observation, o Objective, profile PlayStyleProfile) N
 		}
 	}
 
+	s = mergeNaturalPlaySignal(s, completionistCoverageSignal(obs, o, profile))
 	return s
 }
 
