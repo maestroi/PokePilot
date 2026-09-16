@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"strings"
 	"sync"
 )
 
@@ -69,6 +70,19 @@ func (run *spectatorSourceRun) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	*run = spectatorSourceRun(decoded)
+
+	// The farm's canonical successful terminal reason is "done" (agent
+	// StopDone). Older and some non-LLM runs can therefore be successful without
+	// carrying stats.goal_complete. Normalize that legacy wire shape here so a
+	// healthy finished replay is curated exactly like an explicit goal-complete
+	// run. Failure/cancel/budget reasons remain unchanged and private by default.
+	if run.Status == "done" && strings.EqualFold(strings.TrimSpace(run.Reason), "done") {
+		if run.Stats == nil {
+			run.Stats = &spectatorStats{}
+		}
+		run.Stats.GoalComplete = true
+	}
+
 	rememberSpectatorPresentationPolicy(run.RunID, spectatorPresentationPolicy{
 		FPS:            presentation.FPS,
 		LLMProfile:     presentation.LLMProfile,
