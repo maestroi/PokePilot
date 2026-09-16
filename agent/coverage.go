@@ -31,11 +31,11 @@ type Coverage struct {
 const coverageFileVersion = 1
 
 type coverageTracker struct {
-	ItemsAcquired   map[ItemID]bool
-	ItemsUsed       map[ItemID]bool
-	SpeciesAcquired map[SpeciesID]bool
-	Trainers        map[string]bool
-	Milestones      map[string]bool
+	ItemsAcquired    map[ItemID]bool
+	ItemsUsed        map[ItemID]bool
+	SpeciesAcquired  map[SpeciesID]bool
+	Trainers         map[string]bool
+	Milestones       map[string]bool
 	MachinesAcquired map[ItemID]bool
 	MachinesUsed     map[ItemID]bool
 	Evolutions       map[string]bool
@@ -88,9 +88,44 @@ func (c *coverageTracker) ensure() {
 	}
 }
 
+func (c *coverageTracker) stored() coverageFile {
+	if c == nil {
+		c = newCoverageTracker()
+	}
+	c.ensure()
+	return coverageFile{
+		Version:          coverageFileVersion,
+		ItemsAcquired:    c.ItemsAcquired,
+		ItemsUsed:        c.ItemsUsed,
+		SpeciesAcquired:  c.SpeciesAcquired,
+		Trainers:         c.Trainers,
+		Milestones:       c.Milestones,
+		MachinesAcquired: c.MachinesAcquired,
+		MachinesUsed:     c.MachinesUsed,
+		Evolutions:       c.Evolutions,
+		Catches:          c.Catches,
+	}
+}
+
+func coverageTrackerFromStored(stored coverageFile) *coverageTracker {
+	c := &coverageTracker{
+		ItemsAcquired:    stored.ItemsAcquired,
+		ItemsUsed:        stored.ItemsUsed,
+		SpeciesAcquired:  stored.SpeciesAcquired,
+		Trainers:         stored.Trainers,
+		Milestones:       stored.Milestones,
+		MachinesAcquired: stored.MachinesAcquired,
+		MachinesUsed:     stored.MachinesUsed,
+		Evolutions:       stored.Evolutions,
+		Catches:          stored.Catches,
+	}
+	c.ensure()
+	return c
+}
+
 // seed records durable state already present in an observation. This makes a
 // resumed run start from its real inventory/Dex state even when resuming an old
-// checkpoint that predates the coverage sidecar. ProgressEarly remains the
+// checkpoint that predates coverage telemetry. ProgressEarly remains the
 // baseline, so run-level deltas still describe only newly covered surfaces.
 func (c *coverageTracker) seed(obs Observation) {
 	if c == nil {
@@ -243,44 +278,72 @@ func isCoverageName(name string) bool {
 	return strings.HasSuffix(name, fmt.Sprintf(".coverage-v%d.json", coverageFileVersion))
 }
 
-func writeCoverageFile(statePath string, c *coverageTracker) error {
-	if c == nil {
-		c = newCoverageTracker()
-	}
-	c.ensure()
-	data, err := json.Marshal(coverageFile{
-		Version:          coverageFileVersion,
-		ItemsAcquired:    c.ItemsAcquired,
-		ItemsUsed:        c.ItemsUsed,
-		SpeciesAcquired:  c.SpeciesAcquired,
-		Trainers:         c.Trainers,
-		Milestones:       c.Milestones,
-		MachinesAcquired: c.MachinesAcquired,
-		MachinesUsed:     c.MachinesUsed,
-		Evolutions:       c.Evolutions,
-		Catches:          c.Catches,
-	})
+func atomicWriteJSON(target, prefix string, data []byte) error {
+	tmp, err := os.CreateTemp(filepath.Dir(target), prefix)
 	if err != nil {
-		return fmt.Errorf("encode coverage: %w", err)
-	}
-	target := coveragePathForState(statePath)
-	tmp, err := os.CreateTemp(filepath.Dir(statePath), ".coverage-*.tmp")
-	if err != nil {
-		return fmt.Errorf("create temp coverage file: %w", err)
+		return err
 	}
 	tmpName := tmp.Name()
 	defer os.Remove(tmpName)
 	if _, err := tmp.Write(data); err != nil {
 		tmp.Close()
-		return fmt.Errorf("write coverage: %w", err)
+		return err
 	}
 	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("close coverage: %w", err)
+		return err
 	}
-	if err := os.Rename(tmpName, target); err != nil {
-		return fmt.Errorf("rename coverage into place: %w", err)
+	return os.Rename(tmpName, target)
+}
+
+func writeCoverageFile(statePath string, c *coverageTracker) error {
+	data, err := json.Marshal(c.stored())
+	if err != nil {
+		return fmt.Errorf("encode coverage: %w", err)
+	}
+	if err := atomicWriteJSON(coveragePathForState(statePath), ".coverage-*.tmp", data); err != nil {
+		return fmt.Errorf("write coverage: %w", err)
 	}
 	return nil
+}
+
+// embedCoverageInKnowledgeFile makes coverage part of the existing durable
+// checkpoint artifact as well as the local sidecar. Farm checkpoint upload and
+// major-badge promotion already preserve the knowledge JSON, so this keeps
+// coverage intact across workers without introducing a new artifact protocol.
+func embedCoverageInKnowledgeFile(statePath string, c *coverageTracker) error {
+	path := knowledgePathForState(statePath)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(data, &envelope); err != nil {
+		return err
+	}
+	stored, err := json.Marshal(c.stored())
+	if err != nil {
+		return err
+	}
+	envelope["coverage"] = stored
+	data, err = json.Marshal(envelope)
+	if err != nil {
+		return err
+	}
+	return atomicWriteJSON(path, ".knowledge-coverage-*.tmp", data)
+}
+
+func loadEmbeddedCoverage(statePath string) (*coverageTracker, bool) {
+	data, err := os.ReadFile(knowledgePathForState(statePath))
+	if err != nil {
+		return nil, false
+	}
+	var envelope struct {
+		Coverage *coverageFile `json:"coverage"`
+	}
+	if json.Unmarshal(data, &envelope) != nil || envelope.Coverage == nil || envelope.Coverage.Version != coverageFileVersion {
+		return nil, false
+	}
+	return coverageTrackerFromStored(*envelope.Coverage), true
 }
 
 func loadCoverageFile(statePath string, log io.Writer) *coverageTracker {
@@ -290,27 +353,18 @@ func loadCoverageFile(statePath string, log io.Writer) *coverageTracker {
 	}
 	path := coveragePathForState(statePath)
 	data, err := os.ReadFile(path)
-	if err != nil {
-		if !os.IsNotExist(err) {
-			logCoverage(log, "cannot read %s (%v); rebuilding observable coverage from resumed state", path, err)
+	if err == nil {
+		var stored coverageFile
+		if json.Unmarshal(data, &stored) == nil && stored.Version == coverageFileVersion {
+			return coverageTrackerFromStored(stored)
 		}
-		return c
+		logCoverage(log, "invalid coverage sidecar beside %s; trying embedded checkpoint coverage", statePath)
+	} else if !os.IsNotExist(err) {
+		logCoverage(log, "cannot read %s (%v); trying embedded checkpoint coverage", path, err)
 	}
-	var stored coverageFile
-	if err := json.Unmarshal(data, &stored); err != nil || stored.Version != coverageFileVersion {
-		logCoverage(log, "invalid coverage sidecar beside %s; rebuilding observable coverage from resumed state", statePath)
-		return c
+	if embedded, ok := loadEmbeddedCoverage(statePath); ok {
+		return embedded
 	}
-	c.ItemsAcquired = stored.ItemsAcquired
-	c.ItemsUsed = stored.ItemsUsed
-	c.SpeciesAcquired = stored.SpeciesAcquired
-	c.Trainers = stored.Trainers
-	c.Milestones = stored.Milestones
-	c.MachinesAcquired = stored.MachinesAcquired
-	c.MachinesUsed = stored.MachinesUsed
-	c.Evolutions = stored.Evolutions
-	c.Catches = stored.Catches
-	c.ensure()
 	return c
 }
 
