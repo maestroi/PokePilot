@@ -87,3 +87,9 @@ services:
       POKEPILOT_S3_ACCESS_KEY: ${POKEPILOT_S3_ACCESS_KEY:?POKEPILOT_S3_ACCESS_KEY is required}
       POKEPILOT_S3_SECRET_KEY: ${POKEPILOT_S3_SECRET_KEY:?POKEPILOT_S3_SECRET_KEY is required}
       POKEPILOT_S3_TIMEOUT: ${POKEPILOT_S3_TIMEOUT:-60s}
+
+  ui:
+    environment:
+      # Used only by the private operator UI to build its "Open spectator"
+      # links. The public spectator process remains a separate read-only service.
+      POKEPILOT_SPECTATOR_URL: ${POKEPILOT_SPECTATOR_URL:-https://pokemon.maestroi.cc}
