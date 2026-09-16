@@ -30,9 +30,9 @@ func TestCatchObjectiveKeepsOrdinaryHabitatTravel(t *testing.T) {
 
 func TestCatchObjectivePartySlotOnlyForDirectPartyAdditions(t *testing.T) {
 	for _, tc := range []struct {
-		name string
+		name   string
 		intent string
-		want bool
+		want   bool
 	}{
 		{name: "wild grass", intent: "", want: false},
 		{name: "fishing", intent: dexFishingIntent, want: false},
