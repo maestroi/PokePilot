@@ -5,6 +5,7 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/rom"
+	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
 )
@@ -51,6 +52,17 @@ func liveMapBlocks(m *emu.Emu, h rom.MapHeader) ([]byte, error) {
 	return readLiveMapBlocks(m.Peek8, widthBlocks, heightBlocks)
 }
 
+func liveMapBlocksFromMem(mem *state.Mem, h rom.MapHeader) ([]byte, error) {
+	widthBlocks, heightBlocks := int(h.WidthBlocks), int(h.HeightBlocks)
+	if got := int(mem.U8(sym.CurMapWidth)); got != widthBlocks {
+		return nil, fmt.Errorf("skill: live map width is %d blocks, ROM header for map %02x says %d", got, h.ID, widthBlocks)
+	}
+	if got := int(mem.U8(sym.CurMapHeight)); got != heightBlocks {
+		return nil, fmt.Errorf("skill: live map height is %d blocks, ROM header for map %02x says %d", got, h.ID, heightBlocks)
+	}
+	return readLiveMapBlocks(mem.U8, widthBlocks, heightBlocks)
+}
+
 // liveMapGrid decodes the current post-script geometry using the traversal mode
 // the game is actually in. It intentionally has no cache: semantic transitions
 // such as Cut and Surf are followed by a fresh decode before routing continues.
@@ -62,11 +74,30 @@ func liveMapGrid(m *emu.Emu, romData []byte, h rom.MapHeader) (*world.Grid, erro
 	return liveMapGridForTraversal(m, romData, h, mode)
 }
 
+// liveMapGridFromMem gives pure observation code the same post-script geometry
+// used by runtime navigation. In particular, map scripts that ReplaceTileBlock
+// must affect both offered objective reachability and later execution.
+func liveMapGridFromMem(mem *state.Mem, romData []byte, h rom.MapHeader) (*world.Grid, error) {
+	mode := world.TraversalLand
+	if mem.U8(sym.WalkBikeSurfState) == fieldSurfingState {
+		mode = world.TraversalWater
+	}
+	blocks, err := liveMapBlocksFromMem(mem, h)
+	if err != nil {
+		return nil, err
+	}
+	return buildLiveMapGrid(romData, h, blocks, mode)
+}
+
 func liveMapGridForTraversal(m *emu.Emu, romData []byte, h rom.MapHeader, mode world.TraversalMode) (*world.Grid, error) {
 	blocks, err := liveMapBlocks(m, h)
 	if err != nil {
 		return nil, err
 	}
+	return buildLiveMapGrid(romData, h, blocks, mode)
+}
+
+func buildLiveMapGrid(romData []byte, h rom.MapHeader, blocks []byte, mode world.TraversalMode) (*world.Grid, error) {
 	grid, err := world.BuildFromBlocksForTraversal(romData, h, blocks, mode)
 	if err != nil {
 		return nil, err
