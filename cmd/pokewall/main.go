@@ -139,6 +139,10 @@ func main() {
 	if postgresMode {
 		operator = operatorHTTPHandler(wall)
 	}
+	// Pause/resume must sit inside the catalog/control-plane wrappers so those
+	// persistence layers observe the final paused transition, not the temporary
+	// cancelled/queued state used to cooperate with existing runners.
+	operator = pauseHTTPHandler(wall, operator)
 	baseHandler := wall.outcomesCompatibility(wall.catalogOperatorCompatibility(wall.catalogHTTPHandler(workerControlHTTPHandler(wall, operator))))
 	modelHandler := controlPlaneModelExperimentHTTPHandler(wall, baseHandler)
 	handler := archiveHTTPHandler(wall, modelHandler)

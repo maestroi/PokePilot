@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { ArrowPathIcon, NoSymbolIcon } from '@heroicons/vue/20/solid'
-import { cancelRun, getDashboard, getRun } from '../shared/api/client'
+import { ArrowPathIcon, NoSymbolIcon, PauseIcon, PlayIcon } from '@heroicons/vue/20/solid'
+import { cancelRun, getDashboard, getRun, pauseRun, resumeRun } from '../shared/api/client'
 import type { DashboardRun, DashboardStats, PartyMon } from '../shared/api/types'
 import ResourceState from '../shared/components/ResourceState.vue'
 import StatusBadge from '../shared/components/StatusBadge.vue'
@@ -41,6 +41,8 @@ const selectedRunID = ref(params.get('run') || '')
 const selectionPinned = ref(Boolean(selectedRunID.value))
 const historicalRun = ref<DashboardRun | null>(null)
 const historicalError = ref('')
+const pausing = ref(false)
+const resuming = ref(false)
 const canceling = ref(false)
 const actionError = ref('')
 const copyState = ref('')
@@ -115,9 +117,14 @@ const goalProgress = computed(() => {
   const target = Number(stats?.goal_target || 0)
   return target > 0 ? Math.max(0, Math.min(100, 100 * current / target)) : 0
 })
-const isCancelable = computed(() => {
+const isPausable = computed(() => {
   const status = selectedRun.value?.status
   return status === 'queued' || status === 'leased' || status === 'running'
+})
+const isPaused = computed(() => selectedRun.value?.status === 'paused')
+const isCancelable = computed(() => {
+  const status = selectedRun.value?.status
+  return status === 'queued' || status === 'leased' || status === 'running' || status === 'paused'
 })
 const resourceState = computed(() => {
   if (activeResource.state.value === 'error' && recentResource.state.value === 'error') return 'error'
@@ -171,6 +178,16 @@ const stateRows = computed(() => {
       ['last map', tileLabel(run)],
       ['frame', String(run.frame ?? 0)],
       ['fps', fpsLabel(run)],
+      ['attempts', String(run.attempts ?? 0)]
+    ].filter(([, value]) => value)
+  }
+  if (run.status === 'paused') {
+    return [
+      ['status', 'paused'],
+      ['why', run.stop_so_far || 'paused by operator'],
+      ['detail', run.detail || ''],
+      ['map', tileLabel(run)],
+      ['frame', String(run.frame ?? 0)],
       ['attempts', String(run.attempts ?? 0)]
     ].filter(([, value]) => value)
   }
@@ -242,6 +259,36 @@ function showEndedHeading(index: number): boolean {
 function refresh(): void {
   void activeResource.retry()
   void recentResource.retry()
+}
+
+async function pauseSelected(): Promise<void> {
+  const run = selectedRun.value
+  if (!run || !isPausable.value || pausing.value) return
+  pausing.value = true
+  actionError.value = ''
+  try {
+    await pauseRun(run.run_id)
+    await activeResource.retry()
+  } catch (cause) {
+    actionError.value = cause instanceof Error ? cause.message : 'Pause failed'
+  } finally {
+    pausing.value = false
+  }
+}
+
+async function resumeSelected(): Promise<void> {
+  const run = selectedRun.value
+  if (!run || !isPaused.value || resuming.value) return
+  resuming.value = true
+  actionError.value = ''
+  try {
+    await resumeRun(run.run_id)
+    await activeResource.retry()
+  } catch (cause) {
+    actionError.value = cause instanceof Error ? cause.message : 'Resume failed'
+  } finally {
+    resuming.value = false
+  }
 }
 
 async function cancelSelected(): Promise<void> {
@@ -478,6 +525,7 @@ function warnPlay(stats: DashboardStats | undefined, key: string): boolean {
                 <span class="size-1.5 rounded-full bg-[var(--poke-green)] motion-safe:animate-pulse" aria-hidden="true" />
                 Live
               </span>
+              <span v-else-if="selectedRun.status === 'paused'" class="text-[10px] font-semibold text-[var(--poke-amber)]">Paused · safe to deploy and resume</span>
               <span v-else-if="selectedRun.status === 'done'" class="text-[10px] text-[var(--poke-muted)]">Ended</span>
               <StatusBadge v-if="selectedRun.replay_available" tone="success">replay</StatusBadge>
             </div>
@@ -510,6 +558,12 @@ function warnPlay(stats: DashboardStats | undefined, key: string): boolean {
           </div>
           <div class="flex items-center justify-end gap-1 px-2 py-1.5">
             <button type="button" class="rounded-sm px-1.5 py-1 text-[10px] font-bold ring-1 ring-[var(--poke-border-strong)] hover:bg-white/5" @click="copyRunID">{{ copyState || 'Copy' }}</button>
+            <button v-if="isPausable" type="button" :disabled="pausing" class="inline-flex items-center gap-1 rounded-sm bg-[#3b3222] px-1.5 py-1 text-[10px] font-bold text-[var(--poke-amber)] ring-1 ring-[#6b5632] hover:brightness-110 disabled:opacity-50" @click="pauseSelected">
+              <PauseIcon class="size-3" aria-hidden="true" /> {{ pausing ? 'Pausing…' : 'Pause' }}
+            </button>
+            <button v-if="isPaused" type="button" :disabled="resuming" class="inline-flex items-center gap-1 rounded-sm bg-[#18362f] px-1.5 py-1 text-[10px] font-bold text-[var(--poke-green)] ring-1 ring-[#315f52] hover:brightness-110 disabled:opacity-50" @click="resumeSelected">
+              <PlayIcon class="size-3" aria-hidden="true" /> {{ resuming ? 'Resuming…' : 'Resume' }}
+            </button>
             <button v-if="isCancelable" type="button" :disabled="canceling" class="inline-flex items-center gap-1 rounded-sm bg-[#352529] px-1.5 py-1 text-[10px] font-bold text-[#e4b5b7] ring-1 ring-[#654047] hover:brightness-110 disabled:opacity-50" @click="cancelSelected">
               <NoSymbolIcon class="size-3" aria-hidden="true" /> {{ canceling ? 'Canceling…' : 'Cancel' }}
             </button>
@@ -537,7 +591,6 @@ function warnPlay(stats: DashboardStats | undefined, key: string): boolean {
                 </template>
               </dl>
             </section>
-
             <section class="min-h-[260px] overflow-auto bg-[var(--poke-panel)] p-2">
               <h3 class="mb-1.5 text-[9px] tracking-[0.07em] text-[var(--poke-muted)] uppercase">Plan</h3>
               <div class="text-[9px] text-[var(--poke-muted)]">question</div>

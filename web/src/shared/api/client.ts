@@ -130,6 +130,22 @@ export function investigateTriage(key: string, signal?: AbortSignal): Promise<Re
   })
 }
 
+export function pauseRun(runID: string, signal?: AbortSignal): Promise<Record<string, unknown>> {
+  return requestJSON<Record<string, unknown>>(`/v1/runs/${encodeURIComponent(runID)}/pause`, {
+    method: 'POST',
+    body: '{}',
+    signal
+  })
+}
+
+export function resumeRun(runID: string, signal?: AbortSignal): Promise<Record<string, unknown>> {
+  return requestJSON<Record<string, unknown>>(`/v1/runs/${encodeURIComponent(runID)}/resume`, {
+    method: 'POST',
+    body: '{}',
+    signal
+  })
+}
+
 export function cancelRun(runID: string, signal?: AbortSignal): Promise<Record<string, unknown>> {
   return requestJSON<Record<string, unknown>>(`/v1/runs/${encodeURIComponent(runID)}/cancel`, {
     method: 'POST',
