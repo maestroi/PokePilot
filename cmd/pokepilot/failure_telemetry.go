@@ -27,9 +27,11 @@ func observeAgentLogLine(string) {}
 func captureObjectiveFailureTelemetry(res agent.Result) {
 	copyRes := res
 	copyRes.Outcomes = append([]agent.ObjectiveResult(nil), res.Outcomes...)
+	copyRes.OutcomeTimings = append([]agent.ObjectiveTiming(nil), res.OutcomeTimings...)
 	objectiveFailureTelemetry.Lock()
 	objectiveFailureTelemetry.result = &copyRes
 	objectiveFailureTelemetry.Unlock()
+	captureMediaTimelineResult(copyRes)
 }
 
 // drainObjectiveFailureTelemetry converts the completed run's structured
@@ -325,4 +327,5 @@ func resetObjectiveFailureTelemetry() {
 	objectiveFailureTelemetry.Lock()
 	objectiveFailureTelemetry.result = nil
 	objectiveFailureTelemetry.Unlock()
+	resetMediaTimelineTelemetry()
 }

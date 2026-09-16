@@ -28,6 +28,17 @@ type Result struct {
 	// recoverable blockage and terminal controller/ownership failures. It is
 	// the durable structured counterpart to Final.History's short prompt text.
 	Outcomes []ObjectiveResult
+	// OutcomeTimings is parallel to Outcomes and anchors each completed
+	// transaction to the exact emulator frame at which its settled observation
+	// was captured. Keeping timing separate avoids changing ObjectiveResult's
+	// portable semantic contract merely for media consumers.
+	OutcomeTimings []ObjectiveTiming
+	// Initial/StartFrame and Final/FinalFrame delimit the semantic portion of
+	// this agent run. Farm media code converts these absolute emulator counters
+	// to replay-relative frames using the recording start frame.
+	Initial    Observation
+	StartFrame uint64
+	FinalFrame uint64
 	// Err is why the run STOPPED, and it is nil unless Stop is StopError or
 	// StopFailed. A round that failed and was recovered from does not set
 	// it: those live in Final.History, which is also where the planner reads
@@ -51,6 +62,15 @@ type Result struct {
 	ProgressFinal *Progress
 	// Planning is the run-owned three-tier planner telemetry and final plan.
 	Planning PlanningStats
+}
+
+// ObjectiveTiming is replay/media timing for the matching Result.Outcomes
+// element. Frame is the absolute emulator frame counter; callers that own a
+// recording start frame can translate it without making the agent aware of
+// recording or presentation concerns.
+type ObjectiveTiming struct {
+	Frame uint64
+	Round int
 }
 
 // Progress is one snapshot of how far a run has gotten.

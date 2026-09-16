@@ -84,6 +84,8 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 	if err != nil {
 		return Result{Stop: StopError, Err: err}
 	}
+	res.StartFrame = startFrame
+	res.Initial = last
 	coverage.seed(last)
 	engine := newRunEngine(budget, resumedPlan, last, known, goalPolicy)
 	notifyPlanning(p, engine.planning.snapshot())
@@ -166,6 +168,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 
 		before := last
 		objectiveResult, execErr := executeObjectiveResult(m, romData, obj)
+		settledTiming := ObjectiveTiming{Frame: m.FrameCount(), Round: round}
 		last = objectiveResult.Final
 		coverage.seed(last)
 		res.Rounds = round
@@ -178,6 +181,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 					last.RespawnPlace, before.Money, last.Money)
 			}
 			res.Outcomes = append(res.Outcomes, objectiveResult)
+			res.OutcomeTimings = append(res.OutcomeTimings, settledTiming)
 			outcome := objectiveResult.HistoryText()
 
 			known.FailedResult(objectiveResult, execErr)
@@ -240,6 +244,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 		}
 
 		res.Outcomes = append(res.Outcomes, objectiveResult)
+		res.OutcomeTimings = append(res.OutcomeTimings, settledTiming)
 		res.Completed = append(res.Completed, obj)
 		engine.failures.clear(obj)
 		engine.planning.success(fromPlan)
@@ -281,6 +286,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 	}
 
 	res.Final = last
+	res.FinalFrame = m.FrameCount()
 	res.Planning = engine.planning.snapshot()
 	if status := engine.goal.evaluate(p, last, res.Rounds, intent, intentAge); status != nil {
 		res.GoalStatus = status

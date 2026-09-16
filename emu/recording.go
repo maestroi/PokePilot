@@ -11,7 +11,8 @@ import (
 // boundary; callers receive only the encoded .gbrun bytes when the session
 // stops.
 type SessionRecording struct {
-	recorder *gomeboy.SessionRecorder
+	recorder   *gomeboy.SessionRecorder
+	startFrame uint64
 }
 
 // StartSessionRecording snapshots the emulator's exact current checked state
@@ -21,11 +22,22 @@ func (m *Emu) StartSessionRecording(metadata map[string]string) (*SessionRecordi
 	if m == nil || m.e == nil {
 		return nil, fmt.Errorf("emu: start session recording: nil emulator")
 	}
+	startFrame := m.FrameCount()
 	recorder, err := m.e.StartSessionRecording(gomeboy.RecordingOptions{Metadata: metadata})
 	if err != nil {
 		return nil, err
 	}
-	return &SessionRecording{recorder: recorder}, nil
+	return &SessionRecording{recorder: recorder, startFrame: startFrame}, nil
+}
+
+// StartFrame returns the emulator frame counter at the exact state captured as
+// frame zero of this recording. Media telemetry uses it to translate runtime
+// frame counters into replay-relative frames without parsing .gbrun bytes.
+func (r *SessionRecording) StartFrame() uint64 {
+	if r == nil {
+		return 0
+	}
+	return r.startFrame
 }
 
 // Stop finishes the session recording and returns its durable .gbrun archive.
