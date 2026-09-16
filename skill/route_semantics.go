@@ -283,9 +283,28 @@ func redRoutePrerequisites(g *world.Graph, romData []byte, mem *state.Mem) world
 	transitions := make(map[world.Edge]gameruntime.Transition)
 	for _, edges := range g.Edges {
 		for _, edge := range edges {
-			if transition, ok := redRouteTransitionForEdge(edge); ok {
-				transitions[edge] = transition
+			transition, ok := redRouteTransitionForEdge(edge)
+			if !ok {
+				continue
 			}
+			// Route 12 <-> Route 13 is one border split into several
+			// component-paired bands (connectionEdges), most of which are
+			// non-walkable border padding retained only so this map pair has
+			// somewhere to attach a semantic action (see ConnectionExitWalkable's
+			// doc comment). Snorlax lives inside Route 12's own map, not on the
+			// border, so clearing it is a Gate-shaped precondition on ordinary
+			// ground, not an action that creates traversal (game.Transition's Gate
+			// doc makes that distinction explicit) — but this transition predates
+			// that split and still matches every band of the pair. Without this
+			// check the router treats all of them as equally valid once Snorlax
+			// is cleared and can pick a padding band that was never walkable,
+			// MEASURED on run-h7ow811287kpyo0ekyn8f32b round 3: band 49..49
+			// selected over the real crossing at 50..51, exhausting the re-plan
+			// budget on "no reachable walkable tile" every time.
+			if transition.ID == "red:route12_snorlax" && edge.Kind == world.EdgeConnection && !g.ConnectionExitWalkable(edge) {
+				continue
+			}
+			transitions[edge] = transition
 		}
 	}
 	return world.RoutePrerequisites{

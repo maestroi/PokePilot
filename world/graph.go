@@ -266,6 +266,20 @@ func components(grid *Grid) [][]int {
 	return comps
 }
 
+// ConnectionExitWalkable reports whether e's exit port touches any walkable
+// tile on e.From, per the precomputed static (land-only) component grid. A
+// border connection split by connectionEdges retains a band even when its
+// source tiles are all non-walkable border padding, purely so a semantic
+// transition can still name the map pair (see connectionEdges' doc comment on
+// component-0 retention). An adapter attaching a non-Gate action transition
+// to every band of a map pair should call this first: a real "clear the
+// blocker" action can only ever land on a band that is genuinely walkable
+// ground once the blocker is gone, never on a border-art gap the collision
+// grid never made passable in the first place.
+func (g *Graph) ConnectionExitWalkable(e Edge) bool {
+	return len(g.exitComps[e]) > 0
+}
+
 // exitPortComps returns the components that edge e's exit port touches on
 // e.From: for a connection, the walkable tiles on the map edge in e.Dir; for a
 // warp, the warp tile (or its walkable neighbours, as with a solid stair).

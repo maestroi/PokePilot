@@ -1,6 +1,7 @@
 package skill
 
 import (
+	"os"
 	"testing"
 
 	gameruntime "github.com/maestroi/pokepilot/game"
@@ -71,6 +72,80 @@ func TestRedRouteTransitionsMapRepresentativeGates(t *testing.T) {
 				t.Fatalf("semantic locations not projected: %+v", transition)
 			}
 		})
+	}
+}
+
+// TestRoute12SnorlaxTransitionOnlyOwnsTheWalkableBand is the regression for
+// MEASURED run-h7ow811287kpyo0ekyn8f32b round 3 (progress saffron_gate_open):
+// Route 12 <-> Route 13's border is split into several connectionEdges
+// component-paired bands, most of which are non-walkable border padding
+// retained only so *some* edge of the map pair can carry a semantic
+// transition (see ConnectionExitWalkable's doc comment). Because
+// redRouteTransitionForEdge matches on map pair alone, "red:route12_snorlax"
+// used to land on every one of those bands, including the padding ones. Once
+// Snorlax was clearable, findRoute's semantic bypass let the router pick a
+// padding band exactly as readily as the real crossing, producing "no
+// reachable walkable tile" and exhausting the re-plan budget instead of
+// reaching Route 12. redRoutePrerequisites must keep the transition only on
+// the band that is actually walkable ground.
+func TestRoute12SnorlaxTransitionOnlyOwnsTheWalkableBand(t *testing.T) {
+	if testing.Short() {
+		t.Skip("ROM-backed")
+	}
+	romPath := os.Getenv("POKEMON_RED_ROM")
+	if romPath == "" {
+		t.Skip("POKEMON_RED_ROM not set")
+	}
+	romData, err := os.ReadFile(romPath)
+	if err != nil {
+		t.Fatalf("read ROM: %v", err)
+	}
+	graph, err := world.BuildGraph(romData)
+	if err != nil {
+		t.Fatalf("BuildGraph: %v", err)
+	}
+
+	var borderEdges []world.Edge
+	for _, e := range graph.Edges[route13Map] {
+		if e.Kind == world.EdgeConnection && e.To == route12Map {
+			borderEdges = append(borderEdges, e)
+		}
+	}
+	if len(borderEdges) < 2 {
+		t.Fatalf("Route 13 -> Route 12 has %d connection edge(s), want multiple component-scoped bands", len(borderEdges))
+	}
+	var walkable, unwalkable int
+	for _, e := range borderEdges {
+		if graph.ConnectionExitWalkable(e) {
+			walkable++
+		} else {
+			unwalkable++
+		}
+	}
+	if walkable == 0 || unwalkable == 0 {
+		t.Fatalf("expected a mix of walkable and non-walkable bands, got walkable=%d unwalkable=%d", walkable, unwalkable)
+	}
+
+	// Poke Flute ownership alone grants capCanClearSnorlax (see
+	// TestRedRouteCapabilitiesProjectPokeFluteStoryFact), which is what let the
+	// buggy version of this code attach the transition to every band.
+	mem := new(state.Mem)
+	mem[sym.NumBagItems] = 1
+	mem[sym.BagItems] = 0x49
+	mem[sym.BagItems+1] = 1
+
+	prereqs := redRoutePrerequisites(graph, romData, mem)
+	for _, e := range borderEdges {
+		transition, attached := prereqs.Transitions[e]
+		if !graph.ConnectionExitWalkable(e) {
+			if attached {
+				t.Fatalf("non-walkable band %+v got %q attached; must stay unowned so canExit rejects it", e, transition.ID)
+			}
+			continue
+		}
+		if !attached || transition.ID != "red:route12_snorlax" {
+			t.Fatalf("walkable band %+v should own red:route12_snorlax, got attached=%v transition=%+v", e, attached, transition)
+		}
 	}
 }
 
