@@ -4,24 +4,25 @@ import (
 	"strings"
 	"testing"
 
+	redprofile "github.com/maestroi/pokepilot/red/profile"
 	"github.com/maestroi/pokepilot/skill"
 )
 
 func TestLeadOutOfPPRequiresHardExhaustion(t *testing.T) {
-	if leadOutOfPP(Observation{}) {
+	if leadOutOfPP(Observation{GameID: testGameID}) {
 		t.Fatal("empty PP observation should not be treated as exhausted")
 	}
-	if leadOutOfPP(Observation{LeadPP: []uint8{0, 3}}) {
+	if leadOutOfPP(Observation{GameID: testGameID, LeadPP: []uint8{0, 3}}) {
 		t.Fatal("one usable move should keep the lead out of hard exhaustion")
 	}
-	if !leadOutOfPP(Observation{LeadPP: []uint8{0, 0}}) {
+	if !leadOutOfPP(Observation{GameID: testGameID, LeadPP: []uint8{0, 0}}) {
 		t.Fatal("all-zero PP should be treated as hard exhaustion")
 	}
 }
 
 func TestOfferPPItemOnlyAtHardExhaustion(t *testing.T) {
-	known := NewKnowledge(map[uint8][]uint8{})
-	base := Observation{
+	known := testKnowledge(map[uint8][]uint8{})
+	base := Observation{GameID: testGameID,
 		Map:        0xfe,
 		MapName:    "ROUTE_TEST",
 		PartyCount: 1,
@@ -54,7 +55,7 @@ func TestOfferPPItemOnlyAtHardExhaustion(t *testing.T) {
 }
 
 func TestOfferPrefersFreeCenterWhenAlreadyThere(t *testing.T) {
-	obs := Observation{
+	obs := Observation{GameID: testGameID,
 		Map:        0xfe,
 		MapName:    "VIRIDIAN_POKECENTER",
 		PartyCount: 1,
@@ -63,7 +64,7 @@ func TestOfferPrefersFreeCenterWhenAlreadyThere(t *testing.T) {
 		Bag:        []Item{{Name: "ether", Quantity: 1}},
 	}
 	foundHeal := false
-	for _, o := range Offer(obs, NewKnowledge(map[uint8][]uint8{})) {
+	for _, o := range Offer(obs, testKnowledge(map[uint8][]uint8{})) {
 		if o.Kind == KindUseItem && o.Item == ItemID("ether") {
 			t.Fatalf("finite ether offered while already in a Center: %+v", o)
 		}
@@ -89,13 +90,13 @@ func TestOfferKnownCenterForHealthyPPExhaustedParty(t *testing.T) {
 		fieldMap = 0xfd
 	}
 	fieldLocation := LocationID("test/route")
-	centerLocation := redLocationID(center.Map)
+	centerLocation := redLocationID(redprofile.GameID, center.Map)
 	known := NewKnowledge(KnowledgeTopology{Adjacency: map[LocationID][]LocationID{
 		fieldLocation:  {centerLocation},
 		centerLocation: {fieldLocation},
 	}})
 	known.SawLocation(centerLocation)
-	obs := Observation{
+	obs := Observation{GameID: testGameID,
 		Map:        fieldMap,
 		Location:   PlaceID(fieldLocation),
 		MapName:    "ROUTE_TEST",

@@ -1,6 +1,7 @@
 package skill
 
 import (
+	"fmt"
 	"os"
 	"testing"
 
@@ -80,21 +81,50 @@ func TestBootInputDoesNotTreatOrdinaryMenuAsNameEntry(t *testing.T) {
 	}
 }
 
-func TestDecodeBootedOverworldRequiresAshAndGary(t *testing.T) {
+func TestPresetMenuNamesReadsEntriesFromScreenText(t *testing.T) {
+	cases := []struct {
+		name       string
+		screenText string
+		want       []string
+	}{
+		{"red player", "NAME NEW NAME RED ASH JACK First, what is your name?", []string{"RED", "ASH", "JACK"}},
+		{"red rival", "NAME NEW NAME BLUE GARY JOHN ...Erm, what is his name again?", []string{"BLUE", "GARY", "JOHN"}},
+		{"blue player", "NAME NEW NAME BLUE GARY JOHN First, what is your name?", []string{"BLUE", "GARY", "JOHN"}},
+		{"blue rival", "NAME NEW NAME RED ASH JACK ...Erm, what is his name again?", []string{"RED", "ASH", "JACK"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := presetMenuNames(tc.screenText)
+			if fmt.Sprint(got) != fmt.Sprint(tc.want) {
+				t.Fatalf("presetMenuNames(%q) = %v, want %v", tc.screenText, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestDecodeBootedOverworldRequiresSelectedPresets(t *testing.T) {
 	m := new(state.Mem)
-	copy(m[sym.PlayerName:], []byte{0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x50})
-	if _, err := decodeBootedOverworld(m); err == nil {
-		t.Fatal("decodeBootedOverworld(AAAAAAA) = nil, want error")
+	presets := []string{"ASH", "GARY"}
+	copy(m[sym.PlayerName:], []byte{0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x50}) // AAAAAAA
+	if _, err := decodeBootedOverworld(m, presets); err == nil {
+		t.Fatal("decodeBootedOverworld(AAAAAAA, presets) = nil, want error")
 	}
 
 	copy(m[sym.PlayerName:], []byte{0x80, 0x92, 0x87, 0x50}) // ASH
-	if _, err := decodeBootedOverworld(m); err == nil {
+	if _, err := decodeBootedOverworld(m, presets); err == nil {
 		t.Fatal("decodeBootedOverworld(ASH, empty rival) = nil, want error")
 	}
 
 	copy(m[sym.RivalName:], []byte{0x86, 0x80, 0x91, 0x98, 0x50}) // GARY
-	if _, err := decodeBootedOverworld(m); err != nil {
+	if _, err := decodeBootedOverworld(m, presets); err != nil {
 		t.Fatalf("decodeBootedOverworld(ASH, GARY) = %v, want nil", err)
+	}
+
+	// Blue swaps the presets: GARY is the player's selection there.
+	copy(m[sym.PlayerName:], []byte{0x86, 0x80, 0x91, 0x98, 0x50}) // GARY
+	copy(m[sym.RivalName:], []byte{0x80, 0x92, 0x87, 0x50})        // ASH
+	if _, err := decodeBootedOverworld(m, []string{"GARY", "ASH"}); err != nil {
+		t.Fatalf("decodeBootedOverworld(GARY, ASH) = %v, want nil", err)
 	}
 }
 

@@ -9,7 +9,7 @@ import (
 )
 
 func TestVerbsDoNotSinkAsTheWorldGrows(t *testing.T) {
-	obs := Observation{
+	obs := Observation{GameID: testGameID,
 		Map: 0x28, MapName: "OAKS_LAB", X: 5, Y: 6, PartyCount: 1,
 		Party:  []PartyMon{{Level: 5, HP: 19, MaxHP: 19}},
 		Events: []string{state.EventBattledRivalInOaksLab.String()},
@@ -18,7 +18,7 @@ func TestVerbsDoNotSinkAsTheWorldGrows(t *testing.T) {
 	planner := &redObjectiveAdapter{}
 
 	indexOfProgression := func(visited ...uint8) (int, int) {
-		k := NewKnowledge(adj)
+		k := testKnowledge(adj)
 		for _, m := range visited {
 			k.SawMap(m)
 		}
@@ -41,7 +41,7 @@ func TestVerbsDoNotSinkAsTheWorldGrows(t *testing.T) {
 		t.Fatalf("progression moved from index %d to %d as the world grew", small, big)
 	}
 
-	k := NewKnowledge(adj)
+	k := testKnowledge(adj)
 	for _, m := range []uint8{0x26, 0x25, 0x00, 0x28, 0x0c, 0x01} {
 		k.SawMap(m)
 	}
@@ -62,12 +62,12 @@ func TestVerbsDoNotSinkAsTheWorldGrows(t *testing.T) {
 }
 
 func TestMenuCarriesItsOwnHistory(t *testing.T) {
-	obs := Observation{
+	obs := Observation{GameID: testGameID,
 		Map: 0x00, MapName: "PALLET_TOWN", X: 4, Y: 7, PartyCount: 1,
 		Party:  []PartyMon{{Level: 5, HP: 19, MaxHP: 19}},
 		Events: []string{state.EventBattledRivalInOaksLab.String()},
 	}
-	k := NewKnowledge(map[uint8][]uint8{0x00: {0x0c}})
+	k := testKnowledge(map[uint8][]uint8{0x00: {0x0c}})
 	k.SawMap(0x00)
 
 	lab := Objective{Kind: KindGoTo, Place: "oak's lab"}

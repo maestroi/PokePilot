@@ -11,7 +11,7 @@ import (
 
 func memoryFixture(t *testing.T) (*Knowledge, string, int) {
 	t.Helper()
-	k := NewKnowledge(map[uint8][]uint8{0x01: {0x02}, 0x02: {0x01}})
+	k := testKnowledge(map[uint8][]uint8{0x01: {0x02}, 0x02: {0x01}})
 	k.SawMap(0x01)
 	k.SawMap(0x03)
 	k.Places["pallet town"] = true
@@ -58,7 +58,7 @@ func TestMemoryRoundTrip(t *testing.T) {
 	}
 
 	var log bytes.Buffer
-	got := LoadCheckpointMemory(statePath, map[uint8][]uint8{0x09: {0x0a}}, &log)
+	got := LoadCheckpointMemory(statePath, knowledgeTopologyFor(testGameID, map[uint8][]uint8{0x09: {0x0a}}), &log)
 
 	for _, id := range []uint8{0x01, 0x03} {
 		location := legacyLocationID(id)

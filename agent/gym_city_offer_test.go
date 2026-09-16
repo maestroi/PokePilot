@@ -33,19 +33,19 @@ func TestOfferWithholdsVermilionGymJourneyUntilInside(t *testing.T) {
 	known := NewKnowledge(nil)
 	known.Visited[LocationID("vermilion gym")] = true
 
-	obs := Observation{Map: 0x05, MapName: "VERMILION_CITY", PartyCount: 1}
+	obs := Observation{GameID: testGameID, Map: 0x05, MapName: "VERMILION_CITY", PartyCount: 1}
 	if hasJourneyTo(redOffered(obs, known), "vermilion gym") {
 		t.Fatal("Vermilion City offered a plain journey to the gym before entering it")
 	}
 
-	obs = Observation{Map: 0x5c, Location: "vermilion gym", MapName: "VERMILION_GYM", PartyCount: 1}
+	obs = Observation{GameID: testGameID, Map: 0x5c, Location: "vermilion gym", MapName: "VERMILION_GYM", PartyCount: 1}
 	if !hasJourneyTo(redOffered(obs, known), "vermilion gym") {
 		t.Fatal("already inside the gym, the journey to its own stand tile must still be offered")
 	}
 }
 
 func TestOfferPewterCitySurfacesBrockUntilBoulderBadge(t *testing.T) {
-	obs := Observation{Map: 0x02, MapName: "PEWTER_CITY", PartyCount: 1}
+	obs := Observation{GameID: testGameID, Map: 0x02, MapName: "PEWTER_CITY", PartyCount: 1}
 	known := NewKnowledge(nil)
 	if !hasOfferedKind(redOffered(obs, known), KindGym) {
 		t.Fatal("Pewter City did not offer the Brock gym challenge before the Boulder Badge")
@@ -58,7 +58,7 @@ func TestOfferPewterCitySurfacesBrockUntilBoulderBadge(t *testing.T) {
 }
 
 func TestOfferWithholdsGymWhenDestinationIsSemanticallyBlocked(t *testing.T) {
-	obs := Observation{
+	obs := Observation{GameID: testGameID,
 		Map: 0x05, MapName: "VERMILION_CITY", PartyCount: 1,
 		RouteBlockages: []RouteBlockage{{
 			Destination: "vermilion gym",
@@ -72,7 +72,7 @@ func TestOfferWithholdsGymWhenDestinationIsSemanticallyBlocked(t *testing.T) {
 }
 
 func TestOfferStillSurfacesGymWhenRouteBlockagesOmitIt(t *testing.T) {
-	obs := Observation{Map: 0x05, MapName: "VERMILION_CITY", PartyCount: 1}
+	obs := Observation{GameID: testGameID, Map: 0x05, MapName: "VERMILION_CITY", PartyCount: 1}
 	known := NewKnowledge(nil)
 	if !hasOfferedKind(Offer(obs, known), KindGym) {
 		t.Fatal("empty RouteBlockages withheld the Vermilion gym; Offer must fail open")
@@ -86,7 +86,7 @@ func TestOfferGymDoneCountNeverCarriesOverFromAnotherGym(t *testing.T) {
 
 	// This test is intentionally about generic objective identity annotation,
 	// not Red's compound Cut-owned entry gate, so use portable Offer directly.
-	obs := Observation{Map: 0x05, MapName: "VERMILION_CITY", PartyCount: 1}
+	obs := Observation{GameID: testGameID, Map: 0x05, MapName: "VERMILION_CITY", PartyCount: 1}
 	for _, o := range Offer(obs, known) {
 		if o.Kind != KindGym {
 			continue
@@ -100,7 +100,7 @@ func TestOfferGymDoneCountNeverCarriesOverFromAnotherGym(t *testing.T) {
 }
 
 func TestOfferKeepsGymWhenAlreadyInsideABlockedGymMap(t *testing.T) {
-	obs := Observation{
+	obs := Observation{GameID: testGameID,
 		Map: 0x5C, Location: "vermilion gym", MapName: "VERMILION_GYM", PartyCount: 1,
 		RouteBlockages: []RouteBlockage{{
 			Destination: "vermilion gym",

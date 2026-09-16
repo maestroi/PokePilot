@@ -16,14 +16,14 @@ func TestOfferKeepsDoorsSeenFromVisitedMaps(t *testing.T) {
 		mtMoon1F = 0x3B
 		cerulean = 0x03
 	)
-	known := NewKnowledge(map[uint8][]uint8{
+	known := testKnowledge(map[uint8][]uint8{
 		route4:   {mtMoon1F, cerulean},
 		mtMoon1F: {route4},
 	})
 	known.SawMap(route4)
 	known.SawMap(mtMoon1F)
 
-	obs := Observation{Map: mtMoon1F, MapName: "MT_MOON_1F", PartyCount: 1}
+	obs := Observation{GameID: testGameID, Map: mtMoon1F, MapName: "MT_MOON_1F", PartyCount: 1}
 	if !offersPlace(Offer(obs, known), "cerulean city") {
 		t.Fatal("Cerulean, a door off the visited Route 4, dropped off the menu inside Mt. Moon")
 	}
@@ -55,7 +55,7 @@ func TestOfferNarrowsTravelMenuToNearestPlaces(t *testing.T) {
 	adjacency[0x01] = append(adjacency[0x01], 0x29, 0x2A) // Viridian center, mart
 	adjacency[0x02] = append(adjacency[0x02], 0x3A, 0x36) // Pewter center, gym
 
-	known := NewKnowledge(adjacency)
+	known := testKnowledge(adjacency)
 	// Everything walked except Cerulean, which is still just a door seen from
 	// Route 4 — the frontier this menu exists to reach.
 	for _, m := range []uint8{0x00, 0x0C, 0x01, 0x0D, 0x02, 0x0E, 0x0F, 0x3B, 0x3C, 0x3D, 0x29, 0x2A, 0x3A, 0x36} {
@@ -64,7 +64,7 @@ func TestOfferNarrowsTravelMenuToNearestPlaces(t *testing.T) {
 
 	// Boulder + the Pokedex, so the Route 2 and Route 3 gates are open and
 	// distance is the only thing narrowing the menu.
-	offered := Offer(Observation{
+	offered := Offer(Observation{GameID: testGameID,
 		Map: 0x02, MapName: "PEWTER_CITY", PartyCount: 1,
 		Badges: []string{state.BadgeBoulder.String()},
 		Events: []string{state.EventGotPokedex.String()},
@@ -115,12 +115,12 @@ func TestOfferKeepsVisitedFrontierWhenNearPlacesFillTheCap(t *testing.T) {
 	adjacency[0x3A] = []uint8{0x02}
 	adjacency[0x36] = []uint8{0x02}
 
-	known := NewKnowledge(adjacency)
+	known := testKnowledge(adjacency)
 	for _, m := range []uint8{0x00, 0x0C, 0x01, 0x0D, 0x02, 0x0E, 0x29, 0x2A, 0x3A, 0x36, 0x28, 0x25, 0x21} {
 		known.SawMap(m)
 	}
 
-	offered := Offer(Observation{
+	offered := Offer(Observation{GameID: testGameID,
 		Map: 0x0C, MapName: "ROUTE_1", X: 5, Y: 14, PartyCount: 1,
 		Badges: []string{state.BadgeBoulder.String()},
 		Events: []string{state.EventGotPokedex.String()},

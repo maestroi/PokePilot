@@ -335,6 +335,30 @@ Migrate boundaries incrementally while keeping behavior working. A good change
 makes this dependency direction clearer; a bad change makes generic code depend
 on more one-game facts.
 
+## Gen I: one engine, two games
+
+Pokémon Red and Pokémon Blue share one engine: identical RAM layout, symbol
+table, maps, scripts, and mechanics. They differ in ROM bytes — title,
+preset-name order, wild/fish/trade encounter tables, and a handful of
+version-exclusive species. Supporting Blue therefore meant a second
+`GameID` in the registry, not a second runtime.
+
+The Gen I adapter code physically lives in `red/` today: `red/sym`,
+`red/state`, `red/rom`, `red/data`, and the `red*` agent adapters serve both
+games, bound per `GameID` at registration (`agent/gen1_adapters.go`).
+`blue/profile` is a thin identity override that delegates the engine surface
+to Red's profile and pins its own ROM hash. Every per-game dispatch table
+(observation decoding, knowledge topology, objective catalog) keys on the
+resolved `GameID`, so a Gen I image resolves to exactly one profile and the
+runtime never branches on a game name at runtime.
+
+The removal path is explicit: when the Gen I engine is factored out of `red/`
+into its own package, Red and Blue should both embed it and `blue/profile`
+loses its delegation. Until then, do not add Red-only facts to these shared
+packages without checking they hold on Blue — encounter tables and NPC trades
+must stay ROM-owned (`rom.WildEncounters`, `rom.NPCTrades`, …) so both images
+read their own data.
+
 ## Design gate for every change
 
 Before implementing a gameplay/runtime fix, answer these questions:

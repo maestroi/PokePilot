@@ -8,7 +8,7 @@ import (
 )
 
 func TestJourneyProgressionBlockedRoute3UntilBoulderBadge(t *testing.T) {
-	obs := Observation{Events: []string{state.EventGotPokedex.String()}}
+	obs := Observation{GameID: testGameID, Events: []string{state.EventGotPokedex.String()}}
 	if !journeyProgressionBlocked(obs, route3Map) {
 		t.Fatal("Route 3 should be blocked before the Boulder Badge")
 	}
@@ -23,9 +23,9 @@ func TestJourneyProgressionBlockedRoute3UntilBoulderBadge(t *testing.T) {
 }
 
 func TestOfferSuppressesPewterRoute3UntilBoulderBadge(t *testing.T) {
-	known := NewKnowledge(map[uint8][]uint8{0x02: {route3Map}})
+	known := testKnowledge(map[uint8][]uint8{0x02: {route3Map}})
 	known.SawMap(0x02)
-	obs := Observation{
+	obs := Observation{GameID: testGameID,
 		Map:        0x02,
 		MapName:    "PEWTER_CITY",
 		X:          10,
@@ -47,7 +47,7 @@ func TestOfferSuppressesPewterRoute3UntilBoulderBadge(t *testing.T) {
 }
 
 func TestJourneyProgressionBlockedRoute2UntilPokedex(t *testing.T) {
-	obs := Observation{}
+	obs := Observation{GameID: testGameID}
 	if !journeyProgressionBlocked(obs, route2Map) {
 		t.Fatal("Route 2 should be blocked before the parcel is delivered")
 	}
@@ -75,7 +75,7 @@ func TestJourneyProgressionBlockedUsesSemanticLateGameFacts(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			obs := Observation{}
+			obs := Observation{GameID: testGameID}
 			if !journeyProgressionBlocked(obs, tc.mapID) {
 				t.Fatalf("map %#02x should be blocked before semantic prerequisite", tc.mapID)
 			}
@@ -88,7 +88,7 @@ func TestJourneyProgressionBlockedUsesSemanticLateGameFacts(t *testing.T) {
 }
 
 func TestPlaceProgressionBlockedSnorlaxWaypointsUntilPokeFlute(t *testing.T) {
-	obs := Observation{}
+	obs := Observation{GameID: testGameID}
 	for _, place := range []string{"route 12 snorlax", "route 12 south of snorlax"} {
 		if !placeProgressionBlocked(obs, place) {
 			t.Fatalf("%q should be blocked before the Poké Flute", place)
@@ -113,9 +113,9 @@ func TestOfferNeverAdvertisesRoute12SnorlaxInteractionAsJourney(t *testing.T) {
 	}
 	route12Map := dest.Map
 
-	known := NewKnowledge(map[uint8][]uint8{route12Map: {}})
+	known := testKnowledge(map[uint8][]uint8{route12Map: {}})
 	known.SawMap(route12Map)
-	obs := Observation{
+	obs := Observation{GameID: testGameID,
 		Map:        route12Map,
 		MapName:    "ROUTE_12",
 		X:          9,
@@ -137,9 +137,9 @@ func TestOfferNeverAdvertisesRoute12SnorlaxInteractionAsJourney(t *testing.T) {
 }
 
 func TestOfferSuppressesSaffronGymUntilSilphRescue(t *testing.T) {
-	known := NewKnowledge(map[uint8][]uint8{saffronCityMap: {saffronGymMap}})
+	known := testKnowledge(map[uint8][]uint8{saffronCityMap: {saffronGymMap}})
 	known.SawMap(saffronCityMap)
-	obs := Observation{
+	obs := Observation{GameID: testGameID,
 		Map:        saffronCityMap,
 		MapName:    "SAFFRON_CITY",
 		PartyCount: 1,

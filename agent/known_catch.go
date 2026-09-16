@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/skill"
 )
 
@@ -49,7 +50,7 @@ func appendKnownCatchObjectivesWithWild(romData []byte, obs Observation, known *
 	best := map[SpeciesID]knownCatchHabitat{}
 	seenNative := map[uint8]bool{}
 	for location := range known.Visited {
-		mapID, ok := redNativeMapForLocation(known, location)
+		mapID, ok := redNativeMapForLocation(obs.GameID, known, location)
 		if !ok || seenNative[mapID] || mapID == obs.Map {
 			continue // local catches already came from Offer.
 		}
@@ -113,7 +114,7 @@ func appendKnownCatchObjectivesWithWild(romData []byte, obs Observation, known *
 	return out
 }
 
-func redNativeMapForLocation(known *Knowledge, location LocationID) (uint8, bool) {
+func redNativeMapForLocation(gameID game.GameID, known *Knowledge, location LocationID) (uint8, bool) {
 	if known != nil {
 		for native, semantic := range known.nativeLocations {
 			if semantic == location {
@@ -123,7 +124,7 @@ func redNativeMapForLocation(known *Knowledge, location LocationID) (uint8, bool
 	}
 	for i := 0; i <= 0xff; i++ {
 		id := uint8(i)
-		if redLocationID(id) == location {
+		if redLocationID(gameID, id) == location {
 			return id, true
 		}
 	}

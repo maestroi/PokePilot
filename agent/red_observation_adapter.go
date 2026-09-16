@@ -5,19 +5,22 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/game"
-	redprofile "github.com/maestroi/pokepilot/red/profile"
 	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/skill"
 	"github.com/maestroi/pokepilot/world"
 )
 
-type redSemanticObservationAdapter struct{}
+type redSemanticObservationAdapter struct {
+	id game.GameID
+}
 
-func (redSemanticObservationAdapter) GameID() game.GameID { return redprofile.GameID }
+func (a redSemanticObservationAdapter) GameID() game.GameID { return a.id }
 
 func init() {
-	registerSemanticObservationAdapter(redSemanticObservationAdapter{})
+	for _, id := range gen1Games {
+		registerSemanticObservationAdapter(redSemanticObservationAdapter{id: id})
+	}
 }
 
 var redMoveTypeNames = map[uint8]string{

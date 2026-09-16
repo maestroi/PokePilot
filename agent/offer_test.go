@@ -1,11 +1,9 @@
-package agent_test
+package agent
 
 import (
 	"reflect"
 	"strings"
 	"testing"
-
-	"github.com/maestroi/pokepilot/agent"
 )
 
 // The table below is the whole point of Offer: the menu CHANGES with the
@@ -27,16 +25,16 @@ func TestOfferTable(t *testing.T) {
 
 	cases := []struct {
 		name    string
-		obs     agent.Observation
-		known   func() *agent.Knowledge
+		obs     Observation
+		known   func() *Knowledge
 		want    []string
 		mustNot []string
 	}{
 		{
 			name: "fresh boot at pallet: starters, one step out, nothing else",
-			obs:  agent.Observation{Map: 0x00, MapName: "PALLET_TOWN", X: 5, Y: 6, PartyCount: 0},
-			known: func() *agent.Knowledge {
-				k := agent.NewKnowledge(adj)
+			obs:  Observation{GameID: testGameID, Map: 0x00, MapName: "PALLET_TOWN", X: 5, Y: 6, PartyCount: 0},
+			known: func() *Knowledge {
+				k := testKnowledge(adj)
 				k.SawMap(0x00)
 				return k
 			},
@@ -51,19 +49,19 @@ func TestOfferTable(t *testing.T) {
 		},
 		{
 			name: "on route 1 with a party, balls and grass: one catch per species the map rolls",
-			obs: agent.Observation{
+			obs: Observation{GameID: testGameID,
 				Map: 0x0c, MapName: "ROUTE_1", X: 5, Y: 14, PartyCount: 1,
-				Party:    []agent.PartyMon{{Level: 5, HP: 20, MaxHP: 20}},
-				Bag:      []agent.Item{{Name: "pokeball", Quantity: 5}},
+				Party:    []PartyMon{{Level: 5, HP: 20, MaxHP: 20}},
+				Bag:      []Item{{Name: "pokeball", Quantity: 5}},
 				HasGrass: true,
-				WildGrass: []agent.WildSpecies{
+				WildGrass: []WildSpecies{
 					{Name: "pidgey", MinLevel: 2, MaxLevel: 5, Slots: 6},
 					{Name: "rattata", MinLevel: 2, MaxLevel: 4, Slots: 4},
 				},
 				Events: []string{"BattledRivalInOaksLab"},
 			},
-			known: func() *agent.Knowledge {
-				k := agent.NewKnowledge(adj)
+			known: func() *Knowledge {
+				k := testKnowledge(adj)
 				k.SawMap(0x00)
 				k.SawMap(0x0c)
 				return k
@@ -81,13 +79,13 @@ func TestOfferTable(t *testing.T) {
 		},
 		{
 			name: "balls but the map rolls nothing: catch stays off — the hunt needs a wild table",
-			obs: agent.Observation{
+			obs: Observation{GameID: testGameID,
 				Map: 0x00, MapName: "PALLET_TOWN", X: 4, Y: 7, PartyCount: 1,
-				Bag:    []agent.Item{{Name: "pokeball", Quantity: 5}},
+				Bag:    []Item{{Name: "pokeball", Quantity: 5}},
 				Events: []string{"BattledRivalInOaksLab"},
 			},
-			known: func() *agent.Knowledge {
-				k := agent.NewKnowledge(adj)
+			known: func() *Knowledge {
+				k := testKnowledge(adj)
 				k.SawMap(0x00)
 				return k
 			},
@@ -101,13 +99,13 @@ func TestOfferTable(t *testing.T) {
 		},
 		{
 			name: "hurt party in the field: the walk back to a known center is one objective",
-			obs: agent.Observation{
+			obs: Observation{GameID: testGameID,
 				Map: 0x0c, MapName: "ROUTE_1", X: 5, Y: 14, PartyCount: 1,
-				Party:  []agent.PartyMon{{Species: agent.SpeciesID("rhydon"), Level: 6, HP: 4, MaxHP: 20}},
+				Party:  []PartyMon{{Species: SpeciesID("rhydon"), Level: 6, HP: 4, MaxHP: 20}},
 				Events: []string{"BattledRivalInOaksLab"},
 			},
-			known: func() *agent.Knowledge {
-				k := agent.NewKnowledge(adj)
+			known: func() *Knowledge {
+				k := testKnowledge(adj)
 				for _, m := range []uint8{0x00, 0x0c, 0x01, 0x29} {
 					k.SawMap(m)
 				}
@@ -126,13 +124,13 @@ func TestOfferTable(t *testing.T) {
 		},
 		{
 			name: "healthy party in the field: no heal — a full heal is a round that changes nothing",
-			obs: agent.Observation{
+			obs: Observation{GameID: testGameID,
 				Map: 0x0c, MapName: "ROUTE_1", X: 5, Y: 14, PartyCount: 1,
-				Party:  []agent.PartyMon{{Species: agent.SpeciesID("rhydon"), Level: 6, HP: 20, MaxHP: 20}},
+				Party:  []PartyMon{{Species: SpeciesID("rhydon"), Level: 6, HP: 20, MaxHP: 20}},
 				Events: []string{"BattledRivalInOaksLab"},
 			},
-			known: func() *agent.Knowledge {
-				k := agent.NewKnowledge(adj)
+			known: func() *Knowledge {
+				k := testKnowledge(adj)
 				for _, m := range []uint8{0x00, 0x0c, 0x01, 0x29} {
 					k.SawMap(m)
 				}
@@ -150,13 +148,13 @@ func TestOfferTable(t *testing.T) {
 		},
 		{
 			name: "hurt party but no center the run has been inside: no heal it cannot reach",
-			obs: agent.Observation{
+			obs: Observation{GameID: testGameID,
 				Map: 0x0c, MapName: "ROUTE_1", X: 5, Y: 14, PartyCount: 1,
-				Party:  []agent.PartyMon{{Species: agent.SpeciesID("rhydon"), Level: 6, HP: 4, MaxHP: 20}},
+				Party:  []PartyMon{{Species: SpeciesID("rhydon"), Level: 6, HP: 4, MaxHP: 20}},
 				Events: []string{"BattledRivalInOaksLab"},
 			},
-			known: func() *agent.Knowledge {
-				k := agent.NewKnowledge(adj)
+			known: func() *Knowledge {
+				k := testKnowledge(adj)
 				k.SawMap(0x00)
 				k.SawMap(0x0c)
 				return k
@@ -171,14 +169,14 @@ func TestOfferTable(t *testing.T) {
 		},
 		{
 			name: "hurt party with a potion in the bag: field healing joins without walking to a center",
-			obs: agent.Observation{
+			obs: Observation{GameID: testGameID,
 				Map: 0x0c, MapName: "ROUTE_1", X: 5, Y: 14, PartyCount: 1,
-				Party:  []agent.PartyMon{{Species: agent.SpeciesID("rhydon"), Level: 6, HP: 4, MaxHP: 20}},
-				Bag:    []agent.Item{{Name: "potion", Quantity: 3}},
+				Party:  []PartyMon{{Species: SpeciesID("rhydon"), Level: 6, HP: 4, MaxHP: 20}},
+				Bag:    []Item{{Name: "potion", Quantity: 3}},
 				Events: []string{"BattledRivalInOaksLab"},
 			},
-			known: func() *agent.Knowledge {
-				k := agent.NewKnowledge(adj)
+			known: func() *Knowledge {
+				k := testKnowledge(adj)
 				for _, m := range []uint8{0x00, 0x0c, 0x01, 0x29} {
 					k.SawMap(m)
 				}
@@ -198,14 +196,14 @@ func TestOfferTable(t *testing.T) {
 		},
 		{
 			name: "whole party with a potion in the bag: no use-item — a round that changes nothing",
-			obs: agent.Observation{
+			obs: Observation{GameID: testGameID,
 				Map: 0x0c, MapName: "ROUTE_1", X: 5, Y: 14, PartyCount: 1,
-				Party:  []agent.PartyMon{{Species: agent.SpeciesID("rhydon"), Level: 6, HP: 20, MaxHP: 20}},
-				Bag:    []agent.Item{{Name: "potion", Quantity: 3}},
+				Party:  []PartyMon{{Species: SpeciesID("rhydon"), Level: 6, HP: 20, MaxHP: 20}},
+				Bag:    []Item{{Name: "potion", Quantity: 3}},
 				Events: []string{"BattledRivalInOaksLab"},
 			},
-			known: func() *agent.Knowledge {
-				k := agent.NewKnowledge(adj)
+			known: func() *Knowledge {
+				k := testKnowledge(adj)
 				k.SawMap(0x00)
 				k.SawMap(0x0c)
 				return k
@@ -220,13 +218,13 @@ func TestOfferTable(t *testing.T) {
 		},
 		{
 			name: "hurt party, empty bag: no use-item to offer",
-			obs: agent.Observation{
+			obs: Observation{GameID: testGameID,
 				Map: 0x0c, MapName: "ROUTE_1", X: 5, Y: 14, PartyCount: 1,
-				Party:  []agent.PartyMon{{Species: agent.SpeciesID("rhydon"), Level: 6, HP: 4, MaxHP: 20}},
+				Party:  []PartyMon{{Species: SpeciesID("rhydon"), Level: 6, HP: 4, MaxHP: 20}},
 				Events: []string{"BattledRivalInOaksLab"},
 			},
-			known: func() *agent.Knowledge {
-				k := agent.NewKnowledge(adj)
+			known: func() *Knowledge {
+				k := testKnowledge(adj)
 				k.SawMap(0x00)
 				k.SawMap(0x0c)
 				return k
@@ -241,14 +239,14 @@ func TestOfferTable(t *testing.T) {
 		},
 		{
 			name: "poisoned mon with an antidote: the status cure joins, though the HP is whole",
-			obs: agent.Observation{
+			obs: Observation{GameID: testGameID,
 				Map: 0x0c, MapName: "ROUTE_1", X: 5, Y: 14, PartyCount: 1,
-				Party:  []agent.PartyMon{{Species: agent.SpeciesID("rhydon"), Level: 6, HP: 20, MaxHP: 20, Status: "poisoned"}},
-				Bag:    []agent.Item{{Name: "antidote", Quantity: 1}},
+				Party:  []PartyMon{{Species: SpeciesID("rhydon"), Level: 6, HP: 20, MaxHP: 20, Status: "poisoned"}},
+				Bag:    []Item{{Name: "antidote", Quantity: 1}},
 				Events: []string{"BattledRivalInOaksLab"},
 			},
-			known: func() *agent.Knowledge {
-				k := agent.NewKnowledge(adj)
+			known: func() *Knowledge {
+				k := testKnowledge(adj)
 				k.SawMap(0x00)
 				k.SawMap(0x0c)
 				return k
@@ -264,12 +262,12 @@ func TestOfferTable(t *testing.T) {
 		},
 		{
 			name: "inside a center: heal joins; no balls, so no catch",
-			obs: agent.Observation{
+			obs: Observation{GameID: testGameID,
 				Map: 0x29, MapName: "VIRIDIAN_POKECENTER", X: 4, Y: 5, PartyCount: 1,
 				Events: []string{"BattledRivalInOaksLab"},
 			},
-			known: func() *agent.Knowledge {
-				k := agent.NewKnowledge(adj)
+			known: func() *Knowledge {
+				k := testKnowledge(adj)
 				for _, m := range []uint8{0x00, 0x0c, 0x01, 0x29} {
 					k.SawMap(m)
 				}
@@ -290,13 +288,13 @@ func TestOfferTable(t *testing.T) {
 		},
 		{
 			name: "at the gym underlevelled: the gym is STILL offered — Offer never filters on wisdom",
-			obs: agent.Observation{
+			obs: Observation{GameID: testGameID,
 				Map: 0x36, MapName: "PEWTER_GYM", X: 5, Y: 3, PartyCount: 1,
-				Party:  []agent.PartyMon{{Species: agent.SpeciesID("nidoking"), Level: 5, HP: 1, MaxHP: 20}},
+				Party:  []PartyMon{{Species: SpeciesID("nidoking"), Level: 5, HP: 1, MaxHP: 20}},
 				Events: []string{"BattledRivalInOaksLab"},
 			},
-			known: func() *agent.Knowledge {
-				k := agent.NewKnowledge(adj)
+			known: func() *Knowledge {
+				k := testKnowledge(adj)
 				k.SawMap(0x36)
 				return k
 			},
@@ -308,12 +306,12 @@ func TestOfferTable(t *testing.T) {
 		},
 		{
 			name: "unvisited and unmentioned places stay off the menu",
-			obs: agent.Observation{
+			obs: Observation{GameID: testGameID,
 				Map: 0x00, MapName: "PALLET_TOWN", X: 4, Y: 7, PartyCount: 1,
 				Events: []string{"BattledRivalInOaksLab"},
 			},
-			known: func() *agent.Knowledge {
-				k := agent.NewKnowledge(adj)
+			known: func() *Knowledge {
+				k := testKnowledge(adj)
 				k.SawMap(0x00)
 				return k
 			},
@@ -327,12 +325,12 @@ func TestOfferTable(t *testing.T) {
 		},
 		{
 			name: "a place the game named in dialogue joins the menu",
-			obs: agent.Observation{
+			obs: Observation{GameID: testGameID,
 				Map: 0x00, MapName: "PALLET_TOWN", X: 4, Y: 7, PartyCount: 1,
 				Events: []string{"BattledRivalInOaksLab"},
 			},
-			known: func() *agent.Knowledge {
-				k := agent.NewKnowledge(adj)
+			known: func() *Knowledge {
+				k := testKnowledge(adj)
 				k.SawMap(0x00)
 				k.SawDialogue([]string{"An old man said: Pewter City lies to the east."}, "PALLET_TOWN", 5, 6)
 				return k
@@ -348,13 +346,13 @@ func TestOfferTable(t *testing.T) {
 		},
 		{
 			name: "inside the viridian mart: one buy per item the shelf actually stocks, no POTION",
-			obs: agent.Observation{
+			obs: Observation{GameID: testGameID,
 				Map: 0x2a, MapName: "VIRIDIAN_MART", X: 3, Y: 6, PartyCount: 1, Money: 10000,
 				MartStock: []string{"pokeball", "antidote", "parlyz heal", "burn heal"},
 				Events:    []string{"BattledRivalInOaksLab"},
 			},
-			known: func() *agent.Knowledge {
-				k := agent.NewKnowledge(adj)
+			known: func() *Knowledge {
+				k := testKnowledge(adj)
 				k.SawMap(0x2a)
 				return k
 			},
@@ -367,13 +365,13 @@ func TestOfferTable(t *testing.T) {
 		},
 		{
 			name: "inside a mart whose shelf is unreadable: no buy objective at all",
-			obs: agent.Observation{
+			obs: Observation{GameID: testGameID,
 				Map: 0x2a, MapName: "VIRIDIAN_MART", X: 3, Y: 6, PartyCount: 1,
 				MartStock: nil,
 				Events:    []string{"BattledRivalInOaksLab"},
 			},
-			known: func() *agent.Knowledge {
-				k := agent.NewKnowledge(adj)
+			known: func() *Knowledge {
+				k := testKnowledge(adj)
 				k.SawMap(0x2a)
 				return k
 			},
@@ -385,12 +383,12 @@ func TestOfferTable(t *testing.T) {
 		},
 		{
 			name: "repeatable verbs remain available without campaign knowledge",
-			obs: agent.Observation{
+			obs: Observation{GameID: testGameID,
 				Map: 0x29, MapName: "VIRIDIAN_POKECENTER", X: 4, Y: 5, PartyCount: 1,
 				Events: []string{"BattledRivalInOaksLab"},
 			},
-			known: func() *agent.Knowledge {
-				k := agent.NewKnowledge(adj)
+			known: func() *Knowledge {
+				k := testKnowledge(adj)
 				k.SawMap(0x29)
 				return k
 			},
@@ -404,7 +402,7 @@ func TestOfferTable(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := agent.Offer(tc.obs, tc.known())
+			got := Offer(tc.obs, tc.known())
 			var gotNames []string
 			for _, o := range got {
 				gotNames = append(gotNames, o.String())
@@ -423,14 +421,14 @@ func TestOfferTable(t *testing.T) {
 }
 
 func TestGenericOfferDoesNotInjectGameProgression(t *testing.T) {
-	known := agent.NewKnowledge(nil)
-	before := agent.Observation{Map: 0x00, MapName: "PALLET_TOWN", X: 5, Y: 6, PartyCount: 1}
+	known := NewKnowledge(nil)
+	before := Observation{GameID: testGameID, Map: 0x00, MapName: "PALLET_TOWN", X: 5, Y: 6, PartyCount: 1}
 	after := before
 	after.Events = []string{"BattledRivalInOaksLab"}
 
-	for name, obs := range map[string]agent.Observation{"before": before, "after": after} {
-		for _, objective := range agent.Offer(obs, known) {
-			if objective.Kind == agent.KindProgress {
+	for name, obs := range map[string]Observation{"before": before, "after": after} {
+		for _, objective := range Offer(obs, known) {
+			if objective.Kind == KindProgress {
 				t.Fatalf("%s: generic Offer injected game progression %q", name, objective)
 			}
 		}
@@ -440,20 +438,20 @@ func TestGenericOfferDoesNotInjectGameProgression(t *testing.T) {
 func TestOfferMenuChangesWithSituation(t *testing.T) {
 	adj := map[uint8][]uint8{0x00: {0x0c}, 0x0c: {0x00, 0x01}}
 
-	fresh := agent.Observation{Map: 0x00, MapName: "PALLET_TOWN", X: 5, Y: 6, PartyCount: 0}
-	later := agent.Observation{
+	fresh := Observation{GameID: testGameID, Map: 0x00, MapName: "PALLET_TOWN", X: 5, Y: 6, PartyCount: 0}
+	later := Observation{GameID: testGameID,
 		Map: 0x29, MapName: "VIRIDIAN_POKECENTER", X: 4, Y: 5, PartyCount: 1,
-		Bag: []agent.Item{{Name: "pokeball", Quantity: 3}},
+		Bag: []Item{{Name: "pokeball", Quantity: 3}},
 	}
 
-	k := agent.NewKnowledge(adj)
+	k := testKnowledge(adj)
 	k.SawMap(0x00)
-	first := agent.Offer(fresh, k)
+	first := Offer(fresh, k)
 
 	k.SawMap(0x0c)
 	k.SawMap(0x01)
 	k.SawMap(0x29)
-	second := agent.Offer(later, k)
+	second := Offer(later, k)
 
 	firstSet := map[string]bool{}
 	for _, o := range first {
@@ -481,7 +479,7 @@ func TestOfferMenuChangesWithSituation(t *testing.T) {
 }
 
 func TestKnowledgeDialogueMentions(t *testing.T) {
-	k := agent.NewKnowledge(nil)
+	k := NewKnowledge(nil)
 	k.SawDialogue([]string{
 		"The sign reads: Route 22. Beware the rival.",
 		"Nothing here names a place at all.",
@@ -503,7 +501,7 @@ func TestKnowledgeDialogueMentions(t *testing.T) {
 }
 
 func TestKnowledgeHarvestsStatedRequirements(t *testing.T) {
-	k := agent.NewKnowledge(nil)
+	k := NewKnowledge(nil)
 	guard := []string{
 		"You can pass here\nonly if you have\nthe CASCADEBADGE!",
 		"You don't have the\nCASCADEBADGE yet!",
@@ -521,7 +519,7 @@ func TestKnowledgeHarvestsStatedRequirements(t *testing.T) {
 	}
 
 	k.SawDialogue(guard, "ROUTE_23", 4, 57)
-	want := []agent.Requirement{
+	want := []Requirement{
 		{Text: "You don't have the\nCASCADEBADGE yet!", Place: "ROUTE_23", X: 4, Y: 57, Times: 1},
 		{Text: "You can pass here\nonly if you have\nthe CASCADEBADGE!", Place: "ROUTE_23", X: 4, Y: 57, Times: 1},
 	}
@@ -537,13 +535,13 @@ func TestKnowledgeHarvestsStatedRequirements(t *testing.T) {
 }
 
 func TestKnowledgeRequirementShapesAndCap(t *testing.T) {
-	k := agent.NewKnowledge(nil)
+	k := NewKnowledge(nil)
 	k.HeardRequirement("You can't go\nthrough here!", "VIRIDIAN_CITY", 19, 10)
 	if len(k.Requirements) != 1 || !strings.Contains(k.Requirements[0].Text, "can't go") {
 		t.Fatalf("the 'can't go through' shape was not caught: %v", k.Requirements)
 	}
 
-	k2 := agent.NewKnowledge(nil)
+	k2 := NewKnowledge(nil)
 	for i := 0; i < 12; i++ {
 		k2.HeardRequirement("You need key "+string(rune('a'+i))+" to pass.", "ROUTE_23", 4, 57)
 	}
@@ -560,30 +558,30 @@ func TestKnowledgeRequirementShapesAndCap(t *testing.T) {
 
 func TestOfferJourneyVariants(t *testing.T) {
 	adj := map[uint8][]uint8{0x0c: {0x00, 0x01, 0x29}}
-	obs := agent.Observation{
+	obs := Observation{GameID: testGameID,
 		Map: 0x0c, MapName: "ROUTE_1", X: 5, Y: 14, PartyCount: 1,
-		Party: []agent.PartyMon{{Level: 6, HP: 4, MaxHP: 20}},
+		Party: []PartyMon{{Level: 6, HP: 4, MaxHP: 20}},
 	}
-	known := agent.NewKnowledge(adj)
+	known := testKnowledge(adj)
 	known.SawMap(0x0c)
 	known.SawMap(0x29)
 
-	got := agent.Offer(obs, known)
-	sameJourney := func(a, b agent.Objective) bool {
+	got := Offer(obs, known)
+	sameJourney := func(a, b Objective) bool {
 		return a.Kind == b.Kind && a.Place == b.Place && a.Flee == b.Flee
 	}
 	for i, o := range got {
-		isJourney := o.Kind == agent.KindGoTo || (o.Kind == agent.KindHeal && o.Place != "")
+		isJourney := o.Kind == KindGoTo || (o.Kind == KindHeal && o.Place != "")
 		if !isJourney {
 			continue
 		}
 		if !o.Flee {
-			want := agent.Objective{Kind: o.Kind, Place: o.Place, Flee: true}
+			want := Objective{Kind: o.Kind, Place: o.Place, Flee: true}
 			if i+1 >= len(got) || !sameJourney(got[i+1], want) {
 				t.Fatalf("journey %q at %d has no fleeing variant beside it:\n%v", o, i, got)
 			}
 		} else {
-			plain := agent.Objective{Kind: o.Kind, Place: o.Place}
+			plain := Objective{Kind: o.Kind, Place: o.Place}
 			if i == 0 || !sameJourney(got[i-1], plain) {
 				t.Fatalf("fleeing variant %q at %d does not follow its plain one:\n%v", o, i, got)
 			}
@@ -592,17 +590,17 @@ func TestOfferJourneyVariants(t *testing.T) {
 }
 
 func TestOfferMapObjects(t *testing.T) {
-	obs := agent.Observation{
+	obs := Observation{GameID: testGameID,
 		Map: 0x99, X: 5, Y: 6, PartyCount: 1,
 		Events: []string{"BattledRivalInOaksLab"},
-		MapObjects: []agent.MapObject{
+		MapObjects: []MapObject{
 			{X: 7, Y: 10, Kind: "person"},
 			{X: 2, Y: 4, Kind: "trainer"},
 			{X: 9, Y: 2, Kind: "trainer"},
 			{X: 5, Y: 6, Kind: "item", Item: "pokeball"},
 		},
 	}
-	out := agent.Offer(obs, agent.NewKnowledge(nil))
+	out := Offer(obs, NewKnowledge(nil))
 
 	var got []string
 	for _, o := range out {
@@ -623,23 +621,23 @@ func TestOfferMapObjects(t *testing.T) {
 }
 
 func TestOfferDoesNotRepeatCompletedTalk(t *testing.T) {
-	obs := agent.Observation{
+	obs := Observation{GameID: testGameID,
 		Map: 0x28,
-		MapObjects: []agent.MapObject{
+		MapObjects: []MapObject{
 			{X: 8, Y: 3, Kind: "person"},
 			{X: 5, Y: 2, Kind: "person"},
 		},
 	}
-	known := agent.NewKnowledge(nil)
+	known := NewKnowledge(nil)
 	known.TalkedTo(0x28, 8, 3)
 
-	got := agent.Offer(obs, known)
+	got := Offer(obs, known)
 	for _, objective := range got {
-		if objective == (agent.Objective{Kind: agent.KindTalk, X: 8, Y: 3}) {
+		if objective == (Objective{Kind: KindTalk, X: 8, Y: 3}) {
 			t.Fatalf("Offer repeated completed objective %q", objective)
 		}
 	}
-	want := agent.Objective{Kind: agent.KindTalk, X: 5, Y: 2}
+	want := Objective{Kind: KindTalk, X: 5, Y: 2}
 	found := false
 	for _, objective := range got {
 		if objective == want {
@@ -652,14 +650,14 @@ func TestOfferDoesNotRepeatCompletedTalk(t *testing.T) {
 }
 
 func TestOfferTrainingTargetTracksTheLead(t *testing.T) {
-	known := agent.NewKnowledge(nil)
-	obs := agent.Observation{
+	known := NewKnowledge(nil)
+	obs := Observation{GameID: testGameID,
 		Map: 0x0c, HasGrass: true, PartyCount: 1,
-		Party: []agent.PartyMon{{Level: 11, HP: 20, MaxHP: 20}},
+		Party: []PartyMon{{Level: 11, HP: 20, MaxHP: 20}},
 	}
-	trainTarget := func(obs agent.Observation) (uint8, bool) {
-		for _, objective := range agent.Offer(obs, known) {
-			if objective.Kind == agent.KindTrain {
+	trainTarget := func(obs Observation) (uint8, bool) {
+		for _, objective := range Offer(obs, known) {
+			if objective.Kind == KindTrain {
 				return objective.Level, true
 			}
 		}
@@ -667,7 +665,7 @@ func TestOfferTrainingTargetTracksTheLead(t *testing.T) {
 	}
 
 	for _, tc := range []struct{ lead, want uint8 }{{5, 7}, {11, 13}, {12, 14}, {40, 42}} {
-		obs.Party = []agent.PartyMon{{Level: tc.lead, HP: 20, MaxHP: 20}}
+		obs.Party = []PartyMon{{Level: tc.lead, HP: 20, MaxHP: 20}}
 		got, ok := trainTarget(obs)
 		if !ok {
 			t.Fatalf("lead level %d: training not offered", tc.lead)
@@ -677,7 +675,7 @@ func TestOfferTrainingTargetTracksTheLead(t *testing.T) {
 		}
 	}
 
-	obs.Party = []agent.PartyMon{{Level: 100, HP: 20, MaxHP: 20}}
+	obs.Party = []PartyMon{{Level: 100, HP: 20, MaxHP: 20}}
 	if got, ok := trainTarget(obs); ok {
 		t.Errorf("training offered at level %d for a level-100 lead; there is no rung above it", got)
 	}
@@ -688,16 +686,16 @@ func TestOfferTrainingTargetTracksTheLead(t *testing.T) {
 }
 
 func TestOfferWithholdsTrainBelowRetreatLine(t *testing.T) {
-	known := agent.NewKnowledge(nil)
-	mk := func(hp, maxHP uint16) agent.Observation {
-		return agent.Observation{
+	known := NewKnowledge(nil)
+	mk := func(hp, maxHP uint16) Observation {
+		return Observation{GameID: testGameID,
 			Map: 0x0c, MapName: "ROUTE_1", HasGrass: true, PartyCount: 1,
-			Party: []agent.PartyMon{{Level: 5, HP: hp, MaxHP: maxHP}},
+			Party: []PartyMon{{Level: 5, HP: hp, MaxHP: maxHP}},
 		}
 	}
-	menu := func(obs agent.Observation) (train, others int) {
-		for _, o := range agent.Offer(obs, known) {
-			if o.Kind == agent.KindTrain {
+	menu := func(obs Observation) (train, others int) {
+		for _, o := range Offer(obs, known) {
+			if o.Kind == KindTrain {
 				train++
 			} else {
 				others++
@@ -730,20 +728,20 @@ func TestOfferWithholdsTrainBelowRetreatLine(t *testing.T) {
 }
 
 func TestOfferGymIsNotPewterOnly(t *testing.T) {
-	gymObjective := func(obs agent.Observation) bool {
-		known := agent.NewKnowledge(nil)
+	gymObjective := func(obs Observation) bool {
+		known := NewKnowledge(nil)
 		known.SawMap(obs.Map)
-		for _, o := range agent.Offer(obs, known) {
-			if o.Kind == agent.KindGym {
+		for _, o := range Offer(obs, known) {
+			if o.Kind == KindGym {
 				return true
 			}
 		}
 		return false
 	}
 
-	cerulean := agent.Observation{
+	cerulean := Observation{GameID: testGameID,
 		Map: 0x41, MapName: "CERULEAN_GYM", X: 4, Y: 3, PartyCount: 1,
-		Party:  []agent.PartyMon{{Level: 20, HP: 40, MaxHP: 40}},
+		Party:  []PartyMon{{Level: 20, HP: 40, MaxHP: 40}},
 		Badges: []string{"Boulder"},
 	}
 	if !gymObjective(cerulean) {
@@ -760,21 +758,21 @@ func TestOfferGymIsNotPewterOnly(t *testing.T) {
 		t.Error("gym not offered in Pewter without the badge")
 	}
 
-	pewter.Party = []agent.PartyMon{{Level: 5, HP: 2, MaxHP: 20}}
+	pewter.Party = []PartyMon{{Level: 5, HP: 2, MaxHP: 20}}
 	if !gymObjective(pewter) {
 		t.Error("gym withheld from an underlevelled party; Offer must not filter on wisdom")
 	}
 }
 
 func TestOfferWithholdsTrainBelowTheRetreatLine(t *testing.T) {
-	known := agent.NewKnowledge(map[uint8][]uint8{})
+	known := testKnowledge(map[uint8][]uint8{})
 	offersTrain := func(hp, maxHP uint16) bool {
-		obs := agent.Observation{
+		obs := Observation{GameID: testGameID,
 			Map: 0x0c, HasGrass: true, PartyCount: 1,
-			Party: []agent.PartyMon{{Level: 11, HP: hp, MaxHP: maxHP}},
+			Party: []PartyMon{{Level: 11, HP: hp, MaxHP: maxHP}},
 		}
-		for _, o := range agent.Offer(obs, known) {
-			if o.Kind == agent.KindTrain {
+		for _, o := range Offer(obs, known) {
+			if o.Kind == KindTrain {
 				return true
 			}
 		}
@@ -797,29 +795,29 @@ func TestOfferWithholdsTrainBelowTheRetreatLine(t *testing.T) {
 }
 
 func TestOfferDoesNotCatchSpeciesAlreadyOwnedInPokedex(t *testing.T) {
-	known := agent.NewKnowledge(nil)
-	obs := agent.Observation{
+	known := NewKnowledge(nil)
+	obs := Observation{GameID: testGameID,
 		Map:        0x0c,
 		MapName:    "ROUTE_1",
 		HasGrass:   true,
 		PartyCount: 1,
-		Party:      []agent.PartyMon{{Species: agent.SpeciesID("charmander"), Level: 8, HP: 20, MaxHP: 20}},
-		Bag:        []agent.Item{{Name: "pokeball", Quantity: 5}},
-		WildGrass: []agent.WildSpecies{
+		Party:      []PartyMon{{Species: SpeciesID("charmander"), Level: 8, HP: 20, MaxHP: 20}},
+		Bag:        []Item{{Name: "pokeball", Quantity: 5}},
+		WildGrass: []WildSpecies{
 			{Name: "pidgey", MinLevel: 2, MaxLevel: 5, Slots: 6},
 			{Name: "rattata", MinLevel: 2, MaxLevel: 4, Slots: 4},
 		},
-		PokedexOwned: []agent.SpeciesID{"pidgey"},
+		PokedexOwned: []SpeciesID{"pidgey"},
 	}
-	got := agent.Offer(obs, known)
+	got := Offer(obs, known)
 	for _, o := range got {
-		if o.Kind == agent.KindCatch && o.Species == "pidgey" {
+		if o.Kind == KindCatch && o.Species == "pidgey" {
 			t.Fatalf("offered catch of dex-owned pidgey: %+v", got)
 		}
 	}
 	foundRattata := false
 	for _, o := range got {
-		if o.Kind == agent.KindCatch && o.Species == "rattata" {
+		if o.Kind == KindCatch && o.Species == "rattata" {
 			foundRattata = true
 		}
 	}
