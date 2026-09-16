@@ -246,7 +246,7 @@ onBeforeUnmount(() => window.removeEventListener('popstate', syncPath))
 
       <div v-if="state === 'loading' && !snapshot" class="empty-state">Loading public replays…</div>
       <div v-else-if="error && !snapshot" class="empty-state error-state">
-        Replay library is temporarily unavailable.<br><small>{{ error.message }}</small>
+        Replay library is temporarily unavailable.<br><small>{{ error }}</small>
       </div>
       <div v-else-if="filteredReplays.length === 0" class="empty-state">
         No public replays match these filters.
