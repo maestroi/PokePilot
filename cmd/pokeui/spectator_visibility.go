@@ -75,8 +75,7 @@ func (c *spectatorControlCache) get(ctx context.Context) (wallSpectatorControl, 
 func spectatorVisibilityHTTPHandler(wallBase string, next http.Handler) http.Handler {
 	cache := newSpectatorControlCache(wallBase)
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
-		protected := req.Method == http.MethodGet && (
-			req.URL.Path == "/v1/watch" ||
+		protected := req.Method == http.MethodGet && (req.URL.Path == "/v1/watch" ||
 			req.URL.Path == "/frame" ||
 			strings.HasPrefix(req.URL.Path, "/v1/watch/runs/"))
 		if !protected {
@@ -177,12 +176,12 @@ func serveControlledSpectatorSnapshot(res http.ResponseWriter, req *http.Request
 		}
 		filtered = append(filtered, raw)
 		switch meta.Status {
+		case "running", "leased":
+			summary.Live++
 		case "queued":
 			summary.Queued++
 		case "done":
 			summary.Completed++
-		default:
-			summary.Live++
 		}
 	}
 
