@@ -63,6 +63,7 @@ export interface SpectatorRun {
   reason?: string
   replay_ready?: boolean
   highlight?: string
+  featured?: boolean
 }
 
 export interface SpectatorSummary {
@@ -75,4 +76,5 @@ export interface SpectatorSnapshot {
   now: number
   runs: SpectatorRun[]
   summary: SpectatorSummary
+  featured_run_id?: string
 }
