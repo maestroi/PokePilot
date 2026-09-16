@@ -186,6 +186,24 @@ func (cp *controlPlane) spectatorControlSnapshot(ctx context.Context) (spectator
 
 func (w *Wall) patchSpectatorRunControl(ctx context.Context, runID string, patch spectatorRunControlPatch) (spectatorRunControlResult, error) {
 	if cp := controlPlaneFor(w); cp != nil {
+		result, err := cp.patchSpectatorRunControl(ctx, runID, patch)
+		if !errors.Is(err, sql.ErrNoRows) {
+			return result, err
+		}
+
+		// Active runs can become visible in the operator dashboard a fraction of
+		// a second before the periodic PostgreSQL catalog sweep. Sync immediately
+		// so an operator can hide/feature a newly queued run without a transient
+		// 404 from the spectator-control endpoint.
+		w.mu.Lock()
+		_, active := w.tiles[runID]
+		w.mu.Unlock()
+		if !active {
+			return result, err
+		}
+		if syncErr := w.syncCatalogFromRAM(false); syncErr != nil {
+			return spectatorRunControlResult{}, fmt.Errorf("sync run before spectator update: %w", syncErr)
+		}
 		return cp.patchSpectatorRunControl(ctx, runID, patch)
 	}
 
