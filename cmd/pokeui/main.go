@@ -175,6 +175,13 @@ func handlerWithServices(wallBase, replayBase, token string) http.Handler {
 		res.Header().Set("Cache-Control", "no-store")
 		json.NewEncoder(res).Encode(map[string]string{"version": version}) //nolint:errcheck
 	})
+	mux.HandleFunc("GET /v1/ui-config", func(res http.ResponseWriter, req *http.Request) {
+		res.Header().Set("Content-Type", "application/json")
+		res.Header().Set("Cache-Control", "no-store")
+		json.NewEncoder(res).Encode(map[string]string{
+			"spectator_url": strings.TrimRight(strings.TrimSpace(os.Getenv("POKEPILOT_SPECTATOR_URL")), "/"),
+		}) //nolint:errcheck
+	})
 	mux.HandleFunc("GET /v1/dashboard", proxy(wallBase, true))
 	mux.HandleFunc("GET /v1/stats", outcomesStatsHandler(wallBase))
 	mux.HandleFunc("GET /v1/triage", proxy(wallBase, true))
@@ -183,6 +190,8 @@ func handlerWithServices(wallBase, replayBase, token string) http.Handler {
 	mux.HandleFunc("GET /v1/experiments", proxy(wallBase, true))
 	mux.HandleFunc("GET /v1/experiments/{id}", proxy(wallBase, true))
 	mux.HandleFunc("POST /v1/experiments", proxy(wallBase, false))
+	mux.HandleFunc("GET /v1/spectator/control", proxy(wallBase, true))
+	mux.HandleFunc("PATCH /v1/runs/{id}/spectator", proxy(wallBase, false))
 	mux.HandleFunc("POST /v1/specs", proxy(wallBase, false))
 	mux.HandleFunc("POST /v1/triage/{key}/investigate", proxy(wallBase, false))
 	mux.HandleFunc("POST /v1/runs/{id}/cancel", proxy(wallBase, false))
@@ -279,7 +288,8 @@ func main() {
 	mcpToken := strings.TrimSpace(os.Getenv("POKEPILOT_MCP_TOKEN"))
 	var httpHandler http.Handler
 	if *spectator {
-		httpHandler = spectatorSecurityHeaders(withVuePreview(spectatorHandlerWithReplay(wallBase, replayBase), "spectator"))
+		publicHandler := spectatorVisibilityHTTPHandler(wallBase, spectatorHandlerWithReplay(wallBase, replayBase))
+		httpHandler = spectatorSecurityHeaders(withVuePreview(publicHandler, "spectator"))
 		log.Printf("pokeui proxying %s on http://%s (public spectator mode; read-only; replay=%t)", *wall, *httpAddr, replayBase != "")
 	} else {
 		httpHandler = withVuePreview(handlerWithServices(wallBase, replayBase, mcpToken), "operator")
