@@ -8,13 +8,15 @@ import (
 )
 
 // ObjectiveKey is the canonical semantic identity of an objective. It includes
-// every field that can change execution semantics and deliberately excludes
-// presentation-only Note text. Intent is included because several adapter
-// objectives (for example dex evolution/static acquisition) use it to select a
-// different deterministic execution path.
+// every field that can change execution semantics or durable local identity and
+// deliberately excludes presentation-only Note text. Location scopes
+// coordinate-local interactions without leaking a native map ID. Intent is
+// included because several adapter objectives (for example dex evolution/static
+// acquisition) use it to select a different deterministic execution path.
 type ObjectiveKey struct {
 	Kind     Kind       `json:"kind"`
 	Place    PlaceID    `json:"place,omitempty"`
+	Location LocationID `json:"location,omitempty"`
 	X        uint8      `json:"x,omitempty"`
 	Y        uint8      `json:"y,omitempty"`
 	Starter  uint8      `json:"starter,omitempty"`
@@ -32,6 +34,7 @@ func (o Objective) Key() ObjectiveKey {
 	return ObjectiveKey{
 		Kind:     o.Kind,
 		Place:    o.Place,
+		Location: o.Location,
 		X:        o.X,
 		Y:        o.Y,
 		Starter:  uint8(o.Starter),
@@ -50,6 +53,7 @@ func (k ObjectiveKey) Objective() Objective {
 	return Objective{
 		Kind:     k.Kind,
 		Place:    k.Place,
+		Location: k.Location,
 		X:        k.X,
 		Y:        k.Y,
 		Starter:  skill.Starter(k.Starter),
