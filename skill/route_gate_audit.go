@@ -42,6 +42,14 @@ func addAuditedRedRouteCapabilities(mem *state.Mem, caps gameruntime.CapabilityS
 	if _, count := bagEntry(mem, bicycleItem); count > 0 {
 		caps[capCanRideCyclingRoad] = true
 	}
+	// A completed Snorlax encounter is durable proof that this save already
+	// acquired the Poké Flute. Resume/checkpoint reconstruction can lose the
+	// derived inventory story fact while retaining event flags; without this
+	// recovery the semantic router rejects Route 12 <-> Route 13, then tries
+	// the unrelated Cycling Road escape and reports a missing Bicycle.
+	if state.HasEvent(mem, eventBeatRoute12Snorlax) || state.HasEvent(mem, eventBeatRoute16Snorlax) {
+		caps[capCanClearSnorlax] = true
+	}
 }
 
 func redAuditedRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, bool) {
