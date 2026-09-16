@@ -53,6 +53,7 @@ func stopFarmRecording(runID string, recorder *emu.SessionRecording) []byte {
 	if recorder == nil {
 		return nil
 	}
+	captureMediaTimelineRecordingStart(runID, recorder.StartFrame())
 	data, err := recorder.Stop()
 	if err != nil {
 		// Recording is diagnostic evidence. Losing it must never change the
@@ -194,6 +195,17 @@ func finishRunWithRecording(m *emu.Emu, client *farm.Client, spec farm.Spec, rea
 		}
 	}
 	appendFailureReproArtifacts(&report, failures)
+
+	if timelineArtifact, err := drainMediaTimelineArtifact(spec, reason, m.FrameCount(), report.Artifacts); err != nil {
+		log.Printf("farm: %s: media timeline telemetry: %v", report.RunID, err)
+	} else if timelineArtifact.Name != "" {
+		candidate := append(append([]farm.Artifact(nil), report.Artifacts...), timelineArtifact)
+		if err := farm.ValidateFinishArtifacts(farm.FinishReport{Artifacts: candidate, SeedBurn: report.SeedBurn}); err != nil {
+			log.Printf("farm: %s: omit %s: %v", report.RunID, timelineArtifact.Name, err)
+		} else {
+			report.Artifacts = candidate
+		}
+	}
 
 	if len(recording) > 0 {
 		remote, configured, uploadErr := uploadFarmRecording(spec, recording)
