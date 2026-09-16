@@ -130,16 +130,29 @@ func (cp *controlPlane) persistStrategicRecordsTx(tx *sql.Tx, w *Wall, runID str
 }
 
 // controlPlaneHTTPHandler holds successful mutations until their PostgreSQL
-// writes complete. Heartbeats intentionally stay on the periodic sweep so the
-// database does not enter the frame/telemetry hot path.
+// writes complete. Heartbeats persist only the compact recovery snapshot; once
+// a run is already marked running, heartbeat-only telemetry hashes identically
+// and persistWall returns without issuing a database transaction.
 func (w *Wall) controlPlaneHTTPHandler(next http.Handler) http.Handler {
 	cp := controlPlaneFor(w)
 	if cp == nil {
 		return next
 	}
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
-		if req.Method == http.MethodGet || req.URL.Path == "/v1/workers" || strings.HasSuffix(req.URL.Path, "/heartbeat") {
+		if req.Method == http.MethodGet || req.URL.Path == "/v1/workers" {
 			next.ServeHTTP(res, req)
+			return
+		}
+		if strings.HasSuffix(req.URL.Path, "/heartbeat") {
+			buffered := newCatalogBufferedWriter()
+			next.ServeHTTP(buffered, req)
+			if buffered.status >= 200 && buffered.status < 300 {
+				if err := cp.persistWall(w); err != nil {
+					writeJSON(res, http.StatusInternalServerError, map[string]string{"error": "persist control plane: " + err.Error()})
+					return
+				}
+			}
+			buffered.flush(res)
 			return
 		}
 		var finish *farm.FinishReport
