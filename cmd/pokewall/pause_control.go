@@ -297,9 +297,10 @@ func (w *Wall) maybeAutoPauseRepeatedFailure(id string, before pauseFinishSnapsh
 	isErrorRetry := t.ErrorAttempts > before.row.ErrorAttempts && t.Status == statusQueued && !t.Finished
 	detail, ok := retryFailureDetail(t.Detail)
 	attempts := t.Attempts
+	terminalDone := t.Finished && t.Status == statusDone
 	w.mu.Unlock()
 	if !isErrorRetry || !ok {
-		if t != nil && t.Finished && t.Status == statusDone {
+		if terminalDone {
 			clearFailureStreak(w, id)
 		}
 		return false
@@ -318,9 +319,9 @@ func (w *Wall) maybeAutoPauseRepeatedFailure(id string, before pauseFinishSnapsh
 	}
 	w.queue = removeID(w.queue, id)
 	t.Status = statusPaused
-	// Paused is a settled generation, so Finished stays true until Resume. This
-	// keeps the stale-run reaper from converting an intentionally paused run
-	// into a worker-loss retry, while the public status remains "paused".
+	// Paused is a settled generation, so Finished becomes true until Resume.
+	// This keeps the stale-run reaper from converting an intentionally paused
+	// run into a worker-loss retry while the public status remains "paused".
 	t.Finished = true
 	t.EndedAt = now
 	t.Reason = "error"
