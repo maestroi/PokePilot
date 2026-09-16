@@ -58,6 +58,18 @@ type Transition struct {
 	// adjacent to the near side, which is how a story flag turns into a
 	// route through a wall.
 	Gate bool `json:"gate,omitempty"`
+
+	// PivotOnly marks a semantic action whose capability is needed only when
+	// routing must ignore the immutable walking component around this edge.
+	// The underlying map edge remains ordinary geometry: if its port is
+	// already reachable from the player's current component, routing may use
+	// the edge without the capability and without executing this transition.
+	//
+	// This is intentionally narrower than a normal action. A missing Cut/Surf
+	// capability that actually creates the edge still blocks it completely;
+	// PivotOnly is for proxy transitions such as Route 9's tree, where the
+	// obstacle lives inside the adjacent map rather than on the connection.
+	PivotOnly bool `json:"pivot_only,omitempty"`
 }
 
 // TransitionBlockage is structured evidence that a known transition exists
