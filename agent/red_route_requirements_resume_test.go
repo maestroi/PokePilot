@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/maestroi/pokepilot/skill"
@@ -8,7 +9,7 @@ import (
 
 func TestRedRouteRequirementsResumeBeyondSnorlaxDoesNotReblockExit(t *testing.T) {
 	for _, currentMap := range []uint8{route13Map, route14Map, route15Map, fuchsiaCityMap} {
-		t.Run(skill.MapName(currentMap), func(t *testing.T) {
+		t.Run(fmt.Sprintf("map_%02x", currentMap), func(t *testing.T) {
 			blockages := redRouteRequirements(Observation{Map: currentMap})
 			for _, mapID := range []uint8{route12Map, route13Map, route14Map, route15Map, fuchsiaCityMap} {
 				if routeRequirementsBlockMap(blockages, mapID) {
