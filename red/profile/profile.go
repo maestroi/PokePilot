@@ -25,6 +25,7 @@ const (
 	ProgressPokedexAcquired            game.ProgressID = "pokedex_acquired"
 	ProgressSSTicketAcquired           game.ProgressID = "ss_ticket_acquired"
 	ProgressHM01Acquired               game.ProgressID = "hm01_acquired"
+	ProgressBicycleAcquired            game.ProgressID = "bicycle_acquired"
 	ProgressThunderBadge               game.ProgressID = "thunder_badge"
 	ProgressPostSurgeLavenderReached   game.ProgressID = "post_surge_lavender_reached"
 	ProgressPostSurgeCeladonReady      game.ProgressID = "post_surge_celadon_ready"
@@ -239,6 +240,7 @@ func ProjectStoryFacts(facts state.StoryFacts) game.ProgressState {
 		{ID: ProgressPokedexAcquired, Complete: facts.PokedexAcquired},
 		{ID: ProgressSSTicketAcquired, Complete: facts.SSTicketAcquired},
 		{ID: ProgressHM01Acquired, Complete: facts.HM01Acquired},
+		{ID: ProgressBicycleAcquired, Complete: facts.BicycleAcquired},
 		{ID: ProgressSilphScopeAcquired, Complete: facts.SilphScopeAcquired},
 		{ID: ProgressPokeFluteAcquired, Complete: facts.PokeFluteAcquired},
 		{ID: ProgressFuchsiaProgressionComplete, Complete: facts.FuchsiaProgressionComplete},

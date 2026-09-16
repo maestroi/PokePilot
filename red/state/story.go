@@ -14,6 +14,7 @@ const (
 	elite4CompletedMask uint8  = 1 << 0
 
 	// Item ids from pokered/constants/item_constants.asm.
+	bicycleItemID    uint8 = 0x06
 	secretKeyItemID  uint8 = 0x2b
 	cardKeyItemID    uint8 = 0x30
 	ssTicketItemID   uint8 = 0x3f
@@ -58,6 +59,7 @@ type StoryFacts struct {
 	PokedexAcquired            bool
 	SSTicketAcquired           bool
 	HM01Acquired               bool
+	BicycleAcquired            bool
 	SilphScopeAcquired         bool
 	PokeFluteAcquired          bool
 	FuchsiaProgressionComplete bool
@@ -104,6 +106,7 @@ func DecodeStoryFacts(m *Mem, inv InventoryState) StoryFacts {
 		PokedexAcquired:            HasEvent(m, EventGotPokedex),
 		SSTicketAcquired:           inventoryHasItem(inv, ssTicketItemID),
 		HM01Acquired:               inventoryHasItem(inv, hm01ItemID),
+		BicycleAcquired:            inventoryHasItem(inv, bicycleItemID),
 		SilphScopeAcquired:         inventoryHasItem(inv, silphScopeItemID),
 		PokeFluteAcquired:          inventoryHasItem(inv, pokeFluteItemID),
 		FuchsiaProgressionComplete: progress.Has(BadgeSoul) && inventoryHasItem(inv, hm03ItemID) && inventoryHasItem(inv, hm04ItemID),
