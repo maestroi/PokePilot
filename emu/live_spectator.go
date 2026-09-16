@@ -101,6 +101,19 @@ func (q *liveFrameQueue) next() (liveFrame, bool) {
 	return liveFrame{}, false
 }
 
+func (q *liveFrameQueue) latest() (liveFrame, bool) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	if n := len(q.frames); n > 0 {
+		return q.frames[n-1], true
+	}
+	if q.haveLast {
+		return q.last, true
+	}
+	return liveFrame{}, false
+}
+
 type liveSpectator struct {
 	queue *liveFrameQueue
 
@@ -151,7 +164,19 @@ func (s *liveSpectator) Handler() http.Handler {
 			http.NotFound(w, r)
 			return
 		}
-		frame, ok := s.queue.next()
+
+		var (
+			frame liveFrame
+			ok    bool
+		)
+		if r.URL.Query().Get("buffered") == "1" {
+			frame, ok = s.queue.next()
+		} else {
+			// Keep the original /frame.png contract for finish snapshots and
+			// other point reads: callers that do not opt into playback always
+			// get the newest image, never a queued historical frame.
+			frame, ok = s.queue.latest()
+		}
 		if !ok {
 			http.Error(w, "no frame captured yet", http.StatusServiceUnavailable)
 			return
