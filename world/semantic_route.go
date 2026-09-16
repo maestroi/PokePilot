@@ -108,6 +108,7 @@ func (e *RouteBlockedError) MissingCapabilities() []gameruntime.CapabilityID {
 				seen[id] = true
 				out = append(out, id)
 			}
+		}
 	}
 	return out
 }
