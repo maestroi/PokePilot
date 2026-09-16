@@ -254,6 +254,25 @@ type WorkerPing struct {
 	Version string   `json:"version,omitempty"`
 }
 
+// Coverage is the persisted, game-agnostic breadth summary for a run. It is
+// intentionally nested under Progress so older runners/walls can ignore it
+// while Completionist analytics can compare coverage directly.
+type Coverage struct {
+	UniqueMapsVisited     int `json:"unique_maps_visited,omitempty"`
+	TrainersDefeated      int `json:"trainers_defeated,omitempty"`
+	NPCInteractions       int `json:"npc_interactions,omitempty"`
+	UniqueItemsAcquired   int `json:"unique_items_acquired,omitempty"`
+	UniqueItemsUsed       int `json:"unique_items_used,omitempty"`
+	DexOwned              int `json:"dex_owned,omitempty"`
+	DexSeen               int `json:"dex_seen,omitempty"`
+	OptionalMilestones    int `json:"optional_milestones,omitempty"`
+	TMsHMsAcquired        int `json:"tms_hms_acquired,omitempty"`
+	TMsHMsUsed            int `json:"tms_hms_used,omitempty"`
+	Evolutions            int `json:"evolutions,omitempty"`
+	Catches               int `json:"catches,omitempty"`
+	UniqueSpeciesAcquired int `json:"unique_species_acquired,omitempty"`
+}
+
 // Progress is one snapshot of how far a run has gotten, at one point in
 // it: badges held, story event flags set, distinct maps the player has
 // stood on, and the map the player stands on. The runner decodes these
@@ -271,8 +290,9 @@ type Progress struct {
 	Maps int `json:"maps"`
 	// Map is where the player stands at the sample; MapName is its name
 	// when the ROM names it.
-	Map     uint8  `json:"map"`
-	MapName string `json:"map_name,omitempty"`
+	Map      uint8     `json:"map"`
+	MapName  string    `json:"map_name,omitempty"`
+	Coverage *Coverage `json:"coverage,omitempty"`
 }
 
 // FinishReport is why a run ended, sent once when it stops.
