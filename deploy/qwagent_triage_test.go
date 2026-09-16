@@ -102,6 +102,7 @@ func TestPromptLoadsNativeTriageSkill(t *testing.T) {
 	s := string(body)
 	for _, want := range []string{
 		"[triage:<key>]",
+		"[farm-issue:<issue_number>]",
 		"make test-short",
 		"Do not call pokepilot_get_triage",
 		"native OpenCode skill `pokefarm-triage`",
