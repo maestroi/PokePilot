@@ -10,9 +10,10 @@ import FailuresView from './FailuresView.vue'
 import LiveView from './LiveView.vue'
 import OperationsView from './OperationsView.vue'
 import RunArchiveView from './RunArchiveView.vue'
+import SpectatorView from './SpectatorView.vue'
 import ToolsView from './ToolsView.vue'
 
-const views = ['live', 'runs', 'failures', 'analytics', 'operations', 'tools'] as const
+const views = ['live', 'runs', 'failures', 'analytics', 'operations', 'spectator', 'tools'] as const
 type OperatorView = typeof views[number]
 
 const labels: Record<OperatorView, string> = {
@@ -21,6 +22,7 @@ const labels: Record<OperatorView, string> = {
   failures: 'Failures',
   analytics: 'Analytics',
   operations: 'Operations',
+  spectator: 'Spectator',
   tools: 'Tools'
 }
 
@@ -30,6 +32,7 @@ const descriptions: Record<OperatorView, string> = {
   failures: 'Group, inspect, investigate, and delete finished runs for a specific failure — including issues that are already solved.',
   analytics: 'Farm outcomes, badge progress, LLM workload, and endless-run experiments.',
   operations: 'Fleet health, workers, LLM deployments, paired experiments, and recent outcomes.',
+  spectator: 'Choose which runs are public, feature one as the default audience view, or open a run directly in spectator mode.',
   tools: 'Queue a new scripted or goal-driven run.'
 }
 
@@ -39,6 +42,7 @@ const eyebrows: Record<OperatorView, string> = {
   failures: 'Triage',
   analytics: 'Telemetry',
   operations: 'System',
+  spectator: 'Audience',
   tools: 'Control'
 }
 
@@ -146,6 +150,7 @@ onUnmounted(() => window.removeEventListener('hashchange', syncHash))
     <FailuresView v-else-if="activeView === 'failures'" />
     <AnalyticsView v-else-if="activeView === 'analytics'" />
     <OperationsView v-else-if="activeView === 'operations'" />
+    <SpectatorView v-else-if="activeView === 'spectator'" />
     <ToolsView v-else-if="activeView === 'tools'" />
   </AppShell>
 </template>
