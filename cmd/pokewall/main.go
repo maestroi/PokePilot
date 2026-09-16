@@ -68,6 +68,9 @@ func main() {
 			log.Fatalf("pokewall: open PostgreSQL control plane: %v", err)
 		}
 		if cp := controlPlaneFor(wall); cp != nil {
+			if err := cp.migrateSpectatorControl(); err != nil {
+				log.Fatalf("pokewall: migrate spectator controls: %v", err)
+			}
 			if err := cp.migrateCheckpointArtifacts(); err != nil {
 				log.Fatalf("pokewall: migrate PostgreSQL checkpoint storage: %v", err)
 			}
@@ -142,6 +145,7 @@ func main() {
 	if postgresMode {
 		handler = wall.controlPlaneCheckpointHTTPHandler(wall.controlPlaneHTTPHandler(handler))
 	}
+	handler = spectatorControlHTTPHandler(wall, handler)
 	server := &http.Server{
 		Addr:              *httpAddr,
 		Handler:           handler,
