@@ -16,7 +16,7 @@ type Emu struct {
 	semanticROM []byte
 
 	// Set by Watch. Nil unless a human is watching; see emu/watch.go.
-	spec        *gomeboy.Spectator
+	spec        frameSpectator
 	specEvery   int
 	lastCapture uint64
 
