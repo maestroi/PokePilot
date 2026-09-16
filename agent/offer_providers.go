@@ -304,16 +304,16 @@ func (explorationObjectiveProvider) Provide(ctx *objectiveOfferContext) objectiv
 		switch object.Kind {
 		case CatalogInteractablePerson:
 			if !known.Talked[ctx.currentLocation][[2]uint8{object.X, object.Y}] {
-				out = append(out, Objective{Kind: KindTalk, X: object.X, Y: object.Y})
+				out = append(out, Objective{Kind: KindTalk, Location: ctx.currentLocation, X: object.X, Y: object.Y})
 			}
 		case CatalogInteractableTrainer:
-			challenge := Objective{Kind: KindTrainer, X: object.X, Y: object.Y}
+			challenge := Objective{Kind: KindTrainer, Location: ctx.currentLocation, X: object.X, Y: object.Y}
 			if object.Challengeable && !object.Defeated && known.completionCount(challenge) == 0 {
 				out = append(out, challenge)
 			}
 		case CatalogInteractableItem:
 			if object.Item != "" {
-				out = append(out, Objective{Kind: KindPickup, X: object.X, Y: object.Y, Item: object.Item})
+				out = append(out, Objective{Kind: KindPickup, Location: ctx.currentLocation, X: object.X, Y: object.Y, Item: object.Item})
 			}
 		}
 	}
