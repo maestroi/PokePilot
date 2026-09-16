@@ -8,9 +8,11 @@ OpenCode discovers it from `.claude/skills/pokefarm-triage/SKILL.md`. If the
 skill tool is unavailable, read that file directly instead. Then read and
 follow `docs/ARCHITECTURE.md`.
 
-The packet JSON is attached. Use its `key`, `run_id`, and `example`. The shell
-has already applied the local PokéWall + GitHub claim/repair/regression state
-machine; do not second-guess queue eligibility from stale Orchestrator status.
+The packet JSON is attached. Use its `key`, `run_id`, and `example`. When
+`issue_number` is present, it is the generated GitHub farm issue linked to this
+failure group. The shell has already applied the local PokéWall + GitHub
+claim/repair/regression state machine; do not second-guess queue eligibility
+from stale Orchestrator status.
 
 Do:
 
@@ -26,7 +28,9 @@ Do:
 9. `git push -u origin HEAD`
 10. `gh pr create` with title
     `fix(farm): <short symptom> [triage:<key>]`
-    Body: run id, fingerprint, what you reproduced, what you changed.
+    Body: run id, fingerprint, what you reproduced, what you changed. If the
+    packet contains `issue_number`, also include `[farm-issue:<issue_number>]`
+    in the body so the merge lifecycle closes that exact generated farm issue.
 
 Do not:
 
