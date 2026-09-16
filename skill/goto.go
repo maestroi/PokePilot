@@ -23,11 +23,17 @@ type Destination struct {
 // never fights or flees; it aborts and reports the battle.
 var ErrBattle = errors.New("skill: battle interrupted the route")
 
-// ErrReplanExhausted reports that GoTo spent its whole re-plan budget and
-// gave up. It is a terminal give-up, not a recoverable single-leg failure:
-// it wraps the last failed leg's error (usually ErrLegUnwalkable) so a
-// caller still sees WHY the last attempt died, but errors.Is on
-// ErrReplanExhausted is the unambiguous "stop retrying" signal.
+// ErrReplanExhausted reports that GoTo gave up on this call's route search:
+// either it spent its whole re-plan budget, or a RouteBlockedError arrived
+// right after this same call had already banned a leg for ErrLegUnwalkable,
+// which means the router was forced off a transiently obstructed leg and the
+// reported capability gate belongs to whatever unrelated detour it fell back
+// to, not to a real prerequisite. Either way it is a terminal give-up, not a
+// recoverable single-leg failure: it wraps the last failed leg's error (a
+// RouteBlockedError or, usually, ErrLegUnwalkable) so a caller still sees WHY
+// the last attempt died, but errors.Is on ErrReplanExhausted is the
+// unambiguous "stop retrying, and let the ordinary per-objective quarantine
+// expire on movement rather than waiting on a capability" signal.
 var ErrReplanExhausted = errors.New("skill: route re-plan budget exhausted")
 
 // ErrNavigationStalled reports that GoTo is cycling through an already-seen
@@ -266,6 +272,26 @@ func newReplanExhaustedError(max int, cur, x, y uint8, dest Destination, last er
 		ErrReplanExhausted, max, cur, x, y, dest.Map, dest.X, dest.Y, last)
 }
 
+// routeFailureIsSpuriousCapabilityGate reports whether a route-search error
+// is untrustworthy prerequisite evidence: a *world.RouteBlockedError arriving
+// after this same GoTo call already banned a leg for ErrLegUnwalkable means
+// the router was forced off a transiently obstructed leg (e.g. a live sprite
+// parked on a one-tile connection band) and is instead reporting whatever
+// unrelated capability-gated detour it fell back to. MEASURED on Route 13
+// (run-t047j1rjrshy3ob28cwqwr7pn): a sprite adjacent to the player blocked
+// the only walkable Route 12/13 Snorlax crossing band, Traverse banned that
+// one leg after a single failed attempt, and the very next replan reported
+// the unrelated, distant Cycling Road gate as "missing capabilities" without
+// ever exhausting maxReplans. The caller should route this through
+// ErrReplanExhausted too, so failureCauseFor's existing precedence (see
+// agent/red_failure_normalization.go) classifies it as route_replan_exhausted,
+// whose quarantine scope expires on ordinary movement instead of waiting
+// forever on a capability that was never actually the problem.
+func routeFailureIsSpuriousCapabilityGate(err error, bannedALegThisCall bool) bool {
+	var routeBlocked *world.RouteBlockedError
+	return bannedALegThisCall && errors.As(err, &routeBlocked)
+}
+
 // GoTo walks the player to dest, crossing maps as needed. The immutable graph
 // is built once, but every planning pass overlays the current map's live WRAM
 // block geometry before component routing. After every leg the current map and
@@ -410,6 +436,9 @@ func goToWithTransitionExecutor(m *emu.Emu, romData []byte, dest Destination, ex
 			route, err = retry, retryErr
 		}
 		if err != nil {
+			if routeFailureIsSpuriousCapabilityGate(err, len(failed) > 0) {
+				return newReplanExhaustedError(replans, cur, x, y, dest, err)
+			}
 			return fmt.Errorf("skill: GoTo: no route from map %02x at (%d,%d) to map %02x at (%d,%d): %w",
 				cur, x, y, dest.Map, dest.X, dest.Y, err)
 		}
