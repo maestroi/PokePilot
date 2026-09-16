@@ -5,46 +5,20 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
+	reddata "github.com/maestroi/pokepilot/red/data"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 )
 
 const (
-	staticMasterBall uint8 = 0x01
-	staticUltraBall  uint8 = 0x02
-	staticGreatBall  uint8 = 0x03
-	staticPokeBall   uint8 = 0x04
-
-	staticSnorlax     uint8 = 0x84
-	staticArticuno    uint8 = 0x4A
-	staticZapdos      uint8 = 0x4B
-	staticMoltres     uint8 = 0x49
-	staticMewtwo      uint8 = 0x83
-	staticRetryCount        = 6
-	staticBallBudget        = 12
-	staticStartBudget       = 1200
+	staticRetryCount  = 6
+	staticBallBudget  = 12
+	staticStartBudget = 1200
 )
 
-// StaticCaptureSite describes a one-time Red encounter. Place is an
-// interaction-owned standing tile; X/Y is the immutable ROM object home.
-type StaticCaptureSite struct {
-	Name        string
-	Place       string
-	Map         uint8
-	X, Y        uint8
-	StandX      uint8
-	StandY      uint8
-	Species     uint8
-	Requirement string
-}
-
-var staticCaptureSites = []StaticCaptureSite{
-	{Name: "Route 16 Snorlax", Place: "route 16 snorlax capture", Map: 0x1B, X: 26, Y: 10, StandX: 27, StandY: 10, Species: staticSnorlax, Requirement: "poke_flute"},
-	{Name: "Articuno", Place: "seafoam articuno", Map: 0xA2, X: 6, Y: 1, StandX: 6, StandY: 2, Species: staticArticuno},
-	{Name: "Zapdos", Place: "power plant zapdos", Map: 0x53, X: 4, Y: 9, StandX: 4, StandY: 10, Species: staticZapdos},
-	{Name: "Moltres", Place: "victory road moltres", Map: 0xC2, X: 11, Y: 5, StandX: 11, StandY: 6, Species: staticMoltres},
-	{Name: "Mewtwo", Place: "cerulean cave mewtwo", Map: 0xE3, X: 27, Y: 13, StandX: 27, StandY: 14, Species: staticMewtwo},
-}
+// StaticCaptureSite remains an alias for compatibility with existing skill
+// callers/tests, but the facts themselves are owned by the Red adapter data.
+type StaticCaptureSite = reddata.StaticCaptureSite
 
 var (
 	ErrStaticCaptureUnavailable = errors.New("skill: one-time static source unavailable or already consumed")
@@ -52,33 +26,27 @@ var (
 )
 
 func init() {
-	for _, site := range staticCaptureSites {
+	for _, site := range reddata.StaticCaptureSites() {
 		interactionPlaces[site.Place] = Destination{Map: site.Map, X: site.StandX, Y: site.StandY}
 	}
 }
 
-// StaticCaptureSites returns a copy for Red-owned planning/tests.
+// StaticCaptureSites is the compatibility surface for existing skill callers.
+// New Red-owned planning code should read red/data directly.
 func StaticCaptureSites() []StaticCaptureSite {
-	out := make([]StaticCaptureSite, len(staticCaptureSites))
-	copy(out, staticCaptureSites)
-	return out
+	return reddata.StaticCaptureSites()
 }
 
 func staticCaptureSite(species uint8) (StaticCaptureSite, bool) {
-	for _, site := range staticCaptureSites {
-		if site.Species == species {
-			return site, true
-		}
-	}
-	return StaticCaptureSite{}, false
+	return reddata.StaticCaptureSiteForSpecies(species)
 }
 
 func initiateStaticBattle(m *emu.Emu, romData []byte, site StaticCaptureSite, policy MovePolicy) error {
-	if site.Species == staticSnorlax {
+	if site.WakeItem != 0 {
 		var mem state.Mem
 		state.Snapshot(m, &mem)
-		if !bagHasItem(&mem, pokeFluteItemFuchsia) {
-			return fmt.Errorf("skill: static %s: POKE FLUTE is required", site.Name)
+		if !bagHasItem(&mem, site.WakeItem) {
+			return fmt.Errorf("skill: static %s: required item %q is not in the bag", site.Name, site.Requirement)
 		}
 		if state.HasEvent(&mem, eventBeatRoute16Snorlax) {
 			return fmt.Errorf("%w: %s event is already consumed", ErrStaticCaptureUnavailable, site.Name)
@@ -86,7 +54,7 @@ func initiateStaticBattle(m *emu.Emu, romData []byte, site StaticCaptureSite, po
 		if err := Face(m, site.X, site.Y); err != nil {
 			return fmt.Errorf("skill: static %s: face encounter: %w", site.Name, err)
 		}
-		if err := useOverworldKeyItem(m, pokeFluteItemFuchsia, func(mm *state.Mem) bool {
+		if err := useOverworldKeyItem(m, site.WakeItem, func(mm *state.Mem) bool {
 			return state.HasEvent(mm, eventFightRoute16Snorlax) || state.DecodeBattle(mm) != nil
 		}); err != nil {
 			return fmt.Errorf("%w: %s did not wake: %v", ErrStaticCaptureUnavailable, site.Name, err)
@@ -112,19 +80,11 @@ func initiateStaticBattle(m *emu.Emu, romData []byte, site StaticCaptureSite, po
 	return nil
 }
 
-func staticBall(mem *state.Mem, species uint8) (uint8, bool) {
-	// Mewtwo is the highest-value deterministic Master Ball target. Other
-	// statics preserve it while an ordinary ball remains available.
-	if species == staticMewtwo && bagHasItem(mem, staticMasterBall) {
-		return staticMasterBall, true
-	}
-	for _, item := range []uint8{staticUltraBall, staticGreatBall, staticPokeBall} {
+func staticBall(mem *state.Mem, site StaticCaptureSite) (uint8, bool) {
+	for _, item := range reddata.StaticCaptureBallOrder(site) {
 		if bagHasItem(mem, item) {
 			return item, true
 		}
-	}
-	if bagHasItem(mem, staticMasterBall) {
-		return staticMasterBall, true
 	}
 	return 0, false
 }
@@ -133,20 +93,20 @@ func staticBall(mem *state.Mem, species uint8) (uint8, bool) {
 // attacks after its ball budget is exhausted; the caller restores the
 // pre-encounter emulator checkpoint instead, so a one-time encounter cannot be
 // consumed by a failed bounded attempt.
-func catchStaticBattle(m *emu.Emu, romData []byte, species uint8, maxBalls int) (CatchResult, error) {
+func catchStaticBattle(m *emu.Emu, romData []byte, site StaticCaptureSite, maxBalls int) (CatchResult, error) {
 	var before state.Mem
 	state.Snapshot(m, &before)
 	partyBefore := int(state.DecodeParty(&before).Count)
 	boxBefore := int(state.DecodeBox(&before).Count)
 	ownedBefore := append([]uint8(nil), state.DecodePokedex(&before).Owned...)
-	want := []uint8{species}
+	want := []uint8{site.Species}
 	wantDex := wantedDexNumbers(romData, want)
 	res := CatchResult{Encounters: 1}
 
 	for res.BallsThrown < maxBalls && battleInFlight(m) {
 		var mem state.Mem
 		state.Snapshot(m, &mem)
-		ball, ok := staticBall(&mem, species)
+		ball, ok := staticBall(&mem, site)
 		if !ok {
 			res.Outcome = OutcomeOutOfBalls
 			return res, nil
@@ -227,7 +187,7 @@ func CaptureStatic(m *emu.Emu, romData []byte, species uint8, policy MovePolicy)
 			_ = m.LoadState(checkpoint)
 			return last, err
 		}
-		result, err := catchStaticBattle(m, romData, species, staticBallBudget)
+		result, err := catchStaticBattle(m, romData, site, staticBallBudget)
 		last = result
 		if err == nil && result.Outcome == OutcomeCaught {
 			return result, nil
