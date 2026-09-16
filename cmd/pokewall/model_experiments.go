@@ -696,22 +696,20 @@ type pairResult struct {
 }
 
 func (c *modelExperimentController) experimentView(record experimentRecord) map[string]any {
-	c.wall.mu.Lock()
-	tiles := map[string]Tile{}
+	rows := make(map[string]tileRow, len(record.RunIDs))
 	for _, id := range record.RunIDs {
-		if t := c.wall.tiles[id]; t != nil {
-			tiles[id] = *t
+		if row, ok := c.wall.snapshotRun(id); ok {
+			rows[id] = row
 		}
 	}
-	c.wall.mu.Unlock()
 	armA, armB := armAggregate{}, armAggregate{}
 	pairs := make([]pairResult, 0, len(record.Request.Seeds))
 	winsA, winsB, ties := 0, 0, 0
 	for _, seed := range record.Request.Seeds {
 		caseID := record.ID + "-seed-" + strconv.FormatInt(seed, 10)
 		idA, idB := caseID+"-a", caseID+"-b"
-		tA, okA := tiles[idA]
-		tB, okB := tiles[idB]
+		tA, okA := rows[idA]
+		tB, okB := rows[idB]
 		if okA {
 			accumulateArm(&armA, tA)
 		}
@@ -720,7 +718,7 @@ func (c *modelExperimentController) experimentView(record experimentRecord) map[
 		}
 		metaA, haveMetaA := c.runMeta(idA)
 		metaB, haveMetaB := c.runMeta(idB)
-		pair := pairResult{Seed: seed, StatusA: tA.Status, StatusB: tB.Status, SuccessA: tileBoulderSuccess(tA), SuccessB: tileBoulderSuccess(tB)}
+		pair := pairResult{Seed: seed, StatusA: tA.Status, StatusB: tB.Status, SuccessA: rowBoulderSuccess(tA), SuccessB: rowBoulderSuccess(tB)}
 		pair.Comparable = haveMetaA && haveMetaB && metaA.ComparableHash != "" && metaA.ComparableHash == metaB.ComparableHash
 		if !pair.Comparable {
 			pair.Reason = "matched configuration identity differs or is missing"
@@ -748,7 +746,7 @@ func (c *modelExperimentController) experimentView(record experimentRecord) map[
 	}
 }
 
-func accumulateArm(out *armAggregate, tile Tile) {
+func accumulateArm(out *armAggregate, row tileRow) {
 	out.Runs++
 	if out.ReplanReasons == nil {
 		out.ReplanReasons = map[string]int{}
@@ -756,21 +754,21 @@ func accumulateArm(out *armAggregate, tile Tile) {
 	if out.FinalStopReasons == nil {
 		out.FinalStopReasons = map[string]int{}
 	}
-	if tile.Status == statusDone && tile.Reason != "" {
-		out.FinalStopReasons[tile.Reason]++
+	if row.Status == statusDone && row.Reason != "" {
+		out.FinalStopReasons[row.Reason]++
 	}
-	if tile.Status == statusDone {
+	if row.Status == statusDone {
 		out.Done++
 	}
-	if tileBoulderSuccess(tile) {
+	if rowBoulderSuccess(row) {
 		out.BoulderSuccesses++
 	}
-	if tile.Player != nil {
-		out.Badges += len(tile.Player.Badges)
+	if row.Player != nil {
+		out.Badges += len(row.Player.Badges)
 	}
-	out.Frames += tile.Frame
-	if tile.Stats != nil {
-		s := tile.Stats
+	out.Frames += row.Frame
+	if row.Stats != nil {
+		s := row.Stats
 		out.Rounds += s.Rounds
 		out.Calls += s.Calls
 		out.StrategicCalls += s.StrategicCalls
@@ -845,15 +843,15 @@ func percentile(sorted []float64, p float64) float64 {
 	return sorted[index]
 }
 
-func tileBoulderSuccess(tile Tile) bool {
-	if tile.Player != nil {
-		for _, badge := range tile.Player.Badges {
+func rowBoulderSuccess(row tileRow) bool {
+	if row.Player != nil {
+		for _, badge := range row.Player.Badges {
 			if strings.EqualFold(badge, "boulder") || strings.EqualFold(badge, "boulder badge") {
 				return true
 			}
 		}
 	}
-	return tile.Stats != nil && tile.Stats.GoalComplete && strings.Contains(strings.ToLower(tile.Stats.GoalSummary), "boulder")
+	return row.Stats != nil && row.Stats.GoalComplete && strings.Contains(strings.ToLower(row.Stats.GoalSummary), "boulder")
 }
 
 func (c *modelExperimentController) resolveRunMeta(raw map[string]any, deployment, experimentID, arm, caseID string) (runExperimentMeta, error) {
