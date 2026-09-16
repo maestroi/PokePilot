@@ -74,13 +74,14 @@ type deploymentView struct {
 }
 
 type modelHostStatus struct {
-	State              string `json:"state"`
-	DeploymentID       string `json:"deployment_id,omitempty"`
-	ModelID            string `json:"model_id,omitempty"`
-	Health             string `json:"health,omitempty"`
-	ActiveLeases       int    `json:"active_leases,omitempty"`
-	MaxParallelWorkers int    `json:"max_parallel_workers,omitempty"`
-	Error              string `json:"error,omitempty"`
+	State              string   `json:"state"`
+	DeploymentID       string   `json:"deployment_id,omitempty"`
+	ModelID            string   `json:"model_id,omitempty"`
+	Health             string   `json:"health,omitempty"`
+	ActiveLeases       int      `json:"active_leases,omitempty"`
+	MaxParallelWorkers int      `json:"max_parallel_workers,omitempty"`
+	LeaseRunIDs        []string `json:"lease_run_ids,omitempty"`
+	Error              string   `json:"error,omitempty"`
 }
 
 // modelExperimentHTTPHandler adds #723/#724 operator behavior around the wall
@@ -127,6 +128,7 @@ func logModelExperiment(format string, args ...any) {
 }
 
 func (c *modelExperimentController) handleModels(w http.ResponseWriter, _ *http.Request) {
+	c.reconcileHostLeases()
 	deployments := c.enabledDeployments()
 	views := make([]deploymentView, 0, len(deployments))
 	statuses := map[string]modelHostStatus{}
@@ -276,6 +278,7 @@ func (c *modelExperimentController) handleLease(w http.ResponseWriter, r *http.R
 	if meta.Inference.ControlURL != "" {
 		status, code, err := c.hostAction(meta.Inference, "/v1/leases/acquire", map[string]any{"run_id": spec.RunID, "deployment_id": meta.Deployment, "max_parallel_workers": c.liveParallelLimit(meta.Deployment)})
 		if err != nil || code >= 300 || status.State != "ready" || status.DeploymentID != meta.Deployment {
+			c.releaseHostLease(spec.RunID, meta.Inference)
 			c.requeueLease(spec.RunID)
 			writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "deployment lost readiness while leasing", "deployment": meta.Deployment, "status": status})
 			return
@@ -293,6 +296,7 @@ func (c *modelExperimentController) handleLease(w http.ResponseWriter, r *http.R
 // reports loading. Queued specs whose host is busy are skipped in favor of a
 // runnable deployment.
 func (c *modelExperimentController) prepareNextDeployment() bool {
+	c.reconcileHostLeases()
 	c.wall.mu.Lock()
 	queue := append([]string(nil), c.wall.queue...)
 	c.wall.mu.Unlock()
@@ -474,8 +478,8 @@ func (c *modelExperimentController) handleFinish(w http.ResponseWriter, r *http.
 	if capture.Code < 200 || capture.Code >= 300 {
 		return
 	}
-	if meta, ok := c.runMeta(runID); ok && meta.Inference.ControlURL != "" {
-		_, _, _ = c.hostAction(meta.Inference, "/v1/leases/release", map[string]string{"run_id": runID, "deployment_id": meta.Deployment})
+	if meta, ok := c.bindingForRun(runID, ""); ok && meta.Inference.ControlURL != "" {
+		c.releaseHostLease(runID, meta.Inference)
 	}
 }
 
@@ -954,6 +958,52 @@ func (c *modelExperimentController) attachDeploymentsToTiles() {
 		}
 		if tile.ExperimentID == "" {
 			tile.ExperimentID, tile.ExperimentArm, tile.ExperimentCase = meta.ExperimentID, meta.ExperimentArm, meta.ExperimentCase
+		}
+	}
+}
+
+func (c *modelExperimentController) liveHostLeaseRunIDs() map[string]struct{} {
+	c.wall.mu.Lock()
+	defer c.wall.mu.Unlock()
+	out := make(map[string]struct{})
+	for runID, tile := range c.wall.tiles {
+		if tile == nil || tile.Finished {
+			continue
+		}
+		if tile.Status == statusLeased || tile.Status == statusRunning {
+			out[runID] = struct{}{}
+		}
+	}
+	return out
+}
+
+func (c *modelExperimentController) releaseHostLease(runID string, identity farm.InferenceIdentity) {
+	if strings.TrimSpace(runID) == "" || strings.TrimSpace(identity.ControlURL) == "" {
+		return
+	}
+	_, _, _ = c.hostAction(identity, "/v1/leases/release", map[string]string{"run_id": runID, "deployment_id": identity.DeploymentID})
+}
+
+func (c *modelExperimentController) reconcileHostLeases() {
+	live := c.liveHostLeaseRunIDs()
+	seen := map[string]struct{}{}
+	for _, d := range c.enabledDeployments() {
+		if strings.TrimSpace(d.ControlURL) == "" {
+			continue
+		}
+		if _, ok := seen[d.ControlURL]; ok {
+			continue
+		}
+		seen[d.ControlURL] = struct{}{}
+		status, err := c.hostStatusIdentity(d.Identity())
+		if err != nil {
+			continue
+		}
+		for _, runID := range status.LeaseRunIDs {
+			if _, ok := live[runID]; ok {
+				continue
+			}
+			c.releaseHostLease(runID, d.Identity())
 		}
 	}
 }

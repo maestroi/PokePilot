@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/maestroi/pokepilot/farm"
@@ -408,5 +409,163 @@ func TestExperimentRejectsConcurrencyAboveDeploymentLimit(t *testing.T) {
 	})
 	if created.Code != http.StatusBadRequest {
 		t.Fatalf("create = %d %s, want 400", created.Code, created.Body.String())
+	}
+}
+
+type fakeModelHost struct {
+	mu     sync.Mutex
+	URL    string
+	loaded string
+	state  string
+	leases map[string]string
+}
+
+func newFakeModelHost(t *testing.T, loaded string, leases map[string]string) *fakeModelHost {
+	t.Helper()
+	host := &fakeModelHost{loaded: loaded, state: "ready", leases: leases}
+	if host.leases == nil {
+		host.leases = map[string]string{}
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host.mu.Lock()
+		defer host.mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.URL.Path == "/v1/leases/release":
+			var in leaseBody
+			_ = json.NewDecoder(r.Body).Decode(&in)
+			delete(host.leases, in.RunID)
+			_ = json.NewEncoder(w).Encode(host.statusLocked())
+		case r.URL.Path == "/v1/leases/acquire":
+			var in leaseBody
+			_ = json.NewDecoder(r.Body).Decode(&in)
+			host.leases[in.RunID] = in.DeploymentID
+			if host.loaded == "" {
+				host.loaded = in.DeploymentID
+			}
+			status := host.statusLocked()
+			code := http.StatusOK
+			if host.state != "ready" {
+				code = http.StatusAccepted
+			}
+			w.WriteHeader(code)
+			_ = json.NewEncoder(w).Encode(status)
+		case r.URL.Path == "/v1/load":
+			var in struct {
+				DeploymentID string `json:"deployment_id"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&in)
+			host.loaded = in.DeploymentID
+			host.state = "ready"
+			w.WriteHeader(http.StatusAccepted)
+			_ = json.NewEncoder(w).Encode(host.statusLocked())
+		case r.URL.Path == "/v1/status":
+			_ = json.NewEncoder(w).Encode(host.statusLocked())
+		default:
+			t.Fatalf("unexpected model-host call %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	t.Cleanup(server.Close)
+	host.URL = server.URL
+	return host
+}
+
+type leaseBody struct {
+	RunID        string `json:"run_id"`
+	DeploymentID string `json:"deployment_id"`
+}
+
+func (h *fakeModelHost) statusLocked() map[string]any {
+	ids := make([]string, 0, len(h.leases))
+	for id := range h.leases {
+		ids = append(ids, id)
+	}
+	return map[string]any{
+		"state": h.state, "deployment_id": h.loaded, "health": h.state,
+		"active_leases": len(h.leases), "lease_run_ids": ids,
+	}
+}
+
+func (h *fakeModelHost) leaseCount() int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return len(h.leases)
+}
+
+func (h *fakeModelHost) hasLease(runID string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	_, ok := h.leases[runID]
+	return ok
+}
+
+func sharedHostRegistry(t *testing.T, controlURL string) string {
+	t.Helper()
+	return writeModelRegistry(t, []farm.ModelDeployment{
+		{ID: "qwen-4b", Label: "4B", ModelID: "qwen-4b", Compute: "4090", Endpoint: "http://4090/v1", APIModel: "pokepilot-4090", Enabled: true, ControlURL: controlURL, LegacyProfile: "gpu"},
+		{ID: "qwen-9b", Label: "9B", ModelID: "qwen-9b", Compute: "4090", Endpoint: "http://4090/v1", APIModel: "pokepilot-4090", Enabled: true, ControlURL: controlURL, LegacyProfile: "gpu"},
+	})
+}
+
+func TestPhantomHostLeasesAreReleasedOnModelPoll(t *testing.T) {
+	host := newFakeModelHost(t, "qwen-4b", map[string]string{
+		"exp-old-seed-1-b": "qwen-4b",
+		"exp-old-seed-2-b": "qwen-4b",
+	})
+	t.Setenv("POKEPILOT_MODEL_REGISTRY", sharedHostRegistry(t, host.URL))
+	w := NewWall("")
+	h := modelExperimentHTTPHandler(w, w.Handler())
+
+	models := requestJSON(t, h, http.MethodGet, "/v1/models", nil)
+	if models.Code != http.StatusOK {
+		t.Fatalf("models = %d %s", models.Code, models.Body.String())
+	}
+	if host.leaseCount() != 0 {
+		t.Fatalf("phantom leases still held: %d", host.leaseCount())
+	}
+	var snapshot struct {
+		Deployments []deploymentView `json:"deployments"`
+	}
+	if err := json.Unmarshal(models.Body.Bytes(), &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	byID := map[string]deploymentView{}
+	for _, deployment := range snapshot.Deployments {
+		byID[deployment.ID] = deployment
+	}
+	if byID["qwen-4b"].State != "ready" || byID["qwen-4b"].ActiveLeases != 0 {
+		t.Fatalf("4B after reconcile = %#v", byID["qwen-4b"])
+	}
+	if byID["qwen-9b"].State == "busy" {
+		t.Fatalf("9B still busy after phantom leases released: %#v", byID["qwen-9b"])
+	}
+}
+
+func TestLiveRunHostLeaseSurvivesReconcile(t *testing.T) {
+	host := newFakeModelHost(t, "qwen-4b", nil)
+	t.Setenv("POKEPILOT_MODEL_REGISTRY", sharedHostRegistry(t, host.URL))
+	w := NewWall("")
+	h := modelExperimentHTTPHandler(w, w.Handler())
+	if res := requestJSON(t, h, http.MethodPost, "/v1/specs", map[string]any{"run_id": "live-run", "planner": "llm", "llm_deployment": "qwen-4b"}); res.Code != http.StatusOK {
+		t.Fatalf("enqueue = %d %s", res.Code, res.Body.String())
+	}
+	lease := requestJSON(t, h, http.MethodPost, "/v1/lease", map[string]any{})
+	var spec farm.Spec
+	if lease.Code != http.StatusOK || json.Unmarshal(lease.Body.Bytes(), &spec) != nil || spec.RunID != "live-run" {
+		t.Fatalf("lease = %d %s", lease.Code, lease.Body.String())
+	}
+	host.mu.Lock()
+	host.leases["exp-old-seed-1-b"] = "qwen-4b"
+	host.mu.Unlock()
+
+	models := requestJSON(t, h, http.MethodGet, "/v1/models", nil)
+	if models.Code != http.StatusOK {
+		t.Fatalf("models = %d %s", models.Code, models.Body.String())
+	}
+	if !host.hasLease("live-run") {
+		t.Fatal("reconcile released the live run lease")
+	}
+	if host.hasLease("exp-old-seed-1-b") {
+		t.Fatal("reconcile left the phantom lease in place")
 	}
 }
