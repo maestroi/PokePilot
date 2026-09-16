@@ -11,7 +11,7 @@ import (
 	"sync"
 )
 
-const controlPlaneMigration002 = `
+const controlPlaneMigration003 = `
 CREATE TABLE IF NOT EXISTS spectator_run_settings (
     run_id TEXT PRIMARY KEY REFERENCES runs(run_id) ON DELETE CASCADE,
     visible BOOLEAN NOT NULL DEFAULT TRUE,
@@ -75,15 +75,15 @@ func (cp *controlPlane) migrateSpectatorControl() error {
 	defer tx.Rollback() //nolint:errcheck
 
 	var applied bool
-	if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version=2)`).Scan(&applied); err != nil {
+	if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version=3)`).Scan(&applied); err != nil {
 		return fmt.Errorf("read spectator-control migration version: %w", err)
 	}
 	if !applied {
-		if _, err := tx.Exec(controlPlaneMigration002); err != nil {
-			return fmt.Errorf("apply control-plane migration 2: %w", err)
+		if _, err := tx.Exec(controlPlaneMigration003); err != nil {
+			return fmt.Errorf("apply control-plane migration 3: %w", err)
 		}
-		if _, err := tx.Exec(`INSERT INTO schema_migrations(version) VALUES(2) ON CONFLICT DO NOTHING`); err != nil {
-			return fmt.Errorf("record control-plane migration 2: %w", err)
+		if _, err := tx.Exec(`INSERT INTO schema_migrations(version) VALUES(3) ON CONFLICT DO NOTHING`); err != nil {
+			return fmt.Errorf("record control-plane migration 3: %w", err)
 		}
 	}
 	return tx.Commit()
