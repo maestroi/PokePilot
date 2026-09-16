@@ -17,6 +17,7 @@ func redProgressionKnown(id ProgressID) bool {
 		redProgressMtMoonFossilAcquired,
 		redProgressSSTicketAcquired,
 		redProgressHM01Acquired,
+		redProgressBicycleAcquired,
 		redProgressThunderBadge,
 		redProgressPostSurgeLavenderReached,
 		redProgressPostSurgeCeladonReady,
@@ -120,6 +121,13 @@ func redProgressionObjectives(obs Observation) []Objective {
 			Kind:     KindProgress,
 			Progress: redProgressHM01Acquired,
 			Note:     "(go to Vermilion, board the S.S. Anne with the ticket, defeat the scripted rival on 2F, and receive HM01 Cut from the Captain)",
+		})
+	}
+	if obs.Story.Has(redProgressHM01Acquired) && !obs.Story.Has(redProgressBicycleAcquired) {
+		out = append(out, Objective{
+			Kind:     KindProgress,
+			Progress: redProgressBicycleAcquired,
+			Note:     "(visit the Pokemon Fan Club chairman in Vermilion for the Bike Voucher, then exchange it at Cerulean's Bike Shop for the Bicycle)",
 		})
 	}
 	if obs.Story.Has(redProgressHM01Acquired) && redCutFieldUnlocked(obs) && !hasBadge(obs, state.BadgeThunder) {
@@ -333,6 +341,8 @@ func executeRedProgression(m *emu.Emu, romData []byte, o Objective) error {
 		return skill.Bill(m, romData, policy)
 	case redProgressHM01Acquired:
 		return skill.SSAnneHM01(m, romData, policy)
+	case redProgressBicycleAcquired:
+		return skill.AcquireBicycle(m, romData, policy)
 	case redProgressThunderBadge:
 		return skill.SurgeProgression(m, romData, policy)
 	case redProgressPostSurgeLavenderReached:
