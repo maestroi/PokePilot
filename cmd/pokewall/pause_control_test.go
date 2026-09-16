@@ -30,7 +30,7 @@ func TestPauseRunningRunResumesSameIDFromLatestCheckpoint(t *testing.T) {
 		t.Fatalf("checkpoint: %v", err)
 	}
 
-	postJSON(t, srv.URL+"/v1/runs/pause-me/pause")
+	postPauseControl(t, srv.URL+"/v1/runs/pause-me/pause")
 	reply, err := client.Heartbeat(ctx, farm.Heartbeat{RunID: "pause-me", Frame: 700, Map: 5, X: 11, Y: 4})
 	if err != nil {
 		t.Fatalf("heartbeat: %v", err)
@@ -52,7 +52,7 @@ func TestPauseRunningRunResumesSameIDFromLatestCheckpoint(t *testing.T) {
 		t.Fatalf("pause note = %q", paused.StopSoFar)
 	}
 
-	postJSON(t, srv.URL+"/v1/runs/pause-me/resume")
+	postPauseControl(t, srv.URL+"/v1/runs/pause-me/resume")
 	second, err := client.Lease(ctx)
 	if err != nil || second == nil || second.RunID != "pause-me" || second.Attempt != 2 {
 		t.Fatalf("lease 2 = %+v, %v", second, err)
@@ -123,7 +123,7 @@ func TestRepeatedIdenticalErrorsAutoPauseBeforeThirdAttempt(t *testing.T) {
 		t.Fatalf("auto-pause still offered another attempt: %+v", third)
 	}
 
-	postJSON(t, srv.URL+"/v1/runs/looping/resume")
+	postPauseControl(t, srv.URL+"/v1/runs/looping/resume")
 	third, err = client.Lease(ctx)
 	if err != nil || third == nil || third.Attempt != autoPauseRepeatThreshold+1 {
 		t.Fatalf("lease after resume = %+v, %v", third, err)
@@ -142,8 +142,8 @@ func TestCancelPausedRunMakesItTerminal(t *testing.T) {
 	defer srv.Close()
 
 	enqueueViaHTTP(t, srv.URL, farm.Spec{RunID: "queued-pause", Planner: "llm"})
-	postJSON(t, srv.URL+"/v1/runs/queued-pause/pause")
-	postJSON(t, srv.URL+"/v1/runs/queued-pause/cancel")
+	postPauseControl(t, srv.URL+"/v1/runs/queued-pause/pause")
+	postPauseControl(t, srv.URL+"/v1/runs/queued-pause/cancel")
 
 	w.mu.Lock()
 	tile := *w.tiles["queued-pause"]
@@ -153,7 +153,7 @@ func TestCancelPausedRunMakesItTerminal(t *testing.T) {
 	}
 }
 
-func postJSON(t *testing.T, url string) {
+func postPauseControl(t *testing.T, url string) {
 	t.Helper()
 	req, err := http.NewRequest(http.MethodPost, url, nil)
 	if err != nil {
