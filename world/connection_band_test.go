@@ -1,10 +1,6 @@
 package world
 
-import (
-	"testing"
-
-	"github.com/maestroi/pokepilot/red/rom"
-)
+import "testing"
 
 func TestConnectionEdgesSplitContiguousComponentPairs(t *testing.T) {
 	g := &Graph{
@@ -24,11 +20,11 @@ func TestConnectionEdgesSplitContiguousComponentPairs(t *testing.T) {
 			1: {w: 6, h: 2},
 			2: {w: 6, h: 2},
 		},
-		connections: make(map[Edge]rom.Connection),
+		connections: make(map[Edge]Connection),
 		exitComps:   make(map[Edge][]int),
 		entryComps:  make(map[Edge][]int),
 	}
-	c := rom.Connection{Dir: dirNorth, MapID: 2}
+	c := Connection{Dir: dirNorth, MapID: 2}
 	edges := g.connectionEdges(1, c)
 	if len(edges) != 4 {
 		t.Fatalf("connectionEdges produced %d edges, want 4: %+v", len(edges), edges)
@@ -59,10 +55,6 @@ func TestConnectionEdgesSplitContiguousComponentPairs(t *testing.T) {
 		g.entryComps[e] = got
 	}
 
-	// The map-level destination is identical for every generated edge. The
-	// component-aware router must nevertheless choose the band that actually
-	// lands in the destination tile's component instead of the first border
-	// edge it sees.
 	g.Edges[1] = edges
 	g.Edges[2] = nil
 	route, err := FindRouteAtDestination(g, 1, 2, 0, 0, 2, 0, nil)
@@ -99,10 +91,6 @@ func TestBuildGraphSplitsCeruleanRoute4BorderByLandingComponent(t *testing.T) {
 		if end < start {
 			t.Fatalf("invalid band %d..%d on %+v", start, end, e)
 		}
-		// Check the immediate seam landing, not g.entryComps. BuildGraph expands
-		// entryComps through directed movement (for example Route 4's one-way
-		// ledges), so one literal landing component can correctly become a set
-		// such as [2 1 4] without this border band aggregating multiple tiles.
 		got := g.entryPortComps(e)
 		if len(got) > 1 {
 			t.Fatalf("band %d..%d aggregates multiple raw entry components %v", start, end, got)
