@@ -1,7 +1,9 @@
 package skill
 
 import (
+	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
@@ -289,13 +291,77 @@ func collectSafariRewards(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	return fmt.Errorf("skill: FuchsiaProgression: Safari rewards still incomplete after %d bounded sessions", maxSafariSessions)
 }
 
+// safariGateJoinChoiceIndex recognizes only the paid Safari entrance prompt.
+// FuchsiaProgression owns this transaction, so it may answer it deliberately:
+// YES when entering for rewards, NO when a resumed/finished session is trying
+// to continue south toward Fuchsia and the Warden. Keeping the map and text
+// checks here prevents generic travel from guessing at unrelated choices.
+func safariGateJoinChoiceIndex(mapID uint8, text string, join bool) (int, bool) {
+	if mapID != safariZoneGateMap {
+		return 0, false
+	}
+	normalized := strings.ToLower(strings.Join(strings.Fields(text), " "))
+	if !strings.Contains(normalized, "would you like to join the hunt?") {
+		return 0, false
+	}
+	if join {
+		return 0, true // YES
+	}
+	return 1, true // NO
+}
+
+func answerSafariGateJoinChoice(m *emu.Emu, text string, join bool) (bool, error) {
+	index, ok := safariGateJoinChoiceIndex(m.Peek8(sym.CurMap), text, join)
+	if !ok {
+		return false, nil
+	}
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	if state.DecodeTwoOptionMenu(&mem) == nil {
+		return false, nil
+	}
+	if err := selectTwoOption(m, index); err != nil {
+		return true, err
+	}
+	return true, nil
+}
+
+func recoverAfterSafariGateChoice(m *emu.Emu) error {
+	rec := RecoverDialogue(m, dialogueRecoveryBudget)
+	switch rec.Stop {
+	case DialogueRecovered:
+		return nil
+	case DialogueChoiceRequired, DialogueMenuOpen:
+		return fmt.Errorf("Safari gate answer led to another unanswered choice/menu: %q", rec.Text)
+	case DialogueBudgetExhausted:
+		return fmt.Errorf("Safari gate answer text did not clear: %q", rec.Text)
+	case DialogueUnexpectedMode:
+		return fmt.Errorf("Safari gate answer unexpectedly entered battle")
+	default:
+		return fmt.Errorf("Safari gate answer recovery stopped with %d", rec.Stop)
+	}
+}
+
 func enterSafariZone(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	gate, ok := Place("safari zone gate")
 	if !ok {
 		return fmt.Errorf("safari zone gate place missing")
 	}
 	if _, err := TravelFlee(m, romData, gate, policy, fuchsiaTravelEngagements); err != nil {
-		return err
+		var choice *ErrDialogueChoice
+		if !errors.As(err, &choice) {
+			return err
+		}
+		handled, answerErr := answerSafariGateJoinChoice(m, choice.Result.Text, true)
+		if answerErr != nil {
+			return fmt.Errorf("answer Safari entry prompt: %w", answerErr)
+		}
+		if !handled {
+			return err
+		}
+		return driveStoryUntil(m, fuchsiaStoryBudget, func(mm *state.Mem) bool {
+			return state.HasEvent(mm, eventInSafariZone) && mm.U8(sym.CurMap) == safariZoneCenterMap && state.Controllable(mm)
+		})
 	}
 	if m.Peek8(sym.CurMap) != safariZoneGateMap {
 		return fmt.Errorf("expected Safari gate, on %#04x", m.Peek8(sym.CurMap))
@@ -347,7 +413,23 @@ func receiveStrengthFromWarden(m *emu.Emu, romData []byte, policy MovePolicy) er
 		return fmt.Errorf("skill: FuchsiaProgression: warden place missing")
 	}
 	if _, err := TravelFlee(m, romData, warden, policy, fuchsiaTravelEngagements); err != nil {
-		return fmt.Errorf("skill: FuchsiaProgression: reach Warden: %w", err)
+		var choice *ErrDialogueChoice
+		if !errors.As(err, &choice) {
+			return fmt.Errorf("skill: FuchsiaProgression: reach Warden: %w", err)
+		}
+		handled, answerErr := answerSafariGateJoinChoice(m, choice.Result.Text, false)
+		if answerErr != nil {
+			return fmt.Errorf("skill: FuchsiaProgression: decline Safari re-entry while reaching Warden: %w", answerErr)
+		}
+		if !handled {
+			return fmt.Errorf("skill: FuchsiaProgression: reach Warden: %w", err)
+		}
+		if err := recoverAfterSafariGateChoice(m); err != nil {
+			return fmt.Errorf("skill: FuchsiaProgression: settle Safari re-entry decline: %w", err)
+		}
+		if _, err := TravelFlee(m, romData, warden, policy, fuchsiaTravelEngagements); err != nil {
+			return fmt.Errorf("skill: FuchsiaProgression: reach Warden after declining Safari re-entry: %w", err)
+		}
 	}
 	var mem state.Mem
 	state.Snapshot(m, &mem)
