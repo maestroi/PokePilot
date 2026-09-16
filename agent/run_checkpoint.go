@@ -33,6 +33,9 @@ func (c *checkpointRing) write(m *emu.Emu, round int, obj Objective, k *Knowledg
 	if err := writeCoverageFile(path, coverage); err != nil {
 		return fmt.Errorf("coverage round %d: %w", round, err)
 	}
+	if err := embedCoverageInKnowledgeFile(path, coverage); err != nil {
+		return fmt.Errorf("embed coverage round %d: %w", round, err)
+	}
 	return c.evict()
 }
 
