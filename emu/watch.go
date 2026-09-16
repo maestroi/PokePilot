@@ -5,8 +5,6 @@ import (
 	"net"
 	"net/http"
 	"time"
-
-	"github.com/maestroi/gomeboy/pkg/gomeboy"
 )
 
 // Watch serves the emulator's screen over HTTP at addr so a human can see
@@ -24,7 +22,7 @@ func (m *Emu) Watch(addr string, everyFrames int) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	m.spec = gomeboy.NewSpectator()
+	m.spec = newLiveSpectator(everyFrames)
 	m.specEvery = everyFrames
 	m.trace = newTraceBuf()
 
@@ -226,7 +224,7 @@ function renderParty(p) {
     (rows || '<div class="pempty">no Pokémon yet</div>');
 }
 
-setInterval(tickFrame, 100);
+setInterval(tickFrame, 50);
 setInterval(tickTrace, 500);
 tickFrame();
 tickTrace();
