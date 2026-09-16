@@ -175,7 +175,7 @@ jobs:
           fi
 
           pr_number="$(jq -r --arg repo "$REPO" --arg author "$ALLOWED_AUTHOR" '
-            [.[ ]
+            [.[]
               | select(.state=="open" or .merged_at != null)
               | select(.base.ref=="main")
               | select(.draft==false)
