@@ -7,6 +7,7 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/farm"
+	"github.com/maestroi/pokepilot/profiles"
 	redstarter "github.com/maestroi/pokepilot/red/starter"
 )
 
@@ -31,9 +32,14 @@ func prepareStarterExperiment(m *emu.Emu, spec farm.Spec) error {
 	if err != nil {
 		return err
 	}
+	// The derived cartridge is labelled with the image's own game id, so a
+	// Blue starter experiment is not filed under Red in replays and traces.
 	name := "pokemon-red"
+	if profile, _, err := profiles.Detect(base); err == nil {
+		name = string(profile.ID())
+	}
 	if selection.Experiment() {
-		name = fmt.Sprintf("pokemon-red-starter-%s-%02x", selection.Mode, selection.Raw)
+		name = fmt.Sprintf("%s-starter-%s-%02x", name, selection.Mode, selection.Raw)
 	}
 	if err := m.LoadDerivedROM(base, derived, name); err != nil {
 		return fmt.Errorf("load derived ROM: %w", err)

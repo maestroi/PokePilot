@@ -156,7 +156,7 @@ func farmIdentityFromAgent(result agent.ObjectiveResult) farm.FailureIdentity {
 	return farm.FailureIdentity{
 		Version:      farm.FailureIdentityVersion,
 		Game:         "pokemon",
-		Adapter:      "pokemon-red",
+		Adapter:      adapterName(result),
 		Objective:    farmObjectiveFromAgent(agent.FailureObjectiveFor(result.Objective)),
 		Outcome:      string(result.Outcome),
 		Cause:        string(result.Cause),
@@ -164,6 +164,17 @@ func farmIdentityFromAgent(result agent.ObjectiveResult) farm.FailureIdentity {
 		Initial:      farmStateFromAgent(initial),
 		Final:        farmStateFromAgent(agent.FailureStateFor(result.Final)),
 	}
+}
+
+// adapterName is the game the run actually played, read off its final
+// observation. Farm observations always carry the resolved GameID, so a Blue
+// run's failures are attributed to Blue in the console. The literal only
+// covers synthetic results that never identified a game.
+func adapterName(result agent.ObjectiveResult) string {
+	if id := result.Final.GameID; id != "" {
+		return string(id)
+	}
+	return "pokemon-red"
 }
 
 func farmObjectiveFromAgent(o agent.FailureObjective) farm.FailureObjective {
