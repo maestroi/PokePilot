@@ -18,14 +18,14 @@ func TestGenericTrainerReachableLiveUsesReplacedMapBlocks(t *testing.T) {
 
 	romData := make([]byte, 0xD000)
 	entry := tilesetBase + int(tileset)*12
-	romData[entry] = 3              // tileset data bank
-	romData[entry+1] = 0x00         // block pointer 0x4800
+	romData[entry] = 3      // tileset data bank
+	romData[entry+1] = 0x00 // block pointer 0x4800
 	romData[entry+2] = 0x48
-	romData[entry+5] = 0x00         // collision pointer 0x0200
+	romData[entry+5] = 0x00 // collision pointer 0x0200
 	romData[entry+6] = 0x02
-	romData[0x0200] = 0x01          // only tile 0x01 is walkable
+	romData[0x0200] = 0x01 // only tile 0x01 is walkable
 	romData[0x0201] = 0xff
-	romData[0x0c7e] = 0xff          // no land tile-pair restrictions
+	romData[0x0c7e] = 0xff // no land tile-pair restrictions
 
 	for i := 0; i < 16; i++ {
 		romData[blockBase+i] = 0x01    // block 0: fully walkable
