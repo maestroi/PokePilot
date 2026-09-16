@@ -46,6 +46,7 @@ export interface SpectatorRun {
   dest?: string
   goal?: string
   fps?: number
+  llm_profile?: string
   play_style?: string
   risk_tolerance?: string
   wild_encounters?: string

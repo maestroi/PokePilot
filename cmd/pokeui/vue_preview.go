@@ -36,6 +36,13 @@ func withVuePreview(next http.Handler, target string) http.Handler {
 			res.Header().Set("Cache-Control", "no-store")
 			http.Error(res, "frontend assets unavailable; run the web build before starting pokeui", http.StatusServiceUnavailable)
 			return
+		case req.Method == http.MethodGet && target == "spectator" && (req.URL.Path == "/replays" || strings.HasPrefix(req.URL.Path, "/replays/")):
+			if serveVueFile(res, req, target, "replays.html") {
+				return
+			}
+			res.Header().Set("Cache-Control", "no-store")
+			http.Error(res, "replay library assets unavailable; run the spectator web build before starting pokeui", http.StatusServiceUnavailable)
+			return
 		case req.Method == http.MethodGet && (req.URL.Path == "/next" || req.URL.Path == "/next/"):
 			destination := "/"
 			if req.URL.RawQuery != "" {

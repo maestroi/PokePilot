@@ -23,7 +23,9 @@ export default defineConfig(({ mode, command }) => {
       outDir: `../cmd/pokeui/ui/vue/${target}`,
       emptyOutDir: true,
       rollupOptions: {
-        input: `${target}.html`
+        input: target === 'spectator'
+          ? { spectator: 'spectator.html', replays: 'replays.html' }
+          : 'operator.html'
       }
     }
   }

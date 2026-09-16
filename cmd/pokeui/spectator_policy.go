@@ -11,6 +11,7 @@ import (
 // widening the public trust boundary when private wall rows gain new fields.
 type spectatorPresentationPolicy struct {
 	FPS            int
+	LLMProfile     string
 	PlayStyle      string
 	RiskTolerance  string
 	WildEncounters string
@@ -59,6 +60,7 @@ func (run *spectatorSourceRun) UnmarshalJSON(data []byte) error {
 	}
 	var presentation struct {
 		FPS            int    `json:"fps"`
+		LLMProfile     string `json:"llm_profile,omitempty"`
 		PlayStyle      string `json:"play_style,omitempty"`
 		RiskTolerance  string `json:"risk_tolerance,omitempty"`
 		WildEncounters string `json:"wild_encounters,omitempty"`
@@ -69,6 +71,7 @@ func (run *spectatorSourceRun) UnmarshalJSON(data []byte) error {
 	*run = spectatorSourceRun(decoded)
 	rememberSpectatorPresentationPolicy(run.RunID, spectatorPresentationPolicy{
 		FPS:            presentation.FPS,
+		LLMProfile:     presentation.LLMProfile,
 		PlayStyle:      presentation.PlayStyle,
 		RiskTolerance:  presentation.RiskTolerance,
 		WildEncounters: presentation.WildEncounters,

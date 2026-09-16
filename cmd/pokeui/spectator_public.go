@@ -42,6 +42,7 @@ func (run spectatorRun) MarshalJSON() ([]byte, error) {
 		Dest           string          `json:"dest,omitempty"`
 		Goal           string          `json:"goal,omitempty"`
 		FPS            int             `json:"fps"`
+		LLMProfile     string          `json:"llm_profile,omitempty"`
 		PlayStyle      string          `json:"play_style,omitempty"`
 		RiskTolerance  string          `json:"risk_tolerance,omitempty"`
 		WildEncounters string          `json:"wild_encounters,omitempty"`
@@ -106,6 +107,7 @@ func (run spectatorRun) MarshalJSON() ([]byte, error) {
 		Dest:           run.Dest,
 		Goal:           run.Goal,
 		FPS:            presentation.FPS,
+		LLMProfile:     presentation.LLMProfile,
 		PlayStyle:      presentation.PlayStyle,
 		RiskTolerance:  presentation.RiskTolerance,
 		WildEncounters: presentation.WildEncounters,
