@@ -16,12 +16,14 @@ const (
 
 // liveCheckpointLineageLocked returns every run whose checkpoint tree
 // is still part of recovery for an active run: the active run itself and
-// every ResumeFromRunID ancestor it can still fall back to. Caller holds
+// every ResumeFromRunID ancestor it can still fall back to. Paused runs are
+// intentionally included even though their current runner generation has
+// settled: their checkpoint tree is exactly what Resume needs. Caller holds
 // w.mu.
 func (w *Wall) liveCheckpointLineageLocked() map[string]struct{} {
 	keep := make(map[string]struct{})
 	for _, t := range w.tiles {
-		if t == nil || t.Finished {
+		if t == nil || (t.Finished && t.Status != statusPaused) {
 			continue
 		}
 		if t.RunID != "" {
