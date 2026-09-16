@@ -32,15 +32,15 @@ func TestDrainMediaTimelineArtifactUsesReplayRelativeFramesAndSemanticEvents(t *
 		Outcomes: []agent.ObjectiveResult{
 			{
 				Objective: agent.Objective{Kind: agent.KindGoTo, Place: agent.PlaceID("pewter-city")},
-				Outcome: agent.OutcomeBlocked, Summary: "route was blocked", Final: blocked, Recovered: true,
+				Outcome:   agent.OutcomeBlocked, Summary: "route was blocked", Final: blocked, Recovered: true,
 			},
 			{
 				Objective: agent.Objective{Kind: agent.KindGym, Place: agent.PlaceID("pewter-gym")},
-				Outcome: agent.OutcomeCompleted, Summary: "gym won", Final: afterGym,
+				Outcome:   agent.OutcomeCompleted, Summary: "gym won", Final: afterGym,
 			},
 			{
 				Objective: agent.Objective{Kind: agent.KindTrain, Intent: "dex-evolution"},
-				Outcome: agent.OutcomeCompleted, Summary: "trained", Final: final,
+				Outcome:   agent.OutcomeCompleted, Summary: "trained", Final: final,
 			},
 		},
 		OutcomeTimings: []agent.ObjectiveTiming{
