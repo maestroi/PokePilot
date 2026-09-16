@@ -73,7 +73,7 @@ func seedBurn(seed int64) int {
 }
 
 // starterFromName resolves the public starter request into Oak's physical
-// starter ball. Fixed/random experiments use the middle ball after its species
+// starter ball. Fixed/random experiment requests use the middle ball after its species
 // is patched for this run; canonical starters keep their historic slots.
 func starterFromName(name string) (skill.Starter, bool) {
 	return skill.StarterFromRequest(name)
@@ -95,7 +95,7 @@ func (s *heartbeatSnap) store(hb farm.Heartbeat) {
 
 // storeStatus writes the live position/trace without touching the last
 // plan or the latest tally. sampleHeartbeat uses this so a tick cannot
-// blank the question the planner published while the model was still
+// blank the question/decision the planner wrote while the model was still
 // answering, or the stats it pushed between samples.
 func (s *heartbeatSnap) storeStatus(hb farm.Heartbeat) {
 	s.mu.Lock()
@@ -233,6 +233,22 @@ func heartbeatLoop(client *farm.Client, runID string, snap func() farm.Heartbeat
 		}
 	}()
 	return done
+}
+
+// sendFinalHeartbeat publishes the settled snapshot after the periodic loop
+// has stopped but before Finish marks the run terminal. This closes the race
+// where a goal can become complete between the last periodic heartbeat and
+// run termination, leaving a DONE tile showing the previous badge/player
+// state. Failure is diagnostic-only: Finish still owns lease settlement.
+func sendFinalHeartbeat(client *farm.Client, hb farm.Heartbeat) {
+	if client == nil || hb.RunID == "" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), heartbeatDeadline)
+	defer cancel()
+	if _, err := client.Heartbeat(ctx, hb); err != nil {
+		log.Printf("farm: %s: final heartbeat: %v", hb.RunID, err)
+	}
 }
 
 // runFarm is the farm loop: lease a spec, validate it before gameplay, run
@@ -396,9 +412,18 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 		reason, detail, progEarly, progFinal = runFarmLLM(m, starter, goal, spec.LLMProfile, spec.ReasoningEffort, maxRounds, maxFrames, seed, cancel, snap, checkpointDir)
 	}
 
-	// Stop and join the heartbeat before TraceTail/SaveState/Finish.
+	// The objective that satisfies a deterministic goal can stop the agent
+	// immediately, before OnSample happens to refresh the periodic snapshot.
+	// Sample the settled emulator state explicitly so badges/player/stats agree
+	// with the terminal result that is about to be reported.
+	sampleHeartbeat(m, spec.RunID, snap, mem, addrs, trail)
+
+	// Stop and join the periodic heartbeat first, then publish exactly one
+	// settled snapshot while the run is still active on the wall. Finish comes
+	// afterwards, so the wall cannot reject this final state as already done.
 	close(stop)
 	<-hbDone
+	sendFinalHeartbeat(client, snap.load())
 	m.OnFrame(nil)
 	if stopUploader != nil {
 		close(stopUploader)
