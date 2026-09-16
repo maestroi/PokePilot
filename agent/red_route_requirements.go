@@ -79,14 +79,23 @@ func redRouteRequirements(obs Observation) []RouteBlockage {
 		}
 	}
 	if !obs.Story.Has(redProgressPokeFluteAcquired) {
-		prerequisite := RoutePrerequisiteLink{Progress: redProgressPokeFluteAcquired}
-		for _, mapID := range []uint8{route12Map, route13Map, route14Map, route15Map, fuchsiaCityMap} {
-			blockMap(mapID, "red:story:poke_flute", prerequisite)
+		// Route 13 and the connected south/east Fuchsia corridor are physically
+		// beyond the Route 12 Snorlax gate. A resumed checkpoint on any of these
+		// maps is therefore stronger evidence that the gate is already behind the
+		// player than a missing derived story fact is evidence that it is closed.
+		// Reapplying the entry gate here strands Route 13 between blocked Route 12
+		// and Route 14, making every recovery target outside the map unroutable.
+		gateBehindPlayer := obs.Map == route13Map || obs.Map == route14Map || obs.Map == route15Map || obs.Map == fuchsiaCityMap
+		if !gateBehindPlayer {
+			prerequisite := RoutePrerequisiteLink{Progress: redProgressPokeFluteAcquired}
+			for _, mapID := range []uint8{route12Map, route13Map, route14Map, route15Map, fuchsiaCityMap} {
+				blockMap(mapID, "red:story:poke_flute", prerequisite)
+			}
+			out = append(out,
+				redStoryRouteBlockage("route 12 snorlax", "red:story:route12_snorlax", prerequisite),
+				redStoryRouteBlockage("route 12 south of snorlax", "red:story:route12_snorlax", prerequisite),
+			)
 		}
-		out = append(out,
-			redStoryRouteBlockage("route 12 snorlax", "red:story:route12_snorlax", prerequisite),
-			redStoryRouteBlockage("route 12 south of snorlax", "red:story:route12_snorlax", prerequisite),
-		)
 	}
 	if !obs.Story.Has(ProgressSaffronGateOpen) {
 		blockMap(saffronCityMap, "red:story:saffron_gate", RoutePrerequisiteLink{Progress: ProgressSaffronGateOpen})
