@@ -4,8 +4,8 @@ import "testing"
 
 func TestBicycleProgressionDestinations(t *testing.T) {
 	tests := []struct {
-		name       string
-		mapID, x,y uint8
+		name        string
+		mapID, x, y uint8
 	}{
 		{name: pokemonFanClubChairmanPlace, mapID: 0x5a, x: 3, y: 2},
 		{name: ceruleanBikeShopPlace, mapID: 0x42, x: 3, y: 6},
