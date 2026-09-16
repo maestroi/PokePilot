@@ -22,14 +22,14 @@ const (
 // offline replay, live presentation, and later editorial consumers without
 // depending on wall-clock timing or re-running gameplay.
 type MediaTimeline struct {
-	Version          int               `json:"version"`
-	Run              MediaRunSummary   `json:"run"`
-	Attempt          int               `json:"attempt,omitempty"`
-	SourceStartFrame uint64            `json:"source_start_frame,omitempty"`
-	EndFrame         uint64            `json:"end_frame"`
-	FramesPerSecond  float64           `json:"frames_per_second"`
-	Snapshots        []MediaSnapshot   `json:"snapshots,omitempty"`
-	Events           []MediaEvent      `json:"events,omitempty"`
+	Version          int             `json:"version"`
+	Run              MediaRunSummary `json:"run"`
+	Attempt          int             `json:"attempt,omitempty"`
+	SourceStartFrame uint64          `json:"source_start_frame,omitempty"`
+	EndFrame         uint64          `json:"end_frame"`
+	FramesPerSecond  float64         `json:"frames_per_second"`
+	Snapshots        []MediaSnapshot `json:"snapshots,omitempty"`
+	Events           []MediaEvent    `json:"events,omitempty"`
 }
 
 type MediaRunSummary struct {
@@ -40,11 +40,11 @@ type MediaRunSummary struct {
 }
 
 type MediaLocation struct {
-	Map      uint8  `json:"map"`
-	Name     string `json:"name,omitempty"`
-	Place    string `json:"place,omitempty"`
-	X        uint8  `json:"x"`
-	Y        uint8  `json:"y"`
+	Map   uint8  `json:"map"`
+	Name  string `json:"name,omitempty"`
+	Place string `json:"place,omitempty"`
+	X     uint8  `json:"x"`
+	Y     uint8  `json:"y"`
 }
 
 type MediaPlannerState struct {
@@ -79,11 +79,11 @@ type MediaEvent struct {
 }
 
 type MediaFrameContext struct {
-	Frame       uint64           `json:"frame"`
-	TimestampMS int64            `json:"timestamp_ms"`
-	Run         MediaRunSummary  `json:"run"`
-	Snapshot    *MediaSnapshot   `json:"snapshot,omitempty"`
-	Events      []MediaEvent     `json:"events,omitempty"`
+	Frame       uint64          `json:"frame"`
+	TimestampMS int64           `json:"timestamp_ms"`
+	Run         MediaRunSummary `json:"run"`
+	Snapshot    *MediaSnapshot  `json:"snapshot,omitempty"`
+	Events      []MediaEvent    `json:"events,omitempty"`
 }
 
 func (t MediaTimeline) Normalized() MediaTimeline {
