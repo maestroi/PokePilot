@@ -18,17 +18,21 @@ Make sure no other node has that label:
 docker node ls -q | xargs -n1 docker node inspect --format '{{.Description.Hostname}} {{index .Spec.Labels "pokepilot.db"}}'
 ```
 
-Create the persistent host directory **on that labeled node**. Prefer a real VM/dataset path rather than `/tmp`:
+Mount a dedicated persistent data disk at `/data` on that labeled node, then create the PostgreSQL directory there. Confirm `/data` is a different filesystem from `/` before deploying:
 
 ```sh
+findmnt -T /data
+findmnt -T /
+
 # postgres:18-alpine runs as uid/gid 70. The Debian image uses 999.
-sudo install -d -o 70 -g 70 /srv/pokepilot/postgres
+sudo install -d -o 70 -g 70 /data/pokepilot/postgres
 ```
 
 Put the database settings in `.env` or `~/.config/pokepilot/env`. Use a URL-safe password or URL-encode it in the DSN:
 
 ```sh
-FARM_DB_DIR=/srv/pokepilot/postgres
+FARM_DB_DIR=/data/pokepilot/postgres
+POKEPILOT_DB_MEMORY_LIMIT=4G
 POKEPILOT_DB_NAME=pokepilot
 POKEPILOT_DB_USER=pokepilot
 POKEPILOT_DB_PASSWORD=<strong-password>
@@ -49,7 +53,7 @@ docker stack deploy --resolve-image never \
   pokefarm
 ```
 
-`deploy/postgres.yml` enforces `replicas: 1` and the placement constraint `node.labels.pokepilot.db == true`. Its bind mount is `${FARM_DB_DIR}:/var/lib/postgresql`; PostgreSQL 18 stores its version-specific `PGDATA` beneath that persistent root.
+`deploy/postgres.yml` enforces `replicas: 1`, the placement constraint `node.labels.pokepilot.db == true`, and a PostgreSQL memory limit that defaults to 4 GiB. Its bind mount is `${FARM_DB_DIR}:/var/lib/postgresql`; PostgreSQL 18 stores its version-specific `PGDATA` beneath that persistent root. Production should keep `FARM_DB_DIR=/data/pokepilot/postgres` so database growth cannot consume the VM root filesystem.
 
 The database port is not published to the host. Other services reach it over the Swarm overlay network as `postgres:5432`.
 
