@@ -87,3 +87,7 @@ textarea:disabled {
 .poke-muted {
   color: var(--poke-muted);
 }
+
+table[class~="min-w-[1220px]"] {
+  width: 100%;
+}
