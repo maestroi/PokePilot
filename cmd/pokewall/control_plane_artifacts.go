@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/maestroi/pokepilot/artifactstore"
@@ -44,7 +45,7 @@ func durabilizeFinishReport(report farm.FinishReport, attempt int) (*durableFini
 
 	// FinishReport historically carried these two binary payloads directly.
 	// Promote them into ordinary artifacts so the durable representation can
-	// keep their hashes/object keys without placing bytes in PostgreSQL.
+	// keep their hashes and storage metadata outside report_json.
 	if len(report.SaveState) > 0 {
 		sum := sha256.Sum256(report.SaveState)
 		result.report.Artifacts = append(result.report.Artifacts, farm.Artifact{
@@ -77,7 +78,11 @@ func durabilizeFinishReport(report farm.FinishReport, attempt int) (*durableFini
 		switch {
 		case art.Store == farm.ArtifactStoreS3:
 			meta.Data = nil
-		case isSmallStructuredArtifact(art):
+		case isSmallStructuredArtifact(art), isSmallFinalFrameArtifact(art):
+			// The final 160x144 screenshot is intentionally a small binary
+			// exception to the JSON-only inline rule. Keeping one thumbnail per
+			// run in PostgreSQL makes history cards survive wall restarts without
+			// turning S3 into a latency dependency for the operator run rail.
 			inline = append([]byte(nil), art.Data...)
 			meta.Data = nil
 		default:
@@ -103,6 +108,12 @@ func durabilizeFinishReport(report farm.FinishReport, attempt int) (*durableFini
 		result.artifacts = append(result.artifacts, durableArtifact{meta: meta, inline: inline})
 	}
 	return result, nil
+}
+
+func isSmallFinalFrameArtifact(art farm.Artifact) bool {
+	return art.Name == "final-frame.png" &&
+		strings.EqualFold(strings.TrimSpace(art.MediaType), "image/png") &&
+		len(art.Data) > 0 && len(art.Data) <= maxPostgresInlineEvidence
 }
 
 func finishObjectKey(runID string, attempt int, name string) string {
