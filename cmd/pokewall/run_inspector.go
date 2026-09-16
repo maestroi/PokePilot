@@ -54,12 +54,13 @@ type runFinishView struct {
 }
 
 type runDebugSummary struct {
-	ProgressKnown   bool `json:"progress_known"`
-	Progressed      bool `json:"progressed"`
-	BadgeDelta      int  `json:"badge_delta,omitempty"`
-	EventDelta      int  `json:"event_delta,omitempty"`
-	MapDelta        int  `json:"map_delta,omitempty"`
-	ReplayAvailable bool `json:"replay_available"`
+	ProgressKnown   bool           `json:"progress_known"`
+	Progressed      bool           `json:"progressed"`
+	BadgeDelta      int            `json:"badge_delta,omitempty"`
+	EventDelta      int            `json:"event_delta,omitempty"`
+	MapDelta        int            `json:"map_delta,omitempty"`
+	CoverageDelta   *farm.Coverage `json:"coverage_delta,omitempty"`
+	ReplayAvailable bool           `json:"replay_available"`
 }
 
 type runTimelineEvent struct {
@@ -328,8 +329,40 @@ func summarizeRun(report *farm.FinishReport, artifacts []runArtifactView) runDeb
 	summary.BadgeDelta = report.ProgressFinal.Badges - report.ProgressEarly.Badges
 	summary.EventDelta = report.ProgressFinal.Events - report.ProgressEarly.Events
 	summary.MapDelta = report.ProgressFinal.Maps - report.ProgressEarly.Maps
-	summary.Progressed = summary.BadgeDelta != 0 || summary.EventDelta != 0 || summary.MapDelta != 0 || report.ProgressFinal.Map != report.ProgressEarly.Map
+	summary.CoverageDelta = coverageDelta(report.ProgressEarly.Coverage, report.ProgressFinal.Coverage)
+	summary.Progressed = summary.BadgeDelta != 0 || summary.EventDelta != 0 || summary.MapDelta != 0 || report.ProgressFinal.Map != report.ProgressEarly.Map || coverageProgressed(summary.CoverageDelta)
 	return summary
+}
+
+func coverageDelta(early, final *farm.Coverage) *farm.Coverage {
+	if early == nil || final == nil {
+		return nil
+	}
+	return &farm.Coverage{
+		UniqueMapsVisited:     final.UniqueMapsVisited - early.UniqueMapsVisited,
+		TrainersDefeated:      final.TrainersDefeated - early.TrainersDefeated,
+		NPCInteractions:       final.NPCInteractions - early.NPCInteractions,
+		UniqueItemsAcquired:   final.UniqueItemsAcquired - early.UniqueItemsAcquired,
+		UniqueItemsUsed:       final.UniqueItemsUsed - early.UniqueItemsUsed,
+		DexOwned:              final.DexOwned - early.DexOwned,
+		DexSeen:               final.DexSeen - early.DexSeen,
+		OptionalMilestones:    final.OptionalMilestones - early.OptionalMilestones,
+		TMsHMsAcquired:        final.TMsHMsAcquired - early.TMsHMsAcquired,
+		TMsHMsUsed:            final.TMsHMsUsed - early.TMsHMsUsed,
+		Evolutions:            final.Evolutions - early.Evolutions,
+		Catches:               final.Catches - early.Catches,
+		UniqueSpeciesAcquired: final.UniqueSpeciesAcquired - early.UniqueSpeciesAcquired,
+	}
+}
+
+func coverageProgressed(delta *farm.Coverage) bool {
+	if delta == nil {
+		return false
+	}
+	return delta.UniqueMapsVisited != 0 || delta.TrainersDefeated != 0 || delta.NPCInteractions != 0 ||
+		delta.UniqueItemsAcquired != 0 || delta.UniqueItemsUsed != 0 || delta.DexOwned != 0 || delta.DexSeen != 0 ||
+		delta.OptionalMilestones != 0 || delta.TMsHMsAcquired != 0 || delta.TMsHMsUsed != 0 || delta.Evolutions != 0 ||
+		delta.Catches != 0 || delta.UniqueSpeciesAcquired != 0
 }
 
 func buildRunTimeline(run tileRow, report *farm.FinishReport) []runTimelineEvent {

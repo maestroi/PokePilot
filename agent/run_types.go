@@ -55,12 +55,13 @@ type Result struct {
 
 // Progress is one snapshot of how far a run has gotten.
 type Progress struct {
-	Round   int
-	Badges  int
-	Events  int
-	Maps    int
-	Map     uint8
-	MapName string
+	Round    int
+	Badges   int
+	Events   int
+	Maps     int
+	Map      uint8
+	MapName  string
+	Coverage Coverage
 }
 
 // MaxReplyRetries is how many times the planner may be asked for one round's

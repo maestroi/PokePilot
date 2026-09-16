@@ -650,6 +650,21 @@ func farmProgress(p *agent.Progress) *farm.Progress {
 		Maps:    p.Maps,
 		Map:     p.Map,
 		MapName: p.MapName,
+		Coverage: &farm.Coverage{
+			UniqueMapsVisited:     p.Coverage.UniqueMapsVisited,
+			TrainersDefeated:      p.Coverage.TrainersDefeated,
+			NPCInteractions:       p.Coverage.NPCInteractions,
+			UniqueItemsAcquired:   p.Coverage.UniqueItemsAcquired,
+			UniqueItemsUsed:       p.Coverage.UniqueItemsUsed,
+			DexOwned:              p.Coverage.DexOwned,
+			DexSeen:               p.Coverage.DexSeen,
+			OptionalMilestones:    p.Coverage.OptionalMilestones,
+			TMsHMsAcquired:        p.Coverage.TMsHMsAcquired,
+			TMsHMsUsed:            p.Coverage.TMsHMsUsed,
+			Evolutions:            p.Coverage.Evolutions,
+			Catches:               p.Coverage.Catches,
+			UniqueSpeciesAcquired: p.Coverage.UniqueSpeciesAcquired,
+		},
 	}
 }
 

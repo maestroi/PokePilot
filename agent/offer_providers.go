@@ -299,21 +299,28 @@ type explorationObjectiveProvider struct{}
 func (explorationObjectiveProvider) Family() ObjectiveFamily { return ObjectiveFamilyExploration }
 func (explorationObjectiveProvider) Provide(ctx *objectiveOfferContext) objectiveProviderResult {
 	known := ctx.known
+	// Legacy tests/tools that construct native-map-only observations keep the
+	// historical zero-value objective shape. Production semantic observations
+	// always carry Location, so durable coordinate-local identity is scoped.
+	identityLocation := LocationID("")
+	if ctx.obs.Location != "" {
+		identityLocation = ctx.currentLocation
+	}
 	out := make([]Objective, 0, len(ctx.catalog.Interactables))
 	for _, object := range ctx.catalog.Interactables {
 		switch object.Kind {
 		case CatalogInteractablePerson:
 			if !known.Talked[ctx.currentLocation][[2]uint8{object.X, object.Y}] {
-				out = append(out, Objective{Kind: KindTalk, X: object.X, Y: object.Y})
+				out = append(out, Objective{Kind: KindTalk, Location: identityLocation, X: object.X, Y: object.Y})
 			}
 		case CatalogInteractableTrainer:
-			challenge := Objective{Kind: KindTrainer, X: object.X, Y: object.Y}
+			challenge := Objective{Kind: KindTrainer, Location: identityLocation, X: object.X, Y: object.Y}
 			if object.Challengeable && !object.Defeated && known.completionCount(challenge) == 0 {
 				out = append(out, challenge)
 			}
 		case CatalogInteractableItem:
 			if object.Item != "" {
-				out = append(out, Objective{Kind: KindPickup, X: object.X, Y: object.Y, Item: object.Item})
+				out = append(out, Objective{Kind: KindPickup, Location: identityLocation, X: object.X, Y: object.Y, Item: object.Item})
 			}
 		}
 	}
