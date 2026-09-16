@@ -161,6 +161,11 @@ func serveControlledSpectatorSnapshot(res http.ResponseWriter, req *http.Request
 		if err := json.Unmarshal(raw, &meta); err != nil || meta.RunID == "" {
 			continue
 		}
+		// Queued runs have no gameplay/frame to watch yet. Keep them private to
+		// the operator console until a worker has actually picked them up.
+		if meta.Status == "queued" {
+			continue
+		}
 		if !spectatorRunVisible(control, meta.RunID) {
 			continue
 		}
@@ -178,8 +183,6 @@ func serveControlledSpectatorSnapshot(res http.ResponseWriter, req *http.Request
 		switch meta.Status {
 		case "running", "leased":
 			summary.Live++
-		case "queued":
-			summary.Queued++
 		case "done":
 			summary.Completed++
 		}
