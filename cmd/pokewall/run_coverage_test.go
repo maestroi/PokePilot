@@ -40,3 +40,37 @@ func TestRunFinishViewPreservesCoverage(t *testing.T) {
 		t.Fatalf("inspection coverage = %+v", view.ProgressFinal.Coverage)
 	}
 }
+
+func TestRunSummaryTreatsCoverageOnlyDeltaAsProgress(t *testing.T) {
+	report := &farm.FinishReport{
+		ProgressEarly: &farm.Progress{
+			Map:  10,
+			Maps: 4,
+			Coverage: &farm.Coverage{
+				UniqueMapsVisited: 4,
+				DexOwned:          8,
+			},
+		},
+		ProgressFinal: &farm.Progress{
+			Map:  10,
+			Maps: 4,
+			Coverage: &farm.Coverage{
+				UniqueMapsVisited: 4,
+				TrainersDefeated:  3,
+				NPCInteractions:   5,
+				DexOwned:          10,
+				TMsHMsUsed:        1,
+			},
+		},
+	}
+	summary := summarizeRun(report, nil)
+	if !summary.ProgressKnown || !summary.Progressed {
+		t.Fatalf("coverage-only progress not recognized: %+v", summary)
+	}
+	if summary.CoverageDelta == nil {
+		t.Fatal("coverage delta missing")
+	}
+	if summary.CoverageDelta.TrainersDefeated != 3 || summary.CoverageDelta.NPCInteractions != 5 || summary.CoverageDelta.DexOwned != 2 || summary.CoverageDelta.TMsHMsUsed != 1 {
+		t.Fatalf("coverage delta = %+v", summary.CoverageDelta)
+	}
+}
