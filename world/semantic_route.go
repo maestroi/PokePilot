@@ -108,7 +108,6 @@ func (e *RouteBlockedError) MissingCapabilities() []gameruntime.CapabilityID {
 				seen[id] = true
 				out = append(out, id)
 			}
-		}
 	}
 	return out
 }
@@ -135,10 +134,17 @@ func FindRouteAtDestinationWithCapabilities(
 
 // FindRoutePlanAtDestinationWithCapabilities applies the same semantic policy
 // used by reachability filtering and preserves transition identity for
-// execution. Capability-satisfied semantic edges are executable pivots: the
-// pre-action ordinary-walking component does not have to reach the port. A
-// missing capability removes that edge and, when it is the reason routing
-// fails, returns structured prerequisite evidence before any movement occurs.
+// execution. Capability-satisfied semantic actions are executable pivots: the
+// pre-action ordinary-walking component does not have to reach the port.
+// Missing capabilities normally remove the semantic edge and, when that is the
+// reason routing fails, return structured prerequisite evidence before any
+// movement occurs.
+//
+// PivotOnly transitions are the exception: they annotate an ordinary edge whose
+// capability is needed only to bypass static component reachability. When that
+// capability is absent, the edge remains usable through ordinary geometry if
+// the player can already reach its port; the transition is omitted from the
+// returned RouteStep so execution does not demand an action that was not needed.
 func FindRoutePlanAtDestinationWithCapabilities(
 	g *Graph,
 	from, to uint8,
@@ -152,7 +158,9 @@ func FindRoutePlanAtDestinationWithCapabilities(
 	}
 
 	denied := make(map[Edge]gameruntime.TransitionBlockage)
+	hardDenied := make(map[Edge]gameruntime.TransitionBlockage)
 	allowed := make(map[Edge]bool)
+	executable := make(map[Edge]gameruntime.Transition, len(prereqs.Transitions))
 	allSemantic := make(map[Edge]bool, len(prereqs.Transitions))
 	for edge, transition := range prereqs.Transitions {
 		// A gate is a precondition on ordinary geometry, not an action that
@@ -163,26 +171,40 @@ func FindRoutePlanAtDestinationWithCapabilities(
 		}
 		if blockage, ok := gameruntime.EvaluateTransition(transition, prereqs.Capabilities); !ok {
 			denied[edge] = blockage
-		} else if !transition.Gate {
+			// A normal action or gate cannot be used at all while its
+			// prerequisite is missing. PivotOnly is different: without its
+			// capability the underlying edge is still ordinary geometry, so
+			// keep it and simply withhold the pivot privilege below.
+			if !transition.PivotOnly {
+				hardDenied[edge] = blockage
+			}
+			continue
+		}
+
+		executable[edge] = transition
+		if !transition.Gate {
 			allowed[edge] = true
 		}
 	}
 
 	usable := g
-	if len(denied) > 0 {
-		usable = graphWithoutSemanticEdges(g, denied)
+	if len(hardDenied) > 0 {
+		usable = graphWithoutSemanticEdges(g, hardDenied)
 	}
 	route, err := findRouteAtDestinationAllowingSemantic(usable, from, to, x, y, tx, ty, blockedHere, allowed)
 	if err == nil {
-		return routeSteps(route, prereqs.Transitions), nil
+		return routeSteps(route, executable), nil
 	}
 	if !errors.Is(err, ErrNoRoute) || len(denied) == 0 {
 		return nil, err
 	}
 
 	// Diagnose against the route that would exist if every known semantic
-	// action were usable. This is essential for gates such as Surf/Cut whose
-	// pre-action walking topology deliberately cannot reach the port.
+	// action were usable. This is essential for actions such as Surf/Cut whose
+	// pre-action walking topology deliberately cannot reach the port. It also
+	// preserves prerequisite evidence for PivotOnly actions when ordinary
+	// geometry cannot reach the annotated edge and the missing capability is
+	// exactly what would have allowed the component pivot.
 	geometric, geometricErr := findRouteAtDestinationAllowingSemantic(g, from, to, x, y, tx, ty, blockedHere, allSemantic)
 	if geometricErr != nil {
 		return nil, err
