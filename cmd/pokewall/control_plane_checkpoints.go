@@ -19,11 +19,11 @@ import (
 )
 
 var (
-	errStoredCheckpointNotFound       = errors.New("stored checkpoint not found")
-	errCheckpointStale                = errors.New("stale checkpoint")
-	errCheckpointRunFinished          = errors.New("checkpoint run already finished")
-	errCheckpointArtifactInvalid      = errors.New("invalid checkpoint artifact")
-	errCheckpointStorageUnavailable   = errors.New("checkpoint artifact storage unavailable")
+	errStoredCheckpointNotFound     = errors.New("stored checkpoint not found")
+	errCheckpointStale              = errors.New("stale checkpoint")
+	errCheckpointRunFinished        = errors.New("checkpoint run already finished")
+	errCheckpointArtifactInvalid    = errors.New("invalid checkpoint artifact")
+	errCheckpointStorageUnavailable = errors.New("checkpoint artifact storage unavailable")
 )
 
 // Migration 2 adds the only artifact payload column PostgreSQL is allowed to
