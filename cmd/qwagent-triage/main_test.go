@@ -10,7 +10,7 @@ import (
 func TestPickCLI(t *testing.T) {
 	in := strings.NewReader(`[
 	  {"key":"cafef00d","count":4,"example":"claimed","run_ids":["r1"],"issue":{"status":"open"}},
-	  {"key":"0badf00d","count":3,"example":"free","run_ids":["r2"],"issue":{"status":"open"}}
+	  {"key":"0badf00d","count":3,"example":"free","run_ids":["r2"],"issue":{"issue_number":432,"status":"open"}}
 	]`)
 	var out bytes.Buffer
 	err := run([]string{"pick", "--claimed", "fix(farm): x [triage:cafef00d]"}, in, &out)
@@ -19,6 +19,9 @@ func TestPickCLI(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), `"key": "0badf00d"`) && !strings.Contains(out.String(), `"key":"0badf00d"`) {
 		t.Fatalf("output = %s", out.String())
+	}
+	if !strings.Contains(out.String(), `"issue_number": 432`) && !strings.Contains(out.String(), `"issue_number":432`) {
+		t.Fatalf("output did not preserve linked issue number: %s", out.String())
 	}
 }
 
