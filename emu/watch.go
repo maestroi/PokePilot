@@ -133,7 +133,7 @@ async function tickFrame() {
   if (inFlight) return;
   inFlight = true;
   try {
-    const r = await fetch('/frame.png', { cache: 'no-store' });
+    const r = await fetch('/frame.png?buffered=1', { cache: 'no-store' });
     if (r.ok) {
       const url = URL.createObjectURL(await r.blob());
       const old = img.src;
