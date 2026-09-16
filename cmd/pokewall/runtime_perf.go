@@ -122,6 +122,8 @@ func framesFor(w *Wall) *frameCoordinator {
 
 // fetchRunnerFrameCached caps one run to roughly the browser's 20 fps and
 // collapses concurrent viewers/publisher reads onto a single upstream fetch.
+// Each upstream read drains one emulator-time frame from the runner's bounded
+// playback queue; point-in-time/final-frame reads still use fetchRunnerFrame.
 func (w *Wall) fetchRunnerFrameCached(ctx context.Context, runID string, addrs []string) ([]byte, error) {
 	frames := framesFor(w)
 	now := time.Now()
@@ -145,7 +147,7 @@ func (w *Wall) fetchRunnerFrameCached(ctx context.Context, runID string, addrs [
 	frames.inflight[runID] = call
 	frames.mu.Unlock()
 
-	data, err := fetchRunnerFrame(addrs)
+	data, err := fetchRunnerBufferedFrame(addrs)
 
 	frames.mu.Lock()
 	call.data, call.err = data, err
