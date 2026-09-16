@@ -200,7 +200,7 @@ func (redSemanticObservationAdapter) Observe(m *emu.Emu, romData []byte, profile
 			continue
 		}
 		if object.Kind == "trainer" {
-			if status, err := skill.TrainerStatusAt(romData, &mem, obs.Map, object.X, object.Y); err == nil {
+			if status, err := skill.TrainerStatusAtLive(romData, &mem, obs.Map, object.X, object.Y); err == nil {
 				object.Challengeable = status.Challengeable
 				object.Defeated = status.Defeated
 			}

@@ -24,7 +24,7 @@ type ChoiceReward struct {
 }
 
 var choiceRewards = []ChoiceReward{
-	{Place: "vermilion old rod house", Map: 0xA3, X: 2, Y: 4, StandX: 3, StandY: 4, Item: 0x4C, ItemName: "old rod"},
+	{Place: "vermilion old rod house", Map: 0xA3, X: 2, Y: 4, StandX: 2, StandY: 5, Item: 0x4C, ItemName: "old rod"},
 	{Place: "fuchsia good rod house", Map: 0xA4, X: 5, Y: 3, StandX: 6, StandY: 3, Item: 0x4D, ItemName: "good rod"},
 	{Place: "route 12 super rod house", Map: 0xBD, X: 2, Y: 4, StandX: 3, StandY: 4, Item: 0x4E, ItemName: "super rod"},
 	{Place: "route 2 oak aide", Map: 0x31, X: 1, Y: 4, StandX: 2, StandY: 4, Item: 0xC8, ItemName: "hm05", MinOwned: 10},
