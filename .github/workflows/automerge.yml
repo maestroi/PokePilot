@@ -144,8 +144,36 @@ jobs:
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           set -euo pipefail
-          pr_json="$(gh api -H 'Accept: application/vnd.github+json' \
-            "/repos/${REPO}/commits/${HEAD_SHA}/pulls")"
+
+          # GitHub's commit -> PR association can lag a completed Tests run by a
+          # few seconds, especially when auto-merge lands and deletes the head
+          # branch at nearly the same time. Retry only while the API returns no
+          # associated PRs; once it returns any PR, normal eligibility filtering
+          # below decides whether this workflow should act on it.
+          pr_json='[]'
+          association_found=0
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            if pr_json="$(gh api -H 'Accept: application/vnd.github+json' \
+              "/repos/${REPO}/commits/${HEAD_SHA}/pulls")"; then
+              if jq -e 'length > 0' >/dev/null <<<"$pr_json"; then
+                association_found=1
+                break
+              fi
+            else
+              pr_json='[]'
+            fi
+
+            if [[ "$attempt" -lt 10 ]]; then
+              echo "No PR association for ${HEAD_SHA} yet (attempt ${attempt}/10); retrying..."
+              sleep 3
+            fi
+          done
+
+          if [[ "$association_found" -ne 1 ]]; then
+            echo "No PR association for ${HEAD_SHA} after retries; refusing to silently skip publish."
+            exit 1
+          fi
+
           pr_number="$(jq -r --arg repo "$REPO" --arg author "$ALLOWED_AUTHOR" '
             [.[]
               | select(.state=="open" or .merged_at != null)
@@ -156,7 +184,7 @@ jobs:
             ] | first | .number // empty
           ' <<<"$pr_json")"
           if [[ -z "${pr_number}" ]]; then
-            echo "No ${ALLOWED_AUTHOR} PR into main for ${HEAD_SHA}; skipping auto-merge."
+            echo "No eligible ${ALLOWED_AUTHOR} PR into main for ${HEAD_SHA}; skipping auto-merge."
             exit 0
           fi
 
