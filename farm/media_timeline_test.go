@@ -42,8 +42,8 @@ func TestMediaTimelineContextBoundaryLookup(t *testing.T) {
 		Run:             MediaRunSummary{RunID: "run-boundary"},
 		EndFrame:        300,
 		FramesPerSecond: GameBoyFramesPerSecond,
-		Snapshots: []MediaSnapshot{{Frame: 100, Round: 1}, {Frame: 200, Round: 2}},
-		Events: []MediaEvent{{Type: "badge_acquired", Frame: 200, Round: 2, Evidence: "badge:Boulder"}},
+		Snapshots:       []MediaSnapshot{{Frame: 100, Round: 1}, {Frame: 200, Round: 2}},
+		Events:          []MediaEvent{{Type: "badge_acquired", Frame: 200, Round: 2, Evidence: "badge:Boulder"}},
 	}.Normalized()
 
 	if got := timeline.ContextAtFrame(99); got.Snapshot != nil {
