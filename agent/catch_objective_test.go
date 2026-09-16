@@ -27,3 +27,28 @@ func TestCatchObjectiveKeepsOrdinaryHabitatTravel(t *testing.T) {
 		}
 	}
 }
+
+func TestCatchObjectivePartySlotOnlyForDirectPartyAdditions(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		intent string
+		want   bool
+	}{
+		{name: "wild grass", intent: "", want: false},
+		{name: "fishing", intent: dexFishingIntent, want: false},
+		{name: "water", intent: dexWaterIntent, want: false},
+		{name: "safari", intent: dexSafariIntent, want: false},
+		{name: "static capture", intent: dexStaticIntent, want: false},
+		{name: "trade replaces member", intent: dexTradeIntent, want: false},
+		{name: "gift", intent: dexGiftIntent, want: true},
+		{name: "fossil revival", intent: dexFossilIntent, want: true},
+		{name: "game corner prize", intent: dexGameCornerIntent, want: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			o := Objective{Kind: KindCatch, Species: "magikarp", Intent: tc.intent}
+			if got := catchObjectiveNeedsPartySlot(o); got != tc.want {
+				t.Fatalf("catchObjectiveNeedsPartySlot(%q) = %t, want %t", tc.intent, got, tc.want)
+			}
+		})
+	}
+}

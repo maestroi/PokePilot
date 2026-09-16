@@ -17,6 +17,23 @@ func catchObjectiveOwnsTravel(o Objective) bool {
 	}
 }
 
+// catchObjectiveNeedsPartySlot separates acquisitions whose scripts require a
+// free party slot from actual captures. In Generation I a wild/static/Safari
+// catch made with a full six-Pokemon party is sent directly to the active PC
+// box, so depositing a party member first is both unnecessary and dangerous:
+// it can strand Cut/Surf/Strength ownership and turn a valid catch into
+// field_roster_no_recovery. Gifts, fossil revivals and Game Corner prizes are
+// direct party additions and still need the explicit slot preflight. Trades
+// replace an existing party member and need neither path.
+func catchObjectiveNeedsPartySlot(o Objective) bool {
+	switch o.Intent {
+	case dexGiftIntent, dexFossilIntent, dexGameCornerIntent:
+		return true
+	default:
+		return false
+	}
+}
+
 // redFishingRodID resolves the three fishing-only key items without widening
 // the generic planner/executor item whitelist. The rods are intentionally
 // observation/progression vocabulary, but dex fishing owns their use and may
@@ -39,12 +56,19 @@ func executeCatchObjective(m *emu.Emu, romData []byte, o Objective, result Objec
 	if !ok {
 		return result, fmt.Errorf("agent: %s: unknown Red species %q", o, o.Species)
 	}
-	// Ordinary catches/gifts/fossils/prizes/statics add a party member and
-	// therefore need collection storage preflight. NPC trades replace one party
-	// member with another, so a deposit there is unnecessary and could remove
-	// the exact give-species the trade planner selected.
+
+	// Acquisition storage follows the game mechanic instead of forcing every
+	// Dex source through a party deposit. Real captures can overflow a full
+	// party into Bill's active box; only scripted direct-party additions require
+	// us to make a slot first. NPC trades replace one party member in place.
 	if o.Intent != dexTradeIntent {
-		if err := skill.EnsurePartySlotForCollection(m, romData, skill.StatAwareMove(romData), species); err != nil {
+		var err error
+		if catchObjectiveNeedsPartySlot(o) {
+			err = skill.EnsurePartySlotForCollection(m, romData, skill.StatAwareMove(romData), species)
+		} else {
+			err = skill.EnsureCaptureStorage(m, romData, skill.StatAwareMove(romData))
+		}
+		if err != nil {
 			result.Outcome = OutcomeBlocked
 			return result, fmt.Errorf("agent: %s: %w", o, err)
 		}
