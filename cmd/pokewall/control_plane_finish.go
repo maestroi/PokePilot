@@ -31,6 +31,18 @@ func sanitizeFinishReport(report farm.FinishReport) farm.FinishReport {
 }
 
 func (cp *controlPlane) persistFinish(w *Wall, report farm.FinishReport) error {
+	// The runner does not need to carry a duplicate screenshot in its finish
+	// JSON: handleFinish already captures one final /frame.png from the worker.
+	// Snapshot those bytes before the completed tile is evicted into the run
+	// catalog so the durable finish artifact can keep the history thumbnail.
+	if len(report.FramePNG) == 0 {
+		w.mu.Lock()
+		if t := w.tiles[report.RunID]; t != nil && t.Finished && len(t.lastFrame) > 0 {
+			report.FramePNG = append([]byte(nil), t.lastFrame...)
+		}
+		w.mu.Unlock()
+	}
+
 	attempt := report.Attempt
 	if attempt <= 0 {
 		w.mu.Lock()
