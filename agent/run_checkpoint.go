@@ -17,7 +17,7 @@ type checkpointRing struct {
 	keep int
 }
 
-func (c *checkpointRing) write(m *emu.Emu, round int, obj Objective, k *Knowledge, intent string, intentAge int, plans ...Plan) error {
+func (c *checkpointRing) write(m *emu.Emu, round int, obj Objective, k *Knowledge, coverage *coverageTracker, intent string, intentAge int, plans ...Plan) error {
 	b, err := m.SaveState()
 	if err != nil {
 		return fmt.Errorf("SaveState: %w", err)
@@ -29,6 +29,9 @@ func (c *checkpointRing) write(m *emu.Emu, round int, obj Objective, k *Knowledg
 	}
 	if err := writeMemoryFile(path, k, intent, intentAge, plans...); err != nil {
 		return fmt.Errorf("knowledge round %d: %w", round, err)
+	}
+	if err := writeCoverageFile(path, coverage); err != nil {
+		return fmt.Errorf("coverage round %d: %w", round, err)
 	}
 	return c.evict()
 }
@@ -49,10 +52,18 @@ func (c *checkpointRing) evict() error {
 	}
 	for _, en := range entries {
 		name := en.Name()
-		if !strings.HasPrefix(name, "round-") || !isKnowledgeName(name) {
+		if !strings.HasPrefix(name, "round-") {
 			continue
 		}
-		base := strings.TrimSuffix(strings.TrimSuffix(name, ".json"), fmt.Sprintf(".knowledge-v%d", memoryVersion))
+		var base string
+		switch {
+		case isKnowledgeName(name):
+			base = strings.TrimSuffix(strings.TrimSuffix(name, ".json"), fmt.Sprintf(".knowledge-v%d", memoryVersion))
+		case isCoverageName(name):
+			base = strings.TrimSuffix(name, fmt.Sprintf(".coverage-v%d.json", coverageFileVersion))
+		default:
+			continue
+		}
 		if stateSet[base+".state"] {
 			continue
 		}
@@ -62,10 +73,14 @@ func (c *checkpointRing) evict() error {
 	}
 	sort.Strings(names)
 	for _, n := range names[:max(0, len(names)-c.keep)] {
-		if err := os.Remove(filepath.Join(c.dir, n)); err != nil && !os.IsNotExist(err) {
+		statePath := filepath.Join(c.dir, n)
+		if err := os.Remove(statePath); err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("evict %s: %w", n, err)
 		}
-		if err := os.Remove(knowledgePathForState(filepath.Join(c.dir, n))); err != nil && !os.IsNotExist(err) {
+		if err := os.Remove(knowledgePathForState(statePath)); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("evict %s: %w", n, err)
+		}
+		if err := os.Remove(coveragePathForState(statePath)); err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("evict %s: %w", n, err)
 		}
 	}
