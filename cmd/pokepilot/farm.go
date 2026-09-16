@@ -73,7 +73,7 @@ func seedBurn(seed int64) int {
 }
 
 // starterFromName resolves the public starter request into Oak's physical
-// starter ball. Fixed/random experiments use the middle ball after its species
+// starter ball. Fixed/random experiment requests use the middle ball after its species
 // is patched for this run; canonical starters keep their historic slots.
 func starterFromName(name string) (skill.Starter, bool) {
 	return skill.StarterFromRequest(name)
