@@ -131,9 +131,9 @@ func (cp *controlPlane) persistExperimentController(w *Wall) error {
 	}
 	c.mu.Unlock()
 
-	// Sweep and HTTP finish both persist the same rows. Unordered map
-	// iteration let two transactions lock experiment_runs in opposite
-	// orders and Postgres reported deadlock.
+	// HTTP mutations can persist the same controller state repeatedly. Stable
+	// lock ordering avoids deadlocks, while the DISTINCT predicates below keep
+	// unchanged rows from creating new MVCC/TOAST versions.
 	cp.experimentPersist.Lock()
 	defer cp.experimentPersist.Unlock()
 	tx, err := cp.db.Begin()
@@ -145,7 +145,7 @@ func (cp *controlPlane) persistExperimentController(w *Wall) error {
 	for _, id := range runIDs {
 		meta := state.Runs[id]
 		raw, _ := json.Marshal(meta)
-		if _, err := tx.Exec(`INSERT INTO experiment_runs(run_id,experiment_id,experiment_arm,experiment_case,deployment_id,comparable_hash,metadata_json) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb) ON CONFLICT(run_id) DO UPDATE SET experiment_id=EXCLUDED.experiment_id,experiment_arm=EXCLUDED.experiment_arm,experiment_case=EXCLUDED.experiment_case,deployment_id=EXCLUDED.deployment_id,comparable_hash=EXCLUDED.comparable_hash,metadata_json=EXCLUDED.metadata_json`, id, meta.ExperimentID, meta.ExperimentArm, meta.ExperimentCase, meta.Deployment, meta.ComparableHash, string(raw)); err != nil {
+		if _, err := tx.Exec(`INSERT INTO experiment_runs(run_id,experiment_id,experiment_arm,experiment_case,deployment_id,comparable_hash,metadata_json) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb) ON CONFLICT(run_id) DO UPDATE SET experiment_id=EXCLUDED.experiment_id,experiment_arm=EXCLUDED.experiment_arm,experiment_case=EXCLUDED.experiment_case,deployment_id=EXCLUDED.deployment_id,comparable_hash=EXCLUDED.comparable_hash,metadata_json=EXCLUDED.metadata_json WHERE experiment_runs.experiment_id IS DISTINCT FROM EXCLUDED.experiment_id OR experiment_runs.experiment_arm IS DISTINCT FROM EXCLUDED.experiment_arm OR experiment_runs.experiment_case IS DISTINCT FROM EXCLUDED.experiment_case OR experiment_runs.deployment_id IS DISTINCT FROM EXCLUDED.deployment_id OR experiment_runs.comparable_hash IS DISTINCT FROM EXCLUDED.comparable_hash OR experiment_runs.metadata_json IS DISTINCT FROM EXCLUDED.metadata_json`, id, meta.ExperimentID, meta.ExperimentArm, meta.ExperimentCase, meta.Deployment, meta.ComparableHash, string(raw)); err != nil {
 			return err
 		}
 	}
@@ -153,7 +153,7 @@ func (cp *controlPlane) persistExperimentController(w *Wall) error {
 		record := state.Experiments[id]
 		recordRaw, _ := json.Marshal(record)
 		requestRaw, _ := json.Marshal(record.Request)
-		if _, err := tx.Exec(`INSERT INTO experiments(id,name,created_at,request_json,record_json) VALUES($1,$2,$3,$4::jsonb,$5::jsonb) ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name,request_json=EXCLUDED.request_json,record_json=EXCLUDED.record_json`, id, record.Name, record.CreatedAt, string(requestRaw), string(recordRaw)); err != nil {
+		if _, err := tx.Exec(`INSERT INTO experiments(id,name,created_at,request_json,record_json) VALUES($1,$2,$3,$4::jsonb,$5::jsonb) ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name,request_json=EXCLUDED.request_json,record_json=EXCLUDED.record_json WHERE experiments.name IS DISTINCT FROM EXCLUDED.name OR experiments.request_json IS DISTINCT FROM EXCLUDED.request_json OR experiments.record_json IS DISTINCT FROM EXCLUDED.record_json`, id, record.Name, record.CreatedAt, string(requestRaw), string(recordRaw)); err != nil {
 			return err
 		}
 	}
