@@ -183,6 +183,7 @@ func (f *runFailurePolicy) recoverable(obj Objective, result ObjectiveResult, st
 	fingerprint := fingerprintRecoverableFailure(obj, result)
 	failureKey := fingerprint.Key
 	blackedOut := failureIsBlackout(result)
+	ordinaryBlackout := failureCauseIs(result, "blacked_out")
 	retreated := failureCauseIs(result, "train_retreat")
 	trainProgress := failureCauseIs(result, "train_progress_shortfall")
 	catchMiss := failureCauseIs(result, "catch_hunt_exhausted")
@@ -209,10 +210,20 @@ func (f *runFailurePolicy) recoverable(obj Objective, result ObjectiveResult, st
 
 	if strategic {
 		f.consecutive++
-		if f.escalated[failureKey] || f.consecutive > f.maxConsecutive {
+		// A plain Travel blackout can be caused by a wild encounter or
+		// overworld poison. Reaching the same respawn state again is therefore
+		// not proof that strategic recovery is broken: the next plan can choose
+		// the flee journey variant, train, heal PP, or simply get a different
+		// encounter sequence. Keep those blackouts under the consecutive-failure
+		// ceiling instead of permanently spending the one-shot fingerprint
+		// escalation. Trainer blackouts remain deterministic combat gates and
+		// retain the durable same-state stop behavior below.
+		if (!ordinaryBlackout && f.escalated[failureKey]) || f.consecutive > f.maxConsecutive {
 			return runFailureDecision{Stop: StopFailed}
 		}
-		f.escalated[failureKey] = true
+		if !ordinaryBlackout {
+			f.escalated[failureKey] = true
+		}
 		f.lastFailKey = failureKey
 		reason := "objective_failed"
 		if blackedOut {
