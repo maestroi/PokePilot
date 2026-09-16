@@ -52,7 +52,10 @@ services:
         reservations:
           memory: 256M
         limits:
-          memory: 1G
+          # The control-plane snapshot can require a short-lived memory spike
+          # while PostgreSQL detoasts/compacts a legacy row. Keep the safe
+          # production default overridable for deliberately smaller installs.
+          memory: ${POKEPILOT_DB_MEMORY_LIMIT:-4G}
 
   wall:
     # Replace farm.yml's legacy state/catalog command completely. In this
