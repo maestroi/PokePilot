@@ -48,6 +48,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 	topology := knowledgeTopologyFor(profile.ID(), nativeAdjacency)
 
 	known := NewKnowledge(topology)
+	coverage := newCoverageTracker()
 	intent, intentAge := "", 0
 	resumedPlan := Plan{}
 	if budget.ResumeFrom != "" {
@@ -60,6 +61,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 		}
 		mem := LoadCheckpointMemory(budget.ResumeFrom, topology, budget.Log)
 		known = mem.Knowledge
+		coverage = loadCoverageFile(budget.ResumeFrom, budget.Log)
 		intent, intentAge = mem.Intent, mem.IntentAge
 		resumedPlan = mem.Plan.clone()
 	}
@@ -82,10 +84,11 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 	if err != nil {
 		return Result{Stop: StopError, Err: err}
 	}
+	coverage.seed(last)
 	engine := newRunEngine(budget, resumedPlan, last, known, goalPolicy)
 	notifyPlanning(p, engine.planning.snapshot())
 
-	early := progressOf(last, known, 0)
+	early := progressOf(last, known, coverage, 0)
 	res.ProgressEarly = &early
 	lastUnroutable := ""
 
@@ -154,7 +157,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 		}
 
 		if ring != nil {
-			if err := ring.write(m, round, obj, known, intent, intentAge, engine.planning.Plan); err != nil {
+			if err := ring.write(m, round, obj, known, coverage, intent, intentAge, engine.planning.Plan); err != nil {
 				res.Stop = StopError
 				res.Err = fmt.Errorf("agent: Run: checkpoint round %d: %w", round, err)
 				break
@@ -164,6 +167,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 		before := last
 		objectiveResult, execErr := executeObjectiveResult(m, romData, obj)
 		last = objectiveResult.Final
+		coverage.seed(last)
 		res.Rounds = round
 
 		if execErr != nil {
@@ -245,6 +249,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 		if obj.Kind == KindTalk {
 			known.TalkedAt(observationLocation(before, known), obj.X, obj.Y)
 		}
+		coverage.noteSuccess(obj, before, last)
 		engine.failures.success()
 		history = appendHistory(history, RoundRecord{Objective: obj.String(), Outcome: objectiveResult.HistoryText()})
 		last.History = history
@@ -280,7 +285,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 	if status := engine.goal.evaluate(p, last, res.Rounds, intent, intentAge); status != nil {
 		res.GoalStatus = status
 	}
-	final := progressOf(last, known, res.Rounds)
+	final := progressOf(last, known, coverage, res.Rounds)
 	res.ProgressFinal = &final
 	if up, ok := p.(UsagePlanner); ok {
 		res.PromptTokens, res.CompletionTokens = up.Usage()
@@ -296,14 +301,15 @@ func observeRunInitial(m *emu.Emu, romData []byte) (Observation, error) {
 	return obs, nil
 }
 
-func progressOf(obs Observation, k *Knowledge, round int) Progress {
+func progressOf(obs Observation, k *Knowledge, coverage *coverageTracker, round int) Progress {
 	return Progress{
-		Round:   round,
-		Badges:  len(obs.Badges),
-		Events:  len(obs.Events),
-		Maps:    len(k.Visited),
-		Map:     obs.Map,
-		MapName: obs.MapName,
+		Round:    round,
+		Badges:   len(obs.Badges),
+		Events:   len(obs.Events),
+		Maps:     len(k.Visited),
+		Map:      obs.Map,
+		MapName:  obs.MapName,
+		Coverage: coverage.snapshot(obs, k),
 	}
 }
 
