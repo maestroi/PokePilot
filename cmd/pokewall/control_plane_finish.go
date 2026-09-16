@@ -31,6 +31,17 @@ func sanitizeFinishReport(report farm.FinishReport) farm.FinishReport {
 }
 
 func (cp *controlPlane) persistFinish(w *Wall, report farm.FinishReport) error {
+	// Normal HTTP finishes have already had a frame attached before the inner
+	// catalog handler can evict the completed tile. Keep this RAM fallback for
+	// direct/internal callers that persist a freshly settled run themselves.
+	if len(report.FramePNG) == 0 {
+		w.mu.Lock()
+		if t := w.tiles[report.RunID]; t != nil && t.Finished && len(t.lastFrame) > 0 {
+			report.FramePNG = append([]byte(nil), t.lastFrame...)
+		}
+		w.mu.Unlock()
+	}
+
 	attempt := report.Attempt
 	if attempt <= 0 {
 		w.mu.Lock()
@@ -144,6 +155,9 @@ func (w *Wall) controlPlaneHTTPHandler(next http.Handler) http.Handler {
 			}
 			var parsed farm.FinishReport
 			if json.Unmarshal(data, &parsed) == nil {
+				if len(parsed.FramePNG) == 0 {
+					parsed.FramePNG = w.captureFinishFrame(parsed.RunID)
+				}
 				finish = &parsed
 			}
 			req.Body = io.NopCloser(bytes.NewReader(data))
