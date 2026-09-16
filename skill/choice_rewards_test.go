@@ -29,6 +29,19 @@ func TestChoiceRewardsHaveInteractionOwnedDestinations(t *testing.T) {
 	}
 }
 
+func TestOldRodRewardUsesWalkableGuruApproach(t *testing.T) {
+	dest, ok := Place("vermilion old rod house")
+	if !ok {
+		t.Fatal("vermilion old rod house did not resolve")
+	}
+	// The old (3,4) destination is a wall in the HOUSE tileset. The guru is
+	// fixed at (2,4); (2,5) is the directly-adjacent walkable approach tile.
+	want := (Destination{Map: 0xA3, X: 2, Y: 5})
+	if dest != want {
+		t.Fatalf("old rod destination = %+v, want %+v", dest, want)
+	}
+}
+
 func TestChoiceRewardThresholdsMatchRedAides(t *testing.T) {
 	want := map[string]int{
 		"hm05":       10,
