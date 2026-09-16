@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/maestroi/pokepilot/farm"
@@ -41,6 +42,32 @@ func TestDurabilizeFinishReportKeepsSmallFinalFrameInline(t *testing.T) {
 		return
 	}
 	t.Fatal("durable finish did not contain final-frame.png")
+}
+
+func TestCaptureFinishFrameFetchesAttachedRunner(t *testing.T) {
+	png := []byte{0x89, 'P', 'N', 'G', 0x0d, 0x0a, 10, 11, 12}
+	runner := httptest.NewServer(http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+		if req.URL.Path != "/frame.png" {
+			http.NotFound(res, req)
+			return
+		}
+		res.Header().Set("Content-Type", "image/png")
+		_, _ = res.Write(png)
+	}))
+	defer runner.Close()
+
+	w := NewWall("")
+	w.mu.Lock()
+	w.tiles["finishing-run"] = &Tile{
+		RunID: "finishing-run", Status: statusRunning,
+		workerAddrs: []string{strings.TrimPrefix(runner.URL, "http://")},
+	}
+	w.order = append(w.order, "finishing-run")
+	w.mu.Unlock()
+
+	if got := w.captureFinishFrame("finishing-run"); !bytes.Equal(got, png) {
+		t.Fatalf("captureFinishFrame = %x, want %x", got, png)
+	}
 }
 
 func TestControlPlaneFrameServesHistoricalInlineThumbnail(t *testing.T) {
@@ -104,6 +131,7 @@ func newFrameControlPlaneTestWall(t *testing.T, runID string, png []byte) (*Wall
 	if err != nil {
 		t.Fatal(err)
 	}
+	db.SetMaxOpenConns(1)
 	if _, err := db.Exec(`
 CREATE TABLE runs (run_id TEXT PRIMARY KEY, status TEXT NOT NULL);
 CREATE TABLE artifacts (
