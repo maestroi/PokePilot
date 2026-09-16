@@ -1,0 +1,201 @@
+name: Dex ROM Qualification
+
+# Long-running fresh-save proof for the completionist/Dex goal. Normal PR CI
+# stays ROM-free; this workflow uses the existing private/self-hosted ROM runner.
+on:
+  workflow_dispatch:
+    inputs:
+      max_legs:
+        description: Maximum number of 8-in-game-hour resume legs
+        required: true
+        default: "8"
+        type: string
+  schedule:
+    - cron: "23 4 * * 0"
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: dex-rom-qualification
+  cancel-in-progress: false
+
+jobs:
+  dex:
+    runs-on: [self-hosted, linux, pokepilot-rom]
+    timeout-minutes: 720
+    steps:
+      - name: Checkout PokePilot
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Verify module graph
+        run: go mod download
+
+      - name: Resolve and verify ROM
+        shell: bash
+        env:
+          CONFIGURED_ROM: ${{ vars.POKEMON_RED_ROM_PATH }}
+          ROM_URL: ${{ secrets.POKEPILOT_ROM_URL || vars.POKEPILOT_ROM_URL }}
+        run: |
+          set -euo pipefail
+          target="${CONFIGURED_ROM:-$HOME/.config/pokepilot/pokemon_red.gb}"
+          export POKEPILOT_ROM_URL="$ROM_URL"
+          rom="$(bash ./scripts/ensure-rom.sh "$target")"
+          echo "POKEMON_RED_ROM=$rom" >> "$GITHUB_ENV"
+
+      - name: Resolve qualification output
+        shell: bash
+        env:
+          CONFIGURED_RESULTS: ${{ vars.POKEPILOT_QUALIFICATION_RESULTS }}
+          INPUT_MAX_LEGS: ${{ inputs.max_legs }}
+        run: |
+          set -euo pipefail
+          results="${CONFIGURED_RESULTS:-$HOME/.local/state/pokepilot/dex-qualification}"
+          out="${results}/${GITHUB_RUN_ID}-attempt-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "$out/checkpoints"
+          echo "POKEPILOT_DEX_QUAL_OUT=$out" >> "$GITHUB_ENV"
+
+          max_legs="${INPUT_MAX_LEGS:-8}"
+          if [[ ! "$max_legs" =~ ^[0-9]+$ ]] || (( max_legs < 1 || max_legs > 12 )); then
+            echo "max_legs must be an integer from 1 through 12" >&2
+            exit 2
+          fi
+          echo "POKEPILOT_DEX_QUAL_MAX_LEGS=$max_legs" >> "$GITHUB_ENV"
+
+      - name: Run fresh-save Dex completion qualification
+        shell: bash
+        run: |
+          set -euo pipefail
+          export POKEPILOT_ORCH_URL=""
+
+          completed=0
+          resume_args=()
+          for leg in $(seq 1 "$POKEPILOT_DEX_QUAL_MAX_LEGS"); do
+            log="$POKEPILOT_DEX_QUAL_OUT/leg-${leg}.log"
+            echo "=== Dex qualification leg ${leg}/${POKEPILOT_DEX_QUAL_MAX_LEGS} ===" | tee "$log"
+
+            set +e
+            go run ./cmd/pokepilot \
+              -planner llm \
+              -goal dex \
+              -play-style completionist \
+              -risk-tolerance balanced \
+              -wild-encounters planner \
+              -fps 0 \
+              -http 127.0.0.1:0 \
+              -hold 0s \
+              -max-rounds 0 \
+              -checkpoint-dir "$POKEPILOT_DEX_QUAL_OUT/checkpoints" \
+              "${resume_args[@]}" 2>&1 | tee -a "$log"
+            status=${PIPESTATUS[0]}
+            set -e
+
+            if (( status != 0 )); then
+              echo "Dex qualification leg ${leg} exited with status ${status}" >&2
+              exit "$status"
+            fi
+
+            if grep -qE '^run stopped: done after [0-9]+ round\(s\)$' "$log"; then
+              completed=1
+              printf '{"completed":true,"leg":%d,"max_legs":%d}\n' \
+                "$leg" "$POKEPILOT_DEX_QUAL_MAX_LEGS" \
+                > "$POKEPILOT_DEX_QUAL_OUT/result.json"
+              break
+            fi
+
+            if grep -qE '^run stopped: budget after [0-9]+ round\(s\)$' "$log"; then
+              resume_args=(-resume "$POKEPILOT_DEX_QUAL_OUT/checkpoints")
+              continue
+            fi
+
+            echo "Dex qualification stopped without completion or frame-budget exhaustion" >&2
+            exit 1
+          done
+
+          if (( completed != 1 )); then
+            printf '{"completed":false,"max_legs":%d}\n' \
+              "$POKEPILOT_DEX_QUAL_MAX_LEGS" \
+              > "$POKEPILOT_DEX_QUAL_OUT/result.json"
+            echo "Dex qualification exhausted all resume legs before GoalDex completed" >&2
+            exit 1
+          fi
+
+      - name: Close Dex completion issues after clean proof
+        if: success()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
+          if [[ "$(gh issue view 44 --repo "$GITHUB_REPOSITORY" --json state --jq .state)" == "OPEN" ]]; then
+            gh issue close 44 --repo "$GITHUB_REPOSITORY" --reason completed \
+              --comment "Fresh-save ROM-backed Dex qualification completed the deterministic \`dex\` goal in workflow run ${GITHUB_RUN_ID}: ${run_url}. The run used completionist policy and resumed across bounded 8-in-game-hour legs until GoalDex returned done."
+          fi
+
+          state42="$(gh issue view 42 --repo "$GITHUB_REPOSITORY" --json state --jq .state)"
+          state43="$(gh issue view 43 --repo "$GITHUB_REPOSITORY" --json state --jq .state)"
+          state44="$(gh issue view 44 --repo "$GITHUB_REPOSITORY" --json state --jq .state)"
+          if [[ "$state42" == "CLOSED" && "$state43" == "CLOSED" && "$state44" == "CLOSED" && \
+                "$(gh issue view 40 --repo "$GITHUB_REPOSITORY" --json state --jq .state)" == "OPEN" ]]; then
+            gh issue close 40 --repo "$GITHUB_REPOSITORY" --reason completed \
+              --comment "Dex mode's acquisition/evolution subissues are complete and fresh-save ROM-backed qualification passed in workflow run ${GITHUB_RUN_ID}: ${run_url}."
+          fi
+
+      - name: Build safe diagnostic artifact
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          safe="$RUNNER_TEMP/pokepilot-dex-qualification-safe"
+          rm -rf "$safe"
+          mkdir -p "$safe"
+          if [[ ! -d "${POKEPILOT_DEX_QUAL_OUT:-}" ]]; then
+            exit 0
+          fi
+
+          cd "$POKEPILOT_DEX_QUAL_OUT"
+          while IFS= read -r -d '' file; do
+            mkdir -p "$safe/$(dirname "$file")"
+            cp "$file" "$safe/$file"
+          done < <(find . -type f \
+            ! -name '*.state' \
+            ! -name '*.sav' \
+            ! -name '*.gb' \
+            ! -name '*.gbc' \
+            -print0)
+
+          printf 'Private replay checkpoints remain on the self-hosted runner at:\n%s\n' \
+            "$POKEPILOT_DEX_QUAL_OUT" > "$safe/REPLAY_LOCATION.txt"
+
+      - name: Upload safe qualification diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dex-rom-qualification-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/pokepilot-dex-qualification-safe
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Record replay location
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### Fresh-save Dex qualification'
+            echo
+            echo "Replay checkpoints remain on the self-hosted runner:"
+            echo
+            echo "\`$POKEPILOT_DEX_QUAL_OUT\`"
+            echo
+            echo 'The uploaded artifact intentionally excludes `.state`, `.sav`, `.gb`, and `.gbc` files.'
+            echo 'A passing run closes #44 and closes #40 once #42/#43 are already complete.'
+          } >> "$GITHUB_STEP_SUMMARY"
