@@ -3,6 +3,7 @@ package skill
 import (
 	"sync"
 
+	redworld "github.com/maestroi/pokepilot/red/worldmap"
 	"github.com/maestroi/pokepilot/world"
 )
 
@@ -30,7 +31,7 @@ var routeGraphCache = struct {
 
 func cachedRouteGraph(romData []byte) (*world.Graph, error) {
 	if len(romData) == 0 {
-		return world.BuildGraph(romData)
+		return redworld.BuildGraph(romData)
 	}
 	key := routeGraphROMKey{first: &romData[0], length: len(romData)}
 	routeGraphCache.Lock()
@@ -38,7 +39,7 @@ func cachedRouteGraph(romData []byte) (*world.Graph, error) {
 	if cached, ok := routeGraphCache.entries[key]; ok {
 		return cached.graph, cached.err
 	}
-	graph, err := world.BuildGraph(romData)
+	graph, err := redworld.BuildGraph(romData)
 	routeGraphCache.entries[key] = routeGraphCacheEntry{graph: graph, err: err}
 	return graph, err
 }
