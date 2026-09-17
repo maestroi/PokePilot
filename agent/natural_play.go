@@ -161,10 +161,18 @@ func naturalPlaySignal(obs Observation, o Objective, profile PlayStyleProfile) N
 		}
 
 	case KindTrainer:
+		// Trainer battles are finite, guaranteed XP sources and also generate
+		// money. Prefer them over repeated wild grinding when a play style values
+		// party development, while still letting opportunity cost and recovery
+		// pressure keep remote/risky trainers from becoming mandatory detours.
+		trainerScale := trainerPreferenceScale(profile)
 		if naturalUnderlevelledParty(obs) {
-			addScaled("useful-training", 0.12, profile.PartyScale)
+			addScaled("useful-training", 0.16, trainerScale)
 		} else {
-			addScaled("route-trainer", 0.05, profile.PartyScale)
+			addScaled("route-trainer", 0.06, trainerScale)
+		}
+		if pressure := trainerIncomePressure(obs); pressure > 0 {
+			addScaled("trainer-income", 0.14*pressure, trainerScale)
 		}
 	}
 
@@ -244,6 +252,43 @@ func naturalUnderlevelledParty(obs Observation) bool {
 		}
 	}
 	return false
+}
+
+// trainerPreferenceScale is deliberately profile-level policy rather than a
+// trainer-specific planner. Team Builder and Completionist strongly prefer the
+// finite XP/money opportunity, Adventure likes sensible nearby trainer fights,
+// and Speedrun keeps its historical no-natural-play behavior.
+func trainerPreferenceScale(profile PlayStyleProfile) float64 {
+	switch profile.Name {
+	case PlayStyleTeamBuilder:
+		return 1.60
+	case PlayStyleCompletionist:
+		return 1.35
+	case PlayStyleAdventure:
+		return 1.00
+	default:
+		return 0
+	}
+}
+
+// trainerIncomePressure reuses the economy policy instead of inventing a flat
+// money threshold. Trainer income matters most when required reserves are not
+// funded or when the current inventory policy says resupply is needed.
+func trainerIncomePressure(obs Observation) float64 {
+	economy := EconomyContext(obs)
+	if economy == nil {
+		return 0
+	}
+	switch {
+	case economy.ReservedMoney > economy.Money:
+		return 1.00
+	case economy.ResupplyNeeded && economy.SpendableMoney == 0:
+		return 1.00
+	case economy.ResupplyNeeded:
+		return 0.55
+	default:
+		return 0
+	}
 }
 
 func recentNaturalObjectiveCount(obs Observation, o Objective) int {
