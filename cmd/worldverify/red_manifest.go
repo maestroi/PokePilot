@@ -8,12 +8,12 @@ import (
 	verifier "github.com/maestroi/pokepilot/worldverify"
 )
 
-// redRequiredMaps is deliberately a completion-path invariant, not a list of
-// every interesting room in Red. Each entry owns a story item, mandatory boss,
-// or final-game handoff that a normal completed run must be able to reach.
-// Optional routes and side rooms stay out of this set so the verifier does not
-// accidentally encode one preferred playthrough as the only legal one.
-var redRequiredMaps = map[verifier.MapID]string{
+// gen1RequiredMaps is deliberately a completion-path invariant, not a list of
+// every interesting room in English Red/Blue. The two versions share these map
+// ids and story locations; version-exclusive encounter data is irrelevant to
+// world reachability. Each entry owns a story item, mandatory boss, or final
+// game handoff that a normal completed run must be able to reach.
+var gen1RequiredMaps = map[verifier.MapID]string{
 	"00": "normal game starts in Pallet Town",
 	"28": "Oak's Lab owns the opening/Pokedex progression",
 	"02": "Pewter City is the first badge hub",
@@ -62,13 +62,13 @@ var redRequiredMaps = map[verifier.MapID]string{
 	"78": "Champion's Room is the mandatory final rival battle",
 }
 
-func applyRedReachabilityManifest(snapshot *verifier.Snapshot) {
+func applyGen1ReachabilityManifest(snapshot *verifier.Snapshot) {
 	if snapshot == nil {
 		return
 	}
 
-	// Keep native Red ids and labels in adapter wiring. The generic verifier
-	// treats both as opaque strings.
+	// English Red and Blue share the Gen-I native map-id/name table. The
+	// generic verifier still treats both ids and labels as opaque strings.
 	for i := range snapshot.Maps {
 		raw, err := strconv.ParseUint(string(snapshot.Maps[i].ID), 16, 8)
 		if err != nil {
@@ -88,7 +88,7 @@ func applyRedReachabilityManifest(snapshot *verifier.Snapshot) {
 		})
 	}
 
-	for id, reason := range redRequiredMaps {
+	for id, reason := range gen1RequiredMaps {
 		add(id, verifier.ReachabilityRequired, reason)
 	}
 
@@ -96,7 +96,7 @@ func applyRedReachabilityManifest(snapshot *verifier.Snapshot) {
 		label := m.Label
 		switch {
 		case strings.HasPrefix(label, "UNUSED_MAP_"):
-			add(m.ID, verifier.ReachabilityExpectedUnreachable, "vendored Red decomp marks this map unused")
+			add(m.ID, verifier.ReachabilityExpectedUnreachable, "Gen-I decomp marks this map unused")
 		case strings.HasSuffix(label, "_COPY"):
 			add(m.ID, verifier.ReachabilityExpectedUnreachable, "dead duplicate map; live warps target the non-COPY map")
 		case label == "TRADE_CENTER" || label == "COLOSSEUM":
