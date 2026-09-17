@@ -20,26 +20,8 @@ import (
 
 var virtualTraderPolicies = []string{"scripted", "tradeback", "version-assisted", "pokedex"}
 
-type sessionRequest struct {
-	Session string `json:"session"`
-	RunID   string `json:"run_id,omitempty"`
-	Game    string `json:"game,omitempty"`
-	Policy  string `json:"policy,omitempty"`
-	Species string `json:"species,omitempty"`
-	Level   int    `json:"level,omitempty"`
-}
-
-type sessionStatus struct {
-	Session   string    `json:"session"`
-	RunID     string    `json:"run_id,omitempty"`
-	Game      string    `json:"game"`
-	Policy    string    `json:"policy"`
-	Species   string    `json:"species"`
-	Level     int       `json:"level"`
-	Status    string    `json:"status"`
-	StartedAt time.Time `json:"started_at"`
-	Error     string    `json:"error,omitempty"`
-}
+type sessionRequest = gen1trade.SessionRequest
+type sessionStatus = gen1trade.SessionStatus
 
 type managedSession struct {
 	status sessionStatus
@@ -253,7 +235,6 @@ func (s *tradeService) machine(req sessionRequest) (*gen1trade.Machine, error) {
 }
 
 func (s *tradeService) run(ctx context.Context, managed *managedSession, req sessionRequest, machine *gen1trade.Machine) {
-	s.setStatus(req.Session, "running", "")
 	metadata := map[string]string{
 		"game": req.Game, "trade_policy": req.Policy, "requested_species": req.Species,
 		"status": "ready_to_trade", "run_id": req.RunID,
@@ -261,6 +242,7 @@ func (s *tradeService) run(ctx context.Context, managed *managedSession, req ses
 	err := gen1trade.RunBroker(ctx, gen1trade.BrokerConfig{
 		Address: s.broker, Session: req.Session, PeerID: s.peerID + "-" + req.Session,
 		Metadata: metadata, Timeout: s.timeout,
+		OnReady: func() { s.setStatus(req.Session, "running", "") },
 	}, machine)
 	managed.cancel()
 	switch {
