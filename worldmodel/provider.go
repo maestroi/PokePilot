@@ -27,6 +27,10 @@ type Connection struct {
 	Offset int8
 }
 
+func (c Connection) WorldDirection() uint8 { return c.Dir }
+func (c Connection) WorldMapID() uint8     { return c.MapID }
+func (c Connection) WorldOffset() int8     { return c.Offset }
+
 // Ledge is a directed two-tile movement hop in decoded collision geometry.
 type Ledge struct {
 	DX, DY     int
@@ -44,15 +48,15 @@ type MapHeader struct {
 
 // GridSpec is an adapter-decoded collision grid. Slices are row-major.
 type GridSpec struct {
-	MapID         uint8
-	Width          int
-	Height         int
-	Walkable       []bool
-	CollisionTile  []uint8
-	FieldTile      []uint8
-	TilePairs      map[[2]uint8]bool
-	Ledges         []Ledge
-	CounterTiles   [3]uint8
+	MapID        uint8
+	Width        int
+	Height       int
+	Walkable     []bool
+	CollisionTile []uint8
+	FieldTile    []uint8
+	TilePairs    map[[2]uint8]bool
+	Ledges       []Ledge
+	CounterTiles [3]uint8
 }
 
 // GridHeader is the compatibility boundary used by world.Build and
