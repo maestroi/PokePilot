@@ -33,7 +33,13 @@ var mcpRunSequence atomic.Uint64
 // controls are not reachable through MCP.
 type mcpControl struct {
 	wallBase string
-	http     *http.Client
+	// artifactBase serves GET /v1/runs/{id}/artifacts/{name}/content. It is
+	// pokereplay when configured (inline and S3-backed artifacts both
+	// resolved server-side from pokewall's own artifact list) and falls back
+	// to wallBase (inline only) otherwise — the same selection
+	// mountRunInspectorRoutes makes for the browser's identical route.
+	artifactBase string
+	http         *http.Client
 }
 
 type mcpStartRunInput struct {
@@ -134,10 +140,15 @@ type mcpDashboard struct {
 	Workers []mcpWorkerView `json:"workers"`
 }
 
-func newMCPHandler(wallBase, token string) http.Handler {
+func newMCPHandler(wallBase, replayBase, token string) http.Handler {
+	artifactBase := strings.TrimRight(strings.TrimSpace(replayBase), "/")
+	if artifactBase == "" {
+		artifactBase = strings.TrimRight(wallBase, "/")
+	}
 	control := &mcpControl{
-		wallBase: strings.TrimRight(wallBase, "/"),
-		http:     &http.Client{Timeout: mcpWallTimeout},
+		wallBase:     strings.TrimRight(wallBase, "/"),
+		artifactBase: artifactBase,
+		http:         &http.Client{Timeout: mcpWallTimeout},
 	}
 	server := mcp.NewServer(&mcp.Implementation{
 		Name:    "pokepilot",
@@ -166,7 +177,7 @@ func newMCPHandler(wallBase, token string) http.Handler {
 	}, control.getRunArtifacts)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "pokepilot_get_run_artifact_content",
-		Description: "Fetch one small inline artifact's bytes (a .state checkpoint, .ram snapshot, or knowledge/failure JSON) as base64, for local reproduction. Bounded by the MCP response cap; remotely stored artifacts such as run.gbrun are refused here and must go through the operator UI/replay service instead.",
+		Description: "Fetch one small artifact's bytes (a .state checkpoint, .ram snapshot, or knowledge/failure JSON) as base64, for local reproduction, whether pokewall still holds it inline or it has since been durabilized to S3. Bounded by the MCP response cap, so a large recording such as run.gbrun still will not fit; use the operator UI/replay service for that.",
 	}, control.getRunArtifactContent)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "pokepilot_cancel_run",
@@ -376,7 +387,7 @@ func (c *mcpControl) getRunArtifactContent(ctx context.Context, _ *mcp.CallToolR
 		return nil, mcpArtifactContentOutput{}, fmt.Errorf("name is required")
 	}
 	path := "/v1/runs/" + url.PathEscape(id) + "/artifacts/" + url.PathEscape(name) + "/content"
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.wallBase+path, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.artifactBase+path, nil)
 	if err != nil {
 		return nil, mcpArtifactContentOutput{}, fmt.Errorf("build wall request: %w", err)
 	}

@@ -86,16 +86,18 @@ recording bytes: an autonomous debugging agent first inspects the compact
 bundle, identifies the relevant run/build/progress/failure evidence, and only
 requests deeper artifact work when needed.
 
-`pokepilot_get_run_artifact_content` is that deeper step for **inline**
-artifacts only — the `.state`/`.ram`/knowledge/failure-repro JSON a triage
-agent needs to reproduce a failure locally. It returns base64 bytes bounded by
-the MCP response cap and refuses anything pokewall marks as remotely stored
-(`run.gbrun` stays S3-only, resolved through the operator UI/replay service).
-It exists specifically because `admin.rompilot.app`'s plain
+`pokepilot_get_run_artifact_content` is that deeper step — the
+`.state`/`.ram`/knowledge/failure-repro JSON a triage agent needs to
+reproduce a failure locally. It returns base64 bytes bounded by the MCP
+response cap and, like the browser's identical content route, resolves
+through `pokereplay` when configured so a finish artifact pokewall has
+already durabilized to S3 still comes back; only artifacts too large for the
+cap (`run.gbrun`) need the operator UI/replay service instead. It exists
+specifically because `admin.rompilot.app`'s plain
 `GET /v1/runs/{id}/artifacts/{name}/content` route sits behind Cloudflare
-Access for browser sessions, while `/mcp` reaches `pokewall` server-to-server
-and never crosses that edge — so a bearer-token-only agent uses this tool
-instead of curling the content route directly.
+Access for browser sessions, while `/mcp` reaches `pokewall`/`pokereplay`
+server-to-server and never crosses that edge — so a bearer-token-only agent
+uses this tool instead of curling the content route directly.
 
 The existing `pokepilot_get_run`, triage, and investigation tools continue to
 work unchanged.

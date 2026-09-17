@@ -199,7 +199,7 @@ func handlerWithServices(wallBase, replayBase, token string) http.Handler {
 	mux.HandleFunc("GET /frame", proxy(wallBase, true))
 	mountRunInspectorRoutes(mux, wallBase, replayBase)
 	if token = strings.TrimSpace(token); token != "" {
-		mux.Handle("/mcp", newMCPHandler(wallBase, token))
+		mux.Handle("/mcp", newMCPHandler(wallBase, replayBase, token))
 	}
 	return mux
 }
