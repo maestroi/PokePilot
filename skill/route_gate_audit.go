@@ -12,6 +12,7 @@ import (
 const (
 	capCanRideCyclingRoad        gameruntime.CapabilityID = "can_ride_cycling_road"
 	capCanPassRoute23BadgeChecks gameruntime.CapabilityID = "can_pass_route23_badge_checks"
+	capCanPassLanceExit          gameruntime.CapabilityID = "can_pass_lance_exit"
 
 	// Red's Celadon City object table contains a historical/unused warp at
 	// (39,19) directly to the department store 5F. The decomp explicitly marks
@@ -41,6 +42,7 @@ const (
 
 	eventFightRoute16Snorlax state.Event = 0x4C8
 	eventBeatRoute16Snorlax  state.Event = 0x4C9
+	eventBeatLance           state.Event = 0x8FE
 )
 
 func addAuditedRedRouteCapabilities(mem *state.Mem, caps gameruntime.CapabilitySet) {
@@ -49,6 +51,9 @@ func addAuditedRedRouteCapabilities(mem *state.Mem, caps gameruntime.CapabilityS
 	}
 	if state.DecodeProgress(mem).BadgeCount == 8 {
 		caps[capCanPassRoute23BadgeChecks] = true
+	}
+	if state.HasEvent(mem, eventBeatLance) {
+		caps[capCanPassLanceExit] = true
 	}
 	// A completed Snorlax encounter is durable proof that this save already
 	// acquired the Poké Flute. Resume/checkpoint reconstruction can lose the
@@ -83,6 +88,17 @@ func redAuditedRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, 
 		// the same fact to semantic routing so the portable graph does not stop
 		// at the south Route 23 component even with all progression complete.
 		return semanticTransition("red:route23_league_approach", edge, capCanSurf, capCanPassRoute23BadgeChecks), true
+
+	case edge.Kind == world.EdgeWarp && edge.From == lanceRoomMap && edge.To == championsRoomMap &&
+		edge.WarpX == lanceExitStand.X && edge.WarpY == 0:
+		// Lance's north exit is a scripted progression boundary. The generic
+		// immutable collision graph cannot prove the post-battle approach to the
+		// Champion warp, but Elite Four progression already owns that exact
+		// crossing after EVENT_BEAT_LANCE. Model the durable battle result as a
+		// capability and let this semantic action own the warp port itself.
+		t := semanticTransition("red:lance_to_champion", edge, capCanPassLanceExit)
+		t.PortBypass = true
+		return t, true
 
 	case edge.Kind == world.EdgeWarp && edge.From == celadonCityMap && edge.To == celadonMart5FMap &&
 		edge.WarpX == celadonInaccessibleMartWarpX && edge.WarpY == celadonInaccessibleMartWarpY:
@@ -190,6 +206,23 @@ func (x *redRouteTransitionExecutor) executeAuditedRouteTransition(edge world.Ed
 		facts := currentStoryFacts(x.m)
 		if !facts.Route23BadgeChecksComplete || facts.Route23BadgeChecksPassed != 7 {
 			return world.TransitionExecutionResult{}, true, fmt.Errorf("skill: Route 23 League approach completed with badge checks %d/7", facts.Route23BadgeChecksPassed)
+		}
+		return world.TransitionExecutionResult{Changed: true}, true, nil
+
+	case "red:lance_to_champion":
+		var mem state.Mem
+		state.Snapshot(x.m, &mem)
+		if !redRouteCapabilities(x.romData, &mem).Has(capCanPassLanceExit) {
+			return world.TransitionExecutionResult{}, true, &gameruntime.TransitionBlockage{
+				Transition: transition,
+				Missing:    []gameruntime.CapabilityID{capCanPassLanceExit},
+			}
+		}
+		if x.policy == nil {
+			return world.TransitionExecutionResult{}, true, fmt.Errorf("%w: Lance to Champion", ErrRouteTransitionNeedsBattlePolicy)
+		}
+		if err := enterLeagueRoom(x.m, x.romData, x.policy, lanceExitStand, championsRoomMap, true); err != nil {
+			return world.TransitionExecutionResult{}, true, fmt.Errorf("skill: Lance to Champion: %w", err)
 		}
 		return world.TransitionExecutionResult{Changed: true}, true, nil
 
