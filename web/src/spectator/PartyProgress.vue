@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import type { SpectatorRun } from '../shared/api/spectator'
 import BadgeIcon from '../shared/components/BadgeIcon.vue'
 import ItemIcon from '../shared/components/ItemIcon.vue'
@@ -12,10 +12,13 @@ import {
   formatDuration,
   thinkingTimeSeconds
 } from '../shared/runTiming'
+import WorldExplorer from './WorldExplorer.vue'
 
 const props = defineProps<{
   run: SpectatorRun
 }>()
+
+const worldOpen = ref(false)
 
 const timingMetrics = computed(() => {
   const run = props.run
@@ -174,6 +177,46 @@ const milestones = computed(() => props.run.player?.milestones || [])
       <p v-else class="mt-3 text-xs text-slate-600">No major milestones yet.</p>
     </section>
   </div>
+
+  <Teleport to="body">
+    <button
+      v-if="!worldOpen && Number(run.map) >= 0"
+      type="button"
+      class="fixed right-4 bottom-4 z-[80] inline-flex items-center gap-2 rounded-full bg-[#111a26] px-4 py-2.5 text-xs font-bold text-white shadow-2xl shadow-black/40 ring-1 ring-cyan-300/25 transition hover:bg-[#172334] hover:ring-cyan-300/40"
+      @click="worldOpen = true"
+    >
+      <span class="size-2 rounded-full bg-cyan-300 shadow-[0_0_12px_rgba(103,232,249,0.65)]" />
+      Explore world
+    </button>
+
+    <div
+      v-if="worldOpen"
+      class="fixed inset-0 z-[90] flex items-center justify-center bg-black/80 p-2 backdrop-blur-sm sm:p-5"
+      role="dialog"
+      aria-modal="true"
+      aria-label="World explorer"
+      @click.self="worldOpen = false"
+    >
+      <section class="flex max-h-[94vh] w-full max-w-[96rem] flex-col overflow-hidden rounded-xl border border-white/12 bg-[#0a1018] shadow-2xl shadow-black/60">
+        <header class="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-[#0d141e] px-3 py-2.5 sm:px-4">
+          <div>
+            <div class="text-xs font-bold text-white">PokéPilot World Explorer</div>
+            <div class="mt-0.5 text-[10px] text-slate-500">Explore the same ROM-derived semantic maps used by routing and the operator minimap.</div>
+          </div>
+          <button
+            type="button"
+            class="rounded-md bg-white/7 px-3 py-1.5 text-xs font-semibold text-slate-300 ring-1 ring-white/10 hover:bg-white/12 hover:text-white"
+            @click="worldOpen = false"
+          >
+            Close
+          </button>
+        </header>
+        <div class="min-h-0 flex-1 overflow-auto p-2 sm:p-3">
+          <WorldExplorer :run="run" />
+        </div>
+      </section>
+    </div>
+  </Teleport>
 </template>
 
 <style scoped>
