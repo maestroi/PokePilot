@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { PlayIcon } from '@heroicons/vue/20/solid'
+import { ArrowTopRightOnSquareIcon, PlayIcon } from '@heroicons/vue/20/solid'
 import { getBuildProvenance, getDashboard } from '../shared/api/client'
+import { getOperatorUIConfig } from '../shared/api/spectator-control'
 import AppShell from '../shared/components/AppShell.vue'
 import { usePollingResource } from '../shared/composables/usePollingResource'
 import type { AppNavItem } from '../shared/types'
@@ -52,6 +53,7 @@ function hashView(): OperatorView {
 }
 
 const activeView = ref<OperatorView>(hashView())
+const configuredSpectatorURL = ref('')
 const navigation = computed<AppNavItem[]>(() => views.map((view) => ({
   name: labels[view],
   href: `#${view}`,
@@ -90,8 +92,46 @@ function syncHash(): void {
   document.title = `PokéPilot · ${labels[next]}`
 }
 
+async function loadSpectatorURL(): Promise<void> {
+  try {
+    configuredSpectatorURL.value = (await getOperatorUIConfig()).spectator_url?.trim() || ''
+  } catch {
+    configuredSpectatorURL.value = ''
+  }
+}
+
+function spectatorBaseURL(): string {
+  if (configuredSpectatorURL.value) return configuredSpectatorURL.value
+  const current = new URL(window.location.href)
+  if (current.port === '18080') {
+    current.port = '18081'
+    current.pathname = '/'
+    current.search = ''
+    current.hash = ''
+    return current.toString()
+  }
+  return 'https://pokemon.maestroi.cc'
+}
+
+function selectedRunID(): string {
+  const explicit = new URLSearchParams(window.location.search).get('run')?.trim()
+  if (explicit) return explicit
+  return [...(fleet.data.value?.runs ?? [])]
+    .filter((run) => run.status !== 'done')
+    .sort((a, b) => Number(b.queued_at || 0) - Number(a.queued_at || 0))[0]?.run_id || ''
+}
+
+function openSelectedSpectator(): void {
+  const target = new URL(spectatorBaseURL(), window.location.href)
+  const runID = selectedRunID()
+  if (runID) target.searchParams.set('run', runID)
+  else target.searchParams.delete('run')
+  window.open(target.toString(), '_blank', 'noopener,noreferrer')
+}
+
 onMounted(() => {
   syncHash()
+  void loadSpectatorURL()
   window.addEventListener('hashchange', syncHash)
 })
 onUnmounted(() => window.removeEventListener('hashchange', syncHash))
@@ -135,6 +175,16 @@ onUnmounted(() => window.removeEventListener('hashchange', syncHash))
     </template>
 
     <template #actions>
+      <button
+        v-if="activeView === 'live'"
+        type="button"
+        class="inline-flex items-center gap-1 rounded-sm bg-white/10 px-2 py-1 text-[11px] font-bold text-white ring-1 ring-white/10 hover:bg-white/15"
+        title="Open the selected run in the public spectator view"
+        @click="openSelectedSpectator"
+      >
+        <ArrowTopRightOnSquareIcon class="size-3.5" aria-hidden="true" />
+        Open spectator
+      </button>
       <a
         v-if="activeView === 'live'"
         href="#tools"
