@@ -69,7 +69,8 @@ func TestFindRouteBedroomToPokeCenter(t *testing.T) {
 
 func TestFindRouteNoRoute(t *testing.T) {
 	g := loadGraph(t)
-	// Find a map id that no edge reaches; it is unreachable from anywhere.
+	// Find a graph node that no edge reaches; it is unreachable from any
+	// different starting node without relying on a game-specific map-id bound.
 	reached := make(map[uint8]bool)
 	for _, edges := range g.Edges {
 		for _, e := range edges {
@@ -77,8 +78,8 @@ func TestFindRouteNoRoute(t *testing.T) {
 		}
 	}
 	target, found := uint8(0), false
-	for id := uint8(0); id <= maxMapID; id++ {
-		if !reached[id] {
+	for id := range g.Edges {
+		if id != 0x26 && !reached[id] {
 			target, found = id, true
 			break
 		}
@@ -210,7 +211,7 @@ func TestFindRouteAtReentersMapWhenComponentChanges(t *testing.T) {
 	}
 	for i := range want {
 		if route[i] != want[i] {
-			t.Fatalf("route[%d] = %+v, want %+v (full route %v)", i, route[i], want[i], route)
+			t.Fatalf("route[%d] = %+v, want %+v (full route %v)", i, route[i], want, route)
 		}
 	}
 }
