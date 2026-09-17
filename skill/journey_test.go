@@ -123,7 +123,7 @@ func TestGymJourneyAffordances(t *testing.T) {
 	phaseRetries := 0
 	for detours := 0; detours <= maxHealDetours; detours++ {
 		state.Snapshot(e, &mem)
-		lead := state.DecodeParty(&mem).Mons[0]
+		lead := skill.RedAddresses().DecodeParty(&mem).Mons[0]
 		if int(lead.Level) >= gymLeadLevel {
 			break
 		}
@@ -139,7 +139,7 @@ func TestGymJourneyAffordances(t *testing.T) {
 		}
 		totalBattles += res.Battles
 		state.Snapshot(e, &mem)
-		lead = state.DecodeParty(&mem).Mons[0]
+		lead = skill.RedAddresses().DecodeParty(&mem).Mons[0]
 		if res.BlackedOut {
 			// A blackout fully heals the party and warps it back to a
 			// Pokemon Center; leg resumes the walk from the respawn.
@@ -165,7 +165,7 @@ func TestGymJourneyAffordances(t *testing.T) {
 		}
 	}
 	state.Snapshot(e, &mem)
-	lead := state.DecodeParty(&mem).Mons[0]
+	lead := skill.RedAddresses().DecodeParty(&mem).Mons[0]
 	if int(lead.Level) < gymLeadLevel {
 		diagFatalf(t, e, nil, "the lead is level %d after %d battles and %d heal detour(s), want >= %d to face Brock (HP %d/%d, status=%#02x)",
 			lead.Level, totalBattles, maxHealDetours, gymLeadLevel, lead.HP, lead.MaxHP, lead.Status)
@@ -267,7 +267,7 @@ func TestGymJourneyAffordances(t *testing.T) {
 		state.Snapshot(e, &mem)
 		if mem.U8(sym.FontLoaded) == 0 {
 			settle = 0
-			if state.Controllable(&mem) {
+			if skill.RedAddresses().Controllable(&mem) {
 				closedFor++
 				if closedFor >= 30 {
 					done = true
@@ -278,7 +278,7 @@ func TestGymJourneyAffordances(t *testing.T) {
 			continue
 		}
 		closedFor = 0
-		if menu := state.DecodeTwoOptionMenu(&mem); menu != nil && !answeredChoice {
+		if menu := skill.RedAddresses().DecodeTwoOptionMenu(&mem); menu != nil && !answeredChoice {
 			answeredChoice = true
 			t.Logf("the guide's yes/no choice is up (cursor on option %d); the next A tap confirms the default (YES)", menu.Index)
 		}
@@ -294,7 +294,7 @@ func TestGymJourneyAffordances(t *testing.T) {
 		diagFatalf(t, e, nil, "the guide's conversation did not close within 3000 frames (wFontLoaded=%#02x)", mem.U8(sym.FontLoaded))
 	}
 	state.Snapshot(e, &mem)
-	if !state.Controllable(&mem) {
+	if !skill.RedAddresses().Controllable(&mem) {
 		diagFatalf(t, e, nil, "not controllable after the guide dialogue: wFontLoaded=%#02x wJoyIgnore=%#04x", mem.U8(sym.FontLoaded), mem.U8(sym.JoyIgnore))
 	}
 	t.Logf("talked to the gym guide (%d A presses, yes/no menu seen=%v)", presses, answeredChoice)
@@ -327,7 +327,7 @@ func TestGymJourneyAffordances(t *testing.T) {
 	leg(gymUpper, "Up the side corridor to row 4")
 	leg(gym, "Across the top room to below Brock after healing")
 	state.Snapshot(e, &mem)
-	lead = state.DecodeParty(&mem).Mons[0]
+	lead = skill.RedAddresses().DecodeParty(&mem).Mons[0]
 	if int(lead.HP) != int(lead.MaxHP) || lead.Status != 0 {
 		diagFatalf(t, e, nil, "the lead is not at full strength when the gym fight starts: level %d, HP %d/%d, status=%#02x",
 			lead.Level, lead.HP, lead.MaxHP, lead.Status)
@@ -355,7 +355,7 @@ func TestGymJourneyAffordances(t *testing.T) {
 // state.DecodeInventory — the same decode the planner's Observation.Bag
 // shows.
 func pokeBallCount(mem *state.Mem) int {
-	for _, it := range state.DecodeInventory(mem).Items {
+	for _, it := range skill.RedAddresses().DecodeInventory(mem).Items {
 		if it.ID == skill.ItemPokeBall {
 			return int(it.Quantity)
 		}
@@ -398,7 +398,7 @@ func (d *dialogueRecorder) sample(m *emu.Emu) {
 		d.screen = append(d.screen, scr)
 	}
 	text := ""
-	if ds := state.DecodeDialogue(&mem); ds != nil {
+	if ds := skill.RedAddresses().DecodeDialogue(&mem); ds != nil {
 		text = ds.Text
 	}
 	switch {

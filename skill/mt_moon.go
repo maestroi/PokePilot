@@ -6,7 +6,6 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 )
 
 var ErrMtMoonPostcondition = errors.New("skill: Mt. Moon story postcondition failed")
@@ -49,7 +48,7 @@ func MtMoonProgressionAvailable(mapID uint8) bool {
 func MtMoonFossil(m *emu.Emu, data []byte, policy MovePolicy) error {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if state.DecodeStoryFacts(&mem, state.DecodeInventory(&mem)).MtMoonFossilAcquired && state.Controllable(&mem) {
+	if ram(m).DecodeStoryFacts(&mem, ram(m).DecodeInventory(&mem)).MtMoonFossilAcquired && ram(m).Controllable(&mem) {
 		return nil
 	}
 	if policy == nil {
@@ -60,27 +59,27 @@ func MtMoonFossil(m *emu.Emu, data []byte, policy MovePolicy) error {
 		return err
 	}
 	state.Snapshot(m, &mem)
-	if !state.HasEvent(&mem, state.EventBeatMtMoonSuperNerd) {
+	if !ram(m).HasEvent(&mem, state.EventBeatMtMoonSuperNerd) {
 		// The approach tile triggers the map-owned encounter, sometimes a
 		// few frames after Travel reaches it. Own that deferred script here.
-		if err := driveStoryUntil(m, gymBattleWaitBudget, func(mm *state.Mem) bool { return state.DecodeBattle(mm) != nil }); err != nil {
+		if err := driveStoryUntil(m, gymBattleWaitBudget, func(mm *state.Mem, a wramAddresses) bool { return ram(m).DecodeBattle(mm) != nil }); err != nil {
 			return err
 		}
 		if err := finishStoryBattle(m, "Mt. Moon Super Nerd", policy); err != nil {
 			return err
 		}
-		if err := driveStoryUntil(m, 3000, func(mm *state.Mem) bool {
-			return state.HasEvent(mm, state.EventBeatMtMoonSuperNerd) && state.Controllable(mm)
+		if err := driveStoryUntil(m, 3000, func(mm *state.Mem, a wramAddresses) bool {
+			return ram(m).HasEvent(mm, state.EventBeatMtMoonSuperNerd) && ram(m).Controllable(mm)
 		}); err != nil {
 			return fmt.Errorf("%w: %v", ErrMtMoonPostcondition, err)
 		}
 	}
 	state.Snapshot(m, &mem)
-	if !state.HasEvent(&mem, state.EventBeatMtMoonSuperNerd) {
+	if !ram(m).HasEvent(&mem, state.EventBeatMtMoonSuperNerd) {
 		return fmt.Errorf("%w: Super Nerd victory event absent", ErrMtMoonPostcondition)
 	}
-	if !state.HasEvent(&mem, state.EventGotDomeFossil) && !state.HasEvent(&mem, state.EventGotHelixFossil) {
-		if len(state.DecodeInventory(&mem).Items) >= gen1BagCapacity {
+	if !ram(m).HasEvent(&mem, state.EventGotDomeFossil) && !ram(m).HasEvent(&mem, state.EventGotHelixFossil) {
+		if len(ram(m).DecodeInventory(&mem).Items) >= gen1BagCapacity {
 			return ErrNoSafeBagSpace
 		}
 		fossil, _ := Place("mt moon dome fossil")
@@ -91,27 +90,27 @@ func MtMoonFossil(m *emu.Emu, data []byte, policy MovePolicy) error {
 			return err
 		}
 		m.Tap(emu.A, 3, 7)
-		if err := driveStoryUntil(m, 3000, func(mm *state.Mem) bool { return state.DecodeTwoOptionMenu(mm) != nil }); err != nil {
+		if err := driveStoryUntil(m, 3000, func(mm *state.Mem, a wramAddresses) bool { return ram(m).DecodeTwoOptionMenu(mm) != nil }); err != nil {
 			return err
 		}
 		if err := selectTwoOption(m, 0); err != nil {
 			return err
 		}
-		if err := driveStoryUntil(m, 3000, func(mm *state.Mem) bool {
-			return state.HasEvent(mm, state.EventGotDomeFossil) && state.Controllable(mm)
+		if err := driveStoryUntil(m, 3000, func(mm *state.Mem, a wramAddresses) bool {
+			return ram(m).HasEvent(mm, state.EventGotDomeFossil) && ram(m).Controllable(mm)
 		}); err != nil {
 			return err
 		}
 	}
 	// The fossil script moves the NPC and removes the other fossil after the
 	// acquisition flag; settle the whole owned sequence before returning.
-	if err := driveStoryUntil(m, 3000, func(mm *state.Mem) bool {
-		return state.Controllable(mm) && mm.U8(sym.FontLoaded) == 0 && mm.U8(sym.MtMoonB2FCurScript) == 0
+	if err := driveStoryUntil(m, 3000, func(mm *state.Mem, a wramAddresses) bool {
+		return ram(m).Controllable(mm) && mm.U8(ram(m).FontLoaded) == 0 && mm.U8(ram(m).MtMoonB2FCurScript) == 0
 	}); err != nil {
 		return err
 	}
 	state.Snapshot(m, &mem)
-	if !state.DecodeStoryFacts(&mem, state.DecodeInventory(&mem)).MtMoonFossilAcquired {
+	if !ram(m).DecodeStoryFacts(&mem, ram(m).DecodeInventory(&mem)).MtMoonFossilAcquired {
 		return ErrMtMoonPostcondition
 	}
 	return nil

@@ -5,9 +5,7 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
-	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
 )
 
@@ -24,7 +22,7 @@ const (
 func rocketBagHas(m *emu.Emu, item uint8) bool {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	_, count := bagEntry(&mem, item)
+	_, count := bagEntry(&mem, item, ram(m))
 	return count > 0
 }
 
@@ -34,10 +32,10 @@ func rocketBagHas(m *emu.Emu, item uint8) bool {
 // both guards are beaten and B4F is reloaded, the same query sees the opened
 // door and the regions become connected.
 func rocketB4FGuardsReachable(m *emu.Emu, romData []byte) (bool, error) {
-	if got := m.Peek8(sym.CurMap); got != rocketHideoutB4FMap {
+	if got := m.Peek8(ram(m).CurMap); got != rocketHideoutB4FMap {
 		return false, fmt.Errorf("skill: RocketHideout: guard-side probe on map %#04x, want B4F %#04x", got, rocketHideoutB4FMap)
 	}
-	h, err := rom.ParseMap(romData, rocketHideoutB4FMap)
+	h, err := graphForROM(romData).ParseMap(romData, rocketHideoutB4FMap)
 	if err != nil {
 		return false, err
 	}
@@ -57,10 +55,10 @@ func rocketB4FGuardsReachable(m *emu.Emu, romData []byte) (bool, error) {
 }
 
 func rocketB4FBossRoomReachable(m *emu.Emu, romData []byte) (bool, error) {
-	if got := m.Peek8(sym.CurMap); got != rocketHideoutB4FMap {
+	if got := m.Peek8(ram(m).CurMap); got != rocketHideoutB4FMap {
 		return false, fmt.Errorf("skill: RocketHideout: boss-room probe on map %#04x, want B4F %#04x", got, rocketHideoutB4FMap)
 	}
-	h, err := rom.ParseMap(romData, rocketHideoutB4FMap)
+	h, err := graphForROM(romData).ParseMap(romData, rocketHideoutB4FMap)
 	if err != nil {
 		return false, err
 	}
@@ -71,7 +69,7 @@ func rocketB4FBossRoomReachable(m *emu.Emu, romData []byte) (bool, error) {
 	x, y := playerXY(m)
 	// giovanniStand (25,4) is never itself walkable; route adjacent to
 	// Giovanni's real tile instead (see walkRocketBossDoor).
-	_, _, err = world.FindPathAdjacent(grid, int(x), int(y), int(giovanniX), int(giovanniY), spriteBlockers(m))
+	_, _, err = world.FindPathAdjacent(grid, int(x), int(y), int(giovanniX), int(giovanniY), spriteBlockers(m, m.ROM()))
 	if err == nil {
 		return true, nil
 	}
@@ -90,7 +88,7 @@ func acquireRocketLiftKey(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if rocketBagHas(m, liftKeyItem) {
 		return nil
 	}
-	if got := m.Peek8(sym.CurMap); got != rocketHideoutB4FMap {
+	if got := m.Peek8(ram(m).CurMap); got != rocketHideoutB4FMap {
 		return fmt.Errorf("skill: RocketHideout: Lift Key requested on map %#04x, want B4F %#04x", got, rocketHideoutB4FMap)
 	}
 	if err := fightStoryTrainerAt(m, romData, rocketLiftKeyRocketX, rocketLiftKeyRocketY, "B4F Lift Key Rocket", policy); err != nil {
@@ -112,7 +110,7 @@ func acquireRocketLiftKey(m *emu.Emu, romData []byte, policy MovePolicy) error {
 // door, preserving resumability without depending on the mutable block.
 func reachRocketB2FElevatorFloor(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	for {
-		switch m.Peek8(sym.CurMap) {
+		switch m.Peek8(ram(m).CurMap) {
 		case rocketHideoutB4FMap:
 			edge := world.Edge{Kind: world.EdgeWarp, From: rocketHideoutB4FMap, To: rocketHideoutB3FMap, WarpX: 19, WarpY: 10}
 			if err := travelRocketWarp(m, policy, func() error { return Traverse(m, romData, edge) }); err != nil {
@@ -137,16 +135,16 @@ func reachRocketB2FElevatorFloor(m *emu.Emu, romData []byte, policy MovePolicy) 
 				return fmt.Errorf("skill: RocketHideout: B1F -> B2F for elevator: %w", err)
 			}
 		default:
-			return fmt.Errorf("skill: RocketHideout: cannot reach B2F elevator floor from map %#04x", m.Peek8(sym.CurMap))
+			return fmt.Errorf("skill: RocketHideout: cannot reach B2F elevator floor from map %#04x", m.Peek8(ram(m).CurMap))
 		}
 	}
 }
 
 func enterRocketElevatorFromB2F(m *emu.Emu, romData []byte, policy MovePolicy) error {
-	if m.Peek8(sym.CurMap) == rocketHideoutElevatorMap {
+	if m.Peek8(ram(m).CurMap) == rocketHideoutElevatorMap {
 		return nil
 	}
-	if got := m.Peek8(sym.CurMap); got != rocketHideoutB2FMap {
+	if got := m.Peek8(ram(m).CurMap); got != rocketHideoutB2FMap {
 		return fmt.Errorf("skill: RocketHideout: elevator entrance requested on map %#04x, want B2F %#04x", got, rocketHideoutB2FMap)
 	}
 	if err := travelRocketWarp(m, policy, func() error {
@@ -154,17 +152,17 @@ func enterRocketElevatorFromB2F(m *emu.Emu, romData []byte, policy MovePolicy) e
 	}); err != nil {
 		return fmt.Errorf("skill: RocketHideout: enter B2F elevator: %w", err)
 	}
-	if got := m.Peek8(sym.CurMap); got != rocketHideoutElevatorMap {
+	if got := m.Peek8(ram(m).CurMap); got != rocketHideoutElevatorMap {
 		return fmt.Errorf("skill: RocketHideout: B2F elevator entrance reached map %#04x, want %#04x", got, rocketHideoutElevatorMap)
 	}
 	return nil
 }
 
 func rideRocketElevatorToB4F(m *emu.Emu, romData []byte, policy MovePolicy) error {
-	if m.Peek8(sym.CurMap) == rocketHideoutB4FMap {
+	if m.Peek8(ram(m).CurMap) == rocketHideoutB4FMap {
 		return nil
 	}
-	if got := m.Peek8(sym.CurMap); got != rocketHideoutElevatorMap {
+	if got := m.Peek8(ram(m).CurMap); got != rocketHideoutElevatorMap {
 		return fmt.Errorf("skill: RocketHideout: B4F elevator ride requested on map %#04x, want elevator %#04x", got, rocketHideoutElevatorMap)
 	}
 	if !rocketBagHas(m, liftKeyItem) {
@@ -174,7 +172,7 @@ func rideRocketElevatorToB4F(m *emu.Emu, romData []byte, policy MovePolicy) erro
 	if err := travelRocketWarp(m, policy, func() error { return Traverse(m, romData, edge) }); err != nil {
 		return fmt.Errorf("skill: RocketHideout: ride elevator to B4F: %w", err)
 	}
-	if got := m.Peek8(sym.CurMap); got != rocketHideoutB4FMap {
+	if got := m.Peek8(ram(m).CurMap); got != rocketHideoutB4FMap {
 		return fmt.Errorf("skill: RocketHideout: elevator reached map %#04x, want B4F %#04x", got, rocketHideoutB4FMap)
 	}
 	return nil
@@ -185,7 +183,7 @@ func reachRocketGuardSide(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		return fmt.Errorf("skill: RocketHideout: guard side requires Lift Key")
 	}
 
-	switch m.Peek8(sym.CurMap) {
+	switch m.Peek8(ram(m).CurMap) {
 	case rocketHideoutB4FMap:
 		reachable, err := rocketB4FGuardsReachable(m, romData)
 		if err != nil {
@@ -212,7 +210,7 @@ func reachRocketGuardSide(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	case rocketHideoutElevatorMap:
 		return rideRocketElevatorToB4F(m, romData, policy)
 	default:
-		return fmt.Errorf("skill: RocketHideout: cannot reach guard side from map %#04x", m.Peek8(sym.CurMap))
+		return fmt.Errorf("skill: RocketHideout: cannot reach guard side from map %#04x", m.Peek8(ram(m).CurMap))
 	}
 }
 
@@ -223,7 +221,7 @@ func reachRocketGuardSide(m *emu.Emu, romData []byte, policy MovePolicy) error {
 // and can fail from the guard-side landing. Only reload when the boss room is
 // still disconnected in the live block buffer.
 func reloadRocketB4FViaElevator(m *emu.Emu, romData []byte, policy MovePolicy) error {
-	if got := m.Peek8(sym.CurMap); got != rocketHideoutB4FMap {
+	if got := m.Peek8(ram(m).CurMap); got != rocketHideoutB4FMap {
 		return fmt.Errorf("skill: RocketHideout: B4F reload requested on map %#04x", got)
 	}
 	open, err := rocketB4FBossRoomReachable(m, romData)

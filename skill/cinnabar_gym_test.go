@@ -72,11 +72,11 @@ func TestCinnabarQuizGateEventsAreTheSixLiveGateBits(t *testing.T) {
 
 func TestCinnabarGymReadyRequiresSecretKey(t *testing.T) {
 	var mem state.Mem
-	if CinnabarGymReady(&mem) {
+	if CinnabarGymReady(&mem, redWram()) {
 		t.Fatal("Cinnabar Gym ready without Secret Key")
 	}
 	putBag(&mem, state.BagItem{ID: mansionSecretKeyItem, Quantity: 1})
-	if !CinnabarGymReady(&mem) {
+	if !CinnabarGymReady(&mem, redWram()) {
 		t.Fatal("Cinnabar Gym not ready with Secret Key in bag")
 	}
 }
@@ -86,11 +86,11 @@ func TestCinnabarGymOpenRequiresAllSixQuizGates(t *testing.T) {
 	for index := uint8(1); index <= 6; index++ {
 		event, _ := cinnabarQuizGateEvent(index)
 		setSkillTestEvent(&mem, event)
-		if index < 6 && CinnabarGymOpen(&mem) {
+		if index < 6 && CinnabarGymOpen(&mem, redWram()) {
 			t.Fatalf("gym reported open after only %d gates", index)
 		}
 	}
-	if !CinnabarGymOpen(&mem) {
+	if !CinnabarGymOpen(&mem, redWram()) {
 		t.Fatal("gym not open after all six quiz gate events")
 	}
 }

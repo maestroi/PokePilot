@@ -5,9 +5,7 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
-	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
 )
 
@@ -170,11 +168,11 @@ func executeRocketSpinAction(m *emu.Emu, mapID uint8, action rocketSpinAction) e
 	for i := 0; i < stepMoveBudget; i++ {
 		var mem state.Mem
 		state.Snapshot(m, &mem)
-		if state.DecodeBattle(&mem) != nil {
+		if ram(m).DecodeBattle(&mem) != nil {
 			m.Release(btn)
 			return fmt.Errorf("skill: RocketHideout: battle entering spinner at (%d,%d): %w", action.Enter.x, action.Enter.y, ErrBattle)
 		}
-		if state.DecodeDialogue(&mem) != nil {
+		if ram(m).DecodeDialogue(&mem) != nil {
 			m.Release(btn)
 			return ErrDialogueInterrupted
 		}
@@ -191,19 +189,19 @@ func executeRocketSpinAction(m *emu.Emu, mapID uint8, action rocketSpinAction) e
 	}
 
 	for i := 0; i < rocketSpinSettleBudget; i++ {
-		if m.Peek8(sym.CurMap) != mapID {
-			return fmt.Errorf("skill: RocketHideout: spinner unexpectedly left map %#04x for %#04x", mapID, m.Peek8(sym.CurMap))
+		if m.Peek8(ram(m).CurMap) != mapID {
+			return fmt.Errorf("skill: RocketHideout: spinner unexpectedly left map %#04x for %#04x", mapID, m.Peek8(ram(m).CurMap))
 		}
 		var mem state.Mem
 		state.Snapshot(m, &mem)
-		if state.DecodeBattle(&mem) != nil {
+		if ram(m).DecodeBattle(&mem) != nil {
 			return fmt.Errorf("skill: RocketHideout: battle during forced spinner movement: %w", ErrBattle)
 		}
-		if state.DecodeDialogue(&mem) != nil {
+		if ram(m).DecodeDialogue(&mem) != nil {
 			return ErrDialogueInterrupted
 		}
 		x, y := playerXY(m)
-		if int(x) == action.Landing.x && int(y) == action.Landing.y && state.Controllable(&mem) && mem.U8(sym.WalkCounter) == 0 {
+		if int(x) == action.Landing.x && int(y) == action.Landing.y && ram(m).Controllable(&mem) && mem.U8(ram(m).WalkCounter) == 0 {
 			return waitForPositionStable(m, positionStableBudget, positionStableFrames)
 		}
 		m.StepFrame()
@@ -213,14 +211,14 @@ func executeRocketSpinAction(m *emu.Emu, mapID uint8, action rocketSpinAction) e
 }
 
 func walkRocketSpinnerWarp(m *emu.Emu, romData []byte, mapID, toMap uint8, warpX, warpY uint8) error {
-	if m.Peek8(sym.CurMap) != mapID {
-		return fmt.Errorf("skill: RocketHideout: spinner warp requested on map %#04x, want %#04x", m.Peek8(sym.CurMap), mapID)
+	if m.Peek8(ram(m).CurMap) != mapID {
+		return fmt.Errorf("skill: RocketHideout: spinner warp requested on map %#04x, want %#04x", m.Peek8(ram(m).CurMap), mapID)
 	}
-	h, err := rom.ParseMap(romData, mapID)
+	h, err := graphForROM(romData).ParseMap(romData, mapID)
 	if err != nil {
 		return err
 	}
-	grid, err := world.Build(romData, h)
+	grid, err := world.BuildForTables(graphForROM(romData), romData, h)
 	if err != nil {
 		return err
 	}
@@ -230,7 +228,7 @@ func walkRocketSpinnerWarp(m *emu.Emu, romData []byte, mapID, toMap uint8, warpX
 	}
 
 	for attempt := 0; ; attempt++ {
-		blocked := spriteBlockers(m)
+		blocked := spriteBlockers(m, m.ROM())
 		x, y := playerXY(m)
 		actions, planErr := planRocketSpinner(grid.Width, grid.Height, grid.Walkable, int(x), int(y), int(warpX), int(warpY), transitions, blocked)
 		if planErr != nil {
@@ -264,7 +262,7 @@ func travelRocketWarp(m *emu.Emu, policy MovePolicy, goTo func() error) error {
 	_, err := travel(m, policy, 20,
 		goTo,
 		func() DialogueRecoveryResult { return RecoverDialogue(m, dialogueRecoveryBudget) },
-		func() bool { return m.Peek8(sym.StatusFlags4)&blackoutBit != 0 },
+		func() bool { return m.Peek8(ram(m).StatusFlags4)&blackoutBit != 0 },
 		fightOnly(m, policy),
 	)
 	return err
@@ -276,7 +274,7 @@ func travelRocketWarp(m *emu.Emu, policy MovePolicy, goTo func() error) error {
 // floor before re-reading RAM.
 func descendRocketHideout(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	for {
-		switch m.Peek8(sym.CurMap) {
+		switch m.Peek8(ram(m).CurMap) {
 		case rocketHideoutB1FMap:
 			edge := world.Edge{Kind: world.EdgeWarp, From: rocketHideoutB1FMap, To: rocketHideoutB2FMap, WarpX: 23, WarpY: 2}
 			if err := travelRocketWarp(m, policy, func() error { return Traverse(m, romData, edge) }); err != nil {
@@ -297,7 +295,7 @@ func descendRocketHideout(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		case rocketHideoutB4FMap:
 			return nil
 		default:
-			return fmt.Errorf("skill: RocketHideout: cannot descend from map %#04x", m.Peek8(sym.CurMap))
+			return fmt.Errorf("skill: RocketHideout: cannot descend from map %#04x", m.Peek8(ram(m).CurMap))
 		}
 	}
 }

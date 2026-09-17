@@ -1,63 +1,132 @@
 # PokePilot
 
-PokePilot plays Pokémon games headlessly, beginning with Pokémon Red, and
-measures how far a planner can get with a menu of semantic game verbs. Red is
-the first game adapter, not the intended permanent boundary of the runtime; the
-binding multi-game architecture principles live in `docs/ARCHITECTURE.md`.
+PokePilot is a long-running game-playing runtime. It boots a real ROM in a
+deterministic emulator, drives the game with typed semantic objectives, and
+measures how far a planner can get. Pokémon Red is the first game adapter, not
+the intended permanent boundary of the core.
 
-It boots the real ROM in [GomeBoy](https://github.com/maestroi/gomeboy), a
-deterministic Game Boy emulator, drives it with typed Go executors — boot,
-take a starter, travel, battle, gym, shop, heal — and, in `llm` mode, lets a
-model pick the next objective from a printed menu. Gameplay truth comes from
-RAM, never from pixels; every round is logged; every run is reproducible to
-the bit.
+Gameplay truth comes from RAM, never from pixels. Every round is logged. Every
+run is reproducible to the bit.
+
+The binding design contract is [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md):
+generic layers own semantics and lifecycle; a game adapter owns maps, RAM, menus,
+dialogue, and story mechanics.
+
+## Architecture
+
+The conceptual stack, from [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md):
+
+```mermaid
+flowchart TB
+  planner["Campaign planner<br/>what should become true next?"]
+  runtime["Objective runtime<br/>transactions · structured outcomes · recovery"]
+  skills["Semantic skills + world model<br/>travel · battle · acquire · heal · capabilities"]
+  adapter["Game adapter<br/>maps · RAM · ROM · menus · story rules"]
+  emu["Emulator / game runtime"]
+
+  planner -->|"picks one offered objective"| runtime
+  runtime -->|"owns the start/finish boundary"| skills
+  skills -->|"portable verbs"| adapter
+  adapter -->|"reads RAM, never pixels"| emu
+
+  llm["LLM planner optional<br/>chooses from a printed menu"]
+  llm -.-> planner
+  gomeboy["GomeBoy<br/>deterministic Game Boy"]
+  emu --> gomeboy
+```
+
+Red is the first adapter behind that boundary (`red/`, `profiles/`). Adding
+Crystal or Emerald should mean a new adapter and game facts, not a fork of the
+planner or recovery policy.
+
+How that maps onto this repo and the farm:
+
+```mermaid
+flowchart LR
+  subgraph humans ["Watch"]
+    op["Operator console"]
+    spec["Spectator"]
+  end
+
+  subgraph farm ["PokéFarm"]
+    ui["cmd/pokeui"]
+    wall["cmd/pokewall"]
+    issues["cmd/pokeissues"]
+    runner["cmd/pokepilot"]
+  end
+
+  subgraph runtime ["One runner"]
+    agent["agent/"]
+    skill["skill/ + world/"]
+    red["red/ + profiles/"]
+    emu["emu/"]
+  end
+
+  op --> ui
+  spec --> ui
+  ui --> wall
+  wall -->|"leases, checkpoints"| runner
+  wall --> issues
+  runner --> agent
+  agent --> skill
+  skill --> red
+  red --> emu
+```
+
+| Layer | Packages |
+|---|---|
+| Portable contract | `game/` — objective transactions; must not import Red, emu, skill, or world |
+| Campaign planner | `agent/`, `cmd/pokepilot` |
+| Skills and navigation | `skill/`, `world/` |
+| Red adapter | `red/rom`, `red/state`, `red/sym`, `red/profile`, `profiles/` |
+| Emulator | `emu/` — the only package that talks to [GomeBoy](https://github.com/maestroi/gomeboy) |
+| Farm | `farm/`, `cmd/pokewall`, `cmd/pokeui`, `cmd/pokeissues` |
+
+If a gameplay fix does not fit that split, do not force it into the current
+layer. Reshape the boundary first. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ## Why it is built this way
 
 - **Determinism is the point.** Gen 1's RNG is reseeded from the CPU cycle
-  count (`rDIV`), and nothing in the loop reads a wall clock — so the same
-  ROM and the same inputs meet the same Pidgey on the same tile. `-seed N`
-  burns N-derived idle frames after boot to get *different* luck, not a fair
+  count (`rDIV`). Nothing in the loop reads a wall clock, so the same ROM and
+  the same inputs meet the same Pidgey on the same tile. `-seed N` burns
+  N-derived idle frames after boot to get *different* luck, not a fair
   comparison.
-- **No pixels.** The browser view is for humans to watch. PokePilot reads
-  the game through `red/state` (a RAM snapshot decoded into typed state), so
-  assertions are exact and tests cannot flake on a frame.
+- **No pixels.** The browser view is for humans to watch. Assertions read
+  `red/state` (a RAM snapshot decoded into typed state) and cannot flake on a
+  frame.
 - **The decomp is vendored.** `pokered/` is the full pokered decompilation,
   byte-identical to `roms/pokemon_red.gb` (sha1
-  `ea9bcae617fdf159b045185467ae58b2e4a48b9a`). Every ROM fact this project
-  relies on is read from it; `docs/POKERED.md` maps question → file.
-- **Game facts do not define the core.** Generic layers own objective
-  lifecycle, structured outcomes, semantic capabilities, and recovery policy;
-  game-specific maps, RAM, menus, dialogue, and story mechanics belong behind
-  the game boundary. See `docs/ARCHITECTURE.md`.
+  `ea9bcae617fdf159b045185467ae58b2e4a48b9a`). `docs/POKERED.md` maps question →
+  file.
+- **Endless runs discover; replays prevent regressions.** The farm finds
+  failures. A cheap deterministic replay keeps them fixed. Details in
+  [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ## Layout
 
 | Path | What it is |
 |---|---|
-| `game/` | Game-agnostic objective transaction runtime and adapter contract; forbidden from importing Red/emulator/skill/world implementations |
-| `emu/` | The only package that talks to GomeBoy: open, step, input, save states, watch |
-| `red/rom/` | Static game data parsed out of the ROM image: maps, warps, connections, collision |
-| `red/state/` | A RAM snapshot decoded into typed game state: party, inventory, badges, player, menus, text |
-| `red/sym/` | Generated RAM/HRAM addresses, verified against a committed `pokered.sym` snapshot |
-| `world/` | The map graph, collision grids, and BFS pathfinding |
-| `skill/` | Deterministic executors (boot, starter, goto, travel, battle, gym, shop, …) plus the fixture cache and the probe test |
-| `agent/` | The intent layer above `skill`: objectives, observation, and the LLM planner loop |
-| `farm/` | Lease/spec types shared by farm runners and the wall |
-| `cmd/pokepilot` | The main binary: boots the ROM, serves the screen over HTTP, runs a scripted or llm planner |
-| `cmd/badgerun` | Scoreboard harness: llm planner to the Boulder Badge, N times per starter and seed, prints a table |
-| `cmd/pokewall` | Farm orchestrator: leases, checkpoints, flight recorder, issue handoff |
+| `game/` | Portable objective runtime and adapter contract |
+| `emu/` | Open, step, input, save states, watch |
+| `red/` | ROM tables, RAM decode, symbols, Red profile |
+| `world/` | Map graph, collision grids, BFS pathfinding |
+| `skill/` | Deterministic executors plus the fixture cache and probe |
+| `agent/` | Objectives, observation, planner loop |
+| `farm/` | Lease/spec types shared by runners and the wall |
+| `cmd/pokepilot` | Main binary: ROM, HTTP screen, scripted or llm planner |
+| `cmd/badgerun` | Scoreboard harness to the Boulder Badge |
+| `cmd/pokewall` | Farm orchestrator |
 | `cmd/pokeui` | Operator console; the browser talks only to this |
-| `pokered/` | The vendored decompilation — see `pokered/UPSTREAM.md` |
-| `deploy/` | Docker image and Swarm stack for the local farm (`deploy/README.md`) |
-| `docs/` | Design, agent-loop notes, decomp map, slice plans |
+| `pokered/` | Vendored decompilation — `pokered/UPSTREAM.md` |
+| `deploy/` | Docker image and Swarm stack (`deploy/README.md`) |
+| `docs/` | Architecture, agent loop, decomp map, plans |
 | `roms/` | Gitignored; your ROM lives here |
 
 ## Getting started
 
 Requires Go 1.26 and a Pokémon Red ROM for gameplay. GomeBoy is pinned in
-`go.mod` to the PokePilot-maintained fork at `github.com/maestroi/gomeboy`, so
-a normal fresh clone has no dependency on a developer-local filesystem path.
+`go.mod` to the PokePilot-maintained fork at `github.com/maestroi/gomeboy`.
 ROM-free verification also works without a ROM.
 
 ```sh
@@ -99,11 +168,10 @@ run ends on the round cap rather than on success, and each round carries its
 own progress ("badges N/8") into the planner's prompt. Use `-goal badges:1`
 for a short run that can actually finish.
 
-Each round the model picks one of the offered objectives — `take a starter`
-plus one `go to <place>` per name `skill.Place` accepts — and the round is
-printed to stdout, so an unattended run leaves a log a human can read in the
-morning. The run stops on structured-goal completion, budget exhaustion, a
-reply naming no objective, or a failed objective. Details in `docs/AGENT.md`.
+Each round the model picks one of the offered objectives, and the round is
+printed to stdout. The run stops on structured-goal completion, budget
+exhaustion, a reply naming no objective, or a failed objective. Details in
+`docs/AGENT.md`.
 
 ### Scoreboard
 
@@ -113,9 +181,8 @@ POKEMON_RED_ROM=roms/pokemon_red.gb \
 ```
 
 Per run it reports badge yes/no, frames to badge (emulated frames, never
-wall clock), planner calls, battles, blackouts, and where the run stopped;
-each run keeps `run.log`, `prompts.txt`, and resumable `checkpoints/`. It is
-a harness, not a service — not part of `go test ./...`.
+wall clock), planner calls, battles, blackouts, and where the run stopped.
+It is a harness, not a service — not part of `go test ./...`.
 
 ## Testing
 
@@ -166,9 +233,9 @@ Details in `deploy/README.md`.
 | Doc | What it answers |
 |---|---|
 | `AGENTS.md` | Binding working rules for coding agents, probes, decomp/RNG/fixture discipline |
-| `docs/ARCHITECTURE.md` | Binding multi-game architecture principles and the design gate for every runtime fix |
-| `docs/DESIGN.md` | The technical design and the GomeBoy investigation |
+| `docs/ARCHITECTURE.md` | Binding multi-game architecture: principles, layering, and the design gate for every runtime fix |
 | `docs/AGENT.md` | The agent loop, ROM facts, badgerun, farm evidence |
+| `docs/GAME_PROFILES.md` | Portable `game.GameProfile` contract and Red as the first profile |
 | `docs/POKERED.md` | Question → file map for the vendored decomp |
 | `docs/DEVELOPMENT.md` | ROM-free vs ROM-backed workflow |
 | `docs/QUALIFICATION.md` | ROM-backed qualification catalog and private corpus |
@@ -177,6 +244,7 @@ Details in `deploy/README.md`.
 | `docs/RAM_FORENSICS.md` | Failure RAM capture |
 | `docs/S3_ARTIFACT_STORAGE.md` | Farm artifact object storage |
 | `docs/RUN_INSPECTOR.md` | Run inspector, artifacts, and deterministic replay |
+| `docs/PORTABLE_REPRO.md` | Portable reproduction bundles |
 | `docs/ROAD-TO-ELITE-FOUR.md` | Everything between Cerulean City and the Pokémon League |
 | `docs/RUNNOTES.md` | Permanent per-task measurements |
 | `RUNNOTES.md` | Short handoff for the next task |

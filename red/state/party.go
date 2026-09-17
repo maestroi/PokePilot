@@ -75,14 +75,14 @@ type PartyState struct {
 // switch policy can score bench members directly without reconstructing base
 // stats from species data. Party PP bytes pack the PP Up count into the high
 // two bits; Mon.PP exposes only current remaining PP.
-func DecodeParty(m *Mem) PartyState {
-	count := int(m.U8(sym.PartyCount))
+func (a Addresses) DecodeParty(m *Mem) PartyState {
+	count := int(m.U8(a.PartyCount))
 	if count > 6 {
 		count = 6
 	}
 	mons := make([]Mon, count)
 	for n := 0; n < count; n++ {
-		base := sym.PartyMon1 + uint16(n)*sym.PartyMonSize
+		base := a.PartyMon1 + uint16(n)*sym.PartyMonSize
 		mons[n] = Mon{
 			Species: m.U8(base + sym.MonSpecies),
 			Level:   m.U8(base + sym.MonLevel),

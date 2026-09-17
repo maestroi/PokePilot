@@ -9,25 +9,25 @@ import (
 
 func TestSilphCardKeySemanticHandoff(t *testing.T) {
 	var mem state.Mem
-	if SilphCardKeyReady(&mem) {
+	if SilphCardKeyReady(&mem, redWram()) {
 		t.Fatal("Card Key phase is ready before Saffron gate opens")
 	}
-	if SilphCardKeyOwned(&mem) {
+	if SilphCardKeyOwned(&mem, redWram()) {
 		t.Fatal("empty bag reports Card Key owned")
 	}
 
 	// wStatusFlags1 bit 6 is BIT_GAVE_SAFFRON_GUARDS_DRINK; StoryFacts is
 	// the authoritative decoder used by both gate and Card Key phases.
 	mem[sym.StatusFlags1] |= 1 << 6
-	if !SilphCardKeyReady(&mem) {
+	if !SilphCardKeyReady(&mem, redWram()) {
 		t.Fatal("open Saffron gate did not make Card Key phase ready")
 	}
-	if SilphCardKeyOwned(&mem) {
+	if SilphCardKeyOwned(&mem, redWram()) {
 		t.Fatal("gate opening alone reports Card Key owned")
 	}
 
 	putBag(&mem, state.BagItem{ID: silphCardKeyItem, Quantity: 1})
-	if !SilphCardKeyOwned(&mem) {
+	if !SilphCardKeyOwned(&mem, redWram()) {
 		t.Fatal("Card Key bag entry did not satisfy semantic postcondition")
 	}
 }

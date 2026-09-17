@@ -68,10 +68,30 @@ type Graph struct {
 // any map the source already reaches via an explicit warp (that direction is
 // covered by its own edge). If zero or more than one candidate remains the
 // edge is dropped rather than guessed, so no edge ever has To == 0xFF.
+//
+// The playable slot set comes from the ROM's own tables: Gen I games share one
+// header/object format but differ in table addresses AND in which map ids are
+// real (Yellow appends SUMMER_BEACH_HOUSE at $F8, which Red's $F8 cutoff
+// rejects). BuildGraph defaults to Red's tables; a Gen I game whose layout
+// differs calls BuildGraphForTables with its own.
 func BuildGraph(romData []byte) (*Graph, error) {
+	return BuildGraphForTables(rom.RedTables(), romData)
+}
+
+// BuildGraphForTables is BuildGraph for a Gen I game whose ROM tables differ
+// from Red's. ValidMapID and MaxMapID select the playable slots for that game.
+func BuildGraphForTables(tables rom.Tables, romData []byte) (*Graph, error) {
+	maxID := tables.MaxMapID
+	if maxID == 0 {
+		maxID = maxMapID + 1
+	}
+	valid := tables.ValidMapID
 	headers := make(map[uint8]rom.MapHeader)
-	for id := uint8(0); id <= maxMapID; id++ {
-		h, err := rom.ParseMap(romData, id)
+	for id := uint8(0); id < maxID; id++ {
+		if valid != nil && !valid(id) {
+			continue
+		}
+		h, err := tables.ParseMap(romData, id)
 		if err != nil {
 			continue // invalid map id: skip, do not fail the build
 		}
@@ -118,7 +138,7 @@ func BuildGraph(romData []byte) (*Graph, error) {
 		}
 		g.warps[id] = h.Warps
 		g.tiles[id] = dim{w: int(h.WidthBlocks) * 2, h: int(h.HeightBlocks) * 2}
-		if grid, err := Build(romData, h); err == nil {
+		if grid, err := BuildForTables(tables, romData, h); err == nil {
 			g.comps[id] = components(grid)
 			g.reachable[id] = componentReachability(grid, g.comps[id])
 		}

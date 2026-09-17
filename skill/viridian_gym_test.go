@@ -48,11 +48,11 @@ func TestViridianSpinnerPlannerTreatsArrowAsForcedEdge(t *testing.T) {
 
 func TestViridianGymReadyUsesStoryOpenEvent(t *testing.T) {
 	var mem state.Mem
-	if ViridianGymReady(&mem) {
+	if ViridianGymReady(&mem, redWram()) {
 		t.Fatal("Viridian Gym ready without story-open event")
 	}
 	setSkillTestEvent(&mem, state.Event(0x028))
-	if !ViridianGymReady(&mem) {
+	if !ViridianGymReady(&mem, redWram()) {
 		t.Fatal("Viridian Gym not ready after EVENT_VIRIDIAN_GYM_OPEN")
 	}
 }

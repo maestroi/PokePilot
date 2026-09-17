@@ -16,13 +16,13 @@ func setRouteTestEvent(mem *state.Mem, event state.Event) {
 
 func TestRedRouteCapabilitiesProjectEarlyStoryGates(t *testing.T) {
 	mem := new(state.Mem)
-	caps := redRouteCapabilities(nil, mem)
+	caps := redRouteCapabilities(nil, mem, redWram())
 	if caps.Has(capCanLeaveViridianNorth) || caps.Has(capCanLeavePewterEast) {
 		t.Fatalf("fresh state unexpectedly passes early route gates: %v", caps)
 	}
 
 	setRouteTestEvent(mem, state.EventGotPokedex)
-	caps = redRouteCapabilities(nil, mem)
+	caps = redRouteCapabilities(nil, mem, redWram())
 	if !caps.Has(capCanLeaveViridianNorth) {
 		t.Fatalf("Pokedex story fact did not project %q: %v", capCanLeaveViridianNorth, caps)
 	}
@@ -31,7 +31,7 @@ func TestRedRouteCapabilitiesProjectEarlyStoryGates(t *testing.T) {
 	}
 
 	mem[sym.ObtainedBadges] |= 1 << uint8(state.BadgeBoulder)
-	caps = redRouteCapabilities(nil, mem)
+	caps = redRouteCapabilities(nil, mem, redWram())
 	if !caps.Has(capCanLeavePewterEast) {
 		t.Fatalf("Boulder Badge did not project %q: %v", capCanLeavePewterEast, caps)
 	}

@@ -5,7 +5,6 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 )
 
 const billRouteMaxBattles = 64
@@ -44,11 +43,11 @@ func Bill(m *emu.Emu, romData []byte, policy MovePolicy) error {
 
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if _, count := bagEntry(&mem, ssTicketItem); count > 0 {
+	if _, count := bagEntry(&mem, ssTicketItem, ram(m)); count > 0 {
 		return nil
 	}
 
-	if m.Peek8(sym.CurMap) != billsHouseMap {
+	if m.Peek8(ram(m).CurMap) != billsHouseMap {
 		dest, ok := Place("bill's house")
 		if !ok {
 			return fmt.Errorf("skill: Bill: Place %q not found", "bill's house")
@@ -59,7 +58,7 @@ func Bill(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	}
 
 	state.Snapshot(m, &mem)
-	if _, count := bagEntry(&mem, ssTicketItem); count > 0 {
+	if _, count := bagEntry(&mem, ssTicketItem, ram(m)); count > 0 {
 		return nil
 	}
 	// Bill's final human-form conversation awards a new distinct key item.
@@ -72,7 +71,7 @@ func Bill(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	// Pokemon-form Bill is object slot 1. Approach him explicitly before
 	// helpBill: that helper intentionally owns the unusual choice + scripted
 	// walk and must not be driven through ordinary TalkAt settling.
-	if spriteSlotPresent(&mem, 1) {
+	if spriteSlotPresent(&mem, 1, ram(m)) {
 		if err := talkBeside(m, romData, billPokemonX, billPokemonY, policy); err != nil {
 			return fmt.Errorf("skill: Bill: approach Bill: %w", err)
 		}
@@ -90,7 +89,7 @@ func Bill(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	}
 
 	state.Snapshot(m, &mem)
-	if _, count := bagEntry(&mem, ssTicketItem); count == 0 {
+	if _, count := bagEntry(&mem, ssTicketItem, ram(m)); count == 0 {
 		return fmt.Errorf("skill: Bill: completed without S.S. Ticket in the bag")
 	}
 	return nil

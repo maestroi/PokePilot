@@ -18,11 +18,11 @@ func TestSaffronGymRealROM(t *testing.T) {
 
 	var before state.Mem
 	state.Snapshot(m, &before)
-	facts := state.DecodeStoryFacts(&before, state.DecodeInventory(&before))
+	facts := redWram().DecodeStoryFacts(&before, redWram().DecodeInventory(&before))
 	if !facts.SilphRescueComplete {
 		t.Fatal("prepared Saffron Gym state has not completed the Silph rescue")
 	}
-	if state.DecodeProgress(&before).Has(state.BadgeMarsh) {
+	if redWram().DecodeProgress(&before).Has(state.BadgeMarsh) {
 		t.Fatal("prepared Saffron Gym state already has the Marsh Badge")
 	}
 
@@ -51,10 +51,10 @@ func TestSaffronGymRealROM(t *testing.T) {
 
 	var after state.Mem
 	state.Snapshot(m, &after)
-	if !state.DecodeProgress(&after).Has(state.BadgeMarsh) {
+	if !redWram().DecodeProgress(&after).Has(state.BadgeMarsh) {
 		t.Fatal("Marsh Badge is not set after beating Sabrina")
 	}
-	if !state.Controllable(&after) {
+	if !redWram().Controllable(&after) {
 		t.Fatal("player is not controllable after the Sabrina sequence")
 	}
 }

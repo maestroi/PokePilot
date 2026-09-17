@@ -137,14 +137,14 @@ type FieldCapability struct {
 }
 
 // FieldCapabilityFor decodes one field capability from a RAM snapshot.
-func FieldCapabilityFor(mem *state.Mem, move FieldMove) FieldCapability {
+func FieldCapabilityFor(mem *state.Mem, move FieldMove, a wramAddresses) FieldCapability {
 	spec, ok := FieldMoveSpecFor(move)
 	if !ok {
 		return FieldCapability{Move: move, PartySlot: -1}
 	}
-	slot := partyMoveSlot(mem, spec.MoveID)
-	_, qty := bagEntry(mem, spec.HMItem)
-	badge := state.DecodeProgress(mem).Has(spec.Badge)
+	slot := partyMoveSlot(mem, spec.MoveID, a)
+	_, qty := bagEntry(mem, spec.HMItem, a)
+	badge := a.DecodeProgress(mem).Has(spec.Badge)
 	learned := slot >= 0
 	return FieldCapability{
 		Move:       move,
@@ -161,11 +161,11 @@ func FieldCapabilityFor(mem *state.Mem, move FieldMove) FieldCapability {
 // FieldCapabilities returns all progression field capabilities in stable
 // order. This is the shared query surface for routing and future party/PC
 // retention: callers do not need to know HM item IDs or badge mappings.
-func FieldCapabilities(mem *state.Mem) []FieldCapability {
+func FieldCapabilities(mem *state.Mem, a wramAddresses) []FieldCapability {
 	moves := ProgressionFieldMoves()
 	out := make([]FieldCapability, 0, len(moves))
 	for _, move := range moves {
-		out = append(out, FieldCapabilityFor(mem, move))
+		out = append(out, FieldCapabilityFor(mem, move, a))
 	}
 	return out
 }
@@ -175,8 +175,8 @@ func FieldCapabilities(mem *state.Mem) []FieldCapability {
 // be present and the generic TM/HM policy must find a compatible legal party
 // slot. This is deliberately stronger than "HM owned" and is safe for Travel
 // to use before deciding a blocked route is recoverable.
-func CanPrepareFieldMove(romData []byte, mem *state.Mem, move FieldMove) bool {
-	cap := FieldCapabilityFor(mem, move)
+func CanPrepareFieldMove(romData []byte, mem *state.Mem, move FieldMove, a wramAddresses) bool {
+	cap := FieldCapabilityFor(mem, move, a)
 	if cap.Usable {
 		return true
 	}
@@ -187,7 +187,7 @@ func CanPrepareFieldMove(romData []byte, mem *state.Mem, move FieldMove) bool {
 	if !ok {
 		return false
 	}
-	decision, err := DecideTMHM(romData, state.DecodeParty(mem), spec.HMItem, true)
+	decision, err := DecideTMHM(romData, a.DecodeParty(mem), spec.HMItem, true)
 	return err == nil && decision.PartySlot >= 0
 }
 
@@ -203,13 +203,13 @@ func EnsureFieldMove(m *emu.Emu, move FieldMove) (int, error) {
 
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if !state.DecodeProgress(&mem).Has(spec.Badge) {
+	if !ram(m).DecodeProgress(&mem).Has(spec.Badge) {
 		return -1, fmt.Errorf("%w: %s requires the %s Badge", ErrFieldMovePrerequisite, spec.Name, spec.Badge)
 	}
-	if slot := partyMoveSlot(&mem, spec.MoveID); slot >= 0 {
+	if slot := partyMoveSlot(&mem, spec.MoveID, ram(m)); slot >= 0 {
 		return slot, nil
 	}
-	if _, qty := bagEntry(&mem, spec.HMItem); qty == 0 {
+	if _, qty := bagEntry(&mem, spec.HMItem, ram(m)); qty == 0 {
 		return -1, fmt.Errorf("%w: %s requires HM item %#02x in the bag", ErrFieldMovePrerequisite, spec.Name, spec.HMItem)
 	}
 
@@ -222,7 +222,7 @@ func EnsureFieldMove(m *emu.Emu, move FieldMove) (int, error) {
 	}
 
 	state.Snapshot(m, &mem)
-	slot := partyMoveSlot(&mem, spec.MoveID)
+	slot := partyMoveSlot(&mem, spec.MoveID, ram(m))
 	if slot < 0 {
 		return -1, fmt.Errorf("skill: teach %s: move %d was not verified in party RAM", spec.Name, spec.MoveID)
 	}
@@ -233,7 +233,7 @@ func fieldMoveMenuIndex(m *emu.Emu, menuID uint8) int {
 	// A Pokemon can know at most four moves, so wFieldMoves can expose at
 	// most four entries before its zero terminator.
 	for i := 0; i < 4; i++ {
-		id := m.Peek8(sym.FieldMoves + uint16(i))
+		id := m.Peek8(ram(m).FieldMoves + uint16(i))
 		if id == 0 {
 			break
 		}
@@ -244,8 +244,8 @@ func fieldMoveMenuIndex(m *emu.Emu, menuID uint8) int {
 	return -1
 }
 
-func frontCoordinates(mem *state.Mem) (int, int, bool) {
-	p := state.DecodePlayer(mem)
+func frontCoordinates(mem *state.Mem, a wramAddresses) (int, int, bool) {
+	p := a.DecodePlayer(mem)
 	x, y := int(p.X), int(p.Y)
 	switch p.Facing {
 	case state.FacingUp:
@@ -262,12 +262,12 @@ func frontCoordinates(mem *state.Mem) (int, int, bool) {
 	return x, y, true
 }
 
-func boulderAhead(mem *state.Mem) bool {
-	x, y, ok := frontCoordinates(mem)
+func boulderAhead(mem *state.Mem, a wramAddresses) bool {
+	x, y, ok := frontCoordinates(mem, a)
 	if !ok {
 		return false
 	}
-	for _, sprite := range state.DecodeSprites(mem) {
+	for _, sprite := range a.DecodeSprites(mem) {
 		if sprite.X == x && sprite.Y == y && sprite.PictureID == fieldBoulderPictureID {
 			return true
 		}
@@ -275,22 +275,22 @@ func boulderAhead(mem *state.Mem) bool {
 	return false
 }
 
-func validateFieldActionContext(mem *state.Mem, spec FieldMoveSpec) error {
+func validateFieldActionContext(mem *state.Mem, a wramAddresses, spec FieldMoveSpec) error {
 	switch spec.Move {
 	case FieldCut:
-		if tile := mem.U8(sym.TileInFrontOfPlayer); !cuttableFrontTile(tile) {
+		if tile := mem.U8(a.TileInFrontOfPlayer); !cuttableFrontTile(tile) {
 			return fmt.Errorf("tile in front is %#02x, not a Cut tree", tile)
 		}
 	case FieldStrength:
-		if !boulderAhead(mem) {
+		if !boulderAhead(mem, a) {
 			return fmt.Errorf("no boulder is directly in front of the player")
 		}
 	case FieldSurf:
-		if mem.U8(sym.WalkBikeSurfState) == fieldSurfingState {
+		if mem.U8(a.WalkBikeSurfState) == fieldSurfingState {
 			return fmt.Errorf("player is already surfing")
 		}
 	case FieldFlash:
-		if mem.U8(sym.MapPalOffset) == 0 {
+		if mem.U8(a.MapPalOffset) == 0 {
 			return fmt.Errorf("current area is already lit")
 		}
 	case FieldFly:
@@ -309,23 +309,23 @@ type FieldActionResult struct {
 	Lit            bool
 }
 
-func fieldActionEffectObserved(mem *state.Mem, spec FieldMoveSpec) bool {
+func fieldActionEffectObserved(mem *state.Mem, a wramAddresses, spec FieldMoveSpec) bool {
 	switch spec.Move {
 	case FieldCut:
 		return mem.U8(sym.ActionResult) == 1
 	case FieldSurf:
-		return mem.U8(sym.ActionResult) == 1 && mem.U8(sym.WalkBikeSurfState) == fieldSurfingState
+		return mem.U8(sym.ActionResult) == 1 && mem.U8(a.WalkBikeSurfState) == fieldSurfingState
 	case FieldStrength:
-		return mem.U8(sym.StatusFlags1)&fieldStrengthActiveBit != 0
+		return mem.U8(a.StatusFlags1)&fieldStrengthActiveBit != 0
 	case FieldFlash:
-		return mem.U8(sym.MapPalOffset) == 0
+		return mem.U8(a.MapPalOffset) == 0
 	default:
 		return false
 	}
 }
 
-func fieldActionComplete(mem *state.Mem, spec FieldMoveSpec) bool {
-	return fieldActionEffectObserved(mem, spec) && state.Controllable(mem)
+func fieldActionComplete(mem *state.Mem, a wramAddresses, spec FieldMoveSpec) bool {
+	return fieldActionEffectObserved(mem, a, spec) && a.Controllable(mem)
 }
 
 // settleFieldAction waits for the ROM-side effect and for control to return.
@@ -333,18 +333,19 @@ func fieldActionComplete(mem *state.Mem, spec FieldMoveSpec) bool {
 // important case). Page those text boxes with A, but never select an open menu
 // blindly; MenuUp distinguishes a cursor menu from ordinary dialogue.
 func settleFieldAction(m *emu.Emu, mem *state.Mem, spec FieldMoveSpec) error {
+	wa := ram(m)
 	for spent := 0; spent < fieldActionBudget; spent += 10 {
 		state.Snapshot(m, mem)
-		if fieldActionComplete(mem, spec) {
+		if fieldActionComplete(mem, wa, spec) {
 			return nil
 		}
-		if mem.U8(sym.FontLoaded) != 0 && !state.MenuUp(mem) {
+		if mem.U8(wa.FontLoaded) != 0 && !ram(m).MenuUp(mem) {
 			m.Tap(emu.A, 3, 7)
 			continue
 		}
 		// A failed field action returns to the overworld without the positive
 		// effect. Once that has happened there is nothing useful to wait for.
-		if spent >= 50 && state.Controllable(mem) && !fieldActionEffectObserved(mem, spec) {
+		if spent >= 50 && ram(m).Controllable(mem) && !fieldActionEffectObserved(mem, wa, spec) {
 			return fmt.Errorf("field move returned to the overworld without its expected effect")
 		}
 		m.StepFrames(10)
@@ -359,6 +360,7 @@ func settleFieldAction(m *emu.Emu, mem *state.Mem, spec FieldMoveSpec) error {
 // Fly is represented by the same capability abstraction but needs a caller-
 // supplied destination, so destination-free execution rejects it explicitly.
 func UseFieldMove(m *emu.Emu, move FieldMove) (FieldActionResult, error) {
+	a := ram(m)
 	spec, ok := FieldMoveSpecFor(move)
 	if !ok {
 		return FieldActionResult{}, fmt.Errorf("skill: field move %d is unknown", move)
@@ -366,10 +368,10 @@ func UseFieldMove(m *emu.Emu, move FieldMove) (FieldActionResult, error) {
 
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if !state.Controllable(&mem) {
+	if !ram(m).Controllable(&mem) {
 		return FieldActionResult{}, fmt.Errorf("skill: %s: player is not controllable", spec.Name)
 	}
-	if err := validateFieldActionContext(&mem, spec); err != nil {
+	if err := validateFieldActionContext(&mem, a, spec); err != nil {
 		return FieldActionResult{}, fmt.Errorf("skill: %s: invalid context: %w", spec.Name, err)
 	}
 
@@ -379,7 +381,7 @@ func UseFieldMove(m *emu.Emu, move FieldMove) (FieldActionResult, error) {
 	}
 	state.Snapshot(m, &mem)
 
-	wantMax, itemIndex := startMenuShape(&mem)
+	wantMax, itemIndex := startMenuShape(&mem, ram(m))
 	if err := openStartMenuEntry(m, itemIndex-1, wantMax); err != nil {
 		return FieldActionResult{}, fmt.Errorf("skill: %s: open POKEMON: %w", spec.Name, err)
 	}
@@ -403,10 +405,10 @@ func UseFieldMove(m *emu.Emu, move FieldMove) (FieldActionResult, error) {
 		closeErr := closeToOverworld(m)
 		if closeErr != nil {
 			return FieldActionResult{}, fmt.Errorf("skill: %s did not complete: %v; action=%d surfing=%d strength=%#02x palette=%d screen=%q; cleanup: %v",
-				spec.Name, err, mem.U8(sym.ActionResult), mem.U8(sym.WalkBikeSurfState), mem.U8(sym.StatusFlags1), mem.U8(sym.MapPalOffset), state.ScreenText(&mem), closeErr)
+				spec.Name, err, mem.U8(sym.ActionResult), mem.U8(ram(m).WalkBikeSurfState), mem.U8(ram(m).StatusFlags1), mem.U8(ram(m).MapPalOffset), state.ScreenText(&mem), closeErr)
 		}
 		return FieldActionResult{}, fmt.Errorf("skill: %s did not complete: %v; action=%d surfing=%d strength=%#02x palette=%d screen=%q",
-			spec.Name, err, mem.U8(sym.ActionResult), mem.U8(sym.WalkBikeSurfState), mem.U8(sym.StatusFlags1), mem.U8(sym.MapPalOffset), state.ScreenText(&mem))
+			spec.Name, err, mem.U8(sym.ActionResult), mem.U8(ram(m).WalkBikeSurfState), mem.U8(ram(m).StatusFlags1), mem.U8(ram(m).MapPalOffset), state.ScreenText(&mem))
 	}
 
 	state.Snapshot(m, &mem)
@@ -414,9 +416,9 @@ func UseFieldMove(m *emu.Emu, move FieldMove) (FieldActionResult, error) {
 		Move:           move,
 		PartySlot:      slot,
 		ActionResult:   mem.U8(sym.ActionResult),
-		Surfing:        mem.U8(sym.WalkBikeSurfState) == fieldSurfingState,
-		StrengthActive: mem.U8(sym.StatusFlags1)&fieldStrengthActiveBit != 0,
-		Lit:            mem.U8(sym.MapPalOffset) == 0,
+		Surfing:        mem.U8(ram(m).WalkBikeSurfState) == fieldSurfingState,
+		StrengthActive: mem.U8(ram(m).StatusFlags1)&fieldStrengthActiveBit != 0,
+		Lit:            mem.U8(ram(m).MapPalOffset) == 0,
 	}, nil
 }
 

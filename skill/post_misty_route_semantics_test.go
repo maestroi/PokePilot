@@ -24,7 +24,7 @@ func TestRedRouteCapabilitiesProjectSSTicketGates(t *testing.T) {
 	mem[sym.NumBagItems] = 1
 	mem[sym.BagItems] = ssTicketItem
 	mem[sym.BagItems+1] = 1
-	caps := redRouteCapabilities(nil, mem)
+	caps := redRouteCapabilities(nil, mem, redWram())
 	if !caps.Has(capCanPassCeruleanRobbedHouse) {
 		t.Fatalf("S.S. Ticket did not project robbed-house capability: %v", caps)
 	}
@@ -40,7 +40,7 @@ func TestRedRouteCapabilitiesRetireSSAnneAfterHM01(t *testing.T) {
 	mem[sym.BagItems+1] = 1
 	mem[sym.BagItems+2] = hm01Item
 	mem[sym.BagItems+3] = 1
-	caps := redRouteCapabilities(nil, mem)
+	caps := redRouteCapabilities(nil, mem, redWram())
 	if !caps.Has(capCanPassCeruleanRobbedHouse) {
 		t.Fatalf("HM01 should not invalidate Bill's permanent Cerulean gate: %v", caps)
 	}

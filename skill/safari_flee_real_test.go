@@ -29,7 +29,7 @@ func TestFleeSafariRealROM(t *testing.T) {
 
 	var before state.Mem
 	state.Snapshot(m, &before)
-	if state.DecodeBattle(&before) == nil {
+	if redWram().DecodeBattle(&before) == nil {
 		t.Fatal("prepared Safari state has no battle in progress")
 	}
 
@@ -39,10 +39,10 @@ func TestFleeSafariRealROM(t *testing.T) {
 
 	var after state.Mem
 	state.Snapshot(m, &after)
-	if state.DecodeBattle(&after) != nil {
+	if redWram().DecodeBattle(&after) != nil {
 		t.Fatal("Safari battle still in progress after RUN")
 	}
-	if !state.Controllable(&after) {
+	if !redWram().Controllable(&after) {
 		t.Fatal("player is not controllable after fleeing Safari battle")
 	}
 }

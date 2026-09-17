@@ -20,7 +20,7 @@ import (
 func declineUnexpectedGenericTalkChoice(m *emu.Emu) (bool, error) {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	interaction := state.DecodeInteraction(&mem)
+	interaction := skill.AddressesFor(m).DecodeInteraction(&mem)
 	if !genericTalkDeclinableYesNo(interaction) {
 		return false, nil
 	}

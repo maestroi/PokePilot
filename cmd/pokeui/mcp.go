@@ -31,8 +31,9 @@ var mcpRunSequence atomic.Uint64
 // lease, heartbeat, finish, checkpoint, worker registration and Docker/Swarm
 // controls are not reachable through MCP.
 type mcpControl struct {
-	wallBase string
-	http     *http.Client
+	wallBase   string
+	publicBase string
+	http       *http.Client
 }
 
 type mcpStartRunInput struct {
@@ -121,8 +122,9 @@ type mcpDashboard struct {
 
 func newMCPHandler(wallBase, token string) http.Handler {
 	control := &mcpControl{
-		wallBase: strings.TrimRight(wallBase, "/"),
-		http:     &http.Client{Timeout: mcpWallTimeout},
+		wallBase:   strings.TrimRight(wallBase, "/"),
+		publicBase: operatorPublicOrigin(),
+		http:       &http.Client{Timeout: mcpWallTimeout},
 	}
 	server := mcp.NewServer(&mcp.Implementation{
 		Name:    "pokepilot",
@@ -143,11 +145,11 @@ func newMCPHandler(wallBase, token string) http.Handler {
 	}, control.getRun)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "pokepilot_get_run_debug",
-		Description: "Get the compact persisted debug bundle for one run: finish reason, trace tail, progress deltas, latest planner decision, timeline markers and artifact references. Large artifact bytes are never embedded.",
+		Description: "Get the compact persisted debug bundle for one run: finish reason, trace tail, progress deltas, latest planner decision, timeline markers and artifact references. Large artifact bytes are never embedded. Artifact refs include content_url on the operator HTTP origin (not /mcp); GET with no Authorization header.",
 	}, control.getRunDebug)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "pokepilot_get_run_artifacts",
-		Description: "List one run's artifacts and durable storage references without downloading artifact bytes. Use this to discover run.gbrun recordings and diagnostic evidence.",
+		Description: "List one run's artifacts and durable storage references without downloading artifact bytes. Each artifact includes content_url on the operator HTTP origin (not /mcp). GET that URL with no Authorization header. MCP cannot fetch bytes. Run ids include the run- prefix. Operator REST is documented at /openapi.json.",
 	}, control.getRunArtifacts)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "pokepilot_cancel_run",
@@ -313,7 +315,7 @@ func (c *mcpControl) getRun(ctx context.Context, _ *mcp.CallToolRequest, in mcpR
 	// this tool would start failing for every id at once, including ids whose
 	// own record is a few hundred bytes.
 	var out map[string]any
-	if err := c.requestJSON(ctx, http.MethodGet, "/v1/runs/"+url.PathEscape(id), nil, &out); err != nil {
+	if err := c.fetchRunJSON(ctx, http.MethodGet, id, "", nil, &out); err != nil {
 		return nil, nil, err
 	}
 	if out == nil {
@@ -328,9 +330,10 @@ func (c *mcpControl) getRunDebug(ctx context.Context, _ *mcp.CallToolRequest, in
 		return nil, nil, fmt.Errorf("run_id is required")
 	}
 	var out map[string]any
-	if err := c.requestJSON(ctx, http.MethodGet, "/v1/runs/"+url.PathEscape(id)+"/debug", nil, &out); err != nil {
+	if err := c.fetchRunJSON(ctx, http.MethodGet, id, "/debug", nil, &out); err != nil {
 		return nil, nil, err
 	}
+	annotateOperatorArtifactDownloads(c.publicBase, "", out)
 	return nil, out, nil
 }
 
@@ -340,9 +343,11 @@ func (c *mcpControl) getRunArtifacts(ctx context.Context, _ *mcp.CallToolRequest
 		return nil, nil, fmt.Errorf("run_id is required")
 	}
 	var out map[string]any
-	if err := c.requestJSON(ctx, http.MethodGet, "/v1/runs/"+url.PathEscape(id)+"/artifacts", nil, &out); err != nil {
+	if err := c.fetchRunJSON(ctx, http.MethodGet, id, "/artifacts", nil, &out); err != nil {
 		return nil, nil, err
 	}
+	runID, _ := out["run_id"].(string)
+	annotateOperatorArtifactDownloads(c.publicBase, runID, out)
 	return nil, out, nil
 }
 
@@ -352,11 +357,29 @@ func (c *mcpControl) cancelRun(ctx context.Context, _ *mcp.CallToolRequest, in m
 		return nil, nil, fmt.Errorf("run_id is required")
 	}
 	var out map[string]any
-	if err := c.requestJSON(ctx, http.MethodPost, "/v1/runs/"+url.PathEscape(id)+"/cancel", nil, &out); err != nil {
+	if err := c.fetchRunJSON(ctx, http.MethodPost, id, "/cancel", nil, &out); err != nil {
 		return nil, nil, err
 	}
-	out["run_id"] = id
+	if out == nil {
+		out = map[string]any{}
+	}
+	if _, ok := out["run_id"]; !ok {
+		out["run_id"] = ensureRunPrefix(id)
+	}
 	return nil, out, nil
+}
+
+func (c *mcpControl) fetchRunJSON(ctx context.Context, method, id, suffix string, input, output any) error {
+	try := func(runID string) error {
+		return c.requestJSON(ctx, method, "/v1/runs/"+url.PathEscape(runID)+suffix, input, output)
+	}
+	err := try(id)
+	if wallStatusNotFound(err) {
+		if prefixed := ensureRunPrefix(id); prefixed != id {
+			return try(prefixed)
+		}
+	}
+	return err
 }
 
 // triageGroupActionable annotates a wall triage group and reports whether it

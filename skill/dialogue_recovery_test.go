@@ -149,7 +149,7 @@ func TestRecoverDialoguePagesOrdinaryBox(t *testing.T) {
 	openTextBox(mem, "HI")
 	f := &fakeClock{mem: mem, closesOnTap: true}
 
-	res := recoverDialogue(f, 100)
+	res := recoverDialogue(f, 100, redWram())
 
 	if res.Stop != DialogueRecovered {
 		t.Fatalf("Stop = %d, want DialogueRecovered", res.Stop)
@@ -178,7 +178,7 @@ func TestRecoverDialogueRefusesChoiceOnEntry(t *testing.T) {
 	openChoice(mem, 8, 12, "HEAL")
 	f := &fakeClock{mem: mem, closesOnTap: true}
 
-	res := recoverDialogue(f, 100)
+	res := recoverDialogue(f, 100, redWram())
 
 	if res.Stop != DialogueChoiceRequired {
 		t.Fatalf("Stop = %d, want DialogueChoiceRequired", res.Stop)
@@ -208,7 +208,7 @@ func TestRecoverDialogueStopsBeforePressingAOnLateChoice(t *testing.T) {
 	f := &fakeClock{mem: mem, closesOnTap: true}
 	f.onClose = func(m *state.Mem) { openChoice(m, 8, 12, "HEAL") }
 
-	res := recoverDialogue(f, 100)
+	res := recoverDialogue(f, 100, redWram())
 
 	if res.Stop != DialogueChoiceRequired {
 		t.Fatalf("Stop = %d, want DialogueChoiceRequired", res.Stop)
@@ -230,7 +230,7 @@ func TestRecoverDialogueIgnoresStaleTextBoxID(t *testing.T) {
 	mem[sym.TextBoxID] = 0x14
 	f := &fakeClock{mem: mem, closesOnTap: true}
 
-	res := recoverDialogue(f, 100)
+	res := recoverDialogue(f, 100, redWram())
 
 	if res.Stop != DialogueRecovered {
 		t.Fatalf("Stop = %d, want DialogueRecovered", res.Stop)
@@ -247,7 +247,7 @@ func TestRecoverDialogueBudgetExhausted(t *testing.T) {
 	openTextBox(mem, "STUCK")
 	f := &fakeClock{mem: mem, closesOnTap: false}
 
-	res := recoverDialogue(f, 5)
+	res := recoverDialogue(f, 5, redWram())
 
 	if res.Stop != DialogueBudgetExhausted {
 		t.Fatalf("Stop = %d, want DialogueBudgetExhausted", res.Stop)
@@ -269,7 +269,7 @@ func TestRecoverDialogueBattleAppears(t *testing.T) {
 		openTextBox(mem, "HEY WAIT UP")
 		f := &fakeClock{mem: mem, closesOnTap: true, battleIn: 10}
 
-		res := recoverDialogue(f, 100)
+		res := recoverDialogue(f, 100, redWram())
 
 		if res.Stop != DialogueUnexpectedMode {
 			t.Fatalf("Stop = %d, want DialogueUnexpectedMode", res.Stop)
@@ -283,7 +283,7 @@ func TestRecoverDialogueBattleAppears(t *testing.T) {
 		mem[sym.IsInBattle] = 1
 		f := &fakeClock{mem: mem}
 
-		res := recoverDialogue(f, 100)
+		res := recoverDialogue(f, 100, redWram())
 
 		if res.Stop != DialogueUnexpectedMode {
 			t.Fatalf("Stop = %d, want DialogueUnexpectedMode", res.Stop)
@@ -302,7 +302,7 @@ func TestAdvanceUntilKeepsPressingA(t *testing.T) {
 	openTextBox(mem, "PAGE")
 	f := &fakeClock{mem: mem, closesOnTap: false}
 
-	final := advanceUntil(f, 3, func(*state.Mem) bool { return false })
+	final := advanceUntil(f, redWram(), 3, func(_ *state.Mem, _ wramAddresses) bool { return false })
 
 	if f.taps != 3 {
 		t.Fatalf("taps = %d, want 3 (one per iteration)", f.taps)
@@ -579,7 +579,7 @@ func TestRecoverDialogueRefusesAMenu(t *testing.T) {
 	openMenu(mem, 2, 1, "POKE BALL")
 	f := &fakeClock{mem: mem, closesOnTap: true}
 
-	res := recoverDialogue(f, 100)
+	res := recoverDialogue(f, 100, redWram())
 
 	if res.Stop != DialogueMenuOpen {
 		t.Fatalf("Stop = %d, want DialogueMenuOpen", res.Stop)

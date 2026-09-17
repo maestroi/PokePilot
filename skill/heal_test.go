@@ -32,15 +32,15 @@ func TestHeal(t *testing.T) {
 	// Preconditions: on the approach tile, controllable, party damaged.
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	p := state.DecodePlayer(&mem)
+	p := skill.RedAddresses().DecodePlayer(&mem)
 	if p.MapID != want.Map || p.X != want.X || p.Y != want.Y {
 		t.Fatalf("precondition: fixture player at (%d,%d) on %#04x, want (%d,%d) on %#04x",
 			p.X, p.Y, p.MapID, want.X, want.Y, want.Map)
 	}
-	if !state.Controllable(&mem) {
+	if !skill.RedAddresses().Controllable(&mem) {
 		t.Fatalf("precondition: fixture player not controllable: %+v", p)
 	}
-	party := state.DecodeParty(&mem)
+	party := skill.RedAddresses().DecodeParty(&mem)
 	if party.Count == 0 {
 		t.Fatal("precondition: fixture has no party")
 	}
@@ -68,7 +68,7 @@ func TestHeal(t *testing.T) {
 	// Postcondition: every mon at full HP, the party the same size, the
 	// player controllable again and still on the approach tile (the heal
 	// sequence does not move the player).
-	party = state.DecodeParty(&mem)
+	party = skill.RedAddresses().DecodeParty(&mem)
 	if party.Count != beforeCount {
 		t.Fatalf("postcondition: party count changed %d -> %d", beforeCount, party.Count)
 	}
@@ -78,10 +78,10 @@ func TestHeal(t *testing.T) {
 			t.Fatalf("postcondition: mon %d at %d/%d after heal, want full: %+v", i+1, mon.HP, mon.MaxHP, party.Mons)
 		}
 	}
-	if !state.Controllable(&mem) {
-		t.Fatalf("postcondition: player not controllable: %+v", state.DecodePlayer(&mem))
+	if !skill.RedAddresses().Controllable(&mem) {
+		t.Fatalf("postcondition: player not controllable: %+v", skill.RedAddresses().DecodePlayer(&mem))
 	}
-	p = state.DecodePlayer(&mem)
+	p = skill.RedAddresses().DecodePlayer(&mem)
 	if p.MapID != want.Map || p.X != want.X || p.Y != want.Y {
 		t.Fatalf("postcondition: player at (%d,%d) on %#04x, want (%d,%d) on %#04x",
 			p.X, p.Y, p.MapID, want.X, want.Y, want.Map)

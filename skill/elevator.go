@@ -6,7 +6,6 @@ import (
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
 )
 
@@ -45,7 +44,7 @@ func prepareElevatorEdge(m *emu.Emu, h rom.MapHeader, e world.Edge, grid *world.
 	// through one of those tiles would leave the elevator before the choice is
 	// made, reproducing the exact failure this controller is preventing.
 	sx, sy := playerXY(m)
-	blocked := spriteBlockers(m)
+	blocked := spriteBlockers(m, m.ROM())
 	if blocked == nil {
 		blocked = map[[2]int]bool{}
 	}
@@ -83,7 +82,7 @@ func prepareElevatorEdge(m *emu.Emu, h rom.MapHeader, e world.Edge, grid *world.
 	if _, err := m.StepUntil(arriveBudget, func(em *emu.Emu) bool {
 		var mem state.Mem
 		state.Snapshot(em, &mem)
-		return state.Controllable(&mem) && elevatorWarpEntriesMatch(em, h, floor)
+		return ram(m).Controllable(&mem) && elevatorWarpEntriesMatch(em, h, floor)
 	}); err != nil {
 		return fmt.Errorf("skill: elevator %02x floor %d did not arm doors for map %02x warp %d: %w",
 			e.From, floorIndex, floor.MapID, floor.DestWarpID, err)
@@ -92,11 +91,11 @@ func prepareElevatorEdge(m *emu.Emu, h rom.MapHeader, e world.Edge, grid *world.
 }
 
 func elevatorWarpEntriesMatch(m *emu.Emu, h rom.MapHeader, floor rom.ElevatorFloor) bool {
-	if int(m.Peek8(sym.NumberOfWarps)) < len(h.Warps) {
+	if int(m.Peek8(ram(m).NumberOfWarps)) < len(h.Warps) {
 		return false
 	}
 	for i, w := range h.Warps {
-		addr := sym.WarpEntries + uint16(i*4)
+		addr := ram(m).WarpEntries + uint16(i*4)
 		if m.Peek8(addr) != w.Y || m.Peek8(addr+1) != w.X {
 			return false
 		}

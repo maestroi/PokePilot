@@ -22,19 +22,19 @@ type BoxState struct {
 
 // DecodeBox reads the active Bill's PC box. Corrupt/mid-transition counts are
 // capped at the Gen I box capacity rather than allowing an out-of-range read.
-func DecodeBox(m *Mem) BoxState {
-	count := int(m.U8(sym.BoxCount))
+func (a Addresses) DecodeBox(m *Mem) BoxState {
+	count := int(m.U8(a.BoxCount))
 	if count > activeBoxCapacity {
 		count = activeBoxCapacity
 	}
 	mons := make([]BoxMon, count)
 	for i := 0; i < count; i++ {
-		base := sym.BoxMon1 + uint16(i)*sym.BoxMonSize
+		base := a.BoxMon1 + uint16(i)*sym.BoxMonSize
 		mons[i].Species = m.U8(base + sym.BoxMonSpecies)
 		copy(mons[i].Moves[:], m.Slice(base+sym.BoxMonMoves, 4))
 	}
 	return BoxState{
-		Number: m.U8(sym.CurrentBoxNum) & 0x7f,
+		Number: m.U8(a.CurrentBoxNum) & 0x7f,
 		Count:  uint8(count),
 		Mons:   mons,
 	}

@@ -78,16 +78,17 @@ const (
 // total. If the player cannot afford it, it backs out cleanly and returns
 // ErrCantAfford; if the clerk does not stock the item, ErrNotInStock.
 func Buy(m *emu.Emu, item uint8, qty int) error {
+	a := ram(m)
 	if qty < 1 || qty > 99 {
 		return fmt.Errorf("skill: Buy: quantity %d out of range 1..99", qty)
 	}
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if !state.Controllable(&mem) {
+	if !ram(m).Controllable(&mem) {
 		return fmt.Errorf("skill: Buy: not controllable (wFontLoaded=%#04x wJoyIgnore=%#04x)",
-			mem.U8(sym.FontLoaded), mem.U8(sym.JoyIgnore))
+			mem.U8(ram(m).FontLoaded), mem.U8(ram(m).JoyIgnore))
 	}
-	before := state.DecodeInventory(&mem)
+	before := ram(m).DecodeInventory(&mem)
 	moneyBefore := int(before.Money)
 	bagBefore := bagCount(before.Items, item)
 
@@ -99,7 +100,7 @@ func Buy(m *emu.Emu, item uint8, qty int) error {
 	// instead of running the shop's menu-wait loops out to a confusing
 	// timeout. Scoped to the mart map so it never fires for skills that reuse
 	// this map id for something else.
-	if m.Peek8(sym.CurMap) == viridianMartMap && !state.HasEvent(&mem, state.EventOakGotParcel) {
+	if m.Peek8(ram(m).CurMap) == viridianMartMap && !ram(m).HasEvent(&mem, state.EventOakGotParcel) {
 		return fmt.Errorf("%w: Viridian Mart clerk before EventOakGotParcel", ErrShopNotOpenYet)
 	}
 
@@ -120,7 +121,7 @@ func Buy(m *emu.Emu, item uint8, qty int) error {
 		return recoverShopFailure(m, err)
 	}
 	state.Snapshot(m, &mem)
-	pos, ok := martItemPosition(&mem, item)
+	pos, ok := martItemPosition(&mem, item, a)
 	if !ok {
 		// Refusing the purchase is not enough: the item list is UP, and
 		// returning from here left it up. Every later objective then
@@ -148,7 +149,7 @@ func Buy(m *emu.Emu, item uint8, qty int) error {
 		// shop is gone.
 		return recoverShopFailure(m, shopControllerFailure(fmt.Sprintf("select item %#02x", item), err))
 	}
-	qtyUp := func(mm *state.Mem) bool { return bcdMoney(mm) > 0 && bcdMoney(mm) != hBefore }
+	qtyUp := func(mm *state.Mem, a wramAddresses) bool { return bcdMoney(mm) > 0 && bcdMoney(mm) != hBefore }
 	if err := martWait(m, qtyUp, "the choose-quantity box"); err != nil {
 		// A timeout is still an engineering failure. The campaign may survive
 		// it only after the owning skill proves the shop has been closed.
@@ -192,7 +193,7 @@ func Buy(m *emu.Emu, item uint8, qty int) error {
 
 	// 10. Postconditions: bag rose by qty AND money fell by the total.
 	state.Snapshot(m, &mem)
-	after := state.DecodeInventory(&mem)
+	after := ram(m).DecodeInventory(&mem)
 	bagAfter := bagCount(after.Items, item)
 	if bagAfter != bagBefore+qty {
 		return fmt.Errorf("skill: Buy: bag count for item %#02x = %d, want %d (before %d + %d)",
@@ -221,31 +222,32 @@ const buySellQuitMax = 2
 // Mart's pre-parcel flavor text, or its YES/NO confirmation box) reads as the
 // shop menu already open, and Buy selects BUY/SELL/QUIT entry 0 against
 // whatever is actually on screen instead.
-func buySellQuitUp(mm *state.Mem) bool {
-	return mm.U8(sym.FontLoaded) != 0 && mm.U8(sym.MenuWatchedKeys) == watchBuySellQuit &&
-		mm.U8(sym.MaxMenuItem) == buySellQuitMax
+func buySellQuitUp(mm *state.Mem, a wramAddresses) bool {
+	return mm.U8(a.FontLoaded) != 0 && mm.U8(a.MenuWatchedKeys) == watchBuySellQuit &&
+		mm.U8(a.MaxMenuItem) == buySellQuitMax
 }
 
 // itemListUp reports that the priced item list is up. It is only used at points
 // in the flow where the choose-quantity box is not (yet) up, so A|B|SELECT here
 // means the list.
-func itemListUp(mm *state.Mem) bool {
-	return mm.U8(sym.MenuWatchedKeys) == watchListOrQty
+func itemListUp(mm *state.Mem, a wramAddresses) bool {
+	return mm.U8(a.MenuWatchedKeys) == watchListOrQty
 }
 
 // twoOptionUp reports that a two-option prompt (the YES/NO confirmation) is up.
-func twoOptionUp(mm *state.Mem) bool {
-	return state.DecodeTwoOptionMenu(mm) != nil
+func twoOptionUp(mm *state.Mem, a wramAddresses) bool {
+	return a.DecodeTwoOptionMenu(mm) != nil
 }
 
 // martAdvance steps frames, pressing A while a text box is up, until pred holds.
 // It returns a diagnostic error if pred never holds within the budget. Because
 // pred is checked before every A-tap, it never presses A on the menu it is
 // waiting for.
-func martAdvance(m *emu.Emu, pred func(*state.Mem) bool, what string) error {
-	mem := advanceUntil(m, martAdvanceBudget, pred)
-	if !pred(&mem) {
-		return martTimeout(what, &mem)
+func martAdvance(m *emu.Emu, pred func(*state.Mem, wramAddresses) bool, what string) error {
+	a := ram(m)
+	mem := advanceUntil(m, a, martAdvanceBudget, pred)
+	if !pred(&mem, a) {
+		return martTimeout(what, &mem, a)
 	}
 	return nil
 }
@@ -253,26 +255,27 @@ func martAdvance(m *emu.Emu, pred func(*state.Mem) bool, what string) error {
 // martWait steps frames with NO input until pred holds, for transitions that
 // advance on their own (the "anything else" text auto-advancing to the
 // BUY/SELL/QUIT menu, the quantity box computing its price).
-func martWait(m *emu.Emu, pred func(*state.Mem) bool, what string) error {
+func martWait(m *emu.Emu, pred func(*state.Mem, wramAddresses) bool, what string) error {
+	a := ram(m)
 	var mem state.Mem
 	for i := 0; i < martWaitBudget; i++ {
 		state.Snapshot(m, &mem)
-		if pred(&mem) {
+		if pred(&mem, a) {
 			return nil
 		}
 		m.StepFrames(talkSettle)
 	}
 	state.Snapshot(m, &mem)
-	if !pred(&mem) {
-		return martTimeout(what, &mem)
+	if !pred(&mem, a) {
+		return martTimeout(what, &mem, a)
 	}
 	return nil
 }
 
-func martTimeout(what string, mem *state.Mem) error {
+func martTimeout(what string, mem *state.Mem, a wramAddresses) error {
 	return fmt.Errorf("%w: skill: Buy: %s did not appear (wFontLoaded=%#04x wCurMenuItem=%d wMaxMenuItem=%d wItemQuantity=%d wMoney=%d)",
-		ErrShopMenuTimeout, what, mem.U8(sym.FontLoaded), mem.U8(sym.CurrentMenuItem), mem.U8(sym.MaxMenuItem),
-		mem.U8(sym.ItemQuantity), bcdMoney(mem))
+		ErrShopMenuTimeout, what, mem.U8(a.FontLoaded), mem.U8(a.CurrentMenuItem), mem.U8(a.MaxMenuItem),
+		mem.U8(a.ItemQuantity), bcdMoney(mem))
 }
 
 func shopControllerFailure(context string, err error) error {
@@ -304,8 +307,8 @@ func recoverShopFailure(m *emu.Emu, err error) error {
 // wCurrentMenuItem alone. wMaxMenuItem cannot substitute for either — it is
 // a 1/2 window-size sentinel on list menus (DisplayListMenuID), not the
 // entry count.
-func listPosition(mm *state.Mem) int {
-	return int(mm.U8(sym.ListScrollOffset)) + int(mm.U8(sym.CurrentMenuItem))
+func listPosition(mm *state.Mem, a wramAddresses) int {
+	return int(mm.U8(a.ListScrollOffset)) + int(mm.U8(a.CurrentMenuItem))
 }
 
 // selectListEntry drives the list-menu cursor to a 0-based position and
@@ -318,6 +321,7 @@ func listPosition(mm *state.Mem) int {
 // wListScrollOffset climbs to 1; a loop watching only wCurrentMenuItem
 // never sees a match and burns its budget stuck on "2".
 func selectListEntry(m *emu.Emu, index int) error {
+	a := ram(m)
 	const stuckLimit = 8
 	stuck := 0
 	// The list needs one settle window before it will accept input at all:
@@ -335,7 +339,7 @@ func selectListEntry(m *emu.Emu, index int) error {
 	m.StepFrames(talkSettle)
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	for pos := listPosition(&mem); pos != index; pos = listPosition(&mem) {
+	for pos := listPosition(&mem, a); pos != index; pos = listPosition(&mem, a) {
 		dir := emu.Down
 		if index < pos {
 			dir = emu.Up
@@ -343,7 +347,7 @@ func selectListEntry(m *emu.Emu, index int) error {
 		m.Tap(dir, 3, 7)
 		m.StepFrames(talkSettle)
 		state.Snapshot(m, &mem)
-		if listPosition(&mem) == pos {
+		if listPosition(&mem, a) == pos {
 			stuck++
 			if stuck >= stuckLimit {
 				return fmt.Errorf("%w: cursor stuck at list entry %d, wanted %d, %d consecutive taps without movement", ErrShopControllerStalled, pos, index, stuck)
@@ -364,7 +368,7 @@ func setQuantity(m *emu.Emu, qty int) error {
 	for i := 0; i < martQtyBudget; i++ {
 		var mem state.Mem
 		state.Snapshot(m, &mem)
-		cur := int(mem.U8(sym.ItemQuantity))
+		cur := int(mem.U8(ram(m).ItemQuantity))
 		if cur == qty {
 			return nil
 		}
@@ -376,7 +380,7 @@ func setQuantity(m *emu.Emu, qty int) error {
 	}
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	return fmt.Errorf("%w: quantity did not reach %d (wItemQuantity=%d)", ErrShopControllerStalled, qty, mem.U8(sym.ItemQuantity))
+	return fmt.Errorf("%w: quantity did not reach %d (wItemQuantity=%d)", ErrShopControllerStalled, qty, mem.U8(ram(m).ItemQuantity))
 }
 
 // exitShop leaves the shop after a successful purchase: close "Here you are!"
@@ -435,16 +439,16 @@ func exitToOverworld(m *emu.Emu) error {
 	for i := 0; i < martWaitBudget; i++ {
 		state.Snapshot(m, &mem)
 		switch {
-		case state.Controllable(&mem):
+		case ram(m).Controllable(&mem):
 			m.StepFrames(talkSettle)
 			state.Snapshot(m, &mem)
-			if state.Controllable(&mem) {
+			if ram(m).Controllable(&mem) {
 				return nil
 			}
-		case state.MenuUp(&mem):
+		case ram(m).MenuUp(&mem):
 			m.Tap(emu.B, 3, 7) // B backs out of every Gen 1 menu
 			m.StepFrames(talkSettle)
-		case mem.U8(sym.FontLoaded) != 0:
+		case mem.U8(ram(m).FontLoaded) != 0:
 			m.Tap(emu.A, 3, 7) // ordinary text: page it closed
 			m.StepFrames(talkSettle)
 		default:
@@ -453,15 +457,15 @@ func exitToOverworld(m *emu.Emu) error {
 	}
 	state.Snapshot(m, &mem)
 	return fmt.Errorf("skill: Buy: still not controllable after leaving the shop (wFontLoaded=%#04x wJoyIgnore=%#04x menu=%t screen=%q)",
-		mem.U8(sym.FontLoaded), mem.U8(sym.JoyIgnore), state.MenuUp(&mem), state.ScreenText(&mem))
+		mem.U8(ram(m).FontLoaded), mem.U8(ram(m).JoyIgnore), ram(m).MenuUp(&mem), state.ScreenText(&mem))
 }
 
 // martItemPosition returns the 0-based position of item in the clerk's stock
 // (wItemList: a count byte then item ids, $ff-terminated). It reports ok=false
 // if the clerk does not sell it.
-func martItemPosition(mem *state.Mem, item uint8) (int, bool) {
+func martItemPosition(mem *state.Mem, item uint8, a wramAddresses) (int, bool) {
 	for i := 1; ; i++ {
-		v := mem.U8(sym.ItemList + uint16(i))
+		v := mem.U8(a.ItemList + uint16(i))
 		if v == 0xff {
 			break
 		}

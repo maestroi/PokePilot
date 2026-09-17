@@ -19,7 +19,7 @@ func TestGuardDrinkInBag(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var mem state.Mem
 			putBag(&mem, state.BagItem{ID: tc.item, Quantity: 1})
-			got, ok := guardDrinkInBag(&mem)
+			got, ok := guardDrinkInBag(&mem, redWram())
 			if !ok || got != tc.item {
 				t.Fatalf("guardDrinkInBag = %#02x,%v; want %#02x,true", got, ok, tc.item)
 			}
@@ -28,18 +28,18 @@ func TestGuardDrinkInBag(t *testing.T) {
 
 	var empty state.Mem
 	putBag(&empty, state.BagItem{ID: 0x14, Quantity: 5}) // POTION is not a guard drink.
-	if got, ok := guardDrinkInBag(&empty); ok {
+	if got, ok := guardDrinkInBag(&empty, redWram()); ok {
 		t.Fatalf("guardDrinkInBag accepted non-drink %#02x", got)
 	}
 }
 
 func TestSaffronGateOpenUsesSemanticStoryFact(t *testing.T) {
 	var mem state.Mem
-	if SaffronGateOpen(&mem) {
+	if SaffronGateOpen(&mem, redWram()) {
 		t.Fatal("fresh state reports Saffron gate open")
 	}
 	mem[sym.StatusFlags1] |= 1 << 6 // BIT_GAVE_SAFFRON_GUARDS_DRINK
-	if !SaffronGateOpen(&mem) {
+	if !SaffronGateOpen(&mem, redWram()) {
 		t.Fatal("Saffron guard-drink flag did not satisfy semantic postcondition")
 	}
 }
@@ -51,12 +51,12 @@ func TestSaffronGateReadyRequiresCompletedFuchsiaSlice(t *testing.T) {
 		state.BagItem{ID: hm03SurfItem, Quantity: 1},
 		state.BagItem{ID: hm04StrengthItem, Quantity: 1},
 	)
-	if !SaffronGateReady(&mem) {
+	if !SaffronGateReady(&mem, redWram()) {
 		t.Fatal("Soul Badge + Surf + Strength did not satisfy #33 handoff")
 	}
 
 	putBag(&mem, state.BagItem{ID: hm03SurfItem, Quantity: 1})
-	if SaffronGateReady(&mem) {
+	if SaffronGateReady(&mem, redWram()) {
 		t.Fatal("missing Strength still reported Saffron gate ready")
 	}
 }

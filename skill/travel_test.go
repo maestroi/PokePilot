@@ -181,11 +181,11 @@ func TestTravelRecoversFromBattleOnWalkToWarp(t *testing.T) {
 	}
 	var mem state.Mem
 	state.Snapshot(e, &mem)
-	if p := state.DecodePlayer(&mem); p.MapID != dest.Map || p.X != dest.X || p.Y != dest.Y {
+	if p := skill.RedAddresses().DecodePlayer(&mem); p.MapID != dest.Map || p.X != dest.X || p.Y != dest.Y {
 		t.Fatalf("player at (map %#04x, %d, %d), want the south gate (%#04x, %d, %d); Battles=%d",
 			p.MapID, p.X, p.Y, dest.Map, dest.X, dest.Y, res.Battles)
 	}
-	if !state.Controllable(&mem) {
+	if !skill.RedAddresses().Controllable(&mem) {
 		t.Fatalf("player not controllable at the south gate; Battles=%d BlackedOut=%v", res.Battles, res.BlackedOut)
 	}
 	t.Logf("reached the south gate after %d battle(s) on the walk to its warp (BlackedOut=%v)", res.Battles, res.BlackedOut)
@@ -228,8 +228,8 @@ func TestTravelToPewter(t *testing.T) {
 		}
 		var zmem state.Mem
 		state.Snapshot(e, &zmem)
-		zp := state.DecodePlayer(&zmem)
-		zlead := state.DecodeParty(&zmem).Mons[0]
+		zp := skill.RedAddresses().DecodePlayer(&zmem)
+		zlead := skill.RedAddresses().DecodeParty(&zmem).Mons[0]
 		t.Logf("blackout on the way to Pewter (attempt %d): at map %#04x (%d,%d), lead level %d HP %d/%d status=%#02x; waiting for the respawn warp, then resuming",
 			attempt+1, zp.MapID, zp.X, zp.Y, zlead.Level, zlead.HP, zlead.MaxHP, zlead.Status)
 		settleBlackout(t, e)
@@ -240,12 +240,12 @@ func TestTravelToPewter(t *testing.T) {
 	}
 	var mem state.Mem
 	state.Snapshot(e, &mem)
-	p := state.DecodePlayer(&mem)
+	p := skill.RedAddresses().DecodePlayer(&mem)
 	if p.MapID != dest.Map || p.X != dest.X || p.Y != dest.Y {
 		t.Fatalf("player at (map %#04x, %d, %d), want Place(pewter city) = (map %#04x, %d, %d); Battles=%d BlackedOut=%v",
 			p.MapID, p.X, p.Y, dest.Map, dest.X, dest.Y, res.Battles, res.BlackedOut)
 	}
-	if !state.Controllable(&mem) {
+	if !skill.RedAddresses().Controllable(&mem) {
 		t.Fatalf("player not controllable at Pewter; Battles=%d BlackedOut=%v",
 			res.Battles, res.BlackedOut)
 	}
@@ -321,7 +321,7 @@ func TestTravelRoute3TrainerCrossing(t *testing.T) {
 
 	var mem state.Mem
 	state.Snapshot(e, &mem)
-	beforeLevel := int(state.DecodeParty(&mem).Mons[0].Level)
+	beforeLevel := int(skill.RedAddresses().DecodeParty(&mem).Mons[0].Level)
 
 	// The far side of Route 3, near the north exit to Route 4 and past every
 	// trainer (they stand at x<=33). Measured reachable from the west entry.
@@ -348,18 +348,18 @@ func TestTravelRoute3TrainerCrossing(t *testing.T) {
 	}
 
 	state.Snapshot(e, &mem)
-	p := state.DecodePlayer(&mem)
+	p := skill.RedAddresses().DecodePlayer(&mem)
 	if p.MapID != far.Map || p.X != far.X || p.Y != far.Y {
 		t.Fatalf("player at (map %#04x, %d, %d), want Route 3 far side (map %#04x, %d, %d); battles=%d",
 			p.MapID, p.X, p.Y, far.Map, far.X, far.Y, totalBattles)
 	}
-	if !state.Controllable(&mem) {
+	if !skill.RedAddresses().Controllable(&mem) {
 		t.Fatalf("player not controllable after crossing Route 3; battles=%d", totalBattles)
 	}
 	if totalBattles == 0 {
 		t.Fatal("no trainer battles were fought crossing Route 3; the ambush scenario did not occur")
 	}
-	afterLevel := int(state.DecodeParty(&mem).Mons[0].Level)
+	afterLevel := int(skill.RedAddresses().DecodeParty(&mem).Mons[0].Level)
 	if afterLevel <= beforeLevel {
 		t.Fatalf("lead level did not increase across the trainer crossing (L%d -> L%d); expected won trainer battles to grant experience", beforeLevel, afterLevel)
 	}
@@ -391,11 +391,11 @@ func route3PostBrockEmu(t *testing.T) *emu.Emu {
 	journeyLeg(t, e, romData, safeSpot, policy, "setup: Travel to the safe spot")
 
 	state.Snapshot(e, &mem)
-	if lead := state.DecodeParty(&mem).Mons[0].Level; int(lead) < gymLeadLevel {
+	if lead := skill.RedAddresses().DecodeParty(&mem).Mons[0].Level; int(lead) < gymLeadLevel {
 		phaseRetries := 0
 		for detours := 0; detours <= maxHealDetours; detours++ {
 			state.Snapshot(e, &mem)
-			lead := state.DecodeParty(&mem).Mons[0]
+			lead := skill.RedAddresses().DecodeParty(&mem).Mons[0]
 			if int(lead.Level) >= gymLeadLevel {
 				break
 			}
@@ -409,7 +409,7 @@ func route3PostBrockEmu(t *testing.T) *emu.Emu {
 				diagFatalf(t, e, err, "setup Train: %v", err)
 			}
 			state.Snapshot(e, &mem)
-			lead = state.DecodeParty(&mem).Mons[0]
+			lead = skill.RedAddresses().DecodeParty(&mem).Mons[0]
 			if res.BlackedOut {
 				settleBlackout(t, e)
 				if _, err := skill.Travel(e, romData, safeSpot, policy, 10); err != nil {
@@ -441,10 +441,10 @@ func route3PostBrockEmu(t *testing.T) *emu.Emu {
 			}
 		}
 		state.Snapshot(e, &mem)
-		if lead := state.DecodeParty(&mem).Mons[0]; int(lead.Level) < gymLeadLevel {
+		if lead := skill.RedAddresses().DecodeParty(&mem).Mons[0]; int(lead.Level) < gymLeadLevel {
 			diagFatalf(t, e, nil, "setup: the lead is level %d, want >= %d to face Brock", lead.Level, gymLeadLevel)
 		}
-		t.Logf("setup: trained the lead to level %d", state.DecodeParty(&mem).Mons[0].Level)
+		t.Logf("setup: trained the lead to level %d", skill.RedAddresses().DecodeParty(&mem).Mons[0].Level)
 	}
 
 	northGate := skill.Destination{Map: 0x2F, X: 5, Y: 1}
@@ -485,7 +485,7 @@ func route3PostBrockEmu(t *testing.T) *emu.Emu {
 	if mem.U8(sym.ObtainedBadges)&0x01 == 0 {
 		diagFatalf(t, e, nil, "setup: wObtainedBadges bit 0 not set after the gym")
 	}
-	if !state.Controllable(&mem) {
+	if !skill.RedAddresses().Controllable(&mem) {
 		diagFatalf(t, e, nil, "setup: player not controllable after the gym")
 	}
 	// EVENT_BEAT_BROCK is event flag 0x77 (event_constants.asm: const_next $68,

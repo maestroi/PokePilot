@@ -62,7 +62,7 @@ func buttonFor(s world.Step) (emu.Button, bool) {
 }
 
 func playerXY(m *emu.Emu) (uint8, uint8) {
-	return m.Peek8(sym.XCoord), m.Peek8(sym.YCoord)
+	return m.Peek8(ram(m).XCoord), m.Peek8(ram(m).YCoord)
 }
 
 // idle reports that the game is not executing any movement: the walk
@@ -83,7 +83,7 @@ func playerXY(m *emu.Emu) (uint8, uint8) {
 // index already exhausted on the first frame of the step that was supposed
 // to press the hop.
 func idle(m *emu.Emu) bool {
-	return m.Peek8(sym.WalkCounter) == 0 && m.Peek8(sym.JoyIgnore) == 0 && m.Peek8(sym.JoyHeld) == 0
+	return m.Peek8(ram(m).WalkCounter) == 0 && m.Peek8(ram(m).JoyIgnore) == 0 && m.Peek8(sym.JoyHeld) == 0
 }
 
 // StepOnce attempts a single tile of movement. It returns nil when the
@@ -175,10 +175,10 @@ func WalkPath(m *emu.Emu, path []world.Step) error {
 func movementInterruption(m *emu.Emu) error {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if state.DecodeBattle(&mem) != nil {
+	if ram(m).DecodeBattle(&mem) != nil {
 		return ErrBattleInterrupted
 	}
-	if state.DecodeDialogue(&mem) != nil {
+	if ram(m).DecodeDialogue(&mem) != nil {
 		return ErrDialogueInterrupted
 	}
 	return nil
@@ -363,7 +363,7 @@ func walkAround(interrupted func() error, readBlocked func() map[[2]int]bool, pl
 	}
 }
 
-// walkAroundAvoidingObjects is walkAround with liveBlockers(m, h) as a
+// walkAroundAvoidingObjects is walkAround with liveBlockers(m, m.ROM(), h) as a
 // PREFERENCE rather than a hard wall: a stationary object's tile is real
 // geometry the router should route around when it can, but treating it as
 // always-occupied can turn a corridor that is merely narrow into one this
@@ -379,12 +379,12 @@ func walkAround(interrupted func() error, readBlocked func() map[[2]int]bool, pl
 // enough to the corridor that unconditionally marking it occupied removes
 // the only path the live game actually allows.
 func walkAroundAvoidingObjects(interrupted func() error, m *emu.Emu, h rom.MapHeader, plan func(blocked map[[2]int]bool) ([]world.Step, error), walk func([]world.Step) error, wait func()) error {
-	err := walkAround(interrupted, func() map[[2]int]bool { return liveBlockers(m, h) }, plan, walk, wait)
+	err := walkAround(interrupted, func() map[[2]int]bool { return liveBlockers(m, m.ROM(), h) }, plan, walk, wait)
 	if err == nil {
 		return nil
 	}
 	if !errors.Is(err, world.ErrNoPath) && !errors.Is(err, ErrLegUnwalkable) {
 		return err
 	}
-	return walkAround(interrupted, func() map[[2]int]bool { return spriteBlockers(m) }, plan, walk, wait)
+	return walkAround(interrupted, func() map[[2]int]bool { return spriteBlockers(m, m.ROM()) }, plan, walk, wait)
 }

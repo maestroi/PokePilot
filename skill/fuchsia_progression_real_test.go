@@ -18,16 +18,16 @@ func TestFuchsiaProgressionRealROM(t *testing.T) {
 
 	var before state.Mem
 	state.Snapshot(m, &before)
-	if !FuchsiaProgressionReady(&before) {
+	if !FuchsiaProgressionReady(&before, redWram()) {
 		t.Fatal("prepared #33 state does not own the Poke Flute")
 	}
 	if !FuchsiaProgressionAvailable(before.U8(sym.CurMap)) {
 		t.Fatalf("prepared #33 state is on unsupported map %#02x", before.U8(sym.CurMap))
 	}
-	if state.HasEvent(&before, eventBeatRoute12Snorlax) {
+	if redWram().HasEvent(&before, eventBeatRoute12Snorlax) {
 		t.Fatal("prepared #33 state already cleared the Route 12 Snorlax; want the full post-#32 slice")
 	}
-	if FuchsiaProgressionComplete(&before) {
+	if FuchsiaProgressionComplete(&before, redWram()) {
 		t.Fatal("prepared #33 state is already complete")
 	}
 
@@ -37,19 +37,19 @@ func TestFuchsiaProgressionRealROM(t *testing.T) {
 
 	var after state.Mem
 	state.Snapshot(m, &after)
-	if !state.HasEvent(&after, eventBeatRoute12Snorlax) {
+	if !redWram().HasEvent(&after, eventBeatRoute12Snorlax) {
 		t.Fatal("Route 12 Snorlax completion event is not set")
 	}
-	if !state.DecodeProgress(&after).Has(state.BadgeSoul) {
+	if !redWram().DecodeProgress(&after).Has(state.BadgeSoul) {
 		t.Fatal("Soul Badge is not set after #33 progression")
 	}
-	if !state.HasEvent(&after, eventGotHM03) || !hasBagItem(&after, hm03SurfItem) {
+	if !redWram().HasEvent(&after, eventGotHM03) || !hasBagItem(&after, hm03SurfItem, redWram()) {
 		t.Fatal("HM03 Surf was not positively awarded")
 	}
-	if !state.HasEvent(&after, eventGotHM04) || !hasBagItem(&after, hm04StrengthItem) {
+	if !redWram().HasEvent(&after, eventGotHM04) || !hasBagItem(&after, hm04StrengthItem, redWram()) {
 		t.Fatal("HM04 Strength was not positively awarded")
 	}
-	if !FuchsiaProgressionComplete(&after) {
+	if !FuchsiaProgressionComplete(&after, redWram()) {
 		t.Fatal("#33 positive postcondition is false after progression")
 	}
 }

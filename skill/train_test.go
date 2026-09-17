@@ -105,10 +105,10 @@ func TestTrainGrindsOnRoute1(t *testing.T) {
 	}
 	var mem state.Mem
 	state.Snapshot(e, &mem)
-	if p := state.DecodePlayer(&mem); p.MapID != 0x0C {
+	if p := skill.RedAddresses().DecodePlayer(&mem); p.MapID != 0x0C {
 		t.Fatalf("after the approach the player is on map %#04x, want Route 1 (0x0C)", p.MapID)
 	}
-	startLevel := state.DecodeParty(&mem).Mons[0].Level
+	startLevel := skill.RedAddresses().DecodeParty(&mem).Mons[0].Level
 
 	// A lone L6 lead against Route 1's level 2-5 wilds takes enough
 	// cumulative damage that a session of twelve battles ends before the
@@ -162,7 +162,7 @@ func TestTrainGrindsOnRoute1(t *testing.T) {
 	}
 	res.Battles = totalBattles
 	state.Snapshot(e, &mem)
-	finalLevel := state.DecodeParty(&mem).Mons[0].Level
+	finalLevel := skill.RedAddresses().DecodeParty(&mem).Mons[0].Level
 	if finalLevel < startLevel {
 		t.Fatalf("the lead did not level up: start=%d final=%d (battles=%d, BlackedOut=%v)",
 			startLevel, finalLevel, res.Battles, res.BlackedOut)
@@ -184,9 +184,9 @@ func TestTrainGrindsOnRoute1(t *testing.T) {
 		t.Errorf("Battles = %d, want <= %d (four resume segments plus a final session)", res.Battles, 4*(13+6+6)+13)
 	}
 	state.Snapshot(e, &mem)
-	if state.DecodeBattle(&mem) != nil || !state.Controllable(&mem) {
+	if skill.RedAddresses().DecodeBattle(&mem) != nil || !skill.RedAddresses().Controllable(&mem) {
 		t.Fatalf("a battle was left in progress after Train: battle=%v controllable=%v",
-			state.DecodeBattle(&mem) != nil, state.Controllable(&mem))
+			skill.RedAddresses().DecodeBattle(&mem) != nil, skill.RedAddresses().Controllable(&mem))
 	}
 	if blackedOut {
 		t.Logf("a session blacked out (legitimate: a one-mon party faints from cumulative damage); the grind resumed from the respawn spot and landed on map %#04x at (%d,%d), level %d",
@@ -230,15 +230,15 @@ func TestTrainRetreatsBeforeBlackout(t *testing.T) {
 	}
 	var mem state.Mem
 	state.Snapshot(e, &mem)
-	lead := state.DecodeParty(&mem).Mons[0]
+	lead := skill.RedAddresses().DecodeParty(&mem).Mons[0]
 	if lead.HP == 0 {
 		t.Fatalf("lead HP = 0 in RAM; the retreat must leave the lead alive")
 	}
 	if int(lead.HP)*2 >= int(lead.MaxHP) {
 		t.Errorf("lead HP = %d/%d in RAM, want below the retreat line (half max)", lead.HP, lead.MaxHP)
 	}
-	if state.DecodeBattle(&mem) != nil || !state.Controllable(&mem) {
-		t.Fatalf("a sequence was left in progress after Train: battle=%v controllable=%v", state.DecodeBattle(&mem) != nil, state.Controllable(&mem))
+	if skill.RedAddresses().DecodeBattle(&mem) != nil || !skill.RedAddresses().Controllable(&mem) {
+		t.Fatalf("a sequence was left in progress after Train: battle=%v controllable=%v", skill.RedAddresses().DecodeBattle(&mem) != nil, skill.RedAddresses().Controllable(&mem))
 	}
 	t.Logf("retreat: %d battles, level %d -> %d, lead %d/%d HP — the session that would have blacked out ended alive", res.Battles, res.StartLevel, res.EndLevel, lead.HP, lead.MaxHP)
 }
@@ -259,7 +259,7 @@ func TestTrainBudgetIsAResult(t *testing.T) {
 	}
 	var mem state.Mem
 	state.Snapshot(e, &mem)
-	startLevel := state.DecodeParty(&mem).Mons[0].Level
+	startLevel := skill.RedAddresses().DecodeParty(&mem).Mons[0].Level
 
 	res, err := skill.Train(e, romData, int(startLevel)+8, policy, 1)
 	if err != nil {
@@ -275,9 +275,9 @@ func TestTrainBudgetIsAResult(t *testing.T) {
 		t.Errorf("Battles = %d, want <= maxBattles+1 = 2", res.Battles)
 	}
 	state.Snapshot(e, &mem)
-	if state.DecodeBattle(&mem) != nil || !state.Controllable(&mem) {
+	if skill.RedAddresses().DecodeBattle(&mem) != nil || !skill.RedAddresses().Controllable(&mem) {
 		t.Fatalf("a battle was left in progress after Train: battle=%v controllable=%v",
-			state.DecodeBattle(&mem) != nil, state.Controllable(&mem))
+			skill.RedAddresses().DecodeBattle(&mem) != nil, skill.RedAddresses().Controllable(&mem))
 	}
 	t.Logf("budget test: %d battles, level %d -> %d", res.Battles, res.StartLevel, res.EndLevel)
 }
@@ -341,7 +341,7 @@ func TestTrainSurvivesEvolution(t *testing.T) {
 	// avoid, so the party size is asserted, not assumed.
 	var mem state.Mem
 	state.Snapshot(e, &mem)
-	party := state.DecodeParty(&mem)
+	party := skill.RedAddresses().DecodeParty(&mem)
 	if party.Count != 1 {
 		t.Fatalf("fixture precondition: party has %d mons, want exactly one (a partner would hit the Battle gap)", party.Count)
 	}
@@ -406,12 +406,12 @@ func TestTrainSurvivesEvolution(t *testing.T) {
 		t.Logf("segment %d: %d battle(s), level %d, blackedOut=%v retreated=%v; resuming the grind", segment, r.Battles, r.EndLevel, r.BlackedOut, r.Retreated)
 	}
 	state.Snapshot(e, &mem)
-	after := state.DecodeParty(&mem).Mons[0]
+	after := skill.RedAddresses().DecodeParty(&mem).Mons[0]
 	if after.Species != speciesWartortle {
 		t.Fatalf("lead is species %#02x lv%d after training to %d, want WARTORTLE (%#02x) — Train did not carry the mon through the level-16 evolution", after.Species, after.Level, target, speciesWartortle)
 	}
-	if state.DecodeBattle(&mem) != nil || !state.Controllable(&mem) {
-		t.Fatalf("a sequence was left in progress after Train: battle=%v controllable=%v", state.DecodeBattle(&mem) != nil, state.Controllable(&mem))
+	if skill.RedAddresses().DecodeBattle(&mem) != nil || !skill.RedAddresses().Controllable(&mem) {
+		t.Fatalf("a sequence was left in progress after Train: battle=%v controllable=%v", skill.RedAddresses().DecodeBattle(&mem) != nil, skill.RedAddresses().Controllable(&mem))
 	}
 	// Informational: BITE is NOT expected here — the offer comes at level 24
 	// on this line (see the moveBite note), so a grind to 22 never sees the

@@ -7,7 +7,6 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 )
 
 const (
@@ -26,22 +25,23 @@ const (
 // positive postcondition is intentionally delegated to
 // FuchsiaProgressionComplete: Soul Badge + HM03 + HM04 must all be present.
 func FuchsiaProgression(m *emu.Emu, romData []byte, policy MovePolicy) error {
+	a := ram(m)
 	if policy == nil {
 		return fmt.Errorf("skill: FuchsiaProgression: nil policy")
 	}
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if FuchsiaProgressionComplete(&mem) {
+	if FuchsiaProgressionComplete(&mem, a) {
 		return nil
 	}
-	if !FuchsiaProgressionReady(&mem) {
+	if !FuchsiaProgressionReady(&mem, a) {
 		return fmt.Errorf("skill: FuchsiaProgression: POKE FLUTE is required")
 	}
-	if !FuchsiaProgressionAvailable(mem.U8(sym.CurMap)) {
-		return fmt.Errorf("skill: FuchsiaProgression: map %#04x is outside the supported Lavender/Fuchsia slice", mem.U8(sym.CurMap))
+	if !FuchsiaProgressionAvailable(mem.U8(ram(m).CurMap)) {
+		return fmt.Errorf("skill: FuchsiaProgression: map %#04x is outside the supported Lavender/Fuchsia slice", mem.U8(ram(m).CurMap))
 	}
 
-	if !state.HasEvent(&mem, eventBeatRoute12Snorlax) {
+	if !ram(m).HasEvent(&mem, eventBeatRoute12Snorlax) {
 		if err := clearRoute12Snorlax(m, romData, policy); err != nil {
 			return err
 		}
@@ -51,14 +51,14 @@ func FuchsiaProgression(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	// finite 502-step session before routing back to a Center/Gym; otherwise
 	// resuming this objective would throw away the remaining Safari budget.
 	state.Snapshot(m, &mem)
-	if state.HasEvent(&mem, eventInSafariZone) && needsSafariRewards(&mem) {
+	if ram(m).HasEvent(&mem, eventInSafariZone) && needsSafariRewards(&mem, ram(m)) {
 		if err := collectSafariRewards(m, romData, policy); err != nil {
 			return err
 		}
 	}
 
 	state.Snapshot(m, &mem)
-	if !state.DecodeProgress(&mem).Has(state.BadgeSoul) {
+	if !ram(m).DecodeProgress(&mem).Has(state.BadgeSoul) {
 		// Establish Fuchsia as the recovery checkpoint before Koga. This also
 		// gives the trainer-heavy eastern route a clean heal.
 		center, ok := Place("fuchsia pokemon center")
@@ -83,41 +83,44 @@ func FuchsiaProgression(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		if err != nil {
 			return fmt.Errorf("skill: FuchsiaProgression: Koga: %w", err)
 		}
+		if outcome == state.ResultLost {
+			return fmt.Errorf("skill: FuchsiaProgression: %w against Koga", ErrTrainerBlackedOut)
+		}
 		if outcome != state.ResultWon {
 			return fmt.Errorf("skill: FuchsiaProgression: Koga battle ended with outcome %d", outcome)
 		}
 	}
 
 	state.Snapshot(m, &mem)
-	if needsSafariRewards(&mem) {
+	if needsSafariRewards(&mem, ram(m)) {
 		if err := collectSafariRewards(m, romData, policy); err != nil {
 			return err
 		}
 	}
 
 	state.Snapshot(m, &mem)
-	if !hasBagItem(&mem, hm04StrengthItem) {
+	if !hasBagItem(&mem, hm04StrengthItem, ram(m)) {
 		if err := receiveStrengthFromWarden(m, romData, policy); err != nil {
 			return err
 		}
 	}
 
 	state.Snapshot(m, &mem)
-	if !FuchsiaProgressionComplete(&mem) {
+	if !FuchsiaProgressionComplete(&mem, a) {
 		return fmt.Errorf("skill: FuchsiaProgression: incomplete after execution: soul=%v surf=%v strength=%v",
-			state.DecodeProgress(&mem).Has(state.BadgeSoul), hasBagItem(&mem, hm03SurfItem), hasBagItem(&mem, hm04StrengthItem))
+			ram(m).DecodeProgress(&mem).Has(state.BadgeSoul), hasBagItem(&mem, hm03SurfItem, a), hasBagItem(&mem, hm04StrengthItem, a))
 	}
 	return nil
 }
 
-func hasBagItem(mem *state.Mem, item uint8) bool {
-	_, n := bagEntry(mem, item)
+func hasBagItem(mem *state.Mem, item uint8, a wramAddresses) bool {
+	_, n := bagEntry(mem, item, a)
 	return n > 0
 }
 
-func needsSafariRewards(mem *state.Mem) bool {
-	needSurf := !hasBagItem(mem, hm03SurfItem)
-	needTeeth := !hasBagItem(mem, goldTeethItem) && !state.HasEvent(mem, eventGaveGoldTeeth)
+func needsSafariRewards(mem *state.Mem, a wramAddresses) bool {
+	needSurf := !hasBagItem(mem, hm03SurfItem, a)
+	needTeeth := !hasBagItem(mem, goldTeethItem, a) && !a.HasEvent(mem, eventGaveGoldTeeth)
 	return needSurf || needTeeth
 }
 
@@ -132,19 +135,19 @@ func clearRoute12Snorlax(m *emu.Emu, romData []byte, policy MovePolicy) error {
 
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if state.HasEvent(&mem, eventBeatRoute12Snorlax) {
+	if ram(m).HasEvent(&mem, eventBeatRoute12Snorlax) {
 		return nil
 	}
-	if err := useOverworldKeyItem(m, pokeFluteItemFuchsia, func(mm *state.Mem) bool {
-		return state.HasEvent(mm, eventFightRoute12Snorlax) || state.DecodeBattle(mm) != nil
+	if err := useOverworldKeyItem(m, pokeFluteItemFuchsia, func(mm *state.Mem, a wramAddresses) bool {
+		return ram(m).HasEvent(mm, eventFightRoute12Snorlax) || ram(m).DecodeBattle(mm) != nil
 	}); err != nil {
 		return fmt.Errorf("skill: FuchsiaProgression: wake Route 12 Snorlax: %w", err)
 	}
 
 	state.Snapshot(m, &mem)
-	if state.DecodeBattle(&mem) == nil {
-		if err := driveStoryUntil(m, fuchsiaStoryBudget, func(mm *state.Mem) bool {
-			return state.DecodeBattle(mm) != nil
+	if ram(m).DecodeBattle(&mem) == nil {
+		if err := driveStoryUntil(m, fuchsiaStoryBudget, func(mm *state.Mem, a wramAddresses) bool {
+			return ram(m).DecodeBattle(mm) != nil
 		}); err != nil {
 			return fmt.Errorf("skill: FuchsiaProgression: Snorlax battle did not start: %w", err)
 		}
@@ -153,11 +156,14 @@ func clearRoute12Snorlax(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if err != nil {
 		return fmt.Errorf("skill: FuchsiaProgression: Snorlax battle: %w", err)
 	}
+	if outcome == state.ResultLost {
+		return fmt.Errorf("skill: FuchsiaProgression: %w against the Route 12 Snorlax", ErrTrainerBlackedOut)
+	}
 	if outcome != state.ResultWon {
 		return fmt.Errorf("skill: FuchsiaProgression: Snorlax battle ended with outcome %d", outcome)
 	}
-	if err := Cutscene(m, fuchsiaStoryBudget, func(mm *state.Mem) bool {
-		return state.HasEvent(mm, eventBeatRoute12Snorlax)
+	if err := Cutscene(m, fuchsiaStoryBudget, func(mm *state.Mem, a wramAddresses) bool {
+		return ram(m).HasEvent(mm, eventBeatRoute12Snorlax)
 	}); err != nil {
 		return fmt.Errorf("skill: FuchsiaProgression: settle Snorlax story: %w", err)
 	}
@@ -167,20 +173,21 @@ func clearRoute12Snorlax(m *emu.Emu, romData []byte, policy MovePolicy) error {
 // useOverworldKeyItem performs START -> ITEM -> bag entry -> USE for key
 // items whose effect does not open a party selector. It reuses the verified
 // menu primitives used by UseFieldItem rather than relying on press counts.
-func useOverworldKeyItem(m *emu.Emu, item uint8, started func(*state.Mem) bool) error {
+func useOverworldKeyItem(m *emu.Emu, item uint8, started func(*state.Mem, wramAddresses) bool) error {
+	a := ram(m)
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if !state.Controllable(&mem) {
+	if !ram(m).Controllable(&mem) {
 		return fmt.Errorf("player not controllable")
 	}
-	idx, _ := bagEntry(&mem, item)
+	idx, _ := bagEntry(&mem, item, ram(m))
 	if idx < 0 {
 		return fmt.Errorf("%w (id %#02x)", ErrNotInBag, item)
 	}
 
-	wantMax, itemIndex := startMenuShape(&mem)
+	wantMax, itemIndex := startMenuShape(&mem, ram(m))
 	drawn := func(m *emu.Emu) bool {
-		return m.Peek8(sym.FontLoaded) != 0 && int(m.Peek8(sym.MaxMenuItem)) == wantMax
+		return m.Peek8(ram(m).FontLoaded) != 0 && int(m.Peek8(ram(m).MaxMenuItem)) == wantMax
 	}
 	for attempt := 0; attempt < 5 && !drawn(m); attempt++ {
 		m.Tap(emu.Start, 3, 7)
@@ -193,7 +200,7 @@ func useOverworldKeyItem(m *emu.Emu, item uint8, started func(*state.Mem) bool) 
 		return fmt.Errorf("select ITEM: %w", err)
 	}
 	if _, err := m.StepUntil(bagMenuBudget, func(m *emu.Emu) bool {
-		return m.Peek8(sym.ListMenuID) == itemListMenuID
+		return m.Peek8(ram(m).ListMenuID) == itemListMenuID
 	}); err != nil {
 		return fmt.Errorf("bag list did not open: %w", err)
 	}
@@ -202,23 +209,23 @@ func useOverworldKeyItem(m *emu.Emu, item uint8, started func(*state.Mem) bool) 
 	}
 	if _, err := m.StepUntil(useTossBudget, func(m *emu.Emu) bool {
 		state.Snapshot(m, &mem)
-		return useTossPrompt(&mem) != nil
+		return useTossPrompt(&mem, a) != nil
 	}); err != nil {
 		return fmt.Errorf("USE/TOSS prompt did not open: %w", err)
 	}
 	state.Snapshot(m, &mem)
-	if p := useTossPrompt(&mem); p == nil || p.Index != 0 {
+	if p := useTossPrompt(&mem, a); p == nil || p.Index != 0 {
 		return fmt.Errorf("USE/TOSS cursor is not on USE")
 	}
 	m.Tap(emu.A, 3, 7)
 	return driveStoryUntil(m, fuchsiaStoryBudget, started)
 }
 
-func driveStoryUntil(m *emu.Emu, budget int, done func(*state.Mem) bool) error {
+func driveStoryUntil(m *emu.Emu, budget int, done func(*state.Mem, wramAddresses) bool) error {
 	var mem state.Mem
 	for spent := 0; spent < budget; spent += 10 {
 		state.Snapshot(m, &mem)
-		if done(&mem) {
+		if done(&mem, ram(m)) {
 			return nil
 		}
 		// A advances ordinary text and accepts the default YES choice used
@@ -229,31 +236,31 @@ func driveStoryUntil(m *emu.Emu, budget int, done func(*state.Mem) bool) error {
 	}
 	state.Snapshot(m, &mem)
 	return fmt.Errorf("story transition exceeded %d frames on map %#04x at (%d,%d)", budget,
-		mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord))
+		mem.U8(ram(m).CurMap), mem.U8(ram(m).XCoord), mem.U8(ram(m).YCoord))
 }
 
 func collectSafariRewards(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	for session := 1; session <= maxSafariSessions; session++ {
 		var mem state.Mem
 		state.Snapshot(m, &mem)
-		if !needsSafariRewards(&mem) {
+		if !needsSafariRewards(&mem, ram(m)) {
 			return leaveSafariZoneIfNeeded(m, romData, policy)
 		}
-		if !state.HasEvent(&mem, eventInSafariZone) {
+		if !ram(m).HasEvent(&mem, eventInSafariZone) {
 			if err := enterSafariZone(m, romData, policy); err != nil {
 				return fmt.Errorf("skill: FuchsiaProgression: enter Safari Zone session %d: %w", session, err)
 			}
 		}
 
 		state.Snapshot(m, &mem)
-		if !hasBagItem(&mem, goldTeethItem) && !state.HasEvent(&mem, eventGaveGoldTeeth) {
+		if !hasBagItem(&mem, goldTeethItem, ram(m)) && !ram(m).HasEvent(&mem, eventGaveGoldTeeth) {
 			teethStand, ok := Place("safari gold teeth")
 			if !ok {
 				return fmt.Errorf("skill: FuchsiaProgression: safari gold teeth place missing")
 			}
 			if _, err := TravelFlee(m, romData, teethStand, policy, fuchsiaTravelEngagements); err != nil {
 				state.Snapshot(m, &mem)
-				if !state.HasEvent(&mem, eventInSafariZone) {
+				if !ram(m).HasEvent(&mem, eventInSafariZone) {
 					continue
 				}
 				return fmt.Errorf("skill: FuchsiaProgression: reach Gold Teeth: %w", err)
@@ -264,14 +271,14 @@ func collectSafariRewards(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		}
 
 		state.Snapshot(m, &mem)
-		if !hasBagItem(&mem, hm03SurfItem) {
+		if !hasBagItem(&mem, hm03SurfItem, ram(m)) {
 			secret, ok := Place("safari secret house")
 			if !ok {
 				return fmt.Errorf("skill: FuchsiaProgression: safari secret house place missing")
 			}
 			if _, err := TravelFlee(m, romData, secret, policy, fuchsiaTravelEngagements); err != nil {
 				state.Snapshot(m, &mem)
-				if !state.HasEvent(&mem, eventInSafariZone) {
+				if !ram(m).HasEvent(&mem, eventInSafariZone) {
 					continue
 				}
 				return fmt.Errorf("skill: FuchsiaProgression: reach Safari Secret House: %w", err)
@@ -283,7 +290,7 @@ func collectSafariRewards(m *emu.Emu, romData []byte, policy MovePolicy) error {
 				return fmt.Errorf("skill: FuchsiaProgression: receive HM03: %w", err)
 			}
 			state.Snapshot(m, &mem)
-			if !hasBagItem(&mem, hm03SurfItem) || !state.HasEvent(&mem, eventGotHM03) {
+			if !hasBagItem(&mem, hm03SurfItem, ram(m)) || !ram(m).HasEvent(&mem, eventGotHM03) {
 				return fmt.Errorf("skill: FuchsiaProgression: HM03 was not positively awarded after bag-capacity preflight")
 			}
 		}
@@ -311,13 +318,13 @@ func safariGateJoinChoiceIndex(mapID uint8, text string, join bool) (int, bool) 
 }
 
 func answerSafariGateJoinChoice(m *emu.Emu, text string, join bool) (bool, error) {
-	index, ok := safariGateJoinChoiceIndex(m.Peek8(sym.CurMap), text, join)
+	index, ok := safariGateJoinChoiceIndex(m.Peek8(ram(m).CurMap), text, join)
 	if !ok {
 		return false, nil
 	}
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if state.DecodeTwoOptionMenu(&mem) == nil {
+	if ram(m).DecodeTwoOptionMenu(&mem) == nil {
 		return false, nil
 	}
 	if err := selectTwoOption(m, index); err != nil {
@@ -359,19 +366,19 @@ func enterSafariZone(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		if !handled {
 			return err
 		}
-		return driveStoryUntil(m, fuchsiaStoryBudget, func(mm *state.Mem) bool {
-			return state.HasEvent(mm, eventInSafariZone) && mm.U8(sym.CurMap) == safariZoneCenterMap && state.Controllable(mm)
+		return driveStoryUntil(m, fuchsiaStoryBudget, func(mm *state.Mem, a wramAddresses) bool {
+			return ram(m).HasEvent(mm, eventInSafariZone) && mm.U8(ram(m).CurMap) == safariZoneCenterMap && ram(m).Controllable(mm)
 		})
 	}
-	if m.Peek8(sym.CurMap) != safariZoneGateMap {
-		return fmt.Errorf("expected Safari gate, on %#04x", m.Peek8(sym.CurMap))
+	if m.Peek8(ram(m).CurMap) != safariZoneGateMap {
+		return fmt.Errorf("expected Safari gate, on %#04x", m.Peek8(ram(m).CurMap))
 	}
 	// (3,2) is the script trigger immediately above our stable (3,3) gate
 	// target. The gate's YES/NO prompt defaults to YES; driveStoryUntil
 	// advances that script until EVENT_IN_SAFARI_ZONE and the center warp.
 	m.Tap(emu.Up, 3, 7)
-	if err := driveStoryUntil(m, fuchsiaStoryBudget, func(mm *state.Mem) bool {
-		return state.HasEvent(mm, eventInSafariZone) && mm.U8(sym.CurMap) == safariZoneCenterMap && state.Controllable(mm)
+	if err := driveStoryUntil(m, fuchsiaStoryBudget, func(mm *state.Mem, a wramAddresses) bool {
+		return ram(m).HasEvent(mm, eventInSafariZone) && mm.U8(ram(m).CurMap) == safariZoneCenterMap && ram(m).Controllable(mm)
 	}); err != nil {
 		return err
 	}
@@ -381,7 +388,7 @@ func enterSafariZone(m *emu.Emu, romData []byte, policy MovePolicy) error {
 func leaveSafariZoneIfNeeded(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if !state.HasEvent(&mem, eventInSafariZone) {
+	if !ram(m).HasEvent(&mem, eventInSafariZone) {
 		return nil
 	}
 	exit, ok := Place("safari exit approach")
@@ -390,7 +397,7 @@ func leaveSafariZoneIfNeeded(m *emu.Emu, romData []byte, policy MovePolicy) erro
 	}
 	if _, err := TravelFlee(m, romData, exit, policy, fuchsiaTravelEngagements); err != nil {
 		state.Snapshot(m, &mem)
-		if !state.HasEvent(&mem, eventInSafariZone) {
+		if !ram(m).HasEvent(&mem, eventInSafariZone) {
 			return nil
 		}
 		return err
@@ -399,8 +406,8 @@ func leaveSafariZoneIfNeeded(m *emu.Emu, romData []byte, policy MovePolicy) erro
 	// early-leave prompt defaults to YES. If the Safari timer already expired,
 	// the same predicate simply observes the automatic ejection.
 	m.Tap(emu.Down, 3, 7)
-	return driveStoryUntil(m, fuchsiaStoryBudget, func(mm *state.Mem) bool {
-		return !state.HasEvent(mm, eventInSafariZone) && state.Controllable(mm)
+	return driveStoryUntil(m, fuchsiaStoryBudget, func(mm *state.Mem, a wramAddresses) bool {
+		return !ram(m).HasEvent(mm, eventInSafariZone) && ram(m).Controllable(mm)
 	})
 }
 
@@ -437,7 +444,7 @@ func receiveStrengthFromWarden(m *emu.Emu, romData []byte, policy MovePolicy) er
 	// GiveItem(HM04), so that same interaction creates the required slot. A
 	// resumed save with EVENT_GAVE_GOLD_TEETH already set has no such removal
 	// and must reserve a slot before asking for HM04 again.
-	if !hasBagItem(&mem, goldTeethItem) && state.HasEvent(&mem, eventGaveGoldTeeth) {
+	if !hasBagItem(&mem, goldTeethItem, ram(m)) && ram(m).HasEvent(&mem, eventGaveGoldTeeth) {
 		if err := EnsureBagSpaceFor(m, hm04StrengthItem); err != nil {
 			return fmt.Errorf("skill: FuchsiaProgression: make room for HM04: %w", err)
 		}
@@ -446,7 +453,7 @@ func receiveStrengthFromWarden(m *emu.Emu, romData []byte, policy MovePolicy) er
 		return fmt.Errorf("skill: FuchsiaProgression: give Gold Teeth to Warden: %w", err)
 	}
 	state.Snapshot(m, &mem)
-	if !hasBagItem(&mem, hm04StrengthItem) || !state.HasEvent(&mem, eventGotHM04) {
+	if !hasBagItem(&mem, hm04StrengthItem, ram(m)) || !ram(m).HasEvent(&mem, eventGotHM04) {
 		return fmt.Errorf("skill: FuchsiaProgression: HM04 was not positively awarded (Gold Teeth missing or capacity preflight failed)")
 	}
 	return nil

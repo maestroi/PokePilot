@@ -14,12 +14,12 @@ type DialogueState struct {
 }
 
 // DecodeDialogue returns nil when no text box is up.
-func DecodeDialogue(m *Mem) *DialogueState {
-	if m.U8(sym.FontLoaded) == 0 {
+func (a Addresses) DecodeDialogue(m *Mem) *DialogueState {
+	if m.U8(a.FontLoaded) == 0 {
 		return nil
 	}
 	return &DialogueState{
-		TextBoxID: m.U8(sym.TextBoxID),
+		TextBoxID: m.U8(a.TextBoxID),
 		Text:      ScreenText(m),
 	}
 }
@@ -40,15 +40,15 @@ func DecodeDialogue(m *Mem) *DialogueState {
 // 0x14 behind — see TestRecoverDialogueIgnoresStaleTextBoxID), so reading
 // it here would call an ordinary NPC line a menu and refuse to page it.
 // The tilemap is the screen: either a cursor is drawn or it is not.
-func MenuUp(m *Mem) bool {
-	if m.U8(sym.FontLoaded) == 0 {
+func (a Addresses) MenuUp(m *Mem) bool {
+	if m.U8(a.FontLoaded) == 0 {
 		return false
 	}
-	y, x := int(m.U8(sym.TopMenuItemY)), int(m.U8(sym.TopMenuItemX))
+	y, x := int(m.U8(a.TopMenuItemY)), int(m.U8(a.TopMenuItemX))
 	if y >= 18 || x >= 20 {
 		return false
 	}
-	return m.Slice(sym.TileMap, sym.TileMapLen)[y*20+x] == menuCursorTile
+	return m.Slice(a.TileMap, sym.TileMapLen)[y*20+x] == menuCursorTile
 }
 
 // Controllable reports whether the game is accepting free overworld input.
@@ -56,10 +56,10 @@ func MenuUp(m *Mem) bool {
 // written during new-game initialisation while the intro is still running,
 // so they are NOT evidence that the overworld has been reached. A loaded
 // map always has non-zero dimensions.
-func Controllable(m *Mem) bool {
-	return m.U8(sym.CurMapWidth) != 0 &&
-		m.U8(sym.CurMapHeight) != 0 &&
-		m.U8(sym.FontLoaded) == 0 &&
-		m.U8(sym.JoyIgnore) == 0 &&
-		m.U8(sym.WalkCounter) == 0
+func (a Addresses) Controllable(m *Mem) bool {
+	return m.U8(a.CurMapWidth) != 0 &&
+		m.U8(a.CurMapHeight) != 0 &&
+		m.U8(a.FontLoaded) == 0 &&
+		m.U8(a.JoyIgnore) == 0 &&
+		m.U8(a.WalkCounter) == 0
 }

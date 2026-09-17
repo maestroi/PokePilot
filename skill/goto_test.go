@@ -39,14 +39,14 @@ func TestGoToViridianPokecenter(t *testing.T) {
 
 	var mem state.Mem
 	state.Snapshot(e, &mem)
-	p := state.DecodePlayer(&mem)
+	p := skill.RedAddresses().DecodePlayer(&mem)
 	if p.MapID != 0x29 {
 		t.Fatalf("CurMap = %#04x, want 0x29", p.MapID)
 	}
 	if p.X != 3 || p.Y != 3 {
 		t.Errorf("player = (%d,%d), want (3,3)", p.X, p.Y)
 	}
-	if !state.Controllable(&mem) {
+	if !skill.RedAddresses().Controllable(&mem) {
 		t.Error("player not controllable after GoTo")
 	}
 

@@ -22,11 +22,11 @@ func TestBuy(t *testing.T) {
 
 	var before state.Mem
 	state.Snapshot(m, &before)
-	if !state.Controllable(&before) {
+	if !skill.RedAddresses().Controllable(&before) {
 		t.Fatal("precondition: fixture is not controllable")
 	}
 	bagBefore := countItem(&before, skill.ItemAntidote)
-	moneyBefore := int(state.DecodeInventory(&before).Money)
+	moneyBefore := int(skill.RedAddresses().DecodeInventory(&before).Money)
 
 	if err := skill.Buy(m, skill.ItemAntidote, 2); err != nil {
 		t.Fatalf("Buy: %v", err)
@@ -35,7 +35,7 @@ func TestBuy(t *testing.T) {
 	var after state.Mem
 	state.Snapshot(m, &after)
 	bagAfter := countItem(&after, skill.ItemAntidote)
-	moneyAfter := int(state.DecodeInventory(&after).Money)
+	moneyAfter := int(skill.RedAddresses().DecodeInventory(&after).Money)
 
 	if bagAfter != bagBefore+2 {
 		t.Errorf("bag: ANTIDOTE = %d, want %d (before %d + 2)", bagAfter, bagBefore+2, bagBefore)
@@ -43,7 +43,7 @@ func TestBuy(t *testing.T) {
 	if moneyAfter != moneyBefore-200 {
 		t.Errorf("money: %d, want %d (before %d - 200)", moneyAfter, moneyBefore-200, moneyBefore)
 	}
-	if !state.Controllable(&after) {
+	if !skill.RedAddresses().Controllable(&after) {
 		t.Error("postcondition: player is not controllable after the purchase")
 	}
 }
@@ -62,7 +62,7 @@ func TestBuyCantAfford(t *testing.T) {
 
 	var after state.Mem
 	state.Snapshot(m, &after)
-	if !state.Controllable(&after) {
+	if !skill.RedAddresses().Controllable(&after) {
 		t.Error("postcondition: player is not controllable after the refusal")
 	}
 	// The purchase must NOT have happened.
@@ -89,7 +89,7 @@ func TestTalkStopsAtShopMenu(t *testing.T) {
 }
 
 func countItem(mem *state.Mem, id uint8) int {
-	for _, it := range state.DecodeInventory(mem).Items {
+	for _, it := range skill.RedAddresses().DecodeInventory(mem).Items {
 		if it.ID == id {
 			return int(it.Quantity)
 		}

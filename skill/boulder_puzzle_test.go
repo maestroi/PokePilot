@@ -23,7 +23,7 @@ func TestLiveBoulderMovablesUseSpriteSlotAsStableNodeID(t *testing.T) {
 	writePuzzleSprite(&mem, 7, 17, 13, state.BoulderPictureID)
 	writePuzzleSprite(&mem, 8, 6, 6, 0x01)
 
-	got := liveBoulderMovables(&mem)
+	got := liveBoulderMovables(&mem, redWram())
 	want := []world.Movable{
 		{ID: 3, Pos: world.Point{X: 5, Y: 15}},
 		{ID: 7, Pos: world.Point{X: 17, Y: 13}},
@@ -37,7 +37,7 @@ func TestLiveBoulderMovablesUseSpriteSlotAsStableNodeID(t *testing.T) {
 		}
 	}
 
-	fixed := liveNonBoulderBlockers(&mem)
+	fixed := liveNonBoulderBlockers(&mem, redWram())
 	if fixed[[2]int{5, 15}] || fixed[[2]int{17, 13}] {
 		t.Fatalf("boulders leaked into fixed blockers: %v", fixed)
 	}

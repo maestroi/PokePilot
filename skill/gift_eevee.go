@@ -44,7 +44,7 @@ func ReceiveEeveeGift(m *emu.Emu, romData []byte, policy MovePolicy) (CatchResul
 
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if giftPokemonAlreadyOwned(&mem, romData, eeveeGiftSpecies) {
+	if giftPokemonAlreadyOwned(&mem, romData, eeveeGiftSpecies, ram(m)) {
 		return CatchResult{Outcome: OutcomeCaught, Species: eeveeGiftSpecies}, nil
 	}
 

@@ -42,14 +42,14 @@ func TestVictoryRoadBoulderSectionsRealROM(t *testing.T) {
 			if got := before.U8(sym.CurMap); got != spec.Map {
 				t.Fatalf("%s checkpoint map = %#02x, want %#02x", tc.env, got, spec.Map)
 			}
-			if state.HasEvent(&before, spec.CompleteEvent) {
+			if redWram().HasEvent(&before, spec.CompleteEvent) {
 				t.Fatalf("%s checkpoint already has completion event %#x set", tc.env, spec.CompleteEvent)
 			}
-			capability := FieldCapabilityFor(&before, FieldStrength)
-			if !capability.Usable && !CanPrepareFieldMove(m.ROM(), &before, FieldStrength) {
+			capability := FieldCapabilityFor(&before, FieldStrength, redWram())
+			if !capability.Usable && !CanPrepareFieldMove(m.ROM(), &before, FieldStrength, redWram()) {
 				t.Fatalf("%s checkpoint cannot use or prepare Strength: %+v", tc.env, capability)
 			}
-			if len(state.DecodeBoulders(&before)) == 0 {
+			if len(redWram().DecodeBoulders(&before)) == 0 {
 				t.Fatalf("%s checkpoint has no live boulders", tc.env)
 			}
 
@@ -63,14 +63,14 @@ func TestVictoryRoadBoulderSectionsRealROM(t *testing.T) {
 
 			var after state.Mem
 			state.Snapshot(m, &after)
-			if !state.HasEvent(&after, spec.CompleteEvent) {
+			if !redWram().HasEvent(&after, spec.CompleteEvent) {
 				t.Fatalf("%v completion event %#x is not set after solve", tc.section, spec.CompleteEvent)
 			}
 
 			target := spec.Targets[0]
 			terminal := spec.TerminalTargets[[2]int{target.X, target.Y}]
 			if terminal {
-				for _, boulder := range state.DecodeBoulders(&after) {
+				for _, boulder := range redWram().DecodeBoulders(&after) {
 					if boulder.X == target.X && boulder.Y == target.Y {
 						t.Fatalf("terminal boulder still visible at hole (%d,%d): %+v", target.X, target.Y, boulder)
 					}
@@ -79,14 +79,14 @@ func TestVictoryRoadBoulderSectionsRealROM(t *testing.T) {
 			}
 
 			found := false
-			for _, boulder := range state.DecodeBoulders(&after) {
+			for _, boulder := range redWram().DecodeBoulders(&after) {
 				if boulder.X == target.X && boulder.Y == target.Y {
 					found = true
 					break
 				}
 			}
 			if !found {
-				t.Fatalf("%v event is set but no live boulder occupies target (%d,%d): %v", tc.section, target.X, target.Y, state.DecodeBoulders(&after))
+				t.Fatalf("%v event is set but no live boulder occupies target (%d,%d): %v", tc.section, target.X, target.Y, redWram().DecodeBoulders(&after))
 			}
 		})
 	}

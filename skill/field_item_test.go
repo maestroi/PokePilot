@@ -63,10 +63,10 @@ func TestUseFieldItemPotion(t *testing.T) {
 
 	var before state.Mem
 	state.Snapshot(m, &before)
-	if !state.Controllable(&before) {
+	if !skill.RedAddresses().Controllable(&before) {
 		t.Fatal("precondition: player not controllable after the damage battle")
 	}
-	lead := state.DecodeParty(&before).Mons[0]
+	lead := skill.RedAddresses().DecodeParty(&before).Mons[0]
 	if lead.HP == 0 || lead.HP >= lead.MaxHP {
 		t.Fatalf("precondition: lead not damaged (HP %d/%d)", lead.HP, lead.MaxHP)
 	}
@@ -77,14 +77,14 @@ func TestUseFieldItemPotion(t *testing.T) {
 
 	var after state.Mem
 	state.Snapshot(m, &after)
-	leadAfter := state.DecodeParty(&after).Mons[0]
+	leadAfter := skill.RedAddresses().DecodeParty(&after).Mons[0]
 	if leadAfter.HP <= lead.HP {
 		t.Fatalf("postcondition: lead HP did not rise: %d -> %d (max %d)", lead.HP, leadAfter.HP, lead.MaxHP)
 	}
 	if got := bagQty(t, m, itemPotion); got != 0 {
 		t.Errorf("postcondition: bag POTION = %d, want 0 (the one was used)", got)
 	}
-	if !state.Controllable(&after) {
+	if !skill.RedAddresses().Controllable(&after) {
 		t.Error("postcondition: player is not controllable after using the item")
 	}
 }
@@ -100,7 +100,7 @@ func damageLead(t *testing.T, m *emu.Emu, policy skill.MovePolicy, r1 skill.Dest
 	for tries := 0; tries < 4; tries++ {
 		var mem state.Mem
 		state.Snapshot(m, &mem)
-		if lead := state.DecodeParty(&mem).Mons[0]; lead.HP > 0 && lead.HP < lead.MaxHP {
+		if lead := skill.RedAddresses().DecodeParty(&mem).Mons[0]; lead.HP > 0 && lead.HP < lead.MaxHP {
 			return
 		}
 		if m.Peek8(sym.CurMap) != r1.Map {

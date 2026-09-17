@@ -73,7 +73,7 @@ func TestBattleNoBattleInProgress(t *testing.T) {
 	}
 	var mem state.Mem
 	state.Snapshot(e, &mem)
-	if !state.Controllable(&mem) {
+	if !skill.RedAddresses().Controllable(&mem) {
 		t.Fatal("fixture not controllable at start")
 	}
 
@@ -87,7 +87,7 @@ func TestBattleNoBattleInProgress(t *testing.T) {
 		t.Errorf("player changed: before %+v, after %+v", before, after)
 	}
 	state.Snapshot(e, &mem)
-	if !state.Controllable(&mem) {
+	if !skill.RedAddresses().Controllable(&mem) {
 		t.Error("player not controllable after failed Battle")
 	}
 }
@@ -159,7 +159,7 @@ func forcedSwitchAttempt(t *testing.T, attempt int) bool {
 
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	party0 := state.DecodeParty(&mem)
+	party0 := skill.RedAddresses().DecodeParty(&mem)
 	if party0.Count != 1 {
 		t.Fatalf("attempt %d: fixture precondition: party has %d members, want 1", attempt, party0.Count)
 	}
@@ -185,7 +185,7 @@ func forcedSwitchAttempt(t *testing.T, attempt int) bool {
 		return false
 	}
 	state.Snapshot(m, &mem)
-	party1 := state.DecodeParty(&mem)
+	party1 := skill.RedAddresses().DecodeParty(&mem)
 	if party1.Count != 2 || (party1.Mons[1].Species != speciesPidgey && party1.Mons[1].Species != speciesRattata) {
 		t.Fatalf("attempt %d: post-catch party = %+v, want SQUIRTLE + a Route 1 wild", attempt, party1.Mons)
 	}
@@ -195,7 +195,7 @@ func forcedSwitchAttempt(t *testing.T, attempt int) bool {
 		t.Fatalf("attempt %d: PromoteToLead: %v", attempt, err)
 	}
 	state.Snapshot(m, &mem)
-	leadAfterSwap := state.DecodeParty(&mem).Mons[0].Species
+	leadAfterSwap := skill.RedAddresses().DecodeParty(&mem).Mons[0].Species
 	if leadAfterSwap == leadSpecies {
 		t.Fatalf("attempt %d: lead after swap is still SQUIRTLE (%#02x)", attempt, leadAfterSwap)
 	}
@@ -227,7 +227,7 @@ func forcedSwitchAttempt(t *testing.T, attempt int) bool {
 			t.Fatalf("attempt %d trip %d: Travel to %v: %v", attempt, trip, dest, err)
 		}
 		state.Snapshot(m, &mem)
-		party := state.DecodeParty(&mem)
+		party := skill.RedAddresses().DecodeParty(&mem)
 		if !party.Mons[0].Fainted() {
 			continue
 		}
@@ -244,9 +244,9 @@ func forcedSwitchAttempt(t *testing.T, attempt int) bool {
 		if party.Mons[1].Fainted() {
 			t.Fatalf("attempt %d trip %d: the replacement SQUIRTLE is fainted: %+v", attempt, trip, party.Mons)
 		}
-		if !state.Controllable(&mem) {
+		if !skill.RedAddresses().Controllable(&mem) {
 			t.Fatalf("attempt %d trip %d: player not controllable after the forced switch: %+v",
-				attempt, trip, state.DecodePlayer(&mem))
+				attempt, trip, skill.RedAddresses().DecodePlayer(&mem))
 		}
 		t.Logf("attempt %d trip %d: lead (species %#02x) fainted; Battle answered UseNextMon and sent out the fixture's lead (species %#02x) — party now %+v",
 			attempt, trip, leadAfterSwap, party.Mons[1].Species, party.Mons)
@@ -285,7 +285,7 @@ func TestBattleHandlesStrategicMovePrompt(t *testing.T) {
 	// the prompt under test would never fire.
 	var mem state.Mem
 	state.Snapshot(e, &mem)
-	party := state.DecodeParty(&mem)
+	party := skill.RedAddresses().DecodeParty(&mem)
 	if party.Count != 1 {
 		t.Fatalf("fixture precondition: party has %d mons, want exactly one", party.Count)
 	}
@@ -355,12 +355,12 @@ func TestBattleHandlesStrategicMovePrompt(t *testing.T) {
 	}
 
 	state.Snapshot(e, &mem)
-	after := state.DecodeParty(&mem).Mons[0]
+	after := skill.RedAddresses().DecodeParty(&mem).Mons[0]
 	if after.Species != speciesWartortle {
 		t.Fatalf("lead is species %#02x lv%d after training to %d, want WARTORTLE (%#02x)", after.Species, after.Level, target, speciesWartortle)
 	}
-	if state.DecodeBattle(&mem) != nil || !state.Controllable(&mem) {
-		t.Fatalf("a sequence was left in progress after Train: battle=%v controllable=%v", state.DecodeBattle(&mem) != nil, state.Controllable(&mem))
+	if skill.RedAddresses().DecodeBattle(&mem) != nil || !skill.RedAddresses().Controllable(&mem) {
+		t.Fatalf("a sequence was left in progress after Train: battle=%v controllable=%v", skill.RedAddresses().DecodeBattle(&mem) != nil, skill.RedAddresses().Controllable(&mem))
 	}
 	if after.Moves != want {
 		t.Fatalf("move set after the level-24 BITE prompt is %v, want %v from strategic decision %+v", after.Moves, want, decision)

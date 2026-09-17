@@ -43,10 +43,10 @@ func TestFleeWildBattle(t *testing.T) {
 	}
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if bs := state.DecodeBattle(&mem); bs != nil {
+	if bs := skill.RedAddresses().DecodeBattle(&mem); bs != nil {
 		t.Fatalf("postcondition: battle still in progress after Flee: %+v", bs)
 	}
-	if !state.Controllable(&mem) {
+	if !skill.RedAddresses().Controllable(&mem) {
 		t.Fatal("postcondition: player not controllable after Flee")
 	}
 	if maxAttempts == 0 {
@@ -137,7 +137,7 @@ func TestFleeTrainerBattle(t *testing.T) {
 	}
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if bs := state.DecodeBattle(&mem); bs == nil {
+	if bs := skill.RedAddresses().DecodeBattle(&mem); bs == nil {
 		t.Fatal("the trainer battle is over after a refused flee; the refusal must leave it in progress")
 	}
 	if got := int(m.Peek8(sym.NumRunAttempts)); got != 0 {
@@ -153,7 +153,7 @@ func waitForBattleStart(t *testing.T, m *emu.Emu) error {
 	for i := 0; i < 3000; i++ {
 		var mem state.Mem
 		state.Snapshot(m, &mem)
-		if state.DecodeBattle(&mem) != nil {
+		if skill.RedAddresses().DecodeBattle(&mem) != nil {
 			return nil
 		}
 		m.StepFrame()

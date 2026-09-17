@@ -7,7 +7,6 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
 )
 
@@ -39,7 +38,7 @@ var (
 // transitions from fromMap. PlaceNames is sorted, so equal-length ties are
 // deterministic. Tile-level reachability is still verified by TravelFlee.
 func nearestPokemonCenter(romData []byte, fromMap uint8) (Destination, string, error) {
-	g, err := world.BuildGraph(romData)
+	g, err := cachedRouteGraph(romData)
 	if err != nil {
 		return Destination{}, "", err
 	}
@@ -84,7 +83,7 @@ func ensureAtPokemonCenterPC(m *emu.Emu, romData []byte, policy MovePolicy) erro
 	if policy == nil {
 		return fmt.Errorf("skill: Bill's PC: nil move policy")
 	}
-	cur := m.Peek8(sym.CurMap)
+	cur := m.Peek8(ram(m).CurMap)
 	if !knownPokemonCenterMap(cur) {
 		center, name, err := nearestPokemonCenter(romData, cur)
 		if err != nil {
@@ -95,7 +94,7 @@ func ensureAtPokemonCenterPC(m *emu.Emu, romData []byte, policy MovePolicy) erro
 		}
 	}
 
-	pc := Destination{Map: m.Peek8(sym.CurMap), X: pokemonCenterPCX, Y: pokemonCenterPCY}
+	pc := Destination{Map: m.Peek8(ram(m).CurMap), X: pokemonCenterPCX, Y: pokemonCenterPCY}
 	if _, err := TravelFlee(m, romData, pc, policy, 4); err != nil {
 		return fmt.Errorf("skill: Bill's PC: reach PC tile: %w", err)
 	}
@@ -108,15 +107,15 @@ func ensureAtPokemonCenterPC(m *emu.Emu, romData []byte, policy MovePolicy) erro
 // pcMainMenuScreen is pcMainMenuUp without the live-cursor requirement; see
 // billsPCMenuScreen for why that requirement can be unreliable on a screen
 // reached by backing out of a nested menu rather than opening it fresh.
-func pcMainMenuScreen(mem *state.Mem) bool {
+func pcMainMenuScreen(mem *state.Mem, a wramAddresses) bool {
 	text := state.ScreenText(mem)
-	max := int(mem.U8(sym.MaxMenuItem))
-	return mem.U8(sym.TopMenuItemX) == 1 && mem.U8(sym.TopMenuItemY) == 2 &&
+	max := int(mem.U8(a.MaxMenuItem))
+	return mem.U8(a.TopMenuItemX) == 1 && mem.U8(a.TopMenuItemY) == 2 &&
 		max >= 2 && max <= 4 && strings.Contains(text, "LOG OFF") && strings.Contains(text, "PC")
 }
 
-func pcMainMenuUp(mem *state.Mem) bool {
-	return state.MenuUp(mem) && pcMainMenuScreen(mem)
+func pcMainMenuUp(mem *state.Mem, a wramAddresses) bool {
+	return a.MenuUp(mem) && pcMainMenuScreen(mem, a)
 }
 
 // billsPCMenuScreen is billsPCMenuUp without the live-cursor requirement.
@@ -128,26 +127,26 @@ func pcMainMenuUp(mem *state.Mem) bool {
 // on. pcCancelUntil uses this relaxed form as its arrival target so it does
 // not mistake "arrived, cursor not yet redrawn" for "still need to cancel
 // out further" and keep pressing B straight past the destination.
-func billsPCMenuScreen(mem *state.Mem) bool {
+func billsPCMenuScreen(mem *state.Mem, a wramAddresses) bool {
 	text := state.ScreenText(mem)
-	return mem.U8(sym.TopMenuItemX) == 1 && mem.U8(sym.TopMenuItemY) == 2 &&
-		mem.U8(sym.MaxMenuItem) == 4 && strings.Contains(text, "WITHDRAW") && strings.Contains(text, "DEPOSIT")
+	return mem.U8(a.TopMenuItemX) == 1 && mem.U8(a.TopMenuItemY) == 2 &&
+		mem.U8(a.MaxMenuItem) == 4 && strings.Contains(text, "WITHDRAW") && strings.Contains(text, "DEPOSIT")
 }
 
-func billsPCMenuUp(mem *state.Mem) bool {
-	return state.MenuUp(mem) && billsPCMenuScreen(mem)
+func billsPCMenuUp(mem *state.Mem, a wramAddresses) bool {
+	return a.MenuUp(mem) && billsPCMenuScreen(mem, a)
 }
 
-func pcPokemonListUp(mem *state.Mem) bool {
-	return state.MenuUp(mem) && mem.U8(sym.ListMenuID) == 0 &&
-		mem.U8(sym.TopMenuItemX) == 5 && mem.U8(sym.TopMenuItemY) == 4 &&
-		mem.U8(sym.MenuWatchedKeys) == watchListOrQty
+func pcPokemonListUp(mem *state.Mem, a wramAddresses) bool {
+	return a.MenuUp(mem) && mem.U8(a.ListMenuID) == 0 &&
+		mem.U8(a.TopMenuItemX) == 5 && mem.U8(a.TopMenuItemY) == 4 &&
+		mem.U8(a.MenuWatchedKeys) == watchListOrQty
 }
 
-func pcTransferConfirmUp(mem *state.Mem, action string) bool {
+func pcTransferConfirmUp(mem *state.Mem, a wramAddresses, action string) bool {
 	text := state.ScreenText(mem)
-	return state.MenuUp(mem) && mem.U8(sym.TopMenuItemX) == 10 && mem.U8(sym.TopMenuItemY) == 12 &&
-		mem.U8(sym.MaxMenuItem) == 2 && strings.Contains(text, action) && strings.Contains(text, "STATS")
+	return a.MenuUp(mem) && mem.U8(a.TopMenuItemX) == 10 && mem.U8(a.TopMenuItemY) == 12 &&
+		mem.U8(a.MaxMenuItem) == 2 && strings.Contains(text, action) && strings.Contains(text, "STATS")
 }
 
 // pcAdvanceUntil advances only ordinary PC text while waiting for a known
@@ -163,20 +162,21 @@ func pcTransferConfirmUp(mem *state.Mem, action string) bool {
 // branch waited passively forever instead of paging the confirmation.
 // from may be nil when there is no known prior PC screen to distinguish from
 // (e.g. the very first wait, right after tapping the PC in the overworld).
-func pcAdvanceUntil(m *emu.Emu, from, pred func(*state.Mem) bool, what string) error {
+func pcAdvanceUntil(m *emu.Emu, from, pred func(*state.Mem, wramAddresses) bool, what string) error {
+	a := ram(m)
 	var mem state.Mem
 	for spent := 0; spent < pcTransitionBudget; spent += talkSettle {
 		state.Snapshot(m, &mem)
-		if pred(&mem) {
+		if pred(&mem, a) {
 			return nil
 		}
 		switch {
-		case mem.U8(sym.FontLoaded) != 0 && from != nil && from(&mem):
+		case mem.U8(ram(m).FontLoaded) != 0 && from != nil && from(&mem, a):
 			m.Tap(emu.A, 3, 7)
 			m.StepFrames(talkSettle)
-		case state.MenuUp(&mem):
+		case ram(m).MenuUp(&mem):
 			m.StepFrames(talkSettle)
-		case mem.U8(sym.FontLoaded) != 0:
+		case mem.U8(ram(m).FontLoaded) != 0:
 			m.Tap(emu.A, 3, 7)
 			m.StepFrames(talkSettle)
 		default:
@@ -184,7 +184,7 @@ func pcAdvanceUntil(m *emu.Emu, from, pred func(*state.Mem) bool, what string) e
 		}
 	}
 	state.Snapshot(m, &mem)
-	return fmt.Errorf("skill: Bill's PC: %s did not appear: menu=%t screen=%q", what, state.MenuUp(&mem), state.ScreenText(&mem))
+	return fmt.Errorf("skill: Bill's PC: %s did not appear: menu=%t screen=%q", what, ram(m).MenuUp(&mem), state.ScreenText(&mem))
 }
 
 // pcCancelUntil backs out of real, currently-interactive PC menus with B
@@ -193,15 +193,16 @@ func pcAdvanceUntil(m *emu.Emu, from, pred func(*state.Mem) bool, what string) e
 // this is for a screen that is itself a live menu awaiting a choice: pressing
 // A there selects whatever is highlighted (e.g. reopens the transfer's
 // WITHDRAW/DEPOSIT/STATS/CANCEL popup on the party list), so only B is safe.
-func pcCancelUntil(m *emu.Emu, pred func(*state.Mem) bool, what string) error {
+func pcCancelUntil(m *emu.Emu, pred func(*state.Mem, wramAddresses) bool, what string) error {
+	a := ram(m)
 	var mem state.Mem
 	for spent := 0; spent < pcTransitionBudget; spent += talkSettle {
 		state.Snapshot(m, &mem)
-		if pred(&mem) {
+		if pred(&mem, a) {
 			return nil
 		}
 		switch {
-		case state.MenuUp(&mem):
+		case ram(m).MenuUp(&mem):
 			m.Tap(emu.B, 3, 7)
 			m.StepFrames(talkSettle)
 		default:
@@ -209,7 +210,7 @@ func pcCancelUntil(m *emu.Emu, pred func(*state.Mem) bool, what string) error {
 		}
 	}
 	state.Snapshot(m, &mem)
-	return fmt.Errorf("skill: Bill's PC: %s did not appear: menu=%t screen=%q", what, state.MenuUp(&mem), state.ScreenText(&mem))
+	return fmt.Errorf("skill: Bill's PC: %s did not appear: menu=%t screen=%q", what, ram(m).MenuUp(&mem), state.ScreenText(&mem))
 }
 
 func openBillsPC(m *emu.Emu, romData []byte, policy MovePolicy) error {
@@ -238,20 +239,21 @@ func openBillsPC(m *emu.Emu, romData []byte, policy MovePolicy) error {
 // ordinary dismissible text and paged with A, which would select whatever
 // item the menu defaults to instead of leaving it.
 func closePCToOverworld(m *emu.Emu) error {
+	a := ram(m)
 	var mem state.Mem
 	for i := 0; i < pcCloseBudget; i++ {
 		state.Snapshot(m, &mem)
 		switch {
-		case state.Controllable(&mem):
+		case ram(m).Controllable(&mem):
 			m.StepFrames(talkSettle)
 			state.Snapshot(m, &mem)
-			if state.Controllable(&mem) {
+			if ram(m).Controllable(&mem) {
 				return nil
 			}
-		case state.MenuUp(&mem), pcMainMenuScreen(&mem), billsPCMenuScreen(&mem):
+		case ram(m).MenuUp(&mem), pcMainMenuScreen(&mem, a), billsPCMenuScreen(&mem, a):
 			m.Tap(emu.B, 3, 7)
 			m.StepFrames(talkSettle)
-		case mem.U8(sym.FontLoaded) != 0:
+		case mem.U8(ram(m).FontLoaded) != 0:
 			m.Tap(emu.A, 3, 7)
 			m.StepFrames(talkSettle)
 		default:
@@ -259,7 +261,7 @@ func closePCToOverworld(m *emu.Emu) error {
 		}
 	}
 	state.Snapshot(m, &mem)
-	return fmt.Errorf("skill: Bill's PC: failed to close to overworld: menu=%t screen=%q", state.MenuUp(&mem), state.ScreenText(&mem))
+	return fmt.Errorf("skill: Bill's PC: failed to close to overworld: menu=%t screen=%q", ram(m).MenuUp(&mem), state.ScreenText(&mem))
 }
 
 // DepositPartyMon deposits one current party slot into the active Bill's PC
@@ -268,8 +270,8 @@ func closePCToOverworld(m *emu.Emu) error {
 func DepositPartyMon(m *emu.Emu, romData []byte, policy MovePolicy, slot int) error {
 	var before state.Mem
 	state.Snapshot(m, &before)
-	party := state.DecodeParty(&before)
-	box := state.DecodeBox(&before)
+	party := ram(m).DecodeParty(&before)
+	box := ram(m).DecodeBox(&before)
 	if slot < 0 || slot >= len(party.Mons) {
 		return fmt.Errorf("skill: Bill's PC: deposit slot %d out of range for party of %d", slot, party.Count)
 	}
@@ -297,7 +299,7 @@ func DepositPartyMon(m *emu.Emu, romData []byte, policy MovePolicy, slot int) er
 		_ = closePCToOverworld(m)
 		return fmt.Errorf("skill: Bill's PC: select party slot %d for deposit: %w", slot, err)
 	}
-	depositConfirmUp := func(mem *state.Mem) bool { return pcTransferConfirmUp(mem, "DEPOSIT") }
+	depositConfirmUp := func(mem *state.Mem, a wramAddresses) bool { return pcTransferConfirmUp(mem, a, "DEPOSIT") }
 	if err := pcAdvanceUntil(m, pcPokemonListUp, depositConfirmUp, "DEPOSIT confirmation"); err != nil {
 		_ = closePCToOverworld(m)
 		return err
@@ -316,12 +318,12 @@ func DepositPartyMon(m *emu.Emu, romData []byte, policy MovePolicy, slot int) er
 	// skill/zz_repro_scratch_test.go: a 2-Pokemon party depositing down to 1
 	// landed on billsPCMenuScreen with "You can't deposit the last POKéMON!"
 	// stuck on screen forever, because this predicate only accepted the list.
-	depositedListUp := func(mem *state.Mem) bool {
-		p, b := state.DecodeParty(mem), state.DecodeBox(mem)
+	depositedListUp := func(mem *state.Mem, a wramAddresses) bool {
+		p, b := ram(m).DecodeParty(mem), ram(m).DecodeBox(mem)
 		if p.Count+1 != partyBefore || b.Count != boxBefore+1 {
 			return false
 		}
-		return pcPokemonListUp(mem) || billsPCMenuScreen(mem)
+		return pcPokemonListUp(mem, a) || billsPCMenuScreen(mem, a)
 	}
 	if err := pcAdvanceUntil(m, depositConfirmUp, depositedListUp, "post-deposit party list"); err != nil {
 		_ = closePCToOverworld(m)
@@ -334,7 +336,7 @@ func DepositPartyMon(m *emu.Emu, romData []byte, policy MovePolicy, slot int) er
 
 	var after state.Mem
 	state.Snapshot(m, &after)
-	afterParty, afterBox := state.DecodeParty(&after), state.DecodeBox(&after)
+	afterParty, afterBox := ram(m).DecodeParty(&after), ram(m).DecodeBox(&after)
 	if afterParty.Count != partyBefore-1 || afterBox.Count != boxBefore+1 || len(afterBox.Mons) == 0 || afterBox.Mons[len(afterBox.Mons)-1].Species != want {
 		_ = closePCToOverworld(m)
 		return fmt.Errorf("skill: Bill's PC: deposit postcondition failed for species %#02x: party %d->%d box %d->%d", want, partyBefore, afterParty.Count, boxBefore, afterBox.Count)
@@ -350,8 +352,8 @@ func DepositPartyMon(m *emu.Emu, romData []byte, policy MovePolicy, slot int) er
 func WithdrawBoxMon(m *emu.Emu, romData []byte, policy MovePolicy, boxIndex int) error {
 	var before state.Mem
 	state.Snapshot(m, &before)
-	party := state.DecodeParty(&before)
-	box := state.DecodeBox(&before)
+	party := ram(m).DecodeParty(&before)
+	box := ram(m).DecodeBox(&before)
 	if party.Count >= gen1PartyCapacity {
 		return ErrPCPartyFull
 	}
@@ -376,7 +378,7 @@ func WithdrawBoxMon(m *emu.Emu, romData []byte, policy MovePolicy, boxIndex int)
 		_ = closePCToOverworld(m)
 		return fmt.Errorf("skill: Bill's PC: select box index %d for withdraw: %w", boxIndex, err)
 	}
-	withdrawConfirmUp := func(mem *state.Mem) bool { return pcTransferConfirmUp(mem, "WITHDRAW") }
+	withdrawConfirmUp := func(mem *state.Mem, a wramAddresses) bool { return pcTransferConfirmUp(mem, a, "WITHDRAW") }
 	if err := pcAdvanceUntil(m, pcPokemonListUp, withdrawConfirmUp, "WITHDRAW confirmation"); err != nil {
 		_ = closePCToOverworld(m)
 		return err
@@ -388,12 +390,12 @@ func WithdrawBoxMon(m *emu.Emu, romData []byte, policy MovePolicy, boxIndex int)
 	// Withdrawing the box's last Pokemon leaves nothing for the list to show,
 	// so the game skips straight back to billsPCMenuUp instead of reopening
 	// the (now empty) list the way every other transfer count does.
-	withdrawnUp := func(mem *state.Mem) bool {
-		p, b := state.DecodeParty(mem), state.DecodeBox(mem)
+	withdrawnUp := func(mem *state.Mem, a wramAddresses) bool {
+		p, b := ram(m).DecodeParty(mem), ram(m).DecodeBox(mem)
 		if p.Count != partyBefore+1 || b.Count+1 != boxBefore {
 			return false
 		}
-		return pcPokemonListUp(mem) || billsPCMenuScreen(mem)
+		return pcPokemonListUp(mem, a) || billsPCMenuScreen(mem, a)
 	}
 	if err := pcAdvanceUntil(m, withdrawConfirmUp, withdrawnUp, "post-withdraw state"); err != nil {
 		_ = closePCToOverworld(m)
@@ -406,7 +408,7 @@ func WithdrawBoxMon(m *emu.Emu, romData []byte, policy MovePolicy, boxIndex int)
 
 	var after state.Mem
 	state.Snapshot(m, &after)
-	afterParty, afterBox := state.DecodeParty(&after), state.DecodeBox(&after)
+	afterParty, afterBox := ram(m).DecodeParty(&after), ram(m).DecodeBox(&after)
 	if afterParty.Count != partyBefore+1 || afterBox.Count != boxBefore-1 || len(afterParty.Mons) == 0 || afterParty.Mons[len(afterParty.Mons)-1].Species != want {
 		_ = closePCToOverworld(m)
 		return fmt.Errorf("skill: Bill's PC: withdraw postcondition failed for species %#02x: party %d->%d box %d->%d", want, partyBefore, afterParty.Count, boxBefore, afterBox.Count)
@@ -427,7 +429,7 @@ func EnsurePartySlot(m *emu.Emu, romData []byte, policy MovePolicy, incoming uin
 	}
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	slot, err := planPartySlot(romData, state.DecodeParty(&mem), state.DecodeBox(&mem), state.Mon{Species: incoming}, OwnedCoreProgressionFieldMoves(&mem))
+	slot, err := planPartySlot(romData, ram(m).DecodeParty(&mem), ram(m).DecodeBox(&mem), state.Mon{Species: incoming}, OwnedCoreProgressionFieldMoves(&mem, ram(m)))
 	if err != nil {
 		return err
 	}

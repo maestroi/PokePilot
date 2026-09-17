@@ -20,8 +20,8 @@ func EnsureCaptureStorage(m *emu.Emu, romData []byte, policy MovePolicy) error {
 
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	party := state.DecodeParty(&mem)
-	box := state.DecodeBox(&mem)
+	party := ram(m).DecodeParty(&mem)
+	box := ram(m).DecodeBox(&mem)
 	if !captureNeedsBoxSwitch(party.Count, box.Count) {
 		return nil
 	}

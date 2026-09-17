@@ -61,7 +61,7 @@ const dialogueRecoveryBudget = 10000
 // press it snapshots and checks the choice decoder, and a detected choice
 // returns immediately with zero input sent.
 func RecoverDialogue(m *emu.Emu, budget int) DialogueRecoveryResult {
-	return recoverDialogue(m, budget)
+	return recoverDialogue(m, budget, ram(m))
 }
 
 // recoverDialogue is the loop over the frameClock seam so the tests can
@@ -70,7 +70,7 @@ func RecoverDialogue(m *emu.Emu, budget int) DialogueRecoveryResult {
 // Movement never advances dialogue. After dialogue has interrupted
 // movement, the recovery layer may press A only while ordinary text is
 // active. It never answers a choice.
-func recoverDialogue(m frameClock, budget int) DialogueRecoveryResult {
+func recoverDialogue(m frameClock, budget int, a wramAddresses) DialogueRecoveryResult {
 	// done holds when the screen has left the box: a battle took it (the
 	// box led into one), or the box is closed and the player is
 	// controllable. Checking the battle first is what lets a cutscene box
@@ -81,43 +81,43 @@ func recoverDialogue(m frameClock, budget int) DialogueRecoveryResult {
 	// several frames, so only the last non-empty read reflects what the
 	// player actually saw on the page the loop is about to close.
 	lastText := ""
-	done := func(mm *state.Mem) bool {
-		if d := state.DecodeDialogue(mm); d != nil && d.Text != "" {
+	done := func(mm *state.Mem, a wramAddresses) bool {
+		if d := a.DecodeDialogue(mm); d != nil && d.Text != "" {
 			lastText = d.Text
 		}
-		return state.DecodeBattle(mm) != nil ||
-			(state.DecodeDialogue(mm) == nil && state.Controllable(mm))
+		return a.DecodeBattle(mm) != nil ||
+			(a.DecodeDialogue(mm) == nil && a.Controllable(mm))
 	}
 	// stopBeforeA is checked after the snapshot and before every A press:
 	// a two-option prompt is a question, and this layer does not answer
 	// questions — and any other menu is worse, because A there SELECTS.
 	// Paging a box closed and operating a menu look identical from here
 	// (both want A) and are not remotely the same act.
-	stopBeforeA := func(mm *state.Mem) bool {
-		return state.DecodeTwoOptionMenu(mm) != nil || state.MenuUp(mm)
+	stopBeforeA := func(mm *state.Mem, a wramAddresses) bool {
+		return a.DecodeTwoOptionMenu(mm) != nil || a.MenuUp(mm)
 	}
 
-	final, presses := advanceCore(m, budget, done, stopBeforeA)
+	final, presses := advanceCore(m, a, budget, done, stopBeforeA)
 
 	res := DialogueRecoveryResult{
 		Presses:  presses,
-		Final:    state.Decode(&final),
-		Sprites:  state.DecodeSprites(&final),
+		Final:    a.Decode(&final),
+		Sprites:  a.DecodeSprites(&final),
 		LastText: lastText,
 	}
 	switch {
-	case state.DecodeBattle(&final) != nil:
+	case a.DecodeBattle(&final) != nil:
 		res.Stop = DialogueUnexpectedMode
-	case state.DecodeTwoOptionMenu(&final) != nil:
+	case a.DecodeTwoOptionMenu(&final) != nil:
 		res.Stop = DialogueChoiceRequired
-	case state.MenuUp(&final):
+	case a.MenuUp(&final):
 		res.Stop = DialogueMenuOpen
-	case state.DecodeDialogue(&final) == nil && state.Controllable(&final):
+	case a.DecodeDialogue(&final) == nil && a.Controllable(&final):
 		res.Stop = DialogueRecovered
 	default:
 		res.Stop = DialogueBudgetExhausted
 	}
-	if d := state.DecodeDialogue(&final); d != nil {
+	if d := a.DecodeDialogue(&final); d != nil {
 		res.Text = d.Text
 	}
 	return res

@@ -89,7 +89,7 @@ func TalkAtChoice(m *emu.Emu, romData []byte, x, y uint8, choice int, policy Mov
 
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	menu := state.DecodeTwoOptionMenu(&mem)
+	menu := ram(m).DecodeTwoOptionMenu(&mem)
 	if menu == nil {
 		return presses, fmt.Errorf("skill: TalkAtChoice: interaction opened a non-choice menu: %w", err)
 	}
@@ -120,7 +120,7 @@ func TalkAtChoice(m *emu.Emu, romData []byte, x, y uint8, choice int, policy Mov
 func receiveChoiceReward(m *emu.Emu, romData []byte, reward ChoiceReward, policy MovePolicy) error {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	before := bagCount(state.DecodeInventory(&mem).Items, reward.Item)
+	before := bagCount(ram(m).DecodeInventory(&mem).Items, reward.Item)
 
 	if err := EnsureBagSpaceFor(m, reward.Item); err != nil {
 		return fmt.Errorf("skill: choice reward %s: make bag space: %w", reward.ItemName, err)
@@ -130,7 +130,7 @@ func receiveChoiceReward(m *emu.Emu, romData []byte, reward ChoiceReward, policy
 	}
 
 	state.Snapshot(m, &mem)
-	after := bagCount(state.DecodeInventory(&mem).Items, reward.Item)
+	after := bagCount(ram(m).DecodeInventory(&mem).Items, reward.Item)
 	if after != before+1 {
 		return fmt.Errorf("%w: choice reward %s item %d was %d before and %d after", ErrBagNotRisen, reward.ItemName, reward.Item, before, after)
 	}

@@ -6,7 +6,6 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 )
 
 const (
@@ -54,14 +53,14 @@ func IsGameCornerDexActor(mapID, x, y uint8) bool {
 // overflowing two-byte counter to 9999, so 200 purchases are sufficient.
 func MaxPorygonCoinBudget() uint32 { return 200 * coinPurchaseYen }
 
-func gameCornerMoney(mem *state.Mem) uint32 {
-	return state.DecodeInventory(mem).Money
+func gameCornerMoney(mem *state.Mem, a wramAddresses) uint32 {
+	return a.DecodeInventory(mem).Money
 }
 
 func ensureCoinCase(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if bagHasItem(&mem, coinCaseItem) {
+	if bagHasItem(&mem, coinCaseItem, ram(m)) {
 		return nil
 	}
 	if err := EnsureBagSpaceFor(m, coinCaseItem); err != nil {
@@ -75,12 +74,12 @@ func ensureCoinCase(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		return fmt.Errorf("skill: Porygon: reach Coin Case giver: %w", err)
 	}
 	state.Snapshot(m, &mem)
-	before := bagCount(state.DecodeInventory(&mem).Items, coinCaseItem)
+	before := bagCount(ram(m).DecodeInventory(&mem).Items, coinCaseItem)
 	if _, err := TalkAt(m, romData, coinCaseGiverX, coinCaseGiverY, policy); err != nil {
 		return fmt.Errorf("skill: Porygon: receive Coin Case: %w", err)
 	}
 	state.Snapshot(m, &mem)
-	after := bagCount(state.DecodeInventory(&mem).Items, coinCaseItem)
+	after := bagCount(ram(m).DecodeInventory(&mem).Items, coinCaseItem)
 	if after != before+1 {
 		return fmt.Errorf("skill: Porygon: Coin Case count was %d before and %d after", before, after)
 	}
@@ -99,7 +98,7 @@ func buyPorygonCoins(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	for purchases := 0; purchases < 200; purchases++ {
 		var before state.Mem
 		state.Snapshot(m, &before)
-		coinsBefore := state.DecodeCoins(&before)
+		coinsBefore := ram(m).DecodeCoins(&before)
 		if coinsBefore >= porygonCost {
 			return nil
 		}
@@ -110,7 +109,7 @@ func buyPorygonCoins(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		if coinsBefore >= 9990 {
 			return fmt.Errorf("skill: Porygon: Coin Case is %d; clerk refuses another deterministic purchase", coinsBefore)
 		}
-		moneyBefore := gameCornerMoney(&before)
+		moneyBefore := gameCornerMoney(&before, ram(m))
 		if moneyBefore < coinPurchaseYen {
 			return fmt.Errorf("skill: Porygon: need Y%d more Game Corner coin purchase money (have Y%d)", coinPurchaseYen, moneyBefore)
 		}
@@ -119,8 +118,8 @@ func buyPorygonCoins(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		}
 		var after state.Mem
 		state.Snapshot(m, &after)
-		coinsAfter := state.DecodeCoins(&after)
-		moneyAfter := gameCornerMoney(&after)
+		coinsAfter := ram(m).DecodeCoins(&after)
+		moneyAfter := gameCornerMoney(&after, ram(m))
 		if coinsAfter <= coinsBefore || moneyAfter+coinPurchaseYen != moneyBefore {
 			return fmt.Errorf("skill: Porygon: coin purchase did not verify: coins %d->%d money %d->%d", coinsBefore, coinsAfter, moneyBefore, moneyAfter)
 		}
@@ -134,17 +133,17 @@ func buyPorygonCoins(m *emu.Emu, romData []byte, policy MovePolicy) error {
 func currentGameCornerCoins(m *emu.Emu) int {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	return state.DecodeCoins(&mem)
+	return ram(m).DecodeCoins(&mem)
 }
 
 func redeemPorygon(m *emu.Emu, romData []byte, policy MovePolicy) (CatchResult, error) {
 	var before state.Mem
 	state.Snapshot(m, &before)
-	if giftPokemonAlreadyOwned(&before, romData, porygonSpecies) {
+	if giftPokemonAlreadyOwned(&before, romData, porygonSpecies, ram(m)) {
 		return CatchResult{Outcome: OutcomeCaught, Species: porygonSpecies}, nil
 	}
-	if state.DecodeCoins(&before) < porygonCost {
-		return CatchResult{}, fmt.Errorf("skill: Porygon: prize costs %d coins; have %d", porygonCost, state.DecodeCoins(&before))
+	if ram(m).DecodeCoins(&before) < porygonCost {
+		return CatchResult{}, fmt.Errorf("skill: Porygon: prize costs %d coins; have %d", porygonCost, ram(m).DecodeCoins(&before))
 	}
 
 	dest, ok := Place(gameCornerPorygonPlace)
@@ -156,9 +155,9 @@ func redeemPorygon(m *emu.Emu, romData []byte, policy MovePolicy) (CatchResult, 
 	}
 
 	state.Snapshot(m, &before)
-	partyBefore := int(state.DecodeParty(&before).Count)
-	boxBefore := int(state.DecodeBox(&before).Count)
-	ownedBefore := append([]uint8(nil), state.DecodePokedex(&before).Owned...)
+	partyBefore := int(ram(m).DecodeParty(&before).Count)
+	boxBefore := int(ram(m).DecodeBox(&before).Count)
+	ownedBefore := append([]uint8(nil), ram(m).DecodePokedex(&before).Owned...)
 	want := []uint8{porygonSpecies}
 	wantDex := wantedDexNumbers(romData, want)
 
@@ -184,30 +183,30 @@ func redeemPorygon(m *emu.Emu, romData []byte, policy MovePolicy) (CatchResult, 
 	for spent := 0; spent < giftPokemonBudget; spent += 10 {
 		var mem state.Mem
 		state.Snapshot(m, &mem)
-		if state.DecodeTwoOptionMenu(&mem) != nil {
+		if ram(m).DecodeTwoOptionMenu(&mem) != nil {
 			// GivePokemon's only choice here is the nickname prompt.
 			if err := selectTwoOption(m, 1); err != nil {
 				return res, fmt.Errorf("skill: Porygon: decline nickname: %w", err)
 			}
 			continue
 		}
-		party := state.DecodeParty(&mem)
-		box := state.DecodeBox(&mem)
-		owned := state.DecodePokedex(&mem).Owned
+		party := ram(m).DecodeParty(&mem)
+		box := ram(m).DecodeBox(&mem)
+		owned := ram(m).DecodePokedex(&mem).Owned
 		species, acquired := catchAcquiredWanted(partyBefore, party, boxBefore, box, ownedBefore, owned, want, wantDex)
-		if acquired && state.Controllable(&mem) {
+		if acquired && ram(m).Controllable(&mem) {
 			res.Outcome = OutcomeCaught
 			res.Species = species
 			return res, nil
 		}
-		if state.MenuUp(&mem) {
+		if ram(m).MenuUp(&mem) {
 			return res, fmt.Errorf("skill: Porygon: unexpected menu after prize selection: %q", state.ScreenText(&mem))
 		}
-		if mem.U8(sym.FontLoaded) != 0 {
+		if mem.U8(ram(m).FontLoaded) != 0 {
 			m.Tap(emu.A, 3, 7)
 			continue
 		}
-		if state.Controllable(&mem) && spent >= 100 {
+		if ram(m).Controllable(&mem) && spent >= 100 {
 			return res, fmt.Errorf("skill: Porygon: prize script returned without verified ownership")
 		}
 		m.StepFrames(10)
@@ -224,7 +223,7 @@ func ReceivePorygonPrize(m *emu.Emu, romData []byte, policy MovePolicy) (CatchRe
 	}
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if giftPokemonAlreadyOwned(&mem, romData, porygonSpecies) {
+	if giftPokemonAlreadyOwned(&mem, romData, porygonSpecies, ram(m)) {
 		return CatchResult{Outcome: OutcomeCaught, Species: porygonSpecies}, nil
 	}
 	if err := ensureCoinCase(m, romData, policy); err != nil {

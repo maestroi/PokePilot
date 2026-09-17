@@ -9,7 +9,7 @@ import (
 
 func TestMartTimeoutIsTyped(t *testing.T) {
 	var mem state.Mem
-	err := martTimeout("the item list", &mem)
+	err := martTimeout("the item list", &mem, redWram())
 	if !errors.Is(err, ErrShopMenuTimeout) {
 		t.Fatalf("martTimeout = %v, want ErrShopMenuTimeout", err)
 	}

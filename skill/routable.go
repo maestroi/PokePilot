@@ -4,9 +4,7 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
-	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
 )
 
@@ -43,9 +41,9 @@ func NewRoutePlanner(m *emu.Emu, romData []byte) (*RoutePlanner, error) {
 	if err != nil {
 		return nil, fmt.Errorf("skill: RoutePlanner: build graph: %w", err)
 	}
-	cur := m.Peek8(sym.CurMap)
+	cur := m.Peek8(ram(m).CurMap)
 	x, y := playerXY(m)
-	h, err := rom.ParseMap(romData, cur)
+	h, err := graphForROM(romData).ParseMap(romData, cur)
 	if err != nil {
 		return nil, fmt.Errorf("skill: RoutePlanner: parse map %02x: %w", cur, err)
 	}
@@ -64,7 +62,7 @@ func NewRoutePlanner(m *emu.Emu, romData []byte) (*RoutePlanner, error) {
 		cur:     cur,
 		x:       x,
 		y:       y,
-		prereqs: redRoutePrerequisites(routeGraph, romData, &mem),
+		prereqs: redRoutePrerequisites(routeGraph, romData, &mem, ram(m)),
 	}, nil
 }
 

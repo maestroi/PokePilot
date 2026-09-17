@@ -24,22 +24,22 @@ func centerRecoveryMem(hp, maxHP uint16, status, pp uint8) state.Mem {
 
 func TestAllPartyCenterRecoveredIncludesPPAndStatus(t *testing.T) {
 	recovered := centerRecoveryMem(20, 20, 0, 5)
-	if !allPartyCenterRecovered(&recovered) {
+	if !allPartyCenterRecovered(&recovered, redWram()) {
 		t.Fatal("full HP, healthy status, positive PP should satisfy Center recovery")
 	}
 
 	noPP := centerRecoveryMem(20, 20, 0, 0)
-	if allPartyCenterRecovered(&noPP) {
+	if allPartyCenterRecovered(&noPP, redWram()) {
 		t.Fatal("zero PP was accepted as fully Center-recovered")
 	}
 
 	status := centerRecoveryMem(20, 20, 1, 5)
-	if allPartyCenterRecovered(&status) {
+	if allPartyCenterRecovered(&status, redWram()) {
 		t.Fatal("status ailment was accepted as fully Center-recovered")
 	}
 
 	hurt := centerRecoveryMem(10, 20, 0, 5)
-	if allPartyCenterRecovered(&hurt) {
+	if allPartyCenterRecovered(&hurt, redWram()) {
 		t.Fatal("missing HP was accepted as fully Center-recovered")
 	}
 }

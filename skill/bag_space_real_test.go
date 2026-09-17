@@ -22,7 +22,7 @@ func TestEnsureBagFreeSlotsReal(t *testing.T) {
 	m := fixture.Load(t, "viridian_mart")
 	var before state.Mem
 	state.Snapshot(m, &before)
-	beforeInv := state.DecodeInventory(&before)
+	beforeInv := skill.RedAddresses().DecodeInventory(&before)
 
 	if err := skill.EnsureBagFreeSlots(m, 1); err != nil {
 		t.Fatalf("EnsureBagFreeSlots(1): %v", err)
@@ -30,7 +30,7 @@ func TestEnsureBagFreeSlotsReal(t *testing.T) {
 
 	var after state.Mem
 	state.Snapshot(m, &after)
-	afterInv := state.DecodeInventory(&after)
+	afterInv := skill.RedAddresses().DecodeInventory(&after)
 	if len(afterInv.Items) != len(beforeInv.Items) {
 		t.Fatalf("bag changed despite already having room: %d -> %d stacks", len(beforeInv.Items), len(afterInv.Items))
 	}

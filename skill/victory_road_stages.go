@@ -5,7 +5,6 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 )
 
 func victoryRoadStageState(m *emu.Emu, policy MovePolicy) (state.Mem, state.StoryFacts, error) {
@@ -14,11 +13,11 @@ func victoryRoadStageState(m *emu.Emu, policy MovePolicy) (state.Mem, state.Stor
 	}
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	facts := state.DecodeStoryFacts(&mem, state.DecodeInventory(&mem))
+	facts := ram(m).DecodeStoryFacts(&mem, ram(m).DecodeInventory(&mem))
 	if facts.LeagueChallengeStarted || facts.LeagueChampionDefeated || facts.MainStoryComplete {
 		return mem, facts, nil
 	}
-	if state.DecodeProgress(&mem).BadgeCount != 8 {
+	if ram(m).DecodeProgress(&mem).BadgeCount != 8 {
 		return state.Mem{}, state.StoryFacts{}, fmt.Errorf("%w: Victory Road requires all eight badges", ErrFieldMovePrerequisite)
 	}
 	return mem, facts, nil
@@ -29,7 +28,7 @@ func victoryRoadStageState(m *emu.Emu, policy MovePolicy) (state.Mem, state.Stor
 // proves completion inside the cave while a position north of the cave/at
 // Indigo proves a successful exit afterward. If the run backtracks south, the
 // fact intentionally becomes false because the puzzle has reset.
-func victoryRoadClearBoundary(mem *state.Mem, facts state.StoryFacts) bool {
+func victoryRoadClearBoundary(mem *state.Mem, a wramAddresses, facts state.StoryFacts) bool {
 	if facts.LeagueChallengeStarted || facts.LeagueChampionDefeated || facts.MainStoryComplete {
 		return true
 	}
@@ -39,11 +38,11 @@ func victoryRoadClearBoundary(mem *state.Mem, facts state.StoryFacts) bool {
 	if !facts.Route23BadgeChecksComplete {
 		return false
 	}
-	switch mem.U8(sym.CurMap) {
+	switch mem.U8(a.CurMap) {
 	case indigoPlateauMap, indigoPlateauLobbyMap:
 		return true
 	case route23Map:
-		return int(mem.U8(sym.YCoord)) <= route23NorthCaveY
+		return int(mem.U8(a.YCoord)) <= route23NorthCaveY
 	default:
 		return false
 	}
@@ -74,7 +73,7 @@ func VictoryRoadResolveRival(m *emu.Emu, romData []byte, policy MovePolicy) erro
 // rival stage; the broader routing exists so a checkpoint that wandered away
 // can still recover without replaying an unrelated canonical input sequence.
 func victoryRoadReachEntryFromCurrentState(m *emu.Emu, romData []byte, policy MovePolicy) error {
-	cur := m.Peek8(sym.CurMap)
+	cur := m.Peek8(ram(m).CurMap)
 	if inVictoryRoad(cur) {
 		return nil
 	}
@@ -86,7 +85,7 @@ func victoryRoadReachEntryFromCurrentState(m *emu.Emu, romData []byte, policy Mo
 			return fmt.Errorf("reach Route 23 south entry: %w", err)
 		}
 	}
-	if got := m.Peek8(sym.CurMap); got != route23Map {
+	if got := m.Peek8(ram(m).CurMap); got != route23Map {
 		return fmt.Errorf("expected Route 23 before badge-check traversal, observed map %#02x", got)
 	}
 	for _, barrierY := range route23SurfBarrierRows {
@@ -133,11 +132,12 @@ func VictoryRoadReachCave(m *emu.Emu, romData []byte, policy MovePolicy) error {
 // it can re-establish the entry first. Completion is the final 2F east switch
 // or a verified post-cave position before the Route 23 reset can erase it.
 func VictoryRoadClearCave(m *emu.Emu, romData []byte, policy MovePolicy) error {
+	a := tablesForROM(romData).wram
 	mem, facts, err := victoryRoadStageState(m, policy)
 	if err != nil {
 		return err
 	}
-	if victoryRoadClearBoundary(&mem, facts) {
+	if victoryRoadClearBoundary(&mem, a, facts) {
 		return nil
 	}
 	if !facts.Route23BadgeChecksComplete {
@@ -146,20 +146,20 @@ func VictoryRoadClearCave(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if err := RepairFieldCapabilities(m, romData, policy, []FieldMove{FieldSurf, FieldStrength}); err != nil {
 		return fmt.Errorf("skill: VictoryRoadClearCave: prepare Surf + Strength: %w", err)
 	}
-	if !inVictoryRoad(m.Peek8(sym.CurMap)) {
+	if !inVictoryRoad(m.Peek8(ram(m).CurMap)) {
 		if err := victoryRoadReachEntryFromCurrentState(m, romData, policy); err != nil {
 			return fmt.Errorf("skill: VictoryRoadClearCave: restore cave entry: %w", err)
 		}
 	}
-	if !inVictoryRoad(m.Peek8(sym.CurMap)) {
-		return fmt.Errorf("skill: VictoryRoadClearCave: expected a Victory Road floor, observed map %#02x", m.Peek8(sym.CurMap))
+	if !inVictoryRoad(m.Peek8(ram(m).CurMap)) {
+		return fmt.Errorf("skill: VictoryRoadClearCave: expected a Victory Road floor, observed map %#02x", m.Peek8(ram(m).CurMap))
 	}
 	if err := clearVictoryRoad(m, romData, policy); err != nil {
 		return fmt.Errorf("skill: VictoryRoadClearCave: %w", err)
 	}
 	state.Snapshot(m, &mem)
-	facts = state.DecodeStoryFacts(&mem, state.DecodeInventory(&mem))
-	if !victoryRoadClearBoundary(&mem, facts) {
+	facts = ram(m).DecodeStoryFacts(&mem, ram(m).DecodeInventory(&mem))
+	if !victoryRoadClearBoundary(&mem, a, facts) {
 		return fmt.Errorf("skill: VictoryRoadClearCave: final cave-clear boundary is still false")
 	}
 	return nil
@@ -169,6 +169,7 @@ func VictoryRoadClearCave(m *emu.Emu, romData []byte, policy MovePolicy) error {
 // and Center recovery. Once LeagueChallengeStarted is durable, readiness stays
 // satisfied even though battles naturally damage the party afterward.
 func VictoryRoadPrepareIndigo(m *emu.Emu, romData []byte, policy MovePolicy) error {
+	a := tablesForROM(romData).wram
 	mem, facts, err := victoryRoadStageState(m, policy)
 	if err != nil {
 		return err
@@ -176,17 +177,17 @@ func VictoryRoadPrepareIndigo(m *emu.Emu, romData []byte, policy MovePolicy) err
 	if facts.LeagueChallengeStarted || facts.LeagueChampionDefeated || facts.MainStoryComplete {
 		return nil
 	}
-	if mem.U8(sym.CurMap) == indigoPlateauLobbyMap && allPartyCenterRecovered(&mem) {
+	if mem.U8(ram(m).CurMap) == indigoPlateauLobbyMap && allPartyCenterRecovered(&mem, ram(m)) {
 		return nil
 	}
-	if !victoryRoadClearBoundary(&mem, facts) {
+	if !victoryRoadClearBoundary(&mem, a, facts) {
 		return fmt.Errorf("%w: Victory Road must be cleared before Indigo recovery", ErrFieldMovePrerequisite)
 	}
 	if err := prepareIndigoLobby(m, romData, policy); err != nil {
 		return fmt.Errorf("skill: VictoryRoadPrepareIndigo: %w", err)
 	}
 	state.Snapshot(m, &mem)
-	if mem.U8(sym.CurMap) != indigoPlateauLobbyMap || !allPartyCenterRecovered(&mem) {
+	if mem.U8(ram(m).CurMap) != indigoPlateauLobbyMap || !allPartyCenterRecovered(&mem, ram(m)) {
 		return fmt.Errorf("skill: VictoryRoadPrepareIndigo: lobby recovery postcondition failed")
 	}
 	return nil

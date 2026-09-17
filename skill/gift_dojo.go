@@ -55,10 +55,10 @@ func ReceiveFightingDojoGift(m *emu.Emu, romData []byte, policy MovePolicy, spec
 
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if giftPokemonAlreadyOwned(&mem, romData, species) {
+	if giftPokemonAlreadyOwned(&mem, romData, species, ram(m)) {
 		return CatchResult{Outcome: OutcomeCaught, Species: species}, nil
 	}
-	if giftPokemonAlreadyOwned(&mem, romData, other) {
+	if giftPokemonAlreadyOwned(&mem, romData, other, ram(m)) {
 		return CatchResult{}, fmt.Errorf("skill: %s: the mutually exclusive Fighting Dojo prize was already consumed", name)
 	}
 

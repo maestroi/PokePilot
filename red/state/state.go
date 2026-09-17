@@ -13,17 +13,23 @@ type GameState struct {
 	Dialogue  *DialogueState
 }
 
-// Decode turns a RAM snapshot into a GameState.
+// Decode turns a RAM snapshot into a GameState with the supported Pokémon Red
+// image's addresses.
 func Decode(m *Mem) GameState {
+	return RedAddresses().Decode(m)
+}
+
+// Decode turns a RAM snapshot into a GameState at this address set.
+func (a Addresses) Decode(m *Mem) GameState {
 	return GameState{
-		Player:    DecodePlayer(m),
-		World:     DecodeWorld(m),
-		Party:     DecodeParty(m),
-		Inventory: DecodeInventory(m),
-		Progress:  DecodeProgress(m),
-		Pokedex:   DecodePokedex(m),
-		Battle:    DecodeBattle(m),
-		Menu:      DecodeMenu(m),
-		Dialogue:  DecodeDialogue(m),
+		Player:    a.DecodePlayer(m),
+		World:     a.DecodeWorld(m),
+		Party:     a.DecodeParty(m),
+		Inventory: a.DecodeInventory(m),
+		Progress:  a.DecodeProgress(m),
+		Pokedex:   a.DecodePokedex(m),
+		Battle:    a.BattleAddresses.DecodeBattle(m),
+		Menu:      a.DecodeMenu(m),
+		Dialogue:  a.DecodeDialogue(m),
 	}
 }

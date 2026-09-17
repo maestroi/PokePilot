@@ -84,8 +84,8 @@ func TestCutsceneEnduresOakGate(t *testing.T) {
 	before := mem.Slice(sym.EventFlags, 11)
 
 	// Let the cutscene play. done = the story flag flipped.
-	if err := skill.Cutscene(e, 30000, func(m *state.Mem) bool {
-		return state.HasEvent(m, state.EventFollowedOakIntoLab)
+	if err := skill.Cutscene(e, 30000, func(m *state.Mem, a state.Addresses) bool {
+		return skill.RedAddresses().HasEvent(m, state.EventFollowedOakIntoLab)
 	}); err != nil {
 		t.Fatalf("Cutscene: %v", err)
 	}
@@ -93,15 +93,15 @@ func TestCutsceneEnduresOakGate(t *testing.T) {
 	// Assert the positive facts: the flag flipped, input is back, controllable.
 	state.Snapshot(e, &mem)
 	after := mem.Slice(sym.EventFlags, 11)
-	if !state.HasEvent(&mem, state.EventFollowedOakIntoLab) {
+	if !skill.RedAddresses().HasEvent(&mem, state.EventFollowedOakIntoLab) {
 		t.Fatalf("EVENT_FOLLOWED_OAK_INTO_LAB did not flip; S3-1 bit index 0 is wrong. "+
 			"wEventFlags before=%x after=%x map=%#04x at (%d,%d) controllable=%v",
-			before, after, mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord), state.Controllable(&mem))
+			before, after, mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord), skill.RedAddresses().Controllable(&mem))
 	}
 	if mem.U8(sym.JoyIgnore) != 0 {
 		t.Errorf("wJoyIgnore = %#04x after cutscene, want 0", mem.U8(sym.JoyIgnore))
 	}
-	if !state.Controllable(&mem) {
+	if !skill.RedAddresses().Controllable(&mem) {
 		t.Errorf("player not controllable after cutscene; map=%#04x at (%d,%d)",
 			mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord))
 	}

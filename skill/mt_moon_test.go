@@ -73,7 +73,7 @@ func TestMtMoonFossilOpensTheEasternExit(t *testing.T) {
 		t.Fatalf("missing capabilities = %v, want can_exit_mt_moon named", blocked.MissingCapabilities())
 	}
 	state.Snapshot(e, &mem)
-	if !state.Controllable(&mem) {
+	if !skill.RedAddresses().Controllable(&mem) {
 		t.Fatal("a refused route left the player uncontrollable")
 	}
 
@@ -86,7 +86,7 @@ func TestMtMoonFossilOpensTheEasternExit(t *testing.T) {
 	// and the map script has run to completion rather than being abandoned
 	// mid-sequence with the Super Nerd still walking.
 	state.Snapshot(e, &mem)
-	if !state.HasEvent(&mem, state.EventBeatMtMoonSuperNerd) {
+	if !skill.RedAddresses().HasEvent(&mem, state.EventBeatMtMoonSuperNerd) {
 		t.Error("EVENT_BEAT_MT_MOON_EXIT_SUPER_NERD is not set after the objective")
 	}
 	if q := bagCount(&mem, domeFossilItemID); q != 1 {
@@ -109,7 +109,7 @@ func TestMtMoonFossilOpensTheEasternExit(t *testing.T) {
 	if q := bagCount(&mem, domeFossilItemID); q != 1 {
 		t.Errorf("bag holds %d DOME_FOSSIL after a second run, want 1", q)
 	}
-	if state.HasEvent(&mem, state.EventGotHelixFossil) {
+	if skill.RedAddresses().HasEvent(&mem, state.EventGotHelixFossil) {
 		t.Error("the second run also took the Helix Fossil")
 	}
 
@@ -125,11 +125,11 @@ func TestMtMoonFossilOpensTheEasternExit(t *testing.T) {
 }
 
 func storyFacts(m *state.Mem) state.StoryFacts {
-	return state.DecodeStoryFacts(m, state.DecodeInventory(m))
+	return skill.RedAddresses().DecodeStoryFacts(m, skill.RedAddresses().DecodeInventory(m))
 }
 
 func bagCount(m *state.Mem, item uint8) int {
-	for _, entry := range state.DecodeInventory(m).Items {
+	for _, entry := range skill.RedAddresses().DecodeInventory(m).Items {
 		if entry.ID == item {
 			return int(entry.Quantity)
 		}

@@ -7,7 +7,6 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/profiles"
-	"github.com/maestroi/pokepilot/world"
 )
 
 // Run drives observe -> plan -> execute until the run-owned deterministic
@@ -35,7 +34,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 	if err != nil {
 		return Result{Stop: StopError, Err: fmt.Errorf("agent: Run: detect game profile: %w", err)}
 	}
-	graph, err := world.BuildGraph(romData)
+	graph, err := buildMapGraph(profile, romData)
 	if err != nil {
 		return Result{Stop: StopError, Err: fmt.Errorf("agent: Run: build map graph: %w", err)}
 	}

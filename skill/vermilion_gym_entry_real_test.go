@@ -20,7 +20,7 @@ func TestVermilionGymEntryViaRouteGateRealROM(t *testing.T) {
 
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	cap := FieldCapabilityFor(&mem, FieldCut)
+	cap := FieldCapabilityFor(&mem, FieldCut, redWram())
 	if !cap.Usable {
 		t.Skipf("checkpoint does not model the learned-Cut regression case: %+v", cap)
 	}

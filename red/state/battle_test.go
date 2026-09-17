@@ -195,3 +195,29 @@ func TestDecodeBattleReadsLiveCombatStats(t *testing.T) {
 		t.Fatalf("enemy stats = atk %d def %d special %d; want 99/144/77", b.EnemyAttack, b.EnemyDefense, b.EnemySpecial)
 	}
 }
+
+// TestDecodeBattleAtReadsActiveLevelFromAddresses pins the one field that used
+// to escape the address struct. BattleMonLevel was read straight from this
+// package's sym constants inside DecodeBattleAt, so a game with a different
+// address (Yellow: 0xD021 vs Red's 0xD022) got Red's level — silently, since
+// the value looks plausible. Every field must resolve through
+// BattleAddresses; this one does now.
+func TestDecodeBattleAtReadsActiveLevelFromAddresses(t *testing.T) {
+	var m Mem
+	m[sym.IsInBattle] = 1
+	// Leave Red's BattleMonLevel untouched and put the real value only at the
+	// caller-supplied address. If the decoder falls back to sym it reads 0.
+	const foreignAddr = 0xD021
+	m[foreignAddr] = 42
+
+	a := RedBattleAddresses()
+	a.BattleMonLevel = foreignAddr
+
+	b := DecodeBattleAt(&m, a)
+	if b == nil {
+		t.Fatal("DecodeBattleAt returned nil for a wild battle")
+	}
+	if b.ActiveLevel != 42 {
+		t.Errorf("ActiveLevel = %d, want 42 read from the supplied address", b.ActiveLevel)
+	}
+}

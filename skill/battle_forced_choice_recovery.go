@@ -67,7 +67,7 @@ func recoverForcedChoiceBattle(m *emu.Emu, policy MovePolicy) error {
 			// box re-runs PartyMenuInit with B enabled.
 			var mem state.Mem
 			state.Snapshot(m, &mem)
-			slot := firstLivePartySlot(&mem)
+			slot := firstLivePartySlot(&mem, ram(m))
 			if slot < 0 {
 				return fmt.Errorf("skill: forced-choice recovery: no live party member")
 			}
@@ -104,7 +104,7 @@ func forcedChoiceMenuError(m *emu.Emu, detail string, err error) error {
 func battleRecoveryOutcome(m *emu.Emu) error {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if state.DecodeBattleResult(&mem) == state.ResultLost {
+	if ram(m).DecodeBattleResult(&mem) == state.ResultLost {
 		return ErrBlackedOut
 	}
 	return nil

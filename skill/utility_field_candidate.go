@@ -17,7 +17,7 @@ import (
 func findReachableWildFieldCandidate(m *emu.Emu, romData []byte, target FieldMove, required []FieldMove) (wildFieldCandidate, bool, error) {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	party := state.DecodeParty(&mem)
+	party := ram(m).DecodeParty(&mem)
 
 	planner, err := NewRoutePlanner(m, romData)
 	if err != nil {

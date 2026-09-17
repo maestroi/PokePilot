@@ -77,7 +77,7 @@ func (e *TrainingInefficientError) Error() string {
 func (e *TrainingInefficientError) Unwrap() error { return ErrTrainingInefficient }
 
 func currentTrainingEstimate(mem *state.Mem, romData []byte, mapID uint8, targetLevel, budget int) (TrainingEstimate, error) {
-	party := state.DecodeParty(mem)
+	party := skill.AddressesForROM(romData).DecodeParty(mem)
 	if len(party.Mons) == 0 {
 		return TrainingEstimate{}, fmt.Errorf("agent: training estimate requires a party lead")
 	}

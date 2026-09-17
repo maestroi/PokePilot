@@ -2,8 +2,6 @@ package state
 
 import (
 	"strings"
-
-	"github.com/maestroi/pokepilot/red/sym"
 )
 
 // InteractionKind describes the semantic UI surface currently accepting
@@ -70,36 +68,36 @@ type InteractionState struct {
 // DecodeInteraction returns the active typed interaction surface. Unknown
 // cursor menus fail closed to InteractionMenu/ListMenu rather than being
 // guessed into a story-specific type.
-func DecodeInteraction(m *Mem) InteractionState {
+func (a Addresses) DecodeInteraction(m *Mem) InteractionState {
 	text := ScreenText(m)
 
 	// A short scrolling list can have the same wMaxMenuItem==1 shape as a
 	// two-option prompt. Detect a live DisplayListMenuID surface first; unlike
 	// wListMenuID, wMenuWatchedKeys is written by the live list controller.
-	if liveListMenu(m) {
-		menu := DecodeMenu(m)
-		id := m.U8(sym.ListMenuID)
+	if a.liveListMenu(m) {
+		menu := a.DecodeMenu(m)
+		id := m.U8(a.ListMenuID)
 		return InteractionState{
 			Kind:       classifyListInteraction(id, text),
 			Text:       text,
-			Current:    int(m.U8(sym.ListScrollOffset)) + menu.Current,
+			Current:    int(m.U8(a.ListScrollOffset)) + menu.Current,
 			Max:        menu.Max,
 			ListMenuID: id,
 		}
 	}
 
-	if prompt := DecodeTwoOptionMenu(m); prompt != nil {
+	if prompt := a.DecodeTwoOptionMenu(m); prompt != nil {
 		return InteractionState{
 			Kind:    InteractionTwoOption,
 			Text:    text,
 			Current: prompt.Index,
 			Max:     1,
-			Options: twoOptionLabels(m.U8(sym.TwoOptionMenuID)),
+			Options: twoOptionLabels(m.U8(a.TwoOptionMenuID)),
 		}
 	}
 
-	if MenuUp(m) {
-		menu := DecodeMenu(m)
+	if a.MenuUp(m) {
+		menu := a.DecodeMenu(m)
 		return InteractionState{
 			Kind:    classifyCursorMenu(text),
 			Text:    text,
@@ -108,17 +106,17 @@ func DecodeInteraction(m *Mem) InteractionState {
 		}
 	}
 
-	if dialogue := DecodeDialogue(m); dialogue != nil {
+	if dialogue := a.DecodeDialogue(m); dialogue != nil {
 		return InteractionState{Kind: InteractionDialogue, Text: dialogue.Text}
 	}
 	return InteractionState{Kind: InteractionNone}
 }
 
-func liveListMenu(m *Mem) bool {
-	if !MenuUp(m) || m.U8(sym.MenuWatchedKeys) != listMenuWatchedKeys {
+func (a Addresses) liveListMenu(m *Mem) bool {
+	if !a.MenuUp(m) || m.U8(a.MenuWatchedKeys) != listMenuWatchedKeys {
 		return false
 	}
-	return m.U8(sym.ListMenuID) <= specialListMenuID
+	return m.U8(a.ListMenuID) <= specialListMenuID
 }
 
 func classifyListInteraction(id uint8, text string) InteractionKind {

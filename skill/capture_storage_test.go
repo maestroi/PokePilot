@@ -15,7 +15,7 @@ func TestCaptureNeedsBoxSwitchOnlyWhenFullPartyWouldOverflowFullBox(t *testing.T
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := captureNeedsBoxSwitch(tc.partyCount, tc.boxCount); got != tc.want {
-				t.Fatalf("captureNeedsBoxSwitch(%d, %d) = %t, want %t", tc.partyCount, tc.boxCount, got, tc.want)
+				t.Fatalf("captureNeedsBoxSwitch(%d, %d, redWram()) = %t, want %t", tc.partyCount, tc.boxCount, got, tc.want)
 			}
 		})
 	}

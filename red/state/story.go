@@ -1,7 +1,5 @@
 package state
 
-import "github.com/maestroi/pokepilot/red/sym"
-
 const (
 	// wStatusFlags1 bit 6 is BIT_GAVE_SAFFRON_GUARDS_DRINK.
 	saffronGuardsDrinkMask uint8 = 1 << 6
@@ -96,37 +94,37 @@ var route23BadgeCheckEvents = [...]Event{
 // DecodeStoryFacts derives planner-facing progression semantics from Red's
 // authoritative RAM and decoded inventory. No run memory is involved, so the
 // same checkpoint always reconstructs the same facts after resume.
-func DecodeStoryFacts(m *Mem, inv InventoryState) StoryFacts {
-	progress := DecodeProgress(m)
+func (a Addresses) DecodeStoryFacts(m *Mem, inv InventoryState) StoryFacts {
+	progress := a.DecodeProgress(m)
 	mainStoryComplete := m.U8(elite4FlagsAddr)&elite4CompletedMask != 0
 	facts := StoryFacts{
-		MtMoonFossilAcquired:       HasEvent(m, EventBeatMtMoonSuperNerd) && (HasEvent(m, EventGotDomeFossil) || HasEvent(m, EventGotHelixFossil)) && m.U8(sym.MtMoonB2FCurScript) == 0,
-		PokedexAcquired:            HasEvent(m, EventGotPokedex),
+		MtMoonFossilAcquired:       a.HasEvent(m, EventBeatMtMoonSuperNerd) && (a.HasEvent(m, EventGotDomeFossil) || a.HasEvent(m, EventGotHelixFossil)) && m.U8(a.MtMoonB2FCurScript) == 0,
+		PokedexAcquired:            a.HasEvent(m, EventGotPokedex),
 		SSTicketAcquired:           inventoryHasItem(inv, ssTicketItemID),
 		HM01Acquired:               inventoryHasItem(inv, hm01ItemID),
 		SilphScopeAcquired:         inventoryHasItem(inv, silphScopeItemID),
 		PokeFluteAcquired:          inventoryHasItem(inv, pokeFluteItemID),
 		FuchsiaProgressionComplete: progress.Has(BadgeSoul) && inventoryHasItem(inv, hm03ItemID) && inventoryHasItem(inv, hm04ItemID),
-		SaffronGateOpen:            m.U8(sym.StatusFlags1)&saffronGuardsDrinkMask != 0,
+		SaffronGateOpen:            m.U8(a.StatusFlags1)&saffronGuardsDrinkMask != 0,
 		CardKeyOwned:               inventoryHasItem(inv, cardKeyItemID),
-		SilphCoRivalDefeated:       HasEvent(m, eventBeatSilphCoRival),
-		SilphCoCleared:             HasEvent(m, eventBeatSilphCoGiovanni),
-		MasterBallAwarded:          HasEvent(m, eventGotMasterBall),
-		MansionSwitchOn:            HasEvent(m, eventMansionSwitchOn),
+		SilphCoRivalDefeated:       a.HasEvent(m, eventBeatSilphCoRival),
+		SilphCoCleared:             a.HasEvent(m, eventBeatSilphCoGiovanni),
+		MasterBallAwarded:          a.HasEvent(m, eventGotMasterBall),
+		MansionSwitchOn:            a.HasEvent(m, eventMansionSwitchOn),
 		SecretKeyOwned:             inventoryHasItem(inv, secretKeyItemID),
-		ViridianGymOpen:            HasEvent(m, eventViridianGymOpen),
-		Route22RivalResolved:       HasEvent(m, eventBeatRoute22Rival2ndBattle),
-		LeagueChallengeStarted:     HasEvent(m, eventAutowalkedIntoLoreleisRoom),
-		LeagueLoreleiDefeated:      HasEvent(m, eventBeatLorelei) || mainStoryComplete,
-		LeagueBrunoDefeated:        HasEvent(m, eventBeatBruno) || mainStoryComplete,
-		LeagueAgathaDefeated:       HasEvent(m, eventBeatAgatha) || mainStoryComplete,
-		LeagueLanceDefeated:        HasEvent(m, eventBeatLance) || mainStoryComplete,
-		LeagueChampionDefeated:     HasEvent(m, EventBeatChampionRival) || mainStoryComplete,
+		ViridianGymOpen:            a.HasEvent(m, eventViridianGymOpen),
+		Route22RivalResolved:       a.HasEvent(m, eventBeatRoute22Rival2ndBattle),
+		LeagueChallengeStarted:     a.HasEvent(m, eventAutowalkedIntoLoreleisRoom),
+		LeagueLoreleiDefeated:      a.HasEvent(m, eventBeatLorelei) || mainStoryComplete,
+		LeagueBrunoDefeated:        a.HasEvent(m, eventBeatBruno) || mainStoryComplete,
+		LeagueAgathaDefeated:       a.HasEvent(m, eventBeatAgatha) || mainStoryComplete,
+		LeagueLanceDefeated:        a.HasEvent(m, eventBeatLance) || mainStoryComplete,
+		LeagueChampionDefeated:     a.HasEvent(m, EventBeatChampionRival) || mainStoryComplete,
 		MainStoryComplete:          mainStoryComplete,
 	}
 	facts.SilphRescueComplete = facts.SilphCoCleared && facts.MasterBallAwarded
 	for _, event := range route23BadgeCheckEvents {
-		if HasEvent(m, event) {
+		if a.HasEvent(m, event) {
 			facts.Route23BadgeChecksPassed++
 		}
 	}

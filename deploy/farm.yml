@@ -117,6 +117,8 @@ services:
       # Empty disables /mcp entirely. Keep this operator service private even
       # when MCP is disabled: its HTTP UI can queue, cancel, and delete runs.
       POKEPILOT_MCP_TOKEN: ${POKEPILOT_MCP_TOKEN:-}
+      # Used to mint absolute artifact content_url values in MCP tool results.
+      POKEPILOT_RUN_BASE_URL: ${POKEPILOT_RUN_BASE_URL:-https://pokemon.labstack.cc}
     ports:
       - target: 8080
         published: ${FARM_WALL_PORT:-18080}

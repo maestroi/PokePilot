@@ -39,7 +39,7 @@ func putBag(mem *state.Mem, items ...state.BagItem) {
 func TestChooseBattleMedicineLeavesHealthyMonAlone(t *testing.T) {
 	mem := resourceTestMem(40, 50, 0)
 	putBag(&mem, state.BagItem{ID: itemPotion, Quantity: 5})
-	if got, ok := chooseBattleMedicine(&mem); ok {
+	if got, ok := chooseBattleMedicine(&mem, redWram()); ok {
 		t.Fatalf("chooseBattleMedicine = %+v, true; want no automatic medicine above one-third HP", got)
 	}
 }
@@ -51,7 +51,7 @@ func TestChooseBattleMedicineUsesSmallestSufficientHeal(t *testing.T) {
 		state.BagItem{ID: itemPotion, Quantity: 2},
 		state.BagItem{ID: itemSuperPotion, Quantity: 1},
 	)
-	got, ok := chooseBattleMedicine(&mem)
+	got, ok := chooseBattleMedicine(&mem, redWram())
 	if !ok {
 		t.Fatal("chooseBattleMedicine = no choice, want a heal")
 	}
@@ -66,7 +66,7 @@ func TestChooseBattleMedicinePrefersSpecificStatusCure(t *testing.T) {
 		state.BagItem{ID: itemFullHeal, Quantity: 1},
 		state.BagItem{ID: itemAntidote, Quantity: 1},
 	)
-	got, ok := chooseBattleMedicine(&mem)
+	got, ok := chooseBattleMedicine(&mem, redWram())
 	if !ok {
 		t.Fatal("chooseBattleMedicine = no choice, want poison cure")
 	}
@@ -82,7 +82,7 @@ func TestChooseBattleMedicineUsesFullRestoreForLowHPAndStatus(t *testing.T) {
 		state.BagItem{ID: itemParlyzHeal, Quantity: 1},
 		state.BagItem{ID: itemFullRestore, Quantity: 1},
 	)
-	got, ok := chooseBattleMedicine(&mem)
+	got, ok := chooseBattleMedicine(&mem, redWram())
 	if !ok {
 		t.Fatal("chooseBattleMedicine = no choice, want combined recovery")
 	}
@@ -113,7 +113,7 @@ func TestPPRecoverySlotSkipsFaintedAndExhaustedMons(t *testing.T) {
 	mem[base2+sym.MonMoves] = 52
 	mem[base2+sym.MonPP] = 7
 
-	got, ok := ppRecoverySlot(&mem)
+	got, ok := ppRecoverySlot(&mem, redWram())
 	if !ok || got != 2 {
 		t.Fatalf("ppRecoverySlot = %d,%v, want 2,true", got, ok)
 	}
@@ -122,7 +122,7 @@ func TestPPRecoverySlotSkipsFaintedAndExhaustedMons(t *testing.T) {
 func TestLivePartyCurrentPPRejectsPPUpBitsOnly(t *testing.T) {
 	mem := resourceTestMem(20, 50, 0)
 	mem[sym.PartyMon1+sym.MonPP] = 0xc0 // PP Up count only, zero current PP
-	if livePartyHasCurrentPP(&mem) {
+	if livePartyHasCurrentPP(&mem, redWram()) {
 		t.Fatal("livePartyHasCurrentPP = true for raw PP 0xc0, want false")
 	}
 }

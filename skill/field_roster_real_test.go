@@ -23,19 +23,19 @@ func TestRepairFieldCapabilitiesFullPartySurfRealROM(t *testing.T) {
 
 	var before state.Mem
 	state.Snapshot(m, &before)
-	partyBefore := state.DecodeParty(&before)
+	partyBefore := redWram().DecodeParty(&before)
 	if partyBefore.Count != gen1PartyCapacity {
 		t.Fatalf("prepared roster state has party count %d, want full party %d", partyBefore.Count, gen1PartyCapacity)
 	}
-	capBefore := FieldCapabilityFor(&before, FieldSurf)
+	capBefore := FieldCapabilityFor(&before, FieldSurf, redWram())
 	if !capBefore.BadgeOwned || !capBefore.HMOwned {
 		t.Fatalf("prepared roster state must own Soul Badge + HM03: %+v", capBefore)
 	}
-	if capBefore.Usable || CanPrepareFieldMove(m.ROM(), &before, FieldSurf) {
+	if capBefore.Usable || CanPrepareFieldMove(m.ROM(), &before, FieldSurf, redWram()) {
 		t.Fatalf("prepared roster state already has/permits a current-party Surf user: %+v", capBefore)
 	}
 
-	boxBefore := state.DecodeBox(&before)
+	boxBefore := redWram().DecodeBox(&before)
 	boxIndex, depositSlot, ok, err := chooseCompatibleBoxMon(m.ROM(), partyBefore, boxBefore, FieldSurf, []FieldMove{FieldSurf})
 	if err != nil {
 		t.Fatalf("inspect active box: %v", err)
@@ -62,11 +62,11 @@ func TestRepairFieldCapabilitiesFullPartySurfRealROM(t *testing.T) {
 
 	var repaired state.Mem
 	state.Snapshot(m, &repaired)
-	partyAfter := state.DecodeParty(&repaired)
+	partyAfter := redWram().DecodeParty(&repaired)
 	if partyAfter.Count != gen1PartyCapacity {
 		t.Fatalf("party count after repair = %d, want %d", partyAfter.Count, gen1PartyCapacity)
 	}
-	if cap := FieldCapabilityFor(&repaired, FieldSurf); !cap.Usable {
+	if cap := FieldCapabilityFor(&repaired, FieldSurf, redWram()); !cap.Usable {
 		t.Fatalf("Surf is not usable after roster repair: %+v", cap)
 	}
 	changed := false

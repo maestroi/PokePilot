@@ -690,8 +690,8 @@ func ExecuteLeagueResourceAction(m *emu.Emu, action LeagueResourceAction) error 
 func PrepareLeagueResources(m *emu.Emu, romData []byte, policy LeagueResourcePolicy) (LeagueResourceResult, error) {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	party := state.DecodeParty(&mem)
-	inv := state.DecodeInventory(&mem)
+	party := ram(m).DecodeParty(&mem)
+	inv := ram(m).DecodeInventory(&mem)
 	policy = normalizedLeaguePolicy(policy, len(party.Mons))
 
 	plan, err := PlanLeagueResources(romData, party, inv, policy)
@@ -705,14 +705,14 @@ func PrepareLeagueResources(m *emu.Emu, romData []byte, policy LeagueResourcePol
 		}
 		if err := ExecuteLeagueResourceAction(m, action); err != nil {
 			state.Snapshot(m, &mem)
-			result.Final, _ = assessLeagueResources(romData, state.DecodeParty(&mem), policy)
+			result.Final, _ = assessLeagueResources(romData, ram(m).DecodeParty(&mem), policy)
 			return result, fmt.Errorf("skill: PrepareLeagueResources: %s for slot %d: %w", action.Kind, action.Slot, err)
 		}
 		result.Actions = append(result.Actions, action)
 	}
 
 	state.Snapshot(m, &mem)
-	result.Final, err = assessLeagueResources(romData, state.DecodeParty(&mem), policy)
+	result.Final, err = assessLeagueResources(romData, ram(m).DecodeParty(&mem), policy)
 	if err != nil {
 		return result, err
 	}
@@ -756,7 +756,7 @@ func (p LeagueSequenceProgress) WithWin() LeagueSequenceProgress {
 
 // ConfirmLeagueChampion applies the deterministic run-ending game fact to an
 // existing intermediate progress checkpoint.
-func ConfirmLeagueChampion(mem *state.Mem, p LeagueSequenceProgress) LeagueSequenceProgress {
-	p.ChampionConfirmed = state.HasEvent(mem, state.EventBeatChampionRival)
+func ConfirmLeagueChampion(mem *state.Mem, a wramAddresses, p LeagueSequenceProgress) LeagueSequenceProgress {
+	p.ChampionConfirmed = a.HasEvent(mem, state.EventBeatChampionRival)
 	return p
 }

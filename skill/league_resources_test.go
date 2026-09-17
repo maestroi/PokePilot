@@ -163,7 +163,7 @@ func TestLeagueSequenceProgressNeverCompletesOnIntermediateWin(t *testing.T) {
 	var mem state.Mem
 	e := state.EventBeatChampionRival
 	mem[sym.EventFlags+uint16(e)/8] |= 1 << (uint16(e) % 8)
-	p = ConfirmLeagueChampion(&mem, p)
+	p = ConfirmLeagueChampion(&mem, redWram(), p)
 	if !p.Complete() {
 		t.Fatalf("Champion event + five wins did not complete progress: %+v", p)
 	}

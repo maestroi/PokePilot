@@ -2,8 +2,6 @@ package state
 
 import (
 	"fmt"
-
-	"github.com/maestroi/pokepilot/red/sym"
 )
 
 // Facing is the direction the player sprite faces.
@@ -49,22 +47,22 @@ type WorldState struct {
 }
 
 // DecodePlayer reads the player's position and facing from a RAM snapshot.
-func DecodePlayer(m *Mem) PlayerState {
+func (a Addresses) DecodePlayer(m *Mem) PlayerState {
 	return PlayerState{
-		MapID:   m.U8(sym.CurMap),
-		X:       m.U8(sym.XCoord),
-		Y:       m.U8(sym.YCoord),
-		Facing:  Facing(m.U8(sym.SpritePlayerFacing)),
-		Walking: m.U8(sym.WalkCounter) != 0,
+		MapID:   m.U8(a.CurMap),
+		X:       m.U8(a.XCoord),
+		Y:       m.U8(a.YCoord),
+		Facing:  Facing(m.U8(a.SpritePlayerFacing)),
+		Walking: m.U8(a.WalkCounter) != 0,
 	}
 }
 
 // DecodeWorld reads the current map's dimensions and tileset.
-func DecodeWorld(m *Mem) WorldState {
+func (a Addresses) DecodeWorld(m *Mem) WorldState {
 	return WorldState{
-		MapID:   m.U8(sym.CurMap),
-		Width:   m.U8(sym.CurMapWidth),
-		Height:  m.U8(sym.CurMapHeight),
-		Tileset: m.U8(sym.CurMapTileset),
+		MapID:   m.U8(a.CurMap),
+		Width:   m.U8(a.CurMapWidth),
+		Height:  m.U8(a.CurMapHeight),
+		Tileset: m.U8(a.CurMapTileset),
 	}
 }

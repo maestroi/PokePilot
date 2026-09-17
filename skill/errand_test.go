@@ -28,10 +28,10 @@ func TestOaksParcelRejectsPreStarterState(t *testing.T) {
 
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if state.DecodeParty(&mem).Count != 0 {
-		t.Fatalf("pre-starter rejection changed party count to %d", state.DecodeParty(&mem).Count)
+	if skill.RedAddresses().DecodeParty(&mem).Count != 0 {
+		t.Fatalf("pre-starter rejection changed party count to %d", skill.RedAddresses().DecodeParty(&mem).Count)
 	}
-	if state.HasEvent(&mem, state.EventGotOaksParcel) || state.HasEvent(&mem, state.EventGotPokedex) {
+	if skill.RedAddresses().HasEvent(&mem, state.EventGotOaksParcel) || skill.RedAddresses().HasEvent(&mem, state.EventGotPokedex) {
 		t.Fatal("pre-starter rejection advanced parcel story events")
 	}
 }
@@ -47,12 +47,12 @@ func TestGetParcel(t *testing.T) {
 
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if state.HasEvent(&mem, state.EventGotOaksParcel) {
+	if skill.RedAddresses().HasEvent(&mem, state.EventGotOaksParcel) {
 		t.Fatal("precondition: parcel flag already set in post_starter fixture")
 	}
-	for _, it := range state.DecodeInventory(&mem).Items {
+	for _, it := range skill.RedAddresses().DecodeInventory(&mem).Items {
 		if it.ID == skill.ItemOaksParcel {
-			t.Fatalf("precondition: parcel already in bag: %+v", state.DecodeInventory(&mem).Items)
+			t.Fatalf("precondition: parcel already in bag: %+v", skill.RedAddresses().DecodeInventory(&mem).Items)
 		}
 	}
 
@@ -63,10 +63,10 @@ func TestGetParcel(t *testing.T) {
 	t.Logf("GetParcel took %v", time.Since(start))
 
 	state.Snapshot(m, &mem)
-	if !state.HasEvent(&mem, state.EventGotOaksParcel) {
+	if !skill.RedAddresses().HasEvent(&mem, state.EventGotOaksParcel) {
 		t.Fatal("postcondition: parcel flag not set")
 	}
-	bag := state.DecodeInventory(&mem)
+	bag := skill.RedAddresses().DecodeInventory(&mem)
 	parcel := false
 	for _, it := range bag.Items {
 		if it.ID == skill.ItemOaksParcel {
@@ -79,10 +79,10 @@ func TestGetParcel(t *testing.T) {
 	if !parcel {
 		t.Fatalf("postcondition: no OAK's PARCEL in bag: %+v", bag.Items)
 	}
-	if !state.Controllable(&mem) {
-		t.Fatalf("postcondition: player not controllable: %+v", state.DecodePlayer(&mem))
+	if !skill.RedAddresses().Controllable(&mem) {
+		t.Fatalf("postcondition: player not controllable: %+v", skill.RedAddresses().DecodePlayer(&mem))
 	}
-	p := state.DecodePlayer(&mem)
+	p := skill.RedAddresses().DecodePlayer(&mem)
 	if p.MapID != 0x2A || p.X != 2 || p.Y != 5 {
 		t.Fatalf("postcondition: expected (2,5) on map 0x2a, got (%d,%d) on %#04x", p.X, p.Y, p.MapID)
 	}
@@ -118,18 +118,18 @@ func TestOaksParcel(t *testing.T) {
 	// yet, so the test proves OaksParcel produces each one.
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if state.HasEvent(&mem, state.EventGotPokedex) {
+	if skill.RedAddresses().HasEvent(&mem, state.EventGotPokedex) {
 		t.Fatal("precondition: Pokedex flag already set in post_starter fixture")
 	}
-	if state.HasEvent(&mem, state.EventGotPokeballsFromOak) {
+	if skill.RedAddresses().HasEvent(&mem, state.EventGotPokeballsFromOak) {
 		t.Fatal("precondition: pokeballs-from-Oak flag already set in post_starter fixture")
 	}
-	for _, it := range state.DecodeInventory(&mem).Items {
+	for _, it := range skill.RedAddresses().DecodeInventory(&mem).Items {
 		if it.ID == skill.ItemOaksParcel {
-			t.Fatalf("precondition: parcel already in bag: %+v", state.DecodeInventory(&mem).Items)
+			t.Fatalf("precondition: parcel already in bag: %+v", skill.RedAddresses().DecodeInventory(&mem).Items)
 		}
 		if it.ID == skill.ItemPokeBall {
-			t.Fatalf("precondition: pokeballs already in bag: %+v", state.DecodeInventory(&mem).Items)
+			t.Fatalf("precondition: pokeballs already in bag: %+v", skill.RedAddresses().DecodeInventory(&mem).Items)
 		}
 	}
 
@@ -144,7 +144,7 @@ func TestOaksParcel(t *testing.T) {
 	// (1) The hand-over chain runs to completion: Oak hands over the Pokedex.
 	// This is the one postcondition the parcel-delivery chain actually
 	// satisfies, so a failure here is a real bug in the flow.
-	if !state.HasEvent(&mem, state.EventGotPokedex) {
+	if !skill.RedAddresses().HasEvent(&mem, state.EventGotPokedex) {
 		t.Fatalf("postcondition: %s not set", state.EventGotPokedex)
 	}
 
@@ -154,15 +154,15 @@ func TestOaksParcel(t *testing.T) {
 	// script (RIVAL_LEAVES, OaksLab.asm:644-645), so Controllable together
 	// with the Pokedex event proves the chain ran to its terminus, not just
 	// partway through it.
-	for _, it := range state.DecodeInventory(&mem).Items {
+	for _, it := range skill.RedAddresses().DecodeInventory(&mem).Items {
 		if it.ID == skill.ItemOaksParcel {
-			t.Fatalf("postcondition: parcel still in bag after delivery: %+v", state.DecodeInventory(&mem).Items)
+			t.Fatalf("postcondition: parcel still in bag after delivery: %+v", skill.RedAddresses().DecodeInventory(&mem).Items)
 		}
 	}
-	if !state.Controllable(&mem) {
-		t.Fatalf("postcondition: player not controllable: %+v", state.DecodePlayer(&mem))
+	if !skill.RedAddresses().Controllable(&mem) {
+		t.Fatalf("postcondition: player not controllable: %+v", skill.RedAddresses().DecodePlayer(&mem))
 	}
-	p := state.DecodePlayer(&mem)
+	p := skill.RedAddresses().DecodePlayer(&mem)
 	if p.MapID != 0x28 {
 		t.Fatalf("postcondition: expected map 0x28 (Oak's lab), got %#04x", p.MapID)
 	}
@@ -175,9 +175,9 @@ func TestOaksParcel(t *testing.T) {
 	// point: they keep the wrong premise from silently re-entering the
 	// plan, and a failure means re-derive against the new decomp, not
 	// delete.
-	gotPokeballsFlag := state.HasEvent(&mem, state.EventGotPokeballsFromOak)
+	gotPokeballsFlag := skill.RedAddresses().HasEvent(&mem, state.EventGotPokeballsFromOak)
 	pokeballs := 0
-	for _, it := range state.DecodeInventory(&mem).Items {
+	for _, it := range skill.RedAddresses().DecodeInventory(&mem).Items {
 		if it.ID == skill.ItemPokeBall {
 			pokeballs += int(it.Quantity)
 		}
@@ -221,7 +221,7 @@ func TestOaksParcelOpensViridianNorthGate(t *testing.T) {
 	// Precondition: the post-starter state has the gate shut.
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if state.HasEvent(&mem, state.EventGotPokedex) {
+	if skill.RedAddresses().HasEvent(&mem, state.EventGotPokedex) {
 		t.Fatal("precondition: Pokedex flag already set in post_starter fixture")
 	}
 
@@ -230,7 +230,7 @@ func TestOaksParcelOpensViridianNorthGate(t *testing.T) {
 		t.Fatalf("OaksParcel: %v", err)
 	}
 	state.Snapshot(m, &mem)
-	if !state.HasEvent(&mem, state.EventGotPokedex) {
+	if !skill.RedAddresses().HasEvent(&mem, state.EventGotPokedex) {
 		t.Fatalf("postcondition: %s not set after delivery", state.EventGotPokedex)
 	}
 
@@ -249,7 +249,7 @@ func TestOaksParcelOpensViridianNorthGate(t *testing.T) {
 		t.Fatalf("Travel to Viridian City: %v", err)
 	}
 	state.Snapshot(m, &mem)
-	p := state.DecodePlayer(&mem)
+	p := skill.RedAddresses().DecodePlayer(&mem)
 	if p.MapID != 0x01 || p.X != 23 || p.Y != 26 {
 		t.Fatalf("Travel: expected (23,26) on 0x01, got (%d,%d) on %#04x", p.X, p.Y, p.MapID)
 	}
@@ -261,11 +261,11 @@ func TestOaksParcelOpensViridianNorthGate(t *testing.T) {
 		t.Fatalf("GoTo to the gate approach (19,10): %v", err)
 	}
 	state.Snapshot(m, &mem)
-	p = state.DecodePlayer(&mem)
+	p = skill.RedAddresses().DecodePlayer(&mem)
 	if p.MapID != 0x01 || p.X != 19 || p.Y != 10 {
 		t.Fatalf("approach: expected (19,10) on 0x01, got (%d,%d) on %#04x", p.X, p.Y, p.MapID)
 	}
-	if !state.Controllable(&mem) {
+	if !skill.RedAddresses().Controllable(&mem) {
 		t.Fatalf("approach: player not controllable: %+v", p)
 	}
 
@@ -275,7 +275,7 @@ func TestOaksParcelOpensViridianNorthGate(t *testing.T) {
 		t.Fatalf("step (19,10)->(19,9): %v", err)
 	}
 	state.Snapshot(m, &mem)
-	p = state.DecodePlayer(&mem)
+	p = skill.RedAddresses().DecodePlayer(&mem)
 	if p.MapID != 0x01 || p.X != 19 || p.Y != 9 {
 		t.Fatalf("after first step: expected (19,9) on 0x01, got (%d,%d) on %#04x", p.X, p.Y, p.MapID)
 	}
@@ -287,11 +287,11 @@ func TestOaksParcelOpensViridianNorthGate(t *testing.T) {
 		t.Fatalf("gate crossing step (19,9)->(19,8): %v", err)
 	}
 	state.Snapshot(m, &mem)
-	p = state.DecodePlayer(&mem)
+	p = skill.RedAddresses().DecodePlayer(&mem)
 	if p.MapID != 0x01 || p.X != 19 || p.Y != 8 {
 		t.Fatalf("after crossing: expected (19,8) on 0x01, got (%d,%d) on %#04x", p.X, p.Y, p.MapID)
 	}
-	if !state.Controllable(&mem) {
+	if !skill.RedAddresses().Controllable(&mem) {
 		t.Fatalf("after crossing: player not controllable: %+v", p)
 	}
 
@@ -310,18 +310,18 @@ func TestPostErrandFixture(t *testing.T) {
 
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if !state.HasEvent(&mem, state.EventGotPokedex) {
+	if !skill.RedAddresses().HasEvent(&mem, state.EventGotPokedex) {
 		t.Fatalf("fixture post_errand: %s not set", state.EventGotPokedex)
 	}
-	for _, it := range state.DecodeInventory(&mem).Items {
+	for _, it := range skill.RedAddresses().DecodeInventory(&mem).Items {
 		if it.ID == skill.ItemOaksParcel {
-			t.Fatalf("fixture post_errand: parcel still in bag: %+v", state.DecodeInventory(&mem).Items)
+			t.Fatalf("fixture post_errand: parcel still in bag: %+v", skill.RedAddresses().DecodeInventory(&mem).Items)
 		}
 	}
-	if !state.Controllable(&mem) {
-		t.Fatalf("fixture post_errand: player not controllable: %+v", state.DecodePlayer(&mem))
+	if !skill.RedAddresses().Controllable(&mem) {
+		t.Fatalf("fixture post_errand: player not controllable: %+v", skill.RedAddresses().DecodePlayer(&mem))
 	}
-	p := state.DecodePlayer(&mem)
+	p := skill.RedAddresses().DecodePlayer(&mem)
 	if p.MapID != 0x01 || p.X != 19 || p.Y != 8 {
 		t.Fatalf("fixture post_errand: expected (19,8) on 0x01, got (%d,%d) on %#04x", p.X, p.Y, p.MapID)
 	}

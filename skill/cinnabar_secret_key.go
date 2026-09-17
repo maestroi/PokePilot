@@ -4,9 +4,7 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
-	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
 )
 
@@ -54,13 +52,13 @@ func init() {
 	places["cinnabar pokemon center"] = Destination{Map: cinnabarPokemonCenterMap, X: 3, Y: 4}
 }
 
-func CinnabarSecretKeyOwned(mem *state.Mem) bool {
-	return state.DecodeStoryFacts(mem, state.DecodeInventory(mem)).SecretKeyOwned
+func CinnabarSecretKeyOwned(mem *state.Mem, a wramAddresses) bool {
+	return a.DecodeStoryFacts(mem, a.DecodeInventory(mem)).SecretKeyOwned
 }
 
-func CinnabarSecretKeyReady(mem *state.Mem) bool {
-	facts := state.DecodeStoryFacts(mem, state.DecodeInventory(mem))
-	progress := state.DecodeProgress(mem)
+func CinnabarSecretKeyReady(mem *state.Mem, a wramAddresses) bool {
+	facts := a.DecodeStoryFacts(mem, a.DecodeInventory(mem))
+	progress := a.DecodeProgress(mem)
 	return facts.FuchsiaProgressionComplete && facts.SilphRescueComplete && progress.Has(state.BadgeMarsh)
 }
 
@@ -70,14 +68,14 @@ func AcquireCinnabarSecretKey(m *emu.Emu, romData []byte, policy MovePolicy) err
 	}
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if CinnabarSecretKeyOwned(&mem) {
+	if CinnabarSecretKeyOwned(&mem, ram(m)) {
 		return nil
 	}
-	if !CinnabarSecretKeyReady(&mem) {
+	if !CinnabarSecretKeyReady(&mem, ram(m)) {
 		return fmt.Errorf("skill: AcquireCinnabarSecretKey: post-Saffron/Surf handoff is not satisfied")
 	}
 
-	if !onCinnabarSecretKeySlice(m.Peek8(sym.CurMap)) {
+	if !onCinnabarSecretKeySlice(m.Peek8(ram(m).CurMap)) {
 		if _, err := TravelFlee(m, romData, Destination{Map: semanticPalletTownMap, X: 5, Y: 6}, policy, mansionTravelBattles); err != nil {
 			return fmt.Errorf("skill: AcquireCinnabarSecretKey: reach Pallet for Route 21: %w", err)
 		}
@@ -86,13 +84,13 @@ func AcquireCinnabarSecretKey(m *emu.Emu, romData []byte, policy MovePolicy) err
 		}
 	}
 
-	if !isPokemonMansionMap(m.Peek8(sym.CurMap)) {
+	if !isPokemonMansionMap(m.Peek8(ram(m).CurMap)) {
 		if _, err := TravelFlee(m, romData, Destination{Map: pokemonMansion1FMap, X: 5, Y: 26}, policy, mansionTravelBattles); err != nil {
 			return fmt.Errorf("skill: AcquireCinnabarSecretKey: enter Pokemon Mansion: %w", err)
 		}
 	}
 
-	if m.Peek8(sym.CurMap) != pokemonMansionB1FMap {
+	if m.Peek8(ram(m).CurMap) != pokemonMansionB1FMap {
 		if err := reachMansionBasement(m, romData, policy); err != nil {
 			return err
 		}
@@ -102,7 +100,7 @@ func AcquireCinnabarSecretKey(m *emu.Emu, romData []byte, policy MovePolicy) err
 	}
 
 	state.Snapshot(m, &mem)
-	if !CinnabarSecretKeyOwned(&mem) {
+	if !CinnabarSecretKeyOwned(&mem, ram(m)) {
 		return fmt.Errorf("skill: AcquireCinnabarSecretKey: pickup completed without secret_key_owned semantic postcondition")
 	}
 	return nil
@@ -124,11 +122,11 @@ func isPokemonMansionMap(mapID uint8) bool {
 func currentMansionSwitchOn(m *emu.Emu) bool {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	return state.DecodeStoryFacts(&mem, state.DecodeInventory(&mem)).MansionSwitchOn
+	return ram(m).DecodeStoryFacts(&mem, ram(m).DecodeInventory(&mem)).MansionSwitchOn
 }
 
 func reachMansionBasement(m *emu.Emu, romData []byte, policy MovePolicy) error {
-	switch m.Peek8(sym.CurMap) {
+	switch m.Peek8(ram(m).CurMap) {
 	case pokemonMansionB1FMap:
 		return nil
 	case pokemonMansion1FMap:
@@ -152,11 +150,11 @@ func reachMansionBasement(m *emu.Emu, romData []byte, policy MovePolicy) error {
 			return fmt.Errorf("skill: AcquireCinnabarSecretKey: take Mansion 3F fall: %w", err)
 		}
 	default:
-		return fmt.Errorf("skill: AcquireCinnabarSecretKey: unsupported Mansion resume map %#04x", m.Peek8(sym.CurMap))
+		return fmt.Errorf("skill: AcquireCinnabarSecretKey: unsupported Mansion resume map %#04x", m.Peek8(ram(m).CurMap))
 	}
 
-	if m.Peek8(sym.CurMap) != pokemonMansion1FMap {
-		return fmt.Errorf("skill: AcquireCinnabarSecretKey: 3F fall landed on %#04x, want Mansion 1F", m.Peek8(sym.CurMap))
+	if m.Peek8(ram(m).CurMap) != pokemonMansion1FMap {
+		return fmt.Errorf("skill: AcquireCinnabarSecretKey: 3F fall landed on %#04x, want Mansion 1F", m.Peek8(ram(m).CurMap))
 	}
 	if err := ensureMansionWarpReachable(m, romData, mansion1FToB1FWarp, mansion1FSwitch, policy); err != nil {
 		return fmt.Errorf("skill: AcquireCinnabarSecretKey: open route to Mansion B1F: %w", err)
@@ -171,8 +169,8 @@ func ensureMansionWarpReachable(m *emu.Emu, romData []byte, edge world.Edge, sw 
 	if mansionTileReachable(m, romData, edge.WarpX, edge.WarpY) {
 		return nil
 	}
-	if m.Peek8(sym.CurMap) != sw.Map {
-		return fmt.Errorf("switch for map %#04x requested while on %#04x", sw.Map, m.Peek8(sym.CurMap))
+	if m.Peek8(ram(m).CurMap) != sw.Map {
+		return fmt.Errorf("switch for map %#04x requested while on %#04x", sw.Map, m.Peek8(ram(m).CurMap))
 	}
 	if !mansionTileReachable(m, romData, sw.StandX, sw.StandY) {
 		return fmt.Errorf("neither warp (%d,%d) nor switch stand (%d,%d) is reachable on map %#04x", edge.WarpX, edge.WarpY, sw.StandX, sw.StandY, sw.Map)
@@ -187,8 +185,8 @@ func ensureMansionWarpReachable(m *emu.Emu, romData []byte, edge world.Edge, sw 
 }
 
 func dropMansion3FTo1F(m *emu.Emu, romData []byte, policy MovePolicy) error {
-	if m.Peek8(sym.CurMap) != pokemonMansion3FMap {
-		return fmt.Errorf("drop requested on map %#04x, want Mansion 3F", m.Peek8(sym.CurMap))
+	if m.Peek8(ram(m).CurMap) != pokemonMansion3FMap {
+		return fmt.Errorf("drop requested on map %#04x, want Mansion 3F", m.Peek8(ram(m).CurMap))
 	}
 	findHole := func() (uint8, uint8, bool) {
 		for _, hole := range mansionDropHoles {
@@ -233,7 +231,7 @@ func dropMansion3FTo1F(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	m.Press(btn)
 	crossed := false
 	for i := 0; i < mansionDropBudget; i++ {
-		if m.Peek8(sym.CurMap) != pokemonMansion3FMap {
+		if m.Peek8(ram(m).CurMap) != pokemonMansion3FMap {
 			crossed = true
 			break
 		}
@@ -243,13 +241,13 @@ func dropMansion3FTo1F(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if !crossed {
 		return fmt.Errorf("Mansion drop at (%d,%d) did not change map", hx, hy)
 	}
-	if m.Peek8(sym.CurMap) != pokemonMansion1FMap {
-		return fmt.Errorf("Mansion drop at (%d,%d) landed on map %#04x, want 1F", hx, hy, m.Peek8(sym.CurMap))
+	if m.Peek8(ram(m).CurMap) != pokemonMansion1FMap {
+		return fmt.Errorf("Mansion drop at (%d,%d) landed on map %#04x, want 1F", hx, hy, m.Peek8(ram(m).CurMap))
 	}
 	var mem state.Mem
 	if _, err := m.StepUntil(mansionDropBudget, func(e *emu.Emu) bool {
 		state.Snapshot(e, &mem)
-		return state.Controllable(&mem)
+		return ram(m).Controllable(&mem)
 	}); err != nil {
 		return fmt.Errorf("Mansion 1F landing did not return control")
 	}
@@ -257,8 +255,8 @@ func dropMansion3FTo1F(m *emu.Emu, romData []byte, policy MovePolicy) error {
 }
 
 func solveMansionBasementForKey(m *emu.Emu, romData []byte, policy MovePolicy) error {
-	if m.Peek8(sym.CurMap) != pokemonMansionB1FMap {
-		return fmt.Errorf("basement solver on map %#04x, want Mansion B1F", m.Peek8(sym.CurMap))
+	if m.Peek8(ram(m).CurMap) != pokemonMansionB1FMap {
+		return fmt.Errorf("basement solver on map %#04x, want Mansion B1F", m.Peek8(ram(m).CurMap))
 	}
 	type attemptKey struct {
 		SwitchOn bool
@@ -294,8 +292,8 @@ func solveMansionBasementForKey(m *emu.Emu, romData []byte, policy MovePolicy) e
 }
 
 func mansionTileReachable(m *emu.Emu, romData []byte, tx, ty uint8) bool {
-	cur := m.Peek8(sym.CurMap)
-	h, err := rom.ParseMap(romData, cur)
+	cur := m.Peek8(ram(m).CurMap)
+	h, err := graphForROM(romData).ParseMap(romData, cur)
 	if err != nil {
 		return false
 	}
@@ -309,8 +307,8 @@ func mansionTileReachable(m *emu.Emu, romData []byte, tx, ty uint8) bool {
 }
 
 func mansionTargetReachable(m *emu.Emu, romData []byte, tx, ty uint8) bool {
-	cur := m.Peek8(sym.CurMap)
-	h, err := rom.ParseMap(romData, cur)
+	cur := m.Peek8(ram(m).CurMap)
+	h, err := graphForROM(romData).ParseMap(romData, cur)
 	if err != nil {
 		return false
 	}
@@ -324,8 +322,8 @@ func mansionTargetReachable(m *emu.Emu, romData []byte, tx, ty uint8) bool {
 }
 
 func setMansionSwitch(m *emu.Emu, romData []byte, sw mansionSwitchSpec, want bool, policy MovePolicy) error {
-	if m.Peek8(sym.CurMap) != sw.Map {
-		return fmt.Errorf("Mansion switch (%d,%d) belongs to map %#04x, current map %#04x", sw.TargetX, sw.TargetY, sw.Map, m.Peek8(sym.CurMap))
+	if m.Peek8(ram(m).CurMap) != sw.Map {
+		return fmt.Errorf("Mansion switch (%d,%d) belongs to map %#04x, current map %#04x", sw.TargetX, sw.TargetY, sw.Map, m.Peek8(ram(m).CurMap))
 	}
 	if currentMansionSwitchOn(m) == want {
 		return nil
@@ -357,12 +355,12 @@ func setMansionSwitch(m *emu.Emu, romData []byte, sw mansionSwitchSpec, want boo
 	for frame := 0; frame < mansionSwitchDriveBudget; frame++ {
 		var mem state.Mem
 		state.Snapshot(m, &mem)
-		facts := state.DecodeStoryFacts(&mem, state.DecodeInventory(&mem))
-		if answered && facts.MansionSwitchOn == want && state.Controllable(&mem) {
+		facts := ram(m).DecodeStoryFacts(&mem, ram(m).DecodeInventory(&mem))
+		if answered && facts.MansionSwitchOn == want && ram(m).Controllable(&mem) {
 			m.StepFrames(2)
 			return nil
 		}
-		interaction := state.DecodeInteraction(&mem)
+		interaction := ram(m).DecodeInteraction(&mem)
 		switch interaction.Kind {
 		case state.InteractionTwoOption:
 			if answered {

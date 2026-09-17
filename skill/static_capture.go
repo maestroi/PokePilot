@@ -7,7 +7,6 @@ import (
 	"github.com/maestroi/pokepilot/emu"
 	reddata "github.com/maestroi/pokepilot/red/data"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 )
 
 const (
@@ -45,17 +44,17 @@ func initiateStaticBattle(m *emu.Emu, romData []byte, site StaticCaptureSite, po
 	if site.WakeItem != 0 {
 		var mem state.Mem
 		state.Snapshot(m, &mem)
-		if !bagHasItem(&mem, site.WakeItem) {
+		if !bagHasItem(&mem, site.WakeItem, ram(m)) {
 			return fmt.Errorf("skill: static %s: required item %q is not in the bag", site.Name, site.Requirement)
 		}
-		if state.HasEvent(&mem, eventBeatRoute16Snorlax) {
+		if ram(m).HasEvent(&mem, eventBeatRoute16Snorlax) {
 			return fmt.Errorf("%w: %s event is already consumed", ErrStaticCaptureUnavailable, site.Name)
 		}
 		if err := Face(m, site.X, site.Y); err != nil {
 			return fmt.Errorf("skill: static %s: face encounter: %w", site.Name, err)
 		}
-		if err := useOverworldKeyItem(m, site.WakeItem, func(mm *state.Mem) bool {
-			return state.HasEvent(mm, eventFightRoute16Snorlax) || state.DecodeBattle(mm) != nil
+		if err := useOverworldKeyItem(m, site.WakeItem, func(mm *state.Mem, a wramAddresses) bool {
+			return ram(m).HasEvent(mm, eventFightRoute16Snorlax) || ram(m).DecodeBattle(mm) != nil
 		}); err != nil {
 			return fmt.Errorf("%w: %s did not wake: %v", ErrStaticCaptureUnavailable, site.Name, err)
 		}
@@ -67,22 +66,22 @@ func initiateStaticBattle(m *emu.Emu, romData []byte, site StaticCaptureSite, po
 	}
 
 	if _, err := m.StepUntil(staticStartBudget, func(mm *emu.Emu) bool {
-		return mm.Peek8(sym.IsInBattle) != 0
+		return mm.Peek8(ram(m).IsInBattle) != 0
 	}); err != nil {
 		return fmt.Errorf("%w: %s did not start a battle", ErrStaticCaptureUnavailable, site.Name)
 	}
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	battle := state.DecodeBattle(&mem)
+	battle := ram(m).DecodeBattle(&mem)
 	if battle == nil || battle.EnemySpecies != site.Species {
 		return fmt.Errorf("skill: static %s: expected species %#02x, battle=%+v", site.Name, site.Species, battle)
 	}
 	return nil
 }
 
-func staticBall(mem *state.Mem, site StaticCaptureSite) (uint8, bool) {
+func staticBall(mem *state.Mem, site StaticCaptureSite, a wramAddresses) (uint8, bool) {
 	for _, item := range reddata.StaticCaptureBallOrder(site) {
-		if bagHasItem(mem, item) {
+		if bagHasItem(mem, item, a) {
 			return item, true
 		}
 	}
@@ -96,9 +95,9 @@ func staticBall(mem *state.Mem, site StaticCaptureSite) (uint8, bool) {
 func catchStaticBattle(m *emu.Emu, romData []byte, site StaticCaptureSite, maxBalls int) (CatchResult, error) {
 	var before state.Mem
 	state.Snapshot(m, &before)
-	partyBefore := int(state.DecodeParty(&before).Count)
-	boxBefore := int(state.DecodeBox(&before).Count)
-	ownedBefore := append([]uint8(nil), state.DecodePokedex(&before).Owned...)
+	partyBefore := int(ram(m).DecodeParty(&before).Count)
+	boxBefore := int(ram(m).DecodeBox(&before).Count)
+	ownedBefore := append([]uint8(nil), ram(m).DecodePokedex(&before).Owned...)
 	want := []uint8{site.Species}
 	wantDex := wantedDexNumbers(romData, want)
 	res := CatchResult{Encounters: 1}
@@ -106,7 +105,7 @@ func catchStaticBattle(m *emu.Emu, romData []byte, site StaticCaptureSite, maxBa
 	for res.BallsThrown < maxBalls && battleInFlight(m) {
 		var mem state.Mem
 		state.Snapshot(m, &mem)
-		ball, ok := staticBall(&mem, site)
+		ball, ok := staticBall(&mem, site, ram(m))
 		if !ok {
 			res.Outcome = OutcomeOutOfBalls
 			return res, nil
@@ -136,7 +135,7 @@ func catchStaticBattle(m *emu.Emu, romData []byte, site StaticCaptureSite, maxBa
 	}
 	var after state.Mem
 	state.Snapshot(m, &after)
-	if got, ok := catchAcquiredWanted(partyBefore, state.DecodeParty(&after), boxBefore, state.DecodeBox(&after), ownedBefore, state.DecodePokedex(&after).Owned, want, wantDex); ok {
+	if got, ok := catchAcquiredWanted(partyBefore, ram(m).DecodeParty(&after), boxBefore, ram(m).DecodeBox(&after), ownedBefore, ram(m).DecodePokedex(&after).Owned, want, wantDex); ok {
 		res.Outcome = OutcomeCaught
 		res.Species = got
 		return res, nil
@@ -159,7 +158,7 @@ func CaptureStatic(m *emu.Emu, romData []byte, species uint8, policy MovePolicy)
 	}
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if giftPokemonAlreadyOwned(&mem, romData, species) {
+	if giftPokemonAlreadyOwned(&mem, romData, species, ram(m)) {
 		return CatchResult{Outcome: OutcomeCaught, Species: species}, nil
 	}
 	dest, ok := Place(site.Place)

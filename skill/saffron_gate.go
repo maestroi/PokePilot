@@ -5,7 +5,6 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 )
 
 const (
@@ -35,22 +34,22 @@ const (
 // SaffronGateOpen is the positive story postcondition for the first phase of
 // issue #34. The flag is decoded through StoryFacts so callers do not depend
 // on the raw wStatusFlags1 bit used by Red's four Saffron gate scripts.
-func SaffronGateOpen(mem *state.Mem) bool {
-	return state.DecodeStoryFacts(mem, state.DecodeInventory(mem)).SaffronGateOpen
+func SaffronGateOpen(mem *state.Mem, a wramAddresses) bool {
+	return a.DecodeStoryFacts(mem, a.DecodeInventory(mem)).SaffronGateOpen
 }
 
 // SaffronGateReady keeps the issue #34 handoff explicit: this phase is offered
 // only after issue #33's Soul Badge + Surf + Strength postcondition exists.
-func SaffronGateReady(mem *state.Mem) bool {
-	return state.DecodeStoryFacts(mem, state.DecodeInventory(mem)).FuchsiaProgressionComplete
+func SaffronGateReady(mem *state.Mem, a wramAddresses) bool {
+	return a.DecodeStoryFacts(mem, a.DecodeInventory(mem)).FuchsiaProgressionComplete
 }
 
 // guardDrinkInBag reports whether Red's RemoveGuardDrink routine can consume
 // one of the player's current bag entries. The order mirrors GuardDrinksList,
 // but the particular drink does not matter to the gate postcondition.
-func guardDrinkInBag(mem *state.Mem) (uint8, bool) {
+func guardDrinkInBag(mem *state.Mem, a wramAddresses) (uint8, bool) {
 	for _, item := range [...]uint8{freshWaterItem, sodaPopItem, lemonadeItem} {
-		if _, count := bagEntry(mem, item); count > 0 {
+		if _, count := bagEntry(mem, item, a); count > 0 {
 			return item, true
 		}
 	}
@@ -68,14 +67,14 @@ func OpenSaffronGate(m *emu.Emu, romData []byte, policy MovePolicy) error {
 
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if SaffronGateOpen(&mem) {
+	if SaffronGateOpen(&mem, tablesForROM(romData).wram) {
 		return nil
 	}
-	if !SaffronGateReady(&mem) {
+	if !SaffronGateReady(&mem, tablesForROM(romData).wram) {
 		return fmt.Errorf("skill: OpenSaffronGate: Fuchsia progression (#33) is incomplete")
 	}
 
-	if _, ok := guardDrinkInBag(&mem); !ok {
+	if _, ok := guardDrinkInBag(&mem, tablesForROM(romData).wram); !ok {
 		if err := buySaffronGuardDrink(m, romData, policy); err != nil {
 			return err
 		}
@@ -89,23 +88,23 @@ func OpenSaffronGate(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		return fmt.Errorf("skill: OpenSaffronGate: reach Route 7 gate: %w", err)
 	}
 	state.Snapshot(m, &mem)
-	if SaffronGateOpen(&mem) {
+	if SaffronGateOpen(&mem, tablesForROM(romData).wram) {
 		return nil
 	}
-	if mem.U8(sym.CurMap) != route7GateMap || mem.U8(sym.XCoord) != route7GuardStandX || mem.U8(sym.YCoord) != route7GuardStandY {
+	if mem.U8(ram(m).CurMap) != route7GateMap || mem.U8(ram(m).XCoord) != route7GuardStandX || mem.U8(ram(m).YCoord) != route7GuardStandY {
 		return fmt.Errorf("skill: OpenSaffronGate: expected Route 7 guard stand (%d,%d), on map %#04x at (%d,%d)",
-			route7GuardStandX, route7GuardStandY, mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord))
+			route7GuardStandX, route7GuardStandY, mem.U8(ram(m).CurMap), mem.U8(ram(m).XCoord), mem.U8(ram(m).YCoord))
 	}
 
 	m.Tap(emu.Right, 3, 7)
-	if err := driveSaffronInteraction(m, saffronGateInteractionBudget, func(mm *state.Mem) bool {
-		return SaffronGateOpen(mm) && state.Controllable(mm)
+	if err := driveSaffronInteraction(m, saffronGateInteractionBudget, func(mm *state.Mem, a wramAddresses) bool {
+		return SaffronGateOpen(mm, ram(m)) && ram(m).Controllable(mm)
 	}); err != nil {
 		return fmt.Errorf("skill: OpenSaffronGate: give guard drink at trigger (%d,%d): %w",
 			route7GuardTriggerX, route7GuardTriggerY, err)
 	}
 	state.Snapshot(m, &mem)
-	if !SaffronGateOpen(&mem) {
+	if !SaffronGateOpen(&mem, tablesForROM(romData).wram) {
 		return fmt.Errorf("skill: OpenSaffronGate: guard interaction finished without saffron_gate_open")
 	}
 	return nil
@@ -114,10 +113,10 @@ func OpenSaffronGate(m *emu.Emu, romData []byte, policy MovePolicy) error {
 func buySaffronGuardDrink(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if _, ok := guardDrinkInBag(&mem); ok {
+	if _, ok := guardDrinkInBag(&mem, tablesForROM(romData).wram); ok {
 		return nil
 	}
-	if money := state.DecodeInventory(&mem).Money; money < freshWaterPrice {
+	if money := ram(m).DecodeInventory(&mem).Money; money < freshWaterPrice {
 		return fmt.Errorf("skill: OpenSaffronGate: need at least ¥%d for a guard drink, have ¥%d", freshWaterPrice, money)
 	}
 	if err := EnsureBagSpaceFor(m, freshWaterItem); err != nil {
@@ -133,8 +132,8 @@ func buySaffronGuardDrink(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	}
 
 	m.Tap(emu.A, 3, 7)
-	if err := driveSaffronInteraction(m, saffronGateInteractionBudget, func(mm *state.Mem) bool {
-		return state.DecodeInteraction(mm).Kind == state.InteractionMenu
+	if err := driveSaffronInteraction(m, saffronGateInteractionBudget, func(mm *state.Mem, a wramAddresses) bool {
+		return ram(m).DecodeInteraction(mm).Kind == state.InteractionMenu
 	}); err != nil {
 		return fmt.Errorf("skill: OpenSaffronGate: open vending menu: %w", err)
 	}
@@ -145,14 +144,14 @@ func buySaffronGuardDrink(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	// soon as the confirm tap is sent. Give the vending handler one ordinary
 	// settle window to consume that A before interpreting any remaining menu.
 	m.StepFrames(talkSettle)
-	if err := driveSaffronInteraction(m, saffronGateInteractionBudget, func(mm *state.Mem) bool {
-		_, count := bagEntry(mm, freshWaterItem)
-		return count > 0 && state.Controllable(mm)
+	if err := driveSaffronInteraction(m, saffronGateInteractionBudget, func(mm *state.Mem, a wramAddresses) bool {
+		_, count := bagEntry(mm, freshWaterItem, ram(m))
+		return count > 0 && ram(m).Controllable(mm)
 	}); err != nil {
 		return fmt.Errorf("skill: OpenSaffronGate: settle FRESH WATER purchase: %w", err)
 	}
 	state.Snapshot(m, &mem)
-	if _, ok := guardDrinkInBag(&mem); !ok {
+	if _, ok := guardDrinkInBag(&mem, tablesForROM(romData).wram); !ok {
 		return fmt.Errorf("skill: OpenSaffronGate: vending interaction returned without a valid guard drink")
 	}
 	return nil
@@ -161,14 +160,14 @@ func buySaffronGuardDrink(m *emu.Emu, romData []byte, policy MovePolicy) error {
 // driveSaffronInteraction advances only ordinary dialogue while waiting for a
 // concrete RAM/UI postcondition. Menus are never selected here: if an
 // unexpected menu surface appears, fail closed rather than guessing.
-func driveSaffronInteraction(m *emu.Emu, budget int, done func(*state.Mem) bool) error {
+func driveSaffronInteraction(m *emu.Emu, budget int, done func(*state.Mem, wramAddresses) bool) error {
 	var mem state.Mem
 	for spent := 0; spent < budget; spent += 10 {
 		state.Snapshot(m, &mem)
-		if done(&mem) {
+		if done(&mem, ram(m)) {
 			return nil
 		}
-		switch interaction := state.DecodeInteraction(&mem); interaction.Kind {
+		switch interaction := ram(m).DecodeInteraction(&mem); interaction.Kind {
 		case state.InteractionDialogue:
 			m.Tap(emu.A, 3, 7)
 		case state.InteractionNone:
@@ -182,7 +181,7 @@ func driveSaffronInteraction(m *emu.Emu, budget int, done func(*state.Mem) bool)
 		}
 	}
 	state.Snapshot(m, &mem)
-	interaction := state.DecodeInteraction(&mem)
+	interaction := ram(m).DecodeInteraction(&mem)
 	return fmt.Errorf("interaction exceeded %d frames on map %#04x at (%d,%d), surface=%q text=%q",
-		budget, mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord), interaction.Kind, interaction.Text)
+		budget, mem.U8(ram(m).CurMap), mem.U8(ram(m).XCoord), mem.U8(ram(m).YCoord), interaction.Kind, interaction.Text)
 }

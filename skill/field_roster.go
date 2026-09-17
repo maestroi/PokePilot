@@ -8,7 +8,6 @@ import (
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
 )
 
@@ -38,10 +37,10 @@ func CoreProgressionFieldMoves() []FieldMove {
 // OwnedCoreProgressionFieldMoves returns the core moves whose HM and badge are
 // already owned. It lets a story slice preserve everything the save has
 // actually unlocked without assuming a canonical badge order or starter.
-func OwnedCoreProgressionFieldMoves(mem *state.Mem) []FieldMove {
+func OwnedCoreProgressionFieldMoves(mem *state.Mem, a wramAddresses) []FieldMove {
 	var out []FieldMove
 	for _, move := range CoreProgressionFieldMoves() {
-		cap := FieldCapabilityFor(mem, move)
+		cap := FieldCapabilityFor(mem, move, a)
 		if cap.HMOwned && cap.BadgeOwned {
 			out = append(out, move)
 		}
@@ -313,9 +312,9 @@ func knownGrassDestinations() []Destination {
 func findWildFieldCandidate(m *emu.Emu, romData []byte, target FieldMove, required []FieldMove) (wildFieldCandidate, bool, error) {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	party := state.DecodeParty(&mem)
-	cur := mem.U8(sym.CurMap)
-	g, err := world.BuildGraph(romData)
+	party := ram(m).DecodeParty(&mem)
+	cur := mem.U8(ram(m).CurMap)
+	g, err := cachedRouteGraph(romData)
 	if err != nil {
 		return wildFieldCandidate{}, false, err
 	}
@@ -397,22 +396,22 @@ func RepairFieldCapabilities(m *emu.Emu, romData []byte, policy MovePolicy, requ
 	for _, target := range required {
 		var mem state.Mem
 		state.Snapshot(m, &mem)
-		cap := FieldCapabilityFor(&mem, target)
+		cap := FieldCapabilityFor(&mem, target, ram(m))
 		if !cap.BadgeOwned || !cap.HMOwned {
 			return missingFieldRosterPrerequisite(cap)
 		}
 		if cap.Usable {
 			continue
 		}
-		if CanPrepareFieldMove(romData, &mem, target) {
+		if CanPrepareFieldMove(romData, &mem, target, ram(m)) {
 			if _, err := EnsureFieldMove(m, target); err != nil {
 				return fmt.Errorf("skill: RepairFieldCapabilities: prepare %s in current party: %w", target, err)
 			}
 			continue
 		}
 
-		party := state.DecodeParty(&mem)
-		box := state.DecodeBox(&mem)
+		party := ram(m).DecodeParty(&mem)
+		box := ram(m).DecodeBox(&mem)
 		boxIndex, depositSlot, boxOK, err := chooseCompatibleBoxMon(romData, party, box, target, required)
 		if err != nil {
 			return fmt.Errorf("skill: RepairFieldCapabilities: plan PC recovery for %s: %w", target, err)
@@ -441,7 +440,7 @@ func RepairFieldCapabilities(m *emu.Emu, romData []byte, policy MovePolicy, requ
 		}
 
 		state.Snapshot(m, &mem)
-		party = state.DecodeParty(&mem)
+		party = ram(m).DecodeParty(&mem)
 		incoming := state.Mon{Species: candidate.Species}
 		depositSlot, legal, err := chooseDepositSlotForIncoming(romData, party, incoming, required)
 		if err != nil {
@@ -457,7 +456,7 @@ func RepairFieldCapabilities(m *emu.Emu, romData []byte, policy MovePolicy, requ
 		}
 
 		state.Snapshot(m, &mem)
-		_, balls := bagEntry(&mem, ItemPokeBall)
+		_, balls := bagEntry(&mem, ItemPokeBall, ram(m))
 		if balls <= 0 {
 			return fmt.Errorf("%w: compatible wild species %#02x exists on map %#04x but no POKE BALL is available", ErrFieldRosterNoBalls, candidate.Species, candidate.Map)
 		}
@@ -479,7 +478,7 @@ func RepairFieldCapabilities(m *emu.Emu, romData []byte, policy MovePolicy, requ
 	var after state.Mem
 	state.Snapshot(m, &after)
 	for _, move := range required {
-		cap := FieldCapabilityFor(&after, move)
+		cap := FieldCapabilityFor(&after, move, ram(m))
 		if !cap.Usable {
 			return fmt.Errorf("skill: RepairFieldCapabilities: final invariant failed for %s: badge=%v HM=%v learned=%v slot=%d", cap.Name, cap.BadgeOwned, cap.HMOwned, cap.Learned, cap.PartySlot)
 		}
@@ -492,5 +491,5 @@ func RepairFieldCapabilities(m *emu.Emu, romData []byte, policy MovePolicy, requ
 func RepairOwnedCoreFieldCapabilities(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	return RepairFieldCapabilities(m, romData, policy, OwnedCoreProgressionFieldMoves(&mem))
+	return RepairFieldCapabilities(m, romData, policy, OwnedCoreProgressionFieldMoves(&mem, ram(m)))
 }

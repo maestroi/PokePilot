@@ -16,9 +16,7 @@ import (
 //	+10 grass tile
 //	+11 animation
 const (
-	tilesetsBank    uint8  = 0x03
-	tilesetsAddr    uint16 = 0x47BE
-	tilesetEntryLen        = 12
+	tilesetEntryLen = 12
 
 	// TilePairCollisionsLand (pokered.sym: 00:0c7e) is a bank-0 table of
 	// 3-byte {tileset, tileA, tileB} entries terminated by 0xff. The game
@@ -78,6 +76,11 @@ type Grid struct {
 	// counterTiles are this map's tileset's 3 counter-tile ids (tileset
 	// entry +7..+9), 0xff where unused. See IsCounterTile.
 	counterTiles [3]uint8
+	// tables selects the ROM map/tileset table addresses. Gen I games share
+	// one header and tileset format and differ only in these addresses; Red
+	// is the default so existing callers are unchanged, and Yellow supplies
+	// its own via BuildForTables. Zero value behaves as RedTables.
+	tables rom.Tables
 }
 
 // Passable reports whether a step from (fx,fy) to (tx,ty) is one the game
@@ -210,14 +213,24 @@ func bankedOffset(bank uint8, addr uint16) (int, error) {
 // block map. Runtime navigation should use BuildFromBlocks with the current
 // block IDs when map scripts may have replaced blocks after load.
 func Build(romData []byte, h rom.MapHeader) (*Grid, error) {
+	return BuildForTables(rom.RedTables(), romData, h)
+}
+
+// BuildForTables is Build with an explicit set of ROM table addresses. Gen I
+// games share one map/tileset format and differ only in these addresses, so
+// Yellow passes its own while Red keeps the default.
+func BuildForTables(tables rom.Tables, romData []byte, h rom.MapHeader) (*Grid, error) {
+	if tables.IsZero() {
+		tables = rom.RedTables()
+	}
 	if h.WidthBlocks == 0 || h.HeightBlocks == 0 {
-		return BuildFromBlocks(romData, h, nil)
+		return BuildFromBlocksForTables(tables, romData, h, nil, TraversalLand)
 	}
 	blocks, err := rom.Blocks(romData, h)
 	if err != nil {
 		return nil, err
 	}
-	return BuildFromBlocks(romData, h, blocks)
+	return BuildFromBlocksForTables(tables, romData, h, blocks, TraversalLand)
 }
 
 // BuildFromBlocks constructs the collision grid for h using the supplied
@@ -226,13 +239,23 @@ func Build(romData []byte, h rom.MapHeader) (*Grid, error) {
 // wOverworldMap buffer, so script-driven ReplaceTileBlock changes get exactly
 // the same collision/field-tile semantics as ordinary ROM geometry.
 func BuildFromBlocks(romData []byte, h rom.MapHeader, blocks []byte) (*Grid, error) {
-	return BuildFromBlocksForTraversal(romData, h, blocks, TraversalLand)
+	return BuildFromBlocksForTables(rom.RedTables(), romData, h, blocks, TraversalLand)
 }
 
 // BuildFromBlocksForTraversal decodes h with the movement-mode-specific
 // tile-pair collision table. It is used by live navigation after Surf changes
 // wWalkBikeSurfState; static graph construction intentionally stays on land.
 func BuildFromBlocksForTraversal(romData []byte, h rom.MapHeader, blocks []byte, mode TraversalMode) (*Grid, error) {
+	return BuildFromBlocksForTables(rom.RedTables(), romData, h, blocks, mode)
+}
+
+// BuildFromBlocksForTables is BuildFromBlocksForTraversal with an explicit set
+// of ROM table addresses, so a Gen I game other than Red decodes with its own
+// tileset table.
+func BuildFromBlocksForTables(tables rom.Tables, romData []byte, h rom.MapHeader, blocks []byte, mode TraversalMode) (*Grid, error) {
+	if tables.IsZero() {
+		tables = rom.RedTables()
+	}
 	width := int(h.WidthBlocks) * 2
 	height := int(h.HeightBlocks) * 2
 	g := &Grid{
@@ -244,6 +267,7 @@ func BuildFromBlocksForTraversal(romData []byte, h rom.MapHeader, blocks []byte,
 		fieldTile:     make([]uint8, width*height),
 		tilePairs:     tilePairsForTraversal(romData, h.Tileset, mode),
 		ledges:        rom.Ledges(romData, h.Tileset),
+		tables:        tables,
 	}
 	if width == 0 || height == 0 {
 		return g, nil
@@ -256,7 +280,7 @@ func BuildFromBlocksForTraversal(romData []byte, h rom.MapHeader, blocks []byte,
 	blocks = blocks[:wantBlocks]
 
 	// Look up the map's tileset entry.
-	tsOff, err := bankedOffset(tilesetsBank, tilesetsAddr)
+	tsOff, err := bankedOffset(g.tables.TilesetsBank, g.tables.TilesetsAddr)
 	if err != nil {
 		return nil, fmt.Errorf("map %d: %v", h.ID, err)
 	}
@@ -269,11 +293,18 @@ func BuildFromBlocksForTraversal(romData []byte, h rom.MapHeader, blocks []byte,
 	collPtr := uint16(romData[entryOff+5]) | uint16(romData[entryOff+6])<<8
 	g.counterTiles = [3]uint8{romData[entryOff+7], romData[entryOff+8], romData[entryOff+9]}
 
-	// Read the tileset's walkable-tile list. The list lives in bank 0 (the
-	// Home section); the game dereferences it with no bank switch.
-	collBank := uint8(0)
-	if collPtr >= 0x4000 {
-		collBank = tsBank
+	// Read the tileset's walkable-tile list. The game dereferences this
+	// pointer with no bank switch (_IsTilePassable loads it straight into
+	// hl), so the list must already be in the mapped bank. In Red the lists
+	// are assembled into bank 0 and every pointer is below 0x4000, which the
+	// CPU maps to ROM bank 0 unconditionally. Yellow moved them into bank 1
+	// (Overworld_Coll 01:4AC2 vs Red's 00:1735) so its pointers are >= 0x4000
+	// and the bank is a build-layout fact the pointer cannot reveal: it is
+	// NOT the tileset bank. Tables carries it; a pointer below 0x4000 stays
+	// bank 0 in both games.
+	collBank := g.tables.CollisionListBank
+	if collPtr < 0x4000 {
+		collBank = 0
 	}
 	collOff, err := bankedOffset(collBank, collPtr)
 	if err != nil {

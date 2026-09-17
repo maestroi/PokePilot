@@ -5,9 +5,7 @@ import (
 	"strings"
 
 	"github.com/maestroi/pokepilot/emu"
-	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
 )
 
@@ -32,8 +30,8 @@ func monKnowsMove(mon state.Mon, move uint8) bool {
 	return false
 }
 
-func partyMoveSlot(mem *state.Mem, move uint8) int {
-	for i, mon := range state.DecodeParty(mem).Mons {
+func partyMoveSlot(mem *state.Mem, move uint8, a wramAddresses) int {
+	for i, mon := range a.DecodeParty(mem).Mons {
 		if monKnowsMove(mon, move) {
 			return i
 		}
@@ -50,18 +48,18 @@ func cutScreenHas(m *emu.Emu, marker string) bool {
 func tmhmPartyMenuUp(m *emu.Emu) bool   { return cutScreenHas(m, "Use TM") }
 func normalPartyMenuUp(m *emu.Emu) bool { return cutScreenHas(m, "Choose") }
 func fieldMoveMenuUp(m *emu.Emu) bool {
-	return cutScreenHas(m, "STATS") && m.Peek8(sym.FieldMoves) != 0
+	return cutScreenHas(m, "STATS") && m.Peek8(ram(m).FieldMoves) != 0
 }
 
 func movePartyCursor(m *emu.Emu, index int) error {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	count := int(state.DecodeParty(&mem).Count)
+	count := int(ram(m).DecodeParty(&mem).Count)
 	if index < 0 || index >= count {
 		return fmt.Errorf("skill: party slot %d out of range for party of %d", index, count)
 	}
 	for i := 0; i < 60; i++ {
-		cur := int(m.Peek8(sym.CurrentMenuItem))
+		cur := int(m.Peek8(ram(m).CurrentMenuItem))
 		if cur == index {
 			return nil
 		}
@@ -71,10 +69,10 @@ func movePartyCursor(m *emu.Emu, index int) error {
 		}
 		m.Tap(btn, 3, 7)
 		_, _ = m.StepUntil(menuSettleFrames, func(m *emu.Emu) bool {
-			return int(m.Peek8(sym.CurrentMenuItem)) != cur
+			return int(m.Peek8(ram(m).CurrentMenuItem)) != cur
 		})
 	}
-	return fmt.Errorf("skill: party cursor at %d, want %d", m.Peek8(sym.CurrentMenuItem), index)
+	return fmt.Errorf("skill: party cursor at %d, want %d", m.Peek8(ram(m).CurrentMenuItem), index)
 }
 
 func selectTMHMPartySlot(m *emu.Emu, index int) error {
@@ -116,7 +114,7 @@ func closeToOverworld(m *emu.Emu) error {
 	var mem state.Mem
 	for i := 0; i < 80; i++ {
 		state.Snapshot(m, &mem)
-		if state.Controllable(&mem) && mem.U8(sym.FontLoaded) == 0 {
+		if ram(m).Controllable(&mem) && mem.U8(ram(m).FontLoaded) == 0 {
 			return nil
 		}
 		m.Tap(emu.B, 3, 7)
@@ -142,7 +140,7 @@ func finishTeachingCut(m *emu.Emu, slot int, before [4]uint8) (bool, error) {
 	var mem state.Mem
 	for frames := 0; frames < cutMenuBudget; frames += 20 {
 		state.Snapshot(m, &mem)
-		if partyMoveSlot(&mem, cutMove) == slot {
+		if partyMoveSlot(&mem, cutMove, ram(m)) == slot {
 			return true, nil
 		}
 		text := state.ScreenText(&mem)
@@ -167,7 +165,7 @@ func finishTeachingCut(m *emu.Emu, slot int, before [4]uint8) (bool, error) {
 			}
 			lastForget = pick
 		case strings.Contains(text, "trying to learn"):
-			if state.DecodeTwoOptionMenu(&mem) != nil {
+			if ram(m).DecodeTwoOptionMenu(&mem) != nil {
 				if err := SelectMenuItem(m, 0); err != nil {
 					return false, fmt.Errorf("skill: TeachCut: answer replace-move prompt: %w", err)
 				}
@@ -225,8 +223,8 @@ func reachableBeside(grid *world.Grid, sx, sy, tx, ty int, blocked map[[2]int]bo
 }
 
 func EnterVermilionGym(m *emu.Emu, romData []byte, policy MovePolicy) error {
-	if m.Peek8(sym.CurMap) != vermilionCity {
-		return fmt.Errorf("skill: EnterVermilionGym: on map %#04x, want %#04x", m.Peek8(sym.CurMap), vermilionCity)
+	if m.Peek8(ram(m).CurMap) != vermilionCity {
+		return fmt.Errorf("skill: EnterVermilionGym: on map %#04x, want %#04x", m.Peek8(ram(m).CurMap), vermilionCity)
 	}
 	if policy == nil {
 		return fmt.Errorf("skill: EnterVermilionGym: nil policy")
@@ -235,11 +233,11 @@ func EnterVermilionGym(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		return fmt.Errorf("skill: EnterVermilionGym: prepare Cut carrier: %w", err)
 	}
 
-	h, err := rom.ParseMap(romData, vermilionCity)
+	h, err := graphForROM(romData).ParseMap(romData, vermilionCity)
 	if err != nil {
 		return fmt.Errorf("skill: EnterVermilionGym: parse city: %w", err)
 	}
-	grid, err := world.Build(romData, h)
+	grid, err := world.BuildForTables(graphForROM(romData), romData, h)
 	if err != nil {
 		return fmt.Errorf("skill: EnterVermilionGym: build city: %w", err)
 	}
@@ -259,7 +257,7 @@ func findVermilionGymTree(m *emu.Emu, romData []byte, grid *world.Grid, policy M
 	sx, sy := playerXY(m)
 	for _, c := range routeCutCandidates(grid, overworldTileset, int(sx), int(sy)) {
 		sx, sy = playerXY(m)
-		stand, ok := reachableBeside(grid, int(sx), int(sy), c.x, c.y, spriteBlockers(m))
+		stand, ok := reachableBeside(grid, int(sx), int(sy), c.x, c.y, spriteBlockers(m, m.ROM()))
 		if !ok {
 			continue
 		}
@@ -286,7 +284,7 @@ func crossVermilionGymDoor(m *emu.Emu, grid *world.Grid) error {
 		if !grid.InBounds(x, y) || !grid.Walkable(x, y) {
 			continue
 		}
-		p, err := world.FindPath(grid, int(sx), int(sy), x, y, spriteBlockers(m))
+		p, err := world.FindPath(grid, int(sx), int(sy), x, y, spriteBlockers(m, m.ROM()))
 		if err == nil && (best == nil || len(p) < len(best)) {
 			best, push = p, world.Step{DX: -s.DX, DY: -s.DY}
 		}
@@ -304,21 +302,21 @@ func crossVermilionGymDoor(m *emu.Emu, grid *world.Grid) error {
 	m.Press(btn)
 	crossed := false
 	for i := 0; i < crossBudget; i++ {
-		if m.Peek8(sym.CurMap) != vermilionCity {
+		if m.Peek8(ram(m).CurMap) != vermilionCity {
 			crossed = true
 			break
 		}
 		m.StepFrame()
 	}
 	m.Release(btn)
-	if !crossed || m.Peek8(sym.CurMap) != vermilionGymMap {
+	if !crossed || m.Peek8(ram(m).CurMap) != vermilionGymMap {
 		x, y := playerXY(m)
-		return fmt.Errorf("skill: EnterVermilionGym: door did not enter gym; map=%#04x at (%d,%d)", m.Peek8(sym.CurMap), x, y)
+		return fmt.Errorf("skill: EnterVermilionGym: door did not enter gym; map=%#04x at (%d,%d)", m.Peek8(ram(m).CurMap), x, y)
 	}
 	if _, err := m.StepUntil(arriveBudget, func(m *emu.Emu) bool {
 		var s state.Mem
 		state.Snapshot(m, &s)
-		return state.Controllable(&s)
+		return ram(m).Controllable(&s)
 	}); err != nil {
 		return fmt.Errorf("skill: EnterVermilionGym: gym loaded but player did not become controllable")
 	}

@@ -182,6 +182,7 @@ func handlerWithServices(wallBase, replayBase, token string) http.Handler {
 			"spectator_url": strings.TrimRight(strings.TrimSpace(os.Getenv("POKEPILOT_SPECTATOR_URL")), "/"),
 		}) //nolint:errcheck
 	})
+	mux.HandleFunc("GET /openapi.json", serveOperatorOpenAPI)
 	mux.HandleFunc("GET /v1/dashboard", proxy(wallBase, true))
 	mux.HandleFunc("GET /v1/stats", outcomesStatsHandler(wallBase))
 	mux.HandleFunc("GET /v1/triage", proxy(wallBase, true))

@@ -228,7 +228,7 @@ func settleObjectivePostcondition(m *emu.Emu, o Objective) error {
 	ready := func(em *emu.Emu) bool {
 		var mem state.Mem
 		state.Snapshot(em, &mem)
-		return state.Controllable(&mem) && state.DecodeBattle(&mem) == nil
+		return skill.AddressesFor(m).Controllable(&mem) && skill.AddressesFor(m).DecodeBattle(&mem) == nil
 	}
 	if ready(m) {
 		return nil

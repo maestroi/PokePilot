@@ -5,7 +5,6 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 )
 
 // GymInfo is what Gym needs to fight one gym: where the leader stands,
@@ -20,6 +19,11 @@ type GymInfo struct {
 	LeaderY uint8
 	Badge   state.Badge // the bit of wObtainedBadges a win sets
 	Leader  string      // for logs and errors; never parsed
+	// HealPlace is the city Pokemon Center place a depleted party returns to
+	// before the leader battle, because the approach's trainer gauntlet sits
+	// between any pre-gym heal and the leader. Empty means the caller's
+	// pre-gym heal is the only recovery this challenge gets.
+	HealPlace string
 }
 
 var (
@@ -40,7 +44,7 @@ var gyms = map[uint8]GymInfo{
 	0x41: mistyGym, // Cerulean Gym: already inside
 	0x05: surgeGym, // Vermilion City: exterior Cut prerequisite
 	0x5C: surgeGym, // Vermilion Gym: already inside
-	0x9D: {Map: 0x9D, Place: "fuchsia gym", LeaderX: 4, LeaderY: 10, Badge: state.BadgeSoul, Leader: "KOGA"},
+	0x9D: {Map: 0x9D, Place: "fuchsia gym", LeaderX: 4, LeaderY: 10, Badge: state.BadgeSoul, Leader: "KOGA", HealPlace: "fuchsia pokemon center"},
 }
 
 // GymAt reports the gym challenge available from a map, if there is one.
@@ -88,7 +92,7 @@ func Gym(m *emu.Emu, romData []byte, policy MovePolicy) (state.BattleResult, err
 	if policy == nil {
 		return 0, fmt.Errorf("skill: Gym: nil policy")
 	}
-	cur := m.Peek8(sym.CurMap)
+	cur := m.Peek8(ram(m).CurMap)
 	g, ok := GymAt(cur)
 	if !ok {
 		return 0, fmt.Errorf("skill: Gym: map %#04x has no gym challenge this run can execute", cur)
@@ -102,13 +106,13 @@ func Gym(m *emu.Emu, romData []byte, policy MovePolicy) (state.BattleResult, err
 		if err := enterVermilionGymViaRouteGate(m, romData, policy); err != nil {
 			return 0, fmt.Errorf("skill: Gym: reach %s: %w", g.Leader, err)
 		}
-		cur = m.Peek8(sym.CurMap)
+		cur = m.Peek8(ram(m).CurMap)
 	}
 	if cur == viridianCityMap {
 		if err := EnterViridianGym(m, romData, policy); err != nil {
 			return 0, fmt.Errorf("skill: Gym: reach %s: %w", g.Leader, err)
 		}
-		cur = m.Peek8(sym.CurMap)
+		cur = m.Peek8(ram(m).CurMap)
 	}
 
 	var (
@@ -143,6 +147,22 @@ func Gym(m *emu.Emu, romData []byte, policy MovePolicy) (state.BattleResult, err
 	if res.BlackedOut {
 		return 0, fmt.Errorf("skill: Gym: %w approaching %s (%d battles)", ErrBlackedOut, g.Leader, res.Battles)
 	}
+
+	// The approach's trainer gauntlet sits between any pre-gym heal and the
+	// leader. Fuchsia's six trainers through the invisible maze took a
+	// Venusaur from full to 41/153 HP before Koga
+	// (run-3bnej6i2rtpct1rjr9hm0trdpy round 1) and the leader battle was
+	// lost, so Gym owns handing the leader a party at full strength. The
+	// trainers the approach just defeated stay defeated, which bounds the
+	// out-and-back to a walk; a gym with no registered HealPlace keeps the
+	// caller-heals-before-entry contract it already satisfied.
+	var pre state.Mem
+	state.Snapshot(m, &pre)
+	if g.HealPlace != "" && !allPartyCenterRecovered(&pre, ram(m)) {
+		if err := healBeforeLeader(m, romData, g, dest, policy); err != nil {
+			return 0, fmt.Errorf("skill: Gym: %w before %s", err, g.Leader)
+		}
+	}
 	// The Viridian spinner planner already ends on a verified tile beside
 	// Giovanni. Running ordinary Travel again here could step onto another
 	// forced arrow tile and invalidate that postcondition.
@@ -156,13 +176,13 @@ func Gym(m *emu.Emu, romData []byte, policy MovePolicy) (state.BattleResult, err
 	}
 
 	m.Tap(emu.A, 3, 7)
-	mem := advanceUntil(m, gymBattleWaitBudget, func(mm *state.Mem) bool {
-		return state.DecodeBattle(mm) != nil
+	mem := advanceUntil(m, ram(m), gymBattleWaitBudget, func(mm *state.Mem, a wramAddresses) bool {
+		return ram(m).DecodeBattle(mm) != nil
 	})
-	if state.DecodeBattle(&mem) == nil {
+	if ram(m).DecodeBattle(&mem) == nil {
 		return 0, fmt.Errorf("skill: Gym: battle with %s did not start after the leader dialogue: map=%#04x at (%d,%d) wJoyIgnore=%#04x wFontLoaded=%#04x",
-			g.Leader, mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord),
-			mem.U8(sym.JoyIgnore), mem.U8(sym.FontLoaded))
+			g.Leader, mem.U8(ram(m).CurMap), mem.U8(ram(m).XCoord), mem.U8(ram(m).YCoord),
+			mem.U8(ram(m).JoyIgnore), mem.U8(ram(m).FontLoaded))
 	}
 
 	outcome, err := Battle(m, policy)
@@ -171,27 +191,67 @@ func Gym(m *emu.Emu, romData []byte, policy MovePolicy) (state.BattleResult, err
 	}
 
 	if outcome == state.ResultWon {
-		mem = advanceUntil(m, gymPostBattleBudget, func(mm *state.Mem) bool {
-			return state.DecodeProgress(mm).Has(g.Badge)
+		mem = advanceUntil(m, ram(m), gymPostBattleBudget, func(mm *state.Mem, a wramAddresses) bool {
+			return ram(m).DecodeProgress(mm).Has(g.Badge)
 		})
-		if !state.DecodeProgress(&mem).Has(g.Badge) {
+		if !ram(m).DecodeProgress(&mem).Has(g.Badge) {
 			return outcome, fmt.Errorf("skill: Gym: %s badge not set %d frames after beating %s: map=%#04x at (%d,%d) wJoyIgnore=%#04x wFontLoaded=%#04x",
-				g.Badge, gymPostBattleBudget, g.Leader, mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord),
-				mem.U8(sym.JoyIgnore), mem.U8(sym.FontLoaded))
+				g.Badge, gymPostBattleBudget, g.Leader, mem.U8(ram(m).CurMap), mem.U8(ram(m).XCoord), mem.U8(ram(m).YCoord),
+				mem.U8(ram(m).JoyIgnore), mem.U8(ram(m).FontLoaded))
 		}
 	}
 
-	mem = advanceUntil(m, gymPostBattleBudget, func(mm *state.Mem) bool {
-		return state.Controllable(mm)
+	mem = advanceUntil(m, ram(m), gymPostBattleBudget, func(mm *state.Mem, a wramAddresses) bool {
+		return ram(m).Controllable(mm)
 	})
-	if !state.Controllable(&mem) {
+	if !ram(m).Controllable(&mem) {
 		what := "win"
 		if outcome != state.ResultWon {
 			what = "lost"
 		}
 		return outcome, fmt.Errorf("skill: Gym: not controllable %d frames after the %s battle: map=%#04x at (%d,%d) wJoyIgnore=%#04x wFontLoaded=%#04x",
-			gymPostBattleBudget, what, mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord),
-			mem.U8(sym.JoyIgnore), mem.U8(sym.FontLoaded))
+			gymPostBattleBudget, what, mem.U8(ram(m).CurMap), mem.U8(ram(m).XCoord), mem.U8(ram(m).YCoord),
+			mem.U8(ram(m).JoyIgnore), mem.U8(ram(m).FontLoaded))
 	}
 	return outcome, nil
+}
+
+// healBeforeLeader restores the party at the gym's city Pokemon Center and
+// returns to the leader's stand tile. Gym calls this once, after its approach
+// travel has cleared the gym's trainers, so the out-and-back re-fights
+// nobody. The positive postcondition is a party at full strength standing
+// back on the gym's stand tile; anything less is reported rather than
+// quietly handed to the leader.
+func healBeforeLeader(m *emu.Emu, romData []byte, g GymInfo, dest Destination, policy MovePolicy) error {
+	center, ok := Place(g.HealPlace)
+	if !ok {
+		return fmt.Errorf("skill: Gym: heal place %q missing", g.HealPlace)
+	}
+	toCenter, err := Travel(m, romData, center, policy, 30)
+	if err != nil {
+		return fmt.Errorf("reach %s: %w", g.HealPlace, err)
+	}
+	if toCenter.BlackedOut {
+		return fmt.Errorf("%w reaching %s", ErrBlackedOut, g.HealPlace)
+	}
+	if err := Heal(m); err != nil {
+		return fmt.Errorf("heal at %s: %w", g.HealPlace, err)
+	}
+	back, err := Travel(m, romData, dest, policy, 30)
+	if err != nil {
+		return fmt.Errorf("return to %s: %w", g.Place, err)
+	}
+	if back.BlackedOut {
+		return fmt.Errorf("%w returning to %s", ErrBlackedOut, g.Place)
+	}
+	var after state.Mem
+	state.Snapshot(m, &after)
+	if m.Peek8(ram(m).CurMap) != dest.Map {
+		return fmt.Errorf("skill: Gym: after %s the player is on map %#04x, want the gym map %#04x",
+			g.HealPlace, m.Peek8(ram(m).CurMap), dest.Map)
+	}
+	if !allPartyCenterRecovered(&after, ram(m)) {
+		return fmt.Errorf("skill: Gym: party is not at full strength after %s", g.HealPlace)
+	}
+	return nil
 }

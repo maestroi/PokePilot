@@ -67,10 +67,10 @@ func ReviveFossil(m *emu.Emu, romData []byte, species uint8, policy MovePolicy) 
 
 	var before state.Mem
 	state.Snapshot(m, &before)
-	if giftPokemonAlreadyOwned(&before, romData, species) {
+	if giftPokemonAlreadyOwned(&before, romData, species, ram(m)) {
 		return CatchResult{Outcome: OutcomeCaught, Species: species}, nil
 	}
-	beforeItem := bagCount(state.DecodeInventory(&before).Items, item)
+	beforeItem := bagCount(ram(m).DecodeInventory(&before).Items, item)
 	if beforeItem <= 0 {
 		return CatchResult{}, fmt.Errorf("skill: ReviveFossil: required fossil item %#02x is not in the bag", item)
 	}
@@ -108,7 +108,7 @@ func ReviveFossil(m *emu.Emu, romData []byte, species uint8, policy MovePolicy) 
 
 	var handed state.Mem
 	state.Snapshot(m, &handed)
-	afterItem := bagCount(state.DecodeInventory(&handed).Items, item)
+	afterItem := bagCount(ram(m).DecodeInventory(&handed).Items, item)
 	if afterItem != beforeItem-1 {
 		return CatchResult{}, fmt.Errorf("skill: ReviveFossil: fossil item %#02x count was %d before and %d after handoff", item, beforeItem, afterItem)
 	}
@@ -138,7 +138,7 @@ func ReviveFossil(m *emu.Emu, romData []byte, species uint8, policy MovePolicy) 
 func fossilFilteredMenuIndex(m *emu.Emu, want uint8) (int, error) {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	items := state.DecodeInventory(&mem).Items
+	items := ram(m).DecodeInventory(&mem).Items
 	index := 0
 	for _, item := range []uint8{domeFossilItem, helixFossilItem, oldAmberItem} {
 		if bagCount(items, item) <= 0 {

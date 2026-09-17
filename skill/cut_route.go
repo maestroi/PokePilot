@@ -6,9 +6,7 @@ import (
 	"sort"
 
 	"github.com/maestroi/pokepilot/emu"
-	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
 )
 
@@ -55,9 +53,9 @@ func cellCutRouteTile(grid *world.Grid, tileset uint8, x, y int) bool {
 // learned Cut + Cascade Badge is immediately usable. An owned HM is only
 // enough when the generic TM/HM policy can actually teach it to the current
 // party; HM01 in the bag by itself is deliberately not a capability.
-func cutCapabilityRecoverable(romData []byte, mem *state.Mem) bool {
-	cap := FieldCapabilityFor(mem, FieldCut)
-	return cap.Usable || CanPrepareFieldMove(romData, mem, FieldCut)
+func cutCapabilityRecoverable(romData []byte, mem *state.Mem, a wramAddresses) bool {
+	cap := FieldCapabilityFor(mem, FieldCut, a)
+	return cap.Usable || CanPrepareFieldMove(romData, mem, FieldCut, a)
 }
 
 func routeCutCandidates(grid *world.Grid, tileset uint8, sx, sy int) []routeCutCandidate {
@@ -107,13 +105,13 @@ func buttonForFacing(f state.Facing) (emu.Button, bool) {
 func observeFrontTile(m *emu.Emu) uint8 {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	btn, ok := buttonForFacing(state.DecodePlayer(&mem).Facing)
+	btn, ok := buttonForFacing(ram(m).DecodePlayer(&mem).Facing)
 	if !ok {
-		return m.Peek8(sym.TileInFrontOfPlayer)
+		return m.Peek8(ram(m).TileInFrontOfPlayer)
 	}
 	m.Tap(btn, 3, 7)
 	m.StepFrames(8)
-	return m.Peek8(sym.TileInFrontOfPlayer)
+	return m.Peek8(ram(m).TileInFrontOfPlayer)
 }
 
 func reachableBesideOnMap(grid *world.Grid, mapID uint8, sx, sy, tx, ty int, blocked map[[2]int]bool) (Destination, bool) {
@@ -149,15 +147,15 @@ func reachableBesideOnMap(grid *world.Grid, mapID uint8, sx, sy, tx, ty int, blo
 func cutThroughReachableTree(m *emu.Emu, romData []byte) (bool, error) {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if !cutCapabilityRecoverable(romData, &mem) {
+	if !cutCapabilityRecoverable(romData, &mem, ram(m)) {
 		return false, nil
 	}
-	cur := mem.U8(sym.CurMap)
-	h, err := rom.ParseMap(romData, cur)
+	cur := mem.U8(ram(m).CurMap)
+	h, err := graphForROM(romData).ParseMap(romData, cur)
 	if err != nil {
 		return false, fmt.Errorf("skill: cut route: parse map %02x: %w", cur, err)
 	}
-	grid, err := world.Build(romData, h)
+	grid, err := world.BuildForTables(graphForROM(romData), romData, h)
 	if err != nil {
 		return false, fmt.Errorf("skill: cut route: build map %02x: %w", cur, err)
 	}
@@ -165,7 +163,7 @@ func cutThroughReachableTree(m *emu.Emu, romData []byte) (bool, error) {
 	sx, sy := playerXY(m)
 	for _, c := range routeCutCandidates(grid, h.Tileset, int(sx), int(sy)) {
 		sx, sy = playerXY(m)
-		stand, ok := reachableBesideOnMap(grid, cur, int(sx), int(sy), c.x, c.y, spriteBlockers(m))
+		stand, ok := reachableBesideOnMap(grid, cur, int(sx), int(sy), c.x, c.y, spriteBlockers(m, m.ROM()))
 		if !ok {
 			continue
 		}

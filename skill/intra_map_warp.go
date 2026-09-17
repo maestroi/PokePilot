@@ -7,7 +7,6 @@ import (
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
 )
 
@@ -28,7 +27,7 @@ func travelIntraMapWarpMaze(m *emu.Emu, romData []byte, dest Destination, policy
 	return travel(m, policy, maxBattles,
 		func() error { return goToIntraMapWarpMaze(m, romData, dest) },
 		func() DialogueRecoveryResult { return RecoverDialogue(m, dialogueRecoveryBudget) },
-		func() bool { return m.Peek8(sym.StatusFlags4)&blackoutBit != 0 },
+		func() bool { return m.Peek8(ram(m).StatusFlags4)&blackoutBit != 0 },
 		fightOnly(m, policy),
 	)
 }
@@ -38,12 +37,12 @@ func travelIntraMapWarpMaze(m *emu.Emu, romData []byte, dest Destination, policy
 // already knows which warp lands in which disconnected room; after every pad
 // we throw away the rest of the route and plan again from the live coordinate.
 func goToIntraMapWarpMaze(m *emu.Emu, romData []byte, dest Destination) error {
-	g, err := world.BuildGraph(romData)
+	g, err := cachedRouteGraph(romData)
 	if err != nil {
 		return err
 	}
 	startX, startY := playerXY(m)
-	start := navigationState{Map: m.Peek8(sym.CurMap), X: startX, Y: startY}
+	start := navigationState{Map: m.Peek8(ram(m).CurMap), X: startX, Y: startY}
 	if start.Map != dest.Map {
 		return fmt.Errorf("skill: intra-map warp maze starts on map %02x, destination is map %02x", start.Map, dest.Map)
 	}
@@ -56,13 +55,13 @@ func goToIntraMapWarpMaze(m *emu.Emu, romData []byte, dest Destination) error {
 		if err := waitOutScriptedMovement(m); err != nil {
 			return err
 		}
-		cur := m.Peek8(sym.CurMap)
+		cur := m.Peek8(ram(m).CurMap)
 		x, y := playerXY(m)
 		if cur != dest.Map {
 			return fmt.Errorf("skill: intra-map warp maze unexpectedly left map %02x for %02x at (%d,%d)", dest.Map, cur, x, y)
 		}
 
-		h, err := rom.ParseMap(romData, cur)
+		h, err := graphForROM(romData).ParseMap(romData, cur)
 		if err != nil {
 			return fmt.Errorf("skill: intra-map warp maze parse map %02x: %w", cur, err)
 		}
@@ -94,7 +93,7 @@ func goToIntraMapWarpMaze(m *emu.Emu, romData []byte, dest Destination) error {
 		}
 
 		nowX, nowY := playerXY(m)
-		if err := guard.observe(navigationState{Map: m.Peek8(sym.CurMap), X: nowX, Y: nowY}); err != nil {
+		if err := guard.observe(navigationState{Map: m.Peek8(ram(m).CurMap), X: nowX, Y: nowY}); err != nil {
 			return fmt.Errorf("skill: intra-map warp maze: %w", err)
 		}
 	}
@@ -132,12 +131,12 @@ func intraMapWarpDestination(h rom.MapHeader, e world.Edge) (uint8, uint8, error
 // that can never happen here, so this variant verifies the exact destination
 // warp coordinate, then waits for the teleport animation to return control.
 func traverseIntraMapWarp(m *emu.Emu, romData []byte, e world.Edge) error {
-	cur := m.Peek8(sym.CurMap)
+	cur := m.Peek8(ram(m).CurMap)
 	if cur != e.From || e.From != e.To || e.Kind != world.EdgeWarp {
 		return fmt.Errorf("skill: traverseIntraMapWarp: invalid edge %s from current map %02x", edgeName(e), cur)
 	}
 
-	h, err := rom.ParseMap(romData, e.From)
+	h, err := graphForROM(romData).ParseMap(romData, e.From)
 	if err != nil {
 		return fmt.Errorf("skill: traverseIntraMapWarp: parse map %02x: %w", e.From, err)
 	}
@@ -183,7 +182,7 @@ func traverseIntraMapWarp(m *emu.Emu, romData []byte, e world.Edge) error {
 	m.Press(btn)
 	crossed := false
 	for i := 0; i < intraMapWarpCrossBudget; i++ {
-		if got := m.Peek8(sym.CurMap); got != e.To {
+		if got := m.Peek8(ram(m).CurMap); got != e.To {
 			m.Release(btn)
 			return fmt.Errorf("skill: traverseIntraMapWarp: warp %s unexpectedly changed map to %02x", edgeName(e), got)
 		}
@@ -192,7 +191,7 @@ func traverseIntraMapWarp(m *emu.Emu, romData []byte, e world.Edge) error {
 			crossed = true
 			break
 		}
-		if m.Peek8(sym.IsInBattle) != 0 {
+		if m.Peek8(ram(m).IsInBattle) != 0 {
 			m.Release(btn)
 			return fmt.Errorf("skill: traverseIntraMapWarp: battle while entering pad on map %02x: %w", e.From, ErrBattle)
 		}
@@ -208,14 +207,14 @@ func traverseIntraMapWarp(m *emu.Emu, romData []byte, e world.Edge) error {
 	if _, err := m.StepUntil(arriveBudget, func(m *emu.Emu) bool {
 		var mem state.Mem
 		state.Snapshot(m, &mem)
-		return state.Controllable(&mem)
+		return ram(m).Controllable(&mem)
 	}); err != nil {
 		return fmt.Errorf("skill: traverseIntraMapWarp: player not controllable after landing on (%d,%d): %w", targetX, targetY, err)
 	}
 	if err := waitForPositionStable(m, positionStableBudget, positionStableFrames); err != nil {
 		return fmt.Errorf("skill: traverseIntraMapWarp: %w", err)
 	}
-	if got := m.Peek8(sym.CurMap); got != e.To {
+	if got := m.Peek8(ram(m).CurMap); got != e.To {
 		return fmt.Errorf("skill: traverseIntraMapWarp: settled on map %02x, want %02x", got, e.To)
 	}
 	x, y := playerXY(m)

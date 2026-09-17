@@ -5,7 +5,6 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 )
 
 // Gen 1 item IDs from pokered/constants/item_constants.asm. The automatic
@@ -59,12 +58,12 @@ var hpMedicines = []hpMedicine{
 // active mon. HP medicine is considered only at one-third HP or below;
 // status medicine is considered whenever a matching cure exists. When both
 // apply, FULL RESTORE resolves them in one turn if available.
-func chooseBattleMedicine(mem *state.Mem) (battleMedicineChoice, bool) {
-	if state.DecodeBattle(mem) == nil {
+func chooseBattleMedicine(mem *state.Mem, a wramAddresses) (battleMedicineChoice, bool) {
+	if a.DecodeBattle(mem) == nil {
 		return battleMedicineChoice{}, false
 	}
-	party := state.DecodeParty(mem)
-	slot := int(mem.U8(sym.PlayerMonNumber))
+	party := a.DecodeParty(mem)
+	slot := int(mem.U8(a.PlayerMonNumber))
 	if slot < 0 || slot >= len(party.Mons) {
 		return battleMedicineChoice{}, false
 	}
@@ -75,7 +74,7 @@ func chooseBattleMedicine(mem *state.Mem) (battleMedicineChoice, bool) {
 
 	lowHP := mon.HP*3 <= mon.MaxHP
 	status := mon.StatusName()
-	if lowHP && status != "" && bagHasItem(mem, itemFullRestore) {
+	if lowHP && status != "" && bagHasItem(mem, itemFullRestore, a) {
 		return battleMedicineChoice{
 			Item:   itemFullRestore,
 			Slot:   slot,
@@ -83,7 +82,7 @@ func chooseBattleMedicine(mem *state.Mem) (battleMedicineChoice, bool) {
 		}, true
 	}
 	if lowHP {
-		if item, ok := chooseHPMedicine(mem, int(mon.MaxHP-mon.HP)); ok {
+		if item, ok := chooseHPMedicine(mem, int(mon.MaxHP-mon.HP), a); ok {
 			return battleMedicineChoice{
 				Item:   item,
 				Slot:   slot,
@@ -92,18 +91,18 @@ func chooseBattleMedicine(mem *state.Mem) (battleMedicineChoice, bool) {
 		}
 	}
 	if status != "" {
-		if item, ok := chooseStatusMedicine(mem, status); ok {
+		if item, ok := chooseStatusMedicine(mem, status, a); ok {
 			return battleMedicineChoice{Item: item, Slot: slot, Reason: "active is " + status}, true
 		}
 	}
 	return battleMedicineChoice{}, false
 }
 
-func chooseHPMedicine(mem *state.Mem, missing int) (uint8, bool) {
+func chooseHPMedicine(mem *state.Mem, missing int, a wramAddresses) (uint8, bool) {
 	var strongest uint8
 	found := false
 	for _, med := range hpMedicines {
-		if !bagHasItem(mem, med.item) {
+		if !bagHasItem(mem, med.item, a) {
 			continue
 		}
 		strongest = med.item
@@ -115,7 +114,7 @@ func chooseHPMedicine(mem *state.Mem, missing int) (uint8, bool) {
 	return strongest, found
 }
 
-func chooseStatusMedicine(mem *state.Mem, status string) (uint8, bool) {
+func chooseStatusMedicine(mem *state.Mem, status string, a wramAddresses) (uint8, bool) {
 	var specific uint8
 	switch status {
 	case "poisoned":
@@ -132,23 +131,23 @@ func chooseStatusMedicine(mem *state.Mem, status string) (uint8, bool) {
 		return 0, false
 	}
 	for _, item := range []uint8{specific, itemFullHeal, itemFullRestore} {
-		if bagHasItem(mem, item) {
+		if bagHasItem(mem, item, a) {
 			return item, true
 		}
 	}
 	return 0, false
 }
 
-func bagHasItem(mem *state.Mem, item uint8) bool {
-	_, qty := bagEntry(mem, item)
+func bagHasItem(mem *state.Mem, item uint8, a wramAddresses) bool {
+	_, qty := bagEntry(mem, item, a)
 	return qty > 0
 }
 
 // ppRecoverySlot returns the first live bench mon that has at least one known
 // move with current PP. This is a dead-turn escape, not team strategy.
-func ppRecoverySlot(mem *state.Mem) (int, bool) {
-	party := state.DecodeParty(mem)
-	active := int(mem.U8(sym.PlayerMonNumber))
+func ppRecoverySlot(mem *state.Mem, a wramAddresses) (int, bool) {
+	party := a.DecodeParty(mem)
+	active := int(mem.U8(a.PlayerMonNumber))
 	for slot, mon := range party.Mons {
 		if slot != active && !mon.Fainted() && monHasCurrentPP(mon) {
 			return slot, true
@@ -166,8 +165,8 @@ func monHasCurrentPP(mon state.Mon) bool {
 	return false
 }
 
-func livePartyHasCurrentPP(mem *state.Mem) bool {
-	for _, mon := range state.DecodeParty(mem).Mons {
+func livePartyHasCurrentPP(mem *state.Mem, a wramAddresses) bool {
+	for _, mon := range a.DecodeParty(mem).Mons {
 		if !mon.Fainted() && monHasCurrentPP(mon) {
 			return true
 		}
@@ -183,15 +182,15 @@ func livePartyHasCurrentPP(mem *state.Mem) bool {
 func UseBattleMedicine(m *emu.Emu, item uint8, slot int) error {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if state.DecodeBattle(&mem) == nil {
-		return fmt.Errorf("skill: UseBattleMedicine: no battle in progress on map %#04x", m.Peek8(sym.CurMap))
+	if ram(m).DecodeBattle(&mem) == nil {
+		return fmt.Errorf("skill: UseBattleMedicine: no battle in progress on map %#04x", m.Peek8(ram(m).CurMap))
 	}
-	party := state.DecodeParty(&mem)
+	party := ram(m).DecodeParty(&mem)
 	if slot < 0 || slot >= len(party.Mons) {
 		return fmt.Errorf("skill: UseBattleMedicine: slot %d out of range for a party of %d", slot, len(party.Mons))
 	}
 	beforeMon := party.Mons[slot]
-	idx, beforeQty := bagEntry(&mem, item)
+	idx, beforeQty := bagEntry(&mem, item, ram(m))
 	if idx < 0 || beforeQty < 1 {
 		return fmt.Errorf("skill: UseBattleMedicine: %w (id %#02x)", ErrNotInBag, item)
 	}
@@ -204,11 +203,11 @@ func UseBattleMedicine(m *emu.Emu, item uint8, slot int) error {
 	}
 	m.Tap(emu.A, 3, 7)
 	if _, err := m.StepUntil(bagMenuBudget, func(m *emu.Emu) bool {
-		return m.Peek8(sym.ListMenuID) == itemListMenuID
+		return m.Peek8(ram(m).ListMenuID) == itemListMenuID
 	}); err != nil {
 		state.Snapshot(m, &mem)
 		return fmt.Errorf("skill: UseBattleMedicine: bag list did not open within %d frames: wFontLoaded=%#04x wListMenuID=%#04x",
-			bagMenuBudget, mem.U8(sym.FontLoaded), mem.U8(sym.ListMenuID))
+			bagMenuBudget, mem.U8(ram(m).FontLoaded), mem.U8(ram(m).ListMenuID))
 	}
 	if err := selectBagEntry(m, idx); err != nil {
 		return fmt.Errorf("skill: UseBattleMedicine: %w", err)
@@ -224,27 +223,27 @@ func UseBattleMedicine(m *emu.Emu, item uint8, slot int) error {
 	start := m.FrameCount()
 	for int(m.FrameCount()-start) <= bagUseBudget {
 		state.Snapshot(m, &mem)
-		party = state.DecodeParty(&mem)
+		party = ram(m).DecodeParty(&mem)
 		if slot < len(party.Mons) {
 			afterMon := party.Mons[slot]
 			if afterMon.HP > beforeMon.HP || (beforeMon.Status != 0 && afterMon.Status == 0) {
 				effectObserved = true
 			}
 		}
-		_, afterQty := bagEntry(&mem, item)
+		_, afterQty := bagEntry(&mem, item, ram(m))
 		if afterQty == beforeQty-1 {
 			if !effectObserved {
 				return fmt.Errorf("skill: UseBattleMedicine: item %#02x was consumed but slot %d showed no HP/status effect", item, slot)
 			}
 			return nil
 		}
-		if state.DecodeBattle(&mem) == nil {
+		if ram(m).DecodeBattle(&mem) == nil {
 			return fmt.Errorf("skill: UseBattleMedicine: battle ended before item %#02x consumption/effect was verified", item)
 		}
 		m.Tap(emu.A, 3, 7)
 	}
 	state.Snapshot(m, &mem)
-	_, afterQty := bagEntry(&mem, item)
+	_, afterQty := bagEntry(&mem, item, ram(m))
 	return fmt.Errorf("skill: UseBattleMedicine: item %#02x did not complete within %d frames (bag %d -> %d, effect=%t)",
 		item, bagUseBudget, beforeQty, afterQty, effectObserved)
 }
@@ -253,13 +252,13 @@ func UseBattleMedicine(m *emu.Emu, item uint8, slot int) error {
 // row 1), verifying each transition rather than assuming it starts on FIGHT.
 func selectItemEntry(m *emu.Emu) error {
 	atItem := func(m *emu.Emu) bool {
-		return m.Peek8(sym.TopMenuItemX) == battleMenuLeftX && int(m.Peek8(sym.CurrentMenuItem)) == 1
+		return m.Peek8(ram(m).TopMenuItemX) == battleMenuLeftX && int(m.Peek8(ram(m).CurrentMenuItem)) == 1
 	}
 	for i := 0; i < 8; i++ {
 		if atItem(m) {
 			return nil
 		}
-		prevX, prevRow := m.Peek8(sym.TopMenuItemX), int(m.Peek8(sym.CurrentMenuItem))
+		prevX, prevRow := m.Peek8(ram(m).TopMenuItemX), int(m.Peek8(ram(m).CurrentMenuItem))
 		var btn emu.Button
 		switch {
 		case prevX == battleMenuRightX:
@@ -271,7 +270,7 @@ func selectItemEntry(m *emu.Emu) error {
 		}
 		m.Tap(btn, 3, 7)
 		if _, err := m.StepUntil(menuSettleFrames, func(m *emu.Emu) bool {
-			return m.Peek8(sym.TopMenuItemX) != prevX || int(m.Peek8(sym.CurrentMenuItem)) != prevRow
+			return m.Peek8(ram(m).TopMenuItemX) != prevX || int(m.Peek8(ram(m).CurrentMenuItem)) != prevRow
 		}); err != nil {
 			return fmt.Errorf("skill: UseBattleMedicine: cursor stuck at x=%#02x row %d, want ITEM (x=%#02x row 1): %w",
 				prevX, prevRow, battleMenuLeftX, ErrMenuStuck)

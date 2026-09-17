@@ -23,7 +23,7 @@ func TestSetLeadOneMon(t *testing.T) {
 
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	party := state.DecodeParty(&mem)
+	party := skill.RedAddresses().DecodeParty(&mem)
 	if party.Count != 1 || party.Mons[0].Species != speciesSquirtle {
 		t.Fatalf("fixture precondition: %+v, want a lone SQUIRTLE (%#02x)", party.Mons, speciesSquirtle)
 	}
@@ -34,14 +34,14 @@ func TestSetLeadOneMon(t *testing.T) {
 		t.Fatalf("SetLead(0): %v", err)
 	}
 	state.Snapshot(m, &mem)
-	if got := state.DecodeParty(&mem).Mons[0].Species; got != lead {
+	if got := skill.RedAddresses().DecodeParty(&mem).Mons[0].Species; got != lead {
 		t.Errorf("lead = species %#02x after SetLead(0), want unchanged %#02x", got, lead)
 	}
 	after := playerAt(t, m)
 	if before.MapID != after.MapID || before.X != after.X || before.Y != after.Y {
 		t.Errorf("player moved: before %+v, after %+v", before, after)
 	}
-	if !state.Controllable(&mem) {
+	if !skill.RedAddresses().Controllable(&mem) {
 		t.Error("player not controllable after SetLead(0)")
 	}
 
@@ -53,10 +53,10 @@ func TestSetLeadOneMon(t *testing.T) {
 		}
 	}
 	state.Snapshot(m, &mem)
-	if got := state.DecodeParty(&mem).Mons[0].Species; got != lead {
+	if got := skill.RedAddresses().DecodeParty(&mem).Mons[0].Species; got != lead {
 		t.Errorf("lead changed to species %#02x after rejected SetLead calls", got)
 	}
-	if !state.Controllable(&mem) {
+	if !skill.RedAddresses().Controllable(&mem) {
 		t.Error("player not controllable after rejected SetLead calls")
 	}
 }
@@ -79,7 +79,7 @@ func TestSwitchActiveNoBattle(t *testing.T) {
 	}
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if !state.Controllable(&mem) {
+	if !skill.RedAddresses().Controllable(&mem) {
 		t.Error("player not controllable after failed SwitchActive")
 	}
 }
@@ -136,7 +136,7 @@ func setLeadAttempt(t *testing.T, attempt int) bool {
 
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	party0 := state.DecodeParty(&mem)
+	party0 := skill.RedAddresses().DecodeParty(&mem)
 	if party0.Count != 1 || party0.Mons[0].Species != speciesSquirtle {
 		t.Fatalf("attempt %d: fixture precondition: %+v, want a lone SQUIRTLE (%#02x)", attempt, party0.Mons, speciesSquirtle)
 	}
@@ -158,7 +158,7 @@ func setLeadAttempt(t *testing.T, attempt int) bool {
 		return false
 	}
 	state.Snapshot(m, &mem)
-	party1 := state.DecodeParty(&mem)
+	party1 := skill.RedAddresses().DecodeParty(&mem)
 	if party1.Count != 2 {
 		t.Fatalf("attempt %d: post-catch party = %+v, want two members", attempt, party1.Mons)
 	}
@@ -171,7 +171,7 @@ func setLeadAttempt(t *testing.T, attempt int) bool {
 		t.Fatalf("attempt %d: SetLead(1): %v", attempt, err)
 	}
 	state.Snapshot(m, &mem)
-	party2 := state.DecodeParty(&mem)
+	party2 := skill.RedAddresses().DecodeParty(&mem)
 	if party2.Mons[0].Species != caught || party2.Mons[1].Species != speciesSquirtle {
 		t.Fatalf("attempt %d: lead did not change: %+v, want [%#02x, %#02x]", attempt, party2.Mons, caught, speciesSquirtle)
 	}
@@ -190,14 +190,14 @@ func setLeadAttempt(t *testing.T, attempt int) bool {
 	for i := 0; i < 200; i++ {
 		var s state.Mem
 		state.Snapshot(m, &s)
-		if b := state.DecodeBattle(&s); b != nil && b.ActiveSpecies != 0 {
+		if b := skill.RedAddresses().DecodeBattle(&s); b != nil && b.ActiveSpecies != 0 {
 			break
 		}
 		m.Tap(emu.A, 3, 7)
 		m.StepFrames(10)
 	}
 	state.Snapshot(m, &mem)
-	bs := state.DecodeBattle(&mem)
+	bs := skill.RedAddresses().DecodeBattle(&mem)
 	if bs == nil {
 		t.Fatalf("attempt %d: no battle in progress after EnterWildBattle", attempt)
 	}
@@ -210,7 +210,7 @@ func setLeadAttempt(t *testing.T, attempt int) bool {
 		return false
 	}
 	state.Snapshot(m, &mem)
-	bs2 := state.DecodeBattle(&mem)
+	bs2 := skill.RedAddresses().DecodeBattle(&mem)
 	if bs2 == nil {
 		t.Fatalf("attempt %d: the battle ended while switching — no active mon to assert", attempt)
 	}

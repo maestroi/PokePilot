@@ -5,7 +5,6 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 )
 
 const (
@@ -33,17 +32,17 @@ func SSAnneHM01(m *emu.Emu, romData []byte, policy MovePolicy) error {
 
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if _, count := bagEntry(&mem, hm01Item); count > 0 {
+	if _, count := bagEntry(&mem, hm01Item, ram(m)); count > 0 {
 		return nil
 	}
-	if _, count := bagEntry(&mem, ssTicketItem); count == 0 {
+	if _, count := bagEntry(&mem, ssTicketItem, ram(m)); count == 0 {
 		return fmt.Errorf("skill: SSAnneHM01: S.S. Ticket is required before boarding")
 	}
 
 	// Start the one-rival story leg with a fully recovered party whenever the
 	// current checkpoint is not already in that state. Before HM01 the ship
 	// cannot have departed, so leaving it temporarily to heal is safe.
-	if !allPartyCenterRecovered(&mem) {
+	if !allPartyCenterRecovered(&mem, ram(m)) {
 		center, ok := Place("vermilion pokemon center")
 		if !ok {
 			return fmt.Errorf("skill: SSAnneHM01: vermilion pokemon center place missing")
@@ -75,9 +74,9 @@ func SSAnneHM01(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	}
 
 	state.Snapshot(m, &mem)
-	if _, count := bagEntry(&mem, hm01Item); count == 0 {
+	if _, count := bagEntry(&mem, hm01Item, ram(m)); count == 0 {
 		return fmt.Errorf("skill: SSAnneHM01: Captain conversation completed without HM01 in the bag (map %#04x at %d,%d)",
-			mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord))
+			mem.U8(ram(m).CurMap), mem.U8(ram(m).XCoord), mem.U8(ram(m).YCoord))
 	}
 	return nil
 }

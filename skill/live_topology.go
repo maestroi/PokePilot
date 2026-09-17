@@ -18,7 +18,7 @@ const (
 	surfWaterTile uint8 = 0x14
 )
 
-func readLiveMapBlocks(peek func(uint16) uint8, widthBlocks, heightBlocks int) ([]byte, error) {
+func readLiveMapBlocks(peek func(uint16) uint8, widthBlocks, heightBlocks int, overworldMap uint16) ([]byte, error) {
 	if widthBlocks < 0 || heightBlocks < 0 {
 		return nil, fmt.Errorf("skill: live map has negative dimensions %dx%d", widthBlocks, heightBlocks)
 	}
@@ -35,7 +35,7 @@ func readLiveMapBlocks(peek func(uint16) uint8, widthBlocks, heightBlocks int) (
 	for y := 0; y < heightBlocks; y++ {
 		for x := 0; x < widthBlocks; x++ {
 			off := first + y*stride + x
-			blocks[y*widthBlocks+x] = peek(sym.OverworldMap + uint16(off))
+			blocks[y*widthBlocks+x] = peek(overworldMap + uint16(off))
 		}
 	}
 	return blocks, nil
@@ -43,24 +43,24 @@ func readLiveMapBlocks(peek func(uint16) uint8, widthBlocks, heightBlocks int) (
 
 func liveMapBlocks(m *emu.Emu, h rom.MapHeader) ([]byte, error) {
 	widthBlocks, heightBlocks := int(h.WidthBlocks), int(h.HeightBlocks)
-	if got := int(m.Peek8(sym.CurMapWidth)); got != widthBlocks {
+	if got := int(m.Peek8(ram(m).CurMapWidth)); got != widthBlocks {
 		return nil, fmt.Errorf("skill: live map width is %d blocks, ROM header for map %02x says %d", got, h.ID, widthBlocks)
 	}
-	if got := int(m.Peek8(sym.CurMapHeight)); got != heightBlocks {
+	if got := int(m.Peek8(ram(m).CurMapHeight)); got != heightBlocks {
 		return nil, fmt.Errorf("skill: live map height is %d blocks, ROM header for map %02x says %d", got, h.ID, heightBlocks)
 	}
-	return readLiveMapBlocks(m.Peek8, widthBlocks, heightBlocks)
+	return readLiveMapBlocks(m.Peek8, widthBlocks, heightBlocks, ram(m).OverworldMap)
 }
 
-func liveMapBlocksFromMem(mem *state.Mem, h rom.MapHeader) ([]byte, error) {
+func liveMapBlocksFromMem(mem *state.Mem, a wramAddresses, h rom.MapHeader) ([]byte, error) {
 	widthBlocks, heightBlocks := int(h.WidthBlocks), int(h.HeightBlocks)
-	if got := int(mem.U8(sym.CurMapWidth)); got != widthBlocks {
+	if got := int(mem.U8(a.CurMapWidth)); got != widthBlocks {
 		return nil, fmt.Errorf("skill: live map width is %d blocks, ROM header for map %02x says %d", got, h.ID, widthBlocks)
 	}
-	if got := int(mem.U8(sym.CurMapHeight)); got != heightBlocks {
+	if got := int(mem.U8(a.CurMapHeight)); got != heightBlocks {
 		return nil, fmt.Errorf("skill: live map height is %d blocks, ROM header for map %02x says %d", got, h.ID, heightBlocks)
 	}
-	return readLiveMapBlocks(mem.U8, widthBlocks, heightBlocks)
+	return readLiveMapBlocks(mem.U8, widthBlocks, heightBlocks, a.OverworldMap)
 }
 
 // liveMapGrid decodes the current post-script geometry using the traversal mode
@@ -68,7 +68,7 @@ func liveMapBlocksFromMem(mem *state.Mem, h rom.MapHeader) ([]byte, error) {
 // such as Cut and Surf are followed by a fresh decode before routing continues.
 func liveMapGrid(m *emu.Emu, romData []byte, h rom.MapHeader) (*world.Grid, error) {
 	mode := world.TraversalLand
-	if m.Peek8(sym.WalkBikeSurfState) == fieldSurfingState {
+	if m.Peek8(ram(m).WalkBikeSurfState) == fieldSurfingState {
 		mode = world.TraversalWater
 	}
 	return liveMapGridForTraversal(m, romData, h, mode)
@@ -79,10 +79,10 @@ func liveMapGrid(m *emu.Emu, romData []byte, h rom.MapHeader) (*world.Grid, erro
 // must affect both offered objective reachability and later execution.
 func liveMapGridFromMem(mem *state.Mem, romData []byte, h rom.MapHeader) (*world.Grid, error) {
 	mode := world.TraversalLand
-	if mem.U8(sym.WalkBikeSurfState) == fieldSurfingState {
+	if mem.U8(tablesForROM(romData).wram.WalkBikeSurfState) == fieldSurfingState {
 		mode = world.TraversalWater
 	}
-	blocks, err := liveMapBlocksFromMem(mem, h)
+	blocks, err := liveMapBlocksFromMem(mem, tablesForROM(romData).wram, h)
 	if err != nil {
 		return nil, err
 	}
@@ -98,7 +98,10 @@ func liveMapGridForTraversal(m *emu.Emu, romData []byte, h rom.MapHeader, mode w
 }
 
 func buildLiveMapGrid(romData []byte, h rom.MapHeader, blocks []byte, mode world.TraversalMode) (*world.Grid, error) {
-	grid, err := world.BuildFromBlocksForTraversal(romData, h, blocks, mode)
+	// The free BuildFromBlocksForTraversal reads Red's tileset table, which
+	// is not Yellow's: block data then resolves past the end of a 1MB image.
+	// Resolve the table set for this image, as the static graph builder does.
+	grid, err := world.BuildFromBlocksForTables(graphForROM(romData), romData, h, blocks, mode)
 	if err != nil {
 		return nil, err
 	}

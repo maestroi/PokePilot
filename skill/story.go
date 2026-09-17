@@ -5,9 +5,7 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
-	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
 )
 
@@ -61,7 +59,7 @@ func (s Starter) ball() (ballX, ballY, approachX, approachY uint8) {
 func GetStarter(m *emu.Emu, romData []byte, which Starter, policy MovePolicy) error {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if state.HasEvent(&mem, state.EventBattledRivalInOaksLab) {
+	if ram(m).HasEvent(&mem, state.EventBattledRivalInOaksLab) {
 		return nil
 	}
 	if which > StarterBulbasaur {
@@ -93,39 +91,39 @@ func GetStarter(m *emu.Emu, romData []byte, which Starter, policy MovePolicy) er
 	if err := WalkPath(m, gatePath); err != nil && !errors.Is(err, ErrDialogueInterrupted) {
 		x, y := playerXY(m)
 		return fmt.Errorf("skill: GetStarter: walk to the north exit on map %#04x at (%d,%d): %w",
-			m.Peek8(sym.CurMap), x, y, err)
+			m.Peek8(ram(m).CurMap), x, y, err)
 	}
 
 	// 3. The gate fires within a frame of the player reaching y==1:
 	//    wJoyIgnore goes non-zero and the step into the exit is blocked. That
 	//    block is the trigger, not a failure.
 	if _, err := m.StepUntil(gateWaitBudget, func(m *emu.Emu) bool {
-		return m.Peek8(sym.JoyIgnore) != 0
+		return m.Peek8(ram(m).JoyIgnore) != 0
 	}); err != nil {
 		state.Snapshot(m, &mem)
 		return fmt.Errorf("skill: GetStarter: Oak's gate did not fire: map=%#04x at (%d,%d) wJoyIgnore=%#04x EventFollowedOakIntoLab=%v",
-			mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord),
-			mem.U8(sym.JoyIgnore), state.HasEvent(&mem, state.EventFollowedOakIntoLab))
+			mem.U8(ram(m).CurMap), mem.U8(ram(m).XCoord), mem.U8(ram(m).YCoord),
+			mem.U8(ram(m).JoyIgnore), ram(m).HasEvent(&mem, state.EventFollowedOakIntoLab))
 	}
 
 	// 4. Oak's cutscene: he walks the player into the lab and the script
 	//    holds control for four text boxes. Use EventOakAskedToChooseMon as
 	//    the predicate: at EventFollowedOakIntoLab all four directions are
 	//    still blocked.
-	if err := Cutscene(m, cutsceneBudget, func(mm *state.Mem) bool {
-		return state.HasEvent(mm, state.EventOakAskedToChooseMon)
+	if err := Cutscene(m, cutsceneBudget, func(mm *state.Mem, a wramAddresses) bool {
+		return ram(m).HasEvent(mm, state.EventOakAskedToChooseMon)
 	}); err != nil {
 		return fmt.Errorf("skill: GetStarter: %w", err)
 	}
 	state.Snapshot(m, &mem)
-	if !state.HasEvent(&mem, state.EventOakAskedToChooseMon) {
+	if !ram(m).HasEvent(&mem, state.EventOakAskedToChooseMon) {
 		return fmt.Errorf("skill: GetStarter: %s not set after the cutscene: map=%#04x at (%d,%d) wJoyIgnore=%#04x",
-			state.EventOakAskedToChooseMon, mem.U8(sym.CurMap), mem.U8(sym.XCoord),
-			mem.U8(sym.YCoord), mem.U8(sym.JoyIgnore))
+			state.EventOakAskedToChooseMon, mem.U8(ram(m).CurMap), mem.U8(ram(m).XCoord),
+			mem.U8(ram(m).YCoord), mem.U8(ram(m).JoyIgnore))
 	}
-	if mem.U8(sym.CurMap) != oaksLabMap || mem.U8(sym.XCoord) != 5 || mem.U8(sym.YCoord) != 3 {
+	if mem.U8(ram(m).CurMap) != oaksLabMap || mem.U8(ram(m).XCoord) != 5 || mem.U8(ram(m).YCoord) != 3 {
 		return fmt.Errorf("skill: GetStarter: after the cutscene the player is on map %#04x at (%d,%d), want map %#04x at (5,3); wJoyIgnore=%#04x",
-			mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord), oaksLabMap, mem.U8(sym.JoyIgnore))
+			mem.U8(ram(m).CurMap), mem.U8(ram(m).XCoord), mem.U8(ram(m).YCoord), oaksLabMap, mem.U8(ram(m).JoyIgnore))
 	}
 
 	// 5. Walk to the approach tile below the chosen ball. The rival at (4,3)
@@ -146,20 +144,20 @@ func GetStarter(m *emu.Emu, romData []byte, which Starter, policy MovePolicy) er
 	if err := chooseStarterBall(m); err != nil {
 		return err
 	}
-	mem = advanceUntil(m, starterWaitBudget, func(mm *state.Mem) bool {
-		return state.TookStarterBall(mm) && state.DecodeParty(mm).Count >= 1
+	mem = advanceUntil(m, ram(m), starterWaitBudget, func(mm *state.Mem, a wramAddresses) bool {
+		return ram(m).TookStarterBall(mm) && ram(m).DecodeParty(mm).Count >= 1
 	})
-	if !state.TookStarterBall(&mem) || state.DecodeParty(&mem).Count < 1 {
+	if !ram(m).TookStarterBall(&mem) || ram(m).DecodeParty(&mem).Count < 1 {
 		return fmt.Errorf("skill: GetStarter: starter not taken within %d frames: TookStarterBall=%v party=%d map=%#04x at (%d,%d) wJoyIgnore=%#04x wFontLoaded=%#04x",
-			starterWaitBudget, state.TookStarterBall(&mem), state.DecodeParty(&mem).Count,
-			mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord),
-			mem.U8(sym.JoyIgnore), mem.U8(sym.FontLoaded))
+			starterWaitBudget, ram(m).TookStarterBall(&mem), ram(m).DecodeParty(&mem).Count,
+			mem.U8(ram(m).CurMap), mem.U8(ram(m).XCoord), mem.U8(ram(m).YCoord),
+			mem.U8(ram(m).JoyIgnore), mem.U8(ram(m).FontLoaded))
 	}
 
 	// 7. The game takes control while the rival walks to the table and takes
 	//    his own mon. EventGotStarter is set at the end of that script.
-	if err := Cutscene(m, cutsceneBudget, func(mm *state.Mem) bool {
-		return state.HasEvent(mm, state.EventGotStarter)
+	if err := Cutscene(m, cutsceneBudget, func(mm *state.Mem, a wramAddresses) bool {
+		return ram(m).HasEvent(mm, state.EventGotStarter)
 	}); err != nil {
 		return fmt.Errorf("skill: GetStarter: %w", err)
 	}
@@ -181,13 +179,13 @@ func GetStarter(m *emu.Emu, romData []byte, which Starter, policy MovePolicy) er
 	}
 
 	// 9. Advance the challenge text until the battle starts.
-	mem = advanceUntil(m, battleWaitBudget, func(mm *state.Mem) bool {
-		return state.DecodeBattle(mm) != nil
+	mem = advanceUntil(m, ram(m), battleWaitBudget, func(mm *state.Mem, a wramAddresses) bool {
+		return ram(m).DecodeBattle(mm) != nil
 	})
-	if state.DecodeBattle(&mem) == nil {
+	if ram(m).DecodeBattle(&mem) == nil {
 		return fmt.Errorf("skill: GetStarter: rival battle did not start within %d frames: map=%#04x at (%d,%d) wJoyIgnore=%#04x wFontLoaded=%#04x EventGotStarter=%v",
-			battleWaitBudget, mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord),
-			mem.U8(sym.JoyIgnore), mem.U8(sym.FontLoaded), state.HasEvent(&mem, state.EventGotStarter))
+			battleWaitBudget, mem.U8(ram(m).CurMap), mem.U8(ram(m).XCoord), mem.U8(ram(m).YCoord),
+			mem.U8(ram(m).JoyIgnore), mem.U8(ram(m).FontLoaded), ram(m).HasEvent(&mem, state.EventGotStarter))
 	}
 
 	// The rival battle is won or lost depending on the seed (bulbasaur often
@@ -207,19 +205,19 @@ func GetStarter(m *emu.Emu, romData []byte, which Starter, policy MovePolicy) er
 	//     post-battle dialogue is still ahead. So wait for the flag AND for
 	//     control to come back (wJoyIgnore == 0, no text box), advancing the
 	//     text with A as it appears, then assert the positive facts.
-	mem = advanceUntil(m, battleWaitBudget, func(mm *state.Mem) bool {
-		return state.HasEvent(mm, state.EventBattledRivalInOaksLab) && state.Controllable(mm)
+	mem = advanceUntil(m, ram(m), battleWaitBudget, func(mm *state.Mem, a wramAddresses) bool {
+		return ram(m).HasEvent(mm, state.EventBattledRivalInOaksLab) && ram(m).Controllable(mm)
 	})
 	state.Snapshot(m, &mem)
-	if !state.HasEvent(&mem, state.EventBattledRivalInOaksLab) {
+	if !ram(m).HasEvent(&mem, state.EventBattledRivalInOaksLab) {
 		return fmt.Errorf("skill: GetStarter: %s not set after the battle: map=%#04x at (%d,%d) wJoyIgnore=%#04x",
-			state.EventBattledRivalInOaksLab, mem.U8(sym.CurMap), mem.U8(sym.XCoord),
-			mem.U8(sym.YCoord), mem.U8(sym.JoyIgnore))
+			state.EventBattledRivalInOaksLab, mem.U8(ram(m).CurMap), mem.U8(ram(m).XCoord),
+			mem.U8(ram(m).YCoord), mem.U8(ram(m).JoyIgnore))
 	}
-	if !state.Controllable(&mem) {
+	if !ram(m).Controllable(&mem) {
 		return fmt.Errorf("skill: GetStarter: not controllable after the battle: map=%#04x at (%d,%d) wJoyIgnore=%#04x wFontLoaded=%#04x",
-			mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord),
-			mem.U8(sym.JoyIgnore), mem.U8(sym.FontLoaded))
+			mem.U8(ram(m).CurMap), mem.U8(ram(m).XCoord), mem.U8(ram(m).YCoord),
+			mem.U8(ram(m).JoyIgnore), mem.U8(ram(m).FontLoaded))
 	}
 	return nil
 }
@@ -243,15 +241,15 @@ type frameClock interface {
 // stopBeforeA is checked after the snapshot and before every A press: it is
 // how a caller refuses to advance a screen it does not own, such as a
 // two-option prompt. A nil stopBeforeA never stops the loop.
-func advanceCore(m frameClock, budget int, pred func(*state.Mem) bool, stopBeforeA func(*state.Mem) bool) (state.Mem, int) {
+func advanceCore(m frameClock, a wramAddresses, budget int, pred func(*state.Mem, wramAddresses) bool, stopBeforeA func(*state.Mem, wramAddresses) bool) (state.Mem, int) {
 	var mem state.Mem
 	presses := 0
 	for i := 0; i < budget; i++ {
 		state.Snapshot(m, &mem)
-		if pred(&mem) {
+		if pred(&mem, a) {
 			return mem, presses
 		}
-		if stopBeforeA != nil && stopBeforeA(&mem) {
+		if stopBeforeA != nil && stopBeforeA(&mem, a) {
 			return mem, presses
 		}
 		// A nickname prompt is never advanced with A. This is the shared
@@ -261,11 +259,11 @@ func advanceCore(m frameClock, budget int, pred func(*state.Mem) bool, stopBefor
 		// one. Cutscene has always had it; this loop did not, which is why a
 		// starter taken through advanceUntil came out named "AAAAAAAAAA"
 		// while a starter taken through a cutscene did not.
-		if pokemonNicknamePrompt(&mem) && declineNickname(m, &mem) {
+		if pokemonNicknamePrompt(&mem, a) && declineNickname(m, &mem, a) {
 			presses++
 			continue
 		}
-		if mem.U8(sym.FontLoaded) != 0 {
+		if mem.U8(a.FontLoaded) != 0 {
 			m.Tap(emu.A, 3, 7)
 			m.StepFrames(talkSettle)
 			presses++
@@ -281,8 +279,8 @@ func advanceCore(m frameClock, budget int, pred func(*state.Mem) bool, stopBefor
 // holds or the frame budget is exhausted. It returns the final snapshot. It
 // is the overworld counterpart of Cutscene for predicates that must be
 // checked while text is being advanced.
-func advanceUntil(m frameClock, budget int, pred func(*state.Mem) bool) state.Mem {
-	mem, _ := advanceCore(m, budget, pred, nil)
+func advanceUntil(m frameClock, a wramAddresses, budget int, pred func(*state.Mem, wramAddresses) bool) state.Mem {
+	mem, _ := advanceCore(m, a, budget, pred, nil)
 	return mem
 }
 
@@ -290,17 +288,18 @@ func advanceUntil(m frameClock, budget int, pred func(*state.Mem) bool) state.Me
 // YES (menu index 0) to the YesNoChoice menu. It returns an error if the
 // menu does not appear within the budget.
 func chooseStarterBall(m *emu.Emu) error {
+	a := ram(m)
 	m.Tap(emu.A, 3, 7)
 	var mem state.Mem
 	for i := 0; i < choiceWaitBudget; i++ {
 		state.Snapshot(m, &mem)
-		if state.DecodeTwoOptionMenu(&mem) != nil {
+		if ram(m).DecodeTwoOptionMenu(&mem) != nil {
 			if err := SelectMenuItem(m, 0); err != nil {
 				return fmt.Errorf("skill: GetStarter: select YES: %w", err)
 			}
 			return nil
 		}
-		if mem.U8(sym.FontLoaded) != 0 {
+		if mem.U8(a.FontLoaded) != 0 {
 			m.Tap(emu.A, 3, 7)
 			m.StepFrames(talkSettle)
 		} else {
@@ -309,8 +308,8 @@ func chooseStarterBall(m *emu.Emu) error {
 	}
 	state.Snapshot(m, &mem)
 	return fmt.Errorf("skill: GetStarter: YesNoChoice menu did not appear within %d frames: map=%#04x at (%d,%d) wFontLoaded=%#04x wJoyIgnore=%#04x menu=%+v",
-		choiceWaitBudget, mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord),
-		mem.U8(sym.FontLoaded), mem.U8(sym.JoyIgnore), state.DecodeMenu(&mem))
+		choiceWaitBudget, mem.U8(ram(m).CurMap), mem.U8(ram(m).XCoord), mem.U8(ram(m).YCoord),
+		mem.U8(ram(m).FontLoaded), mem.U8(ram(m).JoyIgnore), ram(m).DecodeMenu(&mem))
 }
 
 // walkLab walks within Oak's lab to (tx,ty), re-planning around dynamic
@@ -321,14 +320,14 @@ func chooseStarterBall(m *emu.Emu) error {
 // and no collision can ever mutate the fixed set. It returns the wrapped
 // WalkPath error when a step stays blocked after all retries.
 func walkLab(m *emu.Emu, romData []byte, tx, ty int, blocked map[[2]int]bool) error {
-	if cur := m.Peek8(sym.CurMap); cur != oaksLabMap {
+	if cur := m.Peek8(ram(m).CurMap); cur != oaksLabMap {
 		return fmt.Errorf("skill: GetStarter: walkLab: on map %#04x, want map %#04x", cur, oaksLabMap)
 	}
-	h, err := rom.ParseMap(romData, oaksLabMap)
+	h, err := graphForROM(romData).ParseMap(romData, oaksLabMap)
 	if err != nil {
 		return fmt.Errorf("skill: GetStarter: parse map %#04x: %w", oaksLabMap, err)
 	}
-	grid, err := world.Build(romData, h)
+	grid, err := world.BuildForTables(graphForROM(romData), romData, h)
 	if err != nil {
 		return fmt.Errorf("skill: GetStarter: build map %#04x: %w", oaksLabMap, err)
 	}
@@ -336,7 +335,7 @@ func walkLab(m *emu.Emu, romData []byte, tx, ty int, blocked map[[2]int]bool) er
 	// planErr is the "no path at all" case: already described in full, so
 	// it is returned as-is rather than re-wrapped as a walk failure.
 	var planErr error
-	err = walkAround(func() error { return movementInterruption(m) }, func() map[[2]int]bool { return mergeBlockers(spriteBlockers(m), blocked) },
+	err = walkAround(func() error { return movementInterruption(m) }, func() map[[2]int]bool { return mergeBlockers(spriteBlockers(m, m.ROM()), blocked) },
 		func(blocked map[[2]int]bool) ([]world.Step, error) {
 			x, y := playerXY(m)
 			steps, err := world.FindPath(grid, int(x), int(y), tx, ty, blocked)

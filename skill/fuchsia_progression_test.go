@@ -28,11 +28,11 @@ func TestFuchsiaProgressionAvailable(t *testing.T) {
 
 func TestFuchsiaProgressionReady(t *testing.T) {
 	var mem state.Mem
-	if FuchsiaProgressionReady(&mem) {
+	if FuchsiaProgressionReady(&mem, redWram()) {
 		t.Fatal("progression must require the Poke Flute")
 	}
 	setTestBag(&mem, [2]uint8{pokeFluteItemFuchsia, 1})
-	if !FuchsiaProgressionReady(&mem) {
+	if !FuchsiaProgressionReady(&mem, redWram()) {
 		t.Fatal("Poke Flute ownership should satisfy the #32 handoff")
 	}
 }
@@ -40,17 +40,17 @@ func TestFuchsiaProgressionReady(t *testing.T) {
 func TestFuchsiaProgressionComplete(t *testing.T) {
 	var mem state.Mem
 	setTestBag(&mem, [2]uint8{hm03SurfItem, 1}, [2]uint8{hm04StrengthItem, 1})
-	if FuchsiaProgressionComplete(&mem) {
+	if FuchsiaProgressionComplete(&mem, redWram()) {
 		t.Fatal("HM03 + HM04 without the Soul Badge must not complete the slice")
 	}
 
 	mem[sym.ObtainedBadges] = soulBadgeMask
-	if !FuchsiaProgressionComplete(&mem) {
+	if !FuchsiaProgressionComplete(&mem, redWram()) {
 		t.Fatal("Soul Badge + HM03 + HM04 should complete the slice")
 	}
 
 	setTestBag(&mem, [2]uint8{hm03SurfItem, 1})
-	if FuchsiaProgressionComplete(&mem) {
+	if FuchsiaProgressionComplete(&mem, redWram()) {
 		t.Fatal("missing HM04 must keep the slice incomplete")
 	}
 }
@@ -71,16 +71,16 @@ func TestFuchsiaGymRegistration(t *testing.T) {
 
 func TestNeedsSafariRewards(t *testing.T) {
 	var mem state.Mem
-	if !needsSafariRewards(&mem) {
+	if !needsSafariRewards(&mem, redWram()) {
 		t.Fatal("missing both Safari rewards must require a Safari session")
 	}
 	setTestBag(&mem, [2]uint8{hm03SurfItem, 1}, [2]uint8{goldTeethItem, 1})
-	if needsSafariRewards(&mem) {
+	if needsSafariRewards(&mem, redWram()) {
 		t.Fatal("HM03 + Gold Teeth should satisfy Safari collection")
 	}
 	setTestBag(&mem, [2]uint8{hm03SurfItem, 1})
 	setTestEvent(&mem, eventGaveGoldTeeth)
-	if needsSafariRewards(&mem) {
+	if needsSafariRewards(&mem, redWram()) {
 		t.Fatal("after giving Gold Teeth away, HM03 alone should satisfy Safari collection")
 	}
 }

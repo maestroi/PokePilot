@@ -25,10 +25,10 @@ func TestBuyUnstockedLeavesTheOverworld(t *testing.T) {
 
 	var after state.Mem
 	state.Snapshot(m, &after)
-	if !state.Controllable(&after) {
+	if !skill.RedAddresses().Controllable(&after) {
 		t.Fatalf("not controllable after an unstocked refusal: %q", state.ScreenText(&after))
 	}
-	if state.MenuUp(&after) {
+	if skill.RedAddresses().MenuUp(&after) {
 		t.Fatalf("still inside a shop menu after an unstocked refusal: %q", state.ScreenText(&after))
 	}
 }
@@ -43,7 +43,7 @@ func TestBuyUnaffordableLeavesTheOverworld(t *testing.T) {
 
 	var before state.Mem
 	state.Snapshot(m, &before)
-	moneyBefore := int(state.DecodeInventory(&before).Money)
+	moneyBefore := int(skill.RedAddresses().DecodeInventory(&before).Money)
 
 	// 99 ANTIDOTEs is 9900: far beyond the fixture's purse.
 	err := skill.Buy(m, skill.ItemAntidote, 99)
@@ -53,13 +53,13 @@ func TestBuyUnaffordableLeavesTheOverworld(t *testing.T) {
 
 	var after state.Mem
 	state.Snapshot(m, &after)
-	if !state.Controllable(&after) {
+	if !skill.RedAddresses().Controllable(&after) {
 		t.Fatalf("not controllable after a refused purchase: %q", state.ScreenText(&after))
 	}
-	if state.MenuUp(&after) {
+	if skill.RedAddresses().MenuUp(&after) {
 		t.Fatalf("still inside a shop menu after a refused purchase: %q", state.ScreenText(&after))
 	}
-	if got := int(state.DecodeInventory(&after).Money); got != moneyBefore {
+	if got := int(skill.RedAddresses().DecodeInventory(&after).Money); got != moneyBefore {
 		t.Fatalf("money = %d, want %d unchanged by a refused purchase", got, moneyBefore)
 	}
 }

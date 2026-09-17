@@ -3,7 +3,9 @@ package skill
 import (
 	"sync"
 
+	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/world"
+	yellowrom "github.com/maestroi/pokepilot/yellow/rom"
 )
 
 // A loaded ROM is immutable for the lifetime of a run. Keep the expensive
@@ -29,8 +31,23 @@ var routeGraphCache = struct {
 }{entries: make(map[routeGraphROMKey]routeGraphCacheEntry)}
 
 func cachedRouteGraph(romData []byte) (*world.Graph, error) {
+	return cachedRouteGraphForTables(graphForROM(romData), romData)
+}
+
+// graphForROM resolves which map-table set a ROM image needs. A ROM is
+// immutable for the lifetime of a run, and the cache key retains a pointer
+// into the backing allocation, so one image always resolves one table set.
+func graphForROM(romData []byte) rom.Tables {
+	if isYellowROM(romData) {
+		return yellowrom.Tables()
+	}
+	return rom.RedTables()
+}
+
+// cachedRouteGraphForTables is cachedRouteGraph with an explicit table set.
+func cachedRouteGraphForTables(tables rom.Tables, romData []byte) (*world.Graph, error) {
 	if len(romData) == 0 {
-		return world.BuildGraph(romData)
+		return world.BuildGraphForTables(tables, romData)
 	}
 	key := routeGraphROMKey{first: &romData[0], length: len(romData)}
 	routeGraphCache.Lock()
@@ -38,7 +55,7 @@ func cachedRouteGraph(romData []byte) (*world.Graph, error) {
 	if cached, ok := routeGraphCache.entries[key]; ok {
 		return cached.graph, cached.err
 	}
-	graph, err := world.BuildGraph(romData)
+	graph, err := world.BuildGraphForTables(tables, romData)
 	routeGraphCache.entries[key] = routeGraphCacheEntry{graph: graph, err: err}
 	return graph, err
 }

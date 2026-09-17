@@ -16,10 +16,10 @@ func TestAcquireCinnabarSecretKeyRealROM(t *testing.T) {
 
 	var before state.Mem
 	state.Snapshot(m, &before)
-	if !CinnabarSecretKeyReady(&before) {
+	if !CinnabarSecretKeyReady(&before, redWram()) {
 		t.Fatal("prepared #35 Secret Key state does not satisfy the post-#34 Surf handoff")
 	}
-	if CinnabarSecretKeyOwned(&before) {
+	if CinnabarSecretKeyOwned(&before, redWram()) {
 		t.Fatal("prepared #35 Secret Key state already owns the Secret Key")
 	}
 
@@ -29,7 +29,7 @@ func TestAcquireCinnabarSecretKeyRealROM(t *testing.T) {
 
 	var after state.Mem
 	state.Snapshot(m, &after)
-	if !CinnabarSecretKeyOwned(&after) {
+	if !CinnabarSecretKeyOwned(&after, redWram()) {
 		t.Fatal("Secret Key semantic postcondition is false after Mansion traversal")
 	}
 	if err := AcquireCinnabarSecretKey(m, m.ROM(), StatAwareMove(m.ROM())); err != nil {

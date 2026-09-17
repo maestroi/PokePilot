@@ -31,18 +31,18 @@ func TestGetStarter(t *testing.T) {
 
 	var mem state.Mem
 	state.Snapshot(e, &mem)
-	if !state.HasEvent(&mem, state.EventGotStarter) {
+	if !skill.RedAddresses().HasEvent(&mem, state.EventGotStarter) {
 		t.Errorf("EventGotStarter not set: map=%#04x at (%d,%d) wJoyIgnore=%#04x",
 			mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord), mem.U8(sym.JoyIgnore))
 	}
-	if !state.HasEvent(&mem, state.EventBattledRivalInOaksLab) {
+	if !skill.RedAddresses().HasEvent(&mem, state.EventBattledRivalInOaksLab) {
 		t.Errorf("EventBattledRivalInOaksLab not set: map=%#04x at (%d,%d) wJoyIgnore=%#04x",
 			mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord), mem.U8(sym.JoyIgnore))
 	}
-	if c := state.DecodeParty(&mem).Count; c < 1 {
+	if c := skill.RedAddresses().DecodeParty(&mem).Count; c < 1 {
 		t.Errorf("party count = %d, want >= 1", c)
 	}
-	if !state.Controllable(&mem) {
+	if !skill.RedAddresses().Controllable(&mem) {
 		t.Errorf("player not controllable: map=%#04x at (%d,%d) wJoyIgnore=%#04x wFontLoaded=%#04x",
 			mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord),
 			mem.U8(sym.JoyIgnore), mem.U8(sym.FontLoaded))
@@ -73,12 +73,12 @@ func TestGetStarter(t *testing.T) {
 		state.Snapshot(e, &mem)
 		t.Fatalf("north exit did not lead out of Pallet Town: %v; map=%#04x at (%d,%d) wJoyIgnore=%#04x EventFollowedOakIntoLab=%v",
 			err, mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord),
-			mem.U8(sym.JoyIgnore), state.HasEvent(&mem, state.EventFollowedOakIntoLab))
+			mem.U8(sym.JoyIgnore), skill.RedAddresses().HasEvent(&mem, state.EventFollowedOakIntoLab))
 	}
 	if _, err := e.StepUntil(600, func(m *emu.Emu) bool {
 		var mem state.Mem
 		state.Snapshot(m, &mem)
-		return state.Controllable(&mem)
+		return skill.RedAddresses().Controllable(&mem)
 	}); err != nil {
 		state.Snapshot(e, &mem)
 		t.Fatalf("not controllable on the far side of the gate: %v; map=%#04x at (%d,%d)",

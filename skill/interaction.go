@@ -25,7 +25,7 @@ func WaitForInteraction(m *emu.Emu, want state.InteractionKind, frameBudget int)
 	var mem state.Mem
 	for i := 0; i <= frameBudget; i++ {
 		state.Snapshot(m, &mem)
-		got := state.DecodeInteraction(&mem)
+		got := ram(m).DecodeInteraction(&mem)
 		if got.Kind == want {
 			return got, nil
 		}
@@ -34,7 +34,7 @@ func WaitForInteraction(m *emu.Emu, want state.InteractionKind, frameBudget int)
 		}
 	}
 	state.Snapshot(m, &mem)
-	got := state.DecodeInteraction(&mem)
+	got := ram(m).DecodeInteraction(&mem)
 	return got, fmt.Errorf("skill: WaitForInteraction: %w: wanted %q, got %q text=%q after %d frames",
 		ErrUnexpectedInteraction, want, got.Kind, got.Text, frameBudget)
 }
@@ -45,7 +45,7 @@ func WaitForInteraction(m *emu.Emu, want state.InteractionKind, frameBudget int)
 func AnswerTwoOption(m *emu.Emu, index int) error {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if got := state.DecodeInteraction(&mem); got.Kind != state.InteractionTwoOption {
+	if got := ram(m).DecodeInteraction(&mem); got.Kind != state.InteractionTwoOption {
 		return fmt.Errorf("skill: AnswerTwoOption: %w: got %q text=%q", ErrUnexpectedInteraction, got.Kind, got.Text)
 	}
 	return selectTwoOption(m, index)
@@ -58,7 +58,7 @@ func AnswerTwoOption(m *emu.Emu, index int) error {
 func AnswerYesNo(m *emu.Emu, yes bool) error {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	got := state.DecodeInteraction(&mem)
+	got := ram(m).DecodeInteraction(&mem)
 	if got.Kind != state.InteractionTwoOption {
 		return fmt.Errorf("skill: AnswerYesNo: %w: got %q text=%q", ErrUnexpectedInteraction, got.Kind, got.Text)
 	}
@@ -87,7 +87,7 @@ func AnswerYesNo(m *emu.Emu, yes bool) error {
 func SelectInteractionIndex(m *emu.Emu, index int) error {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	got := state.DecodeInteraction(&mem)
+	got := ram(m).DecodeInteraction(&mem)
 	switch got.Kind {
 	case state.InteractionTwoOption:
 		return AnswerTwoOption(m, index)
@@ -108,7 +108,7 @@ func SelectInteractionIndex(m *emu.Emu, index int) error {
 func CancelInteraction(m *emu.Emu) error {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	before := state.DecodeInteraction(&mem)
+	before := ram(m).DecodeInteraction(&mem)
 	switch before.Kind {
 	case state.InteractionMenu, state.InteractionListMenu, state.InteractionElevatorMenu,
 		state.InteractionItemMenu, state.InteractionPartyMenu, state.InteractionPCMenu,
@@ -122,10 +122,10 @@ func CancelInteraction(m *emu.Emu) error {
 	if _, err := m.StepUntil(interactionTransitionFrames, func(e *emu.Emu) bool {
 		var nextMem state.Mem
 		state.Snapshot(e, &nextMem)
-		return state.DecodeInteraction(&nextMem) != before
+		return ram(m).DecodeInteraction(&nextMem) != before
 	}); err != nil {
 		state.Snapshot(m, &mem)
-		after := state.DecodeInteraction(&mem)
+		after := ram(m).DecodeInteraction(&mem)
 		return fmt.Errorf("skill: CancelInteraction: interaction did not change after B: before=%+v after=%+v: %w", before, after, err)
 	}
 	return nil

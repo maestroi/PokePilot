@@ -32,7 +32,7 @@ func bagQty(t *testing.T, m *emu.Emu, item uint8) int {
 	t.Helper()
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	for _, it := range state.DecodeInventory(&mem).Items {
+	for _, it := range skill.RedAddresses().DecodeInventory(&mem).Items {
 		if it.ID == item {
 			return int(it.Quantity)
 		}

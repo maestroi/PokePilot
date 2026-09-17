@@ -5,9 +5,7 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
-	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
 )
 
@@ -29,26 +27,26 @@ func CatchWater(m *emu.Emu, romData []byte, want []uint8, policy MovePolicy, max
 
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if !state.Controllable(&mem) {
-		return CatchResult{}, fmt.Errorf("skill: CatchWater: player not controllable on map %#04x", m.Peek8(sym.CurMap))
+	if !ram(m).Controllable(&mem) {
+		return CatchResult{}, fmt.Errorf("skill: CatchWater: player not controllable on map %#04x", m.Peek8(ram(m).CurMap))
 	}
 
 	// Collection uses the same positive acquisition evidence as Catch. Record
 	// it before entering Surf so teaching HM03 or walking to the shoreline
 	// cannot be mistaken for capture progress.
-	partyBefore := int(state.DecodeParty(&mem).Count)
-	boxBefore := int(state.DecodeBox(&mem).Count)
-	ownedBefore := append([]uint8(nil), state.DecodePokedex(&mem).Owned...)
+	partyBefore := int(ram(m).DecodeParty(&mem).Count)
+	boxBefore := int(ram(m).DecodeBox(&mem).Count)
+	ownedBefore := append([]uint8(nil), ram(m).DecodePokedex(&mem).Owned...)
 	wantDex := wantedDexNumbers(romData, want)
 	res := CatchResult{}
 
-	if m.Peek8(sym.WalkBikeSurfState) != fieldSurfingState {
+	if m.Peek8(ram(m).WalkBikeSurfState) != fieldSurfingState {
 		shore, err := nearestFishingShore(m, romData)
 		if err != nil {
 			return res, fmt.Errorf("skill: CatchWater: find Surf shoreline: %w", err)
 		}
 		if _, err := TravelFlee(m, romData, Destination{
-			Map: m.Peek8(sym.CurMap), X: uint8(shore.standX), Y: uint8(shore.standY),
+			Map: m.Peek8(ram(m).CurMap), X: uint8(shore.standX), Y: uint8(shore.standY),
 		}, policy, fishingTravelCap); err != nil {
 			return res, fmt.Errorf("skill: CatchWater: reach shoreline (%d,%d): %w", shore.standX, shore.standY, err)
 		}
@@ -60,13 +58,13 @@ func CatchWater(m *emu.Emu, romData []byte, want []uint8, policy MovePolicy, max
 		if err != nil {
 			return res, fmt.Errorf("skill: CatchWater: enter Surf: %w", err)
 		}
-		if !result.Surfing || m.Peek8(sym.WalkBikeSurfState) != fieldSurfingState {
+		if !result.Surfing || m.Peek8(ram(m).WalkBikeSurfState) != fieldSurfingState {
 			return res, fmt.Errorf("skill: CatchWater: Surf returned without verified surfing state")
 		}
 	}
 
-	mapID := m.Peek8(sym.CurMap)
-	h, err := rom.ParseMap(romData, mapID)
+	mapID := m.Peek8(ram(m).CurMap)
+	h, err := graphForROM(romData).ParseMap(romData, mapID)
 	if err != nil {
 		return res, fmt.Errorf("skill: CatchWater: parse map %#04x: %w", mapID, err)
 	}
@@ -89,7 +87,7 @@ func CatchWater(m *emu.Emu, romData []byte, want []uint8, policy MovePolicy, max
 	if len(water) == 0 {
 		return res, fmt.Errorf("skill: CatchWater: map %#04x has no Surf water cells reachable from (%d,%d)", mapID, now.X, now.Y)
 	}
-	a, b, ok := grindPair(water, grid, int(now.X), int(now.Y), spriteBlockers(m))
+	a, b, ok := grindPair(water, grid, int(now.X), int(now.Y), spriteBlockers(m, m.ROM()))
 	if !ok {
 		return res, fmt.Errorf("skill: CatchWater: map %#04x has no two reachable Surf water cells close enough to hunt between", mapID)
 	}
@@ -116,9 +114,9 @@ func CatchWater(m *emu.Emu, romData []byte, want []uint8, policy MovePolicy, max
 		}
 
 		state.Snapshot(m, &mem)
-		bs := state.DecodeBattle(&mem)
+		bs := ram(m).DecodeBattle(&mem)
 		if bs == nil {
-			return res, fmt.Errorf("skill: CatchWater: hunt leg %d reported an encounter but no battle is in progress on map %#04x", legsSpent, m.Peek8(sym.CurMap))
+			return res, fmt.Errorf("skill: CatchWater: hunt leg %d reported an encounter but no battle is in progress on map %#04x", legsSpent, m.Peek8(ram(m).CurMap))
 		}
 		res.Encounters++
 		if !speciesIn(bs.EnemySpecies, want) {
@@ -135,7 +133,7 @@ func CatchWater(m *emu.Emu, romData []byte, want []uint8, policy MovePolicy, max
 		return catchWanted(m, &mem, want, wantDex, policy, partyBefore, boxBefore, ownedBefore, res, maxBalls)
 	}
 	return res, fmt.Errorf("%w: %d Surf legs and %d encounters (map %#04x)",
-		ErrCatchHuntExhausted, legsSpent, res.Encounters, m.Peek8(sym.CurMap))
+		ErrCatchHuntExhausted, legsSpent, res.Encounters, m.Peek8(ram(m).CurMap))
 }
 
 func surfEncounterCells(grid *world.Grid) []cell {

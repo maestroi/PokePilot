@@ -17,7 +17,7 @@ func TestEvaluateRedRouteGateUsesDeclaredRequirements(t *testing.T) {
 	}
 	mem := new(state.Mem)
 
-	blockage, handled := evaluateRedRouteGate(nil, mem, transition)
+	blockage, handled := evaluateRedRouteGate(nil, mem, transition, redWram())
 	if !handled {
 		t.Fatal("Gate=true transition was not handled as a passive gate")
 	}
@@ -29,13 +29,13 @@ func TestEvaluateRedRouteGateUsesDeclaredRequirements(t *testing.T) {
 	// capCanEnterSaffron. The transition ID is deliberately unknown: Gate and
 	// Requires, not an executor switch case, must be enough to execute it.
 	mem[sym.StatusFlags1] |= 1 << 6
-	blockage, handled = evaluateRedRouteGate(nil, mem, transition)
+	blockage, handled = evaluateRedRouteGate(nil, mem, transition, redWram())
 	if !handled || blockage != nil {
 		t.Fatalf("open passive gate = handled %v blockage %+v, want handled with no blockage", handled, blockage)
 	}
 
 	transition.Gate = false
-	if blockage, handled := evaluateRedRouteGate(nil, mem, transition); handled || blockage != nil {
+	if blockage, handled := evaluateRedRouteGate(nil, mem, transition, redWram()); handled || blockage != nil {
 		t.Fatalf("action transition was consumed by passive gate evaluator: handled %v blockage %+v", handled, blockage)
 	}
 }

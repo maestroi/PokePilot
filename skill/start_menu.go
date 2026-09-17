@@ -6,7 +6,6 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 )
 
 const (
@@ -21,11 +20,11 @@ const (
 // back on screen; FontLoaded has similar lifecycle gaps. SAVE + EXIT are stable
 // start-menu labels, so pairing them with the expected item count identifies
 // the menu we are actually trying to drive.
-func startMenuReady(mem *state.Mem, wantMax int) bool {
+func startMenuReady(mem *state.Mem, wantMax int, a wramAddresses) bool {
 	text := state.ScreenText(mem)
 	return strings.Contains(text, "SAVE") &&
 		strings.Contains(text, "EXIT") &&
-		state.DecodeMenu(mem).Max == wantMax
+		a.DecodeMenu(mem).Max == wantMax
 }
 
 func startMenuMarkersVisible(mem *state.Mem) bool {
@@ -57,17 +56,17 @@ func waitForStartMenu(m *emu.Emu, wantMax int) error {
 	attempts := startMenuOpenBudget / startMenuRetryWindow
 	for i := 0; i < attempts; i++ {
 		state.Snapshot(m, &mem)
-		if startMenuReady(&mem, wantMax) {
+		if startMenuReady(&mem, wantMax, ram(m)) {
 			return nil
 		}
-		if mem.U8(sym.IsInBattle) != 0 {
+		if mem.U8(ram(m).IsInBattle) != 0 {
 			return fmt.Errorf("skill: start menu cannot open during battle")
 		}
 
 		m.Tap(emu.Start, 3, 7)
 		if _, err := m.StepUntil(startMenuRetryWindow, func(m *emu.Emu) bool {
 			state.Snapshot(m, &mem)
-			return startMenuReady(&mem, wantMax)
+			return startMenuReady(&mem, wantMax, ram(m))
 		}); err == nil {
 			return nil
 		}
@@ -75,6 +74,6 @@ func waitForStartMenu(m *emu.Emu, wantMax int) error {
 
 	state.Snapshot(m, &mem)
 	return fmt.Errorf("skill: start menu did not appear after repeated START presses: screen=%q wJoyIgnore=%#04x wFontLoaded=%#04x wCurrentMenuItem=%#04x wMaxMenuItem=%#04x (want max %d)",
-		state.ScreenText(&mem), mem.U16BE(sym.JoyIgnore), mem.U8(sym.FontLoaded),
-		mem.U8(sym.CurrentMenuItem), mem.U8(sym.MaxMenuItem), wantMax)
+		state.ScreenText(&mem), mem.U16BE(ram(m).JoyIgnore), mem.U8(ram(m).FontLoaded),
+		mem.U8(ram(m).CurrentMenuItem), mem.U8(ram(m).MaxMenuItem), wantMax)
 }

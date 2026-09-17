@@ -5,9 +5,7 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
-	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
 )
 
@@ -53,10 +51,10 @@ func Fish(m *emu.Emu, romData []byte, rod uint8, want []uint8, policy MovePolicy
 
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if !state.Controllable(&mem) {
-		return CatchResult{}, fmt.Errorf("skill: Fish: player not controllable on map %#04x", m.Peek8(sym.CurMap))
+	if !ram(m).Controllable(&mem) {
+		return CatchResult{}, fmt.Errorf("skill: Fish: player not controllable on map %#04x", m.Peek8(ram(m).CurMap))
 	}
-	if _, qty := bagEntry(&mem, rod); qty <= 0 {
+	if _, qty := bagEntry(&mem, rod, ram(m)); qty <= 0 {
 		return CatchResult{}, fmt.Errorf("skill: Fish: %w (rod %#02x)", ErrNotInBag, rod)
 	}
 
@@ -65,7 +63,7 @@ func Fish(m *emu.Emu, romData []byte, rod uint8, want []uint8, policy MovePolicy
 		return CatchResult{}, err
 	}
 	if _, err := TravelFlee(m, romData, Destination{
-		Map: m.Peek8(sym.CurMap), X: uint8(shore.standX), Y: uint8(shore.standY),
+		Map: m.Peek8(ram(m).CurMap), X: uint8(shore.standX), Y: uint8(shore.standY),
 	}, policy, fishingTravelCap); err != nil {
 		return CatchResult{}, fmt.Errorf("skill: Fish: reach shoreline (%d,%d): %w", shore.standX, shore.standY, err)
 	}
@@ -75,9 +73,9 @@ func Fish(m *emu.Emu, romData []byte, rod uint8, want []uint8, policy MovePolicy
 	m.StepFrames(2)
 
 	state.Snapshot(m, &mem)
-	partyBefore := int(state.DecodeParty(&mem).Count)
-	boxBefore := int(state.DecodeBox(&mem).Count)
-	ownedBefore := append([]uint8(nil), state.DecodePokedex(&mem).Owned...)
+	partyBefore := int(ram(m).DecodeParty(&mem).Count)
+	boxBefore := int(ram(m).DecodeBox(&mem).Count)
+	ownedBefore := append([]uint8(nil), ram(m).DecodePokedex(&mem).Owned...)
 	wantDex := wantedDexNumbers(romData, want)
 	res := CatchResult{}
 
@@ -96,7 +94,7 @@ func Fish(m *emu.Emu, romData []byte, rod uint8, want []uint8, policy MovePolicy
 		}
 
 		state.Snapshot(m, &mem)
-		bs := state.DecodeBattle(&mem)
+		bs := ram(m).DecodeBattle(&mem)
 		if bs == nil {
 			return res, fmt.Errorf("skill: Fish: attempt %d reported a bite but no battle is in progress", attempt)
 		}
@@ -114,7 +112,7 @@ func Fish(m *emu.Emu, romData []byte, rod uint8, want []uint8, policy MovePolicy
 
 		return catchWanted(m, &mem, want, wantDex, policy, partyBefore, boxBefore, ownedBefore, res, maxBalls)
 	}
-	return res, fmt.Errorf("%w: %d casts and %d encounters on map %#04x", ErrFishingHuntExhausted, fishingAttemptCap, res.Encounters, m.Peek8(sym.CurMap))
+	return res, fmt.Errorf("%w: %d casts and %d encounters on map %#04x", ErrFishingHuntExhausted, fishingAttemptCap, res.Encounters, m.Peek8(ram(m).CurMap))
 }
 
 func fishingRodItem(item uint8) bool {
@@ -125,19 +123,20 @@ func fishingRodItem(item uint8) bool {
 // It returns only after either a battle has started or the no-bite result has
 // settled back to the overworld. Unknown prompts are never answered blindly.
 func castRodOnce(m *emu.Emu, rod uint8) (bool, error) {
+	a := ram(m)
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if !state.Controllable(&mem) {
+	if !ram(m).Controllable(&mem) {
 		return false, fmt.Errorf("player not controllable")
 	}
-	idx, _ := bagEntry(&mem, rod)
+	idx, _ := bagEntry(&mem, rod, ram(m))
 	if idx < 0 {
 		return false, fmt.Errorf("%w (rod %#02x)", ErrNotInBag, rod)
 	}
 
-	wantMax, itemIndex := startMenuShape(&mem)
+	wantMax, itemIndex := startMenuShape(&mem, ram(m))
 	drawn := func(m *emu.Emu) bool {
-		return m.Peek8(sym.FontLoaded) != 0 && int(m.Peek8(sym.MaxMenuItem)) == wantMax
+		return m.Peek8(ram(m).FontLoaded) != 0 && int(m.Peek8(ram(m).MaxMenuItem)) == wantMax
 	}
 	for attempt := 0; attempt < 5 && !drawn(m); attempt++ {
 		m.Tap(emu.Start, 3, 7)
@@ -150,7 +149,7 @@ func castRodOnce(m *emu.Emu, rod uint8) (bool, error) {
 		return false, fmt.Errorf("select ITEM: %w", err)
 	}
 	if _, err := m.StepUntil(bagMenuBudget, func(m *emu.Emu) bool {
-		return m.Peek8(sym.ListMenuID) == itemListMenuID
+		return m.Peek8(ram(m).ListMenuID) == itemListMenuID
 	}); err != nil {
 		return false, fmt.Errorf("bag list did not open: %w", err)
 	}
@@ -159,12 +158,12 @@ func castRodOnce(m *emu.Emu, rod uint8) (bool, error) {
 	}
 	if _, err := m.StepUntil(useTossBudget, func(m *emu.Emu) bool {
 		state.Snapshot(m, &mem)
-		return useTossPrompt(&mem) != nil
+		return useTossPrompt(&mem, a) != nil
 	}); err != nil {
 		return false, fmt.Errorf("USE/TOSS prompt did not open: %w", err)
 	}
 	state.Snapshot(m, &mem)
-	if p := useTossPrompt(&mem); p == nil || p.Index != 0 {
+	if p := useTossPrompt(&mem, a); p == nil || p.Index != 0 {
 		return false, fmt.Errorf("USE/TOSS cursor is not on USE")
 	}
 
@@ -173,10 +172,10 @@ func castRodOnce(m *emu.Emu, rod uint8) (bool, error) {
 	actionStarted := false
 	for int(m.FrameCount()-start) <= fishingUseBudget {
 		state.Snapshot(m, &mem)
-		if state.DecodeBattle(&mem) != nil {
+		if ram(m).DecodeBattle(&mem) != nil {
 			return true, nil
 		}
-		if p := useTossPrompt(&mem); p != nil {
+		if p := useTossPrompt(&mem, a); p != nil {
 			// This exact prompt is known and its cursor was already verified on
 			// USE. Menu transitions can leave it visible for a few frames after
 			// the first A; re-confirming USE is safe and avoids misclassifying
@@ -188,18 +187,18 @@ func castRodOnce(m *emu.Emu, rod uint8) (bool, error) {
 			continue
 		}
 		actionStarted = true
-		if state.DecodeTwoOptionMenu(&mem) != nil {
+		if ram(m).DecodeTwoOptionMenu(&mem) != nil {
 			return false, fmt.Errorf("unexpected choice prompt while resolving rod use")
 		}
-		if actionStarted && (state.DecodeDialogue(&mem) != nil || mem.U8(sym.FontLoaded) != 0) {
+		if actionStarted && (ram(m).DecodeDialogue(&mem) != nil || mem.U8(ram(m).FontLoaded) != 0) {
 			m.Tap(emu.A, 3, 7)
 			continue
 		}
-		if actionStarted && int(m.FrameCount()-start) >= 120 && state.Controllable(&mem) && !state.MenuUp(&mem) && mem.U8(sym.FontLoaded) == 0 {
+		if actionStarted && int(m.FrameCount()-start) >= 120 && ram(m).Controllable(&mem) && !ram(m).MenuUp(&mem) && mem.U8(ram(m).FontLoaded) == 0 {
 			// wRodResponse is WRAM scratch at 0xCD3D: 0=no bite, 1=bite,
 			// 2=no fish on map. A real bite should already have transitioned
 			// into battle above; response 2 is a deterministic bad source.
-			if mem.U8(sym.RodResponse) == 2 {
+			if mem.U8(ram(m).RodResponse) == 2 {
 				return false, ErrFishingNoFishHere
 			}
 			return false, nil
@@ -210,8 +209,8 @@ func castRodOnce(m *emu.Emu, rod uint8) (bool, error) {
 }
 
 func nearestFishingShore(m *emu.Emu, romData []byte) (fishingShore, error) {
-	mapID := m.Peek8(sym.CurMap)
-	h, err := rom.ParseMap(romData, mapID)
+	mapID := m.Peek8(ram(m).CurMap)
+	h, err := graphForROM(romData).ParseMap(romData, mapID)
 	if err != nil {
 		return fishingShore{}, fmt.Errorf("skill: Fish: parse map %#04x: %w", mapID, err)
 	}
@@ -224,7 +223,7 @@ func nearestFishingShore(m *emu.Emu, romData []byte) (fishingShore, error) {
 		return fishingShore{}, fmt.Errorf("skill: Fish: water grid: %w", err)
 	}
 	sx, sy := playerXY(m)
-	blocked := spriteBlockers(m)
+	blocked := spriteBlockers(m, m.ROM())
 	dirs := [][2]int{{0, -1}, {-1, 0}, {1, 0}, {0, 1}}
 
 	best := fishingShore{distance: int(^uint(0) >> 1)}

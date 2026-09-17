@@ -29,7 +29,7 @@ func controllable(t *testing.T, m *emu.Emu) bool {
 	t.Helper()
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	return state.Controllable(&mem)
+	return skill.RedAddresses().Controllable(&mem)
 }
 
 // TestFaceEachDirection faces all four adjacent tiles of the fixture start

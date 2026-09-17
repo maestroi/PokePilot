@@ -1,7 +1,5 @@
 package state
 
-import "github.com/maestroi/pokepilot/red/sym"
-
 // Layout of the sprite state arrays. Both wSpritePlayerStateData1 (0xC100)
 // and wSpriteStateData2 (0xC200) are 16 slots of 16 bytes each: slot 0 is the
 // player and slots 1..15 hold the current map's objects. The offsets below are
@@ -40,11 +38,11 @@ type SpriteState struct {
 // not be consulted for liveness. Slot 0 is the player and is never returned.
 // Coordinates come from wSpriteStateData2's map Y/X, which carry the ROM's +4
 // bias, so both are decremented by 4.
-func DecodeSprites(m *Mem) []SpriteState {
+func (a Addresses) DecodeSprites(m *Mem) []SpriteState {
 	var out []SpriteState
 	for slot := spriteFirstSlot; slot <= spriteLastSlot; slot++ {
-		data1 := sym.SpritePlayerStateData1 + uint16(slot)*spriteSlotSize
-		data2 := sym.SpriteStateData2 + uint16(slot)*spriteSlotSize
+		data1 := a.SpritePlayerStateData1 + uint16(slot)*spriteSlotSize
+		data2 := a.SpriteStateData2 + uint16(slot)*spriteSlotSize
 
 		pictureID := m.U8(data1 + spritePictureID)
 		if pictureID == 0 {

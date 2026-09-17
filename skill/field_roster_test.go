@@ -55,14 +55,14 @@ func TestOwnedSurfWithoutCompatiblePartyNeedsRosterRepair(t *testing.T) {
 	mem[sym.PartySpecies] = species
 	mem[sym.PartyMon1+sym.MonSpecies] = species
 
-	cap := FieldCapabilityFor(&mem, FieldSurf)
+	cap := FieldCapabilityFor(&mem, FieldSurf, redWram())
 	if !cap.BadgeOwned || !cap.HMOwned || cap.Learned || cap.Usable {
 		t.Fatalf("Surf capability = %+v, want owned/unlocked but not learned/usable", cap)
 	}
-	if CanPrepareFieldMove(romData, &mem, FieldSurf) {
+	if CanPrepareFieldMove(romData, &mem, FieldSurf, redWram()) {
 		t.Fatal("CanPrepareFieldMove returned true with no Surf-compatible party member")
 	}
-	owned := OwnedCoreProgressionFieldMoves(&mem)
+	owned := OwnedCoreProgressionFieldMoves(&mem, redWram())
 	if len(owned) != 1 || owned[0] != FieldSurf {
 		t.Fatalf("owned core field moves = %v, want [SURF]", owned)
 	}

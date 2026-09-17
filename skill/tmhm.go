@@ -7,7 +7,6 @@ import (
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 )
 
 // TMHMDecision is a deterministic plan for teaching one owned machine.
@@ -161,9 +160,10 @@ func DecideTMHM(romData []byte, party state.PartyState, item uint8, required boo
 // path backs out to the overworld before returning so a failed machine cannot
 // leave the next objective trapped in ITEM/party/forget UI.
 func TeachTMHM(m *emu.Emu, item uint8, required bool) (result TMHMResult, retErr error) {
+	a := ram(m)
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	party := state.DecodeParty(&mem)
+	party := ram(m).DecodeParty(&mem)
 	decision, err := DecideTMHM(m.ROM(), party, item, required)
 	if err != nil {
 		return TMHMResult{}, fmt.Errorf("skill: TeachTMHM: %w", err)
@@ -172,10 +172,10 @@ func TeachTMHM(m *emu.Emu, item uint8, required bool) (result TMHMResult, retErr
 	if decision.Existing {
 		return result, nil
 	}
-	if !state.Controllable(&mem) {
+	if !ram(m).Controllable(&mem) {
 		return TMHMResult{}, fmt.Errorf("skill: TeachTMHM: player is not controllable")
 	}
-	_, beforeQty := bagEntry(&mem, item)
+	_, beforeQty := bagEntry(&mem, item, a)
 	if beforeQty == 0 {
 		return TMHMResult{}, fmt.Errorf("skill: TeachTMHM: item %#02x is not in the bag", item)
 	}
@@ -190,16 +190,16 @@ func TeachTMHM(m *emu.Emu, item uint8, required bool) (result TMHMResult, retErr
 		}
 	}()
 
-	wantMax, itemIndex := startMenuShape(&mem)
+	wantMax, itemIndex := startMenuShape(&mem, ram(m))
 	menuMayBeOpen = true
 	if err := openStartMenuEntry(m, itemIndex, wantMax); err != nil {
 		return TMHMResult{}, fmt.Errorf("skill: TeachTMHM: open ITEM: %w", err)
 	}
-	if _, err := m.StepUntil(bagMenuBudget, func(m *emu.Emu) bool { return m.Peek8(sym.ListMenuID) == itemListMenuID }); err != nil {
+	if _, err := m.StepUntil(bagMenuBudget, func(m *emu.Emu) bool { return m.Peek8(ram(m).ListMenuID) == itemListMenuID }); err != nil {
 		return TMHMResult{}, fmt.Errorf("skill: TeachTMHM: bag did not open")
 	}
 	state.Snapshot(m, &mem)
-	idx, _ := bagEntry(&mem, item)
+	idx, _ := bagEntry(&mem, item, a)
 	if idx < 0 {
 		return TMHMResult{}, fmt.Errorf("skill: TeachTMHM: item %#02x disappeared from the bag", item)
 	}
@@ -208,25 +208,25 @@ func TeachTMHM(m *emu.Emu, item uint8, required bool) (result TMHMResult, retErr
 	}
 	if _, err := m.StepUntil(useTossBudget, func(m *emu.Emu) bool {
 		state.Snapshot(m, &mem)
-		return useTossPrompt(&mem) != nil
+		return useTossPrompt(&mem, a) != nil
 	}); err != nil {
 		return TMHMResult{}, fmt.Errorf("skill: TeachTMHM: USE/TOSS prompt did not appear")
 	}
-	if p := useTossPrompt(&mem); p == nil || p.Index != 0 {
+	if p := useTossPrompt(&mem, a); p == nil || p.Index != 0 {
 		return TMHMResult{}, fmt.Errorf("skill: TeachTMHM: USE/TOSS cursor is not on USE")
 	}
 	m.Tap(emu.A, 3, 7)
 
 	for i := 0; i < 100; i++ {
 		state.Snapshot(m, &mem)
-		if strings.Contains(state.ScreenText(&mem), "Teach") && state.DecodeTwoOptionMenu(&mem) != nil {
+		if strings.Contains(state.ScreenText(&mem), "Teach") && ram(m).DecodeTwoOptionMenu(&mem) != nil {
 			break
 		}
 		m.Tap(emu.A, 3, 7)
 		m.StepFrames(20)
 	}
 	state.Snapshot(m, &mem)
-	if !(strings.Contains(state.ScreenText(&mem), "Teach") && state.DecodeTwoOptionMenu(&mem) != nil) {
+	if !(strings.Contains(state.ScreenText(&mem), "Teach") && ram(m).DecodeTwoOptionMenu(&mem) != nil) {
 		return TMHMResult{}, fmt.Errorf("skill: TeachTMHM: teach prompt did not appear: %q", state.ScreenText(&mem))
 	}
 	if err := SelectMenuItem(m, 0); err != nil {
@@ -246,11 +246,11 @@ func TeachTMHM(m *emu.Emu, item uint8, required bool) (result TMHMResult, retErr
 	}
 
 	state.Snapshot(m, &mem)
-	afterParty := state.DecodeParty(&mem)
+	afterParty := ram(m).DecodeParty(&mem)
 	if decision.PartySlot >= len(afterParty.Mons) || !monKnowsMove(afterParty.Mons[decision.PartySlot], decision.Machine.Move) {
 		return TMHMResult{}, fmt.Errorf("skill: TeachTMHM: move %d was not verified in party slot %d", decision.Machine.Move, decision.PartySlot)
 	}
-	_, afterQty := bagEntry(&mem, item)
+	_, afterQty := bagEntry(&mem, item, a)
 	if decision.Machine.Consumable() {
 		if afterQty != beforeQty-1 {
 			return TMHMResult{}, fmt.Errorf("skill: TeachTMHM: TM %#02x quantity %d->%d, want exactly one consumed", item, beforeQty, afterQty)
@@ -266,7 +266,7 @@ func finishTeachingTMHM(m *emu.Emu, decision TMHMDecision) error {
 	var mem state.Mem
 	for frames := 0; frames < cutMenuBudget; frames += 20 {
 		state.Snapshot(m, &mem)
-		party := state.DecodeParty(&mem)
+		party := ram(m).DecodeParty(&mem)
 		if decision.PartySlot < len(party.Mons) && monKnowsMove(party.Mons[decision.PartySlot], decision.Machine.Move) {
 			return nil
 		}
@@ -282,7 +282,7 @@ func finishTeachingTMHM(m *emu.Emu, decision TMHMDecision) error {
 				return fmt.Errorf("skill: TeachTMHM: choose move slot %d to forget: %w", decision.ReplaceSlot, err)
 			}
 		case strings.Contains(text, "trying to learn"):
-			if state.DecodeTwoOptionMenu(&mem) != nil {
+			if ram(m).DecodeTwoOptionMenu(&mem) != nil {
 				if err := SelectMenuItem(m, 0); err != nil {
 					return fmt.Errorf("skill: TeachTMHM: answer replace-move prompt: %w", err)
 				}

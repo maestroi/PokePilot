@@ -6,7 +6,6 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
 )
 
@@ -39,24 +38,24 @@ func SafariCatch(m *emu.Emu, romData []byte, targetMap uint8, want []uint8, poli
 
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if !state.Controllable(&mem) {
-		return CatchResult{}, fmt.Errorf("skill: SafariCatch: player not controllable on map %#04x", m.Peek8(sym.CurMap))
+	if !ram(m).Controllable(&mem) {
+		return CatchResult{}, fmt.Errorf("skill: SafariCatch: player not controllable on map %#04x", m.Peek8(ram(m).CurMap))
 	}
-	partyBefore := int(state.DecodeParty(&mem).Count)
-	boxBefore := int(state.DecodeBox(&mem).Count)
-	ownedBefore := append([]uint8(nil), state.DecodePokedex(&mem).Owned...)
+	partyBefore := int(ram(m).DecodeParty(&mem).Count)
+	boxBefore := int(ram(m).DecodeBox(&mem).Count)
+	ownedBefore := append([]uint8(nil), ram(m).DecodePokedex(&mem).Owned...)
 	wantDex := wantedDexNumbers(romData, want)
 	res := CatchResult{}
 
 	for session := 1; session <= safariCatchSessions; session++ {
 		state.Snapshot(m, &mem)
-		if !state.HasEvent(&mem, eventInSafariZone) {
+		if !ram(m).HasEvent(&mem, eventInSafariZone) {
 			if err := enterSafariZone(m, romData, policy); err != nil {
 				return res, fmt.Errorf("skill: SafariCatch: enter session %d: %w", session, err)
 			}
 		}
 		state.Snapshot(m, &mem)
-		if mem.U8(sym.NumSafariBalls) == 0 {
+		if mem.U8(ram(m).NumSafariBalls) == 0 {
 			if err := leaveSafariZoneIfNeeded(m, romData, policy); err != nil {
 				return res, fmt.Errorf("skill: SafariCatch: session %d starts without Safari Balls and cannot exit: %w", session, err)
 			}
@@ -65,7 +64,7 @@ func SafariCatch(m *emu.Emu, romData []byte, targetMap uint8, want []uint8, poli
 
 		if err := travelToSafariGrass(m, romData, targetMap, policy); err != nil {
 			state.Snapshot(m, &mem)
-			if !state.HasEvent(&mem, eventInSafariZone) {
+			if !ram(m).HasEvent(&mem, eventInSafariZone) {
 				continue // the 502-step session expired while routing; buy a fresh one
 			}
 			return res, fmt.Errorf("skill: SafariCatch: session %d reach habitat: %w", session, err)
@@ -139,7 +138,7 @@ func travelToSafariGrass(m *emu.Emu, romData []byte, targetMap uint8, policy Mov
 			lastErr = err
 			var mem state.Mem
 			state.Snapshot(m, &mem)
-			if !state.HasEvent(&mem, eventInSafariZone) {
+			if !ram(m).HasEvent(&mem, eventInSafariZone) {
 				return err
 			}
 		}
@@ -148,8 +147,8 @@ func travelToSafariGrass(m *emu.Emu, romData []byte, targetMap uint8, policy Mov
 }
 
 func huntSafariGrassSession(m *emu.Emu, romData []byte, targetMap uint8, want, wantDex []uint8, policy MovePolicy, partyBefore, boxBefore int, ownedBefore []uint8, res *CatchResult, maxBallsPerEncounter int) (caught, sessionEnded bool, err error) {
-	if m.Peek8(sym.CurMap) != targetMap {
-		return false, false, fmt.Errorf("expected habitat map %#04x, on %#04x", targetMap, m.Peek8(sym.CurMap))
+	if m.Peek8(ram(m).CurMap) != targetMap {
+		return false, false, fmt.Errorf("expected habitat map %#04x, on %#04x", targetMap, m.Peek8(ram(m).CurMap))
 	}
 	grass, grid, err := grassCells(romData, targetMap)
 	if err != nil {
@@ -160,7 +159,7 @@ func huntSafariGrassSession(m *emu.Emu, romData []byte, targetMap uint8, want, w
 	if len(grass) == 0 {
 		return false, false, fmt.Errorf("habitat map %#04x has no reachable encounter grass from (%d,%d)", targetMap, now.X, now.Y)
 	}
-	a, b, ok := grindPair(grass, grid, int(now.X), int(now.Y), spriteBlockers(m))
+	a, b, ok := grindPair(grass, grid, int(now.X), int(now.Y), spriteBlockers(m, m.ROM()))
 	if !ok {
 		return false, false, fmt.Errorf("habitat map %#04x has no usable grass pair", targetMap)
 	}
@@ -171,14 +170,14 @@ func huntSafariGrassSession(m *emu.Emu, romData []byte, targetMap uint8, want, w
 	for res.Encounters-encountersAtStart < catchHuntCap && legs < safariCatchLegsPerSession {
 		var mem state.Mem
 		state.Snapshot(m, &mem)
-		if !state.HasEvent(&mem, eventInSafariZone) || mem.U8(sym.NumSafariBalls) == 0 {
+		if !ram(m).HasEvent(&mem, eventInSafariZone) || mem.U8(ram(m).NumSafariBalls) == 0 {
 			return false, true, nil
 		}
 
 		d := Destination{Map: targetMap, X: uint8(next.x), Y: uint8(next.y)}
 		if err := GoTo(m, romData, d); err != nil && !errors.Is(err, ErrBattle) {
 			state.Snapshot(m, &mem)
-			if !state.HasEvent(&mem, eventInSafariZone) {
+			if !ram(m).HasEvent(&mem, eventInSafariZone) {
 				return false, true, nil
 			}
 			na, nb, ok := repickGrindPair(m, grass, grid, a, b)
@@ -196,7 +195,7 @@ func huntSafariGrassSession(m *emu.Emu, romData []byte, targetMap uint8, want, w
 		}
 
 		state.Snapshot(m, &mem)
-		bs := state.DecodeBattle(&mem)
+		bs := ram(m).DecodeBattle(&mem)
 		if bs == nil {
 			return false, false, fmt.Errorf("Safari hunt leg %d reported an encounter but no battle is in progress", legs)
 		}
@@ -219,18 +218,18 @@ func huntSafariGrassSession(m *emu.Emu, romData []byte, targetMap uint8, want, w
 	return false, false, nil
 }
 
-func safariBallCursor(mem *state.Mem) bool {
+func safariBallCursor(mem *state.Mem, a wramAddresses) bool {
 	return fleeMenuFromMem(mem) == fleeMenuSafari &&
-		mem.U8(sym.TopMenuItemX) == safariBattleMenuLeftX &&
-		mem.U8(sym.CurrentMenuItem) == 0
+		mem.U8(a.TopMenuItemX) == safariBattleMenuLeftX &&
+		mem.U8(a.CurrentMenuItem) == 0
 }
 
-func safariBallNextInput(mem *state.Mem) (btn emu.Button, done bool) {
-	if safariBallCursor(mem) {
+func safariBallNextInput(mem *state.Mem, a wramAddresses) (btn emu.Button, done bool) {
+	if safariBallCursor(mem, a) {
 		return 0, true
 	}
-	row := int(mem.U8(sym.CurrentMenuItem))
-	x := mem.U8(sym.TopMenuItemX)
+	row := int(mem.U8(a.CurrentMenuItem))
+	x := mem.U8(a.TopMenuItemX)
 	switch {
 	case row > 0:
 		return emu.Up, false
@@ -244,6 +243,7 @@ func safariBallNextInput(mem *state.Mem) (btn emu.Button, done bool) {
 }
 
 func selectSafariBallEntry(m *emu.Emu) error {
+	a := ram(m)
 	kind, err := waitFleeMenu(m)
 	if err != nil {
 		return err
@@ -254,7 +254,7 @@ func selectSafariBallEntry(m *emu.Emu) error {
 	for i := 0; i < 12; i++ {
 		var mem state.Mem
 		state.Snapshot(m, &mem)
-		btn, done := safariBallNextInput(&mem)
+		btn, done := safariBallNextInput(&mem, a)
 		if done {
 			return nil
 		}
@@ -269,7 +269,7 @@ func selectSafariBallEntry(m *emu.Emu) error {
 
 func safariCatchWanted(m *emu.Emu, want, wantDex []uint8, partyBefore, boxBefore int, ownedBefore []uint8, res *CatchResult, maxBalls int) (bool, error) {
 	for thrown := 0; thrown < maxBalls && battleInFlight(m); thrown++ {
-		beforeBalls := m.Peek8(sym.NumSafariBalls)
+		beforeBalls := m.Peek8(ram(m).NumSafariBalls)
 		if beforeBalls == 0 {
 			break
 		}
@@ -291,7 +291,7 @@ func safariCatchWanted(m *emu.Emu, want, wantDex []uint8, partyBefore, boxBefore
 		}
 		var mem state.Mem
 		state.Snapshot(m, &mem)
-		if species, ok := catchAcquiredWanted(partyBefore, state.DecodeParty(&mem), boxBefore, state.DecodeBox(&mem), ownedBefore, state.DecodePokedex(&mem).Owned, want, wantDex); ok {
+		if species, ok := catchAcquiredWanted(partyBefore, ram(m).DecodeParty(&mem), boxBefore, ram(m).DecodeBox(&mem), ownedBefore, ram(m).DecodePokedex(&mem).Owned, want, wantDex); ok {
 			res.Outcome = OutcomeCaught
 			res.Species = species
 			return true, nil
@@ -318,17 +318,17 @@ func waitSafariBallResult(m *emu.Emu, beforeBalls uint8) (bool, error) {
 	for spent := 0; spent < battleEndSettle; spent += throwPollFrames {
 		var mem state.Mem
 		state.Snapshot(m, &mem)
-		if state.DecodeBattle(&mem) == nil {
+		if ram(m).DecodeBattle(&mem) == nil {
 			return true, nil
 		}
-		if state.DecodeTwoOptionMenu(&mem) != nil {
+		if ram(m).DecodeTwoOptionMenu(&mem) != nil {
 			if err := selectTwoOption(m, 1); err != nil {
 				return false, fmt.Errorf("declining Safari catch nickname prompt: %w", err)
 			}
 			continue
 		}
 		if fleeMenuFromMem(&mem) == fleeMenuSafari {
-			after := mem.U8(sym.NumSafariBalls)
+			after := mem.U8(ram(m).NumSafariBalls)
 			if beforeBalls == 0 || after+1 != beforeBalls {
 				return false, fmt.Errorf("Safari BALL count changed %d -> %d, want exactly one consumed", beforeBalls, after)
 			}

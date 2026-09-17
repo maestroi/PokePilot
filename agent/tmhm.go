@@ -38,12 +38,12 @@ func offerWithTMHMEvidence(m *emu.Emu, romData []byte, obs Observation, known *K
 	out = appendDexEvolutionObjectives(obs, known, out)
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	party := state.DecodeParty(&mem)
+	party := skill.AddressesFor(m).DecodeParty(&mem)
 	out = enhancePickupObjectives(romData, party, obs, out)
 	out = insertPartyTrainingObjectives(obs, known, out, func(slot, targetLevel int) (TrainingEstimate, error) {
 		return currentPartyTrainingEstimate(&mem, romData, obs.Map, slot, targetLevel, trainSessionBattleBudget)
 	})
-	out = appendTMHMObjectives(romData, party, state.DecodeInventory(&mem), out)
+	out = appendTMHMObjectives(romData, party, skill.AddressesFor(m).DecodeInventory(&mem), out)
 	offer.Candidates = prioritizeDexCleanupObjectives(obs, known, out)
 	return offer
 }
@@ -199,25 +199,26 @@ func normalizeObjectiveBoundary(m *emu.Emu) error {
 	for pass := 0; pass < maxPasses; pass++ {
 		var mem state.Mem
 		state.Snapshot(m, &mem)
-		if state.Controllable(&mem) && state.DecodeDialogue(&mem) == nil && !state.MenuUp(&mem) {
+		addrs := skill.AddressesFor(m)
+		if addrs.Controllable(&mem) && addrs.DecodeDialogue(&mem) == nil && !addrs.MenuUp(&mem) {
 			return nil
 		}
-		if state.DecodeBattle(&mem) != nil {
+		if addrs.DecodeBattle(&mem) != nil {
 			return fmt.Errorf("%w: battle still in progress", ErrObjectiveBoundaryDirty)
 		}
-		if skill.DismissableObjectiveMenu(&mem) {
+		if skill.DismissableObjectiveMenu(&mem, skill.AddressesFor(m)) {
 			if err := skill.CloseOpenMenuToOverworld(m); err != nil {
 				return fmt.Errorf("%w: close leftover menu: %v", ErrObjectiveBoundaryDirty, err)
 			}
 			continue
 		}
-		if state.DecodeTwoOptionMenu(&mem) != nil {
+		if skill.AddressesFor(m).DecodeTwoOptionMenu(&mem) != nil {
 			return ErrObjectiveBoundaryChoice
 		}
-		if state.MenuUp(&mem) {
+		if skill.AddressesFor(m).MenuUp(&mem) {
 			return fmt.Errorf("%w: non-dismissable menu remains open", ErrObjectiveBoundaryDirty)
 		}
-		if state.DecodeDialogue(&mem) != nil {
+		if skill.AddressesFor(m).DecodeDialogue(&mem) != nil {
 			res := skill.RecoverDialogue(m, roundRecoveryBudget)
 			switch res.Stop {
 			case skill.DialogueRecovered:

@@ -6,7 +6,6 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 )
 
 // approachViaTravel walks to a walkable tile orthogonally adjacent to
@@ -76,13 +75,13 @@ var ErrPickupMenu = errors.New("skill: Pickup: a two-option menu appeared while 
 // Teeth safe from the Gen I 20-stack bag limit without teaching their story
 // meaning to this generic primitive. Existing stacks need no free slot.
 func Pickup(m *emu.Emu, romData []byte, x, y uint8, want uint8, policy MovePolicy) error {
-	if reward, ok := choiceRewardAt(m.Peek8(sym.CurMap), x, y, want); ok {
+	if reward, ok := choiceRewardAt(m.Peek8(ram(m).CurMap), x, y, want); ok {
 		return receiveChoiceReward(m, romData, reward, policy)
 	}
 
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	before := bagCount(state.DecodeInventory(&mem).Items, want)
+	before := bagCount(ram(m).DecodeInventory(&mem).Items, want)
 
 	if err := approachViaTravel(m, romData, x, y, policy); err != nil {
 		return err
@@ -96,7 +95,7 @@ func Pickup(m *emu.Emu, romData []byte, x, y uint8, want uint8, policy MovePolic
 
 	m.Tap(emu.A, 3, 7)
 	if _, err := m.StepUntil(talkOpenBudget, func(m *emu.Emu) bool {
-		return m.Peek8(sym.FontLoaded) != 0
+		return m.Peek8(ram(m).FontLoaded) != 0
 	}); err != nil {
 		return fmt.Errorf("skill: Pickup: A at (%d,%d) opened no text box: %w", x, y, ErrNoDialogue)
 	}
@@ -104,9 +103,9 @@ func Pickup(m *emu.Emu, romData []byte, x, y uint8, want uint8, policy MovePolic
 	// Page the box closed. Before every A, check for a two-option menu and
 	// STOP if one is up: the first loop pass checks the box the first press
 	// opened, so a reflex A never answers a question on this path.
-	for m.Peek8(sym.FontLoaded) != 0 {
+	for m.Peek8(ram(m).FontLoaded) != 0 {
 		state.Snapshot(m, &mem)
-		if menu := state.DecodeTwoOptionMenu(&mem); menu != nil {
+		if menu := ram(m).DecodeTwoOptionMenu(&mem); menu != nil {
 			return fmt.Errorf("%w (cursor on option %d)", ErrPickupMenu, menu.Index)
 		}
 		m.Tap(emu.A, 3, 7)
@@ -116,17 +115,17 @@ func Pickup(m *emu.Emu, romData []byte, x, y uint8, want uint8, policy MovePolic
 	// Same settle as Talk: the box is down, but wJoyIgnore may clear a few
 	// frames after wFontLoaded.
 	state.Snapshot(m, &mem)
-	if !state.Controllable(&mem) {
+	if !ram(m).Controllable(&mem) {
 		if _, err := m.StepUntil(talkSettle, func(m *emu.Emu) bool {
 			state.Snapshot(m, &mem)
-			return state.Controllable(&mem)
+			return ram(m).Controllable(&mem)
 		}); err != nil {
 			return fmt.Errorf("skill: Pickup: not controllable %d frames after the box closed", talkSettle)
 		}
 	}
 
 	state.Snapshot(m, &mem)
-	after := bagCount(state.DecodeInventory(&mem).Items, want)
+	after := bagCount(ram(m).DecodeInventory(&mem).Items, want)
 	if after != before+1 {
 		return fmt.Errorf("%w: item %d was %d before and %d after", ErrBagNotRisen, want, before, after)
 	}

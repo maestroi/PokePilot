@@ -6,7 +6,6 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 )
 
 // CatchOutcome is how a Catch call ended. The outcomes that are part of the
@@ -132,12 +131,12 @@ func Catch(m *emu.Emu, romData []byte, want []uint8, policy MovePolicy, maxBalls
 
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if !state.Controllable(&mem) {
-		return CatchResult{}, fmt.Errorf("skill: Catch: player not controllable on map %#04x", m.Peek8(sym.CurMap))
+	if !ram(m).Controllable(&mem) {
+		return CatchResult{}, fmt.Errorf("skill: Catch: player not controllable on map %#04x", m.Peek8(ram(m).CurMap))
 	}
-	before := int(state.DecodeParty(&mem).Count)
-	boxBefore := int(state.DecodeBox(&mem).Count)
-	ownedBefore := append([]uint8(nil), state.DecodePokedex(&mem).Owned...)
+	before := int(ram(m).DecodeParty(&mem).Count)
+	boxBefore := int(ram(m).DecodeBox(&mem).Count)
+	ownedBefore := append([]uint8(nil), ram(m).DecodePokedex(&mem).Owned...)
 	wantDex := wantedDexNumbers(romData, want)
 	res := CatchResult{}
 
@@ -153,7 +152,7 @@ func Catch(m *emu.Emu, romData []byte, want []uint8, policy MovePolicy, maxBalls
 	if len(grass) == 0 {
 		return res, fmt.Errorf("skill: Catch: no walkable tall grass on map %#04x", now.Map)
 	}
-	a, b, ok := grindPair(grass, grid, int(now.X), int(now.Y), spriteBlockers(m))
+	a, b, ok := grindPair(grass, grid, int(now.X), int(now.Y), spriteBlockers(m, m.ROM()))
 	if !ok {
 		return res, fmt.Errorf("skill: Catch: map %#04x has no two walkable grass cells close enough to hunt between", now.Map)
 	}
@@ -182,9 +181,9 @@ func Catch(m *emu.Emu, romData []byte, want []uint8, policy MovePolicy, maxBalls
 			continue
 		}
 		state.Snapshot(m, &mem)
-		bs := state.DecodeBattle(&mem)
+		bs := ram(m).DecodeBattle(&mem)
 		if bs == nil {
-			return res, fmt.Errorf("skill: Catch: hunt leg %d reported an encounter but no battle is in progress on map %#04x", legsSpent, m.Peek8(sym.CurMap))
+			return res, fmt.Errorf("skill: Catch: hunt leg %d reported an encounter but no battle is in progress on map %#04x", legsSpent, m.Peek8(ram(m).CurMap))
 		}
 		res.Encounters++
 
@@ -202,7 +201,7 @@ func Catch(m *emu.Emu, romData []byte, want []uint8, policy MovePolicy, maxBalls
 		return catchWanted(m, &mem, want, wantDex, policy, before, boxBefore, ownedBefore, res, maxBalls)
 	}
 	return res, fmt.Errorf("%w: %d grass legs and %d encounters (map %#04x)",
-		ErrCatchHuntExhausted, legsSpent, res.Encounters, m.Peek8(sym.CurMap))
+		ErrCatchHuntExhausted, legsSpent, res.Encounters, m.Peek8(ram(m).CurMap))
 }
 
 // catchWanted throws balls at the wanted target in progress and reports the
@@ -220,7 +219,7 @@ func catchWanted(m *emu.Emu, mem *state.Mem, want, wantDex []uint8, policy MoveP
 		res.BallsThrown++
 
 		state.Snapshot(m, mem)
-		if bs := state.DecodeBattle(mem); bs != nil && bs.EnemyHP == 0 {
+		if bs := ram(m).DecodeBattle(mem); bs != nil && bs.EnemyHP == 0 {
 			targetFainted = true
 		}
 
@@ -259,7 +258,7 @@ func catchWanted(m *emu.Emu, mem *state.Mem, want, wantDex []uint8, policy MoveP
 		return res, err
 	}
 	state.Snapshot(m, mem)
-	if species, ok := catchAcquiredWanted(partyBefore, state.DecodeParty(mem), boxBefore, state.DecodeBox(mem), ownedBefore, state.DecodePokedex(mem).Owned, want, wantDex); ok {
+	if species, ok := catchAcquiredWanted(partyBefore, ram(m).DecodeParty(mem), boxBefore, ram(m).DecodeBox(mem), ownedBefore, ram(m).DecodePokedex(mem).Owned, want, wantDex); ok {
 		res.Outcome = OutcomeCaught
 		res.Species = species
 		return res, nil
@@ -298,13 +297,13 @@ func waitThrowResult(m *emu.Emu) (bool, error) {
 	for spent := 0; spent < battleEndSettle; spent += throwPollFrames {
 		var mem state.Mem
 		state.Snapshot(m, &mem)
-		if state.DecodeBattle(&mem) == nil {
+		if ram(m).DecodeBattle(&mem) == nil {
 			return true, nil
 		}
 		if mainMenuUp(m) {
 			return false, nil
 		}
-		if state.DecodeTwoOptionMenu(&mem) != nil {
+		if ram(m).DecodeTwoOptionMenu(&mem) != nil {
 			if err := selectTwoOption(m, 1); err != nil {
 				return false, fmt.Errorf("declining the nickname prompt: %w", err)
 			}
@@ -318,12 +317,12 @@ func waitThrowResult(m *emu.Emu) (bool, error) {
 	}
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if state.DecodeBattle(&mem) == nil {
+	if ram(m).DecodeBattle(&mem) == nil {
 		return true, nil
 	}
 	x, y := playerXY(m)
 	return false, fmt.Errorf("neither battle end nor main menu within %d frames: map %02x at (%d,%d)",
-		battleEndSettle, m.Peek8(sym.CurMap), x, y)
+		battleEndSettle, m.Peek8(ram(m).CurMap), x, y)
 }
 
 // waitForBattleEnd steps until no battle is in progress and the player is
@@ -333,11 +332,11 @@ func waitForBattleEnd(m *emu.Emu) error {
 	if _, err := m.StepUntil(battleEndSettle, func(m *emu.Emu) bool {
 		var mem state.Mem
 		state.Snapshot(m, &mem)
-		return state.DecodeBattle(&mem) == nil && state.Controllable(&mem)
+		return ram(m).DecodeBattle(&mem) == nil && ram(m).Controllable(&mem)
 	}); err != nil {
 		x, y := playerXY(m)
 		return fmt.Errorf("skill: Catch: battle did not end within %d frames: map %02x at (%d,%d)",
-			battleEndSettle, m.Peek8(sym.CurMap), x, y)
+			battleEndSettle, m.Peek8(ram(m).CurMap), x, y)
 	}
 	return nil
 }

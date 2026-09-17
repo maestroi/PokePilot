@@ -5,9 +5,7 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
-	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
 )
 
@@ -107,18 +105,18 @@ func ClearSilphCo(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	// A resume may be anywhere after the rival. Re-enter the exact rival room
 	// through the 3F pad when necessary so the 7F->11F pad is reached from the
 	// correct connected component rather than by guessing through locked rooms.
-	if m.Peek8(sym.CurMap) != silphCo7FMap && m.Peek8(sym.CurMap) != silphCo11FMap {
+	if m.Peek8(ram(m).CurMap) != silphCo7FMap && m.Peek8(ram(m).CurMap) != silphCo11FMap {
 		if err := reachSilphRivalRoom(m, romData, policy); err != nil {
 			return err
 		}
 	}
-	if m.Peek8(sym.CurMap) == silphCo7FMap {
+	if m.Peek8(ram(m).CurMap) == silphCo7FMap {
 		if err := traverseSilphWarp(m, romData, silph7FTo11FEdge, policy, nil); err != nil {
 			return fmt.Errorf("skill: ClearSilphCo: take 7F pad to 11F: %w", err)
 		}
 	}
-	if m.Peek8(sym.CurMap) != silphCo11FMap {
-		return fmt.Errorf("skill: ClearSilphCo: story route ended on map %#04x, want Silph Co 11F", m.Peek8(sym.CurMap))
+	if m.Peek8(ram(m).CurMap) != silphCo11FMap {
+		return fmt.Errorf("skill: ClearSilphCo: story route ended on map %#04x, want Silph Co 11F", m.Peek8(ram(m).CurMap))
 	}
 
 	if err := resolveSilphGiovanni(m, romData, policy); err != nil {
@@ -130,11 +128,11 @@ func ClearSilphCo(m *emu.Emu, romData []byte, policy MovePolicy) error {
 func currentSilphFacts(m *emu.Emu) state.StoryFacts {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	return state.DecodeStoryFacts(&mem, state.DecodeInventory(&mem))
+	return ram(m).DecodeStoryFacts(&mem, ram(m).DecodeInventory(&mem))
 }
 
 func reachSilphRivalRoom(m *emu.Emu, romData []byte, policy MovePolicy) error {
-	if m.Peek8(sym.CurMap) == silphCo7FMap {
+	if m.Peek8(ram(m).CurMap) == silphCo7FMap {
 		return nil
 	}
 	landing := Destination{Map: silphCo3FMap, X: silph3FStairLandingX, Y: silph3FStairLandingY}
@@ -195,12 +193,12 @@ func unlockSilphDoor(m *emu.Emu, romData []byte, blockX, blockY int, policy Move
 
 		m.Tap(emu.A, 3, 7)
 		if _, err := m.StepUntil(talkOpenBudget, func(m *emu.Emu) bool {
-			return m.Peek8(sym.FontLoaded) != 0 || m.Peek8(sym.IsInBattle) != 0
+			return m.Peek8(ram(m).FontLoaded) != 0 || m.Peek8(ram(m).IsInBattle) != 0
 		}); err != nil {
 			last = err
 			continue
 		}
-		if m.Peek8(sym.IsInBattle) != 0 {
+		if m.Peek8(ram(m).IsInBattle) != 0 {
 			if err := finishSilphBattle(m, "trainer beside Card Key door", policy); err != nil {
 				return err
 			}
@@ -220,10 +218,10 @@ func unlockSilphDoor(m *emu.Emu, romData []byte, blockX, blockY int, policy Move
 }
 
 func silphWarpReachable(m *emu.Emu, romData []byte, edge world.Edge) bool {
-	if m.Peek8(sym.CurMap) != edge.From {
+	if m.Peek8(ram(m).CurMap) != edge.From {
 		return false
 	}
-	h, err := rom.ParseMap(romData, edge.From)
+	h, err := graphForROM(romData).ParseMap(romData, edge.From)
 	if err != nil {
 		return false
 	}
@@ -232,15 +230,15 @@ func silphWarpReachable(m *emu.Emu, romData []byte, edge world.Edge) bool {
 		return false
 	}
 	x, y := playerXY(m)
-	_, _, _, _, err = warpTarget(h, edge, grid, int(x), int(y), spriteBlockers(m), romData)
+	_, _, _, _, err = warpTarget(h, edge, grid, int(x), int(y), spriteBlockers(m, m.ROM()), romData)
 	return err == nil
 }
 
 func silphTileReachable(m *emu.Emu, romData []byte, mapID, tx, ty uint8) bool {
-	if m.Peek8(sym.CurMap) != mapID {
+	if m.Peek8(ram(m).CurMap) != mapID {
 		return false
 	}
-	h, err := rom.ParseMap(romData, mapID)
+	h, err := graphForROM(romData).ParseMap(romData, mapID)
 	if err != nil {
 		return false
 	}
@@ -249,7 +247,7 @@ func silphTileReachable(m *emu.Emu, romData []byte, mapID, tx, ty uint8) bool {
 		return false
 	}
 	x, y := playerXY(m)
-	_, err = world.FindPath(grid, int(x), int(y), int(tx), int(ty), spriteBlockers(m))
+	_, err = world.FindPath(grid, int(x), int(y), int(tx), int(ty), spriteBlockers(m, m.ROM()))
 	return err == nil
 }
 
@@ -283,8 +281,8 @@ func resolveSilphRival(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if currentSilphFacts(m).SilphCoRivalDefeated {
 		return nil
 	}
-	if m.Peek8(sym.CurMap) != silphCo7FMap {
-		return fmt.Errorf("skill: ClearSilphCo: rival resolution requested on map %#04x", m.Peek8(sym.CurMap))
+	if m.Peek8(ram(m).CurMap) != silphCo7FMap {
+		return fmt.Errorf("skill: ClearSilphCo: rival resolution requested on map %#04x", m.Peek8(ram(m).CurMap))
 	}
 
 	for _, trigger := range []Destination{
@@ -310,8 +308,8 @@ func resolveSilphGiovanni(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if currentSilphFacts(m).SilphCoCleared {
 		return nil
 	}
-	if m.Peek8(sym.CurMap) != silphCo11FMap {
-		return fmt.Errorf("skill: ClearSilphCo: Giovanni resolution requested on map %#04x", m.Peek8(sym.CurMap))
+	if m.Peek8(ram(m).CurMap) != silphCo11FMap {
+		return fmt.Errorf("skill: ClearSilphCo: Giovanni resolution requested on map %#04x", m.Peek8(ram(m).CurMap))
 	}
 
 	reachable := func() bool {
@@ -345,24 +343,24 @@ func resolveSilphGiovanni(m *emu.Emu, romData []byte, policy MovePolicy) error {
 func silphStoryActive(m *emu.Emu) bool {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	return state.DecodeBattle(&mem) != nil || mem.U8(sym.FontLoaded) != 0 || !state.Controllable(&mem)
+	return ram(m).DecodeBattle(&mem) != nil || mem.U8(ram(m).FontLoaded) != 0 || !ram(m).Controllable(&mem)
 }
 
 func driveSilphStory(m *emu.Emu, name string, policy MovePolicy, done func(state.StoryFacts) bool) error {
 	var mem state.Mem
 	for spent := 0; spent < silphStoryDriveBudget; spent += 10 {
 		state.Snapshot(m, &mem)
-		facts := state.DecodeStoryFacts(&mem, state.DecodeInventory(&mem))
-		if done(facts) && state.Controllable(&mem) {
+		facts := ram(m).DecodeStoryFacts(&mem, ram(m).DecodeInventory(&mem))
+		if done(facts) && ram(m).Controllable(&mem) {
 			return nil
 		}
-		if state.DecodeBattle(&mem) != nil {
+		if ram(m).DecodeBattle(&mem) != nil {
 			if err := finishSilphBattle(m, name, policy); err != nil {
 				return err
 			}
 			continue
 		}
-		switch interaction := state.DecodeInteraction(&mem); interaction.Kind {
+		switch interaction := ram(m).DecodeInteraction(&mem); interaction.Kind {
 		case state.InteractionDialogue:
 			m.Tap(emu.A, 3, 7)
 		case state.InteractionNone:
@@ -389,16 +387,16 @@ func settleSilphControl(m *emu.Emu, policy MovePolicy) error {
 	var mem state.Mem
 	for spent := 0; spent < storyBattleSettleBudget; spent += 10 {
 		state.Snapshot(m, &mem)
-		if state.Controllable(&mem) {
+		if ram(m).Controllable(&mem) {
 			return nil
 		}
-		if state.DecodeBattle(&mem) != nil {
+		if ram(m).DecodeBattle(&mem) != nil {
 			if err := finishSilphBattle(m, "trainer interruption", policy); err != nil {
 				return err
 			}
 			continue
 		}
-		switch interaction := state.DecodeInteraction(&mem); interaction.Kind {
+		switch interaction := ram(m).DecodeInteraction(&mem); interaction.Kind {
 		case state.InteractionDialogue:
 			m.Tap(emu.A, 3, 7)
 		case state.InteractionNone:
@@ -425,7 +423,7 @@ func collectSilphPresidentReward(m *emu.Emu, romData []byte, policy MovePolicy) 
 	if err := EnsureBagSpaceFor(m, masterBallItemID); err != nil {
 		return fmt.Errorf("skill: ClearSilphCo: make room for Master Ball: %w", err)
 	}
-	if m.Peek8(sym.CurMap) != silphCo11FMap {
+	if m.Peek8(ram(m).CurMap) != silphCo11FMap {
 		dest := Destination{Map: silphCo11FMap, X: silphPresidentX, Y: silphPresidentY + 1}
 		if _, err := TravelFlee(m, romData, dest, policy, silphStoryTravelBattles); err != nil {
 			return fmt.Errorf("skill: ClearSilphCo: return to Silph president: %w", err)

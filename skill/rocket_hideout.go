@@ -4,9 +4,7 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
-	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
 )
 
@@ -87,11 +85,11 @@ func RocketHideout(m *emu.Emu, romData []byte, policy MovePolicy) error {
 
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if _, count := bagEntry(&mem, silphScopeItem); count > 0 {
+	if _, count := bagEntry(&mem, silphScopeItem, ram(m)); count > 0 {
 		return nil
 	}
 
-	cur := m.Peek8(sym.CurMap)
+	cur := m.Peek8(ram(m).CurMap)
 	if !RocketHideoutAvailable(cur) {
 		return fmt.Errorf("skill: RocketHideout: map %#04x is outside the Celadon/Hideout progression slice", cur)
 	}
@@ -135,10 +133,10 @@ func RocketHideout(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	// walkably connected while block $2d is present. Collect the Lift Key from
 	// the third B4F Rocket first, then use the legal elevator route to them.
 	if !rocketBagHas(m, liftKeyItem) {
-		if m.Peek8(sym.CurMap) == rocketHideoutElevatorMap {
+		if m.Peek8(ram(m).CurMap) == rocketHideoutElevatorMap {
 			return fmt.Errorf("skill: RocketHideout: resumed inside elevator without Lift Key")
 		}
-		if m.Peek8(sym.CurMap) != rocketHideoutB4FMap {
+		if m.Peek8(ram(m).CurMap) != rocketHideoutB4FMap {
 			if err := descendRocketHideout(m, romData, policy); err != nil {
 				return fmt.Errorf("skill: RocketHideout: descend to B4F Lift Key side: %w", err)
 			}
@@ -171,8 +169,8 @@ func RocketHideout(m *emu.Emu, romData []byte, policy MovePolicy) error {
 }
 
 func finishRocketBossRoom(m *emu.Emu, romData []byte, policy MovePolicy) error {
-	if m.Peek8(sym.CurMap) != rocketHideoutB4FMap {
-		return fmt.Errorf("skill: RocketHideout: boss room requested on map %#04x", m.Peek8(sym.CurMap))
+	if m.Peek8(ram(m).CurMap) != rocketHideoutB4FMap {
+		return fmt.Errorf("skill: RocketHideout: boss room requested on map %#04x", m.Peek8(ram(m).CurMap))
 	}
 
 	_, y := playerXY(m)
@@ -190,7 +188,7 @@ func finishRocketBossRoom(m *emu.Emu, romData []byte, policy MovePolicy) error {
 
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if _, count := bagEntry(&mem, silphScopeItem); count < 1 {
+	if _, count := bagEntry(&mem, silphScopeItem, ram(m)); count < 1 {
 		return fmt.Errorf("skill: RocketHideout: Silph Scope missing from bag after pickup")
 	}
 	return nil
@@ -204,8 +202,8 @@ func finishRocketBossRoom(m *emu.Emu, romData []byte, policy MovePolicy) error {
 // dialogue, and fight if a battle begins. Talking to an already-defeated
 // guard simply reaches controllable state with no battle and is a no-op.
 func fightStoryTrainerAt(m *emu.Emu, romData []byte, homeX, homeY uint8, name string, policy MovePolicy) error {
-	cur := m.Peek8(sym.CurMap)
-	h, err := rom.ParseMap(romData, cur)
+	cur := m.Peek8(ram(m).CurMap)
+	h, err := graphForROM(romData).ParseMap(romData, cur)
 	if err != nil {
 		return fmt.Errorf("skill: RocketHideout: parse map %#04x for %s: %w", cur, name, err)
 	}
@@ -223,7 +221,7 @@ func fightStoryTrainerAt(m *emu.Emu, romData []byte, homeX, homeY uint8, name st
 	if err := talkBeside(m, romData, homeX, homeY, policy); err != nil {
 		return fmt.Errorf("skill: RocketHideout: approach %s: %w", name, err)
 	}
-	if m.Peek8(sym.IsInBattle) != 0 {
+	if m.Peek8(ram(m).IsInBattle) != 0 {
 		return finishStoryBattle(m, name, policy)
 	}
 
@@ -239,16 +237,16 @@ func fightStoryTrainerAt(m *emu.Emu, romData []byte, homeX, homeY uint8, name st
 	var mem state.Mem
 	if _, err := m.StepUntil(talkOpenBudget, func(m *emu.Emu) bool {
 		state.Snapshot(m, &mem)
-		return mem.U8(sym.FontLoaded) != 0 || state.DecodeBattle(&mem) != nil
+		return mem.U8(ram(m).FontLoaded) != 0 || ram(m).DecodeBattle(&mem) != nil
 	}); err != nil {
 		return fmt.Errorf("skill: RocketHideout: %s interaction opened neither dialogue nor battle", name)
 	}
 
-	mem = advanceUntil(m, gymBattleWaitBudget, func(mm *state.Mem) bool {
-		return state.DecodeBattle(mm) != nil || (mm.U8(sym.FontLoaded) == 0 && state.Controllable(mm))
+	mem = advanceUntil(m, ram(m), gymBattleWaitBudget, func(mm *state.Mem, a wramAddresses) bool {
+		return ram(m).DecodeBattle(mm) != nil || (mm.U8(ram(m).FontLoaded) == 0 && ram(m).Controllable(mm))
 	})
-	if state.DecodeBattle(&mem) == nil {
-		if state.Controllable(&mem) {
+	if ram(m).DecodeBattle(&mem) == nil {
+		if ram(m).Controllable(&mem) {
 			return nil // already-defeated trainer's after-battle text
 		}
 		return fmt.Errorf("skill: RocketHideout: %s dialogue neither started a battle nor returned control", name)
@@ -265,10 +263,10 @@ func finishStoryBattle(m *emu.Emu, name string, policy MovePolicy) error {
 		return fmt.Errorf("skill: RocketHideout: %w after losing to %s", ErrBlackedOut, name)
 	}
 
-	mem := advanceUntil(m, storyBattleSettleBudget, func(mm *state.Mem) bool {
-		return state.Controllable(mm)
+	mem := advanceUntil(m, ram(m), storyBattleSettleBudget, func(mm *state.Mem, a wramAddresses) bool {
+		return ram(m).Controllable(mm)
 	})
-	if !state.Controllable(&mem) {
+	if !ram(m).Controllable(&mem) {
 		return fmt.Errorf("skill: RocketHideout: not controllable after beating %s", name)
 	}
 	return nil
@@ -289,14 +287,14 @@ func applyLiveOpenBlock(g *world.Grid, blockY, blockX int) {
 }
 
 func crossGameCornerSecretWarp(m *emu.Emu, romData []byte) error {
-	if m.Peek8(sym.CurMap) != gameCornerMap {
-		return fmt.Errorf("on map %#04x, want Game Corner %#04x", m.Peek8(sym.CurMap), gameCornerMap)
+	if m.Peek8(ram(m).CurMap) != gameCornerMap {
+		return fmt.Errorf("on map %#04x, want Game Corner %#04x", m.Peek8(ram(m).CurMap), gameCornerMap)
 	}
-	h, err := rom.ParseMap(romData, gameCornerMap)
+	h, err := graphForROM(romData).ParseMap(romData, gameCornerMap)
 	if err != nil {
 		return err
 	}
-	grid, err := world.Build(romData, h)
+	grid, err := world.BuildForTables(graphForROM(romData), romData, h)
 	if err != nil {
 		return err
 	}
@@ -327,7 +325,7 @@ func crossGameCornerSecretWarp(m *emu.Emu, romData []byte) error {
 	m.Press(btn)
 	crossed := false
 	for i := 0; i < crossBudget; i++ {
-		if m.Peek8(sym.CurMap) != gameCornerMap {
+		if m.Peek8(ram(m).CurMap) != gameCornerMap {
 			crossed = true
 			break
 		}
@@ -341,25 +339,25 @@ func crossGameCornerSecretWarp(m *emu.Emu, romData []byte) error {
 	if _, err := m.StepUntil(arriveBudget, func(m *emu.Emu) bool {
 		var mem state.Mem
 		state.Snapshot(m, &mem)
-		return state.Controllable(&mem)
+		return ram(m).Controllable(&mem)
 	}); err != nil {
 		return fmt.Errorf("player not controllable after secret stair")
 	}
-	if got := m.Peek8(sym.CurMap); got != rocketHideoutB1FMap {
+	if got := m.Peek8(ram(m).CurMap); got != rocketHideoutB1FMap {
 		return fmt.Errorf("secret stair reached map %#04x, want B1F %#04x", got, rocketHideoutB1FMap)
 	}
 	return waitForPositionStable(m, positionStableBudget, positionStableFrames)
 }
 
 func walkRocketBossDoor(m *emu.Emu, romData []byte) error {
-	if m.Peek8(sym.CurMap) != rocketHideoutB4FMap {
-		return fmt.Errorf("on map %#04x, want B4F %#04x", m.Peek8(sym.CurMap), rocketHideoutB4FMap)
+	if m.Peek8(ram(m).CurMap) != rocketHideoutB4FMap {
+		return fmt.Errorf("on map %#04x, want B4F %#04x", m.Peek8(ram(m).CurMap), rocketHideoutB4FMap)
 	}
-	h, err := rom.ParseMap(romData, rocketHideoutB4FMap)
+	h, err := graphForROM(romData).ParseMap(romData, rocketHideoutB4FMap)
 	if err != nil {
 		return err
 	}
-	grid, err := world.Build(romData, h)
+	grid, err := world.BuildForTables(graphForROM(romData), romData, h)
 	if err != nil {
 		return err
 	}

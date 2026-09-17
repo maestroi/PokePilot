@@ -84,20 +84,20 @@ const menuCursorTile = 0xED
 // The tile is read raw from wTileMap as 20-wide rows, never via
 // ScreenText or DecodeTiles: textChars has no entry for $ED, so the cursor
 // would render as a space and the check could never see it.
-func DecodeTwoOptionMenu(m *Mem) *TwoOptionMenu {
-	if m.U8(sym.FontLoaded) == 0 && m.U8(sym.IsInBattle) == 0 {
+func (a Addresses) DecodeTwoOptionMenu(m *Mem) *TwoOptionMenu {
+	if m.U8(a.FontLoaded) == 0 && m.U8(a.IsInBattle) == 0 {
 		return nil
 	}
-	if m.U8(sym.MaxMenuItem) != 1 {
+	if m.U8(a.MaxMenuItem) != 1 {
 		return nil
 	}
-	y := int(m.U8(sym.TopMenuItemY))
-	x := int(m.U8(sym.TopMenuItemX))
+	y := int(m.U8(a.TopMenuItemY))
+	x := int(m.U8(a.TopMenuItemX))
 	if y >= 18 || x >= 20 {
 		return nil
 	}
-	if m.Slice(sym.TileMap, sym.TileMapLen)[y*20+x] != menuCursorTile {
+	if m.Slice(a.TileMap, sym.TileMapLen)[y*20+x] != menuCursorTile {
 		return nil
 	}
-	return &TwoOptionMenu{Index: int(m.U8(sym.CurrentMenuItem))}
+	return &TwoOptionMenu{Index: int(m.U8(a.CurrentMenuItem))}
 }

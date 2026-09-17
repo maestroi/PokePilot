@@ -13,10 +13,10 @@ type PokedexState struct {
 // DecodePokedex reads Red's two 151-bit Pokédex arrays directly from WRAM.
 // Returned values are National Pokédex numbers (1..151), not Red's sparse
 // internal species IDs.
-func DecodePokedex(m *Mem) PokedexState {
+func (a Addresses) DecodePokedex(m *Mem) PokedexState {
 	return PokedexState{
-		Seen:  decodePokedexFlags(m, sym.PokedexSeen),
-		Owned: decodePokedexFlags(m, sym.PokedexOwned),
+		Seen:  decodePokedexFlags(m, a.PokedexSeen),
+		Owned: decodePokedexFlags(m, a.PokedexOwned),
 	}
 }
 

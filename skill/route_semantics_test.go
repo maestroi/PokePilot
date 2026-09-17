@@ -20,7 +20,7 @@ func TestRedRouteCapabilitiesProjectFieldMoves(t *testing.T) {
 		{FieldStrength, capCanMoveBoulders},
 	} {
 		mem := fieldTestMem(tc.move, true, true, false)
-		caps := redRouteCapabilities(nil, mem)
+		caps := redRouteCapabilities(nil, mem, redWram())
 		if !caps.Has(tc.want) {
 			t.Errorf("%s usable in Red RAM but semantic capability %q absent: %v", tc.move, tc.want, caps)
 		}
@@ -32,7 +32,7 @@ func TestRedRouteCapabilitiesProjectPokeFluteStoryFact(t *testing.T) {
 	mem[sym.NumBagItems] = 1
 	mem[sym.BagItems] = 0x49
 	mem[sym.BagItems+1] = 1
-	caps := redRouteCapabilities(nil, mem)
+	caps := redRouteCapabilities(nil, mem, redWram())
 	if !caps.Has(capCanClearSnorlax) {
 		t.Fatalf("Poke Flute in Red inventory did not project %q: %v", capCanClearSnorlax, caps)
 	}
@@ -41,7 +41,7 @@ func TestRedRouteCapabilitiesProjectPokeFluteStoryFact(t *testing.T) {
 func TestRedRouteCapabilitiesProjectSaffronGateOpen(t *testing.T) {
 	mem := new(state.Mem)
 	mem[sym.StatusFlags1] = 1 << 6 // BIT_GAVE_SAFFRON_GUARDS_DRINK
-	caps := redRouteCapabilities(nil, mem)
+	caps := redRouteCapabilities(nil, mem, redWram())
 	if !caps.Has(capCanEnterSaffron) {
 		t.Fatalf("BIT_GAVE_SAFFRON_GUARDS_DRINK set but %q not projected: %v", capCanEnterSaffron, caps)
 	}
@@ -134,7 +134,7 @@ func TestRoute12SnorlaxTransitionOnlyOwnsTheWalkableBand(t *testing.T) {
 	mem[sym.BagItems] = 0x49
 	mem[sym.BagItems+1] = 1
 
-	prereqs := redRoutePrerequisites(graph, romData, mem)
+	prereqs := redRoutePrerequisites(graph, romData, mem, redWram())
 	for _, e := range borderEdges {
 		transition, attached := prereqs.Transitions[e]
 		if !graph.ConnectionExitWalkable(e) {

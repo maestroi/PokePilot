@@ -29,7 +29,7 @@ func executeDexEvolutionTraining(m *emu.Emu, romData []byte, o Objective, result
 	}
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if !dexNumberOwned(state.DecodePokedex(&mem).Owned, wantDex) {
+	if !dexNumberOwned(skill.AddressesFor(m).DecodePokedex(&mem).Owned, wantDex) {
 		return trained, fmt.Errorf("agent: %s: reached level %d but expected evolution Pokédex #%d is not owned", o, o.Level, wantDex)
 	}
 	return trained, nil
@@ -44,7 +44,7 @@ func executeDexEvolutionItem(m *emu.Emu, romData []byte, o Objective, result Obj
 
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	party := state.DecodeParty(&mem)
+	party := skill.AddressesFor(m).DecodeParty(&mem)
 	if o.Slot < 0 || o.Slot >= len(party.Mons) {
 		return result, fmt.Errorf("agent: %s: party slot %d out of range for party of %d", o, o.Slot, len(party.Mons))
 	}

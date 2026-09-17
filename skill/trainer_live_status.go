@@ -5,7 +5,6 @@ import (
 
 	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
 )
 
@@ -14,7 +13,7 @@ import (
 // live wOverworldMap block buffer so ReplaceTileBlock scripts can close or open
 // paths before a generic trainer objective is offered.
 func TrainerStatusAtLive(romData []byte, mem *state.Mem, mapID, homeX, homeY uint8) (TrainerStatus, error) {
-	h, err := rom.ParseMap(romData, mapID)
+	h, err := graphForROM(romData).ParseMap(romData, mapID)
 	if err != nil {
 		return TrainerStatus{}, fmt.Errorf("skill: TrainerStatusAtLive: parse map %#04x: %w", mapID, err)
 	}
@@ -29,7 +28,7 @@ func TrainerStatusAtLive(romData []byte, mem *state.Mem, mapID, homeX, homeY uin
 }
 
 func genericTrainerReachableLive(romData []byte, mem *state.Mem, h rom.MapHeader, homeX, homeY uint8) bool {
-	if mem == nil || mem.U8(sym.CurMap) != h.ID {
+	if mem == nil || mem.U8(tablesForROM(romData).wram.CurMap) != h.ID {
 		return true
 	}
 	g, err := liveMapGridFromMem(mem, romData, h)
@@ -49,7 +48,7 @@ func genericTrainerReachableLive(romData []byte, mem *state.Mem, h rom.MapHeader
 		blocked[[2]int{int(object.X), int(object.Y)}] = true
 	}
 	_, _, err = world.FindPathAdjacent(g,
-		int(mem.U8(sym.XCoord)), int(mem.U8(sym.YCoord)),
+		int(mem.U8(tablesForROM(romData).wram.XCoord)), int(mem.U8(tablesForROM(romData).wram.YCoord)),
 		int(homeX), int(homeY), blocked)
 	return err == nil
 }

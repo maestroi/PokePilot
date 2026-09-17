@@ -6,7 +6,6 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 )
 
 // ItemOaksParcel is the bag item ID of OAK's PARCEL, from the decomp
@@ -97,11 +96,11 @@ const pokeballTalkBudget = 8000
 func GetParcel(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	party := state.DecodeParty(&mem)
-	if !state.HasEvent(&mem, state.EventBattledRivalInOaksLab) || party.Count < 1 {
+	party := ram(m).DecodeParty(&mem)
+	if !ram(m).HasEvent(&mem, state.EventBattledRivalInOaksLab) || party.Count < 1 {
 		return fmt.Errorf("skill: GetParcel: starter story is not complete: %s=%v party=%d",
 			state.EventBattledRivalInOaksLab,
-			state.HasEvent(&mem, state.EventBattledRivalInOaksLab), party.Count)
+			ram(m).HasEvent(&mem, state.EventBattledRivalInOaksLab), party.Count)
 	}
 
 	dest, ok := Place("viridian mart")
@@ -110,7 +109,7 @@ func GetParcel(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	}
 
 	if _, err := Travel(m, romData, dest, policy, parcelRouteMaxBattles); err != nil {
-		if m.Peek8(sym.CurMap) != dest.Map {
+		if m.Peek8(ram(m).CurMap) != dest.Map {
 			return fmt.Errorf("skill: GetParcel: %w", err)
 		}
 	}
@@ -119,8 +118,8 @@ func GetParcel(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	// the predicate holds on the first snapshot and Cutscene returns
 	// without input). It runs to completion until the parcel event is set
 	// and the player is controllable again.
-	if err := Cutscene(m, parcelCutsceneBudget, func(mem *state.Mem) bool {
-		return state.HasEvent(mem, state.EventGotOaksParcel)
+	if err := Cutscene(m, parcelCutsceneBudget, func(mem *state.Mem, a wramAddresses) bool {
+		return ram(m).HasEvent(mem, state.EventGotOaksParcel)
 	}); err != nil {
 		return fmt.Errorf("skill: GetParcel: %w", err)
 	}
@@ -136,11 +135,11 @@ func GetParcel(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	// Positive postcondition, both halves: the story flag is set AND the
 	// item is in the bag. Either alone could be a half-finished cutscene.
 	state.Snapshot(m, &mem)
-	if !state.HasEvent(&mem, state.EventGotOaksParcel) {
+	if !ram(m).HasEvent(&mem, state.EventGotOaksParcel) {
 		return fmt.Errorf("skill: GetParcel: parcel flag not set (map %#04x at (%d,%d))",
-			mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord))
+			mem.U8(ram(m).CurMap), mem.U8(ram(m).XCoord), mem.U8(ram(m).YCoord))
 	}
-	for _, it := range state.DecodeInventory(&mem).Items {
+	for _, it := range ram(m).DecodeInventory(&mem).Items {
 		if it.ID == ItemOaksParcel {
 			return nil
 		}
@@ -202,12 +201,12 @@ func OaksParcel(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		return fmt.Errorf("skill: OaksParcel: Place \"oak's lab\" not found")
 	}
 	if _, err := Travel(m, romData, dest, policy, parcelRouteMaxBattles); err != nil {
-		if m.Peek8(sym.CurMap) != dest.Map {
+		if m.Peek8(ram(m).CurMap) != dest.Map {
 			return fmt.Errorf("skill: OaksParcel: %w", err)
 		}
 		// On the lab: the entry force-walk is in flight. Run it to
 		// completion, then resume the walk to the approach tile.
-		if err := Cutscene(m, labEntryBudget, state.Controllable); err != nil {
+		if err := Cutscene(m, labEntryBudget, func(mem *state.Mem, a wramAddresses) bool { return a.Controllable(mem) }); err != nil {
 			return fmt.Errorf("skill: OaksParcel: %w", err)
 		}
 		if _, err := Travel(m, romData, dest, policy, parcelRouteMaxBattles); err != nil {
@@ -221,18 +220,18 @@ func OaksParcel(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		return fmt.Errorf("skill: OaksParcel: %w", err)
 	}
 	m.Tap(emu.A, 3, 7)
-	mem := advanceUntil(m, deliveryBudget, func(mm *state.Mem) bool {
-		return state.HasEvent(mm, state.EventGotPokedex) && state.Controllable(mm)
+	mem := advanceUntil(m, ram(m), deliveryBudget, func(mm *state.Mem, a wramAddresses) bool {
+		return ram(m).HasEvent(mm, state.EventGotPokedex) && ram(m).Controllable(mm)
 	})
-	if !state.HasEvent(&mem, state.EventGotPokedex) {
+	if !ram(m).HasEvent(&mem, state.EventGotPokedex) {
 		return fmt.Errorf("skill: OaksParcel: %s not set after the hand-over: map=%#04x at (%d,%d) wJoyIgnore=%#04x wFontLoaded=%#04x",
-			state.EventGotPokedex, mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord),
-			mem.U8(sym.JoyIgnore), mem.U8(sym.FontLoaded))
+			state.EventGotPokedex, mem.U8(ram(m).CurMap), mem.U8(ram(m).XCoord), mem.U8(ram(m).YCoord),
+			mem.U8(ram(m).JoyIgnore), mem.U8(ram(m).FontLoaded))
 	}
-	if !state.Controllable(&mem) {
+	if !ram(m).Controllable(&mem) {
 		return fmt.Errorf("skill: OaksParcel: not controllable after the hand-over: map=%#04x at (%d,%d) wJoyIgnore=%#04x wFontLoaded=%#04x",
-			mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord),
-			mem.U8(sym.JoyIgnore), mem.U8(sym.FontLoaded))
+			mem.U8(ram(m).CurMap), mem.U8(ram(m).XCoord), mem.U8(ram(m).YCoord),
+			mem.U8(ram(m).JoyIgnore), mem.U8(ram(m).FontLoaded))
 	}
 	return nil
 }
@@ -294,17 +293,17 @@ func GetPokeBalls(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
 
-	if state.HasEvent(&mem, state.EventGotPokeballsFromOak) {
+	if ram(m).HasEvent(&mem, state.EventGotPokeballsFromOak) {
 		return nil
 	}
 
 	// The battle. EVENT_BEAT_ROUTE22_RIVAL_1ST_BATTLE has exactly one setter
 	// in the decomp (Route22.asm:167), so if it is not set the battle must
 	// be fought and won; there is no other way to reach .give_poke_balls.
-	if !state.HasEvent(&mem, state.EventBeatRoute22Rival1stBattle) {
+	if !ram(m).HasEvent(&mem, state.EventBeatRoute22Rival1stBattle) {
 		dest := route22Trigger
 		if _, err := Travel(m, romData, dest, policy, route22MaxBattles); err != nil {
-			if m.Peek8(sym.CurMap) != dest.Map {
+			if m.Peek8(ram(m).CurMap) != dest.Map {
 				return fmt.Errorf("skill: GetPokeBalls: %w", err)
 			}
 			// On Route 22: stepping onto the trigger tile set wJoyIgnore and
@@ -317,8 +316,8 @@ func GetPokeBalls(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		// intro box, and the battle starts. wJoyIgnore is held for most of it
 		// and cleared by the start-battle script; wait for control rather
 		// than fighting it.
-		if err := Cutscene(m, route22CutsceneBudget, func(mm *state.Mem) bool {
-			return state.DecodeBattle(mm) != nil
+		if err := Cutscene(m, route22CutsceneBudget, func(mm *state.Mem, a wramAddresses) bool {
+			return ram(m).DecodeBattle(mm) != nil
 		}); err != nil {
 			return fmt.Errorf("skill: GetPokeBalls: %w", err)
 		}
@@ -330,7 +329,7 @@ func GetPokeBalls(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		if outcome == state.ResultLost {
 			state.Snapshot(m, &mem)
 			return fmt.Errorf("skill: GetPokeBalls: map=%#04x at (%d,%d): %w",
-				mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord), ErrLostRoute22RivalBattle)
+				mem.U8(ram(m).CurMap), mem.U8(ram(m).XCoord), mem.U8(ram(m).YCoord), ErrLostRoute22RivalBattle)
 		}
 
 		// Battle settles on controllable, which holds in the gap between the
@@ -338,16 +337,16 @@ func GetPokeBalls(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		// win can be reported before the event's only setter has executed.
 		// Run that script to completion: its text box (A), the rival's exit
 		// walk, and the wJoyIgnore it holds until the exit script clears it.
-		if err := Cutscene(m, route22AfterBattleBudget, func(mm *state.Mem) bool {
-			return state.HasEvent(mm, state.EventBeatRoute22Rival1stBattle)
+		if err := Cutscene(m, route22AfterBattleBudget, func(mm *state.Mem, a wramAddresses) bool {
+			return ram(m).HasEvent(mm, state.EventBeatRoute22Rival1stBattle)
 		}); err != nil {
 			return fmt.Errorf("skill: GetPokeBalls: %w", err)
 		}
 
 		state.Snapshot(m, &mem)
-		if !state.HasEvent(&mem, state.EventBeatRoute22Rival1stBattle) {
+		if !ram(m).HasEvent(&mem, state.EventBeatRoute22Rival1stBattle) {
 			return fmt.Errorf("skill: GetPokeBalls: battle won but %s not set: map=%#04x at (%d,%d)",
-				state.EventBeatRoute22Rival1stBattle, mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord))
+				state.EventBeatRoute22Rival1stBattle, mem.U8(ram(m).CurMap), mem.U8(ram(m).XCoord), mem.U8(ram(m).YCoord))
 		}
 	}
 
@@ -359,10 +358,10 @@ func GetPokeBalls(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		return fmt.Errorf("skill: GetPokeBalls: Place \"oak's lab\" not found")
 	}
 	if _, err := Travel(m, romData, dest, policy, route22MaxBattles); err != nil {
-		if m.Peek8(sym.CurMap) != dest.Map {
+		if m.Peek8(ram(m).CurMap) != dest.Map {
 			return fmt.Errorf("skill: GetPokeBalls: %w", err)
 		}
-		if err := Cutscene(m, labEntryBudget, state.Controllable); err != nil {
+		if err := Cutscene(m, labEntryBudget, func(mem *state.Mem, a wramAddresses) bool { return a.Controllable(mem) }); err != nil {
 			return fmt.Errorf("skill: GetPokeBalls: %w", err)
 		}
 		if _, err := Travel(m, romData, dest, policy, route22MaxBattles); err != nil {
@@ -377,21 +376,21 @@ func GetPokeBalls(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		return fmt.Errorf("skill: GetPokeBalls: %w", err)
 	}
 	m.Tap(emu.A, 3, 7)
-	mem = advanceUntil(m, pokeballTalkBudget, func(mm *state.Mem) bool {
-		return state.HasEvent(mm, state.EventGotPokeballsFromOak) && state.Controllable(mm)
+	mem = advanceUntil(m, ram(m), pokeballTalkBudget, func(mm *state.Mem, a wramAddresses) bool {
+		return ram(m).HasEvent(mm, state.EventGotPokeballsFromOak) && ram(m).Controllable(mm)
 	})
 
 	// Positive postcondition, both halves: the story flag is set AND the bag
 	// holds 5x POKE_BALL. CheckAndSetEvent runs BEFORE GiveItem, so the flag
 	// alone can be a half-finished talk; asserting only it would pass with
 	// an empty bag.
-	if !state.HasEvent(&mem, state.EventGotPokeballsFromOak) {
+	if !ram(m).HasEvent(&mem, state.EventGotPokeballsFromOak) {
 		return fmt.Errorf("skill: GetPokeBalls: %s not set after the talk: map=%#04x at (%d,%d) wJoyIgnore=%#04x wFontLoaded=%#04x",
-			state.EventGotPokeballsFromOak, mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord),
-			mem.U8(sym.JoyIgnore), mem.U8(sym.FontLoaded))
+			state.EventGotPokeballsFromOak, mem.U8(ram(m).CurMap), mem.U8(ram(m).XCoord), mem.U8(ram(m).YCoord),
+			mem.U8(ram(m).JoyIgnore), mem.U8(ram(m).FontLoaded))
 	}
 	balls := 0
-	for _, it := range state.DecodeInventory(&mem).Items {
+	for _, it := range ram(m).DecodeInventory(&mem).Items {
 		if it.ID == ItemPokeBall {
 			balls += int(it.Quantity)
 		}

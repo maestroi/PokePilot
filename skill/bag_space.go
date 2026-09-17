@@ -6,7 +6,6 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 )
 
 const (
@@ -56,8 +55,8 @@ var safeBagSacrificeUnitCost = map[uint8]int{
 	0x44: 350,  // X SPECIAL
 }
 
-func bagFreeSlots(mem *state.Mem) int {
-	free := gen1BagCapacity - len(state.DecodeInventory(mem).Items)
+func bagFreeSlots(mem *state.Mem, a wramAddresses) int {
+	free := gen1BagCapacity - len(a.DecodeInventory(mem).Items)
 	if free < 0 {
 		return 0
 	}
@@ -92,7 +91,7 @@ func chooseSafeBagSacrifice(inv state.InventoryState) (int, state.BagItem, bool)
 func EnsureBagSpaceFor(m *emu.Emu, item uint8) error {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if _, quantity := bagEntry(&mem, item); quantity > 0 {
+	if _, quantity := bagEntry(&mem, item, ram(m)); quantity > 0 {
 		return nil
 	}
 	return EnsureBagFreeSlots(m, 1)
@@ -113,15 +112,15 @@ func EnsureBagFreeSlots(m *emu.Emu, minFree int) error {
 	for {
 		var mem state.Mem
 		state.Snapshot(m, &mem)
-		if !state.Controllable(&mem) {
+		if !ram(m).Controllable(&mem) {
 			return fmt.Errorf("skill: EnsureBagFreeSlots: player not controllable on map %#04x at (%d,%d)",
-				mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord))
+				mem.U8(ram(m).CurMap), mem.U8(ram(m).XCoord), mem.U8(ram(m).YCoord))
 		}
-		if free := bagFreeSlots(&mem); free >= minFree {
+		if free := bagFreeSlots(&mem, ram(m)); free >= minFree {
 			return nil
 		}
 
-		inv := state.DecodeInventory(&mem)
+		inv := ram(m).DecodeInventory(&mem)
 		idx, sacrifice, ok := chooseSafeBagSacrifice(inv)
 		if !ok {
 			return fmt.Errorf("%w: bag uses %d/%d slots and %d free slot(s) are required",
@@ -135,9 +134,9 @@ func EnsureBagFreeSlots(m *emu.Emu, minFree int) error {
 }
 
 func openOverworldBagList(m *emu.Emu, mem *state.Mem) error {
-	wantMax, itemIndex := startMenuShape(mem)
+	wantMax, itemIndex := startMenuShape(mem, ram(m))
 	drawn := func(m *emu.Emu) bool {
-		return m.Peek8(sym.FontLoaded) != 0 && int(m.Peek8(sym.MaxMenuItem)) == wantMax
+		return m.Peek8(ram(m).FontLoaded) != 0 && int(m.Peek8(ram(m).MaxMenuItem)) == wantMax
 	}
 	for attempt := 0; attempt < 5 && !drawn(m); attempt++ {
 		m.Tap(emu.Start, 3, 7)
@@ -150,7 +149,7 @@ func openOverworldBagList(m *emu.Emu, mem *state.Mem) error {
 		return fmt.Errorf("select ITEM: %w", err)
 	}
 	if _, err := m.StepUntil(bagMenuBudget, func(m *emu.Emu) bool {
-		return m.Peek8(sym.ListMenuID) == itemListMenuID
+		return m.Peek8(ram(m).ListMenuID) == itemListMenuID
 	}); err != nil {
 		return fmt.Errorf("bag list did not open: %w", err)
 	}
@@ -166,20 +165,20 @@ func selectBagQuantity(m *emu.Emu, target int) error {
 		return fmt.Errorf("skill: selectBagQuantity: target %d out of range 1..99", target)
 	}
 	if _, err := m.StepUntil(bagQuantityMenuBudget, func(m *emu.Emu) bool {
-		max := int(m.Peek8(sym.MaxItemQuantity))
-		cur := int(m.Peek8(sym.ItemQuantity))
+		max := int(m.Peek8(ram(m).MaxItemQuantity))
+		cur := int(m.Peek8(ram(m).ItemQuantity))
 		return max == target && cur >= 1 && cur <= max
 	}); err != nil {
 		return fmt.Errorf("quantity menu did not initialize for stack size %d: max=%d current=%d: %w",
-			target, m.Peek8(sym.MaxItemQuantity), m.Peek8(sym.ItemQuantity), err)
+			target, m.Peek8(ram(m).MaxItemQuantity), m.Peek8(ram(m).ItemQuantity), err)
 	}
 
 	const stuckLimit = 5
 	stuck := 0
-	for cur := int(m.Peek8(sym.ItemQuantity)); cur != target; cur = int(m.Peek8(sym.ItemQuantity)) {
+	for cur := int(m.Peek8(ram(m).ItemQuantity)); cur != target; cur = int(m.Peek8(ram(m).ItemQuantity)) {
 		m.Tap(emu.Down, 3, 7)
 		if _, err := m.StepUntil(menuSettleFrames, func(m *emu.Emu) bool {
-			return int(m.Peek8(sym.ItemQuantity)) != cur
+			return int(m.Peek8(ram(m).ItemQuantity)) != cur
 		}); err != nil {
 			stuck++
 			if stuck >= stuckLimit {
@@ -194,6 +193,7 @@ func selectBagQuantity(m *emu.Emu, target int) error {
 }
 
 func tossBagStack(m *emu.Emu, idx int, item state.BagItem) error {
+	a := ram(m)
 	if _, safe := safeBagSacrificeUnitCost[item.ID]; !safe {
 		return fmt.Errorf("refusing to toss protected item %#02x", item.ID)
 	}
@@ -203,7 +203,7 @@ func tossBagStack(m *emu.Emu, idx int, item state.BagItem) error {
 
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	liveIdx, liveQty := bagEntry(&mem, item.ID)
+	liveIdx, liveQty := bagEntry(&mem, item.ID, ram(m))
 	if liveIdx != idx || liveQty != int(item.Quantity) {
 		return fmt.Errorf("bag changed before toss: item %#02x expected entry %d x%d, now entry %d x%d",
 			item.ID, idx, item.Quantity, liveIdx, liveQty)
@@ -216,7 +216,7 @@ func tossBagStack(m *emu.Emu, idx int, item state.BagItem) error {
 	}
 	if _, err := m.StepUntil(useTossBudget, func(m *emu.Emu) bool {
 		state.Snapshot(m, &mem)
-		return useTossPrompt(&mem) != nil
+		return useTossPrompt(&mem, a) != nil
 	}); err != nil {
 		return fmt.Errorf("USE/TOSS prompt did not open: %w", err)
 	}
@@ -231,7 +231,7 @@ func tossBagStack(m *emu.Emu, idx int, item state.BagItem) error {
 	// USE/TOSS menu. Wait for that exact semantic shape, then choose YES.
 	if _, err := m.StepUntil(bagTossConfirmBudget, func(m *emu.Emu) bool {
 		state.Snapshot(m, &mem)
-		return state.DecodeTwoOptionMenu(&mem) != nil && useTossPrompt(&mem) == nil
+		return ram(m).DecodeTwoOptionMenu(&mem) != nil && useTossPrompt(&mem, a) == nil
 	}); err != nil {
 		return fmt.Errorf("toss confirmation did not appear: %w", err)
 	}
@@ -243,12 +243,12 @@ func tossBagStack(m *emu.Emu, idx int, item state.BagItem) error {
 	start := m.FrameCount()
 	for {
 		state.Snapshot(m, &mem)
-		_, qty := bagEntry(&mem, item.ID)
+		_, qty := bagEntry(&mem, item.ID, ram(m))
 		if qty == 0 {
 			removed = true
 		}
-		if removed && state.Controllable(&mem) && mem.U8(sym.FontLoaded) == 0 {
-			if free := bagFreeSlots(&mem); free < 1 {
+		if removed && ram(m).Controllable(&mem) && mem.U8(ram(m).FontLoaded) == 0 {
+			if free := bagFreeSlots(&mem, ram(m)); free < 1 {
 				return fmt.Errorf("item %#02x disappeared but no bag slot became free", item.ID)
 			}
 			return nil

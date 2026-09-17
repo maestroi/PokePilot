@@ -22,7 +22,7 @@ func playerAt(t *testing.T, m *emu.Emu) state.PlayerState {
 	t.Helper()
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	return state.DecodePlayer(&mem)
+	return skill.RedAddresses().DecodePlayer(&mem)
 }
 
 // Every expectation in this file is ground truth measured by driving the

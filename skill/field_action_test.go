@@ -63,7 +63,7 @@ func TestFieldMoveSpecsMatchPokemonRed(t *testing.T) {
 
 func TestFieldCapabilityHMOwnershipIsNotUsability(t *testing.T) {
 	m := fieldTestMem(FieldSurf, true, false, true)
-	cap := FieldCapabilityFor(m, FieldSurf)
+	cap := FieldCapabilityFor(m, FieldSurf, redWram())
 	if !cap.BadgeOwned || !cap.HMOwned {
 		t.Fatalf("preconditions not decoded: %+v", cap)
 	}
@@ -73,12 +73,12 @@ func TestFieldCapabilityHMOwnershipIsNotUsability(t *testing.T) {
 }
 
 func TestFieldCapabilityRequiresBadgeAndLearnedMove(t *testing.T) {
-	withoutBadge := FieldCapabilityFor(fieldTestMem(FieldStrength, false, true, false), FieldStrength)
+	withoutBadge := FieldCapabilityFor(fieldTestMem(FieldStrength, false, true, false), FieldStrength, redWram())
 	if !withoutBadge.Learned || withoutBadge.Usable {
 		t.Fatalf("learned Strength without Rainbow Badge = %+v, want learned but unusable", withoutBadge)
 	}
 
-	usable := FieldCapabilityFor(fieldTestMem(FieldStrength, true, true, false), FieldStrength)
+	usable := FieldCapabilityFor(fieldTestMem(FieldStrength, true, true, false), FieldStrength, redWram())
 	if !usable.Learned || !usable.BadgeOwned || !usable.Usable || usable.PartySlot != 0 {
 		t.Fatalf("badge + learned Strength = %+v, want usable in slot 0", usable)
 	}
@@ -86,7 +86,7 @@ func TestFieldCapabilityRequiresBadgeAndLearnedMove(t *testing.T) {
 
 func TestFieldCapabilitiesStableForPartyPlanning(t *testing.T) {
 	m := fieldTestMem(FieldCut, true, true, false)
-	caps := FieldCapabilities(m)
+	caps := FieldCapabilities(m, redWram())
 	moves := ProgressionFieldMoves()
 	if len(caps) != len(moves) || len(caps) != 5 {
 		t.Fatalf("capabilities=%d progression moves=%d, want 5", len(caps), len(moves))
@@ -103,12 +103,12 @@ func TestFieldCapabilitiesStableForPartyPlanning(t *testing.T) {
 
 func TestCutRouteCapabilityUsesSharedFieldCapability(t *testing.T) {
 	m := fieldTestMem(FieldCut, true, true, false)
-	if !cutCapabilityRecoverable(nil, m) {
+	if !cutCapabilityRecoverable(nil, m, redWram()) {
 		t.Fatal("route recovery rejected a learned, badged Cut capability")
 	}
 
 	m = fieldTestMem(FieldCut, false, true, true)
-	if cutCapabilityRecoverable(nil, m) {
+	if cutCapabilityRecoverable(nil, m, redWram()) {
 		t.Fatal("route recovery accepted Cut without the Cascade Badge")
 	}
 }
@@ -125,12 +125,12 @@ func TestBoulderAheadUsesLiveSpriteContext(t *testing.T) {
 	m[sym.SpritePlayerStateData1+0x12] = 0
 	m[sym.SpriteStateData2+0x10+0x04] = 14 // y 10 + bias 4
 	m[sym.SpriteStateData2+0x10+0x05] = 15 // x 11 + bias 4
-	if !boulderAhead(m) {
+	if !boulderAhead(m, redWram()) {
 		t.Fatal("boulder directly in front was not detected")
 	}
 
 	m[sym.SpriteStateData2+0x10+0x05] = 16
-	if boulderAhead(m) {
+	if boulderAhead(m, redWram()) {
 		t.Fatal("non-adjacent boulder was treated as the Strength target")
 	}
 }
@@ -141,26 +141,26 @@ func TestFieldActionCompletionUsesROMState(t *testing.T) {
 
 	cut, _ := FieldMoveSpecFor(FieldCut)
 	m[sym.ActionResult] = 1
-	if !fieldActionComplete(m, cut) {
+	if !fieldActionComplete(m, redWram(), cut) {
 		t.Fatal("Cut action result was not accepted")
 	}
 
 	surf, _ := FieldMoveSpecFor(FieldSurf)
-	if fieldActionComplete(m, surf) {
+	if fieldActionComplete(m, redWram(), surf) {
 		t.Fatal("Surf completed without entering surfing state")
 	}
 	m[sym.WalkBikeSurfState] = fieldSurfingState
-	if !fieldActionComplete(m, surf) {
+	if !fieldActionComplete(m, redWram(), surf) {
 		t.Fatal("Surf action result + surfing state was not accepted")
 	}
 
 	strength, _ := FieldMoveSpecFor(FieldStrength)
 	m[sym.ActionResult] = 0 // Strength completion is its dedicated live flag.
-	if fieldActionComplete(m, strength) {
+	if fieldActionComplete(m, redWram(), strength) {
 		t.Fatal("Strength completed before BIT_STRENGTH_ACTIVE was set")
 	}
 	m[sym.StatusFlags1] = fieldStrengthActiveBit
-	if !fieldActionComplete(m, strength) {
+	if !fieldActionComplete(m, redWram(), strength) {
 		t.Fatal("Strength active flag was not accepted")
 	}
 }

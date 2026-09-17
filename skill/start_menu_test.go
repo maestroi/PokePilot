@@ -30,7 +30,7 @@ func TestStartMenuReadyRejectsStaleMenuRAM(t *testing.T) {
 	mem[sym.CurrentMenuItem] = 2
 	mem[sym.FontLoaded] = 1
 
-	if startMenuReady(&mem, 7) {
+	if startMenuReady(&mem, 7, redWram()) {
 		t.Fatal("stale MaxMenuItem/FontLoaded without START-menu labels was accepted")
 	}
 }
@@ -39,12 +39,12 @@ func TestStartMenuReadyRequiresExpectedShapeAndLabels(t *testing.T) {
 	var mem state.Mem
 	putMenuText(&mem, "SAVE EXIT")
 	mem[sym.MaxMenuItem] = 2
-	if startMenuReady(&mem, 7) {
+	if startMenuReady(&mem, 7, redWram()) {
 		t.Fatal("visible labels with stale two-item menu shape were accepted")
 	}
 
 	mem[sym.MaxMenuItem] = 7
-	if !startMenuReady(&mem, 7) {
+	if !startMenuReady(&mem, 7, redWram()) {
 		t.Fatalf("visible START menu with max=%d was not accepted", mem[sym.MaxMenuItem])
 	}
 }

@@ -11,6 +11,7 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
+	"github.com/maestroi/pokepilot/skill"
 )
 
 const (
@@ -97,7 +98,7 @@ func captureRAM(m *emu.Emu, prefix, kind, objective, cause, slug string) error {
 	if err != nil {
 		return fmt.Errorf("ram forensics snapshot: %w", err)
 	}
-	gs := state.Decode(&mem)
+	gs := skill.AddressesFor(m).Decode(&mem)
 	base, err := uniqueFailureBase(dir, fmt.Sprintf("%s%010d-%s", prefix, frame, slug))
 	if err != nil {
 		return err
@@ -137,7 +138,7 @@ func captureRAM(m *emu.Emu, prefix, kind, objective, cause, slug string) error {
 		Map:          gs.Player.MapID,
 		X:            gs.Player.X,
 		Y:            gs.Player.Y,
-		Controllable: state.Controllable(&mem),
+		Controllable: skill.AddressesFor(m).Controllable(&mem),
 		InBattle:     gs.Battle != nil,
 		MenuCurrent:  gs.Menu.Current,
 		MenuMax:      gs.Menu.Max,

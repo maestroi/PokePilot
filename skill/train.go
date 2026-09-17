@@ -9,7 +9,6 @@ import (
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
 )
 
@@ -151,11 +150,11 @@ func Train(m *emu.Emu, romData []byte, targetLevel int, policy MovePolicy, maxBa
 
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if !state.Controllable(&mem) {
-		return TrainResult{}, fmt.Errorf("skill: Train: player not controllable on map %#04x", m.Peek8(sym.CurMap))
+	if !ram(m).Controllable(&mem) {
+		return TrainResult{}, fmt.Errorf("skill: Train: player not controllable on map %#04x", m.Peek8(ram(m).CurMap))
 	}
 	now := currentWorld(m)
-	res := TrainResult{StartLevel: int(state.DecodeParty(&mem).Mons[0].Level)}
+	res := TrainResult{StartLevel: int(ram(m).DecodeParty(&mem).Mons[0].Level)}
 
 	grass, grid, err := grassCells(romData, now.Map)
 	if err != nil {
@@ -174,7 +173,7 @@ func Train(m *emu.Emu, romData []byte, targetLevel int, policy MovePolicy, maxBa
 	if grass = grassInPlayerComponent(grass, grid, int(now.X), int(now.Y)); len(grass) == 0 {
 		return res, fmt.Errorf("skill: Train: no tall grass reachable from (%d,%d) on map %#04x without leaving it", now.X, now.Y, now.Map)
 	}
-	a, b, ok := grindPair(grass, grid, int(now.X), int(now.Y), spriteBlockers(m))
+	a, b, ok := grindPair(grass, grid, int(now.X), int(now.Y), spriteBlockers(m, m.ROM()))
 	if !ok {
 		return res, fmt.Errorf("skill: Train: map %#04x has no two walkable grass cells close enough to grind between", now.Map)
 	}
@@ -288,12 +287,12 @@ func Train(m *emu.Emu, romData []byte, targetLevel int, policy MovePolicy, maxBa
 func PromoteToLead(m *emu.Emu, index int) error {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	party := state.DecodeParty(&mem)
+	party := ram(m).DecodeParty(&mem)
 	if index < 1 || index >= int(party.Count) {
 		return fmt.Errorf("skill: PromoteToLead: index %d out of range for a party of %d (want 1..%d)", index, party.Count, party.Count-1)
 	}
-	if !state.Controllable(&mem) {
-		return fmt.Errorf("skill: PromoteToLead: player not controllable on map %#04x", m.Peek8(sym.CurMap))
+	if !ram(m).Controllable(&mem) {
+		return fmt.Errorf("skill: PromoteToLead: player not controllable on map %#04x", m.Peek8(ram(m).CurMap))
 	}
 	want := party.Mons[index].Species
 	partyMax := int(party.Count) - 1
@@ -312,7 +311,7 @@ func PromoteToLead(m *emu.Emu, index int) error {
 		for i := 0; i < 60; i++ {
 			var s state.Mem
 			state.Snapshot(m, &s)
-			cur := state.DecodeMenu(&s).Current
+			cur := ram(m).DecodeMenu(&s).Current
 			if cur == target {
 				return nil
 			}
@@ -324,7 +323,7 @@ func PromoteToLead(m *emu.Emu, index int) error {
 		}
 		var s state.Mem
 		state.Snapshot(m, &s)
-		return fmt.Errorf("skill: PromoteToLead: cursor stuck at %d, want %d", state.DecodeMenu(&s).Current, target)
+		return fmt.Errorf("skill: PromoteToLead: cursor stuck at %d, want %d", ram(m).DecodeMenu(&s).Current, target)
 	}
 
 	// pressUntil presses A and waits for the positive fact pred (the next
@@ -343,34 +342,34 @@ func PromoteToLead(m *emu.Emu, index int) error {
 	// until pred holds, each re-press gated on stillHere so a stray press that
 	// left the expected screen is reported instead of chased. Success is pred,
 	// never a press count.
-	pressKeyUntil := func(btn emu.Button, budget int, what string, stillHere, pred func(*state.Mem) bool) error {
+	pressKeyUntil := func(btn emu.Button, budget int, what string, stillHere, pred func(*state.Mem, wramAddresses) bool) error {
 		for i := 0; i < budget/25; i++ {
 			var s state.Mem
 			state.Snapshot(m, &s)
-			if pred(&s) {
+			if pred(&s, ram(m)) {
 				return nil
 			}
 			m.Tap(btn, 3, 7)
 			if _, err := m.StepUntil(25, func(m *emu.Emu) bool {
 				var s2 state.Mem
 				state.Snapshot(m, &s2)
-				return pred(&s2)
+				return pred(&s2, ram(m))
 			}); err == nil {
 				return nil
 			}
 			state.Snapshot(m, &s)
-			if !stillHere(&s) {
+			if !stillHere(&s, ram(m)) {
 				return fmt.Errorf("skill: PromoteToLead: %s: left the expected screen before the press took", what)
 			}
 		}
 		return fmt.Errorf("skill: PromoteToLead: %s did not appear after repeated presses", what)
 	}
 
-	pressUntil := func(budget int, what string, stillHere, pred func(*state.Mem) bool) error {
+	pressUntil := func(budget int, what string, stillHere, pred func(*state.Mem, wramAddresses) bool) error {
 		return pressKeyUntil(emu.A, budget, what, stillHere, pred)
 	}
 
-	pick := func(index, budget int, what string, stillHere, pred func(*state.Mem) bool) error {
+	pick := func(index, budget int, what string, stillHere, pred func(*state.Mem, wramAddresses) bool) error {
 		if err := moveCursor(index); err != nil {
 			return fmt.Errorf("skill: PromoteToLead: %s: %w", what, err)
 		}
@@ -413,9 +412,9 @@ func PromoteToLead(m *emu.Emu, index int) error {
 		m.StepFrame()
 	}
 	if err := pressKeyUntil(emu.Start, 500, "start menu",
-		func(s *state.Mem) bool { return s.U8(sym.IsInBattle) == 0 },
-		func(s *state.Mem) bool {
-			mx := state.DecodeMenu(s).Max
+		func(s *state.Mem, a wramAddresses) bool { return s.U8(ram(m).IsInBattle) == 0 },
+		func(s *state.Mem, a wramAddresses) bool {
+			mx := ram(m).DecodeMenu(s).Max
 			return onScreen(s, "SAVE") && onScreen(s, "EXIT") && (mx == 6 || mx == 7)
 		}); err != nil {
 		return err
@@ -426,15 +425,15 @@ func PromoteToLead(m *emu.Emu, index int) error {
 	var mem2 state.Mem
 	state.Snapshot(m, &mem2)
 	pkmnIndex := 0
-	if state.DecodeMenu(&mem2).Max == 7 {
+	if ram(m).DecodeMenu(&mem2).Max == 7 {
 		pkmnIndex = 1
 	}
 	// Normal party screen: the footer reads "Choose a POKéMON." (the # glyph
 	// renders as the POKé ligature).
-	if err := pick(pkmnIndex, 600, "start menu", func(s *state.Mem) bool {
+	if err := pick(pkmnIndex, 600, "start menu", func(s *state.Mem, a wramAddresses) bool {
 		return onScreen(s, "SAVE") && onScreen(s, "EXIT")
-	}, func(s *state.Mem) bool {
-		return onScreen(s, "Choose") && state.DecodeMenu(s).Max == partyMax
+	}, func(s *state.Mem, a wramAddresses) bool {
+		return onScreen(s, "Choose") && ram(m).DecodeMenu(s).Max == partyMax
 	}); err != nil {
 		return err
 	}
@@ -447,9 +446,9 @@ func PromoteToLead(m *emu.Emu, index int) error {
 	// learns Dig while training turns STATUS/SWITCH/CANCEL into
 	// DIG/STATUS/SWITCH/CANCEL, and a press hardcoded at index 1 lands on
 	// STATUS instead ("left the expected screen" on the restore swap).
-	if err := pick(0, 600, "party screen", func(s *state.Mem) bool {
+	if err := pick(0, 600, "party screen", func(s *state.Mem, a wramAddresses) bool {
 		return onScreen(s, "Choose")
-	}, func(s *state.Mem) bool {
+	}, func(s *state.Mem, a wramAddresses) bool {
 		return onScreen(s, "SWITCH")
 	}); err != nil {
 		return err
@@ -459,48 +458,48 @@ func PromoteToLead(m *emu.Emu, index int) error {
 	// wFieldMoves array directly instead — it is already populated by the
 	// party-screen selection above.
 	numFieldMoves := 0
-	for numFieldMoves < 4 && m.Peek8(sym.FieldMoves+uint16(numFieldMoves)) != 0 {
+	for numFieldMoves < 4 && m.Peek8(ram(m).FieldMoves+uint16(numFieldMoves)) != 0 {
 		numFieldMoves++
 	}
 	switchIndex := numFieldMoves + 1
 	// SWITCH follows the field-move entries and STATUS. Selecting it enters
 	// swap mode; the footer changes to "Move POKéMON where?".
-	if err := pick(switchIndex, 600, "option menu", func(s *state.Mem) bool {
+	if err := pick(switchIndex, 600, "option menu", func(s *state.Mem, a wramAddresses) bool {
 		return onScreen(s, "SWITCH")
-	}, func(s *state.Mem) bool {
-		return onScreen(s, "where?") && state.DecodeMenu(s).Max == partyMax
+	}, func(s *state.Mem, a wramAddresses) bool {
+		return onScreen(s, "where?") && ram(m).DecodeMenu(s).Max == partyMax
 	}); err != nil {
 		return err
 	}
 	// Select the partner; SwitchPartyMon performs the swap. The positive fact
 	// that it happened: the wanted species is now Mons[0] in RAM.
-	if err := pick(index, 600, "swap-mode party screen", func(s *state.Mem) bool {
+	if err := pick(index, 600, "swap-mode party screen", func(s *state.Mem, a wramAddresses) bool {
 		return onScreen(s, "where?")
-	}, func(s *state.Mem) bool {
-		return state.DecodeParty(s).Mons[0].Species == want
+	}, func(s *state.Mem, a wramAddresses) bool {
+		return ram(m).DecodeParty(s).Mons[0].Species == want
 	}); err != nil {
 		return err
 	}
 	// B out of the party screen (back to the start menu), B out of the
 	// start menu (overworld). Both are retry-gated: the first B is lost in
 	// the same joypad-init window as the A presses.
-	if err := pressKeyUntil(emu.B, 600, "party screen exit", func(s *state.Mem) bool {
+	if err := pressKeyUntil(emu.B, 600, "party screen exit", func(s *state.Mem, a wramAddresses) bool {
 		return onScreen(s, "Choose")
-	}, func(s *state.Mem) bool {
+	}, func(s *state.Mem, a wramAddresses) bool {
 		return onScreen(s, "SAVE") && onScreen(s, "EXIT")
 	}); err != nil {
 		return err
 	}
-	if err := pressKeyUntil(emu.B, 600, "start menu exit", func(s *state.Mem) bool {
+	if err := pressKeyUntil(emu.B, 600, "start menu exit", func(s *state.Mem, a wramAddresses) bool {
 		return onScreen(s, "SAVE") && onScreen(s, "EXIT")
-	}, func(s *state.Mem) bool {
-		return state.Controllable(s)
+	}, func(s *state.Mem, a wramAddresses) bool {
+		return ram(m).Controllable(s)
 	}); err != nil {
 		return err
 	}
 
 	state.Snapshot(m, &mem)
-	if got := state.DecodeParty(&mem).Mons[0].Species; got != want {
+	if got := ram(m).DecodeParty(&mem).Mons[0].Species; got != want {
 		return fmt.Errorf("skill: PromoteToLead: lead is species %#02x, want %#02x", got, want)
 	}
 	return nil
@@ -547,7 +546,7 @@ func HasReachableGrass(romData []byte, mapID uint8, px, py uint8) (bool, error) 
 // no such cells). The grass tile and block data come from the tileset
 // table, exactly as world/grid.go reads it for collisions.
 func grassCells(romData []byte, mapID uint8) ([]cell, *world.Grid, error) {
-	h, err := rom.ParseMap(romData, mapID)
+	h, err := graphForROM(romData).ParseMap(romData, mapID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("skill: Train: map %#04x: %w", mapID, err)
 	}
@@ -566,7 +565,8 @@ func grassCells(romData []byte, mapID uint8) ([]cell, *world.Grid, error) {
 		return nil, nil, nil
 	}
 	allTiles := mapID >= trainFirstIndoorMap && h.Tileset != trainForestTileset
-	tsOff, err := bankedOff(trainTilesetsBank, trainTilesetsAddr)
+	ts := tablesForROM(romData)
+	tsOff, err := bankedOff(ts.tilesetsBank, ts.tilesetsAddr)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -583,7 +583,7 @@ func grassCells(romData []byte, mapID uint8) ([]cell, *world.Grid, error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("skill: Train: map %#04x: %w", mapID, err)
 	}
-	grid, err := world.Build(romData, h)
+	grid, err := world.BuildForTables(graphForROM(romData), romData, h)
 	if err != nil {
 		return nil, nil, fmt.Errorf("skill: Train: map %#04x: %w", mapID, err)
 	}
@@ -749,7 +749,7 @@ func grindPair(grass []cell, grid *world.Grid, px, py int, blocked map[[2]int]bo
 // report the original error rather than spin.
 func repickGrindPair(m *emu.Emu, grass []cell, grid *world.Grid, a, b cell) (cell, cell, bool) {
 	x, y := playerXY(m)
-	na, nb, ok := grindPair(grass, grid, int(x), int(y), spriteBlockers(m))
+	na, nb, ok := grindPair(grass, grid, int(x), int(y), spriteBlockers(m, m.ROM()))
 	if !ok || (na == a && nb == b) {
 		return a, b, false
 	}
@@ -761,14 +761,14 @@ func repickGrindPair(m *emu.Emu, grass []cell, grid *world.Grid, a, b cell) (cel
 func battleInFlight(m *emu.Emu) bool {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	return state.DecodeBattle(&mem) != nil
+	return ram(m).DecodeBattle(&mem) != nil
 }
 
 // leadLevel re-reads the lead party member's level from RAM.
 func leadLevel(m *emu.Emu) int {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	return int(state.DecodeParty(&mem).Mons[0].Level)
+	return int(ram(m).DecodeParty(&mem).Mons[0].Level)
 }
 
 // BelowRetreatLine reports whether a lead at hp/maxHP is below the
@@ -793,7 +793,7 @@ func BelowRetreatLine(hp, maxHP uint16) bool {
 func leadBelowRetreatLine(m *emu.Emu) bool {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	lead := state.DecodeParty(&mem).Mons[0]
+	lead := ram(m).DecodeParty(&mem).Mons[0]
 	return BelowRetreatLine(lead.HP, lead.MaxHP)
 }
 
@@ -908,7 +908,8 @@ func WildGrass(romData []byte, mapID uint8) ([]WildSpecies, error) {
 // the map's WildDataPointers entry names the record. The record's first
 // byte is the grass encounter rate.
 func wildRecord(romData []byte, mapID uint8) (int, error) {
-	base, err := bankedOff(trainWildBank, trainWildAddr)
+	ts := tablesForROM(romData)
+	base, err := bankedOff(ts.wildBank, ts.wildAddr)
 	if err != nil {
 		return 0, fmt.Errorf("skill: wild data: %w", err)
 	}
@@ -920,7 +921,7 @@ func wildRecord(romData []byte, mapID uint8) (int, error) {
 	// (LoadWildData loads it straight into hl and uses it):
 	// ld a,[hli] / ld h,[hl] / ld l,a.
 	off := uint16(romData[pOff]) | uint16(romData[pOff+1])<<8
-	recOff, err := bankedOff(trainWildBank, off)
+	recOff, err := bankedOff(ts.wildBank, off)
 	if err != nil {
 		return 0, fmt.Errorf("skill: wild data: map %#04x: %w", mapID, err)
 	}

@@ -6,7 +6,6 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 )
 
 // ErrRouteGateClosed reports that the box which interrupted the walk is a
@@ -47,11 +46,11 @@ func knownClosedRouteGateText(text string) bool {
 func AnswerKnownRouteGate(m *emu.Emu) (bool, error) {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	interaction := state.DecodeInteraction(&mem)
+	interaction := ram(m).DecodeInteraction(&mem)
 	if interaction.Kind != state.InteractionTwoOption {
 		return false, nil
 	}
-	index, ok := talkApproachChoiceIndex(m.Peek8(sym.CurMap), interaction.Text)
+	index, ok := talkApproachChoiceIndex(m.Peek8(ram(m).CurMap), interaction.Text)
 	if !ok {
 		return false, nil
 	}
@@ -83,11 +82,11 @@ func routeGateCleanupChoiceIndex(mapID uint8, text string) (int, bool) {
 func DeclineKnownRouteGate(m *emu.Emu) (bool, error) {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	interaction := state.DecodeInteraction(&mem)
+	interaction := ram(m).DecodeInteraction(&mem)
 	if interaction.Kind != state.InteractionTwoOption {
 		return false, nil
 	}
-	index, ok := routeGateCleanupChoiceIndex(m.Peek8(sym.CurMap), interaction.Text)
+	index, ok := routeGateCleanupChoiceIndex(m.Peek8(ram(m).CurMap), interaction.Text)
 	if !ok {
 		return false, nil
 	}

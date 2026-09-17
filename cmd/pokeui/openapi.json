@@ -1,0 +1,116 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "PokePilot operator HTTP",
+    "version": "1",
+    "description": "Allowlisted operator REST on this origin. MCP is a separate Streamable HTTP server at /mcp and requires Authorization: Bearer POKEPILOT_MCP_TOKEN; it cannot proxy these paths. Operator REST does not use that bearer. Run ids include the run- prefix."
+  },
+  "paths": {
+    "/v1/runs/{id}": {
+      "get": {
+        "summary": "Inspect one run",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Run plus compact finish metadata" },
+          "404": { "description": "Unknown run" }
+        }
+      }
+    },
+    "/v1/runs/{id}/debug": {
+      "get": {
+        "summary": "Compact debug bundle",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Finish reason, trace tail, artifacts" },
+          "404": { "description": "Unknown run" }
+        }
+      }
+    },
+    "/v1/runs/{id}/artifacts": {
+      "get": {
+        "summary": "Artifact metadata",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Names, sizes, storage refs; no bytes" },
+          "404": { "description": "Unknown run" }
+        }
+      }
+    },
+    "/v1/runs/{id}/artifacts/{name}/content": {
+      "get": {
+        "summary": "Download artifact bytes",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Raw artifact body" },
+          "404": { "description": "Unknown run or artifact" }
+        }
+      }
+    },
+    "/v1/runs/{id}/checkpoints": {
+      "get": {
+        "summary": "Checkpoint list",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Replayable checkpoints" }
+        }
+      }
+    },
+    "/v1/triage": {
+      "get": {
+        "summary": "Grouped farm failures",
+        "responses": {
+          "200": { "description": "Triage groups" }
+        }
+      }
+    },
+    "/openapi.json": {
+      "get": {
+        "summary": "This document",
+        "responses": {
+          "200": { "description": "OpenAPI 3 JSON" }
+        }
+      }
+    }
+  }
+}

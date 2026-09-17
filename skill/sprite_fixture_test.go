@@ -1,6 +1,7 @@
 package skill_test
 
 import (
+	"github.com/maestroi/pokepilot/skill"
 	"testing"
 
 	"github.com/maestroi/pokepilot/red/rom"
@@ -22,7 +23,7 @@ func TestDecodeSpritesFixture(t *testing.T) {
 	state.Snapshot(e, &mem)
 
 	// The fixture is on the Viridian Pokemon Center (map 0x29).
-	if p := state.DecodePlayer(&mem); p.MapID != 0x29 {
+	if p := skill.RedAddresses().DecodePlayer(&mem); p.MapID != 0x29 {
 		t.Fatalf("fixture map = %#04x, want 0x29", p.MapID)
 	}
 
@@ -34,7 +35,7 @@ func TestDecodeSpritesFixture(t *testing.T) {
 		t.Fatal("ParseMap(0x29): no objects; the anchor has nothing to compare against")
 	}
 
-	sprites := state.DecodeSprites(&mem)
+	sprites := skill.RedAddresses().DecodeSprites(&mem)
 
 	// Find the decoded slot 1 (the nurse).
 	var nurse *state.SpriteState

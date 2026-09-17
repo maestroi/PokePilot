@@ -5,7 +5,6 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 )
 
 // partyMenuMarker identifies the FORCED battle party menu from wTileMap.
@@ -65,15 +64,15 @@ const (
 func SetLead(m *emu.Emu, slot int) error {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	party := state.DecodeParty(&mem)
+	party := ram(m).DecodeParty(&mem)
 	if slot < 0 || slot >= int(party.Count) {
 		return fmt.Errorf("skill: SetLead: slot %d out of range for a party of %d", slot, party.Count)
 	}
 	if slot == 0 {
 		return nil // already the lead; nothing to decide
 	}
-	if !state.Controllable(&mem) {
-		return fmt.Errorf("skill: SetLead: player not controllable on map %#04x", m.Peek8(sym.CurMap))
+	if !ram(m).Controllable(&mem) {
+		return fmt.Errorf("skill: SetLead: player not controllable on map %#04x", m.Peek8(ram(m).CurMap))
 	}
 	return PromoteToLead(m, slot)
 }
@@ -95,10 +94,10 @@ func SetLead(m *emu.Emu, slot int) error {
 func SwitchActive(m *emu.Emu, slot int) error {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if state.DecodeBattle(&mem) == nil {
-		return fmt.Errorf("skill: SwitchActive: no battle in progress on map %#04x", m.Peek8(sym.CurMap))
+	if ram(m).DecodeBattle(&mem) == nil {
+		return fmt.Errorf("skill: SwitchActive: no battle in progress on map %#04x", m.Peek8(ram(m).CurMap))
 	}
-	party := state.DecodeParty(&mem)
+	party := ram(m).DecodeParty(&mem)
 	if slot < 0 || slot >= int(party.Count) {
 		return fmt.Errorf("skill: SwitchActive: slot %d out of range for a party of %d", slot, party.Count)
 	}
@@ -106,9 +105,9 @@ func SwitchActive(m *emu.Emu, slot int) error {
 		return fmt.Errorf("skill: SwitchActive: slot %d is fainted; the ROM bounces a fainted pick back to the menu", slot)
 	}
 	want := party.Mons[slot].Species
-	if int(m.Peek8(sym.PlayerMonNumber)) == slot {
+	if int(m.Peek8(ram(m).PlayerMonNumber)) == slot {
 		// Already out: the ROM would print "ALREADY OUT!" and bounce.
-		b := state.DecodeBattle(&mem)
+		b := ram(m).DecodeBattle(&mem)
 		if b.ActiveSpecies == want {
 			return nil
 		}
@@ -127,13 +126,13 @@ func SwitchActive(m *emu.Emu, slot int) error {
 	// anywhere in the grid, so every tap is verified against wTopMenuItemX
 	// and wCurrentMenuItem before the next one — never a press count.
 	atPKMN := func(m *emu.Emu) bool {
-		return m.Peek8(sym.TopMenuItemX) == battleMenuRightX && int(m.Peek8(sym.CurrentMenuItem)) == 0
+		return m.Peek8(ram(m).TopMenuItemX) == battleMenuRightX && int(m.Peek8(ram(m).CurrentMenuItem)) == 0
 	}
 	for i := 0; i < 8; i++ {
 		if atPKMN(m) {
 			break
 		}
-		prevX, prevRow := m.Peek8(sym.TopMenuItemX), int(m.Peek8(sym.CurrentMenuItem))
+		prevX, prevRow := m.Peek8(ram(m).TopMenuItemX), int(m.Peek8(ram(m).CurrentMenuItem))
 		var btn emu.Button
 		switch {
 		case prevX == battleMenuLeftX && prevRow != 0:
@@ -145,7 +144,7 @@ func SwitchActive(m *emu.Emu, slot int) error {
 		}
 		m.Tap(btn, 3, 7)
 		if _, err := m.StepUntil(menuSettleFrames, func(m *emu.Emu) bool {
-			return m.Peek8(sym.TopMenuItemX) != prevX || int(m.Peek8(sym.CurrentMenuItem)) != prevRow
+			return m.Peek8(ram(m).TopMenuItemX) != prevX || int(m.Peek8(ram(m).CurrentMenuItem)) != prevRow
 		}); err != nil {
 			return fmt.Errorf("skill: SwitchActive: cursor stuck at x=%#02x row %d, want POKéMON (x=%#02x row 0)",
 				prevX, prevRow, battleMenuRightX)
@@ -153,7 +152,7 @@ func SwitchActive(m *emu.Emu, slot int) error {
 	}
 	if !atPKMN(m) {
 		return fmt.Errorf("skill: SwitchActive: cursor at x=%#02x row %d, want POKéMON (x=%#02x row 0)",
-			m.Peek8(sym.TopMenuItemX), int(m.Peek8(sym.CurrentMenuItem)), battleMenuRightX)
+			m.Peek8(ram(m).TopMenuItemX), int(m.Peek8(ram(m).CurrentMenuItem)), battleMenuRightX)
 	}
 
 	// 3. A on POKéMON opens the party menu. The VOLUNTARY menu prints the
@@ -189,7 +188,7 @@ func SwitchActive(m *emu.Emu, slot int) error {
 	activeIs := func(m *emu.Emu) bool {
 		var s state.Mem
 		state.Snapshot(m, &s)
-		b := state.DecodeBattle(&s)
+		b := ram(m).DecodeBattle(&s)
 		return b != nil && b.ActiveSpecies == want
 	}
 	for i := 0; i < 24; i++ {
@@ -204,7 +203,7 @@ func SwitchActive(m *emu.Emu, slot int) error {
 
 	// Postcondition: the active battle mon's species IS the wanted one.
 	state.Snapshot(m, &mem)
-	b := state.DecodeBattle(&mem)
+	b := ram(m).DecodeBattle(&mem)
 	if b == nil || b.ActiveSpecies != want {
 		got := uint8(0)
 		if b != nil {
@@ -237,7 +236,7 @@ func SwitchActive(m *emu.Emu, slot int) error {
 func SelectPartySlot(m *emu.Emu, index int) error {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	party := state.DecodeParty(&mem)
+	party := ram(m).DecodeParty(&mem)
 	if index < 0 || index >= int(party.Count) {
 		return fmt.Errorf("skill: SelectPartySlot: index %d out of range for a party of %d", index, party.Count)
 	}
@@ -247,7 +246,7 @@ func SelectPartySlot(m *emu.Emu, index int) error {
 	stuck := 0
 	for {
 		state.Snapshot(m, &mem)
-		cur := state.DecodeMenu(&mem).Current
+		cur := ram(m).DecodeMenu(&mem).Current
 		if cur == index {
 			break
 		}
@@ -257,13 +256,13 @@ func SelectPartySlot(m *emu.Emu, index int) error {
 		}
 		m.Tap(btn, 3, 7)
 		if _, err := m.StepUntil(menuSettleFrames, func(m *emu.Emu) bool {
-			return int(m.Peek8(sym.CurrentMenuItem)) != cur
+			return int(m.Peek8(ram(m).CurrentMenuItem)) != cur
 		}); err != nil {
 			stuck++
 			if stuck >= stuckLimit {
 				state.Snapshot(m, &mem)
 				return fmt.Errorf("skill: SelectPartySlot: cursor stuck at %d, wanted %d (party of %d), %d consecutive taps without movement",
-					state.DecodeMenu(&mem).Current, index, party.Count, stuck)
+					ram(m).DecodeMenu(&mem).Current, index, party.Count, stuck)
 			}
 		} else {
 			stuck = 0
@@ -291,5 +290,5 @@ func SelectPartySlot(m *emu.Emu, index int) error {
 	}
 	state.Snapshot(m, &mem)
 	return fmt.Errorf("skill: SelectPartySlot: party menu still up after selecting slot %d: %+v",
-		index, state.DecodeMenu(&mem))
+		index, ram(m).DecodeMenu(&mem))
 }

@@ -60,14 +60,14 @@ func TestTraverseGateWarp(t *testing.T) {
 
 	var mem state.Mem
 	state.Snapshot(e, &mem)
-	p = state.DecodePlayer(&mem)
+	p = skill.RedAddresses().DecodePlayer(&mem)
 	if p.MapID != 0x33 {
 		t.Fatalf("CurMap = %02x, want 0x33 (Viridian Forest)", p.MapID)
 	}
 	if p.X != 17 || p.Y != 47 {
 		t.Errorf("player = (%d,%d), want (17,47): the (5,0) warp's landing; (16,47) would mean the (4,0) warp fired", p.X, p.Y)
 	}
-	if !state.Controllable(&mem) {
+	if !skill.RedAddresses().Controllable(&mem) {
 		t.Error("player not controllable after the gate crossing")
 	}
 	t.Logf("crossed the south gate via the reachable warp tile, landed at (%d,%d)", p.X, p.Y)
@@ -122,7 +122,7 @@ func TestTravelRoute1ToPallet(t *testing.T) {
 	if got := mem.U8(sym.CurMap); got != 0x00 {
 		t.Fatalf("wCurMap = %#04x, want 0x00 (Pallet Town)", got)
 	}
-	if !state.Controllable(&mem) {
+	if !skill.RedAddresses().Controllable(&mem) {
 		t.Errorf("player not controllable on map %#04x after the crossing", mem.U8(sym.CurMap))
 	}
 	t.Logf("Route 1 -> Pallet crossed; battles fought: %d, replans: %+v", res.Battles, res.Replans)
@@ -172,8 +172,8 @@ func TestTraverseWarpChain(t *testing.T) {
 
 	var mem state.Mem
 	state.Snapshot(e, &mem)
-	p = state.DecodePlayer(&mem)
-	w := state.DecodeWorld(&mem)
+	p = skill.RedAddresses().DecodePlayer(&mem)
+	w := skill.RedAddresses().DecodeWorld(&mem)
 	if p.MapID != 0x25 {
 		t.Fatalf("CurMap = %02x, want 0x25", p.MapID)
 	}
@@ -183,7 +183,7 @@ func TestTraverseWarpChain(t *testing.T) {
 	if w.Width == 0 || w.Height == 0 {
 		t.Errorf("map dimensions = %dx%d, want non-zero", w.Width, w.Height)
 	}
-	if !state.Controllable(&mem) {
+	if !skill.RedAddresses().Controllable(&mem) {
 		t.Error("player not controllable after 0x26->0x25")
 	}
 
@@ -204,11 +204,11 @@ func TestTraverseWarpChain(t *testing.T) {
 	}
 
 	state.Snapshot(e, &mem)
-	p = state.DecodePlayer(&mem)
+	p = skill.RedAddresses().DecodePlayer(&mem)
 	if p.MapID != 0x00 {
 		t.Fatalf("CurMap = %02x, want 0x00 (Pallet Town)", p.MapID)
 	}
-	if !state.Controllable(&mem) {
+	if !skill.RedAddresses().Controllable(&mem) {
 		t.Error("player not controllable after 0x25->0x00")
 	}
 }

@@ -5,9 +5,7 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
-	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
 )
 
@@ -52,8 +50,8 @@ type BoulderPuzzleResult struct {
 	Explored int
 }
 
-func liveBoulderMovables(mem *state.Mem) []world.Movable {
-	boulders := state.DecodeBoulders(mem)
+func liveBoulderMovables(mem *state.Mem, a wramAddresses) []world.Movable {
+	boulders := a.DecodeBoulders(mem)
 	out := make([]world.Movable, 0, len(boulders))
 	for _, boulder := range boulders {
 		out = append(out, world.Movable{
@@ -64,9 +62,9 @@ func liveBoulderMovables(mem *state.Mem) []world.Movable {
 	return out
 }
 
-func liveNonBoulderBlockers(mem *state.Mem) map[[2]int]bool {
+func liveNonBoulderBlockers(mem *state.Mem, a wramAddresses) map[[2]int]bool {
 	out := map[[2]int]bool{}
-	for _, sprite := range state.DecodeSprites(mem) {
+	for _, sprite := range a.DecodeSprites(mem) {
 		if sprite.PictureID == state.BoulderPictureID {
 			continue
 		}
@@ -75,8 +73,8 @@ func liveNonBoulderBlockers(mem *state.Mem) map[[2]int]bool {
 	return out
 }
 
-func observedBoulderBySlot(mem *state.Mem, slot int) (state.BoulderState, bool) {
-	for _, boulder := range state.DecodeBoulders(mem) {
+func observedBoulderBySlot(mem *state.Mem, slot int, a wramAddresses) (state.BoulderState, bool) {
+	for _, boulder := range a.DecodeBoulders(mem) {
 		if boulder.Slot == slot {
 			return boulder, true
 		}
@@ -84,8 +82,8 @@ func observedBoulderBySlot(mem *state.Mem, slot int) (state.BoulderState, bool) 
 	return state.BoulderState{}, false
 }
 
-func boulderPuzzleEventComplete(mem *state.Mem, spec BoulderPuzzleSpec) bool {
-	return spec.HasCompleteEvent && state.HasEvent(mem, spec.CompleteEvent)
+func boulderPuzzleEventComplete(mem *state.Mem, spec BoulderPuzzleSpec, a wramAddresses) bool {
+	return spec.HasCompleteEvent && a.HasEvent(mem, spec.CompleteEvent)
 }
 
 func validateBoulderPuzzleSpec(spec BoulderPuzzleSpec) error {
@@ -110,15 +108,15 @@ func validateBoulderPuzzleSpec(spec BoulderPuzzleSpec) error {
 func currentBoulderPuzzle(m *emu.Emu, romData []byte, spec BoulderPuzzleSpec) (world.PushPuzzle, *state.Mem, error) {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	cur := mem.U8(sym.CurMap)
+	cur := mem.U8(ram(m).CurMap)
 	if cur != spec.Map {
 		return world.PushPuzzle{}, nil, fmt.Errorf("skill: boulder puzzle is for map %#02x, current map is %#02x", spec.Map, cur)
 	}
-	if !state.Controllable(&mem) {
+	if !ram(m).Controllable(&mem) {
 		return world.PushPuzzle{}, nil, fmt.Errorf("skill: boulder puzzle player is not controllable on map %#02x", cur)
 	}
 
-	h, err := rom.ParseMap(romData, cur)
+	h, err := graphForROM(romData).ParseMap(romData, cur)
 	if err != nil {
 		return world.PushPuzzle{}, nil, fmt.Errorf("skill: boulder puzzle parse map %#02x: %w", cur, err)
 	}
@@ -126,12 +124,12 @@ func currentBoulderPuzzle(m *emu.Emu, romData []byte, spec BoulderPuzzleSpec) (w
 	if err != nil {
 		return world.PushPuzzle{}, nil, fmt.Errorf("skill: boulder puzzle live grid for map %#02x: %w", cur, err)
 	}
-	player := state.DecodePlayer(&mem)
+	player := ram(m).DecodePlayer(&mem)
 	return world.PushPuzzle{
 		Grid:      grid,
 		Player:    world.Point{X: int(player.X), Y: int(player.Y)},
-		Movables:  liveBoulderMovables(&mem),
-		Fixed:     liveNonBoulderBlockers(&mem),
+		Movables:  liveBoulderMovables(&mem, ram(m)),
+		Fixed:     liveNonBoulderBlockers(&mem, ram(m)),
 		Goal:      world.PushGoal{Targets: spec.Targets, Reachable: spec.Reachable},
 		MaxStates: spec.MaxStates,
 	}, &mem, nil
@@ -145,27 +143,27 @@ func settleBoulderPush(m *emu.Emu, spec BoulderPuzzleSpec, push world.Push) erro
 	var last state.Mem
 	for spent := 0; spent <= boulderPushObserveBudget; spent += 10 {
 		state.Snapshot(m, &last)
-		if got := last.U8(sym.CurMap); got != spec.Map {
+		if got := last.U8(ram(m).CurMap); got != spec.Map {
 			return fmt.Errorf("%w: expected map %#02x after pushing slot %d, observed %#02x", ErrBoulderPuzzleMapChanged, spec.Map, push.MovableID, got)
 		}
-		boulder, found := observedBoulderBySlot(&last, push.MovableID)
+		boulder, found := observedBoulderBySlot(&last, push.MovableID, ram(m))
 		if found && boulder.X == push.To.X && boulder.Y == push.To.Y {
 			return nil
 		}
 		if terminal && !found {
-			if !spec.HasCompleteEvent || boulderPuzzleEventComplete(&last, spec) {
+			if !spec.HasCompleteEvent || boulderPuzzleEventComplete(&last, spec, ram(m)) {
 				return nil
 			}
 		}
 		m.StepFrames(10)
 	}
 
-	boulder, found := observedBoulderBySlot(&last, push.MovableID)
+	boulder, found := observedBoulderBySlot(&last, push.MovableID, ram(m))
 	return fmt.Errorf("%w: slot %d planned (%d,%d)->(%d,%d), after %d frames found=%v observed=(%d,%d) terminal=%v eventComplete=%v",
 		ErrBoulderObservationMismatch, push.MovableID,
 		push.From.X, push.From.Y, push.To.X, push.To.Y,
 		boulderPushObserveBudget, found, boulder.X, boulder.Y, terminal,
-		boulderPuzzleEventComplete(&last, spec))
+		boulderPuzzleEventComplete(&last, spec, ram(m)))
 }
 
 // resolveBoulderWalkInterruption handles only interruption cleanup and then
@@ -224,14 +222,14 @@ func executeObservedBoulderPush(m *emu.Emu, spec BoulderPuzzleSpec, policy MoveP
 
 	var before state.Mem
 	state.Snapshot(m, &before)
-	if got := before.U8(sym.CurMap); got != spec.Map {
+	if got := before.U8(ram(m).CurMap); got != spec.Map {
 		return false, fmt.Errorf("%w: walk to push stand left map %#02x for %#02x", ErrBoulderPuzzleMapChanged, spec.Map, got)
 	}
-	player := state.DecodePlayer(&before)
+	player := ram(m).DecodePlayer(&before)
 	if int(player.X) != push.Stand.X || int(player.Y) != push.Stand.Y {
 		return false, fmt.Errorf("%w: planned player stand (%d,%d), observed (%d,%d)", ErrBoulderObservationMismatch, push.Stand.X, push.Stand.Y, player.X, player.Y)
 	}
-	boulder, found := observedBoulderBySlot(&before, push.MovableID)
+	boulder, found := observedBoulderBySlot(&before, push.MovableID, ram(m))
 	if !found || boulder.X != push.From.X || boulder.Y != push.From.Y {
 		return false, fmt.Errorf("%w: slot %d planned at (%d,%d), found=%v observed=(%d,%d)", ErrBoulderObservationMismatch, push.MovableID, push.From.X, push.From.Y, found, boulder.X, boulder.Y)
 	}
@@ -240,7 +238,7 @@ func executeObservedBoulderPush(m *emu.Emu, spec BoulderPuzzleSpec, policy MoveP
 		return false, fmt.Errorf("skill: boulder puzzle face slot %d at (%d,%d): %w", push.MovableID, push.From.X, push.From.Y, err)
 	}
 	state.Snapshot(m, &before)
-	if before.U8(sym.StatusFlags1)&fieldStrengthActiveBit == 0 {
+	if before.U8(ram(m).StatusFlags1)&fieldStrengthActiveBit == 0 {
 		if _, err := UseFieldMove(m, FieldStrength); err != nil {
 			return false, fmt.Errorf("skill: boulder puzzle activate Strength for slot %d: %w", push.MovableID, err)
 		}
@@ -292,7 +290,7 @@ func SolveBoulderPuzzle(m *emu.Emu, romData []byte, policy MovePolicy, spec Boul
 		if err != nil {
 			return result, err
 		}
-		if boulderPuzzleEventComplete(mem, spec) {
+		if boulderPuzzleEventComplete(mem, spec, ram(m)) {
 			return result, nil
 		}
 
@@ -309,7 +307,7 @@ func SolveBoulderPuzzle(m *emu.Emu, romData []byte, policy MovePolicy, spec Boul
 			if spec.HasCompleteEvent {
 				for spent := 0; spent < boulderPushObserveBudget; spent += 10 {
 					state.Snapshot(m, mem)
-					if boulderPuzzleEventComplete(mem, spec) {
+					if boulderPuzzleEventComplete(mem, spec, ram(m)) {
 						return result, nil
 					}
 					m.StepFrames(10)
@@ -333,7 +331,7 @@ func SolveBoulderPuzzle(m *emu.Emu, romData []byte, policy MovePolicy, spec Boul
 	var mem state.Mem
 	state.Snapshot(m, &mem)
 	if result.Replans >= replanLimit {
-		return result, fmt.Errorf("%w: map %#02x after %d replans and %d verified pushes, player=(%d,%d), boulders=%v", ErrBoulderPuzzleReplanLimit, spec.Map, result.Replans, result.Pushes, mem.U8(sym.XCoord), mem.U8(sym.YCoord), state.DecodeBoulders(&mem))
+		return result, fmt.Errorf("%w: map %#02x after %d replans and %d verified pushes, player=(%d,%d), boulders=%v", ErrBoulderPuzzleReplanLimit, spec.Map, result.Replans, result.Pushes, mem.U8(ram(m).XCoord), mem.U8(ram(m).YCoord), ram(m).DecodeBoulders(&mem))
 	}
-	return result, fmt.Errorf("%w: map %#02x after %d verified pushes, player=(%d,%d), boulders=%v", ErrBoulderPuzzlePushLimit, spec.Map, result.Pushes, mem.U8(sym.XCoord), mem.U8(sym.YCoord), state.DecodeBoulders(&mem))
+	return result, fmt.Errorf("%w: map %#02x after %d verified pushes, player=(%d,%d), boulders=%v", ErrBoulderPuzzlePushLimit, spec.Map, result.Pushes, mem.U8(ram(m).XCoord), mem.U8(ram(m).YCoord), ram(m).DecodeBoulders(&mem))
 }

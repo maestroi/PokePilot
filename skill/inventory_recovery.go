@@ -7,7 +7,6 @@ import (
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
 )
 
@@ -35,8 +34,8 @@ var standardMartRecoveryTargets = []standardMartRecoveryTarget{
 	{name: "vermilion mart", mapID: 0x5B},
 }
 
-func itemCount(mem *state.Mem, item uint8) int {
-	_, qty := bagEntry(mem, item)
+func itemCount(mem *state.Mem, item uint8, a wramAddresses) int {
+	_, qty := bagEntry(mem, item, a)
 	return qty
 }
 
@@ -53,13 +52,13 @@ func martStocksItem(romData []byte, mapID, item uint8) bool {
 	return false
 }
 
-func nearestStockMart(romData []byte, mem *state.Mem, item uint8) (standardMartRecoveryTarget, bool, error) {
-	g, err := world.BuildGraph(romData)
+func nearestStockMart(romData []byte, mem *state.Mem, item uint8, a wramAddresses) (standardMartRecoveryTarget, bool, error) {
+	g, err := cachedRouteGraph(romData)
 	if err != nil {
 		return standardMartRecoveryTarget{}, false, err
 	}
 
-	from := mem.U8(sym.CurMap)
+	from := mem.U8(tablesForROM(romData).wram.CurMap)
 	bestLen := int(^uint(0) >> 1)
 	var best standardMartRecoveryTarget
 	found := false
@@ -67,7 +66,7 @@ func nearestStockMart(romData []byte, mem *state.Mem, item uint8) (standardMartR
 		// Before Oak receives the parcel the Viridian clerk is a story NPC,
 		// not a usable shop. Do not route a recovery there just to learn that
 		// again from the shop controller.
-		if target.mapID == viridianMartMap && !state.HasEvent(mem, state.EventOakGotParcel) {
+		if target.mapID == viridianMartMap && !a.HasEvent(mem, state.EventOakGotParcel) {
 			continue
 		}
 		if !martStocksItem(romData, target.mapID, item) {
@@ -110,26 +109,26 @@ func EnsureItemStock(m *emu.Emu, romData []byte, policy MovePolicy, item uint8, 
 
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	have := itemCount(&mem, item)
+	have := itemCount(&mem, item, ram(m))
 	if have >= target {
 		return have, nil
 	}
 
 	softFail := func(err error) (int, error) {
 		state.Snapshot(m, &mem)
-		have = itemCount(&mem, item)
+		have = itemCount(&mem, item, ram(m))
 		if have >= minimum {
 			return have, nil
 		}
 		return have, err
 	}
 
-	mart, ok, err := nearestStockMart(romData, &mem, item)
+	mart, ok, err := nearestStockMart(romData, &mem, item, ram(m))
 	if err != nil {
 		return softFail(fmt.Errorf("skill: EnsureItemStock: choose mart for item %#02x: %w", item, err))
 	}
 	if !ok {
-		return softFail(fmt.Errorf("%w: item %#02x from map %#04x", ErrNoReachableStock, item, mem.U8(sym.CurMap)))
+		return softFail(fmt.Errorf("%w: item %#02x from map %#04x", ErrNoReachableStock, item, mem.U8(tablesForROM(romData).wram.CurMap)))
 	}
 
 	if err := EnsureBagSpaceFor(m, item); err != nil {
@@ -149,7 +148,7 @@ func EnsureItemStock(m *emu.Emu, romData []byte, policy MovePolicy, item uint8, 
 	}
 
 	state.Snapshot(m, &mem)
-	have = itemCount(&mem, item)
+	have = itemCount(&mem, item, ram(m))
 	need := target - have
 	if need <= 0 {
 		return have, nil
@@ -174,7 +173,7 @@ func EnsureItemStock(m *emu.Emu, romData []byte, policy MovePolicy, item uint8, 
 	}
 
 	state.Snapshot(m, &mem)
-	have = itemCount(&mem, item)
+	have = itemCount(&mem, item, ram(m))
 	if have >= minimum {
 		return have, nil
 	}
@@ -193,7 +192,7 @@ func EnsureItemStock(m *emu.Emu, romData []byte, policy MovePolicy, item uint8, 
 func EnsureProgressionPokeBalls(m *emu.Emu, romData []byte, policy MovePolicy) (int, error) {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if have := itemCount(&mem, ItemPokeBall); have > 0 {
+	if have := itemCount(&mem, ItemPokeBall, ram(m)); have > 0 {
 		return have, nil
 	}
 	return EnsureItemStock(m, romData, policy, ItemPokeBall, progressionPokeBallReserve, 1)

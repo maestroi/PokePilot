@@ -8,7 +8,6 @@ import (
 	reddata "github.com/maestroi/pokepilot/red/data"
 	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 )
 
 const inGameTradeBudget = 18000
@@ -55,10 +54,10 @@ func InGameTrade(m *emu.Emu, romData []byte, want uint8, policy MovePolicy) (Cat
 
 	var before state.Mem
 	state.Snapshot(m, &before)
-	if giftPokemonAlreadyOwned(&before, romData, want) {
+	if giftPokemonAlreadyOwned(&before, romData, want, ram(m)) {
 		return CatchResult{Outcome: OutcomeCaught, Species: want}, nil
 	}
-	partyBefore := state.DecodeParty(&before)
+	partyBefore := ram(m).DecodeParty(&before)
 	giveSlot := -1
 	for i, mon := range partyBefore.Mons {
 		if mon.Species == trade.Give {
@@ -84,7 +83,7 @@ func InGameTrade(m *emu.Emu, romData []byte, want uint8, policy MovePolicy) (Cat
 		// only success if the target's durable owned bit now proves it.
 		var afterTalk state.Mem
 		state.Snapshot(m, &afterTalk)
-		if giftPokemonAlreadyOwned(&afterTalk, romData, want) {
+		if giftPokemonAlreadyOwned(&afterTalk, romData, want, ram(m)) {
 			return CatchResult{Outcome: OutcomeCaught, Species: want}, nil
 		}
 		return CatchResult{}, fmt.Errorf("skill: InGameTrade: NPC dialogue ended without offering or completing species %#02x", want)
@@ -96,7 +95,7 @@ func InGameTrade(m *emu.Emu, romData []byte, want uint8, policy MovePolicy) (Cat
 
 	var offer state.Mem
 	state.Snapshot(m, &offer)
-	if state.DecodeTwoOptionMenu(&offer) == nil {
+	if ram(m).DecodeTwoOptionMenu(&offer) == nil {
 		return CatchResult{}, fmt.Errorf("skill: InGameTrade: expected YES/NO trade offer, got %q", state.ScreenText(&offer))
 	}
 	if err := selectTwoOption(m, 0); err != nil { // YES
@@ -116,23 +115,23 @@ func InGameTrade(m *emu.Emu, romData []byte, want uint8, policy MovePolicy) (Cat
 	m.Tap(emu.A, 3, 7)
 
 	wantDex := wantedDexNumbers(romData, []uint8{want})
-	beforeOwned := append([]uint8(nil), state.DecodePokedex(&before).Owned...)
+	beforeOwned := append([]uint8(nil), ram(m).DecodePokedex(&before).Owned...)
 	for spent := 0; spent < inGameTradeBudget; spent += talkSettle {
 		var mem state.Mem
 		state.Snapshot(m, &mem)
-		party := state.DecodeParty(&mem)
-		owned := state.DecodePokedex(&mem).Owned
+		party := ram(m).DecodeParty(&mem)
+		owned := ram(m).DecodePokedex(&mem).Owned
 		acquired := speciesInParty(party, want) || newlyOwnedDex(beforeOwned, owned, wantDex)
-		if acquired && state.Controllable(&mem) {
+		if acquired && ram(m).Controllable(&mem) {
 			return CatchResult{Outcome: OutcomeCaught, Species: want}, nil
 		}
-		if state.Controllable(&mem) && spent >= 200 {
+		if ram(m).Controllable(&mem) && spent >= 200 {
 			return CatchResult{}, fmt.Errorf("skill: InGameTrade: trade returned to overworld without species %#02x", want)
 		}
-		if state.DecodeTwoOptionMenu(&mem) != nil {
+		if ram(m).DecodeTwoOptionMenu(&mem) != nil {
 			return CatchResult{}, fmt.Errorf("skill: InGameTrade: unexpected choice after party selection: %q", state.ScreenText(&mem))
 		}
-		if mem.U8(sym.FontLoaded) != 0 && !state.MenuUp(&mem) {
+		if mem.U8(ram(m).FontLoaded) != 0 && !ram(m).MenuUp(&mem) {
 			m.Tap(emu.A, 3, 7)
 			m.StepFrames(talkSettle)
 			continue

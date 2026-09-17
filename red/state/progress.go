@@ -3,8 +3,6 @@ package state
 import (
 	"fmt"
 	"math/bits"
-
-	"github.com/maestroi/pokepilot/red/sym"
 )
 
 // Badge is one of the eight Kanto badges.
@@ -47,8 +45,14 @@ func (p ProgressState) Has(b Badge) bool {
 
 // DecodeProgress reads the badge bitfield from a RAM snapshot. Bit 0 is the
 // Boulder Badge through bit 7 for the Earth Badge.
-func DecodeProgress(m *Mem) ProgressState {
-	badges := m.U8(sym.ObtainedBadges)
+func (a Addresses) DecodeProgress(m *Mem) ProgressState {
+	return DecodeProgressFromBadges(m.U8(a.ObtainedBadges))
+}
+
+// DecodeProgressFromBadges builds progress from a raw badge bitfield. Gen I
+// games share the badge encoding and differ only in where the byte lives, so
+// a game reading its own address reuses this.
+func DecodeProgressFromBadges(badges uint8) ProgressState {
 	return ProgressState{Badges: badges, BadgeCount: bits.OnesCount8(badges)}
 }
 
@@ -115,8 +119,8 @@ func (e Event) String() string {
 
 // HasEvent reports whether the story event flag is set. Bit N of wEventFlags
 // lives in byte 0xD747+N/8 at bit N%8.
-func HasEvent(m *Mem, e Event) bool {
-	b := m.U8(sym.EventFlags + uint16(e)/8)
+func (a Addresses) HasEvent(m *Mem, e Event) bool {
+	b := m.U8(a.EventFlags + uint16(e)/8)
 	return b&(1<<(uint16(e)%8)) != 0
 }
 
@@ -124,6 +128,6 @@ func HasEvent(m *Mem, e Event) bool {
 // Oak's table. This is wStatusFlags4 bit 3, set the moment the mon is added
 // to the party — NOT EventGotStarter, which the game only sets once the
 // rival has taken his.
-func TookStarterBall(m *Mem) bool {
-	return m.U8(sym.StatusFlags4)&(1<<3) != 0
+func (a Addresses) TookStarterBall(m *Mem) bool {
+	return m.U8(a.StatusFlags4)&(1<<3) != 0
 }

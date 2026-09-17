@@ -44,7 +44,7 @@ func TestEliteFourProgressionQualification(t *testing.T) {
 	if got := before.U8(sym.CurMap); got != indigoPlateauLobbyMap {
 		t.Fatalf("checkpoint map = %#02x, want Indigo lobby %#02x", got, indigoPlateauLobbyMap)
 	}
-	beforeFacts := state.DecodeStoryFacts(&before, state.DecodeInventory(&before))
+	beforeFacts := redWram().DecodeStoryFacts(&before, redWram().DecodeInventory(&before))
 	if beforeFacts.MainStoryComplete {
 		t.Fatal("checkpoint already has main-story completion")
 	}
@@ -69,7 +69,7 @@ func TestEliteFourProgressionQualification(t *testing.T) {
 		}
 		var afterStage state.Mem
 		state.Snapshot(m, &afterStage)
-		facts := state.DecodeStoryFacts(&afterStage, state.DecodeInventory(&afterStage))
+		facts := redWram().DecodeStoryFacts(&afterStage, redWram().DecodeInventory(&afterStage))
 		if !stage.done(facts) {
 			t.Fatalf("%s did not commit its semantic postcondition: %+v", stage.name, facts)
 		}
@@ -77,7 +77,7 @@ func TestEliteFourProgressionQualification(t *testing.T) {
 
 	var after state.Mem
 	state.Snapshot(m, &after)
-	afterFacts := state.DecodeStoryFacts(&after, state.DecodeInventory(&after))
+	afterFacts := redWram().DecodeStoryFacts(&after, redWram().DecodeInventory(&after))
 	if !afterFacts.MainStoryComplete {
 		t.Fatalf("main story not complete after staged League progression: %+v", afterFacts)
 	}

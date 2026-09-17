@@ -32,7 +32,7 @@ func trainForRoute22Rival(t *testing.T, m *emu.Emu, romData []byte, policy skill
 	for {
 		var mem state.Mem
 		state.Snapshot(m, &mem)
-		lead := int(state.DecodeParty(&mem).Mons[0].Level)
+		lead := int(skill.RedAddresses().DecodeParty(&mem).Mons[0].Level)
 		if lead >= skill.Route22RivalLeadLevel {
 			t.Logf("lead ready at level %d", lead)
 			return
@@ -63,7 +63,7 @@ func trainForRoute22Rival(t *testing.T, m *emu.Emu, romData []byte, policy skill
 // assertion passes against an empty bag.
 func pokeballCount(mem *state.Mem) int {
 	n := 0
-	for _, it := range state.DecodeInventory(mem).Items {
+	for _, it := range skill.RedAddresses().DecodeInventory(mem).Items {
 		if it.ID == skill.ItemPokeBall {
 			n += int(it.Quantity)
 		}
@@ -89,14 +89,14 @@ func TestGetPokeBalls(t *testing.T) {
 	// yet, so the test proves GetPokeBalls produces each one.
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if state.HasEvent(&mem, state.EventGotPokeballsFromOak) {
+	if skill.RedAddresses().HasEvent(&mem, state.EventGotPokeballsFromOak) {
 		t.Fatal("precondition: pokeballs-from-Oak flag already set in post_errand fixture")
 	}
-	if state.HasEvent(&mem, state.EventBeatRoute22Rival1stBattle) {
+	if skill.RedAddresses().HasEvent(&mem, state.EventBeatRoute22Rival1stBattle) {
 		t.Fatal("precondition: route 22 rival battle event already set in post_errand fixture")
 	}
 	if n := pokeballCount(&mem); n != 0 {
-		t.Fatalf("precondition: %d POKE_BALL already in bag: %+v", n, state.DecodeInventory(&mem).Items)
+		t.Fatalf("precondition: %d POKE_BALL already in bag: %+v", n, skill.RedAddresses().DecodeInventory(&mem).Items)
 	}
 
 	// The post-parcel lead (level 7) loses the rival battle — his party is
@@ -111,23 +111,23 @@ func TestGetPokeBalls(t *testing.T) {
 	t.Logf("GetPokeBalls took %v", time.Since(start))
 
 	state.Snapshot(m, &mem)
-	if !state.HasEvent(&mem, state.EventBeatRoute22Rival1stBattle) {
+	if !skill.RedAddresses().HasEvent(&mem, state.EventBeatRoute22Rival1stBattle) {
 		t.Fatalf("postcondition: %s not set", state.EventBeatRoute22Rival1stBattle)
 	}
-	if !state.HasEvent(&mem, state.EventGotPokeballsFromOak) {
+	if !skill.RedAddresses().HasEvent(&mem, state.EventGotPokeballsFromOak) {
 		t.Fatalf("postcondition: %s not set", state.EventGotPokeballsFromOak)
 	}
 	if n := pokeballCount(&mem); n != 5 {
-		t.Fatalf("postcondition: bag holds %d POKE_BALL, want 5: %+v", n, state.DecodeInventory(&mem).Items)
+		t.Fatalf("postcondition: bag holds %d POKE_BALL, want 5: %+v", n, skill.RedAddresses().DecodeInventory(&mem).Items)
 	}
-	if !state.Controllable(&mem) {
-		t.Fatalf("postcondition: player not controllable: %+v", state.DecodePlayer(&mem))
+	if !skill.RedAddresses().Controllable(&mem) {
+		t.Fatalf("postcondition: player not controllable: %+v", skill.RedAddresses().DecodePlayer(&mem))
 	}
-	p := state.DecodePlayer(&mem)
+	p := skill.RedAddresses().DecodePlayer(&mem)
 	if p.MapID != 0x28 {
 		t.Fatalf("postcondition: expected Oak's lab (0x28), got %#04x at (%d,%d)", p.MapID, p.X, p.Y)
 	}
-	if party := state.DecodeParty(&mem); party.Count > 0 {
+	if party := skill.RedAddresses().DecodeParty(&mem); party.Count > 0 {
 		t.Logf("lead after the balls: level %d", party.Mons[0].Level)
 	}
 
@@ -140,7 +140,7 @@ func TestGetPokeBalls(t *testing.T) {
 	}
 	state.Snapshot(m, &mem)
 	if n := pokeballCount(&mem); n != 5 {
-		t.Fatalf("after second call: bag holds %d POKE_BALL, want 5: %+v", n, state.DecodeInventory(&mem).Items)
+		t.Fatalf("after second call: bag holds %d POKE_BALL, want 5: %+v", n, skill.RedAddresses().DecodeInventory(&mem).Items)
 	}
 }
 
@@ -156,19 +156,19 @@ func TestPostPokeballsFixture(t *testing.T) {
 
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if !state.HasEvent(&mem, state.EventBeatRoute22Rival1stBattle) {
+	if !skill.RedAddresses().HasEvent(&mem, state.EventBeatRoute22Rival1stBattle) {
 		t.Fatalf("fixture post_pokeballs: %s not set", state.EventBeatRoute22Rival1stBattle)
 	}
-	if !state.HasEvent(&mem, state.EventGotPokeballsFromOak) {
+	if !skill.RedAddresses().HasEvent(&mem, state.EventGotPokeballsFromOak) {
 		t.Fatalf("fixture post_pokeballs: %s not set", state.EventGotPokeballsFromOak)
 	}
 	if n := pokeballCount(&mem); n != 5 {
-		t.Fatalf("fixture post_pokeballs: bag holds %d POKE_BALL, want 5: %+v", n, state.DecodeInventory(&mem).Items)
+		t.Fatalf("fixture post_pokeballs: bag holds %d POKE_BALL, want 5: %+v", n, skill.RedAddresses().DecodeInventory(&mem).Items)
 	}
-	if !state.Controllable(&mem) {
-		t.Fatalf("fixture post_pokeballs: player not controllable: %+v", state.DecodePlayer(&mem))
+	if !skill.RedAddresses().Controllable(&mem) {
+		t.Fatalf("fixture post_pokeballs: player not controllable: %+v", skill.RedAddresses().DecodePlayer(&mem))
 	}
-	p := state.DecodePlayer(&mem)
+	p := skill.RedAddresses().DecodePlayer(&mem)
 	if p.MapID != 0x28 {
 		t.Fatalf("fixture post_pokeballs: expected Oak's lab (0x28), got %#04x at (%d,%d)", p.MapID, p.X, p.Y)
 	}

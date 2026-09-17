@@ -23,7 +23,7 @@ func TestNaturalMoveLearnerUsesWhichPokemonNotActiveBattleMon(t *testing.T) {
 	mem[learner+sym.MonType2] = 0x03
 	copy(mem[learner+sym.MonMoves:learner+sym.MonMoves+4], []byte{33, 45, 73, 22})
 
-	mon, slot, ok := naturalMoveLearner(&mem)
+	mon, slot, ok := naturalMoveLearner(&mem, redWram())
 	if !ok {
 		t.Fatal("naturalMoveLearner reported no learner")
 	}
@@ -42,7 +42,7 @@ func TestNaturalMoveLearnerRejectsInvalidWhichPokemon(t *testing.T) {
 	var mem state.Mem
 	mem[sym.PartyCount] = 1
 	mem[sym.WhichPokemon] = 4
-	if _, slot, ok := naturalMoveLearner(&mem); ok || slot != 4 {
+	if _, slot, ok := naturalMoveLearner(&mem, redWram()); ok || slot != 4 {
 		t.Fatalf("slot=%d ok=%v want invalid slot 4", slot, ok)
 	}
 }

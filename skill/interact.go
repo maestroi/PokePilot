@@ -6,9 +6,7 @@ import (
 	"strings"
 
 	"github.com/maestroi/pokepilot/emu"
-	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
 )
 
@@ -45,7 +43,7 @@ func (e *ErrTalkMenu) Error() string {
 func talkMenuUp(m *emu.Emu) (bool, string) {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if state.DecodeTwoOptionMenu(&mem) != nil || state.MenuUp(&mem) {
+	if ram(m).DecodeTwoOptionMenu(&mem) != nil || ram(m).MenuUp(&mem) {
 		return true, state.ScreenText(&mem)
 	}
 	return false, ""
@@ -127,7 +125,7 @@ func Face(m *emu.Emu, tx, ty uint8) error {
 	var mem state.Mem
 	if _, err := m.StepUntil(faceTurnBudget, func(m *emu.Emu) bool {
 		state.Snapshot(m, &mem)
-		return state.DecodePlayer(&mem).Facing == want
+		return ram(m).DecodePlayer(&mem).Facing == want
 	}); err != nil {
 		return fmt.Errorf("skill: Face: not facing %s within %d frames", want, faceTurnBudget)
 	}
@@ -156,12 +154,12 @@ func Talk(m *emu.Emu) (int, error) {
 	}
 	m.Tap(emu.A, 3, 7)
 	if _, err := m.StepUntil(talkOpenBudget, func(m *emu.Emu) bool {
-		return m.Peek8(sym.FontLoaded) != 0
+		return m.Peek8(ram(m).FontLoaded) != 0
 	}); err != nil {
 		// No dialogue box opened. If a battle started in the meantime, that is
 		// a distinct outcome from "nothing happened": the objective leaked a
 		// battle it does not own, and retrying would fight it blind.
-		if m.Peek8(sym.IsInBattle) != 0 {
+		if m.Peek8(ram(m).IsInBattle) != 0 {
 			return 0, ErrTalkStartedBattle
 		}
 		return 0, ErrNoDialogue
@@ -172,7 +170,7 @@ func Talk(m *emu.Emu) (int, error) {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
 	prev := state.ScreenText(&mem)
-	for m.Peek8(sym.FontLoaded) != 0 {
+	for m.Peek8(ram(m).FontLoaded) != 0 {
 		if presses >= talkPressBudget {
 			return presses, fmt.Errorf("skill: Talk: text box still open after %d A presses", presses)
 		}
@@ -182,7 +180,7 @@ func Talk(m *emu.Emu) (int, error) {
 		m.Tap(emu.A, 3, 7)
 		presses++
 		m.StepFrames(talkSettle)
-		if m.Peek8(sym.FontLoaded) == 0 {
+		if m.Peek8(ram(m).FontLoaded) == 0 {
 			break
 		}
 		state.Snapshot(m, &mem)
@@ -205,10 +203,10 @@ func Talk(m *emu.Emu) (int, error) {
 	// round-038): 274 frames from box-close to controllable. Wait rather
 	// than asserting on the very next frame.
 	state.Snapshot(m, &mem)
-	if !state.Controllable(&mem) {
+	if !ram(m).Controllable(&mem) {
 		if _, err := m.StepUntil(talkPostBoxSettle, func(m *emu.Emu) bool {
 			state.Snapshot(m, &mem)
-			return state.Controllable(&mem)
+			return ram(m).Controllable(&mem)
 		}); err != nil {
 			return presses, fmt.Errorf("skill: Talk: not controllable %d frames after the box closed", talkPostBoxSettle)
 		}
@@ -240,8 +238,8 @@ func dialoguePagingStuck(unchanged int, prev, next string) (int, bool) {
 // the move policy for the one case fleeing cannot cover — a trainer battle,
 // which the game refuses to let you flee and which talkBeside fights.
 func TalkAt(m *emu.Emu, romData []byte, homeX, homeY uint8, policy MovePolicy) (int, error) {
-	cur := m.Peek8(sym.CurMap)
-	h, err := rom.ParseMap(romData, cur)
+	cur := m.Peek8(ram(m).CurMap)
+	h, err := graphForROM(romData).ParseMap(romData, cur)
 	if err != nil {
 		return 0, fmt.Errorf("skill: TalkAt: parse map %#04x: %w", cur, err)
 	}
@@ -322,7 +320,7 @@ func TalkAt(m *emu.Emu, romData []byte, homeX, homeY uint8, policy MovePolicy) (
 func liveObjectPosition(m *emu.Emu, objectID int) (uint8, uint8, bool) {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	for _, sprite := range state.DecodeSprites(&mem) {
+	for _, sprite := range ram(m).DecodeSprites(&mem) {
 		if sprite.Slot == objectID && sprite.X >= 0 && sprite.Y >= 0 && sprite.X <= 255 && sprite.Y <= 255 {
 			return uint8(sprite.X), uint8(sprite.Y), true
 		}
@@ -358,8 +356,8 @@ func besideDestination(m *emu.Emu, romData []byte, targetX, targetY uint8) (Dest
 	if _, ok := directionTo(sx, sy, targetX, targetY); ok {
 		return Destination{}, false, nil
 	}
-	cur := m.Peek8(sym.CurMap)
-	h, err := rom.ParseMap(romData, cur)
+	cur := m.Peek8(ram(m).CurMap)
+	h, err := graphForROM(romData).ParseMap(romData, cur)
 	if err != nil {
 		return Destination{}, false, fmt.Errorf("parse map %#04x: %w", cur, err)
 	}
@@ -367,7 +365,7 @@ func besideDestination(m *emu.Emu, romData []byte, targetX, targetY uint8) (Dest
 	if err != nil {
 		return Destination{}, false, fmt.Errorf("build map %#04x: %w", cur, err)
 	}
-	blocked := spriteBlockers(m)
+	blocked := spriteBlockers(m, m.ROM())
 	steps, _, err := world.FindPathAdjacent(grid, int(sx), int(sy), int(targetX), int(targetY), blocked)
 	if err != nil {
 		// Every free side may simply be occupied this instant. Fall back to
@@ -408,8 +406,8 @@ var counterSteps = []world.Step{world.StepUp, world.StepDown, world.StepLeft, wo
 // walkable, reachable standing tile beyond it — the target is genuinely not
 // a counter NPC, and the caller's ordinary "no path" error stands.
 func counterBeside(m *emu.Emu, romData []byte, targetX, targetY uint8) (Destination, bool, error) {
-	cur := m.Peek8(sym.CurMap)
-	h, err := rom.ParseMap(romData, cur)
+	cur := m.Peek8(ram(m).CurMap)
+	h, err := graphForROM(romData).ParseMap(romData, cur)
 	if err != nil {
 		return Destination{}, false, fmt.Errorf("parse map %#04x: %w", cur, err)
 	}
@@ -417,7 +415,7 @@ func counterBeside(m *emu.Emu, romData []byte, targetX, targetY uint8) (Destinat
 	if err != nil {
 		return Destination{}, false, fmt.Errorf("build map %#04x: %w", cur, err)
 	}
-	blocked := spriteBlockers(m)
+	blocked := spriteBlockers(m, m.ROM())
 	sx, sy := playerXY(m)
 	for _, s := range counterSteps {
 		cx, cy := int(targetX)+s.DX, int(targetY)+s.DY

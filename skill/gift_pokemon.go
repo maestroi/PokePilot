@@ -5,7 +5,6 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 )
 
 const giftPokemonBudget = 6000
@@ -18,9 +17,9 @@ type giftPokemonSpec struct {
 	ConfirmChoice bool
 }
 
-func giftPokemonAlreadyOwned(mem *state.Mem, romData []byte, species uint8) bool {
+func giftPokemonAlreadyOwned(mem *state.Mem, romData []byte, species uint8, a wramAddresses) bool {
 	wantDex := wantedDexNumbers(romData, []uint8{species})
-	have := dexSet(state.DecodePokedex(mem).Owned)
+	have := dexSet(a.DecodePokedex(mem).Owned)
 	for _, dex := range wantDex {
 		if dex != 0 && have[dex] {
 			return true
@@ -40,18 +39,18 @@ func receiveGiftPokemonAt(m *emu.Emu, romData []byte, policy MovePolicy, spec gi
 	if policy == nil {
 		return CatchResult{}, fmt.Errorf("skill: %s: nil policy", spec.Name)
 	}
-	if got := m.Peek8(sym.CurMap); got != spec.Map {
+	if got := m.Peek8(ram(m).CurMap); got != spec.Map {
 		return CatchResult{}, fmt.Errorf("skill: %s: expected map %#04x, on %#04x", spec.Name, spec.Map, got)
 	}
 
 	var before state.Mem
 	state.Snapshot(m, &before)
-	if giftPokemonAlreadyOwned(&before, romData, spec.Species) {
+	if giftPokemonAlreadyOwned(&before, romData, spec.Species, ram(m)) {
 		return CatchResult{Outcome: OutcomeCaught, Species: spec.Species}, nil
 	}
-	partyBefore := int(state.DecodeParty(&before).Count)
-	boxBefore := int(state.DecodeBox(&before).Count)
-	ownedBefore := append([]uint8(nil), state.DecodePokedex(&before).Owned...)
+	partyBefore := int(ram(m).DecodeParty(&before).Count)
+	boxBefore := int(ram(m).DecodeBox(&before).Count)
+	ownedBefore := append([]uint8(nil), ram(m).DecodePokedex(&before).Owned...)
 	want := []uint8{spec.Species}
 	wantDex := wantedDexNumbers(romData, want)
 
@@ -69,7 +68,7 @@ func receiveGiftPokemonAt(m *emu.Emu, romData []byte, policy MovePolicy, spec gi
 		var mem state.Mem
 		state.Snapshot(m, &mem)
 
-		if state.DecodeTwoOptionMenu(&mem) != nil {
+		if ram(m).DecodeTwoOptionMenu(&mem) != nil {
 			if !confirmed {
 				// Choice-backed gifts such as the Fighting Dojo balls ask whether
 				// Red wants this Pokemon before GivePokemon runs. Accept exactly
@@ -88,24 +87,24 @@ func receiveGiftPokemonAt(m *emu.Emu, romData []byte, policy MovePolicy, spec gi
 			continue
 		}
 
-		party := state.DecodeParty(&mem)
-		box := state.DecodeBox(&mem)
-		owned := state.DecodePokedex(&mem).Owned
+		party := ram(m).DecodeParty(&mem)
+		box := ram(m).DecodeBox(&mem)
+		owned := ram(m).DecodePokedex(&mem).Owned
 		species, acquired := catchAcquiredWanted(partyBefore, party, boxBefore, box, ownedBefore, owned, want, wantDex)
-		if acquired && state.Controllable(&mem) {
+		if acquired && ram(m).Controllable(&mem) {
 			res.Outcome = OutcomeCaught
 			res.Species = species
 			return res, nil
 		}
 
-		if state.MenuUp(&mem) {
+		if ram(m).MenuUp(&mem) {
 			return res, fmt.Errorf("skill: %s: unexpected menu while resolving gift: %q", spec.Name, state.ScreenText(&mem))
 		}
-		if mem.U8(sym.FontLoaded) != 0 {
+		if mem.U8(ram(m).FontLoaded) != 0 {
 			m.Tap(emu.A, 3, 7)
 			continue
 		}
-		if state.Controllable(&mem) && spent >= 100 {
+		if ram(m).Controllable(&mem) && spent >= 100 {
 			return res, fmt.Errorf("skill: %s: gift script returned without verified species %#02x ownership", spec.Name, spec.Species)
 		}
 		m.StepFrames(10)

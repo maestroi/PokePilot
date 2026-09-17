@@ -19,10 +19,10 @@ func TestCinnabarGymRealROM(t *testing.T) {
 
 	var before state.Mem
 	state.Snapshot(m, &before)
-	if !CinnabarSecretKeyOwned(&before) {
+	if !CinnabarSecretKeyOwned(&before, redWram()) {
 		t.Fatal("prepared Cinnabar Gym state does not own the Secret Key")
 	}
-	if state.DecodeProgress(&before).Has(state.BadgeVolcano) {
+	if redWram().DecodeProgress(&before).Has(state.BadgeVolcano) {
 		t.Fatal("prepared Cinnabar Gym state already has the Volcano Badge")
 	}
 	switch before.U8(sym.CurMap) {
@@ -37,10 +37,10 @@ func TestCinnabarGymRealROM(t *testing.T) {
 
 	var after state.Mem
 	state.Snapshot(m, &after)
-	if !state.DecodeProgress(&after).Has(state.BadgeVolcano) {
+	if !redWram().DecodeProgress(&after).Has(state.BadgeVolcano) {
 		t.Fatal("Volcano Badge is not set after beating Blaine")
 	}
-	if !state.Controllable(&after) {
+	if !redWram().Controllable(&after) {
 		t.Fatal("player is not controllable after the Blaine sequence")
 	}
 }

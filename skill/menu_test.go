@@ -60,7 +60,7 @@ func TestSelectMenuItemStartMenu(t *testing.T) {
 
 	var mem state.Mem
 	state.Snapshot(e, &mem)
-	menu := state.DecodeMenu(&mem)
+	menu := skill.RedAddresses().DecodeMenu(&mem)
 	if menu.Max <= 0 {
 		t.Fatalf("Start menu Max = %d, want > 0 (wCurrentMenuItem=%#04x wMaxMenuItem=%#04x)",
 			menu.Max, mem.U8(sym.CurrentMenuItem), mem.U8(sym.MaxMenuItem))
@@ -78,7 +78,7 @@ func TestSelectMenuItemStartMenu(t *testing.T) {
 			t.Fatalf("SelectMenuItem(%d) = nil, want out-of-range error (max %d)", bad, menu.Max)
 		}
 		state.Snapshot(e, &mem)
-		if got := state.DecodeMenu(&mem); got.Current != menu.Current || mem.U8(sym.FontLoaded) == 0 {
+		if got := skill.RedAddresses().DecodeMenu(&mem); got.Current != menu.Current || mem.U8(sym.FontLoaded) == 0 {
 			t.Fatalf("SelectMenuItem(%d) changed state: Current=%d wFontLoaded=%#04x; want Current=%d and the menu still open",
 				bad, got.Current, mem.U8(sym.FontLoaded), menu.Current)
 		}
@@ -106,7 +106,7 @@ func TestSelectMenuItemStartMenu(t *testing.T) {
 	if mem.U8(sym.FontLoaded) == 0 {
 		t.Fatal("menu closed after SelectMenuItem(1), want the item menu open")
 	}
-	if got := state.DecodeMenu(&mem); got.Current != 0 || got.Max != 0 {
+	if got := skill.RedAddresses().DecodeMenu(&mem); got.Current != 0 || got.Max != 0 {
 		t.Fatalf("after SelectMenuItem(1): menu = %+v, want the empty bag list menu {Current:0 Max:0}", got)
 	}
 
@@ -126,7 +126,7 @@ func TestSelectMenuItemStartMenu(t *testing.T) {
 			mem.U8(sym.FontLoaded), mem.U8(sym.CurrentMenuItem), mem.U8(sym.MaxMenuItem), mem.U8(sym.ListMenuID))
 	}
 	state.Snapshot(e, &mem)
-	if got := state.DecodeMenu(&mem); got.Current != 1 {
+	if got := skill.RedAddresses().DecodeMenu(&mem); got.Current != 1 {
 		t.Fatalf("Start menu cursor = %d after B, want 1 (where A was pressed)", got.Current)
 	}
 
@@ -136,7 +136,7 @@ func TestSelectMenuItemStartMenu(t *testing.T) {
 	if _, err := e.StepUntil(120, func(m *emu.Emu) bool {
 		var mem state.Mem
 		state.Snapshot(m, &mem)
-		return state.Controllable(&mem)
+		return skill.RedAddresses().Controllable(&mem)
 	}); err != nil {
 		var mem state.Mem
 		state.Snapshot(e, &mem)

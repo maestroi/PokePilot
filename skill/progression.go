@@ -5,9 +5,7 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
-	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
 )
 
@@ -25,8 +23,8 @@ const (
 	vermilionCanCount       = 15
 )
 
-func spriteSlotPresent(mem *state.Mem, slot int) bool {
-	for _, sprite := range state.DecodeSprites(mem) {
+func spriteSlotPresent(mem *state.Mem, slot int, a wramAddresses) bool {
+	for _, sprite := range a.DecodeSprites(mem) {
 		if sprite.Slot == slot {
 			return true
 		}
@@ -42,13 +40,13 @@ func spriteSlotPresent(mem *state.Mem, slot int) bool {
 func helpBill(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if _, count := bagEntry(&mem, ssTicketItem); count > 0 {
+	if _, count := bagEntry(&mem, ssTicketItem, ram(m)); count > 0 {
 		return nil
 	}
 
 	m.Tap(emu.A, 3, 7)
 	if _, err := m.StepUntil(talkOpenBudget, func(m *emu.Emu) bool {
-		return m.Peek8(sym.FontLoaded) != 0
+		return m.Peek8(ram(m).FontLoaded) != 0
 	}); err != nil {
 		return fmt.Errorf("skill: Bill: %w", ErrNoDialogue)
 	}
@@ -56,8 +54,8 @@ func helpBill(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	// A is the default YES on Bill's help prompt. Cutscene keeps advancing
 	// dialogue and scripted movement until object 1 (Pokemon-form Bill) has
 	// been hidden in the separator and control has returned to the player.
-	if err := Cutscene(m, 4000, func(mm *state.Mem) bool {
-		return !spriteSlotPresent(mm, 1)
+	if err := Cutscene(m, 4000, func(mm *state.Mem, a wramAddresses) bool {
+		return !spriteSlotPresent(mm, 1, ram(m))
 	}); err != nil {
 		return fmt.Errorf("skill: Bill: enter separator: %w", err)
 	}
@@ -69,13 +67,13 @@ func helpBill(m *emu.Emu, romData []byte, policy MovePolicy) error {
 // the ordinary map-object talk menu. The positive postcondition is the S.S.
 // Ticket in the bag.
 func finishBillRescue(m *emu.Emu, romData []byte, policy MovePolicy) error {
-	if m.Peek8(sym.CurMap) != billsHouseMap {
-		return fmt.Errorf("skill: Bill: on map %#04x, want Bills House %#04x", m.Peek8(sym.CurMap), billsHouseMap)
+	if m.Peek8(ram(m).CurMap) != billsHouseMap {
+		return fmt.Errorf("skill: Bill: on map %#04x, want Bills House %#04x", m.Peek8(ram(m).CurMap), billsHouseMap)
 	}
 
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if _, count := bagEntry(&mem, ssTicketItem); count > 0 {
+	if _, count := bagEntry(&mem, ssTicketItem, ram(m)); count > 0 {
 		return nil
 	}
 
@@ -93,12 +91,12 @@ func finishBillRescue(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	// its appearance is the positive state transition we wait for.
 	m.Tap(emu.A, 3, 7)
 	if _, err := m.StepUntil(talkOpenBudget, func(m *emu.Emu) bool {
-		return m.Peek8(sym.FontLoaded) != 0
+		return m.Peek8(ram(m).FontLoaded) != 0
 	}); err != nil {
 		return fmt.Errorf("skill: Bill: cell separator: %w", ErrNoDialogue)
 	}
-	if err := Cutscene(m, 6000, func(mm *state.Mem) bool {
-		return spriteSlotPresent(mm, 2)
+	if err := Cutscene(m, 6000, func(mm *state.Mem, a wramAddresses) bool {
+		return spriteSlotPresent(mm, 2, ram(m))
 	}); err != nil {
 		return fmt.Errorf("skill: Bill: exit separator: %w", err)
 	}
@@ -107,7 +105,7 @@ func finishBillRescue(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		return fmt.Errorf("skill: Bill: collect S.S. Ticket: %w", err)
 	}
 	state.Snapshot(m, &mem)
-	if _, count := bagEntry(&mem, ssTicketItem); count == 0 {
+	if _, count := bagEntry(&mem, ssTicketItem, ram(m)); count == 0 {
 		return fmt.Errorf("skill: Bill: conversation finished but S.S. Ticket is not in the bag")
 	}
 	return nil
@@ -146,14 +144,14 @@ func interactHiddenTile(m *emu.Emu, romData []byte, x, y uint8, policy MovePolic
 // wSecondLockTrashCanIndex. Reading those two values means a wrong second
 // guess can never reset the puzzle.
 func OpenVermilionGym(m *emu.Emu, romData []byte, policy MovePolicy) error {
-	if m.Peek8(sym.CurMap) != vermilionGymMap {
-		return fmt.Errorf("skill: OpenVermilionGym: on map %#04x, want %#04x", m.Peek8(sym.CurMap), vermilionGymMap)
+	if m.Peek8(ram(m).CurMap) != vermilionGymMap {
+		return fmt.Errorf("skill: OpenVermilionGym: on map %#04x, want %#04x", m.Peek8(ram(m).CurMap), vermilionGymMap)
 	}
 	if policy == nil {
 		return fmt.Errorf("skill: OpenVermilionGym: nil policy")
 	}
 
-	first := m.Peek8(sym.FirstLockTrashCanIndex)
+	first := m.Peek8(ram(m).FirstLockTrashCanIndex)
 	x, y, ok := vermilionTrashCanCoords(first)
 	if !ok {
 		return fmt.Errorf("skill: OpenVermilionGym: first switch index %d is outside 0..14", first)
@@ -162,7 +160,7 @@ func OpenVermilionGym(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		return fmt.Errorf("skill: OpenVermilionGym: first switch %d at (%d,%d): %w", first, x, y, err)
 	}
 
-	second := m.Peek8(sym.SecondLockTrashCanIndex)
+	second := m.Peek8(ram(m).SecondLockTrashCanIndex)
 	x, y, ok = vermilionTrashCanCoords(second)
 	if !ok {
 		return fmt.Errorf("skill: OpenVermilionGym: second switch index %d is outside 0..14", second)
@@ -186,7 +184,7 @@ func travelOpenVermilion(m *emu.Emu, romData []byte, dest Destination, policy Mo
 	return travel(m, policy, maxBattles,
 		func() error { return walkOpenVermilion(m, romData, dest) },
 		func() DialogueRecoveryResult { return RecoverDialogue(m, dialogueRecoveryBudget) },
-		func() bool { return m.Peek8(sym.StatusFlags4)&blackoutBit != 0 },
+		func() bool { return m.Peek8(ram(m).StatusFlags4)&blackoutBit != 0 },
 		fightOnly(m, policy),
 	)
 }
@@ -195,16 +193,16 @@ func walkOpenVermilion(m *emu.Emu, romData []byte, dest Destination) error {
 	if err := abortIfBattle(m); err != nil {
 		return err
 	}
-	cur := m.Peek8(sym.CurMap)
+	cur := m.Peek8(ram(m).CurMap)
 	if cur != vermilionGymMap || dest.Map != vermilionGymMap {
 		return fmt.Errorf("skill: Vermilion Gym live walk requires map %#04x, got current %#04x destination %#04x", vermilionGymMap, cur, dest.Map)
 	}
 	sx, sy := playerXY(m)
-	h, err := rom.ParseMap(romData, cur)
+	h, err := graphForROM(romData).ParseMap(romData, cur)
 	if err != nil {
 		return fmt.Errorf("skill: Vermilion Gym: parse map at (%d,%d): %w", sx, sy, err)
 	}
-	grid, err := world.Build(romData, h)
+	grid, err := world.BuildForTables(graphForROM(romData), romData, h)
 	if err != nil {
 		return fmt.Errorf("skill: Vermilion Gym: build map at (%d,%d): %w", sx, sy, err)
 	}

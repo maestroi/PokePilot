@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
-	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
 )
 
@@ -13,8 +12,8 @@ import (
 // maintaining a second, weaker tree-search implementation that can drift from
 // route semantics or probe unrelated solid tiles near the gym.
 func enterVermilionGymViaRouteGate(m *emu.Emu, romData []byte, policy MovePolicy) error {
-	if m.Peek8(sym.CurMap) != vermilionCity {
-		return fmt.Errorf("skill: Vermilion Gym entry: on map %#04x, want %#04x", m.Peek8(sym.CurMap), vermilionCity)
+	if m.Peek8(ram(m).CurMap) != vermilionCity {
+		return fmt.Errorf("skill: Vermilion Gym entry: on map %#04x, want %#04x", m.Peek8(ram(m).CurMap), vermilionCity)
 	}
 	if policy == nil {
 		return fmt.Errorf("skill: Vermilion Gym entry: nil policy")
@@ -23,7 +22,7 @@ func enterVermilionGymViaRouteGate(m *emu.Emu, romData []byte, policy MovePolicy
 		return fmt.Errorf("skill: Vermilion Gym entry: prepare Cut carrier: %w", err)
 	}
 
-	g, err := world.BuildGraph(romData)
+	g, err := cachedRouteGraph(romData)
 	if err != nil {
 		return fmt.Errorf("skill: Vermilion Gym entry: build route graph: %w", err)
 	}
@@ -42,7 +41,7 @@ func enterVermilionGymViaRouteGate(m *emu.Emu, romData []byte, policy MovePolicy
 		if err := Traverse(m, romData, edge); err != nil {
 			return fmt.Errorf("skill: Vermilion Gym entry: cross gym door after Cut: %w", err)
 		}
-		if got := m.Peek8(sym.CurMap); got != vermilionGymMap {
+		if got := m.Peek8(ram(m).CurMap); got != vermilionGymMap {
 			return fmt.Errorf("skill: Vermilion Gym entry: arrived on map %#04x, want %#04x", got, vermilionGymMap)
 		}
 		return nil

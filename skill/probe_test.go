@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/maestroi/pokepilot/emu"
-	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/world"
 )
@@ -88,11 +87,11 @@ func TestProbe(t *testing.T) {
 	}
 	mapID := uint8(id64)
 
-	h, err := rom.ParseMap(romData, mapID)
+	h, err := graphForROM(romData).ParseMap(romData, mapID)
 	if err != nil {
 		t.Fatalf("parse map %#04x: %v", mapID, err)
 	}
-	g, err := world.Build(romData, h)
+	g, err := world.BuildForTables(graphForROM(romData), romData, h)
 	if err != nil {
 		t.Fatalf("build map %#04x: %v", mapID, err)
 	}
@@ -117,7 +116,7 @@ func TestProbe(t *testing.T) {
 		if err != nil {
 			t.Fatalf("PROBE_ROUTE %q is not a map id: %v", spec, err)
 		}
-		graph, err := world.BuildGraph(romData)
+		graph, err := cachedRouteGraph(romData)
 		if err != nil {
 			t.Fatalf("build graph: %v", err)
 		}
@@ -280,7 +279,11 @@ func livePlayer(t *testing.T, romPath, statePath string) liveState {
 	if err != nil {
 		t.Fatalf("PROBE_STATE %s: %v", statePath, err)
 	}
-	m, err := emu.Open(romPath)
+	romData, err := os.ReadFile(romPath)
+	if err != nil {
+		t.Fatalf("read ROM %s: %v", romPath, err)
+	}
+	m, err := emu.OpenCGBBytes(romData)
 	if err != nil {
 		t.Fatalf("open ROM %s: %v", romPath, err)
 	}
@@ -290,6 +293,7 @@ func livePlayer(t *testing.T, romPath, statePath string) liveState {
 	}
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	p := state.DecodePlayer(&mem)
-	return liveState{p.MapID, p.X, p.Y, p.Facing.String(), state.Controllable(&mem)}
+	a := AddressesForROM(romData)
+	p := a.DecodePlayer(&mem)
+	return liveState{p.MapID, p.X, p.Y, p.Facing.String(), a.Controllable(&mem)}
 }

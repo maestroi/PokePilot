@@ -5,7 +5,6 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 )
 
 const (
@@ -67,9 +66,9 @@ func cinnabarQuizGateEvent(index uint8) (state.Event, bool) {
 	return cinnabarGymGate0Event + state.Event(index), true
 }
 
-func cinnabarQuizGateOpen(mem *state.Mem, index uint8) bool {
+func cinnabarQuizGateOpen(mem *state.Mem, index uint8, a wramAddresses) bool {
 	event, ok := cinnabarQuizGateEvent(index)
-	return ok && state.HasEvent(mem, event)
+	return ok && a.HasEvent(mem, event)
 }
 
 func cinnabarQuizAnswerYes(quiz cinnabarQuizSpec) (bool, bool) {
@@ -85,16 +84,16 @@ func cinnabarQuizAnswerYes(quiz cinnabarQuizSpec) (bool, bool) {
 
 // CinnabarGymReady is the durable Secret Key prerequisite. The island map
 // script uses the same bag check at (18,4), immediately south of the gym warp.
-func CinnabarGymReady(mem *state.Mem) bool {
-	return CinnabarSecretKeyOwned(mem)
+func CinnabarGymReady(mem *state.Mem, a wramAddresses) bool {
+	return CinnabarSecretKeyOwned(mem, a)
 }
 
 // CinnabarGymOpen reports whether every quiz-controlled gate is already open.
 // Trainer wins may set the same bits, so a resumed run naturally skips any
 // gate solved either by a correct quiz answer or by the associated battle.
-func CinnabarGymOpen(mem *state.Mem) bool {
+func CinnabarGymOpen(mem *state.Mem, a wramAddresses) bool {
 	for _, quiz := range cinnabarQuizSpecs {
-		if !cinnabarQuizGateOpen(mem, quiz.Index) {
+		if !cinnabarQuizGateOpen(mem, quiz.Index, a) {
 			return false
 		}
 	}
@@ -110,19 +109,19 @@ func CinnabarProgression(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	}
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if state.DecodeProgress(&mem).Has(state.BadgeVolcano) {
+	if ram(m).DecodeProgress(&mem).Has(state.BadgeVolcano) {
 		return nil
 	}
-	if !CinnabarGymReady(&mem) {
+	if !CinnabarGymReady(&mem, ram(m)) {
 		return fmt.Errorf("skill: CinnabarProgression: Secret Key is not owned")
 	}
 
-	if m.Peek8(sym.CurMap) == pokemonMansionB1FMap {
+	if m.Peek8(ram(m).CurMap) == pokemonMansionB1FMap {
 		if err := openMansionBasementExit(m, romData, policy); err != nil {
 			return fmt.Errorf("skill: CinnabarProgression: leave Mansion basement: %w", err)
 		}
 	}
-	if m.Peek8(sym.CurMap) != cinnabarGymMap {
+	if m.Peek8(ram(m).CurMap) != cinnabarGymMap {
 		if _, err := TravelFlee(m, romData, Destination{Map: cinnabarIslandMap, X: 11, Y: 12}, policy, mansionTravelBattles); err != nil {
 			return fmt.Errorf("skill: CinnabarProgression: return to Cinnabar Island: %w", err)
 		}
@@ -139,7 +138,7 @@ func CinnabarProgression(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		return fmt.Errorf("skill: CinnabarProgression: Blaine battle outcome %v, want won", outcome)
 	}
 	state.Snapshot(m, &mem)
-	if !state.DecodeProgress(&mem).Has(state.BadgeVolcano) {
+	if !ram(m).DecodeProgress(&mem).Has(state.BadgeVolcano) {
 		return fmt.Errorf("skill: CinnabarProgression: Blaine win returned without Volcano Badge")
 	}
 	return nil
@@ -150,7 +149,7 @@ func CinnabarProgression(m *emu.Emu, romData []byte, policy MovePolicy) error {
 // staircase but not which statue state currently exposes its corridor, so try
 // each reachable live switch state until the 1F warp is pathable.
 func openMansionBasementExit(m *emu.Emu, romData []byte, policy MovePolicy) error {
-	if m.Peek8(sym.CurMap) != pokemonMansionB1FMap {
+	if m.Peek8(ram(m).CurMap) != pokemonMansionB1FMap {
 		return nil
 	}
 	const exitX, exitY uint8 = 23, 22
@@ -192,19 +191,19 @@ func openMansionBasementExit(m *emu.Emu, romData []byte, policy MovePolicy) erro
 }
 
 func EnterCinnabarGym(m *emu.Emu, romData []byte, policy MovePolicy) error {
-	if m.Peek8(sym.CurMap) == cinnabarGymMap {
+	if m.Peek8(ram(m).CurMap) == cinnabarGymMap {
 		return nil
 	}
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if !CinnabarGymReady(&mem) {
+	if !CinnabarGymReady(&mem, ram(m)) {
 		return fmt.Errorf("skill: EnterCinnabarGym: Secret Key is not owned")
 	}
 	if _, err := TravelFlee(m, romData, Destination{Map: cinnabarGymMap, X: cinnabarGymEntranceX, Y: cinnabarGymEntranceY}, policy, cinnabarGymTravelBattles); err != nil {
 		return fmt.Errorf("skill: EnterCinnabarGym: %w", err)
 	}
-	if m.Peek8(sym.CurMap) != cinnabarGymMap {
-		return fmt.Errorf("skill: EnterCinnabarGym: stopped on map %#04x", m.Peek8(sym.CurMap))
+	if m.Peek8(ram(m).CurMap) != cinnabarGymMap {
+		return fmt.Errorf("skill: EnterCinnabarGym: stopped on map %#04x", m.Peek8(ram(m).CurMap))
 	}
 	return nil
 }
@@ -218,21 +217,21 @@ func OpenCinnabarGym(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if policy == nil {
 		return fmt.Errorf("skill: OpenCinnabarGym: nil policy")
 	}
-	if m.Peek8(sym.CurMap) != cinnabarGymMap {
-		return fmt.Errorf("skill: OpenCinnabarGym: on map %#04x, want %#04x", m.Peek8(sym.CurMap), cinnabarGymMap)
+	if m.Peek8(ram(m).CurMap) != cinnabarGymMap {
+		return fmt.Errorf("skill: OpenCinnabarGym: on map %#04x, want %#04x", m.Peek8(ram(m).CurMap), cinnabarGymMap)
 	}
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if !CinnabarGymReady(&mem) {
+	if !CinnabarGymReady(&mem, ram(m)) {
 		return fmt.Errorf("skill: OpenCinnabarGym: Secret Key is not owned")
 	}
-	if CinnabarGymOpen(&mem) {
+	if CinnabarGymOpen(&mem, ram(m)) {
 		return nil
 	}
 
 	for _, quiz := range cinnabarQuizSpecs {
 		state.Snapshot(m, &mem)
-		if cinnabarQuizGateOpen(&mem, quiz.Index) {
+		if cinnabarQuizGateOpen(&mem, quiz.Index, ram(m)) {
 			continue
 		}
 		stand := Destination{Map: cinnabarGymMap, X: quiz.TargetX, Y: quiz.TargetY + 1}
@@ -247,7 +246,7 @@ func OpenCinnabarGym(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		// The route may have crossed the associated trainer, whose post-battle
 		// script sets the same gate bit. Re-read before touching the terminal.
 		state.Snapshot(m, &mem)
-		if cinnabarQuizGateOpen(&mem, quiz.Index) {
+		if cinnabarQuizGateOpen(&mem, quiz.Index, ram(m)) {
 			continue
 		}
 		if err := answerCinnabarQuiz(m, quiz); err != nil {
@@ -256,7 +255,7 @@ func OpenCinnabarGym(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	}
 
 	state.Snapshot(m, &mem)
-	if !CinnabarGymOpen(&mem) {
+	if !CinnabarGymOpen(&mem, ram(m)) {
 		return fmt.Errorf("skill: OpenCinnabarGym: returned with one or more quiz gates still closed")
 	}
 	return nil
@@ -284,14 +283,14 @@ func answerCinnabarQuiz(m *emu.Emu, quiz cinnabarQuizSpec) error {
 	for frame := 0; frame < cinnabarQuizDriveBudget; frame++ {
 		var mem state.Mem
 		state.Snapshot(m, &mem)
-		if answered && state.HasEvent(&mem, gateEvent) && state.Controllable(&mem) {
+		if answered && ram(m).HasEvent(&mem, gateEvent) && ram(m).Controllable(&mem) {
 			m.StepFrames(2)
 			return nil
 		}
-		if state.DecodeBattle(&mem) != nil {
+		if ram(m).DecodeBattle(&mem) != nil {
 			return fmt.Errorf("skill: OpenCinnabarGym: quiz %d answer unexpectedly started a battle", quiz.Index)
 		}
-		interaction := state.DecodeInteraction(&mem)
+		interaction := ram(m).DecodeInteraction(&mem)
 		switch interaction.Kind {
 		case state.InteractionTwoOption:
 			if answered {

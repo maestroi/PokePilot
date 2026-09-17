@@ -2,7 +2,6 @@ package skill
 
 import (
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 )
 
 const (
@@ -60,8 +59,8 @@ func FuchsiaProgressionAvailable(mapID uint8) bool {
 // Flute is the only story prerequisite this slice should assume; reaching a
 // particular map is handled independently by FuchsiaProgressionAvailable so
 // interrupted runs remain resumable.
-func FuchsiaProgressionReady(mem *state.Mem) bool {
-	_, count := bagEntry(mem, pokeFluteItemFuchsia)
+func FuchsiaProgressionReady(mem *state.Mem, a wramAddresses) bool {
+	_, count := bagEntry(mem, pokeFluteItemFuchsia, a)
 	return count > 0
 }
 
@@ -69,11 +68,11 @@ func FuchsiaProgressionReady(mem *state.Mem) bool {
 // Koga's battle alone is insufficient, as are either Safari reward alone: the
 // slice is complete only once the Soul Badge, HM03 Surf, and HM04 Strength are
 // all positively present in RAM/inventory.
-func FuchsiaProgressionComplete(mem *state.Mem) bool {
-	if mem.U8(sym.ObtainedBadges)&soulBadgeMask == 0 {
+func FuchsiaProgressionComplete(mem *state.Mem, a wramAddresses) bool {
+	if mem.U8(a.ObtainedBadges)&soulBadgeMask == 0 {
 		return false
 	}
-	_, surf := bagEntry(mem, hm03SurfItem)
-	_, strength := bagEntry(mem, hm04StrengthItem)
+	_, surf := bagEntry(mem, hm03SurfItem, a)
+	_, strength := bagEntry(mem, hm04StrengthItem, a)
 	return surf > 0 && strength > 0
 }

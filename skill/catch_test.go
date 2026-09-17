@@ -93,7 +93,7 @@ func TestCatchCaterpie(t *testing.T) {
 		if q := bagQty(t, m, skill.ItemPokeBall); q != 5 {
 			t.Fatalf("fixture precondition: expected five POKE BALLS in the bag, got %d", q)
 		}
-		partyBefore := state.DecodeParty(&mem)
+		partyBefore := skill.RedAddresses().DecodeParty(&mem)
 		if partyBefore.Count < 1 || partyBefore.Count >= 6 {
 			t.Fatalf("fixture precondition: unexpected party size %d", partyBefore.Count)
 		}
@@ -118,7 +118,7 @@ func TestCatchCaterpie(t *testing.T) {
 		if res.Outcome == skill.OutcomeCaught {
 			// The typed outcome must agree with the RAM postcondition.
 			state.Snapshot(m, &mem)
-			partyAfter := state.DecodeParty(&mem)
+			partyAfter := skill.RedAddresses().DecodeParty(&mem)
 			if partyAfter.Count != partyBefore.Count+1 {
 				t.Fatalf("postcondition: party has %d members, want %d (one more than before)",
 					partyAfter.Count, partyBefore.Count+1)
@@ -135,8 +135,8 @@ func TestCatchCaterpie(t *testing.T) {
 				t.Fatalf("postcondition: bag holds %d POKE BALLs, want %d (5 minus %d thrown)",
 					q, 5-res.BallsThrown, res.BallsThrown)
 			}
-			if !state.Controllable(&mem) {
-				t.Fatalf("postcondition: player not controllable: %+v", state.DecodePlayer(&mem))
+			if !skill.RedAddresses().Controllable(&mem) {
+				t.Fatalf("postcondition: player not controllable: %+v", skill.RedAddresses().DecodePlayer(&mem))
 			}
 			t.Logf("caught CATERPIE lv%d in %d ball(s) after %d encounter(s); party now %d members",
 				newMon.Level, res.BallsThrown, res.Encounters, partyAfter.Count)

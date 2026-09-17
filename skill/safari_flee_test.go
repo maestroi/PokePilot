@@ -51,20 +51,20 @@ func TestSafariRunNextInputUsesLiveMenuState(t *testing.T) {
 
 	mem[sym.TopMenuItemX] = safariBattleMenuLeftX
 	mem[sym.CurrentMenuItem] = 0
-	if btn, done := safariRunNextInput(mem); done || btn != emu.Down {
+	if btn, done := safariRunNextInput(mem, redWram()); done || btn != emu.Down {
 		t.Fatalf("top-left -> (%v,%v), want Down,false", btn, done)
 	}
 
 	mem[sym.CurrentMenuItem] = mainMenuMax
-	if btn, done := safariRunNextInput(mem); done || btn != emu.Right {
+	if btn, done := safariRunNextInput(mem, redWram()); done || btn != emu.Right {
 		t.Fatalf("bottom-left -> (%v,%v), want Right,false", btn, done)
 	}
 
 	mem[sym.TopMenuItemX] = safariBattleMenuRightX
-	if btn, done := safariRunNextInput(mem); !done || btn != 0 {
+	if btn, done := safariRunNextInput(mem, redWram()); !done || btn != 0 {
 		t.Fatalf("RUN -> (%v,%v), want zero,true", btn, done)
 	}
-	if !safariRunCursor(mem) {
+	if !safariRunCursor(mem, redWram()) {
 		t.Fatal("Safari RUN cursor should be positively recognized")
 	}
 }
@@ -74,7 +74,7 @@ func TestSafariRunCursorRequiresSafariMenu(t *testing.T) {
 	openTextBox(mem, "FIGHT ITEM PKMN RUN")
 	mem[sym.TopMenuItemX] = safariBattleMenuRightX
 	mem[sym.CurrentMenuItem] = mainMenuMax
-	if safariRunCursor(mem) {
+	if safariRunCursor(mem, redWram()) {
 		t.Fatal("cursor coordinates alone must not classify a normal battle menu as Safari RUN")
 	}
 }

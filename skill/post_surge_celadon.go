@@ -92,7 +92,7 @@ func postSurgePrerequisites(m *emu.Emu, policy MovePolicy) (state.Mem, error) {
 	}
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	badges := state.DecodeProgress(&mem)
+	badges := ram(m).DecodeProgress(&mem)
 	if badges.Has(state.BadgeRainbow) {
 		return mem, nil
 	}
@@ -111,10 +111,10 @@ func PostSurgeReachLavender(m *emu.Emu, romData []byte, policy MovePolicy) error
 	if err != nil {
 		return err
 	}
-	if state.DecodeProgress(&mem).Has(state.BadgeRainbow) {
+	if ram(m).DecodeProgress(&mem).Has(state.BadgeRainbow) {
 		return nil
 	}
-	currentMap := state.DecodePlayer(&mem).MapID
+	currentMap := ram(m).DecodePlayer(&mem).MapID
 	if postSurgePastLavender(currentMap) {
 		return nil
 	}
@@ -140,10 +140,10 @@ func PostSurgeReachCeladon(m *emu.Emu, romData []byte, policy MovePolicy) error 
 	if err != nil {
 		return err
 	}
-	if state.DecodeProgress(&mem).Has(state.BadgeRainbow) {
+	if ram(m).DecodeProgress(&mem).Has(state.BadgeRainbow) {
 		return nil
 	}
-	currentMap := state.DecodePlayer(&mem).MapID
+	currentMap := ram(m).DecodePlayer(&mem).MapID
 	if !postSurgePastLavender(currentMap) {
 		return fmt.Errorf("skill: PostSurgeReachCeladon: Lavender stage is incomplete from map %#04x", currentMap)
 	}
@@ -168,10 +168,10 @@ func PostSurgeDefeatErika(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if err != nil {
 		return err
 	}
-	if state.DecodeProgress(&mem).Has(state.BadgeRainbow) {
+	if ram(m).DecodeProgress(&mem).Has(state.BadgeRainbow) {
 		return nil
 	}
-	currentMap := state.DecodePlayer(&mem).MapID
+	currentMap := ram(m).DecodePlayer(&mem).MapID
 	if !postSurgeCeladonArea(currentMap) {
 		return fmt.Errorf("skill: PostSurgeDefeatErika: Celadon-ready stage is incomplete from map %#04x", currentMap)
 	}
@@ -198,7 +198,7 @@ func PostSurgeDefeatErika(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	}
 
 	state.Snapshot(m, &mem)
-	if !state.DecodeProgress(&mem).Has(state.BadgeRainbow) {
+	if !ram(m).DecodeProgress(&mem).Has(state.BadgeRainbow) {
 		return fmt.Errorf("skill: PostSurgeDefeatErika: Rainbow Badge missing after Erika")
 	}
 	return nil

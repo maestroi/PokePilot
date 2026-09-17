@@ -138,7 +138,7 @@ func (redSemanticObservationAdapter) Observe(m *emu.Emu, romData []byte, profile
 		obs.Bag = append(obs.Bag, Item{Name: name, Quantity: int(it.Quantity)})
 	}
 
-	for _, cap := range skill.FieldCapabilities(&mem) {
+	for _, cap := range skill.FieldCapabilities(&mem, skill.AddressesForROM(romData)) {
 		obs.FieldCapabilities = append(obs.FieldCapabilities, FieldCapability{
 			Name:       CapabilityID(semanticPlace(cap.Name)),
 			Badge:      cap.Badge.String(),
@@ -147,7 +147,7 @@ func (redSemanticObservationAdapter) Observe(m *emu.Emu, romData []byte, profile
 			Learned:    cap.Learned,
 			PartySlot:  cap.PartySlot,
 			Usable:     cap.Usable,
-			Preparable: cap.Usable || skill.CanPrepareFieldMove(romData, &mem, cap.Move),
+			Preparable: cap.Usable || skill.CanPrepareFieldMove(romData, &mem, cap.Move, skill.AddressesForROM(romData)),
 		})
 	}
 

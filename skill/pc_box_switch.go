@@ -7,7 +7,6 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 )
 
 const (
@@ -23,8 +22,8 @@ var ErrPCAllBoxesFull = errors.New("skill: Bill's PC: all boxes are full")
 // pcChangeBoxSavePrompt identifies ChangeBox's mandatory save warning. A
 // generic two-option menu is not enough evidence: nickname, toss, and story
 // prompts use the same menu shape, so require the ROM's visible SAVE/BOX text.
-func pcChangeBoxSavePrompt(mem *state.Mem) bool {
-	if state.DecodeTwoOptionMenu(mem) == nil {
+func pcChangeBoxSavePrompt(mem *state.Mem, a wramAddresses) bool {
+	if a.DecodeTwoOptionMenu(mem) == nil {
 		return false
 	}
 	text := strings.ToUpper(state.ScreenText(mem))
@@ -34,20 +33,20 @@ func pcChangeBoxSavePrompt(mem *state.Mem) bool {
 // pcChangeBoxMenuScreen identifies DisplayChangeBoxMenu from geometry alone.
 // The cursor glyph can lag the menu data by a render window; recognizing the
 // screen before state.MenuUp becomes true avoids sending input during render.
-func pcChangeBoxMenuScreen(mem *state.Mem) bool {
-	return mem.U8(sym.TopMenuItemX) == 12 &&
-		mem.U8(sym.TopMenuItemY) == 1 &&
-		mem.U8(sym.MaxMenuItem) == gen1BoxCount-1
+func pcChangeBoxMenuScreen(mem *state.Mem, a wramAddresses) bool {
+	return mem.U8(a.TopMenuItemX) == 12 &&
+		mem.U8(a.TopMenuItemY) == 1 &&
+		mem.U8(a.MaxMenuItem) == gen1BoxCount-1
 }
 
-func pcChangeBoxMenuUp(mem *state.Mem) bool {
-	return state.MenuUp(mem) && pcChangeBoxMenuScreen(mem)
+func pcChangeBoxMenuUp(mem *state.Mem, a wramAddresses) bool {
+	return a.MenuUp(mem) && pcChangeBoxMenuScreen(mem, a)
 }
 
-func pcBoxCounts(mem *state.Mem) [gen1BoxCount]uint8 {
+func pcBoxCounts(mem *state.Mem, a wramAddresses) [gen1BoxCount]uint8 {
 	var counts [gen1BoxCount]uint8
 	for i := range counts {
-		counts[i] = mem.U8(sym.BoxMonCounts + uint16(i))
+		counts[i] = mem.U8(a.BoxMonCounts + uint16(i))
 	}
 	return counts
 }
@@ -73,13 +72,14 @@ func nextNonFullBox(counts [gen1BoxCount]uint8, current int) (int, bool) {
 // wMaxMenuItem to mean "last valid index 11", not "11 items". A dedicated
 // step-and-verify helper is therefore required so Box 12 remains selectable.
 func selectPCBox(m *emu.Emu, index int) error {
+	a := ram(m)
 	if index < 0 || index >= gen1BoxCount {
 		return fmt.Errorf("skill: Bill's PC: box index %d out of range 0..%d", index, gen1BoxCount-1)
 	}
 	if _, err := m.StepUntil(pcTransitionBudget, func(m *emu.Emu) bool {
 		var mem state.Mem
 		state.Snapshot(m, &mem)
-		return pcChangeBoxMenuUp(&mem)
+		return pcChangeBoxMenuUp(&mem, a)
 	}); err != nil {
 		return fmt.Errorf("skill: Bill's PC: Change Box menu cursor did not become interactive: %w", err)
 	}
@@ -88,7 +88,7 @@ func selectPCBox(m *emu.Emu, index int) error {
 	state.Snapshot(m, &mem)
 	const stuckLimit = 5
 	stuck := 0
-	current := int(mem.U8(sym.CurrentMenuItem))
+	current := int(mem.U8(ram(m).CurrentMenuItem))
 	for current != index {
 		previous := current
 		btn := emu.Down
@@ -97,7 +97,7 @@ func selectPCBox(m *emu.Emu, index int) error {
 		}
 		m.Tap(btn, 3, 7)
 		if _, err := m.StepUntil(menuSettleFrames, func(m *emu.Emu) bool {
-			return int(m.Peek8(sym.CurrentMenuItem)) != previous
+			return int(m.Peek8(ram(m).CurrentMenuItem)) != previous
 		}); err != nil {
 			stuck++
 			if stuck >= stuckLimit {
@@ -106,7 +106,7 @@ func selectPCBox(m *emu.Emu, index int) error {
 		} else {
 			stuck = 0
 		}
-		current = int(m.Peek8(sym.CurrentMenuItem))
+		current = int(m.Peek8(ram(m).CurrentMenuItem))
 	}
 	m.Tap(emu.A, 3, 7)
 	return nil
@@ -117,13 +117,14 @@ func selectPCBox(m *emu.Emu, index int) error {
 // the twelve counts the ROM itself builds for DisplayChangeBoxMenu, and success
 // is verified from the newly loaded active-box number and count after the save.
 func SwitchToNextNonFullBox(m *emu.Emu, romData []byte, policy MovePolicy) error {
+	a := ram(m)
 	if policy == nil {
 		return fmt.Errorf("skill: Bill's PC: nil move policy")
 	}
 
 	var before state.Mem
 	state.Snapshot(m, &before)
-	active := state.DecodeBox(&before)
+	active := ram(m).DecodeBox(&before)
 	if active.Count < gen1BoxCapacity {
 		return nil
 	}
@@ -156,7 +157,7 @@ func SwitchToNextNonFullBox(m *emu.Emu, romData []byte, policy MovePolicy) error
 	var menu state.Mem
 	if _, err := m.StepUntil(pcTransitionBudget, func(m *emu.Emu) bool {
 		state.Snapshot(m, &menu)
-		return pcChangeBoxMenuScreen(&menu)
+		return pcChangeBoxMenuScreen(&menu, a)
 	}); err != nil {
 		return cleanup(fmt.Errorf("skill: Bill's PC: Change Box menu did not appear: %w", err))
 	}
@@ -165,12 +166,12 @@ func SwitchToNextNonFullBox(m *emu.Emu, romData []byte, policy MovePolicy) error
 	// count scratch buffer authoritative.
 	if _, err := m.StepUntil(pcTransitionBudget, func(m *emu.Emu) bool {
 		state.Snapshot(m, &menu)
-		return pcChangeBoxMenuUp(&menu)
+		return pcChangeBoxMenuUp(&menu, a)
 	}); err != nil {
 		return cleanup(fmt.Errorf("skill: Bill's PC: Change Box menu did not become interactive: %w", err))
 	}
 	state.Snapshot(m, &menu)
-	counts := pcBoxCounts(&menu)
+	counts := pcBoxCounts(&menu, a)
 	target, ok := nextNonFullBox(counts, current)
 	if !ok {
 		return cleanup(fmt.Errorf("%w: each of %d boxes has %d Pokemon", ErrPCAllBoxesFull, gen1BoxCount, gen1BoxCapacity))
@@ -186,8 +187,8 @@ func SwitchToNextNonFullBox(m *emu.Emu, romData []byte, policy MovePolicy) error
 	var after state.Mem
 	for spent := 0; spent < pcBoxSwitchBudget; spent += talkSettle {
 		state.Snapshot(m, &after)
-		box := state.DecodeBox(&after)
-		if billsPCMenuScreen(&after) && box.Number == uint8(target) {
+		box := ram(m).DecodeBox(&after)
+		if billsPCMenuScreen(&after, a) && box.Number == uint8(target) {
 			if box.Count >= gen1BoxCapacity {
 				return cleanup(fmt.Errorf("skill: Bill's PC: changed to box %d but it is full (%d Pokemon)", target+1, box.Count))
 			}
@@ -199,7 +200,7 @@ func SwitchToNextNonFullBox(m *emu.Emu, romData []byte, policy MovePolicy) error
 		m.StepFrames(talkSettle)
 	}
 	state.Snapshot(m, &after)
-	box := state.DecodeBox(&after)
+	box := ram(m).DecodeBox(&after)
 	return cleanup(fmt.Errorf("skill: Bill's PC: box %d did not become active within %d frames (active=%d count=%d screen=%q)",
 		target+1, pcBoxSwitchBudget, box.Number+1, box.Count, state.ScreenText(&after)))
 }
@@ -215,13 +216,13 @@ func EnsurePartySlotForCollection(m *emu.Emu, romData []byte, policy MovePolicy,
 
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	slot, err := planPartySlot(romData, state.DecodeParty(&mem), state.DecodeBox(&mem), state.Mon{Species: incoming}, OwnedCoreProgressionFieldMoves(&mem))
+	slot, err := planPartySlot(romData, ram(m).DecodeParty(&mem), ram(m).DecodeBox(&mem), state.Mon{Species: incoming}, OwnedCoreProgressionFieldMoves(&mem, ram(m)))
 	if err != nil && errors.Is(err, ErrPCBoxFull) {
 		if err := SwitchToNextNonFullBox(m, romData, policy); err != nil {
 			return err
 		}
 		state.Snapshot(m, &mem)
-		slot, err = planPartySlot(romData, state.DecodeParty(&mem), state.DecodeBox(&mem), state.Mon{Species: incoming}, OwnedCoreProgressionFieldMoves(&mem))
+		slot, err = planPartySlot(romData, ram(m).DecodeParty(&mem), ram(m).DecodeBox(&mem), state.Mon{Species: incoming}, OwnedCoreProgressionFieldMoves(&mem, ram(m)))
 	}
 	if err != nil {
 		return err

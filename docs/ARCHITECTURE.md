@@ -308,6 +308,9 @@ measured, that is a tooling gap to fix rather than a prompt-engineering victory.
 
 ## Target layering
 
+A landing-page diagram of this stack, plus the farm/package map, lives in
+[`README.md`](../README.md).
+
 The conceptual architecture is:
 
 ```text

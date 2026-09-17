@@ -72,11 +72,13 @@ packet should have been selected. Use it to reproduce and diagnose that packet.
 ## 3. Pull the failing round's state
 
 Artifacts are per round: `round-<N>-frame-<F>-<objective>.state`. Take the one
-whose objective matches `finish.detail`.
+whose objective matches `finish.detail`. Prefer the `content_url` returned by
+`pokepilot_get_run_artifacts` over assembling a path. That URL is operator REST
+on `https://pokemon.labstack.cc` (not `/mcp`). Run ids include the `run-`
+prefix. No bearer: `POKEPILOT_MCP_TOKEN` is only for `/mcp`.
 
 ```bash
 curl -sS -o /tmp/r46.state \
-  -H "Authorization: Bearer $POKEPILOT_MCP_TOKEN" \
   "https://pokemon.labstack.cc/v1/runs/<run-id>/artifacts/<artifact-name>/content"
 ```
 

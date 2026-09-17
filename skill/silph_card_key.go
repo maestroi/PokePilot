@@ -5,7 +5,6 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 )
 
 const (
@@ -30,14 +29,14 @@ const (
 // SilphCardKeyOwned is the positive postcondition for the second #34 phase.
 // The semantic decoder derives this from the current bag, so checkpoint resume
 // never depends on run history or on remembering that the pickup text played.
-func SilphCardKeyOwned(mem *state.Mem) bool {
-	return state.DecodeStoryFacts(mem, state.DecodeInventory(mem)).CardKeyOwned
+func SilphCardKeyOwned(mem *state.Mem, a wramAddresses) bool {
+	return a.DecodeStoryFacts(mem, a.DecodeInventory(mem)).CardKeyOwned
 }
 
 // SilphCardKeyReady makes the handoff from the Saffron-gate phase explicit.
 // The Card Key objective must not attempt to route through a closed city gate.
-func SilphCardKeyReady(mem *state.Mem) bool {
-	return state.DecodeStoryFacts(mem, state.DecodeInventory(mem)).SaffronGateOpen
+func SilphCardKeyReady(mem *state.Mem, a wramAddresses) bool {
+	return a.DecodeStoryFacts(mem, a.DecodeInventory(mem)).SaffronGateOpen
 }
 
 // AcquireSilphCardKey enters Silph Co, follows the ordinary stair topology to
@@ -56,10 +55,10 @@ func AcquireSilphCardKey(m *emu.Emu, romData []byte, policy MovePolicy) error {
 
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if SilphCardKeyOwned(&mem) {
+	if SilphCardKeyOwned(&mem, ram(m)) {
 		return nil
 	}
-	if !SilphCardKeyReady(&mem) {
+	if !SilphCardKeyReady(&mem, ram(m)) {
 		return fmt.Errorf("skill: AcquireSilphCardKey: Saffron gate is not open")
 	}
 
@@ -68,15 +67,15 @@ func AcquireSilphCardKey(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		return fmt.Errorf("skill: AcquireSilphCardKey: reach Silph Co 5F stair landing: %w", err)
 	}
 	state.Snapshot(m, &mem)
-	if mem.U8(sym.CurMap) != silphCo5FMap {
-		return fmt.Errorf("skill: AcquireSilphCardKey: navigation ended on map %#04x, want Silph Co 5F %#04x", mem.U8(sym.CurMap), silphCo5FMap)
+	if mem.U8(ram(m).CurMap) != silphCo5FMap {
+		return fmt.Errorf("skill: AcquireSilphCardKey: navigation ended on map %#04x, want Silph Co 5F %#04x", mem.U8(ram(m).CurMap), silphCo5FMap)
 	}
 
 	if err := Pickup(m, romData, silphCardKeyX, silphCardKeyY, silphCardKeyItem, policy); err != nil {
 		return fmt.Errorf("skill: AcquireSilphCardKey: collect Card Key: %w", err)
 	}
 	state.Snapshot(m, &mem)
-	if !SilphCardKeyOwned(&mem) {
+	if !SilphCardKeyOwned(&mem, ram(m)) {
 		return fmt.Errorf("skill: AcquireSilphCardKey: pickup completed without card_key_owned semantic postcondition")
 	}
 	return nil

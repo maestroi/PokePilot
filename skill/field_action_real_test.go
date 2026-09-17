@@ -29,7 +29,7 @@ func loadPreparedFieldActionState(t *testing.T, env string) *emu.Emu {
 	}
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if !state.Controllable(&mem) {
+	if !redWram().Controllable(&mem) {
 		t.Fatalf("%s state is not a controllable overworld", env)
 	}
 	return m
@@ -43,8 +43,8 @@ func TestUseFieldMoveSurfRealROM(t *testing.T) {
 	m := loadPreparedFieldActionState(t, "POKEPILOT_SURF_TEST_STATE")
 	var before state.Mem
 	state.Snapshot(m, &before)
-	cap := FieldCapabilityFor(&before, FieldSurf)
-	if !cap.Usable && !CanPrepareFieldMove(m.ROM(), &before, FieldSurf) {
+	cap := FieldCapabilityFor(&before, FieldSurf, redWram())
+	if !cap.Usable && !CanPrepareFieldMove(m.ROM(), &before, FieldSurf, redWram()) {
 		t.Fatalf("prepared Surf state cannot use or prepare Surf: %+v", cap)
 	}
 
@@ -64,11 +64,11 @@ func TestUseFieldMoveStrengthRealROM(t *testing.T) {
 	m := loadPreparedFieldActionState(t, "POKEPILOT_STRENGTH_TEST_STATE")
 	var before state.Mem
 	state.Snapshot(m, &before)
-	if !boulderAhead(&before) {
+	if !boulderAhead(&before, redWram()) {
 		t.Fatal("prepared Strength state is not facing a live boulder")
 	}
-	cap := FieldCapabilityFor(&before, FieldStrength)
-	if !cap.Usable && !CanPrepareFieldMove(m.ROM(), &before, FieldStrength) {
+	cap := FieldCapabilityFor(&before, FieldStrength, redWram())
+	if !cap.Usable && !CanPrepareFieldMove(m.ROM(), &before, FieldStrength, redWram()) {
 		t.Fatalf("prepared Strength state cannot use or prepare Strength: %+v", cap)
 	}
 

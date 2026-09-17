@@ -4,9 +4,7 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
-	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
 )
 
@@ -33,8 +31,8 @@ const healRunBudget = 30000
 // bonus PP). We intentionally do not try to reconstruct each move's exact max
 // PP here: detecting/recovering an exhausted move is the run-lifecycle problem
 // this predicate must make impossible to report as a successful no-op.
-func allPartyCenterRecovered(mem *state.Mem) bool {
-	party := state.DecodeParty(mem)
+func allPartyCenterRecovered(mem *state.Mem, a wramAddresses) bool {
+	party := a.DecodeParty(mem)
 	if party.Count == 0 {
 		return false
 	}
@@ -60,12 +58,12 @@ func allPartyCenterRecovered(mem *state.Mem) bool {
 // talkable.
 func counterDirection(m *emu.Emu) (world.Step, error) {
 	romData := m.ROM()
-	cur := m.Peek8(sym.CurMap)
-	h, err := rom.ParseMap(romData, cur)
+	cur := m.Peek8(ram(m).CurMap)
+	h, err := graphForROM(romData).ParseMap(romData, cur)
 	if err != nil {
 		return world.Step{}, fmt.Errorf("skill: Heal: parse map %#04x: %w", cur, err)
 	}
-	grid, err := world.Build(romData, h)
+	grid, err := world.BuildForTables(graphForROM(romData), romData, h)
 	if err != nil {
 		return world.Step{}, fmt.Errorf("skill: Heal: build map %#04x: %w", cur, err)
 	}
@@ -96,21 +94,21 @@ func openNurseMenu(m *emu.Emu) error {
 	m.Tap(emu.A, 3, 7)
 	var mem state.Mem
 	if _, err := m.StepUntil(talkOpenBudget, func(m *emu.Emu) bool {
-		return m.Peek8(sym.FontLoaded) != 0
+		return m.Peek8(ram(m).FontLoaded) != 0
 	}); err != nil {
 		state.Snapshot(m, &mem)
 		return fmt.Errorf("skill: Heal: %w: map=%#04x at (%d,%d) wJoyIgnore=%#04x",
-			ErrNoDialogue, mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord),
-			mem.U16BE(sym.JoyIgnore))
+			ErrNoDialogue, mem.U8(ram(m).CurMap), mem.U8(ram(m).XCoord), mem.U8(ram(m).YCoord),
+			mem.U16BE(ram(m).JoyIgnore))
 	}
-	mem = advanceUntil(m, healMenuBudget, func(mem *state.Mem) bool {
-		return state.DecodeTwoOptionMenu(mem) != nil
+	mem = advanceUntil(m, ram(m), healMenuBudget, func(mem *state.Mem, a wramAddresses) bool {
+		return ram(m).DecodeTwoOptionMenu(mem) != nil
 	})
-	if state.DecodeTwoOptionMenu(&mem) == nil {
+	if ram(m).DecodeTwoOptionMenu(&mem) == nil {
 		return fmt.Errorf("skill: Heal: yes/no prompt did not appear within %d iterations: map=%#04x at (%d,%d) wFontLoaded=%#04x wJoyIgnore=%#04x wStatusFlags4=%#04x menu=%+v",
-			healMenuBudget, mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord),
-			mem.U16BE(sym.FontLoaded), mem.U16BE(sym.JoyIgnore), mem.U16BE(sym.StatusFlags4),
-			state.DecodeMenu(&mem))
+			healMenuBudget, mem.U8(ram(m).CurMap), mem.U8(ram(m).XCoord), mem.U8(ram(m).YCoord),
+			mem.U16BE(ram(m).FontLoaded), mem.U16BE(ram(m).JoyIgnore), mem.U16BE(ram(m).StatusFlags4),
+			ram(m).DecodeMenu(&mem))
 	}
 	return nil
 }
@@ -142,14 +140,14 @@ func openNurseMenu(m *emu.Emu) error {
 func Heal(m *emu.Emu) error {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if !state.Controllable(&mem) {
+	if !ram(m).Controllable(&mem) {
 		return fmt.Errorf("skill: Heal: player not controllable: map=%#04x at (%d,%d) wJoyIgnore=%#04x wFontLoaded=%#04x",
-			mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord),
-			mem.U16BE(sym.JoyIgnore), mem.U16BE(sym.FontLoaded))
+			mem.U8(ram(m).CurMap), mem.U8(ram(m).XCoord), mem.U8(ram(m).YCoord),
+			mem.U16BE(ram(m).JoyIgnore), mem.U16BE(ram(m).FontLoaded))
 	}
-	if state.DecodeParty(&mem).Count == 0 {
+	if ram(m).DecodeParty(&mem).Count == 0 {
 		return fmt.Errorf("skill: Heal: no party to heal: map=%#04x at (%d,%d)",
-			mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord))
+			mem.U8(ram(m).CurMap), mem.U8(ram(m).XCoord), mem.U8(ram(m).YCoord))
 	}
 
 	step, err := counterDirection(m)
@@ -171,8 +169,8 @@ func Heal(m *emu.Emu) error {
 	if err := SelectMenuItem(m, 0); err != nil {
 		state.Snapshot(m, &mem)
 		return fmt.Errorf("skill: Heal: select YES: %w: map=%#04x at (%d,%d) wFontLoaded=%#04x menu=%+v",
-			err, mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord),
-			mem.U16BE(sym.FontLoaded), state.DecodeMenu(&mem))
+			err, mem.U8(ram(m).CurMap), mem.U8(ram(m).XCoord), mem.U8(ram(m).YCoord),
+			mem.U16BE(ram(m).FontLoaded), ram(m).DecodeMenu(&mem))
 	}
 
 	if err := Cutscene(m, healRunBudget, allPartyCenterRecovered); err != nil {
@@ -183,15 +181,15 @@ func Heal(m *emu.Emu) error {
 	// Controllable both hold, but re-asserting them keeps Heal's contract
 	// explicit to its callers.
 	state.Snapshot(m, &mem)
-	if !allPartyCenterRecovered(&mem) {
+	if !allPartyCenterRecovered(&mem, ram(m)) {
 		return fmt.Errorf("skill: Heal: party not fully recovered after the heal: %+v (map=%#04x at (%d,%d) wJoyIgnore=%#04x)",
-			state.DecodeParty(&mem).Mons, mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord),
-			mem.U16BE(sym.JoyIgnore))
+			ram(m).DecodeParty(&mem).Mons, mem.U8(ram(m).CurMap), mem.U8(ram(m).XCoord), mem.U8(ram(m).YCoord),
+			mem.U16BE(ram(m).JoyIgnore))
 	}
-	if !state.Controllable(&mem) {
+	if !ram(m).Controllable(&mem) {
 		return fmt.Errorf("skill: Heal: not controllable after the heal: map=%#04x at (%d,%d) wJoyIgnore=%#04x wFontLoaded=%#04x",
-			mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord),
-			mem.U16BE(sym.JoyIgnore), mem.U16BE(sym.FontLoaded))
+			mem.U8(ram(m).CurMap), mem.U8(ram(m).XCoord), mem.U8(ram(m).YCoord),
+			mem.U16BE(ram(m).JoyIgnore), mem.U16BE(ram(m).FontLoaded))
 	}
 	return nil
 }

@@ -5,7 +5,6 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 )
 
 const (
@@ -33,14 +32,14 @@ var (
 
 type leagueFact func(state.StoryFacts) bool
 
-func leagueFacts(mem *state.Mem) state.StoryFacts {
-	return state.DecodeStoryFacts(mem, state.DecodeInventory(mem))
+func leagueFacts(mem *state.Mem, a wramAddresses) state.StoryFacts {
+	return a.DecodeStoryFacts(mem, a.DecodeInventory(mem))
 }
 
 func currentLeagueFacts(m *emu.Emu) state.StoryFacts {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	return leagueFacts(&mem)
+	return leagueFacts(&mem, ram(m))
 }
 
 func leagueMainStoryComplete(m *emu.Emu) bool {
@@ -54,7 +53,7 @@ func leagueMainStoryComplete(m *emu.Emu) bool {
 // The helper releases UP the frame the map changes, then waits on decoded game
 // state rather than a fixed input macro.
 func enterLeagueRoom(m *emu.Emu, romData []byte, policy MovePolicy, stand Destination, targetMap uint8, waitForBattle bool) error {
-	if got := m.Peek8(sym.CurMap); got == targetMap {
+	if got := m.Peek8(ram(m).CurMap); got == targetMap {
 		return settleLeagueRoomEntry(m, targetMap, waitForBattle)
 	} else if got != stand.Map {
 		return fmt.Errorf("skill: EliteFourProgression: north warp expected map %#02x, observed %#02x", stand.Map, got)
@@ -63,14 +62,14 @@ func enterLeagueRoom(m *emu.Emu, romData []byte, policy MovePolicy, stand Destin
 	if _, err := TravelFlee(m, romData, stand, policy, leagueTravelBattles); err != nil {
 		return fmt.Errorf("skill: EliteFourProgression: reach north exit on map %#02x: %w", stand.Map, err)
 	}
-	if got := m.Peek8(sym.CurMap); got != stand.Map {
+	if got := m.Peek8(ram(m).CurMap); got != stand.Map {
 		return fmt.Errorf("skill: EliteFourProgression: approach to north exit left map %#02x for %#02x", stand.Map, got)
 	}
 
 	m.Press(emu.Up)
 	crossed := false
 	for spent := 0; spent < leagueWarpBudget; spent++ {
-		if m.Peek8(sym.CurMap) != stand.Map {
+		if m.Peek8(ram(m).CurMap) != stand.Map {
 			crossed = true
 			break
 		}
@@ -81,38 +80,38 @@ func enterLeagueRoom(m *emu.Emu, romData []byte, policy MovePolicy, stand Destin
 		x, y := playerXY(m)
 		return fmt.Errorf("skill: EliteFourProgression: north exit from map %#02x did not cross within %d frames at (%d,%d)", stand.Map, leagueWarpBudget, x, y)
 	}
-	if got := m.Peek8(sym.CurMap); got != targetMap {
+	if got := m.Peek8(ram(m).CurMap); got != targetMap {
 		return fmt.Errorf("skill: EliteFourProgression: north exit from map %#02x arrived on %#02x, want %#02x", stand.Map, got, targetMap)
 	}
 	return settleLeagueRoomEntry(m, targetMap, waitForBattle)
 }
 
 func settleLeagueRoomEntry(m *emu.Emu, targetMap uint8, waitForBattle bool) error {
-	mem := advanceUntil(m, leagueRoomSettleBudget, func(mm *state.Mem) bool {
-		if mm.U8(sym.CurMap) != targetMap {
+	mem := advanceUntil(m, ram(m), leagueRoomSettleBudget, func(mm *state.Mem, a wramAddresses) bool {
+		if mm.U8(ram(m).CurMap) != targetMap {
 			return false
 		}
-		if leagueFacts(mm).MainStoryComplete {
+		if leagueFacts(mm, ram(m)).MainStoryComplete {
 			return true
 		}
 		if waitForBattle {
-			return state.DecodeBattle(mm) != nil || leagueFacts(mm).LeagueChampionDefeated
+			return ram(m).DecodeBattle(mm) != nil || leagueFacts(mm, ram(m)).LeagueChampionDefeated
 		}
-		return state.Controllable(mm)
+		return ram(m).Controllable(mm)
 	})
-	if mem.U8(sym.CurMap) != targetMap {
-		return fmt.Errorf("skill: EliteFourProgression: room entry expected map %#02x, observed %#02x", targetMap, mem.U8(sym.CurMap))
+	if mem.U8(ram(m).CurMap) != targetMap {
+		return fmt.Errorf("skill: EliteFourProgression: room entry expected map %#02x, observed %#02x", targetMap, mem.U8(ram(m).CurMap))
 	}
-	if leagueFacts(&mem).MainStoryComplete {
+	if leagueFacts(&mem, ram(m)).MainStoryComplete {
 		return nil
 	}
 	if waitForBattle {
-		if state.DecodeBattle(&mem) == nil && !leagueFacts(&mem).LeagueChampionDefeated {
+		if ram(m).DecodeBattle(&mem) == nil && !leagueFacts(&mem, ram(m)).LeagueChampionDefeated {
 			return fmt.Errorf("skill: EliteFourProgression: Champion battle did not start within %d frames", leagueRoomSettleBudget)
 		}
 		return nil
 	}
-	if !state.Controllable(&mem) {
+	if !ram(m).Controllable(&mem) {
 		return fmt.Errorf("skill: EliteFourProgression: map %#02x did not settle controllable within %d frames", targetMap, leagueRoomSettleBudget)
 	}
 	return nil
@@ -125,26 +124,26 @@ func fightLeagueMember(m *emu.Emu, romData []byte, policy MovePolicy, name strin
 	if err := ChallengeTrainer(m, romData, homeX, homeY, policy); err != nil {
 		return fmt.Errorf("skill: EliteFourProgression: %s: %w", name, err)
 	}
-	mem := advanceUntil(m, leagueBattleSettleBudget, func(mm *state.Mem) bool {
-		return done(leagueFacts(mm)) && state.Controllable(mm)
+	mem := advanceUntil(m, ram(m), leagueBattleSettleBudget, func(mm *state.Mem, a wramAddresses) bool {
+		return done(leagueFacts(mm, ram(m))) && ram(m).Controllable(mm)
 	})
-	facts := leagueFacts(&mem)
+	facts := leagueFacts(&mem, ram(m))
 	if !done(facts) {
 		return fmt.Errorf("skill: EliteFourProgression: %s battle won but its room-completion fact was not committed", name)
 	}
-	if !state.Controllable(&mem) {
+	if !ram(m).Controllable(&mem) {
 		return fmt.Errorf("skill: EliteFourProgression: %s post-battle script did not return control", name)
 	}
 	return nil
 }
 
 func prepareLeagueChallenge(m *emu.Emu, romData []byte, policy MovePolicy) error {
-	if got := m.Peek8(sym.CurMap); got != indigoPlateauLobbyMap {
+	if got := m.Peek8(ram(m).CurMap); got != indigoPlateauLobbyMap {
 		return fmt.Errorf("skill: EliteFourProgression: prepare League on map %#02x, want Indigo lobby %#02x", got, indigoPlateauLobbyMap)
 	}
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if !allPartyCenterRecovered(&mem) {
+	if !allPartyCenterRecovered(&mem, ram(m)) {
 		if _, err := TravelFlee(m, romData, indigoLobbyNurse, policy, leagueTravelBattles); err != nil {
 			return fmt.Errorf("skill: EliteFourProgression: reach Indigo nurse: %w", err)
 		}
@@ -152,7 +151,7 @@ func prepareLeagueChallenge(m *emu.Emu, romData []byte, policy MovePolicy) error
 			return fmt.Errorf("skill: EliteFourProgression: heal before committing to the League: %w", err)
 		}
 		state.Snapshot(m, &mem)
-		if !allPartyCenterRecovered(&mem) {
+		if !allPartyCenterRecovered(&mem, ram(m)) {
 			return fmt.Errorf("skill: EliteFourProgression: Indigo heal did not fully restore HP/status/PP")
 		}
 	}
@@ -166,13 +165,13 @@ func prepareLeagueChallenge(m *emu.Emu, romData []byte, policy MovePolicy) error
 }
 
 func recoverLeagueBlackout(m *emu.Emu, romData []byte, policy MovePolicy) error {
-	if got := m.Peek8(sym.CurMap); got != indigoPlateauMap {
+	if got := m.Peek8(ram(m).CurMap); got != indigoPlateauMap {
 		return fmt.Errorf("skill: EliteFourProgression: League blackout recovery started on map %#02x, want Indigo Plateau %#02x", got, indigoPlateauMap)
 	}
 	if _, err := TravelFlee(m, romData, indigoLobbyNurse, policy, leagueTravelBattles); err != nil {
 		return fmt.Errorf("skill: EliteFourProgression: return to Indigo lobby after blackout: %w", err)
 	}
-	if got := m.Peek8(sym.CurMap); got != indigoPlateauLobbyMap {
+	if got := m.Peek8(ram(m).CurMap); got != indigoPlateauLobbyMap {
 		return fmt.Errorf("skill: EliteFourProgression: blackout recovery arrived on map %#02x, want lobby %#02x", got, indigoPlateauLobbyMap)
 	}
 	return nil
@@ -186,15 +185,15 @@ func fightChampion(m *emu.Emu, policy MovePolicy) error {
 	if !facts.LeagueChampionDefeated {
 		var mem state.Mem
 		state.Snapshot(m, &mem)
-		if state.DecodeBattle(&mem) == nil {
-			mem = advanceUntil(m, leagueRoomSettleBudget, func(mm *state.Mem) bool {
-				facts := leagueFacts(mm)
-				return state.DecodeBattle(mm) != nil || facts.LeagueChampionDefeated || facts.MainStoryComplete
+		if ram(m).DecodeBattle(&mem) == nil {
+			mem = advanceUntil(m, ram(m), leagueRoomSettleBudget, func(mm *state.Mem, a wramAddresses) bool {
+				facts := leagueFacts(mm, ram(m))
+				return ram(m).DecodeBattle(mm) != nil || facts.LeagueChampionDefeated || facts.MainStoryComplete
 			})
 		}
-		facts = leagueFacts(&mem)
+		facts = leagueFacts(&mem, ram(m))
 		if !facts.LeagueChampionDefeated && !facts.MainStoryComplete {
-			if state.DecodeBattle(&mem) == nil {
+			if ram(m).DecodeBattle(&mem) == nil {
 				return fmt.Errorf("skill: EliteFourProgression: Champion room did not enter battle")
 			}
 			outcome, err := Battle(m, policy)
@@ -205,11 +204,11 @@ func fightChampion(m *emu.Emu, policy MovePolicy) error {
 				return fmt.Errorf("skill: EliteFourProgression: %w against Champion", ErrTrainerBlackedOut)
 			}
 		}
-		mem = advanceUntil(m, leagueBattleSettleBudget, func(mm *state.Mem) bool {
-			facts := leagueFacts(mm)
+		mem = advanceUntil(m, ram(m), leagueBattleSettleBudget, func(mm *state.Mem, a wramAddresses) bool {
+			facts := leagueFacts(mm, ram(m))
 			return facts.LeagueChampionDefeated || facts.MainStoryComplete
 		})
-		facts = leagueFacts(&mem)
+		facts = leagueFacts(&mem, ram(m))
 		if !facts.LeagueChampionDefeated && !facts.MainStoryComplete {
 			return fmt.Errorf("skill: EliteFourProgression: Champion win did not commit its victory event")
 		}
@@ -226,15 +225,15 @@ func finishHallOfFame(m *emu.Emu) error {
 	if leagueMainStoryComplete(m) {
 		return nil
 	}
-	mem := advanceUntil(m, leagueEndingBudget, func(mm *state.Mem) bool {
-		return leagueFacts(mm).MainStoryComplete
+	mem := advanceUntil(m, ram(m), leagueEndingBudget, func(mm *state.Mem, a wramAddresses) bool {
+		return leagueFacts(mm, ram(m)).MainStoryComplete
 	})
-	facts := leagueFacts(&mem)
+	facts := leagueFacts(&mem, ram(m))
 	if !facts.MainStoryComplete {
-		return fmt.Errorf("skill: EliteFourProgression: Hall of Fame did not commit main-story completion within %d frames; map=%#02x", leagueEndingBudget, mem.U8(sym.CurMap))
+		return fmt.Errorf("skill: EliteFourProgression: Hall of Fame did not commit main-story completion within %d frames; map=%#02x", leagueEndingBudget, mem.U8(ram(m).CurMap))
 	}
-	if mem.U8(sym.CurMap) != hallOfFameMap {
-		return fmt.Errorf("skill: EliteFourProgression: main-story completion appeared on map %#02x, want Hall of Fame %#02x", mem.U8(sym.CurMap), hallOfFameMap)
+	if mem.U8(ram(m).CurMap) != hallOfFameMap {
+		return fmt.Errorf("skill: EliteFourProgression: main-story completion appeared on map %#02x, want Hall of Fame %#02x", mem.U8(ram(m).CurMap), hallOfFameMap)
 	}
 	return nil
 }
@@ -257,7 +256,7 @@ func EliteFourProgression(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		if facts.MainStoryComplete {
 			return nil
 		}
-		switch m.Peek8(sym.CurMap) {
+		switch m.Peek8(ram(m).CurMap) {
 		case indigoPlateauMap:
 			if err := recoverLeagueBlackout(m, romData, policy); err != nil {
 				return err
@@ -307,7 +306,7 @@ func EliteFourProgression(m *emu.Emu, romData []byte, policy MovePolicy) error {
 			return finishHallOfFame(m)
 
 		default:
-			return fmt.Errorf("skill: EliteFourProgression: unexpected map %#02x during League challenge (started=%v champion=%v)", m.Peek8(sym.CurMap), facts.LeagueChallengeStarted, facts.LeagueChampionDefeated)
+			return fmt.Errorf("skill: EliteFourProgression: unexpected map %#02x during League challenge (started=%v champion=%v)", m.Peek8(ram(m).CurMap), facts.LeagueChallengeStarted, facts.LeagueChampionDefeated)
 		}
 	}
 	return fmt.Errorf("skill: EliteFourProgression: exceeded bounded room phase count")

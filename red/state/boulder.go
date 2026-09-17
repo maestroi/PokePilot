@@ -19,7 +19,12 @@ type BoulderState struct {
 // which matters for Victory Road's 3F hole transition where the pushed
 // boulder is hidden on 3F and shown on 2F.
 func DecodeBoulders(m *Mem) []BoulderState {
-	sprites := DecodeSprites(m)
+	return RedAddresses().DecodeBoulders(m)
+}
+
+// DecodeBoulders is the shared Gen I boulder decode at this address set.
+func (a Addresses) DecodeBoulders(m *Mem) []BoulderState {
+	sprites := a.DecodeSprites(m)
 	out := make([]BoulderState, 0, len(sprites))
 	for _, sprite := range sprites {
 		if sprite.PictureID != BoulderPictureID {

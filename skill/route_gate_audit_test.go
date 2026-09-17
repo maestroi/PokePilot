@@ -11,13 +11,13 @@ import (
 
 func TestAuditedRouteCapabilitiesProjectBicycle(t *testing.T) {
 	mem := new(state.Mem)
-	if caps := redRouteCapabilities(nil, mem); caps.Has(capCanRideCyclingRoad) {
+	if caps := redRouteCapabilities(nil, mem, redWram()); caps.Has(capCanRideCyclingRoad) {
 		t.Fatalf("empty bag unexpectedly projects %q: %v", capCanRideCyclingRoad, caps)
 	}
 	mem[sym.NumBagItems] = 1
 	mem[sym.BagItems] = bicycleItem
 	mem[sym.BagItems+1] = 1
-	if caps := redRouteCapabilities(nil, mem); !caps.Has(capCanRideCyclingRoad) {
+	if caps := redRouteCapabilities(nil, mem, redWram()); !caps.Has(capCanRideCyclingRoad) {
 		t.Fatalf("Bicycle in bag did not project %q: %v", capCanRideCyclingRoad, caps)
 	}
 }
@@ -54,7 +54,7 @@ func TestCeladonInaccessibleMartWarpIsPermanentGate(t *testing.T) {
 	if !transition.Gate {
 		t.Fatalf("inaccessible Celadon wall warp was modeled as an executable pivot: %+v", transition)
 	}
-	if caps := redRouteCapabilities(nil, new(state.Mem)); caps.Has(capCanUseInaccessibleWarp) {
+	if caps := redRouteCapabilities(nil, new(state.Mem), redWram()); caps.Has(capCanUseInaccessibleWarp) {
 		t.Fatalf("inaccessible warp capability must never be projected: %v", caps)
 	}
 

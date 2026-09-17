@@ -5,9 +5,7 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
-	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
 )
 
@@ -88,13 +86,13 @@ func PokemonTower(m *emu.Emu, romData []byte, policy MovePolicy) error {
 
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if _, count := bagEntry(&mem, pokeFluteItem); count > 0 {
+	if _, count := bagEntry(&mem, pokeFluteItem, ram(m)); count > 0 {
 		return nil
 	}
-	if _, count := bagEntry(&mem, silphScopeItem); count < 1 {
+	if _, count := bagEntry(&mem, silphScopeItem, ram(m)); count < 1 {
 		return fmt.Errorf("skill: PokemonTower: SILPH SCOPE is required before entering the Tower story")
 	}
-	if cur := mem.U8(sym.CurMap); !PokemonTowerAvailable(cur) {
+	if cur := mem.U8(ram(m).CurMap); !PokemonTowerAvailable(cur) {
 		return fmt.Errorf("skill: PokemonTower: map %#04x is outside the Celadon/Lavender/Tower progression slice", cur)
 	}
 
@@ -103,7 +101,7 @@ func PokemonTower(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	// B2F/B3F arrow tiles are forced movement, so a plain Travel cannot safely
 	// escape from that checkpoint. Reuse the measured spinner transitions and
 	// the live-open boss-door shape, then hand ordinary routing back to Travel.
-	if cur := m.Peek8(sym.CurMap); cur >= rocketHideoutB1FMap && cur <= rocketHideoutB4FMap {
+	if cur := m.Peek8(ram(m).CurMap); cur >= rocketHideoutB1FMap && cur <= rocketHideoutB4FMap {
 		if err := leaveRocketHideoutForTower(m, romData, policy); err != nil {
 			return fmt.Errorf("skill: PokemonTower: leave Rocket Hideout: %w", err)
 		}
@@ -112,13 +110,13 @@ func PokemonTower(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	// If a resumed checkpoint is already in Fuji's house after the rescue,
 	// finish the item handoff directly. Before the rescue Fuji's sprite is
 	// hidden; in that case continue through Lavender/Tower instead.
-	if m.Peek8(sym.CurMap) == mrFujisHouseMap {
+	if m.Peek8(ram(m).CurMap) == mrFujisHouseMap {
 		if _, _, live := liveObjectPosition(m, 5); live { // MRFUJISHOUSE_MR_FUJI
 			return receivePokeFlute(m, romData, policy)
 		}
 	}
 
-	cur := m.Peek8(sym.CurMap)
+	cur := m.Peek8(ram(m).CurMap)
 	if cur < pokemonTower1FMap || cur > pokemonTower7FMap {
 		// Establish Lavender as the blackout checkpoint before committing to
 		// the long Tower climb. TravelFlee keeps transit encounters from
@@ -137,7 +135,7 @@ func PokemonTower(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	}
 
 	state.Snapshot(m, &mem)
-	if _, count := bagEntry(&mem, rareCandyItem); count < 1 {
+	if _, count := bagEntry(&mem, rareCandyItem, ram(m)); count < 1 {
 		// Pickup approaches within the CURRENT map only; it does not cross
 		// maps on its own. Reach 6F's own 5F-side warp landing first (always
 		// walkable and always reachable, whatever floor the climb resumes
@@ -175,11 +173,11 @@ func towerBattleResolver(m *emu.Emu, policy MovePolicy) resolveBattle {
 	return func() (battleResolution, error) {
 		var mem state.Mem
 		state.Snapshot(m, &mem)
-		b := state.DecodeBattle(&mem)
+		b := ram(m).DecodeBattle(&mem)
 		if b == nil {
 			return battleResolution{}, fmt.Errorf("skill: PokemonTower: battle resolver called outside battle")
 		}
-		if b.Kind == state.BattleWild && !pokemonTowerMarowakBattle(mem.U8(sym.CurMap), b) {
+		if b.Kind == state.BattleWild && !pokemonTowerMarowakBattle(mem.U8(ram(m).CurMap), b) {
 			// Use the same deterministic escape bound as TravelFlee. Five tries
 			// is only probabilistic (issue #395); a failed fifth roll would turn
 			// an ordinary Tower encounter into an untyped unknown_failure and
@@ -203,7 +201,7 @@ func travelPokemonTower(m *emu.Emu, romData []byte, dest Destination, policy Mov
 	return travel(m, policy, maxEngagements,
 		cutAwareGoTo(m, romData, dest),
 		func() DialogueRecoveryResult { return RecoverDialogue(m, dialogueRecoveryBudget) },
-		func() bool { return m.Peek8(sym.StatusFlags4)&blackoutBit != 0 },
+		func() bool { return m.Peek8(ram(m).StatusFlags4)&blackoutBit != 0 },
 		towerBattleResolver(m, policy),
 	)
 }
@@ -214,8 +212,8 @@ func travelPokemonTower(m *emu.Emu, romData []byte, dest Destination, policy Mov
 // completion predicate is therefore the destination map plus controllability,
 // not a fixed number of A presses.
 func rescueMrFuji(m *emu.Emu, romData []byte, policy MovePolicy) error {
-	if m.Peek8(sym.CurMap) != pokemonTower7FMap {
-		return fmt.Errorf("skill: PokemonTower: rescue Mr. Fuji on map %#04x, want 7F %#04x", m.Peek8(sym.CurMap), pokemonTower7FMap)
+	if m.Peek8(ram(m).CurMap) != pokemonTower7FMap {
+		return fmt.Errorf("skill: PokemonTower: rescue Mr. Fuji on map %#04x, want 7F %#04x", m.Peek8(ram(m).CurMap), pokemonTower7FMap)
 	}
 
 	const fujiObjectID = 4 // POKEMONTOWER7F_MR_FUJI
@@ -233,32 +231,32 @@ func rescueMrFuji(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	}
 
 	m.Tap(emu.A, 3, 7)
-	mem := advanceUntil(m, mrFujiRescueBudget, func(mm *state.Mem) bool {
-		return mm.U8(sym.CurMap) == mrFujisHouseMap && state.Controllable(mm)
+	mem := advanceUntil(m, ram(m), mrFujiRescueBudget, func(mm *state.Mem, a wramAddresses) bool {
+		return mm.U8(ram(m).CurMap) == mrFujisHouseMap && ram(m).Controllable(mm)
 	})
-	if mem.U8(sym.CurMap) != mrFujisHouseMap || !state.Controllable(&mem) {
+	if mem.U8(ram(m).CurMap) != mrFujisHouseMap || !ram(m).Controllable(&mem) {
 		return fmt.Errorf("skill: PokemonTower: Mr. Fuji rescue did not warp to house within %d frames: map=%#04x at (%d,%d) wJoyIgnore=%#04x wFontLoaded=%#04x",
-			mrFujiRescueBudget, mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord),
-			mem.U8(sym.JoyIgnore), mem.U8(sym.FontLoaded))
+			mrFujiRescueBudget, mem.U8(ram(m).CurMap), mem.U8(ram(m).XCoord), mem.U8(ram(m).YCoord),
+			mem.U8(ram(m).JoyIgnore), mem.U8(ram(m).FontLoaded))
 	}
 	return nil
 }
 
 func receivePokeFlute(m *emu.Emu, romData []byte, policy MovePolicy) error {
-	if m.Peek8(sym.CurMap) != mrFujisHouseMap {
-		return fmt.Errorf("skill: PokemonTower: Poké Flute handoff on map %#04x, want Mr. Fuji's house %#04x", m.Peek8(sym.CurMap), mrFujisHouseMap)
+	if m.Peek8(ram(m).CurMap) != mrFujisHouseMap {
+		return fmt.Errorf("skill: PokemonTower: Poké Flute handoff on map %#04x, want Mr. Fuji's house %#04x", m.Peek8(ram(m).CurMap), mrFujisHouseMap)
 	}
 
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if _, count := bagEntry(&mem, pokeFluteItem); count > 0 {
+	if _, count := bagEntry(&mem, pokeFluteItem, ram(m)); count > 0 {
 		return nil
 	}
 	if _, err := TalkAt(m, romData, 3, 1, policy); err != nil { // MRFUJISHOUSE_MR_FUJI
 		return fmt.Errorf("skill: PokemonTower: receive Poké Flute from Mr. Fuji: %w", err)
 	}
 	state.Snapshot(m, &mem)
-	if _, count := bagEntry(&mem, pokeFluteItem); count < 1 {
+	if _, count := bagEntry(&mem, pokeFluteItem, ram(m)); count < 1 {
 		return fmt.Errorf("skill: PokemonTower: Poké Flute missing from bag after Mr. Fuji handoff (bag may be full)")
 	}
 	return nil
@@ -270,7 +268,7 @@ func receivePokeFlute(m *emu.Emu, romData []byte, policy MovePolicy) error {
 // contains the closed block after the guards have opened it in RAM.
 func leaveRocketHideoutForTower(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	for {
-		switch m.Peek8(sym.CurMap) {
+		switch m.Peek8(ram(m).CurMap) {
 		case rocketHideoutB4FMap:
 			_, y := playerXY(m)
 			if y < 10 {
@@ -302,20 +300,20 @@ func leaveRocketHideoutForTower(m *emu.Emu, romData []byte, policy MovePolicy) e
 		case gameCornerMap, celadonCityMap, celadonPokemonCenterMap:
 			return nil
 		default:
-			return fmt.Errorf("unexpected map %#04x while leaving Rocket Hideout", m.Peek8(sym.CurMap))
+			return fmt.Errorf("unexpected map %#04x while leaving Rocket Hideout", m.Peek8(ram(m).CurMap))
 		}
 	}
 }
 
 func walkRocketB4FLiveTo(m *emu.Emu, romData []byte, dest Destination) error {
-	if m.Peek8(sym.CurMap) != rocketHideoutB4FMap || dest.Map != rocketHideoutB4FMap {
-		return fmt.Errorf("skill: PokemonTower: live B4F walk requested from %#04x to %#04x", m.Peek8(sym.CurMap), dest.Map)
+	if m.Peek8(ram(m).CurMap) != rocketHideoutB4FMap || dest.Map != rocketHideoutB4FMap {
+		return fmt.Errorf("skill: PokemonTower: live B4F walk requested from %#04x to %#04x", m.Peek8(ram(m).CurMap), dest.Map)
 	}
-	h, err := rom.ParseMap(romData, rocketHideoutB4FMap)
+	h, err := graphForROM(romData).ParseMap(romData, rocketHideoutB4FMap)
 	if err != nil {
 		return err
 	}
-	grid, err := world.Build(romData, h)
+	grid, err := world.BuildForTables(graphForROM(romData), romData, h)
 	if err != nil {
 		return err
 	}

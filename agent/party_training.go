@@ -84,7 +84,7 @@ func partyTrainingChoiceNote(slot int, mon, lead PartyMon, wild []WildSpecies, e
 // party slot. estimateTraining is already species/XP based; only the old
 // wrapper was lead-specific.
 func currentPartyTrainingEstimate(mem *state.Mem, romData []byte, mapID uint8, slot, targetLevel, budget int) (TrainingEstimate, error) {
-	party := state.DecodeParty(mem)
+	party := skill.AddressesForROM(romData).DecodeParty(mem)
 	if slot < 0 || slot >= len(party.Mons) {
 		return TrainingEstimate{}, fmt.Errorf("agent: training estimate party slot %d out of range for party of %d", slot, len(party.Mons))
 	}
@@ -103,8 +103,8 @@ func currentPartyTrainingEstimate(mem *state.Mem, romData []byte, mapID uint8, s
 // resolveTrainingPartySlot makes a species-targeted objective resilient to a
 // prior party reorder. Slot is retained as a fast-path/hint and as a fallback
 // for legacy lead objectives that do not carry Species.
-func resolveTrainingPartySlot(mem *state.Mem, o Objective) (int, error) {
-	party := state.DecodeParty(mem)
+func resolveTrainingPartySlot(mem *state.Mem, a state.Addresses, o Objective) (int, error) {
+	party := a.DecodeParty(mem)
 	if len(party.Mons) == 0 {
 		return 0, fmt.Errorf("agent: %s: training requires a party", o)
 	}
@@ -151,7 +151,7 @@ func promoteToLeadStable(m *emu.Emu, slot int) error {
 	if err := skill.PromoteToLead(m, slot); err != nil {
 		var mem state.Mem
 		state.Snapshot(m, &mem)
-		if !skill.DismissableObjectiveMenu(&mem) {
+		if !skill.DismissableObjectiveMenu(&mem, skill.AddressesFor(m)) {
 			return err
 		}
 		if cleanupErr := skill.CloseOpenMenuToOverworld(m); cleanupErr != nil {
@@ -172,7 +172,7 @@ func promoteToLeadStable(m *emu.Emu, slot int) error {
 func executeTrainingObjective(m *emu.Emu, romData []byte, o Objective, result ObjectiveResult) (ObjectiveResult, error) {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	slot, err := resolveTrainingPartySlot(&mem, o)
+	slot, err := resolveTrainingPartySlot(&mem, skill.AddressesFor(m), o)
 	if err != nil {
 		return result, err
 	}

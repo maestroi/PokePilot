@@ -6,7 +6,6 @@ import (
 	"github.com/maestroi/pokepilot/red/combat"
 	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 )
 
 const (
@@ -70,8 +69,8 @@ type switchDecision struct {
 // the ROM's practical switch-legality boundary: trapping/multi-turn states
 // that deny a choice never present this menu to Battle in the first place.
 func chooseTacticalSwitch(romData []byte, mem *state.Mem, b state.BattleState) switchDecision {
-	party := state.DecodeParty(mem)
-	activeSlot := int(mem.U8(sym.PlayerMonNumber))
+	party := tablesForROM(romData).wram.DecodeParty(mem)
+	activeSlot := int(mem.U8(tablesForROM(romData).wram.PlayerMonNumber))
 	decision := switchDecision{Slot: -1, Reason: "no-live-bench"}
 	if len(party.Mons) < 2 || activeSlot < 0 || activeSlot >= len(party.Mons) {
 		return decision
@@ -129,7 +128,7 @@ func chooseTacticalSwitch(romData []byte, mem *state.Mem, b state.BattleState) s
 // the player must send something out. If ROM scoring cannot distinguish the
 // candidates, deterministic party order breaks the tie.
 func bestReplacementSlot(romData []byte, mem *state.Mem, b state.BattleState) (int, switchEvaluation) {
-	party := state.DecodeParty(mem)
+	party := tablesForROM(romData).wram.DecodeParty(mem)
 	_, defender := combat.PlayerMatchup(b)
 	bestSlot := -1
 	var best switchEvaluation

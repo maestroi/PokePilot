@@ -44,8 +44,8 @@ func TestBillsPCRoundTrip(t *testing.T) {
 
 	var before state.Mem
 	state.Snapshot(m, &before)
-	partyBefore := state.DecodeParty(&before)
-	boxBefore := state.DecodeBox(&before)
+	partyBefore := skill.RedAddresses().DecodeParty(&before)
+	boxBefore := skill.RedAddresses().DecodeBox(&before)
 	if partyBefore.Count < 2 {
 		t.Fatalf("party count after catch = %d, want >=2", partyBefore.Count)
 	}
@@ -57,7 +57,7 @@ func TestBillsPCRoundTrip(t *testing.T) {
 	}
 	var stored state.Mem
 	state.Snapshot(m, &stored)
-	partyStored, boxStored := state.DecodeParty(&stored), state.DecodeBox(&stored)
+	partyStored, boxStored := skill.RedAddresses().DecodeParty(&stored), skill.RedAddresses().DecodeBox(&stored)
 	if partyStored.Count != partyBefore.Count-1 || boxStored.Count != boxBefore.Count+1 {
 		t.Fatalf("deposit counts party %d->%d box %d->%d", partyBefore.Count, partyStored.Count, boxBefore.Count, boxStored.Count)
 	}
@@ -67,7 +67,7 @@ func TestBillsPCRoundTrip(t *testing.T) {
 	}
 	var after state.Mem
 	state.Snapshot(m, &after)
-	partyAfter, boxAfter := state.DecodeParty(&after), state.DecodeBox(&after)
+	partyAfter, boxAfter := skill.RedAddresses().DecodeParty(&after), skill.RedAddresses().DecodeBox(&after)
 	if partyAfter.Count != partyBefore.Count || boxAfter.Count != boxBefore.Count {
 		t.Fatalf("roundtrip counts party %d->%d box %d->%d", partyBefore.Count, partyAfter.Count, boxBefore.Count, boxAfter.Count)
 	}

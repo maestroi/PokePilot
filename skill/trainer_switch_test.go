@@ -75,7 +75,7 @@ func TestBattleDeclinesTrainerSwitchWithReserve(t *testing.T) {
 		m.OnFrame(func(m *emu.Emu) {
 			var mem state.Mem
 			state.Snapshot(m, &mem)
-			if strings.Contains(state.ScreenText(&mem), "change POK") && state.DecodeTwoOptionMenu(&mem) != nil {
+			if strings.Contains(state.ScreenText(&mem), "change POK") && skill.RedAddresses().DecodeTwoOptionMenu(&mem) != nil {
 				sawTrainerSwitchPrompt = true
 			}
 		})

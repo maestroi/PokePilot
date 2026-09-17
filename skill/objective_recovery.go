@@ -15,8 +15,8 @@ import (
 // The typed interaction decoder also distinguishes short scrolling item lists
 // from two-option prompts even when both have wMaxMenuItem==1, so this layer no
 // longer needs to inspect a raw list-menu ID itself.
-func DismissableObjectiveMenu(mem *state.Mem) bool {
-	switch state.DecodeInteraction(mem).Kind {
+func DismissableObjectiveMenu(mem *state.Mem, a wramAddresses) bool {
+	switch a.DecodeInteraction(mem).Kind {
 	case state.InteractionMenu, state.InteractionListMenu, state.InteractionElevatorMenu,
 		state.InteractionItemMenu, state.InteractionPartyMenu, state.InteractionPCMenu,
 		state.InteractionPCPokemonList:
@@ -37,11 +37,11 @@ func CloseOpenMenuToOverworld(m *emu.Emu) error {
 	for layer := 0; layer < maxLayers; layer++ {
 		var mem state.Mem
 		state.Snapshot(m, &mem)
-		interaction := state.DecodeInteraction(&mem)
-		if state.Controllable(&mem) && interaction.Kind == state.InteractionNone {
+		interaction := ram(m).DecodeInteraction(&mem)
+		if ram(m).Controllable(&mem) && interaction.Kind == state.InteractionNone {
 			return nil
 		}
-		if state.DecodeBattle(&mem) != nil {
+		if ram(m).DecodeBattle(&mem) != nil {
 			return fmt.Errorf("skill: CloseOpenMenuToOverworld: battle owns the screen")
 		}
 		switch interaction.Kind {
@@ -63,7 +63,7 @@ func CloseOpenMenuToOverworld(m *emu.Emu) error {
 			_, _ = m.StepUntil(interactionTransitionFrames, func(e *emu.Emu) bool {
 				var next state.Mem
 				state.Snapshot(e, &next)
-				return state.Controllable(&next) || state.DecodeInteraction(&next).Kind != state.InteractionNone || state.DecodeBattle(&next) != nil
+				return ram(m).Controllable(&next) || ram(m).DecodeInteraction(&next).Kind != state.InteractionNone || ram(m).DecodeBattle(&next) != nil
 			})
 			continue
 		default:
@@ -72,5 +72,5 @@ func CloseOpenMenuToOverworld(m *emu.Emu) error {
 	}
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	return fmt.Errorf("skill: CloseOpenMenuToOverworld: menu cleanup exceeded %d layers; final=%+v", maxLayers, state.DecodeInteraction(&mem))
+	return fmt.Errorf("skill: CloseOpenMenuToOverworld: menu cleanup exceeded %d layers; final=%+v", maxLayers, ram(m).DecodeInteraction(&mem))
 }

@@ -24,7 +24,7 @@ func TestReadLiveMapBlocksSkipsConnectionBorder(t *testing.T) {
 		}
 	}
 
-	got, err := readLiveMapBlocks(func(addr uint16) uint8 { return mem[addr] }, widthBlocks, heightBlocks)
+	got, err := readLiveMapBlocks(func(addr uint16) uint8 { return mem[addr] }, widthBlocks, heightBlocks, sym.OverworldMap)
 	if err != nil {
 		t.Fatalf("readLiveMapBlocks: %v", err)
 	}
@@ -34,7 +34,7 @@ func TestReadLiveMapBlocksSkipsConnectionBorder(t *testing.T) {
 }
 
 func TestReadLiveMapBlocksRejectsBufferOverflow(t *testing.T) {
-	_, err := readLiveMapBlocks(func(uint16) uint8 { return 0 }, 255, 255)
+	_, err := readLiveMapBlocks(func(uint16) uint8 { return 0 }, 255, 255, sym.OverworldMap)
 	if err == nil {
 		t.Fatal("readLiveMapBlocks accepted dimensions larger than wOverworldMap")
 	}

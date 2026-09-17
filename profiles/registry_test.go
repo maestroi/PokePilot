@@ -5,6 +5,7 @@ import (
 
 	"github.com/maestroi/pokepilot/game"
 	redprofile "github.com/maestroi/pokepilot/red/profile"
+	yellowprofile "github.com/maestroi/pokepilot/yellow/profile"
 )
 
 func TestBuiltinProfilesSatisfyContract(t *testing.T) {
@@ -13,14 +14,21 @@ func TestBuiltinProfilesSatisfyContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	profiles := registry.Profiles()
-	if len(profiles) != 1 {
-		t.Fatalf("built-in profile count = %d, want 1", len(profiles))
+	if len(profiles) != 2 {
+		t.Fatalf("built-in profile count = %d, want 2", len(profiles))
 	}
-	if profiles[0].ID() != redprofile.GameID || profiles[0].Revision() != redprofile.Revision {
-		t.Fatalf("built-in profile = %s@%s", profiles[0].ID(), profiles[0].Revision())
+	byID := map[game.GameID]game.GameProfile{}
+	for _, p := range profiles {
+		if err := game.ValidateProfileContract(p); err != nil {
+			t.Fatalf("%s@%s: %v", p.ID(), p.Revision(), err)
+		}
+		byID[p.ID()] = p
 	}
-	if err := game.ValidateProfileContract(profiles[0]); err != nil {
-		t.Fatal(err)
+	if _, ok := byID[redprofile.GameID]; !ok {
+		t.Fatalf("red profile missing from registry: %v", byID)
+	}
+	if _, ok := byID[yellowprofile.GameID]; !ok {
+		t.Fatalf("yellow profile missing from registry: %v", byID)
 	}
 }
 

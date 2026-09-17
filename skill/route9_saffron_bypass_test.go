@@ -44,7 +44,7 @@ func TestRoute9RoutesToCeladonWithoutSaffron(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildGraph: %v", err)
 	}
-	prereqs := redRoutePrerequisites(g, romData, &mem)
+	prereqs := redRoutePrerequisites(g, romData, &mem, redWram())
 	if !prereqs.Capabilities.Has(capCanCut) {
 		t.Fatalf("capabilities did not include %q: %v", capCanCut, prereqs.Capabilities)
 	}

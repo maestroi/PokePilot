@@ -22,7 +22,7 @@ func TestLeagueResourceItemsRealROM(t *testing.T) {
 
 	var before state.Mem
 	state.Snapshot(m, &before)
-	party := state.DecodeParty(&before)
+	party := redWram().DecodeParty(&before)
 	fainted := -1
 	for slot, mon := range party.Mons {
 		if mon.Fainted() {
@@ -34,8 +34,8 @@ func TestLeagueResourceItemsRealROM(t *testing.T) {
 		t.Fatal("prepared League resource state has no fainted party member")
 	}
 
-	_, reviveQty := bagEntry(&before, itemRevive)
-	_, maxReviveQty := bagEntry(&before, itemMaxRevive)
+	_, reviveQty := bagEntry(&before, itemRevive, redWram())
+	_, maxReviveQty := bagEntry(&before, itemMaxRevive, redWram())
 	useMax := false
 	if reviveQty == 0 {
 		if maxReviveQty == 0 {
@@ -49,13 +49,13 @@ func TestLeagueResourceItemsRealROM(t *testing.T) {
 
 	var revived state.Mem
 	state.Snapshot(m, &revived)
-	if state.DecodeParty(&revived).Mons[fainted].Fainted() {
+	if redWram().DecodeParty(&revived).Mons[fainted].Fainted() {
 		t.Fatalf("slot %d is still fainted after verified revive", fainted)
 	}
 
 	ppItem := uint8(0)
 	for _, item := range []uint8{itemEther, itemMaxEther, itemElixer, itemMaxElixer} {
-		if _, qty := bagEntry(&revived, item); qty > 0 {
+		if _, qty := bagEntry(&revived, item, redWram()); qty > 0 {
 			ppItem = item
 			break
 		}
@@ -64,7 +64,7 @@ func TestLeagueResourceItemsRealROM(t *testing.T) {
 		t.Fatal("prepared League resource state has no Ether/Elixer-family item")
 	}
 
-	party = state.DecodeParty(&revived)
+	party = redWram().DecodeParty(&revived)
 	ppSlot := -1
 	for slot, mon := range party.Mons {
 		if mon.Fainted() {
@@ -97,7 +97,7 @@ func TestLeagueResourceItemsRealROM(t *testing.T) {
 	}
 	var after state.Mem
 	state.Snapshot(m, &after)
-	afterPP := state.DecodeParty(&after).Mons[ppSlot].PP
+	afterPP := redWram().DecodeParty(&after).Mons[ppSlot].PP
 	increased := false
 	for i := range beforePP {
 		if afterPP[i] > beforePP[i] {

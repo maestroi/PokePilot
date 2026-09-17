@@ -6,14 +6,13 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 )
 
 // atControllableOverworld is the single success predicate for the boot: the
 // player is on Red's bedroom map (CurMap == 0x26) and the game accepts free
 // overworld input.
-func atControllableOverworld(m *state.Mem) bool {
-	return m.U8(sym.CurMap) == 0x26 && state.Controllable(m)
+func atControllableOverworld(m *state.Mem, a wramAddresses) bool {
+	return m.U8(a.CurMap) == 0x26 && a.Controllable(m)
 }
 
 // introNameMenu reports whether Oak's player/rival preset-name menu is on
@@ -26,8 +25,8 @@ func atControllableOverworld(m *state.Mem) bool {
 // with PlaceString + HandleMenuInput and never goes through DisplayTextID, so
 // the oak-speech menus sit at FontLoaded=0. Requiring that flag made every
 // A-advance select NEW NAME and type AAAAAAA on the keyboard.
-func introNameMenu(m *state.Mem) bool {
-	if m.U8(sym.MaxMenuItem) != 3 {
+func introNameMenu(m *state.Mem, a wramAddresses) bool {
+	if m.U8(a.MaxMenuItem) != 3 {
 		return false
 	}
 	return strings.Contains(state.ScreenText(m), "NEW NAME")
@@ -41,15 +40,15 @@ const introPresetNameIndex = 2
 // The first four Start taps preserve the existing title/menu skip. Once a
 // player/rival name menu appears, steer to ASH / GARY. Any other intro state
 // is ordinary dialogue, where A is the safe paging input.
-func bootInput(m *state.Mem, iteration int) emu.Button {
+func bootInput(m *state.Mem, a wramAddresses, iteration int) emu.Button {
 	if iteration < 4 {
 		return emu.Start
 	}
-	if !introNameMenu(m) {
+	if !introNameMenu(m, a) {
 		return emu.A
 	}
 
-	current := m.U8(sym.CurrentMenuItem)
+	current := m.U8(a.CurrentMenuItem)
 	switch {
 	case current < introPresetNameIndex:
 		return emu.Down
@@ -78,32 +77,33 @@ func bootInput(m *state.Mem, iteration int) emu.Button {
 // last decoded state if the overworld is not reached within budget.
 func BootToOverworld(m *emu.Emu) (state.GameState, error) {
 	var mem state.Mem
+	wa := ram(m)
 
 	m.StepFrames(300)
 
 	const budget = 900
 	for i := 0; i < budget; i++ {
 		state.Snapshot(m, &mem)
-		if atControllableOverworld(&mem) {
-			return decodeBootedOverworld(&mem)
+		if atControllableOverworld(&mem, wa) {
+			return decodeBootedOverworld(&mem, wa)
 		}
-		m.Tap(bootInput(&mem, i), 3, 7)
+		m.Tap(bootInput(&mem, wa, i), 3, 7)
 	}
 
 	// Timeout: report the last decoded state so a regression is diagnosable.
 	// CurMapWidth/CurMapHeight are included because a zero-dimension map is the
 	// signature of the intro still running (the map was never actually loaded).
 	state.Snapshot(m, &mem)
-	last := state.Decode(&mem)
+	last := wa.Decode(&mem)
 	menuOpen := "no"
-	if mem.U8(sym.FontLoaded) != 0 {
+	if mem.U8(wa.FontLoaded) != 0 {
 		menuOpen = fmt.Sprintf("yes (cur=%d max=%d)", last.Menu.Current, last.Menu.Max)
 	}
 	return state.GameState{}, fmt.Errorf(
 		"boot: no controllable overworld within %d iterations; last: map=%#04x x=%d y=%d mapW=%d mapH=%d fontLoaded=%#04x menu=%s controllable=%v",
 		budget, last.Player.MapID, last.Player.X, last.Player.Y,
 		last.World.Width, last.World.Height,
-		mem.U8(sym.FontLoaded), menuOpen, state.Controllable(&mem))
+		mem.U8(wa.FontLoaded), menuOpen, wa.Controllable(&mem))
 }
 
 const (
@@ -111,14 +111,14 @@ const (
 	introRivalName  = "GARY"
 )
 
-func decodeBootedOverworld(mem *state.Mem) (state.GameState, error) {
-	player := state.DecodeName(mem.Slice(sym.PlayerName, 11))
+func decodeBootedOverworld(mem *state.Mem, a wramAddresses) (state.GameState, error) {
+	player := state.DecodeName(mem.Slice(a.PlayerName, 11))
 	if player != introPlayerName {
 		return state.GameState{}, fmt.Errorf("boot: reached overworld named %q, want %s", player, introPlayerName)
 	}
-	rival := state.DecodeName(mem.Slice(sym.RivalName, 11))
+	rival := state.DecodeName(mem.Slice(a.RivalName, 11))
 	if rival != introRivalName {
 		return state.GameState{}, fmt.Errorf("boot: reached overworld with rival %q, want %s", rival, introRivalName)
 	}
-	return state.Decode(mem), nil
+	return a.Decode(mem), nil
 }

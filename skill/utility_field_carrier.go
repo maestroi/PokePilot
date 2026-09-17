@@ -35,7 +35,7 @@ func RepairUtilityFieldCapability(m *emu.Emu, romData []byte, policy MovePolicy,
 
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	cap := FieldCapabilityFor(&mem, target)
+	cap := FieldCapabilityFor(&mem, target, ram(m))
 	if !cap.BadgeOwned || !cap.HMOwned {
 		return missingFieldRosterPrerequisite(cap)
 	}
@@ -43,8 +43,8 @@ func RepairUtilityFieldCapability(m *emu.Emu, romData []byte, policy MovePolicy,
 		return nil
 	}
 
-	party := state.DecodeParty(&mem)
-	canPrepareHere := CanPrepareFieldMove(romData, &mem, target)
+	party := ram(m).DecodeParty(&mem)
+	canPrepareHere := CanPrepareFieldMove(romData, &mem, target, ram(m))
 	// With more than one current party member the generic TM/HM decision already
 	// prefers a compatible bench carrier for Cut/Flash. There is no reason to
 	// leave the current roster and hunt another Pokemon first.
@@ -56,7 +56,7 @@ func RepairUtilityFieldCapability(m *emu.Emu, romData []byte, policy MovePolicy,
 	}
 
 	required := []FieldMove{target}
-	box := state.DecodeBox(&mem)
+	box := ram(m).DecodeBox(&mem)
 	boxIndex, depositSlot, boxOK, err := chooseCompatibleBoxMon(romData, party, box, target, required)
 	if err != nil {
 		return fmt.Errorf("skill: RepairUtilityFieldCapability: plan PC carrier for %s: %w", target, err)
@@ -94,7 +94,7 @@ func RepairUtilityFieldCapability(m *emu.Emu, romData []byte, policy MovePolicy,
 	}
 
 	state.Snapshot(m, &mem)
-	party = state.DecodeParty(&mem)
+	party = ram(m).DecodeParty(&mem)
 	incoming := state.Mon{Species: candidate.Species}
 	depositSlot, legal, err := chooseDepositSlotForIncoming(romData, party, incoming, required)
 	if err != nil {
@@ -131,7 +131,7 @@ func RepairUtilityFieldCapability(m *emu.Emu, romData []byte, policy MovePolicy,
 	// the party. Re-read it anyway so room-making is based on live state rather
 	// than on the snapshot taken before the recovery transaction.
 	state.Snapshot(m, &mem)
-	party = state.DecodeParty(&mem)
+	party = ram(m).DecodeParty(&mem)
 	if party.Count >= gen1PartyCapacity {
 		if err := DepositPartyMon(m, romData, policy, depositSlot); err != nil {
 			return fmt.Errorf("skill: RepairUtilityFieldCapability: make room for wild species %#02x: %w", candidate.Species, err)
@@ -148,7 +148,7 @@ func RepairUtilityFieldCapability(m *emu.Emu, romData []byte, policy MovePolicy,
 	}
 	if result.Outcome != OutcomeCaught || result.Species != candidate.Species {
 		state.Snapshot(m, &mem)
-		_, remaining := bagEntry(&mem, ItemPokeBall)
+		_, remaining := bagEntry(&mem, ItemPokeBall, ram(m))
 		if remaining <= 0 {
 			return fmt.Errorf("%w: utility carrier species %#02x for %s was not caught after %d balls", ErrFieldRosterNoBalls, candidate.Species, target, result.BallsThrown)
 		}

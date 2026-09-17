@@ -6,7 +6,6 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 )
 
 // ErrFieldItemNoEffect reports that the field item's sequence ran to
@@ -41,9 +40,9 @@ const (
 // useTossPrompt reports the USE/TOSS two-option prompt SPECIFICALLY. The bag
 // list itself can also decode as a two-option menu, so its screen position is
 // part of the identity.
-func useTossPrompt(mem *state.Mem) *state.TwoOptionMenu {
-	p := state.DecodeTwoOptionMenu(mem)
-	if p == nil || mem.U8(sym.TopMenuItemY) != 11 || mem.U8(sym.TopMenuItemX) != 14 {
+func useTossPrompt(mem *state.Mem, a wramAddresses) *state.TwoOptionMenu {
+	p := a.DecodeTwoOptionMenu(mem)
+	if p == nil || mem.U8(a.TopMenuItemY) != 11 || mem.U8(a.TopMenuItemX) != 14 {
 		return nil
 	}
 	return p
@@ -51,9 +50,9 @@ func useTossPrompt(mem *state.Mem) *state.TwoOptionMenu {
 
 // startMenuShape reports the start menu's item count and the cursor index of
 // its ITEM entry, derived from EVENT_GOT_POKEDEX.
-func startMenuShape(mem *state.Mem) (max, itemIndex int) {
+func startMenuShape(mem *state.Mem, a wramAddresses) (max, itemIndex int) {
 	max, itemIndex = 6, 1
-	if state.HasEvent(mem, state.EventGotPokedex) {
+	if a.HasEvent(mem, state.EventGotPokedex) {
 		max, itemIndex = 7, 2
 	}
 	return max, itemIndex
@@ -112,13 +111,14 @@ func fieldItemHadEffect(before, after state.Mon) bool {
 // bag count must also fall by exactly one.
 func UseFieldItem(m *emu.Emu, item uint8, slot int) error {
 	var mem state.Mem
+	a := ram(m)
 	state.Snapshot(m, &mem)
-	if !state.Controllable(&mem) {
+	if !ram(m).Controllable(&mem) {
 		return fmt.Errorf("skill: UseFieldItem: player not controllable on map %#04x at (%d,%d): wJoyIgnore=%#04x wFontLoaded=%#04x",
-			mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord),
-			mem.U16BE(sym.JoyIgnore), mem.U16BE(sym.FontLoaded))
+			mem.U8(ram(m).CurMap), mem.U8(ram(m).XCoord), mem.U8(ram(m).YCoord),
+			mem.U16BE(ram(m).JoyIgnore), mem.U16BE(ram(m).FontLoaded))
 	}
-	party := state.DecodeParty(&mem)
+	party := ram(m).DecodeParty(&mem)
 	if slot < 0 || slot >= int(party.Count) {
 		return fmt.Errorf("skill: UseFieldItem: slot %d out of range for a party of %d", slot, party.Count)
 	}
@@ -131,22 +131,22 @@ func UseFieldItem(m *emu.Emu, item uint8, slot int) error {
 			return fmt.Errorf("skill: UseFieldItem: PP restore target slot %d has no known moves", slot)
 		}
 	}
-	idx, bagBefore := bagEntry(&mem, item)
+	idx, bagBefore := bagEntry(&mem, item, ram(m))
 	if idx < 0 {
 		return fmt.Errorf("skill: UseFieldItem: %w (id %#02x)", ErrNotInBag, item)
 	}
 
-	wantMax, itemIndex := startMenuShape(&mem)
+	wantMax, itemIndex := startMenuShape(&mem, ram(m))
 	if err := openStartMenuEntry(m, itemIndex, wantMax); err != nil {
 		return fmt.Errorf("skill: UseFieldItem: open ITEM: %w", err)
 	}
 
 	if _, err := m.StepUntil(bagMenuBudget, func(m *emu.Emu) bool {
-		return m.Peek8(sym.ListMenuID) == itemListMenuID
+		return m.Peek8(ram(m).ListMenuID) == itemListMenuID
 	}); err != nil {
 		state.Snapshot(m, &mem)
 		return fmt.Errorf("skill: UseFieldItem: bag list did not open after ITEM: wFontLoaded=%#04x wListMenuID=%#04x",
-			mem.U8(sym.FontLoaded), mem.U8(sym.ListMenuID))
+			mem.U8(ram(m).FontLoaded), mem.U8(ram(m).ListMenuID))
 	}
 	for attempt := 0; ; attempt++ {
 		if err := selectBagEntry(m, idx); err != nil {
@@ -154,18 +154,18 @@ func UseFieldItem(m *emu.Emu, item uint8, slot int) error {
 		}
 		if _, err := m.StepUntil(useTossBudget, func(m *emu.Emu) bool {
 			state.Snapshot(m, &mem)
-			return useTossPrompt(&mem) != nil
+			return useTossPrompt(&mem, a) != nil
 		}); err == nil {
 			break
 		}
 		if attempt >= 2 {
 			state.Snapshot(m, &mem)
 			return fmt.Errorf("skill: UseFieldItem: USE/TOSS prompt did not appear after selecting the bag entry (3 attempts): screen=%q wListMenuID=%#02x",
-				state.ScreenText(&mem), mem.U8(sym.ListMenuID))
+				state.ScreenText(&mem), mem.U8(ram(m).ListMenuID))
 		}
 	}
 	state.Snapshot(m, &mem)
-	if p := useTossPrompt(&mem); p == nil || p.Index != 0 {
+	if p := useTossPrompt(&mem, a); p == nil || p.Index != 0 {
 		return fmt.Errorf("skill: UseFieldItem: USE/TOSS cursor not on USE: screen=%q", state.ScreenText(&mem))
 	}
 
@@ -177,9 +177,9 @@ func UseFieldItem(m *emu.Emu, item uint8, slot int) error {
 			break
 		}
 		state.Snapshot(m, &mem)
-		if useTossPrompt(&mem) == nil || attempt >= 2 {
+		if useTossPrompt(&mem, a) == nil || attempt >= 2 {
 			return fmt.Errorf("skill: UseFieldItem: item-use party menu did not appear after USE: screen=%q wFontLoaded=%#02x",
-				state.ScreenText(&mem), mem.U8(sym.FontLoaded))
+				state.ScreenText(&mem), mem.U8(ram(m).FontLoaded))
 		}
 	}
 	if err := SelectPartySlot(m, slot); err != nil {
@@ -191,11 +191,11 @@ func UseFieldItem(m *emu.Emu, item uint8, slot int) error {
 	// then uses 1-based wCurrentMenuItem, exactly like battle move selection.
 	if isSingleMovePPRestore(item) {
 		if _, err := m.StepUntil(itemUseMoveBudget, func(m *emu.Emu) bool {
-			return m.Peek8(sym.MoveMenuType) == 2 && m.Peek8(sym.CurrentMenuItem) >= 1
+			return m.Peek8(ram(m).MoveMenuType) == 2 && m.Peek8(ram(m).CurrentMenuItem) >= 1
 		}); err != nil {
 			state.Snapshot(m, &mem)
 			return fmt.Errorf("skill: UseFieldItem: PP move menu did not appear: item=%#02x slot=%d screen=%q wMoveMenuType=%#02x cursor=%d",
-				item, slot, state.ScreenText(&mem), mem.U8(sym.MoveMenuType), mem.U8(sym.CurrentMenuItem))
+				item, slot, state.ScreenText(&mem), mem.U8(ram(m).MoveMenuType), mem.U8(ram(m).CurrentMenuItem))
 		}
 		if err := SelectMenuItem(m, moveSlot+1); err != nil {
 			return fmt.Errorf("skill: UseFieldItem: select move slot %d for PP restore: %w", moveSlot, err)
@@ -205,33 +205,33 @@ func UseFieldItem(m *emu.Emu, item uint8, slot int) error {
 	// The result text and everything after it close with B, not A. B closes
 	// the result, bag list and start menu while doing nothing in the overworld.
 	state.Snapshot(m, &mem)
-	if !(state.Controllable(&mem) && m.Peek8(sym.FontLoaded) == 0) {
-		if _, err := m.StepUntil(500, func(m *emu.Emu) bool { return m.Peek8(sym.FontLoaded) != 0 }); err != nil {
+	if !(ram(m).Controllable(&mem) && m.Peek8(ram(m).FontLoaded) == 0) {
+		if _, err := m.StepUntil(500, func(m *emu.Emu) bool { return m.Peek8(ram(m).FontLoaded) != 0 }); err != nil {
 			state.Snapshot(m, &mem)
 			return fmt.Errorf("skill: UseFieldItem: result text did not appear within 500 frames: map=%#04x wFontLoaded=%#04x wJoyIgnore=%#04x",
-				mem.U8(sym.CurMap), mem.U8(sym.FontLoaded), mem.U16BE(sym.JoyIgnore))
+				mem.U8(ram(m).CurMap), mem.U8(ram(m).FontLoaded), mem.U16BE(ram(m).JoyIgnore))
 		}
 	}
 	start := m.FrameCount()
 	for {
 		state.Snapshot(m, &mem)
-		if state.Controllable(&mem) && m.Peek8(sym.FontLoaded) == 0 {
+		if ram(m).Controllable(&mem) && m.Peek8(ram(m).FontLoaded) == 0 {
 			break
 		}
-		if p := useTossPrompt(&mem); p != nil {
+		if p := useTossPrompt(&mem, a); p != nil {
 			return fmt.Errorf("%w: cursor on option %d (map %#04x at (%d,%d))",
-				ErrFieldItemPrompt, p.Index, mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord))
+				ErrFieldItemPrompt, p.Index, mem.U8(ram(m).CurMap), mem.U8(ram(m).XCoord), mem.U8(ram(m).YCoord))
 		}
 		if int(m.FrameCount()-start) > fieldResultTextBudget {
 			state.Snapshot(m, &mem)
 			return fmt.Errorf("skill: UseFieldItem: not back to the overworld after item use: screen=%q wFontLoaded=%#02x",
-				state.ScreenText(&mem), mem.U8(sym.FontLoaded))
+				state.ScreenText(&mem), mem.U8(ram(m).FontLoaded))
 		}
 		m.Tap(emu.B, 3, 7)
 	}
 
 	state.Snapshot(m, &mem)
-	afterParty := state.DecodeParty(&mem)
+	afterParty := ram(m).DecodeParty(&mem)
 	if slot >= len(afterParty.Mons) {
 		return fmt.Errorf("skill: UseFieldItem: party slot %d disappeared after item use", slot)
 	}
@@ -241,7 +241,7 @@ func UseFieldItem(m *emu.Emu, item uint8, slot int) error {
 			ErrFieldItemNoEffect, slot, before.HP, before.MaxHP, after.HP, after.MaxHP,
 			before.Status, after.Status, before.PP, after.PP, item, isPPRestoreItem(item))
 	}
-	if _, bagAfter := bagEntry(&mem, item); bagAfter != bagBefore-1 {
+	if _, bagAfter := bagEntry(&mem, item, ram(m)); bagAfter != bagBefore-1 {
 		return fmt.Errorf("skill: UseFieldItem: bag count for %#02x did not drop from %d (now %d)", item, bagBefore, bagAfter)
 	}
 	return nil

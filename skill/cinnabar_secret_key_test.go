@@ -9,10 +9,10 @@ import (
 
 func TestCinnabarSecretKeySemanticHandoff(t *testing.T) {
 	var mem state.Mem
-	if CinnabarSecretKeyReady(&mem) {
+	if CinnabarSecretKeyReady(&mem, redWram()) {
 		t.Fatal("Cinnabar Secret Key phase is ready before #34 completion")
 	}
-	if CinnabarSecretKeyOwned(&mem) {
+	if CinnabarSecretKeyOwned(&mem, redWram()) {
 		t.Fatal("empty bag reports Secret Key owned")
 	}
 
@@ -26,7 +26,7 @@ func TestCinnabarSecretKeySemanticHandoff(t *testing.T) {
 	setTestEvent(&mem, state.Event(0x78d)) // EVENT_GOT_MASTER_BALL
 	setTestEvent(&mem, state.Event(0x78f)) // EVENT_BEAT_SILPH_CO_GIOVANNI
 	mem[sym.ObtainedBadges] |= 1 << uint(state.BadgeMarsh)
-	if !CinnabarSecretKeyReady(&mem) {
+	if !CinnabarSecretKeyReady(&mem, redWram()) {
 		t.Fatal("completed Saffron slice did not make Cinnabar Secret Key phase ready")
 	}
 
@@ -35,7 +35,7 @@ func TestCinnabarSecretKeySemanticHandoff(t *testing.T) {
 		state.BagItem{ID: hm04StrengthItem, Quantity: 1},
 		state.BagItem{ID: mansionSecretKeyItem, Quantity: 1},
 	)
-	if !CinnabarSecretKeyOwned(&mem) {
+	if !CinnabarSecretKeyOwned(&mem, redWram()) {
 		t.Fatal("Secret Key bag entry did not satisfy semantic postcondition")
 	}
 }

@@ -37,7 +37,7 @@ func TestEnsureProgressionPokeBallsRestocksAtCurrentMart(t *testing.T) {
 	if balls := countItem(&after, skill.ItemPokeBall); balls != 7 {
 		t.Fatalf("bag: POKE BALL = %d, want 7", balls)
 	}
-	if !state.Controllable(&after) {
+	if !skill.RedAddresses().Controllable(&after) {
 		t.Fatal("postcondition: player is not controllable after inventory recovery")
 	}
 }

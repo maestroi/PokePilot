@@ -5,7 +5,6 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 )
 
 // LeagueStartChallenge owns only the prepared-lobby -> Lorelei-room boundary.
@@ -21,23 +20,23 @@ func LeagueStartChallenge(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		return nil
 	}
 
-	if m.Peek8(sym.CurMap) == indigoPlateauMap {
+	if m.Peek8(ram(m).CurMap) == indigoPlateauMap {
 		if err := recoverLeagueBlackout(m, romData, policy); err != nil {
 			return fmt.Errorf("skill: LeagueStartChallenge: %w", err)
 		}
 	}
-	if m.Peek8(sym.CurMap) == indigoPlateauLobbyMap {
+	if m.Peek8(ram(m).CurMap) == indigoPlateauLobbyMap {
 		if err := prepareLeagueChallenge(m, romData, policy); err != nil {
 			return fmt.Errorf("skill: LeagueStartChallenge: %w", err)
 		}
 	}
-	if m.Peek8(sym.CurMap) == loreleiRoomMap && !currentLeagueFacts(m).LeagueChallengeStarted {
+	if m.Peek8(ram(m).CurMap) == loreleiRoomMap && !currentLeagueFacts(m).LeagueChallengeStarted {
 		if err := settleLeagueRoomEntry(m, loreleiRoomMap, false); err != nil {
 			return fmt.Errorf("skill: LeagueStartChallenge: settle Lorelei entry: %w", err)
 		}
 	}
 	if !currentLeagueFacts(m).LeagueChallengeStarted {
-		return fmt.Errorf("skill: LeagueStartChallenge: League-started fact is still false on map %#02x", m.Peek8(sym.CurMap))
+		return fmt.Errorf("skill: LeagueStartChallenge: League-started fact is still false on map %#02x", m.Peek8(ram(m).CurMap))
 	}
 	return nil
 }
@@ -48,11 +47,11 @@ func LeagueStartChallenge(m *emu.Emu, romData []byte, policy MovePolicy) error {
 // retries recoverable from the nearest semantic boundary.
 func leagueReachRoom(m *emu.Emu, romData []byte, policy MovePolicy, targetMap uint8) error {
 	for hop := 0; hop < 8; hop++ {
-		if m.Peek8(sym.CurMap) == targetMap {
+		if m.Peek8(ram(m).CurMap) == targetMap {
 			return nil
 		}
 		facts := currentLeagueFacts(m)
-		switch m.Peek8(sym.CurMap) {
+		switch m.Peek8(ram(m).CurMap) {
 		case indigoPlateauMap:
 			if err := recoverLeagueBlackout(m, romData, policy); err != nil {
 				return err
@@ -90,7 +89,7 @@ func leagueReachRoom(m *emu.Emu, romData []byte, policy MovePolicy, targetMap ui
 				return err
 			}
 		default:
-			return fmt.Errorf("cannot advance League stage from map %#02x toward %#02x", m.Peek8(sym.CurMap), targetMap)
+			return fmt.Errorf("cannot advance League stage from map %#02x toward %#02x", m.Peek8(ram(m).CurMap), targetMap)
 		}
 	}
 	return fmt.Errorf("exceeded bounded League room transitions while reaching map %#02x", targetMap)
@@ -159,21 +158,21 @@ func fightChampionStage(m *emu.Emu, policy MovePolicy) error {
 	if facts.MainStoryComplete || facts.LeagueChampionDefeated {
 		return nil
 	}
-	if m.Peek8(sym.CurMap) != championsRoomMap {
-		return fmt.Errorf("Champion stage on map %#02x, want %#02x", m.Peek8(sym.CurMap), championsRoomMap)
+	if m.Peek8(ram(m).CurMap) != championsRoomMap {
+		return fmt.Errorf("Champion stage on map %#02x, want %#02x", m.Peek8(ram(m).CurMap), championsRoomMap)
 	}
 
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if state.DecodeBattle(&mem) == nil {
-		mem = advanceUntil(m, leagueRoomSettleBudget, func(mm *state.Mem) bool {
-			facts := leagueFacts(mm)
-			return state.DecodeBattle(mm) != nil || facts.LeagueChampionDefeated || facts.MainStoryComplete
+	if ram(m).DecodeBattle(&mem) == nil {
+		mem = advanceUntil(m, ram(m), leagueRoomSettleBudget, func(mm *state.Mem, a wramAddresses) bool {
+			facts := leagueFacts(mm, ram(m))
+			return ram(m).DecodeBattle(mm) != nil || facts.LeagueChampionDefeated || facts.MainStoryComplete
 		})
 	}
-	facts = leagueFacts(&mem)
+	facts = leagueFacts(&mem, ram(m))
 	if !facts.LeagueChampionDefeated && !facts.MainStoryComplete {
-		if state.DecodeBattle(&mem) == nil {
+		if ram(m).DecodeBattle(&mem) == nil {
 			return fmt.Errorf("Champion room did not enter battle")
 		}
 		outcome, err := Battle(m, policy)
@@ -184,11 +183,11 @@ func fightChampionStage(m *emu.Emu, policy MovePolicy) error {
 			return fmt.Errorf("%w against Champion", ErrTrainerBlackedOut)
 		}
 	}
-	mem = advanceUntil(m, leagueBattleSettleBudget, func(mm *state.Mem) bool {
-		facts := leagueFacts(mm)
+	mem = advanceUntil(m, ram(m), leagueBattleSettleBudget, func(mm *state.Mem, a wramAddresses) bool {
+		facts := leagueFacts(mm, ram(m))
 		return facts.LeagueChampionDefeated || facts.MainStoryComplete
 	})
-	facts = leagueFacts(&mem)
+	facts = leagueFacts(&mem, ram(m))
 	if !facts.LeagueChampionDefeated && !facts.MainStoryComplete {
 		return fmt.Errorf("Champion win did not commit its victory event")
 	}

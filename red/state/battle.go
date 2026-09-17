@@ -105,10 +105,92 @@ func (b BattleState) Usable() []int {
 	return out
 }
 
+// BattleAddresses are the WRAM addresses a battle decode needs. Gen I games
+// share the battle_struct layout and differ only in these addresses, so a
+// single decoder serves both. Red's are the package default; Yellow supplies
+// its own from yellow/sym.
+type BattleAddresses struct {
+	IsInBattle          uint16
+	BattleResult        uint16
+	EnemyMonSpecies     uint16
+	EnemyMonHP          uint16
+	EnemyMonMaxHP       uint16
+	EnemyMonLevel       uint16
+	EnemyMonAttack      uint16
+	EnemyMonDefense     uint16
+	EnemyMonSpecial     uint16
+	EnemyMonType1       uint16
+	EnemyMonType2       uint16
+	BattleMonSpecies    uint16
+	BattleMonLevel      uint16
+	BattleMonHP         uint16
+	BattleMonMaxHP      uint16
+	BattleMonAttack     uint16
+	BattleMonDefense    uint16
+	BattleMonSpecial    uint16
+	BattleMonType1      uint16
+	BattleMonType2      uint16
+	BattleMonMoves      uint16
+	BattleMonPP         uint16
+	PlayerDisabledMove  uint16
+	PlayerMonAttackMod  uint16
+	PlayerMonDefenseMod uint16
+	EnemyMonAttackMod   uint16
+	EnemyMonDefenseMod  uint16
+}
+
+// RedBattleAddresses are the battle addresses for the supported Pokémon Red
+// image.
+func RedBattleAddresses() BattleAddresses {
+	return BattleAddresses{
+		IsInBattle:          sym.IsInBattle,
+		BattleResult:        sym.BattleResult,
+		EnemyMonSpecies:     sym.EnemyMonSpecies,
+		EnemyMonHP:          sym.EnemyMonHP,
+		EnemyMonMaxHP:       sym.EnemyMonMaxHP,
+		EnemyMonLevel:       sym.EnemyMonLevel,
+		EnemyMonAttack:      sym.EnemyMonAttack,
+		EnemyMonDefense:     sym.EnemyMonDefense,
+		EnemyMonSpecial:     sym.EnemyMonSpecial,
+		EnemyMonType1:       sym.EnemyMonType1,
+		EnemyMonType2:       sym.EnemyMonType2,
+		BattleMonSpecies:    sym.BattleMonSpecies,
+		BattleMonLevel:      sym.BattleMonLevel,
+		BattleMonHP:         sym.BattleMonHP,
+		BattleMonMaxHP:      sym.BattleMonMaxHP,
+		BattleMonAttack:     sym.BattleMonAttack,
+		BattleMonDefense:    sym.BattleMonDefense,
+		BattleMonSpecial:    sym.BattleMonSpecial,
+		BattleMonType1:      sym.BattleMonType1,
+		BattleMonType2:      sym.BattleMonType2,
+		BattleMonMoves:      sym.BattleMonMoves,
+		BattleMonPP:         sym.BattleMonPP,
+		PlayerDisabledMove:  sym.PlayerDisabledMove,
+		PlayerMonAttackMod:  sym.PlayerMonAttackMod,
+		PlayerMonDefenseMod: sym.PlayerMonDefenseMod,
+		EnemyMonAttackMod:   sym.EnemyMonAttackMod,
+		EnemyMonDefenseMod:  sym.EnemyMonDefenseMod,
+	}
+}
+
 // DecodeBattle returns nil when no battle is in progress.
 func DecodeBattle(m *Mem) *BattleState {
+	return RedBattleAddresses().DecodeBattle(m)
+}
+
+// DecodeBattle decodes a battle at this address set. It is the shared Gen I
+// battle decoder reached through an Addresses value, so a caller that has
+// resolved the image's set decodes battle state the same way it decodes
+// everything else.
+func (a BattleAddresses) DecodeBattle(m *Mem) *BattleState {
+	return DecodeBattleAt(m, a)
+}
+
+// DecodeBattleAt decodes a battle at the given addresses. It is the shared
+// Gen I battle decoder; Red and Yellow differ only in the addresses.
+func DecodeBattleAt(m *Mem, a BattleAddresses) *BattleState {
 	var kind BattleKind
-	switch m.U8(sym.IsInBattle) {
+	switch m.U8(a.IsInBattle) {
 	case 1:
 		kind = BattleWild
 	case 2:
@@ -118,33 +200,33 @@ func DecodeBattle(m *Mem) *BattleState {
 	}
 	s := &BattleState{
 		Kind:             kind,
-		EnemySpecies:     m.U8(sym.EnemyMonSpecies),
-		EnemyHP:          m.U16BE(sym.EnemyMonHP),
-		EnemyMaxHP:       m.U16BE(sym.EnemyMonMaxHP),
-		EnemyLevel:       m.U8(sym.EnemyMonLevel),
-		ActiveSpecies:    m.U8(sym.BattleMonSpecies),
-		ActiveHP:         m.U16BE(sym.BattleMonHP),
-		ActiveLevel:      m.U8(sym.BattleMonLevel),
-		ActiveMaxHP:      m.U16BE(sym.BattleMonMaxHP),
-		ActiveAttack:     m.U16BE(sym.BattleMonAttack),
-		ActiveDefense:    m.U16BE(sym.BattleMonDefense),
-		ActiveSpecial:    m.U16BE(sym.BattleMonSpecial),
-		EnemyAttack:      m.U16BE(sym.EnemyMonAttack),
-		EnemyDefense:     m.U16BE(sym.EnemyMonDefense),
-		EnemySpecial:     m.U16BE(sym.EnemyMonSpecial),
-		DisabledMove:     m.U8(sym.PlayerDisabledMove) >> 4,
-		ActiveAttackMod:  m.U8(sym.PlayerMonAttackMod),
-		ActiveDefenseMod: m.U8(sym.PlayerMonDefenseMod),
-		EnemyAttackMod:   m.U8(sym.EnemyMonAttackMod),
-		EnemyDefenseMod:  m.U8(sym.EnemyMonDefenseMod),
-		EnemyType1:       m.U8(sym.EnemyMonType1),
-		EnemyType2:       m.U8(sym.EnemyMonType2),
-		ActiveType1:      m.U8(sym.BattleMonType1),
-		ActiveType2:      m.U8(sym.BattleMonType2),
+		EnemySpecies:     m.U8(a.EnemyMonSpecies),
+		EnemyHP:          m.U16BE(a.EnemyMonHP),
+		EnemyMaxHP:       m.U16BE(a.EnemyMonMaxHP),
+		EnemyLevel:       m.U8(a.EnemyMonLevel),
+		ActiveSpecies:    m.U8(a.BattleMonSpecies),
+		ActiveHP:         m.U16BE(a.BattleMonHP),
+		ActiveLevel:      m.U8(a.BattleMonLevel),
+		ActiveMaxHP:      m.U16BE(a.BattleMonMaxHP),
+		ActiveAttack:     m.U16BE(a.BattleMonAttack),
+		ActiveDefense:    m.U16BE(a.BattleMonDefense),
+		ActiveSpecial:    m.U16BE(a.BattleMonSpecial),
+		EnemyAttack:      m.U16BE(a.EnemyMonAttack),
+		EnemyDefense:     m.U16BE(a.EnemyMonDefense),
+		EnemySpecial:     m.U16BE(a.EnemyMonSpecial),
+		DisabledMove:     m.U8(a.PlayerDisabledMove) >> 4,
+		ActiveAttackMod:  m.U8(a.PlayerMonAttackMod),
+		ActiveDefenseMod: m.U8(a.PlayerMonDefenseMod),
+		EnemyAttackMod:   m.U8(a.EnemyMonAttackMod),
+		EnemyDefenseMod:  m.U8(a.EnemyMonDefenseMod),
+		EnemyType1:       m.U8(a.EnemyMonType1),
+		EnemyType2:       m.U8(a.EnemyMonType2),
+		ActiveType1:      m.U8(a.BattleMonType1),
+		ActiveType2:      m.U8(a.BattleMonType2),
 	}
 	for i := 0; i < len(s.Moves); i++ {
-		s.Moves[i].ID = m.U8(sym.BattleMonMoves + uint16(i))
-		s.Moves[i].PP = m.U8(sym.BattleMonPP+uint16(i)) & CurrentPPMask
+		s.Moves[i].ID = m.U8(a.BattleMonMoves + uint16(i))
+		s.Moves[i].PP = m.U8(a.BattleMonPP+uint16(i)) & CurrentPPMask
 	}
 	return s
 }
@@ -160,5 +242,10 @@ const (
 
 // DecodeBattleResult decodes wBattleResult.
 func DecodeBattleResult(m *Mem) BattleResult {
-	return BattleResult(m.U8(sym.BattleResult))
+	return RedBattleAddresses().DecodeBattleResult(m)
+}
+
+// DecodeBattleResult decodes the battle result at this address set.
+func (a BattleAddresses) DecodeBattleResult(m *Mem) BattleResult {
+	return BattleResult(m.U8(a.BattleResult))
 }

@@ -16,10 +16,10 @@ func TestAcquireSilphCardKeyRealROM(t *testing.T) {
 
 	var before state.Mem
 	state.Snapshot(m, &before)
-	if !SilphCardKeyReady(&before) {
+	if !SilphCardKeyReady(&before, redWram()) {
 		t.Fatal("prepared #34 Card Key state does not have Saffron access open")
 	}
-	if SilphCardKeyOwned(&before) {
+	if SilphCardKeyOwned(&before, redWram()) {
 		t.Fatal("prepared #34 Card Key state already owns the Card Key")
 	}
 
@@ -29,7 +29,7 @@ func TestAcquireSilphCardKeyRealROM(t *testing.T) {
 
 	var after state.Mem
 	state.Snapshot(m, &after)
-	if !SilphCardKeyOwned(&after) {
+	if !SilphCardKeyOwned(&after, redWram()) {
 		t.Fatal("Card Key semantic postcondition is false after acquisition")
 	}
 

@@ -7,9 +7,7 @@ import (
 	"strings"
 
 	"github.com/maestroi/pokepilot/emu"
-	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
 )
 
@@ -276,13 +274,13 @@ func GoTo(m *emu.Emu, romData []byte, dest Destination) error {
 }
 
 func goToWithTransitionExecutor(m *emu.Emu, romData []byte, dest Destination, executor world.TransitionExecutor) error {
-	g, err := world.BuildGraph(romData)
+	g, err := cachedRouteGraph(romData)
 	if err != nil {
 		return err
 	}
 	startX, startY := playerXY(m)
 	guard := newNavigationGuard(dest, navigationState{
-		Map: m.Peek8(sym.CurMap), X: startX, Y: startY,
+		Map: m.Peek8(ram(m).CurMap), X: startX, Y: startY,
 	})
 
 	failed := map[legAt]bool{}
@@ -303,10 +301,10 @@ func goToWithTransitionExecutor(m *emu.Emu, romData []byte, dest Destination, ex
 		if err := waitOutScriptedMovement(m); err != nil {
 			return err
 		}
-		cur := m.Peek8(sym.CurMap)
+		cur := m.Peek8(ram(m).CurMap)
 		x, y := playerXY(m)
 
-		h, err := rom.ParseMap(romData, cur)
+		h, err := graphForROM(romData).ParseMap(romData, cur)
 		if err != nil {
 			return fmt.Errorf("skill: GoTo: parse live map %02x at (%d,%d): %w", cur, x, y, err)
 		}
@@ -337,7 +335,7 @@ func goToWithTransitionExecutor(m *emu.Emu, romData []byte, dest Destination, ex
 
 		var mem state.Mem
 		state.Snapshot(m, &mem)
-		prereqs := redRoutePrerequisites(routeGraph, romData, &mem)
+		prereqs := redRoutePrerequisites(routeGraph, romData, &mem, ram(m))
 		route, err := world.FindRoutePlanAtDestinationWithCapabilities(
 			planGraph, cur, dest.Map, int(x), int(y), int(dest.X), int(dest.Y), blockedHere, prereqs,
 		)
@@ -448,7 +446,7 @@ func goToWithTransitionExecutor(m *emu.Emu, romData []byte, dest Destination, ex
 		visitedMaps[e.From] = true
 		nowX, nowY := playerXY(m)
 		if err := guard.observe(navigationState{
-			Map: m.Peek8(sym.CurMap), X: nowX, Y: nowY,
+			Map: m.Peek8(ram(m).CurMap), X: nowX, Y: nowY,
 		}); err != nil {
 			return fmt.Errorf("skill: GoTo: %w", err)
 		}
@@ -652,10 +650,10 @@ const scriptedMovementBudget = 4000
 func waitOutScriptedMovement(m *emu.Emu) error {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if state.Controllable(&mem) || state.DecodeDialogue(&mem) != nil || state.DecodeBattle(&mem) != nil {
+	if ram(m).Controllable(&mem) || ram(m).DecodeDialogue(&mem) != nil || ram(m).DecodeBattle(&mem) != nil {
 		return nil
 	}
-	if err := Cutscene(m, scriptedMovementBudget, func(*state.Mem) bool { return true }); err != nil {
+	if err := Cutscene(m, scriptedMovementBudget, func(*state.Mem, wramAddresses) bool { return true }); err != nil {
 		return fmt.Errorf("skill: GoTo: %w", err)
 	}
 	return nil
@@ -666,10 +664,10 @@ func waitOutScriptedMovement(m *emu.Emu) error {
 func abortIfBattle(m *emu.Emu) error {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if state.DecodeBattle(&mem) != nil {
+	if ram(m).DecodeBattle(&mem) != nil {
 		x, y := playerXY(m)
 		return fmt.Errorf("skill: GoTo: battle on map %02x at (%d,%d): %w",
-			m.Peek8(sym.CurMap), x, y, ErrBattle)
+			m.Peek8(ram(m).CurMap), x, y, ErrBattle)
 	}
 	return nil
 }
@@ -680,9 +678,9 @@ func abortIfBattle(m *emu.Emu) error {
 // so script-driven tile replacements are ordinary topology rather than
 // learned blockers or story-specific collision patches.
 func walkWithinMap(m *emu.Emu, romData []byte, dest Destination) error {
-	cur := m.Peek8(sym.CurMap)
+	cur := m.Peek8(ram(m).CurMap)
 	sx, sy := playerXY(m)
-	h, err := rom.ParseMap(romData, cur)
+	h, err := graphForROM(romData).ParseMap(romData, cur)
 	if err != nil {
 		return fmt.Errorf("skill: GoTo: parse map %02x at (%d,%d): %w", cur, sx, sy, err)
 	}
@@ -735,7 +733,7 @@ func walkWithinMap(m *emu.Emu, romData []byte, dest Destination) error {
 // geometry, with no sprite on it, is a genuine bug elsewhere rather than an
 // interception, so that case still surfaces planErr unchanged.
 func arriveBesideBlockedDestination(m *emu.Emu, romData []byte, dest Destination, planErr error) error {
-	if !spriteBlockers(m)[[2]int{int(dest.X), int(dest.Y)}] {
+	if !spriteBlockers(m, m.ROM())[[2]int{int(dest.X), int(dest.Y)}] {
 		return planErr
 	}
 	beside, ok, err := besideDestination(m, romData, dest.X, dest.Y)

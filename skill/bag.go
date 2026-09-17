@@ -6,7 +6,6 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 )
 
 // Frame budgets for the bag submenu. The list menu is drawn with a palette
@@ -36,8 +35,8 @@ func EnterWildBattle(m *emu.Emu, attempts int) error {
 	}
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if !state.Controllable(&mem) {
-		return fmt.Errorf("skill: EnterWildBattle: player not controllable on map %#04x", m.Peek8(sym.CurMap))
+	if !ram(m).Controllable(&mem) {
+		return fmt.Errorf("skill: EnterWildBattle: player not controllable on map %#04x", m.Peek8(ram(m).CurMap))
 	}
 	now := currentWorld(m)
 	grass, grid, err := grassCells(m.ROM(), now.Map)
@@ -49,7 +48,7 @@ func EnterWildBattle(m *emu.Emu, attempts int) error {
 	}
 
 	at := cell{int(now.X), int(now.Y)}
-	a, b, ok := grindPair(grass, grid, at.x, at.y, spriteBlockers(m))
+	a, b, ok := grindPair(grass, grid, at.x, at.y, spriteBlockers(m, m.ROM()))
 	if !ok {
 		return fmt.Errorf("skill: EnterWildBattle: map %#04x has no two walkable grass cells close enough to ping-pong between", now.Map)
 	}
@@ -115,16 +114,16 @@ func waitBattleMainMenu(m *emu.Emu) error {
 func UseItem(m *emu.Emu, item uint8) error {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if state.DecodeBattle(&mem) == nil {
+	if ram(m).DecodeBattle(&mem) == nil {
 		x, y := playerXY(m)
-		return fmt.Errorf("skill: UseItem: no battle in progress on map %02x at (%d,%d)", m.Peek8(sym.CurMap), x, y)
+		return fmt.Errorf("skill: UseItem: no battle in progress on map %02x at (%d,%d)", m.Peek8(ram(m).CurMap), x, y)
 	}
 	if err := waitBattleMainMenu(m); err != nil {
 		return err
 	}
 
 	state.Snapshot(m, &mem)
-	idx, before := bagEntry(&mem, item)
+	idx, before := bagEntry(&mem, item, ram(m))
 	if idx < 0 {
 		return fmt.Errorf("skill: UseItem: %w (id %#02x)", ErrNotInBag, item)
 	}
@@ -133,7 +132,7 @@ func UseItem(m *emu.Emu, item uint8) error {
 	// a 2x2 grid with wMaxMenuItem == 1 per column, so SelectMenuItem would
 	// reject index 1 as out of range; step-and-verify it by hand.
 	m.Tap(emu.Down, 3, 7)
-	if _, err := m.StepUntil(menuSettleFrames, func(m *emu.Emu) bool { return int(m.Peek8(sym.CurrentMenuItem)) == 1 }); err != nil {
+	if _, err := m.StepUntil(menuSettleFrames, func(m *emu.Emu) bool { return int(m.Peek8(ram(m).CurrentMenuItem)) == 1 }); err != nil {
 		return fmt.Errorf("skill: UseItem: cursor did not reach the ITEM entry: %w", err)
 	}
 	m.Tap(emu.A, 3, 7)
@@ -144,10 +143,10 @@ func UseItem(m *emu.Emu, item uint8) error {
 	// four-entry window reaches the end of the list, so a bag holding more
 	// than four item types never shows it and the wait timed out on a list
 	// that was open (run-30wscw8elg16m1ubfbhwhlusa8).
-	if _, err := m.StepUntil(bagMenuBudget, func(m *emu.Emu) bool { return m.Peek8(sym.ListMenuID) == itemListMenuID }); err != nil {
+	if _, err := m.StepUntil(bagMenuBudget, func(m *emu.Emu) bool { return m.Peek8(ram(m).ListMenuID) == itemListMenuID }); err != nil {
 		state.Snapshot(m, &mem)
 		return fmt.Errorf("skill: UseItem: bag list did not open within %d frames: wFontLoaded=%#04x wListMenuID=%#04x",
-			bagMenuBudget, mem.U8(sym.FontLoaded), mem.U8(sym.ListMenuID))
+			bagMenuBudget, mem.U8(ram(m).FontLoaded), mem.U8(ram(m).ListMenuID))
 	}
 
 	if err := selectBagEntry(m, idx); err != nil {
@@ -168,25 +167,25 @@ func UseItem(m *emu.Emu, item uint8) error {
 	for {
 		var mem state.Mem
 		state.Snapshot(m, &mem)
-		if _, after := bagEntry(&mem, item); after == before-1 {
+		if _, after := bagEntry(&mem, item, ram(m)); after == before-1 {
 			return nil
 		}
-		if pokemonNicknamePrompt(&mem) {
+		if pokemonNicknamePrompt(&mem, ram(m)) {
 			if err := selectTwoOption(m, 1); err != nil {
 				return fmt.Errorf("skill: UseItem: decline caught-Pokemon nickname prompt: %w", err)
 			}
 			continue
 		}
-		if state.DecodeBattle(&mem) == nil {
+		if ram(m).DecodeBattle(&mem) == nil {
 			// A successful catch normally finishes ItemUseBall only after its
 			// nickname choice and inventory removal. Ending without the count
 			// drop means the item was not consumed — stop rather than tap A in
 			// the overworld.
 			x, y := playerXY(m)
-			return fmt.Errorf("skill: UseItem: battle ended on map %02x at (%d,%d) without the count for %#02x dropping from %d", m.Peek8(sym.CurMap), x, y, item, before)
+			return fmt.Errorf("skill: UseItem: battle ended on map %02x at (%d,%d) without the count for %#02x dropping from %d", m.Peek8(ram(m).CurMap), x, y, item, before)
 		}
 		if int(m.FrameCount()-start) > bagUseBudget {
-			_, after := bagEntry(&mem, item)
+			_, after := bagEntry(&mem, item, ram(m))
 			return fmt.Errorf("skill: UseItem: bag count for %#02x did not drop from %d (now %d) within %d frames", item, before, after, bagUseBudget)
 		}
 		m.Tap(emu.A, 3, 7)
@@ -196,8 +195,8 @@ func UseItem(m *emu.Emu, item uint8) error {
 // bagEntry reports the index of the bag's entry for item and its quantity.
 // The battle bag lists the bag's entries in order, so the list position is
 // the slice index. It returns -1 when the bag holds no such item.
-func bagEntry(mem *state.Mem, item uint8) (int, int) {
-	for i, it := range state.DecodeInventory(mem).Items {
+func bagEntry(mem *state.Mem, item uint8, a wramAddresses) (int, int) {
+	for i, it := range a.DecodeInventory(mem).Items {
 		if it.ID == item {
 			return i, int(it.Quantity)
 		}
@@ -209,7 +208,7 @@ func bagEntry(mem *state.Mem, item uint8) (int, int) {
 // raising wListScrollOffset while the cursor stays put at the window's
 // bottom, so the visible index is the sum.
 func bagPosition(m *emu.Emu) int {
-	return int(m.Peek8(sym.ListScrollOffset)) + int(m.Peek8(sym.CurrentMenuItem))
+	return int(m.Peek8(ram(m).ListScrollOffset)) + int(m.Peek8(ram(m).CurrentMenuItem))
 }
 
 // selectBagEntry moves the cursor of the open bag list to entry idx and

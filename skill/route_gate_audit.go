@@ -5,7 +5,6 @@ import (
 
 	gameruntime "github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
 )
 
@@ -38,8 +37,8 @@ const (
 	eventBeatRoute16Snorlax  state.Event = 0x4C9
 )
 
-func addAuditedRedRouteCapabilities(mem *state.Mem, caps gameruntime.CapabilitySet) {
-	if _, count := bagEntry(mem, bicycleItem); count > 0 {
+func addAuditedRedRouteCapabilities(mem *state.Mem, caps gameruntime.CapabilitySet, a wramAddresses) {
+	if _, count := bagEntry(mem, bicycleItem, a); count > 0 {
 		caps[capCanRideCyclingRoad] = true
 	}
 	// A completed Snorlax encounter is durable proof that this save already
@@ -47,7 +46,7 @@ func addAuditedRedRouteCapabilities(mem *state.Mem, caps gameruntime.CapabilityS
 	// derived inventory story fact while retaining event flags; without this
 	// recovery the semantic router rejects Route 12 <-> Route 13, then tries
 	// the unrelated Cycling Road escape and reports a missing Bicycle.
-	if state.HasEvent(mem, eventBeatRoute12Snorlax) || state.HasEvent(mem, eventBeatRoute16Snorlax) {
+	if a.HasEvent(mem, eventBeatRoute12Snorlax) || a.HasEvent(mem, eventBeatRoute16Snorlax) {
 		caps[capCanClearSnorlax] = true
 	}
 }
@@ -131,7 +130,7 @@ func (x *redRouteTransitionExecutor) executeAuditedRouteTransition(edge world.Ed
 	case "red:cycling_road_bicycle":
 		var mem state.Mem
 		state.Snapshot(x.m, &mem)
-		if !redRouteCapabilities(x.romData, &mem).Has(capCanRideCyclingRoad) {
+		if !redRouteCapabilities(x.romData, &mem, tablesForROM(x.romData).wram).Has(capCanRideCyclingRoad) {
 			return world.TransitionExecutionResult{}, true, &gameruntime.TransitionBlockage{
 				Transition: transition,
 				Missing:    []gameruntime.CapabilityID{capCanRideCyclingRoad},
@@ -146,7 +145,7 @@ func (x *redRouteTransitionExecutor) executeAuditedRouteTransition(edge world.Ed
 		// later Fuchsia progression intentionally crosses the corridor.
 		var mem state.Mem
 		state.Snapshot(x.m, &mem)
-		if !redRouteCapabilities(x.romData, &mem).Has(capCanClearSnorlax) {
+		if !redRouteCapabilities(x.romData, &mem, tablesForROM(x.romData).wram).Has(capCanClearSnorlax) {
 			return world.TransitionExecutionResult{}, true, &gameruntime.TransitionBlockage{
 				Transition: transition,
 				Missing:    []gameruntime.CapabilityID{capCanClearSnorlax},
@@ -157,7 +156,7 @@ func (x *redRouteTransitionExecutor) executeAuditedRouteTransition(edge world.Ed
 	case "red:route16_snorlax_bicycle":
 		var mem state.Mem
 		state.Snapshot(x.m, &mem)
-		caps := redRouteCapabilities(x.romData, &mem)
+		caps := redRouteCapabilities(x.romData, &mem, tablesForROM(x.romData).wram)
 		missing := make([]gameruntime.CapabilityID, 0, 2)
 		if !caps.Has(capCanClearSnorlax) {
 			missing = append(missing, capCanClearSnorlax)
@@ -174,7 +173,7 @@ func (x *redRouteTransitionExecutor) executeAuditedRouteTransition(edge world.Ed
 	case "red:route16_snorlax":
 		var mem state.Mem
 		state.Snapshot(x.m, &mem)
-		if !redRouteCapabilities(x.romData, &mem).Has(capCanClearSnorlax) {
+		if !redRouteCapabilities(x.romData, &mem, tablesForROM(x.romData).wram).Has(capCanClearSnorlax) {
 			return world.TransitionExecutionResult{}, true, &gameruntime.TransitionBlockage{
 				Transition: transition,
 				Missing:    []gameruntime.CapabilityID{capCanClearSnorlax},
@@ -214,13 +213,13 @@ func (x *redRouteTransitionExecutor) executeAuditedRouteTransition(edge world.Ed
 func (x *redRouteTransitionExecutor) clearRoute16Snorlax() (bool, error) {
 	var before state.Mem
 	state.Snapshot(x.m, &before)
-	if state.HasEvent(&before, eventBeatRoute16Snorlax) {
+	if tablesForROM(x.romData).wram.HasEvent(&before, eventBeatRoute16Snorlax) {
 		return false, nil
 	}
 	if x.policy == nil {
 		return false, fmt.Errorf("%w: Route 16 Snorlax", ErrRouteTransitionNeedsBattlePolicy)
 	}
-	if before.U8(sym.CurMap) != route16Map {
+	if before.U8(tablesForROM(x.romData).wram.CurMap) != route16Map {
 		return false, fmt.Errorf("skill: Route 16 Snorlax transition started outside Route 16")
 	}
 
@@ -235,17 +234,17 @@ func (x *redRouteTransitionExecutor) clearRoute16Snorlax() (bool, error) {
 	if _, err := TravelFlee(x.m, x.romData, Destination{Map: route16Map, X: standX, Y: 10}, x.policy, fuchsiaTravelEngagements); err != nil {
 		return false, fmt.Errorf("skill: Route 16 Snorlax approach: %w", err)
 	}
-	if err := useOverworldKeyItem(x.m, pokeFluteItemFuchsia, func(mm *state.Mem) bool {
-		return state.HasEvent(mm, eventFightRoute16Snorlax) || state.DecodeBattle(mm) != nil
+	if err := useOverworldKeyItem(x.m, pokeFluteItemFuchsia, func(mm *state.Mem, a wramAddresses) bool {
+		return tablesForROM(x.romData).wram.HasEvent(mm, eventFightRoute16Snorlax) || tablesForROM(x.romData).wram.DecodeBattle(mm) != nil
 	}); err != nil {
 		return false, fmt.Errorf("skill: wake Route 16 Snorlax: %w", err)
 	}
 
 	var mem state.Mem
 	state.Snapshot(x.m, &mem)
-	if state.DecodeBattle(&mem) == nil {
-		if err := driveStoryUntil(x.m, fuchsiaStoryBudget, func(mm *state.Mem) bool {
-			return state.DecodeBattle(mm) != nil
+	if tablesForROM(x.romData).wram.DecodeBattle(&mem) == nil {
+		if err := driveStoryUntil(x.m, fuchsiaStoryBudget, func(mm *state.Mem, a wramAddresses) bool {
+			return tablesForROM(x.romData).wram.DecodeBattle(mm) != nil
 		}); err != nil {
 			return false, fmt.Errorf("skill: Route 16 Snorlax battle did not start: %w", err)
 		}
@@ -257,8 +256,8 @@ func (x *redRouteTransitionExecutor) clearRoute16Snorlax() (bool, error) {
 	if outcome != state.ResultWon {
 		return false, fmt.Errorf("skill: Route 16 Snorlax battle ended with outcome %d", outcome)
 	}
-	if err := Cutscene(x.m, fuchsiaStoryBudget, func(mm *state.Mem) bool {
-		return state.HasEvent(mm, eventBeatRoute16Snorlax)
+	if err := Cutscene(x.m, fuchsiaStoryBudget, func(mm *state.Mem, a wramAddresses) bool {
+		return tablesForROM(x.romData).wram.HasEvent(mm, eventBeatRoute16Snorlax)
 	}); err != nil {
 		return false, fmt.Errorf("skill: settle Route 16 Snorlax story: %w", err)
 	}

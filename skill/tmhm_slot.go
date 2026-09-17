@@ -14,7 +14,7 @@ import (
 func TeachTMHMToSlot(m *emu.Emu, item uint8, required bool, wantSlot int) (TMHMResult, error) {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	decision, err := DecideTMHM(m.ROM(), state.DecodeParty(&mem), item, required)
+	decision, err := DecideTMHM(m.ROM(), ram(m).DecodeParty(&mem), item, required)
 	if err != nil {
 		return TMHMResult{}, fmt.Errorf("skill: TeachTMHMToSlot: %w", err)
 	}

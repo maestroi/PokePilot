@@ -18,7 +18,7 @@ func TestViridianGymRealROM(t *testing.T) {
 
 	var before state.Mem
 	state.Snapshot(m, &before)
-	progress := state.DecodeProgress(&before)
+	progress := redWram().DecodeProgress(&before)
 	if progress.BadgeCount < 7 {
 		t.Fatalf("prepared Viridian Gym state has %d badges, need at least seven", progress.BadgeCount)
 	}
@@ -32,11 +32,11 @@ func TestViridianGymRealROM(t *testing.T) {
 
 	var after state.Mem
 	state.Snapshot(m, &after)
-	progress = state.DecodeProgress(&after)
+	progress = redWram().DecodeProgress(&after)
 	if !progress.Has(state.BadgeEarth) || progress.BadgeCount != 8 {
 		t.Fatalf("badges after Giovanni = %#02x count=%d, want all eight", progress.Badges, progress.BadgeCount)
 	}
-	if !state.Controllable(&after) {
+	if !redWram().Controllable(&after) {
 		t.Fatal("player is not controllable after the Giovanni sequence")
 	}
 }

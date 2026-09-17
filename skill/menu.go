@@ -6,7 +6,6 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 )
 
 // ErrMenuStuck reports that the cursor would not move to the wanted index.
@@ -51,7 +50,7 @@ func SelectMenuItem(m *emu.Emu, index int) error {
 	m.StepFrames(talkSettle)
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	menu := state.DecodeMenu(&mem)
+	menu := ram(m).DecodeMenu(&mem)
 	if index < 0 || index >= menu.Max {
 		return fmt.Errorf("skill: SelectMenuItem: index %d out of range for menu with max %d", index, menu.Max)
 	}
@@ -65,13 +64,13 @@ func SelectMenuItem(m *emu.Emu, index int) error {
 		}
 		m.Tap(btn, 3, 7)
 		if _, err := m.StepUntil(menuSettleFrames, func(m *emu.Emu) bool {
-			return int(m.Peek8(sym.CurrentMenuItem)) != menu.Current
+			return int(m.Peek8(ram(m).CurrentMenuItem)) != menu.Current
 		}); err != nil {
 			// The cursor did not move across the whole settle interval.
 			stuck++
 			if stuck >= stuckLimit {
 				state.Snapshot(m, &mem)
-				cur := state.DecodeMenu(&mem).Current
+				cur := ram(m).DecodeMenu(&mem).Current
 				return fmt.Errorf("skill: SelectMenuItem: cursor stuck at %d, wanted %d (max %d), %d consecutive taps without movement: %w",
 					cur, index, menu.Max, stuck, ErrMenuStuck)
 			}
@@ -79,7 +78,7 @@ func SelectMenuItem(m *emu.Emu, index int) error {
 			stuck = 0
 		}
 		state.Snapshot(m, &mem)
-		menu = state.DecodeMenu(&mem)
+		menu = ram(m).DecodeMenu(&mem)
 	}
 
 	m.Tap(emu.A, 3, 7)
@@ -105,7 +104,7 @@ func selectTwoOption(m *emu.Emu, index int) error {
 
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	prompt := state.DecodeTwoOptionMenu(&mem)
+	prompt := ram(m).DecodeTwoOptionMenu(&mem)
 	if prompt == nil {
 		return errors.New("skill: selectTwoOption: no two-option prompt is open")
 	}
@@ -121,7 +120,7 @@ func selectTwoOption(m *emu.Emu, index int) error {
 		}
 		m.Tap(btn, 3, 7)
 		if _, err := m.StepUntil(menuSettleFrames, func(m *emu.Emu) bool {
-			return int(m.Peek8(sym.CurrentMenuItem)) != previous
+			return int(m.Peek8(ram(m).CurrentMenuItem)) != previous
 		}); err != nil {
 			stuck++
 			if stuck >= stuckLimit {
@@ -130,7 +129,7 @@ func selectTwoOption(m *emu.Emu, index int) error {
 		} else {
 			stuck = 0
 		}
-		current = int(m.Peek8(sym.CurrentMenuItem))
+		current = int(m.Peek8(ram(m).CurrentMenuItem))
 		if current < 0 || current > 1 {
 			return fmt.Errorf("skill: selectTwoOption: cursor moved out of range to %d", current)
 		}
@@ -148,7 +147,7 @@ func selectTwoOption(m *emu.Emu, index int) error {
 	if _, err := m.StepUntil(twoOptionConsumedFrames, func(m *emu.Emu) bool {
 		var mem state.Mem
 		state.Snapshot(m, &mem)
-		return state.DecodeTwoOptionMenu(&mem) == nil
+		return ram(m).DecodeTwoOptionMenu(&mem) == nil
 	}); err != nil {
 		return fmt.Errorf("skill: selectTwoOption: prompt still open %d frames after answering %d: %w", twoOptionConsumedFrames, index, err)
 	}

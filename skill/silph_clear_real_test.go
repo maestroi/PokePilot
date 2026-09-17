@@ -40,7 +40,7 @@ func TestClearSilphCoRealROM(t *testing.T) {
 
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if _, count := bagEntry(&mem, masterBallItemID); count < 1 {
+	if _, count := bagEntry(&mem, masterBallItemID, redWram()); count < 1 {
 		t.Fatal("Master Ball was not present immediately after president reward")
 	}
 

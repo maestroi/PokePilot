@@ -27,7 +27,7 @@ func (d *dialogueTape) sample(m *emu.Emu) {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
 	text := ""
-	if ds := state.DecodeDialogue(&mem); ds != nil {
+	if ds := skill.AddressesFor(m).DecodeDialogue(&mem); ds != nil {
 		text = ds.Text
 	}
 	if d.observeText(text) {

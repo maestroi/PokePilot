@@ -6,7 +6,6 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
 )
 
@@ -49,7 +48,7 @@ type resolveBattle func() (battleResolution, error)
 // one, because there is nothing else to do — you cannot flee a trainer.
 func fightOnly(m *emu.Emu, policy MovePolicy) resolveBattle {
 	return func() (battleResolution, error) {
-		trainer := state.BattleKind(m.Peek8(sym.IsInBattle)) == state.BattleTrainer
+		trainer := state.BattleKind(m.Peek8(ram(m).IsInBattle)) == state.BattleTrainer
 		outcome, err := Battle(m, policy)
 		return battleResolution{outcome: outcome, trainer: trainer}, err
 	}
@@ -266,7 +265,7 @@ func Travel(m *emu.Emu, romData []byte, dest Destination, policy MovePolicy, max
 	return travel(m, policy, maxBattles,
 		cutAwareGoTo(m, romData, dest, policy),
 		func() DialogueRecoveryResult { return RecoverDialogue(m, dialogueRecoveryBudget) },
-		func() bool { return m.Peek8(sym.StatusFlags4)&blackoutBit != 0 },
+		func() bool { return m.Peek8(ram(m).StatusFlags4)&blackoutBit != 0 },
 		fightOnly(m, policy),
 	)
 }
@@ -287,7 +286,7 @@ func TravelFlee(m *emu.Emu, romData []byte, dest Destination, policy MovePolicy,
 	return travel(m, policy, maxBattles,
 		cutAwareGoTo(m, romData, dest, policy),
 		func() DialogueRecoveryResult { return RecoverDialogue(m, dialogueRecoveryBudget) },
-		func() bool { return m.Peek8(sym.StatusFlags4)&blackoutBit != 0 },
+		func() bool { return m.Peek8(ram(m).StatusFlags4)&blackoutBit != 0 },
 		fleeThenFight(m, policy, guaranteedWildFleeAttempts),
 	)
 }
@@ -443,7 +442,7 @@ func travel(m *emu.Emu, policy MovePolicy, maxBattles int, goTo func() error, re
 
 // currentWorld reads the map and tile the player stands on from RAM.
 func currentWorld(m *emu.Emu) Replan {
-	return Replan{m.Peek8(sym.CurMap), m.Peek8(sym.XCoord), m.Peek8(sym.YCoord)}
+	return Replan{m.Peek8(ram(m).CurMap), m.Peek8(ram(m).XCoord), m.Peek8(ram(m).YCoord)}
 }
 
 // settleWorld steps until the (map, x, y) triple has stood still for
@@ -456,7 +455,7 @@ func currentWorld(m *emu.Emu) Replan {
 func settleWorld(m *emu.Emu, pre Replan, lost bool) Replan {
 	if lost {
 		if _, err := m.StepUntil(worldStableBudget, func(m *emu.Emu) bool {
-			return m.Peek8(sym.CurMap) != pre.Map
+			return m.Peek8(ram(m).CurMap) != pre.Map
 		}); err != nil {
 			// ponytail: blackout transition longer than worldStableBudget ->
 			// fall through with the last read (today's behavior) rather than

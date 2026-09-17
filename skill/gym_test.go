@@ -110,10 +110,10 @@ func settleBlackout(t *testing.T, e *emu.Emu) {
 		e.StepFrames(25)
 		var mem state.Mem
 		state.Snapshot(e, &mem)
-		if !state.Controllable(&mem) {
+		if !skill.RedAddresses().Controllable(&mem) {
 			continue
 		}
-		lead := state.DecodeParty(&mem).Mons[0]
+		lead := skill.RedAddresses().DecodeParty(&mem).Mons[0]
 		if int(lead.HP) == int(lead.MaxHP) && lead.Status == 0 {
 			return
 		}
@@ -132,8 +132,8 @@ func diagnosticBundle(e *emu.Emu, err error) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "  map=%#04x player=(%d,%d) controllable=%v battle=%v\n",
 		mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord),
-		state.Controllable(&mem), state.DecodeBattle(&mem) != nil)
-	sprites := state.DecodeSprites(&mem)
+		skill.RedAddresses().Controllable(&mem), skill.RedAddresses().DecodeBattle(&mem) != nil)
+	sprites := skill.RedAddresses().DecodeSprites(&mem)
 	if len(sprites) == 0 {
 		b.WriteString("  sprites: (none live)\n")
 	}
@@ -191,7 +191,7 @@ func TestGymBoulderBadge(t *testing.T) {
 	if mem.U8(sym.CurMap) != 0x2F {
 		diagFatalf(t, e, nil, "fixture contract: map=%#04x, want 0x2f (the north gate)", mem.U8(sym.CurMap))
 	}
-	if lead := state.DecodeParty(&mem).Mons[0]; int(lead.Level) < gymLeadLevel {
+	if lead := skill.RedAddresses().DecodeParty(&mem).Mons[0]; int(lead.Level) < gymLeadLevel {
 		diagFatalf(t, e, nil, "fixture contract: the lead is level %d, want >= %d", lead.Level, gymLeadLevel)
 	}
 
@@ -223,7 +223,7 @@ func TestGymBoulderBadge(t *testing.T) {
 		diagFatalf(t, e, err, "Travel back to the gym door after healing: %v", err)
 	}
 	state.Snapshot(e, &mem)
-	lead := state.DecodeParty(&mem).Mons[0]
+	lead := skill.RedAddresses().DecodeParty(&mem).Mons[0]
 	if int(lead.HP) != int(lead.MaxHP) || lead.Status != 0 {
 		diagFatalf(t, e, nil, "the lead is not at full strength when the gym fight starts: level %d, HP %d/%d, status=%#02x",
 			lead.Level, lead.HP, lead.MaxHP, lead.Status)
@@ -254,12 +254,12 @@ func TestGymBoulderBadge(t *testing.T) {
 			mem.U8(sym.ObtainedBadges), mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord),
 			mem.U8(sym.JoyIgnore), mem.U8(sym.FontLoaded))
 	}
-	if !state.Controllable(&mem) {
+	if !skill.RedAddresses().Controllable(&mem) {
 		diagFatalf(t, e, nil, "player not controllable after the gym: map=%#04x at (%d,%d) wJoyIgnore=%#04x wFontLoaded=%#04x",
 			mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord),
 			mem.U8(sym.JoyIgnore), mem.U8(sym.FontLoaded))
 	}
-	t.Logf("first badge won: lead level %d, wObtainedBadges=%#02x", state.DecodeParty(&mem).Mons[0].Level, mem.U8(sym.ObtainedBadges))
+	t.Logf("first badge won: lead level %d, wObtainedBadges=%#02x", skill.RedAddresses().DecodeParty(&mem).Mons[0].Level, mem.U8(sym.ObtainedBadges))
 }
 
 // TestGymCascadeBadge is the Cerulean half of the gym generalisation: from
@@ -308,7 +308,7 @@ func TestGymCascadeBadge(t *testing.T) {
 	// the gym level with the party healed.
 	var mem state.Mem
 	state.Snapshot(e, &mem)
-	if !state.DecodeProgress(&mem).Has(state.BadgeBoulder) {
+	if !skill.RedAddresses().DecodeProgress(&mem).Has(state.BadgeBoulder) {
 		diagFatalf(t, e, nil, "fixture contract: the Boulder Badge is not set: wObtainedBadges=%#02x", mem.U8(sym.ObtainedBadges))
 	}
 	city, ok := skill.Place("pewter city")
@@ -318,7 +318,7 @@ func TestGymCascadeBadge(t *testing.T) {
 	if mem.U8(sym.CurMap) != city.Map {
 		diagFatalf(t, e, nil, "fixture contract: map=%#04x, want %#04x (Pewter City)", mem.U8(sym.CurMap), city.Map)
 	}
-	lead := state.DecodeParty(&mem).Mons[0]
+	lead := skill.RedAddresses().DecodeParty(&mem).Mons[0]
 	if int(lead.Level) < gymLeadLevel {
 		diagFatalf(t, e, nil, "fixture contract: the lead is level %d, want >= %d", lead.Level, gymLeadLevel)
 	}
@@ -413,7 +413,7 @@ func TestGymCascadeBadge(t *testing.T) {
 	phaseRetries := 0
 	for detours := 0; detours <= mistyMaxHealDetours; detours++ {
 		state.Snapshot(e, &mem)
-		lead = state.DecodeParty(&mem).Mons[0]
+		lead = skill.RedAddresses().DecodeParty(&mem).Mons[0]
 		if int(lead.Level) >= mistyLeadLevel {
 			break
 		}
@@ -428,7 +428,7 @@ func TestGymCascadeBadge(t *testing.T) {
 		}
 		totalBattles += res.Battles
 		state.Snapshot(e, &mem)
-		lead = state.DecodeParty(&mem).Mons[0]
+		lead = skill.RedAddresses().DecodeParty(&mem).Mons[0]
 		if res.BlackedOut {
 			settleBlackout(t, e)
 			if _, err := skill.Travel(e, romData, grindSpot, policy, 10); err != nil {
@@ -454,7 +454,7 @@ func TestGymCascadeBadge(t *testing.T) {
 		}
 	}
 	state.Snapshot(e, &mem)
-	lead = state.DecodeParty(&mem).Mons[0]
+	lead = skill.RedAddresses().DecodeParty(&mem).Mons[0]
 	if int(lead.Level) < mistyLeadLevel {
 		diagFatalf(t, e, nil, "the lead is level %d after %d Route 4 battles and %d heal detour(s), want >= %d to face Misty (HP %d/%d, status=%#02x)",
 			lead.Level, totalBattles, mistyMaxHealDetours, mistyLeadLevel, lead.HP, lead.MaxHP, lead.Status)
@@ -487,7 +487,7 @@ func TestGymCascadeBadge(t *testing.T) {
 	}
 	battlesBeforeApproach := battles
 	state.Snapshot(e, &mem)
-	lead = state.DecodeParty(&mem).Mons[0]
+	lead = skill.RedAddresses().DecodeParty(&mem).Mons[0]
 	if int(lead.HP) != int(lead.MaxHP) || lead.Status != 0 {
 		diagFatalf(t, e, nil, "the lead is not at full strength when the approach starts: level %d, HP %d/%d, status=%#02x",
 			lead.Level, lead.HP, lead.MaxHP, lead.Status)
@@ -525,11 +525,11 @@ func TestGymCascadeBadge(t *testing.T) {
 			mem.U8(sym.ObtainedBadges), mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord),
 			mem.U8(sym.JoyIgnore), mem.U8(sym.FontLoaded))
 	}
-	if !state.Controllable(&mem) {
+	if !skill.RedAddresses().Controllable(&mem) {
 		diagFatalf(t, e, nil, "player not controllable after the gym: map=%#04x at (%d,%d) wJoyIgnore=%#04x wFontLoaded=%#04x",
 			mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord),
 			mem.U8(sym.JoyIgnore), mem.U8(sym.FontLoaded))
 	}
 	t.Logf("second badge won: lead level %d, wObtainedBadges=%#02x (raw), battles total=%d (approach resolved %d)",
-		state.DecodeParty(&mem).Mons[0].Level, mem.U8(sym.ObtainedBadges), battles, battles-battlesBeforeApproach)
+		skill.RedAddresses().DecodeParty(&mem).Mons[0].Level, mem.U8(sym.ObtainedBadges), battles, battles-battlesBeforeApproach)
 }

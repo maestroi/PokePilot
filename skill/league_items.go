@@ -21,7 +21,7 @@ const (
 func RevivePartyMember(m *emu.Emu, slot int, max bool) error {
 	var before state.Mem
 	state.Snapshot(m, &before)
-	party := state.DecodeParty(&before)
+	party := ram(m).DecodeParty(&before)
 	if slot < 0 || slot >= len(party.Mons) {
 		return fmt.Errorf("skill: RevivePartyMember: slot %d out of range for party of %d", slot, len(party.Mons))
 	}
@@ -39,7 +39,7 @@ func RevivePartyMember(m *emu.Emu, slot int, max bool) error {
 
 	var after state.Mem
 	state.Snapshot(m, &after)
-	afterParty := state.DecodeParty(&after)
+	afterParty := ram(m).DecodeParty(&after)
 	if slot >= len(afterParty.Mons) || afterParty.Mons[slot].Fainted() {
 		return fmt.Errorf("skill: RevivePartyMember: item %#02x completed but slot %d is still fainted", item, slot)
 	}
@@ -62,7 +62,7 @@ func RestorePartyPP(m *emu.Emu, item uint8, slot int) error {
 
 	var before state.Mem
 	state.Snapshot(m, &before)
-	party := state.DecodeParty(&before)
+	party := ram(m).DecodeParty(&before)
 	if slot < 0 || slot >= len(party.Mons) {
 		return fmt.Errorf("skill: RestorePartyPP: slot %d out of range for party of %d", slot, len(party.Mons))
 	}
@@ -73,7 +73,7 @@ func RestorePartyPP(m *emu.Emu, item uint8, slot int) error {
 
 	var after state.Mem
 	state.Snapshot(m, &after)
-	afterParty := state.DecodeParty(&after)
+	afterParty := ram(m).DecodeParty(&after)
 	if slot >= len(afterParty.Mons) {
 		return fmt.Errorf("skill: RestorePartyPP: party slot %d disappeared after item use", slot)
 	}

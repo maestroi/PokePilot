@@ -7,7 +7,6 @@ import (
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 )
 
 var ErrEvolutionItemNoEffect = errors.New("skill: evolution item did not produce the expected species")
@@ -20,12 +19,13 @@ const evolutionItemBudget = 9000
 // forward with A until the expected species and Pokédex-owned bit are both
 // visible, then closes only ordinary leftover menus.
 func UseEvolutionItem(m *emu.Emu, romData []byte, item uint8, slot int, wantSpecies uint8) error {
+	a := ram(m)
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if !state.Controllable(&mem) {
+	if !ram(m).Controllable(&mem) {
 		return fmt.Errorf("skill: UseEvolutionItem: player not controllable")
 	}
-	party := state.DecodeParty(&mem)
+	party := ram(m).DecodeParty(&mem)
 	if slot < 0 || slot >= len(party.Mons) {
 		return fmt.Errorf("skill: UseEvolutionItem: slot %d out of range for party of %d", slot, len(party.Mons))
 	}
@@ -36,14 +36,14 @@ func UseEvolutionItem(m *emu.Emu, romData []byte, item uint8, slot int, wantSpec
 	if err != nil {
 		return fmt.Errorf("skill: UseEvolutionItem: target species %#02x: %w", wantSpecies, err)
 	}
-	idx, bagBefore := bagEntry(&mem, item)
+	idx, bagBefore := bagEntry(&mem, item, ram(m))
 	if idx < 0 || bagBefore <= 0 {
 		return fmt.Errorf("skill: UseEvolutionItem: %w (id %#02x)", ErrNotInBag, item)
 	}
 
-	wantMax, itemIndex := startMenuShape(&mem)
+	wantMax, itemIndex := startMenuShape(&mem, ram(m))
 	drawn := func(m *emu.Emu) bool {
-		return m.Peek8(sym.FontLoaded) != 0 && int(m.Peek8(sym.MaxMenuItem)) == wantMax
+		return m.Peek8(ram(m).FontLoaded) != 0 && int(m.Peek8(ram(m).MaxMenuItem)) == wantMax
 	}
 	for attempt := 0; attempt < 5; attempt++ {
 		if _, stepErr := m.StepUntil(10, drawn); stepErr == nil {
@@ -61,7 +61,7 @@ func UseEvolutionItem(m *emu.Emu, romData []byte, item uint8, slot int, wantSpec
 		return fmt.Errorf("skill: UseEvolutionItem: select ITEM: %w", err)
 	}
 	if _, err := m.StepUntil(bagMenuBudget, func(m *emu.Emu) bool {
-		return m.Peek8(sym.ListMenuID) == itemListMenuID
+		return m.Peek8(ram(m).ListMenuID) == itemListMenuID
 	}); err != nil {
 		return fmt.Errorf("skill: UseEvolutionItem: bag list did not open: %w", err)
 	}
@@ -70,12 +70,12 @@ func UseEvolutionItem(m *emu.Emu, romData []byte, item uint8, slot int, wantSpec
 	}
 	if _, err := m.StepUntil(useTossBudget, func(m *emu.Emu) bool {
 		state.Snapshot(m, &mem)
-		return useTossPrompt(&mem) != nil
+		return useTossPrompt(&mem, a) != nil
 	}); err != nil {
 		return fmt.Errorf("skill: UseEvolutionItem: USE/TOSS prompt did not appear: %w", err)
 	}
 	state.Snapshot(m, &mem)
-	if p := useTossPrompt(&mem); p == nil || p.Index != 0 {
+	if p := useTossPrompt(&mem, a); p == nil || p.Index != 0 {
 		return fmt.Errorf("skill: UseEvolutionItem: USE/TOSS cursor is not on USE")
 	}
 	m.Tap(emu.A, 3, 7)
@@ -90,27 +90,27 @@ func UseEvolutionItem(m *emu.Emu, romData []byte, item uint8, slot int, wantSpec
 	changed := false
 	for int(m.FrameCount()-start) <= evolutionItemBudget {
 		state.Snapshot(m, &mem)
-		party = state.DecodeParty(&mem)
+		party = ram(m).DecodeParty(&mem)
 		changed = slot < len(party.Mons) && party.Mons[slot].Species == wantSpecies
-		owned := pokedexContains(state.DecodePokedex(&mem).Owned, wantDex)
+		owned := pokedexContains(ram(m).DecodePokedex(&mem).Owned, wantDex)
 		if changed && owned {
-			if state.Controllable(&mem) && !state.MenuUp(&mem) && mem.U8(sym.FontLoaded) == 0 {
+			if ram(m).Controllable(&mem) && !ram(m).MenuUp(&mem) && mem.U8(ram(m).FontLoaded) == 0 {
 				break
 			}
-			if DismissableObjectiveMenu(&mem) {
+			if DismissableObjectiveMenu(&mem, ram(m)) {
 				if err := CloseOpenMenuToOverworld(m); err != nil {
 					return fmt.Errorf("skill: UseEvolutionItem: close post-evolution menu: %w", err)
 				}
 				break
 			}
 		}
-		if state.DecodeBattle(&mem) != nil {
+		if ram(m).DecodeBattle(&mem) != nil {
 			return fmt.Errorf("skill: UseEvolutionItem: unexpected battle while evolving")
 		}
-		if state.DecodeTwoOptionMenu(&mem) != nil {
+		if ram(m).DecodeTwoOptionMenu(&mem) != nil {
 			return fmt.Errorf("skill: UseEvolutionItem: unexpected choice prompt while evolving; refusing blind input")
 		}
-		if mem.U8(sym.FontLoaded) != 0 || state.DecodeDialogue(&mem) != nil {
+		if mem.U8(ram(m).FontLoaded) != 0 || ram(m).DecodeDialogue(&mem) != nil {
 			// A advances evolution/result text but cannot cancel an evolution.
 			m.Tap(emu.A, 3, 7)
 		} else {
@@ -119,14 +119,14 @@ func UseEvolutionItem(m *emu.Emu, romData []byte, item uint8, slot int, wantSpec
 	}
 
 	state.Snapshot(m, &mem)
-	party = state.DecodeParty(&mem)
+	party = ram(m).DecodeParty(&mem)
 	if slot >= len(party.Mons) || party.Mons[slot].Species != wantSpecies {
 		return fmt.Errorf("%w: wanted species %#02x in slot %d", ErrEvolutionItemNoEffect, wantSpecies, slot)
 	}
-	if !pokedexContains(state.DecodePokedex(&mem).Owned, wantDex) {
+	if !pokedexContains(ram(m).DecodePokedex(&mem).Owned, wantDex) {
 		return fmt.Errorf("%w: species changed but Pokédex #%d owned bit is not set", ErrEvolutionItemNoEffect, wantDex)
 	}
-	_, bagAfter := bagEntry(&mem, item)
+	_, bagAfter := bagEntry(&mem, item, ram(m))
 	if bagAfter != bagBefore-1 {
 		return fmt.Errorf("skill: UseEvolutionItem: item count changed %d -> %d, want exactly one consumed", bagBefore, bagAfter)
 	}

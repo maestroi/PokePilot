@@ -7,7 +7,6 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 )
 
 // ErrTrainerBattle reports that the battle is a trainer battle, which
@@ -84,22 +83,22 @@ func fleeWaitInputFromMem(mem *state.Mem) emu.Button {
 // safariRunCursor reports the exact live Safari menu state for RUN. It is
 // kept separate from the emulator driver so ROM-free tests can pin the menu
 // semantics directly.
-func safariRunCursor(mem *state.Mem) bool {
+func safariRunCursor(mem *state.Mem, a wramAddresses) bool {
 	return fleeMenuFromMem(mem) == fleeMenuSafari &&
-		mem.U8(sym.TopMenuItemX) == safariBattleMenuRightX &&
-		int(mem.U8(sym.CurrentMenuItem)) == mainMenuMax
+		mem.U8(a.TopMenuItemX) == safariBattleMenuRightX &&
+		int(mem.U8(a.CurrentMenuItem)) == mainMenuMax
 }
 
 // safariRunNextInput returns the next verified cursor move toward RUN, or
 // done=true when the cursor is already there. The Safari menu is the same
 // two-column/two-row HandleMenuInput shape as the ordinary battle menu, but
 // its columns are at different X coordinates.
-func safariRunNextInput(mem *state.Mem) (btn emu.Button, done bool) {
-	if safariRunCursor(mem) {
+func safariRunNextInput(mem *state.Mem, a wramAddresses) (btn emu.Button, done bool) {
+	if safariRunCursor(mem, a) {
 		return 0, true
 	}
-	row := int(mem.U8(sym.CurrentMenuItem))
-	x := mem.U8(sym.TopMenuItemX)
+	row := int(mem.U8(a.CurrentMenuItem))
+	x := mem.U8(a.TopMenuItemX)
 	switch {
 	case row < mainMenuMax:
 		return emu.Down, false
@@ -157,9 +156,9 @@ func Flee(m *emu.Emu, attempts int) error {
 	}
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if state.DecodeBattle(&mem) == nil {
+	if ram(m).DecodeBattle(&mem) == nil {
 		x, y := playerXY(m)
-		return fmt.Errorf("skill: Flee: no battle in progress on map %02x at (%d,%d)", m.Peek8(sym.CurMap), x, y)
+		return fmt.Errorf("skill: Flee: no battle in progress on map %02x at (%d,%d)", m.Peek8(ram(m).CurMap), x, y)
 	}
 
 	for attempt := 1; attempt <= attempts; attempt++ {
@@ -172,7 +171,7 @@ func Flee(m *emu.Emu, attempts int) error {
 		}
 	}
 	x, y := playerXY(m)
-	return fmt.Errorf("skill: Flee: still in battle after %d attempts: map %02x at (%d,%d)", attempts, m.Peek8(sym.CurMap), x, y)
+	return fmt.Errorf("skill: Flee: still in battle after %d attempts: map %02x at (%d,%d)", attempts, m.Peek8(ram(m).CurMap), x, y)
 }
 
 // fleeOutcome is what one RUN attempt ended in.
@@ -229,7 +228,7 @@ func fleeOneAttempt(m *emu.Emu) (fleeOutcome, error) {
 	forcedChoiceRounds := 0
 	for int(m.FrameCount()-start) < fleeAttemptBudget {
 		state.Snapshot(m, &mem)
-		if state.DecodeBattle(&mem) == nil {
+		if ram(m).DecodeBattle(&mem) == nil {
 			// Escaped: the battle is over. Settle the end-of-battle text and
 			// wait until the player is controllable — the positive half of
 			// the postcondition.
@@ -248,7 +247,7 @@ func fleeOneAttempt(m *emu.Emu) (fleeOutcome, error) {
 			forcedChoiceRounds++
 			if forcedChoiceRounds > forcedChoiceCap {
 				x, y := playerXY(m)
-				return 0, fmt.Errorf("skill: Flee: map %02x at (%d,%d): %w", m.Peek8(sym.CurMap), x, y, ErrForcedChoiceStuck)
+				return 0, fmt.Errorf("skill: Flee: map %02x at (%d,%d): %w", m.Peek8(ram(m).CurMap), x, y, ErrForcedChoiceStuck)
 			}
 			m.Tap(emu.B, 3, 7)
 
@@ -264,7 +263,7 @@ func fleeOneAttempt(m *emu.Emu) (fleeOutcome, error) {
 			if forcedChoiceRounds == 0 {
 				var s state.Mem
 				state.Snapshot(m, &s)
-				slot := firstLivePartySlot(&s)
+				slot := firstLivePartySlot(&s, ram(m))
 				if slot < 0 {
 					m.StepFrame()
 					continue
@@ -279,7 +278,7 @@ func fleeOneAttempt(m *emu.Emu) (fleeOutcome, error) {
 		case mainMenuUp(m):
 			if refused {
 				x, y := playerXY(m)
-				return 0, fmt.Errorf("skill: Flee: map %02x at (%d,%d): %w", m.Peek8(sym.CurMap), x, y, ErrTrainerBattle)
+				return 0, fmt.Errorf("skill: Flee: map %02x at (%d,%d): %w", m.Peek8(ram(m).CurMap), x, y, ErrTrainerBattle)
 			}
 			// "Can't escape!" resolved and the enemy took its turn: the menu
 			// is up again. wNumRunAttempts already counts this attempt, so
@@ -292,7 +291,7 @@ func fleeOneAttempt(m *emu.Emu) (fleeOutcome, error) {
 			// itself an escape attempt).
 			var s state.Mem
 			state.Snapshot(m, &s)
-			if state.DecodeTwoOptionMenu(&s) == nil {
+			if ram(m).DecodeTwoOptionMenu(&s) == nil {
 				// The prompt text is on screen but the box is not drawn yet:
 				// tap A to advance it and look again.
 				m.Tap(emu.A, 3, 7)
@@ -307,7 +306,7 @@ func fleeOneAttempt(m *emu.Emu) (fleeOutcome, error) {
 			// the same pick Battle makes (the ROM bounces a fainted one).
 			var s state.Mem
 			state.Snapshot(m, &s)
-			slot := firstLivePartySlot(&s)
+			slot := firstLivePartySlot(&s, ram(m))
 			if slot < 0 {
 				m.StepFrame()
 				continue
@@ -323,7 +322,7 @@ func fleeOneAttempt(m *emu.Emu) (fleeOutcome, error) {
 		}
 	}
 	x, y := playerXY(m)
-	return 0, fmt.Errorf("skill: Flee: attempt did not resolve within %d frames: map %02x at (%d,%d)", fleeAttemptBudget, m.Peek8(sym.CurMap), x, y)
+	return 0, fmt.Errorf("skill: Flee: attempt did not resolve within %d frames: map %02x at (%d,%d)", fleeAttemptBudget, m.Peek8(ram(m).CurMap), x, y)
 }
 
 // selectRunEntry moves the cursor of the FIGHT/ITEM/PKMN/RUN menu to RUN —
@@ -335,13 +334,13 @@ func fleeOneAttempt(m *emu.Emu) (fleeOutcome, error) {
 // grid, so every tap is verified before the next one — never a press count.
 func selectRunEntry(m *emu.Emu) error {
 	atRun := func(m *emu.Emu) bool {
-		return m.Peek8(sym.TopMenuItemX) == battleMenuRightX && int(m.Peek8(sym.CurrentMenuItem)) == mainMenuMax
+		return m.Peek8(ram(m).TopMenuItemX) == battleMenuRightX && int(m.Peek8(ram(m).CurrentMenuItem)) == mainMenuMax
 	}
 	for i := 0; i < 12; i++ {
 		if atRun(m) {
 			return nil
 		}
-		prevX, prevRow := m.Peek8(sym.TopMenuItemX), int(m.Peek8(sym.CurrentMenuItem))
+		prevX, prevRow := m.Peek8(ram(m).TopMenuItemX), int(m.Peek8(ram(m).CurrentMenuItem))
 		var btn emu.Button
 		switch {
 		case prevRow < mainMenuMax:
@@ -353,7 +352,7 @@ func selectRunEntry(m *emu.Emu) error {
 		}
 		m.Tap(btn, 3, 7)
 		if _, err := m.StepUntil(menuSettleFrames, func(m *emu.Emu) bool {
-			return m.Peek8(sym.TopMenuItemX) != prevX || int(m.Peek8(sym.CurrentMenuItem)) != prevRow
+			return m.Peek8(ram(m).TopMenuItemX) != prevX || int(m.Peek8(ram(m).CurrentMenuItem)) != prevRow
 		}); err != nil {
 			return fmt.Errorf("skill: Flee: cursor stuck at x=%#02x row %d, want RUN (x=%#02x row %d)", prevX, prevRow, battleMenuRightX, mainMenuMax)
 		}
@@ -365,10 +364,11 @@ func selectRunEntry(m *emu.Emu) error {
 // RUN using the menu's actual live row/X state. Every move is followed by a
 // positive read-back before the next input.
 func selectSafariRunEntry(m *emu.Emu) error {
+	a := ram(m)
 	for i := 0; i < 12; i++ {
 		var mem state.Mem
 		state.Snapshot(m, &mem)
-		btn, done := safariRunNextInput(&mem)
+		btn, done := safariRunNextInput(&mem, a)
 		if done {
 			return nil
 		}
@@ -376,10 +376,10 @@ func selectSafariRunEntry(m *emu.Emu) error {
 			m.StepFrame()
 			continue
 		}
-		prevX, prevRow := mem.U8(sym.TopMenuItemX), int(mem.U8(sym.CurrentMenuItem))
+		prevX, prevRow := mem.U8(ram(m).TopMenuItemX), int(mem.U8(ram(m).CurrentMenuItem))
 		m.Tap(btn, 3, 7)
 		if _, err := m.StepUntil(menuSettleFrames, func(m *emu.Emu) bool {
-			return m.Peek8(sym.TopMenuItemX) != prevX || int(m.Peek8(sym.CurrentMenuItem)) != prevRow
+			return m.Peek8(ram(m).TopMenuItemX) != prevX || int(m.Peek8(ram(m).CurrentMenuItem)) != prevRow
 		}); err != nil {
 			return fmt.Errorf("skill: Flee: Safari cursor stuck at x=%#02x row %d, want RUN (x=%#02x row %d)",
 				prevX, prevRow, safariBattleMenuRightX, mainMenuMax)

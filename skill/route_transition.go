@@ -6,9 +6,7 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	gameruntime "github.com/maestroi/pokepilot/game"
-	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
 )
 
@@ -30,11 +28,11 @@ func newRedRouteTransitionExecutor(m *emu.Emu, romData []byte, policy MovePolicy
 // capabilities immediately before traversal. Keeping this generic prevents a
 // newly declared gate from being routable but failing later because no
 // transition-ID-specific executor case was added.
-func evaluateRedRouteGate(romData []byte, mem *state.Mem, transition gameruntime.Transition) (*gameruntime.TransitionBlockage, bool) {
+func evaluateRedRouteGate(romData []byte, mem *state.Mem, transition gameruntime.Transition, a wramAddresses) (*gameruntime.TransitionBlockage, bool) {
 	if !transition.Gate {
 		return nil, false
 	}
-	blockage, usable := gameruntime.EvaluateTransition(transition, redRouteCapabilities(romData, mem))
+	blockage, usable := gameruntime.EvaluateTransition(transition, redRouteCapabilities(romData, mem, a))
 	if usable {
 		return nil, true
 	}
@@ -48,7 +46,7 @@ func (x *redRouteTransitionExecutor) ExecuteTransition(edge world.Edge, transiti
 	if transition.Gate {
 		var mem state.Mem
 		state.Snapshot(x.m, &mem)
-		if blockage, _ := evaluateRedRouteGate(x.romData, &mem, transition); blockage != nil {
+		if blockage, _ := evaluateRedRouteGate(x.romData, &mem, transition, tablesForROM(x.romData).wram); blockage != nil {
 			return world.TransitionExecutionResult{}, blockage
 		}
 		return world.TransitionExecutionResult{}, nil
@@ -61,7 +59,7 @@ func (x *redRouteTransitionExecutor) ExecuteTransition(edge world.Edge, transiti
 		// capabilities cannot walk into the still-blocked road.
 		var mem state.Mem
 		state.Snapshot(x.m, &mem)
-		if !redRouteCapabilities(x.romData, &mem).Has(capCanLeaveViridianNorth) {
+		if !redRouteCapabilities(x.romData, &mem, tablesForROM(x.romData).wram).Has(capCanLeaveViridianNorth) {
 			return world.TransitionExecutionResult{}, &gameruntime.TransitionBlockage{
 				Transition: transition,
 				Missing:    []gameruntime.CapabilityID{capCanLeaveViridianNorth},
@@ -75,7 +73,7 @@ func (x *redRouteTransitionExecutor) ExecuteTransition(edge world.Edge, transiti
 		// last-moment capability re-check matters.
 		var mem state.Mem
 		state.Snapshot(x.m, &mem)
-		if !redRouteCapabilities(x.romData, &mem).Has(capCanLeavePewterEast) {
+		if !redRouteCapabilities(x.romData, &mem, tablesForROM(x.romData).wram).Has(capCanLeavePewterEast) {
 			return world.TransitionExecutionResult{}, &gameruntime.TransitionBlockage{
 				Transition: transition,
 				Missing:    []gameruntime.CapabilityID{capCanLeavePewterEast},
@@ -91,7 +89,7 @@ func (x *redRouteTransitionExecutor) ExecuteTransition(edge world.Edge, transiti
 		// missing prerequisite instead of walking into him.
 		var mem state.Mem
 		state.Snapshot(x.m, &mem)
-		if !state.DecodeStoryFacts(&mem, state.DecodeInventory(&mem)).MtMoonFossilAcquired {
+		if !tablesForROM(x.romData).wram.DecodeStoryFacts(&mem, tablesForROM(x.romData).wram.DecodeInventory(&mem)).MtMoonFossilAcquired {
 			return world.TransitionExecutionResult{}, &gameruntime.TransitionBlockage{
 				Transition: transition,
 				Missing:    []gameruntime.CapabilityID{capCanExitMtMoon},
@@ -106,7 +104,7 @@ func (x *redRouteTransitionExecutor) ExecuteTransition(edge world.Edge, transiti
 		// into the still-blocked door.
 		var mem state.Mem
 		state.Snapshot(x.m, &mem)
-		if !state.DecodeStoryFacts(&mem, state.DecodeInventory(&mem)).SSTicketAcquired {
+		if !tablesForROM(x.romData).wram.DecodeStoryFacts(&mem, tablesForROM(x.romData).wram.DecodeInventory(&mem)).SSTicketAcquired {
 			return world.TransitionExecutionResult{}, &gameruntime.TransitionBlockage{
 				Transition: transition,
 				Missing:    []gameruntime.CapabilityID{capCanPassCeruleanRobbedHouse},
@@ -121,7 +119,7 @@ func (x *redRouteTransitionExecutor) ExecuteTransition(edge world.Edge, transiti
 		// cannot walk into the harbor guard on stale capabilities.
 		var mem state.Mem
 		state.Snapshot(x.m, &mem)
-		if !state.DecodeStoryFacts(&mem, state.DecodeInventory(&mem)).SSTicketAcquired {
+		if !tablesForROM(x.romData).wram.DecodeStoryFacts(&mem, tablesForROM(x.romData).wram.DecodeInventory(&mem)).SSTicketAcquired {
 			return world.TransitionExecutionResult{}, &gameruntime.TransitionBlockage{
 				Transition: transition,
 				Missing:    []gameruntime.CapabilityID{capCanBoardSSAnne},
@@ -135,7 +133,7 @@ func (x *redRouteTransitionExecutor) ExecuteTransition(edge world.Edge, transiti
 		// before the planner commits to the east route.
 		var mem state.Mem
 		state.Snapshot(x.m, &mem)
-		if !redRouteCapabilities(x.romData, &mem).Has(capCanCut) {
+		if !redRouteCapabilities(x.romData, &mem, tablesForROM(x.romData).wram).Has(capCanCut) {
 			return world.TransitionExecutionResult{}, &gameruntime.TransitionBlockage{
 				Transition: transition,
 				Missing:    []gameruntime.CapabilityID{capCanCut},
@@ -161,11 +159,11 @@ func (x *redRouteTransitionExecutor) ExecuteTransition(edge world.Edge, transiti
 			if err := Traverse(x.m, x.romData, edge); err != nil {
 				return world.TransitionExecutionResult{}, fmt.Errorf("Cut gate: leave gym: %w", err)
 			}
-			h, err := rom.ParseMap(x.romData, vermilionCity)
+			h, err := graphForROM(x.romData).ParseMap(x.romData, vermilionCity)
 			if err != nil {
 				return world.TransitionExecutionResult{}, fmt.Errorf("Cut gate: leave gym: parse city: %w", err)
 			}
-			grid, err := world.Build(x.romData, h)
+			grid, err := world.BuildForTables(graphForROM(x.romData), x.romData, h)
 			if err != nil {
 				return world.TransitionExecutionResult{}, fmt.Errorf("Cut gate: leave gym: build city: %w", err)
 			}
@@ -214,17 +212,17 @@ func (x *redRouteTransitionExecutor) ExecuteTransition(edge world.Edge, transiti
 }
 
 func (x *redRouteTransitionExecutor) executeSurf(edge world.Edge) (world.TransitionExecutionResult, error) {
-	if x.m.Peek8(sym.WalkBikeSurfState) == fieldSurfingState {
+	if x.m.Peek8(tablesForROM(x.romData).wram.WalkBikeSurfState) == fieldSurfingState {
 		return world.TransitionExecutionResult{}, nil
 	}
 	if edge.Kind != world.EdgeConnection {
 		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf transition %02x->%02x is not a map connection", edge.From, edge.To)
 	}
-	if got := x.m.Peek8(sym.CurMap); got != edge.From {
+	if got := x.m.Peek8(tablesForROM(x.romData).wram.CurMap); got != edge.From {
 		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf transition starts on %02x, current map is %02x", edge.From, got)
 	}
 
-	h, err := rom.ParseMap(x.romData, edge.From)
+	h, err := graphForROM(x.romData).ParseMap(x.romData, edge.From)
 	if err != nil {
 		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf transition parse map %02x: %w", edge.From, err)
 	}
@@ -237,7 +235,7 @@ func (x *redRouteTransitionExecutor) executeSurf(edge world.Edge) (world.Transit
 		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf transition water grid: %w", err)
 	}
 	sx, sy := playerXY(x.m)
-	blocked := spriteBlockers(x.m)
+	blocked := spriteBlockers(x.m, x.m.ROM())
 	tx, ty, err := edgeTargetForConnection(water, edge, int(sx), int(sy), blocked)
 	if err != nil {
 		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf transition cannot reach %02x connection in water mode: %w", edge.To, err)
@@ -275,7 +273,7 @@ func (x *redRouteTransitionExecutor) executeSurf(edge world.Edge) (world.Transit
 	if err != nil {
 		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf transition enter mode: %w", err)
 	}
-	if !result.Surfing || x.m.Peek8(sym.WalkBikeSurfState) != fieldSurfingState {
+	if !result.Surfing || x.m.Peek8(tablesForROM(x.romData).wram.WalkBikeSurfState) != fieldSurfingState {
 		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf transition returned without verified surfing state")
 	}
 	return world.TransitionExecutionResult{Changed: true}, nil
@@ -284,7 +282,7 @@ func (x *redRouteTransitionExecutor) executeSurf(edge world.Edge) (world.Transit
 func (x *redRouteTransitionExecutor) executeRoute12Snorlax() (world.TransitionExecutionResult, error) {
 	var before state.Mem
 	state.Snapshot(x.m, &before)
-	if state.HasEvent(&before, eventBeatRoute12Snorlax) {
+	if tablesForROM(x.romData).wram.HasEvent(&before, eventBeatRoute12Snorlax) {
 		return world.TransitionExecutionResult{}, nil
 	}
 	if x.policy == nil {
@@ -295,7 +293,7 @@ func (x *redRouteTransitionExecutor) executeRoute12Snorlax() (world.TransitionEx
 	}
 	var after state.Mem
 	state.Snapshot(x.m, &after)
-	if !state.HasEvent(&after, eventBeatRoute12Snorlax) {
+	if !tablesForROM(x.romData).wram.HasEvent(&after, eventBeatRoute12Snorlax) {
 		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Route 12 Snorlax transition completed without EVENT_BEAT_ROUTE12_SNORLAX")
 	}
 	return world.TransitionExecutionResult{Changed: true}, nil
@@ -307,13 +305,13 @@ func (x *redRouteTransitionExecutor) executeRoute12Snorlax() (world.TransitionEx
 func (x *redRouteTransitionExecutor) executeRocketB1FTrainerDoor() (world.TransitionExecutionResult, error) {
 	var before state.Mem
 	state.Snapshot(x.m, &before)
-	if state.HasEvent(&before, eventBeatRocketB1FTrainer4) {
+	if tablesForROM(x.romData).wram.HasEvent(&before, eventBeatRocketB1FTrainer4) {
 		return world.TransitionExecutionResult{}, nil
 	}
 	if x.policy == nil {
 		return world.TransitionExecutionResult{}, fmt.Errorf("%w: Rocket Hideout B1F door", ErrRouteTransitionNeedsBattlePolicy)
 	}
-	if got := x.m.Peek8(sym.CurMap); got != rocketHideoutB1FMap {
+	if got := x.m.Peek8(tablesForROM(x.romData).wram.CurMap); got != rocketHideoutB1FMap {
 		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Rocket B1F door transition on map %#04x, want B1F %#04x", got, rocketHideoutB1FMap)
 	}
 	if err := ChallengeTrainer(x.m, x.romData, rocketB1FTrainer5X, rocketB1FTrainer5Y, x.policy); err != nil {
@@ -321,7 +319,7 @@ func (x *redRouteTransitionExecutor) executeRocketB1FTrainerDoor() (world.Transi
 	}
 	var after state.Mem
 	state.Snapshot(x.m, &after)
-	if !state.HasEvent(&after, eventBeatRocketB1FTrainer4) {
+	if !tablesForROM(x.romData).wram.HasEvent(&after, eventBeatRocketB1FTrainer4) {
 		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Rocket B1F door transition completed without EVENT_BEAT_ROCKET_HIDEOUT_1_TRAINER_4")
 	}
 	return world.TransitionExecutionResult{Changed: true}, nil
@@ -351,7 +349,7 @@ func (x *redRouteTransitionExecutor) executeVictoryRoadStrength(edge world.Edge)
 	spec, _ := VictoryRoadBoulderSpec(section)
 	var before state.Mem
 	state.Snapshot(x.m, &before)
-	if boulderPuzzleEventComplete(&before, spec) {
+	if boulderPuzzleEventComplete(&before, spec, tablesForROM(x.romData).wram) {
 		return world.TransitionExecutionResult{}, nil
 	}
 	if x.policy == nil {
@@ -362,7 +360,7 @@ func (x *redRouteTransitionExecutor) executeVictoryRoadStrength(edge world.Edge)
 	}
 	var after state.Mem
 	state.Snapshot(x.m, &after)
-	if !boulderPuzzleEventComplete(&after, spec) {
+	if !boulderPuzzleEventComplete(&after, spec, tablesForROM(x.romData).wram) {
 		return world.TransitionExecutionResult{}, fmt.Errorf("skill: %s solver returned without its completion event", section)
 	}
 	return world.TransitionExecutionResult{Changed: true}, nil

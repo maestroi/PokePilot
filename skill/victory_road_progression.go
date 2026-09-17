@@ -4,9 +4,7 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
-	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
 )
 
@@ -34,7 +32,7 @@ var (
 func currentStoryFacts(m *emu.Emu) state.StoryFacts {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	return state.DecodeStoryFacts(&mem, state.DecodeInventory(&mem))
+	return ram(m).DecodeStoryFacts(&mem, ram(m).DecodeInventory(&mem))
 }
 
 func inVictoryRoad(mapID uint8) bool {
@@ -61,10 +59,10 @@ type route23SurfPlan struct {
 // path is planned on the same live TraversalWater grid normal navigation uses;
 // no input sequence or fixed X coordinate is encoded here.
 func planRoute23SurfBand(m *emu.Emu, romData []byte, barrierY int) (route23SurfPlan, error) {
-	if got := m.Peek8(sym.CurMap); got != route23Map {
+	if got := m.Peek8(ram(m).CurMap); got != route23Map {
 		return route23SurfPlan{}, fmt.Errorf("skill: Route23 Surf planner is on map %#02x, want %#02x", got, route23Map)
 	}
-	h, err := rom.ParseMap(romData, route23Map)
+	h, err := graphForROM(romData).ParseMap(romData, route23Map)
 	if err != nil {
 		return route23SurfPlan{}, fmt.Errorf("skill: Route23 Surf parse map: %w", err)
 	}
@@ -78,7 +76,7 @@ func planRoute23SurfBand(m *emu.Emu, romData []byte, barrierY int) (route23SurfP
 	}
 
 	sx, sy := playerXY(m)
-	blocked := spriteBlockers(m)
+	blocked := spriteBlockers(m, m.ROM())
 	best := route23SurfPlan{steps: -1}
 	for delta := 1; delta <= 16; delta++ {
 		y := barrierY - delta
@@ -129,7 +127,7 @@ func planRoute23SurfBand(m *emu.Emu, romData []byte, barrierY int) (route23SurfP
 }
 
 func crossRoute23SurfBandNorth(m *emu.Emu, romData []byte, policy MovePolicy, barrierY int) error {
-	if got := m.Peek8(sym.CurMap); got != route23Map {
+	if got := m.Peek8(ram(m).CurMap); got != route23Map {
 		return fmt.Errorf("skill: Route23 Surf barrier %d started on map %#02x", barrierY, got)
 	}
 	_, y := playerXY(m)
@@ -141,7 +139,7 @@ func crossRoute23SurfBandNorth(m *emu.Emu, romData []byte, policy MovePolicy, ba
 	if err != nil {
 		return err
 	}
-	if m.Peek8(sym.WalkBikeSurfState) != fieldSurfingState {
+	if m.Peek8(ram(m).WalkBikeSurfState) != fieldSurfingState {
 		stand := Destination{Map: route23Map, X: uint8(plan.stand.X), Y: uint8(plan.stand.Y)}
 		if _, err := TravelFlee(m, romData, stand, policy, victoryRoadTravelBattles); err != nil {
 			return fmt.Errorf("skill: Route23 Surf reach barrier %d shoreline: %w", barrierY, err)
@@ -154,14 +152,14 @@ func crossRoute23SurfBandNorth(m *emu.Emu, romData []byte, policy MovePolicy, ba
 		if err != nil {
 			return fmt.Errorf("skill: Route23 Surf enter mode at barrier %d: %w", barrierY, err)
 		}
-		if !result.Surfing || m.Peek8(sym.WalkBikeSurfState) != fieldSurfingState {
+		if !result.Surfing || m.Peek8(ram(m).WalkBikeSurfState) != fieldSurfingState {
 			return fmt.Errorf("skill: Route23 Surf barrier %d did not enter Surf mode", barrierY)
 		}
 	}
 	if _, err := TravelFlee(m, romData, plan.destination, policy, victoryRoadTravelBattles); err != nil {
 		return fmt.Errorf("skill: Route23 Surf cross barrier %d: %w", barrierY, err)
 	}
-	if gotMap := m.Peek8(sym.CurMap); gotMap != route23Map {
+	if gotMap := m.Peek8(ram(m).CurMap); gotMap != route23Map {
 		return fmt.Errorf("skill: Route23 Surf barrier %d left Route 23 for map %#02x", barrierY, gotMap)
 	}
 	_, gotY := playerXY(m)
@@ -187,17 +185,17 @@ func resolveRoute22LeagueRival(m *emu.Emu, romData []byte, policy MovePolicy) er
 func descendVictoryRoad3FHole(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if mem.U8(sym.CurMap) == victoryRoad2FMap && state.HasEvent(&mem, eventVictoryRoad3BoulderInHole) {
+	if mem.U8(ram(m).CurMap) == victoryRoad2FMap && ram(m).HasEvent(&mem, eventVictoryRoad3BoulderInHole) {
 		return nil
 	}
-	if mem.U8(sym.CurMap) != victoryRoad3FMap {
-		return fmt.Errorf("skill: Victory Road hole descent is on map %#02x, want 3F %#02x", mem.U8(sym.CurMap), victoryRoad3FMap)
+	if mem.U8(ram(m).CurMap) != victoryRoad3FMap {
+		return fmt.Errorf("skill: Victory Road hole descent is on map %#02x, want 3F %#02x", mem.U8(ram(m).CurMap), victoryRoad3FMap)
 	}
-	if !state.HasEvent(&mem, eventVictoryRoad3BoulderInHole) {
+	if !ram(m).HasEvent(&mem, eventVictoryRoad3BoulderInHole) {
 		return fmt.Errorf("skill: Victory Road hole descent requested before the 3F boulder reached the hole")
 	}
 
-	h, err := rom.ParseMap(romData, victoryRoad3FMap)
+	h, err := graphForROM(romData).ParseMap(romData, victoryRoad3FMap)
 	if err != nil {
 		return fmt.Errorf("skill: Victory Road hole parse 3F: %w", err)
 	}
@@ -206,7 +204,7 @@ func descendVictoryRoad3FHole(m *emu.Emu, romData []byte, policy MovePolicy) err
 		return fmt.Errorf("skill: Victory Road hole live grid: %w", err)
 	}
 	px, py := playerXY(m)
-	path, _, err := world.FindPathAdjacent(grid, int(px), int(py), 23, 15, spriteBlockers(m))
+	path, _, err := world.FindPathAdjacent(grid, int(px), int(py), 23, 15, spriteBlockers(m, m.ROM()))
 	if err != nil {
 		return fmt.Errorf("skill: Victory Road hole has no live approach path: %w", err)
 	}
@@ -227,10 +225,10 @@ func descendVictoryRoad3FHole(m *emu.Emu, romData []byte, policy MovePolicy) err
 	m.Tap(btn, 3, 7)
 	for spent := 0; spent <= victoryRoadWarpBudget; spent += 10 {
 		state.Snapshot(m, &mem)
-		if mem.U8(sym.CurMap) == victoryRoad2FMap && state.Controllable(&mem) {
+		if mem.U8(ram(m).CurMap) == victoryRoad2FMap && ram(m).Controllable(&mem) {
 			return nil
 		}
-		if battle := state.DecodeBattle(&mem); battle != nil {
+		if battle := ram(m).DecodeBattle(&mem); battle != nil {
 			return fmt.Errorf("skill: Victory Road hole descent unexpectedly entered battle")
 		}
 		m.StepFrames(10)
@@ -242,7 +240,7 @@ func clearVictoryRoad(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	for phase := 0; phase < 10; phase++ {
 		var mem state.Mem
 		state.Snapshot(m, &mem)
-		switch mem.U8(sym.CurMap) {
+		switch mem.U8(ram(m).CurMap) {
 		case victoryRoad1FMap:
 			if _, err := SolveVictoryRoadBoulderSection(m, romData, policy, VictoryRoad1FSwitch); err != nil {
 				return fmt.Errorf("skill: Victory Road 1F switch: %w", err)
@@ -252,7 +250,7 @@ func clearVictoryRoad(m *emu.Emu, romData []byte, policy MovePolicy) error {
 			}
 
 		case victoryRoad2FMap:
-			if state.HasEvent(&mem, eventVictoryRoad3BoulderInHole) {
+			if ram(m).HasEvent(&mem, eventVictoryRoad3BoulderInHole) {
 				if _, err := SolveVictoryRoadBoulderSection(m, romData, policy, VictoryRoad2FSwitch2); err != nil {
 					return fmt.Errorf("skill: Victory Road 2F east switch: %w", err)
 				}
@@ -279,7 +277,7 @@ func clearVictoryRoad(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		case route23Map, indigoPlateauMap, indigoPlateauLobbyMap:
 			return nil
 		default:
-			return fmt.Errorf("skill: Victory Road progression left the cave on unexpected map %#02x", mem.U8(sym.CurMap))
+			return fmt.Errorf("skill: Victory Road progression left the cave on unexpected map %#02x", mem.U8(ram(m).CurMap))
 		}
 	}
 	return fmt.Errorf("skill: Victory Road progression exceeded its bounded phase count")
@@ -289,7 +287,7 @@ func prepareIndigoLobby(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if _, err := TravelFlee(m, romData, indigoLobbyNurse, policy, victoryRoadTravelBattles); err != nil {
 		return fmt.Errorf("skill: VictoryRoadProgression: reach Indigo Plateau lobby: %w", err)
 	}
-	if got := m.Peek8(sym.CurMap); got != indigoPlateauLobbyMap {
+	if got := m.Peek8(ram(m).CurMap); got != indigoPlateauLobbyMap {
 		return fmt.Errorf("skill: VictoryRoadProgression: expected Indigo lobby %#02x, observed %#02x", indigoPlateauLobbyMap, got)
 	}
 	if err := Heal(m); err != nil {
@@ -312,14 +310,14 @@ func VictoryRoadProgression(m *emu.Emu, romData []byte, policy MovePolicy) error
 	}
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	facts := state.DecodeStoryFacts(&mem, state.DecodeInventory(&mem))
+	facts := ram(m).DecodeStoryFacts(&mem, ram(m).DecodeInventory(&mem))
 	if facts.LeagueChallengeStarted || facts.LeagueChampionDefeated {
 		return nil
 	}
-	if state.DecodeProgress(&mem).BadgeCount != 8 {
+	if ram(m).DecodeProgress(&mem).BadgeCount != 8 {
 		return fmt.Errorf("%w: Victory Road requires all eight badges", ErrFieldMovePrerequisite)
 	}
-	if mem.U8(sym.CurMap) == indigoPlateauLobbyMap || mem.U8(sym.CurMap) == indigoPlateauMap {
+	if mem.U8(ram(m).CurMap) == indigoPlateauLobbyMap || mem.U8(ram(m).CurMap) == indigoPlateauMap {
 		return prepareIndigoLobby(m, romData, policy)
 	}
 
@@ -327,7 +325,7 @@ func VictoryRoadProgression(m *emu.Emu, romData []byte, policy MovePolicy) error
 		return fmt.Errorf("skill: VictoryRoadProgression: prepare Surf + Strength: %w", err)
 	}
 
-	cur := m.Peek8(sym.CurMap)
+	cur := m.Peek8(ram(m).CurMap)
 	if !inVictoryRoad(cur) {
 		if cur == route23Map {
 			_, y := playerXY(m)
@@ -343,7 +341,7 @@ func VictoryRoadProgression(m *emu.Emu, romData []byte, policy MovePolicy) error
 			}
 		}
 
-		if got := m.Peek8(sym.CurMap); got != route23Map {
+		if got := m.Peek8(ram(m).CurMap); got != route23Map {
 			return fmt.Errorf("skill: VictoryRoadProgression: expected Route 23, observed map %#02x", got)
 		}
 		for _, barrierY := range route23SurfBarrierRows {
@@ -363,7 +361,7 @@ func VictoryRoadProgression(m *emu.Emu, romData []byte, policy MovePolicy) error
 		}
 	}
 
-	if inVictoryRoad(m.Peek8(sym.CurMap)) {
+	if inVictoryRoad(m.Peek8(ram(m).CurMap)) {
 		if err := clearVictoryRoad(m, romData, policy); err != nil {
 			return err
 		}

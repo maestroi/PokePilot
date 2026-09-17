@@ -8,7 +8,6 @@ import (
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
 )
 
@@ -55,12 +54,12 @@ const (
 var ErrLegUnwalkable = errors.New("skill: leg is not walkable from here")
 
 func Traverse(m *emu.Emu, romData []byte, e world.Edge) error {
-	cur := m.Peek8(sym.CurMap)
+	cur := m.Peek8(ram(m).CurMap)
 	if cur != e.From {
 		return fmt.Errorf("skill: Traverse: on map %02x, but edge starts on %02x", cur, e.From)
 	}
 
-	h, err := rom.ParseMap(romData, e.From)
+	h, err := graphForROM(romData).ParseMap(romData, e.From)
 	if err != nil {
 		return fmt.Errorf("skill: Traverse: parse map %02x: %w", e.From, err)
 	}
@@ -173,11 +172,11 @@ func Traverse(m *emu.Emu, romData []byte, e world.Edge) error {
 	m.Press(btn)
 	crossed := false
 	for i := 0; i < crossBudget; i++ {
-		if m.Peek8(sym.CurMap) != e.From {
+		if m.Peek8(ram(m).CurMap) != e.From {
 			crossed = true
 			break
 		}
-		if m.Peek8(sym.IsInBattle) != 0 {
+		if m.Peek8(ram(m).IsInBattle) != 0 {
 			m.Release(btn)
 			x, y := playerXY(m)
 			return fmt.Errorf("skill: Traverse: %s: battle on map %02x at (%d,%d): %w",
@@ -189,7 +188,7 @@ func Traverse(m *emu.Emu, romData []byte, e world.Edge) error {
 	if !crossed {
 		x, y := playerXY(m)
 		return fmt.Errorf("skill: Traverse: %s did not cross within %d frames; still on map %02x at (%d,%d)",
-			edgeName(e), crossBudget, m.Peek8(sym.CurMap), x, y)
+			edgeName(e), crossBudget, m.Peek8(ram(m).CurMap), x, y)
 	}
 
 	// Positive arrival facts: a map is actually loaded (non-zero dimensions,
@@ -197,14 +196,14 @@ func Traverse(m *emu.Emu, romData []byte, e world.Edge) error {
 	if _, err := m.StepUntil(arriveBudget, func(m *emu.Emu) bool {
 		var mem state.Mem
 		state.Snapshot(m, &mem)
-		return state.Controllable(&mem)
+		return ram(m).Controllable(&mem)
 	}); err != nil {
 		x, y := playerXY(m)
 		return fmt.Errorf("skill: Traverse: %s: player not controllable on map %02x after %d frames at (%d,%d)",
-			edgeName(e), m.Peek8(sym.CurMap), arriveBudget, x, y)
+			edgeName(e), m.Peek8(ram(m).CurMap), arriveBudget, x, y)
 	}
 
-	if got := m.Peek8(sym.CurMap); got != e.To {
+	if got := m.Peek8(ram(m).CurMap); got != e.To {
 		return fmt.Errorf("skill: Traverse: %s: arrived on map %02x, want %02x", edgeName(e), got, e.To)
 	}
 
@@ -238,7 +237,7 @@ func waitForPositionStable(m *emu.Emu, budget, stableFrames int) error {
 	}
 	x, y := playerXY(m)
 	return fmt.Errorf("position not stable within %d frames on map %02x at (%d,%d)",
-		budget, m.Peek8(sym.CurMap), x, y)
+		budget, m.Peek8(ram(m).CurMap), x, y)
 }
 
 // warpTarget picks the warp tile to cross. Among tiles that lead to e.To it
@@ -291,7 +290,7 @@ func warpTarget(h rom.MapHeader, e world.Edge, g *world.Grid, sx, sy int, blocke
 
 	_, _, _, elevatorEdge := rom.ElevatorFloorForDestination(e.From, e.To)
 	var candidates []rom.Warp
-	destHeader, destErr := rom.ParseMap(romData, e.To)
+	destHeader, destErr := graphForROM(romData).ParseMap(romData, e.To)
 	for _, w := range h.Warps {
 		// Elevator scripts rewrite every door's live destination after the
 		// floor choice, so their immutable ROM DestMap/DestWarpID values are

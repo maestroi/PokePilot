@@ -5,7 +5,6 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 )
 
 const surgeProgressionTravelEngagements = 100
@@ -21,7 +20,7 @@ func SurgeProgression(m *emu.Emu, romData []byte, policy MovePolicy) error {
 
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if state.DecodeProgress(&mem).Has(state.BadgeThunder) {
+	if ram(m).DecodeProgress(&mem).Has(state.BadgeThunder) {
 		return nil
 	}
 
@@ -31,7 +30,7 @@ func SurgeProgression(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		return fmt.Errorf("skill: SurgeProgression: prepare Cut carrier: %w", err)
 	}
 
-	if m.Peek8(sym.CurMap) != vermilionGymMap {
+	if m.Peek8(ram(m).CurMap) != vermilionGymMap {
 		city, ok := Place("vermilion city")
 		if !ok {
 			return fmt.Errorf("skill: SurgeProgression: vermilion city place missing")
@@ -53,7 +52,7 @@ func SurgeProgression(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	}
 
 	state.Snapshot(m, &mem)
-	if !state.DecodeProgress(&mem).Has(state.BadgeThunder) {
+	if !ram(m).DecodeProgress(&mem).Has(state.BadgeThunder) {
 		return fmt.Errorf("skill: SurgeProgression: Thunder Badge missing after Lt. Surge")
 	}
 	return nil

@@ -78,7 +78,7 @@ const (
 // into the portable route vocabulary. A field move counts only when Travel can
 // use it now, including the existing safe auto-teach path. Story/item encoding
 // stays entirely on this side of the boundary.
-func redRouteCapabilities(romData []byte, mem *state.Mem) gameruntime.CapabilitySet {
+func redRouteCapabilities(romData []byte, mem *state.Mem, a wramAddresses) gameruntime.CapabilitySet {
 	caps := gameruntime.NewCapabilitySet()
 	field := []struct {
 		move FieldMove
@@ -89,18 +89,18 @@ func redRouteCapabilities(romData []byte, mem *state.Mem) gameruntime.Capability
 		{FieldStrength, capCanMoveBoulders},
 	}
 	for _, entry := range field {
-		capability := FieldCapabilityFor(mem, entry.move)
-		if capability.Usable || CanPrepareFieldMove(romData, mem, entry.move) {
+		capability := FieldCapabilityFor(mem, entry.move, a)
+		if capability.Usable || CanPrepareFieldMove(romData, mem, entry.move, a) {
 			caps[entry.id] = true
 		}
 	}
 
-	inv := state.DecodeInventory(mem)
-	facts := state.DecodeStoryFacts(mem, inv)
+	inv := tablesForROM(romData).wram.DecodeInventory(mem)
+	facts := tablesForROM(romData).wram.DecodeStoryFacts(mem, inv)
 	if facts.PokedexAcquired {
 		caps[capCanLeaveViridianNorth] = true
 	}
-	if state.DecodeProgress(mem).Has(state.BadgeBoulder) {
+	if tablesForROM(romData).wram.DecodeProgress(mem).Has(state.BadgeBoulder) {
 		caps[capCanLeavePewterEast] = true
 	}
 	if facts.MtMoonFossilAcquired {
@@ -122,7 +122,7 @@ func redRouteCapabilities(romData []byte, mem *state.Mem) gameruntime.Capability
 	if facts.SaffronGateOpen {
 		caps[capCanEnterSaffron] = true
 	}
-	addAuditedRedRouteCapabilities(mem, caps)
+	addAuditedRedRouteCapabilities(mem, caps, a)
 	return caps
 }
 
@@ -279,7 +279,7 @@ func redRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, bool) {
 
 // redRoutePrerequisites attaches adapter-owned transition facts to the concrete
 // graph while keeping the routing algorithm generic.
-func redRoutePrerequisites(g *world.Graph, romData []byte, mem *state.Mem) world.RoutePrerequisites {
+func redRoutePrerequisites(g *world.Graph, romData []byte, mem *state.Mem, a wramAddresses) world.RoutePrerequisites {
 	transitions := make(map[world.Edge]gameruntime.Transition)
 	for _, edges := range g.Edges {
 		for _, edge := range edges {
@@ -309,6 +309,6 @@ func redRoutePrerequisites(g *world.Graph, romData []byte, mem *state.Mem) world
 	}
 	return world.RoutePrerequisites{
 		Transitions:  transitions,
-		Capabilities: redRouteCapabilities(romData, mem),
+		Capabilities: redRouteCapabilities(romData, mem, a),
 	}
 }

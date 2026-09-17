@@ -35,6 +35,100 @@ const (
 	tilesetsAddr          uint16 = 0x47BE
 )
 
+// maxMapID is the exclusive upper bound on Red map ids to attempt parsing.
+const maxMapID uint8 = 0xf8
+
+// Tables is the set of ROM table addresses a map parser needs. Gen I games
+// share one header/object format and differ only in where these tables sit,
+// so a parser is parameterized by Tables rather than forked per game.
+//
+// Red's values are the package default; Yellow supplies its own from
+// yellow/sym. See docs/POKEYELLOW.md.
+type Tables struct {
+	MapHeaderPointersBank uint8
+	MapHeaderPointersAddr uint16
+	MapHeaderBanksBank    uint8
+	MapHeaderBanksAddr    uint16
+	TilesetsBank          uint8
+	TilesetsAddr          uint16
+
+	// ValidMapID reports whether a slot is a playable map for this game. The
+	// id spaces differ at the tail (Yellow appends SUMMER_BEACH_HOUSE at
+	// $F8), and unused slots parse cleanly but invent geometry, so each game
+	// owns its own predicate. Nil means accept every id below MaxMapID.
+	ValidMapID func(uint8) bool
+
+	// MaxMapID is the exclusive upper bound on map ids to attempt. Yellow
+	// defines one more map than Red, so this is per-game.
+	MaxMapID uint8
+
+	// CollisionListBank is the ROM bank the tileset walkable-tile lists were
+	// assembled into. The game dereferences the collision pointer with no
+	// bank switch, so a pointer >= 0x4000 is only meaningful relative to this
+	// bank, which the pointer itself cannot reveal (it is not the tileset
+	// bank: Yellow's Overworld_Coll is in bank 1 while its tileset entry
+	// names bank 0x19). Red's lists are in bank 0 and every pointer is below
+	// 0x4000, so the field is unused there.
+	CollisionListBank uint8
+
+	// tables is non-nil on every value built by a constructor (RedTables, or
+	// another game's own constructor via NewTables). Tables holds a func, so
+	// the struct itself is not comparable; tables is the comparable stand-in
+	// for "was this constructed at all". A zero Tables has nil tables, which
+	// a *ForTables builder reads as "no tables supplied: use Red's".
+	tables *struct{}
+}
+
+// NewTables builds a Tables value for a Gen I game other than Red, which
+// supplies its own addresses and its own valid-map set. It exists because
+// Tables is not constructible from outside this package once it carries a
+// func: the exported fields are settable, but the internal consistency marker
+// is not.
+func NewTables(mapHeaderPointersBank uint8, mapHeaderPointersAddr uint16,
+	mapHeaderBanksBank uint8, mapHeaderBanksAddr uint16,
+	tilesetsBank uint8, tilesetsAddr uint16,
+	validMapID func(uint8) bool, maxMapID uint8, collisionListBank uint8) Tables {
+	return Tables{
+		MapHeaderPointersBank: mapHeaderPointersBank,
+		MapHeaderPointersAddr: mapHeaderPointersAddr,
+		MapHeaderBanksBank:    mapHeaderBanksBank,
+		MapHeaderBanksAddr:    mapHeaderBanksAddr,
+		TilesetsBank:          tilesetsBank,
+		TilesetsAddr:          tilesetsAddr,
+		ValidMapID:            validMapID,
+		MaxMapID:              maxMapID,
+		CollisionListBank:     collisionListBank,
+		tables:                &struct{}{},
+	}
+}
+
+// ZeroTables is the sentinel meaning "no tables were supplied". It compares
+// equal to the zero Tables value. Passing it (or any zero Tables) to a
+// *ForTables builder makes that builder fall back to RedTables().
+var ZeroTables Tables
+
+// IsZero reports whether this Tables value was built by a constructor. Tables
+// carries a func so the struct itself is not comparable; this is the
+// comparable stand-in, and a zero value (built by nobody) means "the caller
+// supplied nothing, fall back to Red".
+func (t Tables) IsZero() bool { return t.tables == nil }
+
+// RedTables are the table addresses for the supported Pokémon Red image.
+func RedTables() Tables {
+	return Tables{
+		MapHeaderPointersBank: mapHeaderPointersBank,
+		MapHeaderPointersAddr: mapHeaderPointersAddr,
+		MapHeaderBanksBank:    mapHeaderBanksBank,
+		MapHeaderBanksAddr:    mapHeaderBanksAddr,
+		TilesetsBank:          tilesetsBank,
+		TilesetsAddr:          tilesetsAddr,
+		ValidMapID:            validMapID,
+		MaxMapID:              maxMapID,
+		CollisionListBank:     0, // Red's collision lists are in bank 0 (Home)
+		tables:                &struct{}{},
+	}
+}
+
 // Warp is a floor tile that teleports the player to another map.
 type Warp struct {
 	X          uint8
@@ -146,15 +240,27 @@ func mapErr(mapID uint8, err error) error {
 	return fmt.Errorf("map %d: %v", mapID, err)
 }
 
-// ParseMap reads one map header and its object data from the ROM image.
+// ParseMap reads one map header and its object data from the ROM image using
+// Red's table addresses.
 func ParseMap(rom []byte, mapID uint8) (MapHeader, error) {
+	return RedTables().ParseMap(rom, mapID)
+}
+
+// ParseMap reads one map header and its object data from the ROM image using
+// this Tables' addresses. The header and object formats are Gen I and shared
+// across Red and Yellow; only the table addresses differ.
+func (t Tables) ParseMap(rom []byte, mapID uint8) (MapHeader, error) {
 	var h MapHeader
 	h.ID = mapID
-	if !validMapID(mapID) {
+	if t.ValidMapID != nil {
+		if !t.ValidMapID(mapID) {
+			return h, fmt.Errorf("map %02x: %w", mapID, ErrInvalidMapID)
+		}
+	} else if !validMapID(mapID) {
 		return h, fmt.Errorf("map %02x: %w", mapID, ErrInvalidMapID)
 	}
 
-	bankOff, err := bankedOffset(mapHeaderBanksBank, mapHeaderBanksAddr)
+	bankOff, err := bankedOffset(t.MapHeaderBanksBank, t.MapHeaderBanksAddr)
 	if err != nil {
 		return h, mapErr(mapID, err)
 	}
@@ -164,7 +270,7 @@ func ParseMap(rom []byte, mapID uint8) (MapHeader, error) {
 	}
 	h.Bank = rom[bankAt]
 
-	ptrOff, err := bankedOffset(mapHeaderPointersBank, mapHeaderPointersAddr)
+	ptrOff, err := bankedOffset(t.MapHeaderPointersBank, t.MapHeaderPointersAddr)
 	if err != nil {
 		return h, mapErr(mapID, err)
 	}

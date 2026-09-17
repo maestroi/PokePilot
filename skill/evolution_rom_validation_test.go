@@ -22,7 +22,7 @@ func requireDexOwned(t *testing.T, romData []byte, mem *state.Mem, species uint8
 	if err != nil {
 		t.Fatalf("dex number for species %#02x: %v", species, err)
 	}
-	for _, owned := range state.DecodePokedex(mem).Owned {
+	for _, owned := range skill.RedAddresses().DecodePokedex(mem).Owned {
 		if owned == dex {
 			return
 		}
@@ -78,14 +78,14 @@ func TestDexLevelEvolutionSetsPokedexOwned(t *testing.T) {
 
 	var mem state.Mem
 	state.Snapshot(e, &mem)
-	party := state.DecodeParty(&mem)
+	party := skill.RedAddresses().DecodeParty(&mem)
 	if party.Count != 1 || party.Mons[0].Species != speciesSquirtle || party.Mons[0].Level < 15 {
 		t.Fatalf("fixture precondition: party=%+v, want lone Squirtle lv>=15", party.Mons)
 	}
 
 	trainRoute1ToLevel(t, e, romData, 16)
 	state.Snapshot(e, &mem)
-	party = state.DecodeParty(&mem)
+	party = skill.RedAddresses().DecodeParty(&mem)
 	if party.Count != 1 || party.Mons[0].Species != speciesWartortle {
 		t.Fatalf("level evolution result party=%+v, want Wartortle (%#02x)", party.Mons, speciesWartortle)
 	}
@@ -152,7 +152,7 @@ func TestDexMoonStoneEvolutionSetsPokedexOwned(t *testing.T) {
 
 	var mem state.Mem
 	state.Snapshot(e, &mem)
-	party := state.DecodeParty(&mem)
+	party := skill.RedAddresses().DecodeParty(&mem)
 	slot := -1
 	for i, mon := range party.Mons {
 		if mon.Species == speciesJigglypuff {
@@ -168,7 +168,7 @@ func TestDexMoonStoneEvolutionSetsPokedexOwned(t *testing.T) {
 	}
 
 	state.Snapshot(e, &mem)
-	party = state.DecodeParty(&mem)
+	party = skill.RedAddresses().DecodeParty(&mem)
 	if slot >= len(party.Mons) || party.Mons[slot].Species != speciesWigglytuff {
 		t.Fatalf("stone evolution party=%+v, want Wigglytuff (%#02x) in slot %d", party.Mons, speciesWigglytuff, slot)
 	}

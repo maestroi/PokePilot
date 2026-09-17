@@ -7,7 +7,6 @@ import (
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
 )
 
@@ -64,7 +63,7 @@ func decodeTrainerFlagRef(romData []byte, bank uint8, ptr uint16) (trainerFlagRe
 	bit := romData[off]
 	base := uint16(romData[off+2]) | uint16(romData[off+3])<<8
 	addr := base + uint16(bit)/8
-	if base < sym.EventFlags || addr >= sym.EventFlags+0x200 {
+	if base < tablesForROM(romData).wram.EventFlags || addr >= tablesForROM(romData).wram.EventFlags+0x200 {
 		return trainerFlagRef{}, fmt.Errorf("skill: trainer header event pointer %#04x + bit %d is outside wEventFlags", base, bit)
 	}
 	return trainerFlagRef{addr: addr, mask: uint8(1 << (bit & 7))}, nil
@@ -186,10 +185,10 @@ func ordinaryTrainerClass(opponent uint8) bool {
 // failure. A map-build failure stays fail-open so observation does not hide
 // trainers because of incomplete geometry.
 func genericTrainerReachable(romData []byte, mem *state.Mem, h rom.MapHeader, homeX, homeY uint8) bool {
-	if mem == nil || mem.U8(sym.CurMap) != h.ID {
+	if mem == nil || mem.U8(tablesForROM(romData).wram.CurMap) != h.ID {
 		return true
 	}
-	g, err := world.Build(romData, h)
+	g, err := world.BuildForTables(graphForROM(romData), romData, h)
 	if err != nil {
 		return true
 	}
@@ -203,7 +202,7 @@ func genericTrainerReachable(romData []byte, mem *state.Mem, h rom.MapHeader, ho
 		blocked[[2]int{int(object.X), int(object.Y)}] = true
 	}
 	_, _, err = world.FindPathAdjacent(g,
-		int(mem.U8(sym.XCoord)), int(mem.U8(sym.YCoord)),
+		int(mem.U8(tablesForROM(romData).wram.XCoord)), int(mem.U8(tablesForROM(romData).wram.YCoord)),
 		int(homeX), int(homeY), blocked)
 	return err == nil
 }
@@ -214,7 +213,7 @@ func genericTrainerReachable(romData []byte, mem *state.Mem, h rom.MapHeader, ho
 // on the current map, Challengeable also requires an approach path from the
 // player's current connected component.
 func TrainerStatusAt(romData []byte, mem *state.Mem, mapID, homeX, homeY uint8) (TrainerStatus, error) {
-	h, err := rom.ParseMap(romData, mapID)
+	h, err := graphForROM(romData).ParseMap(romData, mapID)
 	if err != nil {
 		return TrainerStatus{}, fmt.Errorf("skill: TrainerStatusAt: parse map %#04x: %w", mapID, err)
 	}
@@ -257,8 +256,8 @@ func ChallengeTrainer(m *emu.Emu, romData []byte, homeX, homeY uint8, policy Mov
 	if policy == nil {
 		return errors.New("skill: ChallengeTrainer: nil policy")
 	}
-	cur := m.Peek8(sym.CurMap)
-	h, err := rom.ParseMap(romData, cur)
+	cur := m.Peek8(tablesForROM(romData).wram.CurMap)
+	h, err := graphForROM(romData).ParseMap(romData, cur)
 	if err != nil {
 		return fmt.Errorf("skill: ChallengeTrainer: parse map %#04x: %w", cur, err)
 	}
@@ -296,7 +295,7 @@ func ChallengeTrainer(m *emu.Emu, romData []byte, homeX, homeY uint8, policy Mov
 	var mem state.Mem
 	engaged := func() bool {
 		state.Snapshot(m, &mem)
-		return mem.U8(sym.FontLoaded) != 0 || state.DecodeBattle(&mem) != nil
+		return mem.U8(ram(m).FontLoaded) != 0 || ram(m).DecodeBattle(&mem) != nil
 	}
 	if !engaged() {
 		if err := Face(m, tx, ty); err != nil && !engaged() {
@@ -307,32 +306,32 @@ func ChallengeTrainer(m *emu.Emu, romData []byte, homeX, homeY uint8, policy Mov
 	m.Tap(emu.A, 3, 7)
 	if _, err := m.StepUntil(talkOpenBudget, func(m *emu.Emu) bool {
 		state.Snapshot(m, &mem)
-		return mem.U8(sym.FontLoaded) != 0 || state.DecodeBattle(&mem) != nil
+		return mem.U8(ram(m).FontLoaded) != 0 || ram(m).DecodeBattle(&mem) != nil
 	}); err != nil {
 		return fmt.Errorf("skill: ChallengeTrainer: interaction at (%d,%d) opened neither dialogue nor battle", tx, ty)
 	}
 
-	mem = advanceUntil(m, gymBattleWaitBudget, func(mm *state.Mem) bool {
-		return state.DecodeBattle(mm) != nil || target.flag.setMem(mm) || (mm.U8(sym.FontLoaded) == 0 && state.Controllable(mm))
+	mem = advanceUntil(m, ram(m), gymBattleWaitBudget, func(mm *state.Mem, a wramAddresses) bool {
+		return ram(m).DecodeBattle(mm) != nil || target.flag.setMem(mm) || (mm.U8(ram(m).FontLoaded) == 0 && ram(m).Controllable(mm))
 	})
 	if target.flag.setMem(&mem) {
 		return nil
 	}
-	if state.DecodeBattle(&mem) == nil {
-		if !state.Controllable(&mem) {
+	if ram(m).DecodeBattle(&mem) == nil {
+		if !ram(m).Controllable(&mem) {
 			return fmt.Errorf("skill: ChallengeTrainer: trainer dialogue neither started a battle nor returned control")
 		}
 		// The pre-battle text closing reads as ordinary overworld idle
 		// (StartTrainerBattle clears wJoyIgnore before the screen-flash
 		// transition runs), so give that transition room before concluding
 		// the sighted engagement fizzled with no battle.
-		mem = advanceUntil(m, trainerBattleTransitionSettleBudget, func(mm *state.Mem) bool {
-			return state.DecodeBattle(mm) != nil || target.flag.setMem(mm)
+		mem = advanceUntil(m, ram(m), trainerBattleTransitionSettleBudget, func(mm *state.Mem, a wramAddresses) bool {
+			return ram(m).DecodeBattle(mm) != nil || target.flag.setMem(mm)
 		})
 		if target.flag.setMem(&mem) {
 			return nil
 		}
-		if state.DecodeBattle(&mem) == nil {
+		if ram(m).DecodeBattle(&mem) == nil {
 			return fmt.Errorf("skill: ChallengeTrainer: trainer returned control without battle but fought flag %#04x/%#02x is clear", target.flag.addr, target.flag.mask)
 		}
 	}
@@ -345,10 +344,10 @@ func ChallengeTrainer(m *emu.Emu, romData []byte, homeX, homeY uint8, policy Mov
 		return fmt.Errorf("skill: ChallengeTrainer: %w at (%d,%d)", ErrTrainerBlackedOut, homeX, homeY)
 	}
 
-	mem = advanceUntil(m, storyBattleSettleBudget, func(mm *state.Mem) bool {
-		return target.flag.setMem(mm) && state.Controllable(mm)
+	mem = advanceUntil(m, ram(m), storyBattleSettleBudget, func(mm *state.Mem, a wramAddresses) bool {
+		return target.flag.setMem(mm) && ram(m).Controllable(mm)
 	})
-	if !state.Controllable(&mem) {
+	if !ram(m).Controllable(&mem) {
 		return fmt.Errorf("skill: ChallengeTrainer: not controllable after winning trainer battle")
 	}
 	if !target.flag.setMem(&mem) {
