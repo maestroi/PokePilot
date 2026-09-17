@@ -9,17 +9,28 @@ import (
 	"github.com/maestroi/pokepilot/red/sym"
 )
 
-// loadPreparedFieldActionState loads an externally captured real-ROM state.
-// These are intentionally not committed: .state files contain derived game
-// data and the repository's fixture policy forbids checking them in. Farm or
-// local checkpoints are suitable inputs.
-func loadPreparedFieldActionState(t *testing.T, env string) *emu.Emu {
+// loadPreparedState loads an externally captured real-ROM state without
+// asserting anything about where the game is. These are intentionally not
+// committed: .state files contain derived game data and the repository's
+// fixture policy forbids checking them in. Farm or local checkpoints are
+// suitable inputs.
+func loadPreparedState(t *testing.T, env string) *emu.Emu {
+	return loadStateOn(t, env, openEmu)
+}
+
+// loadPreparedCGBState is loadPreparedState for states the farm captured on
+// CGB hardware; a checked state verifies the model it was saved on.
+func loadPreparedCGBState(t *testing.T, env string) *emu.Emu {
+	return loadStateOn(t, env, openEmuCGB)
+}
+
+func loadStateOn(t *testing.T, env string, open func(t *testing.T) *emu.Emu) *emu.Emu {
 	t.Helper()
 	path := os.Getenv(env)
 	if path == "" {
 		t.Skipf("%s not set (real-ROM prepared-state test)", env)
 	}
-	m := openEmu(t)
+	m := open(t)
 	b, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read %s=%s: %v", env, path, err)
@@ -27,6 +38,14 @@ func loadPreparedFieldActionState(t *testing.T, env string) *emu.Emu {
 	if err := m.LoadState(b); err != nil {
 		t.Fatalf("load %s=%s: %v", env, path, err)
 	}
+	return m
+}
+
+// loadPreparedFieldActionState loads a state that must be a controllable
+// overworld, which is what field-action skills require as an entry condition.
+func loadPreparedFieldActionState(t *testing.T, env string) *emu.Emu {
+	t.Helper()
+	m := loadPreparedState(t, env)
 	var mem state.Mem
 	state.Snapshot(m, &mem)
 	if !state.Controllable(&mem) {
