@@ -59,6 +59,8 @@ type StoryFacts struct {
 	PokedexAcquired            bool
 	SSTicketAcquired           bool
 	HM01Acquired               bool
+	HM03Acquired               bool
+	HM04Acquired               bool
 	BicycleAcquired            bool
 	SilphScopeAcquired         bool
 	PokeFluteAcquired          bool
@@ -102,31 +104,33 @@ func DecodeStoryFacts(m *Mem, inv InventoryState) StoryFacts {
 	progress := DecodeProgress(m)
 	mainStoryComplete := m.U8(elite4FlagsAddr)&elite4CompletedMask != 0
 	facts := StoryFacts{
-		MtMoonFossilAcquired:       HasEvent(m, EventBeatMtMoonSuperNerd) && (HasEvent(m, EventGotDomeFossil) || HasEvent(m, EventGotHelixFossil)) && m.U8(sym.MtMoonB2FCurScript) == 0,
-		PokedexAcquired:            HasEvent(m, EventGotPokedex),
-		SSTicketAcquired:           inventoryHasItem(inv, ssTicketItemID),
-		HM01Acquired:               inventoryHasItem(inv, hm01ItemID),
-		BicycleAcquired:            inventoryHasItem(inv, bicycleItemID),
-		SilphScopeAcquired:         inventoryHasItem(inv, silphScopeItemID),
-		PokeFluteAcquired:          inventoryHasItem(inv, pokeFluteItemID),
-		FuchsiaProgressionComplete: progress.Has(BadgeSoul) && inventoryHasItem(inv, hm03ItemID) && inventoryHasItem(inv, hm04ItemID),
-		SaffronGateOpen:            m.U8(sym.StatusFlags1)&saffronGuardsDrinkMask != 0,
-		CardKeyOwned:               inventoryHasItem(inv, cardKeyItemID),
-		SilphCoRivalDefeated:       HasEvent(m, eventBeatSilphCoRival),
-		SilphCoCleared:             HasEvent(m, eventBeatSilphCoGiovanni),
-		MasterBallAwarded:          HasEvent(m, eventGotMasterBall),
-		MansionSwitchOn:            HasEvent(m, eventMansionSwitchOn),
-		SecretKeyOwned:             inventoryHasItem(inv, secretKeyItemID),
-		ViridianGymOpen:            HasEvent(m, eventViridianGymOpen),
-		Route22RivalResolved:       HasEvent(m, eventBeatRoute22Rival2ndBattle),
-		LeagueChallengeStarted:     HasEvent(m, eventAutowalkedIntoLoreleisRoom),
-		LeagueLoreleiDefeated:      HasEvent(m, eventBeatLorelei) || mainStoryComplete,
-		LeagueBrunoDefeated:        HasEvent(m, eventBeatBruno) || mainStoryComplete,
-		LeagueAgathaDefeated:       HasEvent(m, eventBeatAgatha) || mainStoryComplete,
-		LeagueLanceDefeated:        HasEvent(m, eventBeatLance) || mainStoryComplete,
-		LeagueChampionDefeated:     HasEvent(m, EventBeatChampionRival) || mainStoryComplete,
-		MainStoryComplete:          mainStoryComplete,
+		MtMoonFossilAcquired:   HasEvent(m, EventBeatMtMoonSuperNerd) && (HasEvent(m, EventGotDomeFossil) || HasEvent(m, EventGotHelixFossil)) && m.U8(sym.MtMoonB2FCurScript) == 0,
+		PokedexAcquired:        HasEvent(m, EventGotPokedex),
+		SSTicketAcquired:       inventoryHasItem(inv, ssTicketItemID),
+		HM01Acquired:           inventoryHasItem(inv, hm01ItemID),
+		HM03Acquired:           inventoryHasItem(inv, hm03ItemID),
+		HM04Acquired:           inventoryHasItem(inv, hm04ItemID),
+		BicycleAcquired:        inventoryHasItem(inv, bicycleItemID),
+		SilphScopeAcquired:     inventoryHasItem(inv, silphScopeItemID),
+		PokeFluteAcquired:      inventoryHasItem(inv, pokeFluteItemID),
+		SaffronGateOpen:        m.U8(sym.StatusFlags1)&saffronGuardsDrinkMask != 0,
+		CardKeyOwned:           inventoryHasItem(inv, cardKeyItemID),
+		SilphCoRivalDefeated:   HasEvent(m, eventBeatSilphCoRival),
+		SilphCoCleared:         HasEvent(m, eventBeatSilphCoGiovanni),
+		MasterBallAwarded:      HasEvent(m, eventGotMasterBall),
+		MansionSwitchOn:        HasEvent(m, eventMansionSwitchOn),
+		SecretKeyOwned:         inventoryHasItem(inv, secretKeyItemID),
+		ViridianGymOpen:        HasEvent(m, eventViridianGymOpen),
+		Route22RivalResolved:   HasEvent(m, eventBeatRoute22Rival2ndBattle),
+		LeagueChallengeStarted: HasEvent(m, eventAutowalkedIntoLoreleisRoom),
+		LeagueLoreleiDefeated:  HasEvent(m, eventBeatLorelei) || mainStoryComplete,
+		LeagueBrunoDefeated:    HasEvent(m, eventBeatBruno) || mainStoryComplete,
+		LeagueAgathaDefeated:   HasEvent(m, eventBeatAgatha) || mainStoryComplete,
+		LeagueLanceDefeated:    HasEvent(m, eventBeatLance) || mainStoryComplete,
+		LeagueChampionDefeated: HasEvent(m, EventBeatChampionRival) || mainStoryComplete,
+		MainStoryComplete:      mainStoryComplete,
 	}
+	facts.FuchsiaProgressionComplete = progress.Has(BadgeSoul) && facts.HM03Acquired && facts.HM04Acquired
 	facts.SilphRescueComplete = facts.SilphCoCleared && facts.MasterBallAwarded
 	for _, event := range route23BadgeCheckEvents {
 		if HasEvent(m, event) {
