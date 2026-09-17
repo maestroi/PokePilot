@@ -350,6 +350,7 @@ func warpTarget(h rom.MapHeader, e world.Edge, g *world.Grid, sx, sy int, blocke
 	}
 
 	var reasons []string
+	allNoPath := true
 	// Prefer warp tiles the collision grid says can actually be entered.
 	// Some stairs are intentionally solid and still activate on a push, so
 	// use solid candidates only when this destination has no walkable tile.
@@ -370,16 +371,31 @@ func warpTarget(h rom.MapHeader, e world.Edge, g *world.Grid, sx, sy int, blocke
 		}
 		steps, push, err = world.FindPathAdjacent(g, sx, sy, wx, wy, approachBlocked)
 		if err != nil {
+			if !errors.Is(err, world.ErrNoPath) {
+				allNoPath = false
+			}
 			reasons = append(reasons, fmt.Sprintf("warp (%d,%d): %v", wx, wy, err))
 			continue
 		}
 		if routeCrossesWarp(steps, sx, sy, warpTile) {
+			allNoPath = false
 			reasons = append(reasons, fmt.Sprintf("warp (%d,%d): every route steps on another warp tile", wx, wy))
 			continue
 		}
 		return wx, wy, steps, push, nil
 	}
 	if len(reasons) > 0 {
+		// Callers such as rocketB1FExitReachableOnGrid use errors.Is against
+		// world.ErrNoPath to tell "not reachable yet" apart from a real
+		// failure. Joining every candidate's reason into one plain string
+		// (MEASURED on run-27dtzi7qnqt962i4ecootzj8tg) used to drop that
+		// sentinel even when every candidate failed with exactly ErrNoPath,
+		// turning a normal "still behind the door" result into an
+		// unknown_failure. Keep the sentinel wrapped whenever it still
+		// applies to every candidate.
+		if allNoPath {
+			return 0, 0, nil, world.Step{}, fmt.Errorf("%s: %w", strings.Join(reasons, "; "), world.ErrNoPath)
+		}
 		return 0, 0, nil, world.Step{}, fmt.Errorf("%s", strings.Join(reasons, "; "))
 	}
 	return 0, 0, nil, world.Step{}, fmt.Errorf("no warp on map %02x leads to %02x", e.From, e.To)
