@@ -22,22 +22,29 @@ type Finding struct {
 }
 
 type Stats struct {
-	Maps                    int  `json:"maps"`
-	Edges                   int  `json:"edges"`
-	Components              int  `json:"components"`
-	Capabilities            int  `json:"capabilities"`
-	CapabilityStatesChecked int  `json:"capability_states_checked"`
-	ExhaustiveCapabilities  bool `json:"exhaustive_capabilities"`
-	FullReachableMaps       int  `json:"full_reachable_maps,omitempty"`
-	FullReachableComponents int  `json:"full_reachable_components,omitempty"`
-	InactiveStaticEdges     int  `json:"inactive_static_edges,omitempty"`
-	SemanticDeadPortEdges   int  `json:"semantic_dead_port_edges,omitempty"`
+	Maps                              int  `json:"maps"`
+	Edges                             int  `json:"edges"`
+	Components                        int  `json:"components"`
+	Capabilities                      int  `json:"capabilities"`
+	CapabilityStatesChecked           int  `json:"capability_states_checked"`
+	ExhaustiveCapabilities            bool `json:"exhaustive_capabilities"`
+	FullReachableMaps                 int  `json:"full_reachable_maps,omitempty"`
+	FullReachableComponents           int  `json:"full_reachable_components,omitempty"`
+	FullUnreachableMaps               int  `json:"full_unreachable_maps,omitempty"`
+	RequiredUnreachableMaps           int  `json:"required_unreachable_maps,omitempty"`
+	OptionalUnreachableMaps           int  `json:"optional_unreachable_maps,omitempty"`
+	ExpectedUnreachableMaps           int  `json:"expected_unreachable_maps,omitempty"`
+	StoryStateDependentUnreachableMaps int `json:"story_state_dependent_unreachable_maps,omitempty"`
+	SuspiciousUnreachableMaps         int  `json:"suspicious_unreachable_maps,omitempty"`
+	InactiveStaticEdges               int  `json:"inactive_static_edges,omitempty"`
+	SemanticDeadPortEdges             int  `json:"semantic_dead_port_edges,omitempty"`
 }
 
 type Report struct {
-	Game     string    `json:"game,omitempty"`
-	Stats    Stats     `json:"stats"`
-	Findings []Finding `json:"findings,omitempty"`
+	Game            string            `json:"game,omitempty"`
+	Stats           Stats             `json:"stats"`
+	Findings        []Finding         `json:"findings,omitempty"`
+	UnreachableMaps []MapReachability `json:"unreachable_maps,omitempty"`
 }
 
 func (r Report) HasErrors() bool {
@@ -119,10 +126,39 @@ func Verify(snapshot Snapshot, options Options) Report {
 			report.add(SeverityError, "unknown_start_map", fmt.Sprintf("start map %q does not exist", start), start, "")
 		}
 	}
+
+	expectations := make(map[MapID]MapExpectation, len(snapshot.MapExpectations)+len(snapshot.RequiredMaps))
+	for _, expectation := range snapshot.MapExpectations {
+		if expectation.Map == "" {
+			report.add(SeverityError, "empty_map_expectation", "reachability expectation has an empty map id", "", "")
+			continue
+		}
+		if _, ok := maps[expectation.Map]; !ok {
+			report.add(SeverityError, "unknown_map_expectation", fmt.Sprintf("reachability expectation references unknown map %q", expectation.Map), expectation.Map, "")
+			continue
+		}
+		if !validReachabilityClass(expectation.Class) {
+			report.add(SeverityError, "invalid_reachability_class", fmt.Sprintf("map %q has invalid reachability class %q", expectation.Map, expectation.Class), expectation.Map, "")
+			continue
+		}
+		if _, exists := expectations[expectation.Map]; exists {
+			report.add(SeverityError, "duplicate_map_expectation", fmt.Sprintf("map %q has more than one reachability expectation", expectation.Map), expectation.Map, "")
+			continue
+		}
+		expectations[expectation.Map] = expectation
+	}
 	for _, required := range snapshot.RequiredMaps {
 		if _, ok := maps[required]; !ok {
 			report.add(SeverityError, "unknown_required_map", fmt.Sprintf("required map %q does not exist", required), required, "")
+			continue
 		}
+		if expectation, exists := expectations[required]; exists {
+			if expectation.Class != ReachabilityRequired {
+				report.add(SeverityError, "conflicting_map_expectation", fmt.Sprintf("required map %q is classified as %q", required, expectation.Class), required, "")
+			}
+			continue
+		}
+		expectations[required] = MapExpectation{Map: required, Class: ReachabilityRequired, Reason: "legacy RequiredMaps assertion"}
 	}
 
 	capabilitySet := map[CapabilityID]bool{}
@@ -231,11 +267,7 @@ func Verify(snapshot Snapshot, options Options) Report {
 		}
 		report.Stats.FullReachableMaps = len(full.maps)
 		report.Stats.FullReachableComponents = len(full.states)
-		for _, required := range snapshot.RequiredMaps {
-			if maps[required].ID != "" && !full.maps[required] {
-				report.add(SeverityError, "required_map_unreachable", fmt.Sprintf("required map %q is unreachable even with every declared capability", required), required, "")
-			}
-		}
+		classifyFullReachability(&report, maps, full.maps, expectations)
 	}
 
 	sort.SliceStable(report.Findings, func(i, j int) bool {
@@ -256,6 +288,72 @@ func Verify(snapshot Snapshot, options Options) Report {
 
 func (r *Report) add(severity Severity, code, message string, mapID MapID, edge string) {
 	r.Findings = append(r.Findings, Finding{Severity: severity, Code: code, Message: message, Map: mapID, Edge: edge})
+}
+
+func validReachabilityClass(class ReachabilityClass) bool {
+	switch class {
+	case ReachabilityRequired, ReachabilityOptional, ReachabilityExpectedUnreachable, ReachabilityStoryStateDependent, ReachabilitySuspicious:
+		return true
+	default:
+		return false
+	}
+}
+
+func classifyFullReachability(report *Report, maps map[MapID]Map, reachableMaps map[MapID]bool, expectations map[MapID]MapExpectation) {
+	ids := make([]string, 0, len(maps))
+	for id := range maps {
+		ids = append(ids, string(id))
+	}
+	sort.Strings(ids)
+	for _, raw := range ids {
+		id := MapID(raw)
+		if reachableMaps[id] {
+			continue
+		}
+		expectation, ok := expectations[id]
+		if !ok {
+			expectation = MapExpectation{
+				Map:    id,
+				Class:  ReachabilitySuspicious,
+				Reason: "adapter supplied no reachability explanation",
+			}
+		}
+		m := maps[id]
+		report.UnreachableMaps = append(report.UnreachableMaps, MapReachability{
+			Map: id, Label: m.Label, Class: expectation.Class, Reason: expectation.Reason,
+		})
+		report.Stats.FullUnreachableMaps++
+		name := fmt.Sprintf("map %q", id)
+		if m.Label != "" {
+			name = fmt.Sprintf("map %q (%s)", id, m.Label)
+		}
+		switch expectation.Class {
+		case ReachabilityRequired:
+			report.Stats.RequiredUnreachableMaps++
+			report.add(SeverityError, "required_map_unreachable", fmt.Sprintf("%s is unreachable even with every declared capability: %s", name, expectation.Reason), id, "")
+		case ReachabilityOptional:
+			report.Stats.OptionalUnreachableMaps++
+		case ReachabilityExpectedUnreachable:
+			report.Stats.ExpectedUnreachableMaps++
+		case ReachabilityStoryStateDependent:
+			report.Stats.StoryStateDependentUnreachableMaps++
+		case ReachabilitySuspicious:
+			report.Stats.SuspiciousUnreachableMaps++
+			report.add(SeverityWarning, "unclassified_unreachable_map", fmt.Sprintf("%s is unreachable with every declared capability: %s", name, expectation.Reason), id, "")
+		}
+	}
+
+	for id, expectation := range expectations {
+		if expectation.Class != ReachabilityExpectedUnreachable || !reachableMaps[id] {
+			continue
+		}
+		m := maps[id]
+		name := fmt.Sprintf("map %q", id)
+		if m.Label != "" {
+			name = fmt.Sprintf("map %q (%s)", id, m.Label)
+		}
+		report.add(SeverityWarning, "expected_unreachable_map_reachable", fmt.Sprintf("%s is reachable but manifest marks it expected-unreachable: %s", name, expectation.Reason), id, "")
+	}
 }
 
 func validatePoint(report *Report, side string, point *Point, m Map, edge Edge) {
@@ -331,7 +429,6 @@ func capabilityStates(capabilities []CapabilityID, maxExhaustive int) ([]map[Cap
 			if other != capability {
 				minus[other] = true
 			}
-		}
 		add(minus)
 	}
 	return states, false
