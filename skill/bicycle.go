@@ -5,6 +5,7 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
+	"github.com/maestroi/pokepilot/red/sym"
 )
 
 const (
@@ -15,6 +16,8 @@ const (
 
 	fanClubChairmanX uint8 = 3
 	fanClubChairmanY uint8 = 1
+	fanClubStagingX  uint8 = 2
+	fanClubStagingY  uint8 = 6
 	bikeShopClerkX   uint8 = 6
 	bikeShopClerkY   uint8 = 2
 
@@ -31,11 +34,14 @@ func init() {
 	// for BicycleProgression, but are not generic exploration targets that can
 	// stop halfway through the voucher/exchange transaction.
 	//
-	// The Fan Club chairman stands at (3,1) behind the table/counter tile at
-	// (3,2). The player cannot stand on that middle tile; (3,3) is the actual
-	// counter approach. TalkAtChoice already understands this two-tile Gen 1
-	// counter interaction and faces the intervening counter before talking.
-	interactionPlaces[pokemonFanClubChairmanPlace] = Destination{Map: pokemonFanClubMap, X: 3, Y: 3}
+	// Do not route directly to a guessed interaction tile around the chairman.
+	// The Fan Club's large table occupies the middle of the room; both (3,2)
+	// and (3,3) are inside that blocked footprint. Route only to the open floor
+	// just inside the entrance, then let TalkAtChoice/TalkAt find a live
+	// reachable side of the chairman using the actual collision grid and sprite
+	// positions. This also makes a checkpoint already inside the Fan Club resume
+	// straight into the interaction instead of trying to cross furniture first.
+	interactionPlaces[pokemonFanClubChairmanPlace] = Destination{Map: pokemonFanClubMap, X: fanClubStagingX, Y: fanClubStagingY}
 	interactionPlaces[ceruleanBikeShopPlace] = Destination{Map: bikeShopMap, X: 3, Y: 6}
 }
 
@@ -61,12 +67,17 @@ func AcquireBicycle(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		if err := EnsureBagSpaceFor(m, bikeVoucherItem); err != nil {
 			return fmt.Errorf("skill: AcquireBicycle: make room for Bike Voucher: %w", err)
 		}
-		dest, ok := Place(pokemonFanClubChairmanPlace)
-		if !ok {
-			return fmt.Errorf("skill: AcquireBicycle: Fan Club destination is not registered")
-		}
-		if _, err := TravelFlee(m, romData, dest, policy, bicycleTravelMaxBattles); err != nil {
-			return fmt.Errorf("skill: AcquireBicycle: travel to Pokémon Fan Club: %w", err)
+		// If a checkpoint is already inside the Fan Club, do not run another
+		// fixed-coordinate GoTo first. The interaction primitive below owns the
+		// intra-room approach and can choose a reachable side of the chairman.
+		if m.Peek8(sym.CurMap) != pokemonFanClubMap {
+			dest, ok := Place(pokemonFanClubChairmanPlace)
+			if !ok {
+				return fmt.Errorf("skill: AcquireBicycle: Fan Club destination is not registered")
+			}
+			if _, err := TravelFlee(m, romData, dest, policy, bicycleTravelMaxBattles); err != nil {
+				return fmt.Errorf("skill: AcquireBicycle: travel to Pokémon Fan Club: %w", err)
+			}
 		}
 
 		state.Snapshot(m, &mem)
