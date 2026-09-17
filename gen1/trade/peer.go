@@ -18,6 +18,10 @@ type BrokerConfig struct {
 	PeerID   string
 	Metadata map[string]string
 	Timeout  time.Duration
+	// OnReady fires after the broker has accepted this peer. Service callers
+	// use it to avoid advertising a session before an emulator can safely join
+	// and begin clocking serial traffic.
+	OnReady func()
 }
 
 // RunBroker joins one GomeBoy broker session as role=virtual and services
@@ -65,6 +69,9 @@ func RunBroker(ctx context.Context, cfg BrokerConfig, machine *Machine) error {
 		// Hello metadata is forwarded only when the other peer is already
 		// present. Publishing again is harmless and covers that race.
 		_ = enc.Encode(link.Message{Type: link.MessageMetadata, Metadata: cloneMetadata(cfg.Metadata)})
+	}
+	if cfg.OnReady != nil {
+		cfg.OnReady()
 	}
 
 	closed := make(chan struct{})
