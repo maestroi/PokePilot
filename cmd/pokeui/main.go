@@ -178,9 +178,7 @@ func handlerWithServices(wallBase, replayBase, token string) http.Handler {
 	mux.HandleFunc("GET /v1/ui-config", func(res http.ResponseWriter, req *http.Request) {
 		res.Header().Set("Content-Type", "application/json")
 		res.Header().Set("Cache-Control", "no-store")
-		json.NewEncoder(res).Encode(map[string]string{
-			"spectator_url": strings.TrimRight(strings.TrimSpace(os.Getenv("POKEPILOT_SPECTATOR_URL")), "/"),
-		}) //nolint:errcheck
+		json.NewEncoder(res).Encode(operatorUIConfig()) //nolint:errcheck
 	})
 	mux.HandleFunc("GET /v1/dashboard", proxy(wallBase, true))
 	mux.HandleFunc("GET /v1/stats", outcomesStatsHandler(wallBase))
@@ -291,10 +289,10 @@ func main() {
 	var httpHandler http.Handler
 	if *spectator {
 		publicHandler := spectatorVisibilityHTTPHandler(wallBase, spectatorHandlerWithReplay(wallBase, replayBase))
-		httpHandler = spectatorSecurityHeaders(withVuePreview(publicHandler, "spectator"))
+		httpHandler = withExternalHosts(publicCORS(spectatorSecurityHeaders(withVuePreview(publicHandler, "spectator"))))
 		log.Printf("pokeui proxying %s on http://%s (public spectator mode; read-only; replay=%t)", *wall, *httpAddr, replayBase != "")
 	} else {
-		httpHandler = withVuePreview(handlerWithServices(wallBase, replayBase, mcpToken), "operator")
+		httpHandler = adminCORS(withVuePreview(handlerWithServices(wallBase, replayBase, mcpToken), "operator"))
 		log.Printf("pokeui proxying %s on http://%s (MCP=%t, replay=%t)", *wall, *httpAddr, mcpToken != "", replayBase != "")
 	}
 	server := &http.Server{

@@ -77,7 +77,7 @@ whose objective matches `finish.detail`.
 ```bash
 curl -sS -o /tmp/r46.state \
   -H "Authorization: Bearer $POKEPILOT_MCP_TOKEN" \
-  "https://pokemon.labstack.cc/v1/runs/<run-id>/artifacts/<artifact-name>/content"
+  "https://admin.rompilot.app/v1/runs/<run-id>/artifacts/<artifact-name>/content"
 ```
 
 `.state` files load with `emu.LoadState`; the ROM is normally
@@ -130,7 +130,7 @@ wipe, bad knowledge, or planner decision — replay from an earlier objective
 checkpoint with its paired knowledge instead of guessing how the state formed.
 
 ```bash
-W=https://pokemon.labstack.cc
+W=https://admin.rompilot.app
 curl -sS "$W/v1/runs/<run-id>/checkpoints"
 go run ./cmd/pokerepro -wall $W -run <run-id> -checkpoint latest
 ```

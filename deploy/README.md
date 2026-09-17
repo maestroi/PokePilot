@@ -12,6 +12,14 @@ runners bind-mount it at runtime.
 After `make farm-up`, open **http://localhost:18080** for the operator console.
 The public spectator surface is **http://localhost:18081** by default.
 
+Production hostnames are documented in `docs/DOMAINS.md`:
+
+```text
+rompilot.app          Public RomPilot / spectator
+admin.rompilot.app    Private admin/control plane
+api.rompilot.app      External API entry point
+```
+
 - The operator bar shows running / queued / idle-worker counts.
 - **Queue a run** sets planner (`scripted` or `llm`), starter, destination,
   seed, fps, and budgets. Scripted walks starter → dest; llm lets the model
@@ -121,7 +129,7 @@ is required.
 POKEPILOT_GITHUB_TOKEN=<token with Issues + Contents read/write on maestroi/PokePilot>
 # Optional; these are the stack defaults:
 POKEPILOT_GITHUB_REPO=maestroi/PokePilot
-POKEPILOT_RUN_BASE_URL=https://pokemon.labstack.cc
+POKEPILOT_RUN_BASE_URL=https://admin.rompilot.app
 ```
 
 Only the `issues` service receives `POKEPILOT_GITHUB_TOKEN`. The wall, runners,
@@ -141,7 +149,7 @@ remains in the PokePilot run store.
 The issue links the ZIP and includes an offline command such as
 `go run ./cmd/pokerepro -bundle <github-release-asset-url> -play`. That path
 verifies the embedded state/knowledge hashes and does not need access to
-`pokemon.labstack.cc`.
+`admin.rompilot.app`.
 
 Issue lifecycle maps cleanly back into the wall:
 

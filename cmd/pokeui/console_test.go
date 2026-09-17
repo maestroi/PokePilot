@@ -434,9 +434,9 @@ func TestUIFollowsWatchingFirstReference(t *testing.T) {
 	html := string(indexHTML)
 	js := string(uiJS)
 	inspector := string(inspectorJS)
-	for _, want := range []string{`class="brand-mark"`, `aria-hidden="true"`, `<strong>PokéFarm</strong>`, `<span>Operator console</span>`} {
+	for _, want := range []string{`class="brand-mark"`, `aria-hidden="true"`, `<strong>RomPilot</strong>`, `<span>Control plane</span>`} {
 		if !strings.Contains(html, want) {
-			t.Errorf("header must restore the established PokéFarm mark and wordmark, missing %q", want)
+			t.Errorf("header must restore the established RomPilot mark and wordmark, missing %q", want)
 		}
 	}
 	for _, want := range []string{`Run state`, `id="detail-location"`, `id="detail-objective"`, `id="detail-decision"`, `id="detail-frame"`, `id="detail-round"`} {

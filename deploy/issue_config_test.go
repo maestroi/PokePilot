@@ -45,7 +45,7 @@ func TestIssueConfigUsesGitHubAdapter(t *testing.T) {
 		"command: [\"pokeissues\", \"-http\", \":8080\"]",
 		"POKEPILOT_GITHUB_REPO: ${POKEPILOT_GITHUB_REPO:-maestroi/PokePilot}",
 		"POKEPILOT_GITHUB_TOKEN: ${POKEPILOT_GITHUB_TOKEN:-}",
-		"POKEPILOT_RUN_BASE_URL: ${POKEPILOT_RUN_BASE_URL:-https://pokemon.labstack.cc}",
+		"POKEPILOT_RUN_BASE_URL: ${POKEPILOT_RUN_BASE_URL:-https://admin.rompilot.app}",
 	} {
 		if !strings.Contains(issues, want) {
 			t.Errorf("issues service missing %q", want)

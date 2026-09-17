@@ -16,7 +16,7 @@ if [ -f "$ENV_FILE" ]; then
 	set +a
 fi
 
-POKEPILOT_WALL=${POKEPILOT_WALL:-https://pokemon.labstack.cc}
+POKEPILOT_WALL=${POKEPILOT_WALL:-https://admin.rompilot.app}
 POKEPILOT_TRIAGE_STATE=${POKEPILOT_TRIAGE_STATE:-$HOME/.local/share/pokepilot/qwagent-triage}
 POKEPILOT_TRIAGE_TREE=${POKEPILOT_TRIAGE_TREE:-$HOME/Documents/projects/PokePilot-qwagent-triage}
 PROMPT=${POKEPILOT_TRIAGE_PROMPT:-$SCRIPT_DIR/qwagent-triage.prompt.md}

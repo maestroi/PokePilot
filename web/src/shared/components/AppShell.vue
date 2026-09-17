@@ -20,8 +20,8 @@ const publicNavigation = computed<AppNavItem[]>(() => {
   if (props.mode !== 'public') return []
   const path = window.location.pathname
   return [
-    { name: 'Watch', href: '/', current: path === '/' },
-    { name: 'World', href: '/world', current: path === '/world' || path === '/world/' },
+    { name: 'Watch', href: '/', current: path === '/' || path.startsWith('/runs/') },
+    { name: 'Explore', href: '/explore', current: path === '/explore' || path === '/explore/' || path === '/world' || path === '/world/' },
     { name: 'Replays', href: '/replays', current: path === '/replays' || path.startsWith('/replays/') }
   ]
 })
@@ -36,9 +36,9 @@ const effectiveNavigation = computed(() => props.navigation.length ? props.navig
         <div class="flex min-w-0 items-center gap-2 border-r border-[var(--poke-border)] pr-3 sm:w-[13.125rem]">
           <span class="size-2 shrink-0 rounded-sm bg-[var(--poke-cyan)]" aria-hidden="true" />
           <div class="min-w-0 leading-tight">
-            <strong class="block truncate text-[15px] text-white">{{ mode === 'private' ? 'PokéFarm' : 'PokéPilot' }}</strong>
+            <strong class="block truncate text-[15px] text-white">{{ mode === 'private' ? 'RomPilot Admin' : 'RomPilot' }}</strong>
             <span class="hidden text-[9px] tracking-[0.04em] text-[var(--poke-muted)] uppercase sm:block">
-              {{ mode === 'private' ? 'Operator console' : 'Spectator' }}
+              {{ mode === 'private' ? 'Control plane' : 'Live runs' }}
             </span>
           </div>
         </div>

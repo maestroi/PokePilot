@@ -78,12 +78,61 @@ func TestVueTargetsStaySeparated(t *testing.T) {
 func TestVueNextRedirectsToRoot(t *testing.T) {
 	h := withVuePreview(http.NotFoundHandler(), "operator")
 	res := httptest.NewRecorder()
+	h.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/next/?debug=1", nil))
+	if res.Code != http.StatusPermanentRedirect {
+		t.Fatalf("status = %d", res.Code)
+	}
+	if got := res.Header().Get("Location"); got != "/?debug=1" {
+		t.Fatalf("location = %q", got)
+	}
+}
+
+func TestVueNextRunQueryRedirectsToRunPage(t *testing.T) {
+	h := withVuePreview(http.NotFoundHandler(), "spectator")
+	res := httptest.NewRecorder()
 	h.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/next/?run=abc", nil))
 	if res.Code != http.StatusPermanentRedirect {
 		t.Fatalf("status = %d", res.Code)
 	}
-	if got := res.Header().Get("Location"); got != "/?run=abc" {
+	if got := res.Header().Get("Location"); got != "/runs/abc" {
 		t.Fatalf("location = %q", got)
+	}
+}
+
+func TestVueSpectatorCanonicalizesRunQuery(t *testing.T) {
+	h := withVuePreview(http.NotFoundHandler(), "spectator")
+	res := httptest.NewRecorder()
+	h.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/?run=run-9", nil))
+	if res.Code != http.StatusPermanentRedirect {
+		t.Fatalf("status = %d", res.Code)
+	}
+	if got := res.Header().Get("Location"); got != "/runs/run-9" {
+		t.Fatalf("location = %q", got)
+	}
+}
+
+func TestVueSpectatorServesPublicPages(t *testing.T) {
+	if !vueFileExists("spectator", "spectator.html") {
+		t.Skip("spectator frontend bundle not built in this Go-only checkout")
+	}
+	h := withVuePreview(http.NotFoundHandler(), "spectator")
+	pages := []string{"/"}
+	if vueFileExists("spectator", "world.html") {
+		pages = append(pages, "/world", "/explore")
+	}
+	if vueFileExists("spectator", "replays.html") {
+		pages = append(pages, "/replays")
+	}
+	pages = append(pages, "/runs/run-live")
+	for _, page := range pages {
+		res := httptest.NewRecorder()
+		h.ServeHTTP(res, httptest.NewRequest(http.MethodGet, page, nil))
+		if res.Code != http.StatusOK {
+			t.Fatalf("%s = %d: %s", page, res.Code, res.Body.String())
+		}
+		if !strings.Contains(res.Body.String(), "id=\"app\"") {
+			t.Fatalf("%s did not serve Vue entry: %q", page, res.Body.String())
+		}
 	}
 }
 

@@ -299,7 +299,7 @@ POKEMON_RED_ROM= go test -short -count=1 ./deploy ./cmd/qwagent-triage
 # env
 POKEPILOT_ROOT          # repo that contains cmd/qwagent-triage (the dedicated worktree)
 POKEPILOT_TRIAGE_MAIN   # source checkout used only to `go run` the picker if needed
-POKEPILOT_WALL          # default https://pokemon.labstack.cc
+POKEPILOT_WALL          # default https://admin.rompilot.app
 POKEPILOT_MCP_TOKEN     # from ~/.config/pokepilot/env
 POKEPILOT_TRIAGE_STATE  # default ~/.local/share/pokepilot/qwagent-triage
 POKEPILOT_TRIAGE_TREE   # default ~/Documents/projects/PokePilot-qwagent-triage

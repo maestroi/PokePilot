@@ -20,8 +20,10 @@ make farm-up
 For the public deployment, point the existing reverse proxy at `pokeui` as usual. The MCP URL is then:
 
 ```text
-https://pokemon.labstack.cc/mcp
+https://admin.rompilot.app/mcp
 ```
+
+The previous private hostname `https://pokemon.labstack.cc/mcp` remains a compatibility alias until that host is retired.
 
 Every MCP request must include:
 
@@ -73,7 +75,7 @@ MCP clients use different config file names, but hosts that accept a remote Stre
 ```json
 {
   "name": "pokepilot",
-  "url": "https://pokemon.labstack.cc/mcp",
+  "url": "https://admin.rompilot.app/mcp",
   "headers": {
     "Authorization": "Bearer ${POKEPILOT_MCP_TOKEN}"
   }
@@ -104,7 +106,7 @@ response = client.beta.messages.create(
     }],
     mcp_servers=[{
         "type": "url",
-        "url": "https://pokemon.labstack.cc/mcp",
+        "url": "https://admin.rompilot.app/mcp",
         "name": "pokepilot",
         "authorization_token": os.environ["POKEPILOT_MCP_TOKEN"],
     }],
@@ -125,7 +127,7 @@ See Anthropic's MCP connector documentation for the client-side beta/API details
 The repository also contains `examples/mcp-client`, which uses the same official Go MCP SDK as the server. It is useful before involving a model:
 
 ```sh
-POKEPILOT_MCP_URL=https://pokemon.labstack.cc/mcp \
+POKEPILOT_MCP_URL=https://admin.rompilot.app/mcp \
 POKEPILOT_MCP_TOKEN='...' \
   go run ./examples/mcp-client
 ```

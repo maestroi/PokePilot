@@ -56,7 +56,7 @@ func TestSpectatorServesReadOnlySanitizedSurface(t *testing.T) {
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("GET / = %d, want 200", res.StatusCode)
 	}
-	for _, want := range []string{"PokéPilot Spectator Mode", "Read only", "/watch.js", `id="live-map"`, `[hidden]{display:none!important}`} {
+	for _, want := range []string{"RomPilot", "Read only", "/watch.js", `id="live-map"`, `[hidden]{display:none!important}`} {
 		if !bytes.Contains(body, []byte(want)) {
 			t.Errorf("spectator index missing %q", want)
 		}

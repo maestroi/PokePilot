@@ -144,7 +144,7 @@ onBeforeUnmount(() => window.removeEventListener('popstate', syncPath))
   <main class="replay-shell">
     <header class="topbar">
       <div>
-        <p class="eyebrow">PokéPilot public archive</p>
+        <p class="eyebrow">RomPilot public archive</p>
         <h1>Replay library</h1>
         <p class="lede">Watch curated finished runs without digging through the operator console.</p>
       </div>

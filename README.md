@@ -177,6 +177,7 @@ Details in `deploy/README.md`.
 | `docs/QUALIFICATION.md` | ROM-backed qualification catalog and private corpus |
 | `docs/MCP.md` | Remote MCP control plane |
 | `docs/SPECTATOR.md` | Public read-only spectator mode |
+| `docs/DOMAINS.md` | Public/admin/API hosts, DNS, and CORS |
 | `docs/RAM_FORENSICS.md` | Failure RAM capture |
 | `docs/S3_ARTIFACT_STORAGE.md` | Farm artifact object storage |
 | `docs/RUN_INSPECTOR.md` | Run inspector, artifacts, and deterministic replay |

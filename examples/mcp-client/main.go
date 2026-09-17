@@ -28,7 +28,7 @@ func (t bearerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 func main() {
 	endpoint := strings.TrimSpace(os.Getenv("POKEPILOT_MCP_URL"))
 	if endpoint == "" {
-		endpoint = "https://pokemon.labstack.cc/mcp"
+		endpoint = "https://admin.rompilot.app/mcp"
 	}
 	token := strings.TrimSpace(os.Getenv("POKEPILOT_MCP_TOKEN"))
 	if token == "" {

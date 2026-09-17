@@ -43,7 +43,7 @@ go run ./cmd/pokerepro -bundle 'https://github.com/maestroi/PokePilot/releases/d
 `pokerepro -bundle` accepts either that public HTTPS URL or a local ZIP path,
 verifies the embedded state/knowledge hashes, materializes the pair beside each
 other, and can launch the current checkout without contacting
-`pokemon.labstack.cc`.
+`admin.rompilot.app`.
 
 Because the PokePilot repository is public, these release assets are public too.
 Only enable this workflow for evidence that is safe to publish.

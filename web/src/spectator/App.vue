@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { ArrowPathIcon, ArrowsPointingOutIcon, LinkIcon } from '@heroicons/vue/20/solid'
+import { ArrowPathIcon, ArrowsPointingOutIcon, LinkIcon, PlayIcon } from '@heroicons/vue/20/solid'
 import { getSpectatorSnapshot, spectatorReplayVideoURL } from '../shared/api/spectator-client'
 import type { SpectatorRun } from '../shared/api/spectator'
 import AppShell from '../shared/components/AppShell.vue'
@@ -29,6 +29,7 @@ import {
 import PartyProgress from './PartyProgress.vue'
 import { policyLabel } from '../shared/playstyle'
 import { bagMeter, dexMeter } from '../shared/playerProgress'
+import { runIDFromLocation, spectatorRunPath } from '../shared/urls'
 
 interface ActivityItem {
   id: string
@@ -37,9 +38,8 @@ interface ActivityItem {
   detail: string
 }
 
-const initialParams = new URLSearchParams(window.location.search)
-const selectedRunID = ref(initialParams.get('run') || '')
-const selectionPinned = ref(initialParams.has('run'))
+const selectedRunID = ref(runIDFromLocation(window.location.pathname, window.location.search))
+const selectionPinned = ref(Boolean(selectedRunID.value))
 const copyState = ref('')
 const theaterMode = ref(false)
 const playerRef = ref<HTMLElement | null>(null)
@@ -122,6 +122,7 @@ const modeMetrics = computed(() => {
 
 watch(selectedRun, (run) => {
   if (run && !selectionPinned.value) selectedRunID.value = run.run_id
+  document.title = run ? `RomPilot · ${runTitle(run)}` : 'RomPilot'
 }, { immediate: true })
 
 watch(runs, (nextRuns) => {
@@ -192,9 +193,7 @@ function pushActivity(runID: string, label: string, detail: string): void {
 function selectRun(run: SpectatorRun): void {
   selectedRunID.value = run.run_id
   selectionPinned.value = true
-  const url = new URL(window.location.href)
-  url.searchParams.set('run', run.run_id)
-  history.replaceState(null, '', url)
+  history.replaceState(null, '', spectatorRunPath(run.run_id))
 }
 
 function refresh(): void {
@@ -204,8 +203,7 @@ function refresh(): void {
 async function copyLink(): Promise<void> {
   const run = selectedRun.value
   if (!run) return
-  const url = new URL(window.location.href)
-  url.searchParams.set('run', run.run_id)
+  const url = new URL(spectatorRunPath(run.run_id), window.location.origin)
   try {
     await navigator.clipboard.writeText(url.toString())
     copyState.value = 'Copied'
@@ -236,8 +234,8 @@ function activityTime(item: ActivityItem): string {
 
 <template>
   <AppShell
-    eyebrow="PokéPilot"
-    title="Spectator"
+    eyebrow="Live"
+    title="Watch"
     subtitle=""
     mode="public"
     :show-intro="false"
@@ -251,6 +249,24 @@ function activityTime(item: ActivityItem): string {
     </template>
 
     <template #actions>
+      <button
+        v-if="groupedRuns.live[0] && selectedRun?.run_id !== groupedRuns.live[0].run_id"
+        type="button"
+        class="inline-flex items-center gap-1.5 rounded-md bg-cyan-300 px-2.5 py-1.5 text-xs font-bold text-[#101820] hover:brightness-110"
+        @click="selectRun(groupedRuns.live[0])"
+      >
+        <PlayIcon class="size-3.5" aria-hidden="true" />
+        Watch live
+      </button>
+      <button
+        v-else-if="groupedRuns.live[0]"
+        type="button"
+        class="inline-flex items-center gap-1.5 rounded-md bg-cyan-300/15 px-2.5 py-1.5 text-xs font-bold text-cyan-100 ring-1 ring-cyan-300/20 hover:bg-cyan-300/25"
+        @click="selectRun(groupedRuns.live[0])"
+      >
+        <PlayIcon class="size-3.5" aria-hidden="true" />
+        Watch live
+      </button>
       <button
         v-if="selectedRun"
         type="button"
@@ -278,7 +294,7 @@ function activityTime(item: ActivityItem): string {
         <div class="mx-auto flex size-12 items-center justify-center rounded-full bg-amber-300/10 ring-1 ring-amber-300/20">
           <span class="size-2.5 animate-pulse rounded-full bg-amber-300" />
         </div>
-        <h2 class="mt-4 text-lg font-semibold text-white">Spectator feed reconnecting</h2>
+        <h2 class="mt-4 text-lg font-semibold text-white">RomPilot is reconnecting</h2>
         <p class="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-400">
           {{ error || 'The public feed is temporarily unavailable. This page retries automatically.' }}
         </p>
