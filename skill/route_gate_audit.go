@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	capCanRideCyclingRoad       gameruntime.CapabilityID = "can_ride_cycling_road"
+	capCanRideCyclingRoad        gameruntime.CapabilityID = "can_ride_cycling_road"
 	capCanPassRoute23BadgeChecks gameruntime.CapabilityID = "can_pass_route23_badge_checks"
 
 	// Red's Celadon City object table contains a historical/unused warp at
@@ -61,6 +61,9 @@ func addAuditedRedRouteCapabilities(mem *state.Mem, caps gameruntime.CapabilityS
 }
 
 func redAuditedRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, bool) {
+	if transition, ok := redSideRouteTransitionForEdge(edge); ok {
+		return transition, true
+	}
 	pair := func(a, b uint8) bool {
 		return (edge.From == a && edge.To == b) || (edge.From == b && edge.To == a)
 	}
@@ -145,6 +148,9 @@ func redAuditedRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, 
 }
 
 func (x *redRouteTransitionExecutor) executeAuditedRouteTransition(edge world.Edge, transition gameruntime.Transition) (world.TransitionExecutionResult, bool, error) {
+	if result, handled, err := x.executeSideRouteTransition(edge, transition); handled {
+		return result, true, err
+	}
 	switch transition.ID {
 	case "red:route23_league_approach":
 		var mem state.Mem
