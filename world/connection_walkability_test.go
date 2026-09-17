@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/maestroi/pokepilot/red/rom"
+	"github.com/maestroi/pokepilot/worldmodel"
 )
 
 func TestConnectionExitWalkableRejectsOnlyProvenPaddingBands(t *testing.T) {
@@ -24,7 +25,7 @@ func TestConnectionExitWalkableRejectsOnlyProvenPaddingBands(t *testing.T) {
 			1: {w: 6, h: 2},
 			2: {w: 6, h: 2},
 		},
-		connections: make(map[Edge]rom.Connection),
+		connections: make(map[Edge]worldmodel.Connection),
 		exitComps:   make(map[Edge][]int),
 		entryComps:  make(map[Edge][]int),
 	}
