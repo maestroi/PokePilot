@@ -18,14 +18,14 @@ const (
 	PatchTermByte byte = 0xff
 
 	trainerPreambleLength = 6
-	trainerNameOffset      = trainerPreambleLength
-	partyCountOffset       = trainerNameOffset + NameLength
-	partySpeciesOffset     = partyCountOffset + 1
-	partyMonsOffset        = partySpeciesOffset + PartyLength + 1
-	partyOTOffset          = partyMonsOffset + PartyLength*PartyMonSize
-	partyNickOffset        = partyOTOffset + PartyLength*NameLength
-	patchEntriesOffset     = 10
-	patchPart1Length       = 252 // 0xfd is reserved as a serial preamble value.
+	trainerNameOffset     = trainerPreambleLength
+	partyCountOffset      = trainerNameOffset + NameLength
+	partySpeciesOffset    = partyCountOffset + 1
+	partyMonsOffset       = partySpeciesOffset + PartyLength + 1
+	partyOTOffset         = partyMonsOffset + PartyLength*PartyMonSize
+	partyNickOffset       = partyOTOffset + PartyLength*NameLength
+	patchEntriesOffset    = 10
+	patchPart1Length      = 252 // 0xfd is reserved as a serial preamble value.
 )
 
 // Mon is the exact Generation-I party representation carried over the link.
