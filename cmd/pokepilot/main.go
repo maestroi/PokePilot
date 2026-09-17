@@ -122,10 +122,11 @@ func main() {
 		if err != nil {
 			log.Fatalf("save boot state: %v", err)
 		}
-		fmt.Printf("farm mode: leasing runs from %s\n", orchURL)
+		library := buildROMLibrary(romPath, bootState)
+		fmt.Printf("farm mode: leasing runs from %s; games mounted: %s\n", orchURL, library.games())
 		client := farm.NewClient(orchURL)
 		client.Version = version
-		runFarm(m, client, bootState, watchPort(served), *checkpointDir)
+		runFarm(m, client, library, watchPort(served), *checkpointDir)
 		return
 	}
 
