@@ -23,8 +23,11 @@ type machineState uint8
 const (
 	stateConnecting machineState = iota
 	stateLinkMenu
-	stateWaitingRandom
+	stateSelectedTrade
+	stateWaitingRandomSeed
+	stateSendingRandomSeed
 	stateSendingTrainer
+	stateWaitingPatch
 	stateSendingPatch
 	stateTradeMenu
 	stateTradeInitiated
@@ -73,7 +76,6 @@ type Machine struct {
 	trainerPos  int
 	patchPos    int
 
-	sawRandomData bool
 	remoteBlock   []byte
 	remotePatch   []byte
 	remoteTrainer *Trainer
@@ -92,8 +94,9 @@ func (m *Machine) InitialByte() byte { return slaveMagic }
 
 // ExchangeByte consumes the byte just shifted out by the ROM and returns the
 // byte to place in the virtual peer's shift register for the next exchange.
-// Link-menu polling and transfer preambles are deliberately repeated by the
-// games, which makes this one-byte pipeline equivalent to a physical slave.
+// This is deliberately a one-byte pipeline: the Game Boy serial ISR also
+// loads the byte for the following transfer only after the current transfer
+// completes.
 func (m *Machine) ExchangeByte(in byte) (byte, error) {
 	switch m.state {
 	case stateConnecting:
@@ -115,8 +118,7 @@ func (m *Machine) ExchangeByte(in byte) (byte, error) {
 		case connectedMagic:
 			return connectedMagic, nil
 		case selectTradeMagic:
-			m.state = stateWaitingRandom
-			m.sawRandomData = false
+			m.prepareDataExchange()
 			m.emit(Event{Kind: EventTradeCenter})
 			return selectTradeMagic, nil
 		case selectBattleMagic:
@@ -128,52 +130,84 @@ func (m *Machine) ExchangeByte(in byte) (byte, error) {
 			return in, nil
 		}
 
-	case stateWaitingRandom:
-		// The random-number transfer is safe to echo. Once non-preamble data
-		// has flowed, the next 0xfd starts the trainer-data transfer.
-		if in != PreambleByte {
-			m.sawRandomData = true
-		} else if m.sawRandomData {
-			m.state = stateSendingTrainer
-			m.trainerPos = 0
-			m.remoteBlock = m.remoteBlock[:0]
+	case stateSelectedTrade:
+		// Before the random block, Red performs a nibble sync and sends zero
+		// bytes. Echo all of that. The first 0xfd is the random block's
+		// Serial_ExchangeBytes synchronization preamble.
+		if in == PreambleByte {
+			m.state = stateWaitingRandomSeed
 		}
 		return in, nil
 
+	case stateWaitingRandomSeed:
+		// Echo the random block. Red sends a run of 0xfd preamble bytes and
+		// then ten values below 0xfd. Seeing the first non-preamble byte proves
+		// synchronization has completed; the following 0xfd starts trainer data.
+		if in != PreambleByte {
+			m.state = stateSendingRandomSeed
+		}
+		return in, nil
+
+	case stateSendingRandomSeed:
+		if in != PreambleByte {
+			return in, nil
+		}
+		m.state = stateSendingTrainer
+		m.trainerPos = 1
+		m.remoteBlock = m.remoteBlock[:0]
+		return m.trainerWire[0], nil
+
 	case stateSendingTrainer:
 		m.remoteBlock = append(m.remoteBlock, in)
-		if m.trainerPos >= len(m.trainerWire) {
-			return PreambleByte, errors.New("gen1 trade: trainer stream exhausted unexpectedly")
+		if m.trainerPos < len(m.trainerWire) {
+			out := m.trainerWire[m.trainerPos]
+			m.trainerPos++
+			if m.trainerPos == len(m.trainerWire) {
+				m.state = stateWaitingPatch
+			}
+			return out, nil
 		}
-		out := m.trainerWire[m.trainerPos]
-		m.trainerPos++
-		if m.trainerPos == len(m.trainerWire) {
-			m.state = stateSendingPatch
-			m.patchPos = 0
-			m.remotePatch = m.remotePatch[:0]
+		m.state = stateWaitingPatch
+		return in, nil
+
+	case stateWaitingPatch:
+		// One final remote trainer byte may arrive through the serial pipeline
+		// after our own trainer stream has been scheduled. Keep it, then wait
+		// for the patch-list synchronization preamble.
+		if in != PreambleByte {
+			m.remoteBlock = append(m.remoteBlock, in)
+			return in, nil
 		}
-		return out, nil
+		m.state = stateSendingPatch
+		m.patchPos = 1
+		m.remotePatch = m.remotePatch[:0]
+		return m.patchWire[0], nil
 
 	case stateSendingPatch:
 		m.remotePatch = append(m.remotePatch, in)
-		if m.patchPos >= len(m.patchWire) {
-			return PreambleByte, errors.New("gen1 trade: patch stream exhausted unexpectedly")
+		if m.patchPos < len(m.patchWire) {
+			out := m.patchWire[m.patchPos]
+			m.patchPos++
+			if m.patchPos == len(m.patchWire) {
+				m.state = stateTradeMenu
+				if err := m.decodeRemoteTrainer(); err != nil {
+					return out, err
+				}
+			}
+			return out, nil
 		}
-		out := m.patchWire[m.patchPos]
-		m.patchPos++
-		if m.patchPos == len(m.patchWire) {
-			m.state = stateTradeMenu
+		m.state = stateTradeMenu
+		if m.remoteTrainer == nil {
 			if err := m.decodeRemoteTrainer(); err != nil {
-				return out, err
+				return in, err
 			}
 		}
-		return out, nil
+		return in, nil
 
 	case stateTradeMenu:
 		switch {
 		case in == tradeMenuClosed:
-			m.state = stateWaitingRandom
-			m.sawRandomData = false
+			m.prepareDataExchange()
 			return tradeMenuClosed, nil
 		case in >= firstPartyChoice && in <= lastPartyChoice:
 			m.remoteSlot = int(in - firstPartyChoice)
@@ -204,7 +238,10 @@ func (m *Machine) ExchangeByte(in byte) (byte, error) {
 			if err := m.completeTrade(); err != nil {
 				return in, err
 			}
-			m.resetSession()
+			// Red immediately calls CableClub_DoBattleOrTradeAgain after a
+			// completed trade. Stay connected and wait for that next random block;
+			// this is what makes a real two-step tradeback possible.
+			m.prepareDataExchange()
 		}
 		return in, nil
 
@@ -271,9 +308,18 @@ func (m *Machine) completeTrade() error {
 	return nil
 }
 
+func (m *Machine) prepareDataExchange() {
+	m.state = stateSelectedTrade
+	m.trainerPos = 0
+	m.patchPos = 0
+	m.remoteBlock = m.remoteBlock[:0]
+	m.remotePatch = m.remotePatch[:0]
+	m.remoteTrainer = nil
+	m.remoteSlot = -1
+}
+
 func (m *Machine) resetSession() {
 	m.state = stateConnecting
-	m.sawRandomData = false
 	m.trainerPos = 0
 	m.patchPos = 0
 	m.remoteBlock = m.remoteBlock[:0]
