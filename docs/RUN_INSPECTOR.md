@@ -74,16 +74,28 @@ Deleting a derived MP4 is safe; it can be regenerated from `run.gbrun`.
 
 ## MCP tools for debugging agents
 
-When `POKEPILOT_MCP_TOKEN` enables the existing private MCP server, two new
+When `POKEPILOT_MCP_TOKEN` enables the existing private MCP server, three new
 read-only tools are available:
 
 - `pokepilot_get_run_debug(run_id)`
 - `pokepilot_get_run_artifacts(run_id)`
+- `pokepilot_get_run_artifact_content(run_id, name)`
 
-They deliberately return structured metadata rather than giant recording bytes.
-An autonomous debugging agent can first inspect the compact bundle, identify the
-relevant run/build/progress/failure evidence, and only hand off or request deeper
-artifact work when needed.
+The first two deliberately return structured metadata rather than giant
+recording bytes: an autonomous debugging agent first inspects the compact
+bundle, identifies the relevant run/build/progress/failure evidence, and only
+requests deeper artifact work when needed.
+
+`pokepilot_get_run_artifact_content` is that deeper step for **inline**
+artifacts only — the `.state`/`.ram`/knowledge/failure-repro JSON a triage
+agent needs to reproduce a failure locally. It returns base64 bytes bounded by
+the MCP response cap and refuses anything pokewall marks as remotely stored
+(`run.gbrun` stays S3-only, resolved through the operator UI/replay service).
+It exists specifically because `admin.rompilot.app`'s plain
+`GET /v1/runs/{id}/artifacts/{name}/content` route sits behind Cloudflare
+Access for browser sessions, while `/mcp` reaches `pokewall` server-to-server
+and never crosses that edge — so a bearer-token-only agent uses this tool
+instead of curling the content route directly.
 
 The existing `pokepilot_get_run`, triage, and investigation tools continue to
 work unchanged.

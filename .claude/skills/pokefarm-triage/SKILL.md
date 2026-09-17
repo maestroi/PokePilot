@@ -74,11 +74,27 @@ packet should have been selected. Use it to reproduce and diagnose that packet.
 Artifacts are per round: `round-<N>-frame-<F>-<objective>.state`. Take the one
 whose objective matches `finish.detail`.
 
-```bash
-curl -sS -o /tmp/r46.state \
-  -H "Authorization: Bearer $POKEPILOT_MCP_TOKEN" \
-  "https://admin.rompilot.app/v1/runs/<run-id>/artifacts/<artifact-name>/content"
+`admin.rompilot.app`'s plain `GET /v1/runs/{id}/artifacts/{name}/content` route
+sits behind Cloudflare Access for browser sessions — a bare
+`Authorization: Bearer $POKEPILOT_MCP_TOKEN` curl to it 302s to the Access
+login page, it does not download the artifact. Use the MCP tool instead, which
+reaches `pokewall` server-to-server and never crosses that edge:
+
 ```
+pokepilot_get_run_artifact_content(run_id=<run-id>, name=<artifact-name>)
+```
+
+It returns `content_base64` for small **inline** artifacts (`.state`, `.ram`,
+knowledge/failure JSON), bounded by the MCP response cap; decode it to a local
+file, e.g.:
+
+```bash
+python3 -c "import base64,sys; open('/tmp/r46.state','wb').write(base64.b64decode(sys.argv[1]))" "$CONTENT_BASE64"
+```
+
+It refuses artifacts pokewall marks as remotely stored (`run.gbrun` stays
+S3-only; see `docs/RUN_INSPECTOR.md`'s `.gbrun` replay player section — it is
+not part of the state repro this skill needs).
 
 `.state` files load with `emu.LoadState`; the ROM is normally
 `roms/pokemon_red.gb` or the checkout-independent configured ROM path.

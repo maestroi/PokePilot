@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -113,6 +114,9 @@ func TestMCPToolsDriveOnlyOperatorAPI(t *testing.T) {
 				"run_id": id, "attempt": 1,
 				"artifacts": []map[string]any{{"name": "run.gbrun", "store": "s3", "object_key": "runs/x/run.gbrun"}},
 			})
+		case req.Method == http.MethodGet && strings.HasSuffix(req.URL.Path, "/artifacts/checkpoint.state/content"):
+			res.Header().Set("Content-Type", "application/octet-stream")
+			res.Write([]byte("checkpoint-bytes")) //nolint:errcheck
 		case req.Method == http.MethodPost && strings.HasPrefix(req.URL.Path, "/v1/runs/") && strings.HasSuffix(req.URL.Path, "/cancel"):
 			cancelled = strings.TrimSuffix(strings.TrimPrefix(req.URL.Path, "/v1/runs/"), "/cancel")
 			json.NewEncoder(res).Encode(map[string]bool{"cancel": true}) //nolint:errcheck
@@ -154,6 +158,7 @@ func TestMCPToolsDriveOnlyOperatorAPI(t *testing.T) {
 	want := []string{
 		"pokepilot_cancel_run",
 		"pokepilot_get_run",
+		"pokepilot_get_run_artifact_content",
 		"pokepilot_get_run_artifacts",
 		"pokepilot_get_run_debug",
 		"pokepilot_get_triage",
@@ -207,5 +212,28 @@ func TestMCPToolsDriveOnlyOperatorAPI(t *testing.T) {
 	}
 	if cancelled != runID {
 		t.Fatalf("cancelled = %q, want %q", cancelled, runID)
+	}
+
+	content, err := session.CallTool(context.Background(), &mcp.CallToolParams{
+		Name:      "pokepilot_get_run_artifact_content",
+		Arguments: map[string]any{"run_id": runID, "name": "checkpoint.state"},
+	})
+	if err != nil {
+		t.Fatalf("get_run_artifact_content: %v", err)
+	}
+	raw, err := json.Marshal(content.StructuredContent)
+	if err != nil {
+		t.Fatalf("marshal structured content: %v", err)
+	}
+	var artifact mcpArtifactContentOutput
+	if err := json.Unmarshal(raw, &artifact); err != nil {
+		t.Fatalf("decode artifact content result: %v", err)
+	}
+	decoded, err := base64.StdEncoding.DecodeString(artifact.ContentBase64)
+	if err != nil {
+		t.Fatalf("decode base64: %v", err)
+	}
+	if string(decoded) != "checkpoint-bytes" {
+		t.Fatalf("artifact content = %q, want %q", decoded, "checkpoint-bytes")
 	}
 }

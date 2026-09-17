@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/subtle"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -74,6 +75,19 @@ type mcpTriageInput struct {
 
 type mcpInvestigateInput struct {
 	Key string `json:"key" jsonschema:"triage failure key returned by pokepilot_get_triage"`
+}
+
+type mcpArtifactContentInput struct {
+	RunID string `json:"run_id" jsonschema:"PokePilot run id"`
+	Name  string `json:"name" jsonschema:"artifact name, exactly as pokepilot_get_run_artifacts listed it"`
+}
+
+type mcpArtifactContentOutput struct {
+	RunID         string `json:"run_id"`
+	Name          string `json:"name"`
+	MediaType     string `json:"media_type,omitempty"`
+	Size          int    `json:"size"`
+	ContentBase64 string `json:"content_base64"`
 }
 
 type mcpRunView struct {
@@ -150,6 +164,10 @@ func newMCPHandler(wallBase, token string) http.Handler {
 		Name:        "pokepilot_get_run_artifacts",
 		Description: "List one run's artifacts and durable storage references without downloading artifact bytes. Use this to discover run.gbrun recordings and diagnostic evidence.",
 	}, control.getRunArtifacts)
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "pokepilot_get_run_artifact_content",
+		Description: "Fetch one small inline artifact's bytes (a .state checkpoint, .ram snapshot, or knowledge/failure JSON) as base64, for local reproduction. Bounded by the MCP response cap; remotely stored artifacts such as run.gbrun are refused here and must go through the operator UI/replay service instead.",
+	}, control.getRunArtifactContent)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "pokepilot_cancel_run",
 		Description: "Request cooperative cancellation of one queued or active PokePilot run.",
@@ -346,6 +364,49 @@ func (c *mcpControl) getRunArtifacts(ctx context.Context, _ *mcp.CallToolRequest
 		return nil, nil, err
 	}
 	return nil, out, nil
+}
+
+func (c *mcpControl) getRunArtifactContent(ctx context.Context, _ *mcp.CallToolRequest, in mcpArtifactContentInput) (*mcp.CallToolResult, mcpArtifactContentOutput, error) {
+	id := strings.TrimSpace(in.RunID)
+	name := strings.TrimSpace(in.Name)
+	if id == "" {
+		return nil, mcpArtifactContentOutput{}, fmt.Errorf("run_id is required")
+	}
+	if name == "" {
+		return nil, mcpArtifactContentOutput{}, fmt.Errorf("name is required")
+	}
+	path := "/v1/runs/" + url.PathEscape(id) + "/artifacts/" + url.PathEscape(name) + "/content"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.wallBase+path, nil)
+	if err != nil {
+		return nil, mcpArtifactContentOutput{}, fmt.Errorf("build wall request: %w", err)
+	}
+	res, err := c.http.Do(req)
+	if err != nil {
+		return nil, mcpArtifactContentOutput{}, fmt.Errorf("wall unreachable: %w", err)
+	}
+	defer res.Body.Close()
+
+	data, err := io.ReadAll(io.LimitReader(res.Body, mcpMaxResponseBytes+1))
+	if err != nil {
+		return nil, mcpArtifactContentOutput{}, fmt.Errorf("read wall response: %w", err)
+	}
+	if len(data) > mcpMaxResponseBytes {
+		return nil, mcpArtifactContentOutput{}, fmt.Errorf("artifact %q exceeds %d bytes; fetch it through the operator UI instead", name, mcpMaxResponseBytes)
+	}
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		msg := strings.TrimSpace(string(data))
+		if msg == "" {
+			msg = res.Status
+		}
+		return nil, mcpArtifactContentOutput{}, fmt.Errorf("wall returned %s: %s", res.Status, msg)
+	}
+	return nil, mcpArtifactContentOutput{
+		RunID:         id,
+		Name:          name,
+		MediaType:     res.Header.Get("Content-Type"),
+		Size:          len(data),
+		ContentBase64: base64.StdEncoding.EncodeToString(data),
+	}, nil
 }
 
 func (c *mcpControl) cancelRun(ctx context.Context, _ *mcp.CallToolRequest, in mcpRunInput) (*mcp.CallToolResult, map[string]any, error) {
