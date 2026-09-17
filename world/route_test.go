@@ -211,7 +211,7 @@ func TestFindRouteAtReentersMapWhenComponentChanges(t *testing.T) {
 	}
 	for i := range want {
 		if route[i] != want[i] {
-			t.Fatalf("route[%d] = %+v, want %+v (full route %v)", i, route[i], want, route)
+			t.Fatalf("route[%d] = %+v, want %+v (full route %v)", i, route[i], want[i], route)
 		}
 	}
 }
