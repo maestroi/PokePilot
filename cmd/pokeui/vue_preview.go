@@ -17,7 +17,11 @@ const pokemonSpriteImageOrigin = "https://raw.githubusercontent.com"
 // pokeui compilation. A committed placeholder keeps ordinary Go-only builds
 // valid, but the browser surface now requires built Vue assets at runtime.
 //
-//go:embed ui/vue
+// `all:` is required: Vite emits shared chunks such as
+// `_plugin-vue_export-helper-*.js`, and Go's default directory embed pattern
+// drops names that start with `_`. Those 404s leave Watch and Replays blank.
+//
+//go:embed all:ui/vue
 var vueWebAssets embed.FS
 
 // withVuePreview retains its historic name for compatibility with existing

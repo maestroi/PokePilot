@@ -11,7 +11,11 @@ import (
 
 func vueBuilt(t *testing.T, target string) bool {
 	t.Helper()
-	_, err := fs.ReadFile(vueWebAssets, "ui/vue/"+target+"/"+target+".html")
+	return vueFileExists(target, target+".html")
+}
+
+func vueFileExists(target, name string) bool {
+	_, err := fs.ReadFile(vueWebAssets, "ui/vue/"+target+"/"+name)
 	return err == nil
 }
 
@@ -106,7 +110,7 @@ func TestVueBuildProvenanceEndpoint(t *testing.T) {
 }
 
 func TestVueSpectatorServesWorldExplorer(t *testing.T) {
-	if !vueBuilt(t, "spectator") {
+	if !vueFileExists("spectator", "world.html") {
 		t.Skip("spectator frontend bundle not built in this Go-only checkout")
 	}
 	h := withVuePreview(http.NotFoundHandler(), "spectator")
@@ -118,4 +122,69 @@ func TestVueSpectatorServesWorldExplorer(t *testing.T) {
 	if !strings.Contains(res.Body.String(), "id=\"app\"") {
 		t.Fatalf("world route did not serve Vue entry: %q", res.Body.String())
 	}
+}
+
+func TestVueEmbedIncludesUnderscorePrefixedAssets(t *testing.T) {
+	_, err := fs.ReadFile(vueWebAssets, "ui/vue/_underscore_embed_probe.txt")
+	if err != nil {
+		t.Fatalf("go:embed dropped underscore-prefixed Vue assets: %v", err)
+	}
+}
+
+func TestVueSpectatorHTMLAssetsAreEmbedded(t *testing.T) {
+	if !vueBuilt(t, "spectator") {
+		t.Skip("spectator frontend bundle not built in this Go-only checkout")
+	}
+
+	h := withVuePreview(http.NotFoundHandler(), "spectator")
+	pages := []string{"/"}
+	if vueFileExists("spectator", "world.html") {
+		pages = append(pages, "/world")
+	}
+	if vueFileExists("spectator", "replays.html") {
+		pages = append(pages, "/replays")
+	}
+	seen := map[string]bool{}
+	for _, page := range pages {
+		res := httptest.NewRecorder()
+		h.ServeHTTP(res, httptest.NewRequest(http.MethodGet, page, nil))
+		if res.Code != http.StatusOK {
+			t.Fatalf("%s = %d: %s", page, res.Code, res.Body.String())
+		}
+		for _, asset := range htmlAssetRefs(res.Body.String()) {
+			if seen[asset] {
+				continue
+			}
+			seen[asset] = true
+			assetRes := httptest.NewRecorder()
+			h.ServeHTTP(assetRes, httptest.NewRequest(http.MethodGet, asset, nil))
+			if assetRes.Code != http.StatusOK {
+				t.Fatalf("%s referenced %s, got %d", page, asset, assetRes.Code)
+			}
+		}
+	}
+}
+
+func htmlAssetRefs(html string) []string {
+	refs := make([]string, 0, 8)
+	for _, prefix := range []string{`src="`, `href="`} {
+		rest := html
+		for {
+			start := strings.Index(rest, prefix)
+			if start < 0 {
+				break
+			}
+			rest = rest[start+len(prefix):]
+			end := strings.Index(rest, `"`)
+			if end < 0 {
+				break
+			}
+			ref := rest[:end]
+			rest = rest[end+1:]
+			if strings.HasPrefix(ref, "/assets/") {
+				refs = append(refs, ref)
+			}
+		}
+	}
+	return refs
 }
