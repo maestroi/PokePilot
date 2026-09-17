@@ -46,6 +46,7 @@ const (
 type Tile struct {
 	RunID           string
 	Status          string
+	Game            string
 	Planner         string
 	Starter         string
 	Dest            string
@@ -128,6 +129,7 @@ type Tile struct {
 type tileRow struct {
 	RunID           string           `json:"run_id"`
 	Status          string           `json:"status"`
+	Game            string           `json:"game,omitempty"`
 	Planner         string           `json:"planner"`
 	Starter         string           `json:"starter"`
 	Dest            string           `json:"dest"`
@@ -220,6 +222,7 @@ func (w *Wall) SetStatePath(path string) {
 type persistedTile struct {
 	RunID           string         `json:"run_id"`
 	Status          string         `json:"status"`
+	Game            string         `json:"game,omitempty"`
 	Planner         string         `json:"planner,omitempty"`
 	Starter         string         `json:"starter,omitempty"`
 	Dest            string         `json:"dest,omitempty"`
@@ -281,6 +284,7 @@ func (w *Wall) persistedStateLocked() persistedState {
 		ps.Tiles[id] = persistedTile{
 			RunID:           t.RunID,
 			Status:          t.Status,
+			Game:            t.Game,
 			Planner:         t.Planner,
 			Starter:         t.Starter,
 			Dest:            t.Dest,
@@ -382,6 +386,7 @@ func (w *Wall) loadState() {
 		w.tiles[id] = &Tile{
 			RunID:           pt.RunID,
 			Status:          pt.Status,
+			Game:            pt.Game,
 			Planner:         pt.Planner,
 			Starter:         pt.Starter,
 			Dest:            pt.Dest,
@@ -554,6 +559,7 @@ func (w *Wall) applySpec(runID string, spec farm.Spec) {
 	t.RunID = spec.RunID
 	t.Status = statusQueued
 	t.lastUpdate = time.Now()
+	t.Game = spec.Game
 	t.Planner = spec.Planner
 	t.Starter = spec.Starter
 	t.Dest = spec.Dest
@@ -614,6 +620,7 @@ func (w *Wall) handleLease(res http.ResponseWriter, req *http.Request) {
 		RunID:           t.RunID,
 		Attempt:         t.Attempts + 1,
 		Seed:            t.Seed,
+		Game:            t.Game,
 		Planner:         t.Planner,
 		Starter:         t.Starter,
 		Dest:            t.Dest,
@@ -1466,6 +1473,7 @@ func (w *Wall) enqueueNextLocked(prev *Tile) {
 	w.applySpec(id, farm.Spec{
 		RunID:           id,
 		Seed:            seed,
+		Game:            prev.Game,
 		Planner:         prev.Planner,
 		Starter:         prev.Starter,
 		Dest:            prev.Dest,

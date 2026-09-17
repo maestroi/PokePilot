@@ -5,6 +5,12 @@
 POKEMON_RED_ROM ?= $(firstword $(wildcard $(CURDIR)/roms/pokemon_red.gb $(HOME)/.config/pokepilot/pokemon_red.gb) $(CURDIR)/roms/pokemon_red.gb)
 export POKEMON_RED_ROM
 
+# The whole ROM directory is mounted read-only into the farm runners, so a
+# worker plays any cartridge the operator put there (Red, Blue, ...). It
+# defaults to wherever the Red ROM was found.
+POKEPILOT_ROM_DIR ?= $(dir $(POKEMON_RED_ROM))
+export POKEPILOT_ROM_DIR
+
 # Extra flags, e.g. make run ARGS='-goto "pallet town"'
 ARGS ?=
 

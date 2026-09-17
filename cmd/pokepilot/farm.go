@@ -18,6 +18,7 @@ import (
 	"github.com/maestroi/pokepilot/agent"
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/farm"
+	"github.com/maestroi/pokepilot/game"
 	redprofile "github.com/maestroi/pokepilot/red/profile"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
@@ -260,7 +261,7 @@ func sendFinalHeartbeat(client *farm.Client, hb farm.Heartbeat) {
 //
 // The emulator is single-goroutine: everything that steps or reads it runs
 // on this goroutine. The heartbeat goroutine sees only the plain snapshot.
-func runFarm(m *emu.Emu, client *farm.Client, bootState []byte, watchPort int, checkpointDir string) {
+func runFarm(m *emu.Emu, client *farm.Client, library *romLibrary, watchPort int, checkpointDir string) {
 	tracer := newDialogueTracer()
 	snap := &heartbeatSnap{}
 	var mem state.Mem               // hoisted: every sample reuses this buffer
@@ -287,6 +288,18 @@ func runFarm(m *emu.Emu, client *farm.Client, bootState []byte, watchPort int, c
 
 		planner, starter, dest, fps, maxRounds, maxFrames := applySpec(*spec)
 		if err := validateSpec(planner, starter, dest); err != nil {
+			log.Printf("farm: %s: %v", spec.RunID, err)
+			finishRun(m, client, *spec, "error", err.Error(), 0, "", nil, nil)
+			time.Sleep(farmErrorSleep)
+			continue
+		}
+
+		// The cartridge is rebuilt per lease: a two-game worker pool runs
+		// either game, and an empty game keeps the cartridge this worker
+		// started on. This happens before prepareFarmAttempt, which derives
+		// the starter experiment from the loaded base ROM.
+		bootState, err := library.bootStateFor(m, game.GameID(spec.Game))
+		if err != nil {
 			log.Printf("farm: %s: %v", spec.RunID, err)
 			finishRun(m, client, *spec, "error", err.Error(), 0, "", nil, nil)
 			time.Sleep(farmErrorSleep)

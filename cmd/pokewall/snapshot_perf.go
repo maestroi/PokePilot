@@ -18,6 +18,7 @@ func (w *Wall) tileRowLocked(t *Tile) tileRow {
 	return tileRow{
 		RunID:           t.RunID,
 		Status:          t.Status,
+		Game:            t.Game,
 		Planner:         t.Planner,
 		Starter:         t.Starter,
 		Dest:            t.Dest,

@@ -12,8 +12,10 @@
 # does not build images.
 #
 # The ROM is never baked into the image: runner and replay tasks bind-mount
-# the operator's ${POKEMON_RED_ROM} read-only and read it back as
-# /rom/pokemon_red.gb.
+# the operator's ${POKEPILOT_ROM_DIR} read-only at /rom and read individual
+# cartridges back as /rom/pokemon_red.gb, /rom/pokemon_blue.gb, ... Which game
+# a file is comes from its bytes (profiles.Detect), not its name, so dropping a
+# third cartridge into that directory needs no code or deploy change.
 #
 # pokeui is in the stack twice: `ui` is the private operator console, while
 # `spectator` is a separate process with a server-side read-only route table.
@@ -90,7 +92,7 @@ services:
     image: ${FARM_IMAGE:-pokepilot-farm:local}
     # Replay is intentionally a separate trust boundary. It needs the ROM and
     # S3 credentials to verify/render .gbrun recordings; pokewall does not.
-    command: ["pokereplay", "-http", ":8080", "-wall", "http://wall:8080", "-rom", "/rom/pokemon_red.gb"]
+    command: ["pokereplay", "-http", ":8080", "-wall", "http://wall:8080", "-rom", "/rom/pokemon_red.gb"] # ponytail: Blue recordings still need a per-recording ROM picker; replay stays Red until then
     environment:
       POKEPILOT_S3_ENDPOINT: ${POKEPILOT_S3_ENDPOINT:-}
       POKEPILOT_S3_BUCKET: ${POKEPILOT_S3_BUCKET:-}
@@ -104,7 +106,7 @@ services:
       POKEPILOT_REPLAY_ENCODER: ${POKEPILOT_REPLAY_ENCODER:-auto}
       LIBVA_DRIVER_NAME: ${LIBVA_DRIVER_NAME:-iHD}
     volumes:
-      - ${POKEMON_RED_ROM}:/rom/pokemon_red.gb:ro
+      - ${POKEPILOT_ROM_DIR}:/rom:ro
     deploy:
       replicas: 1
 
@@ -175,6 +177,9 @@ services:
     command: ["pokepilot", "-http", ":8099", "-capture-every", "1"]
     environment:
       POKEPILOT_ORCH_URL: http://wall:8080
+      # POKEPILOT_ROM_DIR is where the runner looks for every cartridge it can
+      # play; POKEMON_RED_ROM names the one non-farm mode boots from.
+      POKEPILOT_ROM_DIR: /rom
       POKEMON_RED_ROM: /rom/pokemon_red.gb
       # Optional S3-compatible artifact storage. Set the tuple to point at
       # RustFS/MinIO/S3; with it configured, run.gbrun is uploaded directly
@@ -238,7 +243,7 @@ services:
       POKEPILOT_LLM_FALLBACK_MAX_TOKENS: ${POKEPILOT_LLM_FALLBACK_MAX_TOKENS:-}
       POKEPILOT_LLM_FALLBACK_TIMEOUT: ${POKEPILOT_LLM_FALLBACK_TIMEOUT:-}
     volumes:
-      - ${POKEMON_RED_ROM}:/rom/pokemon_red.gb:ro
+      - ${POKEPILOT_ROM_DIR}:/rom:ro
     deploy:
       replicas: 2
       # 1G is a fence, not the steady-state budget. A healthy runner is 10-50MB;
