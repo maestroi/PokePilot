@@ -1,14 +1,16 @@
-<script setup lang="ts">
-import { computed, ref } from 'vue'
-import { mapEntry } from '../mapCatalog'
-import { WORLD_ATLAS_MAPS, worldMapMeta } from '../worldManifest'
-
+<script lang="ts">
 export interface WorldAtlasMarker {
   map: number
   x: number
   y: number
   label?: string
 }
+</script>
+
+<script setup lang="ts">
+import { computed, ref } from 'vue'
+import { mapEntry } from '../mapCatalog'
+import { WORLD_ATLAS_MAPS, worldMapMeta } from '../worldManifest'
 
 const props = withDefaults(defineProps<{
   selectedMap?: number
