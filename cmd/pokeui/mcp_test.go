@@ -237,3 +237,66 @@ func TestMCPToolsDriveOnlyOperatorAPI(t *testing.T) {
 		t.Fatalf("artifact content = %q, want %q", decoded, "checkpoint-bytes")
 	}
 }
+
+// TestMCPArtifactContentUsesReplayForDurabilizedArtifacts guards against the
+// regression this tool was built to fix: pokewall durabilizes finish
+// artifacts to S3 shortly after a run ends, at which point its own inline
+// content route 409s. The browser's identical route already falls back to
+// pokereplay for that case (mountRunInspectorRoutes); the MCP tool must make
+// the same choice instead of only ever asking pokewall.
+func TestMCPArtifactContentUsesReplayForDurabilizedArtifacts(t *testing.T) {
+	wall := httptest.NewServer(http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+		if strings.HasSuffix(req.URL.Path, "/content") {
+			t.Fatalf("MCP must not ask pokewall directly once replay is configured: %s", req.URL.Path)
+		}
+		http.NotFound(res, req)
+	}))
+	t.Cleanup(wall.Close)
+
+	replay := httptest.NewServer(http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+		if req.Method == http.MethodGet && strings.HasSuffix(req.URL.Path, "/artifacts/durable.state/content") {
+			res.Header().Set("Content-Type", "application/octet-stream")
+			res.Write([]byte("durabilized-bytes")) //nolint:errcheck
+			return
+		}
+		http.NotFound(res, req)
+	}))
+	t.Cleanup(replay.Close)
+
+	ui := httptest.NewServer(handlerWithServices(wall.URL, replay.URL, "secret"))
+	t.Cleanup(ui.Close)
+
+	client := mcp.NewClient(&mcp.Implementation{Name: "pokeui-test", Version: "1"}, nil)
+	httpClient := &http.Client{Transport: bearerRoundTripper{token: "secret", base: http.DefaultTransport}}
+	session, err := client.Connect(context.Background(), &mcp.StreamableClientTransport{
+		Endpoint:   ui.URL + "/mcp",
+		HTTPClient: httpClient,
+	}, nil)
+	if err != nil {
+		t.Fatalf("connect MCP client: %v", err)
+	}
+	defer session.Close()
+
+	content, err := session.CallTool(context.Background(), &mcp.CallToolParams{
+		Name:      "pokepilot_get_run_artifact_content",
+		Arguments: map[string]any{"run_id": "run-1", "name": "durable.state"},
+	})
+	if err != nil {
+		t.Fatalf("get_run_artifact_content: %v", err)
+	}
+	raw, err := json.Marshal(content.StructuredContent)
+	if err != nil {
+		t.Fatalf("marshal structured content: %v", err)
+	}
+	var artifact mcpArtifactContentOutput
+	if err := json.Unmarshal(raw, &artifact); err != nil {
+		t.Fatalf("decode artifact content result: %v", err)
+	}
+	decoded, err := base64.StdEncoding.DecodeString(artifact.ContentBase64)
+	if err != nil {
+		t.Fatalf("decode base64: %v", err)
+	}
+	if string(decoded) != "durabilized-bytes" {
+		t.Fatalf("artifact content = %q, want %q", decoded, "durabilized-bytes")
+	}
+}
