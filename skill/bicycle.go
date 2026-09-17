@@ -30,7 +30,12 @@ func init() {
 	// These are transaction-owned destinations. They are resolvable by Place
 	// for BicycleProgression, but are not generic exploration targets that can
 	// stop halfway through the voucher/exchange transaction.
-	interactionPlaces[pokemonFanClubChairmanPlace] = Destination{Map: pokemonFanClubMap, X: 3, Y: 2}
+	//
+	// The Fan Club chairman stands at (3,1) behind the table/counter tile at
+	// (3,2). The player cannot stand on that middle tile; (3,3) is the actual
+	// counter approach. TalkAtChoice already understands this two-tile Gen 1
+	// counter interaction and faces the intervening counter before talking.
+	interactionPlaces[pokemonFanClubChairmanPlace] = Destination{Map: pokemonFanClubMap, X: 3, Y: 3}
 	interactionPlaces[ceruleanBikeShopPlace] = Destination{Map: bikeShopMap, X: 3, Y: 6}
 }
 
