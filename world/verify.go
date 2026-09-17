@@ -93,6 +93,12 @@ func ValidationSnapshot(g *Graph, transitions map[Edge]gameruntime.Transition, s
 					PivotOnly:  transition.PivotOnly,
 					PortBypass: transition.PortBypass,
 				}
+				if transition.PortBypass {
+					// The action owns traversal at this seam, so pristine standing
+					// components are not authoritative post-action geometry.
+					out.Exit.Known = false
+					out.Entry.Known = false
+				}
 			}
 			snapshot.Edges = append(snapshot.Edges, out)
 		}
