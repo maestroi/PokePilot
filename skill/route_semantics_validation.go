@@ -24,12 +24,12 @@ func RedRouteTransitionsForValidation(g *world.Graph) map[world.Edge]gameruntime
 			if !ok {
 				continue
 			}
-			// Semantic actions are allowed to bypass pristine component
-			// reachability. Route 12's Snorlax action does not own the map seam,
-			// so attaching it to a padding-only connection band would turn solid
-			// border padding into an executable route. Keep exactly the same
-			// adapter constraint as live routing.
-			if transition.ID == "red:route12_snorlax" && edge.Kind == world.EdgeConnection && !g.ConnectionExitWalkable(edge) {
+			// Only actions that explicitly own a map-edge port may attach to a
+			// connection band with no pristine walkable seam. Surf does; Cut,
+			// Snorlax and other interior actions do not. Keep this identical to
+			// the live prerequisite catalog so verification audits what routing
+			// can actually select.
+			if edge.Kind == world.EdgeConnection && !transition.PortBypass && !g.ConnectionExitWalkable(edge) {
 				continue
 			}
 			transitions[edge] = transition
