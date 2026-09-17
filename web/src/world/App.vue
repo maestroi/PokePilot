@@ -24,6 +24,8 @@ interface MapPayload {
   fallback?: boolean
 }
 
+type WorldView = 'explorer' | 'debug'
+
 const initialParams = new URLSearchParams(window.location.search)
 const initialEntry = resolveMapQuery(initialParams.get('map')) || MAP_CATALOG[0]
 const selectedMap = ref(initialEntry.id)
@@ -31,7 +33,7 @@ const search = ref(initialEntry.name)
 const xInput = ref(initialParams.get('x') || '')
 const yInput = ref(initialParams.get('y') || '')
 const runID = ref(initialParams.get('run') || '')
-const developerOverlay = ref(initialParams.get('debug') === '1')
+const viewMode = ref<WorldView>(initialParams.get('debug') === '1' ? 'debug' : 'explorer')
 const showWarps = ref(true)
 const showSprites = ref(true)
 const showTrail = ref(true)
@@ -91,7 +93,7 @@ watch(selectedMap, () => {
   void loadMap()
   syncURL()
 }, { immediate: true })
-watch([xInput, yInput, developerOverlay, runID], syncURL)
+watch([xInput, yInput, viewMode, runID], syncURL)
 watch(selectedRun, (run) => {
   if (run && Number.isFinite(Number(run.map)) && !initialParams.has('map')) {
     selectedMap.value = Number(run.map)
@@ -163,7 +165,7 @@ function syncURL(): void {
   else url.searchParams.delete('x')
   if (yInput.value.trim() !== '') url.searchParams.set('y', yInput.value.trim())
   else url.searchParams.delete('y')
-  if (developerOverlay.value) url.searchParams.set('debug', '1')
+  if (viewMode.value === 'debug') url.searchParams.set('debug', '1')
   else url.searchParams.delete('debug')
   if (runID.value) url.searchParams.set('run', runID.value)
   else url.searchParams.delete('run')
@@ -185,7 +187,7 @@ async function copyLink(): Promise<void> {
   <AppShell
     eyebrow="Public world data"
     title="World explorer"
-    subtitle="Inspect ROM-derived collision geometry, warps and live run overlays without reproducing a full run first."
+    subtitle="Explore the game map freely, attach a live run, or switch to the exact semantic debug view when diagnosing routing and collision."
     mode="public"
   >
     <template #summary>
@@ -271,10 +273,28 @@ async function copyLink(): Promise<void> {
             </div>
             <p class="mt-1 truncate font-mono text-[10px] text-slate-600">{{ selectedEntry?.name || 'unnamed map id' }}</p>
           </div>
-          <label class="inline-flex cursor-pointer items-center gap-1.5 text-[10px] font-semibold text-slate-400">
-            <input v-model="developerOverlay" type="checkbox" class="size-3 accent-cyan-300" />
-            Debug grid
-          </label>
+          <div class="flex items-center gap-1 rounded-md bg-black/25 p-0.5 ring-1 ring-white/10" aria-label="World map view">
+            <button
+              type="button"
+              :class="[
+                viewMode === 'explorer' ? 'bg-emerald-300/15 text-emerald-100 ring-1 ring-emerald-300/20' : 'text-slate-500 hover:text-white',
+                'rounded px-2 py-1 text-[10px] font-semibold'
+              ]"
+              @click="viewMode = 'explorer'"
+            >
+              Explorer
+            </button>
+            <button
+              type="button"
+              :class="[
+                viewMode === 'debug' ? 'bg-cyan-300/15 text-cyan-100 ring-1 ring-cyan-300/20' : 'text-slate-500 hover:text-white',
+                'rounded px-2 py-1 text-[10px] font-semibold'
+              ]"
+              @click="viewMode = 'debug'"
+            >
+              Debug
+            </button>
+          </div>
         </div>
 
         <div class="h-[calc(68vh-3rem)] min-h-[34rem]">
@@ -288,7 +308,9 @@ async function copyLink(): Promise<void> {
             :show-trail="Boolean(overlayTrail.length)"
             :show-sprites="Boolean(overlaySprites.length)"
             :show-warps="showWarps"
-            :debug="developerOverlay"
+            :debug="viewMode === 'debug'"
+            :appearance="viewMode === 'explorer' ? 'explorer' : 'semantic'"
+            :show-debug-toggle="false"
             interactive
             @warp-select="followWarp"
           />
@@ -333,8 +355,8 @@ async function copyLink(): Promise<void> {
         </section>
 
         <section class="rounded-xl border border-white/10 bg-[#0d141e] p-3 text-[10px] leading-5 text-slate-500">
-          <strong class="text-slate-300">Debugging without extra tools</strong>
-          <p class="mt-1">Open a map by the same name or ID shown in a failure, enter the reported X/Y, enable the debug grid, and share the resulting URL. Warp destinations are clickable and collision comes from the same semantic export used by routing.</p>
+          <strong class="text-slate-300">Explorer + debugger</strong>
+          <p class="mt-1">Explorer mode uses an original procedural terrain treatment for easier public browsing. Debug mode switches back to exact semantic colors, grid labels and coordinates from the same ROM-derived geometry.</p>
         </section>
       </aside>
     </div>
