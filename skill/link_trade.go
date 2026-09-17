@@ -11,16 +11,14 @@ import (
 	"github.com/maestroi/pokepilot/world"
 )
 
-const (
-	tradeCenterMapID           uint8 = 0xef
-	linkReceptionBudget              = 12_000
-	linkMenuBudget                   = 12_000
-	linkExchangeBudget               = 50_000
-	linkTradeMenuBudget              = 50_000
-	linkTradeConfirmationBudget      = 12_000
-	linkTradeExitBudget              = 12_000
-	linkTravelBattles                = 80
-)
+const tradeCenterMapID uint8 = 0xef
+const linkReceptionBudget = 12_000
+const linkMenuBudget = 12_000
+const linkExchangeBudget = 50_000
+const linkTradeMenuBudget = 50_000
+const linkTradeConfirmationBudget = 12_000
+const linkTradeExitBudget = 12_000
+const linkTravelBattles = 80
 
 // LinkTradeResult records the gameplay work done by VirtualTrade. The serial
 // peer owns protocol bytes; this result owns only what the unmodified ROM did.
