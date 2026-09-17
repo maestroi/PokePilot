@@ -12,11 +12,9 @@ import (
 	"time"
 )
 
-const (
-	defaultServiceHTTPTimeout = 10 * time.Second
-	serviceStatusPollInterval = 50 * time.Millisecond
-	maxServiceResponseBytes    = 64 << 10
-)
+const defaultServiceHTTPTimeout = 10 * time.Second
+const serviceStatusPollInterval = 50 * time.Millisecond
+const maxServiceResponseBytes = 64 << 10
 
 // SessionRequest is the stable control-plane request for one virtual trader
 // endpoint. Session is also the broker session id the emulator must join.
