@@ -24,7 +24,7 @@ export default defineConfig(({ mode, command }) => {
       emptyOutDir: true,
       rollupOptions: {
         input: target === 'spectator'
-          ? { spectator: 'spectator.html', replays: 'replays.html' }
+          ? { spectator: 'spectator.html', world: 'world.html', replays: 'replays.html' }
           : 'operator.html'
       }
     }

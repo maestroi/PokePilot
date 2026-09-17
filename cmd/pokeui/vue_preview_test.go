@@ -104,3 +104,18 @@ func TestVueBuildProvenanceEndpoint(t *testing.T) {
 		t.Fatalf("build provenance = %#v", got)
 	}
 }
+
+func TestVueSpectatorServesWorldExplorer(t *testing.T) {
+	if !vueBuilt(t, "spectator") {
+		t.Skip("spectator frontend bundle not built in this Go-only checkout")
+	}
+	h := withVuePreview(http.NotFoundHandler(), "spectator")
+	res := httptest.NewRecorder()
+	h.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/world?map=ROUTE_13&x=49&y=8&debug=1", nil))
+	if res.Code != http.StatusOK {
+		t.Fatalf("world route = %d: %s", res.Code, res.Body.String())
+	}
+	if !strings.Contains(res.Body.String(), "id=\"app\"") {
+		t.Fatalf("world route did not serve Vue entry: %q", res.Body.String())
+	}
+}
