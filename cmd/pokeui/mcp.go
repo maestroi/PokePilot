@@ -37,6 +37,7 @@ type mcpControl struct {
 
 type mcpStartRunInput struct {
 	Planner    string `json:"planner,omitempty" jsonschema:"planner mode: llm or scripted; defaults to llm"`
+	Game       string `json:"game,omitempty" jsonschema:"game to play, e.g. pokemon-red or pokemon-blue; empty lets the runner pick its mounted cartridge"`
 	Starter    string `json:"starter,omitempty" jsonschema:"starter Pokemon: squirtle, charmander, or bulbasaur; defaults to squirtle"`
 	Dest       string `json:"dest,omitempty" jsonschema:"destination for scripted mode"`
 	Goal       string `json:"goal,omitempty" jsonschema:"task statement for llm mode; defaults to earning the Boulder Badge"`
@@ -248,6 +249,7 @@ func (c *mcpControl) startRun(ctx context.Context, _ *mcp.CallToolRequest, in mc
 	spec := farm.Spec{
 		RunID:           runID,
 		Seed:            in.Seed,
+		Game:            strings.ToLower(strings.TrimSpace(in.Game)),
 		Planner:         planner,
 		Starter:         starter,
 		Dest:            dest,

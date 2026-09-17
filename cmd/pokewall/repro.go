@@ -102,6 +102,7 @@ func (w *Wall) handleQueueRepro(res http.ResponseWriter, req *http.Request) {
 	spec := farm.Spec{
 		RunID:      newID,
 		Seed:       run.Seed,
+		Game:       run.Game,
 		Planner:    run.Planner,
 		Starter:    run.Starter,
 		Dest:       run.Dest,

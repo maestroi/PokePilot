@@ -35,6 +35,14 @@
   const howLabel = (r) => r.planner === "scripted" ? "walk" : "play";
   const howText = (r) => r.planner === "scripted" ? "walk to a place" : "play the game";
   const starterOf = (r) => r.starter || (r.planner === "scripted" ? "squirtle" : "LLM picks");
+  const gameOf = (r) => {
+    const game = (r.game || "").toLowerCase();
+    switch (game) {
+      case "pokemon-blue": return "Pokémon Blue";
+      case "pokemon-red": return "Pokémon Red";
+      default: return game || "Pokémon Red";
+    }
+  };
   const outcomeOf = (r) => (r.reason || r.status || "").toLowerCase();
   const goalOf = (r) => (r.goal || "").trim();
   const llmProfileLabel = (r) => {
@@ -283,6 +291,7 @@
     const f = $("spec-form");
     f.run_id.value = newRunId();
     f.planner.value = "llm";
+    f.game.value = "pokemon-red";
     f.starter.value = "";
     f.dest.value = "viridian pokemon center";
     f.goal.value = "Earn the Boulder Badge.";
@@ -738,7 +747,7 @@
     $("detail-frame").textContent = Number((event && event.frame) || run.frame || 0).toLocaleString();
     $("detail-round").textContent = run.stats && (run.stats.round ?? run.stats.rounds) != null ? String(run.stats.round ?? run.stats.rounds) : "—";
     const settings = kv([
-      ["how", howText(run)], ["starter", starterOf(run)], ["goal", goalOf(run)],
+      ["how", howText(run)], ["game", gameOf(run)], ["starter", starterOf(run)], ["goal", goalOf(run)],
       ["model", run.planner === "llm" ? llmProfileLabel(run) : ""],
       ["reasoning", run.planner === "llm" ? reasoningEffortLabel(run) : ""],
       ["walk to", run.planner === "scripted" ? (run.dest || "—") : ""], ["seed", String(run.seed)],
@@ -1074,7 +1083,7 @@
 
   $("spec-form").addEventListener("submit", async (ev) => {
     ev.preventDefault(); const err = $("form-error"); err.textContent = ""; const f = ev.target; const planner = f.planner.value;
-    const spec = { run_id: f.run_id.value.trim(), planner, starter: f.starter.value, dest: planner === "scripted" ? f.dest.value.trim() : "", goal: planner === "llm" ? f.goal.value.trim() : "", llm_profile: planner === "llm" ? f.llm_profile.value : "", reasoning_effort: planner === "llm" && f.reasoning_effort.value !== "auto" ? f.reasoning_effort.value : "", seed: Number(f.seed.value || 0), fps: Number(f.fps.value || 0), max_rounds: Number(f.max_rounds.value || 0), max_frames: Number(f.max_frames.value || 0), endless: f.endless.checked, random_seed: f.endless.checked && f.seed_mode.value === "random" };
+    const spec = { run_id: f.run_id.value.trim(), planner, game: f.game.value, starter: f.starter.value, dest: planner === "scripted" ? f.dest.value.trim() : "", goal: planner === "llm" ? f.goal.value.trim() : "", llm_profile: planner === "llm" ? f.llm_profile.value : "", reasoning_effort: planner === "llm" && f.reasoning_effort.value !== "auto" ? f.reasoning_effort.value : "", seed: Number(f.seed.value || 0), fps: Number(f.fps.value || 0), max_rounds: Number(f.max_rounds.value || 0), max_frames: Number(f.max_frames.value || 0), endless: f.endless.checked, random_seed: f.endless.checked && f.seed_mode.value === "random" };
     try {
       const res = await fetch("/v1/specs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(spec) });
       const body = await res.json().catch(() => ({}));

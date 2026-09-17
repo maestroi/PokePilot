@@ -14,8 +14,12 @@ type Spec struct {
 	// the first, higher after retries. The runner echoes it back in its
 	// FinishReport so a late finish from a dead attempt cannot settle a
 	// newer one.
-	Attempt int    `json:"attempt"`
-	Seed    int64  `json:"seed"`
+	Attempt int   `json:"attempt"`
+	Seed    int64 `json:"seed"`
+	// Game is the game id the run should play, e.g. "pokemon-red" or
+	// "pokemon-blue". Empty means no preference: the runner plays whichever
+	// cartridge it has mounted, which keeps older deployments working.
+	Game    string `json:"game,omitempty"`
 	Planner string `json:"planner"`
 	Starter string `json:"starter"`
 	Dest    string `json:"dest"`
