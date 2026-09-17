@@ -284,6 +284,15 @@ func redRoutePrerequisites(g *world.Graph, romData []byte, mem *state.Mem) world
 	for _, edges := range g.Edges {
 		for _, edge := range edges {
 			if transition, ok := redRouteTransitionForEdge(edge); ok {
+				// Route 12 <-> Route 13 is split into component-scoped border
+				// bands, including in-bounds padding bands with no walkable seam.
+				// The Snorlax action is semantic, so routing is allowed to bypass
+				// ordinary canExit reachability for it; without this filter that
+				// privilege also made the padding bands selectable and Traverse
+				// then burned its re-plan budget trying to stand on solid ground.
+				if transition.ID == "red:route12_snorlax" && edge.Kind == world.EdgeConnection && !g.ConnectionExitWalkable(edge) {
+					continue
+				}
 				transitions[edge] = transition
 			}
 		}
