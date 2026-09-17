@@ -1,9 +1,10 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { Disclosure, DisclosureButton, DisclosurePanel } from '@headlessui/vue'
 import { Bars3Icon, XMarkIcon } from '@heroicons/vue/24/outline'
 import type { AppNavItem } from '../types'
 
-withDefaults(defineProps<{
+const props = withDefaults(defineProps<{
   eyebrow: string
   title: string
   subtitle: string
@@ -14,6 +15,18 @@ withDefaults(defineProps<{
   navigation: () => [],
   showIntro: true
 })
+
+const publicNavigation = computed<AppNavItem[]>(() => {
+  if (props.mode !== 'public') return []
+  const path = window.location.pathname
+  return [
+    { name: 'Watch', href: '/', current: path === '/' },
+    { name: 'World', href: '/world', current: path === '/world' || path === '/world/' },
+    { name: 'Replays', href: '/replays', current: path === '/replays' || path.startsWith('/replays/') }
+  ]
+})
+
+const effectiveNavigation = computed(() => props.navigation.length ? props.navigation : publicNavigation.value)
 </script>
 
 <template>
@@ -30,9 +43,9 @@ withDefaults(defineProps<{
           </div>
         </div>
 
-        <div v-if="navigation.length" class="hidden min-w-0 flex-1 items-stretch self-stretch sm:flex">
+        <div v-if="effectiveNavigation.length" class="hidden min-w-0 flex-1 items-stretch self-stretch sm:flex">
           <a
-            v-for="item in navigation"
+            v-for="item in effectiveNavigation"
             :key="item.name"
             :href="item.href"
             :aria-current="item.current ? 'page' : undefined"
@@ -60,7 +73,7 @@ withDefaults(defineProps<{
         <div class="flex shrink-0 items-center gap-1.5">
           <slot name="actions" />
           <DisclosureButton
-            v-if="navigation.length"
+            v-if="effectiveNavigation.length"
             class="inline-flex items-center justify-center rounded-sm p-1.5 text-[var(--poke-muted)] hover:bg-white/5 hover:text-white sm:hidden"
           >
             <span class="sr-only">Open navigation</span>
@@ -70,9 +83,9 @@ withDefaults(defineProps<{
         </div>
       </div>
 
-      <DisclosurePanel v-if="navigation.length" class="border-t border-[var(--poke-border)] sm:hidden">
+      <DisclosurePanel v-if="effectiveNavigation.length" class="border-t border-[var(--poke-border)] sm:hidden">
         <a
-          v-for="item in navigation"
+          v-for="item in effectiveNavigation"
           :key="item.name"
           :href="item.href"
           :aria-current="item.current ? 'page' : undefined"
@@ -93,8 +106,8 @@ withDefaults(defineProps<{
 
     <main class="px-2.5 py-2 sm:px-3">
       <div v-if="showIntro && (title || subtitle)" class="mb-3 max-w-4xl">
-        <span v-if="eyebrow && navigation.length" class="poke-kicker block">{{ eyebrow }}</span>
-        <h1 v-if="navigation.length" class="text-xl font-semibold text-white">{{ title }}</h1>
+        <span v-if="eyebrow && effectiveNavigation.length" class="poke-kicker block">{{ eyebrow }}</span>
+        <h1 v-if="effectiveNavigation.length" class="text-xl font-semibold text-white">{{ title }}</h1>
         <p v-if="subtitle" class="mt-1 max-w-[70ch] text-[13px] text-[var(--poke-muted)]">{{ subtitle }}</p>
       </div>
       <slot />
