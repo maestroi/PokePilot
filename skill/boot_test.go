@@ -24,6 +24,22 @@ func openEmu(t *testing.T) *emu.Emu {
 	return e
 }
 
+// openEmuCGB mirrors openEmu on the Game Boy Color model the production runner
+// boots, which is what checked states captured by the farm verify against.
+func openEmuCGB(t *testing.T) *emu.Emu {
+	t.Helper()
+	path := os.Getenv("POKEMON_RED_ROM")
+	if path == "" {
+		t.Skip("POKEMON_RED_ROM not set")
+	}
+	e, err := emu.OpenCGB(path)
+	if err != nil {
+		t.Fatalf("emu.OpenCGB: %v", err)
+	}
+	t.Cleanup(func() { e.Close() })
+	return e
+}
+
 func introNameMenuMem(current byte) *state.Mem {
 	m := new(state.Mem)
 	// Oak's name menus never set wFontLoaded; detection must not require it.

@@ -53,3 +53,38 @@ func TestFuchsiaProgressionRealROM(t *testing.T) {
 		t.Fatal("#33 positive postcondition is false after progression")
 	}
 }
+
+// TestFuchsiaProgressionSafariGateResumeRealROM replays the farm failure frame
+// behind triage key 7ec4fd0b8daca2c9 (run-1utwl5b5wpnkv3sh5qap4p29k0 and its
+// resume chain, all built before the PR #818 repair). A resumed save whose
+// Safari session has finished still has the paid entrance "Would you like to
+// join the hunt?" YES/NO prompt open while the story is walking south toward
+// the Warden. Travel used to abort there with an unanswered-choice error
+// instead of declining, so FuchsiaProgression could never reach HM04.
+//
+// POKEPILOT_FUCHSIA_GATE_RESUME_STATE is that mid-dialogue frame, which is why
+// it goes through loadPreparedState rather than the controllable-overworld
+// loader: asserting controllability would reject the exact state the bug lived
+// in.
+func TestFuchsiaProgressionSafariGateResumeRealROM(t *testing.T) {
+	m := loadPreparedCGBState(t, "POKEPILOT_FUCHSIA_GATE_RESUME_STATE")
+
+	var before state.Mem
+	state.Snapshot(m, &before)
+	if FuchsiaProgressionComplete(&before) {
+		t.Fatal("gate-resume state is already complete")
+	}
+
+	if err := FuchsiaProgression(m, m.ROM(), StatAwareMove(m.ROM())); err != nil {
+		t.Fatalf("FuchsiaProgression on the resumed gate state: %v", err)
+	}
+
+	var after state.Mem
+	state.Snapshot(m, &after)
+	if !state.HasEvent(&after, eventGotHM04) || !hasBagItem(&after, hm04StrengthItem) {
+		t.Fatal("resuming through the Safari gate must still award HM04 Strength")
+	}
+	if !FuchsiaProgressionComplete(&after) {
+		t.Fatal("resuming through the Safari gate must reach Soul Badge + HM03 + HM04")
+	}
+}
