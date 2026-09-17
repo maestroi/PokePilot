@@ -6,26 +6,33 @@ import (
 )
 
 func TestTrainerLinkDataRoundTripRestoresNoDataBytes(t *testing.T) {
-	mon := testMon(0x26)
-	mon.Raw[10] = NoDataByte
-	mon.Raw[260%PartyMonSize] = NoDataByte
-	trainer := NewTrainer("POKEPILOT", mon)
+	party := []Mon{
+		testMon(0x24), testMon(0x25), testMon(0x26),
+		testMon(0x27), testMon(0x28), testMon(0x29),
+	}
+	party[0].Raw[10] = NoDataByte
+	// Slot six starts after the 252-byte first patch-list segment, so this
+	// exercises the second segment rather than only the common first one.
+	party[5].Raw[5] = NoDataByte
+	trainer := NewTrainer("POKEPILOT", party...)
 	block, patch, err := trainer.LinkData()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bytes.Contains(block[partyMonsOffset:partyMonsOffset+PartyMonSize], []byte{NoDataByte}) {
+	if bytes.Contains(block[partyMonsOffset:partyMonsOffset+PartyLength*PartyMonSize], []byte{NoDataByte}) {
 		t.Fatal("patched wire block still contains 0xfe")
 	}
 	decoded, err := ParseTrainerBlock(block, patch[:])
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(decoded.Party) != 1 {
-		t.Fatalf("party len = %d, want 1", len(decoded.Party))
+	if len(decoded.Party) != len(party) {
+		t.Fatalf("party len = %d, want %d", len(decoded.Party), len(party))
 	}
-	if decoded.Party[0] != mon {
-		t.Fatalf("round trip changed mon\ngot  %#v\nwant %#v", decoded.Party[0], mon)
+	for i := range party {
+		if decoded.Party[i] != party[i] {
+			t.Fatalf("round trip changed slot %d\ngot  %#v\nwant %#v", i, decoded.Party[i], party[i])
+		}
 	}
 }
 
@@ -49,16 +56,24 @@ func TestMachineStoresExactRemoteMonForTradeback(t *testing.T) {
 	mustExchange(t, m, masterMagic)
 	mustExchange(t, m, connectedMagic)
 	mustExchange(t, m, selectTradeMagic)
+	// CableClub_DoBattleOrTrade first performs nibble/zero synchronization.
+	// The first 0xfd starts the random block, its first non-0xfd byte proves
+	// random synchronization, and the next 0xfd starts trainer data.
+	mustExchange(t, m, 0x60)
+	mustExchange(t, m, 0)
+	mustExchange(t, m, PreambleByte)
 	mustExchange(t, m, PreambleByte)
 	mustExchange(t, m, 0x12)
+	mustExchange(t, m, 0x34)
 	mustExchange(t, m, PreambleByte)
 
-	trainerWire := append([]byte{PreambleByte}, block[:]...)
-	for _, b := range trainerWire {
+	for _, b := range block {
 		mustExchange(t, m, b)
 	}
-	patchWire := append([]byte{PreambleByte}, patch[:]...)
-	for _, b := range patchWire {
+	// The patch list is a separate Serial_ExchangeBytes call and therefore
+	// has its own synchronization preamble before the 200 stored bytes.
+	mustExchange(t, m, PreambleByte)
+	for _, b := range patch {
 		mustExchange(t, m, b)
 	}
 
@@ -69,6 +84,29 @@ func TestMachineStoresExactRemoteMonForTradeback(t *testing.T) {
 
 	if got := m.trainer.Party[0]; got != remote {
 		t.Fatalf("stored tradeback mon changed bytes\ngot  %#v\nwant %#v", got, remote)
+	}
+	if m.state != stateSelectedTrade {
+		t.Fatalf("after completed trade state=%d, want next-trade data exchange", m.state)
+	}
+}
+
+func TestSelectedTradeDoesNotMistakeSyncZerosForRandomData(t *testing.T) {
+	m, err := NewMachine(MachineConfig{Trainer: NewTrainer("PEER", testMon(0x24))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustExchange(t, m, masterMagic)
+	mustExchange(t, m, connectedMagic)
+	mustExchange(t, m, selectTradeMagic)
+	for i := 0; i < 12; i++ {
+		mustExchange(t, m, 0)
+	}
+	if m.state != stateSelectedTrade {
+		t.Fatalf("sync zeros advanced state to %d", m.state)
+	}
+	mustExchange(t, m, PreambleByte)
+	if m.state != stateWaitingRandomSeed {
+		t.Fatalf("random preamble state=%d", m.state)
 	}
 }
 
