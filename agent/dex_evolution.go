@@ -18,14 +18,16 @@ const (
 // branched families are acquired first when no suitable individual is in the
 // party. When a purchasable stone is the only missing immediate prerequisite,
 // it offers a bounded supply purchase; the next observation then offers the
-// verified item evolution.
+// verified item evolution. Virtual trade sources are appended from the same
+// provider so trade-only species can become executable even when there are no
+// remaining locally obtainable Dex targets.
 func appendDexEvolutionObjectives(obs Observation, known *Knowledge, out []Objective) []Objective {
 	if len(obs.Dex.Targets) == 0 {
-		return out
+		return appendDexVirtualTradeObjectives(obs, out)
 	}
 	out = appendDexDuplicateEvolutionBaseObjectives(obs, known, out)
 	if len(obs.Party) == 0 {
-		return out
+		return appendDexVirtualTradeObjectives(obs, out)
 	}
 
 	owned := pokedexOwnedSet(obs)
@@ -113,7 +115,7 @@ func appendDexEvolutionObjectives(obs Observation, known *Knowledge, out []Objec
 			break
 		}
 	}
-	return out
+	return appendDexVirtualTradeObjectives(obs, out)
 }
 
 func dexEvolutionStonePurchaseAvailable(obs Observation, known *Knowledge, item ItemID) bool {
