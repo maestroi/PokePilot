@@ -6,7 +6,7 @@ import (
 	verifier "github.com/maestroi/pokepilot/worldverify"
 )
 
-func TestApplyRedReachabilityManifest(t *testing.T) {
+func TestApplyGen1ReachabilityManifest(t *testing.T) {
 	snapshot := verifier.Snapshot{Maps: []verifier.Map{
 		{ID: "36"}, // Pewter Gym: required
 		{ID: "45"}, // dead COPY
@@ -15,7 +15,7 @@ func TestApplyRedReachabilityManifest(t *testing.T) {
 		{ID: "76"}, // Hall of Fame scripted transfer
 		{ID: "30"}, // ordinary side house: no special expectation
 	}}
-	applyRedReachabilityManifest(&snapshot)
+	applyGen1ReachabilityManifest(&snapshot)
 
 	classes := map[verifier.MapID]verifier.ReachabilityClass{}
 	for _, expectation := range snapshot.MapExpectations {
@@ -42,6 +42,6 @@ func TestApplyRedReachabilityManifest(t *testing.T) {
 		labels[m.ID] = m.Label
 	}
 	if labels["36"] != "PEWTER_GYM" || labels["45"] != "CERULEAN_TRASHED_HOUSE_COPY" || labels["ef"] != "TRADE_CENTER" {
-		t.Fatalf("Red map labels not projected correctly: %+v", labels)
+		t.Fatalf("Gen-I map labels not projected correctly: %+v", labels)
 	}
 }
