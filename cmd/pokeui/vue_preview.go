@@ -36,6 +36,13 @@ func withVuePreview(next http.Handler, target string) http.Handler {
 			res.Header().Set("Cache-Control", "no-store")
 			http.Error(res, "frontend assets unavailable; run the web build before starting pokeui", http.StatusServiceUnavailable)
 			return
+		case req.Method == http.MethodGet && target == "spectator" && (req.URL.Path == "/world" || req.URL.Path == "/world/"):
+			if serveVueFile(res, req, target, "world.html") {
+				return
+			}
+			res.Header().Set("Cache-Control", "no-store")
+			http.Error(res, "world explorer assets unavailable; run the spectator web build before starting pokeui", http.StatusServiceUnavailable)
+			return
 		case req.Method == http.MethodGet && target == "spectator" && (req.URL.Path == "/replays" || strings.HasPrefix(req.URL.Path, "/replays/")):
 			if serveVueFile(res, req, target, "replays.html") {
 				return
