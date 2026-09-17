@@ -22,8 +22,19 @@ func TestVerifyGraphCountsPhantomOrdinaryEdgeAsInactive(t *testing.T) {
 	}
 
 	report := VerifyGraph(g, nil, 1)
-	if report.HasErrors() || report.WarningCount() != 0 {
-		t.Fatalf("inactive ordinary edge must not be a finding: %+v", report.Findings)
+	if report.HasErrors() {
+		t.Fatalf("inactive ordinary edge must not be an error: %+v", report.Findings)
+	}
+	if reportHasFinding(report, "dead_exit_port", worldverify.SeverityError) ||
+		reportHasFinding(report, "dead_entry_port", worldverify.SeverityError) {
+		t.Fatalf("inactive ordinary edge was promoted to a geometry error: %+v", report.Findings)
+	}
+	// With map 1 declared as the start, map 2 is independently and correctly
+	// reported as an unexplained full-capability reachability gap. That finding
+	// is about the map manifest, not the inactive edge classification exercised
+	// by this test.
+	if !reportHasFinding(report, "unclassified_unreachable_map", worldverify.SeverityWarning) {
+		t.Fatalf("expected separate reachability warning for map 2, got %+v", report.Findings)
 	}
 	if report.Stats.InactiveStaticEdges != 1 {
 		t.Fatalf("inactive static edges=%d, want 1", report.Stats.InactiveStaticEdges)

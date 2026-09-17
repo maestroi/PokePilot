@@ -20,6 +20,47 @@ const (
 	EdgeOther      EdgeKind = "other"
 )
 
+// ReachabilityClass describes what an adapter expects from a map when every
+// declared portable traversal capability is available. The verifier never
+// infers these meanings from ids or labels; each game adapter owns its manifest.
+type ReachabilityClass string
+
+const (
+	// ReachabilityRequired means a normal completion path depends on this map.
+	// Failure to reach it with the full capability set is an error.
+	ReachabilityRequired ReachabilityClass = "required"
+	// ReachabilityOptional means the map is legitimate game content but not a
+	// completion-path invariant. Being unreachable is reported, but is not a
+	// verifier failure.
+	ReachabilityOptional ReachabilityClass = "optional"
+	// ReachabilityExpectedUnreachable is dead/unused data intentionally present
+	// in the ROM. Becoming reachable is itself suspicious manifest drift.
+	ReachabilityExpectedUnreachable ReachabilityClass = "expected_unreachable"
+	// ReachabilityStoryStateDependent covers maps entered by runtime script or
+	// mutually-exclusive story state that the static full-capability graph does
+	// not claim to model.
+	ReachabilityStoryStateDependent ReachabilityClass = "story_state_dependent"
+	// ReachabilitySuspicious is the default for an unreachable map with no
+	// adapter explanation. It produces a warning so new gaps cannot hide.
+	ReachabilitySuspicious ReachabilityClass = "suspicious"
+)
+
+// MapExpectation is one adapter-owned reachability assertion/explanation.
+type MapExpectation struct {
+	Map    MapID             `json:"map"`
+	Class  ReachabilityClass `json:"class"`
+	Reason string            `json:"reason,omitempty"`
+}
+
+// MapReachability is the verifier's classification of one map that is
+// unreachable with the full declared capability set.
+type MapReachability struct {
+	Map    MapID             `json:"map"`
+	Label  string            `json:"label,omitempty"`
+	Class  ReachabilityClass `json:"class"`
+	Reason string            `json:"reason,omitempty"`
+}
+
 // Map describes the geometry relevant to verification. Components are stable
 // positive ids for mutually reachable standing regions. GeometryKnown=false
 // means the adapter could not prove collision for this map and the verifier
@@ -84,12 +125,14 @@ type Edge struct {
 
 // Snapshot is the complete portable input to Verify. StartMaps is optional;
 // when present, capability-state exploration begins from every component in
-// those maps. RequiredMaps, when present, must be reachable with the full
-// capability set.
+// those maps. MapExpectations is the adapter-owned reachability manifest.
+// RequiredMaps is retained as a compatibility shorthand for required
+// expectations and can be removed once all adapters have migrated.
 type Snapshot struct {
-	Game         string  `json:"game,omitempty"`
-	Maps         []Map   `json:"maps"`
-	Edges        []Edge  `json:"edges"`
-	StartMaps    []MapID `json:"start_maps,omitempty"`
-	RequiredMaps []MapID `json:"required_maps,omitempty"`
+	Game            string           `json:"game,omitempty"`
+	Maps            []Map            `json:"maps"`
+	Edges           []Edge           `json:"edges"`
+	StartMaps       []MapID          `json:"start_maps,omitempty"`
+	RequiredMaps    []MapID          `json:"required_maps,omitempty"`
+	MapExpectations []MapExpectation `json:"map_expectations,omitempty"`
 }

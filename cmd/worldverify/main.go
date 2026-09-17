@@ -52,6 +52,7 @@ func main() {
 	// 0x00). The native id stays in this adapter wiring; worldverify itself sees
 	// only the opaque portable map id emitted by ValidationSnapshot.
 	snapshot := world.ValidationSnapshot(graph, transitions, 0x00)
+	applyRedReachabilityManifest(&snapshot)
 	report := verifier.Verify(snapshot, verifier.Options{MaxExhaustiveCapabilities: *maxCaps})
 
 	if *jsonOutput {
@@ -71,6 +72,21 @@ func main() {
 			}
 			fmt.Printf("capability exploration: %d states (%s), full-set reachability %d maps / %d components\n",
 				report.Stats.CapabilityStatesChecked, mode, report.Stats.FullReachableMaps, report.Stats.FullReachableComponents)
+			fmt.Printf("reachability audit: %d unreachable (%d required, %d optional, %d expected-unused, %d story-state, %d suspicious)\n",
+				report.Stats.FullUnreachableMaps,
+				report.Stats.RequiredUnreachableMaps,
+				report.Stats.OptionalUnreachableMaps,
+				report.Stats.ExpectedUnreachableMaps,
+				report.Stats.StoryStateDependentUnreachableMaps,
+				report.Stats.SuspiciousUnreachableMaps)
+			for _, unreachable := range report.UnreachableMaps {
+				label := unreachable.Label
+				if label == "" {
+					label = "(unnamed)"
+				}
+				fmt.Printf("unreachable %-22s map=%s %-32s %s\n",
+					unreachable.Class, unreachable.Map, label, unreachable.Reason)
+			}
 		}
 		if report.Stats.InactiveStaticEdges > 0 || report.Stats.SemanticDeadPortEdges > 0 {
 			fmt.Printf("geometry audit: %d inactive static edges, %d semantic dead-port edges\n",
