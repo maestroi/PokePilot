@@ -166,22 +166,46 @@ function isCityMap(): boolean {
   return id <= 0x0a
 }
 
-function explorerFill(cell: string): string {
+function isStructureCell(data: MapPayload, cell: string, x: number, y: number): boolean {
+  if (cell !== '#' || !isCityMap()) return false
+  return (data.warps || []).some((warp) => {
+    const wx = Number(warp.x)
+    const wy = Number(warp.y)
+    return y <= wy && y >= wy - 4 && Math.abs(x - wx) <= 3
+  })
+}
+
+function explorerFill(data: MapPayload, cell: string, x: number, y: number): string {
   if (cell === '~') return '#347d96'
   if (cell === 'g') return '#4f8a53'
   if (cell === '#') {
     if (!isOutdoorMap()) return '#34434b'
+    if (isStructureCell(data, cell, x, y)) return '#7b684f'
     return isCityMap() ? '#48645d' : '#315d3e'
   }
   return isCityMap() ? '#b4a877' : '#aa9b60'
 }
 
-function drawExplorerTexture(ctx: CanvasRenderingContext2D, cell: string, x: number, y: number, px: number): void {
+function drawExplorerTexture(ctx: CanvasRenderingContext2D, data: MapPayload, cell: string, x: number, y: number, px: number): void {
   if (px < 5) return
   const left = x * px
   const top = y * px
 
   if (cell === '#') {
+    if (isStructureCell(data, cell, x, y)) {
+      ctx.fillStyle = 'rgba(253, 224, 171, 0.13)'
+      ctx.fillRect(left, top, px, Math.max(1, px * 0.2))
+      ctx.strokeStyle = 'rgba(49, 36, 30, 0.28)'
+      ctx.lineWidth = Math.max(1, Math.floor(px * 0.07))
+      ctx.beginPath()
+      ctx.moveTo(left, top + px * 0.42)
+      ctx.lineTo(left + px, top + px * 0.42)
+      ctx.moveTo(left + px * 0.5, top)
+      ctx.lineTo(left + px * 0.5, top + px)
+      ctx.stroke()
+      return
+    }
+
     if (isOutdoorMap() && !isCityMap()) {
       const cx = left + px * 0.5
       const cy = top + px * 0.48
@@ -263,6 +287,70 @@ function drawExplorerTexture(ctx: CanvasRenderingContext2D, cell: string, x: num
   }
 }
 
+
+function drawPoi(ctx: CanvasRenderingContext2D, poi: WorldPoi, px: number): void {
+  const cx = (poi.x + 0.5) * px
+  const cy = (poi.y + 0.5) * px
+  const radius = Math.max(2.2, px * 0.2)
+  const selected = selectedPoi.value === poi
+
+  ctx.save()
+  ctx.lineWidth = Math.max(1, px * 0.08)
+  if (poi.kind === 'item') {
+    ctx.fillStyle = '#f6d365'
+    ctx.strokeStyle = '#4b3810'
+    ctx.translate(cx, cy)
+    ctx.rotate(Math.PI / 4)
+    ctx.fillRect(-radius, -radius, radius * 2, radius * 2)
+    ctx.strokeRect(-radius, -radius, radius * 2, radius * 2)
+    ctx.rotate(-Math.PI / 4)
+    ctx.translate(-cx, -cy)
+  } else if (poi.kind === 'sign') {
+    ctx.fillStyle = '#d6c9a0'
+    ctx.strokeStyle = '#4b4231'
+    ctx.fillRect(cx - radius, cy - radius * 0.8, radius * 2, radius * 1.6)
+    ctx.strokeRect(cx - radius, cy - radius * 0.8, radius * 2, radius * 1.6)
+  } else {
+    ctx.fillStyle = poi.kind === 'trainer' ? '#f2a65a' : '#75d5d0'
+    ctx.strokeStyle = poi.kind === 'trainer' ? '#5c2f18' : '#153b43'
+    ctx.beginPath()
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.stroke()
+    if (poi.kind === 'trainer') {
+      ctx.beginPath()
+      ctx.arc(cx, cy, radius * 1.45, 0, Math.PI * 2)
+      ctx.stroke()
+    }
+  }
+
+  if (selected) {
+    ctx.strokeStyle = '#ffffff'
+    ctx.lineWidth = Math.max(1.5, px * 0.1)
+    ctx.beginPath()
+    ctx.arc(cx, cy, radius * 1.9, 0, Math.PI * 2)
+    ctx.stroke()
+  }
+
+  if (px >= 16 && currentPois.value.length <= 14) {
+    const fontSize = Math.max(8, Math.floor(px * 0.3))
+    ctx.font = `700 ${fontSize}px ui-sans-serif, system-ui, sans-serif`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'bottom'
+    const text = poi.label
+    const metrics = ctx.measureText(text)
+    const pad = 3
+    const boxW = metrics.width + pad * 2
+    const boxH = fontSize + 4
+    const ty = cy - radius * 1.8
+    ctx.fillStyle = 'rgba(4, 12, 10, 0.80)'
+    ctx.fillRect(cx - boxW / 2, ty - boxH, boxW, boxH)
+    ctx.fillStyle = '#f4f8f5'
+    ctx.fillText(text, cx, ty - 2)
+  }
+  ctx.restore()
+}
+
 function draw(): void {
   const node = canvas.value
   const box = frame.value
@@ -312,16 +400,20 @@ function draw(): void {
     for (let x = 0; x < width; x++) {
       const cell = cellAt(data, x, y)
       ctx.fillStyle = explorerAppearance.value
-        ? explorerFill(cell)
+        ? explorerFill(data, cell, x, y)
         : cell === '#' ? colors.wall : cell === 'g' ? colors.grass : cell === '~' ? colors.water : colors.ground
       ctx.fillRect(x * px, y * px, px, px)
-      if (explorerAppearance.value) drawExplorerTexture(ctx, cell, x, y, px)
+      if (explorerAppearance.value) drawExplorerTexture(ctx, data, cell, x, y, px)
       if (props.showWarps && cell === 'W') {
         ctx.strokeStyle = colors.warp
         ctx.lineWidth = Math.max(1, Math.floor(px / 4))
         ctx.strokeRect(x * px + 1, y * px + 1, Math.max(1, px - 2), Math.max(1, px - 2))
       }
     }
+  }
+
+  if (explorerAppearance.value && props.showPois) {
+    for (const poi of currentPois.value) drawPoi(ctx, poi, px)
   }
 
   if (debugEnabled.value) {
@@ -413,6 +505,7 @@ async function loadMap(): Promise<void> {
     const next = await response.json() as MapPayload
     if (id !== serial) return
     payload.value = next
+    selectedPoi.value = null
     zoomLevel.value = 1
     requestAnimationFrame(draw)
   } catch (cause) {
@@ -456,7 +549,14 @@ function onCanvasClick(event: MouseEvent): void {
   const tileX = Math.floor(intrinsicX / tileSize)
   const tileY = Math.floor(intrinsicY / tileSize)
   const warp = (payload.value.warps || []).find((candidate) => Number(candidate.x) === tileX && Number(candidate.y) === tileY)
-  if (warp) selectDestination(Number(warp.dest))
+  if (warp) {
+    selectDestination(Number(warp.dest))
+    return
+  }
+  if (explorerAppearance.value && props.showPois) {
+    selectedPoi.value = currentPois.value.find((poi) => poi.x === tileX && poi.y === tileY) || null
+    requestAnimationFrame(draw)
+  }
 }
 
 function connectionArrow(direction: string): string {
@@ -504,6 +604,7 @@ watch([
   () => props.showTrail,
   () => props.showSprites,
   () => props.showWarps,
+  () => props.showPois,
   () => props.appearance,
   () => debugEnabled.value,
   () => atlasMode.value
