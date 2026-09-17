@@ -18,6 +18,7 @@ func redProgressionKnown(id ProgressID) bool {
 		redProgressSSTicketAcquired,
 		redProgressHM01Acquired,
 		redProgressBicycleAcquired,
+		redProgressCascadeBadge,
 		redProgressThunderBadge,
 		redProgressPostSurgeLavenderReached,
 		redProgressPostSurgeCeladonReady,
@@ -26,6 +27,7 @@ func redProgressionKnown(id ProgressID) bool {
 		redProgressPokeFluteAcquired,
 		redProgressFuchsiaProgressionComplete,
 		redProgressSilphRescueComplete,
+		redProgressMarshBadge,
 		redProgressVolcanoBadge,
 		redProgressEarthBadge,
 		ProgressRoute22RivalResolved,
@@ -97,7 +99,7 @@ func redCutFieldUnlocked(obs Observation) bool {
 // objective shape. Availability is Red knowledge; the planner only sees the
 // semantic state change requested by each objective.
 func redProgressionObjectives(obs Observation) []Objective {
-	out := make([]Objective, 0, 16)
+	out := make([]Objective, 0, 18)
 	if skill.MtMoonProgressionAvailable(obs.Map) && !obs.Story.Has(redProgressMtMoonFossilAcquired) {
 		out = append(out, Objective{Kind: KindProgress, Progress: redProgressMtMoonFossilAcquired, Note: "(defeat Mt. Moon's Super Nerd and choose the Dome Fossil to open the eastern exit)"})
 	}
@@ -121,6 +123,13 @@ func redProgressionObjectives(obs Observation) []Objective {
 			Kind:     KindProgress,
 			Progress: redProgressHM01Acquired,
 			Note:     "(go to Vermilion, board the S.S. Anne with the ticket, defeat the scripted rival on 2F, and receive HM01 Cut from the Captain)",
+		})
+	}
+	if obs.Story.Has(redProgressHM01Acquired) && !hasBadge(obs, state.BadgeCascade) {
+		out = append(out, Objective{
+			Kind:     KindProgress,
+			Progress: redProgressCascadeBadge,
+			Note:     "(return to Cerulean and defeat Misty so HM01 Cut is legally usable before the Vermilion Gym leg)",
 		})
 	}
 	if obs.Story.Has(redProgressHM01Acquired) && !obs.Story.Has(redProgressBicycleAcquired) {
@@ -166,13 +175,10 @@ func redProgressionObjectives(obs Observation) []Objective {
 			})
 		}
 	}
-	// Silph Scope and the Poké Flute are later than Surge. The intended
-	// critical path is Thunder Badge -> Rock Tunnel/Lavender/Celadon ->
-	// Rocket Hideout/Silph Scope -> Pokémon Tower/Poké Flute -> Route 12 ->
-	// Fuchsia, where Surf and Strength are finally acquired. Keeping these
-	// facts ordered prevents the strategist from treating Surf as a Route 12
-	// prerequisite or wandering into the sleeping Snorlax before the Flute.
-	if hasBadge(obs, state.BadgeThunder) {
+	// Silph Scope and the Poké Flute are later than Erika in the deterministic
+	// story chain. Requiring Rainbow here prevents the local hideout/tower
+	// offers from letting the strategist defer Erika until Victory Road.
+	if hasBadge(obs, state.BadgeThunder) && hasBadge(obs, state.BadgeRainbow) {
 		if skill.RocketHideoutAvailable(obs.Map) && !obs.Story.Has(redProgressSilphScopeAcquired) {
 			out = append(out, Objective{
 				Kind:     KindProgress,
@@ -225,6 +231,13 @@ func redProgressionObjectives(obs Observation) []Objective {
 			Kind:     KindProgress,
 			Progress: redProgressSilphRescueComplete,
 			Note:     "(open the required Silph doors, take the 3F/7F warp route, defeat the rival and Giovanni, then receive the president's Master Ball reward)",
+		})
+	}
+	if obs.Story.Has(redProgressSilphRescueComplete) && !hasBadge(obs, state.BadgeMarsh) {
+		out = append(out, Objective{
+			Kind:     KindProgress,
+			Progress: redProgressMarshBadge,
+			Note:     "(with Team Rocket cleared from Saffron, enter the Gym, solve the teleporter maze, defeat Sabrina, and verify the Marsh Badge before leaving for Cinnabar)",
 		})
 	}
 	if obs.Story.Has(redProgressSilphRescueComplete) &&
@@ -343,6 +356,8 @@ func executeRedProgression(m *emu.Emu, romData []byte, o Objective) error {
 		return skill.SSAnneHM01(m, romData, policy)
 	case redProgressBicycleAcquired:
 		return skill.AcquireBicycle(m, romData, policy)
+	case redProgressCascadeBadge:
+		return executeRedGymProgression(m, romData, policy, "cerulean gym")
 	case redProgressThunderBadge:
 		return skill.SurgeProgression(m, romData, policy)
 	case redProgressPostSurgeLavenderReached:
@@ -363,6 +378,8 @@ func executeRedProgression(m *emu.Emu, romData []byte, o Objective) error {
 		return skill.AcquireSilphCardKey(m, romData, policy)
 	case redProgressSilphRescueComplete:
 		return skill.ClearSilphCo(m, romData, policy)
+	case redProgressMarshBadge:
+		return skill.SabrinaProgression(m, romData, policy)
 	case ProgressSecretKeyOwned:
 		return skill.AcquireCinnabarSecretKey(m, romData, policy)
 	case redProgressVolcanoBadge:
