@@ -200,6 +200,8 @@ farm-up: farm-image
 	docker service update --force --detach pokefarm_runner
 	docker service update --force --detach pokefarm_replay
 	docker service update --force --detach pokefarm_ui
+	docker service update --force --detach pokefarm_linkbroker
+	docker service update --force --detach pokefarm_virtualtrader
 	@echo "pokefarm UI: http://localhost:$(FARM_WALL_PORT)/"
 
 farm-down:
