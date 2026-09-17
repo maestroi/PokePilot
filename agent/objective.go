@@ -1,68 +1,67 @@
 package agent
 
 import (
+	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
-	reddata "github.com/maestroi/pokepilot/red/data"
+	"github.com/maestroi/pokepilot/red/data"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/skill"
 )
 
+// Kind is the small, typed action vocabulary the model is allowed to choose.
 type Kind uint8
 
 const (
-	KindGoTo Kind = iota
+	KindGoTo Kind = iota + 1
 	KindTalk
+	KindTrainer
 	KindStarter
-	_ // legacy KindErrand numeric slot; retained so existing generic kind values do not move
+	KindProgress
 	KindTrain
 	KindHeal
 	KindGym
 	KindCatch
-	KindBuy
 	KindPickup
 	KindUseItem
-	_ // legacy KindRocketHideout numeric slot
-	_ // legacy KindPokemonTower numeric slot
-	_ // legacy KindFuchsiaProgression numeric slot
-	KindProgress
-	KindTrainer
+	KindBuy
 )
 
-// Objective carries semantic planner arguments. Game-specific encodings stay
-// behind the adapter boundary: Place/Location/Species/Item/Progress are
-// semantic IDs, never Red ROM/RAM bytes or named campaign verbs. Location is
-// intentionally presentation-hidden: coordinate-local interactions need it for
-// durable identity, while the model still sees the same concise objective text.
 type Objective struct {
-	Kind     Kind
+	Kind Kind
+	// Place and semantic arguments deliberately use game-independent ids.
+	// Red translates them to native map/item/species bytes only at the
+	// execution/catalog boundary.
 	Place    PlaceID
-	Location LocationID
 	X, Y     uint8
 	Starter  skill.Starter
 	Progress ProgressID
-	Level    uint8
 	Species  SpeciesID
 	Item     ItemID
 	Slot     int
+	Level    uint8
 	Qty      int
 	Flee     bool
-	Note     string
 	Intent   string
+	Note     string
 }
 
-// Validate checks only portable shape/range invariants. Concrete-game name and
-// progression-goal resolution is adapter-owned.
 func (o Objective) Validate() error {
 	switch o.Kind {
 	case KindGoTo:
-		if strings.TrimSpace(o.Place) == "" {
+		if strings.TrimSpace(string(o.Place)) == "" {
 			return fmt.Errorf("agent: %s: empty place id", o)
 		}
+	case KindTalk, KindTrainer:
 	case KindStarter:
-		if o.Starter > skill.StarterBulbasaur {
-			return fmt.Errorf("agent: %s: unknown starter %d", o, int(o.Starter))
+		if o.Species == "" {
+			switch o.Starter {
+			case skill.StarterCharmander, skill.StarterSquirtle, skill.StarterBulbasaur:
+			default:
+				return fmt.Errorf("agent: %s: invalid starter %d", o, int(o.Starter))
+			}
 		}
 	case KindProgress:
 		if strings.TrimSpace(string(o.Progress)) == "" {
@@ -130,15 +129,25 @@ func (o Objective) String() string {
 	case KindHeal:
 		if o.Place != "" {
 			if o.Flee {
-				return "heal the party at " + strings.ToUpper(o.Place) + ", fleeing wild battles"
+				return "heal the party at " + strings.ToUpper(string(o.Place)) + ", fleeing wild battles"
 			}
-			return "heal the party at " + strings.ToUpper(o.Place)
+			return "heal the party at " + strings.ToUpper(string(o.Place))
 		}
 		return "heal the party"
 	case KindGym:
 		return "beat the gym leader here"
 	case KindCatch:
-		return "catch a " + strings.ToUpper(string(o.Species)) + " here"
+		species := strings.ToUpper(string(o.Species))
+		switch o.Intent {
+		case dexVirtualTradebackIntent:
+			return "trade a party Pokemon through the virtual Cable Club and trade it back to obtain " + species
+		case dexVirtualVersionIntent:
+			return "trade through the virtual Cable Club for version-exclusive " + species
+		case dexVirtualPokedexIntent:
+			return "trade through the virtual Cable Club for otherwise unavailable " + species
+		default:
+			return "catch a " + species + " here"
+		}
 	case KindPickup:
 		return fmt.Sprintf("pick up the %s at (%d,%d)", strings.ToUpper(string(o.Item)), o.X, o.Y)
 	case KindUseItem:
@@ -198,20 +207,38 @@ func starterName(s skill.Starter) string {
 // init (economy catalog, PP restorers and TM/HMs). Keep their legacy map names
 // as aliases to red/data's canonical maps so those registrations remain one
 // source of truth during the incremental profile migration.
-var itemTable, itemByID = reddata.LegacyMutableItemTables()
+var itemTable, itemByID = data.LegacyMutableItemTables()
 
 // Red adapter vocabulary is centralized in red/data so the profile and the
 // executor cannot silently diverge on raw species/item indexes.
-func SpeciesCount() int { return reddata.SpeciesCount() }
+func SpeciesCount() int { return data.SpeciesCount() }
 
-func SpeciesName(id uint8) (string, bool) { return reddata.SpeciesName(id) }
+func SpeciesName(id uint8) (string, bool) { return data.SpeciesName(id) }
 
 // SpeciesByName is planner-facing and returns the semantic identity. Use
 // redSpeciesID when a Red executor needs the ROM byte.
 func SpeciesByName(name string) (SpeciesID, bool) { return semanticSpecies(name) }
 
-func ItemName(id uint8) (string, bool) { return reddata.ItemName(id) }
+func ItemName(id uint8) (string, bool) { return data.ItemName(id) }
 
 // ItemByName is planner-facing and returns the semantic identity. Use
 // redItemID/resolveItemID at the Red boundary for a native bag byte.
 func ItemByName(name string) (ItemID, bool) { return semanticItem(name) }
+
+func answerInt(reply string) (string, bool) {
+	fields := strings.Fields(reply)
+	for i := len(fields) - 1; i >= 0; i-- {
+		v := strings.Trim(fields[i], "`.,:;!?()[]{}\"'")
+		if _, err := strconv.Atoi(v); err == nil {
+			return v, true
+		}
+	}
+	return "", false
+}
+
+func gymLossFailureName(o Objective, err error) (string, bool) {
+	if o.Kind != KindGym || !errors.Is(err, errGymLeaderLost) {
+		return "", false
+	}
+	return gymLossFailureKey(o.Place), true
+}
