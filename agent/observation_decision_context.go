@@ -11,6 +11,7 @@ type DecisionContext struct {
 	Catch    *CatchDecisionContext    `json:",omitempty"`
 	Economy  *EconomyDecisionContext  `json:",omitempty"`
 	Dex      *DexDecisionContext      `json:",omitempty"`
+	Services *RuntimeServices         `json:",omitempty"`
 }
 
 // DexDecisionContext is the prompt-sized Dex catalog: counts only. The full
@@ -45,11 +46,11 @@ type CatchDecisionContext struct {
 
 // MarshalJSON keeps Observation's existing wire shape byte-for-byte for its
 // original fields and adds DecisionContext only when there is relevant local
-// encounter or economy information. Runtime route blockage state deliberately
-// stays complete so Offer can fail closed on every semantic progression gate;
-// only this planner-facing projection is capped to keep the prompt bounded.
-// llmUserPrompt already json.Marshal's Observation, so this reaches every
-// planner without another prompt layer.
+// encounter, economy, Dex, or runtime-service information. Runtime route
+// blockage state deliberately stays complete so Offer can fail closed on every
+// semantic progression gate; only this planner-facing projection is capped to
+// keep the prompt bounded. llmUserPrompt already json.Marshal's Observation,
+// so this reaches every planner without another prompt layer.
 func (o Observation) MarshalJSON() ([]byte, error) {
 	type plain Observation
 	wire := plain(o)
@@ -66,7 +67,7 @@ func (o Observation) MarshalJSON() ([]byte, error) {
 }
 
 func decisionContextFor(o Observation) *DecisionContext {
-	ctx := &DecisionContext{}
+	ctx := &DecisionContext{Services: o.Services}
 
 	if o.HasGrass && len(o.Party) > 0 && len(o.WildGrass) > 0 {
 		minLevel, maxLevel := o.WildGrass[0].MinLevel, o.WildGrass[0].MaxLevel
@@ -103,7 +104,7 @@ func decisionContextFor(o Observation) *DecisionContext {
 			Unavailable: len(o.Dex.Unavailable),
 		}
 	}
-	if ctx.Training == nil && ctx.Catch == nil && ctx.Economy == nil && ctx.Dex == nil {
+	if ctx.Training == nil && ctx.Catch == nil && ctx.Economy == nil && ctx.Dex == nil && ctx.Services == nil {
 		return nil
 	}
 	return ctx
