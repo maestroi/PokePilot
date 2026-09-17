@@ -204,7 +204,7 @@ func (x *redRouteTransitionExecutor) ExecuteTransition(edge world.Edge, transiti
 		return x.executeVictoryRoadStrength(edge)
 
 	case "red:rocket_b1f_trainer_door":
-		return x.executeRocketB1FTrainerDoor()
+		return x.executeRocketB1FTrainerDoorIfNeeded(edge)
 	default:
 		if result, ok, err := x.executeAuditedRouteTransition(edge, transition); ok {
 			return result, err
