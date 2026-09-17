@@ -11,11 +11,15 @@ import (
 )
 
 const (
-	route2GateMap  uint8 = 0x31
-	route10Map     uint8 = 0x15
-	powerPlantMap  uint8 = 0x53
-	powerPlantWarpX uint8 = 6
-	powerPlantWarpY uint8 = 39
+	route2GateMap        uint8 = 0x31
+	route10Map           uint8 = 0x15
+	powerPlantMap        uint8 = 0x53
+	powerPlantWarpX      uint8 = 6
+	powerPlantWarpY      uint8 = 39
+	ceruleanCaveB1FMap   uint8 = 0xE3
+	ceruleanCave1FMap    uint8 = 0xE4
+	ceruleanCaveB1FWarpX uint8 = 0
+	ceruleanCaveB1FWarpY uint8 = 6
 )
 
 // redSideRouteTransitionForEdge models optional-world entrances whose door is
@@ -39,6 +43,16 @@ func redSideRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, boo
 		t := semanticTransition("red:power_plant_surf", edge, capCanSurf)
 		t.PivotOnly = true
 		return t, true
+
+	case edge.From == ceruleanCave1FMap && edge.To == ceruleanCaveB1FMap &&
+		edge.WarpX == ceruleanCaveB1FWarpX && edge.WarpY == ceruleanCaveB1FWarpY:
+		// The lowest-floor ladder is a real ROM warp, but the 1F route to it
+		// crosses the cave's lake. Red/Blue's own traversal therefore needs
+		// Surf inside Cerulean Cave; treating the ladder as ordinary immutable
+		// walking leaves B1F isolated even though 1F/2F are reachable.
+		t := semanticTransition("red:cerulean_cave_b1f_surf", edge, capCanSurf)
+		t.PivotOnly = true
+		return t, true
 	}
 	return gameruntime.Transition{}, false
 }
@@ -52,7 +66,7 @@ func (x *redRouteTransitionExecutor) executeSideRouteTransition(edge world.Edge,
 		result, err := x.executeCutWarpApproach(edge)
 		return result, true, err
 
-	case "red:power_plant_surf":
+	case "red:power_plant_surf", "red:cerulean_cave_b1f_surf":
 		if blockage := x.liveTransitionBlockage(transition); blockage != nil {
 			return world.TransitionExecutionResult{}, true, blockage
 		}
