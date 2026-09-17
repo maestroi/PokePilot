@@ -44,7 +44,9 @@ jobs:
 
       - name: Verify module graph
         run: |
+          go mod download -json github.com/maestroi/gomeboy@v1.2.0
           go mod download
+          git diff -- go.mod go.sum
           git diff --exit-code -- go.mod go.sum
 
       - name: Check formatting
