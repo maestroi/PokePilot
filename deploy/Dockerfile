@@ -16,6 +16,9 @@ WORKDIR /src/web
 COPY web/package.json ./
 RUN npm install --no-audit --no-fund
 COPY web/ ./
+# prebuild generate:world reads vendored pokered map constants/headers.
+COPY pokered/constants/map_constants.asm /src/pokered/constants/map_constants.asm
+COPY pokered/data/maps/headers/ /src/pokered/data/maps/headers/
 RUN npm run build
 
 FROM golang:1.26 AS build

@@ -61,6 +61,25 @@ TLS can stay on Cloudflare (Flexible/Full is whatever the existing
 Traefik `websecure`; operator historically used `web` behind Cloudflare HTTPS.
 Match the existing edge instead of introducing a second certificate path.
 
+### Cloudflare Tunnel public hostnames
+
+`rompilot.app` is served through the same `cloudflared` ingress as the other
+homelab HTTPS hosts (`https://traefik:443`). Copy the origin request settings
+from a working hostname such as `pokemon.maestroi.cc` or `admin.rompilot.app`:
+
+| Field | Value |
+| --- | --- |
+| Service | `https://traefik:443` |
+| HTTP Host Header | exact hostname, no leading/trailing space (`rompilot.app`) |
+| Origin Server Name | the same hostname, no space |
+| No TLS Verify | on (Traefik's default cert is not `traefik`) |
+
+A leading space in Origin Server Name or HTTP Host Header makes Traefik reject
+the TLS host (`HostSNI` requires a valid hostname). The request then misses
+`Host(\`rompilot.app\`)` and returns a 19-byte `404 page not found`. An empty
+origin request on `api.rompilot.app` fails TLS verify (`certificate is valid for
+…traefik.default, not traefik`) and Cloudflare returns 502.
+
 ### Redirect `pokemon.maestroi.cc`
 
 Keep the old DNS record pointed at the spectator service until links drain, and
