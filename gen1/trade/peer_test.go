@@ -25,11 +25,18 @@ func TestRunBrokerRepliesToClockBits(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	peerDone := make(chan error, 1)
+	peerReady := make(chan struct{})
 	go func() {
 		peerDone <- RunBroker(ctx, BrokerConfig{
 			Address: listener.Addr().String(), Session: "test", PeerID: "virtual", Timeout: time.Second,
+			OnReady: func() { close(peerReady) },
 		}, machine)
 	}()
+	select {
+	case <-peerReady:
+	case <-time.After(time.Second):
+		t.Fatal("virtual peer did not register with broker")
+	}
 
 	conn, err := net.DialTimeout("tcp", listener.Addr().String(), time.Second)
 	if err != nil {
