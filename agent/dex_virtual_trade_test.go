@@ -56,7 +56,7 @@ func TestVirtualTradePokedexPolicyCoversForfeitedChoice(t *testing.T) {
 			{Species: "rattata", Level: 9},
 		},
 		Dex: DexCatalog{
-			Owned: []DexEntry{{Species: "rattata", Owned: true, Sources: []DexSource{{Kind: AcquireWildGrass, Place: "route 1"}}}},
+			Owned:       []DexEntry{{Species: "rattata", Owned: true, Sources: []DexSource{{Kind: AcquireWildGrass, Place: "route 1"}}}},
 			Unavailable: []DexEntry{{Species: "squirtle", Unavailable: UnavailableForfeited + ":starter"}},
 		},
 	}
