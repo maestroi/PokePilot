@@ -7,6 +7,14 @@
     "node": ">=22.12.0"
   },
   "scripts": {
+    "generate:world": "node scripts/generate-red-world-manifest.mjs",
+    "predev": "npm run generate:world",
+    "predev:spectator": "npm run generate:world",
+    "pretest": "npm run generate:world",
+    "pretypecheck": "npm run generate:world",
+    "prebuild": "npm run generate:world",
+    "prebuild:operator": "npm run generate:world",
+    "prebuild:spectator": "npm run generate:world",
     "dev": "vite --host 0.0.0.0",
     "dev:spectator": "vite --host 0.0.0.0 --mode spectator",
     "test": "node --experimental-strip-types --test test/*.test.ts",

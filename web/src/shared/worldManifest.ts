@@ -1,0 +1,34 @@
+import { RED_WORLD_MANIFEST } from './redWorldManifest.generated'
+
+export type WorldDirection = 'north' | 'south' | 'west' | 'east'
+
+export interface WorldConnection {
+  direction: WorldDirection
+  to: number
+  offsetBlocks: number
+}
+
+export interface WorldMapMeta {
+  id: number
+  name: string
+  width: number
+  height: number
+  x?: number
+  y?: number
+  connections: readonly WorldConnection[]
+}
+
+export const WORLD_MANIFEST = RED_WORLD_MANIFEST as readonly WorldMapMeta[]
+const WORLD_BY_ID = new Map(WORLD_MANIFEST.map((map) => [map.id, map] as const))
+
+export const WORLD_ATLAS_MAPS = WORLD_MANIFEST.filter((map) => {
+  return Number.isFinite(map.x) && Number.isFinite(map.y) && map.width > 0 && map.height > 0
+})
+
+export function worldMapMeta(id: number): WorldMapMeta | undefined {
+  return WORLD_BY_ID.get(Number(id))
+}
+
+export function worldConnections(id: number): readonly WorldConnection[] {
+  return worldMapMeta(id)?.connections || []
+}
