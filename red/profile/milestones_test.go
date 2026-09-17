@@ -11,10 +11,20 @@ func TestMajorMilestoneLabelsStoryOrder(t *testing.T) {
 	got := MajorMilestoneLabels(state.StoryFacts{
 		MtMoonFossilAcquired:   true,
 		PokedexAcquired:        true,
+		HM03Acquired:           true,
+		HM04Acquired:           true,
 		LeagueChampionDefeated: true,
 		MainStoryComplete:      true,
 	})
-	want := []string{"Pokédex", "Mt. Moon fossil", "Champion", "Hall of Fame"}
+	want := []string{"Pokédex", "Mt. Moon fossil", "HM03 Surf", "HM04 Strength", "Champion", "Hall of Fame"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("labels = %v, want %v", got, want)
+	}
+}
+
+func TestMajorMilestoneLabelsPartialFuchsiaState(t *testing.T) {
+	got := MajorMilestoneLabels(state.StoryFacts{HM04Acquired: true})
+	want := []string{"HM04 Strength"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("labels = %v, want %v", got, want)
 	}

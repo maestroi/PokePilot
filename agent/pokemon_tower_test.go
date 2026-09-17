@@ -43,11 +43,11 @@ func TestOfferPokemonTowerProgressionRequiresScopeAndStopsAfterFlute(t *testing.
 			Map:        mapID,
 			PartyCount: 1,
 			Party:      []PartyMon{{Level: 30, HP: 80, MaxHP: 80}},
-			Badges:     []string{state.BadgeThunder.String()},
+			Badges:     []string{state.BadgeThunder.String(), state.BadgeRainbow.String()},
 			Story:      ProgressState{{ID: redProgressSilphScopeAcquired, Complete: true}},
 		}
 		if got := countProgress(OfferWithProgression(obs, known, planner), redProgressPokeFluteAcquired); got != 1 {
-			t.Errorf("map %#04x offers Poke Flute progression %d times with Scope, want 1", mapID, got)
+			t.Errorf("map %#04x offers Poke Flute progression %d times with Rainbow+Scope, want 1", mapID, got)
 		}
 
 		obs.Story = nil
@@ -68,7 +68,7 @@ func TestOfferPokemonTowerProgressionRequiresScopeAndStopsAfterFlute(t *testing.
 		Map:        0x00,
 		PartyCount: 1,
 		Party:      []PartyMon{{Level: 30, HP: 80, MaxHP: 80}},
-		Badges:     []string{state.BadgeThunder.String()},
+		Badges:     []string{state.BadgeThunder.String(), state.BadgeRainbow.String()},
 		Story:      ProgressState{{ID: redProgressSilphScopeAcquired, Complete: true}},
 	}
 	if got := countProgress(OfferWithProgression(outside, known, planner), redProgressPokeFluteAcquired); got != 0 {

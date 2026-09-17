@@ -92,6 +92,7 @@ func OfferWithProgression(obs Observation, known *Knowledge, p ProgressionPlanne
 }
 
 func (a *redObjectiveAdapter) ProgressionObjectives(obs Observation) []Objective {
-	out := redProgressionObjectives(obs)
+	out := redRequireRainbowForPostCeladon(obs, redProgressionObjectives(obs))
+	out = append(out, redCascadeBadgeObjectives(obs)...)
 	return append(out, redMarshBadgeObjectives(obs)...)
 }

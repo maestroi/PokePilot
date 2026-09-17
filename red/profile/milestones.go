@@ -16,6 +16,8 @@ func MajorMilestoneLabels(facts state.StoryFacts) []string {
 		{facts.HM01Acquired, "HM01"},
 		{facts.SilphScopeAcquired, "Silph Scope"},
 		{facts.PokeFluteAcquired, "Poké Flute"},
+		{facts.HM03Acquired, "HM03 Surf"},
+		{facts.HM04Acquired, "HM04 Strength"},
 		{facts.CardKeyOwned, "Card Key"},
 		{facts.SilphRescueComplete, "Silph rescue"},
 		{facts.SecretKeyOwned, "Secret Key"},
