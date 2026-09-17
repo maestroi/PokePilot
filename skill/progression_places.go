@@ -5,7 +5,11 @@ package skill
 // open route tile or the floor tile immediately inside/beside a decomp warp.
 func init() {
 	places["route 24"] = Destination{Map: 0x23, X: 10, Y: 14}
-	places["route 25"] = Destination{Map: 0x24, X: 44, Y: 3}
+	// Route25_Object puts Bill's House door warp at (45,3). The old target at
+	// (44,3) is the building wall beside that door, so local GoTo could never
+	// path to it. One tile south is the ordinary approach floor used to enter
+	// the house and does not itself trigger the warp.
+	places["route 25"] = Destination{Map: 0x24, X: 45, Y: 4}
 	// BillsHouse_Object exits at (2,7)/(3,7); one row above is ordinary floor.
 	places["bill's house"] = Destination{Map: 0x58, X: 2, Y: 6}
 
