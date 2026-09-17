@@ -8,8 +8,10 @@ import (
 
 func TestMarshProgressionRoutesToSaffronAfterSilphRescue(t *testing.T) {
 	obs := Observation{
-		Map: saffronCityMap,
+		Map:    saffronCityMap,
+		Badges: []string{state.BadgeRainbow.String()},
 		Story: ProgressState{
+			{ID: redProgressRainbowBadge, Complete: true},
 			{ID: redProgressSilphRescueComplete, Complete: true},
 		},
 	}
@@ -25,8 +27,10 @@ func TestMarshProgressionRoutesToSaffronAfterSilphRescue(t *testing.T) {
 
 func TestMarshProgressionChallengesSabrinaInsideGym(t *testing.T) {
 	obs := Observation{
-		Map: saffronGymMap,
+		Map:    saffronGymMap,
+		Badges: []string{state.BadgeRainbow.String()},
 		Story: ProgressState{
+			{ID: redProgressRainbowBadge, Complete: true},
 			{ID: redProgressSilphRescueComplete, Complete: true},
 		},
 	}
@@ -39,9 +43,13 @@ func TestMarshProgressionChallengesSabrinaInsideGym(t *testing.T) {
 
 func TestMarshProgressionAdvancesToCinnabarAfterBadge(t *testing.T) {
 	obs := Observation{
-		Map:    saffronGymMap,
-		Badges: []string{state.BadgeMarsh.String()},
+		Map: saffronGymMap,
+		Badges: []string{
+			state.BadgeRainbow.String(),
+			state.BadgeMarsh.String(),
+		},
 		Story: ProgressState{
+			{ID: redProgressRainbowBadge, Complete: true},
 			{ID: redProgressSilphRescueComplete, Complete: true},
 		},
 	}
@@ -56,7 +64,13 @@ func TestMarshProgressionAdvancesToCinnabarAfterBadge(t *testing.T) {
 }
 
 func TestMarshProgressionDoesNotAppearBeforeSilphRescue(t *testing.T) {
-	obs := Observation{Map: saffronCityMap}
+	obs := Observation{
+		Map:    saffronCityMap,
+		Badges: []string{state.BadgeRainbow.String()},
+		Story: ProgressState{
+			{ID: redProgressRainbowBadge, Complete: true},
+		},
+	}
 	got := (&redObjectiveAdapter{}).ProgressionObjectives(obs)
 	if hasMarshStepObjective(got, KindGym, "saffron gym") || hasMarshStepObjective(got, KindGoTo, "saffron gym") {
 		t.Fatalf("Sabrina progression appeared before Silph rescue: %v", got)
