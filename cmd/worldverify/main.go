@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 
+	redrom "github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/skill"
 	"github.com/maestroi/pokepilot/world"
 	verifier "github.com/maestroi/pokepilot/worldverify"
@@ -34,6 +35,10 @@ func main() {
 	romData, err := os.ReadFile(*romPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "worldverify: read ROM: %v\n", err)
+		os.Exit(1)
+	}
+	if err := redrom.Verify(romData); err != nil {
+		fmt.Fprintf(os.Stderr, "worldverify: verify ROM: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -66,6 +71,10 @@ func main() {
 			}
 			fmt.Printf("capability exploration: %d states (%s), full-set reachability %d maps / %d components\n",
 				report.Stats.CapabilityStatesChecked, mode, report.Stats.FullReachableMaps, report.Stats.FullReachableComponents)
+		}
+		if report.Stats.InactiveStaticEdges > 0 || report.Stats.SemanticDeadPortEdges > 0 {
+			fmt.Printf("geometry audit: %d inactive static edges, %d semantic dead-port edges\n",
+				report.Stats.InactiveStaticEdges, report.Stats.SemanticDeadPortEdges)
 		}
 		for _, finding := range report.Findings {
 			where := ""
