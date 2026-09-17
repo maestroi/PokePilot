@@ -8,7 +8,15 @@ import (
 )
 
 func TestRedRouteRequirementsResumeBeyondSnorlaxDoesNotReblockExit(t *testing.T) {
-	for _, currentMap := range []uint8{route13Map, route14Map, route15Map, fuchsiaCityMap} {
+	for _, currentMap := range []uint8{
+		route13Map, route14Map, route15Map, route15Gate1FMap,
+		fuchsiaCityMap, fuchsiaMartMap, fuchsiaBillsGrandpasHouseMap,
+		fuchsiaPokemonCenterMap, wardensHouseMap, safariZoneGateMap,
+		fuchsiaGymMap, fuchsiaMeetingRoomMap, fuchsiaGoodRodHouseMap,
+		safariZoneEastMap, safariZoneNorthMap, safariZoneWestMap, safariZoneCenterMap,
+		safariZoneCenterRestHouseMap, safariZoneSecretHouseMap, safariZoneWestRestHouseMap,
+		safariZoneEastRestHouseMap, safariZoneNorthRestHouseMap,
+	} {
 		t.Run(fmt.Sprintf("map_%02x", currentMap), func(t *testing.T) {
 			blockages := redRouteRequirements(Observation{Map: currentMap})
 			for _, mapID := range []uint8{route12Map, route13Map, route14Map, route15Map, fuchsiaCityMap} {
@@ -22,6 +30,16 @@ func TestRedRouteRequirementsResumeBeyondSnorlaxDoesNotReblockExit(t *testing.T)
 				}
 			}
 		})
+	}
+}
+
+func TestRedRouteRequirementsFuchsiaPokemonCenterResumeKeepsRoute14Reachable(t *testing.T) {
+	blockages := redRouteRequirements(Observation{Map: fuchsiaPokemonCenterMap})
+	if routeRequirementsBlockMap(blockages, fuchsiaCityMap) {
+		t.Fatal("Fuchsia Pokémon Center checkpoint reblocked its parent city")
+	}
+	if routeRequirementsBlockMap(blockages, route14Map) {
+		t.Fatal("Fuchsia Pokémon Center checkpoint reblocked Route 14 catch habitat")
 	}
 }
 
