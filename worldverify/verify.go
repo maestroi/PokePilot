@@ -15,26 +15,26 @@ const (
 
 type Finding struct {
 	Severity Severity `json:"severity"`
-	Code     string `json:"code"`
-	Message  string `json:"message"`
-	Map      MapID `json:"map,omitempty"`
-	Edge     string `json:"edge,omitempty"`
+	Code     string   `json:"code"`
+	Message  string   `json:"message"`
+	Map      MapID    `json:"map,omitempty"`
+	Edge     string   `json:"edge,omitempty"`
 }
 
 type Stats struct {
-	Maps                    int `json:"maps"`
-	Edges                   int `json:"edges"`
-	Components              int `json:"components"`
-	Capabilities            int `json:"capabilities"`
-	CapabilityStatesChecked int `json:"capability_states_checked"`
+	Maps                    int  `json:"maps"`
+	Edges                   int  `json:"edges"`
+	Components              int  `json:"components"`
+	Capabilities            int  `json:"capabilities"`
+	CapabilityStatesChecked int  `json:"capability_states_checked"`
 	ExhaustiveCapabilities  bool `json:"exhaustive_capabilities"`
-	FullReachableMaps       int `json:"full_reachable_maps,omitempty"`
-	FullReachableComponents int `json:"full_reachable_components,omitempty"`
+	FullReachableMaps       int  `json:"full_reachable_maps,omitempty"`
+	FullReachableComponents int  `json:"full_reachable_components,omitempty"`
 }
 
 type Report struct {
-	Game     string `json:"game,omitempty"`
-	Stats    Stats `json:"stats"`
+	Game     string    `json:"game,omitempty"`
+	Stats    Stats     `json:"stats"`
 	Findings []Finding `json:"findings,omitempty"`
 }
 
