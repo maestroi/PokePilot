@@ -14,16 +14,14 @@ import (
 	"github.com/maestroi/pokepilot/skill"
 )
 
-const (
-	dexVirtualTradebackIntent = "dex-virtual-tradeback"
-	dexVirtualVersionIntent   = "dex-virtual-version-assisted"
-	dexVirtualPokedexIntent   = "dex-virtual-pokedex"
-	linkBrokerEnv             = "POKEPILOT_LINK_BROKER"
-	virtualTradeRunIDEnv      = "POKEPILOT_RUN_ID"
-	virtualTradeOfferLimit    = 4
-	virtualTradeSetupTimeout  = 10 * time.Second
-	virtualTradeLinkTimeout   = 10 * time.Second
-)
+const dexVirtualTradebackIntent = "dex-virtual-tradeback"
+const dexVirtualVersionIntent = "dex-virtual-version-assisted"
+const dexVirtualPokedexIntent = "dex-virtual-pokedex"
+const linkBrokerEnv = "POKEPILOT_LINK_BROKER"
+const virtualTradeRunIDEnv = "POKEPILOT_RUN_ID"
+const virtualTradeOfferLimit = 4
+const virtualTradeSetupTimeout = 10 * time.Second
+const virtualTradeLinkTimeout = 10 * time.Second
 
 // appendDexVirtualTradeObjectives turns the catalog's explicitly unavailable
 // species into executable objectives only when the farm advertises a virtual
@@ -134,6 +132,7 @@ func tradeEvolutionBases(obs Observation) map[SpeciesID]bool {
 				if src.Kind == AcquireTradeEvo && src.From != "" {
 					out[src.From] = true
 				}
+			}
 		}
 	}
 	collect(obs.Dex.Owned)
