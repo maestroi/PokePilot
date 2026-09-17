@@ -33,6 +33,7 @@ const search = ref(initialEntry.name)
 const xInput = ref(initialParams.get('x') || '')
 const yInput = ref(initialParams.get('y') || '')
 const runID = ref(initialParams.get('run') || '')
+const followAgent = ref(initialParams.get('follow') === '1')
 const viewMode = ref<WorldView>(initialParams.get('debug') === '1' ? 'debug' : 'explorer')
 const showWarps = ref(true)
 const showSprites = ref(true)
@@ -42,6 +43,7 @@ const mapError = ref('')
 const loadingMap = ref(false)
 const copyState = ref('')
 let mapSerial = 0
+let initialRunCentered = initialParams.has('map') || !runID.value
 
 const spectator = usePollingResource(
   (signal) => getSpectatorSnapshot(signal),
@@ -93,11 +95,12 @@ watch(selectedMap, () => {
   void loadMap()
   syncURL()
 }, { immediate: true })
-watch([xInput, yInput, viewMode, runID], syncURL)
+watch([xInput, yInput, viewMode, runID, followAgent], syncURL)
 watch(selectedRun, (run) => {
-  if (run && Number.isFinite(Number(run.map)) && !initialParams.has('map')) {
-    selectedMap.value = Number(run.map)
-    search.value = mapEntry(selectedMap.value)?.name || `0x${mapID.value}`
+  if (!run || !Number.isFinite(Number(run.map))) return
+  if (followAgent.value || !initialRunCentered) {
+    chooseMap(Number(run.map), true)
+    initialRunCentered = true
   }
 })
 
@@ -120,7 +123,8 @@ async function loadMap(): Promise<void> {
   }
 }
 
-function chooseMap(id: number): void {
+function chooseMap(id: number, keepFollowing = false): void {
+  if (!keepFollowing) followAgent.value = false
   selectedMap.value = Math.max(0, Math.min(255, Math.trunc(id)))
   search.value = mapEntry(selectedMap.value)?.name || `0x${selectedMap.value.toString(16).padStart(2, '0').toUpperCase()}`
 }
@@ -143,13 +147,29 @@ function followWarp(destination: number): void {
 
 function followRun(run: SpectatorRun): void {
   runID.value = run.run_id
-  chooseMap(Number(run.map || 0))
+  followAgent.value = false
+  initialRunCentered = true
+  chooseMap(Number(run.map || 0), true)
   xInput.value = ''
   yInput.value = ''
 }
 
+function jumpToAgent(): void {
+  const run = selectedRun.value
+  if (!run || !Number.isFinite(Number(run.map))) return
+  chooseMap(Number(run.map), true)
+  xInput.value = ''
+  yInput.value = ''
+}
+
+function toggleFollowAgent(): void {
+  followAgent.value = !followAgent.value
+  if (followAgent.value) jumpToAgent()
+}
+
 function clearRun(): void {
   runID.value = ''
+  followAgent.value = false
 }
 
 function clearTarget(): void {
@@ -169,6 +189,8 @@ function syncURL(): void {
   else url.searchParams.delete('debug')
   if (runID.value) url.searchParams.set('run', runID.value)
   else url.searchParams.delete('run')
+  if (followAgent.value && runID.value) url.searchParams.set('follow', '1')
+  else url.searchParams.delete('follow')
   history.replaceState(null, '', url)
 }
 
