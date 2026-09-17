@@ -70,6 +70,14 @@ type Transition struct {
 	// PivotOnly is for proxy transitions such as Route 9's tree, where the
 	// obstacle lives inside the adjacent map rather than on the connection.
 	PivotOnly bool `json:"pivot_only,omitempty"`
+
+	// PortBypass means the action itself creates a traversable map-edge port
+	// where pristine standing collision has none. Surf is the canonical case:
+	// a water seam is intentionally non-walkable until Surf owns it. Most
+	// semantic actions do NOT own the map seam (Cut trees, Snorlax, switches),
+	// so leaving this false prevents them from turning retained border padding
+	// into an executable route.
+	PortBypass bool `json:"port_bypass,omitempty"`
 }
 
 // TransitionBlockage is structured evidence that a known transition exists
