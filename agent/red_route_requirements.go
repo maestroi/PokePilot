@@ -8,23 +8,41 @@ import (
 )
 
 const (
-	lavenderTownMap uint8 = 0x04
-	celadonCityMap  uint8 = 0x06
-	fuchsiaCityMap  uint8 = 0x07
-	saffronCityMap  uint8 = 0x0a
-	route2Map       uint8 = 0x0d
-	route3Map       uint8 = 0x0e
-	route9Map       uint8 = 0x14
-	route10Map      uint8 = 0x15
-	route12Map      uint8 = 0x17
-	route13Map      uint8 = 0x18
-	route14Map      uint8 = 0x19
-	route15Map      uint8 = 0x1a
-	route25Map      uint8 = 0x24
-	viridianGymMap  uint8 = 0x2d
-	vermilionGymMap uint8 = 0x5c
-	cinnabarGymMap  uint8 = 0xa6
-	saffronGymMap   uint8 = 0xb2
+	lavenderTownMap              uint8 = 0x04
+	celadonCityMap               uint8 = 0x06
+	fuchsiaCityMap               uint8 = 0x07
+	saffronCityMap               uint8 = 0x0a
+	route2Map                    uint8 = 0x0d
+	route3Map                    uint8 = 0x0e
+	route9Map                    uint8 = 0x14
+	route10Map                   uint8 = 0x15
+	route12Map                   uint8 = 0x17
+	route13Map                   uint8 = 0x18
+	route14Map                   uint8 = 0x19
+	route15Map                   uint8 = 0x1a
+	route25Map                   uint8 = 0x24
+	viridianGymMap               uint8 = 0x2d
+	vermilionGymMap              uint8 = 0x5c
+	fuchsiaMartMap               uint8 = 0x98
+	fuchsiaBillsGrandpasHouseMap uint8 = 0x99
+	fuchsiaPokemonCenterMap      uint8 = 0x9a
+	wardensHouseMap              uint8 = 0x9b
+	safariZoneGateMap            uint8 = 0x9c
+	fuchsiaGymMap                uint8 = 0x9d
+	fuchsiaMeetingRoomMap        uint8 = 0x9e
+	fuchsiaGoodRodHouseMap       uint8 = 0xa4
+	cinnabarGymMap               uint8 = 0xa6
+	saffronGymMap                uint8 = 0xb2
+	route15Gate1FMap             uint8 = 0xb8
+	safariZoneEastMap            uint8 = 0xd9
+	safariZoneNorthMap           uint8 = 0xda
+	safariZoneWestMap            uint8 = 0xdb
+	safariZoneCenterMap          uint8 = 0xdc
+	safariZoneCenterRestHouseMap uint8 = 0xdd
+	safariZoneSecretHouseMap     uint8 = 0xde
+	safariZoneWestRestHouseMap   uint8 = 0xdf
+	safariZoneEastRestHouseMap   uint8 = 0xe0
+	safariZoneNorthRestHouseMap  uint8 = 0xe1
 )
 
 // routeAvailabilityFor is Red's live topology projection. Generic blockage
@@ -83,9 +101,10 @@ func redRouteRequirements(obs Observation) []RouteBlockage {
 		// beyond the Route 12 Snorlax gate. A resumed checkpoint on any of these
 		// maps is therefore stronger evidence that the gate is already behind the
 		// player than a missing derived story fact is evidence that it is closed.
-		// Reapplying the entry gate here strands Route 13 between blocked Route 12
-		// and Route 14, making every recovery target outside the map unroutable.
-		gateBehindPlayer := obs.Map == route13Map || obs.Map == route14Map || obs.Map == route15Map || obs.Map == fuchsiaCityMap
+		// This includes Fuchsia interiors and Safari maps: a save in the Pokémon
+		// Center, for example, must be allowed to step back into Fuchsia City and
+		// Route 14 even when the carried story projection lost the Poké Flute fact.
+		gateBehindPlayer := redCheckpointBeyondRoute12Snorlax(obs.Map)
 		if !gateBehindPlayer {
 			prerequisite := RoutePrerequisiteLink{Progress: redProgressPokeFluteAcquired}
 			for _, mapID := range []uint8{route12Map, route13Map, route14Map, route15Map, fuchsiaCityMap} {
@@ -113,6 +132,21 @@ func redRouteRequirements(obs Observation) []RouteBlockage {
 		blockMap(vermilionGymMap, "red:story:vermilion_gym_cut_owner", RoutePrerequisiteLink{Capability: "can_cut", FieldCapability: "cut", Progress: redProgressHM01Acquired})
 	}
 	return dedupeRouteBlockages(out)
+}
+
+func redCheckpointBeyondRoute12Snorlax(mapID uint8) bool {
+	switch mapID {
+	case route13Map, route14Map, route15Map, route15Gate1FMap,
+		fuchsiaCityMap, fuchsiaMartMap, fuchsiaBillsGrandpasHouseMap,
+		fuchsiaPokemonCenterMap, wardensHouseMap, safariZoneGateMap,
+		fuchsiaGymMap, fuchsiaMeetingRoomMap, fuchsiaGoodRodHouseMap,
+		safariZoneEastMap, safariZoneNorthMap, safariZoneWestMap, safariZoneCenterMap,
+		safariZoneCenterRestHouseMap, safariZoneSecretHouseMap, safariZoneWestRestHouseMap,
+		safariZoneEastRestHouseMap, safariZoneNorthRestHouseMap:
+		return true
+	default:
+		return false
+	}
 }
 
 func redStoryRouteBlockage(destination PlaceID, transition string, prerequisite RoutePrerequisiteLink) RouteBlockage {
