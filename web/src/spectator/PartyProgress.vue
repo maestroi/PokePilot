@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import type { SpectatorRun } from '../shared/api/spectator'
 import BadgeIcon from '../shared/components/BadgeIcon.vue'
 import ItemIcon from '../shared/components/ItemIcon.vue'
 import MilestoneIcon from '../shared/components/MilestoneIcon.vue'
+import SemanticMap from '../shared/components/SemanticMap.vue'
 import { itemDisplayName } from '../shared/pokemonAssets'
 import { bagMeter, dexMeter } from '../shared/playerProgress'
 import { playSpeedLabel } from '../shared/playstyle'
@@ -16,6 +17,8 @@ import {
 const props = defineProps<{
   run: SpectatorRun
 }>()
+
+const mapOpen = ref(false)
 
 const timingMetrics = computed(() => {
   const run = props.run
@@ -49,6 +52,16 @@ const dexPercent = computed(() => {
 
 const bag = computed(() => props.run.player?.bag || [])
 const milestones = computed(() => props.run.player?.milestones || [])
+const hasMap = computed(() => Number.isFinite(Number(props.run.map)))
+const mapID = computed(() => Math.max(0, Number(props.run.map || 0)).toString(16).padStart(2, '0').toUpperCase())
+const worldHref = computed(() => {
+  const url = new URL('/world', window.location.origin)
+  url.searchParams.set('map', `0x${mapID.value}`)
+  if (props.run.run_id) url.searchParams.set('run', props.run.run_id)
+  if (Number.isFinite(Number(props.run.x))) url.searchParams.set('x', String(Number(props.run.x)))
+  if (Number.isFinite(Number(props.run.y))) url.searchParams.set('y', String(Number(props.run.y)))
+  return `${url.pathname}${url.search}`
+})
 </script>
 
 <template>
@@ -71,6 +84,47 @@ const milestones = computed(() => props.run.player?.milestones || [])
       </div>
     </div>
   </div>
+
+  <section v-if="hasMap" class="mt-3 border-t border-white/8 pt-3">
+    <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
+      <div class="flex min-w-0 items-center gap-2">
+        <span class="pokeball-mark"><span /></span>
+        <div class="min-w-0">
+          <div class="text-[9px] font-black tracking-[0.1em] text-slate-500 uppercase">Map</div>
+          <p class="mt-0.5 truncate font-mono text-[10px] text-slate-600">0x{{ mapID }} @ {{ Number(run.x || 0) }},{{ Number(run.y || 0) }}</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-1.5">
+        <button
+          type="button"
+          :aria-expanded="mapOpen"
+          class="rounded-md bg-white/7 px-2 py-1 text-[10px] font-semibold text-slate-300 ring-1 ring-white/10 hover:bg-white/12 hover:text-white"
+          @click="mapOpen = !mapOpen"
+        >
+          {{ mapOpen ? 'Hide minimap' : 'Show minimap' }}
+        </button>
+        <a
+          :href="worldHref"
+          class="rounded-md bg-cyan-300/10 px-2 py-1 text-[10px] font-semibold text-cyan-100 ring-1 ring-cyan-300/20 hover:bg-cyan-300/15"
+        >
+          Open World
+        </a>
+      </div>
+    </div>
+    <div v-if="mapOpen" class="h-[22rem] min-h-0 overflow-hidden rounded-lg border border-white/10 bg-[#080d14] sm:h-[28rem]">
+      <SemanticMap
+        :map="Number(run.map || 0)"
+        :x="run.x"
+        :y="run.y"
+        :trail="run.trail || []"
+        :sprites="run.sprites || []"
+        :show-player="true"
+        :show-trail="true"
+        :show-sprites="true"
+        :show-warps="false"
+      />
+    </div>
+  </section>
 
   <section v-if="Number(run.frame || 0) > 0" class="mt-3 border-t border-white/8 pt-3">
     <div class="mb-2 flex flex-wrap items-baseline justify-between gap-2">
