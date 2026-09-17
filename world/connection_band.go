@@ -17,6 +17,31 @@ func ConnectionBand(e Edge) (start, end int, ok bool) {
 	return start, end, true
 }
 
+// ConnectionExitWalkable reports whether a concrete connection edge has at
+// least one physically standable seam tile on both maps. It only returns false
+// when the component-aware graph has enough geometry to prove the band is a
+// non-walkable padding band. Missing/incomplete component data remains
+// permissive so hand-built graphs and partially decoded maps keep their
+// historical behavior.
+//
+// Semantic route actions normally bypass ordinary canExit reachability because
+// actions such as Surf and Cut can create traversal that pristine collision
+// does not expose. Adapter code can use this narrower predicate when an action
+// annotates a real border crossing but must not claim the non-walkable bands
+// retained by connectionEdges solely for semantic routing.
+func (g *Graph) ConnectionExitWalkable(e Edge) bool {
+	if e.Kind != EdgeConnection {
+		return false
+	}
+	if g == nil || !g.componentAware || g.comps[e.From] == nil || g.comps[e.To] == nil {
+		return true
+	}
+	if _, ok := g.connections[e]; !ok {
+		return true
+	}
+	return len(g.connectionPortComps(e, false)) > 0
+}
+
 func encodeConnectionBand(e Edge, start, end int) (Edge, bool) {
 	if start < 0 || end < start || end > 255 {
 		return Edge{}, false
