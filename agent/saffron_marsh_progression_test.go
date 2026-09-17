@@ -15,7 +15,7 @@ func TestMarshProgressionRoutesToSaffronAfterSilphRescue(t *testing.T) {
 	}
 
 	got := (&redObjectiveAdapter{}).ProgressionObjectives(obs)
-	if !hasObjective(got, KindGoTo, "saffron gym") {
+	if !hasMarshStepObjective(got, KindGoTo, "saffron gym") {
 		t.Fatalf("post-Silph progression did not route to Saffron Gym: %v", got)
 	}
 	if offeredProgressID(got, ProgressSecretKeyOwned) {
@@ -32,22 +32,22 @@ func TestMarshProgressionChallengesSabrinaInsideGym(t *testing.T) {
 	}
 
 	got := (&redObjectiveAdapter{}).ProgressionObjectives(obs)
-	if !hasObjective(got, KindGym, "saffron gym") {
+	if !hasMarshStepObjective(got, KindGym, "saffron gym") {
 		t.Fatalf("Saffron Gym did not surface Sabrina as the next story step: %v", got)
 	}
 }
 
 func TestMarshProgressionAdvancesToCinnabarAfterBadge(t *testing.T) {
 	obs := Observation{
-		Map:     saffronGymMap,
-		Badges:  []string{state.BadgeMarsh.String()},
+		Map:    saffronGymMap,
+		Badges: []string{state.BadgeMarsh.String()},
 		Story: ProgressState{
 			{ID: redProgressSilphRescueComplete, Complete: true},
 		},
 	}
 
 	got := (&redObjectiveAdapter{}).ProgressionObjectives(obs)
-	if hasObjective(got, KindGym, "saffron gym") || hasObjective(got, KindGoTo, "saffron gym") {
+	if hasMarshStepObjective(got, KindGym, "saffron gym") || hasMarshStepObjective(got, KindGoTo, "saffron gym") {
 		t.Fatalf("Marsh step remained after badge was earned: %v", got)
 	}
 	if !offeredProgressID(got, ProgressSecretKeyOwned) {
@@ -58,12 +58,12 @@ func TestMarshProgressionAdvancesToCinnabarAfterBadge(t *testing.T) {
 func TestMarshProgressionDoesNotAppearBeforeSilphRescue(t *testing.T) {
 	obs := Observation{Map: saffronCityMap}
 	got := (&redObjectiveAdapter{}).ProgressionObjectives(obs)
-	if hasObjective(got, KindGym, "saffron gym") || hasObjective(got, KindGoTo, "saffron gym") {
+	if hasMarshStepObjective(got, KindGym, "saffron gym") || hasMarshStepObjective(got, KindGoTo, "saffron gym") {
 		t.Fatalf("Sabrina progression appeared before Silph rescue: %v", got)
 	}
 }
 
-func hasObjective(objectives []Objective, kind ObjectiveKind, place PlaceID) bool {
+func hasMarshStepObjective(objectives []Objective, kind Kind, place PlaceID) bool {
 	for _, objective := range objectives {
 		if objective.Kind == kind && objective.Place == place {
 			return true
