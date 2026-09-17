@@ -35,3 +35,23 @@ func TestPowerPlantWarpUsesSurfOnlyAsComponentPivot(t *testing.T) {
 		t.Fatalf("Power Plant requirements=%v, want Surf", transition.Requires)
 	}
 }
+
+func TestCeruleanCaveB1FWarpUsesSurfOnlyAsComponentPivot(t *testing.T) {
+	edge := world.Edge{
+		Kind:  world.EdgeWarp,
+		From:  ceruleanCave1FMap,
+		To:    ceruleanCaveB1FMap,
+		WarpX: ceruleanCaveB1FWarpX,
+		WarpY: ceruleanCaveB1FWarpY,
+	}
+	transition, ok := redRouteTransitionForEdge(edge)
+	if !ok {
+		t.Fatal("Cerulean Cave 1F -> B1F warp is missing semantic transition")
+	}
+	if transition.ID != "red:cerulean_cave_b1f_surf" || !transition.PivotOnly || transition.Gate {
+		t.Fatalf("Cerulean Cave transition=%+v", transition)
+	}
+	if len(transition.Requires) != 1 || transition.Requires[0] != capCanSurf {
+		t.Fatalf("Cerulean Cave requirements=%v, want Surf", transition.Requires)
+	}
+}
