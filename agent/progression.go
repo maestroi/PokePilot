@@ -93,5 +93,6 @@ func OfferWithProgression(obs Observation, known *Knowledge, p ProgressionPlanne
 
 func (a *redObjectiveAdapter) ProgressionObjectives(obs Observation) []Objective {
 	out := redProgressionObjectives(obs)
-	return append(out, redMarshBadgeObjectives(obs)...)
+	out = append(out, redMarshBadgeObjectives(obs)...)
+	return redBadgeOrderedProgression(obs, out)
 }
