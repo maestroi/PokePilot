@@ -8,6 +8,15 @@ export interface WorldConnection {
   offsetBlocks: number
 }
 
+export type WorldPoiKind = 'npc' | 'trainer' | 'item' | 'sign'
+
+export interface WorldPoi {
+  x: number
+  y: number
+  kind: WorldPoiKind
+  label: string
+}
+
 export interface WorldMapMeta {
   id: number
   name: string
@@ -16,6 +25,7 @@ export interface WorldMapMeta {
   x?: number
   y?: number
   connections: readonly WorldConnection[]
+  pois: readonly WorldPoi[]
 }
 
 export const WORLD_MANIFEST = RED_WORLD_MANIFEST as readonly WorldMapMeta[]
@@ -31,4 +41,8 @@ export function worldMapMeta(id: number): WorldMapMeta | undefined {
 
 export function worldConnections(id: number): readonly WorldConnection[] {
   return worldMapMeta(id)?.connections || []
+}
+
+export function worldPois(id: number): readonly WorldPoi[] {
+  return worldMapMeta(id)?.pois || []
 }

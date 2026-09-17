@@ -19,6 +19,7 @@ COPY web/ ./
 # prebuild generate:world reads vendored pokered map constants/headers.
 COPY pokered/constants/map_constants.asm /src/pokered/constants/map_constants.asm
 COPY pokered/data/maps/headers/ /src/pokered/data/maps/headers/
+COPY pokered/data/maps/objects/ /src/pokered/data/maps/objects/
 RUN npm run build
 
 FROM golang:1.26 AS build
