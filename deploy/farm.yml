@@ -11,11 +11,11 @@
 # file intentionally contains no build: keys because `docker stack deploy`
 # does not build images.
 #
-# The ROM is never baked into the image: runner and replay tasks bind-mount
-# the operator's ${POKEPILOT_ROM_DIR} read-only at /rom and read individual
-# cartridges back as /rom/pokemon_red.gb, /rom/pokemon_blue.gb, ... Which game
-# a file is comes from its bytes (profiles.Detect), not its name, so dropping a
-# third cartridge into that directory needs no code or deploy change.
+# The ROM is never baked into the image: runner, replay and virtual-trader tasks
+# bind-mount the operator's ${POKEPILOT_ROM_DIR} read-only at /rom and read
+# individual cartridges back as /rom/pokemon_red.gb, /rom/pokemon_blue.gb, ...
+# Which game a file is comes from its bytes (profiles.Detect), not its name, so
+# dropping a third cartridge into that directory needs no code or deploy change.
 #
 # pokeui is in the stack twice: `ui` is the private operator console, while
 # `spectator` is a separate process with a server-side read-only route table.
@@ -164,6 +164,35 @@ services:
     deploy:
       replicas: 1
 
+  # The GomeBoy broker owns only byte/bit routing. Keeping it separate from the
+  # trader lets later real Red/Blue peers use the same transport without making
+  # the broker Pokemon-aware.
+  linkbroker:
+    image: ${FARM_IMAGE:-pokepilot-farm:local}
+    command: ["gomeboy-link-broker", "-listen", ":8765"]
+    deploy:
+      replicas: 1
+      resources:
+        reservations:
+          memory: 16M
+        limits:
+          memory: 128M
+
+  # Long-lived control service. POST /v1/sessions provisions one lightweight
+  # virtual Cable Club peer for a run/session; it does not run another emulator.
+  virtualtrader:
+    image: ${FARM_IMAGE:-pokepilot-farm:local}
+    command: ["gen1-trade-peer", "-http", ":8080", "-broker", "linkbroker:8765", "-rom", "/rom/pokemon_red.gb"]
+    volumes:
+      - ${POKEPILOT_ROM_DIR}:/rom:ro
+    deploy:
+      replicas: 1
+      resources:
+        reservations:
+          memory: 32M
+        limits:
+          memory: 256M
+
   runner:
     image: ${FARM_IMAGE:-pokepilot-farm:local}
     # -http :8099 binds all interfaces inside the container. The runners
@@ -177,6 +206,11 @@ services:
     command: ["pokepilot", "-http", ":8099", "-capture-every", "1"]
     environment:
       POKEPILOT_ORCH_URL: http://wall:8080
+      # Runtime link services are private Swarm DNS names. The agent projects
+      # only virtual-trader availability into its observation; endpoints never
+      # enter the planner prompt.
+      POKEPILOT_LINK_BROKER: linkbroker:8765
+      POKEPILOT_VIRTUAL_TRADER_URL: http://virtualtrader:8080
       # POKEPILOT_ROM_DIR is where the runner looks for every cartridge it can
       # play; POKEMON_RED_ROM names the one non-farm mode boots from.
       POKEPILOT_ROM_DIR: /rom
