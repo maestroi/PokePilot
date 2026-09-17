@@ -30,6 +30,8 @@ const props = withDefaults(defineProps<{
   showTrail?: boolean
   showSprites?: boolean
   showWarps?: boolean
+  appearance?: 'semantic' | 'explorer'
+  showDebugToggle?: boolean
 }>(), {
   map: 0,
   x: 0,
@@ -41,7 +43,9 @@ const props = withDefaults(defineProps<{
   showPlayer: true,
   showTrail: true,
   showSprites: true,
-  showWarps: true
+  showWarps: true,
+  appearance: 'semantic',
+  showDebugToggle: true
 })
 
 const emit = defineEmits<{
@@ -62,6 +66,7 @@ try {
 }
 const localDebug = ref(new URLSearchParams(window.location.search).get('debug') === '1' || savedDebug)
 const debugEnabled = computed(() => props.debug || localDebug.value)
+const explorerAppearance = computed(() => props.appearance === 'explorer')
 const warpDestinations = computed(() => {
   const seen = new Set<number>()
   const result: number[] = []
@@ -121,6 +126,58 @@ function drawDebugText(ctx: CanvasRenderingContext2D, text: string, x: number, y
   ctx.fillText(text, x, y + 0.5)
 }
 
+function drawExplorerTexture(ctx: CanvasRenderingContext2D, cell: string, x: number, y: number, px: number): void {
+  if (px < 5) return
+  const left = x * px
+  const top = y * px
+
+  if (cell === '#') {
+    ctx.strokeStyle = 'rgba(220, 240, 214, 0.10)'
+    ctx.lineWidth = Math.max(1, Math.floor(px * 0.08))
+    ctx.strokeRect(left + 0.5, top + 0.5, Math.max(1, px - 1), Math.max(1, px - 1))
+    if (px >= 9) {
+      ctx.fillStyle = 'rgba(14, 31, 28, 0.22)'
+      const inset = Math.max(1, Math.floor(px * 0.24))
+      ctx.fillRect(left + inset, top + inset, Math.max(1, px - inset * 2), Math.max(1, px - inset * 2))
+    }
+    return
+  }
+
+  if (cell === 'g') {
+    ctx.strokeStyle = 'rgba(225, 244, 170, 0.30)'
+    ctx.lineWidth = Math.max(1, Math.floor(px * 0.08))
+    const cx = left + px * 0.5
+    const base = top + px * 0.72
+    ctx.beginPath()
+    ctx.moveTo(cx, base)
+    ctx.lineTo(left + px * 0.35, top + px * 0.35)
+    ctx.moveTo(cx, base)
+    ctx.lineTo(left + px * 0.62, top + px * 0.3)
+    ctx.stroke()
+    return
+  }
+
+  if (cell === '~') {
+    ctx.strokeStyle = 'rgba(214, 247, 255, 0.26)'
+    ctx.lineWidth = Math.max(1, Math.floor(px * 0.08))
+    ctx.beginPath()
+    ctx.moveTo(left + px * 0.14, top + px * 0.38)
+    ctx.quadraticCurveTo(left + px * 0.36, top + px * 0.25, left + px * 0.55, top + px * 0.38)
+    ctx.quadraticCurveTo(left + px * 0.74, top + px * 0.51, left + px * 0.9, top + px * 0.38)
+    ctx.moveTo(left + px * 0.1, top + px * 0.68)
+    ctx.quadraticCurveTo(left + px * 0.3, top + px * 0.55, left + px * 0.5, top + px * 0.68)
+    ctx.quadraticCurveTo(left + px * 0.7, top + px * 0.81, left + px * 0.88, top + px * 0.68)
+    ctx.stroke()
+    return
+  }
+
+  ctx.fillStyle = 'rgba(247, 237, 177, 0.13)'
+  const dot = Math.max(1, Math.floor(px * 0.1))
+  const ox = ((x * 7 + y * 3) % 5 + 1) / 6
+  const oy = ((x * 5 + y * 11) % 5 + 1) / 6
+  ctx.fillRect(left + Math.floor(px * ox), top + Math.floor(px * oy), dot, dot)
+}
+
 function draw(): void {
   const node = canvas.value
   const box = frame.value
@@ -144,7 +201,7 @@ function draw(): void {
   if (!ctx) return
 
   ctx.imageSmoothingEnabled = false
-  const colors = {
+  const semanticColors = {
     ground: token('--map-ground', '#102229'),
     wall: token('--map-wall', '#40515d'),
     grass: token('--map-grass', '#28543c'),
@@ -154,12 +211,24 @@ function draw(): void {
     sprite: token('--map-sprite', '#efb24f'),
     player: token('--map-player', '#f2fbff')
   }
+  const explorerColors = {
+    ground: '#8f8653',
+    wall: '#344d46',
+    grass: '#477c4d',
+    water: '#337a91',
+    warp: '#d6a7ff',
+    trail: '#7ee8f2',
+    sprite: '#f2bd59',
+    player: '#ffffff'
+  }
+  const colors = explorerAppearance.value ? explorerColors : semanticColors
 
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const cell = cellAt(data, x, y)
       ctx.fillStyle = cell === '#' ? colors.wall : cell === 'g' ? colors.grass : cell === '~' ? colors.water : colors.ground
       ctx.fillRect(x * px, y * px, px, px)
+      if (explorerAppearance.value) drawExplorerTexture(ctx, cell, x, y, px)
       if (props.showWarps && cell === 'W') {
         ctx.strokeStyle = colors.warp
         ctx.lineWidth = Math.max(1, Math.floor(px / 4))
@@ -237,6 +306,9 @@ function draw(): void {
       ctx.beginPath()
       ctx.arc((playerX + 0.5) * px, (playerY + 0.5) * px, Math.max(2, px * 0.42), 0, Math.PI * 2)
       ctx.fill()
+      ctx.strokeStyle = explorerAppearance.value ? 'rgba(12, 22, 24, 0.8)' : 'transparent'
+      ctx.lineWidth = Math.max(1, Math.floor(px * 0.1))
+      if (explorerAppearance.value) ctx.stroke()
       if (debugEnabled.value) {
         drawDebugText(ctx, `@${playerX},${playerY}`, (playerX + 0.5) * px, (playerY + 0.5) * px, px)
       }
@@ -310,6 +382,7 @@ watch([
   () => props.showTrail,
   () => props.showSprites,
   () => props.showWarps,
+  () => props.appearance,
   () => debugEnabled.value
 ], () => requestAnimationFrame(draw), { deep: true })
 watch(localDebug, (enabled) => {
@@ -333,7 +406,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 w-full flex-col bg-[#0c1118]">
+  <div :class="[appearance === 'explorer' ? 'bg-[#09130f]' : 'bg-[#0c1118]', 'flex h-full min-h-0 w-full flex-col']">
     <div v-if="interactive" class="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 bg-black/20 px-2.5 py-2">
       <div class="flex min-w-0 items-center gap-2">
         <strong class="font-mono text-[11px] text-white">{{ mapLabel(map) }}</strong>
@@ -365,6 +438,7 @@ onUnmounted(() => {
         @click="onCanvasClick"
       />
       <button
+        v-if="showDebugToggle"
         type="button"
         :aria-pressed="debugEnabled"
         :title="debugEnabled ? 'Hide map debug labels' : 'Show map debug labels'"
