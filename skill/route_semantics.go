@@ -131,12 +131,19 @@ func semanticMapPlace(mapID uint8) gameruntime.PlaceID {
 }
 
 func semanticTransition(id string, edge world.Edge, requires ...gameruntime.CapabilityID) gameruntime.Transition {
-	return gameruntime.Transition{
+	t := gameruntime.Transition{
 		ID:       id,
 		From:     semanticMapPlace(edge.From),
 		To:       semanticMapPlace(edge.To),
 		Requires: requires,
 	}
+	for _, requirement := range requires {
+		if requirement == capCanSurf {
+			t.PortBypass = true
+			break
+		}
+	}
+	return t
 }
 
 // redRouteTransitionForEdge maps representative existing Red gates onto the
@@ -284,13 +291,12 @@ func redRoutePrerequisites(g *world.Graph, romData []byte, mem *state.Mem) world
 	for _, edges := range g.Edges {
 		for _, edge := range edges {
 			if transition, ok := redRouteTransitionForEdge(edge); ok {
-				// Route 12 <-> Route 13 is split into component-scoped border
-				// bands, including in-bounds padding bands with no walkable seam.
-				// The Snorlax action is semantic, so routing is allowed to bypass
-				// ordinary canExit reachability for it; without this filter that
-				// privilege also made the padding bands selectable and Traverse
-				// then burned its re-plan budget trying to stand on solid ground.
-				if transition.ID == "red:route12_snorlax" && edge.Kind == world.EdgeConnection && !g.ConnectionExitWalkable(edge) {
+				// Component-scoped ROM connections retain in-bounds padding bands
+				// so actions that truly create a seam (Surf) can own them. Every
+				// other semantic action must still use a physically real border
+				// port; otherwise an interior Cut/Snorlax/switch action can turn
+				// solid padding into an executable map transition.
+				if edge.Kind == world.EdgeConnection && !transition.PortBypass && !g.ConnectionExitWalkable(edge) {
 					continue
 				}
 				transitions[edge] = transition
