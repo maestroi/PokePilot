@@ -30,6 +30,8 @@ type Stats struct {
 	ExhaustiveCapabilities  bool `json:"exhaustive_capabilities"`
 	FullReachableMaps       int  `json:"full_reachable_maps,omitempty"`
 	FullReachableComponents int  `json:"full_reachable_components,omitempty"`
+	InactiveStaticEdges     int  `json:"inactive_static_edges,omitempty"`
+	SemanticDeadPortEdges   int  `json:"semantic_dead_port_edges,omitempty"`
 }
 
 type Report struct {
@@ -161,24 +163,35 @@ func Verify(snapshot Snapshot, options Options) Report {
 			}
 		}
 
+		deadExit := edge.Exit.Known && len(edge.Exit.Components) == 0
+		deadEntry := edge.Entry.Known && len(edge.Entry.Components) == 0
 		ordinaryGeometry := edge.Transition == nil || edge.Transition.Gate
 		if ordinaryGeometry {
-			if edge.Exit.Known && len(edge.Exit.Components) == 0 {
-				report.add(SeverityError, "dead_exit_port", fmt.Sprintf("edge %q has a proven non-walkable exit port", edge.ID), edge.From, edge.ID)
-			}
-			if edge.Entry.Known && len(edge.Entry.Components) == 0 {
-				report.add(SeverityError, "dead_entry_port", fmt.Sprintf("edge %q has a proven non-walkable entry port", edge.ID), edge.To, edge.ID)
+			// BuildGraph deliberately retains known topology even when pristine
+			// collision proves its current port unusable. The router treats an
+			// empty port component set as an inactive edge, not a corrupt graph.
+			// Count that state for audit visibility without manufacturing one
+			// error per endpoint.
+			if deadExit || deadEntry {
+				report.Stats.InactiveStaticEdges++
 			}
 		} else {
-			// A semantic action may deliberately create traversal absent from
-			// pristine collision (Surf, Cut, switches). Keep this visible but
-			// non-fatal; the game adapter can tighten the edge when the action
-			// itself does not own the dead port.
-			if edge.Exit.Known && len(edge.Exit.Components) == 0 {
+			// Semantic actions are the places where bypassing pristine collision
+			// is intentional (Surf, Cut, switches) but also where an action can
+			// accidentally be attached to a padding/dead band. Keep each dead
+			// endpoint visible for adapter-specific audit, but do not classify it
+			// as a generic structural failure.
+			semanticDead := false
+			if deadExit {
 				report.add(SeverityWarning, "semantic_dead_exit_port", fmt.Sprintf("semantic edge %q bypasses a proven non-walkable exit port", edge.ID), edge.From, edge.ID)
+				semanticDead = true
 			}
-			if edge.Entry.Known && len(edge.Entry.Components) == 0 {
+			if deadEntry {
 				report.add(SeverityWarning, "semantic_dead_entry_port", fmt.Sprintf("semantic edge %q lands on a proven non-walkable entry port", edge.ID), edge.To, edge.ID)
+				semanticDead = true
+			}
+			if semanticDead {
+				report.Stats.SemanticDeadPortEdges++
 			}
 		}
 

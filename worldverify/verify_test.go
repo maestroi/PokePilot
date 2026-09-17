@@ -64,11 +64,6 @@ func TestVerifyMutationMatrix(t *testing.T) {
 			mutate: func(s *Snapshot) { s.Edges[0].To = "missing" },
 		},
 		{
-			name:   "dead ordinary exit",
-			code:   "dead_exit_port",
-			mutate: func(s *Snapshot) { s.Edges[0].Exit.Components = nil },
-		},
-		{
 			name:   "bad component",
 			code:   "unknown_port_component",
 			mutate: func(s *Snapshot) { s.Edges[0].Entry.Components = []int{99} },
@@ -102,6 +97,30 @@ func TestVerifyMutationMatrix(t *testing.T) {
 	}
 }
 
+func TestVerifyInactiveStaticEdgeIsCountedNotReported(t *testing.T) {
+	snapshot := Snapshot{
+		Maps: []Map{
+			{ID: "a", Width: 1, Height: 1, GeometryKnown: true, Components: []int{1}},
+			{ID: "b", Width: 1, Height: 1, GeometryKnown: true, Components: []int{1}},
+		},
+		Edges: []Edge{{
+			ID:    "inactive",
+			From:  "a",
+			To:    "b",
+			Exit:  Port{Known: true},
+			Entry: Port{Known: true},
+		}},
+	}
+
+	report := Verify(snapshot, Options{})
+	if report.HasErrors() || report.WarningCount() != 0 {
+		t.Fatalf("inactive static topology is not a finding: %+v", report.Findings)
+	}
+	if report.Stats.InactiveStaticEdges != 1 {
+		t.Fatalf("inactive static edges=%d, want 1", report.Stats.InactiveStaticEdges)
+	}
+}
+
 func TestVerifySemanticDeadPortIsVisibleButNotAutomaticallyFatal(t *testing.T) {
 	snapshot := Snapshot{
 		Maps: []Map{
@@ -124,6 +143,9 @@ func TestVerifySemanticDeadPortIsVisibleButNotAutomaticallyFatal(t *testing.T) {
 	}
 	if !hasFinding(report, "semantic_dead_exit_port", SeverityWarning) {
 		t.Fatalf("expected semantic dead-port warning, got %+v", report.Findings)
+	}
+	if report.Stats.SemanticDeadPortEdges != 1 {
+		t.Fatalf("semantic dead-port edges=%d, want 1", report.Stats.SemanticDeadPortEdges)
 	}
 }
 
