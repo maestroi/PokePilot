@@ -32,10 +32,12 @@ func (fakeMapProvider) ParseMap(id uint8) (worldmodel.MapHeader, error) {
 
 func (fakeMapProvider) Grid(id uint8, _ []byte, _ worldmodel.TraversalMode) (worldmodel.GridSpec, error) {
 	return worldmodel.GridSpec{
-		MapID: id, Width: 2, Height: 2,
-		Walkable: []bool{true, true, true, true},
+		MapID:         id,
+		Width:         2,
+		Height:        2,
+		Walkable:      []bool{true, true, true, true},
 		CollisionTile: []uint8{1, 1, 1, 1},
-		FieldTile: []uint8{1, 1, 1, 1},
+		FieldTile:     []uint8{1, 1, 1, 1},
 	}, nil
 }
 
