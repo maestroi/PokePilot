@@ -60,11 +60,14 @@ type Port struct {
 // Gate means requirements are preconditions on ordinary geometry. PivotOnly
 // means missing requirements still leave the ordinary geometric edge usable;
 // when present, the capability may bypass the static component boundary.
+// PortBypass means the semantic action itself intentionally creates a usable
+// map-edge port where pristine standing collision has none (for example Surf).
 type Transition struct {
-	ID        string         `json:"id,omitempty"`
-	Requires  []CapabilityID `json:"requires,omitempty"`
-	Gate      bool           `json:"gate,omitempty"`
-	PivotOnly bool           `json:"pivot_only,omitempty"`
+	ID         string         `json:"id,omitempty"`
+	Requires   []CapabilityID `json:"requires,omitempty"`
+	Gate       bool           `json:"gate,omitempty"`
+	PivotOnly  bool           `json:"pivot_only,omitempty"`
+	PortBypass bool           `json:"port_bypass,omitempty"`
 }
 
 // Edge is one directed topology transition.
