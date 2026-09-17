@@ -39,6 +39,11 @@ export interface SpectatorStats {
   goal_complete?: boolean
 }
 
+export interface SpectatorMapSprite {
+  x: number
+  y: number
+}
+
 export interface SpectatorRun {
   run_id: string
   status: string
@@ -60,6 +65,8 @@ export interface SpectatorRun {
   stop_so_far?: string
   stats?: SpectatorStats
   player?: SpectatorPlayer
+  sprites?: SpectatorMapSprite[]
+  trail?: [number, number][]
   attempts?: number
   reason?: string
   replay_ready?: boolean
