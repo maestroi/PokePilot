@@ -1,14 +1,14 @@
 # syntax=docker/dockerfile:1
 #
 # PokePilot farm image: one image with runner, wall, private/public UI, replay,
-# and GitHub issue-sink entrypoints. See docs/RUN_INSPECTOR.md.
+# GitHub issue-sink, and Gen-I link/trade entrypoints. See docs/RUN_INSPECTOR.md.
 #
 # GomeBoy is pinned to the PokePilot-maintained GitHub fork in go.mod, so a
 # normal repository checkout is a complete build context.
 #
 # The ROM is never part of this image: .dockerignore keeps roms/, *.gb,
-# *.sav and *.state out of the build context. Runners and the replay sidecar
-# receive the ROM by read-only bind mount at runtime.
+# *.sav and *.state out of the build context. Runners, replay, and the virtual
+# trader receive the ROM by read-only bind mount at runtime.
 
 FROM node:22-alpine AS web
 
@@ -32,12 +32,15 @@ RUN CGO_ENABLED=0 go build -ldflags "-X main.version=${GIT_SHA}" -o /out/pokepil
     CGO_ENABLED=0 go build -ldflags "-X main.version=${GIT_SHA}" -o /out/pokewall ./cmd/pokewall && \
     CGO_ENABLED=0 go build -ldflags "-X main.version=${GIT_SHA} -X main.buildPR=${GIT_PR_NUMBER} -X main.buildTitleB64=${GIT_PR_TITLE_B64} -X main.buildRepo=${GIT_REPOSITORY}" -o /out/pokeui ./cmd/pokeui && \
     CGO_ENABLED=0 go build -o /out/pokereplay ./cmd/pokereplay && \
-    CGO_ENABLED=0 go build -o /out/pokeissues ./cmd/pokeissues
+    CGO_ENABLED=0 go build -o /out/pokeissues ./cmd/pokeissues && \
+    CGO_ENABLED=0 go build -o /out/gen1-trade-peer ./cmd/gen1-trade-peer
 
 # Keep the replay renderer on the v1.1.0 core used by PokePilot, plus the
 # one-line model-selection fix that makes CGB recordings replay as CGB while
-# historical DMG recordings continue to replay as DMG.
-RUN GOBIN=/out CGO_ENABLED=0 go install github.com/maestroi/gomeboy/cmd/gomeboy-stream@26c3dbd668c2351ade5d3ca57019a2a0882255f8
+# historical DMG recordings continue to replay as DMG. The link broker itself
+# is taken from the same v1.2.0 GomeBoy API PokePilot compiles against.
+RUN GOBIN=/out CGO_ENABLED=0 go install github.com/maestroi/gomeboy/cmd/gomeboy-stream@26c3dbd668c2351ade5d3ca57019a2a0882255f8 && \
+    GOBIN=/out CGO_ENABLED=0 go install github.com/maestroi/gomeboy/cmd/gomeboy-link-broker@v1.2.0
 
 # FFmpeg is runtime-only and is used by gomeboy-stream to encode deterministic
 # .gbrun replays into cached MP4s. intel-media-driver is the userspace half of
@@ -49,6 +52,8 @@ COPY --from=build /out/pokewall /usr/local/bin/pokewall
 COPY --from=build /out/pokeui /usr/local/bin/pokeui
 COPY --from=build /out/pokereplay /usr/local/bin/pokereplay
 COPY --from=build /out/pokeissues /usr/local/bin/pokeissues
+COPY --from=build /out/gen1-trade-peer /usr/local/bin/gen1-trade-peer
+COPY --from=build /out/gomeboy-link-broker /usr/local/bin/gomeboy-link-broker
 COPY --from=build /out/gomeboy-stream /usr/local/bin/gomeboy-stream
 # The manager-side updater is deliberately only a stable bootstrap. Changing
 # rollout behavior and LiteLLM config travel inside the exact image digest so
