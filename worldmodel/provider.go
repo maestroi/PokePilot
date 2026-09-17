@@ -48,15 +48,15 @@ type MapHeader struct {
 
 // GridSpec is an adapter-decoded collision grid. Slices are row-major.
 type GridSpec struct {
-	MapID        uint8
-	Width        int
-	Height       int
-	Walkable     []bool
+	MapID         uint8
+	Width         int
+	Height        int
+	Walkable      []bool
 	CollisionTile []uint8
-	FieldTile    []uint8
-	TilePairs    map[[2]uint8]bool
-	Ledges       []Ledge
-	CounterTiles [3]uint8
+	FieldTile     []uint8
+	TilePairs     map[[2]uint8]bool
+	Ledges        []Ledge
+	CounterTiles  [3]uint8
 }
 
 // GridHeader is the compatibility boundary used by world.Build and
