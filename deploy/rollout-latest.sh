@@ -14,7 +14,7 @@ STACK=${FARM_STACK:-pokefarm}
 # When FARM_REPLAY_HOST is set (manager unit), roll that container to :latest
 # too. Without it this script used to print "pokefarm_replay not deployed; skip"
 # forever while pokeui required newer replay APIs (DELETE /artifacts).
-SERVICES=(wall issues ui spectator runner)
+SERVICES=(wall issues ui spectator runner linkbroker virtualtrader)
 
 if ! docker service inspect "${STACK}_wall" >/dev/null 2>&1; then
 	echo "pokefarm-pull: stack ${STACK} not deployed; skip"

@@ -10,7 +10,17 @@ import (
 
 func catchObjectiveOwnsTravel(o Objective) bool {
 	switch o.Intent {
-	case dexSafariIntent, dexTradeIntent, dexFossilIntent, dexGameCornerIntent, dexStaticIntent, dexGiftIntent:
+	case dexSafariIntent, dexTradeIntent, dexFossilIntent, dexGameCornerIntent, dexStaticIntent, dexGiftIntent,
+		dexVirtualTradebackIntent, dexVirtualVersionIntent, dexVirtualPokedexIntent:
+		return true
+	default:
+		return false
+	}
+}
+
+func virtualTradeIntent(intent string) bool {
+	switch intent {
+	case dexVirtualTradebackIntent, dexVirtualVersionIntent, dexVirtualPokedexIntent:
 		return true
 	default:
 		return false
@@ -60,8 +70,9 @@ func executeCatchObjective(m *emu.Emu, romData []byte, o Objective, result Objec
 	// Acquisition storage follows the game mechanic instead of forcing every
 	// Dex source through a party deposit. Real captures can overflow a full
 	// party into Bill's active box; only scripted direct-party additions require
-	// us to make a slot first. NPC trades replace one party member in place.
-	if o.Intent != dexTradeIntent {
+	// us to make a slot first. NPC and virtual trades replace one party member
+	// in place and need neither path.
+	if o.Intent != dexTradeIntent && !virtualTradeIntent(o.Intent) {
 		var err error
 		if catchObjectiveNeedsPartySlot(o) {
 			err = skill.EnsurePartySlotForCollection(m, romData, skill.StatAwareMove(romData), species)
@@ -100,6 +111,10 @@ func executeCatchObjective(m *emu.Emu, romData []byte, o Objective, result Objec
 		if err != nil {
 			return result, fmt.Errorf("agent: %s: travel to catch habitat: %w", o, err)
 		}
+	}
+
+	if virtualTradeIntent(o.Intent) {
+		return executeDexVirtualTrade(m, romData, o, result)
 	}
 
 	var caught skill.CatchResult

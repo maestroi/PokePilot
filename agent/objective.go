@@ -138,7 +138,17 @@ func (o Objective) String() string {
 	case KindGym:
 		return "beat the gym leader here"
 	case KindCatch:
-		return "catch a " + strings.ToUpper(string(o.Species)) + " here"
+		species := strings.ToUpper(string(o.Species))
+		switch o.Intent {
+		case dexVirtualTradebackIntent:
+			return "trade a party Pokemon through the virtual Cable Club and trade it back to obtain " + species
+		case dexVirtualVersionIntent:
+			return "trade through the virtual Cable Club for version-exclusive " + species
+		case dexVirtualPokedexIntent:
+			return "trade through the virtual Cable Club for otherwise unavailable " + species
+		default:
+			return "catch a " + species + " here"
+		}
 	case KindPickup:
 		return fmt.Sprintf("pick up the %s at (%d,%d)", strings.ToUpper(string(o.Item)), o.X, o.Y)
 	case KindUseItem:
