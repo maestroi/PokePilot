@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	gameruntime "github.com/maestroi/pokepilot/game"
-	"github.com/maestroi/pokepilot/red/rom"
+	"github.com/maestroi/pokepilot/worldmodel"
 )
 
 func TestSemanticRouteReportsMissingCapabilityThenUnlocks(t *testing.T) {
@@ -69,7 +69,7 @@ func TestSemanticGateStaysSubjectToComponentReachability(t *testing.T) {
 		// the player stands in (component 2), with no walk between them.
 		comps:      map[uint8][][]int{1: {{1, 0, 2}}, 2: {{1}}},
 		tiles:      map[uint8]dim{1: {w: 3, h: 1}, 2: {w: 1, h: 1}},
-		warps:      map[uint8][]rom.Warp{1: {{X: 0, Y: 0, DestMap: 2}}, 2: {{X: 0, Y: 0, DestMap: 1}}},
+		warps:      map[uint8][]worldmodel.Warp{1: {{X: 0, Y: 0, DestMap: 2}}, 2: {{X: 0, Y: 0, DestMap: 1}}},
 		exitComps:  map[Edge][]int{gated: {1}},
 		entryComps: map[Edge][]int{gated: {1}},
 	}
@@ -104,7 +104,7 @@ func TestMissingPivotOnlyCapabilityFallsBackToOrdinaryGeometry(t *testing.T) {
 		// reach it only when the semantic action is available as a pivot.
 		comps:      map[uint8][][]int{1: {{1, 0, 2}}, 2: {{1}}},
 		tiles:      map[uint8]dim{1: {w: 3, h: 1}, 2: {w: 1, h: 1}},
-		warps:      map[uint8][]rom.Warp{1: {{X: 0, Y: 0, DestMap: 2}}, 2: {{X: 0, Y: 0, DestMap: 1}}},
+		warps:      map[uint8][]worldmodel.Warp{1: {{X: 0, Y: 0, DestMap: 2}}, 2: {{X: 0, Y: 0, DestMap: 1}}},
 		exitComps:  map[Edge][]int{pivot: {1}},
 		entryComps: map[Edge][]int{pivot: {1}},
 	}
