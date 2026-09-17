@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { MapSprite } from '../api/types'
 import { mapEntry } from '../mapCatalog'
-import { worldConnections } from '../worldManifest'
+import { worldConnections, worldPois, type WorldPoi } from '../worldManifest'
 import WorldAtlas, { type WorldAtlasMarker } from './WorldAtlas.vue'
 
 interface MapWarp {
@@ -33,6 +33,11 @@ const props = withDefaults(defineProps<{
   showTrail?: boolean
   showSprites?: boolean
   showWarps?: boolean
+  showPois?: boolean
+  agentMap?: number
+  agentX?: number
+  agentY?: number
+  showAgentMarker?: boolean
   appearance?: 'semantic' | 'explorer'
   showDebugToggle?: boolean
 }>(), {
@@ -47,6 +52,8 @@ const props = withDefaults(defineProps<{
   showTrail: true,
   showSprites: true,
   showWarps: true,
+  showPois: true,
+  showAgentMarker: false,
   appearance: 'semantic',
   showDebugToggle: true
 })
@@ -61,6 +68,7 @@ const loading = ref(false)
 const error = ref('')
 const zoomLevel = ref(1)
 const payload = ref<MapPayload | null>(null)
+const selectedPoi = ref<WorldPoi | null>(null)
 let savedDebug = false
 try {
   savedDebug = window.localStorage.getItem('pokepilot.map.debug') === '1'
@@ -74,13 +82,15 @@ const debugEnabled = computed(() => props.debug || localDebug.value)
 const explorerAppearance = computed(() => props.appearance === 'explorer')
 const atlasAvailable = computed(() => props.interactive && window.location.pathname.startsWith('/world'))
 const currentConnections = computed(() => worldConnections(Number(props.map || 0)))
+const currentPois = computed(() => worldPois(Number(props.map || 0)))
 const atlasMarkers = computed<WorldAtlasMarker[]>(() => {
-  if (!props.showPlayer) return []
+  if (!props.showAgentMarker || !Number.isFinite(Number(props.agentMap))) return []
+  const map = Number(props.agentMap)
   return [{
-    map: Number(props.map || 0),
-    x: Number(props.x || 0),
-    y: Number(props.y || 0),
-    label: `Current agent · ${friendlyMapLabel(Number(props.map || 0))}`
+    map,
+    x: Number(props.agentX || 0),
+    y: Number(props.agentY || 0),
+    label: `Current agent · ${friendlyMapLabel(map)}`
   }]
 })
 const warpDestinations = computed(() => {
