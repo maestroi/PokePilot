@@ -10,12 +10,12 @@ func TestVerifyAcceptsValidComponentGraphAndEnumeratesCapabilities(t *testing.T)
 			{ID: "island", Width: 1, Height: 1, GeometryKnown: true, Components: []int{1}},
 		},
 		Edges: []Edge{{
-			ID:   "surf",
-			Kind: EdgeConnection,
-			From: "start",
-			To:   "island",
-			Exit: Port{Known: true, Components: []int{1}},
-			Entry: Port{Known: true, Components: []int{1}},
+			ID:         "surf",
+			Kind:       EdgeConnection,
+			From:       "start",
+			To:         "island",
+			Exit:       Port{Known: true, Components: []int{1}},
+			Entry:      Port{Known: true, Components: []int{1}},
 			Transition: &Transition{ID: "fixture:surf", Requires: []CapabilityID{"can_surf"}},
 		}},
 		StartMaps:    []MapID{"start"},
@@ -42,11 +42,11 @@ func TestVerifyMutationMatrix(t *testing.T) {
 				{ID: "b", Width: 2, Height: 2, GeometryKnown: true, Components: []int{1}},
 			},
 			Edges: []Edge{{
-				ID:   "a-b",
-				Kind: EdgeWarp,
-				From: "a",
-				To:   "b",
-				Exit: Port{Known: true, Components: []int{1}, Point: &Point{X: 1, Y: 1}},
+				ID:    "a-b",
+				Kind:  EdgeWarp,
+				From:  "a",
+				To:    "b",
+				Exit:  Port{Known: true, Components: []int{1}, Point: &Point{X: 1, Y: 1}},
 				Entry: Port{Known: true, Components: []int{1}, Point: &Point{X: 0, Y: 0}},
 			}},
 			StartMaps: []MapID{"a"},
@@ -54,38 +54,38 @@ func TestVerifyMutationMatrix(t *testing.T) {
 	}
 
 	tests := []struct {
-		name string
-		code string
+		name   string
+		code   string
 		mutate func(*Snapshot)
 	}{
 		{
-			name: "unknown destination",
-			code: "unknown_edge_destination",
+			name:   "unknown destination",
+			code:   "unknown_edge_destination",
 			mutate: func(s *Snapshot) { s.Edges[0].To = "missing" },
 		},
 		{
-			name: "dead ordinary exit",
-			code: "dead_exit_port",
+			name:   "dead ordinary exit",
+			code:   "dead_exit_port",
 			mutate: func(s *Snapshot) { s.Edges[0].Exit.Components = nil },
 		},
 		{
-			name: "bad component",
-			code: "unknown_port_component",
+			name:   "bad component",
+			code:   "unknown_port_component",
 			mutate: func(s *Snapshot) { s.Edges[0].Entry.Components = []int{99} },
 		},
 		{
-			name: "warp out of bounds",
-			code: "point_out_of_bounds",
+			name:   "warp out of bounds",
+			code:   "point_out_of_bounds",
 			mutate: func(s *Snapshot) { s.Edges[0].Exit.Point = &Point{X: 2, Y: 0} },
 		},
 		{
-			name: "bad border band",
-			code: "invalid_border_span",
+			name:   "bad border band",
+			code:   "invalid_border_span",
 			mutate: func(s *Snapshot) { s.Edges[0].BorderSpan = &Span{Start: 0, End: 2, Limit: 2} },
 		},
 		{
-			name: "invalid transition mode",
-			code: "invalid_transition_mode",
+			name:   "invalid transition mode",
+			code:   "invalid_transition_mode",
 			mutate: func(s *Snapshot) { s.Edges[0].Transition = &Transition{ID: "bad", Gate: true, PivotOnly: true} },
 		},
 	}
@@ -109,11 +109,11 @@ func TestVerifySemanticDeadPortIsVisibleButNotAutomaticallyFatal(t *testing.T) {
 			{ID: "water", Width: 1, Height: 1, GeometryKnown: true, Components: []int{1}},
 		},
 		Edges: []Edge{{
-			ID:   "surf-action",
-			From: "shore",
-			To:   "water",
-			Exit: Port{Known: true},
-			Entry: Port{Known: true, Components: []int{1}},
+			ID:         "surf-action",
+			From:       "shore",
+			To:         "water",
+			Exit:       Port{Known: true},
+			Entry:      Port{Known: true, Components: []int{1}},
 			Transition: &Transition{ID: "surf", Requires: []CapabilityID{"can_surf"}},
 		}},
 	}
@@ -145,13 +145,16 @@ func TestVerifyRequiredMapMustBeReachableWithFullCapabilities(t *testing.T) {
 func TestVerifyFallsBackToBoundaryCapabilityStates(t *testing.T) {
 	var requires []CapabilityID
 	for i := 0; i < 5; i++ {
-		requires = append(requires, CapabilityID(rune('a'+i)))
+		requires = append(requires, CapabilityID(string(rune('a'+i))))
 	}
 	snapshot := Snapshot{
 		Maps: []Map{{ID: "a", Width: 1, Height: 1, GeometryKnown: true, Components: []int{1}}},
 		Edges: []Edge{{
-			ID: "loop", From: "a", To: "a",
-			Exit: Port{Known: true, Components: []int{1}}, Entry: Port{Known: true, Components: []int{1}},
+			ID:         "loop",
+			From:       "a",
+			To:         "a",
+			Exit:       Port{Known: true, Components: []int{1}},
+			Entry:      Port{Known: true, Components: []int{1}},
 			Transition: &Transition{ID: "many", Requires: requires},
 		}},
 		StartMaps: []MapID{"a"},
