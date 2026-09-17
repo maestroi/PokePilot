@@ -23,4 +23,5 @@ repro-*
 /web/dist/
 /cmd/pokeui/ui/vue/*
 !/cmd/pokeui/ui/vue/placeholder.txt
+!/cmd/pokeui/ui/vue/_underscore_embed_probe.txt
 /tailwindpro

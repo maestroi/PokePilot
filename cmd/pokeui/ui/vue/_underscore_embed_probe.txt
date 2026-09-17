@@ -1,0 +1,4 @@
+Vite emits shared chunks such as _plugin-vue_export-helper-*.js.
+Go's default //go:embed directory pattern drops names that start with
+underscore, which 404s those chunks and leaves Watch/Replays blank.
+Keep this probe so the embed contract cannot silently regress.
