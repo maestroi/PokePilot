@@ -33,7 +33,7 @@ func TestOfferRocketHideoutProgressionUntilScopeObtained(t *testing.T) {
 			Map:        mapID,
 			PartyCount: 1,
 			Party:      []PartyMon{{Level: 30, HP: 80, MaxHP: 80}},
-			Badges:     []string{state.BadgeThunder.String()},
+			Badges:     []string{state.BadgeThunder.String(), state.BadgeRainbow.String()},
 		}
 		got := OfferWithProgression(obs, known, planner)
 		count := 0
@@ -43,7 +43,7 @@ func TestOfferRocketHideoutProgressionUntilScopeObtained(t *testing.T) {
 			}
 		}
 		if count != 1 {
-			t.Errorf("map %#04x offers Silph Scope progression %d times, want 1; offers=%v", mapID, count, got)
+			t.Errorf("map %#04x offers Silph Scope progression %d times with Rainbow Badge, want 1; offers=%v", mapID, count, got)
 		}
 	}
 
@@ -51,7 +51,7 @@ func TestOfferRocketHideoutProgressionUntilScopeObtained(t *testing.T) {
 		Map:        0x06,
 		PartyCount: 1,
 		Party:      []PartyMon{{Level: 30, HP: 80, MaxHP: 80}},
-		Badges:     []string{state.BadgeThunder.String()},
+		Badges:     []string{state.BadgeThunder.String(), state.BadgeRainbow.String()},
 		Story:      ProgressState{{ID: redProgressSilphScopeAcquired, Complete: true}},
 	}
 	for _, o := range OfferWithProgression(withScope, known, planner) {
