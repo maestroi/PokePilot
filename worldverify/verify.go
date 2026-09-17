@@ -22,22 +22,22 @@ type Finding struct {
 }
 
 type Stats struct {
-	Maps                              int  `json:"maps"`
-	Edges                             int  `json:"edges"`
-	Components                        int  `json:"components"`
-	Capabilities                      int  `json:"capabilities"`
-	CapabilityStatesChecked           int  `json:"capability_states_checked"`
-	ExhaustiveCapabilities            bool `json:"exhaustive_capabilities"`
-	FullReachableMaps                 int  `json:"full_reachable_maps,omitempty"`
-	FullReachableComponents           int  `json:"full_reachable_components,omitempty"`
-	FullUnreachableMaps               int  `json:"full_unreachable_maps,omitempty"`
-	RequiredUnreachableMaps           int  `json:"required_unreachable_maps,omitempty"`
-	OptionalUnreachableMaps           int  `json:"optional_unreachable_maps,omitempty"`
-	ExpectedUnreachableMaps           int  `json:"expected_unreachable_maps,omitempty"`
-	StoryStateDependentUnreachableMaps int `json:"story_state_dependent_unreachable_maps,omitempty"`
-	SuspiciousUnreachableMaps         int  `json:"suspicious_unreachable_maps,omitempty"`
-	InactiveStaticEdges               int  `json:"inactive_static_edges,omitempty"`
-	SemanticDeadPortEdges             int  `json:"semantic_dead_port_edges,omitempty"`
+	Maps                               int  `json:"maps"`
+	Edges                              int  `json:"edges"`
+	Components                         int  `json:"components"`
+	Capabilities                       int  `json:"capabilities"`
+	CapabilityStatesChecked            int  `json:"capability_states_checked"`
+	ExhaustiveCapabilities             bool `json:"exhaustive_capabilities"`
+	FullReachableMaps                  int  `json:"full_reachable_maps,omitempty"`
+	FullReachableComponents            int  `json:"full_reachable_components,omitempty"`
+	FullUnreachableMaps                int  `json:"full_unreachable_maps,omitempty"`
+	RequiredUnreachableMaps            int  `json:"required_unreachable_maps,omitempty"`
+	OptionalUnreachableMaps            int  `json:"optional_unreachable_maps,omitempty"`
+	ExpectedUnreachableMaps            int  `json:"expected_unreachable_maps,omitempty"`
+	StoryStateDependentUnreachableMaps int  `json:"story_state_dependent_unreachable_maps,omitempty"`
+	SuspiciousUnreachableMaps          int  `json:"suspicious_unreachable_maps,omitempty"`
+	InactiveStaticEdges                int  `json:"inactive_static_edges,omitempty"`
+	SemanticDeadPortEdges              int  `json:"semantic_dead_port_edges,omitempty"`
 }
 
 type Report struct {
@@ -203,20 +203,10 @@ func Verify(snapshot Snapshot, options Options) Report {
 		deadEntry := edge.Entry.Known && len(edge.Entry.Components) == 0
 		ordinaryGeometry := edge.Transition == nil || edge.Transition.Gate
 		if ordinaryGeometry {
-			// BuildGraph deliberately retains known topology even when pristine
-			// collision proves its current port unusable. The router treats an
-			// empty port component set as an inactive edge, not a corrupt graph.
-			// Count that state for audit visibility without manufacturing one
-			// error per endpoint.
 			if deadExit || deadEntry {
 				report.Stats.InactiveStaticEdges++
 			}
 		} else {
-			// Semantic actions are the places where bypassing pristine collision
-			// is intentional (Surf, Cut, switches) but also where an action can
-			// accidentally be attached to a padding/dead band. Keep each dead
-			// endpoint visible for adapter-specific audit, but do not classify it
-			// as a generic structural failure.
 			semanticDead := false
 			if deadExit {
 				report.add(SeverityWarning, "semantic_dead_exit_port", fmt.Sprintf("semantic edge %q bypasses a proven non-walkable exit port", edge.ID), edge.From, edge.ID)
@@ -312,11 +302,7 @@ func classifyFullReachability(report *Report, maps map[MapID]Map, reachableMaps 
 		}
 		expectation, ok := expectations[id]
 		if !ok {
-			expectation = MapExpectation{
-				Map:    id,
-				Class:  ReachabilitySuspicious,
-				Reason: "adapter supplied no reachability explanation",
-			}
+			expectation = MapExpectation{Map: id, Class: ReachabilitySuspicious, Reason: "adapter supplied no reachability explanation"}
 		}
 		m := maps[id]
 		report.UnreachableMaps = append(report.UnreachableMaps, MapReachability{
@@ -429,6 +415,7 @@ func capabilityStates(capabilities []CapabilityID, maxExhaustive int) ([]map[Cap
 			if other != capability {
 				minus[other] = true
 			}
+		}
 		add(minus)
 	}
 	return states, false
@@ -500,8 +487,6 @@ func reachable(maps map[MapID]Map, edgesByMap map[MapID][]Edge, starts []MapID, 
 			var next []int
 			switch {
 			case pivot && destination.GeometryKnown && len(destination.Components) > 0:
-				// This mirrors semantic routing: an action can rewrite live
-				// collision, so the pristine landing component is not authoritative.
 				next = destination.Components
 			case edge.Entry.Known:
 				next = edge.Entry.Components
