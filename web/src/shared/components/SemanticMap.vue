@@ -541,14 +541,14 @@ function centerOnPlayer(): void {
 }
 
 function onCanvasClick(event: MouseEvent): void {
-  if (!props.interactive || !props.showWarps || !payload.value || !canvas.value || tileSize <= 0) return
+  if (!props.interactive || !payload.value || !canvas.value || tileSize <= 0) return
   const rect = canvas.value.getBoundingClientRect()
   if (rect.width <= 0 || rect.height <= 0) return
   const intrinsicX = (event.clientX - rect.left) * canvas.value.width / rect.width
   const intrinsicY = (event.clientY - rect.top) * canvas.value.height / rect.height
   const tileX = Math.floor(intrinsicX / tileSize)
   const tileY = Math.floor(intrinsicY / tileSize)
-  const warp = (payload.value.warps || []).find((candidate) => Number(candidate.x) === tileX && Number(candidate.y) === tileY)
+  const warp = props.showWarps ? (payload.value.warps || []).find((candidate) => Number(candidate.x) === tileX && Number(candidate.y) === tileY) : undefined
   if (warp) {
     selectDestination(Number(warp.dest))
     return
@@ -672,7 +672,7 @@ onUnmounted(() => {
         ref="canvas"
         :class="[
           interactive || debugEnabled ? 'max-w-none' : 'max-h-full max-w-full',
-          interactive && showWarps ? 'cursor-crosshair' : '',
+          interactive && (showWarps || showPois) ? 'cursor-crosshair' : '',
           'shrink-0 [image-rendering:pixelated]'
         ]"
         aria-label="Semantic map"
@@ -691,6 +691,20 @@ onUnmounted(() => {
           {{ connectionArrow(connection.direction) }} {{ friendlyMapLabel(connection.to) }}
         </button>
       </template>
+
+      <div
+        v-if="explorerAppearance && selectedPoi"
+        class="absolute top-3 left-3 z-20 max-w-56 rounded-lg border border-white/12 bg-[#09110e]/95 px-3 py-2 shadow-xl shadow-black/40 backdrop-blur-sm"
+      >
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <div class="text-[9px] font-bold tracking-[0.1em] text-emerald-300/70 uppercase">{{ selectedPoi.kind }}</div>
+            <div class="mt-0.5 text-xs font-semibold text-white">{{ selectedPoi.label }}</div>
+            <div class="mt-1 text-[9px] text-slate-500">On {{ friendlyMapLabel(map) }}</div>
+          </div>
+          <button type="button" class="text-xs text-slate-500 hover:text-white" aria-label="Close place details" @click="selectedPoi = null">×</button>
+        </div>
+      </div>
 
       <button
         v-if="showDebugToggle"
@@ -718,6 +732,7 @@ onUnmounted(() => {
       <span v-if="showTrail"><b class="text-cyan-300">—</b> trail</span>
       <span v-if="showSprites"><b class="text-amber-300">■</b> sprites</span>
       <span v-if="showWarps"><b class="text-purple-300">□</b> warp</span>
+      <span v-if="explorerAppearance && showPois && currentPois.length"><b class="text-teal-300">●</b> {{ currentPois.length }} places & people</span>
 
       <span v-if="currentConnections.length" class="ml-auto flex flex-wrap items-center justify-end gap-1">
         <span class="mr-1 text-slate-600">Connected:</span>
