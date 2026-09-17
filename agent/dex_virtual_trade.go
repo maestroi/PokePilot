@@ -265,14 +265,9 @@ func executeDexVirtualTrade(m *emu.Emu, romData []byte, o Objective, result Obje
 
 	trade, err := skill.VirtualTrade(m, romData, o.Slot, tradeback, skill.StatAwareMove(romData))
 	result.Travel = travelEvidenceFromRed(trade.Travel)
-	result.Trade = &TradeEvidence{
-		Partner:          "virtual",
-		Policy:           policy,
-		RequestedSpecies: o.Species,
-		Session:          session,
-		Tradeback:        tradeback,
-		Trades:           trade.Trades,
-	}
+	// Provenance is durable in two existing records without widening the
+	// ObjectiveResult schema: the objective Intent/Note names the policy and
+	// the trader service emits structured session/run trade_event records.
 	if err != nil {
 		return result, fmt.Errorf("agent: %s: %w", o, err)
 	}
