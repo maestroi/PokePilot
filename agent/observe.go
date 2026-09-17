@@ -8,6 +8,13 @@ import (
 	"github.com/maestroi/pokepilot/profiles"
 )
 
+// RuntimeServices describes optional infrastructure available to this agent
+// process. These are capabilities of the runtime, not facts decoded from the
+// cartridge, so game adapters do not own or infer them.
+type RuntimeServices struct {
+	VirtualTrader bool `json:"virtual_trader,omitempty"`
+}
+
 // Observation is the complete planner-facing view of one settled game state.
 // Raw game encodings stay available to game-owned runtime code where necessary,
 // but they do not cross the planner JSON contract: Location, party species,
@@ -61,6 +68,12 @@ type Observation struct {
 	Requirements   []Requirement
 	RouteBlockages []RouteBlockage
 	Unroutable     []string `json:"-"`
+
+	// Services is present only when the process is configured with optional
+	// runtime infrastructure. It is deliberately planner-visible so a model can
+	// distinguish "trade evolutions need external help" from "this farm has a
+	// virtual trader ready to service a link session".
+	Services *RuntimeServices `json:"runtime_services,omitempty"`
 }
 
 // MapObject is one observable object on the current map. Item is a semantic
@@ -174,5 +187,6 @@ func ObserveChecked(m *emu.Emu, romData []byte) (Observation, error) {
 	if obs.GameID == "" {
 		obs.GameID = profile.ID()
 	}
+	obs.Services = runtimeServicesFromEnvironment()
 	return obs, nil
 }
