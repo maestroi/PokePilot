@@ -56,6 +56,10 @@ func main() {
 		fmt.Fprintf(os.Stderr, "worldverify: -game %q does not match detected ROM profile %q\n", *game, profile.ID())
 		os.Exit(2)
 	}
+	if !hasWorldAdapter(string(profile.ID())) {
+		fmt.Fprintf(os.Stderr, "worldverify: no world adapter for detected profile %q\n", profile.ID())
+		os.Exit(2)
+	}
 
 	graph, err := world.BuildGraph(romData)
 	if err != nil {
@@ -63,19 +67,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	var transitions map[world.Edge]structTransition
-	_ = transitions
 	// Red and Blue share the English Gen-I map ids, ROM map-table format and
 	// progression topology. Their profile contract already pins that shared
 	// engine; verification therefore intentionally uses one Gen-I semantic
 	// transition catalog while keeping the detected game identity in the
 	// portable report.
-	switch profile.ID() {
-	case redprofile.GameID, blueprofile.GameID:
-	default:
-		fmt.Fprintf(os.Stderr, "worldverify: no world adapter for detected profile %q\n", profile.ID())
-		os.Exit(2)
-	}
 	redBlueTransitions := skill.RedRouteTransitionsForValidation(graph)
 	// English Red/Blue both begin normal controllable play in Pallet Town
 	// (native map 0x00). Native ids stay in this adapter wiring.
@@ -161,7 +157,6 @@ func normalizeGameFlag(value string) (string, error) {
 	}
 }
 
-// structTransition is intentionally never instantiated; this declaration is
-// only here to keep game-neutral adapter selection visually separate from the
-// concrete Gen-I transition catalog below.
-type structTransition = struct{}
+func hasWorldAdapter(gameID string) bool {
+	return gameID == string(redprofile.GameID) || gameID == string(blueprofile.GameID)
+}
