@@ -1,6 +1,6 @@
 package world
 
-import "github.com/maestroi/pokepilot/red/rom"
+import "github.com/maestroi/pokepilot/worldmodel"
 
 // ConnectionBand returns the inclusive source-border index range carried by a
 // component-scoped connection edge. North/south bands are X coordinates;
@@ -23,12 +23,6 @@ func ConnectionBand(e Edge) (start, end int, ok bool) {
 // non-walkable padding band. Missing/incomplete component data remains
 // permissive so hand-built graphs and partially decoded maps keep their
 // historical behavior.
-//
-// Semantic route actions normally bypass ordinary canExit reachability because
-// actions such as Surf and Cut can create traversal that pristine collision
-// does not expose. Adapter code can use this narrower predicate when an action
-// annotates a real border crossing but must not claim the non-walkable bands
-// retained by connectionEdges solely for semantic routing.
 func (g *Graph) ConnectionExitWalkable(e Edge) bool {
 	if e.Kind != EdgeConnection {
 		return false
@@ -74,12 +68,10 @@ type connectionComponentPair struct {
 	entry int
 }
 
-// connectionEdges splits one ROM border connection into contiguous source
-// bands whose seam tiles share the same source and destination walkable
-// components. The pair matters, not only the destination component: tile-pair
-// collision can split adjacent source-edge tiles even when the far side is one
-// plaza, and routing must not aggregate those exits back together.
-func (g *Graph) connectionEdges(from uint8, c rom.Connection) []Edge {
+// connectionEdges splits one adapter-declared border connection into
+// contiguous source bands whose seam tiles share source/destination walkable
+// components.
+func (g *Graph) connectionEdges(from uint8, c worldmodel.Connection) []Edge {
 	base := Edge{Kind: EdgeConnection, From: from, To: c.MapID, Dir: c.Dir}
 	src, okSrc := g.tiles[from]
 	dst, okDst := g.tiles[c.MapID]
@@ -115,10 +107,6 @@ func (g *Graph) connectionEdges(from uint8, c rom.Connection) []Edge {
 
 	for i := 0; i < n; i++ {
 		sx, sy, tx, ty := g.connectionSeamTile(base, c, i)
-		// Offset can leave part of the source edge outside the actual overlap;
-		// that is not a physical connection band. A tile that is in-bounds but
-		// non-walkable *is* retained with component 0 so semantic transitions
-		// such as Surf can still own it while ordinary canExit rejects it.
 		if sx < 0 || sy < 0 || sx >= src.w || sy >= src.h ||
 			tx < 0 || ty < 0 || tx >= dst.w || ty >= dst.h {
 			flush(i - 1)
@@ -144,9 +132,6 @@ func (g *Graph) connectionEdges(from uint8, c rom.Connection) []Edge {
 	flush(n - 1)
 
 	if len(runs) == 0 {
-		// Preserve the historical edge rather than deleting topology merely
-		// because static component evidence is incomplete. canExit will still
-		// reject a known-unwalkable port once its component sets are computed.
 		g.connections[base] = c
 		return []Edge{base}
 	}
@@ -164,9 +149,9 @@ func (g *Graph) connectionEdges(from uint8, c rom.Connection) []Edge {
 	return out
 }
 
-// connectionSeamTile maps source-border index i to the standing tiles on both
-// sides using the same ROM Offset rule as connectionPortComps.
-func (g *Graph) connectionSeamTile(e Edge, c rom.Connection, i int) (sx, sy, tx, ty int) {
+// connectionSeamTile maps source-border index i to standing tiles on both
+// sides using the adapter-provided Offset rule.
+func (g *Graph) connectionSeamTile(e Edge, c worldmodel.Connection, i int) (sx, sy, tx, ty int) {
 	dst := g.tiles[e.To]
 	j := i + int(c.Offset)
 	sx, sy, tx, ty = i, 0, j, dst.h-1
