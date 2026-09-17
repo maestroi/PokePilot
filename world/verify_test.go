@@ -7,7 +7,7 @@ import (
 	"github.com/maestroi/pokepilot/worldverify"
 )
 
-func TestVerifyGraphDetectsPhantomOrdinaryEdge(t *testing.T) {
+func TestVerifyGraphCountsPhantomOrdinaryEdgeAsInactive(t *testing.T) {
 	edge := Edge{Kind: EdgeConnection, From: 1, To: 2, Dir: dirEast, BandScoped: true, BandStart: 0, BandEnd: 0}
 	g := &Graph{
 		Edges:          map[uint8][]Edge{1: {edge}, 2: nil},
@@ -22,8 +22,11 @@ func TestVerifyGraphDetectsPhantomOrdinaryEdge(t *testing.T) {
 	}
 
 	report := VerifyGraph(g, nil, 1)
-	if !reportHasFinding(report, "dead_exit_port", worldverify.SeverityError) {
-		t.Fatalf("expected dead_exit_port, got %+v", report.Findings)
+	if report.HasErrors() || report.WarningCount() != 0 {
+		t.Fatalf("inactive ordinary edge must not be a finding: %+v", report.Findings)
+	}
+	if report.Stats.InactiveStaticEdges != 1 {
+		t.Fatalf("inactive static edges=%d, want 1", report.Stats.InactiveStaticEdges)
 	}
 }
 
@@ -53,6 +56,9 @@ func TestVerifyGraphKeepsSemanticGeometryMismatchVisible(t *testing.T) {
 	}
 	if report.Stats.Capabilities != 1 || report.Stats.CapabilityStatesChecked != 2 {
 		t.Fatalf("unexpected capability exploration: %+v", report.Stats)
+	}
+	if report.Stats.SemanticDeadPortEdges != 1 {
+		t.Fatalf("semantic dead-port edges=%d, want 1", report.Stats.SemanticDeadPortEdges)
 	}
 }
 
