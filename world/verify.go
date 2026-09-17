@@ -86,7 +86,7 @@ func ValidationSnapshot(g *Graph, transitions map[Edge]gameruntime.Transition, s
 				for _, capability := range transition.Requires {
 					requires = append(requires, worldverify.CapabilityID(capability))
 				}
-			out.Transition = &worldverify.Transition{
+				out.Transition = &worldverify.Transition{
 					ID:        transition.ID,
 					Requires:  requires,
 					Gate:      transition.Gate,
