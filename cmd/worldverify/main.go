@@ -21,7 +21,7 @@ func main() {
 	game := flag.String("game", "red", "game adapter (currently: red)")
 	jsonOutput := flag.Bool("json", false, "emit JSON report")
 	strictWarnings := flag.Bool("strict-warnings", false, "exit non-zero when warnings are present")
-	maxCaps := flag.Int("max-exhaustive-capabilities", 12, "maximum capabilities to enumerate exhaustively")
+	maxCaps := flag.Int("max-exhaustive-capabilities", 16, "maximum capabilities to enumerate exhaustively (16 = 65,536 states)")
 	flag.Parse()
 
 	if *game != "red" {
