@@ -26,6 +26,7 @@ const props = withDefaults(defineProps<{
   sprites?: MapSprite[]
   debug?: boolean
   interactive?: boolean
+  showPlayer?: boolean
   showTrail?: boolean
   showSprites?: boolean
   showWarps?: boolean
@@ -37,6 +38,7 @@ const props = withDefaults(defineProps<{
   sprites: () => [],
   debug: false,
   interactive: false,
+  showPlayer: true,
   showTrail: true,
   showSprites: true,
   showWarps: true
@@ -51,6 +53,7 @@ const canvas = ref<HTMLCanvasElement | null>(null)
 const loading = ref(false)
 const error = ref('')
 const zoomLevel = ref(1)
+const payload = ref<MapPayload | null>(null)
 let savedDebug = false
 try {
   savedDebug = window.localStorage.getItem('pokepilot.map.debug') === '1'
@@ -62,7 +65,7 @@ const debugEnabled = computed(() => props.debug || localDebug.value)
 const warpDestinations = computed(() => {
   const seen = new Set<number>()
   const result: number[] = []
-  for (const warp of payload?.warps || []) {
+  for (const warp of payload.value?.warps || []) {
     const destination = Number(warp.dest)
     if (!Number.isFinite(destination) || seen.has(destination)) continue
     seen.add(destination)
@@ -70,8 +73,7 @@ const warpDestinations = computed(() => {
   }
   return result
 })
-const connections = computed(() => payload?.connections || [])
-let payload: MapPayload | null = null
+const connections = computed(() => payload.value?.connections || [])
 let serial = 0
 let observer: ResizeObserver | null = null
 let tileSize = 0
@@ -122,7 +124,7 @@ function drawDebugText(ctx: CanvasRenderingContext2D, text: string, x: number, y
 function draw(): void {
   const node = canvas.value
   const box = frame.value
-  const data = payload
+  const data = payload.value
   if (!node || !box || !data) return
 
   const width = Math.max(1, Number(data.width || 1))
@@ -227,15 +229,17 @@ function draw(): void {
     }
   }
 
-  const playerX = Number(props.x)
-  const playerY = Number(props.y)
-  if (Number.isFinite(playerX) && Number.isFinite(playerY) && playerX >= 0 && playerY >= 0 && playerX < width && playerY < height) {
-    ctx.fillStyle = colors.player
-    ctx.beginPath()
-    ctx.arc((playerX + 0.5) * px, (playerY + 0.5) * px, Math.max(2, px * 0.42), 0, Math.PI * 2)
-    ctx.fill()
-    if (debugEnabled.value) {
-      drawDebugText(ctx, `@${playerX},${playerY}`, (playerX + 0.5) * px, (playerY + 0.5) * px, px)
+  if (props.showPlayer) {
+    const playerX = Number(props.x || 0)
+    const playerY = Number(props.y || 0)
+    if (playerX >= 0 && playerY >= 0 && playerX < width && playerY < height) {
+      ctx.fillStyle = colors.player
+      ctx.beginPath()
+      ctx.arc((playerX + 0.5) * px, (playerY + 0.5) * px, Math.max(2, px * 0.42), 0, Math.PI * 2)
+      ctx.fill()
+      if (debugEnabled.value) {
+        drawDebugText(ctx, `@${playerX},${playerY}`, (playerX + 0.5) * px, (playerY + 0.5) * px, px)
+      }
     }
   }
 }
@@ -249,12 +253,12 @@ async function loadMap(): Promise<void> {
     if (!response.ok) throw new Error(`Map ${mapName()} unavailable (${response.status})`)
     const next = await response.json() as MapPayload
     if (id !== serial) return
-    payload = next
+    payload.value = next
     zoomLevel.value = 1
     requestAnimationFrame(draw)
   } catch (cause) {
     if (id !== serial) return
-    payload = null
+    payload.value = null
     error.value = cause instanceof Error ? cause.message : 'Map unavailable'
   } finally {
     if (id === serial) loading.value = false
@@ -274,10 +278,9 @@ function resetZoom(): void {
 function centerOnPlayer(): void {
   const box = frame.value
   const node = canvas.value
-  if (!box || !node || tileSize <= 0) return
-  const playerX = Number(props.x)
-  const playerY = Number(props.y)
-  if (!Number.isFinite(playerX) || !Number.isFinite(playerY)) return
+  if (!box || !node || tileSize <= 0 || !props.showPlayer) return
+  const playerX = Number(props.x || 0)
+  const playerY = Number(props.y || 0)
   box.scrollTo({
     left: Math.max(0, node.offsetLeft + (playerX + 0.5) * tileSize - box.clientWidth / 2),
     top: Math.max(0, node.offsetTop + (playerY + 0.5) * tileSize - box.clientHeight / 2),
@@ -286,14 +289,14 @@ function centerOnPlayer(): void {
 }
 
 function onCanvasClick(event: MouseEvent): void {
-  if (!props.interactive || !props.showWarps || !payload || !canvas.value || tileSize <= 0) return
+  if (!props.interactive || !props.showWarps || !payload.value || !canvas.value || tileSize <= 0) return
   const rect = canvas.value.getBoundingClientRect()
   if (rect.width <= 0 || rect.height <= 0) return
   const intrinsicX = (event.clientX - rect.left) * canvas.value.width / rect.width
   const intrinsicY = (event.clientY - rect.top) * canvas.value.height / rect.height
   const tileX = Math.floor(intrinsicX / tileSize)
   const tileY = Math.floor(intrinsicY / tileSize)
-  const warp = (payload.warps || []).find((candidate) => Number(candidate.x) === tileX && Number(candidate.y) === tileY)
+  const warp = (payload.value.warps || []).find((candidate) => Number(candidate.x) === tileX && Number(candidate.y) === tileY)
   if (warp) emit('warpSelect', Number(warp.dest))
 }
 
@@ -303,6 +306,7 @@ watch([
   () => props.y,
   () => props.trail,
   () => props.sprites,
+  () => props.showPlayer,
   () => props.showTrail,
   () => props.showSprites,
   () => props.showWarps,
@@ -339,7 +343,7 @@ onUnmounted(() => {
         <button type="button" class="rounded bg-white/7 px-2 py-1 text-xs text-slate-300 ring-1 ring-white/10 hover:bg-white/12" aria-label="Zoom out" @click="zoomBy(-0.25)">−</button>
         <button type="button" class="min-w-14 rounded bg-white/7 px-2 py-1 font-mono text-[10px] text-slate-300 ring-1 ring-white/10 hover:bg-white/12" title="Reset zoom" @click="resetZoom">{{ Math.round(zoomLevel * 100) }}%</button>
         <button type="button" class="rounded bg-white/7 px-2 py-1 text-xs text-slate-300 ring-1 ring-white/10 hover:bg-white/12" aria-label="Zoom in" @click="zoomBy(0.25)">+</button>
-        <button type="button" class="rounded bg-white/7 px-2 py-1 text-[10px] font-semibold text-slate-300 ring-1 ring-white/10 hover:bg-white/12" @click="centerOnPlayer">Locate</button>
+        <button v-if="showPlayer" type="button" class="rounded bg-white/7 px-2 py-1 text-[10px] font-semibold text-slate-300 ring-1 ring-white/10 hover:bg-white/12" @click="centerOnPlayer">Locate</button>
       </div>
     </div>
 
@@ -366,22 +370,22 @@ onUnmounted(() => {
         :title="debugEnabled ? 'Hide map debug labels' : 'Show map debug labels'"
         :class="[
           debugEnabled ? 'bg-[var(--poke-cyan)] text-[#101820]' : 'bg-black/75 text-[var(--poke-muted)] hover:text-white',
-          'sticky top-1.5 ml-auto z-10 rounded-sm px-1.5 py-0.5 font-mono text-[9px] font-bold ring-1 ring-white/10'
+          'absolute top-2 right-2 z-10 rounded-sm px-1.5 py-0.5 font-mono text-[9px] font-bold ring-1 ring-white/10'
         ]"
         @click="localDebug = !localDebug"
       >
         {{ debugEnabled ? 'DEBUG ON' : 'DEBUG' }}
       </button>
-      <div v-if="debugEnabled" class="pointer-events-none sticky bottom-1.5 left-1.5 z-10 mt-auto mr-auto bg-black/80 px-1.5 py-1 font-mono text-[9px] leading-3 text-[var(--poke-muted)] ring-1 ring-white/10">
+      <div v-if="debugEnabled" class="pointer-events-none absolute bottom-2 left-2 z-10 bg-black/80 px-1.5 py-1 font-mono text-[9px] leading-3 text-[var(--poke-muted)] ring-1 ring-white/10">
         <div><span class="text-white">S#/PP</span> sprite slot / picture ID</div>
         <div><span class="text-white">→MM</span> warp destination map</div>
       </div>
-      <div v-if="loading" class="pointer-events-none sticky right-1.5 bottom-1.5 ml-auto mt-auto bg-black/70 px-1.5 py-0.5 text-[10px] text-[var(--poke-muted)]">Loading map…</div>
-      <div v-else-if="error" class="pointer-events-none sticky right-1.5 bottom-1.5 ml-auto mt-auto max-w-[80%] bg-[#352529] px-1.5 py-0.5 text-[10px] text-[#e4b5b7]">{{ error }}</div>
+      <div v-if="loading" class="pointer-events-none absolute right-1.5 bottom-1.5 bg-black/70 px-1.5 py-0.5 text-[10px] text-[var(--poke-muted)]">Loading map…</div>
+      <div v-else-if="error" class="pointer-events-none absolute right-1.5 bottom-1.5 max-w-[80%] bg-[#352529] px-1.5 py-0.5 text-[10px] text-[#e4b5b7]">{{ error }}</div>
     </div>
 
     <div v-if="interactive" class="flex flex-wrap items-center gap-1.5 border-t border-white/10 bg-black/20 px-2.5 py-2 text-[10px] text-slate-500">
-      <span><b class="text-white">●</b> player</span>
+      <span v-if="showPlayer"><b class="text-white">●</b> player</span>
       <span v-if="showTrail"><b class="text-cyan-300">—</b> trail</span>
       <span v-if="showSprites"><b class="text-amber-300">■</b> sprites</span>
       <span v-if="showWarps"><b class="text-purple-300">□</b> warp</span>
