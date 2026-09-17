@@ -87,10 +87,11 @@ func ValidationSnapshot(g *Graph, transitions map[Edge]gameruntime.Transition, s
 					requires = append(requires, worldverify.CapabilityID(capability))
 				}
 				out.Transition = &worldverify.Transition{
-					ID:        transition.ID,
-					Requires:  requires,
-					Gate:      transition.Gate,
-					PivotOnly: transition.PivotOnly,
+					ID:         transition.ID,
+					Requires:   requires,
+					Gate:       transition.Gate,
+					PivotOnly:  transition.PivotOnly,
+					PortBypass: transition.PortBypass,
 				}
 			}
 			snapshot.Edges = append(snapshot.Edges, out)
