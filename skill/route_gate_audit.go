@@ -10,7 +10,8 @@ import (
 )
 
 const (
-	capCanRideCyclingRoad gameruntime.CapabilityID = "can_ride_cycling_road"
+	capCanRideCyclingRoad        gameruntime.CapabilityID = "can_ride_cycling_road"
+	capCanPassRoute23BadgeChecks gameruntime.CapabilityID = "can_pass_route23_badge_checks"
 
 	// Red's Celadon City object table contains a historical/unused warp at
 	// (39,19) directly to the department store 5F. The decomp explicitly marks
@@ -34,6 +35,10 @@ const (
 	celadonInaccessibleMartWarpX uint8 = 39
 	celadonInaccessibleMartWarpY uint8 = 19
 
+	route23VictoryRoadWarpX     uint8 = 4
+	route23VictoryRoadWarpY     uint8 = 31
+	route23VictoryRoadApproachY uint8 = 32
+
 	eventFightRoute16Snorlax state.Event = 0x4C8
 	eventBeatRoute16Snorlax  state.Event = 0x4C9
 )
@@ -41,6 +46,9 @@ const (
 func addAuditedRedRouteCapabilities(mem *state.Mem, caps gameruntime.CapabilitySet) {
 	if _, count := bagEntry(mem, bicycleItem); count > 0 {
 		caps[capCanRideCyclingRoad] = true
+	}
+	if state.DecodeProgress(mem).BadgeCount == 8 {
+		caps[capCanPassRoute23BadgeChecks] = true
 	}
 	// A completed Snorlax encounter is durable proof that this save already
 	// acquired the Poké Flute. Resume/checkpoint reconstruction can lose the
@@ -53,6 +61,9 @@ func addAuditedRedRouteCapabilities(mem *state.Mem, caps gameruntime.CapabilityS
 }
 
 func redAuditedRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, bool) {
+	if transition, ok := redSideRouteTransitionForEdge(edge); ok {
+		return transition, true
+	}
 	pair := func(a, b uint8) bool {
 		return (edge.From == a && edge.To == b) || (edge.From == b && edge.To == a)
 	}
@@ -63,6 +74,16 @@ func redAuditedRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, 
 	}
 
 	switch {
+	case edge.Kind == world.EdgeWarp && edge.From == route23Map && edge.To == victoryRoad1FMap &&
+		edge.WarpX == route23VictoryRoadWarpX && edge.WarpY == route23VictoryRoadWarpY:
+		// Route 23 is not one immutable walking component. The League approach
+		// crosses three full-width Surf bands and seven scripted badge guards
+		// before the south Victory Road entrance can be reached. The runtime
+		// already owns that measured traversal in VictoryRoadProgression; expose
+		// the same fact to semantic routing so the portable graph does not stop
+		// at the south Route 23 component even with all progression complete.
+		return semanticTransition("red:route23_league_approach", edge, capCanSurf, capCanPassRoute23BadgeChecks), true
+
 	case edge.Kind == world.EdgeWarp && edge.From == celadonCityMap && edge.To == celadonMart5FMap &&
 		edge.WarpX == celadonInaccessibleMartWarpX && edge.WarpY == celadonInaccessibleMartWarpY:
 		// pokered/data/maps/objects/CeladonCity.asm declares this warp but
@@ -127,7 +148,51 @@ func redAuditedRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, 
 }
 
 func (x *redRouteTransitionExecutor) executeAuditedRouteTransition(edge world.Edge, transition gameruntime.Transition) (world.TransitionExecutionResult, bool, error) {
+	if result, handled, err := x.executeSideRouteTransition(edge, transition); handled {
+		return result, true, err
+	}
 	switch transition.ID {
+	case "red:route23_league_approach":
+		var mem state.Mem
+		state.Snapshot(x.m, &mem)
+		caps := redRouteCapabilities(x.romData, &mem)
+		missing := make([]gameruntime.CapabilityID, 0, 2)
+		if !caps.Has(capCanSurf) {
+			missing = append(missing, capCanSurf)
+		}
+		if !caps.Has(capCanPassRoute23BadgeChecks) {
+			missing = append(missing, capCanPassRoute23BadgeChecks)
+		}
+		if len(missing) != 0 {
+			return world.TransitionExecutionResult{}, true, &gameruntime.TransitionBlockage{Transition: transition, Missing: missing}
+		}
+		if x.policy == nil {
+			return world.TransitionExecutionResult{}, true, fmt.Errorf("%w: Route 23 League approach", ErrRouteTransitionNeedsBattlePolicy)
+		}
+		if got := x.m.Peek8(sym.CurMap); got != route23Map {
+			return world.TransitionExecutionResult{}, true, fmt.Errorf("skill: Route 23 League approach started on map %#02x, want %#02x", got, route23Map)
+		}
+		_, y := playerXY(x.m)
+		if y <= route23VictoryRoadApproachY {
+			// The player is already on the north cave-door component. Leave the
+			// actual warp traversal to the generic edge executor.
+			return world.TransitionExecutionResult{}, true, nil
+		}
+		for _, barrierY := range route23SurfBarrierRows {
+			if err := crossRoute23SurfBandNorth(x.m, x.romData, x.policy, barrierY); err != nil {
+				return world.TransitionExecutionResult{}, true, fmt.Errorf("skill: Route 23 League approach: %w", err)
+			}
+		}
+		approach := Destination{Map: route23Map, X: route23VictoryRoadWarpX, Y: route23VictoryRoadApproachY}
+		if _, err := TravelFlee(x.m, x.romData, approach, x.policy, victoryRoadTravelBattles); err != nil {
+			return world.TransitionExecutionResult{}, true, fmt.Errorf("skill: Route 23 League approach: pass badge guards: %w", err)
+		}
+		facts := currentStoryFacts(x.m)
+		if !facts.Route23BadgeChecksComplete || facts.Route23BadgeChecksPassed != 7 {
+			return world.TransitionExecutionResult{}, true, fmt.Errorf("skill: Route 23 League approach completed with badge checks %d/7", facts.Route23BadgeChecksPassed)
+		}
+		return world.TransitionExecutionResult{Changed: true}, true, nil
+
 	case "red:cycling_road_bicycle":
 		var mem state.Mem
 		state.Snapshot(x.m, &mem)
