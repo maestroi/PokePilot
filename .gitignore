@@ -21,6 +21,7 @@ repro-*
 # independently built operator and spectator bundles before compiling pokeui.
 /web/node_modules/
 /web/dist/
+/web/src/shared/redWorldManifest.generated.ts
 /cmd/pokeui/ui/vue/*
 !/cmd/pokeui/ui/vue/placeholder.txt
 !/cmd/pokeui/ui/vue/_underscore_embed_probe.txt
