@@ -9,7 +9,7 @@ import (
 type EdgeKind uint8
 
 const (
-	EdgeWarp       EdgeKind = iota
+	EdgeWarp EdgeKind = iota
 	EdgeConnection
 )
 
