@@ -33,3 +33,10 @@ test('every atlas connection points at a known map', () => {
     }
   }
 })
+
+test('Pallet Town exposes runless people and signs', () => {
+  const pallet = byID.get(0x00)
+  assert.ok(pallet)
+  assert.ok(pallet.pois.some((poi) => poi.kind === 'npc' && poi.label === 'Oak'))
+  assert.ok(pallet.pois.some((poi) => poi.kind === 'sign'))
+})
