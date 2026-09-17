@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { ArrowTopRightOnSquareIcon, PlayIcon } from '@heroicons/vue/20/solid'
 import { getBuildProvenance, getDashboard } from '../shared/api/client'
 import { getOperatorUIConfig } from '../shared/api/spectator-control'
+import { resolveSpectatorBase, spectatorURL } from '../shared/urls'
 import AppShell from '../shared/components/AppShell.vue'
 import { usePollingResource } from '../shared/composables/usePollingResource'
 import type { AppNavItem } from '../shared/types'
@@ -89,28 +90,20 @@ const buildTitle = computed(() => {
 function syncHash(): void {
   const next = hashView()
   activeView.value = next
-  document.title = `PokéPilot · ${labels[next]}`
+  document.title = `RomPilot Admin · ${labels[next]}`
 }
 
 async function loadSpectatorURL(): Promise<void> {
   try {
-    configuredSpectatorURL.value = (await getOperatorUIConfig()).spectator_url?.trim() || ''
+    const config = await getOperatorUIConfig()
+    configuredSpectatorURL.value = resolveSpectatorBase(config, window.location.href)
   } catch {
-    configuredSpectatorURL.value = ''
+    configuredSpectatorURL.value = resolveSpectatorBase({}, window.location.href)
   }
 }
 
 function spectatorBaseURL(): string {
-  if (configuredSpectatorURL.value) return configuredSpectatorURL.value
-  const current = new URL(window.location.href)
-  if (current.port === '18080') {
-    current.port = '18081'
-    current.pathname = '/'
-    current.search = ''
-    current.hash = ''
-    return current.toString()
-  }
-  return 'https://pokemon.maestroi.cc'
+  return configuredSpectatorURL.value
 }
 
 function selectedRunID(): string {
@@ -122,11 +115,9 @@ function selectedRunID(): string {
 }
 
 function openSelectedSpectator(): void {
-  const target = new URL(spectatorBaseURL(), window.location.href)
-  const runID = selectedRunID()
-  if (runID) target.searchParams.set('run', runID)
-  else target.searchParams.delete('run')
-  window.open(target.toString(), '_blank', 'noopener,noreferrer')
+  const base = spectatorBaseURL()
+  if (!base) return
+  window.open(spectatorURL(base, selectedRunID()), '_blank', 'noopener,noreferrer')
 }
 
 onMounted(() => {
@@ -179,11 +170,11 @@ onUnmounted(() => window.removeEventListener('hashchange', syncHash))
         v-if="activeView === 'live'"
         type="button"
         class="inline-flex items-center gap-1 rounded-sm bg-white/10 px-2 py-1 text-[11px] font-bold text-white ring-1 ring-white/10 hover:bg-white/15"
-        title="Open the selected run in the public spectator view"
+        title="Open the selected run on the public RomPilot site"
         @click="openSelectedSpectator"
       >
         <ArrowTopRightOnSquareIcon class="size-3.5" aria-hidden="true" />
-        Open spectator
+        View spectator
       </button>
       <a
         v-if="activeView === 'live'"

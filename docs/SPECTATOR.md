@@ -1,6 +1,16 @@
 # Public spectator mode
 
-`pokeui -spectator` is the public, read-only frontend for PokéPilot runs. It is a separate server mode rather than a cosmetic version of the operator console.
+The public product is **RomPilot**. `pokeui -spectator` is the public, read-only frontend. It is a separate server mode rather than a cosmetic version of the operator console.
+
+Production hostnames:
+
+```text
+rompilot.app          Public RomPilot / spectator
+admin.rompilot.app    Private admin/control plane
+api.rompilot.app      External API entry point
+```
+
+See `docs/DOMAINS.md` for DNS, Cloudflare redirects, and CORS.
 
 ## Security boundary
 
@@ -22,12 +32,12 @@ The page renders run-provided text with DOM `textContent`, and spectator respons
 
 `deploy/farm.yml` runs two `pokeui` processes:
 
-- `ui` on `${FARM_WALL_PORT:-18080}` — private operator console; keep this behind trusted network access/authentication.
-- `spectator` on `${FARM_SPECTATOR_PORT:-18081}` — read-only surface intended for a public reverse proxy or hostname.
+- `ui` on `${FARM_WALL_PORT:-18080}` — private operator console; keep this behind trusted network access/authentication. Production hostname: `admin.rompilot.app`.
+- `spectator` on `${FARM_SPECTATOR_PORT:-18081}` — read-only surface intended for a public reverse proxy or hostname. Production hostname: `rompilot.app`. `api.rompilot.app` is the same process, limited to public API paths.
 
 The wall and runners still publish no host ports. The spectator process reaches the wall only over the Swarm network.
 
-For example, after the normal farm build/deploy flow, open `http://<farm-host>:18081/` locally or point a TLS reverse proxy at port `18081` for the public hostname. Do not point the public hostname at the operator port.
+For example, after the normal farm build/deploy flow, open `http://<farm-host>:18081/` locally or point a TLS reverse proxy at the spectator service for `rompilot.app`. Do not point the public hostname at the operator port.
 
 ## Standalone
 

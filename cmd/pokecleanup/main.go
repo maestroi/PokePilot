@@ -289,7 +289,7 @@ func run(ctx context.Context, client *http.Client, base, key string, issueNumber
 }
 
 func main() {
-	base := flag.String("url", "https://pokemon.labstack.cc", "private PokePilot operator URL")
+	base := flag.String("url", "https://admin.rompilot.app", "private RomPilot operator URL")
 	key := flag.String("key", "", "triage failure key to clean")
 	issueNumber := flag.Int64("issue", 0, "Agent Orchestrator issue number whose triage group should be cleaned")
 	yes := flag.Bool("yes", false, "permanently delete matching finished runs and their S3/replay artifacts")

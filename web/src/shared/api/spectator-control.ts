@@ -16,6 +16,9 @@ export interface SpectatorRunControlResult {
 
 export interface OperatorUIConfig {
   spectator_url?: string
+  public_base_url?: string
+  admin_base_url?: string
+  api_base_url?: string
 }
 
 async function errorDetail(response: Response): Promise<string> {

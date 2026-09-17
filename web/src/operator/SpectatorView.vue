@@ -7,6 +7,7 @@ import {
   getSpectatorControl,
   patchSpectatorRunControl
 } from '../shared/api/spectator-control'
+import { resolveSpectatorBase, spectatorURL } from '../shared/urls'
 import type { DashboardRun } from '../shared/api/types'
 import ResourceState from '../shared/components/ResourceState.vue'
 import StatusBadge from '../shared/components/StatusBadge.vue'
@@ -32,9 +33,9 @@ const busyRunID = ref('')
 
 onMounted(async () => {
   try {
-    configuredSpectatorURL.value = (await getOperatorUIConfig()).spectator_url?.trim() || ''
+    configuredSpectatorURL.value = resolveSpectatorBase(await getOperatorUIConfig(), window.location.href)
   } catch {
-    configuredSpectatorURL.value = ''
+    configuredSpectatorURL.value = resolveSpectatorBase({}, window.location.href)
   }
 })
 
@@ -70,28 +71,16 @@ function isVisible(runID: string): boolean {
 }
 
 function spectatorBaseURL(): string {
-  if (configuredSpectatorURL.value) return configuredSpectatorURL.value
-  const current = new URL(window.location.href)
-  if (current.port === '18080') {
-    current.port = '18081'
-    current.pathname = '/'
-    current.search = ''
-    current.hash = ''
-    return current.toString()
-  }
-  return ''
+  return configuredSpectatorURL.value
 }
 
 function openSpectator(runID = ''): void {
   const base = spectatorBaseURL()
   if (!base) {
-    actionError.value = 'Set POKEPILOT_SPECTATOR_URL on the operator UI to enable spectator links.'
+    actionError.value = 'Set POKEPILOT_PUBLIC_BASE_URL on the operator UI to enable spectator links.'
     return
   }
-  const target = new URL(base, window.location.href)
-  if (runID) target.searchParams.set('run', runID)
-  else target.searchParams.delete('run')
-  window.open(target.toString(), '_blank', 'noopener,noreferrer')
+  window.open(spectatorURL(base, runID), '_blank', 'noopener,noreferrer')
 }
 
 async function refresh(): Promise<void> {
@@ -148,9 +137,9 @@ async function setFeatured(run: DashboardRun, featured: boolean): Promise<void> 
     <div class="space-y-2">
       <section class="flex flex-wrap items-center justify-between gap-3 border border-[var(--poke-border)] bg-[var(--poke-panel)] px-3 py-2.5">
         <div>
-          <h2 class="text-sm font-semibold text-white">Public spectator</h2>
+          <h2 class="text-sm font-semibold text-white">Public site</h2>
           <p class="mt-0.5 text-[11px] text-[var(--poke-muted)]">
-            Hidden runs never cross the public spectator API. Featured runs become the default view for unpinned spectators.
+            Hidden runs never cross the public RomPilot API. Featured runs become the default view for unpinned spectators.
           </p>
         </div>
         <button
@@ -158,7 +147,7 @@ async function setFeatured(run: DashboardRun, featured: boolean): Promise<void> 
           class="inline-flex items-center gap-1.5 rounded-sm bg-[var(--poke-cyan)] px-2.5 py-1.5 text-[11px] font-bold text-[#101820] hover:brightness-110"
           @click="openSpectator()"
         >
-          <ArrowTopRightOnSquareIcon class="size-3.5" aria-hidden="true" /> Open spectator
+          <ArrowTopRightOnSquareIcon class="size-3.5" aria-hidden="true" /> Open public site
         </button>
       </section>
 
@@ -225,7 +214,7 @@ async function setFeatured(run: DashboardRun, featured: boolean): Promise<void> 
               class="inline-flex items-center gap-1 rounded-sm px-1.5 py-1 text-[10px] font-bold text-[var(--poke-cyan)] ring-1 ring-[var(--poke-border-strong)] hover:bg-white/5"
               @click="openSpectator(run.run_id)"
             >
-              <ArrowTopRightOnSquareIcon class="size-3" aria-hidden="true" /> Open
+              <ArrowTopRightOnSquareIcon class="size-3" aria-hidden="true" /> View spectator
             </button>
           </div>
         </div>

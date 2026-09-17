@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"path"
 	"strings"
+
+	"github.com/maestroi/pokepilot/sites"
 )
 
 const pokemonSpriteImageOrigin = "https://raw.githubusercontent.com"
@@ -33,6 +35,17 @@ func withVuePreview(next http.Handler, target string) http.Handler {
 			allowPokemonSpriteImages(res.Header())
 		}
 		switch {
+		case req.Method == http.MethodGet && target == "spectator" && (req.URL.Path == "/" || req.URL.Path == ""):
+			if destination, ok := sites.CanonicalRunRedirect(req.URL.Path, req.URL.Query()); ok {
+				http.Redirect(res, req, destination, http.StatusPermanentRedirect)
+				return
+			}
+			if serveVueFile(res, req, target, target+".html") {
+				return
+			}
+			res.Header().Set("Cache-Control", "no-store")
+			http.Error(res, "frontend assets unavailable; run the web build before starting pokeui", http.StatusServiceUnavailable)
+			return
 		case req.Method == http.MethodGet && req.URL.Path == "/":
 			if serveVueFile(res, req, target, target+".html") {
 				return
@@ -40,7 +53,14 @@ func withVuePreview(next http.Handler, target string) http.Handler {
 			res.Header().Set("Cache-Control", "no-store")
 			http.Error(res, "frontend assets unavailable; run the web build before starting pokeui", http.StatusServiceUnavailable)
 			return
-		case req.Method == http.MethodGet && target == "spectator" && (req.URL.Path == "/world" || req.URL.Path == "/world/"):
+		case req.Method == http.MethodGet && target == "spectator" && spectatorRunPage(req.URL.Path):
+			if serveVueFile(res, req, target, "spectator.html") {
+				return
+			}
+			res.Header().Set("Cache-Control", "no-store")
+			http.Error(res, "frontend assets unavailable; run the web build before starting pokeui", http.StatusServiceUnavailable)
+			return
+		case req.Method == http.MethodGet && target == "spectator" && spectatorExplorePage(req.URL.Path):
 			if serveVueFile(res, req, target, "world.html") {
 				return
 			}
@@ -56,7 +76,9 @@ func withVuePreview(next http.Handler, target string) http.Handler {
 			return
 		case req.Method == http.MethodGet && (req.URL.Path == "/next" || req.URL.Path == "/next/"):
 			destination := "/"
-			if req.URL.RawQuery != "" {
+			if runPage, ok := sites.CanonicalRunRedirect("/", req.URL.Query()); ok {
+				destination = runPage
+			} else if req.URL.RawQuery != "" {
 				destination += "?" + req.URL.RawQuery
 			}
 			http.Redirect(res, req, destination, http.StatusPermanentRedirect)
@@ -118,4 +140,18 @@ func serveVueFile(res http.ResponseWriter, req *http.Request, target, name strin
 	res.WriteHeader(http.StatusOK)
 	_, _ = res.Write(data)
 	return true
+}
+
+func spectatorRunPage(path string) bool {
+	_, ok := spectatorRunID(path)
+	return ok
+}
+
+func spectatorExplorePage(path string) bool {
+	switch path {
+	case "/explore", "/explore/", "/world", "/world/":
+		return true
+	default:
+		return false
+	}
 }
