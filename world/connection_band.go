@@ -2,6 +2,16 @@ package world
 
 import "github.com/maestroi/pokepilot/worldmodel"
 
+type connectionView interface {
+	WorldDirection() uint8
+	WorldMapID() uint8
+	WorldOffset() int8
+}
+
+func portableConnection(c connectionView) worldmodel.Connection {
+	return worldmodel.Connection{Dir: c.WorldDirection(), MapID: c.WorldMapID(), Offset: c.WorldOffset()}
+}
+
 // ConnectionBand returns the inclusive source-border index range carried by a
 // component-scoped connection edge. North/south bands are X coordinates;
 // west/east bands are Y coordinates. Unscoped/hand-built connection edges
@@ -17,12 +27,6 @@ func ConnectionBand(e Edge) (start, end int, ok bool) {
 	return start, end, true
 }
 
-// ConnectionExitWalkable reports whether a concrete connection edge has at
-// least one physically standable seam tile on both maps. It only returns false
-// when the component-aware graph has enough geometry to prove the band is a
-// non-walkable padding band. Missing/incomplete component data remains
-// permissive so hand-built graphs and partially decoded maps keep their
-// historical behavior.
 func (g *Graph) ConnectionExitWalkable(e Edge) bool {
 	if e.Kind != EdgeConnection {
 		return false
@@ -68,10 +72,8 @@ type connectionComponentPair struct {
 	entry int
 }
 
-// connectionEdges splits one adapter-declared border connection into
-// contiguous source bands whose seam tiles share source/destination walkable
-// components.
-func (g *Graph) connectionEdges(from uint8, c worldmodel.Connection) []Edge {
+func (g *Graph) connectionEdges(from uint8, source connectionView) []Edge {
+	c := portableConnection(source)
 	base := Edge{Kind: EdgeConnection, From: from, To: c.MapID, Dir: c.Dir}
 	src, okSrc := g.tiles[from]
 	dst, okDst := g.tiles[c.MapID]
@@ -149,8 +151,6 @@ func (g *Graph) connectionEdges(from uint8, c worldmodel.Connection) []Edge {
 	return out
 }
 
-// connectionSeamTile maps source-border index i to standing tiles on both
-// sides using the adapter-provided Offset rule.
 func (g *Graph) connectionSeamTile(e Edge, c worldmodel.Connection, i int) (sx, sy, tx, ty int) {
 	dst := g.tiles[e.To]
 	j := i + int(c.Offset)
