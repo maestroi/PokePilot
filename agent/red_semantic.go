@@ -14,14 +14,15 @@ import (
 
 // Keep the existing agent names as aliases while progression execution is
 // migrated. The concrete vocabulary is owned by the Red profile where it
-// already exists; League room facts remain adapter-local until that migration
-// is complete.
+// already exists; League room facts and the newly explicit badge-chain facts
+// remain adapter-local until that migration is complete.
 const (
 	redProgressMtMoonFossilAcquired       ProgressID = redprofile.ProgressMtMoonFossilAcquired
 	redProgressPokedexAcquired            ProgressID = redprofile.ProgressPokedexAcquired
 	redProgressSSTicketAcquired           ProgressID = redprofile.ProgressSSTicketAcquired
 	redProgressHM01Acquired               ProgressID = redprofile.ProgressHM01Acquired
 	redProgressBicycleAcquired            ProgressID = redprofile.ProgressBicycleAcquired
+	redProgressCascadeBadge               ProgressID = "cascade_badge"
 	redProgressThunderBadge               ProgressID = redprofile.ProgressThunderBadge
 	redProgressPostSurgeLavenderReached   ProgressID = redprofile.ProgressPostSurgeLavenderReached
 	redProgressPostSurgeCeladonReady      ProgressID = redprofile.ProgressPostSurgeCeladonReady
@@ -30,6 +31,7 @@ const (
 	redProgressPokeFluteAcquired          ProgressID = redprofile.ProgressPokeFluteAcquired
 	redProgressFuchsiaProgressionComplete ProgressID = redprofile.ProgressFuchsiaProgressionComplete
 	redProgressSilphRescueComplete        ProgressID = redprofile.ProgressSilphRescueComplete
+	redProgressMarshBadge                 ProgressID = "marsh_badge"
 	redProgressVolcanoBadge               ProgressID = redprofile.ProgressVolcanoBadge
 	redProgressEarthBadge                 ProgressID = redprofile.ProgressEarthBadge
 	redProgressVictoryRoadCleared         ProgressID = redprofile.ProgressVictoryRoadCleared
@@ -117,5 +119,10 @@ func redProgressState(f state.StoryFacts) ProgressState {
 }
 
 func redProgressStateFromRAM(mem *state.Mem, _ state.InventoryState, f state.StoryFacts) ProgressState {
-	return appendRedLeagueProgress(redprofile.ProjectStory(mem, f), f)
+	progress := appendRedLeagueProgress(redprofile.ProjectStory(mem, f), f)
+	badges := state.DecodeProgress(mem)
+	return append(progress,
+		ProgressFact{ID: redProgressCascadeBadge, Complete: badges.Has(state.BadgeCascade)},
+		ProgressFact{ID: redProgressMarshBadge, Complete: badges.Has(state.BadgeMarsh)},
+	)
 }
