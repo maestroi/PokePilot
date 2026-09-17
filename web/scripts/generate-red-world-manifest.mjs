@@ -6,11 +6,23 @@ const here = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(here, '../..')
 const constantsPath = path.join(repoRoot, 'pokered/constants/map_constants.asm')
 const headersDir = path.join(repoRoot, 'pokered/data/maps/headers')
+const objectsDir = path.join(repoRoot, 'pokered/data/maps/objects')
 const outputPath = path.join(repoRoot, 'web/src/shared/redWorldManifest.generated.ts')
 
 const constants = fs.readFileSync(constantsPath, 'utf8')
 const mapsByName = new Map()
 const mapsByID = new Map()
+const mapsBySourceName = new Map()
+
+function humanizeSymbol(value) {
+  return String(value || '')
+    .replace(/^(SPRITE_|OPP_|TEXT_|ITEM_)/, '')
+    .toLowerCase()
+    .split('_')
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
+}
 
 for (const line of constants.split(/\r?\n/)) {
   const match = line.match(/map_const\s+([A-Z0-9_]+),\s*(\d+),\s*(\d+)\s*;\s*\$([0-9A-Fa-f]{2})/)
@@ -21,7 +33,8 @@ for (const line of constants.split(/\r?\n/)) {
     name,
     width: Number(widthBlocks) * 2,
     height: Number(heightBlocks) * 2,
-    connections: []
+    connections: [],
+    pois: []
   }
   mapsByName.set(name, map)
   mapsByID.set(map.id, map)
@@ -29,10 +42,12 @@ for (const line of constants.split(/\r?\n/)) {
 
 for (const file of fs.readdirSync(headersDir).filter((name) => name.endsWith('.asm'))) {
   const source = fs.readFileSync(path.join(headersDir, file), 'utf8')
-  const header = source.match(/map_header\s+[^,]+,\s*([A-Z0-9_]+),/)
+  const header = source.match(/map_header\s+([^,\s]+),\s*([A-Z0-9_]+),/)
   if (!header) continue
-  const map = mapsByName.get(header[1])
+  const map = mapsByName.get(header[2])
   if (!map) continue
+  map.sourceName = header[1]
+  mapsBySourceName.set(header[1], map)
 
   for (const line of source.split(/\r?\n/)) {
     const connection = line.match(/connection\s+(north|south|west|east),\s*[^,]+,\s*([A-Z0-9_]+),\s*(-?\d+)/)
@@ -47,6 +62,48 @@ for (const file of fs.readdirSync(headersDir).filter((name) => name.endsWith('.a
       to: destination.id,
       offsetBlocks: Number(offsetText)
     })
+  }
+}
+
+
+for (const file of fs.readdirSync(objectsDir).filter((name) => name.endsWith('.asm'))) {
+  const sourceName = path.basename(file, '.asm')
+  const map = mapsBySourceName.get(sourceName)
+  if (!map) continue
+
+  const source = fs.readFileSync(path.join(objectsDir, file), 'utf8')
+  for (const rawLine of source.split(/\r?\n/)) {
+    const line = rawLine.split(';', 1)[0].trim()
+    if (!line) continue
+
+    const bg = line.match(/^bg_event\s+(-?\d+)\s*,\s*(-?\d+)\s*,\s*([A-Z0-9_]+)/)
+    if (bg) {
+      const x = Number(bg[1])
+      const y = Number(bg[2])
+      if (x >= 0 && y >= 0 && x < map.width && y < map.height) {
+        map.pois.push({ x, y, kind: 'sign', label: 'Sign' })
+      }
+      continue
+    }
+
+    if (!line.startsWith('object_event ')) continue
+    const args = line.slice('object_event '.length).split(',').map((part) => part.trim())
+    if (args.length < 6) continue
+    const x = Number(args[0])
+    const y = Number(args[1])
+    if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || y < 0 || x >= map.width || y >= map.height) continue
+
+    const sprite = args[2] || ''
+    let kind = 'npc'
+    let label = humanizeSymbol(sprite) || 'NPC'
+    if (args[6]?.startsWith('OPP_')) {
+      kind = 'trainer'
+      label = humanizeSymbol(args[6]) || 'Trainer'
+    } else if (args.length >= 7) {
+      kind = 'item'
+      label = humanizeSymbol(args[6]) || 'Item'
+    }
+    map.pois.push({ x, y, kind, label })
   }
 }
 
@@ -131,7 +188,8 @@ const manifest = [...mapsByID.values()]
       width: map.width,
       height: map.height,
       ...(position ? position : {}),
-      connections: map.connections
+      connections: map.connections,
+      pois: map.pois
     }
   })
 
