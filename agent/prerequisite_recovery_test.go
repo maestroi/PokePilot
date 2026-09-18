@@ -7,7 +7,7 @@ import (
 	gameruntime "github.com/maestroi/pokepilot/game"
 )
 
-func TestPrerequisiteRecoveryChoosesLinkedProgressObjective(t *testing.T) {
+func TestPrerequisiteRecoverySynthesizesRecoveryOnlyProgressObjective(t *testing.T) {
 	policy := newRunFailurePolicy(3)
 	policy.pendingPrerequisites = []CapabilityID{"can_ride_cycling_road"}
 
@@ -15,25 +15,39 @@ func TestPrerequisiteRecoveryChoosesLinkedProgressObjective(t *testing.T) {
 		Destination: "fuchsia city",
 		Missing:     []CapabilityID{"can_ride_cycling_road"},
 		Prerequisites: []RoutePrerequisiteLink{{
-			Capability: "can_ride_cycling_road",
-			Progress:   redProgressBicycleAcquired,
+			Capability:   "can_ride_cycling_road",
+			Progress:     redProgressBicycleAcquired,
+			RecoveryOnly: true,
 		}},
 	}}}
 	want := Objective{Kind: KindProgress, Progress: redProgressBicycleAcquired}
-	offered := []Objective{
-		{Kind: KindGoTo, Place: "cerulean city"},
-		want,
-	}
+	offered := []Objective{{Kind: KindGoTo, Place: "cerulean city"}}
 
 	got, capabilities, ok := policy.prerequisiteRecovery(obs, offered)
 	if !ok {
-		t.Fatal("linked Bicycle prerequisite did not trigger deterministic recovery")
+		t.Fatal("recovery-only Bicycle prerequisite did not trigger deterministic recovery")
 	}
 	if got.Key() != want.Key() {
 		t.Fatalf("recovery objective = %+v, want %+v", got, want)
 	}
 	if !reflect.DeepEqual(capabilities, []CapabilityID{"can_ride_cycling_road"}) {
 		t.Fatalf("recovery capabilities = %v", capabilities)
+	}
+}
+
+func TestPrerequisiteRecoveryStillRequiresNormalOfferWithoutRecoveryOnly(t *testing.T) {
+	policy := newRunFailurePolicy(3)
+	policy.pendingPrerequisites = []CapabilityID{"can_enter_saffron"}
+	obs := Observation{RouteBlockages: []RouteBlockage{{
+		Destination: "saffron city",
+		Missing:     []CapabilityID{"can_enter_saffron"},
+		Prerequisites: []RoutePrerequisiteLink{{
+			Capability: "can_enter_saffron",
+			Progress:   ProgressSaffronGateOpen,
+		}},
+	}}}
+	if got, capabilities, ok := policy.prerequisiteRecovery(obs, []Objective{{Kind: KindGoTo, Place: "celadon city"}}); ok {
+		t.Fatalf("non-recovery-only prerequisite synthesized unavailable objective %+v via %v", got, capabilities)
 	}
 }
 
