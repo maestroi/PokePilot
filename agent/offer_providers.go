@@ -155,7 +155,7 @@ func (starterObjectiveProvider) Provide(ctx *objectiveOfferContext) objectivePro
 	}
 	out := make([]Objective, 0, len(ctx.catalog.Starters))
 	for _, starter := range ctx.catalog.Starters {
-		out = append(out, Objective{Kind: KindStarter, Starter: starter.Starter})
+		out = append(out, Objective{Kind: KindStarter, Starter: starter.Starter, Species: starter.Species})
 	}
 	return objectiveProviderResult{Candidates: out}
 }
