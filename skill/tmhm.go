@@ -163,6 +163,31 @@ func DecideTMHM(romData []byte, party state.PartyState, item uint8, required boo
 func TeachTMHM(m *emu.Emu, item uint8, required bool) (result TMHMResult, retErr error) {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
+
+	// Bag-pressure recovery may preserve finite TMs in Player PC storage.
+	// Teaching owns the inverse: if the requested machine is stored, create a
+	// bag slot if necessary, withdraw exactly one copy, and return to the same
+	// map/tile before choosing a recipient. The detour may fight encounters, so
+	// the party decision is intentionally computed only after coming back.
+	_, beforeQty := bagEntry(&mem, item)
+	if beforeQty == 0 && pcItemQuantity(state.DecodePCItemStorage(&mem).Items, item) > 0 {
+		if !state.Controllable(&mem) {
+			return TMHMResult{}, fmt.Errorf("skill: TeachTMHM: player is not controllable for PC withdrawal")
+		}
+		if err := EnsureBagSpaceFor(m, item); err != nil {
+			return TMHMResult{}, fmt.Errorf("skill: TeachTMHM: make room to withdraw item %#02x: %w", item, err)
+		}
+		romData := m.ROM()
+		policy := StatAwareMove(romData)
+		if err := runInventoryDetour(m, romData, policy, func() error {
+			return WithdrawPCItem(m, romData, policy, item, 1)
+		}); err != nil {
+			return TMHMResult{}, fmt.Errorf("skill: TeachTMHM: withdraw stored item %#02x: %w", item, err)
+		}
+		state.Snapshot(m, &mem)
+		_, beforeQty = bagEntry(&mem, item)
+	}
+
 	party := state.DecodeParty(&mem)
 	decision, err := DecideTMHM(m.ROM(), party, item, required)
 	if err != nil {
@@ -175,9 +200,8 @@ func TeachTMHM(m *emu.Emu, item uint8, required bool) (result TMHMResult, retErr
 	if !state.Controllable(&mem) {
 		return TMHMResult{}, fmt.Errorf("skill: TeachTMHM: player is not controllable")
 	}
-	_, beforeQty := bagEntry(&mem, item)
 	if beforeQty == 0 {
-		return TMHMResult{}, fmt.Errorf("skill: TeachTMHM: item %#02x is not in the bag", item)
+		return TMHMResult{}, fmt.Errorf("skill: TeachTMHM: item %#02x is not in the bag or Player PC", item)
 	}
 
 	menuMayBeOpen := false

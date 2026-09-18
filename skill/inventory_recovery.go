@@ -33,6 +33,10 @@ var standardMartRecoveryTargets = []standardMartRecoveryTarget{
 	{name: "pewter mart", mapID: 0x38},
 	{name: "cerulean mart", mapID: 0x43},
 	{name: "vermilion mart", mapID: 0x5B},
+	{name: "lavender mart", mapID: 0x96},
+	{name: "fuchsia mart", mapID: 0x98},
+	{name: "cinnabar mart", mapID: 0xAC},
+	{name: "saffron mart", mapID: 0xB4},
 }
 
 func itemCount(mem *state.Mem, item uint8) int {

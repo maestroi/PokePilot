@@ -11,7 +11,7 @@ import (
 
 // ErrFieldItemNoEffect reports that the field item's sequence ran to
 // completion (menus closed, bag consumed) but the target mon did not gain HP,
-// clear a status, or gain PP. A menu closing is not evidence of an effect;
+// clear a status, gain PP, or gain a level. A menu closing is not evidence of an effect;
 // this is the positive postcondition failing.
 var ErrFieldItemNoEffect = errors.New("skill: UseFieldItem: the item had no effect on the target")
 
@@ -88,9 +88,12 @@ func ppRestoreMoveSlot(mon state.Mon) (int, bool) {
 }
 
 // fieldItemHadEffect is the positive postcondition shared by ordinary
-// medicine and PP recovery. PP bytes are already decoded with PP-Up bits
-// stripped by state.DecodeParty.
+// medicine, PP recovery, and Rare Candy. PP bytes are already decoded with
+// PP-Up bits stripped by state.DecodeParty.
 func fieldItemHadEffect(before, after state.Mon) bool {
+	if after.Level > before.Level {
+		return true
+	}
 	if after.HP > before.HP {
 		return true
 	}
@@ -108,8 +111,8 @@ func fieldItemHadEffect(before, after state.Mon) bool {
 // UseFieldItem uses one item from the bag on a party member from the
 // overworld: START -> ITEM -> the item -> the party slot. Ether-style items
 // additionally select a move when the ROM requests one. The postcondition is
-// positive and item-effect based: HP rises, status clears, or PP rises; the
-// bag count must also fall by exactly one.
+// positive and item-effect based: level/HP rises, status clears, or PP rises;
+// the bag count must also fall by exactly one.
 func UseFieldItem(m *emu.Emu, item uint8, slot int) error {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
@@ -237,8 +240,8 @@ func UseFieldItem(m *emu.Emu, item uint8, slot int) error {
 	}
 	after := afterParty.Mons[slot]
 	if !fieldItemHadEffect(before, after) {
-		return fmt.Errorf("%w: slot %d HP %d/%d -> %d/%d, status %#02x -> %#02x, PP %v -> %v (item %#02x, ppRestore=%v)",
-			ErrFieldItemNoEffect, slot, before.HP, before.MaxHP, after.HP, after.MaxHP,
+		return fmt.Errorf("%w: slot %d level %d->%d HP %d/%d -> %d/%d, status %#02x -> %#02x, PP %v -> %v (item %#02x, ppRestore=%v)",
+			ErrFieldItemNoEffect, slot, before.Level, after.Level, before.HP, before.MaxHP, after.HP, after.MaxHP,
 			before.Status, after.Status, before.PP, after.PP, item, isPPRestoreItem(item))
 	}
 	if _, bagAfter := bagEntry(&mem, item); bagAfter != bagBefore-1 {

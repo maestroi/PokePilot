@@ -43,7 +43,26 @@ func offerWithTMHMEvidence(m *emu.Emu, romData []byte, obs Observation, known *K
 	out = insertPartyTrainingObjectives(obs, known, out, func(slot, targetLevel int) (TrainingEstimate, error) {
 		return currentPartyTrainingEstimate(&mem, romData, obs.Map, slot, targetLevel, trainSessionBattleBudget)
 	})
-	out = appendTMHMObjectives(romData, party, state.DecodeInventory(&mem), out)
+	inventory := state.DecodeInventory(&mem)
+	// Bag-pressure recovery may preserve finite TMs in Player PC storage. Keep
+	// those machines visible to the objective provider even though they no
+	// longer consume a bag slot; TeachTMHM owns withdrawing one copy on demand.
+	for _, stored := range state.DecodePCItemStorage(&mem).Items {
+		if stored.ID < rom.TM01Item || stored.ID > rom.TM50Item || stored.Quantity == 0 {
+			continue
+		}
+		present := false
+		for _, bagged := range inventory.Items {
+			if bagged.ID == stored.ID {
+				present = true
+				break
+			}
+		}
+		if !present {
+			inventory.Items = append(inventory.Items, stored)
+		}
+	}
+	out = appendTMHMObjectives(romData, party, inventory, out)
 	offer.Candidates = prioritizeDexCleanupObjectives(obs, known, out)
 	return offer
 }

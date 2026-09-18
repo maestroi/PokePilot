@@ -231,7 +231,7 @@ func openBillsPC(m *emu.Emu, romData []byte, policy MovePolicy) error {
 
 // closePCToOverworld backs out according to the live screen until the player
 // is stably controllable. B closes menus; A pages ordinary text. A known PC
-// menu screen (pcMainMenuScreen/billsPCMenuScreen) is checked ahead of the
+// menu screen (pcMainMenuScreen/billsPCMenuScreen/playersPCMenuScreen) is checked ahead of the
 // bare FontLoaded/press-A fallback even when state.MenuUp's cursor glyph
 // is not currently drawn there — see billsPCMenuScreen — so a menu reached by
 // backing out of a nested screen is closed with B rather than mistaken for
@@ -248,7 +248,7 @@ func closePCToOverworld(m *emu.Emu) error {
 			if state.Controllable(&mem) {
 				return nil
 			}
-		case state.MenuUp(&mem), pcMainMenuScreen(&mem), billsPCMenuScreen(&mem):
+		case state.MenuUp(&mem), pcMainMenuScreen(&mem), billsPCMenuScreen(&mem), playersPCMenuScreen(&mem):
 			m.Tap(emu.B, 3, 7)
 			m.StepFrames(talkSettle)
 		case mem.U8(sym.FontLoaded) != 0:

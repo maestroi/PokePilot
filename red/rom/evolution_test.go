@@ -91,3 +91,34 @@ func hasEvo(evos []Evolution, from, to, method uint8) bool {
 	}
 	return false
 }
+
+func TestLevelUpMovesReadsMoveHalfAfterEvolutions(t *testing.T) {
+	romData := make([]byte, 0x3C000)
+	base, err := bankedOffset(evosMovesBank, evosMovesAddr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const species uint8 = 0x24
+	addr := uint16(0x7280)
+	pOff := base + int(species-1)*2
+	romData[pOff] = byte(addr)
+	romData[pOff+1] = byte(addr >> 8)
+	rec, err := bankedOffset(evosMovesBank, addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// One level evolution, evolution terminator, two exact-level moves, move terminator.
+	copy(romData[rec:], []byte{EvoLevel, 18, 0x96, 0, 12, 0x10, 19, 0x11, 0})
+
+	got, err := LevelUpMoves(romData, species)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("level-up moves = %+v, want 2", got)
+	}
+	if got[0] != (LevelUpMove{Species: species, Level: 12, Move: 0x10}) ||
+		got[1] != (LevelUpMove{Species: species, Level: 19, Move: 0x11}) {
+		t.Fatalf("level-up moves = %+v", got)
+	}
+}
