@@ -117,7 +117,10 @@ func modelExperimentHTTPHandler(w *Wall, fallback http.Handler) http.Handler {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/models", controller.handleModels)
+	mux.HandleFunc("POST /v1/models", controller.handleSaveModel)
+	mux.HandleFunc("POST /v1/models/test", controller.handleTestModel)
 	mux.HandleFunc("PATCH /v1/models/{id}", controller.handlePatchModel)
+	mux.HandleFunc("DELETE /v1/models/{id}", controller.handleDeleteModel)
 	mux.HandleFunc("POST /v1/experiments", controller.handleCreateExperiment)
 	mux.HandleFunc("GET /v1/experiments", controller.handleExperiments)
 	mux.HandleFunc("GET /v1/experiments/{id}", controller.handleExperiment)
@@ -135,13 +138,18 @@ func logModelExperiment(format string, args ...any) {
 
 func (c *modelExperimentController) handleModels(w http.ResponseWriter, _ *http.Request) {
 	c.reconcileHostLeases()
-	deployments := c.enabledDeployments()
+	deployments := c.allDeployments()
 	views := make([]deploymentView, 0, len(deployments))
 	statuses := map[string]modelHostStatus{}
 	queued := c.queuedByDeployment()
 	active := c.activeByDeployment()
 	for _, d := range deployments {
 		view := deploymentView{ModelDeployment: d, State: "ready", ActiveLeases: active[d.ID], Queued: queued[d.ID]}
+		if !d.Enabled {
+			view.State = "disabled"
+			views = append(views, view)
+			continue
+		}
 		if d.ControlURL == "" && d.Discover {
 			resolved, err := c.resolveDeployment(d)
 			if err != nil {
@@ -184,6 +192,103 @@ func (c *modelExperimentController) handleModels(w http.ResponseWriter, _ *http.
 	writeJSON(w, http.StatusOK, map[string]any{"deployments": views, "hosts": statuses})
 }
 
+func (c *modelExperimentController) reloadRegistry() error {
+	registry, err := farm.LoadModelRegistry(c.registrySource)
+	if err != nil {
+		return err
+	}
+	c.registryMu.Lock()
+	c.registry = registry
+	c.registryMu.Unlock()
+	return nil
+}
+
+func (c *modelExperimentController) handleSaveModel(w http.ResponseWriter, r *http.Request) {
+	if strings.TrimSpace(c.registrySource) == "" {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "model registry is not configured"})
+		return
+	}
+	var deployment farm.ModelDeployment
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxSmallControlBody)).Decode(&deployment); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON: " + err.Error()})
+		return
+	}
+	if deployment.MaxParallelWorkers == 0 {
+		deployment.MaxParallelWorkers = 1
+	}
+	updated, err := farm.UpsertModelDeployment(c.registrySource, deployment)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	if err := c.reloadRegistry(); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, deploymentView{ModelDeployment: updated, State: "ready"})
+}
+
+func (c *modelExperimentController) handleTestModel(w http.ResponseWriter, r *http.Request) {
+	var deployment farm.ModelDeployment
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxSmallControlBody)).Decode(&deployment); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON: " + err.Error()})
+		return
+	}
+	if deployment.MaxParallelWorkers == 0 {
+		deployment.MaxParallelWorkers = 1
+	}
+	if err := (farm.ModelRegistry{Deployments: []farm.ModelDeployment{deployment}}).Validate(); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	probe := deployment
+	if probe.ControlURL == "" {
+		probe.Discover = true
+	}
+	resolved, err := c.resolveDeployment(probe)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, deploymentView{ModelDeployment: resolved, State: "ready"})
+}
+
+func (c *modelExperimentController) handleDeleteModel(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimSpace(r.PathValue("id"))
+	if id == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "deployment id is required"})
+		return
+	}
+	if strings.TrimSpace(c.registrySource) == "" {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "model registry is not configured"})
+		return
+	}
+	c.reconcileHostLeases()
+	active := c.activeByDeployment()[id]
+	queued := c.queuedByDeployment()[id]
+	if active > 0 || queued > 0 {
+		writeJSON(w, http.StatusConflict, map[string]any{
+			"error":         "deployment still has active or queued runs",
+			"active_leases": active,
+			"queued":        queued,
+		})
+		return
+	}
+	if err := farm.DeleteModelDeployment(c.registrySource, id); err != nil {
+		if errors.Is(err, farm.ErrDeploymentNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	if err := c.reloadRegistry(); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (c *modelExperimentController) handlePatchModel(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimSpace(r.PathValue("id"))
 	if id == "" {
@@ -220,6 +325,12 @@ func (c *modelExperimentController) enabledDeployments() []farm.ModelDeployment 
 	c.registryMu.RLock()
 	defer c.registryMu.RUnlock()
 	return c.registry.EnabledDeployments()
+}
+
+func (c *modelExperimentController) allDeployments() []farm.ModelDeployment {
+	c.registryMu.RLock()
+	defer c.registryMu.RUnlock()
+	return append([]farm.ModelDeployment(nil), c.registry.Deployments...)
 }
 
 func (c *modelExperimentController) deployment(id string) (farm.ModelDeployment, bool) {

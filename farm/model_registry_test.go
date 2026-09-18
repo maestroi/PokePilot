@@ -83,3 +83,47 @@ func TestDiscoverableDeploymentAllowsEndpointOnlyIdentity(t *testing.T) {
 		t.Fatalf("default roles = %#v", d.DefaultFor)
 	}
 }
+
+func TestUpsertAndDeleteModelDeploymentJSON(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "models.json")
+	if err := os.WriteFile(path, []byte(`{"deployments":[]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	deployment := ModelDeployment{
+		ID: "new-gpu", Label: "New GPU", Compute: "gpu", Endpoint: "http://gpu:8000/v1",
+		Enabled: true, Discover: true, DefaultFor: []string{"farm"}, MaxParallelWorkers: 4,
+	}
+	if _, err := UpsertModelDeployment(path, deployment); err != nil {
+		t.Fatal(err)
+	}
+	registry, err := LoadModelRegistry(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := registry.Deployment("new-gpu")
+	if !ok || !got.Discover || got.ParallelLimit() != 4 || !got.HasDefaultRole("farm") {
+		t.Fatalf("saved deployment = %#v", got)
+	}
+	deployment.Label = "Renamed GPU"
+	if _, err := UpsertModelDeployment(path, deployment); err != nil {
+		t.Fatal(err)
+	}
+	registry, err = LoadModelRegistry(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ = registry.Deployment("new-gpu")
+	if got.Label != "Renamed GPU" || len(registry.Deployments) != 1 {
+		t.Fatalf("updated registry = %#v", registry)
+	}
+	if err := DeleteModelDeployment(path, "new-gpu"); err != nil {
+		t.Fatal(err)
+	}
+	registry, err = LoadModelRegistry(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(registry.Deployments) != 0 {
+		t.Fatalf("deployments after delete = %#v", registry.Deployments)
+	}
+}

@@ -179,6 +179,7 @@ export interface ModelDeployment {
   discover?: boolean
   default_for?: string[]
   control_url?: string
+  token_env?: string
   engine?: string
   engine_version?: string
   engine_config?: string
@@ -190,6 +191,8 @@ export interface ModelDeployment {
   queued?: number
   error?: string
 }
+
+export type ModelDeploymentInput = Omit<ModelDeployment, 'state' | 'loaded_deployment' | 'active_leases' | 'queued' | 'error'>
 
 export interface ModelRegistrySnapshot {
   deployments: ModelDeployment[]

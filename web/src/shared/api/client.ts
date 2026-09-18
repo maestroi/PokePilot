@@ -7,6 +7,7 @@ import type {
   ExperimentRequest,
   ExperimentView,
   ModelDeployment,
+  ModelDeploymentInput,
   ModelRegistrySnapshot,
   ReplayStatus,
   RunArtifact,
@@ -101,6 +102,29 @@ export function patchDeploymentWorkers(id: string, maxParallelWorkers: number, s
   return requestJSON<ModelDeployment>(`/v1/models/${encodeURIComponent(id)}`, {
     method: 'PATCH',
     body: JSON.stringify({ max_parallel_workers: maxParallelWorkers }),
+    signal
+  })
+}
+
+export function saveModelDeployment(deployment: ModelDeploymentInput, signal?: AbortSignal): Promise<ModelDeployment> {
+  return requestJSON<ModelDeployment>('/v1/models', {
+    method: 'POST',
+    body: JSON.stringify(deployment),
+    signal
+  })
+}
+
+export function testModelDeployment(deployment: ModelDeploymentInput, signal?: AbortSignal): Promise<ModelDeployment> {
+  return requestJSON<ModelDeployment>('/v1/models/test', {
+    method: 'POST',
+    body: JSON.stringify(deployment),
+    signal
+  })
+}
+
+export async function deleteModelDeployment(id: string, signal?: AbortSignal): Promise<void> {
+  await requestJSON<void>(`/v1/models/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
     signal
   })
 }

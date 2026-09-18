@@ -105,6 +105,78 @@ ORDER BY compute, label, id`)
 	return registry, nil
 }
 
+func upsertPostgresDeployment(dsn string, d ModelDeployment) error {
+	db, err := sql.Open("postgres", strings.TrimSpace(dsn))
+	if err != nil {
+		return fmt.Errorf("open model registry postgres: %w", err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(modelRegistryPostgresSchema); err != nil {
+		return fmt.Errorf("ensure model registry schema: %w", err)
+	}
+	_, err = db.Exec(`
+INSERT INTO model_deployments (
+	id, label, model_id, revision, artifact, quantization, compute, endpoint,
+	api_model, enabled, discover, default_for, control_url, token_env, engine,
+	engine_version, engine_config, max_parallel_workers, legacy_profile, updated_at
+) VALUES (
+	$1, $2, $3, $4, $5, $6, $7, $8,
+	$9, $10, $11, $12, $13, $14, $15,
+	$16, $17, $18, $19, NOW()
+)
+ON CONFLICT (id) DO UPDATE SET
+	label = EXCLUDED.label,
+	model_id = EXCLUDED.model_id,
+	revision = EXCLUDED.revision,
+	artifact = EXCLUDED.artifact,
+	quantization = EXCLUDED.quantization,
+	compute = EXCLUDED.compute,
+	endpoint = EXCLUDED.endpoint,
+	api_model = EXCLUDED.api_model,
+	enabled = EXCLUDED.enabled,
+	discover = EXCLUDED.discover,
+	default_for = EXCLUDED.default_for,
+	control_url = EXCLUDED.control_url,
+	token_env = EXCLUDED.token_env,
+	engine = EXCLUDED.engine,
+	engine_version = EXCLUDED.engine_version,
+	engine_config = EXCLUDED.engine_config,
+	max_parallel_workers = EXCLUDED.max_parallel_workers,
+	legacy_profile = EXCLUDED.legacy_profile,
+	updated_at = NOW()`,
+		d.ID, d.Label, d.ModelID, d.Revision, d.Artifact, d.Quantization, d.Compute, d.Endpoint,
+		d.APIModel, d.Enabled, d.Discover, pq.Array(d.DefaultFor), d.ControlURL, d.TokenEnv, d.Engine,
+		d.EngineVersion, d.EngineConfig, d.ParallelLimit(), d.LegacyProfile,
+	)
+	if err != nil {
+		return fmt.Errorf("upsert model registry postgres: %w", err)
+	}
+	return nil
+}
+
+func deletePostgresDeployment(dsn, id string) error {
+	db, err := sql.Open("postgres", strings.TrimSpace(dsn))
+	if err != nil {
+		return fmt.Errorf("open model registry postgres: %w", err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(modelRegistryPostgresSchema); err != nil {
+		return fmt.Errorf("ensure model registry schema: %w", err)
+	}
+	res, err := db.Exec(`DELETE FROM model_deployments WHERE id = $1`, strings.TrimSpace(id))
+	if err != nil {
+		return fmt.Errorf("delete model registry postgres: %w", err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("delete model registry postgres: %w", err)
+	}
+	if affected == 0 {
+		return fmt.Errorf("%w: %s", ErrDeploymentNotFound, id)
+	}
+	return nil
+}
+
 func updatePostgresParallelLimit(dsn, id string, n int) error {
 	db, err := sql.Open("postgres", strings.TrimSpace(dsn))
 	if err != nil {
