@@ -28,7 +28,7 @@ func offerWithTMHMEvidence(m *emu.Emu, romData []byte, obs Observation, known *K
 	out = filterRedScriptedTalkObjectives(obs, out)
 	out = filterRedServiceTalkObjectives(romData, obs, out)
 	out = appendRedNPCRewardObjectives(obs, known, out)
-	out = appendKnownCatchObjectives(romData, obs, known, out)
+	out = appendKnownCatchObjectives(m, romData, obs, known, out)
 	out = appendDexCatchObjectives(obs, known, out)
 	out = appendDexGiftObjectives(obs, known, out)
 	out = appendDexTradeObjectives(romData, obs, known, out)

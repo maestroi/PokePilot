@@ -3,8 +3,10 @@ package skill
 import (
 	"strings"
 
+	"github.com/maestroi/pokepilot/emu"
 	gameruntime "github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/state"
+	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
 )
 
@@ -307,4 +309,50 @@ func redRoutePrerequisites(g *world.Graph, romData []byte, mem *state.Mem) world
 		Transitions:  transitions,
 		Capabilities: redRouteCapabilities(romData, mem),
 	}
+}
+
+// ReachableMaps reports which native map IDs GoTo could actually route the
+// player to right now, applying the same capability gating GoTo enforces
+// during travel (Cut, Surf, Snorlax, badges, story flags, ...). Planners that
+// pick a destination without this check can offer a target GoTo will then
+// refuse outright (e.g. a Route 12 catch habitat behind an uncleared
+// Snorlax), burning a full round on an objective that can never complete.
+//
+// A nil emu or empty ROM returns (nil, nil): "unknown" rather than "nothing
+// reachable", so callers that cannot supply live state keep their prior,
+// capability-blind behavior instead of suppressing everything.
+func ReachableMaps(m *emu.Emu, romData []byte) (map[uint8]bool, error) {
+	if m == nil || len(romData) == 0 {
+		return nil, nil
+	}
+	g, err := world.BuildGraph(romData)
+	if err != nil {
+		return nil, err
+	}
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	prereqs := redRoutePrerequisites(g, romData, &mem)
+	cur := mem.U8(sym.CurMap)
+	x, y := mem.U8(sym.XCoord), mem.U8(sym.YCoord)
+
+	candidates := map[uint8]bool{cur: true}
+	for from, edges := range g.Edges {
+		candidates[from] = true
+		for _, edge := range edges {
+			candidates[edge.To] = true
+		}
+	}
+
+	reachable := map[uint8]bool{cur: true}
+	for mapID := range candidates {
+		if reachable[mapID] {
+			continue
+		}
+		if _, err := world.FindRoutePlanAtDestinationWithCapabilities(
+			g, cur, mapID, int(x), int(y), -1, -1, nil, prereqs,
+		); err == nil {
+			reachable[mapID] = true
+		}
+	}
+	return reachable, nil
 }

@@ -42,7 +42,7 @@ func TestAppendKnownCatchObjectivesOffersVisitedHabitatAwayFromGrass(t *testing.
 		Bag:        []Item{{Name: "pokeball", Quantity: 5}},
 	}
 
-	got := appendKnownCatchObjectivesWithWild(nil, obs, known, nil, knownCatchTestWild(t))
+	got := appendKnownCatchObjectivesWithWild(nil, nil, obs, known, nil, knownCatchTestWild(t))
 	if len(got) == 0 {
 		t.Fatal("no known-habitat catch objectives offered")
 	}
@@ -78,12 +78,12 @@ func TestAppendKnownCatchObjectivesRequiresBallsAndOpenPartySlot(t *testing.T) {
 	wildFor := knownCatchTestWild(t)
 
 	base := Observation{GameID: testGameID, Map: 0xff, PartyCount: 1, Party: []PartyMon{{Species: SpeciesID("charmander")}}}
-	if got := appendKnownCatchObjectivesWithWild(nil, base, known, nil, wildFor); len(got) != 0 {
+	if got := appendKnownCatchObjectivesWithWild(nil, nil, base, known, nil, wildFor); len(got) != 0 {
 		t.Fatalf("without balls got %d catch objectives, want 0", len(got))
 	}
 	base.Bag = []Item{{Name: "pokeball", Quantity: 5}}
 	base.PartyCount = 6
-	if got := appendKnownCatchObjectivesWithWild(nil, base, known, nil, wildFor); len(got) != 0 {
+	if got := appendKnownCatchObjectivesWithWild(nil, nil, base, known, nil, wildFor); len(got) != 0 {
 		t.Fatalf("with full party got %d catch objectives, want 0", len(got))
 	}
 }
@@ -108,7 +108,7 @@ func TestAppendKnownCatchObjectivesDoesNotRevealUnvisitedHabitat(t *testing.T) {
 		}
 		return nil, nil
 	}
-	if got := appendKnownCatchObjectivesWithWild(nil, obs, known, nil, wildFor); len(got) != 0 {
+	if got := appendKnownCatchObjectivesWithWild(nil, nil, obs, known, nil, wildFor); len(got) != 0 {
 		t.Fatalf("unvisited habitat produced %d catch objectives, want 0", len(got))
 	}
 	if called {
@@ -130,7 +130,7 @@ func TestAppendKnownCatchObjectivesSkipsPokedexOwned(t *testing.T) {
 		Bag:          []Item{{Name: "pokeball", Quantity: 5}},
 		PokedexOwned: []SpeciesID{"pidgey"},
 	}
-	got := appendKnownCatchObjectivesWithWild(nil, obs, known, nil, knownCatchTestWild(t))
+	got := appendKnownCatchObjectivesWithWild(nil, nil, obs, known, nil, knownCatchTestWild(t))
 	for _, o := range got {
 		if o.Species == "pidgey" {
 			t.Fatalf("known-habitat catch offered dex-owned pidgey: %+v", got)

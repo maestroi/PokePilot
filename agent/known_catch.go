@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/skill"
 )
@@ -28,13 +29,24 @@ type wildGrassLookup func([]byte, uint8) ([]skill.WildSpecies, error)
 //
 // This does not reveal unseen habitats: only Knowledge.Visited locations are
 // projected back through Red's adapter before ROM lookup.
-func appendKnownCatchObjectives(romData []byte, obs Observation, known *Knowledge, out []Objective) []Objective {
-	return appendKnownCatchObjectivesWithWild(romData, obs, known, out, skill.WildGrass)
+func appendKnownCatchObjectives(m *emu.Emu, romData []byte, obs Observation, known *Knowledge, out []Objective) []Objective {
+	return appendKnownCatchObjectivesWithWild(m, romData, obs, known, out, skill.WildGrass)
 }
 
-func appendKnownCatchObjectivesWithWild(romData []byte, obs Observation, known *Knowledge, out []Objective, wildFor wildGrassLookup) []Objective {
+func appendKnownCatchObjectivesWithWild(m *emu.Emu, romData []byte, obs Observation, known *Knowledge, out []Objective, wildFor wildGrassLookup) []Objective {
 	if known == nil || wildFor == nil || !hasBalls(obs) || obs.PartyCount >= 6 {
 		return out
+	}
+
+	// GoTo enforces capability gates (Snorlax, Cut, Surf, badges, ...) that
+	// the plain map-adjacency graph below knows nothing about; without this,
+	// a route only reachable once a story gate clears looks identical to one
+	// reachable right now, and the offered objective fails at travel time
+	// every time it is picked. reachableMaps is nil (not filtered) when no
+	// live state is available, e.g. in unit tests.
+	reachableMaps, err := skill.ReachableMaps(m, romData)
+	if err != nil {
+		reachableMaps = nil
 	}
 
 	alreadyOffered := map[SpeciesID]bool{}
@@ -57,6 +69,9 @@ func appendKnownCatchObjectivesWithWild(romData []byte, obs Observation, known *
 		seenNative[mapID] = true
 		distance, reachable := hops[mapID]
 		if len(adjacency) > 0 && !reachable {
+			continue
+		}
+		if reachableMaps != nil && !reachableMaps[mapID] {
 			continue
 		}
 		place, ok := catchPlaceOnMap(mapID)
