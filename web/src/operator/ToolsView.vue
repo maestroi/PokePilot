@@ -105,6 +105,7 @@ async function submit(): Promise<void> {
     const spec: RunSpec = {
       ...form,
       run_id: form.run_id.trim(),
+      game: form.game,
       starter: starterRequest(),
       dest: isLLM.value ? '' : form.dest.trim(),
       goal: isLLM.value ? form.goal.trim() : '',
