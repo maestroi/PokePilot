@@ -28,3 +28,6 @@ repro-*
 /tailwindpro
 # Build-time mirror of pinned pret/pokered render assets.
 /web/public/gen1/
+
+# Local pret/pokered checkout used as a copy source. The vendored tree is pokered/.
+/pokered-master/
