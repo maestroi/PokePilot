@@ -18,11 +18,18 @@ const (
 	liveSpectatorFrameStride = uint64(3)
 
 	// Flat-out execution happens in short bursts between planner calls. Keep a
-	// generous native-time playback window so spectators can watch those bursts
-	// smoothly while the planner is thinking instead of immediately jumping to
-	// the worker's newest position.
+	// native-time playback window, but consume it faster than 1x when backlog
+	// builds so MAX runs still look fast instead of replaying old movement at
+	// normal Game Boy speed.
 	liveSpectatorBufferSeconds = 12
 	liveSpectatorBufferSize    = liveSpectatorFPS * liveSpectatorBufferSeconds
+
+	// Backlog thresholds are measured in sampled display frames. At >= 0.6s of
+	// native game time behind, play about 4x; at >= 0.3s, play about 2x; near
+	// live, return to 1x. Extreme producer bursts are compacted across the whole
+	// buffered timeline rather than ending in one giant catch-up teleport.
+	liveSpectatorFastBacklog = 12
+	liveSpectatorMidBacklog  = 6
 )
 
 // frameSpectator is the tiny surface Emu needs from its read-only screen
@@ -41,14 +48,12 @@ type liveFrame struct {
 type liveFrameQueue struct {
 	mu sync.Mutex
 
-	capacity    int
-	frames      []liveFrame
-	pending     liveFrame
-	havePending bool
-	last        liveFrame
-	haveLast    bool
-	newest      uint64
-	haveNew     bool
+	capacity int
+	frames   []liveFrame
+	last     liveFrame
+	haveLast bool
+	newest   uint64
+	haveNew  bool
 }
 
 func newLiveFrameQueue(capacity int) *liveFrameQueue {
@@ -70,8 +75,6 @@ func (q *liveFrameQueue) push(frame uint64, png []byte) {
 	// not leak into the new run.
 	if q.haveNew && frame < q.newest {
 		q.frames = q.frames[:0]
-		q.pending = liveFrame{}
-		q.havePending = false
 		q.last = liveFrame{}
 		q.haveLast = false
 		q.haveNew = false
@@ -84,39 +87,58 @@ func (q *liveFrameQueue) push(frame uint64, png []byte) {
 	q.newest = frame
 	q.haveNew = true
 
-	// Once the playback window fills, preserve the contiguous frames already
-	// queued. Replacing their oldest entries on every producer push made MAX
-	// speed look like constant teleporting. Collapse the entire overflow into
-	// one newest pending frame instead; the viewer gets a smooth segment and,
-	// only if it truly cannot keep up, one explicit resync jump afterwards.
-	if q.havePending {
-		q.pending = next
-		return
-	}
+	// When MAX speed fills the window, compact the whole buffered timeline by
+	// keeping one representative from each adjacent pair. That preserves a
+	// continuous fast-forward through the entire burst. The previous design
+	// kept the first 12 seconds at 1x plus one newest pending frame, which is
+	// exactly the "slow for a while, then teleport" failure mode.
 	if len(q.frames) >= q.capacity {
-		q.pending = next
-		q.havePending = true
-		return
+		q.compactLocked()
 	}
 	q.frames = append(q.frames, next)
 }
 
-func (q *liveFrameQueue) next() (liveFrame, bool) {
+func (q *liveFrameQueue) compactLocked() {
+	n := len(q.frames)
+	if n <= 1 {
+		q.frames = q.frames[:0]
+		return
+	}
+
+	// Pick the newer frame from each adjacent pair while ensuring the newest
+	// buffered frame survives both odd and even lengths.
+	start := (n + 1) % 2
+	write := 0
+	for read := start; read < n; read += 2 {
+		q.frames[write] = q.frames[read]
+		write++
+	}
+	q.frames = q.frames[:write]
+}
+
+func playbackAdvance(depth int) int {
+	switch {
+	case depth >= liveSpectatorFastBacklog:
+		return 4
+	case depth >= liveSpectatorMidBacklog:
+		return 2
+	default:
+		return 1
+	}
+}
+
+func (q *liveFrameQueue) nextPlayback() (liveFrame, bool) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
 	if len(q.frames) > 0 {
-		frame := q.frames[0]
-		copy(q.frames, q.frames[1:])
-		q.frames = q.frames[:len(q.frames)-1]
-		q.last = frame
-		q.haveLast = true
-		return frame, true
-	}
-	if q.havePending {
-		frame := q.pending
-		q.pending = liveFrame{}
-		q.havePending = false
+		advance := playbackAdvance(len(q.frames))
+		if advance > len(q.frames) {
+			advance = len(q.frames)
+		}
+		frame := q.frames[advance-1]
+		copy(q.frames, q.frames[advance:])
+		q.frames = q.frames[:len(q.frames)-advance]
 		q.last = frame
 		q.haveLast = true
 		return frame, true
@@ -131,9 +153,6 @@ func (q *liveFrameQueue) latest() (liveFrame, bool) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
-	if q.havePending {
-		return q.pending, true
-	}
 	if n := len(q.frames); n > 0 {
 		return q.frames[n-1], true
 	}
@@ -164,8 +183,9 @@ func newLiveSpectator(captureEvery int) *liveSpectator {
 
 // Capture samples emulator time rather than worker wall time. Flat-out
 // execution can produce hundreds of emulator frames between browser reads;
-// only one native-time display frame every ~3 emulator frames enters the
-// bounded queue, and the HTTP consumer drains that queue at its steady 20 fps.
+// one native-time display frame every ~3 emulator frames enters the bounded
+// queue. The HTTP consumer adaptively fast-forwards that queue when it falls
+// behind, so execution stays fast without presenting a 1x backlog slideshow.
 func (s *liveSpectator) Capture(e *gomeboy.Emulator) error {
 	frame := e.FrameCount()
 	if s.haveCapture {
@@ -199,7 +219,7 @@ func (s *liveSpectator) Handler() http.Handler {
 			ok    bool
 		)
 		if r.URL.Query().Get("buffered") == "1" {
-			frame, ok = s.queue.next()
+			frame, ok = s.queue.nextPlayback()
 		} else {
 			// Keep the original /frame.png contract for finish snapshots and
 			// other point reads: callers that do not opt into playback always
