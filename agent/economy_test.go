@@ -97,13 +97,13 @@ func TestEconomyHealingPrefersFreeCenterAndBoundsEmergencyStock(t *testing.T) {
 	}
 }
 
-func TestEconomyDoesNotSpeculateOnStonesOrTravelUtility(t *testing.T) {
+func TestEconomyDoesNotSpeculateOnStonesOrNonRepelTravelUtility(t *testing.T) {
 	obs := Observation{
 		Money:     9999,
-		MartStock: []string{"fire stone", "repel"},
+		MartStock: []string{"fire stone", "escape rope"},
 	}
 	ctx := EconomyContext(obs)
-	for _, name := range []string{"fire stone", "repel"} {
+	for _, name := range []string{"fire stone", "escape rope"} {
 		p := purchase(t, ctx, name)
 		if !p.CanAffordAfterReserve {
 			t.Fatalf("%s unexpectedly unaffordable: %+v", name, p)
@@ -111,6 +111,33 @@ func TestEconomyDoesNotSpeculateOnStonesOrTravelUtility(t *testing.T) {
 		if p.ShouldBuy {
 			t.Fatalf("%s ShouldBuy = true without a concrete need: %+v", name, p)
 		}
+	}
+}
+
+
+func TestEconomyBuysBoundedCostEfficientRepelCoverage(t *testing.T) {
+	obs := Observation{
+		Money:     5000,
+		MartStock: []string{"repel", "super repel", "max repel"},
+	}
+	ctx := EconomyContext(obs)
+	super := purchase(t, ctx, "super repel")
+	if !super.ShouldBuy || super.SuggestedQty != 2 || super.TargetStock != targetRepelSteps {
+		t.Fatalf("super-repel advice = %+v, want 2 toward %d protected steps", super, targetRepelSteps)
+	}
+	for _, name := range []string{"repel", "max repel"} {
+		if p := purchase(t, ctx, name); p.ShouldBuy {
+			t.Fatalf("%s ShouldBuy = true while more efficient SUPER REPEL is stocked: %+v", name, p)
+		}
+	}
+
+	withCoverage := obs
+	withCoverage.RepelSteps = 50
+	withCoverage.Bag = []Item{{Name: "super repel", Quantity: 1}}
+	ctx = EconomyContext(withCoverage)
+	super = purchase(t, ctx, "super repel")
+	if !super.ShouldBuy || super.SuggestedQty != 1 {
+		t.Fatalf("existing 250-step coverage advice = %+v, want one more SUPER REPEL", super)
 	}
 }
 
