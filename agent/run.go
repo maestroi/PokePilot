@@ -48,6 +48,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 	topology := knowledgeTopologyFor(profile.ID(), nativeAdjacency)
 
 	known := NewKnowledge(topology)
+	known.Build = budget.Build
 	coverage := newCoverageTracker()
 	intent, intentAge := "", 0
 	resumedPlan := Plan{}

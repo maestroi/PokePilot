@@ -16,7 +16,8 @@ func (k *Knowledge) FailedResult(result ObjectiveResult, nativeErr error) {
 		storage = trainerLossFailureKey(o)
 	}
 	f := k.Failures[storage]
-	f.Objective, f.Times, f.Last = o.String(), f.Times+1, conciseObjectiveError(o, nativeErr)
+	k.bumpFailureTimes(&f)
+	f.Objective, f.Last = o.String(), conciseObjectiveError(o, nativeErr)
 	k.Failures[storage] = f
 }
 

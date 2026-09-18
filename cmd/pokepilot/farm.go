@@ -651,6 +651,7 @@ func runFarmLLM(m *emu.Emu, starter, goal, llmProfile, reasoningEffort string, m
 	res := agent.Run(m, m.ROM(), reportingPlanner{inner: stats, snap: snap}, agent.Budget{
 		MaxRounds:     maxRounds,
 		MaxFrames:     maxFrames,
+		Build:         version,
 		Log:           logw,
 		Cancel:        cancel,
 		CheckpointDir: checkpointDir,
