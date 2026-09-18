@@ -573,7 +573,6 @@ func TestLiveRunHostLeaseSurvivesReconcile(t *testing.T) {
 	}
 }
 
-
 func TestImplicitLLMRunBindsRegistryDefaultAndDiscoversServedModel(t *testing.T) {
 	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/models" {
@@ -656,7 +655,6 @@ func TestDynamicDeploymentReportsUnavailableWhenDiscoveryEndpointIsOffline(t *te
 		t.Fatalf("dynamic endpoint state = %#v", snapshot.Deployments)
 	}
 }
-
 
 func TestRestartDoesNotLeaseDynamicRunWhenDiscoveryIsUnavailable(t *testing.T) {
 	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
