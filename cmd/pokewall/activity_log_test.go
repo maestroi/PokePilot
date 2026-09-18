@@ -20,7 +20,7 @@ func TestActivitySnapshotSummarizesWallState(t *testing.T) {
 	w.mu.Unlock()
 
 	got := w.activitySnapshot()
-	if got.total != 4 || got.queued != 1 || got.leased != 1 || got.running != 1 || got.done != 1 {
+	if got.total != 4 || got.queueDepth != 1 || got.queued != 1 || got.leased != 1 || got.running != 1 || got.done != 1 {
 		t.Fatalf("unexpected run counts: %+v", got)
 	}
 	if got.workers != 2 || got.busyWorkers != 1 || got.issueOutbox != 1 {
