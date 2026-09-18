@@ -93,6 +93,26 @@ func componentSetAt(g *Graph, mapID uint8, x, y int) []int {
 	return g.expandComponents(mapID, standingComponentAt(g, mapID, x, y))
 }
 
+// EdgeEntrySharesComponentWith reports whether crossing e lands in the same
+// walkable component as (x,y) on e.To. known is false when the graph has no
+// component evidence for either side; callers should preserve their previous
+// conservative behavior in that case rather than inventing topology.
+//
+// This is intentionally narrower than exposing component ids. A component id
+// is graph-internal bookkeeping; callers such as GoTo only need to distinguish
+// "return to territory already visited" from "same map, new walking region".
+func (g *Graph) EdgeEntrySharesComponentWith(e Edge, x, y int) (same, known bool) {
+	if g == nil || !g.componentAware {
+		return false, false
+	}
+	entry := g.entryComps[e]
+	at := componentSetAt(g, e.To, x, y)
+	if len(entry) == 0 || len(at) == 0 {
+		return false, false
+	}
+	return shareComp(entry, at), true
+}
+
 func standingComponentAt(g *Graph, mapID uint8, x, y int) []int {
 	if !g.componentAware {
 		return nil
