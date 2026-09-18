@@ -183,6 +183,24 @@ ALTER TABLE model_deployments ADD COLUMN IF NOT EXISTS is_default BOOLEAN NOT NU
 ALTER TABLE model_deployments ADD COLUMN IF NOT EXISTS endpoint_token_env TEXT NOT NULL DEFAULT '';
 ALTER TABLE model_deployments ADD COLUMN IF NOT EXISTS max_parallel_workers INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE model_deployments ALTER COLUMN model_id SET DEFAULT '';
+
+-- qwen38-27b-7900 is retained as a stable compatibility key, not a promise
+-- about what the dedicated 7900 endpoint serves. Convert the historical
+-- seeded row in-place so existing production databases get endpoint discovery
+-- without a destructive registry reset.
+UPDATE model_deployments
+SET label='Farm · RX 7900 XTX',
+    model_id='',
+    discover_model=TRUE,
+    is_default=TRUE,
+    revision='',
+    artifact='',
+    quantization='',
+    api_model='',
+    engine_config='7900-openai-discovery-4slot',
+    max_parallel_workers=4,
+    updated_at=NOW()
+WHERE id='qwen38-27b-7900';
 `
 
 type controlPlane struct {
