@@ -168,6 +168,23 @@ func InternalSpeciesDexNumber(rom []byte, species uint8, layout SpeciesLayout) (
 	return dex, nil
 }
 
+func DexNumberInternalSpecies(rom []byte, dex uint8, layout SpeciesLayout) (uint8, error) {
+	if dex == 0 || dex > 151 {
+		return 0, fmt.Errorf("Pokédex number %d outside 1..151", dex)
+	}
+	if layout.PokedexOrderLen <= 0 || layout.PokedexOrderOffset < 0 ||
+		layout.PokedexOrderOffset+layout.PokedexOrderLen > len(rom) {
+		return 0, fmt.Errorf("Pokédex order at %#x for %d species exceeds ROM of %d bytes",
+			layout.PokedexOrderOffset, layout.PokedexOrderLen, len(rom))
+	}
+	for raw := 1; raw <= layout.PokedexOrderLen; raw++ {
+		if rom[layout.PokedexOrderOffset+raw-1] == dex {
+			return uint8(raw), nil
+		}
+	}
+	return 0, fmt.Errorf("Pokédex number %d has no internal species mapping", dex)
+}
+
 func LookupSpeciesBaseStats(rom []byte, species uint8, layout SpeciesLayout) (SpeciesBaseStats, error) {
 	dex, err := InternalSpeciesDexNumber(rom, species, layout)
 	if err != nil {
