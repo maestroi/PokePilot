@@ -40,9 +40,9 @@ const emit = defineEmits<{
 const badges = computed(() => props.run.player?.badges?.length || 0)
 const party = computed(() => props.run.player?.party?.length || 0)
 const replayCount = computed(() => props.recentRuns.filter((run) => run.replay_ready).length)
-const visibleLiveRuns = computed(() => props.liveRuns.slice(0, 5))
+const visibleLiveRuns = computed(() => props.liveRuns.filter((run) => isLiveRun(run)).slice(0, 5))
 const goal = computed(() => goalProgress(props.run))
-const headlineAccent = computed(() => isLiveRun(props.run) ? 'live.' : 'on replay.')
+const headlineAccent = computed(() => isLiveRun(props.run) ? 'live.' : props.run.status === 'done' ? 'on replay.' : 'in progress.')
 
 function watch(run: SpectatorRun): void {
   emit('select', run)
@@ -243,7 +243,7 @@ function watch(run: SpectatorRun): void {
         <PlayIcon class="size-5 text-violet-300" aria-hidden="true" />
         <div>
           <strong>{{ replayCount }}</strong>
-          <span>Ready replays</span>
+          <span>Recent replays</span>
         </div>
       </div>
     </div>
