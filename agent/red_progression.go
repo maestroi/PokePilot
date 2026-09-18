@@ -131,14 +131,6 @@ func redProgressionObjectives(obs Observation) []Objective {
 			Note:     "(go to Vermilion, board the S.S. Anne with the ticket, defeat the scripted rival on 2F, and receive HM01 Cut from the Captain)",
 		})
 	}
-	if obs.Story.Has(redProgressHM01Acquired) && !obs.Story.Has(redProgressBicycleAcquired) {
-		out = append(out, Objective{
-			Kind:     KindProgress,
-			Progress: redProgressBicycleAcquired,
-			Intent:   optionalProgressionIntent,
-			Note:     "(optional for the supported Route 12 Fuchsia path; visit the Pokemon Fan Club chairman in Vermilion for the Bike Voucher, then exchange it at Cerulean's Bike Shop for the Bicycle)",
-		})
-	}
 	if obs.Story.Has(redProgressHM01Acquired) && redCutFieldUnlocked(obs) && !hasBadge(obs, state.BadgeThunder) {
 		out = append(out, Objective{
 			Kind:     KindProgress,
