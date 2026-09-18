@@ -71,6 +71,42 @@ func TestBuyCantAfford(t *testing.T) {
 	}
 }
 
+
+// TestSell drives the real SELL half of the mart controller. Buy two
+// ANTIDOTEs first so the committed fixture needs no RAM mutation, then sell
+// the whole stack. Red pays half the shop price, so ¥200 spent becomes ¥100
+// recovered; the distinct bag slot must disappear and the player must be back
+// on a controllable overworld boundary.
+func TestSell(t *testing.T) {
+	m := fixture.Load(t, "viridian_mart")
+	if err := skill.Buy(m, skill.ItemAntidote, 2); err != nil {
+		t.Fatalf("Buy setup: %v", err)
+	}
+
+	var before state.Mem
+	state.Snapshot(m, &before)
+	moneyBefore := int(state.DecodeInventory(&before).Money)
+	if got := countItem(&before, skill.ItemAntidote); got != 2 {
+		t.Fatalf("setup ANTIDOTE = %d, want 2", got)
+	}
+
+	if err := skill.Sell(m, skill.ItemAntidote, 2); err != nil {
+		t.Fatalf("Sell: %v", err)
+	}
+
+	var after state.Mem
+	state.Snapshot(m, &after)
+	if got := countItem(&after, skill.ItemAntidote); got != 0 {
+		t.Errorf("bag: ANTIDOTE = %d after sale, want 0", got)
+	}
+	if got := int(state.DecodeInventory(&after).Money); got != moneyBefore+100 {
+		t.Errorf("money = %d, want %d (before %d + 100)", got, moneyBefore+100, moneyBefore)
+	}
+	if !state.Controllable(&after) {
+		t.Error("postcondition: player is not controllable after sale")
+	}
+}
+
 // TestTalkStopsAtShopMenu is the triage regression for 081eb00e22e44d40: the
 // Viridian Mart clerk opens a BUY/SELL/QUIT menu, not a text box. Talk pages
 // ordinary dialogue; it must not walk that menu into a purchase. From the
