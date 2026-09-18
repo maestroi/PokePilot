@@ -11,11 +11,13 @@
       "endpoint": "http://192.168.50.130:8002/v1",
       "api_model": "qwen3.8-27b",
       "enabled": true,
+      "discover": true,
+      "default_for": ["farm", "experiment-a"],
       "engine": "llama.cpp",
       "engine_version": "0.4.0-dev (build 10884, commit 434ddbbc0)",
       "engine_config": "7900-pinned-rocm-mtp-4slot",
       "legacy_profile": "auto",
-      "max_parallel_workers": 1
+      "max_parallel_workers": 4
     },
     {
       "id": "qwen35-4b-4090",
@@ -28,6 +30,7 @@
       "endpoint": "http://192.168.50.81:8002/v1",
       "api_model": "pokepilot-4090",
       "enabled": true,
+      "default_for": ["experiment-b"],
       "control_url": "http://192.168.50.81:8091",
       "token_env": "POKEPILOT_MODELHOST_TOKEN",
       "engine": "llama.cpp",
