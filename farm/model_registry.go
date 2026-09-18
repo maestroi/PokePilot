@@ -30,30 +30,30 @@ type ModelRegistry struct {
 // environment variable containing a bearer token; the token itself is never
 // carried in the registry, run spec, dashboard or persisted experiment data.
 type ModelDeployment struct {
-	ID                 string `json:"id"`
-	Label              string `json:"label"`
-	ModelID            string `json:"model_id"`
-	Revision           string `json:"revision,omitempty"`
-	Artifact           string `json:"artifact,omitempty"`
-	Quantization       string `json:"quantization,omitempty"`
-	Compute            string `json:"compute"`
-	Endpoint           string `json:"endpoint"`
-	APIModel           string `json:"api_model"`
-	Enabled            bool     `json:"enabled"`
+	ID           string `json:"id"`
+	Label        string `json:"label"`
+	ModelID      string `json:"model_id"`
+	Revision     string `json:"revision,omitempty"`
+	Artifact     string `json:"artifact,omitempty"`
+	Quantization string `json:"quantization,omitempty"`
+	Compute      string `json:"compute"`
+	Endpoint     string `json:"endpoint"`
+	APIModel     string `json:"api_model"`
+	Enabled      bool   `json:"enabled"`
 	// Discover asks the wall to probe the OpenAI-compatible /v1/models endpoint
 	// and bind runs to the model actually being served. This is useful for
 	// pinned llama.cpp/vLLM/cloud endpoints whose model can change without a
 	// PokePilot deploy. Switchable hosts with ControlURL normally leave this off.
-	Discover           bool     `json:"discover,omitempty"`
+	Discover bool `json:"discover,omitempty"`
 	// DefaultFor gives operator surfaces stable roles without encoding model
 	// sizes or hardware in code (for example "farm", "experiment-a").
 	DefaultFor         []string `json:"default_for,omitempty"`
-	ControlURL         string `json:"control_url,omitempty"`
-	TokenEnv           string `json:"token_env,omitempty"`
-	Engine             string `json:"engine,omitempty"`
-	EngineVersion      string `json:"engine_version,omitempty"`
-	EngineConfig       string `json:"engine_config,omitempty"`
-	MaxParallelWorkers int    `json:"max_parallel_workers,omitempty"`
+	ControlURL         string   `json:"control_url,omitempty"`
+	TokenEnv           string   `json:"token_env,omitempty"`
+	Engine             string   `json:"engine,omitempty"`
+	EngineVersion      string   `json:"engine_version,omitempty"`
+	EngineConfig       string   `json:"engine_config,omitempty"`
+	MaxParallelWorkers int      `json:"max_parallel_workers,omitempty"`
 	// LegacyProfile is only the compatibility adapter used by existing
 	// runners to choose the already-configured compute endpoint. New operator
 	// and experiment code selects ID, never this value.
