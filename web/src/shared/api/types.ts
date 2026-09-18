@@ -204,6 +204,7 @@ export interface ExperimentRequest {
   name: string
   arm_a: ExperimentArm
   arm_b: ExperimentArm
+  game?: string
   goal: string
   starter?: string
   seeds?: number[]
@@ -220,11 +221,19 @@ export interface ExperimentRequest {
 export interface ExperimentArmSummary {
   runs?: number
   done?: number
+  goal_successes?: number
   boulder_successes?: number
   success_rate?: number
+  badges?: number
   rounds?: number
   frames?: number
+  median_rounds_to_goal?: number
+  median_frames_to_goal?: number
+  avg_run_seconds?: number
+  calls?: number
   strategic_calls?: number
+  strategic_rejected?: number
+  plan_steps_produced?: number
   avg_strategic_call_seconds?: number
   p50_strategic_call_seconds?: number
   p95_strategic_call_seconds?: number
@@ -237,12 +246,43 @@ export interface ExperimentArmSummary {
   fallbacks?: number
   plan_executions?: number
   steps_skipped?: number
+  plan_execution_fraction?: number
+  blackouts?: number
+  objective_failures?: number
+  stagnation_replans?: number
+  plan_exhaustion_replans?: number
+  replan_reasons?: Record<string, number>
+  final_stop_reasons?: Record<string, number>
+  strategic_records_dropped?: number
 }
 
 export interface ExperimentPairedSummary {
   a_wins?: number
   ties?: number
   b_wins?: number
+  comparable_pairs?: number
+  completed_pairs?: number
+  excluded_pairs?: number
+}
+
+export interface ExperimentPairResult {
+  seed: number
+  comparable: boolean
+  status_a?: string
+  status_b?: string
+  success_a?: boolean
+  success_b?: boolean
+  winner?: 'a' | 'b' | 'tie' | string
+  non_comparable_reason?: string
+}
+
+export interface ExperimentIdentity {
+  game?: string
+  git_revision?: string
+  rom_identity?: string
+  prompt_identity?: string
+  arm_a?: InferenceIdentity
+  arm_b?: InferenceIdentity
 }
 
 export interface ExperimentView {
@@ -255,6 +295,8 @@ export interface ExperimentView {
   arm_a?: ExperimentArmSummary
   arm_b?: ExperimentArmSummary
   paired?: ExperimentPairedSummary
+  identity?: ExperimentIdentity
+  pairs?: ExperimentPairResult[]
 }
 
 export interface ExperimentList {
