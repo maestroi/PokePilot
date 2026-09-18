@@ -127,8 +127,13 @@ The same replay is the proof of the fix: it must fail before the patch and pass
 after it.
 
 When the reason is not obvious, instrument only the relevant return path, replay
-again, then remove the instrumentation. Do not reason from a collision grid by
-hand; use `skill/probe_test.go` as required by `AGENTS.md`.
+again, then remove the instrumentation.
+
+For map/routing/location failures, use the `world-map-debug` skill before
+guessing spatial relationships. Open a stable World Explorer link for context,
+then use `skill/probe_test.go` for any exact walkability/reachability claim.
+The public map is an orientation surface, not collision proof. Do not reason
+from a collision grid by hand; follow `AGENTS.md`.
 
 ### Do not reproduce a failure through the planner
 
@@ -205,6 +210,7 @@ this skill can.
 
 ## Known map
 
+- `.claude/skills/world-map-debug/SKILL.md` — World Explorer → probe → worldverify workflow for map/routing failures.
 - `docs/RUN_INSPECTOR.md` — artifact/replay endpoints and run inspection.
 - `docs/RAM_FORENSICS.md` + `gomeboy-forensics` — instruction-level probes.
 - `skill/probe_test.go` — measured walkability/route/state questions.

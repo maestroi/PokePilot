@@ -38,6 +38,16 @@ In particular:
 
 ## Never read a collision grid into context
 
+Use the public World Explorer for orientation and shareable diagnosis:
+`https://rompilot.app/world`. For map/routing work, the repo-local
+`.claude/skills/world-map-debug/SKILL.md` defines the intended sequence:
+Explorer for spatial context, `skill/probe_test.go` for exact local
+walkability/state answers, and `cmd/worldverify` for graph-wide invariants.
+
+The Explorer's decomp artwork is not collision proof, and static NPC/trainer
+markers are not current RAM positions. Do not turn a visual impression into a
+routing fact; measure it.
+
 Route 2 is 20x72. Viridian Forest is 34x48. Nothing is meant to read those
 tiles but a breadth-first search, and an agent that reconstructs one by hand
 runs out of context before it reaches an answer. That is not hypothetical:
