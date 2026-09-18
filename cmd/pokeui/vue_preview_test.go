@@ -238,7 +238,6 @@ func htmlAssetRefs(html string) []string {
 	return refs
 }
 
-
 func TestVueSpectatorServesGen1RenderAssets(t *testing.T) {
 	if !vueFileExists("spectator", "gen1/red/maps/PalletTown.blk") {
 		t.Skip("spectator Gen 1 render assets not built in this Go-only checkout")
