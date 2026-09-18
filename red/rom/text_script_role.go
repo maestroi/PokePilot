@@ -1,5 +1,7 @@
 package rom
 
+import "github.com/maestroi/pokepilot/gen1rom"
+
 // ObjectInteractionRole describes Red's built-in text-script dispatch for a
 // map object. These scripts do not behave like ordinary NPC dialogue: the home
 // text dispatcher transfers control to a service/menu handler instead of just
@@ -46,12 +48,12 @@ const (
 func SpecialInteractionActors(romData []byte, mapID uint8) ([]SpecialInteractionActor, error) {
 	h, err := ParseMap(romData, mapID)
 	if err != nil {
-		return nil, mapErr(mapID, err)
+		return nil, err
 	}
 
 	out := make([]SpecialInteractionActor, 0)
 	seen := map[[2]uint8]bool{}
-	for _, table := range textPointerTables(romData, h) {
+	for _, table := range gen1rom.TextPointerTables(romData, gen1rom.MapHeader(h)) {
 		for _, obj := range h.Objects {
 			if obj.TextID == 0 || obj.TextID&0xc0 != 0 {
 				continue // no text, or a trainer/item object
