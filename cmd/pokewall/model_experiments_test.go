@@ -656,3 +656,34 @@ func TestDynamicDeploymentReportsUnavailableWhenDiscoveryEndpointIsOffline(t *te
 		t.Fatalf("dynamic endpoint state = %#v", snapshot.Deployments)
 	}
 }
+
+
+func TestRestartDoesNotLeaseDynamicRunWhenDiscoveryIsUnavailable(t *testing.T) {
+	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": []map[string]any{{"id": "qwen3.5-9b"}},
+		})
+	}))
+	registry := writeModelRegistry(t, []farm.ModelDeployment{{
+		ID: "dynamic", Compute: "gpu", Endpoint: endpoint.URL + "/v1",
+		Enabled: true, DiscoverModel: true, Default: true,
+	}})
+	t.Setenv("POKEPILOT_MODEL_REGISTRY", registry)
+	w := NewWall("")
+	h := modelExperimentHTTPHandler(w, w.Handler())
+	if res := requestJSON(t, h, http.MethodPost, "/v1/specs", map[string]any{
+		"run_id": "queued-dynamic", "planner": "llm",
+	}); res.Code != http.StatusOK {
+		t.Fatalf("enqueue = %d %s", res.Code, res.Body.String())
+	}
+
+	// Simulate controller restart without its sidecar metadata, then lose the
+	// endpoint. The tile still names the deployment, so the new controller
+	// must rediscover it rather than treating it as a legacy unbound run.
+	endpoint.Close()
+	restarted := modelExperimentHTTPHandler(w, w.Handler())
+	lease := requestJSON(t, restarted, http.MethodPost, "/v1/lease", map[string]any{})
+	if lease.Code != http.StatusNoContent {
+		t.Fatalf("offline dynamic lease after restart = %d %s, want 204", lease.Code, lease.Body.String())
+	}
+}
