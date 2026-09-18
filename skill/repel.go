@@ -123,3 +123,25 @@ func UseRepel(m *emu.Emu, item uint8) error {
 	}
 	return nil
 }
+
+ 
+// UseBestRepel activates the longest-duration Repel stack currently available.
+// It is a no-op while an effect is already active or when the bag has no
+// Repel-family item. The caller owns the policy decision to use encounter
+// suppression; this helper only performs the deterministic bag choice.
+func UseBestRepel(m *emu.Emu) (bool, error) {
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	if mem.U8(sym.RepelRemainingSteps) > 0 {
+		return false, nil
+	}
+	for _, item := range []uint8{ItemMaxRepel, ItemSuperRepel, ItemRepel} {
+		if _, quantity := bagEntry(&mem, item); quantity > 0 {
+			if err := UseRepel(m, item); err != nil {
+				return false, err
+			}
+			return true, nil
+		}
+	}
+	return false, nil
+}
