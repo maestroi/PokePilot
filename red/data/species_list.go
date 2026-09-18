@@ -1,23 +1,18 @@
 package data
 
 import (
-	"sort"
-
 	"github.com/maestroi/pokepilot/game"
+	"github.com/maestroi/pokepilot/gen1"
 )
 
-// SpeciesIDs returns every supported non-glitch Red species in a stable order.
-// The order is by raw Gen I species index rather than map iteration order, so
-// deterministic experiment selection stays reproducible across processes.
+// SpeciesIDs returns every supported non-glitch Gen-I species in stable raw
+// internal-index order.
 func SpeciesIDs() []game.SpeciesID {
-	raws := make([]int, 0, len(speciesByID))
-	for raw := range speciesByID {
-		raws = append(raws, int(raw))
-	}
-	sort.Ints(raws)
-	out := make([]game.SpeciesID, 0, len(raws))
-	for _, raw := range raws {
-		out = append(out, game.SpeciesID(speciesByID[uint8(raw)]))
+	out := make([]game.SpeciesID, 0, gen1.SpeciesCount())
+	for raw := uint16(1); raw <= 0xff; raw++ {
+		if species, ok := gen1.Species(uint8(raw)); ok {
+			out = append(out, species)
+		}
 	}
 	return out
 }

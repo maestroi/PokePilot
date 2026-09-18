@@ -3,7 +3,9 @@ package main
 import (
 	"testing"
 
+	redprofile "github.com/maestroi/pokepilot/red/profile"
 	verifier "github.com/maestroi/pokepilot/worldverify"
+	yellowprofile "github.com/maestroi/pokepilot/yellow/profile"
 )
 
 func TestApplyGen1ReachabilityManifest(t *testing.T) {
@@ -15,7 +17,7 @@ func TestApplyGen1ReachabilityManifest(t *testing.T) {
 		{ID: "76"}, // Hall of Fame scripted transfer
 		{ID: "30"}, // ordinary side house: no special expectation
 	}}
-	applyGen1ReachabilityManifest(&snapshot)
+	applyGen1ReachabilityManifest(&snapshot, redprofile.New().ROMParser())
 
 	classes := map[verifier.MapID]verifier.ReachabilityClass{}
 	for _, expectation := range snapshot.MapExpectations {
@@ -43,5 +45,13 @@ func TestApplyGen1ReachabilityManifest(t *testing.T) {
 	}
 	if labels["36"] != "PEWTER_GYM" || labels["45"] != "CERULEAN_TRASHED_HOUSE_COPY" || labels["ef"] != "TRADE_CENTER" {
 		t.Fatalf("Gen-I map labels not projected correctly: %+v", labels)
+	}
+}
+
+func TestApplyGen1ReachabilityManifestUsesYellowMapVocabulary(t *testing.T) {
+	snapshot := verifier.Snapshot{Maps: []verifier.Map{{ID: "f8"}}}
+	applyGen1ReachabilityManifest(&snapshot, yellowprofile.New().ROMParser())
+	if got := snapshot.Maps[0].Label; got != "SUMMER_BEACH_HOUSE" {
+		t.Fatalf("Yellow map F8 label = %q, want SUMMER_BEACH_HOUSE", got)
 	}
 }

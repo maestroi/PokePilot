@@ -1,9 +1,9 @@
 package rom
 
 import (
-	"fmt"
 	"strings"
 
+	"github.com/maestroi/pokepilot/gen1rom"
 	"github.com/maestroi/pokepilot/worldmodel"
 )
 
@@ -87,99 +87,23 @@ func (p *redWorldProvider) ElevatorFloorForDestination(elevatorMap, destinationM
 	return worldmodel.ElevatorFloor{MapID: floor.MapID, DestWarpID: floor.DestWarpID}, true
 }
 
-// WorldGridSpec lets the existing world.Build APIs consume a Red MapHeader
-// through a neutral interface while call sites migrate to profile providers.
+// WorldGridSpec lets existing Red callers keep passing rom.MapHeader while
+// the common Gen-I collision-grid byte decoder lives in gen1rom.
 func (h MapHeader) WorldGridSpec(romData []byte, blocks []byte, mode worldmodel.TraversalMode) (worldmodel.GridSpec, error) {
-	width := int(h.WidthBlocks) * 2
-	height := int(h.HeightBlocks) * 2
-	spec := worldmodel.GridSpec{
-		MapID:         h.ID,
-		Width:         width,
-		Height:        height,
-		Walkable:      make([]bool, width*height),
-		CollisionTile: make([]uint8, width*height),
-		FieldTile:     make([]uint8, width*height),
-		TilePairs:     redTilePairsForTraversal(romData, h.Tileset, mode),
-	}
-	for _, ledge := range Ledges(romData, h.Tileset) {
-		spec.Ledges = append(spec.Ledges, worldmodel.Ledge{DX: ledge.DX, DY: ledge.DY, From: ledge.From, Over: ledge.Over})
-	}
-	if width == 0 || height == 0 {
-		return spec, nil
-	}
-
-	wantBlocks := int(h.WidthBlocks) * int(h.HeightBlocks)
-	if blocks == nil {
-		var err error
-		blocks, err = Blocks(romData, h)
-		if err != nil {
-			return worldmodel.GridSpec{}, err
-		}
-	}
-	if len(blocks) < wantBlocks {
-		return worldmodel.GridSpec{}, fmt.Errorf("map %d: block map has %d bytes, want at least %d", h.ID, len(blocks), wantBlocks)
-	}
-	blocks = blocks[:wantBlocks]
-
-	tsOff, err := bankedOffset(tilesetsBank, tilesetsAddr)
-	if err != nil {
-		return worldmodel.GridSpec{}, fmt.Errorf("map %d: %v", h.ID, err)
-	}
-	entryOff := tsOff + int(h.Tileset)*tilesetEntryLen
-	if entryOff+tilesetEntryLen > len(romData) {
-		return worldmodel.GridSpec{}, fmt.Errorf("map %d: tileset %d entry at offset %d exceeds ROM of %d bytes", h.ID, h.Tileset, entryOff, len(romData))
-	}
-	tsBank := romData[entryOff]
-	blockPtr := uint16(romData[entryOff+1]) | uint16(romData[entryOff+2])<<8
-	collPtr := uint16(romData[entryOff+5]) | uint16(romData[entryOff+6])<<8
-	spec.CounterTiles = [3]uint8{romData[entryOff+7], romData[entryOff+8], romData[entryOff+9]}
-
-	collBank := uint8(0)
-	if collPtr >= 0x4000 {
-		collBank = tsBank
-	}
-	collOff, err := bankedOffset(collBank, collPtr)
-	if err != nil {
-		return worldmodel.GridSpec{}, fmt.Errorf("map %d: %v", h.ID, err)
-	}
-	walkableTiles := make([]bool, 256)
-	for {
-		if collOff >= len(romData) {
-			return worldmodel.GridSpec{}, fmt.Errorf("map %d: collision list at offset %d exceeds ROM of %d bytes", h.ID, collOff, len(romData))
-		}
-		t := romData[collOff]
-		collOff++
-		if t == 0xff {
-			break
-		}
-		walkableTiles[t] = true
-	}
-
-	blockOff, err := bankedOffset(tsBank, blockPtr)
-	if err != nil {
-		return worldmodel.GridSpec{}, fmt.Errorf("map %d: %v", h.ID, err)
-	}
-	wb := int(h.WidthBlocks)
-	for by := 0; by < int(h.HeightBlocks); by++ {
-		for bx := 0; bx < wb; bx++ {
-			blockID := blocks[by*wb+bx]
-			tilesOff := blockOff + int(blockID)*16
-			if tilesOff+16 > len(romData) {
-				return worldmodel.GridSpec{}, fmt.Errorf("map %d: block %d data at offset %d exceeds ROM of %d bytes", h.ID, blockID, tilesOff, len(romData))
+	return gen1rom.BuildGridSpec(romData, gen1rom.MapHeader(h), blocks, mode, gen1rom.GridLayout{
+		TilesetsBank:    tilesetsBank,
+		TilesetsAddr:    tilesetsAddr,
+		TilesetEntryLen: tilesetEntryLen,
+		TilePairs:       redTilePairsForTraversal,
+		Ledges: func(data []byte, tileset uint8) []worldmodel.Ledge {
+			raw := Ledges(data, tileset)
+			out := make([]worldmodel.Ledge, len(raw))
+			for i, ledge := range raw {
+				out[i] = worldmodel.Ledge{DX: ledge.DX, DY: ledge.DY, From: ledge.From, Over: ledge.Over}
 			}
-			for sy := 0; sy < 2; sy++ {
-				for sx := 0; sx < 2; sx++ {
-					field := romData[tilesOff+(2*sy)*4+2*sx]
-					collision := romData[tilesOff+(2*sy+1)*4+2*sx]
-					i := (by*2+sy)*width + (bx*2 + sx)
-					spec.FieldTile[i] = field
-					spec.CollisionTile[i] = collision
-					spec.Walkable[i] = walkableTiles[collision]
-				}
-			}
-		}
-	}
-	return spec, nil
+			return out
+		},
+	})
 }
 
 func redTilePairsForTraversal(romData []byte, tileset uint8, mode worldmodel.TraversalMode) map[[2]uint8]bool {

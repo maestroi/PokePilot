@@ -21,7 +21,7 @@ import (
 
 func main() {
 	romPath := flag.String("rom", defaultROMPath(), "path to ROM (defaults to POKEMON_ROM, then POKEMON_RED_ROM)")
-	game := flag.String("game", "auto", "game profile (auto, red, blue, yellow; Yellow world verification is not implemented yet)")
+	game := flag.String("game", "auto", "game profile (auto, red, blue, yellow)")
 	jsonOutput := flag.Bool("json", false, "emit JSON report")
 	strictWarnings := flag.Bool("strict-warnings", false, "exit non-zero when warnings are present")
 	maxCaps := flag.Int("max-exhaustive-capabilities", 16, "maximum capabilities to enumerate exhaustively (16 = 65,536 states)")
@@ -62,17 +62,14 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Red and Blue share the English Gen-I map ids, ROM map-table format and
-	// progression topology. Their profile contract already pins that shared
-	// engine; verification therefore intentionally uses one Gen-I semantic
-	// transition catalog while keeping the detected game identity in the
-	// portable report.
-	redBlueTransitions := skill.RedRouteTransitionsForValidation(graph)
-	// English Red/Blue both begin normal controllable play in Pallet Town
-	// (native map 0x00). Native ids stay in this adapter wiring.
-	snapshot := world.ValidationSnapshot(graph, redBlueTransitions, 0x00)
+	// The supported English Gen-I Kanto games share the native Kanto map ids
+	// and field capabilities that gate static connectivity (Cut, Surf, Bike,
+	// Poké Flute, etc.). Yellow-specific story-event ordering remains profile
+	// work for Phase 3; this offline catalog audits topology/capabilities only.
+	gen1Transitions := skill.RedRouteTransitionsForValidation(graph)
+	snapshot := world.ValidationSnapshot(graph, gen1Transitions, 0x00)
 	snapshot.Game = string(profile.ID())
-	applyGen1ReachabilityManifest(&snapshot)
+	applyGen1ReachabilityManifest(&snapshot, profile.ROMParser())
 	report := verifier.Verify(snapshot, verifier.Options{MaxExhaustiveCapabilities: *maxCaps})
 
 	if *jsonOutput {
@@ -153,5 +150,7 @@ func normalizeGameFlag(value string) (string, error) {
 }
 
 func hasWorldAdapter(gameID string) bool {
-	return gameID == string(redprofile.GameID) || gameID == string(blueprofile.GameID)
+	return gameID == string(redprofile.GameID) ||
+		gameID == string(blueprofile.GameID) ||
+		gameID == string(yellowprofile.GameID)
 }
