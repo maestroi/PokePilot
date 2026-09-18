@@ -57,10 +57,10 @@ func TestRealYellowGraphIncludesBeachHouse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(graph.Maps) != yellowPlayableMapCount {
-		t.Fatalf("graph maps = %d, want %d", len(graph.Maps), yellowPlayableMapCount)
+	if len(graph.Edges) != yellowPlayableMapCount {
+		t.Fatalf("graph maps = %d, want %d", len(graph.Edges), yellowPlayableMapCount)
 	}
-	if _, ok := graph.Maps[0xF8]; !ok {
+	if _, ok := graph.Edges[0xF8]; !ok {
 		t.Fatal("SUMMER_BEACH_HOUSE (F8) missing from graph")
 	}
 }
