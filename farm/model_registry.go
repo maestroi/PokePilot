@@ -33,6 +33,14 @@ type ModelDeployment struct {
 	ID                 string `json:"id"`
 	Label              string `json:"label"`
 	ModelID            string `json:"model_id"`
+	// DiscoverModel lets an OpenAI-compatible single-model endpoint advertise
+	// the model it is actually serving via GET /models. It is intended for
+	// dedicated llama.cpp/vLLM-style endpoints whose model may be swapped
+	// without changing the farm configuration.
+	DiscoverModel      bool   `json:"discover_model,omitempty"`
+	// Default marks the preferred farm deployment. Model identity still comes
+	// from this deployment (or endpoint discovery), never from the hardware name.
+	Default            bool   `json:"default,omitempty"`
 	Revision           string `json:"revision,omitempty"`
 	Artifact           string `json:"artifact,omitempty"`
 	Quantization       string `json:"quantization,omitempty"`
@@ -41,6 +49,10 @@ type ModelDeployment struct {
 	APIModel           string `json:"api_model"`
 	Enabled            bool   `json:"enabled"`
 	ControlURL         string `json:"control_url,omitempty"`
+	// EndpointTokenEnv optionally names the bearer-token environment variable
+	// for the inference endpoint itself. TokenEnv remains the model-host control
+	// plane credential; keeping them separate makes cloud endpoints safe.
+	EndpointTokenEnv   string `json:"endpoint_token_env,omitempty"`
 	TokenEnv           string `json:"token_env,omitempty"`
 	Engine             string `json:"engine,omitempty"`
 	EngineVersion      string `json:"engine_version,omitempty"`
@@ -65,6 +77,7 @@ type InferenceIdentity struct {
 	Compute            string `json:"compute"`
 	Endpoint           string `json:"endpoint"`
 	APIModel           string `json:"api_model"`
+	EndpointTokenEnv   string `json:"endpoint_token_env,omitempty"`
 	ControlURL         string `json:"control_url,omitempty"`
 	TokenEnv           string `json:"token_env,omitempty"`
 	Engine             string `json:"engine,omitempty"`
@@ -114,6 +127,7 @@ func LoadModelRegistry(source string) (ModelRegistry, error) {
 
 func (r ModelRegistry) Validate() error {
 	seen := map[string]bool{}
+	defaults := 0
 	for i := range r.Deployments {
 		d := r.Deployments[i]
 		id := strings.TrimSpace(d.ID)
@@ -124,8 +138,8 @@ func (r ModelRegistry) Validate() error {
 			return fmt.Errorf("model registry: duplicate deployment id %q", id)
 		}
 		seen[id] = true
-		if strings.TrimSpace(d.ModelID) == "" {
-			return fmt.Errorf("model registry: deployment %q has empty model_id", id)
+		if strings.TrimSpace(d.ModelID) == "" && !d.DiscoverModel {
+			return fmt.Errorf("model registry: deployment %q has empty model_id without discover_model", id)
 		}
 		if strings.TrimSpace(d.Compute) == "" {
 			return fmt.Errorf("model registry: deployment %q has empty compute", id)
@@ -133,8 +147,14 @@ func (r ModelRegistry) Validate() error {
 		if strings.TrimSpace(d.Endpoint) == "" {
 			return fmt.Errorf("model registry: deployment %q has empty endpoint", id)
 		}
-		if strings.TrimSpace(d.APIModel) == "" {
-			return fmt.Errorf("model registry: deployment %q has empty api_model", id)
+		if strings.TrimSpace(d.APIModel) == "" && !d.DiscoverModel {
+			return fmt.Errorf("model registry: deployment %q has empty api_model without discover_model", id)
+		}
+		if d.Enabled && d.Default {
+			defaults++
+			if defaults > 1 {
+				return fmt.Errorf("model registry: more than one enabled deployment is marked default")
+			}
 		}
 		if d.MaxParallelWorkers < 0 {
 			return fmt.Errorf("model registry: deployment %q has invalid max_parallel_workers %d", id, d.MaxParallelWorkers)
@@ -166,6 +186,9 @@ func (r ModelRegistry) EnabledDeployments() []ModelDeployment {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool {
+		if out[i].Default != out[j].Default {
+			return out[i].Default
+		}
 		if out[i].Compute != out[j].Compute {
 			return out[i].Compute < out[j].Compute
 		}
@@ -179,6 +202,7 @@ func (d ModelDeployment) Identity() InferenceIdentity {
 		DeploymentID: d.ID, Label: d.Label, ModelID: d.ModelID,
 		Revision: d.Revision, Artifact: d.Artifact, Quantization: d.Quantization,
 		Compute: d.Compute, Endpoint: d.Endpoint, APIModel: d.APIModel,
+		EndpointTokenEnv: d.EndpointTokenEnv,
 		ControlURL: d.ControlURL, TokenEnv: d.TokenEnv, Engine: d.Engine,
 		EngineVersion: d.EngineVersion, EngineConfig: d.EngineConfig,
 		MaxParallelWorkers: d.ParallelLimit(),
