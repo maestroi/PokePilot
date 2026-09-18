@@ -33,7 +33,7 @@ const defaultGoal = "elite-four"
 
 func main() {
 	addr := flag.String("http", "localhost:8099", "address to serve the screen on")
-	every := flag.Int("capture-every", 4, "capture a frame for the browser every N frames")
+	every := flag.Int("capture-every", 3, "capture a frame for the browser every N frames")
 	dest := flag.String("goto", "viridian pokemon center", "named destination to walk to")
 	fps := flag.Int("fps", 60, "pace the walk to this many frames per second so it is watchable; 0 runs flat out")
 	hold := flag.Duration("hold", 30*time.Second, "how long to keep serving after the run finishes")

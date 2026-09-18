@@ -7,12 +7,26 @@ import (
 	"testing"
 )
 
-func TestLiveFrameQueueCapsOldFramesAndRepeatsLast(t *testing.T) {
+func TestLiveFrameQueuePreservesSmoothSegmentThenResyncs(t *testing.T) {
 	q := newLiveFrameQueue(3)
 	q.push(3, []byte("three"))
 	q.push(6, []byte("six"))
 	q.push(9, []byte("nine"))
+
+	// Overflow does not evict the smooth segment already waiting for the
+	// spectator. It collapses to the newest pending frame instead.
 	q.push(12, []byte("twelve"))
+	q.push(15, []byte("fifteen"))
+
+	got, ok := q.next()
+	if !ok || got.frame != 3 {
+		t.Fatalf("first next() = (%d, %t), want frame 3", got.frame, ok)
+	}
+
+	// Even though one queue slot is now free, keep collapsing overflow until
+	// the original segment drains so MAX-speed execution cannot interleave
+	// large jumps between otherwise adjacent display frames.
+	q.push(18, []byte("eighteen"))
 
 	for _, want := range []struct {
 		frame uint64
@@ -20,9 +34,9 @@ func TestLiveFrameQueueCapsOldFramesAndRepeatsLast(t *testing.T) {
 	}{
 		{6, "six"},
 		{9, "nine"},
-		{12, "twelve"},
+		{18, "eighteen"},
 	} {
-		got, ok := q.next()
+		got, ok = q.next()
 		if !ok {
 			t.Fatalf("next() missing frame %d", want.frame)
 		}
@@ -31,12 +45,28 @@ func TestLiveFrameQueueCapsOldFramesAndRepeatsLast(t *testing.T) {
 		}
 	}
 
-	got, ok := q.next()
+	got, ok = q.next()
 	if !ok {
 		t.Fatal("next() should hold the last displayed frame when the producer pauses")
 	}
+	if got.frame != 18 || string(got.png) != "eighteen" {
+		t.Fatalf("held frame = (%d, %q), want (18, %q)", got.frame, got.png, "eighteen")
+	}
+}
+
+func TestLiveFrameQueueLatestUsesOverflowResyncFrame(t *testing.T) {
+	q := newLiveFrameQueue(2)
+	q.push(3, []byte("three"))
+	q.push(6, []byte("six"))
+	q.push(9, []byte("nine"))
+	q.push(12, []byte("twelve"))
+
+	got, ok := q.latest()
+	if !ok {
+		t.Fatal("latest() missing overflow frame")
+	}
 	if got.frame != 12 || string(got.png) != "twelve" {
-		t.Fatalf("held frame = (%d, %q), want (12, %q)", got.frame, got.png, "twelve")
+		t.Fatalf("latest() = (%d, %q), want (12, %q)", got.frame, got.png, "twelve")
 	}
 }
 
