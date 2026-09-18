@@ -89,14 +89,16 @@ func chooseSafeBagSacrifice(inv state.InventoryState) (int, state.BagItem, bool)
 
 // EnsureBagSpaceFor guarantees that receiving one unit of item will not need
 // a missing bag slot. If item is already present, Gen I stacks it into the
-// existing entry and no space is needed.
+// existing entry and no space is needed. Under real bag pressure it first
+// delegates to productive inventory recovery (sell/use/store) and only then
+// falls back to the explicit safe-toss whitelist.
 func EnsureBagSpaceFor(m *emu.Emu, item uint8) error {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
 	if _, quantity := bagEntry(&mem, item); quantity > 0 {
 		return nil
 	}
-	return EnsureBagFreeSlots(m, 1)
+	return ensureBagFreeSlotsManaged(m, 1)
 }
 
 // EnsureBagFreeSlots guarantees at least minFree distinct-item slots in the
