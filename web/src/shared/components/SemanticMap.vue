@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { MapSprite } from '../api/types'
 import { mapEntry } from '../mapCatalog'
+import { drawGen1TextureMap, loadGen1TextureMap, type Gen1TextureMap } from '../gen1Texture'
 import { worldConnections, worldPois, type WorldPoi } from '../worldManifest'
 import WorldAtlas, { type WorldAtlasMarker } from './WorldAtlas.vue'
 
@@ -68,6 +69,9 @@ const loading = ref(false)
 const error = ref('')
 const zoomLevel = ref(1)
 const payload = ref<MapPayload | null>(null)
+const authenticTexture = ref<Gen1TextureMap | null>(null)
+const textureLoading = ref(false)
+const textureError = ref('')
 const selectedPoi = ref<WorldPoi | null>(null)
 let savedDebug = false
 try {
@@ -106,6 +110,7 @@ const warpDestinations = computed(() => {
 })
 const connections = computed(() => payload.value?.connections || [])
 let serial = 0
+let textureSerial = 0
 let observer: ResizeObserver | null = null
 let tileSize = 0
 
@@ -366,7 +371,10 @@ function draw(): void {
 
   const fitPx = Math.floor(Math.min(availW / width, availH / height))
   const basePx = Math.max(debugEnabled.value ? 18 : 6, fitPx)
-  const px = Math.max(2, Math.floor(basePx * zoomLevel.value))
+  const rawPx = Math.max(2, Math.floor(basePx * zoomLevel.value))
+  const px = explorerAppearance.value && authenticTexture.value
+    ? Math.max(2, Math.floor(rawPx / 2) * 2)
+    : rawPx
   tileSize = px
   node.width = width * px
   node.height = height * px
@@ -396,18 +404,34 @@ function draw(): void {
   }
   const colors = explorerAppearance.value ? explorerColors : semanticColors
 
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const cell = cellAt(data, x, y)
-      ctx.fillStyle = explorerAppearance.value
-        ? explorerFill(data, cell, x, y)
-        : cell === '#' ? colors.wall : cell === 'g' ? colors.grass : cell === '~' ? colors.water : colors.ground
-      ctx.fillRect(x * px, y * px, px, px)
-      if (explorerAppearance.value) drawExplorerTexture(ctx, data, cell, x, y, px)
-      if (props.showWarps && cell === 'W') {
-        ctx.strokeStyle = colors.warp
-        ctx.lineWidth = Math.max(1, Math.floor(px / 4))
-        ctx.strokeRect(x * px + 1, y * px + 1, Math.max(1, px - 2), Math.max(1, px - 2))
+  if (explorerAppearance.value && authenticTexture.value) {
+    drawGen1TextureMap(ctx, authenticTexture.value, px)
+    if (props.showWarps) {
+      for (const warp of data.warps || []) {
+        const x = Number(warp.x)
+        const y = Number(warp.y)
+        if (x < 0 || y < 0 || x >= width || y >= height) continue
+        const radius = Math.max(1.5, px * 0.12)
+        ctx.fillStyle = 'rgba(214, 167, 255, 0.72)'
+        ctx.beginPath()
+        ctx.arc((x + 0.5) * px, (y + 0.5) * px, radius, 0, Math.PI * 2)
+        ctx.fill()
+      }
+    }
+  } else {
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const cell = cellAt(data, x, y)
+        ctx.fillStyle = explorerAppearance.value
+          ? explorerFill(data, cell, x, y)
+          : cell === '#' ? colors.wall : cell === 'g' ? colors.grass : cell === '~' ? colors.water : colors.ground
+        ctx.fillRect(x * px, y * px, px, px)
+        if (explorerAppearance.value) drawExplorerTexture(ctx, data, cell, x, y, px)
+        if (props.showWarps && cell === 'W') {
+          ctx.strokeStyle = colors.warp
+          ctx.lineWidth = Math.max(1, Math.floor(px / 4))
+          ctx.strokeRect(x * px + 1, y * px + 1, Math.max(1, px - 2), Math.max(1, px - 2))
+        }
       }
     }
   }
@@ -492,6 +516,32 @@ function draw(): void {
         drawDebugText(ctx, `@${playerX},${playerY}`, (playerX + 0.5) * px, (playerY + 0.5) * px, px)
       }
     }
+  }
+}
+
+
+async function loadTexture(): Promise<void> {
+  const id = ++textureSerial
+  authenticTexture.value = null
+  textureError.value = ''
+  if (!explorerAppearance.value) {
+    textureLoading.value = false
+    return
+  }
+
+  textureLoading.value = true
+  try {
+    const next = await loadGen1TextureMap(Number(props.map || 0))
+    if (id !== textureSerial) return
+    authenticTexture.value = next
+    requestAnimationFrame(draw)
+  } catch (cause) {
+    if (id !== textureSerial) return
+    authenticTexture.value = null
+    textureError.value = cause instanceof Error ? cause.message : 'Authentic texture unavailable'
+    requestAnimationFrame(draw)
+  } finally {
+    if (id === textureSerial) textureLoading.value = false
   }
 }
 
@@ -594,7 +644,14 @@ function syncAtlasURL(): void {
   history.replaceState(null, '', url)
 }
 
-watch(() => props.map, () => { void loadMap() }, { immediate: true })
+watch(() => props.map, () => {
+  void loadMap()
+  void loadTexture()
+}, { immediate: true })
+watch(() => props.appearance, (appearance) => {
+  if (appearance === 'explorer') void loadTexture()
+  else authenticTexture.value = null
+})
 watch([
   () => props.x,
   () => props.y,
@@ -606,6 +663,7 @@ watch([
   () => props.showWarps,
   () => props.showPois,
   () => props.appearance,
+  () => authenticTexture.value,
   () => debugEnabled.value,
   () => atlasMode.value
 ], () => requestAnimationFrame(draw), { deep: true })
@@ -636,6 +694,8 @@ onUnmounted(() => {
         <strong class="truncate text-[11px] text-white">{{ friendlyMapLabel(map) }}</strong>
         <span v-if="debugEnabled" class="shrink-0 font-mono text-[9px] text-slate-600">0x{{ hexByte(map) }}</span>
         <span v-if="!atlasMode && currentConnections.length" class="hidden truncate text-[10px] text-slate-500 sm:inline">{{ currentConnections.length }} connected exit{{ currentConnections.length === 1 ? '' : 's' }}</span>
+        <span v-if="explorerAppearance && !atlasMode && authenticTexture" class="hidden rounded-full bg-emerald-300/8 px-2 py-0.5 text-[9px] font-semibold text-emerald-100 ring-1 ring-emerald-300/15 sm:inline">Decomp art</span>
+        <span v-else-if="explorerAppearance && !atlasMode && textureLoading" class="hidden text-[9px] text-slate-600 sm:inline">Loading map art…</span>
         <span v-else-if="!atlasMode && connections.length" class="hidden truncate text-[10px] text-slate-500 sm:inline">edges: {{ connections.join(' · ') }}</span>
       </div>
       <div class="flex items-center gap-1">
@@ -725,6 +785,7 @@ onUnmounted(() => {
       </div>
       <div v-if="loading" class="pointer-events-none absolute right-1.5 bottom-1.5 bg-black/70 px-1.5 py-0.5 text-[10px] text-[var(--poke-muted)]">Loading map…</div>
       <div v-else-if="error" class="pointer-events-none absolute right-1.5 bottom-1.5 max-w-[80%] bg-[#352529] px-1.5 py-0.5 text-[10px] text-[#e4b5b7]">{{ error }}</div>
+      <div v-else-if="explorerAppearance && textureError" class="pointer-events-none absolute right-1.5 bottom-1.5 max-w-[80%] rounded bg-black/70 px-1.5 py-0.5 text-[9px] text-slate-500" :title="textureError">Procedural fallback</div>
     </div>
 
     <div v-if="interactive && !atlasMode" class="flex flex-wrap items-center gap-1.5 border-t border-white/10 bg-black/20 px-2.5 py-2 text-[10px] text-slate-500">

@@ -40,3 +40,16 @@ test('Pallet Town exposes runless people and signs', () => {
   assert.ok(pallet.pois.some((poi) => poi.kind === 'npc' && poi.label === 'Oak'))
   assert.ok(pallet.pois.some((poi) => poi.kind === 'sign'))
 })
+
+
+test('render metadata stays aligned with the vendored decomp headers', () => {
+  const pallet = byID.get(0x00)
+  assert.ok(pallet)
+  assert.equal(pallet.sourceName, 'PalletTown')
+  assert.equal(pallet.tileset, 'OVERWORLD')
+
+  const route1 = [...byID.values()].find((map) => map.name === 'ROUTE_1')
+  assert.ok(route1)
+  assert.equal(route1.sourceName, 'Route1')
+  assert.equal(route1.tileset, 'OVERWORLD')
+})
