@@ -30,6 +30,23 @@ func TestControlPlaneMigrationCoversDurableSources(t *testing.T) {
 	}
 }
 
+func TestControlPlaneMigrationMakesFarmDeploymentDynamic(t *testing.T) {
+	for _, want := range []string{
+		"discover_model BOOLEAN",
+		"is_default BOOLEAN",
+		"endpoint_token_env TEXT",
+		"max_parallel_workers INTEGER",
+		"WHERE id='qwen38-27b-7900'",
+		"model_id=''",
+		"api_model=''",
+		"max_parallel_workers=4",
+	} {
+		if !strings.Contains(controlPlaneMigration002, want) {
+			t.Fatalf("migration 2 missing %q", want)
+		}
+	}
+}
+
 func TestSanitizeFinishReportKeepsMetadataNotPayloadBytes(t *testing.T) {
 	in := farm.FinishReport{
 		RunID: "run-1", SaveState: []byte("state"), FramePNG: []byte("png"),
