@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/maestroi/pokepilot/game"
+	"github.com/maestroi/pokepilot/gen1"
 	yellowrom "github.com/maestroi/pokepilot/yellow/rom"
 	"github.com/maestroi/pokepilot/yellow/sym"
 )
@@ -46,7 +47,8 @@ func (*Profile) Symbols() game.SymbolTable {
 
 func (*Profile) Features() game.ProfileFeatures {
 	return game.ProfileFeatures{
-		game.FeatureMapParsing: true,
+		game.FeatureMapParsing:      true,
+		game.FeatureSemanticSpecies: true,
 	}
 }
 
@@ -62,10 +64,11 @@ func (parser) MapName(rawMapID uint16) (string, bool) {
 	return name, name != ""
 }
 
-func (parser) Species(uint16) (game.SpeciesID, bool) {
-	// Species/table parsing is intentionally deferred until the Yellow ROM data
-	// adapter is implemented. Do not silently reuse Red table assumptions here.
-	return "", false
+func (parser) Species(rawSpecies uint16) (game.SpeciesID, bool) {
+	if rawSpecies > 0xff {
+		return "", false
+	}
+	return gen1.Species(uint8(rawSpecies))
 }
 
 func (*Profile) DecodeObservation(reader game.MemoryReader, _ []byte) (game.ProfileObservation, error) {
