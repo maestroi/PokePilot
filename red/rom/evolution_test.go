@@ -92,7 +92,6 @@ func hasEvo(evos []Evolution, from, to, method uint8) bool {
 	return false
 }
 
-
 func TestLevelUpMovesReadsMoveHalfAfterEvolutions(t *testing.T) {
 	romData := make([]byte, 0x3C000)
 	base, err := bankedOffset(evosMovesBank, evosMovesAddr)
