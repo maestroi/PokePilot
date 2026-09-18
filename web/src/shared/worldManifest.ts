@@ -22,6 +22,8 @@ export interface WorldMapMeta {
   name: string
   width: number
   height: number
+  sourceName: string | null
+  tileset: string | null
   x?: number
   y?: number
   connections: readonly WorldConnection[]
