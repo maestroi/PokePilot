@@ -54,7 +54,7 @@ func TestExperimentGeneratesMatchedDeploymentRuns(t *testing.T) {
 	h := modelExperimentHTTPHandler(w, w.Handler())
 
 	create := requestJSON(t, h, http.MethodPost, "/v1/experiments", farm.ExperimentRequest{
-		Name: "brock-27b-v-4b", Goal: "Earn the Boulder Badge.", Starter: "squirtle", Seeds: []int64{101, 202},
+		Name: "brock-27b-v-4b", Game: "pokemon-red", Goal: "Earn the Boulder Badge.", Starter: "squirtle", Seeds: []int64{101, 202},
 		ArmA: farm.ExperimentArm{Name: "27B", Deployment: "qwen-27b-7900"}, ArmB: farm.ExperimentArm{Name: "4B", Deployment: "qwen-4b-4090"},
 		PlayStyle: "speedrunner", RiskTolerance: "balanced", WildEncounters: "flee", ReasoningEffort: "medium", FPS: 0, MaxRounds: 30, MaxFrames: 500000,
 	})
@@ -90,6 +90,9 @@ func TestExperimentGeneratesMatchedDeploymentRuns(t *testing.T) {
 	var spec farm.Spec
 	if err := json.Unmarshal(lease.Body.Bytes(), &spec); err != nil {
 		t.Fatal(err)
+	}
+	if spec.Game != "pokemon-red" {
+		t.Fatalf("leased game = %q, want pokemon-red", spec.Game)
 	}
 	if spec.LLMDeployment == "" || spec.Inference == nil || spec.Inference.DeploymentID != spec.LLMDeployment {
 		t.Fatalf("leased spec missing inference identity: %#v", spec)

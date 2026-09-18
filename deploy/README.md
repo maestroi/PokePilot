@@ -45,6 +45,17 @@ are owned by `pokemodelhost`; the wall waits until that host reports `ready`
 before handing a runner lease, and it will not switch models while a lease is
 active.
 
+Paired experiments also carry an explicit comparability identity. `make farm-up`
+derives the mounted Pokémon Red ROM SHA-256 and a deterministic hash of the
+runtime/prompt-generating Go sources, and passes both to PokéWall. If
+`pokemon_blue.gb` is present in `POKEPILOT_ROM_DIR`, its SHA-256 is derived
+separately. Override any of these with
+`POKEPILOT_ROM_SHA256_POKEMON_RED`,
+`POKEPILOT_ROM_SHA256_POKEMON_BLUE`, or `POKEPILOT_PROMPT_SHA256` in
+`.env` / `~/.config/pokepilot/env`. Missing or mismatched identities do not
+silently enter benchmark totals: the experiment UI marks those seed pairs
+non-comparable and excludes them from aggregates.
+
 The existing `llm_profile` wire values remain the compatibility adapter for
 queued/history runs and for installations with no registry:
 

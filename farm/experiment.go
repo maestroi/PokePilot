@@ -14,6 +14,7 @@ type ExperimentRequest struct {
 	Name            string        `json:"name"`
 	ArmA            ExperimentArm `json:"arm_a"`
 	ArmB            ExperimentArm `json:"arm_b"`
+	Game            string        `json:"game,omitempty"`
 	Goal            string        `json:"goal"`
 	Starter         string        `json:"starter,omitempty"`
 	Seeds           []int64       `json:"seeds,omitempty"`
@@ -42,6 +43,7 @@ type ComparableRunConfig struct {
 	GitRevision        string `json:"git_revision,omitempty"`
 	ROMIdentity        string `json:"rom_identity,omitempty"`
 	PromptIdentity     string `json:"prompt_identity,omitempty"`
+	Game               string `json:"game,omitempty"`
 	Seed               int64  `json:"seed"`
 	Starter            string `json:"starter,omitempty"`
 	Goal               string `json:"goal"`

@@ -55,6 +55,13 @@ services:
     environment:
       POKEPILOT_MODEL_REGISTRY: /etc/pokepilot/models.json
       POKEPILOT_MODELHOST_TOKEN: ${POKEPILOT_MODELHOST_TOKEN:-}
+      # Paired benchmarks use these immutable identities to decide whether
+      # two arms are actually comparable. Per-game hashes win over the
+      # legacy generic hash so Red/Blue experiments cannot share the wrong ROM.
+      POKEPILOT_ROM_SHA256: ${POKEPILOT_ROM_SHA256:-}
+      POKEPILOT_ROM_SHA256_POKEMON_RED: ${POKEPILOT_ROM_SHA256_POKEMON_RED:-}
+      POKEPILOT_ROM_SHA256_POKEMON_BLUE: ${POKEPILOT_ROM_SHA256_POKEMON_BLUE:-}
+      POKEPILOT_PROMPT_SHA256: ${POKEPILOT_PROMPT_SHA256:-}
     configs:
       - source: model_registry
         target: /etc/pokepilot/models.json
