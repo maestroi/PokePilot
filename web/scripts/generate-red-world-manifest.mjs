@@ -42,11 +42,12 @@ for (const line of constants.split(/\r?\n/)) {
 
 for (const file of fs.readdirSync(headersDir).filter((name) => name.endsWith('.asm'))) {
   const source = fs.readFileSync(path.join(headersDir, file), 'utf8')
-  const header = source.match(/map_header\s+([^,\s]+),\s*([A-Z0-9_]+),/)
+  const header = source.match(/map_header\s+([^,\s]+),\s*([A-Z0-9_]+),\s*([A-Z0-9_]+)/)
   if (!header) continue
   const map = mapsByName.get(header[2])
   if (!map) continue
   map.sourceName = header[1]
+  map.tileset = header[3]
   mapsBySourceName.set(header[1], map)
 
   for (const line of source.split(/\r?\n/)) {
@@ -187,6 +188,8 @@ const manifest = [...mapsByID.values()]
       name: map.name,
       width: map.width,
       height: map.height,
+      sourceName: map.sourceName || null,
+      tileset: map.tileset || null,
       ...(position ? position : {}),
       connections: map.connections,
       pois: map.pois
