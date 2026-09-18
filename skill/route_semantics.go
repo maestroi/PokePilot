@@ -53,9 +53,25 @@ const (
 	// it on foot-collision coordinates the static block map does not
 	// encode. The real border crossing into Saffron is the plain map
 	// connection declared on both headers.
+	//
+	// Only the Saffron-facing half of each guardhouse is a route gate. The
+	// outside-facing half must stay routable while the drink flag is absent:
+	// OpenSaffronGate deliberately enters Route 7's west half, walks to the
+	// trigger at x=3, and gives the guard the drink from there. Treating every
+	// route<->guardhouse warp as gated makes the prerequisite impossible to
+	// satisfy because the skill cannot even enter the room that owns it.
 	route5GateMap uint8 = 0x46
 	route6GateMap uint8 = 0x49
 	route8GateMap uint8 = 0x4F
+
+	route5SaffronWarpY     uint8 = 33
+	route5GateSaffronWarpY uint8 = 5
+	route6SaffronWarpY     uint8 = 1
+	route6GateSaffronWarpY uint8 = 0
+	route7SaffronWarpX     uint8 = 18
+	route7GateSaffronWarpX uint8 = 5
+	route8SaffronWarpX     uint8 = 1
+	route8GateSaffronWarpX uint8 = 0
 
 	ceruleanTrashedHouseMap        uint8 = 0x3e
 	ceruleanTrashedHouseFrontWarpX uint8 = 27
@@ -151,6 +167,32 @@ func semanticTransition(id string, edge world.Edge, requires ...gameruntime.Capa
 // redRouteTransitionForEdge maps representative existing Red gates onto the
 // portable transition model. The router never sees these map ids; they are
 // adapter facts attached to ordinary geometric edges.
+func saffronGuardhouseCrossingEdge(edge world.Edge) bool {
+	if edge.Kind != world.EdgeWarp {
+		return false
+	}
+	switch {
+	case edge.From == semanticRoute5Map && edge.To == route5GateMap:
+		return edge.WarpY == route5SaffronWarpY
+	case edge.From == route5GateMap && edge.To == semanticRoute5Map:
+		return edge.WarpY == route5GateSaffronWarpY
+	case edge.From == semanticRoute6Map && edge.To == route6GateMap:
+		return edge.WarpY == route6SaffronWarpY
+	case edge.From == route6GateMap && edge.To == semanticRoute6Map:
+		return edge.WarpY == route6GateSaffronWarpY
+	case edge.From == semanticRoute7Map && edge.To == route7GateMap:
+		return edge.WarpX == route7SaffronWarpX
+	case edge.From == route7GateMap && edge.To == semanticRoute7Map:
+		return edge.WarpX == route7GateSaffronWarpX
+	case edge.From == semanticRoute8Map && edge.To == route8GateMap:
+		return edge.WarpX == route8SaffronWarpX
+	case edge.From == route8GateMap && edge.To == semanticRoute8Map:
+		return edge.WarpX == route8GateSaffronWarpX
+	default:
+		return false
+	}
+}
+
 func redRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, bool) {
 	if transition, ok := redAuditedRouteTransitionForEdge(edge); ok {
 		return transition, true
@@ -222,16 +264,11 @@ func redRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, bool) {
 		pair(semanticSaffronCityMap, semanticRoute6Map),
 		pair(semanticSaffronCityMap, semanticRoute7Map),
 		pair(semanticSaffronCityMap, semanticRoute8Map),
-		pair(route5GateMap, semanticRoute5Map),
-		pair(route6GateMap, semanticRoute6Map),
-		pair(route7GateMap, semanticRoute7Map),
-		pair(route8GateMap, semanticRoute8Map):
-		// Both the route's plain border connection into Saffron and its
-		// guardhouse's interior floor are ordinary geometry; the guard
-		// standing in the doorway is the precondition, not the router's
-		// business to route around by picking a longer real edge. Without
-		// the drink flag this must fail closed as a missing capability, not
-		// walk the agent up to the guard's dialogue to discover it live.
+		saffronGuardhouseCrossingEdge(edge):
+		// The route's plain border connection into Saffron and only the
+		// Saffron-facing guardhouse warps are gated by the drink. The outside
+		// guardhouse entrance stays available so the progression skill can enter
+		// the room and trigger the guard script that satisfies this prerequisite.
 		t := semanticTransition("red:saffron_guard_drink", edge, capCanEnterSaffron)
 		t.Gate = true
 		return t, true
