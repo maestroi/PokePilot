@@ -163,6 +163,8 @@ type ProfileObservation struct {
 	Badges       []string
 	Money        uint32
 	RespawnPlace PlaceID
+	PokedexOwned []SpeciesID
+	PokedexSeen  []SpeciesID
 	Events       []string
 	Story        ProgressState
 	BlackedOut   bool
