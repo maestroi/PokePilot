@@ -25,6 +25,7 @@ var currentRunPolicy struct {
 	playStyle      string
 	riskTolerance  string
 	wildEncounters string
+	inference      *InferenceIdentity
 }
 
 func rememberRunPolicyValue(store *sync.Map, runID, value string) {
@@ -114,6 +115,27 @@ func CurrentWildEncounters() string {
 	currentRunPolicy.RLock()
 	defer currentRunPolicy.RUnlock()
 	return currentRunPolicy.wildEncounters
+}
+
+func CurrentInference() *InferenceIdentity {
+	currentRunPolicy.RLock()
+	defer currentRunPolicy.RUnlock()
+	if currentRunPolicy.inference == nil {
+		return nil
+	}
+	copy := *currentRunPolicy.inference
+	return &copy
+}
+
+func setCurrentInference(identity *InferenceIdentity) {
+	currentRunPolicy.Lock()
+	if identity == nil {
+		currentRunPolicy.inference = nil
+	} else {
+		copy := *identity
+		currentRunPolicy.inference = &copy
+	}
+	currentRunPolicy.Unlock()
 }
 
 func setCurrentRunPolicy(playStyle, riskTolerance, wildEncounters string) {
@@ -207,6 +229,7 @@ func (s *Spec) UnmarshalJSON(data []byte) error {
 	RememberWildEncounters(s.RunID, in.WildEncounters)
 	rememberRunGoalProvided(s.RunID, goalProvided)
 	setCurrentRunPolicy(in.PlayStyle, in.RiskTolerance, in.WildEncounters)
+	setCurrentInference(s.Inference)
 	if !goalProvided {
 		ApplyPlayStyleDefaultGoal(s)
 	}
