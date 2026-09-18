@@ -30,6 +30,15 @@ const (
 
 	saffronGateInteractionBudget = 8000
 	saffronGateTravelBattles     = 80
+
+	// vendingDeliverySettle covers VendingMachineMenu's post-purchase delay:
+	// 60 iterations of a 2-frame DelayFrames "brrrr" loop (pokered/engine/
+	// events/vending_machine.asm .playDeliverySound) run before the menu box
+	// is replaced by the delivery text. talkSettle (40 frames) is well short
+	// of that ~120-frame animation, so polling after only talkSettle still
+	// finds the same vending menu on screen and the fail-closed guard in
+	// driveSaffronInteraction misreads it as an unexpected menu intrusion.
+	vendingDeliverySettle = 150
 )
 
 // SaffronGateOpen is the positive story postcondition for the first phase of
@@ -142,9 +151,9 @@ func buySaffronGuardDrink(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		return fmt.Errorf("skill: OpenSaffronGate: select FRESH WATER: %w", err)
 	}
 	// SelectMenuItem proves the cursor before A but intentionally returns as
-	// soon as the confirm tap is sent. Give the vending handler one ordinary
-	// settle window to consume that A before interpreting any remaining menu.
-	m.StepFrames(talkSettle)
+	// soon as the confirm tap is sent. Give the vending handler the full
+	// delivery-animation settle window before interpreting any remaining menu.
+	m.StepFrames(vendingDeliverySettle)
 	if err := driveSaffronInteraction(m, saffronGateInteractionBudget, func(mm *state.Mem) bool {
 		_, count := bagEntry(mm, freshWaterItem)
 		return count > 0 && state.Controllable(mm)
