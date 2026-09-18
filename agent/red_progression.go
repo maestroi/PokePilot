@@ -110,7 +110,7 @@ func redProgressionObjectives(obs Observation) []Objective {
 			Note:     "(deliver Oak's parcel and acquire the Pokedex)",
 		})
 	}
-	if obs.Story.Has(redProgressPokedexAcquired) && !obs.Story.Has(redProgressBoulderBadge) {
+	if obs.Story.Has(redProgressPokedexAcquired) && !hasBadge(obs, state.BadgeBoulder) {
 		out = append(out, Objective{
 			Kind:     KindProgress,
 			Progress: redProgressBoulderBadge,
