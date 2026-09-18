@@ -84,7 +84,6 @@ func TestDiscoverableDeploymentAllowsEndpointOnlyIdentity(t *testing.T) {
 	}
 }
 
-
 func TestUpsertAndDeleteModelDeploymentJSON(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "models.json")
 	if err := os.WriteFile(path, []byte(`{"deployments":[]}`), 0o644); err != nil {
