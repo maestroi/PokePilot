@@ -94,10 +94,19 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 	res.ProgressEarly = &early
 	lastUnroutable := ""
 
+runLoop:
 	for round := 1; ; round++ {
 		select {
 		case <-budget.Cancel:
-			return Result{Stop: StopBudget, Rounds: round - 1}
+			res.Stop = StopBudget
+			res.Rounds = round - 1
+			if ring != nil {
+				if err := ring.writeBoundary(m, round, "cancel", known, coverage, intent, intentAge, engine.planning.Plan); err != nil {
+					res.Stop = StopError
+					res.Err = fmt.Errorf("agent: Run: cancel checkpoint round %d: %w", round, err)
+				}
+			}
+			break runLoop
 		default:
 		}
 
