@@ -81,3 +81,15 @@ func TestDetectUnsupportedROMIncludesFingerprint(t *testing.T) {
 		t.Fatalf("ROM identity = %#v", info)
 	}
 }
+
+func TestGen1ProfilesShareSemanticBootBoundary(t *testing.T) {
+	for _, p := range []game.GameProfile{
+		redprofile.New(),
+		blueprofile.New(),
+		yellowprofile.New(),
+	} {
+		if _, ok := p.(game.BootProfile); !ok {
+			t.Errorf("%s@%s does not implement game.BootProfile", p.ID(), p.Revision())
+		}
+	}
+}

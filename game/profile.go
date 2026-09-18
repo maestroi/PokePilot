@@ -74,6 +74,34 @@ type MemoryReader interface {
 	PeekInto(addr uint16, dst []byte)
 }
 
+// BootState is the semantic fresh-game state used by the shared boot driver.
+// Concrete profiles own every RAM address and version-specific "ready" map
+// decision; generic code only sees menu/player concepts.
+type BootState struct {
+	Ready           bool
+	Controllable    bool
+	NativeMapID     uint16
+	MapName         string
+	X, Y            uint8
+	MapWidth        uint8
+	MapHeight       uint8
+	FontLoaded      uint8
+	NameMenu        bool
+	CurrentMenuItem uint8
+	MaxMenuItem     uint8
+	PresetNames     []string
+	PlayerName      string
+	RivalName       string
+}
+
+// BootProfile is an optional profile capability for driving a fresh cartridge
+// to normal overworld control. It deliberately takes only MemoryReader so the
+// game package remains independent of the emulator/input implementation.
+type BootProfile interface {
+	GameProfile
+	DecodeBootState(MemoryReader) BootState
+}
+
 // MemorySymbol is a semantic address owned by a concrete game/revision.
 // Bank is zero for fixed/DMG memory and may be non-zero for banked profiles.
 type MemorySymbol struct {

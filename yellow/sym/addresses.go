@@ -25,12 +25,26 @@ const (
 	CurMap             uint16 = 0xD35D // wCurMap
 	YCoord             uint16 = 0xD360 // wYCoord
 	XCoord             uint16 = 0xD361 // wXCoord
+	CurMapHeight       uint16 = 0xD367 // wCurMapHeight
+	CurMapWidth        uint16 = 0xD368 // wCurMapWidth
+	PlayerName         uint16 = 0xD157 // wPlayerName
+	RivalName          uint16 = 0xD349 // wRivalName
 	SpritePlayerFacing uint16 = 0xC109 // wSpritePlayerStateData1 + 9
 
 	// Party. PartyMon1 is a packed 44-byte Gen-I party-mon struct.
 	PartyCount   uint16 = 0xD162 // wPartyCount
 	PartyMon1    uint16 = 0xD16A // wPartyMons / first party mon
 	PartyMonSize uint16 = 0x2C
+
+	// Menus/text/control. These stay profile-owned even though their semantics
+	// are shared with Red/Blue.
+	TileMap         uint16 = 0xC3A0 // wTileMap
+	TileMapLen             = 20 * 18
+	CurrentMenuItem uint16 = 0xCC26 // wCurrentMenuItem
+	MaxMenuItem     uint16 = 0xCC28 // wMaxMenuItem
+	FontLoaded      uint16 = 0xCFC4 // wFontLoaded
+	WalkCounter     uint16 = 0xCFC5 // wWalkCounter
+	JoyIgnore       uint16 = 0xCD6B // wJoyIgnore
 
 	// Battle.
 	IsInBattle uint16 = 0xD056 // wIsInBattle
