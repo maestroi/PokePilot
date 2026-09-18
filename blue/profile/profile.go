@@ -41,6 +41,9 @@ func (*Profile) Detect(info game.ROMInfo) bool { return info.SHA1 == ROMSHA1 }
 func (p *Profile) Symbols() game.SymbolTable      { return p.engine.Symbols() }
 func (p *Profile) Features() game.ProfileFeatures { return p.engine.Features() }
 func (p *Profile) ROMParser() game.ROMParser      { return p.engine.ROMParser() }
+func (p *Profile) DecodeBootState(r game.MemoryReader) game.BootState {
+	return p.engine.DecodeBootState(r)
+}
 func (p *Profile) DecodeObservation(r game.MemoryReader, rom []byte) (game.ProfileObservation, error) {
 	return p.engine.DecodeObservation(r, rom)
 }
