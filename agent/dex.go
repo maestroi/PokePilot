@@ -57,9 +57,10 @@ type DexEntry struct {
 // DexCatalog is the deterministic Dex-mode world model: owned species,
 // remaining local targets, and species this save cannot produce.
 type DexCatalog struct {
-	Owned       []DexEntry `json:"owned"`
-	Targets     []DexEntry `json:"targets"`
-	Unavailable []DexEntry `json:"unavailable"`
+	Owned            []DexEntry `json:"owned"`
+	Targets          []DexEntry `json:"targets"`
+	Unavailable      []DexEntry `json:"unavailable"`
+	IncompleteReason string     `json:"incomplete_reason,omitempty"`
 }
 
 // ProjectPokedex turns Red Pokédex numbers into semantic species IDs via
