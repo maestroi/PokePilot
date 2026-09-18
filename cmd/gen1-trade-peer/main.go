@@ -29,7 +29,7 @@ func main() {
 	peerID := flag.String("peer-id", "virtual-trader", "broker peer id prefix")
 	gameID := flag.String("game", "pokemon-red", "game metadata: pokemon-red or pokemon-blue")
 	runID := flag.String("run-id", "", "optional PokePilot run id for provenance metadata")
-	policy := flag.String("policy", "scripted", "trade policy: scripted, tradeback, version-assisted, or pokedex")
+	policy := flag.String("policy", "scripted", "trade policy: scripted, tradeback, version-assisted, pokedex, or sandbox")
 	species := flag.String("species", "pidgey", "species offered in virtual slot 1")
 	level := flag.Int("level", 20, "level of the generated offered Pokemon")
 	trainerName := flag.String("trainer-name", "POKEPILOT", "virtual trainer name")
@@ -86,6 +86,9 @@ func main() {
 	}
 
 	semanticSpecies := game.SpeciesID(game.CanonicalID(*species))
+	if err := validatePolicySpecies(*policy, semanticSpecies); err != nil {
+		log.Fatal(err)
+	}
 	mon, err := redtrade.SyntheticMon(romData, semanticSpecies, uint8(*level), 0x504b)
 	if err != nil {
 		log.Fatalf("build offered Pokemon: %v", err)
@@ -133,13 +136,21 @@ func main() {
 
 func validatePolicy(policy string) error {
 	switch strings.ToLower(strings.TrimSpace(policy)) {
-	case "scripted", "tradeback", "version-assisted", "pokedex":
+	case "scripted", "tradeback", "version-assisted", "pokedex", "sandbox":
 		return nil
-	case "sandbox":
-		return errors.New("sandbox/Mew injection is intentionally not part of the v1.2.0 virtual-trader slice")
 	case "strict":
 		return errors.New("strict policy requires a real second game peer, not a synthetic virtual trader")
 	default:
 		return fmt.Errorf("unknown trade policy %q", policy)
 	}
+}
+
+func validatePolicySpecies(policy string, species game.SpeciesID) error {
+	if err := validatePolicy(policy); err != nil {
+		return err
+	}
+	if species == "mew" && !strings.EqualFold(strings.TrimSpace(policy), "sandbox") {
+		return errors.New("Mew requires the explicit sandbox trade policy")
+	}
+	return nil
 }
