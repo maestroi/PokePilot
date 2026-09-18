@@ -122,11 +122,13 @@ Needs Docker Swarm on this machine and `roms/pokemon_red.gb` (or
 `make run-llm`.
 
 ```sh
-make farm-up                 # build + deploy farm, issue adapter, LiteLLM, operator/spectator UIs, and 2 runners
+make farm-up                 # build + deploy farm, issue adapter, LiteLLM, operator/spectator UIs, and 4 runners by default
 # Operator UI: http://localhost:18080/
 # Spectator:   http://localhost:18081/
 make farm-down
 ```
+
+Set `POKEPILOT_RUNNER_REPLICAS` to change the worker-pool size; the default is 4 so a four-slot inference deployment can keep four games in flight. Per-deployment `max_parallel_workers` still caps how many of those workers may share one endpoint.
 
 Override the published ports with `FARM_WALL_PORT` and `FARM_SPECTATOR_PORT`.
 If a hostname is public, route it only to the spectator port; keep the operator
