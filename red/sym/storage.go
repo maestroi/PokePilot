@@ -4,6 +4,13 @@ package sym
 // into WRAM; other boxes live in SRAM until Change Box swaps one into this
 // buffer. These addresses are from pokered.sym / ram/wram.asm.
 const (
+	// Player PC item storage lives in WRAM alongside the active Bill's PC
+	// metadata. The item list is count + (item, quantity) pairs and can hold
+	// 50 distinct stacks (pokered/constants/menu_constants.asm).
+	PCItemCount    uint16 = 0xD53A
+	PCItems        uint16 = 0xD53B
+	PCItemCapacity        = 50
+
 	CurrentBoxNum uint16 = 0xD5A0 // low 7 bits are the active box number
 	BoxCount      uint16 = 0xDA80
 	BoxSpecies    uint16 = 0xDA81
