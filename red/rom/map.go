@@ -3,6 +3,8 @@ package rom
 import (
 	"errors"
 	"fmt"
+
+	"github.com/maestroi/pokepilot/gen1rom"
 )
 
 // ErrInvalidMapID identifies a slot that is not a playable Red map. Unused
@@ -10,8 +12,7 @@ import (
 // successfully and invent incoming warps if treated as real headers.
 var ErrInvalidMapID = errors.New("invalid Red map id")
 
-// Defined by pokered/constants/map_constants.asm. Keep this adapter fact out
-// of generic routing: even a readable header is not evidence a slot is used.
+// Defined by pokered/constants/map_constants.asm.
 func validMapID(id uint8) bool {
 	if id >= 0xf8 {
 		return false
@@ -35,317 +36,61 @@ const (
 	tilesetsAddr          uint16 = 0x47BE
 )
 
-// Warp is a floor tile that teleports the player to another map.
-type Warp struct {
-	X          uint8
-	Y          uint8
-	DestWarpID uint8
-	DestMap    uint8
-}
+type Warp = gen1rom.Warp
+type Sign = gen1rom.Sign
+type Object = gen1rom.Object
+type Connection = gen1rom.Connection
 
-// Sign is a floor tile with a signpost text.
-type Sign struct {
-	X      uint8
-	Y      uint8
-	TextID uint8
-}
-
-// Object is a sprite (NPC, item, or trainer) on the map.
-type Object struct {
-	X        uint8
-	Y        uint8
-	SpriteID uint8
-	Movement uint8
-	Range    uint8
-	TextID   uint8
-
-	// ItemID is set when TextID has the 0x80 (item) bit; zero otherwise.
-	ItemID uint8
-	// TrainerClass and TrainerSet are set when TextID has the 0x40 (trainer)
-	// bit; zero otherwise.
-	TrainerClass uint8
-	TrainerSet   uint8
-}
-
-// Object event movement encodings (constants/map_object_constants.asm).
 const (
-	MovementWalk uint8 = 0xFE // the object patrols its range
-	MovementStay uint8 = 0xFF // the object never leaves its home tile
+	MovementWalk = gen1rom.MovementWalk
+	MovementStay = gen1rom.MovementStay
 )
 
-// Connection links this map to an adjacent map. Dir: 0=north 1=south 2=west 3=east.
-type Connection struct {
-	Dir   uint8
-	MapID uint8
-	// Offset adjusts the coordinate along the seam on arrival (X for
-	// north/south, Y for east/west). Written by the connection macro.
-	Offset int8
-}
+// MapHeader preserves the existing Red API while the shared byte decoder lives
+// in gen1rom. Red still owns valid ids and the pointer-table locations.
+type MapHeader gen1rom.MapHeader
 
-// MapHeader is one map's static header plus its object data.
-type MapHeader struct {
-	ID           uint8
-	Tileset      uint8
-	WidthBlocks  uint8
-	HeightBlocks uint8
-	BlocksAddr   uint16 // banked address of the block list
-	TextsAddr    uint16 // address (map bank) of the text pointer table
-	ScriptAddr   uint16 // address (map bank) of the default map script
-	Bank         uint8
-	BorderBlock  uint8
-	Connections  []Connection
-	Warps        []Warp
-	Signs        []Sign
-	Objects      []Object
-}
-
-// bankedOffset converts a banked address (bank:addr) to a ROM file offset.
 func bankedOffset(bank uint8, addr uint16) (int, error) {
-	if addr >= 0x4000 {
-		return int(bank)*0x4000 + int(addr-0x4000), nil
-	}
-	if bank != 0 {
-		return 0, fmt.Errorf("address %04X in bank %d is below 0x4000", addr, bank)
-	}
-	return int(addr), nil
+	return gen1rom.BankedOffset(bank, addr)
 }
 
-// reader is a bounds-checked cursor over a ROM image.
-type reader struct {
-	rom []byte
-	off int
-}
-
-func (r *reader) byte() (byte, error) {
-	if r.off >= len(r.rom) {
-		return 0, fmt.Errorf("read at offset %d exceeds ROM of %d bytes", r.off, len(r.rom))
-	}
-	b := r.rom[r.off]
-	r.off++
-	return b, nil
-}
-
-func (r *reader) u16() (uint16, error) {
-	if r.off+2 > len(r.rom) {
-		return 0, fmt.Errorf("read at offset %d exceeds ROM of %d bytes", r.off, len(r.rom))
-	}
-	v := uint16(r.rom[r.off]) | uint16(r.rom[r.off+1])<<8
-	r.off += 2
-	return v, nil
-}
-
-func (r *reader) skip(n int) error {
-	if r.off+n > len(r.rom) {
-		return fmt.Errorf("skip %d bytes at offset %d exceeds ROM of %d bytes", n, r.off, len(r.rom))
-	}
-	r.off += n
-	return nil
-}
-
-func mapErr(mapID uint8, err error) error {
-	return fmt.Errorf("map %d: %v", mapID, err)
-}
-
-// ParseMap reads one map header and its object data from the ROM image.
-func ParseMap(rom []byte, mapID uint8) (MapHeader, error) {
-	var h MapHeader
-	h.ID = mapID
-	if !validMapID(mapID) {
-		return h, fmt.Errorf("map %02x: %w", mapID, ErrInvalidMapID)
-	}
-
+func redHeaderRef(rom []byte, mapID uint8) (gen1rom.HeaderRef, error) {
 	bankOff, err := bankedOffset(mapHeaderBanksBank, mapHeaderBanksAddr)
 	if err != nil {
-		return h, mapErr(mapID, err)
+		return gen1rom.HeaderRef{}, err
 	}
 	bankAt := bankOff + int(mapID)
 	if bankAt >= len(rom) {
-		return h, mapErr(mapID, fmt.Errorf("bank table offset %d exceeds ROM of %d bytes", bankAt, len(rom)))
+		return gen1rom.HeaderRef{}, fmt.Errorf("map %02x: bank table offset %d exceeds ROM of %d bytes", mapID, bankAt, len(rom))
 	}
-	h.Bank = rom[bankAt]
+	bank := rom[bankAt]
 
 	ptrOff, err := bankedOffset(mapHeaderPointersBank, mapHeaderPointersAddr)
 	if err != nil {
-		return h, mapErr(mapID, err)
+		return gen1rom.HeaderRef{}, err
 	}
 	ptrAt := ptrOff + int(mapID)*2
 	if ptrAt+2 > len(rom) {
-		return h, mapErr(mapID, fmt.Errorf("header pointer offset %d exceeds ROM of %d bytes", ptrAt, len(rom)))
+		return gen1rom.HeaderRef{}, fmt.Errorf("map %02x: header pointer offset %d exceeds ROM of %d bytes", mapID, ptrAt, len(rom))
 	}
-	ptr := uint16(rom[ptrAt]) | uint16(rom[ptrAt+1])<<8
-
-	headerOff, err := bankedOffset(h.Bank, ptr)
-	if err != nil {
-		return h, mapErr(mapID, err)
-	}
-	if headerOff >= len(rom) {
-		return h, mapErr(mapID, fmt.Errorf("header offset %d exceeds ROM of %d bytes", headerOff, len(rom)))
-	}
-
-	r := &reader{rom: rom, off: headerOff}
-	if h.Tileset, err = r.byte(); err != nil {
-		return h, mapErr(mapID, err)
-	}
-	if h.HeightBlocks, err = r.byte(); err != nil {
-		return h, mapErr(mapID, err)
-	}
-	if h.WidthBlocks, err = r.byte(); err != nil {
-		return h, mapErr(mapID, err)
-	}
-	if h.BlocksAddr, err = r.u16(); err != nil {
-		return h, mapErr(mapID, err)
-	}
-	if h.TextsAddr, err = r.u16(); err != nil { // text pointer table
-		return h, mapErr(mapID, err)
-	}
-	if h.ScriptAddr, err = r.u16(); err != nil { // default map script
-		return h, mapErr(mapID, err)
-	}
-	connFlags, err := r.byte()
-	if err != nil {
-		return h, mapErr(mapID, err)
-	}
-
-	// Connection blocks appear in the order north, south, west, east.
-	for dir, bit := range [4]uint8{0x08, 0x04, 0x02, 0x01} {
-		if connFlags&bit == 0 {
-			continue
-		}
-		dest, err := r.byte()
-		if err != nil {
-			return h, mapErr(mapID, err)
-		}
-		if err := r.skip(6); err != nil {
-			return h, mapErr(mapID, err)
-		}
-		y, err := r.byte()
-		if err != nil {
-			return h, mapErr(mapID, err)
-		}
-		x, err := r.byte()
-		if err != nil {
-			return h, mapErr(mapID, err)
-		}
-		offset := int8(y)
-		if dir < 2 {
-			offset = int8(x)
-		}
-		h.Connections = append(h.Connections, Connection{Dir: uint8(dir), MapID: dest, Offset: offset})
-		if err := r.skip(2); err != nil {
-			return h, mapErr(mapID, err)
-		}
-	}
-
-	objPtr, err := r.u16()
-	if err != nil {
-		return h, mapErr(mapID, err)
-	}
-
-	objOff, err := bankedOffset(h.Bank, objPtr)
-	if err != nil {
-		return h, mapErr(mapID, err)
-	}
-	o := &reader{rom: rom, off: objOff}
-
-	if h.BorderBlock, err = o.byte(); err != nil {
-		return h, mapErr(mapID, err)
-	}
-
-	nWarps, err := o.byte()
-	if err != nil {
-		return h, mapErr(mapID, err)
-	}
-	for i := 0; i < int(nWarps); i++ {
-		var w Warp
-		if w.Y, err = o.byte(); err != nil {
-			return h, mapErr(mapID, err)
-		}
-		if w.X, err = o.byte(); err != nil {
-			return h, mapErr(mapID, err)
-		}
-		if w.DestWarpID, err = o.byte(); err != nil {
-			return h, mapErr(mapID, err)
-		}
-		if w.DestMap, err = o.byte(); err != nil {
-			return h, mapErr(mapID, err)
-		}
-		h.Warps = append(h.Warps, w)
-	}
-
-	nSigns, err := o.byte()
-	if err != nil {
-		return h, mapErr(mapID, err)
-	}
-	for i := 0; i < int(nSigns); i++ {
-		var s Sign
-		if s.Y, err = o.byte(); err != nil {
-			return h, mapErr(mapID, err)
-		}
-		if s.X, err = o.byte(); err != nil {
-			return h, mapErr(mapID, err)
-		}
-		if s.TextID, err = o.byte(); err != nil {
-			return h, mapErr(mapID, err)
-		}
-		h.Signs = append(h.Signs, s)
-	}
-
-	nObjects, err := o.byte()
-	if err != nil {
-		return h, mapErr(mapID, err)
-	}
-	for i := 0; i < int(nObjects); i++ {
-		var obj Object
-		if obj.SpriteID, err = o.byte(); err != nil {
-			return h, mapErr(mapID, err)
-		}
-		if obj.Y, err = o.byte(); err != nil {
-			return h, mapErr(mapID, err)
-		}
-		if obj.X, err = o.byte(); err != nil {
-			return h, mapErr(mapID, err)
-		}
-		if obj.Movement, err = o.byte(); err != nil {
-			return h, mapErr(mapID, err)
-		}
-		if obj.Range, err = o.byte(); err != nil {
-			return h, mapErr(mapID, err)
-		}
-		if obj.TextID, err = o.byte(); err != nil {
-			return h, mapErr(mapID, err)
-		}
-		obj.Y -= 4 // object coordinates are stored with +4 added
-		obj.X -= 4
-		switch {
-		case obj.TextID&0x40 != 0: // trainer entry: class then roster
-			if obj.TrainerClass, err = o.byte(); err != nil {
-				return h, mapErr(mapID, err)
-			}
-			if obj.TrainerSet, err = o.byte(); err != nil {
-				return h, mapErr(mapID, err)
-			}
-		case obj.TextID&0x80 != 0: // item entry: item id
-			if obj.ItemID, err = o.byte(); err != nil {
-				return h, mapErr(mapID, err)
-			}
-		}
-		h.Objects = append(h.Objects, obj)
-	}
-
-	return h, nil
+	addr := uint16(rom[ptrAt]) | uint16(rom[ptrAt+1])<<8
+	return gen1rom.HeaderRef{Bank: bank, Addr: addr}, nil
 }
 
-// Blocks returns the raw block ids for a map: WidthBlocks*HeightBlocks bytes.
-func Blocks(rom []byte, h MapHeader) ([]byte, error) {
-	off, err := bankedOffset(h.Bank, h.BlocksAddr)
+// ParseMap reads one Red/Blue map using the shared Gen-I header/object format.
+func ParseMap(rom []byte, mapID uint8) (MapHeader, error) {
+	if !validMapID(mapID) {
+		return MapHeader{ID: mapID}, fmt.Errorf("map %02x: %w", mapID, ErrInvalidMapID)
+	}
+	ref, err := redHeaderRef(rom, mapID)
 	if err != nil {
-		return nil, mapErr(h.ID, err)
+		return MapHeader{ID: mapID}, err
 	}
-	n := int(h.WidthBlocks) * int(h.HeightBlocks)
-	if off+n > len(rom) {
-		return nil, mapErr(h.ID, fmt.Errorf("block list at offset %d (%d bytes) exceeds ROM of %d bytes", off, n, len(rom)))
-	}
-	out := make([]byte, n)
-	copy(out, rom[off:off+n])
-	return out, nil
+	h, err := gen1rom.ParseMapAt(rom, mapID, ref)
+	return MapHeader(h), err
+}
+
+// Blocks returns the raw block ids for a map.
+func Blocks(rom []byte, h MapHeader) ([]byte, error) {
+	return gen1rom.Blocks(rom, gen1rom.MapHeader(h))
 }
