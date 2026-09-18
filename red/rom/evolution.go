@@ -28,6 +28,14 @@ type Evolution struct {
 	Item   uint8
 }
 
+// LevelUpMove is one move learned at an exact level from the move half of a
+// species' EvosMoves record. Species is Red's internal species index.
+type LevelUpMove struct {
+	Species uint8
+	Level   uint8
+	Move    uint8
+}
+
 // Evolutions walks EvosMovesPointerTable in internal-species order and
 // returns every evolution the ROM declares. MissingNo slots with empty
 // records contribute nothing. This is the only evolution chart Dex mode
@@ -95,4 +103,80 @@ func readEvolutions(romData []byte, off int, from uint8) ([]Evolution, error) {
 		}
 	}
 	return nil, fmt.Errorf("rom: EvosMoves for species %#02x exceeded %d bytes without a terminator", from, maxEvoRecordBytes)
+}
+
+
+// LevelUpMoves returns the exact-level move offers declared in one species'
+// EvosMoves record. The record stores evolution entries first, a zero
+// terminator, then (level, move) pairs and another zero terminator. Keeping
+// this ROM-derived lets callers reason about Rare Candy without guessing
+// whether the next level will open a move-learning prompt.
+func LevelUpMoves(romData []byte, species uint8) ([]LevelUpMove, error) {
+	if species == 0 || int(species) > evosMovesCount {
+		return nil, fmt.Errorf("rom: LevelUpMoves species %#02x out of range 1..%d", species, evosMovesCount)
+	}
+	base, err := bankedOffset(evosMovesBank, evosMovesAddr)
+	if err != nil {
+		return nil, fmt.Errorf("rom: EvosMovesPointerTable: %w", err)
+	}
+	pOff := base + (int(species)-1)*2
+	if pOff+2 > len(romData) {
+		return nil, fmt.Errorf("rom: EvosMovesPointerTable species %#02x exceeds ROM of %d bytes", species, len(romData))
+	}
+	addr := uint16(romData[pOff]) | uint16(romData[pOff+1])<<8
+	if addr == 0 {
+		return nil, nil
+	}
+	off, err := bankedOffset(evosMovesBank, addr)
+	if err != nil {
+		return nil, fmt.Errorf("rom: EvosMoves species %#02x: %w", species, err)
+	}
+
+	// Skip the evolution half, respecting each method's real record width.
+	consumed := 0
+	for {
+		if off >= len(romData) {
+			return nil, fmt.Errorf("rom: EvosMoves for species %#02x ran past ROM before move list", species)
+		}
+		method := romData[off]
+		if method == 0 {
+			off++
+			break
+		}
+		var width int
+		switch method {
+		case EvoLevel, EvoTrade:
+			width = 3
+		case EvoItem:
+			width = 4
+		default:
+			return nil, fmt.Errorf("rom: EvosMoves for species %#02x has unknown method %d", species, method)
+		}
+		if off+width > len(romData) {
+			return nil, fmt.Errorf("rom: EvosMoves evolution for species %#02x is truncated", species)
+		}
+		off += width
+		consumed += width
+		if consumed > maxEvoRecordBytes {
+			return nil, fmt.Errorf("rom: EvosMoves for species %#02x exceeded %d evolution bytes without a terminator", species, maxEvoRecordBytes)
+		}
+	}
+
+	out := make([]LevelUpMove, 0, 16)
+	const maxLevelUpEntries = 64
+	for i := 0; i < maxLevelUpEntries; i++ {
+		if off >= len(romData) {
+			return nil, fmt.Errorf("rom: level-up moves for species %#02x ran past ROM", species)
+		}
+		level := romData[off]
+		if level == 0 {
+			return out, nil
+		}
+		if off+2 > len(romData) {
+			return nil, fmt.Errorf("rom: level-up move for species %#02x is truncated", species)
+		}
+		out = append(out, LevelUpMove{Species: species, Level: level, Move: romData[off+1]})
+		off += 2
+	}
+	return nil, fmt.Errorf("rom: level-up moves for species %#02x exceeded %d entries without a terminator", species, maxLevelUpEntries)
 }
