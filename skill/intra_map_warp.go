@@ -155,7 +155,7 @@ func traverseIntraMapWarp(m *emu.Emu, romData []byte, e world.Edge) error {
 	err = walkAroundAvoidingObjects(func() error { return movementInterruption(m) }, m, h,
 		func(blocked map[[2]int]bool) ([]world.Step, error) {
 			x, y := playerXY(m)
-			_, _, steps, p, err := warpTarget(h, e, grid, int(x), int(y), blocked, romData)
+			_, _, steps, p, err := warpTarget(h, e, grid, int(x), int(y), blocked, nil, romData)
 			if err != nil {
 				unwalkable = fmt.Errorf("skill: traverseIntraMapWarp: no reachable source pad from (%d,%d) on map %02x: %v: %w",
 					x, y, e.From, err, ErrLegUnwalkable)

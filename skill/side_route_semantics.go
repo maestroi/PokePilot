@@ -107,7 +107,7 @@ func (x *redRouteTransitionExecutor) executeCutWarpApproach(edge world.Edge) (wo
 		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Cut warp approach build map %02x: %w", edge.From, err)
 	}
 	sx, sy := playerXY(x.m)
-	if _, _, _, _, err := warpTarget(h, edge, grid, int(sx), int(sy), spriteBlockers(x.m), x.romData); err == nil {
+	if _, _, _, _, err := warpTarget(h, edge, grid, int(sx), int(sy), spriteBlockers(x.m), nil, x.romData); err == nil {
 		return world.TransitionExecutionResult{}, nil
 	}
 	opened, err := cutThroughReachableTree(x.m, x.romData)
@@ -145,10 +145,10 @@ func (x *redRouteTransitionExecutor) executeSurfWarpApproach(edge world.Edge) (w
 	}
 	sx, sy := playerXY(x.m)
 	blocked := spriteBlockers(x.m)
-	if _, _, _, _, err := warpTarget(h, edge, land, int(sx), int(sy), blocked, x.romData); err == nil {
+	if _, _, _, _, err := warpTarget(h, edge, land, int(sx), int(sy), blocked, nil, x.romData); err == nil {
 		return world.TransitionExecutionResult{}, nil
 	}
-	_, _, steps, _, err := warpTarget(h, edge, water, int(sx), int(sy), blocked, x.romData)
+	_, _, steps, _, err := warpTarget(h, edge, water, int(sx), int(sy), blocked, nil, x.romData)
 	if err != nil {
 		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf warp approach cannot reach %02x even in water mode: %w", edge.To, err)
 	}

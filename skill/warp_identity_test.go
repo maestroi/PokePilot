@@ -25,7 +25,7 @@ func TestWarpTargetPreservesDestinationLanding(t *testing.T) {
 		t.Fatal(err)
 	}
 	e := world.Edge{Kind: world.EdgeWarp, From: 0x3d, To: 0x3c, WarpX: 5, WarpY: 7}
-	x, y, _, _, err := warpTarget(h, e, g, 21, 17, nil, data)
+	x, y, _, _, err := warpTarget(h, e, g, 21, 17, nil, nil, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +52,7 @@ func TestWarpTargetRoutesAroundOtherWarps(t *testing.T) {
 		t.Fatal(err)
 	}
 	e := world.Edge{Kind: world.EdgeWarp, From: 0x3b, To: 0x3c, WarpX: 5, WarpY: 5}
-	_, _, steps, _, err := warpTarget(h, e, g, 14, 35, nil, data)
+	_, _, steps, _, err := warpTarget(h, e, g, 14, 35, nil, nil, data)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -15,7 +15,7 @@ import (
 // landing and the north exits; it must not force that fight when a resumed
 // checkpoint is already on the exit side of the still-closed door.
 func rocketB1FExitReachableOnGrid(h rom.MapHeader, edge world.Edge, grid *world.Grid, sx, sy int, romData []byte) (bool, error) {
-	_, _, _, _, err := warpTarget(h, edge, grid, sx, sy, nil, romData)
+	_, _, _, _, err := warpTarget(h, edge, grid, sx, sy, nil, nil, romData)
 	if err == nil {
 		return true, nil
 	}
