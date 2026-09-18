@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/gen1rom"
+	"github.com/maestroi/pokepilot/worldmodel"
 )
 
 // ErrInvalidMapID identifies a slot that is not a playable Red map. Unused
@@ -39,7 +40,7 @@ const (
 type Warp = gen1rom.Warp
 type Sign = gen1rom.Sign
 type Object = gen1rom.Object
-type Connection = gen1rom.Connection
+type Connection = worldmodel.Connection
 
 const (
 	MovementWalk = gen1rom.MovementWalk
