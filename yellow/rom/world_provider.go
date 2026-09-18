@@ -10,7 +10,7 @@ import (
 const (
 	yellowTilesetsBank uint8  = 0x03
 	yellowTilesetsAddr uint16 = 0x4558
-	tilesetEntryLen            = 12
+	tilesetEntryLen           = 12
 )
 
 type worldProvider struct {
@@ -62,7 +62,7 @@ func (h MapHeader) WorldGridSpec(romData []byte, blocks []byte, mode worldmodel.
 	return gen1rom.BuildGridSpec(romData, gen1rom.MapHeader(h), blocks, mode, gen1rom.GridLayout{
 		TilesetsBank: yellowTilesetsBank, TilesetsAddr: yellowTilesetsAddr, TilesetEntryLen: tilesetEntryLen,
 		TilePairs: yellowTilePairsForTraversal,
-		Ledges: yellowLedges,
+		Ledges:    yellowLedges,
 	})
 }
 
