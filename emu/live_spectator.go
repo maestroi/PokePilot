@@ -41,7 +41,7 @@ type liveFrame struct {
 type liveFrameQueue struct {
 	mu sync.Mutex
 
-	capacity int
+	capacity    int
 	frames      []liveFrame
 	pending     liveFrame
 	havePending bool
