@@ -46,6 +46,13 @@ export function preferredDeployment(deployments: ModelDeployment[], id: string):
   return selectable[0]?.id || ''
 }
 
+export function defaultFarmDeployment(deployments: ModelDeployment[]): string {
+  const selectable = deployments.filter(deploymentSelectable)
+  return selectable.find((deployment) => hasDefaultRole(deployment, DEFAULT_ROLE_FARM))?.id
+    || selectable[0]?.id
+    || ''
+}
+
 export function defaultExperimentArms(deployments: ModelDeployment[]): [string, string] {
   const enabled = deployments.filter((deployment) => deployment.enabled !== false)
   const armA = enabled.find((deployment) => hasDefaultRole(deployment, DEFAULT_ROLE_EXPERIMENT_A))
