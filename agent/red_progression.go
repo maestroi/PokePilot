@@ -18,6 +18,7 @@ func redProgressionKnown(id ProgressID) bool {
 		redProgressSSTicketAcquired,
 		redProgressHM01Acquired,
 		redProgressBicycleAcquired,
+		redProgressBoulderBadge,
 		redProgressThunderBadge,
 		redProgressPostSurgeLavenderReached,
 		redProgressPostSurgeCeladonReady,
@@ -107,6 +108,13 @@ func redProgressionObjectives(obs Observation) []Objective {
 			Kind:     KindProgress,
 			Progress: redProgressPokedexAcquired,
 			Note:     "(deliver Oak's parcel and acquire the Pokedex)",
+		})
+	}
+	if obs.Story.Has(redProgressPokedexAcquired) && !obs.Story.Has(redProgressBoulderBadge) {
+		out = append(out, Objective{
+			Kind:     KindProgress,
+			Progress: redProgressBoulderBadge,
+			Note:     "(travel through Viridian Forest to Pewter, challenge Brock, and positively verify the Boulder Badge before Route 3)",
 		})
 	}
 	if skill.BillProgressionAvailable(obs.Map) && !obs.Story.Has(redProgressSSTicketAcquired) {
@@ -343,6 +351,8 @@ func executeRedProgression(m *emu.Emu, romData []byte, o Objective) error {
 		return skill.SSAnneHM01(m, romData, policy)
 	case redProgressBicycleAcquired:
 		return skill.AcquireBicycle(m, romData, policy)
+	case redProgressBoulderBadge:
+		return skill.BoulderProgression(m, romData, policy)
 	case redProgressThunderBadge:
 		return skill.SurgeProgression(m, romData, policy)
 	case redProgressPostSurgeLavenderReached:
