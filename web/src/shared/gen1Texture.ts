@@ -3,7 +3,6 @@ import { expandGen1Blocks, gen1TilesetAssetStem } from './gen1TextureCodec'
 
 const TILE_SIZE = 8
 const TILES_PER_BLOCK = 4
-const BLOCK_TILE_COUNT = TILES_PER_BLOCK * TILES_PER_BLOCK
 
 export interface Gen1TextureAssetPaths {
   map: string
