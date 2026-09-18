@@ -40,7 +40,12 @@ type ModelDeployment struct {
 	Endpoint           string `json:"endpoint"`
 	APIModel           string `json:"api_model"`
 	Enabled            bool     `json:"enabled"`
-	// Discover asks the wall to probe the OpenAI-compatible /v1/models endpoint\n\t// and bind runs to the model actually being served. This is useful for\n\t// pinned llama.cpp/vLLM/cloud endpoints whose model can change without a\n\t// PokePilot deploy. Switchable hosts with ControlURL normally leave this off.\n\tDiscover           bool     `json:"discover,omitempty"`\n\t// DefaultFor gives operator surfaces stable roles without encoding model\n\t// sizes or hardware in code (for example "farm", "experiment-a").\n\tDefaultFor         []string `json:"default_for,omitempty"`\n\tControlURL         string `json:"control_url,omitempty"`
+	// Discover asks the wall to probe the OpenAI-compatible /v1/models endpoint
+	// and bind runs to the model actually being served. This is useful for
+	// pinned llama.cpp/vLLM/cloud endpoints whose model can change without a
+	// PokePilot deploy. Switchable hosts with ControlURL normally leave this off.\n\tDiscover           bool     `json:"discover,omitempty"`
+	// DefaultFor gives operator surfaces stable roles without encoding model
+	// sizes or hardware in code (for example "farm", "experiment-a").\n\tDefaultFor         []string `json:"default_for,omitempty"`\n\tControlURL         string `json:"control_url,omitempty"`
 	TokenEnv           string `json:"token_env,omitempty"`
 	Engine             string `json:"engine,omitempty"`
 	EngineVersion      string `json:"engine_version,omitempty"`
