@@ -116,6 +116,12 @@ func modelExperimentHTTPHandler(w *Wall, fallback http.Handler) http.Handler {
 	controller.attachDeploymentsToTiles()
 
 	mux := http.NewServeMux()
+	registerModelExperimentRoutes(mux, controller)
+	mux.Handle("/", fallback)
+	return mux
+}
+
+func registerModelExperimentRoutes(mux *http.ServeMux, controller *modelExperimentController) {
 	mux.HandleFunc("GET /v1/models", controller.handleModels)
 	mux.HandleFunc("POST /v1/models", controller.handleSaveModel)
 	mux.HandleFunc("POST /v1/models/test", controller.handleTestModel)
@@ -128,8 +134,6 @@ func modelExperimentHTTPHandler(w *Wall, fallback http.Handler) http.Handler {
 	mux.HandleFunc("POST /v1/lease", controller.handleLease)
 	mux.HandleFunc("POST /v1/runs/{id}/finish", controller.handleFinish)
 	mux.HandleFunc("GET /v1/dashboard", controller.handleDashboard)
-	mux.Handle("/", fallback)
-	return mux
 }
 
 func logModelExperiment(format string, args ...any) {
