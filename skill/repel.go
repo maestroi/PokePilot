@@ -1,0 +1,102 @@
+package skill
+
+import (
+	"fmt"
+
+	"github.com/maestroi/pokepilot/emu"
+	"github.com/maestroi/pokepilot/red/state"
+	"github.com/maestroi/pokepilot/red/sym"
+)
+
+const (
+	ItemRepel      uint8 = 0x1E
+	ItemSuperRepel uint8 = 0x38
+	ItemMaxRepel   uint8 = 0x39
+
+	repelUseSettleBudget = 1200
+)
+
+// RepelDuration returns the Gen 1 overworld step budget granted by a Repel item.
+func RepelDuration(item uint8) (int, bool) {
+	switch item {
+	case ItemRepel:
+		return 100, true
+	case ItemSuperRepel:
+		return 200, true
+	case ItemMaxRepel:
+		return 250, true
+	default:
+		return 0, false
+	}
+}
+
+// UseRepel activates a Repel-family item from the overworld and proves both
+// sides of the effect: the bag stack decreases by one and
+// wRepelRemainingSteps is loaded with the item's exact duration.
+func UseRepel(m *emu.Emu, item uint8) error {
+	duration, ok := RepelDuration(item)
+	if !ok {
+		return fmt.Errorf("skill: UseRepel: item %#02x is not a Repel-family item", item)
+	}
+
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	if !state.Controllable(&mem) {
+		return fmt.Errorf("skill: UseRepel: player not controllable on map %#04x at (%d,%d)",
+			mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord))
+	}
+	if active := int(mem.U8(sym.RepelRemainingSteps)); active > 0 {
+		return fmt.Errorf("skill: UseRepel: repel is already active for %d more steps", active)
+	}
+	idx, bagBefore := bagEntry(&mem, item)
+	if idx < 0 {
+		return fmt.Errorf("skill: UseRepel: %w (id %#02x)", ErrNotInBag, item)
+	}
+
+	wantMax, itemIndex := startMenuShape(&mem)
+	if err := openStartMenuEntry(m, itemIndex, wantMax); err != nil {
+		return fmt.Errorf("skill: UseRepel: open ITEM: %w", err)
+	}
+	if _, err := m.StepUntil(bagMenuBudget, func(m *emu.Emu) bool {
+		return m.Peek8(sym.ListMenuID) == itemListMenuID
+	}); err != nil {
+		return fmt.Errorf("skill: UseRepel: bag list did not open: %w", err)
+	}
+	if err := selectBagEntry(m, idx); err != nil {
+		return fmt.Errorf("skill: UseRepel: select bag entry: %w", err)
+	}
+	if _, err := m.StepUntil(useTossBudget, func(m *emu.Emu) bool {
+		state.Snapshot(m, &mem)
+		return useTossPrompt(&mem) != nil
+	}); err != nil {
+		return fmt.Errorf("skill: UseRepel: USE/TOSS prompt did not open: %w", err)
+	}
+	state.Snapshot(m, &mem)
+	if p := useTossPrompt(&mem); p == nil || p.Index != 0 {
+		return fmt.Errorf("skill: UseRepel: USE/TOSS cursor is not on USE")
+	}
+
+	m.Tap(emu.A, 3, 7)
+	if _, err := m.StepUntil(repelUseSettleBudget, func(m *emu.Emu) bool {
+		return int(m.Peek8(sym.RepelRemainingSteps)) == duration
+	}); err != nil {
+		state.Snapshot(m, &mem)
+		return fmt.Errorf("skill: UseRepel: effect did not load %d steps: now=%d screen=%q",
+			duration, mem.U8(sym.RepelRemainingSteps), state.ScreenText(&mem))
+	}
+
+	// The effect text leaves the bag/start-menu stack open. Close only
+	// dismissable UI layers; the recovery helper refuses gameplay choices.
+	if err := CloseOpenMenuToOverworld(m); err != nil {
+		return fmt.Errorf("skill: UseRepel: close item UI: %w", err)
+	}
+
+	state.Snapshot(m, &mem)
+	if got := int(mem.U8(sym.RepelRemainingSteps)); got != duration {
+		return fmt.Errorf("skill: UseRepel: active steps changed unexpectedly: got %d want %d", got, duration)
+	}
+	if _, bagAfter := bagEntry(&mem, item); bagAfter != bagBefore-1 {
+		return fmt.Errorf("skill: UseRepel: bag count for %#02x did not drop from %d (now %d)", item, bagBefore, bagAfter)
+	}
+	return nil
+}
