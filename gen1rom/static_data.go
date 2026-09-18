@@ -115,13 +115,13 @@ func LookupMove(rom []byte, id uint8, layout MoveLayout) (Move, error) {
 }
 
 type SpeciesLayout struct {
-	NamesOffset       int
-	NameLength        int
-	InternalCount     int
+	NamesOffset        int
+	NameLength         int
+	InternalCount      int
 	PokedexOrderOffset int
-	PokedexOrderLen   int
-	BaseStatsOffset   int
-	BaseStatsEntryLen int
+	PokedexOrderLen    int
+	BaseStatsOffset    int
+	BaseStatsEntryLen  int
 }
 
 type SpeciesBaseStats struct {
