@@ -3,12 +3,11 @@ package agent
 import "testing"
 
 func TestRepelProviderOffersUseOnlyOnEncounterMapWithoutActiveEffect(t *testing.T) {
-	provider := repelObjectiveProvider{}
-	ctx := &objectiveOfferContext{obs: Observation{
+	obs := Observation{
 		WildGrass: []WildSpecies{{Name: "zubat", MinLevel: 6, MaxLevel: 11, Slots: 10}},
 		Bag:       []Item{{Name: "repel", Quantity: 1}, {Name: "super repel", Quantity: 1}},
-	}}
-	got := provider.Provide(ctx).Candidates
+	}
+	got := repelUseObjectives(obs)
 	if len(got) != 1 {
 		t.Fatalf("repel candidates = %v, want one", got)
 	}
@@ -16,8 +15,8 @@ func TestRepelProviderOffersUseOnlyOnEncounterMapWithoutActiveEffect(t *testing.
 		t.Fatalf("repel objective = %+v, want targetless SUPER REPEL use", got[0])
 	}
 
-	ctx.obs.RepelSteps = 42
-	if got := provider.Provide(ctx).Candidates; len(got) != 0 {
+	obs.RepelSteps = 42
+	if got := repelUseObjectives(obs); len(got) != 0 {
 		t.Fatalf("active repel still offered use: %v", got)
 	}
 }
