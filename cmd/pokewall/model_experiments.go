@@ -530,6 +530,10 @@ func (c *modelExperimentController) handleCreateExperiment(w http.ResponseWriter
 	if request.Name == "" {
 		request.Name = "paired-model-experiment"
 	}
+	request.Game = strings.ToLower(strings.TrimSpace(request.Game))
+	if request.Game == "" {
+		request.Game = "pokemon-red"
+	}
 	if request.Goal == "" {
 		request.Goal = "Earn the Boulder Badge."
 	}
@@ -584,7 +588,7 @@ func (c *modelExperimentController) handleCreateExperiment(w http.ResponseWriter
 		}{{"a", request.ArmA}, {"b", request.ArmB}} {
 			runID := caseID + "-" + arm.key
 			raw := map[string]any{
-				"run_id": runID, "seed": seed, "planner": "llm", "starter": request.Starter, "dest": "", "goal": request.Goal,
+				"run_id": runID, "seed": seed, "game": request.Game, "planner": "llm", "starter": request.Starter, "dest": "", "goal": request.Goal,
 				"llm_deployment": arm.cfg.Deployment, "reasoning_effort": request.ReasoningEffort, "max_parallel_workers": arm.cfg.MaxParallelWorkers,
 				"fps": request.FPS, "max_rounds": request.MaxRounds, "max_frames": request.MaxFrames,
 				"play_style": request.PlayStyle, "risk_tolerance": request.RiskTolerance, "wild_encounters": request.WildEncounters,
@@ -647,11 +651,15 @@ func (c *modelExperimentController) handleExperiment(w http.ResponseWriter, r *h
 type armAggregate struct {
 	Runs                    int            `json:"runs"`
 	Done                    int            `json:"done"`
+	GoalSuccesses           int            `json:"goal_successes"`
 	BoulderSuccesses        int            `json:"boulder_successes"`
 	SuccessRate             float64        `json:"success_rate"`
 	Badges                  int            `json:"badges"`
 	Rounds                  int            `json:"rounds"`
 	Frames                  uint64         `json:"frames"`
+	MedianRoundsToGoal      float64        `json:"median_rounds_to_goal"`
+	MedianFramesToGoal      uint64         `json:"median_frames_to_goal"`
+	AvgRunSeconds           float64        `json:"avg_run_seconds"`
 	Calls                   int            `json:"calls"`
 	StrategicCalls          int            `json:"strategic_calls"`
 	StrategicRejected       int            `json:"strategic_rejected"`
@@ -678,6 +686,10 @@ type armAggregate struct {
 	FinalStopReasons        map[string]int `json:"final_stop_reasons,omitempty"`
 	StrategicRecordsDropped int            `json:"strategic_records_dropped,omitempty"`
 	latencies               []float64
+	successRounds           []float64
+	successFrames           []float64
+	runSeconds              float64
+	runSamples              int
 	prefillSum              float64
 	prefillSamples          int
 	decodeSum               float64
@@ -695,6 +707,24 @@ type pairResult struct {
 	Reason     string `json:"non_comparable_reason,omitempty"`
 }
 
+type experimentPairedSummary struct {
+	AWins           int `json:"a_wins"`
+	BWins           int `json:"b_wins"`
+	Ties            int `json:"ties"`
+	ComparablePairs int `json:"comparable_pairs"`
+	CompletedPairs  int `json:"completed_pairs"`
+	ExcludedPairs   int `json:"excluded_pairs"`
+}
+
+type experimentIdentityView struct {
+	Game           string                 `json:"game"`
+	GitRevision    string                 `json:"git_revision,omitempty"`
+	ROMIdentity    string                 `json:"rom_identity,omitempty"`
+	PromptIdentity string                 `json:"prompt_identity,omitempty"`
+	ArmA           farm.InferenceIdentity `json:"arm_a"`
+	ArmB           farm.InferenceIdentity `json:"arm_b"`
+}
+
 func (c *modelExperimentController) experimentView(record experimentRecord) map[string]any {
 	rows := make(map[string]tileRow, len(record.RunIDs))
 	for _, id := range record.RunIDs {
@@ -704,35 +734,54 @@ func (c *modelExperimentController) experimentView(record experimentRecord) map[
 	}
 	armA, armB := armAggregate{}, armAggregate{}
 	pairs := make([]pairResult, 0, len(record.Request.Seeds))
-	winsA, winsB, ties := 0, 0, 0
+	paired := experimentPairedSummary{}
+	identity := experimentIdentityView{Game: record.Request.Game}
 	for _, seed := range record.Request.Seeds {
 		caseID := record.ID + "-seed-" + strconv.FormatInt(seed, 10)
 		idA, idB := caseID+"-a", caseID+"-b"
 		tA, okA := rows[idA]
 		tB, okB := rows[idB]
-		if okA {
-			accumulateArm(&armA, tA)
-		}
-		if okB {
-			accumulateArm(&armB, tB)
-		}
 		metaA, haveMetaA := c.runMeta(idA)
 		metaB, haveMetaB := c.runMeta(idB)
-		pair := pairResult{Seed: seed, StatusA: tA.Status, StatusB: tB.Status, SuccessA: rowBoulderSuccess(tA), SuccessB: rowBoulderSuccess(tB)}
-		pair.Comparable = haveMetaA && haveMetaB && metaA.ComparableHash != "" && metaA.ComparableHash == metaB.ComparableHash
+		if identity.GitRevision == "" && haveMetaA {
+			identity.Game = metaA.Comparable.Game
+			identity.GitRevision = metaA.Comparable.GitRevision
+			identity.ROMIdentity = metaA.Comparable.ROMIdentity
+			identity.PromptIdentity = metaA.Comparable.PromptIdentity
+			identity.ArmA = metaA.Inference
+		}
+		if identity.ArmB.DeploymentID == "" && haveMetaB {
+			identity.ArmB = metaB.Inference
+		}
+		pair := pairResult{
+			Seed: seed, StatusA: tA.Status, StatusB: tB.Status,
+			SuccessA: rowGoalSuccess(tA, record.Request.Goal), SuccessB: rowGoalSuccess(tB, record.Request.Goal),
+		}
+		pair.Comparable, pair.Reason = comparablePair(metaA, haveMetaA, metaB, haveMetaB)
 		if !pair.Comparable {
-			pair.Reason = "matched configuration identity differs or is missing"
-		} else if tA.Status == statusDone && tB.Status == statusDone {
+			paired.ExcludedPairs++
+			pairs = append(pairs, pair)
+			continue
+		}
+		paired.ComparablePairs++
+		if okA {
+			accumulateArm(&armA, tA, pair.SuccessA)
+		}
+		if okB {
+			accumulateArm(&armB, tB, pair.SuccessB)
+		}
+		if tA.Status == statusDone && tB.Status == statusDone {
+			paired.CompletedPairs++
 			switch {
 			case pair.SuccessA && !pair.SuccessB:
 				pair.Winner = "a"
-				winsA++
+				paired.AWins++
 			case pair.SuccessB && !pair.SuccessA:
 				pair.Winner = "b"
-				winsB++
+				paired.BWins++
 			default:
 				pair.Winner = "tie"
-				ties++
+				paired.Ties++
 			}
 		}
 		pairs = append(pairs, pair)
@@ -742,11 +791,34 @@ func (c *modelExperimentController) experimentView(record experimentRecord) map[
 	return map[string]any{
 		"id": record.ID, "name": record.Name, "created_at": record.CreatedAt, "request": record.Request,
 		"total_pairs": len(record.Request.Seeds), "arm_a": armA, "arm_b": armB,
-		"paired": map[string]int{"a_wins": winsA, "b_wins": winsB, "ties": ties}, "pairs": pairs,
+		"paired": paired, "identity": identity, "pairs": pairs,
 	}
 }
 
-func accumulateArm(out *armAggregate, row tileRow) {
+func comparablePair(a runExperimentMeta, haveA bool, b runExperimentMeta, haveB bool) (bool, string) {
+	if !haveA || !haveB {
+		return false, "experiment run metadata is missing"
+	}
+	if a.ComparableHash == "" || b.ComparableHash == "" || a.ComparableHash != b.ComparableHash {
+		return false, "matched configuration identity differs or is missing"
+	}
+	var missing []string
+	for name, value := range map[string]string{
+		"game": a.Comparable.Game, "git revision": a.Comparable.GitRevision,
+		"ROM identity": a.Comparable.ROMIdentity, "prompt identity": a.Comparable.PromptIdentity,
+	} {
+		if strings.TrimSpace(value) == "" {
+			missing = append(missing, name)
+		}
+	}
+	sort.Strings(missing)
+	if len(missing) > 0 {
+		return false, "missing comparability identity: " + strings.Join(missing, ", ")
+	}
+	return true, ""
+}
+
+func accumulateArm(out *armAggregate, row tileRow, goalSuccess bool) {
 	out.Runs++
 	if out.ReplanReasons == nil {
 		out.ReplanReasons = map[string]int{}
@@ -760,6 +832,9 @@ func accumulateArm(out *armAggregate, row tileRow) {
 	if row.Status == statusDone {
 		out.Done++
 	}
+	if goalSuccess {
+		out.GoalSuccesses++
+	}
 	if rowBoulderSuccess(row) {
 		out.BoulderSuccesses++
 	}
@@ -767,9 +842,21 @@ func accumulateArm(out *armAggregate, row tileRow) {
 		out.Badges += len(row.Player.Badges)
 	}
 	out.Frames += row.Frame
+	if row.Status == statusDone && !row.QueuedAt.IsZero() && !row.EndedAt.IsZero() && !row.EndedAt.Before(row.QueuedAt) {
+		out.runSeconds += row.EndedAt.Sub(row.QueuedAt).Seconds()
+		out.runSamples++
+	}
 	if row.Stats != nil {
 		s := row.Stats
 		out.Rounds += s.Rounds
+		if goalSuccess {
+			if s.Rounds > 0 {
+				out.successRounds = append(out.successRounds, float64(s.Rounds))
+			}
+			if row.Frame > 0 {
+				out.successFrames = append(out.successFrames, float64(row.Frame))
+			}
+		}
 		out.Calls += s.Calls
 		out.StrategicCalls += s.StrategicCalls
 		out.PlanExecutions += s.PlanExecutions
@@ -808,7 +895,18 @@ func accumulateArm(out *armAggregate, row tileRow) {
 
 func finalizeArm(out *armAggregate) {
 	if out.Done > 0 {
-		out.SuccessRate = float64(out.BoulderSuccesses) / float64(out.Done)
+		out.SuccessRate = float64(out.GoalSuccesses) / float64(out.Done)
+	}
+	if out.runSamples > 0 {
+		out.AvgRunSeconds = out.runSeconds / float64(out.runSamples)
+	}
+	if len(out.successRounds) > 0 {
+		sort.Float64s(out.successRounds)
+		out.MedianRoundsToGoal = percentile(out.successRounds, 0.50)
+	}
+	if len(out.successFrames) > 0 {
+		sort.Float64s(out.successFrames)
+		out.MedianFramesToGoal = uint64(percentile(out.successFrames, 0.50))
 	}
 	if out.StrategicCalls > 0 {
 		out.AvgStrategicCall = out.StrategicSeconds / float64(out.StrategicCalls)
@@ -843,6 +941,16 @@ func percentile(sorted []float64, p float64) float64 {
 	return sorted[index]
 }
 
+func rowGoalSuccess(row tileRow, goal string) bool {
+	if row.Stats != nil && row.Stats.GoalComplete {
+		return true
+	}
+	if strings.Contains(strings.ToLower(goal), "boulder") {
+		return rowBoulderSuccess(row)
+	}
+	return false
+}
+
 func rowBoulderSuccess(row tileRow) bool {
 	if row.Player != nil {
 		for _, badge := range row.Player.Badges {
@@ -875,7 +983,7 @@ func (c *modelExperimentController) resolveRunMeta(raw map[string]any, deploymen
 	}
 	comparable := farm.ComparableRunConfig{
 		GitRevision: c.wall.Version, ROMIdentity: strings.TrimSpace(os.Getenv("POKEPILOT_ROM_SHA256")), PromptIdentity: strings.TrimSpace(os.Getenv("POKEPILOT_PROMPT_SHA256")),
-		Seed: int64Number(raw["seed"]), Starter: stringValue(raw["starter"]), Goal: stringValue(raw["goal"]), PlayStyle: stringValue(raw["play_style"]),
+		Game: stringValue(raw["game"]), Seed: int64Number(raw["seed"]), Starter: stringValue(raw["starter"]), Goal: stringValue(raw["goal"]), PlayStyle: stringValue(raw["play_style"]),
 		RiskTolerance: stringValue(raw["risk_tolerance"]), WildEncounters: stringValue(raw["wild_encounters"]), ReasoningEffort: stringValue(raw["reasoning_effort"]),
 		FPS: intNumber(raw["fps"]), MaxRounds: intNumber(raw["max_rounds"]), MaxFrames: intNumber(raw["max_frames"]), MaxParallelWorkers: parallel,
 	}
