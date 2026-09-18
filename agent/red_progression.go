@@ -135,7 +135,8 @@ func redProgressionObjectives(obs Observation) []Objective {
 		out = append(out, Objective{
 			Kind:     KindProgress,
 			Progress: redProgressBicycleAcquired,
-			Note:     "(visit the Pokemon Fan Club chairman in Vermilion for the Bike Voucher, then exchange it at Cerulean's Bike Shop for the Bicycle)",
+			Intent:   optionalProgressionIntent,
+			Note:     "(optional for the supported Route 12 Fuchsia path; visit the Pokemon Fan Club chairman in Vermilion for the Bike Voucher, then exchange it at Cerulean's Bike Shop for the Bicycle)",
 		})
 	}
 	if obs.Story.Has(redProgressHM01Acquired) && redCutFieldUnlocked(obs) && !hasBadge(obs, state.BadgeThunder) {
