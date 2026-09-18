@@ -40,4 +40,3 @@ func TestCyclingRoadCapabilityLinksToBicycleProgression(t *testing.T) {
 		t.Fatal("Cycling Road Bicycle link must be recovery-only")
 	}
 }
-
