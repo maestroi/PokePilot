@@ -195,8 +195,8 @@ func TestYellowMainStoryUsesDurableElite4Flag(t *testing.T) {
 
 func TestYellowSelectedEventIndices(t *testing.T) {
 	got := map[string]yellowEvent{
-		"EVENT_GOT_STARTER":                       eventGotStarter,
-		"EVENT_BATTLED_RIVAL_IN_OAKS_LAB":         eventBattledRivalInOaksLab,
+		"EVENT_GOT_STARTER":                        eventGotStarter,
+		"EVENT_BATTLED_RIVAL_IN_OAKS_LAB":          eventBattledRivalInOaksLab,
 		"EVENT_GOT_BULBASAUR_IN_CERULEAN":          eventGotBulbasaurInCerulean,
 		"EVENT_BEAT_POKEMONTOWER_7_JESSIE_JAMES":   eventBeatTowerJessieJames,
 		"EVENT_GOT_SQUIRTLE_FROM_OFFICER_JENNY":    eventGotSquirtleFromJenny,
@@ -206,8 +206,8 @@ func TestYellowSelectedEventIndices(t *testing.T) {
 		"EVENT_BEAT_CHAMPION_RIVAL":                eventBeatChampionRival,
 	}
 	want := map[string]yellowEvent{
-		"EVENT_GOT_STARTER":                       34,
-		"EVENT_BATTLED_RIVAL_IN_OAKS_LAB":         35,
+		"EVENT_GOT_STARTER":                        34,
+		"EVENT_BATTLED_RIVAL_IN_OAKS_LAB":          35,
 		"EVENT_GOT_BULBASAUR_IN_CERULEAN":          168,
 		"EVENT_BEAT_POKEMONTOWER_7_JESSIE_JAMES":   273,
 		"EVENT_GOT_SQUIRTLE_FROM_OFFICER_JENNY":    327,
