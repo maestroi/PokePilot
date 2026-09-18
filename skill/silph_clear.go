@@ -232,7 +232,7 @@ func silphWarpReachable(m *emu.Emu, romData []byte, edge world.Edge) bool {
 		return false
 	}
 	x, y := playerXY(m)
-	_, _, _, _, err = warpTarget(h, edge, grid, int(x), int(y), spriteBlockers(m), romData)
+	_, _, _, _, err = warpTarget(h, edge, grid, int(x), int(y), spriteBlockers(m), nil, romData)
 	return err == nil
 }
 

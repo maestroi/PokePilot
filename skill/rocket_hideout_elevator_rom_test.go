@@ -74,7 +74,7 @@ func TestWarpTargetBumpsAWarpTileAlreadyStoodOn(t *testing.T) {
 	}
 
 	e := world.Edge{Kind: world.EdgeWarp, From: rocketHideoutB4FMap, To: rocketHideoutElevatorMap, WarpX: 24, WarpY: 15}
-	wx, wy, steps, push, err := warpTarget(h, e, grid, 25, 15, nil, romData)
+	wx, wy, steps, push, err := warpTarget(h, e, grid, 25, 15, nil, nil, romData)
 	if err != nil {
 		t.Fatalf("warpTarget already standing on (25,15): %v", err)
 	}
