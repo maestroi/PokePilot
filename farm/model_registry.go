@@ -26,9 +26,10 @@ type ModelRegistry struct {
 	Deployments []ModelDeployment `json:"deployments"`
 }
 
-// ModelDeployment describes one selectable inference target. TokenEnv names an
-// environment variable containing a bearer token; the token itself is never
-// carried in the registry, run spec, dashboard or persisted experiment data.
+// ModelDeployment describes one selectable inference target. EndpointTokenEnv
+// names the inference bearer-token environment variable; TokenEnv names the
+// optional model-host control-plane credential. Only environment-variable names,
+// never secret values, are carried in registry/run metadata.
 type ModelDeployment struct {
 	ID                 string `json:"id"`
 	Label              string `json:"label"`
