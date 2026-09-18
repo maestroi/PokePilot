@@ -98,7 +98,7 @@ func MartClerkPosition(rom []byte, h MapHeader) (uint8, uint8, error) {
 }
 
 func martClerk(rom []byte, h MapHeader) (Object, []uint8, bool) {
-	for _, table := range textPointerTables(rom, h) {
+	for _, table := range TextPointerTables(rom, h) {
 		for _, obj := range h.Objects {
 			if obj.TextID == 0 || obj.TextID&0xc0 != 0 {
 				continue
@@ -111,7 +111,7 @@ func martClerk(rom []byte, h MapHeader) (Object, []uint8, bool) {
 	return Object{}, nil, false
 }
 
-func textPointerTables(rom []byte, h MapHeader) []int {
+func TextPointerTables(rom []byte, h MapHeader) []int {
 	var tables []int
 	seen := map[int]bool{}
 	add := func(off int) {
