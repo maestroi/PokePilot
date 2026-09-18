@@ -50,3 +50,16 @@ test('Route 1 overworld assets can represent every referenced tile', () => {
 
   assert.ok(maxTile < capacity, `Route 1 needs tile 0x${maxTile.toString(16)} but overworld PNG only exposes ${capacity} 8x8 tiles`)
 })
+
+
+test('synced explorer assets include overworld character and item sprites', () => {
+  const spriteDir = path.join(publicRoot, 'sprites')
+  if (!fs.existsSync(spriteDir)) return
+
+  for (const name of ['youngster.png', 'poke_ball.png', 'nurse.png']) {
+    const sprite = fs.readFileSync(path.join(spriteDir, name))
+    const { width, height } = pngDimensions(sprite)
+    assert.ok(width >= 16, `${name} width = ${width}, want at least 16`)
+    assert.ok(height >= 16, `${name} height = ${height}, want at least 16`)
+  }
+})
