@@ -572,3 +572,87 @@ func TestLiveRunHostLeaseSurvivesReconcile(t *testing.T) {
 		t.Fatal("reconcile left the phantom lease in place")
 	}
 }
+
+
+func TestImplicitLLMRunBindsRegistryDefaultAndDiscoversServedModel(t *testing.T) {
+	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/models" {
+			t.Fatalf("unexpected endpoint call %s", r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": []map[string]any{{"id": "qwen3.5-9b"}},
+		})
+	}))
+	defer endpoint.Close()
+
+	registry := writeModelRegistry(t, []farm.ModelDeployment{
+		{
+			ID: "legacy-7900-id", Label: "Farm · RX 7900 XTX", Compute: "RX 7900 XTX",
+			Endpoint: endpoint.URL + "/v1", Enabled: true, DiscoverModel: true, Default: true,
+			LegacyProfile: "auto", MaxParallelWorkers: 4,
+		},
+		{ID: "other", ModelID: "other", Compute: "RTX 4090", Endpoint: "http://other/v1", APIModel: "other", Enabled: true},
+	})
+	t.Setenv("POKEPILOT_MODEL_REGISTRY", registry)
+	w := NewWall("")
+	h := modelExperimentHTTPHandler(w, w.Handler())
+
+	queued := requestJSON(t, h, http.MethodPost, "/v1/specs", map[string]any{
+		"run_id": "dynamic-run", "planner": "llm", "goal": "Earn the Boulder Badge.",
+	})
+	if queued.Code != http.StatusOK {
+		t.Fatalf("enqueue = %d %s", queued.Code, queued.Body.String())
+	}
+	leased := requestJSON(t, h, http.MethodPost, "/v1/lease", map[string]any{})
+	if leased.Code != http.StatusOK {
+		t.Fatalf("lease = %d %s", leased.Code, leased.Body.String())
+	}
+	var spec farm.Spec
+	if err := json.Unmarshal(leased.Body.Bytes(), &spec); err != nil {
+		t.Fatal(err)
+	}
+	if spec.LLMDeployment != "legacy-7900-id" || spec.Inference == nil {
+		t.Fatalf("deployment binding = %#v", spec)
+	}
+	if spec.Inference.ModelID != "qwen3.5-9b" || spec.Inference.APIModel != "qwen3.5-9b" {
+		t.Fatalf("discovered inference identity = %#v", spec.Inference)
+	}
+	if spec.LLMProfile != "auto" || spec.Inference.MaxParallelWorkers != 4 {
+		t.Fatalf("compatibility/concurrency = profile %q inference %#v", spec.LLMProfile, spec.Inference)
+	}
+
+	models := requestJSON(t, h, http.MethodGet, "/v1/models", nil)
+	if models.Code != http.StatusOK || !bytes.Contains(models.Body.Bytes(), []byte("qwen3.5-9b")) {
+		t.Fatalf("models = %d %s", models.Code, models.Body.String())
+	}
+}
+
+func TestDynamicDeploymentReportsUnavailableWhenDiscoveryEndpointIsOffline(t *testing.T) {
+	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "down", http.StatusServiceUnavailable)
+	}))
+	endpointURL := endpoint.URL
+	endpoint.Close()
+
+	registry := writeModelRegistry(t, []farm.ModelDeployment{{
+		ID: "dynamic", Compute: "gpu", Endpoint: endpointURL + "/v1",
+		Enabled: true, DiscoverModel: true, Default: true,
+	}})
+	t.Setenv("POKEPILOT_MODEL_REGISTRY", registry)
+	w := NewWall("")
+	h := modelExperimentHTTPHandler(w, w.Handler())
+
+	models := requestJSON(t, h, http.MethodGet, "/v1/models", nil)
+	if models.Code != http.StatusOK {
+		t.Fatalf("models = %d %s", models.Code, models.Body.String())
+	}
+	var snapshot struct {
+		Deployments []deploymentView `json:"deployments"`
+	}
+	if err := json.Unmarshal(models.Body.Bytes(), &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot.Deployments) != 1 || snapshot.Deployments[0].State != "unavailable" {
+		t.Fatalf("dynamic endpoint state = %#v", snapshot.Deployments)
+	}
+}
