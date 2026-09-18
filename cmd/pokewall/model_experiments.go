@@ -138,13 +138,18 @@ func logModelExperiment(format string, args ...any) {
 
 func (c *modelExperimentController) handleModels(w http.ResponseWriter, _ *http.Request) {
 	c.reconcileHostLeases()
-	deployments := c.enabledDeployments()
+	deployments := c.allDeployments()
 	views := make([]deploymentView, 0, len(deployments))
 	statuses := map[string]modelHostStatus{}
 	queued := c.queuedByDeployment()
 	active := c.activeByDeployment()
 	for _, d := range deployments {
 		view := deploymentView{ModelDeployment: d, State: "ready", ActiveLeases: active[d.ID], Queued: queued[d.ID]}
+		if !d.Enabled {
+			view.State = "disabled"
+			views = append(views, view)
+			continue
+		}
 		if d.ControlURL == "" && d.Discover {
 			resolved, err := c.resolveDeployment(d)
 			if err != nil {
@@ -236,7 +241,11 @@ func (c *modelExperimentController) handleTestModel(w http.ResponseWriter, r *ht
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	resolved, err := c.resolveDeployment(deployment)
+	probe := deployment
+	if probe.ControlURL == "" {
+		probe.Discover = true
+	}
+	resolved, err := c.resolveDeployment(probe)
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 		return
@@ -254,6 +263,7 @@ func (c *modelExperimentController) handleDeleteModel(w http.ResponseWriter, r *
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "model registry is not configured"})
 		return
 	}
+	c.reconcileHostLeases()
 	active := c.activeByDeployment()[id]
 	queued := c.queuedByDeployment()[id]
 	if active > 0 || queued > 0 {
@@ -315,6 +325,12 @@ func (c *modelExperimentController) enabledDeployments() []farm.ModelDeployment 
 	c.registryMu.RLock()
 	defer c.registryMu.RUnlock()
 	return c.registry.EnabledDeployments()
+}
+
+func (c *modelExperimentController) allDeployments() []farm.ModelDeployment {
+	c.registryMu.RLock()
+	defer c.registryMu.RUnlock()
+	return append([]farm.ModelDeployment(nil), c.registry.Deployments...)
 }
 
 func (c *modelExperimentController) deployment(id string) (farm.ModelDeployment, bool) {
