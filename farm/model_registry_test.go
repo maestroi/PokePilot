@@ -71,7 +71,6 @@ func TestModelRegistryRejectsDuplicateDeployment(t *testing.T) {
 	}
 }
 
-
 func TestDiscoverableDeploymentAllowsEndpointOnlyIdentity(t *testing.T) {
 	registry := ModelRegistry{Deployments: []ModelDeployment{
 		{ID: "dynamic", Label: "Dynamic endpoint", Compute: "gpu", Endpoint: "http://gpu/v1", Enabled: true, Discover: true, DefaultFor: []string{"farm", "experiment-a"}},
