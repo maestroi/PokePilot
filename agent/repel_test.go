@@ -57,3 +57,21 @@ func TestRepelObjectiveValidationIsTargetless(t *testing.T) {
 		t.Fatal("ordinary targetless field item unexpectedly validated")
 	}
 }
+
+func TestSpeedrunMarksCrossMapFleeTravelForRepel(t *testing.T) {
+	obs := Observation{Map: 0x00, MapName: "PALLET_TOWN"}
+	offered := []Objective{
+		{Kind: KindGoTo, Place: "viridian city", Flee: true},
+		{Kind: KindGoTo, Place: "viridian city"},
+	}
+	got := AnnotatePlayStyle(obs, offered, PlayStyle(PlayStyleSpeedrun))
+	if len(got) != 2 || !got[0].RepelBeforeTravel || got[1].RepelBeforeTravel {
+		t.Fatalf("speedrun travel repel hints = %+v, want only cross-map flee travel marked", got)
+	}
+
+	obs.MapName = "SAFARI_ZONE_CENTER"
+	got = AnnotatePlayStyle(obs, offered, PlayStyle(PlayStyleSpeedrun))
+	if got[0].RepelBeforeTravel {
+		t.Fatalf("Safari travel was marked for bag Repel use: %+v", got[0])
+	}
+}
