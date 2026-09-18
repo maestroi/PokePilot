@@ -239,5 +239,5 @@ func finishRunWithRecording(m *emu.Emu, client *farm.Client, spec farm.Spec, rea
 		log.Printf("farm: %s: finish: %v", report.RunID, err)
 		return
 	}
-	fmt.Printf("run %s finished: %s\n", report.RunID, report.Reason)
+	log.Printf("farm: %s: finished reason=%s attempt=%d", report.RunID, report.Reason, report.Attempt)
 }

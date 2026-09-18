@@ -192,11 +192,18 @@ func (s *issueServer) handleReport(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
+	log.Printf("pokeissues: report received source=%s fingerprint=%s external_id=%s artifacts=%d", manifest.Source, manifest.Fingerprint, manifest.ExternalID, len(artifacts))
 	result, created, err := s.github.report(r.Context(), manifest, artifacts)
 	if err != nil {
+		log.Printf("pokeissues: report failed fingerprint=%s external_id=%s: %v", manifest.Fingerprint, manifest.ExternalID, err)
 		writeGitHubError(w, err)
 		return
 	}
+	action := "deduplicated"
+	if created {
+		action = "created"
+	}
+	log.Printf("pokeissues: report %s issue=%d fingerprint=%s external_id=%s", action, result.Issue.IssueNumber, manifest.Fingerprint, manifest.ExternalID)
 	status := http.StatusOK
 	if created {
 		status = http.StatusCreated
@@ -214,10 +221,14 @@ func (s *issueServer) handleGetIssue(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *issueServer) handleInvestigate(w http.ResponseWriter, r *http.Request) {
-	if err := s.github.investigate(r.Context(), r.PathValue("id")); err != nil {
+	id := r.PathValue("id")
+	log.Printf("pokeissues: investigation requested issue=%s", id)
+	if err := s.github.investigate(r.Context(), id); err != nil {
+		log.Printf("pokeissues: investigation request failed issue=%s: %v", id, err)
 		writeGitHubError(w, err)
 		return
 	}
+	log.Printf("pokeissues: investigation recorded issue=%s", id)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "investigating"})
 }
 
