@@ -6,17 +6,17 @@ func TestParseMapAtSharedGen1Format(t *testing.T) {
 	rom := make([]byte, 0x9000)
 	// Header at bank 2:0x4000 -> file offset 0x8000.
 	at := 0x8000
-	rom[at+0] = 3       // tileset
-	rom[at+1] = 2       // height
-	rom[at+2] = 4       // width
-	rom[at+3] = 0x20    // blocks ptr 0x4120
+	rom[at+0] = 3    // tileset
+	rom[at+1] = 2    // height
+	rom[at+2] = 4    // width
+	rom[at+3] = 0x20 // blocks ptr 0x4120
 	rom[at+4] = 0x41
-	rom[at+5] = 0x40    // texts ptr
+	rom[at+5] = 0x40 // texts ptr
 	rom[at+6] = 0x41
-	rom[at+7] = 0x60    // script ptr
+	rom[at+7] = 0x60 // script ptr
 	rom[at+8] = 0x41
-	rom[at+9] = 0x08    // north connection only
-	rom[at+10] = 0x0c   // Route 1
+	rom[at+9] = 0x08  // north connection only
+	rom[at+10] = 0x0c // Route 1
 	// six connection bytes skipped.
 	rom[at+17] = 0xfe // y alignment = -2
 	rom[at+18] = 0x02 // x alignment, used by N/S offset
