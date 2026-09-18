@@ -27,6 +27,7 @@ import {
   splitSpectatorRuns
 } from './model'
 import PartyProgress from './PartyProgress.vue'
+import PublicHome from './PublicHome.vue'
 import { policyLabel } from '../shared/playstyle'
 import { bagMeter, dexMeter } from '../shared/playerProgress'
 import { runIDFromLocation, spectatorRunPath } from '../shared/urls'
@@ -120,9 +121,11 @@ const modeMetrics = computed(() => {
   }
 })
 
-watch(selectedRun, (run) => {
-  if (run && !selectionPinned.value) selectedRunID.value = run.run_id
-  document.title = run ? `RomPilot · ${runTitle(run)}` : 'RomPilot'
+watch([selectedRun, selectionPinned], ([run, pinned]) => {
+  if (run && !pinned) selectedRunID.value = run.run_id
+  document.title = run
+    ? (pinned ? `RomPilot · ${runTitle(run)}` : 'RomPilot · Watch AI play games live')
+    : 'RomPilot'
 }, { immediate: true })
 
 watch(runs, (nextRuns) => {
@@ -268,7 +271,7 @@ function activityTime(item: ActivityItem): string {
         Watch live
       </button>
       <button
-        v-if="selectedRun"
+        v-if="selectedRun && selectionPinned"
         type="button"
         class="inline-flex items-center gap-1.5 rounded-md bg-white/8 px-2.5 py-1.5 text-xs font-semibold text-slate-200 ring-1 ring-white/10 hover:bg-white/12"
         @click="copyLink"
@@ -402,7 +405,18 @@ function activityTime(item: ActivityItem): string {
         </span>
       </div>
 
-      <section class="mode-hero overflow-hidden rounded-xl border bg-[#0d131c] shadow-xl shadow-black/15">
+      <PublicHome
+        v-if="!selectionPinned && snapshot"
+        :run="selectedRun"
+        :live-runs="groupedRuns.live"
+        :recent-runs="groupedRuns.recent"
+        :summary="snapshot.summary"
+        :frame-url="frameURL"
+        :replay-url="replayURL"
+        @select="selectRun"
+      />
+
+      <section v-if="selectionPinned" class="mode-hero overflow-hidden rounded-xl border bg-[#0d131c] shadow-xl shadow-black/15">
         <div class="grid gap-5 px-4 py-4 sm:px-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
           <div class="min-w-0">
             <div class="flex flex-wrap items-center gap-2">
