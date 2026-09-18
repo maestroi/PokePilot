@@ -69,7 +69,7 @@ func main() {
 	gen1Transitions := skill.RedRouteTransitionsForValidation(graph)
 	snapshot := world.ValidationSnapshot(graph, gen1Transitions, 0x00)
 	snapshot.Game = string(profile.ID())
-	applyGen1ReachabilityManifest(&snapshot)
+	applyGen1ReachabilityManifest(&snapshot, profile.ROMParser())
 	report := verifier.Verify(snapshot, verifier.Options{MaxExhaustiveCapabilities: *maxCaps})
 
 	if *jsonOutput {
