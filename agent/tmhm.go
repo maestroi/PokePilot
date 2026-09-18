@@ -22,7 +22,19 @@ func offerWithTMHM(m *emu.Emu, romData []byte, obs Observation, known *Knowledge
 // known-habitat catch transitions, and owned machines while preserving the
 // portable providers' structured block evidence alongside the enriched menu.
 func offerWithTMHMEvidence(m *emu.Emu, romData []byte, obs Observation, known *Knowledge) ObjectiveOffer {
-	offer := OfferWithProgressionEvidence(obs, known, newRedObjectiveAdapter(m, romData))
+	adapter, err := objectiveAdapterForGame(obs.GameID, m, romData)
+	if err != nil {
+		return OfferWithEvidence(obs, known)
+	}
+	redAdapter, ok := adapter.(*redObjectiveAdapter)
+	if !ok {
+		if planner, ok := adapter.(ProgressionPlanner); ok {
+			return OfferWithProgressionEvidence(obs, known, planner)
+		}
+		return OfferWithEvidence(obs, known)
+	}
+
+	offer := OfferWithProgressionEvidence(obs, known, redAdapter)
 	out := offer.Candidates
 	out = filterRedProgressionStageObjectives(obs, out)
 	out = filterRedScriptedTalkObjectives(obs, out)
