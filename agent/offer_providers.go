@@ -108,6 +108,7 @@ var defaultObjectiveProviders = []objectiveProvider{
 	wildCollectionProvider{},
 	recoveryObjectiveProvider{},
 	trainingObjectiveProvider{},
+	repelObjectiveProvider{},
 	economyObjectiveProvider{},
 	explorationObjectiveProvider{},
 	travelObjectiveProvider{},
@@ -287,7 +288,12 @@ func (economyObjectiveProvider) Provide(ctx *objectiveOfferContext) objectivePro
 	for _, advice := range economy.Purchases {
 		if advice.ShouldBuy && advice.SuggestedQty > 0 {
 			if item, ok := ctx.catalog.shopItem(advice.Item); ok {
-				out = append(out, Objective{Kind: KindBuy, Item: item, Qty: advice.SuggestedQty})
+				objective := Objective{Kind: KindBuy, Item: item, Qty: advice.SuggestedQty}
+				if isRepelItemName(advice.Item) {
+					objective.Intent = speedrunRepelBuyIntent
+					objective.Note = "(speedrun encounter management: buy only bounded Repel coverage)"
+				}
+				out = append(out, objective)
 			}
 		}
 	}
