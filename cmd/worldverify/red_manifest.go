@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"strings"
 
-	redstate "github.com/maestroi/pokepilot/red/state"
+	"github.com/maestroi/pokepilot/game"
 	verifier "github.com/maestroi/pokepilot/worldverify"
 )
 
@@ -62,19 +62,21 @@ var gen1RequiredMaps = map[verifier.MapID]string{
 	"78": "Champion's Room is the mandatory final rival battle",
 }
 
-func applyGen1ReachabilityManifest(snapshot *verifier.Snapshot) {
+func applyGen1ReachabilityManifest(snapshot *verifier.Snapshot, parser game.ROMParser) {
 	if snapshot == nil {
 		return
 	}
 
-	// English Red and Blue share the Gen-I native map-id/name table. The
-	// generic verifier still treats both ids and labels as opaque strings.
+	// Native ids remain opaque to the verifier; the detected profile owns the
+	// map-name vocabulary, including Yellow-only maps such as F8.
 	for i := range snapshot.Maps {
 		raw, err := strconv.ParseUint(string(snapshot.Maps[i].ID), 16, 8)
-		if err != nil {
+		if err != nil || parser == nil {
 			continue
 		}
-		snapshot.Maps[i].Label = redstate.MapName(uint8(raw))
+		if label, ok := parser.MapName(uint16(raw)); ok {
+			snapshot.Maps[i].Label = label
+		}
 	}
 
 	seen := make(map[verifier.MapID]bool)
