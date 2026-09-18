@@ -30,15 +30,6 @@ const (
 
 	saffronGateInteractionBudget = 8000
 	saffronGateTravelBattles     = 80
-
-	// vendingDeliverySettle covers VendingMachineMenu's post-purchase delay:
-	// 60 iterations of a 2-frame DelayFrames "brrrr" loop (pokered/engine/
-	// events/vending_machine.asm .playDeliverySound) run before the menu box
-	// is replaced by the delivery text. talkSettle (40 frames) is well short
-	// of that ~120-frame animation, so polling after only talkSettle still
-	// finds the same vending menu on screen and the fail-closed guard in
-	// driveSaffronInteraction misreads it as an unexpected menu intrusion.
-	vendingDeliverySettle = 150
 )
 
 // SaffronGateOpen is the positive story postcondition for the first phase of
@@ -151,10 +142,19 @@ func buySaffronGuardDrink(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		return fmt.Errorf("skill: OpenSaffronGate: select FRESH WATER: %w", err)
 	}
 	// SelectMenuItem proves the cursor before A but intentionally returns as
-	// soon as the confirm tap is sent. Give the vending handler the full
-	// delivery-animation settle window before interpreting any remaining menu.
-	m.StepFrames(vendingDeliverySettle)
-	if err := driveSaffronInteraction(m, saffronGateInteractionBudget, func(mm *state.Mem) bool {
+	// soon as the confirm tap is sent. Give the vending handler one ordinary
+	// settle window before polling for the purchase to land.
+	m.StepFrames(talkSettle)
+	// VendingMachineMenu (pokered/engine/events/vending_machine.asm) calls
+	// HandleMenuInput exactly once, at the top; every branch after the
+	// FRESH WATER/SODA POP/LEMONADE/CANCEL choice only prints text into a
+	// separate box below the item list, never re-entering HandleMenuInput.
+	// Nothing on screen ever redraws over that list, so its cursor glyph
+	// (and MenuUp/DecodeInteraction, which key off exactly that glyph) keep
+	// reading it as a live, unanswered menu for the rest of the purchase.
+	// Once the one real selection above is made, that residual "menu" can
+	// only ever be paged like ordinary dialogue, so tolerate it here.
+	if err := driveSaffronMenuTolerant(m, saffronGateInteractionBudget, func(mm *state.Mem) bool {
 		_, count := bagEntry(mm, freshWaterItem)
 		return count > 0 && state.Controllable(mm)
 	}); err != nil {
@@ -171,6 +171,19 @@ func buySaffronGuardDrink(m *emu.Emu, romData []byte, policy MovePolicy) error {
 // concrete RAM/UI postcondition. Menus are never selected here: if an
 // unexpected menu surface appears, fail closed rather than guessing.
 func driveSaffronInteraction(m *emu.Emu, budget int, done func(*state.Mem) bool) error {
+	return driveSaffronInteractionWithMenuPolicy(m, budget, done, false)
+}
+
+// driveSaffronMenuTolerant is driveSaffronInteraction, except a live
+// InteractionMenu is paged with A instead of failing closed. It exists only
+// for the wait right after a deliberate SelectInteractionIndex call, where
+// the ROM has already consumed its one HandleMenuInput and any menu the
+// decoder still reports is a stale cursor glyph, not a fresh input surface.
+func driveSaffronMenuTolerant(m *emu.Emu, budget int, done func(*state.Mem) bool) error {
+	return driveSaffronInteractionWithMenuPolicy(m, budget, done, true)
+}
+
+func driveSaffronInteractionWithMenuPolicy(m *emu.Emu, budget int, done func(*state.Mem) bool, tolerateMenu bool) error {
 	var mem state.Mem
 	for spent := 0; spent < budget; spent += 10 {
 		state.Snapshot(m, &mem)
@@ -183,6 +196,10 @@ func driveSaffronInteraction(m *emu.Emu, budget int, done func(*state.Mem) bool)
 		case state.InteractionNone:
 			m.StepFrames(10)
 		case state.InteractionMenu:
+			if tolerateMenu {
+				m.Tap(emu.A, 3, 7)
+				continue
+			}
 			// The vending-menu predicate is checked above. Any other live menu
 			// means a story step reached an input surface it did not own.
 			return fmt.Errorf("unexpected menu while waiting: %q", interaction.Text)
