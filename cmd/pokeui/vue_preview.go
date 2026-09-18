@@ -91,6 +91,12 @@ func withVuePreview(next http.Handler, target string) http.Handler {
 		case req.Method == http.MethodGet && strings.HasPrefix(req.URL.Path, "/poke-assets/"):
 			servePokemonAsset(res, req)
 			return
+		case req.Method == http.MethodGet && target == "spectator" && strings.HasPrefix(req.URL.Path, "/gen1/"):
+			name := strings.TrimPrefix(req.URL.Path, "/")
+			if !serveVueFile(res, req, target, name) {
+				http.NotFound(res, req)
+			}
+			return
 		case req.Method == http.MethodGet && strings.HasPrefix(req.URL.Path, "/assets/"):
 			name := strings.TrimPrefix(req.URL.Path, "/")
 			if !serveVueFile(res, req, target, name) {
