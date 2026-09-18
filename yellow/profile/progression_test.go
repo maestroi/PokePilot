@@ -68,8 +68,11 @@ func TestYellowJessieJamesGatesMtMoonAndSilphProgress(t *testing.T) {
 	setYellowEvent(&mem, eventGotMasterBall)
 
 	story := projectYellowStory(&mem, 0x00)
-	if story.Has(gen1.ProgressMtMoonFossilAcquired) {
-		t.Fatal("Mt. Moon progression completed before Jessie/James")
+	if !story.Has(gen1.ProgressMtMoonFossilAcquired) {
+		t.Fatal("fossil acquisition was hidden before Jessie/James")
+	}
+	if story.Has(ProgressYellowMtMoonExitResolved) {
+		t.Fatal("Mt. Moon exit resolved before Jessie/James")
 	}
 	if story.Has(gen1.ProgressSilphCoCleared) {
 		t.Fatal("Silph progression completed before Jessie/James")
@@ -78,8 +81,8 @@ func TestYellowJessieJamesGatesMtMoonAndSilphProgress(t *testing.T) {
 	setYellowEvent(&mem, eventBeatMtMoonJessieJames)
 	setYellowEvent(&mem, eventBeatSilphJessieJames)
 	story = projectYellowStory(&mem, 0x00)
-	if !story.Has(gen1.ProgressMtMoonFossilAcquired) {
-		t.Fatal("Mt. Moon progression did not complete after fossil + Jessie/James")
+	if !story.Has(ProgressYellowMtMoonExitResolved) {
+		t.Fatal("Mt. Moon exit did not resolve after fossil + Jessie/James")
 	}
 	if !story.Has(gen1.ProgressSilphCoCleared) || !story.Has(gen1.ProgressSilphRescueComplete) {
 		t.Fatal("Silph progression did not complete after Yellow-specific gate")
