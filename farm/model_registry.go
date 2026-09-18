@@ -43,9 +43,12 @@ type ModelDeployment struct {
 	// Discover asks the wall to probe the OpenAI-compatible /v1/models endpoint
 	// and bind runs to the model actually being served. This is useful for
 	// pinned llama.cpp/vLLM/cloud endpoints whose model can change without a
-	// PokePilot deploy. Switchable hosts with ControlURL normally leave this off.\n\tDiscover           bool     `json:"discover,omitempty"`
+	// PokePilot deploy. Switchable hosts with ControlURL normally leave this off.
+	Discover           bool     `json:"discover,omitempty"`
 	// DefaultFor gives operator surfaces stable roles without encoding model
-	// sizes or hardware in code (for example "farm", "experiment-a").\n\tDefaultFor         []string `json:"default_for,omitempty"`\n\tControlURL         string `json:"control_url,omitempty"`
+	// sizes or hardware in code (for example "farm", "experiment-a").
+	DefaultFor         []string `json:"default_for,omitempty"`
+	ControlURL         string `json:"control_url,omitempty"`
 	TokenEnv           string `json:"token_env,omitempty"`
 	Engine             string `json:"engine,omitempty"`
 	EngineVersion      string `json:"engine_version,omitempty"`
@@ -179,7 +182,18 @@ func (r ModelRegistry) EnabledDeployments() []ModelDeployment {
 	return out
 }
 
-// HasDefaultRole reports whether this deployment is preferred for an operator role.\n// Roles are intentionally free-form so adding another GPU or a cloud pool does not\n// require another enum/code change.\nfunc (d ModelDeployment) HasDefaultRole(role string) bool {\n\trole = strings.TrimSpace(strings.ToLower(role))\n\tfor _, candidate := range d.DefaultFor {\n\t\tif strings.ToLower(strings.TrimSpace(candidate)) == role {\n\t\t\treturn true\n\t\t}\n\t}\n\treturn false\n}\n\nfunc (d ModelDeployment) Identity() InferenceIdentity {
+// HasDefaultRole reports whether this deployment is preferred for an operator role.
+// Roles are intentionally free-form so adding another GPU or a cloud pool does not
+// require another enum/code change.
+func (d ModelDeployment) HasDefaultRole(role string) bool {
+	role = strings.TrimSpace(strings.ToLower(role))
+	for _, candidate := range d.DefaultFor {
+	\tif strings.ToLower(strings.TrimSpace(candidate)) == role {
+	\t\treturn true
+	\t}
+	}
+	return false\n}\n
+func (d ModelDeployment) Identity() InferenceIdentity {
 	return InferenceIdentity{
 		DeploymentID: d.ID, Label: d.Label, ModelID: d.ModelID,
 		Revision: d.Revision, Artifact: d.Artifact, Quantization: d.Quantization,
