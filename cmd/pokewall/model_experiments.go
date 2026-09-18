@@ -268,9 +268,9 @@ func (c *modelExperimentController) handleDeleteModel(w http.ResponseWriter, r *
 	queued := c.queuedByDeployment()[id]
 	if active > 0 || queued > 0 {
 		writeJSON(w, http.StatusConflict, map[string]any{
-			"error": "deployment still has active or queued runs",
+			"error":         "deployment still has active or queued runs",
 			"active_leases": active,
-			"queued": queued,
+			"queued":        queued,
 		})
 		return
 	}
