@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS model_deployments (
 	quantization TEXT NOT NULL DEFAULT '',
 	compute TEXT NOT NULL,
 	endpoint TEXT NOT NULL,
-	api_model TEXT NOT NULL,
+	api_model TEXT NOT NULL DEFAULT '',
 	enabled BOOLEAN NOT NULL DEFAULT TRUE,
 	control_url TEXT NOT NULL DEFAULT '',
 	endpoint_token_env TEXT NOT NULL DEFAULT '',
@@ -42,6 +42,10 @@ ALTER TABLE model_deployments
 	ADD COLUMN IF NOT EXISTS is_default BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE model_deployments
 	ADD COLUMN IF NOT EXISTS endpoint_token_env TEXT NOT NULL DEFAULT '';
+ALTER TABLE model_deployments
+	ALTER COLUMN model_id SET DEFAULT '';
+ALTER TABLE model_deployments
+	ALTER COLUMN api_model SET DEFAULT '';
 CREATE INDEX IF NOT EXISTS model_deployments_enabled_compute_idx
 	ON model_deployments(enabled, compute, label, id);
 `
