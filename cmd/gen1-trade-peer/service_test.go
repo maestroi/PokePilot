@@ -30,6 +30,28 @@ func TestTradeServiceCapabilities(t *testing.T) {
 	if len(got.Policies) != len(virtualTraderPolicies) {
 		t.Fatalf("policies = %v, want %v", got.Policies, virtualTraderPolicies)
 	}
+	foundSandbox := false
+	for _, policy := range got.Policies {
+		if policy == "sandbox" {
+			foundSandbox = true
+			break
+		}
+	}
+	if !foundSandbox {
+		t.Fatalf("policies = %v, want explicit sandbox capability", got.Policies)
+	}
+}
+
+func TestSandboxPolicyIsExplicitForMew(t *testing.T) {
+	if err := validatePolicySpecies("sandbox", "mew"); err != nil {
+		t.Fatalf("sandbox Mew rejected: %v", err)
+	}
+	if err := validatePolicySpecies("pokedex", "mew"); err == nil {
+		t.Fatal("pokedex policy accepted Mew; want explicit sandbox provenance")
+	}
+	if err := validatePolicySpecies("strict", "pidgey"); err == nil {
+		t.Fatal("synthetic peer accepted strict policy")
+	}
 }
 
 func TestTradeServiceRejectsBadSessionBeforeStartingBroker(t *testing.T) {

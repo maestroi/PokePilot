@@ -18,7 +18,7 @@ import (
 	redtrade "github.com/maestroi/pokepilot/red/trade"
 )
 
-var virtualTraderPolicies = []string{"scripted", "tradeback", "version-assisted", "pokedex"}
+var virtualTraderPolicies = []string{"scripted", "tradeback", "version-assisted", "pokedex", "sandbox"}
 
 type sessionRequest = gen1trade.SessionRequest
 type sessionStatus = gen1trade.SessionStatus
@@ -176,6 +176,9 @@ func (s *tradeService) start(req sessionRequest) (sessionStatus, error) {
 	req.Species = game.CanonicalID(req.Species)
 	if req.Species == "" {
 		req.Species = "pidgey"
+	}
+	if err := validatePolicySpecies(req.Policy, game.SpeciesID(req.Species)); err != nil {
+		return sessionStatus{}, err
 	}
 	if req.Level == 0 {
 		req.Level = 20
