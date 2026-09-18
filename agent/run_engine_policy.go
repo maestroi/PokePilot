@@ -156,14 +156,14 @@ type runFailureDecision struct {
 // Every path keys off fingerprintRecoverableFailure, so these mechanisms cannot
 // disagree about whether two failures are the same semantic event.
 type runFailurePolicy struct {
-	maxConsecutive        int
-	consecutive           int
-	lastFailKey           string
-	retreatStreak         int
-	lastRetreatLevel      uint8
-	escalated             map[string]bool
-	quarantine            map[string]failureQuarantineEntry
-	pendingPrerequisites  []CapabilityID
+	maxConsecutive       int
+	consecutive          int
+	lastFailKey          string
+	retreatStreak        int
+	lastRetreatLevel     uint8
+	escalated            map[string]bool
+	quarantine           map[string]failureQuarantineEntry
+	pendingPrerequisites []CapabilityID
 }
 
 func newRunFailurePolicy(maxConsecutive int) *runFailurePolicy {
