@@ -39,8 +39,8 @@ type ModelDeployment struct {
 	Compute            string `json:"compute"`
 	Endpoint           string `json:"endpoint"`
 	APIModel           string `json:"api_model"`
-	Enabled            bool   `json:"enabled"`
-	ControlURL         string `json:"control_url,omitempty"`
+	Enabled            bool     `json:"enabled"`
+	// Discover asks the wall to probe the OpenAI-compatible /v1/models endpoint\n\t// and bind runs to the model actually being served. This is useful for\n\t// pinned llama.cpp/vLLM/cloud endpoints whose model can change without a\n\t// PokePilot deploy. Switchable hosts with ControlURL normally leave this off.\n\tDiscover           bool     `json:"discover,omitempty"`\n\t// DefaultFor gives operator surfaces stable roles without encoding model\n\t// sizes or hardware in code (for example "farm", "experiment-a").\n\tDefaultFor         []string `json:"default_for,omitempty"`\n\tControlURL         string `json:"control_url,omitempty"`
 	TokenEnv           string `json:"token_env,omitempty"`
 	Engine             string `json:"engine,omitempty"`
 	EngineVersion      string `json:"engine_version,omitempty"`
@@ -124,8 +124,8 @@ func (r ModelRegistry) Validate() error {
 			return fmt.Errorf("model registry: duplicate deployment id %q", id)
 		}
 		seen[id] = true
-		if strings.TrimSpace(d.ModelID) == "" {
-			return fmt.Errorf("model registry: deployment %q has empty model_id", id)
+		if strings.TrimSpace(d.ModelID) == "" && !d.Discover {
+			return fmt.Errorf("model registry: deployment %q has empty model_id (set discover=true for endpoint discovery)", id)
 		}
 		if strings.TrimSpace(d.Compute) == "" {
 			return fmt.Errorf("model registry: deployment %q has empty compute", id)
@@ -133,8 +133,8 @@ func (r ModelRegistry) Validate() error {
 		if strings.TrimSpace(d.Endpoint) == "" {
 			return fmt.Errorf("model registry: deployment %q has empty endpoint", id)
 		}
-		if strings.TrimSpace(d.APIModel) == "" {
-			return fmt.Errorf("model registry: deployment %q has empty api_model", id)
+		if strings.TrimSpace(d.APIModel) == "" && !d.Discover {
+			return fmt.Errorf("model registry: deployment %q has empty api_model (set discover=true for endpoint discovery)", id)
 		}
 		if d.MaxParallelWorkers < 0 {
 			return fmt.Errorf("model registry: deployment %q has invalid max_parallel_workers %d", id, d.MaxParallelWorkers)
@@ -174,7 +174,7 @@ func (r ModelRegistry) EnabledDeployments() []ModelDeployment {
 	return out
 }
 
-func (d ModelDeployment) Identity() InferenceIdentity {
+// HasDefaultRole reports whether this deployment is preferred for an operator role.\n// Roles are intentionally free-form so adding another GPU or a cloud pool does not\n// require another enum/code change.\nfunc (d ModelDeployment) HasDefaultRole(role string) bool {\n\trole = strings.TrimSpace(strings.ToLower(role))\n\tfor _, candidate := range d.DefaultFor {\n\t\tif strings.ToLower(strings.TrimSpace(candidate)) == role {\n\t\t\treturn true\n\t\t}\n\t}\n\treturn false\n}\n\nfunc (d ModelDeployment) Identity() InferenceIdentity {
 	return InferenceIdentity{
 		DeploymentID: d.ID, Label: d.Label, ModelID: d.ModelID,
 		Revision: d.Revision, Artifact: d.Artifact, Quantization: d.Quantization,
