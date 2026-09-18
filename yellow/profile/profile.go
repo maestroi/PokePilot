@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/maestroi/pokepilot/game"
+	yellowrom "github.com/maestroi/pokepilot/yellow/rom"
 	"github.com/maestroi/pokepilot/yellow/sym"
 )
 
@@ -43,26 +44,22 @@ func (*Profile) Symbols() game.SymbolTable {
 	}
 }
 
-// Phase 0 is deliberately capability-empty. Registering exact identity must not
-// accidentally advertise Red-compatible map parsing, battles, inventory, story
-// progress or field moves before the Yellow implementations are validated.
-func (*Profile) Features() game.ProfileFeatures { return game.ProfileFeatures{} }
+func (*Profile) Features() game.ProfileFeatures {
+	return game.ProfileFeatures{
+		game.FeatureMapParsing: true,
+	}
+}
 
 func (*Profile) ROMParser() game.ROMParser { return parser{} }
 
 type parser struct{}
 
 func (parser) MapName(rawMapID uint16) (string, bool) {
-	// Keep this deliberately tiny until Phase 2 supplies the full Yellow map
-	// parser. Phase 1 needs only the fresh-game bedroom plus Pallet Town.
-	switch rawMapID {
-	case 0x00:
-		return "PALLET_TOWN", true
-	case 0x26:
-		return "REDS_HOUSE_2F", true
-	default:
+	if rawMapID > 0xff {
 		return "", false
 	}
+	name := yellowrom.MapName(uint8(rawMapID))
+	return name, name != ""
 }
 
 func (parser) Species(uint16) (game.SpeciesID, bool) {
