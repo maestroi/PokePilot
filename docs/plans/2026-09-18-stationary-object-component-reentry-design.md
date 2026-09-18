@@ -28,17 +28,19 @@ map must replace its prior overlay when it is loaded again.
 
 ## Design
 
-Build each current-map routing overlay from live block geometry plus the
-intersection of:
+Build each current-map routing overlay from live block geometry plus objects
+whose current sprite observation satisfies all three checks:
 
-- ROM objects whose movement is `MovementStay`; and
-- sprite home tiles present in the current RAM snapshot.
+- the live sprite slot maps to the same 1-based ROM object;
+- that ROM object's movement is `MovementStay`; and
+- the live sprite remains on that object's ROM home tile.
 
-This excludes moving sprites and ROM objects that are currently hidden. Apply
-the overlay to the previous per-GoTo graph snapshot rather than rebuilding
-from the immutable graph on every leg. WithMapGrid remains immutable: each
-call returns a new snapshot, and reloading a map replaces that map's earlier
-measurement.
+This excludes moving sprites, displaced objects, and ROM objects that are
+currently hidden, including the case where a different moving sprite happens
+to occupy a hidden stationary object's home coordinate. Apply the overlay to
+the previous per-GoTo graph snapshot rather than rebuilding from the immutable
+graph on every leg. WithMapGrid remains immutable: each call returns a new
+snapshot, and reloading a map replaces that map's earlier measurement.
 
 No map ids, named routes, story cases, or error-string policy enter generic
 routing.

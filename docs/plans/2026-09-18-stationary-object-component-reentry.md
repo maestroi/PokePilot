@@ -18,9 +18,11 @@
 
 **Step 1: Write the failing test**
 
-Add a pure test around a helper that intersects ROM `MovementStay` home tiles
-with live sprite tiles. Assert that a visible stationary trainer is included,
-a moving sprite is excluded, and a hidden stationary object is excluded.
+Add a pure test around a helper that matches live sprite slots to ROM
+`MovementStay` objects on their home tiles. Assert that a visible stationary
+trainer is included, a moving sprite is excluded, a hidden stationary object
+is excluded, and a different moving sprite on the hidden object's home tile
+does not create a false stationary observation.
 
 **Step 2: Run test to verify it fails**
 
