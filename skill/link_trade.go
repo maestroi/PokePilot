@@ -206,9 +206,16 @@ func tradeSelectionMenu(mem *state.Mem) bool {
 	if partyCount == 0 {
 		return false
 	}
-	text := strings.ToUpper(state.ScreenText(mem))
+	// TradeCenter_SelectMon itself establishes this exact controller shape:
+	// player menu at (1,1), wMaxMenuItem == wPartyCount. Do not require
+	// ScreenText here. The Cable Club clears/redraws the tilemap around the
+	// serial exchange, and a perfectly live selection menu can therefore have
+	// no decodable text in our WRAM shadow even though HandleMenuInput is active.
+	// The map + coordinates + party-derived bound are the ROM-owned liveness
+	// invariants and avoid treating rendering as control state.
 	return mem.U8(sym.TopMenuItemY) == 1 && mem.U8(sym.TopMenuItemX) == 1 &&
-		mem.U8(sym.MaxMenuItem) == partyCount && strings.Contains(text, "CANCEL")
+		mem.U8(sym.MaxMenuItem) == partyCount &&
+		mem.U8(sym.CurrentMenuItem) <= partyCount
 }
 
 func waitForTradeSelectionMenu(m *emu.Emu) error {
