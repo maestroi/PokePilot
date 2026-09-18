@@ -177,6 +177,13 @@ func executeRedOwned(m *emu.Emu, romData []byte, o Objective) (result ObjectiveR
 		if !ok {
 			return result, fmt.Errorf("agent: %s: unknown Red item %q", o, o.Item)
 		}
+		if o.Intent == speedrunRepelUseIntent {
+			if err := skill.UseRepel(m, item); err != nil {
+				return result, fmt.Errorf("agent: %s: %w", o, err)
+			}
+			result.ItemEffectVerified = true
+			return result, nil
+		}
 		if o.Intent == "dex-evolution" {
 			used, err := executeDexEvolutionItem(m, romData, o, result)
 			if err == nil {
