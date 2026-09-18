@@ -53,10 +53,10 @@ func TestExperimentExcludesPairsMissingRequiredComparabilityIdentity(t *testing.
 
 	res := requestJSON(t, h, http.MethodGet, "/v1/experiments/"+createdView.ID, nil)
 	var view struct {
-		ArmA   armAggregate             `json:"arm_a"`
-		ArmB   armAggregate             `json:"arm_b"`
-		Paired experimentPairedSummary  `json:"paired"`
-		Pairs  []pairResult             `json:"pairs"`
+		ArmA   armAggregate            `json:"arm_a"`
+		ArmB   armAggregate            `json:"arm_b"`
+		Paired experimentPairedSummary `json:"paired"`
+		Pairs  []pairResult            `json:"pairs"`
 	}
 	if res.Code != http.StatusOK || json.Unmarshal(res.Body.Bytes(), &view) != nil {
 		t.Fatalf("view = %d %s", res.Code, res.Body.String())
