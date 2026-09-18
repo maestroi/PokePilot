@@ -161,8 +161,9 @@ type runFailurePolicy struct {
 	lastFailKey      string
 	retreatStreak    int
 	lastRetreatLevel uint8
-	escalated        map[string]bool
-	quarantine       map[string]failureQuarantineEntry
+	escalated           map[string]bool
+	quarantine          map[string]failureQuarantineEntry
+	pendingPrerequisites []CapabilityID
 }
 
 func newRunFailurePolicy(maxConsecutive int) *runFailurePolicy {
@@ -266,4 +267,5 @@ func (f *runFailurePolicy) success() {
 	f.consecutive = 0
 	f.lastFailKey = ""
 	f.retreatStreak, f.lastRetreatLevel = 0, 0
+	f.pendingPrerequisites = nil
 }
