@@ -48,7 +48,6 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 	topology := knowledgeTopologyFor(profile.ID(), nativeAdjacency)
 
 	known := NewKnowledge(topology)
-	known.Build = budget.Build
 	coverage := newCoverageTracker()
 	intent, intentAge := "", 0
 	resumedPlan := Plan{}
@@ -66,6 +65,11 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 		intent, intentAge = mem.Intent, mem.IntentAge
 		resumedPlan = mem.Plan.clone()
 	}
+	// Failure evidence is scoped to the binary that is actually running. A
+	// resumed checkpoint may carry tallies from an older build; re-apply the
+	// active build after loading checkpoint memory so fixed objectives are not
+	// discouraged by stale pre-fix history.
+	known.Build = budget.Build
 
 	var ring *checkpointRing
 	if budget.CheckpointDir != "" {
@@ -144,7 +148,21 @@ runLoop:
 		last.Round = round
 		last.RoundsLeft = roundsLeft(round, budget.MaxRounds)
 
-		obj, fromPlan, err, retries := engine.planning.choose(budget.Log, round, p, last, now)
+		var (
+			obj      Objective
+			fromPlan bool
+			err      error
+			retries  int
+		)
+		if recovery, capabilities, ok := engine.failures.prerequisiteRecovery(last, now); ok {
+			obj = recovery
+			engine.planning.request("prerequisite_recovery")
+			if budget.Log != nil {
+				fmt.Fprintf(budget.Log, "round %d: deterministic prerequisite recovery for %v -> %s\n", round, capabilities, obj)
+			}
+		} else {
+			obj, fromPlan, err, retries = engine.planning.choose(budget.Log, round, p, last, now)
+		}
 		res.ReplyRetries += retries
 		notifyPlanning(p, engine.planning.snapshot())
 		if errors.Is(err, ErrDone) {
