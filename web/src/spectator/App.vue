@@ -27,6 +27,7 @@ import {
   splitSpectatorRuns
 } from './model'
 import PartyProgress from './PartyProgress.vue'
+import PublicHome from './PublicHome.vue'
 import { policyLabel } from '../shared/playstyle'
 import { bagMeter, dexMeter } from '../shared/playerProgress'
 import { runIDFromLocation, spectatorRunPath } from '../shared/urls'
@@ -402,7 +403,17 @@ function activityTime(item: ActivityItem): string {
         </span>
       </div>
 
-      <section class="mode-hero overflow-hidden rounded-xl border bg-[#0d131c] shadow-xl shadow-black/15">
+      <PublicHome
+        v-if="!selectionPinned && snapshot"
+        :run="selectedRun"
+        :live-runs="groupedRuns.live"
+        :recent-runs="groupedRuns.recent"
+        :summary="snapshot.summary"
+        :frame-url="frameURL"
+        @select="selectRun"
+      />
+
+      <section v-if="selectionPinned" class="mode-hero overflow-hidden rounded-xl border bg-[#0d131c] shadow-xl shadow-black/15">
         <div class="grid gap-5 px-4 py-4 sm:px-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
           <div class="min-w-0">
             <div class="flex flex-wrap items-center gap-2">
