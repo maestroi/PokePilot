@@ -144,8 +144,8 @@ func (r ModelRegistry) Validate() error {
 		if strings.TrimSpace(d.APIModel) == "" && !d.Discover {
 			return fmt.Errorf("model registry: deployment %q has empty api_model (set discover=true for endpoint discovery)", id)
 		}
-		if d.MaxParallelWorkers < 0 {
-			return fmt.Errorf("model registry: deployment %q has invalid max_parallel_workers %d", id, d.MaxParallelWorkers)
+		if d.MaxParallelWorkers < 0 || d.MaxParallelWorkers > MaxParallelWorkersLimit {
+			return fmt.Errorf("model registry: deployment %q has invalid max_parallel_workers %d (must be 0-%d)", id, d.MaxParallelWorkers, MaxParallelWorkersLimit)
 		}
 		switch p := strings.TrimSpace(d.LegacyProfile); p {
 		case "", "auto", "gpu", "default":
