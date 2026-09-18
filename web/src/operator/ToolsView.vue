@@ -24,6 +24,7 @@ type StarterMode =
 const form = reactive<RunSpec>({
   run_id: '',
   seed: 0,
+  game: 'pokemon-red',
   planner: 'llm',
   starter: '',
   dest: '',
@@ -104,6 +105,7 @@ async function submit(): Promise<void> {
     const spec: RunSpec = {
       ...form,
       run_id: form.run_id.trim(),
+      game: form.game,
       starter: starterRequest(),
       dest: isLLM.value ? '' : form.dest.trim(),
       goal: isLLM.value ? form.goal.trim() : '',
@@ -143,6 +145,15 @@ async function submit(): Promise<void> {
             <option value="llm">Play the game</option>
             <option value="scripted">Walk to a place</option>
           </select>
+        </label>
+
+        <label class="block">
+          <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Game</span>
+          <select v-model="form.game" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400">
+            <option value="pokemon-red">Pokémon Red</option>
+            <option value="pokemon-blue">Pokémon Blue</option>
+          </select>
+          <span class="mt-1 block text-[11px] text-slate-600">The worker leases the matching mounted cartridge. Only games with a registered runtime profile are selectable.</span>
         </label>
 
         <label class="block">
