@@ -150,8 +150,6 @@ export interface InferenceIdentity {
   deployment_id: string
   label?: string
   model_id: string
-  discover_model?: boolean
-  default?: boolean
   revision?: string
   artifact?: string
   quantization?: string
@@ -172,6 +170,8 @@ export interface ModelDeployment {
   id: string
   label: string
   model_id: string
+  discover_model?: boolean
+  default?: boolean
   revision?: string
   artifact?: string
   quantization?: string
