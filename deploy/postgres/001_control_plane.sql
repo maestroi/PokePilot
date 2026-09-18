@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS model_deployments (
     quantization TEXT NOT NULL DEFAULT '',
     compute TEXT NOT NULL,
     endpoint TEXT NOT NULL,
-    api_model TEXT NOT NULL,
+    api_model TEXT NOT NULL DEFAULT '',
     enabled BOOLEAN NOT NULL DEFAULT TRUE,
     control_url TEXT NOT NULL DEFAULT '',
     endpoint_token_env TEXT NOT NULL DEFAULT '',
