@@ -5,7 +5,7 @@ import "strings"
 const (
 	speedrunRepelUseIntent = "speedrun-repel"
 	speedrunRepelBuyIntent = "speedrun-repel-supply"
-	targetRepelSteps        = 300
+	targetRepelSteps       = 300
 )
 
 var repelDurations = map[string]int{
