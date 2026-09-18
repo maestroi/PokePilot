@@ -44,26 +44,21 @@ func isSpeedrunRepelObjective(o Objective) bool {
 	return o.Intent == speedrunRepelUseIntent || o.Intent == speedrunRepelBuyIntent
 }
 
-type repelObjectiveProvider struct{}
-
-func (repelObjectiveProvider) Family() ObjectiveFamily { return ObjectiveFamilyEconomy }
-
-func (repelObjectiveProvider) Provide(ctx *objectiveOfferContext) objectiveProviderResult {
-	obs := ctx.obs
+func repelUseObjectives(obs Observation) []Objective {
 	if obs.InBattle || obs.RepelSteps > 0 || len(obs.WildGrass) == 0 {
-		return objectiveProviderResult{}
+		return nil
 	}
 	item, ok := preferredRepelInBag(obs)
 	if !ok {
-		return objectiveProviderResult{}
+		return nil
 	}
-	return objectiveProviderResult{Candidates: []Objective{{
+	return []Objective{{
 		Kind:   KindUseItem,
 		Item:   item,
 		Slot:   -1,
 		Intent: speedrunRepelUseIntent,
 		Note:   "(speedrun encounter management: avoid unnecessary wild-battle transitions on this encounter map)",
-	}}}
+	}}
 }
 
 func filterRepelForPlayStyle(obs Observation, offered []Objective, profile PlayStyleProfile) []Objective {
