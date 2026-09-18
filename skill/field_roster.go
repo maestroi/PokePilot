@@ -319,6 +319,10 @@ func findWildFieldCandidate(m *emu.Emu, romData []byte, target FieldMove, requir
 	if err != nil {
 		return wildFieldCandidate{}, false, err
 	}
+	routePlanner, err := NewRoutePlanner(m, romData)
+	if err != nil {
+		return wildFieldCandidate{}, false, err
+	}
 
 	dests := knownGrassDestinations()
 	x, y := playerXY(m)
@@ -341,6 +345,14 @@ func findWildFieldCandidate(m *emu.Emu, romData []byte, target FieldMove, requir
 			continue
 		}
 		seenMap[dest.Map] = true
+		// Plain graph connectivity is not enough here. A Surf repair must not
+		// choose a Surf-compatible species whose habitat is itself behind Surf
+		// (likewise for Cut/Strength/story gates). Use the same live capability-
+		// aware reachability contract as GoTo before using static route length
+		// only as a ranking signal.
+		if err := routePlanner.Reachability(dest); err != nil {
+			continue
+		}
 		route, err := world.FindRoute(g, cur, dest.Map)
 		if err != nil {
 			continue

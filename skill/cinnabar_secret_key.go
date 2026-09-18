@@ -78,6 +78,14 @@ func AcquireCinnabarSecretKey(m *emu.Emu, romData []byte, policy MovePolicy) err
 	}
 
 	if !onCinnabarSecretKeySlice(m.Peek8(sym.CurMap)) {
+		// Route 21 is the first mandatory Surf traversal in this slice. HM03
+		// ownership alone is not enough: a long-running save may have changed its
+		// party since Fuchsia and no current member may be able to learn Surf.
+		// Repair through normal party/PC/catch actions before asking Travel to
+		// route across water, matching Victory Road's late-game invariant.
+		if err := RepairFieldCapabilities(m, romData, policy, []FieldMove{FieldSurf}); err != nil {
+			return fmt.Errorf("skill: AcquireCinnabarSecretKey: prepare Surf carrier: %w", err)
+		}
 		if _, err := TravelFlee(m, romData, Destination{Map: semanticPalletTownMap, X: 5, Y: 6}, policy, mansionTravelBattles); err != nil {
 			return fmt.Errorf("skill: AcquireCinnabarSecretKey: reach Pallet for Route 21: %w", err)
 		}
