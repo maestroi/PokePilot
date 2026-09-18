@@ -444,7 +444,7 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 	case "scripted":
 		reason, detail, progEarly, progFinal = runFarmScripted(m, starter, dest, seed)
 	case "llm":
-		reason, detail, progEarly, progFinal = runFarmLLM(m, starter, goal, spec.LLMProfile, spec.ReasoningEffort, maxRounds, maxFrames, seed, cancel, snap, checkpointDir)
+		reason, detail, progEarly, progFinal = runFarmLLM(m, starter, goal, spec.LLMProfile, spec.ReasoningEffort, spec.Inference, maxRounds, maxFrames, seed, cancel, snap, checkpointDir)
 	}
 
 	// The objective that satisfies a deterministic goal can stop the agent
@@ -626,7 +626,7 @@ func runFarmScripted(m *emu.Emu, starter, dest string, seed int64) (string, stri
 // runFarmLLM mirrors runLLM's diagnostics and objective list; the only
 // differences are that the budget comes from the spec and cancel is the
 // wall's cooperative stop.
-func runFarmLLM(m *emu.Emu, starter, goal, llmProfile, reasoningEffort string, maxRounds, maxFrames int, seed int64, cancel <-chan struct{}, snap *heartbeatSnap, checkpointDir string) (string, string, *farm.Progress, *farm.Progress) {
+func runFarmLLM(m *emu.Emu, starter, goal, llmProfile, reasoningEffort string, inference *farm.InferenceIdentity, maxRounds, maxFrames int, seed int64, cancel <-chan struct{}, snap *heartbeatSnap, checkpointDir string) (string, string, *farm.Progress, *farm.Progress) {
 	resumeFrom := farmResumePath(checkpointDir)
 	// When the spec names a starter, the farm takes it before handing control
 	// to the model — the same reason badgerun does (a model that knows Pokemon
@@ -646,7 +646,7 @@ func runFarmLLM(m *emu.Emu, starter, goal, llmProfile, reasoningEffort string, m
 	fmt.Println("planner: llm — the model picks from a menu rebuilt every round")
 
 	logw := &agentTraceLog{w: os.Stdout, note: m.TraceNote}
-	stats := newStatsPlanner(llmProfile, reasoningEffort, goal, m, m.TraceStats, snap)
+	stats := newStatsPlannerWithRunPolicyAndInference(llmProfile, reasoningEffort, farm.CurrentPlayStyle(), farm.CurrentRiskTolerance(), farm.CurrentWildEncounters(), goal, inference, m, m.TraceStats, snap)
 	stats.wirePlannerLogs(logw, snap)
 	res := agent.Run(m, m.ROM(), reportingPlanner{inner: stats, snap: snap}, agent.Budget{
 		MaxRounds:     maxRounds,
