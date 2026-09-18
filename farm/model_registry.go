@@ -188,11 +188,13 @@ func (r ModelRegistry) EnabledDeployments() []ModelDeployment {
 func (d ModelDeployment) HasDefaultRole(role string) bool {
 	role = strings.TrimSpace(strings.ToLower(role))
 	for _, candidate := range d.DefaultFor {
-	\tif strings.ToLower(strings.TrimSpace(candidate)) == role {
-	\t\treturn true
-	\t}
+		if strings.ToLower(strings.TrimSpace(candidate)) == role {
+			return true
+		}
 	}
-	return false\n}\n
+	return false
+}
+
 func (d ModelDeployment) Identity() InferenceIdentity {
 	return InferenceIdentity{
 		DeploymentID: d.ID, Label: d.Label, ModelID: d.ModelID,
