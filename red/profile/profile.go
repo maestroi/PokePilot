@@ -26,6 +26,7 @@ const (
 	ProgressSSTicketAcquired           game.ProgressID = "ss_ticket_acquired"
 	ProgressHM01Acquired               game.ProgressID = "hm01_acquired"
 	ProgressBicycleAcquired            game.ProgressID = "bicycle_acquired"
+	ProgressBoulderBadge               game.ProgressID = "boulder_badge"
 	ProgressThunderBadge               game.ProgressID = "thunder_badge"
 	ProgressPostSurgeLavenderReached   game.ProgressID = "post_surge_lavender_reached"
 	ProgressPostSurgeCeladonReady      game.ProgressID = "post_surge_celadon_ready"
@@ -272,6 +273,7 @@ func ProjectStory(mem *state.Mem, facts state.StoryFacts) game.ProgressState {
 	// stricter: inside the lobby, readiness requires a fully recovered party.
 	indigoReady := leaguePastLobby || mapID == indigoPlateauMap || (mapID == indigoPlateauLobbyMap && partyCenterRecovered(state.DecodeParty(mem)))
 	return append(progress,
+		game.ProgressFact{ID: ProgressBoulderBadge, Complete: badges.Has(state.BadgeBoulder)},
 		game.ProgressFact{ID: ProgressThunderBadge, Complete: badges.Has(state.BadgeThunder)},
 		game.ProgressFact{ID: ProgressPostSurgeLavenderReached, Complete: postSurgeLavenderReached(mapID)},
 		game.ProgressFact{ID: ProgressPostSurgeCeladonReady, Complete: postSurgeCeladonArea(mapID) && partyCenterRecovered(state.DecodeParty(mem))},

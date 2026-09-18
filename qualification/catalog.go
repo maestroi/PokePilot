@@ -55,10 +55,9 @@ type Case struct {
 	BlockedBy   int         `json:"blocked_by_issue,omitempty"`
 }
 
-// Catalog returns the complete Red qualification roadmap. Cases whose
-// progression slice has not landed stay visible but unavailable; that makes the
-// qualification matrix grow by flipping the case live when its slice lands,
-// rather than inventing a second roadmap in CI.
+// Catalog returns the complete Red qualification roadmap. Landed progression
+// slices stay runnable in the milestone profile so daily qualification proves
+// the same badge/story handoffs the farm depends on.
 func Catalog() []Case {
 	return []Case{
 		{
@@ -126,8 +125,9 @@ func Catalog() []Case {
 			Layer:       LayerMilestone,
 			Runner:      RunnerRedSkill,
 			Checkpoint:  "fuchsia-koga-surf-strength/start.state",
-			Available:   false,
-			BlockedBy:   33,
+			Action:      "fuchsia-progression",
+			Expect:      Expectation{Kind: "progress", Value: "fuchsia_progression_complete"},
+			Available:   true,
 		},
 		{
 			ID:          "silph-sabrina",
@@ -135,8 +135,9 @@ func Catalog() []Case {
 			Layer:       LayerMilestone,
 			Runner:      RunnerRedSkill,
 			Checkpoint:  "silph-sabrina/start.state",
-			Available:   false,
-			BlockedBy:   34,
+			Action:      "silph-sabrina",
+			Expect:      Expectation{Kind: "badge", Value: "Marsh"},
+			Available:   true,
 		},
 		{
 			ID:          "cinnabar-blaine",
@@ -144,8 +145,9 @@ func Catalog() []Case {
 			Layer:       LayerMilestone,
 			Runner:      RunnerRedSkill,
 			Checkpoint:  "cinnabar-blaine/start.state",
-			Available:   false,
-			BlockedBy:   35,
+			Action:      "cinnabar-blaine",
+			Expect:      Expectation{Kind: "badge", Value: "Volcano"},
+			Available:   true,
 		},
 		{
 			ID:          "viridian-giovanni",
@@ -153,8 +155,9 @@ func Catalog() []Case {
 			Layer:       LayerMilestone,
 			Runner:      RunnerRedSkill,
 			Checkpoint:  "viridian-giovanni/start.state",
-			Available:   false,
-			BlockedBy:   36,
+			Action:      "viridian-giovanni",
+			Expect:      Expectation{Kind: "badge", Value: "Earth"},
+			Available:   true,
 		},
 		{
 			ID:          "victory-road-indigo",
@@ -162,8 +165,9 @@ func Catalog() []Case {
 			Layer:       LayerMilestone,
 			Runner:      RunnerRedSkill,
 			Checkpoint:  "victory-road-indigo/start.state",
-			Available:   false,
-			BlockedBy:   37,
+			Action:      "victory-road-indigo",
+			Expect:      Expectation{Kind: "progress", Value: "indigo_plateau_ready"},
+			Available:   true,
 		},
 		{
 			ID:          "elite-four-champion",

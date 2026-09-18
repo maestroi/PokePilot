@@ -28,11 +28,11 @@ func TestCatalogContainsQualificationRoadmap(t *testing.T) {
 		"misty":                      0,
 		"rocket-hideout":             0,
 		"pokemon-tower":              0,
-		"fuchsia-koga-surf-strength": 33,
-		"silph-sabrina":              34,
-		"cinnabar-blaine":            35,
-		"viridian-giovanni":          36,
-		"victory-road-indigo":        37,
+		"fuchsia-koga-surf-strength": 0,
+		"silph-sabrina":              0,
+		"cinnabar-blaine":            0,
+		"viridian-giovanni":          0,
+		"victory-road-indigo":        0,
 		"elite-four-champion":        0,
 		"fresh-hall-of-fame":         0,
 	}
@@ -58,9 +58,9 @@ func TestSelectProfiles(t *testing.T) {
 		want    []string
 	}{
 		{profile: "skills", want: []string{"rom-short"}},
-		{profile: "milestones", want: []string{"opening-brock", "mt-moon-cerulean", "misty", "rocket-hideout", "pokemon-tower", "elite-four-champion"}},
+		{profile: "milestones", want: []string{"opening-brock", "mt-moon-cerulean", "misty", "rocket-hideout", "pokemon-tower", "fuchsia-koga-surf-strength", "silph-sabrina", "cinnabar-blaine", "viridian-giovanni", "victory-road-indigo", "elite-four-champion"}},
 		{profile: "full", want: []string{"fresh-hall-of-fame"}},
-		{profile: "", want: []string{"opening-brock", "mt-moon-cerulean", "misty", "rocket-hideout", "pokemon-tower", "elite-four-champion"}},
+		{profile: "", want: []string{"opening-brock", "mt-moon-cerulean", "misty", "rocket-hideout", "pokemon-tower", "fuchsia-koga-surf-strength", "silph-sabrina", "cinnabar-blaine", "viridian-giovanni", "victory-road-indigo", "elite-four-champion"}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.profile, func(t *testing.T) {
@@ -80,7 +80,7 @@ func TestSelectProfiles(t *testing.T) {
 	}
 }
 
-func TestSelectAllExcludesFutureUnavailableMilestones(t *testing.T) {
+func TestSelectAllIncludesEveryLandedMilestone(t *testing.T) {
 	cases, err := Select("all", "")
 	if err != nil {
 		t.Fatal(err)
@@ -90,22 +90,35 @@ func TestSelectAllExcludesFutureUnavailableMilestones(t *testing.T) {
 			t.Fatalf("Select returned unavailable case %+v", c)
 		}
 	}
-	for _, forbidden := range []string{"fuchsia-koga-surf-strength", "silph-sabrina", "cinnabar-blaine", "viridian-giovanni", "victory-road-indigo"} {
-		if hasCase(cases, forbidden) {
-			t.Errorf("Select(all) included future case %q", forbidden)
-		}
-	}
-	for _, required := range []string{"elite-four-champion", "fresh-hall-of-fame"} {
+	for _, required := range []string{
+		"fuchsia-koga-surf-strength",
+		"silph-sabrina",
+		"cinnabar-blaine",
+		"viridian-giovanni",
+		"victory-road-indigo",
+		"elite-four-champion",
+		"fresh-hall-of-fame",
+	} {
 		if !hasCase(cases, required) {
 			t.Errorf("Select(all) omitted runnable %s case", required)
 		}
 	}
 }
 
-func TestSelectPendingCaseFailsWithBlocker(t *testing.T) {
-	_, err := Select("milestones", "fuchsia-koga-surf-strength")
-	if err == nil || !strings.Contains(err.Error(), "#33") {
-		t.Fatalf("err=%v, want blocker #33", err)
+func TestLateGameCasesHaveActionsAndPositivePostconditions(t *testing.T) {
+	for _, c := range Catalog() {
+		switch c.ID {
+		case "fuchsia-koga-surf-strength", "silph-sabrina", "cinnabar-blaine", "viridian-giovanni", "victory-road-indigo":
+			if !c.Available {
+				t.Errorf("%s is still unavailable", c.ID)
+			}
+			if c.Action == "" {
+				t.Errorf("%s has no direct action", c.ID)
+			}
+			if c.Expect.Kind == "" || c.Expect.Value == "" {
+				t.Errorf("%s has no positive semantic postcondition: %+v", c.ID, c.Expect)
+			}
+		}
 	}
 }
 

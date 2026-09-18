@@ -313,8 +313,8 @@ func driveUrgency(obs Observation) map[Drive]float64 {
 }
 
 // AnnotatePlayStyle adds compact, inspectable drive hints to the lines the LLM
-// already sees. Speedrun is an exact no-op so old runs stay byte-for-byte
-// compatible until a non-Speedrun profile is explicitly selected.
+// already sees. Speedrun is an exact scoring/annotation no-op so old runs stay
+// byte-for-byte compatible until a non-Speedrun profile is explicitly selected.
 func AnnotatePlayStyle(obs Observation, offered []Objective, profile PlayStyleProfile) []Objective {
 	out := filterRepelForPlayStyle(obs, offered, profile)
 	if profile.Name == "" || profile.Name == PlayStyleSpeedrun {

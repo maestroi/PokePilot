@@ -25,6 +25,7 @@ import (
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/qualification"
 	redrom "github.com/maestroi/pokepilot/red/rom"
+	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/skill"
 )
 
@@ -346,6 +347,16 @@ func runRedSkillCase(cfg config, c qualification.Case, caseDir string) ([]string
 		actionErr = skill.RocketHideout(m, romBytes, policy)
 	case "pokemon-tower":
 		actionErr = skill.PokemonTower(m, romBytes, policy)
+	case "fuchsia-progression":
+		actionErr = skill.FuchsiaProgression(m, romBytes, policy)
+	case "silph-sabrina":
+		actionErr = runSilphSabrinaQualification(m, romBytes, policy)
+	case "cinnabar-blaine":
+		actionErr = runCinnabarBlaineQualification(m, romBytes, policy)
+	case "viridian-giovanni":
+		actionErr = skill.ViridianProgression(m, romBytes, policy)
+	case "victory-road-indigo":
+		actionErr = skill.VictoryRoadProgression(m, romBytes, policy)
 	default:
 		actionErr = fmt.Errorf("unknown Red qualification action %q", c.Action)
 	}
@@ -495,6 +506,43 @@ func runFullCase(cfg config, caseDir string, stdout io.Writer) ([]string, error)
 	return evidence, nil
 }
 
+func runSilphSabrinaQualification(m *emu.Emu, romBytes []byte, policy skill.MovePolicy) error {
+	if err := skill.OpenSaffronGate(m, romBytes, policy); err != nil {
+		return fmt.Errorf("open Saffron: %w", err)
+	}
+	if err := skill.AcquireSilphCardKey(m, romBytes, policy); err != nil {
+		return fmt.Errorf("acquire Card Key: %w", err)
+	}
+	if err := skill.ClearSilphCo(m, romBytes, policy); err != nil {
+		return fmt.Errorf("clear Silph Co: %w", err)
+	}
+	dest, ok := skill.Place("saffron gym")
+	if !ok {
+		return fmt.Errorf("saffron gym place missing")
+	}
+	if _, err := skill.TravelFlee(m, romBytes, dest, policy, 60); err != nil {
+		return fmt.Errorf("reach Saffron Gym: %w", err)
+	}
+	outcome, err := skill.Gym(m, romBytes, policy)
+	if err != nil {
+		return fmt.Errorf("Sabrina: %w", err)
+	}
+	if outcome != state.ResultWon {
+		return fmt.Errorf("Sabrina outcome=%d, want won", outcome)
+	}
+	return nil
+}
+
+func runCinnabarBlaineQualification(m *emu.Emu, romBytes []byte, policy skill.MovePolicy) error {
+	if err := skill.AcquireCinnabarSecretKey(m, romBytes, policy); err != nil {
+		return fmt.Errorf("acquire Secret Key: %w", err)
+	}
+	if err := skill.CinnabarProgression(m, romBytes, policy); err != nil {
+		return fmt.Errorf("Blaine: %w", err)
+	}
+	return nil
+}
+
 func verifyExpectation(expect qualification.Expectation, obs agent.Observation) error {
 	switch expect.Kind {
 	case "":
@@ -506,6 +554,18 @@ func verifyExpectation(expect qualification.Expectation, obs agent.Observation) 
 			}
 		}
 		return fmt.Errorf("item %q is not owned", expect.Value)
+	case "badge":
+		for _, badge := range obs.Badges {
+			if strings.EqualFold(badge, expect.Value) {
+				return nil
+			}
+		}
+		return fmt.Errorf("badge %q is not owned", expect.Value)
+	case "progress":
+		if obs.Story.Has(agent.ProgressID(expect.Value)) {
+			return nil
+		}
+		return fmt.Errorf("progress %q is not complete", expect.Value)
 	default:
 		return fmt.Errorf("unsupported expectation kind %q", expect.Kind)
 	}

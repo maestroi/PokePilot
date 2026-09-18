@@ -18,6 +18,7 @@ func redProgressionKnown(id ProgressID) bool {
 		redProgressSSTicketAcquired,
 		redProgressHM01Acquired,
 		redProgressBicycleAcquired,
+		redProgressBoulderBadge,
 		redProgressThunderBadge,
 		redProgressPostSurgeLavenderReached,
 		redProgressPostSurgeCeladonReady,
@@ -109,6 +110,13 @@ func redProgressionObjectives(obs Observation) []Objective {
 			Note:     "(deliver Oak's parcel and acquire the Pokedex)",
 		})
 	}
+	if obs.Story.Has(redProgressPokedexAcquired) && !hasBadge(obs, state.BadgeBoulder) {
+		out = append(out, Objective{
+			Kind:     KindProgress,
+			Progress: redProgressBoulderBadge,
+			Note:     "(travel through Viridian Forest to Pewter, challenge Brock, and positively verify the Boulder Badge before Route 3)",
+		})
+	}
 	if skill.BillProgressionAvailable(obs.Map) && !obs.Story.Has(redProgressSSTicketAcquired) {
 		out = append(out, Objective{
 			Kind:     KindProgress,
@@ -121,13 +129,6 @@ func redProgressionObjectives(obs Observation) []Objective {
 			Kind:     KindProgress,
 			Progress: redProgressHM01Acquired,
 			Note:     "(go to Vermilion, board the S.S. Anne with the ticket, defeat the scripted rival on 2F, and receive HM01 Cut from the Captain)",
-		})
-	}
-	if obs.Story.Has(redProgressHM01Acquired) && !obs.Story.Has(redProgressBicycleAcquired) {
-		out = append(out, Objective{
-			Kind:     KindProgress,
-			Progress: redProgressBicycleAcquired,
-			Note:     "(visit the Pokemon Fan Club chairman in Vermilion for the Bike Voucher, then exchange it at Cerulean's Bike Shop for the Bicycle)",
 		})
 	}
 	if obs.Story.Has(redProgressHM01Acquired) && redCutFieldUnlocked(obs) && !hasBadge(obs, state.BadgeThunder) {
@@ -343,6 +344,8 @@ func executeRedProgression(m *emu.Emu, romData []byte, o Objective) error {
 		return skill.SSAnneHM01(m, romData, policy)
 	case redProgressBicycleAcquired:
 		return skill.AcquireBicycle(m, romData, policy)
+	case redProgressBoulderBadge:
+		return skill.BoulderProgression(m, romData, policy)
 	case redProgressThunderBadge:
 		return skill.SurgeProgression(m, romData, policy)
 	case redProgressPostSurgeLavenderReached:

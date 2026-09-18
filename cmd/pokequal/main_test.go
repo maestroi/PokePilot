@@ -36,13 +36,13 @@ func TestListDoesNotNeedROM(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := out.String()
-	for _, id := range []string{"rom-short", "opening-brock", "rocket-hideout", "fresh-hall-of-fame"} {
+	for _, id := range []string{"rom-short", "opening-brock", "rocket-hideout", "fuchsia-koga-surf-strength", "silph-sabrina", "cinnabar-blaine", "viridian-giovanni", "victory-road-indigo", "fresh-hall-of-fame"} {
 		if !strings.Contains(text, id) {
 			t.Errorf("list missing %q: %s", id, text)
 		}
 	}
-	if !strings.Contains(text, "blocked #33") {
-		t.Fatalf("list no longer exposes pending milestone blockers: %s", text)
+	if strings.Contains(text, "blocked #33") || strings.Contains(text, "blocked #34") || strings.Contains(text, "blocked #35") || strings.Contains(text, "blocked #36") || strings.Contains(text, "blocked #37") {
+		t.Fatalf("landed late-game milestones are still listed blocked: %s", text)
 	}
 	if strings.Contains(text, "product blocked #39") {
 		t.Fatalf("fresh full qualification still reported as product-blocked: %s", text)
@@ -77,6 +77,27 @@ func TestVerifyExpectationUsesSemanticBag(t *testing.T) {
 	}
 	if err := verifyExpectation(qualification.Expectation{Kind: "item", Value: "poke flute"}, obs); err == nil {
 		t.Fatal("missing item accepted")
+	}
+}
+
+func TestVerifyExpectationUsesSemanticBadgeAndProgress(t *testing.T) {
+	obs := agent.Observation{
+		Badges: []string{"Marsh"},
+		Story: agent.ProgressState{
+			{ID: agent.ProgressID("indigo_plateau_ready"), Complete: true},
+		},
+	}
+	if err := verifyExpectation(qualification.Expectation{Kind: "badge", Value: "marsh"}, obs); err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyExpectation(qualification.Expectation{Kind: "badge", Value: "Earth"}, obs); err == nil {
+		t.Fatal("missing badge accepted")
+	}
+	if err := verifyExpectation(qualification.Expectation{Kind: "progress", Value: "indigo_plateau_ready"}, obs); err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyExpectation(qualification.Expectation{Kind: "progress", Value: "main_story_complete"}, obs); err == nil {
+		t.Fatal("missing progress accepted")
 	}
 }
 
