@@ -97,10 +97,11 @@ one call that answers all ten.
 
 ## Read the decomp; it is vendored here
 
-The full pokered decomposition is at `pokered/` in every worktree — no setup,
-no network. It writes its own paths as `scripts/Foo.asm`; here they are
-`pokered/scripts/Foo.asm`, and several attempts have burned budget
-rediscovering that. `docs/POKERED.md` maps question -> file.
+The pret decomps are at `pokered/` and `pokeyellow/` in every worktree — no
+setup, no network. They write their own paths as `scripts/Foo.asm`; here they
+are `pokered/scripts/Foo.asm` or `pokeyellow/scripts/Foo.asm`, and several
+attempts have burned budget rediscovering that. `docs/POKERED.md` and
+`docs/POKEYELLOW.md` map question -> file.
 
 Read how a value is **written**, not only how it is read. Sprite map
 coordinates are stored with +4 added (`macros/scripts/maps.asm`), which is

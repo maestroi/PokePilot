@@ -13,8 +13,11 @@ import (
 const (
 	gen1BagCapacity       = 20
 	bagQuantityMenuBudget = 300
-	bagTossConfirmBudget  = 600
-	bagTossSettleBudget   = 3000
+	// bagTossConfirmAdvanceBudget counts advanceUntil loop iterations (each
+	// up to talkSettle frames while a text box is up), not raw frames; sized
+	// like the sibling text-advance budgets in heal.go/story.go.
+	bagTossConfirmAdvanceBudget = 3000
+	bagTossSettleBudget         = 3000
 )
 
 // ErrNoSafeBagSpace reports that a full bag has no stack this skill is
@@ -247,13 +250,24 @@ func tossBagStack(m *emu.Emu, idx int, item state.BagItem) error {
 		return err
 	}
 
-	// TossItem asks one final YES/NO. Detect the actual prompt text instead
-	// of assuming its coordinates differ from USE/TOSS.
-	if _, err := m.StepUntil(bagTossConfirmBudget, func(m *emu.Emu) bool {
-		state.Snapshot(m, &mem)
-		return tossConfirmationPrompt(&mem) != nil
-	}); err != nil {
-		return fmt.Errorf("toss confirmation did not appear: %w", err)
+	// TossItem prints "Is it OK to toss X?" ending in a <PROMPT> (pokered
+	// data/text/text_7.asm IsItOKToTossItemText): the question text needs an
+	// A press to dismiss its own arrow before DisplayTextBoxID ever draws the
+	// YES/NO menu (pokered engine/items/item_effects.asm TossItem_). A purely
+	// passive wait never sends that press and hangs forever, which is exactly
+	// what MEASURED failure-id:obhglcih...bkigcangaahddldkgngdai did: wTopMenuItemY
+	// (0xCC24) never changed across 5,000,000 CPU steps from the stalled
+	// state. advanceUntil is the shared "press A while text is up" loop
+	// (skill/story.go, also used by Heal/gyms/mart/tower/hideout) and is the
+	// existing invariant for exactly this shape, so this reuses it instead of
+	// a bespoke wait. The predicate is tossConfirmationPrompt (semantic text
+	// match, not coordinates) so advancing never presses A into the
+	// confirmation prompt itself once it appears.
+	mem = advanceUntil(m, bagTossConfirmAdvanceBudget, func(mem *state.Mem) bool {
+		return tossConfirmationPrompt(mem) != nil
+	})
+	if tossConfirmationPrompt(&mem) == nil {
+		return fmt.Errorf("toss confirmation did not appear within %d iterations", bagTossConfirmAdvanceBudget)
 	}
 	if err := selectTwoOption(m, 0); err != nil { // YES
 		return fmt.Errorf("confirm toss: %w", err)
