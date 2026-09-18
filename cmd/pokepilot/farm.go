@@ -467,6 +467,17 @@ func livePlayer(m *emu.Emu, mem *state.Mem) *farm.Player {
 	return playerSnapshot(g, state.DecodeStoryFacts(mem, g.Inventory))
 }
 
+func livePlayerForProfile(m *emu.Emu, profile game.GameProfile, mem *state.Mem) *farm.Player {
+	if profile.Features().Has(game.FeatureInventory) {
+		return livePlayer(m, mem)
+	}
+	base, err := profile.DecodeObservation(m, m.ROM())
+	if err != nil {
+		return nil
+	}
+	return profilePlayerSnapshot(base)
+}
+
 func profilePlayerSnapshot(obs game.ProfileObservation) *farm.Player {
 	p := &farm.Player{
 		Money:  obs.Money,
