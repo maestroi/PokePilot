@@ -2,13 +2,13 @@ package main
 
 import (
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"testing"
 
 	"github.com/maestroi/pokepilot/farm"
 	_ "modernc.org/sqlite"
-	"database/sql"
 )
 
 func TestControlPlaneFinishReportDoesNotNeedLocalCache(t *testing.T) {
