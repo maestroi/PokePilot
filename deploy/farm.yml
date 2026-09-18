@@ -253,11 +253,12 @@ services:
       POKEPILOT_LLM_GATEWAY_NO_THINK: ${POKEPILOT_LLM_GATEWAY_NO_THINK:-1}
       POKEPILOT_LLM_GATEWAY_RECOVERY_REASONING_EFFORT: ${POKEPILOT_LLM_GATEWAY_RECOVERY_REASONING_EFFORT:-off}
 
-      # Stable run-spec values keep backwards compatibility while the physical
-      # routes are now hardcoded/direct:
-      #   auto    -> 7900 XTX -> CPU/LAN on transport failure or 120s timeout
-      #   gpu     -> RTX 4090 only (manual selection)
-      #   default -> CPU/LAN only (manual selection)
+      # Legacy/profile endpoint defaults. Registry-backed farm leases override
+      # the primary URL/model with their frozen InferenceIdentity; these values
+      # remain for local CLI use, mixed-version queued runs, and fallback policy.
+      #   auto    -> registry-selected primary -> CPU/LAN on transport failure
+      #   gpu     -> RTX 4090 only (manual legacy selection)
+      #   default -> CPU/LAN only (manual legacy selection)
       # The 7900 keeps the historical POKEPILOT_LLM_GPU_* prefix.
       POKEPILOT_LLM_GPU_URL: ${POKEPILOT_LLM_GPU_URL:-http://192.168.50.130:8002/v1}
       POKEPILOT_LLM_GPU_MODEL: ${POKEPILOT_LLM_GPU_MODEL:-qwen3.8-27b}
@@ -286,7 +287,10 @@ services:
     volumes:
       - ${POKEPILOT_ROM_DIR}:/rom:ro
     deploy:
-      replicas: 2
+      # Four workers let the default 4-slot inference deployment stay busy.
+      # This is independent of GPU count: the wall's per-deployment ceilings
+      # decide how many of these workers may share each local/cloud endpoint.
+      replicas: ${POKEPILOT_RUNNER_REPLICAS:-4}
       # 1G is a fence, not the steady-state budget. A healthy runner is 10-50MB;
       # Finish used to reload the whole checkpoint ring and spike to a few GB.
       resources:
