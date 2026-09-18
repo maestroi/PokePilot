@@ -13,11 +13,12 @@ import (
 	blueprofile "github.com/maestroi/pokepilot/blue/profile"
 	"github.com/maestroi/pokepilot/profiles"
 	redprofile "github.com/maestroi/pokepilot/red/profile"
+	yellowprofile "github.com/maestroi/pokepilot/yellow/profile"
 	"github.com/maestroi/pokepilot/skill"
 	"github.com/maestroi/pokepilot/world"
 	verifier "github.com/maestroi/pokepilot/worldverify"
-	yellowprofile "github.com/maestroi/pokepilot/yellow/profile"
 )
+
 
 func main() {
 	romPath := flag.String("rom", defaultROMPath(), "path to ROM (defaults to POKEMON_ROM, then POKEMON_RED_ROM)")
@@ -29,8 +30,7 @@ func main() {
 
 	requestedGame, err := normalizeGameFlag(*game)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "worldverify: %v
-", err)
+		fmt.Fprintf(os.Stderr, "worldverify: %v\n", err)
 		os.Exit(2)
 	}
 	if *romPath == "" {
@@ -39,32 +39,27 @@ func main() {
 	}
 	romData, err := os.ReadFile(*romPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "worldverify: read ROM: %v
-", err)
+		fmt.Fprintf(os.Stderr, "worldverify: read ROM: %v\n", err)
 		os.Exit(1)
 	}
 
 	profile, _, err := profiles.Detect(romData)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "worldverify: detect ROM: %v
-", err)
+		fmt.Fprintf(os.Stderr, "worldverify: detect ROM: %v\n", err)
 		os.Exit(1)
 	}
 	if requestedGame != "auto" && requestedGame != string(profile.ID()) {
-		fmt.Fprintf(os.Stderr, "worldverify: -game %q does not match detected ROM profile %q
-", *game, profile.ID())
+		fmt.Fprintf(os.Stderr, "worldverify: -game %q does not match detected ROM profile %q\n", *game, profile.ID())
 		os.Exit(2)
 	}
 	if !hasWorldAdapter(string(profile.ID())) {
-		fmt.Fprintf(os.Stderr, "worldverify: no world adapter for detected profile %q
-", profile.ID())
+		fmt.Fprintf(os.Stderr, "worldverify: no world adapter for detected profile %q\n", profile.ID())
 		os.Exit(2)
 	}
 
 	graph, err := world.BuildGraph(romData)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "worldverify: build graph: %v
-", err)
+		fmt.Fprintf(os.Stderr, "worldverify: build graph: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -85,24 +80,20 @@ func main() {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
 		if err := enc.Encode(report); err != nil {
-			fmt.Fprintf(os.Stderr, "worldverify: encode report: %v
-", err)
+			fmt.Fprintf(os.Stderr, "worldverify: encode report: %v\n", err)
 			os.Exit(1)
 		}
 	} else {
-		fmt.Printf("%s world verification: %d maps, %d edges, %d components, %d capabilities
-",
+		fmt.Printf("%s world verification: %d maps, %d edges, %d components, %d capabilities\n",
 			report.Game, report.Stats.Maps, report.Stats.Edges, report.Stats.Components, report.Stats.Capabilities)
 		if report.Stats.CapabilityStatesChecked > 0 {
 			mode := "bounded"
 			if report.Stats.ExhaustiveCapabilities {
 				mode = "exhaustive"
 			}
-			fmt.Printf("capability exploration: %d states (%s), full-set reachability %d maps / %d components
-",
+			fmt.Printf("capability exploration: %d states (%s), full-set reachability %d maps / %d components\n",
 				report.Stats.CapabilityStatesChecked, mode, report.Stats.FullReachableMaps, report.Stats.FullReachableComponents)
-			fmt.Printf("reachability audit: %d unreachable (%d required, %d optional, %d expected-unused, %d story-state, %d suspicious)
-",
+			fmt.Printf("reachability audit: %d unreachable (%d required, %d optional, %d expected-unused, %d story-state, %d suspicious)\n",
 				report.Stats.FullUnreachableMaps,
 				report.Stats.RequiredUnreachableMaps,
 				report.Stats.OptionalUnreachableMaps,
@@ -114,14 +105,12 @@ func main() {
 				if label == "" {
 					label = "(unnamed)"
 				}
-				fmt.Printf("unreachable %-22s map=%s %-32s %s
-",
+				fmt.Printf("unreachable %-22s map=%s %-32s %s\n",
 					unreachable.Class, unreachable.Map, label, unreachable.Reason)
 			}
 		}
 		if report.Stats.InactiveStaticEdges > 0 || report.Stats.SemanticDeadPortEdges > 0 {
-			fmt.Printf("geometry audit: %d inactive static edges, %d semantic dead-port edges
-",
+			fmt.Printf("geometry audit: %d inactive static edges, %d semantic dead-port edges\n",
 				report.Stats.InactiveStaticEdges, report.Stats.SemanticDeadPortEdges)
 		}
 		for _, finding := range report.Findings {
@@ -132,11 +121,9 @@ func main() {
 			if finding.Edge != "" {
 				where += " edge=" + finding.Edge
 			}
-			fmt.Printf("%s %-28s%s %s
-", finding.Severity, finding.Code, where, finding.Message)
+			fmt.Printf("%s %-28s%s %s\n", finding.Severity, finding.Code, where, finding.Message)
 		}
-		fmt.Printf("result: %d errors, %d warnings
-", report.ErrorCount(), report.WarningCount())
+		fmt.Printf("result: %d errors, %d warnings\n", report.ErrorCount(), report.WarningCount())
 	}
 
 	if report.HasErrors() || (*strictWarnings && report.WarningCount() > 0) {
