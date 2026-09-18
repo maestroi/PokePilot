@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	_ "github.com/lib/pq"
+	"github.com/lib/pq"
 )
 
 const modelRegistryPostgresSchema = `
@@ -21,6 +21,8 @@ CREATE TABLE IF NOT EXISTS model_deployments (
 	endpoint TEXT NOT NULL,
 	api_model TEXT NOT NULL,
 	enabled BOOLEAN NOT NULL DEFAULT TRUE,
+	discover BOOLEAN NOT NULL DEFAULT FALSE,
+	default_for TEXT[] NOT NULL DEFAULT '{}',
 	control_url TEXT NOT NULL DEFAULT '',
 	token_env TEXT NOT NULL DEFAULT '',
 	engine TEXT NOT NULL DEFAULT '',
@@ -33,6 +35,10 @@ CREATE TABLE IF NOT EXISTS model_deployments (
 );
 ALTER TABLE model_deployments
 	ADD COLUMN IF NOT EXISTS max_parallel_workers INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE model_deployments
+	ADD COLUMN IF NOT EXISTS discover BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE model_deployments
+	ADD COLUMN IF NOT EXISTS default_for TEXT[] NOT NULL DEFAULT '{}';
 CREATE INDEX IF NOT EXISTS model_deployments_enabled_compute_idx
 	ON model_deployments(enabled, compute, label, id);
 `
@@ -68,7 +74,7 @@ func loadModelRegistryPostgres(dsn string) (ModelRegistry, error) {
 
 	rows, err := db.Query(`
 SELECT id, label, model_id, revision, artifact, quantization, compute, endpoint,
-       api_model, enabled, control_url, token_env, engine, engine_version,
+       api_model, enabled, discover, default_for, control_url, token_env, engine, engine_version,
        engine_config, max_parallel_workers, legacy_profile
 FROM model_deployments
 ORDER BY compute, label, id`)
@@ -83,7 +89,7 @@ ORDER BY compute, label, id`)
 		if err := rows.Scan(
 			&d.ID, &d.Label, &d.ModelID, &d.Revision, &d.Artifact,
 			&d.Quantization, &d.Compute, &d.Endpoint, &d.APIModel, &d.Enabled,
-			&d.ControlURL, &d.TokenEnv, &d.Engine, &d.EngineVersion,
+			&d.Discover, pq.Array(&d.DefaultFor), &d.ControlURL, &d.TokenEnv, &d.Engine, &d.EngineVersion,
 			&d.EngineConfig, &d.MaxParallelWorkers, &d.LegacyProfile,
 		); err != nil {
 			return ModelRegistry{}, fmt.Errorf("scan model registry postgres: %w", err)
