@@ -53,13 +53,7 @@ function expectedAssets() {
     stems.add(stem)
   }
 
-  const paths = []
-  for (const name of [...mapNames].sort()) paths.push(`maps/${name}.blk`)
-  for (const stem of [...stems].sort()) {
-    paths.push(`gfx/blocksets/${stem}.bst`)
-    paths.push(`gfx/tilesets/${stem}.png`)
-  }
-  return { mapNames, stems, paths }
+  return { mapNames, stems }
 }
 
 function outputPath(relativePath) {
@@ -77,7 +71,14 @@ function markerMatches(expected) {
   try {
     const marker = JSON.parse(fs.readFileSync(markerPath, 'utf8'))
     if (marker.commit !== POKERED_RENDER_COMMIT) return false
-    return expected.paths.every((relativePath) => fs.existsSync(outputPath(relativePath)))
+    for (const name of expected.mapNames) {
+      if (!fs.existsSync(path.join(outRoot, 'maps', `${name}.blk`))) return false
+    }
+    for (const stem of expected.stems) {
+      if (!fs.existsSync(path.join(outRoot, 'blocksets', `${stem}.bst`))) return false
+      if (!fs.existsSync(path.join(outRoot, 'tilesets', `${stem}.png`))) return false
+    }
+    return true
   } catch {
     return false
   }
@@ -93,8 +94,8 @@ function readTarOctal(buffer) {
   return raw ? Number.parseInt(raw, 8) : 0
 }
 
-function extractSelectedTarEntries(tar, wanted) {
-  const extracted = new Set()
+function extractRenderEntries(tar, stems) {
+  let mapsAsm = ''
   let offset = 0
 
   while (offset + 512 <= tar.length) {
@@ -105,20 +106,79 @@ function extractSelectedTarEntries(tar, wanted) {
     const size = readTarOctal(header.subarray(124, 136))
     const dataStart = offset + 512
     const dataEnd = dataStart + size
+    const data = tar.subarray(dataStart, dataEnd)
 
     const slash = name.indexOf('/')
     const relative = slash >= 0 ? name.slice(slash + 1) : name
-    if (wanted.has(relative)) {
+
+    if (relative === 'maps.asm') {
+      mapsAsm = data.toString('utf8')
+    } else if (/^maps\/[^/]+\.blk$/.test(relative)) {
       const destination = outputPath(relative)
       fs.mkdirSync(path.dirname(destination), { recursive: true })
-      fs.writeFileSync(destination, tar.subarray(dataStart, dataEnd))
-      extracted.add(relative)
+      fs.writeFileSync(destination, data)
+    } else {
+      const blockset = relative.match(/^gfx\/blocksets\/([^/]+)\.bst$/)
+      const tileset = relative.match(/^gfx\/tilesets\/([^/]+)\.png$/)
+      const stem = blockset?.[1] || tileset?.[1]
+      if (stem && stems.has(stem)) {
+        const destination = outputPath(relative)
+        fs.mkdirSync(path.dirname(destination), { recursive: true })
+        fs.writeFileSync(destination, data)
+      }
     }
 
     offset = dataStart + Math.ceil(size / 512) * 512
   }
 
-  return extracted
+  if (!mapsAsm) throw new Error('pret/pokered archive did not contain maps.asm')
+  return mapsAsm
+}
+
+function resolveBlockAliases(mapsAsm) {
+  const aliases = new Map()
+  let pending = []
+
+  for (const rawLine of mapsAsm.split(/\r?\n/)) {
+    const line = rawLine.trim()
+    const label = line.match(/^([A-Za-z0-9]+)_Blocks:(?:\s+INCBIN\s+"maps\/([^"]+\.blk)")?/)
+    if (label) {
+      pending.push(label[1])
+      if (label[2]) {
+        for (const name of pending) aliases.set(name, label[2])
+        pending = []
+      }
+      continue
+    }
+
+    const incbin = line.match(/^INCBIN\s+"maps\/([^"]+\.blk)"/)
+    if (incbin && pending.length) {
+      for (const name of pending) aliases.set(name, incbin[1])
+      pending = []
+    }
+  }
+
+  return aliases
+}
+
+function materializeMapAliases(mapNames, mapsAsm) {
+  const aliases = resolveBlockAliases(mapsAsm)
+  const missing = []
+
+  for (const name of mapNames) {
+    const destination = path.join(outRoot, 'maps', `${name}.blk`)
+    if (fs.existsSync(destination)) continue
+
+    const sourceName = aliases.get(name)
+    const source = sourceName ? path.join(outRoot, 'maps', sourceName) : ''
+    if (!sourceName || !fs.existsSync(source)) {
+      missing.push(name)
+      continue
+    }
+    fs.copyFileSync(source, destination)
+  }
+
+  return missing
 }
 
 async function main() {
@@ -141,11 +201,19 @@ async function main() {
 
   fs.rmSync(outRoot, { recursive: true, force: true })
   fs.mkdirSync(outRoot, { recursive: true })
-  const extracted = extractSelectedTarEntries(tar, new Set(expected.paths))
+  const mapsAsm = extractRenderEntries(tar, expected.stems)
+  const missingMaps = materializeMapAliases(expected.mapNames, mapsAsm)
 
-  const missing = expected.paths.filter((relativePath) => !extracted.has(relativePath))
-  if (missing.length) {
-    throw new Error(`pret/pokered archive is missing ${missing.length} expected render asset(s): ${missing.slice(0, 8).join(', ')}`)
+  const missingAssets = []
+  for (const stem of expected.stems) {
+    if (!fs.existsSync(path.join(outRoot, 'blocksets', `${stem}.bst`))) missingAssets.push(`blocksets/${stem}.bst`)
+    if (!fs.existsSync(path.join(outRoot, 'tilesets', `${stem}.png`))) missingAssets.push(`tilesets/${stem}.png`)
+  }
+  if (missingMaps.length || missingAssets.length) {
+    throw new Error(
+      `pret/pokered render sync incomplete: ${missingMaps.length} map(s), ${missingAssets.length} tileset asset(s) missing; ` +
+      `examples: ${[...missingMaps.slice(0, 5), ...missingAssets.slice(0, 5)].join(', ')}`
+    )
   }
 
   const marker = {
