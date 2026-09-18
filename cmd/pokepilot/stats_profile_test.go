@@ -46,7 +46,6 @@ func TestNewStatsPlannerHonorsLLMProfile(t *testing.T) {
 	}
 }
 
-
 func TestNewStatsPlannerUsesLeasedInferenceIdentity(t *testing.T) {
 	t.Setenv("POKEPILOT_LLM_GPU_URL", "http://legacy-7900.example/v1")
 	t.Setenv("POKEPILOT_LLM_GPU_MODEL", "old-27b")
