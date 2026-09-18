@@ -1,6 +1,6 @@
 # PostgreSQL control plane
 
-PokePilot can keep operator-controlled model deployment configuration in PostgreSQL while leaving large recordings, screenshots and debug bundles in the existing S3-compatible artifact store.
+PokePilot uses PostgreSQL as the sole production store for durable structured control-plane state while leaving large recordings, states and debug bundles in the existing S3-compatible artifact store.
 
 The production rule is intentionally strict: **PostgreSQL owns one durable filesystem and may run on only one designated node/VM.** Do not use a Swarm named volume for database data.
 
@@ -72,11 +72,24 @@ In that topology you do **not** deploy `deploy/postgres.yml`; the farm only conn
 
 ## What is stored there now
 
-The first migration moves the selectable model deployment registry into PostgreSQL. `farm.LoadModelRegistry` accepts a JSON file (development/backward compatibility), a PostgreSQL DSN, or the recommended `postgres-env://ENV_NAME` source, so the existing `/v1/models` and experiment code does not need a second configuration format.
+PostgreSQL is the production authority for run lifecycle/history, attempts,
+experiment definitions and per-run immutable model/comparable identity, model
+deployments/hosts, LLM exchanges, objective failures, issue
+fingerprints/occurrences/links/outbox state, checkpoints/artifact metadata,
+spectator controls, and dataset manifests.
 
-The initial schema seeds the deployments that were previously represented by `deploy/models.example.json`. Update their revision, quantization and engine-version fields to the exact deployed artifacts before using results as reproducible benchmarks.
+`farm.LoadModelRegistry` still accepts a JSON file for development/backward
+compatibility, but the production wall uses the PostgreSQL registry. The schema
+seeds the deployments that were previously represented by
+`deploy/models.example.json`; update revision, quantization and engine-version
+fields to the exact deployed artifacts before treating results as reproducible
+benchmarks.
 
-The current SQLite run-history catalog and `model-experiments.json` remain in the existing PokéWall bind mount in this first migration. They should be migrated next, after the Postgres deployment is proven stable; large artifacts should remain in S3 rather than moving into PostgreSQL.
+SQLite, `state.json`, and `model-experiments.json` are legacy/local
+compatibility paths only. They are not configured by the PostgreSQL production
+overlay. Local finish/checkpoint files are disposable caches and may be absent
+or read-only without changing run settlement or historical inspection.
+Large immutable payload bytes remain in S3 rather than PostgreSQL.
 
 ## Backup
 
