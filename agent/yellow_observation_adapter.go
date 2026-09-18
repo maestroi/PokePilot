@@ -8,9 +8,10 @@ import (
 	yellowprofile "github.com/maestroi/pokepilot/yellow/profile"
 )
 
-// yellowSemanticObservationAdapter is intentionally minimal for phase 0.
-// Unlike Blue, Yellow must not be registered in gen1Games: its RAM layout and
-// game-specific progression differ from Red/Blue.
+// yellowSemanticObservationAdapter keeps Yellow separate from the Red/Blue
+// gen1Games layout group. The Yellow profile now owns map/player/party and
+// story projection; later phases can enrich inventory/battle/Dex execution
+// without leaking native event ids into the generic observation contract.
 type yellowSemanticObservationAdapter struct{}
 
 func (yellowSemanticObservationAdapter) GameID() game.GameID { return yellowprofile.GameID }
