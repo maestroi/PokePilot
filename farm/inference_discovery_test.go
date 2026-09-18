@@ -92,3 +92,31 @@ func TestProbeOpenAIEndpointPreservesLogicalModelBehindAlias(t *testing.T) {
 		t.Fatalf("alias discovery cleared valid metadata: %#v", got)
 	}
 }
+
+
+func TestProbeOpenAIEndpointUsesEndpointTokenEnvironment(t *testing.T) {
+	t.Setenv("CLOUD_INFERENCE_TOKEN", "top-secret")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer top-secret" {
+			t.Fatalf("authorization = %q", got)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": []map[string]any{{"id": "cloud-model"}},
+		})
+	}))
+	defer server.Close()
+
+	got, err := ProbeOpenAIEndpoint(context.Background(), server.Client(), ModelDeployment{
+		ID: "cloud", Compute: "cloud", Endpoint: server.URL + "/v1",
+		DiscoverModel: true, EndpointTokenEnv: "CLOUD_INFERENCE_TOKEN",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.APIModel != "cloud-model" || got.EndpointTokenEnv != "CLOUD_INFERENCE_TOKEN" {
+		t.Fatalf("discovered cloud deployment = %#v", got)
+	}
+	if strings.Contains(fmt.Sprintf("%#v", got), "top-secret") {
+		t.Fatal("secret value leaked into discovered deployment metadata")
+	}
+}
