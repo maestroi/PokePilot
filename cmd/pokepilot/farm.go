@@ -214,6 +214,7 @@ func heartbeatLoop(client *farm.Client, runID string, snap func() farm.Heartbeat
 	go func() {
 		defer close(done)
 		var once sync.Once
+		var lastHeartbeatError time.Time
 		for {
 			select {
 			case <-stop:
@@ -223,8 +224,16 @@ func heartbeatLoop(client *farm.Client, runID string, snap func() farm.Heartbeat
 			ctx, cancelCtx := context.WithTimeout(context.Background(), heartbeatDeadline)
 			reply, err := client.Heartbeat(ctx, snap())
 			cancelCtx()
-			if err == nil && reply.Cancel {
-				once.Do(func() { close(cancel) })
+			if err != nil {
+				if lastHeartbeatError.IsZero() || time.Since(lastHeartbeatError) >= 30*time.Second {
+					log.Printf("farm: %s: heartbeat failed: %v", runID, err)
+					lastHeartbeatError = time.Now()
+				}
+			} else if reply.Cancel {
+				once.Do(func() {
+					log.Printf("farm: %s: cancellation requested by wall", runID)
+					close(cancel)
+				})
 			}
 			select {
 			case <-stop:
@@ -266,6 +275,8 @@ func runFarm(m *emu.Emu, client *farm.Client, library *romLibrary, watchPort int
 	snap := &heartbeatSnap{}
 	var mem state.Mem               // hoisted: every sample reuses this buffer
 	addrs := workerAddrs(watchPort) // fixed for the container's lifetime
+	log.Printf("farm: worker online version=%s wall=%s addrs=%v", client.Version, client.BaseURL, addrs)
+	var lastIdleLog time.Time
 
 	for {
 		pingWorker(client, addrs)
@@ -276,7 +287,13 @@ func runFarm(m *emu.Emu, client *farm.Client, library *romLibrary, watchPort int
 			continue
 		}
 		if spec == nil {
-			// 204: no spec ready yet. Idle workers keep leasing.
+			// 204: no spec ready yet. Idle workers keep leasing. Emit this only
+			// occasionally so service logs distinguish idle from dead without
+			// turning the one-second lease poll into log spam.
+			if lastIdleLog.IsZero() || time.Since(lastIdleLog) >= 30*time.Second {
+				log.Printf("farm: idle: no runnable specs (wall=%s)", client.BaseURL)
+				lastIdleLog = time.Now()
+			}
 			time.Sleep(farmIdleSleep)
 			continue
 		}
@@ -285,6 +302,11 @@ func runFarm(m *emu.Emu, client *farm.Client, library *romLibrary, watchPort int
 			time.Sleep(farmErrorSleep)
 			continue
 		}
+		lastIdleLog = time.Time{}
+		log.Printf(
+			"farm: %s: lease acquired attempt=%d game=%s planner=%s starter=%s goal=%q",
+			spec.RunID, spec.Attempt, spec.Game, spec.Planner, spec.Starter, spec.Goal,
+		)
 
 		planner, starter, dest, fps, maxRounds, maxFrames := applySpec(*spec)
 		if err := validateSpec(planner, starter, dest); err != nil {
