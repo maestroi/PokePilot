@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"sort"
 	"time"
 
@@ -78,6 +79,21 @@ func newStatsPlannerWithPlayStyle(profile, reasoningEffort, playStyle, goal stri
 
 func newStatsPlannerWithRunPolicy(profile, reasoningEffort, playStyle, riskTolerance, wildEncounters, goal string, m *emu.Emu, push func(any), snap *heartbeatSnap) *statsPlanner {
 	primaryCfg, fallbackCfg := agent.ResolveLLMEndpointsWithEffort(agent.NormalizeLLMProfile(profile), agent.NormalizeReasoningEffort(reasoningEffort))
+	if inference := farm.CurrentInference(); inference != nil && inference.Endpoint != "" && inference.APIModel != "" {
+		// A first-class leased deployment is authoritative. Keep the endpoint
+		// tuning defaults (no-think, token budget, reasoning effort), but route
+		// the request to the exact endpoint/model identity the wall resolved.
+		// This is what lets a pinned llama.cpp endpoint change 27B -> 9B without
+		// rebuilding the runner, and prevents experiment identity from diverging
+		// from the model actually requested.
+		primaryCfg.BaseURL = inference.Endpoint
+		primaryCfg.Model = inference.APIModel
+		primaryCfg.Token = ""
+		if inference.TokenEnv != "" {
+			primaryCfg.Token = os.Getenv(inference.TokenEnv)
+		}
+		fallbackCfg = nil
+	}
 	inner := agent.NewLLMPlannerFromConfig(primaryCfg)
 	inner.Goal = goal
 	var fallback *agent.LLMPlanner
