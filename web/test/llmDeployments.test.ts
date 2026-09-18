@@ -4,6 +4,7 @@ import {
   DEFAULT_ROLE_EXPERIMENT_A,
   DEFAULT_ROLE_EXPERIMENT_B,
   defaultExperimentArms,
+  defaultFarmDeployment,
   deploymentOptionLabel,
   deploymentSelectable,
   preferredDeployment
@@ -50,4 +51,13 @@ test('experiment defaults come from registry roles, not model size or hardware l
   ])
   assert.equal(a, 'local-primary')
   assert.equal(b, 'cloud')
+})
+
+
+test('normal runs prefer the registry farm role', () => {
+  const rows = [
+    deployment({ id: 'secondary', default_for: ['experiment-b'] }),
+    deployment({ id: 'primary', default_for: ['farm'] })
+  ]
+  assert.equal(defaultFarmDeployment(rows), 'primary')
 })
