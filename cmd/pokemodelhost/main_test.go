@@ -188,3 +188,27 @@ func TestLifecycleFollowsRequestedLeaseLimitNotHostJSON(t *testing.T) {
 		t.Fatalf("second acquire at wall ceiling 2 = %d, host JSON cap must not block interleaved farm leases", code)
 	}
 }
+
+
+func TestEndpointReadyRejectsWrongAdvertisedModel(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": []map[string]any{{"id": "other-model"}},
+		})
+	}))
+	defer server.Close()
+
+	service, err := newLifecycleService(hostConfig{
+		HostID: "gpu", Compute: "test",
+		Models: []hostModel{{
+			DeploymentID: "wanted", ModelID: "wanted", Endpoint: server.URL + "/v1",
+			HealthURL: server.URL, APIModel: "wanted-alias",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if service.endpointReady(service.models["wanted"]) {
+		t.Fatal("endpoint with wrong advertised model must not be ready")
+	}
+}
