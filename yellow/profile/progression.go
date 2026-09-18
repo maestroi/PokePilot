@@ -64,6 +64,7 @@ const (
 	ProgressYellowPikachuFollowing              game.ProgressID = "yellow_pikachu_following"
 	ProgressYellowPikachuSurfing                game.ProgressID = "yellow_pikachu_surfing"
 	ProgressYellowMtMoonJessieJamesDefeated     game.ProgressID = "yellow_mt_moon_jessie_james_defeated"
+	ProgressYellowMtMoonExitResolved             game.ProgressID = "yellow_mt_moon_exit_resolved"
 	ProgressYellowRocketJessieJamesDefeated     game.ProgressID = "yellow_rocket_hideout_jessie_james_defeated"
 	ProgressYellowTowerJessieJamesDefeated      game.ProgressID = "yellow_pokemon_tower_jessie_james_defeated"
 	ProgressYellowSilphJessieJamesDefeated      game.ProgressID = "yellow_silph_jessie_james_defeated"
@@ -251,8 +252,8 @@ func projectYellowStory(reader game.MemoryReader, mapID uint8) game.ProgressStat
 	silphJJ := yellowHasEvent(reader, eventBeatSilphJessieJames)
 
 	fossil := yellowHasEvent(reader, eventBeatMtMoonSuperNerd) &&
-		(yellowHasEvent(reader, eventGotDomeFossil) || yellowHasEvent(reader, eventGotHelixFossil)) &&
-		mtMoonJJ
+		(yellowHasEvent(reader, eventGotDomeFossil) || yellowHasEvent(reader, eventGotHelixFossil))
+	mtMoonExitResolved := fossil && mtMoonJJ
 	pokedex := yellowHasEvent(reader, eventGotPokedex)
 	hm03 := yellowHasItem(reader, itemHM03)
 	hm04 := yellowHasItem(reader, itemHM04)
@@ -326,6 +327,7 @@ func projectYellowStory(reader game.MemoryReader, mapID uint8) game.ProgressStat
 		{ID: ProgressYellowPikachuFollowing, Complete: pikaFlags&(1<<pikachuFollowingBit) != 0},
 		{ID: ProgressYellowPikachuSurfing, Complete: pikaFlags&(1<<pikachuSurfingBit) != 0},
 		{ID: ProgressYellowMtMoonJessieJamesDefeated, Complete: mtMoonJJ},
+		{ID: ProgressYellowMtMoonExitResolved, Complete: mtMoonExitResolved},
 		{ID: ProgressYellowRocketJessieJamesDefeated, Complete: rocketJJ},
 		{ID: ProgressYellowTowerJessieJamesDefeated, Complete: towerJJ},
 		{ID: ProgressYellowSilphJessieJamesDefeated, Complete: silphJJ},
