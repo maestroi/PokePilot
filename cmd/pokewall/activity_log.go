@@ -9,6 +9,7 @@ const wallActivityLogInterval = 30 * time.Second
 
 type wallActivitySnapshot struct {
 	total        int
+	queueDepth   int
 	queued       int
 	leased       int
 	running      int
@@ -31,7 +32,7 @@ func (w *Wall) activitySnapshot() wallActivitySnapshot {
 
 	s := wallActivitySnapshot{
 		total:       len(w.tiles),
-		queued:      len(w.queue),
+		queueDepth:  len(w.queue),
 		workers:     len(w.workers),
 		issueOutbox: len(w.outbox),
 	}
@@ -46,9 +47,7 @@ func (w *Wall) activitySnapshot() wallActivitySnapshot {
 		}
 		switch tile.Status {
 		case statusQueued:
-			// Queue depth above is authoritative for schedulable work. Do not
-			// increment queued here: paused/retry bookkeeping may retain a
-			// queued-looking tile that is not currently in w.queue.
+			s.queued++
 		case statusLeased:
 			s.leased++
 		case statusRunning:
@@ -58,7 +57,7 @@ func (w *Wall) activitySnapshot() wallActivitySnapshot {
 		default:
 			s.other++
 		}
-		if tile.Finished {
+		if tile.Finished || (tile.Status != statusRunning && tile.Status != statusLeased) {
 			continue
 		}
 		if s.activeRun == "" || tile.lastUpdate.After(s.activeUpdate) {
@@ -97,8 +96,8 @@ func (w *Wall) RunActivityLog(interval time.Duration) {
 			}
 		}
 		log.Printf(
-			"pokewall: activity total=%d queue=%d leased=%d running=%d done=%d other=%d workers=%d busy=%d issue_outbox=%d active_run=%s frame=%d map=0x%02x pos=%d,%d update_age=%s",
-			s.total, s.queued, s.leased, s.running, s.done, s.other,
+			"pokewall: activity total=%d queue_depth=%d queued=%d leased=%d running=%d done=%d other=%d workers=%d busy=%d issue_outbox=%d active_run=%s frame=%d map=0x%02x pos=%d,%d update_age=%s",
+			s.total, s.queueDepth, s.queued, s.leased, s.running, s.done, s.other,
 			s.workers, s.busyWorkers, s.issueOutbox,
 			active, s.activeFrame, s.activeMap, s.activeX, s.activeY, age,
 		)
