@@ -124,7 +124,6 @@ func UseRepel(m *emu.Emu, item uint8) error {
 	return nil
 }
 
- 
 // UseBestRepel activates the longest-duration Repel stack currently available.
 // It is a no-op while an effect is already active or when the bag has no
 // Repel-family item. The caller owns the policy decision to use encounter
