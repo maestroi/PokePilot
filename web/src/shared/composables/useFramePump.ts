@@ -109,6 +109,7 @@ export function useFramePump(
   }
 
   watch([runID, enabled], restart)
+  if (continuous) watch(continuous, restart)
   onMounted(restart)
   onScopeDispose(() => {
     stopPump()
