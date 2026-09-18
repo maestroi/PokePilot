@@ -245,6 +245,79 @@ func SaveModelRegistry(path string, registry ModelRegistry) error {
 	return nil
 }
 
+// UpsertModelDeployment persists a complete deployment definition to either
+// a JSON registry or Postgres. It is used by the operator UI so adding or
+// editing inference endpoints does not require restarting PokéWall.
+func UpsertModelDeployment(source string, deployment ModelDeployment) (ModelDeployment, error) {
+	deployment.ID = strings.TrimSpace(deployment.ID)
+	if deployment.ID == "" {
+		return ModelDeployment{}, fmt.Errorf("model registry: deployment id is empty")
+	}
+	registry, err := LoadModelRegistry(source)
+	if err != nil {
+		return ModelDeployment{}, err
+	}
+	found := false
+	for i := range registry.Deployments {
+		if registry.Deployments[i].ID == deployment.ID {
+			registry.Deployments[i] = deployment
+			found = true
+			break
+		}
+	}
+	if !found {
+		registry.Deployments = append(registry.Deployments, deployment)
+	}
+	if err := registry.Validate(); err != nil {
+		return ModelDeployment{}, err
+	}
+	pathOrDSN, postgres, err := registryPersistTarget(source)
+	if err != nil {
+		return ModelDeployment{}, err
+	}
+	if postgres {
+		if err := upsertPostgresDeployment(pathOrDSN, deployment); err != nil {
+			return ModelDeployment{}, err
+		}
+	} else if err := SaveModelRegistry(pathOrDSN, registry); err != nil {
+		return ModelDeployment{}, err
+	}
+	return deployment, nil
+}
+
+// DeleteModelDeployment removes a deployment from the configured registry.
+// Callers are responsible for refusing deletion while runs still reference the
+// deployment.
+func DeleteModelDeployment(source, id string) error {
+	id = strings.TrimSpace(id)
+	registry, err := LoadModelRegistry(source)
+	if err != nil {
+		return err
+	}
+	index := -1
+	for i := range registry.Deployments {
+		if registry.Deployments[i].ID == id {
+			index = i
+			break
+		}
+	}
+	if index < 0 {
+		return fmt.Errorf("%w: %s", ErrDeploymentNotFound, id)
+	}
+	registry.Deployments = append(registry.Deployments[:index], registry.Deployments[index+1:]...)
+	if err := registry.Validate(); err != nil {
+		return err
+	}
+	pathOrDSN, postgres, err := registryPersistTarget(source)
+	if err != nil {
+		return err
+	}
+	if postgres {
+		return deletePostgresDeployment(pathOrDSN, id)
+	}
+	return SaveModelRegistry(pathOrDSN, registry)
+}
+
 // UpdateDeploymentParallelLimit persists a new worker cap to the registry
 // source (JSON file or Postgres) and returns the updated deployment.
 func UpdateDeploymentParallelLimit(source, id string, n int) (ModelDeployment, error) {
