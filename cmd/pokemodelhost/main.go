@@ -366,8 +366,10 @@ func (s *lifecycleService) endpointReady(model hostModel) bool {
 		} `json:"data"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil || len(payload.Data) == 0 {
-		// Explicit custom health URLs are allowed to be plain 2xx probes.
-		return strings.TrimSpace(model.HealthURL) != ""
+		// Explicit custom health URLs are allowed to be plain 2xx probes, but
+		// a URL that claims to be /models must actually provide model identity.
+		healthURL := strings.TrimRight(strings.TrimSpace(model.HealthURL), "/")
+		return healthURL != "" && !strings.HasSuffix(healthURL, "/models")
 	}
 	for _, advertised := range payload.Data {
 		if strings.TrimSpace(advertised.ID) == strings.TrimSpace(model.APIModel) {
