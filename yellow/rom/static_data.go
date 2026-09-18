@@ -5,12 +5,12 @@ import "github.com/maestroi/pokepilot/gen1rom"
 const (
 	yellowWildPointersBank uint8  = 0x03
 	yellowWildPointersAddr uint16 = 0x4B95
-	yellowMapCount                 = 0xF9
+	yellowMapCount                = 0xF9
 
-	yellowMovesOffset       = 0x38000
-	yellowMoveEntryLen      = 6
-	yellowMoveNamesOffset   = 0xBC000
-	yellowMoveCount         = 0xA5
+	yellowMovesOffset     = 0x38000
+	yellowMoveEntryLen    = 6
+	yellowMoveNamesOffset = 0xBC000
+	yellowMoveCount       = 0xA5
 
 	yellowSpeciesNamesOffset = 0xE8000
 	yellowSpeciesNameLen     = 10
