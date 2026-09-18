@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"sort"
 	"time"
 
@@ -77,7 +78,23 @@ func newStatsPlannerWithPlayStyle(profile, reasoningEffort, playStyle, goal stri
 }
 
 func newStatsPlannerWithRunPolicy(profile, reasoningEffort, playStyle, riskTolerance, wildEncounters, goal string, m *emu.Emu, push func(any), snap *heartbeatSnap) *statsPlanner {
+	return newStatsPlannerWithRunPolicyAndInference(profile, reasoningEffort, playStyle, riskTolerance, wildEncounters, goal, nil, m, push, snap)
+}
+
+// newStatsPlannerWithRunPolicyAndInference is the farm path. The wall freezes
+// the selected deployment's resolved endpoint/model identity onto the lease;
+// using it here prevents legacy environment defaults from silently sending the
+// run to a different model. Endpoint credentials remain environment references,
+// never secrets on the wire.
+func newStatsPlannerWithRunPolicyAndInference(profile, reasoningEffort, playStyle, riskTolerance, wildEncounters, goal string, inference *farm.InferenceIdentity, m *emu.Emu, push func(any), snap *heartbeatSnap) *statsPlanner {
 	primaryCfg, fallbackCfg := agent.ResolveLLMEndpointsWithEffort(agent.NormalizeLLMProfile(profile), agent.NormalizeReasoningEffort(reasoningEffort))
+	if inference != nil && inference.Endpoint != "" && inference.APIModel != "" {
+		primaryCfg.BaseURL = inference.Endpoint
+		primaryCfg.Model = inference.APIModel
+		if inference.EndpointTokenEnv != "" {
+			primaryCfg.Token = os.Getenv(inference.EndpointTokenEnv)
+		}
+	}
 	inner := agent.NewLLMPlannerFromConfig(primaryCfg)
 	inner.Goal = goal
 	var fallback *agent.LLMPlanner
