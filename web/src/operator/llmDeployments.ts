@@ -1,7 +1,12 @@
 import type { DeploymentState, ModelDeployment } from '../shared/api/types'
 
-export const DEFAULT_ARM_A = 'qwen38-27b-7900'
-export const DEFAULT_ARM_B = 'qwen35-4b-4090'
+export const DEFAULT_ROLE_FARM = 'farm'
+export const DEFAULT_ROLE_EXPERIMENT_A = 'experiment-a'
+export const DEFAULT_ROLE_EXPERIMENT_B = 'experiment-b'
+
+function hasDefaultRole(deployment: ModelDeployment, role: string): boolean {
+  return (deployment.default_for || []).some((candidate) => candidate.toLowerCase() === role.toLowerCase())
+}
 
 const blockedStates = new Set(['unavailable', 'failed', 'busy'])
 
@@ -43,11 +48,10 @@ export function preferredDeployment(deployments: ModelDeployment[], id: string):
 
 export function defaultExperimentArms(deployments: ModelDeployment[]): [string, string] {
   const enabled = deployments.filter((deployment) => deployment.enabled !== false)
-  const armA = enabled.find((deployment) => deployment.id === DEFAULT_ARM_A)
-    || enabled.find((deployment) => /27b/i.test(`${deployment.model_id} ${deployment.label}`) && /7900/i.test(`${deployment.compute} ${deployment.label}`))
+  const armA = enabled.find((deployment) => hasDefaultRole(deployment, DEFAULT_ROLE_EXPERIMENT_A))
+    || enabled.find((deployment) => hasDefaultRole(deployment, DEFAULT_ROLE_FARM))
     || enabled[0]
-  const armB = enabled.find((deployment) => deployment.id === DEFAULT_ARM_B)
-    || enabled.find((deployment) => /4b/i.test(`${deployment.model_id} ${deployment.label}`) && /4090/i.test(`${deployment.compute} ${deployment.label}`))
+  const armB = enabled.find((deployment) => hasDefaultRole(deployment, DEFAULT_ROLE_EXPERIMENT_B) && deployment.id !== armA?.id)
     || enabled.find((deployment) => deployment.id !== armA?.id)
   return [armA?.id || '', armB?.id || '']
 }
