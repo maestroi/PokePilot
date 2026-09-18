@@ -1083,7 +1083,7 @@
 
   $("spec-form").addEventListener("submit", async (ev) => {
     ev.preventDefault(); const err = $("form-error"); err.textContent = ""; const f = ev.target; const planner = f.planner.value;
-    const spec = { run_id: f.run_id.value.trim(), planner, game: f.game.value, starter: f.starter.value, dest: planner === "scripted" ? f.dest.value.trim() : "", goal: planner === "llm" ? f.goal.value.trim() : "", llm_profile: planner === "llm" ? f.llm_profile.value : "", reasoning_effort: planner === "llm" && f.reasoning_effort.value !== "auto" ? f.reasoning_effort.value : "", seed: Number(f.seed.value || 0), fps: Number(f.fps.value || 0), max_rounds: Number(f.max_rounds.value || 0), max_frames: Number(f.max_frames.value || 0), endless: f.endless.checked, random_seed: f.endless.checked && f.seed_mode.value === "random" };
+    const spec = { run_id: f.run_id.value.trim(), planner, game: f.game.value, starter: f.game.value === "pokemon-yellow" ? "" : f.starter.value, dest: planner === "scripted" ? f.dest.value.trim() : "", goal: planner === "llm" ? f.goal.value.trim() : "", llm_profile: planner === "llm" ? f.llm_profile.value : "", reasoning_effort: planner === "llm" && f.reasoning_effort.value !== "auto" ? f.reasoning_effort.value : "", seed: Number(f.seed.value || 0), fps: Number(f.fps.value || 0), max_rounds: Number(f.max_rounds.value || 0), max_frames: Number(f.max_frames.value || 0), endless: f.endless.checked, random_seed: f.endless.checked && f.seed_mode.value === "random" };
     try {
       const res = await fetch("/v1/specs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(spec) });
       const body = await res.json().catch(() => ({}));
