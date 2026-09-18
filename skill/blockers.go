@@ -47,6 +47,33 @@ func stationaryObjectBlockers(h rom.MapHeader) map[[2]int]bool {
 	return blocked
 }
 
+// observedStationaryObjectBlockers returns only stationary object home tiles
+// that are present in the current sprite snapshot. Unlike liveBlockers, this
+// is used to change map component topology, so a hidden item or defeated
+// trainer must not split the map after it has disappeared. Moving sprites are
+// excluded because their positions are observations for one walking plan, not
+// stable geometry for later map legs.
+func observedStationaryObjectBlockers(h rom.MapHeader, live []state.SpriteState) map[[2]int]bool {
+	blocked := map[[2]int]bool{}
+	for _, sprite := range live {
+		if sprite.Slot < 1 || sprite.Slot > len(h.Objects) {
+			continue
+		}
+		o := h.Objects[sprite.Slot-1]
+		if o.Movement != rom.MovementStay || sprite.X != int(o.X) || sprite.Y != int(o.Y) {
+			continue
+		}
+		blocked[[2]int{sprite.X, sprite.Y}] = true
+	}
+	return blocked
+}
+
+func currentObservedStationaryObjectBlockers(m *emu.Emu, h rom.MapHeader) map[[2]int]bool {
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	return observedStationaryObjectBlockers(h, state.DecodeSprites(&mem))
+}
+
 // liveBlockers is spriteBlockers widened with h's stationary objects, for
 // callers that plan a route across a distance the player has not yet
 // crossed: MEASURED on Pokemon Tower 5F (run-3anwzvms26fjy32alh211qa4fn and

@@ -335,11 +335,25 @@ func routeFailureIsSpuriousCapabilityGate(err error, bannedALegThisCall bool) bo
 
 // GoTo walks the player to dest, crossing maps as needed. The immutable graph
 // is built once, but every planning pass overlays the current map's live WRAM
-// block geometry before component routing. After every leg the current map and
-// coordinates are re-read and the remaining route is re-planned, so an opened
-// door, closed gate, or unexpected landing is observed rather than cached.
+// block geometry and positively observed stationary objects before component
+// routing. Those immutable snapshots survive across this GoTo call so a later
+// leg can distinguish a fresh component on a previously visited map. Reloading
+// that map replaces its snapshot; nothing survives into another GoTo call.
 func GoTo(m *emu.Emu, romData []byte, dest Destination) error {
 	return goToWithTransitionExecutor(m, romData, dest, newRedRouteTransitionExecutor(m, romData, nil))
+}
+
+// overlayObservedMapTopology applies the current Red map's stable, visible
+// object collisions to its freshly decoded grid, then returns a new routing
+// snapshot. Passing the previous snapshot preserves observations from earlier
+// legs without mutating the base graph. Callers supply only positively
+// observed stationary blockers, keeping moving and hidden objects out of the
+// remembered topology.
+func overlayObservedMapTopology(g *world.Graph, grid *world.Grid, h rom.MapHeader, blockers map[[2]int]bool) (*world.Graph, error) {
+	for at := range blockers {
+		grid.Set(at[0], at[1], false)
+	}
+	return g.WithMapGrid(h.ID, grid)
 }
 
 func goToWithTransitionExecutor(m *emu.Emu, romData []byte, dest Destination, executor world.TransitionExecutor) error {
@@ -363,6 +377,7 @@ func goToWithTransitionExecutor(m *emu.Emu, romData []byte, dest Destination, ex
 	semanticExecutions := 0
 	visitedMaps := map[uint8]bool{}
 	visitedPositions := map[uint8][]navigationState{}
+	routeGraph := g
 
 	for {
 		if err := abortIfBattle(m); err != nil {
@@ -382,7 +397,7 @@ func goToWithTransitionExecutor(m *emu.Emu, romData []byte, dest Destination, ex
 		if err != nil {
 			return fmt.Errorf("skill: GoTo: build live map %02x at (%d,%d): %w", cur, x, y, err)
 		}
-		routeGraph, err := g.WithMapGrid(cur, liveGrid)
+		routeGraph, err = overlayObservedMapTopology(routeGraph, liveGrid, h, currentObservedStationaryObjectBlockers(m, h))
 		if err != nil {
 			return fmt.Errorf("skill: GoTo: overlay live topology for map %02x: %w", cur, err)
 		}
