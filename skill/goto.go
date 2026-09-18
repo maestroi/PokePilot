@@ -140,13 +140,44 @@ func formatNavigationTrace(trace []navigationState) string {
 // 03->0f->03->3e->03->0f->03->3e before the guard fired). Banning every
 // already-visited map as a preference closes the whole cycle, not just its
 // last link.
-func blockVisitedMaps(g *world.Graph, hard map[world.Edge]bool, current uint8, visited map[uint8]bool) map[world.Edge]bool {
+func edgeEntersVisitedRegion(g *world.Graph, e world.Edge, visited map[uint8]bool, positions map[uint8][]navigationState) bool {
+	if !visited[e.To] {
+		return false
+	}
+	known := false
+	for _, p := range positions[e.To] {
+		same, ok := g.EdgeEntrySharesComponentWith(e, int(p.X), int(p.Y))
+		if !ok {
+			continue
+		}
+		known = true
+		if same {
+			return true
+		}
+	}
+	if known {
+		// We have component evidence for every comparison that mattered and
+		// none matched: this edge re-enters the same map in a fresh walking
+		// region, which is real topological progress (Route 12 Gate is the
+		// production example from #1035).
+		return false
+	}
+	// Hand-built/legacy graphs without component evidence keep the historical
+	// map-level preference rather than silently weakening loop protection.
+	return true
+}
+
+func blockVisitedMaps(g *world.Graph, hard map[world.Edge]bool, current uint8, visited map[uint8]bool, visitedPositions ...map[uint8][]navigationState) map[world.Edge]bool {
+	var positions map[uint8][]navigationState
+	if len(visitedPositions) > 0 {
+		positions = visitedPositions[0]
+	}
 	blocked := make(map[world.Edge]bool, len(hard))
 	for e := range hard {
 		blocked[e] = true
 	}
 	for _, e := range g.Edges[current] {
-		if visited[e.To] {
+		if edgeEntersVisitedRegion(g, e, visited, positions) {
 			blocked[e] = true
 		}
 	}
@@ -178,13 +209,17 @@ func blockVisitedMaps(g *world.Graph, hard map[world.Edge]bool, current uint8, v
 // forward path avoids revisiting, which hands off to the existing
 // forcedRevisitBan/safeForcedBan fallback below — the mechanism already
 // built to tell a real dead end from a revisit that is the only way through.
-func graphWithoutEdgesInto(g *world.Graph, visited map[uint8]bool) *world.Graph {
+func graphWithoutEdgesInto(g *world.Graph, visited map[uint8]bool, visitedPositions ...map[uint8][]navigationState) *world.Graph {
+	var positions map[uint8][]navigationState
+	if len(visitedPositions) > 0 {
+		positions = visitedPositions[0]
+	}
 	without := *g
 	without.Edges = make(map[uint8][]world.Edge, len(g.Edges))
 	for mapID, edges := range g.Edges {
 		filtered := make([]world.Edge, 0, len(edges))
 		for _, e := range edges {
-			if !visited[e.To] {
+			if !edgeEntersVisitedRegion(g, e, visited, positions) {
 				filtered = append(filtered, e)
 			}
 		}
@@ -201,12 +236,16 @@ func graphWithoutEdgesInto(g *world.Graph, visited map[uint8]bool) *world.Graph 
 // regardless of which tile it is crossed at). ok is false when there is
 // nothing to ban: no route, the first edge does not revisit, it is already
 // banned, or banning it would seal the map's only remaining exit.
-func forcedRevisitBan(g *world.Graph, retry []world.RouteStep, retryErr error, visitedMaps map[uint8]bool, deadEnds map[legFromMap]bool) (legFromMap, bool) {
+func forcedRevisitBan(g *world.Graph, retry []world.RouteStep, retryErr error, visitedMaps map[uint8]bool, deadEnds map[legFromMap]bool, visitedPositions ...map[uint8][]navigationState) (legFromMap, bool) {
 	if retryErr != nil || len(retry) == 0 {
 		return legFromMap{}, false
 	}
+	var positions map[uint8][]navigationState
+	if len(visitedPositions) > 0 {
+		positions = visitedPositions[0]
+	}
 	edge := retry[0].Edge
-	if !visitedMaps[edge.To] {
+	if !edgeEntersVisitedRegion(g, edge, visitedMaps, positions) {
 		return legFromMap{}, false
 	}
 	forced := legFromMap{e: edge, m: edge.From}
@@ -321,6 +360,7 @@ func goToWithTransitionExecutor(m *emu.Emu, romData []byte, dest Destination, ex
 	replans := 0
 	semanticExecutions := 0
 	visitedMaps := map[uint8]bool{}
+	visitedPositions := map[uint8][]navigationState{}
 
 	for {
 		if err := abortIfBattle(m); err != nil {
@@ -358,7 +398,7 @@ func goToWithTransitionExecutor(m *emu.Emu, romData []byte, dest Destination, ex
 		avoidingVisited := len(visitedMaps) > 0 && !visitedMaps[dest.Map]
 		planGraph := routeGraph
 		if avoidingVisited {
-			planGraph = graphWithoutEdgesInto(routeGraph, visitedMaps)
+			planGraph = graphWithoutEdgesInto(routeGraph, visitedMaps, visitedPositions)
 		}
 
 		var mem state.Mem
@@ -418,7 +458,7 @@ func goToWithTransitionExecutor(m *emu.Emu, romData []byte, dest Destination, ex
 			retry, retryErr := world.FindRoutePlanAtDestinationWithCapabilities(
 				routeGraph, cur, dest.Map, int(x), int(y), int(dest.X), int(dest.Y), blockedHere, prereqs,
 			)
-			if forced, ok := forcedRevisitBan(routeGraph, retry, retryErr, visitedMaps, deadEnds); ok {
+			if forced, ok := forcedRevisitBan(routeGraph, retry, retryErr, visitedMaps, deadEnds, visitedPositions); ok {
 				// Banning forced.e is only safe if the destination stays
 				// reachable without it after every dead-end ban already
 				// learned by this same GoTo call is also applied. Otherwise a
@@ -475,6 +515,7 @@ func goToWithTransitionExecutor(m *emu.Emu, romData []byte, dest Destination, ex
 			return fmt.Errorf("skill: GoTo: %w", err)
 		}
 		visitedMaps[e.From] = true
+		visitedPositions[e.From] = append(visitedPositions[e.From], navigationState{Map: e.From, X: x, Y: y})
 		nowX, nowY := playerXY(m)
 		if err := guard.observe(navigationState{
 			Map: m.Peek8(sym.CurMap), X: nowX, Y: nowY,
