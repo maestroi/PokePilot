@@ -392,12 +392,13 @@ func (c *modelExperimentController) handleLease(w http.ResponseWriter, r *http.R
 		copyRecorder(w, capture)
 		return
 	}
-	meta, err = c.refreshRunInference(meta)
-	if err != nil {
+	refreshed, refreshErr := c.refreshRunInference(meta)
+	if refreshErr != nil {
 		c.requeueLease(spec.RunID)
-		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "deployment endpoint unavailable while leasing", "deployment": spec.LLMDeployment, "detail": err.Error()})
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "deployment endpoint unavailable while leasing", "deployment": spec.LLMDeployment, "detail": refreshErr.Error()})
 		return
 	}
+	meta = refreshed
 	if meta.Inference.ControlURL != "" {
 		status, code, err := c.hostAction(meta.Inference, "/v1/leases/acquire", map[string]any{"run_id": spec.RunID, "deployment_id": meta.Deployment, "max_parallel_workers": c.liveParallelLimit(meta.Deployment)})
 		if err != nil || code >= 300 || status.State != "ready" || status.DeploymentID != meta.Deployment {
