@@ -63,6 +63,7 @@ func TestAddressesMatchSymbolFile(t *testing.T) {
 		{"wPartyCount", PartyCount},
 		{"wPartySpecies", PartySpecies},
 		{"wPartyMon1", PartyMon1},
+		{"wRepelRemainingSteps", RepelRemainingSteps},
 		{"wNumBagItems", NumBagItems},
 		{"wBagItems", BagItems},
 		{"wPlayerMoney", PlayerMoney},

@@ -56,11 +56,12 @@ const (
 
 // Inventory and progress
 const (
-	NumBagItems    uint16 = 0xD31D
-	BagItems       uint16 = 0xD31E
-	PlayerMoney    uint16 = 0xD347 // 3 bytes, binary-coded decimal
-	PlayerCoins    uint16 = 0xD5A4 // 2 bytes, binary-coded decimal; Coin Case max is 9999
-	ObtainedBadges uint16 = 0xD356
+	RepelRemainingSteps uint16 = 0xD0DB // wRepelRemainingSteps: decremented once per step while Repel is active
+	NumBagItems         uint16 = 0xD31D
+	BagItems            uint16 = 0xD31E
+	PlayerMoney         uint16 = 0xD347 // 3 bytes, binary-coded decimal
+	PlayerCoins         uint16 = 0xD5A4 // 2 bytes, binary-coded decimal; Coin Case max is 9999
+	ObtainedBadges      uint16 = 0xD356
 	// ToggleableObjectFlags is the 256-bit global hidden-object array;
 	// ToggleableObjectList maps the current map's 1-based object IDs to
 	// indexes in that array and is terminated by 0xff.

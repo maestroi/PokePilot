@@ -316,7 +316,7 @@ func driveUrgency(obs Observation) map[Drive]float64 {
 // already sees. Speedrun is an exact no-op so old runs stay byte-for-byte
 // compatible until a non-Speedrun profile is explicitly selected.
 func AnnotatePlayStyle(obs Observation, offered []Objective, profile PlayStyleProfile) []Objective {
-	out := append([]Objective(nil), offered...)
+	out := filterRepelForPlayStyle(obs, offered, profile)
 	if profile.Name == "" || profile.Name == PlayStyleSpeedrun {
 		return out
 	}

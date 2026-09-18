@@ -58,6 +58,11 @@ func executeRedOwned(m *emu.Emu, romData []byte, o Objective) (result ObjectiveR
 			err    error
 		)
 		if o.Flee {
+			if o.RepelBeforeTravel {
+				if _, repelErr := skill.UseBestRepel(m); repelErr != nil {
+					return result, fmt.Errorf("agent: %s: prepare Repel for speedrun travel: %w", o, repelErr)
+				}
+			}
 			travel, err = skill.TravelFlee(m, romData, dest, skill.StatAwareMove(romData), 40)
 		} else {
 			travel, err = skill.Travel(m, romData, dest, skill.StatAwareMove(romData), 40)
@@ -176,6 +181,13 @@ func executeRedOwned(m *emu.Emu, romData []byte, o Objective) (result ObjectiveR
 		item, ok := adapter.resolveItemID(o.Item)
 		if !ok {
 			return result, fmt.Errorf("agent: %s: unknown Red item %q", o, o.Item)
+		}
+		if o.Intent == speedrunRepelUseIntent {
+			if err := skill.UseRepel(m, item); err != nil {
+				return result, fmt.Errorf("agent: %s: %w", o, err)
+			}
+			result.ItemEffectVerified = true
+			return result, nil
 		}
 		if o.Intent == "dex-evolution" {
 			used, err := executeDexEvolutionItem(m, romData, o, result)

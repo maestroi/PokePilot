@@ -7,6 +7,7 @@ import (
 	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
+	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/skill"
 	"github.com/maestroi/pokepilot/world"
 )
@@ -75,6 +76,7 @@ func (redSemanticObservationAdapter) Observe(m *emu.Emu, romData []byte, profile
 		BlackedOut:        base.BlackedOut,
 		LeadMoves:         []Move{},
 		LeadPP:            []uint8{},
+		RepelSteps:        int(mem.U8(sym.RepelRemainingSteps)),
 		Bag:               []Item{},
 		FieldCapabilities: []FieldCapability{},
 		RecentDialogue:    []string{},

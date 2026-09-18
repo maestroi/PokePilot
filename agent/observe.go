@@ -43,6 +43,7 @@ type Observation struct {
 
 	LeadMoves         []Move
 	LeadPP            []uint8
+	RepelSteps        int
 	Bag               []Item
 	FieldCapabilities []FieldCapability
 	RecentDialogue    []string
