@@ -315,8 +315,23 @@ func driveUrgency(obs Observation) map[Drive]float64 {
 // AnnotatePlayStyle adds compact, inspectable drive hints to the lines the LLM
 // already sees. Speedrun is an exact no-op so old runs stay byte-for-byte
 // compatible until a non-Speedrun profile is explicitly selected.
+func filterOptionalSpeedrunProgression(offered []Objective, profile PlayStyleProfile) []Objective {
+	if profile.Name != "" && profile.Name != PlayStyleSpeedrun {
+		return offered
+	}
+	out := make([]Objective, 0, len(offered))
+	for _, objective := range offered {
+		if objective.Kind == KindProgress && objective.Progress == redProgressBicycleAcquired {
+			continue
+		}
+		out = append(out, objective)
+	}
+	return out
+}
+
 func AnnotatePlayStyle(obs Observation, offered []Objective, profile PlayStyleProfile) []Objective {
 	out := filterRepelForPlayStyle(obs, offered, profile)
+	out = filterOptionalSpeedrunProgression(out, profile)
 	if profile.Name == "" || profile.Name == PlayStyleSpeedrun {
 		return out
 	}
