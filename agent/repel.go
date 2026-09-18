@@ -66,9 +66,22 @@ func (repelObjectiveProvider) Provide(ctx *objectiveOfferContext) objectiveProvi
 	}}}
 }
 
-func filterRepelForPlayStyle(offered []Objective, profile PlayStyleProfile) []Objective {
+func filterRepelForPlayStyle(obs Observation, offered []Objective, profile PlayStyleProfile) []Objective {
 	if profile.Name == PlayStyleSpeedrun {
-		return append([]Objective(nil), offered...)
+		out := append([]Objective(nil), offered...)
+		if strings.Contains(strings.ToUpper(obs.MapName), "SAFARI") {
+			return out
+		}
+		for i := range out {
+			if out[i].Kind != KindGoTo || !out[i].Flee {
+				continue
+			}
+			_, crossMap, located := objectiveDistance(obs, out[i])
+			if crossMap && located {
+				out[i].RepelBeforeTravel = true
+			}
+		}
+		return out
 	}
 	out := make([]Objective, 0, len(offered))
 	for _, o := range offered {
