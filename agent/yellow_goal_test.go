@@ -34,8 +34,8 @@ func TestYellowDexGoalDoesNotAssumeRed151Target(t *testing.T) {
 	obs := Observation{
 		GameID: yellowprofile.GameID,
 		Dex: DexCatalog{
-			Owned: []DexEntry{{Species: "pikachu"}},
-			Targets: []DexEntry{{Species: "eevee"}, {Species: "vaporeon"}},
+			Owned:       []DexEntry{{Species: "pikachu"}},
+			Targets:     []DexEntry{{Species: "eevee"}, {Species: "vaporeon"}},
 			Unavailable: []DexEntry{{Species: "mew"}},
 		},
 	}
