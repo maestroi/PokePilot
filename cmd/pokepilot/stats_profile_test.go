@@ -41,7 +41,6 @@ func TestNewStatsPlannerHonorsLLMProfile(t *testing.T) {
 	}
 }
 
-
 func TestFarmStatsPlannerHonorsLeasedInferenceIdentity(t *testing.T) {
 	t.Setenv("POKEPILOT_LLM_GATEWAY_URL", "")
 	t.Setenv("POKEPILOT_LLM_URL", "http://lan.example/v1")
