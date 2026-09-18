@@ -728,7 +728,7 @@ func sendFinish(client *farm.Client, report farm.FinishReport, checkpointDir str
 		log.Printf("farm: %s: finish: %v", report.RunID, err)
 		return
 	}
-	fmt.Printf("run %s finished: %s\n", report.RunID, report.Reason)
+	log.Printf("farm: %s: finished reason=%s attempt=%d", report.RunID, report.Reason, report.Attempt)
 }
 
 // finishLeasedRun is the test-facing Finish+cleanup path that does not
