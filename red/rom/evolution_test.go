@@ -99,7 +99,7 @@ func TestLevelUpMovesReadsMoveHalfAfterEvolutions(t *testing.T) {
 		t.Fatal(err)
 	}
 	const species uint8 = 0x24
-	const addr uint16 = 0x7280
+	addr := uint16(0x7280)
 	pOff := base + int(species-1)*2
 	romData[pOff] = byte(addr)
 	romData[pOff+1] = byte(addr >> 8)
