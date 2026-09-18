@@ -233,6 +233,7 @@ export interface ExperimentArmSummary {
   calls?: number
   strategic_calls?: number
   strategic_rejected?: number
+  strategic_seconds?: number
   plan_steps_produced?: number
   avg_strategic_call_seconds?: number
   p50_strategic_call_seconds?: number
