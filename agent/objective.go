@@ -47,8 +47,9 @@ type Objective struct {
 	Item     ItemID
 	Slot     int
 	Qty      int
-	Flee     bool
-	Note     string
+	Flee              bool
+	RepelBeforeTravel bool
+	Note              string
 	Intent   string
 }
 
