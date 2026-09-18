@@ -85,10 +85,26 @@ func UseRepel(m *emu.Emu, item uint8) error {
 			duration, mem.U8(sym.RepelRemainingSteps), state.ScreenText(&mem))
 	}
 
-	// The effect text leaves the bag/start-menu stack open. Close only
-	// dismissable UI layers; the recovery helper refuses gameplay choices.
-	if err := CloseOpenMenuToOverworld(m); err != nil {
-		return fmt.Errorf("skill: UseRepel: close item UI: %w", err)
+	// Repel's success message is dialogue, followed by the bag/start-menu
+	// stack. This verb owns that known result text, so page it with B while
+	// still refusing any unexpected two-option gameplay choice.
+	start := m.FrameCount()
+	for {
+		state.Snapshot(m, &mem)
+		interaction := state.DecodeInteraction(&mem)
+		if state.Controllable(&mem) && interaction.Kind == state.InteractionNone {
+			break
+		}
+		if state.DecodeBattle(&mem) != nil {
+			return fmt.Errorf("skill: UseRepel: unexpected battle while closing item UI")
+		}
+		if interaction.Kind == state.InteractionTwoOption {
+			return fmt.Errorf("skill: UseRepel: unexpected choice while closing item UI: %q", interaction.Text)
+		}
+		if int(m.FrameCount()-start) > fieldResultTextBudget {
+			return fmt.Errorf("skill: UseRepel: item UI did not close: interaction=%s screen=%q", interaction.Kind, state.ScreenText(&mem))
+		}
+		m.Tap(emu.B, 3, 7)
 	}
 
 	state.Snapshot(m, &mem)
