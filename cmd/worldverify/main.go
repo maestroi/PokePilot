@@ -13,12 +13,11 @@ import (
 	blueprofile "github.com/maestroi/pokepilot/blue/profile"
 	"github.com/maestroi/pokepilot/profiles"
 	redprofile "github.com/maestroi/pokepilot/red/profile"
-	yellowprofile "github.com/maestroi/pokepilot/yellow/profile"
 	"github.com/maestroi/pokepilot/skill"
 	"github.com/maestroi/pokepilot/world"
 	verifier "github.com/maestroi/pokepilot/worldverify"
+	yellowprofile "github.com/maestroi/pokepilot/yellow/profile"
 )
-
 
 func main() {
 	romPath := flag.String("rom", defaultROMPath(), "path to ROM (defaults to POKEMON_ROM, then POKEMON_RED_ROM)")
