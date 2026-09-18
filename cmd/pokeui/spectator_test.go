@@ -204,6 +204,8 @@ func TestSpectatorFramePumpIsTwentyFPS(t *testing.T) {
 		`cache: "no-store"`,
 		`createObjectURL`,
 		`revokeObjectURL`,
+		`run.status === "paused"`,
+		`fetchLast(run, "Paused", false)`,
 	} {
 		if !strings.Contains(src, want) {
 			t.Errorf("watch.js missing %q", want)
