@@ -76,12 +76,13 @@ func (parser) Species(rawSpecies uint16) (game.SpeciesID, bool) {
 	return gen1.Species(uint8(rawSpecies))
 }
 
-func (*Profile) DecodeObservation(reader game.MemoryReader, _ []byte) (game.ProfileObservation, error) {
+func (*Profile) DecodeObservation(reader game.MemoryReader, romData []byte) (game.ProfileObservation, error) {
 	if reader == nil {
 		return game.ProfileObservation{}, fmt.Errorf("yellow profile: nil memory reader")
 	}
 	mapID := reader.Peek8(sym.CurMap)
 	mapName, _ := (parser{}).MapName(uint16(mapID))
+	pokedexOwned, pokedexSeen := yellowPokedex(reader, romData)
 	location := game.PlaceID("")
 	if mapName != "" {
 		location = game.PlaceID(game.CanonicalID(strings.ReplaceAll(mapName, "_", " ")))
@@ -101,6 +102,8 @@ func (*Profile) DecodeObservation(reader game.MemoryReader, _ []byte) (game.Prof
 		Badges:       gen1.DecodeBadges(reader, yellowRAMLayout),
 		Money:        gen1.DecodeMoney(reader, yellowRAMLayout),
 		RespawnPlace: yellowLocation(reader.Peek8(sym.LastBlackoutMap)),
+		PokedexOwned: pokedexOwned,
+		PokedexSeen:  pokedexSeen,
 		Events:       yellowEventNames(reader),
 		Story:        projectYellowStory(reader, mapID),
 	}, nil
