@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
-  DEFAULT_ARM_A,
-  DEFAULT_ARM_B,
+  DEFAULT_ROLE_EXPERIMENT_A,
+  DEFAULT_ROLE_EXPERIMENT_B,
   defaultExperimentArms,
   deploymentOptionLabel,
   deploymentSelectable,
@@ -35,19 +35,19 @@ test('busy failed and unavailable deployments are not immediately selectable', (
 
 test('preferred deployment keeps a selectable choice and falls back', () => {
   const rows = [
-    deployment({ id: DEFAULT_ARM_A, state: 'busy', compute: 'RX 7900 XTX', model_id: 'qwen3.8-27b' }),
-    deployment({ id: DEFAULT_ARM_B, state: 'ready', compute: 'RTX 4090', model_id: 'qwen3.5-4b' })
+    deployment({ id: 'primary', state: 'busy', compute: 'RX 7900 XTX', model_id: 'qwen3.5-9b' }),
+    deployment({ id: 'secondary', state: 'ready', compute: 'RTX 4090', model_id: 'qwen3.5-4b' })
   ]
-  assert.equal(preferredDeployment(rows, DEFAULT_ARM_A), DEFAULT_ARM_B)
+  assert.equal(preferredDeployment(rows, 'primary'), 'secondary')
   assert.match(deploymentOptionLabel(rows[0]), /busy/)
 })
 
-test('Brock defaults pick 27B on 7900 against 4B on 4090', () => {
+test('experiment defaults come from registry roles, not model size or hardware labels', () => {
   const [a, b] = defaultExperimentArms([
     deployment({ id: 'cpu', label: 'CPU', model_id: 'qwen3.5-4b', compute: 'CPU' }),
-    deployment({ id: DEFAULT_ARM_B, label: 'Qwen 3.5 4B · RTX 4090', model_id: 'qwen3.5-4b', compute: 'RTX 4090' }),
-    deployment({ id: DEFAULT_ARM_A, label: 'Qwen 3.8 27B · 7900 XTX', model_id: 'qwen3.8-27b', compute: 'RX 7900 XTX' })
+    deployment({ id: 'cloud', label: 'Cloud model', model_id: 'future-model', compute: 'cloud', default_for: [DEFAULT_ROLE_EXPERIMENT_B] }),
+    deployment({ id: 'local-primary', label: 'Local primary', model_id: 'qwen3.5-9b', compute: 'RX 7900 XTX', default_for: [DEFAULT_ROLE_EXPERIMENT_A, 'farm'] })
   ])
-  assert.equal(a, DEFAULT_ARM_A)
-  assert.equal(b, DEFAULT_ARM_B)
+  assert.equal(a, 'local-primary')
+  assert.equal(b, 'cloud')
 })
