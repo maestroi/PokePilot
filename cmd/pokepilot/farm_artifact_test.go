@@ -189,6 +189,61 @@ func TestObjectiveLatestAndEvictionFollowFrameNotRoundNumber(t *testing.T) {
 	}
 }
 
+func TestCheckpointUploaderFlushesObjectivePairOnStop(t *testing.T) {
+	var (
+		mu      sync.Mutex
+		reports []farm.CheckpointReport
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/runs/r1/checkpoint" {
+			t.Errorf("checkpoint path = %s", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		var report farm.CheckpointReport
+		if err := json.NewDecoder(r.Body).Decode(&report); err != nil {
+			t.Errorf("decode checkpoint: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		mu.Lock()
+		reports = append(reports, report)
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	client := farm.NewClient(srv.URL)
+	dir := t.TempDir()
+	stop := make(chan struct{})
+	done := runCheckpointUploader(client, "r1", 1, dir, make(chan periodicSample, 1), stop)
+
+	stateName := "round-002-frame-0000000200-cancel.state"
+	writePair(t, dir, stateName, []byte("paused-state"), []byte(`{"intent":"after objective"}`))
+	close(stop)
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("uploader did not flush and stop")
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	wantKnowledge := strings.TrimSuffix(stateName, ".state") + ".knowledge-v4.json"
+	for _, report := range reports {
+		names := namesOf(report.Artifacts)
+		foundState, foundKnowledge := false, false
+		for _, name := range names {
+			foundState = foundState || name == stateName
+			foundKnowledge = foundKnowledge || name == wantKnowledge
+		}
+		if foundState && foundKnowledge {
+			return
+		}
+	}
+	t.Fatalf("final uploader flush did not send cancellation pair; reports=%v", reports)
+}
+
 func TestCheckpointUploaderNeverTouchesEmu(t *testing.T) {
 	src, err := os.ReadFile("farm_artifacts.go")
 	if err != nil {

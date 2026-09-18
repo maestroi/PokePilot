@@ -134,6 +134,13 @@ func runCheckpointUploader(client *farm.Client, runID string, attempt int, dir s
 		for {
 			select {
 			case <-stop:
+				// agent.Run may have just written the final paired checkpoint at
+				// a cooperative cancel boundary. Flush once before exit so Pause
+				// cannot race Finish and leave only the older pre-objective pair
+				// on the wall.
+				uploadNewObjectivePairs(client, runID, attempt, dir, uploaded)
+				_ = evictObjectiveCheckpoints(dir, objectiveCheckpointKeep)
+				uploadNewRAMBundles(client, runID, attempt, ramForensicsDir(dir), uploadedRAM)
 				return
 			case s := <-samples:
 				writeAndUploadPeriodic(client, runID, attempt, dir, s)
