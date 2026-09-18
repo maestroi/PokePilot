@@ -189,7 +189,6 @@ func TestLifecycleFollowsRequestedLeaseLimitNotHostJSON(t *testing.T) {
 	}
 }
 
-
 func TestEndpointReadyRejectsWrongAdvertisedModel(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
