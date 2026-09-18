@@ -105,7 +105,6 @@ func readEvolutions(romData []byte, off int, from uint8) ([]Evolution, error) {
 	return nil, fmt.Errorf("rom: EvosMoves for species %#02x exceeded %d bytes without a terminator", from, maxEvoRecordBytes)
 }
 
-
 // LevelUpMoves returns the exact-level move offers declared in one species'
 // EvosMoves record. The record stores evolution entries first, a zero
 // terminator, then (level, move) pairs and another zero terminator. Keeping
