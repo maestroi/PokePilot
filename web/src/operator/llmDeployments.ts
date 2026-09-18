@@ -32,7 +32,7 @@ export function deploymentStateTone(state: DeploymentState | undefined): 'neutra
   }
 }
 
-export function preferredDeployment(deployments: ModelDeployment[], id: string): string {
+export function preferredDeployment(deployments: ModelDeployment[], id?: string): string {
   const selectable = deployments.filter(deploymentSelectable)
   if (selectable.some((deployment) => deployment.id === id)) return id
   return selectable.find((deployment) => deployment.default)?.id || selectable[0]?.id || ''
