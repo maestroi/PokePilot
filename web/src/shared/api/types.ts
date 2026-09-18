@@ -150,12 +150,15 @@ export interface InferenceIdentity {
   deployment_id: string
   label?: string
   model_id: string
+  discover_model?: boolean
+  default?: boolean
   revision?: string
   artifact?: string
   quantization?: string
   compute: string
   endpoint: string
   api_model: string
+  endpoint_token_env?: string
   control_url?: string
   token_env?: string
   engine?: string
@@ -176,6 +179,7 @@ export interface ModelDeployment {
   endpoint: string
   api_model: string
   enabled: boolean
+  endpoint_token_env?: string
   control_url?: string
   engine?: string
   engine_version?: string
