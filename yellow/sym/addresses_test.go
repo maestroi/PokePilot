@@ -28,6 +28,16 @@ func TestPhase0AddressesMatchSupportedYellowLayout(t *testing.T) {
 		"wBagItems":                 {BagItems, 0xD31D},
 		"wPlayerMoney":              {PlayerMoney, 0xD346},
 		"wObtainedBadges":           {ObtainedBadges, 0xD355},
+		"wStatusFlags1":              {StatusFlags1, 0xD727},
+		"wStatusFlags4":              {StatusFlags4, 0xD72D},
+		"wElite4Flags":               {Elite4Flags, 0xD733},
+		"wEventFlags":                {EventFlags, 0xD746},
+		"wRivalStarter":              {RivalStarter, 0xD714},
+		"wPlayerStarter":             {PlayerStarter, 0xD716},
+		"wLastBlackoutMap":           {LastBlackoutMap, 0xD718},
+		"wPikachuHappiness":          {PikachuHappiness, 0xD46F},
+		"wPikachuMood":               {PikachuMood, 0xD470},
+		"wPikachuSpawnStateFlags":    {PikachuSpawnStateFlags, 0xD471},
 	}
 	for name, tc := range tests {
 		if tc.got != tc.want {
