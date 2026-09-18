@@ -176,6 +176,13 @@ CREATE TABLE IF NOT EXISTS dataset_manifests (
 CREATE INDEX IF NOT EXISTS dataset_manifests_created_idx ON dataset_manifests(created_at DESC);
 `
 
+const controlPlaneMigration002 = `
+ALTER TABLE model_deployments
+    ADD COLUMN IF NOT EXISTS discover BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE model_deployments
+    ADD COLUMN IF NOT EXISTS default_for TEXT[] NOT NULL DEFAULT '{}';
+`
+
 type controlPlane struct {
 	db                *sql.DB
 	experimentPersist sync.Mutex
@@ -269,6 +276,18 @@ func (cp *controlPlane) migrate() error {
 		}
 		if _, err := tx.Exec(`INSERT INTO schema_migrations(version) VALUES(1) ON CONFLICT DO NOTHING`); err != nil {
 			return fmt.Errorf("record control-plane migration 1: %w", err)
+		}
+	}
+	var applied2 bool
+	if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version=2)`).Scan(&applied2); err != nil {
+		return fmt.Errorf("read migration version 2: %w", err)
+	}
+	if !applied2 {
+		if _, err := tx.Exec(controlPlaneMigration002); err != nil {
+			return fmt.Errorf("apply control-plane migration 2: %w", err)
+		}
+		if _, err := tx.Exec(`INSERT INTO schema_migrations(version) VALUES(2) ON CONFLICT DO NOTHING`); err != nil {
+			return fmt.Errorf("record control-plane migration 2: %w", err)
 		}
 	}
 	return tx.Commit()
