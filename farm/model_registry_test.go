@@ -70,3 +70,16 @@ func TestModelRegistryRejectsDuplicateDeployment(t *testing.T) {
 		t.Fatal("expected duplicate id error")
 	}
 }
+
+func TestDiscoverableDeploymentAllowsEndpointOnlyIdentity(t *testing.T) {
+	registry := ModelRegistry{Deployments: []ModelDeployment{
+		{ID: "dynamic", Label: "Dynamic endpoint", Compute: "gpu", Endpoint: "http://gpu/v1", Enabled: true, Discover: true, DefaultFor: []string{"farm", "experiment-a"}},
+	}}
+	if err := registry.Validate(); err != nil {
+		t.Fatalf("discoverable endpoint should validate without fixed model ids: %v", err)
+	}
+	d, _ := registry.Deployment("dynamic")
+	if !d.HasDefaultRole("FARM") || !d.HasDefaultRole("experiment-a") || d.HasDefaultRole("other") {
+		t.Fatalf("default roles = %#v", d.DefaultFor)
+	}
+}

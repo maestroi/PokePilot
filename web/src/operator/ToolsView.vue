@@ -7,7 +7,7 @@ import { GOAL_OPTIONS, nextGoalForPlayStyle } from '../shared/goals'
 import { defaultGoalForPlayStyle } from '../shared/playstyle'
 import Panel from '../shared/components/Panel.vue'
 import { usePollingResource } from '../shared/composables/usePollingResource'
-import { DEFAULT_ARM_A, deploymentOptionLabel, deploymentSelectable, preferredDeployment } from './llmDeployments'
+import { defaultFarmDeployment, deploymentOptionLabel, deploymentSelectable, preferredDeployment } from './llmDeployments'
 
 type StarterMode =
   | 'default'
@@ -55,7 +55,7 @@ watch(deployments, (next) => {
     form.llm_deployment = ''
     return
   }
-  form.llm_deployment = preferredDeployment(next, form.llm_deployment || DEFAULT_ARM_A)
+  form.llm_deployment = preferredDeployment(next, form.llm_deployment || defaultFarmDeployment(next))
 }, { immediate: true })
 
 const submitting = ref(false)

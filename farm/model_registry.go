@@ -30,22 +30,30 @@ type ModelRegistry struct {
 // environment variable containing a bearer token; the token itself is never
 // carried in the registry, run spec, dashboard or persisted experiment data.
 type ModelDeployment struct {
-	ID                 string `json:"id"`
-	Label              string `json:"label"`
-	ModelID            string `json:"model_id"`
-	Revision           string `json:"revision,omitempty"`
-	Artifact           string `json:"artifact,omitempty"`
-	Quantization       string `json:"quantization,omitempty"`
-	Compute            string `json:"compute"`
-	Endpoint           string `json:"endpoint"`
-	APIModel           string `json:"api_model"`
-	Enabled            bool   `json:"enabled"`
-	ControlURL         string `json:"control_url,omitempty"`
-	TokenEnv           string `json:"token_env,omitempty"`
-	Engine             string `json:"engine,omitempty"`
-	EngineVersion      string `json:"engine_version,omitempty"`
-	EngineConfig       string `json:"engine_config,omitempty"`
-	MaxParallelWorkers int    `json:"max_parallel_workers,omitempty"`
+	ID           string `json:"id"`
+	Label        string `json:"label"`
+	ModelID      string `json:"model_id"`
+	Revision     string `json:"revision,omitempty"`
+	Artifact     string `json:"artifact,omitempty"`
+	Quantization string `json:"quantization,omitempty"`
+	Compute      string `json:"compute"`
+	Endpoint     string `json:"endpoint"`
+	APIModel     string `json:"api_model"`
+	Enabled      bool   `json:"enabled"`
+	// Discover asks the wall to probe the OpenAI-compatible /v1/models endpoint
+	// and bind runs to the model actually being served. This is useful for
+	// pinned llama.cpp/vLLM/cloud endpoints whose model can change without a
+	// PokePilot deploy. Switchable hosts with ControlURL normally leave this off.
+	Discover bool `json:"discover,omitempty"`
+	// DefaultFor gives operator surfaces stable roles without encoding model
+	// sizes or hardware in code (for example "farm", "experiment-a").
+	DefaultFor         []string `json:"default_for,omitempty"`
+	ControlURL         string   `json:"control_url,omitempty"`
+	TokenEnv           string   `json:"token_env,omitempty"`
+	Engine             string   `json:"engine,omitempty"`
+	EngineVersion      string   `json:"engine_version,omitempty"`
+	EngineConfig       string   `json:"engine_config,omitempty"`
+	MaxParallelWorkers int      `json:"max_parallel_workers,omitempty"`
 	// LegacyProfile is only the compatibility adapter used by existing
 	// runners to choose the already-configured compute endpoint. New operator
 	// and experiment code selects ID, never this value.
@@ -124,8 +132,8 @@ func (r ModelRegistry) Validate() error {
 			return fmt.Errorf("model registry: duplicate deployment id %q", id)
 		}
 		seen[id] = true
-		if strings.TrimSpace(d.ModelID) == "" {
-			return fmt.Errorf("model registry: deployment %q has empty model_id", id)
+		if strings.TrimSpace(d.ModelID) == "" && !d.Discover {
+			return fmt.Errorf("model registry: deployment %q has empty model_id (set discover=true for endpoint discovery)", id)
 		}
 		if strings.TrimSpace(d.Compute) == "" {
 			return fmt.Errorf("model registry: deployment %q has empty compute", id)
@@ -133,8 +141,8 @@ func (r ModelRegistry) Validate() error {
 		if strings.TrimSpace(d.Endpoint) == "" {
 			return fmt.Errorf("model registry: deployment %q has empty endpoint", id)
 		}
-		if strings.TrimSpace(d.APIModel) == "" {
-			return fmt.Errorf("model registry: deployment %q has empty api_model", id)
+		if strings.TrimSpace(d.APIModel) == "" && !d.Discover {
+			return fmt.Errorf("model registry: deployment %q has empty api_model (set discover=true for endpoint discovery)", id)
 		}
 		if d.MaxParallelWorkers < 0 {
 			return fmt.Errorf("model registry: deployment %q has invalid max_parallel_workers %d", id, d.MaxParallelWorkers)
@@ -172,6 +180,19 @@ func (r ModelRegistry) EnabledDeployments() []ModelDeployment {
 		return out[i].Label < out[j].Label
 	})
 	return out
+}
+
+// HasDefaultRole reports whether this deployment is preferred for an operator role.
+// Roles are intentionally free-form so adding another GPU or a cloud pool does not
+// require another enum/code change.
+func (d ModelDeployment) HasDefaultRole(role string) bool {
+	role = strings.TrimSpace(strings.ToLower(role))
+	for _, candidate := range d.DefaultFor {
+		if strings.ToLower(strings.TrimSpace(candidate)) == role {
+			return true
+		}
+	}
+	return false
 }
 
 func (d ModelDeployment) Identity() InferenceIdentity {

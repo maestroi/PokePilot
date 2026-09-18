@@ -176,6 +176,8 @@ export interface ModelDeployment {
   endpoint: string
   api_model: string
   enabled: boolean
+  discover?: boolean
+  default_for?: string[]
   control_url?: string
   engine?: string
   engine_version?: string

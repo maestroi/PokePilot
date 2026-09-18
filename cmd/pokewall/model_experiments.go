@@ -84,6 +84,12 @@ type modelHostStatus struct {
 	Error              string   `json:"error,omitempty"`
 }
 
+type endpointModelsResponse struct {
+	Data []struct {
+		ID string `json:"id"`
+	} `json:"data"`
+}
+
 // modelExperimentHTTPHandler adds #723/#724 operator behavior around the wall
 // without changing the runner-facing compatibility handler. If no registry is
 // configured the wrapper is a no-op for legacy runs.
@@ -136,6 +142,15 @@ func (c *modelExperimentController) handleModels(w http.ResponseWriter, _ *http.
 	active := c.activeByDeployment()
 	for _, d := range deployments {
 		view := deploymentView{ModelDeployment: d, State: "ready", ActiveLeases: active[d.ID], Queued: queued[d.ID]}
+		if d.ControlURL == "" && d.Discover {
+			resolved, err := c.resolveDeployment(d)
+			if err != nil {
+				view.State = "unavailable"
+				view.Error = err.Error()
+			} else {
+				view.ModelDeployment = resolved
+			}
+		}
 		if d.ControlURL != "" {
 			status, err := c.hostStatus(d)
 			if err != nil {
@@ -144,6 +159,9 @@ func (c *modelExperimentController) handleModels(w http.ResponseWriter, _ *http.
 			} else {
 				statuses[d.ControlURL] = status
 				view.Loaded, view.Error = status.DeploymentID, status.Error
+				if status.DeploymentID == d.ID && strings.TrimSpace(status.ModelID) != "" {
+					view.ModelID = status.ModelID
+				}
 				if status.ActiveLeases > view.ActiveLeases {
 					view.ActiveLeases = status.ActiveLeases
 				}
@@ -208,6 +226,106 @@ func (c *modelExperimentController) deployment(id string) (farm.ModelDeployment,
 	c.registryMu.RLock()
 	defer c.registryMu.RUnlock()
 	return c.registry.Deployment(id)
+}
+
+func (c *modelExperimentController) resolvedDeployment(id string) (farm.ModelDeployment, error) {
+	d, ok := c.deployment(id)
+	if !ok || !d.Enabled {
+		return farm.ModelDeployment{}, fmt.Errorf("deployment %q is unavailable", id)
+	}
+	return c.resolveDeployment(d)
+}
+
+// resolveDeployment binds an endpoint declaration to what it is actually
+// serving. Switchable model hosts remain authoritative via their control API;
+// pinned/generic OpenAI-compatible endpoints can opt into /v1/models discovery.
+// We only auto-select when there is one unambiguous model (or the configured
+// api_model is present), so a multi-model cloud endpoint is never guessed.
+func (c *modelExperimentController) resolveDeployment(d farm.ModelDeployment) (farm.ModelDeployment, error) {
+	if d.ControlURL != "" {
+		status, err := c.hostStatus(d)
+		if err != nil {
+			return farm.ModelDeployment{}, err
+		}
+		if status.DeploymentID == d.ID && strings.TrimSpace(status.ModelID) != "" && status.ModelID != d.ModelID {
+			d.ModelID = status.ModelID
+			d.Revision, d.Artifact, d.Quantization = "", "", ""
+		}
+		return d, nil
+	}
+	if !d.Discover {
+		return d, nil
+	}
+
+	req, err := http.NewRequest(http.MethodGet, strings.TrimRight(d.Endpoint, "/")+"/models", nil)
+	if err != nil {
+		return farm.ModelDeployment{}, err
+	}
+	if d.TokenEnv != "" {
+		if token := strings.TrimSpace(os.Getenv(d.TokenEnv)); token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return farm.ModelDeployment{}, fmt.Errorf("discover %s: %w", d.Endpoint, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return farm.ModelDeployment{}, fmt.Errorf("discover %s: HTTP %s", d.Endpoint, resp.Status)
+	}
+	var models endpointModelsResponse
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&models); err != nil {
+		return farm.ModelDeployment{}, fmt.Errorf("discover %s: decode models: %w", d.Endpoint, err)
+	}
+	ids := make([]string, 0, len(models.Data))
+	for _, model := range models.Data {
+		if id := strings.TrimSpace(model.ID); id != "" {
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) == 0 {
+		return farm.ModelDeployment{}, fmt.Errorf("discover %s: endpoint reported no models", d.Endpoint)
+	}
+	chosen := ""
+	for _, id := range ids {
+		if d.APIModel != "" && id == d.APIModel {
+			chosen = id
+			break
+		}
+	}
+	if chosen == "" && len(ids) == 1 {
+		chosen = ids[0]
+	}
+	if chosen == "" {
+		return farm.ModelDeployment{}, fmt.Errorf("discover %s: %d models reported and configured api_model %q did not match", d.Endpoint, len(ids), d.APIModel)
+	}
+	if chosen != d.APIModel || chosen != d.ModelID {
+		d.APIModel = chosen
+		d.ModelID = chosen
+		d.Label = chosen + " · " + d.Compute
+		// A changed runtime model invalidates artifact-specific comparability
+		// metadata from the static registry. Keep hardware/engine identity, but
+		// do not pretend the old model hash/quantization still applies.
+		d.Revision, d.Artifact, d.Quantization = "", "", ""
+	}
+	return d, nil
+}
+
+func (c *modelExperimentController) refreshRunInference(meta runExperimentMeta) (runExperimentMeta, error) {
+	d, err := c.resolvedDeployment(meta.Deployment)
+	if err != nil {
+		return meta, err
+	}
+	meta.Inference = d.Identity()
+	meta.MaxParallelWorkers = d.ParallelLimit()
+	c.mu.Lock()
+	if _, exists := c.state.Runs[meta.RunID]; exists {
+		c.state.Runs[meta.RunID] = meta
+		c.persistLocked()
+	}
+	c.mu.Unlock()
+	return meta, nil
 }
 
 func (c *modelExperimentController) liveParallelLimit(id string) int {
@@ -275,6 +393,13 @@ func (c *modelExperimentController) handleLease(w http.ResponseWriter, r *http.R
 		copyRecorder(w, capture)
 		return
 	}
+	refreshed, refreshErr := c.refreshRunInference(meta)
+	if refreshErr != nil {
+		c.requeueLease(spec.RunID)
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "deployment endpoint unavailable while leasing", "deployment": spec.LLMDeployment, "detail": refreshErr.Error()})
+		return
+	}
+	meta = refreshed
 	if meta.Inference.ControlURL != "" {
 		status, code, err := c.hostAction(meta.Inference, "/v1/leases/acquire", map[string]any{"run_id": spec.RunID, "deployment_id": meta.Deployment, "max_parallel_workers": c.liveParallelLimit(meta.Deployment)})
 		if err != nil || code >= 300 || status.State != "ready" || status.DeploymentID != meta.Deployment {
@@ -974,9 +1099,9 @@ func experimentROMIdentity(gameID string) string {
 }
 
 func (c *modelExperimentController) resolveRunMeta(raw map[string]any, deployment, experimentID, arm, caseID string) (runExperimentMeta, error) {
-	d, ok := c.deployment(deployment)
-	if !ok || !d.Enabled {
-		return runExperimentMeta{}, fmt.Errorf("deployment %q is unavailable", deployment)
+	d, err := c.resolvedDeployment(deployment)
+	if err != nil {
+		return runExperimentMeta{}, err
 	}
 	runID, _ := raw["run_id"].(string)
 	if strings.TrimSpace(runID) == "" {
