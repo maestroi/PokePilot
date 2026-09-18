@@ -1,1 +1,37 @@
-import assert from 'node:assert/strict'\nimport { readFileSync } from 'node:fs'\nimport test from 'node:test'\n\nconst source = readFileSync(new URL('../src/operator/PairedExperimentPanel.vue', import.meta.url), 'utf8')\nconst types = readFileSync(new URL('../src/shared/api/types.ts', import.meta.url), 'utf8')\n\ntest('paired experiment pins game and surfaces comparability exclusions', () => {\n  assert.match(source, /game: 'pokemon-red'/)\n  assert.match(source, /v-model="form\.game"/)\n  assert.match(source, /game: form\.game/)\n  assert.match(source, /Comparable/)\n  assert.match(source, /Excluded non-comparable seeds/)\n  assert.match(source, /Excluded pairs never contribute to the aggregate metrics above/)\n  assert.match(source, /rom_identity/)\n  assert.match(source, /deploymentIdentity\('arm_a'\)/)\n  assert.match(types, /comparable_pairs\?: number/)\n  assert.match(types, /excluded_pairs\?: number/)\n  assert.match(types, /pairs\?: ExperimentPairResult\[\]/)\n})\n\ntest('paired experiment exposes quality and inference benchmark metrics', () => {\n  for (const label of [\n    'Goal success',\n    'Median rounds / frames to goal',\n    'Blackouts / objective failures',\n    'Stagnation / plan-exhaustion replans',\n    'Plan steps produced / executed / skipped',\n    'Plan execution fraction',\n    'Strategic avg / p50 / p95',\n    'Planner time',\n    'Prefill / decode TPS',\n    'Prompt / completion tokens'\n  ]) {\n    assert.ok(source.includes(label), `missing metric ${label}`)\n  }\n})\n
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import test from 'node:test'
+
+const source = readFileSync(new URL('../src/operator/PairedExperimentPanel.vue', import.meta.url), 'utf8')
+const types = readFileSync(new URL('../src/shared/api/types.ts', import.meta.url), 'utf8')
+
+test('paired experiment pins game and surfaces comparability exclusions', () => {
+  assert.match(source, /game: 'pokemon-red'/)
+  assert.match(source, /v-model="form\.game"/)
+  assert.match(source, /game: form\.game/)
+  assert.match(source, /Comparable/)
+  assert.match(source, /Excluded non-comparable seeds/)
+  assert.match(source, /Excluded pairs never contribute to the aggregate metrics above/)
+  assert.match(source, /rom_identity/)
+  assert.match(source, /deploymentIdentity\('arm_a'\)/)
+  assert.match(types, /comparable_pairs\?: number/)
+  assert.match(types, /excluded_pairs\?: number/)
+  assert.match(types, /pairs\?: ExperimentPairResult\[\]/)
+})
+
+test('paired experiment exposes quality and inference benchmark metrics', () => {
+  for (const label of [
+    'Goal success',
+    'Median rounds / frames to goal',
+    'Blackouts / objective failures',
+    'Stagnation / plan-exhaustion replans',
+    'Plan steps produced / executed / skipped',
+    'Plan execution fraction',
+    'Strategic avg / p50 / p95',
+    'Planner time',
+    'Prefill / decode TPS',
+    'Prompt / completion tokens'
+  ]) {
+    assert.ok(source.includes(label), `missing metric ${label}`)
+  }
+})
