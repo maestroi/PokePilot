@@ -44,15 +44,15 @@ The current catalog lives in `qualification/catalog.go`.
 | milestone | `misty` | generated/cached `post_boulder` fixture | runnable |
 | milestone | `rocket-hideout` | private `rocket-hideout/start.state` | runnable |
 | milestone | `pokemon-tower` | private `pokemon-tower/start.state` | runnable |
-| milestone | `fuchsia-koga-surf-strength` | private checkpoint | blocked by #33 |
-| milestone | `silph-sabrina` | private checkpoint | blocked by #34 |
-| milestone | `cinnabar-blaine` | private checkpoint | blocked by #35 |
-| milestone | `viridian-giovanni` | private checkpoint | blocked by #36 |
-| milestone | `victory-road-indigo` | private checkpoint | blocked by #37 |
-| milestone | `elite-four-champion` | private checkpoint | blocked by #38 |
-| full | `fresh-hall-of-fame` | fresh emulator boot | runner available; product completion blocked by #39 |
+| milestone | `fuchsia-koga-surf-strength` | private checkpoint | runnable |
+| milestone | `silph-sabrina` | private checkpoint | runnable |
+| milestone | `cinnabar-blaine` | private checkpoint | runnable |
+| milestone | `viridian-giovanni` | private checkpoint | runnable |
+| milestone | `victory-road-indigo` | private checkpoint | runnable |
+| milestone | `elite-four-champion` | private checkpoint | runnable |
+| full | `fresh-hall-of-fame` | fresh emulator boot | runnable; #39 closes only after a clean proof |
 
-Future milestones stay in the catalog with their blocker instead of being silently skipped and presented as green coverage.
+Closed story slices stay in the daily milestone profile. A missing private checkpoint is a qualification failure, not a green skip.
 
 `mt-moon-cerulean` is the regression barrier for the farm defect that stalled
 run `run-17rjs2d1uf1kw3` for eighty rounds. Mt. Moon B2F's fossil corridor is
@@ -98,8 +98,11 @@ Current direct postconditions are:
 
 - Rocket Hideout: semantic bag owns `silph scope`.
 - Pokémon Tower: semantic bag owns `poke flute`.
-
-When later progression slices land, add the smallest positive semantic postcondition for that milestone and flip its catalog entry to runnable.
+- Fuchsia/Koga: semantic progress `fuchsia_progression_complete` (Soul + HM03 + HM04).
+- Silph/Sabrina: Marsh Badge is owned.
+- Cinnabar/Blaine: Volcano Badge is owned.
+- Viridian/Giovanni: Earth Badge is owned.
+- Victory Road/Indigo: semantic progress `indigo_plateau_ready` is complete.
 
 ## Failure evidence
 
@@ -135,13 +138,7 @@ The runner can use the default private paths above, or repository variables can 
 
 LLM configuration uses the existing `POKEPILOT_LLM_*`, `POKEPILOT_LLM_GPU_*`, and profile environment variables available to the self-hosted runner. Credentials are never written to qualification metadata.
 
-The workflow runs milestone qualification daily. A weekly fresh-save job exists but is gated by:
-
-```text
-POKEPILOT_FULL_QUALIFICATION=1
-```
-
-Do not enable that repository variable as a required scheduled barrier until #39 has landed. Manual `full` runs are still useful while #39 is being completed because they produce the exact failing frontier and checkpoint ring.
+The workflow runs milestone qualification daily and runs the fresh-save Hall-of-Fame qualification weekly. The full run is intentionally a real barrier: it closes #39 only after the typed eight-badge + Hall-of-Fame postcondition passes. Failures preserve the checkpoint ring and diagnostics so the next frontier can be replayed without weakening the milestone suite.
 
 ### Artifact boundary
 
