@@ -506,6 +506,31 @@ func goToWithTransitionExecutor(m *emu.Emu, romData []byte, dest Destination, ex
 			}
 		}
 		if err := Traverse(m, romData, e); err != nil {
+			// A measured bounce-back (Cycling Road's forced downhill descent,
+			// or any crossing that settles back on its own origin map) is
+			// evidence about the connection, not the tile: every tile of
+			// Route 18's north edge feeds the same forced descent, so a
+			// per-tile ban (legAt) just lets the router rediscover it from a
+			// different tile of the same map, over and over, until the
+			// navigation guard's exact-position repeat finally fires.
+			// MEASURED on run-5r5c0f2hrowk387f36ca57zob: entering
+			// ROUTE_18_GATE_1F (0xbe) and being routed straight back out to
+			// Route 18 through two different warp tiles before the guard
+			// caught it. Ban the whole map's edge up front instead, with the
+			// same "never strand the destination" safety check the ErrNoRoute
+			// retry path below already uses.
+			if errors.Is(err, ErrLegBouncesBack) {
+				forced := legFromMap{e: e, m: cur}
+				if !deadEnds[forced] {
+					if _, _, ok := safeForcedBanWithDeadEnds(routeGraph, cur, dest, x, y, blockedHere, forced, deadEnds, prereqs); ok {
+						if replans++; replans > maxReplans {
+							return newReplanExhaustedError(maxReplans, cur, x, y, dest, err)
+						}
+						deadEnds[forced] = true
+						continue // re-plan without this leg, from any tile of this map
+					}
+				}
+			}
 			k := legAt{e: e, m: cur, x: x, y: y}
 			if errors.Is(err, ErrLegUnwalkable) && !failed[k] {
 				if replans++; replans > maxReplans {

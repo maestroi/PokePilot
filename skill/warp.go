@@ -54,6 +54,20 @@ const (
 // rather than a defect — the caller bans the edge and re-plans.
 var ErrLegUnwalkable = errors.New("skill: leg is not walkable from here")
 
+// ErrLegBouncesBack reports that a crossing was measured to settle back on
+// its OWN origin map instead of holding on the destination — a forced-scroll
+// script (Cycling Road's mandatory downhill descent) rather than a blocked
+// approach tile. Unlike the ordinary ErrLegUnwalkable case (Route 2's ledge:
+// genuinely walkable from one tile of the edge and not another), a bounce is
+// evidence about the connection itself, not about the tile it was crossed
+// from: every tile of Route 18's north edge feeds the same forced descent,
+// so re-trying it from a different tile of the same map is not a fresh
+// discovery. It wraps ErrLegUnwalkable so existing errors.Is(err,
+// ErrLegUnwalkable) callers keep working unchanged; the caller that cares
+// about the stronger claim checks ErrLegBouncesBack specifically and bans
+// the whole map's edge (legFromMap) rather than just the one tile (legAt).
+var ErrLegBouncesBack = fmt.Errorf("skill: leg settles back on its own origin map: %w", ErrLegUnwalkable)
+
 // maxWarpApproachAttempts bounds the retry-from-a-different-side loop below
 // to one try per orthogonal neighbour of the target warp tile.
 const maxWarpApproachAttempts = 4
@@ -332,6 +346,10 @@ func finishArrival(m *emu.Emu, e world.Edge) error {
 	// does not hold from here" the router already knows how to route around.
 	if got := m.Peek8(sym.CurMap); got != e.To {
 		x, y := playerXY(m)
+		if got == e.From {
+			return fmt.Errorf("skill: Traverse: %s: settled back on map %02x at (%d,%d), never held %02x: %w",
+				edgeName(e), got, x, y, e.To, ErrLegBouncesBack)
+		}
 		return fmt.Errorf("skill: Traverse: %s: settled back on map %02x at (%d,%d), never held %02x: %w",
 			edgeName(e), got, x, y, e.To, ErrLegUnwalkable)
 	}
