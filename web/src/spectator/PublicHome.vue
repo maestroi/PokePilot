@@ -30,6 +30,7 @@ const props = defineProps<{
   recentRuns: SpectatorRun[]
   summary: SpectatorSummary
   frameURL: string
+  replayURL: string
 }>()
 
 const emit = defineEmits<{
@@ -129,8 +130,17 @@ function watch(run: SpectatorRun): void {
 
           <div class="grid gap-3 lg:grid-cols-[minmax(0,1.35fr)_minmax(16rem,0.65fr)]">
             <div class="relative min-h-[18rem] overflow-hidden rounded-xl border border-white/10 bg-black/55 shadow-inner sm:min-h-[22rem]">
+              <video
+                v-if="replayURL"
+                :key="run.run_id"
+                :src="replayURL"
+                class="absolute inset-0 h-full w-full object-contain object-center [image-rendering:pixelated]"
+                controls
+                preload="metadata"
+                playsinline
+              />
               <img
-                v-if="frameURL"
+                v-else-if="frameURL"
                 :src="frameURL"
                 :alt="`Live frame for ${run.run_id}`"
                 class="absolute inset-0 h-full w-full object-contain object-center [image-rendering:pixelated]"
