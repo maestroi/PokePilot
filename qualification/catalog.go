@@ -55,10 +55,9 @@ type Case struct {
 	BlockedBy   int         `json:"blocked_by_issue,omitempty"`
 }
 
-// Catalog returns the complete Red qualification roadmap. Cases whose
-// progression slice has not landed stay visible but unavailable; that makes the
-// qualification matrix grow by flipping the case live when its slice lands,
-// rather than inventing a second roadmap in CI.
+// Catalog returns the complete Red qualification roadmap. Landed progression
+// slices stay runnable in the milestone profile so daily qualification proves
+// the same badge/story handoffs the farm depends on.
 func Catalog() []Case {
 	return []Case{
 		{
