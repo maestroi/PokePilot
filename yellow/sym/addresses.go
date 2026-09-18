@@ -42,8 +42,8 @@ const (
 	TileMapLen             = 20 * 18
 	CurrentMenuItem uint16 = 0xCC26 // wCurrentMenuItem
 	MaxMenuItem     uint16 = 0xCC28 // wMaxMenuItem
-	FontLoaded      uint16 = 0xCFC4 // wFontLoaded
-	WalkCounter     uint16 = 0xCFC5 // wWalkCounter
+	FontLoaded      uint16 = 0xCFC3 // wFontLoaded
+	WalkCounter     uint16 = 0xCFC4 // wWalkCounter
 	JoyIgnore       uint16 = 0xCD6B // wJoyIgnore
 
 	// Battle.
