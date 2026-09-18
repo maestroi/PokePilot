@@ -118,6 +118,7 @@ func recoverableControllerFault(err error) bool {
 	return errors.Is(err, emu.ErrFrameDeadline) ||
 		errors.Is(err, skill.ErrNavigationStalled) ||
 		errors.Is(err, skill.ErrReplanExhausted) ||
+		errors.Is(err, skill.ErrEngagementsExhausted) ||
 		errors.Is(err, skill.ErrMenuStuck) ||
 		errors.Is(err, skill.ErrCutsceneTimeout) ||
 		errors.Is(err, skill.ErrForcedChoiceStuck) ||
@@ -181,6 +182,9 @@ func failureCauseFor(err error) (FailureCauseID, []string) {
 	}
 	if errors.Is(err, skill.ErrNavigationStalled) {
 		return "navigation_stalled", nil
+	}
+	if errors.Is(err, skill.ErrEngagementsExhausted) {
+		return "travel_engagements_exhausted", nil
 	}
 	if errors.Is(err, skill.ErrShopMenuTimeout) {
 		return "shop_menu_timeout", nil

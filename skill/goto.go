@@ -91,6 +91,53 @@ type legFromMap struct {
 	m uint8
 }
 
+// navigationMemory carries GoTo's within-journey loop/bounce protection
+// (the guard, banned legs, dead ends, and visited maps/positions) across
+// separate calls to goToWithTransitionExecutorMemory. Travel's retry loop
+// calls GoTo again after every resolved battle interruption; without this,
+// each fresh call forgot every leg/map this journey had already learned was
+// unproductive, so a wild battle landing near a map boundary could make the
+// walker legally re-plan straight back through ground its own guard/dead-end
+// machinery exists to forbid — MEASURED on run-13kws9zfzq7ka1p4bmd16c9yg3: a
+// battle at the Rock Tunnel 1F / Route 10 boundary reset visitedMaps on every
+// retry, so the replanned route detoured back in via Route 9 and hit another
+// encounter at the same tile, burning the entire maxBattles budget with zero
+// net progress. A nil memory (GoTo's own public entry point, which is not
+// resumed after a battle) behaves exactly as before: a single call still
+// gets its own fresh guard/bans.
+type navigationMemory struct {
+	guard            *navigationGuard
+	failed           map[legAt]bool
+	deadEnds         map[legFromMap]bool
+	visitedMaps      map[uint8]bool
+	visitedPositions map[uint8][]navigationState
+	replans          int
+}
+
+func newNavigationMemory() *navigationMemory {
+	return &navigationMemory{
+		failed:           map[legAt]bool{},
+		deadEnds:         map[legFromMap]bool{},
+		visitedMaps:      map[uint8]bool{},
+		visitedPositions: map[uint8][]navigationState{},
+	}
+}
+
+// ensureGuard seeds the journey's guard from start on the first call for this
+// memory and returns the SAME guard on every later call, no matter what start
+// is on that later call. This is the fix's core invariant: a later call is a
+// GoTo re-entered after Travel resolved a battle, at essentially the position
+// the battle interrupted, not the beginning of a new journey — replacing the
+// guard there would forget every bounce/repeat fact this journey already
+// learned, which is exactly what let a battle at a map boundary send the
+// walker back through ground it had already ruled out.
+func (nav *navigationMemory) ensureGuard(dest Destination, start navigationState) *navigationGuard {
+	if nav.guard == nil {
+		nav.guard = newNavigationGuard(dest, start)
+	}
+	return nav.guard
+}
+
 func newNavigationGuard(dest Destination, start navigationState) *navigationGuard {
 	return &navigationGuard{
 		dest:  dest,
@@ -343,6 +390,14 @@ func GoTo(m *emu.Emu, romData []byte, dest Destination) error {
 	return goToWithTransitionExecutor(m, romData, dest, newRedRouteTransitionExecutor(m, romData, nil))
 }
 
+// goToWithTransitionExecutor is a single, self-contained GoTo call: its
+// loop/bounce memory starts empty and is discarded when it returns. Use
+// goToWithTransitionExecutorMemory directly to carry that memory across
+// repeated calls within one logical journey (see cutAwareGoTo).
+func goToWithTransitionExecutor(m *emu.Emu, romData []byte, dest Destination, executor world.TransitionExecutor) error {
+	return goToWithTransitionExecutorMemory(m, romData, dest, executor, newNavigationMemory())
+}
+
 // overlayObservedMapTopology applies the current Red map's stable, visible
 // object collisions to its freshly decoded grid, then returns a new routing
 // snapshot. Passing the previous snapshot preserves observations from earlier
@@ -356,27 +411,36 @@ func overlayObservedMapTopology(g *world.Graph, grid *world.Grid, h rom.MapHeade
 	return g.WithMapGrid(h.ID, grid)
 }
 
-func goToWithTransitionExecutor(m *emu.Emu, romData []byte, dest Destination, executor world.TransitionExecutor) error {
+// goToWithTransitionExecutorMemory is GoTo's implementation. nav carries
+// loop/bounce protection that can be shared across multiple calls within one
+// logical journey (see navigationMemory); nil gets a fresh one, matching a
+// single self-contained GoTo call.
+func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destination, executor world.TransitionExecutor, nav *navigationMemory) error {
 	g, err := world.BuildGraph(romData)
 	if err != nil {
 		return err
 	}
+	if nav == nil {
+		nav = newNavigationMemory()
+	}
 	startX, startY := playerXY(m)
-	guard := newNavigationGuard(dest, navigationState{
+	guard := nav.ensureGuard(dest, navigationState{
 		Map: m.Peek8(sym.CurMap), X: startX, Y: startY,
 	})
-
-	failed := map[legAt]bool{}
-	deadEnds := map[legFromMap]bool{}
+	failed := nav.failed
+	deadEnds := nav.deadEnds
+	visitedMaps := nav.visitedMaps
+	visitedPositions := nav.visitedPositions
 
 	// A bound on re-plans. Each ban is a distinct (leg, tile) or (leg, map),
 	// so this terminates on its own, but an unattended run should not
-	// discover a pathological map by walking it for an hour.
+	// discover a pathological map by walking it for an hour. It is carried
+	// in nav so it bounds the whole journey, not just one battle-free
+	// stretch of it.
 	const maxReplans = 8
-	replans := 0
+	replans := nav.replans
+	defer func() { nav.replans = replans }()
 	semanticExecutions := 0
-	visitedMaps := map[uint8]bool{}
-	visitedPositions := map[uint8][]navigationState{}
 	routeGraph := g
 
 	for {

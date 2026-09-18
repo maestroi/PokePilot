@@ -98,6 +98,17 @@ var ErrBlackedOut = errors.New("skill: Travel: blacked out")
 // trainer wall from a wild loss or poison wipe.
 var ErrTrainerBlackedOut = fmt.Errorf("%w: lost trainer battle", ErrBlackedOut)
 
+// ErrEngagementsExhausted reports that Travel hit maxBattles without reaching
+// dest: the walk kept getting interrupted by wild/trainer engagements faster
+// than it could make progress toward the destination. Unlike a blackout or a
+// dialogue choice, the player is left standing in the ordinary overworld —
+// this is a controller/navigation stall, the same shape as
+// ErrNavigationStalled or ErrReplanExhausted, not an unclassified terminal
+// failure: the caller should replan from the stable boundary it is already
+// standing on rather than treat this as an unrecoverable defect. See
+// recoverableControllerFault in agent/red_failure_normalization.go.
+var ErrEngagementsExhausted = errors.New("skill: Travel: still interrupted by engagements")
+
 func battleBlackoutError(r battleResolution) error {
 	if r.trainer {
 		return ErrTrainerBlackedOut
@@ -209,9 +220,15 @@ func cutAwareGoTo(m *emu.Emu, romData []byte, dest Destination, policies ...Move
 	}
 	executor := newRedRouteTransitionExecutor(m, romData, policy)
 	cuts := 0
+	// nav is shared across every call this closure makes for the rest of the
+	// journey: Travel's retry loop invokes this closure again after each
+	// resolved battle, and without a shared memory GoTo's own loop/bounce
+	// protection (the guard, banned legs, dead ends, visited maps) would
+	// reset to empty on every one of those re-entries — see navigationMemory.
+	nav := newNavigationMemory()
 	return func() error {
 		for {
-			err := goToWithTransitionExecutor(m, romData, dest, executor)
+			err := goToWithTransitionExecutorMemory(m, romData, dest, executor, nav)
 			if err == nil || errors.Is(err, ErrBattle) || errors.Is(err, ErrDialogueInterrupted) {
 				return err
 			}
@@ -312,8 +329,8 @@ func travel(m *emu.Emu, policy MovePolicy, maxBattles int, goTo func() error, re
 			// long the walk may be interrupted, whatever the policy does with each
 			// encounter.
 			if res.Battles+res.Flees >= maxBattles {
-				return res, fmt.Errorf("skill: Travel: still interrupted after %d engagement(s) (maxBattles): %v",
-					maxBattles, err)
+				return res, fmt.Errorf("skill: Travel: still interrupted after %d engagement(s) (maxBattles): %w: %v",
+					maxBattles, ErrEngagementsExhausted, err)
 			}
 			pre := currentWorld(m)
 			r, berr := resolveBattle()
