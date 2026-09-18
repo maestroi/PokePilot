@@ -353,7 +353,28 @@ func (s *lifecycleService) endpointReady(model hostModel) bool {
 		return false
 	}
 	defer resp.Body.Close()
-	return resp.StatusCode >= 200 && resp.StatusCode < 400
+	if resp.StatusCode < 200 || resp.StatusCode >= 400 {
+		return false
+	}
+
+	// A /models health endpoint can prove more than liveness: it can prove
+	// the server actually loaded the alias this deployment will request. This
+	// catches stale/wrong llama.cpp processes before a farm run is leased.
+	var payload struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil || len(payload.Data) == 0 {
+		// Explicit custom health URLs are allowed to be plain 2xx probes.
+		return strings.TrimSpace(model.HealthURL) != ""
+	}
+	for _, advertised := range payload.Data {
+		if strings.TrimSpace(advertised.ID) == strings.TrimSpace(model.APIModel) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *lifecycleService) status() hostStatus {
