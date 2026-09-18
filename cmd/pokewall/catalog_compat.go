@@ -9,8 +9,9 @@ import (
 
 // catalogOperatorCompatibility keeps the operator/debug behavior that used to
 // be derived from finished tiles in RAM. The catalog remains the history
-// source; issue links and outbox state stay live in state.json and are overlaid
-// at read time so a later GitHub status change never leaves stale catalog JSON.
+// source; issue links and outbox state stay live in the wall state store
+// (PostgreSQL in production, state.json only in legacy/local mode) and are
+// overlaid at read time so a later GitHub status change never leaves stale JSON.
 func (w *Wall) catalogOperatorCompatibility(next http.Handler) http.Handler {
 	if catalogFor(w) == nil {
 		return next
@@ -136,7 +137,8 @@ func (w *Wall) overlayRunEnvelopeIssue(data []byte) ([]byte, error) {
 	return json.Marshal(envelope)
 }
 
-// catalogTriage streams historical failures from SQLite and keeps only one
+// catalogTriage streams historical failures from the configured run catalog
+// (PostgreSQL in production, SQLite only in legacy/local mode) and keeps one
 // accumulator per normalized failure pattern plus a small newest-run sample.
 // This preserves the old triage semantics without retaining every finished
 // Tile in the wall process.

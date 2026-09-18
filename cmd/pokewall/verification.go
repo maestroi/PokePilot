@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -77,19 +78,63 @@ func (w *Wall) refreshIssueVerifications(now time.Time) {
 
 func (w *Wall) verificationSnapshot() (map[string]IssueLink, []verificationTile) {
 	w.mu.Lock()
-	defer w.mu.Unlock()
 	links := copyIssueLink(w.issueLinks)
 	tiles := make([]verificationTile, 0, len(w.order))
+	seen := make(map[string]bool, len(w.order))
 	for _, id := range w.order {
 		t := w.tiles[id]
 		if t == nil {
 			continue
 		}
+		seen[t.RunID] = true
 		tiles = append(tiles, verificationTile{
 			RunID: t.RunID, Planner: t.Planner, Starter: t.Starter, Goal: t.Goal,
 			QueuedAt: t.QueuedAt, EndedAt: t.EndedAt, Attempts: t.Attempts,
 			Finished: t.Finished, Reason: t.Reason, Detail: t.Detail,
 		})
+	}
+	w.mu.Unlock()
+
+	// Finished runs are intentionally evicted from RAM in production. Verification
+	// must therefore read the durable history catalog (PostgreSQL in control-plane
+	// mode) rather than depending on which historical tiles happen to remain live.
+	if catalog := catalogFor(w); catalog != nil {
+		rows, err := catalog.db.Query(`SELECT row_json FROM runs WHERE status=? ORDER BY ended_at,run_id`, statusDone)
+		if err != nil {
+			log.Printf("pokewall: query verification history: %v", err)
+			return links, tiles
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var raw []byte
+			var row tileRow
+			if err := rows.Scan(&raw); err != nil {
+				log.Printf("pokewall: scan verification history: %v", err)
+				break
+			}
+			if err := json.Unmarshal(raw, &row); err != nil {
+				log.Printf("pokewall: decode verification history: %v", err)
+				continue
+			}
+			if seen[row.RunID] {
+				continue
+			}
+			tile := verificationTile{
+				RunID: row.RunID, Planner: row.Planner, Starter: row.Starter, Goal: row.Goal,
+				Attempts: row.Attempts, Finished: row.Status == statusDone,
+				Reason: row.Reason, Detail: row.Detail,
+			}
+			if row.QueuedAt > 0 {
+				tile.QueuedAt = time.Unix(row.QueuedAt, 0)
+			}
+			if row.EndedAt > 0 {
+				tile.EndedAt = time.Unix(row.EndedAt, 0)
+			}
+			tiles = append(tiles, tile)
+		}
+		if err := rows.Err(); err != nil {
+			log.Printf("pokewall: iterate verification history: %v", err)
+		}
 	}
 	return links, tiles
 }
@@ -322,12 +367,19 @@ func verificationReportReproduces(issueKey string, report farm.FinishReport) boo
 }
 
 func (w *Wall) loadVerificationFinish(tile verificationTile) (farm.FinishReport, error) {
-	if w.dumpsDir == "" {
-		return farm.FinishReport{}, os.ErrNotExist
-	}
 	attempt := tile.Attempts
 	if attempt < 1 {
 		attempt = 1
+	}
+	if cp := controlPlaneFor(w); cp != nil {
+		report, err := cp.finishReport(tile.RunID, attempt)
+		if err != nil {
+			return farm.FinishReport{}, err
+		}
+		return *report, nil
+	}
+	if w.dumpsDir == "" {
+		return farm.FinishReport{}, os.ErrNotExist
 	}
 	path := filepath.Join(w.dumpsDir, safeDumpName(tile.RunID))
 	if attempt > 1 {

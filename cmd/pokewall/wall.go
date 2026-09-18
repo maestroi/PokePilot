@@ -1,7 +1,7 @@
 // Package main is the pokefarm wall: a small orchestrator that queues run
 // specs, leases them to pokepilot runners, tracks their heartbeats, takes
-// cooperative cancel requests, and keeps durable finish dumps. It speaks
-// only the farm wire contract and the standard library — no emu, skill,
+// cooperative cancel requests, and keeps an optional local finish cache. It
+// speaks only the farm wire contract and the standard library — no emu, skill,
 // agent, red, Docker, or Swarm here.
 package main
 
@@ -181,7 +181,7 @@ type Wall struct {
 	queue        []string               // queued run IDs, oldest first
 	tiles        map[string]*Tile       // every known run
 	cancel       map[string]bool        // cooperative cancel flags
-	dumpsDir     string                 // "" disables durable dumps
+	dumpsDir     string                 // "" disables the local/legacy finish cache
 	statePath    string                 // "" disables tile/queue persistence
 	workers      map[string]*workerInfo // runner presence, keyed by first reported addr
 	workerExpiry time.Duration          // how long a worker may go unseen before the reaper drops it
@@ -193,7 +193,7 @@ type Wall struct {
 }
 
 // NewWall builds a Wall. If dumpsDir is non-empty, finish reports are also
-// written there as JSON.
+// cached there as JSON. PostgreSQL control-plane mode never relies on it.
 func NewWall(dumpsDir string) *Wall {
 	return &Wall{
 		tiles:        map[string]*Tile{},
@@ -892,21 +892,34 @@ func (w *Wall) handleFinish(res http.ResponseWriter, req *http.Request) {
 	if w.dumpsDir != "" {
 		data, err := json.Marshal(report)
 		if err != nil {
-			writeJSON(res, http.StatusInternalServerError, map[string]string{"error": "encode dump: " + err.Error()})
-			return
+			if controlPlaneFor(w) == nil {
+				writeJSON(res, http.StatusInternalServerError, map[string]string{"error": "encode dump: " + err.Error()})
+				return
+			}
+			log.Printf("pokewall: encode optional finish cache for %s: %v", id, err)
+		} else {
+			// Attempt 1 keeps the historic name; retries get their own file so
+			// no attempt's cache entry is overwritten by a later one.
+			name := safeDumpName(report.RunID)
+			if report.Attempt > 1 {
+				name = fmt.Sprintf("%s-attempt-%d.json", safeBase(report.RunID), report.Attempt)
+			}
+			if err := os.WriteFile(filepath.Join(w.dumpsDir, name), data, 0o644); err != nil {
+				if controlPlaneFor(w) == nil {
+					writeJSON(res, http.StatusInternalServerError, map[string]string{"error": "write dump: " + err.Error()})
+					return
+				}
+				// In production this file is only a disposable cache. The outer
+				// control-plane wrapper must still receive a successful settlement so
+				// it can commit run_attempts/failures/artifacts to PostgreSQL.
+				log.Printf("pokewall: write optional finish cache for %s: %v", id, err)
+			} else if controlPlaneFor(w) == nil {
+				// The generic file-backed issue queue is legacy/local only. Production
+				// failure delivery is transactionally seeded by persistFinish.
+				w.enqueueIssueAfterDump(id, report)
+				w.saveState()
+			}
 		}
-		// Attempt 1 keeps the historic name; retries get their own file so
-		// no attempt's dump is overwritten by a later one.
-		name := safeDumpName(report.RunID)
-		if report.Attempt > 1 {
-			name = fmt.Sprintf("%s-attempt-%d.json", safeBase(report.RunID), report.Attempt)
-		}
-		if err := os.WriteFile(filepath.Join(w.dumpsDir, name), data, 0o644); err != nil {
-			writeJSON(res, http.StatusInternalServerError, map[string]string{"error": "write dump: " + err.Error()})
-			return
-		}
-		w.enqueueIssueAfterDump(id, report)
-		w.saveState()
 	}
 	writeJSON(res, http.StatusOK, map[string]string{"status": statusDone})
 }

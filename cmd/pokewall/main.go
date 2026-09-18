@@ -48,21 +48,30 @@ func main() {
 	issuesTimeout := flag.Duration("issues-timeout", defaultIssueTimeout, "timeout for issue sink HTTP calls")
 	flag.Parse()
 
-	if *databaseURL != "" && (*stateFile != "" || *catalogPath != "") {
+	postgresMode := strings.TrimSpace(*databaseURL) != ""
+	if postgresMode && (*stateFile != "" || *catalogPath != "") {
 		log.Fatal("pokewall: -database cannot be combined with legacy -state/-catalog persistence")
 	}
-	if err := os.MkdirAll(*dumpsDir, 0o755); err != nil {
-		log.Fatalf("pokewall: cannot create local cache directory %s: %v", *dumpsDir, err)
+	localCacheDir := strings.TrimSpace(*dumpsDir)
+	if localCacheDir != "" {
+		if err := os.MkdirAll(localCacheDir, 0o755); err != nil {
+			if !postgresMode {
+				log.Fatalf("pokewall: cannot create local cache directory %s: %v", localCacheDir, err)
+			}
+			// PostgreSQL/S3 are authoritative in production. A missing/read-only
+			// local cache must not prevent the control plane from starting.
+			log.Printf("pokewall: disabling unavailable local cache %s: %v", localCacheDir, err)
+			localCacheDir = ""
+		}
 	}
 
-	wall := NewWall(*dumpsDir)
+	wall := NewWall(localCacheDir)
 	wall.Version = version
 	client, err := parseIssueFlags(*issuesAPI, *issuesProject, *issuesUI)
 	if err != nil {
 		log.Fatalf("pokewall: %v", err)
 	}
 
-	postgresMode := strings.TrimSpace(*databaseURL) != ""
 	if postgresMode {
 		if err := wall.SetControlPlaneDatabase(*databaseURL); err != nil {
 			log.Fatalf("pokewall: open PostgreSQL control plane: %v", err)
@@ -73,9 +82,6 @@ func main() {
 			}
 			if err := cp.migrateSpectatorControl(); err != nil {
 				log.Fatalf("pokewall: migrate spectator controls: %v", err)
-			}
-			if err := cp.rebuildFinishCache(wall); err != nil {
-				log.Fatalf("pokewall: rebuild finish cache from PostgreSQL: %v", err)
 			}
 		}
 		defer wall.CloseControlPlane() //nolint:errcheck
@@ -127,9 +133,9 @@ func main() {
 		}
 		go wall.RunPublisher(*publishDir, *publishEvery)
 		log.Printf("pokewall listening on http://%s (local cache %s, publishing dashboard to %s every %s)",
-			*httpAddr, *dumpsDir, *publishDir, *publishEvery)
+			*httpAddr, localCacheDir, *publishDir, *publishEvery)
 	} else {
-		log.Printf("pokewall listening on http://%s (local cache %s)", *httpAddr, *dumpsDir)
+		log.Printf("pokewall listening on http://%s (local cache %s)", *httpAddr, localCacheDir)
 	}
 
 	// In PostgreSQL mode use the compatibility operator wrapper directly. The

@@ -215,6 +215,9 @@ func (w *Wall) loadRunInspection(runID string) (tileRow, *farm.FinishReport, err
 }
 
 func (w *Wall) loadLatestFinishReport(runID string) (*farm.FinishReport, error) {
+	if cp := controlPlaneFor(w); cp != nil {
+		return cp.latestFinishReport(runID)
+	}
 	if w.dumpsDir == "" {
 		return nil, fs.ErrNotExist
 	}
