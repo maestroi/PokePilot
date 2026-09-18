@@ -24,6 +24,19 @@ function humanizeSymbol(value) {
     .join(' ')
 }
 
+function spriteAssetName(symbol) {
+  if (!symbol || symbol === 'SPRITE_NONE') return null
+  const aliases = {
+    SPRITE_UNUSED_SCIENTIST: 'scientist',
+    SPRITE_UNUSED_GUARD: 'guard',
+    SPRITE_UNUSED_GAMEBOY_KID: 'gameboy_kid',
+    SPRITE_UNUSED_OLD_AMBER: 'old_amber',
+    SPRITE_UNUSED_GAMBLER_ASLEEP_1: 'gambler_asleep',
+    SPRITE_UNUSED_GAMBLER_ASLEEP_2: 'gambler_asleep'
+  }
+  return aliases[symbol] || symbol.replace(/^SPRITE_/, '').toLowerCase()
+}
+
 for (const line of constants.split(/\r?\n/)) {
   const match = line.match(/map_const\s+([A-Z0-9_]+),\s*(\d+),\s*(\d+)\s*;\s*\$([0-9A-Fa-f]{2})/)
   if (!match) continue
@@ -82,7 +95,7 @@ for (const file of fs.readdirSync(objectsDir).filter((name) => name.endsWith('.a
       const x = Number(bg[1])
       const y = Number(bg[2])
       if (x >= 0 && y >= 0 && x < map.width && y < map.height) {
-        map.pois.push({ x, y, kind: 'sign', label: 'Sign' })
+        map.pois.push({ x, y, kind: 'sign', label: 'Sign', textSymbol: bg[3] })
       }
       continue
     }
@@ -95,16 +108,40 @@ for (const file of fs.readdirSync(objectsDir).filter((name) => name.endsWith('.a
     if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || y < 0 || x >= map.width || y >= map.height) continue
 
     const sprite = args[2] || ''
+    const movement = args[3] || ''
+    const facing = args[4] || ''
+    const textSymbol = args[5] || ''
+    const extra1 = args[6] || ''
+    const extra2 = args[7] || ''
+    const spriteAsset = spriteAssetName(sprite)
+    const spriteLabel = humanizeSymbol(sprite) || 'Object'
+
     let kind = 'npc'
-    let label = humanizeSymbol(sprite) || 'NPC'
-    if (args[6]?.startsWith('OPP_')) {
-      kind = 'trainer'
-      label = humanizeSymbol(args[6]) || 'Trainer'
-    } else if (args.length >= 7) {
-      kind = 'item'
-      label = humanizeSymbol(args[6]) || 'Item'
+    let label = spriteLabel
+    const poi = { x, y, kind, label, sprite, spriteAsset, movement, facing, textSymbol }
+
+    if (extra1.startsWith('OPP_')) {
+      poi.kind = 'trainer'
+      poi.trainerClass = extra1
+      poi.trainerNumber = /^-?\d+$/.test(extra2) ? Number(extra2) : null
+      poi.label = humanizeSymbol(extra1) || 'Trainer'
+    } else if (sprite === 'SPRITE_POKE_BALL' && extra1) {
+      if (/^-?\d+$/.test(extra2)) {
+        poi.kind = 'encounter'
+        poi.species = extra1
+        poi.level = Number(extra2)
+        poi.label = `${humanizeSymbol(extra1)} Lv. ${extra2}`
+      } else {
+        poi.kind = 'item'
+        poi.item = extra1
+        poi.label = humanizeSymbol(extra1) || 'Item'
+      }
+    } else if (sprite === 'SPRITE_POKE_BALL') {
+      poi.kind = 'object'
+      poi.label = 'Poké Ball'
     }
-    map.pois.push({ x, y, kind, label })
+
+    map.pois.push(poi)
   }
 }
 

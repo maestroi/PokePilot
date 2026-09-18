@@ -64,6 +64,9 @@ function outputPath(relativePath) {
   if (relativePath.startsWith('gfx/tilesets/')) {
     return path.join(outRoot, 'tilesets', path.basename(relativePath))
   }
+  if (relativePath.startsWith('gfx/sprites/')) {
+    return path.join(outRoot, 'sprites', path.basename(relativePath))
+  }
   throw new Error(`unsupported render asset ${relativePath}`)
 }
 
@@ -78,6 +81,8 @@ function markerMatches(expected) {
       if (!fs.existsSync(path.join(outRoot, 'blocksets', `${stem}.bst`))) return false
       if (!fs.existsSync(path.join(outRoot, 'tilesets', `${stem}.png`))) return false
     }
+    const spriteDir = path.join(outRoot, 'sprites')
+    if (!fs.existsSync(spriteDir) || fs.readdirSync(spriteDir).filter((name) => name.endsWith('.png')).length < 50) return false
     return true
   } catch {
     return false
@@ -114,6 +119,10 @@ function extractRenderEntries(tar, stems) {
     if (relative === 'maps.asm') {
       mapsAsm = data.toString('utf8')
     } else if (/^maps\/[^/]+\.blk$/.test(relative)) {
+      const destination = outputPath(relative)
+      fs.mkdirSync(path.dirname(destination), { recursive: true })
+      fs.writeFileSync(destination, data)
+    } else if (/^gfx\/sprites\/[^/]+\.png$/.test(relative)) {
       const destination = outputPath(relative)
       fs.mkdirSync(path.dirname(destination), { recursive: true })
       fs.writeFileSync(destination, data)
@@ -221,10 +230,12 @@ async function main() {
     commit: POKERED_RENDER_COMMIT,
     maps: expected.mapNames.size,
     tilesets: [...expected.stems].sort(),
+    sprites: fs.readdirSync(path.join(outRoot, 'sprites')).filter((name) => name.endsWith('.png')).length,
     note: 'Generated at build time; original game graphics are not committed to PokePilot.'
   }
   fs.writeFileSync(markerPath, JSON.stringify(marker, null, 2) + '\n')
-  console.log(`gen1 render assets: mirrored ${expected.mapNames.size} maps and ${expected.stems.size} tilesets`)
+  const spriteCount = fs.readdirSync(path.join(outRoot, 'sprites')).filter((name) => name.endsWith('.png')).length
+  console.log(`gen1 render assets: mirrored ${expected.mapNames.size} maps, ${expected.stems.size} tilesets, and ${spriteCount} sprites`)
 }
 
 await main()

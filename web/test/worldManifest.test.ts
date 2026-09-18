@@ -100,3 +100,23 @@ test('every stitched atlas map has decomp render metadata', () => {
     assert.ok(map.tileset, `${map.name} is missing tileset`)
   }
 })
+
+
+test('Route 2 exposes named item pickups with sprite art metadata', () => {
+  const route2 = maps.find((map) => map.name === 'ROUTE_2')
+  assert.ok(route2)
+  const items = route2.pois.filter((poi) => poi.kind === 'item')
+  assert.ok(items.some((poi) => poi.item === 'MOON_STONE' && poi.label === 'Moon Stone'))
+  assert.ok(items.some((poi) => poi.item === 'HP_UP' && poi.label === 'Hp Up'))
+  assert.ok(items.every((poi) => poi.sprite === 'SPRITE_POKE_BALL' && poi.spriteAsset === 'poke_ball'))
+})
+
+test('trainer POIs keep trainer class and overworld sprite separately', () => {
+  const route3 = maps.find((map) => map.name === 'ROUTE_3')
+  assert.ok(route3)
+  const trainer = route3.pois.find((poi) => poi.kind === 'trainer')
+  assert.ok(trainer)
+  assert.ok(trainer.trainerClass?.startsWith('OPP_'))
+  assert.ok(trainer.sprite?.startsWith('SPRITE_'))
+  assert.ok(trainer.spriteAsset)
+})
