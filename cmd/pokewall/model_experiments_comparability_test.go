@@ -142,3 +142,19 @@ func TestExperimentAggregatesGenericGoalAndIdentity(t *testing.T) {
 		t.Fatalf("model identities = a:%#v b:%#v", view.Identity.ArmA, view.Identity.ArmB)
 	}
 }
+
+func TestExperimentROMIdentityPrefersSelectedGame(t *testing.T) {
+	t.Setenv("POKEPILOT_ROM_SHA256", "legacy")
+	t.Setenv("POKEPILOT_ROM_SHA256_POKEMON_RED", "red-sha")
+	t.Setenv("POKEPILOT_ROM_SHA256_POKEMON_BLUE", "blue-sha")
+
+	if got := experimentROMIdentity("pokemon-red"); got != "red-sha" {
+		t.Fatalf("red identity = %q", got)
+	}
+	if got := experimentROMIdentity("pokemon-blue"); got != "blue-sha" {
+		t.Fatalf("blue identity = %q", got)
+	}
+	if got := experimentROMIdentity("unknown-game"); got != "legacy" {
+		t.Fatalf("fallback identity = %q", got)
+	}
+}
