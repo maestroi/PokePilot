@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue'
 import type { MapSprite } from '../api/types'
 import { mapEntry } from '../mapCatalog'
 import { drawGen1TextureMap, loadGen1TextureMap, type Gen1TextureMap } from '../gen1Texture'
+import { drawGen1Sprite, gen1SpriteURL, loadGen1Sprite } from '../gen1Sprite'
 import { worldConnections, worldPois, type WorldPoi } from '../worldManifest'
 import WorldAtlas, { type WorldAtlasMarker } from './WorldAtlas.vue'
 
@@ -73,6 +74,7 @@ const authenticTexture = ref<Gen1TextureMap | null>(null)
 const textureLoading = ref(false)
 const textureError = ref('')
 const selectedPoi = ref<WorldPoi | null>(null)
+const poiSpriteImages = shallowRef<Map<string, HTMLImageElement>>(new Map())
 let savedDebug = false
 try {
   savedDebug = window.localStorage.getItem('pokepilot.map.debug') === '1'
@@ -123,6 +125,7 @@ function mapLabel(value: number): string {
 }
 
 function friendlyMapLabel(value: number): string {
+  if (Number(value) === 0xff) return 'Previous map'
   return mapEntry(Number(value))?.label || mapLabel(Number(value))
 }
 
@@ -298,10 +301,13 @@ function drawPoi(ctx: CanvasRenderingContext2D, poi: WorldPoi, px: number): void
   const cy = (poi.y + 0.5) * px
   const radius = Math.max(2.2, px * 0.2)
   const selected = selectedPoi.value === poi
+  const spriteImage = poi.spriteAsset ? poiSpriteImages.value.get(poi.spriteAsset) : undefined
 
   ctx.save()
   ctx.lineWidth = Math.max(1, px * 0.08)
-  if (poi.kind === 'item') {
+  if (spriteImage) {
+    drawGen1Sprite(ctx, spriteImage, poi.x, poi.y, px, poi.facing)
+  } else if (poi.kind === 'item') {
     ctx.fillStyle = '#f6d365'
     ctx.strokeStyle = '#4b3810'
     ctx.translate(cx, cy)
@@ -370,7 +376,8 @@ function draw(): void {
   if (availW < 8 || availH < 8) return
 
   const fitPx = Math.floor(Math.min(availW / width, availH / height))
-  const basePx = Math.max(debugEnabled.value ? 18 : 6, fitPx)
+  const readableFloor = explorerAppearance.value && authenticTexture.value ? 18 : 6
+  const basePx = Math.max(debugEnabled.value ? 18 : readableFloor, fitPx)
   const rawPx = Math.max(2, Math.floor(basePx * zoomLevel.value))
   const px = explorerAppearance.value && authenticTexture.value
     ? Math.max(2, Math.floor(rawPx / 2) * 2)
@@ -459,7 +466,8 @@ function draw(): void {
         const x = Number(warp.x)
         const y = Number(warp.y)
         if (x < 0 || y < 0 || x >= width || y >= height) continue
-        drawDebugText(ctx, `→${hexByte(warp.dest)}`, (x + 0.5) * px, (y + 0.5) * px, px)
+        const warpLabel = Number(warp.dest) === 0xff ? '↩' : `→${hexByte(warp.dest)}`
+        drawDebugText(ctx, warpLabel, (x + 0.5) * px, (y + 0.5) * px, px)
       }
     }
   }
@@ -519,6 +527,46 @@ function draw(): void {
   }
 }
 
+
+
+async function loadPoiSprites(): Promise<void> {
+  if (!explorerAppearance.value) {
+    poiSpriteImages.value = new Map()
+    return
+  }
+  const assets = [...new Set(currentPois.value.map((poi) => poi.spriteAsset).filter((asset): asset is string => Boolean(asset)))]
+  const settled = await Promise.allSettled(assets.map(async (asset) => [asset, await loadGen1Sprite(asset)] as const))
+  const next = new Map<string, HTMLImageElement>()
+  for (const result of settled) {
+    if (result.status === 'fulfilled') next.set(result.value[0], result.value[1])
+  }
+  poiSpriteImages.value = next
+  requestAnimationFrame(draw)
+}
+
+function poiWikiURL(poi: WorldPoi): string {
+  const query = poi.item || poi.species || (poi.trainerClass ? friendlyPoiSymbol(poi.trainerClass) : poi.label)
+  return `https://bulbapedia.bulbagarden.net/wiki/Special:Search?search=${encodeURIComponent(query)}`
+}
+
+function friendlyPoiSymbol(value: string | null | undefined): string {
+  return String(value || '')
+    .replace(/^(SPRITE_|OPP_|TEXT_|ITEM_)/, '')
+    .toLowerCase()
+    .split('_')
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
+}
+
+function poiKindLabel(poi: WorldPoi): string {
+  if (poi.kind === 'trainer') return 'Trainer'
+  if (poi.kind === 'item') return 'Item'
+  if (poi.kind === 'encounter') return 'Static encounter'
+  if (poi.kind === 'sign') return 'Sign'
+  if (poi.kind === 'object') return 'Object'
+  return 'NPC'
+}
 
 async function loadTexture(): Promise<void> {
   const id = ++textureSerial
@@ -647,10 +695,16 @@ function syncAtlasURL(): void {
 watch(() => props.map, () => {
   void loadMap()
   void loadTexture()
+  void loadPoiSprites()
 }, { immediate: true })
 watch(() => props.appearance, (appearance) => {
-  if (appearance === 'explorer') void loadTexture()
-  else authenticTexture.value = null
+  if (appearance === 'explorer') {
+    void loadTexture()
+    void loadPoiSprites()
+  } else {
+    authenticTexture.value = null
+    poiSpriteImages.value = new Map()
+  }
 })
 watch([
   () => props.x,
