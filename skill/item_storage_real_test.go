@@ -17,6 +17,15 @@ func storedItemQty(mem *state.Mem, item uint8) int {
 	return 0
 }
 
+func bagItemQty(mem *state.Mem, item uint8) int {
+	for _, it := range state.DecodeInventory(mem).Items {
+		if it.ID == item {
+			return int(it.Quantity)
+		}
+	}
+	return 0
+}
+
 // TestPlayerPCItemRoundTrip is the emulator proof for the Player PC item
 // storage controller. It buys a real ANTIDOTE, deposits the whole stack, then
 // withdraws it again and verifies both inventories at each boundary.
@@ -38,15 +47,8 @@ func TestPlayerPCItemRoundTrip(t *testing.T) {
 	if got := storedItemQty(&deposited, skill.ItemAntidote); got != 1 {
 		t.Fatalf("stored ANTIDOTE = %d, want 1", got)
 	}
-	if got := state.DecodeInventory(&deposited).Items; func() bool {
-		for _, it := range got {
-			if it.ID == skill.ItemAntidote {
-				return true
-			}
-		}
-		return false
-	}() {
-		t.Fatal("ANTIDOTE remained in bag after deposit")
+	if got := bagItemQty(&deposited, skill.ItemAntidote); got != 0 {
+		t.Fatalf("bag ANTIDOTE after deposit = %d, want 0", got)
 	}
 
 	if err := skill.WithdrawPCItem(m, m.ROM(), policy, skill.ItemAntidote, 1); err != nil {
@@ -57,14 +59,8 @@ func TestPlayerPCItemRoundTrip(t *testing.T) {
 	if got := storedItemQty(&withdrawn, skill.ItemAntidote); got != 0 {
 		t.Fatalf("stored ANTIDOTE after withdraw = %d, want 0", got)
 	}
-	bagQty := 0
-	for _, it := range state.DecodeInventory(&withdrawn).Items {
-		if it.ID == skill.ItemAntidote {
-			bagQty = int(it.Quantity)
-		}
-	}
-	if bagQty != 1 {
-		t.Fatalf("bag ANTIDOTE after withdraw = %d, want 1", bagQty)
+	if got := bagItemQty(&withdrawn, skill.ItemAntidote); got != 1 {
+		t.Fatalf("bag ANTIDOTE after withdraw = %d, want 1", got)
 	}
 	if !state.Controllable(&withdrawn) {
 		t.Fatal("player not controllable after Player PC round trip")
