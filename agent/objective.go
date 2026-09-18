@@ -87,6 +87,12 @@ func (o Objective) Validate() error {
 		if strings.TrimSpace(string(o.Item)) == "" {
 			return fmt.Errorf("agent: %s: empty item id", o)
 		}
+		if o.Intent == speedrunRepelUseIntent {
+			if !isRepelItemName(string(o.Item)) {
+				return fmt.Errorf("agent: %s: repel intent requires a Repel-family item", o)
+			}
+			break
+		}
 		if o.Slot < 0 || o.Slot > 5 {
 			return fmt.Errorf("agent: %s: party slot %d out of range 0..5", o, o.Slot)
 		}
@@ -153,6 +159,9 @@ func (o Objective) String() string {
 		return fmt.Sprintf("pick up the %s at (%d,%d)", strings.ToUpper(string(o.Item)), o.X, o.Y)
 	case KindUseItem:
 		name := string(o.Item)
+		if o.Intent == speedrunRepelUseIntent {
+			return "use " + strings.ToUpper(name) + " to suppress wild encounters"
+		}
 		return fmt.Sprintf("use %s %s on party slot %d", article(name), strings.ToUpper(name), o.Slot)
 	case KindBuy:
 		return fmt.Sprintf("buy %d %s", o.Qty, strings.ToUpper(string(o.Item)))
