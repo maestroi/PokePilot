@@ -231,6 +231,11 @@ func (c *mcpControl) startRun(ctx context.Context, _ *mcp.CallToolRequest, in mc
 		return nil, mcpStartRunOutput{}, fmt.Errorf("game must be pokemon-red, pokemon-blue, or pokemon-yellow")
 	}
 
+	starter := strings.TrimSpace(in.Starter)
+	if gameID == "pokemon-yellow" {
+		starter = ""
+	}
+
 	planner := strings.ToLower(strings.TrimSpace(in.Planner))
 	if planner == "" {
 		planner = "llm"
