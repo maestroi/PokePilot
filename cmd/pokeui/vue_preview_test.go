@@ -237,3 +237,25 @@ func htmlAssetRefs(html string) []string {
 	}
 	return refs
 }
+
+
+func TestVueSpectatorServesGen1RenderAssets(t *testing.T) {
+	if !vueFileExists("spectator", "gen1/red/maps/PalletTown.blk") {
+		t.Skip("spectator Gen 1 render assets not built in this Go-only checkout")
+	}
+	h := withVuePreview(http.NotFoundHandler(), "spectator")
+	for _, asset := range []string{
+		"/gen1/red/maps/PalletTown.blk",
+		"/gen1/red/blocksets/overworld.bst",
+		"/gen1/red/tilesets/overworld.png",
+	} {
+		res := httptest.NewRecorder()
+		h.ServeHTTP(res, httptest.NewRequest(http.MethodGet, asset, nil))
+		if res.Code != http.StatusOK {
+			t.Fatalf("%s = %d: %s", asset, res.Code, res.Body.String())
+		}
+		if res.Body.Len() == 0 {
+			t.Fatalf("%s served an empty body", asset)
+		}
+	}
+}
