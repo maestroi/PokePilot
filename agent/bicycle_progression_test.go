@@ -42,3 +42,21 @@ func TestCyclingRoadCapabilityLinksToBicycleProgression(t *testing.T) {
 		t.Fatalf("progress = %q, want %q", link.Progress, redProgressBicycleAcquired)
 	}
 }
+
+func TestSpeedrunPlannerHidesOptionalBicycleButRecoveryCanStillUseIt(t *testing.T) {
+	obs := Observation{Story: ProgressState{{ID: redProgressHM01Acquired, Complete: true}}}
+	raw := redProgressionObjectives(obs)
+	if bicycleProgressCount(raw) != 1 {
+		t.Fatalf("raw progression must keep Bicycle available for typed recovery: %v", raw)
+	}
+
+	speed := AnnotatePlayStyle(obs, raw, PlayStyle(PlayStyleSpeedrun))
+	if bicycleProgressCount(speed) != 0 {
+		t.Fatalf("speedrun planner still sees optional Bicycle progression: %v", speed)
+	}
+
+	adventure := AnnotatePlayStyle(obs, raw, PlayStyle(PlayStyleAdventure))
+	if bicycleProgressCount(adventure) != 1 {
+		t.Fatalf("Adventure should retain optional Bicycle progression: %v", adventure)
+	}
+}
