@@ -842,8 +842,8 @@ func accumulateArm(out *armAggregate, row tileRow, goalSuccess bool) {
 		out.Badges += len(row.Player.Badges)
 	}
 	out.Frames += row.Frame
-	if row.Status == statusDone && !row.QueuedAt.IsZero() && !row.EndedAt.IsZero() && !row.EndedAt.Before(row.QueuedAt) {
-		out.runSeconds += row.EndedAt.Sub(row.QueuedAt).Seconds()
+	if row.Status == statusDone && row.QueuedAt > 0 && row.EndedAt >= row.QueuedAt {
+		out.runSeconds += float64(row.EndedAt - row.QueuedAt)
 		out.runSamples++
 	}
 	if row.Stats != nil {
