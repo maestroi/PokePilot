@@ -962,6 +962,17 @@ func rowBoulderSuccess(row tileRow) bool {
 	return row.Stats != nil && row.Stats.GoalComplete && strings.Contains(strings.ToLower(row.Stats.GoalSummary), "boulder")
 }
 
+func experimentROMIdentity(gameID string) string {
+	gameID = strings.ToUpper(strings.TrimSpace(gameID))
+	gameID = strings.NewReplacer("-", "_", " ", "_").Replace(gameID)
+	if gameID != "" {
+		if value := strings.TrimSpace(os.Getenv("POKEPILOT_ROM_SHA256_" + gameID)); value != "" {
+			return value
+		}
+	}
+	return strings.TrimSpace(os.Getenv("POKEPILOT_ROM_SHA256"))
+}
+
 func (c *modelExperimentController) resolveRunMeta(raw map[string]any, deployment, experimentID, arm, caseID string) (runExperimentMeta, error) {
 	d, ok := c.deployment(deployment)
 	if !ok || !d.Enabled {
@@ -982,7 +993,7 @@ func (c *modelExperimentController) resolveRunMeta(raw map[string]any, deploymen
 		return runExperimentMeta{}, fmt.Errorf("deployment %q allows at most %d parallel worker(s)", deployment, d.ParallelLimit())
 	}
 	comparable := farm.ComparableRunConfig{
-		GitRevision: c.wall.Version, ROMIdentity: strings.TrimSpace(os.Getenv("POKEPILOT_ROM_SHA256")), PromptIdentity: strings.TrimSpace(os.Getenv("POKEPILOT_PROMPT_SHA256")),
+		GitRevision: c.wall.Version, ROMIdentity: experimentROMIdentity(stringValue(raw["game"])), PromptIdentity: strings.TrimSpace(os.Getenv("POKEPILOT_PROMPT_SHA256")),
 		Game: stringValue(raw["game"]), Seed: int64Number(raw["seed"]), Starter: stringValue(raw["starter"]), Goal: stringValue(raw["goal"]), PlayStyle: stringValue(raw["play_style"]),
 		RiskTolerance: stringValue(raw["risk_tolerance"]), WildEncounters: stringValue(raw["wild_encounters"]), ReasoningEffort: stringValue(raw["reasoning_effort"]),
 		FPS: intNumber(raw["fps"]), MaxRounds: intNumber(raw["max_rounds"]), MaxFrames: intNumber(raw["max_frames"]), MaxParallelWorkers: parallel,
