@@ -108,7 +108,6 @@ var defaultObjectiveProviders = []objectiveProvider{
 	wildCollectionProvider{},
 	recoveryObjectiveProvider{},
 	trainingObjectiveProvider{},
-	repelObjectiveProvider{},
 	economyObjectiveProvider{},
 	explorationObjectiveProvider{},
 	travelObjectiveProvider{},
@@ -271,8 +270,9 @@ type economyObjectiveProvider struct{}
 
 func (economyObjectiveProvider) Family() ObjectiveFamily { return ObjectiveFamilyEconomy }
 func (economyObjectiveProvider) Provide(ctx *objectiveOfferContext) objectiveProviderResult {
+	out := repelUseObjectives(ctx.obs)
 	if ctx.catalog.Shop == nil {
-		return objectiveProviderResult{}
+		return objectiveProviderResult{Candidates: out}
 	}
 	obs := ctx.obs
 	if len(obs.MartStock) == 0 {
@@ -282,9 +282,13 @@ func (economyObjectiveProvider) Provide(ctx *objectiveOfferContext) objectivePro
 	}
 	economy := EconomyContext(obs)
 	if economy == nil {
-		return objectiveProviderResult{}
+		return objectiveProviderResult{Candidates: out}
 	}
-	out := make([]Objective, 0, len(economy.Purchases))
+	if cap(out)-len(out) < len(economy.Purchases) {
+		grown := make([]Objective, len(out), len(out)+len(economy.Purchases))
+		copy(grown, out)
+		out = grown
+	}
 	for _, advice := range economy.Purchases {
 		if advice.ShouldBuy && advice.SuggestedQty > 0 {
 			if item, ok := ctx.catalog.shopItem(advice.Item); ok {
