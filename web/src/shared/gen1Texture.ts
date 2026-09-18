@@ -3,6 +3,7 @@ import { expandGen1Blocks, gen1TilesetAssetStem } from './gen1TextureCodec'
 
 const TILE_SIZE = 8
 const TILES_PER_BLOCK = 4
+const GEN1_RENDER_REVISION = '0cd19d3'
 
 export interface Gen1TextureAssetPaths {
   map: string
@@ -22,24 +23,33 @@ export interface Gen1TextureMap {
 const bytesCache = new Map<string, Promise<Uint8Array>>()
 const imageCache = new Map<string, Promise<HTMLImageElement>>()
 
+function versionedAsset(path: string): string {
+  return `${path}?rev=${GEN1_RENDER_REVISION}`
+}
+
 export function gen1TextureAssetPaths(mapID: number): Gen1TextureAssetPaths | null {
   const meta = worldMapMeta(Number(mapID))
   const stem = gen1TilesetAssetStem(meta?.tileset)
   if (!meta?.sourceName || !stem) return null
   return {
-    map: `/gen1/red/maps/${meta.sourceName}.blk`,
-    blockset: `/gen1/red/blocksets/${stem}.bst`,
-    tileset: `/gen1/red/tilesets/${stem}.png`
+    map: versionedAsset(`/gen1/red/maps/${meta.sourceName}.blk`),
+    blockset: versionedAsset(`/gen1/red/blocksets/${stem}.bst`),
+    tileset: versionedAsset(`/gen1/red/tilesets/${stem}.png`)
   }
 }
 
 async function fetchBytes(url: string): Promise<Uint8Array> {
   let pending = bytesCache.get(url)
   if (!pending) {
-    pending = fetch(url, { cache: 'force-cache' }).then(async (response) => {
-      if (!response.ok) throw new Error(`${url} returned HTTP ${response.status}`)
-      return new Uint8Array(await response.arrayBuffer())
-    })
+    pending = fetch(url, { cache: 'force-cache' })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`${url} returned HTTP ${response.status}`)
+        return new Uint8Array(await response.arrayBuffer())
+      })
+      .catch((cause) => {
+        bytesCache.delete(url)
+        throw cause
+      })
     bytesCache.set(url, pending)
   }
   return pending
@@ -52,7 +62,10 @@ async function loadImage(url: string): Promise<HTMLImageElement> {
       const image = new Image()
       image.decoding = 'async'
       image.onload = () => resolve(image)
-      image.onerror = () => reject(new Error(`failed to load ${url}`))
+      image.onerror = () => {
+        imageCache.delete(url)
+        reject(new Error(`failed to load ${url}`))
+      }
       image.src = url
     })
     imageCache.set(url, pending)
