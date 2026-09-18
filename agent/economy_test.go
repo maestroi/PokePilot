@@ -114,7 +114,6 @@ func TestEconomyDoesNotSpeculateOnStonesOrNonRepelTravelUtility(t *testing.T) {
 	}
 }
 
-
 func TestEconomyBuysBoundedCostEfficientRepelCoverage(t *testing.T) {
 	obs := Observation{
 		Money:     5000,
