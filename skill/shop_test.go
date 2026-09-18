@@ -71,7 +71,6 @@ func TestBuyCantAfford(t *testing.T) {
 	}
 }
 
-
 // TestSell drives the real SELL half of the mart controller. Buy two
 // ANTIDOTEs first so the committed fixture needs no RAM mutation, then sell
 // the whole stack. Red pays half the shop price, so ¥200 spent becomes ¥100
