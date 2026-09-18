@@ -54,4 +54,19 @@ const (
 	BagItems       uint16 = 0xD31D // first item id in wBagItems
 	PlayerMoney    uint16 = 0xD346 // wPlayerMoney, 3-byte BCD
 	ObtainedBadges uint16 = 0xD355 // wObtainedBadges
+
+	// Persistent/story state. Yellow's main-data block is shifted one byte
+	// earlier than Red in this region.
+	StatusFlags1   uint16 = 0xD727 // wStatusFlags1
+	StatusFlags4   uint16 = 0xD72D // wStatusFlags4
+	Elite4Flags    uint16 = 0xD733 // wElite4Flags
+	EventFlags     uint16 = 0xD746 // wEventFlags
+	RivalStarter   uint16 = 0xD714 // wRivalStarter: 1=Jolteon, 2=Flareon, 3=Vaporeon path
+	PlayerStarter  uint16 = 0xD716 // wPlayerStarter
+	LastBlackoutMap uint16 = 0xD718 // wLastBlackoutMap
+
+	// Yellow-only Pikachu state.
+	PikachuHappiness       uint16 = 0xD46F // wPikachuHappiness
+	PikachuMood            uint16 = 0xD470 // wPikachuMood
+	PikachuSpawnStateFlags uint16 = 0xD471 // wPikachuSpawnStateFlags
 )
