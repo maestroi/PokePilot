@@ -138,7 +138,7 @@ func serveVueFile(res http.ResponseWriter, req *http.Request, target, name strin
 	}
 	if strings.HasSuffix(clean, ".html") {
 		res.Header().Set("Cache-Control", "no-store")
-	} else if strings.HasPrefix(clean, "assets/") {
+	} else if strings.HasPrefix(clean, "assets/") || strings.HasPrefix(clean, "gen1/") {
 		res.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 	} else {
 		res.Header().Set("Cache-Control", "no-cache")
