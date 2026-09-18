@@ -316,6 +316,25 @@ func finishArrival(m *emu.Emu, e world.Edge) error {
 	if err := waitForPositionStable(m, positionStableBudget, positionStableFrames); err != nil {
 		return fmt.Errorf("skill: Traverse: %s: %w", edgeName(e), err)
 	}
+
+	// waitForPositionStable only tracks (x,y): it never re-checks CurMap, so a
+	// forced-scroll script that keeps running after Controllable first flips
+	// true can carry the player back off e.To and let its settling position
+	// on a DIFFERENT map read as "stable". MEASURED on Route 18 -> Route 17
+	// (0x1d -> 0x1c, run-18ou0y2719oq33ly7rpykncxk4): the earlier CurMap check
+	// above passed while Cycling Road's forced downhill descent was still
+	// mid-flight, then that descent pushed the player back across the
+	// boundary onto e.From's exact starting tile, where the position finally
+	// stopped changing. The crossing never actually held, but every check
+	// before this one only ever sampled while it looked like it had. Without
+	// this, GoTo's navigationGuard sees "returned to a state already seen"
+	// and reports an unrecoverable stall instead of the ordinary "this leg
+	// does not hold from here" the router already knows how to route around.
+	if got := m.Peek8(sym.CurMap); got != e.To {
+		x, y := playerXY(m)
+		return fmt.Errorf("skill: Traverse: %s: settled back on map %02x at (%d,%d), never held %02x: %w",
+			edgeName(e), got, x, y, e.To, ErrLegUnwalkable)
+	}
 	return nil
 }
 
