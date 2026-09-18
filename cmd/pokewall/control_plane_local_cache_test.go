@@ -34,7 +34,7 @@ func TestControlPlaneFinishIgnoresUnavailableLocalCache(t *testing.T) {
 	t.Cleanup(func() { wallControlPlanes.Delete(w) })
 
 	h := w.Handler()
-	if res := serveWallJSON(t, h, http.MethodPost, "/v1/specs", spec("db-settlement"), nil); res.Code != http.StatusOK {
+	if res := serveWallJSON(t, h, http.MethodPost, "/v1/specs", spec("db-settlement")); res.Code != http.StatusOK {
 		t.Fatalf("enqueue = %d: %s", res.Code, res.Body.String())
 	}
 	finish := farm.FinishReport{RunID: "db-settlement", Attempt: 1, Reason: "done"}
@@ -52,7 +52,7 @@ func TestControlPlaneFinishDoesNotSeedLegacyFileOutbox(t *testing.T) {
 	w.issues = &issueClient{}
 
 	h := w.Handler()
-	if res := serveWallJSON(t, h, http.MethodPost, "/v1/specs", spec("db-failure"), nil); res.Code != http.StatusOK {
+	if res := serveWallJSON(t, h, http.MethodPost, "/v1/specs", spec("db-failure")); res.Code != http.StatusOK {
 		t.Fatalf("enqueue = %d: %s", res.Code, res.Body.String())
 	}
 	finish := farm.FinishReport{RunID: "db-failure", Attempt: 1, Reason: "error", Detail: "typed failure"}
