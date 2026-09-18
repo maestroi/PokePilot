@@ -3,6 +3,7 @@ package skill
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
@@ -193,6 +194,23 @@ func selectBagQuantity(m *emu.Emu, target int) error {
 	return nil
 }
 
+// tossConfirmationPrompt identifies TossItem's final YES/NO by both a live
+// two-option cursor and the semantic prompt text. Its menu coordinates are not
+// a safe discriminator: on real Red the final "Is it OK to toss ...?" prompt
+// can reuse the same top-left coordinates as USE/TOSS, which made a visibly
+// open confirmation look like it never appeared.
+func tossConfirmationPrompt(mem *state.Mem) *state.TwoOptionMenu {
+	p := state.DecodeTwoOptionMenu(mem)
+	if p == nil {
+		return nil
+	}
+	text := strings.ToLower(state.ScreenText(mem))
+	if !strings.Contains(text, "ok to toss") {
+		return nil
+	}
+	return p
+}
+
 func tossBagStack(m *emu.Emu, idx int, item state.BagItem) error {
 	if _, safe := safeBagSacrificeUnitCost[item.ID]; !safe {
 		return fmt.Errorf("refusing to toss protected item %#02x", item.ID)
@@ -227,11 +245,11 @@ func tossBagStack(m *emu.Emu, idx int, item state.BagItem) error {
 		return err
 	}
 
-	// TossItem asks one final YES/NO at a different screen position than the
-	// USE/TOSS menu. Wait for that exact semantic shape, then choose YES.
+	// TossItem asks one final YES/NO. Detect the actual prompt text instead
+	// of assuming its coordinates differ from USE/TOSS.
 	if _, err := m.StepUntil(bagTossConfirmBudget, func(m *emu.Emu) bool {
 		state.Snapshot(m, &mem)
-		return state.DecodeTwoOptionMenu(&mem) != nil && useTossPrompt(&mem) == nil
+		return tossConfirmationPrompt(&mem) != nil
 	}); err != nil {
 		return fmt.Errorf("toss confirmation did not appear: %w", err)
 	}
