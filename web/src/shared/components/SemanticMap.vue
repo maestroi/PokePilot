@@ -806,19 +806,72 @@ onUnmounted(() => {
         </button>
       </template>
 
-      <div
+      <aside
         v-if="explorerAppearance && selectedPoi"
-        class="absolute top-3 left-3 z-20 max-w-56 rounded-lg border border-white/12 bg-[#09110e]/95 px-3 py-2 shadow-xl shadow-black/40 backdrop-blur-sm"
+        class="absolute top-3 right-3 z-30 w-[min(22rem,calc(100%-1.5rem))] rounded-xl border border-white/12 bg-[#09110e]/96 p-3 shadow-2xl shadow-black/55 backdrop-blur-md"
       >
-        <div class="flex items-start justify-between gap-3">
-          <div>
-            <div class="text-[9px] font-bold tracking-[0.1em] text-emerald-300/70 uppercase">{{ selectedPoi.kind }}</div>
-            <div class="mt-0.5 text-xs font-semibold text-white">{{ selectedPoi.label }}</div>
-            <div class="mt-1 text-[9px] text-slate-500">On {{ friendlyMapLabel(map) }}</div>
+        <div class="flex items-start gap-3">
+          <div
+            v-if="selectedPoi.spriteAsset"
+            class="h-16 w-16 shrink-0 overflow-hidden rounded-lg bg-white/5 ring-1 ring-white/10"
+          >
+            <img
+              :src="gen1SpriteURL(selectedPoi.spriteAsset)"
+              :alt="selectedPoi.label"
+              class="w-16 max-w-none [image-rendering:pixelated]"
+            />
           </div>
-          <button type="button" class="text-xs text-slate-500 hover:text-white" aria-label="Close place details" @click="selectedPoi = null">×</button>
+          <div class="min-w-0 flex-1">
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0">
+                <div class="text-[9px] font-bold tracking-[0.12em] text-emerald-300/70 uppercase">{{ poiKindLabel(selectedPoi) }}</div>
+                <div class="mt-0.5 truncate text-sm font-semibold text-white">{{ selectedPoi.label }}</div>
+                <div class="mt-1 text-[10px] text-slate-500">{{ friendlyMapLabel(map) }} · {{ selectedPoi.x }},{{ selectedPoi.y }}</div>
+              </div>
+              <button type="button" class="shrink-0 text-sm text-slate-500 hover:text-white" aria-label="Close object details" @click="selectedPoi = null">×</button>
+            </div>
+          </div>
         </div>
-      </div>
+
+        <dl class="mt-3 grid grid-cols-[6rem_1fr] gap-x-2 gap-y-1.5 text-[10px]">
+          <template v-if="selectedPoi.sprite">
+            <dt class="text-slate-600">Sprite</dt>
+            <dd class="truncate text-slate-300">{{ friendlyPoiSymbol(selectedPoi.sprite) }}</dd>
+          </template>
+          <template v-if="selectedPoi.trainerClass">
+            <dt class="text-slate-600">Trainer</dt>
+            <dd class="text-slate-300">
+              {{ friendlyPoiSymbol(selectedPoi.trainerClass) }}
+              <span v-if="selectedPoi.trainerNumber != null" class="text-slate-500">#{{ selectedPoi.trainerNumber }}</span>
+            </dd>
+          </template>
+          <template v-if="selectedPoi.item">
+            <dt class="text-slate-600">Pickup</dt>
+            <dd class="text-amber-200">{{ friendlyPoiSymbol(selectedPoi.item) }}</dd>
+          </template>
+          <template v-if="selectedPoi.species">
+            <dt class="text-slate-600">Encounter</dt>
+            <dd class="text-slate-300">{{ friendlyPoiSymbol(selectedPoi.species) }} <span v-if="selectedPoi.level" class="text-slate-500">Lv. {{ selectedPoi.level }}</span></dd>
+          </template>
+          <template v-if="selectedPoi.movement">
+            <dt class="text-slate-600">Movement</dt>
+            <dd class="text-slate-300">{{ friendlyPoiSymbol(selectedPoi.movement) }}</dd>
+          </template>
+          <template v-if="selectedPoi.facing && selectedPoi.facing !== 'NONE'">
+            <dt class="text-slate-600">Facing</dt>
+            <dd class="text-slate-300">{{ friendlyPoiSymbol(selectedPoi.facing) }}</dd>
+          </template>
+        </dl>
+
+        <a
+          :href="poiWikiURL(selectedPoi)"
+          target="_blank"
+          rel="noreferrer"
+          class="mt-3 inline-flex rounded-md bg-white/7 px-2.5 py-1.5 text-[10px] font-semibold text-slate-300 ring-1 ring-white/10 hover:bg-white/12 hover:text-white"
+        >
+          Search Bulbapedia ↗
+        </a>
+      </aside>
 
       <button
         v-if="showDebugToggle"
