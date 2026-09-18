@@ -2,6 +2,7 @@ package agent
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 )
 
@@ -198,6 +199,51 @@ func TestRunPlanningFallsBackToCheapChooserOnUnresolvedPlanStep(t *testing.T) {
 	// being stuck on the rejected plan.
 	if r.Plan.Active() {
 		t.Fatalf("plan should not be active after a rejected strategize: %+v", r.Plan)
+	}
+}
+
+// truncatingStrategist always gets cut off mid-reply, the failure mode a
+// reasoning-heavy recovery escalation (blackout, stuck, ...) produces on a
+// model that burns its completion budget on a <think> block before ever
+// emitting the closing JSON. It has no StrategizeRetry, so
+// strategizeWithRetries cannot re-ask and returns the initial error as-is.
+type truncatingStrategist struct{ fast int }
+
+func (p *truncatingStrategist) Next(_ Observation, offered []Objective) (Objective, error) {
+	p.fast++
+	return offered[0], nil
+}
+func (p *truncatingStrategist) Strategize(_ Observation, _ []Objective, _ string) (Plan, error) {
+	return Plan{}, fmt.Errorf("%w: finish_reason %q", ErrNotFinished, "length")
+}
+
+// TestRunPlanningFallsBackToCheapChooserOnLengthTruncation covers the same
+// class of farm failure as the unresolved-step case above, but for a
+// strategist that never even produces a parseable plan: MEASURED on
+// run-1pkm1en1hog5a0, where a blackout replan escalated reasoning effort,
+// every retry hit finish_reason "length", and because only
+// ErrPlanStepUnresolved degraded to the cheap chooser, the run re-entered the
+// same expensive strategist call forever instead of falling back.
+func TestRunPlanningFallsBackToCheapChooserOnLengthTruncation(t *testing.T) {
+	offered := []Objective{{Kind: KindGoTo, Place: "pewter city"}}
+	p := &truncatingStrategist{}
+	r := newRunPlanning(Plan{})
+
+	obj, fromPlan, err, _ := r.choose(nil, 1, p, Observation{Round: 1}, offered)
+	if err != nil {
+		t.Fatalf("choose returned an error instead of degrading: %v", err)
+	}
+	if fromPlan {
+		t.Fatal("fallback objective reported as coming from the plan")
+	}
+	if obj.String() != "go to pewter city" {
+		t.Fatalf("obj = %q, want the offered fallback objective", obj.String())
+	}
+	if p.fast != 1 {
+		t.Fatalf("cheap chooser calls = %d, want 1", p.fast)
+	}
+	if r.Stats.FastCalls != 1 {
+		t.Fatalf("FastCalls = %d, want 1", r.Stats.FastCalls)
 	}
 }
 
