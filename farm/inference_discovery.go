@@ -103,12 +103,19 @@ func ProbeOpenAIEndpoint(ctx context.Context, client *http.Client, d ModelDeploy
 	}
 
 	out := d
-	identityChanged := selected != strings.TrimSpace(d.APIModel) || selected != strings.TrimSpace(d.ModelID)
+	configuredAPI := strings.TrimSpace(d.APIModel)
+	configuredModel := strings.TrimSpace(d.ModelID)
 	out.APIModel = selected
-	out.ModelID = selected
+
+	// API aliases and logical model identities can legitimately differ (for
+	// example a stable cloud alias or pokepilot-* alias). If the advertised id
+	// matches either configured identity, keep the declared ModelID/revision.
+	// Only a genuinely new advertised identity invalidates artifact metadata.
+	identityChanged := configuredModel == "" || (selected != configuredAPI && selected != configuredModel)
+	if configuredModel == "" || identityChanged {
+		out.ModelID = selected
+	}
 	if identityChanged {
-		// These values describe the old artifact and must not be attached to a
-		// newly discovered model. A managed host may provide them explicitly.
 		out.Revision = ""
 		out.Artifact = ""
 		out.Quantization = ""
