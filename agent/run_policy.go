@@ -254,7 +254,6 @@ func mergePolicyNotes(a, b string) string {
 	}
 }
 
-
 func removeRepelEncounterAvoidance(offered []Objective) []Objective {
 	out := make([]Objective, 0, len(offered))
 	for _, o := range offered {
