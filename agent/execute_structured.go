@@ -58,6 +58,11 @@ func executeRedOwned(m *emu.Emu, romData []byte, o Objective) (result ObjectiveR
 			err    error
 		)
 		if o.Flee {
+			if o.RepelBeforeTravel {
+				if _, repelErr := skill.UseBestRepel(m); repelErr != nil {
+					return result, fmt.Errorf("agent: %s: prepare Repel for speedrun travel: %w", o, repelErr)
+				}
+			}
 			travel, err = skill.TravelFlee(m, romData, dest, skill.StatAwareMove(romData), 40)
 		} else {
 			travel, err = skill.Travel(m, romData, dest, skill.StatAwareMove(romData), 40)
