@@ -354,6 +354,9 @@ func (c *modelExperimentController) prepareNextDeployment() bool {
 			continue
 		}
 		if meta.Inference.ControlURL == "" {
+			if d, ok := c.deployment(meta.Deployment); ok && d.DiscoverModel && strings.TrimSpace(meta.Inference.APIModel) == "" {
+				continue
+			}
 			c.moveQueueFront(runID)
 			return true
 		}
@@ -468,6 +471,13 @@ func (c *modelExperimentController) bindingForRun(runID, deployment string) (run
 	if d, ok := c.deployment(deployment); ok {
 		if resolved, err := c.resolveDeploymentIdentity(d); err == nil {
 			d = resolved
+		} else if d.DiscoverModel {
+			// Preserve the deployment binding so capacity/queue logic still
+			// recognizes this as a model-bound run, but leave model identity
+			// unresolved. prepareNextDeployment will keep it queued until the
+			// endpoint becomes discoverable again.
+			d.ModelID = ""
+			d.APIModel = ""
 		}
 		c.wall.mu.Lock()
 		expID, expArm, expCase := "", "", ""
