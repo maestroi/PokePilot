@@ -21,10 +21,10 @@ func BuildGridSpec(rom []byte, h MapHeader, blocks []byte, mode worldmodel.Trave
 	width, height := int(h.WidthBlocks)*2, int(h.HeightBlocks)*2
 	spec := worldmodel.GridSpec{
 		MapID: h.ID, Width: width, Height: height,
-		Walkable: make([]bool, width*height),
+		Walkable:      make([]bool, width*height),
 		CollisionTile: make([]uint8, width*height),
-		FieldTile: make([]uint8, width*height),
-		TilePairs: map[[2]uint8]bool{},
+		FieldTile:     make([]uint8, width*height),
+		TilePairs:     map[[2]uint8]bool{},
 	}
 	if layout.TilePairs != nil {
 		spec.TilePairs = layout.TilePairs(rom, h.Tileset, mode)
