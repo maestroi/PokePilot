@@ -7,9 +7,9 @@ package agent
 //
 // This is intentionally narrower than general stall fallback. We only bypass the
 // planner when all three pieces of evidence agree:
-//   1. the previous recoverable failure named a missing capability;
-//   2. the current observation links that capability to a progression fact; and
-//   3. the normal objective provider is offering the matching progression step.
+//  1. the previous recoverable failure named a missing capability;
+//  2. the current observation links that capability to a progression fact; and
+//  3. the normal objective provider is offering the matching progression step.
 //
 // Unknown prerequisites still fall through to the strategist/exploration path.
 func (f *runFailurePolicy) prerequisiteRecovery(obs Observation, offered []Objective) (Objective, []CapabilityID, bool) {
