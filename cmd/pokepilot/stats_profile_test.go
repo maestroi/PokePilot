@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/maestroi/pokepilot/agent"
+	"github.com/maestroi/pokepilot/farm"
 )
 
 func TestNewStatsPlannerHonorsLLMProfile(t *testing.T) {
@@ -37,5 +38,37 @@ func TestNewStatsPlannerHonorsLLMProfile(t *testing.T) {
 	}
 	if agent.NormalizeLLMProfile("AUTO") != agent.LLMProfileAuto {
 		t.Fatal("profile normalization drift")
+	}
+}
+
+
+func TestFarmStatsPlannerHonorsLeasedInferenceIdentity(t *testing.T) {
+	t.Setenv("POKEPILOT_LLM_GATEWAY_URL", "")
+	t.Setenv("POKEPILOT_LLM_URL", "http://lan.example/v1")
+	t.Setenv("POKEPILOT_LLM_MODEL", "lan-model")
+	t.Setenv("POKEPILOT_LLM_GPU_URL", "http://stale-7900.example/v1")
+	t.Setenv("POKEPILOT_LLM_GPU_MODEL", "stale-27b")
+	t.Setenv("DYNAMIC_ENDPOINT_TOKEN", "secret")
+
+	identity := &farm.InferenceIdentity{
+		DeploymentID: "farm-7900",
+		Endpoint: "http://7900.example/v1",
+		APIModel: "qwen3.5-9b",
+		ModelID: "qwen3.5-9b",
+		Compute: "RX 7900 XTX",
+		EndpointTokenEnv: "DYNAMIC_ENDPOINT_TOKEN",
+	}
+	s := newStatsPlannerWithRunPolicyAndInference(
+		"auto", "", "speedrunner", "", "", "Earn the Boulder Badge.",
+		identity, nil, nil, nil,
+	)
+	if s.inner.BaseURL != identity.Endpoint || s.inner.Model != identity.APIModel {
+		t.Fatalf("leased inference = %s/%s, want %s/%s", s.inner.BaseURL, s.inner.Model, identity.Endpoint, identity.APIModel)
+	}
+	if s.inner.Token != "secret" {
+		t.Fatalf("endpoint token = %q, want secret", s.inner.Token)
+	}
+	if s.router.Fallback == nil || s.router.Fallback.BaseURL != "http://lan.example/v1" {
+		t.Fatalf("auto fallback = %+v, want LAN safety fallback", s.router.Fallback)
 	}
 }
