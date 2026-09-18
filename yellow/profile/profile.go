@@ -9,6 +9,7 @@ package profile
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/yellow/sym"
@@ -52,12 +53,16 @@ func (*Profile) ROMParser() game.ROMParser { return parser{} }
 type parser struct{}
 
 func (parser) MapName(rawMapID uint16) (string, bool) {
-	// Pallet Town is sufficient for the phase-0 boot/identity smoke path.
-	// Phase 2 owns the complete Yellow map table.
-	if rawMapID == 0 {
+	// Keep this deliberately tiny until Phase 2 supplies the full Yellow map
+	// parser. Phase 1 needs only the fresh-game bedroom plus Pallet Town.
+	switch rawMapID {
+	case 0x00:
 		return "PALLET_TOWN", true
+	case 0x26:
+		return "REDS_HOUSE_2F", true
+	default:
+		return "", false
 	}
-	return "", false
 }
 
 func (parser) Species(uint16) (game.SpeciesID, bool) {
@@ -73,8 +78,8 @@ func (*Profile) DecodeObservation(reader game.MemoryReader, _ []byte) (game.Prof
 	mapID := reader.Peek8(sym.CurMap)
 	mapName, _ := (parser{}).MapName(uint16(mapID))
 	location := game.PlaceID("")
-	if mapName == "PALLET_TOWN" {
-		location = game.PlaceID("pallet town")
+	if mapName != "" {
+		location = game.PlaceID(game.CanonicalID(strings.ReplaceAll(mapName, "_", " ")))
 	}
 	return game.ProfileObservation{
 		NativeMapID: uint16(mapID),
@@ -83,9 +88,9 @@ func (*Profile) DecodeObservation(reader game.MemoryReader, _ []byte) (game.Prof
 		X:           reader.Peek8(sym.XCoord),
 		Y:           reader.Peek8(sym.YCoord),
 		Facing:      decodeFacing(reader.Peek8(sym.SpritePlayerFacing)),
-		// Control-state, party, inventory, progression and semantic map
-		// decoding are intentionally not claimed by the phase-0 profile.
-		Controllable: false,
+		// Phase 1 exposes the shared control-state semantic while leaving party,
+		// inventory and story decoding for later Yellow phases.
+		Controllable: yellowControllable(reader),
 		InBattle:     reader.Peek8(sym.IsInBattle) != 0,
 		Party:        []game.ProfilePartyMon{},
 		Badges:       []string{},
