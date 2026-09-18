@@ -144,10 +144,11 @@ func edgeEntersVisitedRegion(g *world.Graph, e world.Edge, visited map[uint8]boo
 	if !visited[e.To] {
 		return false
 	}
-	known := false
+	known, unknown := false, false
 	for _, p := range positions[e.To] {
 		same, ok := g.EdgeEntrySharesComponentWith(e, int(p.X), int(p.Y))
 		if !ok {
+			unknown = true
 			continue
 		}
 		known = true
@@ -155,15 +156,16 @@ func edgeEntersVisitedRegion(g *world.Graph, e world.Edge, visited map[uint8]boo
 			return true
 		}
 	}
-	if known {
-		// We have component evidence for every comparison that mattered and
-		// none matched: this edge re-enters the same map in a fresh walking
-		// region, which is real topological progress (Route 12 Gate is the
-		// production example from #1035).
+	if known && !unknown {
+		// Every recorded visit could be classified and none matched: this edge
+		// re-enters the same map in a fresh walking region, which is real
+		// topological progress (Route 12 Gate is the production example from
+		// #1035).
 		return false
 	}
-	// Hand-built/legacy graphs without component evidence keep the historical
-	// map-level preference rather than silently weakening loop protection.
+	// Missing component evidence for any recorded visit falls back to the
+	// historical map-level preference rather than silently weakening loop
+	// protection.
 	return true
 }
 
