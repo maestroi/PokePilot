@@ -36,21 +36,21 @@ const (
 // intentionally presentation-hidden: coordinate-local interactions need it for
 // durable identity, while the model still sees the same concise objective text.
 type Objective struct {
-	Kind     Kind
-	Place    PlaceID
-	Location LocationID
-	X, Y     uint8
-	Starter  skill.Starter
-	Progress ProgressID
-	Level    uint8
-	Species  SpeciesID
-	Item     ItemID
-	Slot     int
-	Qty      int
+	Kind              Kind
+	Place             PlaceID
+	Location          LocationID
+	X, Y              uint8
+	Starter           skill.Starter
+	Progress          ProgressID
+	Level             uint8
+	Species           SpeciesID
+	Item              ItemID
+	Slot              int
+	Qty               int
 	Flee              bool
 	RepelBeforeTravel bool
 	Note              string
-	Intent   string
+	Intent            string
 }
 
 // Validate checks only portable shape/range invariants. Concrete-game name and
