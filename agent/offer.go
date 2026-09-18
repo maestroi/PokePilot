@@ -22,6 +22,11 @@ type Knowledge struct {
 	Adjacency    map[LocationID][]LocationID
 	Requirements []Requirement
 
+	// Build is this process's running binary identity (e.g. a git SHA), set
+	// by the caller. Empty means unknown, which leaves failure tallies
+	// build-unaware (their historical pre-feature behavior).
+	Build string
+
 	nativeLocations map[uint8]LocationID
 }
 
@@ -89,6 +94,7 @@ type Failure struct {
 	Objective string
 	Times     int
 	Last      string
+	Build     string
 }
 
 type Completion struct {
@@ -137,8 +143,21 @@ func (k *Knowledge) Failed(o Objective, err error) {
 		storage = trainerLossFailureKey(o)
 	}
 	f := k.Failures[storage]
-	f.Objective, f.Times, f.Last = o.String(), f.Times+1, conciseObjectiveError(o, err)
+	k.bumpFailureTimes(&f)
+	f.Objective, f.Last = o.String(), conciseObjectiveError(o, err)
 	k.Failures[storage] = f
+}
+
+// bumpFailureTimes increments f.Times as evidence toward "this objective is
+// broken". A tally carried over from a different build is not that evidence
+// (architecture: repeats only count "same objective, same relevant state,
+// same build"), so a build change resets it to a fresh count of one instead
+// of letting stale pre-fix failures keep discouraging a step forever.
+func (k *Knowledge) bumpFailureTimes(f *Failure) {
+	if build := strings.TrimSpace(k.Build); build != "" && f.Build != build {
+		f.Times, f.Build = 0, build
+	}
+	f.Times++
 }
 
 func (k *Knowledge) FailureList() []Failure {
@@ -398,7 +417,7 @@ func (k *Knowledge) restore(mem memoryFile) {
 		}
 	}
 	for _, f := range mem.Failures {
-		failure := Failure{Objective: f.Objective, Times: f.Times, Last: f.Last}
+		failure := Failure{Objective: f.Objective, Times: f.Times, Last: f.Last, Build: f.Build}
 		if f.Key != (ObjectiveKey{}) {
 			k.Failures[failureStorageKey(f.Key, f.Mode)] = failure
 		} else if f.Objective != "" {

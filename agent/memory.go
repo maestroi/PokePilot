@@ -54,6 +54,7 @@ type storedFailure struct {
 	Objective string       `json:"objective"`
 	Times     int          `json:"times"`
 	Last      string       `json:"last"`
+	Build     string       `json:"build,omitempty"`
 }
 
 // memoryFile is the v6 serialised form. Adjacency and native-map translation
@@ -153,7 +154,7 @@ func encodeMemoryFile(k *Knowledge, intent string, intentAge int, plans ...Plan)
 	sort.Strings(failureKeys)
 	for _, storage := range failureKeys {
 		failure := k.Failures[storage]
-		entry := storedFailure{Objective: failure.Objective, Times: failure.Times, Last: failure.Last}
+		entry := storedFailure{Objective: failure.Objective, Times: failure.Times, Last: failure.Last, Build: failure.Build}
 		if key, mode, ok := parseFailureStorageKey(storage); ok {
 			entry.Key, entry.Mode = key, mode
 		}

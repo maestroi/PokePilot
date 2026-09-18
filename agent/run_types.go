@@ -176,6 +176,11 @@ type Budget struct {
 	MaxFrames int
 	Goal      string
 
+	// Build identifies the running binary (e.g. a git SHA). It scopes
+	// Knowledge failure tallies: a step's failure history from a different
+	// build is stale evidence, not proof the step is still broken.
+	Build string
+
 	StuckAfter             int
 	StagnationAfter        int
 	MaxConsecutiveFailures int

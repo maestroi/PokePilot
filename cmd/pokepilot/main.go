@@ -225,6 +225,7 @@ func runLLM(m *emu.Emu, goal, llmProfile string, maxRounds int, checkpointDir, r
 	res := agent.Run(m, m.ROM(), stats, agent.Budget{
 		MaxRounds:     maxRounds,
 		MaxFrames:     llmMaxFrames,
+		Build:         version,
 		Log:           log,
 		CheckpointDir: checkpointDir,
 		ResumeFrom:    resumeFrom,
