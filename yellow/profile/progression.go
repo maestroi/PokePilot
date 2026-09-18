@@ -12,68 +12,68 @@ import (
 type yellowEvent uint16
 
 const (
-	eventFollowedOakIntoLab       yellowEvent = 0
-	eventOakAskedToChooseMon      yellowEvent = 33
-	eventGotStarter               yellowEvent = 34
-	eventBattledRivalInOaksLab    yellowEvent = 35
-	eventGotPokedex               yellowEvent = 37
-	eventOakAppearedInPallet      yellowEvent = 39
-	eventViridianGymOpen          yellowEvent = 40
-	eventGotBulbasaurInCerulean   yellowEvent = 168
-	eventBeatTowerJessieJames     yellowEvent = 273
-	eventGotSquirtleFromJenny     yellowEvent = 327
-	eventMansionSwitchOn          yellowEvent = 632
-	eventRescuedMrFuji            yellowEvent = 1231
-	eventBeatRoute22Rival2        yellowEvent = 1318
-	eventPassedCascadeBadgeCheck  yellowEvent = 1328
-	eventPassedThunderBadgeCheck  yellowEvent = 1329
-	eventPassedRainbowBadgeCheck  yellowEvent = 1330
-	eventPassedSoulBadgeCheck     yellowEvent = 1331
-	eventPassedMarshBadgeCheck    yellowEvent = 1332
-	eventPassedVolcanoBadgeCheck  yellowEvent = 1333
-	eventPassedEarthBadgeCheck    yellowEvent = 1334
-	eventGotCharmanderRoute24     yellowEvent = 0x54f
-	eventGotDomeFossil            yellowEvent = 1400
-	eventBeatMtMoonSuperNerd      yellowEvent = 1401
-	eventBeatMtMoonJessieJames    yellowEvent = 1402
-	eventGotHelixFossil           yellowEvent = 1407
-	eventBeatRocketJessieJames    yellowEvent = 1698
-	eventRocketHideoutDoorOpen    yellowEvent = 1701
-	eventBeatRocketGiovanni       yellowEvent = 1703
-	eventBeatSilphRival           yellowEvent = 1856
-	eventBeatSilphJessieJames     yellowEvent = 1924
-	eventGotMasterBall            yellowEvent = 1933
-	eventBeatSilphGiovanni        yellowEvent = 1935
-	eventBeatLorelei              yellowEvent = 2273
-	eventAutowalkedIntoLorelei    yellowEvent = 2278
-	eventBeatBruno                yellowEvent = 2281
-	eventBeatAgatha               yellowEvent = 2289
-	eventBeatLanceTrainer         yellowEvent = 2297
-	eventBeatLance                yellowEvent = 2302
-	eventBeatChampionRival        yellowEvent = 2305
+	eventFollowedOakIntoLab      yellowEvent = 0
+	eventOakAskedToChooseMon     yellowEvent = 33
+	eventGotStarter              yellowEvent = 34
+	eventBattledRivalInOaksLab   yellowEvent = 35
+	eventGotPokedex              yellowEvent = 37
+	eventOakAppearedInPallet     yellowEvent = 39
+	eventViridianGymOpen         yellowEvent = 40
+	eventGotBulbasaurInCerulean  yellowEvent = 168
+	eventBeatTowerJessieJames    yellowEvent = 273
+	eventGotSquirtleFromJenny    yellowEvent = 327
+	eventMansionSwitchOn         yellowEvent = 632
+	eventRescuedMrFuji           yellowEvent = 1231
+	eventBeatRoute22Rival2       yellowEvent = 1318
+	eventPassedCascadeBadgeCheck yellowEvent = 1328
+	eventPassedThunderBadgeCheck yellowEvent = 1329
+	eventPassedRainbowBadgeCheck yellowEvent = 1330
+	eventPassedSoulBadgeCheck    yellowEvent = 1331
+	eventPassedMarshBadgeCheck   yellowEvent = 1332
+	eventPassedVolcanoBadgeCheck yellowEvent = 1333
+	eventPassedEarthBadgeCheck   yellowEvent = 1334
+	eventGotCharmanderRoute24    yellowEvent = 0x54f
+	eventGotDomeFossil           yellowEvent = 1400
+	eventBeatMtMoonSuperNerd     yellowEvent = 1401
+	eventBeatMtMoonJessieJames   yellowEvent = 1402
+	eventGotHelixFossil          yellowEvent = 1407
+	eventBeatRocketJessieJames   yellowEvent = 1698
+	eventRocketHideoutDoorOpen   yellowEvent = 1701
+	eventBeatRocketGiovanni      yellowEvent = 1703
+	eventBeatSilphRival          yellowEvent = 1856
+	eventBeatSilphJessieJames    yellowEvent = 1924
+	eventGotMasterBall           yellowEvent = 1933
+	eventBeatSilphGiovanni       yellowEvent = 1935
+	eventBeatLorelei             yellowEvent = 2273
+	eventAutowalkedIntoLorelei   yellowEvent = 2278
+	eventBeatBruno               yellowEvent = 2281
+	eventBeatAgatha              yellowEvent = 2289
+	eventBeatLanceTrainer        yellowEvent = 2297
+	eventBeatLance               yellowEvent = 2302
+	eventBeatChampionRival       yellowEvent = 2305
 )
 
 const (
-	ProgressYellowStarterReceived              game.ProgressID = "yellow_starter_received"
-	ProgressYellowLabRivalResolved              game.ProgressID = "yellow_lab_rival_resolved"
-	ProgressYellowRivalJolteonPath              game.ProgressID = "yellow_rival_jolteon_path"
-	ProgressYellowRivalFlareonPath              game.ProgressID = "yellow_rival_flareon_path"
-	ProgressYellowRivalVaporeonPath             game.ProgressID = "yellow_rival_vaporeon_path"
-	ProgressYellowPikachuHappiness              game.ProgressID = "yellow_pikachu_happiness"
-	ProgressYellowPikachuStarterPresent         game.ProgressID = "yellow_pikachu_starter_present"
-	ProgressYellowPikachuFollowing              game.ProgressID = "yellow_pikachu_following"
-	ProgressYellowPikachuSurfing                game.ProgressID = "yellow_pikachu_surfing"
-	ProgressYellowMtMoonJessieJamesDefeated     game.ProgressID = "yellow_mt_moon_jessie_james_defeated"
-	ProgressYellowMtMoonExitResolved             game.ProgressID = "yellow_mt_moon_exit_resolved"
-	ProgressYellowRocketJessieJamesDefeated     game.ProgressID = "yellow_rocket_hideout_jessie_james_defeated"
-	ProgressYellowTowerJessieJamesDefeated      game.ProgressID = "yellow_pokemon_tower_jessie_james_defeated"
-	ProgressYellowSilphJessieJamesDefeated      game.ProgressID = "yellow_silph_jessie_james_defeated"
-	ProgressYellowBulbasaurGiftAvailable        game.ProgressID = "yellow_bulbasaur_gift_available"
-	ProgressYellowBulbasaurGiftReceived         game.ProgressID = "yellow_bulbasaur_gift_received"
-	ProgressYellowCharmanderGiftAvailable       game.ProgressID = "yellow_charmander_gift_available"
-	ProgressYellowCharmanderGiftReceived        game.ProgressID = "yellow_charmander_gift_received"
-	ProgressYellowSquirtleGiftAvailable         game.ProgressID = "yellow_squirtle_gift_available"
-	ProgressYellowSquirtleGiftReceived          game.ProgressID = "yellow_squirtle_gift_received"
+	ProgressYellowStarterReceived           game.ProgressID = "yellow_starter_received"
+	ProgressYellowLabRivalResolved          game.ProgressID = "yellow_lab_rival_resolved"
+	ProgressYellowRivalJolteonPath          game.ProgressID = "yellow_rival_jolteon_path"
+	ProgressYellowRivalFlareonPath          game.ProgressID = "yellow_rival_flareon_path"
+	ProgressYellowRivalVaporeonPath         game.ProgressID = "yellow_rival_vaporeon_path"
+	ProgressYellowPikachuHappiness          game.ProgressID = "yellow_pikachu_happiness"
+	ProgressYellowPikachuStarterPresent     game.ProgressID = "yellow_pikachu_starter_present"
+	ProgressYellowPikachuFollowing          game.ProgressID = "yellow_pikachu_following"
+	ProgressYellowPikachuSurfing            game.ProgressID = "yellow_pikachu_surfing"
+	ProgressYellowMtMoonJessieJamesDefeated game.ProgressID = "yellow_mt_moon_jessie_james_defeated"
+	ProgressYellowMtMoonExitResolved        game.ProgressID = "yellow_mt_moon_exit_resolved"
+	ProgressYellowRocketJessieJamesDefeated game.ProgressID = "yellow_rocket_hideout_jessie_james_defeated"
+	ProgressYellowTowerJessieJamesDefeated  game.ProgressID = "yellow_pokemon_tower_jessie_james_defeated"
+	ProgressYellowSilphJessieJamesDefeated  game.ProgressID = "yellow_silph_jessie_james_defeated"
+	ProgressYellowBulbasaurGiftAvailable    game.ProgressID = "yellow_bulbasaur_gift_available"
+	ProgressYellowBulbasaurGiftReceived     game.ProgressID = "yellow_bulbasaur_gift_received"
+	ProgressYellowCharmanderGiftAvailable   game.ProgressID = "yellow_charmander_gift_available"
+	ProgressYellowCharmanderGiftReceived    game.ProgressID = "yellow_charmander_gift_received"
+	ProgressYellowSquirtleGiftAvailable     game.ProgressID = "yellow_squirtle_gift_available"
+	ProgressYellowSquirtleGiftReceived      game.ProgressID = "yellow_squirtle_gift_received"
 )
 
 const (
@@ -86,7 +86,7 @@ const (
 	pikachuStarterBit   = 7
 
 	saffronGuardsDrinkMask = 1 << 6
-	elite4CompletedMask     = 1 << 0
+	elite4CompletedMask    = 1 << 0
 
 	itemBicycle    = 0x06
 	itemSecretKey  = 0x2b
