@@ -227,7 +227,12 @@ func (w *Wall) SetIssueClient(c *issueClient) {
 	w.mu.Lock()
 	w.issues = c
 	w.mu.Unlock()
-	go w.runOutboxDispatcher()
+	// The generic dispatcher consumes local finish JSON and exists only for
+	// legacy/local mode. PostgreSQL control-plane mode seeds and delivers its
+	// structured failure outbox transactionally from run_attempts instead.
+	if controlPlaneFor(w) == nil {
+		go w.runOutboxDispatcher()
+	}
 	go w.runStatusSync(defaultStatusSyncEvery)
 }
 
