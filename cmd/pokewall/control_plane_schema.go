@@ -65,14 +65,15 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 );
 CREATE TABLE IF NOT EXISTS model_deployments (
     id TEXT PRIMARY KEY,
-    label TEXT NOT NULL DEFAULT '', model_id TEXT NOT NULL,
+    label TEXT NOT NULL DEFAULT '', model_id TEXT NOT NULL DEFAULT '',
+    discover_model BOOLEAN NOT NULL DEFAULT FALSE, is_default BOOLEAN NOT NULL DEFAULT FALSE,
     revision TEXT NOT NULL DEFAULT '', artifact TEXT NOT NULL DEFAULT '',
     quantization TEXT NOT NULL DEFAULT '', compute TEXT NOT NULL,
     endpoint TEXT NOT NULL, api_model TEXT NOT NULL,
     enabled BOOLEAN NOT NULL DEFAULT TRUE, control_url TEXT NOT NULL DEFAULT '',
-    token_env TEXT NOT NULL DEFAULT '', engine TEXT NOT NULL DEFAULT '',
+    endpoint_token_env TEXT NOT NULL DEFAULT '', token_env TEXT NOT NULL DEFAULT '', engine TEXT NOT NULL DEFAULT '',
     engine_version TEXT NOT NULL DEFAULT '', engine_config TEXT NOT NULL DEFAULT '',
-    legacy_profile TEXT NOT NULL DEFAULT '',
+    max_parallel_workers INTEGER NOT NULL DEFAULT 1, legacy_profile TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS model_deployments_enabled_compute_idx ON model_deployments(enabled, compute, label, id);
@@ -176,6 +177,14 @@ CREATE TABLE IF NOT EXISTS dataset_manifests (
 CREATE INDEX IF NOT EXISTS dataset_manifests_created_idx ON dataset_manifests(created_at DESC);
 `
 
+const controlPlaneMigration002 = `
+ALTER TABLE model_deployments ADD COLUMN IF NOT EXISTS discover_model BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE model_deployments ADD COLUMN IF NOT EXISTS is_default BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE model_deployments ADD COLUMN IF NOT EXISTS endpoint_token_env TEXT NOT NULL DEFAULT '';
+ALTER TABLE model_deployments ADD COLUMN IF NOT EXISTS max_parallel_workers INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE model_deployments ALTER COLUMN model_id SET DEFAULT '';
+`
+
 type controlPlane struct {
 	db                *sql.DB
 	experimentPersist sync.Mutex
@@ -269,6 +278,18 @@ func (cp *controlPlane) migrate() error {
 		}
 		if _, err := tx.Exec(`INSERT INTO schema_migrations(version) VALUES(1) ON CONFLICT DO NOTHING`); err != nil {
 			return fmt.Errorf("record control-plane migration 1: %w", err)
+		}
+	}
+	var applied2 bool
+	if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version=2)`).Scan(&applied2); err != nil {
+		return fmt.Errorf("read migration version 2: %w", err)
+	}
+	if !applied2 {
+		if _, err := tx.Exec(controlPlaneMigration002); err != nil {
+			return fmt.Errorf("apply control-plane migration 2: %w", err)
+		}
+		if _, err := tx.Exec(`INSERT INTO schema_migrations(version) VALUES(2) ON CONFLICT DO NOTHING`); err != nil {
+			return fmt.Errorf("record control-plane migration 2: %w", err)
 		}
 	}
 	return tx.Commit()
