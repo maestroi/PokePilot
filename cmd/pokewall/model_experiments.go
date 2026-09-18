@@ -303,6 +303,7 @@ func (c *modelExperimentController) resolveDeployment(d farm.ModelDeployment) (f
 	if chosen != d.APIModel || chosen != d.ModelID {
 		d.APIModel = chosen
 		d.ModelID = chosen
+		d.Label = chosen + " · " + d.Compute
 		// A changed runtime model invalidates artifact-specific comparability
 		// metadata from the static registry. Keep hardware/engine identity, but
 		// do not pretend the old model hash/quantization still applies.
