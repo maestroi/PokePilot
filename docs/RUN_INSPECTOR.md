@@ -6,7 +6,7 @@ S3 object keys, or replay cache.
 
 ## Ownership
 
-- **pokewall** owns run lifecycle state and durable finish-dump metadata.
+- **pokewall/PostgreSQL** own run lifecycle state, finish metadata, artifact references, failure/outbox state, and queryable planner exchanges.
 - **S3/RustFS** owns large artifact bytes such as `run.gbrun` and derived MP4s.
 - **pokereplay** reads artifact references from pokewall, reads/writes S3, and
   has read-only access to the ROM needed by GomeBoy for deterministic replay.
@@ -15,8 +15,9 @@ S3 object keys, or replay cache.
   PokePilot HTTP/MCP reads when it needs evidence. It never queries a PokePilot
   database or S3 bucket directly.
 
-No new PostgreSQL dependency is introduced by this slice. The finish dumps that
-pokewall already owns are the initial artifact index.
+In production, PostgreSQL is the structured source of truth. Local finish JSON
+under PokéWall's cache directory is optional compatibility/debug material only;
+inspector correctness does not depend on it.
 
 ## Operator HTTP API
 
@@ -30,9 +31,10 @@ Pokewall adds read-only inspection routes alongside the existing wall protocol:
   embedded.
 - `GET /v1/runs/{id}/artifacts/{name}/content` — inline artifact bytes only.
 
-The inspector scans the existing durable finish dumps and verifies the embedded
-`run_id`, so a run can still be inspected after its history row was deleted
-from the in-memory dashboard.
+In PostgreSQL control-plane mode the inspector reads `run_attempts.report_json`
+and the `artifacts` index directly. Small inline evidence is reconstructed from
+PostgreSQL; large evidence remains an S3 reference. Local finish JSON is read
+only by the legacy/local mode.
 
 The private pokeui allowlists these routes. It never exposes them through the
 public spectator process.
@@ -117,8 +119,9 @@ FFmpeg, and `intel-media-driver` (iHD). When `/dev/dri/renderD128` is present,
 nor S3 credentials.
 
 If S3 is not configured, the replay service stays healthy and reports replay as
-disabled. Dashboard, farm execution, finish dumps, inline artifact browsing,
-MCP run-debug reads, and the public spectator remain independent of replay.
+disabled. Dashboard, farm execution, PostgreSQL-backed finish inspection, inline
+artifact browsing, MCP run-debug reads, and the public spectator remain
+independent of replay.
 
 ## Current telemetry boundary
 
@@ -130,4 +133,8 @@ LLM/state inspection without changing the artifact/replay ownership model above.
 
 ## Run catalog
 
-Production PokéWall keeps finished run metadata in `/var/lib/pokewall/catalog.db`. SQLite is the query index; finish dumps/checkpoints remain artifacts with their normal retention policy. RAM and `state.json` keep only live runs plus any finished resume ancestors still required by an active child.
+Production PokéWall keeps run history, attempts, experiments, failures/outbox,
+issue links, artifact metadata, and planner exchanges in PostgreSQL. RAM holds
+the live working set; local SQLite/`state.json` remain development/compatibility
+paths only. Large immutable payloads stay in S3-compatible object storage, with
+their hashes and object references in PostgreSQL.
