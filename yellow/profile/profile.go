@@ -41,13 +41,18 @@ func (*Profile) Symbols() game.SymbolTable {
 		"battle.mode":      {Name: "battle.mode", Address: sym.IsInBattle, Width: 1},
 		"badges":           {Name: "badges", Address: sym.ObtainedBadges, Width: 1},
 		"bag":              {Name: "bag", Address: sym.BagItems},
-		"money":            {Name: "money", Address: sym.PlayerMoney, Width: 3},
+		"money":                    {Name: "money", Address: sym.PlayerMoney, Width: 3},
+		"respawn.map":              {Name: "respawn.map", Address: sym.LastBlackoutMap, Width: 1},
+		"story.events":             {Name: "story.events", Address: sym.EventFlags},
+		"yellow.rival.starter":     {Name: "yellow.rival.starter", Address: sym.RivalStarter, Width: 1},
+		"yellow.pikachu.happiness": {Name: "yellow.pikachu.happiness", Address: sym.PikachuHappiness, Width: 1},
 	}
 }
 
 func (*Profile) Features() game.ProfileFeatures {
 	return game.ProfileFeatures{
 		game.FeatureMapParsing:      true,
+		game.FeatureStoryProgress:   true,
 		game.FeatureSemanticSpecies: true,
 	}
 }
@@ -95,9 +100,18 @@ func (*Profile) DecodeObservation(reader game.MemoryReader, _ []byte) (game.Prof
 		Party:        gen1.DecodeParty(reader, yellowRAMLayout),
 		Badges:       gen1.DecodeBadges(reader, yellowRAMLayout),
 		Money:        gen1.DecodeMoney(reader, yellowRAMLayout),
-		Events:       []string{},
-		Story:        game.ProgressState{},
+		RespawnPlace: yellowLocation(reader.Peek8(sym.LastBlackoutMap)),
+		Events:       yellowEventNames(reader),
+		Story:        projectYellowStory(reader, mapID),
 	}, nil
+}
+
+func yellowLocation(mapID uint8) game.PlaceID {
+	name := yellowrom.MapName(mapID)
+	if name == "" {
+		return ""
+	}
+	return game.PlaceID(game.CanonicalID(strings.ReplaceAll(name, "_", " ")))
 }
 
 func decodeFacing(v byte) string {
