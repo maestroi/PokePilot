@@ -74,7 +74,6 @@ func TestModelRegistryRejectsDuplicateDeployment(t *testing.T) {
 	}
 }
 
-
 func TestRegistryDiscoveryAllowsModelIdentityFromEndpoint(t *testing.T) {
 	registry := ModelRegistry{Deployments: []ModelDeployment{
 		{ID: "dynamic", Compute: "gpu", Endpoint: "http://gpu/v1", Enabled: true, DiscoverModel: true, Default: true},
