@@ -15,7 +15,7 @@ describe('operator game selection', () => {
   it('does not offer Red-style starter replacement for Yellow', () => {
     const source = readFileSync(new URL('../src/operator/ToolsView.vue', import.meta.url), 'utf8')
     assert.ok(source.includes("form.game === 'pokemon-yellow'"))
-    assert.ok(source.includes('if (isYellow.value)) return')
+    assert.ok(source.includes('if (isYellow.value) return'))
     assert.ok(source.includes(':disabled="isYellow"'))
   })
 })
