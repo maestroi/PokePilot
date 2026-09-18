@@ -69,7 +69,7 @@ CREATE TABLE IF NOT EXISTS model_deployments (
     discover_model BOOLEAN NOT NULL DEFAULT FALSE, is_default BOOLEAN NOT NULL DEFAULT FALSE,
     revision TEXT NOT NULL DEFAULT '', artifact TEXT NOT NULL DEFAULT '',
     quantization TEXT NOT NULL DEFAULT '', compute TEXT NOT NULL,
-    endpoint TEXT NOT NULL, api_model TEXT NOT NULL,
+    endpoint TEXT NOT NULL, api_model TEXT NOT NULL DEFAULT '',
     enabled BOOLEAN NOT NULL DEFAULT TRUE, control_url TEXT NOT NULL DEFAULT '',
     endpoint_token_env TEXT NOT NULL DEFAULT '', token_env TEXT NOT NULL DEFAULT '', engine TEXT NOT NULL DEFAULT '',
     engine_version TEXT NOT NULL DEFAULT '', engine_config TEXT NOT NULL DEFAULT '',
@@ -183,6 +183,7 @@ ALTER TABLE model_deployments ADD COLUMN IF NOT EXISTS is_default BOOLEAN NOT NU
 ALTER TABLE model_deployments ADD COLUMN IF NOT EXISTS endpoint_token_env TEXT NOT NULL DEFAULT '';
 ALTER TABLE model_deployments ADD COLUMN IF NOT EXISTS max_parallel_workers INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE model_deployments ALTER COLUMN model_id SET DEFAULT '';
+ALTER TABLE model_deployments ALTER COLUMN api_model SET DEFAULT '';
 
 -- qwen38-27b-7900 is retained as a stable compatibility key, not a promise
 -- about what the dedicated 7900 endpoint serves. Convert the historical
