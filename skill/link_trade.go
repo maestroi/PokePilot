@@ -14,6 +14,7 @@ import (
 const tradeCenterMapID uint8 = 0xef
 const linkReceptionBudget = 12_000
 const linkMenuBudget = 12_000
+const linkRoomBudget = 12_000
 const linkExchangeBudget = 50_000
 const linkTradeMenuBudget = 50_000
 const linkTradeConfirmationBudget = 12_000
@@ -55,6 +56,9 @@ func VirtualTrade(m *emu.Emu, romData []byte, playerSlot int, tradeback bool, po
 		return result, err
 	}
 	if err := enterTradeCenter(m); err != nil {
+		return result, err
+	}
+	if err := activateTradeCenterConsole(m); err != nil {
 		return result, err
 	}
 	if err := waitForTradeSelectionMenu(m); err != nil {
@@ -196,6 +200,56 @@ func linkMenuScreen(mem *state.Mem) bool {
 	text := strings.ToUpper(state.ScreenText(mem))
 	return strings.Contains(text, "TRADE CENTER") && strings.Contains(text, "COLOSSEUM") && strings.Contains(text, "CANCEL") &&
 		mem.U8(sym.TopMenuItemY) == 7 && mem.U8(sym.TopMenuItemX) == 6
+}
+
+// activateTradeCenterConsole performs the interaction that actually starts
+// CableClub_DoBattleOrTrade. Selecting TRADE CENTER at the receptionist only
+// warps both players into map 0xef; the ROM does not begin party exchange until
+// the local player presses A on the Game Boy at the table.
+//
+// Red places the internal-clock player at (3,4), beside the left console
+// hidden event at (4,4), and the external-clock player at (6,4), beside the
+// right console at (5,4). CableClubLeftGameboy/CableClubRightGameboy then set
+// wLinkState=LINK_STATE_START_TRADE and the map loop begins serial exchange.
+func activateTradeCenterConsole(m *emu.Emu) error {
+	var mem state.Mem
+	if _, err := m.StepUntil(linkRoomBudget, func(em *emu.Emu) bool {
+		state.Snapshot(em, &mem)
+		if mem.U8(sym.CurMap) != tradeCenterMapID || !state.Controllable(&mem) {
+			return false
+		}
+		_, _, ok := tradeCenterConsoleTarget(mem.U8(sym.XCoord), mem.U8(sym.YCoord))
+		return ok
+	}); err != nil {
+		state.Snapshot(m, &mem)
+		return fmt.Errorf("skill: VirtualTrade: Trade Center console position did not become ready: map=%#04x at (%d,%d): %w",
+			mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord), err)
+	}
+
+	tx, ty, ok := tradeCenterConsoleTarget(mem.U8(sym.XCoord), mem.U8(sym.YCoord))
+	if !ok {
+		return fmt.Errorf("skill: VirtualTrade: no Cable Club console adjacent at (%d,%d)",
+			mem.U8(sym.XCoord), mem.U8(sym.YCoord))
+	}
+	if err := Face(m, tx, ty); err != nil {
+		return fmt.Errorf("skill: VirtualTrade: face Cable Club console at (%d,%d): %w", tx, ty, err)
+	}
+	m.Tap(emu.A, 3, 7)
+	return nil
+}
+
+func tradeCenterConsoleTarget(x, y uint8) (uint8, uint8, bool) {
+	if y != 4 {
+		return 0, 0, false
+	}
+	switch x {
+	case 3:
+		return 4, 4, true
+	case 6:
+		return 5, 4, true
+	default:
+		return 0, 0, false
+	}
 }
 
 func tradeSelectionMenu(mem *state.Mem) bool {
