@@ -42,6 +42,7 @@ const mapAsset = ref<MapPayload | null>(null)
 const mapError = ref('')
 const loadingMap = ref(false)
 const copyState = ref('')
+const mapHistory = ref<number[]>([])
 let mapSerial = 0
 let initialRunCentered = initialParams.has('map') || !runID.value
 
@@ -130,6 +131,7 @@ function chooseMap(id: number, keepFollowing = false): void {
 }
 
 function applySearch(): void {
+  mapHistory.value = []
   const exact = resolveMapQuery(search.value)
   if (exact) {
     chooseMap(exact.id)
@@ -140,12 +142,25 @@ function applySearch(): void {
 }
 
 function followWarp(destination: number): void {
-  chooseMap(destination)
+  if (Number(destination) === 0xff) {
+    const previous = mapHistory.value.pop()
+    if (previous == null) return
+    chooseMap(previous)
+  } else {
+    if (Number(destination) !== selectedMap.value) mapHistory.value.push(selectedMap.value)
+    chooseMap(destination)
+  }
   xInput.value = ''
   yInput.value = ''
 }
 
+function warpDestinationLabel(destination: number): string {
+  if (Number(destination) === 0xff) return 'Return to previous map'
+  return mapEntry(destination)?.label || ('0x' + Number(destination).toString(16).padStart(2, '0').toUpperCase())
+}
+
 function followRun(run: SpectatorRun): void {
+  mapHistory.value = []
   runID.value = run.run_id
   followAgent.value = false
   initialRunCentered = true
@@ -155,6 +170,7 @@ function followRun(run: SpectatorRun): void {
 }
 
 function jumpToAgent(): void {
+  mapHistory.value = []
   const run = selectedRun.value
   if (!run || !Number.isFinite(Number(run.map))) return
   chooseMap(Number(run.map), true)
@@ -477,7 +493,7 @@ async function copyLink(): Promise<void> {
           <div v-if="mapAsset?.warps?.length" class="mt-2 max-h-80 space-y-1 overflow-auto pr-1">
             <button v-for="(warp, index) in mapAsset.warps" :key="warp.x + '-' + warp.y + '-' + index" type="button" class="flex w-full items-center justify-between gap-2 rounded bg-black/15 px-2 py-1.5 text-left ring-1 ring-white/7 hover:bg-white/5" @click="followWarp(warp.dest)">
               <span class="font-mono text-[10px] text-slate-400">{{ warp.x }},{{ warp.y }}</span>
-              <span class="min-w-0 truncate text-right text-[10px] text-purple-200">→ {{ mapEntry(warp.dest)?.label || ('0x' + Number(warp.dest).toString(16).padStart(2, '0').toUpperCase()) }}</span>
+              <span class="min-w-0 truncate text-right text-[10px] text-purple-200">{{ Number(warp.dest) === 0xff ? '↩' : '→' }} {{ warpDestinationLabel(warp.dest) }}</span>
             </button>
           </div>
           <p v-else class="mt-2 text-[10px] text-slate-600">No warps exported for this map.</p>
