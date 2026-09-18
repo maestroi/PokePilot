@@ -220,6 +220,17 @@ func (c *modelExperimentController) deployment(id string) (farm.ModelDeployment,
 	return c.registry.Deployment(id)
 }
 
+func (c *modelExperimentController) defaultDeployment() (farm.ModelDeployment, bool) {
+	deployments := c.enabledDeployments()
+	if len(deployments) == 0 {
+		return farm.ModelDeployment{}, false
+	}
+	// EnabledDeployments sorts the explicit registry default first. When an
+	// older registry has no default marker, preserving the first enabled
+	// deployment keeps the previous operator behavior deterministic.
+	return deployments[0], true
+}
+
 func (c *modelExperimentController) liveParallelLimit(id string) int {
 	if d, ok := c.deployment(id); ok {
 		return d.ParallelLimit()
@@ -252,11 +263,18 @@ func (c *modelExperimentController) handleSpec(w http.ResponseWriter, r *http.Re
 		return
 	}
 	deployment, _ := raw["llm_deployment"].(string)
-	if strings.TrimSpace(deployment) == "" {
+	deployment = strings.TrimSpace(deployment)
+	if deployment == "" && strings.EqualFold(strings.TrimSpace(stringValue(raw["planner"])), "llm") {
+		if preferred, ok := c.defaultDeployment(); ok {
+			deployment = preferred.ID
+			raw["llm_deployment"] = deployment
+		}
+	}
+	if deployment == "" {
 		c.forwardBody(w, r, body)
 		return
 	}
-	meta, err := c.resolveRunMeta(raw, strings.TrimSpace(deployment), "", "", "")
+	meta, err := c.resolveRunMeta(raw, deployment, "", "", "")
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
