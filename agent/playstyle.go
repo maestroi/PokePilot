@@ -312,29 +312,11 @@ func driveUrgency(obs Observation) map[Drive]float64 {
 	return u
 }
 
-const optionalProgressionIntent = "optional_progression"
-
 // AnnotatePlayStyle adds compact, inspectable drive hints to the lines the LLM
-// already sees. Speedrun leaves scores/notes unchanged but may suppress
-// adapter-marked optional progression; typed prerequisite recovery consumes the
-// unfiltered objective menu before planner presentation.
-func filterOptionalSpeedrunProgression(offered []Objective, profile PlayStyleProfile) []Objective {
-	if profile.Name != "" && profile.Name != PlayStyleSpeedrun {
-		return offered
-	}
-	out := make([]Objective, 0, len(offered))
-	for _, objective := range offered {
-		if objective.Kind == KindProgress && objective.Intent == optionalProgressionIntent {
-			continue
-		}
-		out = append(out, objective)
-	}
-	return out
-}
-
+// already sees. Speedrun is an exact scoring/annotation no-op so old runs stay
+// byte-for-byte compatible until a non-Speedrun profile is explicitly selected.
 func AnnotatePlayStyle(obs Observation, offered []Objective, profile PlayStyleProfile) []Objective {
 	out := filterRepelForPlayStyle(obs, offered, profile)
-	out = filterOptionalSpeedrunProgression(out, profile)
 	if profile.Name == "" || profile.Name == PlayStyleSpeedrun {
 		return out
 	}
