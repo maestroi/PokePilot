@@ -109,7 +109,7 @@ func TestRedRoutePrerequisiteLinksCoverStoryGates(t *testing.T) {
 		badge    string
 	}{
 		{cap: "can_leave_viridian_north", progress: redProgressPokedexAcquired},
-		{cap: "can_leave_pewter_east", badge: state.BadgeBoulder.String()},
+		{cap: "can_leave_pewter_east", progress: redProgressBoulderBadge, badge: state.BadgeBoulder.String()},
 		{cap: "can_enter_saffron", progress: ProgressSaffronGateOpen},
 	} {
 		link, ok := redRoutePrerequisiteLink(tc.cap)
