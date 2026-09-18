@@ -116,7 +116,9 @@ export async function loadGen1TextureMap(mapID: number): Promise<Gen1TextureMap 
 export function drawGen1TextureMap(
   ctx: CanvasRenderingContext2D,
   texture: Gen1TextureMap,
-  fieldCellPixels: number
+  fieldCellPixels: number,
+  offsetX = 0,
+  offsetY = 0
 ): void {
   const destinationTileSize = fieldCellPixels / 2
   ctx.imageSmoothingEnabled = false
@@ -132,8 +134,8 @@ export function drawGen1TextureMap(
         sourceY,
         TILE_SIZE,
         TILE_SIZE,
-        x * destinationTileSize,
-        y * destinationTileSize,
+        offsetX + x * destinationTileSize,
+        offsetY + y * destinationTileSize,
         destinationTileSize,
         destinationTileSize
       )

@@ -53,3 +53,50 @@ test('render metadata stays aligned with the vendored decomp headers', () => {
   assert.equal(route1.sourceName, 'Route1')
   assert.equal(route1.tileset, 'OVERWORLD')
 })
+
+
+test('every stitched outdoor connection agrees with global placement', () => {
+  const atlasByID = new Map(atlasMaps.map((map) => [map.id, map] as const))
+
+  for (const source of atlasMaps) {
+    for (const connection of source.connections) {
+      const destination = atlasByID.get(connection.to)
+      if (!destination) continue
+
+      const delta = connection.offsetBlocks * 2
+      let expectedX = Number(source.x)
+      let expectedY = Number(source.y)
+      if (connection.direction === 'north') {
+        expectedX += delta
+        expectedY -= destination.height
+      } else if (connection.direction === 'south') {
+        expectedX += delta
+        expectedY += source.height
+      } else if (connection.direction === 'west') {
+        expectedX -= destination.width
+        expectedY += delta
+      } else {
+        expectedX += source.width
+        expectedY += delta
+      }
+
+      assert.equal(
+        Number(destination.x),
+        expectedX,
+        `${source.name} ${connection.direction} -> ${destination.name} has mismatched atlas x`
+      )
+      assert.equal(
+        Number(destination.y),
+        expectedY,
+        `${source.name} ${connection.direction} -> ${destination.name} has mismatched atlas y`
+      )
+    }
+  }
+})
+
+test('every stitched atlas map has decomp render metadata', () => {
+  for (const map of atlasMaps) {
+    assert.ok(map.sourceName, `${map.name} is missing sourceName`)
+    assert.ok(map.tileset, `${map.name} is missing tileset`)
+  }
+})
