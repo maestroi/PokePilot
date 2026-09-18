@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -136,6 +137,15 @@ func (c *modelExperimentController) handleModels(w http.ResponseWriter, _ *http.
 	active := c.activeByDeployment()
 	for _, d := range deployments {
 		view := deploymentView{ModelDeployment: d, State: "ready", ActiveLeases: active[d.ID], Queued: queued[d.ID]}
+		if d.ControlURL == "" && d.DiscoverModel {
+			resolved, err := c.resolveDeploymentIdentity(d)
+			if err != nil {
+				view.State = "unavailable"
+				view.Error = err.Error()
+			} else {
+				view.ModelDeployment = resolved
+			}
+		}
 		if d.ControlURL != "" {
 			status, err := c.hostStatus(d)
 			if err != nil {
@@ -215,6 +225,19 @@ func (c *modelExperimentController) liveParallelLimit(id string) int {
 		return d.ParallelLimit()
 	}
 	return 1
+}
+
+// resolveDeploymentIdentity turns a dedicated OpenAI-compatible endpoint into
+// the immutable model identity copied onto a run. Managed switchable hosts are
+// already authoritative through ControlURL and must not be probed while a
+// different model may be loaded on the same endpoint.
+func (c *modelExperimentController) resolveDeploymentIdentity(d farm.ModelDeployment) (farm.ModelDeployment, error) {
+	if d.ControlURL != "" || !d.DiscoverModel {
+		return d, nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	return farm.ProbeOpenAIEndpoint(ctx, c.client, d)
 }
 
 func (c *modelExperimentController) handleSpec(w http.ResponseWriter, r *http.Request) {
@@ -425,6 +448,9 @@ func (c *modelExperimentController) bindingForRun(runID, deployment string) (run
 		return runExperimentMeta{}, false
 	}
 	if d, ok := c.deployment(deployment); ok {
+		if resolved, err := c.resolveDeploymentIdentity(d); err == nil {
+			d = resolved
+		}
 		c.wall.mu.Lock()
 		expID, expArm, expCase := "", "", ""
 		if tile := c.wall.tiles[runID]; tile != nil {
@@ -977,6 +1003,11 @@ func (c *modelExperimentController) resolveRunMeta(raw map[string]any, deploymen
 	d, ok := c.deployment(deployment)
 	if !ok || !d.Enabled {
 		return runExperimentMeta{}, fmt.Errorf("deployment %q is unavailable", deployment)
+	}
+	if resolved, err := c.resolveDeploymentIdentity(d); err != nil {
+		return runExperimentMeta{}, fmt.Errorf("deployment %q discovery: %w", deployment, err)
+	} else {
+		d = resolved
 	}
 	runID, _ := raw["run_id"].(string)
 	if strings.TrimSpace(runID) == "" {
