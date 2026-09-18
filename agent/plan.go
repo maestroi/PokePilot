@@ -310,18 +310,26 @@ func (r *runPlanning) choose(log io.Writer, round int, p Planner, obs Observatio
 			}
 			plan, err, retries := strategizeWithRetries(log, round, sp, obs, offered, reason)
 			if err != nil {
-				if !errors.Is(err, ErrPlanStepUnresolved) {
+				if !errors.Is(err, ErrPlanStepUnresolved) && !IsLengthTruncation(err) {
 					return Objective{}, false, err, retries
 				}
-				// The strategist itself is fine — every re-ask above quoted
-				// the actual offered menu back at it — but it kept naming
-				// something not on it (stale, invented, or a formatting
-				// near-miss Chosen couldn't recover) until the retry budget
-				// ran out. That is a round-scoped failure, not a run one:
-				// fall back to the single-objective chooser, which asks a
-				// far more constrained question (pick one menu index) that
-				// this failure mode does not reach. The strategist gets
-				// another chance next round; r.pending is untouched.
+				// Two round-scoped failures degrade instead of killing the
+				// run: the strategist named something not on this round's
+				// menu (ErrPlanStepUnresolved — stale, invented, or a
+				// near-miss Chosen couldn't recover), or it kept getting cut
+				// off mid-reply (IsLengthTruncation — a reasoning-heavy
+				// escalation, e.g. a recovery replan, ate the whole
+				// completion budget before emitting the closing JSON; doubling
+				// the budget on retry did not catch up). MEASURED on
+				// run-1pkm1en1hog5a0: blackout recovery escalated reasoning
+				// effort, every retry hit finish_reason "length", and because
+				// only ErrPlanStepUnresolved fell back, the run re-entered the
+				// same expensive strategist call every round forever instead
+				// of degrading. Either way the single-objective chooser asks
+				// a far cheaper, more constrained question (pick one menu
+				// index, no thinking) that this failure mode does not reach.
+				// The strategist gets another chance next round; r.pending is
+				// untouched.
 				if log != nil {
 					fmt.Fprintf(log, "round %d: strategist exhausted retries (%v); falling back to the single-objective planner for this round\n", round, err)
 				}
