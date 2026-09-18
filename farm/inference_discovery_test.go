@@ -69,7 +69,6 @@ func TestProbeOpenAIEndpointRequiresSelectionForMultiModelDiscovery(t *testing.T
 	}
 }
 
-
 func TestProbeOpenAIEndpointPreservesLogicalModelBehindAlias(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
@@ -94,7 +93,6 @@ func TestProbeOpenAIEndpointPreservesLogicalModelBehindAlias(t *testing.T) {
 		t.Fatalf("alias discovery cleared valid metadata: %#v", got)
 	}
 }
-
 
 func TestProbeOpenAIEndpointUsesEndpointTokenEnvironment(t *testing.T) {
 	t.Setenv("CLOUD_INFERENCE_TOKEN", "top-secret")
