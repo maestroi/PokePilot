@@ -57,12 +57,12 @@ const (
 
 	// Persistent/story state. Yellow's main-data block is shifted one byte
 	// earlier than Red in this region.
-	StatusFlags1   uint16 = 0xD727 // wStatusFlags1
-	StatusFlags4   uint16 = 0xD72D // wStatusFlags4
-	Elite4Flags    uint16 = 0xD733 // wElite4Flags
-	EventFlags     uint16 = 0xD746 // wEventFlags
-	RivalStarter   uint16 = 0xD714 // wRivalStarter: 1=Jolteon, 2=Flareon, 3=Vaporeon path
-	PlayerStarter  uint16 = 0xD716 // wPlayerStarter
+	StatusFlags1    uint16 = 0xD727 // wStatusFlags1
+	StatusFlags4    uint16 = 0xD72D // wStatusFlags4
+	Elite4Flags     uint16 = 0xD733 // wElite4Flags
+	EventFlags      uint16 = 0xD746 // wEventFlags
+	RivalStarter    uint16 = 0xD714 // wRivalStarter: 1=Jolteon, 2=Flareon, 3=Vaporeon path
+	PlayerStarter   uint16 = 0xD716 // wPlayerStarter
 	LastBlackoutMap uint16 = 0xD718 // wLastBlackoutMap
 
 	// Yellow-only Pikachu state.
