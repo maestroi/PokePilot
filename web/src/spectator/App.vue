@@ -67,9 +67,13 @@ const selectedRun = computed(() => preferredRun(
   runs.value,
   selectionPinned.value ? selectedRunID.value : ''
 ))
-const liveRunID = computed(() => isLiveRun(selectedRun.value) ? selectedRun.value?.run_id || '' : '')
-const frameEnabled = computed(() => Boolean(liveRunID.value))
-const { frameURL, state: frameState, error: frameError } = useFramePump(liveRunID, frameEnabled)
+const frameRunID = computed(() => {
+  const run = selectedRun.value
+  return run && (isLiveRun(run) || run.status === 'paused') ? run.run_id : ''
+})
+const frameEnabled = computed(() => Boolean(frameRunID.value))
+const frameContinuous = computed(() => isLiveRun(selectedRun.value))
+const { frameURL, state: frameState, error: frameError } = useFramePump(frameRunID, frameEnabled, 50, frameContinuous)
 const replayURL = computed(() => {
   const run = selectedRun.value
   return run?.status === 'done' && run.replay_ready ? spectatorReplayVideoURL(run.run_id) : ''
