@@ -4,8 +4,11 @@ import "testing"
 
 func TestYellowMapInventory(t *testing.T) {
 	ids := MapIDs()
-	if len(ids) != yellowPlayableMapCount || len(ids) != 227 {
-		t.Fatalf("playable map count = %d, want 227", len(ids))
+	if yellowPlayableMapCount != 227 {
+		t.Fatalf("generated playable map constant = %d, want 227", yellowPlayableMapCount)
+	}
+	if len(ids) != yellowPlayableMapCount {
+		t.Fatalf("playable map count = %d, want %d", len(ids), yellowPlayableMapCount)
 	}
 	for _, tc := range []struct {
 		id   uint8
