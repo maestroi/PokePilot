@@ -25,6 +25,7 @@ import (
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/qualification"
 	redrom "github.com/maestroi/pokepilot/red/rom"
+	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/skill"
 )
 
@@ -526,7 +527,7 @@ func runSilphSabrinaQualification(m *emu.Emu, romBytes []byte, policy skill.Move
 	if err != nil {
 		return fmt.Errorf("Sabrina: %w", err)
 	}
-	if outcome != 1 {
+	if outcome != state.ResultWon {
 		return fmt.Errorf("Sabrina outcome=%d, want won", outcome)
 	}
 	return nil
