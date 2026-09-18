@@ -266,7 +266,7 @@ export interface ExperimentList {
 export interface RunSpec {
   run_id: string
   seed: number
-  game: string
+  game?: string
   planner: string
   starter: string
   dest: string
