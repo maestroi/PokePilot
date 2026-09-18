@@ -14,12 +14,15 @@ const (
 	// one image every three emulator frames makes that 20 fps clock represent
 	// native game time instead of whatever wall-clock speed the worker happens
 	// to execute at.
+	liveSpectatorFPS         = 20
 	liveSpectatorFrameStride = uint64(3)
 
-	// Keep at most one second of display frames. When a flat-out worker gets
-	// farther ahead, dropping the oldest buffered images keeps spectators near
-	// live instead of letting latency grow without bound.
-	liveSpectatorBufferSize = 20
+	// Flat-out execution happens in short bursts between planner calls. Keep a
+	// generous native-time playback window so spectators can watch those bursts
+	// smoothly while the planner is thinking instead of immediately jumping to
+	// the worker's newest position.
+	liveSpectatorBufferSeconds = 12
+	liveSpectatorBufferSize    = liveSpectatorFPS * liveSpectatorBufferSeconds
 )
 
 // frameSpectator is the tiny surface Emu needs from its read-only screen
@@ -39,11 +42,13 @@ type liveFrameQueue struct {
 	mu sync.Mutex
 
 	capacity int
-	frames   []liveFrame
-	last     liveFrame
-	haveLast bool
-	newest   uint64
-	haveNew  bool
+	frames      []liveFrame
+	pending     liveFrame
+	havePending bool
+	last        liveFrame
+	haveLast    bool
+	newest      uint64
+	haveNew     bool
 }
 
 func newLiveFrameQueue(capacity int) *liveFrameQueue {
@@ -65,6 +70,8 @@ func (q *liveFrameQueue) push(frame uint64, png []byte) {
 	// not leak into the new run.
 	if q.haveNew && frame < q.newest {
 		q.frames = q.frames[:0]
+		q.pending = liveFrame{}
+		q.havePending = false
 		q.last = liveFrame{}
 		q.haveLast = false
 		q.haveNew = false
@@ -73,14 +80,25 @@ func (q *liveFrameQueue) push(frame uint64, png []byte) {
 		return
 	}
 
-	q.frames = append(q.frames, liveFrame{frame: frame, png: png})
+	next := liveFrame{frame: frame, png: png}
 	q.newest = frame
 	q.haveNew = true
-	if len(q.frames) > q.capacity {
-		drop := len(q.frames) - q.capacity
-		copy(q.frames, q.frames[drop:])
-		q.frames = q.frames[:q.capacity]
+
+	// Once the playback window fills, preserve the contiguous frames already
+	// queued. Replacing their oldest entries on every producer push made MAX
+	// speed look like constant teleporting. Collapse the entire overflow into
+	// one newest pending frame instead; the viewer gets a smooth segment and,
+	// only if it truly cannot keep up, one explicit resync jump afterwards.
+	if q.havePending {
+		q.pending = next
+		return
 	}
+	if len(q.frames) >= q.capacity {
+		q.pending = next
+		q.havePending = true
+		return
+	}
+	q.frames = append(q.frames, next)
 }
 
 func (q *liveFrameQueue) next() (liveFrame, bool) {
@@ -95,6 +113,14 @@ func (q *liveFrameQueue) next() (liveFrame, bool) {
 		q.haveLast = true
 		return frame, true
 	}
+	if q.havePending {
+		frame := q.pending
+		q.pending = liveFrame{}
+		q.havePending = false
+		q.last = frame
+		q.haveLast = true
+		return frame, true
+	}
 	if q.haveLast {
 		return q.last, true
 	}
@@ -105,6 +131,9 @@ func (q *liveFrameQueue) latest() (liveFrame, bool) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
+	if q.havePending {
+		return q.pending, true
+	}
 	if n := len(q.frames); n > 0 {
 		return q.frames[n-1], true
 	}
