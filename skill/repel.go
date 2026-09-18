@@ -84,6 +84,13 @@ func UseRepel(m *emu.Emu, item uint8) error {
 		return fmt.Errorf("skill: UseRepel: effect did not load %d steps: now=%d screen=%q",
 			duration, mem.U8(sym.RepelRemainingSteps), state.ScreenText(&mem))
 	}
+	// The counter is written immediately before the ROM enters the generic
+	// item-success path. Let the owned USE/TOSS surface disappear before
+	// treating any later two-option prompt as unexpected gameplay.
+	_, _ = m.StepUntil(useTossBudget, func(m *emu.Emu) bool {
+		state.Snapshot(m, &mem)
+		return useTossPrompt(&mem) == nil
+	})
 
 	// Repel's success message is dialogue, followed by the bag/start-menu
 	// stack. This verb owns that known result text, so page it with B while
