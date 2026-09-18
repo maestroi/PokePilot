@@ -18,12 +18,24 @@ type checkpointRing struct {
 }
 
 func (c *checkpointRing) write(m *emu.Emu, round int, obj Objective, k *Knowledge, coverage *coverageTracker, intent string, intentAge int, plans ...Plan) error {
+	return c.writeNamed(m, round, checkpointSlug(obj), k, coverage, intent, intentAge, plans...)
+}
+
+// writeBoundary captures a safe between-objective state with the agent memory
+// that describes that exact emulator state. Cooperative cancellation happens
+// only at this boundary, so pause/resume can continue without rewinding to the
+// checkpoint taken before the previous objective ran.
+func (c *checkpointRing) writeBoundary(m *emu.Emu, round int, name string, k *Knowledge, coverage *coverageTracker, intent string, intentAge int, plans ...Plan) error {
+	return c.writeNamed(m, round, slugify(name), k, coverage, intent, intentAge, plans...)
+}
+
+func (c *checkpointRing) writeNamed(m *emu.Emu, round int, name string, k *Knowledge, coverage *coverageTracker, intent string, intentAge int, plans ...Plan) error {
 	b, err := m.SaveState()
 	if err != nil {
 		return fmt.Errorf("SaveState: %w", err)
 	}
 	path := filepath.Join(c.dir, fmt.Sprintf("round-%03d-frame-%010d-%s.state",
-		round, m.FrameCount(), checkpointSlug(obj)))
+		round, m.FrameCount(), name))
 	if err := os.WriteFile(path, b, 0o644); err != nil {
 		return fmt.Errorf("write %s: %w", path, err)
 	}
