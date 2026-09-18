@@ -19,6 +19,7 @@ import (
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/farm"
 	"github.com/maestroi/pokepilot/game"
+	"github.com/maestroi/pokepilot/profiles"
 	redprofile "github.com/maestroi/pokepilot/red/profile"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
@@ -375,6 +376,14 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 		return
 	}
 
+	profile, _, err := profiles.Detect(m.ROM())
+	if err != nil {
+		detail := fmt.Sprintf("detect active game profile: %v", err)
+		log.Printf("farm: %s: %s", spec.RunID, detail)
+		finishRun(m, client, spec, "error", detail, burn, checkpointDir, nil, nil)
+		return
+	}
+
 	m.Pace(fps)
 	m.TraceHeader(runHeader(planner, starter, dest, seed, burn))
 
@@ -391,10 +400,12 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 	// tracer plus the heartbeat snapshot, sharing one hoisted Mem buffer.
 	trail := &heartbeatTrail{}
 	m.OnSample(func(m *emu.Emu) {
-		tracer.sample(m)
-		sampleHeartbeat(m, spec.RunID, snap, mem, addrs, trail)
+		if profile.Features().Has(game.FeatureBattles) {
+			tracer.sample(m)
+		}
+		sampleHeartbeat(m, profile, spec.RunID, snap, mem, addrs, trail)
 	})
-	sampleHeartbeat(m, spec.RunID, snap, mem, addrs, trail) // synchronous initial sample
+	sampleHeartbeat(m, profile, spec.RunID, snap, mem, addrs, trail) // synchronous initial sample
 
 	var samples chan periodicSample
 	var stopUploader chan struct{}
@@ -429,7 +440,7 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 	// immediately, before OnSample happens to refresh the periodic snapshot.
 	// Sample the settled emulator state explicitly so badges/player/stats agree
 	// with the terminal result that is about to be reported.
-	sampleHeartbeat(m, spec.RunID, snap, mem, addrs, trail)
+	sampleHeartbeat(m, profile, spec.RunID, snap, mem, addrs, trail)
 
 	// Stop and join the periodic heartbeat first, then publish exactly one
 	// settled snapshot while the run is still active on the wall. Finish comes
@@ -454,6 +465,20 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 func livePlayer(m *emu.Emu, mem *state.Mem) *farm.Player {
 	g := state.Read(m, mem)
 	return playerSnapshot(g, state.DecodeStoryFacts(mem, g.Inventory))
+}
+
+func profilePlayerSnapshot(obs game.ProfileObservation) *farm.Player {
+	p := &farm.Player{
+		Money:  obs.Money,
+		Badges: append([]string(nil), obs.Badges...),
+		Party:  make([]farm.PartyMon, 0, len(obs.Party)),
+	}
+	for _, mon := range obs.Party {
+		p.Party = append(p.Party, farm.PartyMon{
+			Name: string(mon.Species), Level: mon.Level, HP: mon.HP, MaxHP: mon.MaxHP, Status: mon.Status,
+		})
+	}
+	return p
 }
 
 func playerSnapshot(g state.GameState, facts state.StoryFacts) *farm.Player {
@@ -498,28 +523,43 @@ func playerSnapshot(g state.GameState, facts state.StoryFacts) *farm.Player {
 	return p
 }
 
-func sampleHeartbeat(m *emu.Emu, runID string, snap *heartbeatSnap, mem *state.Mem, addrs []string, trail *heartbeatTrail) {
-	g := state.Read(m, mem)
+func sampleHeartbeat(m *emu.Emu, profile game.GameProfile, runID string, snap *heartbeatSnap, mem *state.Mem, addrs []string, trail *heartbeatTrail) {
+	base, err := profile.DecodeObservation(m, m.ROM())
+	if err != nil || base.NativeMapID > 0xff {
+		return
+	}
+
+	player := profilePlayerSnapshot(base)
+	// Fully migrated Red/Blue profiles still expose the richer inventory/Dex
+	// heartbeat while partial profiles (currently Yellow) stay on semantic
+	// profile data rather than being decoded through Red WRAM offsets.
+	if profile.Features().Has(game.FeatureInventory) {
+		g := state.Read(m, mem)
+		player = playerSnapshot(g, state.DecodeStoryFacts(mem, g.Inventory))
+	}
+
 	hb := farm.Heartbeat{
 		RunID:       runID,
 		Frame:       m.FrameCount(),
-		Map:         g.Player.MapID,
-		X:           g.Player.X,
-		Y:           g.Player.Y,
+		Map:         uint8(base.NativeMapID),
+		X:           base.X,
+		Y:           base.Y,
 		WorkerAddrs: addrs,
-		Trail:       trail.add(g.Player.MapID, g.Player.X, g.Player.Y),
-		Player:      playerSnapshot(g, state.DecodeStoryFacts(mem, g.Inventory)),
+		Trail:       trail.add(uint8(base.NativeMapID), base.X, base.Y),
+		Player:      player,
 	}
-	for _, sp := range state.DecodeSprites(mem) {
-		if sp.X < 0 || sp.Y < 0 || sp.X > 255 || sp.Y > 255 {
-			continue
+	// Sprite telemetry has not yet moved into ProfileObservation. Only profiles
+	// advertising the existing trainer/map-object runtime use the legacy decoder.
+	if profile.Features().Has(game.FeatureTrainerFlags) {
+		state.Snapshot(m, mem)
+		for _, sp := range state.DecodeSprites(mem) {
+			if sp.X < 0 || sp.Y < 0 || sp.X > 255 || sp.Y > 255 {
+				continue
+			}
+			hb.Sprites = append(hb.Sprites, farm.MapSprite{
+				X: uint8(sp.X), Y: uint8(sp.Y), PictureID: sp.PictureID, Slot: uint8(sp.Slot),
+			})
 		}
-		hb.Sprites = append(hb.Sprites, farm.MapSprite{
-			X:         uint8(sp.X),
-			Y:         uint8(sp.Y),
-			PictureID: sp.PictureID,
-			Slot:      uint8(sp.Slot),
-		})
 	}
 	if tail := m.TraceTail(1); len(tail) > 0 {
 		hb.Trace = tail[len(tail)-1]
