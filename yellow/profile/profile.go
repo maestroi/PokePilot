@@ -92,8 +92,9 @@ func (*Profile) DecodeObservation(reader game.MemoryReader, _ []byte) (game.Prof
 		// inventory and story decoding for later Yellow phases.
 		Controllable: yellowControllable(reader),
 		InBattle:     reader.Peek8(sym.IsInBattle) != 0,
-		Party:        []game.ProfilePartyMon{},
-		Badges:       []string{},
+		Party:        gen1.DecodeParty(reader, yellowRAMLayout),
+		Badges:       gen1.DecodeBadges(reader, yellowRAMLayout),
+		Money:        gen1.DecodeMoney(reader, yellowRAMLayout),
 		Events:       []string{},
 		Story:        game.ProgressState{},
 	}, nil
