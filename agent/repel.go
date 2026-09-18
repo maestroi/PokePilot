@@ -67,6 +67,9 @@ func (repelObjectiveProvider) Provide(ctx *objectiveOfferContext) objectiveProvi
 }
 
 func filterRepelForPlayStyle(obs Observation, offered []Objective, profile PlayStyleProfile) []Objective {
+	if profile.Name == "" {
+		return append([]Objective(nil), offered...)
+	}
 	if profile.Name == PlayStyleSpeedrun {
 		out := append([]Objective(nil), offered...)
 		if strings.Contains(strings.ToUpper(obs.MapName), "SAFARI") {
