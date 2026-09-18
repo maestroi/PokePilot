@@ -1,8 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
-  DEFAULT_ARM_A,
-  DEFAULT_ARM_B,
   defaultExperimentArms,
   deploymentOptionLabel,
   deploymentSelectable,
@@ -35,19 +33,27 @@ test('busy failed and unavailable deployments are not immediately selectable', (
 
 test('preferred deployment keeps a selectable choice and falls back', () => {
   const rows = [
-    deployment({ id: DEFAULT_ARM_A, state: 'busy', compute: 'RX 7900 XTX', model_id: 'qwen3.8-27b' }),
-    deployment({ id: DEFAULT_ARM_B, state: 'ready', compute: 'RTX 4090', model_id: 'qwen3.5-4b' })
+    deployment({ id: 'farm-7900', state: 'busy', compute: 'RX 7900 XTX', model_id: 'qwen3.5-9b', default: true }),
+    deployment({ id: 'coding-4090', state: 'ready', compute: 'RTX 4090', model_id: 'qwen3.5-4b' })
   ]
-  assert.equal(preferredDeployment(rows, DEFAULT_ARM_A), DEFAULT_ARM_B)
+  assert.equal(preferredDeployment(rows, 'farm-7900'), 'coding-4090')
   assert.match(deploymentOptionLabel(rows[0]), /busy/)
 })
 
-test('Brock defaults pick 27B on 7900 against 4B on 4090', () => {
+test('experiment defaults follow registry default and prefer a different compute for B', () => {
   const [a, b] = defaultExperimentArms([
     deployment({ id: 'cpu', label: 'CPU', model_id: 'qwen3.5-4b', compute: 'CPU' }),
-    deployment({ id: DEFAULT_ARM_B, label: 'Qwen 3.5 4B · RTX 4090', model_id: 'qwen3.5-4b', compute: 'RTX 4090' }),
-    deployment({ id: DEFAULT_ARM_A, label: 'Qwen 3.8 27B · 7900 XTX', model_id: 'qwen3.8-27b', compute: 'RX 7900 XTX' })
+    deployment({ id: 'coding-4090', label: 'Qwen 3.5 4B · RTX 4090', model_id: 'qwen3.5-4b', compute: 'RTX 4090' }),
+    deployment({ id: 'farm-7900', label: 'Farm · RX 7900 XTX', model_id: 'qwen3.5-9b', compute: 'RX 7900 XTX', default: true })
   ])
-  assert.equal(a, DEFAULT_ARM_A)
-  assert.equal(b, DEFAULT_ARM_B)
+  assert.equal(a, 'farm-7900')
+  assert.equal(b, 'cpu')
+})
+
+test('preferred deployment falls back to registry default without model-name heuristics', () => {
+  const rows = [
+    deployment({ id: 'other', compute: 'RTX 4090' }),
+    deployment({ id: 'farm', compute: 'RX 7900 XTX', default: true })
+  ]
+  assert.equal(preferredDeployment(rows, ''), 'farm')
 })
