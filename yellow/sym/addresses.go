@@ -50,6 +50,9 @@ const (
 	IsInBattle uint16 = 0xD056 // wIsInBattle
 
 	// Inventory/progress.
+	PokedexOwned   uint16 = 0xD2F6 // wPokedexOwned, 19 bytes
+	PokedexSeen    uint16 = 0xD309 // wPokedexSeen, 19 bytes
+	PokedexBytes          = 19
 	NumBagItems    uint16 = 0xD31C // wNumBagItems
 	BagItems       uint16 = 0xD31D // first item id in wBagItems
 	PlayerMoney    uint16 = 0xD346 // wPlayerMoney, 3-byte BCD
