@@ -1230,10 +1230,16 @@ func (w *Wall) triage() []triageGroup {
 }
 
 func issueLinkFor(t *Tile, links map[string]IssueLink) *IssueLink {
-	if t == nil || !t.Finished || (t.Reason != "error" && t.Reason != "lost") || t.Detail == "" {
+	if t == nil {
 		return nil
 	}
-	key, _ := failureIdentity(normalizeDetail(t.Detail))
+	key := strings.TrimSpace(t.CircuitKey)
+	if key == "" {
+		if !t.Finished || (t.Reason != "error" && t.Reason != "lost") || t.Detail == "" {
+			return nil
+		}
+		key, _ = failureIdentity(normalizeDetail(t.Detail))
+	}
 	link, ok := links[key]
 	if !ok || link.IssueID == "" {
 		return nil
