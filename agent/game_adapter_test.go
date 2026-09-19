@@ -190,6 +190,9 @@ func TestObjectiveRuntimePreservesAdapterBlockedOutcome(t *testing.T) {
 	if got.Outcome != OutcomeBlocked {
 		t.Fatalf("Outcome = %q, want blocked", got.Outcome)
 	}
+	if got.Failure == nil || got.Failure.Class != gameruntime.FailureClassBlocked || !got.Failure.Recoverable {
+		t.Fatalf("Failure = %+v, want recoverable blocked failure", got.Failure)
+	}
 	if got.Final.MapName != "ROOM_B" {
 		t.Fatalf("Final = %+v, want transaction-owned ROOM_B observation", got.Final)
 	}
