@@ -209,7 +209,13 @@ func (w *Wall) reportObjectiveFailure(dump farm.FinishReport, f farm.ObjectiveFa
 	existing := w.outbox[ext]
 	prior := w.issueLinks[key]
 	w.mu.Unlock()
-	if existing.Status == outboxComplete || existing.Status == outboxQuarantined {
+	// A terminal outbox row is only authoritative while the canonical issue
+	// binding still exists. Sink migrations can legitimately detach issueLinks
+	// while leaving old complete/quarantined occurrence rows behind; treating
+	// those rows as delivered forever strands the durable failure group with no
+	// GitHub issue. Re-delivery is safe because the issue adapter deduplicates by
+	// fingerprint/external id.
+	if prior.IssueID != "" && (existing.Status == outboxComplete || existing.Status == outboxQuarantined) {
 		return nil
 	}
 
