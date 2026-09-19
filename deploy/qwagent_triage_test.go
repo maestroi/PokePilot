@@ -185,7 +185,8 @@ func TestScriptHasDryRunAndLock(t *testing.T) {
 			t.Errorf("script missing %q", want)
 		}
 	}
-	if !strings.Contains(s, "--\n\t\"Follow the attached farm triage packet") &&
+	if !strings.Contains(s, "-- \\\n\t\t\"Follow the attached farm triage packet") &&
+		!strings.Contains(s, "--\n\t\"Follow the attached farm triage packet") &&
 		!strings.Contains(s, "--\n\"Follow the attached farm triage packet") {
 		t.Error("opencode --file is an array flag; the prompt message must come after --")
 	}
