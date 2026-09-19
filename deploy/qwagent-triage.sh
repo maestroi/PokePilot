@@ -16,7 +16,7 @@ if [ -f "$ENV_FILE" ]; then
 	set +a
 fi
 
-POKEPILOT_WALL=${POKEPILOT_WALL:-https://admin.rompilot.app}
+POKEPILOT_MCP_URL=${POKEPILOT_MCP_URL:-https://admin.rompilot.app/mcp}
 POKEPILOT_TRIAGE_STATE=${POKEPILOT_TRIAGE_STATE:-$HOME/.local/share/pokepilot/qwagent-triage}
 POKEPILOT_TRIAGE_TREE=${POKEPILOT_TRIAGE_TREE:-$HOME/Documents/projects/PokePilot-qwagent-triage}
 PROMPT=${POKEPILOT_TRIAGE_PROMPT:-$SCRIPT_DIR/qwagent-triage.prompt.md}
@@ -134,11 +134,39 @@ gh_repo() {
 	esac
 }
 
+triage_bin() {
+	local bin="$POKEPILOT_TRIAGE_STATE/qwagent-triage"
+	# go run rewrites a child exit 2 into its own exit 1; build so idle stays 2.
+	(cd "$POKEPILOT_ROOT" && go build -o "$bin" ./cmd/qwagent-triage)
+	printf '%s' "$bin"
+}
+
+seed_rom() {
+	local src=""
+	if [ -n "${POKEMON_RED_ROM:-}" ] && [ -f "$POKEMON_RED_ROM" ]; then
+		src=$POKEMON_RED_ROM
+	elif [ -f "$HOME/.config/pokepilot/pokemon_red.gb" ]; then
+		src=$HOME/.config/pokepilot/pokemon_red.gb
+	elif [ -f "$POKEPILOT_ROOT/roms/pokemon_red.gb" ]; then
+		src=$POKEPILOT_ROOT/roms/pokemon_red.gb
+	else
+		log "no pokemon_red.gb found for the worktree"
+		return 0
+	fi
+	mkdir -p "$POKEPILOT_TRIAGE_TREE/roms"
+	ln -sfn "$src" "$POKEPILOT_TRIAGE_TREE/roms/pokemon_red.gb"
+	if ! grep -qxF 'roms/pokemon_red.gb' "$POKEPILOT_TRIAGE_TREE/.git/info/exclude" 2>/dev/null; then
+		printf '%s\n' 'roms/pokemon_red.gb' >>"$POKEPILOT_TRIAGE_TREE/.git/info/exclude"
+	fi
+	export POKEMON_RED_ROM="$POKEPILOT_TRIAGE_TREE/roms/pokemon_red.gb"
+}
+
 pick_next() {
 	local triage titles merged_prs pick_args status bin
 	local triage_file merged_file candidates ancestry_ready
-	if ! triage=$(curl -fsS -H "Authorization: Bearer ${POKEPILOT_MCP_TOKEN}" "${POKEPILOT_WALL}/v1/triage"); then
-		log "wall unreachable; skip"
+	bin=$(triage_bin)
+	if ! triage=$("$bin" fetch-triage --endpoint "$POKEPILOT_MCP_URL"); then
+		log "MCP triage unreachable; skip"
 		return 2
 	fi
 	titles=$(gh pr list --repo "$(gh_repo)" --state open --limit 100 --json title --jq '.[].title' 2>/dev/null || true)
@@ -209,8 +237,7 @@ PY
 			continue
 		fi
 		local debug runner_version
-		if ! debug=$(curl -fsS -H "Authorization: Bearer ${POKEPILOT_MCP_TOKEN}" \
-			"${POKEPILOT_WALL}/v1/runs/${run_id}/debug"); then
+		if ! debug=$("$bin" fetch-debug --endpoint "$POKEPILOT_MCP_URL" --run-id "$run_id"); then
 			log "cannot read representative run $run_id for $key; keep merged repair suppressed"
 			pick_args+=(--repaired "$key")
 			continue
@@ -229,9 +256,6 @@ PY
 		fi
 	done <<<"$candidates"
 
-	# go run rewrites a child exit 2 into its own exit 1; build so idle stays 2.
-	bin="$POKEPILOT_TRIAGE_STATE/qwagent-triage"
-	(cd "$POKEPILOT_ROOT" && go build -o "$bin" ./cmd/qwagent-triage)
 	set +e
 	PICK_JSON=$(printf '%s' "$triage" | "$bin" "${pick_args[@]}")
 	status=$?
@@ -277,19 +301,13 @@ log "claiming $KEY ($EXAMPLE) run=$RUN_ID"
 # Investigate is a best-effort claim. Auto-filed issues are often already
 # investigating, and the orchestrator then 409s (the wall currently maps
 # that to 502). An open PR is the durable skip; do not abort the local agent.
-invest_body=$(mktemp)
 set +e
-invest_code=$(curl -sS -o "$invest_body" -w '%{http_code}' -X POST \
-	-H "Authorization: Bearer ${POKEPILOT_MCP_TOKEN}" \
-	"${POKEPILOT_WALL}/v1/triage/${KEY}/investigate")
+invest_out=$("$POKEPILOT_TRIAGE_STATE/qwagent-triage" investigate --endpoint "$POKEPILOT_MCP_URL" --key "$KEY" 2>&1)
+invest_status=$?
 set -e
-case "$invest_code" in
-200 | 201 | 202 | 409) ;;
-*)
-	log "investigate HTTP ${invest_code:-err}: $(tr '\n' ' ' <"$invest_body"); continuing locally"
-	;;
-esac
-rm -f "$invest_body"
+if [ "$invest_status" -ne 0 ]; then
+	log "investigate failed: $(printf '%s' "$invest_out" | tr '\n' ' '); continuing locally"
+fi
 
 if [ ! -d "$POKEPILOT_TRIAGE_TREE/.git" ]; then
 	mkdir -p "$(dirname "$POKEPILOT_TRIAGE_TREE")"
@@ -301,6 +319,7 @@ git -C "$POKEPILOT_TRIAGE_TREE" fetch origin
 git -C "$POKEPILOT_TRIAGE_TREE" checkout main
 git -C "$POKEPILOT_TRIAGE_TREE" reset --hard origin/main
 git -C "$POKEPILOT_TRIAGE_TREE" clean -fd
+seed_rom
 
 printf '%s\n' "$PICK_JSON" >"$POKEPILOT_TRIAGE_STATE/packet.json"
 {
