@@ -9,10 +9,10 @@ func TestNormalizeRedOwnedExecutionResultUseItemFallback(t *testing.T) {
 	controllerErr := errors.New("item-use menu did not appear")
 
 	tests := []struct {
-		name    string
-		obj     Objective
-		result  ObjectiveResult
-		want    Outcome
+		name   string
+		obj    Objective
+		result ObjectiveResult
+		want   Outcome
 	}{
 		{
 			name: "unclassified use item becomes blocked",
