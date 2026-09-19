@@ -240,7 +240,7 @@ func warpTestROM(t *testing.T) []byte {
 	t.Helper()
 	data, err := os.ReadFile(os.Getenv("POKEMON_RED_ROM"))
 	if err != nil {
-		t.Fatal(err)
+		t.Skipf("POKEMON_RED_ROM not set: %v", err)
 	}
 	return data
 }
