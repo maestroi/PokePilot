@@ -3,10 +3,10 @@
 You are running unattended in a dedicated worktree. The shell already
 chose the failure. Do not call pokepilot_get_triage to pick another one.
 
-First load the native OpenCode skill `pokefarm-triage` with the `skill` tool.
-OpenCode discovers it from `.claude/skills/pokefarm-triage/SKILL.md`. If the
-skill tool is unavailable, read that file directly instead. Then read and
-follow `docs/ARCHITECTURE.md`.
+First load the repository triage instructions from
+`.claude/skills/pokefarm-triage/SKILL.md`. If your agent runtime exposes a
+native skill tool, you may load `pokefarm-triage` through that tool instead.
+Then read and follow `docs/ARCHITECTURE.md`.
 
 The packet JSON is attached. Use its `key`, `run_id`, and `example`. When
 `issue_number` is present, it is the generated GitHub farm issue linked to this
