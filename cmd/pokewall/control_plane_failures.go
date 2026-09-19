@@ -74,7 +74,18 @@ type pendingObjectiveFailure struct {
 }
 
 func (cp *controlPlane) pendingObjectiveFailures(limit int) ([]pendingObjectiveFailure, error) {
-	rows, err := cp.db.Query(`SELECT run_id,attempt,failure_key,failure_json,report_json FROM objective_failures WHERE delivery_status='pending' ORDER BY updated_at LIMIT $1`, limit)
+	rows, err := cp.db.Query(`
+SELECT f.run_id,f.attempt,f.failure_key,f.failure_json,f.report_json
+FROM objective_failures f
+LEFT JOIN issue_links l ON l.failure_key=f.failure_key AND l.issue_id<>''
+WHERE f.delivery_status='pending'
+   OR (
+        f.delivery_status='complete'
+        AND (f.blocking=TRUE OR f.terminal_count>0)
+        AND l.failure_key IS NULL
+      )
+ORDER BY f.updated_at
+LIMIT $1`, limit)
 	if err != nil {
 		return nil, err
 	}
