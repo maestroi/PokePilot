@@ -44,3 +44,17 @@ func TestYellowDexGoalDoesNotAssumeRed151Target(t *testing.T) {
 		t.Fatalf("Yellow Dex goal used fixed target instead of catalog: %+v", status)
 	}
 }
+
+
+func TestYellowReachGoalUsesSemanticLocation(t *testing.T) {
+	obs := Observation{
+		GameID:   yellowprofile.GameID,
+		Location: "summer beach house",
+		MapName:  "SUMMER_BEACH_HOUSE",
+		Map:      0xf8,
+	}
+	status := EvaluateGoal(Goal{Kind: GoalReach, Target: "summer beach house"}, obs)
+	if !status.Complete {
+		t.Fatalf("Yellow semantic reach goal = %+v", status)
+	}
+}
