@@ -43,7 +43,9 @@ selects a first-class **deployment** instead of a legacy LLM profile. Each
 deployment copies immutable inference identity onto the run. Switchable hosts
 are owned by `pokemodelhost`; the wall waits until that host reports `ready`
 before handing a runner lease, and it will not switch models while a lease is
-active.
+active. The 7900 XTX farm default uses `discover: true`: it probes the live
+`/v1/models` endpoint, so `xtx-9b` / `xtx-27b` host switches show up in the UI
+and leased run identity without editing the registry.
 
 Paired experiments also carry an explicit comparability identity. `make farm-up`
 derives the mounted Pokémon Red ROM SHA-256 and a deterministic hash of the
@@ -73,7 +75,7 @@ route they started with; cancel/requeue one if a GPU must be freed immediately.
 Default physical backends are:
 
 ```text
-7900 XTX  qwen3.8-27B  http://192.168.50.130:8002/v1
+7900 XTX  switchable (discover)  http://192.168.50.130:8002/v1
 4090      switchable   http://192.168.50.81:8002/v1  (alias pokepilot-4090; control http://192.168.50.81:8091)
 LAN CPU   qwen 4B      http://192.168.50.204:8000/v1  (bearer llm_token)
 ```

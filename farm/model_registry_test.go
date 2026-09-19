@@ -42,23 +42,25 @@ func TestProductionModelRegistryValidates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, id := range []string{"qwen35-9b-7900", "qwen35-4b-4090"} {
-		d, ok := registry.Deployment(id)
-		if !ok || !d.Enabled {
-			t.Fatalf("production registry missing enabled %s", id)
-		}
-		if d.Revision == "" || strings.HasPrefix(d.Revision, "replace-with-") {
-			t.Fatalf("%s still has a placeholder revision %q", id, d.Revision)
-		}
+	a, ok := registry.Deployment("qwen38-27b-7900")
+	if !ok || !a.Enabled || !a.Discover {
+		t.Fatalf("7900 deployment must be the discoverable farm default: %#v", a)
 	}
-	a, _ := registry.Deployment("qwen35-9b-7900")
-	b, _ := registry.Deployment("qwen35-4b-4090")
-	if a.CompatibilityProfile() != "auto" || a.APIModel != "qwen3.5-9b" || a.MaxParallelWorkers != 4 {
-		t.Fatalf("7900 9B deployment = %#v", a)
+	if a.CompatibilityProfile() != "auto" || a.MaxParallelWorkers != 4 || !a.HasDefaultRole("farm") {
+		t.Fatalf("7900 deployment = %#v", a)
 	}
-	previous, ok := registry.Deployment("qwen38-27b-7900")
-	if !ok || previous.Enabled {
-		t.Fatalf("7900 27B rollback deployment = %#v, want present and disabled", previous)
+	if a.ModelID != "" || a.APIModel != "" || a.Revision != "" || a.Artifact != "" {
+		t.Fatalf("7900 deployment must not pin a static model identity: %#v", a)
+	}
+	if _, exists := registry.Deployment("qwen35-9b-7900"); exists {
+		t.Fatal("static 7900 9B pin must not compete with discovery; xtx-9b/xtx-27b share one endpoint")
+	}
+	b, ok := registry.Deployment("qwen35-4b-4090")
+	if !ok || !b.Enabled {
+		t.Fatalf("production registry missing enabled qwen35-4b-4090")
+	}
+	if b.Revision == "" || strings.HasPrefix(b.Revision, "replace-with-") {
+		t.Fatalf("qwen35-4b-4090 still has a placeholder revision %q", b.Revision)
 	}
 	if b.CompatibilityProfile() != "gpu" || b.APIModel != "pokepilot-4090" || b.ControlURL == "" {
 		t.Fatalf("4090 4B deployment = %#v", b)
