@@ -56,8 +56,16 @@ func (w *Wall) tileRowLocked(t *Tile) tileRow {
 		Reason:          t.Reason,
 		Detail:          t.Detail,
 		Issue:           issueLinkFor(t, w.issueLinks),
-		ReplayAvailable: t.ReplayAvailable,
-		ResumeFromRunID: t.ResumeFromRunID,
+		ReplayAvailable:   t.ReplayAvailable,
+		ResumeFromRunID:   t.ResumeFromRunID,
+		CircuitKey:         t.CircuitKey,
+		CircuitFingerprint: t.CircuitFingerprint,
+		CircuitKind:        t.CircuitKind,
+		CircuitCount:       t.CircuitCount,
+		CircuitBadges:      t.CircuitBadges,
+		CircuitEvents:      t.CircuitEvents,
+		CircuitMaps:        t.CircuitMaps,
+		CircuitRevision:    t.CircuitRevision,
 	}
 }
 
