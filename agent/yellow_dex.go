@@ -131,7 +131,6 @@ func yellowExclusiveChoices() []exclusiveChoice {
 	}
 }
 
-
 func yellowEventOnly() map[SpeciesID]bool {
 	return map[SpeciesID]bool{"mew": true}
 }
