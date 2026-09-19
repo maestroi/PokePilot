@@ -42,7 +42,7 @@ func TestProductionModelRegistryValidates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, id := range []string{"qwen38-27b-7900", "qwen35-4b-4090"} {
+	for _, id := range []string{"qwen35-9b-7900", "qwen35-4b-4090"} {
 		d, ok := registry.Deployment(id)
 		if !ok || !d.Enabled {
 			t.Fatalf("production registry missing enabled %s", id)
@@ -51,10 +51,14 @@ func TestProductionModelRegistryValidates(t *testing.T) {
 			t.Fatalf("%s still has a placeholder revision %q", id, d.Revision)
 		}
 	}
-	a, _ := registry.Deployment("qwen38-27b-7900")
+	a, _ := registry.Deployment("qwen35-9b-7900")
 	b, _ := registry.Deployment("qwen35-4b-4090")
-	if a.CompatibilityProfile() != "auto" {
-		t.Fatalf("7900 legacy_profile = %q, want auto", a.CompatibilityProfile())
+	if a.CompatibilityProfile() != "auto" || a.APIModel != "qwen3.5-9b" || a.MaxParallelWorkers != 4 {
+		t.Fatalf("7900 9B deployment = %#v", a)
+	}
+	previous, ok := registry.Deployment("qwen38-27b-7900")
+	if !ok || previous.Enabled {
+		t.Fatalf("7900 27B rollback deployment = %#v, want present and disabled", previous)
 	}
 	if b.CompatibilityProfile() != "gpu" || b.APIModel != "pokepilot-4090" || b.ControlURL == "" {
 		t.Fatalf("4090 4B deployment = %#v", b)
