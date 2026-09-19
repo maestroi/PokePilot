@@ -42,7 +42,6 @@ func TestOldRodRewardUsesWalkableGuruApproach(t *testing.T) {
 	}
 }
 
-
 func TestSuperRodRewardUsesWalkableGuruApproach(t *testing.T) {
 	dest, ok := Place("route 12 super rod house")
 	if !ok {
