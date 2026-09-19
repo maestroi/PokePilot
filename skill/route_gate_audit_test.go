@@ -160,7 +160,7 @@ func TestGymCutGatesAreBidirectionalPivots(t *testing.T) {
 // must be a real pivot, exactly like red:vermilion_gym_cut.
 func TestRoute9CutIsPivotNotGate(t *testing.T) {
 	transition := requireTransition(t,
-		world.Edge{Kind: world.EdgeConnection, From: semanticCeruleanCityMap, To: semanticRoute9Map},
+		world.Edge{Kind: world.EdgeConnection, From: semanticRoute9Map, To: route10Map},
 		"red:route9_cut", capCanCut)
 	if transition.Gate {
 		t.Fatalf("red:route9_cut is a Gate: %+v; a static pre-cut component strands Rock Tunnel/Lavender/Celadon behind it", transition)
