@@ -35,6 +35,20 @@ func TestPickSkipsResolvedAndClaimed(t *testing.T) {
 	}
 }
 
+func TestPickPrioritizesOpenCircuit(t *testing.T) {
+	groups := []TriageGroup{
+		{Key: "frequent", Count: 20, RunIDs: []string{"run-old"}, Issue: &TriageIssue{Status: "open"}},
+		{Key: "circuit", Count: 2, RunIDs: []string{"run-blocked"}, Issue: &TriageIssue{Status: "open", CircuitOpen: true}},
+	}
+	got, ok := Pick(groups, nil)
+	if !ok {
+		t.Fatal("expected a pick")
+	}
+	if got.Key != "circuit" {
+		t.Fatalf("key = %q, want circuit", got.Key)
+	}
+}
+
 func TestPickEmptyWhenNothingFree(t *testing.T) {
 	groups := []TriageGroup{
 		{Key: "deadbeef", Count: 9, Issue: &TriageIssue{Status: "resolved", Resolution: "fixed"}},
