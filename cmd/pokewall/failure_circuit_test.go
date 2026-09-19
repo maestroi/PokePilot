@@ -96,8 +96,8 @@ func TestFailureCircuitPausesQueuedRetryAndPreservesFrame(t *testing.T) {
 	w.order = []string{"run-1"}
 	w.queue = []string{"run-1"}
 	before := pauseFinishSnapshot{
-		ok: true,
-		row: tileRow{RunID: "run-1", Seed: 42, Frame: 1234, Map: 9, X: 3, Y: 4},
+		ok:        true,
+		row:       tileRow{RunID: "run-1", Seed: 42, Frame: 1234, Map: 9, X: 3, Y: 4},
 		lastFrame: []byte{1, 2, 3},
 	}
 	report := farm.FinishReport{RunID: "run-1", Attempt: 1, Reason: "error", Detail: "blocked"}
