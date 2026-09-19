@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -33,6 +34,7 @@ type statsPlanner struct {
 	playStyle      agent.PlayStyleProfile
 	riskTolerance  string
 	wildEncounters string
+	decision        agent.DecisionSettings
 
 	stats                runStats
 	counts               map[string]int
@@ -109,6 +111,7 @@ func newStatsPlannerWithRunPolicy(profile, reasoningEffort, playStyle, riskToler
 		playStyle:        agent.PlayStyle(playStyle),
 		riskTolerance:    agent.NormalizeRiskTolerance(riskTolerance),
 		wildEncounters:   agent.NormalizeWildEncounters(wildEncounters),
+		decision:         agent.DecisionSettingsFromEnv(),
 		counts:           map[string]int{},
 		baseExtraSystem:  appendSystemNote(inner.ExtraSystem, agent.PlayStyleSystemNote(playStyle)),
 		lastTelemetrySeq: currentLLMTelemetrySeq(),
@@ -187,10 +190,140 @@ func (s *statsPlanner) ask(obs agent.Observation, offered []agent.Objective, ret
 		offered = farmRecoveryOffered(obs, offered)
 	}
 	offered = s.applyRunPolicy(obs, offered)
+	if retry == nil && s.decision.Engine != nil && s.decision.ObjectiveSelection {
+		if objective, ok := s.typedObjective(obs, offered); ok {
+			return objective, nil
+		}
+	}
 	if retry == nil {
 		return s.router.Next(obs, offered)
 	}
 	return s.router.NextRetry(obs, offered, *retry)
+}
+
+func (s *statsPlanner) typedObjective(obs agent.Observation, offered []agent.Objective) (agent.Objective, bool) {
+	req, err := agent.ObjectiveDecisionRequest(obs, offered, s.inner.Goal)
+	if err != nil {
+		s.recordDecision(req, agent.DecisionResponse{}, err, true)
+		return agent.Objective{}, false
+	}
+	resp, err := agent.DecideChecked(context.Background(), s.decision.Engine, req)
+	if err == nil && s.decision.MinConfidence > 0 && resp.Confidence < s.decision.MinConfidence {
+		err = fmt.Errorf("%w: %.3f < %.3f", agent.ErrDecisionLowConfidence, resp.Confidence, s.decision.MinConfidence)
+	}
+	var objective agent.Objective
+	if err == nil {
+		objective, err = agent.Chosen(offered, resp.Choice)
+	}
+	fallback := err != nil
+	s.recordDecision(req, resp, err, fallback)
+	if err != nil {
+		return agent.Objective{}, false
+	}
+	s.recordTypedObjectiveChoice(obs, objective)
+	return objective, true
+}
+
+// DecideFailure implements agent.FailureDecisionPlanner. Run calls it only for
+// failures already admitted by deterministic recovery policy; an unavailable,
+// rejected, or low-confidence typed answer simply falls back to that existing
+// policy.
+func (s *statsPlanner) DecideFailure(result agent.ObjectiveResult) (agent.DecisionResponse, error) {
+	if s.decision.Engine == nil || !s.decision.FailureRecovery {
+		return agent.DecisionResponse{}, agent.ErrDecisionDisabled
+	}
+	req, err := agent.FailureDecisionRequest(result)
+	if err != nil {
+		s.recordDecision(req, agent.DecisionResponse{}, err, true)
+		return agent.DecisionResponse{}, err
+	}
+	resp, err := agent.DecideChecked(context.Background(), s.decision.Engine, req)
+	if err == nil && s.decision.MinConfidence > 0 && resp.Confidence < s.decision.MinConfidence {
+		err = fmt.Errorf("%w: %.3f < %.3f", agent.ErrDecisionLowConfidence, resp.Confidence, s.decision.MinConfidence)
+	}
+	s.recordDecision(req, resp, err, err != nil)
+	return resp, err
+}
+
+func (s *statsPlanner) recordTypedObjectiveChoice(obs agent.Observation, objective agent.Objective) {
+	s.stats.FastCalls++
+	s.stats.Rounds++
+	s.stats.Round, s.stats.RoundsLeft = obs.Round, obs.RoundsLeft
+	name := objective.String()
+	if s.counts[name] > 0 {
+		s.stats.Repeats++
+	}
+	s.counts[name]++
+	s.stats.Choices = rankChoices(s.counts)
+	s.publish()
+}
+
+func cloneDecisionProbabilities(in map[string]float64) map[string]float64 {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]float64, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
+}
+
+func (s *statsPlanner) recordDecision(req agent.DecisionRequest, resp agent.DecisionResponse, err error, fallback bool) {
+	s.stats.DecisionCalls++
+	s.stats.DecisionSeconds += resp.Duration.Seconds()
+	s.stats.DecisionAvgSeconds = s.stats.DecisionSeconds / float64(s.stats.DecisionCalls)
+	s.stats.DecisionPromptTokens += resp.Usage.PromptTokens
+	s.stats.DecisionCompletionTokens += resp.Usage.CompletionTokens
+	s.stats.DecisionInputBytes += resp.Usage.InputBytes
+	s.stats.DecisionOutputBytes += resp.Usage.OutputBytes
+	if err != nil {
+		s.stats.DecisionRejected++
+	}
+	if fallback {
+		s.stats.DecisionFallbacks++
+	}
+	if resp.Backend != "" {
+		s.stats.DecisionBackend = resp.Backend
+	} else if s.decision.Backend != "" {
+		s.stats.DecisionBackend = s.decision.Backend
+	}
+	if resp.Model != "" {
+		s.stats.DecisionModel = resp.Model
+	}
+	s.stats.DecisionKind = req.Kind
+	s.stats.DecisionChoice = resp.Choice
+	s.stats.DecisionConfidence = resp.Confidence
+	s.stats.DecisionProbabilities = cloneDecisionProbabilities(resp.Probabilities)
+
+	record := farm.TypedDecisionRecord{
+		Kind:             req.Kind,
+		Question:         req.Question,
+		Choice:           resp.Choice,
+		Probabilities:    cloneDecisionProbabilities(resp.Probabilities),
+		Confidence:       resp.Confidence,
+		DurationSeconds:  resp.Duration.Seconds(),
+		Backend:          resp.Backend,
+		Model:            resp.Model,
+		PromptTokens:     resp.Usage.PromptTokens,
+		CompletionTokens: resp.Usage.CompletionTokens,
+		InputBytes:       resp.Usage.InputBytes,
+		OutputBytes:      resp.Usage.OutputBytes,
+		Fallback:         fallback,
+	}
+	if record.Backend == "" {
+		record.Backend = s.decision.Backend
+	}
+	if err != nil {
+		record.Error = err.Error()
+	}
+	const maxDecisionRecords = 128
+	if len(s.stats.DecisionRecords) < maxDecisionRecords {
+		s.stats.DecisionRecords = append(s.stats.DecisionRecords, record)
+	} else {
+		s.stats.DecisionRecordsDropped++
+	}
+	s.publish()
 }
 
 func (s *statsPlanner) Strategize(obs agent.Observation, offered []agent.Objective, reason string) (agent.Plan, error) {
