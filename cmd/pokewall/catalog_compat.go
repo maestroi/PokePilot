@@ -90,10 +90,13 @@ func catalogRunIDFromPath(path string) string {
 }
 
 func (w *Wall) currentIssueForRow(row tileRow) *IssueLink {
-	if row.Status != statusDone || (row.Reason != "error" && row.Reason != "lost") || strings.TrimSpace(row.Detail) == "" {
-		return nil
+	key := strings.TrimSpace(row.CircuitKey)
+	if key == "" {
+		if row.Status != statusDone || (row.Reason != "error" && row.Reason != "lost") || strings.TrimSpace(row.Detail) == "" {
+			return nil
+		}
+		key, _ = failureIdentity(normalizeDetail(row.Detail))
 	}
-	key, _ := failureIdentity(normalizeDetail(row.Detail))
 	w.mu.Lock()
 	link, ok := w.issueLinks[key]
 	w.mu.Unlock()
