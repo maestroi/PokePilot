@@ -504,19 +504,25 @@ func (w *Wall) maybeResumeCircuitCanary(key string, link IssueLink) bool {
 	return true
 }
 
-func (w *Wall) noteCircuitIssue(key string, decision failureCircuitDecision) {
+func applyCircuitToIssueLink(link IssueLink, runID string, decision failureCircuitDecision) IssueLink {
+	if !decision.Open {
+		return link
+	}
+	link.CircuitOpen = true
+	link.CircuitKind = decision.Kind
+	link.CircuitCount = decision.Count
+	link.CircuitRunID = runID
+	link.CircuitOpenedAt = time.Now().Unix()
+	return link
+}
+
+func (w *Wall) noteCircuitIssue(key, runID string, decision failureCircuitDecision) {
 	if !decision.Open || key == "" {
 		return
 	}
 	w.mu.Lock()
-	link, ok := w.issueLinks[key]
-	if ok {
-		link.CircuitOpen = true
-		link.CircuitKind = decision.Kind
-		link.CircuitCount = decision.Count
-		link.CircuitRunID = link.LastObservedRun
-		link.CircuitOpenedAt = time.Now().Unix()
-		w.issueLinks[key] = link
+	if link, ok := w.issueLinks[key]; ok {
+		w.issueLinks[key] = applyCircuitToIssueLink(link, runID, decision)
 	}
 	w.mu.Unlock()
 }
