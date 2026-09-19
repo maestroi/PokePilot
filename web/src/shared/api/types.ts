@@ -8,6 +8,11 @@ export interface DashboardIssueLink {
   occurrence_count?: number
   fixed_revision?: string
   stale?: boolean
+  circuit_open?: boolean
+  circuit_kind?: string
+  circuit_count?: number
+  circuit_run_id?: string
+  circuit_opened_at?: number
 }
 
 export interface PartyMon {
@@ -110,6 +115,14 @@ export interface DashboardRun {
   replay_available?: boolean
   resume_from_run_id?: string
   resume_protected?: boolean
+  circuit_key?: string
+  circuit_fingerprint?: string
+  circuit_kind?: string
+  circuit_count?: number
+  circuit_badges?: number
+  circuit_events?: number
+  circuit_maps?: number
+  circuit_revision?: string
   [key: string]: unknown
 }
 
