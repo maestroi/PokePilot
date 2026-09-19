@@ -93,6 +93,9 @@ func (cp *controlPlane) persistFinish(w *Wall, report farm.FinishReport) error {
 	if err := cp.persistStrategicRecordsTx(tx, w, durable.report.RunID, attempt); err != nil {
 		return err
 	}
+	if err := cp.persistDecisionRecordsTx(tx, w, durable.report.RunID, attempt); err != nil {
+		return err
+	}
 	if err := tx.Commit(); err != nil {
 		return err
 	}
@@ -124,6 +127,33 @@ func (cp *controlPlane) persistStrategicRecordsTx(tx *sql.Tx, w *Wall, runID str
 		q := `INSERT INTO llm_exchanges(run_id,attempt,exchange_index,observation,offered,replan_reason,plan_goal,plan_steps,rejected,error,duration_seconds,backend,model,prompt_tokens,completion_tokens,prefill_tps,decode_tps) VALUES($1,$2,$3,CASE WHEN $4::text='' THEN NULL ELSE $4::jsonb END,$5::jsonb,$6,$7,$8::jsonb,$9,$10,$11,$12,$13,$14,$15,$16,$17) ON CONFLICT(run_id,attempt,exchange_index) DO UPDATE SET observation=EXCLUDED.observation,offered=EXCLUDED.offered,replan_reason=EXCLUDED.replan_reason,plan_goal=EXCLUDED.plan_goal,plan_steps=EXCLUDED.plan_steps,rejected=EXCLUDED.rejected,error=EXCLUDED.error,duration_seconds=EXCLUDED.duration_seconds,backend=EXCLUDED.backend,model=EXCLUDED.model,prompt_tokens=EXCLUDED.prompt_tokens,completion_tokens=EXCLUDED.completion_tokens,prefill_tps=EXCLUDED.prefill_tps,decode_tps=EXCLUDED.decode_tps`
 		if _, err := tx.Exec(q, runID, attempt, i, obs, string(offered), rec.ReplanReason, rec.PlanGoal, string(steps), rec.Rejected, rec.Error, rec.DurationSeconds, rec.Backend, rec.Model, rec.PromptTokens, rec.CompletionTokens, rec.PrefillTPS, rec.DecodeTPS); err != nil {
 			return fmt.Errorf("persist LLM exchange %d: %w", i, err)
+		}
+	}
+	return nil
+}
+
+func (cp *controlPlane) persistDecisionRecordsTx(tx *sql.Tx, w *Wall, runID string, attempt int) error {
+	row, ok := w.ramRow(runID)
+	if !ok {
+		if catalog := catalogFor(w); catalog != nil {
+			var err error
+			row, ok, err = catalog.get(runID)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	if !ok || row.Stats == nil {
+		return nil
+	}
+	for i, rec := range row.Stats.DecisionRecords {
+		probabilities, _ := json.Marshal(rec.Probabilities)
+		if len(probabilities) == 0 || string(probabilities) == "null" {
+			probabilities = []byte("{}")
+		}
+		q := `INSERT INTO decision_exchanges(run_id,attempt,decision_index,kind,question,choice,probabilities,confidence,fallback,error,duration_seconds,backend,model,prompt_tokens,completion_tokens,input_bytes,output_bytes) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) ON CONFLICT(run_id,attempt,decision_index) DO UPDATE SET kind=EXCLUDED.kind,question=EXCLUDED.question,choice=EXCLUDED.choice,probabilities=EXCLUDED.probabilities,confidence=EXCLUDED.confidence,fallback=EXCLUDED.fallback,error=EXCLUDED.error,duration_seconds=EXCLUDED.duration_seconds,backend=EXCLUDED.backend,model=EXCLUDED.model,prompt_tokens=EXCLUDED.prompt_tokens,completion_tokens=EXCLUDED.completion_tokens,input_bytes=EXCLUDED.input_bytes,output_bytes=EXCLUDED.output_bytes`
+		if _, err := tx.Exec(q, runID, attempt, i, rec.Kind, rec.Question, rec.Choice, string(probabilities), rec.Confidence, rec.Fallback, rec.Error, rec.DurationSeconds, rec.Backend, rec.Model, rec.PromptTokens, rec.CompletionTokens, rec.InputBytes, rec.OutputBytes); err != nil {
+			return fmt.Errorf("persist typed decision exchange %d: %w", i, err)
 		}
 	}
 	return nil
