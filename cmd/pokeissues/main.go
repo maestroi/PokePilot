@@ -355,6 +355,13 @@ func (c *githubClient) report(ctx context.Context, manifest issueReportManifest,
 			existing.State = "open"
 			existing.StateReason = "reopened"
 		}
+		if strings.EqualFold(existing.State, "open") {
+			updated, err := c.updateLatestObservation(ctx, existing, manifest)
+			if err != nil {
+				return out, false, err
+			}
+			existing = updated
+		}
 		if err := c.attachPortableRepro(ctx, &existing, manifest, artifacts); err != nil {
 			return out, false, err
 		}
@@ -435,6 +442,23 @@ func (c *githubClient) ensureOccurrenceComment(ctx context.Context, number int64
 	}
 	payload := map[string]string{"body": renderOccurrenceComment(c.runBase, manifest, artifacts)}
 	return c.doJSON(ctx, http.MethodPost, path, payload, nil)
+}
+
+func (c *githubClient) updateLatestObservation(ctx context.Context, issue githubIssue, manifest issueReportManifest) (githubIssue, error) {
+	revision := strings.TrimSpace(manifest.ObservedRevision)
+	if revision == "" {
+		return issue, nil
+	}
+	body := setLatestObservedRevision(issue.Body, revision)
+	if body == issue.Body {
+		return issue, nil
+	}
+	payload := map[string]string{"body": body}
+	var updated githubIssue
+	if err := c.doJSON(ctx, http.MethodPatch, c.repoPath("issues", strconv.FormatInt(issue.Number, 10)), payload, &updated); err != nil {
+		return issue, err
+	}
+	return updated, nil
 }
 
 func (c *githubClient) getIssueStatus(ctx context.Context, id string) (issueStatusResponse, error) {
@@ -564,6 +588,10 @@ func renderIssueBody(runBase string, manifest issueReportManifest, artifacts []a
 	b.WriteString(fingerprintMarker(manifest.Fingerprint))
 	b.WriteByte('\n')
 	b.WriteString(externalIDMarker(manifest.ExternalID))
+	if revision := strings.TrimSpace(manifest.ObservedRevision); revision != "" {
+		b.WriteByte('\n')
+		b.WriteString(latestObservedRevisionMarker(revision))
+	}
 	b.WriteString("\n<!-- pokepilot-generated:github-issues-v1 -->\n\n")
 	b.WriteString("Automated PokePilot farm failure. GitHub is the issue system of record; repeated active occurrences remain grouped by fingerprint.\n\n")
 	renderMetadata(&b, runBase, manifest)
@@ -767,6 +795,30 @@ func fingerprintMarker(fingerprint string) string {
 
 func externalIDMarker(externalID string) string {
 	return "<!-- pokepilot-external-id:" + htmlCommentSafe(externalID) + " -->"
+}
+
+const latestObservedRevisionPrefix = "<!-- pokepilot-latest-observed-revision:"
+
+func latestObservedRevisionMarker(revision string) string {
+	return latestObservedRevisionPrefix + htmlCommentSafe(revision) + " -->"
+}
+
+func setLatestObservedRevision(body, revision string) string {
+	marker := latestObservedRevisionMarker(revision)
+	lines := strings.Split(body, "\n")
+	for i, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), latestObservedRevisionPrefix) {
+			if line == marker {
+				return body
+			}
+			lines[i] = marker
+			return strings.Join(lines, "\n")
+		}
+	}
+	if body == "" {
+		return marker
+	}
+	return marker + "\n" + body
 }
 
 func triageKey(fingerprint string) string {
