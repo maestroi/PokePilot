@@ -143,6 +143,9 @@ func (w *Wall) overlayRunEnvelopeIssue(data []byte) ([]byte, error) {
 // This preserves the old triage semantics without retaining every finished
 // Tile in the wall process.
 func (w *Wall) catalogTriage() ([]triageGroup, error) {
+	if cp := controlPlaneFor(w); cp != nil {
+		return cp.objectiveFailureTriage(w)
+	}
 	catalog := catalogFor(w)
 	if catalog == nil {
 		return w.triage(), nil
