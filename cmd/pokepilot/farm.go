@@ -487,10 +487,10 @@ func profilePlayerSnapshot(obs game.ProfileObservation) *farm.Player {
 		Badges:      append([]string(nil), obs.Badges...),
 		Party:       make([]farm.PartyMon, 0, len(obs.Party)),
 		BagUsed:     len(obs.Bag),
-		BagCapacity: 20,
+		BagCapacity: obs.BagCapacity,
 		DexOwned:    len(obs.PokedexOwned),
 		DexSeen:     len(obs.PokedexSeen),
-		DexTotal:    151,
+		DexTotal:    obs.PokedexTotal,
 	}
 	for _, mon := range obs.Party {
 		p.Party = append(p.Party, farm.PartyMon{
