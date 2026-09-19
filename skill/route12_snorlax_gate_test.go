@@ -17,6 +17,9 @@ import (
 //   - run-29f4dc81z9h2f1sv5v1ggk40xi (triage:d8e00d285ab9c820, farm-issue:1241;
 //     catch same-map Place("route 13") with Snorlax already cleared — see
 //     TestSatisfiedRoute12SnorlaxCatchHabitatLeavesViaRoute14)
+//   - run-2pw78yuh93bj133cj3fwkz4rey (triage:5f4d7b3680d0f610, farm-issue:1282;
+//     same go_to vermilion route_replan_exhausted from (11,4), last leg
+//     misreported as missing can_ride_cycling_road)
 //
 // A stationary trainer at (12,4) splits (11,4) from the walkable Route 12 seam.
 // A free FROM-side pivot offered that unreachable north connection and
