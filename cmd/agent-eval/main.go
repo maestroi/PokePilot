@@ -70,12 +70,12 @@ func run() int {
 	}
 
 	var (
-		planner    agent.Planner
-		llmPlanner *agent.LLMPlanner
+		planner         agent.Planner
+		llmPlanner      *agent.LLMPlanner
 		decisionPlanner *agent.DecisionObjectivePlanner
-		backendName string
-		modelName string
-		promptHash string
+		backendName     string
+		modelName       string
+		promptHash      string
 	)
 	switch strings.ToLower(strings.TrimSpace(*backend)) {
 	case "", "llm", "generative":
