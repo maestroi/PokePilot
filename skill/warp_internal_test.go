@@ -178,6 +178,54 @@ func TestWarpTargetExcludeFallsBackToOtherCandidate(t *testing.T) {
 	}
 }
 
+// TestWarpAvoidanceBansEveryOtherWarpTile pins the fix for
+// run-3cefsxn84apv3126k7vkfk517y round 5: a walk toward an ordinary
+// connection edge (Cerulean's east border, band 16..17) is free to path
+// across any other warp tile the collision grid says is walkable, since
+// world.FindPath knows nothing about warps. Cerulean City exposes the Badge
+// House's front door at (9,11); stepping on it fires the warp, and the
+// Badge House's OTHER exterior door, (9,9), is a genuine dead pocket
+// (CeruleanBadgeHouse's own warp table sends it there, and the collision
+// grid shows it walled off from the rest of the city on every side but the
+// warp itself — measured with the probe, PROBE_MAP=0x03 PROBE_AT=9,9,
+// north/south/east/west edges all unreachable). Once diverted there, no
+// re-plan can walk out again without re-crossing the same house. warpTarget
+// has always banned every other warp tile from a warp APPROACH
+// (approachBlocked); warpAvoidance is that same rule shared with ordinary
+// connection walks.
+func TestWarpAvoidanceBansEveryOtherWarpTile(t *testing.T) {
+	const ceruleanCity = 0x03
+	romData := warpTestROM(t)
+	h, err := rom.ParseMap(romData, ceruleanCity)
+	if err != nil {
+		t.Fatalf("ParseMap CeruleanCity: %v", err)
+	}
+	if len(h.Warps) < 2 {
+		t.Fatalf("CeruleanCity has %d warp(s), want at least 2 to test avoidance", len(h.Warps))
+	}
+
+	blocked := warpAvoidance(h, 5, 5, nil)
+	for _, w := range h.Warps {
+		if !blocked[[2]int{int(w.X), int(w.Y)}] {
+			t.Errorf("warpAvoidance from (5,5) left warp tile (%d,%d) unblocked", w.X, w.Y)
+		}
+	}
+
+	// The Badge House's front door, (9,11), must be one of the banned tiles
+	// standing anywhere else — it is not itself the player's position here.
+	if !blocked[[2]int{9, 11}] {
+		t.Errorf("warpAvoidance did not ban the Badge House door (9,11)")
+	}
+
+	// Standing exactly on a warp tile must exempt that one tile: arriving on
+	// it does not refire it, and a caller there must still be free to walk
+	// off in any direction.
+	standingOnDoor := warpAvoidance(h, 9, 11, nil)
+	if standingOnDoor[[2]int{9, 11}] {
+		t.Errorf("warpAvoidance blocked the tile the caller is standing on, (9,11)")
+	}
+}
+
 // selectWarp runs one warpTarget selection and returns the chosen tile.
 func selectWarp(t *testing.T, h rom.MapHeader, e world.Edge, g *world.Grid, sx, sy int) ([2]int, error) {
 	t.Helper()
