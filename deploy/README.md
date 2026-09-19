@@ -177,14 +177,17 @@ Issue lifecycle maps cleanly back into the wall:
 
 The `Investigate` action in the operator console now adds one investigation
 request comment to the GitHub issue. The local qwagent loop still claims work
-from `/v1/triage`, so it does not depend on GitHub issue state to run.
+from MCP `pokepilot_get_triage`, so it does not depend on GitHub issue state
+to run.
 
 ## Local qwagent triage (optional)
 
-A user systemd timer can offer one unused `GET /v1/triage` group to local
-`qwagent` (`opencode run --auto --model qwen3.8-27b/qwen3.8-27b`) every 30
-minutes. The picker is deterministic; the model only reproduces, patches, and
-opens a PR. It never merges and never writes `main`.
+A user systemd timer can offer one unused MCP `pokepilot_get_triage` group to
+local `qwagent` (`opencode run --auto --model qwen3.8-27b/qwen3.8-27b`) every
+30 minutes. The picker talks to `/mcp` because `admin.rompilot.app/v1/*` sits
+behind Cloudflare Access; a bearer token alone gets a 302 login page there.
+The picker is deterministic; the model only reproduces, patches, and opens a
+PR. It never merges and never writes `main`.
 
 ```sh
 make qwagent-triage-install   # units + zsh helpers; timer stays off
@@ -197,6 +200,7 @@ qwtriage-logs
 ```
 
 Needs `POKEPILOT_MCP_TOKEN` in `~/.config/pokepilot/env`, `gh` auth, Qwen on
-`127.0.0.1:8002`, and `roms/pokemon_red.gb` in the worktree or
-`~/.config/pokepilot/pokemon_red.gb`. Open PRs are titled
-`fix(farm): … [triage:<key>]` so a later tick skips that key.
+`127.0.0.1:8002` or an authenticated Cursor CLI, and
+`~/.config/pokepilot/pokemon_red.gb` (symlinked into the worktree each tick).
+Open PRs are titled `fix(farm): … [triage:<key>]` so a later tick skips that
+key.

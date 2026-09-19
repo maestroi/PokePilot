@@ -216,8 +216,8 @@ farm-down:
 	docker rm -f pokefarm_ui >/dev/null 2>&1 || true
 	docker stack rm pokefarm
 
-# Opt-in local qwagent loop against GET /v1/triage. Installs user systemd
-# units and zsh helpers; does not enable the timer.
+# Opt-in local qwagent loop against MCP pokepilot_get_triage. Installs user
+# systemd units and zsh helpers; does not enable the timer.
 qwagent-triage-install:
 	mkdir -p "$(HOME)/.config/systemd/user"
 	sed 's|@@POKEPILOT_ROOT@@|$(CURDIR)|g' deploy/qwagent-triage.service.in \

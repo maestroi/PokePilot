@@ -5,5 +5,7 @@ Description=PokePilot qwagent farm-triage attempt
 Type=oneshot
 Nice=10
 EnvironmentFile=-%h/.config/pokepilot/env
-Environment=PATH=%h/.opencode/bin:%h/go/bin:%h/.local/bin:/usr/local/go/bin:/usr/local/bin:/usr/bin:/bin
+Environment=PATH=%h/.cursor/bin:%h/.opencode/bin:%h/go/bin:%h/.local/bin:/usr/local/go/bin:/usr/local/bin:/usr/bin:/bin
+Environment=POKEMON_RED_ROM=%h/.config/pokepilot/pokemon_red.gb
+Environment=POKEPILOT_MCP_URL=https://admin.rompilot.app/mcp
 ExecStart=@@POKEPILOT_ROOT@@/deploy/qwagent-triage.sh

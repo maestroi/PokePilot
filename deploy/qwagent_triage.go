@@ -1,6 +1,52 @@
 package deploy
 
-import "strings"
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"strings"
+	"unicode"
+)
+
+func DecodeTriageGroups(raw []byte) ([]TriageGroup, error) {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 {
+		return nil, fmt.Errorf("empty triage payload")
+	}
+	if trimmed[0] != '[' && trimmed[0] != '{' {
+		return nil, fmt.Errorf("triage payload is not JSON (got %q)", jsonPreview(trimmed))
+	}
+	if trimmed[0] == '[' {
+		var groups []TriageGroup
+		if err := json.Unmarshal(trimmed, &groups); err != nil {
+			return nil, err
+		}
+		return groups, nil
+	}
+	var envelope struct {
+		Groups []TriageGroup `json:"groups"`
+	}
+	if err := json.Unmarshal(trimmed, &envelope); err != nil {
+		return nil, err
+	}
+	if envelope.Groups == nil && !bytes.Contains(trimmed, []byte(`"groups"`)) {
+		return nil, fmt.Errorf("triage JSON object missing groups")
+	}
+	return envelope.Groups, nil
+}
+
+func jsonPreview(raw []byte) string {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) > 80 {
+		trimmed = trimmed[:80]
+	}
+	return strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return ' '
+		}
+		return r
+	}, string(trimmed))
+}
 
 type TriageIssue struct {
 	IssueNumber     int64  `json:"issue_number"`

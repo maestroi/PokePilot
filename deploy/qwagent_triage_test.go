@@ -178,7 +178,11 @@ func TestScriptHasDryRunAndLock(t *testing.T) {
 		"--repaired",
 		"--regressed",
 		"merge-base --is-ancestor",
-		"/debug",
+		"fetch-triage",
+		"fetch-debug",
+		"POKEPILOT_MCP_URL",
+		"POKEMON_RED_ROM",
+		"roms/pokemon_red.gb",
 		"runner_version",
 	} {
 		if !strings.Contains(s, want) {
@@ -192,5 +196,35 @@ func TestScriptHasDryRunAndLock(t *testing.T) {
 	}
 	if strings.Contains(s, "investigate failed; skip") {
 		t.Error("investigate must be best-effort; an already-investigating 409/502 must not skip the local agent")
+	}
+	if strings.Contains(s, "${POKEPILOT_WALL}/v1/triage") || strings.Contains(s, "$POKEPILOT_WALL/v1/triage") {
+		t.Error("do not curl Access-gated /v1/triage; fetch through /mcp")
+	}
+}
+
+func TestDecodeTriageGroupsRejectsAccessHTML(t *testing.T) {
+	_, err := DecodeTriageGroups([]byte("<html>\r\n<head><title>302 Found</title></head>\r\n"))
+	if err == nil {
+		t.Fatal("Access login HTML must not decode as triage groups")
+	}
+}
+
+func TestDecodeTriageGroupsAcceptsWallArray(t *testing.T) {
+	groups, err := DecodeTriageGroups([]byte(`[{"key":"abc","count":2,"run_ids":["r1"]}]`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(groups) != 1 || groups[0].Key != "abc" {
+		t.Fatalf("groups = %+v", groups)
+	}
+}
+
+func TestDecodeTriageGroupsUnwrapsMCPEnvelope(t *testing.T) {
+	groups, err := DecodeTriageGroups([]byte(`{"groups":[{"key":"abc","count":2}],"resolved_hidden":3}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(groups) != 1 || groups[0].Key != "abc" {
+		t.Fatalf("groups = %+v", groups)
 	}
 }
