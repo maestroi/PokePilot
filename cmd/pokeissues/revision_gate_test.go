@@ -37,11 +37,23 @@ func (f *revisionGateGitHub) handler() http.Handler {
 			"closed_at":    f.closedAt.UTC().Format(time.RFC3339),
 		})
 	})
-	mux.HandleFunc("PATCH /repos/o/r/issues/{number}", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("PATCH /repos/o/r/issues/{number}", func(w http.ResponseWriter, r *http.Request) {
+		var payload map[string]string
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 		f.mu.Lock()
 		f.patched++
-		f.issue.State = "open"
-		f.issue.StateReason = "reopened"
+		if state, ok := payload["state"]; ok {
+			f.issue.State = state
+			if state == "open" {
+				f.issue.StateReason = "reopened"
+			}
+		}
+		if body, ok := payload["body"]; ok {
+			f.issue.Body = body
+		}
 		issue := f.issue
 		f.mu.Unlock()
 		_ = json.NewEncoder(w).Encode(issue)
@@ -151,8 +163,8 @@ func TestReportReopensWhenFixedBuildItselfReproduces(t *testing.T) {
 	}
 	fake.mu.Lock()
 	defer fake.mu.Unlock()
-	if fake.patched != 1 {
-		t.Fatalf("fixed build recurrence patched=%d, want 1", fake.patched)
+	if fake.patched != 2 {
+		t.Fatalf("fixed build recurrence patched=%d, want reopen + latest-observation update", fake.patched)
 	}
 	if fake.compareLookups != 0 {
 		t.Fatalf("equal revisions should not need compare API, got %d calls", fake.compareLookups)

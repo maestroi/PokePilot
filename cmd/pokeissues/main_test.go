@@ -73,12 +73,24 @@ func (f *fakeGitHub) handler() http.Handler {
 	})
 	mux.HandleFunc("PATCH /repos/o/r/issues/{number}", func(w http.ResponseWriter, r *http.Request) {
 		n := mustNumber(r.PathValue("number"))
+		var payload map[string]string
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			testHTTPError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		for i := range f.issues {
 			if f.issues[i].Number == n {
-				f.issues[i].State = "open"
-				f.issues[i].StateReason = "reopened"
+				if state, ok := payload["state"]; ok {
+					f.issues[i].State = state
+					if state == "open" {
+						f.issues[i].StateReason = "reopened"
+					}
+				}
+				if body, ok := payload["body"]; ok {
+					f.issues[i].Body = body
+				}
 				f.patched++
 				_ = json.NewEncoder(w).Encode(f.issues[i])
 				return
@@ -221,6 +233,8 @@ func TestReportCreatesGitHubIssueWithoutArtifactBytes(t *testing.T) {
 	for _, want := range []string{
 		"pokepilot-fingerprint:sha256:0123456789abcdef",
 		"pokepilot-external-id:run-42-attempt-3-objective-key",
+		"pokepilot-latest-observed-revision:abc123",
+		"pokepilot-latest-observed-at:2026-09-14T01:00:00Z",
 		"Triage key:** `0123456789abcdef`",
 		"https://pokemon.test/v1/runs/run-42/debug",
 		"`round-003.state`",
@@ -259,6 +273,68 @@ func TestReportDeduplicatesOpenFingerprint(t *testing.T) {
 	defer fake.mu.Unlock()
 	if fake.created != 0 || fake.commented != 0 || fake.patched != 0 {
 		t.Fatalf("created=%d commented=%d patched=%d", fake.created, fake.commented, fake.patched)
+	}
+}
+
+func TestReportDeduplicatedOpenIssueTracksLatestObservedRevision(t *testing.T) {
+	fake := newFakeGitHub()
+	old := sampleManifest("old-occurrence")
+	old.ObservedRevision = "old-revision"
+	fake.issues = []githubIssue{{Number: 8, State: "open", Body: renderIssueBody("", old, nil)}}
+	issues, _ := newTestServer(t, fake)
+
+	current := sampleManifest("new-occurrence")
+	current.ObservedRevision = "new-revision"
+	resp := reportRequest(t, issues.URL, current, "", nil)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status=%d body=%s", resp.StatusCode, body)
+	}
+
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if fake.patched != 1 {
+		t.Fatalf("patched=%d, want 1 latest-observation update", fake.patched)
+	}
+	body := fake.issues[0].Body
+	if !strings.Contains(body, latestObservedRevisionMarker("new-revision")) {
+		t.Fatalf("latest observation marker missing:\n%s", body)
+	}
+	if strings.Contains(body, latestObservedRevisionMarker("old-revision")) {
+		t.Fatalf("stale latest observation marker retained:\n%s", body)
+	}
+}
+
+func TestReportDeduplicatedOpenIssueDoesNotRollLatestObservationBackward(t *testing.T) {
+	fake := newFakeGitHub()
+	latest := sampleManifest("latest-occurrence")
+	latest.ObservedRevision = "new-revision"
+	latest.ObservedAt = time.Date(2026, 9, 19, 21, 0, 0, 0, time.UTC)
+	fake.issues = []githubIssue{{Number: 18, State: "open", Body: renderIssueBody("", latest, nil)}}
+	issues, _ := newTestServer(t, fake)
+
+	older := sampleManifest("older-retry")
+	older.ObservedRevision = "old-revision"
+	older.ObservedAt = latest.ObservedAt.Add(-time.Hour)
+	resp := reportRequest(t, issues.URL, older, "", nil)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status=%d body=%s", resp.StatusCode, body)
+	}
+
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if fake.patched != 0 {
+		t.Fatalf("older retry patched issue %d time(s), want 0", fake.patched)
+	}
+	body := fake.issues[0].Body
+	if !strings.Contains(body, latestObservedRevisionMarker("new-revision")) {
+		t.Fatalf("latest revision rolled backward:\n%s", body)
+	}
+	if strings.Contains(body, latestObservedRevisionMarker("old-revision")) {
+		t.Fatalf("old revision replaced latest marker:\n%s", body)
 	}
 }
 

@@ -90,6 +90,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: main
+          fetch-depth: 0
       - name: Close issues matching merged triage keys
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -97,7 +98,9 @@ jobs:
           REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
           MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
-        run: bash .github/scripts/close-triage-issues.sh
+        run: |
+          bash .github/scripts/close-triage-issues.sh
+          bash .github/scripts/reconcile-farm-issues.sh
 
   disable:
     name: Keep others manual
@@ -135,6 +138,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: main
+          fetch-depth: 0
       - name: Squash-merge passing PR, close its farm issues, and publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -213,6 +217,7 @@ jobs:
             merge_sha="$(gh api "/repos/${REPO}/pulls/${pr_number}" --jq .merge_commit_sha)"
             PR="$pr_number" MERGE_SHA="$merge_sha" REPO="$REPO" \
               bash .github/scripts/close-triage-issues.sh
+            REPO="$REPO" bash .github/scripts/reconcile-farm-issues.sh
             gh workflow run publish-farm.yml --ref main
-            echo "Closed matching farm issues and dispatched Publish farm image after #${pr_number}."
+            echo "Reconciled farm issues and dispatched Publish farm image after #${pr_number}."
           fi
