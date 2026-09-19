@@ -320,8 +320,15 @@ cursor)
 	if [ -n "$POKEPILOT_CURSOR_MODEL" ]; then
 		cursor_args+=(--model "$POKEPILOT_CURSOR_MODEL")
 	fi
-	"$CURSOR_BIN" "${cursor_args[@]}" "$(cat "$POKEPILOT_TRIAGE_STATE/packet.md")"
+	cursor_packet="$POKEPILOT_TRIAGE_TREE/.pokepilot-triage-packet.md"
+	if ! grep -qxF '.pokepilot-triage-packet.md' "$POKEPILOT_TRIAGE_TREE/.git/info/exclude" 2>/dev/null; then
+		printf '%s\n' '.pokepilot-triage-packet.md' >>"$POKEPILOT_TRIAGE_TREE/.git/info/exclude"
+	fi
+	cp "$POKEPILOT_TRIAGE_STATE/packet.md" "$cursor_packet"
+	"$CURSOR_BIN" "${cursor_args[@]}" \
+		"Read @.pokepilot-triage-packet.md and follow it exactly. Do not pick a different failure."
 	agent_status=$?
+	rm -f "$cursor_packet"
 	;;
 opencode)
 	opencode run --auto --model qwen3.8-27b/qwen3.8-27b \
