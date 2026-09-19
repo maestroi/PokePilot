@@ -1,8 +1,10 @@
 package skill
 
 import (
+	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/rom"
@@ -29,6 +31,29 @@ type LinkTradeResult struct {
 	Tradeback bool
 }
 
+// linkStallTimeout bounds one VirtualTrade call's real (wall-clock) time.
+// gomeboy's serial scheduler polls a non-blocking channel for the network
+// peer's next clock pulse (internal/serial/serial.go SerialExternalClock)
+// and, while nothing has arrived, reschedules itself every 32 ticks forever
+// — entirely inside the current m.StepFrame() call, with no interrupt to
+// break out. MEASURED: a synthetic-peer repro (gomeboy SIGQUIT dump) showed
+// the goroutine still parked in that HALT-skip reschedule loop 40+ real
+// seconds in, mid skill.Traverse (ordinary overworld walking, well before
+// any Cable Club interaction), well past the farm's 30s heartbeat reaper —
+// the whole worker died with zero diagnostic. emu.WithFrameDeadline can't
+// help: it only checks between frames, and this hangs inside one.
+// ponytail: a wall-clock watchdog is the whole fix here — teaching
+// gomeboy's scheduler to cancel mid-frame would need a context threaded
+// through its CPU loop, upstream work outside this repo.
+const linkStallTimeout = 25 * time.Second
+
+// ErrLinkStalled means the network trade peer never answered within
+// linkStallTimeout. gomeboy's serial scheduler has no cancellation hook, so
+// the goroutine stepping m may still be spinning when this is returned: m
+// must not be reused afterward. The caller should end the run, not retry
+// with the same emulator.
+var ErrLinkStalled = errors.New("skill: VirtualTrade: link exchange stalled")
+
 // VirtualTrade enters a normal Gen-I Cable Club Trade Center and trades the
 // requested player party slot with broker slot zero. With tradeback=true it
 // immediately trades the received placeholder back, causing the returned
@@ -36,6 +61,25 @@ type LinkTradeResult struct {
 //
 // The caller must attach a live GomeBoy link before calling this function.
 func VirtualTrade(m *emu.Emu, romData []byte, playerSlot int, tradeback bool, policy MovePolicy) (LinkTradeResult, error) {
+	type out struct {
+		result LinkTradeResult
+		err    error
+	}
+	done := make(chan out, 1)
+	go func() {
+		result, err := virtualTrade(m, romData, playerSlot, tradeback, policy)
+		done <- out{result, err}
+	}()
+	select {
+	case o := <-done:
+		return o.result, o.err
+	case <-time.After(linkStallTimeout):
+		return LinkTradeResult{Tradeback: tradeback}, fmt.Errorf("%w: no peer response for %s at frame %d",
+			ErrLinkStalled, linkStallTimeout, m.FrameCount())
+	}
+}
+
+func virtualTrade(m *emu.Emu, romData []byte, playerSlot int, tradeback bool, policy MovePolicy) (LinkTradeResult, error) {
 	result := LinkTradeResult{Tradeback: tradeback}
 	if policy == nil {
 		return result, fmt.Errorf("skill: VirtualTrade: nil move policy")
