@@ -20,6 +20,7 @@ import {
   safeIssueURL
 } from './runs'
 import { isPlayStyleRun, playStyleLabel } from '../shared/playstyle'
+import { gameTitle } from './operations'
 
 const PAGE_SIZE = 25
 
@@ -559,6 +560,7 @@ function experimentLabel(run: DashboardRun): string {
                     <a :href="legacyRunURL(run.run_id)" class="font-mono text-xs text-cyan-200 hover:text-cyan-100" :title="run.run_id">{{ run.run_id }}</a>
                     <div class="mt-1.5 flex flex-wrap gap-1.5">
                       <StatusBadge tone="neutral">{{ archiveHow(run) }}</StatusBadge>
+                      <StatusBadge tone="neutral">{{ gameTitle(run.game) }}</StatusBadge>
                       <button v-if="isPlayStyleRun(run)" type="button" @click="setFilter('playStyle', run.play_style || '')">
                         <StatusBadge tone="info">{{ playStyleLabel(run) }}</StatusBadge>
                       </button>
