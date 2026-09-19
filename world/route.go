@@ -87,9 +87,13 @@ func FindRouteAtDestination(g *Graph, from, to uint8, x, y, tx, ty int, blockedH
 func findRouteAtDestinationAllowingSemantic(g *Graph, from, to uint8, x, y, tx, ty int, blockedHere map[Edge]bool, skipCanExit, relaxLanding map[Edge]bool) ([]Edge, error) {
 	first := componentSetAt(g, from, x, y)
 	target := standingComponentAt(g, to, tx, ty)
-	if !g.componentAware || len(first) == 0 || len(target) == 0 {
-		// Missing component data is not evidence that a detour is required.
-		// Preserve the old map-level behavior in that case.
+	if !g.componentAware || len(target) == 0 {
+		// Unknown destination tile: map-level arrival is enough. A missing
+		// START component must not take this branch — that is not evidence
+		// the requested dest tile is unreachable, and dropping target made
+		// every landing on `to` look like success (Cerulean (19,28) is
+		// unwalkable in the ROM grid, so "go to Route 4 (10,10)" accepted
+		// the east-seam landing).
 		return findRoute(g, from, to, blockedHere, first, nil, skipCanExit, relaxLanding)
 	}
 	return findRoute(g, from, to, blockedHere, first, target, skipCanExit, relaxLanding)
@@ -170,7 +174,8 @@ func findRoute(g *Graph, from, to uint8, blockedHere map[Edge]bool, first, targe
 		return []Edge{}, nil
 	}
 	// node.prev indexes back into nodes, or -1 for a first hop. entry is the
-	// walkable component set on edge.To after taking edge.
+	// walkable component set on edge.To after taking edge (nil after a
+	// relaxLanding hop, so later canExit on that map may use every port).
 	type node struct {
 		edge  Edge
 		prev  int
@@ -178,9 +183,12 @@ func findRoute(g *Graph, from, to uint8, blockedHere map[Edge]bool, first, targe
 	}
 	var nodes []node
 	seen := make(map[routeStateKey]bool)
+	// A PivotOnly hop may unlock exits on a map the search has not stood on
+	// yet. Re-entering a map already occupied in this search must use the
+	// physical landing: otherwise leave-and-return becomes a teleport onto
+	// every component of the origin (Cerulean -> Route 9 -> Cerulean).
+	occupied := map[uint8]bool{from: true}
 	if g.componentAware && len(first) > 0 {
-		// Returning to the exact component we started in is a no-op cycle, not
-		// a new opportunity to bypass a first-hop restriction.
 		seen[routeStateIdentity(g, from, first, Edge{})] = true
 	}
 	expand := func(cur uint8, prev int, entry []int) {
@@ -195,7 +203,7 @@ func findRoute(g *Graph, from, to uint8, blockedHere map[Edge]bool, first, targe
 				continue
 			}
 			nextEntry := g.entryComps[e]
-			if relaxLanding[e] {
+			if relaxLanding[e] && !occupied[e.To] {
 				// The static graph's landing component for e.To was computed from
 				// pristine ROM collision. A semantic pivot (Cut, Surf, a switch...)
 				// can permanently rewrite that map's tile collision at the exact
@@ -212,6 +220,7 @@ func findRoute(g *Graph, from, to uint8, blockedHere map[Edge]bool, first, targe
 				continue
 			}
 			seen[key] = true
+			occupied[e.To] = true
 			nodes = append(nodes, node{edge: e, prev: prev, entry: nextEntry})
 		}
 	}
