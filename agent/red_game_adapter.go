@@ -121,7 +121,23 @@ func (a *redObjectiveAdapter) NormalizeBoundary() error {
 }
 
 func (a *redObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error) {
-	return executeRedOwned(a.m, a.romData, o)
+	result, err := executeRedOwned(a.m, a.romData, o)
+	return normalizeRedOwnedExecutionResult(o, result, err)
+}
+
+// normalizeRedOwnedExecutionResult gives validated item-use actions a portable
+// fallback outcome when their native controller path returns an untyped error.
+// UseFieldItem and TeachTMHM contain several menu-state failures that are
+// ordinary replanning conditions but cannot be distinguished by error identity
+// alone. Marking the owned action blocked prevents those errors from becoming a
+// terminal unknown_failure. Typed failures still win in NormalizeFailure, and
+// an unsafe finish boundary or unreadable final observation still overrides
+// this fallback in the transaction runtime.
+func normalizeRedOwnedExecutionResult(o Objective, result ObjectiveResult, err error) (ObjectiveResult, error) {
+	if err != nil && o.Kind == KindUseItem && result.Outcome == "" {
+		result.Outcome = OutcomeBlocked
+	}
+	return result, err
 }
 
 func (a *redObjectiveAdapter) WithinObjectiveBudget(o Objective, fn func() error) error {
