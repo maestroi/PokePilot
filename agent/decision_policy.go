@@ -7,7 +7,7 @@ import (
 
 const (
 	DecisionKindObjectiveSelection = "objective_selection"
-	DecisionKindFailureRecovery     = "failure_recovery"
+	DecisionKindFailureRecovery    = "failure_recovery"
 )
 
 type objectiveDecisionState struct {
