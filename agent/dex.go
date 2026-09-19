@@ -105,7 +105,7 @@ func BuildDexCatalog(romData []byte, owned, seen []SpeciesID) (DexCatalog, error
 	if err != nil {
 		return DexCatalog{}, err
 	}
-	return assembleDexCatalog(entries, sources, owned, seen, redExclusiveChoices()), nil
+	return assembleDexCatalogWithPolicy(entries, sources, owned, seen, redExclusiveChoices(), redEventOnly()), nil
 }
 
 func dexSpecies(romData []byte) ([]DexEntry, error) {
@@ -212,6 +212,10 @@ func collectDexSources(romData []byte) (map[SpeciesID][]DexSource, error) {
 }
 
 func assembleDexCatalog(species []DexEntry, sources map[SpeciesID][]DexSource, owned, seen []SpeciesID, exclusives []exclusiveChoice) DexCatalog {
+	return assembleDexCatalogWithPolicy(species, sources, owned, seen, exclusives, redEventOnly())
+}
+
+func assembleDexCatalogWithPolicy(species []DexEntry, sources map[SpeciesID][]DexSource, owned, seen []SpeciesID, exclusives []exclusiveChoice, eventOnly map[SpeciesID]bool) DexCatalog {
 	ownedSet := speciesSet(owned)
 	seenSet := speciesSet(seen)
 	forfeited := forfeitedSpecies(ownedSet, exclusives)
@@ -245,7 +249,7 @@ func assembleDexCatalog(species []DexEntry, sources map[SpeciesID][]DexSource, o
 			cat.Unavailable = append(cat.Unavailable, entry)
 		case local[entry.Species]:
 			cat.Targets = append(cat.Targets, entry)
-		case redEventOnly()[entry.Species]:
+		case eventOnly[entry.Species]:
 			entry.Unavailable = UnavailableEventOnly
 			cat.Unavailable = append(cat.Unavailable, entry)
 		case onlyTradeEvo(entry.Sources):
