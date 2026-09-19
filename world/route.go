@@ -51,7 +51,7 @@ func FindRoute(g *Graph, from, to uint8) ([]Edge, error) {
 //
 // Edge is comparable, so the caller's set is a plain map[Edge]bool.
 func FindRouteAvoiding(g *Graph, from, to uint8, blockedHere map[Edge]bool) ([]Edge, error) {
-	return findRoute(g, from, to, blockedHere, nil, nil, nil)
+	return findRoute(g, from, to, blockedHere, nil, nil, nil, nil)
 }
 
 // FindRouteAt is FindRouteAvoiding with the player's position on `from` known:
@@ -60,7 +60,7 @@ func FindRouteAvoiding(g *Graph, from, to uint8, blockedHere map[Edge]bool) ([]E
 // components (Route 2, the gate maps) and the caller knows which one it stands
 // in; the component the player is in is the only honest first-hop constraint.
 func FindRouteAt(g *Graph, from, to uint8, x, y int, blockedHere map[Edge]bool) ([]Edge, error) {
-	return findRoute(g, from, to, blockedHere, componentSetAt(g, from, x, y), nil, nil)
+	return findRoute(g, from, to, blockedHere, componentSetAt(g, from, x, y), nil, nil, nil)
 }
 
 // FindRouteAtDestination is FindRouteAt with the destination tile known too.
@@ -70,23 +70,29 @@ func FindRouteAt(g *Graph, from, to uint8, x, y int, blockedHere map[Edge]bool) 
 // deliberately searches a cycle that leaves and re-enters the map through a
 // component that can actually reach the target.
 func FindRouteAtDestination(g *Graph, from, to uint8, x, y, tx, ty int, blockedHere map[Edge]bool) ([]Edge, error) {
-	return findRouteAtDestinationAllowingSemantic(g, from, to, x, y, tx, ty, blockedHere, nil)
+	return findRouteAtDestinationAllowingSemantic(g, from, to, x, y, tx, ty, blockedHere, nil, nil)
 }
 
 // findRouteAtDestinationAllowingSemantic is the component-aware planner with
-// one extra contract: an edge named in semantic is an executable topology
-// transition, so ordinary walking reachability to that edge's exit port is not
-// a prerequisite. The owning transition executor must establish and verify the
-// game-specific effect before the edge is traversed.
-func findRouteAtDestinationAllowingSemantic(g *Graph, from, to uint8, x, y, tx, ty int, blockedHere map[Edge]bool, semantic map[Edge]bool) ([]Edge, error) {
+// two semantic privileges. skipCanExit edges may be taken even when ordinary
+// walking cannot reach their exit port (PortBypass / FROM-side actions such as
+// Surf or a Cut tree on this map). relaxLanding edges discard the static
+// destination landing component after the hop, so a TO-side pivot (Route 9's
+// tree) can continue past a split that pristine ROM collision still sees.
+//
+// PivotOnly annotations belong in relaxLanding only: their obstacle lives on
+// the adjacent map, so inventing FROM-side port reachability strands players
+// in dead pockets (Cerulean Badge House north exit) that planned "east to
+// Route 9" with Cut while standing on an unreachable component.
+func findRouteAtDestinationAllowingSemantic(g *Graph, from, to uint8, x, y, tx, ty int, blockedHere map[Edge]bool, skipCanExit, relaxLanding map[Edge]bool) ([]Edge, error) {
 	first := componentSetAt(g, from, x, y)
 	target := standingComponentAt(g, to, tx, ty)
 	if !g.componentAware || len(first) == 0 || len(target) == 0 {
 		// Missing component data is not evidence that a detour is required.
 		// Preserve the old map-level behavior in that case.
-		return findRoute(g, from, to, blockedHere, first, nil, semantic)
+		return findRoute(g, from, to, blockedHere, first, nil, skipCanExit, relaxLanding)
 	}
-	return findRoute(g, from, to, blockedHere, first, target, semantic)
+	return findRoute(g, from, to, blockedHere, first, target, skipCanExit, relaxLanding)
 }
 
 func componentSetAt(g *Graph, mapID uint8, x, y int) []int {
@@ -159,7 +165,7 @@ func componentSetKey(in []int) string {
 	return b.String()
 }
 
-func findRoute(g *Graph, from, to uint8, blockedHere map[Edge]bool, first, target []int, semantic map[Edge]bool) ([]Edge, error) {
+func findRoute(g *Graph, from, to uint8, blockedHere map[Edge]bool, first, target []int, skipCanExit, relaxLanding map[Edge]bool) ([]Edge, error) {
 	if from == to && (len(target) == 0 || shareComp(first, target)) {
 		return []Edge{}, nil
 	}
@@ -182,15 +188,14 @@ func findRoute(g *Graph, from, to uint8, blockedHere map[Edge]bool, first, targe
 			if prev < 0 && blockedHere[e] {
 				continue
 			}
-			// A semantic edge represents an action that changes traversal state
-			// (Cut, Surf, a story gate, a boulder switch, ...). Requiring the
-			// pre-action walking component to reach its port would make the action
-			// impossible to select. Non-semantic edges retain the exact old rule.
-			if !semantic[e] && !canExit(g, e, entry) {
+			// PortBypass / FROM-side actions may be selected even when ordinary
+			// walking cannot reach the exit port. PivotOnly destinations still
+			// require canExit: their obstacle is on the adjacent map.
+			if !skipCanExit[e] && !canExit(g, e, entry) {
 				continue
 			}
 			nextEntry := g.entryComps[e]
-			if semantic[e] {
+			if relaxLanding[e] {
 				// The static graph's landing component for e.To was computed from
 				// pristine ROM collision. A semantic pivot (Cut, Surf, a switch...)
 				// can permanently rewrite that map's tile collision at the exact

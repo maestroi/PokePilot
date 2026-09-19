@@ -138,15 +138,28 @@ func TestMissingPivotOnlyCapabilityFallsBackToOrdinaryGeometry(t *testing.T) {
 		t.Fatalf("missing = %v, want %v", got, want)
 	}
 
-	// Once the capability exists the same edge becomes an executable pivot and
-	// may bridge the static component split.
+	// Once the capability exists, PivotOnly still does not invent FROM-side
+	// port reachability — the obstacle lives on the adjacent map. PortBypass
+	// (or a normal FROM-side action) is what bridges a static split on this
+	// map. A satisfied PivotOnly from the wrong component must stay unroutable.
 	prereqs.Capabilities = gameruntime.NewCapabilitySet("can_pivot")
+	if _, err = FindRoutePlanAtDestinationWithCapabilities(g, 1, 2, 2, 0, 0, 0, nil, prereqs); !errors.Is(err, ErrNoRoute) {
+		t.Fatalf("enabled pivot-only from unreachable component routed: %v", err)
+	}
+
+	// The same edge marked PortBypass may bridge the FROM-side split.
+	prereqs.Transitions = map[Edge]gameruntime.Transition{pivot: {
+		ID:         "optional_component_pivot",
+		Requires:   []gameruntime.CapabilityID{"can_pivot"},
+		PivotOnly:  true,
+		PortBypass: true,
+	}}
 	plan, err = FindRoutePlanAtDestinationWithCapabilities(g, 1, 2, 2, 0, 0, 0, nil, prereqs)
 	if err != nil {
-		t.Fatalf("enabled pivot-only route: %v", err)
+		t.Fatalf("enabled port-bypass pivot route: %v", err)
 	}
 	if len(plan) != 1 || plan[0].Transition == nil || plan[0].Transition.ID != "optional_component_pivot" {
-		t.Fatalf("enabled pivot-only plan = %+v, want executable transition", plan)
+		t.Fatalf("enabled port-bypass plan = %+v, want executable transition", plan)
 	}
 }
 
