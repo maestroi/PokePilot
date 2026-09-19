@@ -129,6 +129,20 @@ CREATE TABLE IF NOT EXISTS llm_exchanges (
 );
 CREATE INDEX IF NOT EXISTS llm_exchanges_model_idx ON llm_exchanges(model, recorded_at DESC);
 CREATE INDEX IF NOT EXISTS llm_exchanges_run_idx ON llm_exchanges(run_id, attempt);
+CREATE TABLE IF NOT EXISTS decision_exchanges (
+    run_id TEXT NOT NULL, attempt INTEGER NOT NULL, decision_index INTEGER NOT NULL,
+    kind TEXT NOT NULL DEFAULT '', question TEXT NOT NULL DEFAULT '', choice TEXT NOT NULL DEFAULT '',
+    probabilities JSONB NOT NULL DEFAULT '{}'::jsonb, confidence DOUBLE PRECISION NOT NULL DEFAULT 0,
+    fallback BOOLEAN NOT NULL DEFAULT FALSE, error TEXT NOT NULL DEFAULT '',
+    duration_seconds DOUBLE PRECISION NOT NULL DEFAULT 0, backend TEXT NOT NULL DEFAULT '',
+    model TEXT NOT NULL DEFAULT '', prompt_tokens INTEGER NOT NULL DEFAULT 0,
+    completion_tokens INTEGER NOT NULL DEFAULT 0, input_bytes BIGINT NOT NULL DEFAULT 0,
+    output_bytes BIGINT NOT NULL DEFAULT 0, recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (run_id, attempt, decision_index)
+);
+CREATE INDEX IF NOT EXISTS decision_exchanges_model_idx ON decision_exchanges(model, recorded_at DESC);
+CREATE INDEX IF NOT EXISTS decision_exchanges_run_idx ON decision_exchanges(run_id, attempt);
+CREATE INDEX IF NOT EXISTS decision_exchanges_kind_idx ON decision_exchanges(kind, recorded_at DESC);
 CREATE TABLE IF NOT EXISTS objective_failures (
     run_id TEXT NOT NULL, attempt INTEGER NOT NULL, failure_key TEXT NOT NULL, fingerprint TEXT NOT NULL,
     blocking BOOLEAN NOT NULL DEFAULT FALSE, terminal_count INTEGER NOT NULL DEFAULT 0,
@@ -181,6 +195,23 @@ ALTER TABLE model_deployments
     ADD COLUMN IF NOT EXISTS discover BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE model_deployments
     ADD COLUMN IF NOT EXISTS default_for TEXT[] NOT NULL DEFAULT '{}';
+`
+
+const controlPlaneMigration004 = `
+CREATE TABLE IF NOT EXISTS decision_exchanges (
+    run_id TEXT NOT NULL, attempt INTEGER NOT NULL, decision_index INTEGER NOT NULL,
+    kind TEXT NOT NULL DEFAULT '', question TEXT NOT NULL DEFAULT '', choice TEXT NOT NULL DEFAULT '',
+    probabilities JSONB NOT NULL DEFAULT '{}'::jsonb, confidence DOUBLE PRECISION NOT NULL DEFAULT 0,
+    fallback BOOLEAN NOT NULL DEFAULT FALSE, error TEXT NOT NULL DEFAULT '',
+    duration_seconds DOUBLE PRECISION NOT NULL DEFAULT 0, backend TEXT NOT NULL DEFAULT '',
+    model TEXT NOT NULL DEFAULT '', prompt_tokens INTEGER NOT NULL DEFAULT 0,
+    completion_tokens INTEGER NOT NULL DEFAULT 0, input_bytes BIGINT NOT NULL DEFAULT 0,
+    output_bytes BIGINT NOT NULL DEFAULT 0, recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (run_id, attempt, decision_index)
+);
+CREATE INDEX IF NOT EXISTS decision_exchanges_model_idx ON decision_exchanges(model, recorded_at DESC);
+CREATE INDEX IF NOT EXISTS decision_exchanges_run_idx ON decision_exchanges(run_id, attempt);
+CREATE INDEX IF NOT EXISTS decision_exchanges_kind_idx ON decision_exchanges(kind, recorded_at DESC);
 `
 
 type controlPlane struct {
@@ -288,6 +319,18 @@ func (cp *controlPlane) migrate() error {
 		}
 		if _, err := tx.Exec(`INSERT INTO schema_migrations(version) VALUES(2) ON CONFLICT DO NOTHING`); err != nil {
 			return fmt.Errorf("record control-plane migration 2: %w", err)
+		}
+	}
+	var applied4 bool
+	if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version=4)`).Scan(&applied4); err != nil {
+		return fmt.Errorf("read migration version 4: %w", err)
+	}
+	if !applied4 {
+		if _, err := tx.Exec(controlPlaneMigration004); err != nil {
+			return fmt.Errorf("apply control-plane migration 3: %w", err)
+		}
+		if _, err := tx.Exec(`INSERT INTO schema_migrations(version) VALUES(4) ON CONFLICT DO NOTHING`); err != nil {
+			return fmt.Errorf("record control-plane migration 3: %w", err)
 		}
 	}
 	return tx.Commit()

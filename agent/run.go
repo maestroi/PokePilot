@@ -239,6 +239,27 @@ runLoop:
 				res.Stop = StopError
 				res.Err = fmt.Errorf("agent: objective %s returned error with completed outcome: %w", obj, execErr)
 			case actionReplan:
+				// Typed failure decisions are advisory inside the deterministic
+				// safety envelope. Only outcomes already classified as recoverable
+				// can reach this hook, and only the conservative pause/impossible
+				// choices may tighten policy into a stop.
+				if decider, ok := p.(FailureDecisionPlanner); ok {
+					decision, decisionErr := decider.DecideFailure(objectiveResult)
+					if decisionErr == nil {
+						stop, mappingErr := FailureDecisionStops(decision.Choice)
+						if mappingErr == nil && stop {
+							markLastOutcomeTerminal(&res)
+							res.Stop = StopError
+							sentinel := ErrDecisionImpossible
+							if decision.Choice == "pause" {
+								sentinel = ErrDecisionPause
+							}
+							res.Err = fmt.Errorf("%w: disposition=%s confidence=%.3f after %s: %v",
+								sentinel, decision.Choice, decision.Confidence, obj, execErr)
+							break
+						}
+					}
+				}
 				engine.failures.record(objectiveResult)
 			}
 			if res.Stop != StopUnset {

@@ -222,6 +222,28 @@ type LLMStats struct {
 	StrategicRecords        []StrategicCallRecord `json:"strategic_records,omitempty"`
 	StrategicRecordsDropped int                   `json:"strategic_records_dropped,omitempty"`
 
+	// Decision* is the independent constrained-backend telemetry. These fields
+	// deliberately do not reuse Calls/Rejected/Model above: those describe the
+	// generative planner and must remain comparable when typed decisions are
+	// enabled only for one part of a run.
+	DecisionCalls            int                   `json:"decision_calls,omitempty"`
+	DecisionRejected         int                   `json:"decision_rejected,omitempty"`
+	DecisionFallbacks        int                   `json:"decision_fallbacks,omitempty"`
+	DecisionSeconds          float64               `json:"decision_seconds,omitempty"`
+	DecisionAvgSeconds       float64               `json:"decision_avg_seconds,omitempty"`
+	DecisionPromptTokens     int                   `json:"decision_prompt_tokens,omitempty"`
+	DecisionCompletionTokens int                   `json:"decision_completion_tokens,omitempty"`
+	DecisionInputBytes       int                   `json:"decision_input_bytes,omitempty"`
+	DecisionOutputBytes      int                   `json:"decision_output_bytes,omitempty"`
+	DecisionBackend          string                `json:"decision_backend,omitempty"`
+	DecisionModel            string                `json:"decision_model,omitempty"`
+	DecisionKind             string                `json:"decision_kind,omitempty"`
+	DecisionChoice           string                `json:"decision_choice,omitempty"`
+	DecisionConfidence       float64               `json:"decision_confidence,omitempty"`
+	DecisionProbabilities    map[string]float64    `json:"decision_probabilities,omitempty"`
+	DecisionRecords          []TypedDecisionRecord `json:"decision_records,omitempty"`
+	DecisionRecordsDropped   int                   `json:"decision_records_dropped,omitempty"`
+
 	// Goal* is present only when LLMPlanner.Goal opted into the structured
 	// deterministic syntax. Summary is the human/model-facing status; the
 	// numeric fields make dashboards able to render progress without parsing
