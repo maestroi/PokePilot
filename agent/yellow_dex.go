@@ -121,11 +121,11 @@ func yellowExclusiveChoices() []exclusiveChoice {
 			},
 		},
 		{
-			Group: "fighting_dojo",
+			Group:        "fighting_dojo",
 			Alternatives: [][]SpeciesID{{"hitmonlee"}, {"hitmonchan"}},
 		},
 		{
-			Group: "eevee_stone",
+			Group:        "eevee_stone",
 			Alternatives: [][]SpeciesID{{"flareon"}, {"jolteon"}, {"vaporeon"}},
 		},
 	}
