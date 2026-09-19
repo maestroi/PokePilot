@@ -8,6 +8,9 @@ type TriageIssue struct {
 	Resolution      string `json:"resolution"`
 	OccurrenceCount int64  `json:"occurrence_count"`
 	FixedRevision   string `json:"fixed_revision"`
+	CircuitOpen     bool   `json:"circuit_open,omitempty"`
+	CircuitKind     string `json:"circuit_kind,omitempty"`
+	CircuitCount    int    `json:"circuit_count,omitempty"`
 }
 
 type TriageGroup struct {
@@ -97,7 +100,9 @@ func PickWithLocalState(groups []TriageGroup, prTitles, repairedKeys, regressedK
 		if !Actionable(g) && !keyed(regressedKeys, key) {
 			continue
 		}
-		if !found || g.Count > best.Count {
+		gCircuit := g.Issue != nil && g.Issue.CircuitOpen
+		bestCircuit := best.Issue != nil && best.Issue.CircuitOpen
+		if !found || (gCircuit && !bestCircuit) || (gCircuit == bestCircuit && g.Count > best.Count) {
 			best = g
 			found = true
 		}
