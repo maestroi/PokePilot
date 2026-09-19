@@ -233,6 +233,7 @@ func TestReportCreatesGitHubIssueWithoutArtifactBytes(t *testing.T) {
 	for _, want := range []string{
 		"pokepilot-fingerprint:sha256:0123456789abcdef",
 		"pokepilot-external-id:run-42-attempt-3-objective-key",
+		"pokepilot-latest-observed-revision:abc123",
 		"Triage key:** `0123456789abcdef`",
 		"https://pokemon.test/v1/runs/run-42/debug",
 		"`round-003.state`",
