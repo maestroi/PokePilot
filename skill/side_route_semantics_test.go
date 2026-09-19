@@ -13,7 +13,7 @@ func TestRoute2GateWarpUsesCutOnlyAsComponentPivot(t *testing.T) {
 		if !ok {
 			t.Fatalf("Route 2 Gate warp (%d,%d) is missing semantic transition", point[0], point[1])
 		}
-		if transition.ID != "red:route2_gate_cut" || !transition.PivotOnly || transition.Gate {
+		if transition.ID != "red:route2_gate_cut" || !transition.PivotOnly || !transition.PortBypass || transition.Gate {
 			t.Fatalf("Route 2 Gate transition=%+v", transition)
 		}
 		if len(transition.Requires) != 1 || transition.Requires[0] != capCanCut {
@@ -28,7 +28,7 @@ func TestPowerPlantWarpUsesSurfOnlyAsComponentPivot(t *testing.T) {
 	if !ok {
 		t.Fatal("Route 10 -> Power Plant warp is missing semantic transition")
 	}
-	if transition.ID != "red:power_plant_surf" || !transition.PivotOnly || transition.Gate {
+	if transition.ID != "red:power_plant_surf" || !transition.PivotOnly || !transition.PortBypass || transition.Gate {
 		t.Fatalf("Power Plant transition=%+v", transition)
 	}
 	if len(transition.Requires) != 1 || transition.Requires[0] != capCanSurf {
@@ -48,7 +48,7 @@ func TestCeruleanCaveB1FWarpUsesSurfOnlyAsComponentPivot(t *testing.T) {
 	if !ok {
 		t.Fatal("Cerulean Cave 1F -> B1F warp is missing semantic transition")
 	}
-	if transition.ID != "red:cerulean_cave_b1f_surf" || !transition.PivotOnly || transition.Gate {
+	if transition.ID != "red:cerulean_cave_b1f_surf" || !transition.PivotOnly || !transition.PortBypass || transition.Gate {
 		t.Fatalf("Cerulean Cave transition=%+v", transition)
 	}
 	if len(transition.Requires) != 1 || transition.Requires[0] != capCanSurf {

@@ -24,9 +24,10 @@ const (
 
 // redSideRouteTransitionForEdge models optional-world entrances whose door is
 // real but lives in a different immutable walking component from the ordinary
-// route. These are PivotOnly transitions: Cut/Surf is needed to bridge into
-// the pocket, but a resumed save already standing on that pocket must remain
-// able to use the ordinary warp without owning the field capability.
+// route. These are PivotOnly+PortBypass: Cut/Surf is needed to bridge into the
+// pocket from the wrong component, but a resumed save already standing on that
+// pocket must remain able to use the ordinary warp without owning the field
+// capability (PivotOnly's missing-cap fallback).
 func redSideRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, bool) {
 	if edge.Kind != world.EdgeWarp {
 		return gameruntime.Transition{}, false
@@ -36,12 +37,14 @@ func redSideRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, boo
 		((edge.WarpX == 16 && edge.WarpY == 35) || (edge.WarpX == 15 && edge.WarpY == 39)):
 		t := semanticTransition("red:route2_gate_cut", edge, capCanCut)
 		t.PivotOnly = true
+		t.PortBypass = true
 		return t, true
 
 	case edge.From == route10Map && edge.To == powerPlantMap &&
 		edge.WarpX == powerPlantWarpX && edge.WarpY == powerPlantWarpY:
 		t := semanticTransition("red:power_plant_surf", edge, capCanSurf)
 		t.PivotOnly = true
+		t.PortBypass = true
 		return t, true
 
 	case edge.From == ceruleanCave1FMap && edge.To == ceruleanCaveB1FMap &&
@@ -52,6 +55,7 @@ func redSideRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, boo
 		// walking leaves B1F isolated even though 1F/2F are reachable.
 		t := semanticTransition("red:cerulean_cave_b1f_surf", edge, capCanSurf)
 		t.PivotOnly = true
+		t.PortBypass = true
 		return t, true
 	}
 	return gameruntime.Transition{}, false

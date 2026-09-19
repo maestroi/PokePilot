@@ -135,17 +135,22 @@ func FindRouteAtDestinationWithCapabilities(
 
 // FindRoutePlanAtDestinationWithCapabilities applies the same semantic policy
 // used by reachability filtering and preserves transition identity for
-// execution. Capability-satisfied semantic actions are executable pivots: the
-// pre-action ordinary-walking component does not have to reach the port.
-// Missing capabilities normally remove the semantic edge and, when that is the
-// reason routing fails, return structured prerequisite evidence before any
-// movement occurs.
+// execution.
 //
-// PivotOnly transitions are the exception: they annotate an ordinary edge whose
-// capability is needed only to bypass static component reachability. When that
-// capability is absent, the edge remains usable through ordinary geometry if
-// the player can already reach its port; the transition is omitted from the
-// returned RouteStep so execution does not demand an action that was not needed.
+// PortBypass and ordinary FROM-side actions (Cut a tree on this map, Surf off
+// a shore) are executable pivots: the pre-action ordinary-walking component
+// does not have to reach the port. PivotOnly annotations are narrower — they
+// only relax the destination landing component (the obstacle lives on the
+// adjacent map), so FROM-side canExit still applies. Missing capabilities
+// normally remove a semantic edge and, when that is the reason routing fails,
+// return structured prerequisite evidence before any movement occurs.
+//
+// PivotOnly transitions are also the exception for missing capabilities: they
+// annotate an ordinary edge whose capability is needed only to bypass static
+// TO-side component reachability. When that capability is absent, the edge
+// remains usable through ordinary geometry if the player can already reach its
+// port; the transition is omitted from the returned RouteStep so execution
+// does not demand an action that was not needed.
 func FindRoutePlanAtDestinationWithCapabilities(
 	g *Graph,
 	from, to uint8,
@@ -160,7 +165,8 @@ func FindRoutePlanAtDestinationWithCapabilities(
 
 	denied := make(map[Edge]gameruntime.TransitionBlockage)
 	hardDenied := make(map[Edge]gameruntime.TransitionBlockage)
-	allowed := make(map[Edge]bool)
+	skipCanExit := make(map[Edge]bool)
+	relaxLanding := make(map[Edge]bool)
 	executable := make(map[Edge]gameruntime.Transition, len(prereqs.Transitions))
 	allSemantic := make(map[Edge]bool, len(prereqs.Transitions))
 	for edge, transition := range prereqs.Transitions {
@@ -183,8 +189,19 @@ func FindRoutePlanAtDestinationWithCapabilities(
 		}
 
 		executable[edge] = transition
-		if !transition.Gate {
-			allowed[edge] = true
+		switch {
+		case transition.Gate:
+			// Gates never skip canExit or relax landings.
+		case transition.PortBypass:
+			skipCanExit[edge] = true
+			relaxLanding[edge] = true
+		case transition.PivotOnly:
+			// TO-side proxy only: keep FROM-side walking reachability.
+			relaxLanding[edge] = true
+		default:
+			// Ordinary FROM-side action (Cut tree on this map, etc.).
+			skipCanExit[edge] = true
+			relaxLanding[edge] = true
 		}
 	}
 
@@ -192,7 +209,7 @@ func FindRoutePlanAtDestinationWithCapabilities(
 	if len(hardDenied) > 0 {
 		usable = graphWithoutSemanticEdges(g, hardDenied)
 	}
-	route, err := findRouteAtDestinationAllowingSemantic(usable, from, to, x, y, tx, ty, blockedHere, allowed)
+	route, err := findRouteAtDestinationAllowingSemantic(usable, from, to, x, y, tx, ty, blockedHere, skipCanExit, relaxLanding)
 	if err == nil {
 		return routeSteps(route, executable), nil
 	}
@@ -206,7 +223,7 @@ func FindRoutePlanAtDestinationWithCapabilities(
 	// preserves prerequisite evidence for PivotOnly actions when ordinary
 	// geometry cannot reach the annotated edge and the missing capability is
 	// exactly what would have allowed the component pivot.
-	geometric, geometricErr := findRouteAtDestinationAllowingSemantic(g, from, to, x, y, tx, ty, blockedHere, allSemantic)
+	geometric, geometricErr := findRouteAtDestinationAllowingSemantic(g, from, to, x, y, tx, ty, blockedHere, allSemantic, allSemantic)
 	if geometricErr != nil {
 		return nil, err
 	}
