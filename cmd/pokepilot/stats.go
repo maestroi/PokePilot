@@ -34,7 +34,7 @@ type statsPlanner struct {
 	playStyle      agent.PlayStyleProfile
 	riskTolerance  string
 	wildEncounters string
-	decision        agent.DecisionSettings
+	decision       agent.DecisionSettings
 
 	stats                runStats
 	counts               map[string]int
