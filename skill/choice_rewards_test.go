@@ -42,6 +42,20 @@ func TestOldRodRewardUsesWalkableGuruApproach(t *testing.T) {
 	}
 }
 
+
+func TestSuperRodRewardUsesWalkableGuruApproach(t *testing.T) {
+	dest, ok := Place("route 12 super rod house")
+	if !ok {
+		t.Fatal("route 12 super rod house did not resolve")
+	}
+	// Map 0xBD's generated collision grid has walls at (3,4) and (4,4).
+	// The guru is fixed at (2,4), so (2,5) is the adjacent open floor tile.
+	want := (Destination{Map: 0xBD, X: 2, Y: 5})
+	if dest != want {
+		t.Fatalf("super rod destination = %+v, want %+v", dest, want)
+	}
+}
+
 func TestChoiceRewardThresholdsMatchRedAides(t *testing.T) {
 	want := map[string]int{
 		"hm05":       10,
