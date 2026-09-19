@@ -60,6 +60,46 @@ func TestRoutePrerequisiteQuarantineSurvivesPositionDrift(t *testing.T) {
 	}
 }
 
+func TestProgressRoutePrerequisiteQuarantineExpiresAfterRouteMovement(t *testing.T) {
+	failed := Objective{Kind: KindProgress, Progress: redProgressBoulderBadge}
+	alternative := Objective{Kind: KindTrain, Level: 12}
+	obs := Observation{
+		Location:     "route 2",
+		X:            8,
+		Y:            71,
+		Controllable: true,
+		Story:        ProgressState{{ID: redProgressPokedexAcquired, Complete: true}},
+	}
+
+	policy := newRunFailurePolicy(3)
+	policy.record(ObjectiveResult{
+		Objective:    failed,
+		Outcome:      OutcomeBlocked,
+		Cause:        "route_prerequisite_missing",
+		CauseContext: []string{"can_cut"},
+		Final:        obs,
+	})
+
+	// In the exact same route state the failed compound progression remains
+	// quarantined while an alternative exists.
+	got := policy.filter(obs, []Objective{failed, alternative})
+	if len(got) != 1 || got[0].Key() != alternative.Key() {
+		t.Fatalf("same-state progression prerequisite was not quarantined: %+v", got)
+	}
+
+	// #1109 died after Boulder progression hit a local route prerequisite on
+	// Route 2. A compound progression owns its internal route, so movement to a
+	// different component/map must reopen it; otherwise harmless alternatives
+	// can move Red around forever while the required story step stays hidden.
+	moved := obs
+	moved.Location = "viridian forest"
+	moved.X, moved.Y = 17, 43
+	got = policy.filter(moved, []Objective{failed, alternative})
+	if len(got) != 2 || got[0].Key() != failed.Key() {
+		t.Fatalf("route movement did not release compound progression quarantine: %+v", got)
+	}
+}
+
 func TestRoutePrerequisiteQuarantineExpiresAfterSemanticProgress(t *testing.T) {
 	fleeing := Objective{Kind: KindGoTo, Place: "pewter city", Flee: true}
 	plain := Objective{Kind: KindGoTo, Place: "pewter city"}
