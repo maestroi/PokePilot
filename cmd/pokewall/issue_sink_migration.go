@@ -23,6 +23,14 @@ func (w *Wall) reconcileIssueSink(uiBase string) int {
 			continue
 		}
 		delete(w.issueLinks, key)
+		for externalID, entry := range w.outbox {
+			if entry.Key != key {
+				continue
+			}
+			if entry.Status == outboxComplete || entry.Status == outboxQuarantined || entry.Status == outboxError {
+				delete(w.outbox, externalID)
+			}
+		}
 		removed++
 	}
 	w.mu.Unlock()
