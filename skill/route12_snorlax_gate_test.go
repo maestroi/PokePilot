@@ -10,22 +10,21 @@ import (
 	"github.com/maestroi/pokepilot/world"
 )
 
-// TestRoute12SnorlaxIsGateNotPivot pins the Route 13 west-pocket failure from
-// run-1q6cjygnjsm5a3tcrcf6mdityp (triage:d9d7e0200d20d0dd): a stationary
-// trainer at (12,4) splits (11,4) from the walkable Route 12 seam. When
-// red:route12_snorlax was a free pivot, FindRoute still offered that north
-// connection first and Traverse exhausted the re-plan budget (last leg then
-// misreported as the distant Cycling Road bicycle gate). As a gate it must
-// leave via Route 14 and only take the north seam once ordinary walking can
-// reach it.
-func TestRoute12SnorlaxIsGateNotPivot(t *testing.T) {
+// TestRoute12SnorlaxRequiresReachablePort pins the Route 13 west-pocket
+// failure from run-1q6cjygnjsm5a3tcrcf6mdityp
+// (triage:d9d7e0200d20d0dd): a stationary trainer at (12,4) splits (11,4)
+// from the walkable Route 12 seam. A free FROM-side pivot offered that
+// unreachable north connection and exhausted the re-plan budget. The Snorlax
+// action must remain executable, but PivotOnly keeps ordinary port reachability
+// so this pocket escapes through Route 14 first.
+func TestRoute12SnorlaxRequiresReachablePort(t *testing.T) {
 	edge := world.Edge{Kind: world.EdgeConnection, From: route13Map, To: route12Map}
 	transition, ok := redRouteTransitionForEdge(edge)
 	if !ok || transition.ID != "red:route12_snorlax" {
 		t.Fatalf("Route 13 -> Route 12 transition = %+v ok=%v, want red:route12_snorlax", transition, ok)
 	}
-	if !transition.Gate {
-		t.Fatalf("red:route12_snorlax must be a gate (blocker), not a free pivot: %+v", transition)
+	if transition.Gate || !transition.PivotOnly {
+		t.Fatalf("red:route12_snorlax must be an executable PivotOnly action, not a passive gate/free pivot: %+v", transition)
 	}
 
 	romPath := os.Getenv("POKEMON_RED_ROM")
