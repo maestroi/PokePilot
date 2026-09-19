@@ -111,21 +111,12 @@ type LLMPlanner struct {
 	// selection over presented objectives, not open reasoning, and
 	// RouteBlockages/Requirements already do the one derivation
 	// (prerequisite lookup) the task needs. POKEPILOT_LLM_REASONING_EFFORT
-	// overrides it. See RecoveryReasoningEffort for when this run has
-	// stopped making progress: that is a different regime, and "off"
-	// should not apply to it uniformly.
+	// overrides it. "off" is a hard run policy, including recovery replans.
 	ReasoningEffort string
 
-	// RecoveryReasoningEffort overrides ReasoningEffort for one strategist
-	// call when the replan reason is itself evidence something is going
-	// wrong (isRecoveryReplan): stagnation, stuck, objective_failed,
-	// blackout, train_retreat. A stalled run is exactly the case where
-	// "off"'s lookup-not-derivation assumption stops holding — the
-	// strategist needs to actually reconsider the approach, not just
-	// re-sequence the same menu. Defaults to "medium" in NewLLMPlanner;
-	// POKEPILOT_LLM_RECOVERY_REASONING_EFFORT overrides it. Only takes
-	// effect when ReasoningEffort is "off"; a run already reasoning at
-	// low/medium/high has no separate recovery tier.
+	// RecoveryReasoningEffort is retained for endpoint-configuration
+	// compatibility. It must never override ReasoningEffort="off"; callers
+	// that want reasoning must select it explicitly for the whole run.
 	RecoveryReasoningEffort string
 
 	// MaxTokens caps one reply's completion tokens. Zero means
@@ -253,7 +244,7 @@ func (p *LLMPlanner) StrategicPromptHash() string {
 // POKEPILOT_LLM_URL and POKEPILOT_LLM_MODEL when set. The bearer
 // token comes from llm_token (the name used in .env).
 func NewLLMPlanner() *LLMPlanner {
-	p := &LLMPlanner{BaseURL: defaultLLMBaseURL, Model: defaultLLMModel, ReasoningEffort: "off", RecoveryReasoningEffort: "medium"}
+	p := &LLMPlanner{BaseURL: defaultLLMBaseURL, Model: defaultLLMModel, ReasoningEffort: "off", RecoveryReasoningEffort: "off"}
 	if v := os.Getenv("POKEPILOT_LLM_URL"); v != "" {
 		p.BaseURL = v
 	}
@@ -282,19 +273,6 @@ func NewLLMPlanner() *LLMPlanner {
 	}
 	return p
 }
-
-// recoveryReplanReasons are the replan reasons run.go raises when something
-// is going wrong, not merely when a plan finished or the world moved on:
-// see agent/run.go's planning.request calls and recoverableFailureReplan.
-var recoveryReplanReasons = map[string]bool{
-	"stagnation":       true,
-	"stuck":            true,
-	"objective_failed": true,
-	"blackout":         true,
-	"train_retreat":    true,
-}
-
-func isRecoveryReplan(reason string) bool { return recoveryReplanReasons[reason] }
 
 // Next posts the observation and the offered objectives to the model and
 // returns the offered objective the model picked. It never guesses: a
@@ -882,10 +860,6 @@ func (p *LLMPlanner) askPlan(obs Observation, offered []Objective, reason, feedb
 		user += "\n\nYour previous plan reply was rejected: " + feedback +
 			"\nReturn ONLY corrected plan JSON, using exact objective sentences from the offered list."
 	}
-	maxTokens := p.MaxTokens
-	if maxTokens < strategicReplyTokens {
-		maxTokens = strategicReplyTokens
-	}
 	timeout := p.Timeout
 	if timeout < strategicTimeout {
 		timeout = strategicTimeout
@@ -895,22 +869,26 @@ func (p *LLMPlanner) askPlan(obs Observation, offered []Objective, reason, feedb
 	// the reasoning_effort field to shrink it. reasoning_effort is meaningless
 	// once thinking is off, so it is not sent alongside enable_thinking:false.
 	//
-	// A recovery-triggered replan (isRecoveryReplan) overrides that: the
-	// run has stopped making progress, which is exactly when "off"'s
-	// lookup-not-derivation assumption stops holding, so this one call
-	// escalates to RecoveryReasoningEffort instead.
+	// Off is a hard run policy. Recovery replans must not silently turn
+	// thinking back on: a small model can otherwise spend the whole slot on
+	// hidden reasoning and repeat that truncation on every retry.
 	effort := p.ReasoningEffort
-	if effort == "off" && isRecoveryReplan(reason) {
-		effort = p.RecoveryReasoningEffort
-		if effort == "" {
-			effort = "medium"
-		}
-	}
 	strategistNoThink := effort == "off"
 	if strategistNoThink {
 		effort = ""
 	}
-	return p.askRequest(system, user, "objective_plan", planSchema, strategistNoThink, effort, maxTokens, strategicRetryTokens, timeout, p.StrategicPromptHash(), temperature, maxTokensFactor)
+	maxTokens := p.MaxTokens
+	if maxTokens <= 0 {
+		maxTokens = strategicReplyTokens
+	}
+	if !strategistNoThink && maxTokens < strategicReplyTokens {
+		maxTokens = strategicReplyTokens
+	}
+	retryCap := strategicRetryTokens
+	if strategistNoThink {
+		retryCap = maxTokens
+	}
+	return p.askRequest(system, user, "objective_plan", planSchema, strategistNoThink, effort, maxTokens, retryCap, timeout, p.StrategicPromptHash(), temperature, maxTokensFactor)
 }
 
 func (p *LLMPlanner) askRequest(system, user, schemaName string, schema map[string]any, noThink bool, reasoningEffort string, baseMaxTokens, retryCap int, timeout time.Duration, promptHash string, temperature *float64, maxTokensFactor int) (chatResult, error) {

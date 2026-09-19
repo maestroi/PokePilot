@@ -17,11 +17,9 @@ type LLMConfig struct {
 	NoThink   bool
 	MaxTokens int
 	Timeout   time.Duration
-	// ReasoningEffort and RecoveryReasoningEffort carry the matching
-	// LLMPlanner fields through the config path. Farm runs build their
-	// planner via NewLLMPlannerFromConfig, never NewLLMPlanner, so the
-	// same defaults must be applied here too or the strategist silently
-	// reverts to "off" with no recovery escalation at all.
+	// ReasoningEffort and the legacy RecoveryReasoningEffort setting carry
+	// the matching LLMPlanner fields through the config path. Farm runs build
+	// their planner via NewLLMPlannerFromConfig, never NewLLMPlanner.
 	ReasoningEffort         string
 	RecoveryReasoningEffort string
 }
@@ -36,7 +34,7 @@ func NewLLMPlannerFromConfig(c LLMConfig) *LLMPlanner {
 	}
 	recovery := c.RecoveryReasoningEffort
 	if recovery == "" {
-		recovery = "medium"
+		recovery = "off"
 	}
 	return &LLMPlanner{
 		BaseURL:                 c.BaseURL,
