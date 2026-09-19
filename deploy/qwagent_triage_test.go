@@ -3,6 +3,7 @@ package deploy
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -146,6 +147,13 @@ func TestTriageSkillDocumentsLocalLifecycle(t *testing.T) {
 		if !strings.Contains(s, want) {
 			t.Errorf("triage skill missing %q", want)
 		}
+	}
+}
+
+func TestTriageScriptParsesAsBash(t *testing.T) {
+	cmd := exec.Command("bash", "-n", "qwagent-triage.sh")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("bash -n: %v\n%s", err, out)
 	}
 }
 
