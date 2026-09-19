@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -84,6 +85,72 @@ func TestFailureCircuitOpensOnSecondCanonicalOccurrence(t *testing.T) {
 	}
 	if decision.Badges != 5 {
 		t.Fatalf("badges = %d, want 5", decision.Badges)
+	}
+}
+
+func TestFailureCircuitOpensOnThirdFailureAtSameBadgeFrontier(t *testing.T) {
+	db := newFailureCircuitTestDB(t)
+	cp := &controlPlane{db: db}
+	scope := tileRow{Game: "pokemon-red", Planner: "llm", Goal: "champion"}
+	for i, id := range []string{"run-a", "run-b"} {
+		previous := farm.FinishReport{
+			RunID: id, Attempt: 1, Reason: "stuck", Detail: "different blocker",
+			RunnerVersion: "build-a", ProgressFinal: &farm.Progress{Badges: 5, Events: 10 + i, Maps: 60 + i},
+		}
+		reportRaw, _ := json.Marshal(previous)
+		rowRaw, _ := json.Marshal(scope)
+		if _, err := db.Exec(`INSERT INTO run_attempts(run_id,attempt,reason,runner_version,report_json) VALUES(?,?,?,?,?)`,
+			id, 1, previous.Reason, previous.RunnerVersion, reportRaw); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec(`INSERT INTO runs(run_id,row_json) VALUES(?,?)`, id, rowRaw); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	current := farm.FinishReport{
+		RunID: "run-c", Attempt: 1, Reason: "stuck", Detail: "third distinct blocker",
+		RunnerVersion: "build-a", ProgressFinal: &farm.Progress{Badges: 5, Events: 12, Maps: 62, Map: 0x0f},
+	}
+	failure, ok := terminalRunFailure(current, nil)
+	if !ok {
+		t.Fatal("missing synthetic current failure")
+	}
+	decision, err := cp.failureCircuitForOccurrence(scope, current, 1, failure)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !decision.Open || decision.Kind != "progression-frontier" || decision.Count != 3 || decision.Badges != 5 {
+		t.Fatalf("decision = %+v", decision)
+	}
+}
+
+func TestObjectiveFailureTriageUsesCanonicalFailureRows(t *testing.T) {
+	db := newFailureCircuitTestDB(t)
+	cp := &controlPlane{db: db}
+	failure := farm.ObjectiveFailure{
+		Objective: "make progress toward run goal", Error: "stagnation watchdog stopped the run",
+		Count: 1, TerminalCount: 1, Blocking: true, Map: 0x0f,
+	}
+	raw, _ := json.Marshal(failure)
+	for _, id := range []string{"run-a", "run-b"} {
+		if _, err := db.Exec(`INSERT INTO objective_failures(run_id,attempt,failure_key,fingerprint,blocking,terminal_count,failure_json) VALUES(?,?,?,?,TRUE,1,?)`,
+			id, 1, "canonical-key", "sha256:canonical", raw); err != nil {
+			t.Fatal(err)
+		}
+	}
+	w := NewWall("")
+	w.issueLinks["canonical-key"] = IssueLink{IssueID: "42", Status: "open", CircuitOpen: true}
+
+	groups, err := cp.objectiveFailureTriage(w)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(groups) != 1 || groups[0].Key != "canonical-key" || groups[0].Count != 2 {
+		t.Fatalf("groups = %+v", groups)
+	}
+	if groups[0].Issue == nil || !groups[0].Issue.CircuitOpen {
+		t.Fatalf("issue = %+v, want circuit-open canonical link", groups[0].Issue)
 	}
 }
 
