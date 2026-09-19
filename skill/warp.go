@@ -255,6 +255,20 @@ func walkToConnectionEdge(m *emu.Emu, h rom.MapHeader, grid *world.Grid, e world
 	err := walkAroundAvoidingObjects(func() error { return movementInterruption(m) }, m, h,
 		func(blocked map[[2]int]bool) ([]world.Step, error) {
 			x, y := playerXY(m)
+			// A connection edge is ordinary ground, not a door, but the path
+			// to it can still cross another warp tile of this same map (the
+			// Cerulean Badge House's front door sits right in the plaza).
+			// Stepping on ANY warp tile fires it, same as walking onto the
+			// intended one, and silently diverts the walk into that building
+			// instead of toward the border — MEASURED on
+			// run-3cefsxn84apv3126k7vkfk517y round 5: the walk toward
+			// Cerulean's east border crossed the Badge House door at (9,11),
+			// and the far door (9,9) is a genuine dead pocket with no route
+			// back out except through the same house, so every re-plan after
+			// that kept failing the same unreachable border search. Ban every
+			// other warp tile from the path exactly like warpTarget already
+			// does for a warp approach.
+			blocked = warpAvoidance(h, int(x), int(y), blocked)
 			tx, ty, err := edgeTargetForConnection(grid, e, int(x), int(y), blocked)
 			if err != nil {
 				// Type it as ErrLegUnwalkable like the FindPath failure below:
@@ -406,6 +420,28 @@ func waitForPositionStable(m *emu.Emu, budget, stableFrames int) error {
 		budget, m.Peek8(sym.CurMap), x, y)
 }
 
+// warpAvoidance extends blocked with every one of this map's warp tiles
+// except the tile the player is standing on. A path search that does not
+// know about warps can freely route across one on its way to some other
+// tile, firing it and silently diverting the walk into whatever it leads to
+// — the same hazard walkAroundAvoidingObjects's object blockers exist for,
+// just for doors instead of sprites. Standing on a warp tile does not refire
+// it (pokered only fires a warp on the step that arrives on it), so the
+// current tile is exempt: a caller already there must be free to walk off
+// it in any direction.
+func warpAvoidance(h rom.MapHeader, sx, sy int, blocked map[[2]int]bool) map[[2]int]bool {
+	out := make(map[[2]int]bool, len(blocked)+len(h.Warps))
+	for p, b := range blocked {
+		out[p] = b
+	}
+	for _, w := range h.Warps {
+		if int(w.X) != sx || int(w.Y) != sy {
+			out[[2]int{int(w.X), int(w.Y)}] = true
+		}
+	}
+	return out
+}
+
 // warpTarget picks the warp tile to cross. Among tiles that lead to e.To it
 // uses walkable tiles when any exist, then takes the first one in ROM table
 // order that the pathfinder can reach from (sx,sy). A destination made only
@@ -443,16 +479,10 @@ func warpTarget(h rom.MapHeader, e world.Edge, g *world.Grid, sx, sy int, blocke
 		}
 	}
 	warpTile := make(map[[2]int]bool, len(h.Warps))
-	approachBlocked := make(map[[2]int]bool, len(blocked)+len(h.Warps))
-	for p, b := range blocked {
-		approachBlocked[p] = b
-	}
 	for _, w := range h.Warps {
 		warpTile[[2]int{int(w.X), int(w.Y)}] = true
-		if int(w.X) != sx || int(w.Y) != sy {
-			approachBlocked[[2]int{int(w.X), int(w.Y)}] = true
-		}
 	}
+	approachBlocked := warpAvoidance(h, sx, sy, blocked)
 
 	_, _, _, elevatorEdge := rom.ElevatorFloorForDestination(e.From, e.To)
 	var candidates []rom.Warp
