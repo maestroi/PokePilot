@@ -163,6 +163,86 @@ func TestMissingPivotOnlyCapabilityFallsBackToOrdinaryGeometry(t *testing.T) {
 	}
 }
 
+// TestPivotOnlyReentryDoesNotUnlockUnreachableExits is the generic shape of
+// farm #1261. A TO-side pivot may relax landing on the adjacent map so the
+// walker can continue past that map's static split. It must not treat
+// leave-and-immediately-return as a teleport onto a different component of
+// the origin map. Otherwise an east-seam standing tile plans
+// "leave, re-enter, take a plaza-only exit" and GoTo oscillates forever.
+func TestPivotOnlyReentryDoesNotUnlockUnreachableExits(t *testing.T) {
+	toNeighbor := Edge{Kind: EdgeConnection, From: 1, To: 2, Dir: dirEast}
+	fromNeighbor := Edge{Kind: EdgeConnection, From: 2, To: 1, Dir: dirWest}
+	toDest := Edge{Kind: EdgeConnection, From: 1, To: 3, Dir: dirWest}
+	g := &Graph{
+		componentAware: true,
+		Edges: map[uint8][]Edge{
+			1: {toNeighbor, toDest},
+			2: {fromNeighbor},
+			3: {},
+		},
+		comps: map[uint8][][]int{
+			1: {{1, 0, 2}},
+			2: {{1}},
+			3: {{1}},
+		},
+		tiles: map[uint8]dim{1: {w: 3, h: 1}, 2: {w: 1, h: 1}, 3: {w: 1, h: 1}},
+		exitComps: map[Edge][]int{
+			toNeighbor:   {2},
+			fromNeighbor: {1},
+			toDest:       {1},
+		},
+		entryComps: map[Edge][]int{
+			toNeighbor:   {1},
+			fromNeighbor: {2},
+			toDest:       {1},
+		},
+	}
+	prereqs := RoutePrerequisites{
+		Capabilities: gameruntime.NewCapabilitySet("can_cut"),
+		Transitions: map[Edge]gameruntime.Transition{
+			toNeighbor: {
+				ID:        "cut",
+				Requires:  []gameruntime.CapabilityID{"can_cut"},
+				PivotOnly: true,
+			},
+			fromNeighbor: {
+				ID:        "cut",
+				Requires:  []gameruntime.CapabilityID{"can_cut"},
+				PivotOnly: true,
+			},
+		},
+	}
+
+	plan, err := FindRoutePlanAtDestinationWithCapabilities(g, 1, 3, 2, 0, 0, 0, nil, prereqs)
+	if !errors.Is(err, ErrNoRoute) {
+		t.Fatalf("east seam routed to a plaza-only destination via pivot bounce: err=%v plan=%+v", err, plan)
+	}
+}
+
+// TestUnknownStartComponentStillHonorsDestinationLanding is the other half of
+// #1261. Cerulean (19,28) has no static walkable component, so the old
+// planner discarded the Route 4 (10,10) target and treated any landing on
+// map 0x0F as arrival. Missing start-tile evidence must not erase the
+// destination component.
+func TestUnknownStartComponentStillHonorsDestinationLanding(t *testing.T) {
+	wrong := Edge{Kind: EdgeConnection, From: 1, To: 2, Dir: dirEast}
+	g := &Graph{
+		componentAware: true,
+		Edges:          map[uint8][]Edge{1: {wrong}, 2: {}},
+		// Tile (0,0) is unwalkable (no start component). Dest (1,0) is
+		// component 2; the only edge lands in component 1.
+		comps:      map[uint8][][]int{1: {{0, 0}}, 2: {{1, 2}}},
+		tiles:      map[uint8]dim{1: {w: 2, h: 1}, 2: {w: 2, h: 1}},
+		exitComps:  map[Edge][]int{wrong: {1}},
+		entryComps: map[Edge][]int{wrong: {1}},
+	}
+
+	plan, err := FindRouteAtDestination(g, 1, 2, 0, 0, 1, 0, nil)
+	if !errors.Is(err, ErrNoRoute) {
+		t.Fatalf("unknown start component accepted a landing that is not the dest tile: err=%v plan=%+v", err, plan)
+	}
+}
+
 func TestSemanticRouteDoesNotInventPrerequisiteForGeometricFailure(t *testing.T) {
 	gated := Edge{Kind: EdgeConnection, From: 9, To: 10, Dir: dirEast}
 	g := &Graph{Edges: map[uint8][]Edge{

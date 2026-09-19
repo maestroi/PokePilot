@@ -82,3 +82,44 @@ func TestCeruleanBadgeHousePocketDoesNotPlanUnreachableRoute9Exit(t *testing.T) 
 		t.Fatalf("second hop = %+v, want Badge House south plaza exit (WarpY=7), not the north pocket door", second)
 	}
 }
+
+// TestCeruleanEastDoesNotBounceThroughRoute9ToReachRoute4West is farm #1261:
+// standing on Cerulean's east seam with can_cut, bidirectional Route 9
+// PivotOnly planned Cerulean -> Route 9 -> Cerulean -> Route 4. That re-entry
+// relaxes Cerulean's landing and unlocks plaza-only Route 4 bands the east
+// seam cannot walk, so GoTo oscillates until navigation_stalled.
+func TestCeruleanEastDoesNotBounceThroughRoute9ToReachRoute4West(t *testing.T) {
+	if os.Getenv("POKEMON_RED_ROM") == "" {
+		t.Skip("POKEMON_RED_ROM required")
+	}
+	g := loadGraph(t)
+	transitions := map[Edge]gameruntime.Transition{}
+	for _, edges := range [][]Edge{g.Edges[0x03], g.Edges[0x14]} {
+		for _, e := range edges {
+			if e.Kind != EdgeConnection {
+				continue
+			}
+			if (e.From == 0x03 && e.To == 0x14) || (e.From == 0x14 && e.To == 0x03) {
+				transitions[e] = gameruntime.Transition{
+					ID:        "red:route9_cut",
+					Requires:  []gameruntime.CapabilityID{"can_cut"},
+					PivotOnly: true,
+				}
+			}
+		}
+	}
+	prereqs := RoutePrerequisites{
+		Capabilities: gameruntime.NewCapabilitySet("can_cut"),
+		Transitions:  transitions,
+	}
+
+	plan, err := FindRoutePlanAtDestinationWithCapabilities(
+		g, 0x03, 0x0f, 39, 17, 10, 10, nil, prereqs,
+	)
+	if err != nil {
+		return
+	}
+	if len(plan) >= 2 && plan[0].Edge.To == 0x14 && plan[1].Edge.To == 0x03 {
+		t.Fatalf("Cerulean east planned Route 9 bounce toward Route 4 west: %+v", plan)
+	}
+}
