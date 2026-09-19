@@ -298,9 +298,18 @@ func redRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, bool) {
 		t.Gate = true
 		return t, true
 	case pair(route12Map, route13Map):
-		// Once the Poké Flute exists this action owns the actual wake/battle
-		// before the Fuchsia route continues south.
-		return semanticTransition("red:route12_snorlax", edge, capCanClearSnorlax), true
+		// Snorlax is something standing in the way, not an action that creates
+		// a seam. world.TestSemanticGateStaysSubjectToComponentReachability is
+		// the contract: a satisfied gate still requires ordinary reachability
+		// to the port. Treating this as a free pivot let FindRoute offer
+		// Route 13's north connection from the west trainer pocket at (11,4),
+		// where Traverse cannot reach any walkable north-edge tile, and burn
+		// the re-plan budget (run-3ecf4m4kv1nv71il1djnor7ur0;
+		// triage:8ebf8a44a95c3566). Keep execution ownership of the wake/battle
+		// on this transition; only the routing privilege changes.
+		t := semanticTransition("red:route12_snorlax", edge, capCanClearSnorlax)
+		t.Gate = true
+		return t, true
 	case pair(victoryRoad1FMap, victoryRoad2FMap),
 		pair(victoryRoad2FMap, victoryRoad3FMap):
 		return semanticTransition("red:victory_road_strength", edge, capCanMoveBoulders), true
