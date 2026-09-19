@@ -14,12 +14,12 @@ func redRouteAvailabilityPlaceNames() []string {
 	for _, name := range names {
 		seen[name] = true
 	}
-	for _, reward := range skill.ChoiceRewards() {
-		if reward.Place == "" || seen[reward.Place] {
+	for _, name := range skill.InteractionPlaceNames() {
+		if name == "" || seen[name] {
 			continue
 		}
-		seen[reward.Place] = true
-		names = append(names, reward.Place)
+		seen[name] = true
+		names = append(names, name)
 	}
 	return names
 }
