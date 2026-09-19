@@ -92,25 +92,36 @@ type legFromMap struct {
 }
 
 // navigationMemory carries GoTo's within-journey loop/bounce protection
-// (the guard, banned legs, dead ends, and visited maps/positions) across
-// separate calls to goToWithTransitionExecutorMemory. Travel's retry loop
-// calls GoTo again after every resolved battle interruption; without this,
-// each fresh call forgot every leg/map this journey had already learned was
+// (the guard, banned legs, dead ends, visited maps/positions, and observed
+// map-topology snapshots) across separate calls to
+// goToWithTransitionExecutorMemory. Travel's retry loop calls GoTo again
+// after every resolved battle or dialogue interruption; without this, each
+// fresh call forgot every leg/map this journey had already learned was
 // unproductive, so a wild battle landing near a map boundary could make the
 // walker legally re-plan straight back through ground its own guard/dead-end
 // machinery exists to forbid — MEASURED on run-13kws9zfzq7ka1p4bmd16c9yg3: a
 // battle at the Rock Tunnel 1F / Route 10 boundary reset visitedMaps on every
 // retry, so the replanned route detoured back in via Route 9 and hit another
 // encounter at the same tile, burning the entire maxBattles budget with zero
-// net progress. A nil memory (GoTo's own public entry point, which is not
-// resumed after a battle) behaves exactly as before: a single call still
-// gets its own fresh guard/bans.
+// net progress.
+//
+// routeGraph is the same contract for observed stationary-object component
+// splits: a single GoTo retains WithMapGrid snapshots across legs so a later
+// fresh-component re-entry (Route 14 -> Route 13 row 8 after escaping the
+// west trainer pocket) stays distinguishable from a same-component bounce.
+// Travel's next GoTo must keep that evidence too — otherwise visitedMaps
+// falls back to a whole-map ban, the planner takes Route 15 instead, and the
+// journey dies on replan exhaustion (run-4h4isxsvaskt1c7mslvxzsrr6). A nil
+// memory (GoTo's own public entry point, which is not resumed after a battle)
+// behaves exactly as before: a single call still gets its own fresh
+// guard/bans/topology.
 type navigationMemory struct {
 	guard            *navigationGuard
 	failed           map[legAt]bool
 	deadEnds         map[legFromMap]bool
 	visitedMaps      map[uint8]bool
 	visitedPositions map[uint8][]navigationState
+	routeGraph       *world.Graph
 	replans          int
 }
 
@@ -385,7 +396,10 @@ func routeFailureIsSpuriousCapabilityGate(err error, bannedALegThisCall bool) bo
 // block geometry and positively observed stationary objects before component
 // routing. Those immutable snapshots survive across this GoTo call so a later
 // leg can distinguish a fresh component on a previously visited map. Reloading
-// that map replaces its snapshot; nothing survives into another GoTo call.
+// that map replaces its snapshot. When a shared navigationMemory is in use
+// (Travel's cutAwareGoTo), the same snapshots also survive into the next GoTo
+// call of the same journey so a dialogue/battle interrupt cannot erase the
+// component evidence visited-map preference needs.
 func GoTo(m *emu.Emu, romData []byte, dest Destination) error {
 	return goToWithTransitionExecutor(m, romData, dest, newRedRouteTransitionExecutor(m, romData, nil))
 }
@@ -442,6 +456,13 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 	defer func() { nav.replans = replans }()
 	semanticExecutions := 0
 	routeGraph := g
+	if nav.routeGraph != nil {
+		// Resume with topology observed earlier in this journey (other maps'
+		// stationary-object splits) rather than a ROM-only BuildGraph that
+		// would collapse every visited map back into one component.
+		routeGraph = nav.routeGraph
+	}
+	defer func() { nav.routeGraph = routeGraph }()
 
 	for {
 		if err := abortIfBattle(m); err != nil {
