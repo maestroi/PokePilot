@@ -64,6 +64,10 @@ func (yellowSemanticObservationAdapter) Observe(m *emu.Emu, romData []byte, prof
 		RouteBlockages:    []RouteBlockage{},
 		Unroutable:        []string{},
 	}
+	for _, item := range base.Bag {
+		obs.Bag = append(obs.Bag, Item{Name: item.Name, Quantity: item.Quantity})
+	}
+
 	for i, mon := range base.Party {
 		obs.Party[i] = PartyMon{
 			Species:    SpeciesID(mon.Species),
