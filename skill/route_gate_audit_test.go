@@ -1,6 +1,7 @@
 package skill
 
 import (
+	"os"
 	"testing"
 
 	gameruntime "github.com/maestroi/pokepilot/game"
@@ -136,6 +137,74 @@ func TestCyclingRoadUphillIsPermanentGate(t *testing.T) {
 	mem[sym.BagItems+1] = 1
 	if caps := redRouteCapabilities(nil, mem); caps.Has(capCanClimbCyclingRoad) {
 		t.Fatalf("owning a Bicycle must not project uphill Cycling Road: %v", caps)
+	}
+}
+
+// TestRoute18WestGateEscapesToCeladonRoofWithoutUphill locks the stranded
+// Route 18 gate pocket measured on run-2isuhypptp3cn1ji08lyq3j6e9: the player
+// already owns a Bicycle, stands on the west warp tile (33,8), and needs the
+// Celadon Mart roof. Without the uphill gate the static graph prefers
+// Route 18→17→16; with it, the first durable escape is through ROUTE_18_GATE
+// onto the Fuchsia-facing half, then the ordinary land path. Requires
+// POKEMON_RED_ROM.
+func TestRoute18WestGateEscapesToCeladonRoofWithoutUphill(t *testing.T) {
+	romPath := os.Getenv("POKEMON_RED_ROM")
+	if romPath == "" {
+		t.Skip("POKEMON_RED_ROM not set")
+	}
+	romData, err := os.ReadFile(romPath)
+	if err != nil {
+		t.Fatalf("read ROM: %v", err)
+	}
+
+	// Match the farm save's relevant route permissions: Bicycle (gate warps)
+	// plus a cleared Route 12 Snorlax so the Fuchsia→Lavender land path is
+	// open. Without the land path, routing correctly reports the blocked
+	// uphill Cycling Road edge and never reaches the gate-escape assertion.
+	var mem state.Mem
+	mem[sym.NumBagItems] = 1
+	mem[sym.BagItems] = bicycleItem
+	mem[sym.BagItems+1] = 1
+	mem[sym.BagItems+2] = 0xff
+	setEventFlag(&mem, eventBeatRoute12Snorlax)
+
+	g, err := world.BuildGraph(romData)
+	if err != nil {
+		t.Fatalf("BuildGraph: %v", err)
+	}
+	prereqs := redRoutePrerequisites(g, romData, &mem)
+	if !prereqs.Capabilities.Has(capCanRideCyclingRoad) {
+		t.Fatalf("capabilities did not include %q: %v", capCanRideCyclingRoad, prereqs.Capabilities)
+	}
+	if !prereqs.Capabilities.Has(capCanClearSnorlax) {
+		t.Fatalf("capabilities did not include %q: %v", capCanClearSnorlax, prereqs.Capabilities)
+	}
+
+	route, err := world.FindRoutePlanAtDestinationWithCapabilities(
+		g, route18Map, celadonMartRoofMap, 33, 8, int(vendingStandX), int(vendingStandY), nil, prereqs,
+	)
+	if err != nil {
+		t.Fatalf("no route from Route 18 (33,8) to Celadon Mart roof with a Bicycle: %v", err)
+	}
+	if len(route) == 0 {
+		t.Fatal("empty route from Route 18 west gate to Celadon Mart roof")
+	}
+	sawGateEscape := false
+	for i, step := range route {
+		e := step.Edge
+		if e.Kind == world.EdgeConnection && e.From == route18Map && e.To == route17Map {
+			t.Fatalf("leg %d climbed Cycling Road uphill Route 18→17: %+v", i+1, route)
+		}
+		if e.Kind == world.EdgeConnection && e.From == route17Map && e.To == route16Map {
+			t.Fatalf("leg %d climbed Cycling Road uphill Route 17→16: %+v", i+1, route)
+		}
+		if e.Kind == world.EdgeWarp && e.From == route18Map && e.To == route18Gate1FMap &&
+			(e.WarpX == 33 || e.WarpX == 40) {
+			sawGateEscape = true
+		}
+	}
+	if !sawGateEscape {
+		t.Fatalf("route never crossed Route 18 Gate to leave the west pocket: %+v", route)
 	}
 }
 
