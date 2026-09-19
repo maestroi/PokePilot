@@ -102,11 +102,13 @@ func (*Profile) DecodeObservation(reader game.MemoryReader, romData []byte) (gam
 		InBattle:     reader.Peek8(sym.IsInBattle) != 0,
 		Party:        gen1.DecodeParty(reader, yellowRAMLayout),
 		Bag:          bag,
+		BagCapacity:  gen1.BagCapacity,
 		Badges:       gen1.DecodeBadges(reader, yellowRAMLayout),
 		Money:        gen1.DecodeMoney(reader, yellowRAMLayout),
 		RespawnPlace: yellowLocation(reader.Peek8(sym.LastBlackoutMap)),
 		PokedexOwned: pokedexOwned,
 		PokedexSeen:  pokedexSeen,
+		PokedexTotal: gen1.SpeciesCount(),
 		Events:       yellowEventNames(reader),
 		Story:        projectYellowStory(reader, mapID),
 	}, nil
