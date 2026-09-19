@@ -167,11 +167,13 @@ type ProfileObservation struct {
 	InBattle     bool
 	Party        []ProfilePartyMon
 	Bag          []ProfileItem
+	BagCapacity  int
 	Badges       []string
 	Money        uint32
 	RespawnPlace PlaceID
 	PokedexOwned []SpeciesID
 	PokedexSeen  []SpeciesID
+	PokedexTotal int
 	Events       []string
 	Story        ProgressState
 	BlackedOut   bool
