@@ -109,7 +109,6 @@ func TestVisitedMapPreferenceAllowsRoute12GateComponentBridge(t *testing.T) {
 	}
 }
 
-
 func TestSingleNeighborTransitRoomSuspendsVisitedPreference(t *testing.T) {
 	const (
 		badgeHouse   = uint8(0xe6)
