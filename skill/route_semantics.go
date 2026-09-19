@@ -298,16 +298,11 @@ func redRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, bool) {
 		t.Gate = true
 		return t, true
 	case pair(route12Map, route13Map):
-		// Snorlax is something standing in the way, not an action that creates
-		// a seam. world.TestSemanticGateStaysSubjectToComponentReachability is
-		// the contract: a satisfied gate still requires ordinary reachability
-		// to the port. Treating this as a free pivot let FindRoute offer
-		// Route 13's north connection from the west trainer pocket at (11,4),
-		// where a stationary sprite at (12,4) blocks every walkable north-edge
-		// tile and Traverse burns the re-plan budget
-		// (run-1q6cjygnjsm5a3tcrcf6mdityp; triage:d9d7e0200d20d0dd). Keep
-		// execution ownership of the wake/battle on this transition; only the
-		// routing privilege changes.
+		// Snorlax is a blocker on an otherwise ordinary seam, not an action
+		// that creates reachability. Even after the Poké Flute exists, routing
+		// must be able to walk to this connection from the current component.
+		// Treating it as a free pivot strands Route 13's west trainer pocket by
+		// repeatedly selecting an unreachable north seam.
 		t := semanticTransition("red:route12_snorlax", edge, capCanClearSnorlax)
 		t.Gate = true
 		return t, true
@@ -333,6 +328,27 @@ func redRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, bool) {
 	}
 }
 
+// redRouteTransitionEffectComplete reports that a semantic action's durable
+// postcondition already holds, so the edge must use ordinary walking geometry
+// instead of pivot privilege. A satisfied Snorlax clear still left
+// red:route12_snorlax attached; FindRoute then waived reachability to Route 13's
+// north port and offered an unwalkable first hop from the west-side trainer
+// pocket (run-4h4isxsvaskt1c7mslvxzsrr6). Gates and PortBypass seams stay
+// annotated: they are still the portable description of the edge.
+func redRouteTransitionEffectComplete(mem *state.Mem, transition gameruntime.Transition) bool {
+	if transition.Gate || transition.PortBypass {
+		return false
+	}
+	switch transition.ID {
+	case "red:route12_snorlax":
+		return state.HasEvent(mem, eventBeatRoute12Snorlax)
+	case "red:route16_snorlax":
+		return state.HasEvent(mem, eventBeatRoute16Snorlax)
+	default:
+		return false
+	}
+}
+
 // redRoutePrerequisites attaches adapter-owned transition facts to the concrete
 // graph while keeping the routing algorithm generic.
 func redRoutePrerequisites(g *world.Graph, romData []byte, mem *state.Mem) world.RoutePrerequisites {
@@ -346,6 +362,9 @@ func redRoutePrerequisites(g *world.Graph, romData []byte, mem *state.Mem) world
 				// port; otherwise an interior Cut/Snorlax/switch action can turn
 				// solid padding into an executable map transition.
 				if edge.Kind == world.EdgeConnection && !transition.PortBypass && !g.ConnectionExitWalkable(edge) {
+					continue
+				}
+				if redRouteTransitionEffectComplete(mem, transition) {
 					continue
 				}
 				transitions[edge] = transition
