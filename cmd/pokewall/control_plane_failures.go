@@ -52,6 +52,11 @@ func (w *Wall) RunControlPlaneObjectiveFailures(every time.Duration) {
 	if every <= 0 {
 		every = defaultObjectiveFailureReportEvery
 	}
+	if n, err := cp.requeueOrphanedObjectiveFailureErrors(); err != nil {
+		log.Printf("pokewall: requeue orphaned objective failure errors: %v", err)
+	} else if n > 0 {
+		log.Printf("pokewall: requeued %d orphaned objective failure error(s) for the current issue sink", n)
+	}
 	for {
 		rows, err := cp.pendingObjectiveFailures(32)
 		if err != nil {
@@ -63,6 +68,24 @@ func (w *Wall) RunControlPlaneObjectiveFailures(every time.Duration) {
 		}
 		time.Sleep(every)
 	}
+}
+
+func (cp *controlPlane) requeueOrphanedObjectiveFailureErrors() (int64, error) {
+	result, err := cp.db.Exec(`
+UPDATE objective_failures
+SET delivery_status='pending', delivery_error='', updated_at=CURRENT_TIMESTAMP
+WHERE delivery_status='error'
+  AND (blocking=TRUE OR terminal_count>0)
+  AND NOT EXISTS (
+      SELECT 1
+      FROM issue_links
+      WHERE issue_links.failure_key=objective_failures.failure_key
+        AND issue_links.issue_id<>''
+  )`)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 type pendingObjectiveFailure struct {
