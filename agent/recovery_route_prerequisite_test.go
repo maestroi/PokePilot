@@ -100,6 +100,44 @@ func TestProgressRoutePrerequisiteQuarantineExpiresAfterRouteMovement(t *testing
 	}
 }
 
+func TestCatchRoutePrerequisiteQuarantineExpiresAfterRouteMovement(t *testing.T) {
+	failed := Objective{Kind: KindCatch, Species: "caterpie", Place: "route 2", Flee: true}
+	alternative := Objective{Kind: KindHeal, Place: "vermilion pokemon center"}
+	obs := Observation{
+		Location:     "route 2",
+		X:            8,
+		Y:            71,
+		Controllable: true,
+		Party:        []PartyMon{{Species: "pikachu", Level: 18, HP: 35, MaxHP: 35}},
+		Bag:          []Item{{Name: "poke ball", Quantity: 5}},
+	}
+
+	policy := newRunFailurePolicy(3)
+	policy.record(ObjectiveResult{
+		Objective:    failed,
+		Outcome:      OutcomeBlocked,
+		Cause:        "route_prerequisite_missing",
+		CauseContext: []string{"can_cut"},
+		Final:        obs,
+	})
+
+	got := policy.filter(obs, []Objective{failed, alternative})
+	if len(got) != 1 || got[0].Key() != alternative.Key() {
+		t.Fatalf("same-state catch prerequisite was not quarantined: %+v", got)
+	}
+
+	// #1084 stopped in Vermilion after a Route 2 catch had been quarantined.
+	// Catch owns its travel, so a different location/component can produce a
+	// different route even when the capability set itself has not changed.
+	moved := obs
+	moved.Location = "vermilion pokemon center"
+	moved.X, moved.Y = 3, 3
+	got = policy.filter(moved, []Objective{failed, alternative})
+	if len(got) != 2 || got[0].Key() != failed.Key() {
+		t.Fatalf("route movement did not release compound catch quarantine: %+v", got)
+	}
+}
+
 func TestRoutePrerequisiteQuarantineExpiresAfterSemanticProgress(t *testing.T) {
 	fleeing := Objective{Kind: KindGoTo, Place: "pewter city", Flee: true}
 	plain := Objective{Kind: KindGoTo, Place: "pewter city"}
