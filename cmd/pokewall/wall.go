@@ -121,6 +121,18 @@ type Tile struct {
 	// checkpoint this run should continue from on attempt 1. Empty for a
 	// brand-new campaign, including the successor of a successful `done`.
 	ResumeFromRunID string
+
+	// Circuit* records why an automatic failure circuit paused this campaign.
+	// It is durable so wall restarts and deployments can safely release one
+	// canary without losing the failure identity or progress baseline.
+	CircuitKey         string
+	CircuitFingerprint string
+	CircuitKind        string
+	CircuitCount       int
+	CircuitBadges      int
+	CircuitEvents      int
+	CircuitMaps        int
+	CircuitRevision    string
 }
 
 // tileRow is a plain-value snapshot of a Tile, taken under w.mu so the
@@ -168,8 +180,16 @@ type tileRow struct {
 	Detail          string           `json:"detail"`
 	Issue           *IssueLink       `json:"issue,omitempty"`
 	ReplayAvailable bool             `json:"replay_available,omitempty"`
-	ResumeFromRunID string           `json:"resume_from_run_id,omitempty"`
-	ResumeProtected bool             `json:"resume_protected,omitempty"`
+	ResumeFromRunID   string `json:"resume_from_run_id,omitempty"`
+	ResumeProtected   bool   `json:"resume_protected,omitempty"`
+	CircuitKey         string `json:"circuit_key,omitempty"`
+	CircuitFingerprint string `json:"circuit_fingerprint,omitempty"`
+	CircuitKind        string `json:"circuit_kind,omitempty"`
+	CircuitCount       int    `json:"circuit_count,omitempty"`
+	CircuitBadges      int    `json:"circuit_badges,omitempty"`
+	CircuitEvents      int    `json:"circuit_events,omitempty"`
+	CircuitMaps        int    `json:"circuit_maps,omitempty"`
+	CircuitRevision    string `json:"circuit_revision,omitempty"`
 }
 
 // Wall owns the spec queue, the tile map, cancel flags, the optional dump
@@ -259,7 +279,15 @@ type persistedTile struct {
 	Finished        bool           `json:"finished"`
 	WorkerAddrs     []string       `json:"worker_addrs,omitempty"`
 	ReplayAvailable bool           `json:"replay_available,omitempty"`
-	ResumeFromRunID string         `json:"resume_from_run_id,omitempty"`
+	ResumeFromRunID   string `json:"resume_from_run_id,omitempty"`
+	CircuitKey         string `json:"circuit_key,omitempty"`
+	CircuitFingerprint string `json:"circuit_fingerprint,omitempty"`
+	CircuitKind        string `json:"circuit_kind,omitempty"`
+	CircuitCount       int    `json:"circuit_count,omitempty"`
+	CircuitBadges      int    `json:"circuit_badges,omitempty"`
+	CircuitEvents      int    `json:"circuit_events,omitempty"`
+	CircuitMaps        int    `json:"circuit_maps,omitempty"`
+	CircuitRevision    string `json:"circuit_revision,omitempty"`
 }
 
 // persistedState is the wall's whole on-disk memory: run order, tiles, and
@@ -320,8 +348,16 @@ func (w *Wall) persistedStateLocked() persistedState {
 			Detail:          t.Detail,
 			Finished:        t.Finished,
 			WorkerAddrs:     append([]string(nil), t.workerAddrs...),
-			ReplayAvailable: t.ReplayAvailable,
-			ResumeFromRunID: t.ResumeFromRunID,
+			ReplayAvailable:   t.ReplayAvailable,
+			ResumeFromRunID:   t.ResumeFromRunID,
+			CircuitKey:         t.CircuitKey,
+			CircuitFingerprint: t.CircuitFingerprint,
+			CircuitKind:        t.CircuitKind,
+			CircuitCount:       t.CircuitCount,
+			CircuitBadges:      t.CircuitBadges,
+			CircuitEvents:      t.CircuitEvents,
+			CircuitMaps:        t.CircuitMaps,
+			CircuitRevision:    t.CircuitRevision,
 		}
 	}
 	return ps
@@ -422,9 +458,17 @@ func (w *Wall) loadState() {
 			Detail:          pt.Detail,
 			Finished:        pt.Finished,
 			workerAddrs:     append([]string(nil), pt.WorkerAddrs...),
-			ReplayAvailable: pt.ReplayAvailable,
-			ResumeFromRunID: pt.ResumeFromRunID,
-			lastUpdate:      now,
+			ReplayAvailable:   pt.ReplayAvailable,
+			ResumeFromRunID:   pt.ResumeFromRunID,
+			CircuitKey:         pt.CircuitKey,
+			CircuitFingerprint: pt.CircuitFingerprint,
+			CircuitKind:        pt.CircuitKind,
+			CircuitCount:       pt.CircuitCount,
+			CircuitBadges:      pt.CircuitBadges,
+			CircuitEvents:      pt.CircuitEvents,
+			CircuitMaps:        pt.CircuitMaps,
+			CircuitRevision:    pt.CircuitRevision,
+			lastUpdate:         now,
 		}
 	}
 	w.queue = append(w.queue, ps.Queue...)
@@ -600,6 +644,7 @@ func (w *Wall) applySpec(runID string, spec farm.Spec) {
 	t.lastFrame = nil
 	t.Finished = false
 	t.ResumeFromRunID = ""
+	clearTileCircuit(t)
 }
 
 // handleLease hands out the oldest queued spec exactly once; 204 when the
