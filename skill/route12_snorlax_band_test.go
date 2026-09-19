@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/maestroi/pokepilot/red/state"
+	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
 )
 
@@ -58,5 +59,50 @@ func TestRoute12SnorlaxTransitionOnlyClaimsWalkableConnectionBands(t *testing.T)
 	}
 	if padding == 0 {
 		t.Fatal("Route 13 -> Route 12 exposed no non-walkable padding band; regression fixture no longer exercises the bug")
+	}
+}
+
+// TestClearedRoute12SnorlaxDropsComponentBypassAction is the regression for
+// farm run-zm5v9uxm1o2n10yevwxd6jxbe: after EVENT_BEAT_ROUTE12_SNORLAX the
+// seam is ordinary geometry. Leaving the wake/battle action attached lets
+// routing treat the north band as a semantic pivot even when a live sprite has
+// severed the only walkable approach, which then falls through to a spurious
+// Cycling Road bicycle prerequisite.
+func TestClearedRoute12SnorlaxDropsComponentBypassAction(t *testing.T) {
+	romPath := os.Getenv("POKEMON_RED_ROM")
+	if romPath == "" {
+		t.Skip("POKEMON_RED_ROM not set")
+	}
+	romData, err := os.ReadFile(romPath)
+	if err != nil {
+		t.Fatalf("read ROM: %v", err)
+	}
+	g, err := world.BuildGraph(romData)
+	if err != nil {
+		t.Fatalf("BuildGraph: %v", err)
+	}
+
+	var mem state.Mem
+	addr := sym.EventFlags + uint16(eventBeatRoute12Snorlax)/8
+	mem[addr] |= byte(1 << (uint16(eventBeatRoute12Snorlax) % 8))
+
+	prereqs := redRoutePrerequisites(g, romData, &mem)
+	for _, edge := range g.Edges[route13Map] {
+		if edge.Kind != world.EdgeConnection || edge.To != route12Map {
+			continue
+		}
+		if transition, ok := prereqs.Transitions[edge]; ok && transition.ID == "red:route12_snorlax" {
+			start, end, _ := world.ConnectionBand(edge)
+			t.Fatalf("cleared Snorlax still attached action on Route 13 -> Route 12 band %d..%d", start, end)
+		}
+	}
+	for _, edge := range g.Edges[route12Map] {
+		if edge.Kind != world.EdgeConnection || edge.To != route13Map {
+			continue
+		}
+		if transition, ok := prereqs.Transitions[edge]; ok && transition.ID == "red:route12_snorlax" {
+			start, end, _ := world.ConnectionBand(edge)
+			t.Fatalf("cleared Snorlax still attached action on Route 12 -> Route 13 band %d..%d", start, end)
+		}
 	}
 }

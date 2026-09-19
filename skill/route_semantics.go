@@ -327,6 +327,7 @@ func redRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, bool) {
 // graph while keeping the routing algorithm generic.
 func redRoutePrerequisites(g *world.Graph, romData []byte, mem *state.Mem) world.RoutePrerequisites {
 	transitions := make(map[world.Edge]gameruntime.Transition)
+	snorlaxCleared := mem != nil && state.HasEvent(mem, eventBeatRoute12Snorlax)
 	for _, edges := range g.Edges {
 		for _, edge := range edges {
 			if transition, ok := redRouteTransitionForEdge(edge); ok {
@@ -336,6 +337,19 @@ func redRoutePrerequisites(g *world.Graph, romData []byte, mem *state.Mem) world
 				// port; otherwise an interior Cut/Snorlax/switch action can turn
 				// solid padding into an executable map transition.
 				if edge.Kind == world.EdgeConnection && !transition.PortBypass && !g.ConnectionExitWalkable(edge) {
+					continue
+				}
+				// Once Route 12's Snorlax is beaten, the Route 12 <-> Route 13
+				// seam is ordinary walkable geometry. Keeping red:route12_snorlax
+				// attached would still put that edge in the semantic `allowed`
+				// set (it is an action, not a Gate), so FindRoute can select the
+				// north connection even when a live sprite has severed the only
+				// walkable path to that band. MEASURED on Route 13 (11,4) with
+				// Bird Keeper at (12,4): the bypass picked 18->17, Traverse banned
+				// the leg, and the next replan reported the unrelated Cycling Road
+				// bicycle gate as route_prerequisite_missing
+				// (run-zm5v9uxm1o2n10yevwxd6jxbe).
+				if snorlaxCleared && transition.ID == "red:route12_snorlax" {
 					continue
 				}
 				transitions[edge] = transition
