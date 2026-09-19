@@ -298,9 +298,15 @@ func redRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, bool) {
 		t.Gate = true
 		return t, true
 	case pair(route12Map, route13Map):
-		// Once the Poké Flute exists this action owns the actual wake/battle
-		// before the Fuchsia route continues south.
-		return semanticTransition("red:route12_snorlax", edge, capCanClearSnorlax), true
+		// Snorlax is an executable blocker, but reaching it must not create a
+		// magic exit from another disconnected component. PivotOnly preserves
+		// ordinary FROM-side port reachability while still letting the owned
+		// transition wake/battle Snorlax and relax the landing after that world
+		// change. This keeps Route 13's west trainer pocket from selecting an
+		// unreachable north seam without turning the action into a passive gate.
+		t := semanticTransition("red:route12_snorlax", edge, capCanClearSnorlax)
+		t.PivotOnly = true
+		return t, true
 	case pair(victoryRoad1FMap, victoryRoad2FMap),
 		pair(victoryRoad2FMap, victoryRoad3FMap):
 		return semanticTransition("red:victory_road_strength", edge, capCanMoveBoulders), true
