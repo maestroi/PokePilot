@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -65,7 +66,27 @@ func pauseHTTPHandler(w *Wall, next http.Handler) http.Handler {
 				next.ServeHTTP(capture, req)
 				if capture.status >= 200 && capture.status < 300 {
 					if !w.finalizeRequestedPause(id) {
-						w.maybeAutoPauseRepeatedFailure(id, before)
+						circuitPaused := false
+						if report, ok := finishReportFromRequest(req); ok {
+							if circuitCanaryAdvanced(before.row, report) {
+								w.releaseCircuitPeers(before.row.CircuitKey, id)
+							}
+							if cp := controlPlaneFor(w); cp != nil {
+								attempt := report.Attempt
+								if attempt <= 0 {
+									attempt = before.row.Attempts + 1
+								}
+								decision, err := cp.failureCircuitDecision(before.row, report, attempt)
+								if err != nil {
+									log.Printf("pokewall: failure circuit %s/%d: %v", id, attempt, err)
+								} else if decision.Open {
+									circuitPaused = w.pauseForFailureCircuit(id, before, report, decision)
+								}
+							}
+						}
+						if !circuitPaused {
+							w.maybeAutoPauseRepeatedFailure(id, before)
+						}
 					}
 				}
 				return
@@ -174,6 +195,7 @@ func (w *Wall) handleResume(res http.ResponseWriter, _ *http.Request, id string)
 	// lineage.
 	t.ErrorAttempts = 0
 	t.LossRecoveries = 0
+	clearTileCircuit(t)
 	t.workerAddrs = nil
 	t.lastUpdate = now
 	delete(w.cancel, id)

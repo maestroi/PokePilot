@@ -42,6 +42,15 @@ type IssueLink struct {
 	Fingerprint          string `json:"fingerprint,omitempty"`
 	Stale                bool   `json:"stale,omitempty"`
 
+	// Circuit* is local automation state. It marks a failure group that has
+	// crossed the repeated-failure/progression-frontier threshold and should be
+	// claimed by an unattended repair agent.
+	CircuitOpen     bool   `json:"circuit_open,omitempty"`
+	CircuitKind     string `json:"circuit_kind,omitempty"`
+	CircuitCount    int    `json:"circuit_count,omitempty"`
+	CircuitRunID    string `json:"circuit_run_id,omitempty"`
+	CircuitOpenedAt int64  `json:"circuit_opened_at,omitempty"`
+
 	// Verification is PokePilot-local evidence that a remotely fixed issue
 	// stayed fixed. Agent Orchestrator remains the source of truth for Status,
 	// Resolution and FixedRevision; these fields never mutate its lifecycle.

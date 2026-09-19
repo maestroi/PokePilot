@@ -2,9 +2,9 @@
 Description=Offer one PokeFarm failure to local qwagent
 
 [Timer]
-OnBootSec=5min
-OnUnitInactiveSec=30min
-AccuracySec=1min
+OnBootSec=1min
+OnUnitInactiveSec=2min
+AccuracySec=15s
 Persistent=false
 
 [Install]

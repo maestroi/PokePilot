@@ -230,3 +230,4 @@ qwagent-triage-install:
 		echo "appended source line to ~/.zshrc (open a new shell)"; \
 	fi
 	@echo "timer installed but not enabled. qwtriage-on to start, qwtriage-off to stop."
+	@echo "Cursor subscription backend: run 'agent login' once; auto mode prefers authenticated Cursor CLI."

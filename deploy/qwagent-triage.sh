@@ -20,7 +20,9 @@ POKEPILOT_WALL=${POKEPILOT_WALL:-https://admin.rompilot.app}
 POKEPILOT_TRIAGE_STATE=${POKEPILOT_TRIAGE_STATE:-$HOME/.local/share/pokepilot/qwagent-triage}
 POKEPILOT_TRIAGE_TREE=${POKEPILOT_TRIAGE_TREE:-$HOME/Documents/projects/PokePilot-qwagent-triage}
 PROMPT=${POKEPILOT_TRIAGE_PROMPT:-$SCRIPT_DIR/qwagent-triage.prompt.md}
-export PATH="$HOME/.opencode/bin:$HOME/go/bin:$HOME/.local/bin:/usr/local/go/bin:$PATH"
+POKEPILOT_TRIAGE_AGENT=${POKEPILOT_TRIAGE_AGENT:-auto}
+POKEPILOT_CURSOR_MODEL=${POKEPILOT_CURSOR_MODEL:-}
+export PATH="$HOME/.cursor/bin:$HOME/.opencode/bin:$HOME/go/bin:$HOME/.local/bin:/usr/local/go/bin:$PATH"
 
 DRY_RUN=0
 LOCKED=0
@@ -32,6 +34,67 @@ for arg in "$@"; do
 done
 
 log() { echo "qwagent-triage: $*" >&2; }
+
+cursor_binary() {
+	if command -v agent >/dev/null 2>&1; then
+		command -v agent
+		return 0
+	fi
+	if command -v cursor-agent >/dev/null 2>&1; then
+		command -v cursor-agent
+		return 0
+	fi
+	return 1
+}
+
+cursor_authenticated() {
+	local bin status
+	bin=$(cursor_binary) || return 1
+	status=$("$bin" status 2>&1 || true)
+	if printf '%s' "$status" | grep -Eiq 'not authenticated|not logged|logged out'; then
+		return 1
+	fi
+	[ -n "$status" ]
+}
+
+select_agent_backend() {
+	case "$POKEPILOT_TRIAGE_AGENT" in
+	auto)
+		if cursor_authenticated; then
+			echo cursor
+			return 0
+		fi
+		if command -v opencode >/dev/null 2>&1; then
+			echo opencode
+			return 0
+		fi
+		log "no authenticated Cursor CLI or OpenCode binary found; skip"
+		return 1
+		;;
+	cursor)
+		if ! cursor_binary >/dev/null; then
+			log "Cursor CLI not installed; install it from cursor.com/cli"
+			return 1
+		fi
+		if ! cursor_authenticated; then
+			log "Cursor CLI is not authenticated; run 'agent login' once with your Cursor account"
+			return 1
+		fi
+		echo cursor
+		;;
+	opencode)
+		if ! command -v opencode >/dev/null 2>&1; then
+			log "OpenCode is not installed; skip"
+			return 1
+		fi
+		echo opencode
+		;;
+	*)
+		log "unknown POKEPILOT_TRIAGE_AGENT=$POKEPILOT_TRIAGE_AGENT; want auto, cursor, or opencode"
+		return 1
+		;;
+	esac
+}
 
 mkdir -p "$POKEPILOT_TRIAGE_STATE"
 
@@ -196,17 +259,17 @@ if [ -z "$KEY" ]; then
 	exit 0
 fi
 
-OPENCODE_CMD=(opencode run --auto --model qwen3.8-27b/qwen3.8-27b
-	--dir "$POKEPILOT_TRIAGE_TREE"
-	--title "farm triage ${KEY}"
-	--file "$POKEPILOT_TRIAGE_STATE/packet.md"
-	--
-	"Follow the attached farm triage packet. Do not pick a different failure.")
+if ! AGENT_BACKEND=$(select_agent_backend); then
+	exit 0
+fi
 
 if [ "$DRY_RUN" -eq 1 ]; then
 	printf '%s\n' "$PICK_JSON"
 	echo "would claim $KEY (run $RUN_ID)"
-	echo "would run: ${OPENCODE_CMD[*]}"
+	case "$AGENT_BACKEND" in
+	cursor) echo "would run: Cursor CLI headless in $POKEPILOT_TRIAGE_TREE" ;;
+	opencode) echo "would run: OpenCode qwagent in $POKEPILOT_TRIAGE_TREE" ;;
+	esac
 	exit 0
 fi
 
@@ -248,11 +311,38 @@ printf '%s\n' "$PICK_JSON" >"$POKEPILOT_TRIAGE_STATE/packet.json"
 } >"$POKEPILOT_TRIAGE_STATE/packet.md"
 
 set +e
-"${OPENCODE_CMD[@]}"
-agent_status=$?
+case "$AGENT_BACKEND" in
+cursor)
+	CURSOR_BIN=$(cursor_binary)
+	cursor_args=(-p --force --trust --approve-mcps
+		--workspace "$POKEPILOT_TRIAGE_TREE"
+		--output-format text)
+	if [ -n "$POKEPILOT_CURSOR_MODEL" ]; then
+		cursor_args+=(--model "$POKEPILOT_CURSOR_MODEL")
+	fi
+	cursor_packet="$POKEPILOT_TRIAGE_TREE/.pokepilot-triage-packet.md"
+	if ! grep -qxF '.pokepilot-triage-packet.md' "$POKEPILOT_TRIAGE_TREE/.git/info/exclude" 2>/dev/null; then
+		printf '%s\n' '.pokepilot-triage-packet.md' >>"$POKEPILOT_TRIAGE_TREE/.git/info/exclude"
+	fi
+	cp "$POKEPILOT_TRIAGE_STATE/packet.md" "$cursor_packet"
+	"$CURSOR_BIN" "${cursor_args[@]}" \
+		"Read @.pokepilot-triage-packet.md and follow it exactly. Do not pick a different failure."
+	agent_status=$?
+	rm -f "$cursor_packet"
+	;;
+opencode)
+	opencode run --auto --model qwen3.8-27b/qwen3.8-27b \
+		--dir "$POKEPILOT_TRIAGE_TREE" \
+		--title "farm triage ${KEY}" \
+		--file "$POKEPILOT_TRIAGE_STATE/packet.md" \
+		-- \
+		"Follow the attached farm triage packet. Do not pick a different failure."
+	agent_status=$?
+	;;
+esac
 set -e
 if [ "$agent_status" -ne 0 ]; then
-	log "opencode exited $agent_status; no PR"
+	log "$AGENT_BACKEND exited $agent_status; no PR"
 	exit 0
 fi
 
@@ -291,5 +381,5 @@ fi
 
 gh pr create --repo "$(gh_repo)" --head "$branch" \
 	--title "fix(farm): ${EXAMPLE} ${marker}" \
-	--body "Unattended qwagent attempt for run \`${RUN_ID}\` (${marker})."
-log "opened PR for $KEY"
+	--body "Unattended ${AGENT_BACKEND} repair attempt for run \`${RUN_ID}\` (${marker})."
+log "opened PR for $KEY with $AGENT_BACKEND"

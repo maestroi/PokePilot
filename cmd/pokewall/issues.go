@@ -560,6 +560,7 @@ func (w *Wall) syncIssueStatuses() {
 		cur.UpdatedAt = time.Now().Unix()
 		w.issueLinks[keys[i]] = cur
 		w.mu.Unlock()
+		w.maybeResumeCircuitCanary(keys[i], cur)
 	}
 	w.saveState()
 }

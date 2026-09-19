@@ -3,6 +3,7 @@ package deploy
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -32,6 +33,20 @@ func TestPickSkipsResolvedAndClaimed(t *testing.T) {
 	}
 	if got.RunID() != "run-free" {
 		t.Fatalf("run = %q, want run-free", got.RunID())
+	}
+}
+
+func TestPickPrioritizesOpenCircuit(t *testing.T) {
+	groups := []TriageGroup{
+		{Key: "frequent", Count: 20, RunIDs: []string{"run-old"}, Issue: &TriageIssue{Status: "open"}},
+		{Key: "circuit", Count: 2, RunIDs: []string{"run-blocked"}, Issue: &TriageIssue{Status: "open", CircuitOpen: true}},
+	}
+	got, ok := Pick(groups, nil)
+	if !ok {
+		t.Fatal("expected a pick")
+	}
+	if got.Key != "circuit" {
+		t.Fatalf("key = %q, want circuit", got.Key)
 	}
 }
 
@@ -94,7 +109,7 @@ func TestPickOpenPRStillClaimsLocalRegression(t *testing.T) {
 	}
 }
 
-func TestPromptLoadsNativeTriageSkill(t *testing.T) {
+func TestPromptLoadsTriageInstructions(t *testing.T) {
 	body, err := os.ReadFile(filepath.Join("qwagent-triage.prompt.md"))
 	if err != nil {
 		t.Fatal(err)
@@ -105,8 +120,8 @@ func TestPromptLoadsNativeTriageSkill(t *testing.T) {
 		"[farm-issue:<issue_number>]",
 		"make test-short",
 		"Do not call pokepilot_get_triage",
-		"native OpenCode skill `pokefarm-triage`",
-		"`skill` tool",
+		".claude/skills/pokefarm-triage/SKILL.md",
+		"native skill tool",
 		"do not second-guess queue eligibility",
 	} {
 		if !strings.Contains(s, want) {
@@ -135,6 +150,13 @@ func TestTriageSkillDocumentsLocalLifecycle(t *testing.T) {
 	}
 }
 
+func TestTriageScriptParsesAsBash(t *testing.T) {
+	cmd := exec.Command("bash", "-n", "qwagent-triage.sh")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("bash -n: %v\n%s", err, out)
+	}
+}
+
 func TestScriptHasDryRunAndLock(t *testing.T) {
 	body, err := os.ReadFile("qwagent-triage.sh")
 	if err != nil {
@@ -145,6 +167,11 @@ func TestScriptHasDryRunAndLock(t *testing.T) {
 		"--dry-run",
 		"flock -n",
 		"opencode run --auto",
+		"POKEPILOT_TRIAGE_AGENT",
+		"cursor_authenticated",
+		"agent login",
+		"--approve-mcps",
+		"--workspace",
 		"continuing locally",
 		"Follow the attached farm triage packet",
 		"--file \"$POKEPILOT_TRIAGE_STATE/packet.md\"",
@@ -158,7 +185,8 @@ func TestScriptHasDryRunAndLock(t *testing.T) {
 			t.Errorf("script missing %q", want)
 		}
 	}
-	if !strings.Contains(s, "--\n\t\"Follow the attached farm triage packet") &&
+	if !strings.Contains(s, "-- \\\n\t\t\"Follow the attached farm triage packet") &&
+		!strings.Contains(s, "--\n\t\"Follow the attached farm triage packet") &&
 		!strings.Contains(s, "--\n\"Follow the attached farm triage packet") {
 		t.Error("opencode --file is an array flag; the prompt message must come after --")
 	}
