@@ -87,6 +87,14 @@ func TestIssueConfigUsesGitHubAdapter(t *testing.T) {
 			t.Errorf("runner missing inference setting %q", want)
 		}
 	}
+	// Virtual trade stays off until gomeboy's serial scheduler can exit a
+	// stalled Cable Club handshake (PR #1141 only fails the skill fast).
+	for _, line := range strings.Split(runner, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "POKEPILOT_VIRTUAL_TRADER_URL:") {
+			t.Errorf("runner must not enable virtual trader until gomeboy is fixed; found %q", trimmed)
+		}
+	}
 	for _, want := range []string{
 		"POKEPILOT_LITELLM_7900_URL: ${POKEPILOT_LITELLM_7900_URL:-http://192.168.50.130:8002/v1}",
 		"POKEPILOT_LITELLM_4090_URL: ${POKEPILOT_LITELLM_4090_URL:-http://192.168.50.81:8002/v1}",
