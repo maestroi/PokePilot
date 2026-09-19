@@ -16,13 +16,12 @@ import (
 	"github.com/maestroi/pokepilot/skill"
 	"github.com/maestroi/pokepilot/world"
 	verifier "github.com/maestroi/pokepilot/worldverify"
+	yellowprofile "github.com/maestroi/pokepilot/yellow/profile"
 )
-
-const pokemonYellowENUSRev0SHA1 = "cc7d03262ebfaf2f06772c1a480c7d9d5f4a38e1"
 
 func main() {
 	romPath := flag.String("rom", defaultROMPath(), "path to ROM (defaults to POKEMON_ROM, then POKEMON_RED_ROM)")
-	game := flag.String("game", "auto", "game adapter (auto, red, blue; yellow fingerprint is recognized but its world adapter is not implemented yet)")
+	game := flag.String("game", "auto", "game profile (auto, red, blue, yellow; Yellow world verification is not implemented yet)")
 	jsonOutput := flag.Bool("json", false, "emit JSON report")
 	strictWarnings := flag.Bool("strict-warnings", false, "exit non-zero when warnings are present")
 	maxCaps := flag.Int("max-exhaustive-capabilities", 16, "maximum capabilities to enumerate exhaustively (16 = 65,536 states)")
@@ -43,12 +42,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	profile, info, err := profiles.Detect(romData)
+	profile, _, err := profiles.Detect(romData)
 	if err != nil {
-		if info.SHA1 == pokemonYellowENUSRev0SHA1 {
-			fmt.Fprintf(os.Stderr, "worldverify: recognized pokemon-yellow@en-us-rev0 ROM (sha1 %s), but the Yellow world adapter is not implemented yet\n", info.SHA1)
-			os.Exit(2)
-		}
 		fmt.Fprintf(os.Stderr, "worldverify: detect ROM: %v\n", err)
 		os.Exit(1)
 	}
@@ -151,9 +146,9 @@ func normalizeGameFlag(value string) (string, error) {
 	case "blue", "pokemon-blue":
 		return string(blueprofile.GameID), nil
 	case "yellow", "pokemon-yellow":
-		return "pokemon-yellow", nil
+		return string(yellowprofile.GameID), nil
 	default:
-		return "", fmt.Errorf("unsupported -game %q (supported: auto, red, blue; yellow adapter pending)", value)
+		return "", fmt.Errorf("unsupported -game %q (supported: auto, red, blue, yellow)", value)
 	}
 }
 
