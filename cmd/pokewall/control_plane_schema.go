@@ -183,7 +183,7 @@ ALTER TABLE model_deployments
     ADD COLUMN IF NOT EXISTS default_for TEXT[] NOT NULL DEFAULT '{}';
 `
 
-const controlPlaneMigration003 = `
+const controlPlaneMigration004 = `
 CREATE TABLE IF NOT EXISTS decision_exchanges (
     run_id TEXT NOT NULL, attempt INTEGER NOT NULL, decision_index INTEGER NOT NULL,
     kind TEXT NOT NULL DEFAULT '', question TEXT NOT NULL DEFAULT '', choice TEXT NOT NULL DEFAULT '',
@@ -307,15 +307,15 @@ func (cp *controlPlane) migrate() error {
 			return fmt.Errorf("record control-plane migration 2: %w", err)
 		}
 	}
-	var applied3 bool
-	if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version=3)`).Scan(&applied3); err != nil {
-		return fmt.Errorf("read migration version 3: %w", err)
+	var applied4 bool
+	if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version=4)`).Scan(&applied4); err != nil {
+		return fmt.Errorf("read migration version 4: %w", err)
 	}
-	if !applied3 {
-		if _, err := tx.Exec(controlPlaneMigration003); err != nil {
+	if !applied4 {
+		if _, err := tx.Exec(controlPlaneMigration004); err != nil {
 			return fmt.Errorf("apply control-plane migration 3: %w", err)
 		}
-		if _, err := tx.Exec(`INSERT INTO schema_migrations(version) VALUES(3) ON CONFLICT DO NOTHING`); err != nil {
+		if _, err := tx.Exec(`INSERT INTO schema_migrations(version) VALUES(4) ON CONFLICT DO NOTHING`); err != nil {
 			return fmt.Errorf("record control-plane migration 3: %w", err)
 		}
 	}
