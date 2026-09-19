@@ -173,7 +173,17 @@ func trainerBlackoutStateKey(obs Observation) string {
 
 func recoveryStateScopeFor(result ObjectiveResult) recoveryStateScope {
 	if failureCauseIs(result, "route_prerequisite_missing") {
-		return recoveryStateScopeRoutePrerequisite
+		// Direct route objectives are blocked by a portable capability: walking
+		// elsewhere cannot make a missing badge/HM/story fact appear. Compound
+		// progression is different. A progression transaction can own several
+		// internal journeys, and a route prerequisite can belong only to the
+		// component or detour where that attempt stopped. Quarantining the whole
+		// story step on capability-only state would suppress it forever while
+		// unrelated movement changes the route that the next attempt would take
+		// (farm #1109: Boulder progression stalled on Route 2).
+		if result.Objective.Kind != KindProgress {
+			return recoveryStateScopeRoutePrerequisite
+		}
 	}
 	if failureCauseIs(result, "trainer_blacked_out") {
 		return recoveryStateScopeTrainerBlackout
