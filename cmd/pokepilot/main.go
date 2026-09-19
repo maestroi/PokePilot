@@ -1,4 +1,4 @@
-// Command pokepilot boots a supported Pokemon Gen I ROM (Red or Blue), serves
+// Command pokepilot boots a supported Pokemon Gen I ROM, serves
 // the screen over HTTP so a human can watch, and drives the built skills.
 package main
 
@@ -15,6 +15,8 @@ import (
 	"github.com/maestroi/pokepilot/agent"
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/farm"
+	"github.com/maestroi/pokepilot/game"
+	"github.com/maestroi/pokepilot/profiles"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/skill"
@@ -90,6 +92,10 @@ func main() {
 	}
 	defer m.Close()
 
+	watchProfile, _, err := profiles.Detect(m.ROM())
+	if err != nil {
+		log.Fatalf("detect game profile: %v", err)
+	}
 	served, err := m.Watch(*addr, *every)
 	if err != nil {
 		log.Fatalf("serve screen: %v", err)
@@ -97,8 +103,10 @@ func main() {
 	var watchMem state.Mem
 	tracer := newDialogueTracer()
 	m.OnSample(func(m *emu.Emu) {
-		tracer.sample(m)
-		m.TracePlayer(livePlayer(m, &watchMem))
+		if watchProfile.Features().Has(game.FeatureBattles) {
+			tracer.sample(m)
+		}
+		m.TracePlayer(livePlayerForProfile(m, watchProfile, &watchMem))
 	})
 	fmt.Printf("%s\nwatch: http://%s\n\n", version, served)
 

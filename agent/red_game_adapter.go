@@ -26,6 +26,15 @@ func newRedObjectiveAdapter(m *emu.Emu, romData []byte) *redObjectiveAdapter {
 	return &redObjectiveAdapter{m: m, romData: romData}
 }
 
+func init() {
+	for _, id := range gen1Games {
+		gameID := id
+		registerObjectiveAdapter(gameID, func(m *emu.Emu, romData []byte) ObjectiveGameAdapter {
+			return &redObjectiveAdapter{m: m, romData: romData, gameID: gameID}
+		})
+	}
+}
+
 func (a *redObjectiveAdapter) Observe() (Observation, error) {
 	obs, err := ObserveChecked(a.m, a.romData)
 	if err != nil {

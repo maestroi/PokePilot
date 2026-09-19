@@ -31,6 +31,15 @@ export function goalLabel(run: DashboardRun): string {
   return (run.goal || run.dest || '').trim() || 'Free play'
 }
 
+export function gameTitle(game: string | undefined): string {
+  switch ((game || 'pokemon-red').toLowerCase()) {
+    case 'pokemon-blue': return 'Pokémon Blue'
+    case 'pokemon-yellow': return 'Pokémon Yellow'
+    case 'pokemon-red':
+    default: return 'Pokémon Red'
+  }
+}
+
 export function llmProfileLabel(run: DashboardRun): string {
   const identity = run.inference
   if (identity?.label) {

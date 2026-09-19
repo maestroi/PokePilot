@@ -44,7 +44,7 @@ type mcpControl struct {
 
 type mcpStartRunInput struct {
 	Planner    string `json:"planner,omitempty" jsonschema:"planner mode: llm or scripted; defaults to llm"`
-	Game       string `json:"game,omitempty" jsonschema:"game to play, e.g. pokemon-red or pokemon-blue; empty lets the runner pick its mounted cartridge"`
+	Game       string `json:"game,omitempty" jsonschema:"game to play: pokemon-red, pokemon-blue, or pokemon-yellow; empty lets the runner pick its mounted cartridge"`
 	Starter    string `json:"starter,omitempty" jsonschema:"starter Pokemon: squirtle, charmander, or bulbasaur; defaults to squirtle"`
 	Dest       string `json:"dest,omitempty" jsonschema:"destination for scripted mode"`
 	Goal       string `json:"goal,omitempty" jsonschema:"task statement for llm mode; defaults to earning the Boulder Badge"`
@@ -224,6 +224,18 @@ func mcpBearerAuth(token string, next http.Handler) http.Handler {
 }
 
 func (c *mcpControl) startRun(ctx context.Context, _ *mcp.CallToolRequest, in mcpStartRunInput) (*mcp.CallToolResult, mcpStartRunOutput, error) {
+	gameID := strings.ToLower(strings.TrimSpace(in.Game))
+	switch gameID {
+	case "", "pokemon-red", "pokemon-blue", "pokemon-yellow":
+	default:
+		return nil, mcpStartRunOutput{}, fmt.Errorf("game must be pokemon-red, pokemon-blue, or pokemon-yellow")
+	}
+
+	starter := strings.TrimSpace(in.Starter)
+	if gameID == "pokemon-yellow" {
+		starter = ""
+	}
+
 	planner := strings.ToLower(strings.TrimSpace(in.Planner))
 	if planner == "" {
 		planner = "llm"
@@ -278,7 +290,7 @@ func (c *mcpControl) startRun(ctx context.Context, _ *mcp.CallToolRequest, in mc
 	spec := farm.Spec{
 		RunID:           runID,
 		Seed:            in.Seed,
-		Game:            strings.ToLower(strings.TrimSpace(in.Game)),
+		Game:            gameID,
 		Planner:         planner,
 		Starter:         starter,
 		Dest:            dest,

@@ -15,6 +15,7 @@ import PairedExperimentPanel from './PairedExperimentPanel.vue'
 import {
   ageLabel,
   formatFrame,
+  gameTitle,
   goalLabel,
   llmProfileLabel,
   outcomeLabel,
@@ -232,6 +233,7 @@ async function confirmForceEnd(): Promise<void> {
                     <div class="flex items-center gap-2">
                       <span class="size-1.5 rounded-full bg-emerald-300 shadow-[0_0_10px_rgba(110,231,183,0.45)]" />
                       <span class="font-mono text-xs text-slate-300" :title="run.run_id">{{ shortID(run.run_id) }}</span>
+                      <span class="text-[9px] text-slate-500">{{ gameTitle(run.game) }}</span>
                     </div>
                   </td>
                   <td class="px-3 py-2">
@@ -273,6 +275,7 @@ async function confirmForceEnd(): Promise<void> {
                   <div class="flex items-center gap-2">
                     <span class="font-mono text-xs text-slate-300" :title="run.run_id">{{ shortID(run.run_id) }}</span>
                     <StatusBadge :tone="statusTone(run.status)">{{ run.status }}</StatusBadge>
+                    <StatusBadge tone="neutral">{{ gameTitle(run.game) }}</StatusBadge>
                   </div>
                   <p class="mt-1 truncate text-xs text-slate-500" :title="goalLabel(run)">{{ goalLabel(run) }}</p>
                 </div>
@@ -321,7 +324,10 @@ async function confirmForceEnd(): Promise<void> {
                 <td class="px-3 py-2 sm:px-4" :title="run.run_id">
                   <div class="flex min-w-[8rem] items-center gap-2">
                     <PokemonSprite v-if="leadMon(run)" :name="leadMon(run)?.name || ''" :size="30" :fainted="Number(leadMon(run)?.hp || 0) <= 0" />
-                    <span class="font-mono text-xs whitespace-nowrap text-slate-300">{{ shortID(run.run_id) }}</span>
+                    <div class="min-w-0">
+                      <span class="block font-mono text-xs whitespace-nowrap text-slate-300">{{ shortID(run.run_id) }}</span>
+                      <span class="block text-[9px] text-slate-600">{{ gameTitle(run.game) }}</span>
+                    </div>
                   </div>
                 </td>
                 <td class="px-3 py-2.5"><StatusBadge :tone="outcomeTone(run)">{{ outcomeLabel(run) }}</StatusBadge></td>

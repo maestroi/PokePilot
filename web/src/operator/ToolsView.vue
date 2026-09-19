@@ -24,6 +24,7 @@ type StarterMode =
 const form = reactive<RunSpec>({
   run_id: '',
   seed: 0,
+  game: 'pokemon-red',
   planner: 'llm',
   starter: '',
   dest: '',
@@ -64,6 +65,7 @@ const starterMode = ref<StarterMode>('default')
 const specificStarter = ref('')
 const goalExplicitlySelected = ref(false)
 const isLLM = computed(() => form.planner === 'llm')
+const isYellow = computed(() => form.game === 'pokemon-yellow')
 const isSpecificStarter = computed(() => starterMode.value === 'specific')
 
 watch(
@@ -78,6 +80,7 @@ function markGoalExplicitlySelected(): void {
 }
 
 function starterRequest(): string {
+  if (isYellow.value) return ''
   if (starterMode.value === 'specific') return specificStarter.value.trim()
   if (starterMode.value === 'default') return isLLM.value ? '' : 'squirtle'
   return starterMode.value
@@ -104,6 +107,7 @@ async function submit(): Promise<void> {
     const spec: RunSpec = {
       ...form,
       run_id: form.run_id.trim(),
+      game: form.game,
       starter: starterRequest(),
       dest: isLLM.value ? '' : form.dest.trim(),
       goal: isLLM.value ? form.goal.trim() : '',
@@ -146,8 +150,18 @@ async function submit(): Promise<void> {
         </label>
 
         <label class="block">
+          <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Game</span>
+          <select v-model="form.game" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400">
+            <option value="pokemon-red">Pokémon Red</option>
+            <option value="pokemon-blue">Pokémon Blue</option>
+            <option value="pokemon-yellow">Pokémon Yellow</option>
+          </select>
+          <span class="mt-1 block text-[11px] text-slate-600">The worker loads the matching mounted cartridge through the registered game profile.</span>
+        </label>
+
+        <label class="block">
           <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Starter</span>
-          <select v-model="starterMode" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400">
+          <select v-model="starterMode" :disabled="isYellow" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400">
             <optgroup label="Default">
               <option value="default">{{ isLLM ? 'Let LLM decide' : 'Default · Squirtle' }}</option>
             </optgroup>
@@ -165,10 +179,10 @@ async function submit(): Promise<void> {
               <option value="specific">Specific Pokémon…</option>
             </optgroup>
           </select>
-          <span class="mt-1 block text-[11px] text-slate-600">Random choices are deterministic from the run seed. Pick Specific Pokémon for any other Gen I species.</span>
+          <span class="mt-1 block text-[11px] text-slate-600">{{ isYellow ? 'Yellow uses its scripted Pikachu starter; Red-style starter replacement is disabled.' : 'Random choices are deterministic from the run seed. Pick Specific Pokémon for any other Gen I species.' }}</span>
         </label>
 
-        <label v-if="isSpecificStarter" class="block">
+        <label v-if="isSpecificStarter && !isYellow" class="block">
           <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Specific Pokémon</span>
           <input v-model="specificStarter" placeholder="e.g. pikachu, dragonite, snorlax" autocomplete="off" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400" />
           <span class="mt-1 block text-[11px] text-slate-600">Enter any valid Generation I Pokémon name.</span>

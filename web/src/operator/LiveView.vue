@@ -14,6 +14,7 @@ import {
   formatFrame,
   formatWhen,
   gameMediaLabel,
+  gameTitle,
   goalLabel,
   howText,
   isLiveStatus,
@@ -516,6 +517,7 @@ function warnPlay(stats: DashboardStats | undefined, key: string): boolean {
             <strong class="mt-0.5 block truncate font-mono text-[11px]" :title="selectedRun.run_id">{{ selectedRun.run_id }}</strong>
             <div class="mt-1 flex flex-wrap items-center gap-1">
               <StatusBadge :tone="statusTone(selectedRun.status)">{{ selectedRun.status }}</StatusBadge>
+              <StatusBadge tone="neutral">{{ gameTitle(selectedRun.game) }}</StatusBadge>
               <StatusBadge v-if="isPlayStyleRun(selectedRun)" tone="info">{{ playStyleLabel(selectedRun) }}</StatusBadge>
               <span class="font-mono text-[10px] text-[var(--poke-muted)]">{{ playSpeedLabel(selectedRun) }}</span>
               <span

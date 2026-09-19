@@ -74,6 +74,14 @@ func SpeciesName(romData []byte, species uint8) (string, error) {
 	return gen1rom.SpeciesName(romData, species, yellowSpeciesLayout)
 }
 
+func InternalSpeciesDexNumber(romData []byte, species uint8) (uint8, error) {
+	return gen1rom.InternalSpeciesDexNumber(romData, species, yellowSpeciesLayout)
+}
+
+func DexNumberInternalSpecies(romData []byte, dex uint8) (uint8, error) {
+	return gen1rom.DexNumberInternalSpecies(romData, dex, yellowSpeciesLayout)
+}
+
 func LookupSpeciesBaseStats(romData []byte, species uint8) (gen1rom.SpeciesBaseStats, error) {
 	return gen1rom.LookupSpeciesBaseStats(romData, species, yellowSpeciesLayout)
 }
