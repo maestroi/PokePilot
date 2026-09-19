@@ -1,9 +1,11 @@
 package skill
 
 import (
+	"os"
 	"testing"
 
 	gameruntime "github.com/maestroi/pokepilot/game"
+	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
@@ -41,5 +43,75 @@ func TestSatisfiedRoute12SnorlaxDropsActionPivot(t *testing.T) {
 	gate := gameruntime.Transition{ID: "red:route12_snorlax_access", Gate: true}
 	if redRouteTransitionEffectComplete(mem, gate) {
 		t.Fatal("gates must stay annotated even when related story flags are set")
+	}
+}
+
+// TestSatisfiedRoute12SnorlaxCatchHabitatLeavesViaRoute14 is the catch-shaped
+// sibling of TestRoute12SnorlaxRequiresReachablePort for
+// run-29f4dc81z9h2f1sv5v1ggk40xi (triage:d8e00d285ab9c820, farm-issue:1241).
+// EVENT_BEAT_ROUTE12_SNORLAX is already set, so the action must drop entirely;
+// with the (12,4) trainer overlay, Place("route 13") from (11,4) must leave
+// west through Route 14 rather than walkWithinMap no_path on the same map.
+func TestSatisfiedRoute12SnorlaxCatchHabitatLeavesViaRoute14(t *testing.T) {
+	romPath := os.Getenv("POKEMON_RED_ROM")
+	if romPath == "" {
+		t.Skip("POKEMON_RED_ROM not set")
+	}
+	romData, err := os.ReadFile(romPath)
+	if err != nil {
+		t.Fatalf("read ROM: %v", err)
+	}
+	dest, ok := Place("route 13")
+	if !ok {
+		t.Fatal("missing route 13 place")
+	}
+	g, err := world.BuildGraph(romData)
+	if err != nil {
+		t.Fatalf("BuildGraph: %v", err)
+	}
+	h, err := rom.ParseMap(romData, route13Map)
+	if err != nil {
+		t.Fatalf("ParseMap: %v", err)
+	}
+	grid, err := world.Build(romData, h)
+	if err != nil {
+		t.Fatalf("Build grid: %v", err)
+	}
+	trainerSlot := 0
+	for i, o := range h.Objects {
+		if o.X == 12 && o.Y == 4 {
+			trainerSlot = i + 1
+			break
+		}
+	}
+	if trainerSlot == 0 {
+		t.Fatal("Route 13 object at (12,4) is missing")
+	}
+	observed := observedStationaryObjectBlockers(h, []state.SpriteState{{Slot: trainerSlot, X: 12, Y: 4}})
+	g, err = overlayObservedMapTopology(g, grid, h, observed)
+	if err != nil {
+		t.Fatalf("overlay: %v", err)
+	}
+
+	mem := new(state.Mem)
+	setEventFlag(mem, eventBeatRoute12Snorlax)
+	prereqs := redRoutePrerequisites(g, romData, mem)
+	for _, tr := range prereqs.Transitions {
+		if tr.ID == "red:route12_snorlax" {
+			t.Fatalf("cleared Snorlax still annotated on prerequisites: %+v", tr)
+		}
+	}
+
+	route, err := world.FindRoutePlanAtDestinationWithCapabilities(
+		g, route13Map, dest.Map, 11, 4, int(dest.X), int(dest.Y), nil, prereqs,
+	)
+	if err != nil {
+		t.Fatalf("FindRoute: %v", err)
+	}
+	if len(route) < 2 {
+		t.Fatalf("route = %+v, want leave+reenter", route)
+	}
+	if route[0].Edge.To != route14Map {
+		t.Fatalf("first leg to map %02x, want Route 14; route=%+v", route[0].Edge.To, route)
 	}
 }
