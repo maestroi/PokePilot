@@ -108,3 +108,65 @@ func TestVisitedMapPreferenceAllowsRoute12GateComponentBridge(t *testing.T) {
 		t.Fatalf("Route 12 Gate premise changed: same-component exits=%d fresh-component exits=%d", same, fresh)
 	}
 }
+
+func TestSingleNeighborTransitRoomSuspendsVisitedPreference(t *testing.T) {
+	const (
+		badgeHouse   = uint8(0xe6)
+		ceruleanCity = uint8(0x03)
+	)
+	g := &world.Graph{Edges: map[uint8][]world.Edge{
+		badgeHouse: {
+			{Kind: world.EdgeWarp, From: badgeHouse, To: ceruleanCity, WarpX: 2, WarpY: 0},
+			{Kind: world.EdgeWarp, From: badgeHouse, To: ceruleanCity, WarpX: 2, WarpY: 7},
+		},
+	}}
+	if !onlyExitReturnsToVisitedMap(g, badgeHouse, map[uint8]bool{ceruleanCity: true}) {
+		t.Fatal("single-neighbor transit room did not suspend visited-map preference")
+	}
+	g.Edges[badgeHouse] = append(g.Edges[badgeHouse],
+		world.Edge{Kind: world.EdgeWarp, From: badgeHouse, To: 0x40, WarpX: 3, WarpY: 7},
+	)
+	if onlyExitReturnsToVisitedMap(g, badgeHouse, map[uint8]bool{ceruleanCity: true}) {
+		t.Fatal("multi-neighbor map incorrectly suspended visited-map preference")
+	}
+}
+
+func TestCeruleanBadgeHouseUnfilteredRouteChoosesPlazaExit(t *testing.T) {
+	p := os.Getenv("POKEMON_RED_ROM")
+	if p == "" {
+		t.Skip("POKEMON_RED_ROM required")
+	}
+	data, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, err := world.BuildGraph(data)
+	if err != nil {
+		t.Fatalf("BuildGraph: %v", err)
+	}
+
+	const (
+		badgeHouse   = uint8(0xe6)
+		ceruleanCity = uint8(0x03)
+	)
+	// (3,6) is open floor immediately above the two south doors. The named
+	// Cerulean destination (5,18) is on the main plaza component. The north
+	// Badge House exit lands in Cerulean's isolated (9,9) pocket; the south
+	// exits land at the plaza door (9,11). Component-aware routing therefore
+	// has enough information to choose the safe south exit as long as the
+	// anti-bounce preference does not remove it merely because Cerulean was
+	// visited before entering the house.
+	route, err := world.FindRouteAtDestination(g, badgeHouse, ceruleanCity, 3, 6, 5, 18, nil)
+	if err != nil {
+		t.Fatalf("Badge House -> Cerulean plaza route: %v", err)
+	}
+	if len(route) == 0 {
+		t.Fatal("Badge House -> Cerulean plaza returned empty route")
+	}
+	if route[0].From != badgeHouse || route[0].To != ceruleanCity || route[0].WarpY != 7 {
+		t.Fatalf("first exit = %+v, want a south Badge House door to the plaza", route[0])
+	}
+	if !onlyExitReturnsToVisitedMap(g, badgeHouse, map[uint8]bool{ceruleanCity: true}) {
+		t.Fatal("real Badge House topology did not trigger single-neighbor return protection")
+	}
+}

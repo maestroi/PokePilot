@@ -258,6 +258,31 @@ func blockVisitedMaps(g *world.Graph, hard map[world.Edge]bool, current uint8, v
 // forward path avoids revisiting, which hands off to the existing
 // forcedRevisitBan/safeForcedBan fallback below — the mechanism already
 // built to tell a real dead end from a revisit that is the only way through.
+// onlyExitReturnsToVisitedMap reports that current is a transit room whose
+// every graph exit leads back to the same map this journey already visited.
+// In that shape, the visited-map preference must be suspended for one step:
+// component-aware routing has to choose WHICH return door reaches the actual
+// destination. Preferring a "fresh" component can be actively wrong — the
+// Cerulean Badge House has one door back to the city plaza and another into
+// the isolated (9,9) pocket. Farm #1149/#1150 resumed inside that house and
+// anti-bounce filtering selected the fresh dead pocket instead of the plaza.
+func onlyExitReturnsToVisitedMap(g *world.Graph, current uint8, visited map[uint8]bool) bool {
+	edges := g.Edges[current]
+	if len(edges) == 0 {
+		return false
+	}
+	to := edges[0].To
+	if !visited[to] {
+		return false
+	}
+	for _, edge := range edges[1:] {
+		if edge.To != to {
+			return false
+		}
+	}
+	return true
+}
+
 func graphWithoutEdgesInto(g *world.Graph, visited map[uint8]bool, visitedPositions ...map[uint8][]navigationState) *world.Graph {
 	var positions map[uint8][]navigationState
 	if len(visitedPositions) > 0 {
@@ -476,7 +501,8 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 				blockedHere[k.e] = true
 			}
 		}
-		avoidingVisited := len(visitedMaps) > 0 && !visitedMaps[dest.Map]
+		avoidingVisited := len(visitedMaps) > 0 && !visitedMaps[dest.Map] &&
+			!onlyExitReturnsToVisitedMap(routeGraph, cur, visitedMaps)
 		planGraph := routeGraph
 		if avoidingVisited {
 			planGraph = graphWithoutEdgesInto(routeGraph, visitedMaps, visitedPositions)
@@ -873,6 +899,12 @@ func walkWithinMap(m *emu.Emu, romData []byte, dest Destination) error {
 	err = walkAroundAvoidingObjects(func() error { return movementInterruption(m) }, m, h,
 		func(blocked map[[2]int]bool) ([]world.Step, error) {
 			x, y := playerXY(m)
+			// Same-map destinations are ordinary standing tiles. Stepping on an
+			// unrelated door while walking to one fires that warp immediately,
+			// just like it does during a connection-edge approach. #1117 fixed
+			// connection walks; the later #1149/#1150 failures showed local walks
+			// could still enter Cerulean's Badge House and recreate the trap.
+			blocked = warpAvoidance(h, int(x), int(y), blocked)
 			steps, err := world.FindPath(grid, int(x), int(y), int(dest.X), int(dest.Y), blocked)
 			if err != nil {
 				planErr = fmt.Errorf("skill: GoTo: no path on map %02x from (%d,%d) to (%d,%d): %w",
