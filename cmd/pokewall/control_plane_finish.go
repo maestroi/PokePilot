@@ -202,6 +202,7 @@ func (w *Wall) controlPlaneHTTPHandler(next http.Handler) http.Handler {
 					parsed.FramePNG = w.captureFinishFrame(parsed.RunID)
 				}
 				finish = &parsed
+				req = withFinishReport(req, parsed)
 			}
 			req.Body = io.NopCloser(bytes.NewReader(data))
 			req.ContentLength = int64(len(data))
