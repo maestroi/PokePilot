@@ -137,6 +137,10 @@ func terminalRunFailure(dump farm.FinishReport, failures []farm.ObjectiveFailure
 		objective = "recover from repeated objective failures"
 		failureText = "failure recovery budget was exhausted"
 		cause = "failure-budget"
+	case "error":
+		objective = "recover from terminal run error"
+		failureText = "terminal run error stopped the run"
+		cause = "run-error"
 	default:
 		return farm.ObjectiveFailure{}, false
 	}
@@ -191,6 +195,14 @@ func (w *Wall) reportObjectiveFailure(dump farm.FinishReport, f farm.ObjectiveFa
 	if err != nil {
 		return err
 	}
+	circuit := failureCircuitDecision{}
+	if cp := controlPlaneFor(w); cp != nil && circuitFailureEligible(f) {
+		scope, _ := w.circuitScopeForRun(dump.RunID)
+		circuit, err = cp.failureCircuitForOccurrence(scope, dump, max(1, dump.Attempt), f)
+		if err != nil {
+			return fmt.Errorf("evaluate failure circuit: %w", err)
+		}
+	}
 	ext := objectiveFailureExternalID(dump.RunID, dump.Attempt, key)
 
 	w.mu.Lock()
@@ -205,6 +217,12 @@ func (w *Wall) reportObjectiveFailure(dump farm.FinishReport, f farm.ObjectiveFa
 	if structured {
 		disposition = classifyIssueOccurrence(prior)
 		if disposition == occurrenceQuarantine {
+			if circuit.Open {
+				if err := w.requestCircuitInvestigation(c, prior.IssueID, circuit); err != nil {
+					return err
+				}
+				w.noteCircuitIssue(key, dump.RunID, circuit)
+			}
 			w.quarantineOccurrence(outboxEntry{
 				ExternalID: ext,
 				RunID:      dump.RunID,
@@ -282,6 +300,9 @@ func (w *Wall) reportObjectiveFailure(dump farm.FinishReport, f farm.ObjectiveFa
 	}
 	if runContextErr != nil {
 		evidenceValues["run_context_error"] = runContextErr.Error()
+	}
+	if circuit.Open {
+		evidenceValues["circuit_breaker"] = circuit
 	}
 	evidence, _ := json.Marshal(evidenceValues)
 
@@ -363,6 +384,11 @@ func (w *Wall) reportObjectiveFailure(dump farm.FinishReport, f farm.ObjectiveFa
 	if result.Issue.ID == "" {
 		return fmt.Errorf("agent orchestrator returned an empty issue id")
 	}
+	if circuit.Open {
+		if err := w.requestCircuitInvestigation(c, result.Issue.ID, circuit); err != nil {
+			return err
+		}
+	}
 
 	now := time.Now().Unix()
 	w.mu.Lock()
@@ -377,6 +403,7 @@ func (w *Wall) reportObjectiveFailure(dump farm.FinishReport, f farm.ObjectiveFa
 	link.LastDisposition = string(disposition)
 	link.UpdatedAt = now
 	link.Fingerprint = fp
+	link = applyCircuitToIssueLink(link, dump.RunID, circuit)
 	w.issueLinks[key] = link
 	w.outbox[ext] = outboxEntry{
 		ExternalID: ext,
