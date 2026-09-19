@@ -618,13 +618,17 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 			// per-tile ban (legAt) just lets the router rediscover it from a
 			// different tile of the same map, over and over, until the
 			// navigation guard's exact-position repeat finally fires.
-			// MEASURED on run-5r5c0f2hrowk387f36ca57zob: entering
-			// ROUTE_18_GATE_1F (0xbe) and being routed straight back out to
-			// Route 18 through two different warp tiles before the guard
-			// caught it. Ban the whole map's edge up front instead, with the
-			// same "never strand the destination" safety check the ErrNoRoute
-			// retry path below already uses.
-			if errors.Is(err, ErrLegBouncesBack) {
+			// MEASURED on run-5r5c0f2hrowk387f36ca57zob and
+			// run-3gf4z15byn2we2cyhg1zfez04n: entering ROUTE_18_GATE_1F
+			// (0xbe) and being routed straight back out to Route 18 through
+			// two different warp tiles before the guard caught it.
+			//
+			// Ban the whole map's edge when safe; never degrade a bounce to
+			// ErrLegUnwalkable's per-tile ban. ErrLegBouncesBack wraps
+			// ErrLegUnwalkable, so falling through would silently undo the
+			// map-scoped ban and reintroduce the gate thrash.
+			bounce, tile := legFailureBanScope(err)
+			if bounce {
 				forced := legFromMap{e: e, m: cur}
 				if !deadEnds[forced] {
 					if _, _, ok := safeForcedBanWithDeadEnds(routeGraph, cur, dest, x, y, blockedHere, forced, deadEnds, prereqs); ok {
@@ -635,9 +639,10 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 						continue // re-plan without this leg, from any tile of this map
 					}
 				}
+				return fmt.Errorf("skill: GoTo: %w", err)
 			}
 			k := legAt{e: e, m: cur, x: x, y: y}
-			if errors.Is(err, ErrLegUnwalkable) && !failed[k] {
+			if tile && !failed[k] {
 				if replans++; replans > maxReplans {
 					return newReplanExhaustedError(maxReplans, cur, x, y, dest, err)
 				}
@@ -655,6 +660,21 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 			return fmt.Errorf("skill: GoTo: %w", err)
 		}
 	}
+}
+
+// legFailureBanScope decides how GoTo records a Traverse failure.
+// Bounce-backs are map-scoped only; ordinary unwalkable legs are tile-scoped.
+// A bounce must never also count as a tile ban: ErrLegBouncesBack wraps
+// ErrLegUnwalkable, and degrading would rediscover the same forced descent
+// from another tile of the same map.
+func legFailureBanScope(err error) (bounce, tile bool) {
+	if errors.Is(err, ErrLegBouncesBack) {
+		return true, false
+	}
+	if errors.Is(err, ErrLegUnwalkable) {
+		return false, true
+	}
+	return false, false
 }
 
 // places is the single source of truth for the names Place accepts.
