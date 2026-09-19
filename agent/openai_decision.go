@@ -20,6 +20,10 @@ const (
 
 const decisionSystemPrompt = `You are a typed decision function inside a deterministic game-playing runtime. Choose exactly one declared choice from structured state. Deterministic code owns legality, navigation, controller safety, menus, and execution; never invent actions outside the declared choices. Return ONLY JSON with "choice" and "probabilities". probabilities must contain every declared choice exactly once, contain no other choice, use values from 0 to 1, and represent your confidence distribution. The selected choice must have the highest probability. Do not explain.`
 
+func DecisionPromptHash() string {
+	return PromptHash(decisionSystemPrompt, "", "", "typed-choice-probabilities-v1")
+}
+
 // OpenAIDecisionEngine is the local System One-style experiment. It reuses an
 // OpenAI-compatible /chat/completions endpoint but narrows the task to a strict
 // enum plus an explicit probability distribution.
