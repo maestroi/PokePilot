@@ -105,6 +105,21 @@ func Traverse(m *emu.Emu, romData []byte, e world.Edge) error {
 			return fmt.Errorf("skill: Traverse: invalid push step %s on %02x->%02x", push, e.From, e.To)
 		}
 		if err := pushAcrossEdge(m, e, btn); err != nil {
+			if errors.Is(err, errDidNotCross) {
+				// A failed connection push can leave the sprite one tile past
+				// the map edge without flipping wCurMap (Route 10 south ->
+				// Lavender measured at (9,72) on a 20x72 map). Step back onto
+				// the map so the next replan has a walkable standing tile, and
+				// type the failure as ErrLegUnwalkable so GoTo bans this
+				// approach tile and can try another band of the same edge.
+				sx, sy := playerXY(m)
+				if !grid.InBounds(int(sx), int(sy)) || !grid.Walkable(int(sx), int(sy)) {
+					if back, ok := buttonFor(world.Step{DX: -push.DX, DY: -push.DY}); ok {
+						m.Tap(back, 3, 7)
+					}
+				}
+				return fmt.Errorf("skill: Traverse: connection push failed: %v: %w", err, ErrLegUnwalkable)
+			}
 			return err
 		}
 		return finishArrival(m, e)

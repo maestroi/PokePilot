@@ -251,12 +251,24 @@ func redRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, bool) {
 	case pair(semanticCeruleanCityMap, semanticRoute9Map):
 		// The immutable ROM collision splits Route 9 into a Cerulean-side
 		// component and a Route 10-side component, joined only by the live Cut
-		// tree. Once can_cut is available this semantic action must act as a
-		// pivot so routing can cross that static split. But the connection
-		// itself is not the tree: a player already on the Cerulean-side
-		// component can leave Route 9 again without Cut. Issue #815 exposed the
-		// old all-or-nothing behavior by stranding a checkpoint at Route 9
-		// (0,0) while recovery tried to return to Route 4.
+		// tree. Annotate only Route 9 -> Cerulean: a player already on the
+		// Cerulean-side component must still leave without Cut (issue #815),
+		// and Cerulean -> Route 9 must stay ordinary geometry so PivotOnly
+		// cannot bypass Cerulean's own water/ledge split and invent a direct
+		// east-edge crossing from the west bank (run-1vgggovqm500x1sw9gnrhtu1l1).
+		if edge.From != semanticRoute9Map {
+			return gameruntime.Transition{}, false
+		}
+		t := semanticTransition("red:route9_cut", edge, capCanCut)
+		t.PivotOnly = true
+		return t, true
+	case pair(semanticRoute9Map, route10Map):
+		// Symmetric east-border pivot: Cut is required only when leaving the
+		// Cerulean-side component toward Route 10. Route 10 -> Route 9 stays
+		// ordinary so an east-side landing does not demand Cut to exist.
+		if edge.From != semanticRoute9Map {
+			return gameruntime.Transition{}, false
+		}
 		t := semanticTransition("red:route9_cut", edge, capCanCut)
 		t.PivotOnly = true
 		return t, true

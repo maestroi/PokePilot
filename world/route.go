@@ -51,7 +51,7 @@ func FindRoute(g *Graph, from, to uint8) ([]Edge, error) {
 //
 // Edge is comparable, so the caller's set is a plain map[Edge]bool.
 func FindRouteAvoiding(g *Graph, from, to uint8, blockedHere map[Edge]bool) ([]Edge, error) {
-	return findRoute(g, from, to, blockedHere, nil, nil, nil)
+	return findRoute(g, from, to, blockedHere, nil, nil, nil, nil)
 }
 
 // FindRouteAt is FindRouteAvoiding with the player's position on `from` known:
@@ -60,7 +60,7 @@ func FindRouteAvoiding(g *Graph, from, to uint8, blockedHere map[Edge]bool) ([]E
 // components (Route 2, the gate maps) and the caller knows which one it stands
 // in; the component the player is in is the only honest first-hop constraint.
 func FindRouteAt(g *Graph, from, to uint8, x, y int, blockedHere map[Edge]bool) ([]Edge, error) {
-	return findRoute(g, from, to, blockedHere, componentSetAt(g, from, x, y), nil, nil)
+	return findRoute(g, from, to, blockedHere, componentSetAt(g, from, x, y), nil, nil, nil)
 }
 
 // FindRouteAtDestination is FindRouteAt with the destination tile known too.
@@ -70,23 +70,27 @@ func FindRouteAt(g *Graph, from, to uint8, x, y int, blockedHere map[Edge]bool) 
 // deliberately searches a cycle that leaves and re-enters the map through a
 // component that can actually reach the target.
 func FindRouteAtDestination(g *Graph, from, to uint8, x, y, tx, ty int, blockedHere map[Edge]bool) ([]Edge, error) {
-	return findRouteAtDestinationAllowingSemantic(g, from, to, x, y, tx, ty, blockedHere, nil)
+	return findRouteAtDestinationAllowingSemantic(g, from, to, x, y, tx, ty, blockedHere, nil, nil)
 }
 
 // findRouteAtDestinationAllowingSemantic is the component-aware planner with
-// one extra contract: an edge named in semantic is an executable topology
-// transition, so ordinary walking reachability to that edge's exit port is not
-// a prerequisite. The owning transition executor must establish and verify the
-// game-specific effect before the edge is traversed.
-func findRouteAtDestinationAllowingSemantic(g *Graph, from, to uint8, x, y, tx, ty int, blockedHere map[Edge]bool, semantic map[Edge]bool) ([]Edge, error) {
+// semantic topology transitions.
+//
+//   - actions: full semantic actions that rewrite destination collision (Cut
+//     into a gym yard, Surf onto water). They bypass source-port reachability
+//     and discard the static landing component.
+//   - pivotOnly: source-side component bridges (Route 9's Cut tree). They
+//     bypass source-port reachability but keep the ordinary landing component
+//     so the far map's own splits stay authoritative.
+func findRouteAtDestinationAllowingSemantic(g *Graph, from, to uint8, x, y, tx, ty int, blockedHere map[Edge]bool, actions, pivotOnly map[Edge]bool) ([]Edge, error) {
 	first := componentSetAt(g, from, x, y)
 	target := standingComponentAt(g, to, tx, ty)
 	if !g.componentAware || len(first) == 0 || len(target) == 0 {
 		// Missing component data is not evidence that a detour is required.
 		// Preserve the old map-level behavior in that case.
-		return findRoute(g, from, to, blockedHere, first, nil, semantic)
+		return findRoute(g, from, to, blockedHere, first, nil, actions, pivotOnly)
 	}
-	return findRoute(g, from, to, blockedHere, first, target, semantic)
+	return findRoute(g, from, to, blockedHere, first, target, actions, pivotOnly)
 }
 
 func componentSetAt(g *Graph, mapID uint8, x, y int) []int {
@@ -159,7 +163,7 @@ func componentSetKey(in []int) string {
 	return b.String()
 }
 
-func findRoute(g *Graph, from, to uint8, blockedHere map[Edge]bool, first, target []int, semantic map[Edge]bool) ([]Edge, error) {
+func findRoute(g *Graph, from, to uint8, blockedHere map[Edge]bool, first, target []int, actions, pivotOnly map[Edge]bool) ([]Edge, error) {
 	if from == to && (len(target) == 0 || shareComp(first, target)) {
 		return []Edge{}, nil
 	}
@@ -182,24 +186,28 @@ func findRoute(g *Graph, from, to uint8, blockedHere map[Edge]bool, first, targe
 			if prev < 0 && blockedHere[e] {
 				continue
 			}
-			// A semantic edge represents an action that changes traversal state
-			// (Cut, Surf, a story gate, a boulder switch, ...). Requiring the
-			// pre-action walking component to reach its port would make the action
-			// impossible to select. Non-semantic edges retain the exact old rule.
-			if !semantic[e] && !canExit(g, e, entry) {
+			// Full actions and PivotOnly both bypass source-port reachability:
+			// the action is what makes the port usable. Non-semantic edges keep
+			// the exact old canExit rule.
+			if !actions[e] && !pivotOnly[e] && !canExit(g, e, entry) {
 				continue
 			}
 			nextEntry := g.entryComps[e]
-			if semantic[e] {
+			if actions[e] {
 				// The static graph's landing component for e.To was computed from
-				// pristine ROM collision. A semantic pivot (Cut, Surf, a switch...)
-				// can permanently rewrite that map's tile collision at the exact
-				// spot it lands (VermilionGymSetDoorTile, a cut tree), so the
+				// pristine ROM collision. A full semantic action (Cut into a gym
+				// yard, Surf onto water, a switch...) can permanently rewrite that
+				// map's tile collision at the exact spot it lands, so the
 				// precomputed component is not authoritative once the action is
 				// taken. Treat the landing as unconstrained, same as a caller who
 				// does not know its component (canExit already treats nil this
 				// way); the live map, rebuilt fresh once the walker actually
 				// stands there, is what execution trusts anyway.
+				//
+				// PivotOnly deliberately does NOT do this: it only bridges a
+				// source-side split (Route 9's tree). Discarding the landing would
+				// invent reachability across the destination map's own splits
+				// (Route 10 north vs south / Lavender).
 				nextEntry = nil
 			}
 			key := routeStateIdentity(g, e.To, nextEntry, e)
@@ -212,10 +220,10 @@ func findRoute(g *Graph, from, to uint8, blockedHere map[Edge]bool, first, targe
 	}
 	expand(from, -1, first)
 	for i := 0; i < len(nodes); i++ {
-		// nodes[i].entry == nil means a semantic pivot deliberately discarded
-		// the static landing component (see expand above): "unknown" must not
-		// read as "elsewhere," the same rule canExit already applies for an
-		// edge whose entry component isn't known.
+		// nodes[i].entry == nil means a full semantic action deliberately
+		// discarded the static landing component (see expand above): "unknown"
+		// must not read as "elsewhere," the same rule canExit already applies
+		// for an edge whose entry component isn't known.
 		if nodes[i].edge.To == to && (len(target) == 0 || nodes[i].entry == nil || shareComp(nodes[i].entry, target)) {
 			var route []Edge
 			for j := i; j >= 0; j = nodes[j].prev {

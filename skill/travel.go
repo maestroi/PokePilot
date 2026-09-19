@@ -191,15 +191,17 @@ const maxRouteCuts = 4
 
 // ErrNavigationStalled is included because a Cut tree the router treats as
 // "the connection itself is open, the obstacle is inside the destination
-// map" (Route 9: see red:route9_cut) has no edge of its own the pre-cut
-// static graph can honestly route around. Once inside Route 9 with the tree
-// still standing, the capability-aware planner can find only degenerate
-// routes that leave and re-enter through the same border crossing, which
-// GoTo then walks in a circle until the exact-position repeat guard fires —
-// reproduced in run-1948e1rnco3sp1y9bbhdwp7eov. That repeat is the same
-// "stuck here, tree in the way" signal ErrNoPath already triggers recovery
-// for; cutThroughReachableTree is a no-op (opened=false, original error
-// preserved) when the stall was not actually caused by a reachable tree.
+// map" used to rely entirely on deferred Travel Cut recovery (Route 9). The
+// red:route9_cut executor now clears that tree itself; this still covers any
+// remaining static-obstacle stall that leaves the walker in place with a
+// reachable tree. Once inside Route 9 with the tree still standing, a
+// capability-aware planner can otherwise find only degenerate routes that
+// leave and re-enter through the same border crossing, which GoTo then walks
+// in a circle until the exact-position repeat guard fires — reproduced in
+// run-1948e1rnco3sp1y9bbhdwp7eov. That repeat is the same "stuck here, tree
+// in the way" signal ErrNoPath already triggers recovery for;
+// cutThroughReachableTree is a no-op (opened=false, original error preserved)
+// when the stall was not actually caused by a reachable tree.
 func cutRecoverableNavigationError(err error) bool {
 	return errors.Is(err, ErrLegUnwalkable) ||
 		errors.Is(err, ErrReplanExhausted) ||

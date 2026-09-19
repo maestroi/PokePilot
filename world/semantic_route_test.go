@@ -150,6 +150,70 @@ func TestMissingPivotOnlyCapabilityFallsBackToOrdinaryGeometry(t *testing.T) {
 	}
 }
 
+// TestPivotOnlyPreservesDestinationLandingComponents is the Route 9/10 contract:
+// a PivotOnly Cut on the source map must not discard the destination map's
+// static landing component and invent reachability across that map's own split
+// (Route 10 north vs south toward Lavender).
+func TestPivotOnlyPreservesDestinationLandingComponents(t *testing.T) {
+	cross := Edge{Kind: EdgeConnection, From: 1, To: 2, Dir: dirEast}
+	south := Edge{Kind: EdgeConnection, From: 2, To: 3, Dir: dirSouth}
+	cave := Edge{Kind: EdgeWarp, From: 2, To: 3, WarpX: 0, WarpY: 0}
+	g := &Graph{
+		componentAware: true,
+		Edges: map[uint8][]Edge{
+			1: {cross},
+			2: {south, cave},
+			3: {},
+		},
+		// Map 2 has north (comp 1) and south (comp 2). Cross from map 1 lands
+		// on north. South exit is only on south. Cave bridges north -> south dest.
+		comps: map[uint8][][]int{
+			1: {{1}},
+			2: {{1}, {2}},
+			3: {{1}},
+		},
+		tiles: map[uint8]dim{1: {w: 1, h: 1}, 2: {w: 1, h: 2}, 3: {w: 1, h: 1}},
+		exitComps: map[Edge][]int{
+			cross: {1},
+			south: {2},
+			cave:  {1},
+		},
+		entryComps: map[Edge][]int{
+			cross: {1}, // lands on north of map 2
+			south: {1},
+			cave:  {1},
+		},
+	}
+	prereqs := RoutePrerequisites{
+		Capabilities: gameruntime.NewCapabilitySet("can_cut"),
+		Transitions: map[Edge]gameruntime.Transition{
+			cross: {
+				ID:        "source_cut_pivot",
+				Requires:  []gameruntime.CapabilityID{"can_cut"},
+				PivotOnly: true,
+			},
+		},
+	}
+
+	plan, err := FindRoutePlanAtDestinationWithCapabilities(g, 1, 3, 0, 0, 0, 0, nil, prereqs)
+	if err != nil {
+		t.Fatalf("pivot-only route: %v", err)
+	}
+	sawCave := false
+	sawSouth := false
+	for _, step := range plan {
+		if step.Edge == cave {
+			sawCave = true
+		}
+		if step.Edge == south {
+			sawSouth = true
+		}
+	}
+	if !sawCave || sawSouth {
+		t.Fatalf("plan=%+v: PivotOnly must keep the north landing and use the cave, not invent the south exit", plan)
+	}
+}
+
 func TestSemanticRouteDoesNotInventPrerequisiteForGeometricFailure(t *testing.T) {
 	gated := Edge{Kind: EdgeConnection, From: 9, To: 10, Dir: dirEast}
 	g := &Graph{Edges: map[uint8][]Edge{
