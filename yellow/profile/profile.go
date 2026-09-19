@@ -52,6 +52,7 @@ func (*Profile) Symbols() game.SymbolTable {
 func (*Profile) Features() game.ProfileFeatures {
 	return game.ProfileFeatures{
 		game.FeatureMapParsing:      true,
+		game.FeatureInventory:       true,
 		game.FeatureStoryProgress:   true,
 		game.FeatureSemanticSpecies: true,
 	}
@@ -83,6 +84,7 @@ func (*Profile) DecodeObservation(reader game.MemoryReader, romData []byte) (gam
 	mapID := reader.Peek8(sym.CurMap)
 	mapName, _ := (parser{}).MapName(uint16(mapID))
 	pokedexOwned, pokedexSeen := yellowPokedex(reader, romData)
+	bag := yellowBag(reader, romData)
 	location := game.PlaceID("")
 	if mapName != "" {
 		location = game.PlaceID(game.CanonicalID(strings.ReplaceAll(mapName, "_", " ")))
@@ -99,6 +101,7 @@ func (*Profile) DecodeObservation(reader game.MemoryReader, romData []byte) (gam
 		Controllable: yellowControllable(reader),
 		InBattle:     reader.Peek8(sym.IsInBattle) != 0,
 		Party:        gen1.DecodeParty(reader, yellowRAMLayout),
+		Bag:          bag,
 		Badges:       gen1.DecodeBadges(reader, yellowRAMLayout),
 		Money:        gen1.DecodeMoney(reader, yellowRAMLayout),
 		RespawnPlace: yellowLocation(reader.Peek8(sym.LastBlackoutMap)),
