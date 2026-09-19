@@ -74,7 +74,7 @@ func TestRoute12SnorlaxIsGateNotPivot(t *testing.T) {
 	prereqs.Capabilities = caps
 
 	plan, err := world.FindRoutePlanAtDestinationWithCapabilities(
-		g, route13Map, /* vermilion */ 0x05, 11, 4, -1, -1, nil, prereqs,
+		g, route13Map /* vermilion */, 0x05, 11, 4, -1, -1, nil, prereqs,
 	)
 	if err != nil {
 		t.Fatalf("FindRoute from Route 13 pocket: %v", err)
