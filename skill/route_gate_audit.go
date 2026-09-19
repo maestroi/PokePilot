@@ -22,6 +22,14 @@ const (
 	// intact for destination-warp indexing.
 	capCanUseInaccessibleWarp gameruntime.CapabilityID = "can_use_inaccessible_warp"
 
+	// Cycling Road (Routes 16–18) forces downhill bike movement once
+	// BIT_ALWAYS_ON_BIKE is set at the corridor entry tiles
+	// (pokered/data/maps/force_bike_surf.asm). Northbound map connections are
+	// therefore not traversable in play; keep a never-projected capability so
+	// semantic routing never plans Fuchsia→Celadon "uphill" and discovers the
+	// dead end only after bouncing at Route 18's north edge.
+	capCanClimbCyclingRoad gameruntime.CapabilityID = "can_climb_cycling_road"
+
 	bicycleItem uint8 = 0x06
 
 	route16Map       uint8 = 0x1B
@@ -137,6 +145,24 @@ func redAuditedRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, 
 	case edge.Kind == world.EdgeWarp && edge.From == route18Gate1FMap && edge.To == route18Map &&
 		(edge.WarpX == 0 || edge.WarpX == 7) && (edge.WarpY == 4 || edge.WarpY == 5):
 		return bikeGate("red:cycling_road_bicycle", capCanRideCyclingRoad)
+
+	case edge.Kind == world.EdgeConnection && edge.From == route18Map && edge.To == route17Map:
+		// MEASURED on run-3t3kznqtevtk6l137tdx25gbh: OpenSaffronGate's travel
+		// from Fuchsia to the Celadon roof vending machine routed west onto
+		// Cycling Road, crossed Route 18 Gate onto (33,8), then looped the
+		// gate while the north connection's forced downhill bounce never
+		// became a durable plan fact fast enough to escape the navigation
+		// stall. Southbound (Route 16→17→18) stays ordinary geometry.
+		t := semanticTransition("red:cycling_road_uphill", edge, capCanClimbCyclingRoad)
+		t.Gate = true
+		t.OneWay = true
+		return t, true
+
+	case edge.Kind == world.EdgeConnection && edge.From == route17Map && edge.To == route16Map:
+		t := semanticTransition("red:cycling_road_uphill", edge, capCanClimbCyclingRoad)
+		t.Gate = true
+		t.OneWay = true
+		return t, true
 
 	case edge.Kind == world.EdgeConnection && edge.From == route16Map && edge.To == celadonCityMap:
 		// Returning north from Cycling Road exits onto Route 16 west of the

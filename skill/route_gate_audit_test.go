@@ -104,6 +104,41 @@ func TestCyclingRoadModelsOnlyTheBikeCorridor(t *testing.T) {
 	}
 }
 
+func TestCyclingRoadUphillIsPermanentGate(t *testing.T) {
+	for _, edge := range []world.Edge{
+		{Kind: world.EdgeConnection, From: route18Map, To: route17Map},
+		{Kind: world.EdgeConnection, From: route17Map, To: route16Map},
+	} {
+		transition := requireTransition(t, edge, "red:cycling_road_uphill", capCanClimbCyclingRoad)
+		if !transition.Gate {
+			t.Fatalf("uphill Cycling Road edge was modeled as an executable pivot: %+v", transition)
+		}
+		if !transition.OneWay {
+			t.Fatalf("uphill Cycling Road edge missing OneWay: %+v", transition)
+		}
+	}
+	// Downhill remains ordinary topology so Celadon→Fuchsia via Cycling Road
+	// still routes once the Bicycle gate warps are satisfied.
+	for _, edge := range []world.Edge{
+		{Kind: world.EdgeConnection, From: route16Map, To: route17Map},
+		{Kind: world.EdgeConnection, From: route17Map, To: route18Map},
+	} {
+		if transition, ok := redRouteTransitionForEdge(edge); ok && transition.ID == "red:cycling_road_uphill" {
+			t.Fatalf("downhill Cycling Road edge was incorrectly uphill-gated: %+v", transition)
+		}
+	}
+	if caps := redRouteCapabilities(nil, new(state.Mem)); caps.Has(capCanClimbCyclingRoad) {
+		t.Fatalf("uphill Cycling Road capability must never be projected: %v", caps)
+	}
+	mem := new(state.Mem)
+	mem[sym.NumBagItems] = 1
+	mem[sym.BagItems] = bicycleItem
+	mem[sym.BagItems+1] = 1
+	if caps := redRouteCapabilities(nil, mem); caps.Has(capCanClimbCyclingRoad) {
+		t.Fatalf("owning a Bicycle must not project uphill Cycling Road: %v", caps)
+	}
+}
+
 func TestSouthernSeaRouteRequiresSurf(t *testing.T) {
 	for _, edge := range []world.Edge{
 		{Kind: world.EdgeConnection, From: route19Map, To: route20Map},
