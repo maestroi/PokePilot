@@ -757,6 +757,13 @@ func (p reportingPlanner) ObservePlanning(stats agent.PlanningStats) {
 	}
 }
 
+func (p reportingPlanner) DecideFailure(result agent.ObjectiveResult) (agent.DecisionResponse, error) {
+	if decider, ok := p.inner.(agent.FailureDecisionPlanner); ok {
+		return decider.DecideFailure(result)
+	}
+	return agent.DecisionResponse{}, agent.ErrDecisionDisabled
+}
+
 func (p reportingPlanner) ask(obs agent.Observation, offered []agent.Objective, r agent.Retry) (agent.Objective, error) {
 	q := planQuestion(offered)
 	if p.snap != nil {
