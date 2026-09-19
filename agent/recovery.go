@@ -173,15 +173,18 @@ func trainerBlackoutStateKey(obs Observation) string {
 
 func recoveryStateScopeFor(result ObjectiveResult) recoveryStateScope {
 	if failureCauseIs(result, "route_prerequisite_missing") {
-		// Direct route objectives are blocked by a portable capability: walking
-		// elsewhere cannot make a missing badge/HM/story fact appear. Compound
-		// progression is different. A progression transaction can own several
-		// internal journeys, and a route prerequisite can belong only to the
-		// component or detour where that attempt stopped. Quarantining the whole
-		// story step on capability-only state would suppress it forever while
-		// unrelated movement changes the route that the next attempt would take
-		// (farm #1109: Boulder progression stalled on Route 2).
-		if result.Objective.Kind != KindProgress {
+		// Capability-only quarantine is safe for direct travel objectives: moving
+		// elsewhere does not satisfy a missing badge/HM/story gate, and the
+		// plain/flee sibling would otherwise immediately retry the same route.
+		//
+		// Compound objectives are different. Progress, catch, gym, gift/trade
+		// execution and similar transactions can own multiple internal journeys,
+		// so a route prerequisite may describe only the approach that failed.
+		// Their ordinary objective state includes position and lets a materially
+		// different route reopen the transaction. #1109 exposed this for
+		// progression; #1084 exposed the same permanent quarantine for a Route 2
+		// catch after recovery had moved Red elsewhere.
+		if _, direct := routePolicySibling(result.Objective); direct {
 			return recoveryStateScopeRoutePrerequisite
 		}
 	}
