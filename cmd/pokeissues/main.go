@@ -449,7 +449,7 @@ func (c *githubClient) updateLatestObservation(ctx context.Context, issue github
 	if revision == "" {
 		return issue, nil
 	}
-	body := setLatestObservedRevision(issue.Body, revision)
+	body := setLatestObservation(issue.Body, revision, manifest.ObservedAt)
 	if body == issue.Body {
 		return issue, nil
 	}
@@ -591,6 +591,10 @@ func renderIssueBody(runBase string, manifest issueReportManifest, artifacts []a
 	if revision := strings.TrimSpace(manifest.ObservedRevision); revision != "" {
 		b.WriteByte('\n')
 		b.WriteString(latestObservedRevisionMarker(revision))
+		if !manifest.ObservedAt.IsZero() {
+			b.WriteByte('\n')
+			b.WriteString(latestObservedAtMarker(manifest.ObservedAt))
+		}
 	}
 	b.WriteString("\n<!-- pokepilot-generated:github-issues-v1 -->\n\n")
 	b.WriteString("Automated PokePilot farm failure. GitHub is the issue system of record; repeated active occurrences remain grouped by fingerprint.\n\n")
@@ -797,17 +801,33 @@ func externalIDMarker(externalID string) string {
 	return "<!-- pokepilot-external-id:" + htmlCommentSafe(externalID) + " -->"
 }
 
-const latestObservedRevisionPrefix = "<!-- pokepilot-latest-observed-revision:"
+const (
+	latestObservedRevisionPrefix = "<!-- pokepilot-latest-observed-revision:"
+	latestObservedAtPrefix       = "<!-- pokepilot-latest-observed-at:"
+)
 
 func latestObservedRevisionMarker(revision string) string {
 	return latestObservedRevisionPrefix + htmlCommentSafe(revision) + " -->"
 }
 
-func setLatestObservedRevision(body, revision string) string {
-	marker := latestObservedRevisionMarker(revision)
+func latestObservedAtMarker(observedAt time.Time) string {
+	return latestObservedAtPrefix + observedAt.UTC().Format(time.RFC3339Nano) + " -->"
+}
+
+func hiddenMarkerValue(body, prefix string) string {
+	for _, line := range strings.Split(body, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, prefix) && strings.HasSuffix(line, " -->") {
+			return strings.TrimSuffix(strings.TrimPrefix(line, prefix), " -->")
+		}
+	}
+	return ""
+}
+
+func setHiddenMarker(body, prefix, marker string) string {
 	lines := strings.Split(body, "\n")
 	for i, line := range lines {
-		if strings.HasPrefix(strings.TrimSpace(line), latestObservedRevisionPrefix) {
+		if strings.HasPrefix(strings.TrimSpace(line), prefix) {
 			if line == marker {
 				return body
 			}
@@ -819,6 +839,22 @@ func setLatestObservedRevision(body, revision string) string {
 		return marker
 	}
 	return marker + "\n" + body
+}
+
+func setLatestObservation(body, revision string, observedAt time.Time) string {
+	if revision = strings.TrimSpace(revision); revision == "" {
+		return body
+	}
+	if raw := hiddenMarkerValue(body, latestObservedAtPrefix); raw != "" && !observedAt.IsZero() {
+		if previous, err := time.Parse(time.RFC3339Nano, raw); err == nil && previous.After(observedAt) {
+			return body
+		}
+	}
+	body = setHiddenMarker(body, latestObservedRevisionPrefix, latestObservedRevisionMarker(revision))
+	if !observedAt.IsZero() {
+		body = setHiddenMarker(body, latestObservedAtPrefix, latestObservedAtMarker(observedAt))
+	}
+	return body
 }
 
 func triageKey(fingerprint string) string {
