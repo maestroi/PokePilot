@@ -91,6 +91,31 @@ type legFromMap struct {
 	m uint8
 }
 
+// newLegFromMap builds a legFromMap ban key, scoping a warp edge to its
+// (From,To) map pair rather than the exact warp tile. A gate building
+// commonly exposes several warp objects between the same two maps (Route 18
+// Gate has four: two doors in from Route 18, two doors back out), and
+// Traverse already treats same-pair warps as interchangeable when choosing
+// which tile to cross (warp.go: "warp tiles the collision grid marks
+// walkable are preferred, then considered in ROM warp-table order"). A dead
+// end proven through one door is a fact about the building, not that one
+// tile, so the ban must close every door between the same pair of maps at
+// once — otherwise the router discovers and bans them one at a time,
+// spending a full replan on each. MEASURED on run-4h4isxsvaskt1c7mslvxzsrr6:
+// OpenSaffronGate's travel to the Celadon vending machine hit Route 18's
+// one-way Cycling Road connection, correctly banned it, then spent 3 more of
+// its 8-replan budget discovering and banning Route 18 Gate's four doors one
+// by one before giving up on the area entirely and wandering back through
+// Fuchsia and Route 15's own gate, finally exhausting the budget there with
+// a "no route" error that named neither the real dead end nor its actual
+// cause.
+func newLegFromMap(e world.Edge, m uint8) legFromMap {
+	if e.Kind == world.EdgeWarp {
+		e.WarpX, e.WarpY = 0, 0
+	}
+	return legFromMap{e: e, m: m}
+}
+
 // navigationMemory carries GoTo's within-journey loop/bounce protection
 // (the guard, banned legs, dead ends, and visited maps/positions) across
 // separate calls to goToWithTransitionExecutorMemory. Travel's retry loop
@@ -322,12 +347,12 @@ func forcedRevisitBan(g *world.Graph, retry []world.RouteStep, retryErr error, v
 	if !edgeEntersVisitedRegion(g, edge, visitedMaps, positions) {
 		return legFromMap{}, false
 	}
-	forced := legFromMap{e: edge, m: edge.From}
+	forced := newLegFromMap(edge, edge.From)
 	if deadEnds[forced] {
 		return legFromMap{}, false
 	}
 	for _, e := range g.Edges[forced.m] {
-		if e != forced.e && !deadEnds[legFromMap{e: e, m: forced.m}] {
+		if key := newLegFromMap(e, forced.m); key != forced && !deadEnds[key] {
 			return forced, true
 		}
 	}
@@ -366,7 +391,7 @@ func safeForcedBanWithDeadEnds(
 	for mapID, edges := range g.Edges {
 		filtered := make([]world.Edge, 0, len(edges))
 		for _, e := range edges {
-			key := legFromMap{e: e, m: mapID}
+			key := newLegFromMap(e, mapID)
 			if key == forced || deadEnds[key] {
 				continue
 			}
@@ -496,9 +521,9 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 				blockedHere[k.e] = true
 			}
 		}
-		for k := range deadEnds {
-			if k.m == cur {
-				blockedHere[k.e] = true
+		for _, e := range routeGraph.Edges[cur] {
+			if deadEnds[newLegFromMap(e, cur)] {
+				blockedHere[e] = true
 			}
 		}
 		avoidingVisited := len(visitedMaps) > 0 && !visitedMaps[dest.Map] &&
@@ -576,7 +601,11 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 						return newReplanExhaustedError(maxReplans, cur, x, y, dest, err)
 					}
 					deadEnds[forced] = true
-					blockedHere[forced.e] = true
+					for _, e := range routeGraph.Edges[cur] {
+						if newLegFromMap(e, cur) == forced {
+							blockedHere[e] = true
+						}
+					}
 					retry, retryErr = afterBan, afterBanErr
 				}
 			}
@@ -625,7 +654,7 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 			// same "never strand the destination" safety check the ErrNoRoute
 			// retry path below already uses.
 			if errors.Is(err, ErrLegBouncesBack) {
-				forced := legFromMap{e: e, m: cur}
+				forced := newLegFromMap(e, cur)
 				if !deadEnds[forced] {
 					if _, _, ok := safeForcedBanWithDeadEnds(routeGraph, cur, dest, x, y, blockedHere, forced, deadEnds, prereqs); ok {
 						if replans++; replans > maxReplans {
