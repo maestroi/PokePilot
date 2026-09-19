@@ -468,7 +468,10 @@ func livePlayer(m *emu.Emu, mem *state.Mem) *farm.Player {
 }
 
 func livePlayerForProfile(m *emu.Emu, profile game.GameProfile, mem *state.Mem) *farm.Player {
-	if profile.Features().Has(game.FeatureInventory) {
+	// Red/Blue still have richer legacy milestone/sprite telemetry. Keep that
+	// transitional path behind the trainer-state capability, not inventory:
+	// Yellow now has semantic inventory and must never be decoded with Red RAM.
+	if profile.Features().Has(game.FeatureTrainerFlags) {
 		return livePlayer(m, mem)
 	}
 	base, err := profile.DecodeObservation(m, m.ROM())
@@ -480,14 +483,22 @@ func livePlayerForProfile(m *emu.Emu, profile game.GameProfile, mem *state.Mem) 
 
 func profilePlayerSnapshot(obs game.ProfileObservation) *farm.Player {
 	p := &farm.Player{
-		Money:  obs.Money,
-		Badges: append([]string(nil), obs.Badges...),
-		Party:  make([]farm.PartyMon, 0, len(obs.Party)),
+		Money:       obs.Money,
+		Badges:      append([]string(nil), obs.Badges...),
+		Party:       make([]farm.PartyMon, 0, len(obs.Party)),
+		BagUsed:     len(obs.Bag),
+		BagCapacity: 20,
+		DexOwned:    len(obs.PokedexOwned),
+		DexSeen:     len(obs.PokedexSeen),
+		DexTotal:    151,
 	}
 	for _, mon := range obs.Party {
 		p.Party = append(p.Party, farm.PartyMon{
 			Name: string(mon.Species), Level: mon.Level, HP: mon.HP, MaxHP: mon.MaxHP, Status: mon.Status,
 		})
+	}
+	for _, item := range obs.Bag {
+		p.Bag = append(p.Bag, farm.BagItem{Name: item.Name, Quantity: item.Quantity})
 	}
 	return p
 }
@@ -541,10 +552,10 @@ func sampleHeartbeat(m *emu.Emu, profile game.GameProfile, runID string, snap *h
 	}
 
 	player := profilePlayerSnapshot(base)
-	// Fully migrated Red/Blue profiles still expose the richer inventory/Dex
-	// heartbeat while partial profiles (currently Yellow) stay on semantic
-	// profile data rather than being decoded through Red WRAM offsets.
-	if profile.Features().Has(game.FeatureInventory) {
+	// Red/Blue still expose a richer legacy milestone overlay. Yellow now
+	// advertises semantic inventory, so inventory capability cannot be used as
+	// a proxy for "safe to decode with Red WRAM".
+	if profile.Features().Has(game.FeatureTrainerFlags) {
 		g := state.Read(m, mem)
 		player = playerSnapshot(g, state.DecodeStoryFacts(mem, g.Inventory))
 	}
