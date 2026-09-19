@@ -108,7 +108,7 @@ func TestPickOpenPRStillClaimsLocalRegression(t *testing.T) {
 	}
 }
 
-func TestPromptLoadsNativeTriageSkill(t *testing.T) {
+func TestPromptLoadsTriageInstructions(t *testing.T) {
 	body, err := os.ReadFile(filepath.Join("qwagent-triage.prompt.md"))
 	if err != nil {
 		t.Fatal(err)
@@ -119,8 +119,8 @@ func TestPromptLoadsNativeTriageSkill(t *testing.T) {
 		"[farm-issue:<issue_number>]",
 		"make test-short",
 		"Do not call pokepilot_get_triage",
-		"native OpenCode skill `pokefarm-triage`",
-		"`skill` tool",
+		".claude/skills/pokefarm-triage/SKILL.md",
+		"native skill tool",
 		"do not second-guess queue eligibility",
 	} {
 		if !strings.Contains(s, want) {
@@ -159,6 +159,11 @@ func TestScriptHasDryRunAndLock(t *testing.T) {
 		"--dry-run",
 		"flock -n",
 		"opencode run --auto",
+		"POKEPILOT_TRIAGE_AGENT",
+		"cursor_authenticated",
+		"agent login",
+		"--approve-mcps",
+		"--workspace",
 		"continuing locally",
 		"Follow the attached farm triage packet",
 		"--file \"$POKEPILOT_TRIAGE_STATE/packet.md\"",
