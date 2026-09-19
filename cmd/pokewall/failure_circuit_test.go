@@ -140,12 +140,12 @@ func TestFixedCircuitReleasesOneCanaryOnNewBuild(t *testing.T) {
 	}
 	queued := 0
 	paused := 0
-	for _, t := range w.tiles {
-		switch t.Status {
+	for _, tile := range w.tiles {
+		switch tile.Status {
 		case statusQueued:
 			queued++
-			if t.CircuitKind != "canary" {
-				t.Fatalf("queued circuit kind = %q", t.CircuitKind)
+			if tile.CircuitKind != "canary" {
+				t.Fatalf("queued circuit kind = %q", tile.CircuitKind)
 			}
 		case statusPaused:
 			paused++
