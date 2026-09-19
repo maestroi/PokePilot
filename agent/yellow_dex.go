@@ -19,7 +19,7 @@ func buildYellowDexCatalog(romData []byte, owned, seen []SpeciesID) (DexCatalog,
 	if err != nil {
 		return DexCatalog{}, err
 	}
-	cat := assembleDexCatalog(entries, sources, owned, seen, yellowExclusiveChoices())
+	cat := assembleDexCatalogWithPolicy(entries, sources, owned, seen, yellowExclusiveChoices(), yellowEventOnly())
 	cat.IncompleteReason = yellowDexIncompleteReason
 	return cat, nil
 }
@@ -129,4 +129,9 @@ func yellowExclusiveChoices() []exclusiveChoice {
 			Alternatives: [][]SpeciesID{{"flareon"}, {"jolteon"}, {"vaporeon"}},
 		},
 	}
+}
+
+
+func yellowEventOnly() map[SpeciesID]bool {
+	return map[SpeciesID]bool{"mew": true}
 }
