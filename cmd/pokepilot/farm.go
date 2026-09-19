@@ -165,6 +165,26 @@ func (w rawWriter) Write(p []byte) (int, error) {
 // tally that record() keeps mutating on the stepping goroutine.
 func (s *heartbeatSnap) storeStats(st farm.LLMStats) {
 	st.Choices = append([]farm.ChoiceCount(nil), st.Choices...)
+	if len(st.DecisionProbabilities) > 0 {
+		probabilities := make(map[string]float64, len(st.DecisionProbabilities))
+		for key, value := range st.DecisionProbabilities {
+			probabilities[key] = value
+		}
+		st.DecisionProbabilities = probabilities
+	}
+	if len(st.DecisionRecords) > 0 {
+		st.DecisionRecords = append([]farm.TypedDecisionRecord(nil), st.DecisionRecords...)
+		for i := range st.DecisionRecords {
+			if len(st.DecisionRecords[i].Probabilities) == 0 {
+				continue
+			}
+			probabilities := make(map[string]float64, len(st.DecisionRecords[i].Probabilities))
+			for key, value := range st.DecisionRecords[i].Probabilities {
+				probabilities[key] = value
+			}
+			st.DecisionRecords[i].Probabilities = probabilities
+		}
+	}
 	s.mu.Lock()
 	s.hb.Stats = &st
 	s.mu.Unlock()
