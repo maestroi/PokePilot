@@ -46,7 +46,6 @@ func TestRedRouteAvailabilityProjectsBlockedChoiceReward(t *testing.T) {
 	t.Fatalf("no structured blockage projected for %q: %+v", oldRodPlace, got.Blockages)
 }
 
-
 func TestRedRouteAvailabilityProjectsBlockedFossilRevival(t *testing.T) {
 	place := skill.FossilRevivalPlace()
 	dest, ok := skill.Place(place)
