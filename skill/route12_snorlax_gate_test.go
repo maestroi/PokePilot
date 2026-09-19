@@ -11,12 +11,14 @@ import (
 )
 
 // TestRoute12SnorlaxRequiresReachablePort pins the Route 13 west-pocket
-// failure from run-1q6cjygnjsm5a3tcrcf6mdityp
-// (triage:d9d7e0200d20d0dd): a stationary trainer at (12,4) splits (11,4)
-// from the walkable Route 12 seam. A free FROM-side pivot offered that
-// unreachable north connection and exhausted the re-plan budget. The Snorlax
-// action must remain executable, but PivotOnly keeps ordinary port reachability
-// so this pocket escapes through Route 14 first.
+// failure shared by:
+//   - run-1q6cjygnjsm5a3tcrcf6mdityp (triage:d9d7e0200d20d0dd)
+//   - run-1dcoirnu6on9p2kox4vsamfo12 (triage:8ebf8a44a95c3566, farm-issue:1187)
+// A stationary trainer at (12,4) splits (11,4) from the walkable Route 12 seam.
+// A free FROM-side pivot offered that unreachable north connection and
+// exhausted the re-plan budget on go_to vermilion. The Snorlax action must
+// remain executable, but PivotOnly keeps ordinary port reachability so this
+// pocket escapes through Route 14 first.
 func TestRoute12SnorlaxRequiresReachablePort(t *testing.T) {
 	edge := world.Edge{Kind: world.EdgeConnection, From: route13Map, To: route12Map}
 	transition, ok := redRouteTransitionForEdge(edge)
