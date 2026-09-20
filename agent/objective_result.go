@@ -173,6 +173,14 @@ func verifyObjectivePostcondition(o Objective, initial, final Observation, resul
 		return OutcomeCompleted, nil
 
 	case KindGoTo:
+		if o.Location != "" {
+			if LocationID(final.Location) != o.Location || final.X != o.X || final.Y != o.Y {
+				return OutcomePostconditionFailed, fmt.Errorf(
+					"%w: %s ended at %q (%d,%d), want %q (%d,%d)",
+					ErrObjectivePostconditionFailed, o, final.Location, final.X, final.Y, o.Location, o.X, o.Y)
+			}
+			return OutcomeCompleted, nil
+		}
 		dest, ok := skill.Place(string(o.Place))
 		if !ok {
 			return OutcomePostconditionFailed, fmt.Errorf("%w: destination %q no longer resolves", ErrObjectivePostconditionFailed, o.Place)
