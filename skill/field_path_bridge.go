@@ -17,8 +17,11 @@ import (
 //
 // Same-map destinations already prefer field pathing directly. Cross-map
 // destinations used to die on the static component split even when a single
-// destination-aware Cut would open the needed port (Celadon City south of the
-// gym yard toward the Pokemon Center: run-18zw4xby92x603chema3m8j2cm).
+// destination-aware Cut would open the needed port. Measured Celadon City
+// south-of-gym pocket cases:
+//   - Pokemon Center (catch / VirtualTrade): run-18zw4xby92x603chema3m8j2cm
+//   - Game Corner stand (silph_scope_acquired / RocketHideout):
+//     run-3hksgfzyx8naz3kvcvmuevzjeo
 func fieldPathBridgeOnCurrentMap(
 	m *emu.Emu,
 	romData []byte,
