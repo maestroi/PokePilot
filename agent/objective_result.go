@@ -203,7 +203,10 @@ func verifyObjectivePostcondition(o Objective, initial, final Observation, resul
 			ErrObjectivePostconditionFailed, o, o.X, o.Y)
 
 	case KindStarter:
-		want := SpeciesID(starterName(o.Starter))
+		want := o.Species
+		if want == "" {
+			want = SpeciesID(starterName(o.Starter))
+		}
 		for _, mon := range final.Party {
 			if mon.Species == want {
 				return OutcomeCompleted, nil
