@@ -4,6 +4,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/maestroi/pokepilot/red/forcedmove"
 	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/world"
 )
@@ -19,7 +20,11 @@ func planForcedPathBesideWarp(t *testing.T, romData []byte, mapID uint8, sx, sy,
 		t.Fatalf("Build(%02x): %v", mapID, err)
 	}
 	rules := fieldPathRules{ForcedLanding: func(x, y int) (world.Point, bool) {
-		return rom.ForcedMovementLanding(mapID, x, y)
+		landing, ok := forcedmove.Landing(mapID, x, y)
+		if !ok {
+			return world.Point{}, false
+		}
+		return world.Point{X: landing.X, Y: landing.Y}, true
 	}}
 	var lastErr error
 	for _, side := range []world.Step{world.StepUp, world.StepDown, world.StepLeft, world.StepRight} {
