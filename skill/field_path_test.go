@@ -215,3 +215,35 @@ func TestPlanFieldPathHonorsSurfEntryRule(t *testing.T) {
 		t.Fatalf("Surf actions = %d, want 1; plan=%+v", got, plan)
 	}
 }
+
+
+func TestPlanFieldPathTreatsForcedMovementAsOneEdge(t *testing.T) {
+	land := newFakeFieldPathGrid(5, 1)
+	water := newFakeFieldPathGrid(5, 1)
+	for x := 0; x < 5; x++ {
+		openCells(land, [2]int{x, 0})
+		openCells(water, [2]int{x, 0})
+	}
+
+	rules := fieldPathRules{
+		ForcedLanding: func(x, y int) (world.Point, bool) {
+			if x == 1 && y == 0 {
+				return world.Point{X: 3, Y: 0}, true
+			}
+			return world.Point{}, false
+		},
+	}
+	plan, err := planFieldPath(land, water, overworldTileset, 0, 0, 4, 0, nil, false, false, false, rules)
+	if err != nil {
+		t.Fatalf("planFieldPath forced movement: %v", err)
+	}
+	if len(plan) != 2 {
+		t.Fatalf("plan length = %d, want forced edge + final walk; plan=%+v", len(plan), plan)
+	}
+	if plan[0].Action != fieldPathForced || plan[0].Landing != (world.Point{X: 3, Y: 0}) {
+		t.Fatalf("first step = %+v, want forced landing (3,0)", plan[0])
+	}
+	if plan[1].Action != fieldPathWalk || plan[1].Move != world.StepRight {
+		t.Fatalf("second step = %+v, want ordinary right walk", plan[1])
+	}
+}
