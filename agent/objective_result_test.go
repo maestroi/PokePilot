@@ -377,7 +377,6 @@ func TestConciseObjectiveErrorIsOneLine(t *testing.T) {
 	}
 }
 
-
 func TestStarterPostconditionPrefersSemanticSpecies(t *testing.T) {
 	o := Objective{Kind: KindStarter, Species: "pikachu"}
 	final := Observation{
