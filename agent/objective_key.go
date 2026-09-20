@@ -31,12 +31,21 @@ type ObjectiveKey struct {
 }
 
 func (o Objective) Key() ObjectiveKey {
+	location, x, y := o.Location, o.X, o.Y
+	// Travel coordinates are adapter-derived execution metadata. The semantic
+	// Place is the durable identity: preserving native/stand coordinates in a
+	// checkpoint key would make the same journey forget its history whenever a
+	// profile improves its chosen landing tile. Resumed travel re-resolves the
+	// active catalog by Place before execution.
+	if o.Kind == KindGoTo {
+		location, x, y = "", 0, 0
+	}
 	return ObjectiveKey{
 		Kind:     o.Kind,
 		Place:    o.Place,
-		Location: o.Location,
-		X:        o.X,
-		Y:        o.Y,
+		Location: location,
+		X:        x,
+		Y:        y,
 		Starter:  uint8(o.Starter),
 		Progress: o.Progress,
 		Level:    o.Level,
