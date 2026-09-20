@@ -184,3 +184,34 @@ func TestPlanFieldPathUsesSurfOnlyWhenWaterIsRequired(t *testing.T) {
 		t.Fatalf("without Surf err=%v, want world.ErrNoPath", err)
 	}
 }
+
+func TestPlanFieldPathHonorsSurfEntryRule(t *testing.T) {
+	land := newFakeFieldPathGrid(5, 1)
+	water := newFakeFieldPathGrid(5, 1)
+
+	openCells(land, [2]int{0, 0}, [2]int{4, 0})
+	for x := 0; x < 5; x++ {
+		openCells(water, [2]int{x, 0})
+	}
+	for x := 1; x <= 3; x++ {
+		water.fieldTile[[2]int{x, 0}] = surfWaterTile
+	}
+
+	denyStart := fieldPathRules{
+		SurfAllowedFrom: func(x, y int) bool {
+			return x != 0 || y != 0
+		},
+	}
+	_, err := planFieldPath(land, water, overworldTileset, 0, 0, 4, 0, nil, false, true, false, denyStart)
+	if !errors.Is(err, world.ErrNoPath) {
+		t.Fatalf("blocked Surf entry err=%v, want world.ErrNoPath", err)
+	}
+
+	plan, err := planFieldPath(land, water, overworldTileset, 0, 0, 4, 0, nil, false, true, false, fieldPathRules{})
+	if err != nil {
+		t.Fatalf("unrestricted Surf entry: %v", err)
+	}
+	if got := countFieldActions(plan, fieldPathSurf); got != 1 {
+		t.Fatalf("Surf actions = %d, want 1; plan=%+v", got, plan)
+	}
+}

@@ -559,6 +559,31 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 				}
 				return walkErr
 			}
+
+			// Seafoam B4F has one ROM-enforced Surf entry restriction: while
+			// the current is active, Surf cannot be started from the stairs at
+			// (7,11). Prove that removing only that restriction makes this exact
+			// destination reachable before moving any boulders. Travel owns the
+			// multi-floor preparation because it has the battle/roster policy.
+			localBlocked := currentObservedStationaryObjectBlockers(m, h)
+			localBlocked = warpAvoidance(h, int(x), int(y), localBlocked)
+			currentBlocked, currentErr := seafoamCurrentBlocksDestination(m, romData, h, dest, localBlocked)
+			if currentErr != nil {
+				return fmt.Errorf("skill: GoTo: Seafoam current probe on map %02x: %w", cur, currentErr)
+			}
+			if currentBlocked {
+				if nav.policy == nil {
+					return fmt.Errorf("skill: GoTo: Seafoam current blocks destination (%d,%d); Travel is required to prepare the multi-floor Strength puzzle", dest.X, dest.Y)
+				}
+				if err := prepareSeafoamCurrents(m, romData, nav.policy); err != nil {
+					return fmt.Errorf("skill: GoTo: prepare Seafoam currents: %w", err)
+				}
+				// Preparation deliberately travels across several floors and mutates
+				// object/event topology. Throw away every graph overlay from before
+				// it and re-plan the original destination from the new live state.
+				routeGraph = g
+				continue
+			}
 		}
 		blockedHere := map[world.Edge]bool{}
 		for k := range failed {
