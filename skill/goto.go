@@ -682,6 +682,30 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 			route, err = retry, retryErr
 		}
 		if err != nil {
+			if errors.Is(err, world.ErrNoRoute) && cur != dest.Map {
+				// Cross-map routing dies on static components even when local
+				// Cut/Surf pathing can open an ordinary exit on this map.
+				// Bridge to a field-reachable port that restores a route, then
+				// re-plan — the same destination-aware local planner same-map
+				// GoTo already prefers before leaving the map.
+				bridge, ok, bridgeErr := fieldPathBridgeOnCurrentMap(m, romData, h, routeGraph, dest, prereqs, blockedHere)
+				if bridgeErr != nil {
+					return fmt.Errorf("skill: GoTo: field-path bridge on map %02x: %w", cur, bridgeErr)
+				}
+				if ok {
+					walkErr := walkWithinMap(m, romData, bridge, nav.policy)
+					if errors.Is(walkErr, errLocalNavigationWorldChanged) {
+						continue
+					}
+					if walkErr != nil {
+						return walkErr
+					}
+					if replans++; replans > maxReplans {
+						return newReplanExhaustedError(maxReplans, cur, x, y, dest, err)
+					}
+					continue
+				}
+			}
 			if routeFailureIsSpuriousCapabilityGate(err, len(failed) > 0) {
 				return newReplanExhaustedError(replans, cur, x, y, dest, err)
 			}
