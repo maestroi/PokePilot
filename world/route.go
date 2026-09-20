@@ -199,7 +199,20 @@ func findRoute(g *Graph, from, to uint8, blockedHere map[Edge]bool, first, targe
 			// PortBypass / FROM-side actions may be selected even when ordinary
 			// walking cannot reach the exit port. PivotOnly destinations still
 			// require canExit: their obstacle is on the adjacent map.
-			if !skipCanExit[e] && !canExit(g, e, entry) {
+			//
+			// skipCanExit waives component reachability, not "the port exists".
+			// A connection band with empty exitComps is padding/phantom geometry.
+			// Only a seam-creating action (skipCanExit+relaxLanding, e.g. Surf)
+			// may own those bands; otherwise an interior Cut annotated as
+			// PortBypass+PivotOnly treats solid padding as a map transition,
+			// lands with unknown component, and unlocks every exit on the far
+			// map (Rock Tunnel north -> Route 9 Cut -> invented Route 10 south).
+			phantomExit := g.componentAware && g.comps[e.From] != nil && len(g.exitComps[e]) == 0
+			if phantomExit {
+				if !(skipCanExit[e] && relaxLanding[e]) {
+					continue
+				}
+			} else if !skipCanExit[e] && !canExit(g, e, entry) {
 				continue
 			}
 			nextEntry := g.entryComps[e]

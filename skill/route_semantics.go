@@ -375,12 +375,16 @@ func redRoutePrerequisites(g *world.Graph, romData []byte, mem *state.Mem) world
 		for _, edge := range edges {
 			if transition, ok := redRouteTransitionForEdge(edge); ok {
 				// Component-scoped ROM connections retain in-bounds padding bands
-				// so actions that truly create a seam (Surf) can own them. Every
+				// so actions that truly create a seam (Surf / PortBypass alone)
+				// can own them. PortBypass+PivotOnly (Route 9 Cut) and every
 				// other semantic action must still use a physically real border
-				// port; otherwise an interior Cut/Snorlax/switch action can turn
-				// solid padding into an executable map transition.
-				if edge.Kind == world.EdgeConnection && !transition.PortBypass && !g.ConnectionExitWalkable(edge) {
-					continue
+				// port; otherwise an interior Cut can turn solid padding into an
+				// executable map transition that lands with unknown component
+				// and invents a south Route 10 exit from the north pocket.
+				if edge.Kind == world.EdgeConnection && !g.ConnectionExitWalkable(edge) {
+					if !transition.PortBypass || transition.PivotOnly {
+						continue
+					}
 				}
 				if redRouteTransitionEffectComplete(mem, transition) {
 					continue

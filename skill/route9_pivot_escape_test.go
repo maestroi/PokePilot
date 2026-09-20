@@ -133,6 +133,79 @@ func TestRoute9WestRoutesToLavenderWithoutSaffron(t *testing.T) {
 	}
 }
 
+// TestRockTunnelNorthRoutesToLavenderThroughTunnel pins farm triage
+// bd4bb51aa6b8d736 (run-3fl35ipa0wah83axgm9bz5mqc9): standing in Rock Tunnel
+// 1F's north pocket with can_cut, GoTo must traverse B1F to Route 10 south.
+// A PortBypass+PivotOnly route9_cut annotation on phantom Route 9 connection
+// bands used to invent Route 10 north -> Route 9 Cut -> Route 10 south, which
+// bounced until navigation_stalled.
+func TestRockTunnelNorthRoutesToLavenderThroughTunnel(t *testing.T) {
+	romPath := os.Getenv("POKEMON_RED_ROM")
+	if romPath == "" {
+		t.Skip("POKEMON_RED_ROM not set")
+	}
+	romData, err := os.ReadFile(romPath)
+	if err != nil {
+		t.Fatalf("read ROM: %v", err)
+	}
+
+	var mem state.Mem
+	mem[sym.ObtainedBadges] = 1<<state.BadgeBoulder | 1<<state.BadgeCascade | 1<<state.BadgeThunder
+	mem[sym.PartyCount] = 1
+	base := sym.PartyMon1
+	mem[base+sym.MonSpecies] = 6 // Charmeleon: Cut-compatible
+	copy(mem.Slice(base+sym.MonMoves, 4), []byte{cutMove, 0, 0, 0})
+	mem[sym.NumBagItems] = 2
+	mem[sym.BagItems] = ssTicketItem
+	mem[sym.BagItems+1] = 1
+	mem[sym.BagItems+2] = hm01Item
+	mem[sym.BagItems+3] = 1
+	mem[sym.BagItems+4] = 0xff
+
+	g, err := world.BuildGraph(romData)
+	if err != nil {
+		t.Fatalf("BuildGraph: %v", err)
+	}
+	prereqs := redRoutePrerequisites(g, romData, &mem)
+	if !prereqs.Capabilities.Has(capCanCut) {
+		t.Fatalf("capabilities did not include %q: %v", capCanCut, prereqs.Capabilities)
+	}
+
+	lavender, ok := Place("lavender town")
+	if !ok {
+		t.Fatal("lavender town place missing")
+	}
+	const rockTunnel1F = uint8(0x52)
+	route, err := world.FindRoutePlanAtDestinationWithCapabilities(
+		g, rockTunnel1F, lavender.Map, 15, 4, int(lavender.X), int(lavender.Y), nil, prereqs,
+	)
+	if err != nil {
+		t.Fatalf("Rock Tunnel 1F (15,4) -> Lavender with can_cut: %v", err)
+	}
+	if len(route) == 0 {
+		t.Fatal("empty route")
+	}
+	if route[0].Edge.To == route10Map {
+		t.Fatalf("first hop exited north to Route 10 instead of B1F: %+v", route)
+	}
+	sawB1F := false
+	sawRoute9Cut := false
+	for _, step := range route {
+		if step.Edge.To == 0xe8 || step.Edge.From == 0xe8 {
+			sawB1F = true
+		}
+		if step.Transition != nil && step.Transition.ID == "red:route9_cut" {
+			sawRoute9Cut = true
+		}
+	}
+	if !sawB1F {
+		t.Fatalf("route did not traverse Rock Tunnel B1F: %+v", route)
+	}
+	if sawRoute9Cut {
+		t.Fatalf("route invented Route 9 Cut bypass instead of tunnel: %+v", route)
+	}
+}
+
 // TestGoToRoute4FromCeruleanEastDoesNotBounceRoute9 is farm #1261
 // (run-27dtzi7qnqt962i4ecootzj8tg): GoTo Route 4 (10,10) from Cerulean's
 // east seam with can_cut used to plan Cerulean -> Route 9 -> Cerulean and

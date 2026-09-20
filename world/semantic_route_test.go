@@ -281,3 +281,63 @@ func TestSemanticRouteDoesNotInventPrerequisiteForGeometricFailure(t *testing.T)
 		t.Fatalf("error = %v, want ErrNoRoute", err)
 	}
 }
+
+// TestPortBypassPivotOnlyRejectsPhantomConnectionBands is the generic shape of
+// farm triage bd4bb51aa6b8d736 (run-3fl35ipa0wah83axgm9bz5mqc9): an interior
+// Cut annotated PortBypass+PivotOnly must not skip canExit on padding bands
+// whose exitComps are empty. Those bands land with unknown component and
+// unlock every exit on the far map, so Rock Tunnel's north pocket invents a
+// Route 9 Cut hop onto Route 10 south instead of traversing B1F.
+func TestPortBypassPivotOnlyRejectsPhantomConnectionBands(t *testing.T) {
+	real := Edge{Kind: EdgeConnection, From: 1, To: 2, Dir: dirEast, BandStart: 0, BandEnd: 0, BandScoped: true}
+	phantom := Edge{Kind: EdgeConnection, From: 1, To: 2, Dir: dirEast, BandStart: 1, BandEnd: 1, BandScoped: true}
+	toDest := Edge{Kind: EdgeConnection, From: 2, To: 3, Dir: dirSouth, BandStart: 0, BandEnd: 0, BandScoped: true}
+	g := &Graph{
+		componentAware: true,
+		Edges: map[uint8][]Edge{
+			1: {real, phantom},
+			2: {toDest},
+			3: {},
+		},
+		comps: map[uint8][][]int{
+			1: {{1}},
+			2: {{1, 0}, {0, 2}}, // north component 1, south component 2
+			3: {{2}},
+		},
+		tiles: map[uint8]dim{1: {w: 1, h: 1}, 2: {w: 2, h: 2}, 3: {w: 1, h: 1}},
+		exitComps: map[Edge][]int{
+			real:    {1},
+			phantom: {}, // padding: no walkable exit tile
+			toDest:  {2}, // only south component of map 2 reaches dest
+		},
+		entryComps: map[Edge][]int{
+			real:    {1}, // lands on map 2 north
+			phantom: {},
+			toDest:  {2},
+		},
+	}
+	prereqs := RoutePrerequisites{
+		Capabilities: gameruntime.NewCapabilitySet("can_cut"),
+		Transitions: map[Edge]gameruntime.Transition{
+			real: {
+				ID:         "cut_bridge",
+				Requires:   []gameruntime.CapabilityID{"can_cut"},
+				PivotOnly:  true,
+				PortBypass: true,
+			},
+			phantom: {
+				ID:         "cut_bridge",
+				Requires:   []gameruntime.CapabilityID{"can_cut"},
+				PivotOnly:  true,
+				PortBypass: true,
+			},
+		},
+	}
+
+	// Standing on map 1, dest is map 3 which is only reachable via map 2 south.
+	// The real PortBypass hop lands on map 2 north and must NOT unlock south.
+	_, err := FindRoutePlanAtDestinationWithCapabilities(g, 1, 3, 0, 0, 0, 0, nil, prereqs)
+	if !errors.Is(err, ErrNoRoute) {
+		t.Fatalf("phantom PortBypass+PivotOnly invented a south exit: err=%v", err)
+	}
+}
