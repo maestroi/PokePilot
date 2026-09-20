@@ -82,6 +82,19 @@ func TestLegalFastTravelOptionsDigAndEscapeReturnToLastCenter(t *testing.T) {
 	}
 }
 
+
+func TestEscapeTravelUsesSpecialWarpLandingsForRouteCenters(t *testing.T) {
+	for mapID, want := range map[uint8]Destination{
+		0x0f: {Map: 0x0f, X: 11, Y: 6},
+		0x15: {Map: 0x15, X: 11, Y: 20},
+	} {
+		got, ok := specialWarpLanding(mapID)
+		if !ok || got != want {
+			t.Fatalf("specialWarpLanding(%#02x) = %+v,%v; want %+v", mapID, got, ok, want)
+		}
+	}
+}
+
 func TestEscapeTravelAllowedRejectsAgathaDespiteCemeteryTileset(t *testing.T) {
 	mem := controllableFastTravelMem()
 	mem[sym.CurMap] = agathasRoomMap
