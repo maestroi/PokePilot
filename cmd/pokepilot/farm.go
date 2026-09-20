@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"math/rand/v2"
@@ -294,7 +295,7 @@ func sendFinalHeartbeat(client *farm.Client, hb farm.Heartbeat) {
 //
 // The emulator is single-goroutine: everything that steps or reads it runs
 // on this goroutine. The heartbeat goroutine sees only the plain snapshot.
-func runFarm(m *emu.Emu, client *farm.Client, library *romLibrary, watchPort int, checkpointDir string) {
+func runFarm(m *emu.Emu, client *farm.Client, library *romLibrary, watchPort int, checkpointDir string) bool {
 	tracer := newDialogueTracer()
 	snap := &heartbeatSnap{}
 	var mem state.Mem               // hoisted: every sample reuses this buffer
@@ -352,7 +353,10 @@ func runFarm(m *emu.Emu, client *farm.Client, library *romLibrary, watchPort int
 			continue
 		}
 
-		runOne(m, client, *spec, planner, starter, dest, spec.Goal, fps, maxRounds, maxFrames, bootState, tracer, snap, &mem, addrs, checkpointDir)
+		if runOne(m, client, *spec, planner, starter, dest, spec.Goal, fps, maxRounds, maxFrames, bootState, tracer, snap, &mem, addrs, checkpointDir) {
+			log.Printf("farm: %s: emulator poisoned by stalled link exchange; recycling worker", spec.RunID)
+			return true
+		}
 	}
 }
 
@@ -405,7 +409,7 @@ func validateSpec(planner, starter, dest string) error {
 // runOne runs one leased spec end-to-end and always finishes it. The
 // heartbeat starts before gameplay and is stopped and joined before the
 // dump, so no heartbeat arrives after Finish.
-func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, dest, goal string, fps, maxRounds, maxFrames int, bootState []byte, tracer *dialogueTracer, snap *heartbeatSnap, mem *state.Mem, addrs []string, checkpointDir string) {
+func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, dest, goal string, fps, maxRounds, maxFrames int, bootState []byte, tracer *dialogueTracer, snap *heartbeatSnap, mem *state.Mem, addrs []string, checkpointDir string) bool {
 	restoreRunID := setFarmRunID(spec.RunID)
 	defer restoreRunID()
 
@@ -421,7 +425,7 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 	if err != nil {
 		log.Printf("farm: %s: prepare attempt: %v", spec.RunID, err)
 		finishRun(m, client, spec, "error", err.Error(), 0, checkpointDir, nil, nil)
-		return
+		return false
 	}
 
 	m.Pace(fps)
@@ -467,11 +471,28 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 
 	var reason, detail string
 	var progEarly, progFinal *farm.Progress
+	var emulatorPoisoned bool
 	switch planner {
 	case "scripted":
 		reason, detail, progEarly, progFinal = runFarmScripted(m, starter, dest, seed)
 	case "llm":
-		reason, detail, progEarly, progFinal = runFarmLLM(m, starter, goal, spec.LLMProfile, spec.ReasoningEffort, maxRounds, maxFrames, seed, cancel, snap, checkpointDir)
+		reason, detail, progEarly, progFinal, emulatorPoisoned = runFarmLLM(m, starter, goal, spec.LLMProfile, spec.ReasoningEffort, maxRounds, maxFrames, seed, cancel, snap, checkpointDir)
+	}
+
+	if emulatorPoisoned {
+		// ErrLinkStalled explicitly means the goroutine inside StepFrame may
+		// still be alive. Do not sample, detach callbacks, stop recording, save,
+		// or otherwise touch m again. Settle from already-captured telemetry and
+		// force the long-lived farm worker to restart before another lease.
+		close(stop)
+		<-hbDone
+		sendFinalHeartbeat(client, snap.load())
+		if stopUploader != nil {
+			close(stopUploader)
+			<-uploaderDone
+		}
+		finishRunWithRecording(nil, client, spec, reason, detail, burn, checkpointDir, progEarly, progFinal, nil)
+		return true
 	}
 
 	// The objective that satisfies a deterministic goal can stop the agent
@@ -494,6 +515,7 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 
 	recording := stopFarmRecording(spec.RunID, recorder)
 	finishRunWithRecording(m, client, spec, reason, detail, burn, checkpointDir, progEarly, progFinal, recording)
+	return false
 }
 
 // sampleHeartbeat captures the plain snapshot the heartbeat goroutine will
@@ -653,7 +675,7 @@ func runFarmScripted(m *emu.Emu, starter, dest string, seed int64) (string, stri
 // runFarmLLM mirrors runLLM's diagnostics and objective list; the only
 // differences are that the budget comes from the spec and cancel is the
 // wall's cooperative stop.
-func runFarmLLM(m *emu.Emu, starter, goal, llmProfile, reasoningEffort string, maxRounds, maxFrames int, seed int64, cancel <-chan struct{}, snap *heartbeatSnap, checkpointDir string) (string, string, *farm.Progress, *farm.Progress) {
+func runFarmLLM(m *emu.Emu, starter, goal, llmProfile, reasoningEffort string, maxRounds, maxFrames int, seed int64, cancel <-chan struct{}, snap *heartbeatSnap, checkpointDir string) (string, string, *farm.Progress, *farm.Progress, bool) {
 	resumeFrom := farmResumePath(checkpointDir)
 	// When the spec names a starter, the farm takes it before handing control
 	// to the model — the same reason badgerun does (a model that knows Pokemon
@@ -662,12 +684,12 @@ func runFarmLLM(m *emu.Emu, starter, goal, llmProfile, reasoningEffort string, m
 	if starter != "" && resumeFrom == "" {
 		starterObj, objErr := starterObjectiveForRequest(starter, seed)
 		if objErr != nil {
-			return "error", fmt.Sprintf("starter objective: %v", objErr), nil, nil
+			return "error", fmt.Sprintf("starter objective: %v", objErr), nil, nil, false
 		}
 		starterResult, execErr := executeScriptedObjective(m, starterObj)
 		if execErr != nil {
 			captureScriptedObjectiveTelemetry(agent.StopError, []agent.ObjectiveResult{starterResult}, execErr)
-			return "error", scriptedObjectiveDetail(starterResult, execErr), nil, nil
+			return "error", scriptedObjectiveDetail(starterResult, execErr), nil, nil, errors.Is(execErr, skill.ErrLinkStalled)
 		}
 	}
 	fmt.Println("planner: llm — the model picks from a menu rebuilt every round")
@@ -696,7 +718,7 @@ func runFarmLLM(m *emu.Emu, starter, goal, llmProfile, reasoningEffort string, m
 		fmt.Printf("  error: %v\n", res.Err)
 		detail = res.Err.Error()
 	}
-	return stopName(res.Stop), detail, farmProgress(res.ProgressEarly), farmProgress(res.ProgressFinal)
+	return stopName(res.Stop), detail, farmProgress(res.ProgressEarly), farmProgress(res.ProgressFinal), errors.Is(res.Err, skill.ErrLinkStalled)
 }
 
 // farmProgress lifts one of the run's progress samples onto the wire type.
