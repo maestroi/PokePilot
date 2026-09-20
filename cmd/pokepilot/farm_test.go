@@ -33,6 +33,39 @@ func TestMainWiresFarmMode(t *testing.T) {
 	}
 }
 
+func TestSetFarmRunIDSetsAndRestores(t *testing.T) {
+	original, had := os.LookupEnv(farmRunIDEnv)
+	_ = os.Unsetenv(farmRunIDEnv)
+	t.Cleanup(func() {
+		if had {
+			_ = os.Setenv(farmRunIDEnv, original)
+			return
+		}
+		_ = os.Unsetenv(farmRunIDEnv)
+	})
+
+	restore := setFarmRunID(" run-1370 ")
+	if got := os.Getenv(farmRunIDEnv); got != "run-1370" {
+		t.Fatalf("%s = %q, want run-1370", farmRunIDEnv, got)
+	}
+	restore()
+	if _, still := os.LookupEnv(farmRunIDEnv); still {
+		t.Fatalf("%s still set after restore", farmRunIDEnv)
+	}
+}
+
+func TestSetFarmRunIDRestoresPreviousValue(t *testing.T) {
+	t.Setenv(farmRunIDEnv, "outer-run")
+	restore := setFarmRunID("inner-run")
+	if got := os.Getenv(farmRunIDEnv); got != "inner-run" {
+		t.Fatalf("%s = %q, want inner-run", farmRunIDEnv, got)
+	}
+	restore()
+	if got := os.Getenv(farmRunIDEnv); got != "outer-run" {
+		t.Fatalf("%s = %q after restore, want outer-run", farmRunIDEnv, got)
+	}
+}
+
 func TestEnableFarmRAMForensicsSetsAndRestores(t *testing.T) {
 	orig, had := os.LookupEnv(agent.RAMForensicsDirEnv)
 	_ = os.Unsetenv(agent.RAMForensicsDirEnv)

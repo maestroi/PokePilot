@@ -177,6 +177,9 @@ func failureCauseFor(err error) (FailureCauseID, []string) {
 	if errors.Is(err, skill.ErrShopStabilization) {
 		return "shop_stabilization_failed", nil
 	}
+	if errors.Is(err, skill.ErrLinkStalled) {
+		return "link_stalled", nil
+	}
 	if errors.Is(err, emu.ErrFrameDeadline) {
 		return "frame_deadline", nil
 	}
