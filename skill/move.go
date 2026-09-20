@@ -104,6 +104,9 @@ func StepOnce(m *emu.Emu, s world.Step) error {
 	if !ok {
 		return fmt.Errorf("skill: invalid step %s", s)
 	}
+	if m.Peek8(sym.CurMap) == route17Map && absInt(s.DX)+absInt(s.DY) == 1 {
+		return stepOnceCyclingRoad(m, s, btn)
+	}
 
 	startX, startY := playerXY(m)
 	moved := false
