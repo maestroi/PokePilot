@@ -245,11 +245,11 @@ func Travel(m *emu.Emu, romData []byte, dest Destination, policy MovePolicy, max
 	if maxBattles <= 0 {
 		return TravelResult{}, fmt.Errorf("skill: Travel: maxBattles must be > 0, got %d", maxBattles)
 	}
-	if used, err := maybeUseFastTravel(m, dest); err != nil {
+	if used, err := maybeUseFastTravel(m, romData, dest); err != nil {
 		return TravelResult{}, fmt.Errorf("skill: Travel: fast travel: %w", err)
 	} else if used {
-		// The special warp landed on dest.Map. Ordinary GoTo below owns the
-		// remaining exact-tile walk and all normal interruption semantics.
+		// The verified shortcut may be an intermediate landing. Ordinary GoTo
+		// below owns the entire remaining route to the requested exact tile.
 	}
 	return travel(m, policy, maxBattles,
 		cutAwareGoTo(m, romData, dest, policy),
@@ -275,10 +275,11 @@ func TravelFlee(m *emu.Emu, romData []byte, dest Destination, policy MovePolicy,
 	if maxBattles <= 0 {
 		return TravelResult{}, fmt.Errorf("skill: TravelFlee: maxBattles must be > 0, got %d", maxBattles)
 	}
-	if used, err := maybeUseFastTravel(m, dest); err != nil {
+	if used, err := maybeUseFastTravel(m, romData, dest); err != nil {
 		return TravelResult{}, fmt.Errorf("skill: TravelFlee: fast travel: %w", err)
 	} else if used {
-		// Continue with the flee-first journey from the verified landing.
+		// Continue with the flee-first journey from the verified shortcut
+		// landing, which may be an intermediate town/center.
 	}
 	return travel(m, policy, maxBattles,
 		cutAwareGoTo(m, romData, dest, policy),
