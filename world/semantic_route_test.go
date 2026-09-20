@@ -307,7 +307,7 @@ func TestPortBypassPivotOnlyRejectsPhantomConnectionBands(t *testing.T) {
 		tiles: map[uint8]dim{1: {w: 1, h: 1}, 2: {w: 2, h: 2}, 3: {w: 1, h: 1}},
 		exitComps: map[Edge][]int{
 			real:    {1},
-			phantom: {}, // padding: no walkable exit tile
+			phantom: {},  // padding: no walkable exit tile
 			toDest:  {2}, // only south component of map 2 reaches dest
 		},
 		entryComps: map[Edge][]int{
