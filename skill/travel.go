@@ -7,6 +7,7 @@ import (
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
+	"github.com/maestroi/pokepilot/world"
 )
 
 // Replan records the world as Travel re-read it after a battle: the map and
@@ -181,6 +182,17 @@ const maxSameBoxRepeats = 3
 // between hits) still counts while a walk that is actually covering ground
 // does not.
 const sameBoxStallFrames = 600
+
+// cutRecoverableNavigationError is retained as the navigation-error
+// classification used by tests and diagnostics. Travel no longer responds to
+// this class by cutting an arbitrary nearby tree; field moves are selected by
+// destination-aware path planning instead.
+func cutRecoverableNavigationError(err error) bool {
+	return errors.Is(err, ErrLegUnwalkable) ||
+		errors.Is(err, ErrReplanExhausted) ||
+		errors.Is(err, world.ErrNoPath) ||
+		errors.Is(err, ErrNavigationStalled)
+}
 
 // cutAwareGoTo keeps Travel's journey-scoped navigation memory and semantic
 // transition executor. The historical name remains for callers, but generic
