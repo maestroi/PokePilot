@@ -26,6 +26,10 @@ import (
 )
 
 const (
+	// farmRunIDEnv carries the current lease into per-run sidecars such as the
+	// virtual trader so their structured events can be joined back to the run.
+	farmRunIDEnv = "POKEPILOT_RUN_ID"
+
 	// heartbeatInterval is the cadence of an in-flight run's heartbeats:
 	// on the order of a second, not every frame.
 	heartbeatInterval = time.Second
@@ -402,6 +406,9 @@ func validateSpec(planner, starter, dest string) error {
 // heartbeat starts before gameplay and is stopped and joined before the
 // dump, so no heartbeat arrives after Finish.
 func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, dest, goal string, fps, maxRounds, maxFrames int, bootState []byte, tracer *dialogueTracer, snap *heartbeatSnap, mem *state.Mem, addrs []string, checkpointDir string) {
+	restoreRunID := setFarmRunID(spec.RunID)
+	defer restoreRunID()
+
 	// A new lease must not inherit the previous run's plan: the snap is
 	// reused for the worker's lifetime.
 	snap.store(farm.Heartbeat{RunID: spec.RunID})
@@ -820,6 +827,21 @@ func planQuestion(offered []agent.Objective) string {
 		fmt.Fprintf(&b, "%d: %s", i+1, o)
 	}
 	return b.String()
+}
+
+// setFarmRunID scopes sidecar provenance to exactly one lease. Farm workers
+// are long-lived, so restore the prior value instead of leaking one run into
+// the next.
+func setFarmRunID(runID string) func() {
+	previous, had := os.LookupEnv(farmRunIDEnv)
+	_ = os.Setenv(farmRunIDEnv, strings.TrimSpace(runID))
+	return func() {
+		if had {
+			_ = os.Setenv(farmRunIDEnv, previous)
+			return
+		}
+		_ = os.Unsetenv(farmRunIDEnv)
+	}
 }
 
 // enableFarmRAMForensics points POKEPILOT_RAM_DIR at <checkpoint-dir>/ram for
