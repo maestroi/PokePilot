@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
+	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
@@ -12,25 +13,10 @@ import (
 
 const forcedMovementSettleBudget = 2400
 
-// forcedLandingForMap returns deterministic scripted movement triggered by
-// entering a tile. The coordinate tables remain Red adapter facts; the local
-// planner/executor is generic and sees only entry -> landing transitions.
+// forcedLandingForMap is the adapter seam between portable local pathing and
+// Red's script-derived trigger tables.
 func forcedLandingForMap(mapID uint8, x, y int) (world.Point, bool) {
-	p := rocketPoint{x: x, y: y}
-	var table map[rocketPoint]rocketPoint
-	switch mapID {
-	case rocketHideoutB2FMap, rocketHideoutB3FMap:
-		table = rocketSpinnerTransitions(mapID)
-	case viridianGymMap:
-		table = viridianGymSpins
-	default:
-		return world.Point{}, false
-	}
-	landing, ok := table[p]
-	if !ok {
-		return world.Point{}, false
-	}
-	return world.Point{X: landing.x, Y: landing.y}, true
+	return rom.ForcedMovementLanding(mapID, x, y)
 }
 
 // cyclingRoadAutoDown mirrors JoypadOverworld in Red. Route 17 is not a
