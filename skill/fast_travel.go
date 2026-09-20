@@ -68,6 +68,19 @@ var flyLanding = map[uint8]Destination{
 	0x0a: {Map: 0x0a, X: 9, Y: 30},
 }
 
+var escapeWarpLanding = map[uint8]Destination{
+	0x0f: {Map: 0x0f, X: 11, Y: 6},  // Route 4 Pokemon Center
+	0x15: {Map: 0x15, X: 11, Y: 20}, // Route 10 Pokemon Center
+}
+
+func specialWarpLanding(mapID uint8) (Destination, bool) {
+	if landing, ok := flyLanding[mapID]; ok {
+		return landing, true
+	}
+	landing, ok := escapeWarpLanding[mapID]
+	return landing, ok
+}
+
 func townVisited(mem *state.Mem, mapID uint8) bool {
 	if mem == nil || mapID >= 11 {
 		return false
@@ -125,7 +138,7 @@ func legalFastTravelOptions(mem *state.Mem) []fastTravelOption {
 	}
 
 	if escapeTravelAllowed(mem) {
-		if landing, ok := flyLanding[mem.U8(sym.LastBlackoutMap)]; ok {
+		if landing, ok := specialWarpLanding(mem.U8(sym.LastBlackoutMap)); ok {
 			if partyMoveSlot(mem, digMoveID) >= 0 {
 				out = append(out, fastTravelOption{
 					Kind:       fastTravelDig,
@@ -334,7 +347,7 @@ func useFlyTo(m *emu.Emu, destMap uint8) error {
 }
 
 func useDigFastTravel(m *emu.Emu, destMap uint8) error {
-	landing, ok := flyLanding[destMap]
+	landing, ok := specialWarpLanding(destMap)
 	if !ok {
 		return fmt.Errorf("Dig destination map %#02x has no special-warp landing", destMap)
 	}
@@ -351,7 +364,7 @@ func useDigFastTravel(m *emu.Emu, destMap uint8) error {
 }
 
 func useEscapeRopeFastTravel(m *emu.Emu, destMap uint8) error {
-	landing, ok := flyLanding[destMap]
+	landing, ok := specialWarpLanding(destMap)
 	if !ok {
 		return fmt.Errorf("Escape Rope destination map %#02x has no special-warp landing", destMap)
 	}
