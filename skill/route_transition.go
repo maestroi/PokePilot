@@ -130,9 +130,13 @@ func (x *redRouteTransitionExecutor) ExecuteTransition(edge world.Edge, transiti
 		return world.TransitionExecutionResult{}, nil
 
 	case "red:route9_cut":
-		// The actual tree is inside Route 9 and is still handled by Travel's
-		// live Cut recovery. This gate only proves that recovery is possible
-		// before the planner commits to the east route.
+		// The Cut tree that joins Route 9's Cerulean-side and Route 10-side
+		// components lives INSIDE Route 9. Declaring can_cut is not enough:
+		// without cutting here, GoTo stays on the west component and diagnosis
+		// falls through to the closed Saffron drink gate
+		// (run-os1jmuuqpc1033zjhq2at3qz4). When already on Route 9, clear the
+		// tree before the next leg. When still elsewhere, only prove the
+		// capability — ordinary Traverse owns the border crossing.
 		var mem state.Mem
 		state.Snapshot(x.m, &mem)
 		if !redRouteCapabilities(x.romData, &mem).Has(capCanCut) {
@@ -140,6 +144,16 @@ func (x *redRouteTransitionExecutor) ExecuteTransition(edge world.Edge, transiti
 				Transition: transition,
 				Missing:    []gameruntime.CapabilityID{capCanCut},
 			}
+		}
+		if x.m.Peek8(sym.CurMap) != semanticRoute9Map {
+			return world.TransitionExecutionResult{}, nil
+		}
+		opened, err := cutThroughReachableTree(x.m, x.romData)
+		if err != nil {
+			return world.TransitionExecutionResult{}, fmt.Errorf("Cut gate: clear Route 9 tree: %w", err)
+		}
+		if opened {
+			return world.TransitionExecutionResult{Changed: true}, nil
 		}
 		return world.TransitionExecutionResult{}, nil
 

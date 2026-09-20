@@ -127,15 +127,16 @@ func TestMissingPivotOnlyCapabilityFallsBackToOrdinaryGeometry(t *testing.T) {
 		t.Fatalf("ordinary pivot-only plan = %+v, want one ordinary edge", plan)
 	}
 
-	// From the disconnected component the capability is still genuinely
-	// required, so preserve the structured prerequisite diagnosis.
+	// From the disconnected component, pure PivotOnly cannot help: it only
+	// relaxes the far landing. Missing can_pivot is not the reason this is
+	// unroutable, so do not invent a RouteBlockedError for it.
 	_, err = FindRoutePlanAtDestinationWithCapabilities(g, 1, 2, 2, 0, 0, 0, nil, prereqs)
-	var blocked *RouteBlockedError
-	if !errors.As(err, &blocked) {
-		t.Fatalf("disconnected pivot-only error = %T %v, want *RouteBlockedError", err, err)
+	if !errors.Is(err, ErrNoRoute) {
+		t.Fatalf("disconnected pure pivot-only error = %v, want ErrNoRoute", err)
 	}
-	if got, want := blocked.MissingCapabilities(), []gameruntime.CapabilityID{"can_pivot"}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("missing = %v, want %v", got, want)
+	var blocked *RouteBlockedError
+	if errors.As(err, &blocked) {
+		t.Fatalf("disconnected pure pivot-only mislabeled as capability blockage: %+v", blocked)
 	}
 
 	// Once the capability exists, PivotOnly still does not invent FROM-side
@@ -147,13 +148,24 @@ func TestMissingPivotOnlyCapabilityFallsBackToOrdinaryGeometry(t *testing.T) {
 		t.Fatalf("enabled pivot-only from unreachable component routed: %v", err)
 	}
 
-	// The same edge marked PortBypass may bridge the FROM-side split.
+	// PortBypass+PivotOnly is the FROM-side bridge. Without the capability,
+	// preserve structured prerequisite evidence; with it, the edge is usable.
+	prereqs.Capabilities = nil
 	prereqs.Transitions = map[Edge]gameruntime.Transition{pivot: {
 		ID:         "optional_component_pivot",
 		Requires:   []gameruntime.CapabilityID{"can_pivot"},
 		PivotOnly:  true,
 		PortBypass: true,
 	}}
+	_, err = FindRoutePlanAtDestinationWithCapabilities(g, 1, 2, 2, 0, 0, 0, nil, prereqs)
+	if !errors.As(err, &blocked) {
+		t.Fatalf("disconnected port-bypass pivot error = %T %v, want *RouteBlockedError", err, err)
+	}
+	if got, want := blocked.MissingCapabilities(), []gameruntime.CapabilityID{"can_pivot"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("missing = %v, want %v", got, want)
+	}
+
+	prereqs.Capabilities = gameruntime.NewCapabilitySet("can_pivot")
 	plan, err = FindRoutePlanAtDestinationWithCapabilities(g, 1, 2, 2, 0, 0, 0, nil, prereqs)
 	if err != nil {
 		t.Fatalf("enabled port-bypass pivot route: %v", err)
