@@ -2,8 +2,10 @@ package skill
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 
+	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/world"
 )
 
@@ -244,5 +246,83 @@ func TestPlanFieldPathTreatsForcedMovementAsOneEdge(t *testing.T) {
 	}
 	if plan[1].Action != fieldPathWalk || plan[1].Move != world.StepRight {
 		t.Fatalf("second step = %+v, want ordinary right walk", plan[1])
+	}
+}
+
+// TestBlockingUndefeatedTrainerSingleGate is Silph Co 5F's Card Key room
+// in miniature: MEASURED against the real ROM (skill/probe_test.go's
+// TestProbe), the only corridor from the 5F stair landing to the Card Key
+// runs through Rocket2's tile at (28,4). currentObservedStationaryObjectBlockers
+// correctly marks that tile solid, so a plain reachability probe reports a
+// dead end; unblocking exactly that one tile is what should make dest
+// reachable again, which is the fact this test fixes in place.
+func TestBlockingUndefeatedTrainerSingleGate(t *testing.T) {
+	rocket := rom.Object{X: 28, Y: 4}
+	scientist := rom.Object{X: 8, Y: 3}
+	reachable := map[[2]int]bool{
+		{int(rocket.X), int(rocket.Y)}: true,
+	}
+	candidate, ok, err := blockingUndefeatedTrainer([]rom.Object{scientist, rocket}, func(at [2]int) (bool, error) {
+		return reachable[at], nil
+	})
+	if err != nil {
+		t.Fatalf("blockingUndefeatedTrainer: %v", err)
+	}
+	if !ok {
+		t.Fatal("blockingUndefeatedTrainer: ok = false, want the single reachability-restoring trainer")
+	}
+	if candidate != rocket {
+		t.Fatalf("candidate = %+v, want %+v", candidate, rocket)
+	}
+}
+
+// TestBlockingUndefeatedTrainerDeclinesWhenAmbiguous mirrors
+// currentLocalStrengthPlan's refusal to move a boulder that does not
+// provably open the exact destination: if unblocking either of two
+// candidate trainers alone would reopen the route, fighting the wrong one
+// first wastes a battle without helping, so the probe must decline rather
+// than guess.
+func TestBlockingUndefeatedTrainerDeclinesWhenAmbiguous(t *testing.T) {
+	a := rom.Object{X: 8, Y: 16}
+	b := rom.Object{X: 28, Y: 4}
+	_, ok, err := blockingUndefeatedTrainer([]rom.Object{a, b}, func(at [2]int) (bool, error) {
+		return true, nil
+	})
+	if err != nil {
+		t.Fatalf("blockingUndefeatedTrainer: %v", err)
+	}
+	if ok {
+		t.Fatal("blockingUndefeatedTrainer: ok = true with two equally-reopening candidates, want false")
+	}
+}
+
+// TestBlockingUndefeatedTrainerDeclinesWhenNoneHelp covers the case that
+// walkWithinMap must still fall through to arriveBesideBlockedDestination
+// for: an undefeated trainer sits on a blocked tile, but the destination is
+// genuinely unreachable regardless (a real dead end, not a gauntlet gate).
+func TestBlockingUndefeatedTrainerDeclinesWhenNoneHelp(t *testing.T) {
+	a := rom.Object{X: 8, Y: 16}
+	_, ok, err := blockingUndefeatedTrainer([]rom.Object{a}, func(at [2]int) (bool, error) {
+		return false, nil
+	})
+	if err != nil {
+		t.Fatalf("blockingUndefeatedTrainer: %v", err)
+	}
+	if ok {
+		t.Fatal("blockingUndefeatedTrainer: ok = true when no candidate reopens dest, want false")
+	}
+}
+
+// TestBlockingUndefeatedTrainerPropagatesError proves a plan-time error other
+// than world.ErrNoPath (a malformed map, not a mere disconnection) aborts the
+// probe instead of being swallowed as "this trainer does not help".
+func TestBlockingUndefeatedTrainerPropagatesError(t *testing.T) {
+	a := rom.Object{X: 8, Y: 16}
+	wantErr := fmt.Errorf("boom")
+	_, _, err := blockingUndefeatedTrainer([]rom.Object{a}, func(at [2]int) (bool, error) {
+		return false, wantErr
+	})
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("blockingUndefeatedTrainer error = %v, want %v", err, wantErr)
 	}
 }
