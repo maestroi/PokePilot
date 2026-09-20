@@ -370,8 +370,12 @@ func (travelObjectiveProvider) Provide(ctx *objectiveOfferContext) objectiveProv
 		if !ok {
 			continue
 		}
-		plain := Objective{Kind: KindGoTo, Place: destination.Place}
-		flee := Objective{Kind: KindGoTo, Place: destination.Place, Flee: true}
+		plain := Objective{
+			Kind: KindGoTo, Place: destination.Place, Location: destination.Location,
+			X: destination.X, Y: destination.Y,
+		}
+		flee := plain
+		flee.Flee = true
 		if ctx.adjacentLocations[destination.Location] && !known.Visited[destination.Location] {
 			plain.Note = "(unvisited adjacent map)"
 			flee.Note = "(unvisited adjacent map)"
