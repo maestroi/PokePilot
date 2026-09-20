@@ -42,3 +42,16 @@ func (yellowKnowledgeTopologyProvider) KnowledgeTopology(native map[uint8][]uint
 	}
 	return normalizeKnowledgeTopology(topology)
 }
+
+
+func yellowNativeMapForLocation(location LocationID) (uint8, bool) {
+	if location == "" {
+		return 0, false
+	}
+	for _, mapID := range yellowrom.MapIDs() {
+		if yellowLocationID(yellowprofile.GameID, mapID) == location {
+			return mapID, true
+		}
+	}
+	return 0, false
+}
