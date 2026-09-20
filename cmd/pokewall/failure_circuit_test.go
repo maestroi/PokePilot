@@ -187,9 +187,14 @@ func TestFailureCircuitPausesQueuedRetryAndPreservesFrame(t *testing.T) {
 	}
 }
 
-func TestFixedCircuitReleasesOneCanaryOnNewBuild(t *testing.T) {
+func TestFixedCircuitReleasesOneCanaryAfterRunnerRollout(t *testing.T) {
 	w := NewWall("")
-	w.Version = "build-fixed"
+	// The wall build is deliberately still the broken revision. Canary gating
+	// must use runner versions, not the control-plane server version.
+	w.Version = "build-broken"
+	w.workers["runner-fixed"] = &workerInfo{
+		Addrs: []string{"10.0.0.2:8099"}, Version: "build-fixed", LastSeen: time.Now(),
+	}
 	for _, id := range []string{"run-a", "run-b"} {
 		w.tiles[id] = &Tile{
 			RunID: id, Status: statusPaused, Finished: true, EndedAt: time.Now(),
@@ -203,7 +208,7 @@ func TestFixedCircuitReleasesOneCanaryOnNewBuild(t *testing.T) {
 		CircuitOpen: true,
 	}
 	if !w.maybeResumeCircuitCanary("deadbeef", w.issueLinks["deadbeef"]) {
-		t.Fatal("fixed circuit did not release a canary")
+		t.Fatal("fixed circuit did not release a canary after runner rollout")
 	}
 	queued := 0
 	paused := 0
@@ -223,5 +228,56 @@ func TestFixedCircuitReleasesOneCanaryOnNewBuild(t *testing.T) {
 	}
 	if w.maybeResumeCircuitCanary("deadbeef", w.issueLinks["deadbeef"]) {
 		t.Fatal("second canary released while first is active")
+	}
+}
+
+func TestFixedCircuitWaitsUntilBrokenRunnerBuildDrains(t *testing.T) {
+	w := NewWall("")
+	w.workers["runner-old"] = &workerInfo{
+		Addrs: []string{"10.0.0.1:8099"}, Version: "build-broken", LastSeen: time.Now(),
+	}
+	w.workers["runner-new"] = &workerInfo{
+		Addrs: []string{"10.0.0.2:8099"}, Version: "build-fixed", LastSeen: time.Now(),
+	}
+	w.tiles["run-a"] = &Tile{
+		RunID: "run-a", Status: statusPaused, Finished: true, EndedAt: time.Now(),
+		CircuitKey: "deadbeef", CircuitKind: "fingerprint", CircuitRevision: "build-broken",
+		Attempts: 2,
+	}
+	w.order = []string{"run-a"}
+	w.issueLinks["deadbeef"] = IssueLink{
+		IssueID: "1", Status: "resolved", Resolution: "fixed", FixedRevision: "build-fixed",
+		CircuitOpen: true,
+	}
+
+	if w.maybeResumeCircuitCanary("deadbeef", w.issueLinks["deadbeef"]) {
+		t.Fatal("canary released while a broken-build runner was still live")
+	}
+	if got := w.tiles["run-a"].Status; got != statusPaused {
+		t.Fatalf("status with mixed runner fleet = %q, want paused", got)
+	}
+
+	delete(w.workers, "runner-old")
+	if !w.maybeResumeCircuitCanary("deadbeef", w.issueLinks["deadbeef"]) {
+		t.Fatal("canary did not release after broken-build runner drained")
+	}
+}
+
+func TestFixedCircuitWaitsForVersionedRunner(t *testing.T) {
+	w := NewWall("")
+	w.workers["runner-unknown"] = &workerInfo{
+		Addrs: []string{"10.0.0.3:8099"}, LastSeen: time.Now(),
+	}
+	w.tiles["run-a"] = &Tile{
+		RunID: "run-a", Status: statusPaused, Finished: true,
+		CircuitKey: "deadbeef", CircuitKind: "repeat", CircuitRevision: "build-broken",
+	}
+	w.order = []string{"run-a"}
+	w.issueLinks["deadbeef"] = IssueLink{
+		IssueID: "1", Status: "resolved", Resolution: "fixed", FixedRevision: "build-fixed",
+	}
+
+	if w.maybeResumeCircuitCanary("deadbeef", w.issueLinks["deadbeef"]) {
+		t.Fatal("canary released onto an unversioned runner")
 	}
 }

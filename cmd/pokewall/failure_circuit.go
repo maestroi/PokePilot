@@ -441,12 +441,32 @@ func (w *Wall) releaseCircuitPeers(key, completedCanary string) int {
 	return released
 }
 
-func (w *Wall) maybeResumeCircuitCanary(key string, link IssueLink) bool {
-	if key == "" || !issueFixedForVerification(link) {
+// circuitWorkersReadyLocked reports whether the live runner fleet has fully
+// rolled away from the build that opened a circuit. Requiring every currently
+// visible worker to report a version different from the broken revision keeps
+// a released canary from being leased by an old worker during a rolling deploy.
+// Caller holds w.mu.
+func (w *Wall) circuitWorkersReadyLocked(brokenRevision string) bool {
+	brokenRevision = strings.TrimSpace(brokenRevision)
+	if brokenRevision == "" || len(w.workers) == 0 {
 		return false
 	}
-	version := strings.TrimSpace(w.Version)
-	if version == "" || version == "dev" {
+	ready := false
+	for _, worker := range w.workers {
+		if worker == nil {
+			continue
+		}
+		version := strings.TrimSpace(worker.Version)
+		if version == "" || version == brokenRevision {
+			return false
+		}
+		ready = true
+	}
+	return ready
+}
+
+func (w *Wall) maybeResumeCircuitCanary(key string, link IssueLink) bool {
+	if key == "" || !issueFixedForVerification(link) {
 		return false
 	}
 	now := time.Now()
@@ -463,9 +483,10 @@ func (w *Wall) maybeResumeCircuitCanary(key string, link IssueLink) bool {
 		if t == nil || t.Status != statusPaused || t.CircuitKey != key {
 			continue
 		}
-		// Do not canary the same build that opened the circuit. A fixed issue
-		// can close before the new runner image finishes rolling out.
-		if strings.TrimSpace(t.CircuitRevision) == version {
+		// CircuitRevision is the runner build that reproduced the blocker. Wait
+		// until the whole visible runner fleet has rolled off that build; using
+		// the wall server's own version here can release a canary too early.
+		if !w.circuitWorkersReadyLocked(t.CircuitRevision) {
 			continue
 		}
 		target = t
@@ -521,9 +542,11 @@ func (w *Wall) noteCircuitIssue(key, runID string, decision failureCircuitDecisi
 		return
 	}
 	w.mu.Lock()
-	if link, ok := w.issueLinks[key]; ok {
-		w.issueLinks[key] = applyCircuitToIssueLink(link, runID, decision)
-	}
+	// Keep circuit metadata even when the issue reporter has not created the
+	// remote issue yet. Reporters merge into this placeholder later, so the
+	// circuit can still be prioritized and auto-resumed once the issue is fixed.
+	link := w.issueLinks[key]
+	w.issueLinks[key] = applyCircuitToIssueLink(link, runID, decision)
 	w.mu.Unlock()
 }
 

@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/maestroi/pokepilot/farm"
 )
 
 const (
@@ -67,7 +69,9 @@ func pauseHTTPHandler(w *Wall, next http.Handler) http.Handler {
 				if capture.status >= 200 && capture.status < 300 {
 					if !w.finalizeRequestedPause(id) {
 						circuitPaused := false
-						if report, ok := finishReportFromRequest(req); ok {
+						report := farm.FinishReport{}
+						if parsed, ok := finishReportFromRequest(req); ok {
+							report = parsed
 							if circuitCanaryAdvanced(before.row, report) {
 								w.releaseCircuitPeers(before.row.CircuitKey, id)
 							}
@@ -85,7 +89,7 @@ func pauseHTTPHandler(w *Wall, next http.Handler) http.Handler {
 							}
 						}
 						if !circuitPaused {
-							w.maybeAutoPauseRepeatedFailure(id, before)
+							w.maybeAutoPauseRepeatedFailure(id, before, report)
 						}
 					}
 				}
@@ -302,7 +306,7 @@ func clearFailureStreak(w *Wall, id string) {
 	repeatedFailures.Unlock()
 }
 
-func (w *Wall) maybeAutoPauseRepeatedFailure(id string, before pauseFinishSnapshot) bool {
+func (w *Wall) maybeAutoPauseRepeatedFailure(id string, before pauseFinishSnapshot, report farm.FinishReport) bool {
 	if !before.ok {
 		return false
 	}
@@ -332,6 +336,14 @@ func (w *Wall) maybeAutoPauseRepeatedFailure(id string, before pauseFinishSnapsh
 		return false
 	}
 
+	pattern := normalizeDetail(detail)
+	key, fingerprint := failureIdentity(pattern)
+	decision := circuitDecisionFromProgress(failureCircuitDecision{
+		Open: true, Kind: "repeat", Key: key, Fingerprint: fingerprint,
+		Count: autoPauseRepeatThreshold, Threshold: autoPauseRepeatThreshold,
+		Revision: strings.TrimSpace(report.RunnerVersion),
+	}, report.ProgressFinal)
+
 	now := time.Now()
 	w.mu.Lock()
 	t = w.tiles[id]
@@ -348,7 +360,8 @@ func (w *Wall) maybeAutoPauseRepeatedFailure(id string, before pauseFinishSnapsh
 	t.EndedAt = now
 	t.Reason = "error"
 	t.Detail = detail
-	t.StopSoFar = fmt.Sprintf("auto-paused after %d repeated failures", autoPauseRepeatThreshold)
+	t.StopSoFar = circuitPauseNote(decision)
+	setTileCircuit(t, decision)
 	t.lastUpdate = now
 	// The ordinary retry path clears live state before requeueing. Put the last
 	// pre-finish snapshot back so the paused card still shows where the bug was.
@@ -367,6 +380,7 @@ func (w *Wall) maybeAutoPauseRepeatedFailure(id string, before pauseFinishSnapsh
 	t.Player = before.row.Player
 	t.lastFrame = append(t.lastFrame[:0], before.lastFrame...)
 	w.mu.Unlock()
+	w.noteCircuitIssue(decision.Key, id, decision)
 	w.saveState()
 	return true
 }
