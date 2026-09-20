@@ -45,3 +45,31 @@ func TestFindRouteAtDestinationReentersSameMapForDifferentComponent(t *testing.T
 		t.Fatalf("same-component route = %#v, want empty", got)
 	}
 }
+
+func TestFindRouteAtDestinationUsesSameMapWarpBetweenComponents(t *testing.T) {
+	pad := Edge{Kind: EdgeWarp, From: 1, To: 1, WarpX: 0, WarpY: 0}
+	g := &Graph{
+		Edges: map[uint8][]Edge{
+			1: {pad},
+		},
+		componentAware: true,
+		comps: map[uint8][][]int{
+			1: {{1, 0, 2}},
+		},
+		exitComps: map[Edge][]int{
+			pad: {1},
+		},
+		entryComps: map[Edge][]int{
+			pad: {2},
+		},
+	}
+
+	got, err := FindRouteAtDestination(g, 1, 1, 0, 0, 2, 0, nil)
+	if err != nil {
+		t.Fatalf("FindRouteAtDestination same-map warp: %v", err)
+	}
+	want := []Edge{pad}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("same-map warp route = %#v, want %#v", got, want)
+	}
+}
