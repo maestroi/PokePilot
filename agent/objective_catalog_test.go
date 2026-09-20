@@ -65,7 +65,7 @@ func TestAdapterCatalogFeedsGenericProviders(t *testing.T) {
 		{Kind: KindTalk, X: 4, Y: 5},
 		{Kind: KindTrainer, X: 6, Y: 7},
 		{Kind: KindPickup, X: 8, Y: 9, Item: "potion"},
-		{Kind: KindGoTo, Place: "beta"},
+		{Kind: KindGoTo, Place: "beta", X: 3, Y: 4},
 	} {
 		if !hasCatalogObjective(got, want) {
 			t.Fatalf("catalog objective %+v missing from offer: %+v", want, got)
