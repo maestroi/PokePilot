@@ -45,7 +45,6 @@ func TestYellowDexGoalDoesNotAssumeRed151Target(t *testing.T) {
 	}
 }
 
-
 func TestYellowReachGoalUsesSemanticLocation(t *testing.T) {
 	obs := Observation{
 		GameID:   yellowprofile.GameID,
