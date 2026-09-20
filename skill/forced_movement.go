@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
-	"github.com/maestroi/pokepilot/red/rom"
+	"github.com/maestroi/pokepilot/red/forcedmove"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
@@ -16,7 +16,11 @@ const forcedMovementSettleBudget = 2400
 // forcedLandingForMap is the adapter seam between portable local pathing and
 // Red's script-derived trigger tables.
 func forcedLandingForMap(mapID uint8, x, y int) (world.Point, bool) {
-	return rom.ForcedMovementLanding(mapID, x, y)
+	landing, ok := forcedmove.Landing(mapID, x, y)
+	if !ok {
+		return world.Point{}, false
+	}
+	return world.Point{X: landing.X, Y: landing.Y}, true
 }
 
 // cyclingRoadAutoDown mirrors JoypadOverworld in Red. Route 17 is not a
