@@ -231,9 +231,21 @@ func (c *mcpControl) startRun(ctx context.Context, _ *mcp.CallToolRequest, in mc
 		return nil, mcpStartRunOutput{}, fmt.Errorf("game must be pokemon-red, pokemon-blue, or pokemon-yellow")
 	}
 
-	starter := strings.TrimSpace(in.Starter)
+	starter := strings.ToLower(strings.TrimSpace(in.Starter))
 	if gameID == "pokemon-yellow" {
+		if starter != "" && starter != "pikachu" {
+			return nil, mcpStartRunOutput{}, fmt.Errorf("pokemon-yellow uses the scripted Pikachu starter")
+		}
 		starter = ""
+	} else {
+		if starter == "" {
+			starter = "squirtle"
+		}
+		switch starter {
+		case "squirtle", "charmander", "bulbasaur":
+		default:
+			return nil, mcpStartRunOutput{}, fmt.Errorf("starter must be squirtle, charmander, or bulbasaur")
+		}
 	}
 
 	planner := strings.ToLower(strings.TrimSpace(in.Planner))
@@ -242,15 +254,6 @@ func (c *mcpControl) startRun(ctx context.Context, _ *mcp.CallToolRequest, in mc
 	}
 	if planner != "llm" && planner != "scripted" {
 		return nil, mcpStartRunOutput{}, fmt.Errorf("planner must be llm or scripted")
-	}
-	starter := strings.ToLower(strings.TrimSpace(in.Starter))
-	if starter == "" {
-		starter = "squirtle"
-	}
-	switch starter {
-	case "squirtle", "charmander", "bulbasaur":
-	default:
-		return nil, mcpStartRunOutput{}, fmt.Errorf("starter must be squirtle, charmander, or bulbasaur")
 	}
 	if in.FPS < 0 || in.FPS > 240 {
 		return nil, mcpStartRunOutput{}, fmt.Errorf("fps must be between 0 and 240")
