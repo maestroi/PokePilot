@@ -82,7 +82,6 @@ func TestLegalFastTravelOptionsDigAndEscapeReturnToLastCenter(t *testing.T) {
 	}
 }
 
-
 func TestEscapeTravelUsesSpecialWarpLandingsForRouteCenters(t *testing.T) {
 	for mapID, want := range map[uint8]Destination{
 		0x0f: {Map: 0x0f, X: 11, Y: 6},
