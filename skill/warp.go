@@ -97,6 +97,18 @@ func Traverse(m *emu.Emu, romData []byte, e world.Edge) error {
 
 	if e.Kind == world.EdgeConnection {
 		push, err := walkToConnectionEdge(m, h, grid, e)
+		if err != nil && errors.Is(err, ErrLegUnwalkable) {
+			// Land-only collision may split the selected source band behind Cut,
+			// Surf, Strength, or a forced-movement tile. Ask the same local
+			// capability planner used by GoTo to reach this exact connection band,
+			// then retry ordinary edge traversal from the resulting live state.
+			if fieldErr := approachConnectionWithFieldPath(m, romData, e); fieldErr == nil {
+				if refreshed, refreshErr := liveMapGrid(m, romData, h); refreshErr == nil {
+					grid = refreshed
+				}
+				push, err = walkToConnectionEdge(m, h, grid, e)
+			}
+		}
 		if err != nil {
 			return err
 		}

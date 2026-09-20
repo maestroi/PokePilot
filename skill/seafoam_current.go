@@ -85,6 +85,12 @@ func currentFieldPathRules(m *emu.Emu, h rom.MapHeader) fieldPathRules {
 		SurfAllowedFrom: func(x, y int) bool {
 			return seafoamSurfAllowedFrom(&mem, h.ID, x, y)
 		},
+		ForcedLanding: func(x, y int) (world.Point, bool) {
+			return forcedLandingForMap(h.ID, x, y)
+		},
+		MoveAllowed: func(x, y int, input world.Step) bool {
+			return cyclingRoadMoveAllowed(&mem, h.ID, input)
+		},
 	}
 }
 

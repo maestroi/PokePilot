@@ -18,11 +18,13 @@ const (
 	fieldPathWalk fieldPathAction = iota
 	fieldPathCut
 	fieldPathSurf
+	fieldPathForced
 )
 
 type fieldPathStep struct {
-	Move   world.Step
-	Action fieldPathAction
+	Move    world.Step
+	Action  fieldPathAction
+	Landing world.Point
 }
 
 type fieldPathGrid interface {
@@ -91,10 +93,23 @@ type fieldPathParent struct {
 
 type fieldPathRules struct {
 	SurfAllowedFrom func(x, y int) bool
+	ForcedLanding   func(x, y int) (world.Point, bool)
+	MoveAllowed     func(x, y int, input world.Step) bool
 }
 
 func (r fieldPathRules) canSurfFrom(x, y int) bool {
 	return r.SurfAllowedFrom == nil || r.SurfAllowedFrom(x, y)
+}
+
+func (r fieldPathRules) forcedLanding(x, y int) (world.Point, bool) {
+	if r.ForcedLanding == nil {
+		return world.Point{}, false
+	}
+	return r.ForcedLanding(x, y)
+}
+
+func (r fieldPathRules) moveAllowed(x, y int, input world.Step) bool {
+	return r.MoveAllowed == nil || r.MoveAllowed(x, y, input)
 }
 
 func fieldPathCutTile(g fieldPathGrid, tileset uint8, x, y int) bool {
@@ -195,6 +210,9 @@ func planFieldPath(
 		}
 
 		for _, input := range []world.Step{world.StepUp, world.StepDown, world.StepLeft, world.StepRight} {
+			if !rule.moveAllowed(cur.x, cur.y, input) {
+				continue
+			}
 			if cur.water {
 				if water == nil {
 					continue
@@ -212,6 +230,15 @@ func planFieldPath(
 
 			if move, ok := land.Movement(cur.x, cur.y, input, blocked); ok {
 				nx, ny := cur.x+move.DX, cur.y+move.DY
+				if landing, forced := rule.forcedLanding(nx, ny); forced {
+					if !land.InBounds(landing.X, landing.Y) || !land.Walkable(landing.X, landing.Y) || blocked[[2]int{landing.X, landing.Y}] {
+						continue
+					}
+					cost := absInt(move.DX) + absInt(move.DY) + absInt(landing.X-nx) + absInt(landing.Y-ny)
+					push(cur, fieldPathState{x: landing.X, y: landing.Y},
+						fieldPathStep{Move: input, Action: fieldPathForced, Landing: landing}, 0, cost)
+					continue
+				}
 				push(cur, fieldPathState{x: nx, y: ny},
 					fieldPathStep{Move: move, Action: fieldPathWalk}, 0, absInt(move.DX)+absInt(move.DY))
 				continue
@@ -329,6 +356,12 @@ func executeFieldPathAction(m *emu.Emu, step fieldPathStep) error {
 		}
 		if err := StepOnce(m, step.Move); err != nil {
 			return fmt.Errorf("skill: field path enter cleared Cut tile (%d,%d): %w", tx, ty, err)
+		}
+		return nil
+
+	case fieldPathForced:
+		if err := executeForcedMovementStep(m, m.Peek8(sym.CurMap), step.Move, step.Landing); err != nil {
+			return fmt.Errorf("skill: field path forced movement via (%d,%d) to (%d,%d): %w", tx, ty, step.Landing.X, step.Landing.Y, err)
 		}
 		return nil
 

@@ -312,25 +312,18 @@ func (x *redRouteTransitionExecutor) executeAuditedRouteTransition(edge world.Ed
 		return result, true, err
 
 	case "red:celadon_gym_cut":
-		if edge.From == celadonGymMap {
-			// Leaving starts inside the building while the tree that separates
-			// the landing yard from the city street is outside. Cross the warp
-			// first so the generic live Cut recovery can see and clear that tree.
-			// Traverse already performs the promised edge, so always report a
-			// state change and let Travel re-plan from the city side afterwards.
-			if err := Traverse(x.m, x.romData, edge); err != nil {
-				return world.TransitionExecutionResult{}, true, fmt.Errorf("Celadon Gym Cut gate: leave gym: %w", err)
+		var mem state.Mem
+		state.Snapshot(x.m, &mem)
+		if !redRouteCapabilities(x.romData, &mem).Has(capCanCut) {
+			return world.TransitionExecutionResult{}, true, &gameruntime.TransitionBlockage{
+				Transition: transition,
+				Missing:    []gameruntime.CapabilityID{capCanCut},
 			}
-			if _, err := cutThroughReachableTree(x.m, x.romData); err != nil {
-				return world.TransitionExecutionResult{}, true, fmt.Errorf("Celadon Gym Cut gate: clear city-side tree: %w", err)
-			}
-			return world.TransitionExecutionResult{Changed: true}, true, nil
 		}
-		opened, err := cutThroughReachableTree(x.m, x.romData)
-		if err != nil {
-			return world.TransitionExecutionResult{}, true, fmt.Errorf("Celadon Gym Cut gate: %w", err)
-		}
-		return world.TransitionExecutionResult{Changed: opened}, true, nil
+		// The semantic pivot only relaxes static component routing. Traverse's
+		// target-specific field approach owns the actual Cut, and after a reverse
+		// gym exit ordinary GoTo replans the city-side destination before cutting.
+		return world.TransitionExecutionResult{}, true, nil
 	}
 	return world.TransitionExecutionResult{}, false, nil
 }

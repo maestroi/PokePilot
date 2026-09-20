@@ -67,8 +67,9 @@ func (x *redRouteTransitionExecutor) executeSideRouteTransition(edge world.Edge,
 		if blockage := x.liveTransitionBlockage(transition); blockage != nil {
 			return world.TransitionExecutionResult{}, true, blockage
 		}
-		result, err := x.executeCutWarpApproach(edge)
-		return result, true, err
+		// Traverse will approach the selected gate warp with the shared field
+		// planner and therefore Cut only a tree that actually unlocks this door.
+		return world.TransitionExecutionResult{}, true, nil
 
 	case "red:power_plant_surf", "red:cerulean_cave_b1f_surf":
 		if blockage := x.liveTransitionBlockage(transition); blockage != nil {

@@ -245,6 +245,12 @@ func Travel(m *emu.Emu, romData []byte, dest Destination, policy MovePolicy, max
 	if maxBattles <= 0 {
 		return TravelResult{}, fmt.Errorf("skill: Travel: maxBattles must be > 0, got %d", maxBattles)
 	}
+	if used, err := maybeUseFastTravel(m, dest); err != nil {
+		return TravelResult{}, fmt.Errorf("skill: Travel: fast travel: %w", err)
+	} else if used {
+		// The special warp landed on dest.Map. Ordinary GoTo below owns the
+		// remaining exact-tile walk and all normal interruption semantics.
+	}
 	return travel(m, policy, maxBattles,
 		cutAwareGoTo(m, romData, dest, policy),
 		func() DialogueRecoveryResult { return RecoverDialogue(m, dialogueRecoveryBudget) },
@@ -266,6 +272,14 @@ func Travel(m *emu.Emu, romData []byte, dest Destination, policy MovePolicy, max
 // healed at a center, and re-planning from the respawn spot is the caller's
 // decision.
 func TravelFlee(m *emu.Emu, romData []byte, dest Destination, policy MovePolicy, maxBattles int) (TravelResult, error) {
+	if maxBattles <= 0 {
+		return TravelResult{}, fmt.Errorf("skill: TravelFlee: maxBattles must be > 0, got %d", maxBattles)
+	}
+	if used, err := maybeUseFastTravel(m, dest); err != nil {
+		return TravelResult{}, fmt.Errorf("skill: TravelFlee: fast travel: %w", err)
+	} else if used {
+		// Continue with the flee-first journey from the verified landing.
+	}
 	return travel(m, policy, maxBattles,
 		cutAwareGoTo(m, romData, dest, policy),
 		func() DialogueRecoveryResult { return RecoverDialogue(m, dialogueRecoveryBudget) },

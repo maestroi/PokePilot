@@ -235,23 +235,24 @@ func OpenCinnabarGym(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		if cinnabarQuizGateOpen(&mem, quiz.Index) {
 			continue
 		}
+		quiz := quiz
 		stand := Destination{Map: cinnabarGymMap, X: quiz.TargetX, Y: quiz.TargetY + 1}
-		res, err := Travel(m, romData, stand, policy, cinnabarGymTravelBattles)
+		_, err := executeTopologyInteraction(m, romData, policy, topologyInteraction{
+			Name:       fmt.Sprintf("Cinnabar quiz %d", quiz.Index),
+			Approach:   stand,
+			TargetX:    quiz.TargetX,
+			TargetY:    quiz.TargetY,
+			MaxBattles: cinnabarGymTravelBattles,
+			Budget:     cinnabarQuizDriveBudget,
+			Complete: func(mm *state.Mem) bool {
+				return cinnabarQuizGateOpen(mm, quiz.Index)
+			},
+			Interact: func() error {
+				return answerCinnabarQuiz(m, quiz)
+			},
+		})
 		if err != nil {
-			return fmt.Errorf("skill: OpenCinnabarGym: reach quiz %d at (%d,%d): %w", quiz.Index, quiz.TargetX, quiz.TargetY, err)
-		}
-		if res.BlackedOut {
-			return fmt.Errorf("skill: OpenCinnabarGym: %w reaching quiz %d", ErrBlackedOut, quiz.Index)
-		}
-
-		// The route may have crossed the associated trainer, whose post-battle
-		// script sets the same gate bit. Re-read before touching the terminal.
-		state.Snapshot(m, &mem)
-		if cinnabarQuizGateOpen(&mem, quiz.Index) {
-			continue
-		}
-		if err := answerCinnabarQuiz(m, quiz); err != nil {
-			return err
+			return fmt.Errorf("skill: OpenCinnabarGym: %w", err)
 		}
 	}
 

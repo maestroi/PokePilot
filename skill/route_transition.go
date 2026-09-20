@@ -129,14 +129,12 @@ func (x *redRouteTransitionExecutor) ExecuteTransition(edge world.Edge, transiti
 		}
 		return world.TransitionExecutionResult{}, nil
 
-	case "red:route9_cut":
-		// The Cut tree that joins Route 9's Cerulean-side and Route 10-side
-		// components lives INSIDE Route 9. Declaring can_cut is not enough:
-		// without cutting here, GoTo stays on the west component and diagnosis
-		// falls through to the closed Saffron drink gate
-		// (run-os1jmuuqpc1033zjhq2at3qz4). When already on Route 9, clear the
-		// tree before the next leg. When still elsewhere, only prove the
-		// capability — ordinary Traverse owns the border crossing.
+	case "red:route9_cut", "red:vermilion_gym_cut":
+		// These semantic pivots exist so the component router may select an
+		// edge whose static ROM geometry is split by a Cut tree. Execution is
+		// deliberately capability-only: Traverse now approaches the selected
+		// connection/warp through the shared destination-aware field planner,
+		// which cuts only a tree proven to lie on that exact edge route.
 		var mem state.Mem
 		state.Snapshot(x.m, &mem)
 		if !redRouteCapabilities(x.romData, &mem).Has(capCanCut) {
@@ -145,68 +143,7 @@ func (x *redRouteTransitionExecutor) ExecuteTransition(edge world.Edge, transiti
 				Missing:    []gameruntime.CapabilityID{capCanCut},
 			}
 		}
-		if x.m.Peek8(sym.CurMap) != semanticRoute9Map {
-			return world.TransitionExecutionResult{}, nil
-		}
-		opened, err := cutThroughReachableTree(x.m, x.romData)
-		if err != nil {
-			return world.TransitionExecutionResult{}, fmt.Errorf("Cut gate: clear Route 9 tree: %w", err)
-		}
-		if opened {
-			return world.TransitionExecutionResult{Changed: true}, nil
-		}
 		return world.TransitionExecutionResult{}, nil
-
-	case "red:vermilion_gym_cut":
-		if edge.From == vermilionGymMap {
-			// Leaving: the tree stands outside, on Vermilion City's side of
-			// this door, so cutThroughReachableTree (which only ever looks at
-			// the CURRENT map, and only recognizes the exact overworld/gym
-			// tree tile ids) finds nothing while still inside the gym, and
-			// still misses this one live tile-ID quirk once outside. Cross
-			// the door ourselves first, then reuse EnterVermilionGym's own
-			// tree finder — already proven against this exact tree — to clear
-			// whatever still blocks the yard the door lands in, so the exit
-			// this transition promised is the one the walker actually gets.
-			// Measured on run-3djisxgsy3dgzpnsde2inzyuh round 7: the
-			// one-directional gate only ever cut the tree on entry, so every
-			// later GoTo leaving the Gym found the same tree still standing
-			// and reported "world: no route" trying to reach Celadon.
-			if err := Traverse(x.m, x.romData, edge); err != nil {
-				return world.TransitionExecutionResult{}, fmt.Errorf("Cut gate: leave gym: %w", err)
-			}
-			h, err := rom.ParseMap(x.romData, vermilionCity)
-			if err != nil {
-				return world.TransitionExecutionResult{}, fmt.Errorf("Cut gate: leave gym: parse city: %w", err)
-			}
-			grid, err := world.Build(x.romData, h)
-			if err != nil {
-				return world.TransitionExecutionResult{}, fmt.Errorf("Cut gate: leave gym: build city: %w", err)
-			}
-			tree, err := findVermilionGymTree(x.m, x.romData, grid, x.policy)
-			if err != nil {
-				// No verifiable tree left standing is the idempotent
-				// already-cut case (a later run through the same door, or a
-				// route that lands beside a tree some earlier leg already
-				// removed): Traverse already delivered the crossing this
-				// transition promised, so report it and let ordinary
-				// geometry take it from here instead of failing the leg.
-				return world.TransitionExecutionResult{Changed: true}, nil
-			}
-			if err := CutAhead(x.m); err != nil {
-				return world.TransitionExecutionResult{}, fmt.Errorf("Cut gate: leave gym: cut tree at (%d,%d): %w", tree.x, tree.y, err)
-			}
-			// Traverse already performed the crossing; report Changed so the
-			// caller re-plans from the new position instead of traversing e again.
-			return world.TransitionExecutionResult{Changed: true}, nil
-		}
-		opened, err := cutThroughReachableTree(x.m, x.romData)
-		if err != nil {
-			return world.TransitionExecutionResult{}, fmt.Errorf("Cut gate: %w", err)
-		}
-		// No candidate is the idempotent already-open case. Traverse is the
-		// positive proof that ordinary geometry is now sufficient.
-		return world.TransitionExecutionResult{Changed: opened}, nil
 
 	case "red:route21_surf":
 		return x.executeSurf(edge)

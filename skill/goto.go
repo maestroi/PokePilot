@@ -713,7 +713,14 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 				continue // effect observed: discard stale route/topology and re-plan
 			}
 		}
-		if err := Traverse(m, romData, e); err != nil {
+		var traverseErr error
+		if e.Kind == world.EdgeWarp && e.From == e.To {
+			traverseErr = traverseIntraMapWarp(m, romData, e)
+		} else {
+			traverseErr = Traverse(m, romData, e)
+		}
+		if traverseErr != nil {
+			err := traverseErr
 			// A measured bounce-back (Cycling Road's forced downhill descent,
 			// or any crossing that settles back on its own origin map) is
 			// evidence about the connection, not the tile: every tile of

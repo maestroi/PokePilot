@@ -16,6 +16,7 @@ const (
 	CurMapHeight            uint16 = 0xD368
 	CurMapWidth             uint16 = 0xD369
 	WalkBikeSurfState       uint16 = 0xD700 // wWalkBikeSurfState: 0 walking, 1 biking, 2 surfing
+	TownVisitedFlag         uint16 = 0xD70B // wTownVisitedFlag: Fly-unlocked city bits
 	PlayerMovingDirection   uint16 = 0xD528
 	PlayerLastStopDirection uint16 = 0xD529
 	PlayerDirection         uint16 = 0xD52A
@@ -81,6 +82,8 @@ const (
 	// nurse, before HealParty. A run that never heals at a Center leaves it
 	// at its zeroed new-game value, PALLET_TOWN.
 	LastBlackoutMap uint16 = 0xD719
+	DestinationMap  uint16 = 0xD71A // wDestinationMap: Fly/special-warp target
+	StatusFlags6    uint16 = 0xD732 // wStatusFlags6: Fly/escape/forced-bike warp flags
 )
 
 // Battle
@@ -159,8 +162,9 @@ const (
 	TextBoxID        uint16 = 0xD125
 	// wFieldMoves is populated after choosing a Pokémon from the START-menu
 	// party list. Entries are field-move menu IDs (CUT=1), terminated by 0.
-	FieldMoves    uint16 = 0xCD3D
-	NumFieldMoves uint16 = 0xCD41
+	FieldMoves       uint16 = 0xCD3D
+	FlyLocationsList uint16 = 0xCD3E // union overlay used by ChooseFlyDestination
+	NumFieldMoves    uint16 = 0xCD41
 	// ActionResult is wActionResultOrTookBattleTurn. UsedCut writes 1 only
 	// when the tile in front was actually cut.
 	ActionResult uint16 = 0xCD6A
