@@ -214,6 +214,25 @@ CREATE INDEX IF NOT EXISTS decision_exchanges_run_idx ON decision_exchanges(run_
 CREATE INDEX IF NOT EXISTS decision_exchanges_kind_idx ON decision_exchanges(kind, recorded_at DESC);
 `
 
+// Migration 5 retires the static 7900 9B pin that competed with the
+// discoverable qwen38-27b-7900 row after deploy/models.json switched to one
+// switchable deployment. Stale leases still naming qwen3.5-9b against a host
+// serving qwen3.8-27b are what produced farm fingerprint ed63cfe2fa840cee.
+const controlPlaneMigration005 = `
+DELETE FROM model_deployments WHERE id = 'qwen35-9b-7900';
+UPDATE model_deployments
+SET label = '7900 XTX',
+    model_id = '',
+    revision = '',
+    artifact = '',
+    quantization = '',
+    api_model = '',
+    discover = TRUE,
+    engine_config = CASE WHEN engine_config = '' OR engine_config LIKE '7900-pinned%' THEN '7900-switchable' ELSE engine_config END,
+    updated_at = NOW()
+WHERE id = 'qwen38-27b-7900';
+`
+
 type controlPlane struct {
 	db                *sql.DB
 	experimentPersist sync.Mutex
@@ -327,10 +346,22 @@ func (cp *controlPlane) migrate() error {
 	}
 	if !applied4 {
 		if _, err := tx.Exec(controlPlaneMigration004); err != nil {
-			return fmt.Errorf("apply control-plane migration 3: %w", err)
+			return fmt.Errorf("apply control-plane migration 4: %w", err)
 		}
 		if _, err := tx.Exec(`INSERT INTO schema_migrations(version) VALUES(4) ON CONFLICT DO NOTHING`); err != nil {
-			return fmt.Errorf("record control-plane migration 3: %w", err)
+			return fmt.Errorf("record control-plane migration 4: %w", err)
+		}
+	}
+	var applied5 bool
+	if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version=5)`).Scan(&applied5); err != nil {
+		return fmt.Errorf("read migration version 5: %w", err)
+	}
+	if !applied5 {
+		if _, err := tx.Exec(controlPlaneMigration005); err != nil {
+			return fmt.Errorf("apply control-plane migration 5: %w", err)
+		}
+		if _, err := tx.Exec(`INSERT INTO schema_migrations(version) VALUES(5) ON CONFLICT DO NOTHING`); err != nil {
+			return fmt.Errorf("record control-plane migration 5: %w", err)
 		}
 	}
 	return tx.Commit()

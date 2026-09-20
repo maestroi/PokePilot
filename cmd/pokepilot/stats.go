@@ -98,9 +98,11 @@ func newStatsPlannerWithRunPolicy(profile, reasoningEffort, playStyle, riskToler
 	}
 	inner := agent.NewLLMPlannerFromConfig(primaryCfg)
 	inner.Goal = goal
+	inner.OnModelAdopted = farm.AdoptCurrentInferenceModel
 	var fallback *agent.LLMPlanner
 	if fallbackCfg != nil {
 		fallback = agent.NewLLMPlannerFromConfig(*fallbackCfg)
+		fallback.OnModelAdopted = farm.AdoptCurrentInferenceModel
 	}
 
 	s := &statsPlanner{
