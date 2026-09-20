@@ -20,6 +20,7 @@ import (
 // destination-aware Cut would open the needed port. Measured Celadon City
 // south-of-gym pocket cases:
 //   - Pokemon Center (catch / VirtualTrade): run-18zw4xby92x603chema3m8j2cm
+//     and run-jjzpcm0bpqco24ijjvh3vm93q (triage ab11fbcf89382c39)
 //   - Game Corner stand (silph_scope_acquired / RocketHideout):
 //     run-3hksgfzyx8naz3kvcvmuevzjeo
 func fieldPathBridgeOnCurrentMap(
