@@ -376,3 +376,16 @@ func TestConciseObjectiveErrorIsOneLine(t *testing.T) {
 		t.Fatalf("concise error lost joined evidence: %q", got)
 	}
 }
+
+
+func TestStarterPostconditionPrefersSemanticSpecies(t *testing.T) {
+	o := Objective{Kind: KindStarter, Species: "pikachu"}
+	final := Observation{
+		Controllable: true,
+		Party:        []PartyMon{{Species: "pikachu", Level: 5}},
+	}
+	out, err := verifyObjectivePostcondition(o, Observation{}, final, ObjectiveResult{Objective: o})
+	if err != nil || out != OutcomeCompleted {
+		t.Fatalf("semantic starter postcondition = %v, %v", out, err)
+	}
+}
