@@ -41,7 +41,12 @@ type BoulderPuzzleSpec struct {
 	// snapshot. Generic navigation uses this for unrelated warp tiles so a
 	// boulder solution cannot "solve" a route by accidentally stepping into
 	// another map.
-	Fixed            map[[2]int]bool
+	Fixed map[[2]int]bool
+	// MovableIDs optionally restricts the puzzle to specific live sprite slots.
+	// This matters for maps such as Seafoam B3F where unrelated Strength
+	// boulders share the same map but only a named pair may be sunk into the
+	// current-blocking holes.
+	MovableIDs       map[int]bool
 	TerminalTargets  map[[2]int]bool
 	CompleteEvent    state.Event
 	HasCompleteEvent bool
@@ -65,6 +70,19 @@ func liveBoulderMovables(mem *state.Mem) []world.Movable {
 			ID:  boulder.Slot,
 			Pos: world.Point{X: boulder.X, Y: boulder.Y},
 		})
+	}
+	return out
+}
+
+func selectedBoulderMovables(movables []world.Movable, allowed map[int]bool) []world.Movable {
+	if len(allowed) == 0 {
+		return movables
+	}
+	out := make([]world.Movable, 0, len(movables))
+	for _, movable := range movables {
+		if allowed[movable.ID] {
+			out = append(out, movable)
+		}
 	}
 	return out
 }
@@ -141,7 +159,7 @@ func currentBoulderPuzzle(m *emu.Emu, romData []byte, spec BoulderPuzzleSpec) (w
 	return world.PushPuzzle{
 		Grid:      grid,
 		Player:    world.Point{X: int(player.X), Y: int(player.Y)},
-		Movables:  liveBoulderMovables(&mem),
+		Movables:  selectedBoulderMovables(liveBoulderMovables(&mem), spec.MovableIDs),
 		Fixed:     fixed,
 		Goal:      world.PushGoal{Targets: spec.Targets, Reachable: spec.Reachable},
 		MaxStates: spec.MaxStates,
