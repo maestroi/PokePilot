@@ -209,6 +209,7 @@ func cutAwareGoTo(m *emu.Emu, romData []byte, dest Destination, policies ...Move
 	// journey: Travel's retry loop invokes this closure again after each
 	// resolved battle/dialogue, so learned bounce/dead-end facts must survive.
 	nav := newNavigationMemory()
+	nav.policy = policy
 	return func() error {
 		return goToWithTransitionExecutorMemory(m, romData, dest, executor, nav)
 	}

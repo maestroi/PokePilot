@@ -34,9 +34,14 @@ const (
 // fact when the map script provides one. HasCompleteEvent distinguishes event
 // index zero from "no event".
 type BoulderPuzzleSpec struct {
-	Map              uint8
-	Targets          []world.Point
-	Reachable        *world.Point
+	Map       uint8
+	Targets   []world.Point
+	Reachable *world.Point
+	// Fixed adds caller-owned non-movable blockers to the live sprite
+	// snapshot. Generic navigation uses this for unrelated warp tiles so a
+	// boulder solution cannot "solve" a route by accidentally stepping into
+	// another map.
+	Fixed            map[[2]int]bool
 	TerminalTargets  map[[2]int]bool
 	CompleteEvent    state.Event
 	HasCompleteEvent bool
@@ -127,11 +132,17 @@ func currentBoulderPuzzle(m *emu.Emu, romData []byte, spec BoulderPuzzleSpec) (w
 		return world.PushPuzzle{}, nil, fmt.Errorf("skill: boulder puzzle live grid for map %#02x: %w", cur, err)
 	}
 	player := state.DecodePlayer(&mem)
+	fixed := liveNonBoulderBlockers(&mem)
+	for at, blocked := range spec.Fixed {
+		if blocked {
+			fixed[at] = true
+		}
+	}
 	return world.PushPuzzle{
 		Grid:      grid,
 		Player:    world.Point{X: int(player.X), Y: int(player.Y)},
 		Movables:  liveBoulderMovables(&mem),
-		Fixed:     liveNonBoulderBlockers(&mem),
+		Fixed:     fixed,
 		Goal:      world.PushGoal{Targets: spec.Targets, Reachable: spec.Reachable},
 		MaxStates: spec.MaxStates,
 	}, &mem, nil
@@ -171,6 +182,13 @@ func settleBoulderPush(m *emu.Emu, spec BoulderPuzzleSpec, push world.Push) erro
 // resolveBoulderWalkInterruption handles only interruption cleanup and then
 // asks the outer solver to re-plan. It never resumes a stale planned path.
 func resolveBoulderWalkInterruption(m *emu.Emu, policy MovePolicy, err error) error {
+	// A nil policy means the caller owns interruptions (plain GoTo). Preserve
+	// the movement contract instead of silently fighting from inside pathing.
+	// Travel and story progression pass a policy and keep the historical
+	// self-contained recovery behavior.
+	if policy == nil {
+		return err
+	}
 	switch {
 	case errors.Is(err, ErrBattleInterrupted):
 		resolution, battleErr := fleeThenFight(m, policy, 3)()
@@ -270,10 +288,89 @@ func executeObservedBoulderPush(m *emu.Emu, spec BoulderPuzzleSpec, policy MoveP
 // then throws the rest of the plan away and re-plans. This makes a resumed
 // mid-puzzle checkpoint identical to any other starting state and ensures map
 // scripts that open doors or hide/show boulders are incorporated immediately.
-func SolveBoulderPuzzle(m *emu.Emu, romData []byte, policy MovePolicy, spec BoulderPuzzleSpec) (BoulderPuzzleResult, error) {
-	if policy == nil {
-		return BoulderPuzzleResult{}, fmt.Errorf("skill: boulder puzzle: nil move policy")
+// localStrengthPuzzleSpec builds the generic GoTo reachability form of the
+// boulder solver. Unlike story puzzle specs it has no switch/hole target: the
+// only goal is making the requested standing tile reachable. Unrelated warps
+// are fixed blockers so the push search stays on this map.
+func localStrengthPuzzleSpec(m *emu.Emu, h rom.MapHeader, dest Destination) BoulderPuzzleSpec {
+	sx, sy := playerXY(m)
+	fixed := warpAvoidance(h, int(sx), int(sy), nil)
+	return BoulderPuzzleSpec{
+		Map:       h.ID,
+		Reachable: &world.Point{X: int(dest.X), Y: int(dest.Y)},
+		Fixed:     fixed,
 	}
+}
+
+// currentLocalStrengthPlan asks the push solver whether moving one or more
+// live boulders can make dest reachable. A zero-push result is deliberately
+// reported as not-needed: ordinary/Cut/Surf pathing owns that case.
+func currentLocalStrengthPlan(m *emu.Emu, romData []byte, h rom.MapHeader, dest Destination) (world.PushPlan, bool, error) {
+	if h.ID != dest.Map || m.Peek8(sym.CurMap) != dest.Map {
+		return world.PushPlan{}, false, nil
+	}
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	if mem.U8(sym.WalkBikeSurfState) == fieldSurfingState || len(state.DecodeBoulders(&mem)) == 0 {
+		return world.PushPlan{}, false, nil
+	}
+	puzzle, _, err := currentBoulderPuzzle(m, romData, localStrengthPuzzleSpec(m, h, dest))
+	if err != nil {
+		return world.PushPlan{}, false, err
+	}
+	plan, err := world.PlanPushPuzzle(puzzle)
+	if err != nil {
+		if errors.Is(err, world.ErrPushPuzzleNoSolution) {
+			return world.PushPlan{}, false, nil
+		}
+		return world.PushPlan{}, false, err
+	}
+	return plan, len(plan.Pushes) > 0, nil
+}
+
+// solveLocalStrengthPath repairs the Strength carrier only after the push
+// solver has proved a boulder must move. Current-party compatible Pokémon are
+// auto-taught by UseFieldMove. With a Travel policy, a missing carrier is
+// repaired through the existing party -> PC -> catch pipeline. If that repair
+// moves the player to another map, moved=true tells GoTo to discard all local
+// geometry and re-plan the original journey from the new live state.
+func solveLocalStrengthPath(m *emu.Emu, romData []byte, policy MovePolicy, h rom.MapHeader, dest Destination) (moved bool, err error) {
+	_, needed, err := currentLocalStrengthPlan(m, romData, h, dest)
+	if err != nil || !needed {
+		return false, err
+	}
+
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	capability := FieldCapabilityFor(&mem, FieldStrength)
+	if !capability.Usable && !CanPrepareFieldMove(romData, &mem, FieldStrength) {
+		if !capability.BadgeOwned || !capability.HMOwned {
+			return false, missingFieldRosterPrerequisite(capability)
+		}
+		if policy == nil {
+			return false, fmt.Errorf("%w: Strength route needs a compatible current-party carrier; Travel can repair from PC/catch", ErrFieldMovePrerequisite)
+		}
+		beforeMap := m.Peek8(sym.CurMap)
+		if err := RepairFieldCapabilities(m, romData, policy, []FieldMove{FieldStrength}); err != nil {
+			return false, fmt.Errorf("skill: GoTo: repair Strength carrier for boulder route: %w", err)
+		}
+		if m.Peek8(sym.CurMap) != beforeMap {
+			return true, nil
+		}
+	}
+
+	spec := localStrengthPuzzleSpec(m, h, dest)
+	// Generic navigation must not consume battles/dialogue internally. A nil
+	// solver policy bubbles those interruptions back to Travel, preserving its
+	// engagement budgets and ownership contract; policy above is used only for
+	// deliberate roster repair.
+	if _, err := SolveBoulderPuzzle(m, romData, nil, spec); err != nil {
+		return false, fmt.Errorf("skill: GoTo: solve local Strength route on map %02x: %w", h.ID, err)
+	}
+	return false, nil
+}
+
+func SolveBoulderPuzzle(m *emu.Emu, romData []byte, policy MovePolicy, spec BoulderPuzzleSpec) (BoulderPuzzleResult, error) {
 	if err := validateBoulderPuzzleSpec(spec); err != nil {
 		return BoulderPuzzleResult{}, err
 	}

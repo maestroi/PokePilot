@@ -265,11 +265,19 @@ func fieldPathReachableOnCurrentMap(m *emu.Emu, romData []byte, h rom.MapHeader,
 	switch {
 	case err == nil:
 		return true, nil
-	case errors.Is(err, world.ErrNoPath):
-		return false, nil
-	default:
+	case !errors.Is(err, world.ErrNoPath):
 		return false, err
 	}
+
+	// Ordinary/Cut/Surf geometry is disconnected. Before allowing the map
+	// router to leave and re-enter, ask whether live Strength boulders can open
+	// a direct route to this same destination. Capability repair/execution is
+	// deliberately deferred to walkWithinMap; this probe is geometry-only.
+	_, needsStrength, strengthErr := currentLocalStrengthPlan(m, romData, h, dest)
+	if strengthErr != nil {
+		return false, strengthErr
+	}
+	return needsStrength, nil
 }
 
 func firstFieldAction(plan []fieldPathStep) (prefix []world.Step, action *fieldPathStep) {
