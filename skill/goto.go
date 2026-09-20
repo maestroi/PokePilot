@@ -50,6 +50,10 @@ var errLocalNavigationWorldChanged = errors.New("skill: local navigation world c
 const (
 	maxNavigationTransitions        = 64
 	maxSemanticTransitionExecutions = 16
+	// maxFieldExitOpenings bounds sealed-pocket Cut/Surf recoveries that run
+	// before component routing can see a land exit. Each success must change
+	// live topology; a stuck pocket therefore cannot burn the journey forever.
+	maxFieldExitOpenings = 8
 )
 
 type navigationState struct {
@@ -512,6 +516,7 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 	replans := nav.replans
 	defer func() { nav.replans = replans }()
 	semanticExecutions := 0
+	fieldExitOpenings := 0
 	routeGraph := g
 	if nav.routeGraph != nil {
 		// Resume with topology observed earlier in this journey (other maps'
@@ -682,6 +687,26 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 			route, err = retry, retryErr
 		}
 		if err != nil {
+			// Sealed Cut/Surf pocket on the current map: component routing sees
+			// no land exit toward dest, and leave-and-return through a pivot
+			// cannot relaxLanding onto an already-occupied map (Celadon and
+			// Vermilion gym yards). Open one destination-progressing field-path
+			// exit, then rebuild live topology and re-plan.
+			if errors.Is(err, world.ErrNoRoute) && cur != dest.Map {
+				opened, openErr := openFieldPathTowardDestination(m, romData, routeGraph, dest)
+				if openErr != nil {
+					return fmt.Errorf("skill: GoTo: field-path exit toward map %02x at (%d,%d) from map %02x at (%d,%d): %w",
+						dest.Map, dest.X, dest.Y, cur, x, y, openErr)
+				}
+				if opened {
+					fieldExitOpenings++
+					if fieldExitOpenings > maxFieldExitOpenings {
+						return fmt.Errorf("skill: GoTo: field-path exit budget exhausted (%d) from map %02x at (%d,%d) toward map %02x at (%d,%d): %w",
+							maxFieldExitOpenings, cur, x, y, dest.Map, dest.X, dest.Y, err)
+					}
+					continue
+				}
+			}
 			if routeFailureIsSpuriousCapabilityGate(err, len(failed) > 0) {
 				return newReplanExhaustedError(replans, cur, x, y, dest, err)
 			}
