@@ -72,7 +72,7 @@ func TestRunOneFlushesSettledHeartbeatBeforeFinish(t *testing.T) {
 		t.Fatal("runOne is missing the settled-state heartbeat refresh")
 	}
 	tail := text[anchor:]
-	refresh := strings.Index(tail, "sampleHeartbeat(m, spec.RunID, snap, mem, addrs, trail)")
+	refresh := strings.Index(tail, "sampleHeartbeat(m, profile, spec.RunID, snap, mem, addrs, trail)")
 	join := strings.Index(tail, "<-hbDone")
 	flush := strings.Index(tail, "sendFinalHeartbeat(client, snap.load())")
 	finish := strings.Index(tail, "finishRunWithRecording(m, client, spec")
