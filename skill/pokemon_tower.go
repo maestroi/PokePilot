@@ -265,8 +265,8 @@ func receivePokeFlute(m *emu.Emu, romData []byte, policy MovePolicy) error {
 }
 
 // leaveRocketHideoutForTower bridges the exact post-#31 checkpoint to the
-// ordinary map graph. B2F/B3F use their measured spinner transition tables;
-// B4F uses the live-open boss door because the immutable ROM collision still
+// ordinary map graph. B2F/B3F use ordinary Traverse; the shared local planner
+// consumes Red's forced-movement edges. B4F uses the live-open boss door because the immutable ROM collision still
 // contains the closed block after the guards have opened it in RAM.
 func leaveRocketHideoutForTower(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	for {
@@ -283,16 +283,14 @@ func leaveRocketHideoutForTower(m *emu.Emu, romData []byte, policy MovePolicy) e
 				return fmt.Errorf("B4F -> B3F: %w", err)
 			}
 		case rocketHideoutB3FMap:
-			if err := travelRocketWarp(m, policy, func() error {
-				return walkRocketSpinnerWarp(m, romData, rocketHideoutB3FMap, rocketHideoutB2FMap, 25, 6)
-			}); err != nil {
-				return fmt.Errorf("B3F spinner -> B2F: %w", err)
+			edge := world.Edge{Kind: world.EdgeWarp, From: rocketHideoutB3FMap, To: rocketHideoutB2FMap, WarpX: 25, WarpY: 6}
+			if err := travelRocketWarp(m, policy, func() error { return Traverse(m, romData, edge) }); err != nil {
+				return fmt.Errorf("B3F forced-movement floor -> B2F: %w", err)
 			}
 		case rocketHideoutB2FMap:
-			if err := travelRocketWarp(m, policy, func() error {
-				return walkRocketSpinnerWarp(m, romData, rocketHideoutB2FMap, rocketHideoutB1FMap, 27, 8)
-			}); err != nil {
-				return fmt.Errorf("B2F spinner -> B1F: %w", err)
+			edge := world.Edge{Kind: world.EdgeWarp, From: rocketHideoutB2FMap, To: rocketHideoutB1FMap, WarpX: 27, WarpY: 8}
+			if err := travelRocketWarp(m, policy, func() error { return Traverse(m, romData, edge) }); err != nil {
+				return fmt.Errorf("B2F forced-movement floor -> B1F: %w", err)
 			}
 		case rocketHideoutB1FMap:
 			edge := world.Edge{Kind: world.EdgeWarp, From: rocketHideoutB1FMap, To: gameCornerMap, WarpX: 21, WarpY: 2}

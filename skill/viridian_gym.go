@@ -4,10 +4,8 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
-	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
-	"github.com/maestroi/pokepilot/world"
 )
 
 const (
@@ -22,25 +20,6 @@ const (
 	viridianGymTravelBattles = 60
 	viridianGymOpenBudget    = 1200
 )
-
-// ViridianGymArrowTilePlayerMovement in pokered/scripts/ViridianGym.asm is
-// authoritative for these transitions. Each entry tile starts a simulated
-// joypad run; navigation therefore treats the whole forced run as one graph
-// edge, exactly like Rocket Hideout's spinner-aware motor.
-var viridianGymSpins = map[rocketPoint]rocketPoint{
-	{19, 11}: {19, 2},
-	{19, 1}:  {11, 1},
-	{18, 2}:  {18, 11},
-	{11, 2}:  {17, 2},
-	{16, 10}: {16, 12},
-	{4, 6}:   {4, 13},
-	{5, 13}:  {13, 13},
-	{4, 14}:  {13, 14},
-	{0, 15}:  {0, 7},
-	{1, 15}:  {1, 9},
-	{13, 16}: {7, 16},
-	{13, 17}: {1, 17},
-}
 
 var giovanniGym = GymInfo{
 	Map:     viridianGymMap,
@@ -87,64 +66,6 @@ func EnterViridianGym(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		return fmt.Errorf("skill: EnterViridianGym: stopped on map %#04x", m.Peek8(sym.CurMap))
 	}
 	return nil
-}
-
-// walkViridianGymToLeader reuses the tested Rocket Hideout spinner planner,
-// but changes the goal from "beside a warp" to "beside Giovanni". Ordinary
-// steps and forced arrow entries are planned together from the live position;
-// trainer sprites are blockers and trainer battles are surfaced to travel's
-// normal battle/replan loop.
-func walkViridianGymToLeader(m *emu.Emu, romData []byte) error {
-	if m.Peek8(sym.CurMap) != viridianGymMap {
-		return fmt.Errorf("skill: ViridianGym: spinner route on map %#04x, want %#04x", m.Peek8(sym.CurMap), viridianGymMap)
-	}
-	h, err := rom.ParseMap(romData, viridianGymMap)
-	if err != nil {
-		return err
-	}
-	grid, err := world.Build(romData, h)
-	if err != nil {
-		return err
-	}
-
-	blocked := spriteBlockers(m)
-	sx, sy := playerXY(m)
-	actions, err := planRocketSpinner(
-		grid.Width, grid.Height, grid.Walkable,
-		int(sx), int(sy), int(viridianGymLeaderX), int(viridianGymLeaderY),
-		viridianGymSpins, blocked,
-	)
-	if err != nil {
-		return fmt.Errorf("skill: ViridianGym: plan spinner route to Giovanni: %w", err)
-	}
-	for _, action := range actions {
-		if err := executeRocketSpinAction(m, viridianGymMap, action); err != nil {
-			return err
-		}
-	}
-
-	x, y := playerXY(m)
-	dx := int(x) - int(viridianGymLeaderX)
-	if dx < 0 {
-		dx = -dx
-	}
-	dy := int(y) - int(viridianGymLeaderY)
-	if dy < 0 {
-		dy = -dy
-	}
-	if dx+dy != 1 {
-		return fmt.Errorf("skill: ViridianGym: spinner route ended at (%d,%d), not beside Giovanni", x, y)
-	}
-	return nil
-}
-
-func travelViridianGymToLeader(m *emu.Emu, romData []byte, policy MovePolicy) (TravelResult, error) {
-	return travel(m, policy, viridianGymTravelBattles,
-		func() error { return walkViridianGymToLeader(m, romData) },
-		func() DialogueRecoveryResult { return RecoverDialogue(m, dialogueRecoveryBudget) },
-		func() bool { return m.Peek8(sym.StatusFlags4)&blackoutBit != 0 },
-		fightOnly(m, policy),
-	)
 }
 
 // ViridianProgression is issue #36's resumable executor. Returning to Viridian
