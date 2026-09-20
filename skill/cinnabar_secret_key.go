@@ -176,7 +176,10 @@ func reachMansionBasement(m *emu.Emu, romData []byte, policy MovePolicy) error {
 }
 
 func ensureMansionWarpReachable(m *emu.Emu, romData []byte, edge world.Edge, sw mansionSwitchSpec, policy MovePolicy) error {
-	if mansionTileReachable(m, romData, edge.WarpX, edge.WarpY) {
+	goalReachable := func() bool {
+		return mansionTileReachable(m, romData, edge.WarpX, edge.WarpY)
+	}
+	if goalReachable() {
 		return nil
 	}
 	if m.Peek8(sym.CurMap) != sw.Map {
@@ -185,11 +188,30 @@ func ensureMansionWarpReachable(m *emu.Emu, romData []byte, edge world.Edge, sw 
 	if !mansionTileReachable(m, romData, sw.StandX, sw.StandY) {
 		return fmt.Errorf("neither warp (%d,%d) nor switch stand (%d,%d) is reachable on map %#04x", edge.WarpX, edge.WarpY, sw.StandX, sw.StandY, sw.Map)
 	}
-	if err := setMansionSwitch(m, romData, sw, !currentMansionSwitchOn(m), policy); err != nil {
+
+	want := !currentMansionSwitchOn(m)
+	_, err := executeTopologyInteraction(m, romData, policy, topologyInteraction{
+		Name:          fmt.Sprintf("Mansion switch %02x(%d,%d)", sw.Map, sw.TargetX, sw.TargetY),
+		Approach:      Destination{Map: sw.Map, X: sw.StandX, Y: sw.StandY},
+		TargetX:       sw.TargetX,
+		TargetY:       sw.TargetY,
+		MaxBattles:    mansionTravelBattles,
+		Budget:        mansionSwitchDriveBudget,
+		RouteGoal:     fmt.Sprintf("Mansion warp (%d,%d)", edge.WarpX, edge.WarpY),
+		GoalReachable: goalReachable,
+		Complete: func(mem *state.Mem) bool {
+			facts := state.DecodeStoryFacts(mem, state.DecodeInventory(mem))
+			return facts.MansionSwitchOn == want
+		},
+		Interact: func() error {
+			return driveMansionSwitchInteraction(m, sw, want)
+		},
+	})
+	if err != nil {
 		return err
 	}
-	if !mansionTileReachable(m, romData, edge.WarpX, edge.WarpY) {
-		return fmt.Errorf("warp (%d,%d) remains unreachable after toggling Mansion switch", edge.WarpX, edge.WarpY)
+	if !goalReachable() {
+		return fmt.Errorf("warp (%d,%d) remains unreachable after verified Mansion switch action", edge.WarpX, edge.WarpY)
 	}
 	return nil
 }
@@ -357,9 +379,15 @@ func setMansionSwitch(m *emu.Emu, romData []byte, sw mansionSwitchSpec, want boo
 	if err := Face(m, sw.TargetX, sw.TargetY); err != nil {
 		return fmt.Errorf("face Mansion switch (%d,%d): %w", sw.TargetX, sw.TargetY, err)
 	}
+	return driveMansionSwitchInteraction(m, sw, want)
+}
+
+func driveMansionSwitchInteraction(m *emu.Emu, sw mansionSwitchSpec, want bool) error {
 	if px, py := playerXY(m); px != sw.StandX || py != sw.StandY {
-		return fmt.Errorf("facing Mansion switch moved player off required stand to (%d,%d)", px, py)
+		return fmt.Errorf("Mansion switch (%d,%d) requires stand (%d,%d), at (%d,%d)",
+			sw.TargetX, sw.TargetY, sw.StandX, sw.StandY, px, py)
 	}
+
 	m.Tap(emu.A, 3, 7)
 	answered := false
 	for frame := 0; frame < mansionSwitchDriveBudget; frame++ {
