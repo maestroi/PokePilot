@@ -1,0 +1,97 @@
+package world
+
+import (
+	"os"
+	"testing"
+
+	"github.com/maestroi/pokepilot/red/rom"
+)
+
+// Teleporter pads are walkable floor bytes, but stepping on one leaves the
+// map. Component flood-fill must not treat them as ordinary corridors, or
+// rooms that are only joined by a pad (Silph Co 5F's Card Key hallway across
+// (9,15)) collapse into one component and GoTo never leave/re-enters.
+//
+// Pristine ROM collision alone still connects the stair landing to the Card
+// Key through the Rocket's home tile; overlaying still-present stay objects
+// marks that tile occupied. Together, warp punching + object overlay make
+// leave/re-enter the honest route.
+func TestSilphCo5FWarpPadSplitsCardKeyComponent(t *testing.T) {
+	romPath := os.Getenv("POKEMON_RED_ROM")
+	if romPath == "" {
+		t.Skip("POKEMON_RED_ROM not set")
+	}
+	romData, err := os.ReadFile(romPath)
+	if err != nil {
+		t.Fatalf("read ROM: %v", err)
+	}
+	g, err := BuildGraph(romData)
+	if err != nil {
+		t.Fatalf("BuildGraph: %v", err)
+	}
+	const silph5F uint8 = 0xd2
+	h, err := rom.ParseMap(romData, silph5F)
+	if err != nil {
+		t.Fatalf("ParseMap: %v", err)
+	}
+	grid, err := Build(romData, h)
+	if err != nil {
+		t.Fatalf("Build grid: %v", err)
+	}
+	for _, o := range h.Objects {
+		if o.Movement == rom.MovementStay {
+			grid.Set(int(o.X), int(o.Y), false)
+		}
+	}
+	g2, err := g.WithMapGrid(silph5F, grid)
+	if err != nil {
+		t.Fatalf("WithMapGrid: %v", err)
+	}
+	comps := g2.comps[silph5F]
+	start := comps[1][26]
+	cardKeyApproach := comps[16][20]
+	if start == 0 || cardKeyApproach == 0 {
+		t.Fatalf("missing components: stair landing=%d card-key approach=%d", start, cardKeyApproach)
+	}
+	if start == cardKeyApproach {
+		t.Fatalf("stair landing (26,1) and Card Key approach (20,16) share component %d after warp+object overlay", start)
+	}
+
+	route, err := FindRouteAtDestination(g2, silph5F, silph5F, 26, 1, 20, 16, nil)
+	if err != nil {
+		t.Fatalf("FindRouteAtDestination: %v", err)
+	}
+	if len(route) < 2 {
+		t.Fatalf("route = %+v, want a leave/re-enter cycle through another floor", route)
+	}
+	if route[0].From != silph5F || route[0].To == silph5F {
+		t.Fatalf("first hop = %+v, want leave Silph Co 5F", route[0])
+	}
+	last := route[len(route)-1]
+	if last.To != silph5F {
+		t.Fatalf("last hop = %+v, want re-enter Silph Co 5F", last)
+	}
+}
+
+func TestComponentsWithBlockedTreatsWarpAsNonCorridor(t *testing.T) {
+	// Two open cells joined only through a center "pad".
+	g := &Grid{
+		Width:    3,
+		Height:   1,
+		walkable: []bool{true, true, true},
+	}
+	if c := components(g); c[0][0] != c[0][2] {
+		t.Fatalf("open corridor components = %v, want one region", c[0])
+	}
+	blocked := map[[2]int]bool{[2]int{1, 0}: true}
+	c := componentsWithBlocked(g, blocked)
+	if c[0][0] == 0 || c[0][2] == 0 {
+		t.Fatalf("blocked-center components = %v, want both sides labeled", c[0])
+	}
+	if c[0][0] == c[0][2] {
+		t.Fatalf("warp-blocked center still merged sides into component %d", c[0][0])
+	}
+	if c[0][1] != 0 {
+		t.Fatalf("blocked pad itself got component %d, want 0", c[0][1])
+	}
+}

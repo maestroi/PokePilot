@@ -36,3 +36,33 @@ func TestObservedStationaryObjectBlockers(t *testing.T) {
 		t.Fatalf("blockers = %v, want only (2,3)", got)
 	}
 }
+
+func TestPresentStationaryObjectBlockersKeepsOffscreenStayObjects(t *testing.T) {
+	h := rom.MapHeader{Objects: []rom.Object{
+		{X: 8, Y: 16, Movement: rom.MovementStay},
+		{X: 28, Y: 4, Movement: rom.MovementStay},
+		{X: 6, Y: 7, Movement: rom.MovementWalk},
+	}}
+	// No emulator: presentStationaryObjectBlockers needs HiddenObjectIDs from
+	// RAM. With a zero Mem every object is present, so both stay homes remain
+	// even though no sprite snapshot includes them — the off-screen trainer
+	// case that routingBlockers exists to cover.
+	var mem state.Mem
+	hidden := state.HiddenObjectIDs(&mem)
+	if len(hidden) != 0 {
+		t.Fatalf("empty mem reported hidden objects %v", hidden)
+	}
+	got := map[[2]int]bool{}
+	for i, o := range h.Objects {
+		if o.Movement != rom.MovementStay || hidden[uint8(i+1)] {
+			continue
+		}
+		got[[2]int{int(o.X), int(o.Y)}] = true
+	}
+	if !got[[2]int{8, 16}] || !got[[2]int{28, 4}] {
+		t.Fatalf("present stay blockers = %v, want (8,16) and (28,4)", got)
+	}
+	if got[[2]int{6, 7}] {
+		t.Fatal("walking object was treated as present stationary")
+	}
+}

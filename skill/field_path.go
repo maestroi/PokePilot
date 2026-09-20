@@ -294,17 +294,21 @@ func currentFieldPathPlan(m *emu.Emu, romData []byte, h rom.MapHeader, dest Dest
 }
 
 // fieldPathReachableOnCurrentMap is a geometry probe used before component
-// routing. It ignores transient moving sprites but keeps stationary observed
-// blockers and unrelated warps out of the route. A positive result means GoTo
-// should stay on this map and let walkWithinMap execute the field actions
-// directly; a negative result leaves the existing leave/re-enter component
-// routing behavior untouched.
+// routing. It uses routingBlockers + warpAvoidance: still-present stationary
+// objects (including off-screen trainers) and the live sprite snapshot, with
+// unrelated warp pads kept out of the walk. Using only on-screen observed
+// stationary blockers falsely reports reachability through off-screen
+// trainers and teleporter pads (Silph Co 5F Card Key), which then traps
+// walkWithinMap in a sprite-fallback oscillation. A positive result means
+// GoTo should stay on this map and let walkWithinMap execute the field
+// actions directly; a negative result leaves the existing leave/re-enter
+// component routing behavior untouched.
 func fieldPathReachableOnCurrentMap(m *emu.Emu, romData []byte, h rom.MapHeader, dest Destination) (bool, error) {
 	if m.Peek8(sym.CurMap) != dest.Map {
 		return false, nil
 	}
 	sx, sy := playerXY(m)
-	blocked := currentObservedStationaryObjectBlockers(m, h)
+	blocked := routingBlockers(m, h)
 	blocked = warpAvoidance(h, int(sx), int(sy), blocked)
 	_, err := currentFieldPathPlan(m, romData, h, dest, blocked)
 	switch {

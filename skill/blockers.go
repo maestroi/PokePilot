@@ -68,6 +68,35 @@ func observedStationaryObjectBlockers(h rom.MapHeader, live []state.SpriteState)
 	return blocked
 }
 
+// presentStationaryObjectBlockers returns MovementStay home tiles that are
+// still present on the map: not listed in the missable/hidden object set.
+// Unlike observedStationaryObjectBlockers (sprite-RAM only, so off-screen
+// objects vanish) and stationaryObjectBlockers (every ROM stay object,
+// including already-collected balls), this is the topology set GoTo should
+// overlay: undefeated trainers and remaining items split components even when
+// they are outside the current sprite window (Silph Co 5F Card Key corridor).
+func presentStationaryObjectBlockers(m *emu.Emu, h rom.MapHeader) map[[2]int]bool {
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	hidden := state.HiddenObjectIDs(&mem)
+	blocked := map[[2]int]bool{}
+	for i, o := range h.Objects {
+		if o.Movement != rom.MovementStay || hidden[uint8(i+1)] {
+			continue
+		}
+		blocked[[2]int{int(o.X), int(o.Y)}] = true
+	}
+	return blocked
+}
+
+// routingBlockers is the preferred same-map topology/path set: every still-
+// present stationary object plus the live sprite snapshot. Off-screen
+// trainers stay in the set so component routing can leave and re-enter
+// instead of planning a walk through their tile.
+func routingBlockers(m *emu.Emu, h rom.MapHeader) map[[2]int]bool {
+	return mergeBlockers(spriteBlockers(m), presentStationaryObjectBlockers(m, h))
+}
+
 func currentObservedStationaryObjectBlockers(m *emu.Emu, h rom.MapHeader) map[[2]int]bool {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
