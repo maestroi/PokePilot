@@ -360,7 +360,11 @@ func solveLocalStrengthPath(m *emu.Emu, romData []byte, policy MovePolicy, h rom
 	}
 
 	spec := localStrengthPuzzleSpec(m, h, dest)
-	if _, err := SolveBoulderPuzzle(m, romData, policy, spec); err != nil {
+	// Generic navigation must not consume battles/dialogue internally. A nil
+	// solver policy bubbles those interruptions back to Travel, preserving its
+	// engagement budgets and ownership contract; policy above is used only for
+	// deliberate roster repair.
+	if _, err := SolveBoulderPuzzle(m, romData, nil, spec); err != nil {
 		return false, fmt.Errorf("skill: GoTo: solve local Strength route on map %02x: %w", h.ID, err)
 	}
 	return false, nil
