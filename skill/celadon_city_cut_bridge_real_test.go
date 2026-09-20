@@ -11,8 +11,8 @@ import (
 // Celadon gym-yard / south-street Cut pocket can still GoTo the Pokemon Center.
 // After #1356 removed the blind Celadon Gym Cut executor, cross-map GoTo died
 // on world.ErrNoRoute even though same-map field pathing could open the street
-// toward the Center door (run-18zw4xby92x603chema3m8j2cm, catch blocked
-// no_route / triage 08f773ea8ca70f4f).
+// toward the Center door (run-18zw4xby92x603chema3m8j2cm / triage 08f773ea8ca70f4f
+// and run-jjzpcm0bpqco24ijjvh3vm93q / triage ab11fbcf89382c39).
 //
 // POKEPILOT_CELADON_CITY_CUT_BRIDGE_STATE should be a controllable CGB state on
 // CELADON_CITY inside the Cut-sealed pocket with usable Cut — for example the
