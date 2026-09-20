@@ -36,6 +36,9 @@ const (
 	celadonInaccessibleMartWarpX uint8 = 39
 	celadonInaccessibleMartWarpY uint8 = 19
 
+	silphCo1FInaccessibleStairWarpX uint8 = 16
+	silphCo1FInaccessibleStairWarpY uint8 = 10
+
 	route23VictoryRoadWarpX     uint8 = 4
 	route23VictoryRoadWarpY     uint8 = 31
 	route23VictoryRoadApproachY uint8 = 32
@@ -109,6 +112,17 @@ func redAuditedRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, 
 		// removes only this source edge while preserving the real way to 5F via
 		// the department-store entrance, stairs/elevator, and all raw warp ids.
 		return bikeGate("red:celadon_inaccessible_mart_warp", capCanUseInaccessibleWarp)
+
+	case edge.Kind == world.EdgeWarp && edge.From == silphCo1FMap && edge.To == silphCo3FMap &&
+		edge.WarpX == silphCo1FInaccessibleStairWarpX && edge.WarpY == silphCo1FInaccessibleStairWarpY:
+		// pokered/data/maps/objects/SilphCo1F.asm declares this warp but
+		// annotates it "; inaccessible", the same leftover-ROM-data pattern as
+		// the Celadon Mart 5F warp above. Static collision leaves a walkable
+		// room beside the coordinate, so the generic graph mistakes it for a
+		// working stairway to 3F and Traverse spends its whole budget bouncing
+		// off a warp the real game never lets fire. Gate only this source
+		// edge; the real way to 3F stays open via the elevator and 2F stairs.
+		return bikeGate("red:silph_co_1f_inaccessible_stair_warp", capCanUseInaccessibleWarp)
 
 	case edge.Kind == world.EdgeWarp && edge.From == route16Map && edge.To == route16Gate1FMap &&
 		edge.WarpX == 24 && (edge.WarpY == 10 || edge.WarpY == 11):
