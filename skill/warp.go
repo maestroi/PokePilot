@@ -126,6 +126,7 @@ func Traverse(m *emu.Emu, romData []byte, e world.Edge) error {
 	// warpTarget hand back the next one instead of failing the whole edge.
 	excludeWarp := map[[2]int]bool{}
 	var lastErr error
+	fieldApproachTried := false
 	for candidate := 0; candidate < maxWarpCandidates; candidate++ {
 		var unwalkable error
 		var wx, wy int
@@ -150,6 +151,21 @@ func Traverse(m *emu.Emu, romData []byte, e world.Edge) error {
 			func() { m.StepFrames(npcWaitFrames) })
 		if err != nil {
 			if err == unwalkable {
+				// Land-only FindPath still treats Cut trees as solid. Local
+				// field pathing already owns those trees for same-map walks;
+				// warp approaches must use the same destination-aware planner
+				// instead of failing a sealed pocket (Celadon Gym's leader
+				// chamber after #1327 removed post-failure nearest-tree cuts).
+				if !fieldApproachTried {
+					fieldApproachTried = true
+					if aperr := approachWarpWithFieldPath(m, romData, e); aperr == nil {
+						if g, gerr := liveMapGrid(m, romData, h); gerr == nil {
+							grid = g
+						}
+						candidate--
+						continue
+					}
+				}
 				if lastErr != nil {
 					return lastErr
 				}
@@ -466,7 +482,12 @@ func warpAvoidance(h rom.MapHeader, sx, sy int, blocked map[[2]int]bool) map[[2]
 // A 0xFF (LAST_MAP) destination means "the map you came from." The graph
 // resolved it when it built e: if e's own tile is a 0xFF warp, every 0xFF
 // warp on this map resolves to e.To, so all of them lead to the target.
-func warpTarget(h rom.MapHeader, e world.Edge, g *world.Grid, sx, sy int, blocked map[[2]int]bool, excludeWarp map[[2]int]bool, romData []byte) (wx, wy int, steps []world.Step, push world.Step, err error) {
+
+// edgeWarpCandidates lists the door/ladder tiles on h that Traverse may use
+// for edge e. The filters match warpTarget: elevator scripts rewrite live
+// destinations, paired door tiles may share adjacent landings, and LAST_MAP
+// (0xFF) warps resolve to e.To when the edge tile itself is a LAST_MAP warp.
+func edgeWarpCandidates(h rom.MapHeader, e world.Edge, romData []byte) []rom.Warp {
 	lastMapDest, haveLastMap := uint8(0), false
 	var targetWarp uint8
 	haveTarget := false
@@ -478,29 +499,16 @@ func warpTarget(h rom.MapHeader, e world.Edge, g *world.Grid, sx, sy int, blocke
 			lastMapDest, haveLastMap = e.To, true
 		}
 	}
-	warpTile := make(map[[2]int]bool, len(h.Warps))
-	for _, w := range h.Warps {
-		warpTile[[2]int{int(w.X), int(w.Y)}] = true
-	}
-	approachBlocked := warpAvoidance(h, sx, sy, blocked)
 
 	_, _, _, elevatorEdge := rom.ElevatorFloorForDestination(e.From, e.To)
 	var candidates []rom.Warp
 	destHeader, destErr := rom.ParseMap(romData, e.To)
 	for _, w := range h.Warps {
-		// Elevator scripts rewrite every door's live destination after the
-		// floor choice, so their immutable ROM DestMap/DestWarpID values are
-		// not candidate filters. prepareElevatorEdge positively verified the
-		// live table before this point.
 		if elevatorEdge {
 			candidates = append(candidates, w)
 			continue
 		}
-		// Equal destination maps do not make ladders interchangeable: their
-		// landing warps can be in disconnected rooms on the same floor.
 		equivalent := w.DestWarpID == targetWarp
-		// Paired door tiles can name adjacent landing tiles. Preserve this
-		// measured door equivalence, but never substitute a remote ladder.
 		if !equivalent && destErr == nil && int(targetWarp) < len(destHeader.Warps) && int(w.DestWarpID) < len(destHeader.Warps) {
 			a, b := destHeader.Warps[targetWarp], destHeader.Warps[w.DestWarpID]
 			equivalent = absInt(int(w.X)-int(e.WarpX))+absInt(int(w.Y)-int(e.WarpY)) == 1 && absInt(int(a.X)-int(b.X))+absInt(int(a.Y)-int(b.Y)) == 1
@@ -519,6 +527,77 @@ func warpTarget(h rom.MapHeader, e world.Edge, g *world.Grid, sx, sy int, blocke
 			candidates = append(candidates, w)
 		}
 	}
+	return candidates
+}
+
+// approachWarpWithFieldPath walks to an orthogonal neighbour of a warp that
+// leads across e, using the same Cut/Surf local planner as walkWithinMap.
+// Land-only FindPath still treats Cut trees as solid, so a sealed pocket
+// (Celadon Gym's leader chamber) has no ordinary route to the door even when
+// the party can legally Cut out. This is destination-aware: it ranks approach
+// tiles by field-action cost and never cuts an arbitrary nearby tree.
+func approachWarpWithFieldPath(m *emu.Emu, romData []byte, e world.Edge) error {
+	if e.Kind != world.EdgeWarp {
+		return world.ErrNoPath
+	}
+	if got := m.Peek8(sym.CurMap); got != e.From {
+		return fmt.Errorf("skill: field-path warp approach on map %02x, edge starts on %02x", got, e.From)
+	}
+	h, err := rom.ParseMap(romData, e.From)
+	if err != nil {
+		return err
+	}
+	candidates := edgeWarpCandidates(h, e, romData)
+	if len(candidates) == 0 {
+		return world.ErrNoPath
+	}
+
+	sx, sy := playerXY(m)
+	blocked := spriteBlockers(m)
+	blocked = warpAvoidance(h, int(sx), int(sy), blocked)
+
+	type rankedApproach struct {
+		dest    Destination
+		actions int
+		moves   int
+	}
+	var best *rankedApproach
+	for _, w := range candidates {
+		for _, step := range []world.Step{world.StepUp, world.StepDown, world.StepLeft, world.StepRight} {
+			ax, ay := int(w.X)+step.DX, int(w.Y)+step.DY
+			if ax < 0 || ay < 0 || ax > 255 || ay > 255 {
+				continue
+			}
+			dest := Destination{Map: e.From, X: uint8(ax), Y: uint8(ay)}
+			plan, perr := currentFieldPathPlan(m, romData, h, dest, blocked)
+			if perr != nil {
+				continue
+			}
+			actions := 0
+			for _, p := range plan {
+				if p.Action != fieldPathWalk {
+					actions++
+				}
+			}
+			cand := rankedApproach{dest: dest, actions: actions, moves: len(plan)}
+			if best == nil || cand.actions < best.actions || (cand.actions == best.actions && cand.moves < best.moves) {
+				best = &cand
+			}
+		}
+	}
+	if best == nil {
+		return world.ErrNoPath
+	}
+	return walkWithinMap(m, romData, best.dest)
+}
+
+func warpTarget(h rom.MapHeader, e world.Edge, g *world.Grid, sx, sy int, blocked map[[2]int]bool, excludeWarp map[[2]int]bool, romData []byte) (wx, wy int, steps []world.Step, push world.Step, err error) {
+	warpTile := make(map[[2]int]bool, len(h.Warps))
+	for _, w := range h.Warps {
+		warpTile[[2]int{int(w.X), int(w.Y)}] = true
+	}
+	approachBlocked := warpAvoidance(h, sx, sy, blocked)
+	candidates := edgeWarpCandidates(h, e, romData)
 
 	// The player may already be standing on one of this destination's warp
 	// tiles: a resumed checkpoint whose previous leg warped in and landed
