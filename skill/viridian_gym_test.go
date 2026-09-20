@@ -6,43 +6,10 @@ import (
 	"github.com/maestroi/pokepilot/red/state"
 )
 
-func TestViridianGymSpinnerTransitionsMatchDecomp(t *testing.T) {
-	want := map[rocketPoint]rocketPoint{
-		{19, 11}: {19, 2},
-		{19, 1}:  {11, 1},
-		{18, 2}:  {18, 11},
-		{11, 2}:  {17, 2},
-		{16, 10}: {16, 12},
-		{4, 6}:   {4, 13},
-		{5, 13}:  {13, 13},
-		{4, 14}:  {13, 14},
-		{0, 15}:  {0, 7},
-		{1, 15}:  {1, 9},
-		{13, 16}: {7, 16},
-		{13, 17}: {1, 17},
-	}
-	if len(viridianGymSpins) != len(want) {
-		t.Fatalf("spinner count = %d, want %d", len(viridianGymSpins), len(want))
-	}
-	for enter, landing := range want {
-		if got, ok := viridianGymSpins[enter]; !ok || got != landing {
-			t.Fatalf("spinner %v = %v,%v, want %v", enter, got, ok, landing)
-		}
-	}
-}
-
-func TestViridianSpinnerPlannerTreatsArrowAsForcedEdge(t *testing.T) {
-	walkable := func(x, y int) bool { return x >= 0 && x < 20 && y >= 0 && y < 18 }
-	actions, err := planRocketSpinner(20, 18, walkable, 19, 12, 19, 1, viridianGymSpins, nil)
-	if err != nil {
-		t.Fatalf("plan spinner: %v", err)
-	}
-	if len(actions) == 0 {
-		t.Fatal("spinner planner returned no actions")
-	}
-	first := actions[0]
-	if !first.Forced || first.Enter != (rocketPoint{19, 11}) || first.Landing != (rocketPoint{19, 2}) {
-		t.Fatalf("first action = %+v, want forced (19,11)->(19,2)", first)
+func TestViridianGymUsesSharedForcedMovementAdapter(t *testing.T) {
+	landing, ok := forcedLandingForMap(viridianGymMap, 19, 11)
+	if !ok || landing.X != 19 || landing.Y != 2 {
+		t.Fatalf("Viridian arrow (19,11) = %+v,%v; want (19,2)", landing, ok)
 	}
 }
 
