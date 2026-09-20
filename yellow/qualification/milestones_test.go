@@ -20,9 +20,9 @@ func TestCampaignMilestonesAreOrderedAndSemantic(t *testing.T) {
 
 func TestEvaluateStopsAtFirstMissingRequiredMilestone(t *testing.T) {
 	obs := game.ProfileObservation{
-		NativeMapID: 0x26,
+		NativeMapID:  0x26,
 		Controllable: true,
-		Badges: []string{"Boulder", "Cascade", "Thunder"},
+		Badges:       []string{"Boulder", "Cascade", "Thunder"},
 		Story: game.ProgressState{
 			{ID: yellowprofile.ProgressYellowStarterReceived, Complete: true},
 			{ID: yellowprofile.ProgressYellowLabRivalResolved, Complete: true},
@@ -62,10 +62,10 @@ func TestEvaluateCompleteCampaign(t *testing.T) {
 		story = append(story, game.ProgressFact{ID: id, Complete: true})
 	}
 	obs := game.ProfileObservation{
-		NativeMapID: 0x26,
+		NativeMapID:  0x26,
 		Controllable: true,
-		Badges: []string{"1","2","3","4","5","6","7","8"},
-		Story: story,
+		Badges:       []string{"1", "2", "3", "4", "5", "6", "7", "8"},
+		Story:        story,
 	}
 	got := Evaluate(obs)
 	if got.Next != nil || got.Reached != got.Total {
