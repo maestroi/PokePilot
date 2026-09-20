@@ -70,6 +70,31 @@ func countFieldActions(plan []fieldPathStep, action fieldPathAction) int {
 	return n
 }
 
+func TestPlanFieldPathOpensGymCutChamberToDoorApproach(t *testing.T) {
+	// Celadon Gym's leader pocket is a Cut-tree chamber: land-only FindPath
+	// reports no route to the south door even when Cut is usable. Local field
+	// pathing must treat the gym tree tile as a destination-aware Cut step.
+	land := newFakeFieldPathGrid(5, 6)
+	water := newFakeFieldPathGrid(5, 6)
+
+	openCells(land,
+		[2]int{2, 1}, [2]int{2, 2}, // sealed chamber
+		[2]int{2, 4}, [2]int{2, 5}, // corridor to the door approach
+	)
+	for y := 0; y < 6; y++ {
+		openCells(water, [2]int{2, y})
+	}
+	land.fieldTile[[2]int{2, 3}] = gymCutTreeTile
+
+	plan, err := planFieldPath(land, water, gymTileset, 2, 1, 2, 5, nil, true, false, false)
+	if err != nil {
+		t.Fatalf("planFieldPath through gym Cut chamber: %v", err)
+	}
+	if got := countFieldActions(plan, fieldPathCut); got != 1 {
+		t.Fatalf("Cut actions = %d, want 1; plan=%+v", got, plan)
+	}
+}
+
 func TestPlanFieldPathCutsTreeOnSelectedRouteNotNearbyDeadEnd(t *testing.T) {
 	land := newFakeFieldPathGrid(7, 3)
 	water := newFakeFieldPathGrid(7, 3)
