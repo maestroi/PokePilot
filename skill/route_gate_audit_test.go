@@ -67,6 +67,30 @@ func TestCeladonInaccessibleMartWarpIsPermanentGate(t *testing.T) {
 	}
 }
 
+func TestSilphCo1FInaccessibleStairWarpIsPermanentGate(t *testing.T) {
+	edge := world.Edge{
+		Kind:  world.EdgeWarp,
+		From:  silphCo1FMap,
+		To:    silphCo3FMap,
+		WarpX: silphCo1FInaccessibleStairWarpX,
+		WarpY: silphCo1FInaccessibleStairWarpY,
+	}
+	transition := requireTransition(t, edge, "red:silph_co_1f_inaccessible_stair_warp", capCanUseInaccessibleWarp)
+	if !transition.Gate {
+		t.Fatalf("inaccessible Silph Co 1F stair warp was modeled as an executable pivot: %+v", transition)
+	}
+	if caps := redRouteCapabilities(nil, new(state.Mem)); caps.Has(capCanUseInaccessibleWarp) {
+		t.Fatalf("inaccessible warp capability must never be projected: %v", caps)
+	}
+
+	// The real way up remains ordinary topology; only the source warp
+	// explicitly marked inaccessible by the Red decomp is suppressed.
+	elevator := world.Edge{Kind: world.EdgeWarp, From: silphCo1FMap, To: 0xec, WarpX: 20, WarpY: 0}
+	if got, ok := redRouteTransitionForEdge(elevator); ok && got.ID == "red:silph_co_1f_inaccessible_stair_warp" {
+		t.Fatalf("real Silph Co elevator warp was suppressed: %+v", got)
+	}
+}
+
 func TestCyclingRoadModelsOnlyTheBikeCorridor(t *testing.T) {
 	east := requireTransition(t,
 		world.Edge{Kind: world.EdgeWarp, From: route16Map, To: route16Gate1FMap, WarpX: 24, WarpY: 10},
