@@ -58,6 +58,23 @@ func (a *yellowObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, err
 			return result, fmt.Errorf("agent: %s: %w", o, err)
 		}
 		return result, nil
+	case KindGoTo:
+		obs, err := a.Observe()
+		if err != nil {
+			return result, fmt.Errorf("agent: %s: resolve Yellow destination: %w", o, err)
+		}
+		destination, ok := obs.Catalog.destination(o.Place)
+		if !ok {
+			return result, fmt.Errorf("agent: %s: Yellow destination %q is not in the active catalog", o, o.Place)
+		}
+		mapID, ok := yellowNativeMapForLocation(destination.Location)
+		if !ok {
+			return result, fmt.Errorf("agent: %s: Yellow destination location %q has no native map", o, destination.Location)
+		}
+		if err := yellowcontroller.GoTo(a.m, a.romData, mapID, destination.X, destination.Y); err != nil {
+			return result, fmt.Errorf("agent: %s: %w", o, err)
+		}
+		return result, nil
 	default:
 		return result, fmt.Errorf("agent: %s: %w", o, errYellowControllerUnavailable)
 	}
