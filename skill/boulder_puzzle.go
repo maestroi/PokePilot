@@ -34,14 +34,14 @@ const (
 // fact when the map script provides one. HasCompleteEvent distinguishes event
 // index zero from "no event".
 type BoulderPuzzleSpec struct {
-	Map              uint8
-	Targets          []world.Point
-	Reachable        *world.Point
+	Map       uint8
+	Targets   []world.Point
+	Reachable *world.Point
 	// Fixed adds caller-owned non-movable blockers to the live sprite
 	// snapshot. Generic navigation uses this for unrelated warp tiles so a
 	// boulder solution cannot "solve" a route by accidentally stepping into
 	// another map.
-	Fixed             map[[2]int]bool
+	Fixed            map[[2]int]bool
 	TerminalTargets  map[[2]int]bool
 	CompleteEvent    state.Event
 	HasCompleteEvent bool
