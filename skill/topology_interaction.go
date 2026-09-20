@@ -8,24 +8,53 @@ import (
 	"github.com/maestroi/pokepilot/red/sym"
 )
 
-// topologyInteraction is a verified route mutation selected by story-specific
-// code. Navigation owns the common transaction, but never invents interactions:
-// callers provide the exact approach, target, action, and durable RAM fact.
+// topologyInteraction is a verified topology mutation selected by
+// story-specific code. Navigation owns the common transaction, but never
+// invents interactions: callers provide the exact approach, target, legal
+// action, durable RAM fact, and (for route actions) the reachability goal.
+//
+// GoalReachable is what makes an interaction route-scoped rather than merely a
+// scripted story action. When present, the executor refuses to press A if that
+// exact goal is already reachable, and after the durable state change it
+// verifies the goal became reachable before reporting Changed=true.
 type topologyInteraction struct {
-	Name       string
-	Approach   Destination
-	TargetX    uint8
-	TargetY    uint8
-	MaxBattles int
-	Budget     int
-	Complete   func(*state.Mem) bool
-	Interact   func() error
+	Name          string
+	Approach      Destination
+	TargetX       uint8
+	TargetY       uint8
+	MaxBattles    int
+	Budget        int
+	Complete      func(*state.Mem) bool
+	Interact      func() error
+	RouteGoal     string
+	GoalReachable func() bool
 }
 
-// executeTopologyInteraction performs one destination-aware topology mutation.
-// It is idempotent on the supplied Complete fact and positively verifies the
-// fact after the interaction before returning Changed=true. Callers should
-// discard stale route/grid state when Changed is true.
+func (spec topologyInteraction) routeGoalName() string {
+	if spec.RouteGoal != "" {
+		return spec.RouteGoal
+	}
+	return "requested route goal"
+}
+
+func (spec topologyInteraction) goalReachable() bool {
+	return spec.GoalReachable != nil && spec.GoalReachable()
+}
+
+// executeTopologyInteraction performs one verified topology mutation.
+//
+// The transaction is:
+//   1. prove the requested route goal is still blocked (when supplied),
+//   2. walk to the story-owned interaction,
+//   3. re-check both goal and durable completion from live state,
+//   4. face + interact,
+//   5. positively verify the RAM/event postcondition,
+//   6. prove the requested goal is now reachable,
+//   7. return Changed=true so callers discard stale route/grid state.
+//
+// A route-scoped interaction therefore cannot become "navigation failed, press
+// A on something nearby": story code chooses the legal action, while this
+// executor proves that action was needed and changed the requested topology.
 func executeTopologyInteraction(
 	m *emu.Emu,
 	romData []byte,
@@ -38,6 +67,9 @@ func executeTopologyInteraction(
 	if spec.Complete == nil || spec.Interact == nil {
 		return false, fmt.Errorf("skill: topology interaction %q: incomplete specification", spec.Name)
 	}
+	if (spec.RouteGoal == "") != (spec.GoalReachable == nil) {
+		return false, fmt.Errorf("skill: topology interaction %q: RouteGoal and GoalReachable must be supplied together", spec.Name)
+	}
 	if spec.MaxBattles <= 0 {
 		spec.MaxBattles = 20
 	}
@@ -45,9 +77,21 @@ func executeTopologyInteraction(
 		spec.Budget = 1200
 	}
 
+	// Destination-aware route actions are demand-driven. If the exact goal is
+	// already reachable, do not walk toward or interact with the switch/door.
+	if spec.goalReachable() {
+		return false, nil
+	}
+
 	var mem state.Mem
 	state.Snapshot(m, &mem)
 	if spec.Complete(&mem) {
+		if spec.GoalReachable != nil {
+			return false, fmt.Errorf(
+				"skill: topology interaction %q: durable postcondition is already complete but %s is still unreachable",
+				spec.Name, spec.routeGoalName(),
+			)
+		}
 		return false, nil
 	}
 
@@ -60,11 +104,21 @@ func executeTopologyInteraction(
 		return false, fmt.Errorf("skill: topology interaction %q: %w", spec.Name, ErrBlackedOut)
 	}
 
-	// Movement to the action can itself satisfy the postcondition (for example
-	// an associated trainer battle opening the same gate). Never replay an
-	// already-completed interaction.
+	// Movement can itself change topology (for example a trainer encounter that
+	// opens the same gate). Re-read the route before replaying any interaction.
+	if spec.goalReachable() {
+		state.Snapshot(m, &mem)
+		return spec.Complete(&mem), nil
+	}
+
 	state.Snapshot(m, &mem)
 	if spec.Complete(&mem) {
+		if spec.GoalReachable != nil {
+			return false, fmt.Errorf(
+				"skill: topology interaction %q: movement satisfied the durable state but did not make %s reachable",
+				spec.Name, spec.routeGoalName(),
+			)
+		}
 		return true, nil
 	}
 	if got := mem.U8(sym.CurMap); got != spec.Approach.Map {
@@ -84,6 +138,13 @@ func executeTopologyInteraction(
 		state.Snapshot(m, &mem)
 		return false, fmt.Errorf("skill: topology interaction %q: postcondition not observed within %d frames at map %#02x (%d,%d)",
 			spec.Name, spec.Budget, mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord))
+	}
+
+	if spec.GoalReachable != nil && !spec.GoalReachable() {
+		return false, fmt.Errorf(
+			"skill: topology interaction %q: verified durable state change did not make %s reachable",
+			spec.Name, spec.routeGoalName(),
+		)
 	}
 	return true, nil
 }
