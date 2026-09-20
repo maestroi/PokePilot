@@ -126,7 +126,12 @@ func main() {
 		fmt.Printf("farm mode: leasing runs from %s; games mounted: %s\n", orchURL, library.games())
 		client := farm.NewClient(orchURL)
 		client.Version = version
-		runFarm(m, client, library, watchPort(served), *checkpointDir)
+		if runFarm(m, client, library, watchPort(served), *checkpointDir) {
+			// ErrLinkStalled can leave a goroutine inside the emulator. os.Exit
+			// intentionally skips the deferred m.Close so this poisoned instance
+			// is never touched again; Swarm restarts the failed worker task.
+			os.Exit(1)
+		}
 		return
 	}
 
