@@ -145,16 +145,22 @@ func finishRunWithRecording(m *emu.Emu, client *farm.Client, spec farm.Spec, rea
 		Attempt:       spec.Attempt,
 		Reason:        reason,
 		Detail:        detail,
-		TraceTail:     m.TraceTail(20),
 		RunnerVersion: client.Version,
 		SeedBurn:      burn,
 		ProgressEarly: progEarly,
 		ProgressFinal: progFinal,
 	}
-	if save, err := m.SaveState(); err == nil {
-		report.SaveState = save
-	} else {
-		log.Printf("farm: %s: save state: %v", spec.RunID, err)
+	// A nil emulator is deliberate for terminal faults such as
+	// skill.ErrLinkStalled where another goroutine may still be inside
+	// StepFrame. In that case already-captured artifacts are safe, but any
+	// emulator read/save would violate the skill's ownership contract.
+	if m != nil {
+		report.TraceTail = m.TraceTail(20)
+		if save, err := m.SaveState(); err == nil {
+			report.SaveState = save
+		} else {
+			log.Printf("farm: %s: save state: %v", spec.RunID, err)
+		}
 	}
 
 	defer removeCheckpointDir(checkpointDir)
@@ -196,14 +202,16 @@ func finishRunWithRecording(m *emu.Emu, client *farm.Client, spec farm.Spec, rea
 	}
 	appendFailureReproArtifacts(&report, failures)
 
-	if timelineArtifact, err := drainMediaTimelineArtifact(spec, reason, m.FrameCount(), report.Artifacts); err != nil {
-		log.Printf("farm: %s: media timeline telemetry: %v", report.RunID, err)
-	} else if timelineArtifact.Name != "" {
-		candidate := append(append([]farm.Artifact(nil), report.Artifacts...), timelineArtifact)
-		if err := farm.ValidateFinishArtifacts(farm.FinishReport{Artifacts: candidate, SeedBurn: report.SeedBurn}); err != nil {
-			log.Printf("farm: %s: omit %s: %v", report.RunID, timelineArtifact.Name, err)
-		} else {
-			report.Artifacts = candidate
+	if m != nil {
+		if timelineArtifact, err := drainMediaTimelineArtifact(spec, reason, m.FrameCount(), report.Artifacts); err != nil {
+			log.Printf("farm: %s: media timeline telemetry: %v", report.RunID, err)
+		} else if timelineArtifact.Name != "" {
+			candidate := append(append([]farm.Artifact(nil), report.Artifacts...), timelineArtifact)
+			if err := farm.ValidateFinishArtifacts(farm.FinishReport{Artifacts: candidate, SeedBurn: report.SeedBurn}); err != nil {
+				log.Printf("farm: %s: omit %s: %v", report.RunID, timelineArtifact.Name, err)
+			} else {
+				report.Artifacts = candidate
+			}
 		}
 	}
 
