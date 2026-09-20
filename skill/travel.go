@@ -245,7 +245,7 @@ func Travel(m *emu.Emu, romData []byte, dest Destination, policy MovePolicy, max
 	if maxBattles <= 0 {
 		return TravelResult{}, fmt.Errorf("skill: Travel: maxBattles must be > 0, got %d", maxBattles)
 	}
-	if used, err := maybeUseFastTravel(m, dest); err != nil {
+	if used, err := maybeUseFastTravel(m, romData, dest); err != nil {
 		return TravelResult{}, fmt.Errorf("skill: Travel: fast travel: %w", err)
 	} else if used {
 		// The special warp landed on dest.Map. Ordinary GoTo below owns the
