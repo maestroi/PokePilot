@@ -7,7 +7,6 @@ import (
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
-	"github.com/maestroi/pokepilot/world"
 )
 
 // Replan records the world as Travel re-read it after a battle: the map and
@@ -183,70 +182,23 @@ const maxSameBoxRepeats = 3
 // does not.
 const sameBoxStallFrames = 600
 
-// maxRouteCuts bounds field-move recovery inside one Travel call. Route 9 and
-// the Celadon Gym approach each need one tree; four leaves room for a route
-// with several legitimate gates while keeping a bad collision classification
-// from turning into an unbounded tree-clearing loop.
-const maxRouteCuts = 4
-
-// ErrNavigationStalled is included because a Cut tree the router treats as
-// "the connection itself is open, the obstacle is inside the destination
-// map" (Route 9: see red:route9_cut) has no edge of its own the pre-cut
-// static graph can honestly route around. Once inside Route 9 with the tree
-// still standing, the capability-aware planner can find only degenerate
-// routes that leave and re-enter through the same border crossing, which
-// GoTo then walks in a circle until the exact-position repeat guard fires —
-// reproduced in run-1948e1rnco3sp1y9bbhdwp7eov. That repeat is the same
-// "stuck here, tree in the way" signal ErrNoPath already triggers recovery
-// for; cutThroughReachableTree is a no-op (opened=false, original error
-// preserved) when the stall was not actually caused by a reachable tree.
-func cutRecoverableNavigationError(err error) bool {
-	return errors.Is(err, ErrLegUnwalkable) ||
-		errors.Is(err, ErrReplanExhausted) ||
-		errors.Is(err, world.ErrNoPath) ||
-		errors.Is(err, ErrNavigationStalled)
-}
-
-// cutAwareGoTo wraps one Travel journey's GoTo attempts. Only a terminal
-// static-path failure is eligible for CUT recovery; battles and dialogue are
-// returned immediately to travel's existing resolvers. If the current map has
-// a real reachable Cut tree and the party can legally use Cut, the tree is
-// removed and the player steps onto the cleared cell before GoTo replans.
-// Otherwise the original navigation error is preserved verbatim.
+// cutAwareGoTo keeps Travel's journey-scoped navigation memory and semantic
+// transition executor. The historical name remains for callers, but generic
+// "navigation failed -> cut the nearest reachable tree" recovery is gone:
+// Cut and Surf are now selected by local capability-aware path planning, while
+// cross-map field gates remain owned by explicit semantic transitions.
 func cutAwareGoTo(m *emu.Emu, romData []byte, dest Destination, policies ...MovePolicy) func() error {
 	var policy MovePolicy
 	if len(policies) > 0 {
 		policy = policies[0]
 	}
 	executor := newRedRouteTransitionExecutor(m, romData, policy)
-	cuts := 0
 	// nav is shared across every call this closure makes for the rest of the
 	// journey: Travel's retry loop invokes this closure again after each
-	// resolved battle, and without a shared memory GoTo's own loop/bounce
-	// protection (the guard, banned legs, dead ends, visited maps) would
-	// reset to empty on every one of those re-entries — see navigationMemory.
+	// resolved battle/dialogue, so learned bounce/dead-end facts must survive.
 	nav := newNavigationMemory()
 	return func() error {
-		for {
-			err := goToWithTransitionExecutorMemory(m, romData, dest, executor, nav)
-			if err == nil || errors.Is(err, ErrBattle) || errors.Is(err, ErrDialogueInterrupted) {
-				return err
-			}
-			if cuts >= maxRouteCuts || !cutRecoverableNavigationError(err) {
-				return err
-			}
-			opened, cutErr := cutThroughReachableTree(m, romData)
-			if cutErr != nil {
-				if errors.Is(cutErr, ErrBattle) || errors.Is(cutErr, ErrDialogueInterrupted) {
-					return cutErr
-				}
-				return fmt.Errorf("skill: Travel: Cut recovery after %v: %w", err, cutErr)
-			}
-			if !opened {
-				return err
-			}
-			cuts++
-		}
+		return goToWithTransitionExecutorMemory(m, romData, dest, executor, nav)
 	}
 }
 
