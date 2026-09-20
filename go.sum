@@ -30,6 +30,7 @@ github.com/maestroi/gomeboy v1.1.0 h1:rgjKBrJ9HyreYLJ0MHRwCDvJEUh7/NAvW+Fx06rOwX
 github.com/maestroi/gomeboy v1.1.0/go.mod h1:Fox3g+WM2HCpA3U4xnS66NedCORZ0n9+5BO84e9Z9VU=
 github.com/maestroi/gomeboy v1.2.0 h1:cONhxhXLkoWliduC+6swIe8o1JOCfOSg1gnulzHWU4o=
 github.com/maestroi/gomeboy v1.2.0/go.mod h1:Fox3g+WM2HCpA3U4xnS66NedCORZ0n9+5BO84e9Z9VU=
+github.com/maestroi/gomeboy v1.3.0 h1:Zr/n75lnW8WaBm8D6wHqVrAD5e0f7YN5mzaLAKTnc9M=
 github.com/maestroi/gomeboy v1.3.0/go.mod h1:Fox3g+WM2HCpA3U4xnS66NedCORZ0n9+5BO84e9Z9VU=
 github.com/mattn/go-isatty v0.0.24 h1:tGZZoVgT/KiqK1c8ocVLeDS8BSWMRd47J3Lbz7vsReI=
 github.com/mattn/go-isatty v0.0.24/go.mod h1:nMCL3Zebbrt45jsMDgnfIwz6ydEQApk5oEI3HqDio6A=
