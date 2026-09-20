@@ -60,7 +60,8 @@ func TestRoute9CutIsPivotOnlyWhenLeavingRoute9(t *testing.T) {
 	}
 }
 
-// TestRoute9WestRoutesToLavenderWithoutSaffron pins run-os1jmuuqpc1033zjhq2at3qz4:
+// TestRoute9WestRoutesToLavenderWithoutSaffron pins run-os1jmuuqpc1033zjhq2at3qz4
+// and the sibling fingerprint from run-1gclfih4ac3hv (triage:66a55643ac896b9a):
 // stranded west of Route 9's Cut tree with can_cut, GoTo must reach Lavender
 // through Rock Tunnel instead of reporting can_enter_saffron.
 func TestRoute9WestRoutesToLavenderWithoutSaffron(t *testing.T) {
