@@ -80,6 +80,8 @@ func TestRepeatedIdenticalErrorsAutoPauseBeforeThirdAttempt(t *testing.T) {
 	ctx := context.Background()
 
 	enqueueViaHTTP(t, srv.URL, farm.Spec{RunID: "looping", Planner: "llm", Goal: "beat the game"})
+	const detail = "unknown fishing rod old rod at map 05"
+	expectedKey, expectedFingerprint := failureIdentity(normalizeDetail(detail))
 	for attempt := 1; attempt <= autoPauseRepeatThreshold; attempt++ {
 		spec, err := client.Lease(ctx)
 		if err != nil || spec == nil || spec.Attempt != attempt {
@@ -91,7 +93,9 @@ func TestRepeatedIdenticalErrorsAutoPauseBeforeThirdAttempt(t *testing.T) {
 			t.Fatalf("heartbeat %d: %v", attempt, err)
 		}
 		if err := client.Finish(ctx, farm.FinishReport{
-			RunID: "looping", Attempt: attempt, Reason: "error", Detail: "unknown fishing rod old rod at map 05",
+			RunID: "looping", Attempt: attempt, Reason: "error", Detail: detail,
+			RunnerVersion: "build-broken",
+			ProgressFinal: &farm.Progress{Badges: 2, Events: 20, Maps: 40},
 		}); err != nil {
 			t.Fatalf("finish %d: %v", attempt, err)
 		}
@@ -100,6 +104,7 @@ func TestRepeatedIdenticalErrorsAutoPauseBeforeThirdAttempt(t *testing.T) {
 	w.mu.Lock()
 	tile := *w.tiles["looping"]
 	queued := append([]string(nil), w.queue...)
+	link := w.issueLinks[expectedKey]
 	w.mu.Unlock()
 	if tile.Status != statusPaused || !tile.Finished {
 		t.Fatalf("tile after repeated errors = status %q finished=%v", tile.Status, tile.Finished)
@@ -107,8 +112,17 @@ func TestRepeatedIdenticalErrorsAutoPauseBeforeThirdAttempt(t *testing.T) {
 	if tile.Attempts != autoPauseRepeatThreshold || tile.ErrorAttempts != autoPauseRepeatThreshold {
 		t.Fatalf("attempt counters = attempts %d error %d", tile.Attempts, tile.ErrorAttempts)
 	}
-	if tile.StopSoFar != "auto-paused after 2 repeated failures" {
-		t.Fatalf("auto-pause note = %q", tile.StopSoFar)
+	if tile.CircuitKey != expectedKey || tile.CircuitFingerprint != expectedFingerprint || tile.CircuitKind != "repeat" {
+		t.Fatalf("circuit identity = key %q fingerprint %q kind %q", tile.CircuitKey, tile.CircuitFingerprint, tile.CircuitKind)
+	}
+	if tile.CircuitRevision != "build-broken" || tile.CircuitBadges != 2 || tile.CircuitEvents != 20 || tile.CircuitMaps != 40 {
+		t.Fatalf("circuit baseline = revision %q badges %d events %d maps %d", tile.CircuitRevision, tile.CircuitBadges, tile.CircuitEvents, tile.CircuitMaps)
+	}
+	if want := circuitPauseNote(failureCircuitDecision{Kind: "repeat", Count: autoPauseRepeatThreshold, Key: expectedKey}); tile.StopSoFar != want {
+		t.Fatalf("auto-pause note = %q, want %q", tile.StopSoFar, want)
+	}
+	if !link.CircuitOpen || link.CircuitRunID != "looping" || link.CircuitKind != "repeat" {
+		t.Fatalf("placeholder issue circuit = %+v", link)
 	}
 	for _, id := range queued {
 		if id == "looping" {
