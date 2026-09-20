@@ -403,14 +403,18 @@ func (c *modelExperimentController) resolveDeployment(d farm.ModelDeployment) (f
 		return farm.ModelDeployment{}, fmt.Errorf("discover %s: endpoint reported no models", d.Endpoint)
 	}
 	chosen := ""
-	for _, id := range ids {
-		if d.APIModel != "" && id == d.APIModel {
-			chosen = id
-			break
-		}
-	}
-	if chosen == "" && len(ids) == 1 {
+	// A discoverable single-model host is authoritative: prefer the sole live
+	// id over a possibly-stale configured api_model left in the registry row
+	// after an xtx-9b/xtx-27b host switch.
+	if len(ids) == 1 {
 		chosen = ids[0]
+	} else {
+		for _, id := range ids {
+			if d.APIModel != "" && id == d.APIModel {
+				chosen = id
+				break
+			}
+		}
 	}
 	if chosen == "" {
 		return farm.ModelDeployment{}, fmt.Errorf("discover %s: %d models reported and configured api_model %q did not match", d.Endpoint, len(ids), d.APIModel)

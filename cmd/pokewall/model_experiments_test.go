@@ -573,6 +573,45 @@ func TestLiveRunHostLeaseSurvivesReconcile(t *testing.T) {
 	}
 }
 
+func TestDiscoverableEndpointPrefersSoleLiveModelOverStaleAPIModel(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/models" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"id":"qwen3.8-27b"}]}`))
+	}))
+	defer server.Close()
+
+	registry := writeModelRegistry(t, []farm.ModelDeployment{{
+		ID: "7900-primary", Label: "7900 primary", Compute: "RX 7900 XTX",
+		Endpoint: server.URL + "/v1", APIModel: "qwen3.5-9b", ModelID: "qwen3.5-9b",
+		Enabled: true, Discover: true, LegacyProfile: "auto", MaxParallelWorkers: 4,
+	}})
+	t.Setenv("POKEPILOT_MODEL_REGISTRY", registry)
+	w := NewWall("")
+	h := modelExperimentHTTPHandler(w, w.Handler())
+
+	enqueue := requestJSON(t, h, http.MethodPost, "/v1/specs", map[string]any{
+		"run_id": "stale-api-model-run", "seed": 1, "planner": "llm",
+		"goal": "Earn the Boulder Badge.", "llm_deployment": "7900-primary",
+	})
+	if enqueue.Code < 200 || enqueue.Code >= 300 {
+		t.Fatalf("enqueue = %d %s", enqueue.Code, enqueue.Body.String())
+	}
+	lease := requestJSON(t, h, http.MethodPost, "/v1/lease", map[string]any{})
+	if lease.Code != http.StatusOK {
+		t.Fatalf("lease = %d %s", lease.Code, lease.Body.String())
+	}
+	var spec farm.Spec
+	if err := json.Unmarshal(lease.Body.Bytes(), &spec); err != nil {
+		t.Fatal(err)
+	}
+	if spec.Inference == nil || spec.Inference.ModelID != "qwen3.8-27b" || spec.Inference.APIModel != "qwen3.8-27b" {
+		t.Fatalf("discovered inference = %#v, want live sole model over stale api_model", spec.Inference)
+	}
+}
+
 func TestDiscoverableEndpointBindsActualServedModel(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/models" {

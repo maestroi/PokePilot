@@ -138,6 +138,26 @@ func setCurrentInference(identity *InferenceIdentity) {
 	currentRunPolicy.Unlock()
 }
 
+// AdoptCurrentInferenceModel updates the leased inference identity when the
+// planner adopts a live single-model answer that disagreed with the request
+// name. No-op when no inference is leased.
+func AdoptCurrentInferenceModel(model string) {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return
+	}
+	currentRunPolicy.Lock()
+	defer currentRunPolicy.Unlock()
+	if currentRunPolicy.inference == nil {
+		return
+	}
+	currentRunPolicy.inference.ModelID = model
+	currentRunPolicy.inference.APIModel = model
+	currentRunPolicy.inference.Revision = ""
+	currentRunPolicy.inference.Artifact = ""
+	currentRunPolicy.inference.Quantization = ""
+}
+
 func setCurrentRunPolicy(playStyle, riskTolerance, wildEncounters string) {
 	currentRunPolicy.Lock()
 	currentRunPolicy.playStyle = strings.ToLower(strings.TrimSpace(playStyle))
