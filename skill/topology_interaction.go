@@ -54,13 +54,13 @@ func validateTopologyInteraction(spec topologyInteraction) error {
 // executeTopologyInteraction performs one verified topology mutation.
 //
 // The transaction is:
-//   1. prove the requested route goal is still blocked (when supplied),
-//   2. walk to the story-owned interaction,
-//   3. re-check both goal and durable completion from live state,
-//   4. face + interact,
-//   5. positively verify the RAM/event postcondition,
-//   6. prove the requested goal is now reachable,
-//   7. return Changed=true so callers discard stale route/grid state.
+//  1. prove the requested route goal is still blocked (when supplied),
+//  2. walk to the story-owned interaction,
+//  3. re-check both goal and durable completion from live state,
+//  4. face + interact,
+//  5. positively verify the RAM/event postcondition,
+//  6. prove the requested goal is now reachable,
+//  7. return Changed=true so callers discard stale route/grid state.
 //
 // A route-scoped interaction therefore cannot become "navigation failed, press
 // A on something nearby": story code chooses the legal action, while this
