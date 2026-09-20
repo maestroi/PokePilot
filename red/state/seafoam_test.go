@@ -5,8 +5,8 @@ import "testing"
 func TestSeafoamDropEventsMatchDecomp(t *testing.T) {
 	events := parseEventConstants(t)
 	cases := []struct {
-		stage SeafoamDropStage
-		first string
+		stage  SeafoamDropStage
+		first  string
 		second string
 	}{
 		{SeafoamDrop1F, "EVENT_SEAFOAM1_BOULDER1_DOWN_HOLE", "EVENT_SEAFOAM1_BOULDER2_DOWN_HOLE"},
