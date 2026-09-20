@@ -29,7 +29,6 @@ func TestSelectedBoulderMovablesRestrictsSlots(t *testing.T) {
 	}
 }
 
-
 func TestUnselectedBouldersRemainFixedBlockers(t *testing.T) {
 	in := []world.Movable{
 		{ID: 1, Pos: world.Point{X: 5, Y: 14}},
@@ -103,7 +102,6 @@ func TestSeafoamBoulderDropSpecBindsSourceSlotAndEvent(t *testing.T) {
 		}
 	}
 }
-
 
 func TestSeafoamSurfAllowedFromMatchesB4FStairRule(t *testing.T) {
 	var mem state.Mem
