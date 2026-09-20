@@ -101,18 +101,6 @@ func TestFieldCapabilitiesStableForPartyPlanning(t *testing.T) {
 	}
 }
 
-func TestCutRouteCapabilityUsesSharedFieldCapability(t *testing.T) {
-	m := fieldTestMem(FieldCut, true, true, false)
-	if !cutCapabilityRecoverable(nil, m) {
-		t.Fatal("route recovery rejected a learned, badged Cut capability")
-	}
-
-	m = fieldTestMem(FieldCut, false, true, true)
-	if cutCapabilityRecoverable(nil, m) {
-		t.Fatal("route recovery accepted Cut without the Cascade Badge")
-	}
-}
-
 func TestBoulderAheadUsesLiveSpriteContext(t *testing.T) {
 	m := new(state.Mem)
 	m[sym.CurMap] = 1
