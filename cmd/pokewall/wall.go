@@ -651,14 +651,33 @@ func (w *Wall) applySpec(runID string, spec farm.Spec) {
 // queue is empty.
 func (w *Wall) handleLease(res http.ResponseWriter, req *http.Request) {
 	w.mu.Lock()
-	if len(w.queue) == 0 {
+	var t *Tile
+	now := time.Now()
+	// A queued run can be cancelled before any worker ever leases it (the
+	// operator hits cancel on a run stuck behind a bad deployment, say).
+	// handleCancel only records the intent in w.cancel; nothing else reads
+	// it until a heartbeat arrives, which a queued run never gets. Settle it
+	// here instead of handing it out, and keep walking the queue so one
+	// lease call can skip past any number of cancelled entries.
+	for len(w.queue) > 0 {
+		runID := w.queue[0]
+		w.queue = w.queue[1:]
+		cand := w.tiles[runID]
+		if cand == nil || cand.Finished {
+			continue
+		}
+		if w.cancel[runID] {
+			w.settleRun(cand, "cancelled", "cancelled while queued", now)
+			continue
+		}
+		t = cand
+		break
+	}
+	if t == nil {
 		w.mu.Unlock()
 		res.WriteHeader(http.StatusNoContent)
 		return
 	}
-	runID := w.queue[0]
-	w.queue = w.queue[1:]
-	t := w.tiles[runID]
 	t.Status = statusLeased
 	t.lastUpdate = time.Now()
 	spec := farm.Spec{
