@@ -325,6 +325,92 @@ func fieldPathReachableOnCurrentMap(m *emu.Emu, romData []byte, h rom.MapHeader,
 	return needsStrength, nil
 }
 
+// currentBlockingUndefeatedTrainer identifies the single undefeated,
+// ordinary-class stationary trainer whose home tile is the only reason a
+// local field path failed with world.ErrNoPath against the exact blocked set
+// that produced that failure. Several Red interiors (Silph Co 5F's Rocket2
+// guarding the Card Key room; Rocket Hideout's grunts) route the only
+// corridor through a single STAY trainer's tile: pokered does not expect a
+// walk around them, it expects their sight line to force the battle that
+// then drops them from the object table. currentObservedStationaryObjectBlockers
+// correctly marks that tile solid (it is, until fought), so a plain
+// reachability probe reports a dead end instead of the fight the room
+// actually wants.
+//
+// Exactly one candidate must provably reopen dest when its tile alone is
+// removed from blocked; two or more, like currentLocalStrengthPlan's refusal
+// to move a boulder that does not provably open the exact destination, means
+// this probe cannot tell which one the room actually needs, so it declines
+// rather than fight the wrong trainer.
+func currentBlockingUndefeatedTrainer(m *emu.Emu, romData []byte, h rom.MapHeader, dest Destination, blocked map[[2]int]bool) (rom.Object, bool, error) {
+	if len(blocked) == 0 {
+		return rom.Object{}, false, nil
+	}
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+
+	var candidates []rom.Object
+	for _, o := range h.Objects {
+		if o.Movement != rom.MovementStay {
+			continue
+		}
+		if !blocked[[2]int{int(o.X), int(o.Y)}] {
+			continue
+		}
+		target, err := trainerTargetAt(romData, h, o.X, o.Y)
+		if err != nil {
+			// Not a standard-trainer object (item ball, clipboard, sign, an
+			// NPC with a bespoke script): this probe only ever fights the
+			// ordinary TalkToTrainer contract ChallengeTrainer supports.
+			continue
+		}
+		if !ordinaryTrainerClass(target.object.TrainerClass) || target.flag.setMem(&mem) {
+			continue
+		}
+		candidates = append(candidates, o)
+	}
+	return blockingUndefeatedTrainer(candidates, func(at [2]int) (bool, error) {
+		relaxed := make(map[[2]int]bool, len(blocked))
+		for k, v := range blocked {
+			relaxed[k] = v
+		}
+		delete(relaxed, at)
+		if _, err := currentFieldPathPlan(m, romData, h, dest, relaxed); err != nil {
+			if errors.Is(err, world.ErrNoPath) {
+				return false, nil
+			}
+			return false, err
+		}
+		return true, nil
+	})
+}
+
+// blockingUndefeatedTrainer is currentBlockingUndefeatedTrainer's pure
+// selection rule, factored out so the "exactly one match wins, ties decline"
+// contract is unit-testable without an emulator or ROM: candidates are
+// already known to be undefeated, ordinary-class, and standing on a blocked
+// tile, and reachableWithout reports whether dest becomes reachable with
+// exactly that one tile unblocked.
+func blockingUndefeatedTrainer(candidates []rom.Object, reachableWithout func(at [2]int) (bool, error)) (rom.Object, bool, error) {
+	var candidate rom.Object
+	matches := 0
+	for _, o := range candidates {
+		ok, err := reachableWithout([2]int{int(o.X), int(o.Y)})
+		if err != nil {
+			return rom.Object{}, false, err
+		}
+		if !ok {
+			continue
+		}
+		matches++
+		candidate = o
+	}
+	if matches != 1 {
+		return rom.Object{}, false, nil
+	}
+	return candidate, true, nil
+}
+
 func firstFieldAction(plan []fieldPathStep) (prefix []world.Step, action *fieldPathStep) {
 	for i := range plan {
 		if plan[i].Action != fieldPathWalk {

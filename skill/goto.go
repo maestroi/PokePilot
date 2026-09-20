@@ -1058,6 +1058,7 @@ func walkWithinMap(m *emu.Emu, romData []byte, dest Destination, policies ...Mov
 	for fieldActions := 0; ; {
 		var planErr error
 		var nextAction *fieldPathStep
+		var blockedAtFailure map[[2]int]bool
 		err = walkAroundAvoidingObjects(func() error { return movementInterruption(m) }, m, h,
 			func(blocked map[[2]int]bool) ([]world.Step, error) {
 				x, y := playerXY(m)
@@ -1069,6 +1070,7 @@ func walkWithinMap(m *emu.Emu, romData []byte, dest Destination, policies ...Mov
 				if perr != nil {
 					planErr = fmt.Errorf("skill: GoTo: no capability-aware path on map %02x from (%d,%d) to (%d,%d): %w",
 						cur, x, y, dest.X, dest.Y, perr)
+					blockedAtFailure = blocked
 					return nil, planErr
 				}
 				prefix, action := firstFieldAction(plan)
@@ -1101,6 +1103,36 @@ func walkWithinMap(m *emu.Emu, romData []byte, dest Destination, policies ...Mov
 					}
 					// Pushes were positively observed. Re-read the map and let the
 					// ordinary/Cut/Surf planner own the now-open final walk.
+					continue
+				}
+
+				// Neither Cut/Surf nor Strength opens it. Some Red interiors
+				// (Silph Co 5F's Rocket2 guarding the Card Key room, Rocket
+				// Hideout's grunts) route the only corridor through a single
+				// STAY trainer tile: the game does not expect you to walk
+				// around them, it expects their sight line to force the fight
+				// that then removes them from the object table. Fight the one
+				// undefeated ordinary trainer whose tile is provably the sole
+				// reason this exact destination is unreachable before
+				// reporting a dead end.
+				trainer, gated, trainerErr := currentBlockingUndefeatedTrainer(m, romData, h, dest, blockedAtFailure)
+				if trainerErr != nil {
+					return fmt.Errorf("skill: GoTo: blocking-trainer probe on map %02x: %w", cur, trainerErr)
+				}
+				if gated {
+					if policy == nil {
+						return fmt.Errorf("skill: GoTo: undefeated trainer at (%d,%d) blocks the only route to (%d,%d) on map %02x; Travel is required to fight it",
+							trainer.X, trainer.Y, dest.X, dest.Y, cur)
+					}
+					if err := ChallengeTrainer(m, romData, trainer.X, trainer.Y, policy); err != nil {
+						if errors.Is(err, ErrTrainerBlackedOut) {
+							return err
+						}
+						return fmt.Errorf("skill: GoTo: fight blocking trainer at (%d,%d) on map %02x: %w", trainer.X, trainer.Y, cur, err)
+					}
+					// The trainer's tile is now clear (or was already passable
+					// via sight-triggered approach). Re-read live topology and
+					// let the ordinary planner own the rest of the walk.
 					continue
 				}
 				return arriveBesideBlockedDestination(m, romData, dest, planErr)
