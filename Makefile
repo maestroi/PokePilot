@@ -191,12 +191,13 @@ test-state:
 # normal CI because the copyrighted ROM is supplied by the operator.
 test-yellow-rom:
 	$(require-yellow-rom)
-	POKEMON_YELLOW_ROM="$(POKEMON_YELLOW_ROM)" go test -count=1 ./yellow/... $(ARGS)
+	POKEMON_RED_ROM= POKEMON_YELLOW_ROM="$(POKEMON_YELLOW_ROM)" go test -count=1 ./yellow/... $(ARGS)
+	POKEMON_RED_ROM= POKEMON_YELLOW_ROM="$(POKEMON_YELLOW_ROM)" go test -count=1 -run Yellow ./agent $(ARGS)
 
 verify-yellow-rom:
 	$(require-yellow-rom)
 	go run ./cmd/worldverify -game yellow -rom "$(POKEMON_YELLOW_ROM)" -max-exhaustive-capabilities 16
-	POKEMON_YELLOW_ROM="$(POKEMON_YELLOW_ROM)" go test -count=1 ./yellow/... $(ARGS)
+	$(MAKE) test-yellow-rom POKEMON_YELLOW_ROM="$(POKEMON_YELLOW_ROM)" ARGS='$(ARGS)'
 
 # GomeBoy is pinned to the maintained GitHub fork in go.mod, so the Docker
 # build needs only this repository as its build context.
