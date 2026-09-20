@@ -216,7 +216,6 @@ func TestPlanFieldPathHonorsSurfEntryRule(t *testing.T) {
 	}
 }
 
-
 func TestPlanFieldPathTreatsForcedMovementAsOneEdge(t *testing.T) {
 	land := newFakeFieldPathGrid(5, 1)
 	water := newFakeFieldPathGrid(5, 1)
