@@ -89,6 +89,14 @@ type fieldPathParent struct {
 	step fieldPathStep
 }
 
+type fieldPathRules struct {
+	SurfAllowedFrom func(x, y int) bool
+}
+
+func (r fieldPathRules) canSurfFrom(x, y int) bool {
+	return r.SurfAllowedFrom == nil || r.SurfAllowedFrom(x, y)
+}
+
 func fieldPathCutTile(g fieldPathGrid, tileset uint8, x, y int) bool {
 	if field, ok := g.FieldTile(x, y); ok && cutRouteTile(tileset, field) {
 		return true
@@ -124,7 +132,12 @@ func planFieldPath(
 	sx, sy, dx, dy int,
 	blocked map[[2]int]bool,
 	canCut, canSurf, startWater bool,
+	rules ...fieldPathRules,
 ) ([]fieldPathStep, error) {
+	var rule fieldPathRules
+	if len(rules) > 0 {
+		rule = rules[0]
+	}
 	if land == nil || !land.InBounds(sx, sy) || !land.InBounds(dx, dy) || blocked[[2]int{sx, sy}] || blocked[[2]int{dx, dy}] {
 		return nil, world.ErrNoPath
 	}
@@ -213,7 +226,7 @@ func planFieldPath(
 					fieldPathStep{Move: input, Action: fieldPathCut}, 1, 1)
 				continue
 			}
-			if canSurf && water != nil && fieldPathWaterTile(water, nx, ny) {
+			if canSurf && rule.canSurfFrom(cur.x, cur.y) && water != nil && fieldPathWaterTile(water, nx, ny) {
 				if move, ok := water.Movement(cur.x, cur.y, input, blocked); ok {
 					wx, wy := cur.x+move.DX, cur.y+move.DY
 					push(cur, fieldPathState{x: wx, y: wy, water: true},
@@ -225,7 +238,7 @@ func planFieldPath(
 	return nil, world.ErrNoPath
 }
 
-func currentFieldPathPlan(m *emu.Emu, romData []byte, h rom.MapHeader, dest Destination, blocked map[[2]int]bool) ([]fieldPathStep, error) {
+func currentFieldPathPlanWithRules(m *emu.Emu, romData []byte, h rom.MapHeader, dest Destination, blocked map[[2]int]bool, rules fieldPathRules) ([]fieldPathStep, error) {
 	land, err := liveMapGridForTraversal(m, romData, h, world.TraversalLand)
 	if err != nil {
 		return nil, err
@@ -245,7 +258,12 @@ func currentFieldPathPlan(m *emu.Emu, romData []byte, h rom.MapHeader, dest Dest
 		int(sx), int(sy), int(dest.X), int(dest.Y),
 		blocked,
 		caps.Has(capCanCut), caps.Has(capCanSurf), startWater,
+		rules,
 	)
+}
+
+func currentFieldPathPlan(m *emu.Emu, romData []byte, h rom.MapHeader, dest Destination, blocked map[[2]int]bool) ([]fieldPathStep, error) {
+	return currentFieldPathPlanWithRules(m, romData, h, dest, blocked, currentFieldPathRules(m, h))
 }
 
 // fieldPathReachableOnCurrentMap is a geometry probe used before component
