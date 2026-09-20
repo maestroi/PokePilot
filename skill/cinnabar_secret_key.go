@@ -190,6 +190,9 @@ func ensureMansionWarpReachable(m *emu.Emu, romData []byte, edge world.Edge, sw 
 	}
 
 	want := !currentMansionSwitchOn(m)
+	// The exact selected warp is the route goal. This prevents a generic
+	// "toggle a reachable statue" fallback from mutating unrelated Mansion
+	// doors after a path failure.
 	_, err := executeTopologyInteraction(m, romData, policy, topologyInteraction{
 		Name:          fmt.Sprintf("Mansion switch %02x(%d,%d)", sw.Map, sw.TargetX, sw.TargetY),
 		Approach:      Destination{Map: sw.Map, X: sw.StandX, Y: sw.StandY},
