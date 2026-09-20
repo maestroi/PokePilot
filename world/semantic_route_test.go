@@ -138,15 +138,23 @@ func TestMissingPivotOnlyCapabilityFallsBackToOrdinaryGeometry(t *testing.T) {
 		t.Fatalf("missing = %v, want %v", got, want)
 	}
 
-	// Once the capability exists the same edge becomes an executable pivot and
-	// may bridge the static component split.
+	// PivotOnly never invents a departure from a room that cannot reach the
+	// annotated port. Having the capability only unconstrained-lands on the
+	// far side once the port is reachable; from a disconnected component the
+	// edge stays unroutable (same as a satisfied Gate).
 	prereqs.Capabilities = gameruntime.NewCapabilitySet("can_pivot")
-	plan, err = FindRoutePlanAtDestinationWithCapabilities(g, 1, 2, 2, 0, 0, 0, nil, prereqs)
-	if err != nil {
-		t.Fatalf("enabled pivot-only route: %v", err)
+	if _, err = FindRoutePlanAtDestinationWithCapabilities(g, 1, 2, 2, 0, 0, 0, nil, prereqs); !errors.Is(err, ErrNoRoute) {
+		t.Fatalf("enabled pivot-only from unreachable port = %v, want ErrNoRoute", err)
 	}
-	if len(plan) != 1 || plan[0].Transition == nil || plan[0].Transition.ID != "optional_component_pivot" {
-		t.Fatalf("enabled pivot-only plan = %+v, want executable transition", plan)
+
+	// From the port's own component the capability is not required, and the
+	// edge remains ordinary geometry.
+	plan, err = FindRoutePlanAtDestinationWithCapabilities(g, 1, 2, 0, 0, 0, 0, nil, prereqs)
+	if err != nil {
+		t.Fatalf("enabled pivot-only from reachable port: %v", err)
+	}
+	if len(plan) != 1 || plan[0].Edge != pivot {
+		t.Fatalf("enabled pivot-only plan = %+v, want one edge from the port's component", plan)
 	}
 }
 

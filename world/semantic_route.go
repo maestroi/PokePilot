@@ -141,11 +141,14 @@ func FindRouteAtDestinationWithCapabilities(
 // reason routing fails, return structured prerequisite evidence before any
 // movement occurs.
 //
-// PivotOnly transitions are the exception: they annotate an ordinary edge whose
-// capability is needed only to bypass static component reachability. When that
-// capability is absent, the edge remains usable through ordinary geometry if
-// the player can already reach its port; the transition is omitted from the
-// returned RouteStep so execution does not demand an action that was not needed.
+// PivotOnly transitions annotate an ordinary edge whose capability is needed
+// only to unconstrained-land on the far side of a static component split inside
+// the adjacent map (Route 9's tree). The exit port on this map must still be
+// reachable by ordinary walking; PivotOnly never invents a departure from a
+// room that cannot reach the border. When the capability is absent, the edge
+// remains usable through ordinary geometry if the player can already reach its
+// port; the transition is omitted from the returned RouteStep so execution
+// does not demand an action that was not needed.
 func FindRoutePlanAtDestinationWithCapabilities(
 	g *Graph,
 	from, to uint8,
@@ -161,12 +164,17 @@ func FindRoutePlanAtDestinationWithCapabilities(
 	denied := make(map[Edge]gameruntime.TransitionBlockage)
 	hardDenied := make(map[Edge]gameruntime.TransitionBlockage)
 	allowed := make(map[Edge]bool)
+	freeLanding := make(map[Edge]bool)
 	executable := make(map[Edge]gameruntime.Transition, len(prereqs.Transitions))
 	allSemantic := make(map[Edge]bool, len(prereqs.Transitions))
 	for edge, transition := range prereqs.Transitions {
 		// A gate is a precondition on ordinary geometry, not an action that
 		// creates traversal, so it is never a pivot: satisfied or not, the
 		// component rules below still decide whether its port is reachable.
+		//
+		// PivotOnly stays in allSemantic so diagnosis can still explain a
+		// missing capability that would unlock a leave-and-reenter pivot, but
+		// it is excluded from allowed: real routing must still reach the port.
 		if !transition.Gate {
 			allSemantic[edge] = true
 		}
@@ -175,7 +183,7 @@ func FindRoutePlanAtDestinationWithCapabilities(
 			// A normal action or gate cannot be used at all while its
 			// prerequisite is missing. PivotOnly is different: without its
 			// capability the underlying edge is still ordinary geometry, so
-			// keep it and simply withhold the pivot privilege below.
+			// keep it and simply withhold the free-landing privilege below.
 			if !transition.PivotOnly {
 				hardDenied[edge] = blockage
 			}
@@ -183,16 +191,21 @@ func FindRoutePlanAtDestinationWithCapabilities(
 		}
 
 		executable[edge] = transition
-		if !transition.Gate {
-			allowed[edge] = true
+		if transition.Gate {
+			continue
 		}
+		if transition.PivotOnly {
+			freeLanding[edge] = true
+			continue
+		}
+		allowed[edge] = true
 	}
 
 	usable := g
 	if len(hardDenied) > 0 {
 		usable = graphWithoutSemanticEdges(g, hardDenied)
 	}
-	route, err := findRouteAtDestinationAllowingSemantic(usable, from, to, x, y, tx, ty, blockedHere, allowed)
+	route, err := findRouteAtDestinationAllowingSemantic(usable, from, to, x, y, tx, ty, blockedHere, allowed, freeLanding)
 	if err == nil {
 		return routeSteps(route, executable), nil
 	}
@@ -206,7 +219,7 @@ func FindRoutePlanAtDestinationWithCapabilities(
 	// preserves prerequisite evidence for PivotOnly actions when ordinary
 	// geometry cannot reach the annotated edge and the missing capability is
 	// exactly what would have allowed the component pivot.
-	geometric, geometricErr := findRouteAtDestinationAllowingSemantic(g, from, to, x, y, tx, ty, blockedHere, allSemantic)
+	geometric, geometricErr := findRouteAtDestinationAllowingSemantic(g, from, to, x, y, tx, ty, blockedHere, allSemantic, nil)
 	if geometricErr != nil {
 		return nil, err
 	}

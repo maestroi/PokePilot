@@ -60,10 +60,11 @@ type Transition struct {
 	Gate bool `json:"gate,omitempty"`
 
 	// PivotOnly marks a semantic action whose capability is needed only when
-	// routing must ignore the immutable walking component around this edge.
-	// The underlying map edge remains ordinary geometry: if its port is
-	// already reachable from the player's current component, routing may use
-	// the edge without the capability and without executing this transition.
+	// routing must ignore the immutable walking component on the far side of
+	// this edge. The underlying map edge remains ordinary geometry: its exit
+	// port must still be reachable from the player's current component. When
+	// that port is already reachable, routing may use the edge without the
+	// capability and without executing this transition.
 	//
 	// This is intentionally narrower than a normal action. A missing Cut/Surf
 	// capability that actually creates the edge still blocks it completely;
