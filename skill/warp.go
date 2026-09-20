@@ -82,6 +82,9 @@ func Traverse(m *emu.Emu, romData []byte, e world.Edge) error {
 	if cur != e.From {
 		return fmt.Errorf("skill: Traverse: on map %02x, but edge starts on %02x", cur, e.From)
 	}
+	if e.Kind == world.EdgeWarp && e.From == e.To {
+		return traverseIntraMapWarp(m, romData, e)
+	}
 
 	h, err := rom.ParseMap(romData, e.From)
 	if err != nil {
