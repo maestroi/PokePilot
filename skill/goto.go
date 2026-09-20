@@ -41,6 +41,12 @@ var ErrReplanExhausted = errors.New("skill: route re-plan budget exhausted")
 // its destination. It aborts only the current navigation call.
 var ErrNavigationStalled = errors.New("skill: navigation made no progress")
 
+// errLocalNavigationWorldChanged is internal control flow: a field-capability
+// repair deliberately moved the player (for example to a PC or catch habitat).
+// The original GoTo journey is still valid, but every local grid/component
+// snapshot is stale and must be rebuilt from the new live position.
+var errLocalNavigationWorldChanged = errors.New("skill: local navigation world changed")
+
 const (
 	maxNavigationTransitions        = 64
 	maxSemanticTransitionExecutions = 16
@@ -147,6 +153,7 @@ type navigationMemory struct {
 	visitedMaps      map[uint8]bool
 	visitedPositions map[uint8][]navigationState
 	routeGraph       *world.Graph
+	policy           MovePolicy
 	replans          int
 }
 
@@ -546,7 +553,11 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 				return fmt.Errorf("skill: GoTo: field-path probe on map %02x: %w", cur, fieldErr)
 			}
 			if reachable {
-				return walkWithinMap(m, romData, dest)
+				walkErr := walkWithinMap(m, romData, dest, nav.policy)
+				if errors.Is(walkErr, errLocalNavigationWorldChanged) {
+					continue
+				}
+				return walkErr
 			}
 		}
 		blockedHere := map[world.Edge]bool{}
@@ -653,7 +664,11 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 				cur, x, y, dest.Map, dest.X, dest.Y, err)
 		}
 		if len(route) == 0 {
-			return walkWithinMap(m, romData, dest)
+			walkErr := walkWithinMap(m, romData, dest, nav.policy)
+			if errors.Is(walkErr, errLocalNavigationWorldChanged) {
+				continue
+			}
+			return walkErr
 		}
 
 		step := route[0]
@@ -965,7 +980,11 @@ func abortIfBattle(m *emu.Emu) error {
 // a route first, walks only the ordinary prefix, performs the first field move
 // on that route, then rebuilds live state and plans again. It never scans for
 // an arbitrary nearby tree after a navigation failure.
-func walkWithinMap(m *emu.Emu, romData []byte, dest Destination) error {
+func walkWithinMap(m *emu.Emu, romData []byte, dest Destination, policies ...MovePolicy) error {
+	var policy MovePolicy
+	if len(policies) > 0 {
+		policy = policies[0]
+	}
 	cur := m.Peek8(sym.CurMap)
 	sx, sy := playerXY(m)
 	h, err := rom.ParseMap(romData, cur)
@@ -1004,6 +1023,30 @@ func walkWithinMap(m *emu.Emu, romData []byte, dest Destination) error {
 
 		if err != nil {
 			if err == planErr {
+				// Cut/Surf could not reach the destination. Before declaring a
+				// dead local component, ask the live push solver whether Strength
+				// can open it. This is destination-aware: no boulder moves unless
+				// the solved push state makes this exact destination reachable.
+				_, needsStrength, strengthPlanErr := currentLocalStrengthPlan(m, romData, h, dest)
+				if strengthPlanErr != nil {
+					return fmt.Errorf("skill: GoTo: Strength route plan on map %02x: %w", cur, strengthPlanErr)
+				}
+				if needsStrength {
+					moved, strengthErr := solveLocalStrengthPath(m, romData, policy, h, dest)
+					if strengthErr != nil {
+						if errors.Is(strengthErr, ErrBattleInterrupted) {
+							x, y := playerXY(m)
+							return fmt.Errorf("skill: GoTo: battle during Strength route on map %02x at (%d,%d): %w", cur, x, y, ErrBattle)
+						}
+						return strengthErr
+					}
+					if moved {
+						return errLocalNavigationWorldChanged
+					}
+					// Pushes were positively observed. Re-read the map and let the
+					// ordinary/Cut/Surf planner own the now-open final walk.
+					continue
+				}
 				return arriveBesideBlockedDestination(m, romData, dest, planErr)
 			}
 			x, y := playerXY(m)
