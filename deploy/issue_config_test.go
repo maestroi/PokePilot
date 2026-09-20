@@ -87,13 +87,10 @@ func TestIssueConfigUsesGitHubAdapter(t *testing.T) {
 			t.Errorf("runner missing inference setting %q", want)
 		}
 	}
-	// Virtual trade stays off until gomeboy's serial scheduler can exit a
-	// stalled Cable Club handshake (PR #1141 only fails the skill fast).
-	for _, line := range strings.Split(runner, "\n") {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "POKEPILOT_VIRTUAL_TRADER_URL:") {
-			t.Errorf("runner must not enable virtual trader until gomeboy is fixed; found %q", trimmed)
-		}
+	// Virtual trade is available again after gomeboy v1.3.0 (#1326). Keep the
+	// Swarm DNS endpoint set so RuntimeServices.VirtualTrader stays true.
+	if !strings.Contains(runner, "POKEPILOT_VIRTUAL_TRADER_URL: http://virtualtrader:8080") {
+		t.Errorf("runner missing enabled virtual trader URL")
 	}
 	for _, want := range []string{
 		"POKEPILOT_LITELLM_7900_URL: ${POKEPILOT_LITELLM_7900_URL:-http://192.168.50.130:8002/v1}",

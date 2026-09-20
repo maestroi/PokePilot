@@ -217,15 +217,11 @@ services:
       # only virtual-trader availability into its observation; endpoints never
       # enter the planner prompt.
       POKEPILOT_LINK_BROKER: linkbroker:8765
-      # Disabled: gomeboy's serial scheduler can spin forever inside a single
-      # StepFrame() when the trade peer's connection handshake stalls (see
-      # skill.ErrLinkStalled, PR #1141). That PR bounds the wait so a stall
-      # fails fast instead of killing the worker, but the trade itself still
-      # can't complete until the underlying gomeboy scheduler bug is fixed
-      # upstream. Unset until then so the planner is never offered a virtual
-      # trade objective (agent.runtimeServicesFromEnvironment returns nil,
-      # RuntimeServices.VirtualTrader stays false).
-      # POKEPILOT_VIRTUAL_TRADER_URL: http://virtualtrader:8080
+      # Re-enabled after gomeboy v1.3.0 (#1326): external-clock polling no longer
+      # monopolizes the halted CPU scheduler during Cable Club handshakes.
+      # skill.ErrLinkStalled (PR #1141) still fails a stalled trade fast so a
+      # peer hang cannot kill the worker.
+      POKEPILOT_VIRTUAL_TRADER_URL: http://virtualtrader:8080
       # POKEPILOT_ROM_DIR is where the runner looks for every cartridge it can
       # play; POKEMON_RED_ROM names the one non-farm mode boots from.
       POKEPILOT_ROM_DIR: /rom
