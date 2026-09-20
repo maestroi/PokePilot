@@ -7,6 +7,7 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	gameruntime "github.com/maestroi/pokepilot/game"
+	yellowcontroller "github.com/maestroi/pokepilot/yellow/controller"
 	yellowprofile "github.com/maestroi/pokepilot/yellow/profile"
 )
 
@@ -50,7 +51,16 @@ func (a *yellowObjectiveAdapter) NormalizeBoundary() error {
 }
 
 func (a *yellowObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error) {
-	return ObjectiveResult{Objective: o}, fmt.Errorf("agent: %s: %w", o, errYellowControllerUnavailable)
+	result := ObjectiveResult{Objective: o}
+	switch o.Kind {
+	case KindStarter:
+		if err := yellowcontroller.GetPikachuStarter(a.m, a.romData); err != nil {
+			return result, fmt.Errorf("agent: %s: %w", o, err)
+		}
+		return result, nil
+	default:
+		return result, fmt.Errorf("agent: %s: %w", o, errYellowControllerUnavailable)
+	}
 }
 
 func (a *yellowObjectiveAdapter) WithinObjectiveBudget(o Objective, fn func() error) error {
