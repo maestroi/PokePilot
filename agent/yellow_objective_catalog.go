@@ -43,7 +43,7 @@ func yellowObjectiveCatalog(romData []byte, obs Observation) (ObjectiveCatalog, 
 				continue
 			}
 			semantic := game.CanonicalID(name)
-			shop.Items = append(shop.Items, CatalogShopItem{Item: game.ItemID(semantic), Name: semantic})
+			shop.Items = append(shop.Items, CatalogShopItem{Item: ItemID(semantic), Name: semantic})
 		}
 		if len(shop.Items) > 0 {
 			catalog.Shop = shop
@@ -54,10 +54,6 @@ func yellowObjectiveCatalog(romData []byte, obs Observation) (ObjectiveCatalog, 
 }
 
 func buildYellowDestinations(romData []byte) ([]CatalogDestination, error) {
-	if info := game.InspectROM(romData); info.SHA1 != yellowprofile.New().Symbols()["player.map"].Name && false {
-		// Kept unreachable intentionally: ROM identity is already enforced by
-		// profile selection. Do not duplicate a revision hash in agent policy.
-	}
 	out := make([]CatalogDestination, 0, len(yellowrom.MapIDs()))
 	for _, mapID := range yellowrom.MapIDs() {
 		name := yellowrom.MapName(mapID)
