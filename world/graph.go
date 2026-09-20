@@ -129,7 +129,12 @@ func buildGraph(provider worldmodel.MapHeaderProvider) (*Graph, error) {
 		g.tiles[id] = dim{w: int(h.WidthBlocks) * 2, h: int(h.HeightBlocks) * 2}
 		if spec, err := provider.Grid(id, nil, worldmodel.TraversalLand); err == nil {
 			if grid, err := gridFromSpec(spec); err == nil {
-				g.comps[id] = components(grid)
+				// Warp tiles are walkable floor, but stepping on one leaves the
+				// map. Flood-filling through them falsely merges rooms that are
+				// only joined by a teleporter pad (Silph Co 5F's Card Key
+				// corridor across (9,15)). Component analysis must match
+				// GoTo's warpAvoidance: pads are ports, not corridors.
+				g.comps[id] = componentsWithBlocked(grid, warpTileBlockers(h.Warps))
 				g.reachable[id] = componentReachability(grid, g.comps[id])
 			}
 		}
@@ -212,16 +217,41 @@ func Components(grid *Grid) [][]int {
 	return components(grid)
 }
 
+func warpTileBlockers(warps []worldmodel.Warp) map[[2]int]bool {
+	if len(warps) == 0 {
+		return nil
+	}
+	out := make(map[[2]int]bool, len(warps))
+	for _, w := range warps {
+		out[[2]int{int(w.X), int(w.Y)}] = true
+	}
+	return out
+}
+
 func components(grid *Grid) [][]int {
+	return componentsWithBlocked(grid, nil)
+}
+
+// componentsWithBlocked is components, but tiles in blocked are treated as
+// non-walkable for the flood. Callers use this to keep teleporter/door warp
+// pads from bridging rooms that can only be joined by actually taking the
+// warp edge.
+func componentsWithBlocked(grid *Grid, blocked map[[2]int]bool) [][]int {
 	w, h := grid.Width, grid.Height
 	comps := make([][]int, h)
 	for y := range comps {
 		comps[y] = make([]int, w)
 	}
+	walkable := func(x, y int) bool {
+		if blocked[[2]int{x, y}] {
+			return false
+		}
+		return grid.Walkable(x, y)
+	}
 	next := 0
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {
-			if !grid.Walkable(x, y) || comps[y][x] != 0 {
+			if !walkable(x, y) || comps[y][x] != 0 {
 				continue
 			}
 			next++
@@ -234,7 +264,10 @@ func components(grid *Grid) [][]int {
 					if nx < 0 || ny < 0 || nx >= w || ny >= h {
 						continue
 					}
-					if !grid.Passable(c[0], c[1], nx, ny) || comps[ny][nx] != 0 {
+					if !walkable(nx, ny) || comps[ny][nx] != 0 {
+						continue
+					}
+					if !grid.Passable(c[0], c[1], nx, ny) {
 						continue
 					}
 					comps[ny][nx] = next

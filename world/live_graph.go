@@ -45,7 +45,7 @@ func (g *Graph) WithMapGrid(mapID uint8, grid *Grid) (*Graph, error) {
 		out.tiles[id] = d
 	}
 
-	out.comps[mapID] = components(grid)
+	out.comps[mapID] = componentsWithBlocked(grid, warpTileBlockers(g.warps[mapID]))
 	out.reachable[mapID] = componentReachability(grid, out.comps[mapID])
 	out.tiles[mapID] = dim{w: grid.Width, h: grid.Height}
 

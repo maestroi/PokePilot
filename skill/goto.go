@@ -539,7 +539,7 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 		if err != nil {
 			return fmt.Errorf("skill: GoTo: build live map %02x at (%d,%d): %w", cur, x, y, err)
 		}
-		routeGraph, err = overlayObservedMapTopology(routeGraph, liveGrid, h, currentObservedStationaryObjectBlockers(m, h))
+		routeGraph, err = overlayObservedMapTopology(routeGraph, liveGrid, h, routingBlockers(m, h))
 		if err != nil {
 			return fmt.Errorf("skill: GoTo: overlay live topology for map %02x: %w", cur, err)
 		}
@@ -565,7 +565,7 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 			// (7,11). Prove that removing only that restriction makes this exact
 			// destination reachable before moving any boulders. Travel owns the
 			// multi-floor preparation because it has the battle/roster policy.
-			localBlocked := currentObservedStationaryObjectBlockers(m, h)
+			localBlocked := routingBlockers(m, h)
 			localBlocked = warpAvoidance(h, int(x), int(y), localBlocked)
 			currentBlocked, currentErr := seafoamCurrentBlocksDestination(m, romData, h, dest, localBlocked)
 			if currentErr != nil {
