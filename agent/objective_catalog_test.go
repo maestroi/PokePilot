@@ -82,7 +82,7 @@ func TestAdapterCatalogOwnsStarterChoices(t *testing.T) {
 		{Starter: skill.StarterSquirtle, Species: "squirtle"},
 	}}}
 	got := OfferWithProgressionEvidence(obs, NewKnowledge(nil), planner).Candidates
-	if !hasCatalogObjective(got, Objective{Kind: KindStarter, Starter: skill.StarterSquirtle}) {
+	if !hasCatalogObjective(got, Objective{Kind: KindStarter, Starter: skill.StarterSquirtle, Species: "squirtle"}) {
 		t.Fatalf("adapter starter missing: %+v", got)
 	}
 	if hasCatalogObjective(got, Objective{Kind: KindStarter, Starter: skill.StarterCharmander}) ||
