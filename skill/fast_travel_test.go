@@ -18,7 +18,7 @@ func setTownVisited(mem *state.Mem, mapID uint8) {
 	mem[sym.TownVisitedFlag+uint16(mapID)/8] |= 1 << (mapID % 8)
 }
 
-func TestChooseFastTravelFlyOnlyToVisitedRequestedCity(t *testing.T) {
+func TestLegalFastTravelOptionsExposeOnlyUnlockedFlyDestinations(t *testing.T) {
 	mem := controllableFastTravelMem()
 	mem[sym.CurMap] = 0x01
 	mem[sym.CurMapTileset] = overworldTileset
@@ -28,18 +28,28 @@ func TestChooseFastTravelFlyOnlyToVisitedRequestedCity(t *testing.T) {
 	setTownVisited(&mem, 0)
 	setTownVisited(&mem, 6)
 
-	got := chooseFastTravel(&mem, Destination{Map: 6, X: 41, Y: 10})
-	if got.Kind != fastTravelFly || got.Map != 6 {
-		t.Fatalf("choice = %+v, want Fly to Celadon", got)
+	options := legalFastTravelOptions(&mem)
+	if len(options) != 2 {
+		t.Fatalf("options=%+v, want Pallet and Celadon Fly edges", options)
+	}
+	seen := map[uint8]bool{}
+	for _, option := range options {
+		if option.Kind != fastTravelFly {
+			t.Fatalf("unexpected non-Fly option: %+v", option)
+		}
+		seen[option.Landing.Map] = true
+	}
+	if !seen[0] || !seen[6] {
+		t.Fatalf("Fly options maps=%v, want visited 0 and 6", seen)
 	}
 
-	mem[sym.TownVisitedFlag] &^= 1 << 6
-	if got := chooseFastTravel(&mem, Destination{Map: 6, X: 41, Y: 10}); got.Kind != fastTravelNone {
-		t.Fatalf("unvisited city choice = %+v, want none", got)
+	mem[sym.ObtainedBadges] = 0
+	if got := legalFastTravelOptions(&mem); len(got) != 0 {
+		t.Fatalf("Fly options without Thunder Badge=%+v, want none", got)
 	}
 }
 
-func TestChooseFastTravelPrefersDigThenEscapeRopeForLastCenter(t *testing.T) {
+func TestLegalFastTravelOptionsDigAndEscapeReturnToLastCenter(t *testing.T) {
 	mem := controllableFastTravelMem()
 	mem[sym.CurMap] = 0x3d
 	mem[sym.CurMapTileset] = 17 // CAVERN
@@ -50,19 +60,133 @@ func TestChooseFastTravelPrefersDigThenEscapeRopeForLastCenter(t *testing.T) {
 	mem[sym.BagItems] = escapeRopeItem
 	mem[sym.BagItems+1] = 2
 
-	got := chooseFastTravel(&mem, Destination{Map: 0x02, X: 13, Y: 26})
+	options := legalFastTravelOptions(&mem)
+	var dig, rope *fastTravelOption
+	for i := range options {
+		switch options[i].Kind {
+		case fastTravelDig:
+			dig = &options[i]
+		case fastTravelEscapeRope:
+			rope = &options[i]
+		}
+	}
+	if dig == nil || rope == nil {
+		t.Fatalf("options=%+v, want Dig and Escape Rope", options)
+	}
+	want := flyLanding[0x02]
+	if dig.Landing != want || rope.Landing != want {
+		t.Fatalf("escape landings dig=%+v rope=%+v want=%+v", dig.Landing, rope.Landing, want)
+	}
+	if dig.ActionCost >= rope.ActionCost {
+		t.Fatalf("Dig cost=%d Escape Rope=%d; reusable Dig should be cheaper", dig.ActionCost, rope.ActionCost)
+	}
+}
+
+func TestEscapeTravelUsesSpecialWarpLandingsForRouteCenters(t *testing.T) {
+	for mapID, want := range map[uint8]Destination{
+		0x0f: {Map: 0x0f, X: 11, Y: 6},
+		0x15: {Map: 0x15, X: 11, Y: 20},
+	} {
+		got, ok := specialWarpLanding(mapID)
+		if !ok || got != want {
+			t.Fatalf("specialWarpLanding(%#02x) = %+v,%v; want %+v", mapID, got, ok, want)
+		}
+	}
+}
+
+func TestEscapeTravelAllowedRejectsAgathaDespiteCemeteryTileset(t *testing.T) {
+	mem := controllableFastTravelMem()
+	mem[sym.CurMap] = agathasRoomMap
+	mem[sym.CurMapTileset] = 15 // CEMETERY
+	if escapeTravelAllowed(&mem) {
+		t.Fatal("Agatha's room incorrectly allows Dig/Escape Rope")
+	}
+	mem[sym.CurMap] = 0x95
+	if !escapeTravelAllowed(&mem) {
+		t.Fatal("ordinary cemetery map unexpectedly rejects Dig/Escape Rope")
+	}
+}
+
+func TestChooseFastTravelByCostPreservesCheaperWalking(t *testing.T) {
+	options := []fastTravelOption{{
+		Kind:       fastTravelFly,
+		Landing:    Destination{Map: 6, X: 41, Y: 10},
+		ActionCost: fastTravelFlyActionCost,
+	}}
+	got := chooseFastTravelByCost(100, true, options, func(Destination) (int, bool) {
+		return 0, true
+	})
+	if got.Kind != fastTravelNone {
+		t.Fatalf("choice=%+v, want walking because 100 < Fly cost %d", got, fastTravelFlyActionCost)
+	}
+}
+
+func TestChooseFastTravelByCostUsesShortcutOnlyWhenItWins(t *testing.T) {
+	celadon := Destination{Map: 6, X: 41, Y: 10}
+	options := []fastTravelOption{{
+		Kind:       fastTravelFly,
+		Landing:    celadon,
+		ActionCost: fastTravelFlyActionCost,
+	}}
+	got := chooseFastTravelByCost(500, true, options, func(landing Destination) (int, bool) {
+		if landing != celadon {
+			return 0, false
+		}
+		return 40, true
+	})
+	if got.Kind != fastTravelFly || got.Cost != fastTravelFlyActionCost+40 {
+		t.Fatalf("choice=%+v, want Fly total=%d", got, fastTravelFlyActionCost+40)
+	}
+}
+
+func TestChooseFastTravelByCostCanUseIntermediateLanding(t *testing.T) {
+	cerulean := Destination{Map: 3, X: 19, Y: 18}
+	celadon := Destination{Map: 6, X: 41, Y: 10}
+	options := []fastTravelOption{
+		{Kind: fastTravelFly, Landing: cerulean, ActionCost: fastTravelFlyActionCost},
+		{Kind: fastTravelFly, Landing: celadon, ActionCost: fastTravelFlyActionCost},
+	}
+	got := chooseFastTravelByCost(600, true, options, func(landing Destination) (int, bool) {
+		switch landing.Map {
+		case 3:
+			return 300, true
+		case 6:
+			return 100, true
+		default:
+			return 0, false
+		}
+	})
+	if got.Kind != fastTravelFly || got.Map != 6 {
+		t.Fatalf("choice=%+v, want Fly via cheaper Celadon onward route", got)
+	}
+}
+
+func TestChooseFastTravelByCostPrefersReusableDigOverEscapeRope(t *testing.T) {
+	landing := Destination{Map: 2, X: 13, Y: 26}
+	options := []fastTravelOption{
+		{Kind: fastTravelEscapeRope, Landing: landing, ActionCost: fastTravelEscapeActionCost},
+		{Kind: fastTravelDig, Landing: landing, ActionCost: fastTravelDigActionCost},
+	}
+	got := chooseFastTravelByCost(400, true, options, func(Destination) (int, bool) {
+		return 100, true
+	})
 	if got.Kind != fastTravelDig {
-		t.Fatalf("choice with Dig = %+v, want Dig", got)
+		t.Fatalf("choice=%+v, want Dig over consumable Escape Rope", got)
 	}
+}
 
-	mem[sym.PartyMon1+sym.MonMoves] = 0
-	got = chooseFastTravel(&mem, Destination{Map: 0x02, X: 13, Y: 26})
-	if got.Kind != fastTravelEscapeRope {
-		t.Fatalf("choice without Dig = %+v, want Escape Rope", got)
-	}
-
-	if got := chooseFastTravel(&mem, Destination{Map: 0x03, X: 1, Y: 1}); got.Kind != fastTravelNone {
-		t.Fatalf("different requested map choice = %+v, want none", got)
+func TestChooseFastTravelByCostCanBypassBlockedOrdinaryRoute(t *testing.T) {
+	landing := Destination{Map: 2, X: 13, Y: 26}
+	options := []fastTravelOption{{
+		Kind:       fastTravelDig,
+		Landing:    landing,
+		ActionCost: fastTravelDigActionCost,
+	}}
+	got := chooseFastTravelByCost(0, false, options, func(Destination) (int, bool) {
+		return 100, true
+	})
+	if got.Kind != fastTravelDig {
+		t.Fatalf("choice=%+v, want legal shortcut when ordinary route is unavailable", got)
 	}
 }
 
