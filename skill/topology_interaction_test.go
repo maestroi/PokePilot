@@ -59,3 +59,10 @@ func TestTopologyInteractionGoalProbeIsDemandDriven(t *testing.T) {
 		t.Fatalf("goal probe calls=%d, want exactly one live check", calls)
 	}
 }
+
+func TestTopologyInteractionRouteGoalNameIsExplicit(t *testing.T) {
+	spec := topologyInteraction{RouteGoal: "Mansion warp (5,10)"}
+	if got := spec.routeGoalName(); got != "Mansion warp (5,10)" {
+		t.Fatalf("routeGoalName() = %q, want explicit route goal", got)
+	}
+}
