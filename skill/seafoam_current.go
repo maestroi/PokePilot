@@ -71,7 +71,6 @@ func seafoamDropStageForMap(mapID uint8) (seafoamDropStageSpec, bool) {
 	return seafoamDropStageSpec{}, false
 }
 
-
 func seafoamSurfAllowedFrom(mem *state.Mem, mapID uint8, x, y int) bool {
 	if mapID != seafoamB4FMap || state.SeafoamCurrentsStopped(mem) {
 		return true
