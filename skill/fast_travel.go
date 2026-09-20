@@ -9,11 +9,11 @@ import (
 )
 
 const (
-	escapeRopeItem      uint8 = 0x1d
-	digMoveID           uint8 = 0x5b
-	digFieldMoveMenuID  uint8 = 7
-	plateauTileset      uint8 = 23
-	fastTravelWarpBudget      = 6000
+	escapeRopeItem       uint8 = 0x1d
+	digMoveID            uint8 = 0x5b
+	digFieldMoveMenuID   uint8 = 7
+	plateauTileset       uint8 = 23
+	fastTravelWarpBudget       = 6000
 )
 
 type fastTravelKind uint8
