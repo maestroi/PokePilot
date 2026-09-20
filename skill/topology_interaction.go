@@ -41,6 +41,16 @@ func (spec topologyInteraction) goalReachable() bool {
 	return spec.GoalReachable != nil && spec.GoalReachable()
 }
 
+func validateTopologyInteraction(spec topologyInteraction) error {
+	if spec.Complete == nil || spec.Interact == nil {
+		return fmt.Errorf("skill: topology interaction %q: incomplete specification", spec.Name)
+	}
+	if (spec.RouteGoal == "") != (spec.GoalReachable == nil) {
+		return fmt.Errorf("skill: topology interaction %q: RouteGoal and GoalReachable must be supplied together", spec.Name)
+	}
+	return nil
+}
+
 // executeTopologyInteraction performs one verified topology mutation.
 //
 // The transaction is:
@@ -64,11 +74,8 @@ func executeTopologyInteraction(
 	if policy == nil {
 		return false, fmt.Errorf("skill: topology interaction %q: nil move policy", spec.Name)
 	}
-	if spec.Complete == nil || spec.Interact == nil {
-		return false, fmt.Errorf("skill: topology interaction %q: incomplete specification", spec.Name)
-	}
-	if (spec.RouteGoal == "") != (spec.GoalReachable == nil) {
-		return false, fmt.Errorf("skill: topology interaction %q: RouteGoal and GoalReachable must be supplied together", spec.Name)
+	if err := validateTopologyInteraction(spec); err != nil {
+		return false, err
 	}
 	if spec.MaxBattles <= 0 {
 		spec.MaxBattles = 20
