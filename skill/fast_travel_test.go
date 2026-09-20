@@ -5,7 +5,6 @@ import (
 
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
-	"github.com/maestroi/pokepilot/world"
 )
 
 func controllableFastTravelMem() state.Mem {
@@ -67,21 +66,14 @@ func TestChooseFastTravelPrefersDigThenEscapeRopeForLastCenter(t *testing.T) {
 	}
 }
 
-func TestCyclingRoadMoveAllowedBlocksOnlyUphillWhileForced(t *testing.T) {
-	var mem state.Mem
-	if !cyclingRoadMoveAllowed(&mem, route17Map, world.StepUp) {
-		t.Fatal("Route 17 up blocked before forced-bike state")
+func TestCyclingRoadExplicitInputSuppressesAutoDown(t *testing.T) {
+	if !cyclingRoadAutoDown(route17Map, false, false) {
+		t.Fatal("Route 17 idle input did not trigger downhill coast")
 	}
-	mem[sym.StatusFlags6] = alwaysOnBikeBit
-	if cyclingRoadMoveAllowed(&mem, route17Map, world.StepUp) {
-		t.Fatal("Route 17 up allowed during forced-bike state")
+	if cyclingRoadAutoDown(route17Map, false, true) {
+		t.Fatal("explicit Route 17 input still triggered downhill coast")
 	}
-	for _, step := range []world.Step{world.StepDown, world.StepLeft, world.StepRight} {
-		if !cyclingRoadMoveAllowed(&mem, route17Map, step) {
-			t.Fatalf("Route 17 legal move %s was blocked", step)
-		}
-	}
-	if !cyclingRoadMoveAllowed(&mem, cinnabarGymMap, world.StepUp) {
-		t.Fatal("forced-bike bit leaked uphill restriction outside Cycling Road")
+	if cyclingRoadAutoDown(route17Map, true, false) {
+		t.Fatal("trainer battle did not suppress Route 17 downhill coast")
 	}
 }

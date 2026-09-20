@@ -1,7 +1,6 @@
 package skill
 
 import (
-	"os"
 	"testing"
 
 	gameruntime "github.com/maestroi/pokepilot/game"
@@ -105,106 +104,44 @@ func TestCyclingRoadModelsOnlyTheBikeCorridor(t *testing.T) {
 	}
 }
 
-func TestCyclingRoadUphillIsPermanentGate(t *testing.T) {
+func TestCyclingRoadUphillConnectionsAreOrdinaryTopology(t *testing.T) {
+	// JoypadOverworld injects PAD_DOWN only when Route 17 has *no* held input.
+	// Explicit Up is legal, so both map directions must remain routable. The
+	// old never-projected "can_climb_cycling_road" gate encoded an automation
+	// release-frame bug as if it were a game rule.
 	for _, edge := range []world.Edge{
 		{Kind: world.EdgeConnection, From: route18Map, To: route17Map},
 		{Kind: world.EdgeConnection, From: route17Map, To: route16Map},
-	} {
-		transition := requireTransition(t, edge, "red:cycling_road_uphill", capCanClimbCyclingRoad)
-		if !transition.Gate {
-			t.Fatalf("uphill Cycling Road edge was modeled as an executable pivot: %+v", transition)
-		}
-		if !transition.OneWay {
-			t.Fatalf("uphill Cycling Road edge missing OneWay: %+v", transition)
-		}
-	}
-	// Downhill remains ordinary topology so Celadon→Fuchsia via Cycling Road
-	// still routes once the Bicycle gate warps are satisfied.
-	for _, edge := range []world.Edge{
 		{Kind: world.EdgeConnection, From: route16Map, To: route17Map},
 		{Kind: world.EdgeConnection, From: route17Map, To: route18Map},
 	} {
 		if transition, ok := redRouteTransitionForEdge(edge); ok && transition.ID == "red:cycling_road_uphill" {
-			t.Fatalf("downhill Cycling Road edge was incorrectly uphill-gated: %+v", transition)
+			t.Fatalf("Cycling Road connection %+v still carries obsolete uphill gate: %+v", edge, transition)
 		}
-	}
-	if caps := redRouteCapabilities(nil, new(state.Mem)); caps.Has(capCanClimbCyclingRoad) {
-		t.Fatalf("uphill Cycling Road capability must never be projected: %v", caps)
-	}
-	mem := new(state.Mem)
-	mem[sym.NumBagItems] = 1
-	mem[sym.BagItems] = bicycleItem
-	mem[sym.BagItems+1] = 1
-	if caps := redRouteCapabilities(nil, mem); caps.Has(capCanClimbCyclingRoad) {
-		t.Fatalf("owning a Bicycle must not project uphill Cycling Road: %v", caps)
 	}
 }
 
-// TestRoute18WestGateEscapesToCeladonRoofWithoutUphill locks the stranded
-// Route 18 gate pocket measured on run-2isuhypptp3cn1ji08lyq3j6e9: the player
-// already owns a Bicycle, stands on the west warp tile (33,8), and needs the
-// Celadon Mart roof. Without the uphill gate the static graph prefers
-// Route 18→17→16; with it, the first durable escape is through ROUTE_18_GATE
-// onto the Fuchsia-facing half, then the ordinary land path. Requires
-// POKEMON_RED_ROM.
-func TestRoute18WestGateEscapesToCeladonRoofWithoutUphill(t *testing.T) {
-	romPath := os.Getenv("POKEMON_RED_ROM")
-	if romPath == "" {
-		t.Skip("POKEMON_RED_ROM not set")
+func TestCyclingRoadAutoDownMatchesROMInputRule(t *testing.T) {
+	tests := []struct {
+		name          string
+		mapID         uint8
+		trainerBattle bool
+		inputHeld     bool
+		want          bool
+	}{
+		{name: "route17 idle", mapID: route17Map, want: true},
+		{name: "route17 explicit direction or button", mapID: route17Map, inputHeld: true, want: false},
+		{name: "route17 trainer battle", mapID: route17Map, trainerBattle: true, want: false},
+		{name: "route16 idle", mapID: route16Map, want: false},
+		{name: "route18 idle", mapID: route18Map, want: false},
 	}
-	romData, err := os.ReadFile(romPath)
-	if err != nil {
-		t.Fatalf("read ROM: %v", err)
-	}
-
-	// Match the farm save's relevant route permissions: Bicycle (gate warps)
-	// plus a cleared Route 12 Snorlax so the Fuchsia→Lavender land path is
-	// open. Without the land path, routing correctly reports the blocked
-	// uphill Cycling Road edge and never reaches the gate-escape assertion.
-	var mem state.Mem
-	mem[sym.NumBagItems] = 1
-	mem[sym.BagItems] = bicycleItem
-	mem[sym.BagItems+1] = 1
-	mem[sym.BagItems+2] = 0xff
-	setEventFlag(&mem, eventBeatRoute12Snorlax)
-
-	g, err := world.BuildGraph(romData)
-	if err != nil {
-		t.Fatalf("BuildGraph: %v", err)
-	}
-	prereqs := redRoutePrerequisites(g, romData, &mem)
-	if !prereqs.Capabilities.Has(capCanRideCyclingRoad) {
-		t.Fatalf("capabilities did not include %q: %v", capCanRideCyclingRoad, prereqs.Capabilities)
-	}
-	if !prereqs.Capabilities.Has(capCanClearSnorlax) {
-		t.Fatalf("capabilities did not include %q: %v", capCanClearSnorlax, prereqs.Capabilities)
-	}
-
-	route, err := world.FindRoutePlanAtDestinationWithCapabilities(
-		g, route18Map, celadonMartRoofMap, 33, 8, int(vendingStandX), int(vendingStandY), nil, prereqs,
-	)
-	if err != nil {
-		t.Fatalf("no route from Route 18 (33,8) to Celadon Mart roof with a Bicycle: %v", err)
-	}
-	if len(route) == 0 {
-		t.Fatal("empty route from Route 18 west gate to Celadon Mart roof")
-	}
-	sawGateEscape := false
-	for i, step := range route {
-		e := step.Edge
-		if e.Kind == world.EdgeConnection && e.From == route18Map && e.To == route17Map {
-			t.Fatalf("leg %d climbed Cycling Road uphill Route 18→17: %+v", i+1, route)
-		}
-		if e.Kind == world.EdgeConnection && e.From == route17Map && e.To == route16Map {
-			t.Fatalf("leg %d climbed Cycling Road uphill Route 17→16: %+v", i+1, route)
-		}
-		if e.Kind == world.EdgeWarp && e.From == route18Map && e.To == route18Gate1FMap &&
-			(e.WarpX == 33 || e.WarpX == 40) {
-			sawGateEscape = true
-		}
-	}
-	if !sawGateEscape {
-		t.Fatalf("route never crossed Route 18 Gate to leave the west pocket: %+v", route)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := cyclingRoadAutoDown(tc.mapID, tc.trainerBattle, tc.inputHeld); got != tc.want {
+				t.Fatalf("cyclingRoadAutoDown(%#02x, trainer=%v, input=%v) = %v, want %v",
+					tc.mapID, tc.trainerBattle, tc.inputHeld, got, tc.want)
+			}
+		})
 	}
 }
 
