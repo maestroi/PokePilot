@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	gameruntime "github.com/maestroi/pokepilot/game"
+	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
@@ -65,6 +66,88 @@ func TestCeladonInaccessibleMartWarpIsPermanentGate(t *testing.T) {
 	realDoor := world.Edge{Kind: world.EdgeWarp, From: celadonCityMap, To: gameCornerMap, WarpX: 28, WarpY: 19}
 	if got, ok := redRouteTransitionForEdge(realDoor); ok && got.ID == "red:celadon_inaccessible_mart_warp" {
 		t.Fatalf("real Game Corner warp was suppressed: %+v", got)
+	}
+}
+
+func TestSilph1FInaccessible3FWarpIsPermanentGate(t *testing.T) {
+	edge := world.Edge{
+		Kind:  world.EdgeWarp,
+		From:  silphCo1FMap,
+		To:    silphCo3FMap,
+		WarpX: silph1FInaccessible3FWarpX,
+		WarpY: silph1FInaccessible3FWarpY,
+	}
+	transition := requireTransition(t, edge, "red:silph_1f_inaccessible_3f_warp", capCanUseInaccessibleWarp)
+	if !transition.Gate {
+		t.Fatalf("inaccessible Silph 1F->3F warp was modeled as an executable pivot: %+v", transition)
+	}
+	if caps := redRouteCapabilities(nil, new(state.Mem)); caps.Has(capCanUseInaccessibleWarp) {
+		t.Fatalf("inaccessible warp capability must never be projected: %v", caps)
+	}
+
+	// The real 1F stairs to 2F remain ordinary topology.
+	realStairs := world.Edge{Kind: world.EdgeWarp, From: silphCo1FMap, To: 0xcf, WarpX: 26, WarpY: 0}
+	if got, ok := redRouteTransitionForEdge(realStairs); ok && got.ID == "red:silph_1f_inaccessible_3f_warp" {
+		t.Fatalf("real Silph 1F->2F stairs were suppressed: %+v", got)
+	}
+}
+
+func TestWarpAvoidanceSkipsInaccessibleWarps(t *testing.T) {
+	h := rom.MapHeader{
+		ID: silphCo11FMap,
+		Warps: []rom.Warp{
+			{X: silph11FInaccessibleWarpX, Y: silph11FInaccessibleWarpY, DestMap: 0xff, DestWarpID: 10},
+			{X: 3, Y: 2, DestMap: silphCo7FMap, DestWarpID: 4},
+		},
+	}
+	avoid := warpAvoidance(h, 10, 6, nil)
+	if avoid[[2]int{int(silph11FInaccessibleWarpX), int(silph11FInaccessibleWarpY)}] {
+		t.Fatal("inaccessible Silph 11F warp was included in warpAvoidance")
+	}
+	if !avoid[[2]int{3, 2}] {
+		t.Fatal("real Silph 11F->7F pad was missing from warpAvoidance")
+	}
+}
+
+// TestSilph1FRoutesTo3FViaStairsNotPhantomWarp locks the farm failure from
+// run-2sw2weue3l2ay1ddm11uelaj2n: without the inaccessible-warp gate, the
+// first leg from Silph Co 1F to the 3F stair landing is the phantom (16,10)
+// edge that never crosses. Requires POKEMON_RED_ROM.
+func TestSilph1FRoutesTo3FViaStairsNotPhantomWarp(t *testing.T) {
+	romPath := os.Getenv("POKEMON_RED_ROM")
+	if romPath == "" {
+		t.Skip("POKEMON_RED_ROM not set")
+	}
+	romData, err := os.ReadFile(romPath)
+	if err != nil {
+		t.Fatalf("read ROM: %v", err)
+	}
+	g, err := world.BuildGraph(romData)
+	if err != nil {
+		t.Fatalf("BuildGraph: %v", err)
+	}
+	var mem state.Mem
+	prereqs := redRoutePrerequisites(g, romData, &mem)
+	route, err := world.FindRoutePlanAtDestinationWithCapabilities(
+		g, silphCo1FMap, silphCo3FMap, 10, 15,
+		int(silph3FStairLandingX), int(silph3FStairLandingY), nil, prereqs,
+	)
+	if err != nil {
+		t.Fatalf("no route from Silph Co 1F to 3F landing: %v", err)
+	}
+	if len(route) == 0 {
+		t.Fatal("empty route from Silph Co 1F to 3F landing")
+	}
+	for i, step := range route {
+		e := step.Edge
+		if e.Kind == world.EdgeWarp && e.From == silphCo1FMap && e.To == silphCo3FMap &&
+			e.WarpX == silph1FInaccessible3FWarpX && e.WarpY == silph1FInaccessible3FWarpY {
+			t.Fatalf("leg %d used inaccessible Silph 1F->3F warp: %+v", i+1, route)
+		}
+	}
+	first := route[0].Edge
+	if first.Kind != world.EdgeWarp || first.From != silphCo1FMap || first.WarpX != 26 || first.WarpY != 0 {
+		t.Fatalf("first leg = %+v, want Silph 1F stairs at (26,0)", first)
 	}
 }
 

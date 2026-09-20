@@ -463,9 +463,16 @@ func warpAvoidance(h rom.MapHeader, sx, sy int, blocked map[[2]int]bool) map[[2]
 		out[p] = b
 	}
 	for _, w := range h.Warps {
-		if int(w.X) != sx || int(w.Y) != sy {
-			out[[2]int{int(w.X), int(w.Y)}] = true
+		if int(w.X) == sx && int(w.Y) == sy {
+			continue
 		}
+		// Decomp-annotated inaccessible warps never fire. Avoiding them as if
+		// they were doors can seal the only walkable corridor on a map
+		// (Silph Co 11F (5,5) between the Beauty and the president).
+		if redInaccessibleWarpTile(h.ID, w.X, w.Y) {
+			continue
+		}
+		out[[2]int{int(w.X), int(w.Y)}] = true
 	}
 	return out
 }

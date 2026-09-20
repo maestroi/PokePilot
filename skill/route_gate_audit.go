@@ -19,7 +19,8 @@ const (
 	// it "inaccessible": there is no door there in the playable map. Keep a
 	// never-projected capability for that one phantom edge so semantic routing
 	// cannot use the wall as a shortcut while the raw ROM warp table remains
-	// intact for destination-warp indexing.
+	// intact for destination-warp indexing. The same never-projected capability
+	// covers Silph Co's decomp-annotated inaccessible warps.
 	capCanUseInaccessibleWarp gameruntime.CapabilityID = "can_use_inaccessible_warp"
 
 	// Cycling Road (Routes 16–18) forces downhill bike movement once
@@ -43,6 +44,19 @@ const (
 	celadonMart5FMap             uint8 = 0x88
 	celadonInaccessibleMartWarpX uint8 = 39
 	celadonInaccessibleMartWarpY uint8 = 19
+
+	// Silph Co 1F declares a direct warp to 3F at (16,10) that the decomp marks
+	// inaccessible: the tile is walkable but never triggers. Without a permanent
+	// gate, Travel prefers it over the real 1F→2F→3F stair chain and stalls on
+	// the phantom edge (farm run-2sw2weue3l2ay1ddm11uelaj2n).
+	silph1FInaccessible3FWarpX uint8 = 16
+	silph1FInaccessible3FWarpY uint8 = 10
+
+	// Silph Co 11F declares a LAST_MAP warp at (5,5) marked inaccessible. It
+	// does not become a graph edge, but warpAvoidance would still treat it as a
+	// door and block the only walk around the Beauty NPC to the president.
+	silph11FInaccessibleWarpX uint8 = 5
+	silph11FInaccessibleWarpY uint8 = 5
 
 	route23VictoryRoadWarpX     uint8 = 4
 	route23VictoryRoadWarpY     uint8 = 31
@@ -71,6 +85,22 @@ func addAuditedRedRouteCapabilities(mem *state.Mem, caps gameruntime.CapabilityS
 	if state.HasEvent(mem, eventBeatRoute12Snorlax) || state.HasEvent(mem, eventBeatRoute16Snorlax) {
 		caps[capCanClearSnorlax] = true
 	}
+}
+
+// redInaccessibleWarpTile reports ROM warp-table entries the pret decomp marks
+// "; inaccessible". They remain in the raw header for DestWarpID indexing, but
+// must not be planned as traversable edges or avoided as live doors: stepping
+// on them never fires a warp.
+func redInaccessibleWarpTile(mapID, x, y uint8) bool {
+	switch {
+	case mapID == celadonCityMap && x == celadonInaccessibleMartWarpX && y == celadonInaccessibleMartWarpY:
+		return true
+	case mapID == silphCo1FMap && x == silph1FInaccessible3FWarpX && y == silph1FInaccessible3FWarpY:
+		return true
+	case mapID == silphCo11FMap && x == silph11FInaccessibleWarpX && y == silph11FInaccessibleWarpY:
+		return true
+	}
+	return false
 }
 
 func redAuditedRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, bool) {
@@ -117,6 +147,13 @@ func redAuditedRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, 
 		// removes only this source edge while preserving the real way to 5F via
 		// the department-store entrance, stairs/elevator, and all raw warp ids.
 		return bikeGate("red:celadon_inaccessible_mart_warp", capCanUseInaccessibleWarp)
+
+	case edge.Kind == world.EdgeWarp && edge.From == silphCo1FMap && edge.To == silphCo3FMap &&
+		edge.WarpX == silph1FInaccessible3FWarpX && edge.WarpY == silph1FInaccessible3FWarpY:
+		// pokered/data/maps/objects/SilphCo1F.asm declares warp (16,10)->3F but
+		// annotates it "; inaccessible". The stair/elevator path through 2F is
+		// the real route; this phantom edge must never be planned.
+		return bikeGate("red:silph_1f_inaccessible_3f_warp", capCanUseInaccessibleWarp)
 
 	case edge.Kind == world.EdgeWarp && edge.From == route16Map && edge.To == route16Gate1FMap &&
 		edge.WarpX == 24 && (edge.WarpY == 10 || edge.WarpY == 11):

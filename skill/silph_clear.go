@@ -25,11 +25,16 @@ const (
 	silph3FStairLandingY uint8 = 1
 
 	// 3F pad (11,11) lands on 7F's pad (5,3), immediately west of the rival
-	// encounter. The closed Card Key block is block-coordinate (4,4).
-	silph3FTo7FWarpX  uint8 = 11
-	silph3FTo7FWarpY  uint8 = 11
-	silph3FDoorBlockX       = 4
-	silph3FDoorBlockY       = 4
+	// encounter. SilphCo3F.asm GateCoordinates lists two Card Key blocks:
+	// (8,4) is the east wall between the stair/elevator landing and the pad;
+	// (4,4) is the west wall beyond the pad. From the stair landing only (8,4)
+	// opens the rival route (measured on run-2sw2weue3l2ay1ddm11uelaj2n).
+	silph3FTo7FWarpX uint8 = 11
+	silph3FTo7FWarpY uint8 = 11
+	silph3FEastDoorBlockX       = 8
+	silph3FEastDoorBlockY       = 4
+	silph3FWestDoorBlockX       = 4
+	silph3FWestDoorBlockY       = 4
 
 	// The rival appears at home coordinate (3,7) and is triggered from either
 	// (3,2) or (3,3). After the fight, the pad at (5,7) lands on 11F (3,2).
@@ -143,8 +148,27 @@ func reachSilphRivalRoom(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	}
 	reachable := func() bool { return silphWarpReachable(m, romData, silph3FTo7FEdge) }
 	if !reachable() {
-		if err := unlockSilphDoor(m, romData, silph3FDoorBlockX, silph3FDoorBlockY, policy, reachable); err != nil {
-			return fmt.Errorf("skill: ClearSilphCo: unlock 3F rival-room door: %w", err)
+		// Open whichever 3F Card Key door actually connects the current
+		// component to the rival pad. Success is pad reachability, not a
+		// particular door coordinate.
+		var last error
+		for _, door := range [][2]int{
+			{silph3FEastDoorBlockX, silph3FEastDoorBlockY},
+			{silph3FWestDoorBlockX, silph3FWestDoorBlockY},
+		} {
+			if reachable() {
+				break
+			}
+			if err := unlockSilphDoor(m, romData, door[0], door[1], policy, reachable); err != nil {
+				last = err
+				continue
+			}
+		}
+		if !reachable() {
+			if last != nil {
+				return fmt.Errorf("skill: ClearSilphCo: unlock 3F rival-room door: %w", last)
+			}
+			return fmt.Errorf("skill: ClearSilphCo: unlock 3F rival-room door: pad still unreachable")
 		}
 	}
 	if err := traverseSilphWarp(m, romData, silph3FTo7FEdge, policy, nil); err != nil {
