@@ -89,4 +89,3 @@ func TestWarpTargetBumpsAWarpTileAlreadyStoodOn(t *testing.T) {
 		t.Fatalf("warpTarget pushed %s onto walkable (%d,%d); want a wall to bump for the collision-warp path", push, nx, ny)
 	}
 }
-
