@@ -11,11 +11,13 @@ import (
 // Erika's Cut-sealed chamber can still leave through the south door. After
 // #1327 moved Cut into destination-aware local pathing, land-only Traverse
 // approaches treated the gym trees as solid and reported leg_unwalkable even
-// with Cut usable. Warp approaches must use the same field planner.
+// with Cut usable. Warp approaches must use the same field planner (#1339).
 //
 // The checkpoint must be a controllable CGB state on CELADON_GYM with the
 // Rainbow Badge and usable Cut. Farm states for this regression include
-// run-yj2tln2booq72zcohb2z6cqmq and run-bhtxa1lziy0w2rj8up54tfc9t.
+// run-yj2tln2booq72zcohb2z6cqmq, run-bhtxa1lziy0w2rj8up54tfc9t, and the
+// resumed go_to celadon city terminal
+// run-12dm6z8w9rg6332zcpn9ppvdnx (triage fa02e7c6c4a2b3c9 / farm issue 1347).
 func TestCeladonGymLeaveCutPocketRealROM(t *testing.T) {
 	m := loadPreparedCGBState(t, "POKEPILOT_CELADON_GYM_LEAVE_STATE")
 	rom := m.ROM()
@@ -39,7 +41,10 @@ func TestCeladonGymLeaveCutPocketRealROM(t *testing.T) {
 	if !ok {
 		t.Fatal(`Place("celadon city") missing`)
 	}
-	if _, err := TravelFlee(m, rom, dest, StatAwareMove(rom), 20); err != nil {
+	// Match the terminal farm objective on run-12dm6z8w9rg6332zcpn9ppvdnx
+	// ("go to celadon city", not the fleeing variant): Travel must clear the
+	// Cut pocket via Traverse's field-path warp approach and land in the city.
+	if _, err := Travel(m, rom, dest, StatAwareMove(rom), 20); err != nil {
 		t.Fatalf("leave Celadon Gym Cut pocket: %v", err)
 	}
 	if got := m.Peek8(sym.CurMap); got != celadonCityMap {
