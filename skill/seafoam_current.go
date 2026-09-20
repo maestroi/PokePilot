@@ -74,11 +74,11 @@ func seafoamBoulderDropSpec(stage seafoamDropStageSpec, index int) (BoulderPuzzl
 	}
 	hole := stage.Holes[index]
 	return BoulderPuzzleSpec{
-		Map:             stage.Map,
-		Targets:         []world.Point{hole},
-		MovableIDs:      map[int]bool{stage.Slots[index]: true},
-		TerminalTargets: map[[2]int]bool{{hole.X, hole.Y}: true},
-		CompleteEvent:   event,
+		Map:              stage.Map,
+		Targets:          []world.Point{hole},
+		MovableIDs:       map[int]bool{stage.Slots[index]: true},
+		TerminalTargets:  map[[2]int]bool{{hole.X, hole.Y}: true},
+		CompleteEvent:    event,
 		HasCompleteEvent: true,
 	}, nil
 }
