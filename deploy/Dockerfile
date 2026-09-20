@@ -41,8 +41,8 @@ RUN CGO_ENABLED=0 go build -ldflags "-X main.version=${GIT_SHA}" -o /out/pokepil
 
 # Keep the replay renderer on the v1.1.0 core used by PokePilot, plus the
 # one-line model-selection fix that makes CGB recordings replay as CGB while
-# historical DMG recordings continue to replay as DMG. The link broker itself
-# is taken from the same v1.2.0 GomeBoy API PokePilot compiles against.
+# historical DMG recordings continue to replay as DMG. The link broker is
+# installed from the same v1.3.0 GomeBoy release PokePilot compiles against.
 RUN GOBIN=/out CGO_ENABLED=0 go install github.com/maestroi/gomeboy/cmd/gomeboy-stream@26c3dbd668c2351ade5d3ca57019a2a0882255f8 && \
     GOBIN=/out CGO_ENABLED=0 go install github.com/maestroi/gomeboy/cmd/gomeboy-link-broker@v1.3.0
 
