@@ -199,6 +199,21 @@ func findRoute(g *Graph, from, to uint8, blockedHere map[Edge]bool, first, targe
 			// PortBypass / FROM-side actions may be selected even when ordinary
 			// walking cannot reach the exit port. PivotOnly destinations still
 			// require canExit: their obstacle is on the adjacent map.
+			//
+			// PortBypass must never promote a phantom connection band — one
+			// whose exit port has no walkable tile — into a real hop. Those
+			// bands still receive the same transition annotation as their
+			// walkable siblings (Route 9's east seam is split into six bands,
+			// five of them empty), and skipping canExit for them used to land
+			// with a nil component set. A nil landing is "unconstrained," so
+			// the next hop could invent a far-side exit on the destination map
+			// (Route 10 south to Lavender without Rock Tunnel). MEASURED on
+			// farm run-2ccw7p3rpnvu4129l1dkhc7ayh: with can_cut, FindRoutePlan
+			// returned Route9 -cut-> Route10 -south-> Lavender, then GoTo
+			// bounced through Rock Tunnel until navigation_stalled.
+			if g.componentAware && len(g.exitComps[e]) == 0 {
+				continue
+			}
 			if !skipCanExit[e] && !canExit(g, e, entry) {
 				continue
 			}
