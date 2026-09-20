@@ -87,6 +87,19 @@ func selectedBoulderMovables(movables []world.Movable, allowed map[int]bool) []w
 	return out
 }
 
+func unselectedBoulderBlockers(movables []world.Movable, allowed map[int]bool) map[[2]int]bool {
+	out := map[[2]int]bool{}
+	if len(allowed) == 0 {
+		return out
+	}
+	for _, movable := range movables {
+		if !allowed[movable.ID] {
+			out[[2]int{movable.Pos.X, movable.Pos.Y}] = true
+		}
+	}
+	return out
+}
+
 func liveNonBoulderBlockers(mem *state.Mem) map[[2]int]bool {
 	out := map[[2]int]bool{}
 	for _, sprite := range state.DecodeSprites(mem) {
@@ -153,12 +166,8 @@ func currentBoulderPuzzle(m *emu.Emu, romData []byte, spec BoulderPuzzleSpec) (w
 	fixed := liveNonBoulderBlockers(&mem)
 	allMovables := liveBoulderMovables(&mem)
 	movables := selectedBoulderMovables(allMovables, spec.MovableIDs)
-	if len(spec.MovableIDs) != 0 {
-		for _, movable := range allMovables {
-			if !spec.MovableIDs[movable.ID] {
-				fixed[[2]int{movable.Pos.X, movable.Pos.Y}] = true
-			}
-		}
+	for at := range unselectedBoulderBlockers(allMovables, spec.MovableIDs) {
+		fixed[at] = true
 	}
 	for at, blocked := range spec.Fixed {
 		if blocked {
