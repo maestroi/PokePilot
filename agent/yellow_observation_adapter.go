@@ -119,5 +119,11 @@ func (yellowSemanticObservationAdapter) Observe(m *emu.Emu, romData []byte, prof
 		})
 	}
 	obs.HasGrass = len(obs.WildGrass) > 0
+
+	catalog, err := yellowObjectiveCatalog(romData, obs)
+	if err != nil {
+		return Observation{}, fmt.Errorf("Yellow objective catalog: %w", err)
+	}
+	obs.Catalog = catalog
 	return obs, nil
 }
