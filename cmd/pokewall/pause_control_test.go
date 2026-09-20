@@ -115,9 +115,6 @@ func TestRepeatedIdenticalErrorsAutoPauseBeforeThirdAttempt(t *testing.T) {
 	if tile.CircuitKey != expectedKey || tile.CircuitFingerprint != expectedFingerprint || tile.CircuitKind != "repeat" {
 		t.Fatalf("circuit identity = key %q fingerprint %q kind %q", tile.CircuitKey, tile.CircuitFingerprint, tile.CircuitKind)
 	}
-	if tile.CircuitRevision != "build-broken" || tile.CircuitBadges != 2 || tile.CircuitEvents != 20 || tile.CircuitMaps != 40 {
-		t.Fatalf("circuit baseline = revision %q badges %d events %d maps %d", tile.CircuitRevision, tile.CircuitBadges, tile.CircuitEvents, tile.CircuitMaps)
-	}
 	if want := circuitPauseNote(failureCircuitDecision{Kind: "repeat", Count: autoPauseRepeatThreshold, Key: expectedKey}); tile.StopSoFar != want {
 		t.Fatalf("auto-pause note = %q, want %q", tile.StopSoFar, want)
 	}
@@ -148,6 +145,40 @@ func TestRepeatedIdenticalErrorsAutoPauseBeforeThirdAttempt(t *testing.T) {
 		t.Fatalf("error retry budget after human resume = %d, want 0", got)
 	}
 	w.mu.Unlock()
+}
+
+func TestRepeatedFailureCircuitCarriesFinishRevisionAndProgress(t *testing.T) {
+	w := NewWall("")
+	const detail = "unknown fishing rod old rod at map 05"
+	// Prime the first identical occurrence; maybeAutoPauseRepeatedFailure records
+	// the second one while observing the already-settled retry tile below.
+	recordFailureStreak(w, "looping", detail)
+
+	w.tiles["looping"] = &Tile{
+		RunID: "looping", Status: statusQueued, Attempts: 2, ErrorAttempts: 2,
+		Detail: "attempt 2 failed: " + detail,
+	}
+	w.queue = []string{"looping"}
+	before := pauseFinishSnapshot{
+		ok: true,
+		row: tileRow{
+			RunID: "looping", Attempts: 1, ErrorAttempts: 1,
+			Seed: 42, Frame: 1234, Map: 5, X: 11, Y: 4,
+		},
+	}
+	report := farm.FinishReport{
+		RunID: "looping", Attempt: 2, Reason: "error", Detail: detail,
+		RunnerVersion: "build-broken",
+		ProgressFinal: &farm.Progress{Badges: 2, Events: 20, Maps: 40},
+	}
+	if !w.maybeAutoPauseRepeatedFailure("looping", before, report) {
+		t.Fatal("second repeated failure did not open fallback circuit")
+	}
+
+	tile := w.tiles["looping"]
+	if tile.CircuitRevision != "build-broken" || tile.CircuitBadges != 2 || tile.CircuitEvents != 20 || tile.CircuitMaps != 40 {
+		t.Fatalf("circuit baseline = revision %q badges %d events %d maps %d", tile.CircuitRevision, tile.CircuitBadges, tile.CircuitEvents, tile.CircuitMaps)
+	}
 }
 
 func TestCancelPausedRunMakesItTerminal(t *testing.T) {
