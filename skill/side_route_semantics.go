@@ -91,40 +91,6 @@ func (x *redRouteTransitionExecutor) liveTransitionBlockage(transition gamerunti
 	return &blockage
 }
 
-// executeCutWarpApproach clears one reachable Cut tree only when the target
-// building warp is not already reachable through current live geometry. The
-// generic Cut recovery already validates the actual front tile against RAM,
-// cuts it, and steps onto the cleared cell; Changed then forces GoTo to rebuild
-// live topology before it attempts the door again.
-func (x *redRouteTransitionExecutor) executeCutWarpApproach(edge world.Edge) (world.TransitionExecutionResult, error) {
-	if edge.Kind != world.EdgeWarp {
-		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Cut warp approach %02x->%02x is not a warp", edge.From, edge.To)
-	}
-	if got := x.m.Peek8(sym.CurMap); got != edge.From {
-		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Cut warp approach starts on %02x, current map is %02x", edge.From, got)
-	}
-	h, err := rom.ParseMap(x.romData, edge.From)
-	if err != nil {
-		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Cut warp approach parse map %02x: %w", edge.From, err)
-	}
-	grid, err := liveMapGrid(x.m, x.romData, h)
-	if err != nil {
-		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Cut warp approach build map %02x: %w", edge.From, err)
-	}
-	sx, sy := playerXY(x.m)
-	if _, _, _, _, err := warpTarget(h, edge, grid, int(sx), int(sy), spriteBlockers(x.m), nil, x.romData); err == nil {
-		return world.TransitionExecutionResult{}, nil
-	}
-	opened, err := cutThroughReachableTree(x.m, x.romData)
-	if err != nil {
-		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Cut warp approach: %w", err)
-	}
-	if !opened {
-		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Cut warp approach to %02x has no reachable verified Cut tree", edge.To)
-	}
-	return world.TransitionExecutionResult{Changed: true}, nil
-}
-
 // executeSurfWarpApproach enters Surf at the first water-only step on a path
 // to a real warp. It deliberately does not traverse the warp itself. Once Surf
 // is positively observed, Changed makes GoTo overlay the live water topology;
