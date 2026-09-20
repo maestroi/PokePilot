@@ -185,7 +185,6 @@ func TestPlanFieldPathUsesSurfOnlyWhenWaterIsRequired(t *testing.T) {
 	}
 }
 
-
 func TestPlanFieldPathHonorsSurfEntryRule(t *testing.T) {
 	land := newFakeFieldPathGrid(5, 1)
 	water := newFakeFieldPathGrid(5, 1)
