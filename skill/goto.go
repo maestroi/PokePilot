@@ -536,6 +536,19 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 		if err != nil {
 			return fmt.Errorf("skill: GoTo: overlay live topology for map %02x: %w", cur, err)
 		}
+		// Prefer a direct capability-aware local route before component routing.
+		// This is what makes Cut/Surf true tile-path capabilities: if the
+		// destination is on this map and a mixed land/field-move path exists,
+		// do not leave the map just because pristine collision splits it.
+		if cur == dest.Map {
+			reachable, fieldErr := fieldPathReachableOnCurrentMap(m, romData, h, dest)
+			if fieldErr != nil {
+				return fmt.Errorf("skill: GoTo: field-path probe on map %02x: %w", cur, fieldErr)
+			}
+			if reachable {
+				return walkWithinMap(m, romData, dest)
+			}
+		}
 		blockedHere := map[world.Edge]bool{}
 		for k := range failed {
 			if k.m == cur && k.x == x && k.y == y {
@@ -947,10 +960,11 @@ func abortIfBattle(m *emu.Emu) error {
 }
 
 // walkWithinMap walks the player from their current position to dest on the
-// current map, retrying around dynamic sprite obstacles up to maxRetries times.
-// Its collision grid is decoded from the current wOverworldMap block buffer,
-// so script-driven tile replacements are ordinary topology rather than
-// learned blockers or story-specific collision patches.
+// current map, retrying around dynamic sprite obstacles. Local path planning
+// includes Cut and Surf when those capabilities are usable: the planner picks
+// a route first, walks only the ordinary prefix, performs the first field move
+// on that route, then rebuilds live state and plans again. It never scans for
+// an arbitrary nearby tree after a navigation failure.
 func walkWithinMap(m *emu.Emu, romData []byte, dest Destination) error {
 	cur := m.Peek8(sym.CurMap)
 	sx, sy := playerXY(m)
@@ -958,48 +972,68 @@ func walkWithinMap(m *emu.Emu, romData []byte, dest Destination) error {
 	if err != nil {
 		return fmt.Errorf("skill: GoTo: parse map %02x at (%d,%d): %w", cur, sx, sy, err)
 	}
-	grid, err := liveMapGrid(m, romData, h)
-	if err != nil {
-		return fmt.Errorf("skill: GoTo: build live map %02x at (%d,%d): %w", cur, sx, sy, err)
+	if dest.Map != cur {
+		return fmt.Errorf("skill: GoTo: local walk destination is map %02x while current map is %02x", dest.Map, cur)
 	}
 
-	// planErr is the "no path at all" case: already described in full, so
-	// it is returned as-is rather than re-wrapped as a walk failure.
-	var planErr error
-	err = walkAroundAvoidingObjects(func() error { return movementInterruption(m) }, m, h,
-		func(blocked map[[2]int]bool) ([]world.Step, error) {
-			x, y := playerXY(m)
-			// Same-map destinations are ordinary standing tiles. Stepping on an
-			// unrelated door while walking to one fires that warp immediately,
-			// just like it does during a connection-edge approach. #1117 fixed
-			// connection walks; the later #1149/#1150 failures showed local walks
-			// could still enter Cerulean's Badge House and recreate the trap.
-			blocked = warpAvoidance(h, int(x), int(y), blocked)
-			steps, err := world.FindPath(grid, int(x), int(y), int(dest.X), int(dest.Y), blocked)
-			if err != nil {
-				planErr = fmt.Errorf("skill: GoTo: no path on map %02x from (%d,%d) to (%d,%d): %w",
-					cur, x, y, dest.X, dest.Y, err)
-				return nil, planErr
+	// Each action changes live traversal state/topology. Replanning immediately
+	// afterwards keeps Cut/Surf execution evidence-based and bounds malformed
+	// geometry without limiting ordinary walking distance.
+	const maxLocalFieldActions = 16
+	for fieldActions := 0; ; {
+		var planErr error
+		var nextAction *fieldPathStep
+		err = walkAroundAvoidingObjects(func() error { return movementInterruption(m) }, m, h,
+			func(blocked map[[2]int]bool) ([]world.Step, error) {
+				x, y := playerXY(m)
+				// Same-map destinations are ordinary standing tiles. Stepping on an
+				// unrelated door while walking to one fires that warp immediately,
+				// so keep every other warp tile out of the local route.
+				blocked = warpAvoidance(h, int(x), int(y), blocked)
+				plan, perr := currentFieldPathPlan(m, romData, h, dest, blocked)
+				if perr != nil {
+					planErr = fmt.Errorf("skill: GoTo: no capability-aware path on map %02x from (%d,%d) to (%d,%d): %w",
+						cur, x, y, dest.X, dest.Y, perr)
+					return nil, planErr
+				}
+				prefix, action := firstFieldAction(plan)
+				nextAction = action
+				return prefix, nil
+			}, func(steps []world.Step) error { return WalkPath(m, steps) },
+			func() { m.StepFrames(npcWaitFrames) })
+
+		if err != nil {
+			if err == planErr {
+				return arriveBesideBlockedDestination(m, romData, dest, planErr)
 			}
-			return steps, nil
-		}, func(steps []world.Step) error { return WalkPath(m, steps) },
-		func() { m.StepFrames(npcWaitFrames) })
-	if err == nil {
-		return nil
+			x, y := playerXY(m)
+			if errors.Is(err, ErrBattleInterrupted) {
+				return fmt.Errorf("skill: GoTo: battle on map %02x at (%d,%d): %w", cur, x, y, ErrBattle)
+			}
+			var eb *ErrBlocked
+			if errors.As(err, &eb) {
+				return fmt.Errorf("skill: GoTo: blocked on map %02x at (%d,%d) after %d retries: %w",
+					cur, eb.At.X, eb.At.Y, maxWalkRetries, err)
+			}
+			return fmt.Errorf("skill: GoTo: walk on map %02x at (%d,%d): %w", cur, x, y, err)
+		}
+		if nextAction == nil {
+			return nil
+		}
+		if fieldActions >= maxLocalFieldActions {
+			x, y := playerXY(m)
+			return fmt.Errorf("skill: GoTo: exceeded %d local field actions on map %02x at (%d,%d) toward (%d,%d)",
+				maxLocalFieldActions, cur, x, y, dest.X, dest.Y)
+		}
+		if err := executeFieldPathAction(m, *nextAction); err != nil {
+			if errors.Is(err, ErrBattleInterrupted) {
+				x, y := playerXY(m)
+				return fmt.Errorf("skill: GoTo: battle during field-path action on map %02x at (%d,%d): %w", cur, x, y, ErrBattle)
+			}
+			return err
+		}
+		fieldActions++
 	}
-	if err == planErr {
-		return arriveBesideBlockedDestination(m, romData, dest, planErr)
-	}
-	x, y := playerXY(m)
-	if errors.Is(err, ErrBattleInterrupted) {
-		return fmt.Errorf("skill: GoTo: battle on map %02x at (%d,%d): %w", cur, x, y, ErrBattle)
-	}
-	var eb *ErrBlocked
-	if errors.As(err, &eb) {
-		return fmt.Errorf("skill: GoTo: blocked on map %02x at (%d,%d) after %d retries: %w",
-			cur, eb.At.X, eb.At.Y, maxWalkRetries, err)
-	}
-	return fmt.Errorf("skill: GoTo: walk on map %02x at (%d,%d): %w", cur, x, y, err)
 }
 
 // arriveBesideBlockedDestination is the last resort when walkAround's whole
