@@ -139,18 +139,20 @@ func FindRouteAtDestinationWithCapabilities(
 //
 // PortBypass and ordinary FROM-side actions (Cut a tree on this map, Surf off
 // a shore) are executable pivots: the pre-action ordinary-walking component
-// does not have to reach the port. PivotOnly annotations are narrower — they
-// only relax the destination landing component (the obstacle lives on the
-// adjacent map), so FROM-side canExit still applies. Missing capabilities
-// normally remove a semantic edge and, when that is the reason routing fails,
-// return structured prerequisite evidence before any movement occurs.
+// does not have to reach the port. PivotOnly annotations alone are narrower —
+// they only relax the destination landing component (the obstacle lives on the
+// adjacent map), so FROM-side canExit still applies. PortBypass+PivotOnly is
+// the FROM-side bridge that skips canExit without discarding the far map's
+// landing (Route 9 Cut toward Route 10). Missing capabilities normally remove
+// a semantic edge and, when that is the reason routing fails, return structured
+// prerequisite evidence before any movement occurs.
 //
 // PivotOnly transitions are also the exception for missing capabilities: they
 // annotate an ordinary edge whose capability is needed only to bypass static
-// TO-side component reachability. When that capability is absent, the edge
-// remains usable through ordinary geometry if the player can already reach its
-// port; the transition is omitted from the returned RouteStep so execution
-// does not demand an action that was not needed.
+// component reachability. When that capability is absent, the edge remains
+// usable through ordinary geometry if the player can already reach its port;
+// the transition is omitted from the returned RouteStep so execution does not
+// demand an action that was not needed.
 func FindRoutePlanAtDestinationWithCapabilities(
 	g *Graph,
 	from, to uint8,
@@ -168,13 +170,29 @@ func FindRoutePlanAtDestinationWithCapabilities(
 	skipCanExit := make(map[Edge]bool)
 	relaxLanding := make(map[Edge]bool)
 	executable := make(map[Edge]gameruntime.Transition, len(prereqs.Transitions))
-	allSemantic := make(map[Edge]bool, len(prereqs.Transitions))
+	allSkip := make(map[Edge]bool, len(prereqs.Transitions))
+	allRelax := make(map[Edge]bool, len(prereqs.Transitions))
+	classifyPrivileges := func(edge Edge, transition gameruntime.Transition, skip, relax map[Edge]bool) {
+		switch {
+		case transition.Gate:
+		case transition.PortBypass && transition.PivotOnly:
+			skip[edge] = true
+		case transition.PortBypass:
+			skip[edge] = true
+			relax[edge] = true
+		case transition.PivotOnly:
+			relax[edge] = true
+		default:
+			skip[edge] = true
+			relax[edge] = true
+		}
+	}
 	for edge, transition := range prereqs.Transitions {
 		// A gate is a precondition on ordinary geometry, not an action that
 		// creates traversal, so it is never a pivot: satisfied or not, the
 		// component rules below still decide whether its port is reachable.
 		if !transition.Gate {
-			allSemantic[edge] = true
+			classifyPrivileges(edge, transition, allSkip, allRelax)
 		}
 		if blockage, ok := gameruntime.EvaluateTransition(transition, prereqs.Capabilities); !ok {
 			denied[edge] = blockage
@@ -189,20 +207,7 @@ func FindRoutePlanAtDestinationWithCapabilities(
 		}
 
 		executable[edge] = transition
-		switch {
-		case transition.Gate:
-			// Gates never skip canExit or relax landings.
-		case transition.PortBypass:
-			skipCanExit[edge] = true
-			relaxLanding[edge] = true
-		case transition.PivotOnly:
-			// TO-side proxy only: keep FROM-side walking reachability.
-			relaxLanding[edge] = true
-		default:
-			// Ordinary FROM-side action (Cut tree on this map, etc.).
-			skipCanExit[edge] = true
-			relaxLanding[edge] = true
-		}
+		classifyPrivileges(edge, transition, skipCanExit, relaxLanding)
 	}
 
 	usable := g
@@ -223,7 +228,7 @@ func FindRoutePlanAtDestinationWithCapabilities(
 	// preserves prerequisite evidence for PivotOnly actions when ordinary
 	// geometry cannot reach the annotated edge and the missing capability is
 	// exactly what would have allowed the component pivot.
-	geometric, geometricErr := findRouteAtDestinationAllowingSemantic(g, from, to, x, y, tx, ty, blockedHere, allSemantic, allSemantic)
+	geometric, geometricErr := findRouteAtDestinationAllowingSemantic(g, from, to, x, y, tx, ty, blockedHere, allSkip, allRelax)
 	if geometricErr != nil {
 		return nil, err
 	}

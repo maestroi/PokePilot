@@ -251,14 +251,31 @@ func redRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, bool) {
 	case pair(semanticCeruleanCityMap, semanticRoute9Map):
 		// The immutable ROM collision splits Route 9 into a Cerulean-side
 		// component and a Route 10-side component, joined only by the live Cut
-		// tree. Once can_cut is available this semantic action must act as a
-		// pivot so routing can cross that static split. But the connection
-		// itself is not the tree: a player already on the Cerulean-side
-		// component can leave Route 9 again without Cut. Issue #815 exposed the
-		// old all-or-nothing behavior by stranding a checkpoint at Route 9
-		// (0,0) while recovery tried to return to Route 4.
+		// tree. Annotate only Route 9 -> Cerulean: a player already on the
+		// Cerulean-side component must still leave without Cut (issue #815),
+		// and Cerulean -> Route 9 must stay ordinary geometry so a TO-side
+		// PivotOnly landing relax cannot invent a direct east-edge crossing
+		// from Cerulean's west bank (run-os1jmuuqpc1033zjhq2at3qz4).
+		if edge.From != semanticRoute9Map {
+			return gameruntime.Transition{}, false
+		}
 		t := semanticTransition("red:route9_cut", edge, capCanCut)
 		t.PivotOnly = true
+		return t, true
+	case pair(semanticRoute9Map, route10Map):
+		// FROM-side Cut bridge: the tree is on Route 9, so with can_cut the
+		// router must skip canExit toward Route 10 while keeping Route 10's
+		// north/south landing authoritative. PivotOnly alone only relaxes the
+		// far landing; PortBypass alone also discards it. Together they mean
+		// "skip source canExit, keep destination components" so a west-side
+		// checkpoint reaches Rock Tunnel instead of inventing Saffron
+		// (run-os1jmuuqpc1033zjhq2at3qz4). Route 10 -> Route 9 stays ordinary.
+		if edge.From != semanticRoute9Map {
+			return gameruntime.Transition{}, false
+		}
+		t := semanticTransition("red:route9_cut", edge, capCanCut)
+		t.PivotOnly = true
+		t.PortBypass = true
 		return t, true
 	case pair(semanticSaffronCityMap, semanticRoute5Map),
 		pair(semanticSaffronCityMap, semanticRoute6Map),

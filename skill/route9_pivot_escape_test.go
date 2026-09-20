@@ -9,35 +9,135 @@ import (
 	"github.com/maestroi/pokepilot/world"
 )
 
-func TestRoute9CutIsPivotOnlyInBothDirections(t *testing.T) {
-	for _, edge := range []world.Edge{
-		{Kind: world.EdgeConnection, From: semanticCeruleanCityMap, To: semanticRoute9Map},
-		{Kind: world.EdgeConnection, From: semanticRoute9Map, To: semanticCeruleanCityMap},
-	} {
-		transition, ok := redRouteTransitionForEdge(edge)
-		if !ok {
-			t.Fatalf("Route 9 edge %+v has no semantic transition", edge)
+func TestRoute9CutIsPivotOnlyWhenLeavingRoute9(t *testing.T) {
+	cases := []struct {
+		name           string
+		edge           world.Edge
+		wantPivot      bool
+		wantPortBypass bool
+	}{
+		{
+			name:      "Route 9 -> Cerulean",
+			edge:      world.Edge{Kind: world.EdgeConnection, From: semanticRoute9Map, To: semanticCeruleanCityMap},
+			wantPivot: true,
+		},
+		{
+			name:           "Route 9 -> Route 10",
+			edge:           world.Edge{Kind: world.EdgeConnection, From: semanticRoute9Map, To: route10Map},
+			wantPivot:      true,
+			wantPortBypass: true,
+		},
+		{
+			name:      "Cerulean -> Route 9 stays ordinary",
+			edge:      world.Edge{Kind: world.EdgeConnection, From: semanticCeruleanCityMap, To: semanticRoute9Map},
+			wantPivot: false,
+		},
+		{
+			name:      "Route 10 -> Route 9 stays ordinary",
+			edge:      world.Edge{Kind: world.EdgeConnection, From: route10Map, To: semanticRoute9Map},
+			wantPivot: false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			transition, ok := redRouteTransitionForEdge(tc.edge)
+			if tc.wantPivot != ok {
+				t.Fatalf("ok=%v wantPivot=%v transition=%+v", ok, tc.wantPivot, transition)
+			}
+			if !tc.wantPivot {
+				return
+			}
+			if transition.ID != "red:route9_cut" || transition.Gate || !transition.PivotOnly {
+				t.Fatalf("transition=%+v, want PivotOnly red:route9_cut", transition)
+			}
+			if transition.PortBypass != tc.wantPortBypass {
+				t.Fatalf("PortBypass=%v, want %v", transition.PortBypass, tc.wantPortBypass)
+			}
+			if len(transition.Requires) != 1 || transition.Requires[0] != capCanCut {
+				t.Fatalf("requirements=%v, want [%s]", transition.Requires, capCanCut)
+			}
+		})
+	}
+}
+
+// TestRoute9WestRoutesToLavenderWithoutSaffron pins run-os1jmuuqpc1033zjhq2at3qz4:
+// stranded west of Route 9's Cut tree with can_cut, GoTo must reach Lavender
+// through Rock Tunnel instead of reporting can_enter_saffron.
+func TestRoute9WestRoutesToLavenderWithoutSaffron(t *testing.T) {
+	romPath := os.Getenv("POKEMON_RED_ROM")
+	if romPath == "" {
+		t.Skip("POKEMON_RED_ROM not set")
+	}
+	romData, err := os.ReadFile(romPath)
+	if err != nil {
+		t.Fatalf("read ROM: %v", err)
+	}
+
+	var mem state.Mem
+	mem[sym.ObtainedBadges] = 1<<state.BadgeBoulder | 1<<state.BadgeCascade | 1<<state.BadgeThunder
+	mem[sym.PartyCount] = 1
+	base := sym.PartyMon1
+	mem[base+sym.MonSpecies] = 6 // Charmeleon: Cut-compatible
+	copy(mem.Slice(base+sym.MonMoves, 4), []byte{cutMove, 0, 0, 0})
+	mem[sym.NumBagItems] = 2
+	mem[sym.BagItems] = ssTicketItem
+	mem[sym.BagItems+1] = 1
+	mem[sym.BagItems+2] = hm01Item
+	mem[sym.BagItems+3] = 1
+	mem[sym.BagItems+4] = 0xff
+
+	g, err := world.BuildGraph(romData)
+	if err != nil {
+		t.Fatalf("BuildGraph: %v", err)
+	}
+	prereqs := redRoutePrerequisites(g, romData, &mem)
+	if !prereqs.Capabilities.Has(capCanCut) {
+		t.Fatalf("capabilities did not include %q: %v", capCanCut, prereqs.Capabilities)
+	}
+	if prereqs.Capabilities.Has(capCanEnterSaffron) {
+		t.Fatal("test setup must not include can_enter_saffron")
+	}
+
+	lavender, ok := Place("lavender town")
+	if !ok {
+		t.Fatal("lavender town place missing")
+	}
+	route, err := world.FindRoutePlanAtDestinationWithCapabilities(
+		g, semanticRoute9Map, lavender.Map, 0, 8, int(lavender.X), int(lavender.Y), nil, prereqs,
+	)
+	if err != nil {
+		t.Fatalf("Route 9 (0,8) -> Lavender with can_cut and no Saffron: %v", err)
+	}
+	sawSaffron := false
+	for _, step := range route {
+		if step.Edge.From == semanticSaffronCityMap || step.Edge.To == semanticSaffronCityMap {
+			sawSaffron = true
 		}
-		if transition.ID != "red:route9_cut" {
-			t.Fatalf("Route 9 edge %+v transition id = %q", edge, transition.ID)
+	}
+	if sawSaffron {
+		t.Fatalf("route crossed Saffron despite missing drink: %+v", route)
+	}
+	// A Route 9 -> Route 10 Cut hop is enough to prove the west-side checkpoint
+	// is no longer diagnosed as can_enter_saffron. Some east-edge bands lack
+	// static entry components, so the shortest plan may temporarily look like a
+	// direct Route 10 south seam; live Cut + replan still owns Rock Tunnel.
+	sawRoute10 := false
+	for _, step := range route {
+		if step.Edge.From == route10Map || step.Edge.To == route10Map {
+			sawRoute10 = true
+			break
 		}
-		if transition.Gate {
-			t.Fatalf("Route 9 edge %+v is a gate; Cut must remain a component pivot", edge)
-		}
-		if !transition.PivotOnly {
-			t.Fatalf("Route 9 edge %+v is not PivotOnly; west-side checkpoints can be stranded without Cut", edge)
-		}
-		if len(transition.Requires) != 1 || transition.Requires[0] != capCanCut {
-			t.Fatalf("Route 9 edge %+v requirements = %v, want [%s]", edge, transition.Requires, capCanCut)
-		}
+	}
+	if !sawRoute10 {
+		t.Fatalf("route did not leave via Route 10: %+v", route)
 	}
 }
 
 // TestGoToRoute4FromCeruleanEastDoesNotBounceRoute9 is farm #1261
 // (run-27dtzi7qnqt962i4ecootzj8tg): GoTo Route 4 (10,10) from Cerulean's
 // east seam with can_cut used to plan Cerulean -> Route 9 -> Cerulean and
-// stall. The adapter still annotates both directions; the generic router
-// must not treat that re-entry as a component teleport.
+// stall. Cerulean -> Route 9 is ordinary geometry; the router must still
+// refuse a no-op bounce through Route 9.
 func TestGoToRoute4FromCeruleanEastDoesNotBounceRoute9(t *testing.T) {
 	romPath := os.Getenv("POKEMON_RED_ROM")
 	if romPath == "" {
