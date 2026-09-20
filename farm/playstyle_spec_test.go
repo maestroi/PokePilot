@@ -92,3 +92,34 @@ func TestCopyRunPolicyCarriesOrthogonalSettings(t *testing.T) {
 		t.Fatalf("copied wild policy = %q", got)
 	}
 }
+
+func TestAdoptCurrentInferenceModelUpdatesLeasedIdentity(t *testing.T) {
+	var spec Spec
+	if err := json.Unmarshal([]byte(`{
+		"run_id":"adopt-model",
+		"inference":{
+			"deployment_id":"7900-primary",
+			"model_id":"qwen3.5-9b",
+			"api_model":"qwen3.5-9b",
+			"endpoint":"http://gpu.example/v1",
+			"compute":"RX 7900 XTX",
+			"revision":"stale",
+			"artifact":"/old.gguf",
+			"quantization":"Q4"
+		}
+	}`), &spec); err != nil {
+		t.Fatal(err)
+	}
+	AdoptCurrentInferenceModel("qwen3.8-27b")
+	got := CurrentInference()
+	if got == nil || got.ModelID != "qwen3.8-27b" || got.APIModel != "qwen3.8-27b" {
+		t.Fatalf("adopted inference = %#v", got)
+	}
+	if got.Revision != "" || got.Artifact != "" || got.Quantization != "" {
+		t.Fatalf("adopt retained stale artifact fields: %#v", got)
+	}
+	var reset Spec
+	if err := json.Unmarshal([]byte(`{"run_id":"adopt-reset"}`), &reset); err != nil {
+		t.Fatal(err)
+	}
+}

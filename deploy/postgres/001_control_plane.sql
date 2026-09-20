@@ -38,11 +38,10 @@ INSERT INTO model_deployments (
     engine_config, legacy_profile
 ) VALUES
     (
-        'qwen38-27b-7900', 'Qwen 3.8 27B · 7900 XTX', 'qwen3.8-27b',
-        'replace-with-model-revision-or-sha256', '/srv/models/qwen3.8-27b/model.gguf',
-        'replace-with-quantization', 'RX 7900 XTX', 'http://192.168.50.130:8002/v1',
-        'qwen3.8-27b', TRUE, TRUE, ARRAY['farm','experiment-a'], '', '', 'llama.cpp', 'replace-with-server-version',
-        '7900-pinned', 'auto'
+        'qwen38-27b-7900', '7900 XTX', '',
+        '', '', '', 'RX 7900 XTX', 'http://192.168.50.130:8002/v1',
+        '', TRUE, TRUE, ARRAY['farm','experiment-a'], '', '', 'llama.cpp', 'replace-with-server-version',
+        '7900-switchable', 'auto'
     ),
     (
         'qwen35-4b-4090', 'Qwen 3.5 4B · RTX 4090', 'qwen3.5-4b',

@@ -138,6 +138,12 @@ type LLMPlanner struct {
 	// under. badgerun reads these off the planner at the end of each run.
 	Health LLMHealth
 
+	// OnModelAdopted is called when reconcileResponseModel updates p.Model
+	// because a single-model endpoint answered under a different name than
+	// the (stale) lease requested. Farm uses it to keep InferenceIdentity
+	// aligned with what actually served the reply.
+	OnModelAdopted func(model string)
+
 	// modelOmittedLogged is the once-per-run gate for the "server did not
 	// report a model" log line: visible, but not repeated every call.
 	modelOmittedLogged bool
@@ -196,6 +202,88 @@ const (
 // usage, which is "not reported", never "free".
 func (p *LLMPlanner) Usage() (prompt, completion int) {
 	return p.Health.PromptTokens, p.Health.CompletionTokens
+}
+
+// reconcileResponseModel enforces the S7-3 identity check with one shared
+// exception for switchable single-model hosts: llama.cpp (and similar)
+// ignores the request model name and echoes whatever is loaded. When a
+// lease still names a prior load (or a stale registry pin) but /v1/models
+// reports exactly the answering model, adopt that identity and keep the
+// reply. A multi-model endpoint or a live sole model that disagrees with
+// the answer stays a hard ErrModelMismatch — re-asking cannot change which
+// weights the server has loaded.
+func (p *LLMPlanner) reconcileResponseModel(answered string) error {
+	answered = strings.TrimSpace(answered)
+	if answered == "" {
+		if !p.modelOmittedLogged {
+			p.modelOmittedLogged = true
+			if p.Log != nil {
+				fmt.Fprintln(p.Log, "  llm: server did not report a model field; cannot verify which model answered")
+			}
+		}
+		return nil
+	}
+	if answered == p.Model {
+		return nil
+	}
+	if live, ok := p.liveSoleModel(); ok && live == answered {
+		requested := p.Model
+		p.Model = answered
+		if p.Log != nil {
+			fmt.Fprintf(p.Log, "  llm: adopting live model %q (requested %q; endpoint serves only that model)\n", answered, requested)
+		}
+		if p.OnModelAdopted != nil {
+			p.OnModelAdopted(answered)
+		}
+		return nil
+	}
+	return fmt.Errorf("%w: requested %q but %q answered", ErrModelMismatch, p.Model, answered)
+}
+
+// liveSoleModel probes the planner endpoint's /v1/models list. ok is true
+// only when the endpoint reports exactly one non-empty model id.
+func (p *LLMPlanner) liveSoleModel() (string, bool) {
+	base := strings.TrimRight(p.BaseURL, "/")
+	if base == "" {
+		base = strings.TrimRight(defaultLLMBaseURL, "/")
+	}
+	req, err := http.NewRequest(http.MethodGet, base+"/models", nil)
+	if err != nil {
+		return "", false
+	}
+	if p.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+p.Token)
+	}
+	client := p.Client
+	if client == nil {
+		client = &http.Client{Timeout: 5 * time.Second}
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", false
+	}
+	var models struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&models); err != nil {
+		return "", false
+	}
+	ids := make([]string, 0, len(models.Data))
+	for _, m := range models.Data {
+		if id := strings.TrimSpace(m.ID); id != "" {
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) != 1 {
+		return "", false
+	}
+	return ids[0], true
 }
 
 // PromptHash is the comparability marker for the prompt a planner sends:
@@ -336,23 +424,9 @@ func (p *LLMPlanner) NextRetry(obs Observation, offered []Objective, r Retry) (O
 				len(offered), took.Round(10*time.Millisecond), usage, snippet([]byte(reply)), picked)
 		}
 	}()
-	if res.Model != "" && res.Model != p.Model {
-		// The ablation question is "does the bigger model solve this?". If
-		// the server ignored the model field, loaded one model, or the env
-		// var is wrong, comparing a model to itself would be read as "not
-		// capacity" — a false negative on the central experiment. So this
-		// is a hard error naming both sides, never a warn-and-continue.
+	if err := p.reconcileResponseModel(res.Model); err != nil {
 		p.Health.Rejected++
-		return Objective{}, fmt.Errorf("%w: requested %q but %q answered", ErrModelMismatch, p.Model, res.Model)
-	}
-	if res.Model == "" && !p.modelOmittedLogged {
-		// Some OpenAI-compatible servers omit the field entirely; that is
-		// not an error (failing there would break working setups), but it
-		// means which model answered is UNVERIFIED, so say so once.
-		p.modelOmittedLogged = true
-		if p.Log != nil {
-			fmt.Fprintln(p.Log, "  llm: server did not report a model field; cannot verify which model answered")
-		}
+		return Objective{}, err
 	}
 	if res.FinishReason != "" && res.FinishReason != "stop" {
 		// "length" means the reply was cut off: a truncated JSON that still
@@ -407,15 +481,9 @@ func (p *LLMPlanner) StrategizeRetry(obs Observation, offered []Objective, reaso
 		}
 		fmt.Fprintf(p.Log, "  strategist: %d offered, %s%s, reply %q\n", len(offered), took.Round(10*time.Millisecond), usage, snippet([]byte(reply)))
 	}
-	if res.Model != "" && res.Model != p.Model {
+	if err := p.reconcileResponseModel(res.Model); err != nil {
 		p.Health.Rejected++
-		return Plan{}, fmt.Errorf("%w: requested %q but %q answered", ErrModelMismatch, p.Model, res.Model)
-	}
-	if res.Model == "" && !p.modelOmittedLogged {
-		p.modelOmittedLogged = true
-		if p.Log != nil {
-			fmt.Fprintln(p.Log, "  llm: server did not report a model field; cannot verify which model answered")
-		}
+		return Plan{}, err
 	}
 	if res.FinishReason != "" && res.FinishReason != "stop" {
 		p.Health.Rejected++
