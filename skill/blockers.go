@@ -38,21 +38,33 @@ func spriteBlockers(m *emu.Emu) map[[2]int]bool {
 // what spriteBlockers reports when in range and this layer has no better
 // answer for it out of range.
 func stationaryObjectBlockers(h rom.MapHeader) map[[2]int]bool {
+	return presentStationaryObjectBlockers(h, nil)
+}
+
+// presentStationaryObjectBlockers returns MovementStay home tiles that are
+// still present on the map: every stay object whose 1-based object id is not
+// in hidden. Unlike observedStationaryObjectBlockers, this is map-wide — an
+// off-screen trainer or item ball still occupies its home tile — matching
+// HiddenObjectIDs' map-wide missable list. Use it for local planning and for
+// component topology so a distant NPC that cuts a floor is visible to the
+// router before the sprite buffer loads it.
+func presentStationaryObjectBlockers(h rom.MapHeader, hidden map[uint8]bool) map[[2]int]bool {
 	blocked := map[[2]int]bool{}
-	for _, o := range h.Objects {
-		if o.Movement == rom.MovementStay {
-			blocked[[2]int{int(o.X), int(o.Y)}] = true
+	for i, o := range h.Objects {
+		if o.Movement != rom.MovementStay || hidden[uint8(i+1)] {
+			continue
 		}
+		blocked[[2]int{int(o.X), int(o.Y)}] = true
 	}
 	return blocked
 }
 
 // observedStationaryObjectBlockers returns only stationary object home tiles
-// that are present in the current sprite snapshot. Unlike liveBlockers, this
-// is used to change map component topology, so a hidden item or defeated
-// trainer must not split the map after it has disappeared. Moving sprites are
-// excluded because their positions are observations for one walking plan, not
-// stable geometry for later map legs.
+// that are present in the current sprite snapshot. Unlike present stationary
+// blockers, this drops off-screen stay objects, so it must not be the sole
+// input to map-component topology on floors where a distant NPC is the cut.
+// Moving sprites are excluded because their positions are observations for
+// one walking plan, not stable geometry for later map legs.
 func observedStationaryObjectBlockers(h rom.MapHeader, live []state.SpriteState) map[[2]int]bool {
 	blocked := map[[2]int]bool{}
 	for _, sprite := range live {
@@ -74,7 +86,13 @@ func currentObservedStationaryObjectBlockers(m *emu.Emu, h rom.MapHeader) map[[2
 	return observedStationaryObjectBlockers(h, state.DecodeSprites(&mem))
 }
 
-// liveBlockers is spriteBlockers widened with h's stationary objects, for
+func currentPresentStationaryObjectBlockers(m *emu.Emu, h rom.MapHeader) map[[2]int]bool {
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	return presentStationaryObjectBlockers(h, state.HiddenObjectIDs(&mem))
+}
+
+// liveBlockers is spriteBlockers widened with present stationary objects, for
 // callers that plan a route across a distance the player has not yet
 // crossed: MEASURED on Pokemon Tower 5F (run-3anwzvms26fjy32alh211qa4fn and
 // run-27a3sz93t4z9t3vgoljp7oofcc), a Channeler at (17,7) invisible to
@@ -85,7 +103,7 @@ func currentObservedStationaryObjectBlockers(m *emu.Emu, h rom.MapHeader) map[[2
 // Travel's same-box loop guard on a walk that was never actually stuck, just
 // oscillating between two routes neither snapshot alone ruled out.
 func liveBlockers(m *emu.Emu, h rom.MapHeader) map[[2]int]bool {
-	return mergeBlockers(spriteBlockers(m), stationaryObjectBlockers(h))
+	return mergeBlockers(spriteBlockers(m), currentPresentStationaryObjectBlockers(m, h))
 }
 
 // mergeBlockers returns the union of live and fixed blockers as a new map

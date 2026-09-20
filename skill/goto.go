@@ -469,15 +469,27 @@ func goToWithTransitionExecutor(m *emu.Emu, romData []byte, dest Destination, ex
 	return goToWithTransitionExecutorMemory(m, romData, dest, executor, newNavigationMemory())
 }
 
-// overlayObservedMapTopology applies the current Red map's stable, visible
-// object collisions to its freshly decoded grid, then returns a new routing
-// snapshot. Passing the previous snapshot preserves observations from earlier
-// legs without mutating the base graph. Callers supply only positively
-// observed stationary blockers, keeping moving and hidden objects out of the
-// remembered topology.
+// overlayObservedMapTopology applies the current Red map's stable present
+// object collisions and warp tiles to its freshly decoded grid, then returns a
+// new routing snapshot. Passing the previous snapshot preserves observations
+// from earlier legs without mutating the base graph.
+//
+// Callers must supply present (non-hidden) stationary blockers — including
+// off-screen stay objects — so a distant NPC that cuts the floor splits
+// components before the sprite buffer loads it. Warp tiles are cleared too:
+// they are portals, not corridors. Leaving them walkable lets a local "path"
+// bridge two pockets by stepping onto a door mid-route, which GoTo's
+// warpAvoidance correctly forbids while FindRoutePlan still believes the
+// pockets are one component and returns an empty same-map route.
+// MEASURED on Silph Co 5F (run-29v9xyjvb2vlx1kkxbzqocuax4): the Card Key
+// pocket is only joined to the stair/elevator side through warp tiles once
+// the MovementStay rocket at (8,16) is present.
 func overlayObservedMapTopology(g *world.Graph, grid *world.Grid, h rom.MapHeader, blockers map[[2]int]bool) (*world.Graph, error) {
 	for at := range blockers {
 		grid.Set(at[0], at[1], false)
+	}
+	for _, w := range h.Warps {
+		grid.Set(int(w.X), int(w.Y), false)
 	}
 	return g.WithMapGrid(h.ID, grid)
 }
@@ -539,7 +551,7 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 		if err != nil {
 			return fmt.Errorf("skill: GoTo: build live map %02x at (%d,%d): %w", cur, x, y, err)
 		}
-		routeGraph, err = overlayObservedMapTopology(routeGraph, liveGrid, h, currentObservedStationaryObjectBlockers(m, h))
+		routeGraph, err = overlayObservedMapTopology(routeGraph, liveGrid, h, currentPresentStationaryObjectBlockers(m, h))
 		if err != nil {
 			return fmt.Errorf("skill: GoTo: overlay live topology for map %02x: %w", cur, err)
 		}

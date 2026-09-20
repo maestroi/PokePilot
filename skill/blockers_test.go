@@ -7,6 +7,27 @@ import (
 	"github.com/maestroi/pokepilot/red/state"
 )
 
+func TestPresentStationaryObjectBlockersSkipsHidden(t *testing.T) {
+	h := rom.MapHeader{Objects: []rom.Object{
+		{X: 2, Y: 3, Movement: rom.MovementStay},
+		{X: 4, Y: 5, Movement: rom.MovementStay},
+		{X: 6, Y: 7, Movement: rom.MovementWalk},
+	}}
+	got := presentStationaryObjectBlockers(h, map[uint8]bool{2: true})
+	if !got[[2]int{2, 3}] {
+		t.Fatal("visible stay object missing")
+	}
+	if got[[2]int{4, 5}] {
+		t.Fatal("hidden stay object included")
+	}
+	if got[[2]int{6, 7}] {
+		t.Fatal("walking object included")
+	}
+	if len(got) != 1 {
+		t.Fatalf("blockers = %v, want only (2,3)", got)
+	}
+}
+
 func TestObservedStationaryObjectBlockers(t *testing.T) {
 	h := rom.MapHeader{Objects: []rom.Object{
 		{X: 2, Y: 3, Movement: rom.MovementStay},
