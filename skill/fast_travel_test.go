@@ -5,7 +5,6 @@ import (
 
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
-	"github.com/maestroi/pokepilot/world"
 )
 
 func controllableFastTravelMem() state.Mem {
