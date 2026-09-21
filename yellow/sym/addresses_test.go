@@ -35,6 +35,7 @@ func TestPhase0AddressesMatchSupportedYellowLayout(t *testing.T) {
 		{name: "wListMenuID", got: ListMenuID, want: 0xCF93},
 		{name: "wPartyMenuTypeOrMessageID", got: PartyMenuTypeOrMessage, want: 0xD07C},
 		{name: "wFieldMoves", got: FieldMoves, want: 0xCD3D},
+		{name: "wRodResponse", got: RodResponse, want: 0xCD3D},
 		{name: "wFlyLocationsList", got: FlyLocationsList, want: 0xCD3E},
 		{name: "wDestinationMap", got: DestinationMap, want: 0xD719},
 		{name: "wActionResultOrTookBattleTurn", got: ActionResult, want: 0xCD6A},
