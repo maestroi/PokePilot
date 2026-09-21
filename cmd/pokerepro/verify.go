@@ -156,8 +156,9 @@ func objectiveFromFailure(in farm.FailureObjective) (agent.Objective, error) {
 		Place:    agent.PlaceID(strings.TrimSpace(in.Place)),
 		X:        in.X,
 		Y:        in.Y,
-		Progress: agent.ProgressID(strings.TrimSpace(in.Progress)),
-		Level:    in.Level,
+		Progress:        agent.ProgressID(strings.TrimSpace(in.Progress)),
+		FieldCapability: agent.CapabilityID(strings.TrimSpace(in.FieldCapability)),
+		Level:           in.Level,
 		Species:  agent.SpeciesID(strings.TrimSpace(in.Species)),
 		Item:     agent.ItemID(strings.TrimSpace(in.Item)),
 		Slot:     in.Slot,
@@ -199,6 +200,8 @@ func objectiveFromFailure(in farm.FailureObjective) (agent.Objective, error) {
 		o.Kind = agent.KindUseItem
 	case "progress":
 		o.Kind = agent.KindProgress
+	case "repair_field_capability":
+		o.Kind = agent.KindRepairFieldCapability
 	default:
 		return agent.Objective{}, fmt.Errorf("failure repro has unsupported objective kind %q", in.Kind)
 	}
