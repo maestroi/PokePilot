@@ -246,8 +246,8 @@ func chooseYellowGrassPair(romData []byte, mapID uint8, sx, sy int) (yellowHuntC
 		return yellowHuntCell{}, yellowHuntCell{}, fmt.Errorf("yellow capture: map %#02x has fewer than two reachable free encounter cells", mapID)
 	}
 	sort.Slice(candidates, func(i, j int) bool {
-		di := yellowAbsInt(candidates[i].x-sx) + yellowAbsInt(candidates[i].y-sy)
-		dj := yellowAbsInt(candidates[j].x-sx) + yellowAbsInt(candidates[j].y-sy)
+		di := yellowControllerAbsInt(candidates[i].x-sx) + yellowControllerAbsInt(candidates[i].y-sy)
+		dj := yellowControllerAbsInt(candidates[j].x-sx) + yellowControllerAbsInt(candidates[j].y-sy)
 		if di != dj {
 			return di < dj
 		}
@@ -259,7 +259,7 @@ func chooseYellowGrassPair(romData []byte, mapID uint8, sx, sy int) (yellowHuntC
 
 	a := candidates[0]
 	for _, b := range candidates[1:] {
-		if yellowAbsInt(a.x-b.x)+yellowAbsInt(a.y-b.y) == 1 && grid.Passable(a.x, a.y, b.x, b.y) {
+		if yellowControllerAbsInt(a.x-b.x)+yellowControllerAbsInt(a.y-b.y) == 1 && grid.Passable(a.x, a.y, b.x, b.y) {
 			return a, b, nil
 		}
 	}
@@ -689,8 +689,8 @@ func chooseYellowWaterPair(romData []byte, mapID uint8, sx, sy int) (yellowHuntC
 		return yellowHuntCell{}, yellowHuntCell{}, fmt.Errorf("yellow capture: map %#02x has fewer than two reachable Surf encounter cells", mapID)
 	}
 	sort.Slice(candidates, func(i, j int) bool {
-		di := yellowAbsInt(candidates[i].x-sx) + yellowAbsInt(candidates[i].y-sy)
-		dj := yellowAbsInt(candidates[j].x-sx) + yellowAbsInt(candidates[j].y-sy)
+		di := yellowControllerAbsInt(candidates[i].x-sx) + yellowControllerAbsInt(candidates[i].y-sy)
+		dj := yellowControllerAbsInt(candidates[j].x-sx) + yellowControllerAbsInt(candidates[j].y-sy)
 		if di != dj {
 			return di < dj
 		}
@@ -701,7 +701,7 @@ func chooseYellowWaterPair(romData []byte, mapID uint8, sx, sy int) (yellowHuntC
 	})
 	a := candidates[0]
 	for _, b := range candidates[1:] {
-		if yellowAbsInt(a.x-b.x)+yellowAbsInt(a.y-b.y) == 1 && grid.Passable(a.x, a.y, b.x, b.y) {
+		if yellowControllerAbsInt(a.x-b.x)+yellowControllerAbsInt(a.y-b.y) == 1 && grid.Passable(a.x, a.y, b.x, b.y) {
 			return a, b, nil
 		}
 	}
@@ -931,4 +931,12 @@ func CaptureWildWater(m *emu.Emu, romData []byte, species uint8) (CaptureResult,
 		}
 	}
 	return result, fmt.Errorf("%w: Surf map=%#02x encounters=%d", ErrYellowCatchHuntExhausted, mapID, result.Encounters)
+}
+
+
+func yellowControllerAbsInt(v int) int {
+	if v < 0 {
+		return -v
+	}
+	return v
 }
