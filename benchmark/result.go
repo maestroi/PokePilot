@@ -64,15 +64,21 @@ type Source struct {
 }
 
 type ModelIdentity struct {
-	Profile       string `json:"profile,omitempty"`
-	PrimaryModel  string `json:"primary_model,omitempty"`
-	PrimaryURL    string `json:"primary_url,omitempty"`
-	FallbackModel string `json:"fallback_model,omitempty"`
-	FallbackURL   string `json:"fallback_url,omitempty"`
-	NoThink       bool   `json:"no_think,omitempty"`
-	MaxTokens     int    `json:"max_tokens,omitempty"`
-	Timeout       string `json:"timeout,omitempty"`
-	PromptHash    string `json:"prompt_hash,omitempty"`
+	Profile                 string `json:"profile,omitempty"`
+	PrimaryModel            string `json:"primary_model,omitempty"`
+	PrimaryURL              string `json:"primary_url,omitempty"`
+	NoThink                 bool   `json:"no_think,omitempty"`
+	MaxTokens               int    `json:"max_tokens,omitempty"`
+	Timeout                 string `json:"timeout,omitempty"`
+	ReasoningEffort         string `json:"reasoning_effort,omitempty"`
+	RecoveryReasoningEffort string `json:"recovery_reasoning_effort,omitempty"`
+	PromptHash              string `json:"prompt_hash,omitempty"`
+	FallbackModel           string `json:"fallback_model,omitempty"`
+	FallbackURL             string `json:"fallback_url,omitempty"`
+	FallbackNoThink         bool   `json:"fallback_no_think,omitempty"`
+	FallbackMaxTokens       int    `json:"fallback_max_tokens,omitempty"`
+	FallbackTimeout         string `json:"fallback_timeout,omitempty"`
+	FallbackReasoningEffort string `json:"fallback_reasoning_effort,omitempty"`
 }
 
 type Configuration struct {
@@ -773,7 +779,7 @@ func SanitizeSettings(in map[string]string) map[string]string {
 	out := map[string]string{}
 	for key, value := range in {
 		lower := strings.ToLower(key)
-		if containsAny(lower, "token", "secret", "password", "credential", "authorization", "api_key", "apikey") {
+		if secretSettingKey(lower) {
 			continue
 		}
 		if strings.Contains(lower, "url") || strings.Contains(lower, "endpoint") {
@@ -888,6 +894,14 @@ func farmState(in agent.FailureState) farm.FailureState {
 		out.Progress = append(out.Progress, farm.FailureProgressFact{ID: string(fact.ID), Complete: fact.Complete, Value: fact.Value})
 	}
 	return out
+}
+
+func secretSettingKey(lower string) bool {
+	normalized := strings.NewReplacer("-", "_", ".", "_").Replace(strings.TrimSpace(lower))
+	if normalized == "token" || strings.HasSuffix(normalized, "_token") {
+		return true
+	}
+	return containsAny(normalized, "secret", "password", "credential", "authorization", "api_key", "apikey", "access_token", "auth_token")
 }
 
 func containsAny(s string, values ...string) bool {
