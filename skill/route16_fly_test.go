@@ -38,6 +38,13 @@ func TestRoute16FlyHouseTransactionDestination(t *testing.T) {
 // lower corridor and died with world: no route from (7,8). The lower-door
 // annotation must stay a Gate so landing remains the lower corridor; the
 // honest Fly-house path uses the upper gate warps at y=4/5.
+//
+// Sibling fingerprints of the same lower-gate no_route (fixed by #1444):
+//   - run-1raszzjt1ird032sctzreuktyy (triage:4fb1be1a33296d41, farm-issue:1441;
+//     runner de517683 before #1444; progress fly_ready from Celadon Mart 4F
+//     entered ROUTE_16_GATE_1F (7,8) and exhausted the failure-recovery budget
+//     on world: no_route to the Fly house. On post-#1444 main,
+//     PrepareFlyFastTravel from round-005 reaches map 0xBC without no_route.)
 func TestRoute16FlyHouseRejectsLowerGateTeleport(t *testing.T) {
 	romPath := os.Getenv("POKEMON_RED_ROM")
 	if romPath == "" {
