@@ -25,6 +25,10 @@ import (
 //     observed on runner 5c5d020e before #1384 deployed)
 //   - run-147obvg8zhcn32hbhtbui3m2gf (triage:e30926cf9d590d68, farm-issue:1392;
 //     resume of run-77gc6gouf4ph1udc0lfs70evu on runner 242849dc before #1384)
+//   - run-1xoateppursxmhuq6pgsbmupq (triage:c3710db68ddcea92, farm-issue:1377;
+//     same no_path on runner before #1384; AcquireSilphCardKey from
+//     round-01_start.state reproduces the stuck (28,3) path until warp
+//     punching + presentStationaryObjectBlockers)
 func TestSilphCo5FWarpPadSplitsCardKeyComponent(t *testing.T) {
 	romPath := os.Getenv("POKEMON_RED_ROM")
 	if romPath == "" {
