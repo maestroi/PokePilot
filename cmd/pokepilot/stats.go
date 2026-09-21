@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/maestroi/pokepilot/agent"
+	"github.com/maestroi/pokepilot/benchmark"
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/farm"
 )
@@ -55,6 +56,9 @@ type statsPlanner struct {
 	strategySeen    bool
 	stallCaptured   bool
 	baseExtraSystem string
+
+	benchmarkCalls         []agent.LLMCall
+	benchmarkDecisionCalls []benchmark.DecisionCall
 }
 
 // newStatsPlanner remains source-compatible with existing local/tests. Farm
@@ -276,6 +280,11 @@ func cloneDecisionProbabilities(in map[string]float64) map[string]float64 {
 }
 
 func (s *statsPlanner) recordDecision(req agent.DecisionRequest, resp agent.DecisionResponse, err error, fallback bool) {
+	s.benchmarkDecisionCalls = append(s.benchmarkDecisionCalls, benchmark.DecisionCall{
+		Kind: req.Kind, Duration: resp.Duration, PromptTokens: resp.Usage.PromptTokens,
+		CompletionTokens: resp.Usage.CompletionTokens, Backend: firstNonEmpty(resp.Backend, s.decision.Backend),
+		Model: resp.Model, Err: err,
+	})
 	s.stats.DecisionCalls++
 	s.stats.DecisionSeconds += resp.Duration.Seconds()
 	s.stats.DecisionAvgSeconds = s.stats.DecisionSeconds / float64(s.stats.DecisionCalls)
@@ -424,6 +433,7 @@ func (s *statsPlanner) record(obs agent.Observation, offered int, o agent.Object
 }
 
 func (s *statsPlanner) recordCall(call agent.LLMCall) {
+	s.benchmarkCalls = append(s.benchmarkCalls, call)
 	obs, offered, o, err, took := call.Observation, call.Offered, call.Objective, call.Err, call.Duration
 	s.stats.Calls++
 	s.offered += offered
