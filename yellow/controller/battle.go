@@ -45,6 +45,7 @@ const (
 	battlePhaseMoveMenu
 	battlePhaseUseNext
 	battlePhaseTrainerSwitch
+	battlePhaseSafariMenu
 	battlePhaseLearnMove
 	battlePhaseAbandonLearning
 	battlePhaseForcedParty
@@ -58,6 +59,8 @@ func battlePhaseFor(text string, maxMenu uint8, forcedParty bool) battlePhase {
 		return battlePhaseForcedParty
 	case strings.Contains(upper, "TYPE/"):
 		return battlePhaseMoveMenu
+	case strings.Contains(upper, "BALL") && strings.Contains(upper, "BAIT") && strings.Contains(upper, "ROCK") && strings.Contains(upper, "RUN"):
+		return battlePhaseSafariMenu
 	case strings.Contains(upper, "FIGHT"):
 		return battlePhaseMainMenu
 	case strings.Contains(upper, "USE NEXT"):
@@ -145,6 +148,14 @@ func Battle(m *emu.Emu, romData []byte) (BattleResult, error) {
 			} else {
 				m.Tap(emu.A, 3, 7)
 			}
+
+		case battlePhaseSafariMenu:
+			// Generic battle resolution never consumes Safari Balls. RUN is
+			// bottom-right in Yellow's BALL/BAIT/ROCK/RUN menu.
+			if err := selectYellowBattleMainMenu(m, yellowBattleMenuRightX, 1); err != nil {
+				return BattleResult{}, fmt.Errorf("yellow battle: select Safari RUN: %w", err)
+			}
+			m.Tap(emu.A, 3, 7)
 
 		case battlePhaseTrainerSwitch:
 			// Decline optional trainer switching. A forced replacement is
