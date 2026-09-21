@@ -121,6 +121,27 @@ func OfferWithEvidence(obs Observation, known *Knowledge) ObjectiveOffer {
 		known.releaseCombatLossGates()
 	}
 	ctx := newObjectiveOfferContext(obs, known)
+
+	// A catalog that offers starters while the party is empty owns the game's
+	// mandatory opening transaction. Do not advertise travel (or other
+	// unrelated objectives) beside it: in Red, Pallet Town's north exit is
+	// physically script-locked until Oak has taken the player into the lab and
+	// the starter sequence completes. Offering "go to ..." here lets the
+	// strategist select an objective that deterministic execution cannot
+	// legally satisfy; the Oak cutscene then interrupts the crossing and the
+	// run surfaces a terminal navigation error (farm #1497/#1496).
+	//
+	// Keep this generic by keying off the catalog's actual starter candidates:
+	// games/catalog states with no mandatory starter continue through the
+	// ordinary provider pipeline unchanged.
+	if obs.PartyCount == 0 {
+		starterOnly := (starterObjectiveProvider{}).Provide(ctx)
+		if len(starterOnly.Candidates) > 0 {
+			candidates := annotate(starterOnly.Candidates, known)
+			return ObjectiveOffer{Candidates: candidates, Blocked: starterOnly.Blocked}
+		}
+	}
+
 	local := make([]Objective, 0, 8)
 	journeys := make([]Objective, 0, 2*journeyPlaceLimit)
 	blocked := make([]ObjectiveBlockEvidence, 0, 8)
