@@ -36,7 +36,9 @@ func TestPhase0AddressesMatchSupportedYellowLayout(t *testing.T) {
 		"wFieldMoves":               {FieldMoves, 0xCD3D},
 		"wFlyLocationsList":         {FlyLocationsList, 0xCD3E},
 		"wDestinationMap":           {DestinationMap, 0xD719},
+
 		"wActionResultOrTookBattleTurn": {ActionResult, 0xCD6A},
+
 		"wTileInFrontOfPlayer":      {TileInFrontOfPlayer, 0xCFC5},
 		"wWalkBikeSurfState":        {WalkBikeSurfState, 0xD6FF},
 		"wMapPalOffset":             {MapPalOffset, 0xD35C},
