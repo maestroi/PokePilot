@@ -197,25 +197,11 @@ func yellowPartyRecovered(reader game.MemoryReader) bool {
 }
 
 func yellowPostSurgeCeladonArea(mapID uint8) bool {
-	name := yellowrom.MapName(mapID)
-	return strings.HasPrefix(name, "CELADON_") ||
-		name == "GAME_CORNER" ||
-		strings.HasPrefix(name, "GAME_CORNER_") ||
-		strings.HasPrefix(name, "ROCKET_HIDEOUT_")
+	return gen1.PostSurgeCeladonArea(mapID, yellowrom.MapName(mapID))
 }
 
 func yellowPostSurgeLavenderReached(mapID uint8) bool {
-	name := yellowrom.MapName(mapID)
-	switch mapID {
-	case 0x04, 0x13, 0x4f, 0x50, 0x79, 0x4d, 0x4e, 0x4c, 0x12, 0x0a:
-		return true
-	}
-	return strings.HasPrefix(name, "LAVENDER_") ||
-		strings.HasPrefix(name, "POKEMON_TOWER_") ||
-		name == "MR_FUJIS_HOUSE" ||
-		strings.HasPrefix(name, "SAFFRON_") ||
-		strings.HasPrefix(name, "SILPH_CO_") ||
-		yellowPostSurgeCeladonArea(mapID)
+	return gen1.PostSurgeLavenderReached(mapID, yellowrom.MapName(mapID))
 }
 
 func yellowVictoryRoadCleared(reader game.MemoryReader, mapID uint8, badgeChecksComplete, leagueStarted, champion, mainComplete bool) bool {
