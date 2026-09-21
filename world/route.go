@@ -123,15 +123,61 @@ func (g *Graph) EdgeEntrySharesComponentWith(e Edge, x, y int) (same, known bool
 	return shareComp(entry, at), true
 }
 
+// standingComponentAt reports the walkable component(s) at (x,y) on mapID.
+// A tile the player is physically standing on is never itself a warp tile's
+// component: componentsWithBlocked excludes warp tiles from the flood so a
+// teleporter can't falsely bridge two rooms it connects. But route search
+// treats an empty result as "unknown, don't filter" (canExit), so standing
+// exactly on a warp tile — a gym's exit door, a stair, a checkpoint that
+// resumed mid-warp — used to silently disable first-hop reachability
+// filtering and let the router offer every same-map warp edge as if it were
+// walkable from here, however far behind a wall its pad actually sits
+// (Saffron Gym's warp maze, standing on the exit door at (8,17)). Graph-build
+// time already solves this for a warp's own port component via
+// tileOrNeighbourComps; apply the same neighbor fallback here so a live
+// position gets the same answer a statically-known warp tile would.
+// isWarpTile reports whether (x,y) is a warp source tile on mapID, the only
+// reason componentsWithBlocked would leave a walkable tile at component 0.
+func isWarpTile(g *Graph, mapID uint8, x, y int) bool {
+	for _, w := range g.warps[mapID] {
+		if int(w.X) == x && int(w.Y) == y {
+			return true
+		}
+	}
+	return false
+}
+
 func standingComponentAt(g *Graph, mapID uint8, x, y int) []int {
 	if !g.componentAware {
 		return nil
 	}
 	c := g.comps[mapID]
-	if c == nil || y < 0 || y >= len(c) || x < 0 || x >= len(c[y]) || c[y][x] == 0 {
+	if c == nil || y < 0 || y >= len(c) || x < 0 || x >= len(c[y]) {
 		return nil
 	}
-	return []int{c[y][x]}
+	if v := c[y][x]; v != 0 {
+		return []int{v}
+	}
+	if !isWarpTile(g, mapID, x, y) {
+		// Zero here means genuinely unwalkable (a wall, padding on a
+		// connection border) rather than an excluded warp tile: stay
+		// "unknown" rather than borrowing a neighbor's component, or a
+		// padding tile would look like part of the walkable room beside it.
+		return nil
+	}
+	var out []int
+	seen := map[int]bool{}
+	for _, d := range [][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}} {
+		nx, ny := x+d[0], y+d[1]
+		if ny < 0 || ny >= len(c) || nx < 0 || nx >= len(c[ny]) {
+			continue
+		}
+		if v := c[ny][nx]; v != 0 && !seen[v] {
+			seen[v] = true
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 type routeStateKey struct {
