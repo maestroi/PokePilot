@@ -16,9 +16,9 @@ const (
 )
 
 var (
-	ErrFieldItemNotInBag   = errors.New("yellow field item: item not in bag")
-	ErrFieldItemChoice     = errors.New("yellow field item: unsupported choice requires explicit policy")
-	ErrFieldItemNoEffect   = errors.New("yellow field item: no verified effect")
+	ErrFieldItemNotInBag = errors.New("yellow field item: item not in bag")
+	ErrFieldItemChoice   = errors.New("yellow field item: unsupported choice requires explicit policy")
+	ErrFieldItemNoEffect = errors.New("yellow field item: no verified effect")
 )
 
 type yellowPartySlotState struct {
