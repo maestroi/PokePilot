@@ -31,6 +31,29 @@ func TestTileRowJSONExposesRunPolicy(t *testing.T) {
 	}
 }
 
+func TestTileRowJSONRestoresRunPolicy(t *testing.T) {
+	rememberTestRunPolicy("style-catalog-row", "team_builder", "balanced", "avoid")
+	b, err := json.Marshal(tileRow{RunID: "style-catalog-row", Planner: "llm"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rememberTestRunPolicy("style-catalog-row", "", "", "")
+
+	var got tileRow
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatal(err)
+	}
+	if style := farm.PlayStyleForRun("style-catalog-row"); style != "team_builder" {
+		t.Fatalf("restored style = %q, want team_builder", style)
+	}
+	if risk := farm.RiskToleranceForRun("style-catalog-row"); risk != "balanced" {
+		t.Fatalf("restored risk = %q, want balanced", risk)
+	}
+	if wild := farm.WildEncountersForRun("style-catalog-row"); wild != "avoid" {
+		t.Fatalf("restored wild policy = %q, want avoid", wild)
+	}
+}
+
 func TestPersistedTileRestoresRunPolicy(t *testing.T) {
 	rememberTestRunPolicy("style-persist", "completionist", "cautious", "planner")
 	b, err := json.Marshal(persistedTile{RunID: "style-persist", Planner: "llm"})

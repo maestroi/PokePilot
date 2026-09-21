@@ -122,6 +122,54 @@ func TestExperimentGeneratesMatchedDeploymentRuns(t *testing.T) {
 	}
 }
 
+func TestCloneRunPreservesModelDeploymentMetadata(t *testing.T) {
+	registry := writeModelRegistry(t, []farm.ModelDeployment{
+		{ID: "model-a", ModelID: "a", Compute: "gpu-a", Endpoint: "http://a/v1", APIModel: "a", Enabled: true, MaxParallelWorkers: 3},
+	})
+	t.Setenv("POKEPILOT_MODEL_REGISTRY", registry)
+	w := NewWall("")
+	h := modelExperimentHTTPHandler(w, w.Handler())
+
+	enqueue := requestJSON(t, h, http.MethodPost, "/v1/specs", map[string]any{
+		"run_id": "clone-model-source", "planner": "llm", "llm_deployment": "model-a", "max_parallel_workers": 2,
+	})
+	if enqueue.Code != http.StatusOK {
+		t.Fatalf("enqueue = %d %s", enqueue.Code, enqueue.Body.String())
+	}
+	cloned := requestJSON(t, h, http.MethodPost, "/v1/runs/clone-model-source/clone", nil)
+	if cloned.Code != http.StatusCreated {
+		t.Fatalf("clone = %d %s", cloned.Code, cloned.Body.String())
+	}
+	var clone cloneRunResult
+	if err := json.Unmarshal(cloned.Body.Bytes(), &clone); err != nil {
+		t.Fatal(err)
+	}
+
+	dashboard := requestJSON(t, h, http.MethodGet, "/v1/dashboard", nil)
+	if dashboard.Code != http.StatusOK {
+		t.Fatalf("dashboard = %d %s", dashboard.Code, dashboard.Body.String())
+	}
+	var doc struct {
+		Runs []map[string]any `json:"runs"`
+	}
+	if err := json.Unmarshal(dashboard.Body.Bytes(), &doc); err != nil {
+		t.Fatal(err)
+	}
+	for _, run := range doc.Runs {
+		if run["run_id"] != clone.RunID {
+			continue
+		}
+		if run["llm_deployment"] != "model-a" || run["inference"] == nil || intNumber(run["max_parallel_workers"]) != 2 {
+			t.Fatalf("clone model metadata differs: %#v", run)
+		}
+		if run["experiment_id"] != nil && run["experiment_id"] != "" {
+			t.Fatalf("manual clone inherited experiment id: %#v", run)
+		}
+		return
+	}
+	t.Fatalf("clone %q missing from dashboard: %s", clone.RunID, dashboard.Body.String())
+}
+
 func TestBusyModelHostLeavesRunQueued(t *testing.T) {
 	host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

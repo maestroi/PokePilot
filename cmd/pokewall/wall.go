@@ -545,6 +545,7 @@ func (w *Wall) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/workers", w.handleWorkers)
 	mux.HandleFunc("POST /v1/runs/{id}/heartbeat", w.handleHeartbeat)
 	mux.HandleFunc("POST /v1/runs/{id}/cancel", w.handleCancel)
+	mux.HandleFunc("POST /v1/runs/{id}/clone", w.handleCloneRun)
 	mux.HandleFunc("DELETE /v1/runs/{id}", w.handleDelete)
 	mux.HandleFunc("POST /v1/runs/{id}/finish", w.handleFinish)
 	mux.HandleFunc("POST /v1/runs/{id}/checkpoint", w.handleCheckpoint)

@@ -45,6 +45,27 @@ func (r tileRow) MarshalJSON() ([]byte, error) {
 	})
 }
 
+// UnmarshalJSON restores optional gameplay policy from catalog rows. Catalog
+// rows are encoded through MarshalJSON above, so without the matching decoder
+// archived runs lose these settings after they leave the in-memory tile set.
+func (r *tileRow) UnmarshalJSON(data []byte) error {
+	type plain tileRow
+	var in struct {
+		plain
+		PlayStyle      string `json:"play_style,omitempty"`
+		RiskTolerance  string `json:"risk_tolerance,omitempty"`
+		WildEncounters string `json:"wild_encounters,omitempty"`
+	}
+	if err := json.Unmarshal(data, &in); err != nil {
+		return err
+	}
+	*r = tileRow(in.plain)
+	farm.RememberPlayStyle(r.RunID, in.PlayStyle)
+	farm.RememberRiskTolerance(r.RunID, in.RiskTolerance)
+	farm.RememberWildEncounters(r.RunID, in.WildEncounters)
+	return nil
+}
+
 // persistedTile carries gameplay policy through a wall restart. Old state
 // files simply omit it and retain legacy compatibility behavior.
 func (p persistedTile) MarshalJSON() ([]byte, error) {

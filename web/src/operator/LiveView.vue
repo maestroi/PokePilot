@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { ArrowPathIcon, NoSymbolIcon, PauseIcon, PlayIcon } from '@heroicons/vue/20/solid'
-import { cancelRun, getDashboard, getRun, pauseRun, resumeRun } from '../shared/api/client'
-import type { DashboardRun, DashboardStats, PartyMon } from '../shared/api/types'
+import { ArrowPathIcon, EyeIcon, EyeSlashIcon, NoSymbolIcon, PauseIcon, PlayIcon, Square2StackIcon } from '@heroicons/vue/20/solid'
+import { cancelRun, cloneRun, forceEndWorker, getDashboard, getRun, pauseRun, resumeRun } from '../shared/api/client'
+import type { DashboardRun, DashboardStats, DashboardWorker, PartyMon } from '../shared/api/types'
+import { getSpectatorControl, patchSpectatorRunControl } from '../shared/api/spectator-control'
 import ResourceState from '../shared/components/ResourceState.vue'
 import StatusBadge from '../shared/components/StatusBadge.vue'
 import { useFramePump } from '../shared/composables/useFramePump'
 import { usePollingResource } from '../shared/composables/usePollingResource'
+import ConfirmDialog from '../shared/components/ConfirmDialog.vue'
 import InspectorPanel from './InspectorPanel.vue'
 import SemanticMap from './SemanticMap.vue'
 import {
@@ -44,8 +46,13 @@ const historicalError = ref('')
 const pausing = ref(false)
 const resuming = ref(false)
 const canceling = ref(false)
+const cloning = ref(false)
+const spectatorUpdating = ref(false)
+const forceEndTarget = ref<DashboardWorker | null>(null)
+const forceEndBusy = ref(false)
 const actionError = ref('')
 const copyState = ref('')
+const cloneState = ref('')
 let detailSerial = 0
 
 const activeResource = usePollingResource(
@@ -56,6 +63,11 @@ const activeResource = usePollingResource(
 const recentResource = usePollingResource(
   (signal) => getDashboard({ status: 'done', limit: 8 }, signal),
   { intervalMs: 10000 }
+)
+
+const spectatorResource = usePollingResource(
+  (signal) => getSpectatorControl(signal),
+  { intervalMs: 5000 }
 )
 
 const activeRuns = computed(() => [...(activeResource.data.value?.runs ?? [])]
@@ -126,6 +138,24 @@ const isCancelable = computed(() => {
   const status = selectedRun.value?.status
   return status === 'queued' || status === 'leased' || status === 'running' || status === 'paused'
 })
+const selectedWorker = computed<DashboardWorker | null>(() => {
+  const runID = selectedRun.value?.run_id
+  if (!runID) return null
+  return activeResource.data.value?.workers?.find((worker) => worker.run_id === runID) ?? null
+})
+const spectatorVisible = computed(() => {
+  const runID = selectedRun.value?.run_id
+  if (!runID) return true
+  return spectatorResource.data.value?.runs?.[runID]?.visible ?? true
+})
+const spectatorControlReady = computed(() => Boolean(spectatorResource.data.value))
+const forceEndTitle = computed(() => forceEndTarget.value ? `Force quit worker ${forceEndTarget.value.addr}?` : 'Force quit worker?')
+const forceEndMessage = computed(() => {
+  const worker = forceEndTarget.value
+  if (!worker) return ''
+  const runID = worker.run_id || selectedRun.value?.run_id || ''
+  return `This immediately terminates worker ${worker.addr} and force-ends run ${runID}. The run becomes terminal: it will not be retried and an endless successor will not be created.\n\nUse this only when pause/cancel cannot recover the run.`
+})
 const resourceState = computed(() => {
   if (activeResource.state.value === 'error' && recentResource.state.value === 'error') return 'error'
   if (activeResource.state.value === 'loading' && recentResource.state.value === 'loading') return 'loading'
@@ -159,6 +189,7 @@ const settingsRows = computed(() => {
   } else {
     rows.push(['speed', playSpeedLabel(run)], ['walk to', run.dest || '—'])
   }
+  if (selectedWorker.value) rows.push(['worker', selectedWorker.value.addr])
   rows.push(
     ['seed', String(run.seed ?? 0)],
     ['keep going', run.endless ? (run.random_seed ? 'yes, random seed' : 'yes, same seed') : ''],
@@ -226,12 +257,16 @@ const playChoices = computed(() => {
 })
 const playTop = computed(() => playChoices.value[0]?.count || 1)
 
-function selectRun(run: DashboardRun): void {
-  selectedRunID.value = run.run_id
+function selectRunID(runID: string): void {
+  selectedRunID.value = runID
   selectionPinned.value = true
   const url = new URL(window.location.href)
-  url.searchParams.set('run', run.run_id)
+  url.searchParams.set('run', runID)
   history.replaceState(null, '', url)
+}
+
+function selectRun(run: DashboardRun): void {
+  selectRunID(run.run_id)
 }
 
 function hpPercent(mon: PartyMon): number {
@@ -259,6 +294,7 @@ function showEndedHeading(index: number): boolean {
 function refresh(): void {
   void activeResource.retry()
   void recentResource.retry()
+  void spectatorResource.retry()
 }
 
 async function pauseSelected(): Promise<void> {
@@ -303,6 +339,64 @@ async function cancelSelected(): Promise<void> {
     actionError.value = cause instanceof Error ? cause.message : 'Cancel failed'
   } finally {
     canceling.value = false
+  }
+}
+
+async function cloneSelected(): Promise<void> {
+  const run = selectedRun.value
+  if (!run || cloning.value) return
+  cloning.value = true
+  cloneState.value = ''
+  actionError.value = ''
+  try {
+    const result = await cloneRun(run.run_id)
+    await Promise.all([activeResource.retry(), spectatorResource.retry()])
+    cloneState.value = 'Cloned'
+    selectRunID(result.run_id)
+    window.setTimeout(() => { cloneState.value = '' }, 1800)
+  } catch (cause) {
+    actionError.value = cause instanceof Error ? cause.message : 'Clone failed'
+  } finally {
+    cloning.value = false
+  }
+}
+
+async function toggleSpectatorSelected(): Promise<void> {
+  const run = selectedRun.value
+  if (!run || spectatorUpdating.value || !spectatorControlReady.value) return
+  spectatorUpdating.value = true
+  actionError.value = ''
+  try {
+    await patchSpectatorRunControl(run.run_id, { visible: !spectatorVisible.value })
+    await spectatorResource.retry()
+  } catch (cause) {
+    actionError.value = cause instanceof Error ? cause.message : 'Spectator visibility update failed'
+  } finally {
+    spectatorUpdating.value = false
+  }
+}
+
+function requestForceEndSelected(): void {
+  if (selectedWorker.value) forceEndTarget.value = selectedWorker.value
+}
+
+function closeForceEnd(): void {
+  if (!forceEndBusy.value) forceEndTarget.value = null
+}
+
+async function confirmForceEnd(): Promise<void> {
+  const worker = forceEndTarget.value
+  if (!worker || forceEndBusy.value) return
+  forceEndBusy.value = true
+  actionError.value = ''
+  try {
+    await forceEndWorker(worker.addr)
+    forceEndTarget.value = null
+    await Promise.all([activeResource.retry(), recentResource.retry()])
+  } catch (cause) {
+    actionError.value = cause instanceof Error ? cause.message : 'Force quit failed'
+  } finally {
+    forceEndBusy.value = false
   }
 }
 
@@ -556,8 +650,25 @@ function warnPlay(stats: DashboardStats | undefined, key: string): boolean {
             <span class="text-[9px] tracking-[0.04em] text-[var(--poke-muted)] uppercase">Round</span>
             <strong class="mt-0.5 block font-mono text-[11px]">{{ selectedRun.stats?.round ?? selectedRun.stats?.rounds ?? '—' }}</strong>
           </div>
-          <div class="flex items-center justify-end gap-1 px-2 py-1.5">
+          <div class="flex flex-wrap items-center justify-end gap-1 px-2 py-1.5">
             <button type="button" class="rounded-sm px-1.5 py-1 text-[10px] font-bold ring-1 ring-[var(--poke-border-strong)] hover:bg-white/5" @click="copyRunID">{{ copyState || 'Copy' }}</button>
+            <button type="button" :disabled="cloning" class="inline-flex items-center gap-1 rounded-sm px-1.5 py-1 text-[10px] font-bold ring-1 ring-[var(--poke-border-strong)] hover:bg-white/5 disabled:opacity-50" @click="cloneSelected">
+              <Square2StackIcon class="size-3" aria-hidden="true" /> {{ cloning ? 'Cloning…' : (cloneState || 'Clone') }}
+            </button>
+            <button
+              type="button"
+              :disabled="spectatorUpdating || !spectatorControlReady"
+              :title="spectatorControlReady ? (spectatorVisible ? 'Visible in spectator mode. Click to hide.' : 'Hidden from spectator mode. Click to show.') : 'Spectator controls unavailable.'"
+              :class="[
+                spectatorVisible ? 'bg-[#18362f] text-[var(--poke-green)] ring-[#315f52]' : 'bg-[#2b3038] text-[var(--poke-muted)] ring-[var(--poke-border-strong)]',
+                'inline-flex items-center gap-1 rounded-sm px-1.5 py-1 text-[10px] font-bold ring-1 hover:brightness-110 disabled:opacity-50'
+              ]"
+              @click="toggleSpectatorSelected"
+            >
+              <EyeIcon v-if="spectatorVisible" class="size-3" aria-hidden="true" />
+              <EyeSlashIcon v-else class="size-3" aria-hidden="true" />
+              {{ spectatorUpdating ? 'Updating…' : (spectatorVisible ? 'Spectator visible' : 'Spectator hidden') }}
+            </button>
             <button v-if="isPausable" type="button" :disabled="pausing" class="inline-flex items-center gap-1 rounded-sm bg-[#3b3222] px-1.5 py-1 text-[10px] font-bold text-[var(--poke-amber)] ring-1 ring-[#6b5632] hover:brightness-110 disabled:opacity-50" @click="pauseSelected">
               <PauseIcon class="size-3" aria-hidden="true" /> {{ pausing ? 'Pausing…' : 'Pause' }}
             </button>
@@ -566,6 +677,16 @@ function warnPlay(stats: DashboardStats | undefined, key: string): boolean {
             </button>
             <button v-if="isCancelable" type="button" :disabled="canceling" class="inline-flex items-center gap-1 rounded-sm bg-[#352529] px-1.5 py-1 text-[10px] font-bold text-[#e4b5b7] ring-1 ring-[#654047] hover:brightness-110 disabled:opacity-50" @click="cancelSelected">
               <NoSymbolIcon class="size-3" aria-hidden="true" /> {{ canceling ? 'Canceling…' : 'Cancel' }}
+            </button>
+            <button
+              v-if="selectedWorker"
+              type="button"
+              :disabled="forceEndBusy"
+              :title="`Force quit worker ${selectedWorker.addr} for this run`"
+              class="inline-flex items-center gap-1 rounded-sm bg-[#4a2026] px-1.5 py-1 text-[10px] font-bold text-[#ffd4d6] ring-1 ring-[#8b3f4a] hover:brightness-110 disabled:opacity-50"
+              @click="requestForceEndSelected"
+            >
+              <NoSymbolIcon class="size-3" aria-hidden="true" /> Force quit
             </button>
           </div>
         </div>
@@ -631,6 +752,17 @@ function warnPlay(stats: DashboardStats | undefined, key: string): boolean {
         <div v-if="actionError" class="border border-[#654047] bg-[#352529] px-2.5 py-2 text-[12px] text-[#e4b5b7]" role="alert">{{ actionError }}</div>
 
         <InspectorPanel :run-id="selectedRun.run_id" />
+
+        <ConfirmDialog
+          :open="forceEndTarget !== null"
+          :title="forceEndTitle"
+          :message="forceEndMessage"
+          confirm-label="Force quit worker"
+          :busy="forceEndBusy"
+          danger
+          @close="closeForceEnd"
+          @confirm="confirmForceEnd"
+        />
       </div>
     </div>
 
