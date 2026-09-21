@@ -118,7 +118,7 @@ func representativeYellowTile(grid *world.Grid) (int, int, bool) {
 			if components[y][x] != largest {
 				continue
 			}
-			d := absInt(x-cx) + absInt(y-cy)
+			d := yellowAbsInt(x-cx) + yellowAbsInt(y-cy)
 			if d < bestDistance || d == bestDistance && (bestY < 0 || y < bestY || y == bestY && x < bestX) {
 				bestX, bestY, bestDistance = x, y, d
 			}
@@ -127,7 +127,7 @@ func representativeYellowTile(grid *world.Grid) (int, int, bool) {
 	return bestX, bestY, bestX >= 0
 }
 
-func absInt(v int) int {
+func yellowAbsInt(v int) int {
 	if v < 0 {
 		return -v
 	}
