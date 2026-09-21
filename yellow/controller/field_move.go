@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -263,6 +264,8 @@ func UseFieldMove(m *emu.Emu, romData []byte, move FieldMove) error {
 }
 
 
+var ErrFlyDestinationUnvisited = errors.New("yellow Fly: destination has not been visited")
+
 const (
 	yellowFlyCityCount = 11
 	yellowNotVisited   = 0xfe
@@ -308,7 +311,7 @@ func FlyTo(m *emu.Emu, romData []byte, destMap uint8) error {
 	if locations[destMap] == yellowNotVisited {
 		// B returns safely from the town map.
 		m.Tap(emu.B, 3, 7)
-		return fmt.Errorf("yellow Fly: destination %s has not been visited", yellowrom.MapName(destMap))
+		return fmt.Errorf("%w: %s", ErrFlyDestinationUnvisited, yellowrom.MapName(destMap))
 	}
 	if locations[destMap] != destMap {
 		m.Tap(emu.B, 3, 7)
