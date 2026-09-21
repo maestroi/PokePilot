@@ -78,19 +78,22 @@ func AcquireCinnabarSecretKey(m *emu.Emu, romData []byte, policy MovePolicy) err
 	}
 
 	if !onCinnabarSecretKeySlice(m.Peek8(sym.CurMap)) {
-		// Route 21 is the first mandatory Surf traversal in this slice. HM03
-		// ownership alone is not enough: a long-running save may have changed its
-		// party since Fuchsia and no current member may be able to learn Surf.
-		// Repair through normal party/PC/catch actions before asking Travel to
-		// route across water, matching Victory Road's late-game invariant.
+		// Cinnabar is only reachable by Surf (southern sea from Fuchsia, or
+		// Route 21 from Pallet). HM03 ownership alone is not enough: a
+		// long-running save may have changed its party since Fuchsia and no
+		// current member may be able to learn Surf. Repair through normal
+		// party/PC/catch actions before asking Travel to route across water,
+		// matching Victory Road's late-game invariant.
+		//
+		// Do not force a Pallet waypoint: Diglett's Cave lands in a Cut-sealed
+		// Route 2 pocket that cannot walk to Viridian/Pallet, while the world
+		// graph can already plan the southern-sea approach once Surf shores
+		// are routable (triage:ff3ad54bb21d3a2d).
 		if err := RepairFieldCapabilities(m, romData, policy, []FieldMove{FieldSurf}); err != nil {
 			return fmt.Errorf("skill: AcquireCinnabarSecretKey: prepare Surf carrier: %w", err)
 		}
-		if _, err := TravelFlee(m, romData, Destination{Map: semanticPalletTownMap, X: 5, Y: 6}, policy, mansionTravelBattles); err != nil {
-			return fmt.Errorf("skill: AcquireCinnabarSecretKey: reach Pallet for Route 21: %w", err)
-		}
 		if _, err := TravelFlee(m, romData, Destination{Map: cinnabarIslandMap, X: 11, Y: 12}, policy, mansionTravelBattles); err != nil {
-			return fmt.Errorf("skill: AcquireCinnabarSecretKey: Surf Route 21 to Cinnabar: %w", err)
+			return fmt.Errorf("skill: AcquireCinnabarSecretKey: reach Cinnabar: %w", err)
 		}
 	}
 

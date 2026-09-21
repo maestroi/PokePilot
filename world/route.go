@@ -257,7 +257,14 @@ func findRoute(g *Graph, from, to uint8, blockedHere map[Edge]bool, first, targe
 			// farm run-2ccw7p3rpnvu4129l1dkhc7ayh: with can_cut, FindRoutePlan
 			// returned Route9 -cut-> Route10 -south-> Lavender, then GoTo
 			// bounced through Rock Tunnel until navigation_stalled.
-			if g.componentAware && len(g.exitComps[e]) == 0 {
+			//
+			// Surf is the exception: its PortBypass privilege is
+			// skipCanExit+relaxLanding (not PivotOnly), and water shores have
+			// empty land exitComps by construction. Rejecting them made every
+			// southern-sea / Route 21 Surf approach unroutable
+			// (triage:ff3ad54bb21d3a2d). PivotOnly+PortBypass Cut phantoms only
+			// set skipCanExit and stay rejected here.
+			if g.componentAware && len(g.exitComps[e]) == 0 && !(skipCanExit[e] && relaxLanding[e]) {
 				continue
 			}
 			if !skipCanExit[e] && !canExit(g, e, entry) {
