@@ -44,17 +44,17 @@ type openingState struct {
 type openingPhase string
 
 const (
-	openingPhaseDone            openingPhase = "done"
-	openingPhaseBattle          openingPhase = "battle"
-	openingPhaseNickname        openingPhase = "nickname"
-	openingPhaseScript          openingPhase = "script"
-	openingPhaseBedroomUpstairs openingPhase = "bedroom-upstairs"
+	openingPhaseDone              openingPhase = "done"
+	openingPhaseBattle            openingPhase = "battle"
+	openingPhaseNickname          openingPhase = "nickname"
+	openingPhaseScript            openingPhase = "script"
+	openingPhaseBedroomUpstairs   openingPhase = "bedroom-upstairs"
 	openingPhaseBedroomDownstairs openingPhase = "bedroom-downstairs"
-	openingPhaseOakGate         openingPhase = "oak-gate"
-	openingPhaseEeveeBall       openingPhase = "eevee-ball"
-	openingPhaseAwaitStarter    openingPhase = "await-starter"
-	openingPhaseRivalTrigger    openingPhase = "rival-trigger"
-	openingPhaseUnexpected      openingPhase = "unexpected"
+	openingPhaseOakGate           openingPhase = "oak-gate"
+	openingPhaseEeveeBall         openingPhase = "eevee-ball"
+	openingPhaseAwaitStarter      openingPhase = "await-starter"
+	openingPhaseRivalTrigger      openingPhase = "rival-trigger"
+	openingPhaseUnexpected        openingPhase = "unexpected"
 )
 
 func openingPhaseFor(state openingState, nickname bool) openingPhase {
