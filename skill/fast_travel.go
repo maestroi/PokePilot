@@ -15,8 +15,8 @@ const (
 	teleportMoveID          uint8 = 0x64
 	teleportFieldMoveMenuID uint8 = 8
 	plateauTileset          uint8 = 23
-	agathasRoomMap       uint8 = 0xf7
-	fastTravelWarpBudget       = 6000
+	agathasRoomMap          uint8 = 0xf7
+	fastTravelWarpBudget          = 6000
 
 	// Route-cost units deliberately compare coarse journey exposure rather
 	// than emulator frames. One ordinary map transition costs 100. Menu-driven
