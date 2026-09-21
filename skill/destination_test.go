@@ -51,8 +51,8 @@ func TestAreaDestinationAcceptsAnyTileInRegion(t *testing.T) {
 func TestInteractionDestinationRoutesToApproachTilesNotObjectTile(t *testing.T) {
 	dest := InteractionDestination(0x29, 3, 1)
 	targets := destinationRouteTargets(dest)
-	if len(targets) != 8 {
-		t.Fatalf("interaction approach targets=%d, want 8", len(targets))
+	if len(targets) != 7 {
+		t.Fatalf("interaction approach targets=%d, want 7 valid in-bounds approaches", len(targets))
 	}
 	for _, target := range targets {
 		if target.X == 3 && target.Y == 1 {
