@@ -11,6 +11,7 @@ import (
 //
 //   - run-opn83x1wj99vp9241oyhcacb (fixed in #1414)
 //   - run-3ryd6j6etrlvo3eof6m6vuiu6l / triage:978e898d718fbf45 / farm-issue #1412
+//   - run-1uyafua3jt0o9egm3y6lg9np3 / triage:6ffbb6bf79d245b0 / farm-issue #1413
 //     (same symptom on runner 9ec6751c: go_to blocked route_replan_exhausted
 //     saffron gym — 8 re-plans from map b2 at (8,17) toward (9,9), last leg
 //     traverseIntraMapWarp with no reachable source pad for warp (5,9))
@@ -77,8 +78,13 @@ func TestFindRouteAtIgnoresUnreachableWarpWhenStandingOnAWarpTile(t *testing.T) 
 // TestFindRouteAtDestinationIgnoresUnreachableSameMapWarpWhenStandingOnWarpTile
 // is the exact go_to saffron gym farm shape: same-map destination tile, player
 // standing on the gym exit warp, unreachable same-map teleporter listed first.
-// run-3ryd6j6etrlvo3eof6m6vuiu6l / triage:978e898d718fbf45 exhausted re-plans
-// offering warp (5,9) from SAFFRON_GYM (8,17) toward Place (9,9).
+// Sibling fingerprints on runner 9ec6751c before #1414 deployed:
+//
+//   - run-3ryd6j6etrlvo3eof6m6vuiu6l / triage:978e898d718fbf45 / farm-issue #1412
+//   - run-1uyafua3jt0o9egm3y6lg9np3 / triage:6ffbb6bf79d245b0 / farm-issue #1413
+//
+// Both exhausted re-plans offering warp (5,9) from SAFFRON_GYM (8,17) toward
+// Place (9,9). See also TestSaffronGymExitDoorRoutesViaReachableTeleporter.
 func TestFindRouteAtDestinationIgnoresUnreachableSameMapWarpWhenStandingOnWarpTile(t *testing.T) {
 	const (
 		door    = 0 // player stands here (exit warp)
