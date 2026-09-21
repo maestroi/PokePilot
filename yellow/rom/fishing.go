@@ -1,10 +1,6 @@
 package rom
 
-import (
-	"fmt"
-
-	"github.com/maestroi/pokepilot/gen1rom"
-)
+import "fmt"
 
 const (
 	OldRodItem   uint8 = 0x4c
