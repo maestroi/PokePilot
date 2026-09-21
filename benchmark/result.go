@@ -784,7 +784,7 @@ func LoadResults(path string) ([]Result, error) {
 			if walkErr != nil {
 				return walkErr
 			}
-			if !d.IsDir() && strings.HasSuffix(strings.ToLower(d.Name()), ".json") {
+			if !d.IsDir() && strings.EqualFold(d.Name(), "benchmark-result.json") {
 				paths = append(paths, p)
 			}
 			return nil
