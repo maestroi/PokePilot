@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/maestroi/pokepilot/emu"
+	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
@@ -74,9 +75,17 @@ func VirtualTrade(m *emu.Emu, romData []byte, playerSlot int, tradeback bool, po
 	case o := <-done:
 		return o.result, o.err
 	case <-time.After(linkStallTimeout):
-		return LinkTradeResult{Tradeback: tradeback}, fmt.Errorf("%w: no peer response for %s at frame %d",
-			ErrLinkStalled, linkStallTimeout, m.FrameCount())
+		return LinkTradeResult{Tradeback: tradeback}, linkExchangeStalled(m.FrameCount())
 	}
+}
+
+// linkExchangeStalled is the portable poison signal for one stalled link.
+// ErrLinkStalled keeps the farm's existing exit check. game.ErrMachineUnusable
+// tells the objective transaction not to step or save the emulator again:
+// the goroutine inside Step may still hold the frame lock.
+func linkExchangeStalled(frame uint64) error {
+	return fmt.Errorf("%w: %w: no peer response for %s at frame %d",
+		game.ErrMachineUnusable, ErrLinkStalled, linkStallTimeout, frame)
 }
 
 func virtualTrade(m *emu.Emu, romData []byte, playerSlot int, tradeback bool, policy MovePolicy) (LinkTradeResult, error) {

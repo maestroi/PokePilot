@@ -13,8 +13,9 @@ import (
 // checkpointRing is the bounded record of a run: one save state per
 // objective, kept as a ring of the last keep entries.
 type checkpointRing struct {
-	dir  string
-	keep int
+	dir       string
+	keep      int
+	lastState string
 }
 
 func (c *checkpointRing) write(m *emu.Emu, round int, obj Objective, k *Knowledge, coverage *coverageTracker, intent string, intentAge int, plans ...Plan) error {
@@ -48,7 +49,19 @@ func (c *checkpointRing) writeNamed(m *emu.Emu, round int, name string, k *Knowl
 	if err := embedCoverageInKnowledgeFile(path, coverage); err != nil {
 		return fmt.Errorf("embed coverage round %d: %w", round, err)
 	}
+	c.lastState = path
 	return c.evict()
+}
+
+// rewriteKnowledge updates the knowledge sidecar of the checkpoint just
+// written, without saving emulator state. A poisoned machine cannot be
+// snapshotted; the pre-objective state file stays, and the failure has to
+// be durable or the next resume selects the same objective again.
+func (c *checkpointRing) rewriteKnowledge(k *Knowledge, intent string, intentAge int, plans ...Plan) error {
+	if c == nil || c.lastState == "" {
+		return nil
+	}
+	return writeMemoryFile(c.lastState, k, intent, intentAge, plans...)
 }
 
 func (c *checkpointRing) evict() error {

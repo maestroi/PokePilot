@@ -23,11 +23,11 @@ const (
 // remaining locally obtainable Dex targets.
 func appendDexEvolutionObjectives(obs Observation, known *Knowledge, out []Objective) []Objective {
 	if len(obs.Dex.Targets) == 0 {
-		return appendDexVirtualTradeObjectives(obs, out)
+		return appendDexVirtualTradeObjectives(obs, known, out)
 	}
 	out = appendDexDuplicateEvolutionBaseObjectives(obs, known, out)
 	if len(obs.Party) == 0 {
-		return appendDexVirtualTradeObjectives(obs, out)
+		return appendDexVirtualTradeObjectives(obs, known, out)
 	}
 
 	owned := pokedexOwnedSet(obs)
@@ -115,7 +115,7 @@ func appendDexEvolutionObjectives(obs Observation, known *Knowledge, out []Objec
 			break
 		}
 	}
-	return appendDexVirtualTradeObjectives(obs, out)
+	return appendDexVirtualTradeObjectives(obs, known, out)
 }
 
 func dexEvolutionStonePurchaseAvailable(obs Observation, known *Knowledge, item ItemID) bool {

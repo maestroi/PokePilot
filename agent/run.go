@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/maestroi/pokepilot/emu"
+	gameruntime "github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/profiles"
 	"github.com/maestroi/pokepilot/world"
 )
@@ -215,6 +216,24 @@ runLoop:
 			outcome := objectiveResult.HistoryText()
 
 			known.FailedResult(objectiveResult, execErr)
+			if errors.Is(execErr, gameruntime.ErrMachineUnusable) {
+				// The stalled step may still hold the emulator lock. Record the
+				// failure beside the checkpoint already written for this round
+				// and stop. Do not save, step, or ask the planner to continue.
+				known.noteMachineUnusable(obj, execErr)
+				if ring != nil {
+					if err := ring.rewriteKnowledge(known, intent, intentAge, engine.planning.Plan); err != nil {
+						execErr = fmt.Errorf("%w (checkpoint knowledge: %v)", execErr, err)
+					}
+				}
+				history = appendHistory(history, RoundRecord{Objective: obj.String(), Outcome: outcome})
+				last.History = history
+				last.RecentDialogue = tape.recent()
+				logRound(budget.Log, round, obj, outcome, last)
+				markLastOutcomeTerminal(&res)
+				res.Stop, res.Err = StopError, execErr
+				break
+			}
 			known.notePartyCombatResult(before, last, objectiveResult)
 			history = appendHistory(history, RoundRecord{Objective: obj.String(), Outcome: outcome})
 			last.History = history
