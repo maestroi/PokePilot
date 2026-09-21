@@ -95,6 +95,14 @@ func redCutFieldUnlocked(obs Observation) bool {
 	return ok && cut.BadgeOwned && cut.HMOwned
 }
 
+// redFlyFieldUnlocked is the recovery half of Fly progression. Once HM02 is
+// in the bag, a failed/paused preparation transaction must remain offerable
+// even if it stopped outside the geographic Celadon-ready checkpoint.
+func redFlyFieldUnlocked(obs Observation) bool {
+	fly, ok := observedFieldCapability(obs, "fly")
+	return ok && fly.BadgeOwned && fly.HMOwned
+}
+
 // redProgressionObjectives exposes Red story opportunities as one portable
 // objective shape. Availability is Red knowledge; the planner only sees the
 // semantic state change requested by each objective.
@@ -146,27 +154,33 @@ func redProgressionObjectives(obs Observation) []Objective {
 			Note:  "(prepare a compatible Cut carrier through the party/PC/catch recovery path, clear the exterior tree, and challenge Lt. Surge)",
 		})
 	}
-	if hasBadge(obs, state.BadgeThunder) && !obs.Story.Has(redProgressRainbowBadge) {
+	if hasBadge(obs, state.BadgeThunder) {
 		switch {
-		case !obs.Story.Has(redProgressPostSurgeLavenderReached):
+		case !obs.Story.Has(redProgressFlyReady) && redFlyFieldUnlocked(obs):
+			out = append(out, Objective{
+				Kind:     KindProgress,
+				Progress: redProgressFlyReady,
+				Note:     "(HM02 Fly is already owned; finish preparing a compatible current-party Fly user and return recovered to Celadon so later Travel can fast-travel instead of walking across Kanto)",
+			})
+		case !obs.Story.Has(redProgressRainbowBadge) && !obs.Story.Has(redProgressPostSurgeLavenderReached):
 			out = append(out, Objective{
 				Kind:     KindProgress,
 				Progress: redProgressPostSurgeLavenderReached,
 				Note:     "(repair or retain a Cut carrier, travel through Cerulean and Route 9, then cross Rock Tunnel to the Lavender checkpoint; Flash is optional for ROM-driven navigation)",
 			})
-		case !obs.Story.Has(redProgressPostSurgeCeladonReady):
+		case !obs.Story.Has(redProgressRainbowBadge) && !obs.Story.Has(redProgressPostSurgeCeladonReady):
 			out = append(out, Objective{
 				Kind:     KindProgress,
 				Progress: redProgressPostSurgeCeladonReady,
 				Note:     "(from Lavender or later, continue through Route 8/7's Underground Path to the Celadon Pokemon Center and fully recover the party before Erika)",
 			})
-		case !obs.Story.Has(redProgressFlyReady):
+		case !obs.Story.Has(redProgressFlyReady) && obs.Story.Has(redProgressPostSurgeCeladonReady):
 			out = append(out, Objective{
 				Kind:     KindProgress,
 				Progress: redProgressFlyReady,
-				Note:     "(take the short Route 16 Cut detour, receive HM02 Fly, and leave a compatible current-party Pokemon knowing Fly so later Travel can fast-travel instead of walking across Kanto)",
+				Note:     "(take the short Route 16 Cut detour, receive HM02 Fly, prepare a compatible current-party Fly user, then return recovered to Celadon)",
 			})
-		default:
+		case !obs.Story.Has(redProgressRainbowBadge):
 			out = append(out, Objective{
 				Kind:     KindProgress,
 				Progress: redProgressRainbowBadge,
