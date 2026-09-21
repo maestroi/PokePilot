@@ -84,12 +84,12 @@ type yellowLiveSprite struct {
 }
 
 const (
-	yellowSpriteSlotSize    uint16 = 0x10
-	yellowSpritePictureID   uint16 = 0x00
-	yellowSpriteImageIndex  uint16 = 0x02
-	yellowSpriteMapY        uint16 = 0x04
-	yellowSpriteMapX        uint16 = 0x05
-	yellowBoulderPictureID         = 0x49
+	yellowSpriteSlotSize   uint16 = 0x10
+	yellowSpritePictureID  uint16 = 0x00
+	yellowSpriteImageIndex uint16 = 0x02
+	yellowSpriteMapY       uint16 = 0x04
+	yellowSpriteMapX       uint16 = 0x05
+	yellowBoulderPictureID        = 0x49
 )
 
 func yellowLiveSprites(m *emu.Emu) []yellowLiveSprite {
