@@ -264,7 +264,6 @@ func TestRunPlanningKeepsHardStopForStructurallyInvalidPlans(t *testing.T) {
 	}
 }
 
-
 func TestValidateStrategicPlanStopsAtFirstWorldBoundary(t *testing.T) {
 	offered := []Objective{
 		{Kind: KindTrain, Level: 12},
