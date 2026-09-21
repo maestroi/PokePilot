@@ -199,7 +199,6 @@ func hasFinding(report Report, code string, severity Severity) bool {
 	return false
 }
 
-
 func TestVerifyRejectsGraphExitComponentWithoutExecutableApproach(t *testing.T) {
 	snapshot := Snapshot{
 		Maps: []Map{
