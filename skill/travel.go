@@ -18,13 +18,26 @@ type Replan struct {
 	X, Y uint8
 }
 
+// EmergencyEgress records a navigation failure that Travel recovered from by
+// deliberately returning to a known-safe landing. Detail preserves the
+// original pathing error (including its transition trace) so a successful run
+// does not hide the defect that made recovery necessary.
+type EmergencyEgress struct {
+	Cause   string
+	Method  string
+	Detail  string
+	From    Replan
+	Landing Replan
+}
+
 // TravelResult reports what happened on the way.
 type TravelResult struct {
-	Battles    int      // wild encounters fought
-	Flees      int      // wild encounters fled (S8-7's fight/flee policy)
-	Dialogues  int      // text boxes recovered on the way
-	BlackedOut bool     // the journey ended in a blackout (a lost battle, or the last mon fainted out of poison)
-	Replans    []Replan // one entry per engagement, in order resolved
+	Battles           int               // wild encounters fought
+	Flees             int               // wild encounters fled (S8-7's fight/flee policy)
+	Dialogues         int               // text boxes recovered on the way
+	BlackedOut        bool              // the journey ended in a blackout (a lost battle, or the last mon fainted out of poison)
+	Replans           []Replan          // one entry per engagement, in order resolved
+	EmergencyEgresses []EmergencyEgress // pathing stalls escaped to safety, in occurrence order
 }
 
 // battleResolution is the outcome of resolving one interrupting battle under
@@ -215,6 +228,69 @@ func cutAwareGoTo(m *emu.Emu, romData []byte, dest Destination, policies ...Move
 	}
 }
 
+const maxEmergencyEgressesPerJourney = 1
+
+func emergencyEgressCause(err error) string {
+	switch {
+	case errors.Is(err, ErrNavigationStalled):
+		return "navigation_stalled"
+	case errors.Is(err, ErrReplanExhausted):
+		return "route_replan_exhausted"
+	default:
+		return ""
+	}
+}
+
+// recoveringGoTo adds one bounded resilience step around ordinary journey
+// navigation. A controller-confirmed cycle/exhaustion may evacuate to the last
+// safe healing landing, then the entire GoTo navigation memory is rebuilt from
+// that landing. This is intentionally one-shot per Travel call: if the fresh
+// route stalls again, the real pathing error is returned to the agent instead
+// of hiding a persistent defect behind repeated escapes.
+func recoveringGoTo(m *emu.Emu, romData []byte, dest Destination, policy MovePolicy, recovered *[]EmergencyEgress) func() error {
+	goTo := cutAwareGoTo(m, romData, dest, policy)
+	egresses := 0
+	return func() error {
+		for {
+			err := goTo()
+			if err == nil {
+				return nil
+			}
+			cause := emergencyEgressCause(err)
+			if cause == "" || egresses >= maxEmergencyEgressesPerJourney || m == nil {
+				return err
+			}
+
+			from := currentWorld(m)
+			choice, ok, egressErr := executeEmergencyEgress(m)
+			if !ok {
+				return err
+			}
+			egresses++
+			if egressErr != nil {
+				return fmt.Errorf("%w; emergency egress via %s from map %#02x at (%d,%d) failed: %v",
+					err, choice.Method.String(), from.Map, from.X, from.Y, egressErr)
+			}
+
+			landing := currentWorld(m)
+			if recovered != nil {
+				*recovered = append(*recovered, EmergencyEgress{
+					Cause:   cause,
+					Method:  choice.Method.String(),
+					Detail:  err.Error(),
+					From:    from,
+					Landing: landing,
+				})
+			}
+
+			// The old guard/dead-end/banned-leg memory describes the map graph
+			// before the forced warp. Rebuild it rather than carrying stale
+			// local evidence across the emergency transition.
+			goTo = cutAwareGoTo(m, romData, dest, policy)
+		}
+	}
+}
+
 // Travel walks to dest like GoTo, but resolves the wild encounters, ordinary
 // text boxes, and legal Cut-tree route gates that interrupt a route. Each
 // encounter is fought with policy; each box is paged closed by
@@ -251,12 +327,15 @@ func Travel(m *emu.Emu, romData []byte, dest Destination, policy MovePolicy, max
 		// The verified shortcut may be an intermediate landing. Ordinary GoTo
 		// below owns the entire remaining route to the requested exact tile.
 	}
-	return travel(m, policy, maxBattles,
-		cutAwareGoTo(m, romData, dest, policy),
+	var egresses []EmergencyEgress
+	res, err := travel(m, policy, maxBattles,
+		recoveringGoTo(m, romData, dest, policy, &egresses),
 		func() DialogueRecoveryResult { return RecoverDialogue(m, dialogueRecoveryBudget) },
 		func() bool { return m.Peek8(sym.StatusFlags4)&blackoutBit != 0 },
 		fightOnly(m, policy),
 	)
+	res.EmergencyEgresses = append(res.EmergencyEgresses, egresses...)
+	return res, err
 }
 
 // TravelFlee is Travel with S8-7's fight/flee policy: wild encounters are
@@ -281,12 +360,15 @@ func TravelFlee(m *emu.Emu, romData []byte, dest Destination, policy MovePolicy,
 		// Continue with the flee-first journey from the verified shortcut
 		// landing, which may be an intermediate town/center.
 	}
-	return travel(m, policy, maxBattles,
-		cutAwareGoTo(m, romData, dest, policy),
+	var egresses []EmergencyEgress
+	res, err := travel(m, policy, maxBattles,
+		recoveringGoTo(m, romData, dest, policy, &egresses),
 		func() DialogueRecoveryResult { return RecoverDialogue(m, dialogueRecoveryBudget) },
 		func() bool { return m.Peek8(sym.StatusFlags4)&blackoutBit != 0 },
 		fleeThenFight(m, policy, guaranteedWildFleeAttempts),
 	)
+	res.EmergencyEgresses = append(res.EmergencyEgresses, egresses...)
+	return res, err
 }
 
 // travel is the retry loop: walk, resolve what interrupted the walk, walk
