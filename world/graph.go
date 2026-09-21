@@ -95,6 +95,9 @@ func buildGraph(provider worldmodel.MapHeaderProvider) (*Graph, error) {
 	explicit := make(map[uint8]map[uint8]bool)
 	for id, h := range headers {
 		for _, w := range h.Warps {
+			if w.Inert {
+				continue
+			}
 			if warpTo[w.DestMap] == nil {
 				warpTo[w.DestMap] = make(map[uint8]bool)
 			}
@@ -179,6 +182,9 @@ func buildGraph(provider worldmodel.MapHeaderProvider) (*Graph, error) {
 	for id, h := range headers {
 		if elevator, ok := provider.LookupElevator(id); ok {
 			for _, w := range h.Warps {
+				if w.Inert {
+					continue
+				}
 				for _, floor := range elevator.Floors {
 					g.Edges[id] = append(g.Edges[id], Edge{
 						Kind: EdgeWarp, From: id, To: floor.MapID, WarpX: w.X, WarpY: w.Y,
@@ -187,6 +193,9 @@ func buildGraph(provider worldmodel.MapHeaderProvider) (*Graph, error) {
 			}
 		} else {
 			for _, w := range h.Warps {
+				if w.Inert {
+					continue
+				}
 				to, ok := resolve(id, w)
 				if !ok {
 					continue
@@ -223,6 +232,9 @@ func warpTileBlockers(warps []worldmodel.Warp) map[[2]int]bool {
 	}
 	out := make(map[[2]int]bool, len(warps))
 	for _, w := range warps {
+		if w.Inert {
+			continue
+		}
 		out[[2]int{int(w.X), int(w.Y)}] = true
 	}
 	return out
@@ -233,9 +245,9 @@ func components(grid *Grid) [][]int {
 }
 
 // componentsWithBlocked is components, but tiles in blocked are treated as
-// non-walkable for the flood. Callers use this to keep teleporter/door warp
-// pads from bridging rooms that can only be joined by actually taking the
-// warp edge.
+// non-walkable for the flood. Callers use this to keep active teleporter/door
+// warp pads from bridging rooms that can only be joined by actually taking the
+// warp edge. Inert warp-table entries are deliberately not blocked.
 func componentsWithBlocked(grid *Grid, blocked map[[2]int]bool) [][]int {
 	w, h := grid.Width, grid.Height
 	comps := make([][]int, h)
