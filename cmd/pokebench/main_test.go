@@ -3,7 +3,10 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/maestroi/pokepilot/benchmark"
 )
 
 func TestParseRedConfig(t *testing.T) {
@@ -61,6 +64,29 @@ func TestResolveCheckpointUsesBenchmarkAndQualificationLayouts(t *testing.T) {
 	}
 	if filepath.Base(filepath.Dir(got)) != "rocket-hideout" {
 		t.Fatalf("qualification checkpoint resolved = %q", got)
+	}
+}
+
+func TestResolveSourceCarriesCheckpointProvenance(t *testing.T) {
+	root := t.TempDir()
+	state := filepath.Join(root, "sabrina.state")
+	if err := os.WriteFile(state, []byte("state"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	metaPath := strings.TrimSuffix(state, ".state") + ".benchmark.json"
+	if err := benchmark.WriteJSON(metaPath, benchmark.CheckpointMetadata{
+		Version: benchmark.ResultVersion, RunID: "origin", Commit: "abc", Game: "pokemon-red",
+		ROMSHA256: "romhash", Seed: 11, Milestone: "sabrina",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	source, resume, err := resolveSource(redConfig{from: "checkpoint:sabrina", corpus: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resume != state || source.OriginRunID != "origin" || source.OriginCommit != "abc" ||
+		source.OriginMilestone != "sabrina" || source.OriginSeed != 11 {
+		t.Fatalf("source = %+v resume=%q", source, resume)
 	}
 }
 
