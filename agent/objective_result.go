@@ -172,6 +172,16 @@ func verifyObjectivePostcondition(o Objective, initial, final Observation, resul
 		}
 		return OutcomeCompleted, nil
 
+	case KindRepairFieldCapability:
+		for _, capability := range final.FieldCapabilities {
+			if capability.Name == o.FieldCapability && capability.Usable {
+				return OutcomeCompleted, nil
+			}
+		}
+		return OutcomePostconditionFailed, fmt.Errorf(
+			"%w: %s finished but field capability %q is not usable",
+			ErrObjectivePostconditionFailed, o, o.FieldCapability)
+
 	case KindGoTo:
 		dest, ok := skill.Place(string(o.Place))
 		if !ok {

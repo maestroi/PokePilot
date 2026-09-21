@@ -116,6 +116,24 @@ func executeRedOwned(m *emu.Emu, romData []byte, o Objective) (result ObjectiveR
 		}
 		return result, nil
 
+	case KindRepairFieldCapability:
+		move, ok := redFieldMoveForCapability(o.FieldCapability)
+		if !ok {
+			return result, fmt.Errorf("agent: %s: unknown Red field capability %q", o, o.FieldCapability)
+		}
+		policy := skill.StatAwareMove(romData)
+		var err error
+		switch move {
+		case skill.FieldCut, skill.FieldFlash:
+			err = skill.RepairUtilityFieldCapability(m, romData, policy, move)
+		default:
+			err = skill.RepairFieldCapabilities(m, romData, policy, []skill.FieldMove{move})
+		}
+		if err != nil {
+			return result, fmt.Errorf("agent: %s: %w", o, err)
+		}
+		return result, nil
+
 	case KindTrain:
 		if o.Intent == "dex-evolution" {
 			return executeDexEvolutionTraining(m, romData, o, result)

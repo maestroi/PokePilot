@@ -21,18 +21,19 @@ const (
 // FailureObjective is the portable, planner-selected operation that failed.
 // It deliberately excludes presentation-only fields such as notes and intent.
 type FailureObjective struct {
-	Kind     string `json:"kind"`
-	Place    string `json:"place,omitempty"`
-	X        uint8  `json:"x,omitempty"`
-	Y        uint8  `json:"y,omitempty"`
-	Starter  string `json:"starter,omitempty"`
-	Progress string `json:"progress,omitempty"`
-	Level    uint8  `json:"level,omitempty"`
-	Species  string `json:"species,omitempty"`
-	Item     string `json:"item,omitempty"`
-	Slot     int    `json:"slot,omitempty"`
-	Qty      int    `json:"qty,omitempty"`
-	Flee     bool   `json:"flee,omitempty"`
+	Kind            string `json:"kind"`
+	Place           string `json:"place,omitempty"`
+	X               uint8  `json:"x,omitempty"`
+	Y               uint8  `json:"y,omitempty"`
+	Starter         string `json:"starter,omitempty"`
+	Progress        string `json:"progress,omitempty"`
+	FieldCapability string `json:"field_capability,omitempty"`
+	Level           uint8  `json:"level,omitempty"`
+	Species         string `json:"species,omitempty"`
+	Item            string `json:"item,omitempty"`
+	Slot            int    `json:"slot,omitempty"`
+	Qty             int    `json:"qty,omitempty"`
+	Flee            bool   `json:"flee,omitempty"`
 }
 
 type FailurePartyMember struct {
@@ -239,6 +240,7 @@ func canonicalFailureIdentity(in FailureIdentity) FailureIdentity {
 	out.Objective.Place = canonicalFailureString(in.Objective.Place)
 	out.Objective.Starter = canonicalFailureString(in.Objective.Starter)
 	out.Objective.Progress = canonicalFailureString(in.Objective.Progress)
+	out.Objective.FieldCapability = canonicalFailureString(in.Objective.FieldCapability)
 	out.Objective.Species = canonicalFailureString(in.Objective.Species)
 	out.Objective.Item = canonicalFailureString(in.Objective.Item)
 	out.Outcome = canonicalFailureString(in.Outcome)

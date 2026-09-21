@@ -77,6 +77,10 @@ func recoveryStateFor(o Objective, obs Observation) recoveryState {
 	switch o.Kind {
 	case KindGoTo, KindProgress:
 		includeRoute()
+	case KindRepairFieldCapability:
+		includeCombat()
+		includeInventory()
+		includeRoute()
 	case KindTalk:
 		// Position/boundary state is sufficient for a local interaction retry.
 	case KindTrainer:

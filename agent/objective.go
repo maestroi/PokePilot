@@ -28,6 +28,7 @@ const (
 	_ // legacy KindFuchsiaProgression numeric slot
 	KindProgress
 	KindTrainer
+	KindRepairFieldCapability
 )
 
 // Objective carries semantic planner arguments. Game-specific encodings stay
@@ -42,6 +43,7 @@ type Objective struct {
 	X, Y              uint8
 	Starter           skill.Starter
 	Progress          ProgressID
+	FieldCapability   CapabilityID
 	Level             uint8
 	Species           SpeciesID
 	Item              ItemID
@@ -68,6 +70,10 @@ func (o Objective) Validate() error {
 	case KindProgress:
 		if strings.TrimSpace(string(o.Progress)) == "" {
 			return fmt.Errorf("agent: %s: empty progression id", o)
+		}
+	case KindRepairFieldCapability:
+		if strings.TrimSpace(string(o.FieldCapability)) == "" {
+			return fmt.Errorf("agent: %s: empty field capability id", o)
 		}
 	case KindTrain:
 		if o.Level < 1 || o.Level > 100 {
@@ -126,6 +132,8 @@ func (o Objective) String() string {
 		return "take the " + starterName(o.Starter) + " starter"
 	case KindProgress:
 		return "progress " + string(o.Progress)
+	case KindRepairFieldCapability:
+		return "repair the " + strings.ToUpper(string(o.FieldCapability)) + " field capability"
 	case KindTrain:
 		if o.Species != "" {
 			return fmt.Sprintf("train %s to level %d", strings.ToUpper(string(o.Species)), o.Level)

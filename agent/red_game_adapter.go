@@ -26,6 +26,23 @@ func newRedObjectiveAdapter(m *emu.Emu, romData []byte) *redObjectiveAdapter {
 	return &redObjectiveAdapter{m: m, romData: romData}
 }
 
+func redFieldMoveForCapability(capability CapabilityID) (skill.FieldMove, bool) {
+	switch capability {
+	case "cut":
+		return skill.FieldCut, true
+	case "fly":
+		return skill.FieldFly, true
+	case "surf":
+		return skill.FieldSurf, true
+	case "strength":
+		return skill.FieldStrength, true
+	case "flash":
+		return skill.FieldFlash, true
+	default:
+		return 0, false
+	}
+}
+
 func (a *redObjectiveAdapter) Observe() (Observation, error) {
 	obs, err := ObserveChecked(a.m, a.romData)
 	if err != nil {
@@ -69,6 +86,10 @@ func (a *redObjectiveAdapter) Validate(o Objective, obs Observation) error {
 	case KindProgress:
 		if !redProgressionKnown(o.Progress) {
 			return fmt.Errorf("agent: %s: unknown Red progression goal %q", o, o.Progress)
+		}
+	case KindRepairFieldCapability:
+		if _, ok := redFieldMoveForCapability(o.FieldCapability); !ok {
+			return fmt.Errorf("agent: %s: unknown Red field capability %q", o, o.FieldCapability)
 		}
 	case KindCatch:
 		if _, ok := redSpeciesID(o.Species); !ok {

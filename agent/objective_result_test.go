@@ -283,6 +283,13 @@ func TestVerifyObjectivePostconditionRepresentativeEvidence(t *testing.T) {
 			o:     Objective{Kind: KindProgress, Progress: ProgressID("door_unlocked")},
 			final: Observation{Controllable: true, Story: ProgressState{{ID: ProgressID("door_unlocked"), Complete: true}}},
 		},
+		{
+			name: "field capability repair",
+			o:    Objective{Kind: KindRepairFieldCapability, FieldCapability: "surf"},
+			final: Observation{Controllable: true, FieldCapabilities: []FieldCapability{{
+				Name: "surf", BadgeOwned: true, HMOwned: true, Learned: true, Usable: true,
+			}}},
+		},
 	}
 
 	for _, tc := range cases {
@@ -297,7 +304,13 @@ func TestVerifyObjectivePostconditionRepresentativeEvidence(t *testing.T) {
 
 func TestVerifyObjectivePostconditionFailsClosedWithoutEvidence(t *testing.T) {
 	stable := Observation{Controllable: true}
-	out, err := verifyObjectivePostcondition(
+	fieldRepair := Objective{Kind: KindRepairFieldCapability, FieldCapability: "surf"}
+	out, err := verifyObjectivePostcondition(fieldRepair, Observation{}, stable, ObjectiveResult{})
+	if out != OutcomePostconditionFailed || !errors.Is(err, ErrObjectivePostconditionFailed) {
+		t.Fatalf("field repair without usable capability = %q, %v; want postcondition_failed", out, err)
+	}
+
+	out, err = verifyObjectivePostcondition(
 		Objective{Kind: KindUseItem, Item: "potion", Slot: 0},
 		Observation{}, stable, ObjectiveResult{},
 	)
@@ -321,6 +334,9 @@ func TestClassifyObjectiveOutcomePCStorageIsBlocked(t *testing.T) {
 	}
 	if got := classifyObjectiveOutcome(Objective{Kind: KindCatch, Species: "pidgey"}, skill.ErrFieldRosterNoRecovery, clean); got != OutcomeBlocked {
 		t.Fatalf("no safe deposit = %q, want blocked", got)
+	}
+	if got := classifyObjectiveOutcome(Objective{Kind: KindRepairFieldCapability, FieldCapability: "surf"}, skill.ErrFieldRosterCatch, clean); got != OutcomeBlocked {
+		t.Fatalf("field roster catch failure = %q, want blocked", got)
 	}
 }
 
