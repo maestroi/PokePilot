@@ -43,7 +43,6 @@ func (yellowKnowledgeTopologyProvider) KnowledgeTopology(native map[uint8][]uint
 	return normalizeKnowledgeTopology(topology)
 }
 
-
 func yellowNativeMapForLocation(location LocationID) (uint8, bool) {
 	if location == "" {
 		return 0, false
