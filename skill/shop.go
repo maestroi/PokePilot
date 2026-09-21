@@ -144,9 +144,11 @@ func Buy(m *emu.Emu, item uint8, qty int) error {
 	}
 
 	// 4. Select the item; the choose-quantity box opens. Capture the stale
-	// hMoney first so the box is detected by the price changing (there is no
-	// other RAM marker that distinguishes it from the item list).
+	// hMoney and wMaxItemQuantity first. The highlighted row's price is
+	// already in hMoney, so a one-item total does not change it; the
+	// quantity menu is the one that sets wMaxItemQuantity to 99.
 	hBefore := bcdMoney(&mem)
+	maxBefore := mem.U8(sym.MaxItemQuantity)
 	if err := selectListEntry(m, pos); err != nil {
 		// Same rule as the ErrNotInStock backout above: a cursor that never
 		// reached its target leaves the item list up. The typed controller
@@ -154,7 +156,7 @@ func Buy(m *emu.Emu, item uint8, qty int) error {
 		// shop is gone.
 		return recoverShopFailure(m, shopControllerFailure(fmt.Sprintf("select item %#02x", item), err))
 	}
-	qtyUp := func(mm *state.Mem) bool { return bcdMoney(mm) > 0 && bcdMoney(mm) != hBefore }
+	qtyUp := func(mm *state.Mem) bool { return quantityBoxUp(mm, hBefore, maxBefore) }
 	if err := martWait(m, qtyUp, "the choose-quantity box"); err != nil {
 		// A timeout is still an engineering failure. The campaign may survive
 		// it only after the owning skill proves the shop has been closed.
@@ -346,6 +348,21 @@ func buySellQuitUp(mm *state.Mem) bool {
 // means the list.
 func itemListUp(mm *state.Mem) bool {
 	return mm.U8(sym.MenuWatchedKeys) == watchListOrQty
+}
+
+// quantityBoxUp reports that DisplayChooseQuantityMenu has taken over from the
+// priced item list. The list already stores the highlighted item's price in
+// hMoney, and the quantity box's first total is that same price, so a price
+// change never arrives for a one-item purchase of the highlighted row.
+// pokemart.asm sets wMaxItemQuantity to 99 immediately before drawing the box;
+// the list leaves that byte at a smaller stale value (measured 1 at Cerulean
+// Mart, run-2v0h14ws5jl5jeghjyff4ayql).
+func quantityBoxUp(mm *state.Mem, hBefore int, maxBefore uint8) bool {
+	if mm.U8(sym.MaxItemQuantity) == 99 && mm.U8(sym.ItemQuantity) >= 1 && maxBefore != 99 {
+		return true
+	}
+	price := bcdMoney(mm)
+	return price > 0 && price != hBefore
 }
 
 // twoOptionUp reports that a two-option prompt (the YES/NO confirmation) is up.

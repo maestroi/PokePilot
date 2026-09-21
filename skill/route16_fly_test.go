@@ -128,3 +128,66 @@ func TestRoute16FlyHouseRejectsLowerGateTeleport(t *testing.T) {
 		t.Fatalf("lower east (24,10)->fly land plan: err=%v, want ErrNoRoute (Cut bridge owns the seam)", err)
 	}
 }
+
+// TestRoute16WestPocketGrassIsAGateHop pins the Fly-house recovery habitat.
+// The door from ROUTE_16_FLY_HOUSE lands at (7,6), a component with no tall
+// grass. Doduo/Spearow grass is a gate hop away (measured (24,3) on
+// run-2v0h14ws5jl5jeghjyff4ayql). Treating "this map's encounter table lists
+// a Fly learner" as a reachable habitat made roster repair give up inside
+// the house and, after the door, offer a tile Catch cannot hunt.
+func TestRoute16WestPocketGrassIsAGateHop(t *testing.T) {
+	romPath := os.Getenv("POKEMON_RED_ROM")
+	if romPath == "" {
+		t.Skip("POKEMON_RED_ROM not set")
+	}
+	romData, err := os.ReadFile(romPath)
+	if err != nil {
+		t.Fatalf("read ROM: %v", err)
+	}
+	grass, grid, err := grassCells(romData, route16Map)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := len(grassInPlayerComponent(grass, grid, 7, 6)); n != 0 {
+		t.Fatalf("Route 16 (7,6) grass cells = %d, want 0", n)
+	}
+	if n := len(grassInPlayerComponent(grass, grid, 24, 3)); n == 0 {
+		t.Fatal("Route 16 (24,3) has no tall grass in its component")
+	}
+
+	g, err := world.BuildGraph(romData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var mem state.Mem
+	mem[sym.ObtainedBadges] = 1<<state.BadgeBoulder | 1<<state.BadgeCascade | 1<<state.BadgeThunder |
+		1<<state.BadgeRainbow | 1<<state.BadgeSoul | 1<<state.BadgeMarsh
+	mem[sym.PartyCount] = 1
+	base := sym.PartyMon1
+	mem[base+sym.MonSpecies] = 44
+	copy(mem.Slice(base+sym.MonMoves, 4), []byte{cutMove, 0, 0, 0})
+	mem[sym.NumBagItems] = 3
+	mem[sym.BagItems] = hm01Item
+	mem[sym.BagItems+1] = 1
+	mem[sym.BagItems+2] = bicycleItem
+	mem[sym.BagItems+3] = 1
+	mem[sym.BagItems+4] = pokeFluteItem
+	mem[sym.BagItems+5] = 1
+	mem[sym.BagItems+6] = 0xff
+	setEventFlag(&mem, eventBeatRoute16Snorlax)
+
+	planner := &RoutePlanner{
+		graph:   g,
+		cur:     route16Map,
+		x:       7,
+		y:       6,
+		prereqs: redRoutePrerequisites(g, romData, &mem),
+	}
+	dest, ok, err := currentMapGrassDestination(romData, planner)
+	if err != nil || !ok {
+		t.Fatalf("grass destination from (7,6) ok=%v err=%v", ok, err)
+	}
+	if len(grassInPlayerComponent(grass, grid, int(dest.X), int(dest.Y))) == 0 {
+		t.Fatalf("grass destination %+v is not in a grass component", dest)
+	}
+}

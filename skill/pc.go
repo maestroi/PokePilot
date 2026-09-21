@@ -123,6 +123,47 @@ func singleDestinationWarpExit(g *world.Graph, fromMap uint8) (world.Edge, bool)
 	return edges[0], true
 }
 
+// leaveMandatoryWarpRoom walks out of a room whose every graph exit is a warp
+// to one outside map. Static component routing from inside such a room cannot
+// prove journeys that only exist after that mandatory first hop, but the door
+// is still the only legal move. Returns false when the map is not that shape.
+//
+// Route 16's Fly House is the measured case for both Pokemon Center recovery
+// and field-move roster repair: its LAST_MAP doors land in Route 16's west
+// pocket, so a search that never takes the door reports no route to any
+// habitat (run-2v0h14ws5jl5jeghjyff4ayql, field_roster_no_recovery).
+func leaveMandatoryWarpRoom(m *emu.Emu, romData []byte, g *world.Graph) (bool, error) {
+	if m == nil || g == nil {
+		return false, nil
+	}
+	cur := m.Peek8(sym.CurMap)
+	exit, ok := mandatoryWarpExitEdge(g, m)
+	if !ok {
+		return false, nil
+	}
+	if err := Traverse(m, romData, exit); err != nil {
+		return false, fmt.Errorf("leave mandatory warp room %#04x toward %#04x: %w", cur, exit.To, err)
+	}
+	return true, nil
+}
+
+// mandatoryWarpExitEdge is the door a single-destination warp room must take.
+// A room can have several non-equivalent doors to the same outside map
+// (Cerulean's Badge House is the canonical shape). Prefer the edge the
+// component-aware router can reach from the player's actual tile; Traverse
+// still owns live sprite blockers and paired-door candidate selection.
+func mandatoryWarpExitEdge(g *world.Graph, m *emu.Emu) (world.Edge, bool) {
+	exit, ok := singleDestinationWarpExit(g, m.Peek8(sym.CurMap))
+	if !ok {
+		return world.Edge{}, false
+	}
+	x, y := playerXY(m)
+	if route, routeErr := world.FindRouteAt(g, exit.From, exit.To, int(x), int(y), nil); routeErr == nil && len(route) > 0 {
+		exit = route[0]
+	}
+	return exit, true
+}
+
 // reachNearestPokemonCenter owns the whole "get to a Center" preflight shared
 // by Bill's PC and VirtualTrade. Normally it selects a Center and delegates to
 // TravelFlee. If component-aware routing cannot name any Center while the
@@ -152,21 +193,12 @@ func reachNearestPokemonCenter(m *emu.Emu, romData []byte, policy MovePolicy, ma
 			return TravelResult{}, "", selectErr
 		}
 
-		exit, ok := singleDestinationWarpExit(g, cur)
-		if !ok {
+		left, err := leaveMandatoryWarpRoom(m, romData, g)
+		if err != nil {
+			return TravelResult{}, "", fmt.Errorf("skill: Pokemon Center travel: %w", err)
+		}
+		if !left {
 			return TravelResult{}, "", selectErr
-		}
-		// A room can have several non-equivalent doors to the same outside
-		// map (Cerulean's Badge House is the canonical shape). Prefer the
-		// edge the component-aware router can reach from the player's actual
-		// tile; Traverse still owns live sprite blockers and paired-door
-		// candidate selection at execution time.
-		x, y := playerXY(m)
-		if route, routeErr := world.FindRouteAt(g, cur, exit.To, int(x), int(y), nil); routeErr == nil && len(route) > 0 {
-			exit = route[0]
-		}
-		if err := Traverse(m, romData, exit); err != nil {
-			return TravelResult{}, "", fmt.Errorf("skill: Pokemon Center travel: leave mandatory warp room %#04x toward %#04x: %w", cur, exit.To, err)
 		}
 	}
 }

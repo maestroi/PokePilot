@@ -314,6 +314,11 @@ func useFlyTo(m *emu.Emu, destMap uint8) error {
 	}); err != nil {
 		return fmt.Errorf("Fly destination list did not appear")
 	}
+	// BuildFlyLocationsList stores the terminator before the first town
+	// name's DelayFrames 15. An UP during that delay is discarded and the
+	// cursor ends one visited city short (measured: Vermilion instead of
+	// Celadon, run-2v0h14ws5jl5jeghjyff4ayql).
+	m.StepFrames(24)
 	presses := 0
 	for id := uint8(1); id <= destMap; id++ {
 		if townVisited(&mem, id) {
