@@ -241,29 +241,43 @@ func firstLiveYellowPartySlot(m *emu.Emu, romData []byte) (int, error) {
 }
 
 func selectYellowBattleFight(m *emu.Emu) error {
+	return selectYellowBattleMainMenu(m, yellowBattleMenuLeftX, 0)
+}
+
+func selectYellowBattleMainMenu(m *emu.Emu, targetX, targetRow uint8) error {
+	if targetX != yellowBattleMenuLeftX && targetX != yellowBattleMenuRightX {
+		return fmt.Errorf("yellow battle: invalid main-menu target x=%#02x", targetX)
+	}
+	if targetRow > 1 {
+		return fmt.Errorf("yellow battle: invalid main-menu target row=%d", targetRow)
+	}
 	for attempt := 0; attempt < 8; attempt++ {
 		x := m.Peek8(sym.TopMenuItemX)
 		row := m.Peek8(sym.CurrentMenuItem)
-		if x == yellowBattleMenuLeftX && row == 0 {
+		if x == targetX && row == targetRow {
 			return nil
 		}
 
 		var button emu.Button
 		switch {
-		case x == yellowBattleMenuRightX && row != 0:
-			button = emu.Up
-		case x == yellowBattleMenuRightX:
-			button = emu.Left
-		case x == yellowBattleMenuLeftX:
-			button = emu.Up
-		default:
+		case x != yellowBattleMenuLeftX && x != yellowBattleMenuRightX:
 			return fmt.Errorf("yellow battle: unknown main-menu cursor x=%#02x row=%d", x, row)
+		case x != targetX:
+			if targetX == yellowBattleMenuLeftX {
+				button = emu.Left
+			} else {
+				button = emu.Right
+			}
+		case row < targetRow:
+			button = emu.Down
+		default:
+			button = emu.Up
 		}
 		if err := tapYellowCursor(m, button, x, row); err != nil {
 			return err
 		}
 	}
-	return fmt.Errorf("yellow battle: main-menu cursor did not reach FIGHT")
+	return fmt.Errorf("yellow battle: main-menu cursor did not reach x=%#02x row=%d", targetX, targetRow)
 }
 
 func selectYellowTwoOption(m *emu.Emu, no bool) error {
