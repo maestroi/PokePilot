@@ -131,6 +131,7 @@ func registerModelExperimentRoutes(mux *http.ServeMux, controller *modelExperime
 	mux.HandleFunc("GET /v1/experiments", controller.handleExperiments)
 	mux.HandleFunc("GET /v1/experiments/{id}", controller.handleExperiment)
 	mux.HandleFunc("POST /v1/specs", controller.handleSpec)
+	mux.HandleFunc("POST /v1/runs/{id}/clone", controller.handleCloneRun)
 	mux.HandleFunc("POST /v1/lease", controller.handleLease)
 	mux.HandleFunc("POST /v1/runs/{id}/finish", controller.handleFinish)
 	mux.HandleFunc("GET /v1/dashboard", controller.handleDashboard)
@@ -486,6 +487,37 @@ func (c *modelExperimentController) handleSpec(w http.ResponseWriter, r *http.Re
 		c.persistLocked()
 		c.mu.Unlock()
 	}
+}
+
+func (c *modelExperimentController) handleCloneRun(w http.ResponseWriter, r *http.Request) {
+	sourceID := strings.TrimSpace(r.PathValue("id"))
+	sourceDeployment := c.tileDeployment(sourceID)
+	sourceMeta, hasMeta := c.bindingForRun(sourceID, sourceDeployment)
+
+	capture := httptest.NewRecorder()
+	c.fallback.ServeHTTP(capture, r)
+	if capture.Code < 200 || capture.Code >= 300 {
+		copyRecorder(w, capture)
+		return
+	}
+
+	if hasMeta && strings.TrimSpace(sourceMeta.Deployment) != "" {
+		var result cloneRunResult
+		if err := json.Unmarshal(capture.Body.Bytes(), &result); err == nil && result.RunID != "" {
+			cloneMeta := sourceMeta
+			cloneMeta.RunID = result.RunID
+			// Execution/model settings are cloned; experiment provenance is not.
+			// Otherwise a manual parallel clone would contaminate paired results.
+			cloneMeta.ExperimentID = ""
+			cloneMeta.ExperimentArm = ""
+			cloneMeta.ExperimentCase = ""
+			c.mu.Lock()
+			c.state.Runs[result.RunID] = cloneMeta
+			c.persistLocked()
+			c.mu.Unlock()
+		}
+	}
+	copyRecorder(w, capture)
 }
 
 func (c *modelExperimentController) handleLease(w http.ResponseWriter, r *http.Request) {
