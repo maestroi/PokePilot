@@ -6,8 +6,21 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/maestroi/pokepilot/agent"
 	"github.com/maestroi/pokepilot/benchmark"
 )
+
+func TestPolicyPlannerRoutePriorityFollowsMode(t *testing.T) {
+	speedrun := &policyPlanner{style: agent.PlayStyle(agent.PlayStyleSpeedrun)}
+	if got := speedrun.RoutePriority(); got != agent.RoutePriorityFastest {
+		t.Fatalf("speedrun route priority = %v, want fastest", got)
+	}
+
+	adventure := &policyPlanner{style: agent.PlayStyle(agent.PlayStyleAdventure)}
+	if got := adventure.RoutePriority(); got != agent.RoutePriorityConservative {
+		t.Fatalf("adventure route priority = %v, want conservative", got)
+	}
+}
 
 func TestParseRedConfig(t *testing.T) {
 	cfg, err := parseRedConfig([]string{
