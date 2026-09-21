@@ -107,6 +107,69 @@ func TestEscapeTravelAllowedRejectsAgathaDespiteCemeteryTileset(t *testing.T) {
 	}
 }
 
+func TestEmergencyEgressPrefersDigOverEscapeRope(t *testing.T) {
+	mem := controllableFastTravelMem()
+	mem[sym.CurMap] = 0x3d
+	mem[sym.CurMapTileset] = 17 // CAVERN
+	mem[sym.LastBlackoutMap] = 0x02
+	mem[sym.PartyCount] = 1
+	mem[sym.PartyMon1+sym.MonMoves] = digMoveID
+	mem[sym.NumBagItems] = 1
+	mem[sym.BagItems] = escapeRopeItem
+	mem[sym.BagItems+1] = 1
+
+	got := chooseEmergencyEgress(&mem)
+	if got.Method != emergencyEgressDig {
+		t.Fatalf("emergency egress = %+v, want Dig", got)
+	}
+	if got.Landing != flyLanding[0x02] {
+		t.Fatalf("landing = %+v, want %+v", got.Landing, flyLanding[0x02])
+	}
+}
+
+func TestEmergencyEgressUsesEscapeRopeWhenDigUnavailable(t *testing.T) {
+	mem := controllableFastTravelMem()
+	mem[sym.CurMap] = 0x3d
+	mem[sym.CurMapTileset] = 17 // CAVERN
+	mem[sym.LastBlackoutMap] = 0x02
+	mem[sym.NumBagItems] = 1
+	mem[sym.BagItems] = escapeRopeItem
+	mem[sym.BagItems+1] = 1
+
+	if got := chooseEmergencyEgress(&mem); got.Method != emergencyEgressEscapeRope {
+		t.Fatalf("emergency egress = %+v, want Escape Rope", got)
+	}
+}
+
+func TestEmergencyEgressUsesTeleportOutside(t *testing.T) {
+	mem := controllableFastTravelMem()
+	mem[sym.CurMap] = 0x01
+	mem[sym.CurMapTileset] = overworldTileset
+	mem[sym.LastBlackoutMap] = 0x02
+	mem[sym.PartyCount] = 1
+	mem[sym.PartyMon1+sym.MonMoves] = teleportMoveID
+
+	if got := chooseEmergencyEgress(&mem); got.Method != emergencyEgressTeleport || got.Landing != flyLanding[0x02] {
+		t.Fatalf("emergency egress = %+v, want Teleport to %+v", got, flyLanding[0x02])
+	}
+}
+
+func TestEmergencyEgressFallsBackToFlyToLastVisitedTown(t *testing.T) {
+	mem := controllableFastTravelMem()
+	mem[sym.CurMap] = 0x01
+	mem[sym.CurMapTileset] = overworldTileset
+	mem[sym.LastBlackoutMap] = 0x06
+	mem[sym.ObtainedBadges] = 1 << 2 // Thunder Badge
+	mem[sym.PartyCount] = 1
+	mem[sym.PartyMon1+sym.MonMoves] = fieldFlyMove
+	setTownVisited(&mem, 0)
+	setTownVisited(&mem, 6)
+
+	if got := chooseEmergencyEgress(&mem); got.Method != emergencyEgressFly || got.Landing != flyLanding[0x06] {
+		t.Fatalf("emergency egress = %+v, want Fly to %+v", got, flyLanding[0x06])
+	}
+}
+
 func TestChooseFastTravelByCostPreservesCheaperWalking(t *testing.T) {
 	options := []fastTravelOption{{
 		Kind:       fastTravelFly,
