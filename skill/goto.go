@@ -416,8 +416,9 @@ func safeForcedBanWithDeadEnds(
 		}
 		without.Edges[mapID] = filtered
 	}
+	targetX, targetY := dest.routeCoordinates()
 	route, err := world.FindRoutePlanAtDestinationWithCapabilities(
-		&without, cur, dest.Map, int(x), int(y), int(dest.X), int(dest.Y), blockedHere, prereqs,
+		&without, cur, dest.Map, int(x), int(y), targetX, targetY, blockedHere, prereqs,
 	)
 	if errors.Is(err, world.ErrRouteReplanRequired) && len(route) > 0 {
 		return route, nil, true
@@ -572,17 +573,30 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 		if err != nil {
 			return fmt.Errorf("skill: GoTo: overlay live topology for map %02x: %w", cur, err)
 		}
+
+		routeDest := dest
+		if cur == dest.Map {
+			resolved, satisfied, resolveErr := resolveLocalDestination(m, romData, dest)
+			if resolveErr != nil {
+				return fmt.Errorf("skill: GoTo: resolve %s destination on map %02x: %w", dest.String(), cur, resolveErr)
+			}
+			if satisfied {
+				return nil
+			}
+			routeDest = resolved
+		}
+
 		// Prefer a direct capability-aware local route before component routing.
 		// This is what makes Cut/Surf true tile-path capabilities: if the
 		// destination is on this map and a mixed land/field-move path exists,
 		// do not leave the map just because pristine collision splits it.
 		if cur == dest.Map {
-			reachable, fieldErr := fieldPathReachableOnCurrentMap(m, romData, h, dest)
+			reachable, fieldErr := fieldPathReachableOnCurrentMap(m, romData, h, routeDest)
 			if fieldErr != nil {
 				return fmt.Errorf("skill: GoTo: field-path probe on map %02x: %w", cur, fieldErr)
 			}
 			if reachable {
-				walkErr := walkWithinMap(m, romData, dest, nav.policy)
+				walkErr := walkWithinMap(m, romData, routeDest, nav.policy)
 				if errors.Is(walkErr, errLocalNavigationWorldChanged) {
 					continue
 				}
@@ -596,13 +610,13 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 			// multi-floor preparation because it has the battle/roster policy.
 			localBlocked := routingBlockers(m, h)
 			localBlocked = warpAvoidance(h, int(x), int(y), localBlocked)
-			currentBlocked, currentErr := seafoamCurrentBlocksDestination(m, romData, h, dest, localBlocked)
+			currentBlocked, currentErr := seafoamCurrentBlocksDestination(m, romData, h, routeDest, localBlocked)
 			if currentErr != nil {
 				return fmt.Errorf("skill: GoTo: Seafoam current probe on map %02x: %w", cur, currentErr)
 			}
 			if currentBlocked {
 				if nav.policy == nil {
-					return fmt.Errorf("skill: GoTo: Seafoam current blocks destination (%d,%d); Travel is required to prepare the multi-floor Strength puzzle", dest.X, dest.Y)
+					return fmt.Errorf("skill: GoTo: Seafoam current blocks destination (%d,%d); Travel is required to prepare the multi-floor Strength puzzle", routeDest.X, routeDest.Y)
 				}
 				if err := prepareSeafoamCurrents(m, romData, nav.policy); err != nil {
 					return fmt.Errorf("skill: GoTo: prepare Seafoam currents: %w", err)
@@ -635,8 +649,9 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 		var mem state.Mem
 		state.Snapshot(m, &mem)
 		prereqs := redRoutePrerequisites(routeGraph, romData, &mem)
+		targetX, targetY := routeDest.routeCoordinates()
 		routeResult, err := routePlanByTravelPolicy(
-			m, planGraph, cur, dest.Map, int(x), int(y), int(dest.X), int(dest.Y), blockedHere, prereqs,
+			m, planGraph, cur, routeDest.Map, int(x), int(y), targetX, targetY, blockedHere, prereqs,
 		)
 		route := routeResult.Steps
 		if errors.Is(err, world.ErrRouteReplanRequired) && len(route) > 0 {
@@ -798,7 +813,14 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 				cur, x, y, dest.Map, dest.X, dest.Y, err)
 		}
 		if len(route) == 0 {
-			walkErr := walkWithinMap(m, romData, dest, nav.policy)
+			resolved, satisfied, resolveErr := resolveLocalDestination(m, romData, dest)
+			if resolveErr != nil {
+				return fmt.Errorf("skill: GoTo: resolve final %s destination: %w", dest.String(), resolveErr)
+			}
+			if satisfied {
+				return nil
+			}
+			walkErr := walkWithinMap(m, romData, resolved, nav.policy)
 			if errors.Is(walkErr, errLocalNavigationWorldChanged) {
 				continue
 			}
