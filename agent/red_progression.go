@@ -17,6 +17,7 @@ func redProgressionKnown(id ProgressID) bool {
 		redProgressMtMoonFossilAcquired,
 		redProgressSSTicketAcquired,
 		redProgressHM01Acquired,
+		redProgressFlyReady,
 		redProgressBicycleAcquired,
 		redProgressBoulderBadge,
 		redProgressThunderBadge,
@@ -159,11 +160,17 @@ func redProgressionObjectives(obs Observation) []Objective {
 				Progress: redProgressPostSurgeCeladonReady,
 				Note:     "(from Lavender or later, continue through Route 8/7's Underground Path to the Celadon Pokemon Center and fully recover the party before Erika)",
 			})
+		case !obs.Story.Has(redProgressFlyReady):
+			out = append(out, Objective{
+				Kind:     KindProgress,
+				Progress: redProgressFlyReady,
+				Note:     "(take the short Route 16 Cut detour, receive HM02 Fly, and leave a compatible current-party Pokemon knowing Fly so later Travel can fast-travel instead of walking across Kanto)",
+			})
 		default:
 			out = append(out, Objective{
 				Kind:     KindProgress,
 				Progress: redProgressRainbowBadge,
-				Note:     "(from a recovered Celadon state, revalidate the Cut carrier, take the short gym approach, defeat Erika, and verify the Rainbow Badge)",
+				Note:     "(from a recovered Celadon state with Fly prepared, revalidate the Cut carrier, take the short gym approach, defeat Erika, and verify the Rainbow Badge)",
 			})
 		}
 	}
@@ -352,6 +359,8 @@ func executeRedProgression(m *emu.Emu, romData []byte, o Objective) error {
 		return skill.PostSurgeReachLavender(m, romData, policy)
 	case redProgressPostSurgeCeladonReady:
 		return skill.PostSurgeReachCeladon(m, romData, policy)
+	case redProgressFlyReady:
+		return skill.PrepareFlyFastTravel(m, romData, policy)
 	case redProgressRainbowBadge:
 		return skill.PostSurgeDefeatErika(m, romData, policy)
 	case redProgressSilphScopeAcquired:
