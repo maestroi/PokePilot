@@ -21,19 +21,19 @@ const (
 // FailureObjective is the portable, planner-selected operation that failed.
 // It deliberately excludes presentation-only fields such as notes and intent.
 type FailureObjective struct {
-	Kind     string `json:"kind"`
-	Place    string `json:"place,omitempty"`
-	X        uint8  `json:"x,omitempty"`
-	Y        uint8  `json:"y,omitempty"`
-	Starter  string `json:"starter,omitempty"`
+	Kind            string `json:"kind"`
+	Place           string `json:"place,omitempty"`
+	X               uint8  `json:"x,omitempty"`
+	Y               uint8  `json:"y,omitempty"`
+	Starter         string `json:"starter,omitempty"`
 	Progress        string `json:"progress,omitempty"`
 	FieldCapability string `json:"field_capability,omitempty"`
 	Level           uint8  `json:"level,omitempty"`
-	Species  string `json:"species,omitempty"`
-	Item     string `json:"item,omitempty"`
-	Slot     int    `json:"slot,omitempty"`
-	Qty      int    `json:"qty,omitempty"`
-	Flee     bool   `json:"flee,omitempty"`
+	Species         string `json:"species,omitempty"`
+	Item            string `json:"item,omitempty"`
+	Slot            int    `json:"slot,omitempty"`
+	Qty             int    `json:"qty,omitempty"`
+	Flee            bool   `json:"flee,omitempty"`
 }
 
 type FailurePartyMember struct {
