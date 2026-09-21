@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	gameruntime "github.com/maestroi/pokepilot/game"
+	"github.com/maestroi/pokepilot/worldmodel"
 	"github.com/maestroi/pokepilot/worldverify"
 )
 
@@ -100,4 +101,85 @@ func reportHasFinding(report worldverify.Report, code string, severity worldveri
 		}
 	}
 	return false
+}
+
+func TestVerifyGraphDetectsWarpLandingExecutorMismatch(t *testing.T) {
+	edge := Edge{Kind: EdgeWarp, From: 1, To: 2, WarpX: 0, WarpY: 0}
+	g := &Graph{
+		Edges:          map[uint8][]Edge{1: {edge}, 2: nil},
+		componentAware: true,
+		comps: map[uint8][][]int{
+			1: {{0, 1}},
+			2: {{0, 2, 1}},
+		},
+		exitComps:  map[Edge][]int{edge: {1}},
+		entryComps: map[Edge][]int{edge: {1}}, // stale graph claim; actual landing is component 2
+		warps: map[uint8][]worldmodel.Warp{
+			1: {{X: 0, Y: 0, DestWarpID: 0, DestMap: 2}},
+			2: {{X: 0, Y: 0, DestWarpID: 0, DestMap: 1}},
+		},
+		tiles: map[uint8]dim{1: {w: 2, h: 1}, 2: {w: 3, h: 1}},
+	}
+
+	report := VerifyGraph(g, nil, 1)
+	if !reportHasFinding(report, "executor_landing_not_advertised", worldverify.SeverityError) {
+		t.Fatalf("expected warp executor landing mismatch, got %+v", report.Findings)
+	}
+}
+
+func TestVerifyGraphDetectsConnectionBandLandingMismatch(t *testing.T) {
+	edge := Edge{
+		Kind: EdgeConnection, From: 1, To: 2, Dir: dirEast,
+		BandScoped: true, BandStart: 0, BandEnd: 0,
+	}
+	g := &Graph{
+		Edges:          map[uint8][]Edge{1: {edge}, 2: nil},
+		componentAware: true,
+		comps: map[uint8][][]int{
+			1: {{1}},
+			2: {{2, 1}},
+		},
+		exitComps:  map[Edge][]int{edge: {1}},
+		entryComps: map[Edge][]int{edge: {1}}, // aggregate/stale claim; seam actually lands in 2
+		tiles:      map[uint8]dim{1: {w: 1, h: 1}, 2: {w: 2, h: 1}},
+		connections: map[Edge]worldmodel.Connection{
+			edge: {Dir: dirEast, MapID: 2, Offset: 0},
+		},
+	}
+
+	report := VerifyGraph(g, nil, 1)
+	if !reportHasFinding(report, "executor_landing_not_advertised", worldverify.SeverityError) {
+		t.Fatalf("expected connection-band executor landing mismatch, got %+v", report.Findings)
+	}
+}
+
+func TestValidationSnapshotUsesProviderInertWarpSemanticsForExecution(t *testing.T) {
+	// Regression shape from the measured Silph Co inert-teleporter failures:
+	// an inaccessible warp-table entry is ordinary floor and must be neither a
+	// graph edge nor an execution blocker. The portable provider carries the
+	// same Inert bit derived from red/rom.IsInertWarp that runtime navigation
+	// uses when building warpAvoidance/warpTarget.
+	g, err := BuildGraph(fakeMapProvider{})
+	if err != nil {
+		t.Fatalf("BuildGraph(fake provider): %v", err)
+	}
+	snapshot := ValidationSnapshot(g, nil, 1)
+	seenActive := false
+	for _, edge := range snapshot.Edges {
+		if edge.From != validationMapID(1) || edge.Kind != worldverify.EdgeWarp {
+			continue
+		}
+		if edge.Exit.Point != nil && edge.Exit.Point.X == 1 && edge.Exit.Point.Y == 0 {
+			t.Fatalf("inert warp leaked into validation snapshot: %+v", edge)
+		}
+		if edge.Exit.Point != nil && edge.Exit.Point.X == 0 && edge.Exit.Point.Y == 0 {
+			seenActive = true
+			if edge.Execution == nil || edge.Execution.Status != worldverify.ExecutionProven || len(edge.Execution.Paths) == 0 {
+				t.Fatalf("active warp lacks executable proof: %+v", edge.Execution)
+			}
+		}
+	}
+	if !seenActive {
+		t.Fatal("active warp missing from validation snapshot")
+	}
 }
