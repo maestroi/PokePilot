@@ -79,6 +79,19 @@ func (yellowSemanticObservationAdapter) Observe(m *emu.Emu, romData []byte, prof
 			Status:     mon.Status,
 		}
 	}
+	for _, cap := range yellowcontroller.FieldCapabilities(m, romData) {
+		obs.FieldCapabilities = append(obs.FieldCapabilities, FieldCapability{
+			Name:       CapabilityID(strings.ToLower(cap.Name)),
+			Badge:      cap.Badge,
+			BadgeOwned: cap.BadgeOwned,
+			HMOwned:    cap.HMOwned,
+			Learned:    cap.Learned,
+			PartySlot:  cap.PartySlot,
+			Usable:     cap.Usable,
+			Preparable: cap.Preparable,
+		})
+	}
+
 
 	cat, err := buildYellowDexCatalog(romData, obs.PokedexOwned, obs.PokedexSeen)
 	if err != nil {
