@@ -249,6 +249,30 @@ func TestHeartbeatSnapRaw(t *testing.T) {
 	}
 }
 
+type fixedRoutePriorityPlanner struct {
+	priority agent.RoutePriority
+}
+
+func (p fixedRoutePriorityPlanner) Next(agent.Observation, []agent.Objective) (agent.Objective, error) {
+	return agent.Objective{}, agent.ErrDone
+}
+
+func (p fixedRoutePriorityPlanner) RoutePriority() agent.RoutePriority {
+	return p.priority
+}
+
+func TestReportingPlannerForwardsRoutePriority(t *testing.T) {
+	fast := reportingPlanner{inner: fixedRoutePriorityPlanner{priority: agent.RoutePriorityFastest}}
+	if got := fast.RoutePriority(); got != agent.RoutePriorityFastest {
+		t.Fatalf("fast route priority = %v, want fastest", got)
+	}
+
+	conservative := reportingPlanner{inner: blockingPlanner{}}
+	if got := conservative.RoutePriority(); got != agent.RoutePriorityConservative {
+		t.Fatalf("planner without route priority = %v, want conservative", got)
+	}
+}
+
 // blockingPlanner parks in Next until release is closed, so the test
 // can observe the snap after the question is published and before the
 // decision exists.
