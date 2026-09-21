@@ -272,7 +272,6 @@ func redProgressionObjectives(obs Observation) []Objective {
 	return out
 }
 
-
 func redLeagueApproachNote(id ProgressID) string {
 	switch id {
 	case ProgressRoute22RivalResolved:
