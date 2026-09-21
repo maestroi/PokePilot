@@ -51,21 +51,87 @@ func TestPrerequisiteRecoveryStillRequiresNormalOfferWithoutRecoveryOnly(t *test
 	}
 }
 
-func TestPrerequisiteRecoveryDoesNotGuessFieldCapabilityRepair(t *testing.T) {
+func TestPrerequisiteRecoverySynthesizesUnlockedFieldCapabilityRepair(t *testing.T) {
 	policy := newRunFailurePolicy(3)
 	policy.pendingPrerequisites = []CapabilityID{"can_surf"}
 
-	obs := Observation{RouteBlockages: []RouteBlockage{{
-		Destination: "cinnabar island",
-		Missing:     []CapabilityID{"can_surf"},
-		Prerequisites: []RoutePrerequisiteLink{{
-			Capability:      "can_surf",
-			FieldCapability: "surf",
+	obs := Observation{
+		FieldCapabilities: []FieldCapability{{
+			Name:       "surf",
+			BadgeOwned: true,
+			HMOwned:    true,
+			Usable:     false,
 		}},
-	}}}
-	offered := []Objective{{Kind: KindProgress, Progress: ProgressID("unrelated")}}
-	if got, capabilities, ok := policy.prerequisiteRecovery(obs, offered); ok {
-		t.Fatalf("guessed recovery = %+v via %v; field-move preparation has no explicit progression link", got, capabilities)
+		RouteBlockages: []RouteBlockage{{
+			Destination: "cinnabar island",
+			Missing:     []CapabilityID{"can_surf"},
+			Prerequisites: []RoutePrerequisiteLink{{
+				Capability:      "can_surf",
+				FieldCapability: "surf",
+			}},
+		}},
+	}
+	got, capabilities, ok := policy.prerequisiteRecovery(obs, []Objective{{Kind: KindCatch, Species: "pidgey"}})
+	if !ok {
+		t.Fatal("Surf route prerequisite did not trigger deterministic field-capability recovery")
+	}
+	want := Objective{Kind: KindRepairFieldCapability, FieldCapability: "surf"}
+	if got.Key() != want.Key() {
+		t.Fatalf("recovery objective = %+v, want %+v", got, want)
+	}
+	if !reflect.DeepEqual(capabilities, []CapabilityID{"can_surf"}) {
+		t.Fatalf("recovery capabilities = %v", capabilities)
+	}
+}
+
+func TestPrerequisiteRecoveryDoesNotRepairLockedFieldCapability(t *testing.T) {
+	for _, field := range []FieldCapability{
+		{Name: "surf", BadgeOwned: false, HMOwned: true},
+		{Name: "surf", BadgeOwned: true, HMOwned: false},
+		{Name: "surf", BadgeOwned: true, HMOwned: true, Usable: true},
+	} {
+		policy := newRunFailurePolicy(3)
+		policy.pendingPrerequisites = []CapabilityID{"can_surf"}
+		obs := Observation{
+			FieldCapabilities: []FieldCapability{field},
+			RouteBlockages: []RouteBlockage{{
+				Destination: "cinnabar island",
+				Missing:     []CapabilityID{"can_surf"},
+				Prerequisites: []RoutePrerequisiteLink{{
+					Capability:      "can_surf",
+					FieldCapability: "surf",
+				}},
+			}},
+		}
+		if got, capabilities, ok := policy.prerequisiteRecovery(obs, []Objective{{Kind: KindCatch, Species: "pidgey"}}); ok {
+			t.Fatalf("locked/already-usable field capability %+v synthesized recovery %+v via %v", field, got, capabilities)
+		}
+	}
+}
+
+func TestPrerequisiteRecoveryPrefersOfferedProgressBeforeFieldRepair(t *testing.T) {
+	policy := newRunFailurePolicy(3)
+	policy.pendingPrerequisites = []CapabilityID{"can_cut"}
+	obs := Observation{
+		FieldCapabilities: []FieldCapability{{
+			Name:       "cut",
+			BadgeOwned: true,
+			HMOwned:    true,
+		}},
+		RouteBlockages: []RouteBlockage{{
+			Destination: "vermilion gym",
+			Missing:     []CapabilityID{"can_cut"},
+			Prerequisites: []RoutePrerequisiteLink{{
+				Capability:      "can_cut",
+				FieldCapability: "cut",
+				Progress:        redProgressHM01Acquired,
+			}},
+		}},
+	}
+	progress := Objective{Kind: KindProgress, Progress: redProgressHM01Acquired}
+	got, _, ok := policy.prerequisiteRecovery(obs, []Objective{progress})
+	if !ok || got.Key() != progress.Key() {
+		t.Fatalf("recovery = %+v, ok=%v; want offered progression %+v", got, ok, progress)
 	}
 }
 
