@@ -205,8 +205,9 @@ func PostSurgeDefeatErika(m *emu.Emu, romData []byte, policy MovePolicy) error {
 }
 
 // PostSurgeCeladonProgression remains as a composed milestone helper for ROM
-// qualification and callers outside the objective runtime. The runtime offers
-// the three functions above as separate semantic progression stages.
+// qualification and callers outside the objective runtime. Runtime progression
+// now inserts the bounded Fly preparation stage between Celadon recovery and
+// Erika so speed-oriented runs leave the city with fast travel actually usable.
 func PostSurgeCeladonProgression(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	stages := []struct {
 		name string
@@ -214,6 +215,7 @@ func PostSurgeCeladonProgression(m *emu.Emu, romData []byte, policy MovePolicy) 
 	}{
 		{name: "reach Lavender", run: PostSurgeReachLavender},
 		{name: "reach and recover in Celadon", run: PostSurgeReachCeladon},
+		{name: "prepare Fly fast travel", run: PrepareFlyFastTravel},
 		{name: "defeat Erika", run: PostSurgeDefeatErika},
 	}
 	for _, stage := range stages {
