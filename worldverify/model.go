@@ -97,6 +97,34 @@ type Port struct {
 	Point      *Point `json:"point,omitempty"`
 }
 
+type ExecutionStatus string
+
+const (
+	ExecutionProven         ExecutionStatus = "proven"
+	ExecutionDynamicUnknown ExecutionStatus = "dynamic_unknown"
+)
+
+// ExecutionPath is one statically executable local crossing. ExitComponent is
+// the source standing component that can approach ExitPoint without crossing
+// another active port; EntryComponent is the concrete destination component
+// reached by the corresponding landing tile.
+type ExecutionPath struct {
+	ExitComponent  int   `json:"exit_component,omitempty"`
+	EntryComponent int   `json:"entry_component,omitempty"`
+	ExitPoint      Point `json:"exit_point"`
+	EntryPoint     Point `json:"entry_point"`
+}
+
+// ExecutionEvidence is adapter-supplied proof about whether the local
+// navigation executor can realize a graph edge without running an emulator.
+// Dynamic semantic edges are explicit unknowns rather than being treated as
+// unrestricted geometry.
+type ExecutionEvidence struct {
+	Status ExecutionStatus  `json:"status"`
+	Paths  []ExecutionPath `json:"paths,omitempty"`
+	Reason string          `json:"reason,omitempty"`
+}
+
 // Transition is the portable semantic overlay on one geometric edge.
 // Gate means requirements are preconditions on ordinary geometry. PivotOnly
 // means missing requirements still leave the ordinary geometric edge usable;
@@ -113,14 +141,15 @@ type Transition struct {
 
 // Edge is one directed topology transition.
 type Edge struct {
-	ID         string      `json:"id"`
-	Kind       EdgeKind    `json:"kind"`
-	From       MapID       `json:"from"`
-	To         MapID       `json:"to"`
-	Exit       Port        `json:"exit"`
-	Entry      Port        `json:"entry"`
-	BorderSpan *Span       `json:"border_span,omitempty"`
-	Transition *Transition `json:"transition,omitempty"`
+	ID         string             `json:"id"`
+	Kind       EdgeKind           `json:"kind"`
+	From       MapID              `json:"from"`
+	To         MapID              `json:"to"`
+	Exit       Port               `json:"exit"`
+	Entry      Port               `json:"entry"`
+	BorderSpan *Span              `json:"border_span,omitempty"`
+	Transition *Transition        `json:"transition,omitempty"`
+	Execution  *ExecutionEvidence `json:"execution,omitempty"`
 }
 
 // Snapshot is the complete portable input to Verify. StartMaps is optional;
