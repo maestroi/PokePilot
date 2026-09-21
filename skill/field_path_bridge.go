@@ -71,11 +71,16 @@ func fieldPathBridgeOnCurrentMap(
 		if rerr != nil {
 			return
 		}
-		actions := 0
-		for _, step := range plan {
-			if step.Action != fieldPathWalk {
-				actions++
-			}
+		actions := fieldPathPlanActionCount(plan)
+		// This helper exists to bridge a topology split with a real local
+		// field action. An ordinary zero-action walk must stay owned by the
+		// global component/semantic router; otherwise it can pre-empt the
+		// semantic action that actually opens the route. Farm #1492 and its
+		// 0xCB siblings reproduced that shape in Rocket Hideout B1F: the
+		// zero-action "bridge" steered back toward the elevator instead of
+		// executing red:rocket_b1f_trainer_door.
+		if actions == 0 {
+			return
 		}
 		cand := ranked{dest: bridge, actions: actions, moves: len(plan)}
 		if best == nil || cand.actions < best.actions || (cand.actions == best.actions && cand.moves < best.moves) {
