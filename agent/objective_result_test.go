@@ -173,10 +173,13 @@ func TestClassifyObjectiveOutcomeDoesNotParseLegacyGameplayProse(t *testing.T) {
 }
 
 func TestObjectivePostconditionGoToExactDestination(t *testing.T) {
-	o := Objective{Kind: KindGoTo, Place: "pallet town"}
+	o := Objective{Kind: KindGoTo, Place: "viridian pokemon center"}
 	dest, ok := skill.Place(o.Place)
 	if !ok {
-		t.Fatal("Place(pallet town) did not resolve")
+		t.Fatal("Place(viridian pokemon center) did not resolve")
+	}
+	if dest.Kind != skill.DestinationExactTile {
+		t.Fatalf("exact-destination fixture kind=%v, want exact tile", dest.Kind)
 	}
 
 	good := Observation{Map: dest.Map, X: dest.X, Y: dest.Y, Controllable: true}
