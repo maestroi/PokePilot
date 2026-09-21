@@ -269,7 +269,7 @@ func findRoute(g *Graph, from, to uint8, blockedHere map[Edge]bool, first, targe
 			}
 
 			nextEntry := g.entryComps[e]
-			boundary := relaxLanding[e] && !occupied[e.To]
+			boundary := g.componentAware && relaxLanding[e] && !occupied[e.To]
 			key := routeStateIdentity(g, e.To, nextEntry, e)
 			if seen[key] {
 				continue
