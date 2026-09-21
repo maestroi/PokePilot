@@ -15,26 +15,26 @@ import (
 
 const (
 	yellowCatchEncounterCap = 40
-	yellowCatchGrassLegs     = 600
-	yellowCatchBallBudget    = 8
-	yellowStaticRetryCount   = 6
-	yellowStaticBallBudget   = 12
-	yellowCatchMenuBudget    = 3000
-	yellowCatchSettleBudget  = 5000
+	yellowCatchGrassLegs    = 600
+	yellowCatchBallBudget   = 8
+	yellowStaticRetryCount  = 6
+	yellowStaticBallBudget  = 12
+	yellowCatchMenuBudget   = 3000
+	yellowCatchSettleBudget = 5000
 )
 
 var (
-	ErrYellowCatchHuntExhausted  = errors.New("yellow capture: hunt exhausted")
-	ErrYellowCatchOutOfBalls     = errors.New("yellow capture: out of balls")
-	ErrYellowStaticUnavailable   = errors.New("yellow capture: one-time static source unavailable")
-	ErrYellowStaticExhausted     = errors.New("yellow capture: static capture attempts exhausted")
+	ErrYellowCatchHuntExhausted = errors.New("yellow capture: hunt exhausted")
+	ErrYellowCatchOutOfBalls    = errors.New("yellow capture: out of balls")
+	ErrYellowStaticUnavailable  = errors.New("yellow capture: one-time static source unavailable")
+	ErrYellowStaticExhausted    = errors.New("yellow capture: static capture attempts exhausted")
 )
 
 type CaptureResult struct {
-	Caught       bool
-	Species      uint8
-	BallsThrown  int
-	Encounters   int
+	Caught      bool
+	Species     uint8
+	BallsThrown int
+	Encounters  int
 }
 
 type yellowStaticSite struct {
