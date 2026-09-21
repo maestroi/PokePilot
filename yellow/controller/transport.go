@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	yellowBicycleItem  = 0x06
+	yellowBicycleItem   = 0x06
 	yellowPokeFluteItem = 0x49
 
 	yellowRoute12 = 0x17
