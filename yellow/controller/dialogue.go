@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	yellowDialogueFrameBudget = 6000
+	yellowDialogueFrameBudget  = 6000
 	yellowDialogueStableFrames = 8
 )
 
@@ -39,7 +39,6 @@ func dialoguePhaseFor(text string, maxMenu, fontLoaded uint8, controllable bool)
 	}
 	return dialoguePhaseWait
 }
-
 
 // TalkAt approaches one map object, faces it, presses A once, and requires the
 // interaction to produce a real control-state transition before it is counted.
