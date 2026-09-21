@@ -52,6 +52,20 @@ var yellowStaticSites = []yellowStaticSite{
 	{species: 0x83, name: "Mewtwo", mapID: 0xe3, x: 27, y: 13, event: 0x8c1},
 }
 
+type yellowSnorlaxSite struct {
+	name      string
+	mapID     uint8
+	objectX   uint8
+	objectY   uint8
+	fightEvent uint16
+	beatEvent  uint16
+}
+
+var yellowSnorlaxSites = []yellowSnorlaxSite{
+	{name: "Route 12 Snorlax", mapID: yellowRoute12, objectX: 10, objectY: 62, fightEvent: yellowEventFightRoute12Snorlax, beatEvent: yellowEventBeatRoute12Snorlax},
+	{name: "Route 16 Snorlax", mapID: yellowRoute16, objectX: 26, objectY: 10, fightEvent: yellowEventFightRoute16Snorlax, beatEvent: yellowEventBeatRoute16Snorlax},
+}
+
 func yellowStaticSiteForSpecies(species uint8) (yellowStaticSite, bool) {
 	for _, site := range yellowStaticSites {
 		if site.species == species {
@@ -424,6 +438,121 @@ func initiateYellowStaticBattle(m *emu.Emu, romData []byte, site yellowStaticSit
 	return fmt.Errorf("%w: %s did not start battle", ErrYellowStaticUnavailable, site.name)
 }
 
+func routeToYellowSnorlaxActivation(m *emu.Emu, romData []byte, site yellowSnorlaxSite) error {
+	h, err := yellowrom.ParseMap(romData, site.mapID)
+	if err != nil {
+		return err
+	}
+	grid, err := world.Build(romData, h)
+	if err != nil {
+		return err
+	}
+	target := [2]int{int(site.objectX), int(site.objectY)}
+	blocked := staticObjectBlockers(h, &target)
+	var candidates []yellowHuntCell
+	for _, step := range []world.Step{world.StepDown, world.StepUp, world.StepRight, world.StepLeft} {
+		x, y := int(site.objectX)+step.DX, int(site.objectY)+step.DY
+		if grid.InBounds(x, y) && grid.Walkable(x, y) && !blocked[[2]int{x, y}] {
+			candidates = append(candidates, yellowHuntCell{x: x, y: y})
+		}
+	}
+	if len(candidates) == 0 {
+		return fmt.Errorf("yellow capture: %s has no walkable activation tile", site.name)
+	}
+	var last error
+	for _, candidate := range candidates {
+		if err := GoTo(m, romData, site.mapID, uint8(candidate.x), uint8(candidate.y)); err == nil {
+			if _, _, ok := yellowSnorlaxFluteTarget(m); ok {
+				return nil
+			}
+			last = fmt.Errorf("arrival (%d,%d) is not a legal flute activation tile", candidate.x, candidate.y)
+		} else {
+			last = err
+		}
+	}
+	return fmt.Errorf("yellow capture: reach %s: %w", site.name, last)
+}
+
+func captureYellowSnorlax(m *emu.Emu, romData []byte) (CaptureResult, error) {
+	const species = uint8(0x84)
+	var result CaptureResult
+	owned, err := yellowPokedexOwnsInternal(m, romData, species)
+	if err != nil {
+		return result, err
+	}
+	if owned {
+		return CaptureResult{Caught: true, Species: species}, nil
+	}
+
+	for _, site := range yellowSnorlaxSites {
+		if yellowEventSet(m, site.beatEvent) {
+			continue
+		}
+		if err := routeToYellowSnorlaxActivation(m, romData, site); err != nil {
+			continue
+		}
+		checkpoint, err := m.SaveState()
+		if err != nil {
+			return result, fmt.Errorf("yellow capture: checkpoint %s: %w", site.name, err)
+		}
+		phases := [...]int{0, 17, 37, 61, 89, 127}
+		for attempt := 0; attempt < yellowStaticRetryCount; attempt++ {
+			if attempt > 0 {
+				if err := m.LoadState(checkpoint); err != nil {
+					return result, fmt.Errorf("yellow capture: restore %s attempt %d: %w", site.name, attempt+1, err)
+				}
+				m.StepFrames(phases[attempt])
+			}
+			_, beatEvent, err := startPokeFluteSnorlaxBattle(m, romData)
+			if err != nil {
+				_ = m.LoadState(checkpoint)
+				break
+			}
+			enemy, err := yellowWaitEnemySpecies(m)
+			if err != nil || enemy != species {
+				_ = m.LoadState(checkpoint)
+				if err != nil {
+					return result, err
+				}
+				return result, fmt.Errorf("yellow capture: %s started species %#02x, want Snorlax", site.name, enemy)
+			}
+			result.Encounters++
+			for thrown := 0; thrown < yellowStaticBallBudget; thrown++ {
+				caught, ended, err := throwYellowBall(m, romData, species, true)
+				if errors.Is(err, ErrYellowCatchOutOfBalls) {
+					break
+				}
+				if err != nil {
+					break
+				}
+				result.BallsThrown++
+				if caught {
+					if !yellowEventSet(m, beatEvent) {
+						for frame := 0; frame < 1800 && !yellowEventSet(m, beatEvent); frame++ {
+							if m.Peek8(sym.FontLoaded) != 0 {
+								m.Tap(emu.A, 3, 7)
+							} else {
+								m.StepFrame()
+							}
+						}
+					}
+					result.Caught = true
+					result.Species = species
+					return result, nil
+				}
+				if ended {
+					break
+				}
+			}
+			if err := m.LoadState(checkpoint); err != nil {
+				return result, fmt.Errorf("yellow capture: rollback %s attempt %d: %w", site.name, attempt+1, err)
+			}
+		}
+	}
+
+	return result, fmt.Errorf("%w: both Yellow Snorlax sources are unavailable or exhausted", ErrYellowStaticExhausted)
+}
+
 // CaptureStatic captures Yellow's finite legendary overworld encounters with
 // rollback-safe RNG phases. A failed ball phase restores the exact state from
 // before interaction, so Articuno/Zapdos/Moltres/Mewtwo are never consumed by
@@ -432,6 +561,9 @@ func CaptureStatic(m *emu.Emu, romData []byte, species uint8) (CaptureResult, er
 	var result CaptureResult
 	if m == nil {
 		return result, fmt.Errorf("yellow capture: nil emulator")
+	}
+	if species == 0x84 {
+		return captureYellowSnorlax(m, romData)
 	}
 	owned, err := yellowPokedexOwnsInternal(m, romData, species)
 	if err != nil {
