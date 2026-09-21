@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 )
 
 // Stop says why a run ended.
@@ -69,8 +70,9 @@ type Result struct {
 // recording start frame can translate it without making the agent aware of
 // recording or presentation concerns.
 type ObjectiveTiming struct {
-	Frame uint64
-	Round int
+	Frame       uint64
+	Round       int
+	WallElapsed time.Duration
 }
 
 // Progress is one snapshot of how far a run has gotten.
