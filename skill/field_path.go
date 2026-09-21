@@ -438,6 +438,20 @@ func blockingUndefeatedTrainer(candidates []rom.Object, reachableWithout func(at
 	return candidate, true, nil
 }
 
+// fieldPathPlanActionCount reports how many non-walk operations a local field
+// plan actually performs. Cross-map bridge recovery must require at least one:
+// a zero-action plan is ordinary walking and belongs to the component/semantic
+// router, not the field-bridge override.
+func fieldPathPlanActionCount(plan []fieldPathStep) int {
+	n := 0
+	for _, step := range plan {
+		if step.Action != fieldPathWalk {
+			n++
+		}
+	}
+	return n
+}
+
 func firstFieldAction(plan []fieldPathStep) (prefix []world.Step, action *fieldPathStep) {
 	for i := range plan {
 		if plan[i].Action != fieldPathWalk {
