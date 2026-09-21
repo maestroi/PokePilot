@@ -47,6 +47,11 @@ var ErrNavigationStalled = errors.New("skill: navigation made no progress")
 // snapshot is stale and must be rebuilt from the new live position.
 var errLocalNavigationWorldChanged = errors.New("skill: local navigation world changed")
 
+// errPreferStrengthRoute is internal weighted-routing control flow. It is
+// emitted only after the live push solver proved a cheaper, currently
+// executable Strength route to the exact same destination.
+var errPreferStrengthRoute = errors.New("skill: weighted routing prefers Strength")
+
 const (
 	maxNavigationTransitions        = 64
 	maxSemanticTransitionExecutions = 16
@@ -1106,12 +1111,19 @@ func walkWithinMap(m *emu.Emu, romData []byte, dest Destination, policies ...Mov
 				// unrelated door while walking to one fires that warp immediately,
 				// so keep every other warp tile out of the local route.
 				blocked = warpAvoidance(h, int(x), int(y), blocked)
-				plan, perr := currentFieldPathPlan(m, romData, h, dest, blocked)
+				plan, planCost, perr := currentFieldPathPlanWithCost(m, romData, h, dest, blocked)
 				if perr != nil {
 					planErr = fmt.Errorf("skill: GoTo: no capability-aware path on map %02x from (%d,%d) to (%d,%d): %w",
 						cur, x, y, dest.X, dest.Y, perr)
 					blockedAtFailure = blocked
 					return nil, planErr
+				}
+				preferStrength, strengthCostErr := preferLocalStrengthRoute(m, romData, h, dest, planCost)
+				if strengthCostErr != nil {
+					return nil, fmt.Errorf("skill: GoTo: weighted Strength route probe on map %02x: %w", cur, strengthCostErr)
+				}
+				if preferStrength {
+					return nil, errPreferStrengthRoute
 				}
 				prefix, action := firstFieldAction(plan)
 				nextAction = action
@@ -1120,6 +1132,20 @@ func walkWithinMap(m *emu.Emu, romData []byte, dest Destination, policies ...Mov
 			func() { m.StepFrames(npcWaitFrames) })
 
 		if err != nil {
+			if errors.Is(err, errPreferStrengthRoute) {
+				moved, strengthErr := solveLocalStrengthPath(m, romData, policy, h, dest)
+				if strengthErr != nil {
+					if errors.Is(strengthErr, ErrBattleInterrupted) {
+						x, y := playerXY(m)
+						return fmt.Errorf("skill: GoTo: battle during weighted Strength route on map %02x at (%d,%d): %w", cur, x, y, ErrBattle)
+					}
+					return strengthErr
+				}
+				if moved {
+					return errLocalNavigationWorldChanged
+				}
+				continue
+			}
 			if err == planErr {
 				// Cut/Surf could not reach the destination. Before declaring a
 				// dead local component, ask the live push solver whether Strength
