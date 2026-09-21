@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/maestroi/pokepilot/emu"
+	yellowprofile "github.com/maestroi/pokepilot/yellow/profile"
 	"github.com/maestroi/pokepilot/yellow/sym"
 )
 
