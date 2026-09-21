@@ -55,7 +55,7 @@ func (p *policyPlanner) StrategizeRetry(obs agent.Observation, offered []agent.O
 }
 
 func (p *policyPlanner) Usage() (int, int) { return p.inner.Usage() }
-func (p *policyPlanner) RunGoal() string { return p.inner.RunGoal() }
+func (p *policyPlanner) RunGoal() string   { return p.inner.RunGoal() }
 
 type redConfig struct {
 	romPath         string
@@ -289,14 +289,14 @@ func runRedOnce(cfg redConfig, source benchmark.Source, resumeFrom, goal, romSHA
 		Planner: "agent.FailoverPlanner+run-policy", Goal: goal, LLMProfile: string(profile),
 		ReasoningEffort: cfg.reasoningEffort, PlayStyle: cfg.mode, RiskTolerance: risk, WildEncounters: wild,
 		DecisionBackend: strings.TrimSpace(os.Getenv("POKEPILOT_DECISION_BACKEND")),
-		EmulatorSpeed: "unthrottled; canonical score=emulator frames",
+		EmulatorSpeed:   "unthrottled; canonical score=emulator frames",
 		Model: benchmark.ModelIdentity{
 			Profile: string(profile), PrimaryModel: primaryCfg.Model, PrimaryURL: benchmark.SafeEndpoint(primaryCfg.BaseURL),
 			NoThink: primaryCfg.NoThink, MaxTokens: primaryCfg.MaxTokens, Timeout: primaryCfg.Timeout.String(), PromptHash: primary.PromptHash(),
 		},
 		FeatureFlags: benchmark.SanitizeSettings(map[string]string{
-			"POKEPILOT_RISK_TOLERANCE": os.Getenv("POKEPILOT_RISK_TOLERANCE"),
-			"POKEPILOT_WILD_ENCOUNTERS": os.Getenv("POKEPILOT_WILD_ENCOUNTERS"),
+			"POKEPILOT_RISK_TOLERANCE":   os.Getenv("POKEPILOT_RISK_TOLERANCE"),
+			"POKEPILOT_WILD_ENCOUNTERS":  os.Getenv("POKEPILOT_WILD_ENCOUNTERS"),
 			"POKEPILOT_DECISION_BACKEND": os.Getenv("POKEPILOT_DECISION_BACKEND"),
 		}),
 	}
