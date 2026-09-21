@@ -27,7 +27,10 @@ func TestBuildCapturesSplitsTimingCountersAndModelCost(t *testing.T) {
 		Objective: agent.Objective{Kind: agent.KindGoTo, Place: "pewter city"},
 		Outcome:   agent.OutcomeCompleted,
 		Final:     agent.Observation{MapName: "PEWTER_CITY", Badges: []string{"Boulder"}},
-		Travel:    &agent.TravelEvidence{Battles: 2, Flees: 1, Replans: 1},
+		Travel: &agent.TravelEvidence{
+			Battles: 2, Flees: 1, Replans: 1,
+			EmergencyEgresses: []agent.EmergencyEgressEvidence{{Cause: "navigation_stalled", Method: "dig"}},
+		},
 	}
 	second := agent.ObjectiveResult{
 		Objective: agent.Objective{Kind: agent.KindGym},
@@ -79,7 +82,8 @@ func TestBuildCapturesSplitsTimingCountersAndModelCost(t *testing.T) {
 	if result.Counters["battles"] != 3 || result.Counters["wild_battles"] != 2 || result.Counters["trainer_battles"] != 1 {
 		t.Fatalf("counters = %+v", result.Counters)
 	}
-	if result.Counters["replans"] != 2 || result.Model.Calls != 2 || result.Model.StrategistCalls != 1 {
+	if result.Counters["replans"] != 2 || result.Counters["emergency_navigation_egresses"] != 1 ||
+		result.Model.Calls != 2 || result.Model.StrategistCalls != 1 {
 		t.Fatalf("planner/model telemetry = counters %+v model %+v", result.Counters, result.Model)
 	}
 	if result.Counters["typed_decision_calls"] != 1 || result.Decision.Calls != 1 || result.Decision.PromptTokens != 20 {
