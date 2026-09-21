@@ -654,3 +654,282 @@ func CaptureStatic(m *emu.Emu, romData []byte, species uint8) (CaptureResult, er
 	}
 	return result, fmt.Errorf("%w: %s after %d rollback-safe phases", ErrYellowStaticExhausted, site.name, yellowStaticRetryCount)
 }
+
+
+func chooseYellowWaterPair(romData []byte, mapID uint8, sx, sy int) (yellowHuntCell, yellowHuntCell, error) {
+	cells, err := yellowrom.WaterEncounterCells(romData, mapID)
+	if err != nil {
+		return yellowHuntCell{}, yellowHuntCell{}, err
+	}
+	if len(cells) < 2 {
+		return yellowHuntCell{}, yellowHuntCell{}, fmt.Errorf("yellow capture: map %#02x has fewer than two Surf encounter cells", mapID)
+	}
+	h, err := yellowrom.ParseMap(romData, mapID)
+	if err != nil {
+		return yellowHuntCell{}, yellowHuntCell{}, err
+	}
+	grid, err := world.BuildFromBlocksForTraversal(romData, h, nil, world.TraversalWater)
+	if err != nil {
+		return yellowHuntCell{}, yellowHuntCell{}, err
+	}
+	comps := world.Components(grid)
+	if !grid.InBounds(sx, sy) || comps[sy][sx] == 0 {
+		return yellowHuntCell{}, yellowHuntCell{}, fmt.Errorf("yellow capture: Surf position (%d,%d) is outside a water component", sx, sy)
+	}
+	wantComp := comps[sy][sx]
+	blocked := staticObjectBlockers(h, nil)
+	candidates := make([]yellowHuntCell, 0, len(cells))
+	for _, c := range cells {
+		x, y := int(c.X), int(c.Y)
+		if !grid.InBounds(x, y) || comps[y][x] != wantComp || blocked[[2]int{x, y}] {
+			continue
+		}
+		candidates = append(candidates, yellowHuntCell{x: x, y: y})
+	}
+	if len(candidates) < 2 {
+		return yellowHuntCell{}, yellowHuntCell{}, fmt.Errorf("yellow capture: map %#02x has fewer than two reachable Surf encounter cells", mapID)
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		di := yellowAbsInt(candidates[i].x-sx) + yellowAbsInt(candidates[i].y-sy)
+		dj := yellowAbsInt(candidates[j].x-sx) + yellowAbsInt(candidates[j].y-sy)
+		if di != dj {
+			return di < dj
+		}
+		if candidates[i].y != candidates[j].y {
+			return candidates[i].y < candidates[j].y
+		}
+		return candidates[i].x < candidates[j].x
+	})
+	a := candidates[0]
+	for _, b := range candidates[1:] {
+		if yellowAbsInt(a.x-b.x)+yellowAbsInt(a.y-b.y) == 1 && grid.Passable(a.x, a.y, b.x, b.y) {
+			return a, b, nil
+		}
+	}
+	for _, b := range candidates[1:] {
+		if _, err := world.FindPath(grid, a.x, a.y, b.x, b.y, blocked); err == nil {
+			return a, b, nil
+		}
+	}
+	return yellowHuntCell{}, yellowHuntCell{}, fmt.Errorf("yellow capture: no connected Surf encounter pair on map %#02x", mapID)
+}
+
+func walkYellowTraversalTo(m *emu.Emu, romData []byte, tx, ty int, mode world.TraversalMode) error {
+	mapID := m.Peek8(sym.CurMap)
+	h, err := yellowrom.ParseMap(romData, mapID)
+	if err != nil {
+		return err
+	}
+	grid, err := world.BuildFromBlocksForTraversal(romData, h, nil, mode)
+	if err != nil {
+		return err
+	}
+	sx, sy := int(m.Peek8(sym.XCoord)), int(m.Peek8(sym.YCoord))
+	steps, err := world.FindPath(grid, sx, sy, tx, ty, staticObjectBlockers(h, nil))
+	if err != nil {
+		return err
+	}
+	return walkPath(m, mapID, steps)
+}
+
+type yellowShore struct {
+	standX, standY int
+	waterX, waterY int
+	distance       int
+}
+
+func nearestYellowShore(m *emu.Emu, romData []byte) (yellowShore, error) {
+	mapID := m.Peek8(sym.CurMap)
+	h, err := yellowrom.ParseMap(romData, mapID)
+	if err != nil {
+		return yellowShore{}, err
+	}
+	land, err := world.BuildFromBlocksForTraversal(romData, h, nil, world.TraversalLand)
+	if err != nil {
+		return yellowShore{}, err
+	}
+	water, err := world.BuildFromBlocksForTraversal(romData, h, nil, world.TraversalWater)
+	if err != nil {
+		return yellowShore{}, err
+	}
+	sx, sy := int(m.Peek8(sym.XCoord)), int(m.Peek8(sym.YCoord))
+	blocked := staticObjectBlockers(h, nil)
+	dirs := []world.Step{world.StepUp, world.StepLeft, world.StepRight, world.StepDown}
+	best := yellowShore{distance: int(^uint(0) >> 1)}
+	found := false
+	for y := 0; y < land.Height; y++ {
+		for x := 0; x < land.Width; x++ {
+			if !land.Walkable(x, y) || blocked[[2]int{x, y}] {
+				continue
+			}
+			steps, pathErr := world.FindPath(land, sx, sy, x, y, blocked)
+			if pathErr != nil {
+				continue
+			}
+			for _, d := range dirs {
+				nx, ny := x+d.DX, y+d.DY
+				if !water.InBounds(nx, ny) || land.Passable(x, y, nx, ny) || !water.Passable(x, y, nx, ny) {
+					continue
+				}
+				field, fieldOK := water.FieldTile(nx, ny)
+				collision, collisionOK := water.Tile(nx, ny)
+				if (!fieldOK || field != 0x14) && (!collisionOK || collision != 0x14) {
+					continue
+				}
+				candidate := yellowShore{
+					standX: x, standY: y, waterX: nx, waterY: ny, distance: len(steps),
+				}
+				if !found || candidate.distance < best.distance ||
+					(candidate.distance == best.distance &&
+						(candidate.standY < best.standY ||
+							(candidate.standY == best.standY && candidate.standX < best.standX))) {
+					best, found = candidate, true
+				}
+			}
+		}
+	}
+	if !found {
+		return yellowShore{}, fmt.Errorf("yellow capture: no reachable shoreline on map %#02x", mapID)
+	}
+	return best, nil
+}
+
+func faceYellowCoordinate(m *emu.Emu, x, y int) error {
+	dx := x - int(m.Peek8(sym.XCoord))
+	dy := y - int(m.Peek8(sym.YCoord))
+	var step world.Step
+	switch {
+	case dx == 1 && dy == 0:
+		step = world.StepRight
+	case dx == -1 && dy == 0:
+		step = world.StepLeft
+	case dx == 0 && dy == 1:
+		step = world.StepDown
+	case dx == 0 && dy == -1:
+		step = world.StepUp
+	default:
+		return fmt.Errorf("yellow capture: target (%d,%d) is not adjacent for facing", x, y)
+	}
+	btn, ok := buttonFor(step)
+	if !ok {
+		return fmt.Errorf("yellow capture: invalid facing direction")
+	}
+	m.Tap(btn, 3, 7)
+	return nil
+}
+
+// CaptureWildWater enters Surf when needed and hunts Yellow's water encounter
+// table on the current map. Wanted targets receive only verified ball throws;
+// unwanted encounters are resolved by the Yellow battle controller.
+func CaptureWildWater(m *emu.Emu, romData []byte, species uint8) (CaptureResult, error) {
+	var result CaptureResult
+	if m == nil {
+		return result, fmt.Errorf("yellow capture: nil emulator")
+	}
+	owned, err := yellowPokedexOwnsInternal(m, romData, species)
+	if err != nil {
+		return result, err
+	}
+	if owned {
+		return CaptureResult{Caught: true, Species: species}, nil
+	}
+	mapID := m.Peek8(sym.CurMap)
+	has, err := yellowrom.HasWildSpecies(romData, mapID, gen1rom.HabitatWater, species)
+	if err != nil {
+		return result, err
+	}
+	if !has {
+		return result, fmt.Errorf("yellow capture: species %#02x is not in map %#02x water table", species, mapID)
+	}
+
+	if m.Peek8(sym.WalkBikeSurfState) != 2 {
+		shore, err := nearestYellowShore(m, romData)
+		if err != nil {
+			return result, err
+		}
+		if err := walkTo(m, romData, shore.standX, shore.standY, nil); err != nil {
+			return result, fmt.Errorf("yellow capture: reach Surf shoreline: %w", err)
+		}
+		if err := faceYellowCoordinate(m, shore.waterX, shore.waterY); err != nil {
+			return result, err
+		}
+		if err := UseFieldMove(m, romData, FieldSurf); err != nil {
+			return result, fmt.Errorf("yellow capture: enter Surf: %w", err)
+		}
+		if m.Peek8(sym.WalkBikeSurfState) != 2 {
+			return result, fmt.Errorf("yellow capture: Surf did not enter surfing state")
+		}
+	}
+
+	a, b, err := chooseYellowWaterPair(romData, mapID, int(m.Peek8(sym.XCoord)), int(m.Peek8(sym.YCoord)))
+	if err != nil {
+		return result, err
+	}
+	next := a
+	for legs := 0; legs < yellowCatchGrassLegs && result.Encounters < yellowCatchEncounterCap; legs++ {
+		if err := walkYellowTraversalTo(m, romData, next.x, next.y, world.TraversalWater); err != nil && m.Peek8(sym.IsInBattle) == 0 {
+			a, b, err = chooseYellowWaterPair(romData, mapID, int(m.Peek8(sym.XCoord)), int(m.Peek8(sym.YCoord)))
+			if err != nil {
+				return result, err
+			}
+			next = a
+			continue
+		}
+		if next == a {
+			next = b
+		} else {
+			next = a
+		}
+		if m.Peek8(sym.IsInBattle) == 0 {
+			continue
+		}
+		if m.Peek8(sym.IsInBattle) != 1 {
+			if _, err := Battle(m, romData); err != nil {
+				return result, err
+			}
+			continue
+		}
+		enemy, err := yellowWaitEnemySpecies(m)
+		if err != nil {
+			return result, err
+		}
+		result.Encounters++
+		if enemy != species {
+			outcome, err := Battle(m, romData)
+			if err != nil {
+				return result, fmt.Errorf("yellow capture: unwanted Surf species %#02x: %w", enemy, err)
+			}
+			if outcome.Outcome == BattleOutcomeLost {
+				return result, fmt.Errorf("yellow capture: blacked out during Surf hunt")
+			}
+			continue
+		}
+		for thrown := 0; thrown < yellowCatchBallBudget; thrown++ {
+			caught, ended, err := throwYellowBall(m, romData, species, false)
+			if errors.Is(err, ErrYellowCatchOutOfBalls) {
+				break
+			}
+			if err != nil {
+				return result, err
+			}
+			result.BallsThrown++
+			if caught {
+				result.Caught = true
+				result.Species = species
+				return result, nil
+			}
+			if ended {
+				break
+			}
+		}
+		if m.Peek8(sym.IsInBattle) != 0 {
+			if _, err := Battle(m, romData); err != nil {
+				return result, err
+			}
+		}
+		if _, ok := yellowCaptureBall(m, false); !ok {
+			return result, ErrYellowCatchOutOfBalls
+		}
+	}
+	return result, fmt.Errorf("%w: Surf map=%#02x encounters=%d", ErrYellowCatchHuntExhausted, mapID, result.Encounters)
+}
