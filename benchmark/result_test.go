@@ -177,7 +177,7 @@ func TestMaterializeCheckpointsCopiesStateAndAgentMemory(t *testing.T) {
 	result := Result{
 		RunID: "origin-run", Commit: "abc", Game: "pokemon-red", ROMSHA256: "romhash", Seed: 7,
 		Configuration: Configuration{PlayStyle: "speedrun"},
-		Milestones: []Split{{ID: "brock", Round: 1, Frame: 100}},
+		Milestones:    []Split{{ID: "brock", Round: 1, Frame: 100}},
 	}
 	if err := MaterializeCheckpoints(&result, sourceDir, outputDir, ""); err != nil {
 		t.Fatal(err)
