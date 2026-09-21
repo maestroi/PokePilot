@@ -143,6 +143,22 @@ func (p *policyPlanner) boundRiskPlan(plan agent.Plan, offered []agent.Objective
 	return plan
 }
 
+func decisionIdentity(settings agent.DecisionSettings) map[string]string {
+	out := map[string]string{
+		"POKEPILOT_DECISION_BACKEND":        settings.Backend,
+		"POKEPILOT_DECISION_MIN_CONFIDENCE": fmt.Sprintf("%.3f", settings.MinConfidence),
+		"POKEPILOT_DECISION_OBJECTIVES":     strconv.FormatBool(settings.ObjectiveSelection),
+		"POKEPILOT_DECISION_FAILURES":       strconv.FormatBool(settings.FailureRecovery),
+	}
+	if engine, ok := settings.Engine.(*agent.OpenAIDecisionEngine); ok {
+		out["POKEPILOT_DECISION_URL"] = engine.BaseURL
+		out["POKEPILOT_DECISION_MODEL"] = engine.Model
+		out["POKEPILOT_DECISION_TIMEOUT"] = engine.Timeout.String()
+		out["POKEPILOT_DECISION_MAX_TOKENS"] = strconv.Itoa(engine.MaxTokens)
+	}
+	return benchmark.SanitizeSettings(out)
+}
+
 func (p *policyPlanner) Usage() (int, int) { return p.inner.Usage() }
 func (p *policyPlanner) RunGoal() string   { return p.inner.RunGoal() }
 
@@ -377,29 +393,24 @@ func runRedOnce(cfg redConfig, source benchmark.Source, resumeFrom, goal, romSHA
 
 	config := benchmark.Configuration{
 		Planner: "agent.FailoverPlanner+run-policy", Goal: goal, LLMProfile: string(profile),
-		ReasoningEffort: cfg.reasoningEffort, PlayStyle: cfg.mode, RiskTolerance: risk, WildEncounters: wild,
+		ReasoningEffort: primaryCfg.ReasoningEffort, PlayStyle: cfg.mode, RiskTolerance: risk, WildEncounters: wild,
 		DecisionBackend: decision.Backend,
 		EmulatorSpeed:   "unthrottled; canonical score=emulator frames",
 		Model: benchmark.ModelIdentity{
 			Profile: string(profile), PrimaryModel: primaryCfg.Model, PrimaryURL: benchmark.SafeEndpoint(primaryCfg.BaseURL),
-			NoThink: primaryCfg.NoThink, MaxTokens: primaryCfg.MaxTokens, Timeout: primaryCfg.Timeout.String(), PromptHash: primary.PromptHash(),
+			NoThink: primaryCfg.NoThink, MaxTokens: primaryCfg.MaxTokens, Timeout: primaryCfg.Timeout.String(),
+			ReasoningEffort: primaryCfg.ReasoningEffort, RecoveryReasoningEffort: primaryCfg.RecoveryReasoningEffort,
+			PromptHash: primary.PromptHash(),
 		},
-		FeatureFlags: benchmark.SanitizeSettings(map[string]string{
-			"POKEPILOT_RISK_TOLERANCE":   os.Getenv("POKEPILOT_RISK_TOLERANCE"),
-			"POKEPILOT_WILD_ENCOUNTERS":  os.Getenv("POKEPILOT_WILD_ENCOUNTERS"),
-			"POKEPILOT_DECISION_BACKEND":        decision.Backend,
-			"POKEPILOT_DECISION_MIN_CONFIDENCE": fmt.Sprintf("%.3f", decision.MinConfidence),
-			"POKEPILOT_DECISION_OBJECTIVES":     strconv.FormatBool(decision.ObjectiveSelection),
-			"POKEPILOT_DECISION_FAILURES":       strconv.FormatBool(decision.FailureRecovery),
-			"POKEPILOT_DECISION_URL":            os.Getenv("POKEPILOT_DECISION_URL"),
-			"POKEPILOT_DECISION_MODEL":          os.Getenv("POKEPILOT_DECISION_MODEL"),
-			"POKEPILOT_DECISION_TIMEOUT":        os.Getenv("POKEPILOT_DECISION_TIMEOUT"),
-			"POKEPILOT_DECISION_MAX_TOKENS":     os.Getenv("POKEPILOT_DECISION_MAX_TOKENS"),
-		}),
+		FeatureFlags: decisionIdentity(decision),
 	}
 	if fallbackCfg != nil {
 		config.Model.FallbackModel = fallbackCfg.Model
 		config.Model.FallbackURL = benchmark.SafeEndpoint(fallbackCfg.BaseURL)
+		config.Model.FallbackNoThink = fallbackCfg.NoThink
+		config.Model.FallbackMaxTokens = fallbackCfg.MaxTokens
+		config.Model.FallbackTimeout = fallbackCfg.Timeout.String()
+		config.Model.FallbackReasoningEffort = fallbackCfg.ReasoningEffort
 	}
 
 	started := time.Now()
