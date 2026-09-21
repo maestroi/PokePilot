@@ -32,6 +32,7 @@ func GoTo(m *emu.Emu, romData []byte, destMap, destX, destY uint8) error {
 	}
 
 	flyAttempted := false
+	blockedHere := map[world.Edge]bool{}
 	for attempt := 0; attempt < travelReplanBudget; attempt++ {
 		recovered, err := recoverYellowTravelInterruption(m, romData)
 		if err != nil {
@@ -45,6 +46,25 @@ func GoTo(m *emu.Emu, romData []byte, destMap, destX, destY uint8) error {
 		x, y := m.Peek8(sym.XCoord), m.Peek8(sym.YCoord)
 		if cur == destMap && x == destX && y == destY {
 			return nil
+		}
+		if err := yellowMaybeFlash(m, romData); err != nil {
+			return err
+		}
+		if cur == destMap {
+			err := yellowWalkToWithFieldActions(m, romData, int(destX), int(destY), nil)
+			if err == nil {
+				continue
+			}
+			recovered, recoverErr := recoverYellowTravelInterruption(m, romData)
+			if recoverErr != nil {
+				return fmt.Errorf("yellow travel: local field-path recovery on map %#02x: %w", cur, recoverErr)
+			}
+			if recovered {
+				continue
+			}
+			if !errors.Is(err, world.ErrNoPath) {
+				return fmt.Errorf("yellow travel: local field path on map %#02x: %w", cur, err)
+			}
 		}
 
 		// Prefer Fly for already-visited city destinations once Yellow can
@@ -63,24 +83,22 @@ func GoTo(m *emu.Emu, romData []byte, destMap, destX, destY uint8) error {
 		}
 
 		route, err := world.FindRouteAtDestination(
-			graph, cur, destMap, int(x), int(y), int(destX), int(destY), nil,
+			graph, cur, destMap, int(x), int(y), int(destX), int(destY), blockedHere,
 		)
+		if err != nil && cur != destMap && errors.Is(err, world.ErrNoRoute) {
+			// The static land-component graph cannot represent a first hop
+			// whose port is reached by Cut/Surf/Strength. Fall back to map-level
+			// routing for that first hop; traverseYellowEdge still proves the
+			// concrete field-aware approach before crossing.
+			route, err = world.FindRouteAvoiding(graph, cur, destMap, blockedHere)
+		}
 		if err != nil {
 			return fmt.Errorf("yellow travel: route %#02x (%d,%d) -> %#02x (%d,%d): %w",
 				cur, x, y, destMap, destX, destY, err)
 		}
 		if len(route) == 0 {
-			if err := walkTo(m, romData, int(destX), int(destY), nil); err != nil {
-				recovered, recoverErr := recoverYellowTravelInterruption(m, romData)
-				if recoverErr != nil {
-					return fmt.Errorf("yellow travel: final walk recovery on map %#02x: %w", cur, recoverErr)
-				}
-				if recovered {
-					continue
-				}
-				return fmt.Errorf("yellow travel: final walk on map %#02x: %w", cur, err)
-			}
-			continue
+			return fmt.Errorf("yellow travel: no local field path or map transition from %#02x toward (%d,%d)",
+				cur, destX, destY)
 		}
 
 		if err := traverseYellowEdge(m, romData, route[0]); err != nil {
@@ -91,8 +109,13 @@ func GoTo(m *emu.Emu, romData []byte, destMap, destX, destY uint8) error {
 			if recovered {
 				continue
 			}
+			if errors.Is(err, world.ErrNoPath) {
+				blockedHere[route[0]] = true
+				continue
+			}
 			return err
 		}
+		blockedHere = map[world.Edge]bool{}
 	}
 	return fmt.Errorf("yellow travel: exceeded %d re-plans toward map %#02x (%d,%d)",
 		travelReplanBudget, destMap, destX, destY)
