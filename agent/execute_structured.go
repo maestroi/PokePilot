@@ -43,9 +43,11 @@ func battleEvidenceFromRed(result state.BattleResult) *BattleEvidence {
 // executeRedOwned is the Red adapter's action dispatcher. All semantic entity
 // ids are translated here, immediately before a Red skill consumes its native
 // numeric/index representation.
-func executeRedOwned(m *emu.Emu, romData []byte, o Objective) (result ObjectiveResult, retErr error) {
+func executeRedOwned(m *emu.Emu, romData []byte, o Objective, routePriority RoutePriority) (result ObjectiveResult, retErr error) {
 	result.Objective = o
-	adapter := newRedObjectiveAdapter(m, romData)
+	restoreTravelCostPolicy := skill.WithTravelCostPolicy(m, redTravelCostPolicy(routePriority))
+	defer restoreTravelCostPolicy()
+	adapter := newRedObjectiveAdapterWithRoutePriority(m, romData, routePriority)
 
 	switch o.Kind {
 	case KindGoTo:
