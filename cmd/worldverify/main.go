@@ -117,6 +117,10 @@ func main() {
 			fmt.Printf("geometry audit: %d inactive static edges, %d semantic dead-port edges\n",
 				report.Stats.InactiveStaticEdges, report.Stats.SemanticDeadPortEdges)
 		}
+		if report.Stats.ExecutableEdges > 0 || report.Stats.DynamicExecutionEdges > 0 {
+			fmt.Printf("execution audit: %d statically proven edges, %d dynamic/semantic unknowns\n",
+				report.Stats.ExecutableEdges, report.Stats.DynamicExecutionEdges)
+		}
 		for _, finding := range report.Findings {
 			where := ""
 			if finding.Map != "" {
@@ -127,7 +131,7 @@ func main() {
 			}
 			fmt.Printf("%s %-28s%s %s\n", finding.Severity, finding.Code, where, finding.Message)
 		}
-		fmt.Printf("result: %d errors, %d warnings\n", report.ErrorCount(), report.WarningCount())
+		fmt.Printf("result: %d errors, %d warnings, %d info\n", report.ErrorCount(), report.WarningCount(), report.InfoCount())
 	}
 
 	if report.HasErrors() || (*strictWarnings && report.WarningCount() > 0) {
