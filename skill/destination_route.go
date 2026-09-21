@@ -90,10 +90,10 @@ func routePlanToDestinationByTravelPolicy(
 	}
 
 	var (
-		best       world.RouteCostResult
-		bestErr    error
-		firstErr   error
-		haveBest   bool
+		best     world.RouteCostResult
+		bestErr  error
+		firstErr error
+		haveBest bool
 	)
 	for _, target := range targets {
 		result, err := routePlanByTravelPolicy(
