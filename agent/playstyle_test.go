@@ -103,3 +103,22 @@ func TestPlayStyleUnknownFallsBackToSpeedrun(t *testing.T) {
 		t.Fatalf("unknown profile name = %q, want speedrun", got.Name)
 	}
 }
+
+
+func TestAnnotatePlayStyleSpeedrunPrioritizesFlySetup(t *testing.T) {
+	offered := []Objective{
+		{Kind: KindProgress, Progress: redProgressSilphScopeAcquired},
+		{Kind: KindProgress, Progress: redProgressFlyReady},
+		{Kind: KindProgress, Progress: redProgressRainbowBadge},
+	}
+
+	got := AnnotatePlayStyle(Observation{}, offered, PlayStyle(PlayStyleSpeedrun))
+	if len(got) != 1 || got[0].Kind != KindProgress || got[0].Progress != redProgressFlyReady {
+		t.Fatalf("speedrun Fly priority = %#v, want only %q", got, redProgressFlyReady)
+	}
+
+	adventure := AnnotatePlayStyle(Observation{}, offered, PlayStyle(PlayStyleAdventure))
+	if len(adventure) != len(offered) {
+		t.Fatalf("adventure Fly menu len = %d, want %d", len(adventure), len(offered))
+	}
+}
