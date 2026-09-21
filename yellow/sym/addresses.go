@@ -61,6 +61,7 @@ const (
 	ListMenuID             uint16 = 0xCF93 // wListMenuID
 	PartyMenuTypeOrMessage uint16 = 0xD07C // wPartyMenuTypeOrMessageID
 	FieldMoves             uint16 = 0xCD3D // wFieldMoves
+	RodResponse            uint16 = 0xCD3D // wRodResponse; aliases field-move scratch outside fishing
 	FlyLocationsList       uint16 = 0xCD3E // wFlyLocationsList, NUM_CITY_MAPS entries
 	DestinationMap         uint16 = 0xD719 // wDestinationMap
 	ActionResult           uint16 = 0xCD6A // wActionResultOrTookBattleTurn
