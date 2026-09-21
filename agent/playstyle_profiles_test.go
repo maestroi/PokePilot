@@ -19,6 +19,18 @@ func TestNormalizePlayStyleKeepsLegacyEmptyAsSpeedrun(t *testing.T) {
 	}
 }
 
+func TestRoutePriorityForPlayStyle(t *testing.T) {
+	if got := RoutePriorityForPlayStyle(PlayStyle(PlayStyleSpeedrun)); got != RoutePriorityFastest {
+		t.Fatalf("speedrun route priority = %v, want fastest", got)
+	}
+	if got := RoutePriorityForPlayStyle(PlayStyle(PlayStyleAdventure)); got != RoutePriorityConservative {
+		t.Fatalf("adventure route priority = %v, want conservative", got)
+	}
+	if got := routePriorityForPlanner(NewStyledLLMPlanner(nil, PlayStyleSpeedrun)); got != RoutePriorityFastest {
+		t.Fatalf("styled speedrun planner route priority = %v, want fastest", got)
+	}
+}
+
 func TestPlayStylesAreIndependentDataProfiles(t *testing.T) {
 	adventure := PlayStyle(PlayStyleAdventure)
 	completionist := PlayStyle(PlayStyleCompletionist)

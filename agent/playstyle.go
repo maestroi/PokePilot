@@ -42,6 +42,39 @@ const (
 	PlayStyleTeamBuilder   = "team_builder"
 )
 
+// RoutePriority is portable execution policy: game adapters decide how to
+// translate "fastest" into native movement/action costs. It deliberately does
+// not name Cut, Surf, Strength, map ids, or any other game-specific mechanic.
+type RoutePriority uint8
+
+const (
+	RoutePriorityConservative RoutePriority = iota
+	RoutePriorityFastest
+)
+
+// RoutePriorityPlanner is an optional run-level policy seam. Run asks it after
+// choosing an objective so cached strategic steps and deterministic recovery
+// objectives receive the same travel policy as freshly planned objectives.
+type RoutePriorityPlanner interface {
+	RoutePriority() RoutePriority
+}
+
+func routePriorityForPlanner(p Planner) RoutePriority {
+	if provider, ok := p.(RoutePriorityPlanner); ok {
+		return provider.RoutePriority()
+	}
+	return RoutePriorityConservative
+}
+
+// RoutePriorityForPlayStyle maps the product-facing play style to portable
+// execution policy. Empty retains the legacy speedrun default.
+func RoutePriorityForPlayStyle(profile PlayStyleProfile) RoutePriority {
+	if profile.Name == "" || profile.Name == PlayStyleSpeedrun {
+		return RoutePriorityFastest
+	}
+	return RoutePriorityConservative
+}
+
 // PlayStyleProfile is data-only policy over the shared planner. Besides drive
 // weights it controls how tolerant the mode is of detours and how strongly the
 // common natural-play layer values exploration/optional content versus party
@@ -401,6 +434,10 @@ func NewStyledLLMPlanner(inner *LLMPlanner, style string) *StyledLLMPlanner {
 
 func NewAdventureLLMPlanner(inner *LLMPlanner) *StyledLLMPlanner {
 	return NewStyledLLMPlanner(inner, PlayStyleAdventure)
+}
+
+func (p *StyledLLMPlanner) RoutePriority() RoutePriority {
+	return RoutePriorityForPlayStyle(p.Profile)
 }
 
 func (p *StyledLLMPlanner) Next(obs Observation, offered []Objective) (Objective, error) {

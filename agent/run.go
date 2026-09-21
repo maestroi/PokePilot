@@ -197,7 +197,7 @@ runLoop:
 		}
 
 		before := last
-		objectiveResult, execErr := executeObjectiveResult(m, romData, obj)
+		objectiveResult, execErr := executeObjectiveResultWithRoutePriority(m, romData, obj, routePriorityForPlanner(p))
 		settledTiming := ObjectiveTiming{Frame: m.FrameCount(), Round: round, WallElapsed: time.Since(runStarted)}
 		last = objectiveResult.Final
 		coverage.seed(last)

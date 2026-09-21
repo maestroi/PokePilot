@@ -158,6 +158,84 @@ func TestPlanFieldPathPrefersOrdinaryDetourOverUnneededCut(t *testing.T) {
 	}
 }
 
+func TestPlanFieldPathFastestUsesCutWhenItBeatsLongDetour(t *testing.T) {
+	land := newFakeFieldPathGrid(3, 7)
+	water := newFakeFieldPathGrid(3, 7)
+
+	// Direct route is two tiles with one Cut. The zero-action alternative is a
+	// long U-shaped corridor: six down, two across, six up. Conservative mode
+	// must keep the detour; fastest mode prices Cut at eight movement units and
+	// therefore takes the 10-unit shortcut instead of the 14-unit walk.
+	for y := 0; y < 7; y++ {
+		openCells(land, [2]int{0, y}, [2]int{2, y})
+		openCells(water, [2]int{0, y}, [2]int{2, y})
+	}
+	for x := 0; x < 3; x++ {
+		openCells(land, [2]int{x, 6})
+		openCells(water, [2]int{x, 6})
+	}
+	land.fieldTile[[2]int{1, 0}] = cutTreeTile
+
+	conservative, err := planFieldPath(land, water, overworldTileset, 0, 0, 2, 0, nil, true, false, false)
+	if err != nil {
+		t.Fatalf("conservative planFieldPath: %v", err)
+	}
+	if got := countFieldActions(conservative, fieldPathCut); got != 0 {
+		t.Fatalf("conservative Cut actions = %d, want 0; plan=%+v", got, conservative)
+	}
+
+	fastest, cost, err := planFieldPathWithCost(
+		land, water, overworldTileset,
+		0, 0, 2, 0, nil,
+		true, false, false,
+		fastestFieldPathCostPolicy(),
+	)
+	if err != nil {
+		t.Fatalf("fastest planFieldPathWithCost: %v", err)
+	}
+	if got := countFieldActions(fastest, fieldPathCut); got != 1 {
+		t.Fatalf("fastest Cut actions = %d, want 1; plan=%+v", got, fastest)
+	}
+	if cost.weighted != 10 {
+		t.Fatalf("fastest weighted cost = %d, want 10", cost.weighted)
+	}
+
+	withoutCut, _, err := planFieldPathWithCost(
+		land, water, overworldTileset,
+		0, 0, 2, 0, nil,
+		false, false, false,
+		fastestFieldPathCostPolicy(),
+	)
+	if err != nil {
+		t.Fatalf("fastest plan without Cut capability: %v", err)
+	}
+	if got := countFieldActions(withoutCut, fieldPathCut); got != 0 {
+		t.Fatalf("Cut actions without capability = %d, want 0; plan=%+v", got, withoutCut)
+	}
+}
+
+func TestStrengthPlanTravelCostCanBeatLongFieldPath(t *testing.T) {
+	policy := fastestFieldPathCostPolicy()
+	plan := world.PushPlan{
+		Pushes: []world.Push{{
+			Walk: []world.Step{world.StepDown, world.StepDown, world.StepRight},
+		}},
+		FinalWalk: []world.Step{world.StepRight, world.StepUp},
+	}
+	if got := weightedStrengthPlanCost(plan, false, policy); got != 16 {
+		t.Fatalf("inactive Strength weighted cost = %d, want 16", got)
+	}
+	if !strengthPlanBeatsFieldPath(fieldPathCost{weighted: 30}, plan, false, policy) {
+		t.Fatal("Strength plan should beat a 30-unit field path")
+	}
+	if strengthPlanBeatsFieldPath(fieldPathCost{weighted: 12}, plan, false, policy) {
+		t.Fatal("Strength plan should not beat a 12-unit field path")
+	}
+	if strengthPlanBeatsFieldPath(fieldPathCost{weighted: 30}, plan, false, conservativeFieldPathCostPolicy()) {
+		t.Fatal("conservative policy must not prefer Strength as an optional shortcut")
+	}
+}
+
 func TestPlanFieldPathUsesSurfOnlyWhenWaterIsRequired(t *testing.T) {
 	land := newFakeFieldPathGrid(5, 1)
 	water := newFakeFieldPathGrid(5, 1)
