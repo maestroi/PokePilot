@@ -933,7 +933,6 @@ func CaptureWildWater(m *emu.Emu, romData []byte, species uint8) (CaptureResult,
 	return result, fmt.Errorf("%w: Surf map=%#02x encounters=%d", ErrYellowCatchHuntExhausted, mapID, result.Encounters)
 }
 
-
 func yellowControllerAbsInt(v int) int {
 	if v < 0 {
 		return -v
