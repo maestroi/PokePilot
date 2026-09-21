@@ -137,6 +137,15 @@ func reachNearestPokemonCenter(m *emu.Emu, romData []byte, policy MovePolicy, ma
 		if !ok {
 			return TravelResult{}, "", selectErr
 		}
+		// A room can have several non-equivalent doors to the same outside
+		// map (Cerulean's Badge House is the canonical shape). Prefer the
+		// edge the component-aware router can reach from the player's actual
+		// tile; Traverse still owns live sprite blockers and paired-door
+		// candidate selection at execution time.
+		x, y := playerXY(m)
+		if route, routeErr := world.FindRouteAt(g, cur, exit.To, int(x), int(y), nil); routeErr == nil && len(route) > 0 {
+			exit = route[0]
+		}
 		if err := Traverse(m, romData, exit); err != nil {
 			return TravelResult{}, "", fmt.Errorf("skill: Pokemon Center travel: leave mandatory warp room %#04x toward %#04x: %w", cur, exit.To, err)
 		}
