@@ -100,6 +100,12 @@ func GoTo(m *emu.Emu, romData []byte, destMap, destX, destY uint8) error {
 
 func recoverYellowTravelInterruption(m *emu.Emu, romData []byte) (bool, error) {
 	if m.Peek8(sym.IsInBattle) != 0 {
+		if m.Peek8(sym.BattleType) == 2 {
+			if err := FleeSafari(m, romData); err != nil {
+				return true, fmt.Errorf("yellow travel: flee Safari encounter: %w", err)
+			}
+			return true, nil
+		}
 		result, err := Battle(m, romData)
 		if err != nil {
 			return true, fmt.Errorf("yellow travel: resolve battle: %w", err)
