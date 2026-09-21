@@ -373,8 +373,14 @@ func (s *statsPlanner) ObservePlanning(p agent.PlanningStats) {
 	s.stats.PlanSteps = append([]string(nil), p.Plan.Steps...)
 	s.stats.PlanStep = p.Plan.Step
 	s.stats.PlanRound = p.Plan.Round
+	s.stats.PlanBoundary = p.Plan.Boundary
 	s.stats.PlanExecutions = p.PlanExecutions
+	s.stats.LegAutoExecutions = p.LegAutoExecutions
+	s.stats.LegFastExecutions = p.LegFastExecutions
+	s.stats.LegBoundaries = p.LegBoundaries
+	s.stats.LegTailStepsDropped = p.LegTailStepsDropped
 	s.stats.StepsSkipped = p.StepsSkipped
+	s.stats.LastLegDecision = p.LastLegDecision
 	s.stats.LastReplanReason = p.LastReplanReason
 	s.stats.ReplanReasons = make(map[string]int, len(p.ReplanReasons))
 	for k, v := range p.ReplanReasons {
@@ -505,6 +511,7 @@ func (s *statsPlanner) recordCall(call agent.LLMCall) {
 			ReplanReason:     call.ReplanReason,
 			PlanGoal:         call.Plan.Goal,
 			PlanSteps:        append([]string(nil), call.Plan.Steps...),
+			PlanBoundary:     call.Plan.Boundary,
 			Rejected:         err != nil,
 			DurationSeconds:  took.Seconds(),
 			Backend:          s.stats.Backend,

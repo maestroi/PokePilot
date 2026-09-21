@@ -461,13 +461,19 @@ func objectiveBucket(o agent.Objective) string {
 
 func counters(res agent.Result) map[string]int64 {
 	out := map[string]int64{
-		"objectives_attempted": int64(len(res.Outcomes)),
-		"objectives_completed": int64(len(res.Completed)),
-		"objective_failures":   int64(len(res.Outcomes) - len(res.Completed)),
-		"replans":              int64(sumMap(res.Planning.ReplanReasons)),
-		"strategist_calls":     int64(res.Planning.StrategicCalls),
-		"fast_planner_calls":   int64(res.Planning.FastCalls),
-		"reply_retries":        int64(res.ReplyRetries),
+		"objectives_attempted":   int64(len(res.Outcomes)),
+		"objectives_completed":   int64(len(res.Completed)),
+		"objective_failures":     int64(len(res.Outcomes) - len(res.Completed)),
+		"replans":                int64(sumMap(res.Planning.ReplanReasons)),
+		"strategist_calls":       int64(res.Planning.StrategicCalls),
+		"fast_planner_calls":     int64(res.Planning.FastCalls),
+		"plan_executions":        int64(res.Planning.PlanExecutions),
+		"leg_auto_executions":    int64(res.Planning.LegAutoExecutions),
+		"leg_fast_executions":    int64(res.Planning.LegFastExecutions),
+		"leg_boundaries":         int64(res.Planning.LegBoundaries),
+		"leg_tail_steps_dropped": int64(res.Planning.LegTailStepsDropped),
+		"planner_steps_skipped":  int64(res.Planning.StepsSkipped),
+		"reply_retries":          int64(res.ReplyRetries),
 	}
 	previous := res.Initial
 	for _, result := range res.Outcomes {

@@ -317,7 +317,11 @@ runLoop:
 		res.OutcomeTimings = append(res.OutcomeTimings, settledTiming)
 		res.Completed = append(res.Completed, obj)
 		engine.failures.clear(obj)
-		engine.planning.success(fromPlan)
+		legBoundary, droppedTail := engine.planning.success(fromPlan, obj)
+		if legBoundary && budget.Log != nil {
+			fmt.Fprintf(budget.Log, "round %d: strategic leg boundary reached goal=%q objective=%s dropped_tail_steps=%d\n",
+				round, engine.planning.Plan.Goal, obj, droppedTail)
+		}
 		notifyPlanning(p, engine.planning.snapshot())
 		known.Done(obj)
 		known.notePartyCombatResult(before, last, objectiveResult)

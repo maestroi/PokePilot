@@ -211,11 +211,17 @@ type LLMStats struct {
 	StrategicCalls          int                   `json:"strategic_calls,omitempty"`
 	FastCalls               int                   `json:"fast_calls,omitempty"`
 	PlanExecutions          int                   `json:"plan_executions,omitempty"`
+	LegAutoExecutions       int                   `json:"leg_auto_executions,omitempty"`
+	LegFastExecutions       int                   `json:"leg_fast_executions,omitempty"`
+	LegBoundaries           int                   `json:"leg_boundaries,omitempty"`
+	LegTailStepsDropped     int                   `json:"leg_tail_steps_dropped,omitempty"`
 	StepsSkipped            int                   `json:"steps_skipped,omitempty"`
 	PlanGoal                string                `json:"plan_goal,omitempty"`
 	PlanSteps               []string              `json:"plan_steps,omitempty"`
 	PlanStep                int                   `json:"plan_step,omitempty"`
 	PlanRound               int                   `json:"plan_round,omitempty"`
+	PlanBoundary            bool                  `json:"plan_boundary,omitempty"`
+	LastLegDecision         string                `json:"last_leg_decision,omitempty"`
 	LastReplanReason        string                `json:"last_replan_reason,omitempty"`
 	ReplanReasons           map[string]int        `json:"replan_reasons,omitempty"`
 	StrategicSeconds        float64               `json:"strategic_seconds,omitempty"`

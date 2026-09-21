@@ -68,7 +68,9 @@ func TestRunPlanningExecutesPlanWithoutFastCalls(t *testing.T) {
 	if err != nil || !fromPlan || first.String() != "go to pallet town" {
 		t.Fatalf("first = %q fromPlan=%v err=%v", first.String(), fromPlan, err)
 	}
-	r.success(true)
+	if boundary, dropped := r.success(true, first); boundary || dropped != 0 {
+		t.Fatalf("ordinary cached step unexpectedly ended leg: boundary=%v dropped=%d", boundary, dropped)
+	}
 	second, fromPlan, err, _ := r.choose(nil, 2, p, Observation{Round: 2}, offered)
 	if err != nil || !fromPlan || second.String() != "go to route 1" {
 		t.Fatalf("second = %q fromPlan=%v err=%v", second.String(), fromPlan, err)
@@ -259,5 +261,135 @@ func TestRunPlanningKeepsHardStopForStructurallyInvalidPlans(t *testing.T) {
 	r := newRunPlanning(Plan{})
 	if _, _, err, _ := r.choose(nil, 1, p, Observation{Round: 1}, offered); err == nil {
 		t.Fatal("Run accepted a custom strategist plan made of a menu index")
+	}
+}
+
+func TestValidateStrategicPlanStopsAtFirstWorldBoundary(t *testing.T) {
+	offered := []Objective{
+		{Kind: KindTrain, Level: 12},
+		{Kind: KindGoTo, Place: "route 3", Note: "(unvisited adjacent map)"},
+		{Kind: KindGoTo, Place: "pallet town"},
+	}
+	got, err := validateStrategicPlan(Plan{
+		Goal:  "reach mt moon",
+		Steps: []string{"train the lead to level 12", "go to route 3", "go to pallet town"},
+	}, offered, 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.Boundary {
+		t.Fatalf("plan = %+v; want discovery boundary", got)
+	}
+	if len(got.Steps) != 2 || got.Steps[1] != "go to route 3" {
+		t.Fatalf("steps = %v; speculative tail was not removed", got.Steps)
+	}
+	if got.TailDropped != 1 {
+		t.Fatalf("tail dropped = %d; want 1", got.TailDropped)
+	}
+	if len(got.StepKeys) != 2 {
+		t.Fatalf("step keys = %d; want 2", len(got.StepKeys))
+	}
+}
+
+func TestRunPlanningAutoContinuesBoundaryLegIntoSingleProgression(t *testing.T) {
+	progress := Objective{Kind: KindProgress, Progress: "mt_moon_fossil_acquired"}
+	p := &planningTestPlanner{}
+	r := newRunPlanning(Plan{
+		Goal:     "cross mt moon and reach cerulean",
+		Steps:    []string{"go to route 3"},
+		StepKeys: []ObjectiveKey{{Kind: KindGoTo, Place: "route 3"}},
+		Step:     1,
+		Boundary: true,
+	})
+
+	obj, fromPlan, err, _ := r.choose(nil, 2, p, Observation{Round: 2}, []Objective{progress})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fromPlan {
+		t.Fatal("automatic leg continuation should not advance an exhausted cached step")
+	}
+	if obj != progress {
+		t.Fatalf("obj = %+v; want %+v", obj, progress)
+	}
+	if p.strategic != 0 || p.fast != 0 {
+		t.Fatalf("planner calls strategic=%d fast=%d; want zero-call continuation", p.strategic, p.fast)
+	}
+	if r.Stats.LegAutoExecutions != 1 || r.Stats.LastLegDecision != "single_progression" {
+		t.Fatalf("stats = %+v", r.Stats)
+	}
+}
+
+func TestRunPlanningUsesCheapChooserForSingleFrontierVariants(t *testing.T) {
+	offered := []Objective{
+		{Kind: KindGoTo, Place: "route 3", Note: "(unvisited adjacent map)"},
+		{Kind: KindGoTo, Place: "route 3", Flee: true, Note: "(unvisited adjacent map)"},
+		{Kind: KindGoTo, Place: "pewter city"},
+	}
+	p := &planningTestPlanner{}
+	r := newRunPlanning(Plan{Goal: "reach mt moon", Step: 0, Boundary: true})
+
+	obj, fromPlan, err, _ := r.choose(nil, 2, p, Observation{Round: 2}, offered)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fromPlan {
+		t.Fatal("cheap frontier continuation reported as cached plan execution")
+	}
+	if obj.Place != "route 3" {
+		t.Fatalf("obj = %s; want route 3 frontier", obj)
+	}
+	if p.strategic != 0 || p.fast != 1 {
+		t.Fatalf("planner calls strategic=%d fast=%d; want 0/1", p.strategic, p.fast)
+	}
+	if r.Stats.LegFastExecutions != 1 || r.Stats.FastCalls != 1 {
+		t.Fatalf("stats = %+v", r.Stats)
+	}
+}
+
+func TestRunPlanningReplansWhenBoundaryRevealsRealBranch(t *testing.T) {
+	offered := []Objective{
+		{Kind: KindGoTo, Place: "route 3", Note: "(unvisited adjacent map)"},
+		{Kind: KindGoTo, Place: "route 22", Note: "(unvisited adjacent map)"},
+	}
+	p := &planningTestPlanner{plans: []Plan{{Goal: "take the story route", Steps: []string{"go to route 3"}}}}
+	r := newRunPlanning(Plan{Goal: "keep advancing", Boundary: true})
+
+	obj, fromPlan, err, _ := r.choose(nil, 2, p, Observation{Round: 2}, offered)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !fromPlan || obj.Place != "route 3" {
+		t.Fatalf("obj=%s fromPlan=%v; want strategist-selected route 3", obj, fromPlan)
+	}
+	if p.strategic != 1 {
+		t.Fatalf("strategic calls = %d; want 1 for a real branch", p.strategic)
+	}
+}
+
+func TestRunPlanningDropsLegacyTailWhenBoundaryExecutes(t *testing.T) {
+	offered := []Objective{
+		{Kind: KindGoTo, Place: "route 3", Note: "(unvisited adjacent map)"},
+		{Kind: KindGoTo, Place: "pallet town"},
+	}
+	r := newRunPlanning(Plan{
+		Goal:  "reach mt moon",
+		Steps: []string{"go to route 3", "go to pallet town"},
+	})
+	p := &planningTestPlanner{}
+
+	obj, fromPlan, err, _ := r.choose(nil, 2, p, Observation{Round: 2}, offered)
+	if err != nil || !fromPlan {
+		t.Fatalf("choose obj=%s fromPlan=%v err=%v", obj, fromPlan, err)
+	}
+	boundary, dropped := r.success(true, obj)
+	if !boundary || dropped != 1 {
+		t.Fatalf("boundary=%v dropped=%d; want true/1", boundary, dropped)
+	}
+	if len(r.Plan.Steps) != 1 || r.Plan.Step != 1 || !r.Plan.Boundary {
+		t.Fatalf("plan after boundary = %+v", r.Plan)
+	}
+	if r.Stats.LegTailStepsDropped != 1 || r.Stats.LegBoundaries != 1 {
+		t.Fatalf("stats = %+v", r.Stats)
 	}
 }
