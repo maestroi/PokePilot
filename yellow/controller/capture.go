@@ -932,3 +932,151 @@ func CaptureWildWater(m *emu.Emu, romData []byte, species uint8) (CaptureResult,
 	}
 	return result, fmt.Errorf("%w: Surf map=%#02x encounters=%d", ErrYellowCatchHuntExhausted, mapID, result.Encounters)
 }
+
+
+const (
+	yellowOldRodItem   = 0x4c
+	yellowGoodRodItem  = 0x4d
+	yellowSuperRodItem = 0x4e
+	yellowFishingCap   = 32
+)
+
+func yellowFishingRod(item uint8) bool {
+	return item == yellowOldRodItem || item == yellowGoodRodItem || item == yellowSuperRodItem
+}
+
+func castYellowRodOnce(m *emu.Emu, romData []byte, rod uint8) (bool, error) {
+	if !yellowFishingRod(rod) {
+		return false, fmt.Errorf("yellow fishing: item %#02x is not a rod", rod)
+	}
+	idx, qty := yellowBagEntry(m, rod)
+	if idx < 0 || qty <= 0 {
+		return false, fmt.Errorf("yellow fishing: rod %#02x is not in the bag", rod)
+	}
+	if err := openYellowBag(m, romData); err != nil {
+		return false, fmt.Errorf("yellow fishing: open bag: %w", err)
+	}
+	if err := selectYellowBagEntry(m, idx); err != nil {
+		return false, fmt.Errorf("yellow fishing: select rod: %w", err)
+	}
+	if _, err := m.StepUntil(900, yellowUseTossPrompt); err != nil {
+		return false, fmt.Errorf("yellow fishing: USE/TOSS prompt did not appear")
+	}
+	if err := selectYellowLinearMenuItem(m, 0); err != nil {
+		return false, fmt.Errorf("yellow fishing: select USE: %w", err)
+	}
+	m.Tap(emu.A, 3, 7)
+
+	for frame := 0; frame < 9000; frame++ {
+		if m.Peek8(sym.IsInBattle) != 0 {
+			return true, nil
+		}
+		if m.Peek8(sym.MaxMenuItem) == 1 {
+			return false, fmt.Errorf("yellow fishing: unexpected choice while resolving rod use: screen=%q",
+				strings.Join(strings.Fields(screenText(m)), " "))
+		}
+		if m.Peek8(sym.FontLoaded) != 0 {
+			m.Tap(emu.A, 3, 7)
+			continue
+		}
+		if frame > 120 {
+			ready, err := yellowprofileObservation(m, romData)
+			if err == nil && ready {
+				if m.Peek8(sym.FieldMoves) == 2 {
+					return false, fmt.Errorf("yellow fishing: selected rod has no fish on this map")
+				}
+				return false, nil
+			}
+		}
+		m.StepFrame()
+	}
+	return false, fmt.Errorf("yellow fishing: rod result exceeded frame budget")
+}
+
+// CaptureFishing repeatedly casts one Yellow rod from the nearest reachable
+// shoreline until the requested species appears, then uses the same verified
+// Pokédex-backed ball flow as grass and Surf captures.
+func CaptureFishing(m *emu.Emu, romData []byte, species, rod uint8) (CaptureResult, error) {
+	var result CaptureResult
+	if m == nil {
+		return result, fmt.Errorf("yellow fishing: nil emulator")
+	}
+	if !yellowFishingRod(rod) {
+		return result, fmt.Errorf("yellow fishing: unsupported rod %#02x", rod)
+	}
+	owned, err := yellowPokedexOwnsInternal(m, romData, species)
+	if err != nil {
+		return result, err
+	}
+	if owned {
+		return CaptureResult{Caught: true, Species: species}, nil
+	}
+
+	shore, err := nearestYellowShore(m, romData)
+	if err != nil {
+		return result, err
+	}
+	if err := walkTo(m, romData, shore.standX, shore.standY, nil); err != nil {
+		return result, fmt.Errorf("yellow fishing: reach shoreline: %w", err)
+	}
+	if err := faceYellowCoordinate(m, shore.waterX, shore.waterY); err != nil {
+		return result, err
+	}
+
+	for attempt := 0; attempt < yellowFishingCap; attempt++ {
+		if err := faceYellowCoordinate(m, shore.waterX, shore.waterY); err != nil {
+			return result, err
+		}
+		bite, err := castYellowRodOnce(m, romData, rod)
+		if err != nil {
+			return result, err
+		}
+		if !bite {
+			continue
+		}
+		enemy, err := yellowWaitEnemySpecies(m)
+		if err != nil {
+			return result, err
+		}
+		result.Encounters++
+		if enemy != species {
+			outcome, err := Battle(m, romData)
+			if err != nil {
+				return result, fmt.Errorf("yellow fishing: unwanted species %#02x: %w", enemy, err)
+			}
+			if outcome.Outcome == BattleOutcomeLost {
+				return result, fmt.Errorf("yellow fishing: blacked out during hunt")
+			}
+			continue
+		}
+
+		for thrown := 0; thrown < yellowCatchBallBudget; thrown++ {
+			caught, ended, err := throwYellowBall(m, romData, species, false)
+			if errors.Is(err, ErrYellowCatchOutOfBalls) {
+				break
+			}
+			if err != nil {
+				return result, err
+			}
+			result.BallsThrown++
+			if caught {
+				result.Caught = true
+				result.Species = species
+				return result, nil
+			}
+			if ended {
+				break
+			}
+		}
+		if m.Peek8(sym.IsInBattle) != 0 {
+			if _, err := Battle(m, romData); err != nil {
+				return result, err
+			}
+		}
+		if _, ok := yellowCaptureBall(m, false); !ok {
+			return result, ErrYellowCatchOutOfBalls
+		}
+	}
+	return result, fmt.Errorf("%w: %d rod attempts, %d encounters",
+		ErrYellowCatchHuntExhausted, yellowFishingCap, result.Encounters)
+}
