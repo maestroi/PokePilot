@@ -386,6 +386,13 @@ func travel(m *emu.Emu, policy MovePolicy, maxBattles int, goTo func() error, re
 			return res, nil
 		}
 		switch {
+		case errors.Is(err, ErrBlackedOut):
+			// A fainted party blackouts on the next counted step, before any
+			// battle starts. GoTo/Traverse used to read HandleBlackOut's
+			// respawn as a wrong-map warp arrival (unknown_failure). The
+			// respawn has already settled; surface it as the blackout it is.
+			res.BlackedOut = true
+			return res, err
 		case errors.Is(err, ErrBattle):
 			// The bound is on engagements (fights and flees alike): it caps how
 			// long the walk may be interrupted, whatever the policy does with each

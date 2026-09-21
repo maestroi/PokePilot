@@ -109,6 +109,16 @@ func StepOnce(m *emu.Emu, s world.Step) error {
 	}
 
 	startX, startY := playerXY(m)
+	startMap := m.Peek8(sym.CurMap)
+	// A party that is already fainted blackouts on the next counted overworld
+	// step (ApplyOutOfBattlePoisonDamage -> AnyPartyAlive -> HandleBlackOut).
+	// That teleport is not a blocked tile. MEASURED on
+	// run-37ak6sdalbmn13qpvmsiiekdui: Route 2 (6,2), Dragonite 0/27 HP,
+	// wOutOfBattleBlackout=$ff, and the step that should have entered the
+	// forest gate respawned at Pallet Town with the party healed and money
+	// halved. WalkPath then treated the landing as collision and Traverse
+	// reported it as "arrived on map 00, want 2f".
+	startFainted := partyAllFainted(m)
 	moved := false
 	for attempt := 0; attempt < 2 && !moved; attempt++ {
 		_, err := m.HoldUntil(btn, stepMoveBudget, func(m *emu.Emu) bool {
@@ -120,6 +130,9 @@ func StepOnce(m *emu.Emu, s world.Step) error {
 		}
 	}
 	if !moved {
+		if err := waitForFaintRespawn(m, startMap, startFainted); err != nil {
+			return err
+		}
 		return &ErrBlocked{Step: s, At: struct{ X, Y uint8 }{startX, startY}}
 	}
 
@@ -135,6 +148,9 @@ func StepOnce(m *emu.Emu, s world.Step) error {
 	// held direction does not leak into the next press; where it cannot be
 	// satisfied, the coordinate below is still the honest answer.
 	_, _ = m.StepUntil(settleBudget, idle)
+	if err := waitForFaintRespawn(m, startMap, startFainted); err != nil {
+		return err
+	}
 
 	// The step is over; report where it actually ended. A hop that the ROM
 	// only carried one tile lands here as an ordinary blocked step whose
@@ -143,6 +159,71 @@ func StepOnce(m *emu.Emu, s world.Step) error {
 	x, y := playerXY(m)
 	if int(x) != int(startX)+s.DX || int(y) != int(startY)+s.DY {
 		return &ErrBlocked{Step: s, At: struct{ X, Y uint8 }{startX, startY}}
+	}
+	return nil
+}
+
+// partyAllFainted reports that the party has at least one Pokémon and every
+// one of them has 0 HP. An empty party is not a faint: the overworld poison
+// check refuses to black out when wPartyCount is 0.
+func partyAllFainted(m *emu.Emu) bool {
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	party := state.DecodeParty(&mem)
+	if len(party.Mons) == 0 {
+		return false
+	}
+	for _, mon := range party.Mons {
+		if !mon.Fainted() {
+			return false
+		}
+	}
+	return true
+}
+
+// respawnedFromFaint reports HandleBlackOut's positive postcondition: the
+// map is no longer the one the step started on, it is wLastBlackoutMap, the
+// player can move, and HealParty has brought someone off 0 HP.
+func respawnedFromFaint(m *emu.Emu, startMap uint8) bool {
+	if m.Peek8(sym.CurMap) == startMap || m.Peek8(sym.CurMap) != m.Peek8(sym.LastBlackoutMap) {
+		return false
+	}
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	return state.Controllable(&mem) && !partyAllFainted(m)
+}
+
+// waitForFaintRespawn returns ErrBlackedOut once a fainted party's step has
+// finished HandleBlackOut. A step that is still on the origin map with the
+// joypad free is an ordinary step and returns nil immediately, so a healthy
+// walk never pays the respawn budget.
+func waitForFaintRespawn(m *emu.Emu, startMap uint8, startFainted bool) error {
+	if !startFainted {
+		return nil
+	}
+	if respawnedFromFaint(m, startMap) {
+		return ErrBlackedOut
+	}
+	mapNow := m.Peek8(sym.CurMap)
+	if mapNow != startMap && mapNow != m.Peek8(sym.LastBlackoutMap) {
+		return nil
+	}
+	if mapNow == startMap && m.Peek8(sym.JoyIgnore) == 0 && m.Peek8(sym.IsInBattle) == 0 {
+		var mem state.Mem
+		state.Snapshot(m, &mem)
+		if state.DecodeDialogue(&mem) == nil {
+			return nil
+		}
+	}
+	_, _ = m.StepUntil(arriveBudget, func(m *emu.Emu) bool {
+		if respawnedFromFaint(m, startMap) {
+			return true
+		}
+		cur := m.Peek8(sym.CurMap)
+		return cur != startMap && cur != m.Peek8(sym.LastBlackoutMap) && m.Peek8(sym.JoyIgnore) == 0
+	})
+	if respawnedFromFaint(m, startMap) {
+		return ErrBlackedOut
 	}
 	return nil
 }

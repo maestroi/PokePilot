@@ -352,10 +352,17 @@ var errDidNotCross = errors.New("skill: Traverse: did not cross within budget")
 // tile, where no second encounter can fire because the player is already
 // standing on the grass.
 func pushAcrossEdge(m *emu.Emu, e world.Edge, btn emu.Button) error {
+	startFainted := partyAllFainted(m)
 	m.Press(btn)
 	crossed := false
 	for i := 0; i < crossBudget; i++ {
 		if m.Peek8(sym.CurMap) != e.From {
+			if startFainted {
+				m.Release(btn)
+				if err := waitForFaintRespawn(m, e.From, true); err != nil {
+					return fmt.Errorf("skill: Traverse: %s: %w", edgeName(e), err)
+				}
+			}
 			crossed = true
 			break
 		}
