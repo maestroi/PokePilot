@@ -35,10 +35,10 @@ func TestProfileUsesSemanticMilestones(t *testing.T) {
 
 func TestGoalForComparisonSegments(t *testing.T) {
 	cases := map[string]string{
-		"brock": "badges:1",
-		"sabrina": "badges:6",
-		"blaine": "badges:7",
-		"hall-of-fame": "elite-four",
+		"brock":         "badges:1",
+		"sabrina":       "badges:6",
+		"blaine":        "badges:7",
+		"hall-of-fame":  "elite-four",
 		"surf-obtained": "capability:surf",
 	}
 	for in, want := range cases {
