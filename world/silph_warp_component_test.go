@@ -32,6 +32,9 @@ import (
 //   - run-8s9ydjiftbb510ch1h786tdj2 (triage:9d5b4f4dad3316f4, farm-issue:1375;
 //     resume of run-xgoe3a12m8xdt on runner aafd8b76 before #1384; round-003
 //     AcquireSilphCardKey from (8,15) oscillated to (28,3) until the same fix)
+//   - run-20u6ntzbz2y1r3aokln4zvlx85 (triage:d9dc009d30d09325, farm-issue:1393;
+//     observed on runner 5c5d020e before #1384; stuck at SILPH_CO_5F (28,3)
+//     with GoTo no capability-aware path to (20,16))
 func TestSilphCo5FWarpPadSplitsCardKeyComponent(t *testing.T) {
 	romPath := os.Getenv("POKEMON_RED_ROM")
 	if romPath == "" {
