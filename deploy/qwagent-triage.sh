@@ -26,10 +26,12 @@ export PATH="$HOME/.cursor/bin:$HOME/.opencode/bin:$HOME/go/bin:$HOME/.local/bin
 
 DRY_RUN=0
 LOCKED=0
+PREPARE_ONLY=0
 for arg in "$@"; do
 	case "$arg" in
 	--dry-run) DRY_RUN=1 ;;
 	--locked) LOCKED=1 ;;
+	--prepare-tree) PREPARE_ONLY=1 ;;
 	esac
 done
 
@@ -96,7 +98,40 @@ select_agent_backend() {
 	esac
 }
 
+prepare_triage_tree() {
+	# Share objects with the local checkout, but fetch and push the
+	# primary repo's origin. A tree cloned from the checkout itself only
+	# sees that checkout's main, and push never reaches GitHub.
+	local upstream
+	upstream=$(git -C "$POKEPILOT_ROOT" remote get-url origin 2>/dev/null || true)
+	if [ -z "$upstream" ]; then
+		upstream=$POKEPILOT_ROOT
+	fi
+	if [ ! -d "$POKEPILOT_TRIAGE_TREE/.git" ]; then
+		mkdir -p "$(dirname "$POKEPILOT_TRIAGE_TREE")"
+		if ! git clone --reference "$POKEPILOT_ROOT" "$upstream" "$POKEPILOT_TRIAGE_TREE"; then
+			git clone "$upstream" "$POKEPILOT_TRIAGE_TREE"
+		fi
+	elif [ "$upstream" != "$POKEPILOT_ROOT" ]; then
+		git -C "$POKEPILOT_TRIAGE_TREE" remote set-url origin "$upstream"
+	fi
+	git -C "$POKEPILOT_TRIAGE_TREE" fetch origin
+	# A timed-out attempt leaves this dedicated tree dirty. checkout then
+	# aborts and the oneshot exits 1 before reset --hard can rebuild main.
+	git -C "$POKEPILOT_TRIAGE_TREE" reset --hard HEAD
+	git -C "$POKEPILOT_TRIAGE_TREE" clean -fd
+	git -C "$POKEPILOT_TRIAGE_TREE" checkout -f main
+	git -C "$POKEPILOT_TRIAGE_TREE" reset --hard origin/main
+	git -C "$POKEPILOT_TRIAGE_TREE" branch --set-upstream-to=origin/main main
+	git -C "$POKEPILOT_TRIAGE_TREE" clean -fd
+}
+
 mkdir -p "$POKEPILOT_TRIAGE_STATE"
+
+if [ "$PREPARE_ONLY" -eq 1 ]; then
+	prepare_triage_tree
+	exit 0
+fi
 
 if [ -z "${POKEPILOT_MCP_TOKEN:-}" ]; then
 	log "POKEPILOT_MCP_TOKEN unset; skip"
@@ -309,16 +344,7 @@ if [ "$invest_status" -ne 0 ]; then
 	log "investigate failed: $(printf '%s' "$invest_out" | tr '\n' ' '); continuing locally"
 fi
 
-if [ ! -d "$POKEPILOT_TRIAGE_TREE/.git" ]; then
-	mkdir -p "$(dirname "$POKEPILOT_TRIAGE_TREE")"
-	if ! git clone --reference "$POKEPILOT_ROOT" "$POKEPILOT_ROOT" "$POKEPILOT_TRIAGE_TREE"; then
-		git clone "$(git -C "$POKEPILOT_ROOT" remote get-url origin)" "$POKEPILOT_TRIAGE_TREE"
-	fi
-fi
-git -C "$POKEPILOT_TRIAGE_TREE" fetch origin
-git -C "$POKEPILOT_TRIAGE_TREE" checkout main
-git -C "$POKEPILOT_TRIAGE_TREE" reset --hard origin/main
-git -C "$POKEPILOT_TRIAGE_TREE" clean -fd
+prepare_triage_tree
 seed_rom
 
 printf '%s\n' "$PICK_JSON" >"$POKEPILOT_TRIAGE_STATE/packet.json"

@@ -219,6 +219,153 @@ func TestDecodeTriageGroupsAcceptsWallArray(t *testing.T) {
 	}
 }
 
+func TestPrepareTriageTreeDiscardsDirtyCheckout(t *testing.T) {
+	root := t.TempDir()
+	origin := filepath.Join(root, "origin")
+	tree := filepath.Join(root, "triage")
+	git := func(dir string, args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=test",
+			"GIT_AUTHOR_EMAIL=test@example.com",
+			"GIT_COMMITTER_NAME=test",
+			"GIT_COMMITTER_EMAIL=test@example.com",
+		)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
+		}
+		return string(out)
+	}
+	if err := os.MkdirAll(origin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	git(origin, "init", "-b", "main")
+	write := func(path, body string) {
+		t.Helper()
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(filepath.Join(origin, "tracked.go"), "from-main\n")
+	write(filepath.Join(origin, "conflict.txt"), "from-main\n")
+	git(origin, "add", "tracked.go", "conflict.txt")
+	git(origin, "commit", "-m", "base")
+	git(root, "clone", origin, tree)
+
+	git(tree, "checkout", "-b", "fix/wip")
+	git(tree, "rm", "conflict.txt")
+	write(filepath.Join(tree, "tracked.go"), "from-branch\n")
+	git(tree, "add", "tracked.go")
+	git(tree, "commit", "-m", "wip")
+	// Same shape as a timed-out attempt: a tracked edit checkout would
+	// overwrite, plus an untracked path that main already tracks.
+	write(filepath.Join(tree, "tracked.go"), "dirty\n")
+	write(filepath.Join(tree, "conflict.txt"), "untracked\n")
+	write(filepath.Join(tree, "scratch.go"), "scratch\n")
+
+	envFile := filepath.Join(root, "empty-env")
+	write(envFile, "")
+	cmd := exec.Command("bash", "qwagent-triage.sh", "--prepare-tree")
+	cmd.Env = append(os.Environ(),
+		"POKEPILOT_ENV="+envFile,
+		"POKEPILOT_ROOT="+origin,
+		"POKEPILOT_TRIAGE_TREE="+tree,
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("prepare: %v\n%s", err, out)
+	}
+
+	branch := strings.TrimSpace(git(tree, "rev-parse", "--abbrev-ref", "HEAD"))
+	if branch != "main" {
+		t.Fatalf("branch = %q, want main", branch)
+	}
+	for _, name := range []string{"tracked.go", "conflict.txt"} {
+		got, err := os.ReadFile(filepath.Join(tree, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != "from-main\n" {
+			t.Fatalf("%s = %q, want from-main", name, got)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(tree, "scratch.go")); !os.IsNotExist(err) {
+		t.Fatalf("scratch.go still present: %v", err)
+	}
+}
+
+func TestPrepareTriageTreeTracksUpstreamMain(t *testing.T) {
+	root := t.TempDir()
+	github := filepath.Join(root, "github")
+	local := filepath.Join(root, "local")
+	tree := filepath.Join(root, "triage")
+	git := func(dir string, args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=test",
+			"GIT_AUTHOR_EMAIL=test@example.com",
+			"GIT_COMMITTER_NAME=test",
+			"GIT_COMMITTER_EMAIL=test@example.com",
+		)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
+		}
+		return string(out)
+	}
+	write := func(path, body string) {
+		t.Helper()
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.MkdirAll(github, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	git(github, "init", "-b", "main")
+	write(filepath.Join(github, "tracked.go"), "stale\n")
+	git(github, "add", "tracked.go")
+	git(github, "commit", "-m", "stale")
+	git(root, "clone", github, local)
+	git(root, "clone", local, tree)
+
+	write(filepath.Join(github, "tracked.go"), "upstream\n")
+	git(github, "add", "tracked.go")
+	git(github, "commit", "-m", "upstream")
+	write(filepath.Join(tree, "tracked.go"), "dirty\n")
+
+	envFile := filepath.Join(root, "empty-env")
+	write(envFile, "")
+	cmd := exec.Command("bash", "qwagent-triage.sh", "--prepare-tree")
+	cmd.Env = append(os.Environ(),
+		"POKEPILOT_ENV="+envFile,
+		"POKEPILOT_ROOT="+local,
+		"POKEPILOT_TRIAGE_TREE="+tree,
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("prepare: %v\n%s", err, out)
+	}
+	got, err := os.ReadFile(filepath.Join(tree, "tracked.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "upstream\n" {
+		t.Fatalf("tracked.go = %q, want upstream", got)
+	}
+	origin := strings.TrimSpace(git(tree, "remote", "get-url", "origin"))
+	if origin != github {
+		t.Fatalf("origin = %q, want %s", origin, github)
+	}
+	upstream := strings.TrimSpace(git(tree, "rev-parse", "--abbrev-ref", "main@{upstream}"))
+	if upstream != "origin/main" {
+		t.Fatalf("main upstream = %q, want origin/main", upstream)
+	}
+}
+
 func TestDecodeTriageGroupsUnwrapsMCPEnvelope(t *testing.T) {
 	groups, err := DecodeTriageGroups([]byte(`{"groups":[{"key":"abc","count":2}],"resolved_hidden":3}`))
 	if err != nil {
