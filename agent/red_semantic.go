@@ -104,19 +104,10 @@ func redStarter(id skill.Starter) (skill.Starter, bool) {
 	return id, true
 }
 
-func appendRedLeagueProgress(progress ProgressState, f state.StoryFacts) ProgressState {
-	return append(progress,
-		ProgressFact{ID: redProgressLeagueLoreleiDefeated, Complete: f.LeagueLoreleiDefeated},
-		ProgressFact{ID: redProgressLeagueBrunoDefeated, Complete: f.LeagueBrunoDefeated},
-		ProgressFact{ID: redProgressLeagueAgathaDefeated, Complete: f.LeagueAgathaDefeated},
-		ProgressFact{ID: redProgressLeagueLanceDefeated, Complete: f.LeagueLanceDefeated},
-	)
-}
-
 func redProgressState(f state.StoryFacts) ProgressState {
-	return appendRedLeagueProgress(redprofile.ProjectStoryFacts(f), f)
+	return redprofile.ProjectStoryFacts(f)
 }
 
 func redProgressStateFromRAM(mem *state.Mem, _ state.InventoryState, f state.StoryFacts) ProgressState {
-	return appendRedLeagueProgress(redprofile.ProjectStory(mem, f), f)
+	return redprofile.ProjectStory(mem, f)
 }
