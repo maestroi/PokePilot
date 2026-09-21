@@ -100,7 +100,6 @@ func GrassEncounterCells(romData []byte, mapID uint8) ([]EncounterCell, error) {
 	return out, nil
 }
 
-
 // WaterEncounterCells returns Yellow Surf encounter coordinates on a map with
 // a non-zero water encounter table. The water traversal grid supplies the
 // game-specific land/water pair semantics; the tile identity remains
