@@ -148,6 +148,10 @@ func (s *statsPlanner) NextRetry(obs agent.Observation, offered []agent.Objectiv
 	return s.ask(obs, offered, &r)
 }
 
+func (s *statsPlanner) RoutePriority() agent.RoutePriority {
+	return agent.RoutePriorityForPlayStyle(s.playStyle)
+}
+
 func (s *statsPlanner) applyRunPolicy(obs agent.Observation, offered []agent.Objective) []agent.Objective {
 	offered = agent.ApplyRunPolicy(obs, offered, s.riskTolerance, s.wildEncounters)
 	return agent.AnnotatePlayStyle(obs, offered, s.playStyle)
