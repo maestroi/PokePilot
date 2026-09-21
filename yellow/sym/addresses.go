@@ -61,6 +61,8 @@ const (
 	ListMenuID             uint16 = 0xCF93 // wListMenuID
 	PartyMenuTypeOrMessage uint16 = 0xD07C // wPartyMenuTypeOrMessageID
 	FieldMoves             uint16 = 0xCD3D // wFieldMoves
+	FlyLocationsList       uint16 = 0xCD3E // wFlyLocationsList, NUM_CITY_MAPS entries
+	DestinationMap         uint16 = 0xD719 // wDestinationMap
 	ActionResult           uint16 = 0xCD6A // wActionResultOrTookBattleTurn
 	TileInFrontOfPlayer    uint16 = 0xCFC5 // wTileInFrontOfPlayer
 	WalkBikeSurfState      uint16 = 0xD6FF // wWalkBikeSurfState
