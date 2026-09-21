@@ -41,15 +41,9 @@ type fieldPathState struct {
 }
 
 type fieldPathCost struct {
-	actions int
-	moves   int
-}
-
-func (c fieldPathCost) less(other fieldPathCost) bool {
-	if c.actions != other.actions {
-		return c.actions < other.actions
-	}
-	return c.moves < other.moves
+	actions  int
+	moves    int
+	weighted int
 }
 
 type fieldPathQueueNode struct {
@@ -58,31 +52,30 @@ type fieldPathQueueNode struct {
 	index int
 }
 
-type fieldPathQueue []*fieldPathQueueNode
+type fieldPathQueue struct {
+	items  []*fieldPathQueueNode
+	policy fieldPathCostPolicy
+}
 
-func (q fieldPathQueue) Len() int { return len(q) }
+func (q fieldPathQueue) Len() int { return len(q.items) }
 func (q fieldPathQueue) Less(i, j int) bool {
-	if q[i].cost.actions != q[j].cost.actions {
-		return q[i].cost.actions < q[j].cost.actions
-	}
-	return q[i].cost.moves < q[j].cost.moves
+	return q.policy.less(q.items[i].cost, q.items[j].cost)
 }
 func (q fieldPathQueue) Swap(i, j int) {
-	q[i], q[j] = q[j], q[i]
-	q[i].index = i
-	q[j].index = j
+	q.items[i], q.items[j] = q.items[j], q.items[i]
+	q.items[i].index = i
+	q.items[j].index = j
 }
 func (q *fieldPathQueue) Push(v any) {
 	n := v.(*fieldPathQueueNode)
-	n.index = len(*q)
-	*q = append(*q, n)
+	n.index = len(q.items)
+	q.items = append(q.items, n)
 }
 func (q *fieldPathQueue) Pop() any {
-	old := *q
-	n := len(old)
-	v := old[n-1]
-	old[n-1] = nil
-	*q = old[:n-1]
+	n := len(q.items)
+	v := q.items[n-1]
+	q.items[n-1] = nil
+	q.items = q.items[:n-1]
 	return v
 }
 
@@ -132,15 +125,10 @@ func fieldPathWaterTile(g fieldPathGrid, x, y int) bool {
 	return false
 }
 
-// planFieldPath plans one local route while treating owned field moves as
-// traversal capabilities. Ordinary movement is preferred over field actions:
-// the cost is lexicographic (fewest field actions, then fewest movement
-// tiles), so Cut/Surf are used only when they unlock a route rather than as
-// arbitrary shortcuts.
-//
-// Cut appears as the step INTO the tree cell. Surf appears as the first
-// land->water step. Runtime execution performs one field action and replans
-// from fresh live state, so this planner never assumes a mutation succeeded.
+// planFieldPath preserves the historical conservative local policy for pure
+// callers/tests: minimize field actions first, then movement. Runtime travel
+// selects the policy-scoped variant below so speedrun mode can price Cut/Surf
+// against walking instead of treating every field action as infinitely costly.
 func planFieldPath(
 	land, water fieldPathGrid,
 	tileset uint8,
@@ -149,32 +137,56 @@ func planFieldPath(
 	canCut, canSurf, startWater bool,
 	rules ...fieldPathRules,
 ) ([]fieldPathStep, error) {
+	plan, _, err := planFieldPathWithCost(
+		land, water, tileset,
+		sx, sy, dx, dy,
+		blocked,
+		canCut, canSurf, startWater,
+		conservativeFieldPathCostPolicy(),
+		rules...,
+	)
+	return plan, err
+}
+
+// planFieldPathWithCost plans one local route while treating owned field moves
+// as traversal capabilities. Conservative policy is lexicographic; fastest
+// policy uses shared coarse travel-cost units. Cut appears as the step INTO
+// the tree cell and Surf as the first land->water step. Runtime execution
+// performs one field action and replans from fresh live state, so this planner
+// never assumes a mutation succeeded.
+func planFieldPathWithCost(
+	land, water fieldPathGrid,
+	tileset uint8,
+	sx, sy, dx, dy int,
+	blocked map[[2]int]bool,
+	canCut, canSurf, startWater bool,
+	costPolicy fieldPathCostPolicy,
+	rules ...fieldPathRules,
+) ([]fieldPathStep, fieldPathCost, error) {
 	var rule fieldPathRules
 	if len(rules) > 0 {
 		rule = rules[0]
 	}
 	if land == nil || !land.InBounds(sx, sy) || !land.InBounds(dx, dy) || blocked[[2]int{sx, sy}] || blocked[[2]int{dx, dy}] {
-		return nil, world.ErrNoPath
+		return nil, fieldPathCost{}, world.ErrNoPath
 	}
 	if sx == dx && sy == dy {
-		return []fieldPathStep{}, nil
+		return []fieldPathStep{}, fieldPathCost{}, nil
 	}
 
 	start := fieldPathState{x: sx, y: sy, water: startWater}
 	best := map[fieldPathState]fieldPathCost{start: {}}
 	parent := map[fieldPathState]fieldPathParent{}
 	closed := map[fieldPathState]bool{}
-	open := &fieldPathQueue{}
+	open := &fieldPathQueue{policy: costPolicy}
 	heap.Push(open, &fieldPathQueueNode{state: start})
 
-	push := func(from fieldPathState, to fieldPathState, step fieldPathStep, addActions, addMoves int) {
+	push := func(from fieldPathState, to fieldPathState, step fieldPathStep, addMoves int) {
 		if closed[to] {
 			return
 		}
-		next := best[from]
-		next.actions += addActions
-		next.moves += addMoves
-		if old, seen := best[to]; seen && !next.less(old) {
+		next := costPolicy.add(best[from], step.Action, addMoves)
+		if old, seen := best[to]; seen && !costPolicy.less(next, old) {
 			return
 		}
 		best[to] = next
@@ -197,7 +209,7 @@ func planFieldPath(
 			for at := cur; at != start; {
 				p, ok := parent[at]
 				if !ok {
-					return nil, world.ErrNoPath
+					return nil, fieldPathCost{}, world.ErrNoPath
 				}
 				rev = append(rev, p.step)
 				at = p.prev
@@ -206,7 +218,7 @@ func planFieldPath(
 			for i := range rev {
 				out[len(rev)-1-i] = rev[i]
 			}
-			return out, nil
+			return out, best[cur], nil
 		}
 
 		for _, input := range []world.Step{world.StepUp, world.StepDown, world.StepLeft, world.StepRight} {
@@ -224,7 +236,7 @@ func planFieldPath(
 				nx, ny := cur.x+move.DX, cur.y+move.DY
 				nextWater := fieldPathWaterTile(water, nx, ny) || !land.Walkable(nx, ny)
 				push(cur, fieldPathState{x: nx, y: ny, water: nextWater},
-					fieldPathStep{Move: move, Action: fieldPathWalk}, 0, absInt(move.DX)+absInt(move.DY))
+					fieldPathStep{Move: move, Action: fieldPathWalk}, absInt(move.DX)+absInt(move.DY))
 				continue
 			}
 
@@ -236,11 +248,11 @@ func planFieldPath(
 					}
 					cost := absInt(move.DX) + absInt(move.DY) + absInt(landing.X-nx) + absInt(landing.Y-ny)
 					push(cur, fieldPathState{x: landing.X, y: landing.Y},
-						fieldPathStep{Move: input, Action: fieldPathForced, Landing: landing}, 0, cost)
+						fieldPathStep{Move: input, Action: fieldPathForced, Landing: landing}, cost)
 					continue
 				}
 				push(cur, fieldPathState{x: nx, y: ny},
-					fieldPathStep{Move: move, Action: fieldPathWalk}, 0, absInt(move.DX)+absInt(move.DY))
+					fieldPathStep{Move: move, Action: fieldPathWalk}, absInt(move.DX)+absInt(move.DY))
 				continue
 			}
 
@@ -250,29 +262,29 @@ func planFieldPath(
 			}
 			if canCut && fieldPathCutTile(land, tileset, nx, ny) {
 				push(cur, fieldPathState{x: nx, y: ny},
-					fieldPathStep{Move: input, Action: fieldPathCut}, 1, 1)
+					fieldPathStep{Move: input, Action: fieldPathCut}, 1)
 				continue
 			}
 			if canSurf && rule.canSurfFrom(cur.x, cur.y) && water != nil && fieldPathWaterTile(water, nx, ny) {
 				if move, ok := water.Movement(cur.x, cur.y, input, blocked); ok {
 					wx, wy := cur.x+move.DX, cur.y+move.DY
 					push(cur, fieldPathState{x: wx, y: wy, water: true},
-						fieldPathStep{Move: move, Action: fieldPathSurf}, 1, absInt(move.DX)+absInt(move.DY))
+						fieldPathStep{Move: move, Action: fieldPathSurf}, absInt(move.DX)+absInt(move.DY))
 				}
 			}
 		}
 	}
-	return nil, world.ErrNoPath
+	return nil, fieldPathCost{}, world.ErrNoPath
 }
 
-func currentFieldPathPlanWithRules(m *emu.Emu, romData []byte, h rom.MapHeader, dest Destination, blocked map[[2]int]bool, rules fieldPathRules) ([]fieldPathStep, error) {
+func currentFieldPathPlanWithRulesAndCost(m *emu.Emu, romData []byte, h rom.MapHeader, dest Destination, blocked map[[2]int]bool, rules fieldPathRules) ([]fieldPathStep, fieldPathCost, error) {
 	land, err := liveMapGridForTraversal(m, romData, h, world.TraversalLand)
 	if err != nil {
-		return nil, err
+		return nil, fieldPathCost{}, err
 	}
 	water, err := liveMapGridForTraversal(m, romData, h, world.TraversalWater)
 	if err != nil {
-		return nil, err
+		return nil, fieldPathCost{}, err
 	}
 
 	var mem state.Mem
@@ -280,17 +292,28 @@ func currentFieldPathPlanWithRules(m *emu.Emu, romData []byte, h rom.MapHeader, 
 	caps := redRouteCapabilities(romData, &mem)
 	startWater := mem.U8(sym.WalkBikeSurfState) == fieldSurfingState
 	sx, sy := playerXY(m)
-	return planFieldPath(
+	return planFieldPathWithCost(
 		land, water, h.Tileset,
 		int(sx), int(sy), int(dest.X), int(dest.Y),
 		blocked,
 		caps.Has(capCanCut), caps.Has(capCanSurf), startWater,
+		fieldPathCostPolicyFor(m),
 		rules,
 	)
 }
 
+func currentFieldPathPlanWithRules(m *emu.Emu, romData []byte, h rom.MapHeader, dest Destination, blocked map[[2]int]bool, rules fieldPathRules) ([]fieldPathStep, error) {
+	plan, _, err := currentFieldPathPlanWithRulesAndCost(m, romData, h, dest, blocked, rules)
+	return plan, err
+}
+
+func currentFieldPathPlanWithCost(m *emu.Emu, romData []byte, h rom.MapHeader, dest Destination, blocked map[[2]int]bool) ([]fieldPathStep, fieldPathCost, error) {
+	return currentFieldPathPlanWithRulesAndCost(m, romData, h, dest, blocked, currentFieldPathRules(m, h))
+}
+
 func currentFieldPathPlan(m *emu.Emu, romData []byte, h rom.MapHeader, dest Destination, blocked map[[2]int]bool) ([]fieldPathStep, error) {
-	return currentFieldPathPlanWithRules(m, romData, h, dest, blocked, currentFieldPathRules(m, h))
+	plan, _, err := currentFieldPathPlanWithCost(m, romData, h, dest, blocked)
+	return plan, err
 }
 
 // fieldPathReachableOnCurrentMap is a geometry probe used before component
