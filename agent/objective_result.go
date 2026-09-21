@@ -194,7 +194,7 @@ func verifyObjectivePostcondition(o Objective, initial, final Observation, resul
 		if !dest.Reached(final.Map, final.X, final.Y) {
 			return OutcomePostconditionFailed, fmt.Errorf(
 				"%w: %s ended on map %02x at (%d,%d), want %s destination on map %02x",
-				ErrObjectivePostconditionFailed, o, final.Map, final.X, final.Y, dest.String(), dest.Map)
+				ErrObjectivePostconditionFailed, o, final.Map, final.X, final.Y, dest.KindName(), dest.Map)
 		}
 		return OutcomeCompleted, nil
 
