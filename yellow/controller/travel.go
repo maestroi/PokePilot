@@ -163,39 +163,26 @@ func traverseYellowEdge(m *emu.Emu, romData []byte, edge world.Edge) error {
 	if err != nil {
 		return fmt.Errorf("yellow travel: parse map %#02x: %w", edge.From, err)
 	}
-	grid, err := world.Build(romData, h)
-	if err != nil {
-		return fmt.Errorf("yellow travel: build grid %#02x: %w", edge.From, err)
-	}
-	blocked := staticObjectBlockers(h, nil)
 
 	var push world.Step
 	switch edge.Kind {
 	case world.EdgeConnection:
-		tx, ty, p, err := yellowConnectionTarget(grid, edge, int(m.Peek8(sym.XCoord)), int(m.Peek8(sym.YCoord)), blocked)
+		tx, ty, p, err := yellowConnectionFieldTarget(m, romData, h, edge)
 		if err != nil {
 			return fmt.Errorf("yellow travel: connection %#02x->%#02x: %w", edge.From, edge.To, err)
 		}
-		if err := walkTo(m, romData, tx, ty, nil); err != nil {
+		if err := yellowWalkToWithFieldActions(m, romData, tx, ty, nil); err != nil {
 			return fmt.Errorf("yellow travel: approach connection %#02x->%#02x: %w", edge.From, edge.To, err)
 		}
 		push = p
 
 	case world.EdgeWarp:
-		target := [2]int{int(edge.WarpX), int(edge.WarpY)}
-		for _, warp := range h.Warps {
-			p := [2]int{int(warp.X), int(warp.Y)}
-			if p != target {
-				blocked[p] = true
-			}
-		}
-		sx, sy := int(m.Peek8(sym.XCoord)), int(m.Peek8(sym.YCoord))
-		steps, p, err := world.FindPathAdjacent(grid, sx, sy, target[0], target[1], blocked)
+		tx, ty, p, blocked, err := yellowWarpFieldApproach(m, romData, h, edge)
 		if err != nil {
 			return fmt.Errorf("yellow travel: no path to warp %#02x->%#02x at (%d,%d): %w",
 				edge.From, edge.To, edge.WarpX, edge.WarpY, err)
 		}
-		if err := walkPath(m, edge.From, steps); err != nil {
+		if err := yellowWalkToWithFieldActions(m, romData, tx, ty, blocked); err != nil {
 			return fmt.Errorf("yellow travel: approach warp %#02x->%#02x: %w", edge.From, edge.To, err)
 		}
 		push = p
@@ -238,6 +225,109 @@ func traverseYellowEdge(m *emu.Emu, romData []byte, edge world.Edge) error {
 		return fmt.Errorf("yellow travel: arrival %#02x->%#02x did not settle: %w", edge.From, edge.To, err)
 	}
 	return nil
+}
+
+func yellowLocalFieldReachCost(m *emu.Emu, romData []byte, h yellowrom.MapHeader, tx, ty int, extra map[[2]int]bool) (int, bool, error) {
+	plan, err := yellowCurrentFieldPath(m, romData, h, tx, ty, extra)
+	if err == nil {
+		actions := 0
+		for _, step := range plan {
+			if step.Action != yellowFieldWalk {
+				actions++
+			}
+		}
+		return actions*10000 + len(plan), true, nil
+	}
+	if !errors.Is(err, world.ErrNoPath) {
+		return 0, false, err
+	}
+	strength, needed, err := yellowStrengthPlan(m, romData, h, tx, ty, extra)
+	if err != nil {
+		return 0, false, err
+	}
+	if !needed {
+		return 0, false, nil
+	}
+	cap := fieldCapabilityFor(m, romData, FieldStrength)
+	if !cap.Usable && !cap.Preparable {
+		return 0, false, nil
+	}
+	return 20000 + len(strength.Pushes)*100 + len(strength.FinalWalk), true, nil
+}
+
+func yellowConnectionFieldTarget(m *emu.Emu, romData []byte, h yellowrom.MapHeader, edge world.Edge) (int, int, world.Step, error) {
+	grid, err := yellowLiveMapGridForTraversal(m, romData, h, world.TraversalLand)
+	if err != nil {
+		return 0, 0, world.Step{}, err
+	}
+	start, end := 0, grid.Width-1
+	if edge.Dir >= 2 {
+		end = grid.Height - 1
+	}
+	if edge.BandScoped {
+		start, end = int(edge.BandStart), int(edge.BandEnd)
+	}
+	bestX, bestY, bestCost := -1, -1, -1
+	for i := start; i <= end; i++ {
+		tx, ty := i, 0
+		switch edge.Dir {
+		case 0:
+			tx, ty = i, 0
+		case 1:
+			tx, ty = i, grid.Height-1
+		case 2:
+			tx, ty = 0, i
+		case 3:
+			tx, ty = grid.Width-1, i
+		default:
+			return 0, 0, world.Step{}, fmt.Errorf("unknown connection direction %d", edge.Dir)
+		}
+		cost, ok, err := yellowLocalFieldReachCost(m, romData, h, tx, ty, nil)
+		if err != nil {
+			return 0, 0, world.Step{}, err
+		}
+		if !ok {
+			continue
+		}
+		if bestCost < 0 || cost < bestCost {
+			bestX, bestY, bestCost = tx, ty, cost
+		}
+	}
+	if bestCost < 0 {
+		return 0, 0, world.Step{}, world.ErrNoPath
+	}
+	return bestX, bestY, connectionPush(edge.Dir), nil
+}
+
+func yellowWarpFieldApproach(m *emu.Emu, romData []byte, h yellowrom.MapHeader, edge world.Edge) (int, int, world.Step, map[[2]int]bool, error) {
+	targetX, targetY := int(edge.WarpX), int(edge.WarpY)
+	extra := map[[2]int]bool{}
+	for _, warp := range h.Warps {
+		if int(warp.X) == targetX && int(warp.Y) == targetY {
+			continue
+		}
+		extra[[2]int{int(warp.X), int(warp.Y)}] = true
+	}
+
+	bestX, bestY, bestCost := -1, -1, -1
+	var bestPush world.Step
+	for _, push := range []world.Step{world.StepUp, world.StepDown, world.StepLeft, world.StepRight} {
+		standX, standY := targetX-push.DX, targetY-push.DY
+		cost, ok, err := yellowLocalFieldReachCost(m, romData, h, standX, standY, extra)
+		if err != nil {
+			return 0, 0, world.Step{}, nil, err
+		}
+		if !ok {
+			continue
+		}
+		if bestCost < 0 || cost < bestCost {
+			bestX, bestY, bestCost, bestPush = standX, standY, cost, push
+		}
+	}
+	if bestCost < 0 {
+		return 0, 0, world.Step{}, extra, world.ErrNoPath
+	}
+	return bestX, bestY, bestPush, extra, nil
 }
 
 func yellowConnectionTarget(grid *world.Grid, edge world.Edge, sx, sy int, blocked map[[2]int]bool) (int, int, world.Step, error) {
