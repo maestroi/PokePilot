@@ -120,6 +120,4 @@ const (
 	PikachuHappiness       uint16 = 0xD46F // wPikachuHappiness
 	PikachuMood            uint16 = 0xD470 // wPikachuMood
 	PikachuSpawnStateFlags uint16 = 0xD471 // wPikachuSpawnStateFlags
-	NumSafariBalls          uint16 = 0xDA46 // wNumSafariBalls
-	SafariSteps             uint16 = 0xD70C // wSafariSteps, big-endian
 )
