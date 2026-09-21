@@ -335,6 +335,9 @@ func TestClassifyObjectiveOutcomePCStorageIsBlocked(t *testing.T) {
 	if got := classifyObjectiveOutcome(Objective{Kind: KindCatch, Species: "pidgey"}, skill.ErrFieldRosterNoRecovery, clean); got != OutcomeBlocked {
 		t.Fatalf("no safe deposit = %q, want blocked", got)
 	}
+	if got := classifyObjectiveOutcome(Objective{Kind: KindRepairFieldCapability, FieldCapability: "surf"}, skill.ErrFieldRosterCatch, clean); got != OutcomeBlocked {
+		t.Fatalf("field roster catch failure = %q, want blocked", got)
+	}
 }
 
 func TestObjectivePostconditionNoLongerDefersUnknownKindsToExecutorNil(t *testing.T) {
