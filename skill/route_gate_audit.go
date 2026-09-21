@@ -14,12 +14,11 @@ const (
 	capCanPassRoute23BadgeChecks gameruntime.CapabilityID = "can_pass_route23_badge_checks"
 	capCanPassLanceExit          gameruntime.CapabilityID = "can_pass_lance_exit"
 
-	// Red's Celadon City object table contains a historical/unused warp at
-	// (39,19) directly to the department store 5F. The decomp explicitly marks
-	// it "inaccessible": there is no door there in the playable map. Keep a
-	// never-projected capability for that one phantom edge so semantic routing
-	// cannot use the wall as a shortcut while the raw ROM warp table remains
-	// intact for destination-warp indexing.
+	// Red's object tables contain a few historical/unused warps the pret
+	// decomp marks "; inaccessible". Keep a never-projected capability for
+	// those phantom edges so semantic routing cannot use them as shortcuts
+	// while the raw ROM warp table remains intact for destination-warp
+	// indexing. Local walk planning also skips them via redInaccessibleWarp.
 	capCanUseInaccessibleWarp gameruntime.CapabilityID = "can_use_inaccessible_warp"
 
 	// Cycling Road (Routes 16–18) forces downhill bike movement once
@@ -43,6 +42,9 @@ const (
 	celadonMart5FMap             uint8 = 0x88
 	celadonInaccessibleMartWarpX uint8 = 39
 	celadonInaccessibleMartWarpY uint8 = 19
+
+	silphCo1FInaccessibleWarpX uint8 = 16
+	silphCo1FInaccessibleWarpY uint8 = 10
 
 	route23VictoryRoadWarpX     uint8 = 4
 	route23VictoryRoadWarpY     uint8 = 31
@@ -117,6 +119,14 @@ func redAuditedRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, 
 		// removes only this source edge while preserving the real way to 5F via
 		// the department-store entrance, stairs/elevator, and all raw warp ids.
 		return bikeGate("red:celadon_inaccessible_mart_warp", capCanUseInaccessibleWarp)
+
+	case edge.Kind == world.EdgeWarp && edge.From == silphCo1FMap && edge.To == silphCo3FMap &&
+		edge.WarpX == silphCo1FInaccessibleWarpX && edge.WarpY == silphCo1FInaccessibleWarpY:
+		// pokered/data/maps/objects/SilphCo1F.asm marks (16,10)->3F inaccessible.
+		// The ordinary stair/elevator path still reaches every Silph floor; this
+		// gate only removes the phantom shortcut that otherwise traps Travel on
+		// a non-firing warp tile.
+		return bikeGate("red:silph_1f_inaccessible_3f_warp", capCanUseInaccessibleWarp)
 
 	case edge.Kind == world.EdgeWarp && edge.From == route16Map && edge.To == route16Gate1FMap &&
 		edge.WarpX == 24 && (edge.WarpY == 10 || edge.WarpY == 11):

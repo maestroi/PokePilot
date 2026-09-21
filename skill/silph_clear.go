@@ -425,9 +425,12 @@ func collectSilphPresidentReward(m *emu.Emu, romData []byte, policy MovePolicy) 
 	if err := EnsureBagSpaceFor(m, masterBallItemID); err != nil {
 		return fmt.Errorf("skill: ClearSilphCo: make room for Master Ball: %w", err)
 	}
-	if m.Peek8(sym.CurMap) != silphCo11FMap {
-		dest := Destination{Map: silphCo11FMap, X: silphPresidentX, Y: silphPresidentY + 1}
-		if _, err := TravelFlee(m, romData, dest, policy, silphStoryTravelBattles); err != nil {
+	// The elevator and stair lobby on 11F are a different walking component
+	// from the president's office. Travel to an 11F coordinate lands via the
+	// elevator and cannot path beside the president; enter through the same 7F
+	// story pad used for Giovanni instead.
+	if !silphPresidentApproachable(m, romData) {
+		if err := reachSilphPresidentArea(m, romData, policy); err != nil {
 			return fmt.Errorf("skill: ClearSilphCo: return to Silph president: %w", err)
 		}
 	}
@@ -437,6 +440,50 @@ func collectSilphPresidentReward(m *emu.Emu, romData []byte, policy MovePolicy) 
 	facts = currentSilphFacts(m)
 	if !facts.MasterBallAwarded || !facts.SilphRescueComplete {
 		return fmt.Errorf("skill: ClearSilphCo: president conversation ended without Master Ball award completion")
+	}
+	return nil
+}
+
+// silphPresidentApproachable is true when TalkAt can already plan a standing
+// tile beside the president from the current map position. The president's
+// own home tile is occupied by the sprite, so silphTileReachable on that
+// coordinate is the wrong probe.
+func silphPresidentApproachable(m *emu.Emu, romData []byte) bool {
+	if m.Peek8(sym.CurMap) != silphCo11FMap {
+		return false
+	}
+	_, _, err := besideDestination(m, romData, silphPresidentX, silphPresidentY)
+	return err == nil
+}
+
+// reachSilphPresidentArea puts the player on Silph Co 11F in the president's
+// connected component via the 7F story pad. Callers must already know the
+// president is not approachable from the current standing position.
+func reachSilphPresidentArea(m *emu.Emu, romData []byte, policy MovePolicy) error {
+	// Already on 11F in the elevator/stair lobby: leave through the ordinary
+	// 3F stair landing first, then re-enter through the pad chain. Staying on
+	// 11F and asking Travel for the president tile routes back through the
+	// elevator into the same disconnected lobby.
+	if m.Peek8(sym.CurMap) == silphCo11FMap {
+		landing := Destination{Map: silphCo3FMap, X: silph3FStairLandingX, Y: silph3FStairLandingY}
+		if _, err := TravelFlee(m, romData, landing, policy, silphStoryTravelBattles); err != nil {
+			return fmt.Errorf("leave 11F lobby for story pad route: %w", err)
+		}
+	}
+	if m.Peek8(sym.CurMap) != silphCo7FMap && m.Peek8(sym.CurMap) != silphCo11FMap {
+		if err := reachSilphRivalRoom(m, romData, policy); err != nil {
+			return err
+		}
+	}
+	if m.Peek8(sym.CurMap) == silphCo7FMap {
+		if err := traverseSilphWarp(m, romData, silph7FTo11FEdge, policy, nil); err != nil {
+			return fmt.Errorf("take 7F pad to 11F: %w", err)
+		}
+	}
+	if !silphPresidentApproachable(m, romData) {
+		x, y := playerXY(m)
+		return fmt.Errorf("president still unreachable after story pad entry on map %#04x at (%d,%d)",
+			m.Peek8(sym.CurMap), x, y)
 	}
 	return nil
 }

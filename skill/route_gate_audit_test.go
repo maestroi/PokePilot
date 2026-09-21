@@ -68,6 +68,23 @@ func TestCeladonInaccessibleMartWarpIsPermanentGate(t *testing.T) {
 	}
 }
 
+func TestSilph1FInaccessible3FWarpIsPermanentGate(t *testing.T) {
+	edge := world.Edge{
+		Kind:  world.EdgeWarp,
+		From:  silphCo1FMap,
+		To:    silphCo3FMap,
+		WarpX: silphCo1FInaccessibleWarpX,
+		WarpY: silphCo1FInaccessibleWarpY,
+	}
+	transition := requireTransition(t, edge, "red:silph_1f_inaccessible_3f_warp", capCanUseInaccessibleWarp)
+	if !transition.Gate {
+		t.Fatalf("inaccessible Silph 1F warp was modeled as an executable pivot: %+v", transition)
+	}
+	if caps := redRouteCapabilities(nil, new(state.Mem)); caps.Has(capCanUseInaccessibleWarp) {
+		t.Fatalf("inaccessible warp capability must never be projected: %v", caps)
+	}
+}
+
 func TestCyclingRoadModelsOnlyTheBikeCorridor(t *testing.T) {
 	east := requireTransition(t,
 		world.Edge{Kind: world.EdgeWarp, From: route16Map, To: route16Gate1FMap, WarpX: 24, WarpY: 10},
