@@ -155,8 +155,8 @@ func tileOpensDest(
 	if err != nil || grid == nil || !grid.Walkable(x, y) {
 		return false
 	}
-	if _, err := world.FindRoutePlanAtDestinationWithCapabilities(
-		routeGraph, mapID, dest.Map, x, y, int(dest.X), int(dest.Y), blockedHere, prereqs,
+	if _, err := findRoutePlanForDestination(
+		routeGraph, mapID, x, y, dest, blockedHere, prereqs,
 	); err == nil {
 		return true
 	}
@@ -176,8 +176,8 @@ func tileOpensDest(
 			if err != nil || len(toStage) == 0 {
 				continue
 			}
-			if _, err := world.FindRoutePlanAtDestinationWithCapabilities(
-				routeGraph, mapID, dest.Map, nx, ny, int(dest.X), int(dest.Y), blockedHere, prereqs,
+			if _, err := findRoutePlanForDestination(
+				routeGraph, mapID, nx, ny, dest, blockedHere, prereqs,
 			); err == nil {
 				return true
 			}
@@ -287,8 +287,8 @@ func fieldPathBridgeFromTile(
 		if perr != nil {
 			return
 		}
-		_, rerr := world.FindRoutePlanAtDestinationWithCapabilities(
-			routeGraph, mapID, dest.Map, x, y, int(dest.X), int(dest.Y), blockedHere, prereqs,
+		_, rerr := findRoutePlanForDestination(
+			routeGraph, mapID, x, y, dest, blockedHere, prereqs,
 		)
 		if rerr != nil {
 			return

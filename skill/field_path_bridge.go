@@ -65,8 +65,8 @@ func fieldPathBridgeOnCurrentMap(
 		if perr != nil {
 			return
 		}
-		_, rerr := world.FindRoutePlanAtDestinationWithCapabilities(
-			routeGraph, cur, dest.Map, x, y, int(dest.X), int(dest.Y), blockedHere, prereqs,
+		_, rerr := findRoutePlanForDestination(
+			routeGraph, cur, x, y, dest, blockedHere, prereqs,
 		)
 		if rerr != nil {
 			return
