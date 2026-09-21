@@ -21,6 +21,7 @@ type ObjectiveKey struct {
 	Y        uint8      `json:"y,omitempty"`
 	Starter  uint8      `json:"starter,omitempty"`
 	Progress ProgressID `json:"progress,omitempty"`
+	FieldCapability CapabilityID `json:"field_capability,omitempty"`
 	Level    uint8      `json:"level,omitempty"`
 	Species  SpeciesID  `json:"species,omitempty"`
 	Item     ItemID     `json:"item,omitempty"`
@@ -39,6 +40,7 @@ func (o Objective) Key() ObjectiveKey {
 		Y:        o.Y,
 		Starter:  uint8(o.Starter),
 		Progress: o.Progress,
+		FieldCapability: o.FieldCapability,
 		Level:    o.Level,
 		Species:  o.Species,
 		Item:     o.Item,
@@ -58,6 +60,7 @@ func (k ObjectiveKey) Objective() Objective {
 		Y:        k.Y,
 		Starter:  skill.Starter(k.Starter),
 		Progress: k.Progress,
+		FieldCapability: k.FieldCapability,
 		Level:    k.Level,
 		Species:  k.Species,
 		Item:     k.Item,
