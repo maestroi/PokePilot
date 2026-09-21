@@ -140,8 +140,9 @@ func FindRouteAtDestinationWithCapabilities(
 // PortBypass and ordinary FROM-side actions (Cut a tree on this map, Surf off
 // a shore) are executable pivots: the pre-action ordinary-walking component
 // does not have to reach the port. PivotOnly annotations alone are narrower —
-// they only relax the destination landing component (the obstacle lives on the
-// adjacent map), so FROM-side canExit still applies. PortBypass+PivotOnly is
+// identify a destination-side topology change (the obstacle lives on the
+// adjacent map), so FROM-side canExit still applies and planning stops at that
+// action until live topology is refreshed. PortBypass+PivotOnly is
 // the FROM-side bridge that skips canExit without discarding the far map's
 // landing (Route 9 Cut toward Route 10). Missing capabilities normally remove
 // a semantic edge and, when that is the reason routing fails, return structured
@@ -218,6 +219,9 @@ func FindRoutePlanAtDestinationWithCapabilities(
 	if err == nil {
 		return routeSteps(route, executable), nil
 	}
+	if errors.Is(err, ErrRouteReplanRequired) {
+		return routeSteps(route, executable), err
+	}
 	if !errors.Is(err, ErrNoRoute) || len(denied) == 0 {
 		return nil, err
 	}
@@ -229,7 +233,7 @@ func FindRoutePlanAtDestinationWithCapabilities(
 	// geometry cannot reach the annotated edge and the missing capability is
 	// exactly what would have allowed the component pivot.
 	geometric, geometricErr := findRouteAtDestinationAllowingSemantic(g, from, to, x, y, tx, ty, blockedHere, allSkip, allRelax)
-	if geometricErr != nil {
+	if geometricErr != nil && !errors.Is(geometricErr, ErrRouteReplanRequired) {
 		return nil, err
 	}
 	var blockages []gameruntime.TransitionBlockage

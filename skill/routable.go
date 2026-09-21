@@ -1,6 +1,7 @@
 package skill
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
@@ -79,6 +80,13 @@ func (p *RoutePlanner) Reachability(dest Destination) error {
 	_, err := world.FindRouteAtDestinationWithCapabilities(
 		p.graph, p.cur, dest.Map, int(p.x), int(p.y), int(dest.X), int(dest.Y), nil, p.prereqs,
 	)
+	if errors.Is(err, world.ErrRouteReplanRequired) {
+		// The target lies beyond an executable semantic frontier. GoTo can
+		// advance to that action and re-plan from refreshed live topology; this
+		// is routable for objective offering without claiming a concrete
+		// post-action component in the world planner itself.
+		return nil
+	}
 	return err
 }
 

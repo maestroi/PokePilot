@@ -226,8 +226,11 @@ func TestPivotOnlyReentryDoesNotUnlockUnreachableExits(t *testing.T) {
 	}
 
 	plan, err := FindRoutePlanAtDestinationWithCapabilities(g, 1, 3, 2, 0, 0, 0, nil, prereqs)
-	if !errors.Is(err, ErrNoRoute) {
-		t.Fatalf("east seam routed to a plaza-only destination via pivot bounce: err=%v plan=%+v", err, plan)
+	if !errors.Is(err, ErrRouteReplanRequired) {
+		t.Fatalf("east seam error=%v plan=%+v, want bounded semantic replan", err, plan)
+	}
+	if len(plan) != 1 || plan[0].Edge != toNeighbor {
+		t.Fatalf("east seam plan=%+v, want only the local pivot frontier", plan)
 	}
 }
 

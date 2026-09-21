@@ -1,6 +1,8 @@
 package skill
 
 import (
+	"errors"
+
 	"github.com/maestroi/pokepilot/emu"
 	gameruntime "github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/world"
@@ -42,7 +44,7 @@ func routePlanByTravelPolicy(
 	steps, err := world.FindRoutePlanAtDestinationWithCapabilities(
 		g, from, to, x, y, tx, ty, blockedHere, prereqs,
 	)
-	if err != nil {
+	if err != nil && !errors.Is(err, world.ErrRouteReplanRequired) {
 		return world.RouteCostResult{}, err
 	}
 	cost := len(steps) * fastTravelMapTransitionCost
@@ -57,5 +59,5 @@ func routePlanByTravelPolicy(
 		}
 		cost += dx + dy
 	}
-	return world.RouteCostResult{Steps: steps, Cost: cost, Exact: false}, nil
+	return world.RouteCostResult{Steps: steps, Cost: cost, Exact: false}, err
 }

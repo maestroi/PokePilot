@@ -2,6 +2,7 @@ package world
 
 import (
 	"container/heap"
+	"errors"
 
 	gameruntime "github.com/maestroi/pokepilot/game"
 )
@@ -111,11 +112,11 @@ func FindWeightedRoutePlanAtDestinationWithCapabilities(
 	}
 	policy = policy.normalized()
 
-	fallback, err := FindRoutePlanAtDestinationWithCapabilities(
+	fallback, fallbackErr := FindRoutePlanAtDestinationWithCapabilities(
 		g, from, to, x, y, tx, ty, blockedHere, prereqs,
 	)
-	if err != nil {
-		return RouteCostResult{}, err
+	if fallbackErr != nil && !errors.Is(fallbackErr, ErrRouteReplanRequired) {
+		return RouteCostResult{}, fallbackErr
 	}
 	fallbackResult := RouteCostResult{
 		Steps: fallback,
@@ -123,10 +124,13 @@ func FindWeightedRoutePlanAtDestinationWithCapabilities(
 		Exact: false,
 	}
 
-	if exact, ok := findExactWeightedRoute(
+	if exact, exactErr, ok := findExactWeightedRoute(
 		g, from, to, x, y, tx, ty, blockedHere, prereqs, policy,
 	); ok {
-		return exact, nil
+		return exact, exactErr
+	}
+	if fallbackErr != nil {
+		return fallbackResult, fallbackErr
 	}
 	return fallbackResult, nil
 }
@@ -209,11 +213,12 @@ func (o routeOccupancy) with(mapID uint8) routeOccupancy {
 }
 
 type weightedRouteNode struct {
-	mapID uint8
-	x, y  int
-	known bool
-	entry []int
-	via   Edge
+	mapID    uint8
+	x, y     int
+	known    bool
+	entry    []int
+	via      Edge
+	boundary bool
 
 	occupied routeOccupancy
 	cost     int
@@ -275,9 +280,9 @@ func findExactWeightedRoute(
 	blockedHere map[Edge]bool,
 	prereqs RoutePrerequisites,
 	policy RouteCostPolicy,
-) (RouteCostResult, bool) {
+) (RouteCostResult, error, bool) {
 	if x < 0 || y < 0 {
-		return RouteCostResult{}, false
+		return RouteCostResult{}, nil, false
 	}
 	view := buildWeightedSemanticView(g, prereqs)
 	geometry := newRouteGeometry(g, policy.AllowWater)
@@ -324,13 +329,20 @@ func findExactWeightedRoute(
 				Steps: reconstructWeightedRoute(nodes, item.node),
 				Cost:  cur.cost + finalDistance*policy.MoveCost,
 				Exact: true,
-			}, true
+			}, nil, true
+		}
+		if cur.boundary {
+			return RouteCostResult{
+				Steps: reconstructWeightedRoute(nodes, item.node),
+				Cost:  cur.cost,
+				Exact: true,
+			}, ErrRouteReplanRequired, true
 		}
 
 	expand:
 		expanded++
 		if expanded > maxWeightedRouteStates {
-			return RouteCostResult{}, false
+			return RouteCostResult{}, nil, false
 		}
 
 		for _, edge := range view.usable.Edges[cur.mapID] {
@@ -354,9 +366,7 @@ func findExactWeightedRoute(
 			}
 
 			nextEntry := g.entryComps[edge]
-			if view.relaxLanding[edge] && !cur.occupied.has(edge.To) {
-				nextEntry = nil
-			}
+			boundary := g.componentAware && view.relaxLanding[edge] && !cur.occupied.has(edge.To)
 
 			next := weightedRouteNode{
 				mapID:    edge.To,
@@ -365,6 +375,7 @@ func findExactWeightedRoute(
 				known:    port.entryKnown,
 				entry:    nextEntry,
 				via:      edge,
+				boundary: boundary,
 				occupied: cur.occupied.with(edge.To),
 				prev:     item.node,
 			}
@@ -389,7 +400,7 @@ func findExactWeightedRoute(
 			heap.Push(open, &weightedQueueItem{node: len(nodes) - 1, cost: next.cost, seq: seq})
 		}
 	}
-	return RouteCostResult{}, false
+	return RouteCostResult{}, nil, false
 }
 
 func reconstructWeightedRoute(nodes []weightedRouteNode, at int) []RouteStep {

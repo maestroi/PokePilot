@@ -1,8 +1,10 @@
 package world
 
 import (
+	"errors"
 	"testing"
 
+	gameruntime "github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/worldmodel"
 )
 
@@ -189,5 +191,67 @@ func TestWeightedMapOnlyGoalDoesNotInventDestinationTile(t *testing.T) {
 	}
 	if !result.Exact || len(result.Steps) != 0 || result.Cost != 0 {
 		t.Fatalf("map-only result = %+v, want exact zero-cost arrival on current map", result)
+	}
+}
+
+func TestWeightedRouteStopsAtSemanticRelaxLandingFrontier(t *testing.T) {
+	pivot := Edge{Kind: EdgeWarp, From: 1, To: 2, WarpX: 1, WarpY: 0}
+	onward := Edge{Kind: EdgeWarp, From: 2, To: 3, WarpX: 1, WarpY: 0}
+	provider := weightedRouteTestProvider{width: 20, height: 4}
+	g := &Graph{
+		Edges: map[uint8][]Edge{
+			1: {pivot},
+			2: {onward},
+			3: nil,
+		},
+		componentAware: true,
+		comps: map[uint8][][]int{
+			1: {{1, 1}},
+			2: {{1, 2}},
+			3: {{1, 1}},
+		},
+		exitComps: map[Edge][]int{
+			pivot:  {1},
+			onward: {2},
+		},
+		entryComps: map[Edge][]int{
+			pivot:  {1},
+			onward: {1},
+		},
+		warps: map[uint8][]worldmodel.Warp{
+			1: {{X: 1, Y: 0, DestWarpID: 0, DestMap: 2}},
+			2: {
+				{X: 0, Y: 0, DestWarpID: 0, DestMap: 1},
+				{X: 1, Y: 0, DestWarpID: 0, DestMap: 3},
+			},
+			3: {{X: 0, Y: 0, DestWarpID: 1, DestMap: 2}},
+		},
+		tiles: map[uint8]dim{
+			1: {w: 20, h: 4},
+			2: {w: 20, h: 4},
+			3: {w: 20, h: 4},
+		},
+		provider: provider,
+	}
+	prereqs := RoutePrerequisites{
+		Transitions: map[Edge]gameruntime.Transition{
+			pivot: {
+				ID:        "fake:weighted-local-action",
+				PivotOnly: true,
+			},
+		},
+	}
+
+	result, err := FindWeightedRoutePlanAtDestinationWithCapabilities(
+		g, 1, 3, 0, 0, -1, -1, nil, prereqs, DefaultRouteCostPolicy(),
+	)
+	if !errors.Is(err, ErrRouteReplanRequired) {
+		t.Fatalf("weighted error = %v, want ErrRouteReplanRequired", err)
+	}
+	if !result.Exact {
+		t.Fatalf("weighted result unexpectedly fell back: %+v", result)
+	}
+	if len(result.Steps) != 1 || result.Steps[0].Edge != pivot {
+		t.Fatalf("weighted plan = %+v, want only semantic frontier", result.Steps)
 	}
 }
