@@ -451,7 +451,10 @@ func (p *LLMPlanner) NextRetry(obs Observation, offered []Objective, r Retry) (O
 	return o, nil
 }
 
-// Strategize asks the same endpoint for an ordered, bounded plan. Thinking is
+// Strategize asks the same endpoint for an ordered, bounded strategic leg.
+// The leg caches a longer-lived purpose plus immediate setup steps, but stops
+// at the first world-state/discovery boundary so the runtime can use newly
+// exposed objectives instead of executing a stale itinerary. Thinking is
 // intentionally enabled for this request even when the cheap chooser runs
 // with NoThink=true, and the strategist receives a larger completion/time
 // budget so a reasoning block cannot make planning unusable by construction.
@@ -656,7 +659,7 @@ func llmUserPrompt(obs Observation, offered []Objective) string {
 	return b.String()
 }
 
-const strategicSystemPrompt = `You are the strategic planner for a deterministic game-playing runtime. Build a short multi-round plan toward the run goal from the current Observation. Deterministic code owns legality, navigation, battles, menus, and execution; you only sequence semantic objectives. Every plan step MUST be copied exactly as an objective sentence from the current Offered objectives. Never use menu indexes, never invent an unavailable action, and never infer that a prerequisite is satisfied unless Observation says so. RouteBlockages and Requirements are explicit evidence for prerequisite planning. Reply with ONLY JSON: {"goal":"one short strategic purpose","steps":["exact objective sentence", ...]}. Use at most 10 steps. Do not explain.`
+const strategicSystemPrompt = `You are the strategic planner for a deterministic game-playing runtime. Build one short strategic LEG toward the run goal from the current Observation. Put the longer-range purpose in "goal"; "steps" are only immediate setup actions that are legal in the CURRENT Offered objectives. Deterministic code owns legality, navigation, battles, menus, and execution; you only sequence semantic objectives. Every plan step MUST be copied exactly as an objective sentence from the current Offered objectives. Never use menu indexes, never invent an unavailable action, and never infer that a prerequisite is satisfied unless Observation says so. RouteBlockages and Requirements are explicit evidence for prerequisite planning. End the executable leg at the FIRST world-state/discovery boundary: a progression objective, gym objective, starter choice, or travel objective marked "(unvisited adjacent map)". Do NOT put executable steps after that boundary; the runtime will observe the new state and continue the same purpose when unambiguous or ask you again when a real branch appears. Prefer short legs; use extra steps only for necessary preparation before the boundary. Reply with ONLY JSON: {"goal":"one short strategic purpose","steps":["exact objective sentence", ...]}. Use at most 10 steps. Do not explain.`
 
 func (p *LLMPlanner) strategicSystemMessage() string {
 	s := strategicSystemPrompt + p.ExtraSystem

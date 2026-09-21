@@ -189,8 +189,11 @@ function renderStats(s) {
     row('round', s.round + (s.rounds_left ? ' (' + s.rounds_left + ' left)' : '')) +
     row('repeat picks', s.repeats + ' of ' + s.rounds, s.rounds > 3 && s.repeats * 2 >= s.rounds) +
     row('think', s.last_seconds.toFixed(1) + 's / ' + s.avg_seconds.toFixed(1) + 's avg') +
-    row('tiers', (s.strategic_calls || 0) + ' strategic / ' + (s.fast_calls || 0) + ' fast / ' + (s.plan_executions || 0) + ' zero-call') +
-    row('plan', s.plan_goal ? (Math.min((s.plan_step || 0) + 1, (s.plan_steps ? s.plan_steps.length : 0)) + '/' + (s.plan_steps ? s.plan_steps.length : 0) + ' ' + s.plan_goal) : 'none') +
+    row('tiers', (s.strategic_calls || 0) + ' strategic / ' + (s.fast_calls || 0) + ' fast / ' + (s.plan_executions || 0) + ' cached') +
+    row('leg continue', (s.leg_auto_executions || 0) + ' zero-call / ' + (s.leg_fast_executions || 0) + ' cheap') +
+    row('leg boundaries', (s.leg_boundaries || 0) + ' reached / ' + (s.leg_tail_steps_dropped || 0) + ' stale steps dropped') +
+    row('plan', s.plan_goal ? (Math.min((s.plan_step || 0) + 1, (s.plan_steps ? s.plan_steps.length : 0)) + '/' + (s.plan_steps ? s.plan_steps.length : 0) + (s.plan_boundary ? ' boundary ' : ' ') + s.plan_goal) : 'none') +
+    row('leg decision', s.last_leg_decision || '—') +
     row('replan', s.last_replan_reason || '—') +
     row('offered', s.avg_offered.toFixed(1) + ' avg') +
     row('tokens', s.prompt_tokens + ' / ' + s.completion_tokens) +
