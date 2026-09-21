@@ -363,6 +363,8 @@ func redRouteTransitionEffectComplete(mem *state.Mem, transition gameruntime.Tra
 		return state.HasEvent(mem, eventBeatRoute12Snorlax)
 	case "red:route16_snorlax":
 		return state.HasEvent(mem, eventBeatRoute16Snorlax)
+	case "red:rocket_b1f_trainer_door":
+		return state.HasEvent(mem, eventBeatRocketB1FTrainer4)
 	default:
 		return false
 	}
