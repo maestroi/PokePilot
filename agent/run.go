@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/profiles"
@@ -82,6 +83,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 
 	res := Result{Completed: []Objective{}, Outcomes: []ObjectiveResult{}}
 	startFrame := m.FrameCount()
+	runStarted := time.Now()
 	tape := &dialogueTape{}
 	m.AlsoSample(tape.sample)
 	var history []RoundRecord
@@ -196,7 +198,7 @@ runLoop:
 
 		before := last
 		objectiveResult, execErr := executeObjectiveResult(m, romData, obj)
-		settledTiming := ObjectiveTiming{Frame: m.FrameCount(), Round: round}
+		settledTiming := ObjectiveTiming{Frame: m.FrameCount(), Round: round, WallElapsed: time.Since(runStarted)}
 		last = objectiveResult.Final
 		coverage.seed(last)
 		res.Rounds = round
