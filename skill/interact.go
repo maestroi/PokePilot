@@ -344,12 +344,16 @@ func liveObjectPosition(m *emu.Emu, objectID int) (uint8, uint8, bool) {
 // walk away, and Manhattan distance can't tell the two apart.
 //
 // The side it picks must be a side the WALKER will accept, so this plans on
-// exactly what GoTo plans on: the live post-script grid, and the tiles live
-// sprites occupy. Choosing with a blind ROM grid instead is how the approach
-// picks a tile another NPC is standing on and then fails to walk to the tile
-// it just chose — MEASURED on MT_MOON_POKECENTER (map 0x44), where "talk at
-// (7,2)" chose the side (7,3) with an NPC parked on it and died with "no path
-// from (10,5) to (7,3)" 51 times, while (6,2) and (8,2) stood free. The other
+// exactly what GoTo plans on: the live post-script grid, the tiles live
+// sprites occupy, and warpAvoidance. Choosing with a blind ROM grid instead
+// is how the approach picks a tile another NPC is standing on and then fails
+// to walk to the tile it just chose — MEASURED on MT_MOON_POKECENTER (map
+// 0x44), where "talk at (7,2)" chose the side (7,3) with an NPC parked on it
+// and died with "no path from (10,5) to (7,3)" 51 times, while (6,2) and
+// (8,2) stood free. Ignoring warpAvoidance is the same class of bug:
+// MEASURED on SILPH_CO_11F, where the shortest side of the president at
+// (7,5) is (6,5) whose only route steps onto teleporter (5,5), so GoTo then
+// fails with no capability-aware path while (8,5) is a clean walk. The other
 // sides of a talk target are usually equally good, so preferring a free one
 // costs nothing. The target tile itself is never required to be free — it is
 // the NPC being talked to.
@@ -367,14 +371,16 @@ func besideDestination(m *emu.Emu, romData []byte, targetX, targetY uint8) (Dest
 	if err != nil {
 		return Destination{}, false, fmt.Errorf("build map %#04x: %w", cur, err)
 	}
-	blocked := spriteBlockers(m)
+	blocked := warpAvoidance(h, int(sx), int(sy), spriteBlockers(m))
 	steps, _, err := world.FindPathAdjacent(grid, int(sx), int(sy), int(targetX), int(targetY), blocked)
 	if err != nil {
 		// Every free side may simply be occupied this instant. Fall back to
 		// the sprite-blind choice rather than refusing the objective: GoTo
 		// waits out a wanderer, and a stationary NPC yields the same error
-		// as before instead of a new one.
-		steps, _, err = world.FindPathAdjacent(grid, int(sx), int(sy), int(targetX), int(targetY), nil)
+		// as before instead of a new one. Still keep warpAvoidance so the
+		// chosen side remains a tile GoTo will actually walk to.
+		steps, _, err = world.FindPathAdjacent(grid, int(sx), int(sy), int(targetX), int(targetY),
+			warpAvoidance(h, int(sx), int(sy), nil))
 	}
 	if err != nil {
 		return Destination{}, false, fmt.Errorf("no walkable tile beside (%d,%d) on map %#04x: %w", targetX, targetY, cur, err)

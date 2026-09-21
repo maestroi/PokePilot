@@ -460,17 +460,45 @@ func waitForPositionStable(m *emu.Emu, budget, stableFrames int) error {
 // it (pokered only fires a warp on the step that arrives on it), so the
 // current tile is exempt: a caller already there must be free to walk off
 // it in any direction.
+//
+// Decomp-annotated "; inaccessible" warp-table entries are also exempt.
+// Those occupy ordinary walkable floor but do not fire as exits — MEASURED
+// on SILPH_CO_11F (5,5), where treating the inert teleporter as an eject
+// tile forced every approach to the president through the Beauty at (10,5)
+// and left GoTo with no capability-aware path.
 func warpAvoidance(h rom.MapHeader, sx, sy int, blocked map[[2]int]bool) map[[2]int]bool {
 	out := make(map[[2]int]bool, len(blocked)+len(h.Warps))
 	for p, b := range blocked {
 		out[p] = b
 	}
 	for _, w := range h.Warps {
-		if int(w.X) != sx || int(w.Y) != sy {
-			out[[2]int{int(w.X), int(w.Y)}] = true
+		if int(w.X) == sx && int(w.Y) == sy {
+			continue
 		}
+		if redInaccessibleWarp(h.ID, w.X, w.Y) {
+			continue
+		}
+		out[[2]int{int(w.X), int(w.Y)}] = true
 	}
 	return out
+}
+
+// redInaccessibleWarp reports warp-table entries the pret decomp marks
+// "; inaccessible". They are Red adapter facts: walkable floor that must not
+// be treated as local eject tiles, and (separately) must not be executable
+// cross-map graph edges — see the permanent semantic gates in
+// route_gate_audit.go.
+func redInaccessibleWarp(mapID, x, y uint8) bool {
+	switch mapID {
+	case celadonCityMap:
+		return x == celadonInaccessibleMartWarpX && y == celadonInaccessibleMartWarpY
+	case silphCo1FMap:
+		return x == silphCo1FInaccessibleStairWarpX && y == silphCo1FInaccessibleStairWarpY
+	case silphCo11FMap:
+		return x == 5 && y == 5
+	default:
+		return false
+	}
 }
 
 // warpTarget picks the warp tile to cross. Among tiles that lead to e.To it
