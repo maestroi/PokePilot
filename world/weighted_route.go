@@ -61,13 +61,19 @@ func (p RouteCostPolicy) actionCost(t gameruntime.Transition) int {
 	if cost, ok := p.TransitionCosts[t.ID]; ok {
 		return cost
 	}
-	cost := p.DefaultActionCost
+	cost, matched := 0, false
 	for _, capability := range t.Requires {
-		if c, ok := p.CapabilityActionCosts[capability]; ok && c > cost {
-			cost = c
+		if c, ok := p.CapabilityActionCosts[capability]; ok {
+			if !matched || c > cost {
+				cost = c
+			}
+			matched = true
 		}
 	}
-	return cost
+	if matched {
+		return cost
+	}
+	return p.DefaultActionCost
 }
 
 // RouteCostResult is a capability-aware route plus its estimated travel cost.
