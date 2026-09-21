@@ -732,8 +732,12 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 			// completely. The next visit to Route 24 then had nowhere at all to
 			// go, and "go to route 2" died on "world: no route" even though
 			// Route 24 -> Cerulean was the one genuinely open door.
-			retryResult, retryErr := routePlanByTravelPolicy(
-				m, routeGraph, cur, dest.Map, int(x), int(y), int(dest.X), int(dest.Y), blockedHere, prereqs,
+			// Preserve the destination's semantic kind here. Named map/area/
+			// interaction goals intentionally do not use dest.X/Y as a canonical
+			// tile; retrying after the visited-map preference must use the same
+			// target-set semantics as the primary planning pass.
+			retryResult, retryErr := routePlanToDestinationByTravelPolicy(
+				m, routeGraph, cur, int(x), int(y), dest, blockedHere, prereqs,
 			)
 			retry := retryResult.Steps
 			if errors.Is(retryErr, world.ErrRouteReplanRequired) && len(retry) > 0 {
