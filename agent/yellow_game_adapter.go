@@ -150,7 +150,6 @@ func (a *yellowObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, err
 	}
 }
 
-
 func yellowBagItemID(romData []byte, obs Observation, id ItemID) (uint8, bool) {
 	for _, item := range obs.Bag {
 		if ItemID(gameruntime.CanonicalID(item.Name)) != id || item.Quantity <= 0 {
