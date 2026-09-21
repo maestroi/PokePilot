@@ -152,6 +152,21 @@ func Heal(m *emu.Emu) error {
 			mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord))
 	}
 
+	// Healing is an interaction goal, not a canonical map coordinate. Resolve
+	// the nurse from the ROM's service-script role and let GoTo choose the
+	// cheapest valid counter approach from live geometry. This keeps callers
+	// free to use map-arrival semantics for Pokemon Centers.
+	nurse, ok, err := interactionDestinationForRole(m.ROM(), mem.U8(sym.CurMap), rom.InteractionPokemonCenterNurse)
+	if err != nil {
+		return fmt.Errorf("skill: Heal: locate nurse: %w", err)
+	}
+	if !ok {
+		return fmt.Errorf("skill: Heal: no Pokemon Center nurse on map %#04x", mem.U8(sym.CurMap))
+	}
+	if err := GoTo(m, m.ROM(), nurse); err != nil {
+		return fmt.Errorf("skill: Heal: approach nurse: %w", err)
+	}
+
 	step, err := counterDirection(m)
 	if err != nil {
 		return err
