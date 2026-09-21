@@ -83,9 +83,11 @@ func FindRouteAtDestination(g *Graph, from, to uint8, x, y, tx, ty int, blockedH
 // findRouteAtDestinationAllowingSemantic is the component-aware planner with
 // two semantic privileges. skipCanExit edges may be taken even when ordinary
 // walking cannot reach their exit port (PortBypass / FROM-side actions such as
-// Surf or a Cut tree on this map). relaxLanding edges discard the static
-// destination landing component after the hop, so a TO-side pivot (Route 9's
-// tree) can continue past a split that pristine ROM collision still sees.
+// Surf or a Cut tree on this map). relaxLanding edges identify actions whose
+// destination topology may change. Routing may select such an edge, but it
+// stops at that semantic frontier unless the concrete static landing already
+// supports the requested destination; execution then refreshes live topology
+// before planning any continuation.
 //
 // PivotOnly annotations belong in relaxLanding only: their obstacle lives on
 // the adjacent map, so inventing FROM-side port reachability strands players
