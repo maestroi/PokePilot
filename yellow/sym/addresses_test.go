@@ -26,6 +26,8 @@ func TestPhase0AddressesMatchSupportedYellowLayout(t *testing.T) {
 		"wTopMenuItemX":             {TopMenuItemX, 0xCC25},
 		"wTopMenuItemY":             {TopMenuItemY, 0xCC24},
 		"wMenuJoypadPollCount":      {MenuJoypadPollCount, 0xCC34},
+		"wMenuWatchedKeys":          {MenuWatchedKeys, 0xCC29},
+		"wItemQuantity":             {ItemQuantity, 0xCF95},
 		"wListScrollOffset":         {ListScrollOffset, 0xCC36},
 		"wListCount":                {ListCount, 0xD129},
 		"wListMenuID":               {ListMenuID, 0xCF93},
