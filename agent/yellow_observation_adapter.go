@@ -7,6 +7,7 @@ import (
 	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/gen1"
 	"github.com/maestroi/pokepilot/gen1rom"
+	yellowcontroller "github.com/maestroi/pokepilot/yellow/controller"
 	yellowprofile "github.com/maestroi/pokepilot/yellow/profile"
 	yellowrom "github.com/maestroi/pokepilot/yellow/rom"
 )
@@ -119,6 +120,40 @@ func (yellowSemanticObservationAdapter) Observe(m *emu.Emu, romData []byte, prof
 		})
 	}
 	obs.HasGrass = len(obs.WildGrass) > 0
+
+	if h, err := yellowrom.ParseMap(romData, obs.Map); err == nil {
+		obs.MapObjects = make([]MapObject, 0, len(h.Objects))
+		for _, object := range h.Objects {
+			mo := MapObject{X: object.X, Y: object.Y}
+			switch {
+			case object.TextID&0x80 != 0:
+				mo.Kind = "item"
+				if name, err := yellowrom.ItemName(romData, object.ItemID); err == nil {
+					mo.Item = gameruntime.CanonicalID(name)
+				} else {
+					mo.Item = "unknown"
+				}
+			case object.TextID&0x40 != 0:
+				mo.Kind = "trainer"
+				if status, err := yellowcontroller.TrainerStatusAt(m, romData, obs.Map, object.X, object.Y); err == nil {
+					mo.Defeated = status.Defeated
+					mo.Challengeable = status.Challengeable
+				}
+			default:
+				mo.Kind = "person"
+			}
+			obs.MapObjects = append(obs.MapObjects, mo)
+		}
+	}
+
+	obs.MartStock = []string{}
+	if items, err := yellowrom.MartItems(romData, obs.Map); err == nil {
+		for _, raw := range items {
+			if name, err := yellowrom.ItemName(romData, raw); err == nil {
+				obs.MartStock = append(obs.MartStock, gameruntime.CanonicalID(name))
+			}
+		}
+	}
 
 	catalog, err := yellowObjectiveCatalog(romData, obs)
 	if err != nil {
