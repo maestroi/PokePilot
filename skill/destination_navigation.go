@@ -51,6 +51,19 @@ func resolveLocalDestination(m *emu.Emu, romData []byte, dest Destination) (exac
 	}
 }
 
+func interactionDestinationForRole(romData []byte, mapID uint8, role rom.ObjectInteractionRole) (Destination, bool, error) {
+	actors, err := rom.SpecialInteractionActors(romData, mapID)
+	if err != nil {
+		return Destination{}, false, err
+	}
+	for _, actor := range actors {
+		if actor.Role == role {
+			return InteractionDestination(mapID, actor.X, actor.Y), true, nil
+		}
+	}
+	return Destination{}, false, nil
+}
+
 // cheapestAreaDestination chooses the least-cost currently executable tile in
 // an area. It uses the same Cut/Surf-aware local planner as GoTo, so "area"
 // means a reachable region rather than merely the closest coordinate by
