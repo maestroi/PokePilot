@@ -5,8 +5,8 @@ package benchmark
 import (
 	"strings"
 
-	core "github.com/maestroi/pokepilot/benchmark"
 	"github.com/maestroi/pokepilot/agent"
+	core "github.com/maestroi/pokepilot/benchmark"
 )
 
 func Profile() core.Profile {
