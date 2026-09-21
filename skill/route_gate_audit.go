@@ -22,6 +22,10 @@ const (
 	// intact for destination-warp indexing.
 	capCanUseInaccessibleWarp gameruntime.CapabilityID = "can_use_inaccessible_warp"
 
+	// The Game Corner poster stair is a real warp_event, but the map script
+	// replaces its block with a wall until EVENT_FOUND_ROCKET_HIDEOUT.
+	capCanEnterRocketHideout gameruntime.CapabilityID = "can_enter_rocket_hideout"
+
 	bicycleItem uint8 = 0x06
 
 	route16Map       uint8 = 0x1B
@@ -168,6 +172,18 @@ func redAuditedRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, 
 		// Route 19 itself walkable from Fuchsia; Surf starts at the Route 19/20
 		// seam and remains required through the Cinnabar connection.
 		return semanticTransition("red:southern_sea_surf", edge, capCanSurf), true
+
+	case edge.Kind == world.EdgeWarp && edge.From == gameCornerMap && edge.To == rocketHideoutB1FMap &&
+		edge.WarpX == gameCornerWarpX && edge.WarpY == gameCornerWarpY:
+		// pokered/scripts/GameCorner.asm GameCornerSetRocketHideoutDoorTile
+		// writes block $2a over (17,4) until EVENT_FOUND_ROCKET_HIDEOUT.
+		// The warp table entry remains, so a speedrun cost search prices a
+		// one-tile push into that wall and then stops at Rocket B1F's
+		// trainer-door frontier — the nearest semantic pivot, not a path to
+		// the destination (run-2fjudkv8c4i4y2147qkbldx57h). Gate only this
+		// source edge. The reverse stair stays ordinary, and RocketHideout
+		// still owns pressing the poster and crossing the revealed step.
+		return bikeGate("red:rocket_hideout_entrance", capCanEnterRocketHideout)
 
 	case edge.Kind == world.EdgeWarp && pair(celadonCityMap, celadonGymMap):
 		// Erika's door is behind the Cut tree in Celadon City. The immutable

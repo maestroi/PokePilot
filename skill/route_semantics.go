@@ -141,6 +141,12 @@ func redRouteCapabilities(romData []byte, mem *state.Mem) gameruntime.Capability
 	if facts.SaffronGateOpen {
 		caps[capCanEnterSaffron] = true
 	}
+	// GameCornerSetRocketHideoutDoorTile keeps the poster stair a wall
+	// until this flag. Project it so routing can tell a closed warp table
+	// entry from the stair the poster script has already opened.
+	if state.HasEvent(mem, state.EventFoundRocketHideout) {
+		caps[capCanEnterRocketHideout] = true
+	}
 	addAuditedRedRouteCapabilities(mem, caps)
 	return caps
 }
