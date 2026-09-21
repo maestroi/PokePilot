@@ -47,11 +47,11 @@ func TestSurfPortBypassRoutesAcrossWaterOnlySeams(t *testing.T) {
 	}
 
 	plan, err := FindRoutePlanAtDestinationWithCapabilities(g, 1, 3, 0, 0, 1, 1, nil, prereqs)
-	if err != nil {
-		t.Fatalf("Surf PortBypass should route across a water-only seam: %v", err)
+	if !errors.Is(err, ErrRouteReplanRequired) {
+		t.Fatalf("Surf PortBypass error = %v, want ErrRouteReplanRequired", err)
 	}
-	if len(plan) != 2 || plan[0].Edge != shore || plan[1].Edge != arrival {
-		t.Fatalf("plan=%+v, want shore then arrival", plan)
+	if len(plan) != 1 || plan[0].Edge != shore {
+		t.Fatalf("plan=%+v, want only the Surf semantic frontier", plan)
 	}
 	if plan[0].Transition == nil || plan[0].Transition.ID != "surf_shore" {
 		t.Fatalf("first step transition = %+v, want surf_shore", plan[0].Transition)
