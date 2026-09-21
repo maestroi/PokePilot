@@ -14,6 +14,7 @@ func TestBattlePhaseForYellowMenus(t *testing.T) {
 		{name: "moves", text: "THUNDERSHOCK TYPE/ELECTRIC", want: battlePhaseMoveMenu},
 		{name: "use next", text: "Use next POKEMON?", max: 1, want: battlePhaseUseNext},
 		{name: "trainer switch", text: "Will RED change POKEMON?", max: 1, want: battlePhaseTrainerSwitch},
+		{name: "safari", text: "BALLx 30 BAIT THROW ROCK RUN", want: battlePhaseSafariMenu},
 		{name: "learn", text: "PIKACHU is trying to learn QUICK ATTACK", want: battlePhaseLearnMove},
 		{name: "abandon", text: "Abandon learning QUICK ATTACK?", max: 1, want: battlePhaseAbandonLearning},
 		{name: "forced party", text: "Choose a POKEMON.", forced: true, want: battlePhaseForcedParty},
