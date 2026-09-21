@@ -166,8 +166,12 @@ type Failure struct {
 	Y            uint8               `json:"y"`
 	Checkpoint   string              `json:"checkpoint,omitempty"`
 	Semantic     agent.FailureState  `json:"semantic_state"`
-	Recent       []HistoryEntry      `json:"recent_history,omitempty"`
-	Planning     agent.PlanningStats `json:"planning"`
+	Recent       []HistoryEntry       `json:"recent_history,omitempty"`
+	RecentEvents []string             `json:"recent_events,omitempty"`
+	Travel       *agent.TravelEvidence `json:"travel,omitempty"`
+	RouteBlockages []agent.RouteBlockage `json:"route_blockages,omitempty"`
+	Planning     agent.PlanningStats  `json:"planning"`
+	Reproduce    string               `json:"reproduce,omitempty"`
 }
 
 type Result struct {
@@ -494,21 +498,15 @@ func buildFailure(in BuildInput) (Failure, bool) {
 	if idx < len(res.OutcomeTimings) {
 		timing = res.OutcomeTimings[idx]
 	}
-	initial := agent.FailureStateFor(res.Initial)
+	initial := agent.FailureState{}
 	if result.Initial != nil {
 		initial = *result.Initial
 	}
 	final := agent.FailureStateFor(result.Final)
 	cause := string(result.Cause)
-	if cause == "" && result.Failure != nil {
-		cause = string(result.Failure.Cause)
-	}
-	if cause == "" {
-		cause = "unknown"
-	}
 	identity := farm.FailureIdentity{
 		Version: farm.FailureIdentityVersion,
-		Game: in.Game,
+		Game: "pokemon",
 		Adapter: in.Game,
 		Objective: farmObjective(agent.FailureObjectiveFor(result.Objective)),
 		Outcome: string(result.Outcome),
@@ -517,18 +515,30 @@ func buildFailure(in BuildInput) (Failure, bool) {
 		Initial: farmState(initial),
 		Final: farmState(final),
 	}
-	occurrence, err := farm.NewFailureOccurrence(identity, in.Commit, timing.Round, "", result.Summary, in.FinishedAt)
+	var occurrence farm.FailureOccurrence
+	var err error
+	if cause != "" {
+		occurrence, err = farm.NewFailureOccurrence(identity, in.Commit, timing.Round, "", result.Summary, in.FinishedAt)
+	}
 	failure := Failure{
 		Round: timing.Round, Frame: timing.Frame, Objective: result.Objective.String(),
 		Outcome: string(result.Outcome), Cause: cause, Summary: result.Summary,
 		ErrorChain: errorChain(firstError(in.TerminalError, res.Err)),
 		Map: result.Final.MapName, X: result.Final.X, Y: result.Final.Y,
-		Semantic: final, Recent: recentHistory(res, 6), Planning: res.Planning,
+		Semantic: final, Recent: recentHistory(res, 6), RecentEvents: tailStrings(result.Final.Events, 12),
+		Travel: result.Travel, RouteBlockages: append([]agent.RouteBlockage(nil), result.Final.RouteBlockages...), Planning: res.Planning,
 	}
 	if err == nil {
 		failure.Key, failure.Fingerprint = occurrence.Key, occurrence.Fingerprint
 	}
 	return failure, true
+}
+
+func tailStrings(values []string, n int) []string {
+	if len(values) <= n {
+		return append([]string(nil), values...)
+	}
+	return append([]string(nil), values[len(values)-n:]...)
 }
 
 func recentHistory(res agent.Result, n int) []HistoryEntry {
@@ -574,6 +584,7 @@ func MaterializeCheckpoints(result *Result, checkpointDir, outputDir, finalState
 				return err
 			}
 			failure.Checkpoint = filepath.ToSlash(filepath.Join("checkpoints", "failure.state"))
+			failure.Reproduce = fmt.Sprintf("pokebench red --from checkpoint:%s --until %s --runs 1", failure.Checkpoint, result.EndCondition)
 		}
 	}
 	return nil
