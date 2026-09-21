@@ -88,7 +88,7 @@ func (d Destination) routeCoordinates() (int, int) {
 	}
 }
 
-func (d Destination) String() string {
+func (d Destination) KindName() string {
 	switch d.Kind {
 	case DestinationMap:
 		return "map"
