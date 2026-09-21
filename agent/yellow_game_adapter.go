@@ -98,6 +98,13 @@ func (a *yellowObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, err
 		if !ok {
 			return result, fmt.Errorf("agent: %s: Yellow bag does not contain semantic item %q", o, o.Item)
 		}
+		if _, err := yellowrom.LookupTMHM(a.romData, rawItem); err == nil {
+			if err := yellowcontroller.TeachTMHM(a.m, a.romData, rawItem, o.Slot); err != nil {
+				return result, fmt.Errorf("agent: %s: %w", o, err)
+			}
+			result.ItemEffectVerified = true
+			return result, nil
+		}
 		if err := yellowcontroller.UseFieldItem(a.m, a.romData, rawItem, o.Slot); err != nil {
 			return result, fmt.Errorf("agent: %s: %w", o, err)
 		}
