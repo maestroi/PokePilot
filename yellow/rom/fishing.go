@@ -34,7 +34,7 @@ func FishingEncounters(romData []byte) ([]FishingEncounter, error) {
 		{Rod: OldRodItem, Species: 0x85, Level: 5, Global: true}, // MAGIKARP
 	}
 
-	goodOff, err := gen1rom.BankedOffset(yellowGoodRodBank, yellowGoodRodAddr)
+	goodOff, err := bankedOffset(yellowGoodRodBank, yellowGoodRodAddr)
 	if err != nil {
 		return nil, err
 	}
@@ -53,7 +53,7 @@ func FishingEncounters(romData []byte) ([]FishingEncounter, error) {
 		})
 	}
 
-	superOff, err := gen1rom.BankedOffset(yellowSuperRodBank, yellowSuperRodAddr)
+	superOff, err := bankedOffset(yellowSuperRodBank, yellowSuperRodAddr)
 	if err != nil {
 		return nil, err
 	}
