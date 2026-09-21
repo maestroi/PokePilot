@@ -292,3 +292,25 @@ func TestVerifyDynamicExecutionUnknownIsInformational(t *testing.T) {
 		t.Fatalf("dynamic execution edges=%d, want 1", report.Stats.DynamicExecutionEdges)
 	}
 }
+
+func TestVerifyReportsExpectedMapParseDiagnostic(t *testing.T) {
+	snapshot := Snapshot{
+		Maps: []Map{{ID: "01", Width: 1, Height: 1, GeometryKnown: true, Components: []int{1}}},
+		MapParseDiagnostics: []MapParseDiagnostic{{
+			Map:    "02",
+			Error:  "truncated map header",
+			Reason: "dead duplicate map excluded by adapter",
+		}},
+	}
+
+	report := Verify(snapshot, Options{})
+	if report.HasErrors() {
+		t.Fatalf("expected parse diagnostic must be non-fatal: %+v", report.Findings)
+	}
+	if report.Stats.ExpectedMapParseFailures != 1 {
+		t.Fatalf("expected parse failures=%d, want 1", report.Stats.ExpectedMapParseFailures)
+	}
+	if !hasFinding(report, "expected_map_parse_failure", SeverityWarning) {
+		t.Fatalf("expected parse diagnostic missing from report: %+v", report.Findings)
+	}
+}

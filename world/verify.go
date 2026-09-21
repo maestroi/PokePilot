@@ -112,6 +112,13 @@ func ValidationSnapshot(g *Graph, transitions map[Edge]gameruntime.Transition, s
 		}
 	}
 
+	for _, failure := range g.ParseFailures() {
+		snapshot.MapParseDiagnostics = append(snapshot.MapParseDiagnostics, worldverify.MapParseDiagnostic{
+			Map:    validationMapID(failure.MapID),
+			Error:  failure.Err.Error(),
+			Reason: failure.Reason,
+		})
+	}
 	for _, start := range starts {
 		snapshot.StartMaps = append(snapshot.StartMaps, validationMapID(start))
 	}

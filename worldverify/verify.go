@@ -41,6 +41,7 @@ type Stats struct {
 	SemanticDeadPortEdges              int  `json:"semantic_dead_port_edges,omitempty"`
 	ExecutableEdges                    int  `json:"executable_edges,omitempty"`
 	DynamicExecutionEdges              int  `json:"dynamic_execution_edges,omitempty"`
+	ExpectedMapParseFailures           int  `json:"expected_map_parse_failures,omitempty"`
 }
 
 type Report struct {
@@ -133,6 +134,15 @@ func Verify(snapshot Snapshot, options Options) Report {
 		report.Stats.Components += len(set)
 	}
 	report.Stats.Maps = len(maps)
+
+	for _, diagnostic := range snapshot.MapParseDiagnostics {
+		report.Stats.ExpectedMapParseFailures++
+		message := fmt.Sprintf("map %q was deliberately omitted after ParseMap failed: %s", diagnostic.Map, diagnostic.Error)
+		if diagnostic.Reason != "" {
+			message += "; " + diagnostic.Reason
+		}
+		report.add(SeverityWarning, "expected_map_parse_failure", message, diagnostic.Map, "")
+	}
 
 	for _, start := range snapshot.StartMaps {
 		if _, ok := maps[start]; !ok {

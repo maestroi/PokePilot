@@ -91,6 +91,14 @@ type MapHeaderProvider interface {
 	ElevatorFloorForDestination(elevatorMap, destinationMap uint8) (ElevatorFloor, bool)
 }
 
+// MapParseFailureClassifier is an optional provider capability for maps that
+// are deliberately enumerated but not parseable by this adapter. Returning
+// ok=true makes that omission explicit; all unclassified ParseMap failures are
+// fatal to normal graph construction.
+type MapParseFailureClassifier interface {
+	ExpectedMapParseFailure(mapID uint8, err error) (reason string, ok bool)
+}
+
 // ROMProviderFactory is retained as a compatibility bridge for callers that
 // still pass raw ROM bytes to world.BuildGraph. New adapters/callers should
 // pass a MapHeaderProvider directly.
