@@ -37,6 +37,10 @@ const (
 // changing GomeBoy's generic latest-frame spectator.
 type frameSpectator interface {
 	Capture(*gomeboy.Emulator) error
+	// Reset starts a new visual epoch after emulator state restoration. It
+	// must discard all frames captured before the restore so buffered viewers
+	// can never replay an earlier boot/run before showing the restored state.
+	Reset(*gomeboy.Emulator) error
 	Handler() http.Handler
 }
 
@@ -61,6 +65,29 @@ func newLiveFrameQueue(capacity int) *liveFrameQueue {
 		capacity = 1
 	}
 	return &liveFrameQueue{capacity: capacity}
+}
+
+// reset starts a new playback epoch unconditionally. Frame counters are not a
+// reliable epoch signal: a resumed checkpoint can have a larger frame number
+// than the worker boot frames that were captured before the lease started.
+// In that case rollback detection in push cannot distinguish the two runs.
+func (q *liveFrameQueue) reset(frame uint64, png []byte) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	q.frames = q.frames[:0]
+	q.last = liveFrame{}
+	q.haveLast = false
+	q.newest = 0
+	q.haveNew = false
+
+	if len(png) == 0 {
+		return
+	}
+	next := liveFrame{frame: frame, png: png}
+	q.frames = append(q.frames, next)
+	q.newest = frame
+	q.haveNew = true
 }
 
 func (q *liveFrameQueue) push(frame uint64, png []byte) {
@@ -179,6 +206,26 @@ func newLiveSpectator(captureEvery int) *liveSpectator {
 		queue:        newLiveFrameQueue(liveSpectatorBufferSize),
 		captureEvery: stride,
 	}
+}
+
+// Reset is called after a successful emulator LoadState. Clear playback first
+// even if PNG encoding fails: keeping an old frame would make a resumed run
+// look like it restarted and then teleported. On success, seed the new epoch
+// immediately with the restored screen so the next browser poll starts at the
+// checkpoint rather than waiting for another stepped frame.
+func (s *liveSpectator) Reset(e *gomeboy.Emulator) error {
+	frame := e.FrameCount()
+	s.queue.reset(0, nil)
+	s.haveCapture = false
+
+	png, err := e.PNG()
+	if err != nil {
+		return err
+	}
+	s.queue.reset(frame, png)
+	s.lastCapture = frame
+	s.haveCapture = true
+	return nil
 }
 
 // Capture samples emulator time rather than worker wall time. Flat-out
