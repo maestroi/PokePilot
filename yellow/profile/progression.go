@@ -1,8 +1,6 @@
 package profile
 
 import (
-	"strings"
-
 	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/gen1"
 	yellowrom "github.com/maestroi/pokepilot/yellow/rom"
