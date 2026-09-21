@@ -28,8 +28,27 @@ type CatalogStarter struct {
 type CatalogDestination struct {
 	Place    PlaceID
 	Location LocationID
+	Kind     skill.DestinationKind
 	X, Y     uint8
+	Area     skill.DestinationBounds
 	Center   bool
+}
+
+func (d CatalogDestination) reached(location LocationID, x, y uint8) bool {
+	if d.Location == "" || d.Location != location {
+		return false
+	}
+	switch d.Kind {
+	case skill.DestinationMap:
+		return true
+	case skill.DestinationArea:
+		return x >= d.Area.MinX && x <= d.Area.MaxX &&
+			y >= d.Area.MinY && y <= d.Area.MaxY
+	case skill.DestinationInteraction:
+		return false
+	default:
+		return x == d.X && y == d.Y
+	}
 }
 
 type CatalogChallenge struct {

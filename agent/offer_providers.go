@@ -352,7 +352,7 @@ func (travelObjectiveProvider) Provide(ctx *objectiveOfferContext) objectiveProv
 		case routePlaceBlocked(obs, place):
 			blocked = append(blocked, blockEvidence(ObjectiveFamilyTravel, "route_prerequisite", nil, place, "route_requirement"))
 			continue
-		case destination.Location == ctx.currentLocation && destination.X == obs.X && destination.Y == obs.Y:
+		case destination.reached(ctx.currentLocation, obs.X, obs.Y):
 			continue
 		default:
 			placeNames = append(placeNames, name)

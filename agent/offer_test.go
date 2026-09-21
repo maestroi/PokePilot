@@ -90,8 +90,6 @@ func TestOfferTable(t *testing.T) {
 				return k
 			},
 			want: []string{
-				"go to pallet town",
-				"go to pallet town, fleeing wild battles",
 				"go to route 1",
 				"go to route 1, fleeing wild battles",
 			},
@@ -316,12 +314,10 @@ func TestOfferTable(t *testing.T) {
 				return k
 			},
 			want: []string{
-				"go to pallet town",
-				"go to pallet town, fleeing wild battles",
 				"go to route 1",
 				"go to route 1, fleeing wild battles",
 			},
-			mustNot: []string{"pewter city", "viridian city", "forest", "lab", "progress"},
+			mustNot: []string{"pallet town", "pewter city", "viridian city", "forest", "lab", "progress"},
 		},
 		{
 			name: "a place the game named in dialogue joins the menu",
@@ -336,8 +332,6 @@ func TestOfferTable(t *testing.T) {
 				return k
 			},
 			want: []string{
-				"go to pallet town",
-				"go to pallet town, fleeing wild battles",
 				"go to pewter city",
 				"go to pewter city, fleeing wild battles",
 				"go to route 1",
@@ -686,7 +680,9 @@ func TestOfferTrainingTargetTracksTheLead(t *testing.T) {
 }
 
 func TestOfferWithholdsTrainBelowRetreatLine(t *testing.T) {
-	known := NewKnowledge(nil)
+	known := testKnowledge(map[uint8][]uint8{0x0c: {0x00}})
+	known.SawMap(0x0c)
+	known.SawMap(0x00)
 	mk := func(hp, maxHP uint16) Observation {
 		return Observation{GameID: testGameID,
 			Map: 0x0c, MapName: "ROUTE_1", HasGrass: true, PartyCount: 1,

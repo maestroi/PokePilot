@@ -13,12 +13,6 @@ import (
 	"github.com/maestroi/pokepilot/world"
 )
 
-// Destination is a concrete place: a map and a standing position on it.
-type Destination struct {
-	Map  uint8
-	X, Y uint8
-}
-
 // ErrBattle is returned by GoTo when a wild battle interrupts the route. GoTo
 // never fights or flees; it aborts and reports the battle.
 var ErrBattle = errors.New("skill: battle interrupted the route")
@@ -422,8 +416,8 @@ func safeForcedBanWithDeadEnds(
 		}
 		without.Edges[mapID] = filtered
 	}
-	route, err := world.FindRoutePlanAtDestinationWithCapabilities(
-		&without, cur, dest.Map, int(x), int(y), int(dest.X), int(dest.Y), blockedHere, prereqs,
+	route, err := findRoutePlanForDestination(
+		&without, cur, int(x), int(y), dest, blockedHere, prereqs,
 	)
 	if errors.Is(err, world.ErrRouteReplanRequired) && len(route) > 0 {
 		return route, nil, true
@@ -578,17 +572,30 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 		if err != nil {
 			return fmt.Errorf("skill: GoTo: overlay live topology for map %02x: %w", cur, err)
 		}
+
+		routeDest := dest
+		if cur == dest.Map {
+			resolved, satisfied, resolveErr := resolveLocalDestination(m, romData, dest)
+			if resolveErr != nil {
+				return fmt.Errorf("skill: GoTo: resolve %s destination on map %02x: %w", dest.KindName(), cur, resolveErr)
+			}
+			if satisfied {
+				return nil
+			}
+			routeDest = resolved
+		}
+
 		// Prefer a direct capability-aware local route before component routing.
 		// This is what makes Cut/Surf true tile-path capabilities: if the
 		// destination is on this map and a mixed land/field-move path exists,
 		// do not leave the map just because pristine collision splits it.
 		if cur == dest.Map {
-			reachable, fieldErr := fieldPathReachableOnCurrentMap(m, romData, h, dest)
+			reachable, fieldErr := fieldPathReachableOnCurrentMap(m, romData, h, routeDest)
 			if fieldErr != nil {
 				return fmt.Errorf("skill: GoTo: field-path probe on map %02x: %w", cur, fieldErr)
 			}
 			if reachable {
-				walkErr := walkWithinMap(m, romData, dest, nav.policy)
+				walkErr := walkWithinMap(m, romData, routeDest, nav.policy)
 				if errors.Is(walkErr, errLocalNavigationWorldChanged) {
 					continue
 				}
@@ -602,13 +609,13 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 			// multi-floor preparation because it has the battle/roster policy.
 			localBlocked := routingBlockers(m, h)
 			localBlocked = warpAvoidance(h, int(x), int(y), localBlocked)
-			currentBlocked, currentErr := seafoamCurrentBlocksDestination(m, romData, h, dest, localBlocked)
+			currentBlocked, currentErr := seafoamCurrentBlocksDestination(m, romData, h, routeDest, localBlocked)
 			if currentErr != nil {
 				return fmt.Errorf("skill: GoTo: Seafoam current probe on map %02x: %w", cur, currentErr)
 			}
 			if currentBlocked {
 				if nav.policy == nil {
-					return fmt.Errorf("skill: GoTo: Seafoam current blocks destination (%d,%d); Travel is required to prepare the multi-floor Strength puzzle", dest.X, dest.Y)
+					return fmt.Errorf("skill: GoTo: Seafoam current blocks destination (%d,%d); Travel is required to prepare the multi-floor Strength puzzle", routeDest.X, routeDest.Y)
 				}
 				if err := prepareSeafoamCurrents(m, romData, nav.policy); err != nil {
 					return fmt.Errorf("skill: GoTo: prepare Seafoam currents: %w", err)
@@ -641,8 +648,8 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 		var mem state.Mem
 		state.Snapshot(m, &mem)
 		prereqs := redRoutePrerequisites(routeGraph, romData, &mem)
-		routeResult, err := routePlanByTravelPolicy(
-			m, planGraph, cur, dest.Map, int(x), int(y), int(dest.X), int(dest.Y), blockedHere, prereqs,
+		routeResult, err := routePlanToDestinationByTravelPolicy(
+			m, planGraph, cur, int(x), int(y), routeDest, blockedHere, prereqs,
 		)
 		route := routeResult.Steps
 		if errors.Is(err, world.ErrRouteReplanRequired) && len(route) > 0 {
@@ -804,7 +811,14 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 				cur, x, y, dest.Map, dest.X, dest.Y, err)
 		}
 		if len(route) == 0 {
-			walkErr := walkWithinMap(m, romData, dest, nav.policy)
+			resolved, satisfied, resolveErr := resolveLocalDestination(m, romData, dest)
+			if resolveErr != nil {
+				return fmt.Errorf("skill: GoTo: resolve final %s destination: %w", dest.KindName(), resolveErr)
+			}
+			if satisfied {
+				return nil
+			}
+			walkErr := walkWithinMap(m, romData, resolved, nav.policy)
 			if errors.Is(walkErr, errLocalNavigationWorldChanged) {
 				continue
 			}
@@ -1027,27 +1041,17 @@ var places = map[string]Destination{
 // Place, but are not standalone travel objectives in PlaceNames.
 var interactionPlaces = map[string]Destination{}
 
-// Place maps a friendly name to a Destination.
+// Place maps a friendly name to a semantic Destination. Broad geographic
+// places such as cities and routes are map-arrival goals; interaction-owned
+// and scripted places retain their explicit exact coordinates.
 func Place(name string) (Destination, bool) {
 	d, ok := places[name]
-	if !ok {
-		d, ok = interactionPlaces[name]
+	if ok {
+		d.Kind = namedPlaceKind(name, d)
+		return d, true
 	}
+	d, ok = interactionPlaces[name]
 	return d, ok
-}
-
-// PlaceOnMap returns the named destination recorded for mapID, so a caller
-// standing on a map can find the tile that map's objectives are written
-// against without hardcoding coordinates a second time. Names are scanned in
-// sorted order, so a map carrying more than one place resolves the same way
-// every call. ok is false for a map with no named place.
-func PlaceOnMap(mapID uint8) (Destination, bool) {
-	for _, name := range PlaceNames() {
-		if d := places[name]; d.Map == mapID {
-			return d, true
-		}
-	}
-	return Destination{}, false
 }
 
 // PlaceNames returns every name Place accepts, sorted, so a caller can offer
