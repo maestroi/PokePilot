@@ -306,6 +306,63 @@ func knownGrassDestinations() []Destination {
 	return out
 }
 
+// currentMapGrassDestination is a standing tile on the player's map whose
+// walkable component contains tall grass. The player's own tile qualifies
+// when they already share that component. Otherwise a warp-adjacent tile on
+// another component qualifies only when the live route plan can reach it, so
+// a gate between two pockets is a habitat and a sealed pocket is not.
+func currentMapGrassDestination(romData []byte, planner *RoutePlanner) (Destination, bool, error) {
+	if planner == nil {
+		return Destination{}, false, nil
+	}
+	mapID := planner.cur
+	grass, grid, err := grassCells(romData, mapID)
+	if err != nil || grid == nil || len(grass) == 0 {
+		return Destination{}, false, err
+	}
+	px, py := int(planner.x), int(planner.y)
+	if len(grassInPlayerComponent(grass, grid, px, py)) > 0 {
+		return Destination{Map: mapID, X: planner.x, Y: planner.y}, true, nil
+	}
+	h, err := rom.ParseMap(romData, mapID)
+	if err != nil {
+		return Destination{}, false, err
+	}
+	best := Destination{}
+	bestLen := int(^uint(0) >> 1)
+	found := false
+	seen := map[[2]int]bool{}
+	for _, w := range h.Warps {
+		for _, d := range [][2]int{{0, 0}, {1, 0}, {-1, 0}, {0, 1}, {0, -1}} {
+			x, y := int(w.X)+d[0], int(w.Y)+d[1]
+			key := [2]int{x, y}
+			if seen[key] || x < 0 || y < 0 || x > 255 || y > 255 || !grid.Walkable(x, y) {
+				continue
+			}
+			seen[key] = true
+			if len(grassInPlayerComponent(grass, grid, x, y)) == 0 {
+				continue
+			}
+			plan, err := world.FindRoutePlanAtDestinationWithCapabilities(
+				planner.graph, mapID, mapID, px, py, x, y, nil, planner.prereqs,
+			)
+			if err != nil {
+				continue
+			}
+			n := len(plan)
+			if n == 0 {
+				n = 1
+			}
+			if !found || n < bestLen || (n == bestLen && (y < int(best.Y) || (y == int(best.Y) && x < int(best.X)))) {
+				found = true
+				bestLen = n
+				best = Destination{Map: mapID, X: uint8(x), Y: uint8(y)}
+			}
+		}
+	}
+	return best, found, nil
+}
+
 // findWildFieldCandidate uses only ROM encounter tables and HM compatibility.
 // It contains no species-specific "HM slave" table: any reachable known grass
 // map may supply the missing capability. Nearer maps win; within the same map,
@@ -345,15 +402,32 @@ func findWildFieldCandidate(m *emu.Emu, romData []byte, target FieldMove, requir
 			continue
 		}
 		seenMap[dest.Map] = true
-		// Plain graph connectivity is not enough here. A Surf repair must not
-		// choose a Surf-compatible species whose habitat is itself behind Surf
-		// (likewise for Cut/Strength/story gates). Use the same live capability-
-		// aware reachability contract as GoTo before using static route length
-		// only as a ranking signal.
-		if err := routePlanner.Reachability(dest); err != nil {
-			continue
+		habitat := dest
+		if dest.Map == cur {
+			// The map's encounter table is not a habitat. Route 16's west
+			// Fly-house landing and its Doduo grass are different components;
+			// accepting the standing tile made a carrier "reachable" that
+			// Catch cannot hunt. A same-map gate hop onto the grass component
+			// is a real route, the same one GoTo already plans.
+			tile, ok, err := currentMapGrassDestination(romData, routePlanner)
+			if err != nil {
+				return wildFieldCandidate{}, false, err
+			}
+			if !ok {
+				continue
+			}
+			habitat = tile
+		} else {
+			// Plain graph connectivity is not enough here. A Surf repair must not
+			// choose a Surf-compatible species whose habitat is itself behind Surf
+			// (likewise for Cut/Strength/story gates). Use the same live capability-
+			// aware reachability contract as GoTo before using static route length
+			// only as a ranking signal.
+			if err := routePlanner.Reachability(dest); err != nil {
+				continue
+			}
 		}
-		route, err := world.FindRoute(g, cur, dest.Map)
+		route, err := world.FindRoute(g, cur, habitat.Map)
 		if err != nil {
 			continue
 		}
@@ -377,7 +451,7 @@ func findWildFieldCandidate(m *emu.Emu, romData []byte, target FieldMove, requir
 			if !legal {
 				continue
 			}
-			candidate := wildFieldCandidate{Destination: dest, Map: dest.Map, Species: species.ID, Slots: species.Slots, RouteLen: len(route)}
+			candidate := wildFieldCandidate{Destination: habitat, Map: habitat.Map, Species: species.ID, Slots: species.Slots, RouteLen: len(route)}
 			if !found || candidate.RouteLen < best.RouteLen ||
 				(candidate.RouteLen == best.RouteLen && candidate.Slots > best.Slots) ||
 				(candidate.RouteLen == best.RouteLen && candidate.Slots == best.Slots && candidate.Map < best.Map) ||
@@ -447,6 +521,26 @@ func RepairFieldCapabilities(m *emu.Emu, romData []byte, policy MovePolicy, requ
 		candidate, wildOK, err := findWildFieldCandidate(m, romData, target, required)
 		if err != nil {
 			return fmt.Errorf("skill: RepairFieldCapabilities: find wild %s carrier: %w", target, err)
+		}
+		if !wildOK {
+			// A single-door room hides every outdoor habitat from component
+			// routing. Take that door once and search from the landing; the
+			// door is the only legal first action, the same rule Center
+			// recovery already uses.
+			g, gerr := cachedRouteGraph(romData)
+			if gerr != nil {
+				return fmt.Errorf("skill: RepairFieldCapabilities: find wild %s carrier: %w", target, gerr)
+			}
+			left, leaveErr := leaveMandatoryWarpRoom(m, romData, g)
+			if leaveErr != nil {
+				return fmt.Errorf("skill: RepairFieldCapabilities: leave room to seek %s carrier: %w", target, leaveErr)
+			}
+			if left {
+				candidate, wildOK, err = findWildFieldCandidate(m, romData, target, required)
+				if err != nil {
+					return fmt.Errorf("skill: RepairFieldCapabilities: find wild %s carrier: %w", target, err)
+				}
+			}
 		}
 		if !wildOK {
 			return fmt.Errorf("%w: %s has no compatible current-party member, active-box member, or reachable known grass species", ErrFieldRosterNoRecovery, target)
