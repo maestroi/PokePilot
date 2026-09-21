@@ -294,6 +294,7 @@ function showEndedHeading(index: number): boolean {
 function refresh(): void {
   void activeResource.retry()
   void recentResource.retry()
+  void spectatorResource.retry()
 }
 
 async function pauseSelected(): Promise<void> {
@@ -349,7 +350,7 @@ async function cloneSelected(): Promise<void> {
   actionError.value = ''
   try {
     const result = await cloneRun(run.run_id)
-    await activeResource.retry()
+    await Promise.all([activeResource.retry(), spectatorResource.retry()])
     cloneState.value = 'Cloned'
     selectRunID(result.run_id)
     window.setTimeout(() => { cloneState.value = '' }, 1800)
