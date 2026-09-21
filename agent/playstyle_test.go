@@ -104,7 +104,6 @@ func TestPlayStyleUnknownFallsBackToSpeedrun(t *testing.T) {
 	}
 }
 
-
 func TestAnnotatePlayStyleSpeedrunPrioritizesFlySetup(t *testing.T) {
 	offered := []Objective{
 		{Kind: KindProgress, Progress: redProgressSilphScopeAcquired},
