@@ -11,18 +11,18 @@ import (
 type FailureCauseID string
 
 type FailureObjective struct {
-	Kind     string
-	Place    PlaceID
-	X, Y     uint8
-	Starter  string
+	Kind            string
+	Place           PlaceID
+	X, Y            uint8
+	Starter         string
 	Progress        ProgressID
 	FieldCapability CapabilityID
 	Level           uint8
-	Species  SpeciesID
-	Item     ItemID
-	Slot     int
-	Qty      int
-	Flee     bool
+	Species         SpeciesID
+	Item            ItemID
+	Slot            int
+	Qty             int
+	Flee            bool
 }
 
 type FailurePartyMember struct {
@@ -71,19 +71,19 @@ type FailureState struct {
 
 func FailureObjectiveFor(o Objective) FailureObjective {
 	return FailureObjective{
-		Kind:     failureKindName(o.Kind),
-		Place:    o.Place,
-		X:        o.X,
-		Y:        o.Y,
-		Starter:  starterName(o.Starter),
+		Kind:            failureKindName(o.Kind),
+		Place:           o.Place,
+		X:               o.X,
+		Y:               o.Y,
+		Starter:         starterName(o.Starter),
 		Progress:        o.Progress,
 		FieldCapability: o.FieldCapability,
 		Level:           o.Level,
-		Species:  o.Species,
-		Item:     o.Item,
-		Slot:     o.Slot,
-		Qty:      o.Qty,
-		Flee:     o.Flee,
+		Species:         o.Species,
+		Item:            o.Item,
+		Slot:            o.Slot,
+		Qty:             o.Qty,
+		Flee:            o.Flee,
 	}
 }
 
