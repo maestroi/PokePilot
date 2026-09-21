@@ -198,6 +198,7 @@ func handlerWithServices(wallBase, replayBase, token string) http.Handler {
 	mux.HandleFunc("POST /v1/runs/{id}/pause", proxy(wallBase, false))
 	mux.HandleFunc("POST /v1/runs/{id}/resume", proxy(wallBase, false))
 	mux.HandleFunc("POST /v1/runs/{id}/cancel", proxy(wallBase, false))
+	mux.HandleFunc("POST /v1/runs/{id}/clone", proxy(wallBase, false))
 	mux.HandleFunc("DELETE /v1/runs/{id}", deleteRunHandler(wallBase, replayBase))
 	mux.HandleFunc("GET /frame", proxy(wallBase, true))
 	mountRunInspectorRoutes(mux, wallBase, replayBase)
