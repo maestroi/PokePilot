@@ -36,6 +36,10 @@ type policyPlanner struct {
 	decisionCalls []benchmark.DecisionCall
 }
 
+func (p *policyPlanner) RoutePriority() agent.RoutePriority {
+	return agent.RoutePriorityForPlayStyle(p.style)
+}
+
 func (p *policyPlanner) offered(obs agent.Observation, offered []agent.Objective) []agent.Objective {
 	offered = agent.ApplyRunPolicy(obs, offered, p.risk, p.wild)
 	return agent.AnnotatePlayStyle(obs, offered, p.style)
