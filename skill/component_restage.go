@@ -293,11 +293,12 @@ func fieldPathBridgeFromTile(
 		if rerr != nil {
 			return
 		}
-		actions := 0
-		for _, step := range plan {
-			if step.Action != fieldPathWalk {
-				actions++
-			}
+		actions := fieldPathPlanActionCount(plan)
+		if actions == 0 {
+			// Ordinary walking is not a field-path bridge. Let component
+			// routing keep ownership so this recovery cannot suppress a
+			// semantic frontier such as Rocket B1F's trainer door.
+			return
 		}
 		cand := ranked{dest: Destination{Map: mapID, X: uint8(x), Y: uint8(y)}, actions: actions, moves: len(plan)}
 		if best == nil || cand.actions < best.actions || (cand.actions == best.actions && cand.moves < best.moves) {
