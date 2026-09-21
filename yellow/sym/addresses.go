@@ -53,6 +53,8 @@ const (
 	TopMenuItemX            uint16 = 0xCC25 // wTopMenuItemX
 	TopMenuItemY            uint16 = 0xCC24 // wTopMenuItemY
 	MenuJoypadPollCount     uint16 = 0xCC34 // wMenuJoypadPollCount
+	MenuWatchedKeys         uint16 = 0xCC29 // wMenuWatchedKeys
+	ItemQuantity            uint16 = 0xCF95 // wItemQuantity
 	ListScrollOffset        uint16 = 0xCC36 // wListScrollOffset
 	ListCount               uint16 = 0xD129 // wListCount
 	ListMenuID              uint16 = 0xCF93 // wListMenuID
