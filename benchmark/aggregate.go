@@ -34,8 +34,8 @@ func Summarize(results []Result) Aggregate {
 	agg := Aggregate{
 		Version: ResultVersion, Runs: len(results),
 		FailureFingerprints: map[string]int{},
-		MilestoneFrames: map[string]Distribution{},
-		Counters: map[string]Distribution{},
+		MilestoneFrames:     map[string]Distribution{},
+		Counters:            map[string]Distribution{},
 	}
 	var completedFrames []float64
 	var completedWalls []float64
@@ -127,9 +127,9 @@ func CompareText(baseline, candidate Aggregate) string {
 	}
 
 	type splitChange struct {
-		id string
-		pct float64
-		base float64
+		id        string
+		pct       float64
+		base      float64
 		candidate float64
 	}
 	var changes []splitChange
@@ -138,7 +138,7 @@ func CompareText(baseline, candidate Aggregate) string {
 		if !ok || base.Median == 0 {
 			continue
 		}
-		changes = append(changes, splitChange{id: id, pct: (cand.Median-base.Median)/base.Median*100, base: base.Median, candidate: cand.Median})
+		changes = append(changes, splitChange{id: id, pct: (cand.Median - base.Median) / base.Median * 100, base: base.Median, candidate: cand.Median})
 	}
 	sort.Slice(changes, func(i, j int) bool { return math.Abs(changes[i].pct) > math.Abs(changes[j].pct) })
 	if len(changes) > 0 {
@@ -169,10 +169,16 @@ func CompareText(baseline, candidate Aggregate) string {
 	if len(candidate.FailureFingerprints) > 0 || len(baseline.FailureFingerprints) > 0 {
 		b.WriteString("\nFailure fingerprints:\n")
 		keys := map[string]bool{}
-		for key := range baseline.FailureFingerprints { keys[key] = true }
-		for key := range candidate.FailureFingerprints { keys[key] = true }
+		for key := range baseline.FailureFingerprints {
+			keys[key] = true
+		}
+		for key := range candidate.FailureFingerprints {
+			keys[key] = true
+		}
 		var ordered []string
-		for key := range keys { ordered = append(ordered, key) }
+		for key := range keys {
+			ordered = append(ordered, key)
+		}
 		sort.Strings(ordered)
 		for _, key := range ordered {
 			fmt.Fprintf(&b, "  %-52s %3d -> %3d\n", key, baseline.FailureFingerprints[key], candidate.FailureFingerprints[key])
