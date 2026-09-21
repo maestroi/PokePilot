@@ -174,7 +174,16 @@ func redProgressionObjectives(obs Observation) []Objective {
 				Progress: redProgressPostSurgeCeladonReady,
 				Note:     "(from Lavender or later, continue through Route 8/7's Underground Path to the Celadon Pokemon Center and fully recover the party before Erika)",
 			})
-		case !obs.Story.Has(redProgressFlyReady) && obs.Story.Has(redProgressPostSurgeCeladonReady):
+		case !obs.Story.Has(redProgressFlyReady) && obs.Story.Has(redProgressPostSurgeCeladonReady) &&
+			obs.Story.Has(redProgressPokeFluteAcquired):
+			// The Route 16 Fly house is a one-way trip past the sleeping Snorlax:
+			// PrepareFlyFastTravel (skill/route16_fly.go) refuses to commit to it
+			// without the Poke Flute already in hand, since the only way back is
+			// through Snorlax again. Offering this stage before the Flute exists
+			// used to hand the strategist a plan step that could never succeed,
+			// burning the run's one-shot same-failure escalation on the first
+			// repeat (farm-issue:1486, run-mir8dcxt9sei). Fall through to Erika
+			// instead; Silph Scope/Poke Flute are independently offered below.
 			out = append(out, Objective{
 				Kind:     KindProgress,
 				Progress: redProgressFlyReady,

@@ -53,13 +53,38 @@ func TestRedProgressionOffersFlyBeforeErikaAfterCeladonReady(t *testing.T) {
 	obs.Story = append(obs.Story,
 		ProgressFact{ID: redProgressPostSurgeLavenderReached, Complete: true},
 		ProgressFact{ID: redProgressPostSurgeCeladonReady, Complete: true},
+		ProgressFact{ID: redProgressPokeFluteAcquired, Complete: true},
 	)
 	got := redProgressionObjectives(obs)
 	if !hasProgressObjective(got, redProgressFlyReady) {
-		t.Fatal("Celadon-ready observation did not offer the Fly preparation stage")
+		t.Fatal("Celadon-ready observation with the Poke Flute already in hand did not offer the Fly preparation stage")
 	}
 	if hasProgressObjective(got, redProgressRainbowBadge) {
 		t.Fatalf("Erika leaked before Fly was prepared: %v", got)
+	}
+}
+
+// TestRedProgressionWithholdsFlyWithoutPokeFlute pins farm triage
+// c52de558bf874ee1 / run-mir8dcxt9sei: PrepareFlyFastTravel
+// (skill/route16_fly.go) refuses the one-way Route 16 Fly house trip past
+// Snorlax without the Poke Flute already acquired, since the only way back is
+// through Snorlax again. Offering fly_ready here before the Flute existed
+// used to hand the strategist a plan step that could never succeed; it
+// repeated the identical failure on the very next attempt and burned the
+// run's one-shot same-failure escalation, stopping the run outright instead
+// of continuing on to Erika/Rocket Hideout/Pokemon Tower.
+func TestRedProgressionWithholdsFlyWithoutPokeFlute(t *testing.T) {
+	obs := postSurgeObservation(0x85)
+	obs.Story = append(obs.Story,
+		ProgressFact{ID: redProgressPostSurgeLavenderReached, Complete: true},
+		ProgressFact{ID: redProgressPostSurgeCeladonReady, Complete: true},
+	)
+	got := redProgressionObjectives(obs)
+	if hasProgressObjective(got, redProgressFlyReady) {
+		t.Fatalf("Fly preparation was offered before the Poke Flute was acquired: %v", got)
+	}
+	if !hasProgressObjective(got, redProgressRainbowBadge) {
+		t.Fatalf("Erika was not offered as the fallback stage while the Flute is missing: %v", got)
 	}
 }
 
