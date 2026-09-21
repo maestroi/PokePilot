@@ -36,14 +36,79 @@ type openingState struct {
 	controllable bool
 	inBattle     bool
 	partyCount   int
+	hasPikachu   bool
 	starter      bool
 	labRival     bool
+}
+
+type openingPhase string
+
+const (
+	openingPhaseDone            openingPhase = "done"
+	openingPhaseBattle          openingPhase = "battle"
+	openingPhaseNickname        openingPhase = "nickname"
+	openingPhaseScript          openingPhase = "script"
+	openingPhaseBedroomUpstairs openingPhase = "bedroom-upstairs"
+	openingPhaseBedroomDownstairs openingPhase = "bedroom-downstairs"
+	openingPhaseOakGate         openingPhase = "oak-gate"
+	openingPhaseEeveeBall       openingPhase = "eevee-ball"
+	openingPhaseAwaitStarter    openingPhase = "await-starter"
+	openingPhaseRivalTrigger    openingPhase = "rival-trigger"
+	openingPhaseUnexpected      openingPhase = "unexpected"
+)
+
+func openingPhaseFor(state openingState, nickname bool) openingPhase {
+	if state.labRival {
+		if state.starter && state.hasPikachu && state.controllable && !state.inBattle {
+			return openingPhaseDone
+		}
+		if !state.starter || !state.hasPikachu {
+			return openingPhaseUnexpected
+		}
+	}
+	if state.inBattle {
+		return openingPhaseBattle
+	}
+	if nickname {
+		return openingPhaseNickname
+	}
+	if !state.controllable {
+		return openingPhaseScript
+	}
+	if !state.starter {
+		switch state.mapID {
+		case mapRedsHouse2F:
+			return openingPhaseBedroomUpstairs
+		case mapRedsHouse1F:
+			return openingPhaseBedroomDownstairs
+		case mapPalletTown:
+			return openingPhaseOakGate
+		case mapOaksLab:
+			if state.partyCount == 0 {
+				return openingPhaseEeveeBall
+			}
+			return openingPhaseAwaitStarter
+		default:
+			return openingPhaseUnexpected
+		}
+	}
+	if state.mapID == mapOaksLab {
+		return openingPhaseRivalTrigger
+	}
+	return openingPhaseUnexpected
 }
 
 func observeOpening(m *emu.Emu, romData []byte) (openingState, error) {
 	obs, err := yellowprofile.New().DecodeObservation(m, romData)
 	if err != nil {
 		return openingState{}, err
+	}
+	hasPikachu := false
+	for _, mon := range obs.Party {
+		if mon.Species == "pikachu" {
+			hasPikachu = true
+			break
+		}
 	}
 	return openingState{
 		mapID:        uint8(obs.NativeMapID),
@@ -52,6 +117,7 @@ func observeOpening(m *emu.Emu, romData []byte) (openingState, error) {
 		controllable: obs.Controllable,
 		inBattle:     obs.InBattle,
 		partyCount:   len(obs.Party),
+		hasPikachu:   hasPikachu,
 		starter:      obs.Story.Has(yellowprofile.ProgressYellowStarterReceived),
 		labRival:     obs.Story.Has(yellowprofile.ProgressYellowLabRivalResolved),
 	}, nil
@@ -78,67 +144,43 @@ func GetPikachuStarter(m *emu.Emu, romData []byte) error {
 		if err != nil {
 			return fmt.Errorf("yellow opening: observe: %w", err)
 		}
-		if state.labRival && state.controllable && !state.inBattle {
+		phase := openingPhaseFor(state, nicknamePrompt(m))
+		switch phase {
+		case openingPhaseDone:
 			return nil
-		}
-
-		if state.inBattle {
+		case openingPhaseBattle:
 			if err := confirmFirstMoveBattle(m, romData); err != nil {
-				return err
+				return fmt.Errorf("yellow opening phase %s: %w", phase, err)
 			}
-			continue
-		}
-		if nicknamePrompt(m) {
+		case openingPhaseNickname:
 			if err := declineNickname(m); err != nil {
-				return err
+				return fmt.Errorf("yellow opening phase %s: %w", phase, err)
 			}
-			continue
-		}
-		if !state.controllable {
+		case openingPhaseScript, openingPhaseAwaitStarter:
 			advanceScriptFrame(m)
-			continue
-		}
-
-		if !state.starter {
-			switch state.mapID {
-			case mapRedsHouse2F:
-				if err := takeWarp(m, romData, 7, 1, mapRedsHouse1F); err != nil {
-					return err
-				}
-			case mapRedsHouse1F:
-				if err := takeWarp(m, romData, 2, 7, mapPalletTown); err != nil {
-					return err
-				}
-			case mapPalletTown:
-				// PalletTownDefaultScript fires when the player reaches y=0.
-				// x=10 is the canonical right-hand exit used by the script.
-				if err := walkTo(m, romData, 10, 0, nil); err != nil {
-					return fmt.Errorf("yellow opening: reach Oak gate: %w", err)
-				}
-			case mapOaksLab:
-				// Once Oak's choose-mon speech releases control, examining the
-				// Eevee ball at (7,3) is the only player-owned interaction.
-				if state.partyCount == 0 {
-					if err := interactAt(m, romData, 7, 3); err != nil {
-						return fmt.Errorf("yellow opening: trigger Eevee-ball script: %w", err)
-					}
-				} else {
-					advanceScriptFrame(m)
-				}
-			default:
-				return fmt.Errorf("yellow opening: controllable before starter on unexpected map %#02x at (%d,%d)",
-					state.mapID, state.x, state.y)
+		case openingPhaseBedroomUpstairs:
+			if err := takeWarp(m, romData, 7, 1, mapRedsHouse1F); err != nil {
+				return fmt.Errorf("yellow opening phase %s: %w", phase, err)
 			}
-			continue
-		}
-
-		// Oak has given Pikachu. The lab rival challenges when the player
-		// reaches row 6; (5,6) is open floor and works from either side of Oak.
-		if !state.labRival {
-			if state.mapID != mapOaksLab {
-				return fmt.Errorf("yellow opening: starter received on unexpected map %#02x at (%d,%d)",
-					state.mapID, state.x, state.y)
+		case openingPhaseBedroomDownstairs:
+			if err := takeWarp(m, romData, 2, 7, mapPalletTown); err != nil {
+				return fmt.Errorf("yellow opening phase %s: %w", phase, err)
 			}
+		case openingPhaseOakGate:
+			// PalletTownDefaultScript fires when the player reaches y=0.
+			// x=10 is the canonical right-hand exit used by the script.
+			if err := walkTo(m, romData, 10, 0, nil); err != nil {
+				return fmt.Errorf("yellow opening phase %s: reach Oak gate: %w", phase, err)
+			}
+		case openingPhaseEeveeBall:
+			// Once Oak's choose-mon speech releases control, examining the
+			// Eevee ball at (7,3) is the only player-owned interaction.
+			if err := interactAt(m, romData, 7, 3); err != nil {
+				return fmt.Errorf("yellow opening phase %s: trigger Eevee-ball script: %w", phase, err)
+			}
+		case openingPhaseRivalTrigger:
+			// Oak has given Pikachu. The lab rival challenges when the player
+			// reaches row 6; (5,6) is open floor and works from either side of Oak.
 			if err := walkTo(m, romData, 5, 6, nil); err != nil {
 				// The rival challenge opens dialogue as the destination row is
 				// reached. A text/script takeover after real movement is the
@@ -146,9 +188,16 @@ func GetPikachuStarter(m *emu.Emu, romData []byte) error {
 				// than the stale walk error.
 				after, obsErr := observeOpening(m, romData)
 				if obsErr != nil || (after.controllable && !after.inBattle) {
-					return fmt.Errorf("yellow opening: reach rival trigger: %w", err)
+					return fmt.Errorf("yellow opening phase %s: reach rival trigger: %w", phase, err)
 				}
 			}
+		case openingPhaseUnexpected:
+			return fmt.Errorf(
+				"yellow opening phase %s: map=%#02x (%d,%d) controllable=%v battle=%v party=%d pikachu=%v starter=%v lab_rival=%v",
+				phase, state.mapID, state.x, state.y, state.controllable, state.inBattle,
+				state.partyCount, state.hasPikachu, state.starter, state.labRival)
+		default:
+			return fmt.Errorf("yellow opening: unknown phase %q", phase)
 		}
 	}
 
