@@ -379,8 +379,6 @@ func yellowWalkToWithFieldActions(m *emu.Emu, romData []byte, tx, ty int, extra 
 	return fmt.Errorf("yellow travel: exceeded local field-action replan budget toward (%d,%d)", tx, ty)
 }
 
-
-
 func yellowLiveBoulders(m *emu.Emu) []world.Movable {
 	var out []world.Movable
 	for _, sprite := range yellowLiveSprites(m) {
