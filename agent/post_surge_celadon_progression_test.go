@@ -136,3 +136,23 @@ func TestFlyReadyProgressIsProjectedFromUsableFieldCapability(t *testing.T) {
 		t.Fatal("usable Fly capability was not projected into semantic progression state")
 	}
 }
+
+
+func TestRedProgressionResumesFlyAfterHM02AcquiredAwayFromCeladon(t *testing.T) {
+	obs := postSurgeObservation(0xBC) // Route 16 Fly house: geographic Celadon-ready fact may be false mid-transaction.
+	obs.FieldCapabilities = []FieldCapability{{
+		Name:       "fly",
+		BadgeOwned: true,
+		HMOwned:    true,
+		Learned:    false,
+		Usable:     false,
+	}}
+
+	got := redProgressionObjectives(obs)
+	if !hasProgressObjective(got, redProgressFlyReady) {
+		t.Fatalf("HM02-owned partial Fly setup was not resumed: %v", got)
+	}
+	if hasProgressObjective(got, redProgressPostSurgeLavenderReached) {
+		t.Fatalf("partial Fly setup incorrectly backtracked to Lavender: %v", got)
+	}
+}
