@@ -32,6 +32,96 @@ If `POKEMON_RED_ROM` is not set, the local default is `$HOME/.config/pokepilot/p
 
 Never commit the ROM, `.sav` files, or `.state` files. The qualification command never copies the ROM into its output.
 
+## E2E speed and reliability benchmark
+
+`cmd/pokebench` is the structured measurement layer on top of the same
+`agent.Run`, semantic progression, checkpoint, and farm failure-fingerprint
+systems used by qualification. It does not parse screen text and it does not
+change controller timing to obtain measurements.
+
+A fresh baseline and candidate comparison looks like:
+
+```sh
+go run ./cmd/pokebench red \
+  --mode speedrun \
+  --from fresh \
+  --until hall-of-fame \
+  --runs 3 \
+  --seed 1 \
+  --output ./benchmarks/baseline
+
+# make the routing/model/runtime change
+
+go run ./cmd/pokebench red \
+  --mode speedrun \
+  --from fresh \
+  --until hall-of-fame \
+  --runs 3 \
+  --seed 1 \
+  --output ./benchmarks/candidate
+
+go run ./cmd/pokebench compare \
+  ./benchmarks/baseline \
+  ./benchmarks/candidate
+```
+
+The same seed sequence is used when the same `--seed` and `--runs` are
+supplied, so baseline and candidate see the same deterministic fresh-run frame
+burns. Use `--seeds 7,11,13` when an exact seed list is preferred.
+
+For a focused regression, load a preserved semantic milestone checkpoint
+instead of replaying Pallet Town onward:
+
+```sh
+go run ./cmd/pokebench red \
+  --from checkpoint:/absolute/path/to/sabrina.state \
+  --until blaine \
+  --runs 3 \
+  --output ./benchmarks/sabrina-to-blaine
+```
+
+Named checkpoints resolve against `POKEPILOT_QUALIFICATION_CORPUS` in both
+the existing `<case>/start.state` layout and the benchmark
+`checkpoints/<milestone>.state` layout. Benchmark-created milestone
+checkpoints copy the paired agent knowledge/coverage files when they exist, so
+a replay resumes with the same semantic agent memory rather than only emulator
+RAM.
+
+### Result contract
+
+Each run writes a version-1 `benchmark-result.json`. The containing directory
+includes game, fresh/checkpoint benchmark type, end milestone, commit, timestamp,
+run index, and seed. The result records:
+
+- commit, verified ROM SHA-256, mode, seed, source/checkpoint hash, and sanitized
+  model/run policy identity;
+- canonical emulator frames and emulated seconds separately from wall time;
+- semantic major-milestone splits with absolute/delta frames, wall splits,
+  party, map, badges/capabilities, and the objective crossing the split;
+- coarse frame attribution (navigation, battle, menus, healing,
+  shopping/inventory, field actions, unclassified) plus strategist/fast
+  inference wall latency;
+- planner/model call counts, p50/p95 latency, token totals, route and health;
+- optimization counters derived from existing structured objective evidence;
+- farm-compatible structured failure fingerprints, recent objective/events,
+  planner/navigation diagnostics, semantic state, and a replay checkpoint.
+
+No endpoint credential/token is persisted. Endpoint URLs are stripped of
+userinfo, query strings and fragments, and arbitrary settings pass through a
+secret-key denylist before serialization.
+
+A failed run is still written before the command returns non-zero. Its console
+summary includes the last split, failed objective, farm fingerprint, checkpoint,
+and frame count. `benchmark-summary.json` aggregates repeated runs without
+folding failures into successful completion time. `pokebench compare` makes
+completion-rate changes visible before speed deltas and reports only descriptive
+sample comparisons; it does not claim statistical significance from small N.
+
+Pokémon Red owns the milestone definitions in `red/benchmark`; the generic
+benchmark engine therefore does not need Red map/event constants. Yellow and
+future games can provide another profile using the same result/aggregation
+format.
+
 ## Qualification layers
 
 The current catalog lives in `qualification/catalog.go`.
@@ -138,7 +228,7 @@ The runner can use the default private paths above, or repository variables can 
 
 LLM configuration uses the existing `POKEPILOT_LLM_*`, `POKEPILOT_LLM_GPU_*`, and profile environment variables available to the self-hosted runner. Credentials are never written to qualification metadata.
 
-The workflow runs milestone qualification daily and runs the fresh-save Hall-of-Fame qualification weekly. The full run is intentionally a real barrier: it closes #39 only after the typed eight-badge + Hall-of-Fame postcondition passes. Failures preserve the checkpoint ring and diagnostics so the next frontier can be replayed without weakening the milestone suite.
+The workflow runs milestone qualification plus two representative checkpoint benchmarks daily and runs the structured fresh-save Hall-of-Fame benchmark weekly. The full run is intentionally a real barrier: it closes #39 only after the typed eight-badge + Hall-of-Fame postcondition passes. Failures preserve the checkpoint ring and diagnostics so the next frontier can be replayed without weakening the milestone suite.
 
 ### Artifact boundary
 

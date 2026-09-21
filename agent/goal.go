@@ -16,6 +16,8 @@ const (
 	GoalLevel
 	GoalItem
 	GoalDex
+	GoalProgress
+	GoalCapability
 )
 
 type Goal struct {
@@ -64,6 +66,10 @@ func ParseGoal(raw string) (Goal, error) {
 		return Goal{Kind: GoalLevel, Count: n}, nil
 	case "item":
 		return Goal{Kind: GoalItem, Target: strings.ToLower(arg)}, nil
+	case "progress":
+		return Goal{Kind: GoalProgress, Target: strings.ToLower(arg)}, nil
+	case "capability", "field-capability":
+		return Goal{Kind: GoalCapability, Target: strings.ToLower(arg)}, nil
 	default:
 		return Goal{}, fmt.Errorf("agent: unknown goal kind %q", kind)
 	}
@@ -116,7 +122,7 @@ func PlannerGoal(raw string) (Goal, bool, error) {
 		return Goal{}, false, nil
 	}
 	switch strings.ToLower(strings.TrimSpace(kind)) {
-	case "badges", "badge-count", "reach", "place", "level", "item":
+	case "badges", "badge-count", "reach", "place", "level", "item", "progress", "capability", "field-capability":
 		g, err := ParseGoal(raw)
 		return g, true, err
 	default:
@@ -182,6 +188,17 @@ func EvaluateGoal(g Goal, obs Observation) GoalStatus {
 			}
 		}
 		return GoalStatus{Summary: fmt.Sprintf("acquire %s", g.Target), Target: 1}
+	case GoalProgress:
+		complete := obs.Story.Has(ProgressID(g.Target))
+		return GoalStatus{Complete: complete, Summary: fmt.Sprintf("progress %s", g.Target), Current: boolInt(complete), Target: 1}
+	case GoalCapability:
+		for _, capability := range obs.FieldCapabilities {
+			if strings.EqualFold(string(capability.Name), g.Target) {
+				complete := capability.HMOwned || capability.Learned || capability.Usable
+				return GoalStatus{Complete: complete, Summary: fmt.Sprintf("capability %s", g.Target), Current: boolInt(complete), Target: 1}
+			}
+		}
+		return GoalStatus{Summary: fmt.Sprintf("acquire capability %s", g.Target), Target: 1}
 	default:
 		return GoalStatus{Summary: "unknown goal"}
 	}
