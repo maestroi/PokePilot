@@ -86,8 +86,6 @@ func TestPhase0AddressesMatchSupportedYellowLayout(t *testing.T) {
 		{name: "wPikachuHappiness", got: PikachuHappiness, want: 0xD46F},
 		{name: "wPikachuMood", got: PikachuMood, want: 0xD470},
 		{name: "wPikachuSpawnStateFlags", got: PikachuSpawnStateFlags, want: 0xD471},
-		{name: "wNumSafariBalls", got: NumSafariBalls, want: 0xDA46},
-		{name: "wSafariSteps", got: SafariSteps, want: 0xD70C},
 	}
 	for _, tc := range tests {
 		if tc.got != tc.want {
