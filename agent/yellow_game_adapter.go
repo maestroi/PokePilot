@@ -54,6 +54,12 @@ func (a *yellowObjectiveAdapter) NormalizeBoundary() error {
 func (a *yellowObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error) {
 	result := ObjectiveResult{Objective: o}
 	switch o.Kind {
+	case KindTrainer:
+		if err := yellowcontroller.ChallengeTrainer(a.m, a.romData, o.X, o.Y); err != nil {
+			return result, fmt.Errorf("agent: %s: %w", o, err)
+		}
+		result.Battle = &BattleEvidence{Result: "won", Won: true}
+		return result, nil
 	case KindTalk:
 		presses, err := yellowcontroller.TalkAt(a.m, a.romData, o.X, o.Y)
 		if err != nil {
