@@ -214,7 +214,7 @@ func TestCompareTextMakesReliabilityRegressionObvious(t *testing.T) {
 
 func TestSanitizeSettingsAndEndpointExcludeSecrets(t *testing.T) {
 	got := SanitizeSettings(map[string]string{
-		"feature":   "on",
+		"feature":    "on",
 		"api_token":  "secret",
 		"max_tokens": "512",
 		"endpoint":   "https://user:pass@example.test/v1?api_key=hidden",
