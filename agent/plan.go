@@ -38,10 +38,10 @@ var ErrPlanStepUnresolved = errors.New("agent: strategist: plan step does not re
 // sentence-resolution fallback. Boundary is additive checkpoint metadata, so
 // older checkpoints decode with the conservative false value.
 type Plan struct {
-	Goal     string         `json:"goal,omitempty"`
-	Steps    []string       `json:"steps,omitempty"`
-	StepKeys []ObjectiveKey `json:"step_keys,omitempty"`
-	Step     int            `json:"step,omitempty"`
+	Goal        string         `json:"goal,omitempty"`
+	Steps       []string       `json:"steps,omitempty"`
+	StepKeys    []ObjectiveKey `json:"step_keys,omitempty"`
+	Step        int            `json:"step,omitempty"`
 	Round       int            `json:"round,omitempty"`
 	Boundary    bool           `json:"boundary,omitempty"`
 	TailDropped int            `json:"tail_dropped,omitempty"`
@@ -217,7 +217,6 @@ func resolvePlanStep(plan *Plan, offered []Objective) (Objective, int, bool) {
 	return Objective{}, skipped, false
 }
 
-
 // objectiveEndsStrategicLeg identifies actions after which the objective menu
 // can materially change. Progress/gym/starter transactions commit durable
 // story state. Travel is a boundary only when it enters an unvisited adjacent
@@ -240,6 +239,7 @@ func objectiveEndsStrategicLeg(o Objective) bool {
 //   - exactly one currently offered progression transaction is safe to run
 //     without another model call;
 //   - exactly one unvisited adjacent destination can continue the same leg.
+//
 // Fight/flee variants for that one destination are returned together so the
 // cheap chooser can decide encounter policy without waking the strategist.
 // Any real branch is left to the strategist.
