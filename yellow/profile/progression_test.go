@@ -182,6 +182,34 @@ func TestYellowSharedKantoProgressComesFromYellowState(t *testing.T) {
 	}
 }
 
+func TestYellowProjectsSharedLeagueRoomFacts(t *testing.T) {
+	var mem fakeMemory
+	for _, event := range []yellowEvent{
+		eventAutowalkedIntoLorelei,
+		eventBeatLorelei,
+		eventBeatBruno,
+		eventBeatAgatha,
+		eventBeatLance,
+	} {
+		setYellowEvent(&mem, event)
+	}
+	story := projectYellowStory(&mem, indigoPlateauMap)
+	for _, id := range []game.ProgressID{
+		gen1.ProgressLeagueChallengeStarted,
+		gen1.ProgressLeagueLoreleiDefeated,
+		gen1.ProgressLeagueBrunoDefeated,
+		gen1.ProgressLeagueAgathaDefeated,
+		gen1.ProgressLeagueLanceDefeated,
+	} {
+		if !story.Has(id) {
+			t.Errorf("shared League progress %q not complete", id)
+		}
+	}
+	if story.Has(gen1.ProgressLeagueChampionDefeated) {
+		t.Fatal("Champion progress completed before Champion event")
+	}
+}
+
 func TestYellowMainStoryUsesDurableElite4Flag(t *testing.T) {
 	var mem fakeMemory
 	mem[sym.Elite4Flags] = elite4CompletedMask
