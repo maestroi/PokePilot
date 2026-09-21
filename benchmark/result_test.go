@@ -14,25 +14,25 @@ import (
 func TestBuildCapturesSplitsTimingCountersAndModelCost(t *testing.T) {
 	start := time.Unix(100, 0)
 	res := agent.Result{
-		Stop: agent.StopDone,
+		Stop:       agent.StopDone,
 		StartFrame: 100,
 		FinalFrame: 300,
-		Initial: agent.Observation{MapName: "PALLET_TOWN", Controllable: true},
-		Final: agent.Observation{MapName: "CERULEAN_CITY", Badges: []string{"Boulder", "Cascade"}},
+		Initial:    agent.Observation{MapName: "PALLET_TOWN", Controllable: true},
+		Final:      agent.Observation{MapName: "CERULEAN_CITY", Badges: []string{"Boulder", "Cascade"}},
 		GoalStatus: &agent.GoalStatus{Complete: true},
-		Completed: []agent.Objective{{Kind: agent.KindGoTo}, {Kind: agent.KindGym}},
-		Planning: agent.PlanningStats{StrategicCalls: 2, FastCalls: 1, ReplanReasons: map[string]int{"initial": 1, "objective_failed": 1}},
+		Completed:  []agent.Objective{{Kind: agent.KindGoTo}, {Kind: agent.KindGym}},
+		Planning:   agent.PlanningStats{StrategicCalls: 2, FastCalls: 1, ReplanReasons: map[string]int{"initial": 1, "objective_failed": 1}},
 	}
 	first := agent.ObjectiveResult{
 		Objective: agent.Objective{Kind: agent.KindGoTo, Place: "pewter city"},
-		Outcome: agent.OutcomeCompleted,
-		Final: agent.Observation{MapName: "PEWTER_CITY", Badges: []string{"Boulder"}},
-		Travel: &agent.TravelEvidence{Battles: 2, Flees: 1, Replans: 1},
+		Outcome:   agent.OutcomeCompleted,
+		Final:     agent.Observation{MapName: "PEWTER_CITY", Badges: []string{"Boulder"}},
+		Travel:    &agent.TravelEvidence{Battles: 2, Flees: 1, Replans: 1},
 	}
 	second := agent.ObjectiveResult{
 		Objective: agent.Objective{Kind: agent.KindGym},
-		Outcome: agent.OutcomeCompleted,
-		Final: res.Final,
+		Outcome:   agent.OutcomeCompleted,
+		Final:     res.Final,
 	}
 	res.Outcomes = []agent.ObjectiveResult{first, second}
 	res.OutcomeTimings = []agent.ObjectiveTiming{
@@ -85,7 +85,7 @@ func TestCheckpointSourceDoesNotPretendEarlierMilestonesWereCrossed(t *testing.T
 	obs := agent.Observation{Badges: []string{"Boulder", "Cascade", "Thunder", "Rainbow", "Soul", "Marsh"}}
 	res := agent.Result{
 		StartFrame: 500, FinalFrame: 700, Initial: obs,
-		Outcomes: []agent.ObjectiveResult{{Objective: agent.Objective{Kind: agent.KindGym}, Outcome: agent.OutcomeCompleted, Final: agent.Observation{Badges: append(append([]string(nil), obs.Badges...), "Volcano")}}},
+		Outcomes:       []agent.ObjectiveResult{{Objective: agent.Objective{Kind: agent.KindGym}, Outcome: agent.OutcomeCompleted, Final: agent.Observation{Badges: append(append([]string(nil), obs.Badges...), "Volcano")}}},
 		OutcomeTimings: []agent.ObjectiveTiming{{Frame: 700, Round: 1, WallElapsed: time.Second}},
 	}
 	profile := Profile{Milestones: []MilestoneDefinition{
@@ -102,20 +102,20 @@ func TestBuildFailureUsesFarmFingerprintAndHistory(t *testing.T) {
 	now := time.Unix(200, 0)
 	res := agent.Result{
 		Stop: agent.StopFailed, StartFrame: 10, FinalFrame: 40,
-		Initial: agent.Observation{Location: "route 1", Controllable: true},
-		Final: agent.Observation{Location: "route 1", MapName: "ROUTE_1", X: 3, Y: 4, Controllable: true},
-		Err: errors.New("outer: controller blocked"),
+		Initial:  agent.Observation{Location: "route 1", Controllable: true},
+		Final:    agent.Observation{Location: "route 1", MapName: "ROUTE_1", X: 3, Y: 4, Controllable: true},
+		Err:      errors.New("outer: controller blocked"),
 		Planning: agent.PlanningStats{ReplanReasons: map[string]int{"objective_failed": 2}},
 	}
 	res.Outcomes = []agent.ObjectiveResult{{
 		Objective: agent.Objective{Kind: agent.KindGoTo, Place: "viridian city"},
-		Outcome: agent.OutcomeBlocked, Cause: agent.FailureCauseID("route_blocked"),
+		Outcome:   agent.OutcomeBlocked, Cause: agent.FailureCauseID("route_blocked"),
 		Summary: "blocked at route 1", Final: res.Final, Terminal: true,
 	}}
 	res.OutcomeTimings = []agent.ObjectiveTiming{{Frame: 40, Round: 3, WallElapsed: 2 * time.Second}}
 	result := Build(BuildInput{
 		RunID: "failed", Commit: "abc", Game: "pokemon-red", ROMSHA256: "hash", Mode: "speedrun",
-		EndCondition: "brock", AgentResult: res, StartedAt: now, FinishedAt: now.Add(2*time.Second),
+		EndCondition: "brock", AgentResult: res, StartedAt: now, FinishedAt: now.Add(2 * time.Second),
 	})
 	if len(result.Failures) != 1 {
 		t.Fatalf("failures = %+v", result.Failures)
@@ -155,10 +155,16 @@ func TestMaterializeCheckpointsCopiesStateAndAgentMemory(t *testing.T) {
 	dir := t.TempDir()
 	sourceDir := filepath.Join(dir, "ring")
 	outputDir := filepath.Join(dir, "run")
-	if err := os.MkdirAll(sourceDir, 0o755); err != nil { t.Fatal(err) }
+	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	state := filepath.Join(sourceDir, "round-002-frame-0000000100-next.state")
-	if err := os.WriteFile(state, []byte("state"), 0o600); err != nil { t.Fatal(err) }
-	if err := os.WriteFile(strings.TrimSuffix(state, ".state")+".knowledge-v1.json", []byte("{}"), 0o600); err != nil { t.Fatal(err) }
+	if err := os.WriteFile(state, []byte("state"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(strings.TrimSuffix(state, ".state")+".knowledge-v1.json", []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	result := Result{Milestones: []Split{{ID: "brock", Round: 1}}}
 	if err := MaterializeCheckpoints(&result, sourceDir, outputDir, ""); err != nil {
 		t.Fatal(err)
@@ -199,9 +205,9 @@ func TestCompareTextMakesReliabilityRegressionObvious(t *testing.T) {
 
 func TestSanitizeSettingsAndEndpointExcludeSecrets(t *testing.T) {
 	got := SanitizeSettings(map[string]string{
-		"feature": "on",
+		"feature":   "on",
 		"api_token": "secret",
-		"endpoint": "https://user:pass@example.test/v1?api_key=hidden",
+		"endpoint":  "https://user:pass@example.test/v1?api_key=hidden",
 	})
 	if got["feature"] != "on" {
 		t.Fatalf("feature lost: %+v", got)
