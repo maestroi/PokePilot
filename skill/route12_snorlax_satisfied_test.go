@@ -46,6 +46,34 @@ func TestSatisfiedRoute12SnorlaxDropsActionPivot(t *testing.T) {
 	}
 }
 
+// TestSatisfiedRocketB1FTrainerDoorDropsActionPivot is the regression for farm
+// runs stuck bouncing cb<->c7<->c8 forever after Rocket Hideout B1F's door
+// guard (Rocket5) was already beaten: red:rocket_b1f_trainer_door was added to
+// redRouteTransitionForEdge (#587) but never to redRouteTransitionEffectComplete,
+// so both of B1F's gated exits (Game Corner and the B2F stairs) stayed
+// annotated as an unplanned boundary forever. FindRoute stops expanding at the
+// FIRST such boundary in edge order regardless of whether it leads toward the
+// destination, so it always offered the B2F stairs into a dead-end floor
+// instead of the direct Game Corner exit, and GoTo looped until the
+// navigation guard fired (measured on run-2fjudkv8c4i4y2147qkbldx57h).
+func TestSatisfiedRocketB1FTrainerDoorDropsActionPivot(t *testing.T) {
+	edge := world.Edge{Kind: world.EdgeWarp, From: rocketHideoutB1FMap, To: gameCornerMap, WarpX: rocketB1FGameCornerWarpX, WarpY: rocketB1FGameCornerWarpY}
+	transition, ok := redRouteTransitionForEdge(edge)
+	if !ok || transition.ID != "red:rocket_b1f_trainer_door" {
+		t.Fatalf("B1F -> Game Corner transition = %+v ok=%v, want red:rocket_b1f_trainer_door", transition, ok)
+	}
+
+	mem := new(state.Mem)
+	if redRouteTransitionEffectComplete(mem, transition) {
+		t.Fatal("unbeaten Rocket5 must keep the action pivot")
+	}
+
+	setEventFlag(mem, eventBeatRocketB1FTrainer4)
+	if !redRouteTransitionEffectComplete(mem, transition) {
+		t.Fatal("beaten Rocket5 must drop the action pivot so ordinary port reachability applies")
+	}
+}
+
 // TestSatisfiedRoute12SnorlaxCatchHabitatLeavesViaRoute14 is the catch-shaped
 // sibling of TestRoute12SnorlaxRequiresReachablePort for
 // run-29f4dc81z9h2f1sv5v1ggk40xi (triage:d8e00d285ab9c820, farm-issue:1241).
