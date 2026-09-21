@@ -289,7 +289,6 @@ func (a *yellowObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, err
 	}
 }
 
-
 func yellowFishingRodID(id ItemID) (uint8, bool) {
 	switch strings.ToLower(strings.TrimSpace(string(id))) {
 	case "old rod":
