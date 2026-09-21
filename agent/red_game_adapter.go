@@ -14,8 +14,9 @@ import (
 const objectiveFrameBudget uint64 = 500_000
 
 type redObjectiveAdapter struct {
-	m       *emu.Emu
-	romData []byte
+	m             *emu.Emu
+	romData       []byte
+	routePriority RoutePriority
 	// gameID is set only on instances bound at registration. Execution helpers
 	// build from an emulator and ROM and never need it: the caller already
 	// selected this adapter through the per-game registry lookup.
@@ -23,7 +24,18 @@ type redObjectiveAdapter struct {
 }
 
 func newRedObjectiveAdapter(m *emu.Emu, romData []byte) *redObjectiveAdapter {
-	return &redObjectiveAdapter{m: m, romData: romData}
+	return newRedObjectiveAdapterWithRoutePriority(m, romData, RoutePriorityConservative)
+}
+
+func newRedObjectiveAdapterWithRoutePriority(m *emu.Emu, romData []byte, priority RoutePriority) *redObjectiveAdapter {
+	return &redObjectiveAdapter{m: m, romData: romData, routePriority: priority}
+}
+
+func redTravelCostPolicy(priority RoutePriority) skill.TravelCostPolicy {
+	if priority == RoutePriorityFastest {
+		return skill.TravelCostFastest
+	}
+	return skill.TravelCostConservative
 }
 
 func redFieldMoveForCapability(capability CapabilityID) (skill.FieldMove, bool) {
@@ -142,7 +154,7 @@ func (a *redObjectiveAdapter) NormalizeBoundary() error {
 }
 
 func (a *redObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error) {
-	result, err := executeRedOwned(a.m, a.romData, o)
+	result, err := executeRedOwned(a.m, a.romData, o, a.routePriority)
 	return normalizeRedOwnedExecutionResult(o, result, err)
 }
 
