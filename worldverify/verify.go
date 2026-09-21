@@ -404,6 +404,14 @@ func validateExecution(report *Report, edge Edge, from, to Map, fromComponents, 
 	}
 
 	if len(execution.Paths) == 0 {
+		// A structurally present edge with a proven dead source/entry port is
+		// already inactive and cannot be selected by component-aware routing.
+		// Executability becomes a hard error only when the graph advertises a
+		// usable port that the local navigator cannot realize.
+		if (edge.Exit.Known && len(edge.Exit.Components) == 0) ||
+			(edge.Entry.Known && len(edge.Entry.Components) == 0) {
+			return
+		}
 		report.add(SeverityError, "edge_not_executable", fmt.Sprintf("edge %q has no statically executable local crossing", edge.ID), edge.From, edge.ID)
 		return
 	}
