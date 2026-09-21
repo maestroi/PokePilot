@@ -53,10 +53,10 @@ var yellowStaticSites = []yellowStaticSite{
 }
 
 type yellowSnorlaxSite struct {
-	name      string
-	mapID     uint8
-	objectX   uint8
-	objectY   uint8
+	name       string
+	mapID      uint8
+	objectX    uint8
+	objectY    uint8
 	fightEvent uint16
 	beatEvent  uint16
 }
@@ -654,7 +654,6 @@ func CaptureStatic(m *emu.Emu, romData []byte, species uint8) (CaptureResult, er
 	}
 	return result, fmt.Errorf("%w: %s after %d rollback-safe phases", ErrYellowStaticExhausted, site.name, yellowStaticRetryCount)
 }
-
 
 func chooseYellowWaterPair(romData []byte, mapID uint8, sx, sy int) (yellowHuntCell, yellowHuntCell, error) {
 	cells, err := yellowrom.WaterEncounterCells(romData, mapID)
