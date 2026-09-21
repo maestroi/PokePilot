@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	gameruntime "github.com/maestroi/pokepilot/game"
+	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
@@ -88,6 +89,23 @@ func TestSilphCo1FInaccessibleStairWarpIsPermanentGate(t *testing.T) {
 	elevator := world.Edge{Kind: world.EdgeWarp, From: silphCo1FMap, To: 0xec, WarpX: 20, WarpY: 0}
 	if got, ok := redRouteTransitionForEdge(elevator); ok && got.ID == "red:silph_co_1f_inaccessible_stair_warp" {
 		t.Fatalf("real Silph Co elevator warp was suppressed: %+v", got)
+	}
+}
+
+func TestWarpAvoidanceSkipsInaccessibleWarps(t *testing.T) {
+	h := rom.MapHeader{
+		ID: silphCo11FMap,
+		Warps: []rom.Warp{
+			{X: silph11FInaccessibleWarpX, Y: silph11FInaccessibleWarpY, DestMap: 0xff, DestWarpID: 10},
+			{X: 3, Y: 2, DestMap: silphCo7FMap, DestWarpID: 4},
+		},
+	}
+	avoid := warpAvoidance(h, 10, 6, nil)
+	if avoid[[2]int{int(silph11FInaccessibleWarpX), int(silph11FInaccessibleWarpY)}] {
+		t.Fatal("inaccessible Silph 11F warp was included in warpAvoidance")
+	}
+	if !avoid[[2]int{3, 2}] {
+		t.Fatal("real Silph 11F->7F pad was missing from warpAvoidance")
 	}
 }
 

@@ -39,6 +39,12 @@ const (
 	silphCo1FInaccessibleStairWarpX uint8 = 16
 	silphCo1FInaccessibleStairWarpY uint8 = 10
 
+	// Silph Co 11F declares a LAST_MAP warp at (5,5) marked inaccessible. It
+	// does not become a graph edge, but warpAvoidance would still treat it as a
+	// door and block the only walk around the Beauty NPC to the president.
+	silph11FInaccessibleWarpX uint8 = 5
+	silph11FInaccessibleWarpY uint8 = 5
+
 	route23VictoryRoadWarpX     uint8 = 4
 	route23VictoryRoadWarpY     uint8 = 31
 	route23VictoryRoadApproachY uint8 = 32
@@ -66,6 +72,22 @@ func addAuditedRedRouteCapabilities(mem *state.Mem, caps gameruntime.CapabilityS
 	if state.HasEvent(mem, eventBeatRoute12Snorlax) || state.HasEvent(mem, eventBeatRoute16Snorlax) {
 		caps[capCanClearSnorlax] = true
 	}
+}
+
+// redInaccessibleWarpTile reports ROM warp-table entries the pret decomp marks
+// "; inaccessible". They remain in the raw header for DestWarpID indexing, but
+// must not be planned as traversable edges or avoided as live doors: stepping
+// on them never fires a warp.
+func redInaccessibleWarpTile(mapID, x, y uint8) bool {
+	switch {
+	case mapID == celadonCityMap && x == celadonInaccessibleMartWarpX && y == celadonInaccessibleMartWarpY:
+		return true
+	case mapID == silphCo1FMap && x == silphCo1FInaccessibleStairWarpX && y == silphCo1FInaccessibleStairWarpY:
+		return true
+	case mapID == silphCo11FMap && x == silph11FInaccessibleWarpX && y == silph11FInaccessibleWarpY:
+		return true
+	}
+	return false
 }
 
 func redAuditedRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, bool) {
