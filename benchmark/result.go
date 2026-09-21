@@ -129,6 +129,28 @@ type TimingBucket struct {
 	Count       int64   `json:"count,omitempty"`
 }
 
+type DecisionCall struct {
+	Kind             string
+	Duration         time.Duration
+	PromptTokens     int
+	CompletionTokens int
+	Backend          string
+	Model            string
+	Err              error
+}
+
+type DecisionStats struct {
+	Calls            int     `json:"calls,omitempty"`
+	Failures         int     `json:"failures,omitempty"`
+	TotalLatencySec  float64 `json:"total_latency_seconds,omitempty"`
+	P50LatencySec    float64 `json:"p50_latency_seconds,omitempty"`
+	P95LatencySec    float64 `json:"p95_latency_seconds,omitempty"`
+	PromptTokens     int     `json:"prompt_tokens,omitempty"`
+	CompletionTokens int     `json:"completion_tokens,omitempty"`
+	Backend          string  `json:"backend,omitempty"`
+	Model            string  `json:"model,omitempty"`
+}
+
 type ModelStats struct {
 	Calls            int             `json:"calls"`
 	StrategistCalls  int             `json:"strategist_calls,omitempty"`
@@ -215,6 +237,7 @@ type BuildInput struct {
 	Profile       Profile
 	AgentResult   agent.Result
 	Calls         []agent.LLMCall
+	DecisionCalls []DecisionCall
 	Route         agent.LLMRoute
 	Health        agent.LLMHealth
 	StartedAt     time.Time
@@ -243,9 +266,18 @@ func Build(in BuildInput) Result {
 		Frames:          frames,
 		EmulatedSeconds: float64(frames) / farm.GameBoyFramesPerSecond,
 		WallSeconds:     in.FinishedAt.Sub(in.StartedAt).Seconds(),
-		Timing:          timing(res, in.Calls),
+		Timing:          timing(res, in.Calls, in.DecisionCalls),
 		Counters:        counters(res),
 		Model:           modelStats(res, in.Calls, in.Route, in.Health),
+		Decision:        decisionStats(in.DecisionCalls),
+	}
+	if len(in.DecisionCalls) > 0 {
+		out.Counters["typed_decision_calls"] = int64(len(in.DecisionCalls))
+		for _, call := range in.DecisionCalls {
+			if call.Err != nil {
+				out.Counters["typed_decision_failures"]++
+			}
+		}
 	}
 	if res.Stop == agent.StopDone && res.GoalStatus != nil && res.GoalStatus.Complete {
 		out.Outcome = "completed"
@@ -333,7 +365,7 @@ func splitFromObservation(id, name string, round int, frame, frameDelta uint64, 
 	return s
 }
 
-func timing(res agent.Result, calls []agent.LLMCall) map[string]TimingBucket {
+func timing(res agent.Result, calls []agent.LLMCall, decisionCalls []DecisionCall) map[string]TimingBucket {
 	out := map[string]TimingBucket{}
 	prev := res.StartFrame
 	for i, result := range res.Outcomes {
@@ -362,6 +394,12 @@ func timing(res agent.Result, calls []agent.LLMCall) map[string]TimingBucket {
 		bucket.WallSeconds += call.Duration.Seconds()
 		bucket.Count++
 		out[name] = bucket
+	}
+	for _, call := range decisionCalls {
+		bucket := out["typed_decision_inference"]
+		bucket.WallSeconds += call.Duration.Seconds()
+		bucket.Count++
+		out["typed_decision_inference"] = bucket
 	}
 	if res.Planning.StrategicCalls > 0 {
 		bucket := out["planner_replanning"]
@@ -471,6 +509,30 @@ func modelStats(res agent.Result, calls []agent.LLMCall, route agent.LLMRoute, h
 		}
 		if call.Err != nil {
 			stats.Failures++
+		}
+	}
+	sort.Float64s(latencies)
+	stats.P50LatencySec = percentile(latencies, 0.50)
+	stats.P95LatencySec = percentile(latencies, 0.95)
+	return stats
+}
+
+func decisionStats(calls []DecisionCall) DecisionStats {
+	latencies := make([]float64, 0, len(calls))
+	stats := DecisionStats{Calls: len(calls)}
+	for _, call := range calls {
+		latencies = append(latencies, call.Duration.Seconds())
+		stats.TotalLatencySec += call.Duration.Seconds()
+		stats.PromptTokens += call.PromptTokens
+		stats.CompletionTokens += call.CompletionTokens
+		if call.Err != nil {
+			stats.Failures++
+		}
+		if call.Backend != "" {
+			stats.Backend = call.Backend
+		}
+		if call.Model != "" {
+			stats.Model = call.Model
 		}
 	}
 	sort.Float64s(latencies)
