@@ -218,6 +218,9 @@ func FindRoutePlanAtDestinationWithCapabilities(
 	if err == nil {
 		return routeSteps(route, executable), nil
 	}
+	if errors.Is(err, ErrRouteReplanRequired) {
+		return routeSteps(route, executable), err
+	}
 	if !errors.Is(err, ErrNoRoute) || len(denied) == 0 {
 		return nil, err
 	}
@@ -229,7 +232,7 @@ func FindRoutePlanAtDestinationWithCapabilities(
 	// geometry cannot reach the annotated edge and the missing capability is
 	// exactly what would have allowed the component pivot.
 	geometric, geometricErr := findRouteAtDestinationAllowingSemantic(g, from, to, x, y, tx, ty, blockedHere, allSkip, allRelax)
-	if geometricErr != nil {
+	if geometricErr != nil && !errors.Is(geometricErr, ErrRouteReplanRequired) {
 		return nil, err
 	}
 	var blockages []gameruntime.TransitionBlockage
