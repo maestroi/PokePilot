@@ -366,7 +366,7 @@ func findExactWeightedRoute(
 			}
 
 			nextEntry := g.entryComps[edge]
-			boundary := view.relaxLanding[edge] && !cur.occupied.has(edge.To)
+			boundary := g.componentAware && view.relaxLanding[edge] && !cur.occupied.has(edge.To)
 
 			next := weightedRouteNode{
 				mapID:    edge.To,
