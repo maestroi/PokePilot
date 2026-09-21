@@ -61,6 +61,15 @@ type MapReachability struct {
 	Reason string            `json:"reason,omitempty"`
 }
 
+// MapParseDiagnostic records a provider-declared map parse omission that was
+// explicitly allowed during graph construction. It remains visible to audit
+// tooling instead of disappearing from the graph silently.
+type MapParseDiagnostic struct {
+	Map    MapID  `json:"map"`
+	Error  string `json:"error"`
+	Reason string `json:"reason,omitempty"`
+}
+
 // Map describes the geometry relevant to verification. Components are stable
 // positive ids for mutually reachable standing regions. GeometryKnown=false
 // means the adapter could not prove collision for this map and the verifier
@@ -163,5 +172,6 @@ type Snapshot struct {
 	Edges           []Edge           `json:"edges"`
 	StartMaps       []MapID          `json:"start_maps,omitempty"`
 	RequiredMaps    []MapID          `json:"required_maps,omitempty"`
-	MapExpectations []MapExpectation `json:"map_expectations,omitempty"`
+	MapExpectations    []MapExpectation    `json:"map_expectations,omitempty"`
+	MapParseDiagnostics []MapParseDiagnostic `json:"map_parse_diagnostics,omitempty"`
 }
