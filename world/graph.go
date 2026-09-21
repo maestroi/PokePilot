@@ -2,6 +2,8 @@ package world
 
 import (
 	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/maestroi/pokepilot/worldmodel"
 )
@@ -35,6 +37,73 @@ const (
 
 type dim struct{ w, h int }
 
+// MapParseFailure records one provider ParseMap failure. Expected is only true
+// when the provider explicitly classifies the map as deliberately unsupported
+// or unused through worldmodel.MapParseFailureClassifier.
+type MapParseFailure struct {
+	MapID    uint8
+	Err      error
+	Expected bool
+	Reason   string
+}
+
+func (f MapParseFailure) Error() string {
+	message := fmt.Sprintf("map 0x%02x: %v", f.MapID, f.Err)
+	if f.Expected {
+		if f.Reason != "" {
+			return message + " (expected: " + f.Reason + ")"
+		}
+		return message + " (expected)"
+	}
+	return message
+}
+
+// GraphBuildError aggregates map parse failures so adapter/parser regressions
+// are reported together instead of surfacing later as mysterious route gaps.
+type GraphBuildError struct {
+	ParseFailures   []MapParseFailure
+	NoParseableMaps bool
+}
+
+func (e *GraphBuildError) Error() string {
+	if e == nil {
+		return ""
+	}
+	failures := append([]MapParseFailure(nil), e.ParseFailures...)
+	sort.Slice(failures, func(i, j int) bool { return failures[i].MapID < failures[j].MapID })
+	unexpected, expected := 0, 0
+	parts := make([]string, 0, len(failures))
+	for _, failure := range failures {
+		if failure.Expected {
+			expected++
+		} else {
+			unexpected++
+		}
+		parts = append(parts, failure.Error())
+	}
+	prefix := fmt.Sprintf("map provider parse failures: %d unexpected, %d expected", unexpected, expected)
+	if e.NoParseableMaps {
+		prefix = "map provider returned no parseable maps; " + prefix
+	}
+	if len(parts) == 0 {
+		return prefix
+	}
+	return prefix + ": " + strings.Join(parts, "; ")
+}
+
+func (e *GraphBuildError) Unwrap() []error {
+	if e == nil {
+		return nil
+	}
+	out := make([]error, 0, len(e.ParseFailures))
+	for _, failure := range e.ParseFailures {
+		if failure.Err != nil {
+			out = append(out, fmt.Errorf("map 0x%02x: %w", failure.MapID, failure.Err))
+		}
+	}
+	return out
+}
+
 type Graph struct {
 	Edges map[uint8][]Edge
 
@@ -47,6 +116,7 @@ type Graph struct {
 	connections    map[Edge]worldmodel.Connection
 	reachable      map[uint8]map[int][]int
 	provider       worldmodel.MapHeaderProvider
+	parseFailures  []MapParseFailure
 }
 
 // BuildGraph builds a map-level graph from an adapter-supplied provider. A
@@ -80,15 +150,35 @@ func graphProvider(source any) (worldmodel.MapHeaderProvider, error) {
 
 func buildGraph(provider worldmodel.MapHeaderProvider) (*Graph, error) {
 	headers := make(map[uint8]worldmodel.MapHeader)
+	var parseFailures []MapParseFailure
+	classifier, _ := provider.(worldmodel.MapParseFailureClassifier)
 	for _, id := range provider.MapIDs() {
 		h, err := provider.ParseMap(id)
 		if err != nil {
+			failure := MapParseFailure{MapID: id, Err: err}
+			if classifier != nil {
+				if reason, ok := classifier.ExpectedMapParseFailure(id, err); ok {
+					failure.Expected = true
+					failure.Reason = reason
+				}
+			}
+			parseFailures = append(parseFailures, failure)
 			continue
 		}
 		headers[id] = h
 	}
+	unexpected := false
+	for _, failure := range parseFailures {
+		if !failure.Expected {
+			unexpected = true
+			break
+		}
+	}
+	if unexpected {
+		return nil, &GraphBuildError{ParseFailures: parseFailures}
+	}
 	if len(headers) == 0 {
-		return nil, fmt.Errorf("map provider returned no parseable maps")
+		return nil, &GraphBuildError{ParseFailures: parseFailures, NoParseableMaps: true}
 	}
 
 	warpTo := make(map[uint8]map[uint8]bool)
@@ -122,6 +212,7 @@ func buildGraph(provider worldmodel.MapHeaderProvider) (*Graph, error) {
 		connections:    make(map[Edge]worldmodel.Connection),
 		reachable:      make(map[uint8]map[int][]int),
 		provider:       provider,
+		parseFailures:  append([]MapParseFailure(nil), parseFailures...),
 	}
 	for id, h := range headers {
 		g.Edges[id] = nil
@@ -217,6 +308,16 @@ func buildGraph(provider worldmodel.MapHeaderProvider) (*Graph, error) {
 		}
 	}
 	return g, nil
+}
+
+// ParseFailures returns explicitly classified parse failures retained on a
+// successfully built graph. Unexpected failures never reach this point because
+// BuildGraph returns GraphBuildError instead.
+func (g *Graph) ParseFailures() []MapParseFailure {
+	if g == nil {
+		return nil
+	}
+	return append([]MapParseFailure(nil), g.parseFailures...)
 }
 
 // Components is the exported form of components, for callers outside this
