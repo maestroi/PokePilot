@@ -17,7 +17,7 @@ const (
 // DestinationArea is an inclusive rectangular set of acceptable standing
 // tiles. It is intentionally comparable so Destination remains usable as a
 // map key and in equality-based regression tests.
-type DestinationArea struct {
+type DestinationBounds struct {
 	MinX, MinY uint8
 	MaxX, MaxY uint8
 }
@@ -30,7 +30,7 @@ type Destination struct {
 	Map  uint8
 	X, Y uint8
 	Kind DestinationKind
-	Area DestinationArea
+	Area DestinationBounds
 }
 
 func ExactDestination(mapID, x, y uint8) Destination {
@@ -45,7 +45,7 @@ func AreaDestination(mapID, minX, minY, maxX, maxY uint8) Destination {
 	return Destination{
 		Map:  mapID,
 		Kind: DestinationArea,
-		Area: DestinationArea{MinX: minX, MinY: minY, MaxX: maxX, MaxY: maxY},
+		Area: DestinationBounds{MinX: minX, MinY: minY, MaxX: maxX, MaxY: maxY},
 	}
 }
 
