@@ -123,7 +123,6 @@ func (a *yellowObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, err
 	}
 }
 
-
 func yellowMartItemID(romData []byte, mapID uint8, id ItemID) (uint8, bool) {
 	items, err := yellowrom.MartItems(romData, mapID)
 	if err != nil {
