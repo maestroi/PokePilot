@@ -26,10 +26,10 @@ var (
 type BattleOutcome string
 
 const (
-	BattleOutcomeWon     BattleOutcome = "won"
-	BattleOutcomeLost    BattleOutcome = "lost"
-	BattleOutcomeCaught  BattleOutcome = "caught"
-	BattleOutcomeEnded   BattleOutcome = "ended"
+	BattleOutcomeWon    BattleOutcome = "won"
+	BattleOutcomeLost   BattleOutcome = "lost"
+	BattleOutcomeCaught BattleOutcome = "caught"
+	BattleOutcomeEnded  BattleOutcome = "ended"
 )
 
 type BattleResult struct {
