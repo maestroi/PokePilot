@@ -509,22 +509,23 @@ func replanOnce(escalated *bool) bool {
 }
 
 func (r *runPlanning) success(fromPlan bool, obj Objective) (boundary bool, dropped int) {
-	if !fromPlan {
-		r.sync()
-		return false, 0
-	}
-	if r.Plan.Step < len(r.Plan.Steps) {
+	if fromPlan && r.Plan.Step < len(r.Plan.Steps) {
 		r.Plan.Step++
 	}
-	if objectiveEndsStrategicLeg(obj) {
+	// Boundary continuations are part of the cached leg even though they are
+	// not literal stored steps. Count their state transitions too; otherwise
+	// telemetry would under-report the exact zero/cheap-call path this layer
+	// exists to make visible.
+	if objectiveEndsStrategicLeg(obj) && (fromPlan || r.Plan.Boundary) {
 		boundary = true
 		r.Plan.Boundary = true
-		if r.Plan.Step < len(r.Plan.Steps) {
+		if fromPlan && r.Plan.Step < len(r.Plan.Steps) {
 			dropped = len(r.Plan.Steps) - r.Plan.Step
 			r.Plan.Steps = append([]string(nil), r.Plan.Steps[:r.Plan.Step]...)
 			if len(r.Plan.StepKeys) >= r.Plan.Step {
 				r.Plan.StepKeys = append([]ObjectiveKey(nil), r.Plan.StepKeys[:r.Plan.Step]...)
 			}
+			r.Plan.TailDropped += dropped
 		}
 		r.Stats.LegBoundaries++
 		r.Stats.LegTailStepsDropped += dropped
