@@ -29,7 +29,10 @@ const virtualTradeLinkTimeout = 10 * time.Second
 // outside this branch. Trade evolutions require the exact base in the party;
 // version/choice gaps require a repeatably obtainable donor so completing the
 // Dex never destroys an irreplaceable field or one-off Pokemon.
-func appendDexVirtualTradeObjectives(obs Observation, out []Objective) []Objective {
+func appendDexVirtualTradeObjectives(obs Observation, known *Knowledge, out []Objective) []Objective {
+	if virtualTradeMachineUnusable(known) {
+		return out
+	}
 	if obs.Services == nil || !obs.Services.VirtualTrader || len(obs.Dex.Unavailable) == 0 {
 		return out
 	}

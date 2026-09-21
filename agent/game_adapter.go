@@ -105,7 +105,9 @@ func executeObjectiveWithAdapter(a ObjectiveGameAdapter, o Objective) (Objective
 		attachNormalizedFailure(a, &result, failurePhase, failureNative, tx.Final)
 	}
 	result = finalizeObjectiveResult(o, result, tx.Final, retErr)
-	if retErr != nil {
+	// CaptureFailure saves emulator state. A poisoned machine still holds the
+	// frame lock inside the stalled step, so a save here deadlocks the worker.
+	if retErr != nil && !errors.Is(retErr, gameruntime.ErrMachineUnusable) {
 		reportObjectiveCaptureFailure(a, o, retErr)
 	}
 	return result, retErr
