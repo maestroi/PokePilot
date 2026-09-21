@@ -498,6 +498,7 @@ func counters(res agent.Result) map[string]int64 {
 			out["encounters"] += int64(result.Travel.Battles)
 			out["fled_encounters"] += int64(result.Travel.Flees)
 			out["local_navigation_replans"] += int64(result.Travel.Replans)
+			out["emergency_navigation_egresses"] += int64(len(result.Travel.EmergencyEgresses))
 		}
 		if result.Train != nil {
 			out["battles"] += int64(result.Train.Battles)
