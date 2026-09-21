@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"net/http"
 	"strings"
 
@@ -81,8 +82,15 @@ func (w *Wall) handleCloneRun(res http.ResponseWriter, req *http.Request) {
 // copySpectatorVisibility keeps a hidden test run hidden when it is cloned.
 // Featured status is intentionally not copied because only one run can be
 // featured at a time and cloning must not steal that slot from the source.
-func (w *Wall) copySpectatorVisibility(ctx interface{ Done() <-chan struct{} }, sourceID, cloneID string) {
-	// Kept in clone_run.go only to document the intended behavior. The concrete
-	// context-aware implementation lives in spectator_control.go where both the
-	// memory and control-plane stores are available.
+func (w *Wall) copySpectatorVisibility(ctx context.Context, sourceID, cloneID string) {
+	snapshot, err := w.spectatorControlSnapshot(ctx)
+	if err != nil {
+		return
+	}
+	setting, explicitlySet := snapshot.Runs[sourceID]
+	if !explicitlySet {
+		return // both source and clone use the default visible=true
+	}
+	visible := setting.Visible
+	_, _ = w.patchSpectatorRunControl(ctx, cloneID, spectatorRunControlPatch{Visible: &visible})
 }
