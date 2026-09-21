@@ -88,6 +88,7 @@ type ModelIdentity struct {
 type Configuration struct {
 	Planner         string            `json:"planner,omitempty"`
 	Goal            string            `json:"goal,omitempty"`
+	Starter         string            `json:"starter,omitempty"`
 	LLMProfile      string            `json:"llm_profile,omitempty"`
 	ReasoningEffort string            `json:"reasoning_effort,omitempty"`
 	PlayStyle       string            `json:"play_style,omitempty"`
@@ -234,6 +235,9 @@ type Result struct {
 	Failures        []Failure               `json:"failures,omitempty"`
 	LastMilestone   string                  `json:"last_milestone,omitempty"`
 	ActiveObjective string                  `json:"active_objective,omitempty"`
+	ExperimentID   string                  `json:"experiment_id,omitempty"`
+	ExperimentArm  string                  `json:"experiment_arm,omitempty"`
+	ExperimentCase string                  `json:"experiment_case,omitempty"`
 }
 
 type CheckpointMetadata struct {
