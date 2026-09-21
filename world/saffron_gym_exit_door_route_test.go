@@ -48,10 +48,10 @@ func TestSaffronGymExitDoorRoutesViaReachableTeleporter(t *testing.T) {
 	}
 
 	const (
-		doorX, doorY     = 8, 17
-		placeX, placeY   = 9, 9
+		doorX, doorY       = 8, 17
+		placeX, placeY     = 9, 9
 		nearPadX, nearPadY = 11, 15
-		farPadX, farPadY = 5, 9
+		farPadX, farPadY   = 5, 9
 	)
 
 	route, err := FindRouteAtDestination(g2, saffronGym, saffronGym, doorX, doorY, placeX, placeY, nil)
