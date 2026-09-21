@@ -65,6 +65,22 @@ func TestPrepareFarmAttemptLooksUpResumeOnFirstAttempt(t *testing.T) {
 	}
 }
 
+func TestResumeFallbackWarningOnlyFiresWhenResumeWasExpected(t *testing.T) {
+	if warn, _ := resumeFallbackWarning(1, false, "no checkpoint found"); warn {
+		t.Fatal("an ordinary first attempt with no expected resume must not warn")
+	}
+	warn, msg := resumeFallbackWarning(2, true, "resume lookup failed: dial tcp: timeout")
+	if !warn {
+		t.Fatal("a retry that fell back to a fresh cartridge must warn")
+	}
+	if !strings.Contains(msg, "attempt 2") || !strings.Contains(msg, "fresh cartridge") || !strings.Contains(msg, "resume lookup failed") {
+		t.Fatalf("message missing expected detail: %q", msg)
+	}
+	if warn, msg := resumeFallbackWarning(1, true, ""); !warn || !strings.Contains(msg, "resume not attempted") {
+		t.Fatalf("endless successor with no fallback reason should still warn with a placeholder: warn=%v msg=%q", warn, msg)
+	}
+}
+
 func runnerResumeArtifact(name string, data []byte, mediaType string) farm.Artifact {
 	sum := sha256.Sum256(data)
 	return farm.Artifact{Name: name, MediaType: mediaType, SHA256: hex.EncodeToString(sum[:]), Data: data}
