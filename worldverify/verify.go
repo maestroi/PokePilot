@@ -381,7 +381,6 @@ func validatePort(report *Report, side string, port Port, valid map[int]bool, ed
 	}
 }
 
-
 func validateExecution(report *Report, edge Edge, from, to Map, fromComponents, toComponents map[int]bool) {
 	execution := edge.Execution
 	if execution == nil {
