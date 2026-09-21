@@ -199,6 +199,19 @@ func TestPlanFieldPathFastestUsesCutWhenItBeatsLongDetour(t *testing.T) {
 	if cost.weighted != 10 {
 		t.Fatalf("fastest weighted cost = %d, want 10", cost.weighted)
 	}
+
+	withoutCut, _, err := planFieldPathWithCost(
+		land, water, overworldTileset,
+		0, 0, 2, 0, nil,
+		false, false, false,
+		fastestFieldPathCostPolicy(),
+	)
+	if err != nil {
+		t.Fatalf("fastest plan without Cut capability: %v", err)
+	}
+	if got := countFieldActions(withoutCut, fieldPathCut); got != 0 {
+		t.Fatalf("Cut actions without capability = %d, want 0; plan=%+v", got, withoutCut)
+	}
 }
 
 func TestStrengthPlanTravelCostCanBeatLongFieldPath(t *testing.T) {
