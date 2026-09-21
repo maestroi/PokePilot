@@ -167,8 +167,26 @@ func (a *yellowObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, err
 			}
 			return result, nil
 		case dexSafariIntent:
-			return result, unavailable(o, "yellow_catch_controller_unavailable",
-				"Yellow Safari capture is not available for this acquisition source yet")
+			obs, err := a.Observe()
+			if err != nil {
+				return result, fmt.Errorf("agent: %s: resolve Yellow Safari habitat: %w", o, err)
+			}
+			destination, ok := obs.Catalog.destination(o.Place)
+			if !ok {
+				return result, fmt.Errorf("agent: %s: Yellow Safari habitat %q is not in the active catalog", o, o.Place)
+			}
+			mapID, ok := yellowNativeMapForLocation(destination.Location)
+			if !ok {
+				return result, fmt.Errorf("agent: %s: Yellow Safari habitat location %q has no native map", o, destination.Location)
+			}
+			caught, err := yellowcontroller.CaptureSafari(a.m, a.romData, mapID, rawSpecies)
+			if err != nil {
+				return result, fmt.Errorf("agent: %s: %w", o, err)
+			}
+			if !caught.Caught {
+				return result, fmt.Errorf("agent: %s: Yellow Safari capture ended without ownership", o)
+			}
+			return result, nil
 		default:
 			if o.Place != "" {
 				obs, err := a.Observe()
