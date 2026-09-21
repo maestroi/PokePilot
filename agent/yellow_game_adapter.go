@@ -7,6 +7,7 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	gameruntime "github.com/maestroi/pokepilot/game"
+	"github.com/maestroi/pokepilot/gen1"
 	yellowcontroller "github.com/maestroi/pokepilot/yellow/controller"
 	yellowprofile "github.com/maestroi/pokepilot/yellow/profile"
 	yellowrom "github.com/maestroi/pokepilot/yellow/rom"
@@ -89,6 +90,21 @@ func (a *yellowObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, err
 			return result, fmt.Errorf("agent: %s: %w", o, err)
 		}
 		return result, nil
+	case KindCatch:
+		rawSpecies, ok := yellowSpeciesID(a.romData, o.Species)
+		if !ok {
+			return result, fmt.Errorf("agent: %s: unknown Yellow species %q", o, o.Species)
+		}
+		switch o.Intent {
+		case dexGiftIntent:
+			if err := yellowcontroller.ReceiveGift(a.m, a.romData, rawSpecies); err != nil {
+				return result, fmt.Errorf("agent: %s: %w", o, err)
+			}
+			return result, nil
+		default:
+			return result, unavailable(o, "yellow_catch_controller_unavailable",
+				"Yellow wild/static capture is not available for this acquisition source yet")
+		}
 	case KindUseItem:
 		obs, err := a.Observe()
 		if err != nil {
@@ -162,6 +178,21 @@ func (a *yellowObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, err
 	default:
 		return result, fmt.Errorf("agent: %s: %w", o, errYellowControllerUnavailable)
 	}
+}
+
+
+func yellowSpeciesID(romData []byte, id SpeciesID) (uint8, bool) {
+	for dex := 1; dex <= 151; dex++ {
+		raw, err := yellowrom.DexNumberInternalSpecies(romData, uint8(dex))
+		if err != nil {
+			continue
+		}
+		name, ok := gen1.Species(raw)
+		if ok && SpeciesID(name) == id {
+			return raw, true
+		}
+	}
+	return 0, false
 }
 
 func yellowBagItemID(romData []byte, obs Observation, id ItemID) (uint8, bool) {
