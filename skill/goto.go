@@ -811,6 +811,9 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 				cur, x, y, dest.Map, dest.X, dest.Y, err)
 		}
 		if len(route) == 0 {
+			if emptyErr := emptyCrossMapRouteError(cur, x, y, dest); emptyErr != nil {
+				return emptyErr
+			}
 			resolved, satisfied, resolveErr := resolveLocalDestination(m, romData, dest)
 			if resolveErr != nil {
 				return fmt.Errorf("skill: GoTo: resolve final %s destination: %w", dest.KindName(), resolveErr)
@@ -893,6 +896,21 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 			return fmt.Errorf("skill: GoTo: %w", err)
 		}
 	}
+}
+
+// emptyCrossMapRouteError protects GoTo's final same-map walk from an
+// impossible planner result. An empty route means "already at the destination"
+// only when the live map is the destination map. If a planner ever returns an
+// empty route across maps, surface a typed recoverable navigation failure
+// instead of calling walkWithinMap with mismatched maps. Farm #1488 observed
+// exactly that leak as GAME_CORNER (0x87) -> VERMILION_CITY (0x05), which
+// otherwise became terminal unknown_failure/unknown_error.
+func emptyCrossMapRouteError(cur, x, y uint8, dest Destination) error {
+	if cur == dest.Map {
+		return nil
+	}
+	return fmt.Errorf("skill: GoTo: empty cross-map route from map %02x at (%d,%d) to map %02x: %w",
+		cur, x, y, dest.Map, ErrNavigationStalled)
 }
 
 // legFailureBanScope decides how GoTo records a Traverse failure.
