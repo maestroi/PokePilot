@@ -33,13 +33,13 @@ type FieldCapability struct {
 }
 
 type yellowFieldMoveSpec struct {
-	move       FieldMove
-	name       string
-	item       uint8
-	moveID     uint8
-	menuID     uint8
-	badgeBit   uint8
-	badgeName  string
+	move      FieldMove
+	name      string
+	item      uint8
+	moveID    uint8
+	menuID    uint8
+	badgeBit  uint8
+	badgeName string
 }
 
 var yellowFieldMoveSpecs = [...]yellowFieldMoveSpec{
@@ -262,7 +262,6 @@ func UseFieldMove(m *emu.Emu, romData []byte, move FieldMove) error {
 	}
 	return fmt.Errorf("yellow field move: %s did not reach its expected postcondition", spec.name)
 }
-
 
 var ErrFlyDestinationUnvisited = errors.New("yellow Fly: destination has not been visited")
 
