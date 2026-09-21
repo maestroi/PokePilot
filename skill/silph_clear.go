@@ -19,17 +19,25 @@ const (
 	masterBallItemID uint8 = 0x01
 
 	// Ordinary stair landing on 3F. The story route deliberately enters the
-	// rival room through 3F's Card Key door and pad instead of relying on the
+	// rival room through 3F's Card Key doors and pad instead of relying on the
 	// elevator or on a blind floor-by-floor movement script.
 	silph3FStairLandingX uint8 = 24
 	silph3FStairLandingY uint8 = 1
 
 	// 3F pad (11,11) lands on 7F's pad (5,3), immediately west of the rival
-	// encounter. The closed Card Key block is block-coordinate (4,4).
-	silph3FTo7FWarpX  uint8 = 11
-	silph3FTo7FWarpY  uint8 = 11
-	silph3FDoorBlockX       = 4
-	silph3FDoorBlockY       = 4
+	// encounter. Two Card Key blocks gate that corridor from the stair
+	// landing: (8,4) opens the mid-floor passage, then (4,4) opens the
+	// rival-pad room. MEASURED on run-307qfeox5ecw52jviqm1q1t3kl: with both
+	// closed, (24,1) cannot reach any stand-beside tile of (4,4), so unlocking
+	// only the rival-room door reports no_path forever.
+	silph3FTo7FWarpX             uint8 = 11
+	silph3FTo7FWarpY             uint8 = 11
+	silph3FCorridorDoorBlockX          = 8
+	silph3FCorridorDoorBlockY          = 4
+	silph3FCorridorDoorApproachX uint8 = 10
+	silph3FCorridorDoorApproachY uint8 = 8
+	silph3FDoorBlockX                  = 4
+	silph3FDoorBlockY                  = 4
 
 	// The rival appears at home coordinate (3,7) and is triggered from either
 	// (3,2) or (3,3). After the fight, the pad at (5,7) lands on 11F (3,2).
@@ -64,9 +72,10 @@ var (
 )
 
 // ClearSilphCo completes the story portion of issue #34 after the Card Key is
-// owned: open only the two doors required by the shortest story route, take
-// the 3F pad to the rival, take the 7F pad to 11F, defeat Giovanni, and collect
-// the president's Master Ball reward.
+// owned: open the 3F corridor door, the 3F rival-room door, and the 11F boss
+// door required by the shortest story route, take the 3F pad to the rival,
+// take the 7F pad to 11F, defeat Giovanni, and collect the president's Master
+// Ball reward.
 //
 // Every boundary is reconstructed from RAM. A checkpoint after the rival,
 // after Giovanni, or after the president reward resumes from that durable fact
@@ -143,6 +152,17 @@ func reachSilphRivalRoom(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	}
 	reachable := func() bool { return silphWarpReachable(m, romData, silph3FTo7FEdge) }
 	if !reachable() {
+		// The corridor door must open before the rival-room door is approachable
+		// from the stair landing. Its positive postcondition is reachability of
+		// the mid-corridor tile just west of the closed (8,4) block.
+		corridorOpen := func() bool {
+			return silphTileReachable(m, romData, silphCo3FMap, silph3FCorridorDoorApproachX, silph3FCorridorDoorApproachY)
+		}
+		if !corridorOpen() {
+			if err := unlockSilphDoor(m, romData, silph3FCorridorDoorBlockX, silph3FCorridorDoorBlockY, policy, corridorOpen); err != nil {
+				return fmt.Errorf("skill: ClearSilphCo: unlock 3F corridor door: %w", err)
+			}
+		}
 		if err := unlockSilphDoor(m, romData, silph3FDoorBlockX, silph3FDoorBlockY, policy, reachable); err != nil {
 			return fmt.Errorf("skill: ClearSilphCo: unlock 3F rival-room door: %w", err)
 		}
