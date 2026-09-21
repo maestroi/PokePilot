@@ -396,6 +396,9 @@ func timing(res agent.Result, calls []agent.LLMCall, decisionCalls []DecisionCal
 		}
 		frame := res.OutcomeTimings[i].Frame
 		name := objectiveBucket(result.Objective)
+		if result.Recovered || (result.Outcome != agent.OutcomeCompleted && !result.Terminal) {
+			name = "recovery"
+		}
 		bucket := out[name]
 		bucket.Frames += delta(frame, prev)
 		bucket.Count++
