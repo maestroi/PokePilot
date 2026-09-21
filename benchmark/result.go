@@ -303,7 +303,7 @@ func Build(in BuildInput) Result {
 			}
 		}
 	}
-	if res.Stop == agent.StopDone && res.GoalStatus != nil && res.GoalStatus.Complete {
+	if res.Stop == agent.StopDone && (res.GoalStatus == nil || res.GoalStatus.Complete) {
 		out.Outcome = "completed"
 	}
 	out.Milestones = splits(in.Profile, in.Source, res)
