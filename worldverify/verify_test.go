@@ -293,7 +293,6 @@ func TestVerifyDynamicExecutionUnknownIsInformational(t *testing.T) {
 	}
 }
 
-
 func TestVerifyReportsExpectedMapParseDiagnostic(t *testing.T) {
 	snapshot := Snapshot{
 		Maps: []Map{{ID: "01", Width: 1, Height: 1, GeometryKnown: true, Components: []int{1}}},
