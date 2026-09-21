@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
+	"github.com/maestroi/pokepilot/gen1"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/skill"
 )
@@ -251,80 +252,61 @@ func redProgressionObjectives(obs Observation) []Objective {
 		})
 	}
 	if obs.Story.Has(redProgressEarthBadge) && !obs.Story.Has(redProgressIndigoPlateauReady) {
-		switch {
-		case !obs.Story.Has(ProgressRoute22RivalResolved):
+		if next, ok := gen1.FirstIncomplete(obs.Story, gen1.LeagueApproachStages()); ok {
 			out = append(out, Objective{
 				Kind:     KindProgress,
-				Progress: ProgressRoute22RivalResolved,
-				Note:     "(travel to Route 22, defeat the final rival, and positively verify the second Route 22 rival event before entering the League approach)",
-			})
-		case !obs.Story.Has(ProgressRoute23BadgeChecks):
-			out = append(out, Objective{
-				Kind:     KindProgress,
-				Progress: ProgressRoute23BadgeChecks,
-				Note:     "(repair Surf, enter Route 23, cross its three live water bands, pass all seven badge checks, and end at the Victory Road 1F entry)",
-			})
-		case !obs.Story.Has(redProgressVictoryRoadCleared):
-			out = append(out, Objective{
-				Kind:     KindProgress,
-				Progress: redProgressVictoryRoadCleared,
-				Note:     "(repair Strength, solve Victory Road's live 1F/2F/3F boulder sequence, and finish with the final 2F east switch positively set)",
-			})
-		default:
-			out = append(out, Objective{
-				Kind:     KindProgress,
-				Progress: redProgressIndigoPlateauReady,
-				Note:     "(leave the cleared cave, reach the Indigo Plateau lobby nurse, and fully recover HP, status, and PP before committing to the League)",
+				Progress: next,
+				Note:     redLeagueApproachNote(next),
 			})
 		}
 	}
 	if obs.Story.Has(redProgressIndigoPlateauReady) && !obs.Story.Has(ProgressMainStoryComplete) {
-		switch {
-		case !obs.Story.Has(ProgressLeagueChallengeStarted):
+		if next, ok := gen1.FirstIncomplete(obs.Story, gen1.LeagueStages()); ok {
 			out = append(out, Objective{
 				Kind:     KindProgress,
-				Progress: ProgressLeagueChallengeStarted,
-				Note:     "(from the recovered Indigo checkpoint, enter Lorelei's room and positively commit the League challenge before any Elite Four battle)",
-			})
-		case !obs.Story.Has(redProgressLeagueLoreleiDefeated):
-			out = append(out, Objective{
-				Kind:     KindProgress,
-				Progress: redProgressLeagueLoreleiDefeated,
-				Note:     "(defeat Lorelei and stop once her room-completion fact is committed)",
-			})
-		case !obs.Story.Has(redProgressLeagueBrunoDefeated):
-			out = append(out, Objective{
-				Kind:     KindProgress,
-				Progress: redProgressLeagueBrunoDefeated,
-				Note:     "(advance from the completed Lorelei room, defeat Bruno, and stop at Bruno's committed completion fact)",
-			})
-		case !obs.Story.Has(redProgressLeagueAgathaDefeated):
-			out = append(out, Objective{
-				Kind:     KindProgress,
-				Progress: redProgressLeagueAgathaDefeated,
-				Note:     "(advance from the completed Bruno room, defeat Agatha, and stop at Agatha's committed completion fact)",
-			})
-		case !obs.Story.Has(redProgressLeagueLanceDefeated):
-			out = append(out, Objective{
-				Kind:     KindProgress,
-				Progress: redProgressLeagueLanceDefeated,
-				Note:     "(advance from the completed Agatha room, defeat Lance, and stop at Lance's committed completion fact)",
-			})
-		case !obs.Story.Has(ProgressLeagueChampionDefeated):
-			out = append(out, Objective{
-				Kind:     KindProgress,
-				Progress: ProgressLeagueChampionDefeated,
-				Note:     "(advance from Lance's completed room, defeat the Champion, and positively verify the Champion victory event without folding the ending into this battle transaction)",
-			})
-		default:
-			out = append(out, Objective{
-				Kind:     KindProgress,
-				Progress: ProgressMainStoryComplete,
-				Note:     "(advance only the post-Champion Oak and Hall of Fame scripts until the durable main-story completion bit is recorded)",
+				Progress: next,
+				Note:     redLeagueStageNote(next),
 			})
 		}
 	}
 	return out
+}
+
+
+func redLeagueApproachNote(id ProgressID) string {
+	switch id {
+	case ProgressRoute22RivalResolved:
+		return "(travel to Route 22, defeat the final rival, and positively verify the second Route 22 rival event before entering the League approach)"
+	case ProgressRoute23BadgeChecks:
+		return "(repair Surf, enter Route 23, cross its three live water bands, pass all seven badge checks, and end at the Victory Road 1F entry)"
+	case redProgressVictoryRoadCleared:
+		return "(repair Strength, solve Victory Road's live 1F/2F/3F boulder sequence, and finish with the final 2F east switch positively set)"
+	case redProgressIndigoPlateauReady:
+		return "(leave the cleared cave, reach the Indigo Plateau lobby nurse, and fully recover HP, status, and PP before committing to the League)"
+	default:
+		return ""
+	}
+}
+
+func redLeagueStageNote(id ProgressID) string {
+	switch id {
+	case ProgressLeagueChallengeStarted:
+		return "(from the recovered Indigo checkpoint, enter Lorelei's room and positively commit the League challenge before any Elite Four battle)"
+	case redProgressLeagueLoreleiDefeated:
+		return "(defeat Lorelei and stop once her room-completion fact is committed)"
+	case redProgressLeagueBrunoDefeated:
+		return "(advance from the completed Lorelei room, defeat Bruno, and stop at Bruno's committed completion fact)"
+	case redProgressLeagueAgathaDefeated:
+		return "(advance from the completed Bruno room, defeat Agatha, and stop at Agatha's committed completion fact)"
+	case redProgressLeagueLanceDefeated:
+		return "(advance from the completed Agatha room, defeat Lance, and stop at Lance's committed completion fact)"
+	case ProgressLeagueChampionDefeated:
+		return "(advance from Lance's completed room, defeat the Champion, and positively verify the Champion victory event without folding the ending into this battle transaction)"
+	case ProgressMainStoryComplete:
+		return "(advance only the post-Champion Oak and Hall of Fame scripts until the durable main-story completion bit is recorded)"
+	default:
+		return ""
+	}
 }
 
 // executeRedProgression owns the game-specific mechanics for satisfying a
