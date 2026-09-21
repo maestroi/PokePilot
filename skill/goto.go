@@ -557,32 +557,58 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 				if errors.Is(walkErr, errLocalNavigationWorldChanged) {
 					continue
 				}
-				return walkErr
-			}
-
-			// Seafoam B4F has one ROM-enforced Surf entry restriction: while
-			// the current is active, Surf cannot be started from the stairs at
-			// (7,11). Prove that removing only that restriction makes this exact
-			// destination reachable before moving any boulders. Travel owns the
-			// multi-floor preparation because it has the battle/roster policy.
-			localBlocked := currentObservedStationaryObjectBlockers(m, h)
-			localBlocked = warpAvoidance(h, int(x), int(y), localBlocked)
-			currentBlocked, currentErr := seafoamCurrentBlocksDestination(m, romData, h, dest, localBlocked)
-			if currentErr != nil {
-				return fmt.Errorf("skill: GoTo: Seafoam current probe on map %02x: %w", cur, currentErr)
-			}
-			if currentBlocked {
-				if nav.policy == nil {
-					return fmt.Errorf("skill: GoTo: Seafoam current blocks destination (%d,%d); Travel is required to prepare the multi-floor Strength puzzle", dest.X, dest.Y)
+				if walkErr == nil {
+					return nil
 				}
-				if err := prepareSeafoamCurrents(m, romData, nav.policy); err != nil {
-					return fmt.Errorf("skill: GoTo: prepare Seafoam currents: %w", err)
+				// fieldPathReachable is intentionally optimistic about distant
+				// stationary objects (it matches observed sprites, not every
+				// ROM home tile). walkWithinMap may still exhaust liveBlockers
+				// then spriteBlockers and return no_path when those homes seal
+				// every same-map corridor. Rebuild topology with the same
+				// obstacles the local walk preferred so component routing can
+				// leave and re-enter through another door instead of dying on
+				// the optimistic probe. MEASURED on Silph Co 5F Card Key
+				// (run-77gc6gouf4ph1udc0lfs70evu): observed reachability was
+				// true via the out-of-range Rocket at (8,16), local walk
+				// failed, and 5F->9F->5F opens the sealed corridor.
+				if !errors.Is(walkErr, world.ErrNoPath) && !errors.Is(walkErr, ErrLegUnwalkable) {
+					return walkErr
 				}
-				// Preparation deliberately travels across several floors and mutates
-				// object/event topology. Throw away every graph overlay from before
-				// it and re-plan the original destination from the new live state.
-				routeGraph = g
-				continue
+				sealedGrid, sealedGridErr := liveMapGrid(m, romData, h)
+				if sealedGridErr != nil {
+					return fmt.Errorf("skill: GoTo: rebuild sealed live map %02x: %w", cur, sealedGridErr)
+				}
+				sealed := warpAvoidance(h, int(x), int(y), liveBlockers(m, h))
+				routeGraph, err = overlayObservedMapTopology(routeGraph, sealedGrid, h, sealed)
+				if err != nil {
+					return fmt.Errorf("skill: GoTo: overlay sealed local topology for map %02x: %w", cur, err)
+				}
+				// Fall through to component routing with the sealed overlay.
+			} else {
+				// Seafoam B4F has one ROM-enforced Surf entry restriction: while
+				// the current is active, Surf cannot be started from the stairs at
+				// (7,11). Prove that removing only that restriction makes this exact
+				// destination reachable before moving any boulders. Travel owns the
+				// multi-floor preparation because it has the battle/roster policy.
+				localBlocked := currentObservedStationaryObjectBlockers(m, h)
+				localBlocked = warpAvoidance(h, int(x), int(y), localBlocked)
+				currentBlocked, currentErr := seafoamCurrentBlocksDestination(m, romData, h, dest, localBlocked)
+				if currentErr != nil {
+					return fmt.Errorf("skill: GoTo: Seafoam current probe on map %02x: %w", cur, currentErr)
+				}
+				if currentBlocked {
+					if nav.policy == nil {
+						return fmt.Errorf("skill: GoTo: Seafoam current blocks destination (%d,%d); Travel is required to prepare the multi-floor Strength puzzle", dest.X, dest.Y)
+					}
+					if err := prepareSeafoamCurrents(m, romData, nav.policy); err != nil {
+						return fmt.Errorf("skill: GoTo: prepare Seafoam currents: %w", err)
+					}
+					// Preparation deliberately travels across several floors and mutates
+					// object/event topology. Throw away every graph overlay from before
+					// it and re-plan the original destination from the new live state.
+					routeGraph = g
+					continue
+				}
 			}
 		}
 		blockedHere := map[world.Edge]bool{}
