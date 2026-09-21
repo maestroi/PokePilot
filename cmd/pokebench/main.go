@@ -229,7 +229,7 @@ func runRed(cfg redConfig, stdout io.Writer) error {
 func runRedOnce(cfg redConfig, source benchmark.Source, resumeFrom, goal, romSHA256, commit string, index int, seed int64, stdout io.Writer) (benchmark.Result, error) {
 	runID := fmt.Sprintf("%s-%02d-seed%d", time.Now().UTC().Format("20060102T150405.000000000Z"), index, seed)
 	sourceName := source.Kind
-	runDir := filepath.Join(cfg.output, fmt.Sprintf("pokemon-red-%s-%s-%s", sourceName, shortRevision(commit), runID))
+	runDir := filepath.Join(cfg.output, fmt.Sprintf("pokemon-red-%s-to-%s-%s-%s", sourceName, strings.ReplaceAll(cfg.until, "_", "-"), shortRevision(commit), runID))
 	checkpointDir := filepath.Join(runDir, "objective-checkpoints")
 	if err := os.MkdirAll(checkpointDir, 0o755); err != nil {
 		return benchmark.Result{}, err
@@ -279,13 +279,17 @@ func runRedOnce(cfg redConfig, source benchmark.Source, resumeFrom, goal, romSHA
 		fallback = agent.NewLLMPlannerFromConfig(*fallbackCfg)
 	}
 	router := agent.NewFailoverPlanner(primary, fallback)
-	planner := &policyPlanner{inner: router, style: agent.PlayStyle(cfg.mode), risk: agent.NormalizeRiskTolerance(os.Getenv("POKEPILOT_RISK_TOLERANCE")), wild: agent.NormalizeWildEncounters(os.Getenv("POKEPILOT_WILD_ENCOUNTERS"))}
+	risk := agent.NormalizeRiskTolerance(os.Getenv("POKEPILOT_RISK_TOLERANCE"))
+	wild := agent.NormalizeWildEncounters(os.Getenv("POKEPILOT_WILD_ENCOUNTERS"))
+	planner := &policyPlanner{inner: router, style: agent.PlayStyle(cfg.mode), risk: risk, wild: wild}
 	var calls []agent.LLMCall
 	router.OnCall = func(call agent.LLMCall) { calls = append(calls, call) }
 
 	config := benchmark.Configuration{
 		Planner: "agent.FailoverPlanner+run-policy", Goal: goal, LLMProfile: string(profile),
-		ReasoningEffort: cfg.reasoningEffort, PlayStyle: cfg.mode, EmulatorSpeed: "unthrottled; canonical score=emulator frames",
+		ReasoningEffort: cfg.reasoningEffort, PlayStyle: cfg.mode, RiskTolerance: risk, WildEncounters: wild,
+		DecisionBackend: strings.TrimSpace(os.Getenv("POKEPILOT_DECISION_BACKEND")),
+		EmulatorSpeed: "unthrottled; canonical score=emulator frames",
 		Model: benchmark.ModelIdentity{
 			Profile: string(profile), PrimaryModel: primaryCfg.Model, PrimaryURL: benchmark.SafeEndpoint(primaryCfg.BaseURL),
 			NoThink: primaryCfg.NoThink, MaxTokens: primaryCfg.MaxTokens, Timeout: primaryCfg.Timeout.String(), PromptHash: primary.PromptHash(),
@@ -358,7 +362,7 @@ func resolveSource(cfg redConfig) (benchmark.Source, string, error) {
 		return benchmark.Source{}, "", err
 	}
 	sum := sha256.Sum256(data)
-	return benchmark.Source{Kind: "checkpoint", Checkpoint: path, CheckpointSHA256: fmt.Sprintf("%x", sum[:])}, path, nil
+	return benchmark.Source{Kind: "checkpoint", Checkpoint: strings.TrimSpace(name), CheckpointSHA256: fmt.Sprintf("%x", sum[:])}, path, nil
 }
 
 func resolveCheckpoint(corpus, name string) (string, error) {
