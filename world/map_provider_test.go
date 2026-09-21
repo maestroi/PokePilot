@@ -18,7 +18,10 @@ func (fakeMapProvider) ParseMap(id uint8) (worldmodel.MapHeader, error) {
 	case 1:
 		return worldmodel.MapHeader{
 			ID: 1, WidthBlocks: 1, HeightBlocks: 1,
-			Warps: []worldmodel.Warp{{X: 0, Y: 0, DestWarpID: 0, DestMap: 2}},
+			Warps: []worldmodel.Warp{
+				{X: 0, Y: 0, DestWarpID: 0, DestMap: 2},
+				{X: 1, Y: 0, DestWarpID: 0, DestMap: 2, Inert: true},
+			},
 		}, nil
 	case 2:
 		return worldmodel.MapHeader{
@@ -59,6 +62,20 @@ func TestBuildGraphFromFakeProvider(t *testing.T) {
 	}
 	if !hasWarpEdge(g, 2, 1, 1, 1) {
 		t.Fatalf("fake provider graph missing 2->1 warp: %+v", g.Edges[2])
+	}
+	if hasWarpEdge(g, 1, 2, 1, 0) {
+		t.Fatalf("fake provider graph emitted inert 1->2 warp: %+v", g.Edges[1])
+	}
+
+	blocked := warpTileBlockers([]worldmodel.Warp{
+		{X: 0, Y: 0},
+		{X: 1, Y: 0, Inert: true},
+	})
+	if !blocked[[2]int{0, 0}] {
+		t.Fatal("active warp was not blocked from component flooding")
+	}
+	if blocked[[2]int{1, 0}] {
+		t.Fatal("inert warp was incorrectly blocked from component flooding")
 	}
 }
 

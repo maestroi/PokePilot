@@ -18,6 +18,9 @@ type Warp struct {
 	Y          uint8
 	DestWarpID uint8
 	DestMap    uint8
+	// Inert marks a ROM warp-table entry that is ordinary traversable floor:
+	// it does not fire a transition and therefore must not become a graph port.
+	Inert bool
 }
 
 // Connection is a portable adjacent-map seam.

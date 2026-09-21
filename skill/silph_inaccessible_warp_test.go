@@ -25,7 +25,7 @@ func TestSilph11FInaccessibleWarpIsWalkThroughFloor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !redInaccessibleWarp(silphCo11FMap, 5, 5) {
+	if !rom.IsInertWarp(silphCo11FMap, 5, 5) {
 		t.Fatal("Silph 11F (5,5) is not classified as an inaccessible warp")
 	}
 	blocked := warpAvoidance(h, 3, 2, nil)
