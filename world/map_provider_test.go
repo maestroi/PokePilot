@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/maestroi/pokepilot/worldmodel"
+	"github.com/maestroi/pokepilot/worldverify"
 )
 
 type fakeMapProvider struct{}
