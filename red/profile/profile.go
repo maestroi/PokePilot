@@ -183,38 +183,11 @@ func semanticLocation(mapName string) game.PlaceID {
 }
 
 func postSurgeCeladonArea(mapID uint8) bool {
-	name := state.MapName(mapID)
-	return strings.HasPrefix(name, "CELADON_") ||
-		name == "GAME_CORNER" ||
-		strings.HasPrefix(name, "GAME_CORNER_") ||
-		strings.HasPrefix(name, "ROCKET_HIDEOUT_")
+	return gen1.PostSurgeCeladonArea(mapID, state.MapName(mapID))
 }
 
-// postSurgeLavenderReached is geographic rather than a synthetic save flag.
-// It stays true across the westbound corridor and the relevant Lavender,
-// Saffron, and Celadon interiors, so a resumed stage never walks east merely
-// to replay the Lavender checkpoint after already making forward progress.
 func postSurgeLavenderReached(mapID uint8) bool {
-	name := state.MapName(mapID)
-	switch mapID {
-	case 0x04, // Lavender Town
-		0x13, // Route 8
-		0x4F, // Route 8 gate
-		0x50, // Underground Path Route 8
-		0x79, // Underground Path west-east
-		0x4D, // Underground Path Route 7
-		0x4E, // Underground Path Route 7 copy
-		0x4C, // Route 7 gate
-		0x12, // Route 7
-		0x0A: // Saffron City
-		return true
-	}
-	return strings.HasPrefix(name, "LAVENDER_") ||
-		strings.HasPrefix(name, "POKEMON_TOWER_") ||
-		name == "MR_FUJIS_HOUSE" ||
-		strings.HasPrefix(name, "SAFFRON_") ||
-		strings.HasPrefix(name, "SILPH_CO_") ||
-		postSurgeCeladonArea(mapID)
+	return gen1.PostSurgeLavenderReached(mapID, state.MapName(mapID))
 }
 
 func partyCenterRecovered(party state.PartyState) bool {
