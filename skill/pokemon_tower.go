@@ -200,12 +200,15 @@ func towerBattleResolver(m *emu.Emu, policy MovePolicy) resolveBattle {
 }
 
 func travelPokemonTower(m *emu.Emu, romData []byte, dest Destination, policy MovePolicy, maxEngagements int) (TravelResult, error) {
-	return travel(m, policy, maxEngagements,
-		cutAwareGoTo(m, romData, dest),
+	var egresses []EmergencyEgress
+	res, err := travel(m, policy, maxEngagements,
+		recoveringGoTo(m, romData, dest, nil, &egresses),
 		func() DialogueRecoveryResult { return RecoverDialogue(m, dialogueRecoveryBudget) },
 		func() bool { return m.Peek8(sym.StatusFlags4)&blackoutBit != 0 },
 		towerBattleResolver(m, policy),
 	)
+	res.EmergencyEgresses = append(res.EmergencyEgresses, egresses...)
+	return res, err
 }
 
 // rescueMrFuji owns the 7F interaction because ordinary Talk expects control

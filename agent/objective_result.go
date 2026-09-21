@@ -24,14 +24,25 @@ const (
 	OutcomeUnknownFailure           Outcome = "unknown_failure"
 )
 
+// EmergencyEgressEvidence is portable evidence that navigation had to leave
+// the current area to recover. Detail keeps the controller's diagnostic trace
+// as opaque evidence while Cause/Method remain stable aggregation fields.
+type EmergencyEgressEvidence struct {
+	Cause  string `json:"cause,omitempty"`
+	Method string `json:"method,omitempty"`
+	Detail string `json:"detail,omitempty"`
+}
+
 // TravelEvidence is the portable semantic subset of a game adapter's travel
-// result. Adapter-native route/controller details stay behind the adapter seam.
+// result. Adapter-native controller types stay behind the adapter seam, while
+// emergency recovery evidence survives so successful runs cannot hide stalls.
 type TravelEvidence struct {
-	Battles    int  `json:"battles,omitempty"`
-	Flees      int  `json:"flees,omitempty"`
-	Dialogues  int  `json:"dialogues,omitempty"`
-	BlackedOut bool `json:"blacked_out,omitempty"`
-	Replans    int  `json:"replans,omitempty"`
+	Battles           int                       `json:"battles,omitempty"`
+	Flees             int                       `json:"flees,omitempty"`
+	Dialogues         int                       `json:"dialogues,omitempty"`
+	BlackedOut        bool                      `json:"blacked_out,omitempty"`
+	Replans           int                       `json:"replans,omitempty"`
+	EmergencyEgresses []EmergencyEgressEvidence `json:"emergency_egresses,omitempty"`
 }
 
 // TrainingEvidence is the portable semantic summary of one training session.

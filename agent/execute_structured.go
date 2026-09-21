@@ -18,12 +18,21 @@ func Execute(m *emu.Emu, romData []byte, o Objective) (ObjectiveResult, error) {
 }
 
 func travelEvidenceFromRed(travel skill.TravelResult) *TravelEvidence {
+	egresses := make([]EmergencyEgressEvidence, 0, len(travel.EmergencyEgresses))
+	for _, egress := range travel.EmergencyEgresses {
+		egresses = append(egresses, EmergencyEgressEvidence{
+			Cause:  egress.Cause,
+			Method: egress.Method,
+			Detail: egress.Detail,
+		})
+	}
 	return &TravelEvidence{
-		Battles:    travel.Battles,
-		Flees:      travel.Flees,
-		Dialogues:  travel.Dialogues,
-		BlackedOut: travel.BlackedOut,
-		Replans:    len(travel.Replans),
+		Battles:           travel.Battles,
+		Flees:             travel.Flees,
+		Dialogues:         travel.Dialogues,
+		BlackedOut:        travel.BlackedOut,
+		Replans:           len(travel.Replans),
+		EmergencyEgresses: egresses,
 	}
 }
 

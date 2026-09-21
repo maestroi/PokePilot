@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/maestroi/pokepilot/red/state"
+	"github.com/maestroi/pokepilot/red/sym"
 )
 
 func TestChooseSafeBagSacrificePrefersCheapestWholeStack(t *testing.T) {
@@ -13,7 +14,7 @@ func TestChooseSafeBagSacrificePrefersCheapestWholeStack(t *testing.T) {
 		{ID: 0x14, Quantity: 2},  // POTION: 600 total
 		{ID: 0x0B, Quantity: 7},  // ANTIDOTE: 700 total
 	}}
-	idx, got, ok := chooseSafeBagSacrifice(inv)
+	idx, got, ok := chooseSafeBagSacrifice(inv, false)
 	if !ok {
 		t.Fatal("chooseSafeBagSacrifice returned no candidate")
 	}
@@ -39,7 +40,7 @@ func TestChooseSafeBagSacrificeProtectsCriticalAndUnknownItems(t *testing.T) {
 		{ID: 0xFA, Quantity: 1}, // TM50
 		{ID: 0x7F, Quantity: 1}, // unknown / invalid for ordinary bag use
 	}
-	if idx, item, ok := chooseSafeBagSacrifice(state.InventoryState{Items: protected}); ok {
+	if idx, item, ok := chooseSafeBagSacrifice(state.InventoryState{Items: protected}, false); ok {
 		t.Fatalf("protected-only bag produced candidate entry %d %#02x x%d", idx, item.ID, item.Quantity)
 	}
 }
@@ -51,9 +52,35 @@ func TestChooseSafeBagSacrificeUsesSafeItemAmongProtectedEntries(t *testing.T) {
 		{ID: 0x0B, Quantity: 1}, // ANTIDOTE
 		{ID: 0xE2, Quantity: 1}, // TM26
 	}}
-	idx, got, ok := chooseSafeBagSacrifice(inv)
+	idx, got, ok := chooseSafeBagSacrifice(inv, false)
 	if !ok || idx != 2 || got.ID != 0x0B {
 		t.Fatalf("candidate = (%d, %#02x, %v), want ANTIDOTE at entry 2", idx, got.ID, ok)
+	}
+}
+
+func TestChooseSafeBagSacrificeReservesEscapeRopeBeforeDig(t *testing.T) {
+	inv := state.InventoryState{Items: []state.BagItem{
+		{ID: escapeRopeItem, Quantity: 1}, // 550 total; normally cheapest
+		{ID: 0x0B, Quantity: 6},           // ANTIDOTE: 600 total
+	}}
+	if _, got, ok := chooseSafeBagSacrifice(inv, false); !ok || got.ID != escapeRopeItem {
+		t.Fatalf("unprotected candidate = %#02x,%v; want Escape Rope", got.ID, ok)
+	}
+	idx, got, ok := chooseSafeBagSacrifice(inv, true)
+	if !ok || idx != 1 || got.ID != 0x0B {
+		t.Fatalf("protected candidate = entry %d %#02x,%v; want ANTIDOTE", idx, got.ID, ok)
+	}
+}
+
+func TestProtectEmergencyEscapeRopeUntilDigExists(t *testing.T) {
+	var mem state.Mem
+	if !protectEmergencyEscapeRope(&mem) {
+		t.Fatal("party without Dig did not reserve Escape Rope")
+	}
+	mem[sym.PartyCount] = 1
+	mem[sym.PartyMon1+sym.MonMoves] = digMoveID
+	if protectEmergencyEscapeRope(&mem) {
+		t.Fatal("party with Dig still reserved Escape Rope")
 	}
 }
 

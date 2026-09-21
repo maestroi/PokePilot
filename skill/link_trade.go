@@ -219,6 +219,7 @@ func combineLinkTravel(a, b TravelResult) TravelResult {
 	a.Dialogues += b.Dialogues
 	a.BlackedOut = a.BlackedOut || b.BlackedOut
 	a.Replans = append(a.Replans, b.Replans...)
+	a.EmergencyEgresses = append(a.EmergencyEgresses, b.EmergencyEgresses...)
 	return a
 }
 

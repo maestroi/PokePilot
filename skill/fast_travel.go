@@ -9,12 +9,14 @@ import (
 )
 
 const (
-	escapeRopeItem       uint8 = 0x1d
-	digMoveID            uint8 = 0x5b
-	digFieldMoveMenuID   uint8 = 7
-	plateauTileset       uint8 = 23
-	agathasRoomMap       uint8 = 0xf7
-	fastTravelWarpBudget       = 6000
+	escapeRopeItem          uint8 = 0x1d
+	digMoveID               uint8 = 0x5b
+	digFieldMoveMenuID      uint8 = 7
+	teleportMoveID          uint8 = 0x64
+	teleportFieldMoveMenuID uint8 = 8
+	plateauTileset          uint8 = 23
+	agathasRoomMap          uint8 = 0xf7
+	fastTravelWarpBudget          = 6000
 
 	// Route-cost units deliberately compare coarse journey exposure rather
 	// than emulator frames. One ordinary map transition costs 100. Menu-driven
@@ -51,6 +53,36 @@ type fastTravelChoice struct {
 	Map     uint8
 	Landing Destination
 	Cost    int
+}
+
+type emergencyEgressMethod uint8
+
+const (
+	emergencyEgressNone emergencyEgressMethod = iota
+	emergencyEgressDig
+	emergencyEgressEscapeRope
+	emergencyEgressTeleport
+	emergencyEgressFly
+)
+
+func (m emergencyEgressMethod) String() string {
+	switch m {
+	case emergencyEgressDig:
+		return "dig"
+	case emergencyEgressEscapeRope:
+		return "escape_rope"
+	case emergencyEgressTeleport:
+		return "teleport"
+	case emergencyEgressFly:
+		return "fly"
+	default:
+		return "none"
+	}
+}
+
+type emergencyEgressChoice struct {
+	Method  emergencyEgressMethod
+	Landing Destination
 }
 
 var flyLanding = map[uint8]Destination{
@@ -109,6 +141,40 @@ func escapeTravelAllowed(mem *state.Mem) bool {
 	default:
 		return false
 	}
+}
+
+// chooseEmergencyEgress chooses a deterministic return-to-safety action for a
+// controller-confirmed navigation stall. This is deliberately NOT route-cost
+// optimization: it is only consumed after GoTo has already proved that the
+// current journey is cycling/exhausted. Reusable moves win over consumables.
+// Indoors, Dig is preferred and Escape Rope is the fallback. Outdoors,
+// Teleport returns to the last healing location without a badge; Fly is the
+// final fallback when that same town is a legal visited Fly destination.
+func chooseEmergencyEgress(mem *state.Mem) emergencyEgressChoice {
+	if mem == nil || !state.Controllable(mem) || state.DecodeBattle(mem) != nil {
+		return emergencyEgressChoice{}
+	}
+
+	destMap := mem.U8(sym.LastBlackoutMap)
+	landing, hasLanding := specialWarpLanding(destMap)
+	if escapeTravelAllowed(mem) && hasLanding {
+		if partyMoveSlot(mem, digMoveID) >= 0 {
+			return emergencyEgressChoice{Method: emergencyEgressDig, Landing: landing}
+		}
+		if _, qty := bagEntry(mem, escapeRopeItem); qty > 0 {
+			return emergencyEgressChoice{Method: emergencyEgressEscapeRope, Landing: landing}
+		}
+	}
+
+	if outsideForFly(mem) && hasLanding && partyMoveSlot(mem, teleportMoveID) >= 0 {
+		return emergencyEgressChoice{Method: emergencyEgressTeleport, Landing: landing}
+	}
+
+	if outsideForFly(mem) && destMap < 11 && destMap != mem.U8(sym.CurMap) &&
+		townVisited(mem, 0) && townVisited(mem, destMap) && FieldCapabilityFor(mem, FieldFly).Usable {
+		return emergencyEgressChoice{Method: emergencyEgressFly, Landing: landing}
+	}
+	return emergencyEgressChoice{}
 }
 
 // legalFastTravelOptions projects Red's current RAM into optional route edges.
@@ -374,6 +440,52 @@ func useEscapeRopeFastTravel(m *emu.Emu, destMap uint8) error {
 		return fmt.Errorf("Escape Rope: %w", err)
 	}
 	return waitFastTravelArrival(m, landing)
+}
+
+func useTeleportFastTravel(m *emu.Emu, destMap uint8) error {
+	landing, ok := specialWarpLanding(destMap)
+	if !ok {
+		return fmt.Errorf("Teleport destination map %#02x has no special-warp landing", destMap)
+	}
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	slot := partyMoveSlot(&mem, teleportMoveID)
+	if slot < 0 || !outsideForFly(&mem) || mem.U8(sym.LastBlackoutMap) != destMap {
+		return fmt.Errorf("Teleport fast travel is not legal to map %#02x", destMap)
+	}
+	if err := openPartyFieldMove(m, slot, teleportFieldMoveMenuID); err != nil {
+		return fmt.Errorf("Teleport: %w", err)
+	}
+	return waitFastTravelArrival(m, landing)
+}
+
+// executeEmergencyEgress executes exactly the action selected from the current
+// settled RAM state. ok=false means there is no legal escape primitive and the
+// caller must preserve the original navigation failure. Once an action starts,
+// any controller/menu failure is surfaced rather than silently trying a second
+// method from an uncertain UI state.
+func executeEmergencyEgress(m *emu.Emu) (choice emergencyEgressChoice, ok bool, err error) {
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	choice = chooseEmergencyEgress(&mem)
+	if choice.Method == emergencyEgressNone {
+		return choice, false, nil
+	}
+
+	destMap := choice.Landing.Map
+	switch choice.Method {
+	case emergencyEgressDig:
+		err = useDigFastTravel(m, destMap)
+	case emergencyEgressEscapeRope:
+		err = useEscapeRopeFastTravel(m, destMap)
+	case emergencyEgressTeleport:
+		err = useTeleportFastTravel(m, destMap)
+	case emergencyEgressFly:
+		err = useFlyTo(m, destMap)
+	default:
+		return choice, false, fmt.Errorf("unknown emergency egress method %d", choice.Method)
+	}
+	return choice, true, err
 }
 
 // maybeUseFastTravel prices legal shortcuts against the ordinary semantic
