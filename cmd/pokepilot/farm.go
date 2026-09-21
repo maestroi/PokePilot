@@ -763,6 +763,13 @@ type reportingPlanner struct {
 	snap  *heartbeatSnap
 }
 
+func (p reportingPlanner) RoutePriority() agent.RoutePriority {
+	if provider, ok := p.inner.(agent.RoutePriorityPlanner); ok {
+		return provider.RoutePriority()
+	}
+	return agent.RoutePriorityConservative
+}
+
 func (p reportingPlanner) Next(obs agent.Observation, offered []agent.Objective) (agent.Objective, error) {
 	return p.ask(obs, offered, agent.Retry{})
 }
