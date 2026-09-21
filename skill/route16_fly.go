@@ -9,12 +9,12 @@ import (
 )
 
 const (
-	route16FlyHouseMap       uint8 = 0xBC
-	route16FlyGirlX          uint8 = 2
-	route16FlyGirlY          uint8 = 3
-	route16FlyHouseStagingX  uint8 = 2
-	route16FlyHouseStagingY  uint8 = 6
-	flyPreparationEngagements      = 40
+	route16FlyHouseMap        uint8 = 0xBC
+	route16FlyGirlX           uint8 = 2
+	route16FlyGirlY           uint8 = 3
+	route16FlyHouseStagingX   uint8 = 2
+	route16FlyHouseStagingY   uint8 = 6
+	flyPreparationEngagements       = 40
 )
 
 const route16FlyHousePlace = "route 16 fly house"
