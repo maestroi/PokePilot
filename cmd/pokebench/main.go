@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"crypto/sha256"
 	"flag"
 	"fmt"
@@ -27,10 +28,12 @@ import (
 const defaultMaxFrames = 8 * 60 * 60 * 60
 
 type policyPlanner struct {
-	inner *agent.FailoverPlanner
-	style agent.PlayStyleProfile
-	risk  string
-	wild  string
+	inner         *agent.FailoverPlanner
+	style         agent.PlayStyleProfile
+	risk          string
+	wild          string
+	decision      agent.DecisionSettings
+	decisionCalls []benchmark.DecisionCall
 }
 
 func (p *policyPlanner) offered(obs agent.Observation, offered []agent.Objective) []agent.Objective {
@@ -39,7 +42,13 @@ func (p *policyPlanner) offered(obs agent.Observation, offered []agent.Objective
 }
 
 func (p *policyPlanner) Next(obs agent.Observation, offered []agent.Objective) (agent.Objective, error) {
-	return p.inner.Next(obs, p.offered(obs, offered))
+	offered = p.offered(obs, offered)
+	if p.decision.Engine != nil && p.decision.ObjectiveSelection {
+		if objective, ok := p.typedObjective(obs, offered); ok {
+			return objective, nil
+		}
+	}
+	return p.inner.Next(obs, offered)
 }
 
 func (p *policyPlanner) NextRetry(obs agent.Observation, offered []agent.Objective, retry agent.Retry) (agent.Objective, error) {
@@ -47,11 +56,91 @@ func (p *policyPlanner) NextRetry(obs agent.Observation, offered []agent.Objecti
 }
 
 func (p *policyPlanner) Strategize(obs agent.Observation, offered []agent.Objective, reason string) (agent.Plan, error) {
-	return p.inner.Strategize(obs, p.offered(obs, offered), reason)
+	offered = p.offered(obs, offered)
+	plan, err := p.inner.Strategize(obs, offered, reason)
+	if err != nil {
+		return plan, err
+	}
+	return p.boundRiskPlan(plan, offered), nil
 }
 
 func (p *policyPlanner) StrategizeRetry(obs agent.Observation, offered []agent.Objective, reason string, retry agent.Retry) (agent.Plan, error) {
-	return p.inner.StrategizeRetry(obs, p.offered(obs, offered), reason, retry)
+	offered = p.offered(obs, offered)
+	plan, err := p.inner.StrategizeRetry(obs, offered, reason, retry)
+	if err != nil {
+		return plan, err
+	}
+	return p.boundRiskPlan(plan, offered), nil
+}
+
+func (p *policyPlanner) typedObjective(obs agent.Observation, offered []agent.Objective) (agent.Objective, bool) {
+	req, err := agent.ObjectiveDecisionRequest(obs, offered, p.inner.RunGoal())
+	if err != nil {
+		p.recordDecision(req, agent.DecisionResponse{}, err)
+		return agent.Objective{}, false
+	}
+	resp, err := agent.DecideChecked(context.Background(), p.decision.Engine, req)
+	if err == nil && p.decision.MinConfidence > 0 && resp.Confidence < p.decision.MinConfidence {
+		err = fmt.Errorf("%w: %.3f < %.3f", agent.ErrDecisionLowConfidence, resp.Confidence, p.decision.MinConfidence)
+	}
+	var objective agent.Objective
+	if err == nil {
+		objective, err = agent.Chosen(offered, resp.Choice)
+	}
+	p.recordDecision(req, resp, err)
+	return objective, err == nil
+}
+
+func (p *policyPlanner) DecideFailure(result agent.ObjectiveResult) (agent.DecisionResponse, error) {
+	if p.decision.Engine == nil || !p.decision.FailureRecovery {
+		return agent.DecisionResponse{}, agent.ErrDecisionDisabled
+	}
+	req, err := agent.FailureDecisionRequest(result)
+	if err != nil {
+		p.recordDecision(req, agent.DecisionResponse{}, err)
+		return agent.DecisionResponse{}, err
+	}
+	resp, err := agent.DecideChecked(context.Background(), p.decision.Engine, req)
+	if err == nil && p.decision.MinConfidence > 0 && resp.Confidence < p.decision.MinConfidence {
+		err = fmt.Errorf("%w: %.3f < %.3f", agent.ErrDecisionLowConfidence, resp.Confidence, p.decision.MinConfidence)
+	}
+	p.recordDecision(req, resp, err)
+	return resp, err
+}
+
+func (p *policyPlanner) recordDecision(req agent.DecisionRequest, resp agent.DecisionResponse, err error) {
+	backend := resp.Backend
+	if backend == "" {
+		backend = p.decision.Backend
+	}
+	p.decisionCalls = append(p.decisionCalls, benchmark.DecisionCall{
+		Kind: req.Kind, Duration: resp.Duration, PromptTokens: resp.Usage.PromptTokens,
+		CompletionTokens: resp.Usage.CompletionTokens, Backend: backend, Model: resp.Model, Err: err,
+	})
+}
+
+func (p *policyPlanner) boundRiskPlan(plan agent.Plan, offered []agent.Objective) agent.Plan {
+	if p.risk == agent.RiskToleranceAggressive || len(plan.Steps) <= 1 {
+		return plan
+	}
+	for i, step := range plan.Steps {
+		objective, err := agent.Chosen(offered, step)
+		if err != nil {
+			continue
+		}
+		risky := false
+		switch objective.Kind {
+		case agent.KindTrainer, agent.KindGym, agent.KindTrain, agent.KindCatch:
+			risky = true
+		case agent.KindGoTo:
+			risky = !objective.Flee || p.wild == agent.WildEncountersFight
+		}
+		if risky && i+1 < len(plan.Steps) {
+			plan.Steps = append([]string(nil), plan.Steps[:i+1]...)
+			break
+		}
+	}
+	return plan
 }
 
 func (p *policyPlanner) Usage() (int, int) { return p.inner.Usage() }
@@ -281,14 +370,15 @@ func runRedOnce(cfg redConfig, source benchmark.Source, resumeFrom, goal, romSHA
 	router := agent.NewFailoverPlanner(primary, fallback)
 	risk := agent.NormalizeRiskTolerance(os.Getenv("POKEPILOT_RISK_TOLERANCE"))
 	wild := agent.NormalizeWildEncounters(os.Getenv("POKEPILOT_WILD_ENCOUNTERS"))
-	planner := &policyPlanner{inner: router, style: agent.PlayStyle(cfg.mode), risk: risk, wild: wild}
+	decision := agent.DecisionSettingsFromEnv()
+	planner := &policyPlanner{inner: router, style: agent.PlayStyle(cfg.mode), risk: risk, wild: wild, decision: decision}
 	var calls []agent.LLMCall
 	router.OnCall = func(call agent.LLMCall) { calls = append(calls, call) }
 
 	config := benchmark.Configuration{
 		Planner: "agent.FailoverPlanner+run-policy", Goal: goal, LLMProfile: string(profile),
 		ReasoningEffort: cfg.reasoningEffort, PlayStyle: cfg.mode, RiskTolerance: risk, WildEncounters: wild,
-		DecisionBackend: strings.TrimSpace(os.Getenv("POKEPILOT_DECISION_BACKEND")),
+		DecisionBackend: decision.Backend,
 		EmulatorSpeed:   "unthrottled; canonical score=emulator frames",
 		Model: benchmark.ModelIdentity{
 			Profile: string(profile), PrimaryModel: primaryCfg.Model, PrimaryURL: benchmark.SafeEndpoint(primaryCfg.BaseURL),
@@ -297,7 +387,14 @@ func runRedOnce(cfg redConfig, source benchmark.Source, resumeFrom, goal, romSHA
 		FeatureFlags: benchmark.SanitizeSettings(map[string]string{
 			"POKEPILOT_RISK_TOLERANCE":   os.Getenv("POKEPILOT_RISK_TOLERANCE"),
 			"POKEPILOT_WILD_ENCOUNTERS":  os.Getenv("POKEPILOT_WILD_ENCOUNTERS"),
-			"POKEPILOT_DECISION_BACKEND": os.Getenv("POKEPILOT_DECISION_BACKEND"),
+			"POKEPILOT_DECISION_BACKEND":        decision.Backend,
+			"POKEPILOT_DECISION_MIN_CONFIDENCE": fmt.Sprintf("%.3f", decision.MinConfidence),
+			"POKEPILOT_DECISION_OBJECTIVES":     strconv.FormatBool(decision.ObjectiveSelection),
+			"POKEPILOT_DECISION_FAILURES":       strconv.FormatBool(decision.FailureRecovery),
+			"POKEPILOT_DECISION_URL":            os.Getenv("POKEPILOT_DECISION_URL"),
+			"POKEPILOT_DECISION_MODEL":          os.Getenv("POKEPILOT_DECISION_MODEL"),
+			"POKEPILOT_DECISION_TIMEOUT":        os.Getenv("POKEPILOT_DECISION_TIMEOUT"),
+			"POKEPILOT_DECISION_MAX_TOKENS":     os.Getenv("POKEPILOT_DECISION_MAX_TOKENS"),
 		}),
 	}
 	if fallbackCfg != nil {
@@ -322,7 +419,7 @@ func runRedOnce(cfg redConfig, source benchmark.Source, resumeFrom, goal, romSHA
 	result := benchmark.Build(benchmark.BuildInput{
 		RunID: runID, Commit: commit, Game: "pokemon-red", ROMSHA256: romSHA256, Mode: cfg.mode,
 		Seed: seed, Source: source, EndCondition: cfg.until, Configuration: config, Profile: redbench.Profile(),
-		AgentResult: res, Calls: calls, Route: router.Route(), Health: router.Health(),
+		AgentResult: res, Calls: calls, DecisionCalls: planner.decisionCalls, Route: router.Route(), Health: router.Health(),
 		StartedAt: started, FinishedAt: finished, TerminalError: res.Err,
 	})
 	if err := benchmark.MaterializeCheckpoints(&result, checkpointDir, runDir, finalState); err != nil {
