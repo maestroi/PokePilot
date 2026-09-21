@@ -151,7 +151,7 @@ func CompareText(baseline, candidate Aggregate) string {
 		}
 	}
 
-	counterNames := []string{"wild_battles", "encounters", "local_navigation_replans", "replans", "repel_uses", "strategist_calls", "fast_planner_calls", "successful_recoveries", "blackouts"}
+	counterNames := []string{"wild_battles", "encounters", "local_navigation_replans", "replans", "repel_uses", "strategist_calls", "fast_planner_calls", "typed_decision_calls", "typed_decision_failures", "successful_recoveries", "blackouts"}
 	var wroteCounters bool
 	for _, name := range counterNames {
 		base, bok := baseline.Counters[name]
