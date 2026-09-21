@@ -364,6 +364,51 @@ func currentLocalStrengthPlan(m *emu.Emu, romData []byte, h rom.MapHeader, dest 
 	return plan, len(plan.Pushes) > 0, nil
 }
 
+// weightedStrengthPlanCost estimates the same coarse travel units used by
+// fastest field-path routing. Walking to each push stand and the push itself
+// cost movement units; activating Strength is a one-time field-action cost.
+// The push solver already supplies FinalWalk for a reachability goal.
+func weightedStrengthPlanCost(plan world.PushPlan, strengthActive bool, policy fieldPathCostPolicy) int {
+	cost := len(plan.FinalWalk) * policy.moveCost
+	if len(plan.Pushes) > 0 && !strengthActive {
+		cost += policy.strengthCost
+	}
+	for _, push := range plan.Pushes {
+		cost += len(push.Walk) * policy.moveCost
+		cost += policy.moveCost
+	}
+	return cost
+}
+
+func strengthPlanBeatsFieldPath(fieldCost fieldPathCost, plan world.PushPlan, strengthActive bool, policy fieldPathCostPolicy) bool {
+	return policy.weighted && len(plan.Pushes) > 0 &&
+		weightedStrengthPlanCost(plan, strengthActive, policy) < fieldCost.weighted
+}
+
+// preferLocalStrengthRoute asks whether a currently executable Strength route
+// is cheaper than the already-planned Cut/Surf/walk route. It deliberately
+// declines roster repair: fetching/catching a carrier is not represented in
+// this local estimate and therefore must not masquerade as a cheap shortcut.
+func preferLocalStrengthRoute(m *emu.Emu, romData []byte, h rom.MapHeader, dest Destination, fieldCost fieldPathCost) (bool, error) {
+	policy := fieldPathCostPolicyFor(m)
+	if !policy.weighted {
+		return false, nil
+	}
+	plan, needed, err := currentLocalStrengthPlan(m, romData, h, dest)
+	if err != nil || !needed {
+		return false, err
+	}
+
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	capability := FieldCapabilityFor(&mem, FieldStrength)
+	if !capability.Usable && !CanPrepareFieldMove(romData, &mem, FieldStrength) {
+		return false, nil
+	}
+	strengthActive := mem.U8(sym.StatusFlags1)&fieldStrengthActiveBit != 0
+	return strengthPlanBeatsFieldPath(fieldCost, plan, strengthActive, policy), nil
+}
+
 // solveLocalStrengthPath repairs the Strength carrier only after the push
 // solver has proved a boulder must move. Current-party compatible Pokémon are
 // auto-taught by UseFieldMove. With a Travel policy, a missing carrier is
