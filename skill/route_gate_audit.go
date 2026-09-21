@@ -128,10 +128,15 @@ func redAuditedRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, 
 		edge.WarpX == 24 && (edge.WarpY == 10 || edge.WarpY == 11):
 		// The east entrance to Route 16's lower gate is reached from Celadon.
 		// Snorlax sits immediately east of the gate, and the guard inside the
-		// lower corridor separately requires a Bicycle. This transition owns
-		// both preconditions so a journey to Fuchsia cannot walk into either
-		// scripted blocker before reporting why the route is closed.
-		return semanticTransition("red:route16_snorlax_bicycle", edge, capCanClearSnorlax, capCanRideCyclingRoad), true
+		// lower corridor separately requires a Bicycle. Both are preconditions
+		// on ordinary geometry: the warp still lands in the lower corridor
+		// only. Modeling this as an action pivot used to relax that landing
+		// and let routing pretend the lower door reaches the upper
+		// pedestrian/Fly-house exits through a wall (farm triage
+		// 0ece8bd130597547 / run-1g7kwah5oygzl29jkvhmhsmby6). Keep it a Gate
+		// so component reachability stays honest; execution still clears
+		// Snorlax when the annotated edge is taken.
+		return bikeGate("red:route16_snorlax_bicycle", capCanClearSnorlax, capCanRideCyclingRoad)
 
 	case edge.Kind == world.EdgeWarp && edge.From == route16Map && edge.To == route16Gate1FMap &&
 		edge.WarpX == 17 && (edge.WarpY == 10 || edge.WarpY == 11):

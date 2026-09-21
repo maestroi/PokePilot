@@ -95,8 +95,8 @@ func TestCyclingRoadModelsOnlyTheBikeCorridor(t *testing.T) {
 	east := requireTransition(t,
 		world.Edge{Kind: world.EdgeWarp, From: route16Map, To: route16Gate1FMap, WarpX: 24, WarpY: 10},
 		"red:route16_snorlax_bicycle", capCanClearSnorlax, capCanRideCyclingRoad)
-	if east.Gate {
-		t.Fatal("east Route 16 entry must execute the Snorlax action, not be a pure gate")
+	if !east.Gate {
+		t.Fatal("east Route 16 lower entry must be a Gate so its landing stays the lower corridor")
 	}
 
 	west := requireTransition(t,

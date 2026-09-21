@@ -9,15 +9,23 @@ import (
 )
 
 const (
-	route16FlyHouseMap        uint8 = 0xBC
-	route16FlyGirlX           uint8 = 2
-	route16FlyGirlY           uint8 = 3
-	route16FlyHouseStagingX   uint8 = 2
-	route16FlyHouseStagingY   uint8 = 6
+	route16FlyHouseMap      uint8 = 0xBC
+	route16FlyGirlX         uint8 = 2
+	route16FlyGirlY         uint8 = 3
+	route16FlyHouseStagingX uint8 = 2
+	route16FlyHouseStagingY uint8 = 6
+	// Celadon-side Route 16 tile east of the Cut tree that joins the lower
+	// road to the upper pedestrian passage. Staging here lets GoTo's
+	// field-path bridge own that tree before the upper gate hop to the house.
+	route16FlyApproachX       uint8 = 30
+	route16FlyApproachY       uint8 = 10
 	flyPreparationEngagements       = 40
 )
 
-const route16FlyHousePlace = "route 16 fly house"
+const (
+	route16FlyHousePlace    = "route 16 fly house"
+	route16FlyApproachPlace = "route 16 fly approach"
+)
 
 func init() {
 	// HM02 is a transaction-owned destination rather than a generic exploration
@@ -27,6 +35,11 @@ func init() {
 		Map: route16FlyHouseMap,
 		X:   route16FlyHouseStagingX,
 		Y:   route16FlyHouseStagingY,
+	}
+	interactionPlaces[route16FlyApproachPlace] = Destination{
+		Map: route16Map,
+		X:   route16FlyApproachX,
+		Y:   route16FlyApproachY,
 	}
 }
 
@@ -64,6 +77,21 @@ func PrepareFlyFastTravel(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		}
 		if err := EnsureBagSpaceFor(m, fieldHM02Item); err != nil {
 			return fmt.Errorf("skill: PrepareFlyFastTravel: make room for HM02: %w", err)
+		}
+		// Stage onto Route 16's Celadon-side approach first. A direct land plan
+		// from Celadon to the Fly house has no honest route until the Route 16
+		// Cut tree is cleared; GoTo's field-path bridge owns that tree only
+		// while already on Route 16. Skipping this stage used to let a false
+		// lower-gate pivot invent a path through the Cycling Road corridor.
+		state.Snapshot(m, &mem)
+		if cur := state.DecodePlayer(&mem).MapID; cur != route16Map && cur != route16FlyHouseMap {
+			approach, ok := Place(route16FlyApproachPlace)
+			if !ok {
+				return fmt.Errorf("skill: PrepareFlyFastTravel: Route 16 Fly approach destination is not registered")
+			}
+			if _, err := TravelFlee(m, romData, approach, policy, flyPreparationEngagements); err != nil {
+				return fmt.Errorf("skill: PrepareFlyFastTravel: reach Route 16 Fly approach: %w", err)
+			}
 		}
 		dest, ok := Place(route16FlyHousePlace)
 		if !ok {
