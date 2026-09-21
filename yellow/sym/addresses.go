@@ -55,6 +55,7 @@ const (
 	MenuJoypadPollCount    uint16 = 0xCC34 // wMenuJoypadPollCount
 	MenuWatchedKeys        uint16 = 0xCC29 // wMenuWatchedKeys
 	ItemQuantity           uint16 = 0xCF95 // wItemQuantity
+	MoneyTemp              uint16 = 0xFF9F // hMoney, 3-byte BCD menu price/total
 	ListScrollOffset       uint16 = 0xCC36 // wListScrollOffset
 	ListCount              uint16 = 0xD129 // wListCount
 	ListMenuID             uint16 = 0xCF93 // wListMenuID
