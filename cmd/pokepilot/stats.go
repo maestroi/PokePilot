@@ -268,6 +268,13 @@ func (s *statsPlanner) recordTypedObjectiveChoice(obs agent.Observation, objecti
 	s.publish()
 }
 
+func benchmarkDecisionBackend(response, configured string) string {
+	if response != "" {
+		return response
+	}
+	return configured
+}
+
 func cloneDecisionProbabilities(in map[string]float64) map[string]float64 {
 	if len(in) == 0 {
 		return nil
@@ -282,7 +289,7 @@ func cloneDecisionProbabilities(in map[string]float64) map[string]float64 {
 func (s *statsPlanner) recordDecision(req agent.DecisionRequest, resp agent.DecisionResponse, err error, fallback bool) {
 	s.benchmarkDecisionCalls = append(s.benchmarkDecisionCalls, benchmark.DecisionCall{
 		Kind: req.Kind, Duration: resp.Duration, PromptTokens: resp.Usage.PromptTokens,
-		CompletionTokens: resp.Usage.CompletionTokens, Backend: firstNonEmpty(resp.Backend, s.decision.Backend),
+		CompletionTokens: resp.Usage.CompletionTokens, Backend: benchmarkDecisionBackend(resp.Backend, s.decision.Backend),
 		Model: resp.Model, Err: err,
 	})
 	s.stats.DecisionCalls++
