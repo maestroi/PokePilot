@@ -396,6 +396,7 @@ func runRedOnce(cfg redConfig, source benchmark.Source, resumeFrom, goal, romSHA
 		ReasoningEffort: primaryCfg.ReasoningEffort, PlayStyle: cfg.mode, RiskTolerance: risk, WildEncounters: wild,
 		DecisionBackend: decision.Backend,
 		EmulatorSpeed:   "unthrottled; canonical score=emulator frames",
+		MaxFrames:       cfg.maxFrames,
 		Model: benchmark.ModelIdentity{
 			Profile: string(profile), PrimaryModel: primaryCfg.Model, PrimaryURL: benchmark.SafeEndpoint(primaryCfg.BaseURL),
 			NoThink: primaryCfg.NoThink, MaxTokens: primaryCfg.MaxTokens, Timeout: primaryCfg.Timeout.String(),
@@ -470,7 +471,16 @@ func resolveSource(cfg redConfig) (benchmark.Source, string, error) {
 		return benchmark.Source{}, "", err
 	}
 	sum := sha256.Sum256(data)
-	return benchmark.Source{Kind: "checkpoint", Checkpoint: strings.TrimSpace(name), CheckpointSHA256: fmt.Sprintf("%x", sum[:])}, path, nil
+	source := benchmark.Source{Kind: "checkpoint", Checkpoint: strings.TrimSpace(name), CheckpointSHA256: fmt.Sprintf("%x", sum[:])}
+	if meta, ok, metaErr := benchmark.ReadCheckpointMetadata(path); metaErr != nil {
+		return benchmark.Source{}, "", fmt.Errorf("pokebench: checkpoint metadata: %w", metaErr)
+	} else if ok {
+		source.OriginRunID = meta.RunID
+		source.OriginCommit = meta.Commit
+		source.OriginMilestone = meta.Milestone
+		source.OriginSeed = meta.Seed
+	}
+	return source, path, nil
 }
 
 func resolveCheckpoint(corpus, name string) (string, error) {
