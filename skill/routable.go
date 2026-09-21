@@ -77,9 +77,8 @@ func (p *RoutePlanner) Reachability(dest Destination) error {
 	if p == nil {
 		return nil // no planner is no evidence; never hide a place on a guess
 	}
-	targetX, targetY := dest.routeCoordinates()
-	_, err := world.FindRouteAtDestinationWithCapabilities(
-		p.graph, p.cur, dest.Map, int(p.x), int(p.y), targetX, targetY, nil, p.prereqs,
+	_, err := findRoutePlanForDestination(
+		p.graph, p.cur, int(p.x), int(p.y), dest, nil, p.prereqs,
 	)
 	if errors.Is(err, world.ErrRouteReplanRequired) {
 		// The target lies beyond an executable semantic frontier. GoTo can
