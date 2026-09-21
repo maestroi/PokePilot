@@ -170,10 +170,28 @@ func (m *Emu) SaveState() ([]byte, error) {
 // state. This keeps existing fixtures and resumable-run checkpoints readable
 // while allowing new diagnostics to use SaveStateChecked.
 func (m *Emu) LoadState(b []byte) error {
+	var err error
 	if isCheckedState(b) {
-		return m.e.LoadStateChecked(b)
+		err = m.e.LoadStateChecked(b)
+	} else {
+		err = m.e.LoadState(b)
 	}
-	return m.e.LoadState(b)
+	if err != nil {
+		return err
+	}
+
+	// A state restore is an explicit visual epoch boundary. The long-lived
+	// farm worker starts Watch before it boots and leases runs, so its spectator
+	// queue may still contain intro or previous-run frames. A resumed checkpoint
+	// can have a higher frame counter than those frames, which means rollback
+	// detection alone cannot notice the boundary. Reset and seed the spectator
+	// from the restored machine immediately; preview failures remain diagnostic
+	// only and must never turn a valid state restore into a gameplay failure.
+	if m.spec != nil {
+		_ = m.spec.Reset(m.e)
+		m.lastCapture = m.e.FrameCount()
+	}
+	return nil
 }
 
 // FrameCount returns the number of frames stepped since the ROM was loaded.

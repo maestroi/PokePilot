@@ -93,6 +93,28 @@ func TestLiveFrameQueueResetsOnFrameRollback(t *testing.T) {
 	}
 }
 
+func TestLiveFrameQueueExplicitResetStartsNewEpochWhenFrameIncreases(t *testing.T) {
+	q := newLiveFrameQueue(8)
+	q.push(300, []byte("boot-a"))
+	q.push(303, []byte("boot-b"))
+
+	// Durable resume checkpoints commonly have a larger frame count than the
+	// worker's one-time boot sequence. The epoch must therefore be explicit,
+	// not inferred only from a decreasing frame number.
+	q.reset(900000, []byte("restored"))
+
+	got, ok := q.nextPlayback()
+	if !ok {
+		t.Fatal("nextPlayback() missing restored frame after explicit reset")
+	}
+	if got.frame != 900000 || string(got.png) != "restored" {
+		t.Fatalf("nextPlayback() after explicit reset = (%d, %q), want (900000, %q)", got.frame, got.png, "restored")
+	}
+	if _, ok := q.nextPlayback(); !ok {
+		t.Fatal("nextPlayback() should retain the restored frame once queue is drained")
+	}
+}
+
 func TestLiveSpectatorUsesNativeTimeStride(t *testing.T) {
 	if got := newLiveSpectator(1).captureEvery; got != 3 {
 		t.Fatalf("capture-every 1 stride = %d, want 3", got)
