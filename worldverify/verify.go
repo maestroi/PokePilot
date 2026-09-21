@@ -396,7 +396,6 @@ func validateExecution(report *Report, edge Edge, from, to Map, fromComponents, 
 		report.add(SeverityInfo, "dynamic_execution_unknown", fmt.Sprintf("edge %q is intentionally not statically proven executable: %s", edge.ID, reason), edge.From, edge.ID)
 		return
 	case ExecutionProven:
-		report.Stats.ExecutableEdges++
 	default:
 		report.add(SeverityError, "invalid_execution_status", fmt.Sprintf("edge %q has unknown execution status %q", edge.ID, execution.Status), edge.From, edge.ID)
 		return
@@ -414,6 +413,8 @@ func validateExecution(report *Report, edge Edge, from, to Map, fromComponents, 
 		report.add(SeverityError, "edge_not_executable", fmt.Sprintf("edge %q has no statically executable local crossing", edge.ID), edge.From, edge.ID)
 		return
 	}
+
+	report.Stats.ExecutableEdges++
 
 	executableExit := map[int]bool{}
 	for _, path := range execution.Paths {
