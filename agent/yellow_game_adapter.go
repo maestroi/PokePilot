@@ -9,6 +9,7 @@ import (
 	gameruntime "github.com/maestroi/pokepilot/game"
 	yellowcontroller "github.com/maestroi/pokepilot/yellow/controller"
 	yellowprofile "github.com/maestroi/pokepilot/yellow/profile"
+	yellowrom "github.com/maestroi/pokepilot/yellow/rom"
 )
 
 var errYellowControllerUnavailable = errors.New("Pokémon Yellow objective controller is not implemented yet")
@@ -82,6 +83,19 @@ func (a *yellowObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, err
 			return result, fmt.Errorf("agent: %s: %w", o, err)
 		}
 		return result, nil
+	case KindBuy:
+		obs, err := a.Observe()
+		if err != nil {
+			return result, fmt.Errorf("agent: %s: observe Yellow mart: %w", o, err)
+		}
+		rawItem, ok := yellowMartItemID(a.romData, obs.Map, o.Item)
+		if !ok {
+			return result, fmt.Errorf("agent: %s: Yellow mart does not stock semantic item %q", o, o.Item)
+		}
+		if err := yellowcontroller.Buy(a.m, a.romData, rawItem, o.Qty); err != nil {
+			return result, fmt.Errorf("agent: %s: %w", o, err)
+		}
+		return result, nil
 	case KindStarter:
 		if err := yellowcontroller.GetPikachuStarter(a.m, a.romData); err != nil {
 			return result, fmt.Errorf("agent: %s: %w", o, err)
@@ -107,6 +121,24 @@ func (a *yellowObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, err
 	default:
 		return result, fmt.Errorf("agent: %s: %w", o, errYellowControllerUnavailable)
 	}
+}
+
+
+func yellowMartItemID(romData []byte, mapID uint8, id ItemID) (uint8, bool) {
+	items, err := yellowrom.MartItems(romData, mapID)
+	if err != nil {
+		return 0, false
+	}
+	for _, raw := range items {
+		name, err := yellowrom.ItemName(romData, raw)
+		if err != nil {
+			continue
+		}
+		if ItemID(gameruntime.CanonicalID(name)) == id {
+			return raw, true
+		}
+	}
+	return 0, false
 }
 
 func (a *yellowObjectiveAdapter) WithinObjectiveBudget(o Objective, fn func() error) error {
