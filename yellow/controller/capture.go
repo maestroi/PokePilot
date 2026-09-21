@@ -1080,3 +1080,283 @@ func CaptureFishing(m *emu.Emu, romData []byte, species, rod uint8) (CaptureResu
 	return result, fmt.Errorf("%w: %d rod attempts, %d encounters",
 		ErrYellowCatchHuntExhausted, yellowFishingCap, result.Encounters)
 }
+
+
+const (
+	yellowSafariGateMap   = 0x9c
+	yellowSafariEastMap   = 0xd9
+	yellowSafariNorthMap  = 0xda
+	yellowSafariWestMap   = 0xdb
+	yellowSafariCenterMap = 0xdc
+
+	yellowSafariSessions = 3
+	yellowSafariLegs     = 500
+)
+
+func yellowSafariHabitat(mapID uint8) bool {
+	return mapID >= yellowSafariEastMap && mapID <= yellowSafariCenterMap
+}
+
+func yellowSafariActive(m *emu.Emu) bool {
+	return m.Peek8(sym.NumSafariBalls) > 0 &&
+		(yellowSafariHabitat(m.Peek8(sym.CurMap)) || m.Peek8(sym.CurMap) == yellowSafariGateMap)
+}
+
+func enterYellowSafari(m *emu.Emu, romData []byte) error {
+	if yellowSafariActive(m) && yellowSafariHabitat(m.Peek8(sym.CurMap)) {
+		return nil
+	}
+	if err := GoTo(m, romData, yellowSafariGateMap, 4, 3); err != nil {
+		if m.Peek8(sym.CurMap) != yellowSafariGateMap {
+			return fmt.Errorf("yellow Safari: reach gate: %w", err)
+		}
+	}
+
+	for frame := 0; frame < 9000; frame++ {
+		if yellowSafariHabitat(m.Peek8(sym.CurMap)) && m.Peek8(sym.NumSafariBalls) > 0 {
+			return waitYellowControllable(m, romData, 1200)
+		}
+		text := strings.ToUpper(screenText(m))
+		if m.Peek8(sym.MaxMenuItem) == 1 && strings.Contains(text, "YES") && strings.Contains(text, "NO") {
+			if err := selectYellowTwoOption(m, false); err != nil {
+				return fmt.Errorf("yellow Safari: accept admission: %w", err)
+			}
+			continue
+		}
+		if m.Peek8(sym.FontLoaded) != 0 {
+			m.Tap(emu.A, 3, 7)
+			continue
+		}
+		if m.Peek8(sym.CurMap) == yellowSafariGateMap &&
+			m.Peek8(sym.JoyIgnore) == 0 &&
+			m.Peek8(sym.YCoord) >= 3 {
+			m.Tap(emu.Up, 3, 7)
+			continue
+		}
+		m.StepFrame()
+	}
+	return fmt.Errorf("yellow Safari: admission did not reach an active session")
+}
+
+func leaveYellowSafari(m *emu.Emu, romData []byte) error {
+	if !yellowSafariActive(m) {
+		return nil
+	}
+	if m.Peek8(sym.CurMap) != yellowSafariGateMap {
+		if err := GoTo(m, romData, yellowSafariGateMap, 4, 1); err != nil &&
+			m.Peek8(sym.CurMap) != yellowSafariGateMap {
+			return fmt.Errorf("yellow Safari: return to gate: %w", err)
+		}
+	}
+	for frame := 0; frame < 6000; frame++ {
+		if m.Peek8(sym.NumSafariBalls) == 0 && m.Peek8(sym.CurMap) != yellowSafariGateMap {
+			return waitYellowControllable(m, romData, 1200)
+		}
+		text := strings.ToUpper(screenText(m))
+		if m.Peek8(sym.MaxMenuItem) == 1 && strings.Contains(text, "YES") && strings.Contains(text, "NO") {
+			if err := selectYellowTwoOption(m, false); err != nil {
+				return fmt.Errorf("yellow Safari: confirm early exit: %w", err)
+			}
+			continue
+		}
+		if m.Peek8(sym.FontLoaded) != 0 {
+			m.Tap(emu.A, 3, 7)
+			continue
+		}
+		if m.Peek8(sym.CurMap) == yellowSafariGateMap &&
+			m.Peek8(sym.JoyIgnore) == 0 &&
+			m.Peek8(sym.YCoord) <= 1 {
+			m.Tap(emu.Down, 3, 7)
+			continue
+		}
+		m.StepFrame()
+	}
+	return fmt.Errorf("yellow Safari: early exit did not settle")
+}
+
+func yellowSafariBattleMenuUp(m *emu.Emu) bool {
+	return battlePhaseFor(screenText(m), m.Peek8(sym.MaxMenuItem), m.Peek8(sym.ForcePlayerToChooseMon) != 0) == battlePhaseSafariMenu
+}
+
+func throwYellowSafariBall(m *emu.Emu, romData []byte, species uint8) (caught, ended bool, err error) {
+	for frame := 0; frame < yellowCatchMenuBudget && !yellowSafariBattleMenuUp(m); frame++ {
+		if m.Peek8(sym.IsInBattle) == 0 {
+			return false, true, nil
+		}
+		m.Tap(emu.A, 3, 7)
+	}
+	if !yellowSafariBattleMenuUp(m) {
+		return false, false, fmt.Errorf("yellow Safari: BALL menu did not appear")
+	}
+	before := m.Peek8(sym.NumSafariBalls)
+	if before == 0 {
+		return false, false, ErrYellowCatchOutOfBalls
+	}
+	if err := selectYellowBattleMainMenu(m, yellowBattleMenuLeftX, 0); err != nil {
+		return false, false, fmt.Errorf("yellow Safari: select BALL: %w", err)
+	}
+	m.Tap(emu.A, 3, 7)
+
+	for frame := 0; frame < yellowCatchSettleBudget; frame++ {
+		owned, ownedErr := yellowPokedexOwnsInternal(m, romData, species)
+		if ownedErr == nil && owned && m.Peek8(sym.IsInBattle) == 0 {
+			if err := waitYellowControllable(m, romData, yellowCatchSettleBudget); err != nil {
+				return false, true, err
+			}
+			return true, true, nil
+		}
+		if m.Peek8(sym.IsInBattle) == 0 {
+			owned, ownedErr = yellowPokedexOwnsInternal(m, romData, species)
+			return ownedErr == nil && owned, true, ownedErr
+		}
+		if yellowSafariBattleMenuUp(m) {
+			after := m.Peek8(sym.NumSafariBalls)
+			if after+1 != before {
+				return false, false, fmt.Errorf("yellow Safari: BALL count changed %d -> %d, want exactly one consumed", before, after)
+			}
+			return false, false, nil
+		}
+		if nicknamePrompt(m) {
+			if err := declineNickname(m); err != nil {
+				return false, false, err
+			}
+			continue
+		}
+		m.Tap(emu.A, 3, 7)
+	}
+	return false, false, fmt.Errorf("yellow Safari: BALL result did not settle")
+}
+
+func travelYellowSafariHabitat(m *emu.Emu, romData []byte, mapID uint8) error {
+	cells, err := yellowrom.GrassEncounterCells(romData, mapID)
+	if err != nil {
+		return err
+	}
+	if len(cells) == 0 {
+		return fmt.Errorf("yellow Safari: target map %#02x has no encounter grass", mapID)
+	}
+	limit := len(cells)
+	if limit > 12 {
+		limit = 12
+	}
+	var last error
+	for i := 0; i < limit; i++ {
+		if !yellowSafariActive(m) {
+			return fmt.Errorf("yellow Safari: session expired while routing to map %#02x", mapID)
+		}
+		c := cells[i]
+		if err := GoTo(m, romData, mapID, c.X, c.Y); err == nil {
+			return nil
+		} else {
+			last = err
+		}
+	}
+	return fmt.Errorf("yellow Safari: no reachable grass entry on map %#02x: %w", mapID, last)
+}
+
+// CaptureSafari owns Yellow's paid Safari session lifecycle. It enters through
+// the real gate, hunts only on the requested Safari map, runs from unwanted
+// encounters, throws only Safari Balls at the wanted species, and starts a
+// fresh bounded session when the 502-step/ball budget expires.
+func CaptureSafari(m *emu.Emu, romData []byte, targetMap, species uint8) (CaptureResult, error) {
+	var result CaptureResult
+	if m == nil {
+		return result, fmt.Errorf("yellow Safari: nil emulator")
+	}
+	if !yellowSafariHabitat(targetMap) {
+		return result, fmt.Errorf("yellow Safari: map %#02x is not a Safari habitat", targetMap)
+	}
+	owned, err := yellowPokedexOwnsInternal(m, romData, species)
+	if err != nil {
+		return result, err
+	}
+	if owned {
+		return CaptureResult{Caught: true, Species: species}, nil
+	}
+	has, err := yellowrom.HasWildSpecies(romData, targetMap, gen1rom.HabitatGrass, species)
+	if err != nil {
+		return result, err
+	}
+	if !has {
+		return result, fmt.Errorf("yellow Safari: species %#02x is not in map %#02x encounter table", species, targetMap)
+	}
+
+	for session := 0; session < yellowSafariSessions; session++ {
+		if err := enterYellowSafari(m, romData); err != nil {
+			return result, fmt.Errorf("yellow Safari: enter session %d: %w", session+1, err)
+		}
+		if err := travelYellowSafariHabitat(m, romData, targetMap); err != nil {
+			if !yellowSafariActive(m) {
+				continue
+			}
+			return result, err
+		}
+
+		a, b, err := chooseYellowGrassPair(romData, targetMap, int(m.Peek8(sym.XCoord)), int(m.Peek8(sym.YCoord)))
+		if err != nil {
+			return result, err
+		}
+		next := a
+		for legs := 0; legs < yellowSafariLegs && yellowSafariActive(m); legs++ {
+			if err := walkTo(m, romData, next.x, next.y, nil); err != nil && m.Peek8(sym.IsInBattle) == 0 {
+				a, b, err = chooseYellowGrassPair(romData, targetMap, int(m.Peek8(sym.XCoord)), int(m.Peek8(sym.YCoord)))
+				if err != nil {
+					return result, err
+				}
+				next = a
+				continue
+			}
+			if next == a {
+				next = b
+			} else {
+				next = a
+			}
+			if m.Peek8(sym.IsInBattle) == 0 {
+				continue
+			}
+			enemy, err := yellowWaitEnemySpecies(m)
+			if err != nil {
+				return result, err
+			}
+			result.Encounters++
+			if enemy != species {
+				if _, err := Battle(m, romData); err != nil {
+					return result, fmt.Errorf("yellow Safari: flee unwanted species %#02x: %w", enemy, err)
+				}
+				continue
+			}
+
+			for thrown := 0; thrown < yellowCatchBallBudget && m.Peek8(sym.NumSafariBalls) > 0; thrown++ {
+				caught, ended, err := throwYellowSafariBall(m, romData, species)
+				if errors.Is(err, ErrYellowCatchOutOfBalls) {
+					break
+				}
+				if err != nil {
+					return result, err
+				}
+				result.BallsThrown++
+				if caught {
+					result.Caught = true
+					result.Species = species
+					return result, nil
+				}
+				if ended {
+					break
+				}
+			}
+			if m.Peek8(sym.IsInBattle) != 0 {
+				if _, err := Battle(m, romData); err != nil {
+					return result, fmt.Errorf("yellow Safari: leave uncaught wanted battle: %w", err)
+				}
+			}
+		}
+
+		if yellowSafariActive(m) {
+			if err := leaveYellowSafari(m, romData); err != nil {
+				return result, fmt.Errorf("yellow Safari: close session %d: %w", session+1, err)
+			}
+		}
+	}
+	return result, fmt.Errorf("%w: Safari sessions=%d encounters=%d balls=%d",
+		ErrYellowCatchHuntExhausted, yellowSafariSessions, result.Encounters, result.BallsThrown)
+}
