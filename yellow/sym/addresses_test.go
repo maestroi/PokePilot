@@ -15,7 +15,10 @@ func TestPhase0AddressesMatchSupportedYellowLayout(t *testing.T) {
 		{name: "wCurMapWidth", got: CurMapWidth, want: 0xD368},
 		{name: "wPlayerName", got: PlayerName, want: 0xD157},
 		{name: "wRivalName", got: RivalName, want: 0xD349},
+		{name: "wSpritePlayerStateData1", got: SpritePlayerStateData1, want: 0xC100},
+		{name: "wSpriteStateData2", got: SpriteStateData2, want: 0xC200},
 		{name: "wSpritePlayerStateData1+9", got: SpritePlayerFacing, want: 0xC109},
+		{name: "wOverworldMap", got: OverworldMap, want: 0xC6E8},
 		{name: "wTileMap", got: TileMap, want: 0xC3A0},
 		{name: "wCurrentMenuItem", got: CurrentMenuItem, want: 0xCC26},
 		{name: "wMaxMenuItem", got: MaxMenuItem, want: 0xCC28},
@@ -94,5 +97,8 @@ func TestPhase0AddressesMatchSupportedYellowLayout(t *testing.T) {
 	}
 	if PartyMonSize != 0x2C {
 		t.Fatalf("PartyMonSize = %d, want 44", PartyMonSize)
+	}
+	if OverworldMapLen != 1300 {
+		t.Fatalf("OverworldMapLen = %d, want 1300", OverworldMapLen)
 	}
 }
