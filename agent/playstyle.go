@@ -59,6 +59,13 @@ type RoutePriorityPlanner interface {
 	RoutePriority() RoutePriority
 }
 
+func routePriorityForPlanner(p Planner) RoutePriority {
+	if provider, ok := p.(RoutePriorityPlanner); ok {
+		return provider.RoutePriority()
+	}
+	return RoutePriorityConservative
+}
+
 // RoutePriorityForPlayStyle maps the product-facing play style to portable
 // execution policy. Empty retains the legacy speedrun default.
 func RoutePriorityForPlayStyle(profile PlayStyleProfile) RoutePriority {
