@@ -526,8 +526,15 @@ func counters(res agent.Result) map[string]int64 {
 
 func modelStats(res agent.Result, calls []agent.LLMCall, route agent.LLMRoute, health agent.LLMHealth) ModelStats {
 	latencies := make([]float64, 0, len(calls))
+	promptTokens, completionTokens := res.PromptTokens, res.CompletionTokens
+	if promptTokens == 0 && health.PromptTokens > 0 {
+		promptTokens = health.PromptTokens
+	}
+	if completionTokens == 0 && health.CompletionTokens > 0 {
+		completionTokens = health.CompletionTokens
+	}
 	stats := ModelStats{
-		Calls: len(calls), PromptTokens: res.PromptTokens, CompletionTokens: res.CompletionTokens,
+		Calls: len(calls), PromptTokens: promptTokens, CompletionTokens: completionTokens,
 		Route: route, Health: health,
 	}
 	for _, call := range calls {
