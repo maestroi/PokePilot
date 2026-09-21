@@ -416,9 +416,8 @@ func safeForcedBanWithDeadEnds(
 		}
 		without.Edges[mapID] = filtered
 	}
-	targetX, targetY := dest.routeCoordinates()
-	route, err := world.FindRoutePlanAtDestinationWithCapabilities(
-		&without, cur, dest.Map, int(x), int(y), targetX, targetY, blockedHere, prereqs,
+	route, err := findRoutePlanForDestination(
+		&without, cur, int(x), int(y), dest, blockedHere, prereqs,
 	)
 	if errors.Is(err, world.ErrRouteReplanRequired) && len(route) > 0 {
 		return route, nil, true
@@ -649,9 +648,8 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 		var mem state.Mem
 		state.Snapshot(m, &mem)
 		prereqs := redRoutePrerequisites(routeGraph, romData, &mem)
-		targetX, targetY := routeDest.routeCoordinates()
-		routeResult, err := routePlanByTravelPolicy(
-			m, planGraph, cur, routeDest.Map, int(x), int(y), targetX, targetY, blockedHere, prereqs,
+		routeResult, err := routePlanToDestinationByTravelPolicy(
+			m, planGraph, cur, int(x), int(y), routeDest, blockedHere, prereqs,
 		)
 		route := routeResult.Steps
 		if errors.Is(err, world.ErrRouteReplanRequired) && len(route) > 0 {
