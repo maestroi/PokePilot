@@ -53,6 +53,13 @@ func (a *yellowObjectiveAdapter) NormalizeBoundary() error {
 func (a *yellowObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error) {
 	result := ObjectiveResult{Objective: o}
 	switch o.Kind {
+	case KindTalk:
+		presses, err := yellowcontroller.TalkAt(a.m, a.romData, o.X, o.Y)
+		if err != nil {
+			return result, fmt.Errorf("agent: %s: %w", o, err)
+		}
+		result.InteractionPresses = presses
+		return result, nil
 	case KindStarter:
 		if err := yellowcontroller.GetPikachuStarter(a.m, a.romData); err != nil {
 			return result, fmt.Errorf("agent: %s: %w", o, err)
