@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"log"
@@ -476,7 +477,7 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 	case "scripted":
 		reason, detail, progEarly, progFinal = runFarmScripted(m, starter, dest, seed)
 	case "llm":
-		reason, detail, progEarly, progFinal, emulatorPoisoned = runFarmLLM(m, starter, goal, spec.LLMProfile, spec.ReasoningEffort, maxRounds, maxFrames, seed, cancel, snap, checkpointDir)
+		reason, detail, progEarly, progFinal, emulatorPoisoned = runFarmLLM(m, spec, starter, goal, spec.LLMProfile, spec.ReasoningEffort, maxRounds, maxFrames, seed, cancel, snap, checkpointDir)
 	}
 
 	if emulatorPoisoned {
@@ -675,8 +676,10 @@ func runFarmScripted(m *emu.Emu, starter, dest string, seed int64) (string, stri
 // runFarmLLM mirrors runLLM's diagnostics and objective list; the only
 // differences are that the budget comes from the spec and cancel is the
 // wall's cooperative stop.
-func runFarmLLM(m *emu.Emu, starter, goal, llmProfile, reasoningEffort string, maxRounds, maxFrames int, seed int64, cancel <-chan struct{}, snap *heartbeatSnap, checkpointDir string) (string, string, *farm.Progress, *farm.Progress, bool) {
+func runFarmLLM(m *emu.Emu, spec farm.Spec, starter, goal, llmProfile, reasoningEffort string, maxRounds, maxFrames int, seed int64, cancel <-chan struct{}, snap *heartbeatSnap, checkpointDir string) (string, string, *farm.Progress, *farm.Progress, bool) {
 	resumeFrom := farmResumePath(checkpointDir)
+	romSum := sha256.Sum256(m.ROM())
+	romSHA256 := fmt.Sprintf("%x", romSum[:])
 	// When the spec names a starter, the farm takes it before handing control
 	// to the model — the same reason badgerun does (a model that knows Pokemon
 	// always picks Squirtle otherwise). A resumed state is already past that
@@ -697,6 +700,7 @@ func runFarmLLM(m *emu.Emu, starter, goal, llmProfile, reasoningEffort string, m
 	logw := &agentTraceLog{w: os.Stdout, note: m.TraceNote}
 	stats := newStatsPlanner(llmProfile, reasoningEffort, goal, m, m.TraceStats, snap)
 	stats.wirePlannerLogs(logw, snap)
+	benchmarkStarted := time.Now()
 	res := agent.Run(m, m.ROM(), reportingPlanner{inner: stats, snap: snap}, agent.Budget{
 		MaxRounds:     maxRounds,
 		MaxFrames:     maxFrames,
@@ -706,7 +710,11 @@ func runFarmLLM(m *emu.Emu, starter, goal, llmProfile, reasoningEffort string, m
 		CheckpointDir: checkpointDir,
 		ResumeFrom:    resumeFrom,
 	})
+	benchmarkFinished := time.Now()
 	captureObjectiveFailureTelemetry(res)
+	if err := writeFarmBenchmarkResult(spec, res, stats, benchmarkStarted, benchmarkFinished, resumeFrom, checkpointDir, romSHA256, maxFrames); err != nil {
+		log.Printf("farm: %s: benchmark result: %v", spec.RunID, err)
+	}
 
 	fmt.Printf("\nrun stopped: %s after %d round(s)\n", stopName(res.Stop), res.Rounds)
 	for i, o := range res.Completed {
