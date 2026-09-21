@@ -21,7 +21,7 @@ const (
 	redProgressPokedexAcquired            ProgressID = redprofile.ProgressPokedexAcquired
 	redProgressSSTicketAcquired           ProgressID = redprofile.ProgressSSTicketAcquired
 	redProgressHM01Acquired               ProgressID = redprofile.ProgressHM01Acquired
-	redProgressFlyReady                     ProgressID = "fly_ready"
+	redProgressFlyReady                   ProgressID = "fly_ready"
 	redProgressBicycleAcquired            ProgressID = redprofile.ProgressBicycleAcquired
 	redProgressBoulderBadge               ProgressID = redprofile.ProgressBoulderBadge
 	redProgressThunderBadge               ProgressID = redprofile.ProgressThunderBadge
