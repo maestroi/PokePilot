@@ -77,10 +77,22 @@ type liveConnectionKey struct {
 // inserted at the first old edge for that logical connection, preserving the
 // route graph's relative edge order while dropping any remaining stale bands.
 func (g *Graph) resegmentConnectionsTouching(base *Graph, mapID uint8) {
+	affected := make(map[Edge]bool)
+	for _, edges := range base.Edges {
+		for _, e := range edges {
+			_, known := base.connections[e]
+			if e.Kind == EdgeConnection && known && (e.From == mapID || e.To == mapID) {
+				affected[e] = true
+			}
+		}
+	}
+
 	g.Edges = make(map[uint8][]Edge, len(base.Edges))
 	g.connections = make(map[Edge]worldmodel.Connection, len(base.connections))
 	for e, c := range base.connections {
-		g.connections[e] = c
+		if !affected[e] {
+			g.connections[e] = c
+		}
 	}
 
 	seen := make(map[liveConnectionKey]bool)
@@ -88,12 +100,11 @@ func (g *Graph) resegmentConnectionsTouching(base *Graph, mapID uint8) {
 		rebuilt := make([]Edge, 0, len(edges))
 		for _, e := range edges {
 			c, known := base.connections[e]
-			if e.Kind != EdgeConnection || !known || (e.From != mapID && e.To != mapID) {
+			if !affected[e] || !known {
 				rebuilt = append(rebuilt, e)
 				continue
 			}
 
-			delete(g.connections, e)
 			key := liveConnectionKey{from: e.From, to: e.To, dir: e.Dir, offset: c.Offset}
 			if seen[key] {
 				continue
