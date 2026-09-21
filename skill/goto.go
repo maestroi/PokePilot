@@ -638,9 +638,10 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 		var mem state.Mem
 		state.Snapshot(m, &mem)
 		prereqs := redRoutePrerequisites(routeGraph, romData, &mem)
-		route, err := world.FindRoutePlanAtDestinationWithCapabilities(
-			planGraph, cur, dest.Map, int(x), int(y), int(dest.X), int(dest.Y), blockedHere, prereqs,
+		routeResult, err := routePlanByTravelPolicy(
+			m, planGraph, cur, dest.Map, int(x), int(y), int(dest.X), int(dest.Y), blockedHere, prereqs,
 		)
+		route := routeResult.Steps
 		// A dead-end map's only exit IS the reverse. Route 4's Pokemon
 		// Center (map 0x44) has two warps and both land back on Route 4,
 		// so banning the reverse bans every edge and the journey dies on
@@ -689,9 +690,10 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 			// completely. The next visit to Route 24 then had nowhere at all to
 			// go, and "go to route 2" died on "world: no route" even though
 			// Route 24 -> Cerulean was the one genuinely open door.
-			retry, retryErr := world.FindRoutePlanAtDestinationWithCapabilities(
-				routeGraph, cur, dest.Map, int(x), int(y), int(dest.X), int(dest.Y), blockedHere, prereqs,
+			retryResult, retryErr := routePlanByTravelPolicy(
+				m, routeGraph, cur, dest.Map, int(x), int(y), int(dest.X), int(dest.Y), blockedHere, prereqs,
 			)
+			retry := retryResult.Steps
 			if forced, ok := forcedRevisitBan(routeGraph, retry, retryErr, visitedMaps, deadEnds, visitedPositions); ok {
 				// Banning forced.e is only safe if the destination stays
 				// reachable without it after every dead-end ban already
