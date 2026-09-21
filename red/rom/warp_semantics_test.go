@@ -4,7 +4,7 @@ import "testing"
 
 func TestIsInertWarp(t *testing.T) {
 	for _, tc := range []struct {
-		name       string
+		name        string
 		mapID, x, y uint8
 	}{
 		{name: "celadon inaccessible mart entry", mapID: 0x06, x: 39, y: 19},
