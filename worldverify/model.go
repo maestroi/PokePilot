@@ -167,11 +167,11 @@ type Edge struct {
 // RequiredMaps is retained as a compatibility shorthand for required
 // expectations and can be removed once all adapters have migrated.
 type Snapshot struct {
-	Game            string           `json:"game,omitempty"`
-	Maps            []Map            `json:"maps"`
-	Edges           []Edge           `json:"edges"`
-	StartMaps       []MapID          `json:"start_maps,omitempty"`
-	RequiredMaps    []MapID          `json:"required_maps,omitempty"`
-	MapExpectations    []MapExpectation    `json:"map_expectations,omitempty"`
+	Game                string               `json:"game,omitempty"`
+	Maps                []Map                `json:"maps"`
+	Edges               []Edge               `json:"edges"`
+	StartMaps           []MapID              `json:"start_maps,omitempty"`
+	RequiredMaps        []MapID              `json:"required_maps,omitempty"`
+	MapExpectations     []MapExpectation     `json:"map_expectations,omitempty"`
 	MapParseDiagnostics []MapParseDiagnostic `json:"map_parse_diagnostics,omitempty"`
 }
