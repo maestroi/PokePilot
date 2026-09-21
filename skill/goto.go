@@ -520,6 +520,8 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 		routeGraph = nav.routeGraph
 	}
 	defer func() { nav.routeGraph = routeGraph }()
+	restageCount := 0
+	const maxRestages = 2
 
 	for {
 		if err := abortIfBattle(m); err != nil {
@@ -727,6 +729,25 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 					}
 					if replans++; replans > maxReplans {
 						return newReplanExhaustedError(maxReplans, cur, x, y, dest, err)
+					}
+					continue
+				}
+				// Same-map field bridging cannot cross a building that is
+				// another map (Route 16's gate between west-north and
+				// east-north). Restage onto a warp-adjacent tile that
+				// ordinary routing can already reach and from which dest
+				// opens — then re-plan from there.
+				stage, stageOK, stageErr := componentRestagingDestination(m, romData, h, routeGraph, dest, prereqs, blockedHere)
+				if stageErr != nil {
+					return fmt.Errorf("skill: GoTo: component restage on map %02x: %w", cur, stageErr)
+				}
+				if stageOK && restageCount < maxRestages {
+					restageCount++
+					if replans++; replans > maxReplans {
+						return newReplanExhaustedError(maxReplans, cur, x, y, dest, err)
+					}
+					if stageErr := goToWithTransitionExecutorMemory(m, romData, stage, executor, nav); stageErr != nil {
+						return fmt.Errorf("skill: GoTo: restage to map %02x (%d,%d): %w", stage.Map, stage.X, stage.Y, stageErr)
 					}
 					continue
 				}
