@@ -5,6 +5,7 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/world"
+	yellowprofile "github.com/maestroi/pokepilot/yellow/profile"
 	yellowrom "github.com/maestroi/pokepilot/yellow/rom"
 	"github.com/maestroi/pokepilot/yellow/sym"
 )
@@ -30,16 +31,18 @@ func GoTo(m *emu.Emu, romData []byte, destMap, destX, destY uint8) error {
 	}
 
 	for attempt := 0; attempt < travelReplanBudget; attempt++ {
+		recovered, err := recoverYellowTravelInterruption(m, romData)
+		if err != nil {
+			return err
+		}
+		if recovered {
+			continue
+		}
+
 		cur := m.Peek8(sym.CurMap)
 		x, y := m.Peek8(sym.XCoord), m.Peek8(sym.YCoord)
 		if cur == destMap && x == destX && y == destY {
 			return nil
-		}
-		if m.Peek8(sym.IsInBattle) != 0 {
-			return fmt.Errorf("yellow travel: battle interrupted route on map %#02x at (%d,%d)", cur, x, y)
-		}
-		if m.Peek8(sym.FontLoaded) != 0 {
-			return fmt.Errorf("yellow travel: dialogue interrupted route on map %#02x at (%d,%d)", cur, x, y)
 		}
 
 		route, err := world.FindRouteAtDestination(
@@ -51,17 +54,59 @@ func GoTo(m *emu.Emu, romData []byte, destMap, destX, destY uint8) error {
 		}
 		if len(route) == 0 {
 			if err := walkTo(m, romData, int(destX), int(destY), nil); err != nil {
+				recovered, recoverErr := recoverYellowTravelInterruption(m, romData)
+				if recoverErr != nil {
+					return fmt.Errorf("yellow travel: final walk recovery on map %#02x: %w", cur, recoverErr)
+				}
+				if recovered {
+					continue
+				}
 				return fmt.Errorf("yellow travel: final walk on map %#02x: %w", cur, err)
 			}
 			continue
 		}
 
 		if err := traverseYellowEdge(m, romData, route[0]); err != nil {
+			recovered, recoverErr := recoverYellowTravelInterruption(m, romData)
+			if recoverErr != nil {
+				return fmt.Errorf("yellow travel: edge recovery: %w", recoverErr)
+			}
+			if recovered {
+				continue
+			}
 			return err
 		}
 	}
 	return fmt.Errorf("yellow travel: exceeded %d re-plans toward map %#02x (%d,%d)",
 		travelReplanBudget, destMap, destX, destY)
+}
+
+func recoverYellowTravelInterruption(m *emu.Emu, romData []byte) (bool, error) {
+	if m.Peek8(sym.IsInBattle) != 0 {
+		result, err := Battle(m, romData)
+		if err != nil {
+			return true, fmt.Errorf("yellow travel: resolve battle: %w", err)
+		}
+		if result.Outcome == BattleOutcomeLost {
+			// Blackout recovery is a valid new routing origin. The next loop
+			// replans from the semantic respawn state rather than pretending
+			// the interrupted leg still applies.
+			return true, nil
+		}
+		return true, nil
+	}
+
+	obs, err := yellowprofile.New().DecodeObservation(m, romData)
+	if err != nil {
+		return false, fmt.Errorf("yellow travel: observe interruption: %w", err)
+	}
+	if m.Peek8(sym.FontLoaded) != 0 || !obs.Controllable {
+		if _, err := RecoverDialogue(m, romData); err != nil {
+			return true, fmt.Errorf("yellow travel: resolve dialogue/cutscene: %w", err)
+		}
+		return true, nil
+	}
+	return false, nil
 }
 
 func traverseYellowEdge(m *emu.Emu, romData []byte, edge world.Edge) error {
