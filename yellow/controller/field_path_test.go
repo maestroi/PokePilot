@@ -11,12 +11,12 @@ import (
 func yellowTestGrid(t *testing.T, walkable []bool, collision, field []uint8) *world.Grid {
 	t.Helper()
 	grid, err := world.GridFromSpec(worldmodel.GridSpec{
-		MapID:        1,
-		Width:        len(walkable),
-		Height:       1,
-		Walkable:     walkable,
+		MapID:         1,
+		Width:         len(walkable),
+		Height:        1,
+		Walkable:      walkable,
 		CollisionTile: collision,
-		FieldTile:    field,
+		FieldTile:     field,
 	})
 	if err != nil {
 		t.Fatalf("GridFromSpec: %v", err)
