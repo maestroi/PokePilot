@@ -174,17 +174,28 @@ func TestMaterializeCheckpointsCopiesStateAndAgentMemory(t *testing.T) {
 	if err := os.WriteFile(strings.TrimSuffix(state, ".state")+".knowledge-v1.json", []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	result := Result{Milestones: []Split{{ID: "brock", Round: 1}}}
+	result := Result{
+		RunID: "origin-run", Commit: "abc", Game: "pokemon-red", ROMSHA256: "romhash", Seed: 7,
+		Configuration: Configuration{PlayStyle: "speedrun"},
+		Milestones: []Split{{ID: "brock", Round: 1, Frame: 100}},
+	}
 	if err := MaterializeCheckpoints(&result, sourceDir, outputDir, ""); err != nil {
 		t.Fatal(err)
 	}
 	if result.Milestones[0].Checkpoint != "checkpoints/brock.state" {
 		t.Fatalf("checkpoint = %q", result.Milestones[0].Checkpoint)
 	}
-	for _, name := range []string{"brock.state", "brock.knowledge-v1.json"} {
+	for _, name := range []string{"brock.state", "brock.knowledge-v1.json", "brock.benchmark.json"} {
 		if _, err := os.Stat(filepath.Join(outputDir, "checkpoints", name)); err != nil {
 			t.Fatalf("%s missing: %v", name, err)
 		}
+	}
+	meta, ok, err := ReadCheckpointMetadata(filepath.Join(outputDir, "checkpoints", "brock.state"))
+	if err != nil || !ok {
+		t.Fatalf("checkpoint metadata: ok=%v err=%v", ok, err)
+	}
+	if meta.RunID != "origin-run" || meta.Commit != "abc" || meta.Milestone != "brock" || meta.Seed != 7 {
+		t.Fatalf("checkpoint metadata = %+v", meta)
 	}
 }
 
