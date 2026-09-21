@@ -110,6 +110,10 @@ func executeObjectiveResult(m *emu.Emu, romData []byte, o Objective) (ObjectiveR
 	return executeObjective(m, romData, o)
 }
 
+func executeObjectiveResultWithRoutePriority(m *emu.Emu, romData []byte, o Objective, priority RoutePriority) (ObjectiveResult, error) {
+	return executeObjectiveWithAdapter(newRedObjectiveAdapterWithRoutePriority(m, romData, priority), o)
+}
+
 func finalizeObjectiveResult(o Objective, result ObjectiveResult, final Observation, err error) ObjectiveResult {
 	result.Objective = o
 	result.Final = final
