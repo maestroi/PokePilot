@@ -1,6 +1,7 @@
 package skill
 
 import (
+	"errors"
 	"strings"
 
 	"github.com/maestroi/pokepilot/emu"
@@ -434,7 +435,9 @@ func ReachableMaps(m *emu.Emu, romData []byte) (map[uint8]bool, error) {
 		}
 		if _, err := world.FindRoutePlanAtDestinationWithCapabilities(
 			g, cur, mapID, int(x), int(y), -1, -1, nil, prereqs,
-		); err == nil {
+		); err == nil || errors.Is(err, world.ErrRouteReplanRequired) {
+			// A semantic frontier is executable now even though its post-action
+			// component topology must be learned by live re-planning.
 			reachable[mapID] = true
 		}
 	}
