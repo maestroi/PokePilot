@@ -18,10 +18,10 @@ const (
 )
 
 // GoTo walks through Yellow's ROM-derived map graph to one concrete native
-// destination. It handles ordinary warps and border connections only. Story
-// pivots (Cut/Surf/Strength/Poké Flute etc.) remain separate semantic
-// controllers; if one blocks a leg this returns a typed, bounded error for the
-// objective runtime to replan around rather than importing Red's gate logic.
+// destination. Local and edge approaches re-plan through Yellow-owned Cut,
+// Surf, Strength and Flash mechanics when the current party can use or prepare
+// them. Story pivots such as Snorlax and scripted puzzle events remain separate
+// semantic controllers; navigation never guesses through those gates.
 func GoTo(m *emu.Emu, romData []byte, destMap, destX, destY uint8) error {
 	if m == nil {
 		return fmt.Errorf("yellow travel: nil emulator")
