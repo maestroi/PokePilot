@@ -103,6 +103,7 @@ func classifyObjectiveOutcome(_ Objective, err error, final Observation) Outcome
 		errors.Is(err, skill.ErrNoDialogue) ||
 		errors.Is(err, skill.ErrDialogueInterrupted) ||
 		errors.Is(err, skill.ErrFieldMovePrerequisite) ||
+		errors.Is(err, skill.ErrPCNoKnownCenter) ||
 		errors.As(err, &blocked) ||
 		errors.As(err, &gate)
 	if knownBlockage {
@@ -261,6 +262,17 @@ func failureCauseFor(err error) (FailureCauseID, []string) {
 	}
 	if errors.Is(err, world.ErrNoRoute) {
 		return "no_route", nil
+	}
+	// ErrPCNoKnownCenter is Bill's PC/VirtualTrade's own sentinel, not a
+	// wrapped world.ErrNoRoute, so it fell through to "unknown_error" and
+	// never accumulated a stable identity for the consecutive-failure
+	// escalation in run_engine_policy.go. MEASURED on runs stranded at
+	// ROUTE_16_FLY_HOUSE (0xBC): "trade through the virtual Cable Club" died
+	// on this every round with reason unknown_failure/unknown_error, so
+	// nothing ever recognized the repeat and the objective retried forever
+	// until the run stalled on a heartbeat timeout instead of failing clean.
+	if errors.Is(err, skill.ErrPCNoKnownCenter) {
+		return "pc_no_known_center", nil
 	}
 	if errors.Is(err, skill.ErrLegUnwalkable) {
 		return "leg_unwalkable", nil

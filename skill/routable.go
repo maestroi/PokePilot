@@ -89,3 +89,21 @@ func (p *RoutePlanner) Reachability(dest Destination) error {
 func (p *RoutePlanner) CanReach(dest Destination) bool {
 	return p == nil || p.Reachability(dest) == nil
 }
+
+// RouteLen reports the number of map transitions to dest under the same
+// capability-aware search Reachability uses, so callers choosing among
+// several known destinations (e.g. the nearest Pokemon Center) rank them
+// consistently with whether GoTo could actually walk there. ok is false when
+// dest is unreachable from this snapshot.
+func (p *RoutePlanner) RouteLen(dest Destination) (n int, ok bool) {
+	if p == nil {
+		return 0, true
+	}
+	edges, err := world.FindRouteAtDestinationWithCapabilities(
+		p.graph, p.cur, dest.Map, int(p.x), int(p.y), int(dest.X), int(dest.Y), nil, p.prereqs,
+	)
+	if err != nil {
+		return 0, false
+	}
+	return len(edges), true
+}

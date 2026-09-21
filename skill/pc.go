@@ -8,7 +8,6 @@ import (
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
-	"github.com/maestroi/pokepilot/world"
 )
 
 // pokemonCenterPCY is the tile the player stands on to use the PC; the PC
@@ -36,12 +35,13 @@ var (
 )
 
 // nearestPokemonCenter chooses the known Center requiring the fewest map
-// transitions from fromMap. PlaceNames is sorted, so equal-length ties are
-// deterministic. Tile-level reachability is still verified by TravelFlee.
-func nearestPokemonCenter(romData []byte, fromMap uint8) (Destination, string, error) {
-	g, err := world.BuildGraph(romData)
+// transitions from the player's current position. PlaceNames is sorted, so
+// equal-length ties are deterministic. Tile-level reachability is still
+// verified by TravelFlee.
+func nearestPokemonCenter(m *emu.Emu, romData []byte) (Destination, string, error) {
+	planner, err := NewRoutePlanner(m, romData)
 	if err != nil {
-		return Destination{}, "", err
+		return Destination{}, "", fmt.Errorf("skill: Bill's PC: build route planner: %w", err)
 	}
 	bestLen := int(^uint(0) >> 1)
 	var best Destination
@@ -54,16 +54,16 @@ func nearestPokemonCenter(romData []byte, fromMap uint8) (Destination, string, e
 		if !ok {
 			continue
 		}
-		route, err := world.FindRoute(g, fromMap, d.Map)
-		if err != nil {
+		n, ok := planner.RouteLen(d)
+		if !ok {
 			continue
 		}
-		if len(route) < bestLen {
-			bestLen, best, bestName = len(route), d, name
+		if n < bestLen {
+			bestLen, best, bestName = n, d, name
 		}
 	}
 	if bestName == "" {
-		return Destination{}, "", fmt.Errorf("%w from map %#04x", ErrPCNoKnownCenter, fromMap)
+		return Destination{}, "", fmt.Errorf("%w from map %#04x", ErrPCNoKnownCenter, m.Peek8(sym.CurMap))
 	}
 	return best, bestName, nil
 }
@@ -86,7 +86,7 @@ func ensureAtPokemonCenterPC(m *emu.Emu, romData []byte, policy MovePolicy) erro
 	}
 	cur := m.Peek8(sym.CurMap)
 	if !knownPokemonCenterMap(cur) {
-		center, name, err := nearestPokemonCenter(romData, cur)
+		center, name, err := nearestPokemonCenter(m, romData)
 		if err != nil {
 			return err
 		}

@@ -139,7 +139,7 @@ func reachCableClubReceptionist(m *emu.Emu, romData []byte, policy MovePolicy) (
 	var total TravelResult
 	cur := m.Peek8(sym.CurMap)
 	if !knownPokemonCenterMap(cur) {
-		center, name, err := nearestPokemonCenter(romData, cur)
+		center, name, err := nearestPokemonCenter(m, romData)
 		if err != nil {
 			return total, fmt.Errorf("skill: VirtualTrade: find Pokemon Center: %w", err)
 		}
