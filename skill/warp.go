@@ -475,30 +475,12 @@ func warpAvoidance(h rom.MapHeader, sx, sy int, blocked map[[2]int]bool) map[[2]
 		if int(w.X) == sx && int(w.Y) == sy {
 			continue
 		}
-		if redInaccessibleWarp(h.ID, w.X, w.Y) {
+		if rom.IsInertWarp(h.ID, w.X, w.Y) {
 			continue
 		}
 		out[[2]int{int(w.X), int(w.Y)}] = true
 	}
 	return out
-}
-
-// redInaccessibleWarp reports warp-table entries the pret decomp marks
-// "; inaccessible". They are Red adapter facts: walkable floor that must not
-// be treated as local eject tiles, and (separately) must not be executable
-// cross-map graph edges — see the permanent semantic gates in
-// route_gate_audit.go.
-func redInaccessibleWarp(mapID, x, y uint8) bool {
-	switch mapID {
-	case celadonCityMap:
-		return x == celadonInaccessibleMartWarpX && y == celadonInaccessibleMartWarpY
-	case silphCo1FMap:
-		return x == silphCo1FInaccessibleStairWarpX && y == silphCo1FInaccessibleStairWarpY
-	case silphCo11FMap:
-		return x == 5 && y == 5
-	default:
-		return false
-	}
 }
 
 // warpTarget picks the warp tile to cross. Among tiles that lead to e.To it
