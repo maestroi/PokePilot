@@ -41,6 +41,8 @@ func TestPhase0AddressesMatchSupportedYellowLayout(t *testing.T) {
 		{name: "wActionResultOrTookBattleTurn", got: ActionResult, want: 0xCD6A},
 		{name: "wTileInFrontOfPlayer", got: TileInFrontOfPlayer, want: 0xCFC5},
 		{name: "wWalkBikeSurfState", got: WalkBikeSurfState, want: 0xD6FF},
+		{name: "wNumSafariBalls", got: NumSafariBalls, want: 0xDA46},
+		{name: "wSafariSteps", got: SafariSteps, want: 0xD70C},
 		{name: "wMapPalOffset", got: MapPalOffset, want: 0xD35C},
 		{name: "wMoveMenuType", got: MoveMenuType, want: 0xCCDB},
 		{name: "wNumMovesMinusOne", got: NumMovesMinusOne, want: 0xCD6C},
