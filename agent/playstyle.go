@@ -312,11 +312,29 @@ func driveUrgency(obs Observation) map[Drive]float64 {
 	return u
 }
 
+// prioritizeFlyForSpeedrun makes the one-time Celadon Fly setup deterministic.
+// The objective is still sourced by Red's ordinary legal progression menu;
+// this policy only prevents a speedrun planner from walking into Erika/Rocket
+// work first and permanently missing the short Route 16 detour.
+func prioritizeFlyForSpeedrun(offered []Objective, profile PlayStyleProfile) []Objective {
+	if profile.Name != "" && profile.Name != PlayStyleSpeedrun {
+		return offered
+	}
+	for _, o := range offered {
+		if o.Kind == KindProgress && o.Progress == redProgressFlyReady {
+			return []Objective{o}
+		}
+	}
+	return offered
+}
+
 // AnnotatePlayStyle adds compact, inspectable drive hints to the lines the LLM
-// already sees. Speedrun is an exact scoring/annotation no-op so old runs stay
-// byte-for-byte compatible until a non-Speedrun profile is explicitly selected.
+// already sees. Speedrun remains a scoring/annotation no-op, with narrowly
+// deterministic policy filters for mechanics that directly remove future
+// travel overhead (Repel and the one-time Fly setup).
 func AnnotatePlayStyle(obs Observation, offered []Objective, profile PlayStyleProfile) []Objective {
 	out := filterRepelForPlayStyle(obs, offered, profile)
+	out = prioritizeFlyForSpeedrun(out, profile)
 	if profile.Name == "" || profile.Name == PlayStyleSpeedrun {
 		return out
 	}
