@@ -349,6 +349,15 @@ func yellowWalkToWithFieldActions(m *emu.Emu, romData []byte, tx, ty int, extra 
 		}
 		plan, err := yellowCurrentFieldPath(m, romData, h, tx, ty, extra)
 		if err != nil {
+			if errors.Is(err, world.ErrNoPath) {
+				pushed, pushErr := yellowTryStrengthToward(m, romData, h, tx, ty, extra)
+				if pushErr != nil {
+					return pushErr
+				}
+				if pushed {
+					continue
+				}
+			}
 			return err
 		}
 		prefix, action := yellowFirstFieldAction(plan)
@@ -368,6 +377,128 @@ func yellowWalkToWithFieldActions(m *emu.Emu, romData []byte, tx, ty int, extra 
 		}
 	}
 	return fmt.Errorf("yellow travel: exceeded local field-action replan budget toward (%d,%d)", tx, ty)
+}
+
+
+
+func yellowLiveBoulders(m *emu.Emu) []world.Movable {
+	var out []world.Movable
+	for _, sprite := range yellowLiveSprites(m) {
+		if sprite.pictureID != yellowBoulderPictureID {
+			continue
+		}
+		out = append(out, world.Movable{
+			ID:  sprite.slot,
+			Pos: world.Point{X: sprite.x, Y: sprite.y},
+		})
+	}
+	return out
+}
+
+func yellowStrengthFixedBlockers(m *emu.Emu, extra map[[2]int]bool) map[[2]int]bool {
+	out := make(map[[2]int]bool, len(extra)+15)
+	for at, blocked := range extra {
+		if blocked {
+			out[at] = true
+		}
+	}
+	for _, sprite := range yellowLiveSprites(m) {
+		if sprite.pictureID == yellowBoulderPictureID {
+			continue
+		}
+		out[[2]int{sprite.x, sprite.y}] = true
+	}
+	return out
+}
+
+func yellowObservedBoulder(m *emu.Emu, slot int) (world.Point, bool) {
+	for _, sprite := range yellowLiveSprites(m) {
+		if sprite.slot == slot && sprite.pictureID == yellowBoulderPictureID {
+			return world.Point{X: sprite.x, Y: sprite.y}, true
+		}
+	}
+	return world.Point{}, false
+}
+
+func yellowStrengthPlan(m *emu.Emu, romData []byte, h yellowrom.MapHeader, tx, ty int, extra map[[2]int]bool) (world.PushPlan, bool, error) {
+	if m.Peek8(sym.WalkBikeSurfState) == 2 {
+		return world.PushPlan{}, false, nil
+	}
+	movables := yellowLiveBoulders(m)
+	if len(movables) == 0 {
+		return world.PushPlan{}, false, nil
+	}
+	grid, err := yellowLiveMapGridForTraversal(m, romData, h, world.TraversalLand)
+	if err != nil {
+		return world.PushPlan{}, false, err
+	}
+	puzzle := world.PushPuzzle{
+		Grid:     grid,
+		Player:   world.Point{X: int(m.Peek8(sym.XCoord)), Y: int(m.Peek8(sym.YCoord))},
+		Movables: movables,
+		Fixed:    yellowStrengthFixedBlockers(m, extra),
+		Goal:     world.PushGoal{Reachable: &world.Point{X: tx, Y: ty}},
+	}
+	plan, err := world.PlanPushPuzzle(puzzle)
+	if err != nil {
+		if errors.Is(err, world.ErrPushPuzzleNoSolution) {
+			return world.PushPlan{}, false, nil
+		}
+		return world.PushPlan{}, false, err
+	}
+	return plan, len(plan.Pushes) > 0, nil
+}
+
+func yellowExecuteStrengthPush(m *emu.Emu, romData []byte, mapID uint8, push world.Push) error {
+	if err := walkPath(m, mapID, push.Walk); err != nil {
+		return fmt.Errorf("yellow travel: walk to Strength push stand (%d,%d): %w", push.Stand.X, push.Stand.Y, err)
+	}
+	if gotX, gotY := int(m.Peek8(sym.XCoord)), int(m.Peek8(sym.YCoord)); gotX != push.Stand.X || gotY != push.Stand.Y {
+		return fmt.Errorf("yellow travel: Strength push stand observed (%d,%d), want (%d,%d)",
+			gotX, gotY, push.Stand.X, push.Stand.Y)
+	}
+	before, ok := yellowObservedBoulder(m, push.MovableID)
+	if !ok || before != push.From {
+		return fmt.Errorf("yellow travel: Strength boulder slot %d observed=%v at (%d,%d), want (%d,%d)",
+			push.MovableID, ok, before.X, before.Y, push.From.X, push.From.Y)
+	}
+	if m.Peek8(sym.StatusFlags1)&1 == 0 {
+		if err := UseFieldMove(m, romData, FieldStrength); err != nil {
+			return fmt.Errorf("yellow travel: activate Strength: %w", err)
+		}
+	}
+	if err := stepOnce(m, mapID, push.Direction); err != nil {
+		return fmt.Errorf("yellow travel: push boulder slot %d from (%d,%d): %w",
+			push.MovableID, push.From.X, push.From.Y, err)
+	}
+	if gotX, gotY := int(m.Peek8(sym.XCoord)), int(m.Peek8(sym.YCoord)); gotX != push.From.X || gotY != push.From.Y {
+		return fmt.Errorf("yellow travel: after Strength push player=(%d,%d), want (%d,%d)",
+			gotX, gotY, push.From.X, push.From.Y)
+	}
+	for frame := 0; frame < 240; frame += 8 {
+		if after, found := yellowObservedBoulder(m, push.MovableID); found && after == push.To {
+			return nil
+		}
+		m.StepFrames(8)
+	}
+	after, found := yellowObservedBoulder(m, push.MovableID)
+	return fmt.Errorf("yellow travel: Strength boulder slot %d failed (%d,%d)->(%d,%d); found=%v observed=(%d,%d)",
+		push.MovableID, push.From.X, push.From.Y, push.To.X, push.To.Y, found, after.X, after.Y)
+}
+
+func yellowTryStrengthToward(m *emu.Emu, romData []byte, h yellowrom.MapHeader, tx, ty int, extra map[[2]int]bool) (bool, error) {
+	plan, needed, err := yellowStrengthPlan(m, romData, h, tx, ty, extra)
+	if err != nil || !needed {
+		return false, err
+	}
+	cap := fieldCapabilityFor(m, romData, FieldStrength)
+	if !cap.Usable && !cap.Preparable {
+		return false, fmt.Errorf("yellow travel: Strength route exists but field capability is unavailable")
+	}
+	if err := yellowExecuteStrengthPush(m, romData, h.ID, plan.Pushes[0]); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func yellowMaybeFlash(m *emu.Emu, romData []byte) error {
