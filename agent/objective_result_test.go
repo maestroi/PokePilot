@@ -332,6 +332,9 @@ func TestClassifyObjectiveOutcomePCStorageIsBlocked(t *testing.T) {
 	if got := classifyObjectiveOutcome(Objective{Kind: KindCatch, Species: "pidgey"}, skill.ErrPCBoxFull, clean); got != OutcomeBlocked {
 		t.Fatalf("full box = %q, want blocked", got)
 	}
+	if got := classifyObjectiveOutcome(Objective{Kind: KindCatch, Species: "vulpix"}, skill.ErrPCNoKnownCenter, clean); got != OutcomeBlocked {
+		t.Fatalf("no known center = %q, want blocked", got)
+	}
 	if got := classifyObjectiveOutcome(Objective{Kind: KindCatch, Species: "pidgey"}, skill.ErrFieldRosterNoRecovery, clean); got != OutcomeBlocked {
 		t.Fatalf("no safe deposit = %q, want blocked", got)
 	}

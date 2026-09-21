@@ -38,6 +38,11 @@ var (
 // nearestPokemonCenter chooses the known Center requiring the fewest map
 // transitions from fromMap. PlaceNames is sorted, so equal-length ties are
 // deterministic. Tile-level reachability is still verified by TravelFlee.
+//
+// When the standing map's component-aware graph cannot reach any Center
+// (Route 16 Fly house / west-north pocket), fall back to Centers reachable
+// from a one-hop neighbour. Travel owns exiting the pocket onto that
+// neighbour — including component restaging through a gate before Cut.
 func nearestPokemonCenter(romData []byte, fromMap uint8) (Destination, string, error) {
 	g, err := world.BuildGraph(romData)
 	if err != nil {
@@ -46,20 +51,34 @@ func nearestPokemonCenter(romData []byte, fromMap uint8) (Destination, string, e
 	bestLen := int(^uint(0) >> 1)
 	var best Destination
 	bestName := ""
-	for _, name := range PlaceNames() {
-		if !strings.HasSuffix(name, "pokemon center") {
-			continue
+	consider := func(via uint8, hopPenalty int) {
+		for _, name := range PlaceNames() {
+			if !strings.HasSuffix(name, "pokemon center") {
+				continue
+			}
+			d, ok := Place(name)
+			if !ok {
+				continue
+			}
+			route, err := world.FindRoute(g, via, d.Map)
+			if err != nil {
+				continue
+			}
+			cost := hopPenalty + len(route)
+			if cost < bestLen {
+				bestLen, best, bestName = cost, d, name
+			}
 		}
-		d, ok := Place(name)
-		if !ok {
-			continue
-		}
-		route, err := world.FindRoute(g, fromMap, d.Map)
-		if err != nil {
-			continue
-		}
-		if len(route) < bestLen {
-			bestLen, best, bestName = len(route), d, name
+	}
+	consider(fromMap, 0)
+	if bestName == "" {
+		seen := map[uint8]bool{fromMap: true}
+		for _, e := range g.Edges[fromMap] {
+			if seen[e.To] {
+				continue
+			}
+			seen[e.To] = true
+			consider(e.To, 1)
 		}
 	}
 	if bestName == "" {

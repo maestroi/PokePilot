@@ -398,6 +398,11 @@ func (g *Graph) destWarpTile(e Edge) (int, int, bool) {
 	return int(dest[destID].X), int(dest[destID].Y), true
 }
 
+// DestWarpTile returns the standing tile on e.To that edge e lands on.
+func (g *Graph) DestWarpTile(e Edge) (int, int, bool) {
+	return g.destWarpTile(e)
+}
+
 func edgeLineComps(comps [][]int, w, h int, dir uint8) []int {
 	seen := make(map[int]bool)
 	var out []int

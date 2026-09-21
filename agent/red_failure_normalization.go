@@ -90,6 +90,7 @@ func classifyObjectiveOutcome(_ Objective, err error, final Observation) Outcome
 		errors.Is(err, skill.ErrFieldRosterNoBalls) ||
 		errors.Is(err, skill.ErrFieldRosterCatch) ||
 		errors.Is(err, skill.ErrPCBoxFull) ||
+		errors.Is(err, skill.ErrPCNoKnownCenter) ||
 		errors.Is(err, skill.ErrFieldRosterPrerequisite) ||
 		errors.Is(err, skill.ErrFieldRosterNoRecovery) {
 		return OutcomeBlocked
@@ -252,6 +253,9 @@ func failureCauseFor(err error) (FailureCauseID, []string) {
 	}
 	if errors.Is(err, skill.ErrPCBoxFull) {
 		return "pc_box_full", nil
+	}
+	if errors.Is(err, skill.ErrPCNoKnownCenter) {
+		return "pc_no_known_center", nil
 	}
 	if errors.Is(err, skill.ErrFieldRosterNoRecovery) {
 		return "field_roster_no_recovery", nil
