@@ -257,6 +257,10 @@ func ProjectStoryFacts(facts state.StoryFacts) game.ProgressState {
 		{ID: ProgressRoute22RivalResolved, Complete: facts.Route22RivalResolved},
 		{ID: ProgressRoute23BadgeChecks, Complete: facts.Route23BadgeChecksComplete, Value: facts.Route23BadgeChecksPassed},
 		{ID: ProgressLeagueChallengeStarted, Complete: facts.LeagueChallengeStarted},
+		{ID: gen1.ProgressLeagueLoreleiDefeated, Complete: facts.LeagueLoreleiDefeated},
+		{ID: gen1.ProgressLeagueBrunoDefeated, Complete: facts.LeagueBrunoDefeated},
+		{ID: gen1.ProgressLeagueAgathaDefeated, Complete: facts.LeagueAgathaDefeated},
+		{ID: gen1.ProgressLeagueLanceDefeated, Complete: facts.LeagueLanceDefeated},
 		{ID: ProgressLeagueChampionDefeated, Complete: facts.LeagueChampionDefeated},
 		{ID: ProgressMainStoryComplete, Complete: facts.MainStoryComplete},
 	}
