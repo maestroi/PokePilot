@@ -90,6 +90,7 @@ func TestStoryEventIndicesMatchDecomp(t *testing.T) {
 		event Event
 	}{
 		{"EVENT_VIRIDIAN_GYM_OPEN", eventViridianGymOpen},
+		{"EVENT_FOUND_ROCKET_HIDEOUT", EventFoundRocketHideout},
 		{"EVENT_MANSION_SWITCH_ON", eventMansionSwitchOn},
 		{"EVENT_BEAT_ROUTE22_RIVAL_2ND_BATTLE", eventBeatRoute22Rival2ndBattle},
 		{"EVENT_PASSED_CASCADEBADGE_CHECK", eventPassedCascadeBadgeCheck},

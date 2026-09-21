@@ -51,6 +51,11 @@ const (
 	eventBeatLance                  Event = 0x8fe
 )
 
+// EventFoundRocketHideout is EVENT_FOUND_ROCKET_HIDEOUT. Game Corner's map
+// script closes the poster stair at (17,4) until the switch behind the poster
+// sets this flag. Routing projects it; the bit index is checked in story_test.
+const EventFoundRocketHideout Event = 0x1b9
+
 // StoryFacts is Red's semantic progression projection. It deliberately names
 // game concepts, not event ids, WRAM bits, or item bytes. Every field is
 // deterministically re-derived from the current RAM/bag state.
