@@ -13,12 +13,6 @@ import (
 	"github.com/maestroi/pokepilot/world"
 )
 
-// Destination is a concrete place: a map and a standing position on it.
-type Destination struct {
-	Map  uint8
-	X, Y uint8
-}
-
 // ErrBattle is returned by GoTo when a wild battle interrupts the route. GoTo
 // never fights or flees; it aborts and reports the battle.
 var ErrBattle = errors.New("skill: battle interrupted the route")
@@ -1027,27 +1021,17 @@ var places = map[string]Destination{
 // Place, but are not standalone travel objectives in PlaceNames.
 var interactionPlaces = map[string]Destination{}
 
-// Place maps a friendly name to a Destination.
+// Place maps a friendly name to a semantic Destination. Broad geographic
+// places such as cities and routes are map-arrival goals; interaction-owned
+// and scripted places retain their explicit exact coordinates.
 func Place(name string) (Destination, bool) {
 	d, ok := places[name]
-	if !ok {
-		d, ok = interactionPlaces[name]
+	if ok {
+		d.Kind = namedPlaceKind(name, d)
+		return d, true
 	}
+	d, ok = interactionPlaces[name]
 	return d, ok
-}
-
-// PlaceOnMap returns the named destination recorded for mapID, so a caller
-// standing on a map can find the tile that map's objectives are written
-// against without hardcoding coordinates a second time. Names are scanned in
-// sorted order, so a map carrying more than one place resolves the same way
-// every call. ok is false for a map with no named place.
-func PlaceOnMap(mapID uint8) (Destination, bool) {
-	for _, name := range PlaceNames() {
-		if d := places[name]; d.Map == mapID {
-			return d, true
-		}
-	}
-	return Destination{}, false
 }
 
 // PlaceNames returns every name Place accepts, sorted, so a caller can offer
