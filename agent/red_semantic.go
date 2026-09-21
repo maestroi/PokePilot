@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	gameruntime "github.com/maestroi/pokepilot/game"
+	"github.com/maestroi/pokepilot/gen1"
 	reddata "github.com/maestroi/pokepilot/red/data"
 	redprofile "github.com/maestroi/pokepilot/red/profile"
 	"github.com/maestroi/pokepilot/red/rom"
@@ -34,10 +35,10 @@ const (
 	redProgressEarthBadge                 ProgressID = redprofile.ProgressEarthBadge
 	redProgressVictoryRoadCleared         ProgressID = redprofile.ProgressVictoryRoadCleared
 	redProgressIndigoPlateauReady         ProgressID = redprofile.ProgressIndigoPlateauReady
-	redProgressLeagueLoreleiDefeated      ProgressID = "league_lorelei_defeated"
-	redProgressLeagueBrunoDefeated        ProgressID = "league_bruno_defeated"
-	redProgressLeagueAgathaDefeated       ProgressID = "league_agatha_defeated"
-	redProgressLeagueLanceDefeated        ProgressID = "league_lance_defeated"
+	redProgressLeagueLoreleiDefeated      ProgressID = gen1.ProgressLeagueLoreleiDefeated
+	redProgressLeagueBrunoDefeated        ProgressID = gen1.ProgressLeagueBrunoDefeated
+	redProgressLeagueAgathaDefeated       ProgressID = gen1.ProgressLeagueAgathaDefeated
+	redProgressLeagueLanceDefeated        ProgressID = gen1.ProgressLeagueLanceDefeated
 
 	redIndigoPlateauMap      uint8 = 0x09
 	redIndigoPlateauLobbyMap uint8 = 0xAE
