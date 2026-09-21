@@ -28,7 +28,9 @@ type CatalogStarter struct {
 type CatalogDestination struct {
 	Place    PlaceID
 	Location LocationID
+	Kind     skill.DestinationKind
 	X, Y     uint8
+	Area     skill.DestinationArea
 	Center   bool
 }
 
