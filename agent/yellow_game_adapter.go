@@ -136,9 +136,39 @@ func (a *yellowObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, err
 				return result, fmt.Errorf("agent: %s: Yellow Surf capture ended without ownership", o)
 			}
 			return result, nil
-		case dexFishingIntent, dexSafariIntent:
+		case dexFishingIntent:
+			if o.Place != "" {
+				obs, err := a.Observe()
+				if err != nil {
+					return result, fmt.Errorf("agent: %s: resolve Yellow fishing habitat: %w", o, err)
+				}
+				destination, ok := obs.Catalog.destination(o.Place)
+				if !ok {
+					return result, fmt.Errorf("agent: %s: Yellow fishing habitat %q is not in the active catalog", o, o.Place)
+				}
+				mapID, ok := yellowNativeMapForLocation(destination.Location)
+				if !ok {
+					return result, fmt.Errorf("agent: %s: Yellow fishing habitat location %q has no native map", o, destination.Location)
+				}
+				if err := yellowcontroller.GoTo(a.m, a.romData, mapID, destination.X, destination.Y); err != nil {
+					return result, fmt.Errorf("agent: %s: travel to Yellow fishing habitat: %w", o, err)
+				}
+			}
+			rawRod, ok := yellowFishingRodID(o.Item)
+			if !ok {
+				return result, fmt.Errorf("agent: %s: unknown Yellow fishing rod %q", o, o.Item)
+			}
+			caught, err := yellowcontroller.Fish(a.m, a.romData, rawRod, rawSpecies)
+			if err != nil {
+				return result, fmt.Errorf("agent: %s: %w", o, err)
+			}
+			if !caught.Caught {
+				return result, fmt.Errorf("agent: %s: Yellow fishing ended without ownership", o)
+			}
+			return result, nil
+		case dexSafariIntent:
 			return result, unavailable(o, "yellow_catch_controller_unavailable",
-				"Yellow fishing and Safari capture are not available for this acquisition source yet")
+				"Yellow Safari capture is not available for this acquisition source yet")
 		default:
 			if o.Place != "" {
 				obs, err := a.Observe()
@@ -238,6 +268,20 @@ func (a *yellowObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, err
 		return result, nil
 	default:
 		return result, fmt.Errorf("agent: %s: %w", o, errYellowControllerUnavailable)
+	}
+}
+
+
+func yellowFishingRodID(id ItemID) (uint8, bool) {
+	switch strings.ToLower(strings.TrimSpace(string(id))) {
+	case "old rod":
+		return yellowrom.OldRodItem, true
+	case "good rod":
+		return yellowrom.GoodRodItem, true
+	case "super rod":
+		return yellowrom.SuperRodItem, true
+	default:
+		return 0, false
 	}
 }
 
