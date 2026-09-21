@@ -191,10 +191,10 @@ func verifyObjectivePostcondition(o Objective, initial, final Observation, resul
 		if !ok {
 			return OutcomePostconditionFailed, fmt.Errorf("%w: destination %q no longer resolves", ErrObjectivePostconditionFailed, o.Place)
 		}
-		if final.Map != dest.Map || final.X != dest.X || final.Y != dest.Y {
+		if !dest.Reached(final.Map, final.X, final.Y) {
 			return OutcomePostconditionFailed, fmt.Errorf(
-				"%w: %s ended on map %02x at (%d,%d), want map %02x at (%d,%d)",
-				ErrObjectivePostconditionFailed, o, final.Map, final.X, final.Y, dest.Map, dest.X, dest.Y)
+				"%w: %s ended on map %02x at (%d,%d), want %s destination on map %02x",
+				ErrObjectivePostconditionFailed, o, final.Map, final.X, final.Y, dest.String(), dest.Map)
 		}
 		return OutcomeCompleted, nil
 
