@@ -149,7 +149,12 @@ func redNativeMapForLocation(gameID game.GameID, known *Knowledge, location Loca
 func catchPlaceOnMap(mapID uint8) (PlaceID, bool) {
 	for _, name := range skill.PlaceNames() {
 		dest, ok := skill.Place(name)
-		if ok && dest.Map == mapID {
+		if !ok || dest.Map != mapID {
+			continue
+		}
+		// Catch travel must target habitat semantics, never an unrelated exact
+		// service/script anchor that merely happens to share the map.
+		if dest.Kind == skill.DestinationMap || dest.Kind == skill.DestinationArea {
 			return PlaceID(name), true
 		}
 	}
