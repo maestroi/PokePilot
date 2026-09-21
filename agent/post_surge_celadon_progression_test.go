@@ -124,7 +124,6 @@ func TestRainbowBadgeProgressIsProjectedFromRAM(t *testing.T) {
 	}
 }
 
-
 func TestFlyReadyProgressIsProjectedFromUsableFieldCapability(t *testing.T) {
 	var mem state.Mem
 	mem[sym.ObtainedBadges] = 1 << uint8(state.BadgeThunder)
@@ -136,7 +135,6 @@ func TestFlyReadyProgressIsProjectedFromUsableFieldCapability(t *testing.T) {
 		t.Fatal("usable Fly capability was not projected into semantic progression state")
 	}
 }
-
 
 func TestRedProgressionResumesFlyAfterHM02AcquiredAwayFromCeladon(t *testing.T) {
 	obs := postSurgeObservation(0xBC) // Route 16 Fly house: geographic Celadon-ready fact may be false mid-transaction.
