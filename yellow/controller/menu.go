@@ -89,7 +89,7 @@ func openYellowBag(m *emu.Emu, romData []byte) error {
 	return nil
 }
 
-func selectYellowPartySlot(m *emu.Emu, target int) error {
+func chooseYellowPartySlot(m *emu.Emu, target int) error {
 	count := int(m.Peek8(sym.PartyCount))
 	if target < 0 || target >= count {
 		return fmt.Errorf("yellow menu: party slot %d outside party count %d", target, count)
