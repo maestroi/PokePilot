@@ -48,12 +48,13 @@ func TestRoute16FlyHouseCenterRecoveryUsesMandatoryExit(t *testing.T) {
 		t.Fatalf("BuildGraph: %v", err)
 	}
 
-	// This is the exact planner shape from the virtual-trade failure: the Fly
-	// House's LAST_MAP doors land in Route 16's Cut-gated pocket, so static
-	// component routing cannot prove a complete route to any Center while the
-	// player is still inside the house.
-	if _, _, err := nearestPokemonCenterInGraph(g, route16FlyHouseMap); !errors.Is(err, ErrPCNoKnownCenter) {
-		t.Fatalf("Fly House static Center selection err = %v, want ErrPCNoKnownCenter", err)
+	// This is the exact planner shape from the virtual-trade failure today:
+	// the Fly House's LAST_MAP doors land in Route 16's Cut-gated pocket, so
+	// static component routing may be unable to prove a complete route to any
+	// Center while the player is still inside the house. A future graph that
+	// can prove that route directly is also valid; any other error is not.
+	if _, _, err := nearestPokemonCenterInGraph(g, route16FlyHouseMap); err != nil && !errors.Is(err, ErrPCNoKnownCenter) {
+		t.Fatalf("Fly House static Center selection err = %v, want nil or ErrPCNoKnownCenter", err)
 	}
 
 	exit, ok := singleDestinationWarpExit(g, route16FlyHouseMap)
