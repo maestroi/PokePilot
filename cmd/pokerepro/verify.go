@@ -153,17 +153,17 @@ func writePortableReproVerdict(path, dir string, verdict portableReproVerdict) e
 
 func objectiveFromFailure(in farm.FailureObjective) (agent.Objective, error) {
 	o := agent.Objective{
-		Place:    agent.PlaceID(strings.TrimSpace(in.Place)),
-		X:        in.X,
-		Y:        in.Y,
+		Place:           agent.PlaceID(strings.TrimSpace(in.Place)),
+		X:               in.X,
+		Y:               in.Y,
 		Progress:        agent.ProgressID(strings.TrimSpace(in.Progress)),
 		FieldCapability: agent.CapabilityID(strings.TrimSpace(in.FieldCapability)),
 		Level:           in.Level,
-		Species:  agent.SpeciesID(strings.TrimSpace(in.Species)),
-		Item:     agent.ItemID(strings.TrimSpace(in.Item)),
-		Slot:     in.Slot,
-		Qty:      in.Qty,
-		Flee:     in.Flee,
+		Species:         agent.SpeciesID(strings.TrimSpace(in.Species)),
+		Item:            agent.ItemID(strings.TrimSpace(in.Item)),
+		Slot:            in.Slot,
+		Qty:             in.Qty,
+		Flee:            in.Flee,
 	}
 	switch strings.ToLower(strings.TrimSpace(in.Kind)) {
 	case "go_to":
