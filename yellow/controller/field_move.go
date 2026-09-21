@@ -261,3 +261,93 @@ func UseFieldMove(m *emu.Emu, romData []byte, move FieldMove) error {
 	}
 	return fmt.Errorf("yellow field move: %s did not reach its expected postcondition", spec.name)
 }
+
+
+const (
+	yellowFlyCityCount = 11
+	yellowNotVisited   = 0xfe
+)
+
+// FlyTo executes Yellow's destination-aware Fly UI. The town-map list is
+// built by the ROM from wTownVisitedFlag; this controller reads that live list,
+// refuses unvisited destinations, drives only among entries the game exposed,
+// and verifies the actual destination map after the fly transition.
+func FlyTo(m *emu.Emu, romData []byte, destMap uint8) error {
+	if m == nil {
+		return fmt.Errorf("yellow Fly: nil emulator")
+	}
+	if destMap >= yellowFlyCityCount || yellowrom.MapName(destMap) == "" {
+		return fmt.Errorf("yellow Fly: map %#02x is not a fly city", destMap)
+	}
+	if m.Peek8(sym.CurMap) == destMap {
+		return nil
+	}
+
+	spec, _ := yellowFieldSpec(FieldFly)
+	slot, err := EnsureFieldMove(m, romData, FieldFly)
+	if err != nil {
+		return err
+	}
+	index, err := openYellowFieldMoveMenu(m, romData, slot, spec.menuID)
+	if err != nil {
+		return fmt.Errorf("yellow Fly: open field menu: %w", err)
+	}
+	if err := selectYellowLinearMenuItem(m, index); err != nil {
+		return fmt.Errorf("yellow Fly: choose FLY: %w", err)
+	}
+	m.Tap(emu.A, 3, 7)
+
+	if _, err := m.StepUntil(2400, func(m *emu.Emu) bool {
+		return strings.Contains(strings.ToUpper(screenText(m)), "TO")
+	}); err != nil {
+		return fmt.Errorf("yellow Fly: town map did not open: %w", err)
+	}
+
+	locations := make([]uint8, yellowFlyCityCount)
+	m.PeekInto(sym.FlyLocationsList, locations)
+	if locations[destMap] == yellowNotVisited {
+		// B returns safely from the town map.
+		m.Tap(emu.B, 3, 7)
+		return fmt.Errorf("yellow Fly: destination %s has not been visited", yellowrom.MapName(destMap))
+	}
+	if locations[destMap] != destMap {
+		m.Tap(emu.B, 3, 7)
+		return fmt.Errorf("yellow Fly: destination list entry %d=%#02x, want %#02x",
+			destMap, locations[destMap], destMap)
+	}
+
+	// LoadTownMap_Fly starts at entry zero. UP advances the list pointer and
+	// skips NOT_VISITED entries. Count exactly the visible visited entries
+	// preceding our destination; no wraparound or guessed city ordering.
+	steps := 0
+	for city := 1; city <= int(destMap); city++ {
+		if locations[city] != yellowNotVisited {
+			steps++
+		}
+	}
+	for i := 0; i < steps; i++ {
+		before := screenText(m)
+		m.Tap(emu.Up, 3, 7)
+		if _, err := m.StepUntil(180, func(m *emu.Emu) bool {
+			return screenText(m) != before
+		}); err != nil {
+			return fmt.Errorf("yellow Fly: destination cursor did not advance at step %d/%d", i+1, steps)
+		}
+	}
+
+	m.Tap(emu.A, 3, 7)
+	if _, err := m.StepUntil(1200, func(m *emu.Emu) bool {
+		return m.Peek8(sym.DestinationMap) == destMap
+	}); err != nil {
+		return fmt.Errorf("yellow Fly: town map did not commit destination %#02x: %w", destMap, err)
+	}
+	if _, err := m.StepUntil(6000, func(m *emu.Emu) bool {
+		return m.Peek8(sym.CurMap) == destMap
+	}); err != nil {
+		return fmt.Errorf("yellow Fly: transition did not reach %s: %w", yellowrom.MapName(destMap), err)
+	}
+	if err := waitYellowControllable(m, romData, 3000); err != nil {
+		return fmt.Errorf("yellow Fly: arrival did not settle: %w", err)
+	}
+	return nil
+}
