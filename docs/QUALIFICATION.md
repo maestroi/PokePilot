@@ -32,6 +32,25 @@ If `POKEMON_RED_ROM` is not set, the local default is `$HOME/.config/pokepilot/p
 
 Never commit the ROM, `.sav` files, or `.state` files. The qualification command never copies the ROM into its output.
 
+## Starting qualification from RomPilot
+
+Operator-driven benchmark runs use the normal **New Run** form in RomPilot.
+Choose a **Qualification target** and, when desired, set **Benchmark runs** to
+queue a repeated seeded set. These are ordinary farm specs and use the same
+workers, model deployment selection, run policy, checkpoints, failure handling,
+and spectator path as any other UI-started run.
+
+Each completed Pokémon Red LLM run automatically carries a versioned
+`benchmark-result.json` finish artifact. Selecting a qualification target adds
+a deterministic semantic end condition and groups repeated runs with the
+existing experiment identity fields. Seeds advance from the form's base seed,
+so the same base seed and run count can be reused for a fair baseline/candidate
+comparison.
+
+The `pokebench` command remains available for private CI/offline execution and
+`pokebench compare` remains the machine-readable/result-set comparison tool;
+it is not required to launch normal operator qualification runs.
+
 ## E2E speed and reliability benchmark
 
 `cmd/pokebench` is the structured measurement layer on top of the same

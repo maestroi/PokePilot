@@ -521,6 +521,9 @@ func collectCheckpointArtifacts(dir string) ([]farm.Artifact, error) {
 			return nil, fmt.Errorf("farm: orphan knowledge %s", kn)
 		}
 	}
+	if _, ok := files[farmBenchmarkResultName]; ok {
+		want = append(want, farmBenchmarkResultName)
+	}
 	arts, err := artifactsForFiles(want, dir)
 	if err != nil {
 		return nil, err

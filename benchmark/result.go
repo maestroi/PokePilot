@@ -88,6 +88,7 @@ type ModelIdentity struct {
 type Configuration struct {
 	Planner         string            `json:"planner,omitempty"`
 	Goal            string            `json:"goal,omitempty"`
+	Starter         string            `json:"starter,omitempty"`
 	LLMProfile      string            `json:"llm_profile,omitempty"`
 	ReasoningEffort string            `json:"reasoning_effort,omitempty"`
 	PlayStyle       string            `json:"play_style,omitempty"`
@@ -234,6 +235,9 @@ type Result struct {
 	Failures        []Failure               `json:"failures,omitempty"`
 	LastMilestone   string                  `json:"last_milestone,omitempty"`
 	ActiveObjective string                  `json:"active_objective,omitempty"`
+	ExperimentID    string                  `json:"experiment_id,omitempty"`
+	ExperimentArm   string                  `json:"experiment_arm,omitempty"`
+	ExperimentCase  string                  `json:"experiment_case,omitempty"`
 }
 
 type CheckpointMetadata struct {
@@ -303,7 +307,7 @@ func Build(in BuildInput) Result {
 			}
 		}
 	}
-	if res.Stop == agent.StopDone && res.GoalStatus != nil && res.GoalStatus.Complete {
+	if res.Stop == agent.StopDone && (res.GoalStatus == nil || res.GoalStatus.Complete) {
 		out.Outcome = "completed"
 	}
 	out.Milestones = splits(in.Profile, in.Source, res)
@@ -522,8 +526,15 @@ func counters(res agent.Result) map[string]int64 {
 
 func modelStats(res agent.Result, calls []agent.LLMCall, route agent.LLMRoute, health agent.LLMHealth) ModelStats {
 	latencies := make([]float64, 0, len(calls))
+	promptTokens, completionTokens := res.PromptTokens, res.CompletionTokens
+	if promptTokens == 0 && health.PromptTokens > 0 {
+		promptTokens = health.PromptTokens
+	}
+	if completionTokens == 0 && health.CompletionTokens > 0 {
+		completionTokens = health.CompletionTokens
+	}
 	stats := ModelStats{
-		Calls: len(calls), PromptTokens: res.PromptTokens, CompletionTokens: res.CompletionTokens,
+		Calls: len(calls), PromptTokens: promptTokens, CompletionTokens: completionTokens,
 		Route: route, Health: health,
 	}
 	for _, call := range calls {
