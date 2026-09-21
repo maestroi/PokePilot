@@ -1,23 +1,20 @@
 package agent
 
 // prerequisiteRecovery turns a typed route blockage into deterministic recovery
-// when the active game adapter has already linked the missing capability to a
-// concrete progression fact and that progression objective is currently
-// executable.
+// when the active game adapter has already linked the missing route capability
+// to an executable semantic prerequisite.
 //
-// This is intentionally narrower than general stall fallback. We only bypass the
-// planner when all three pieces of evidence agree:
-//  1. the previous recoverable failure named a missing capability;
-//  2. the current observation links that capability to a progression fact; and
-//  3. the normal objective provider is offering the matching progression step,
-//     unless the adapter explicitly marks that link recovery-only.
+// Progress links retain their historical behavior: ordinary progression must be
+// present in the offered menu, while RecoveryOnly links may synthesize it. Field
+// capability links are different: when the observation proves the badge and HM
+// are already owned but the move is not usable, the runtime synthesizes an
+// explicit field-capability repair objective. That keeps party/PC/wild-carrier
+// selection inside the game adapter instead of asking the strategist to invent
+// a Pokemon that might not even be HM-compatible.
 //
-// Recovery-only links are useful for optional detours such as Cycling Road: the
-// action stays out of the normal campaign menu, but a concrete typed blockage
-// can still request exactly the progression needed to satisfy that route.
-// Unknown prerequisites still fall through to the strategist/exploration path.
+// Unknown or still-locked prerequisites fall through to the strategist.
 func (f *runFailurePolicy) prerequisiteRecovery(obs Observation, offered []Objective) (Objective, []CapabilityID, bool) {
-	if f == nil || len(f.pendingPrerequisites) == 0 || len(offered) == 0 {
+	if f == nil || len(f.pendingPrerequisites) == 0 {
 		return Objective{}, nil, false
 	}
 
@@ -26,33 +23,56 @@ func (f *runFailurePolicy) prerequisiteRecovery(obs Observation, offered []Objec
 		pending[capability] = true
 	}
 
-	progressFor := map[CapabilityID]RoutePrerequisiteLink{}
+	prerequisiteFor := map[CapabilityID]RoutePrerequisiteLink{}
 	for _, blockage := range obs.RouteBlockages {
 		for _, prerequisite := range blockage.Prerequisites {
-			if prerequisite.Capability == "" || !pending[prerequisite.Capability] || prerequisite.Progress == "" {
+			if prerequisite.Capability == "" || !pending[prerequisite.Capability] {
 				continue
 			}
-			progressFor[prerequisite.Capability] = prerequisite
+			prerequisiteFor[prerequisite.Capability] = prerequisite
 		}
 	}
 
-	// Preserve the normalized failure-context order. It is stable, and when a
-	// transition reports multiple missing capabilities it lets the runtime make
-	// one known semantic repair at a time before re-evaluating live state.
+	// Preserve normalized failure-context order. When a transition reports
+	// multiple missing capabilities, repair one semantic prerequisite at a time
+	// and then rebuild reachability from fresh live state.
 	for _, capability := range f.pendingPrerequisites {
-		prerequisite, ok := progressFor[capability]
-		if !ok || prerequisite.Progress == "" {
+		prerequisite, ok := prerequisiteFor[capability]
+		if !ok {
 			continue
 		}
-		for _, objective := range offered {
-			if objective.Kind == KindProgress && objective.Progress == prerequisite.Progress {
-				return objective, []CapabilityID{capability}, true
+
+		if prerequisite.Progress != "" {
+			for _, objective := range offered {
+				if objective.Kind == KindProgress && objective.Progress == prerequisite.Progress {
+					return objective, []CapabilityID{capability}, true
+				}
+			}
+			if prerequisite.RecoveryOnly {
+				return Objective{Kind: KindProgress, Progress: prerequisite.Progress}, []CapabilityID{capability}, true
 			}
 		}
-		if prerequisite.RecoveryOnly {
-			return Objective{Kind: KindProgress, Progress: prerequisite.Progress}, []CapabilityID{capability}, true
+
+		if prerequisite.FieldCapability != "" && fieldCapabilityRepairReady(obs, prerequisite.FieldCapability) {
+			return Objective{
+				Kind:            KindRepairFieldCapability,
+				FieldCapability: prerequisite.FieldCapability,
+			}, []CapabilityID{capability}, true
 		}
 	}
 
 	return Objective{}, nil, false
+}
+
+func fieldCapabilityRepairReady(obs Observation, capability CapabilityID) bool {
+	for _, field := range obs.FieldCapabilities {
+		if field.Name != capability {
+			continue
+		}
+		// RepairFieldCapabilities can teach the current party, withdraw a boxed
+		// carrier, or catch a ROM-compatible wild carrier. It cannot conjure the
+		// badge or HM, so those remain progression prerequisites.
+		return field.BadgeOwned && field.HMOwned && !field.Usable
+	}
+	return false
 }
