@@ -32,15 +32,19 @@ func redObjectiveCatalog(obs Observation) ObjectiveCatalog {
 		if !ok {
 			continue
 		}
-		catalog.Destinations = append(catalog.Destinations, CatalogDestination{
+		entry := CatalogDestination{
 			Place:    PlaceID(name),
 			Location: redLocationID(obs.GameID, destination.Map),
 			Kind:     destination.Kind,
-			X:        destination.X,
-			Y:        destination.Y,
-			Area:     destination.Area,
 			Center:   isCenter(state.MapName(destination.Map)),
-		})
+		}
+		switch destination.Kind {
+		case skill.DestinationArea:
+			entry.Area = destination.Area
+		case skill.DestinationExactTile, skill.DestinationInteraction:
+			entry.X, entry.Y = destination.X, destination.Y
+		}
+		catalog.Destinations = append(catalog.Destinations, entry)
 	}
 
 	if gym, ok := skill.GymAt(obs.Map); ok {
