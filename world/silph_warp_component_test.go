@@ -16,6 +16,13 @@ import (
 // Key through the Rocket's home tile; overlaying still-present stay objects
 // marks that tile occupied. Together, warp punching + object overlay make
 // leave/re-enter the honest route.
+//
+// Sibling farm fingerprints of the same no_path (AcquireSilphCardKey /
+// approach beside the Card Key, oscillation (8,15)<->(28,3) under
+// sprite-fallback):
+//   - run-xgoe3a12m8xdt (triage:2f31f14067d98e4a, farm-issue:1374; #1384)
+//   - run-klyyfags4zp2o83zk0lvxsgx (triage:15a12d2232f2261d, farm-issue:1391;
+//     observed on runner 5c5d020e before #1384 deployed)
 func TestSilphCo5FWarpPadSplitsCardKeyComponent(t *testing.T) {
 	romPath := os.Getenv("POKEMON_RED_ROM")
 	if romPath == "" {
