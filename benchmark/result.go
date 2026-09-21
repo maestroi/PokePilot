@@ -235,9 +235,9 @@ type Result struct {
 	Failures        []Failure               `json:"failures,omitempty"`
 	LastMilestone   string                  `json:"last_milestone,omitempty"`
 	ActiveObjective string                  `json:"active_objective,omitempty"`
-	ExperimentID   string                  `json:"experiment_id,omitempty"`
-	ExperimentArm  string                  `json:"experiment_arm,omitempty"`
-	ExperimentCase string                  `json:"experiment_case,omitempty"`
+	ExperimentID    string                  `json:"experiment_id,omitempty"`
+	ExperimentArm   string                  `json:"experiment_arm,omitempty"`
+	ExperimentCase  string                  `json:"experiment_case,omitempty"`
 }
 
 type CheckpointMetadata struct {
