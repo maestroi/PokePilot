@@ -162,11 +162,6 @@ func executeRedOwned(m *emu.Emu, romData []byte, o Objective, routePriority Rout
 				return result, fmt.Errorf("agent: %s: %w", o, err)
 			}
 		}
-		if dest, ok := skill.PlaceOnMap(m.Peek8(sym.CurMap)); ok {
-			if err := skill.GoTo(m, romData, dest); err != nil {
-				return result, fmt.Errorf("agent: %s: walk to the nurse: %w", o, err)
-			}
-		}
 		if err := skill.Heal(m); err != nil {
 			return result, fmt.Errorf("agent: %s: %w", o, err)
 		}
