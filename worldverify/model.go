@@ -120,7 +120,7 @@ type ExecutionPath struct {
 // Dynamic semantic edges are explicit unknowns rather than being treated as
 // unrestricted geometry.
 type ExecutionEvidence struct {
-	Status ExecutionStatus  `json:"status"`
+	Status ExecutionStatus `json:"status"`
 	Paths  []ExecutionPath `json:"paths,omitempty"`
 	Reason string          `json:"reason,omitempty"`
 }
