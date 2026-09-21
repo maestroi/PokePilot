@@ -93,7 +93,6 @@ func (yellowSemanticObservationAdapter) Observe(m *emu.Emu, romData []byte, prof
 		})
 	}
 
-
 	cat, err := buildYellowDexCatalog(romData, obs.PokedexOwned, obs.PokedexSeen)
 	if err != nil {
 		return Observation{}, fmt.Errorf("Yellow Dex catalog: %w", err)
