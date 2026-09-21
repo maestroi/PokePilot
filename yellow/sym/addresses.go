@@ -61,6 +61,10 @@ const (
 	ListMenuID             uint16 = 0xCF93 // wListMenuID
 	PartyMenuTypeOrMessage uint16 = 0xD07C // wPartyMenuTypeOrMessageID
 	FieldMoves             uint16 = 0xCD3D // wFieldMoves
+	ActionResult           uint16 = 0xCD6A // wActionResultOrTookBattleTurn
+	TileInFrontOfPlayer    uint16 = 0xCFC5 // wTileInFrontOfPlayer
+	WalkBikeSurfState      uint16 = 0xD6FF // wWalkBikeSurfState
+	MapPalOffset           uint16 = 0xD35C // wMapPalOffset
 	MoveMenuType           uint16 = 0xCCDB // wMoveMenuType
 	NumMovesMinusOne       uint16 = 0xCD6C // wNumMovesMinusOne
 	ForcePlayerToChooseMon uint16 = 0xD11E // wForcePlayerToChooseMon
