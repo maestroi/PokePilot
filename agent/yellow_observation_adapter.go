@@ -129,7 +129,7 @@ func (yellowSemanticObservationAdapter) Observe(m *emu.Emu, romData []byte, prof
 			case object.TextID&0x80 != 0:
 				mo.Kind = "item"
 				if name, err := yellowrom.ItemName(romData, object.ItemID); err == nil {
-					mo.Item = gameruntime.CanonicalID(name)
+					mo.Item = game.CanonicalID(name)
 				} else {
 					mo.Item = "unknown"
 				}
@@ -150,7 +150,7 @@ func (yellowSemanticObservationAdapter) Observe(m *emu.Emu, romData []byte, prof
 	if items, err := yellowrom.MartItems(romData, obs.Map); err == nil {
 		for _, raw := range items {
 			if name, err := yellowrom.ItemName(romData, raw); err == nil {
-				obs.MartStock = append(obs.MartStock, gameruntime.CanonicalID(name))
+				obs.MartStock = append(obs.MartStock, game.CanonicalID(name))
 			}
 		}
 	}
