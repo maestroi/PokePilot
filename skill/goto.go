@@ -647,8 +647,34 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 		route := routeResult.Steps
 		if errors.Is(err, world.ErrRouteReplanRequired) && len(route) > 0 {
 			// The route is intentionally a safe prefix ending at a semantic
-			// action. Execute toward that frontier; the transition/Traverse path
-			// below refreshes live topology before any post-action continuation.
+			// action, but that action can lead AWAY from dest just as easily as
+			// toward it: findRoute stops expanding at the first such boundary
+			// it discovers in edge order and offers it regardless of whether
+			// crossing it helps. When dest sits on this same live map behind a
+			// Cut/Surf field-path action, prefer that concrete, verified route
+			// over an unrelated cross-map pivot. MEASURED on
+			// run-j6f404urmxjd2ouv6vim9fdfa round 12: staged on Route 16
+			// (1b,30,10) one Cut tree from the Fly house's own warp door, the
+			// graph's only boundary from there was the reverse Snorlax/Cut
+			// pivot back into Celadon City — an entirely different map that
+			// cannot reach the Fly house either, so GoTo crossed it, then
+			// repeated the same false "boundary" dance from Celadon's Cut-gym
+			// pivot until the navigation guard fired.
+			if cur != dest.Map {
+				if bridge, bridgeOK, bridgeErr := fieldPathBridgeOnCurrentMap(m, romData, h, routeGraph, dest, prereqs, blockedHere); bridgeErr == nil && bridgeOK {
+					walkErr := walkWithinMap(m, romData, bridge, nav.policy)
+					if errors.Is(walkErr, errLocalNavigationWorldChanged) {
+						continue
+					}
+					if walkErr != nil {
+						return walkErr
+					}
+					if replans++; replans > maxReplans {
+						return newReplanExhaustedError(maxReplans, cur, x, y, dest, err)
+					}
+					continue
+				}
+			}
 			err = nil
 		}
 		// A dead-end map's only exit IS the reverse. Route 4's Pokemon
