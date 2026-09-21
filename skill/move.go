@@ -268,7 +268,7 @@ func blockedDestination(e *ErrBlocked) [2]int {
 //     its 16-frame animation, so a sprite mid-step can straddle two tiles:
 //     the snapshot may report the tile it is leaving, not the one it is
 //     entering.
-func walkAround(interrupted func() error, readBlocked func() map[[2]int]bool, plan func(blocked map[[2]int]bool) ([]world.Step, error), walk func([]world.Step) error, wait func()) error {
+func walkAround(interrupted func() error, readBlocked func() map[[2]int]bool, neverLearn map[[2]int]bool, plan func(blocked map[[2]int]bool) ([]world.Step, error), walk func([]world.Step) error, wait func()) error {
 	unexplainedMisses := map[[2]int]int{}
 	learnedBlocked := map[[2]int]bool{}
 	stagnantRetries := 0
@@ -329,9 +329,12 @@ func walkAround(interrupted func() error, readBlocked func() map[[2]int]bool, pl
 
 			target := blockedDestination(eb)
 			learnedNow := false
-			if liveBlocked[target] {
-				// This was explained by the snapshot we planned from. Never
-				// turn an observed sprite position into learned geometry.
+			if liveBlocked[target] || neverLearn[target] {
+				// Observed sprites and known Stay-home tiles are not mystery
+				// geometry. Stay homes in particular must not become call-local
+				// walls: learning a corridor trainer (Silph Co 5F Rocket at
+				// (8,16) on run-2wvvgm279oaj1uhpm9pfh4ofm) deletes the only
+				// remaining approach and strands the walk on an unrelated pad.
 				delete(unexplainedMisses, target)
 			} else {
 				unexplainedMisses[target]++
@@ -363,28 +366,39 @@ func walkAround(interrupted func() error, readBlocked func() map[[2]int]bool, pl
 	}
 }
 
-// walkAroundAvoidingObjects is walkAround with liveBlockers(m, h) as a
-// PREFERENCE rather than a hard wall: a stationary object's tile is real
-// geometry the router should route around when it can, but treating it as
-// always-occupied can turn a corridor that is merely narrow into one this
-// layer believes has no path at all, when the live game would have let the
-// walk pass beside it. If the preferring attempt fails with no path found at
-// all, this retries once against the narrower live-only snapshot before
-// giving up — the behavior every caller had before liveBlockers existed.
+// walkAroundAvoidingObjects is walkAround with softPreferStationaryBlockers
+// as the live obstacle set: Stay-home tiles are preferred detours when the
+// destination stays reachable, and are omitted when marking them occupied
+// would invent a dead end. Stay homes are also never learned as call-local
+// walls — corridor NPCs must be fought or routed around via topology, not
+// painted out of the graph after a blind bump.
 //
 // MEASURED on Pokemon Tower 6F (run-3anwzvms26fjy32alh211qa4fn,
-// run-27a3sz93t4z9t3vgoljp7oofcc): liveBlockers alone fixes 5F's
+// run-27a3sz93t4z9t3vgoljp7oofcc): unconditional liveBlockers fixes 5F's
 // Channeler-oscillation loop but turns the 6F exit warp's only route into
-// "world: no route", because a different Channeler's home tile sits close
-// enough to the corridor that unconditionally marking it occupied removes
-// the only path the live game actually allows.
+// "world: no route". Soft preference keeps the Channeler when a detour
+// exists and drops Stay homes that would delete the only legal path.
+//
+// MEASURED on Silph Co 5F (run-2wvvgm279oaj1uhpm9pfh4ofm): defeated corridor
+// Rockets block every non-pad approach to the Card Key. Local soft preference
+// alone cannot invent a walkable tile through them; GoTo's topology overlay
+// (present Stay homes + warp ports) must select the 5F→9F→5F pad route
+// instead. neverLearn keeps a blind bump from permanently sealing the map
+// when a local walk is still attempted.
 func walkAroundAvoidingObjects(interrupted func() error, m *emu.Emu, h rom.MapHeader, plan func(blocked map[[2]int]bool) ([]world.Step, error), walk func([]world.Step) error, wait func()) error {
-	err := walkAround(interrupted, func() map[[2]int]bool { return liveBlockers(m, h) }, plan, walk, wait)
+	stayHomes := presentStationaryObjectBlockers(m, h)
+	prefer := softPreferStationaryBlockers(m, h, plan)
+	if _, err := plan(prefer); err != nil && (errors.Is(err, world.ErrNoPath) || errors.Is(err, ErrLegUnwalkable)) {
+		return walkAround(interrupted, func() map[[2]int]bool { return spriteBlockers(m) }, stayHomes, plan, walk, wait)
+	}
+	err := walkAround(interrupted,
+		func() map[[2]int]bool { return softPreferStationaryBlockers(m, h, plan) },
+		stayHomes, plan, walk, wait)
 	if err == nil {
 		return nil
 	}
 	if !errors.Is(err, world.ErrNoPath) && !errors.Is(err, ErrLegUnwalkable) {
 		return err
 	}
-	return walkAround(interrupted, func() map[[2]int]bool { return spriteBlockers(m) }, plan, walk, wait)
+	return walkAround(interrupted, func() map[[2]int]bool { return spriteBlockers(m) }, stayHomes, plan, walk, wait)
 }

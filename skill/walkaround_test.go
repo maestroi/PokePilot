@@ -36,6 +36,7 @@ func (p *walkAroundProbe) run() error {
 			}
 			return map[[2]int]bool{}
 		},
+		nil,
 		func(blocked map[[2]int]bool) ([]world.Step, error) {
 			snap := map[[2]int]bool{}
 			for k, v := range blocked {
@@ -96,6 +97,7 @@ func TestWalkAroundLearnsRepeatedUnexplainedBlock(t *testing.T) {
 
 	err := walkAround(nil,
 		func() map[[2]int]bool { return map[[2]int]bool{} },
+		nil,
 		func(blocked map[[2]int]bool) ([]world.Step, error) {
 			snap := map[[2]int]bool{}
 			for k, v := range blocked {
@@ -198,6 +200,7 @@ func TestWalkAroundRetriesPlanFailureWithEmptySnapshot(t *testing.T) {
 	planCalls := 0
 	err := walkAround(nil,
 		func() map[[2]int]bool { return map[[2]int]bool{} },
+		nil,
 		func(blocked map[[2]int]bool) ([]world.Step, error) {
 			planCalls++
 			if planCalls <= emptyBlockedRetries {
@@ -224,6 +227,7 @@ func TestWalkAroundGivesUpOnPersistentEmptySnapshotFailure(t *testing.T) {
 	planCalls := 0
 	err := walkAround(nil,
 		func() map[[2]int]bool { return map[[2]int]bool{} },
+		nil,
 		func(blocked map[[2]int]bool) ([]world.Step, error) {
 			planCalls++
 			return nil, wantErr
@@ -265,6 +269,7 @@ func TestWalkAroundInterruptionDuringNPCWait(t *testing.T) {
 				return nil
 			},
 				func() map[[2]int]bool { return map[[2]int]bool{{1, 1}: true} },
+				nil,
 				func(map[[2]int]bool) ([]world.Step, error) { plans++; return nil, world.ErrNoPath },
 				func([]world.Step) error { t.Fatal("must not walk"); return nil },
 				func() { waiting = true },

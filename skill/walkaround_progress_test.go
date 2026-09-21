@@ -30,6 +30,7 @@ func TestWalkAroundRetryBudgetResetsWhenLearningNewBlockers(t *testing.T) {
 	walks := 0
 	err := walkAround(nil,
 		func() map[[2]int]bool { return map[[2]int]bool{} },
+		nil,
 		func(blocked map[[2]int]bool) ([]world.Step, error) {
 			plans++
 			chosen = -1

@@ -4,6 +4,7 @@ import (
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
+	"github.com/maestroi/pokepilot/world"
 )
 
 // spriteBlockers snapshots the sprite RAM and returns the tiles the live map
@@ -74,6 +75,25 @@ func currentObservedStationaryObjectBlockers(m *emu.Emu, h rom.MapHeader) map[[2
 	return observedStationaryObjectBlockers(h, state.DecodeSprites(&mem))
 }
 
+// presentStationaryObjectBlockers returns every Stay-home tile that still
+// exists on the current map. Hidden/missable objects are omitted; defeated
+// trainers that remain as solid sprites are kept. Unlike the observed-only
+// snapshot, this does not depend on sprite RAM proximity — a corridor NPC
+// several rooms away still occupies its tile.
+func presentStationaryObjectBlockers(m *emu.Emu, h rom.MapHeader) map[[2]int]bool {
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	hidden := state.HiddenObjectIDs(&mem)
+	blocked := map[[2]int]bool{}
+	for i, o := range h.Objects {
+		if o.Movement != rom.MovementStay || hidden[uint8(i+1)] {
+			continue
+		}
+		blocked[[2]int{int(o.X), int(o.Y)}] = true
+	}
+	return blocked
+}
+
 // liveBlockers is spriteBlockers widened with h's stationary objects, for
 // callers that plan a route across a distance the player has not yet
 // crossed: MEASURED on Pokemon Tower 5F (run-3anwzvms26fjy32alh211qa4fn and
@@ -88,6 +108,30 @@ func liveBlockers(m *emu.Emu, h rom.MapHeader) map[[2]int]bool {
 	return mergeBlockers(spriteBlockers(m), stationaryObjectBlockers(h))
 }
 
+// softPreferStationaryBlockers is the destination-aware form of liveBlockers.
+// It starts from the live sprite snapshot and adds each Stay-home tile only
+// when the caller's plan still admits a path with that tile occupied.
+//
+// Full Stay-home widening can invent a dead end: MEASURED on Silph Co 5F
+// (run-2wvvgm279oaj1uhpm9pfh4ofm), marking every Stay object occupied removes
+// the only stair-landing → Card Key approach because a Rocket's home tile sits
+// on that corridor. Soft preference keeps every Stay home that is merely a
+// detour, and leaves corridor-critical trainers for live collision + battle
+// resolution instead of teaching walkAround to "learn" them as walls.
+func softPreferStationaryBlockers(m *emu.Emu, h rom.MapHeader, plan func(blocked map[[2]int]bool) ([]world.Step, error)) map[[2]int]bool {
+	blocked := spriteBlockers(m)
+	for tile := range stationaryObjectBlockers(h) {
+		if blocked[tile] {
+			continue
+		}
+		trial := mergeBlockers(blocked, map[[2]int]bool{tile: true})
+		if _, err := plan(trial); err == nil {
+			blocked[tile] = true
+		}
+	}
+	return blocked
+}
+
 // mergeBlockers returns the union of live and fixed blockers as a new map
 // that owns its entries, so neither input is mutated or aliased by the
 // result.
@@ -100,4 +144,20 @@ func mergeBlockers(live, fixed map[[2]int]bool) map[[2]int]bool {
 		out[k] = true
 	}
 	return out
+}
+
+// stayTrainerHome reports whether (x,y) is the ROM home tile of an undefeated
+// Stay trainer object on h. Item balls and ordinary NPCs return false.
+func stayTrainerHome(m *emu.Emu, romData []byte, h rom.MapHeader, x, y int) bool {
+	for _, o := range h.Objects {
+		if o.Movement != rom.MovementStay || int(o.X) != x || int(o.Y) != y || o.TrainerClass == 0 {
+			continue
+		}
+		target, err := trainerTargetAt(romData, h, o.X, o.Y)
+		if err != nil {
+			return true
+		}
+		return !target.flag.set(m)
+	}
+	return false
 }

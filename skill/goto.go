@@ -479,6 +479,14 @@ func overlayObservedMapTopology(g *world.Graph, grid *world.Grid, h rom.MapHeade
 	for at := range blockers {
 		grid.Set(at[0], at[1], false)
 	}
+	// Warp tiles are transition ports, not ordinary floor that should merge
+	// rooms for component reachability. Leaving them walkable falsely joins
+	// pad mazes (Silph Co) into one component so GoTo never selects the
+	// leave/re-enter pad route — MEASURED on run-2wvvgm279oaj1uhpm9pfh4ofm
+	// when defeated corridor Rockets blocked every non-pad Card Key approach.
+	for _, w := range h.Warps {
+		grid.Set(int(w.X), int(w.Y), false)
+	}
 	return g.WithMapGrid(h.ID, grid)
 }
 
@@ -539,7 +547,7 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 		if err != nil {
 			return fmt.Errorf("skill: GoTo: build live map %02x at (%d,%d): %w", cur, x, y, err)
 		}
-		routeGraph, err = overlayObservedMapTopology(routeGraph, liveGrid, h, currentObservedStationaryObjectBlockers(m, h))
+		routeGraph, err = overlayObservedMapTopology(routeGraph, liveGrid, h, presentStationaryObjectBlockers(m, h))
 		if err != nil {
 			return fmt.Errorf("skill: GoTo: overlay live topology for map %02x: %w", cur, err)
 		}
@@ -1055,6 +1063,8 @@ func walkWithinMap(m *emu.Emu, romData []byte, dest Destination, policies ...Mov
 	// afterwards keeps Cut/Surf execution evidence-based and bounds malformed
 	// geometry without limiting ordinary walking distance.
 	const maxLocalFieldActions = 16
+	const maxLocalTrainerClears = 8
+	trainerClears := 0
 	for fieldActions := 0; ; {
 		var planErr error
 		var nextAction *fieldPathStep
@@ -1111,6 +1121,14 @@ func walkWithinMap(m *emu.Emu, romData []byte, dest Destination, policies ...Mov
 			}
 			var eb *ErrBlocked
 			if errors.As(err, &eb) {
+				target := blockedDestination(eb)
+				if policy != nil && trainerClears < maxLocalTrainerClears && stayTrainerHome(m, romData, h, target[0], target[1]) {
+					if cerr := ChallengeTrainer(m, romData, uint8(target[0]), uint8(target[1]), policy); cerr != nil {
+						return fmt.Errorf("skill: GoTo: clear trainer at (%d,%d) on map %02x: %w", target[0], target[1], cur, cerr)
+					}
+					trainerClears++
+					continue
+				}
 				return fmt.Errorf("skill: GoTo: blocked on map %02x at (%d,%d) after %d retries: %w",
 					cur, eb.At.X, eb.At.Y, maxWalkRetries, err)
 			}
