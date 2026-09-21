@@ -78,7 +78,14 @@ func observedStationaryObjectBlockers(h rom.MapHeader, live []state.SpriteState)
 func presentStationaryObjectBlockers(m *emu.Emu, h rom.MapHeader) map[[2]int]bool {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	hidden := state.HiddenObjectIDs(&mem)
+	return persistentTopologyBlockers(h, state.HiddenObjectIDs(&mem))
+}
+
+// persistentTopologyBlockers is the stable subset that may be remembered in
+// the route graph across navigation legs. Moving objects are deliberately
+// excluded even when their live sprite currently occupies a corridor tile:
+// their position belongs to immediate path avoidance, not map geometry.
+func persistentTopologyBlockers(h rom.MapHeader, hidden map[uint8]bool) map[[2]int]bool {
 	blocked := map[[2]int]bool{}
 	for i, o := range h.Objects {
 		if o.Movement != rom.MovementStay || hidden[uint8(i+1)] {
