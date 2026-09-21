@@ -8,16 +8,25 @@ import (
 	"github.com/maestroi/pokepilot/worldmodel"
 )
 
+type yellowTestGridHeader struct {
+	spec worldmodel.GridSpec
+}
+
+func (h yellowTestGridHeader) WorldGridSpec([]byte, []byte, worldmodel.TraversalMode) (worldmodel.GridSpec, error) {
+	return h.spec, nil
+}
+
 func yellowTestGrid(t *testing.T, walkable []bool, collision, field []uint8) *world.Grid {
 	t.Helper()
-	grid, err := world.GridFromSpec(worldmodel.GridSpec{
+	header := yellowTestGridHeader{spec: worldmodel.GridSpec{
 		MapID:         1,
 		Width:         len(walkable),
 		Height:        1,
 		Walkable:      walkable,
 		CollisionTile: collision,
 		FieldTile:     field,
-	})
+	}}
+	grid, err := world.BuildFromBlocksForTraversal(nil, header, nil, world.TraversalLand)
 	if err != nil {
 		t.Fatalf("GridFromSpec: %v", err)
 	}
