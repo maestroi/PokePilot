@@ -72,13 +72,21 @@ func bagFreeSlots(mem *state.Mem) int {
 // slot is keyed by distinct item ID, so tossing only part of a stack cannot
 // create capacity; the score is therefore unit price * quantity. Ties prefer
 // the smaller stack, then the earlier bag entry for deterministic behavior.
-func chooseSafeBagSacrifice(inv state.InventoryState) (int, state.BagItem, bool) {
+//
+// protectEscapeRope reserves the Escape Rope stack as an emergency dungeon
+// exit. Because a partial toss cannot free a Gen I bag slot, protecting "one"
+// rope necessarily protects the whole stack until a reusable Dig carrier
+// exists.
+func chooseSafeBagSacrifice(inv state.InventoryState, protectEscapeRope bool) (int, state.BagItem, bool) {
 	bestIndex := -1
 	var best state.BagItem
 	bestCost := 0
 	for i, it := range inv.Items {
 		unit, ok := safeBagSacrificeUnitCost[it.ID]
 		if !ok || it.Quantity == 0 {
+			continue
+		}
+		if protectEscapeRope && it.ID == escapeRopeItem {
 			continue
 		}
 		cost := unit * int(it.Quantity)
@@ -95,6 +103,17 @@ func chooseSafeBagSacrifice(inv state.InventoryState) (int, state.BagItem, bool)
 // existing entry and no space is needed. Under real bag pressure it first
 // delegates to productive inventory recovery (sell/use/store) and only then
 // falls back to the explicit safe-toss whitelist.
+func protectEmergencyEscapeRope(mem *state.Mem) bool {
+	if mem == nil {
+		return true
+	}
+	// Dig uses the same legal dungeon/interior escape mechanism without
+	// consuming inventory, so it is the only durable substitute for a Rope in
+	// the places where a Rope matters. Teleport/Fly work outside and therefore
+	// do not make the last dungeon escape expendable.
+	return partyMoveSlot(mem, digMoveID) < 0
+}
+
 func EnsureBagSpaceFor(m *emu.Emu, item uint8) error {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
@@ -128,7 +147,7 @@ func EnsureBagFreeSlots(m *emu.Emu, minFree int) error {
 		}
 
 		inv := state.DecodeInventory(&mem)
-		idx, sacrifice, ok := chooseSafeBagSacrifice(inv)
+		idx, sacrifice, ok := chooseSafeBagSacrifice(inv, protectEmergencyEscapeRope(&mem))
 		if !ok {
 			return fmt.Errorf("%w: bag uses %d/%d slots and %d free slot(s) are required",
 				ErrNoSafeBagSpace, len(inv.Items), gen1BagCapacity, minFree)
@@ -226,6 +245,9 @@ func tossBagStack(m *emu.Emu, idx int, item state.BagItem) error {
 
 	var mem state.Mem
 	state.Snapshot(m, &mem)
+	if item.ID == escapeRopeItem && protectEmergencyEscapeRope(&mem) {
+		return fmt.Errorf("refusing to toss reserved Escape Rope stack before Dig is available")
+	}
 	liveIdx, liveQty := bagEntry(&mem, item.ID)
 	if liveIdx != idx || liveQty != int(item.Quantity) {
 		return fmt.Errorf("bag changed before toss: item %#02x expected entry %d x%d, now entry %d x%d",
