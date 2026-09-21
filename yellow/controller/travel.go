@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
@@ -30,6 +31,7 @@ func GoTo(m *emu.Emu, romData []byte, destMap, destX, destY uint8) error {
 		return fmt.Errorf("yellow travel: build graph: %w", err)
 	}
 
+	flyAttempted := false
 	for attempt := 0; attempt < travelReplanBudget; attempt++ {
 		recovered, err := recoverYellowTravelInterruption(m, romData)
 		if err != nil {
@@ -43,6 +45,21 @@ func GoTo(m *emu.Emu, romData []byte, destMap, destX, destY uint8) error {
 		x, y := m.Peek8(sym.XCoord), m.Peek8(sym.YCoord)
 		if cur == destMap && x == destX && y == destY {
 			return nil
+		}
+
+		// Prefer Fly for already-visited city destinations once Yellow can
+		// actually prepare/use HM02. Only outdoor maps can open Fly. An
+		// unvisited destination is a normal routing fallback, not a failure.
+		if !flyAttempted && cur < 0x25 && destMap < yellowFlyCityCount && cur != destMap {
+			cap := fieldCapabilityFor(m, romData, FieldFly)
+			if cap.Usable || cap.Preparable {
+				flyAttempted = true
+				if err := FlyTo(m, romData, destMap); err == nil {
+					continue
+				} else if !errors.Is(err, ErrFlyDestinationUnvisited) {
+					return fmt.Errorf("yellow travel: Fly to %#02x: %w", destMap, err)
+				}
+			}
 		}
 
 		route, err := world.FindRouteAtDestination(
