@@ -198,3 +198,97 @@ func hasFinding(report Report, code string, severity Severity) bool {
 	}
 	return false
 }
+
+func TestVerifyRejectsGraphExitComponentWithoutExecutableApproach(t *testing.T) {
+	snapshot := Snapshot{
+		Maps: []Map{
+			{ID: "a", Width: 3, Height: 1, GeometryKnown: true, Components: []int{1, 2}},
+			{ID: "b", Width: 1, Height: 1, GeometryKnown: true, Components: []int{1}},
+		},
+		Edges: []Edge{{
+			ID:    "a-b",
+			Kind:  EdgeConnection,
+			From:  "a",
+			To:    "b",
+			Exit:  Port{Known: true, Components: []int{1, 2}},
+			Entry: Port{Known: true, Components: []int{1}},
+			Execution: &ExecutionEvidence{
+				Status: ExecutionProven,
+				Paths: []ExecutionPath{{
+					ExitComponent:  1,
+					EntryComponent: 1,
+					ExitPoint:      Point{X: 0, Y: 0},
+					EntryPoint:     Point{X: 0, Y: 0},
+				}},
+			},
+		}},
+	}
+
+	report := Verify(snapshot, Options{})
+	if !hasFinding(report, "graph_executor_exit_mismatch", SeverityError) {
+		t.Fatalf("expected graph_executor_exit_mismatch, got %+v", report.Findings)
+	}
+}
+
+func TestVerifyRejectsExecutorLandingOutsideAdvertisedEntry(t *testing.T) {
+	snapshot := Snapshot{
+		Maps: []Map{
+			{ID: "a", Width: 1, Height: 1, GeometryKnown: true, Components: []int{1}},
+			{ID: "b", Width: 2, Height: 1, GeometryKnown: true, Components: []int{1, 2}},
+		},
+		Edges: []Edge{{
+			ID:    "warp",
+			Kind:  EdgeWarp,
+			From:  "a",
+			To:    "b",
+			Exit:  Port{Known: true, Components: []int{1}},
+			Entry: Port{Known: true, Components: []int{1}},
+			Execution: &ExecutionEvidence{
+				Status: ExecutionProven,
+				Paths: []ExecutionPath{{
+					ExitComponent:  1,
+					EntryComponent: 2,
+					ExitPoint:      Point{X: 0, Y: 0},
+					EntryPoint:     Point{X: 1, Y: 0},
+				}},
+			},
+		}},
+	}
+
+	report := Verify(snapshot, Options{})
+	if !hasFinding(report, "executor_landing_not_advertised", SeverityError) {
+		t.Fatalf("expected executor_landing_not_advertised, got %+v", report.Findings)
+	}
+}
+
+func TestVerifyDynamicExecutionUnknownIsInformational(t *testing.T) {
+	snapshot := Snapshot{
+		Maps: []Map{
+			{ID: "a", Width: 1, Height: 1, GeometryKnown: true, Components: []int{1}},
+			{ID: "b", Width: 1, Height: 1, GeometryKnown: true, Components: []int{1}},
+		},
+		Edges: []Edge{{
+			ID:    "surf",
+			Kind:  EdgeConnection,
+			From:  "a",
+			To:    "b",
+			Exit:  Port{Known: false},
+			Entry: Port{Known: false},
+			Execution: &ExecutionEvidence{
+				Status: ExecutionDynamicUnknown,
+				Reason: "requires live Surf topology",
+			},
+		}},
+	}
+
+	report := Verify(snapshot, Options{})
+	if report.HasErrors() || report.WarningCount() != 0 {
+		t.Fatalf("dynamic unknown should be informational only: %+v", report.Findings)
+	}
+	if !hasFinding(report, "dynamic_execution_unknown", SeverityInfo) {
+		t.Fatalf("expected dynamic_execution_unknown info, got %+v", report.Findings)
+	}
+	if report.Stats.DynamicExecutionEdges != 1 {
+		t.Fatalf("dynamic execution edges=%d, want 1", report.Stats.DynamicExecutionEdges)
+	}
+}
