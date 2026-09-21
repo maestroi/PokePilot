@@ -61,6 +61,10 @@ type Source struct {
 	Kind             string `json:"kind"`
 	Checkpoint       string `json:"checkpoint,omitempty"`
 	CheckpointSHA256 string `json:"checkpoint_sha256,omitempty"`
+	OriginRunID      string `json:"origin_run_id,omitempty"`
+	OriginCommit     string `json:"origin_commit,omitempty"`
+	OriginMilestone  string `json:"origin_milestone,omitempty"`
+	OriginSeed       int64  `json:"origin_seed,omitempty"`
 }
 
 type ModelIdentity struct {
@@ -228,6 +232,18 @@ type Result struct {
 	Failures        []Failure               `json:"failures,omitempty"`
 	LastMilestone   string                  `json:"last_milestone,omitempty"`
 	ActiveObjective string                  `json:"active_objective,omitempty"`
+}
+
+type CheckpointMetadata struct {
+	Version       int           `json:"version"`
+	RunID         string        `json:"run_id"`
+	Commit        string        `json:"commit,omitempty"`
+	Game          string        `json:"game"`
+	ROMSHA256     string        `json:"rom_sha256"`
+	Seed          int64         `json:"seed"`
+	Milestone     string        `json:"milestone"`
+	Frame         uint64        `json:"frame"`
+	Configuration Configuration `json:"configuration"`
 }
 
 type BuildInput struct {
@@ -642,6 +658,9 @@ func MaterializeCheckpoints(result *Result, checkpointDir, outputDir, finalState
 			return err
 		}
 		split.Checkpoint = filepath.ToSlash(filepath.Join("checkpoints", split.ID+".state"))
+		if err := WriteJSON(checkpointMetadataPath(dst), checkpointMetadata(*result, split.ID, split.Frame)); err != nil {
+			return err
+		}
 	}
 	if len(result.Failures) > 0 {
 		failure := &result.Failures[0]
@@ -653,9 +672,42 @@ func MaterializeCheckpoints(result *Result, checkpointDir, outputDir, finalState
 			}
 			failure.Checkpoint = filepath.ToSlash(filepath.Join("checkpoints", "failure.state"))
 			failure.Reproduce = fmt.Sprintf("pokebench red --from checkpoint:%s --until %s --runs 1", failure.Checkpoint, result.EndCondition)
+			if err := WriteJSON(checkpointMetadataPath(dst), checkpointMetadata(*result, "failure", failure.Frame)); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
+}
+
+func checkpointMetadata(result Result, milestone string, frame uint64) CheckpointMetadata {
+	return CheckpointMetadata{
+		Version: ResultVersion, RunID: result.RunID, Commit: result.Commit, Game: result.Game,
+		ROMSHA256: result.ROMSHA256, Seed: result.Seed, Milestone: milestone, Frame: frame,
+		Configuration: result.Configuration,
+	}
+}
+
+func checkpointMetadataPath(statePath string) string {
+	return strings.TrimSuffix(statePath, ".state") + ".benchmark.json"
+}
+
+func ReadCheckpointMetadata(statePath string) (CheckpointMetadata, bool, error) {
+	data, err := os.ReadFile(checkpointMetadataPath(statePath))
+	if errors.Is(err, os.ErrNotExist) {
+		return CheckpointMetadata{}, false, nil
+	}
+	if err != nil {
+		return CheckpointMetadata{}, false, err
+	}
+	var meta CheckpointMetadata
+	if err := json.Unmarshal(data, &meta); err != nil {
+		return CheckpointMetadata{}, false, err
+	}
+	if meta.Version != ResultVersion {
+		return CheckpointMetadata{}, false, fmt.Errorf("benchmark: checkpoint metadata version %d, want %d", meta.Version, ResultVersion)
+	}
+	return meta, true, nil
 }
 
 func checkpointForRound(dir string, round int) string {
