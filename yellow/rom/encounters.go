@@ -73,7 +73,7 @@ func GrassEncounterCells(romData []byte, mapID uint8) ([]EncounterCell, error) {
 	allWalkable := mapID >= yellowFirstIndoorMap && h.Tileset != yellowForestTileset
 	grassTile := uint8(0)
 	if !allWalkable {
-		base, err := gen1rom.BankedOffset(yellowTilesetsBank, yellowTilesetsAddr)
+		base, err := bankedOffset(yellowTilesetsBank, yellowTilesetsAddr)
 		if err != nil {
 			return nil, err
 		}
