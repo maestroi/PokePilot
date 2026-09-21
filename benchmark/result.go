@@ -95,6 +95,7 @@ type Configuration struct {
 	WildEncounters  string            `json:"wild_encounters,omitempty"`
 	DecisionBackend string            `json:"decision_backend,omitempty"`
 	EmulatorSpeed   string            `json:"emulator_speed,omitempty"`
+	MaxFrames       int               `json:"max_frames,omitempty"`
 	Model           ModelIdentity     `json:"model"`
 	FeatureFlags    map[string]string `json:"feature_flags,omitempty"`
 }
@@ -229,6 +230,7 @@ type Result struct {
 	Timing          map[string]TimingBucket `json:"timing"`
 	Counters        map[string]int64        `json:"counters"`
 	Model           ModelStats              `json:"model"`
+	Decision        DecisionStats           `json:"decision,omitempty"`
 	Failures        []Failure               `json:"failures,omitempty"`
 	LastMilestone   string                  `json:"last_milestone,omitempty"`
 	ActiveObjective string                  `json:"active_objective,omitempty"`

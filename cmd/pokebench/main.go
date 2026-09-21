@@ -259,10 +259,11 @@ func parseRedConfig(args []string) (redConfig, error) {
 		return redConfig{}, fmt.Errorf("pokebench red: --until must not be empty")
 	}
 	if strings.TrimSpace(*seedsRaw) != "" {
-		cfg.seeds, err = parseSeeds(*seedsRaw)
+		seeds, err := parseSeeds(*seedsRaw)
 		if err != nil {
 			return redConfig{}, err
 		}
+		cfg.seeds = seeds
 	}
 	return cfg, nil
 }
