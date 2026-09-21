@@ -83,6 +83,20 @@ func (a *yellowObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, err
 			return result, fmt.Errorf("agent: %s: %w", o, err)
 		}
 		return result, nil
+	case KindUseItem:
+		obs, err := a.Observe()
+		if err != nil {
+			return result, fmt.Errorf("agent: %s: observe Yellow bag: %w", o, err)
+		}
+		rawItem, ok := yellowBagItemID(a.romData, obs, o.Item)
+		if !ok {
+			return result, fmt.Errorf("agent: %s: Yellow bag does not contain semantic item %q", o, o.Item)
+		}
+		if err := yellowcontroller.UseFieldItem(a.m, a.romData, rawItem, o.Slot); err != nil {
+			return result, fmt.Errorf("agent: %s: %w", o, err)
+		}
+		result.ItemEffectVerified = true
+		return result, nil
 	case KindBuy:
 		obs, err := a.Observe()
 		if err != nil {
@@ -121,6 +135,25 @@ func (a *yellowObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, err
 	default:
 		return result, fmt.Errorf("agent: %s: %w", o, errYellowControllerUnavailable)
 	}
+}
+
+
+func yellowBagItemID(romData []byte, obs Observation, id ItemID) (uint8, bool) {
+	for _, item := range obs.Bag {
+		if ItemID(gameruntime.CanonicalID(item.Name)) != id || item.Quantity <= 0 {
+			continue
+		}
+		for raw := 1; raw <= 0xff; raw++ {
+			name, err := yellowrom.ItemName(romData, uint8(raw))
+			if err != nil {
+				continue
+			}
+			if ItemID(gameruntime.CanonicalID(name)) == id {
+				return uint8(raw), true
+			}
+		}
+	}
+	return 0, false
 }
 
 func yellowMartItemID(romData []byte, mapID uint8, id ItemID) (uint8, bool) {
