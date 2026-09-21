@@ -180,7 +180,6 @@ func (a *yellowObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, err
 	}
 }
 
-
 func yellowSpeciesID(romData []byte, id SpeciesID) (uint8, bool) {
 	for dex := 1; dex <= 151; dex++ {
 		raw, err := yellowrom.DexNumberInternalSpecies(romData, uint8(dex))
