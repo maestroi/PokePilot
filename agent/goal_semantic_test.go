@@ -12,7 +12,7 @@ func TestSemanticProgressAndCapabilityGoals(t *testing.T) {
 		t.Fatalf("capability goal = %+v, %v", capability, err)
 	}
 	obs := Observation{
-		Story: ProgressState{{ID: "silph_co_cleared", Complete: true}},
+		Story:             ProgressState{{ID: "silph_co_cleared", Complete: true}},
 		FieldCapabilities: []FieldCapability{{Name: "surf", HMOwned: true}},
 	}
 	if got := EvaluateGoal(progress, obs); !got.Complete {
