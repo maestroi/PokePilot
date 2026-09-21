@@ -15,8 +15,9 @@ type FailureObjective struct {
 	Place    PlaceID
 	X, Y     uint8
 	Starter  string
-	Progress ProgressID
-	Level    uint8
+	Progress        ProgressID
+	FieldCapability CapabilityID
+	Level           uint8
 	Species  SpeciesID
 	Item     ItemID
 	Slot     int
@@ -75,8 +76,9 @@ func FailureObjectiveFor(o Objective) FailureObjective {
 		X:        o.X,
 		Y:        o.Y,
 		Starter:  starterName(o.Starter),
-		Progress: o.Progress,
-		Level:    o.Level,
+		Progress:        o.Progress,
+		FieldCapability: o.FieldCapability,
+		Level:           o.Level,
 		Species:  o.Species,
 		Item:     o.Item,
 		Slot:     o.Slot,
@@ -111,6 +113,8 @@ func failureKindName(k Kind) string {
 		return "use_item"
 	case KindProgress:
 		return "progress"
+	case KindRepairFieldCapability:
+		return "repair_field_capability"
 	default:
 		return "unknown"
 	}
