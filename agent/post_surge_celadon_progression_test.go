@@ -48,18 +48,34 @@ func TestRedProgressionAdvancesFromLavenderToCeladonRecovery(t *testing.T) {
 	}
 }
 
-func TestRedProgressionOffersErikaOnlyAfterCeladonReady(t *testing.T) {
+func TestRedProgressionOffersFlyBeforeErikaAfterCeladonReady(t *testing.T) {
 	obs := postSurgeObservation(0x85)
 	obs.Story = append(obs.Story,
 		ProgressFact{ID: redProgressPostSurgeLavenderReached, Complete: true},
 		ProgressFact{ID: redProgressPostSurgeCeladonReady, Complete: true},
 	)
 	got := redProgressionObjectives(obs)
-	if !hasProgressObjective(got, redProgressRainbowBadge) {
-		t.Fatal("Celadon-ready observation did not offer the Erika/Rainbow stage")
+	if !hasProgressObjective(got, redProgressFlyReady) {
+		t.Fatal("Celadon-ready observation did not offer the Fly preparation stage")
 	}
-	if hasProgressObjective(got, redProgressPostSurgeLavenderReached) || hasProgressObjective(got, redProgressPostSurgeCeladonReady) {
-		t.Fatalf("completed post-Surge travel stages were re-offered: %v", got)
+	if hasProgressObjective(got, redProgressRainbowBadge) {
+		t.Fatalf("Erika leaked before Fly was prepared: %v", got)
+	}
+}
+
+func TestRedProgressionOffersErikaAfterFlyReady(t *testing.T) {
+	obs := postSurgeObservation(0x85)
+	obs.Story = append(obs.Story,
+		ProgressFact{ID: redProgressPostSurgeLavenderReached, Complete: true},
+		ProgressFact{ID: redProgressPostSurgeCeladonReady, Complete: true},
+		ProgressFact{ID: redProgressFlyReady, Complete: true},
+	)
+	got := redProgressionObjectives(obs)
+	if !hasProgressObjective(got, redProgressRainbowBadge) {
+		t.Fatal("Fly-ready Celadon observation did not offer the Erika/Rainbow stage")
+	}
+	if hasProgressObjective(got, redProgressFlyReady) {
+		t.Fatalf("completed Fly stage was re-offered: %v", got)
 	}
 }
 
@@ -79,6 +95,7 @@ func TestRainbowStageDoesNotSuppressRocketHideout(t *testing.T) {
 	obs.Story = append(obs.Story,
 		ProgressFact{ID: redProgressPostSurgeLavenderReached, Complete: true},
 		ProgressFact{ID: redProgressPostSurgeCeladonReady, Complete: true},
+		ProgressFact{ID: redProgressFlyReady, Complete: true},
 	)
 	if !hasProgressObjective(redProgressionObjectives(obs), redProgressSilphScopeAcquired) {
 		t.Fatal("adding the bounded Rainbow stage suppressed the independently available Rocket Hideout objective")
@@ -89,6 +106,7 @@ func TestPostSurgeStageIDsAreAcceptedByRedAdapter(t *testing.T) {
 	for _, id := range []ProgressID{
 		redProgressPostSurgeLavenderReached,
 		redProgressPostSurgeCeladonReady,
+		redProgressFlyReady,
 		redProgressRainbowBadge,
 	} {
 		if !redProgressionKnown(id) {
@@ -103,5 +121,36 @@ func TestRainbowBadgeProgressIsProjectedFromRAM(t *testing.T) {
 	progress := redProgressStateFromRAM(&mem, state.InventoryState{}, state.StoryFacts{})
 	if !progress.Has(redProgressRainbowBadge) {
 		t.Fatal("Rainbow Badge bit was not projected into semantic progression state")
+	}
+}
+
+func TestFlyReadyProgressIsProjectedFromUsableFieldCapability(t *testing.T) {
+	var mem state.Mem
+	mem[sym.ObtainedBadges] = 1 << uint8(state.BadgeThunder)
+	mem[sym.PartyCount] = 1
+	mem[sym.PartyMon1+sym.MonMoves] = 0x13 // FLY
+
+	progress := redProgressStateFromRAM(&mem, state.InventoryState{}, state.StoryFacts{})
+	if !progress.Has(redProgressFlyReady) {
+		t.Fatal("usable Fly capability was not projected into semantic progression state")
+	}
+}
+
+func TestRedProgressionResumesFlyAfterHM02AcquiredAwayFromCeladon(t *testing.T) {
+	obs := postSurgeObservation(0xBC) // Route 16 Fly house: geographic Celadon-ready fact may be false mid-transaction.
+	obs.FieldCapabilities = []FieldCapability{{
+		Name:       "fly",
+		BadgeOwned: true,
+		HMOwned:    true,
+		Learned:    false,
+		Usable:     false,
+	}}
+
+	got := redProgressionObjectives(obs)
+	if !hasProgressObjective(got, redProgressFlyReady) {
+		t.Fatalf("HM02-owned partial Fly setup was not resumed: %v", got)
+	}
+	if hasProgressObjective(got, redProgressPostSurgeLavenderReached) {
+		t.Fatalf("partial Fly setup incorrectly backtracked to Lavender: %v", got)
 	}
 }
