@@ -531,6 +531,31 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 		cur := m.Peek8(sym.CurMap)
 		x, y := playerXY(m)
 
+		// Travel may begin inside a Center, gym, hideout, or other interior
+		// where the real game does not permit Fly. Reconsider fast travel on
+		// every map boundary once a battle policy is present (plain GoTo keeps
+		// its historical walking-only contract). This closes the gap where the
+		// top-level Travel preflight saw "indoors", then one long GoTo walked
+		// across Kanto without ever checking Fly again after stepping outside.
+		if nav.policy != nil {
+			used, fastErr := maybeUseFastTravel(m, romData, dest)
+			if fastErr != nil {
+				return fmt.Errorf("skill: GoTo: fast travel: %w", fastErr)
+			}
+			if used {
+				visitedMaps[cur] = true
+				visitedPositions[cur] = append(visitedPositions[cur], navigationState{Map: cur, X: x, Y: y})
+				nowX, nowY := playerXY(m)
+				if err := guard.observe(navigationState{Map: m.Peek8(sym.CurMap), X: nowX, Y: nowY}); err != nil {
+					return fmt.Errorf("skill: GoTo: %w", err)
+				}
+				// Fly is a non-edge world transition. Rebuild from immutable
+				// topology and let the next loop overlay the new live map.
+				routeGraph = g
+				continue
+			}
+		}
+
 		h, err := rom.ParseMap(romData, cur)
 		if err != nil {
 			return fmt.Errorf("skill: GoTo: parse live map %02x at (%d,%d): %w", cur, x, y, err)
