@@ -178,6 +178,20 @@ export function cancelRun(runID: string, signal?: AbortSignal): Promise<Record<s
   })
 }
 
+export interface CloneRunResult {
+  run_id: string
+  cloned_from: string
+  status: string
+}
+
+export function cloneRun(runID: string, signal?: AbortSignal): Promise<CloneRunResult> {
+  return requestJSON<CloneRunResult>(`/v1/runs/${encodeURIComponent(runID)}/clone`, {
+    method: 'POST',
+    body: '{}',
+    signal
+  })
+}
+
 export function forceEndWorker(addr: string, signal?: AbortSignal): Promise<Record<string, unknown>> {
   return requestJSON<Record<string, unknown>>(`/v1/workers/${encodeURIComponent(addr)}/force-end`, {
     method: 'POST',
