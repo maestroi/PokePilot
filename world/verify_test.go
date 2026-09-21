@@ -103,7 +103,6 @@ func reportHasFinding(report worldverify.Report, code string, severity worldveri
 	return false
 }
 
-
 func TestVerifyGraphDetectsWarpLandingExecutorMismatch(t *testing.T) {
 	edge := Edge{Kind: EdgeWarp, From: 1, To: 2, WarpX: 0, WarpY: 0}
 	g := &Graph{
