@@ -40,6 +40,37 @@ func approachViaTravel(m *emu.Emu, romData []byte, targetX, targetY uint8, polic
 	return nil
 }
 
+const pickupFaceRecoveryAttempts = 3
+
+// pickupInterruptionForTravel translates the movement layer's battle sentinel
+// into the one Travel's resolver owns. Dialogue already uses the same sentinel
+// on both layers.
+func pickupInterruptionForTravel(err error) error {
+	if errors.Is(err, ErrBattleInterrupted) {
+		return ErrBattle
+	}
+	return err
+}
+
+// recoverPickupInteractionInterruption owns the tiny race after an approach
+// has finished but before Pickup presses A. A sighted trainer (or an ordinary
+// wild encounter that lands on the last approach step) can take control in
+// exactly that window: Face then times out because direction input is ignored.
+// Run the same bounded dialogue/battle resolver used by TravelFlee, then let
+// Pickup re-approach the ball and try the interaction again.
+func recoverPickupInteractionInterruption(m *emu.Emu, policy MovePolicy) error {
+	_, err := travel(
+		m,
+		policy,
+		4,
+		func() error { return pickupInterruptionForTravel(movementInterruption(m)) },
+		func() DialogueRecoveryResult { return RecoverDialogue(m, dialogueRecoveryBudget) },
+		func() bool { return m.Peek8(sym.StatusFlags4)&blackoutBit != 0 },
+		fleeThenFight(m, policy, guaranteedWildFleeAttempts),
+	)
+	return err
+}
+
 // ErrBagNotRisen reports that pressing A did not collect the wanted item:
 // the bag count for it is not exactly one higher than before. A ball that
 // was already collected fails here, cleanly — there is no event flag for
@@ -90,8 +121,33 @@ func Pickup(m *emu.Emu, romData []byte, x, y uint8, want uint8, policy MovePolic
 	if err := EnsureBagSpaceFor(m, want); err != nil {
 		return fmt.Errorf("skill: Pickup: make room for item %#02x: %w", want, err)
 	}
-	if err := Face(m, x, y); err != nil {
-		return fmt.Errorf("skill: Pickup: %w", err)
+	var faceErr error
+	for attempt := 1; attempt <= pickupFaceRecoveryAttempts; attempt++ {
+		faceErr = Face(m, x, y)
+		if faceErr == nil {
+			break
+		}
+
+		// If the face failed while the overworld is still idle, this is a
+		// genuine interaction/controller failure. Recovery is only justified
+		// when live RAM proves a battle/dialogue stole control after the
+		// approach completed.
+		if movementInterruption(m) == nil {
+			return fmt.Errorf("skill: Pickup: %w", faceErr)
+		}
+		if attempt == pickupFaceRecoveryAttempts {
+			return fmt.Errorf("skill: Pickup: face item at (%d,%d) still interrupted after %d recoveries: %w",
+				x, y, pickupFaceRecoveryAttempts-1, faceErr)
+		}
+		if err := recoverPickupInteractionInterruption(m, policy); err != nil {
+			return fmt.Errorf("skill: Pickup: recover interruption before facing item at (%d,%d): %w", x, y, err)
+		}
+		// A trainer fight can move the player a tile and a blackout can move
+		// maps entirely. Re-establish the normal Pickup approach rather than
+		// assuming the pre-interruption position is still valid.
+		if err := approachViaTravel(m, romData, x, y, policy); err != nil {
+			return err
+		}
 	}
 
 	m.Tap(emu.A, 3, 7)
