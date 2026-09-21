@@ -41,7 +41,6 @@ func (w *Wall) handleCloneRun(res http.ResponseWriter, req *http.Request) {
 	}
 	w.order = append(w.order, cloneID)
 	w.tiles[cloneID] = &Tile{}
-	w.queue = append(w.queue, cloneID)
 	w.applySpec(cloneID, farm.Spec{
 		RunID:           cloneID,
 		Seed:            source.Seed,
@@ -62,15 +61,21 @@ func (w *Wall) handleCloneRun(res http.ResponseWriter, req *http.Request) {
 	delete(w.cancel, cloneID)
 	w.mu.Unlock()
 
-	// These extension fields are keyed by run id outside Tile. Copy them after
-	// the destination exists so leases and dashboard serialization see the same
-	// policy as the source. This also preserves an explicitly empty Free Play
+	// These extension fields are keyed by run id outside Tile. Install them
+	// before the clone becomes leasable so a fast worker cannot observe a
+	// partially cloned policy. This also preserves an explicitly empty Free Play
 	// goal rather than applying a play-style default.
 	farm.CopyRunPolicy(sourceID, cloneID)
 
+	// Do the same for spectator visibility. The clone exists in RAM but is not
+	// in the lease queue yet, so a hidden source cannot briefly leak publicly.
+	w.copySpectatorVisibility(req.Context(), sourceID, cloneID)
+
+	w.mu.Lock()
+	w.queue = append(w.queue, cloneID)
+	w.mu.Unlock()
 	w.dropFrameCache(cloneID)
 	w.saveState()
-	w.copySpectatorVisibility(req.Context(), sourceID, cloneID)
 
 	writeJSON(res, http.StatusCreated, cloneRunResult{
 		RunID:      cloneID,
