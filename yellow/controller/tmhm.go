@@ -50,7 +50,7 @@ func yellowTMHMRecipient(m *emu.Emu, romData []byte, item uint8, requested int) 
 		if err != nil || !ok {
 			continue
 		}
-		for i, move := range state.moves {
+		for _, move := range state.moves {
 			if move == 0 {
 				return candidate, -1, nil
 			}
