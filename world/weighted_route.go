@@ -16,13 +16,13 @@ import (
 // instead of pretending an arbitrary tile is representative of a map-only
 // goal.
 type RouteCostPolicy struct {
-	MoveCost                 int
-	MapTransitionCost        int
-	DefaultActionCost        int
+	MoveCost                  int
+	MapTransitionCost         int
+	DefaultActionCost         int
 	FallbackMapTransitionCost int
-	AllowWater               bool
-	TransitionCosts          map[string]int
-	CapabilityActionCosts    map[gameruntime.CapabilityID]int
+	AllowWater                bool
+	TransitionCosts           map[string]int
+	CapabilityActionCosts     map[gameruntime.CapabilityID]int
 }
 
 // DefaultRouteCostPolicy matches the coarse units already used by Red's local
@@ -145,10 +145,10 @@ func fallbackRouteCost(steps []RouteStep, from, to uint8, x, y, tx, ty int, poli
 }
 
 type weightedSemanticView struct {
-	usable        *Graph
-	executable    map[Edge]gameruntime.Transition
-	skipCanExit   map[Edge]bool
-	relaxLanding  map[Edge]bool
+	usable       *Graph
+	executable   map[Edge]gameruntime.Transition
+	skipCanExit  map[Edge]bool
+	relaxLanding map[Edge]bool
 }
 
 func buildWeightedSemanticView(g *Graph, prereqs RoutePrerequisites) weightedSemanticView {
@@ -210,7 +210,7 @@ func (o routeOccupancy) with(mapID uint8) routeOccupancy {
 
 type weightedRouteNode struct {
 	mapID uint8
-	x, y int
+	x, y  int
 	known bool
 	entry []int
 	via   Edge
