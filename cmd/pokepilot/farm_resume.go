@@ -79,24 +79,42 @@ func prepareFarmAttempt(m *emu.Emu, client *farm.Client, spec farm.Spec, planner
 	// Attempt 1 also asks: endless successors of a failed campaign resume
 	// from the parent's latest major checkpoint, and ordinary first leases
 	// get 204 and boot. Scripted runs keep their historic fresh retry.
+	//
+	// A missing/unusable checkpoint is deliberately best-effort: falling back
+	// to bootState below must never wedge the farm (see farm.Client.ResumeCheckpoint).
+	// But for attempt>1 or an endless successor, a resume was actually
+	// expected, so silently landing on a fresh cartridge is a real regression
+	// worth surfacing loudly rather than looking like a live mid-game hang.
+	isRetryAttempt := spec.Attempt >= 2
+	expectedResume := planner == "llm" && (isRetryAttempt || spec.Endless)
+	fallbackReason := ""
 	if planner == "llm" && dir != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), farmHTTPTimeout)
 		cp, lookupErr := client.ResumeCheckpoint(ctx, spec.RunID, spec.Attempt)
 		cancel()
 		if lookupErr != nil {
+			fallbackReason = fmt.Sprintf("resume lookup failed: %v", lookupErr)
 			log.Printf("farm: %s: resume lookup failed; starting attempt %d fresh: %v", spec.RunID, spec.Attempt, lookupErr)
 		} else if cp != nil {
 			if materializeErr := materializeFarmResume(dir, *cp); materializeErr != nil {
+				fallbackReason = fmt.Sprintf("resume checkpoint unusable: %v", materializeErr)
 				log.Printf("farm: %s: resume checkpoint unusable; starting attempt %d fresh: %v", spec.RunID, spec.Attempt, materializeErr)
 			} else if loadErr := m.LoadState(cp.State.Data); loadErr != nil {
 				_ = os.Remove(filepath.Join(dir, farmResumeMarker))
+				fallbackReason = fmt.Sprintf("resume state rejected: %v", loadErr)
 				log.Printf("farm: %s: resume state rejected; starting attempt %d fresh: %v", spec.RunID, spec.Attempt, loadErr)
 			} else {
 				log.Printf("farm: %s: resumed attempt %d from attempt %d checkpoint %s", spec.RunID, spec.Attempt, cp.Attempt, cp.State.Name)
 				m.TraceNote("resume", fmt.Sprintf("attempt %d checkpoint %s", cp.Attempt, cp.State.Name))
 				return dir, 0, nil
 			}
+		} else {
+			fallbackReason = "no checkpoint found"
 		}
+	}
+	if warn, message := resumeFallbackWarning(spec.Attempt, expectedResume, fallbackReason); warn {
+		log.Printf("farm: %s: WARNING: %s", spec.RunID, message)
+		m.TraceNote("resume-fallback", message)
 	}
 
 	// bootState is the runner's raw post-boot state captured from the verified
@@ -112,6 +130,24 @@ func prepareFarmAttempt(m *emu.Emu, client *farm.Client, spec farm.Spec, planner
 		fmt.Printf("seed %d: burned %d idle frames, so this run's luck differs\n", spec.Seed, burn)
 	}
 	return dir, burn, nil
+}
+
+// resumeFallbackWarning reports whether an attempt that was expected to
+// resume from a checkpoint (a retry, or an endless successor) instead fell
+// back to a fresh cartridge, and the message to surface for it. Falling back
+// itself is fine and by design (see farm.Client.ResumeCheckpoint); silently
+// doing so on an attempt that should have carried forward mid-game progress
+// is not, and previously it was indistinguishable from a genuine in-game
+// hang until someone went looking for it.
+func resumeFallbackWarning(attempt int, expectedResume bool, fallbackReason string) (warn bool, message string) {
+	if !expectedResume {
+		return false, ""
+	}
+	reason := fallbackReason
+	if reason == "" {
+		reason = "resume not attempted"
+	}
+	return true, fmt.Sprintf("attempt %d expected to resume but is starting from a fresh cartridge (%s)", attempt, reason)
 }
 
 func materializeFarmResume(dir string, cp farm.ResumeCheckpoint) error {
