@@ -10,6 +10,13 @@ import (
 // ErrNoRoute reports that no sequence of warps/connections links the maps.
 var ErrNoRoute = errors.New("world: no route")
 
+// ErrRouteReplanRequired reports that routing reached an executable semantic
+// action whose post-action component topology is not represented by the
+// current graph. The returned route is a safe prefix ending at that action;
+// callers that can execute it must refresh live topology and re-plan instead
+// of treating the unknown landing as unrestricted reachability.
+var ErrRouteReplanRequired = errors.New("world: semantic route requires live-topology replan")
+
 // FindRoute returns the edges to traverse, in order, to get from map
 // `from` to map `to`. It returns an empty slice when from == to.
 //
@@ -219,13 +226,15 @@ func findRoute(g *Graph, from, to uint8, blockedHere map[Edge]bool, first, targe
 	if from == to && (len(target) == 0 || shareComp(first, target)) {
 		return []Edge{}, nil
 	}
-	// node.prev indexes back into nodes, or -1 for a first hop. entry is the
-	// walkable component set on edge.To after taking edge (nil after a
-	// relaxLanding hop, so later canExit on that map may use every port).
+	// node.prev indexes back into nodes, or -1 for a first hop. entry always
+	// remains the concrete component set supported by the current graph.
+	// boundary marks a semantic action whose effect may rewrite destination
+	// topology; such a node is never expanded until live topology is refreshed.
 	type node struct {
-		edge  Edge
-		prev  int
-		entry []int
+		edge     Edge
+		prev     int
+		entry    []int
+		boundary bool
 	}
 	var nodes []node
 	seen := make(map[routeStateKey]bool)
@@ -247,65 +256,56 @@ func findRoute(g *Graph, from, to uint8, blockedHere map[Edge]bool, first, targe
 			// require canExit: their obstacle is on the adjacent map.
 			//
 			// PortBypass must never promote a phantom connection band — one
-			// whose exit port has no walkable tile — into a real hop. Those
-			// bands still receive the same transition annotation as their
-			// walkable siblings (Route 9's east seam is split into six bands,
-			// five of them empty), and skipping canExit for them used to land
-			// with a nil component set. A nil landing is "unconstrained," so
-			// the next hop could invent a far-side exit on the destination map
-			// (Route 10 south to Lavender without Rock Tunnel). MEASURED on
-			// farm run-2ccw7p3rpnvu4129l1dkhc7ayh: with can_cut, FindRoutePlan
-			// returned Route9 -cut-> Route10 -south-> Lavender, then GoTo
-			// bounced through Rock Tunnel until navigation_stalled.
-			//
-			// Surf is the exception: its PortBypass privilege is
-			// skipCanExit+relaxLanding (not PivotOnly), and water shores have
-			// empty land exitComps by construction. Rejecting them made every
-			// southern-sea / Route 21 Surf approach unroutable
-			// (triage:ff3ad54bb21d3a2d). PivotOnly+PortBypass Cut phantoms only
-			// set skipCanExit and stay rejected here.
+			// whose exit port has no walkable tile — into a real hop. Surf is
+			// the exception: its PortBypass privilege is skipCanExit+relaxLanding,
+			// and water shores have empty land exitComps by construction. Those
+			// edges are allowed as executable semantic frontiers, but routing
+			// stops there until live water topology is rebuilt.
 			if g.componentAware && len(g.exitComps[e]) == 0 && !(skipCanExit[e] && relaxLanding[e]) {
 				continue
 			}
 			if !skipCanExit[e] && !canExit(g, e, entry) {
 				continue
 			}
+
 			nextEntry := g.entryComps[e]
-			if relaxLanding[e] && !occupied[e.To] {
-				// The static graph's landing component for e.To was computed from
-				// pristine ROM collision. A semantic pivot (Cut, Surf, a switch...)
-				// can permanently rewrite that map's tile collision at the exact
-				// spot it lands (VermilionGymSetDoorTile, a cut tree), so the
-				// precomputed component is not authoritative once the action is
-				// taken. Treat the landing as unconstrained, same as a caller who
-				// does not know its component (canExit already treats nil this
-				// way); the live map, rebuilt fresh once the walker actually
-				// stands there, is what execution trusts anyway.
-				nextEntry = nil
-			}
+			boundary := relaxLanding[e] && !occupied[e.To]
 			key := routeStateIdentity(g, e.To, nextEntry, e)
 			if seen[key] {
 				continue
 			}
 			seen[key] = true
 			occupied[e.To] = true
-			nodes = append(nodes, node{edge: e, prev: prev, entry: nextEntry})
+			nodes = append(nodes, node{edge: e, prev: prev, entry: nextEntry, boundary: boundary})
 		}
 	}
+	reconstruct := func(i int) []Edge {
+		var route []Edge
+		for j := i; j >= 0; j = nodes[j].prev {
+			route = append([]Edge{nodes[j].edge}, route...)
+		}
+		return route
+	}
+
 	expand(from, -1, first)
+	boundary := -1
 	for i := 0; i < len(nodes); i++ {
-		// nodes[i].entry == nil means a semantic pivot deliberately discarded
-		// the static landing component (see expand above): "unknown" must not
-		// read as "elsewhere," the same rule canExit already applies for an
-		// edge whose entry component isn't known.
-		if nodes[i].edge.To == to && (len(target) == 0 || nodes[i].entry == nil || shareComp(nodes[i].entry, target)) {
-			var route []Edge
-			for j := i; j >= 0; j = nodes[j].prev {
-				route = append([]Edge{nodes[j].edge}, route...)
+		// Destination success is allowed only when the physical landing supports
+		// the requested component. A semantic boundary may still complete a
+		// map-only goal, or an exact goal already in that concrete component.
+		if nodes[i].edge.To == to && (len(target) == 0 || shareComp(nodes[i].entry, target)) {
+			return reconstruct(i), nil
+		}
+		if nodes[i].boundary {
+			if boundary < 0 {
+				boundary = i
 			}
-			return route, nil
+			continue
 		}
 		expand(nodes[i].edge.To, i, nodes[i].entry)
+	}
+	if boundary >= 0 {
+		return reconstruct(boundary), ErrRouteReplanRequired
 	}
 	return nil, ErrNoRoute
 }
