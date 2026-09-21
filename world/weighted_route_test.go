@@ -194,7 +194,6 @@ func TestWeightedMapOnlyGoalDoesNotInventDestinationTile(t *testing.T) {
 	}
 }
 
-
 func TestWeightedRouteStopsAtSemanticRelaxLandingFrontier(t *testing.T) {
 	pivot := Edge{Kind: EdgeWarp, From: 1, To: 2, WarpX: 1, WarpY: 0}
 	onward := Edge{Kind: EdgeWarp, From: 2, To: 3, WarpX: 1, WarpY: 0}
