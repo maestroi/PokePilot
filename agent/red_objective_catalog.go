@@ -35,8 +35,10 @@ func redObjectiveCatalog(obs Observation) ObjectiveCatalog {
 		catalog.Destinations = append(catalog.Destinations, CatalogDestination{
 			Place:    PlaceID(name),
 			Location: redLocationID(obs.GameID, destination.Map),
+			Kind:     destination.Kind,
 			X:        destination.X,
 			Y:        destination.Y,
+			Area:     destination.Area,
 			Center:   isCenter(state.MapName(destination.Map)),
 		})
 	}
