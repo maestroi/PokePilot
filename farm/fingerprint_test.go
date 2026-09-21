@@ -86,8 +86,9 @@ func TestFailureFingerprintChangesForMaterialIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	cases := map[string]func(*FailureIdentity){
-		"objective": func(v *FailureIdentity) { v.Objective.Place = "route_13" },
-		"cause":     func(v *FailureIdentity) { v.Cause = "no_path" },
+		"objective":        func(v *FailureIdentity) { v.Objective.Place = "route_13" },
+		"field capability": func(v *FailureIdentity) { v.Objective.FieldCapability = "surf" },
+		"cause":            func(v *FailureIdentity) { v.Cause = "no_path" },
 		"context":   func(v *FailureIdentity) { v.CauseContext = []string{"can_cut"} },
 		"state":     func(v *FailureIdentity) { v.Initial.Party[0].HP-- },
 		"outcome":   func(v *FailureIdentity) { v.Outcome = "controller_uncertain" },
