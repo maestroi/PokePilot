@@ -87,36 +87,32 @@ func yellowSnorlaxFluteTarget(m *emu.Emu) (fightEvent, beatEvent uint16, ok bool
 	return 0, 0, false
 }
 
-// UsePokeFluteAtSnorlax owns the two overworld Snorlax story interactions.
-// The legal activation coordinates and event bits come from Yellow's ROM
-// scripts. Success requires the fight event, a resolved battle, and the
-// durable beat event; merely playing the flute is not enough.
-func UsePokeFluteAtSnorlax(m *emu.Emu, romData []byte) error {
+func startPokeFluteSnorlaxBattle(m *emu.Emu, romData []byte) (fightEvent, beatEvent uint16, err error) {
 	if m == nil {
-		return fmt.Errorf("yellow Poke Flute: nil emulator")
+		return 0, 0, fmt.Errorf("yellow Poke Flute: nil emulator")
 	}
 	fightEvent, beatEvent, ok := yellowSnorlaxFluteTarget(m)
 	if !ok {
-		return fmt.Errorf("yellow Poke Flute: player is not at a Route 12/16 Snorlax activation tile")
+		return 0, 0, fmt.Errorf("yellow Poke Flute: player is not at a Route 12/16 Snorlax activation tile")
 	}
 	if yellowEventSet(m, beatEvent) {
-		return nil
+		return fightEvent, beatEvent, fmt.Errorf("yellow Poke Flute: Snorlax source is already consumed")
 	}
 	idx, qty := yellowBagEntry(m, yellowPokeFluteItem)
 	if idx < 0 || qty == 0 {
-		return fmt.Errorf("yellow Poke Flute: Poke Flute is not in the bag")
+		return fightEvent, beatEvent, fmt.Errorf("yellow Poke Flute: Poke Flute is not in the bag")
 	}
 	if err := openYellowBag(m, romData); err != nil {
-		return fmt.Errorf("yellow Poke Flute: open bag: %w", err)
+		return fightEvent, beatEvent, fmt.Errorf("yellow Poke Flute: open bag: %w", err)
 	}
 	if err := selectYellowBagEntry(m, idx); err != nil {
-		return fmt.Errorf("yellow Poke Flute: select item: %w", err)
+		return fightEvent, beatEvent, fmt.Errorf("yellow Poke Flute: select item: %w", err)
 	}
 	if _, err := m.StepUntil(900, yellowUseTossPrompt); err != nil {
-		return fmt.Errorf("yellow Poke Flute: USE/TOSS prompt did not appear")
+		return fightEvent, beatEvent, fmt.Errorf("yellow Poke Flute: USE/TOSS prompt did not appear")
 	}
 	if err := selectYellowLinearMenuItem(m, 0); err != nil {
-		return fmt.Errorf("yellow Poke Flute: select USE: %w", err)
+		return fightEvent, beatEvent, fmt.Errorf("yellow Poke Flute: select USE: %w", err)
 	}
 	m.Tap(emu.A, 3, 7)
 
@@ -125,7 +121,7 @@ func UsePokeFluteAtSnorlax(m *emu.Emu, romData []byte) error {
 			break
 		}
 		if m.Peek8(sym.MaxMenuItem) == 1 {
-			return fmt.Errorf("yellow Poke Flute: unexpected choice before Snorlax fight")
+			return fightEvent, beatEvent, fmt.Errorf("yellow Poke Flute: unexpected choice before Snorlax fight")
 		}
 		if m.Peek8(sym.FontLoaded) != 0 {
 			m.Tap(emu.A, 3, 7)
@@ -134,7 +130,7 @@ func UsePokeFluteAtSnorlax(m *emu.Emu, romData []byte) error {
 		}
 	}
 	if !yellowEventSet(m, fightEvent) {
-		return fmt.Errorf("yellow Poke Flute: flute played without setting Snorlax fight event")
+		return fightEvent, beatEvent, fmt.Errorf("yellow Poke Flute: flute played without setting Snorlax fight event")
 	}
 
 	for frame := 0; frame < 3000 && m.Peek8(sym.IsInBattle) == 0; frame++ {
@@ -145,7 +141,19 @@ func UsePokeFluteAtSnorlax(m *emu.Emu, romData []byte) error {
 		}
 	}
 	if m.Peek8(sym.IsInBattle) == 0 {
-		return fmt.Errorf("yellow Poke Flute: Snorlax fight event set but battle did not start")
+		return fightEvent, beatEvent, fmt.Errorf("yellow Poke Flute: Snorlax fight event set but battle did not start")
+	}
+	return fightEvent, beatEvent, nil
+}
+
+// UsePokeFluteAtSnorlax owns the two overworld Snorlax story interactions.
+// The legal activation coordinates and event bits come from Yellow's ROM
+// scripts. Success requires the fight event, a resolved battle, and the
+// durable beat event; merely playing the flute is not enough.
+func UsePokeFluteAtSnorlax(m *emu.Emu, romData []byte) error {
+	_, beatEvent, err := startPokeFluteSnorlaxBattle(m, romData)
+	if err != nil {
+		return err
 	}
 	result, err := Battle(m, romData)
 	if err != nil {
