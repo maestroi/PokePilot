@@ -26,6 +26,37 @@ import (
 
 const defaultMaxFrames = 8 * 60 * 60 * 60
 
+type policyPlanner struct {
+	inner *agent.FailoverPlanner
+	style agent.PlayStyleProfile
+	risk  string
+	wild  string
+}
+
+func (p *policyPlanner) offered(obs agent.Observation, offered []agent.Objective) []agent.Objective {
+	offered = agent.ApplyRunPolicy(obs, offered, p.risk, p.wild)
+	return agent.AnnotatePlayStyle(obs, offered, p.style)
+}
+
+func (p *policyPlanner) Next(obs agent.Observation, offered []agent.Objective) (agent.Objective, error) {
+	return p.inner.Next(obs, p.offered(obs, offered))
+}
+
+func (p *policyPlanner) NextRetry(obs agent.Observation, offered []agent.Objective, retry agent.Retry) (agent.Objective, error) {
+	return p.inner.NextRetry(obs, p.offered(obs, offered), retry)
+}
+
+func (p *policyPlanner) Strategize(obs agent.Observation, offered []agent.Objective, reason string) (agent.Plan, error) {
+	return p.inner.Strategize(obs, p.offered(obs, offered), reason)
+}
+
+func (p *policyPlanner) StrategizeRetry(obs agent.Observation, offered []agent.Objective, reason string, retry agent.Retry) (agent.Plan, error) {
+	return p.inner.StrategizeRetry(obs, p.offered(obs, offered), reason, retry)
+}
+
+func (p *policyPlanner) Usage() (int, int) { return p.inner.Usage() }
+func (p *policyPlanner) RunGoal() string { return p.inner.RunGoal() }
+
 type redConfig struct {
 	romPath         string
 	corpus          string
@@ -238,6 +269,7 @@ func runRedOnce(cfg redConfig, source benchmark.Source, resumeFrom, goal, romSHA
 	primaryCfg, fallbackCfg := agent.ResolveLLMEndpointsWithEffort(profile, agent.NormalizeReasoningEffort(cfg.reasoningEffort))
 	primary := agent.NewLLMPlannerFromConfig(primaryCfg)
 	primary.Goal = goal
+	primary.ExtraSystem = agent.PlayStyleSystemNote(cfg.mode)
 	primary.Log = logWriter
 	primary.PromptLog = promptFile
 	primary.ReplyLog = replyFile
@@ -245,12 +277,13 @@ func runRedOnce(cfg redConfig, source benchmark.Source, resumeFrom, goal, romSHA
 	if fallbackCfg != nil {
 		fallback = agent.NewLLMPlannerFromConfig(*fallbackCfg)
 	}
-	planner := agent.NewFailoverPlanner(primary, fallback)
+	router := agent.NewFailoverPlanner(primary, fallback)
+	planner := &policyPlanner{inner: router, style: agent.PlayStyle(cfg.mode), risk: agent.NormalizeRiskTolerance(os.Getenv("POKEPILOT_RISK_TOLERANCE")), wild: agent.NormalizeWildEncounters(os.Getenv("POKEPILOT_WILD_ENCOUNTERS"))}
 	var calls []agent.LLMCall
-	planner.OnCall = func(call agent.LLMCall) { calls = append(calls, call) }
+	router.OnCall = func(call agent.LLMCall) { calls = append(calls, call) }
 
 	config := benchmark.Configuration{
-		Planner: "agent.FailoverPlanner/qualification", Goal: goal, LLMProfile: string(profile),
+		Planner: "agent.FailoverPlanner+run-policy", Goal: goal, LLMProfile: string(profile),
 		ReasoningEffort: cfg.reasoningEffort, PlayStyle: cfg.mode, EmulatorSpeed: "unthrottled; canonical score=emulator frames",
 		Model: benchmark.ModelIdentity{
 			Profile: string(profile), PrimaryModel: primaryCfg.Model, PrimaryURL: benchmark.SafeEndpoint(primaryCfg.BaseURL),
@@ -284,7 +317,7 @@ func runRedOnce(cfg redConfig, source benchmark.Source, resumeFrom, goal, romSHA
 	result := benchmark.Build(benchmark.BuildInput{
 		RunID: runID, Commit: commit, Game: "pokemon-red", ROMSHA256: romSHA256, Mode: cfg.mode,
 		Seed: seed, Source: source, EndCondition: cfg.until, Configuration: config, Profile: redbench.Profile(),
-		AgentResult: res, Calls: calls, Route: planner.Route(), Health: planner.Health(),
+		AgentResult: res, Calls: calls, Route: router.Route(), Health: router.Health(),
 		StartedAt: started, FinishedAt: finished, TerminalError: res.Err,
 	})
 	if err := benchmark.MaterializeCheckpoints(&result, checkpointDir, runDir, finalState); err != nil {
