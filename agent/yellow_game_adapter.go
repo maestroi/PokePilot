@@ -60,6 +60,28 @@ func (a *yellowObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, err
 		}
 		result.InteractionPresses = presses
 		return result, nil
+	case KindHeal:
+		if o.Place != "" {
+			obs, err := a.Observe()
+			if err != nil {
+				return result, fmt.Errorf("agent: %s: resolve Yellow Center: %w", o, err)
+			}
+			destination, ok := obs.Catalog.destination(o.Place)
+			if !ok || !destination.Center {
+				return result, fmt.Errorf("agent: %s: Yellow Center %q is not in the active catalog", o, o.Place)
+			}
+			mapID, ok := yellowNativeMapForLocation(destination.Location)
+			if !ok {
+				return result, fmt.Errorf("agent: %s: Yellow Center location %q has no native map", o, destination.Location)
+			}
+			if err := yellowcontroller.GoTo(a.m, a.romData, mapID, destination.X, destination.Y); err != nil {
+				return result, fmt.Errorf("agent: %s: travel to Center: %w", o, err)
+			}
+		}
+		if err := yellowcontroller.Heal(a.m, a.romData); err != nil {
+			return result, fmt.Errorf("agent: %s: %w", o, err)
+		}
+		return result, nil
 	case KindStarter:
 		if err := yellowcontroller.GetPikachuStarter(a.m, a.romData); err != nil {
 			return result, fmt.Errorf("agent: %s: %w", o, err)
