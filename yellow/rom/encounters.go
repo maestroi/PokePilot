@@ -10,6 +10,7 @@ import (
 const (
 	yellowFirstIndoorMap = 0x25
 	yellowForestTileset  = 3
+	yellowSurfWaterTile  = 0x14
 )
 
 type EncounterCell struct {
@@ -91,6 +92,43 @@ func GrassEncounterCells(romData []byte, mapID uint8) ([]EncounterCell, error) {
 				continue
 			}
 			if !allWalkable && spec.CollisionTile[i] != grassTile {
+				continue
+			}
+			out = append(out, EncounterCell{X: uint8(x), Y: uint8(y)})
+		}
+	}
+	return out, nil
+}
+
+
+// WaterEncounterCells returns Yellow Surf encounter coordinates on a map with
+// a non-zero water encounter table. The water traversal grid supplies the
+// game-specific land/water pair semantics; the tile identity remains
+// Yellow-owned here.
+func WaterEncounterCells(romData []byte, mapID uint8) ([]EncounterCell, error) {
+	hasWater, err := hasWildHabitat(romData, mapID, gen1rom.HabitatWater)
+	if err != nil {
+		return nil, err
+	}
+	if !hasWater {
+		return nil, nil
+	}
+	h, err := ParseMap(romData, mapID)
+	if err != nil {
+		return nil, err
+	}
+	spec, err := h.WorldGridSpec(romData, nil, worldmodel.TraversalWater)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]EncounterCell, 0, spec.Width*spec.Height/4)
+	for y := 0; y < spec.Height; y++ {
+		for x := 0; x < spec.Width; x++ {
+			i := y*spec.Width + x
+			if !spec.Walkable[i] {
+				continue
+			}
+			if spec.FieldTile[i] != yellowSurfWaterTile && spec.CollisionTile[i] != yellowSurfWaterTile {
 				continue
 			}
 			out = append(out, EncounterCell{X: uint8(x), Y: uint8(y)})
