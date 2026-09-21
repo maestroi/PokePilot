@@ -166,16 +166,13 @@ func routeCostFrom(m *emu.Emu, p *RoutePlanner, from, dest Destination) (int, bo
 	if p == nil || p.graph == nil {
 		return 0, false
 	}
-	targetX, targetY := dest.routeCoordinates()
-	result, err := routePlanByTravelPolicy(
+	result, err := routePlanToDestinationByTravelPolicy(
 		m,
 		p.graph,
 		from.Map,
-		dest.Map,
 		int(from.X),
 		int(from.Y),
-		targetX,
-		targetY,
+		dest,
 		nil,
 		p.prereqs,
 	)
