@@ -67,6 +67,8 @@ const (
 	ActionResult           uint16 = 0xCD6A // wActionResultOrTookBattleTurn
 	TileInFrontOfPlayer    uint16 = 0xCFC5 // wTileInFrontOfPlayer
 	WalkBikeSurfState      uint16 = 0xD6FF // wWalkBikeSurfState
+	NumSafariBalls         uint16 = 0xDA46 // wNumSafariBalls
+	SafariSteps            uint16 = 0xD70C // wSafariSteps, big-endian remaining steps
 	MapPalOffset           uint16 = 0xD35C // wMapPalOffset
 	MoveMenuType           uint16 = 0xCCDB // wMoveMenuType
 	NumMovesMinusOne       uint16 = 0xCD6C // wNumMovesMinusOne
