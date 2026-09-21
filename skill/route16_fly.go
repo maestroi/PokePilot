@@ -112,5 +112,21 @@ func PrepareFlyFastTravel(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		return fmt.Errorf("skill: PrepareFlyFastTravel: final Fly invariant failed: badge=%v HM=%v learned=%v slot=%d",
 			fly.BadgeOwned, fly.HMOwned, fly.Learned, fly.PartySlot)
 	}
+
+	// End on the same recovered Celadon checkpoint this transaction started
+	// from. RepairFieldCapabilities may have visited a PC or caught a wild Fly
+	// carrier, and the HM handoff itself ends indoors on Route 16. Travel now
+	// reconsiders Fly after leaving an interior, so this return leg also proves
+	// the newly prepared shortcut is usable immediately.
+	center, ok := Place("celadon pokemon center")
+	if !ok {
+		return fmt.Errorf("skill: PrepareFlyFastTravel: Celadon Pokemon Center destination is not registered")
+	}
+	if _, err := TravelFlee(m, romData, center, policy, flyPreparationEngagements); err != nil {
+		return fmt.Errorf("skill: PrepareFlyFastTravel: return to Celadon: %w", err)
+	}
+	if err := Heal(m); err != nil {
+		return fmt.Errorf("skill: PrepareFlyFastTravel: heal after Fly setup: %w", err)
+	}
 	return nil
 }
