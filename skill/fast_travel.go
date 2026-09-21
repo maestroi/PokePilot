@@ -6,7 +6,6 @@ import (
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
-	"github.com/maestroi/pokepilot/world"
 )
 
 const (
@@ -163,11 +162,12 @@ func legalFastTravelOptions(mem *state.Mem) []fastTravelOption {
 // when source and destination are on the same map, Manhattan distance breaks
 // the otherwise-zero-cost tie and prevents a Fly landing across town from
 // looking free.
-func routeCostFrom(p *RoutePlanner, from, dest Destination) (int, bool) {
+func routeCostFrom(m *emu.Emu, p *RoutePlanner, from, dest Destination) (int, bool) {
 	if p == nil || p.graph == nil {
 		return 0, false
 	}
-	plan, err := world.FindRoutePlanAtDestinationWithCapabilities(
+	result, err := routePlanByTravelPolicy(
+		m,
 		p.graph,
 		from.Map,
 		dest.Map,
@@ -181,19 +181,7 @@ func routeCostFrom(p *RoutePlanner, from, dest Destination) (int, bool) {
 	if err != nil {
 		return 0, false
 	}
-	cost := len(plan) * fastTravelMapTransitionCost
-	if from.Map == dest.Map {
-		dx := int(from.X) - int(dest.X)
-		if dx < 0 {
-			dx = -dx
-		}
-		dy := int(from.Y) - int(dest.Y)
-		if dy < 0 {
-			dy = -dy
-		}
-		cost += dx + dy
-	}
-	return cost, true
+	return result.Cost, true
 }
 
 // chooseFastTravelByCost is the generic shortcut selector. onwardCost answers
@@ -249,9 +237,9 @@ func chooseFastTravel(m *emu.Emu, romData []byte, mem *state.Mem, dest Destinati
 		return fastTravelChoice{}
 	}
 	from := Destination{Map: planner.cur, X: planner.x, Y: planner.y}
-	walkCost, walkOK := routeCostFrom(planner, from, dest)
+	walkCost, walkOK := routeCostFrom(m, planner, from, dest)
 	return chooseFastTravelByCost(walkCost, walkOK, options, func(landing Destination) (int, bool) {
-		return routeCostFrom(planner, landing, dest)
+		return routeCostFrom(m, planner, landing, dest)
 	})
 }
 
