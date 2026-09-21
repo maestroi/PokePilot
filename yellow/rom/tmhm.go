@@ -4,8 +4,8 @@ import "fmt"
 
 const (
 	yellowTechnicalMachinesOffset = 0x1232d // 04:632d TechnicalMachines
-	yellowBaseStatsTMHMOffset      = 20
-	yellowTMHMBytesPerSpecies      = 7
+	yellowBaseStatsTMHMOffset     = 20
+	yellowTMHMBytesPerSpecies     = 7
 
 	HM01Item uint8 = 0xC4
 	HM05Item uint8 = 0xC8
