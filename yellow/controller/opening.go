@@ -149,8 +149,14 @@ func GetPikachuStarter(m *emu.Emu, romData []byte) error {
 		case openingPhaseDone:
 			return nil
 		case openingPhaseBattle:
-			if err := confirmFirstMoveBattle(m, romData); err != nil {
-				return fmt.Errorf("yellow opening phase %s: %w", phase, err)
+			if state.starter {
+				if _, err := Battle(m, romData); err != nil {
+					return fmt.Errorf("yellow opening phase %s: resolve lab rival battle: %w", phase, err)
+				}
+			} else {
+				if err := advanceScriptedCaptureBattle(m, romData); err != nil {
+					return fmt.Errorf("yellow opening phase %s: resolve scripted Pikachu capture: %w", phase, err)
+				}
 			}
 		case openingPhaseNickname:
 			if err := declineNickname(m); err != nil {
@@ -248,19 +254,26 @@ func declineNickname(m *emu.Emu) error {
 // selects FIGHT and the first move from the default battle cursor, while also
 // paging battle text. Losing the lab rival fight is a legal story outcome in
 // Yellow; the durable progress flag, not the win bit, is the opening's goal.
-func confirmFirstMoveBattle(m *emu.Emu, romData []byte) error {
+func advanceScriptedCaptureBattle(m *emu.Emu, romData []byte) error {
 	start := m.FrameCount()
 	for int(m.FrameCount()-start) <= battleFrameBudget {
 		state, err := observeOpening(m, romData)
 		if err != nil {
-			return fmt.Errorf("yellow opening battle: observe: %w", err)
+			return fmt.Errorf("yellow opening scripted capture: observe: %w", err)
 		}
 		if !state.inBattle {
 			return nil
 		}
-		m.Tap(emu.A, 3, 7)
+		// This is Oak's scripted capture, not a player battle: there is no
+		// legal FIGHT/ITEM/PKMN/RUN decision to make. Advance only rendered
+		// text pages; animation/script frames receive no input.
+		if m.Peek8(sym.FontLoaded) != 0 {
+			m.Tap(emu.A, 3, 7)
+		} else {
+			m.StepFrame()
+		}
 	}
-	return fmt.Errorf("yellow opening battle: exceeded %d frames", battleFrameBudget)
+	return fmt.Errorf("yellow opening scripted capture: exceeded %d frames", battleFrameBudget)
 }
 
 func staticObjectBlockers(h yellowrom.MapHeader, except *[2]int) map[[2]int]bool {
