@@ -50,6 +50,9 @@ func TestBuildCapturesSplitsTimingCountersAndModelCost(t *testing.T) {
 			{Duration: time.Second, Strategic: true},
 			{Duration: 500 * time.Millisecond},
 		},
+		DecisionCalls: []DecisionCall{
+			{Kind: agent.DecisionKindObjectiveSelection, Duration: 100 * time.Millisecond, PromptTokens: 20, CompletionTokens: 4, Backend: "system-one-local", Model: "tiny"},
+		},
 		StartedAt: start, FinishedAt: start.Add(6 * time.Second),
 	})
 	if result.Outcome != "completed" || result.Frames != 200 {
@@ -78,6 +81,12 @@ func TestBuildCapturesSplitsTimingCountersAndModelCost(t *testing.T) {
 	}
 	if result.Counters["replans"] != 2 || result.Model.Calls != 2 || result.Model.StrategistCalls != 1 {
 		t.Fatalf("planner/model telemetry = counters %+v model %+v", result.Counters, result.Model)
+	}
+	if result.Counters["typed_decision_calls"] != 1 || result.Decision.Calls != 1 || result.Decision.PromptTokens != 20 {
+		t.Fatalf("decision telemetry = counters %+v decision %+v", result.Counters, result.Decision)
+	}
+	if result.Timing["typed_decision_inference"].WallSeconds != .1 {
+		t.Fatalf("decision timing = %+v", result.Timing["typed_decision_inference"])
 	}
 }
 
@@ -206,14 +215,18 @@ func TestCompareTextMakesReliabilityRegressionObvious(t *testing.T) {
 func TestSanitizeSettingsAndEndpointExcludeSecrets(t *testing.T) {
 	got := SanitizeSettings(map[string]string{
 		"feature":   "on",
-		"api_token": "secret",
-		"endpoint":  "https://user:pass@example.test/v1?api_key=hidden",
+		"api_token":  "secret",
+		"max_tokens": "512",
+		"endpoint":   "https://user:pass@example.test/v1?api_key=hidden",
 	})
 	if got["feature"] != "on" {
 		t.Fatalf("feature lost: %+v", got)
 	}
 	if _, ok := got["api_token"]; ok {
 		t.Fatalf("secret persisted: %+v", got)
+	}
+	if got["max_tokens"] != "512" {
+		t.Fatalf("non-secret inference setting removed: %+v", got)
 	}
 	if strings.Contains(got["endpoint"], "user") || strings.Contains(got["endpoint"], "hidden") {
 		t.Fatalf("endpoint leaked credentials: %q", got["endpoint"])
