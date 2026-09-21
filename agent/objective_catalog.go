@@ -30,7 +30,7 @@ type CatalogDestination struct {
 	Location LocationID
 	Kind     skill.DestinationKind
 	X, Y     uint8
-	Area     skill.DestinationArea
+	Area     skill.DestinationBounds
 	Center   bool
 }
 
