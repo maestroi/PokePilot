@@ -22,18 +22,18 @@ const (
 // decomp rather than importing red/sym.
 const (
 	// Player/world.
-	CurMap             uint16 = 0xD35D // wCurMap
-	YCoord             uint16 = 0xD360 // wYCoord
-	XCoord             uint16 = 0xD361 // wXCoord
-	CurMapHeight       uint16 = 0xD367 // wCurMapHeight
-	CurMapWidth        uint16 = 0xD368 // wCurMapWidth
-	PlayerName         uint16 = 0xD157 // wPlayerName
-	RivalName          uint16 = 0xD349 // wRivalName
+	CurMap                 uint16 = 0xD35D // wCurMap
+	YCoord                 uint16 = 0xD360 // wYCoord
+	XCoord                 uint16 = 0xD361 // wXCoord
+	CurMapHeight           uint16 = 0xD367 // wCurMapHeight
+	CurMapWidth            uint16 = 0xD368 // wCurMapWidth
+	PlayerName             uint16 = 0xD157 // wPlayerName
+	RivalName              uint16 = 0xD349 // wRivalName
 	SpritePlayerStateData1 uint16 = 0xC100 // wSpritePlayerStateData1
 	SpriteStateData2       uint16 = 0xC200 // wSpriteStateData2
 	SpritePlayerFacing     uint16 = 0xC109 // wSpritePlayerStateData1 + 9
 	OverworldMap           uint16 = 0xC6E8 // wOverworldMap
-	OverworldMapLen               = 1300  // wOverworldMap..wOverworldMapEnd
+	OverworldMapLen               = 1300   // wOverworldMap..wOverworldMapEnd
 
 	// Party. PartyMon1 is a packed 44-byte Gen-I party-mon struct.
 	PartyCount   uint16 = 0xD162 // wPartyCount
