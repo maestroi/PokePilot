@@ -101,9 +101,44 @@ func (a *yellowObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, err
 				return result, fmt.Errorf("agent: %s: %w", o, err)
 			}
 			return result, nil
-		default:
+		case dexStaticIntent:
+			caught, err := yellowcontroller.CaptureStatic(a.m, a.romData, rawSpecies)
+			if err != nil {
+				return result, fmt.Errorf("agent: %s: %w", o, err)
+			}
+			if !caught.Caught {
+				return result, fmt.Errorf("agent: %s: Yellow static capture ended without ownership", o)
+			}
+			return result, nil
+		case dexFishingIntent, dexWaterIntent, dexSafariIntent:
 			return result, unavailable(o, "yellow_catch_controller_unavailable",
-				"Yellow wild/static capture is not available for this acquisition source yet")
+				"Yellow fishing, Surf-water, and Safari capture are not available for this acquisition source yet")
+		default:
+			if o.Place != "" {
+				obs, err := a.Observe()
+				if err != nil {
+					return result, fmt.Errorf("agent: %s: resolve Yellow catch habitat: %w", o, err)
+				}
+				destination, ok := obs.Catalog.destination(o.Place)
+				if !ok {
+					return result, fmt.Errorf("agent: %s: Yellow catch habitat %q is not in the active catalog", o, o.Place)
+				}
+				mapID, ok := yellowNativeMapForLocation(destination.Location)
+				if !ok {
+					return result, fmt.Errorf("agent: %s: Yellow catch habitat location %q has no native map", o, destination.Location)
+				}
+				if err := yellowcontroller.GoTo(a.m, a.romData, mapID, destination.X, destination.Y); err != nil {
+					return result, fmt.Errorf("agent: %s: travel to Yellow catch habitat: %w", o, err)
+				}
+			}
+			caught, err := yellowcontroller.CaptureWildGrass(a.m, a.romData, rawSpecies)
+			if err != nil {
+				return result, fmt.Errorf("agent: %s: %w", o, err)
+			}
+			if !caught.Caught {
+				return result, fmt.Errorf("agent: %s: Yellow grass capture ended without ownership", o)
+			}
+			return result, nil
 		}
 	case KindUseItem:
 		obs, err := a.Observe()
