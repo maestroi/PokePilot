@@ -76,17 +76,17 @@ type ModelIdentity struct {
 }
 
 type Configuration struct {
-	Planner          string            `json:"planner,omitempty"`
-	Goal             string            `json:"goal,omitempty"`
-	LLMProfile       string            `json:"llm_profile,omitempty"`
-	ReasoningEffort  string            `json:"reasoning_effort,omitempty"`
-	PlayStyle        string            `json:"play_style,omitempty"`
-	RiskTolerance    string            `json:"risk_tolerance,omitempty"`
-	WildEncounters   string            `json:"wild_encounters,omitempty"`
-	DecisionBackend  string            `json:"decision_backend,omitempty"`
-	EmulatorSpeed    string            `json:"emulator_speed,omitempty"`
-	Model            ModelIdentity     `json:"model"`
-	FeatureFlags     map[string]string `json:"feature_flags,omitempty"`
+	Planner         string            `json:"planner,omitempty"`
+	Goal            string            `json:"goal,omitempty"`
+	LLMProfile      string            `json:"llm_profile,omitempty"`
+	ReasoningEffort string            `json:"reasoning_effort,omitempty"`
+	PlayStyle       string            `json:"play_style,omitempty"`
+	RiskTolerance   string            `json:"risk_tolerance,omitempty"`
+	WildEncounters  string            `json:"wild_encounters,omitempty"`
+	DecisionBackend string            `json:"decision_backend,omitempty"`
+	EmulatorSpeed   string            `json:"emulator_speed,omitempty"`
+	Model           ModelIdentity     `json:"model"`
+	FeatureFlags    map[string]string `json:"feature_flags,omitempty"`
 }
 
 type PartyMember struct {
@@ -106,21 +106,21 @@ type Capability struct {
 }
 
 type Split struct {
-	ID                   string       `json:"id"`
-	Name                 string       `json:"name"`
-	Round                int          `json:"round,omitempty"`
-	Frame                uint64       `json:"frame"`
-	FramesSincePrevious  uint64       `json:"frames_since_previous"`
-	WallSeconds          float64      `json:"wall_seconds"`
-	WallSincePrevious    float64      `json:"wall_since_previous"`
-	Map                  string       `json:"map,omitempty"`
-	X                    uint8        `json:"x"`
-	Y                    uint8        `json:"y"`
-	Party                []PartyMember `json:"party,omitempty"`
-	Badges               []string     `json:"badges,omitempty"`
-	Capabilities         []Capability `json:"capabilities,omitempty"`
-	Objective            string       `json:"objective,omitempty"`
-	Checkpoint           string       `json:"checkpoint,omitempty"`
+	ID                  string        `json:"id"`
+	Name                string        `json:"name"`
+	Round               int           `json:"round,omitempty"`
+	Frame               uint64        `json:"frame"`
+	FramesSincePrevious uint64        `json:"frames_since_previous"`
+	WallSeconds         float64       `json:"wall_seconds"`
+	WallSincePrevious   float64       `json:"wall_since_previous"`
+	Map                 string        `json:"map,omitempty"`
+	X                   uint8         `json:"x"`
+	Y                   uint8         `json:"y"`
+	Party               []PartyMember `json:"party,omitempty"`
+	Badges              []string      `json:"badges,omitempty"`
+	Capabilities        []Capability  `json:"capabilities,omitempty"`
+	Objective           string        `json:"objective,omitempty"`
+	Checkpoint          string        `json:"checkpoint,omitempty"`
 }
 
 type TimingBucket struct {
@@ -130,17 +130,17 @@ type TimingBucket struct {
 }
 
 type ModelStats struct {
-	Calls             int            `json:"calls"`
-	StrategistCalls   int            `json:"strategist_calls,omitempty"`
-	FastCalls         int            `json:"fast_calls,omitempty"`
-	Failures          int            `json:"failures,omitempty"`
-	TotalLatencySec   float64        `json:"total_latency_seconds,omitempty"`
-	P50LatencySec     float64        `json:"p50_latency_seconds,omitempty"`
-	P95LatencySec     float64        `json:"p95_latency_seconds,omitempty"`
-	PromptTokens      int            `json:"prompt_tokens,omitempty"`
-	CompletionTokens  int            `json:"completion_tokens,omitempty"`
-	Route              agent.LLMRoute `json:"route"`
-	Health             agent.LLMHealth `json:"health"`
+	Calls            int             `json:"calls"`
+	StrategistCalls  int             `json:"strategist_calls,omitempty"`
+	FastCalls        int             `json:"fast_calls,omitempty"`
+	Failures         int             `json:"failures,omitempty"`
+	TotalLatencySec  float64         `json:"total_latency_seconds,omitempty"`
+	P50LatencySec    float64         `json:"p50_latency_seconds,omitempty"`
+	P95LatencySec    float64         `json:"p95_latency_seconds,omitempty"`
+	PromptTokens     int             `json:"prompt_tokens,omitempty"`
+	CompletionTokens int             `json:"completion_tokens,omitempty"`
+	Route            agent.LLMRoute  `json:"route"`
+	Health           agent.LLMHealth `json:"health"`
 }
 
 type HistoryEntry struct {
@@ -152,54 +152,54 @@ type HistoryEntry struct {
 }
 
 type Failure struct {
-	Key          string              `json:"key,omitempty"`
-	Fingerprint  string              `json:"fingerprint,omitempty"`
-	Round        int                 `json:"round,omitempty"`
-	Frame        uint64              `json:"frame,omitempty"`
-	Objective    string              `json:"objective,omitempty"`
-	Outcome      string              `json:"outcome,omitempty"`
-	Cause        string              `json:"cause,omitempty"`
-	ErrorChain   []string            `json:"error_chain,omitempty"`
-	Summary      string              `json:"summary,omitempty"`
-	Map          string              `json:"map,omitempty"`
-	X            uint8               `json:"x"`
-	Y            uint8               `json:"y"`
-	Checkpoint   string              `json:"checkpoint,omitempty"`
-	Semantic     agent.FailureState  `json:"semantic_state"`
-	Recent       []HistoryEntry       `json:"recent_history,omitempty"`
-	RecentEvents []string             `json:"recent_events,omitempty"`
-	Travel       *agent.TravelEvidence `json:"travel,omitempty"`
+	Key            string                `json:"key,omitempty"`
+	Fingerprint    string                `json:"fingerprint,omitempty"`
+	Round          int                   `json:"round,omitempty"`
+	Frame          uint64                `json:"frame,omitempty"`
+	Objective      string                `json:"objective,omitempty"`
+	Outcome        string                `json:"outcome,omitempty"`
+	Cause          string                `json:"cause,omitempty"`
+	ErrorChain     []string              `json:"error_chain,omitempty"`
+	Summary        string                `json:"summary,omitempty"`
+	Map            string                `json:"map,omitempty"`
+	X              uint8                 `json:"x"`
+	Y              uint8                 `json:"y"`
+	Checkpoint     string                `json:"checkpoint,omitempty"`
+	Semantic       agent.FailureState    `json:"semantic_state"`
+	Recent         []HistoryEntry        `json:"recent_history,omitempty"`
+	RecentEvents   []string              `json:"recent_events,omitempty"`
+	Travel         *agent.TravelEvidence `json:"travel,omitempty"`
 	RouteBlockages []agent.RouteBlockage `json:"route_blockages,omitempty"`
-	Planning     agent.PlanningStats  `json:"planning"`
-	Reproduce    string               `json:"reproduce,omitempty"`
+	Planning       agent.PlanningStats   `json:"planning"`
+	Reproduce      string                `json:"reproduce,omitempty"`
 }
 
 type Result struct {
-	Version          int                     `json:"version"`
-	RunID            string                  `json:"run_id"`
-	Commit           string                  `json:"commit,omitempty"`
-	StartedAt        time.Time               `json:"started_at"`
-	FinishedAt       time.Time               `json:"finished_at"`
-	Game             string                  `json:"game"`
-	ROMSHA256        string                  `json:"rom_sha256"`
-	Mode             string                  `json:"mode"`
-	Seed             int64                   `json:"seed"`
-	Source           Source                  `json:"source"`
-	Configuration    Configuration           `json:"configuration"`
-	Outcome          string                  `json:"outcome"`
-	EndCondition     string                  `json:"end_condition"`
-	Stop             string                  `json:"stop"`
-	Frames           uint64                  `json:"frames"`
-	EmulatorCycles   *uint64                 `json:"emulator_cycles,omitempty"`
-	EmulatedSeconds  float64                 `json:"emulated_seconds"`
-	WallSeconds      float64                 `json:"wall_seconds"`
-	Milestones       []Split                 `json:"milestones"`
-	Timing           map[string]TimingBucket `json:"timing"`
-	Counters         map[string]int64        `json:"counters"`
-	Model            ModelStats              `json:"model"`
-	Failures         []Failure               `json:"failures,omitempty"`
-	LastMilestone    string                  `json:"last_milestone,omitempty"`
-	ActiveObjective  string                  `json:"active_objective,omitempty"`
+	Version         int                     `json:"version"`
+	RunID           string                  `json:"run_id"`
+	Commit          string                  `json:"commit,omitempty"`
+	StartedAt       time.Time               `json:"started_at"`
+	FinishedAt      time.Time               `json:"finished_at"`
+	Game            string                  `json:"game"`
+	ROMSHA256       string                  `json:"rom_sha256"`
+	Mode            string                  `json:"mode"`
+	Seed            int64                   `json:"seed"`
+	Source          Source                  `json:"source"`
+	Configuration   Configuration           `json:"configuration"`
+	Outcome         string                  `json:"outcome"`
+	EndCondition    string                  `json:"end_condition"`
+	Stop            string                  `json:"stop"`
+	Frames          uint64                  `json:"frames"`
+	EmulatorCycles  *uint64                 `json:"emulator_cycles,omitempty"`
+	EmulatedSeconds float64                 `json:"emulated_seconds"`
+	WallSeconds     float64                 `json:"wall_seconds"`
+	Milestones      []Split                 `json:"milestones"`
+	Timing          map[string]TimingBucket `json:"timing"`
+	Counters        map[string]int64        `json:"counters"`
+	Model           ModelStats              `json:"model"`
+	Failures        []Failure               `json:"failures,omitempty"`
+	LastMilestone   string                  `json:"last_milestone,omitempty"`
+	ActiveObjective string                  `json:"active_objective,omitempty"`
 }
 
 type BuildInput struct {
@@ -394,11 +394,11 @@ func counters(res agent.Result) map[string]int64 {
 	out := map[string]int64{
 		"objectives_attempted": int64(len(res.Outcomes)),
 		"objectives_completed": int64(len(res.Completed)),
-		"objective_failures": int64(len(res.Outcomes) - len(res.Completed)),
-		"replans": int64(sumMap(res.Planning.ReplanReasons)),
-		"strategist_calls": int64(res.Planning.StrategicCalls),
-		"fast_planner_calls": int64(res.Planning.FastCalls),
-		"reply_retries": int64(res.ReplyRetries),
+		"objective_failures":   int64(len(res.Outcomes) - len(res.Completed)),
+		"replans":              int64(sumMap(res.Planning.ReplanReasons)),
+		"strategist_calls":     int64(res.Planning.StrategicCalls),
+		"fast_planner_calls":   int64(res.Planning.FastCalls),
+		"reply_retries":        int64(res.ReplyRetries),
 	}
 	previous := res.Initial
 	for _, result := range res.Outcomes {
@@ -487,8 +487,8 @@ func buildFailure(in BuildInput) (Failure, bool) {
 		}
 		return Failure{
 			ErrorChain: errorChain(firstError(in.TerminalError, res.Err)),
-			Summary: firstError(in.TerminalError, res.Err).Error(),
-			Map: res.Final.MapName, X: res.Final.X, Y: res.Final.Y,
+			Summary:    firstError(in.TerminalError, res.Err).Error(),
+			Map:        res.Final.MapName, X: res.Final.X, Y: res.Final.Y,
 			Semantic: agent.FailureStateFor(res.Final), Planning: res.Planning,
 		}, true
 	}
@@ -505,15 +505,15 @@ func buildFailure(in BuildInput) (Failure, bool) {
 	final := agent.FailureStateFor(result.Final)
 	cause := string(result.Cause)
 	identity := farm.FailureIdentity{
-		Version: farm.FailureIdentityVersion,
-		Game: "pokemon",
-		Adapter: in.Game,
-		Objective: farmObjective(agent.FailureObjectiveFor(result.Objective)),
-		Outcome: string(result.Outcome),
-		Cause: cause,
+		Version:      farm.FailureIdentityVersion,
+		Game:         "pokemon",
+		Adapter:      in.Game,
+		Objective:    farmObjective(agent.FailureObjectiveFor(result.Objective)),
+		Outcome:      string(result.Outcome),
+		Cause:        cause,
 		CauseContext: append([]string(nil), result.CauseContext...),
-		Initial: farmState(initial),
-		Final: farmState(final),
+		Initial:      farmState(initial),
+		Final:        farmState(final),
 	}
 	var occurrence farm.FailureOccurrence
 	var err error
@@ -524,7 +524,7 @@ func buildFailure(in BuildInput) (Failure, bool) {
 		Round: timing.Round, Frame: timing.Frame, Objective: result.Objective.String(),
 		Outcome: string(result.Outcome), Cause: cause, Summary: result.Summary,
 		ErrorChain: errorChain(firstError(in.TerminalError, res.Err)),
-		Map: result.Final.MapName, X: result.Final.X, Y: result.Final.Y,
+		Map:        result.Final.MapName, X: result.Final.X, Y: result.Final.Y,
 		Semantic: final, Recent: recentHistory(res, 6), RecentEvents: tailStrings(result.Final.Events, 12),
 		Travel: result.Travel, RouteBlockages: append([]agent.RouteBlockage(nil), result.Final.RouteBlockages...), Planning: res.Planning,
 	}
@@ -751,7 +751,7 @@ func percentile(values []float64, p float64) float64 {
 		index = 0
 	}
 	if index >= len(values) {
-		index = len(values)-1
+		index = len(values) - 1
 	}
 	return values[index]
 }
