@@ -221,6 +221,7 @@ func runRed(cfg redConfig, stdout io.Writer) error {
 	fmt.Fprintln(stdout)
 	if failed {
 		fmt.Fprintf(stdout, "pokebench: one or more runs failed; structured failure results and replay checkpoints were preserved under %s\n", cfg.output)
+		return fmt.Errorf("pokebench: qualification failed; see %s", cfg.output)
 	}
 	return nil
 }
