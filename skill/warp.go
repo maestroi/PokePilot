@@ -133,23 +133,39 @@ func Traverse(m *emu.Emu, romData []byte, e world.Edge) error {
 			// run-18lk6m6f27hl732ikt5b86rzvs round 3: AcquireCinnabarSecretKey
 			// held south at Pallet (3,17) for the full budget without ever
 			// entering Route 21.
-			if errors.Is(err, errDidNotCross) && m.Peek8(sym.WalkBikeSurfState) != fieldSurfingState {
-				if mountErr := mountSurfFacingPush(m, romData, push); mountErr == nil {
-					if err2 := pushAcrossEdge(m, e, btn); err2 == nil {
-						return finishArrival(m, e)
+			if errors.Is(err, errDidNotCross) {
+				if m.Peek8(sym.WalkBikeSurfState) != fieldSurfingState {
+					if mountErr := mountSurfFacingPush(m, romData, push); mountErr == nil {
+						if err2 := pushAcrossEdge(m, e, btn); err2 == nil {
+							return finishArrival(m, e)
+						}
+					} else {
+						// The ROM itself declined to Surf here (validateFieldActionContext
+						// only rejects "already surfing", so a decline this far in means
+						// IsNextTileShoreOrWater said no): this exact border tile is not a
+						// crossing point at all, e.g. shoreline scenery rather than open
+						// water. That is per-tile evidence, not evidence about the edge
+						// itself — Route 21's near shore has open water a few columns over
+						// from Pallet's blocked (3,17). Ban this tile like ErrLegUnwalkable
+						// so GoTo's existing band search picks the next candidate column
+						// instead of failing the whole edge.
+						return fmt.Errorf("skill: Traverse: %s: %v: %w", edgeName(e), err, ErrLegUnwalkable)
 					}
-				} else {
-					// The ROM itself declined to Surf here (validateFieldActionContext
-					// only rejects "already surfing", so a decline this far in means
-					// IsNextTileShoreOrWater said no): this exact border tile is not a
-					// crossing point at all, e.g. shoreline scenery rather than open
-					// water. That is per-tile evidence, not evidence about the edge
-					// itself — Route 21's near shore has open water a few columns over
-					// from Pallet's blocked (3,17). Ban this tile like ErrLegUnwalkable
-					// so GoTo's existing band search picks the next candidate column
-					// instead of failing the whole edge.
-					return fmt.Errorf("skill: Traverse: %s: %v: %w", edgeName(e), err, ErrLegUnwalkable)
 				}
+				// Already surfing and the held push still never crossed: the same
+				// per-tile evidence as the not-surfing/declined-Surf case above, just
+				// without a Surf decline to read it from. MEASURED on
+				// run-1biaubd9xooqm round 2 (Route 20 (99,3) -> Route 19 east): the
+				// connection's band is geometrically valid across the map's full
+				// height (offset +36 keeps every row in bounds on Route 19), and
+				// crossing at a different row of the SAME edge — (99,10) — fires
+				// immediately, landing on Route 19 at (10,46). Row 3 alone never
+				// budges the player's position across the full 180-frame hold: live
+				// proof this exact border tile is a dead spot, not that the whole
+				// edge is uncrossable. Ban it like ErrLegUnwalkable so GoTo's
+				// existing band search retries a different tile of this connection
+				// instead of terminating the journey on one bad row.
+				return fmt.Errorf("skill: Traverse: %s: %v: %w", edgeName(e), err, ErrLegUnwalkable)
 			}
 			return err
 		}
