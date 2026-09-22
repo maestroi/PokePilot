@@ -211,9 +211,26 @@ func (x *redRouteTransitionExecutor) executeSurf(edge world.Edge) (world.Transit
 		px, py = nx, ny
 	}
 	if !found {
-		// The connection is already ordinary-walkable from this position;
-		// do not enter Surf merely because the semantic edge is annotated.
-		return world.TransitionExecutionResult{}, nil
+		// The land/water diff above only sees tiles inside e.From's own live
+		// grid. A border tile can be ordinary dry land right up to the edge
+		// while the adjacent map's side is pure water (Pallet Town's south
+		// shore onto Route 21, MEASURED run-7r4gd76w4w061ewqnfebx7pw0: the
+		// player already stood exactly on the crossing tile, so there were no
+		// intermediate steps for the land/water diff to inspect, and Traverse
+		// then held Down for 180 frames against water it could not see).
+		// ConnectionExitWalkable is compiled from the destination map's own
+		// static collision, so it can tell the two cases apart even though
+		// the destination map is not loaded yet.
+		g, gerr := world.BuildGraph(x.romData)
+		if gerr != nil || g.ConnectionExitWalkable(edge) {
+			// Either the check is unavailable, or the destination genuinely
+			// has an ordinary land landing: do not enter Surf merely because
+			// the semantic edge is annotated.
+			return world.TransitionExecutionResult{}, nil
+		}
+		step := edgeDirStep(edge.Dir)
+		standX, standY = tx, ty
+		waterX, waterY = tx+step.DX, ty+step.DY
 	}
 	if err := walkWithinMap(x.m, x.romData, Destination{Map: edge.From, X: uint8(standX), Y: uint8(standY)}); err != nil {
 		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf transition reach shoreline (%d,%d): %w", standX, standY, err)
