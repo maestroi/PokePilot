@@ -54,18 +54,35 @@ func TestYellowEarlyProgressionUsesSharedOrderWithMtMoonOverride(t *testing.T) {
 	}
 }
 
-func TestYellowEarlyProgressionStopsAfterHM01(t *testing.T) {
+func TestYellowMiddleProgressionUsesSharedOrder(t *testing.T) {
 	a := &yellowObjectiveAdapter{}
-	obs := yellowProgressObservation(
+	base := []ProgressID{
 		gen1.ProgressPokedexAcquired,
 		gen1.ProgressBoulderBadge,
 		gen1.ProgressMtMoonFossilAcquired,
 		yellowprofile.ProgressYellowMtMoonExitResolved,
 		gen1.ProgressSSTicketAcquired,
 		gen1.ProgressHM01Acquired,
-	)
-	if got := a.ProgressionObjectives(obs); len(got) != 0 {
-		t.Fatalf("post-HM01 early campaign offered %v", got)
+	}
+	cases := []struct {
+		name string
+		done []ProgressID
+		want ProgressID
+	}{
+		{"misty", nil, gen1.ProgressCascadeBadge},
+		{"surge", []ProgressID{gen1.ProgressCascadeBadge}, gen1.ProgressThunderBadge},
+		{"lavender", []ProgressID{gen1.ProgressCascadeBadge, gen1.ProgressThunderBadge}, gen1.ProgressPostSurgeLavenderReached},
+		{"celadon", []ProgressID{gen1.ProgressCascadeBadge, gen1.ProgressThunderBadge, gen1.ProgressPostSurgeLavenderReached}, gen1.ProgressPostSurgeCeladonReady},
+		{"erika", []ProgressID{gen1.ProgressCascadeBadge, gen1.ProgressThunderBadge, gen1.ProgressPostSurgeLavenderReached, gen1.ProgressPostSurgeCeladonReady}, gen1.ProgressRainbowBadge},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			done := append(append([]ProgressID{}, base...), tc.done...)
+			got := a.ProgressionObjectives(yellowProgressObservation(done...))
+			if len(got) != 1 || got[0].Progress != tc.want {
+				t.Fatalf("got=%v want progression %q", got, tc.want)
+			}
+		})
 	}
 }
 
