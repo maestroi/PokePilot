@@ -61,6 +61,8 @@ func (a *yellowObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, err
 	case KindProgress:
 		var err error
 		switch o.Progress {
+		case yellowprofile.ProgressYellowLabRivalResolved:
+			err = yellowcontroller.GetPikachuStarter(a.m, a.romData)
 		case gen1.ProgressPokedexAcquired:
 			err = yellowcontroller.AcquirePokedex(a.m, a.romData)
 		case gen1.ProgressBoulderBadge:
