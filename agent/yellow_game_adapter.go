@@ -75,6 +75,16 @@ func (a *yellowObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, err
 			err = yellowcontroller.AcquireSSTicket(a.m, a.romData)
 		case gen1.ProgressHM01Acquired:
 			err = yellowcontroller.AcquireHM01(a.m, a.romData)
+		case gen1.ProgressCascadeBadge:
+			err = yellowcontroller.DefeatMisty(a.m, a.romData)
+		case gen1.ProgressThunderBadge:
+			err = yellowcontroller.DefeatSurge(a.m, a.romData)
+		case gen1.ProgressPostSurgeLavenderReached:
+			err = yellowcontroller.ReachLavender(a.m, a.romData)
+		case gen1.ProgressPostSurgeCeladonReady:
+			err = yellowcontroller.ReachCeladonRecovered(a.m, a.romData)
+		case gen1.ProgressRainbowBadge:
+			err = yellowcontroller.DefeatErika(a.m, a.romData)
 		default:
 			err = fmt.Errorf("%w: Yellow progression %q", errYellowControllerUnavailable, o.Progress)
 		}
