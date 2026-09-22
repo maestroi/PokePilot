@@ -22,6 +22,7 @@ POKEPILOT_TRIAGE_TREE=${POKEPILOT_TRIAGE_TREE:-$HOME/Documents/projects/PokePilo
 PROMPT=${POKEPILOT_TRIAGE_PROMPT:-$SCRIPT_DIR/qwagent-triage.prompt.md}
 POKEPILOT_TRIAGE_AGENT=${POKEPILOT_TRIAGE_AGENT:-auto}
 POKEPILOT_CURSOR_MODEL=${POKEPILOT_CURSOR_MODEL:-}
+POKEPILOT_OPENCODE_MODEL=${POKEPILOT_OPENCODE_MODEL:-qwen3.8-27b/qwen3.8-27b}
 export PATH="$HOME/.cursor/bin:$HOME/.opencode/bin:$HOME/go/bin:$HOME/.local/bin:/usr/local/go/bin:$PATH"
 
 DRY_RUN=0
@@ -96,6 +97,37 @@ select_agent_backend() {
 		return 1
 		;;
 	esac
+}
+
+selected_agent_model() {
+	case "$AGENT_BACKEND" in
+	cursor)
+		if [ -n "$POKEPILOT_CURSOR_MODEL" ]; then
+			printf '%s' "$POKEPILOT_CURSOR_MODEL"
+		else
+			printf '%s' "auto"
+		fi
+		;;
+	opencode) printf '%s' "$POKEPILOT_OPENCODE_MODEL" ;;
+	esac
+}
+
+record_solver_attempt() {
+	local state=$1 note=${2:-} branch_name=${3:-} pr_number=${4:-0} pr_url=${5:-} exit_code=${6:-0}
+	"$POKEPILOT_TRIAGE_STATE/qwagent-triage" record-attempt \
+		--endpoint "$POKEPILOT_MCP_URL" \
+		--key "$KEY" \
+		--id "$ATTEMPT_ID" \
+		--backend "$AGENT_BACKEND" \
+		--model "$SOLVER_MODEL" \
+		--state "$state" \
+		--run-id "$RUN_ID" \
+		--branch "$branch_name" \
+		--pr-number "$pr_number" \
+		--pr-url "$pr_url" \
+		--exit-code "$exit_code" \
+		--note "$note" \
+		--started-at "$ATTEMPT_STARTED_AT" >/dev/null 2>&1 || log "could not record solver attempt $ATTEMPT_ID state=$state"
 }
 
 prepare_triage_tree() {
@@ -343,6 +375,7 @@ EXAMPLE=$(printf '%s' "$PICK_JSON" | json_field example)
 MODE=$(printf '%s' "$PICK_JSON" | json_field mode)
 HEAD_REF=$(printf '%s' "$PICK_JSON" | json_field head_ref)
 PR_NUMBER=$(printf '%s' "$PICK_JSON" | json_field pr_number)
+PR_URL=$(printf '%s' "$PICK_JSON" | json_field pr_url)
 if [ -z "$KEY" ]; then
 	log "picker returned empty key; skip"
 	exit 0
@@ -359,9 +392,10 @@ if [ "$DRY_RUN" -eq 1 ]; then
 	else
 		echo "would claim $KEY (run $RUN_ID)"
 	fi
+	SOLVER_MODEL=$(selected_agent_model)
 	case "$AGENT_BACKEND" in
-	cursor) echo "would run: Cursor CLI headless in $POKEPILOT_TRIAGE_TREE" ;;
-	opencode) echo "would run: OpenCode qwagent in $POKEPILOT_TRIAGE_TREE" ;;
+	cursor) echo "would run: Cursor CLI model=$SOLVER_MODEL in $POKEPILOT_TRIAGE_TREE" ;;
+	opencode) echo "would run: OpenCode model=$SOLVER_MODEL in $POKEPILOT_TRIAGE_TREE" ;;
 	esac
 	exit 0
 fi
@@ -404,6 +438,11 @@ printf '%s\n' "$PICK_JSON" >"$POKEPILOT_TRIAGE_STATE/packet.json"
 	printf '```\n'
 } >"$POKEPILOT_TRIAGE_STATE/packet.md"
 
+ATTEMPT_STARTED_AT=$(date +%s)
+ATTEMPT_ID="${KEY}-${ATTEMPT_STARTED_AT}-$"
+SOLVER_MODEL=$(selected_agent_model)
+record_solver_attempt started "coding agent launched"
+
 set +e
 case "$AGENT_BACKEND" in
 cursor)
@@ -425,7 +464,7 @@ cursor)
 	rm -f "$cursor_packet"
 	;;
 opencode)
-	opencode run --auto --model qwen3.8-27b/qwen3.8-27b \
+	opencode run --auto --model "$POKEPILOT_OPENCODE_MODEL" \
 		--dir "$POKEPILOT_TRIAGE_TREE" \
 		--title "farm triage ${KEY}" \
 		--file "$POKEPILOT_TRIAGE_STATE/packet.md" \
@@ -436,6 +475,7 @@ opencode)
 esac
 set -e
 if [ "$agent_status" -ne 0 ]; then
+	record_solver_attempt agent_failed "$AGENT_BACKEND exited before producing a usable PR" "" 0 "" "$agent_status"
 	log "$AGENT_BACKEND exited $agent_status; no PR"
 	exit 0
 fi
@@ -443,19 +483,23 @@ fi
 branch=$(git -C "$POKEPILOT_TRIAGE_TREE" rev-parse --abbrev-ref HEAD)
 if [ "$MODE" = "repair_pr" ]; then
 	if [ "$branch" != "$HEAD_REF" ]; then
+		record_solver_attempt no_pr "repair left the expected PR branch" "$branch"
 		log "repair left branch $branch; want $HEAD_REF"
 		exit 0
 	fi
 	if ! git -C "$POKEPILOT_TRIAGE_TREE" rev-parse --verify "origin/$HEAD_REF" >/dev/null 2>&1; then
+		record_solver_attempt no_pr "repair branch was not pushed" "$HEAD_REF"
 		log "repair branch $HEAD_REF not pushed"
 		exit 0
 	fi
+	record_solver_attempt pr_updated "updated an existing triage PR after failed checks" "$HEAD_REF" "${PR_NUMBER:-0}" "$PR_URL"
 	log "updated PR #$PR_NUMBER for $KEY"
 	exit 0
 fi
 case "$branch" in
 fix/*) ;;
 *)
+	record_solver_attempt no_pr "agent did not leave a fix/* branch" "$branch"
 	log "agent left branch $branch; refuse PR"
 	exit 0
 	;;
@@ -464,12 +508,14 @@ esac
 main_head=$(git -C "$POKEPILOT_TRIAGE_TREE" rev-parse main)
 origin_main=$(git -C "$POKEPILOT_TRIAGE_TREE" rev-parse origin/main)
 if [ "$main_head" != "$origin_main" ]; then
+	record_solver_attempt no_pr "triage worktree main moved during the attempt" "$branch"
 	log "main moved; refuse PR"
 	exit 0
 fi
 
 bad=$(git -C "$POKEPILOT_TRIAGE_TREE" diff --name-only origin/main...HEAD | grep -E '\.(state|gb|sav)$|^skill/zz_.*_test\.go$' || true)
 if [ -n "$bad" ]; then
+	record_solver_attempt no_pr "agent committed forbidden ROM/state/scratch paths" "$branch"
 	log "forbidden paths in commit; refuse PR:"
 	printf '%s\n' "$bad" >&2
 	exit 0
@@ -477,15 +523,30 @@ fi
 
 marker="[triage:${KEY}]"
 if gh pr list --repo "$(gh_repo)" --state open --head "$branch" --json title --jq '.[].title' | grep -F -q "$marker"; then
+	pr_json=$(gh pr list --repo "$(gh_repo)" --state open --head "$branch" --limit 1 --json number,url --jq '.[0]' 2>/dev/null || printf '{}')
+	existing_pr_number=$(printf '%s' "$pr_json" | json_field number)
+	existing_pr_url=$(printf '%s' "$pr_json" | json_field url)
+	record_solver_attempt pr_opened "PR already existed for the produced branch" "$branch" "${existing_pr_number:-0}" "$existing_pr_url"
 	log "PR already open for $KEY"
 	exit 0
 fi
 if ! git -C "$POKEPILOT_TRIAGE_TREE" rev-parse --verify "origin/$branch" >/dev/null 2>&1; then
+	record_solver_attempt no_pr "agent did not push the fix branch" "$branch"
 	log "branch $branch not pushed; refuse PR"
 	exit 0
 fi
 
-gh pr create --repo "$(gh_repo)" --head "$branch" \
+set +e
+created_pr_url=$(gh pr create --repo "$(gh_repo)" --head "$branch" \
 	--title "fix(farm): ${EXAMPLE} ${marker}" \
-	--body "Unattended ${AGENT_BACKEND} repair attempt for run \`${RUN_ID}\` (${marker})."
-log "opened PR for $KEY with $AGENT_BACKEND"
+	--body "Unattended ${AGENT_BACKEND} repair attempt for run \`${RUN_ID}\` (${marker}). Solver: \`${SOLVER_MODEL}\`. Solver attempt: \`${ATTEMPT_ID}\`.")
+pr_status=$?
+set -e
+if [ "$pr_status" -ne 0 ]; then
+	record_solver_attempt no_pr "gh pr create failed" "$branch" 0 "" "$pr_status"
+	log "gh pr create failed for $KEY"
+	exit 0
+fi
+created_pr_number=$(gh pr view "$created_pr_url" --repo "$(gh_repo)" --json number --jq '.number' 2>/dev/null || true)
+record_solver_attempt pr_opened "opened a triage repair PR" "$branch" "${created_pr_number:-0}" "$created_pr_url"
+log "opened PR for $KEY with $AGENT_BACKEND model=$SOLVER_MODEL"
