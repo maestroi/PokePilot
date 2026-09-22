@@ -49,7 +49,7 @@ const form = reactive({
   fps: 0,
   max_rounds: 0,
   max_frames: 0,
-  recovery_profile: 'resilient'
+  recovery_profile: 'resilient' as 'strict' | 'resilient'
 })
 
 watch(deployments, (next) => {
