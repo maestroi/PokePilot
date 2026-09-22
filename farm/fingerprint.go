@@ -200,6 +200,15 @@ func FailureDetailMarker(o FailureOccurrence) string {
 		b.WriteByte(' ')
 		b.WriteString(id.Objective.Place)
 	}
+	if id.Objective.Progress != "" {
+		fmt.Fprintf(&b, " progress=%s", id.Objective.Progress)
+	}
+	if id.Objective.FieldCapability != "" {
+		fmt.Fprintf(&b, " field_capability=%s", id.Objective.FieldCapability)
+	}
+	if len(id.CauseContext) > 0 {
+		fmt.Fprintf(&b, " cause_context=%s", strings.Join(id.CauseContext, ","))
+	}
 	return b.String()
 }
 
@@ -229,6 +238,36 @@ func ParseFailureDetailMarker(detail string) (key, fingerprint string, ok bool) 
 	}
 	h := b.String()
 	return h[:16], "sha256:" + h, true
+}
+
+// ParseFailureDetailCauseContext recovers the small semantic prerequisite set
+// embedded in a terminal marker for human/actionable fallback reporting. The
+// canonical fingerprint remains the identity boundary; this display metadata
+// is intentionally ignored by ParseFailureDetailMarker.
+func ParseFailureDetailCauseContext(detail string) []string {
+	if _, _, ok := ParseFailureDetailMarker(detail); !ok {
+		return nil
+	}
+	for _, field := range strings.Fields(detail) {
+		if !strings.HasPrefix(field, "cause_context=") {
+			continue
+		}
+		raw := strings.TrimPrefix(field, "cause_context=")
+		if raw == "" {
+			return nil
+		}
+		parts := strings.Split(raw, ",")
+		out := make([]string, 0, len(parts))
+		for _, part := range parts {
+			part = canonicalFailureString(part)
+			if part != "" {
+				out = append(out, part)
+			}
+		}
+		sort.Strings(out)
+		return out
+	}
+	return nil
 }
 
 func canonicalFailureIdentity(in FailureIdentity) FailureIdentity {
