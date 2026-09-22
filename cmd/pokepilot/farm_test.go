@@ -193,6 +193,7 @@ func TestHeartbeatSnapKeepsPlan(t *testing.T) {
 	s := &heartbeatSnap{}
 	s.store(farm.Heartbeat{RunID: "r1", Frame: 10, Trace: "control: control regained"})
 	s.storePlan("1: go to pallet town\n2: talk at (5,3)", "")
+	s.storeActivity(farm.ActivityEvent{Source: "skill", Kind: "started", Summary: "go to pallet town", Frame: 10, Round: 1})
 	got := s.load()
 	if got.Question != "1: go to pallet town\n2: talk at (5,3)" || got.Decision != "" || got.Frame != 10 {
 		t.Fatalf("after storePlan: %+v", got)
@@ -205,6 +206,9 @@ func TestHeartbeatSnapKeepsPlan(t *testing.T) {
 	}
 	if got.Question != "1: go to pallet town\n2: talk at (5,3)" || got.Decision != "" {
 		t.Fatalf("storeStatus wiped the in-flight plan: %+v", got)
+	}
+	if got.Activity == nil || got.Activity.Source != "skill" || got.Activity.Summary != "go to pallet town" {
+		t.Fatalf("storeStatus wiped structured execution activity: %+v", got.Activity)
 	}
 
 	s.storePlan("1: go to pallet town\n2: talk at (5,3)", "go to pallet town")
