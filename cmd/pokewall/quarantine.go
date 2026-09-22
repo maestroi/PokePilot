@@ -132,11 +132,27 @@ func hasObjectiveFailureArtifact(report farm.FinishReport) bool {
 	return false
 }
 
+// embeddedFailureMarker recovers the stable terminal failure marker when a
+// synthetic run-level fallback has wrapped it in human-readable error text.
+// This happens when objective-failures.json is unavailable but FinishReport's
+// Detail still carries the canonical failure-id marker.
+func embeddedFailureMarker(text string) (key, fingerprint string, ok bool) {
+	const prefix = "failure-id:"
+	idx := strings.Index(text, prefix)
+	if idx < 0 {
+		return "", "", false
+	}
+	return farm.ParseFailureDetailMarker(text[idx:])
+}
+
 // objectiveFailureFingerprint prefers the versioned structured identity carried
 // by v2 objective-failure telemetry. Historical v1/manual entries retain the
 // old normalized-prose fingerprint so existing issue history stays reachable.
 func objectiveFailureFingerprint(f farm.ObjectiveFailure) (key, fingerprint string, structured bool, err error) {
 	if f.Identity == nil {
+		if key, fingerprint, ok := embeddedFailureMarker(f.Error); ok {
+			return key, fingerprint, true, nil
+		}
 		pattern := objectiveFailurePattern(f)
 		key, fingerprint = failureIdentity(pattern)
 		return key, fingerprint, false, nil
