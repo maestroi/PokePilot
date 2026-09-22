@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { splitSpectatorRuns } from '../src/spectator/model.ts'
 import { preferredRun, type SelectableSpectatorRun } from '../src/spectator/preferredRun.ts'
 
 function run(run_id: string, status: string, queued_at: number, featured = false): SelectableSpectatorRun {
@@ -42,4 +43,19 @@ test('preferredRun still follows the newest live run when nothing is featured', 
   ]
 
   assert.equal(preferredRun(runs)?.run_id, 'run-b')
+})
+
+
+test('splitSpectatorRuns only labels running and leased sessions as live', () => {
+  const runs = [
+    { run_id: 'running', status: 'running', queued_at: 10 },
+    { run_id: 'leased', status: 'leased', queued_at: 20 },
+    { run_id: 'paused', status: 'paused', queued_at: 30 },
+    { run_id: 'queued', status: 'queued', queued_at: 40 },
+    { run_id: 'done', status: 'done', ended_at: 50 }
+  ]
+
+  const grouped = splitSpectatorRuns(runs)
+  assert.deepEqual(grouped.live.map((entry) => entry.run_id), ['leased', 'running'])
+  assert.deepEqual(grouped.recent.map((entry) => entry.run_id), ['done'])
 })
