@@ -8,6 +8,7 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
+	"github.com/maestroi/pokepilot/skill"
 	"github.com/maestroi/pokepilot/skill/fixture"
 )
 
@@ -77,6 +78,63 @@ func TestPrepareObjectiveBoundaryDoesNotAnswerMuseumGate(t *testing.T) {
 	state.Snapshot(e, &mem)
 	if state.DecodeTwoOptionMenu(&mem) == nil {
 		t.Fatal("objective boundary consumed the Museum choice; only Travel/TalkAt may answer it")
+	}
+}
+
+// TestCloseOpenMenuToOverworldWaitsOutMenuTeardown pins the window in which a
+// dismissed menu is still on the tilemap but its cursor glyph is gone.
+//
+// MEASURED on the real ROM (post_starter, 2026-09-22): CancelInteraction
+// returns as soon as its B lands, but the ROM keeps wFontLoaded set and leaves
+// the START frame and "POKéMON ITEM ASH SAVE OPTION EXIT" on the tilemap for
+// four more frames, with no cursor glyph. DecodeInteraction therefore reports
+// InteractionDialogue for a menu that is already closed, and the boundary used
+// to return "dialogue remains open" four frames before control returned —
+// turning every dismissed leftover menu into a terminal stabilization failure.
+// The wait that fixes it presses nothing, so a panel that really is open is
+// still reported on the next pass.
+func TestCloseOpenMenuToOverworldWaitsOutMenuTeardown(t *testing.T) {
+	e := fixture.Load(t, "post_starter")
+	t.Cleanup(func() { e.Close() })
+
+	e.Tap(emu.Start, 3, 7)
+	e.StepFrames(30)
+	var mem state.Mem
+	state.Snapshot(e, &mem)
+	if !state.MenuUp(&mem) {
+		t.Fatal("setup did not leave the START menu open; the test proves nothing")
+	}
+
+	// Back the menu out with the game's own B and stop the moment the cursor
+	// glyph is gone but the menu's text is still decoded as an interaction.
+	// That is the teardown window: the layer is closed, the ROM is still
+	// animating, and the player is not yet in control.
+	e.Tap(emu.B, 3, 7)
+	found := false
+	for i := 0; i < 60; i++ {
+		state.Snapshot(e, &mem)
+		if !state.MenuUp(&mem) &&
+			!state.Controllable(&mem) &&
+			state.DecodeInteraction(&mem).Kind == state.InteractionDialogue {
+			found = true
+			break
+		}
+		e.StepFrame()
+	}
+	if !found {
+		t.Skip("this ROM did not leave a menu-teardown text window; the test proves nothing")
+	}
+
+	before := e.FrameCount()
+	if err := skill.CloseOpenMenuToOverworld(e); err != nil {
+		t.Fatalf("CloseOpenMenuToOverworld returned %v during the menu's own teardown; want it to wait for control", err)
+	}
+	state.Snapshot(e, &mem)
+	if state.MenuUp(&mem) || !state.Controllable(&mem) {
+		t.Fatalf("menu cleanup left menu/control dirty: menu=%v controllable=%v", state.MenuUp(&mem), state.Controllable(&mem))
+	}
+	if got := e.FrameCount(); got <= before {
+		t.Fatalf("CloseOpenMenuToOverworld stepped zero frames during the teardown instead of waiting it out")
 	}
 }
 

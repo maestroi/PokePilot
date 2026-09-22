@@ -32,8 +32,21 @@ func DismissableObjectiveMenu(mem *state.Mem) bool {
 // older "press B until controllable" loop: a B may expose a choice, battle, or
 // other owner-controlled surface, and another blind B there could make a real
 // gameplay decision.
+//
+// The loop waits passively before it concludes that a surface is permanently
+// open. A dismissed menu does not vanish the instant its B lands: the ROM's
+// teardown keeps wFontLoaded set and leaves the menu frame and labels on the
+// tilemap for a few frames. MEASURED on the real ROM (post_starter,
+// 2026-09-22): after CancelInteraction closed the START menu, the tilemap held
+// the START frame and "POKéMON ITEM ASH SAVE OPTION EXIT" for four more
+// frames with no cursor glyph, so DecodeInteraction reported InteractionDialogue
+// for a menu that was already closed and the loop returned "dialogue remains
+// open" four frames before control returned. The wait presses nothing, so it
+// cannot answer a choice, select an entry, or fight; a surface that is
+// genuinely open is unchanged by it and is still reported on the next pass.
 func CloseOpenMenuToOverworld(m *emu.Emu) error {
 	const maxLayers = 8
+	waitedFor := state.InteractionState{}
 	for layer := 0; layer < maxLayers; layer++ {
 		var mem state.Mem
 		state.Snapshot(m, &mem)
@@ -43,6 +56,21 @@ func CloseOpenMenuToOverworld(m *emu.Emu) error {
 		}
 		if state.DecodeBattle(&mem) != nil {
 			return fmt.Errorf("skill: CloseOpenMenuToOverworld: battle owns the screen")
+		}
+		// Waiting is only meaningful the first time this exact surface is
+		// seen in this call: if the same kind, text and cursor position are
+		// still decoded after a full transition budget, the ROM is not
+		// animating it away and the surface really is open.
+		if interaction.Kind != state.InteractionNone && interaction != waitedFor && !state.Controllable(&mem) {
+			waitedFor = interaction
+			_, _ = m.StepUntil(interactionTransitionFrames, func(e *emu.Emu) bool {
+				var next state.Mem
+				state.Snapshot(e, &next)
+				return state.Controllable(&next) ||
+					state.DecodeBattle(&next) != nil ||
+					state.DecodeInteraction(&next) != interaction
+			})
+			continue
 		}
 		switch interaction.Kind {
 		case state.InteractionMenu, state.InteractionListMenu, state.InteractionElevatorMenu,
