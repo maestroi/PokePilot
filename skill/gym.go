@@ -98,6 +98,20 @@ func Gym(m *emu.Emu, romData []byte, policy MovePolicy) (state.BattleResult, err
 		return 0, fmt.Errorf("skill: Gym: Place %q not found", g.Place)
 	}
 
+	if cur == celadonCityMap {
+		// Celadon Gym has two distinct Cut problems: the exterior tree that
+		// guards the door and an interior garden maze between the door landing
+		// and Erika. Route only to the gym MAP first so the cross-map planner
+		// never has to pretend the static landing can already reach Erika.
+		// Once inside, the ordinary local field planner below owns the garden
+		// cuts from live geometry. This keeps the gym warp a normal one-exit
+		// room for every unrelated journey (#1586-#1588).
+		if _, err := Travel(m, romData, MapDestination(celadonGymMap), policy, 20); err != nil {
+			return 0, fmt.Errorf("skill: Gym: reach %s's gym: %w", g.Leader, err)
+		}
+		cur = m.Peek8(sym.CurMap)
+	}
+
 	if cur == vermilionCity {
 		if err := enterVermilionGymViaRouteGate(m, romData, policy); err != nil {
 			return 0, fmt.Errorf("skill: Gym: reach %s: %w", g.Leader, err)
