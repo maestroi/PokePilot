@@ -84,7 +84,7 @@ func FuchsiaProgression(m *emu.Emu, romData []byte, policy MovePolicy) error {
 			return fmt.Errorf("skill: FuchsiaProgression: Koga: %w", err)
 		}
 		if outcome != state.ResultWon {
-			return fmt.Errorf("skill: FuchsiaProgression: Koga battle ended with outcome %d", outcome)
+			return fuchsiaKogaOutcomeErr(outcome)
 		}
 	}
 
@@ -108,6 +108,17 @@ func FuchsiaProgression(m *emu.Emu, romData []byte, policy MovePolicy) error {
 			state.DecodeProgress(&mem).Has(state.BadgeSoul), hasBagItem(&mem, hm03SurfItem), hasBagItem(&mem, hm04StrengthItem))
 	}
 	return nil
+}
+
+// fuchsiaKogaOutcomeErr maps the Koga battle outcome to the skill's error. A
+// loss keeps the typed trainer-blackout signal so the planner can train or
+// grow the party and retry the slice, instead of a raw outcome that classifies
+// as an unknown, unrecoverable failure.
+func fuchsiaKogaOutcomeErr(outcome state.BattleResult) error {
+	if outcome == state.ResultLost {
+		return fmt.Errorf("skill: FuchsiaProgression: %w against Koga", ErrTrainerBlackedOut)
+	}
+	return fmt.Errorf("skill: FuchsiaProgression: Koga battle ended with outcome %d", outcome)
 }
 
 func hasBagItem(mem *state.Mem, item uint8) bool {
