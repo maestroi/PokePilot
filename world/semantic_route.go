@@ -185,7 +185,14 @@ func FindRoutePlanAtDestinationWithCapabilities(
 			relax[edge] = true
 		default:
 			skip[edge] = true
-			relax[edge] = true
+			// See the matching comment in weighted_route.go's classify: a
+			// plain gated EdgeWarp's destination is a statically known ROM
+			// map, not a live-topology unknown, so it must not be granted
+			// boundary/relaxLanding status the way a Surf shore or a
+			// straddling Cut tree (EdgeConnection) legitimately is.
+			if edge.Kind == EdgeConnection {
+				relax[edge] = true
+			}
 		}
 	}
 	for edge, transition := range prereqs.Transitions {
