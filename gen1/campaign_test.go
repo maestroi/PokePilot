@@ -6,7 +6,6 @@ import (
 	"github.com/maestroi/pokepilot/game"
 )
 
-
 func TestEarlyCampaignStagesOrder(t *testing.T) {
 	want := []game.ProgressID{
 		ProgressPokedexAcquired,
