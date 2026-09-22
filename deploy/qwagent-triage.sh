@@ -439,7 +439,7 @@ printf '%s\n' "$PICK_JSON" >"$POKEPILOT_TRIAGE_STATE/packet.json"
 } >"$POKEPILOT_TRIAGE_STATE/packet.md"
 
 ATTEMPT_STARTED_AT=$(date +%s)
-ATTEMPT_ID="${KEY}-${ATTEMPT_STARTED_AT}-$"
+ATTEMPT_ID="${KEY}-${ATTEMPT_STARTED_AT}-${BASHPID}"
 SOLVER_MODEL=$(selected_agent_model)
 record_solver_attempt started "coding agent launched"
 
