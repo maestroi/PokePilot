@@ -210,9 +210,10 @@ func tmhmDecisionNote(machine rom.Machine, decision skill.TMHMDecision) string {
 
 // normalizeObjectiveBoundary is Pokémon Red's implementation of the portable
 // boundary contract. It may perform only semantically reversible cleanup: page
-// ordinary text and back out of a menu whose meaning is unambiguously "back".
-// It never answers a gameplay choice, starts/finishes a battle, or guesses
-// through an unknown non-controllable state.
+// ordinary text, back out of a menu whose meaning is unambiguously "back", and
+// wait out the ROM's own input lockout during an animation. It never answers a
+// gameplay choice, starts/finishes a battle, or guesses through an unknown
+// non-controllable state.
 func normalizeObjectiveBoundary(m *emu.Emu) error {
 	const maxPasses = 4
 	for pass := 0; pass < maxPasses; pass++ {
@@ -249,6 +250,25 @@ func normalizeObjectiveBoundary(m *emu.Emu) error {
 				return fmt.Errorf("%w: leftover dialogue did not recover: %s", ErrObjectiveBoundaryDirty, recoveryStopName(res.Stop))
 			}
 		}
+		// The player is not controllable and no menu, dialogue or battle
+		// explains it. That is the ROM holding input (wJoyIgnore) for an
+		// ordinary turn/step animation, and it self-clears a few frames
+		// later. Declaring the boundary dirty here, without advancing a
+		// frame, kills runs that were seconds from recovering: MEASURED on
+		// the farm (issues #1533/#1534, run-12pnfwosfyeeq2up888b6daoev) Fish's
+		// Face() tap at Vermilion City (12,23) left the player uncontrollable
+		// with nothing on screen for 27 frames; the boundary reported a
+		// terminal stabilization failure at frame 22, five frames before
+		// control would have returned, ending a six-badge run.
+		//
+		// Waiting is not a gameplay choice, so it is inside the contract.
+		// This is the same wait GoTo performs (skill.waitOutScriptedMovement)
+		// but presses nothing: if a menu or dialogue appears while it waits,
+		// the pass loop handles it through its own branches, and an
+		// unanswered choice still returns ErrObjectiveBoundaryChoice.
+		if reevaluate, _ := waitOutInputLockout(m, objectiveLockoutBudget); reevaluate {
+			continue
+		}
 		return fmt.Errorf("%w: player is not controllable and no recoverable menu or dialogue is open", ErrObjectiveBoundaryDirty)
 	}
 	return fmt.Errorf("%w: cleanup did not converge after %d passes", ErrObjectiveBoundaryDirty, maxPasses)
@@ -260,4 +280,41 @@ func prepareObjectiveBoundary(m *emu.Emu) error {
 
 func settleObjectiveBoundary(m *emu.Emu) error {
 	return normalizeObjectiveBoundary(m)
+}
+
+// objectiveLockoutBudget bounds how long the boundary waits for the ROM to
+// release input it is holding for an animation before concluding the state is
+// genuinely dirty. It is generous on purpose: the only alternative at that
+// point is a terminal stabilization failure, so spending frames to avoid
+// killing a long run is always the right trade. The common healthy case
+// returns within a few dozen frames.
+const objectiveLockoutBudget = 4000
+
+// waitOutInputLockout steps frames while the ROM holds input for an animation,
+// until the player is controllable again, an interactive surface appears, or
+// the budget is exhausted. It presses no input at all: it cannot answer a
+// choice, start or finish a battle, or touch a menu.
+//
+// It reports whether the pass loop should re-evaluate the state: true when
+// control returned OR something interactive (menu, dialogue, battle) surfaced
+// mid-wait, which the loop's own choice-preserving branches must handle
+// instead of waiting the budget out under it. Only a budget exhausted with
+// nothing to show returns false, which is the genuinely-dirty condition.
+func waitOutInputLockout(m *emu.Emu, budget int) (reevaluate bool, steps int) {
+	var mem state.Mem
+	for steps < budget {
+		state.Snapshot(m, &mem)
+		if state.Controllable(&mem) {
+			return true, steps
+		}
+		if state.MenuUp(&mem) || state.DecodeDialogue(&mem) != nil || state.DecodeBattle(&mem) != nil {
+			// Something to interact with appeared while the ROM was driving.
+			// Hand it back to the pass loop rather than running the wait to
+			// budget under an open choice and mislabeling it dirty.
+			return true, steps
+		}
+		m.StepFrame()
+		steps++
+	}
+	return false, steps
 }
