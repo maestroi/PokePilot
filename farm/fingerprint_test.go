@@ -109,13 +109,28 @@ func TestFailureFingerprintChangesForMaterialIdentity(t *testing.T) {
 }
 
 func TestFailureDetailMarkerRoundTripSurvivesNumberNormalization(t *testing.T) {
-	o, err := NewFailureOccurrence(testFailureIdentity(), "build", 4, "round-004.state", "detail", time.Time{})
+	id := testFailureIdentity()
+	id.Objective.Progress = "fuchsia_progress"
+	id.Objective.FieldCapability = "surf"
+	o, err := NewFailureOccurrence(id, "build", 4, "round-004.state", "detail", time.Time{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	marker := FailureDetailMarker(o)
 	if marker == "" || !strings.HasPrefix(marker, "failure-id:") {
 		t.Fatalf("marker = %q", marker)
+	}
+	for _, want := range []string{
+		"progress=fuchsia_progress",
+		"field_capability=surf",
+		"cause_context=can_clear_snorlax,can_surf",
+	} {
+		if !strings.Contains(marker, want) {
+			t.Fatalf("marker %q missing %q", marker, want)
+		}
+	}
+	if got := strings.Join(ParseFailureDetailCauseContext(marker), ","); got != "can_clear_snorlax,can_surf" {
+		t.Fatalf("ParseFailureDetailCauseContext(%q) = %q", marker, got)
 	}
 	key, fp, ok := ParseFailureDetailMarker(marker)
 	if !ok || key != o.Key || fp != o.Fingerprint {
