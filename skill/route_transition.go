@@ -228,9 +228,30 @@ func (x *redRouteTransitionExecutor) executeSurf(edge world.Edge) (world.Transit
 			// the semantic edge is annotated.
 			return world.TransitionExecutionResult{}, nil
 		}
-		step := edgeDirStep(edge.Dir)
 		standX, standY = tx, ty
-		waterX, waterY = tx+step.DX, ty+step.DY
+		// The tile one step beyond the player in the connection direction is
+		// outside this map's grid; the ROM's IsNextTileShoreOrWater reads
+		// wTileInFrontOfPlayer from the current map, so an out-of-bounds target
+		// gives a wrong tile id and Surf is rejected. Scan the in-map
+		// neighbours for a collision tile the ROM recognises as water ($14),
+		// shore ($32), or Safari shore ($48) and face that instead.
+		waterX, waterY = -1, -1
+		for _, n := range [][2]int{{tx + 1, ty}, {tx - 1, ty}, {tx, ty + 1}, {tx, ty - 1}} {
+			if !water.InBounds(n[0], n[1]) {
+				continue
+			}
+			id, ok := water.Tile(n[0], n[1])
+			if !ok {
+				continue
+			}
+			if id == surfWaterTile || id == 0x32 || id == 0x48 {
+				waterX, waterY = n[0], n[1]
+				break
+			}
+		}
+		if waterX < 0 {
+			return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf transition at (%d,%d): no in-map water/shore tile adjacent for Surf target", tx, ty)
+		}
 	}
 	if err := walkWithinMap(x.m, x.romData, Destination{Map: edge.From, X: uint8(standX), Y: uint8(standY)}); err != nil {
 		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf transition reach shoreline (%d,%d): %w", standX, standY, err)
