@@ -116,6 +116,25 @@ func (w *runWatchdogPolicy) roundBoundary(round int, obs Observation, known *Kno
 // successfulObjective evaluates the short stuck watchdog after a successful
 // transaction. A material semantic change resets both its counter and its
 // one-shot strategic escalation.
+// productiveSession records a bounded gameplay session that made live
+// controller progress even though its requested semantic postcondition was not
+// reached. Stochastic hunt exhaustion is the canonical case: the full hunt
+// budget ran successfully and simply missed the requested species. Treating
+// that as idle time makes the stagnation/dead-position watchdogs kill a healthy
+// retry loop (#1547). This refreshes liveness without mutating semantic
+// majorProgress, so reporting still distinguishes "tried productively" from
+// actual badge/story/Dex progress. Explicit round/frame budgets remain the
+// outer ceiling for deliberately long-running goals.
+func (w *runWatchdogPolicy) productiveSession(round int) {
+	if round > w.lastMajorProgressRound {
+		w.lastMajorProgressRound = round
+	}
+	w.stagnationEscalated = false
+	w.stuck = 0
+	w.stuckEscalated = false
+	w.dead = deadPosition{}
+}
+
 func (w *runWatchdogPolicy) successfulObjective(before, after Observation, strategic bool) runWatchdogDecision {
 	decision := runWatchdogDecision{}
 	if sameProgress(before, after) {
@@ -146,9 +165,10 @@ func (w *runWatchdogPolicy) successfulObjective(before, after Observation, strat
 // objective failure. Frame-budget checks intentionally remain engine guards:
 // this policy is concerned only with retry/replan/terminal failure state.
 type runFailureDecision struct {
-	Stop         Stop
-	ReplanReason string
-	Recovered    bool
+	Stop              Stop
+	ReplanReason      string
+	Recovered         bool
+	ProductiveSession bool
 }
 
 // runFailurePolicy owns all recoverable-failure state: same-world quarantine,
@@ -193,16 +213,16 @@ func (f *runFailurePolicy) recoverable(obj Objective, result ObjectiveResult, st
 	// condition simply was not reached. A training shortfall explicitly means
 	// the lead gained a level; a hunt exhaustion (grass or fishing) means the
 	// controller completed the whole stochastic hunt budget without seeing the
-	// requested species. Neither is evidence that recovery itself is broken, so neither
-	// may consume the fatal consecutive-failure budget. Same-state quarantine
-	// still suppresses the exact objective when alternatives exist, and the
-	// independent stagnation watchdog remains the ceiling when no alternative
-	// can make progress.
+	// requested species. Neither is evidence that recovery itself is broken, so
+	// neither may consume the fatal consecutive-failure budget or look like idle
+	// time to the liveness watchdogs. Same-state quarantine still suppresses the
+	// exact objective when alternatives exist; explicit round/frame budgets
+	// remain the ceiling for deliberately persistent stochastic goals.
 	if trainProgress || huntMiss {
 		f.consecutive = 0
 		f.lastFailKey = ""
 		f.retreatStreak, f.lastRetreatLevel = 0, 0
-		decision := runFailureDecision{Recovered: true}
+		decision := runFailureDecision{Recovered: true, ProductiveSession: true}
 		if strategic {
 			decision.ReplanReason = "objective_failed"
 		}
