@@ -189,7 +189,16 @@ local `qwagent` (`opencode run --auto --model qwen3.8-27b/qwen3.8-27b`) every
 30 minutes. The picker talks to `/mcp` because `admin.rompilot.app/v1/*` sits
 behind Cloudflare Access; a bearer token alone gets a 302 login page there.
 The picker is deterministic; the model only reproduces, patches, and opens a
-PR. It never merges and never writes `main`.
+PR. It never merges and never writes `main`. Every real coding attempt is
+recorded against the failure key with its backend, requested model, outcome,
+branch, and PR. The operator failure view shows the latest solver plus the
+attempt count; GitHub resolution and PokePilot verification still decide
+whether a repair actually succeeded.
+
+OpenCode defaults to `qwen3.8-27b/qwen3.8-27b`. Escalation is deliberately
+manual: set `POKEPILOT_OPENCODE_MODEL` (or `POKEPILOT_CURSOR_MODEL`) before
+`qwtriage-once` when you want to spend a stronger model. The timer never
+changes models on its own.
 
 ```sh
 make qwagent-triage-install   # units + zsh helpers; timer stays off
