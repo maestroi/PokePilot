@@ -362,3 +362,25 @@ func TestDashboardMarksReplayAvailable(t *testing.T) {
 		t.Fatal("run without a recording is replay_available")
 	}
 }
+
+
+func TestCompatibilityDashboardOmitsOperatorActivity(t *testing.T) {
+	wall := NewWall("")
+	wall.mu.Lock()
+	wall.order = []string{"activity-private"}
+	wall.tiles["activity-private"] = &Tile{
+		RunID: "activity-private", Status: statusRunning, Planner: "llm",
+		Activity: []runActivityEvent{{Source: "recovery", Kind: "retry", Summary: "private recovery story"}},
+	}
+	wall.mu.Unlock()
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/dashboard", nil)
+	res := httptest.NewRecorder()
+	wall.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("dashboard status = %d", res.Code)
+	}
+	if strings.Contains(res.Body.String(), "\"activity\"") || strings.Contains(res.Body.String(), "private recovery story") {
+		t.Fatalf("dashboard leaked operator activity: %s", res.Body.String())
+	}
+}
