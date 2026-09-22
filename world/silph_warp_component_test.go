@@ -90,6 +90,24 @@ func TestSilphCo5FWarpPadSplitsCardKeyComponent(t *testing.T) {
 	if last.To != silph5F {
 		t.Fatalf("last hop = %+v, want re-enter Silph Co 5F", last)
 	}
+
+	// Speedrun pricing uses the weighted router. Grid distance still walks
+	// through the Rocket home tile, so an exact same-map arrival from the
+	// stair component is the empty route that GoTo cannot walk.
+	for _, from := range [][2]int{{26, 1}, {28, 3}} {
+		weighted, err := FindWeightedRoutePlanAtDestinationWithCapabilities(
+			g2, silph5F, silph5F, from[0], from[1], 20, 16, nil, RoutePrerequisites{}, DefaultRouteCostPolicy(),
+		)
+		if err != nil {
+			t.Fatalf("weighted route from (%d,%d): %v", from[0], from[1], err)
+		}
+		if len(weighted.Steps) == 0 {
+			t.Fatalf("weighted route from (%d,%d) stayed inside the split component", from[0], from[1])
+		}
+		if weighted.Steps[0].Edge.From != silph5F || weighted.Steps[0].Edge.To == silph5F {
+			t.Fatalf("weighted first hop from (%d,%d) = %+v, want leave Silph Co 5F", from[0], from[1], weighted.Steps[0].Edge)
+		}
+	}
 }
 
 func TestComponentsWithBlockedTreatsWarpAsNonCorridor(t *testing.T) {

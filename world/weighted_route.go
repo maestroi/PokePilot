@@ -273,6 +273,21 @@ func (q *weightedRouteQueue) Pop() any {
 	return v
 }
 
+// weightedSameComponent reports whether two tiles of one map can be walked
+// without leaving it. Missing component data keeps the grid-distance
+// decision; a known split does not.
+func weightedSameComponent(g *Graph, mapID uint8, fromX, fromY, toX, toY int) bool {
+	if g == nil || !g.componentAware {
+		return true
+	}
+	from := componentSetAt(g, mapID, fromX, fromY)
+	to := componentSetAt(g, mapID, toX, toY)
+	if len(from) == 0 || len(to) == 0 {
+		return true
+	}
+	return shareComp(from, to)
+}
+
 func findExactWeightedRoute(
 	g *Graph,
 	from, to uint8,
@@ -316,7 +331,13 @@ func findExactWeightedRoute(
 		if cur.mapID == to {
 			finalDistance := 0
 			if tx >= 0 && ty >= 0 {
-				if !cur.known {
+				if !cur.known || !weightedSameComponent(g, cur.mapID, cur.x, cur.y, tx, ty) {
+					// Already on the destination map is not arrival when a
+					// warp or stationary object splits the walk. Grid distance
+					// only punches warp tiles, so it still steps through the
+					// object and would return an empty route; the walker then
+					// dies inside the closed component. Leave and re-enter,
+					// the same way the component-aware search does.
 					goto expand
 				}
 				d, ok := geometry.distance(cur.mapID, cur.x, cur.y, tx, ty, false)
