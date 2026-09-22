@@ -57,6 +57,71 @@ func TestCollectCheckpointArtifacts(t *testing.T) {
 	}
 }
 
+func TestCollectFailureCheckpointArtifactsOnlyKeepsReferencedPairs(t *testing.T) {
+	dir := t.TempDir()
+	keep := "round-002-frame-0000000200-goto.state"
+	writePair(t, dir, "round-001-frame-0000000100-goto.state", []byte("state-a"), []byte(`{"k":1}`))
+	writePair(t, dir, keep, []byte("state-b"), []byte(`{"k":2}`))
+	writePeriodic(t, dir, "periodic-00000018000.state", []byte("periodic"), []byte(`{"frame":18000}`))
+	if err := os.WriteFile(filepath.Join(dir, farmBenchmarkResultName), []byte(`{"version":1}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := collectFailureCheckpointArtifacts(dir, []farm.ObjectiveFailure{
+		{Checkpoint: keep},
+		{Checkpoint: keep},
+		{Checkpoint: "round-999-frame-9999999999-missing.state"},
+	})
+	if err != nil {
+		t.Fatalf("collect failure checkpoints: %v", err)
+	}
+	want := []string{
+		farmBenchmarkResultName,
+		"round-002-frame-0000000200-goto.knowledge-v4.json",
+		keep,
+	}
+	if names := namesOf(got); len(names) != len(want) {
+		t.Fatalf("artifacts = %v, want %v", names, want)
+	} else {
+		for i := range want {
+			if names[i] != want[i] {
+				t.Fatalf("artifacts = %v, want %v", names, want)
+			}
+		}
+	}
+}
+
+func TestRecordingFinishDoesNotRepackCheckpointRing(t *testing.T) {
+	resetObjectiveFailureTelemetry()
+	dir, err := os.MkdirTemp("", "pokefarm-checkpoints-test-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writePair(t, dir, "round-001-frame-0000000100-goto.state", []byte("state-a"), []byte(`{"k":1}`))
+	writePeriodic(t, dir, "periodic-00000018000.state", []byte("periodic"), []byte(`{"frame":18000}`))
+
+	var report farm.FinishReport
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&report); err != nil {
+			t.Errorf("decode finish: %v", err)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	client := farm.NewClient(srv.URL)
+	client.Version = "abc123"
+	finishRunWithRecording(nil, client, farm.Spec{RunID: "r-no-repack", Attempt: 1}, "done", "", 0, dir, nil, nil, nil)
+
+	for _, artifact := range report.Artifacts {
+		if strings.HasSuffix(artifact.Name, ".state") ||
+			strings.Contains(artifact.Name, "knowledge-v") ||
+			strings.HasPrefix(artifact.Name, "periodic-") {
+			t.Fatalf("finish repacked incremental checkpoint artifact %q; artifacts=%v", artifact.Name, namesOf(report.Artifacts))
+		}
+	}
+}
+
 func TestCollectCheckpointArtifactsPeriodicPairs(t *testing.T) {
 	dir := t.TempDir()
 	writePeriodic(t, dir, "periodic-00000018000.state", []byte("p-state"), []byte(`{"frame":18000}`))
