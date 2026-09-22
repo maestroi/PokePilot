@@ -56,6 +56,29 @@ func TestNormalizeRedFailureRepresentativeClasses(t *testing.T) {
 			err: skill.ErrNavigationStalled, final: stable,
 			class: gameruntime.FailureClassControllerUncertain, cause: "navigation_stalled", recoverable: false,
 		},
+		// MEASURED run-7r4gd76w4w061ewqnfebx7pw0 round 5: "catch a TENTACOOL
+		// here" exhausted Fish's rod-attempt budget (32 casts, 11 encounters,
+		// never the wanted species) and fell through to unknown_failure/
+		// unknown_error because ErrFishingHuntExhausted was never classified,
+		// even though the grass-hunt equivalent (ErrCatchHuntExhausted) already
+		// gets the ordinary bounded-hunt "blocked, replan" treatment. That
+		// misclassification is what stopped the run instead of letting the
+		// planner retry or pick a different objective.
+		{
+			name: "fishing hunt exhausted", phase: gameruntime.FailurePhaseExecution,
+			err: skill.ErrFishingHuntExhausted, final: stable,
+			class: gameruntime.FailureClassBlocked, cause: "fishing_hunt_exhausted", recoverable: true,
+		},
+		{
+			name: "fishing no shoreline", phase: gameruntime.FailurePhaseExecution,
+			err: skill.ErrFishingNoShoreline, final: stable,
+			class: gameruntime.FailureClassBlocked, cause: "fishing_no_shoreline", recoverable: true,
+		},
+		{
+			name: "fishing no fish here", phase: gameruntime.FailurePhaseExecution,
+			err: skill.ErrFishingNoFishHere, final: stable,
+			class: gameruntime.FailureClassBlocked, cause: "fishing_no_fish_here", recoverable: true,
+		},
 	}
 
 	for _, tc := range cases {
