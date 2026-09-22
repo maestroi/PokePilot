@@ -14,7 +14,15 @@ failure group. The shell has already applied the local PokéWall + GitHub
 claim/repair/regression state machine; do not second-guess queue eligibility
 from stale Orchestrator status.
 
-Do:
+If `mode` is `repair_pr`, this attempt is a pull request this loop already
+opened and whose checks failed. Do not investigate a new farm failure.
+
+1. The shell has checked out `head_ref`. Stay on that branch.
+2. Fix the checks named in `failing_checks`. `make test-short` must pass.
+3. Commit on `head_ref` and `git push`.
+4. Do not open a new pull request and do not switch to `main`.
+
+Otherwise do:
 
 1. `pokepilot_get_run_debug` / `pokepilot_get_run_artifacts` for `run_id`.
 2. Download the failing round `.state` (objective matching finish.detail).
