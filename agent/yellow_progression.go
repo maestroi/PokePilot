@@ -7,6 +7,8 @@ import (
 
 func yellowProgressionNote(id ProgressID) string {
 	switch id {
+	case yellowprofile.ProgressYellowLabRivalResolved:
+		return "(resume Yellow's opening after Pikachu is received and finish the lab rival sequence at a stable boundary)"
 	case gen1.ProgressPokedexAcquired:
 		return "(pick up Oak's Parcel in Viridian Mart, return to Oak's lab, and positively verify the Pokédex)"
 	case gen1.ProgressBoulderBadge:
@@ -26,7 +28,8 @@ func yellowProgressionNote(id ProgressID) string {
 
 func yellowProgressionKnown(id ProgressID) bool {
 	switch id {
-	case gen1.ProgressPokedexAcquired,
+	case yellowprofile.ProgressYellowLabRivalResolved,
+		gen1.ProgressPokedexAcquired,
 		gen1.ProgressBoulderBadge,
 		gen1.ProgressMtMoonFossilAcquired,
 		yellowprofile.ProgressYellowMtMoonExitResolved,
@@ -42,7 +45,14 @@ func yellowProgressionKnown(id ProgressID) bool {
 // inserts only the story pivots that are genuinely Yellow-specific.
 func (a *yellowObjectiveAdapter) ProgressionObjectives(obs Observation) []Objective {
 	if !obs.Story.Has(yellowprofile.ProgressYellowLabRivalResolved) {
-		return nil
+		if obs.PartyCount == 0 && !obs.Story.Has(yellowprofile.ProgressYellowStarterReceived) {
+			return nil
+		}
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: yellowprofile.ProgressYellowLabRivalResolved,
+			Note:     yellowProgressionNote(yellowprofile.ProgressYellowLabRivalResolved),
+		}}
 	}
 
 	next, ok := gen1.FirstIncomplete(obs.Story, gen1.EarlyCampaignStages())
