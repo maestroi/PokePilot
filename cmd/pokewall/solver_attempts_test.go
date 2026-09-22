@@ -68,3 +68,21 @@ func TestSolverAttemptRouteRejectsUnknownFailure(t *testing.T) {
 		t.Fatalf("status=%d body=%s", res.Code, res.Body.String())
 	}
 }
+
+
+func TestCopyIssueLinkDeepCopiesSolverAttempts(t *testing.T) {
+	original := map[string]IssueLink{
+		"deadbeef": {
+			IssueID: "42",
+			SolverAttempts: []SolverAttempt{{ID: "attempt-1", State: "started"}},
+		},
+	}
+	copied := copyIssueLink(original)
+	link := copied["deadbeef"]
+	link.SolverAttempts[0].State = "pr_opened"
+	copied["deadbeef"] = link
+
+	if got := original["deadbeef"].SolverAttempts[0].State; got != "started" {
+		t.Fatalf("original solver state = %q, want started", got)
+	}
+}
