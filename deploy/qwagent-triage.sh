@@ -201,6 +201,45 @@ gh_repo() {
 	esac
 }
 
+CLAIMED_ISSUE_NUMBER=""
+KEEP_ISSUE_CLAIM=0
+
+release_issue_claim() {
+	local login
+	[ -n "${CLAIMED_ISSUE_NUMBER:-}" ] || return 0
+	[ "${KEEP_ISSUE_CLAIM:-0}" -eq 0 ] || return 0
+	login=$(gh api user --jq .login 2>/dev/null || true)
+	[ -n "$login" ] || return 0
+	if gh issue edit "$CLAIMED_ISSUE_NUMBER" --repo "$(gh_repo)" --remove-assignee "$login" >/dev/null 2>&1; then
+		log "released GitHub issue #$CLAIMED_ISSUE_NUMBER from @$login"
+	fi
+	CLAIMED_ISSUE_NUMBER=""
+}
+
+claim_issue() {
+	local issue=$1 login assignees
+	[ -n "$issue" ] || return 0
+	login=$(gh api user --jq .login 2>/dev/null || true)
+	if [ -z "$login" ]; then
+		log "cannot determine authenticated GitHub user; refusing an invisible issue claim"
+		return 1
+	fi
+	assignees=$(gh issue view "$issue" --repo "$(gh_repo)" --json assignees --jq '.assignees[].login' 2>/dev/null || true)
+	if [ -n "$assignees" ]; then
+		log "GitHub issue #$issue is already assigned ($(printf '%s' "$assignees" | paste -sd, -)); another agent owns it"
+		return 2
+	fi
+	if ! gh issue edit "$issue" --repo "$(gh_repo)" --add-assignee "$login" >/dev/null; then
+		log "failed to claim GitHub issue #$issue as @$login"
+		return 1
+	fi
+	CLAIMED_ISSUE_NUMBER=$issue
+	log "claimed GitHub issue #$issue as @$login"
+	return 0
+}
+
+trap 'release_issue_claim' EXIT INT TERM
+
 triage_bin() {
 	local bin="$POKEPILOT_TRIAGE_STATE/qwagent-triage"
 	# go run rewrites a child exit 2 into its own exit 1; build so idle stays 2.
@@ -253,12 +292,34 @@ pick_next() {
 	rm -f "$own_err"
 
 	titles=$(gh pr list --repo "$(gh_repo)" --state open --limit 100 --json title --jq '.[].title' 2>/dev/null || true)
+	assigned_issues=$(gh issue list --repo "$(gh_repo)" --state open --limit 200 --json body,assignees 2>/dev/null || printf '[]')
 	merged_prs=$(gh pr list --repo "$(gh_repo)" --state closed --limit 200 --json title,mergedAt,mergeCommit 2>/dev/null || printf '[]')
 	pick_args=(pick)
 	while IFS= read -r title; do
 		[ -z "$title" ] && continue
 		pick_args+=(--claimed "$title")
 	done <<<"$titles"
+	while IFS= read -r key; do
+		[ -z "$key" ] && continue
+		# Reuse the picker's existing stable marker parser: an assigned generated
+		# farm issue is an earlier claim than an eventual [triage:key] PR.
+		pick_args+=(--claimed "[triage:$key]")
+	done < <(printf '%s' "$assigned_issues" | python3 -c '
+import json
+import sys
+
+tick = chr(96)
+for issue in json.load(sys.stdin):
+    if not issue.get("assignees"):
+        continue
+    for line in (issue.get("body") or "").splitlines():
+        if not line.startswith("- **Triage key:**"):
+            continue
+        parts = line.split(tick)
+        if len(parts) >= 3 and parts[1].strip():
+            print(parts[1].strip())
+            break
+')
 
 	# A merged [triage:key] PR suppresses that key unless the fingerprint's
 	# last_observed_revision contains the merge. The run's latest finish is
@@ -390,8 +451,10 @@ if [ "$DRY_RUN" -eq 1 ]; then
 	printf '%s\n' "$PICK_JSON"
 	if [ "$MODE" = "repair_pr" ]; then
 		echo "would repair PR #$PR_NUMBER on $HEAD_REF"
+	elif [ -n "$ISSUE_NUMBER" ]; then
+		echo "would claim GitHub issue #$ISSUE_NUMBER for $KEY (run $RUN_ID)"
 	else
-		echo "would claim $KEY (run $RUN_ID)"
+		echo "would claim $KEY (run $RUN_ID; no generated GitHub issue)"
 	fi
 	SOLVER_MODEL=$(selected_agent_model)
 	case "$AGENT_BACKEND" in
@@ -399,6 +462,22 @@ if [ "$DRY_RUN" -eq 1 ]; then
 	opencode) echo "would run: OpenCode model=$SOLVER_MODEL in $POKEPILOT_TRIAGE_TREE" ;;
 	esac
 	exit 0
+fi
+
+if [ "$MODE" != "repair_pr" ] && [ -n "$ISSUE_NUMBER" ]; then
+	set +e
+	claim_issue "$ISSUE_NUMBER"
+	claim_status=$?
+	set -e
+	if [ "$claim_status" -eq 2 ]; then
+		# Another agent won the GitHub-visible claim after selection. Leave this
+		# tick idle rather than racing it; the next timer tick will pick again.
+		exit 0
+	fi
+	if [ "$claim_status" -ne 0 ]; then
+		log "could not establish a GitHub-visible claim; skip"
+		exit 0
+	fi
 fi
 
 if [ "$MODE" = "repair_pr" ]; then
@@ -528,6 +607,7 @@ if gh pr list --repo "$(gh_repo)" --state open --head "$branch" --json title --j
 	existing_pr_number=$(printf '%s' "$pr_json" | json_field number)
 	existing_pr_url=$(printf '%s' "$pr_json" | json_field url)
 	record_solver_attempt pr_opened "PR already existed for the produced branch" "$branch" "${existing_pr_number:-0}" "$existing_pr_url"
+	KEEP_ISSUE_CLAIM=1
 	log "PR already open for $KEY"
 	exit 0
 fi
@@ -554,4 +634,5 @@ if [ "$pr_status" -ne 0 ]; then
 fi
 created_pr_number=$(gh pr view "$created_pr_url" --repo "$(gh_repo)" --json number --jq '.number' 2>/dev/null || true)
 record_solver_attempt pr_opened "opened a triage repair PR" "$branch" "${created_pr_number:-0}" "$created_pr_url"
+KEEP_ISSUE_CLAIM=1
 log "opened PR for $KEY with $AGENT_BACKEND model=$SOLVER_MODEL"
