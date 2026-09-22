@@ -25,6 +25,26 @@ func TestEarlyCampaignStagesOrder(t *testing.T) {
 	}
 }
 
+
+func TestMiddleCampaignStagesOrder(t *testing.T) {
+	want := []game.ProgressID{
+		ProgressCascadeBadge,
+		ProgressThunderBadge,
+		ProgressPostSurgeLavenderReached,
+		ProgressPostSurgeCeladonReady,
+		ProgressRainbowBadge,
+	}
+	got := MiddleCampaignStages()
+	if len(got) != len(want) {
+		t.Fatalf("MiddleCampaignStages length=%d, want %d", len(got), len(want))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("MiddleCampaignStages[%d]=%q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
 func TestLeagueStagesOrder(t *testing.T) {
 	want := []game.ProgressID{
 		ProgressLeagueChallengeStarted,
