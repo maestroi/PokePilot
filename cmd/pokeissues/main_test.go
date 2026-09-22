@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -25,6 +26,10 @@ type fakeGitHub struct {
 	lastCreateTitle string
 	lastCreateBody  string
 	auth            []string
+	listed          int
+	createStarted   chan struct{}
+	createRelease   chan struct{}
+	secondLookup    chan struct{}
 }
 
 func newFakeGitHub() *fakeGitHub {
@@ -37,6 +42,10 @@ func (f *fakeGitHub) handler() http.Handler {
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		f.auth = append(f.auth, r.Header.Get("Authorization"))
+		f.listed++
+		if f.listed == 2 && f.secondLookup != nil {
+			close(f.secondLookup)
+		}
 		_ = json.NewEncoder(w).Encode(f.issues)
 	})
 	mux.HandleFunc("POST /repos/o/r/issues", func(w http.ResponseWriter, r *http.Request) {
@@ -47,6 +56,15 @@ func (f *fakeGitHub) handler() http.Handler {
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			testHTTPError(w, http.StatusBadRequest, err.Error())
 			return
+		}
+		if f.createStarted != nil {
+			select {
+			case f.createStarted <- struct{}{}:
+			default:
+			}
+		}
+		if f.createRelease != nil {
+			<-f.createRelease
 		}
 		f.mu.Lock()
 		defer f.mu.Unlock()
@@ -273,6 +291,77 @@ func TestReportDeduplicatesOpenFingerprint(t *testing.T) {
 	defer fake.mu.Unlock()
 	if fake.created != 0 || fake.commented != 0 || fake.patched != 0 {
 		t.Fatalf("created=%d commented=%d patched=%d", fake.created, fake.commented, fake.patched)
+	}
+}
+
+func TestReportSerializesConcurrentFingerprintDeduplication(t *testing.T) {
+	fake := newFakeGitHub()
+	fake.createStarted = make(chan struct{}, 1)
+	fake.createRelease = make(chan struct{})
+	fake.secondLookup = make(chan struct{})
+
+	gh := httptest.NewServer(fake.handler())
+	defer gh.Close()
+	client, err := newGitHubClient(gh.URL, "https://github.test", "o/r", "secret", "", time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	type reportResult struct {
+		out     issueReportResponse
+		created bool
+		err     error
+	}
+	first := make(chan reportResult, 1)
+	second := make(chan reportResult, 1)
+	go func() {
+		out, created, err := client.report(context.Background(), sampleManifest("concurrent-a"), nil)
+		first <- reportResult{out: out, created: created, err: err}
+	}()
+
+	select {
+	case <-fake.createStarted:
+	case <-time.After(time.Second):
+		t.Fatal("first report never reached GitHub issue creation")
+	}
+
+	go func() {
+		out, created, err := client.report(context.Background(), sampleManifest("concurrent-b"), nil)
+		second <- reportResult{out: out, created: created, err: err}
+	}()
+
+	secondLookupBeforeCreate := false
+	select {
+	case <-fake.secondLookup:
+		secondLookupBeforeCreate = true
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(fake.createRelease)
+
+	r1, r2 := <-first, <-second
+	if r1.err != nil || r2.err != nil {
+		t.Fatalf("concurrent reports failed: first=%v second=%v", r1.err, r2.err)
+	}
+	if secondLookupBeforeCreate {
+		t.Fatal("second report scanned GitHub before the first fingerprint create completed")
+	}
+	if r1.out.Issue.IssueNumber != r2.out.Issue.IssueNumber {
+		t.Fatalf("concurrent reports returned different issues: %d vs %d", r1.out.Issue.IssueNumber, r2.out.Issue.IssueNumber)
+	}
+	created := 0
+	if r1.created {
+		created++
+	}
+	if r2.created {
+		created++
+	}
+	if created != 1 {
+		t.Fatalf("created reports=%d, want exactly 1", created)
+	}
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if fake.created != 1 {
+		t.Fatalf("GitHub creates=%d, want exactly 1", fake.created)
 	}
 }
 
