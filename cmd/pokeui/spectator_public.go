@@ -52,6 +52,9 @@ func (run spectatorRun) MarshalJSON() ([]byte, error) {
 		Map            uint8           `json:"map"`
 		X              uint8           `json:"x"`
 		Y              uint8           `json:"y"`
+		MapsVisited    int             `json:"maps_visited,omitempty"`
+		PlannerWaiting bool            `json:"planner_waiting,omitempty"`
+		PlannerOptions int             `json:"planner_options,omitempty"`
 		Decision       string          `json:"decision,omitempty"`
 		StopSoFar      string          `json:"stop_so_far,omitempty"`
 		Stats          *spectatorStats `json:"stats,omitempty"`
@@ -117,6 +120,9 @@ func (run spectatorRun) MarshalJSON() ([]byte, error) {
 		Map:            run.Map,
 		X:              run.X,
 		Y:              run.Y,
+		MapsVisited:    run.MapsVisited,
+		PlannerWaiting: run.PlannerWaiting,
+		PlannerOptions: run.PlannerOptions,
 		Decision:       run.Decision,
 		StopSoFar:      run.StopSoFar,
 		Stats:          run.Stats,
