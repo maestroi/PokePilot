@@ -16,7 +16,10 @@ func TestRuntimeDashboardPagesAndFiltersHistory(t *testing.T) {
 	w.mu.Lock()
 	w.order = []string{"done-1", "active", "done-2", "done-3", "done-4"}
 	w.tiles["done-1"] = &Tile{RunID: "done-1", Status: statusDone, Planner: "llm", Reason: "error", Starter: "bulbasaur", EndedAt: now.Add(-4 * time.Minute)}
-	w.tiles["active"] = &Tile{RunID: "active", Status: statusRunning, Planner: "llm", Starter: "squirtle"}
+	w.tiles["active"] = &Tile{
+		RunID: "active", Status: statusRunning, Planner: "llm", Starter: "squirtle",
+		Activity: []runActivityEvent{{Source: "llm", Kind: "decision", Summary: "private operator activity"}},
+	}
 	w.tiles["done-2"] = &Tile{RunID: "done-2", Status: statusDone, Planner: "scripted", Reason: "done", Starter: "squirtle", EndedAt: now.Add(-3 * time.Minute)}
 	w.tiles["done-3"] = &Tile{RunID: "done-3", Status: statusDone, Planner: "llm", Reason: "done", Starter: "charmander", EndedAt: now.Add(-2 * time.Minute)}
 	w.tiles["done-4"] = &Tile{RunID: "done-4", Status: statusDone, Planner: "scripted", Reason: "done", Starter: "squirtle", EndedAt: now.Add(-time.Minute)}
@@ -60,6 +63,9 @@ func TestRuntimeDashboardPagesAndFiltersHistory(t *testing.T) {
 	}
 	if page.Total != 1 || len(page.Runs) != 1 || page.Runs[0].RunID != "active" {
 		t.Fatalf("active total=%d runs=%+v", page.Total, page.Runs)
+	}
+	if len(page.Runs[0].Activity) != 0 {
+		t.Fatalf("dashboard leaked operator activity: %+v", page.Runs[0].Activity)
 	}
 }
 
