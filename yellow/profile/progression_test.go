@@ -133,22 +133,27 @@ func TestYellowGiftAvailabilityUsesRealPrerequisites(t *testing.T) {
 
 func TestYellowEarlyStoryResumeFactsProjectFromNativeEvents(t *testing.T) {
 	var mem fakeMemory
-	mem[sym.ObtainedBadges] |= 1 << badgeBoulder
+	mem[sym.ObtainedBadges] |= 1<<badgeBoulder | 1<<badgeCascade
 	for _, event := range []yellowEvent{
 		eventGotOaksParcel,
 		eventBeatMtMoonSuperNerd,
 		eventBillSaidUseSeparator,
 		eventUsedCellSeparatorOnBill,
+		eventFirstLockOpened,
+		eventSecondLockOpened,
 	} {
 		setYellowEvent(&mem, event)
 	}
 	story := projectYellowStory(&mem, 0x00)
 	for _, id := range []game.ProgressID{
 		gen1.ProgressBoulderBadge,
+		gen1.ProgressCascadeBadge,
 		ProgressYellowOaksParcelReceived,
 		ProgressYellowMtMoonSuperNerdDefeated,
 		ProgressYellowBillSeparatorReady,
 		ProgressYellowBillSeparatorUsed,
+		ProgressYellowVermilionFirstLockOpen,
+		ProgressYellowVermilionGateOpen,
 	} {
 		if !story.Has(id) {
 			t.Errorf("early resume progress %q not complete", id)
