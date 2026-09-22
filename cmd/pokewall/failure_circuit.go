@@ -321,6 +321,12 @@ func (w *Wall) pauseForFailureCircuit(id string, before pauseFinishSnapshot, rep
 			setTileCircuit(current, decision)
 			current.StopSoFar = fmt.Sprintf("goal recovery %d; %s", current.RecoveryAttempts, circuitPauseNote(decision))
 			current.lastUpdate = time.Now()
+			appendRunActivityLocked(current, runActivityEvent{
+				Source: "recovery", Kind: "circuit", At: current.lastUpdate.Unix(),
+				RecoveryAttempt: current.RecoveryAttempts,
+				Summary:         "Repeated failure detected",
+				Detail:          circuitPauseNote(decision),
+			})
 		}
 		w.mu.Unlock()
 		w.noteCircuitIssue(decision.Key, id, decision)
