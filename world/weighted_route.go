@@ -392,6 +392,9 @@ func findExactWeightedRoute(
 			if cur.prev < 0 && blockedHere[edge] {
 				continue
 			}
+			if bypassBandDominatedByReachableSibling(view.usable, edge, cur.entry, view.skipCanExit) {
+				continue
+			}
 			if g.componentAware && len(g.exitComps[edge]) == 0 &&
 				!(view.skipCanExit[edge] && view.relaxLanding[edge]) {
 				continue
