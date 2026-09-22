@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 
 type TimelineRow = Record<string, unknown>
 
@@ -15,6 +15,11 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{
   select: [index: number]
 }>()
+
+const MIN_ZOOM = 1
+const MAX_ZOOM = 32
+const zoom = ref(MIN_ZOOM)
+const timelineScroll = ref<HTMLElement | null>(null)
 
 function number(value: unknown): number {
   const parsed = Number(value || 0)
@@ -126,7 +131,10 @@ const layout = computed(() => {
   const positions = props.events.map((event) => Math.max(0, Math.min(100, 100 * eventFrame(event) / maximum)))
   const lanes: number[] = []
   const laneEnds: number[] = []
-  const collisionDistance = 1.75
+  // Marker spacing is measured against the visible viewport. As the timeline
+  // widens, the percentage threshold must shrink or zooming would keep the
+  // same giant vertical stacks instead of spreading events horizontally.
+  const collisionDistance = 1.75 / zoom.value
   for (const position of positions) {
     let lane = laneEnds.findIndex((end) => position - end >= collisionDistance)
     if (lane < 0) lane = laneEnds.length
@@ -136,12 +144,63 @@ const layout = computed(() => {
   return { positions, lanes, laneCount: Math.max(1, laneEnds.length), totalFrames: maximum }
 })
 
-const ticks = computed(() => [0, 25, 50, 75, 100].map((percent) => ({
-  percent,
-  label: compactFrame(layout.value.totalFrames * percent / 100)
-})))
+const ticks = computed(() => {
+  const divisions = Math.min(80, Math.max(4, Math.round(4 * zoom.value)))
+  return Array.from({ length: divisions + 1 }, (_, index) => {
+    const percent = 100 * index / divisions
+    return {
+      percent,
+      label: compactFrame(layout.value.totalFrames * percent / 100)
+    }
+  })
+})
 
 const selected = computed(() => props.events[props.selectedIndex] || null)
+const canZoomIn = computed(() => zoom.value < MAX_ZOOM)
+const canZoomOut = computed(() => zoom.value > MIN_ZOOM)
+
+function focusRatio(): number {
+  const event = selected.value || props.events[props.events.length - 1]
+  if (!event) return 0.5
+  return Math.max(0, Math.min(1, eventFrame(event) / layout.value.totalFrames))
+}
+
+function scrollToRatio(ratio: number): void {
+  void nextTick(() => {
+    const viewport = timelineScroll.value
+    if (!viewport) return
+    const clamped = Math.max(0, Math.min(1, ratio))
+    const maximum = Math.max(0, viewport.scrollWidth - viewport.clientWidth)
+    viewport.scrollLeft = Math.max(0, Math.min(maximum, clamped * viewport.scrollWidth - viewport.clientWidth / 2))
+  })
+}
+
+function setZoom(nextZoom: number): void {
+  const viewport = timelineScroll.value
+  const anchor = viewport && viewport.scrollWidth > viewport.clientWidth
+    ? (viewport.scrollLeft + viewport.clientWidth / 2) / viewport.scrollWidth
+    : focusRatio()
+  zoom.value = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, nextZoom))
+  scrollToRatio(anchor)
+}
+
+function zoomIn(): void {
+  setZoom(zoom.value * 2)
+}
+
+function zoomOut(): void {
+  setZoom(zoom.value / 2)
+}
+
+function fitTimeline(): void {
+  setZoom(MIN_ZOOM)
+}
+
+watch(() => props.selectedIndex, (index) => {
+  if (index < 0 || zoom.value <= MIN_ZOOM) return
+  const event = props.events[index]
+  if (event) scrollToRatio(eventFrame(event) / layout.value.totalFrames)
+})
 
 function sourceLabel(event: TimelineRow): string {
   const source = text(event.source).toLowerCase()
@@ -171,13 +230,54 @@ function when(event: TimelineRow): string {
         <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Live + recorded</span>
         <h3 class="mt-0.5 text-sm font-semibold text-slate-200">Run activity</h3>
       </div>
-      <span class="max-w-full truncate font-mono text-[10px] text-slate-500 xl:max-w-xl">
-        {{ selected ? `${when(selected)} · ${eventTitle(selected)}` : `${layout.totalFrames.toLocaleString()} frames` }}
-      </span>
+      <div class="flex max-w-full flex-wrap items-center justify-end gap-2">
+        <span class="max-w-full truncate font-mono text-[10px] text-slate-500 xl:max-w-xl">
+          {{ selected ? `${when(selected)} · ${eventTitle(selected)}` : `${layout.totalFrames.toLocaleString()} frames` }}
+        </span>
+        <div v-if="events.length" class="flex items-center overflow-hidden rounded-md border border-white/8 bg-black/20" role="group" aria-label="Timeline zoom">
+          <button
+            type="button"
+            class="grid h-6 min-w-6 place-items-center border-r border-white/8 px-1.5 text-xs font-semibold text-slate-400 hover:bg-white/5 hover:text-slate-200 disabled:cursor-not-allowed disabled:opacity-30"
+            :disabled="!canZoomOut"
+            aria-label="Zoom out timeline"
+            title="Zoom out"
+            @click="zoomOut"
+          >−</button>
+          <span class="min-w-9 px-1.5 text-center font-mono text-[9px] text-slate-500">{{ zoom }}×</span>
+          <button
+            type="button"
+            class="grid h-6 min-w-6 place-items-center border-l border-white/8 px-1.5 text-xs font-semibold text-slate-400 hover:bg-white/5 hover:text-slate-200 disabled:cursor-not-allowed disabled:opacity-30"
+            :disabled="!canZoomIn"
+            aria-label="Zoom in timeline"
+            title="Zoom in"
+            @click="zoomIn"
+          >+</button>
+          <button
+            v-if="zoom > 1"
+            type="button"
+            class="h-6 border-l border-white/8 px-2 text-[9px] font-semibold text-slate-500 hover:bg-white/5 hover:text-slate-200"
+            title="Fit the full run"
+            @click="fitTimeline"
+          >Fit</button>
+        </div>
+      </div>
     </div>
 
     <div v-if="events.length" class="mt-3">
-      <div class="relative overflow-hidden rounded-md border border-white/8 bg-black/20 px-3 pt-5 pb-3" :style="{ minHeight: `${76 + (layout.laneCount - 1) * 16}px` }">
+      <div
+        ref="timelineScroll"
+        class="overflow-x-auto overscroll-x-contain rounded-md border border-white/8 bg-black/20 focus:outline-none focus:ring-1 focus:ring-cyan-300/30"
+        tabindex="0"
+        aria-label="Run activity timeline. Scroll horizontally when zoomed."
+      >
+        <div
+          class="relative px-3 pt-5 pb-3"
+          :style="{
+            minHeight: `${76 + (layout.laneCount - 1) * 16}px`,
+            width: `${zoom * 100}%`,
+            minWidth: '100%'
+          }"
+        >
         <div class="absolute inset-x-3 bottom-7 h-px bg-white/15" />
         <div v-for="tick in ticks" :key="tick.percent" class="absolute bottom-2 -translate-x-1/2 font-mono text-[9px] text-slate-700" :style="{ left: `${tick.percent}%` }">
           <span class="mb-1 block h-1.5 w-px bg-white/15" />{{ tick.label }}
@@ -198,9 +298,11 @@ function when(event: TimelineRow): string {
         >
           {{ markerSymbol(event) }}
         </button>
+        </div>
       </div>
       <div class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[9px] font-medium text-slate-600">
         <span>○ LLM</span><span>⚙ Skill</span><span>↻ Recovery</span><span>● Milestone</span><span>■ Checkpoint</span><span>◆ Failure</span>
+        <span v-if="zoom > 1" class="ml-auto text-slate-700">Scroll horizontally to pan</span>
       </div>
     </div>
     <p v-else class="mt-3 py-5 text-center text-xs text-slate-600">No persisted semantic events for this run.</p>
