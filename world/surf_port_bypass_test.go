@@ -58,6 +58,64 @@ func TestSurfPortBypassRoutesAcrossWaterOnlySeams(t *testing.T) {
 	}
 }
 
+func TestSurfPortBypassPrefersReachableEquivalentBand(t *testing.T) {
+	// Model Pallet Town's south edge after component segmentation: the first
+	// band is an isolated two-tile pocket, while the second band is in the
+	// player's ordinary land component. Both land in the same Route 21
+	// component. PortBypass must widen reachability only when needed; it must
+	// not let slice order choose the isolated pocket first.
+	isolated := Edge{Kind: EdgeConnection, From: 1, To: 2, Dir: dirSouth, BandStart: 0, BandEnd: 1, BandScoped: true}
+	reachable := Edge{Kind: EdgeConnection, From: 1, To: 2, Dir: dirSouth, BandStart: 2, BandEnd: 3, BandScoped: true}
+
+	g := &Graph{
+		componentAware: true,
+		Edges: map[uint8][]Edge{
+			1: {isolated, reachable}, // bad band deliberately first
+			2: {},
+		},
+		comps: map[uint8][][]int{
+			1: {{2, 2, 1, 1}},
+			2: {{1, 1, 1, 1}},
+		},
+		tiles: map[uint8]dim{
+			1: {w: 4, h: 1},
+			2: {w: 4, h: 1},
+		},
+		exitComps: map[Edge][]int{
+			isolated:  {2},
+			reachable: {1},
+		},
+		entryComps: map[Edge][]int{
+			isolated:  {1},
+			reachable: {1},
+		},
+	}
+
+	transition := gameruntime.Transition{
+		ID:         "surf_shore",
+		Requires:   []gameruntime.CapabilityID{"can_surf"},
+		PortBypass: true,
+	}
+	prereqs := RoutePrerequisites{
+		Capabilities: gameruntime.NewCapabilitySet("can_surf"),
+		Transitions: map[Edge]gameruntime.Transition{
+			isolated:  transition,
+			reachable: transition,
+		},
+	}
+
+	plan, err := FindRoutePlanAtDestinationWithCapabilities(g, 1, 2, 2, 0, 0, 0, nil, prereqs)
+	if err != nil {
+		t.Fatalf("route through equivalent Surf bands: %v", err)
+	}
+	if len(plan) != 1 || plan[0].Edge != reachable {
+		t.Fatalf("plan=%+v, want reachable band %+v", plan, reachable)
+	}
+	if plan[0].Transition == nil || plan[0].Transition.ID != "surf_shore" {
+		t.Fatalf("transition=%+v, want surf_shore", plan[0].Transition)
+	}
+}
+
 func TestSurfPortBypassWithoutCapabilityStaysBlocked(t *testing.T) {
 	shore := Edge{Kind: EdgeConnection, From: 1, To: 2, Dir: dirSouth, BandStart: 0, BandEnd: 3, BandScoped: true}
 
