@@ -74,6 +74,9 @@ func TestTerminalRunFailureMarkerUsesCanonicalFingerprint(t *testing.T) {
 	if !strings.Contains(failure.Error, "failure-id:") {
 		t.Fatalf("synthetic error lost marker: %q", failure.Error)
 	}
+	if got := strings.Join(failure.CauseContext, ","); got != "can_clear_snorlax" {
+		t.Fatalf("synthetic cause context = %q, want can_clear_snorlax", got)
+	}
 	key, fingerprint, structured, err := objectiveFailureFingerprint(failure)
 	if err != nil {
 		t.Fatal(err)
