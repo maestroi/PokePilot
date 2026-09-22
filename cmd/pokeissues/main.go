@@ -693,7 +693,7 @@ func renderEvidence(b *strings.Builder, raw json.RawMessage) {
 		return
 	}
 	keys := []string{
-		"classification", "disposition", "objective", "error", "cause", "outcome",
+		"classification", "disposition", "objective", "error", "cause", "cause_context", "outcome",
 		"attempt", "seed", "seed_burn", "map", "x", "y", "occurrences_in_run",
 		"first_round", "last_round", "recovered", "recovered_count", "terminal_count",
 		"blocking", "run_reason", "runner_version", "observed_revision",
@@ -710,6 +710,19 @@ func renderEvidence(b *strings.Builder, raw json.RawMessage) {
 			text = v
 		case float64, bool:
 			text = fmt.Sprint(v)
+		case []any:
+			parts := make([]string, 0, len(v))
+			for _, item := range v {
+				s, ok := item.(string)
+				if !ok {
+					continue
+				}
+				s = strings.TrimSpace(truncateUTF8(s, maxEvidenceValueBytes))
+				if s != "" {
+					parts = append(parts, s)
+				}
+			}
+			text = strings.Join(parts, ", ")
 		default:
 			continue
 		}
