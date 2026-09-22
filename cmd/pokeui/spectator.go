@@ -49,30 +49,30 @@ type spectatorSummary struct {
 }
 
 type spectatorRun struct {
-	RunID       string           `json:"run_id"`
-	Status      string           `json:"status"`
-	Starter     string           `json:"starter,omitempty"`
-	Dest        string           `json:"dest,omitempty"`
-	Goal        string           `json:"goal,omitempty"`
-	QueuedAt    int64            `json:"queued_at,omitempty"`
-	EndedAt     int64            `json:"ended_at,omitempty"`
-	Frame       uint64           `json:"frame"`
-	Map         uint8            `json:"map"`
-	X           uint8            `json:"x"`
-	Y           uint8            `json:"y"`
-	MapsVisited   int              `json:"maps_visited,omitempty"`
+	RunID          string           `json:"run_id"`
+	Status         string           `json:"status"`
+	Starter        string           `json:"starter,omitempty"`
+	Dest           string           `json:"dest,omitempty"`
+	Goal           string           `json:"goal,omitempty"`
+	QueuedAt       int64            `json:"queued_at,omitempty"`
+	EndedAt        int64            `json:"ended_at,omitempty"`
+	Frame          uint64           `json:"frame"`
+	Map            uint8            `json:"map"`
+	X              uint8            `json:"x"`
+	Y              uint8            `json:"y"`
+	MapsVisited    int              `json:"maps_visited,omitempty"`
 	PlannerWaiting bool             `json:"planner_waiting,omitempty"`
 	PlannerOptions int              `json:"planner_options,omitempty"`
-	Decision      string           `json:"decision,omitempty"`
-	StopSoFar   string           `json:"stop_so_far,omitempty"`
-	Stats       *spectatorStats  `json:"stats,omitempty"`
-	Player      *farm.Player     `json:"player,omitempty"`
-	Sprites     []farm.MapSprite `json:"sprites,omitempty"`
-	Trail       [][2]uint8       `json:"trail,omitempty"`
-	Attempts    int              `json:"attempts,omitempty"`
-	Reason      string           `json:"reason,omitempty"`
-	ReplayReady bool             `json:"replay_ready,omitempty"`
-	Highlight   string           `json:"highlight,omitempty"`
+	Decision       string           `json:"decision,omitempty"`
+	StopSoFar      string           `json:"stop_so_far,omitempty"`
+	Stats          *spectatorStats  `json:"stats,omitempty"`
+	Player         *farm.Player     `json:"player,omitempty"`
+	Sprites        []farm.MapSprite `json:"sprites,omitempty"`
+	Trail          [][2]uint8       `json:"trail,omitempty"`
+	Attempts       int              `json:"attempts,omitempty"`
+	Reason         string           `json:"reason,omitempty"`
+	ReplayReady    bool             `json:"replay_ready,omitempty"`
+	Highlight      string           `json:"highlight,omitempty"`
 }
 
 type spectatorStats struct {
