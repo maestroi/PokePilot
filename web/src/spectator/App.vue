@@ -1,7 +1,19 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { ArrowPathIcon, ArrowsPointingOutIcon, LinkIcon, PlayIcon } from '@heroicons/vue/20/solid'
-import { getSpectatorSnapshot, spectatorReplayVideoURL } from '../shared/api/spectator-client'
+import {
+  ArrowPathIcon,
+  ArrowsPointingOutIcon,
+  BoltIcon,
+  BugAntIcon,
+  GlobeAltIcon,
+  LinkIcon,
+  PlayIcon,
+  QueueListIcon,
+  SignalIcon,
+  SparklesIcon,
+  TrophyIcon
+} from '@heroicons/vue/20/solid'
+import { getSpectatorSnapshot } from '../shared/api/spectator-client'
 import type { SpectatorRun } from '../shared/api/spectator'
 import AppShell from '../shared/components/AppShell.vue'
 import Panel from '../shared/components/Panel.vue'
@@ -30,11 +42,16 @@ import PartyProgress from './PartyProgress.vue'
 import PublicHome from './PublicHome.vue'
 import { policyLabel } from '../shared/playstyle'
 import { bagMeter, dexMeter } from '../shared/playerProgress'
+import { MAP_CATALOG } from '../shared/mapCatalog'
 import { runIDFromLocation, spectatorRunPath } from '../shared/urls'
+
+type ActivityKind = 'decision' | 'area' | 'badge' | 'party' | 'dex' | 'milestone' | 'state'
+type ActivityFilter = 'all' | 'milestones' | 'decisions'
 
 interface ActivityItem {
   id: string
   at: number
+  kind: ActivityKind
   label: string
   detail: string
 }
@@ -44,6 +61,7 @@ const selectionPinned = ref(Boolean(selectedRunID.value))
 const copyState = ref('')
 const theaterMode = ref(false)
 const playerRef = ref<HTMLElement | null>(null)
+const activityFilter = ref<ActivityFilter>('all')
 const activityByRun = ref<Record<string, ActivityItem[]>>({})
 const previousRuns = new Map<string, SpectatorRun>()
 
@@ -64,22 +82,46 @@ const {
 const runs = computed(() => snapshot.value?.runs ?? [])
 const groupedRuns = computed(() => splitSpectatorRuns(runs.value))
 const selectedRun = computed(() => preferredRun(
-  runs.value,
+  groupedRuns.value.live,
   selectionPinned.value ? selectedRunID.value : ''
 ))
 const frameRunID = computed(() => {
   const run = selectedRun.value
-  return run && (isLiveRun(run) || run.status === 'paused') ? run.run_id : ''
+  return run && isLiveRun(run) ? run.run_id : ''
 })
 const frameEnabled = computed(() => Boolean(frameRunID.value))
 const frameContinuous = computed(() => isLiveRun(selectedRun.value))
 const { frameURL, state: frameState, error: frameError } = useFramePump(frameRunID, frameEnabled, 50, frameContinuous)
-const replayURL = computed(() => {
-  const run = selectedRun.value
-  return run?.status === 'done' && run.replay_ready ? spectatorReplayVideoURL(run.run_id) : ''
-})
 const modeClass = computed(() => `mode-${normalizePlayStyle(selectedRun.value)}`)
-const selectedActivity = computed(() => selectedRun.value ? activityByRun.value[selectedRun.value.run_id] || [] : [])
+const selectedActivity = computed(() => {
+  const run = selectedRun.value
+  const activity = run ? activityByRun.value[run.run_id] || [] : []
+  if (activityFilter.value === 'milestones') {
+    return activity.filter((item) => ['area', 'badge', 'party', 'dex', 'milestone'].includes(item.kind))
+  }
+  if (activityFilter.value === 'decisions') {
+    return activity.filter((item) => item.kind === 'decision')
+  }
+  return activity
+})
+const plannerState = computed(() => {
+  const run = selectedRun.value
+  if (!run || !isLiveRun(run) || run.decision) return null
+  const question = String(run.question || '').trim()
+  const options = question
+    ? question.split('\n').filter((line) => /^\s*\d+\s*:/.test(line)).length
+    : 0
+  return {
+    title: question ? 'Planner thinking' : 'Agent starting',
+    detail: question
+      ? (options > 0 ? `Evaluating ${options} available objectives` : 'Waiting for the model response')
+      : 'Building the first objective menu'
+  }
+})
+const mapsLabel = computed(() => {
+  const visited = Number(selectedRun.value?.maps_visited || 0)
+  return visited > 0 ? `${visited}/${MAP_CATALOG.length}` : `0/${MAP_CATALOG.length}`
+})
 const lastRefreshLabel = computed(() => {
   if (!lastUpdatedAt.value) return ''
   return new Date(lastUpdatedAt.value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
