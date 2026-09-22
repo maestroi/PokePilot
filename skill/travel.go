@@ -236,6 +236,18 @@ func emergencyEgressCause(err error) string {
 		return "navigation_stalled"
 	case errors.Is(err, ErrReplanExhausted):
 		return "route_replan_exhausted"
+	case errors.Is(err, world.ErrNoRoute):
+		// GoTo only reaches this after its own in-map recovery (field-path
+		// bridging, component restaging) has already failed, so a bare
+		// world.ErrNoRoute here means the player's current walkable
+		// component has no graph edge out at all — e.g. a one-way ledge
+		// dropped them into a pocket whose only warp loops back into itself
+		// (measured on Vermilion City (12,23), issue #1553: every
+		// destination, not just the one being routed to, came back
+		// unroutable). Walking can never recover from a component with zero
+		// outgoing edges; the same emergency egress that already rescues a
+		// stalled/exhausted journey is equally the fix here.
+		return "no_route"
 	default:
 		return ""
 	}
