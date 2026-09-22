@@ -238,7 +238,9 @@ claim_issue() {
 	return 0
 }
 
-trap 'release_issue_claim' EXIT INT TERM
+trap 'release_issue_claim' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 triage_bin() {
 	local bin="$POKEPILOT_TRIAGE_STATE/qwagent-triage"
