@@ -176,66 +176,92 @@ watch([selectedRun, selectionPinned], ([run, pinned]) => {
 
 watch(runs, (nextRuns) => {
   for (const run of nextRuns) {
+    if (!isLiveRun(run)) continue
     const previous = previousRuns.get(run.run_id)
     if (!previous) {
-      if (run.decision) pushActivity(run.run_id, 'Current decision', run.decision)
-      else if (run.stop_so_far) pushActivity(run.run_id, 'Run state', run.stop_so_far)
+      if (run.decision) pushActivity(run.run_id, 'decision', 'Current decision', run.decision)
+      else if (run.question) pushActivity(run.run_id, 'state', 'Planner thinking', 'Choosing the first objective')
+      else if (run.stop_so_far) pushActivity(run.run_id, 'state', 'Run state', run.stop_so_far)
       previousRuns.set(run.run_id, run)
       continue
     }
 
+    if (run.question && !run.decision && previous.decision) {
+      pushActivity(run.run_id, 'state', 'Planner thinking', 'Choosing the next objective')
+    }
     if (run.decision && run.decision !== previous.decision) {
-      pushActivity(run.run_id, 'Decision', run.decision)
+      pushActivity(run.run_id, 'decision', 'Decision', run.decision)
     }
     if (run.map !== previous.map) {
-      pushActivity(run.run_id, 'New area', locationLabel(run))
+      pushActivity(run.run_id, 'area', 'New area', locationLabel(run))
     }
 
     const beforeBadges = previous.player?.badges || []
     const afterBadges = run.player?.badges || []
     if (afterBadges.length > beforeBadges.length) {
       const earned = afterBadges.filter((badge) => !beforeBadges.includes(badge))
-      pushActivity(run.run_id, 'Badge earned', earned.join(', ') || `${afterBadges.length} badges`)
+      pushActivity(run.run_id, 'badge', 'Badge earned', earned.join(', ') || `${afterBadges.length} badges`)
     }
 
     const beforeParty = previous.player?.party || []
     const afterParty = run.player?.party || []
     if (afterParty.length > beforeParty.length) {
       const joined = afterParty.slice(beforeParty.length).map((mon) => mon.name).filter(Boolean)
-      pushActivity(run.run_id, 'Pokémon joined', joined.join(', ') || `${afterParty.length}/6 party`)
+      pushActivity(run.run_id, 'party', 'Pokémon joined', joined.join(', ') || `${afterParty.length}/6 party`)
     }
 
     const beforeDex = Number(previous.player?.dex_owned || 0)
     const afterDex = Number(run.player?.dex_owned || 0)
     if (afterDex > beforeDex) {
-      pushActivity(run.run_id, 'Pokédex', `${afterDex} owned`)
+      pushActivity(run.run_id, 'dex', 'Pokédex updated', `${afterDex} owned`)
     }
 
     const beforeMilestones = previous.player?.milestones || []
     const afterMilestones = run.player?.milestones || []
     if (afterMilestones.length > beforeMilestones.length) {
       const earned = afterMilestones.filter((beat) => !beforeMilestones.includes(beat))
-      pushActivity(run.run_id, 'Milestone', earned.join(', ') || afterMilestones[afterMilestones.length - 1] || 'Progress')
+      pushActivity(run.run_id, 'milestone', 'Milestone', earned.join(', ') || afterMilestones[afterMilestones.length - 1] || 'Progress')
     }
 
-    if (previous.status !== 'done' && run.status === 'done') {
-      pushActivity(run.run_id, 'Run finished', run.highlight || run.reason || 'Run complete')
-    }
     previousRuns.set(run.run_id, run)
   }
 }, { immediate: true })
 
-function pushActivity(runID: string, label: string, detail: string): void {
+function pushActivity(runID: string, kind: ActivityKind, label: string, detail: string): void {
   if (!detail) return
   const current = activityByRun.value[runID] || []
   const latest = current[0]
-  if (latest?.label === label && latest.detail === detail) return
+  if (latest?.kind === kind && latest.label === label && latest.detail === detail) return
   activityByRun.value = {
     ...activityByRun.value,
     [runID]: [
-      { id: `${Date.now()}-${label}-${detail}`, at: Date.now(), label, detail },
+      { id: `${Date.now()}-${kind}-${label}-${detail}`, at: Date.now(), kind, label, detail },
       ...current
-    ].slice(0, 10)
+    ].slice(0, 24)
+  }
+}
+
+function activityIcon(kind: ActivityKind) {
+  switch (kind) {
+    case 'decision': return SparklesIcon
+    case 'area': return GlobeAltIcon
+    case 'badge': return TrophyIcon
+    case 'party': return QueueListIcon
+    case 'dex': return BugAntIcon
+    case 'milestone': return BoltIcon
+    default: return SignalIcon
+  }
+}
+
+function activityTone(kind: ActivityKind): string {
+  switch (kind) {
+    case 'decision': return 'text-cyan-300 bg-cyan-300/10 ring-cyan-300/20'
+    case 'area': return 'text-blue-300 bg-blue-300/10 ring-blue-300/20'
+    case 'badge': return 'text-amber-300 bg-amber-300/10 ring-amber-300/20'
+    case 'party': return 'text-violet-300 bg-violet-300/10 ring-violet-300/20'
+    case 'dex': return 'text-rose-300 bg-rose-300/10 ring-rose-300/20'
+    case 'milestone': return 'text-emerald-300 bg-emerald-300/10 ring-emerald-300/20'
+    default: return 'text-slate-300 bg-white/5 ring-white/10'
   }
 }
 
