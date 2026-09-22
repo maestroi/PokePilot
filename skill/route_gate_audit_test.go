@@ -120,9 +120,12 @@ func TestCyclingRoadModelsOnlyTheBikeCorridor(t *testing.T) {
 		world.Edge{Kind: world.EdgeWarp, From: route18Gate1FMap, To: route18Map, WarpX: 0, WarpY: 4},
 		"red:cycling_road_bicycle", capCanRideCyclingRoad)
 
-	requireTransition(t,
+	snorlaxEdge := requireTransition(t,
 		world.Edge{Kind: world.EdgeConnection, From: route16Map, To: celadonCityMap},
 		"red:route16_snorlax", capCanClearSnorlax)
+	if !snorlaxEdge.PivotOnly || !snorlaxEdge.PortBypass {
+		t.Fatalf("route16_snorlax = %+v, want PivotOnly+PortBypass so the east component stays walkable without the flute", snorlaxEdge)
+	}
 	if transition, ok := redRouteTransitionForEdge(world.Edge{Kind: world.EdgeConnection, From: celadonCityMap, To: route16Map}); ok && transition.ID == "red:route16_snorlax" {
 		t.Fatalf("Celadon -> Route 16 entry was over-gated by Snorlax: %+v", transition)
 	}

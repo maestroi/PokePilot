@@ -5,6 +5,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/maestroi/pokepilot/emu"
 	gameruntime "github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
@@ -189,5 +190,79 @@ func TestRoute16WestPocketGrassIsAGateHop(t *testing.T) {
 	}
 	if len(grassInPlayerComponent(grass, grid, int(dest.X), int(dest.Y))) == 0 {
 		t.Fatalf("grass destination %+v is not in a grass component", dest)
+	}
+}
+
+// TestRoute16EastComponentReachesCeladonWithoutFlute pins
+// run-1c4k0nk8lwwcc2hr8dhy65m5o0 (triage:1e001c1e962bcdd0, farm-issue:1469).
+// The Fly house is west of Snorlax, but the upper-passage Cut tree at (34,9)
+// lands east of him. That component walks into Celadon with no Poké Flute.
+// The lower road at (24,10) still cannot, because his tile splits the corridor.
+func TestRoute16EastComponentReachesCeladonWithoutFlute(t *testing.T) {
+	romPath := os.Getenv("POKEMON_RED_ROM")
+	if romPath == "" {
+		t.Skip("POKEMON_RED_ROM not set")
+	}
+	romData, err := os.ReadFile(romPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base, err := world.BuildGraph(romData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var mem state.Mem
+	g, err := withAsleepRoute16Snorlax(base, romData, &mem)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prereqs := redRoutePrerequisites(g, romData, &mem)
+	prereqs.Capabilities = gameruntime.NewCapabilitySet(capCanCut)
+	center, ok := Place("celadon pokemon center")
+	if !ok {
+		t.Fatal("celadon pokemon center is not registered")
+	}
+
+	east, err := world.FindRoutePlanAtDestinationWithCapabilities(
+		g, route16Map, center.Map, 30, 10, int(center.X), int(center.Y), nil, prereqs,
+	)
+	if err != nil {
+		t.Fatalf("east of Snorlax (30,10) -> Celadon: %v", err)
+	}
+	for _, step := range east {
+		if step.Transition != nil && step.Transition.ID == "red:route16_snorlax" {
+			t.Fatalf("east component used %s; Cut/walk east of (26,10) must not clear Snorlax", step.Transition.ID)
+		}
+	}
+
+	_, err = world.FindRoutePlanAtDestinationWithCapabilities(
+		g, route16Map, center.Map, 24, 10, int(center.X), int(center.Y), nil, prereqs,
+	)
+	var blocked *world.RouteBlockedError
+	if !errors.As(err, &blocked) {
+		t.Fatalf("west lower road (24,10) err=%v, want RouteBlockedError", err)
+	}
+	missing := blocked.MissingCapabilities()
+	if len(missing) != 1 || missing[0] != capCanClearSnorlax {
+		t.Fatalf("west lower road missing=%v, want [%s]", missing, capCanClearSnorlax)
+	}
+
+	m, err := emu.Open(romPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	if !tileOpensDest(m, romData, g, route16Map, 24, 6, center, prereqs, nil) {
+		t.Fatal("upper passage (24,6) did not open Celadon via Cut")
+	}
+
+	edge := world.Edge{Kind: world.EdgeConnection, From: route16Map, To: celadonCityMap}
+	transition, ok := redRouteTransitionForEdge(edge)
+	if !ok {
+		t.Fatal("route16_snorlax transition missing")
+	}
+	setEventFlag(&mem, eventBeatRoute16Snorlax)
+	if !redRouteTransitionEffectComplete(&mem, transition) {
+		t.Fatal("beaten Route 16 Snorlax must drop the port-bypass pivot")
 	}
 }

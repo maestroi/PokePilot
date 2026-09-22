@@ -361,14 +361,19 @@ func redRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, bool) {
 // pocket (run-4h4isxsvaskt1c7mslvxzsrr6). Gates and PortBypass seams stay
 // annotated: they are still the portable description of the edge.
 func redRouteTransitionEffectComplete(mem *state.Mem, transition gameruntime.Transition) bool {
+	// Route 16's Snorlax action is PortBypass while he is asleep so the west
+	// lower road can select the crossing. Once he is gone the pivot must drop:
+	// leaving it attached waives port reachability for the upper passage,
+	// which still reaches Celadon only by Cut.
+	if transition.ID == "red:route16_snorlax" {
+		return state.HasEvent(mem, eventBeatRoute16Snorlax)
+	}
 	if transition.Gate || transition.PortBypass {
 		return false
 	}
 	switch transition.ID {
 	case "red:route12_snorlax":
 		return state.HasEvent(mem, eventBeatRoute12Snorlax)
-	case "red:route16_snorlax":
-		return state.HasEvent(mem, eventBeatRoute16Snorlax)
 	case "red:rocket_b1f_trainer_door":
 		return state.HasEvent(mem, eventBeatRocketB1FTrainer4)
 	default:
@@ -424,6 +429,10 @@ func ReachableMaps(m *emu.Emu, romData []byte) (map[uint8]bool, error) {
 	}
 	var mem state.Mem
 	state.Snapshot(m, &mem)
+	g, err = withAsleepRoute16Snorlax(g, romData, &mem)
+	if err != nil {
+		return nil, err
+	}
 	prereqs := redRoutePrerequisites(g, romData, &mem)
 	cur := mem.U8(sym.CurMap)
 	x, y := mem.U8(sym.XCoord), mem.U8(sym.YCoord)
