@@ -1146,6 +1146,7 @@
           fps: Number(f.fps.value || 0),
           max_rounds: Number(f.max_rounds.value || 0),
           max_frames: Number(f.max_frames.value || 0),
+          recovery_profile: target ? "strict" : (planner === "llm" ? "resilient" : "strict"),
           endless: target ? false : f.endless.checked,
           random_seed: target ? false : (f.endless.checked && f.seed_mode.value === "random")
         };
