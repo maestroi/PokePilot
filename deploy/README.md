@@ -196,9 +196,11 @@ attempt count; GitHub resolution and PokePilot verification still decide
 whether a repair actually succeeded.
 
 OpenCode defaults to `qwen3.8-27b/qwen3.8-27b`. Escalation is deliberately
-manual: set `POKEPILOT_OPENCODE_MODEL` (or `POKEPILOT_CURSOR_MODEL`) before
-`qwtriage-once` when you want to spend a stronger model. The timer never
-changes models on its own.
+manual. For a one-off stronger attempt, invoke the script directly so the
+model override is scoped to that process, for example
+`POKEPILOT_TRIAGE_AGENT=opencode POKEPILOT_OPENCODE_MODEL=<model> ./deploy/qwagent-triage.sh`.
+The systemd timer never changes models on its own; `qwtriage-once` continues to
+use the defaults from `~/.config/pokepilot/env`.
 
 ```sh
 make qwagent-triage-install   # units + zsh helpers; timer stays off
