@@ -224,6 +224,45 @@ func componentSetKey(in []int) string {
 	return b.String()
 }
 
+// bypassBandDominatedByReachableSibling reports a component-scoped connection
+// band that only becomes selectable through skipCanExit even though another
+// band of the same logical map connection is ordinarily reachable from the
+// current component and lands in the same destination component.
+//
+// PortBypass is intentionally allowed to bridge an otherwise unreachable
+// source port (Surf is the canonical case), but that privilege must be a
+// fallback, not a reason to prefer an isolated source-border pocket over an
+// equivalent reachable shore. Pallet Town -> Route 21 exposes both shapes:
+// the first component-scoped south band is an isolated two-tile pocket while a
+// later band is reachable from town and lands in the same Route 21 component.
+// Taking the isolated band stranded live runs before Surf could cross.
+//
+// Different destination components are never dominated: selecting an
+// unreachable band can be the whole point of a semantic pivot when it opens a
+// distinct region.
+func bypassBandDominatedByReachableSibling(g *Graph, e Edge, entry []int, skipCanExit map[Edge]bool) bool {
+	if g == nil || !g.componentAware || e.Kind != EdgeConnection || !skipCanExit[e] || canExit(g, e, entry) {
+		return false
+	}
+	landing := g.entryComps[e]
+	if len(landing) == 0 {
+		return false
+	}
+	for _, sibling := range g.Edges[e.From] {
+		if sibling == e || sibling.Kind != EdgeConnection ||
+			sibling.To != e.To || sibling.Dir != e.Dir || !skipCanExit[sibling] {
+			continue
+		}
+		if !canExit(g, sibling, entry) {
+			continue
+		}
+		if shareComp(landing, g.entryComps[sibling]) {
+			return true
+		}
+	}
+	return false
+}
+
 func findRoute(g *Graph, from, to uint8, blockedHere map[Edge]bool, first, target []int, skipCanExit, relaxLanding map[Edge]bool) ([]Edge, error) {
 	if from == to && (len(target) == 0 || shareComp(first, target)) {
 		return []Edge{}, nil
@@ -251,6 +290,9 @@ func findRoute(g *Graph, from, to uint8, blockedHere map[Edge]bool, first, targe
 	expand := func(cur uint8, prev int, entry []int) {
 		for _, e := range g.Edges[cur] {
 			if prev < 0 && blockedHere[e] {
+				continue
+			}
+			if bypassBandDominatedByReachableSibling(g, e, entry, skipCanExit) {
 				continue
 			}
 			// PortBypass / FROM-side actions may be selected even when ordinary
