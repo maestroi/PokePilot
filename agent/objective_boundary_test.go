@@ -80,6 +80,74 @@ func TestPrepareObjectiveBoundaryDoesNotAnswerMuseumGate(t *testing.T) {
 	}
 }
 
+// TestPrepareObjectiveBoundaryWaitsOutTransientInputLockout covers the class
+// of failure that ends runs: a skill fails while the ROM is holding input
+// (wJoyIgnore) for an ordinary turn/step animation, with no menu, dialogue or
+// battle to explain the lockout. The lockout self-clears a few frames later.
+//
+// MEASURED on the farm (issues #1533/#1534, run-12pnfwosfyeeq2up888b6daoev):
+// Fish's Face() tap at Vermilion City (12,23) left the player uncontrollable
+// with nothing on screen for 27 frames. Fish's cast guard failed inside that
+// window at frame 22, and the boundary check concluded "dirty" without
+// advancing a single frame, so a transient that would have cleared 5 frames
+// later was classified as a terminal stabilization failure and ended a
+// six-badge run.
+//
+// The boundary contract may only perform semantically reversible cleanup, and
+// waiting is not a gameplay choice: a bounded wait for control to return is
+// exactly what GoTo already does (skill.waitOutScriptedMovement /
+// skill.Cutscene). Declaring the boundary dirty must wait for the same window
+// to elapse first.
+func TestPrepareObjectiveBoundaryWaitsOutTransientInputLockout(t *testing.T) {
+	// Face()'s input: a short directional tap. Pressing toward an impassable
+	// tile turns the player in place, and the ROM holds input for the turn.
+	// Try each direction from the fixture's starting position; the turn
+	// direction depends on which tile the player faces, not on the button.
+	var e *emu.Emu
+	var mem state.Mem
+	for _, btn := range []emu.Button{emu.Up, emu.Down, emu.Left, emu.Right} {
+		cand := fixture.Load(t, "post_starter")
+		cand.Tap(btn, 3, 7)
+		found := false
+		for i := 0; i < 150; i++ {
+			state.Snapshot(cand, &mem)
+			if !state.Controllable(&mem) &&
+				state.DecodeDialogue(&mem) == nil &&
+				!state.MenuUp(&mem) &&
+				state.DecodeBattle(&mem) == nil {
+				// Nothing-open is the precondition of the branch under test;
+				// a menu/dialogue/battle open takes a different, already-
+				// correct branch and must keep stepping zero frames.
+				found = true
+				break
+			}
+			cand.StepFrame()
+		}
+		if found {
+			e = cand
+			break
+		}
+		cand.Close()
+	}
+	if e == nil {
+		t.Skip("this ROM/position did not produce an input lockout; the test proves nothing")
+	}
+	t.Cleanup(func() { e.Close() })
+
+	before := e.FrameCount()
+	err := prepareObjectiveBoundary(e)
+	if err != nil {
+		t.Fatalf("prepareObjectiveBoundary returned %v on a self-clearing input lockout; want it to wait for control to return", err)
+	}
+	state.Snapshot(e, &mem)
+	if !state.Controllable(&mem) {
+		t.Fatalf("boundary recovery left the player uncontrollable after reporting success")
+	}
+	if got := e.FrameCount(); got == before {
+		t.Fatalf("prepareObjectiveBoundary stepped zero frames during the lockout instead of waiting it out")
+	}
+}
+
 func TestObjectiveBoundaryErrorAttributesDirtyFinishToProducingObjective(t *testing.T) {
 	o := Objective{Kind: KindGoTo, Place: "cerulean city"}
 	boundary := errors.New("unanswered choice remains open")
