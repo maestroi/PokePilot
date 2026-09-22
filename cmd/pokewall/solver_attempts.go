@@ -8,10 +8,10 @@ import (
 )
 
 const (
-	maxSolverAttempts      = 32
-	maxSolverAttemptField  = 256
-	maxSolverAttemptNote   = 1024
-	maxSolverAttemptBody   = 16 << 10
+	maxSolverAttempts     = 32
+	maxSolverAttemptField = 256
+	maxSolverAttemptNote  = 1024
+	maxSolverAttemptBody  = 16 << 10
 )
 
 func cleanSolverAttemptField(value string, limit int) string {
