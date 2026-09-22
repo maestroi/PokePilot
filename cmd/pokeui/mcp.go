@@ -83,6 +83,21 @@ type mcpInvestigateInput struct {
 	Key string `json:"key" jsonschema:"triage failure key returned by pokepilot_get_triage"`
 }
 
+type mcpSolverAttemptInput struct {
+	Key       string `json:"key" jsonschema:"triage failure key returned by pokepilot_get_triage"`
+	ID        string `json:"id" jsonschema:"stable id for this solver attempt; updates with the same id replace that attempt"`
+	Backend   string `json:"backend" jsonschema:"coding agent runtime, for example opencode, cursor, codex, or claude"`
+	Model     string `json:"model,omitempty" jsonschema:"actual requested coding model id when known"`
+	State     string `json:"state" jsonschema:"attempt state such as started, agent_failed, no_pr, pr_opened, or pr_updated"`
+	RunID     string `json:"run_id,omitempty" jsonschema:"representative failing PokePilot run id"`
+	Branch    string `json:"branch,omitempty" jsonschema:"repair branch produced by the coding agent"`
+	PRNumber  int64  `json:"pr_number,omitempty" jsonschema:"GitHub pull request number produced by the attempt"`
+	PRURL     string `json:"pr_url,omitempty" jsonschema:"GitHub pull request URL produced by the attempt"`
+	ExitCode  int    `json:"exit_code,omitempty" jsonschema:"coding agent process exit code when non-zero"`
+	Note      string `json:"note,omitempty" jsonschema:"short machine/operator note about the attempt outcome"`
+	StartedAt int64  `json:"started_at,omitempty" jsonschema:"optional Unix start timestamp; wall fills it for a new attempt when omitted"`
+}
+
 type mcpArtifactContentInput struct {
 	RunID string `json:"run_id" jsonschema:"PokePilot run id"`
 	Name  string `json:"name" jsonschema:"artifact name, exactly as pokepilot_get_run_artifacts listed it"`
@@ -191,6 +206,10 @@ func newMCPHandler(wallBase, replayBase, token string) http.Handler {
 		Name:        "pokepilot_investigate_failure",
 		Description: "Trigger the existing PokePilot investigation handoff for one actionable triage failure key.",
 	}, control.investigateFailure)
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "pokepilot_record_solver_attempt",
+		Description: "Record or update which coding agent/model attempted a triage failure and whether it produced a PR. Issue resolution and PokePilot verification determine whether that repair ultimately succeeded.",
+	}, control.recordSolverAttempt)
 
 	streamable := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
 		return server
@@ -508,6 +527,34 @@ func (c *mcpControl) investigateFailure(ctx context.Context, _ *mcp.CallToolRequ
 		return nil, nil, err
 	}
 	out["key"] = key
+	return nil, out, nil
+}
+
+func (c *mcpControl) recordSolverAttempt(ctx context.Context, _ *mcp.CallToolRequest, in mcpSolverAttemptInput) (*mcp.CallToolResult, map[string]any, error) {
+	key := strings.TrimSpace(in.Key)
+	if key == "" {
+		return nil, nil, fmt.Errorf("key is required")
+	}
+	if strings.TrimSpace(in.ID) == "" || strings.TrimSpace(in.Backend) == "" || strings.TrimSpace(in.State) == "" {
+		return nil, nil, fmt.Errorf("id, backend, and state are required")
+	}
+	payload := map[string]any{
+		"id":         in.ID,
+		"backend":    in.Backend,
+		"model":      in.Model,
+		"state":      in.State,
+		"run_id":     in.RunID,
+		"branch":     in.Branch,
+		"pr_number":  in.PRNumber,
+		"pr_url":     in.PRURL,
+		"exit_code":  in.ExitCode,
+		"note":       in.Note,
+		"started_at": in.StartedAt,
+	}
+	var out map[string]any
+	if err := c.requestJSON(ctx, http.MethodPost, "/v1/triage/"+url.PathEscape(key)+"/solver-attempt", payload, &out); err != nil {
+		return nil, nil, err
+	}
 	return nil, out, nil
 }
 

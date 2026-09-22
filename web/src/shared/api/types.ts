@@ -1,6 +1,21 @@
 export type RunStatus = 'queued' | 'leased' | 'running' | 'done' | string
 export type RecoveryProfile = 'strict' | 'resilient'
 
+export interface SolverAttempt {
+  id: string
+  backend: string
+  model?: string
+  state: string
+  run_id?: string
+  branch?: string
+  pr_number?: number
+  pr_url?: string
+  exit_code?: number
+  note?: string
+  started_at?: number
+  updated_at?: number
+}
+
 export interface DashboardIssueLink {
   issue_number?: number
   issue_url?: string
@@ -8,6 +23,10 @@ export interface DashboardIssueLink {
   resolution?: string
   occurrence_count?: number
   fixed_revision?: string
+  solver_attempts?: SolverAttempt[]
+  verification_state?: string
+  verification_revision?: string
+  verification_verified_at?: number
   stale?: boolean
   circuit_open?: boolean
   circuit_kind?: string

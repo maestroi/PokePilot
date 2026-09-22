@@ -27,7 +27,7 @@ func main() {
 
 func run(args []string, stdin io.Reader, stdout io.Writer) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: qwagent-triage pick|pick-own-pr|classify-repairs|fetch-triage|fetch-debug|investigate ...")
+		return fmt.Errorf("usage: qwagent-triage pick|pick-own-pr|classify-repairs|fetch-triage|fetch-debug|investigate|record-attempt ...")
 	}
 	switch args[0] {
 	case "pick":
@@ -42,6 +42,8 @@ func run(args []string, stdin io.Reader, stdout io.Writer) error {
 		return fetchDebugCmd(args[1:], stdout)
 	case "investigate":
 		return investigateCmd(args[1:], stdout)
+	case "record-attempt":
+		return recordAttemptCmd(args[1:], stdout)
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
@@ -200,6 +202,48 @@ func investigateCmd(args []string, stdout io.Writer) error {
 	}
 	raw, err := deploy.CallMCPTool(nil, endpoint, token, "pokepilot_investigate_failure", map[string]any{
 		"key": key,
+	})
+	if err != nil {
+		return err
+	}
+	_, err = stdout.Write(append(bytes.TrimSpace(raw), '\n'))
+	return err
+}
+
+func recordAttemptCmd(args []string, stdout io.Writer) error {
+	fs := flag.NewFlagSet("record-attempt", flag.ContinueOnError)
+	key := fs.String("key", "", "triage failure key")
+	id := fs.String("id", "", "stable solver attempt id")
+	backend := fs.String("backend", "", "coding agent backend")
+	model := fs.String("model", "", "coding model id")
+	state := fs.String("state", "", "solver attempt state")
+	runID := fs.String("run-id", "", "representative failing run id")
+	branch := fs.String("branch", "", "repair branch")
+	prNumber := fs.Int64("pr-number", 0, "pull request number")
+	prURL := fs.String("pr-url", "", "pull request URL")
+	exitCode := fs.Int("exit-code", 0, "coding agent exit code")
+	note := fs.String("note", "", "short attempt outcome note")
+	startedAt := fs.Int64("started-at", 0, "Unix start timestamp")
+	endpoint, token, err := parseMCPFlagsWith(fs, args)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(*key) == "" || strings.TrimSpace(*id) == "" || strings.TrimSpace(*backend) == "" || strings.TrimSpace(*state) == "" {
+		return fmt.Errorf("usage: qwagent-triage record-attempt --key KEY --id ID --backend BACKEND --state STATE")
+	}
+	raw, err := deploy.CallMCPTool(nil, endpoint, token, "pokepilot_record_solver_attempt", map[string]any{
+		"key":        strings.TrimSpace(*key),
+		"id":         strings.TrimSpace(*id),
+		"backend":    strings.TrimSpace(*backend),
+		"model":      strings.TrimSpace(*model),
+		"state":      strings.TrimSpace(*state),
+		"run_id":     strings.TrimSpace(*runID),
+		"branch":     strings.TrimSpace(*branch),
+		"pr_number":  *prNumber,
+		"pr_url":     strings.TrimSpace(*prURL),
+		"exit_code":  *exitCode,
+		"note":       strings.TrimSpace(*note),
+		"started_at": *startedAt,
 	})
 	if err != nil {
 		return err

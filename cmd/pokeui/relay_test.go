@@ -29,6 +29,9 @@ func TestPokeuiProxiesAllowlistedRoutes(t *testing.T) {
 		case req.Method == http.MethodPost && req.URL.Path == "/v1/triage/abcdabcdabcdabcd/investigate":
 			res.Header().Set("Content-Type", "application/json")
 			res.Write([]byte(`{"issue_number":42}`))
+		case req.Method == http.MethodPost && req.URL.Path == "/v1/triage/abcdabcdabcdabcd/solver-attempt":
+			res.Header().Set("Content-Type", "application/json")
+			res.Write([]byte(`{"attempt_count":1}`))
 		case req.Method == http.MethodPost && req.URL.Path == "/v1/specs":
 			body, _ := io.ReadAll(req.Body)
 			if !bytes.Contains(body, []byte(`"run_id"`)) {
@@ -101,6 +104,17 @@ func TestPokeuiProxiesAllowlistedRoutes(t *testing.T) {
 	res.Body.Close()
 	if res.StatusCode != 200 {
 		t.Fatalf("POST investigate = %d, want 200", res.StatusCode)
+	}
+
+	solverAttempt := bytes.NewBufferString(`{"id":"a","backend":"opencode","model":"qwen3.8-27b/qwen3.8-27b","state":"started"}`)
+	res, err = http.Post(ui.URL+"/v1/triage/abcdabcdabcdabcd/solver-attempt", "application/json", solverAttempt)
+	if err != nil {
+		t.Fatalf("POST solver-attempt: %v", err)
+	}
+	io.Copy(io.Discard, res.Body) //nolint:errcheck
+	res.Body.Close()
+	if res.StatusCode != 200 {
+		t.Fatalf("POST solver-attempt = %d, want 200", res.StatusCode)
 	}
 
 	res, err = http.Post(ui.URL+"/v1/triage/abcdabcdabcdabcd/other", "application/json", bytes.NewReader(nil))

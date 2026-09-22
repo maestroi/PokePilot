@@ -589,6 +589,7 @@ func (w *Wall) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/dashboard", w.handleDashboard)
 	mux.HandleFunc("GET /v1/triage", w.handleTriage)
 	mux.HandleFunc("POST /v1/triage/{key}/investigate", w.handleInvestigate)
+	mux.HandleFunc("POST /v1/triage/{key}/solver-attempt", w.handleSolverAttempt)
 	mux.HandleFunc("GET /", w.handleGrid)
 	mux.HandleFunc("GET /frame", w.handleFrame)
 	return mux
