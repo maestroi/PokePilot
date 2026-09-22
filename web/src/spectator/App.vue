@@ -563,11 +563,30 @@ function activityTime(item: ActivityItem): string {
                 <span class="rounded bg-black/45 px-2 py-1 font-mono text-slate-300 ring-1 ring-white/10">{{ locationLabel(selectedRun) }}</span>
               </div>
 
-              <div class="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/45 to-transparent px-3 pb-3 pt-10 sm:px-4 sm:pb-4">
-                <div class="flex items-end justify-between gap-4">
+              <div class="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/50 to-transparent px-3 pb-3 pt-14 sm:px-4 sm:pb-4">
+                <div v-if="plannerState" class="flex items-end justify-between gap-4">
+                  <div class="flex min-w-0 items-center gap-3">
+                    <div class="planner-spinner grid size-9 shrink-0 place-items-center rounded-full border border-cyan-300/25 bg-cyan-300/10">
+                      <SparklesIcon class="size-4 text-cyan-200" aria-hidden="true" />
+                    </div>
+                    <div class="min-w-0">
+                      <div class="text-[9px] font-semibold tracking-[0.12em] text-cyan-200 uppercase">{{ plannerState.title }}</div>
+                      <div class="mt-1 flex items-center gap-2 text-xs text-white sm:text-sm">
+                        <span class="truncate">{{ plannerState.detail }}</span>
+                        <span class="planner-dots inline-flex shrink-0 gap-1" aria-hidden="true">
+                          <span />
+                          <span />
+                          <span />
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="shrink-0 rounded bg-black/50 px-2 py-1 font-mono text-[10px] text-cyan-100 ring-1 ring-cyan-300/20">LLM</div>
+                </div>
+                <div v-else class="flex items-end justify-between gap-4">
                   <div class="min-w-0">
                     <div class="text-[9px] font-semibold tracking-[0.1em] text-slate-400 uppercase">Latest decision</div>
-                    <div class="mt-1 line-clamp-2 max-w-4xl text-xs leading-5 text-white sm:text-sm">{{ selectedRun.decision || 'Waiting for the next decision…' }}</div>
+                    <div class="mt-1 line-clamp-2 max-w-4xl text-xs leading-5 text-white sm:text-sm">{{ selectedRun.decision || 'Preparing the next objective' }}</div>
                   </div>
                   <div class="shrink-0 rounded bg-black/50 px-2 py-1 font-mono text-[10px] text-slate-300 ring-1 ring-white/10">{{ playSpeedLabel(selectedRun) }}</div>
                 </div>
@@ -603,20 +622,41 @@ function activityTime(item: ActivityItem): string {
             <PartyProgress :run="selectedRun" />
           </Panel>
 
-          <Panel title="Activity" description="A lightweight watch feed built from public run changes." compact>
+          <Panel title="Activity" description="Live decisions and progression, grouped by event type." compact>
+            <div class="mb-3 flex flex-wrap gap-1.5">
+              <button
+                v-for="filter in (['all', 'milestones', 'decisions'] as ActivityFilter[])"
+                :key="filter"
+                type="button"
+                :class="[
+                  activityFilter === filter
+                    ? 'bg-cyan-300/12 text-cyan-100 ring-cyan-300/25'
+                    : 'bg-white/5 text-slate-500 ring-white/8 hover:bg-white/8 hover:text-slate-300',
+                  'rounded-full px-2.5 py-1 text-[10px] font-semibold capitalize ring-1 transition-colors'
+                ]"
+                @click="activityFilter = filter"
+              >
+                {{ filter }}
+              </button>
+            </div>
             <div v-if="selectedActivity.length" class="divide-y divide-white/8">
-              <div v-for="item in selectedActivity" :key="item.id" class="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-3 py-2.5 first:pt-0 last:pb-0">
-                <time class="font-mono text-[10px] text-slate-600">{{ activityTime(item) }}</time>
+              <div v-for="item in selectedActivity" :key="item.id" class="grid grid-cols-[4rem_2rem_minmax(0,1fr)] items-start gap-2.5 py-2.5 first:pt-0 last:pb-0">
+                <time class="pt-1 font-mono text-[10px] text-slate-600">{{ activityTime(item) }}</time>
+                <span
+                  :class="[activityTone(item.kind), 'grid size-7 place-items-center rounded-md ring-1']"
+                  :title="item.label"
+                >
+                  <component :is="activityIcon(item.kind)" class="size-3.5" aria-hidden="true" />
+                </span>
                 <div class="min-w-0">
-                  <div class="flex items-center gap-2">
-                    <span class="mode-dot size-1.5 shrink-0 rounded-full" />
-                    <strong class="text-xs text-slate-300">{{ item.label }}</strong>
-                  </div>
-                  <p class="mt-1 text-xs leading-5 text-slate-500">{{ item.detail }}</p>
+                  <strong class="text-xs text-slate-300">{{ item.label }}</strong>
+                  <p class="mt-0.5 text-xs leading-5 text-slate-500">{{ item.detail }}</p>
                 </div>
               </div>
             </div>
-            <p v-else class="py-5 text-center text-xs text-slate-500">New decisions, areas, catches and badges will appear here.</p>
+            <p v-else class="py-5 text-center text-xs text-slate-500">
+              {{ activityFilter === 'all' ? 'New decisions, areas, catches and badges will appear here.' : 'No ' + activityFilter + ' events yet.' }}
+            </p>
           </Panel>
         </div>
 
@@ -760,6 +800,69 @@ function activityTime(item: ActivityItem): string {
 
 .mode-metric {
   border-color: var(--mode-border);
+}
+
+.planner-spinner {
+  position: relative;
+  animation: planner-breathe 1.7s ease-in-out infinite;
+}
+
+.planner-spinner::after {
+  position: absolute;
+  inset: -0.35rem;
+  border: 1px solid rgba(103, 232, 249, 0.22);
+  border-radius: 9999px;
+  content: '';
+  animation: planner-ring 1.7s ease-out infinite;
+}
+
+.planner-dots > span {
+  width: 0.25rem;
+  height: 0.25rem;
+  border-radius: 9999px;
+  background: rgb(165 243 252);
+  animation: planner-dot 1.15s ease-in-out infinite;
+}
+
+.planner-dots > span:nth-child(2) {
+  animation-delay: 0.16s;
+}
+
+.planner-dots > span:nth-child(3) {
+  animation-delay: 0.32s;
+}
+
+.live-radar {
+  position: relative;
+}
+
+.live-radar::before,
+.live-radar::after {
+  position: absolute;
+  inset: -0.55rem;
+  border: 1px solid rgba(103, 232, 249, 0.18);
+  border-radius: 9999px;
+  content: '';
+  animation: planner-ring 2.2s ease-out infinite;
+}
+
+.live-radar::after {
+  animation-delay: 1.1s;
+}
+
+@keyframes planner-breathe {
+  0%, 100% { transform: scale(0.96); box-shadow: 0 0 0 rgba(34, 211, 238, 0); }
+  50% { transform: scale(1.04); box-shadow: 0 0 1.25rem rgba(34, 211, 238, 0.18); }
+}
+
+@keyframes planner-ring {
+  0% { opacity: 0.75; transform: scale(0.72); }
+  100% { opacity: 0; transform: scale(1.35); }
+}
+
+@keyframes planner-dot {
+  0%, 70%, 100% { opacity: 0.3; transform: translateY(0); }
+  35% { opacity: 1; transform: translateY(-0.18rem); }
 }
 
 :fullscreen {
