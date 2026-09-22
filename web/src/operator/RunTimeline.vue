@@ -33,12 +33,18 @@ function eventRound(event: TimelineRow): number {
   return number(event.round)
 }
 
-function eventKind(event: TimelineRow): 'decision' | 'checkpoint' | 'progress' | 'failure' | 'event' {
+type EventKind = 'decision' | 'checkpoint' | 'progress' | 'failure' | 'recovery' | 'skill' | 'system' | 'event'
+
+function eventKind(event: TimelineRow): EventKind {
+  const source = text(event.source).toLowerCase()
   const value = `${text(event.kind)} ${text(event.type)} ${text(event.message)} ${text(event.detail)}`.toLowerCase()
   if (value.includes('fail') || value.includes('lost') || value.includes('error')) return 'failure'
   if (value.includes('checkpoint')) return 'checkpoint'
-  if (value.includes('progress') || value.includes('finish')) return 'progress'
-  if (value.includes('decision')) return 'decision'
+  if (source === 'recovery' || value.includes('recover') || value.includes('rollback') || value.includes('resume')) return 'recovery'
+  if (source === 'milestone' || value.includes('progress') || value.includes('finish') || value.includes('badge')) return 'progress'
+  if (source === 'llm' || value.includes('decision') || value.includes('planning')) return 'decision'
+  if (source === 'skill') return 'skill'
+  if (source === 'system') return 'system'
   return 'event'
 }
 
@@ -48,12 +54,17 @@ function humanize(value: string): string {
 
 function eventTitle(event: TimelineRow): string {
   const kind = eventKind(event)
+  const message = text(event.message)
   const checkpoint = text(event.checkpoint) || text(event.name)
   if (kind === 'checkpoint' && checkpoint) return checkpoint
-  if (kind === 'decision') return 'Planner decision'
-  if (kind === 'failure') return 'Run failed'
+  if (message) return message
+  if (kind === 'decision') return 'LLM decision'
+  if (kind === 'failure') return 'Attempt failed'
+  if (kind === 'recovery') return 'Recovery action'
+  if (kind === 'skill') return 'Skill execution'
+  if (kind === 'system') return 'System event'
   if (kind === 'progress') return text(event.type).toLowerCase().includes('finish') ? 'Run finished' : 'Progress recorded'
-  return text(event.message) || humanize(text(event.type) || text(event.kind) || 'Recorded event')
+  return humanize(text(event.type) || text(event.kind) || 'Recorded event')
 }
 
 function eventDetail(event: TimelineRow): string {
@@ -63,9 +74,12 @@ function eventDetail(event: TimelineRow): string {
   const detail = text(event.detail)
   const progress = text(event.progress)
   const kind = eventKind(event)
-  if (kind === 'decision') return decision || question || message || 'A planner decision was persisted.'
-  if (kind === 'failure') return detail || message || question || 'The run stopped with a failure.'
-  if (kind === 'progress') return progress || message || detail || 'Run progress was persisted.'
+  if (kind === 'decision') return decision || detail || question || message || 'The planner state changed.'
+  if (kind === 'failure') return detail || message || question || 'The current attempt stopped with a failure.'
+  if (kind === 'recovery') return detail || message || 'The recovery supervisor changed how the campaign will continue.'
+  if (kind === 'skill') return detail || message || 'Deterministic gameplay execution.'
+  if (kind === 'system') return detail || message || 'Run lifecycle event.'
+  if (kind === 'progress') return progress || detail || message || 'Run progress was persisted.'
   if (detail && detail !== eventTitle(event)) return detail
   if (message && message !== eventTitle(event)) return message
   if (question) return question
@@ -81,6 +95,9 @@ function markerSymbol(event: TimelineRow): string {
     case 'failure': return '◆'
     case 'progress': return '●'
     case 'decision': return '○'
+    case 'recovery': return '↻'
+    case 'skill': return '⚙'
+    case 'system': return '·'
     default: return '·'
   }
 }
@@ -91,6 +108,9 @@ function markerClasses(event: TimelineRow): string {
     case 'failure': return 'border-rose-300/60 bg-rose-400/15 text-rose-200 hover:bg-rose-400/25'
     case 'progress': return 'border-emerald-300/50 bg-emerald-300/15 text-emerald-200 hover:bg-emerald-300/25'
     case 'decision': return 'border-cyan-300/50 bg-cyan-300/15 text-cyan-100 hover:bg-cyan-300/25'
+    case 'recovery': return 'border-amber-300/60 bg-amber-300/15 text-amber-100 hover:bg-amber-300/25'
+    case 'skill': return 'border-violet-300/50 bg-violet-300/10 text-violet-200 hover:bg-violet-300/20'
+    case 'system': return 'border-slate-500/50 bg-slate-500/15 text-slate-300 hover:bg-slate-500/25'
     default: return 'border-slate-500/50 bg-slate-500/15 text-slate-300 hover:bg-slate-500/25'
   }
 }
@@ -123,11 +143,24 @@ const ticks = computed(() => [0, 25, 50, 75, 100].map((percent) => ({
 
 const selected = computed(() => props.events[props.selectedIndex] || null)
 
+function sourceLabel(event: TimelineRow): string {
+  const source = text(event.source).toLowerCase()
+  if (source === 'llm') return 'LLM'
+  if (source === 'skill') return 'Skill'
+  if (source === 'recovery') return 'Recovery'
+  if (source === 'milestone') return 'Milestone'
+  if (source === 'system') return 'System'
+  return ''
+}
+
 function when(event: TimelineRow): string {
   const frame = eventFrame(event)
   if (frame) return `frame ${frame.toLocaleString()}`
   const round = eventRound(event)
-  return round ? `round ${round}` : 'recorded'
+  if (round) return `round ${round}`
+  const at = number(event.at)
+  if (at) return new Date(at * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  return 'recorded'
 }
 </script>
 
@@ -135,8 +168,8 @@ function when(event: TimelineRow): string {
   <section class="rounded-md border border-white/8 bg-black/10 p-3">
     <div class="flex flex-wrap items-start justify-between gap-2">
       <div>
-        <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Playback</span>
-        <h3 class="mt-0.5 text-sm font-semibold text-slate-200">Run timeline</h3>
+        <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Live + recorded</span>
+        <h3 class="mt-0.5 text-sm font-semibold text-slate-200">Run activity</h3>
       </div>
       <span class="max-w-full truncate font-mono text-[10px] text-slate-500 xl:max-w-xl">
         {{ selected ? `${when(selected)} · ${eventTitle(selected)}` : `${layout.totalFrames.toLocaleString()} frames` }}
@@ -167,7 +200,7 @@ function when(event: TimelineRow): string {
         </button>
       </div>
       <div class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[9px] font-medium text-slate-600">
-        <span>○ Decision</span><span>■ Checkpoint</span><span>● Progress</span><span>◆ Failure</span>
+        <span>○ LLM</span><span>⚙ Skill</span><span>↻ Recovery</span><span>● Milestone</span><span>■ Checkpoint</span><span>◆ Failure</span>
       </div>
     </div>
     <p v-else class="mt-3 py-5 text-center text-xs text-slate-600">No persisted semantic events for this run.</p>
@@ -188,7 +221,10 @@ function when(event: TimelineRow): string {
           <span class="font-mono text-[9px] text-slate-600">{{ when(event) }}</span>
           <span class="text-[10px] text-cyan-200/80">{{ markerSymbol(event) }}</span>
           <span class="min-w-0">
-            <strong class="block truncate text-[11px] font-semibold text-slate-300">{{ eventTitle(event) }}</strong>
+            <span class="flex min-w-0 items-center gap-1.5">
+              <span v-if="sourceLabel(event)" class="shrink-0 rounded-sm border border-white/8 bg-white/[0.035] px-1 py-0.5 text-[8px] font-semibold tracking-[0.05em] text-slate-500 uppercase">{{ sourceLabel(event) }}</span>
+              <strong class="block min-w-0 truncate text-[11px] font-semibold text-slate-300">{{ eventTitle(event) }}</strong>
+            </span>
             <span class="mt-0.5 block truncate text-[10px] text-slate-600">{{ eventDetail(event) }}</span>
           </span>
         </button>
@@ -200,8 +236,15 @@ function when(event: TimelineRow): string {
             <span class="text-[10px] font-semibold tracking-[0.08em] text-cyan-300/70 uppercase">Selected event</span>
             <span class="font-mono text-[9px] text-slate-600">{{ when(selected) }}</span>
           </div>
-          <strong class="mt-2 block text-xs text-slate-200">{{ eventTitle(selected) }}</strong>
+          <div class="mt-2 flex items-center gap-2">
+            <span v-if="sourceLabel(selected)" class="rounded-sm border border-white/8 bg-white/[0.035] px-1.5 py-0.5 text-[9px] font-semibold tracking-[0.05em] text-slate-500 uppercase">{{ sourceLabel(selected) }}</span>
+            <strong class="block text-xs text-slate-200">{{ eventTitle(selected) }}</strong>
+          </div>
           <p class="mt-1 max-h-28 overflow-auto whitespace-pre-wrap text-[11px] leading-5 text-slate-400">{{ eventDetail(selected) }}</p>
+          <p v-if="number(selected.attempt) || number(selected.recovery_attempt)" class="mt-2 font-mono text-[9px] text-slate-600">
+            <span v-if="number(selected.attempt)">attempt {{ number(selected.attempt) }}</span>
+            <span v-if="number(selected.recovery_attempt)"> · recovery {{ number(selected.recovery_attempt) }}</span>
+          </p>
         </template>
         <p v-else class="py-5 text-center text-xs text-slate-600">Choose a marker to inspect that point in the run.</p>
       </div>

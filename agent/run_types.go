@@ -75,6 +75,18 @@ type ObjectiveTiming struct {
 	WallElapsed time.Duration
 }
 
+// ObjectiveActivity is an optional live observer event around one objective
+// transaction. It reports the semantic execution boundary without coupling the
+// agent package to farm/operator presentation.
+type ObjectiveActivity struct {
+	Stage     string
+	Objective string
+	Outcome   string
+	Error     string
+	Frame     uint64
+	Round     int
+}
+
 // Progress is one snapshot of how far a run has gotten.
 type Progress struct {
 	Round    int
@@ -191,4 +203,5 @@ type Budget struct {
 	CheckpointKeep         int
 	ResumeFrom             string
 	Cancel                 <-chan struct{}
+	OnObjective            func(ObjectiveActivity)
 }

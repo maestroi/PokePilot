@@ -75,6 +75,14 @@ func (w *Wall) tileRowLocked(t *Tile) tileRow {
 	}
 }
 
+func (w *Wall) tileRowWithActivityLocked(t *Tile) tileRow {
+	row := w.tileRowLocked(t)
+	if t != nil {
+		row.Activity = copyRunActivity(t.Activity)
+	}
+	return row
+}
+
 func (w *Wall) tileRowWithLineageLocked(t *Tile, lineage map[string]struct{}) tileRow {
 	row := w.tileRowLocked(t)
 	if t != nil && t.Finished {
@@ -134,7 +142,7 @@ func (w *Wall) snapshotRun(runID string) (tileRow, bool) {
 	w.mu.Lock()
 	t := w.tiles[runID]
 	if t != nil {
-		row := w.tileRowLocked(t)
+		row := w.tileRowWithActivityLocked(t)
 		w.mu.Unlock()
 		return row, true
 	}

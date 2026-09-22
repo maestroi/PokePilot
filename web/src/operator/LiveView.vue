@@ -185,7 +185,11 @@ const settingsRows = computed(() => {
       ['risk', policyLabel(run.risk_tolerance, 'balanced')],
       ['wild encounters', policyLabel(run.wild_encounters, 'planner')]
     )
-    rows.push(['model', llmProfileLabel(run)], ['reasoning', reasoningEffortLabel(run)])
+    rows.push(
+      ['model', llmProfileLabel(run)],
+      ['reasoning', reasoningEffortLabel(run)],
+      ['recovery mode', run.recovery_profile || 'strict']
+    )
   } else {
     rows.push(['speed', playSpeedLabel(run)], ['walk to', run.dest || '—'])
   }
@@ -209,7 +213,8 @@ const stateRows = computed(() => {
       ['last map', tileLabel(run)],
       ['frame', String(run.frame ?? 0)],
       ['fps', fpsLabel(run)],
-      ['attempts', String(run.attempts ?? 0)]
+      ['attempts', String(run.attempts ?? 0)],
+      ['recoveries', run.recovery_attempts ? String(run.recovery_attempts) : '']
     ].filter(([, value]) => value)
   }
   if (run.status === 'paused') {
@@ -219,7 +224,8 @@ const stateRows = computed(() => {
       ['detail', run.detail || ''],
       ['map', tileLabel(run)],
       ['frame', String(run.frame ?? 0)],
-      ['attempts', String(run.attempts ?? 0)]
+      ['attempts', String(run.attempts ?? 0)],
+      ['recoveries', run.recovery_attempts ? String(run.recovery_attempts) : '']
     ].filter(([, value]) => value)
   }
   return [
@@ -227,7 +233,8 @@ const stateRows = computed(() => {
     ['map', tileLabel(run)],
     ['frame', String(run.frame ?? 0)],
     ['fps', fpsLabel(run)],
-    ['attempt', String(run.attempts ?? 0)],
+    ['attempt', String((run.attempts ?? 0) + 1)],
+    ['recoveries', run.recovery_attempts ? String(run.recovery_attempts) : ''],
     ['so far', run.stop_so_far || '']
   ].filter(([, value]) => value)
 })
@@ -476,6 +483,7 @@ function warnPlay(stats: DashboardStats | undefined, key: string): boolean {
                 <span class="flex flex-wrap items-center gap-1">
                   <StatusBadge :tone="statusTone(run.status)">{{ railStatusLabel(run) }}</StatusBadge>
                   <StatusBadge v-if="isPlayStyleRun(run)" tone="info">{{ playStyleLabel(run) }}</StatusBadge>
+                  <StatusBadge v-if="run.planner === 'llm' && run.recovery_profile" :tone="run.recovery_profile === 'resilient' ? 'warning' : 'neutral'">{{ run.recovery_profile }}</StatusBadge>
                 </span>
                 <span class="mt-0.5 block truncate font-mono text-[10px] font-bold text-white" :title="run.run_id">{{ run.run_id }}</span>
                 <span class="block truncate text-[10px] text-[var(--poke-muted)]">{{ tileLabel(run) }}</span>

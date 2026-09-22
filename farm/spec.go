@@ -127,6 +127,18 @@ type Player struct {
 	Milestones  []string   `json:"milestones,omitempty"`
 }
 
+// ActivityEvent is the latest structured execution event from the runner.
+// It complements Trace: Trace is emulator/debug evidence, while ActivityEvent
+// names the subsystem and semantic action that actually happened.
+type ActivityEvent struct {
+	Source  string `json:"source"`
+	Kind    string `json:"kind"`
+	Summary string `json:"summary"`
+	Detail  string `json:"detail,omitempty"`
+	Frame   uint64 `json:"frame,omitempty"`
+	Round   int    `json:"round,omitempty"`
+}
+
 // Heartbeat is the small, frequent status push a runner sends while a
 // leased run is in progress.
 type Heartbeat struct {
@@ -171,6 +183,10 @@ type Heartbeat struct {
 	// Player is the live party/money/badges snapshot. Nil on older
 	// runners and before the first sample.
 	Player *Player `json:"player,omitempty"`
+	// Activity is the latest semantic execution event. It is intentionally a
+	// single event rather than an unbounded log; the wall deduplicates and
+	// retains a bounded operator history.
+	Activity *ActivityEvent `json:"activity,omitempty"`
 }
 
 // LLMStats is the planner tally a runner pushes on its heartbeats: round

@@ -64,14 +64,19 @@ type runDebugSummary struct {
 }
 
 type runTimelineEvent struct {
-	Type     string         `json:"type"`
-	At       int64          `json:"at,omitempty"`
-	Frame    *uint64        `json:"frame,omitempty"`
-	Round    int            `json:"round,omitempty"`
-	Message  string         `json:"message,omitempty"`
-	Progress *farm.Progress `json:"progress,omitempty"`
-	Question string         `json:"question,omitempty"`
-	Decision string         `json:"decision,omitempty"`
+	Type            string         `json:"type"`
+	Source          string         `json:"source,omitempty"`
+	Kind            string         `json:"kind,omitempty"`
+	At              int64          `json:"at,omitempty"`
+	Frame           *uint64        `json:"frame,omitempty"`
+	Round           int            `json:"round,omitempty"`
+	Attempt         int            `json:"attempt,omitempty"`
+	RecoveryAttempt int            `json:"recovery_attempt,omitempty"`
+	Message         string         `json:"message,omitempty"`
+	Detail          string         `json:"detail,omitempty"`
+	Progress        *farm.Progress `json:"progress,omitempty"`
+	Question        string         `json:"question,omitempty"`
+	Decision        string         `json:"decision,omitempty"`
 }
 
 type runDebugView struct {
@@ -369,31 +374,61 @@ func coverageProgressed(delta *farm.Coverage) bool {
 }
 
 func buildRunTimeline(run tileRow, report *farm.FinishReport) []runTimelineEvent {
-	events := make([]runTimelineEvent, 0, 5)
-	if run.QueuedAt != 0 {
-		events = append(events, runTimelineEvent{Type: "queued", At: run.QueuedAt, Message: "run queued"})
+	events := make([]runTimelineEvent, 0, len(run.Activity)+5)
+	hasQueued := false
+	hasDecision := false
+	hasTerminal := false
+	for _, activity := range run.Activity {
+		event := runTimelineEvent{
+			Type:            "activity",
+			Source:          activity.Source,
+			Kind:            activity.Kind,
+			At:              activity.At,
+			Round:           activity.Round,
+			Attempt:         activity.Attempt,
+			RecoveryAttempt: activity.RecoveryAttempt,
+			Message:         activity.Summary,
+			Detail:          activity.Detail,
+		}
+		if activity.Frame != 0 {
+			frame := activity.Frame
+			event.Frame = &frame
+		}
+		switch activity.Kind {
+		case "queued":
+			hasQueued = true
+		case "decision":
+			hasDecision = true
+			event.Decision = activity.Summary
+		case "goal", "terminal", "cancelled":
+			hasTerminal = true
+		}
+		events = append(events, event)
+	}
+	if run.QueuedAt != 0 && !hasQueued {
+		events = append(events, runTimelineEvent{Type: "queued", Source: "system", Kind: "queued", At: run.QueuedAt, Message: "Run queued"})
 	}
 	if report != nil && report.ProgressEarly != nil {
 		events = append(events, runTimelineEvent{
-			Type: "progress_early", Round: report.ProgressEarly.Round,
-			Message: "progress snapshot before the first objective", Progress: report.ProgressEarly,
+			Type: "progress_early", Source: "milestone", Kind: "progress", Round: report.ProgressEarly.Round,
+			Message: "Progress snapshot before the first objective", Progress: report.ProgressEarly,
 		})
 	}
-	if run.Question != "" || run.Decision != "" {
+	if (run.Question != "" || run.Decision != "") && !hasDecision {
 		frame := run.Frame
 		events = append(events, runTimelineEvent{
-			Type: "latest_decision", Frame: &frame, Message: "last persisted planner decision",
+			Type: "latest_decision", Source: "llm", Kind: "decision", Frame: &frame, Message: "Last persisted planner decision",
 			Question: run.Question, Decision: run.Decision,
 		})
 	}
 	if report != nil && report.ProgressFinal != nil {
 		frame := run.Frame
 		events = append(events, runTimelineEvent{
-			Type: "progress_final", Frame: &frame, Round: report.ProgressFinal.Round,
-			Message: "final progress snapshot", Progress: report.ProgressFinal,
+			Type: "progress_final", Source: "milestone", Kind: "progress", Frame: &frame, Round: report.ProgressFinal.Round,
+			Message: "Final progress snapshot", Progress: report.ProgressFinal,
 		})
 	}
-	if run.Reason != "" || (report != nil && report.Reason != "") {
+	if run.Status == statusDone && (run.Reason != "" || (report != nil && report.Reason != "")) && !hasTerminal {
 		frame := run.Frame
 		reason, detail := run.Reason, run.Detail
 		if report != nil {
@@ -403,7 +438,7 @@ func buildRunTimeline(run tileRow, report *farm.FinishReport) []runTimelineEvent
 		if detail != "" {
 			message += ": " + detail
 		}
-		events = append(events, runTimelineEvent{Type: "finished", At: run.EndedAt, Frame: &frame, Message: message})
+		events = append(events, runTimelineEvent{Type: "finished", Source: "system", Kind: "finish", At: run.EndedAt, Frame: &frame, Message: message, Detail: detail})
 	}
 	return events
 }

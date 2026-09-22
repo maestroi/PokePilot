@@ -81,14 +81,17 @@ type Tile struct {
 	RecoveryBadges   int
 	RecoveryEvents   int
 	RecoveryMaps     int
-	Frame            uint64
-	Map              uint8
-	X                uint8
-	Y                uint8
-	MapsVisited      int
-	Trace            string
-	Question         string
-	Decision         string
+	// Activity is the bounded operator-facing causal story. It survives
+	// retries so one resilient campaign remains understandable as a whole.
+	Activity    []runActivityEvent
+	Frame       uint64
+	Map         uint8
+	X           uint8
+	Y           uint8
+	MapsVisited int
+	Trace       string
+	Question    string
+	Decision    string
 	// Raw is the last verbatim model exchange from the heartbeat. Live
 	// only: it is deliberately absent from persistedTile, so a wall
 	// restart drops it rather than growing the state file.
@@ -191,6 +194,7 @@ type tileRow struct {
 	RecoveryBadges     int                  `json:"recovery_badges,omitempty"`
 	RecoveryEvents     int                  `json:"recovery_events,omitempty"`
 	RecoveryMaps       int                  `json:"recovery_maps,omitempty"`
+	Activity           []runActivityEvent   `json:"activity,omitempty"`
 	Reason             string               `json:"reason"`
 	Detail             string               `json:"detail"`
 	Issue              *IssueLink           `json:"issue,omitempty"`
@@ -284,6 +288,7 @@ type persistedTile struct {
 	RecoveryBadges     int                  `json:"recovery_badges,omitempty"`
 	RecoveryEvents     int                  `json:"recovery_events,omitempty"`
 	RecoveryMaps       int                  `json:"recovery_maps,omitempty"`
+	Activity           []runActivityEvent   `json:"activity,omitempty"`
 	Frame              uint64               `json:"frame"`
 	Map                uint8                `json:"map"`
 	X                  uint8                `json:"x"`
@@ -359,6 +364,7 @@ func (w *Wall) persistedStateLocked() persistedState {
 			RecoveryBadges:     t.RecoveryBadges,
 			RecoveryEvents:     t.RecoveryEvents,
 			RecoveryMaps:       t.RecoveryMaps,
+			Activity:           copyRunActivity(t.Activity),
 			Frame:              t.Frame,
 			Map:                t.Map,
 			X:                  t.X,
@@ -474,6 +480,7 @@ func (w *Wall) loadState() {
 			RecoveryBadges:     pt.RecoveryBadges,
 			RecoveryEvents:     pt.RecoveryEvents,
 			RecoveryMaps:       pt.RecoveryMaps,
+			Activity:           copyRunActivity(pt.Activity),
 			Frame:              pt.Frame,
 			Map:                pt.Map,
 			X:                  pt.X,
@@ -665,6 +672,7 @@ func (w *Wall) applySpec(runID string, spec farm.Spec) {
 	t.RecoveryBadges = 0
 	t.RecoveryEvents = 0
 	t.RecoveryMaps = 0
+	t.Activity = nil
 	t.Frame = 0
 	t.Map = 0
 	t.X = 0
@@ -685,6 +693,11 @@ func (w *Wall) applySpec(runID string, spec farm.Spec) {
 	t.Finished = false
 	t.ResumeFromRunID = ""
 	clearTileCircuit(t)
+	appendRunActivityLocked(t, runActivityEvent{
+		Source: "system", Kind: "queued", At: t.QueuedAt.Unix(), Attempt: 1,
+		Summary: "Run queued",
+		Detail:  fmt.Sprintf("recovery profile: %s", t.RecoveryProfile),
+	})
 }
 
 // handleLease hands out the oldest queued spec exactly once; 204 when the
@@ -720,6 +733,10 @@ func (w *Wall) handleLease(res http.ResponseWriter, req *http.Request) {
 	}
 	t.Status = statusLeased
 	t.lastUpdate = time.Now()
+	appendRunActivityLocked(t, runActivityEvent{
+		Source: "system", Kind: "leased", At: t.lastUpdate.Unix(), Attempt: t.Attempts + 1,
+		Summary: fmt.Sprintf("Attempt %d leased", t.Attempts+1),
+	})
 	spec := farm.Spec{
 		RunID:           t.RunID,
 		Attempt:         t.Attempts + 1,
@@ -774,6 +791,11 @@ func (w *Wall) handleHeartbeat(res http.ResponseWriter, req *http.Request) {
 		writeJSON(res, http.StatusConflict, map[string]string{"error": "run already finished: " + id})
 		return
 	}
+	previousStatus := t.Status
+	previousQuestion := t.Question
+	previousDecision := t.Decision
+	previousPlayer := t.Player
+	now := time.Now()
 	t.Status = statusRunning
 	t.Frame = hb.Frame
 	t.Map = hb.Map
@@ -790,7 +812,8 @@ func (w *Wall) handleHeartbeat(res http.ResponseWriter, req *http.Request) {
 	t.Stats = hb.Stats
 	t.Player = hb.Player
 	t.workerAddrs = hb.WorkerAddrs
-	t.lastUpdate = time.Now()
+	t.lastUpdate = now
+	appendHeartbeatActivityLocked(t, hb, now, previousStatus, previousQuestion, previousDecision, previousPlayer)
 	w.upsertWorkerLocked(hb.WorkerAddrs, id, hb.Version, t.lastUpdate)
 	cancel := w.cancel[id]
 	w.mu.Unlock()
@@ -1522,6 +1545,19 @@ func noteRecoveryProgressLocked(t *Tile, p *farm.Progress) {
 	if !advanced {
 		return
 	}
+	if t.RecoveryAttempts > 0 {
+		appendRunActivityLocked(t, runActivityEvent{
+			Source: "recovery", Kind: "recovered", Attempt: t.Attempts + 1,
+			RecoveryAttempt: t.RecoveryAttempts,
+			Summary:         "Recovery succeeded; progress advanced",
+			Detail:          fmt.Sprintf("badges %d · events %d · maps %d", p.Badges, p.Events, p.Maps),
+		})
+	}
+	appendRunActivityLocked(t, runActivityEvent{
+		Source: "milestone", Kind: "progress", Attempt: t.Attempts + 1,
+		Summary: "Progress frontier advanced",
+		Detail:  fmt.Sprintf("badges %d · events %d · maps %d", p.Badges, p.Events, p.Maps),
+	})
 	t.RecoveryBadges = p.Badges
 	t.RecoveryEvents = p.Events
 	t.RecoveryMaps = p.Maps
@@ -1560,7 +1596,40 @@ func (w *Wall) settleRun(t *Tile, reason, detail string, now time.Time) int {
 	if cancelled || reason == "cancelled" || reason == "done" {
 		terminal = true
 	}
+
+	if reason == "done" {
+		appendRunActivityLocked(t, runActivityEvent{
+			Source: "milestone", Kind: "goal", At: now.Unix(), Frame: t.Frame, Attempt: completed,
+			Summary: "Run goal completed",
+			Detail:  detail,
+		})
+	} else if cancelled || reason == "cancelled" {
+		appendRunActivityLocked(t, runActivityEvent{
+			Source: "system", Kind: "cancelled", At: now.Unix(), Frame: t.Frame, Attempt: completed,
+			Summary: "Run cancelled",
+			Detail:  detail,
+		})
+	} else {
+		source := "system"
+		if recoverable {
+			source = "recovery"
+		}
+		appendRunActivityLocked(t, runActivityEvent{
+			Source: source, Kind: "failure", At: now.Unix(), Frame: t.Frame, Attempt: completed,
+			RecoveryAttempt: t.RecoveryAttempts,
+			Summary:         fmt.Sprintf("Attempt %d stopped: %s", completed, reason),
+			Detail:          detail,
+		})
+	}
+
 	if terminal {
+		if reason != "done" && !cancelled && reason != "cancelled" {
+			appendRunActivityLocked(t, runActivityEvent{
+				Source: "system", Kind: "terminal", At: now.Unix(), Frame: t.Frame, Attempt: completed,
+				Summary: "Run stopped",
+				Detail:  fmt.Sprintf("%s: %s", reason, detail),
+			})
+		}
 		t.Status = statusDone
 		t.Reason = reason
 		t.Detail = detail
@@ -1575,6 +1644,12 @@ func (w *Wall) settleRun(t *Tile, reason, detail string, now time.Time) int {
 	// the retry is the outer goal supervisor: local agent/watchdog budgets stay
 	// bounded, but exhausting one escalates to a new checkpoint-backed attempt
 	// instead of terminating the campaign.
+	appendRunActivityLocked(t, runActivityEvent{
+		Source: "recovery", Kind: "retry", At: now.Unix(), Frame: t.Frame, Attempt: completed,
+		RecoveryAttempt: t.RecoveryAttempts,
+		Summary:         fmt.Sprintf("Recovery queued attempt %d", completed+1),
+		Detail:          fmt.Sprintf("%s: %s", reason, detail),
+	})
 	t.Status = statusQueued
 	t.Seed = rand.Int64()
 	t.Frame = 0
