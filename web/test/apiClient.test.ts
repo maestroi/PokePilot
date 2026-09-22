@@ -43,7 +43,7 @@ test('createRun generates a run id and surfaces API errors', async () => {
   const spec = {
     run_id: '', seed: 0, planner: 'llm', starter: '', dest: '', goal: 'Earn the Boulder Badge.',
     llm_profile: 'auto', play_style: 'progression', risk_tolerance: 'normal', wild_encounters: 'normal',
-    reasoning_effort: '', fps: 60, max_rounds: 0, max_frames: 0, endless: false, random_seed: false
+    reasoning_effort: '', fps: 60, max_rounds: 0, max_frames: 0, recovery_profile: 'resilient' as const, endless: false, random_seed: false
   }
   globalThis.fetch = async (_input, init) => {
     const body = JSON.parse(String(init?.body || '{}'))

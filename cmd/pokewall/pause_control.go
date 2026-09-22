@@ -199,6 +199,7 @@ func (w *Wall) handleResume(res http.ResponseWriter, _ *http.Request, id string)
 	// lineage.
 	t.ErrorAttempts = 0
 	t.LossRecoveries = 0
+	t.RecoveryAttempts = 0
 	clearTileCircuit(t)
 	t.workerAddrs = nil
 	t.lastUpdate = now
@@ -308,6 +309,13 @@ func clearFailureStreak(w *Wall, id string) {
 
 func (w *Wall) maybeAutoPauseRepeatedFailure(id string, before pauseFinishSnapshot, report farm.FinishReport) bool {
 	if !before.ok {
+		return false
+	}
+	// Resilient campaigns deliberately keep the goal alive. The durable
+	// control-plane circuit still records/report repeated fingerprints, but the
+	// local compatibility auto-pause must not turn that diagnostic threshold
+	// into a terminal operator intervention.
+	if before.row.RecoveryProfile.Resilient() {
 		return false
 	}
 

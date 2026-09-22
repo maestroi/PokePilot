@@ -168,6 +168,9 @@ func (w *Wall) handleCheckpointResume(res http.ResponseWriter, id string, reques
 	lostPrefix := retryPrefix + "no heartbeat for "
 	planner := t.Planner
 	lostRetry := previous > 0 && strings.HasPrefix(t.Detail, lostPrefix)
+	resilientRetry := previous > 0 && t.RecoveryProfile.Resilient() && planner == "llm" &&
+		strings.HasPrefix(t.Detail, retryPrefix) && !lostRetry
+	recoveryAttempts := t.RecoveryAttempts
 	endlessRetry := previous > 0 && t.Endless && planner == "llm" && strings.HasPrefix(t.Detail, retryPrefix) && !lostRetry
 	gymRetry := previous > 0 && !t.Endless && planner == "llm" && strings.HasPrefix(t.Detail, retryPrefix) && !lostRetry
 	lineageRetry := previous == 0 && t.Endless && planner == "llm" && t.ResumeFromRunID != ""
@@ -192,6 +195,8 @@ func (w *Wall) handleCheckpointResume(res http.ResponseWriter, id string, reques
 				cp, err = w.latestLineageMajorCheckpoint(id)
 			}
 		}
+	case resilientRetry:
+		cp, err = w.resilientResumeCheckpoint(id, planner, recoveryAttempts)
 	case endlessRetry:
 		cp, err = w.latestLineageResumeCheckpoint(id, planner)
 		if os.IsNotExist(err) {
@@ -218,6 +223,40 @@ func (w *Wall) handleCheckpointResume(res http.ResponseWriter, id string, reques
 		return
 	}
 	writeJSON(res, http.StatusOK, cp)
+}
+
+// resilientResumeCheckpoint turns repeated no-progress failures into a
+// deterministic rollback ladder. First retry stays near the fault so a changed
+// planner decision/seed can recover cheaply. Further failures back up across
+// major milestones one at a time; once no older retained milestone exists the
+// 204 path deliberately falls back to a fresh cartridge.
+func (w *Wall) resilientResumeCheckpoint(startID, planner string, recoveryAttempts int) (farm.ResumeCheckpoint, error) {
+	if recoveryAttempts <= 1 {
+		cp, err := w.latestLineageResumeCheckpoint(startID, planner)
+		if err == nil {
+			return cp, nil
+		}
+		if !os.IsNotExist(err) {
+			return farm.ResumeCheckpoint{}, err
+		}
+		return w.latestLineageMajorCheckpoint(startID)
+	}
+	return w.latestLineageMajorCheckpointRollback(startID, recoveryAttempts-2)
+}
+
+func (w *Wall) latestLineageMajorCheckpointRollback(startID string, rollback int) (farm.ResumeCheckpoint, error) {
+	latest, err := w.latestLineageMajorCheckpoint(startID)
+	if err != nil {
+		return farm.ResumeCheckpoint{}, err
+	}
+	if rollback <= 0 {
+		return latest, nil
+	}
+	badge, ok := majorCheckpointBadge(latest.State.Name)
+	if !ok || badge-rollback < 1 {
+		return farm.ResumeCheckpoint{}, os.ErrNotExist
+	}
+	return w.latestLineageMajorCheckpointAtOrBelow(startID, badge-rollback)
 }
 
 // objectiveFrame is the cumulative emulator frame embedded in an objective
@@ -326,6 +365,10 @@ func majorCheckpointBadge(name string) (int, bool) {
 }
 
 func (w *Wall) latestLineageMajorCheckpoint(startID string) (farm.ResumeCheckpoint, error) {
+	return w.latestLineageMajorCheckpointAtOrBelow(startID, 8)
+}
+
+func (w *Wall) latestLineageMajorCheckpointAtOrBelow(startID string, maxBadge int) (farm.ResumeCheckpoint, error) {
 	seen := map[string]struct{}{}
 	id := startID
 	bestBadge := 0
@@ -346,7 +389,7 @@ func (w *Wall) latestLineageMajorCheckpoint(startID string) (farm.ResumeCheckpoi
 		}
 		w.mu.Unlock()
 		if through > 0 {
-			cp, err := latestMajorResumeCheckpoint(w.dumpsDir, id, through)
+			cp, err := latestMajorResumeCheckpointAtOrBelow(w.dumpsDir, id, through, maxBadge)
 			if err == nil {
 				badge, ok := majorCheckpointBadge(cp.State.Name)
 				if ok && (!found || badge > bestBadge) {
@@ -367,6 +410,10 @@ func (w *Wall) latestLineageMajorCheckpoint(startID string) (farm.ResumeCheckpoi
 }
 
 func latestMajorResumeCheckpoint(dumpsDir, runID string, throughAttempt int) (farm.ResumeCheckpoint, error) {
+	return latestMajorResumeCheckpointAtOrBelow(dumpsDir, runID, throughAttempt, 8)
+}
+
+func latestMajorResumeCheckpointAtOrBelow(dumpsDir, runID string, throughAttempt, maxBadge int) (farm.ResumeCheckpoint, error) {
 	bestBadge := 0
 	var best farm.ResumeCheckpoint
 	found := false
@@ -386,7 +433,7 @@ func latestMajorResumeCheckpoint(dumpsDir, runID string, throughAttempt int) (fa
 			}
 			name := e.Name()
 			names = append(names, name)
-			if strings.HasPrefix(name, majorCheckpointPrefix) && strings.HasSuffix(name, ".state") {
+			if badge, ok := majorCheckpointBadge(name); ok && badge <= maxBadge {
 				states = append(states, name)
 			}
 		}

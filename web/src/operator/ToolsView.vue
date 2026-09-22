@@ -38,6 +38,7 @@ const form = reactive<RunSpec>({
   fps: 60,
   max_rounds: 0,
   max_frames: 0,
+  recovery_profile: 'resilient',
   endless: false,
   random_seed: false
 })
@@ -114,7 +115,8 @@ async function submit(): Promise<void> {
       play_style: isLLM.value ? form.play_style : '',
       risk_tolerance: isLLM.value ? form.risk_tolerance : '',
       wild_encounters: isLLM.value ? form.wild_encounters : '',
-      reasoning_effort: isLLM.value ? form.reasoning_effort : ''
+      reasoning_effort: isLLM.value ? form.reasoning_effort : '',
+      recovery_profile: isLLM.value ? form.recovery_profile : 'strict'
     }
     const response = await createRun(spec)
     const returnedID = typeof response.run_id === 'string' ? response.run_id : ''
@@ -282,6 +284,15 @@ async function submit(): Promise<void> {
             <option :value="0">Max · uncapped</option>
           </select>
           <span class="mt-1 block text-[11px] text-slate-600">Max keeps the existing 0 FPS wire value and runs as fast as the worker can emulate.</span>
+        </label>
+
+        <label v-if="isLLM" class="block">
+          <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Recovery</span>
+          <select v-model="form.recovery_profile" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400">
+            <option value="resilient">Resilient · keep pursuing the goal</option>
+            <option value="strict">Strict · stop after bounded recovery</option>
+          </select>
+          <span class="mt-1 block text-[11px] text-slate-600">Resilient escalates from local resume to progressively older milestone checkpoints instead of ending the campaign on a stuck/failed attempt.</span>
         </label>
 
         <label class="block">

@@ -311,6 +311,22 @@ func (w *Wall) pauseForFailureCircuit(id string, before pauseFinishSnapshot, rep
 	if !decision.Open || !before.ok {
 		return false
 	}
+	if before.row.RecoveryProfile.Resilient() {
+		// A circuit is still valuable evidence in resilient mode, but it is an
+		// escalation signal rather than a stop signal. Keep the queued retry
+		// alive, attach the fingerprint/progress metadata, and let a newly
+		// deployed runner naturally pick up the next attempt.
+		w.mu.Lock()
+		if current := w.tiles[id]; current != nil && !current.Finished {
+			setTileCircuit(current, decision)
+			current.StopSoFar = fmt.Sprintf("goal recovery %d; %s", current.RecoveryAttempts, circuitPauseNote(decision))
+			current.lastUpdate = time.Now()
+		}
+		w.mu.Unlock()
+		w.noteCircuitIssue(decision.Key, id, decision)
+		w.saveState()
+		return false
+	}
 	now := time.Now()
 	w.mu.Lock()
 	current := w.tiles[id]
@@ -441,6 +457,7 @@ func (w *Wall) releaseCircuitPeers(key, completedCanary string) int {
 		}
 		t.ErrorAttempts = 0
 		t.LossRecoveries = 0
+		t.RecoveryAttempts = 0
 		t.workerAddrs = nil
 		t.lastUpdate = now
 		delete(w.cancel, id)
@@ -540,6 +557,7 @@ func (w *Wall) maybeResumeCircuitCanary(key string, link IssueLink) bool {
 	}
 	target.ErrorAttempts = 0
 	target.LossRecoveries = 0
+	target.RecoveryAttempts = 0
 	target.workerAddrs = nil
 	target.lastUpdate = now
 	target.CircuitKind = "canary"

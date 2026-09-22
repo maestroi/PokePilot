@@ -48,7 +48,8 @@ const form = reactive({
   reasoning_effort: 'medium',
   fps: 0,
   max_rounds: 0,
-  max_frames: 0
+  max_frames: 0,
+  recovery_profile: 'resilient' as 'strict' | 'resilient'
 })
 
 watch(deployments, (next) => {
@@ -123,7 +124,8 @@ async function submit(): Promise<void> {
       reasoning_effort: form.reasoning_effort,
       fps: Number(form.fps || 0),
       max_rounds: Number(form.max_rounds || 0),
-      max_frames: Number(form.max_frames || 0)
+      max_frames: Number(form.max_frames || 0),
+      recovery_profile: form.recovery_profile
     })
     void retryExperiments()
   } catch (cause) {
@@ -267,6 +269,14 @@ const metrics = computed(() => {
           <option :value="120">2× · 120 FPS</option>
           <option :value="240">4× · 240 FPS</option>
         </select>
+      </label>
+      <label class="block">
+        <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Recovery</span>
+        <select v-model="form.recovery_profile" :class="fieldClass">
+          <option value="resilient">Resilient · measure recovery burden</option>
+          <option value="strict">Strict · fail on bounded recovery</option>
+        </select>
+        <span class="mt-1 block text-[10px] text-slate-600">Both arms use the same recovery policy, so weaker models can still be compared by time and recoveries to goal.</span>
       </label>
       <label class="block">
         <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Round cap</span>

@@ -5,6 +5,24 @@
 // farm, and farm imports nothing from them.
 package farm
 
+// RecoveryProfile controls what the wall does when a goal-driven runner stops
+// before satisfying its goal. Empty is intentionally equivalent to strict so
+// older queued specs preserve their historic bounded-retry semantics.
+type RecoveryProfile string
+
+const (
+	RecoveryProfileStrict    RecoveryProfile = "strict"
+	RecoveryProfileResilient RecoveryProfile = "resilient"
+)
+
+func (p RecoveryProfile) Valid() bool {
+	return p == "" || p == RecoveryProfileStrict || p == RecoveryProfileResilient
+}
+
+func (p RecoveryProfile) Resilient() bool {
+	return p == RecoveryProfileResilient
+}
+
 // Spec is one run's configuration, filled either by CLI flags (today) or
 // by a lease from the wall (farm mode). Field names mirror the flags in
 // cmd/pokepilot/main.go one for one.
@@ -50,6 +68,11 @@ type Spec struct {
 	// MaxFrames remains the last-resort emulator watchdog. Zero on the wire
 	// asks the runner to use its built-in frame safety limit.
 	MaxFrames int `json:"max_frames"`
+	// RecoveryProfile is orthogonal to the agent's bounded local retry budgets.
+	// Strict preserves the historic wall-level terminal budgets. Resilient keeps
+	// the campaign alive across error/failed/stuck/budget stops, escalating
+	// checkpoint rollback until progress resumes or the operator cancels.
+	RecoveryProfile RecoveryProfile `json:"recovery_profile,omitempty"`
 	// Endless asks the wall to queue a successor when this run settles,
 	// so idle workers keep picking up work. A successor of a failed
 	// campaign resumes from the parent's latest major checkpoint; a

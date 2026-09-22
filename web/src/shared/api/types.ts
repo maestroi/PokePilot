@@ -1,4 +1,5 @@
 export type RunStatus = 'queued' | 'leased' | 'running' | 'done' | string
+export type RecoveryProfile = 'strict' | 'resilient'
 
 export interface DashboardIssueLink {
   issue_number?: number
@@ -89,6 +90,11 @@ export interface DashboardRun {
   fps?: number
   max_rounds?: number
   max_frames?: number
+  recovery_profile?: RecoveryProfile
+  recovery_attempts?: number
+  recovery_badges?: number
+  recovery_events?: number
+  recovery_maps?: number
   endless?: boolean
   random_seed?: boolean
   queued_at?: number
@@ -234,6 +240,7 @@ export interface ExperimentRequest {
   fps?: number
   max_rounds?: number
   max_frames?: number
+  recovery_profile?: RecoveryProfile
 }
 
 export interface ExperimentArmSummary {
@@ -339,6 +346,7 @@ export interface RunSpec {
   fps: number
   max_rounds: number
   max_frames: number
+  recovery_profile: RecoveryProfile
   endless: boolean
   random_seed: boolean
 }
