@@ -33,12 +33,12 @@ const (
 	// Snorlax's Route 16 home tile from the ROM object table (probe: sprite 67
 	// at (26,10)). He blocks the lower road only; the upper passage Cut tree
 	// at (34,9) joins the Fly-house side to the Celadon edge east of him.
-	route16SnorlaxX        = 26
-	route16SnorlaxY        = 10
+	route16SnorlaxX = 26
+	route16SnorlaxY = 10
 	// The Cut tree on the upper passage. Solid in the static grid; walkable
 	// while the player can Cut, it joins the Fly-house side to the east road.
-	route16CutTreeX = 34
-	route16CutTreeY = 9
+	route16CutTreeX        = 34
+	route16CutTreeY        = 9
 	route17Map       uint8 = 0x1C
 	route18Map       uint8 = 0x1D
 	route19Map       uint8 = 0x1E
