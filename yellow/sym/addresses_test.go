@@ -82,6 +82,8 @@ func TestPhase0AddressesMatchSupportedYellowLayout(t *testing.T) {
 		{name: "wStatusFlags1", got: StatusFlags1, want: 0xD727},
 		{name: "wStatusFlags4", got: StatusFlags4, want: 0xD72D},
 		{name: "wElite4Flags", got: Elite4Flags, want: 0xD733},
+		{name: "wFirstLockTrashCanIndex", got: FirstLockTrashCanIndex, want: 0xD743},
+		{name: "wSecondLockTrashCanIndex", got: SecondLockTrashCanIndex, want: 0xD744},
 		{name: "wEventFlags", got: EventFlags, want: 0xD746},
 		{name: "wRivalStarter", got: RivalStarter, want: 0xD714},
 		{name: "wPlayerStarter", got: PlayerStarter, want: 0xD716},
