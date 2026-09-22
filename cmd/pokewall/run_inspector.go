@@ -428,7 +428,7 @@ func buildRunTimeline(run tileRow, report *farm.FinishReport) []runTimelineEvent
 			Message: "Final progress snapshot", Progress: report.ProgressFinal,
 		})
 	}
-	if (run.Reason != "" || (report != nil && report.Reason != "")) && !hasTerminal {
+	if run.Status == statusDone && (run.Reason != "" || (report != nil && report.Reason != "")) && !hasTerminal {
 		frame := run.Frame
 		reason, detail := run.Reason, run.Detail
 		if report != nil {
