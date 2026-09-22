@@ -486,3 +486,15 @@ func TestHeartbeatSnapTakesPlayerKeepsStats(t *testing.T) {
 		t.Fatalf("new lease kept the old player: %+v", got.Player)
 	}
 }
+
+func TestHeartbeatTrailCountsDistinctMaps(t *testing.T) {
+	trail := &heartbeatTrail{}
+	trail.add(0x01, 1, 1)
+	trail.add(0x01, 2, 1)
+	trail.add(0x02, 3, 3)
+	trail.add(0x01, 4, 4)
+
+	if got := trail.mapsVisited(); got != 2 {
+		t.Fatalf("mapsVisited() = %d, want 2 distinct maps", got)
+	}
+}

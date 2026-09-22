@@ -27,8 +27,8 @@ func TestSpectatorServesReadOnlySanitizedSurface(t *testing.T) {
 				"workers": [{"addr":"10.0.0.9:8099","version":"secret-runner-sha"}],
 				"runs": [{
 					"run_id":"run-1","status":"running","planner":"llm","starter":"bulbasaur","dest":"brock","goal":"Get the Boulder Badge",
-					"seed":999,"queued_at":100,"frame":456,"map":12,"x":15,"y":9,
-					"trace":"private trace","question":"private question","decision":"Travel to Pewter City","raw":"private raw exchange","stop_so_far":"No badge yet",
+					"seed":999,"queued_at":100,"frame":456,"map":12,"x":15,"y":9,"maps_visited":10,
+					"trace":"private trace","question":"private question\n1: Travel north\n2: Train party","decision":"","raw":"private raw exchange","stop_so_far":"No badge yet",
 					"stats":{"round":3,"rounds_left":7,"calls":4,"rounds":3,"rejected":1,"repeats":1,"last_seconds":2.5,"avg_seconds":2.0,"model":"private-model","backend":"fallback","prompt_tokens":5000},
 					"player":{"money":1200,"badges":["Boulder"],"party":[{"name":"BULBASAUR","level":12,"hp":25,"max_hp":31}],"bag_used":2,"bag_capacity":20,"bag":[{"name":"pokeball","quantity":5}],"dex_owned":1,"dex_seen":3,"dex_total":151,"milestones":["Pokédex"]},
 					"sprites":[{"x":8,"y":3,"picture_id":61,"slot":4}],"trail":[[12,11],[5,11]],
@@ -108,7 +108,7 @@ func TestSpectatorServesReadOnlySanitizedSurface(t *testing.T) {
 			t.Errorf("public snapshot leaked %q: %s", secret, watchBody)
 		}
 	}
-	for _, want := range []string{"run-1", "bulbasaur", "Get the Boulder Badge", "Travel to Pewter City", "BULBASAUR", "Boulder", "pokeball", "Pokédex", "bag_used", "dex_owned"} {
+	for _, want := range []string{"run-1", "bulbasaur", "Get the Boulder Badge", "BULBASAUR", "Boulder", "pokeball", "Pokédex", "bag_used", "dex_owned", `"maps_visited":10`, `"planner_waiting":true`, `"planner_options":2`} {
 		if !bytes.Contains(watchBody, []byte(want)) {
 			t.Errorf("public snapshot missing %q: %s", want, watchBody)
 		}
@@ -119,6 +119,9 @@ func TestSpectatorServesReadOnlySanitizedSurface(t *testing.T) {
 	}
 	if len(decoded.Runs) != 1 || decoded.Runs[0].Stats == nil || decoded.Runs[0].Stats.Round != 3 {
 		t.Fatalf("decoded snapshot = %+v", decoded)
+	}
+	if decoded.Runs[0].MapsVisited != 10 || !decoded.Runs[0].PlannerWaiting || decoded.Runs[0].PlannerOptions != 2 {
+		t.Fatalf("public live telemetry = %+v, want maps=10 planner_waiting=true planner_options=2", decoded.Runs[0])
 	}
 	if len(decoded.Runs[0].Sprites) != 1 || decoded.Runs[0].Sprites[0].X != 8 || decoded.Runs[0].Sprites[0].Y != 3 {
 		t.Fatalf("public sprites = %+v", decoded.Runs[0].Sprites)

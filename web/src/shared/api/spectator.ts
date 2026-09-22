@@ -61,6 +61,9 @@ export interface SpectatorRun {
   map?: number
   x?: number
   y?: number
+  maps_visited?: number
+  planner_waiting?: boolean
+  planner_options?: number
   decision?: string
   stop_so_far?: string
   stats?: SpectatorStats

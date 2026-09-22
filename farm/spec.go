@@ -130,12 +130,13 @@ type Player struct {
 // Heartbeat is the small, frequent status push a runner sends while a
 // leased run is in progress.
 type Heartbeat struct {
-	RunID string `json:"run_id"`
-	Frame uint64 `json:"frame"`
-	Map   uint8  `json:"map"`
-	X     uint8  `json:"x"`
-	Y     uint8  `json:"y"`
-	Trace string `json:"trace"`
+	RunID       string `json:"run_id"`
+	Frame       uint64 `json:"frame"`
+	Map         uint8  `json:"map"`
+	X           uint8  `json:"x"`
+	Y           uint8  `json:"y"`
+	MapsVisited int    `json:"maps_visited,omitempty"`
+	Trace       string `json:"trace"`
 	// Sprites are the current live map objects (slots 1..15). Trail is a
 	// bounded history of recent positions on this map, oldest first. Both
 	// are live-only and optional for compatibility with older runners.

@@ -49,6 +49,7 @@ func (w *Wall) tileRowLocked(t *Tile) tileRow {
 		Map:                t.Map,
 		X:                  t.X,
 		Y:                  t.Y,
+		MapsVisited:        t.MapsVisited,
 		Trace:              t.Trace,
 		Question:           t.Question,
 		Decision:           t.Decision,

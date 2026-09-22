@@ -49,27 +49,30 @@ type spectatorSummary struct {
 }
 
 type spectatorRun struct {
-	RunID       string           `json:"run_id"`
-	Status      string           `json:"status"`
-	Starter     string           `json:"starter,omitempty"`
-	Dest        string           `json:"dest,omitempty"`
-	Goal        string           `json:"goal,omitempty"`
-	QueuedAt    int64            `json:"queued_at,omitempty"`
-	EndedAt     int64            `json:"ended_at,omitempty"`
-	Frame       uint64           `json:"frame"`
-	Map         uint8            `json:"map"`
-	X           uint8            `json:"x"`
-	Y           uint8            `json:"y"`
-	Decision    string           `json:"decision,omitempty"`
-	StopSoFar   string           `json:"stop_so_far,omitempty"`
-	Stats       *spectatorStats  `json:"stats,omitempty"`
-	Player      *farm.Player     `json:"player,omitempty"`
-	Sprites     []farm.MapSprite `json:"sprites,omitempty"`
-	Trail       [][2]uint8       `json:"trail,omitempty"`
-	Attempts    int              `json:"attempts,omitempty"`
-	Reason      string           `json:"reason,omitempty"`
-	ReplayReady bool             `json:"replay_ready,omitempty"`
-	Highlight   string           `json:"highlight,omitempty"`
+	RunID          string           `json:"run_id"`
+	Status         string           `json:"status"`
+	Starter        string           `json:"starter,omitempty"`
+	Dest           string           `json:"dest,omitempty"`
+	Goal           string           `json:"goal,omitempty"`
+	QueuedAt       int64            `json:"queued_at,omitempty"`
+	EndedAt        int64            `json:"ended_at,omitempty"`
+	Frame          uint64           `json:"frame"`
+	Map            uint8            `json:"map"`
+	X              uint8            `json:"x"`
+	Y              uint8            `json:"y"`
+	MapsVisited    int              `json:"maps_visited,omitempty"`
+	PlannerWaiting bool             `json:"planner_waiting,omitempty"`
+	PlannerOptions int              `json:"planner_options,omitempty"`
+	Decision       string           `json:"decision,omitempty"`
+	StopSoFar      string           `json:"stop_so_far,omitempty"`
+	Stats          *spectatorStats  `json:"stats,omitempty"`
+	Player         *farm.Player     `json:"player,omitempty"`
+	Sprites        []farm.MapSprite `json:"sprites,omitempty"`
+	Trail          [][2]uint8       `json:"trail,omitempty"`
+	Attempts       int              `json:"attempts,omitempty"`
+	Reason         string           `json:"reason,omitempty"`
+	ReplayReady    bool             `json:"replay_ready,omitempty"`
+	Highlight      string           `json:"highlight,omitempty"`
 }
 
 type spectatorStats struct {
@@ -93,7 +96,8 @@ type spectatorStats struct {
 // the spectator trust boundary.
 type spectatorSourceRun struct {
 	spectatorRun
-	Issue json.RawMessage `json:"issue,omitempty"`
+	Question string          `json:"question,omitempty"`
+	Issue    json.RawMessage `json:"issue,omitempty"`
 }
 
 type spectatorSourceDashboard struct {
@@ -321,8 +325,8 @@ func mergeSpectatorSources(parts ...spectatorSourceDashboard) spectatorSourceDas
 	return out
 }
 
-// publicSpectatorRuns keeps every in-flight run, but finished runs are a
-// curated replay archive rather than raw history. A finished run must both be
+// publicSpectatorRuns keeps only actively broadcasting runs (running or
+// leased). Finished runs are a curated replay archive rather than raw history. A finished run must both be
 // noteworthy and already have a cached video. Goal completion is inherently
 // noteworthy; a linked engineering issue means the run was selected for
 // analysis. Ordinary failures and recordings still remain available privately
@@ -330,8 +334,9 @@ func mergeSpectatorSources(parts ...spectatorSourceDashboard) spectatorSourceDas
 func publicSpectatorRuns(ctx context.Context, runs []spectatorSourceRun, catalog *spectatorReplayCatalog) []spectatorRun {
 	active := make([]spectatorRun, 0, len(runs))
 	for _, run := range runs {
-		if run.Status != "done" {
-			active = append(active, run.spectatorRun)
+		switch run.Status {
+		case "running", "leased":
+			active = append(active, publicLiveSpectatorRun(run))
 		}
 	}
 
@@ -369,6 +374,31 @@ func publicSpectatorRuns(ctx context.Context, runs []spectatorSourceRun, catalog
 	}
 	catalog.setAllowed(allowed)
 	return append(active, done...)
+}
+
+func publicLiveSpectatorRun(run spectatorSourceRun) spectatorRun {
+	publicRun := run.spectatorRun
+	question := strings.TrimSpace(run.Question)
+	publicRun.PlannerWaiting = question != "" && strings.TrimSpace(run.Decision) == ""
+	if publicRun.PlannerWaiting {
+		publicRun.PlannerOptions = spectatorPlannerOptions(question)
+	}
+	return publicRun
+}
+
+func spectatorPlannerOptions(question string) int {
+	count := 0
+	for _, line := range strings.Split(question, "\n") {
+		line = strings.TrimSpace(line)
+		colon := strings.IndexByte(line, ':')
+		if colon <= 0 {
+			continue
+		}
+		if _, err := strconv.Atoi(strings.TrimSpace(line[:colon])); err == nil {
+			count++
+		}
+	}
+	return count
 }
 
 func spectatorHighlight(run spectatorSourceRun) string {
@@ -522,11 +552,12 @@ func spectatorRuns(runs []spectatorRun) []spectatorRun {
 	active := make([]spectatorRun, 0, len(runs))
 	done := make([]spectatorRun, 0, len(runs))
 	for _, run := range runs {
-		if run.Status == "done" {
+		switch run.Status {
+		case "done":
 			done = append(done, run)
-			continue
+		case "running", "leased":
+			active = append(active, run)
 		}
-		active = append(active, run)
 	}
 	if len(done) > spectatorHistoryLimit {
 		done = done[len(done)-spectatorHistoryLimit:]
