@@ -615,6 +615,8 @@ func TestOfferMapObjects(t *testing.T) {
 func TestOfferDoesNotRepeatCompletedTalk(t *testing.T) {
 	obs := Observation{GameID: testGameID,
 		Map: 0x28,
+		// Starter already chosen, so talk stays on the menu.
+		PartyCount: 1,
 		MapObjects: []MapObject{
 			{X: 8, Y: 3, Kind: "person"},
 			{X: 5, Y: 2, Kind: "person"},
