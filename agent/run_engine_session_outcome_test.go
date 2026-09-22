@@ -19,32 +19,36 @@ func recoverableSessionResult(obj Objective, cause string, final Observation) Ob
 	}
 }
 
-func TestRunFailurePolicyCatchHuntExhaustionDoesNotSpendFailureBudget(t *testing.T) {
-	policy := newRunFailurePolicy(2)
-	obj := Objective{Kind: KindCatch, Species: SpeciesID("nidoran♀")}
-	result := recoverableSessionResult(obj, "catch_hunt_exhausted", Observation{
-		Location:   "route 22",
-		PartyCount: 1,
-		Party:      []PartyMon{{Species: SpeciesID("bulbasaur"), Level: 12}},
-	})
+func TestRunFailurePolicyHuntExhaustionDoesNotSpendFailureBudget(t *testing.T) {
+	for _, cause := range []string{"catch_hunt_exhausted", "fishing_hunt_exhausted"} {
+		policy := newRunFailurePolicy(2)
+		obj := Objective{Kind: KindCatch, Species: SpeciesID("nidoran♀")}
+		result := recoverableSessionResult(obj, cause, Observation{
+			Location:   "route 22",
+			PartyCount: 1,
+			Party:      []PartyMon{{Species: SpeciesID("bulbasaur"), Level: 12}},
+		})
 
-	for i := 0; i < 4; i++ {
-		got := policy.recoverable(obj, result, false, 12)
-		if got.Stop != StopUnset || !got.Recovered {
-			t.Fatalf("catch miss %d = %+v; bounded stochastic miss must remain recoverable", i+1, got)
+		for i := 0; i < 4; i++ {
+			got := policy.recoverable(obj, result, false, 12)
+			if got.Stop != StopUnset || !got.Recovered {
+				t.Fatalf("%s miss %d = %+v; bounded stochastic miss must remain recoverable", cause, i+1, got)
+			}
 		}
 	}
 }
 
-func TestRunFailurePolicyCatchHuntExhaustionStillReplansStrategically(t *testing.T) {
-	policy := newRunFailurePolicy(2)
-	obj := Objective{Kind: KindCatch, Species: SpeciesID("nidoran♀")}
-	result := recoverableSessionResult(obj, "catch_hunt_exhausted", Observation{Location: "route 22"})
+func TestRunFailurePolicyHuntExhaustionStillReplansStrategically(t *testing.T) {
+	for _, cause := range []string{"catch_hunt_exhausted", "fishing_hunt_exhausted"} {
+		policy := newRunFailurePolicy(2)
+		obj := Objective{Kind: KindCatch, Species: SpeciesID("nidoran♀")}
+		result := recoverableSessionResult(obj, cause, Observation{Location: "route 22"})
 
-	for i := 0; i < 3; i++ {
-		got := policy.recoverable(obj, result, true, 0)
-		if got.Stop != StopUnset || !got.Recovered || got.ReplanReason != "objective_failed" {
-			t.Fatalf("strategic catch miss %d = %+v; want recovered replan without escalation stop", i+1, got)
+		for i := 0; i < 3; i++ {
+			got := policy.recoverable(obj, result, true, 0)
+			if got.Stop != StopUnset || !got.Recovered || got.ReplanReason != "objective_failed" {
+				t.Fatalf("strategic %s miss %d = %+v; want recovered replan without escalation stop", cause, i+1, got)
+			}
 		}
 	}
 }
