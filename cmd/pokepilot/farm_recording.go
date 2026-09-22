@@ -193,11 +193,11 @@ func finishRunWithRecording(m *emu.Emu, client *farm.Client, spec farm.Spec, rea
 	if failureArtifact, err := farm.NewObjectiveFailureArtifact(failures); err != nil {
 		log.Printf("farm: %s: objective failure telemetry: %v", report.RunID, err)
 	} else if failureArtifact.Name != "" {
-		candidate := append(append([]farm.Artifact(nil), report.Artifacts...), failureArtifact)
-		if err := farm.ValidateFinishArtifacts(farm.FinishReport{Artifacts: candidate, SeedBurn: report.SeedBurn}); err != nil {
+		evicted, err := appendPriorityFinishArtifact(&report, failureArtifact)
+		if err != nil {
 			log.Printf("farm: %s: omit %s: %v", report.RunID, failureArtifact.Name, err)
-		} else {
-			report.Artifacts = candidate
+		} else if len(evicted) > 0 {
+			log.Printf("farm: %s: evicted lower-priority artifacts %v to preserve %s", report.RunID, evicted, failureArtifact.Name)
 		}
 	}
 	appendFailureReproArtifacts(&report, failures)
