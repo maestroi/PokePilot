@@ -12,6 +12,7 @@ import {
   TrophyIcon
 } from '@heroicons/vue/20/solid'
 import type { SpectatorRun, SpectatorSummary } from '../shared/api/spectator'
+import { MAP_CATALOG } from '../shared/mapCatalog'
 import {
   goalProgress,
   isLiveRun,
@@ -27,10 +28,8 @@ import {
 const props = defineProps<{
   run: SpectatorRun
   liveRuns: SpectatorRun[]
-  recentRuns: SpectatorRun[]
   summary: SpectatorSummary
   frameUrl: string
-  replayUrl: string
 }>()
 
 const emit = defineEmits<{
@@ -39,10 +38,9 @@ const emit = defineEmits<{
 
 const badges = computed(() => props.run.player?.badges?.length || 0)
 const party = computed(() => props.run.player?.party?.length || 0)
-const replayCount = computed(() => props.recentRuns.filter((run) => run.replay_ready).length)
 const visibleLiveRuns = computed(() => props.liveRuns.filter((run) => isLiveRun(run)).slice(0, 5))
 const goal = computed(() => goalProgress(props.run))
-const headlineAccent = computed(() => isLiveRun(props.run) ? 'live.' : props.run.status === 'done' ? 'on replay.' : 'in progress.')
+const mapProgress = computed(() => `${Number(props.run.maps_visited || 0)}/${MAP_CATALOG.length}`)
 
 function watch(run: SpectatorRun): void {
   emit('select', run)
@@ -65,7 +63,7 @@ function watch(run: SpectatorRun): void {
 
         <h1 class="mt-5 max-w-3xl text-4xl font-black tracking-[-0.045em] text-white sm:text-5xl lg:text-6xl xl:text-[4.4rem] xl:leading-[0.98]">
           Watch AI play games,
-          <span class="public-home-accent block">{{ headlineAccent }}</span>
+          <span class="public-home-accent block">live.</span>
         </h1>
 
         <p class="mt-5 max-w-2xl text-sm leading-7 text-slate-300 sm:text-base">
@@ -80,7 +78,7 @@ function watch(run: SpectatorRun): void {
             @click="watch(run)"
           >
             <PlayIcon class="size-4" aria-hidden="true" />
-            {{ isLiveRun(run) ? 'Watch live' : 'Watch featured replay' }}
+            Watch live
             <ArrowRightIcon class="size-4 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
           </button>
           <a
@@ -97,7 +95,7 @@ function watch(run: SpectatorRun): void {
             <SignalIcon class="size-3.5 text-emerald-300" aria-hidden="true" />
             {{ summary.live }} live now
           </span>
-          <span>{{ summary.completed }} completed public runs</span>
+          <span>Only active broadcasts appear here</span>
           <a href="/replays" class="font-semibold text-slate-300 hover:text-white">Replay library →</a>
         </div>
       </div>
@@ -110,13 +108,11 @@ function watch(run: SpectatorRun): void {
               <span
                 :class="[
                   'inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-black tracking-[0.12em] uppercase ring-1',
-                  isLiveRun(run)
-                    ? 'bg-emerald-400/12 text-emerald-200 ring-emerald-300/25'
-                    : 'bg-violet-400/12 text-violet-200 ring-violet-300/25'
+                  'bg-emerald-400/12 text-emerald-200 ring-emerald-300/25'
                 ]"
               >
-                <span :class="['size-1.5 rounded-full', isLiveRun(run) ? 'animate-pulse bg-emerald-300' : 'bg-violet-300']" />
-                {{ isLiveRun(run) ? 'Live' : 'Featured' }}
+                <span class="size-1.5 animate-pulse rounded-full bg-emerald-300" />
+                Live
               </span>
               <div class="min-w-0">
                 <div class="truncate text-sm font-extrabold text-white">{{ runTitle(run) }}</div>
@@ -130,17 +126,8 @@ function watch(run: SpectatorRun): void {
 
           <div class="grid gap-3 lg:grid-cols-[minmax(0,1.35fr)_minmax(16rem,0.65fr)]">
             <div class="relative min-h-[18rem] overflow-hidden rounded-xl border border-white/10 bg-black/55 shadow-inner sm:min-h-[22rem]">
-              <video
-                v-if="replayUrl"
-                :key="run.run_id"
-                :src="replayUrl"
-                class="absolute inset-0 h-full w-full object-contain object-center [image-rendering:pixelated]"
-                controls
-                preload="metadata"
-                playsinline
-              />
               <img
-                v-else-if="frameUrl"
+                v-if="frameUrl"
                 :src="frameUrl"
                 :alt="`Live frame for ${run.run_id}`"
                 class="absolute inset-0 h-full w-full object-contain object-center [image-rendering:pixelated]"
@@ -151,7 +138,7 @@ function watch(run: SpectatorRun): void {
                     <PlayIcon class="size-5 text-cyan-300" aria-hidden="true" />
                   </div>
                   <p class="mt-3 text-xs font-semibold text-slate-400">
-                    {{ run.status === 'queued' ? 'Waiting for a worker' : 'Waiting for the next public frame' }}
+                    Waiting for the next public frame
                   </p>
                 </div>
               </div>
@@ -226,24 +213,24 @@ function watch(run: SpectatorRun): void {
         </div>
       </div>
       <div class="public-stat">
+        <GlobeAltIcon class="size-5 text-blue-300" aria-hidden="true" />
+        <div>
+          <strong>{{ mapProgress }}</strong>
+          <span>Maps explored</span>
+        </div>
+      </div>
+      <div class="public-stat">
+        <BoltIcon class="size-5 text-violet-300" aria-hidden="true" />
+        <div>
+          <strong>{{ run.stats?.round ?? 0 }}</strong>
+          <span>Planner rounds</span>
+        </div>
+      </div>
+      <div class="public-stat">
         <TrophyIcon class="size-5 text-amber-300" aria-hidden="true" />
         <div>
-          <strong>{{ summary.completed }}</strong>
-          <span>Completed</span>
-        </div>
-      </div>
-      <div class="public-stat">
-        <QueueListIcon class="size-5 text-blue-300" aria-hidden="true" />
-        <div>
-          <strong>{{ summary.queued }}</strong>
-          <span>Queued</span>
-        </div>
-      </div>
-      <div class="public-stat">
-        <PlayIcon class="size-5 text-violet-300" aria-hidden="true" />
-        <div>
-          <strong>{{ replayCount }}</strong>
-          <span>Recent replays</span>
+          <strong>{{ badges }}</strong>
+          <span>Badges</span>
         </div>
       </div>
     </div>
