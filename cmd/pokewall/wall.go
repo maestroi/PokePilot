@@ -83,15 +83,15 @@ type Tile struct {
 	RecoveryMaps     int
 	// Activity is the bounded operator-facing causal story. It survives
 	// retries so one resilient campaign remains understandable as a whole.
-	Activity []runActivityEvent
-	Frame    uint64
-	Map              uint8
-	X                uint8
-	Y                uint8
-	MapsVisited      int
-	Trace            string
-	Question         string
-	Decision         string
+	Activity    []runActivityEvent
+	Frame       uint64
+	Map         uint8
+	X           uint8
+	Y           uint8
+	MapsVisited int
+	Trace       string
+	Question    string
+	Decision    string
 	// Raw is the last verbatim model exchange from the heartbeat. Live
 	// only: it is deliberately absent from persistedTile, so a wall
 	// restart drops it rather than growing the state file.
