@@ -376,6 +376,7 @@ MODE=$(printf '%s' "$PICK_JSON" | json_field mode)
 HEAD_REF=$(printf '%s' "$PICK_JSON" | json_field head_ref)
 PR_NUMBER=$(printf '%s' "$PICK_JSON" | json_field pr_number)
 PR_URL=$(printf '%s' "$PICK_JSON" | json_field pr_url)
+ISSUE_NUMBER=$(printf '%s' "$PICK_JSON" | json_field issue_number)
 if [ -z "$KEY" ]; then
 	log "picker returned empty key; skip"
 	exit 0
@@ -536,10 +537,14 @@ if ! git -C "$POKEPILOT_TRIAGE_TREE" rev-parse --verify "origin/$branch" >/dev/n
 	exit 0
 fi
 
+farm_issue_marker=""
+if [ -n "$ISSUE_NUMBER" ]; then
+	farm_issue_marker=" [farm-issue:${ISSUE_NUMBER}]"
+fi
 set +e
 created_pr_url=$(gh pr create --repo "$(gh_repo)" --head "$branch" \
 	--title "fix(farm): ${EXAMPLE} ${marker}" \
-	--body "Unattended ${AGENT_BACKEND} repair attempt for run \`${RUN_ID}\` (${marker}). Solver: \`${SOLVER_MODEL}\`. Solver attempt: \`${ATTEMPT_ID}\`.")
+	--body "Unattended ${AGENT_BACKEND} repair attempt for run \`${RUN_ID}\` (${marker}).${farm_issue_marker} Solver: \`${SOLVER_MODEL}\`. Solver attempt: \`${ATTEMPT_ID}\`.")
 pr_status=$?
 set -e
 if [ "$pr_status" -ne 0 ]; then
