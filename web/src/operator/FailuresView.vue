@@ -54,6 +54,17 @@ function groupTitle(group: TriageGroup): string {
   return group.pattern || group.detail || group.example || group.fingerprint || group.key
 }
 
+function solverSummary(group: TriageGroup): string {
+  const attempts = group.issue?.solver_attempts || []
+  if (!attempts.length) return ''
+  const latest = attempts[attempts.length - 1]
+  const model = latest.model || latest.backend || 'unknown model'
+  const count = attempts.length
+  const state = String(latest.state || '').replaceAll('_', ' ')
+  const verified = group.issue?.verification_state === 'verified' ? ' · verified' : ''
+  return `last solver: ${model} · ${count} attempt${count === 1 ? '' : 's'}${state ? ` · ${state}` : ''}${verified}`
+}
+
 function exampleRuns(group: TriageGroup): string[] {
   const candidates = group.run_ids || group.runs || group.examples || []
   return candidates.slice(0, 5).map(String)
@@ -200,6 +211,7 @@ function retry(): void {
                 <div class="flex flex-wrap items-center gap-2">
                   <StatusBadge tone="danger">{{ Number(group.count || 0) }} occurrence{{ Number(group.count || 0) === 1 ? '' : 's' }}</StatusBadge>
                   <StatusBadge v-if="group.issue?.issue_number" :tone="group.issue?.stale ? 'warning' : 'info'">Issue #{{ group.issue.issue_number }}</StatusBadge>
+                  <StatusBadge v-if="solverSummary(group)" tone="warning">{{ solverSummary(group) }}</StatusBadge>
                   <span class="font-mono text-[10px] text-slate-600">{{ group.key }}</span>
                 </div>
                 <h3 class="mt-2 break-words text-sm font-semibold leading-6 text-slate-100">{{ groupTitle(group) }}</h3>
@@ -295,6 +307,7 @@ function retry(): void {
             <div class="flex flex-wrap items-center gap-2">
               <StatusBadge v-if="group.issue?.issue_number" tone="info">Issue #{{ group.issue.issue_number }}</StatusBadge>
               <StatusBadge tone="success">resolved</StatusBadge>
+              <StatusBadge v-if="solverSummary(group)" :tone="group.issue?.verification_state === 'verified' ? 'success' : 'warning'">{{ solverSummary(group) }}</StatusBadge>
               <StatusBadge tone="neutral">{{ Number(group.count || 0) }} recorded</StatusBadge>
             </div>
             <p class="mt-1 truncate text-xs text-slate-300" :title="groupTitle(group)">{{ groupTitle(group) }}</p>
