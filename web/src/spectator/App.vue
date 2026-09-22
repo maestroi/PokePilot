@@ -317,9 +317,8 @@ function activityTime(item: ActivityItem): string {
   >
     <template #summary>
       <template v-if="snapshot">
-        <span><strong class="text-white">{{ snapshot.summary.live }}</strong> live</span>
-        <span><strong class="text-white">{{ snapshot.summary.queued }}</strong> queued</span>
-        <span><strong class="text-white">{{ snapshot.summary.completed }}</strong> completed</span>
+        <span><strong class="text-white">{{ snapshot.summary.live }}</strong> live now</span>
+        <span v-if="selectedRun"><strong class="text-white">{{ mapsLabel }}</strong> maps explored</span>
       </template>
     </template>
 
@@ -389,9 +388,9 @@ function activityTime(item: ActivityItem): string {
           <div class="mx-auto flex size-12 items-center justify-center rounded-full bg-amber-300/10 ring-1 ring-amber-300/20">
             <span class="size-2.5 rounded-full bg-amber-300" />
           </div>
-          <h2 class="mt-4 text-xl font-semibold text-white">This run is no longer available</h2>
+          <h2 class="mt-4 text-xl font-semibold text-white">This run stopped broadcasting</h2>
           <p class="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-400">
-            The selected session may have ended unexpectedly, been cleaned up, or be temporarily missing from the public spectator feed.
+            It may have completed, paused, stalled, or stopped. Spectator mode only keeps actively running sessions in the live feed.
           </p>
           <div class="mx-auto mt-4 max-w-xl rounded-lg bg-black/20 px-3 py-2 ring-1 ring-white/8">
             <div class="text-[9px] font-semibold tracking-[0.08em] text-slate-600 uppercase">Requested run</div>
@@ -399,7 +398,7 @@ function activityTime(item: ActivityItem): string {
           </div>
         </div>
 
-        <div v-if="groupedRuns.live.length || groupedRuns.recent.length" class="mt-6 grid gap-4 md:grid-cols-2">
+        <div v-if="groupedRuns.live.length" class="mt-6">
           <section v-if="groupedRuns.live.length">
             <div class="mb-2 flex items-center justify-between gap-3">
               <h3 class="text-xs font-semibold text-slate-300">Available now</h3>
@@ -425,27 +424,7 @@ function activityTime(item: ActivityItem): string {
             </div>
           </section>
 
-          <section v-if="groupedRuns.recent.length">
-            <div class="mb-2 flex items-center justify-between gap-3">
-              <h3 class="text-xs font-semibold text-slate-300">Recent runs</h3>
-              <span class="text-[10px] text-slate-600">{{ groupedRuns.recent.length }} saved</span>
-            </div>
-            <div class="space-y-1.5">
-              <button
-                v-for="run in groupedRuns.recent.slice(0, 4)"
-                :key="run.run_id"
-                type="button"
-                class="w-full rounded-md bg-black/10 px-3 py-2 text-left ring-1 ring-white/8 transition-colors hover:bg-white/5 hover:ring-white/15"
-                @click="selectRun(run)"
-              >
-                <div class="flex items-center justify-between gap-3">
-                  <strong class="truncate text-xs text-slate-300">{{ runTitle(run) }}</strong>
-                  <StatusBadge :tone="runTone(run)">{{ runStatusLabel(run) }}</StatusBadge>
-                </div>
-                <p class="mt-1 truncate text-[10px] text-slate-600">{{ shortRunID(run.run_id) }} · {{ routeLabel(run) }}</p>
-              </button>
-            </div>
-          </section>
+
         </div>
 
         <div v-else class="mt-6 rounded-lg border border-white/8 bg-black/10 px-4 py-4 text-center">
@@ -462,9 +441,11 @@ function activityTime(item: ActivityItem): string {
       </div>
 
       <div v-else class="max-w-xl text-center">
-        <span class="mx-auto block size-2.5 animate-pulse rounded-full bg-cyan-300" />
-        <h2 class="mt-4 text-xl font-semibold text-white">No public run is live yet</h2>
-        <p class="mt-2 text-sm leading-6 text-slate-400">The page is connected and will pick up the next run automatically.</p>
+        <div class="live-radar mx-auto grid size-16 place-items-center rounded-full border border-cyan-300/20 bg-cyan-300/5">
+          <SignalIcon class="size-6 text-cyan-200" aria-hidden="true" />
+        </div>
+        <h2 class="mt-5 text-xl font-semibold text-white">No run is broadcasting right now</h2>
+        <p class="mt-2 text-sm leading-6 text-slate-400">Spectator mode is connected. It will automatically switch to the next live run when one starts.</p>
       </div>
     </div>
 
@@ -481,10 +462,8 @@ function activityTime(item: ActivityItem): string {
         v-if="!selectionPinned && snapshot"
         :run="selectedRun"
         :live-runs="groupedRuns.live"
-        :recent-runs="groupedRuns.recent"
         :summary="snapshot.summary"
         :frame-url="frameURL"
-        :replay-url="replayURL"
         @select="selectRun"
       />
 
@@ -517,12 +496,12 @@ function activityTime(item: ActivityItem): string {
               <div class="mt-1 font-mono text-lg font-semibold text-white">{{ selectedRun.player?.badges?.length || 0 }}</div>
             </div>
             <div class="bg-[#0b1119] px-3 py-2.5 text-center">
-              <div class="text-[9px] font-semibold tracking-[0.1em] text-slate-500 uppercase">Party</div>
-              <div class="mt-1 font-mono text-lg font-semibold text-white">{{ selectedRun.player?.party?.length || 0 }}/6</div>
+              <div class="text-[9px] font-semibold tracking-[0.1em] text-slate-500 uppercase">Maps</div>
+              <div class="mt-1 font-mono text-lg font-semibold text-white">{{ mapsLabel }}</div>
             </div>
             <div class="bg-[#0b1119] px-3 py-2.5 text-center">
-              <div class="text-[9px] font-semibold tracking-[0.1em] text-slate-500 uppercase">Bag</div>
-              <div class="mt-1 font-mono text-lg font-semibold text-white">{{ bagMeter(selectedRun.player) || '—' }}</div>
+              <div class="text-[9px] font-semibold tracking-[0.1em] text-slate-500 uppercase">Party</div>
+              <div class="mt-1 font-mono text-lg font-semibold text-white">{{ selectedRun.player?.party?.length || 0 }}/6</div>
             </div>
             <div class="bg-[#0b1119] px-3 py-2.5 text-center">
               <div class="text-[9px] font-semibold tracking-[0.1em] text-slate-500 uppercase">Dex</div>
@@ -542,7 +521,7 @@ function activityTime(item: ActivityItem): string {
 
       <div :class="['grid grid-cols-1 gap-3', theaterMode ? '' : 'xl:grid-cols-[minmax(0,2.2fr)_minmax(19rem,0.8fr)]']">
         <div class="space-y-3">
-          <Panel title="Game" :description="isLiveRun(selectedRun) ? 'Live gameplay broadcast' : 'Public replay highlight'" compact>
+          <Panel title="Game" description="Live gameplay broadcast" compact>
             <template #actions>
               <div class="flex items-center gap-1.5">
                 <button type="button" class="rounded-md bg-white/7 px-2 py-1 text-[10px] font-semibold text-slate-300 ring-1 ring-white/10 hover:bg-white/12 hover:text-white" @click="theaterMode = !theaterMode">
@@ -562,18 +541,8 @@ function activityTime(item: ActivityItem): string {
                 theaterMode ? 'min-h-[72vh]' : 'min-h-[26rem] sm:min-h-[34rem] lg:min-h-[39rem]'
               ]"
             >
-              <video
-                v-if="replayURL"
-                :key="selectedRun.run_id"
-                class="absolute inset-0 h-full w-full object-contain object-center [image-rendering:pixelated]"
-                :src="replayURL"
-                controls
-                preload="metadata"
-                playsinline
-              />
-
               <img
-                v-else-if="frameURL"
+                v-if="frameURL"
                 :src="frameURL"
                 :alt="`Live frame for ${selectedRun.run_id}`"
                 class="absolute inset-0 h-full w-full object-contain object-center [image-rendering:pixelated]"
@@ -584,9 +553,7 @@ function activityTime(item: ActivityItem): string {
                   <div class="mx-auto flex size-12 items-center justify-center rounded-full border border-white/10 bg-white/5">
                     <span :class="['size-2.5 rounded-full', isLiveRun(selectedRun) ? 'animate-pulse bg-emerald-300' : 'bg-slate-600']" />
                   </div>
-                  <p class="mt-3 text-sm font-medium text-slate-300">
-                    {{ selectedRun.status === 'queued' ? 'Waiting for a worker' : selectedRun.status === 'done' ? 'Replay is not public for this run' : 'Waiting for a live frame' }}
-                  </p>
+                  <p class="mt-3 text-sm font-medium text-slate-300">Waiting for the live stream</p>
                   <p v-if="frameState === 'error' && frameError" class="mt-1 text-xs text-amber-300/80">{{ frameError }}</p>
                 </div>
               </div>
@@ -725,27 +692,7 @@ function activityTime(item: ActivityItem): string {
             <p v-else class="py-4 text-center text-xs text-slate-500">Nothing is running right now.</p>
           </Panel>
 
-          <Panel title="Replay highlights" description="Completed public runs with a ready video." compact>
-            <div v-if="groupedRuns.recent.length" class="space-y-1.5">
-              <button
-                v-for="run in groupedRuns.recent"
-                :key="run.run_id"
-                type="button"
-                :class="[
-                  run.run_id === selectedRun.run_id ? 'bg-white/8 ring-white/15' : 'bg-black/10 ring-white/8 hover:bg-white/5',
-                  'w-full rounded-md px-3 py-2 text-left ring-1 transition-colors'
-                ]"
-                @click="selectRun(run)"
-              >
-                <div class="flex items-center justify-between gap-3">
-                  <strong class="truncate text-xs text-slate-300">{{ runTitle(run) }}</strong>
-                  <StatusBadge :tone="runTone(run)">{{ runStatusLabel(run) }}</StatusBadge>
-                </div>
-                <p class="mt-1 truncate text-[10px] text-slate-600">{{ shortRunID(run.run_id) }} · {{ routeLabel(run) }}</p>
-              </button>
-            </div>
-            <p v-else class="py-4 text-center text-xs text-slate-500">No public replay highlights are available yet.</p>
-          </Panel>
+
         </aside>
       </div>
     </div>
