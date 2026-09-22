@@ -79,7 +79,6 @@ func TestRunFailurePolicyTrainProgressResetsConsecutiveFailureBudget(t *testing.
 	}
 }
 
-
 func TestRunFailurePolicyMarksProductiveBoundedSessions(t *testing.T) {
 	cases := []struct {
 		cause string
