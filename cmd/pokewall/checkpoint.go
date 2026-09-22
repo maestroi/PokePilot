@@ -219,9 +219,37 @@ func (w *Wall) handleCheckpointResume(res http.ResponseWriter, id string, reques
 		}
 		// Resume is recovery, never a new reason for the run to fail. The
 		// runner interprets 204 as a clean fresh-start fallback.
+		w.mu.Lock()
+		if current := w.tiles[id]; current != nil && !current.Finished {
+			appendRunActivityLocked(current, runActivityEvent{
+				Source: "recovery", Kind: "fresh_start", Attempt: attempt,
+				RecoveryAttempt: recoveryAttempts,
+				Summary:         "No usable checkpoint; starting fresh",
+				Detail:          fmt.Sprintf("attempt %d recovery fallback", attempt),
+			})
+		}
+		w.mu.Unlock()
+		w.saveStateSoon()
 		res.WriteHeader(http.StatusNoContent)
 		return
 	}
+	kind := "resume"
+	summary := "Resuming from checkpoint"
+	if strings.HasPrefix(cp.State.Name, majorCheckpointPrefix) {
+		kind = "rollback"
+		summary = "Rolling back to major checkpoint"
+	}
+	w.mu.Lock()
+	if current := w.tiles[id]; current != nil && !current.Finished {
+		appendRunActivityLocked(current, runActivityEvent{
+			Source: "recovery", Kind: kind, Attempt: attempt,
+			RecoveryAttempt: recoveryAttempts,
+			Summary:         summary,
+			Detail:          cp.State.Name,
+		})
+	}
+	w.mu.Unlock()
+	w.saveStateSoon()
 	writeJSON(res, http.StatusOK, cp)
 }
 
