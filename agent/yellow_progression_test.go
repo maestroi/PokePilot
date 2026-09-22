@@ -69,14 +69,25 @@ func TestYellowEarlyProgressionStopsAfterHM01(t *testing.T) {
 	}
 }
 
-func TestYellowProgressionWaitsForOpeningResolution(t *testing.T) {
+func TestYellowProgressionResumesOpeningAfterStarterReceipt(t *testing.T) {
 	a := &yellowObjectiveAdapter{}
-	obs := Observation{GameID: yellowprofile.GameID, PartyCount: 1}
-	if got := a.ProgressionObjectives(obs); len(got) != 0 {
-		t.Fatalf("progression offered before lab rival resolution: %v", got)
+	obs := Observation{
+		GameID:     yellowprofile.GameID,
+		PartyCount: 1,
+		Story: ProgressState{
+			{ID: yellowprofile.ProgressYellowStarterReceived, Complete: true},
+		},
 	}
-	catalog := a.ObjectiveCatalog(obs)
-	if len(catalog.Starters) != 1 || catalog.Starters[0].Species != "pikachu" {
-		t.Fatalf("opening recovery starter catalog=%v, want pikachu", catalog.Starters)
+	got := a.ProgressionObjectives(obs)
+	if len(got) != 1 || got[0].Progress != yellowprofile.ProgressYellowLabRivalResolved {
+		t.Fatalf("opening recovery progression=%v, want lab rival resolution", got)
+	}
+}
+
+func TestYellowProgressionLeavesFreshOpeningToStarterProvider(t *testing.T) {
+	a := &yellowObjectiveAdapter{}
+	obs := Observation{GameID: yellowprofile.GameID}
+	if got := a.ProgressionObjectives(obs); len(got) != 0 {
+		t.Fatalf("fresh opening progression=%v, want starter provider ownership", got)
 	}
 }
