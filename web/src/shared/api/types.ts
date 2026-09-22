@@ -240,6 +240,7 @@ export interface ExperimentRequest {
   fps?: number
   max_rounds?: number
   max_frames?: number
+  recovery_profile?: RecoveryProfile
 }
 
 export interface ExperimentArmSummary {
