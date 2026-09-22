@@ -81,7 +81,10 @@ type Tile struct {
 	RecoveryBadges   int
 	RecoveryEvents   int
 	RecoveryMaps     int
-	Frame            uint64
+	// Activity is the bounded operator-facing causal story. It survives
+	// retries so one resilient campaign remains understandable as a whole.
+	Activity []runActivityEvent
+	Frame    uint64
 	Map              uint8
 	X                uint8
 	Y                uint8
@@ -191,6 +194,7 @@ type tileRow struct {
 	RecoveryBadges     int                  `json:"recovery_badges,omitempty"`
 	RecoveryEvents     int                  `json:"recovery_events,omitempty"`
 	RecoveryMaps       int                  `json:"recovery_maps,omitempty"`
+	Activity           []runActivityEvent   `json:"activity,omitempty"`
 	Reason             string               `json:"reason"`
 	Detail             string               `json:"detail"`
 	Issue              *IssueLink           `json:"issue,omitempty"`
@@ -284,6 +288,7 @@ type persistedTile struct {
 	RecoveryBadges     int                  `json:"recovery_badges,omitempty"`
 	RecoveryEvents     int                  `json:"recovery_events,omitempty"`
 	RecoveryMaps       int                  `json:"recovery_maps,omitempty"`
+	Activity           []runActivityEvent   `json:"activity,omitempty"`
 	Frame              uint64               `json:"frame"`
 	Map                uint8                `json:"map"`
 	X                  uint8                `json:"x"`
@@ -359,6 +364,7 @@ func (w *Wall) persistedStateLocked() persistedState {
 			RecoveryBadges:     t.RecoveryBadges,
 			RecoveryEvents:     t.RecoveryEvents,
 			RecoveryMaps:       t.RecoveryMaps,
+			Activity:           copyRunActivity(t.Activity),
 			Frame:              t.Frame,
 			Map:                t.Map,
 			X:                  t.X,
@@ -474,6 +480,7 @@ func (w *Wall) loadState() {
 			RecoveryBadges:     pt.RecoveryBadges,
 			RecoveryEvents:     pt.RecoveryEvents,
 			RecoveryMaps:       pt.RecoveryMaps,
+			Activity:           copyRunActivity(pt.Activity),
 			Frame:              pt.Frame,
 			Map:                pt.Map,
 			X:                  pt.X,
@@ -665,6 +672,7 @@ func (w *Wall) applySpec(runID string, spec farm.Spec) {
 	t.RecoveryBadges = 0
 	t.RecoveryEvents = 0
 	t.RecoveryMaps = 0
+	t.Activity = nil
 	t.Frame = 0
 	t.Map = 0
 	t.X = 0
@@ -685,6 +693,11 @@ func (w *Wall) applySpec(runID string, spec farm.Spec) {
 	t.Finished = false
 	t.ResumeFromRunID = ""
 	clearTileCircuit(t)
+	appendRunActivityLocked(t, runActivityEvent{
+		Source: "system", Kind: "queued", At: t.QueuedAt.Unix(), Attempt: 1,
+		Summary: "Run queued",
+		Detail:  fmt.Sprintf("recovery profile: %s", t.RecoveryProfile),
+	})
 }
 
 // handleLease hands out the oldest queued spec exactly once; 204 when the
@@ -720,6 +733,10 @@ func (w *Wall) handleLease(res http.ResponseWriter, req *http.Request) {
 	}
 	t.Status = statusLeased
 	t.lastUpdate = time.Now()
+	appendRunActivityLocked(t, runActivityEvent{
+		Source: "system", Kind: "leased", At: t.lastUpdate.Unix(), Attempt: t.Attempts + 1,
+		Summary: fmt.Sprintf("Attempt %d leased", t.Attempts+1),
+	})
 	spec := farm.Spec{
 		RunID:           t.RunID,
 		Attempt:         t.Attempts + 1,
@@ -774,6 +791,12 @@ func (w *Wall) handleHeartbeat(res http.ResponseWriter, req *http.Request) {
 		writeJSON(res, http.StatusConflict, map[string]string{"error": "run already finished: " + id})
 		return
 	}
+	previousStatus := t.Status
+	previousQuestion := t.Question
+	previousDecision := t.Decision
+	previousTrace := t.Trace
+	previousPlayer := t.Player
+	now := time.Now()
 	t.Status = statusRunning
 	t.Frame = hb.Frame
 	t.Map = hb.Map
@@ -790,7 +813,8 @@ func (w *Wall) handleHeartbeat(res http.ResponseWriter, req *http.Request) {
 	t.Stats = hb.Stats
 	t.Player = hb.Player
 	t.workerAddrs = hb.WorkerAddrs
-	t.lastUpdate = time.Now()
+	t.lastUpdate = now
+	appendHeartbeatActivityLocked(t, hb, now, previousStatus, previousQuestion, previousDecision, previousTrace, previousPlayer)
 	w.upsertWorkerLocked(hb.WorkerAddrs, id, hb.Version, t.lastUpdate)
 	cancel := w.cancel[id]
 	w.mu.Unlock()
