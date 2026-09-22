@@ -15,6 +15,19 @@ func EarlyCampaignStages() []game.ProgressID {
 	}
 }
 
+// MiddleCampaignStages is the shared Kanto spine from HM01 through Celadon.
+// Flash is deliberately not a hard milestone: ROM-driven navigation can cross
+// Rock Tunnel without it, while concrete adapters may use it when available.
+func MiddleCampaignStages() []game.ProgressID {
+	return []game.ProgressID{
+		ProgressCascadeBadge,
+		ProgressThunderBadge,
+		ProgressPostSurgeLavenderReached,
+		ProgressPostSurgeCeladonReady,
+		ProgressRainbowBadge,
+	}
+}
+
 // LeagueApproachStages is the shared Kanto endgame order between the eighth
 // badge and the first Elite Four room. Concrete games own how each fact is
 // executed and observed.
