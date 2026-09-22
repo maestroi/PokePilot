@@ -204,6 +204,22 @@ pick_next() {
 		log "MCP triage unreachable; skip"
 		return 2
 	fi
+	open_prs=$(gh pr list --repo "$(gh_repo)" --state open --limit 100 --json number,title,headRefName,url,statusCheckRollup 2>/dev/null || printf '[]')
+	own_err=$(mktemp)
+	set +e
+	own_pr=$(printf '%s' "$open_prs" | "$bin" pick-own-pr 2>"$own_err")
+	own_status=$?
+	set -e
+	if [ "$own_status" -eq 0 ]; then
+		rm -f "$own_err"
+		printf '%s' "$own_pr"
+		return 0
+	fi
+	if [ "$own_status" -ne 2 ]; then
+		log "own-pr picker failed (exit $own_status): $(tr '\n' ' ' <"$own_err")"
+	fi
+	rm -f "$own_err"
+
 	titles=$(gh pr list --repo "$(gh_repo)" --state open --limit 100 --json title --jq '.[].title' 2>/dev/null || true)
 	merged_prs=$(gh pr list --repo "$(gh_repo)" --state closed --limit 200 --json title,mergedAt,mergeCommit 2>/dev/null || printf '[]')
 	pick_args=(pick)
@@ -212,15 +228,14 @@ pick_next() {
 		pick_args+=(--claimed "$title")
 	done <<<"$titles"
 
-	# A merged [triage:key] PR is the local fallback for Orchestrator issue
-	# state. Compare its merge commit with the build that produced the newest
-	# representative failure. Old-build failures stay suppressed; a failure
-	# from a build containing the repair is a concrete regression.
+	# A merged [triage:key] PR suppresses that key unless the fingerprint's
+	# last_observed_revision contains the merge. The run's latest finish is
+	# the wrong revision: a later attempt can fail differently on a newer build.
 	triage_file=$(mktemp)
 	merged_file=$(mktemp)
 	printf '%s' "$triage" >"$triage_file"
 	printf '%s' "$merged_prs" >"$merged_file"
-	candidates=$(python3 - "$triage_file" "$merged_file" <<'PY'
+	repairs=$(python3 - "$triage_file" "$merged_file" <<'PY'
 import json
 import re
 import sys
@@ -240,24 +255,26 @@ for pr in prs:
     if not match:
         continue
     key = match.group(1).strip()
-    if key not in groups:
+    group = groups.get(key)
+    if group is None:
         continue
-    merge_commit = pr.get("mergeCommit") or {}
-    merge_sha = merge_commit.get("oid") or ""
+    merge_sha = ((pr.get("mergeCommit") or {}).get("oid") or "")
+    issue = group.get("issue") or {}
+    observed = str(issue.get("last_observed_revision") or "").strip()
     previous = latest.get(key)
     if previous is None or merged_at > previous[0]:
-        latest[key] = (merged_at, merge_sha)
+        latest[key] = (merged_at, merge_sha, observed)
 
-for key, (_, merge_sha) in latest.items():
-    run_ids = groups[key].get("run_ids") or []
-    run_id = str(run_ids[0]) if run_ids else ""
-    print(f"{key}\t{run_id}\t{merge_sha}")
+rows = []
+for key, (_, merge_sha, observed) in latest.items():
+    rows.append({"key": key, "merge_sha": merge_sha, "observed_revision": observed})
+json.dump(rows, sys.stdout)
 PY
 )
 	rm -f "$triage_file" "$merged_file"
 
 	ancestry_ready=0
-	if [ -n "$candidates" ]; then
+	if [ "$repairs" != "[]" ] && [ -n "$repairs" ]; then
 		if git -C "$POKEPILOT_ROOT" fetch --quiet origin; then
 			ancestry_ready=1
 		else
@@ -265,31 +282,41 @@ PY
 		fi
 	fi
 
-	while IFS=$'\t' read -r key run_id merge_sha; do
+	if [ "$ancestry_ready" -eq 1 ]; then
+		set +e
+		class_json=$(printf '%s' "$repairs" | "$bin" classify-repairs --repo "$POKEPILOT_ROOT")
+		class_status=$?
+		set -e
+		if [ "$class_status" -ne 0 ]; then
+			log "classify-repairs failed; suppress merged repairs"
+			ancestry_ready=0
+		fi
+	fi
+	if [ "$ancestry_ready" -eq 1 ]; then
+		classified=$(printf '%s' "$class_json" | python3 -c '
+import json, sys
+data = json.load(sys.stdin)
+for key in data.get("repaired") or []:
+    print("repaired\t" + str(key))
+for key in data.get("regressed") or []:
+    print("regressed\t" + str(key))
+')
+	else
+		classified=$(printf '%s' "$repairs" | python3 -c '
+import json, sys
+for row in json.load(sys.stdin):
+    key = str(row.get("key") or "").strip()
+    if key:
+        print("repaired\t" + key)
+')
+	fi
+	while IFS=$'\t' read -r kind key; do
 		[ -z "$key" ] && continue
-		if [ "$ancestry_ready" -ne 1 ] || [ -z "$run_id" ] || [ -z "$merge_sha" ]; then
-			pick_args+=(--repaired "$key")
-			continue
-		fi
-		local debug runner_version
-		if ! debug=$("$bin" fetch-debug --endpoint "$POKEPILOT_MCP_URL" --run-id "$run_id"); then
-			log "cannot read representative run $run_id for $key; keep merged repair suppressed"
-			pick_args+=(--repaired "$key")
-			continue
-		fi
-		runner_version=$(printf '%s' "$debug" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(((d.get("finish") or {}).get("runner_version") or "").strip())')
-		if [ -z "$runner_version" ] || \
-			! git -C "$POKEPILOT_ROOT" cat-file -e "${merge_sha}^{commit}" 2>/dev/null || \
-			! git -C "$POKEPILOT_ROOT" cat-file -e "${runner_version}^{commit}" 2>/dev/null; then
-			pick_args+=(--repaired "$key")
-			continue
-		fi
-		if git -C "$POKEPILOT_ROOT" merge-base --is-ancestor "$merge_sha" "$runner_version"; then
-			pick_args+=(--regressed "$key")
-		else
-			pick_args+=(--repaired "$key")
-		fi
-	done <<<"$candidates"
+		case "$kind" in
+		repaired) pick_args+=(--repaired "$key") ;;
+		regressed) pick_args+=(--regressed "$key") ;;
+		esac
+	done <<<"$classified"
 
 	set +e
 	PICK_JSON=$(printf '%s' "$triage" | "$bin" "${pick_args[@]}")
@@ -313,6 +340,9 @@ fi
 KEY=$(printf '%s' "$PICK_JSON" | json_field key)
 RUN_ID=$(printf '%s' "$PICK_JSON" | json_field run_id)
 EXAMPLE=$(printf '%s' "$PICK_JSON" | json_field example)
+MODE=$(printf '%s' "$PICK_JSON" | json_field mode)
+HEAD_REF=$(printf '%s' "$PICK_JSON" | json_field head_ref)
+PR_NUMBER=$(printf '%s' "$PICK_JSON" | json_field pr_number)
 if [ -z "$KEY" ]; then
 	log "picker returned empty key; skip"
 	exit 0
@@ -324,7 +354,11 @@ fi
 
 if [ "$DRY_RUN" -eq 1 ]; then
 	printf '%s\n' "$PICK_JSON"
-	echo "would claim $KEY (run $RUN_ID)"
+	if [ "$MODE" = "repair_pr" ]; then
+		echo "would repair PR #$PR_NUMBER on $HEAD_REF"
+	else
+		echo "would claim $KEY (run $RUN_ID)"
+	fi
 	case "$AGENT_BACKEND" in
 	cursor) echo "would run: Cursor CLI headless in $POKEPILOT_TRIAGE_TREE" ;;
 	opencode) echo "would run: OpenCode qwagent in $POKEPILOT_TRIAGE_TREE" ;;
@@ -332,7 +366,11 @@ if [ "$DRY_RUN" -eq 1 ]; then
 	exit 0
 fi
 
-log "claiming $KEY ($EXAMPLE) run=$RUN_ID"
+if [ "$MODE" = "repair_pr" ]; then
+	log "repairing PR #$PR_NUMBER ($HEAD_REF) for $KEY: $EXAMPLE"
+else
+	log "claiming $KEY ($EXAMPLE) run=$RUN_ID"
+fi
 # Investigate is a best-effort claim. Auto-filed issues are often already
 # investigating, and the orchestrator then 409s (the wall currently maps
 # that to 502). An open PR is the durable skip; do not abort the local agent.
@@ -346,6 +384,17 @@ fi
 
 prepare_triage_tree
 seed_rom
+if [ "$MODE" = "repair_pr" ]; then
+	if [ -z "$HEAD_REF" ]; then
+		log "repair packet missing head_ref; skip"
+		exit 0
+	fi
+	if ! git -C "$POKEPILOT_TRIAGE_TREE" fetch origin "$HEAD_REF"; then
+		log "cannot fetch $HEAD_REF; skip"
+		exit 0
+	fi
+	git -C "$POKEPILOT_TRIAGE_TREE" checkout -f -B "$HEAD_REF" "origin/$HEAD_REF"
+fi
 
 printf '%s\n' "$PICK_JSON" >"$POKEPILOT_TRIAGE_STATE/packet.json"
 {
@@ -392,6 +441,18 @@ if [ "$agent_status" -ne 0 ]; then
 fi
 
 branch=$(git -C "$POKEPILOT_TRIAGE_TREE" rev-parse --abbrev-ref HEAD)
+if [ "$MODE" = "repair_pr" ]; then
+	if [ "$branch" != "$HEAD_REF" ]; then
+		log "repair left branch $branch; want $HEAD_REF"
+		exit 0
+	fi
+	if ! git -C "$POKEPILOT_TRIAGE_TREE" rev-parse --verify "origin/$HEAD_REF" >/dev/null 2>&1; then
+		log "repair branch $HEAD_REF not pushed"
+		exit 0
+	fi
+	log "updated PR #$PR_NUMBER for $KEY"
+	exit 0
+fi
 case "$branch" in
 fix/*) ;;
 *)

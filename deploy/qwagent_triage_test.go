@@ -123,6 +123,8 @@ func TestPromptLoadsTriageInstructions(t *testing.T) {
 		".claude/skills/pokefarm-triage/SKILL.md",
 		"native skill tool",
 		"do not second-guess queue eligibility",
+		"repair_pr",
+		"failing_checks",
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("prompt missing %q", want)
@@ -141,8 +143,9 @@ func TestTriageSkillDocumentsLocalLifecycle(t *testing.T) {
 		"Unattended qwagent triage",
 		"open PR containing `[triage:<key>]`",
 		"merged PR containing `[triage:<key>]`",
-		"runner_version",
+		"last_observed_revision",
 		"fail closed",
+		"whose checks have failed",
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("triage skill missing %q", want)
@@ -177,13 +180,14 @@ func TestScriptHasDryRunAndLock(t *testing.T) {
 		"--file \"$POKEPILOT_TRIAGE_STATE/packet.md\"",
 		"--repaired",
 		"--regressed",
-		"merge-base --is-ancestor",
+		"last_observed_revision",
+		"classify-repairs",
+		"pick-own-pr",
+		"repair_pr",
 		"fetch-triage",
-		"fetch-debug",
 		"POKEPILOT_MCP_URL",
 		"POKEMON_RED_ROM",
 		"roms/pokemon_red.gb",
-		"runner_version",
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("script missing %q", want)
@@ -364,6 +368,192 @@ func TestPrepareTriageTreeTracksUpstreamMain(t *testing.T) {
 	if upstream != "origin/main" {
 		t.Fatalf("main upstream = %q, want origin/main", upstream)
 	}
+}
+
+func TestDecodeTriageKeepsObservedRevision(t *testing.T) {
+	groups, err := DecodeTriageGroups([]byte(`[{"key":"k","issue":{"status":"resolved","last_observed_revision":"abc123"}}]`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if groups[0].Issue == nil || groups[0].Issue.LastObservedRevision != "abc123" {
+		t.Fatalf("observed revision = %+v", groups[0].Issue)
+	}
+}
+
+func TestClassifyRepairsUsesFingerprintRevision(t *testing.T) {
+	repo := t.TempDir()
+	git := testGit(t, repo)
+	git("init", "-b", "main")
+	if err := os.WriteFile(filepath.Join(repo, "note"), []byte("a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git("add", "note")
+	git("commit", "-m", "failure")
+	before := strings.TrimSpace(git("rev-parse", "HEAD"))
+	if err := os.WriteFile(filepath.Join(repo, "note"), []byte("b\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git("add", "note")
+	git("commit", "-m", "repair")
+	repair := strings.TrimSpace(git("rev-parse", "HEAD"))
+	if err := os.WriteFile(filepath.Join(repo, "note"), []byte("c\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git("add", "note")
+	git("commit", "-m", "later attempt")
+	after := strings.TrimSpace(git("rev-parse", "HEAD"))
+
+	repaired, regressed := ClassifyRepairs(repo, []RepairObservation{
+		{Key: "stuck", MergeSHA: repair, ObservedRevision: before},
+		{Key: "real", MergeSHA: repair, ObservedRevision: after},
+		{Key: "missing", MergeSHA: repair, ObservedRevision: ""},
+		{Key: "unknown", MergeSHA: repair, ObservedRevision: "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"},
+	})
+	if !sameKeys(repaired, []string{"missing", "stuck", "unknown"}) {
+		t.Fatalf("repaired = %v", repaired)
+	}
+	if !sameKeys(regressed, []string{"real"}) {
+		t.Fatalf("regressed = %v", regressed)
+	}
+}
+
+func TestFalseRegressionDoesNotBeatOpenIssue(t *testing.T) {
+	repo := t.TempDir()
+	git := testGit(t, repo)
+	git("init", "-b", "main")
+	if err := os.WriteFile(filepath.Join(repo, "note"), []byte("a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git("add", "note")
+	git("commit", "-m", "failure")
+	before := strings.TrimSpace(git("rev-parse", "HEAD"))
+	if err := os.WriteFile(filepath.Join(repo, "note"), []byte("b\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git("add", "note")
+	git("commit", "-m", "repair")
+	repair := strings.TrimSpace(git("rev-parse", "HEAD"))
+
+	groups := []TriageGroup{
+		{
+			Key: "stuck", Count: 4, Example: "already fixed",
+			Issue: &TriageIssue{Status: "resolved", Resolution: "fixed", CircuitOpen: true, IssueNumber: 1450},
+		},
+		{
+			Key: "open1", Count: 2, Example: "still broken", RunIDs: []string{"run-open"},
+			Issue: &TriageIssue{Status: "open", CircuitOpen: true, IssueNumber: 1469},
+		},
+	}
+	repaired, regressed := ClassifyRepairs(repo, []RepairObservation{{
+		Key: "stuck", MergeSHA: repair, ObservedRevision: before,
+	}})
+	got, ok := PickWithLocalState(groups, nil, repaired, regressed)
+	if !ok {
+		t.Fatal("expected the open issue")
+	}
+	if got.Key != "open1" {
+		t.Fatalf("key = %q, want open1 (repaired=%v regressed=%v)", got.Key, repaired, regressed)
+	}
+}
+
+func TestPickOwnPRFailurePrefersOldestRedTriagePR(t *testing.T) {
+	failed := []PullCheck{{Name: "ci / test", Status: "COMPLETED", Conclusion: "FAILURE"}}
+	green := []PullCheck{{Name: "ci / test", Status: "COMPLETED", Conclusion: "SUCCESS"}}
+	running := []PullCheck{
+		{Name: "ci / test", Status: "COMPLETED", Conclusion: "FAILURE"},
+		{Name: "ci / lint", Status: "IN_PROGRESS", Conclusion: ""},
+	}
+	prs := []OpenPullRequest{
+		{Number: 10, Title: "human bug", Checks: failed},
+		{Number: 20, Title: "fix(farm): done [triage:aaa]", Checks: green},
+		{Number: 30, Title: "fix(farm): racing [triage:bbb]", Checks: running},
+		{Number: 50, Title: "fix(farm): newer [triage:ddd]", Checks: failed},
+		{Number: 40, Title: "fix(farm): older [triage:ccc]", HeadRef: "fix/older", URL: "https://example/40", Checks: failed},
+	}
+	got, ok := PickOwnPRFailure(prs)
+	if !ok {
+		t.Fatal("expected a red triage PR")
+	}
+	if got.Number != 40 || TriageKeyFromTitle(got.Title) != "ccc" {
+		t.Fatalf("picked %+v", got)
+	}
+	if got.FailingChecks() != "ci / test" {
+		t.Fatalf("failing checks = %q", got.FailingChecks())
+	}
+}
+
+func TestPickOwnPRFailureIgnoresPendingAndUntagged(t *testing.T) {
+	raw := []byte(`[
+	  {"number":1,"title":"fix(farm): wait [triage:aaa]","headRefName":"fix/wait","statusCheckRollup":[
+	    {"__typename":"CheckRun","name":"ci / test","status":"QUEUED","conclusion":null}
+	  ]},
+	  {"number":2,"title":"unrelated","headRefName":"fix/human","statusCheckRollup":[
+	    {"__typename":"CheckRun","name":"ci / test","status":"COMPLETED","conclusion":"FAILURE"}
+	  ]},
+	  {"number":3,"title":"fix(farm): status [triage:bbb]","headRefName":"fix/status","statusCheckRollup":[
+	    {"__typename":"StatusContext","context":"ci","state":"PENDING"}
+	  ]}
+	]`)
+	prs, err := DecodePullRequests(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := PickOwnPRFailure(prs); ok {
+		t.Fatal("pending or untagged PRs are not own failures")
+	}
+}
+
+func TestDecodePullRequestFailureConclusion(t *testing.T) {
+	raw := []byte(`[{
+	  "number":7,"title":"fix(farm): red [triage:abc]","headRefName":"fix/red","url":"https://example/7",
+	  "statusCheckRollup":[
+	    {"__typename":"CheckRun","name":"ci / test","status":"COMPLETED","conclusion":"FAILURE"},
+	    {"__typename":"CheckRun","name":"ci / lint","status":"COMPLETED","conclusion":"SKIPPED"},
+	    {"__typename":"StatusContext","context":"build","state":"ERROR"}
+	  ]
+	}]`)
+	prs, err := DecodePullRequests(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(prs) != 1 || prs[0].HeadRef != "fix/red" {
+		t.Fatalf("prs = %+v", prs)
+	}
+	if prs[0].FailingChecks() != "build, ci / test" {
+		t.Fatalf("failing = %q", prs[0].FailingChecks())
+	}
+}
+
+func testGit(t *testing.T, dir string) func(args ...string) string {
+	t.Helper()
+	return func(args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=test",
+			"GIT_AUTHOR_EMAIL=test@example.com",
+			"GIT_COMMITTER_NAME=test",
+			"GIT_COMMITTER_EMAIL=test@example.com",
+		)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
+		}
+		return string(out)
+	}
+}
+
+func sameKeys(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func TestDecodeTriageGroupsUnwrapsMCPEnvelope(t *testing.T) {

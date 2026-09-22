@@ -40,17 +40,16 @@ The selector uses a deterministic local lifecycle so it can keep working while
 Agent Orchestrator is missing or stale:
 
 - no triage PR for a key -> actionable;
-- open PR containing `[triage:<key>]` -> claimed, skip;
-- merged PR containing `[triage:<key>]`, while the representative failure came
-  from a build before that merged repair -> repaired / awaiting post-fix
-  evidence, skip;
-- the same key reproduced by a `runner_version` whose Git history contains the
-  merged repair -> regression, actionable again.
+- open PR containing `[triage:<key>]` whose checks are still pending or green -> claimed, skip;
+- open PR containing `[triage:<key>]` whose checks have failed -> repair that PR before any new farm failure;
+- merged PR containing `[triage:<key>]`, while the fingerprint's `last_observed_revision` does not contain that repair -> repaired, skip;
+- the same key reproduced by a `last_observed_revision` whose Git history contains the merged repair -> regression, actionable again.
 
 A proven post-fix regression is stronger evidence than stale remote
-`resolved/fixed` metadata. Conversely, missing run-version or Git ancestry
-proof must fail closed: do not create a duplicate repair merely because remote
-issue state is unavailable.
+`resolved/fixed` metadata. The revision that counts is the one that produced
+this fingerprint, not a later attempt of the same run. Missing observation or
+Git ancestry proof must fail closed: do not create a duplicate repair merely
+because remote issue state is unavailable.
 
 `reason` values commonly include `failed`/`error` for an objective failure and
 `budget` for a planner loop. A live run with no terminal reason is not a repair

@@ -27,11 +27,15 @@ func main() {
 
 func run(args []string, stdin io.Reader, stdout io.Writer) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: qwagent-triage pick|fetch-triage|fetch-debug|investigate ...")
+		return fmt.Errorf("usage: qwagent-triage pick|pick-own-pr|classify-repairs|fetch-triage|fetch-debug|investigate ...")
 	}
 	switch args[0] {
 	case "pick":
 		return pickCmd(args[1:], stdin, stdout)
+	case "pick-own-pr":
+		return pickOwnPRCmd(args[1:], stdin, stdout)
+	case "classify-repairs":
+		return classifyRepairsCmd(args[1:], stdin, stdout)
 	case "fetch-triage":
 		return fetchTriageCmd(args[1:], stdout)
 	case "fetch-debug":
@@ -79,6 +83,62 @@ func pickCmd(args []string, stdin io.Reader, stdout io.Writer) error {
 	enc := json.NewEncoder(stdout)
 	enc.SetIndent("", "  ")
 	return enc.Encode(out)
+}
+
+func pickOwnPRCmd(args []string, stdin io.Reader, stdout io.Writer) error {
+	fs := flag.NewFlagSet("pick-own-pr", flag.ContinueOnError)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	raw, err := io.ReadAll(stdin)
+	if err != nil {
+		return err
+	}
+	prs, err := deploy.DecodePullRequests(raw)
+	if err != nil {
+		return err
+	}
+	pr, ok := deploy.PickOwnPRFailure(prs)
+	if !ok {
+		return errNothing
+	}
+	out := map[string]any{
+		"mode":           "repair_pr",
+		"key":            deploy.TriageKeyFromTitle(pr.Title),
+		"pr_number":      pr.Number,
+		"head_ref":       pr.HeadRef,
+		"pr_url":         pr.URL,
+		"failing_checks": pr.FailingChecks(),
+		"example":        "CI failed: " + pr.FailingChecks(),
+	}
+	enc := json.NewEncoder(stdout)
+	enc.SetIndent("", "  ")
+	return enc.Encode(out)
+}
+
+func classifyRepairsCmd(args []string, stdin io.Reader, stdout io.Writer) error {
+	fs := flag.NewFlagSet("classify-repairs", flag.ContinueOnError)
+	repo := fs.String("repo", "", "git repository used for ancestry checks")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*repo) == "" {
+		return fmt.Errorf("usage: qwagent-triage classify-repairs --repo PATH")
+	}
+	raw, err := io.ReadAll(stdin)
+	if err != nil {
+		return err
+	}
+	var rows []deploy.RepairObservation
+	if err := json.Unmarshal(raw, &rows); err != nil {
+		return err
+	}
+	repaired, regressed := deploy.ClassifyRepairs(*repo, rows)
+	enc := json.NewEncoder(stdout)
+	return enc.Encode(map[string]any{
+		"repaired":  repaired,
+		"regressed": regressed,
+	})
 }
 
 func fetchTriageCmd(args []string, stdout io.Writer) error {
