@@ -78,22 +78,37 @@ func AcquireCinnabarSecretKey(m *emu.Emu, romData []byte, policy MovePolicy) err
 	}
 
 	if !onCinnabarSecretKeySlice(m.Peek8(sym.CurMap)) {
-		// Cinnabar is only reachable by Surf (southern sea from Fuchsia, or
-		// Route 21 from Pallet). HM03 ownership alone is not enough: a
-		// long-running save may have changed its party since Fuchsia and no
-		// current member may be able to learn Surf. Repair through normal
-		// party/PC/catch actions before asking Travel to route across water,
-		// matching Victory Road's late-game invariant.
+		// The supported story corridor is Pallet -> Route 21 -> Cinnabar.
+		// Route 20 is split by Seafoam Islands; treating its two Surf seams as
+		// one ordinary cross-map journey makes Secret Key accidentally absorb
+		// the unsupported Seafoam traversal/puzzle and stranded #1595 on 0x1f.
 		//
-		// Do not force a Pallet waypoint: Diglett's Cave lands in a Cut-sealed
-		// Route 2 pocket that cannot walk to Viridian/Pallet, while the world
-		// graph can already plan the southern-sea approach once Surf shores
-		// are routable (triage:ff3ad54bb21d3a2d).
-		if err := RepairFieldCapabilities(m, romData, policy, []FieldMove{FieldSurf}); err != nil {
-			return fmt.Errorf("skill: AcquireCinnabarSecretKey: prepare Surf carrier: %w", err)
+		// Earlier #1448 temporarily removed the Pallet waypoint because the
+		// semantic router could not cross Surf-only ports. #1551/#1591 fixed
+		// those port/band defects, so restore the original #190 contract rather
+		// than teaching this milestone to solve Seafoam.
+		//
+		// Make Fly usable first so a resumed late-game save can deterministically
+		// return to Pallet instead of asking the walking graph to choose between
+		// Diglett's Cave and the same Seafoam detour. By this stage Thunder,
+		// Poké Flute and Cut are already progression prerequisites, so Fly setup
+		// is an idempotent repair of an intended speedrun capability.
+		state.Snapshot(m, &mem)
+		if !FieldCapabilityFor(&mem, FieldFly).Usable {
+			if err := PrepareFlyFastTravel(m, romData, policy); err != nil {
+				return fmt.Errorf("skill: AcquireCinnabarSecretKey: prepare Fly for Route 21 approach: %w", err)
+			}
+		}
+		if err := RepairFieldCapabilities(m, romData, policy, []FieldMove{FieldSurf, FieldFly}); err != nil {
+			return fmt.Errorf("skill: AcquireCinnabarSecretKey: prepare Surf/Fly carriers: %w", err)
+		}
+
+		pallet := Destination{Map: semanticPalletTownMap, X: 5, Y: 6}
+		if _, err := TravelFlee(m, romData, pallet, policy, mansionTravelBattles); err != nil {
+			return fmt.Errorf("skill: AcquireCinnabarSecretKey: reach Pallet for Route 21: %w", err)
 		}
 		if _, err := TravelFlee(m, romData, Destination{Map: cinnabarIslandMap, X: 11, Y: 12}, policy, mansionTravelBattles); err != nil {
-			return fmt.Errorf("skill: AcquireCinnabarSecretKey: reach Cinnabar: %w", err)
+			return fmt.Errorf("skill: AcquireCinnabarSecretKey: Surf Route 21 to Cinnabar: %w", err)
 		}
 	}
 
