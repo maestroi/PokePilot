@@ -11,6 +11,7 @@ const (
 	ProgressHM01Acquired               game.ProgressID = "hm01_acquired"
 	ProgressBicycleAcquired            game.ProgressID = "bicycle_acquired"
 	ProgressBoulderBadge               game.ProgressID = "boulder_badge"
+	ProgressCascadeBadge               game.ProgressID = "cascade_badge"
 	ProgressThunderBadge               game.ProgressID = "thunder_badge"
 	ProgressPostSurgeLavenderReached   game.ProgressID = "post_surge_lavender_reached"
 	ProgressPostSurgeCeladonReady      game.ProgressID = "post_surge_celadon_ready"
