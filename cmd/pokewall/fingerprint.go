@@ -23,6 +23,24 @@ const (
 	checkpointMajorKeep     = 3
 )
 
+// SolverAttempt records one coding-agent attempt against a stable failure key.
+// The wall stores this beside the issue link so model attribution survives PR
+// merges and issue resolution without depending on mutable GitHub labels.
+type SolverAttempt struct {
+	ID        string `json:"id"`
+	Backend   string `json:"backend"`
+	Model     string `json:"model,omitempty"`
+	State     string `json:"state"`
+	RunID     string `json:"run_id,omitempty"`
+	Branch    string `json:"branch,omitempty"`
+	PRNumber  int64  `json:"pr_number,omitempty"`
+	PRURL     string `json:"pr_url,omitempty"`
+	ExitCode  int    `json:"exit_code,omitempty"`
+	Note      string `json:"note,omitempty"`
+	StartedAt int64  `json:"started_at,omitempty"`
+	UpdatedAt int64  `json:"updated_at,omitempty"`
+}
+
 // IssueLink is the wall's copy of an Agent Orchestrator issue identity.
 // Issue numbers are display-only; links always use the UUID URL.
 type IssueLink struct {
@@ -40,7 +58,8 @@ type IssueLink struct {
 	LastDisposition      string `json:"last_disposition,omitempty"`
 	UpdatedAt            int64  `json:"updated_at,omitempty"`
 	Fingerprint          string `json:"fingerprint,omitempty"`
-	Stale                bool   `json:"stale,omitempty"`
+	Stale                bool            `json:"stale,omitempty"`
+	SolverAttempts       []SolverAttempt `json:"solver_attempts,omitempty"`
 
 	// Circuit* is local automation state. It marks a failure group that has
 	// crossed the repeated-failure/progression-frontier threshold and should be
