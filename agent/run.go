@@ -315,6 +315,9 @@ runLoop:
 				engine.planning.request(failure.ReplanReason)
 				notifyPlanning(p, engine.planning.snapshot())
 			}
+			if failure.ProductiveSession {
+				engine.watchdogs.productiveSession(round)
+			}
 			if failure.Stop != StopUnset {
 				markLastOutcomeTerminal(&res)
 				res.Stop, res.Err = failure.Stop, execErr
