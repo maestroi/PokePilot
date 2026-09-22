@@ -194,6 +194,74 @@ func TestWeightedMapOnlyGoalDoesNotInventDestinationTile(t *testing.T) {
 	}
 }
 
+func TestWeightedExactTargetRespectsLiveComponentSplit(t *testing.T) {
+	exit := Edge{Kind: EdgeWarp, From: 1, To: 2, WarpX: 1, WarpY: 0}
+	reenter := Edge{Kind: EdgeWarp, From: 2, To: 1, WarpX: 1, WarpY: 0}
+
+	provider := weightedRouteTestProvider{width: 6, height: 2}
+	g := &Graph{
+		Edges: map[uint8][]Edge{
+			1: {exit},
+			2: {reenter},
+		},
+		componentAware: true,
+		comps: map[uint8][][]int{
+			1: {
+				{1, 1, 0, 2, 2, 2},
+				{1, 1, 0, 2, 2, 2},
+			},
+			2: {
+				{1, 1, 1, 1, 1, 1},
+				{1, 1, 1, 1, 1, 1},
+			},
+		},
+		exitComps: map[Edge][]int{
+			exit:    {1},
+			reenter: {1},
+		},
+		entryComps: map[Edge][]int{
+			exit:    {1},
+			reenter: {2},
+		},
+		warps: map[uint8][]worldmodel.Warp{
+			1: {
+				{X: 1, Y: 0, DestWarpID: 0, DestMap: 2},
+				{X: 4, Y: 0, DestWarpID: 0, DestMap: 2},
+			},
+			2: {
+				{X: 0, Y: 0, DestWarpID: 0, DestMap: 1},
+				{X: 1, Y: 0, DestWarpID: 1, DestMap: 1},
+			},
+		},
+		tiles: map[uint8]dim{
+			1: {w: 6, h: 2},
+			2: {w: 6, h: 2},
+		},
+		provider: provider,
+	}
+
+	fallback, err := FindRouteAtDestination(g, 1, 1, 0, 1, 5, 1, nil)
+	if err != nil {
+		t.Fatalf("component-aware fallback route: %v", err)
+	}
+	if len(fallback) != 2 || fallback[0] != exit || fallback[1] != reenter {
+		t.Fatalf("fallback route = %+v, want leave/re-enter route", fallback)
+	}
+
+	result, err := FindWeightedRoutePlanAtDestinationWithCapabilities(
+		g, 1, 1, 0, 1, 5, 1, nil, RoutePrerequisites{}, DefaultRouteCostPolicy(),
+	)
+	if err != nil {
+		t.Fatalf("weighted route: %v", err)
+	}
+	if !result.Exact {
+		t.Fatalf("weighted route unexpectedly fell back: %+v", result)
+	}
+	if len(result.Steps) != 2 || result.Steps[0].Edge != exit || result.Steps[1].Edge != reenter {
+		t.Fatalf("weighted route = %+v, want component-preserving leave/re-enter route", result.Steps)
+	}
+}
+
 func TestWeightedRouteStopsAtSemanticRelaxLandingFrontier(t *testing.T) {
 	pivot := Edge{Kind: EdgeWarp, From: 1, To: 2, WarpX: 1, WarpY: 0}
 	onward := Edge{Kind: EdgeWarp, From: 2, To: 3, WarpX: 1, WarpY: 0}
