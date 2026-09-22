@@ -115,7 +115,8 @@ async function submit(): Promise<void> {
       play_style: isLLM.value ? form.play_style : '',
       risk_tolerance: isLLM.value ? form.risk_tolerance : '',
       wild_encounters: isLLM.value ? form.wild_encounters : '',
-      reasoning_effort: isLLM.value ? form.reasoning_effort : ''
+      reasoning_effort: isLLM.value ? form.reasoning_effort : '',
+      recovery_profile: isLLM.value ? form.recovery_profile : 'strict'
     }
     const response = await createRun(spec)
     const returnedID = typeof response.run_id === 'string' ? response.run_id : ''
