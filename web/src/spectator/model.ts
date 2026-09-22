@@ -19,7 +19,7 @@ export function isLiveRun(run: SpectatorRun | null | undefined): boolean {
 
 export function splitSpectatorRuns(runs: SpectatorRun[]) {
   const live = [...runs]
-    .filter((run) => run.status !== 'done')
+    .filter(isLiveRun)
     .sort((a, b) => Number(b.queued_at || 0) - Number(a.queued_at || 0))
   const recent = [...runs]
     .filter((run) => run.status === 'done')
