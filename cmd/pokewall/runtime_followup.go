@@ -178,7 +178,9 @@ func (w *Wall) runtimeDashboardSnapshot(query runtimeDashboardQuery) runtimeDash
 		if query.limit > 0 && len(rows) >= query.limit {
 			continue
 		}
-		rows = append(rows, w.tileRowWithLineageLocked(t, lineage))
+		row := w.tileRowWithLineageLocked(t, lineage)
+		row.Activity = nil // keep the 2s dashboard poll compact; inspector fetches it separately
+		rows = append(rows, row)
 	}
 	view := runtimeDashboardView{
 		Now: now.Unix(), WallVersion: w.Version, Runs: rows, Workers: workers, Total: total,
