@@ -187,6 +187,40 @@ func TestFailureCircuitPausesQueuedRetryAndPreservesFrame(t *testing.T) {
 	}
 }
 
+func TestFailureCircuitDoesNotPauseEndlessGoalCampaign(t *testing.T) {
+	w := NewWall("")
+	w.tiles["run-1"] = &Tile{
+		RunID: "run-1", Status: statusQueued, Attempts: 3, ErrorAttempts: 3,
+		Seed: 999, Frame: 0, Finished: false, Endless: true,
+	}
+	w.order = []string{"run-1"}
+	w.queue = []string{"run-1"}
+	before := pauseFinishSnapshot{
+		ok:        true,
+		row:       tileRow{RunID: "run-1", Seed: 42, Frame: 1234, Map: 9, X: 3, Y: 4, Endless: true},
+		lastFrame: []byte{1, 2, 3},
+	}
+	report := farm.FinishReport{RunID: "run-1", Attempt: 3, Reason: "error", Detail: "blocked"}
+	decision := failureCircuitDecision{
+		Open: true, Kind: "fingerprint", Key: "deadbeef", Fingerprint: "sha256:deadbeef",
+		Count: 4, Threshold: 2, Badges: 5, Revision: "build-a",
+	}
+
+	if w.pauseForFailureCircuit("run-1", before, report, decision) {
+		t.Fatal("endless goal campaign was quarantined by the failure circuit")
+	}
+	tile := w.tiles["run-1"]
+	if tile.Status != statusQueued || tile.Finished {
+		t.Fatalf("tile = %+v, want active queued endless campaign", tile)
+	}
+	if len(w.queue) != 1 || w.queue[0] != "run-1" {
+		t.Fatalf("queue = %v, want run-1 to remain recoverable", w.queue)
+	}
+	if tile.CircuitKey != "" {
+		t.Fatalf("circuit key = %q, advisory circuit must not mutate endless tile", tile.CircuitKey)
+	}
+}
+
 func TestFixedCircuitReleasesOneCanaryAfterRunnerRollout(t *testing.T) {
 	w := NewWall("")
 	// The wall build is deliberately still the broken revision. Canary gating
