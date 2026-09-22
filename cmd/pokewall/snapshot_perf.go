@@ -45,7 +45,6 @@ func (w *Wall) tileRowLocked(t *Tile) tileRow {
 		RecoveryBadges:     t.RecoveryBadges,
 		RecoveryEvents:     t.RecoveryEvents,
 		RecoveryMaps:       t.RecoveryMaps,
-		Activity:           copyRunActivity(t.Activity),
 		Frame:              t.Frame,
 		Map:                t.Map,
 		X:                  t.X,
@@ -74,6 +73,14 @@ func (w *Wall) tileRowLocked(t *Tile) tileRow {
 		CircuitMaps:        t.CircuitMaps,
 		CircuitRevision:    t.CircuitRevision,
 	}
+}
+
+func (w *Wall) tileRowWithActivityLocked(t *Tile) tileRow {
+	row := w.tileRowLocked(t)
+	if t != nil {
+		row.Activity = copyRunActivity(t.Activity)
+	}
+	return row
 }
 
 func (w *Wall) tileRowWithLineageLocked(t *Tile, lineage map[string]struct{}) tileRow {
@@ -119,9 +126,7 @@ func (w *Wall) snapshotFiltered(status string, limit int) dashboardView {
 		if t == nil || (status != "" && t.Status != status) {
 			continue
 		}
-		row := w.tileRowWithLineageLocked(t, lineage)
-		row.Activity = nil // activity is fetched on-demand by the operator inspector
-		rows = append(rows, row)
+		rows = append(rows, w.tileRowWithLineageLocked(t, lineage))
 		if limit > 0 && len(rows) >= limit {
 			break
 		}
@@ -137,7 +142,7 @@ func (w *Wall) snapshotRun(runID string) (tileRow, bool) {
 	w.mu.Lock()
 	t := w.tiles[runID]
 	if t != nil {
-		row := w.tileRowLocked(t)
+		row := w.tileRowWithActivityLocked(t)
 		w.mu.Unlock()
 		return row, true
 	}
