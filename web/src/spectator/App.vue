@@ -83,6 +83,10 @@ const selectedRun = computed(() => preferredRun(
   groupedRuns.value.live,
   selectionPinned.value ? selectedRunID.value : ''
 ))
+const otherLiveRuns = computed(() => {
+  const selectedID = selectedRun.value?.run_id || ''
+  return groupedRuns.value.live.filter((run) => run.run_id !== selectedID).slice(0, 3)
+})
 const frameRunID = computed(() => {
   const run = selectedRun.value
   return run && isLiveRun(run) ? run.run_id : ''
@@ -547,7 +551,7 @@ function activityTimeAgo(item: ActivityItem): string {
             </div>
           </section>
 
-          <section v-if="groupedRuns.live.length > 1" class="spectator-card rounded-2xl border p-3">
+          <section v-if="otherLiveRuns.length" class="spectator-card rounded-2xl border p-3">
             <div class="mb-2 flex items-center justify-between gap-2">
               <div>
                 <h2 class="text-xs font-bold text-white">Other live runs</h2>
@@ -557,7 +561,7 @@ function activityTimeAgo(item: ActivityItem): string {
             </div>
             <div class="space-y-1.5">
               <button
-                v-for="run in groupedRuns.live.filter((item) => item.run_id !== selectedRun.run_id).slice(0, 3)"
+                v-for="run in otherLiveRuns"
                 :key="run.run_id"
                 type="button"
                 class="w-full rounded-lg bg-black/15 px-2.5 py-2 text-left ring-1 ring-white/8 transition hover:bg-white/6 hover:ring-white/15"
