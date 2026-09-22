@@ -8,7 +8,7 @@ import (
 	yellowrom "github.com/maestroi/pokepilot/yellow/rom"
 )
 
-const yellowDexIncompleteReason = "yellow evolution/fishing/trade sources not yet modeled"
+const yellowDexIncompleteReason = "yellow evolution/trade sources not yet modeled"
 
 func buildYellowDexCatalog(romData []byte, owned, seen []SpeciesID) (DexCatalog, error) {
 	entries, err := yellowDexSpecies(romData)
@@ -73,6 +73,42 @@ func yellowDexSources(romData []byte) (map[SpeciesID][]DexSource, error) {
 		}
 		out[SpeciesID(id)] = append(out[SpeciesID(id)], DexSource{
 			Kind: kind, Place: place, Level: enc.Level, Requirement: req,
+		})
+	}
+
+	fishing, err := yellowrom.FishingEncounters(romData)
+	if err != nil {
+		return nil, err
+	}
+	for _, enc := range fishing {
+		id, ok := gen1.Species(enc.Species)
+		if !ok {
+			continue
+		}
+		requirement := ""
+		switch enc.Rod {
+		case yellowrom.OldRodItem:
+			requirement = "old_rod"
+		case yellowrom.GoodRodItem:
+			requirement = "good_rod"
+		case yellowrom.SuperRodItem:
+			requirement = "super_rod"
+		default:
+			continue
+		}
+		place := PlaceID("")
+		if !enc.Global {
+			name := yellowrom.MapName(enc.MapID)
+			if name == "" {
+				continue
+			}
+			place = PlaceID(semanticLocation(name))
+			if yellowSafariRequirement(enc.MapID) {
+				requirement = joinReq(requirement, "safari_zone")
+			}
+		}
+		out[SpeciesID(id)] = append(out[SpeciesID(id)], DexSource{
+			Kind: AcquireFishing, Place: place, Level: enc.Level, Requirement: requirement,
 		})
 	}
 

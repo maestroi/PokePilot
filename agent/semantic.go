@@ -1,6 +1,9 @@
 package agent
 
-import gameruntime "github.com/maestroi/pokepilot/game"
+import (
+	gameruntime "github.com/maestroi/pokepilot/game"
+	"github.com/maestroi/pokepilot/gen1"
+)
 
 // Re-export the portable semantic vocabulary at the planner boundary so
 // callers constructing objectives/fixtures do not need to know which concrete
@@ -20,17 +23,17 @@ type (
 // completely different set without changing ProgressState itself. #137 moves
 // Red-specific progression planning behind the adapter.
 const (
-	ProgressSaffronGateOpen        ProgressID = "saffron_gate_open"
-	ProgressCardKeyOwned           ProgressID = "card_key_owned"
-	ProgressSilphCoCleared         ProgressID = "silph_co_cleared"
-	ProgressMansionSwitchOn        ProgressID = "mansion_switch_on"
-	ProgressSecretKeyOwned         ProgressID = "secret_key_owned"
-	ProgressViridianGymOpen        ProgressID = "viridian_gym_open"
-	ProgressRoute22RivalResolved   ProgressID = "route_22_rival_resolved"
-	ProgressRoute23BadgeChecks     ProgressID = "route_23_badge_checks"
-	ProgressLeagueChallengeStarted ProgressID = "league_challenge_started"
-	ProgressLeagueChampionDefeated ProgressID = "league_champion_defeated"
-	ProgressMainStoryComplete      ProgressID = "main_story_complete"
+	ProgressSaffronGateOpen        ProgressID = gen1.ProgressSaffronGateOpen
+	ProgressCardKeyOwned           ProgressID = gen1.ProgressCardKeyOwned
+	ProgressSilphCoCleared         ProgressID = gen1.ProgressSilphCoCleared
+	ProgressMansionSwitchOn        ProgressID = gen1.ProgressMansionSwitchOn
+	ProgressSecretKeyOwned         ProgressID = gen1.ProgressSecretKeyOwned
+	ProgressViridianGymOpen        ProgressID = gen1.ProgressViridianGymOpen
+	ProgressRoute22RivalResolved   ProgressID = gen1.ProgressRoute22RivalResolved
+	ProgressRoute23BadgeChecks     ProgressID = gen1.ProgressRoute23BadgeChecks
+	ProgressLeagueChallengeStarted ProgressID = gen1.ProgressLeagueChallengeStarted
+	ProgressLeagueChampionDefeated ProgressID = gen1.ProgressLeagueChampionDefeated
+	ProgressMainStoryComplete      ProgressID = gen1.ProgressMainStoryComplete
 )
 
 const (

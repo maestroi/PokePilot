@@ -131,6 +131,36 @@ func TestYellowGiftAvailabilityUsesRealPrerequisites(t *testing.T) {
 	}
 }
 
+func TestYellowEarlyStoryResumeFactsProjectFromNativeEvents(t *testing.T) {
+	var mem fakeMemory
+	mem[sym.ObtainedBadges] |= 1<<badgeBoulder | 1<<badgeCascade
+	for _, event := range []yellowEvent{
+		eventGotOaksParcel,
+		eventBeatMtMoonSuperNerd,
+		eventBillSaidUseSeparator,
+		eventUsedCellSeparatorOnBill,
+		eventFirstLockOpened,
+		eventSecondLockOpened,
+	} {
+		setYellowEvent(&mem, event)
+	}
+	story := projectYellowStory(&mem, 0x00)
+	for _, id := range []game.ProgressID{
+		gen1.ProgressBoulderBadge,
+		gen1.ProgressCascadeBadge,
+		ProgressYellowOaksParcelReceived,
+		ProgressYellowMtMoonSuperNerdDefeated,
+		ProgressYellowBillSeparatorReady,
+		ProgressYellowBillSeparatorUsed,
+		ProgressYellowVermilionFirstLockOpen,
+		ProgressYellowVermilionGateOpen,
+	} {
+		if !story.Has(id) {
+			t.Errorf("early resume progress %q not complete", id)
+		}
+	}
+}
+
 func TestYellowSharedKantoProgressComesFromYellowState(t *testing.T) {
 	var mem fakeMemory
 	mem[sym.PartyCount] = 1
@@ -179,6 +209,34 @@ func TestYellowSharedKantoProgressComesFromYellowState(t *testing.T) {
 	}
 	if got, ok := story.Value(gen1.ProgressRoute23BadgeChecks); !ok || got != 7 {
 		t.Fatalf("badge checks = %d,%v, want 7,true", got, ok)
+	}
+}
+
+func TestYellowProjectsSharedLeagueRoomFacts(t *testing.T) {
+	var mem fakeMemory
+	for _, event := range []yellowEvent{
+		eventAutowalkedIntoLorelei,
+		eventBeatLorelei,
+		eventBeatBruno,
+		eventBeatAgatha,
+		eventBeatLance,
+	} {
+		setYellowEvent(&mem, event)
+	}
+	story := projectYellowStory(&mem, indigoPlateauMap)
+	for _, id := range []game.ProgressID{
+		gen1.ProgressLeagueChallengeStarted,
+		gen1.ProgressLeagueLoreleiDefeated,
+		gen1.ProgressLeagueBrunoDefeated,
+		gen1.ProgressLeagueAgathaDefeated,
+		gen1.ProgressLeagueLanceDefeated,
+	} {
+		if !story.Has(id) {
+			t.Errorf("shared League progress %q not complete", id)
+		}
+	}
+	if story.Has(gen1.ProgressLeagueChampionDefeated) {
+		t.Fatal("Champion progress completed before Champion event")
 	}
 }
 

@@ -1,8 +1,6 @@
 package profile
 
 import (
-	"strings"
-
 	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/gen1"
 	yellowrom "github.com/maestroi/pokepilot/yellow/rom"
@@ -17,14 +15,19 @@ const (
 	eventGotStarter              yellowEvent = 34
 	eventBattledRivalInOaksLab   yellowEvent = 35
 	eventGotPokedex              yellowEvent = 37
+	eventGotOaksParcel           yellowEvent = 57
 	eventOakAppearedInPallet     yellowEvent = 39
 	eventViridianGymOpen         yellowEvent = 40
 	eventGotBulbasaurInCerulean  yellowEvent = 168
 	eventBeatTowerJessieJames    yellowEvent = 273
 	eventGotSquirtleFromJenny    yellowEvent = 327
+	eventSecondLockOpened        yellowEvent = 352
+	eventFirstLockOpened         yellowEvent = 353
 	eventMansionSwitchOn         yellowEvent = 632
 	eventRescuedMrFuji           yellowEvent = 1231
 	eventBeatRoute22Rival2       yellowEvent = 1318
+	eventUsedCellSeparatorOnBill yellowEvent = 1372
+	eventBillSaidUseSeparator    yellowEvent = 1375
 	eventPassedCascadeBadgeCheck yellowEvent = 1328
 	eventPassedThunderBadgeCheck yellowEvent = 1329
 	eventPassedRainbowBadgeCheck yellowEvent = 1330
@@ -56,6 +59,7 @@ const (
 const (
 	ProgressYellowStarterReceived           game.ProgressID = "yellow_starter_received"
 	ProgressYellowLabRivalResolved          game.ProgressID = "yellow_lab_rival_resolved"
+	ProgressYellowOaksParcelReceived        game.ProgressID = "yellow_oaks_parcel_received"
 	ProgressYellowRivalJolteonPath          game.ProgressID = "yellow_rival_jolteon_path"
 	ProgressYellowRivalFlareonPath          game.ProgressID = "yellow_rival_flareon_path"
 	ProgressYellowRivalVaporeonPath         game.ProgressID = "yellow_rival_vaporeon_path"
@@ -63,11 +67,16 @@ const (
 	ProgressYellowPikachuStarterPresent     game.ProgressID = "yellow_pikachu_starter_present"
 	ProgressYellowPikachuFollowing          game.ProgressID = "yellow_pikachu_following"
 	ProgressYellowPikachuSurfing            game.ProgressID = "yellow_pikachu_surfing"
+	ProgressYellowMtMoonSuperNerdDefeated   game.ProgressID = "yellow_mt_moon_super_nerd_defeated"
 	ProgressYellowMtMoonJessieJamesDefeated game.ProgressID = "yellow_mt_moon_jessie_james_defeated"
 	ProgressYellowMtMoonExitResolved        game.ProgressID = "yellow_mt_moon_exit_resolved"
 	ProgressYellowRocketJessieJamesDefeated game.ProgressID = "yellow_rocket_hideout_jessie_james_defeated"
 	ProgressYellowTowerJessieJamesDefeated  game.ProgressID = "yellow_pokemon_tower_jessie_james_defeated"
 	ProgressYellowSilphJessieJamesDefeated  game.ProgressID = "yellow_silph_jessie_james_defeated"
+	ProgressYellowBillSeparatorReady        game.ProgressID = "yellow_bill_separator_ready"
+	ProgressYellowBillSeparatorUsed         game.ProgressID = "yellow_bill_separator_used"
+	ProgressYellowVermilionFirstLockOpen    game.ProgressID = "yellow_vermilion_first_lock_open"
+	ProgressYellowVermilionGateOpen         game.ProgressID = "yellow_vermilion_gate_open"
 	ProgressYellowBulbasaurGiftAvailable    game.ProgressID = "yellow_bulbasaur_gift_available"
 	ProgressYellowBulbasaurGiftReceived     game.ProgressID = "yellow_bulbasaur_gift_received"
 	ProgressYellowCharmanderGiftAvailable   game.ProgressID = "yellow_charmander_gift_available"
@@ -98,6 +107,8 @@ const (
 	itemHM03       = 0xc6
 	itemHM04       = 0xc7
 
+	badgeBoulder = 0
+	badgeCascade = 1
 	badgeThunder = 2
 	badgeRainbow = 3
 	badgeSoul    = 4
@@ -197,25 +208,11 @@ func yellowPartyRecovered(reader game.MemoryReader) bool {
 }
 
 func yellowPostSurgeCeladonArea(mapID uint8) bool {
-	name := yellowrom.MapName(mapID)
-	return strings.HasPrefix(name, "CELADON_") ||
-		name == "GAME_CORNER" ||
-		strings.HasPrefix(name, "GAME_CORNER_") ||
-		strings.HasPrefix(name, "ROCKET_HIDEOUT_")
+	return gen1.PostSurgeCeladonArea(mapID, yellowrom.MapName(mapID))
 }
 
 func yellowPostSurgeLavenderReached(mapID uint8) bool {
-	name := yellowrom.MapName(mapID)
-	switch mapID {
-	case 0x04, 0x13, 0x4f, 0x50, 0x79, 0x4d, 0x4e, 0x4c, 0x12, 0x0a:
-		return true
-	}
-	return strings.HasPrefix(name, "LAVENDER_") ||
-		strings.HasPrefix(name, "POKEMON_TOWER_") ||
-		name == "MR_FUJIS_HOUSE" ||
-		strings.HasPrefix(name, "SAFFRON_") ||
-		strings.HasPrefix(name, "SILPH_CO_") ||
-		yellowPostSurgeCeladonArea(mapID)
+	return gen1.PostSurgeLavenderReached(mapID, yellowrom.MapName(mapID))
 }
 
 func yellowVictoryRoadCleared(reader game.MemoryReader, mapID uint8, badgeChecksComplete, leagueStarted, champion, mainComplete bool) bool {
@@ -293,6 +290,8 @@ func projectYellowStory(reader game.MemoryReader, mapID uint8) game.ProgressStat
 		{ID: gen1.ProgressSSTicketAcquired, Complete: yellowHasItem(reader, itemSSTicket)},
 		{ID: gen1.ProgressHM01Acquired, Complete: yellowHasItem(reader, itemHM01)},
 		{ID: gen1.ProgressBicycleAcquired, Complete: yellowHasItem(reader, itemBicycle)},
+		{ID: gen1.ProgressBoulderBadge, Complete: yellowHasBadge(reader, badgeBoulder)},
+		{ID: gen1.ProgressCascadeBadge, Complete: yellowHasBadge(reader, badgeCascade)},
 		{ID: gen1.ProgressThunderBadge, Complete: yellowHasBadge(reader, badgeThunder)},
 		{ID: gen1.ProgressPostSurgeLavenderReached, Complete: yellowPostSurgeLavenderReached(mapID)},
 		{ID: gen1.ProgressPostSurgeCeladonReady, Complete: yellowPostSurgeCeladonArea(mapID) && yellowPartyRecovered(reader)},
@@ -311,6 +310,10 @@ func projectYellowStory(reader game.MemoryReader, mapID uint8) game.ProgressStat
 		{ID: gen1.ProgressRoute23BadgeChecks, Complete: badgeChecksComplete, Value: badgeChecks},
 		{ID: gen1.ProgressVictoryRoadCleared, Complete: victoryRoadCleared},
 		{ID: gen1.ProgressLeagueChallengeStarted, Complete: leagueStarted},
+		{ID: gen1.ProgressLeagueLoreleiDefeated, Complete: leagueLorelei},
+		{ID: gen1.ProgressLeagueBrunoDefeated, Complete: leagueBruno},
+		{ID: gen1.ProgressLeagueAgathaDefeated, Complete: leagueAgatha},
+		{ID: gen1.ProgressLeagueLanceDefeated, Complete: leagueLance},
 		{ID: gen1.ProgressLeagueChampionDefeated, Complete: champion},
 		{ID: gen1.ProgressMainStoryComplete, Complete: mainComplete},
 		{ID: gen1.ProgressVolcanoBadge, Complete: yellowHasBadge(reader, badgeVolcano)},
@@ -319,6 +322,7 @@ func projectYellowStory(reader game.MemoryReader, mapID uint8) game.ProgressStat
 
 		{ID: ProgressYellowStarterReceived, Complete: yellowHasEvent(reader, eventGotStarter)},
 		{ID: ProgressYellowLabRivalResolved, Complete: labRivalResolved},
+		{ID: ProgressYellowOaksParcelReceived, Complete: yellowHasEvent(reader, eventGotOaksParcel)},
 		{ID: ProgressYellowRivalJolteonPath, Complete: labRivalResolved && rival == rivalStarterJolteon},
 		{ID: ProgressYellowRivalFlareonPath, Complete: labRivalResolved && rival == rivalStarterFlareon},
 		{ID: ProgressYellowRivalVaporeonPath, Complete: labRivalResolved && rival == rivalStarterVaporeon},
@@ -326,11 +330,16 @@ func projectYellowStory(reader game.MemoryReader, mapID uint8) game.ProgressStat
 		{ID: ProgressYellowPikachuStarterPresent, Complete: pikaFlags&(1<<pikachuStarterBit) != 0},
 		{ID: ProgressYellowPikachuFollowing, Complete: pikaFlags&(1<<pikachuFollowingBit) != 0},
 		{ID: ProgressYellowPikachuSurfing, Complete: pikaFlags&(1<<pikachuSurfingBit) != 0},
+		{ID: ProgressYellowMtMoonSuperNerdDefeated, Complete: yellowHasEvent(reader, eventBeatMtMoonSuperNerd)},
 		{ID: ProgressYellowMtMoonJessieJamesDefeated, Complete: mtMoonJJ},
 		{ID: ProgressYellowMtMoonExitResolved, Complete: mtMoonExitResolved},
 		{ID: ProgressYellowRocketJessieJamesDefeated, Complete: rocketJJ},
 		{ID: ProgressYellowTowerJessieJamesDefeated, Complete: towerJJ},
 		{ID: ProgressYellowSilphJessieJamesDefeated, Complete: silphJJ},
+		{ID: ProgressYellowBillSeparatorReady, Complete: yellowHasEvent(reader, eventBillSaidUseSeparator)},
+		{ID: ProgressYellowBillSeparatorUsed, Complete: yellowHasEvent(reader, eventUsedCellSeparatorOnBill)},
+		{ID: ProgressYellowVermilionFirstLockOpen, Complete: yellowHasEvent(reader, eventFirstLockOpened)},
+		{ID: ProgressYellowVermilionGateOpen, Complete: yellowHasEvent(reader, eventSecondLockOpened)},
 		{ID: ProgressYellowBulbasaurGiftAvailable, Complete: !gotBulbasaur && happiness >= 147 && partyRoom},
 		{ID: ProgressYellowBulbasaurGiftReceived, Complete: gotBulbasaur},
 		{ID: ProgressYellowCharmanderGiftAvailable, Complete: !gotCharmander && partyRoom},

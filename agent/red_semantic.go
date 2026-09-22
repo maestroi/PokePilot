@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	gameruntime "github.com/maestroi/pokepilot/game"
+	"github.com/maestroi/pokepilot/gen1"
 	reddata "github.com/maestroi/pokepilot/red/data"
 	redprofile "github.com/maestroi/pokepilot/red/profile"
 	"github.com/maestroi/pokepilot/red/rom"
@@ -34,10 +35,10 @@ const (
 	redProgressEarthBadge                 ProgressID = redprofile.ProgressEarthBadge
 	redProgressVictoryRoadCleared         ProgressID = redprofile.ProgressVictoryRoadCleared
 	redProgressIndigoPlateauReady         ProgressID = redprofile.ProgressIndigoPlateauReady
-	redProgressLeagueLoreleiDefeated      ProgressID = "league_lorelei_defeated"
-	redProgressLeagueBrunoDefeated        ProgressID = "league_bruno_defeated"
-	redProgressLeagueAgathaDefeated       ProgressID = "league_agatha_defeated"
-	redProgressLeagueLanceDefeated        ProgressID = "league_lance_defeated"
+	redProgressLeagueLoreleiDefeated      ProgressID = gen1.ProgressLeagueLoreleiDefeated
+	redProgressLeagueBrunoDefeated        ProgressID = gen1.ProgressLeagueBrunoDefeated
+	redProgressLeagueAgathaDefeated       ProgressID = gen1.ProgressLeagueAgathaDefeated
+	redProgressLeagueLanceDefeated        ProgressID = gen1.ProgressLeagueLanceDefeated
 
 	redIndigoPlateauMap      uint8 = 0x09
 	redIndigoPlateauLobbyMap uint8 = 0xAE
@@ -103,19 +104,10 @@ func redStarter(id skill.Starter) (skill.Starter, bool) {
 	return id, true
 }
 
-func appendRedLeagueProgress(progress ProgressState, f state.StoryFacts) ProgressState {
-	return append(progress,
-		ProgressFact{ID: redProgressLeagueLoreleiDefeated, Complete: f.LeagueLoreleiDefeated},
-		ProgressFact{ID: redProgressLeagueBrunoDefeated, Complete: f.LeagueBrunoDefeated},
-		ProgressFact{ID: redProgressLeagueAgathaDefeated, Complete: f.LeagueAgathaDefeated},
-		ProgressFact{ID: redProgressLeagueLanceDefeated, Complete: f.LeagueLanceDefeated},
-	)
-}
-
 func redProgressState(f state.StoryFacts) ProgressState {
-	return appendRedLeagueProgress(redprofile.ProjectStoryFacts(f), f)
+	return redprofile.ProjectStoryFacts(f)
 }
 
 func redProgressStateFromRAM(mem *state.Mem, _ state.InventoryState, f state.StoryFacts) ProgressState {
-	return appendRedLeagueProgress(redprofile.ProjectStory(mem, f), f)
+	return redprofile.ProjectStory(mem, f)
 }

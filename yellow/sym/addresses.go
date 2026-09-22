@@ -22,14 +22,18 @@ const (
 // decomp rather than importing red/sym.
 const (
 	// Player/world.
-	CurMap             uint16 = 0xD35D // wCurMap
-	YCoord             uint16 = 0xD360 // wYCoord
-	XCoord             uint16 = 0xD361 // wXCoord
-	CurMapHeight       uint16 = 0xD367 // wCurMapHeight
-	CurMapWidth        uint16 = 0xD368 // wCurMapWidth
-	PlayerName         uint16 = 0xD157 // wPlayerName
-	RivalName          uint16 = 0xD349 // wRivalName
-	SpritePlayerFacing uint16 = 0xC109 // wSpritePlayerStateData1 + 9
+	CurMap                 uint16 = 0xD35D // wCurMap
+	YCoord                 uint16 = 0xD360 // wYCoord
+	XCoord                 uint16 = 0xD361 // wXCoord
+	CurMapHeight           uint16 = 0xD367 // wCurMapHeight
+	CurMapWidth            uint16 = 0xD368 // wCurMapWidth
+	PlayerName             uint16 = 0xD157 // wPlayerName
+	RivalName              uint16 = 0xD349 // wRivalName
+	SpritePlayerStateData1 uint16 = 0xC100 // wSpritePlayerStateData1
+	SpriteStateData2       uint16 = 0xC200 // wSpriteStateData2
+	SpritePlayerFacing     uint16 = 0xC109 // wSpritePlayerStateData1 + 9
+	OverworldMap           uint16 = 0xC6E8 // wOverworldMap
+	OverworldMapLen               = 1300   // wOverworldMap..wOverworldMapEnd
 
 	// Party. PartyMon1 is a packed 44-byte Gen-I party-mon struct.
 	PartyCount   uint16 = 0xD162 // wPartyCount
@@ -46,8 +50,56 @@ const (
 	WalkCounter     uint16 = 0xCFC4 // wWalkCounter
 	JoyIgnore       uint16 = 0xCD6B // wJoyIgnore
 
-	// Battle.
-	IsInBattle uint16 = 0xD056 // wIsInBattle
+	// Battle/menu runtime. These addresses are from the generated
+	// pokeyellow.sym for the exact supported ROM revision above. The battle
+	// struct is shifted relative to Pokémon Red, so keep every native address
+	// Yellow-owned even where the byte format is shared.
+	TopMenuItemX           uint16 = 0xCC25 // wTopMenuItemX
+	TopMenuItemY           uint16 = 0xCC24 // wTopMenuItemY
+	MenuJoypadPollCount    uint16 = 0xCC34 // wMenuJoypadPollCount
+	MenuWatchedKeys        uint16 = 0xCC29 // wMenuWatchedKeys
+	ItemQuantity           uint16 = 0xCF95 // wItemQuantity
+	MoneyTemp              uint16 = 0xFF9F // hMoney, 3-byte BCD menu price/total
+	ListScrollOffset       uint16 = 0xCC36 // wListScrollOffset
+	ListCount              uint16 = 0xD129 // wListCount
+	ListMenuID             uint16 = 0xCF93 // wListMenuID
+	PartyMenuTypeOrMessage uint16 = 0xD07C // wPartyMenuTypeOrMessageID
+	FieldMoves             uint16 = 0xCD3D // wFieldMoves
+	RodResponse            uint16 = 0xCD3D // wRodResponse; aliases field-move scratch outside fishing
+	FlyLocationsList       uint16 = 0xCD3E // wFlyLocationsList, NUM_CITY_MAPS entries
+	DestinationMap         uint16 = 0xD719 // wDestinationMap
+	ActionResult           uint16 = 0xCD6A // wActionResultOrTookBattleTurn
+	TileInFrontOfPlayer    uint16 = 0xCFC5 // wTileInFrontOfPlayer
+	WalkBikeSurfState      uint16 = 0xD6FF // wWalkBikeSurfState
+	NumSafariBalls         uint16 = 0xDA46 // wNumSafariBalls
+	SafariSteps            uint16 = 0xD70C // wSafariSteps, big-endian remaining steps
+	MapPalOffset           uint16 = 0xD35C // wMapPalOffset
+	MoveMenuType           uint16 = 0xCCDB // wMoveMenuType
+	NumMovesMinusOne       uint16 = 0xCD6C // wNumMovesMinusOne
+	ForcePlayerToChooseMon uint16 = 0xD11E // wForcePlayerToChooseMon
+	BattleMonSpecies       uint16 = 0xD013 // wBattleMonSpecies
+	BattleMonHP            uint16 = 0xD014 // wBattleMonHP, big-endian
+	BattleMonMoves         uint16 = 0xD01B // wBattleMonMoves, 4 move ids
+	BattleMonLevel         uint16 = 0xD021 // wBattleMonLevel
+	BattleMonMaxHP         uint16 = 0xD022 // wBattleMonMaxHP, big-endian
+	BattleMonPP            uint16 = 0xD02C // wBattleMonPP, low 6 bits are PP
+	EnemyMonSpecies        uint16 = 0xCFE4 // wEnemyMonSpecies
+	EnemyMonHP             uint16 = 0xCFE5 // wEnemyMonHP, big-endian
+	EnemyMonLevel          uint16 = 0xCFF2 // wEnemyMonLevel
+	EnemyMonMaxHP          uint16 = 0xCFF3 // wEnemyMonMaxHP, big-endian
+	BattleResult           uint16 = 0xCF0B // wBattleResult
+	PlayerMonNumber        uint16 = 0xCC2F // wPlayerMonNumber
+	WhichPokemon           uint16 = 0xCF91 // wWhichPokemon
+	MoveNum                uint16 = 0xD0DF // wMoveNum
+	PlayerMoveNum          uint16 = 0xCFD1 // wPlayerMoveNum
+	PlayerSelectedMove     uint16 = 0xCCDC // wPlayerSelectedMove
+	EnemyMoveNum           uint16 = 0xCFCB // wEnemyMoveNum
+	TrainerClass           uint16 = 0xD030 // wTrainerClass
+	TrainerNo              uint16 = 0xD05C // wTrainerNo
+	BattleType             uint16 = 0xD059 // wBattleType
+	CurOpponent            uint16 = 0xD058 // wCurOpponent
+	EnemyMonPartyPos       uint16 = 0xCFE7 // wEnemyMonPartyPos
+	IsInBattle             uint16 = 0xD056 // wIsInBattle
 
 	// Inventory/progress.
 	PokedexOwned   uint16 = 0xD2F6 // wPokedexOwned, 19 bytes
@@ -60,13 +112,15 @@ const (
 
 	// Persistent/story state. Yellow's main-data block is shifted one byte
 	// earlier than Red in this region.
-	StatusFlags1    uint16 = 0xD727 // wStatusFlags1
-	StatusFlags4    uint16 = 0xD72D // wStatusFlags4
-	Elite4Flags     uint16 = 0xD733 // wElite4Flags
-	EventFlags      uint16 = 0xD746 // wEventFlags
-	RivalStarter    uint16 = 0xD714 // wRivalStarter: 1=Jolteon, 2=Flareon, 3=Vaporeon path
-	PlayerStarter   uint16 = 0xD716 // wPlayerStarter
-	LastBlackoutMap uint16 = 0xD718 // wLastBlackoutMap
+	StatusFlags1            uint16 = 0xD727 // wStatusFlags1
+	StatusFlags4            uint16 = 0xD72D // wStatusFlags4
+	Elite4Flags             uint16 = 0xD733 // wElite4Flags
+	FirstLockTrashCanIndex  uint16 = 0xD743 // wFirstLockTrashCanIndex
+	SecondLockTrashCanIndex uint16 = 0xD744 // wSecondLockTrashCanIndex
+	EventFlags              uint16 = 0xD746 // wEventFlags
+	RivalStarter            uint16 = 0xD714 // wRivalStarter: 1=Jolteon, 2=Flareon, 3=Vaporeon path
+	PlayerStarter           uint16 = 0xD716 // wPlayerStarter
+	LastBlackoutMap         uint16 = 0xD718 // wLastBlackoutMap
 
 	// Yellow-only Pikachu state.
 	PikachuHappiness       uint16 = 0xD46F // wPikachuHappiness

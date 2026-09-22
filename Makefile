@@ -5,6 +5,11 @@
 POKEMON_RED_ROM ?= $(firstword $(wildcard $(CURDIR)/roms/pokemon_red.gb $(HOME)/.config/pokepilot/pokemon_red.gb) $(CURDIR)/roms/pokemon_red.gb)
 export POKEMON_RED_ROM
 
+# Pokémon Yellow qualification is opt-in just like Red emulator fixtures. The
+# ROM is never required by normal CI and is never committed.
+POKEMON_YELLOW_ROM ?= $(firstword $(wildcard $(CURDIR)/roms/pokemon_yellow.gb $(HOME)/.config/pokepilot/pokemon_yellow.gb) $(CURDIR)/roms/pokemon_yellow.gb)
+export POKEMON_YELLOW_ROM
+
 # The whole ROM directory is mounted read-only into the farm runners, so a
 # worker plays any cartridge the operator put there (Red, Blue, ...). It
 # defaults to wherever the Red ROM was found.
@@ -78,11 +83,17 @@ AUTO_LLM_FALLBACK_URL ?= http://192.168.50.204:8000/v1
 AUTO_LLM_FALLBACK_MODEL ?= qwen3.5-4b
 AUTO_LLM_FALLBACK_TIMEOUT ?= 60s
 
-.PHONY: run run-60 run-0 run-llm run-llm-local run-llm-auto test test-short test-race test-farm test-agent test-state fmt-check vet verify farm-image farm-up farm-down qwagent-triage-install
+.PHONY: run run-60 run-0 run-llm run-llm-local run-llm-auto test test-short test-race test-farm test-agent test-state test-yellow-rom verify-yellow-rom fmt-check vet verify farm-image farm-up farm-down qwagent-triage-install
 
 require-rom = @test -f "$(POKEMON_RED_ROM)" || { \
 	echo "POKEMON_RED_ROM not found: $(POKEMON_RED_ROM)"; \
 	echo "point it at a Pokemon Red ROM"; \
+	exit 1; \
+}
+
+require-yellow-rom = @test -f "$(POKEMON_YELLOW_ROM)" || { \
+	echo "POKEMON_YELLOW_ROM not found: $(POKEMON_YELLOW_ROM)"; \
+	echo "point it at the supported Pokemon Yellow EN rev0 ROM"; \
 	exit 1; \
 }
 
@@ -175,6 +186,18 @@ test-agent:
 
 test-state:
 	POKEMON_RED_ROM= go test -short -count=1 ./red/state ./red/sym ./world $(ARGS)
+
+# Local Yellow qualification. These targets are intentionally not part of
+# normal CI because the copyrighted ROM is supplied by the operator.
+test-yellow-rom:
+	$(require-yellow-rom)
+	POKEMON_RED_ROM= POKEMON_YELLOW_ROM="$(POKEMON_YELLOW_ROM)" go test -count=1 ./yellow/... $(ARGS)
+	POKEMON_RED_ROM= POKEMON_YELLOW_ROM="$(POKEMON_YELLOW_ROM)" go test -count=1 -run Yellow ./agent $(ARGS)
+
+verify-yellow-rom:
+	$(require-yellow-rom)
+	go run ./cmd/worldverify -game yellow -rom "$(POKEMON_YELLOW_ROM)" -max-exhaustive-capabilities 16
+	$(MAKE) test-yellow-rom POKEMON_YELLOW_ROM="$(POKEMON_YELLOW_ROM)" ARGS='$(ARGS)'
 
 # GomeBoy is pinned to the maintained GitHub fork in go.mod, so the Docker
 # build needs only this repository as its build context.
