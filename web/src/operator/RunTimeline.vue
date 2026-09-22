@@ -126,22 +126,66 @@ function compactFrame(value: number): string {
   return String(Math.round(value))
 }
 
+type TimelineMark = {
+  position: number
+  eventIndices: number[]
+  representativeIndex: number
+  firstFrame: number
+  lastFrame: number
+}
+
+function eventPriority(event: TimelineRow): number {
+  switch (eventKind(event)) {
+    case 'failure': return 7
+    case 'checkpoint': return 6
+    case 'recovery': return 5
+    case 'progress': return 4
+    case 'decision': return 3
+    case 'skill': return 2
+    case 'system': return 1
+    default: return 0
+  }
+}
+
 const layout = computed(() => {
   const maximum = Math.max(1, number(props.totalFrames), ...props.events.map(eventFrame))
   const positions = props.events.map((event) => Math.max(0, Math.min(100, 100 * eventFrame(event) / maximum)))
-  const lanes: number[] = []
-  const laneEnds: number[] = []
-  // Marker spacing is measured against the visible viewport. As the timeline
-  // widens, the percentage threshold must shrink or zooming would keep the
-  // same giant vertical stacks instead of spreading events horizontally.
-  const collisionDistance = 1.75 / zoom.value
-  for (const position of positions) {
-    let lane = laneEnds.findIndex((end) => position - end >= collisionDistance)
-    if (lane < 0) lane = laneEnds.length
-    lanes.push(lane)
-    laneEnds[lane] = position
+  const collisionDistance = 2.2 / zoom.value
+  const sorted = positions
+    .map((position, index) => ({ position, index }))
+    .sort((a, b) => a.position - b.position || a.index - b.index)
+
+  const marks: TimelineMark[] = []
+  let lastPosition = -Infinity
+
+  for (const item of sorted) {
+    const previous = marks[marks.length - 1]
+    if (previous && item.position - lastPosition < collisionDistance) {
+      previous.eventIndices.push(item.index)
+      previous.position = previous.eventIndices.reduce((sum, index) => sum + positions[index], 0) / previous.eventIndices.length
+      previous.firstFrame = Math.min(previous.firstFrame, eventFrame(props.events[item.index]))
+      previous.lastFrame = Math.max(previous.lastFrame, eventFrame(props.events[item.index]))
+      const currentRepresentative = props.events[previous.representativeIndex]
+      const candidate = props.events[item.index]
+      if (
+        eventPriority(candidate) > eventPriority(currentRepresentative) ||
+        (eventPriority(candidate) === eventPriority(currentRepresentative) && item.index > previous.representativeIndex)
+      ) {
+        previous.representativeIndex = item.index
+      }
+    } else {
+      marks.push({
+        position: item.position,
+        eventIndices: [item.index],
+        representativeIndex: item.index,
+        firstFrame: eventFrame(props.events[item.index]),
+        lastFrame: eventFrame(props.events[item.index])
+      })
+    }
+    lastPosition = item.position
   }
-  return { positions, lanes, laneCount: Math.max(1, laneEnds.length), totalFrames: maximum }
+
+  return { positions, marks, totalFrames: maximum }
 })
 
 const ticks = computed(() => {
@@ -175,13 +219,36 @@ function scrollToRatio(ratio: number): void {
   })
 }
 
-function setZoom(nextZoom: number): void {
+function setZoom(nextZoom: number, anchorOverride?: number): void {
   const viewport = timelineScroll.value
-  const anchor = viewport && viewport.scrollWidth > viewport.clientWidth
+  const anchor = anchorOverride ?? (viewport && viewport.scrollWidth > viewport.clientWidth
     ? (viewport.scrollLeft + viewport.clientWidth / 2) / viewport.scrollWidth
-    : focusRatio()
+    : focusRatio())
   zoom.value = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, nextZoom))
   scrollToRatio(anchor)
+}
+
+function activateMark(mark: TimelineMark): void {
+  if (mark.eventIndices.length === 1) {
+    emit('select', mark.eventIndices[0])
+    return
+  }
+  if (canZoomIn.value) {
+    setZoom(zoom.value * 2, mark.position / 100)
+    return
+  }
+  emit('select', mark.representativeIndex)
+}
+
+function markTitle(mark: TimelineMark): string {
+  if (mark.eventIndices.length === 1) {
+    const event = props.events[mark.eventIndices[0]]
+    return `${when(event)} · ${eventTitle(event)}`
+  }
+  const frameRange = mark.firstFrame === mark.lastFrame
+    ? `frame ${mark.firstFrame.toLocaleString()}`
+    : `frames ${mark.firstFrame.toLocaleString()}–${mark.lastFrame.toLocaleString()}`
+  return `${mark.eventIndices.length} events · ${frameRange} · click to zoom`
 }
 
 function zoomIn(): void {
@@ -271,9 +338,8 @@ function when(event: TimelineRow): string {
         aria-label="Run activity timeline. Scroll horizontally when zoomed."
       >
         <div
-          class="relative px-3 pt-5 pb-3"
+          class="relative h-[76px] px-3 pt-5 pb-3"
           :style="{
-            minHeight: `${76 + (layout.laneCount - 1) * 16}px`,
             width: `${zoom * 100}%`,
             minWidth: '100%'
           }"
@@ -283,25 +349,28 @@ function when(event: TimelineRow): string {
           <span class="mb-1 block h-1.5 w-px bg-white/15" />{{ tick.label }}
         </div>
         <button
-          v-for="(event, index) in events"
-          :key="`${eventFrame(event)}-${index}`"
+          v-for="(mark, markIndex) in layout.marks"
+          :key="`${mark.firstFrame}-${mark.lastFrame}-${markIndex}`"
           type="button"
-          :title="`${when(event)} · ${eventTitle(event)}`"
-          :aria-current="index === selectedIndex ? 'true' : undefined"
+          :title="markTitle(mark)"
+          :aria-current="mark.eventIndices.includes(selectedIndex) ? 'true' : undefined"
           :class="[
-            markerClasses(event),
-            index === selectedIndex ? 'scale-110 ring-2 ring-white/35' : '',
-            'absolute z-10 grid size-5 -translate-x-1/2 place-items-center rounded-full border text-[9px] font-bold shadow-sm transition'
+            markerClasses(events[mark.representativeIndex]),
+            mark.eventIndices.includes(selectedIndex) ? 'scale-110 ring-2 ring-white/35' : '',
+            mark.eventIndices.length > 1 ? 'min-w-6 px-1.5' : 'size-5',
+            'absolute z-10 grid h-5 -translate-x-1/2 place-items-center rounded-full border text-[9px] font-bold shadow-sm transition'
           ]"
-          :style="{ left: `${layout.positions[index]}%`, bottom: `${21 + layout.lanes[index] * 16}px` }"
-          @click="emit('select', index)"
+          :style="{ left: `${mark.position}%`, bottom: '21px' }"
+          @click="activateMark(mark)"
         >
-          {{ markerSymbol(event) }}
+          <span v-if="mark.eventIndices.length > 1">{{ mark.eventIndices.length }}</span>
+          <span v-else>{{ markerSymbol(events[mark.representativeIndex]) }}</span>
         </button>
         </div>
       </div>
       <div class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[9px] font-medium text-slate-600">
         <span>○ LLM</span><span>⚙ Skill</span><span>↻ Recovery</span><span>● Milestone</span><span>■ Checkpoint</span><span>◆ Failure</span>
+        <span class="text-slate-700">number = clustered events</span>
         <span v-if="zoom > 1" class="ml-auto text-slate-700">Scroll horizontally to pan</span>
       </div>
     </div>
