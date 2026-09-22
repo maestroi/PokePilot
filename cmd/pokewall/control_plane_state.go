@@ -60,9 +60,11 @@ func restorePersistedState(w *Wall, ps persistedState) {
 			ExperimentID: pt.ExperimentID, ExperimentArm: pt.ExperimentArm, ExperimentCase: pt.ExperimentCase,
 			ReasoningEffort: pt.ReasoningEffort,
 			Seed:            pt.Seed, FPS: pt.FPS, MaxRounds: pt.MaxRounds, MaxFrames: pt.MaxFrames,
-			Endless: pt.Endless, RandomSeed: pt.RandomSeed,
+			RecoveryProfile: pt.RecoveryProfile, Endless: pt.Endless, RandomSeed: pt.RandomSeed,
 			QueuedAt: timeFromUnix(pt.QueuedAt), EndedAt: timeFromUnix(pt.EndedAt),
 			Attempts: pt.Attempts, ErrorAttempts: pt.ErrorAttempts, LossRecoveries: pt.LossRecoveries,
+			RecoveryAttempts: pt.RecoveryAttempts, RecoveryBadges: pt.RecoveryBadges, RecoveryEvents: pt.RecoveryEvents, RecoveryMaps: pt.RecoveryMaps,
+			Activity: copyRunActivity(pt.Activity),
 			Frame: pt.Frame, Map: pt.Map, X: pt.X, Y: pt.Y,
 			Trace: pt.Trace, Question: pt.Question, Decision: pt.Decision, StopSoFar: pt.StopSoFar,
 			Stats: pt.Stats, Player: pt.Player, Reason: pt.Reason, Detail: pt.Detail,
@@ -168,6 +170,7 @@ func controlPlanePersistedStateLocked(w *Wall) persistedState {
 		pt.Stats = nil
 		pt.Player = nil
 		pt.WorkerAddrs = nil
+		pt.Activity = durableRunActivity(pt.Activity)
 		ps.Tiles[id] = pt
 	}
 	return ps
