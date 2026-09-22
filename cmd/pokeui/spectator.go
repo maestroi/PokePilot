@@ -60,6 +60,8 @@ type spectatorRun struct {
 	Map         uint8            `json:"map"`
 	X           uint8            `json:"x"`
 	Y           uint8            `json:"y"`
+	MapsVisited int              `json:"maps_visited,omitempty"`
+	Question    string           `json:"question,omitempty"`
 	Decision    string           `json:"decision,omitempty"`
 	StopSoFar   string           `json:"stop_so_far,omitempty"`
 	Stats       *spectatorStats  `json:"stats,omitempty"`
@@ -330,7 +332,8 @@ func mergeSpectatorSources(parts ...spectatorSourceDashboard) spectatorSourceDas
 func publicSpectatorRuns(ctx context.Context, runs []spectatorSourceRun, catalog *spectatorReplayCatalog) []spectatorRun {
 	active := make([]spectatorRun, 0, len(runs))
 	for _, run := range runs {
-		if run.Status != "done" {
+		switch run.Status {
+		case "running", "leased":
 			active = append(active, run.spectatorRun)
 		}
 	}
