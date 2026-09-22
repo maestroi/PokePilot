@@ -113,10 +113,42 @@ type githubClient struct {
 	http    *http.Client
 
 	// GitHub Issues has no atomic "find-or-create by fingerprint" operation.
-	// pokeissues is deliberately deployed as one replica, so serialize reports
-	// through the scan/create window to keep concurrent farm deliveries from
-	// creating duplicate issues for the same fingerprint.
-	reportMu sync.Mutex
+	// pokeissues is deliberately deployed as one replica; these in-process
+	// keyed locks serialize only reports for the same fingerprint, while
+	// unrelated failures can still upload/reconcile concurrently.
+	reportLocksMu sync.Mutex
+	reportLocks   map[string]*fingerprintReportLock
+}
+
+type fingerprintReportLock struct {
+	mu   sync.Mutex
+	refs int
+}
+
+func (c *githubClient) lockFingerprintReport(fingerprint string) func() {
+	c.reportLocksMu.Lock()
+	if c.reportLocks == nil {
+		c.reportLocks = make(map[string]*fingerprintReportLock)
+	}
+	lock := c.reportLocks[fingerprint]
+	if lock == nil {
+		lock = &fingerprintReportLock{}
+		c.reportLocks[fingerprint] = lock
+	}
+	lock.refs++
+	c.reportLocksMu.Unlock()
+
+	lock.mu.Lock()
+	return func() {
+		lock.mu.Unlock()
+
+		c.reportLocksMu.Lock()
+		lock.refs--
+		if lock.refs == 0 {
+			delete(c.reportLocks, fingerprint)
+		}
+		c.reportLocksMu.Unlock()
+	}
 }
 
 type issueServer struct {
@@ -335,8 +367,8 @@ func validateManifest(m issueReportManifest) error {
 }
 
 func (c *githubClient) report(ctx context.Context, manifest issueReportManifest, artifacts []artifactMeta) (issueReportResponse, bool, error) {
-	c.reportMu.Lock()
-	defer c.reportMu.Unlock()
+	unlock := c.lockFingerprintReport(manifest.Fingerprint)
+	defer unlock()
 
 	var out issueReportResponse
 	existing, found, err := c.findIssue(ctx, manifest.Fingerprint, manifest.ExternalID)
