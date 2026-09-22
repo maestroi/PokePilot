@@ -124,6 +124,17 @@ func TestMCPToolsDriveOnlyOperatorAPI(t *testing.T) {
 			json.NewEncoder(res).Encode([]map[string]any{{"key": "deadbeef", "pattern": "stuck", "count": 2}}) //nolint:errcheck
 		case req.Method == http.MethodPost && req.URL.Path == "/v1/triage/deadbeef/investigate":
 			json.NewEncoder(res).Encode(map[string]any{"issue_number": 42}) //nolint:errcheck
+		case req.Method == http.MethodPost && req.URL.Path == "/v1/triage/deadbeef/solver-attempt":
+			var attempt map[string]any
+			if err := json.NewDecoder(req.Body).Decode(&attempt); err != nil {
+				http.Error(res, err.Error(), http.StatusBadRequest)
+				return
+			}
+			if attempt["model"] != "qwen3.8-27b/qwen3.8-27b" {
+				http.Error(res, "wrong model", http.StatusBadRequest)
+				return
+			}
+			json.NewEncoder(res).Encode(map[string]any{"attempt_count": 1}) //nolint:errcheck
 		case req.URL.Path == "/v1/lease" || strings.Contains(req.URL.Path, "/heartbeat") || strings.Contains(req.URL.Path, "/finish"):
 			http.Error(res, "runner-only route reached", http.StatusInternalServerError)
 		default:
@@ -164,6 +175,7 @@ func TestMCPToolsDriveOnlyOperatorAPI(t *testing.T) {
 		"pokepilot_get_triage",
 		"pokepilot_investigate_failure",
 		"pokepilot_list_runs",
+		"pokepilot_record_solver_attempt",
 		"pokepilot_start_run",
 	}
 	if strings.Join(names, ",") != strings.Join(want, ",") {
@@ -204,6 +216,10 @@ func TestMCPToolsDriveOnlyOperatorAPI(t *testing.T) {
 		{"pokepilot_get_run_artifacts", map[string]any{"run_id": runID}},
 		{"pokepilot_get_triage", map[string]any{}},
 		{"pokepilot_investigate_failure", map[string]any{"key": "deadbeef"}},
+		{"pokepilot_record_solver_attempt", map[string]any{
+			"key": "deadbeef", "id": "attempt-1", "backend": "opencode",
+			"model": "qwen3.8-27b/qwen3.8-27b", "state": "started", "run_id": runID,
+		}},
 		{"pokepilot_cancel_run", map[string]any{"run_id": runID}},
 	} {
 		if _, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: call.name, Arguments: call.args}); err != nil {
