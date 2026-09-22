@@ -318,6 +318,21 @@ func (w *Wall) pauseForFailureCircuit(id string, before pauseFinishSnapshot, rep
 		w.mu.Unlock()
 		return false
 	}
+	// Endless is the resilient goal-supervisor mode. A repeated blocker is
+	// still persisted, grouped, reported, and investigated, but it must not
+	// quarantine the campaign: settleRun already bounds retries for one runner
+	// generation and then enqueueNextLocked resumes a successor from the latest
+	// major checkpoint. Keeping the circuit advisory here means weak/experimental
+	// planners can need many recoveries without turning one bad objective into
+	// a permanently stopped goal.
+	//
+	// Non-endless runs retain the strict circuit behavior used by qualification
+	// and debugging: repeated deterministic blockers pause until a fixed-build
+	// canary is available.
+	if current.Endless {
+		w.mu.Unlock()
+		return false
+	}
 
 	target := current
 	restoreCurrent := current.Status == statusQueued && !current.Finished
