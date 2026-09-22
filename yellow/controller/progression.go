@@ -344,6 +344,56 @@ func yellowSecondTrashCanIndex(m *emu.Emu) (uint8, bool) {
 	return 0, false
 }
 
+func yellowResetInvalidSurgeSecondLock(m *emu.Emu, romData []byte) error {
+	first := m.Peek8(sym.FirstLockTrashCanIndex)
+	for index := uint8(0); index < 15; index++ {
+		if index == first {
+			continue
+		}
+		x, y, _ := yellowVermilionTrashCanCoords(index)
+		if err := interactAt(m, romData, int(x), int(y)); err != nil {
+			recovered, recoverErr := recoverYellowTravelInterruption(m, romData)
+			if recoverErr != nil {
+				return recoverErr
+			}
+			if recovered {
+				continue
+			}
+			return err
+		}
+		if _, err := RecoverDialogue(m, romData); err != nil {
+			return err
+		}
+		open, err := yellowStoryHas(m, romData, yellowprofile.ProgressYellowVermilionFirstLockOpen)
+		if err != nil {
+			return err
+		}
+		if !open {
+			return nil
+		}
+	}
+	return fmt.Errorf("yellow Surge puzzle: could not reset invalid sampled second-switch state")
+}
+
+func ensureYellowCutCarrier(m *emu.Emu, romData []byte) error {
+	cap := fieldCapabilityFor(m, romData, FieldCut)
+	if !cap.Usable && !cap.Preparable {
+		// Yellow guarantees a Cut-compatible Charmander gift on Route 24.
+		// Use it as the bounded recovery path when the current roster cannot
+		// carry HM01, rather than letting a legitimate speedrun dead-end.
+		if m.Peek8(sym.PartyCount) >= 6 {
+			return fmt.Errorf("yellow Cut recovery: no compatible party member and party is full")
+		}
+		if err := ReceiveGift(m, romData, 0xb0); err != nil {
+			return fmt.Errorf("yellow Cut recovery: receive Route 24 Charmander: %w", err)
+		}
+	}
+	if _, err := EnsureFieldMove(m, romData, FieldCut); err != nil {
+		return err
+	}
+	return nil
+}
+
 func openYellowVermilionGym(m *emu.Emu, romData []byte) error {
 	if done, err := yellowStoryHas(m, romData, yellowprofile.ProgressYellowVermilionGateOpen); err != nil {
 		return err
@@ -377,7 +427,13 @@ func openYellowVermilionGym(m *emu.Emu, romData []byte) error {
 		}
 		second, ok := yellowSecondTrashCanIndex(m)
 		if !ok {
-			return fmt.Errorf("yellow Surge puzzle: no valid sampled second-switch index")
+			// Yellow's three-choice sampler has a register bug and can read a
+			// pair outside the 0..14 can range. Deliberately touch a wrong can
+			// to make the game reset the first lock, then retry from live state.
+			if err := yellowResetInvalidSurgeSecondLock(m, romData); err != nil {
+				return err
+			}
+			continue
 		}
 		x, y, _ := yellowVermilionTrashCanCoords(second)
 		err = yellowStoryHiddenEvent(m, romData, x, y, yellowprofile.ProgressYellowVermilionGateOpen)
@@ -431,7 +487,7 @@ func DefeatSurge(m *emu.Emu, romData []byte) error {
 	} else if !hm01 {
 		return fmt.Errorf("yellow Surge: HM01 is not owned")
 	}
-	if _, err := EnsureFieldMove(m, romData, FieldCut); err != nil {
+	if err := ensureYellowCutCarrier(m, romData); err != nil {
 		return fmt.Errorf("yellow Surge: prepare Cut: %w", err)
 	}
 	if err := GoTo(m, romData, yellowVermilionGymMap, 5, 15); err != nil {
@@ -463,7 +519,7 @@ func ReachLavender(m *emu.Emu, romData []byte) error {
 	} else if !thunder {
 		return fmt.Errorf("yellow Rock Tunnel: Thunder Badge milestone is incomplete")
 	}
-	if _, err := EnsureFieldMove(m, romData, FieldCut); err != nil {
+	if err := ensureYellowCutCarrier(m, romData); err != nil {
 		return fmt.Errorf("yellow Rock Tunnel: prepare Cut: %w", err)
 	}
 	if err := GoTo(m, romData, yellowLavenderCenterMap, 3, 3); err != nil {
@@ -516,7 +572,7 @@ func DefeatErika(m *emu.Emu, romData []byte) error {
 	} else if !ready {
 		return fmt.Errorf("yellow Erika: Celadon recovered checkpoint is incomplete")
 	}
-	if _, err := EnsureFieldMove(m, romData, FieldCut); err != nil {
+	if err := ensureYellowCutCarrier(m, romData); err != nil {
 		return fmt.Errorf("yellow Erika: prepare Cut: %w", err)
 	}
 	if err := GoTo(m, romData, yellowCeladonGymMap, 4, 4); err != nil {
