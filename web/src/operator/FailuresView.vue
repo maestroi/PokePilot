@@ -60,7 +60,7 @@ function solverSummary(group: TriageGroup): string {
   const latest = attempts[attempts.length - 1]
   const model = latest.model || latest.backend || 'unknown model'
   const count = attempts.length
-  const state = String(latest.state || '').replaceAll('_', ' ')
+  const state = String(latest.state || '').replace(/_/g, ' ')
   const verified = group.issue?.verification_state === 'verified' ? ' · verified' : ''
   return `last solver: ${model} · ${count} attempt${count === 1 ? '' : 's'}${state ? ` · ${state}` : ''}${verified}`
 }
