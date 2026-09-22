@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -18,8 +19,8 @@ func TestRunActivityRingIsBoundedAndDeduplicated(t *testing.T) {
 	}
 	for i := 0; i < runActivityKeep+20; i++ {
 		appendRunActivityLocked(tile, runActivityEvent{
-			Source: "system", Kind: "test", Summary: "event " + string(rune('A'+i%26)),
-			Detail: string(rune(i)),
+			Source: "system", Kind: "test", Summary: fmt.Sprintf("event %d", i),
+			Detail: fmt.Sprintf("detail %d", i),
 		})
 	}
 	if len(tile.Activity) != runActivityKeep {
