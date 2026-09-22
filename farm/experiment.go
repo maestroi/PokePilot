@@ -26,6 +26,7 @@ type ExperimentRequest struct {
 	FPS             int           `json:"fps,omitempty"`
 	MaxRounds       int           `json:"max_rounds,omitempty"`
 	MaxFrames       int           `json:"max_frames,omitempty"`
+	RecoveryProfile RecoveryProfile `json:"recovery_profile,omitempty"`
 }
 
 // ExperimentRunMeta is copied onto each generated run and persisted by the
@@ -52,7 +53,8 @@ type ComparableRunConfig struct {
 	WildEncounters     string `json:"wild_encounters,omitempty"`
 	ReasoningEffort    string `json:"reasoning_effort,omitempty"`
 	FPS                int    `json:"fps,omitempty"`
-	MaxRounds          int    `json:"max_rounds,omitempty"`
-	MaxFrames          int    `json:"max_frames,omitempty"`
-	MaxParallelWorkers int    `json:"max_parallel_workers,omitempty"`
+	MaxRounds          int             `json:"max_rounds,omitempty"`
+	MaxFrames          int             `json:"max_frames,omitempty"`
+	RecoveryProfile    RecoveryProfile `json:"recovery_profile,omitempty"`
+	MaxParallelWorkers int             `json:"max_parallel_workers,omitempty"`
 }
