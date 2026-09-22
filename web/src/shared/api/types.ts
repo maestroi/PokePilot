@@ -24,6 +24,9 @@ export interface DashboardIssueLink {
   occurrence_count?: number
   fixed_revision?: string
   solver_attempts?: SolverAttempt[]
+  verification_state?: string
+  verification_revision?: string
+  verification_verified_at?: number
   stale?: boolean
   circuit_open?: boolean
   circuit_kind?: string
