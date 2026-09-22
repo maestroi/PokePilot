@@ -97,19 +97,19 @@ const (
 )
 
 var eventNames = map[Event]string{
-	EventFollowedOakIntoLab:        "FollowedOakIntoLab",
-	EventOakAskedToChooseMon:       "OakAskedToChooseMon",
-	EventGotStarter:                "GotStarter",
-	EventBattledRivalInOaksLab:     "BattledRivalInOaksLab",
-	EventGotPokeballsFromOak:       "GotPokeballsFromOak",
-	EventGotPokedex:                "GotPokedex",
-	EventOakAppearedInPallet:       "OakAppearedInPallet",
-	EventOakGotParcel:              "OakGotParcel",
-	EventGotOaksParcel:             "GotOaksParcel",
+	EventFollowedOakIntoLab:           "FollowedOakIntoLab",
+	EventOakAskedToChooseMon:          "OakAskedToChooseMon",
+	EventGotStarter:                   "GotStarter",
+	EventBattledRivalInOaksLab:        "BattledRivalInOaksLab",
+	EventGotPokeballsFromOak:          "GotPokeballsFromOak",
+	EventGotPokedex:                   "GotPokedex",
+	EventOakAppearedInPallet:          "OakAppearedInPallet",
+	EventOakGotParcel:                 "OakGotParcel",
+	EventGotOaksParcel:                "GotOaksParcel",
 	EventVermilionGymSecondLockOpened: "VermilionGymSecondLockOpened",
 	EventVermilionGymFirstLockOpened:  "VermilionGymFirstLockOpened",
-	EventBeatRoute22Rival1stBattle: "BeatRoute22Rival1stBattle",
-	EventBeatChampionRival:         "BeatChampionRival",
+	EventBeatRoute22Rival1stBattle:    "BeatRoute22Rival1stBattle",
+	EventBeatChampionRival:            "BeatChampionRival",
 }
 
 // String renders the event name; unnamed indices render as "unknown(N)".
