@@ -29,7 +29,6 @@ import {
   objectiveLabel,
   playSpeedLabel,
   playStyleLabel,
-  playStyleTagline,
   preferredRun,
   routeLabel,
   runStatusLabel,
@@ -62,6 +61,7 @@ const activityFilter = ref<ActivityFilter>('all')
 const activityFilters: ActivityFilter[] = ['all', 'milestones', 'decisions']
 const activityByRun = ref<Record<string, ActivityItem[]>>({})
 const previousRuns = new Map<string, SpectatorRun>()
+const GYM_BADGES = ['Boulder', 'Cascade', 'Thunder', 'Rainbow', 'Soul', 'Marsh', 'Volcano', 'Earth'] as const
 
 const {
   data: snapshot,
@@ -142,17 +142,18 @@ const nextMilestone = computed(() => {
   if (!run) return null
   const badges = run.player?.badges?.length || 0
   if (badges < 8) {
+    const badgeName = GYM_BADGES[badges] || 'Next'
     return {
       eyebrow: 'Next milestone',
-      title: 'Next Gym Badge',
-      detail: objectiveLabel(run),
+      title: badgeName + ' Badge',
+      detail: (8 - badges) + ' gym badge' + (8 - badges === 1 ? '' : 's') + ' remain before the Indigo Plateau.',
       progress: badges + 1 + ' of 8 badges'
     }
   }
   return {
     eyebrow: 'Final stretch',
     title: 'Elite Four & Hall of Fame',
-    detail: objectiveLabel(run),
+    detail: 'All gym badges are earned. The next major public milestone is entering the Hall of Fame.',
     progress: 'All 8 badges earned'
   }
 })
