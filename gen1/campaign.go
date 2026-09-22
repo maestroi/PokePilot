@@ -2,6 +2,19 @@ package gen1
 
 import "github.com/maestroi/pokepilot/game"
 
+// EarlyCampaignStages is the shared Kanto spine after the starter/opening.
+// Version-specific interruptions (for example Yellow's Jessie/James exit battle)
+// are inserted by the concrete adapter between these durable milestones.
+func EarlyCampaignStages() []game.ProgressID {
+	return []game.ProgressID{
+		ProgressPokedexAcquired,
+		ProgressBoulderBadge,
+		ProgressMtMoonFossilAcquired,
+		ProgressSSTicketAcquired,
+		ProgressHM01Acquired,
+	}
+}
+
 // LeagueApproachStages is the shared Kanto endgame order between the eighth
 // badge and the first Elite Four room. Concrete games own how each fact is
 // executed and observed.
