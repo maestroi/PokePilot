@@ -218,7 +218,8 @@ func sampleManifest(externalID string) issueReportManifest {
 		Severity:         "critical",
 		Evidence: json.RawMessage(`{
 			"run_id":"run-42","attempt":3,"classification":"progression-blocker",
-			"objective":"GoTo Cerulean","error":"no path","map":"0x03","x":1,"y":2,
+			"objective":"GoTo Cerulean","error":"no path","cause":"route_prerequisite_missing",
+			"cause_context":["can_surf","can_clear_snorlax"],"map":"0x03","x":1,"y":2,
 			"trace_tail":["private noisy trace that should not be copied"]
 		}`),
 	}
@@ -257,6 +258,7 @@ func TestReportCreatesGitHubIssueWithoutArtifactBytes(t *testing.T) {
 		"https://pokemon.test/v1/runs/run-42/debug",
 		"`round-003.state`",
 		"progression-blocker",
+		"| `cause_context` | can_surf, can_clear_snorlax |",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("issue body missing %q:\n%s", want, body)
