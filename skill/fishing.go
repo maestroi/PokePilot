@@ -82,6 +82,15 @@ func Fish(m *emu.Emu, romData []byte, rod uint8, want []uint8, policy MovePolicy
 	res := CatchResult{}
 
 	for attempt := 1; attempt <= fishingAttemptCap; attempt++ {
+		// A prior catch's AddPartyMon/AskName sequence can leave a trailing
+		// script holding wJoyIgnore for a short, self-clearing window after
+		// the naming prompt is dismissed (MEASURED: ~100 frames). GoTo's step
+		// loop already waits this out before trusting position/input; Fish's
+		// attempt loop must do the same before Face or the very next
+		// Controllable check below fails a perfectly recoverable transient.
+		if err := waitOutScriptedMovement(m); err != nil {
+			return res, fmt.Errorf("skill: Fish: attempt %d: %w", attempt, err)
+		}
 		// Battle and menu handling can change facing. Re-prove the cast target
 		// immediately before every attempt instead of assuming it stayed put.
 		if err := Face(m, uint8(shore.waterX), uint8(shore.waterY)); err != nil {
@@ -125,6 +134,12 @@ func fishingRodItem(item uint8) bool {
 // It returns only after either a battle has started or the no-bite result has
 // settled back to the overworld. Unknown prompts are never answered blindly.
 func castRodOnce(m *emu.Emu, rod uint8) (bool, error) {
+	// Face (the caller's last action) can itself be the input that lets a
+	// trailing script grab wJoyIgnore for its self-clearing window; wait it
+	// out here too, since that is where the transient actually lands.
+	if err := waitOutScriptedMovement(m); err != nil {
+		return false, err
+	}
 	var mem state.Mem
 	state.Snapshot(m, &mem)
 	if !state.Controllable(&mem) {
