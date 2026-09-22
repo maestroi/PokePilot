@@ -6,6 +6,26 @@ import (
 	"github.com/maestroi/pokepilot/game"
 )
 
+
+func TestEarlyCampaignStagesOrder(t *testing.T) {
+	want := []game.ProgressID{
+		ProgressPokedexAcquired,
+		ProgressBoulderBadge,
+		ProgressMtMoonFossilAcquired,
+		ProgressSSTicketAcquired,
+		ProgressHM01Acquired,
+	}
+	got := EarlyCampaignStages()
+	if len(got) != len(want) {
+		t.Fatalf("EarlyCampaignStages length=%d, want %d", len(got), len(want))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("EarlyCampaignStages[%d]=%q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
 func TestLeagueStagesOrder(t *testing.T) {
 	want := []game.ProgressID{
 		ProgressLeagueChallengeStarted,
