@@ -1,6 +1,7 @@
 package skill
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/maestroi/pokepilot/red/state"
@@ -66,6 +67,22 @@ func TestFuchsiaGymRegistration(t *testing.T) {
 	d, ok := Place(g.Place)
 	if !ok || d.Map != fuchsiaGymMap || d.X != 4 || d.Y != 11 {
 		t.Fatalf("Koga approach place = %+v,%v, want map %#02x at (4,11)", d, ok, fuchsiaGymMap)
+	}
+}
+
+// TestFuchsiaKogaOutcomeErr pins the triage c4db7cfafa4b263c defect: a Koga
+// loss must keep the typed trainer-blackout signal so the planner can train or
+// grow the party and retry the slice, not classify as an unknown,
+// unrecoverable failure.
+func TestFuchsiaKogaOutcomeErr(t *testing.T) {
+	if !errors.Is(fuchsiaKogaOutcomeErr(state.ResultLost), ErrTrainerBlackedOut) {
+		t.Fatal("Koga loss must unwrap to ErrTrainerBlackedOut so the planner can train and retry")
+	}
+	if errors.Is(fuchsiaKogaOutcomeErr(state.ResultDraw), ErrTrainerBlackedOut) {
+		t.Fatal("a draw must not be reported as a trainer blackout")
+	}
+	if errors.Is(fuchsiaKogaOutcomeErr(state.ResultWon), ErrTrainerBlackedOut) {
+		t.Fatal("a win must not be reported as a trainer blackout")
 	}
 }
 
