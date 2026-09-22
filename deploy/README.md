@@ -189,7 +189,12 @@ local `qwagent` (`opencode run --auto --model qwen3.8-27b/qwen3.8-27b`) every
 30 minutes. The picker talks to `/mcp` because `admin.rompilot.app/v1/*` sits
 behind Cloudflare Access; a bearer token alone gets a 302 login page there.
 The picker is deterministic; the model only reproduces, patches, and opens a
-PR. It never merges and never writes `main`. Every real coding attempt is
+PR. It never merges and never writes `main`. Before launching a fresh coding
+attempt, the loop assigns the generated farm issue to the authenticated GitHub
+user. Assigned farm issues are skipped by later picker ticks, making ownership
+visible before a PR exists. If the attempt ends without a surviving PR the
+assignment is released; once a repair PR exists the assignment stays on the
+issue through the normal merge/close lifecycle. Every real coding attempt is
 recorded against the failure key with its backend, requested model, outcome,
 branch, and PR. The operator failure view shows the latest solver plus the
 attempt count; GitHub resolution and PokePilot verification still decide

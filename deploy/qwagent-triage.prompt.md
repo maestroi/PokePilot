@@ -10,7 +10,9 @@ Then read and follow `docs/ARCHITECTURE.md`.
 
 The packet JSON is attached. Use its `key`, `run_id`, and `example`. When
 `issue_number` is present, it is the generated GitHub farm issue linked to this
-failure group. The shell has already applied the local PokéWall + GitHub
+failure group. For a fresh repair, the shell has already assigned that issue to
+the authenticated GitHub user as the visible claim; do not remove or replace
+that assignment. The shell has also applied the local PokéWall + GitHub
 claim/repair/regression state machine; do not second-guess queue eligibility
 from stale Orchestrator status.
 

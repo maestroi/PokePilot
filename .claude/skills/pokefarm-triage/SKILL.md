@@ -30,6 +30,23 @@ metadata may include `status`, `resolution`, `occurrence_count`, and
 loop. Do not recreate work by grouping old `pokepilot_list_runs` detail strings:
 those rows are evidence and can describe bugs fixed by later revisions.
 
+### Claim the generated GitHub issue before work
+
+When a triage group has `issue.issue_number`, the GitHub issue is the visible
+human/agent ownership surface. Before reproducing or editing code:
+
+1. inspect the issue assignees;
+2. if it is already assigned, treat it as claimed and choose another issue
+   unless the user explicitly asked you to resume that issue/repair;
+3. otherwise assign it to the authenticated GitHub user (for example
+   `gh issue edit <number> --add-assignee @me`);
+4. keep the assignment while a repair PR is open;
+5. if you abandon/fail the attempt before a PR exists, remove your assignment.
+
+This claim happens earlier than the `[triage:<key>]` PR marker, so another
+agent can immediately see that the issue is being worked. The unattended
+`qwagent-triage.sh` loop performs this claim/release automatically.
+
 ### Unattended qwagent triage
 
 The shell has already selected exactly one failure and attached a packet with
@@ -39,7 +56,8 @@ The shell has already selected exactly one failure and attached a packet with
 The selector uses a deterministic local lifecycle so it can keep working while
 Agent Orchestrator is missing or stale:
 
-- no triage PR for a key -> actionable;
+- assigned generated GitHub issue for a key -> claimed, skip before coding starts;
+- no issue assignment and no triage PR for a key -> actionable;
 - open PR containing `[triage:<key>]` whose checks are still pending or green -> claimed, skip;
 - open PR containing `[triage:<key>]` whose checks have failed -> repair that PR before any new farm failure;
 - merged PR containing `[triage:<key>]`, while the fingerprint's `last_observed_revision` does not contain that repair -> repaired, skip;
