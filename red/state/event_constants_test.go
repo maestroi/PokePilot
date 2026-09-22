@@ -110,6 +110,8 @@ func TestEventIndicesMatchDecomp(t *testing.T) {
 		{"EVENT_OAK_APPEARED_IN_PALLET", EventOakAppearedInPallet},
 		{"EVENT_OAK_GOT_PARCEL", EventOakGotParcel},
 		{"EVENT_GOT_OAKS_PARCEL", EventGotOaksParcel},
+		{"EVENT_2ND_LOCK_OPENED", EventVermilionGymSecondLockOpened},
+		{"EVENT_1ST_LOCK_OPENED", EventVermilionGymFirstLockOpened},
 		{"EVENT_BEAT_ROUTE22_RIVAL_1ST_BATTLE", EventBeatRoute22Rival1stBattle},
 		{"EVENT_BEAT_CHAMPION_RIVAL", EventBeatChampionRival},
 	}

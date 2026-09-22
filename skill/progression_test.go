@@ -1,6 +1,11 @@
 package skill
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/maestroi/pokepilot/red/state"
+	"github.com/maestroi/pokepilot/red/sym"
+)
 
 func TestVermilionTrashCanCoords(t *testing.T) {
 	want := [][2]uint8{
@@ -18,5 +23,35 @@ func TestVermilionTrashCanCoords(t *testing.T) {
 	}
 	if _, _, ok := vermilionTrashCanCoords(15); ok {
 		t.Fatal("can 15 unexpectedly accepted")
+	}
+}
+
+func setVermilionGymTestEvent(mem *state.Mem, event state.Event) {
+	addr := sym.EventFlags + uint16(event)/8
+	mem[addr] |= 1 << (uint16(event) % 8)
+}
+
+func TestVermilionGymPuzzlePhaseResumesAtSecondSwitch(t *testing.T) {
+	var mem state.Mem
+	if got := vermilionGymPuzzlePhaseFor(&mem); got != vermilionGymNeedsFirstSwitch {
+		t.Fatalf("fresh puzzle phase=%d, want first switch", got)
+	}
+
+	setVermilionGymTestEvent(&mem, state.EventVermilionGymFirstLockOpened)
+	if got := vermilionGymPuzzlePhaseFor(&mem); got != vermilionGymNeedsSecondSwitch {
+		t.Fatalf("first lock open phase=%d, want second switch", got)
+	}
+
+	setVermilionGymTestEvent(&mem, state.EventVermilionGymSecondLockOpened)
+	if got := vermilionGymPuzzlePhaseFor(&mem); got != vermilionGymGateOpen {
+		t.Fatalf("second lock open phase=%d, want gate open", got)
+	}
+}
+
+func TestVermilionGymSecondLockIsAuthoritative(t *testing.T) {
+	var mem state.Mem
+	setVermilionGymTestEvent(&mem, state.EventVermilionGymSecondLockOpened)
+	if got := vermilionGymPuzzlePhaseFor(&mem); got != vermilionGymGateOpen {
+		t.Fatalf("second-lock-only phase=%d, want gate open", got)
 	}
 }
