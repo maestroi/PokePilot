@@ -3,11 +3,13 @@ package main
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/maestroi/pokepilot/farm"
 )
 
-func TestObjectiveFailureFingerprintRecoversEmbeddedTerminalMarker(t *testing.T) {
+func terminalMarkerOccurrence(t *testing.T) farm.FailureOccurrence {
+	t.Helper()
 	identity := farm.FailureIdentity{
 		Version: farm.FailureIdentityVersion,
 		Game:    "pokemon",
@@ -20,10 +22,15 @@ func TestObjectiveFailureFingerprintRecoversEmbeddedTerminalMarker(t *testing.T)
 		Cause:        "route_prerequisite_missing",
 		CauseContext: []string{"can_clear_snorlax"},
 	}
-	occurrence, err := farm.NewFailureOccurrence(identity, "build-a", 7, "", "route blocked", testObservedAt)
+	occurrence, err := farm.NewFailureOccurrence(identity, "build-a", 7, "", "route blocked", time.Unix(100, 0).UTC())
 	if err != nil {
 		t.Fatal(err)
 	}
+	return occurrence
+}
+
+func TestObjectiveFailureFingerprintRecoversEmbeddedTerminalMarker(t *testing.T) {
+	occurrence := terminalMarkerOccurrence(t)
 	marker := farm.FailureDetailMarker(occurrence)
 	failure := farm.ObjectiveFailure{
 		Objective: "recover from repeated objective failures",
@@ -56,22 +63,7 @@ func TestEmbeddedFailureMarkerRejectsIncidentalText(t *testing.T) {
 }
 
 func TestTerminalRunFailureMarkerUsesCanonicalFingerprint(t *testing.T) {
-	identity := farm.FailureIdentity{
-		Version: farm.FailureIdentityVersion,
-		Game:    "pokemon",
-		Adapter: "pokemon-red",
-		Objective: farm.FailureObjective{
-			Kind:  "go_to",
-			Place: "fuchsia city",
-		},
-		Outcome:      "blocked",
-		Cause:        "route_prerequisite_missing",
-		CauseContext: []string{"can_clear_snorlax"},
-	}
-	occurrence, err := farm.NewFailureOccurrence(identity, "build-a", 7, "", "route blocked", testObservedAt)
-	if err != nil {
-		t.Fatal(err)
-	}
+	occurrence := terminalMarkerOccurrence(t)
 	failure, ok := terminalRunFailure(farm.FinishReport{
 		Reason: "failed",
 		Detail: farm.FailureDetailMarker(occurrence),
