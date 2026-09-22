@@ -35,6 +35,7 @@ func yellowStoryHas(m *emu.Emu, romData []byte, id game.ProgressID) (bool, error
 
 func settleYellowStoryProgress(m *emu.Emu, romData []byte, id game.ProgressID, acceptYes bool) error {
 	stable := 0
+	idle := 0
 	for frame := 0; frame < yellowStoryFrameBudget; frame++ {
 		obs, err := yellowprofile.New().DecodeObservation(m, romData)
 		if err != nil {
@@ -52,6 +53,7 @@ func settleYellowStoryProgress(m *emu.Emu, romData []byte, id game.ProgressID, a
 		stable = 0
 
 		if obs.InBattle {
+			idle = 0
 			result, err := Battle(m, romData)
 			if err != nil {
 				return fmt.Errorf("yellow story %s: battle: %w", id, err)
@@ -64,6 +66,7 @@ func settleYellowStoryProgress(m *emu.Emu, romData []byte, id game.ProgressID, a
 
 		text := strings.ToUpper(screenText(m))
 		if m.Peek8(sym.MaxMenuItem) == 1 && strings.Contains(text, "YES") && strings.Contains(text, "NO") {
+			idle = 0
 			if !acceptYes {
 				return fmt.Errorf("%w: yellow story %s screen=%q", ErrDialogueChoiceRequired, id,
 					strings.Join(strings.Fields(screenText(m)), " "))
@@ -75,16 +78,23 @@ func settleYellowStoryProgress(m *emu.Emu, romData []byte, id game.ProgressID, a
 		}
 
 		if m.Peek8(sym.FontLoaded) != 0 {
+			idle = 0
 			m.Tap(emu.A, 3, 7)
 			continue
 		}
 		if obs.Controllable && !complete {
-			// The caller may need to perform another explicit story action.
-			// Returning here keeps each interaction bounded instead of blindly
-			// pressing A or movement after the script has handed control back.
-			return fmt.Errorf("yellow story %s: interaction settled before progress committed on map %#02x at (%d,%d)",
-				id, m.Peek8(sym.CurMap), m.Peek8(sym.XCoord), m.Peek8(sym.YCoord))
+			// Map-entry triggers can begin a few frames after Travel's arrival
+			// boundary. Give them a small bounded grace period, but never turn
+			// that grace into blind input after control has genuinely returned.
+			idle++
+			if idle >= 90 {
+				return fmt.Errorf("yellow story %s: interaction settled before progress committed on map %#02x at (%d,%d)",
+					id, m.Peek8(sym.CurMap), m.Peek8(sym.XCoord), m.Peek8(sym.YCoord))
+			}
+			m.StepFrame()
+			continue
 		}
+		idle = 0
 		m.StepFrame()
 	}
 	return fmt.Errorf("yellow story %s: exceeded %d frames", id, yellowStoryFrameBudget)
