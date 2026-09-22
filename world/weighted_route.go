@@ -296,6 +296,11 @@ func findExactWeightedRoute(
 		occupied: (routeOccupancy{}).with(from),
 		prev:     -1,
 	}
+	// Exact-tile arrival must obey the same live component constraint as the
+	// conservative planner. The weighted geometry below comes from immutable
+	// ROM collision data, so by itself it cannot see live stationary-object
+	// splits such as Silph Co 5F's Card Key corridor.
+	targetComponents := standingComponentAt(g, to, tx, ty)
 	nodes := []weightedRouteNode{start}
 	best := map[weightedRouteKey]int{weightedNodeKey(start): 0}
 	open := &weightedRouteQueue{}
@@ -317,6 +322,13 @@ func findExactWeightedRoute(
 			finalDistance := 0
 			if tx >= 0 && ty >= 0 {
 				if !cur.known {
+					goto expand
+				}
+				// Reaching the destination map is not enough when live topology
+				// places this landing and the exact target in different components.
+				// Keep searching for a leave/re-enter route before pricing the local
+				// final walk on the static ROM grid.
+				if len(targetComponents) > 0 && !shareComp(cur.entry, targetComponents) {
 					goto expand
 				}
 				d, ok := geometry.distance(cur.mapID, cur.x, cur.y, tx, ty, false)
