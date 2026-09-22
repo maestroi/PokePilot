@@ -107,15 +107,16 @@ const selectedActivity = computed(() => {
 const plannerState = computed(() => {
   const run = selectedRun.value
   if (!run || !isLiveRun(run) || run.decision) return null
-  const question = String(run.question || '').trim()
-  const options = question
-    ? question.split('\n').filter((line) => /^\s*\d+\s*:/.test(line)).length
-    : 0
+  if (!run.planner_waiting) {
+    return {
+      title: 'Agent starting',
+      detail: 'Building the first objective menu'
+    }
+  }
+  const options = Number(run.planner_options || 0)
   return {
-    title: question ? 'Planner thinking' : 'Agent starting',
-    detail: question
-      ? (options > 0 ? `Evaluating ${options} available objectives` : 'Waiting for the model response')
-      : 'Building the first objective menu'
+    title: 'Planner thinking',
+    detail: options > 0 ? `Evaluating ${options} available objectives` : 'Waiting for the model response'
   }
 })
 const mapsLabel = computed(() => {
@@ -180,13 +181,13 @@ watch(runs, (nextRuns) => {
     const previous = previousRuns.get(run.run_id)
     if (!previous) {
       if (run.decision) pushActivity(run.run_id, 'decision', 'Current decision', run.decision)
-      else if (run.question) pushActivity(run.run_id, 'state', 'Planner thinking', 'Choosing the first objective')
+      else if (run.planner_waiting) pushActivity(run.run_id, 'state', 'Planner thinking', 'Choosing the first objective')
       else if (run.stop_so_far) pushActivity(run.run_id, 'state', 'Run state', run.stop_so_far)
       previousRuns.set(run.run_id, run)
       continue
     }
 
-    if (run.question && !run.decision && previous.decision) {
+    if (run.planner_waiting && previous.decision) {
       pushActivity(run.run_id, 'state', 'Planner thinking', 'Choosing the next objective')
     }
     if (run.decision && run.decision !== previous.decision) {
