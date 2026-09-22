@@ -41,6 +41,14 @@ const party = computed(() => props.run.player?.party?.length || 0)
 const visibleLiveRuns = computed(() => props.liveRuns.filter((run) => isLiveRun(run)).slice(0, 5))
 const goal = computed(() => goalProgress(props.run))
 const mapProgress = computed(() => `${Number(props.run.maps_visited || 0)}/${MAP_CATALOG.length}`)
+const plannerState = computed(() => {
+  if (props.run.decision) return null
+  if (props.run.planner_waiting) {
+    const options = Number(props.run.planner_options || 0)
+    return options > 0 ? `Evaluating ${options} objectives` : 'Waiting for the model response'
+  }
+  return 'Preparing the first objective'
+})
 
 function watch(run: SpectatorRun): void {
   emit('select', run)
@@ -148,10 +156,22 @@ function watch(run: SpectatorRun): void {
                 <span class="rounded-md bg-black/55 px-2 py-1 font-mono text-[9px] text-slate-300 ring-1 ring-white/10">{{ locationLabel(run) }}</span>
               </div>
               <div class="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/45 to-transparent px-3 pb-3 pt-12">
-                <div class="text-[9px] font-bold tracking-[0.1em] text-slate-400 uppercase">Latest decision</div>
-                <div class="mt-1 line-clamp-2 text-xs font-semibold leading-5 text-white">
-                  {{ run.decision || 'The agent is preparing its next move…' }}
+                <div v-if="plannerState" class="flex items-center gap-2.5">
+                  <div class="home-planner-icon grid size-8 shrink-0 place-items-center rounded-full border border-cyan-300/25 bg-cyan-300/10">
+                    <SparklesIcon class="size-3.5 text-cyan-200" aria-hidden="true" />
+                  </div>
+                  <div class="min-w-0">
+                    <div class="text-[9px] font-bold tracking-[0.1em] text-cyan-200 uppercase">Planner thinking</div>
+                    <div class="mt-1 flex items-center gap-2 text-xs font-semibold leading-5 text-white">
+                      <span class="truncate">{{ plannerState }}</span>
+                      <span class="home-planner-dots inline-flex gap-1" aria-hidden="true"><span /><span /><span /></span>
+                    </div>
+                  </div>
                 </div>
+                <template v-else>
+                  <div class="text-[9px] font-bold tracking-[0.1em] text-slate-400 uppercase">Latest decision</div>
+                  <div class="mt-1 line-clamp-2 text-xs font-semibold leading-5 text-white">{{ run.decision }}</div>
+                </template>
               </div>
             </div>
 
@@ -370,6 +390,46 @@ function watch(run: SpectatorRun): void {
   font-weight: 700;
   letter-spacing: 0.07em;
   text-transform: uppercase;
+}
+
+.home-planner-icon {
+  position: relative;
+  animation: home-planner-breathe 1.7s ease-in-out infinite;
+}
+
+.home-planner-icon::after {
+  position: absolute;
+  inset: -0.3rem;
+  border: 1px solid rgba(103, 232, 249, 0.2);
+  border-radius: 9999px;
+  content: '';
+  animation: home-planner-ring 1.7s ease-out infinite;
+}
+
+.home-planner-dots > span {
+  width: 0.22rem;
+  height: 0.22rem;
+  border-radius: 9999px;
+  background: rgb(165 243 252);
+  animation: home-planner-dot 1.1s ease-in-out infinite;
+}
+
+.home-planner-dots > span:nth-child(2) { animation-delay: 0.15s; }
+.home-planner-dots > span:nth-child(3) { animation-delay: 0.3s; }
+
+@keyframes home-planner-breathe {
+  0%, 100% { transform: scale(0.96); }
+  50% { transform: scale(1.05); }
+}
+
+@keyframes home-planner-ring {
+  0% { opacity: 0.7; transform: scale(0.75); }
+  100% { opacity: 0; transform: scale(1.35); }
+}
+
+@keyframes home-planner-dot {
+  0%, 70%, 100% { opacity: 0.3; transform: translateY(0); }
+  35% { opacity: 1; transform: translateY(-0.15rem); }
 }
 
 .public-feature {
