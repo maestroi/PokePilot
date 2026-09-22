@@ -139,9 +139,22 @@ func interactHiddenTile(m *emu.Emu, romData []byte, x, y uint8, policy MovePolic
 	return nil
 }
 
-func vermilionGymLockState(mem *state.Mem) (firstOpen, secondOpen bool) {
-	return state.HasEvent(mem, state.EventVermilionGymFirstLockOpened),
-		state.HasEvent(mem, state.EventVermilionGymSecondLockOpened)
+type vermilionGymPuzzlePhase uint8
+
+const (
+	vermilionGymNeedsFirstSwitch vermilionGymPuzzlePhase = iota
+	vermilionGymNeedsSecondSwitch
+	vermilionGymGateOpen
+)
+
+func vermilionGymPuzzlePhaseFor(mem *state.Mem) vermilionGymPuzzlePhase {
+	if state.HasEvent(mem, state.EventVermilionGymSecondLockOpened) {
+		return vermilionGymGateOpen
+	}
+	if state.HasEvent(mem, state.EventVermilionGymFirstLockOpened) {
+		return vermilionGymNeedsSecondSwitch
+	}
+	return vermilionGymNeedsFirstSwitch
 }
 
 // interactVermilionTrashCan deliberately keeps the approach on map 0x5C.
@@ -205,12 +218,12 @@ func OpenVermilionGym(m *emu.Emu, romData []byte, policy MovePolicy) error {
 
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	firstOpen, secondOpen := vermilionGymLockState(&mem)
-	if secondOpen {
+	phase := vermilionGymPuzzlePhaseFor(&mem)
+	if phase == vermilionGymGateOpen {
 		return nil
 	}
 
-	if !firstOpen {
+	if phase == vermilionGymNeedsFirstSwitch {
 		first := m.Peek8(sym.FirstLockTrashCanIndex)
 		x, y, ok := vermilionTrashCanCoords(first)
 		if !ok {
@@ -220,12 +233,12 @@ func OpenVermilionGym(m *emu.Emu, romData []byte, policy MovePolicy) error {
 			return fmt.Errorf("skill: OpenVermilionGym: first switch %d at (%d,%d): %w", first, x, y, err)
 		}
 		state.Snapshot(m, &mem)
-		firstOpen, secondOpen = vermilionGymLockState(&mem)
-		if secondOpen {
+		phase = vermilionGymPuzzlePhaseFor(&mem)
+		if phase == vermilionGymGateOpen {
 			return nil
 		}
-		if !firstOpen {
-			return fmt.Errorf("skill: OpenVermilionGym: first switch %d did not set the first-lock event", first)
+		if phase != vermilionGymNeedsSecondSwitch {
+			return fmt.Errorf("skill: OpenVermilionGym: first switch %d did not advance the puzzle to the second lock", first)
 		}
 	}
 
@@ -238,9 +251,8 @@ func OpenVermilionGym(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		return fmt.Errorf("skill: OpenVermilionGym: second switch %d at (%d,%d): %w", second, x, y, err)
 	}
 	state.Snapshot(m, &mem)
-	_, secondOpen = vermilionGymLockState(&mem)
-	if !secondOpen {
-		return fmt.Errorf("skill: OpenVermilionGym: second switch %d did not set the second-lock event", second)
+	if phase = vermilionGymPuzzlePhaseFor(&mem); phase != vermilionGymGateOpen {
+		return fmt.Errorf("skill: OpenVermilionGym: second switch %d did not open the gate", second)
 	}
 	return nil
 }
