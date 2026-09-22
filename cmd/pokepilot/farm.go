@@ -206,12 +206,17 @@ func (s *heartbeatSnap) load() farm.Heartbeat {
 // heartbeatTrail owns the recent map-local position samples. It is only
 // touched on the stepping goroutine; snapshots get a copied slice.
 type heartbeatTrail struct {
-	mapID uint8
-	set   bool
-	pts   [][2]uint8
+	mapID   uint8
+	set     bool
+	pts     [][2]uint8
+	visited map[uint8]struct{}
 }
 
 func (t *heartbeatTrail) add(mapID, x, y uint8) [][2]uint8 {
+	if t.visited == nil {
+		t.visited = make(map[uint8]struct{})
+	}
+	t.visited[mapID] = struct{}{}
 	if !t.set || t.mapID != mapID {
 		t.mapID = mapID
 		t.set = true
@@ -227,6 +232,10 @@ func (t *heartbeatTrail) add(mapID, x, y uint8) [][2]uint8 {
 		}
 	}
 	return append([][2]uint8(nil), t.pts...)
+}
+
+func (t *heartbeatTrail) mapsVisited() int {
+	return len(t.visited)
 }
 
 // heartbeatLoop pushes one Heartbeat per tick until stop is closed, and
@@ -582,6 +591,7 @@ func sampleHeartbeat(m *emu.Emu, runID string, snap *heartbeatSnap, mem *state.M
 		Trail:       trail.add(g.Player.MapID, g.Player.X, g.Player.Y),
 		Player:      playerSnapshot(g, state.DecodeStoryFacts(mem, g.Inventory)),
 	}
+	hb.MapsVisited = trail.mapsVisited()
 	for _, sp := range state.DecodeSprites(mem) {
 		if sp.X < 0 || sp.Y < 0 || sp.X > 255 || sp.Y > 255 {
 			continue
