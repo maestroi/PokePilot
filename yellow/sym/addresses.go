@@ -115,6 +115,8 @@ const (
 	StatusFlags1    uint16 = 0xD727 // wStatusFlags1
 	StatusFlags4    uint16 = 0xD72D // wStatusFlags4
 	Elite4Flags     uint16 = 0xD733 // wElite4Flags
+	FirstLockTrashCanIndex  uint16 = 0xD743 // wFirstLockTrashCanIndex
+	SecondLockTrashCanIndex uint16 = 0xD744 // wSecondLockTrashCanIndex
 	EventFlags      uint16 = 0xD746 // wEventFlags
 	RivalStarter    uint16 = 0xD714 // wRivalStarter: 1=Jolteon, 2=Flareon, 3=Vaporeon path
 	PlayerStarter   uint16 = 0xD716 // wPlayerStarter
