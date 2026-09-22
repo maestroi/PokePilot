@@ -81,6 +81,9 @@ func classifyObjectiveOutcome(_ Objective, err error, final Observation) Outcome
 	if errors.Is(err, skill.ErrBlackedOut) ||
 		errors.Is(err, skill.ErrCatchBlackout) ||
 		errors.Is(err, skill.ErrCatchHuntExhausted) ||
+		errors.Is(err, skill.ErrFishingHuntExhausted) ||
+		errors.Is(err, skill.ErrFishingNoShoreline) ||
+		errors.Is(err, skill.ErrFishingNoFishHere) ||
 		errors.Is(err, skill.ErrTrainRetreat) ||
 		errors.Is(err, skill.ErrTrainProgress) ||
 		errors.Is(err, ErrTrainingInefficient) ||
@@ -226,6 +229,15 @@ func failureCauseFor(err error) (FailureCauseID, []string) {
 	}
 	if errors.Is(err, skill.ErrCatchHuntExhausted) {
 		return "catch_hunt_exhausted", nil
+	}
+	if errors.Is(err, skill.ErrFishingHuntExhausted) {
+		return "fishing_hunt_exhausted", nil
+	}
+	if errors.Is(err, skill.ErrFishingNoShoreline) {
+		return "fishing_no_shoreline", nil
+	}
+	if errors.Is(err, skill.ErrFishingNoFishHere) {
+		return "fishing_no_fish_here", nil
 	}
 	if errors.Is(err, ErrTrainingInefficient) {
 		return "training_inefficient_area", nil
