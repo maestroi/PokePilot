@@ -35,13 +35,12 @@ import {
   runStatusLabel,
   runTitle,
   runTone,
-  shortRunID,
   splitSpectatorRuns
 } from './model'
 import PartyProgress from './PartyProgress.vue'
 import PublicHome from './PublicHome.vue'
 import { policyLabel } from '../shared/playstyle'
-import { bagMeter, dexMeter } from '../shared/playerProgress'
+import { dexMeter } from '../shared/playerProgress'
 import { MAP_CATALOG } from '../shared/mapCatalog'
 import { runIDFromLocation, spectatorRunPath } from '../shared/urls'
 
@@ -62,6 +61,7 @@ const copyState = ref('')
 const theaterMode = ref(false)
 const playerRef = ref<HTMLElement | null>(null)
 const activityFilter = ref<ActivityFilter>('all')
+const activityFilters: ActivityFilter[] = ['all', 'milestones', 'decisions']
 const activityByRun = ref<Record<string, ActivityItem[]>>({})
 const previousRuns = new Map<string, SpectatorRun>()
 
@@ -626,7 +626,7 @@ function activityTime(item: ActivityItem): string {
           <Panel title="Activity" description="Live decisions and progression, grouped by event type." compact>
             <div class="mb-3 flex flex-wrap gap-1.5">
               <button
-                v-for="filter in (['all', 'milestones', 'decisions'] as ActivityFilter[])"
+                v-for="filter in activityFilters"
                 :key="filter"
                 type="button"
                 :class="[
