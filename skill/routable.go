@@ -54,12 +54,23 @@ func NewRoutePlanner(m *emu.Emu, romData []byte) (*RoutePlanner, error) {
 	if err != nil {
 		return nil, fmt.Errorf("skill: RoutePlanner: build live map %02x: %w", cur, err)
 	}
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	if cur == route16Map && !state.HasEvent(&mem, eventBeatRoute16Snorlax) {
+		liveGrid.Set(route16SnorlaxX, route16SnorlaxY, false)
+	}
 	routeGraph, err := g.WithMapGrid(cur, liveGrid)
 	if err != nil {
 		return nil, fmt.Errorf("skill: RoutePlanner: overlay live topology for map %02x: %w", cur, err)
 	}
-	var mem state.Mem
-	state.Snapshot(m, &mem)
+	// The live overlay above replaces only the current map. Snorlax still has
+	// to split Route 16 when the player is indoors on its Fly-house side.
+	if cur != route16Map {
+		routeGraph, err = withAsleepRoute16Snorlax(routeGraph, romData, &mem)
+		if err != nil {
+			return nil, fmt.Errorf("skill: RoutePlanner: Route 16 Snorlax corridor: %w", err)
+		}
+	}
 	return &RoutePlanner{
 		graph:   routeGraph,
 		cur:     cur,

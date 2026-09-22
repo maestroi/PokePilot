@@ -493,6 +493,12 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 	if err != nil {
 		return err
 	}
+	var routeMem state.Mem
+	state.Snapshot(m, &routeMem)
+	g, err = withAsleepRoute16Snorlax(g, romData, &routeMem)
+	if err != nil {
+		return fmt.Errorf("skill: GoTo: Route 16 Snorlax corridor: %w", err)
+	}
 	if nav == nil {
 		nav = newNavigationMemory()
 	}
@@ -568,7 +574,18 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 		if err != nil {
 			return fmt.Errorf("skill: GoTo: build live map %02x at (%d,%d): %w", cur, x, y, err)
 		}
-		routeGraph, err = overlayObservedMapTopology(routeGraph, liveGrid, h, presentStationaryObjectBlockers(m, h))
+		blockers := presentStationaryObjectBlockers(m, h)
+		if cur == route16Map {
+			var corridor state.Mem
+			state.Snapshot(m, &corridor)
+			if !state.HasEvent(&corridor, eventBeatRoute16Snorlax) {
+				if blockers == nil {
+					blockers = map[[2]int]bool{}
+				}
+				blockers[[2]int{route16SnorlaxX, route16SnorlaxY}] = true
+			}
+		}
+		routeGraph, err = overlayObservedMapTopology(routeGraph, liveGrid, h, blockers)
 		if err != nil {
 			return fmt.Errorf("skill: GoTo: overlay live topology for map %02x: %w", cur, err)
 		}

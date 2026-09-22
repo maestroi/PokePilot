@@ -69,18 +69,14 @@ func PrepareFlyFastTravel(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	}
 
 	if !fly.HMOwned {
-		// The only way back from the Fly house's side of Route 16 is back past
-		// Snorlax (red:route16_snorlax on the Route16->Celadon connection); the
-		// Cut-tree passage that reaches the house does not reopen a path around
-		// it. Committing to this trip before Snorlax is clearable stakes a
-		// round trip on capabilities the run does not have yet: if the roster
-		// repair below then finds no compatible Fly carrier, there is no way
-		// back to fix that and the run is truly stranded. MEASURED on
-		// run-ek112v6wsjd523dbfxfxfk0l0: a save with HM02 already owned but no
-		// Fly-capable roster member and no Poke Flute got stuck inside
-		// ROUTE_16_FLY_HOUSE with "unroutable from map bc" to every other
-		// destination in the game, and kept re-failing identically on every
-		// resumed attempt. Refuse the trip up front instead.
+		// Cut along the upper passage returns to Celadon without clearing
+		// Snorlax: the tree at (34,9) lands east of him. This guard still
+		// refuses the outbound trip until the flute is usable. MEASURED on
+		// run-ek112v6wsjd523dbfxfxfk0l0, before that return was routable: a
+		// save with HM02 but no Fly carrier and no Poké Flute was stranded in
+		// ROUTE_16_FLY_HOUSE and re-failed from map 0xBC on every resume.
+		// Refuse the trip up front instead of staking the round trip on a
+		// roster repair that may not find a carrier.
 		if !redRouteCapabilities(romData, &mem).Has(capCanClearSnorlax) {
 			return fmt.Errorf("%w: FLY requires Route 16 Snorlax to be clearable (Poke Flute) before the one-way trip to the Fly house", ErrFieldMovePrerequisite)
 		}

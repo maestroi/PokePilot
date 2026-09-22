@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	gameruntime "github.com/maestroi/pokepilot/game"
+	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
@@ -28,7 +29,12 @@ const (
 
 	bicycleItem uint8 = 0x06
 
-	route16Map       uint8 = 0x1B
+	route16Map uint8 = 0x1B
+	// Snorlax's Route 16 home tile from the ROM object table (probe: sprite 67
+	// at (26,10)). He blocks the lower road only; the upper passage Cut tree
+	// at (34,9) joins the Fly-house side to the Celadon edge east of him.
+	route16SnorlaxX        = 26
+	route16SnorlaxY        = 10
 	route17Map       uint8 = 0x1C
 	route18Map       uint8 = 0x1D
 	route19Map       uint8 = 0x1E
@@ -70,6 +76,29 @@ func addAuditedRedRouteCapabilities(mem *state.Mem, caps gameruntime.CapabilityS
 	if state.HasEvent(mem, eventBeatRoute12Snorlax) || state.HasEvent(mem, eventBeatRoute16Snorlax) {
 		caps[capCanClearSnorlax] = true
 	}
+}
+
+// withAsleepRoute16Snorlax splits Route 16's lower road on Snorlax's home
+// tile while EVENT_BEAT_ROUTE16_SNORLAX is clear. The static collision grid
+// treats that tile as walkable, so without this split the west component
+// canExit the Celadon connection straight through him. The upper passage and
+// the east-of-Snorlax road stay separate components; Cut joins those.
+//
+// The returned graph is a snapshot. The cached ROM graph is not mutated.
+func withAsleepRoute16Snorlax(g *world.Graph, romData []byte, mem *state.Mem) (*world.Graph, error) {
+	if g == nil || mem == nil || state.HasEvent(mem, eventBeatRoute16Snorlax) {
+		return g, nil
+	}
+	h, err := rom.ParseMap(romData, route16Map)
+	if err != nil {
+		return nil, err
+	}
+	grid, err := world.Build(romData, h)
+	if err != nil {
+		return nil, err
+	}
+	grid.Set(route16SnorlaxX, route16SnorlaxY, false)
+	return g.WithMapGrid(route16Map, grid)
 }
 
 func redAuditedRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, bool) {
@@ -162,10 +191,24 @@ func redAuditedRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, 
 		return bikeGate("red:cycling_road_bicycle", capCanRideCyclingRoad)
 
 	case edge.Kind == world.EdgeConnection && edge.From == route16Map && edge.To == celadonCityMap:
-		// Returning north from Cycling Road exits onto Route 16 west of the
-		// sleeping Snorlax. Clearing it is an action, not merely a gate, so the
-		// executor uses the Flute and resolves the battle before traversal.
-		return semanticTransition("red:route16_snorlax", edge, capCanClearSnorlax), true
+		// Snorlax sleeps on the lower road at (26,10). The Celadon connection's
+		// east component is already past him, and Route 16's upper passage
+		// reaches that component by Cut at (34,9) — measured from the upper
+		// gate landing (24,5) to the east edge (39,10) in one Cut while (26,10)
+		// is blocked. A hard deny on this whole connection made that side
+		// report can_clear_snorlax anyway, so a Fly-house save with Cut and no
+		// Poké Flute was unroutable to Celadon (run-1c4k0nk8lwwcc2hr8dhy65m5o0).
+		//
+		// PivotOnly keeps the edge on ordinary geometry when the flute is
+		// missing, so the east component still walks into Celadon. PortBypass
+		// lets a west-of-Snorlax tile that cannot reach the port select this
+		// action once the flute is held; the executor then wakes him. The
+		// asleep sprite must also split the lower road (withAsleepRoute16Snorlax)
+		// or the west component canExit through his tile and walks into him.
+		t := semanticTransition("red:route16_snorlax", edge, capCanClearSnorlax)
+		t.PivotOnly = true
+		t.PortBypass = true
+		return t, true
 
 	case pair(route19Map, route20Map), pair(route20Map, cinnabarIslandMap):
 		// The southern sea route is every bit as Surf-gated as Route 21. Keep
