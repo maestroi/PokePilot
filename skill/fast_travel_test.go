@@ -1,10 +1,13 @@
 package skill
 
 import (
+	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
+	"github.com/maestroi/pokepilot/world"
 )
 
 func controllableFastTravelMem() state.Mem {
@@ -250,6 +253,26 @@ func TestChooseFastTravelByCostCanBypassBlockedOrdinaryRoute(t *testing.T) {
 	})
 	if got.Kind != fastTravelDig {
 		t.Fatalf("choice=%+v, want legal shortcut when ordinary route is unavailable", got)
+	}
+}
+
+// TestEmergencyEgressCauseCoversNoRoute: GoTo's terminal "no route" error
+// (world.ErrNoRoute, wrapped through GoTo's every in-map recovery attempt)
+// must classify as an emergency-egress cause. Without this, a player stranded
+// in a walkable component with zero graph edges out — e.g. dropped by a
+// one-way ledge into a pocket whose only warp loops back on itself, measured
+// on Vermilion City (12,23), issue #1553 — has no recovery: walking can never
+// find a route from a component with no outgoing edges, so only the same
+// Fly/Teleport/Dig emergency egress that already rescues a stalled or
+// replan-exhausted journey can get it unstuck.
+func TestEmergencyEgressCauseCoversNoRoute(t *testing.T) {
+	wrapped := fmt.Errorf("skill: GoTo: no route from map %02x at (%d,%d) to map %02x at (%d,%d): %w",
+		0x05, 12, 23, 0x08, 11, 12, world.ErrNoRoute)
+	if got := emergencyEgressCause(wrapped); got != "no_route" {
+		t.Fatalf("emergencyEgressCause(%v) = %q, want %q", wrapped, got, "no_route")
+	}
+	if got := emergencyEgressCause(errors.New("unrelated")); got != "" {
+		t.Fatalf("emergencyEgressCause(unrelated) = %q, want empty", got)
 	}
 }
 
