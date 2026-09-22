@@ -363,7 +363,6 @@ func TestDashboardMarksReplayAvailable(t *testing.T) {
 	}
 }
 
-
 func TestCompatibilityDashboardOmitsOperatorActivity(t *testing.T) {
 	wall := NewWall("")
 	wall.mu.Lock()
