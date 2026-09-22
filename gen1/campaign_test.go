@@ -25,7 +25,6 @@ func TestEarlyCampaignStagesOrder(t *testing.T) {
 	}
 }
 
-
 func TestMiddleCampaignStagesOrder(t *testing.T) {
 	want := []game.ProgressID{
 		ProgressCascadeBadge,
