@@ -110,6 +110,7 @@ func (s *heartbeatSnap) storeStatus(hb farm.Heartbeat) {
 	hb.Decision = s.hb.Decision
 	hb.Raw = s.hb.Raw
 	hb.Stats = s.hb.Stats
+	hb.Activity = s.hb.Activity
 	s.hb = hb
 	s.mu.Unlock()
 }
@@ -122,6 +123,13 @@ func (s *heartbeatSnap) storePlan(question, decision string) {
 	s.mu.Lock()
 	s.hb.Question = question
 	s.hb.Decision = decision
+	s.mu.Unlock()
+}
+
+func (s *heartbeatSnap) storeActivity(event farm.ActivityEvent) {
+	copy := event
+	s.mu.Lock()
+	s.hb.Activity = &copy
 	s.mu.Unlock()
 }
 
@@ -719,6 +727,26 @@ func runFarmLLM(m *emu.Emu, spec farm.Spec, starter, goal, llmProfile, reasoning
 		Cancel:        cancel,
 		CheckpointDir: checkpointDir,
 		ResumeFrom:    resumeFrom,
+		OnObjective: func(activity agent.ObjectiveActivity) {
+			if snap == nil {
+				return
+			}
+			detail := activity.Outcome
+			if activity.Error != "" {
+				if detail != "" {
+					detail += " · "
+				}
+				detail += activity.Error
+			}
+			snap.storeActivity(farm.ActivityEvent{
+				Source: "skill",
+				Kind: activity.Stage,
+				Summary: activity.Objective,
+				Detail: detail,
+				Frame: activity.Frame,
+				Round: activity.Round,
+			})
+		},
 	})
 	benchmarkFinished := time.Now()
 	captureObjectiveFailureTelemetry(res)
