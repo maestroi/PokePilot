@@ -51,8 +51,8 @@ func TestOperatorInspectorShowsLiveActorsAndRecoveryAcrossRetry(t *testing.T) {
 		Activity: &farm.ActivityEvent{
 			Source: "skill", Kind: "started", Summary: "travel to Pewter City", Frame: 100, Round: 1,
 		},
-		Stats:    &farm.LLMStats{Round: 1},
-		Player:   &farm.Player{Party: []farm.PartyMon{{Name: "SQUIRTLE", Level: 8}}},
+		Stats:  &farm.LLMStats{Round: 1},
+		Player: &farm.Player{Party: []farm.PartyMon{{Name: "SQUIRTLE", Level: 8}}},
 	}); resp.StatusCode != http.StatusOK {
 		t.Fatalf("planning heartbeat: %d", resp.StatusCode)
 	}
