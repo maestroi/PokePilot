@@ -535,6 +535,78 @@ func collectCheckpointArtifacts(dir string) ([]farm.Artifact, error) {
 	return arts, nil
 }
 
+// collectFailureCheckpointArtifacts keeps Finish focused on the small subset
+// of local checkpoint evidence that structured failures actually reference.
+// The complete checkpoint ring is already uploaded incrementally while the run
+// is active, so re-embedding every periodic/objective/major state here only
+// duplicates binary data and can exhaust the Finish artifact budget.
+func collectFailureCheckpointArtifacts(dir string, failures []farm.ObjectiveFailure) ([]farm.Artifact, error) {
+	if dir == "" {
+		return nil, nil
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	files := map[string]struct{}{}
+	var knowledge []string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		files[name] = struct{}{}
+		if strings.Contains(name, "knowledge-v") && strings.HasSuffix(name, ".json") {
+			knowledge = append(knowledge, name)
+		}
+	}
+
+	wantSet := map[string]struct{}{}
+	for _, failure := range failures {
+		stateName := strings.TrimSpace(failure.Checkpoint)
+		if stateName == "" {
+			continue
+		}
+		if err := checkArtifactName(stateName); err != nil {
+			return nil, err
+		}
+		if _, ok := files[stateName]; !ok {
+			// The local ring may already have evicted an older checkpoint after
+			// uploading it. Finish must not fail merely because only the wall has
+			// the durable copy.
+			continue
+		}
+		wantSet[stateName] = struct{}{}
+		base := strings.TrimSuffix(stateName, ".state")
+		if base == stateName {
+			continue
+		}
+		if kn := findKnowledge(base, knowledge); kn != "" {
+			if err := checkArtifactName(kn); err != nil {
+				return nil, err
+			}
+			wantSet[kn] = struct{}{}
+		}
+	}
+	if _, ok := files[farmBenchmarkResultName]; ok {
+		wantSet[farmBenchmarkResultName] = struct{}{}
+	}
+
+	want := make([]string, 0, len(wantSet))
+	for name := range wantSet {
+		want = append(want, name)
+	}
+	sort.Strings(want)
+	arts, err := artifactsForFiles(want, dir)
+	if err != nil {
+		return nil, err
+	}
+	if err := farm.ValidateFinishArtifacts(farm.FinishReport{Artifacts: arts}); err != nil {
+		return nil, err
+	}
+	return arts, nil
+}
+
 func artifactsForFiles(names []string, dir string) ([]farm.Artifact, error) {
 	out := make([]farm.Artifact, 0, len(names))
 	for _, name := range names {

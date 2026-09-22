@@ -164,9 +164,21 @@ func finishRunWithRecording(m *emu.Emu, client *farm.Client, spec farm.Spec, rea
 	}
 
 	defer removeCheckpointDir(checkpointDir)
-	checkpointArtifacts, err := collectCheckpointArtifacts(checkpointDir)
+	failures, terminal := drainObjectiveFailureTelemetry(reason, client.Version, checkpointDir)
+	if terminal != nil {
+		if marker := farm.FailureDetailMarker(*terminal); marker != "" {
+			// The operator-facing top-level key is structured and stable. Human
+			// diagnostics remain in objective-failures.json and TraceTail.
+			report.Detail = marker
+		}
+	}
+
+	// Checkpoints are uploaded continuously while the run is active. Finish
+	// only reattaches the exact failure-repro checkpoint pairs still present in
+	// the local ring, rather than repacking every periodic/objective snapshot.
+	checkpointArtifacts, err := collectFailureCheckpointArtifacts(checkpointDir, failures)
 	if err != nil {
-		log.Printf("farm: %s: collect checkpoints: %v", report.RunID, err)
+		log.Printf("farm: %s: collect failure checkpoints: %v", report.RunID, err)
 	} else {
 		report.Artifacts = checkpointArtifacts
 	}
@@ -179,15 +191,6 @@ func finishRunWithRecording(m *emu.Emu, client *farm.Client, spec farm.Spec, rea
 			log.Printf("farm: %s: omit %s: %v", report.RunID, runContextArtifact.Name, err)
 		} else {
 			report.Artifacts = candidate
-		}
-	}
-
-	failures, terminal := drainObjectiveFailureTelemetry(reason, client.Version, checkpointDir)
-	if terminal != nil {
-		if marker := farm.FailureDetailMarker(*terminal); marker != "" {
-			// The operator-facing top-level key is structured and stable. Human
-			// diagnostics remain in objective-failures.json and TraceTail.
-			report.Detail = marker
 		}
 	}
 	if failureArtifact, err := farm.NewObjectiveFailureArtifact(failures); err != nil {
