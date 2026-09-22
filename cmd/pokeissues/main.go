@@ -21,6 +21,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 )
@@ -110,6 +111,12 @@ type githubClient struct {
 	token   string
 	runBase string
 	http    *http.Client
+
+	// GitHub Issues has no atomic "find-or-create by fingerprint" operation.
+	// pokeissues is deliberately deployed as one replica, so serialize reports
+	// through the scan/create window to keep concurrent farm deliveries from
+	// creating duplicate issues for the same fingerprint.
+	reportMu sync.Mutex
 }
 
 type issueServer struct {
@@ -328,6 +335,9 @@ func validateManifest(m issueReportManifest) error {
 }
 
 func (c *githubClient) report(ctx context.Context, manifest issueReportManifest, artifacts []artifactMeta) (issueReportResponse, bool, error) {
+	c.reportMu.Lock()
+	defer c.reportMu.Unlock()
+
 	var out issueReportResponse
 	existing, found, err := c.findIssue(ctx, manifest.Fingerprint, manifest.ExternalID)
 	if err != nil {
