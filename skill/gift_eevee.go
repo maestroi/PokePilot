@@ -12,19 +12,15 @@ const (
 	eeveeGiftSpecies           uint8 = 0x66
 	eeveeGiftX                 uint8 = 4
 	eeveeGiftY                 uint8 = 3
-	eeveeGiftApproachX         uint8 = eeveeGiftX - 1
-	eeveeGiftApproachY         uint8 = eeveeGiftY
 )
 
 func eeveeGiftDestination() Destination {
-	// The Eevee ball sits at (4,3). The tile below it, (4,4), is not connected
-	// to the room entrance in the live collision grid (the old generic catch
-	// pre-travel failed there in #425). Approach laterally from (3,3) instead.
-	return Destination{
-		Map: celadonMansionRoofHouseMap,
-		X:   eeveeGiftApproachX,
-		Y:   eeveeGiftApproachY,
-	}
+	// The Eevee ball itself is the navigation target. Its room has multiple
+	// disconnected-looking approach candidates in the static collision grid;
+	// pinning travel to one guessed stand tile has repeatedly produced no_path
+	// failures (#425, #1577). InteractionDestination lets routing choose a
+	// reachable adjacent side from live geometry after entering the room.
+	return InteractionDestination(celadonMansionRoofHouseMap, eeveeGiftX, eeveeGiftY)
 }
 
 func init() {
