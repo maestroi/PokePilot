@@ -794,7 +794,6 @@ func (w *Wall) handleHeartbeat(res http.ResponseWriter, req *http.Request) {
 	previousStatus := t.Status
 	previousQuestion := t.Question
 	previousDecision := t.Decision
-	previousTrace := t.Trace
 	previousPlayer := t.Player
 	now := time.Now()
 	t.Status = statusRunning
@@ -814,7 +813,7 @@ func (w *Wall) handleHeartbeat(res http.ResponseWriter, req *http.Request) {
 	t.Player = hb.Player
 	t.workerAddrs = hb.WorkerAddrs
 	t.lastUpdate = now
-	appendHeartbeatActivityLocked(t, hb, now, previousStatus, previousQuestion, previousDecision, previousTrace, previousPlayer)
+	appendHeartbeatActivityLocked(t, hb, now, previousStatus, previousQuestion, previousDecision, previousPlayer)
 	w.upsertWorkerLocked(hb.WorkerAddrs, id, hb.Version, t.lastUpdate)
 	cancel := w.cancel[id]
 	w.mu.Unlock()
