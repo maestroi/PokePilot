@@ -68,12 +68,14 @@ func appendRunActivityLocked(t *Tile, event runActivityEvent) {
 	if event.RecoveryAttempt == 0 && t.RecoveryAttempts > 0 {
 		event.RecoveryAttempt = t.RecoveryAttempts
 	}
-	if len(t.Activity) > 0 {
-		last := t.Activity[len(t.Activity)-1]
-		// Heartbeats can repeat the same semantic state for many seconds. Do
-		// not turn that into timeline noise.
-		if last.Source == event.Source && last.Kind == event.Kind && last.Summary == event.Summary &&
-			last.Detail == event.Detail && last.Attempt == event.Attempt && last.Round == event.Round && last.Frame == event.Frame {
+	// Heartbeats repeat their latest semantic event. A different event (for
+	// example a milestone) may be appended between two copies, so dedupe against
+	// the bounded ring rather than only its tail.
+	for index := len(t.Activity) - 1; index >= 0; index-- {
+		seen := t.Activity[index]
+		if seen.Source == event.Source && seen.Kind == event.Kind && seen.Summary == event.Summary &&
+			seen.Detail == event.Detail && seen.Attempt == event.Attempt &&
+			seen.RecoveryAttempt == event.RecoveryAttempt && seen.Round == event.Round && seen.Frame == event.Frame {
 			return
 		}
 	}
