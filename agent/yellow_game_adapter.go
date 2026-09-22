@@ -38,6 +38,9 @@ func (a *yellowObjectiveAdapter) Validate(o Objective, _ Observation) error {
 	if o.Kind == KindStarter && o.Species != "" && o.Species != "pikachu" {
 		return fmt.Errorf("agent: %s: Yellow starter must be pikachu, got %q", o, o.Species)
 	}
+	if o.Kind == KindProgress && !yellowProgressionKnown(o.Progress) {
+		return fmt.Errorf("agent: %s: unknown Yellow progression goal %q", o, o.Progress)
+	}
 	return nil
 }
 
@@ -55,6 +58,28 @@ func (a *yellowObjectiveAdapter) NormalizeBoundary() error {
 func (a *yellowObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error) {
 	result := ObjectiveResult{Objective: o}
 	switch o.Kind {
+	case KindProgress:
+		var err error
+		switch o.Progress {
+		case gen1.ProgressPokedexAcquired:
+			err = yellowcontroller.AcquirePokedex(a.m, a.romData)
+		case gen1.ProgressBoulderBadge:
+			err = yellowcontroller.DefeatBrock(a.m, a.romData)
+		case gen1.ProgressMtMoonFossilAcquired:
+			err = yellowcontroller.AcquireMtMoonFossil(a.m, a.romData)
+		case yellowprofile.ProgressYellowMtMoonExitResolved:
+			err = yellowcontroller.ResolveMtMoonExit(a.m, a.romData)
+		case gen1.ProgressSSTicketAcquired:
+			err = yellowcontroller.AcquireSSTicket(a.m, a.romData)
+		case gen1.ProgressHM01Acquired:
+			err = yellowcontroller.AcquireHM01(a.m, a.romData)
+		default:
+			err = fmt.Errorf("%w: Yellow progression %q", errYellowControllerUnavailable, o.Progress)
+		}
+		if err != nil {
+			return result, fmt.Errorf("agent: %s: %w", o, err)
+		}
+		return result, nil
 	case KindTrainer:
 		if err := yellowcontroller.ChallengeTrainer(a.m, a.romData, o.X, o.Y); err != nil {
 			return result, fmt.Errorf("agent: %s: %w", o, err)
@@ -389,7 +414,7 @@ func (a *yellowObjectiveAdapter) ObjectiveCatalog(obs Observation) ObjectiveCata
 	catalog := ObjectiveCatalog{
 		CurrentCenter: strings.Contains(strings.ToUpper(obs.MapName), "POKECENTER"),
 	}
-	if obs.PartyCount == 0 {
+	if obs.PartyCount == 0 || !obs.Story.Has(yellowprofile.ProgressYellowLabRivalResolved) {
 		catalog.Starters = []CatalogStarter{{Species: "pikachu"}}
 	}
 	return catalog
