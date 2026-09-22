@@ -48,6 +48,9 @@ func TestOperatorInspectorShowsLiveActorsAndRecoveryAcrossRetry(t *testing.T) {
 		RunID: runID, Frame: 100, Map: 1, X: 4, Y: 5,
 		Question: "1: travel to Pewter City\n2: train nearby",
 		Trace:    "walk: moving north",
+		Activity: &farm.ActivityEvent{
+			Source: "skill", Kind: "started", Summary: "travel to Pewter City", Frame: 100, Round: 1,
+		},
 		Stats:    &farm.LLMStats{Round: 1},
 		Player:   &farm.Player{Party: []farm.PartyMon{{Name: "SQUIRTLE", Level: 8}}},
 	}); resp.StatusCode != http.StatusOK {
