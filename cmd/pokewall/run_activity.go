@@ -12,7 +12,6 @@ const (
 	runActivityKeep       = 240
 	runActivitySummaryCap = 220
 	runActivityDetailCap  = 700
-	skillActivityInterval = 20 * time.Second
 )
 
 // runActivityEvent is the operator-facing causal story of a run. It is
@@ -74,7 +73,7 @@ func appendRunActivityLocked(t *Tile, event runActivityEvent) {
 		// Heartbeats can repeat the same semantic state for many seconds. Do
 		// not turn that into timeline noise.
 		if last.Source == event.Source && last.Kind == event.Kind && last.Summary == event.Summary &&
-			last.Detail == event.Detail && last.Attempt == event.Attempt {
+			last.Detail == event.Detail && last.Attempt == event.Attempt && last.Round == event.Round && last.Frame == event.Frame {
 			return
 		}
 	}
@@ -110,7 +109,7 @@ func durableRunActivity(events []runActivityEvent) []runActivityEvent {
 	return out
 }
 
-func appendHeartbeatActivityLocked(t *Tile, hb farm.Heartbeat, now time.Time, previousStatus, previousQuestion, previousDecision, previousTrace string, previousPlayer *farm.Player) {
+func appendHeartbeatActivityLocked(t *Tile, hb farm.Heartbeat, now time.Time, previousStatus, previousQuestion, previousDecision string, previousPlayer *farm.Player) {
 	if previousStatus != statusRunning {
 		appendRunActivityLocked(t, runActivityEvent{
 			Source: "system", Kind: "attempt_start", At: now.Unix(), Frame: hb.Frame,
@@ -142,21 +141,12 @@ func appendHeartbeatActivityLocked(t *Tile, hb farm.Heartbeat, now time.Time, pr
 		})
 	}
 
-	if hb.Trace != "" && hb.Trace != previousTrace {
-		lastSkillAt := int64(0)
-		for index := len(t.Activity) - 1; index >= 0; index-- {
-			if t.Activity[index].Source == "skill" {
-				lastSkillAt = t.Activity[index].At
-				break
-			}
-		}
-		if lastSkillAt == 0 || now.Unix()-lastSkillAt >= int64(skillActivityInterval/time.Second) {
-			appendRunActivityLocked(t, runActivityEvent{
-				Source: "skill", Kind: "execution", At: now.Unix(), Frame: hb.Frame,
-				Summary: hb.Trace,
-				Detail:  "Deterministic gameplay execution.",
-			})
-		}
+	if hb.Activity != nil {
+		appendRunActivityLocked(t, runActivityEvent{
+			Source: hb.Activity.Source, Kind: hb.Activity.Kind, At: now.Unix(),
+			Frame: hb.Activity.Frame, Round: hb.Activity.Round,
+			Summary: hb.Activity.Summary, Detail: hb.Activity.Detail,
+		})
 	}
 
 	appendPlayerMilestonesLocked(t, previousPlayer, hb.Player, now, hb.Frame)
