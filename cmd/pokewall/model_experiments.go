@@ -813,6 +813,10 @@ func (c *modelExperimentController) handleCreateExperiment(w http.ResponseWriter
 	if request.Goal == "" {
 		request.Goal = "Earn the Boulder Badge."
 	}
+	if !request.RecoveryProfile.Valid() {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "recovery_profile must be strict or resilient"})
+		return
+	}
 	if request.ArmA.Name == "" {
 		request.ArmA.Name = "A"
 	}
@@ -866,7 +870,7 @@ func (c *modelExperimentController) handleCreateExperiment(w http.ResponseWriter
 			raw := map[string]any{
 				"run_id": runID, "seed": seed, "game": request.Game, "planner": "llm", "starter": request.Starter, "dest": "", "goal": request.Goal,
 				"llm_deployment": arm.cfg.Deployment, "reasoning_effort": request.ReasoningEffort, "max_parallel_workers": arm.cfg.MaxParallelWorkers,
-				"fps": request.FPS, "max_rounds": request.MaxRounds, "max_frames": request.MaxFrames,
+				"fps": request.FPS, "max_rounds": request.MaxRounds, "max_frames": request.MaxFrames, "recovery_profile": request.RecoveryProfile,
 				"play_style": request.PlayStyle, "risk_tolerance": request.RiskTolerance, "wild_encounters": request.WildEncounters,
 			}
 			meta, err := c.resolveRunMeta(raw, arm.cfg.Deployment, experimentID, arm.key, caseID)
@@ -1272,7 +1276,8 @@ func (c *modelExperimentController) resolveRunMeta(raw map[string]any, deploymen
 		GitRevision: c.wall.Version, ROMIdentity: experimentROMIdentity(stringValue(raw["game"])), PromptIdentity: strings.TrimSpace(os.Getenv("POKEPILOT_PROMPT_SHA256")),
 		Game: stringValue(raw["game"]), Seed: int64Number(raw["seed"]), Starter: stringValue(raw["starter"]), Goal: stringValue(raw["goal"]), PlayStyle: stringValue(raw["play_style"]),
 		RiskTolerance: stringValue(raw["risk_tolerance"]), WildEncounters: stringValue(raw["wild_encounters"]), ReasoningEffort: stringValue(raw["reasoning_effort"]),
-		FPS: intNumber(raw["fps"]), MaxRounds: intNumber(raw["max_rounds"]), MaxFrames: intNumber(raw["max_frames"]), MaxParallelWorkers: parallel,
+		FPS: intNumber(raw["fps"]), MaxRounds: intNumber(raw["max_rounds"]), MaxFrames: intNumber(raw["max_frames"]),
+		RecoveryProfile: farm.RecoveryProfile(stringValue(raw["recovery_profile"])), MaxParallelWorkers: parallel,
 	}
 	blob, _ := json.Marshal(comparable)
 	hash := sha256.Sum256(blob)
