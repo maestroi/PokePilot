@@ -1546,6 +1546,19 @@ func noteRecoveryProgressLocked(t *Tile, p *farm.Progress) {
 	if !advanced {
 		return
 	}
+	if t.RecoveryAttempts > 0 {
+		appendRunActivityLocked(t, runActivityEvent{
+			Source: "recovery", Kind: "recovered", Attempt: t.Attempts + 1,
+			RecoveryAttempt: t.RecoveryAttempts,
+			Summary:         "Recovery succeeded; progress advanced",
+			Detail:          fmt.Sprintf("badges %d · events %d · maps %d", p.Badges, p.Events, p.Maps),
+		})
+	}
+	appendRunActivityLocked(t, runActivityEvent{
+		Source: "milestone", Kind: "progress", Attempt: t.Attempts + 1,
+		Summary: "Progress frontier advanced",
+		Detail:  fmt.Sprintf("badges %d · events %d · maps %d", p.Badges, p.Events, p.Maps),
+	})
 	t.RecoveryBadges = p.Badges
 	t.RecoveryEvents = p.Events
 	t.RecoveryMaps = p.Maps
@@ -1584,7 +1597,40 @@ func (w *Wall) settleRun(t *Tile, reason, detail string, now time.Time) int {
 	if cancelled || reason == "cancelled" || reason == "done" {
 		terminal = true
 	}
+
+	if reason == "done" {
+		appendRunActivityLocked(t, runActivityEvent{
+			Source: "milestone", Kind: "goal", At: now.Unix(), Frame: t.Frame, Attempt: completed,
+			Summary: "Run goal completed",
+			Detail:  detail,
+		})
+	} else if cancelled || reason == "cancelled" {
+		appendRunActivityLocked(t, runActivityEvent{
+			Source: "system", Kind: "cancelled", At: now.Unix(), Frame: t.Frame, Attempt: completed,
+			Summary: "Run cancelled",
+			Detail:  detail,
+		})
+	} else {
+		source := "system"
+		if recoverable {
+			source = "recovery"
+		}
+		appendRunActivityLocked(t, runActivityEvent{
+			Source: source, Kind: "failure", At: now.Unix(), Frame: t.Frame, Attempt: completed,
+			RecoveryAttempt: t.RecoveryAttempts,
+			Summary:         fmt.Sprintf("Attempt %d stopped: %s", completed, reason),
+			Detail:          detail,
+		})
+	}
+
 	if terminal {
+		if reason != "done" && !cancelled && reason != "cancelled" {
+			appendRunActivityLocked(t, runActivityEvent{
+				Source: "system", Kind: "terminal", At: now.Unix(), Frame: t.Frame, Attempt: completed,
+				Summary: "Run stopped",
+				Detail:  fmt.Sprintf("%s: %s", reason, detail),
+			})
+		}
 		t.Status = statusDone
 		t.Reason = reason
 		t.Detail = detail
@@ -1599,6 +1645,12 @@ func (w *Wall) settleRun(t *Tile, reason, detail string, now time.Time) int {
 	// the retry is the outer goal supervisor: local agent/watchdog budgets stay
 	// bounded, but exhausting one escalates to a new checkpoint-backed attempt
 	// instead of terminating the campaign.
+	appendRunActivityLocked(t, runActivityEvent{
+		Source: "recovery", Kind: "retry", At: now.Unix(), Frame: t.Frame, Attempt: completed,
+		RecoveryAttempt: t.RecoveryAttempts,
+		Summary:         fmt.Sprintf("Recovery queued attempt %d", completed+1),
+		Detail:          fmt.Sprintf("%s: %s", reason, detail),
+	})
 	t.Status = statusQueued
 	t.Seed = rand.Int64()
 	t.Frame = 0
