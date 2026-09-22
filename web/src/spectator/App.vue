@@ -16,7 +16,7 @@ import {
 import { getSpectatorSnapshot } from '../shared/api/spectator-client'
 import type { SpectatorRun } from '../shared/api/spectator'
 import AppShell from '../shared/components/AppShell.vue'
-import Panel from '../shared/components/Panel.vue'
+import BadgeIcon from '../shared/components/BadgeIcon.vue'
 import PokemonPartyCard from '../shared/components/PokemonPartyCard.vue'
 import StatusBadge from '../shared/components/StatusBadge.vue'
 import { useFramePump } from '../shared/composables/useFramePump'
@@ -37,12 +37,10 @@ import {
   runTone,
   splitSpectatorRuns
 } from './model'
-import PartyProgress from './PartyProgress.vue'
 import PublicHome from './PublicHome.vue'
-import { policyLabel } from '../shared/playstyle'
-import { dexMeter } from '../shared/playerProgress'
-import { MAP_CATALOG } from '../shared/mapCatalog'
+import { MAP_CATALOG, mapEntry } from '../shared/mapCatalog'
 import { runIDFromLocation, spectatorRunPath } from '../shared/urls'
+import { elapsedRunSeconds, formatDuration } from '../shared/runTiming'
 
 type ActivityKind = 'decision' | 'area' | 'badge' | 'party' | 'dex' | 'milestone' | 'state'
 type ActivityFilter = 'all' | 'milestones' | 'decisions'
@@ -128,43 +126,34 @@ const lastRefreshLabel = computed(() => {
   return new Date(lastUpdatedAt.value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 })
 
-const modeMetrics = computed(() => {
+const currentLocation = computed(() => {
   const run = selectedRun.value
-  if (!run) return []
-  const party = run.player?.party || []
+  if (!run) return 'Waiting for location'
+  return mapEntry(Number(run.map || 0))?.label || locationLabel(run)
+})
+const runtimeLabel = computed(() => {
+  const run = selectedRun.value
+  if (!run) return '—'
+  const seconds = elapsedRunSeconds(run)
+  return seconds > 0 ? formatDuration(seconds) : 'Just started'
+})
+const nextMilestone = computed(() => {
+  const run = selectedRun.value
+  if (!run) return null
   const badges = run.player?.badges?.length || 0
-  const avgLevel = party.length
-    ? Math.round(party.reduce((sum, mon) => sum + Number(mon.level || 0), 0) / party.length)
-    : 0
-  const totalHP = party.reduce((sum, mon) => sum + Number(mon.hp || 0), 0)
-  const totalMaxHP = party.reduce((sum, mon) => sum + Number(mon.max_hp || 0), 0)
-  const health = totalMaxHP > 0 ? Math.round(100 * totalHP / totalMaxHP) : 0
-
-  switch (normalizePlayStyle(run)) {
-    case 'adventure':
-      return [
-        { label: 'Journey', value: locationLabel(run), note: routeLabel(run) },
-        { label: 'Party', value: `${party.length}/6`, note: party[0]?.name || 'building a team' },
-        { label: 'Badges', value: String(badges), note: 'story milestones' }
-      ]
-    case 'completionist':
-      return [
-        { label: 'Goal', value: `${goalProgress(run).toFixed(0)}%`, note: objectiveLabel(run) },
-        { label: 'Party', value: `${party.length}/6`, note: 'caught companions' },
-        { label: 'Wild policy', value: policyLabel(run.wild_encounters || 'planner'), note: 'encounter behavior' }
-      ]
-    case 'team_builder':
-      return [
-        { label: 'Avg level', value: avgLevel ? `Lv ${avgLevel}` : '—', note: party[0]?.name || 'waiting for party data' },
-        { label: 'Party health', value: `${health}%`, note: `${party.length}/6 slots filled` },
-        { label: 'Badges', value: String(badges), note: 'progress while training' }
-      ]
-    default:
-      return [
-        { label: 'Goal pace', value: `${goalProgress(run).toFixed(0)}%`, note: objectiveLabel(run) },
-        { label: 'Frame', value: Number(run.frame || 0).toLocaleString(), note: `${run.stats?.round ?? 0} planner rounds` },
-        { label: 'Attempts', value: String(run.attempts || 1), note: `${playSpeedLabel(run)} play speed` }
-      ]
+  if (badges < 8) {
+    return {
+      eyebrow: 'Next milestone',
+      title: 'Next Gym Badge',
+      detail: objectiveLabel(run),
+      progress: badges + 1 + ' of 8 badges'
+    }
+  }
+  return {
+    eyebrow: 'Final stretch',
+    title: 'Elite Four & Hall of Fame',
+    detail: objectiveLabel(run),
+    progress: 'All 8 badges earned'
   }
 })
 
@@ -180,6 +169,12 @@ watch(runs, (nextRuns) => {
     if (!isLiveRun(run)) continue
     const previous = previousRuns.get(run.run_id)
     if (!previous) {
+      pushActivity(
+        run.run_id,
+        'area',
+        'Watching from',
+        mapEntry(Number(run.map || 0))?.label || locationLabel(run)
+      )
       if (run.decision) pushActivity(run.run_id, 'decision', 'Current decision', run.decision)
       else if (run.planner_waiting) pushActivity(run.run_id, 'state', 'Planner thinking', 'Choosing the first objective')
       else if (run.stop_so_far) pushActivity(run.run_id, 'state', 'Run state', run.stop_so_far)
@@ -194,7 +189,7 @@ watch(runs, (nextRuns) => {
       pushActivity(run.run_id, 'decision', 'Decision', run.decision)
     }
     if (run.map !== previous.map) {
-      pushActivity(run.run_id, 'area', 'New area', locationLabel(run))
+      pushActivity(run.run_id, 'area', 'Entered area', mapEntry(Number(run.map || 0))?.label || locationLabel(run))
     }
 
     const beforeBadges = previous.player?.badges || []
@@ -303,8 +298,13 @@ function moneyLabel(run: SpectatorRun): string {
   return `₽${Number(run.player?.money || 0).toLocaleString()}`
 }
 
-function activityTime(item: ActivityItem): string {
-  return new Date(item.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+function activityTimeAgo(item: ActivityItem): string {
+  const seconds = Math.max(0, Math.floor((Date.now() - item.at) / 1000))
+  if (seconds < 45) return 'now'
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return minutes + 'm ago'
+  const hours = Math.floor(minutes / 60)
+  return hours + 'h ago'
 }
 </script>
 
@@ -318,8 +318,7 @@ function activityTime(item: ActivityItem): string {
   >
     <template #summary>
       <template v-if="snapshot">
-        <span><strong class="text-white">{{ snapshot.summary.live }}</strong> live now</span>
-        <span v-if="selectedRun"><strong class="text-white">{{ mapsLabel }}</strong> maps explored</span>
+        <span><strong class="text-white">{{ snapshot.summary.live }}</strong> live run{{ snapshot.summary.live === 1 ? '' : 's' }}</span>
       </template>
     </template>
 
@@ -468,148 +467,194 @@ function activityTime(item: ActivityItem): string {
         @select="selectRun"
       />
 
-      <section v-if="selectionPinned" class="mode-hero overflow-hidden rounded-xl border bg-[#0d131c] shadow-xl shadow-black/15">
-        <div class="grid gap-5 px-4 py-4 sm:px-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
-          <div class="min-w-0">
+      <div v-if="selectionPinned" class="spectator-stage grid gap-3 xl:grid-cols-[18rem_minmax(0,1fr)_21rem]">
+        <aside class="space-y-3">
+          <section class="spectator-card overflow-hidden rounded-2xl border p-4 shadow-xl shadow-black/20">
             <div class="flex flex-wrap items-center gap-2">
-              <span v-if="isLiveRun(selectedRun)" class="inline-flex items-center gap-1.5 rounded-full bg-red-500/12 px-2 py-1 text-[10px] font-bold tracking-[0.12em] text-red-300 uppercase ring-1 ring-red-400/20">
+              <span v-if="isLiveRun(selectedRun)" class="inline-flex items-center gap-1.5 rounded-full bg-red-500/12 px-2.5 py-1 text-[10px] font-black tracking-[0.11em] text-red-300 uppercase ring-1 ring-red-400/20">
                 <span class="size-1.5 animate-pulse rounded-full bg-red-400" />
-                Live
+                Live run
               </span>
               <StatusBadge v-else :tone="runTone(selectedRun)">{{ runStatusLabel(selectedRun) }}</StatusBadge>
               <span class="mode-chip">{{ playStyleLabel(selectedRun) }}</span>
-              <span class="text-[11px] text-slate-500">{{ playStyleTagline(selectedRun) }}</span>
             </div>
-            <h1 class="mt-2 truncate text-xl font-semibold tracking-tight text-white sm:text-2xl">{{ runTitle(selectedRun) }}</h1>
-            <p class="mt-1 truncate text-sm text-slate-400">{{ routeLabel(selectedRun) }}</p>
-            <div class="mt-3 flex min-w-0 items-start gap-2">
-              <span class="mode-dot mt-1.5 size-2 shrink-0 rounded-full" />
+
+            <div class="mt-4 flex items-start gap-3">
+              <div class="game-mark grid size-11 shrink-0 place-items-center rounded-xl ring-1 ring-white/10">
+                <span class="text-2xl" aria-hidden="true">◉</span>
+              </div>
               <div class="min-w-0">
-                <p class="text-[10px] font-semibold tracking-[0.1em] text-slate-500 uppercase">Current objective</p>
-                <p class="mt-0.5 truncate text-sm font-medium text-slate-200">{{ objectiveLabel(selectedRun) }}</p>
+                <h1 class="text-2xl font-black tracking-tight text-white">Pokémon Red</h1>
+                <p class="mt-0.5 truncate text-sm text-slate-400">{{ playStyleLabel(selectedRun) }} · {{ selectedRun.player?.party?.[0]?.name || selectedRun.starter || 'new trainer' }}</p>
+                <p class="mt-1 truncate text-[11px] text-slate-600">{{ currentLocation }}</p>
               </div>
             </div>
-          </div>
 
-          <div class="grid grid-cols-3 gap-px overflow-hidden rounded-lg bg-white/10 ring-1 ring-white/10 sm:grid-cols-6 lg:min-w-[36rem]">
-            <div class="bg-[#0b1119] px-3 py-2.5 text-center">
-              <div class="text-[9px] font-semibold tracking-[0.1em] text-slate-500 uppercase">Badges</div>
-              <div class="mt-1 font-mono text-lg font-semibold text-white">{{ selectedRun.player?.badges?.length || 0 }}</div>
-            </div>
-            <div class="bg-[#0b1119] px-3 py-2.5 text-center">
-              <div class="text-[9px] font-semibold tracking-[0.1em] text-slate-500 uppercase">Maps</div>
-              <div class="mt-1 font-mono text-lg font-semibold text-white">{{ mapsLabel }}</div>
-            </div>
-            <div class="bg-[#0b1119] px-3 py-2.5 text-center">
-              <div class="text-[9px] font-semibold tracking-[0.1em] text-slate-500 uppercase">Party</div>
-              <div class="mt-1 font-mono text-lg font-semibold text-white">{{ selectedRun.player?.party?.length || 0 }}/6</div>
-            </div>
-            <div class="bg-[#0b1119] px-3 py-2.5 text-center">
-              <div class="text-[9px] font-semibold tracking-[0.1em] text-slate-500 uppercase">Dex</div>
-              <div class="mt-1 font-mono text-lg font-semibold text-white">{{ dexMeter(selectedRun.player) || '—' }}</div>
-            </div>
-            <div class="bg-[#0b1119] px-3 py-2.5 text-center">
-              <div class="text-[9px] font-semibold tracking-[0.1em] text-slate-500 uppercase">Money</div>
-              <div class="mt-1 font-mono text-sm font-semibold text-white sm:text-base">{{ moneyLabel(selectedRun) }}</div>
-            </div>
-            <div class="bg-[#0b1119] px-3 py-2.5 text-center">
-              <div class="text-[9px] font-semibold tracking-[0.1em] text-slate-500 uppercase">Speed</div>
-              <div class="mode-text mt-1 font-mono text-lg font-semibold">{{ playSpeedLabel(selectedRun) }}</div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <div :class="['grid grid-cols-1 gap-3', theaterMode ? '' : 'xl:grid-cols-[minmax(0,2.2fr)_minmax(19rem,0.8fr)]']">
-        <div class="space-y-3">
-          <Panel title="Game" description="Live gameplay broadcast" compact>
-            <template #actions>
-              <div class="flex items-center gap-1.5">
-                <button type="button" class="rounded-md bg-white/7 px-2 py-1 text-[10px] font-semibold text-slate-300 ring-1 ring-white/10 hover:bg-white/12 hover:text-white" @click="theaterMode = !theaterMode">
-                  {{ theaterMode ? 'Exit theater' : 'Theater' }}
-                </button>
-                <button type="button" class="inline-flex items-center gap-1 rounded-md bg-white/7 px-2 py-1 text-[10px] font-semibold text-slate-300 ring-1 ring-white/10 hover:bg-white/12 hover:text-white" @click="fullscreenPlayer">
-                  <ArrowsPointingOutIcon class="size-3" aria-hidden="true" />
-                  Fullscreen
-                </button>
+            <div class="mt-5">
+              <p class="text-sm leading-6 text-slate-300">{{ objectiveLabel(selectedRun) }}</p>
+              <div class="mt-3 h-2 overflow-hidden rounded-full bg-white/8">
+                <div class="mode-progress h-full rounded-full transition-[width]" :style="{ width: goalProgress(selectedRun) + '%' }" />
               </div>
-            </template>
+              <div class="mt-1.5 flex items-center justify-between font-mono text-[10px] text-slate-500">
+                <span>{{ selectedRun.player?.badges?.length || 0 }} / 8 badges</span>
+                <span>{{ goalProgress(selectedRun).toFixed(0) }}%</span>
+              </div>
+            </div>
 
+            <div class="mt-5">
+              <div class="mb-2 text-[9px] font-black tracking-[0.11em] text-slate-500 uppercase">Gym badges</div>
+              <div class="grid grid-cols-8 gap-1.5">
+                <div
+                  v-for="slot in 8"
+                  :key="slot"
+                  :class="[
+                    selectedRun.player?.badges?.[slot - 1] ? 'badge-earned' : 'badge-empty',
+                    'grid aspect-square place-items-center rounded-full'
+                  ]"
+                  :title="selectedRun.player?.badges?.[slot - 1] || 'Badge not earned yet'"
+                >
+                  <BadgeIcon
+                    v-if="selectedRun.player?.badges?.[slot - 1]"
+                    :name="selectedRun.player.badges[slot - 1]"
+                    :size="26"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div class="mt-5 grid grid-cols-2 gap-2">
+              <div class="audience-stat rounded-xl border border-white/8 p-3">
+                <GlobeAltIcon class="size-4 text-cyan-200/80" aria-hidden="true" />
+                <strong class="mt-2 block font-mono text-base text-white">{{ mapsLabel }}</strong>
+                <span class="text-[10px] text-slate-500">Maps visited</span>
+              </div>
+              <div class="audience-stat rounded-xl border border-white/8 p-3">
+                <QueueListIcon class="size-4 text-violet-200/80" aria-hidden="true" />
+                <strong class="mt-2 block font-mono text-base text-white">{{ selectedRun.player?.party?.length || 0 }}/6</strong>
+                <span class="text-[10px] text-slate-500">Party</span>
+              </div>
+              <div class="audience-stat rounded-xl border border-white/8 p-3">
+                <SignalIcon class="size-4 text-emerald-200/80" aria-hidden="true" />
+                <strong class="mt-2 block font-mono text-base text-white">{{ runtimeLabel }}</strong>
+                <span class="text-[10px] text-slate-500">Runtime</span>
+              </div>
+              <div class="audience-stat rounded-xl border border-white/8 p-3">
+                <TrophyIcon class="size-4 text-amber-200/80" aria-hidden="true" />
+                <strong class="mt-2 block font-mono text-base text-white">{{ moneyLabel(selectedRun) }}</strong>
+                <span class="text-[10px] text-slate-500">Money</span>
+              </div>
+            </div>
+          </section>
+
+          <section v-if="groupedRuns.live.length > 1" class="spectator-card rounded-2xl border p-3">
+            <div class="mb-2 flex items-center justify-between gap-2">
+              <div>
+                <h2 class="text-xs font-bold text-white">Other live runs</h2>
+                <p class="mt-0.5 text-[10px] text-slate-600">Switch streams instantly.</p>
+              </div>
+              <span class="rounded-full bg-emerald-300/10 px-2 py-1 font-mono text-[9px] text-emerald-200 ring-1 ring-emerald-300/20">{{ groupedRuns.live.length }} live</span>
+            </div>
+            <div class="space-y-1.5">
+              <button
+                v-for="run in groupedRuns.live.filter((item) => item.run_id !== selectedRun.run_id).slice(0, 3)"
+                :key="run.run_id"
+                type="button"
+                class="w-full rounded-lg bg-black/15 px-2.5 py-2 text-left ring-1 ring-white/8 transition hover:bg-white/6 hover:ring-white/15"
+                @click="selectRun(run)"
+              >
+                <div class="flex items-center justify-between gap-2">
+                  <strong class="truncate text-[11px] text-slate-300">{{ runTitle(run) }}</strong>
+                  <span class="size-1.5 shrink-0 rounded-full bg-emerald-300" />
+                </div>
+                <div class="mt-1 truncate text-[9px] text-slate-600">{{ mapEntry(Number(run.map || 0))?.label || locationLabel(run) }}</div>
+              </button>
+            </div>
+          </section>
+        </aside>
+
+        <main class="min-w-0 space-y-3">
+          <section class="player-card overflow-hidden rounded-2xl border shadow-2xl shadow-black/30">
             <div
               ref="playerRef"
               :class="[
-                'group relative overflow-hidden rounded-lg border border-white/10 bg-black shadow-inner shadow-black',
-                theaterMode ? 'min-h-[72vh]' : 'min-h-[26rem] sm:min-h-[34rem] lg:min-h-[39rem]'
+                'player-shell group relative overflow-hidden bg-black',
+                theaterMode ? 'min-h-[78vh]' : 'min-h-[34rem] sm:min-h-[42rem] xl:min-h-[46rem]'
               ]"
             >
               <img
                 v-if="frameURL"
                 :src="frameURL"
-                :alt="`Live frame for ${selectedRun.run_id}`"
+                :alt="'Live frame for ' + selectedRun.run_id"
                 class="absolute inset-0 h-full w-full object-contain object-center [image-rendering:pixelated]"
               />
 
               <div v-else class="absolute inset-0 grid place-items-center px-6 py-12 text-center">
                 <div>
-                  <div class="mx-auto flex size-12 items-center justify-center rounded-full border border-white/10 bg-white/5">
-                    <span :class="['size-2.5 rounded-full', isLiveRun(selectedRun) ? 'animate-pulse bg-emerald-300' : 'bg-slate-600']" />
+                  <div class="mx-auto flex size-14 items-center justify-center rounded-full border border-white/10 bg-white/5">
+                    <span :class="['size-3 rounded-full', isLiveRun(selectedRun) ? 'animate-pulse bg-emerald-300' : 'bg-slate-600']" />
                   </div>
-                  <p class="mt-3 text-sm font-medium text-slate-300">Waiting for the live stream</p>
+                  <p class="mt-3 text-sm font-semibold text-slate-300">Waiting for the live stream</p>
                   <p v-if="frameState === 'error' && frameError" class="mt-1 text-xs text-amber-300/80">{{ frameError }}</p>
                 </div>
               </div>
 
-              <div class="pointer-events-none absolute inset-x-0 top-0 flex items-center justify-between bg-gradient-to-b from-black/65 to-transparent px-3 py-3 text-[10px] font-semibold tracking-[0.08em] uppercase">
-                <span class="rounded bg-black/45 px-2 py-1 text-slate-200 ring-1 ring-white/10">{{ playStyleLabel(selectedRun) }}</span>
-                <span class="rounded bg-black/45 px-2 py-1 font-mono text-slate-300 ring-1 ring-white/10">{{ locationLabel(selectedRun) }}</span>
+              <div class="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-3 bg-gradient-to-b from-black/75 via-black/30 to-transparent px-3 py-3 sm:px-4">
+                <div class="flex items-center gap-2">
+                  <span class="inline-flex items-center gap-1.5 rounded-full bg-black/55 px-2.5 py-1 text-[10px] font-black tracking-[0.1em] text-white uppercase ring-1 ring-white/12">
+                    <span class="size-1.5 animate-pulse rounded-full bg-red-400" />
+                    Live
+                  </span>
+                  <span class="rounded-full bg-black/55 px-2.5 py-1 font-mono text-[10px] text-slate-200 ring-1 ring-white/12">{{ playSpeedLabel(selectedRun) }}</span>
+                </div>
+                <span class="rounded-full bg-black/55 px-2.5 py-1 text-[10px] font-bold text-slate-200 ring-1 ring-white/12">{{ currentLocation }}</span>
               </div>
 
-              <div class="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/50 to-transparent px-3 pb-3 pt-14 sm:px-4 sm:pb-4">
-                <div v-if="plannerState" class="flex items-end justify-between gap-4">
-                  <div class="flex min-w-0 items-center gap-3">
-                    <div class="planner-spinner grid size-9 shrink-0 place-items-center rounded-full border border-cyan-300/25 bg-cyan-300/10">
-                      <SparklesIcon class="size-4 text-cyan-200" aria-hidden="true" />
-                    </div>
-                    <div class="min-w-0">
-                      <div class="text-[9px] font-semibold tracking-[0.12em] text-cyan-200 uppercase">{{ plannerState.title }}</div>
-                      <div class="mt-1 flex items-center gap-2 text-xs text-white sm:text-sm">
-                        <span class="truncate">{{ plannerState.detail }}</span>
-                        <span class="planner-dots inline-flex shrink-0 gap-1" aria-hidden="true">
-                          <span />
-                          <span />
-                          <span />
-                        </span>
-                      </div>
-                    </div>
+              <div class="absolute right-3 top-14 z-10 flex flex-col gap-2 opacity-80 transition-opacity group-hover:opacity-100 sm:right-4">
+                <button type="button" class="player-control" :title="theaterMode ? 'Exit theater mode' : 'Theater mode'" @click="theaterMode = !theaterMode">
+                  <PlayIcon class="size-4" aria-hidden="true" />
+                </button>
+                <button type="button" class="player-control" title="Fullscreen" @click="fullscreenPlayer">
+                  <ArrowsPointingOutIcon class="size-4" aria-hidden="true" />
+                </button>
+              </div>
+
+              <div class="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/55 to-transparent px-3 pb-3 pt-20 sm:px-4 sm:pb-4">
+                <div v-if="plannerState" class="inline-flex max-w-[90%] items-center gap-3 rounded-xl bg-black/60 px-3 py-2.5 ring-1 ring-cyan-300/20 backdrop-blur-md">
+                  <div class="planner-spinner grid size-8 shrink-0 place-items-center rounded-full border border-cyan-300/25 bg-cyan-300/10">
+                    <SparklesIcon class="size-4 text-cyan-200" aria-hidden="true" />
                   </div>
-                  <div class="shrink-0 rounded bg-black/50 px-2 py-1 font-mono text-[10px] text-cyan-100 ring-1 ring-cyan-300/20">LLM</div>
-                </div>
-                <div v-else class="flex items-end justify-between gap-4">
                   <div class="min-w-0">
-                    <div class="text-[9px] font-semibold tracking-[0.1em] text-slate-400 uppercase">Latest decision</div>
-                    <div class="mt-1 line-clamp-2 max-w-4xl text-xs leading-5 text-white sm:text-sm">{{ selectedRun.decision || 'Preparing the next objective' }}</div>
+                    <div class="text-[9px] font-black tracking-[0.11em] text-cyan-200 uppercase">{{ plannerState.title }}</div>
+                    <div class="mt-0.5 flex items-center gap-2 text-xs text-white sm:text-sm">
+                      <span class="truncate">{{ plannerState.detail }}</span>
+                      <span class="planner-dots inline-flex shrink-0 gap-1" aria-hidden="true"><span /><span /><span /></span>
+                    </div>
                   </div>
-                  <div class="shrink-0 rounded bg-black/50 px-2 py-1 font-mono text-[10px] text-slate-300 ring-1 ring-white/10">{{ playSpeedLabel(selectedRun) }}</div>
+                </div>
+                <div v-else class="inline-block max-w-[92%] rounded-xl bg-black/60 px-3 py-2.5 ring-1 ring-white/12 backdrop-blur-md">
+                  <div class="text-[9px] font-black tracking-[0.1em] text-slate-400 uppercase">Latest decision</div>
+                  <div class="mt-1 line-clamp-2 text-xs font-semibold leading-5 text-white sm:text-sm">{{ selectedRun.decision || 'Preparing the next objective' }}</div>
                 </div>
               </div>
 
-              <div v-if="frameURL && frameState === 'error'" class="absolute right-3 top-12 rounded-md bg-black/75 px-2 py-1 text-[10px] font-semibold text-amber-200 ring-1 ring-amber-300/20">
+              <div v-if="frameURL && frameState === 'error'" class="absolute left-3 top-14 rounded-full bg-amber-950/80 px-2.5 py-1 text-[10px] font-semibold text-amber-200 ring-1 ring-amber-300/20">
                 Last frame · reconnecting
               </div>
             </div>
-          </Panel>
+          </section>
 
-          <Panel title="Party" :description="normalizePlayStyle(selectedRun) === 'team_builder' ? 'The team is the story in this run.' : 'Live party health and levels.'" compact>
-            <div
-              v-if="selectedRun.player?.party?.length"
-              :class="[
-                'grid gap-2',
-                normalizePlayStyle(selectedRun) === 'team_builder' ? 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-3' : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'
-              ]"
-            >
+          <section class="spectator-card rounded-2xl border p-3 sm:p-4">
+            <div class="mb-3 flex items-end justify-between gap-3">
+              <div>
+                <h2 class="text-sm font-black text-white">Current Party</h2>
+                <p class="mt-0.5 text-[10px] text-slate-600">Live health and levels.</p>
+              </div>
+              <span class="font-mono text-[10px] text-slate-500">{{ selectedRun.player?.party?.length || 0 }} / 6 slots</span>
+            </div>
+            <div v-if="selectedRun.player?.party?.length" class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
               <PokemonPartyCard
                 v-for="(mon, index) in selectedRun.player.party"
-                :key="`${mon.name}-${index}`"
+                :key="mon.name + '-' + index"
                 :name="mon.name"
                 :level="mon.level"
                 :hp="mon.hp"
@@ -619,121 +664,89 @@ function activityTime(item: ActivityItem): string {
               />
             </div>
             <p v-else class="py-5 text-center text-sm text-slate-500">Party data is not available yet.</p>
+          </section>
+        </main>
 
-            <PartyProgress :run="selectedRun" />
-          </Panel>
-
-          <Panel title="Activity" description="Live decisions and progression, grouped by event type." compact>
-            <div class="mb-3 flex flex-wrap gap-1.5">
-              <button
-                v-for="filter in activityFilters"
-                :key="filter"
-                type="button"
-                :class="[
-                  activityFilter === filter
-                    ? 'bg-cyan-300/12 text-cyan-100 ring-cyan-300/25'
-                    : 'bg-white/5 text-slate-500 ring-white/8 hover:bg-white/8 hover:text-slate-300',
-                  'rounded-full px-2.5 py-1 text-[10px] font-semibold capitalize ring-1 transition-colors'
-                ]"
-                @click="activityFilter = filter"
-              >
-                {{ filter }}
-              </button>
-            </div>
-            <div v-if="selectedActivity.length" class="divide-y divide-white/8">
-              <div v-for="item in selectedActivity" :key="item.id" class="grid grid-cols-[4rem_2rem_minmax(0,1fr)] items-start gap-2.5 py-2.5 first:pt-0 last:pb-0">
-                <time class="pt-1 font-mono text-[10px] text-slate-600">{{ activityTime(item) }}</time>
-                <span
-                  :class="[activityTone(item.kind), 'grid size-7 place-items-center rounded-md ring-1']"
-                  :title="item.label"
+        <aside class="space-y-3">
+          <section class="spectator-card rounded-2xl border p-4">
+            <div class="flex items-center justify-between gap-3">
+              <div class="flex items-center gap-2">
+                <span class="size-2 animate-pulse rounded-full bg-red-400" />
+                <div>
+                  <h2 class="text-sm font-black text-white">Live Activity</h2>
+                  <p class="mt-0.5 text-[10px] text-slate-600">What the run is doing right now.</p>
+                </div>
+              </div>
+              <div class="flex rounded-lg bg-black/20 p-0.5 ring-1 ring-white/8">
+                <button
+                  v-for="filter in activityFilters"
+                  :key="filter"
+                  type="button"
+                  :title="'Show ' + filter + ' activity'"
+                  :class="[
+                    activityFilter === filter ? 'bg-white/10 text-white' : 'text-slate-600 hover:text-slate-300',
+                    'rounded-md px-2 py-1 text-[9px] font-bold capitalize transition-colors'
+                  ]"
+                  @click="activityFilter = filter"
                 >
+                  {{ filter === 'milestones' ? 'Progress' : filter }}
+                </button>
+              </div>
+            </div>
+
+            <div v-if="selectedActivity.length" class="activity-list relative mt-4 space-y-1">
+              <div v-for="item in selectedActivity.slice(0, 9)" :key="item.id" class="activity-item relative grid grid-cols-[2rem_minmax(0,1fr)] gap-2.5 py-2">
+                <span :class="[activityTone(item.kind), 'relative z-10 grid size-7 place-items-center rounded-lg ring-1']" :title="item.label">
                   <component :is="activityIcon(item.kind)" class="size-3.5" aria-hidden="true" />
                 </span>
                 <div class="min-w-0">
-                  <strong class="text-xs text-slate-300">{{ item.label }}</strong>
-                  <p class="mt-0.5 text-xs leading-5 text-slate-500">{{ item.detail }}</p>
+                  <div class="flex items-baseline justify-between gap-2">
+                    <strong class="truncate text-[11px] text-slate-300">{{ item.label }}</strong>
+                    <time class="shrink-0 font-mono text-[9px] text-slate-700">{{ activityTimeAgo(item) }}</time>
+                  </div>
+                  <p class="mt-0.5 text-[11px] leading-4 text-slate-500">{{ item.detail }}</p>
                 </div>
               </div>
             </div>
-            <p v-else class="py-5 text-center text-xs text-slate-500">
-              {{ activityFilter === 'all' ? 'New decisions, areas, catches and badges will appear here.' : 'No ' + activityFilter + ' events yet.' }}
-            </p>
-          </Panel>
-        </div>
+            <div v-else class="mt-4 rounded-xl border border-dashed border-white/10 px-3 py-8 text-center">
+              <SignalIcon class="mx-auto size-5 text-slate-700" aria-hidden="true" />
+              <p class="mt-2 text-xs text-slate-500">Waiting for the next live event.</p>
+            </div>
+          </section>
 
-        <aside class="space-y-3">
-          <Panel :title="`${playStyleLabel(selectedRun)} focus`" :description="playStyleTagline(selectedRun)" compact>
-            <div class="grid gap-2 sm:grid-cols-3 xl:grid-cols-1">
-              <div v-for="metric in modeMetrics" :key="metric.label" class="mode-metric rounded-lg border bg-black/10 px-3 py-2.5">
-                <div class="text-[9px] font-semibold tracking-[0.1em] text-slate-500 uppercase">{{ metric.label }}</div>
-                <div class="mode-text mt-1 truncate font-mono text-base font-semibold">{{ metric.value }}</div>
-                <div class="mt-0.5 truncate text-[10px] text-slate-600">{{ metric.note }}</div>
+          <section v-if="nextMilestone" class="milestone-card overflow-hidden rounded-2xl border p-4">
+            <div class="text-[9px] font-black tracking-[0.11em] text-cyan-200/70 uppercase">{{ nextMilestone.eyebrow }}</div>
+            <div class="mt-3 flex items-start gap-3">
+              <div class="grid size-12 shrink-0 place-items-center rounded-xl bg-cyan-300/10 ring-1 ring-cyan-300/20">
+                <TrophyIcon class="size-6 text-cyan-100" aria-hidden="true" />
+              </div>
+              <div class="min-w-0">
+                <h2 class="text-base font-black text-white">{{ nextMilestone.title }}</h2>
+                <p class="mt-1 line-clamp-3 text-[11px] leading-5 text-slate-400">{{ nextMilestone.detail }}</p>
               </div>
             </div>
-          </Panel>
-
-          <Panel title="Objective" :description="objectiveLabel(selectedRun)" compact>
-            <div class="h-2 overflow-hidden rounded-full bg-white/8">
-              <div class="mode-progress h-full rounded-full transition-[width]" :style="{ width: `${goalProgress(selectedRun)}%` }" />
+            <div class="mt-4 h-2 overflow-hidden rounded-full bg-white/8">
+              <div class="mode-progress h-full rounded-full" :style="{ width: Math.min(100, ((selectedRun.player?.badges?.length || 0) / 8) * 100) + '%' }" />
             </div>
-            <div class="mt-2 flex items-center justify-between gap-3 font-mono text-[10px] text-slate-500">
-              <span v-if="selectedRun.stats?.goal_target">{{ selectedRun.stats.goal_current || 0 }} / {{ selectedRun.stats.goal_target }}</span>
-              <span v-else>goal-driven</span>
-              <span>{{ goalProgress(selectedRun).toFixed(0) }}%</span>
+            <div class="mt-2 flex items-center justify-between text-[10px]">
+              <span class="text-slate-600">{{ nextMilestone.progress }}</span>
+              <span class="font-mono text-slate-500">{{ selectedRun.player?.badges?.length || 0 }}/8</span>
             </div>
-          </Panel>
+          </section>
 
-          <Panel title="Run settings" description="Public-safe behavior profile." compact>
-            <dl class="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
-              <div>
-                <dt class="text-[9px] font-semibold tracking-[0.08em] text-slate-600 uppercase">Play style</dt>
-                <dd class="mode-text mt-0.5 font-semibold">{{ playStyleLabel(selectedRun) }}</dd>
-              </div>
-              <div>
-                <dt class="text-[9px] font-semibold tracking-[0.08em] text-slate-600 uppercase">Speed</dt>
-                <dd class="mt-0.5 font-mono font-semibold text-slate-300">{{ playSpeedLabel(selectedRun) }}</dd>
+          <section class="watching-card rounded-2xl border px-4 py-3">
+            <div class="flex items-center gap-3">
+              <div class="flex -space-x-1.5">
+                <span class="viewer-dot bg-cyan-300" />
+                <span class="viewer-dot bg-violet-300" />
+                <span class="viewer-dot bg-emerald-300" />
               </div>
               <div>
-                <dt class="text-[9px] font-semibold tracking-[0.08em] text-slate-600 uppercase">Risk</dt>
-                <dd class="mt-0.5 text-slate-300">{{ policyLabel(selectedRun.risk_tolerance || 'balanced') }}</dd>
+                <strong class="block text-[11px] text-slate-300">Watching AI play classic games</strong>
+                <span class="text-[10px] text-slate-600">Real gameplay · real progress · no operator controls</span>
               </div>
-              <div>
-                <dt class="text-[9px] font-semibold tracking-[0.08em] text-slate-600 uppercase">Wild encounters</dt>
-                <dd class="mt-0.5 text-slate-300">{{ policyLabel(selectedRun.wild_encounters || 'planner') }}</dd>
-              </div>
-            </dl>
-            <div class="mt-3 border-t border-white/8 pt-3">
-              <div class="text-[9px] font-semibold tracking-[0.08em] text-slate-600 uppercase">Run ID</div>
-              <div class="mt-1 break-all font-mono text-[10px] text-slate-500">{{ selectedRun.run_id }}</div>
             </div>
-          </Panel>
-
-          <Panel title="Live runs" description="Switch streams without leaving the page." compact>
-            <div v-if="groupedRuns.live.length" class="space-y-1.5">
-              <button
-                v-for="run in groupedRuns.live"
-                :key="run.run_id"
-                type="button"
-                :class="[
-                  run.run_id === selectedRun.run_id ? 'bg-white/8 ring-white/15' : 'bg-black/10 ring-white/8 hover:bg-white/5',
-                  'w-full rounded-md px-3 py-2 text-left ring-1 transition-colors'
-                ]"
-                @click="selectRun(run)"
-              >
-                <div class="flex items-center justify-between gap-3">
-                  <strong class="truncate text-xs text-slate-300">{{ runTitle(run) }}</strong>
-                  <StatusBadge :tone="runTone(run)">{{ runStatusLabel(run) }}</StatusBadge>
-                </div>
-                <div class="mt-1 flex items-center justify-between gap-3 text-[10px] text-slate-600">
-                  <span class="truncate">{{ routeLabel(run) }}</span>
-                  <span class="shrink-0 font-mono">{{ playSpeedLabel(run) }}</span>
-                </div>
-              </button>
-            </div>
-            <p v-else class="py-4 text-center text-xs text-slate-500">Nothing is running right now.</p>
-          </Panel>
-
-
+          </section>
         </aside>
       </div>
     </div>
@@ -741,6 +754,112 @@ function activityTime(item: ActivityItem): string {
 </template>
 
 <style scoped>
+
+.spectator-stage {
+  align-items: start;
+}
+
+.spectator-card,
+.player-card,
+.milestone-card,
+.watching-card {
+  border-color: rgba(148, 163, 184, 0.12);
+  background:
+    linear-gradient(180deg, rgba(19, 30, 48, 0.92), rgba(8, 15, 28, 0.94)),
+    rgba(8, 15, 28, 0.95);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+}
+
+.player-card {
+  border-color: rgba(96, 165, 250, 0.22);
+  background: rgba(3, 7, 18, 0.96);
+}
+
+.player-shell {
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.025),
+    inset 0 0 5rem rgba(15, 23, 42, 0.24);
+}
+
+.game-mark {
+  color: #f8fafc;
+  background:
+    radial-gradient(circle at 30% 20%, rgba(255,255,255,.2), transparent 35%),
+    linear-gradient(145deg, rgba(251,113,133,.88), rgba(59,130,246,.78));
+}
+
+.audience-stat {
+  background: rgba(2, 6, 23, 0.28);
+}
+
+.badge-earned {
+  background: rgba(251, 191, 36, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.2);
+}
+
+.badge-empty {
+  background: rgba(255, 255, 255, 0.025);
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.12);
+}
+
+.player-control {
+  display: grid;
+  width: 2.25rem;
+  height: 2.25rem;
+  place-items: center;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: .65rem;
+  background: rgba(2, 6, 23, .72);
+  color: rgb(226 232 240);
+  backdrop-filter: blur(10px);
+  transition: background .15s ease, border-color .15s ease, transform .15s ease;
+}
+
+.player-control:hover {
+  border-color: rgba(103, 232, 249, .28);
+  background: rgba(15, 23, 42, .9);
+  transform: translateY(-1px);
+}
+
+.activity-list::before {
+  position: absolute;
+  top: .9rem;
+  bottom: .9rem;
+  left: .84rem;
+  width: 1px;
+  background: linear-gradient(to bottom, rgba(103,232,249,.38), rgba(148,163,184,.10));
+  content: '';
+}
+
+.milestone-card {
+  border-color: rgba(103, 232, 249, 0.16);
+  background:
+    radial-gradient(circle at 0% 0%, rgba(56, 189, 248, .12), transparent 18rem),
+    linear-gradient(180deg, rgba(19, 30, 48, 0.94), rgba(8, 15, 28, 0.96));
+}
+
+.watching-card {
+  background:
+    linear-gradient(135deg, rgba(16,185,129,.07), rgba(59,130,246,.04)),
+    rgba(8, 15, 28, 0.9);
+}
+
+.viewer-dot {
+  display: block;
+  width: 1.3rem;
+  height: 1.3rem;
+  border: 2px solid #0b1220;
+  border-radius: 9999px;
+  opacity: .9;
+}
+
+@media (min-width: 80rem) {
+  .spectator-stage > aside {
+    position: sticky;
+    top: 4.5rem;
+  }
+}
+
 .spectator-theme {
   --mode-accent: #67e8f9;
   --mode-soft: rgba(103, 232, 249, 0.1);
