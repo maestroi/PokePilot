@@ -120,6 +120,37 @@ func Traverse(m *emu.Emu, romData []byte, e world.Edge) error {
 			return fmt.Errorf("skill: Traverse: invalid push step %s on %02x->%02x", push, e.From, e.To)
 		}
 		if err := pushAcrossEdge(m, e, btn); err != nil {
+			// A connection edge that never crosses within crossBudget while
+			// simply held is a strong live signal that a water tile blocked
+			// the walk, not a wall: game input blocked by a wall reports
+			// itself as immediate lack of movement, not a stalled crossing.
+			// Ask the ROM itself whether Surf now clears it — it reads the
+			// live tile in front of the player, so it is authoritative about
+			// water even when the crossing is a shore that begins exactly on
+			// the OTHER map's side of the seam (Pallet Town's dry south
+			// border into Route 21's water), which neither map's own
+			// pre-crossing land/water grid can see. MEASURED on
+			// run-18lk6m6f27hl732ikt5b86rzvs round 3: AcquireCinnabarSecretKey
+			// held south at Pallet (3,17) for the full budget without ever
+			// entering Route 21.
+			if errors.Is(err, errDidNotCross) && m.Peek8(sym.WalkBikeSurfState) != fieldSurfingState {
+				if mountErr := mountSurfFacingPush(m, romData, push); mountErr == nil {
+					if err2 := pushAcrossEdge(m, e, btn); err2 == nil {
+						return finishArrival(m, e)
+					}
+				} else {
+					// The ROM itself declined to Surf here (validateFieldActionContext
+					// only rejects "already surfing", so a decline this far in means
+					// IsNextTileShoreOrWater said no): this exact border tile is not a
+					// crossing point at all, e.g. shoreline scenery rather than open
+					// water. That is per-tile evidence, not evidence about the edge
+					// itself — Route 21's near shore has open water a few columns over
+					// from Pallet's blocked (3,17). Ban this tile like ErrLegUnwalkable
+					// so GoTo's existing band search picks the next candidate column
+					// instead of failing the whole edge.
+					return fmt.Errorf("skill: Traverse: %s: %v: %w", edgeName(e), err, ErrLegUnwalkable)
+				}
+			}
 			return err
 		}
 		return finishArrival(m, e)
@@ -825,4 +856,29 @@ func edgeName(e world.Edge) string {
 		return fmt.Sprintf("connection edge %02x->%02x via %s", e.From, e.To, dirName(e.Dir))
 	}
 	return fmt.Sprintf("edge %02x->%02x kind %d", e.From, e.To, e.Kind)
+}
+
+// mountSurfFacingPush faces the tile one step beyond the player in push's
+// direction and attempts to mount Surf there. It is only ever tried after an
+// ordinary connection push has already failed to cross, so a failure here
+// (not water, no Surf-capable party member, wrong facing) is expected and
+// left for the caller to report as the original crossing error.
+func mountSurfFacingPush(m *emu.Emu, romData []byte, push world.Step) error {
+	x, y := playerXY(m)
+	tx, ty := int(x)+push.DX, int(y)+push.DY
+	if tx < 0 || tx > 255 || ty < 0 || ty > 255 {
+		return fmt.Errorf("skill: mountSurfFacingPush: facing tile (%d,%d) out of range", tx, ty)
+	}
+	if err := Face(m, uint8(tx), uint8(ty)); err != nil {
+		return err
+	}
+	m.StepFrames(2)
+	result, err := UseFieldMove(m, FieldSurf)
+	if err != nil {
+		return err
+	}
+	if !result.Surfing || m.Peek8(sym.WalkBikeSurfState) != fieldSurfingState {
+		return fmt.Errorf("skill: mountSurfFacingPush: returned without verified surfing state")
+	}
+	return nil
 }
