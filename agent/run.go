@@ -197,9 +197,26 @@ runLoop:
 			}
 		}
 
+		if budget.OnObjective != nil {
+			budget.OnObjective(ObjectiveActivity{
+				Stage: "started", Objective: obj.String(), Frame: m.FrameCount(), Round: round,
+			})
+		}
 		before := last
 		objectiveResult, execErr := executeObjectiveResultWithRoutePriority(m, romData, obj, routePriorityForPlanner(p))
 		settledTiming := ObjectiveTiming{Frame: m.FrameCount(), Round: round, WallElapsed: time.Since(runStarted)}
+		if budget.OnObjective != nil {
+			stage := "completed"
+			errText := ""
+			if execErr != nil {
+				stage = "failed"
+				errText = execErr.Error()
+			}
+			budget.OnObjective(ObjectiveActivity{
+				Stage: stage, Objective: obj.String(), Outcome: objectiveResult.HistoryText(), Error: errText,
+				Frame: settledTiming.Frame, Round: round,
+			})
+		}
 		last = objectiveResult.Final
 		coverage.seed(last)
 		res.Rounds = round
