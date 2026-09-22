@@ -2,10 +2,11 @@ package skill
 
 import "testing"
 
-func TestEeveeGiftDestinationUsesReachableLateralStand(t *testing.T) {
+func TestEeveeGiftDestinationUsesLiveInteractionApproach(t *testing.T) {
 	got := eeveeGiftDestination()
-	if got.Map != celadonMansionRoofHouseMap || got.X != 3 || got.Y != 3 {
-		t.Fatalf("Eevee gift destination = %+v, want map %#02x at (3,3)", got, celadonMansionRoofHouseMap)
+	if got.Map != celadonMansionRoofHouseMap || got.X != eeveeGiftX || got.Y != eeveeGiftY || got.Kind != DestinationInteraction {
+		t.Fatalf("Eevee gift destination = %+v, want interaction map %#02x target (%d,%d)",
+			got, celadonMansionRoofHouseMap, eeveeGiftX, eeveeGiftY)
 	}
 
 	place, ok := Place("celadon mansion eevee")
@@ -14,6 +15,23 @@ func TestEeveeGiftDestinationUsesReachableLateralStand(t *testing.T) {
 	}
 	if place != got {
 		t.Fatalf("Eevee interaction place = %+v, executor destination = %+v", place, got)
+	}
+
+	// Cross-map planning must be free to choose whichever side of the ball is
+	// actually connected when Red arrives. The old exact destination pinned the
+	// route to one guessed stand tile and reintroduced #425 as #1577.
+	targets := destinationRouteTargets(got)
+	want := map[destinationRouteTarget]bool{
+		{X: int(eeveeGiftX) - 1, Y: int(eeveeGiftY)}: true,
+		{X: int(eeveeGiftX) + 1, Y: int(eeveeGiftY)}: true,
+		{X: int(eeveeGiftX), Y: int(eeveeGiftY) - 1}: true,
+		{X: int(eeveeGiftX), Y: int(eeveeGiftY) + 1}: true,
+	}
+	for _, target := range targets {
+		delete(want, target)
+	}
+	if len(want) != 0 {
+		t.Fatalf("Eevee interaction route targets missing adjacent approaches: %v (all=%v)", want, targets)
 	}
 }
 
