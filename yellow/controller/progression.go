@@ -13,13 +13,13 @@ import (
 )
 
 const (
-	yellowViridianMartMap     uint8 = 0x2a
-	yellowPewterGymMap        uint8 = 0x36
-	yellowMtMoonB2FMap        uint8 = 0x3d
-	yellowBillsHouseMap       uint8 = 0x58
-	yellowSSAnneCaptainsRoom  uint8 = 0x65
-	yellowStorySettleFrames         = 8
-	yellowStoryFrameBudget          = 18000
+	yellowViridianMartMap    uint8 = 0x2a
+	yellowPewterGymMap       uint8 = 0x36
+	yellowMtMoonB2FMap       uint8 = 0x3d
+	yellowBillsHouseMap      uint8 = 0x58
+	yellowSSAnneCaptainsRoom uint8 = 0x65
+	yellowStorySettleFrames        = 8
+	yellowStoryFrameBudget         = 18000
 )
 
 // yellowStoryHas reads the same semantic projection the agent later uses for
