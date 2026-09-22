@@ -85,6 +85,7 @@ type Tile struct {
 	Map              uint8
 	X                uint8
 	Y                uint8
+	MapsVisited      int
 	Trace            string
 	Question         string
 	Decision         string
@@ -173,6 +174,7 @@ type tileRow struct {
 	Map                uint8                `json:"map"`
 	X                  uint8                `json:"x"`
 	Y                  uint8                `json:"y"`
+	MapsVisited        int                  `json:"maps_visited,omitempty"`
 	Trace              string               `json:"trace"`
 	Question           string               `json:"question,omitempty"`
 	Decision           string               `json:"decision,omitempty"`
@@ -784,6 +786,7 @@ func (w *Wall) handleHeartbeat(res http.ResponseWriter, req *http.Request) {
 	t.StopSoFar = hb.StopSoFar
 	t.Sprites = append(t.Sprites[:0], hb.Sprites...)
 	t.Trail = append(t.Trail[:0], hb.Trail...)
+	t.MapsVisited = hb.MapsVisited
 	t.Stats = hb.Stats
 	t.Player = hb.Player
 	t.workerAddrs = hb.WorkerAddrs
