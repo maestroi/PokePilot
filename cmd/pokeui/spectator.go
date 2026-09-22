@@ -325,8 +325,8 @@ func mergeSpectatorSources(parts ...spectatorSourceDashboard) spectatorSourceDas
 	return out
 }
 
-// publicSpectatorRuns keeps every in-flight run, but finished runs are a
-// curated replay archive rather than raw history. A finished run must both be
+// publicSpectatorRuns keeps only actively broadcasting runs (running or
+// leased). Finished runs are a curated replay archive rather than raw history. A finished run must both be
 // noteworthy and already have a cached video. Goal completion is inherently
 // noteworthy; a linked engineering issue means the run was selected for
 // analysis. Ordinary failures and recordings still remain available privately
@@ -552,11 +552,12 @@ func spectatorRuns(runs []spectatorRun) []spectatorRun {
 	active := make([]spectatorRun, 0, len(runs))
 	done := make([]spectatorRun, 0, len(runs))
 	for _, run := range runs {
-		if run.Status == "done" {
+		switch run.Status {
+		case "done":
 			done = append(done, run)
-			continue
+		case "running", "leased":
+			active = append(active, run)
 		}
-		active = append(active, run)
 	}
 	if len(done) > spectatorHistoryLimit {
 		done = done[len(done)-spectatorHistoryLimit:]
