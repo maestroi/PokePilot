@@ -256,8 +256,8 @@ func ResolveMtMoonExit(m *emu.Emu, romData []byte) error {
 }
 
 // AcquireSSTicket drives Bill's Yellow-specific transformation sequence using
-// durable sub-events. The hidden PC event is activated from the real player
-// coordinate (1,4) while facing up.
+// durable sub-events. The PC hidden-event target is (1,4); the player stands
+// immediately below it at (1,5) facing up.
 func AcquireSSTicket(m *emu.Emu, romData []byte) error {
 	if done, err := yellowStoryHas(m, romData, gen1.ProgressSSTicketAcquired); err != nil {
 		return err
@@ -324,7 +324,6 @@ func AcquireHM01(m *emu.Emu, romData []byte) error {
 	}
 	return nil
 }
-
 
 func yellowVermilionTrashCanCoords(index uint8) (x, y uint8, ok bool) {
 	if index >= 15 {
