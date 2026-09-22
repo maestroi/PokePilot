@@ -69,11 +69,10 @@ func TestSolverAttemptRouteRejectsUnknownFailure(t *testing.T) {
 	}
 }
 
-
 func TestCopyIssueLinkDeepCopiesSolverAttempts(t *testing.T) {
 	original := map[string]IssueLink{
 		"deadbeef": {
-			IssueID: "42",
+			IssueID:        "42",
 			SolverAttempts: []SolverAttempt{{ID: "attempt-1", State: "started"}},
 		},
 	}
