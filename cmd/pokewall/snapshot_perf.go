@@ -45,6 +45,7 @@ func (w *Wall) tileRowLocked(t *Tile) tileRow {
 		RecoveryBadges:     t.RecoveryBadges,
 		RecoveryEvents:     t.RecoveryEvents,
 		RecoveryMaps:       t.RecoveryMaps,
+		Activity:           copyRunActivity(t.Activity),
 		Frame:              t.Frame,
 		Map:                t.Map,
 		X:                  t.X,
@@ -118,7 +119,9 @@ func (w *Wall) snapshotFiltered(status string, limit int) dashboardView {
 		if t == nil || (status != "" && t.Status != status) {
 			continue
 		}
-		rows = append(rows, w.tileRowWithLineageLocked(t, lineage))
+		row := w.tileRowWithLineageLocked(t, lineage)
+		row.Activity = nil // activity is fetched on-demand by the operator inspector
+		rows = append(rows, row)
 		if limit > 0 && len(rows) >= limit {
 			break
 		}
