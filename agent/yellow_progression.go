@@ -21,6 +21,16 @@ func yellowProgressionNote(id ProgressID) string {
 		return "(reach Bill's house, run the cell separator sequence, and obtain the S.S. Ticket)"
 	case gen1.ProgressHM01Acquired:
 		return "(enter the ticket-gated S.S. Anne, resolve the 2F rival, reach the Captain, and receive HM01 Cut)"
+	case gen1.ProgressCascadeBadge:
+		return "(return to Cerulean, defeat Misty, and verify the Cascade Badge so HM01 Cut is legal)"
+	case gen1.ProgressThunderBadge:
+		return "(prepare Cut, enter Vermilion Gym, solve Yellow's live trash-can switches, defeat Lt. Surge, and verify the Thunder Badge)"
+	case gen1.ProgressPostSurgeLavenderReached:
+		return "(travel through Route 9 and Rock Tunnel to Lavender; use Flash automatically when available, but do not require it for ROM-driven navigation)"
+	case gen1.ProgressPostSurgeCeladonReady:
+		return "(continue from Lavender through the Underground Path to Celadon Pokemon Center and fully recover the party)"
+	case gen1.ProgressRainbowBadge:
+		return "(prepare Cut for the Celadon Gym approach, defeat Erika, and verify the Rainbow Badge)"
 	default:
 		return ""
 	}
@@ -34,7 +44,12 @@ func yellowProgressionKnown(id ProgressID) bool {
 		gen1.ProgressMtMoonFossilAcquired,
 		yellowprofile.ProgressYellowMtMoonExitResolved,
 		gen1.ProgressSSTicketAcquired,
-		gen1.ProgressHM01Acquired:
+		gen1.ProgressHM01Acquired,
+		gen1.ProgressCascadeBadge,
+		gen1.ProgressThunderBadge,
+		gen1.ProgressPostSurgeLavenderReached,
+		gen1.ProgressPostSurgeCeladonReady,
+		gen1.ProgressRainbowBadge:
 		return true
 	default:
 		return false
@@ -56,13 +71,22 @@ func (a *yellowObjectiveAdapter) ProgressionObjectives(obs Observation) []Object
 	}
 
 	next, ok := gen1.FirstIncomplete(obs.Story, gen1.EarlyCampaignStages())
+	if ok {
+		if next == gen1.ProgressSSTicketAcquired &&
+			obs.Story.Has(gen1.ProgressMtMoonFossilAcquired) &&
+			!obs.Story.Has(yellowprofile.ProgressYellowMtMoonExitResolved) {
+			next = yellowprofile.ProgressYellowMtMoonExitResolved
+		}
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: next,
+			Note:     yellowProgressionNote(next),
+		}}
+	}
+
+	next, ok = gen1.FirstIncomplete(obs.Story, gen1.MiddleCampaignStages())
 	if !ok {
 		return nil
-	}
-	if next == gen1.ProgressSSTicketAcquired &&
-		obs.Story.Has(gen1.ProgressMtMoonFossilAcquired) &&
-		!obs.Story.Has(yellowprofile.ProgressYellowMtMoonExitResolved) {
-		next = yellowprofile.ProgressYellowMtMoonExitResolved
 	}
 	return []Objective{{
 		Kind:     KindProgress,
