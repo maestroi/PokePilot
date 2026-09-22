@@ -35,6 +35,10 @@ const (
 	// at (34,9) joins the Fly-house side to the Celadon edge east of him.
 	route16SnorlaxX        = 26
 	route16SnorlaxY        = 10
+	// The Cut tree on the upper passage. Solid in the static grid; walkable
+	// while the player can Cut, it joins the Fly-house side to the east road.
+	route16CutTreeX = 34
+	route16CutTreeY = 9
 	route17Map       uint8 = 0x1C
 	route18Map       uint8 = 0x1D
 	route19Map       uint8 = 0x1E
@@ -98,7 +102,18 @@ func withAsleepRoute16Snorlax(g *world.Graph, romData []byte, mem *state.Mem) (*
 		return nil, err
 	}
 	grid.Set(route16SnorlaxX, route16SnorlaxY, false)
+	openRoute16CutPassage(grid, romData, mem)
 	return g.WithMapGrid(route16Map, grid)
+}
+
+// openRoute16CutPassage opens the Cut tree at (34,9) in a Route 16 grid while
+// the player can Cut. The static collision grid keeps the tree solid, so the
+// graph only sees the upper-passage-to-east-road passage once the capability
+// is held; without it the two halves stay separate components.
+func openRoute16CutPassage(grid *world.Grid, romData []byte, mem *state.Mem) {
+	if redRouteCapabilities(romData, mem).Has(capCanCut) {
+		grid.Set(route16CutTreeX, route16CutTreeY, true)
+	}
 }
 
 func redAuditedRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, bool) {
@@ -405,7 +420,15 @@ func (x *redRouteTransitionExecutor) clearRoute16Snorlax() (bool, error) {
 	if xPos <= 25 {
 		standX = 25
 	}
-	if _, err := TravelFlee(x.m, x.romData, Destination{Map: route16Map, X: standX, Y: 10}, x.policy, fuchsiaTravelEngagements); err != nil {
+	stand := Destination{Map: route16Map, X: standX, Y: 10}
+	// The west stand (25,10) is sealed behind the bike-gated gate corridor, so
+	// a Fly-house player without a bicycle cannot reach it. When the coordinate
+	// stand is unreachable, approach from the east stand instead: the graph
+	// routes through the upper gate passage and the Cut tree at (34,9).
+	if planner, perr := NewRoutePlanner(x.m, x.romData); perr != nil || !planner.CanReach(stand) {
+		stand = Destination{Map: route16Map, X: 27, Y: 10}
+	}
+	if _, err := TravelFlee(x.m, x.romData, stand, x.policy, fuchsiaTravelEngagements); err != nil {
 		return false, fmt.Errorf("skill: Route 16 Snorlax approach: %w", err)
 	}
 	if err := useOverworldKeyItem(x.m, pokeFluteItemFuchsia, func(mm *state.Mem) bool {

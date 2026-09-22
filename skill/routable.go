@@ -56,8 +56,11 @@ func NewRoutePlanner(m *emu.Emu, romData []byte) (*RoutePlanner, error) {
 	}
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if cur == route16Map && !state.HasEvent(&mem, eventBeatRoute16Snorlax) {
-		liveGrid.Set(route16SnorlaxX, route16SnorlaxY, false)
+	if cur == route16Map {
+		if !state.HasEvent(&mem, eventBeatRoute16Snorlax) {
+			liveGrid.Set(route16SnorlaxX, route16SnorlaxY, false)
+		}
+		openRoute16CutPassage(liveGrid, romData, &mem)
 	}
 	routeGraph, err := g.WithMapGrid(cur, liveGrid)
 	if err != nil {

@@ -584,6 +584,7 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 				}
 				blockers[[2]int{route16SnorlaxX, route16SnorlaxY}] = true
 			}
+			openRoute16CutPassage(liveGrid, romData, &corridor)
 		}
 		routeGraph, err = overlayObservedMapTopology(routeGraph, liveGrid, h, blockers)
 		if err != nil {
