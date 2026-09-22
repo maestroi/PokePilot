@@ -152,3 +152,40 @@ func TestFieldActionCompletionUsesROMState(t *testing.T) {
 		t.Fatal("Strength active flag was not accepted")
 	}
 }
+
+// TestValidateFieldActionContextRequiresWaterInFrontForSurf pins the Surf
+// precondition the ROM actually enforces. Surf from a tile with no water in
+// front is not slow, it is refused: the ROM opens the party menu, accepts the
+// Surfer and prints "No SURFing on <MON> here!", which the old context check
+// (already-surfing only) let through. The settle loop then spent its whole
+// 3000-frame budget stepping under that open menu and reported a timeout.
+//
+// MEASURED from run-1biaubd9xooqm's failing Route 21 state: action=0 surfing=0
+// palette=0, screen "Choose a POKéMON ... SURF STATS SWITCH CANCEL".
+func TestValidateFieldActionContextRequiresWaterInFrontForSurf(t *testing.T) {
+	surf, _ := FieldMoveSpecFor(FieldSurf)
+
+	m := new(state.Mem)
+	makeFieldControllable(m)
+	for _, tile := range []uint8{0x00, 0x18, 0x11, 0x2c} {
+		m[sym.TileInFrontOfPlayer] = tile
+		if err := validateFieldActionContext(m, surf); err == nil {
+			t.Fatalf("front tile %#02x was accepted as a Surf entry point; want a named rejection", tile)
+		}
+	}
+
+	// The ROM's own accepted list: $14 water, $32 and $48 eastern shores.
+	for _, tile := range []uint8{surfWaterTile, surfEastShoreTile, surfSafariEastShoreTile} {
+		m[sym.TileInFrontOfPlayer] = tile
+		if err := validateFieldActionContext(m, surf); err != nil {
+			t.Fatalf("front tile %#02x is a ROM-accepted Surf entry point but was rejected: %v", tile, err)
+		}
+	}
+
+	// Already surfing stays its own, separate rejection.
+	m[sym.WalkBikeSurfState] = fieldSurfingState
+	m[sym.TileInFrontOfPlayer] = surfWaterTile
+	if err := validateFieldActionContext(m, surf); err == nil {
+		t.Fatal("already-surfing context was accepted")
+	}
+}

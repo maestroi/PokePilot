@@ -289,6 +289,22 @@ func validateFieldActionContext(mem *state.Mem, spec FieldMoveSpec) error {
 		if mem.U8(sym.WalkBikeSurfState) == fieldSurfingState {
 			return fmt.Errorf("player is already surfing")
 		}
+		// Surf is a field move the ROM refuses from a tile whose facing tile
+		// is not water: it opens the party menu, accepts the Surfer, and then
+		// prints "No SURFing on <MON> here!" instead of entering Surf mode.
+		// Requiring the same positive precondition Cut (a tree) and Strength
+		// (a boulder) require means a caller that faces the wrong tile gets a
+		// named rejection instead of a 3000-frame settle timeout spent inside
+		// an open party menu. MEASURED from run-1biaubd9xooqm's failing state
+		// (Route 21 Surf from Pallet Town): action=0 surfing=0 palette=0 with
+		// "Choose a POKéMON ... SURF STATS SWITCH CANCEL" still on screen.
+		//
+		// The accepted tiles are the ROM's own list (engine/items/
+		// item_effects.asm IsNextTileShoreOrWater): $14 water, plus the $32
+		// and $48 eastern shore tiles that surf into the water behind them.
+		if !surfableFrontTile(mem.U8(sym.TileInFrontOfPlayer)) {
+			return fmt.Errorf("no surfable water is directly in front of the player (front tile %#02x)", mem.U8(sym.TileInFrontOfPlayer))
+		}
 	case FieldFlash:
 		if mem.U8(sym.MapPalOffset) == 0 {
 			return fmt.Errorf("current area is already lit")

@@ -16,7 +16,24 @@ const (
 	// water tile. Land collision lists intentionally exclude it, so a Surf
 	// traversal grid must add it back after decoding the shared map blocks.
 	surfWaterTile uint8 = 0x14
+	// That same ROM routine also accepts the eastern shore tiles, so a player
+	// standing on the beach can face one and mount Surf to cross the water
+	// behind it. Taken from pokered/engine/items/item_effects.asm:
+	// IsNextTileShoreOrWater returns carry clear for $14, $32 and $48.
+	surfEastShoreTile       uint8 = 0x32
+	surfSafariEastShoreTile uint8 = 0x48
 )
+
+// surfableFrontTile reports whether IsNextTileShoreOrWater would accept the
+// tile the player is facing as a Surf entry point.
+func surfableFrontTile(tile uint8) bool {
+	switch tile {
+	case surfWaterTile, surfEastShoreTile, surfSafariEastShoreTile:
+		return true
+	default:
+		return false
+	}
+}
 
 func readLiveMapBlocks(peek func(uint16) uint8, widthBlocks, heightBlocks int) ([]byte, error) {
 	if widthBlocks < 0 || heightBlocks < 0 {

@@ -140,15 +140,17 @@ func Traverse(m *emu.Emu, romData []byte, e world.Edge) error {
 							return finishArrival(m, e)
 						}
 					} else {
-						// The ROM itself declined to Surf here (validateFieldActionContext
-						// only rejects "already surfing", so a decline this far in means
-						// IsNextTileShoreOrWater said no): this exact border tile is not a
-						// crossing point at all, e.g. shoreline scenery rather than open
-						// water. That is per-tile evidence, not evidence about the edge
-						// itself — Route 21's near shore has open water a few columns over
-						// from Pallet's blocked (3,17). Ban this tile like ErrLegUnwalkable
-						// so GoTo's existing band search picks the next candidate column
-						// instead of failing the whole edge.
+						// The ROM (or the shared Surf context check, which
+						// accepts exactly the tile ids IsNextTileShoreOrWater
+						// accepts) declined to Surf here: this exact border
+						// tile is not a crossing point at all, e.g. shoreline
+						// scenery rather than open water. That is per-tile
+						// evidence, not evidence about the edge itself — Route
+						// 21's near shore has open water a few columns over
+						// from Pallet's blocked (3,17). Ban this tile like
+						// ErrLegUnwalkable so GoTo's existing band search picks
+						// the next candidate column instead of failing the
+						// whole edge.
 						return fmt.Errorf("skill: Traverse: %s: %v: %w", edgeName(e), err, ErrLegUnwalkable)
 					}
 				}
