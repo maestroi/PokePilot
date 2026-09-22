@@ -60,9 +60,10 @@ type spectatorRun struct {
 	Map         uint8            `json:"map"`
 	X           uint8            `json:"x"`
 	Y           uint8            `json:"y"`
-	MapsVisited int              `json:"maps_visited,omitempty"`
-	Question    string           `json:"question,omitempty"`
-	Decision    string           `json:"decision,omitempty"`
+	MapsVisited   int              `json:"maps_visited,omitempty"`
+	PlannerWaiting bool             `json:"planner_waiting,omitempty"`
+	PlannerOptions int              `json:"planner_options,omitempty"`
+	Decision      string           `json:"decision,omitempty"`
 	StopSoFar   string           `json:"stop_so_far,omitempty"`
 	Stats       *spectatorStats  `json:"stats,omitempty"`
 	Player      *farm.Player     `json:"player,omitempty"`
@@ -95,7 +96,8 @@ type spectatorStats struct {
 // the spectator trust boundary.
 type spectatorSourceRun struct {
 	spectatorRun
-	Issue json.RawMessage `json:"issue,omitempty"`
+	Question string          `json:"question,omitempty"`
+	Issue    json.RawMessage `json:"issue,omitempty"`
 }
 
 type spectatorSourceDashboard struct {
@@ -334,7 +336,7 @@ func publicSpectatorRuns(ctx context.Context, runs []spectatorSourceRun, catalog
 	for _, run := range runs {
 		switch run.Status {
 		case "running", "leased":
-			active = append(active, run.spectatorRun)
+			active = append(active, publicLiveSpectatorRun(run))
 		}
 	}
 
@@ -372,6 +374,31 @@ func publicSpectatorRuns(ctx context.Context, runs []spectatorSourceRun, catalog
 	}
 	catalog.setAllowed(allowed)
 	return append(active, done...)
+}
+
+func publicLiveSpectatorRun(run spectatorSourceRun) spectatorRun {
+	publicRun := run.spectatorRun
+	question := strings.TrimSpace(run.Question)
+	publicRun.PlannerWaiting = question != "" && strings.TrimSpace(run.Decision) == ""
+	if publicRun.PlannerWaiting {
+		publicRun.PlannerOptions = spectatorPlannerOptions(question)
+	}
+	return publicRun
+}
+
+func spectatorPlannerOptions(question string) int {
+	count := 0
+	for _, line := range strings.Split(question, "\n") {
+		line = strings.TrimSpace(line)
+		colon := strings.IndexByte(line, ':')
+		if colon <= 0 {
+			continue
+		}
+		if _, err := strconv.Atoi(strings.TrimSpace(line[:colon])); err == nil {
+			count++
+		}
+	}
+	return count
 }
 
 func spectatorHighlight(run spectatorSourceRun) string {
