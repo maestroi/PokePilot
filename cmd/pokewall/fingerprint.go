@@ -123,6 +123,9 @@ func copyIssueLink(src map[string]IssueLink) map[string]IssueLink {
 	}
 	out := make(map[string]IssueLink, len(src))
 	for k, v := range src {
+		if len(v.SolverAttempts) > 0 {
+			v.SolverAttempts = append([]SolverAttempt(nil), v.SolverAttempts...)
+		}
 		out[k] = v
 	}
 	return out
