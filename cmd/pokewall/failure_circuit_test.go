@@ -281,3 +281,49 @@ func TestFixedCircuitWaitsForVersionedRunner(t *testing.T) {
 		t.Fatal("canary released onto an unversioned runner")
 	}
 }
+
+// TestFixedCircuitWithNoPausedTileClearsOrphanedFlag covers the reporter path
+// (objective_failures.go's quarantine branch): CircuitOpen can be set purely
+// for triage priority, from persisted failure counts, without ever pausing a
+// run. Once the issue is fixed, that flag must not wait forever for a paused
+// tile that was never created.
+func TestFixedCircuitWithNoPausedTileClearsOrphanedFlag(t *testing.T) {
+	w := NewWall("")
+	w.issueLinks["deadbeef"] = IssueLink{
+		IssueID: "1", Status: "resolved", Resolution: "fixed", FixedRevision: "build-fixed",
+		CircuitOpen: true, CircuitKind: "fingerprint", CircuitCount: 16,
+	}
+
+	if w.maybeResumeCircuitCanary("deadbeef", w.issueLinks["deadbeef"]) {
+		t.Fatal("no paused tile exists; nothing should have been released")
+	}
+	if w.issueLinks["deadbeef"].CircuitOpen {
+		t.Fatal("orphaned CircuitOpen flag was not cleared once fixed with no paused tile")
+	}
+}
+
+// TestFixedCircuitStillWaitingKeepsFlagWhilePausedTileExists is the negative
+// case: a real paused tile exists but the runner fleet has not rolled off the
+// broken build yet. The orphan-clearing path must not fire here.
+func TestFixedCircuitStillWaitingKeepsFlagWhilePausedTileExists(t *testing.T) {
+	w := NewWall("")
+	w.workers["runner-old"] = &workerInfo{
+		Addrs: []string{"10.0.0.1:8099"}, Version: "build-broken", LastSeen: time.Now(),
+	}
+	w.tiles["run-a"] = &Tile{
+		RunID: "run-a", Status: statusPaused, Finished: true,
+		CircuitKey: "deadbeef", CircuitKind: "fingerprint", CircuitRevision: "build-broken",
+	}
+	w.order = []string{"run-a"}
+	w.issueLinks["deadbeef"] = IssueLink{
+		IssueID: "1", Status: "resolved", Resolution: "fixed", FixedRevision: "build-fixed",
+		CircuitOpen: true,
+	}
+
+	if w.maybeResumeCircuitCanary("deadbeef", w.issueLinks["deadbeef"]) {
+		t.Fatal("canary released while a broken-build runner was still live")
+	}
+	if !w.issueLinks["deadbeef"].CircuitOpen {
+		t.Fatal("CircuitOpen was cleared while a real paused tile is still waiting on the fleet")
+	}
+}

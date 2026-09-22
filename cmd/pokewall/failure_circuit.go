@@ -478,11 +478,13 @@ func (w *Wall) maybeResumeCircuitCanary(key string, link IssueLink) bool {
 		}
 	}
 	var target *Tile
+	foundPaused := false
 	for _, id := range w.order {
 		t := w.tiles[id]
 		if t == nil || t.Status != statusPaused || t.CircuitKey != key {
 			continue
 		}
+		foundPaused = true
 		// CircuitRevision is the runner build that reproduced the blocker. Wait
 		// until the whole visible runner fleet has rolled off that build; using
 		// the wall server's own version here can release a canary too early.
@@ -493,6 +495,21 @@ func (w *Wall) maybeResumeCircuitCanary(key string, link IssueLink) bool {
 		break
 	}
 	if target == nil {
+		// The issue reporter can mark CircuitOpen for triage priority (a repeat
+		// fingerprint crossing threshold) without ever pausing a run: that
+		// happens asynchronously from persisted failure counts, not from a live
+		// tile it holds. If the fix landed and no tile is actually paused on
+		// this key, there is nothing to release; clear the flag instead of
+		// retrying forever against a paused tile that will never appear.
+		if !foundPaused {
+			if current, ok := w.issueLinks[key]; ok && current.CircuitOpen {
+				current.CircuitOpen = false
+				w.issueLinks[key] = current
+				w.mu.Unlock()
+				w.saveState()
+				return false
+			}
+		}
 		w.mu.Unlock()
 		return false
 	}
