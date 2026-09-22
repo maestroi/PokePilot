@@ -21,6 +21,8 @@ const (
 	eventGotBulbasaurInCerulean  yellowEvent = 168
 	eventBeatTowerJessieJames    yellowEvent = 273
 	eventGotSquirtleFromJenny    yellowEvent = 327
+	eventSecondLockOpened        yellowEvent = 352
+	eventFirstLockOpened         yellowEvent = 353
 	eventMansionSwitchOn         yellowEvent = 632
 	eventRescuedMrFuji           yellowEvent = 1231
 	eventBeatRoute22Rival2       yellowEvent = 1318
@@ -73,6 +75,8 @@ const (
 	ProgressYellowSilphJessieJamesDefeated  game.ProgressID = "yellow_silph_jessie_james_defeated"
 	ProgressYellowBillSeparatorReady        game.ProgressID = "yellow_bill_separator_ready"
 	ProgressYellowBillSeparatorUsed         game.ProgressID = "yellow_bill_separator_used"
+	ProgressYellowVermilionFirstLockOpen     game.ProgressID = "yellow_vermilion_first_lock_open"
+	ProgressYellowVermilionGateOpen          game.ProgressID = "yellow_vermilion_gate_open"
 	ProgressYellowBulbasaurGiftAvailable    game.ProgressID = "yellow_bulbasaur_gift_available"
 	ProgressYellowBulbasaurGiftReceived     game.ProgressID = "yellow_bulbasaur_gift_received"
 	ProgressYellowCharmanderGiftAvailable   game.ProgressID = "yellow_charmander_gift_available"
@@ -104,6 +108,7 @@ const (
 	itemHM04       = 0xc7
 
 	badgeBoulder = 0
+	badgeCascade = 1
 	badgeThunder = 2
 	badgeRainbow = 3
 	badgeSoul    = 4
@@ -286,6 +291,7 @@ func projectYellowStory(reader game.MemoryReader, mapID uint8) game.ProgressStat
 		{ID: gen1.ProgressHM01Acquired, Complete: yellowHasItem(reader, itemHM01)},
 		{ID: gen1.ProgressBicycleAcquired, Complete: yellowHasItem(reader, itemBicycle)},
 		{ID: gen1.ProgressBoulderBadge, Complete: yellowHasBadge(reader, badgeBoulder)},
+		{ID: gen1.ProgressCascadeBadge, Complete: yellowHasBadge(reader, badgeCascade)},
 		{ID: gen1.ProgressThunderBadge, Complete: yellowHasBadge(reader, badgeThunder)},
 		{ID: gen1.ProgressPostSurgeLavenderReached, Complete: yellowPostSurgeLavenderReached(mapID)},
 		{ID: gen1.ProgressPostSurgeCeladonReady, Complete: yellowPostSurgeCeladonArea(mapID) && yellowPartyRecovered(reader)},
@@ -332,6 +338,8 @@ func projectYellowStory(reader game.MemoryReader, mapID uint8) game.ProgressStat
 		{ID: ProgressYellowSilphJessieJamesDefeated, Complete: silphJJ},
 		{ID: ProgressYellowBillSeparatorReady, Complete: yellowHasEvent(reader, eventBillSaidUseSeparator)},
 		{ID: ProgressYellowBillSeparatorUsed, Complete: yellowHasEvent(reader, eventUsedCellSeparatorOnBill)},
+		{ID: ProgressYellowVermilionFirstLockOpen, Complete: yellowHasEvent(reader, eventFirstLockOpened)},
+		{ID: ProgressYellowVermilionGateOpen, Complete: yellowHasEvent(reader, eventSecondLockOpened)},
 		{ID: ProgressYellowBulbasaurGiftAvailable, Complete: !gotBulbasaur && happiness >= 147 && partyRoom},
 		{ID: ProgressYellowBulbasaurGiftReceived, Complete: gotBulbasaur},
 		{ID: ProgressYellowCharmanderGiftAvailable, Complete: !gotCharmander && partyRoom},
