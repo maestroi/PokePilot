@@ -90,6 +90,19 @@ func TestSilphCo5FWarpPadSplitsCardKeyComponent(t *testing.T) {
 	if last.To != silph5F {
 		t.Fatalf("last hop = %+v, want re-enter Silph Co 5F", last)
 	}
+
+	// Speedrun pricing must not collapse this split back into a local walk.
+	// Farm run-3uur450e1esuu2liiozd83sv9n stood at (28,3) and GoTo reported
+	// no path to (20,16) because the weighted route was empty.
+	weighted, werr := FindWeightedRoutePlanAtDestinationWithCapabilities(
+		g2, silph5F, silph5F, 28, 3, 20, 16, nil, RoutePrerequisites{}, DefaultRouteCostPolicy(),
+	)
+	if werr != nil {
+		t.Fatalf("weighted route from (28,3): %v", werr)
+	}
+	if len(weighted.Steps) == 0 {
+		t.Fatalf("weighted route from (28,3) was a local walk (cost=%d exact=%v); component split must leave 5F", weighted.Cost, weighted.Exact)
+	}
 }
 
 func TestComponentsWithBlockedTreatsWarpAsNonCorridor(t *testing.T) {

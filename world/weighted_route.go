@@ -457,6 +457,21 @@ func newRouteGeometry(g *Graph, allowWater bool) *routeGeometry {
 	}
 }
 
+// sameWalkComponent reports whether a local walk from (sx,sy) to (dx,dy)
+// stays inside one component of the graph's current matrix. Graphs without
+// component data keep the historical geometry-only answer.
+func (r *routeGeometry) sameWalkComponent(mapID uint8, sx, sy, dx, dy int) bool {
+	if r.g == nil || !r.g.componentAware || r.g.comps[mapID] == nil {
+		return true
+	}
+	start := componentSetAt(r.g, mapID, sx, sy)
+	end := componentSetAt(r.g, mapID, dx, dy)
+	if len(start) == 0 || len(end) == 0 {
+		return false
+	}
+	return shareComp(start, end)
+}
+
 func (r *routeGeometry) grid(mapID uint8, mode TraversalMode) (*Grid, bool) {
 	key := routeGridKey{mapID: mapID, mode: mode}
 	if grid, ok := r.grids[key]; ok {
@@ -487,6 +502,15 @@ func (r *routeGeometry) distance(mapID uint8, sx, sy, dx, dy int, adjacent bool)
 		return distance, true
 	}
 	if r.distMiss[key] {
+		return 0, false
+	}
+	// The provider grid is pristine collision. Live topology (a still-present
+	// stationary object, a locked door) is already baked into the graph's
+	// component matrix. A local distance that ignores that split reports a
+	// walk across a room the player cannot cross, and GoTo then treats the
+	// empty route as "already in the destination room".
+	if !r.sameWalkComponent(mapID, sx, sy, dx, dy) {
+		r.distMiss[key] = true
 		return 0, false
 	}
 

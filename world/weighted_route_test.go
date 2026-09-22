@@ -255,3 +255,57 @@ func TestWeightedRouteStopsAtSemanticRelaxLandingFrontier(t *testing.T) {
 		t.Fatalf("weighted plan = %+v, want only semantic frontier", result.Steps)
 	}
 }
+
+// TestWeightedRouteDoesNotWalkAcrossAComponentSplit is the Silph Co 5F Card
+// Key regression under speedrun pricing. Pristine collision still joins the
+// two rooms through a stationary object's tile, so a geometry-only distance
+// reports a local walk and an empty route. The component matrix already
+// punched that tile out. Weighted routing must take the warp that re-enters
+// the destination room instead of telling GoTo to walk there.
+func TestWeightedRouteDoesNotWalkAcrossAComponentSplit(t *testing.T) {
+	const (
+		roomA = 0
+		padA  = 2
+		padB  = 4
+		roomB = 5
+	)
+	reenter := Edge{Kind: EdgeWarp, From: 1, To: 1, WarpX: padA, WarpY: 0}
+	provider := weightedRouteTestProvider{width: 6, height: 2}
+	g := &Graph{
+		Edges:          map[uint8][]Edge{1: {reenter}},
+		componentAware: true,
+		comps: map[uint8][][]int{
+			1: {{1, 1, 0, 0, 0, 2}},
+		},
+		warps: map[uint8][]worldmodel.Warp{
+			1: {
+				{X: padA, Y: 0, DestWarpID: 1, DestMap: 1},
+				{X: padB, Y: 0, DestWarpID: 0, DestMap: 1},
+			},
+		},
+		exitComps:  map[Edge][]int{reenter: {1}},
+		entryComps: map[Edge][]int{reenter: {2}},
+		tiles:      map[uint8]dim{1: {w: 6, h: 2}},
+		provider:   provider,
+	}
+
+	result, err := FindWeightedRoutePlanAtDestinationWithCapabilities(
+		g, 1, 1, roomA, 0, roomB, 0, nil, RoutePrerequisites{}, DefaultRouteCostPolicy(),
+	)
+	if err != nil {
+		t.Fatalf("weighted route: %v", err)
+	}
+	if len(result.Steps) != 1 || result.Steps[0].Edge != reenter {
+		t.Fatalf("weighted route = %+v, want the re-entry warp, not a local walk across the split", result.Steps)
+	}
+
+	same, err := FindWeightedRoutePlanAtDestinationWithCapabilities(
+		g, 1, 1, roomA, 0, roomA+1, 0, nil, RoutePrerequisites{}, DefaultRouteCostPolicy(),
+	)
+	if err != nil {
+		t.Fatalf("same-component weighted route: %v", err)
+	}
+	if len(same.Steps) != 0 || !same.Exact {
+		t.Fatalf("same-component route = %+v, want an exact local walk", same)
+	}
+}
