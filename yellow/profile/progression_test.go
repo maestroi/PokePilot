@@ -131,6 +131,31 @@ func TestYellowGiftAvailabilityUsesRealPrerequisites(t *testing.T) {
 	}
 }
 
+func TestYellowEarlyStoryResumeFactsProjectFromNativeEvents(t *testing.T) {
+	var mem fakeMemory
+	mem[sym.ObtainedBadges] |= 1 << badgeBoulder
+	for _, event := range []yellowEvent{
+		eventGotOaksParcel,
+		eventBeatMtMoonSuperNerd,
+		eventBillSaidUseSeparator,
+		eventUsedCellSeparatorOnBill,
+	} {
+		setYellowEvent(&mem, event)
+	}
+	story := projectYellowStory(&mem, 0x00)
+	for _, id := range []game.ProgressID{
+		gen1.ProgressBoulderBadge,
+		ProgressYellowOaksParcelReceived,
+		ProgressYellowMtMoonSuperNerdDefeated,
+		ProgressYellowBillSeparatorReady,
+		ProgressYellowBillSeparatorUsed,
+	} {
+		if !story.Has(id) {
+			t.Errorf("early resume progress %q not complete", id)
+		}
+	}
+}
+
 func TestYellowSharedKantoProgressComesFromYellowState(t *testing.T) {
 	var mem fakeMemory
 	mem[sym.PartyCount] = 1
