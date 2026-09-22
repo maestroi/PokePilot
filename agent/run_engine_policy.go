@@ -113,9 +113,6 @@ func (w *runWatchdogPolicy) roundBoundary(round int, obs Observation, known *Kno
 	return decision
 }
 
-// successfulObjective evaluates the short stuck watchdog after a successful
-// transaction. A material semantic change resets both its counter and its
-// one-shot strategic escalation.
 // productiveSession records a bounded gameplay session that made live
 // controller progress even though its requested semantic postcondition was not
 // reached. Stochastic hunt exhaustion is the canonical case: the full hunt
@@ -135,6 +132,9 @@ func (w *runWatchdogPolicy) productiveSession(round int) {
 	w.dead = deadPosition{}
 }
 
+// successfulObjective evaluates the short stuck watchdog after a successful
+// transaction. A material semantic change resets both its counter and its
+// one-shot strategic escalation.
 func (w *runWatchdogPolicy) successfulObjective(before, after Observation, strategic bool) runWatchdogDecision {
 	decision := runWatchdogDecision{}
 	if sameProgress(before, after) {
