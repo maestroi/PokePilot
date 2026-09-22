@@ -487,7 +487,6 @@ func TestHeartbeatSnapTakesPlayerKeepsStats(t *testing.T) {
 	}
 }
 
-
 func TestHeartbeatTrailCountsDistinctMaps(t *testing.T) {
 	trail := &heartbeatTrail{}
 	trail.add(0x01, 1, 1)
