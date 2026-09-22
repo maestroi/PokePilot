@@ -89,6 +89,28 @@ func TestPickCLIRejectsAccessHTML(t *testing.T) {
 	}
 }
 
+func TestRecordAttemptCLIUsesMCP(t *testing.T) {
+	srv := mcpToolServer(t, "pokepilot_record_solver_attempt", map[string]any{"attempt_count": 1})
+	var out bytes.Buffer
+	err := run([]string{
+		"record-attempt",
+		"--endpoint", srv.URL + "/mcp",
+		"--token", "secret",
+		"--key", "deadbeef",
+		"--id", "attempt-1",
+		"--backend", "opencode",
+		"--model", "qwen3.8-27b/qwen3.8-27b",
+		"--state", "started",
+		"--run-id", "run-1",
+	}, strings.NewReader(""), &out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "attempt_count") {
+		t.Fatalf("output = %s", out.String())
+	}
+}
+
 func TestFetchTriageCLIUsesMCP(t *testing.T) {
 	srv := mcpToolServer(t, "pokepilot_get_triage", map[string]any{
 		"groups": []map[string]any{{"key": "abc", "count": 2, "run_ids": []string{"r1"}}},
