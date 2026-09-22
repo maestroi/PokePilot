@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { ArrowDownTrayIcon, ArrowPathIcon, FilmIcon } from '@heroicons/vue/20/solid'
 import {
   artifactContentURL,
@@ -32,6 +32,7 @@ const selectedEvent = ref(-1)
 const video = ref<HTMLVideoElement | null>(null)
 const playbackRate = ref(Number(localStorage.getItem('pokepilot.replayPlaybackRate') || 1))
 let serial = 0
+let liveTimer = 0
 
 function object(value: unknown): Row {
   return value && typeof value === 'object' ? value as Row : {}
@@ -47,6 +48,57 @@ function eventRound(value: unknown): number {
   return Number.isFinite(round) ? round : 0
 }
 
+function eventAt(value: unknown): number {
+  const at = Number(object(value).at || 0)
+  return Number.isFinite(at) ? at : 0
+}
+
+const run = computed<Row>(() => object(debug.value?.run))
+const activity = computed<Row[]>(() => Array.isArray(run.value.activity) ? run.value.activity.map(object) : [])
+const latestActivity = computed<Row>(() => activity.value.length ? activity.value[activity.value.length - 1] : {})
+const recoveryCount = computed(() => Number(run.value.recovery_attempts || 0))
+const runAttempt = computed(() => Number(run.value.attempts || 0) + (String(run.value.status || '') === 'done' ? 0 : 1))
+const recoveryMode = computed(() => String(run.value.recovery_profile || 'strict'))
+const currentActor = computed(() => {
+  if (run.value.question && !run.value.decision) return 'LLM planning'
+  const source = String(latestActivity.value.source || '')
+  if (source === 'recovery') return 'Recovery'
+  if (source === 'llm') return 'LLM'
+  if (source === 'skill') return 'Skill'
+  if (source === 'milestone') return 'Milestone'
+  if (run.value.trace) return 'Skill'
+  return 'System'
+})
+const currentSummary = computed(() => String(latestActivity.value.summary || run.value.stop_so_far || run.value.decision || run.value.trace || 'Waiting for run activity'))
+const liveStatus = computed(() => ['queued', 'leased', 'running', 'paused'].includes(String(run.value.status || '')))
+
+function clearLiveTimer(): void {
+  if (liveTimer) window.clearTimeout(liveTimer)
+  liveTimer = 0
+}
+
+function scheduleLiveRefresh(): void {
+  clearLiveTimer()
+  if (!liveStatus.value || !props.runID) return
+  liveTimer = window.setTimeout(() => { void refreshLive() }, 2000)
+}
+
+async function refreshLive(): Promise<void> {
+  const runID = props.runID
+  if (!runID) return
+  const followLatest = selectedEvent.value < 0 || selectedEvent.value === timeline.value.length - 1
+  try {
+    const value = await getRunDebug(runID)
+    if (runID !== props.runID) return
+    debug.value = value
+    if (followLatest) selectedEvent.value = timeline.value.length ? timeline.value.length - 1 : -1
+  } catch {
+    // Full refresh exposes errors; background live refresh stays unobtrusive.
+  } finally {
+    scheduleLiveRefresh()
+  }
+}
+
 const timeline = computed<TimelineRow[]>(() => {
   const value = debug.value || {}
   const source = Array.isArray(value.timeline) ? value.timeline.map(object) : []
@@ -60,7 +112,12 @@ const timeline = computed<TimelineRow[]>(() => {
       checkpoint: checkpoint.name || checkpoint.kind || checkpoint.label || checkpoint.key || `checkpoint ${index + 1}`
     })
   })
-  return rows.sort((a, b) => eventFrame(a) - eventFrame(b) || eventRound(a) - eventRound(b))
+  return rows.sort((a, b) => {
+    const aAt = eventAt(a)
+    const bAt = eventAt(b)
+    if (aAt && bAt && aAt !== bAt) return aAt - bAt
+    return eventFrame(a) - eventFrame(b) || eventRound(a) - eventRound(b)
+  })
 })
 
 const totalFrames = computed(() => {
@@ -104,6 +161,7 @@ async function load(): Promise<void> {
   }
   selectedEvent.value = timeline.value.length ? timeline.value.length - 1 : -1
   loading.value = false
+  scheduleLiveRefresh()
 }
 
 async function requestReplay(): Promise<void> {
@@ -161,13 +219,17 @@ function applyPlaybackRate(): void {
   if (video.value) video.value.playbackRate = value
 }
 
-watch(() => props.runID, () => { void load() }, { immediate: true })
+watch(() => props.runID, () => {
+  clearLiveTimer()
+  void load()
+}, { immediate: true })
 watch(playbackRate, () => { void nextTick(applyPlaybackRate) })
+onBeforeUnmount(clearLiveTimer)
 </script>
 
 <template>
   <div class="space-y-2">
-    <Panel title="Run inspector" description="Semantic timeline, checkpoints, artifacts, and deterministic replay." compact>
+    <Panel title="Run inspector" description="Live activity, recovery history, checkpoints, artifacts, and deterministic replay." compact>
       <template #actions>
         <button type="button" class="inline-flex items-center gap-1.5 rounded-sm bg-white/8 px-2 py-1 text-[11px] font-semibold text-slate-200 ring-1 ring-white/10 hover:bg-white/12" :disabled="loading" @click="load">
           <ArrowPathIcon class="size-3.5" aria-hidden="true" /> {{ loading ? 'Loading…' : 'Refresh' }}
@@ -175,6 +237,16 @@ watch(playbackRate, () => { void nextTick(applyPlaybackRate) })
       </template>
 
       <div v-if="error" class="mb-2 border border-[var(--poke-amber)]/40 bg-[#332d20] p-2 text-[12px] text-[#ddc18c]">{{ error }}</div>
+
+      <div v-if="debug?.run" class="mb-3 flex flex-wrap items-center gap-2 rounded-md border border-white/8 bg-black/15 px-3 py-2">
+        <StatusBadge :tone="run.status === 'done' ? 'neutral' : run.status === 'paused' ? 'warning' : 'success'">{{ run.status || 'unknown' }}</StatusBadge>
+        <StatusBadge :tone="recoveryMode === 'resilient' ? 'info' : 'neutral'">{{ recoveryMode }}</StatusBadge>
+        <StatusBadge v-if="recoveryCount" tone="warning">recovery {{ recoveryCount }}</StatusBadge>
+        <span class="h-4 w-px bg-white/10" aria-hidden="true" />
+        <span class="text-[10px] font-semibold tracking-[0.06em] text-slate-500 uppercase">{{ currentActor }}</span>
+        <strong class="min-w-0 flex-1 truncate text-[11px] font-medium text-slate-300" :title="currentSummary">{{ currentSummary }}</strong>
+        <span class="font-mono text-[9px] text-slate-600">attempt {{ runAttempt }}</span>
+      </div>
 
       <div class="grid grid-cols-1 gap-3 2xl:grid-cols-[minmax(0,1.45fr)_minmax(18rem,0.55fr)]">
         <RunTimeline :events="timeline" :total-frames="totalFrames" :selected-index="selectedEvent" @select="selectEvent" />
