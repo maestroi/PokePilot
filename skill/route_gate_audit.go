@@ -236,7 +236,22 @@ func redAuditedRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, 
 		// and dies with "world: no route" from map 0x86. Model the door as the
 		// same bidirectional pivot used for Vermilion Gym; the reverse executor
 		// crosses the door first, then clears the city-side tree.
-		return semanticTransition("red:celadon_gym_cut", edge, capCanCut), true
+		//
+		// Unlike Vermilion Gym's open interior (measured: door (4,17) to
+		// Surge (5,1) walks in 17 ordinary steps, no Cut needed), Celadon
+		// Gym's interior is itself a Cut-tree garden maze: the door landing
+		// (4,17) cannot reach Erika's approach tile (4,4) by ordinary
+		// collision at all (measured "world: no path"). The static graph has
+		// no separate edge for that interior split, so a plain Gate/default
+		// classification demands the landing tile already be ordinarily
+		// reachable from the door and fails the whole route before Cut ever
+		// gets a chance to clear the maze. PortBypass tells routing this one
+		// Cut both opens the door AND is the same action Traverse already
+		// uses at execution time to clear the interior maze, so the graph
+		// should not require the far side to be ordinarily reachable first.
+		t := semanticTransition("red:celadon_gym_cut", edge, capCanCut)
+		t.PortBypass = true
+		return t, true
 	}
 	return gameruntime.Transition{}, false
 }
