@@ -81,8 +81,8 @@ const (
 	// Vermilion Gym's trash-can puzzle is deliberately resumable from these
 	// durable script flags. The ROM declares SECOND before FIRST in the event
 	// table, even though gameplay opens them in the opposite order.
-	EventVermilionGymSecondLockOpened Event = 222
-	EventVermilionGymFirstLockOpened  Event = 223
+	EventVermilionGymSecondLockOpened Event = 352
+	EventVermilionGymFirstLockOpened  Event = 353
 	// Set by Route22Rival1AfterBattleScript (pokered/scripts/Route22.asm:167),
 	// the only setter in the decomp; it is what unlocks Oak's .give_poke_balls.
 	EventBeatRoute22Rival1stBattle Event = 1317
