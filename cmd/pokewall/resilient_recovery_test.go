@@ -126,7 +126,7 @@ func TestStrictGoalKeepsRunLevelStopsTerminal(t *testing.T) {
 
 func TestResilientRecoveryDepthResetsOnlyOnNewProgress(t *testing.T) {
 	tile := &Tile{
-		RecoveryProfile: farm.RecoveryProfileResilient,
+		RecoveryProfile:  farm.RecoveryProfileResilient,
 		RecoveryAttempts: 4, RecoveryBadges: 2, RecoveryEvents: 20, RecoveryMaps: 30,
 	}
 	noteRecoveryProgressLocked(tile, &farm.Progress{Badges: 2, Events: 20, Maps: 30})
