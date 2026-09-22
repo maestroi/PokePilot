@@ -205,7 +205,7 @@ func (w *Wall) ramRow(runID string) (tileRow, bool) {
 	if t == nil {
 		return tileRow{}, false
 	}
-	return w.tileRowLocked(t), true
+	return w.tileRowWithActivityLocked(t), true
 }
 
 func (w *Wall) syncCatalogFromRAM(includeFinished bool) error {
@@ -220,7 +220,7 @@ func (w *Wall) syncCatalogFromRAM(includeFinished bool) error {
 		if t == nil || (!includeFinished && t.Finished) {
 			continue
 		}
-		rows = append(rows, w.tileRowLocked(t))
+		rows = append(rows, w.tileRowWithActivityLocked(t))
 	}
 	w.mu.Unlock()
 	for _, row := range rows {
@@ -290,7 +290,7 @@ func (w *Wall) RunCatalogSettlementSweep(interval time.Duration) {
 		rows := make([]tileRow, 0)
 		for _, id := range w.order {
 			if t := w.tiles[id]; t != nil && t.Finished {
-				rows = append(rows, w.tileRowLocked(t))
+				rows = append(rows, w.tileRowWithActivityLocked(t))
 			}
 		}
 		w.mu.Unlock()
