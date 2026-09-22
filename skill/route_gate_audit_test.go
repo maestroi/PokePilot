@@ -200,6 +200,9 @@ func TestGymCutGatesAreBidirectionalPivots(t *testing.T) {
 		if transition.Gate {
 			t.Fatalf("Celadon Gym Cut transition was a pure gate instead of a pivot: %+v", transition)
 		}
+		if transition.PortBypass || transition.PivotOnly {
+			t.Fatalf("Celadon Gym Cut warp became a live-topology boundary: %+v; one-exit gyms must not be transit prefixes", transition)
+		}
 	}
 
 	// The same tree sits on both sides of Vermilion's door in the immutable
