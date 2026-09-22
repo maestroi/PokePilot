@@ -151,7 +151,8 @@ func terminalRunFailure(dump farm.FinishReport, failures []farm.ObjectiveFailure
 		round = dump.ProgressFinal.Round
 		mapID = dump.ProgressFinal.Map
 	}
-	if detail := strings.TrimSpace(dump.Detail); detail != "" {
+	detail := strings.TrimSpace(dump.Detail)
+	if detail != "" {
 		failureText += ": " + detail
 	}
 	return farm.ObjectiveFailure{
@@ -166,6 +167,7 @@ func terminalRunFailure(dump farm.FinishReport, failures []farm.ObjectiveFailure
 		Build:         strings.TrimSpace(dump.RunnerVersion),
 		Outcome:       reason,
 		Cause:         cause,
+		CauseContext:  farm.ParseFailureDetailCauseContext(detail),
 	}, true
 }
 
