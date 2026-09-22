@@ -195,6 +195,7 @@ func handlerWithServices(wallBase, replayBase, token string) http.Handler {
 	mux.HandleFunc("PATCH /v1/runs/{id}/spectator", proxy(wallBase, false))
 	mux.HandleFunc("POST /v1/specs", proxy(wallBase, false))
 	mux.HandleFunc("POST /v1/triage/{key}/investigate", proxy(wallBase, false))
+	mux.HandleFunc("POST /v1/triage/{key}/solver-attempt", proxy(wallBase, false))
 	mux.HandleFunc("POST /v1/runs/{id}/pause", proxy(wallBase, false))
 	mux.HandleFunc("POST /v1/runs/{id}/resume", proxy(wallBase, false))
 	mux.HandleFunc("POST /v1/runs/{id}/cancel", proxy(wallBase, false))
