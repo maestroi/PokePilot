@@ -739,12 +739,12 @@ func runFarmLLM(m *emu.Emu, spec farm.Spec, starter, goal, llmProfile, reasoning
 				detail += activity.Error
 			}
 			snap.storeActivity(farm.ActivityEvent{
-				Source: "skill",
-				Kind: activity.Stage,
+				Source:  "skill",
+				Kind:    activity.Stage,
 				Summary: activity.Objective,
-				Detail: detail,
-				Frame: activity.Frame,
-				Round: activity.Round,
+				Detail:  detail,
+				Frame:   activity.Frame,
+				Round:   activity.Round,
 			})
 		},
 	})
