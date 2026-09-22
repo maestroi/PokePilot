@@ -179,7 +179,29 @@ func buildWeightedSemanticView(g *Graph, prereqs RoutePrerequisites) weightedSem
 			view.relaxLanding[edge] = true
 		default:
 			view.skipCanExit[edge] = true
-			view.relaxLanding[edge] = true
+			// relaxLanding marks an edge as a live-topology boundary: findRoute
+			// stops expanding past it and hands back a "safe prefix" route,
+			// trusting that crossing it is worth trying blind because the far
+			// side's geometry cannot be known without live observation (a Surf
+			// shore, a straddling Cut tree). A plain gated EdgeWarp's far side
+			// is an ordinary ROM-known interior map with no such uncertainty —
+			// BuildGraph already has its full layout — so granting it boundary
+			// status only hides a dead end from the search instead of
+			// describing a real unknown. Vermilion Gym's and Celadon Gym's
+			// Cut-gated doors (route_semantics.go, route_gate_audit.go) landed
+			// here only for skipCanExit (their tree blocks both sides of the
+			// static component check); nothing about them needs a live
+			// replan. Treating them as boundaries let GoTo accept a route
+			// into a one-exit dead-end room as a "safe prefix" toward an
+			// unrelated Surf-gated destination, walk in, discover no
+			// progress, and, since a mid-journey boundary crossing is
+			// accepted without banning it (skill/goto.go's sanity check only
+			// covers cur == dest.Map), get offered right back a replan later
+			// (run-14itq6xawle0136xfk2l4gkqfq: 05->5c->05->5c until the
+			// navigation guard fired).
+			if edge.Kind == EdgeConnection {
+				view.relaxLanding[edge] = true
+			}
 		}
 	}
 
