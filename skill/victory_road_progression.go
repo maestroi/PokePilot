@@ -28,7 +28,6 @@ var (
 	victoryRoad1FEntry   = Destination{Map: victoryRoad1FMap, X: 8, Y: 17}
 	victoryRoad2FEntry   = Destination{Map: victoryRoad2FMap, X: 0, Y: 8}
 	victoryRoad3FEntry   = Destination{Map: victoryRoad3FMap, X: 23, Y: 7}
-	indigoLobbyNurse     = Destination{Map: indigoPlateauLobbyMap, X: 7, Y: 6}
 )
 
 func currentStoryFacts(m *emu.Emu) state.StoryFacts {
@@ -285,8 +284,23 @@ func clearVictoryRoad(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	return fmt.Errorf("skill: Victory Road progression exceeded its bounded phase count")
 }
 
+func indigoLobbyNurseDestination(romData []byte) (Destination, error) {
+	nurse, ok, err := interactionDestinationForRole(romData, indigoPlateauLobbyMap, rom.InteractionPokemonCenterNurse)
+	if err != nil {
+		return Destination{}, fmt.Errorf("find Indigo nurse: %w", err)
+	}
+	if !ok {
+		return Destination{}, fmt.Errorf("Indigo lobby has no nurse interaction")
+	}
+	return nurse, nil
+}
+
 func prepareIndigoLobby(m *emu.Emu, romData []byte, policy MovePolicy) error {
-	if _, err := TravelFlee(m, romData, indigoLobbyNurse, policy, victoryRoadTravelBattles); err != nil {
+	nurse, err := indigoLobbyNurseDestination(romData)
+	if err != nil {
+		return fmt.Errorf("skill: VictoryRoadProgression: %w", err)
+	}
+	if _, err := TravelFlee(m, romData, nurse, policy, victoryRoadTravelBattles); err != nil {
 		return fmt.Errorf("skill: VictoryRoadProgression: reach Indigo Plateau lobby: %w", err)
 	}
 	if got := m.Peek8(sym.CurMap); got != indigoPlateauLobbyMap {

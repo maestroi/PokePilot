@@ -173,7 +173,11 @@ func prepareLeagueChallenge(m *emu.Emu, romData []byte, policy MovePolicy) error
 	var mem state.Mem
 	state.Snapshot(m, &mem)
 	if !allPartyCenterRecovered(&mem) {
-		if _, err := TravelFlee(m, romData, indigoLobbyNurse, policy, leagueTravelBattles); err != nil {
+		nurse, err := indigoLobbyNurseDestination(romData)
+		if err != nil {
+			return fmt.Errorf("skill: EliteFourProgression: %w", err)
+		}
+		if _, err := TravelFlee(m, romData, nurse, policy, leagueTravelBattles); err != nil {
 			return fmt.Errorf("skill: EliteFourProgression: reach Indigo nurse: %w", err)
 		}
 		if err := Heal(m); err != nil {
@@ -197,7 +201,11 @@ func recoverLeagueBlackout(m *emu.Emu, romData []byte, policy MovePolicy) error 
 	if got := m.Peek8(sym.CurMap); got != indigoPlateauMap {
 		return fmt.Errorf("skill: EliteFourProgression: League blackout recovery started on map %#02x, want Indigo Plateau %#02x", got, indigoPlateauMap)
 	}
-	if _, err := TravelFlee(m, romData, indigoLobbyNurse, policy, leagueTravelBattles); err != nil {
+	nurse, err := indigoLobbyNurseDestination(romData)
+	if err != nil {
+		return fmt.Errorf("skill: EliteFourProgression: %w", err)
+	}
+	if _, err := TravelFlee(m, romData, nurse, policy, leagueTravelBattles); err != nil {
 		return fmt.Errorf("skill: EliteFourProgression: return to Indigo lobby after blackout: %w", err)
 	}
 	if got := m.Peek8(sym.CurMap); got != indigoPlateauLobbyMap {
