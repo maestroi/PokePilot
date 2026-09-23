@@ -21,6 +21,7 @@ import (
 // battle contract instead.
 func TestDirectBattleCallersDeclareStructuredOwnership(t *testing.T) {
 	allowedRawBattleOwners := map[string]string{
+		"Battle":                    "Compatibility facade delegates to BattleWithOptions with zero-value options; semantic ownership remains with its caller.",
 		"fightOnly":                 "Travel resolves incidental encounters into battleResolution.",
 		"fleeThenFight":             "Travel may be forced to fight an incidental trainer after RUN is refused.",
 		"GetStarter":                "The Oak-lab rival fight is complete on its positive story event even after a loss.",
@@ -29,7 +30,7 @@ func TestDirectBattleCallersDeclareStructuredOwnership(t *testing.T) {
 		"Gym":                       "Gym is a battle primitive that returns BattleResult; its objective/story caller owns the required-win contract.",
 		"Catch":                     "Catch owns catch-session outcomes, including non-target battle losses.",
 		"catchWanted":               "Catch settles an uncaught target battle before returning a catch-session outcome.",
-		"Train":                     "Train owns training-session progress/retreat/blackout outcomes.",
+		"resolveTrainingBattle":     "Train owns incidental wild/trainer battle results as training-session progress, retreat, or blackout outcomes.",
 		"CatchWater":                "Water catching owns catch-session outcomes for incidental encounters.",
 		"Fish":                      "Fishing owns catch-session outcomes for incidental encounters.",
 	}
@@ -66,7 +67,7 @@ func TestDirectBattleCallersDeclareStructuredOwnership(t *testing.T) {
 					return true
 				}
 				switch ident.Name {
-				case "Battle":
+				case "Battle", "BattleWithOptions":
 					hasBattle = true
 				case "RequireBattleWin", "RequireTrainerBattleWin":
 					hasRequiredContract = true

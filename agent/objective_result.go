@@ -48,12 +48,13 @@ type TravelEvidence struct {
 
 // TrainingEvidence is the portable semantic summary of one training session.
 type TrainingEvidence struct {
-	StartLevel int  `json:"start_level,omitempty"`
-	EndLevel   int  `json:"end_level,omitempty"`
-	Battles    int  `json:"battles,omitempty"`
-	BlackedOut bool `json:"blacked_out,omitempty"`
-	Reached    bool `json:"reached,omitempty"`
-	Retreated  bool `json:"retreated,omitempty"`
+	StartLevel int    `json:"start_level,omitempty"`
+	EndLevel   int    `json:"end_level,omitempty"`
+	Battles    int    `json:"battles,omitempty"`
+	BlackedOut bool   `json:"blacked_out,omitempty"`
+	Reached    bool   `json:"reached,omitempty"`
+	Retreated  bool   `json:"retreated,omitempty"`
+	Method     string `json:"method,omitempty"`
 }
 
 // BattleEvidence avoids exposing a concrete game's battle enum through the
