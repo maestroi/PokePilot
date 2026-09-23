@@ -179,10 +179,11 @@ func (o Objective) String() string {
 }
 
 func gymOutcomeErr(o Objective, outcome state.BattleResult) error {
-	if outcome == state.ResultWon {
+	err := skill.RequireTrainerBattleWin("gym:"+string(o.Place), outcome)
+	if err == nil {
 		return nil
 	}
-	return fmt.Errorf("agent: %s: %w (blacked out to the center)", o, errGymLeaderLost)
+	return fmt.Errorf("agent: %s: %w", o, err)
 }
 
 func catchOutcomeName(o skill.CatchOutcome) string {
