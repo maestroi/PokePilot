@@ -399,8 +399,8 @@ func finishSilphBattle(m *emu.Emu, name string, policy MovePolicy) error {
 	if err != nil {
 		return fmt.Errorf("skill: ClearSilphCo: battle %s: %w", name, err)
 	}
-	if outcome != state.ResultWon {
-		return fmt.Errorf("skill: ClearSilphCo: %w after losing %s", ErrTrainerBlackedOut, name)
+	if err := RequireBattleWin("silph:"+name, outcome); err != nil {
+		return fmt.Errorf("skill: ClearSilphCo: %w", err)
 	}
 	return nil
 }
