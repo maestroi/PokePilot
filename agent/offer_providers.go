@@ -162,7 +162,7 @@ func OfferWithEvidence(obs Observation, known *Knowledge) ObjectiveOffer {
 		}
 	}
 	candidates := append(local, journeys...)
-	candidates = filterTrainerLossBlocked(candidates, known)
+	candidates = filterCombatRecoveryBlocked(candidates, known)
 	candidates = annotate(candidates, known)
 	return ObjectiveOffer{Candidates: candidates, Blocked: blocked}
 }
@@ -265,7 +265,7 @@ func (trainingObjectiveProvider) Provide(ctx *objectiveOfferContext) objectivePr
 		switch {
 		case routePlaceBlocked(obs, challenge.Place):
 			blocked = append(blocked, blockEvidence(ObjectiveFamilyTraining, "route_prerequisite", &gym, challenge.Place, "route_requirement"))
-		case gymLossRecorded(known, challenge.Place):
+		case combatLossRecorded(known, Objective{Kind: KindGym, Place: challenge.Place}):
 			blocked = append(blocked, blockEvidence(ObjectiveFamilyTraining, "combat_readiness", &gym, challenge.Place, "material_party_progress"))
 		default:
 			out = append(out, gym)
