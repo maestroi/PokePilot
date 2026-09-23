@@ -245,7 +245,6 @@ func warpTestROM(t *testing.T) []byte {
 	return data
 }
 
-
 func TestMergeBlockedTilesAddsExtraWithoutMutatingBase(t *testing.T) {
 	base := map[[2]int]bool{{1, 2}: true}
 	extra := map[[2]int]bool{{3, 4}: true}
