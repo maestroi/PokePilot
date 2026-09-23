@@ -142,3 +142,25 @@ func TestMenuUpRejectsCursorOutsideTilemap(t *testing.T) {
 		}
 	}
 }
+
+// A lost battle's whiteout leaves the joypad, font and walk counter idle
+// while wIsInBattle=$ff and BIT_BATTLE_OVER_OR_BLACKOUT are still set; the
+// respawn has not happened, so the overworld is not controllable yet.
+// Values measured on run-22ahrk9pflcilu3jxq9xt37x6's post-Lance checkpoint.
+func TestControllableFalseDuringBlackout(t *testing.T) {
+	var m Mem
+	m[sym.CurMapWidth], m[sym.CurMapHeight] = 13, 13
+	m[sym.IsInBattle] = 0xff
+	m[sym.StatusFlags4] = 0x2f
+	if Controllable(&m) {
+		t.Fatal("Controllable = true mid-blackout (wIsInBattle=$ff)")
+	}
+	m[sym.IsInBattle] = 0
+	if Controllable(&m) {
+		t.Fatal("Controllable = true with BIT_BATTLE_OVER_OR_BLACKOUT set")
+	}
+	m[sym.StatusFlags4] = 0x0f
+	if !Controllable(&m) {
+		t.Fatal("Controllable = false after the respawn cleared both flags")
+	}
+}

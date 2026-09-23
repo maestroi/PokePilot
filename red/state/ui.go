@@ -75,5 +75,19 @@ func Controllable(m *Mem) bool {
 		m.U8(sym.CurMapHeight) != 0 &&
 		m.U8(sym.FontLoaded) == 0 &&
 		m.U8(sym.JoyIgnore) == 0 &&
-		m.U8(sym.WalkCounter) == 0
+		m.U8(sym.WalkCounter) == 0 &&
+		m.U8(sym.IsInBattle) == 0 &&
+		m.U8(sym.StatusFlags4)&battleOverOrBlackout == 0
 }
+
+// battleOverOrBlackout is wStatusFlags4's BIT_BATTLE_OVER_OR_BLACKOUT. The
+// overworld sets it when a battle ends (home/overworld.asm .battleOccurred)
+// and clears it on the next EnterMap or inside HandleBlackOut, so while it is
+// set a battle-end or whiteout transition is still in flight; a lost battle
+// also leaves wIsInBattle=$ff through that window. MEASURED on
+// run-22ahrk9pflcilu3jxq9xt37x6: after losing to Lance the joypad, font and
+// walk counter read idle for 81 frames while HandleBlackOut was still fading
+// to the Indigo Plateau respawn. Reading that as control let the battle
+// settle hand back a fainted party "in" Lance's room, so every later
+// objective planned from a room the player was about to leave.
+const battleOverOrBlackout = 1 << 5

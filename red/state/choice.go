@@ -105,12 +105,17 @@ func menuCursorOffset(m *Mem) (int, bool) {
 // actually drawn at the location the ROM published. This is the positive,
 // screen-level evidence that separates a live menu from stale cursor bytes.
 func menuCursorDrawn(m *Mem) bool {
+	tile, ok := menuCursorGlyph(m)
+	return ok && (tile == menuCursorTile || tile == menuCursorSelectedTile)
+}
+
+// menuCursorGlyph returns the raw tile at the ROM-published cursor location.
+func menuCursorGlyph(m *Mem) (uint8, bool) {
 	offset, ok := menuCursorOffset(m)
 	if !ok {
-		return false
+		return 0, false
 	}
-	tile := m.Slice(sym.TileMap, sym.TileMapLen)[offset]
-	return tile == menuCursorTile || tile == menuCursorSelectedTile
+	return m.Slice(sym.TileMap, sym.TileMapLen)[offset], true
 }
 
 // DecodeTwoOptionMenu reports the live two-option prompt, or nil when none
@@ -143,7 +148,14 @@ func DecodeTwoOptionMenu(m *Mem) *TwoOptionMenu {
 	if m.U8(sym.MaxMenuItem) != 1 {
 		return nil
 	}
-	if !menuCursorDrawn(m) {
+	// Only the FILLED cursor is a prompt waiting for an answer. Two-option
+	// menus never draw '▷' while waiting; callers draw it after
+	// HandleMenuInput has already returned a choice. The item menu's USE/TOSS
+	// box (start_sub_menus.asm .choseItem) is the measured case: it leaves
+	// wMaxMenuItem=1 and '▷' on USE while the TM's "Teach X?" text prints,
+	// and reading that as a live prompt answered nothing
+	// (run-22ahrk9pflcilu3jxq9xt37x6, TeachTMHM).
+	if tile, ok := menuCursorGlyph(m); !ok || tile != menuCursorTile {
 		return nil
 	}
 	return &TwoOptionMenu{Index: int(m.U8(sym.CurrentMenuItem))}
