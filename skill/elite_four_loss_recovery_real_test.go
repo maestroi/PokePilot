@@ -16,13 +16,13 @@ import (
 // underpowered enough to lose to Lorelei with StatAwareMove.
 //
 // The regression owns three boundaries:
-//   1. the mandatory fight must return RequiredBattleError rather than a plain
-//      story-specific error;
-//   2. the post-loss state must be a real Indigo blackout/respawn with Lorelei
-//      still incomplete;
-//   3. after a save/close/reopen/load boundary, the normal League room traversal
-//      must heal/recommit and return to Lorelei without a member-specific retry
-//      branch.
+//  1. the mandatory fight must return RequiredBattleError rather than a plain
+//     story-specific error;
+//  2. the post-loss state must be a real Indigo blackout/respawn with Lorelei
+//     still incomplete;
+//  3. after a save/close/reopen/load boundary, the normal League room traversal
+//     must heal/recommit and return to Lorelei without a member-specific retry
+//     branch.
 //
 // Generic agent tests separately pin RequiredBattleError -> combat_defeat and
 // combat_loss -> combat_retry after material readiness progress.
