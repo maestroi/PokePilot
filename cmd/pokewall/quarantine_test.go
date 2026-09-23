@@ -52,13 +52,17 @@ func TestStructuredObjectiveFailureQuarantinesActiveIssue(t *testing.T) {
 	w := NewWall(t.TempDir())
 	w.issues = newIssueClient(ao.URL, "p", "http://ui", time.Second)
 	failure, occurrence := structuredObjectiveFailureFixture(t, "build-new")
+	familyKey, familyFP, err := farm.FingerprintFailureFamily(occurrence.Identity)
+	if err != nil {
+		t.Fatal(err)
+	}
 	w.mu.Lock()
-	w.issueLinks[occurrence.Key] = IssueLink{
+	w.issueLinks[familyKey] = IssueLink{
 		IssueID:         "issue-1",
 		IssueNumber:     42,
 		IssueURL:        "http://ui/issues/issue-1",
 		Status:          "open",
-		Fingerprint:     occurrence.Fingerprint,
+		Fingerprint:     familyFP,
 		OccurrenceCount: 1,
 	}
 	w.mu.Unlock()
@@ -73,7 +77,7 @@ func TestStructuredObjectiveFailureQuarantinesActiveIssue(t *testing.T) {
 	ext := objectiveFailureExternalID(dump.RunID, dump.Attempt, occurrence.Key)
 	w.mu.Lock()
 	entry := w.outbox[ext]
-	link := w.issueLinks[occurrence.Key]
+	link := w.issueLinks[familyKey]
 	w.mu.Unlock()
 	if entry.Status != outboxQuarantined || !strings.Contains(entry.Note, "equivalent structured fingerprint") {
 		t.Fatalf("quarantine outbox = %+v", entry)
@@ -88,7 +92,7 @@ func TestStructuredObjectiveFailureQuarantinesActiveIssue(t *testing.T) {
 		t.Fatalf("idempotent reportObjectiveFailure: %v", err)
 	}
 	w.mu.Lock()
-	link = w.issueLinks[occurrence.Key]
+	link = w.issueLinks[familyKey]
 	w.mu.Unlock()
 	if link.QuarantinedCount != 1 {
 		t.Fatalf("quarantined count = %d, want 1 after duplicate", link.QuarantinedCount)
@@ -118,15 +122,19 @@ func TestStructuredObjectiveFailureReportsFixedRegression(t *testing.T) {
 	w := NewWall(t.TempDir())
 	w.issues = newIssueClient(ao.URL, "p", "http://ui", time.Second)
 	failure, occurrence := structuredObjectiveFailureFixture(t, "build-new")
+	familyKey, familyFP, err := farm.FingerprintFailureFamily(occurrence.Identity)
+	if err != nil {
+		t.Fatal(err)
+	}
 	w.mu.Lock()
-	w.issueLinks[occurrence.Key] = IssueLink{
+	w.issueLinks[familyKey] = IssueLink{
 		IssueID:       "issue-1",
 		IssueNumber:   42,
 		IssueURL:      "http://ui/issues/issue-1",
 		Status:        "resolved",
 		Resolution:    "fixed",
 		FixedRevision: "build-fixed",
-		Fingerprint:   occurrence.Fingerprint,
+		Fingerprint:   familyFP,
 	}
 	w.mu.Unlock()
 
@@ -137,27 +145,62 @@ func TestStructuredObjectiveFailureReportsFixedRegression(t *testing.T) {
 	if calls.Load() != 1 {
 		t.Fatalf("orchestrator calls = %d, want 1 regression report", calls.Load())
 	}
-	if gotManifest.Fingerprint != occurrence.Fingerprint || gotManifest.ObservedRevision != "build-new" || gotManifest.Severity != "critical" || !strings.Contains(gotManifest.Title, "[farm][regression]") {
+	if gotManifest.Fingerprint != familyFP || gotManifest.ObservedRevision != "build-new" || gotManifest.Severity != "critical" || !strings.Contains(gotManifest.Title, "[farm][regression]") {
 		t.Fatalf("regression manifest = %+v", gotManifest)
 	}
 	var evidence map[string]any
 	if err := json.Unmarshal(gotManifest.Evidence, &evidence); err != nil {
 		t.Fatalf("evidence: %v", err)
 	}
-	if evidence["classification"] != "regression" || evidence["prior_fixed_revision"] != "build-fixed" || evidence["fingerprint"] != occurrence.Fingerprint {
+	if evidence["classification"] != "regression" || evidence["prior_fixed_revision"] != "build-fixed" || evidence["fingerprint"] != familyFP || evidence["occurrence_fingerprint"] != occurrence.Fingerprint {
 		t.Fatalf("regression evidence = %s", gotManifest.Evidence)
 	}
 
 	ext := objectiveFailureExternalID(dump.RunID, dump.Attempt, occurrence.Key)
 	w.mu.Lock()
 	entry := w.outbox[ext]
-	link := w.issueLinks[occurrence.Key]
+	link := w.issueLinks[familyKey]
 	w.mu.Unlock()
 	if entry.Status != outboxComplete {
 		t.Fatalf("regression outbox = %+v", entry)
 	}
 	if link.Status != "open" || link.LastDisposition != string(occurrenceRegression) || link.LastObservedRevision != "build-new" {
 		t.Fatalf("reopened link = %+v", link)
+	}
+}
+
+func TestStructuredObjectiveFailureAliasesLegacyExactIssueLink(t *testing.T) {
+	var calls atomic.Int32
+	ao := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		http.Error(w, "legacy active issue should be reused", http.StatusInternalServerError)
+	}))
+	t.Cleanup(ao.Close)
+
+	w := NewWall(t.TempDir())
+	w.issues = newIssueClient(ao.URL, "p", "http://ui", time.Second)
+	failure, occurrence := structuredObjectiveFailureFixture(t, "build-new")
+	familyKey, familyFP, err := farm.FingerprintFailureFamily(occurrence.Identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if familyKey == occurrence.Key {
+		t.Fatal("test requires distinct family and exact keys")
+	}
+	w.issueLinks[occurrence.Key] = IssueLink{
+		IssueID: "issue-old", IssueNumber: 41, Status: "open", Fingerprint: occurrence.Fingerprint,
+	}
+
+	dump := farm.FinishReport{RunID: "run-alias", Attempt: 1, Reason: "error", RunnerVersion: "build-new"}
+	if err := w.reportObjectiveFailure(dump, failure); err != nil {
+		t.Fatalf("reportObjectiveFailure: %v", err)
+	}
+	if calls.Load() != 0 {
+		t.Fatalf("orchestrator calls = %d, want legacy issue quarantine", calls.Load())
+	}
+	link := w.issueLinks[familyKey]
+	if link.IssueID != "issue-old" || link.Fingerprint != familyFP {
+		t.Fatalf("family alias = %+v, want legacy issue-old with family fingerprint %s", link, familyFP)
 	}
 }
 

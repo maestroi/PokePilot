@@ -113,7 +113,7 @@ func (cp *controlPlane) failureCircuitDecision(scope tileRow, report farm.Finish
 	if err != nil {
 		return failureCircuitDecision{}, err
 	}
-	// Exact repeated fingerprints are the strongest signal. Evaluate every
+	// Repeated failure families are the strongest signal. Evaluate every
 	// terminal/blocking failure before considering the broader badge frontier.
 	for _, failure := range failures {
 		if !circuitFailureEligible(failure) {
@@ -175,7 +175,7 @@ func (cp *controlPlane) failureFingerprintCounts(fingerprint, revision, currentR
 SELECT f.run_id, f.attempt, COALESCE(a.runner_version, '')
 FROM objective_failures f
 LEFT JOIN run_attempts a ON a.run_id=f.run_id AND a.attempt=f.attempt
-WHERE f.fingerprint=? AND (f.blocking=TRUE OR f.terminal_count>0)
+WHERE COALESCE(NULLIF(f.family_fingerprint,''), f.fingerprint)=? AND (f.blocking=TRUE OR f.terminal_count>0)
 ORDER BY f.updated_at DESC`, fingerprint)
 	if err != nil {
 		return 0, 0, err
@@ -627,7 +627,7 @@ func (w *Wall) requestCircuitInvestigation(c *issueClient, issueID string, decis
 // terminal stuck/failed failures and survives wall restarts.
 func (cp *controlPlane) objectiveFailureTriage(w *Wall) ([]triageGroup, error) {
 	rows, err := cp.db.Query(`
-SELECT failure_key, fingerprint, run_id, failure_json
+SELECT failure_key, fingerprint, family_key, family_fingerprint, run_id, failure_json
 FROM objective_failures
 WHERE blocking=TRUE OR terminal_count>0
 ORDER BY updated_at DESC`)
@@ -645,24 +645,33 @@ ORDER BY updated_at DESC`)
 	}
 	groups := map[string]*acc{}
 	for rows.Next() {
-		var key, fingerprint, runID string
+		var occurrenceKey, occurrenceFingerprint, familyKey, familyFingerprint, runID string
 		var raw []byte
-		if err := rows.Scan(&key, &fingerprint, &runID, &raw); err != nil {
+		if err := rows.Scan(&occurrenceKey, &occurrenceFingerprint, &familyKey, &familyFingerprint, &runID, &raw); err != nil {
 			return nil, err
 		}
 		var failure farm.ObjectiveFailure
 		if json.Unmarshal(raw, &failure) != nil {
 			continue
 		}
-		group := groups[key]
+		if familyKey == "" || familyFingerprint == "" {
+			var err error
+			familyKey, familyFingerprint, _, err = objectiveFailureFingerprint(failure)
+			if err != nil {
+				// Historical/corrupt rows remain visible under their exact key
+				// rather than disappearing from the triage queue.
+				familyKey, familyFingerprint = occurrenceKey, occurrenceFingerprint
+			}
+		}
+		group := groups[familyKey]
 		if group == nil {
 			group = &acc{
-				fingerprint: fingerprint,
+				fingerprint: familyFingerprint,
 				pattern:     objectiveFailurePattern(failure),
 				example:     strings.TrimSpace(failure.Objective + ": " + failure.Error),
 				seenRuns:    map[string]bool{},
 			}
-			groups[key] = group
+			groups[familyKey] = group
 		}
 		group.count++
 		if !group.seenRuns[runID] && len(group.runIDs) < triageRunIDCap {

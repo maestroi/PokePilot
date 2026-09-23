@@ -20,7 +20,8 @@ func newFailureCircuitTestDB(t *testing.T) *sql.DB {
 	if _, err := db.Exec(`
 CREATE TABLE objective_failures (
  run_id TEXT NOT NULL, attempt INTEGER NOT NULL, failure_key TEXT NOT NULL,
- fingerprint TEXT NOT NULL, blocking BOOLEAN NOT NULL DEFAULT FALSE,
+ fingerprint TEXT NOT NULL, family_key TEXT NOT NULL DEFAULT '',
+ family_fingerprint TEXT NOT NULL DEFAULT '', blocking BOOLEAN NOT NULL DEFAULT FALSE,
  terminal_count INTEGER NOT NULL DEFAULT 0, failure_json BLOB NOT NULL DEFAULT '{}',
  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
  PRIMARY KEY(run_id,attempt,failure_key)
@@ -134,8 +135,8 @@ func TestObjectiveFailureTriageUsesCanonicalFailureRows(t *testing.T) {
 	}
 	raw, _ := json.Marshal(failure)
 	for _, id := range []string{"run-a", "run-b"} {
-		if _, err := db.Exec(`INSERT INTO objective_failures(run_id,attempt,failure_key,fingerprint,blocking,terminal_count,failure_json) VALUES(?,?,?,?,TRUE,1,?)`,
-			id, 1, "canonical-key", "sha256:canonical", raw); err != nil {
+		if _, err := db.Exec(`INSERT INTO objective_failures(run_id,attempt,failure_key,fingerprint,family_key,family_fingerprint,blocking,terminal_count,failure_json) VALUES(?,?,?,?,?,?,TRUE,1,?)`,
+			id, 1, "occurrence-key", "sha256:occurrence", "canonical-key", "sha256:canonical", raw); err != nil {
 			t.Fatal(err)
 		}
 	}

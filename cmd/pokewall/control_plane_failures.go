@@ -20,21 +20,30 @@ func (cp *controlPlane) persistObjectiveFailuresTx(tx *sql.Tx, report farm.Finis
 	safeReport := sanitizeFinishReport(report)
 	reportRaw, _ := json.Marshal(safeReport)
 	for _, failure := range failures {
-		key, fp, _, err := objectiveFailureFingerprint(failure)
+		familyKey, familyFP, _, err := objectiveFailureFingerprint(failure)
+		if err != nil {
+			return err
+		}
+		occurrenceKey, occurrenceFP, _, err := objectiveFailureOccurrenceFingerprint(failure)
 		if err != nil {
 			return err
 		}
 		failureRaw, _ := json.Marshal(failure)
-		ext := objectiveFailureExternalID(report.RunID, attempt, key)
-		if _, err := tx.Exec(`INSERT INTO objective_failures(run_id,attempt,failure_key,fingerprint,blocking,terminal_count,failure_json,report_json,delivery_status,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,'pending',NOW()) ON CONFLICT(run_id,attempt,failure_key) DO UPDATE SET fingerprint=EXCLUDED.fingerprint,blocking=EXCLUDED.blocking,terminal_count=EXCLUDED.terminal_count,failure_json=EXCLUDED.failure_json,report_json=EXCLUDED.report_json,updated_at=NOW()`, report.RunID, attempt, key, fp, failure.Blocking, failure.TerminalCount, string(failureRaw), string(reportRaw)); err != nil {
+		ext := objectiveFailureExternalID(report.RunID, attempt, occurrenceKey)
+		if _, err := tx.Exec(`INSERT INTO objective_failures(run_id,attempt,failure_key,fingerprint,family_key,family_fingerprint,blocking,terminal_count,failure_json,report_json,delivery_status,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,'pending',NOW()) ON CONFLICT(run_id,attempt,failure_key) DO UPDATE SET fingerprint=EXCLUDED.fingerprint,family_key=EXCLUDED.family_key,family_fingerprint=EXCLUDED.family_fingerprint,blocking=EXCLUDED.blocking,terminal_count=EXCLUDED.terminal_count,failure_json=EXCLUDED.failure_json,report_json=EXCLUDED.report_json,updated_at=NOW()`, report.RunID, attempt, occurrenceKey, occurrenceFP, familyKey, familyFP, failure.Blocking, failure.TerminalCount, string(failureRaw), string(reportRaw)); err != nil {
 			return err
 		}
-		if _, err := tx.Exec(`INSERT INTO issue_fingerprints(failure_key,fingerprint,payload_json,updated_at) VALUES($1,$2,$3::jsonb,NOW()) ON CONFLICT(failure_key) DO UPDATE SET fingerprint=EXCLUDED.fingerprint,payload_json=EXCLUDED.payload_json,updated_at=NOW()`, key, fp, string(failureRaw)); err != nil {
+		if _, err := tx.Exec(`INSERT INTO issue_fingerprints(failure_key,fingerprint,payload_json,updated_at) VALUES($1,$2,$3::jsonb,NOW()) ON CONFLICT(failure_key) DO UPDATE SET fingerprint=EXCLUDED.fingerprint,payload_json=EXCLUDED.payload_json,updated_at=NOW()`, familyKey, familyFP, string(failureRaw)); err != nil {
 			return err
 		}
-		occ := map[string]any{"failure": failure, "fingerprint": fp}
+		occ := map[string]any{
+			"failure":                failure,
+			"fingerprint":            familyFP,
+			"family_fingerprint":     familyFP,
+			"occurrence_fingerprint": occurrenceFP,
+		}
 		occRaw, _ := json.Marshal(occ)
-		if _, err := tx.Exec(`INSERT INTO issue_occurrences(external_id,failure_key,run_id,attempt,payload_json) VALUES($1,$2,$3,$4,$5::jsonb) ON CONFLICT(external_id) DO UPDATE SET payload_json=EXCLUDED.payload_json`, ext, key, report.RunID, attempt, string(occRaw)); err != nil {
+		if _, err := tx.Exec(`INSERT INTO issue_occurrences(external_id,failure_key,run_id,attempt,payload_json) VALUES($1,$2,$3,$4,$5::jsonb) ON CONFLICT(external_id) DO UPDATE SET failure_key=EXCLUDED.failure_key,payload_json=EXCLUDED.payload_json`, ext, familyKey, report.RunID, attempt, string(occRaw)); err != nil {
 			return err
 		}
 	}
@@ -79,7 +88,7 @@ WHERE delivery_status='error'
   AND NOT EXISTS (
       SELECT 1
       FROM issue_links
-      WHERE issue_links.failure_key=objective_failures.failure_key
+      WHERE issue_links.failure_key=COALESCE(NULLIF(objective_failures.family_key,''), objective_failures.failure_key)
         AND issue_links.issue_id<>''
   )`)
 	if err != nil {
@@ -100,7 +109,7 @@ func (cp *controlPlane) pendingObjectiveFailures(limit int) ([]pendingObjectiveF
 	rows, err := cp.db.Query(`
 SELECT f.run_id,f.attempt,f.failure_key,f.failure_json,f.report_json
 FROM objective_failures f
-LEFT JOIN issue_links l ON l.failure_key=f.failure_key AND l.issue_id<>''
+LEFT JOIN issue_links l ON l.failure_key=COALESCE(NULLIF(f.family_key,''), f.failure_key) AND l.issue_id<>''
 WHERE f.delivery_status='pending'
    OR (
         f.delivery_status='complete'

@@ -197,6 +197,10 @@ func (w *Wall) reportObjectiveFailure(dump farm.FinishReport, f farm.ObjectiveFa
 	if err != nil {
 		return err
 	}
+	occurrenceKey, occurrenceFP, _, err := objectiveFailureOccurrenceFingerprint(f)
+	if err != nil {
+		return err
+	}
 	circuit := failureCircuitDecision{}
 	if cp := controlPlaneFor(w); cp != nil && circuitFailureEligible(f) {
 		scope, _ := w.circuitScopeForRun(dump.RunID)
@@ -205,11 +209,21 @@ func (w *Wall) reportObjectiveFailure(dump farm.FinishReport, f farm.ObjectiveFa
 			return fmt.Errorf("evaluate failure circuit: %w", err)
 		}
 	}
-	ext := objectiveFailureExternalID(dump.RunID, dump.Attempt, key)
+	ext := objectiveFailureExternalID(dump.RunID, dump.Attempt, occurrenceKey)
 
 	w.mu.Lock()
 	existing := w.outbox[ext]
 	prior := w.issueLinks[key]
+	if prior.IssueID == "" && occurrenceKey != key {
+		// Rollout compatibility: issue links created before family fingerprints
+		// are keyed by the exact occurrence. Alias the first recurrence onto its
+		// new family key so deployment does not create one transitional duplicate.
+		if exactPrior := w.issueLinks[occurrenceKey]; exactPrior.IssueID != "" {
+			prior = exactPrior
+			prior.Fingerprint = fp
+			w.issueLinks[key] = prior
+		}
+	}
 	w.mu.Unlock()
 	// A terminal outbox row is only authoritative while the canonical issue
 	// binding still exists. Sink migrations can legitimately detach issueLinks
@@ -260,39 +274,41 @@ func (w *Wall) reportObjectiveFailure(dump farm.FinishReport, f farm.ObjectiveFa
 	observedRevision := observedObjectiveFailureRevision(dump, f)
 	runContext, hasRunContext, runContextErr := farm.DecodeRunContext(dump)
 	evidenceValues := map[string]any{
-		"classification":       classification,
-		"disposition":          string(disposition),
-		"run_id":               dump.RunID,
-		"attempt":              max(1, dump.Attempt),
-		"seed_burn":            dump.SeedBurn,
-		"objective":            f.Objective,
-		"error":                f.Error,
-		"occurrences_in_run":   f.Count,
-		"first_round":          f.FirstRound,
-		"last_round":           f.LastRound,
-		"map":                  fmt.Sprintf("0x%02x", f.Map),
-		"x":                    f.X,
-		"y":                    f.Y,
-		"recovered":            f.Recovered,
-		"recovered_count":      f.RecoveredCount,
-		"terminal_count":       f.TerminalCount,
-		"blocking":             f.Blocking,
-		"run_reason":           dump.Reason,
-		"run_detail":           dump.Detail,
-		"progress_early":       dump.ProgressEarly,
-		"progress_final":       dump.ProgressFinal,
-		"trace_tail":           dump.TraceTail,
-		"runner_version":       dump.RunnerVersion,
-		"observed_revision":    observedRevision,
-		"fingerprint":          fp,
-		"identity":             f.Identity,
-		"outcome":              f.Outcome,
-		"cause":                f.Cause,
-		"cause_context":        f.CauseContext,
-		"checkpoint":           f.Checkpoint,
-		"prior_issue_status":   prior.Status,
-		"prior_resolution":     prior.Resolution,
-		"prior_fixed_revision": prior.FixedRevision,
+		"classification":         classification,
+		"disposition":            string(disposition),
+		"run_id":                 dump.RunID,
+		"attempt":                max(1, dump.Attempt),
+		"seed_burn":              dump.SeedBurn,
+		"objective":              f.Objective,
+		"error":                  f.Error,
+		"occurrences_in_run":     f.Count,
+		"first_round":            f.FirstRound,
+		"last_round":             f.LastRound,
+		"map":                    fmt.Sprintf("0x%02x", f.Map),
+		"x":                      f.X,
+		"y":                      f.Y,
+		"recovered":              f.Recovered,
+		"recovered_count":        f.RecoveredCount,
+		"terminal_count":         f.TerminalCount,
+		"blocking":               f.Blocking,
+		"run_reason":             dump.Reason,
+		"run_detail":             dump.Detail,
+		"progress_early":         dump.ProgressEarly,
+		"progress_final":         dump.ProgressFinal,
+		"trace_tail":             dump.TraceTail,
+		"runner_version":         dump.RunnerVersion,
+		"observed_revision":      observedRevision,
+		"fingerprint":            fp,
+		"family_fingerprint":     fp,
+		"occurrence_fingerprint": occurrenceFP,
+		"identity":               f.Identity,
+		"outcome":                f.Outcome,
+		"cause":                  f.Cause,
+		"cause_context":          f.CauseContext,
+		"checkpoint":             f.Checkpoint,
+		"prior_issue_status":     prior.Status,
+		"prior_resolution":       prior.Resolution,
+		"prior_fixed_revision":   prior.FixedRevision,
 	}
 	if hasRunContext {
 		evidenceValues["planner"] = runContext.Planner

@@ -145,12 +145,14 @@ CREATE INDEX IF NOT EXISTS decision_exchanges_run_idx ON decision_exchanges(run_
 CREATE INDEX IF NOT EXISTS decision_exchanges_kind_idx ON decision_exchanges(kind, recorded_at DESC);
 CREATE TABLE IF NOT EXISTS objective_failures (
     run_id TEXT NOT NULL, attempt INTEGER NOT NULL, failure_key TEXT NOT NULL, fingerprint TEXT NOT NULL,
+    family_key TEXT NOT NULL DEFAULT '', family_fingerprint TEXT NOT NULL DEFAULT '',
     blocking BOOLEAN NOT NULL DEFAULT FALSE, terminal_count INTEGER NOT NULL DEFAULT 0,
     failure_json JSONB NOT NULL, report_json JSONB NOT NULL,
     delivery_status TEXT NOT NULL DEFAULT 'pending', delivery_error TEXT NOT NULL DEFAULT '',
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), PRIMARY KEY (run_id, attempt, failure_key)
 );
 CREATE INDEX IF NOT EXISTS objective_failures_fingerprint_idx ON objective_failures(fingerprint, updated_at DESC);
+CREATE INDEX IF NOT EXISTS objective_failures_family_idx ON objective_failures(family_key, updated_at DESC);
 CREATE INDEX IF NOT EXISTS objective_failures_delivery_idx ON objective_failures(delivery_status, updated_at);
 CREATE TABLE IF NOT EXISTS issue_fingerprints (
     failure_key TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -231,6 +233,15 @@ SET label = '7900 XTX',
     engine_config = CASE WHEN engine_config = '' OR engine_config LIKE '7900-pinned%' THEN '7900-switchable' ELSE engine_config END,
     updated_at = NOW()
 WHERE id = 'qwen38-27b-7900';
+`
+
+const controlPlaneMigration006 = `
+ALTER TABLE objective_failures
+    ADD COLUMN IF NOT EXISTS family_key TEXT NOT NULL DEFAULT '';
+ALTER TABLE objective_failures
+    ADD COLUMN IF NOT EXISTS family_fingerprint TEXT NOT NULL DEFAULT '';
+CREATE INDEX IF NOT EXISTS objective_failures_family_idx
+    ON objective_failures(family_key, updated_at DESC);
 `
 
 type controlPlane struct {
@@ -362,6 +373,18 @@ func (cp *controlPlane) migrate() error {
 		}
 		if _, err := tx.Exec(`INSERT INTO schema_migrations(version) VALUES(5) ON CONFLICT DO NOTHING`); err != nil {
 			return fmt.Errorf("record control-plane migration 5: %w", err)
+		}
+	}
+	var applied6 bool
+	if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version=6)`).Scan(&applied6); err != nil {
+		return fmt.Errorf("read migration version 6: %w", err)
+	}
+	if !applied6 {
+		if _, err := tx.Exec(controlPlaneMigration006); err != nil {
+			return fmt.Errorf("apply control-plane migration 6: %w", err)
+		}
+		if _, err := tx.Exec(`INSERT INTO schema_migrations(version) VALUES(6) ON CONFLICT DO NOTHING`); err != nil {
+			return fmt.Errorf("record control-plane migration 6: %w", err)
 		}
 	}
 	return tx.Commit()
