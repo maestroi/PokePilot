@@ -21,6 +21,7 @@ import (
 // battle contract instead.
 func TestDirectBattleCallersDeclareStructuredOwnership(t *testing.T) {
 	allowedRawBattleOwners := map[string]string{
+		"Battle":                    "Compatibility facade delegates to BattleWithOptions with zero-value options; semantic ownership remains with its caller.",
 		"fightOnly":                 "Travel resolves incidental encounters into battleResolution.",
 		"fleeThenFight":             "Travel may be forced to fight an incidental trainer after RUN is refused.",
 		"GetStarter":                "The Oak-lab rival fight is complete on its positive story event even after a loss.",
