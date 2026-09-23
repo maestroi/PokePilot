@@ -1,6 +1,10 @@
 package skill
 
-import "github.com/maestroi/pokepilot/red/rom"
+import (
+	"strings"
+
+	"github.com/maestroi/pokepilot/red/rom"
+)
 
 // PokemonCenterMap reports whether a map exposes the actual Pokemon Center
 // nurse service. Service-role detection is stronger than map-name conventions:
@@ -21,6 +25,9 @@ func RecoveryCheckpointPlace(romData []byte, respawnMap uint8) (string, bool, er
 		return "", false, err
 	}
 	for _, name := range PlaceNames() {
+		if !strings.HasSuffix(name, "pokemon center") {
+			continue
+		}
 		dest, ok := Place(name)
 		if !ok {
 			continue
