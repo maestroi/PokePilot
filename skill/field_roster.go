@@ -3,6 +3,7 @@ package skill
 import (
 	"errors"
 	"fmt"
+	"math/bits"
 	"sort"
 
 	"github.com/maestroi/pokepilot/emu"
@@ -35,10 +36,39 @@ func CoreProgressionFieldMoves() []FieldMove {
 	return []FieldMove{FieldCut, FieldSurf, FieldStrength}
 }
 
-// OwnedCoreProgressionFieldMoves returns the core moves whose HM and badge are
-// already owned. It lets a story slice preserve everything the save has
-// actually unlocked without assuming a canonical badge order or starter.
-func OwnedCoreProgressionFieldMoves(mem *state.Mem) []FieldMove {
+// OwnedCoreProgressionFieldMoves returns the owned core traversal moves the
+// current party can actually retain: badge and HM owned, and the whole
+// returned set holdable by the party at once. The retention contract exists
+// to stop a roster change from dropping the last carrier of an unlocked
+// move; a move no party member can learn (a randomized compatibility table,
+// a wiped roster) has no carrier to retain, and demanding it would make
+// every roster repair report no recovery. The result is the largest jointly
+// satisfiable subset, so the final-party invariant stays achievable.
+func OwnedCoreProgressionFieldMoves(romData []byte, mem *state.Mem) []FieldMove {
+	owned := ownedCoreProgressionFieldMoves(mem)
+	mons := state.DecodeParty(mem).Mons
+	for size := len(owned); size >= 1; size-- {
+		for mask := 1; mask < 1<<len(owned); mask++ {
+			if bits.OnesCount8(uint8(mask)) != size {
+				continue
+			}
+			subset := make([]FieldMove, 0, size)
+			for i, move := range owned {
+				if mask&(1<<uint(i)) != 0 {
+					subset = append(subset, move)
+				}
+			}
+			if ok, err := partyCanSatisfyFieldMoves(romData, mons, subset); err == nil && ok {
+				return subset
+			}
+		}
+	}
+	return nil
+}
+
+// ownedCoreProgressionFieldMoves returns the core moves whose HM and badge
+// are already owned, before the retainability filter.
+func ownedCoreProgressionFieldMoves(mem *state.Mem) []FieldMove {
 	var out []FieldMove
 	for _, move := range CoreProgressionFieldMoves() {
 		cap := FieldCapabilityFor(mem, move)
@@ -598,5 +628,5 @@ func RepairFieldCapabilities(m *emu.Emu, romData []byte, policy MovePolicy, requ
 func RepairOwnedCoreFieldCapabilities(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	return RepairFieldCapabilities(m, romData, policy, OwnedCoreProgressionFieldMoves(&mem))
+	return RepairFieldCapabilities(m, romData, policy, OwnedCoreProgressionFieldMoves(romData, &mem))
 }

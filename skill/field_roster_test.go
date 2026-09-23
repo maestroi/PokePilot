@@ -39,7 +39,7 @@ func fakeCoreFieldROM(t *testing.T) []byte {
 	return romData
 }
 
-func TestOwnedSurfWithoutCompatiblePartyNeedsRosterRepair(t *testing.T) {
+func TestOwnedSurfWithoutCarrierIsNotRetained(t *testing.T) {
 	surf, _ := FieldMoveSpecFor(FieldSurf)
 	romData := fakeTMHMROM(t, surf.HMItem, surf.MoveID,
 		rom.Move{ID: surf.MoveID, Power: 95, Type: 0x15, Accuracy: 255, PP: 15})
@@ -62,9 +62,49 @@ func TestOwnedSurfWithoutCompatiblePartyNeedsRosterRepair(t *testing.T) {
 	if CanPrepareFieldMove(romData, &mem, FieldSurf) {
 		t.Fatal("CanPrepareFieldMove returned true with no Surf-compatible party member")
 	}
-	owned := OwnedCoreProgressionFieldMoves(&mem)
-	if len(owned) != 1 || owned[0] != FieldSurf {
-		t.Fatalf("owned core field moves = %v, want [SURF]", owned)
+	owned := OwnedCoreProgressionFieldMoves(romData, &mem)
+	if len(owned) != 0 {
+		t.Fatalf("owned core field moves = %v, want none: Surf has no carrier to retain", owned)
+	}
+}
+
+// TestOwnedCoreFieldMovesDropUnretainable is the regression for farm failure
+// 3fc4561dd79adb1d (run-jxh8lk19wv6on, issue 1620): a save owns every badge
+// and HM, but on a randomized compatibility table no party member can learn
+// Surf or Strength. Requiring them in the retention set made
+// chooseDepositSlotForIncoming reject every roster change, so the Fly
+// carrier catch for fly_ready reported no recovery. Only moves the party can
+// actually retain may be retained.
+func TestOwnedCoreFieldMovesDropUnretainable(t *testing.T) {
+	romData := fakeCoreFieldROM(t)
+	cut, _ := FieldMoveSpecFor(FieldCut)
+	surf, _ := FieldMoveSpecFor(FieldSurf)
+	strength, _ := FieldMoveSpecFor(FieldStrength)
+
+	// One Cut carrier plus two fillers with no HM compatibility.
+	allowTMHM(t, romData, 0x21, 1, cut.HMItem)
+
+	var mem state.Mem
+	mem[sym.ObtainedBadges] = (1 << uint8(cut.Badge)) | (1 << uint8(surf.Badge)) | (1 << uint8(strength.Badge))
+	mem[sym.NumBagItems] = 3
+	mem[sym.BagItems] = cut.HMItem
+	mem[sym.BagItems+1] = 1
+	mem[sym.BagItems+2] = surf.HMItem
+	mem[sym.BagItems+3] = 1
+	mem[sym.BagItems+4] = strength.HMItem
+	mem[sym.BagItems+5] = 1
+	mem[sym.PartyCount] = 3
+	mem[sym.PartySpecies] = 0x21
+	mem[sym.PartySpecies+1] = 0x10
+	mem[sym.PartySpecies+2] = 0x11
+	mem[sym.PartyMon1+sym.MonSpecies] = 0x21
+	mem[sym.PartyMon1+sym.MonMoves] = cut.MoveID
+	mem[sym.PartyMon1+sym.PartyMonSize+sym.MonSpecies] = 0x10
+	mem[sym.PartyMon1+2*sym.PartyMonSize+sym.MonSpecies] = 0x11
+
+	owned := OwnedCoreProgressionFieldMoves(romData, &mem)
+	if len(owned) != 1 || owned[0] != FieldCut {
+		t.Fatalf("owned core field moves = %v, want [CUT]: unretainable Surf/Strength must drop out", owned)
 	}
 }
 

@@ -562,7 +562,7 @@ func EnsurePartySlot(m *emu.Emu, romData []byte, policy MovePolicy, incoming uin
 	}
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	slot, err := planPartySlot(romData, state.DecodeParty(&mem), state.DecodeBox(&mem), state.Mon{Species: incoming}, OwnedCoreProgressionFieldMoves(&mem))
+	slot, err := planPartySlot(romData, state.DecodeParty(&mem), state.DecodeBox(&mem), state.Mon{Species: incoming}, OwnedCoreProgressionFieldMoves(romData, &mem))
 	if err != nil {
 		return err
 	}
