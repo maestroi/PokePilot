@@ -320,7 +320,6 @@ func TrainWithOptions(m *emu.Emu, romData []byte, targetLevel int, policy MovePo
 	}
 }
 
-
 func trainingCarryReady(mem *state.Mem, minLevel uint8) bool {
 	party := state.DecodeParty(mem)
 	for slot, mon := range party.Mons {
@@ -398,7 +397,6 @@ func travelTrainingLeg(m *emu.Emu, romData []byte, dest Destination, policy Move
 	res.EmergencyEgresses = append(res.EmergencyEgresses, egresses...)
 	return res, err
 }
-
 
 // PromoteToLead moves party member index (1..Count-1) into slot 0 through
 // the in-game party swap: START -> PKMN -> select the current lead ->
