@@ -291,6 +291,9 @@ func executeObservedBoulderPush(m *emu.Emu, spec BoulderPuzzleSpec, policy MoveP
 	}
 
 	if err := Face(m, uint8(push.From.X), uint8(push.From.Y)); err != nil {
+		if errors.Is(err, ErrBattle) {
+			return false, nil // the solver loop resolves the battle, then re-plans
+		}
 		return false, fmt.Errorf("skill: boulder puzzle face slot %d at (%d,%d): %w", push.MovableID, push.From.X, push.From.Y, err)
 	}
 	state.Snapshot(m, &before)
@@ -466,6 +469,14 @@ func SolveBoulderPuzzle(m *emu.Emu, romData []byte, policy MovePolicy, spec Boul
 
 	result := BoulderPuzzleResult{}
 	for result.Pushes < pushLimit && result.Replans < replanLimit {
+		// A wild encounter can roll on any step: walking to a stand, the
+		// push itself, or just before Face. Every push path returns to this
+		// loop, so resolve a live battle here before observing the puzzle.
+		if m.Peek8(sym.IsInBattle) != 0 {
+			if err := resolveBoulderWalkInterruption(m, policy, ErrBattleInterrupted); err != nil {
+				return result, err
+			}
+		}
 		puzzle, mem, err := currentBoulderPuzzle(m, romData, spec)
 		if err != nil {
 			return result, err
