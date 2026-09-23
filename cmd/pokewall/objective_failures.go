@@ -220,7 +220,8 @@ func (w *Wall) reportObjectiveFailure(dump farm.FinishReport, f farm.ObjectiveFa
 		// new family key so deployment does not create one transitional duplicate.
 		if exactPrior := w.issueLinks[occurrenceKey]; exactPrior.IssueID != "" {
 			prior = exactPrior
-			w.issueLinks[key] = exactPrior
+			prior.Fingerprint = fp
+			w.issueLinks[key] = prior
 		}
 	}
 	w.mu.Unlock()
