@@ -44,12 +44,15 @@ type mansionSwitchSpec struct {
 }
 
 var (
-	mansion1FSwitch    = mansionSwitchSpec{Map: pokemonMansion1FMap, TargetX: 5, TargetY: 2, StandX: 5, StandY: 3}
-	mansion2FSwitch    = mansionSwitchSpec{Map: pokemonMansion2FMap, TargetX: 11, TargetY: 2, StandX: 11, StandY: 3}
-	mansion3FSwitch    = mansionSwitchSpec{Map: pokemonMansion3FMap, TargetX: 5, TargetY: 10, StandX: 5, StandY: 11}
+	// Statue tiles are pokered's hidden_events, whose macro takes x first but
+	// stores the bytes y,x; #190 read them in stored order and every switch
+	// target landed on open floor (#1647).
+	mansion1FSwitch    = mansionSwitchSpec{Map: pokemonMansion1FMap, TargetX: 2, TargetY: 5, StandX: 2, StandY: 6}
+	mansion2FSwitch    = mansionSwitchSpec{Map: pokemonMansion2FMap, TargetX: 2, TargetY: 11, StandX: 2, StandY: 12}
+	mansion3FSwitch    = mansionSwitchSpec{Map: pokemonMansion3FMap, TargetX: 10, TargetY: 5, StandX: 10, StandY: 6}
 	mansionB1FSwitches = []mansionSwitchSpec{
-		{Map: pokemonMansionB1FMap, TargetX: 3, TargetY: 20, StandX: 3, StandY: 21},
-		{Map: pokemonMansionB1FMap, TargetX: 25, TargetY: 18, StandX: 25, StandY: 19},
+		{Map: pokemonMansionB1FMap, TargetX: 20, TargetY: 3, StandX: 20, StandY: 4},
+		{Map: pokemonMansionB1FMap, TargetX: 18, TargetY: 25, StandX: 18, StandY: 26},
 	}
 	cinnabarToMansionWarp = world.Edge{Kind: world.EdgeWarp, From: cinnabarIslandMap, To: pokemonMansion1FMap, WarpX: 6, WarpY: 3}
 	mansion1FTo2FWarp     = world.Edge{Kind: world.EdgeWarp, From: pokemonMansion1FMap, To: pokemonMansion2FMap, WarpX: 5, WarpY: 10}
@@ -280,8 +283,14 @@ func ensureMansionWarpReachable(m *emu.Emu, romData []byte, edge world.Edge, sw 
 	if m.Peek8(sym.CurMap) != sw.Map {
 		return fmt.Errorf("switch for map %#04x requested while on %#04x", sw.Map, m.Peek8(sym.CurMap))
 	}
-	if !mansionTileReachable(m, romData, sw.StandX, sw.StandY) {
-		return fmt.Errorf("neither warp (%d,%d) nor switch stand (%d,%d) is reachable on map %#04x", edge.WarpX, edge.WarpY, sw.StandX, sw.StandY, sw.Map)
+	// The 3F fall lands in a 1F pocket that reaches neither the B1F stairs
+	// nor the statue (#1647); only the statue's region decides whether the
+	// warp needs the switch at all.
+	if err := reachMansionSwitchRegion(m, romData, sw, policy); err != nil {
+		return fmt.Errorf("neither warp (%d,%d) nor %w", edge.WarpX, edge.WarpY, err)
+	}
+	if goalReachable() {
+		return nil
 	}
 
 	want := !currentMansionSwitchOn(m)
@@ -310,6 +319,21 @@ func ensureMansionWarpReachable(m *emu.Emu, romData []byte, edge world.Edge, sw 
 	}
 	if !goalReachable() {
 		return fmt.Errorf("warp (%d,%d) remains unreachable after verified Mansion switch action", edge.WarpX, edge.WarpY)
+	}
+	return nil
+}
+
+// reachMansionSwitchRegion walks to sw's stand when it is not reachable on
+// the current floor. Mansion floors are split into pockets joined only
+// through other floors, so single-map reachability is not a failure; Travel
+// crosses floors and ends on the stand or reports why it cannot.
+func reachMansionSwitchRegion(m *emu.Emu, romData []byte, sw mansionSwitchSpec, policy MovePolicy) error {
+	if mansionTileReachable(m, romData, sw.StandX, sw.StandY) {
+		return nil
+	}
+	stand := Destination{Map: sw.Map, X: sw.StandX, Y: sw.StandY}
+	if _, err := TravelFlee(m, romData, stand, policy, mansionTravelBattles); err != nil {
+		return fmt.Errorf("switch stand %02x(%d,%d) is reachable: %w", sw.Map, sw.StandX, sw.StandY, err)
 	}
 	return nil
 }
@@ -357,9 +381,14 @@ func dropMansion3FTo1FOnce(m *emu.Emu, romData []byte, policy MovePolicy) error 
 	}
 	hx, hy, ok := findHole()
 	if !ok {
-		if !mansionTileReachable(m, romData, mansion3FSwitch.StandX, mansion3FSwitch.StandY) {
-			return fmt.Errorf("no 1F drop hole or 3F switch stand is reachable")
+		// The 2F (7,10) stairs land in a sealed 3F pocket; the holes and the
+		// switch share the region behind 2F's other stairs (#1647).
+		if err := reachMansionSwitchRegion(m, romData, mansion3FSwitch, policy); err != nil {
+			return err
 		}
+		hx, hy, ok = findHole()
+	}
+	if !ok {
 		if err := setMansionSwitch(m, romData, mansion3FSwitch, !currentMansionSwitchOn(m), policy); err != nil {
 			return err
 		}
@@ -407,10 +436,17 @@ func dropMansion3FTo1FOnce(m *emu.Emu, romData []byte, policy MovePolicy) error 
 	if m.Peek8(sym.CurMap) != pokemonMansion1FMap {
 		return fmt.Errorf("Mansion drop at (%d,%d) landed on map %#04x, want 1F", hx, hy, m.Peek8(sym.CurMap))
 	}
+	landing, err := rom.ParseMap(romData, pokemonMansion1FMap)
+	if err != nil {
+		return fmt.Errorf("parse Mansion 1F header: %w", err)
+	}
+	// wCurMap flips before the 1F blocks load, while input still looks free;
+	// routing then reads 3F geometry under the 1F id (#1647).
 	var mem state.Mem
 	if _, err := m.StepUntil(mansionDropBudget, func(e *emu.Emu) bool {
 		state.Snapshot(e, &mem)
-		return state.Controllable(&mem)
+		_, loadErr := liveMapBlocks(e, landing)
+		return loadErr == nil && state.Controllable(&mem)
 	}); err != nil {
 		return fmt.Errorf("Mansion 1F landing did not return control")
 	}
