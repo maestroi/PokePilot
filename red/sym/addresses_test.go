@@ -54,6 +54,8 @@ func TestAddressesMatchSymbolFile(t *testing.T) {
 		{"wCurMapTileset", CurMapTileset},
 		{"wCurMapHeight", CurMapHeight},
 		{"wCurMapWidth", CurMapWidth},
+		{"wCurMapScriptPtr", CurMapScriptPtr},
+		{"wCurrentMapScriptFlags", CurrentMapScriptFlags},
 		{"wWalkBikeSurfState", WalkBikeSurfState},
 		{"wPlayerMovingDirection", PlayerMovingDirection},
 		{"wPlayerDirection", PlayerDirection},

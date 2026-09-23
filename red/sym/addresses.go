@@ -15,6 +15,8 @@ const (
 	CurMapTileset           uint16 = 0xD367
 	CurMapHeight            uint16 = 0xD368
 	CurMapWidth             uint16 = 0xD369
+	CurrentMapScriptFlags   uint16 = 0xD126 // wCurrentMapScriptFlags: EnterMap sets bit 5 (BIT_CUR_MAP_LOADED_1); scripts that care clear it on their first run
+	CurMapScriptPtr         uint16 = 0xD36E // wCurMapScriptPtr: written by LoadMapHeader, so it names the map whose header is actually loaded
 	WalkBikeSurfState       uint16 = 0xD700 // wWalkBikeSurfState: 0 walking, 1 biking, 2 surfing
 	TownVisitedFlag         uint16 = 0xD70B // wTownVisitedFlag: Fly-unlocked city bits
 	PlayerMovingDirection   uint16 = 0xD528
