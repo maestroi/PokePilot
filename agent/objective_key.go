@@ -103,6 +103,7 @@ const (
 	failureModeGymLoss         = "gym_loss"
 	failureModeGymRetry        = "gym_retry"
 	failureModeTrainerLoss     = "trainer_loss"
+	failureModeCombatLoss      = "combat_loss"
 	failureModeMachineUnusable = "machine_unusable"
 )
 
@@ -117,7 +118,7 @@ func parseFailureStorageKey(id string) (ObjectiveKey, string, bool) {
 	if key, ok := parseObjectiveKeyID(id); ok {
 		return key, "", true
 	}
-	for _, mode := range []string{failureModeGymLoss, failureModeGymRetry, failureModeTrainerLoss, failureModeMachineUnusable} {
+	for _, mode := range []string{failureModeGymLoss, failureModeGymRetry, failureModeTrainerLoss, failureModeCombatLoss, failureModeMachineUnusable} {
 		prefix := mode + ":"
 		if strings.HasPrefix(id, prefix) {
 			key, ok := parseObjectiveKeyID(strings.TrimPrefix(id, prefix))
