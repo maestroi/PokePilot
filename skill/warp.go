@@ -629,6 +629,14 @@ func edgeWarpCandidates(h rom.MapHeader, e world.Edge, romData []byte) []rom.War
 			if !haveLastMap || lastMapDest != e.To {
 				continue
 			}
+			// LAST_MAP is resolved at runtime, so a shared DestWarpID does not
+			// make two LAST_MAP warps the same exit: Route 22 Gate's south door
+			// (4,7) and north exit (4,0) are both "LAST_MAP, 1", and its script
+			// picks Route 22 or Route 23 from wYCoord. Only the edge tile itself
+			// and its adjacent door-pair partner lead where the edge does.
+			if absInt(int(w.X)-int(e.WarpX))+absInt(int(w.Y)-int(e.WarpY)) > 1 {
+				continue
+			}
 			dest = e.To
 		}
 		if dest == e.To {
