@@ -49,7 +49,14 @@ func TestDismissableListMenuIsRoutedToCancelNotYesNoDecline(t *testing.T) {
 	mem[sym.ListMenuID] = 4      // SPECIALLISTMENU
 	mem[sym.TopMenuItemY] = 8
 	mem[sym.TopMenuItemX] = 12
-	mem[sym.TileMap+8*20+12] = 0xED // cursor glyph PlaceMenuCursor draws
+	// The cursor is read from wMenuCursorLocation, so record where the glyph
+	// was drawn the way PlaceMenuCursor does; the top-item coordinates alone
+	// are only the first entry's position.
+	offset := uint16(8*20 + 12)
+	mem[sym.TileMap+offset] = 0xED // cursor glyph PlaceMenuCursor draws
+	cursor := sym.TileMap + offset
+	mem[sym.MenuCursorLocation] = byte(cursor)
+	mem[sym.MenuCursorLocation+1] = byte(cursor >> 8)
 
 	interaction := state.DecodeInteraction(&mem)
 	if interaction.Kind != state.InteractionListMenu {

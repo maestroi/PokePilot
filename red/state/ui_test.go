@@ -75,3 +75,70 @@ func TestControllable(t *testing.T) {
 		t.Errorf("Controllable = true, want false while a dungeon warp is pending")
 	}
 }
+
+// startMenuFixture is the START menu shape measured from run-jxh8lk19wv6on
+// (triage:067dd95f2f04909a) after a Water Stone evolved EEVEE on Celadon Mart
+// 4F: a double-spaced 7-item menu with ITEM selected.
+//
+//	wMenuCursorLocation = 0xC423 -> wTileMap offset 131 = (11,6)
+//	wCurrentMenuItem    = 2 (POKeDEX, POKeMON, ITEM)
+//	wMaxMenuItem        = 7
+//	wTopMenuItemY       = 2   (the FIRST item, not the selected one)
+//	wTopMenuItemX       = 11
+//
+// The cursor is four rows below wTopMenuItemY because DrawStartMenu sets
+// BIT_DOUBLE_SPACED_MENU: PlaceMenuCursor advances two rows per selected item.
+func startMenuFixture(cursorTile byte) *Mem {
+	m := &Mem{}
+	m[sym.FontLoaded] = 1
+	m[sym.MaxMenuItem] = 7
+	m[sym.CurrentMenuItem] = 2
+	m[sym.TopMenuItemY] = 2
+	m[sym.TopMenuItemX] = 11
+	m[sym.MenuWatchedKeys] = 0xCB
+	const offset = 6*20 + 11
+	cursor := sym.TileMap + offset
+	m[sym.MenuCursorLocation] = byte(cursor)
+	m[sym.MenuCursorLocation+1] = byte(cursor >> 8)
+	m[sym.TileMap+offset] = cursorTile
+	return m
+}
+
+// TestMenuUpReadsMenuCursorLocation is the regression for the stone-use
+// deadlock. MenuUp used to read wTopMenuItemX/wTopMenuItemY, which are only the
+// FIRST item's coordinates, so a live START menu whose cursor sits on ITEM
+// reported "no menu". UseEvolutionItem then could not see the leftover menu it
+// had to dismiss, every stone use left that menu open, and the objective died
+// on objective_boundary_dirty 318 times in a row on run-jxh8lk19wv6on.
+func TestMenuUpReadsMenuCursorLocation(t *testing.T) {
+	if !MenuUp(startMenuFixture(menuCursorTile)) {
+		t.Fatal("live START menu with the cursor on ITEM read as no menu")
+	}
+	// A menu that just took a selection shows the unfilled cursor.
+	if !MenuUp(startMenuFixture(menuCursorSelectedTile)) {
+		t.Fatal("live START menu showing the unfilled cursor read as no menu")
+	}
+	// The first item's coordinates must not be what decides this: the same
+	// bytes with the glyph only under wTopMenuItem=(2,11) are a stale menu.
+	stale := startMenuFixture(menuCursorTile)
+	staleCursor := sym.TileMap + 11*20 + 11
+	stale[sym.MenuCursorLocation] = byte(staleCursor)
+	stale[sym.MenuCursorLocation+1] = byte(staleCursor >> 8)
+	stale[sym.TileMap+6*20+11] = 0x7F // box border, as measured
+	if MenuUp(stale) {
+		t.Fatal("cursor bytes pointing at a non-cursor tile decoded as a live menu")
+	}
+}
+
+// TestMenuUpRejectsCursorOutsideTilemap guards the address arithmetic: a stale
+// or nonsense wMenuCursorLocation must fail closed rather than index elsewhere.
+func TestMenuUpRejectsCursorOutsideTilemap(t *testing.T) {
+	for _, cursor := range []uint16{0x0000, 0xC000, sym.TileMap + sym.TileMapLen} {
+		m := startMenuFixture(menuCursorTile)
+		m[sym.MenuCursorLocation] = byte(cursor)
+		m[sym.MenuCursorLocation+1] = byte(cursor >> 8)
+		if MenuUp(m) {
+			t.Fatalf("wMenuCursorLocation %#06x outside wTileMap decoded as a live menu", cursor)
+		}
+	}
+}
