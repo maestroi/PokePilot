@@ -1,10 +1,11 @@
 package agent
 
 import (
-	"strings"
+	"errors"
 	"testing"
 
 	"github.com/maestroi/pokepilot/red/state"
+	"github.com/maestroi/pokepilot/skill"
 )
 
 // TestGymOutcomeErr pins the KindGym branch's classification — the whole of
@@ -28,7 +29,8 @@ func TestGymOutcomeErr(t *testing.T) {
 	if err == nil {
 		t.Fatalf("gymOutcomeErr(ResultLost) = nil, want an error (a loss is the objective NOT having done what it said)")
 	}
-	if !strings.Contains(err.Error(), "lost to the gym leader") {
-		t.Fatalf("error = %v, want it to name the loss", err)
+	var required *skill.RequiredBattleError
+	if !errors.As(err, &required) || required.Outcome.Result != state.ResultLost || !required.Outcome.Trainer {
+		t.Fatalf("error = %v, want structured trainer loss", err)
 	}
 }
