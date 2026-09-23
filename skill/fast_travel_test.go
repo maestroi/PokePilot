@@ -288,7 +288,6 @@ func TestCyclingRoadExplicitInputSuppressesAutoDown(t *testing.T) {
 	}
 }
 
-
 func TestVisitedIndigoPlateauIsLegalFlyDestination(t *testing.T) {
 	mem := controllableFastTravelMem()
 	mem[sym.CurMap] = 0x01
