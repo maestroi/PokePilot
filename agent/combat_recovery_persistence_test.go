@@ -18,7 +18,7 @@ func assertNoLegacyCombatWriterModes(t *testing.T, known *Knowledge) {
 			continue
 		}
 		switch mode {
-		case failureModeTrainerLoss, failureModeGymLoss, failureModeGymRetry:
+		case legacyFailureModeTrainerLoss, legacyFailureModeGymLoss, legacyFailureModeGymRetry:
 			t.Fatalf("new recovery state wrote legacy mode %q: %s", mode, storage)
 		}
 	}
@@ -107,8 +107,8 @@ func TestLegacyCombatModesRemainReadableAndMigrateToGenericRetry(t *testing.T) {
 	route := Objective{Kind: KindGoTo, Place: "route 3"}
 	gym := Objective{Kind: KindGym, Place: "pewter gym"}
 
-	known.Failures[trainerLossFailureKey(route)] = Failure{Objective: route.String(), Times: 2, Last: "legacy trainer loss"}
-	known.Failures[gymLossFailureKey(string(gym.Place))] = Failure{Objective: gym.String(), Times: 3, Last: "legacy gym loss"}
+	known.Failures[legacyTrainerLossStorageKey(route)] = Failure{Objective: route.String(), Times: 2, Last: "legacy trainer loss"}
+	known.Failures[legacyGymLossStorageKey(string(gym.Place))] = Failure{Objective: gym.String(), Times: 3, Last: "legacy gym loss"}
 
 	if !combatLossRecorded(known, route) || !combatLossRecorded(known, gym) {
 		t.Fatalf("legacy combat modes were not readable: %+v", known.Failures)
