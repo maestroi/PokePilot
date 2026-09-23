@@ -371,6 +371,12 @@ func (k *Knowledge) Done(o Objective) {
 	delete(k.Failures, combatLossFailureKey(o))
 	delete(k.Failures, combatRetryReadyKey(o))
 	clearLegacyCombatRecovery(k, o)
+	if o.Kind == KindTrain {
+		// Pre-readiness checkpoints/direct callers have no quantitative target.
+		// Preserve their historical "one completed training rung unlocks retry"
+		// behavior without weakening new structured preparation campaigns.
+		k.promoteCombatLossesToRetryWhere(func(f Failure) bool { return f.ReadinessTarget == 0 })
+	}
 }
 
 func (k *Knowledge) TalkedAt(location LocationID, x, y uint8) {
