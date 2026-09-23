@@ -35,7 +35,6 @@ func TestBattleBlackoutErrorDistinguishesTrainerFromWild(t *testing.T) {
 	}
 }
 
-
 func TestRecordTravelBattleDefeatPreservesSemanticKind(t *testing.T) {
 	trainerResult := TravelResult{}
 	trainerErr := recordTravelBattleDefeat(&trainerResult, battleResolution{outcome: state.ResultLost, trainer: true})
