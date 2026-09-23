@@ -117,9 +117,6 @@ func OfferWithEvidence(obs Observation, known *Knowledge) ObjectiveOffer {
 	if known == nil {
 		known = NewKnowledge(nil)
 	}
-	if trainingUnviableHere(obs) {
-		known.releaseCombatLossGates()
-	}
 	ctx := newObjectiveOfferContext(obs, known)
 
 	// A catalog that offers starters while the party is empty owns the game's
