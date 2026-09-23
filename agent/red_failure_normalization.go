@@ -176,6 +176,9 @@ func failureCauseFor(err error) (FailureCauseID, []string) {
 	if errors.Is(err, skill.ErrFieldItemPrompt) {
 		return "field_item_prompt", nil
 	}
+	if errors.Is(err, skill.ErrPickupApproachIncomplete) {
+		return "pickup_approach_incomplete", nil
+	}
 	if errors.Is(err, ErrObjectivePostconditionFailed) {
 		return "objective_postcondition_failed", nil
 	}

@@ -52,6 +52,11 @@ func TestNormalizeRedFailureRepresentativeClasses(t *testing.T) {
 			class: gameruntime.FailureClassPostconditionFailed, cause: "objective_postcondition_failed", recoverable: true,
 		},
 		{
+			name: "pickup approach did not reach the item", phase: gameruntime.FailurePhaseExecution,
+			err: fmt.Errorf("pickup: %w", skill.ErrPickupApproachIncomplete), final: stable,
+			class: gameruntime.FailureClassUnknown, cause: "pickup_approach_incomplete", recoverable: false,
+		},
+		{
 			name: "observation phase always uncertain", phase: gameruntime.FailurePhaseFinalObservation,
 			err: skill.ErrNavigationStalled, final: stable,
 			class: gameruntime.FailureClassControllerUncertain, cause: "navigation_stalled", recoverable: false,
