@@ -140,7 +140,30 @@ func redProgressionObjectives(obs Observation) []Objective {
 			Note:     "(go to Vermilion, board the S.S. Anne with the ticket, defeat the scripted rival on 2F, and receive HM01 Cut from the Captain)",
 		})
 	}
-	if obs.Story.Has(redProgressHM01Acquired) && redCutFieldUnlocked(obs) && !hasBadge(obs, state.BadgeThunder) {
+	// Celadon's only west/south exits to Vermilion run through Saffron City,
+	// and Saffron's four guardhouses are shut until a guard accepts a drink
+	// (BIT_GAVE_SAFFRON_GUARDS_DRINK). The drink itself is an ordinary
+	// ¥200 Celadon-roof vending purchase that needs no badge, HM, or story
+	// fact, so this prerequisite must be offered BEFORE the Thunder Badge it
+	// unblocks. It used to sit behind redProgressFuchsiaProgressionComplete,
+	// which is derived from the Soul Badge + Surf + Strength — and Surf is
+	// only reachable past the Thunder Badge via Rock Tunnel. Celadon, Route 8
+	// and Lavender are in between, so a run that had already crossed into
+	// Celadon with two badges could never route back to Vermilion: every
+	// "return to Vermilion" attempt died on
+	// transition "red:saffron_guard_drink" missing can_enter_saffron while
+	// the only action that satisfies it stayed unoffered
+	// (run-jxh8lk19wv6on, run-1biaubd9xooqm). Serve the small always-available
+	// prerequisite first; Fuchsia keeps its own later ordering below.
+	if obs.Story.Has(redProgressHM01Acquired) && !obs.Story.Has(ProgressSaffronGateOpen) {
+		out = append(out, Objective{
+			Kind:     KindProgress,
+			Progress: ProgressSaffronGateOpen,
+			Note:     "(reopen Saffron's guardhouses with a drink: buy Fresh Water from the Celadon roof vending machine and walk into the Route 7 gate guard trigger; this is the only route between Celadon and Vermilion)",
+		})
+	}
+	if obs.Story.Has(redProgressHM01Acquired) && redCutFieldUnlocked(obs) &&
+		obs.Story.Has(ProgressSaffronGateOpen) && !hasBadge(obs, state.BadgeThunder) {
 		out = append(out, Objective{
 			Kind:     KindProgress,
 			Progress: redProgressThunderBadge,
@@ -228,14 +251,6 @@ func redProgressionObjectives(obs Observation) []Objective {
 			Kind:     KindProgress,
 			Progress: redProgressFuchsiaProgressionComplete,
 			Note:     "(use the Poke Flute on Route 12, reach Fuchsia, earn Soul Badge, then acquire Surf + Strength in the Safari/Warden story)",
-		})
-	}
-	if obs.Story.Has(redProgressFuchsiaProgressionComplete) &&
-		!obs.Story.Has(ProgressSaffronGateOpen) {
-		out = append(out, Objective{
-			Kind:     KindProgress,
-			Progress: ProgressSaffronGateOpen,
-			Note:     "(open Saffron access; reuse a guard drink or buy Fresh Water from the Celadon roof vending machine and give it to the Route 7 guard)",
 		})
 	}
 	if obs.Story.Has(redProgressFuchsiaProgressionComplete) &&

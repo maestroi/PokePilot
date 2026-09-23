@@ -11,6 +11,10 @@ func TestRedProgressionKeepsThunderBadgeAheadOfLaterStory(t *testing.T) {
 		Map: route12Map,
 		Story: ProgressState{
 			{ID: redProgressHM01Acquired, Complete: true},
+			// The guardhouses are already open: this observation is past the
+			// drink prerequisite, so the Thunder Badge objective below is the
+			// next real step rather than a route the run cannot drive.
+			{ID: ProgressSaffronGateOpen, Complete: true},
 		},
 		FieldCapabilities: []FieldCapability{{
 			Name:       "cut",
@@ -26,6 +30,15 @@ func TestRedProgressionKeepsThunderBadgeAheadOfLaterStory(t *testing.T) {
 		if hasProgressObjective(got, later) {
 			t.Fatalf("later progression %q was offered before Thunder Badge", later)
 		}
+	}
+
+	// With the guardhouses still shut, the same observation must reach for the
+	// drink instead: Saffron is the only corridor back to Vermilion, so the
+	// Thunder Badge step is not yet drivable.
+	shut := obs
+	shut.Story = ProgressState{{ID: redProgressHM01Acquired, Complete: true}}
+	if !hasProgressObjective(redProgressionObjectives(shut), ProgressSaffronGateOpen) {
+		t.Fatal("closed Saffron gate did not preempt the Thunder Badge objective")
 	}
 }
 

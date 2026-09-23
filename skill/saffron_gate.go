@@ -39,12 +39,6 @@ func SaffronGateOpen(mem *state.Mem) bool {
 	return state.DecodeStoryFacts(mem, state.DecodeInventory(mem)).SaffronGateOpen
 }
 
-// SaffronGateReady keeps the issue #34 handoff explicit: this phase is offered
-// only after issue #33's Soul Badge + Surf + Strength postcondition exists.
-func SaffronGateReady(mem *state.Mem) bool {
-	return state.DecodeStoryFacts(mem, state.DecodeInventory(mem)).FuchsiaProgressionComplete
-}
-
 // guardDrinkInBag reports whether Red's RemoveGuardDrink routine can consume
 // one of the player's current bag entries. The order mirrors GuardDrinksList,
 // but the particular drink does not matter to the gate postcondition.
@@ -61,6 +55,15 @@ func guardDrinkInBag(mem *state.Mem) (uint8, bool) {
 // Route 7 guard. It is resumable at every durable boundary: if a checkpoint is
 // taken after buying the drink, the next invocation reuses it; if the global
 // Saffron guard flag is already set, it returns without moving.
+//
+// The drink is the whole prerequisite: a ¥200 FRESH WATER from Celadon's roof
+// vending machine, purchasable with no badge, HM, or story fact. Do not add a
+// story-readiness gate here. Saffron is the only corridor between Celadon and
+// Vermilion, so gating this on a later milestone (it once required the Soul
+// Badge, Surf and Strength) makes the Thunder Badge in Vermilion unreachable
+// and deadlocks every run that crossed into Celadon with two badges
+// (run-jxh8lk19wv6on, run-1biaubd9xooqm). Calls from the wrong side of Kanto
+// fail on the travel leg below, which is the honest prerequisite.
 func OpenSaffronGate(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if policy == nil {
 		return fmt.Errorf("skill: OpenSaffronGate: nil policy")
@@ -70,9 +73,6 @@ func OpenSaffronGate(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	state.Snapshot(m, &mem)
 	if SaffronGateOpen(&mem) {
 		return nil
-	}
-	if !SaffronGateReady(&mem) {
-		return fmt.Errorf("skill: OpenSaffronGate: Fuchsia progression (#33) is incomplete")
 	}
 
 	if _, ok := guardDrinkInBag(&mem); !ok {
