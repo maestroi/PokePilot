@@ -28,6 +28,19 @@ const (
 	TrainingOutsideBudget TrainingViability = "outside_budget"
 )
 
+// TrainingMethod distinguishes ordinary grinding from deliberate switch
+// training. In switch training the target starts every wild battle so Red
+// marks it as a participant, then a healthy stronger party member is sent in
+// to finish the fight. Gen 1 splits battle XP across participants, so estimates
+// must account for that cost instead of pretending the weak target receives
+// the full reward.
+type TrainingMethod string
+
+const (
+	TrainingDirect TrainingMethod = "direct"
+	TrainingSwitch TrainingMethod = "switch"
+)
+
 // TrainingEstimate explains whether the current grass can plausibly deliver a
 // concrete level target within one bounded Train session.
 type TrainingEstimate struct {
@@ -38,23 +51,34 @@ type TrainingEstimate struct {
 	EstimatedEncounters int               `json:"estimated_encounters"`
 	SessionBudget       int               `json:"session_budget"`
 	Viability           TrainingViability `json:"viability"`
+	Method              TrainingMethod    `json:"method,omitempty"`
+	WildMaxLevel        uint8             `json:"wild_max_level,omitempty"`
+	CarryLevel          uint8             `json:"carry_level,omitempty"`
+	MinCarryLevel       uint8             `json:"min_carry_level,omitempty"`
 }
 
 // Diagnostic is deliberately compact enough for objective notes/history while
 // retaining the quantitative reason behind the class.
 func (e TrainingEstimate) Diagnostic() string {
+	method := ""
+	if e.Method == TrainingSwitch {
+		method = fmt.Sprintf("; switch training via L%d carry against wilds up to L%d (shared XP)", e.CarryLevel, e.WildMaxLevel)
+	}
 	switch e.Viability {
 	case TrainingSatisfied:
 		return fmt.Sprintf("training target L%d already satisfied", e.TargetLevel)
 	case TrainingOutsideBudget:
 		if e.XPPerEncounter == 0 {
+			if e.WildMaxLevel > 0 && e.Method == TrainingDirect && e.MinCarryLevel > 0 {
+				return fmt.Sprintf("training unsafe here: wilds reach L%d and no healthy carry meets L%d; budget %d battles", e.WildMaxLevel, e.MinCarryLevel, e.SessionBudget)
+			}
 			return fmt.Sprintf("training outside current session budget: no usable wild XP estimate; budget %d battles", e.SessionBudget)
 		}
-		return fmt.Sprintf("training outside current session budget: ~%d encounters for %d XP at ~%d XP/encounter; budget %d battles", e.EstimatedEncounters, e.XPRemaining, e.XPPerEncounter, e.SessionBudget)
+		return fmt.Sprintf("training outside current session budget: ~%d encounters for %d XP at ~%d XP/encounter; budget %d battles%s", e.EstimatedEncounters, e.XPRemaining, e.XPPerEncounter, e.SessionBudget, method)
 	case TrainingExpensive:
-		return fmt.Sprintf("training expensive: ~%d/%d encounters for %d XP at ~%d XP/encounter", e.EstimatedEncounters, e.SessionBudget, e.XPRemaining, e.XPPerEncounter)
+		return fmt.Sprintf("training expensive: ~%d/%d encounters for %d XP at ~%d XP/encounter%s", e.EstimatedEncounters, e.SessionBudget, e.XPRemaining, e.XPPerEncounter, method)
 	default:
-		return fmt.Sprintf("training viable: ~%d/%d encounters for %d XP at ~%d XP/encounter", e.EstimatedEncounters, e.SessionBudget, e.XPRemaining, e.XPPerEncounter)
+		return fmt.Sprintf("training viable: ~%d/%d encounters for %d XP at ~%d XP/encounter%s", e.EstimatedEncounters, e.SessionBudget, e.XPRemaining, e.XPPerEncounter, method)
 	}
 }
 
@@ -77,20 +101,7 @@ func (e *TrainingInefficientError) Error() string {
 func (e *TrainingInefficientError) Unwrap() error { return ErrTrainingInefficient }
 
 func currentTrainingEstimate(mem *state.Mem, romData []byte, mapID uint8, targetLevel, budget int) (TrainingEstimate, error) {
-	party := state.DecodeParty(mem)
-	if len(party.Mons) == 0 {
-		return TrainingEstimate{}, fmt.Errorf("agent: training estimate requires a party lead")
-	}
-	currentXP, ok := state.PartyExperience(mem, 0)
-	if !ok {
-		return TrainingEstimate{}, fmt.Errorf("agent: training estimate could not read lead experience")
-	}
-	slots, err := skill.WildGrassSlots(romData, mapID)
-	if err != nil {
-		return TrainingEstimate{}, err
-	}
-	lead := party.Mons[0]
-	return estimateTraining(romData, lead.Species, currentXP, lead.Level, slots, targetLevel, budget)
+	return currentPartyTrainingEstimate(mem, romData, mapID, 0, targetLevel, budget)
 }
 
 func currentTrainingEstimateFromEmu(m *emu.Emu, romData []byte, mapID uint8, targetLevel, budget int) (TrainingEstimate, error) {
@@ -133,6 +144,7 @@ func estimateTraining(romData []byte, leadSpecies uint8, currentXP uint32, curre
 		CurrentLevel:  currentLevel,
 		TargetLevel:   uint8(targetLevel),
 		SessionBudget: budget,
+		Method:        TrainingDirect,
 	}
 	if targetLevel <= int(currentLevel) || currentXP >= targetXP {
 		estimate.Viability = TrainingSatisfied
@@ -195,4 +207,130 @@ func estimateTraining(romData []byte, leadSpecies uint8, currentXP uint32, curre
 		estimate.Viability = TrainingViable
 	}
 	return estimate, nil
+}
+
+
+const (
+	// A target more than three levels below the strongest local wild is treated
+	// as unsafe for direct grinding. The actual battle layer still evaluates
+	// type/move matchups turn by turn; this is only the coarse pre-battle gate
+	// that decides whether the weak mon should be protected by switch training.
+	directTrainingWildGap = 3
+	// A carry may trail the strongest local wild slightly because the battle
+	// switch policy also considers moves, HP and typing. Requiring it to be at
+	// least within two levels keeps "L12 target + L15 backup in Victory Road"
+	// from being mislabeled as safe switch training.
+	carryWildLevelSlack = 2
+)
+
+func strongestWildLevel(slots []skill.WildEncounterSlot) uint8 {
+	var max uint8
+	for _, slot := range slots {
+		if slot.Level > max {
+			max = slot.Level
+		}
+	}
+	return max
+}
+
+func minimumTrainingCarryLevel(targetLevel, wildMax uint8) uint8 {
+	min := uint8(1)
+	if wildMax > carryWildLevelSlack {
+		min = wildMax - carryWildLevelSlack
+	}
+	// The carry should also be materially ahead of the target; otherwise a
+	// second mediocre mon merely shares XP while adding another failure mode.
+	if targetLevel <= 95 && targetLevel+5 > min {
+		min = targetLevel + 5
+	}
+	return min
+}
+
+func bestTrainingCarry(party state.PartyState, targetSlot int, minLevel uint8) (int, uint8, bool) {
+	bestSlot := -1
+	var bestLevel uint8
+	for slot, mon := range party.Mons {
+		if slot == targetSlot || mon.Fainted() || mon.Level < minLevel || mon.StatusName() == "frozen" {
+			continue
+		}
+		if mon.MaxHP > 0 && mon.HP*2 < mon.MaxHP {
+			continue
+		}
+		usablePP := false
+		for _, pp := range mon.PP {
+			if pp > 0 {
+				usablePP = true
+				break
+			}
+		}
+		if !usablePP {
+			continue
+		}
+		if bestSlot < 0 || mon.Level > bestLevel {
+			bestSlot, bestLevel = slot, mon.Level
+		}
+	}
+	return bestSlot, bestLevel, bestSlot >= 0
+}
+
+func classifyTrainingEstimate(e *TrainingEstimate) {
+	if e == nil || e.Viability == TrainingSatisfied {
+		return
+	}
+	if e.XPPerEncounter == 0 {
+		e.Viability = TrainingOutsideBudget
+		e.EstimatedEncounters = 0
+		return
+	}
+	e.EstimatedEncounters = int((uint64(e.XPRemaining) + uint64(e.XPPerEncounter) - 1) / uint64(e.XPPerEncounter))
+	switch {
+	case e.EstimatedEncounters > e.SessionBudget:
+		e.Viability = TrainingOutsideBudget
+	case e.EstimatedEncounters*4 > e.SessionBudget*3:
+		e.Viability = TrainingExpensive
+	default:
+		e.Viability = TrainingViable
+	}
+}
+
+// applyPartyTrainingMethod converts a raw direct-XP estimate into the method
+// that is actually safe for this party in this encounter band. When direct
+// training is unsafe but a healthy carry exists, Gen 1 will split XP between
+// the target and carry, so the effective XP rate is halved and viability is
+// recomputed. If no carry can safely take over, the area is rejected rather
+// than letting a low-level target repeatedly black out.
+func applyPartyTrainingMethod(party state.PartyState, targetSlot int, slots []skill.WildEncounterSlot, estimate TrainingEstimate) TrainingEstimate {
+	wildMax := strongestWildLevel(slots)
+	estimate.WildMaxLevel = wildMax
+	if estimate.Viability == TrainingSatisfied || targetSlot < 0 || targetSlot >= len(party.Mons) || wildMax == 0 {
+		return estimate
+	}
+
+	target := party.Mons[targetSlot]
+	if int(wildMax) <= int(target.Level)+directTrainingWildGap {
+		return estimate
+	}
+
+	minCarry := minimumTrainingCarryLevel(target.Level, wildMax)
+	estimate.MinCarryLevel = minCarry
+	_, carryLevel, ok := bestTrainingCarry(party, targetSlot, minCarry)
+	if !ok {
+		// Preserve the fact that XP itself may be plentiful, but make the method
+		// non-executable in this area. Diagnostic() explains that safety, not XP,
+		// is the blocker.
+		estimate.Method = TrainingDirect
+		estimate.XPPerEncounter = 0
+		estimate.Viability = TrainingOutsideBudget
+		estimate.EstimatedEncounters = 0
+		return estimate
+	}
+
+	estimate.Method = TrainingSwitch
+	estimate.CarryLevel = carryLevel
+	// Two participating Pokémon split wild XP in Gen 1. Use the conservative
+	// half-rate here; occasional later tactical switches can only make this
+	// estimate safer, never overstate target XP.
+	estimate.XPPerEncounter /= 2
+	classifyTrainingEstimate(&estimate)
+	return estimate
 }
