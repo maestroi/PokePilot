@@ -158,6 +158,7 @@ The current catalog lives in `qualification/catalog.go`.
 | milestone | `cinnabar-blaine` | private checkpoint | runnable |
 | milestone | `viridian-giovanni` | private checkpoint | runnable |
 | milestone | `victory-road-indigo` | private checkpoint | runnable |
+| milestone | `elite-four-loss-recovery` | private losing Indigo checkpoint | runnable; required defeat -> blackout -> restart -> League recommit |
 | milestone | `elite-four-champion` | private checkpoint | runnable; save/reopen/load after every League stage |
 | full | `fresh-hall-of-fame` | fresh emulator boot | runnable; #39 closes only after a clean proof |
 
@@ -195,6 +196,8 @@ $POKEPILOT_QUALIFICATION_CORPUS/
     start.state
   victory-road-indigo/
     start.state
+  elite-four-loss-recovery/
+    start.state
   elite-four-champion/
     start.state
 ```
@@ -202,6 +205,15 @@ $POKEPILOT_QUALIFICATION_CORPUS/
 A landed checkpoint case fails if its `start.state` is absent. It does not downgrade missing replay evidence to a skip.
 
 For direct checkpoint cases, `pokequal` copies the exact input state into the run evidence, records its SHA-256, loads it through `emu.LoadState`, runs the Red-owned progression skill, and verifies a positive semantic postcondition through `agent.Observation`. A nil skill error alone is never qualification success.
+
+The `elite-four-loss-recovery` case starts from an intentionally underpowered
+Indigo-lobby checkpoint that deterministically loses to Lorelei with the normal
+battle policy. It requires a typed `RequiredBattleError` with encounter identity,
+verifies the real Indigo blackout without falsely committing Lorelei, restarts
+the emulator from that post-loss state, and proves the ordinary League traversal
+heals and recommits to Lorelei. Generic ROM-free agent tests cover the other half
+of the contract: that this typed loss normalizes to `combat_defeat` and only
+becomes retry-ready after material combat-readiness progress.
 
 The `elite-four-champion` Go-test case is intentionally stronger than a single
 in-process gauntlet. After League start, each Elite Four member, the Champion,
