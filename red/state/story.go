@@ -114,12 +114,21 @@ var route23BadgeCheckEvents = [...]Event{
 	eventPassedEarthBadgeCheck,
 }
 
+// MainStoryComplete reports the durable Hall-of-Fame completion bit. It is the
+// only Indigo fact that survives the ending's own event reset
+// (HallOfFameResetEventsAndSaveScript), so callers that need "this save has
+// actually finished the campaign" should read it here rather than re-deriving
+// the whole story projection.
+func MainStoryComplete(m *Mem) bool {
+	return m.U8(elite4FlagsAddr)&elite4CompletedMask != 0
+}
+
 // DecodeStoryFacts derives planner-facing progression semantics from Red's
 // authoritative RAM and decoded inventory. No run memory is involved, so the
 // same checkpoint always reconstructs the same facts after resume.
 func DecodeStoryFacts(m *Mem, inv InventoryState) StoryFacts {
 	progress := DecodeProgress(m)
-	mainStoryComplete := m.U8(elite4FlagsAddr)&elite4CompletedMask != 0
+	mainStoryComplete := MainStoryComplete(m)
 	facts := StoryFacts{
 		MtMoonFossilAcquired:   HasEvent(m, EventBeatMtMoonSuperNerd) && (HasEvent(m, EventGotDomeFossil) || HasEvent(m, EventGotHelixFossil)) && m.U8(sym.MtMoonB2FCurScript) == 0,
 		PokedexAcquired:        HasEvent(m, EventGotPokedex),

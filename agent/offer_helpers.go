@@ -22,15 +22,25 @@ func medReaches(mon PartyMon, wantStatus string) bool {
 	return mon.Status == wantStatus
 }
 
-func preferredRecoveryCenter(obs Observation, known *Knowledge, knownLocations map[LocationID]bool, catalog ObjectiveCatalog) (PlaceID, bool) {
+// preferredRecoveryCenters ranks the Centers a hurt party may heal at, most
+// preferred first. It returns a list rather than one name because the live
+// router can reject the best candidate: the cartridge's active blackout
+// checkpoint is the strongest preference, but it is not usable when the player
+// is standing behind a gate that the checkpoint sits on the far side of. The
+// caller takes the first candidate the router accepts.
+func preferredRecoveryCenters(obs Observation, known *Knowledge, knownLocations map[LocationID]bool, catalog ObjectiveCatalog) []PlaceID {
+	ranked := make([]PlaceID, 0, 2)
 	if obs.RecoveryCheckpoint != "" {
 		if destination, ok := catalog.destination(obs.RecoveryCheckpoint); ok && destination.Center {
 			// The cartridge's active blackout checkpoint is stronger evidence than
 			// planner visitation: the player necessarily activated this nurse.
-			return obs.RecoveryCheckpoint, true
+			ranked = append(ranked, obs.RecoveryCheckpoint)
 		}
 	}
-	return nearestKnownCenter(obs, known, knownLocations, catalog)
+	if name, ok := nearestKnownCenter(obs, known, knownLocations, catalog); ok && name != obs.RecoveryCheckpoint {
+		ranked = append(ranked, name)
+	}
+	return ranked
 }
 
 func nearestKnownCenter(obs Observation, known *Knowledge, knownLocations map[LocationID]bool, catalog ObjectiveCatalog) (PlaceID, bool) {
@@ -50,6 +60,21 @@ func nearestKnownCenter(obs Observation, known *Knowledge, knownLocations map[Lo
 		}
 	}
 	return best, best != ""
+}
+
+// firstRoutableRecoveryCenter returns the most preferred Center whose live
+// route is not positively rejected. Routability is a decision the generic Offer
+// already makes for journeys (route_blockage.go, travelObjectiveProvider); a
+// heal that names a destination is the same question and must not skip it.
+// Withholding is fail-open: an empty unroutable set means the router was never
+// consulted, so the first preference stands.
+func firstRoutableRecoveryCenter(candidates []PlaceID, unroutable map[string]bool) (PlaceID, bool) {
+	for _, candidate := range candidates {
+		if !unroutable[string(candidate)] {
+			return candidate, true
+		}
+	}
+	return "", false
 }
 
 func observedEvent(obs Observation, name string) bool {
