@@ -9,19 +9,22 @@ import (
 	"github.com/maestroi/pokepilot/red/sym"
 )
 
-// approachViaTravel walks to a walkable tile orthogonally adjacent to
-// (targetX, targetY) on the current map, fleeing wild battles that interrupt
-// the way. Trainer battles still fall back to Battle because they cannot be
-// fled. It is a no-op when the player is already adjacent.
+// ErrPickupApproachIncomplete means navigation returned without leaving the
+// player beside the item. Pickup must not interact from that position.
+var ErrPickupApproachIncomplete = errors.New("skill: Pickup: approach did not reach the item")
+
+// approachViaTravel walks beside the item, fleeing wild battles that interrupt
+// the way. A trainer battle may move a sprite onto the chosen standing tile,
+// so the destination must remain an interaction target: Travel then chooses a
+// new side from live state after the battle. It is a no-op when already beside.
 func approachViaTravel(m *emu.Emu, romData []byte, targetX, targetY uint8, policy MovePolicy) error {
-	dest, ok, err := besideDestination(m, romData, targetX, targetY)
-	if err != nil {
-		return fmt.Errorf("skill: Pickup: %w", err)
-	}
-	if !ok {
+	mapID := m.Peek8(sym.CurMap)
+	x, y := playerXY(m)
+	if _, adjacent := directionTo(x, y, targetX, targetY); adjacent {
 		return nil
 	}
-	_, err = TravelFlee(m, romData, dest, policy, 20)
+	dest := InteractionDestination(mapID, targetX, targetY)
+	_, err := TravelFlee(m, romData, dest, policy, 20)
 	if errors.Is(err, ErrForcedChoiceStuck) {
 		// A trainer can interrupt a forest/item approach after a failed RUN
 		// attempt and leave Battle on the forced party-choice screen. The
@@ -36,6 +39,11 @@ func approachViaTravel(m *emu.Emu, romData []byte, targetX, targetY uint8, polic
 	}
 	if err != nil {
 		return fmt.Errorf("skill: Pickup: approach beside (%d,%d) on map %#04x: %w", targetX, targetY, dest.Map, err)
+	}
+	x, y = playerXY(m)
+	if _, adjacent := directionTo(x, y, targetX, targetY); m.Peek8(sym.CurMap) != mapID || !adjacent {
+		return fmt.Errorf("%w: item on map %#04x at (%d,%d), player on map %#04x at (%d,%d)",
+			ErrPickupApproachIncomplete, mapID, targetX, targetY, m.Peek8(sym.CurMap), x, y)
 	}
 	return nil
 }

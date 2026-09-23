@@ -1,11 +1,51 @@
 package skill_test
 
 import (
+	"crypto/sha256"
+	"fmt"
+	"os"
 	"testing"
 
+	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/skill"
 	"github.com/maestroi/pokepilot/skill/fixture"
 )
+
+// TestPickupTrainerInterceptionReplay is the exact round-1 checkpoint from
+// run-jxh8lk19wv6on. The saved state is an external farm artifact, never a
+// checked-in fixture. Set PICKUP_TRAINER_REPRO_STATE to its downloaded path.
+// The trainer intercepts the first standing tile; Pickup must reselect a live
+// side and collect the item instead of facing it diagonally.
+func TestPickupTrainerInterceptionReplay(t *testing.T) {
+	statePath := os.Getenv("PICKUP_TRAINER_REPRO_STATE")
+	if statePath == "" {
+		t.Skip("set PICKUP_TRAINER_REPRO_STATE to the run-jxh8lk19wv6on round-1 .state artifact")
+	}
+	stateBytes, err := os.ReadFile(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const stateSHA = "407836f33f5d9a8e9831637ec832c799e66b4259d4a8c3a3e57b52a8c6e613f8"
+	if got := fmt.Sprintf("%x", sha256.Sum256(stateBytes)); got != stateSHA {
+		t.Fatalf("replay state SHA-256 = %s, want %s", got, stateSHA)
+	}
+	m, err := emu.Open(os.Getenv("POKEMON_RED_ROM"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	if err := m.LoadState(stateBytes); err != nil {
+		t.Fatal(err)
+	}
+	const fullHeal = 0x34
+	before := bagQty(t, m, fullHeal)
+	if err := skill.Pickup(m, m.ROM(), 18, 9, fullHeal, skill.StatAwareMove(m.ROM())); err != nil {
+		t.Fatal(err)
+	}
+	if after := bagQty(t, m, fullHeal); after != before+1 {
+		t.Fatalf("FULL HEAL count = %d, want %d", after, before+1)
+	}
+}
 
 // TestPickupPokeBall is the S7-6 postcondition: from the post-errand state
 // (Viridian City), travel into Viridian Forest and take the POKE BALL at
