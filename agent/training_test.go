@@ -222,7 +222,6 @@ func TestTrainingInefficiencyClassifiesAsRecoverableBlockage(t *testing.T) {
 	}
 }
 
-
 func TestApplyPartyTrainingMethodUsesSwitchTrainingForUnsafeTarget(t *testing.T) {
 	party := state.PartyState{Count: 2, Mons: []state.Mon{
 		{Species: 1, Level: 12, HP: 30, MaxHP: 30, PP: [4]uint8{20}},
