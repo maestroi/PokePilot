@@ -209,7 +209,6 @@ func estimateTraining(romData []byte, leadSpecies uint8, currentXP uint32, curre
 	return estimate, nil
 }
 
-
 const (
 	// A target more than three levels below the strongest local wild is treated
 	// as unsafe for direct grinding. The actual battle layer still evaluates
