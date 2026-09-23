@@ -12,9 +12,9 @@ func combatPreparationTestObservation(levels ...uint8) Observation {
 	for i, level := range levels {
 		obs.Party = append(obs.Party, PartyMon{
 			Species: SpeciesID("testmon"),
-			Level: level,
-			HP: uint16(100 + i),
-			MaxHP: uint16(100 + i),
+			Level:   level,
+			HP:      uint16(100 + i),
+			MaxHP:   uint16(100 + i),
 		})
 	}
 	return obs
