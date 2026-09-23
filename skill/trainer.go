@@ -341,8 +341,8 @@ func ChallengeTrainer(m *emu.Emu, romData []byte, homeX, homeY uint8, policy Mov
 	if err != nil {
 		return fmt.Errorf("skill: ChallengeTrainer: battle: %w", err)
 	}
-	if outcome != state.ResultWon {
-		return fmt.Errorf("skill: ChallengeTrainer: %w at (%d,%d)", ErrTrainerBlackedOut, homeX, homeY)
+	if err := RequireBattleWin(fmt.Sprintf("trainer:%02x:%d,%d", cur, homeX, homeY), outcome); err != nil {
+		return fmt.Errorf("skill: ChallengeTrainer: %w", err)
 	}
 
 	mem = advanceUntil(m, storyBattleSettleBudget, func(mm *state.Mem) bool {
