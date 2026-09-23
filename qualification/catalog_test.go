@@ -33,6 +33,7 @@ func TestCatalogContainsQualificationRoadmap(t *testing.T) {
 		"cinnabar-blaine":            0,
 		"viridian-giovanni":          0,
 		"victory-road-indigo":        0,
+		"elite-four-loss-recovery":   0,
 		"elite-four-champion":        0,
 		"fresh-hall-of-fame":         0,
 	}
@@ -58,9 +59,9 @@ func TestSelectProfiles(t *testing.T) {
 		want    []string
 	}{
 		{profile: "skills", want: []string{"rom-short"}},
-		{profile: "milestones", want: []string{"opening-brock", "mt-moon-cerulean", "misty", "rocket-hideout", "pokemon-tower", "fuchsia-koga-surf-strength", "silph-sabrina", "cinnabar-blaine", "viridian-giovanni", "victory-road-indigo", "elite-four-champion"}},
+		{profile: "milestones", want: []string{"opening-brock", "mt-moon-cerulean", "misty", "rocket-hideout", "pokemon-tower", "fuchsia-koga-surf-strength", "silph-sabrina", "cinnabar-blaine", "viridian-giovanni", "victory-road-indigo", "elite-four-loss-recovery", "elite-four-champion"}},
 		{profile: "full", want: []string{"fresh-hall-of-fame"}},
-		{profile: "", want: []string{"opening-brock", "mt-moon-cerulean", "misty", "rocket-hideout", "pokemon-tower", "fuchsia-koga-surf-strength", "silph-sabrina", "cinnabar-blaine", "viridian-giovanni", "victory-road-indigo", "elite-four-champion"}},
+		{profile: "", want: []string{"opening-brock", "mt-moon-cerulean", "misty", "rocket-hideout", "pokemon-tower", "fuchsia-koga-surf-strength", "silph-sabrina", "cinnabar-blaine", "viridian-giovanni", "victory-road-indigo", "elite-four-loss-recovery", "elite-four-champion"}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.profile, func(t *testing.T) {
@@ -96,6 +97,7 @@ func TestSelectAllIncludesEveryLandedMilestone(t *testing.T) {
 		"cinnabar-blaine",
 		"viridian-giovanni",
 		"victory-road-indigo",
+		"elite-four-loss-recovery",
 		"elite-four-champion",
 		"fresh-hall-of-fame",
 	} {
