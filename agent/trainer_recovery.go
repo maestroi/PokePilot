@@ -7,10 +7,6 @@ import (
 	"github.com/maestroi/pokepilot/skill"
 )
 
-// legacyTrainerLossFailurePrefix is retained only for v4/string-keyed
-// checkpoint migration. New state never writes trainer-specific combat modes.
-const legacyTrainerLossFailurePrefix = "trainer loss while attempting "
-
 func combatRecoveryObjective(o Objective) Objective {
 	base := o
 	base.Note = ""
@@ -22,30 +18,12 @@ func combatRecoveryObjective(o Objective) Objective {
 	return base
 }
 
-// trainerLossObjective is kept as a compatibility name for old tests/helpers.
-// New recovery code should use combatRecoveryObjective.
-func trainerLossObjective(o Objective) Objective { return combatRecoveryObjective(o) }
-
-// trainerLossFailureKey is read-only compatibility for persisted checkpoints.
-// New state writes combatLossFailureKey instead.
-func trainerLossFailureKey(o Objective) string {
-	return failureStorageKey(combatRecoveryObjective(o).Key(), failureModeTrainerLoss)
-}
-
 func combatLossFailureKey(o Objective) string {
 	return failureStorageKey(combatRecoveryObjective(o).Key(), failureModeCombatLoss)
 }
 
 func combatRetryReadyKey(o Objective) string {
 	return failureStorageKey(combatRecoveryObjective(o).Key(), failureModeCombatRetry)
-}
-
-func legacyTrainerLossFailureKey(o Objective) string {
-	base := combatRecoveryObjective(o)
-	if base.Kind == KindGym && base.Place != "" {
-		return legacyTrainerLossFailurePrefix + "beat the gym leader at " + strings.ToUpper(string(base.Place))
-	}
-	return legacyTrainerLossFailurePrefix + base.String()
 }
 
 // combatLossFailureName recognizes only typed combat evidence. It deliberately
@@ -65,13 +43,6 @@ func combatLossFailureName(o Objective, err error) (string, bool) {
 	return "", false
 }
 
-// trainerLossFailureName is retained for compatibility with focused callers.
-// It now returns the generic combat-loss storage key and never a trainer_loss
-// writer key.
-func trainerLossFailureName(o Objective, err error) (string, bool) {
-	return combatLossFailureName(o, err)
-}
-
 func combatLossRecorded(k *Knowledge, o Objective) bool {
 	if k == nil {
 		return false
@@ -81,25 +52,21 @@ func combatLossRecorded(k *Knowledge, o Objective) bool {
 		return true
 	}
 	// Read-only migration support for structured pre-generic modes.
-	if _, ok := k.Failures[trainerLossFailureKey(base)]; ok {
+	if _, ok := k.Failures[legacyTrainerLossStorageKey(base)]; ok {
 		return true
 	}
-	if _, ok := k.Failures[legacyTrainerLossFailureKey(base)]; ok {
+	if _, ok := k.Failures[legacyTrainerLossStringKey(base)]; ok {
 		return true
 	}
 	if base.Kind == KindGym && base.Place != "" {
-		if _, ok := k.Failures[gymLossFailureKey(string(base.Place))]; ok {
+		if _, ok := k.Failures[legacyGymLossStorageKey(string(base.Place))]; ok {
 			return true
 		}
-		if _, ok := k.Failures[legacyGymLossFailureKey(string(base.Place))]; ok {
+		if _, ok := k.Failures[legacyGymLossStringKey(string(base.Place))]; ok {
 			return true
 		}
 	}
 	return false
-}
-
-func trainerLossRecorded(k *Knowledge, o Objective) bool {
-	return combatLossRecorded(k, o)
 }
 
 func mergeCombatRetryFailure(a, b Failure) Failure {
@@ -120,11 +87,11 @@ func (k *Knowledge) promoteCombatLossesToRetry() {
 	for storage, f := range k.Failures {
 		if key, mode, ok := parseFailureStorageKey(storage); ok {
 			switch mode {
-			case failureModeCombatLoss, failureModeTrainerLoss, failureModeGymLoss:
+			case failureModeCombatLoss, legacyFailureModeTrainerLoss, legacyFailureModeGymLoss:
 				key = combatRecoveryObjective(key.Objective()).Key()
 				retries[key] = mergeCombatRetryFailure(retries[key], f)
 				delete(k.Failures, storage)
-			case failureModeGymRetry:
+			case legacyFailureModeGymRetry:
 				// Legacy retry-ready state is migrated on sight.
 				key = combatRecoveryObjective(key.Objective()).Key()
 				retries[key] = mergeCombatRetryFailure(retries[key], f)
@@ -186,9 +153,9 @@ func combatRetryKeys(k *Knowledge) map[ObjectiveKey]bool {
 		if key, mode, ok := parseFailureStorageKey(storage); ok {
 			key = combatRecoveryObjective(key.Objective()).Key()
 			switch mode {
-			case failureModeCombatRetry, failureModeGymRetry:
+			case failureModeCombatRetry, legacyFailureModeGymRetry:
 				ready[key] = true
-			case failureModeCombatLoss, failureModeTrainerLoss, failureModeGymLoss:
+			case failureModeCombatLoss, legacyFailureModeTrainerLoss, legacyFailureModeGymLoss:
 				lost[key] = true
 			}
 			continue
@@ -215,13 +182,6 @@ func combatRetryKeys(k *Knowledge) map[ObjectiveKey]bool {
 		delete(ready, key)
 	}
 	return ready
-}
-
-// clearTrainerLossFailures is a compatibility name. Clearing a combat gate now
-// means promoting it to retry-ready state so the improved party is tested
-// before another training rung is offered.
-func (k *Knowledge) clearTrainerLossFailures() {
-	k.promoteCombatLossesToRetry()
 }
 
 // notePartyCombatChange is retained for direct legacy callers/tests; live Run
@@ -293,9 +253,7 @@ func combatRetryMatchesObjective(ready map[ObjectiveKey]bool, o Objective) bool 
 	return false
 }
 
-// filterTrainerLossBlocked keeps its historical name for call-site stability,
-// but its policy is now fully generic combat recovery.
-func filterTrainerLossBlocked(out []Objective, known *Knowledge) []Objective {
+func filterCombatRecoveryBlocked(out []Objective, known *Knowledge) []Objective {
 	retryKeys := combatRetryKeys(known)
 	retryDue := len(retryKeys) > 0
 	ppDue := ppRecoveryDue(out)
