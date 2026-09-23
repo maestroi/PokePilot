@@ -70,7 +70,6 @@ func TestMansionStoryRouteConstants(t *testing.T) {
 	}
 }
 
-
 func TestMansionInterruptionUsesTravelRecoveryKinds(t *testing.T) {
 	if got := mansionInterruptionForTravel(ErrBattleInterrupted); !errors.Is(got, ErrBattle) {
 		t.Fatalf("battle interruption = %v, want ErrBattle for Travel resolver", got)
