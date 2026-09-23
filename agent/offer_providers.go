@@ -227,7 +227,12 @@ func (recoveryObjectiveProvider) Provide(ctx *objectiveOfferContext) objectivePr
 				note = "(active Pokemon Center checkpoint; prefer returning to this known-safe hub)"
 			}
 			if ppExhausted {
-				note = appendNoteText(note, "lead has no PP; Center restores PP without spending finite items")
+				ppNote := "(lead has no PP; Center restores PP without spending finite items)"
+				if note == "" {
+					note = ppNote
+				} else {
+					note += " " + ppNote
+				}
 			}
 			out = append(out, Objective{Kind: KindHeal, Place: name, Note: note}, Objective{Kind: KindHeal, Place: name, Flee: true, Note: note})
 		} else {
