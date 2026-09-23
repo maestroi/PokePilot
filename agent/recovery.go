@@ -22,7 +22,7 @@ type recoveryStateScope uint8
 const (
 	recoveryStateScopeObjective recoveryStateScope = iota
 	recoveryStateScopeRoutePrerequisite
-	recoveryStateScopeTrainerBlackout
+	recoveryStateScopeCombatLoss
 	recoveryStateScopeFieldRoster
 )
 
@@ -152,12 +152,12 @@ func routePrerequisiteStateKey(obs Observation) string {
 	return fmt.Sprintf("%x", sum[:8])
 }
 
-// trainerBlackoutStateKey treats a trainer interception during travel as the
-// combat failure it actually is. Ordinary GoTo failures intentionally ignore
-// party drift, but a blackout can become retryable after training, evolution,
-// PP recovery, or other material party progress even when the destination and
-// route state are unchanged.
-func trainerBlackoutStateKey(obs Observation) string {
+// combatLossStateKey treats every battle defeat as a combat-state failure.
+// Ordinary GoTo/progression failures intentionally ignore party drift, but a
+// blackout can become retryable after training, evolution, PP recovery, or
+// other material party progress even when the destination and route state are
+// unchanged.
+func combatLossStateKey(obs Observation) string {
 	full := FailureStateFor(obs)
 	data, _ := json.Marshal(struct {
 		Party        []FailurePartyMember  `json:"party,omitempty"`
@@ -220,8 +220,9 @@ func recoveryStateScopeFor(result ObjectiveResult) recoveryStateScope {
 			return recoveryStateScopeRoutePrerequisite
 		}
 	}
-	if failureCauseIs(result, "trainer_blacked_out") {
-		return recoveryStateScopeTrainerBlackout
+	if failureCauseIs(result, "trainer_blacked_out") ||
+		failureCauseIs(result, failureCauseCombatDefeat) {
+		return recoveryStateScopeCombatLoss
 	}
 	if failureCauseIs(result, "field_roster_no_recovery") {
 		return recoveryStateScopeFieldRoster
@@ -233,8 +234,8 @@ func recoveryStateKeyForScope(o Objective, obs Observation, scope recoveryStateS
 	switch scope {
 	case recoveryStateScopeRoutePrerequisite:
 		return routePrerequisiteStateKey(obs)
-	case recoveryStateScopeTrainerBlackout:
-		return trainerBlackoutStateKey(obs)
+	case recoveryStateScopeCombatLoss:
+		return combatLossStateKey(obs)
 	case recoveryStateScopeFieldRoster:
 		return fieldRosterStateKey(obs)
 	default:
