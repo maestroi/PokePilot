@@ -214,6 +214,15 @@ func (w *Wall) reportObjectiveFailure(dump farm.FinishReport, f farm.ObjectiveFa
 	w.mu.Lock()
 	existing := w.outbox[ext]
 	prior := w.issueLinks[key]
+	if prior.IssueID == "" && occurrenceKey != key {
+		// Rollout compatibility: issue links created before family fingerprints
+		// are keyed by the exact occurrence. Alias the first recurrence onto its
+		// new family key so deployment does not create one transitional duplicate.
+		if exactPrior := w.issueLinks[occurrenceKey]; exactPrior.IssueID != "" {
+			prior = exactPrior
+			w.issueLinks[key] = exactPrior
+		}
+	}
 	w.mu.Unlock()
 	// A terminal outbox row is only authoritative while the canonical issue
 	// binding still exists. Sink migrations can legitimately detach issueLinks
