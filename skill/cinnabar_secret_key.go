@@ -42,9 +42,10 @@ var (
 		{Map: pokemonMansionB1FMap, TargetX: 3, TargetY: 20, StandX: 3, StandY: 21},
 		{Map: pokemonMansionB1FMap, TargetX: 25, TargetY: 18, StandX: 25, StandY: 19},
 	}
-	mansion1FTo2FWarp  = world.Edge{Kind: world.EdgeWarp, From: pokemonMansion1FMap, To: pokemonMansion2FMap, WarpX: 5, WarpY: 10}
-	mansion2FTo3FWarp  = world.Edge{Kind: world.EdgeWarp, From: pokemonMansion2FMap, To: pokemonMansion3FMap, WarpX: 7, WarpY: 10}
-	mansion1FToB1FWarp = world.Edge{Kind: world.EdgeWarp, From: pokemonMansion1FMap, To: pokemonMansionB1FMap, WarpX: 21, WarpY: 23}
+	cinnabarToMansionWarp = world.Edge{Kind: world.EdgeWarp, From: cinnabarIslandMap, To: pokemonMansion1FMap, WarpX: 6, WarpY: 3}
+	mansion1FTo2FWarp     = world.Edge{Kind: world.EdgeWarp, From: pokemonMansion1FMap, To: pokemonMansion2FMap, WarpX: 5, WarpY: 10}
+	mansion2FTo3FWarp     = world.Edge{Kind: world.EdgeWarp, From: pokemonMansion2FMap, To: pokemonMansion3FMap, WarpX: 7, WarpY: 10}
+	mansion1FToB1FWarp    = world.Edge{Kind: world.EdgeWarp, From: pokemonMansion1FMap, To: pokemonMansionB1FMap, WarpX: 21, WarpY: 23}
 	mansionDropHoles   = [][2]uint8{{16, 14}, {17, 14}}
 )
 
@@ -113,8 +114,8 @@ func AcquireCinnabarSecretKey(m *emu.Emu, romData []byte, policy MovePolicy) err
 	}
 
 	if !isPokemonMansionMap(m.Peek8(sym.CurMap)) {
-		if _, err := TravelFlee(m, romData, Destination{Map: pokemonMansion1FMap, X: 5, Y: 26}, policy, mansionTravelBattles); err != nil {
-			return fmt.Errorf("skill: AcquireCinnabarSecretKey: enter Pokemon Mansion: %w", err)
+		if err := enterPokemonMansion(m, romData, policy); err != nil {
+			return err
 		}
 	}
 
@@ -130,6 +131,31 @@ func AcquireCinnabarSecretKey(m *emu.Emu, romData []byte, policy MovePolicy) err
 	state.Snapshot(m, &mem)
 	if !CinnabarSecretKeyOwned(&mem) {
 		return fmt.Errorf("skill: AcquireCinnabarSecretKey: pickup completed without secret_key_owned semantic postcondition")
+	}
+	return nil
+}
+
+func enterPokemonMansion(m *emu.Emu, romData []byte, policy MovePolicy) error {
+	if m.Peek8(sym.CurMap) != cinnabarIslandMap {
+		// Keep the story handoff local once Cinnabar is reached. A generic
+		// cross-map route to Mansion 1F can consider unrelated boundaries on
+		// the island (the locked Gym or the southern Surf seam) before the
+		// actual Mansion door. That produced repeated secret_key_owned
+		// terminal failures while the run was already on map 0x08 (#1618,
+		// #1629). Route to a stable island tile first, then traverse the ROM's
+		// known Mansion entrance warp directly.
+		if _, err := TravelFlee(m, romData, Destination{Map: cinnabarIslandMap, X: 11, Y: 12}, policy, mansionTravelBattles); err != nil {
+			return fmt.Errorf("skill: AcquireCinnabarSecretKey: return to Cinnabar Island for Mansion entrance: %w", err)
+		}
+	}
+	if got := m.Peek8(sym.CurMap); got != cinnabarIslandMap {
+		return fmt.Errorf("skill: AcquireCinnabarSecretKey: Mansion entrance staging ended on map %#04x, want Cinnabar Island", got)
+	}
+	if err := Traverse(m, romData, cinnabarToMansionWarp); err != nil {
+		return fmt.Errorf("skill: AcquireCinnabarSecretKey: enter Pokemon Mansion through Cinnabar door: %w", err)
+	}
+	if got := m.Peek8(sym.CurMap); got != pokemonMansion1FMap {
+		return fmt.Errorf("skill: AcquireCinnabarSecretKey: Mansion door landed on map %#04x, want Mansion 1F", got)
 	}
 	return nil
 }
