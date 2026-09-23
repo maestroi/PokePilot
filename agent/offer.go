@@ -91,12 +91,12 @@ func (k *Knowledge) nativeAdjacency() map[uint8][]uint8 {
 }
 
 type Failure struct {
-	Objective          string
-	Times              int
-	Last               string
-	Build              string
-	ReadinessBaseline  int
-	ReadinessTarget    int
+	Objective         string
+	Times             int
+	Last              string
+	Build             string
+	ReadinessBaseline int
+	ReadinessTarget   int
 }
 
 type Completion struct {
