@@ -127,3 +127,33 @@ func TestCatalogNormalizationKeepsOffersDeterministic(t *testing.T) {
 		t.Fatalf("travel order = %v, want adapter-independent semantic order", travel)
 	}
 }
+
+
+func TestRecoveryPrefersActivePokemonCenterCheckpoint(t *testing.T) {
+	obs := Observation{
+		Map:               1,
+		Location:          "field",
+		PartyCount:        1,
+		Party:             []PartyMon{{Species: "testmon", Level: 20, HP: 8, MaxHP: 50}},
+		RecoveryCheckpoint: "checkpoint pokemon center",
+		Catalog: ObjectiveCatalog{Destinations: []CatalogDestination{
+			{Place: "near pokemon center", Location: "near-center", Center: true},
+			{Place: "checkpoint pokemon center", Location: "checkpoint-center", Center: true},
+		}},
+	}
+	known := NewKnowledge(KnowledgeTopology{Adjacency: map[LocationID][]LocationID{
+		"field":             {"near-center"},
+		"near-center":       {"field", "checkpoint-center"},
+		"checkpoint-center": {"near-center"},
+	}})
+	known.SawLocation("field")
+	known.SawLocation("near-center")
+
+	got := OfferWithEvidence(obs, known).Candidates
+	if !hasCatalogObjective(got, Objective{Kind: KindHeal, Place: "checkpoint pokemon center"}) {
+		t.Fatalf("active Center checkpoint missing from recovery offers: %+v", got)
+	}
+	if hasCatalogObjective(got, Objective{Kind: KindHeal, Place: "near pokemon center"}) {
+		t.Fatalf("nearer Center displaced active recovery checkpoint: %+v", got)
+	}
+}
