@@ -71,9 +71,9 @@ func TestSelectMenuItemStartMenu(t *testing.T) {
 	}
 
 	// Out of range: an error, and nothing changes (DESIGN.md 3.2b: a failure
-	// assertion must also assert nothing changed). Valid indices are 0..Max-1,
-	// so -1 and Max are the two boundary violations.
-	for _, bad := range []int{-1, menu.Max} {
+	// assertion must also assert nothing changed). Valid indices are 0..Max,
+	// so -1 and Max+1 are the two boundary violations.
+	for _, bad := range []int{-1, menu.Max + 1} {
 		if err := skill.SelectMenuItem(e, bad); err == nil {
 			t.Fatalf("SelectMenuItem(%d) = nil, want out-of-range error (max %d)", bad, menu.Max)
 		}

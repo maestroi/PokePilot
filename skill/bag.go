@@ -130,8 +130,8 @@ func UseItem(m *emu.Emu, item uint8) error {
 	}
 
 	// ITEM is the second entry of the main menu (below FIGHT). The menu is
-	// a 2x2 grid with wMaxMenuItem == 1 per column, so SelectMenuItem would
-	// reject index 1 as out of range; step-and-verify it by hand.
+	// a 2x2 grid driven by the battle menu's own column handling, not
+	// HandleMenuInput's single list; step-and-verify it by hand.
 	m.Tap(emu.Down, 3, 7)
 	if _, err := m.StepUntil(menuSettleFrames, func(m *emu.Emu) bool { return int(m.Peek8(sym.CurrentMenuItem)) == 1 }); err != nil {
 		return fmt.Errorf("skill: UseItem: cursor did not reach the ITEM entry: %w", err)
