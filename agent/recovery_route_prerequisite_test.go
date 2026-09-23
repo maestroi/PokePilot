@@ -219,3 +219,51 @@ func TestNavigationFailureQuarantineStillExpiresAfterPositionChange(t *testing.T
 		t.Fatalf("position change should release ordinary navigation quarantine: %+v", got)
 	}
 }
+
+func TestFieldRosterQuarantineSurvivesPositionDrift(t *testing.T) {
+	failed := Objective{Kind: KindProgress, FieldCapability: "fly"}
+	alternative := Objective{Kind: KindTrain, Level: 12}
+	obs := Observation{
+		Location:     "fuchsia city",
+		X:            39,
+		Y:            16,
+		Controllable: true,
+		Party: []PartyMon{
+			{Species: "venusaur", Level: 54, HP: 100, MaxHP: 100},
+			{Species: "nidoran-f", Level: 12, HP: 30, MaxHP: 30},
+			{Species: "magikarp", Level: 5, HP: 20, MaxHP: 20},
+		},
+		Bag: []Item{
+			{Name: "hm02", Quantity: 1},
+			{Name: "poke ball", Quantity: 7},
+		},
+	}
+
+	policy := newRunFailurePolicy(3)
+	policy.record(ObjectiveResult{
+		Objective: failed,
+		Outcome:   OutcomeBlocked,
+		Cause:     "field_roster_no_recovery",
+		Final:     obs,
+	})
+
+	// Same roster at a different map/position: quarantine must persist.
+	moved := obs
+	moved.Location = "route 16"
+	moved.X, moved.Y = 5, 30
+	got := policy.filter(moved, []Objective{failed, alternative})
+	if len(got) != 1 || got[0].Key() != alternative.Key() {
+		t.Fatalf("position drift reopened field-roster failure: %+v", got)
+	}
+
+	// A material party change (new member that can learn FLY) must release it.
+	changed := obs
+	changed.Party = []PartyMon{
+		{Species: "venusaur", Level: 54, HP: 100, MaxHP: 100},
+		{Species: "pidgeot", Level: 40, HP: 80, MaxHP: 80},
+	}
+	got = policy.filter(changed, []Objective{failed, alternative})
+	if len(got) != 2 || got[0].Key() != failed.Key() {
+		t.Fatalf("party change did not release field-roster quarantine: %+v", got)
+	}
+}

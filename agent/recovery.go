@@ -23,6 +23,7 @@ const (
 	recoveryStateScopeObjective recoveryStateScope = iota
 	recoveryStateScopeRoutePrerequisite
 	recoveryStateScopeTrainerBlackout
+	recoveryStateScopeFieldRoster
 )
 
 type failureQuarantineEntry struct {
@@ -175,6 +176,33 @@ func trainerBlackoutStateKey(obs Observation) string {
 	return fmt.Sprintf("%x", sum[:8])
 }
 
+// fieldRosterStateKey treats a field-roster capability gap (no party or box
+// member can learn the required HM) as a roster-state failure, not a
+// position failure. Walking to a different tile or map does not change which
+// Pokémon can learn FLY; the quarantine must survive position drift until
+// party composition, inventory, badges, capabilities, or story progress
+// change.
+func fieldRosterStateKey(obs Observation) string {
+	full := FailureStateFor(obs)
+	data, _ := json.Marshal(struct {
+		Party        []FailurePartyMember   `json:"party,omitempty"`
+		LeadPP       []uint8                `json:"lead_pp,omitempty"`
+		Inventory    []FailureInventoryItem `json:"inventory,omitempty"`
+		Badges       []string               `json:"badges,omitempty"`
+		Capabilities []FailureCapability    `json:"capabilities,omitempty"`
+		Progress     []FailureProgressFact  `json:"progress,omitempty"`
+	}{
+		Party:        full.Party,
+		LeadPP:       append([]uint8(nil), obs.LeadPP...),
+		Inventory:    full.Inventory,
+		Badges:       full.Badges,
+		Capabilities: full.Capabilities,
+		Progress:     full.Progress,
+	})
+	sum := sha256.Sum256(data)
+	return fmt.Sprintf("%x", sum[:8])
+}
+
 func recoveryStateScopeFor(result ObjectiveResult) recoveryStateScope {
 	if failureCauseIs(result, "route_prerequisite_missing") {
 		// Capability-only quarantine is safe for direct travel objectives: moving
@@ -195,6 +223,9 @@ func recoveryStateScopeFor(result ObjectiveResult) recoveryStateScope {
 	if failureCauseIs(result, "trainer_blacked_out") {
 		return recoveryStateScopeTrainerBlackout
 	}
+	if failureCauseIs(result, "field_roster_no_recovery") {
+		return recoveryStateScopeFieldRoster
+	}
 	return recoveryStateScopeObjective
 }
 
@@ -204,6 +235,8 @@ func recoveryStateKeyForScope(o Objective, obs Observation, scope recoveryStateS
 		return routePrerequisiteStateKey(obs)
 	case recoveryStateScopeTrainerBlackout:
 		return trainerBlackoutStateKey(obs)
+	case recoveryStateScopeFieldRoster:
+		return fieldRosterStateKey(obs)
 	default:
 		return recoveryStateKey(o, obs)
 	}
