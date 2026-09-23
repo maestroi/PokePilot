@@ -12,10 +12,14 @@ import (
 
 const (
 	// FailureIdentityVersion is the canonical schema version hashed into every
-	// structured failure fingerprint. Changing fingerprint semantics requires a
+	// exact occurrence fingerprint. Changing fingerprint semantics requires a
 	// new version rather than silently changing the meaning of an old digest.
 	FailureIdentityVersion = 1
-	failureDetailPrefix    = "failure-id:"
+	// FailureFamilyVersion versions the coarser defect identity used for issue
+	// ownership. Exact FailureIdentity fingerprints remain replay identities.
+	FailureFamilyVersion      = 1
+	failureDetailPrefix       = "failure-id:"
+	failureFamilyDetailPrefix = "family-id:"
 )
 
 // FailureObjective is the portable, planner-selected operation that failed.
@@ -96,6 +100,22 @@ type FailureIdentity struct {
 	Final        FailureState     `json:"final"`
 }
 
+// FailureFamilyIdentity is the stable defect identity used for issue ownership.
+// It intentionally excludes volatile party HP/levels, money, inventory counts,
+// exact coordinates and other replay state that can vary between sightings of
+// the same underlying bug. Site is retained only for location-sensitive causes
+// whose cause vocabulary is too broad to safely merge across semantic areas.
+type FailureFamilyIdentity struct {
+	Version      int              `json:"version"`
+	Game         string           `json:"game"`
+	Adapter      string           `json:"adapter"`
+	Objective    FailureObjective `json:"objective"`
+	Outcome      string           `json:"outcome"`
+	Cause        string           `json:"cause"`
+	CauseContext []string         `json:"cause_context,omitempty"`
+	Site         string           `json:"site,omitempty"`
+}
+
 // FailureOccurrence is one sighting of a logical failure. Fingerprint/Key are
 // redundant on purpose: persisted evidence is self-checking, while Build,
 // checkpoint and diagnostic text remain occurrence facts and never influence
@@ -133,6 +153,77 @@ func FingerprintFailureIdentity(identity FailureIdentity) (key, fingerprint stri
 	sum := sha256.Sum256(data)
 	h := hex.EncodeToString(sum[:])
 	return h[:16], "sha256:" + h, nil
+}
+
+// FingerprintFailureFamily returns the stable issue-family fingerprint for an
+// exact FailureIdentity. The exact occurrence fingerprint remains available via
+// FingerprintFailureIdentity for replay/checkpoint correlation.
+func FingerprintFailureFamily(identity FailureIdentity) (key, fingerprint string, err error) {
+	family := failureFamilyIdentity(identity)
+	if family.Version == 0 {
+		family.Version = FailureFamilyVersion
+	}
+	if family.Version != FailureFamilyVersion {
+		return "", "", fmt.Errorf("farm: failure family version %d, want %d", family.Version, FailureFamilyVersion)
+	}
+	if family.Game == "" || family.Adapter == "" || family.Objective.Kind == "" || family.Outcome == "" || family.Cause == "" {
+		return "", "", fmt.Errorf("farm: incomplete failure family identity")
+	}
+	data, err := json.Marshal(family)
+	if err != nil {
+		return "", "", fmt.Errorf("farm: encode failure family identity: %w", err)
+	}
+	sum := sha256.Sum256(data)
+	h := hex.EncodeToString(sum[:])
+	return h[:16], "sha256:" + h, nil
+}
+
+func failureFamilyIdentity(identity FailureIdentity) FailureFamilyIdentity {
+	in := canonicalFailureIdentity(identity)
+	out := FailureFamilyIdentity{
+		Version:      FailureFamilyVersion,
+		Game:         in.Game,
+		Adapter:      in.Adapter,
+		Objective:    in.Objective,
+		Outcome:      in.Outcome,
+		Cause:        in.Cause,
+		CauseContext: append([]string(nil), in.CauseContext...),
+	}
+	if failureFamilyUsesSite(in.Cause) {
+		out.Site = in.Final.Location
+		if out.Site == "" {
+			out.Site = in.Initial.Location
+		}
+	}
+	return out
+}
+
+// Some causes already carry enough semantic identity to describe one defect
+// across maps. For broad/local controller and navigation causes, retaining the
+// semantic place prevents unrelated bugs from being over-collapsed.
+func failureFamilyUsesSite(cause string) bool {
+	switch canonicalFailureString(cause) {
+	case "route_prerequisite_missing",
+		"field_move_prerequisite_missing",
+		"field_roster_no_recovery",
+		"field_roster_catch_failed",
+		"no_pokeball",
+		"pc_box_full",
+		"pc_no_known_center",
+		"trainer_blacked_out",
+		"catch_blackout",
+		"blacked_out",
+		"catch_hunt_exhausted",
+		"fishing_hunt_exhausted",
+		"train_retreat",
+		"train_progress_shortfall",
+		"cant_afford",
+		"not_in_stock",
+		"bag_not_risen":
+		return false
+	default:
+		return true
+	}
 }
 
 func NewFailureOccurrence(identity FailureIdentity, build string, round int, checkpoint, diagnostic string, observedAt time.Time) (FailureOccurrence, error) {
@@ -194,6 +285,28 @@ func FailureDetailMarker(o FailureOccurrence) string {
 		}
 		b.WriteByte('a' + n)
 	}
+	if _, familyFingerprint, err := FingerprintFailureFamily(o.Identity); err == nil {
+		familyHex := strings.TrimPrefix(familyFingerprint, "sha256:")
+		if len(familyHex) == 64 {
+			b.WriteByte(' ')
+			b.WriteString(failureFamilyDetailPrefix)
+			for _, r := range familyHex {
+				var n byte
+				switch {
+				case r >= '0' && r <= '9':
+					n = byte(r - '0')
+				case r >= 'a' && r <= 'f':
+					n = byte(r-'a') + 10
+				default:
+					n = 255
+				}
+				if n > 15 {
+					break
+				}
+				b.WriteByte('a' + n)
+			}
+		}
+	}
 	id := o.Identity
 	fmt.Fprintf(&b, " %s %s %s", id.Objective.Kind, id.Outcome, id.Cause)
 	if id.Objective.Place != "" {
@@ -238,6 +351,36 @@ func ParseFailureDetailMarker(detail string) (key, fingerprint string, ok bool) 
 	}
 	h := b.String()
 	return h[:16], "sha256:" + h, true
+}
+
+// ParseFailureDetailFamilyMarker recovers the issue-family fingerprint embedded
+// by new runners while preserving ParseFailureDetailMarker as the exact replay
+// identity parser for compatibility.
+func ParseFailureDetailFamilyMarker(detail string) (key, fingerprint string, ok bool) {
+	if _, _, exactOK := ParseFailureDetailMarker(detail); !exactOK {
+		return "", "", false
+	}
+	for _, field := range strings.Fields(detail) {
+		if !strings.HasPrefix(field, failureFamilyDetailPrefix) {
+			continue
+		}
+		rest := strings.TrimPrefix(field, failureFamilyDetailPrefix)
+		if len(rest) != 64 {
+			return "", "", false
+		}
+		var b strings.Builder
+		b.Grow(64)
+		const hexChars = "0123456789abcdef"
+		for _, r := range rest {
+			if r < 'a' || r > 'p' {
+				return "", "", false
+			}
+			b.WriteByte(hexChars[int(r-'a')])
+		}
+		h := b.String()
+		return h[:16], "sha256:" + h, true
+	}
+	return "", "", false
 }
 
 // ParseFailureDetailCauseContext recovers the small semantic prerequisite set
