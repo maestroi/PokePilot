@@ -23,6 +23,14 @@ const (
 	mcpWallTimeout      = 5 * time.Second
 	mcpMaxResponseBytes = 2 << 20
 	mcpMaxRuns          = 100
+	// A looping endless run accumulates hundreds of activity events, each
+	// planning event carrying a multi-KB STRATEGY dump (MEASURED 2026-09-23 on
+	// run-22ahrk9pflcilu3jxq9xt37x6: 76 KB of activity, repeated as an 87 KB
+	// timeline in the debug bundle), which overflows MCP clients' tool-result
+	// token cap. MCP gets the newest events with clipped text; the operator UI
+	// still serves the full history.
+	mcpMaxEvents    = 40
+	mcpMaxEventText = 400
 )
 
 var mcpRunSequence atomic.Uint64
@@ -369,6 +377,9 @@ func (c *mcpControl) getRun(ctx context.Context, _ *mcp.CallToolRequest, in mcpR
 	if out == nil {
 		return nil, nil, fmt.Errorf("run %q not found", id)
 	}
+	if run, ok := out["run"].(map[string]any); ok {
+		compactEvents(run, "activity")
+	}
 	return nil, out, nil
 }
 
@@ -381,7 +392,38 @@ func (c *mcpControl) getRunDebug(ctx context.Context, _ *mcp.CallToolRequest, in
 	if err := c.requestJSON(ctx, http.MethodGet, "/v1/runs/"+url.PathEscape(id)+"/debug", nil, &out); err != nil {
 		return nil, nil, err
 	}
+	// timeline already carries every activity event; drop the duplicate copy.
+	if run, ok := out["run"].(map[string]any); ok {
+		delete(run, "activity")
+	}
+	compactEvents(out, "timeline")
 	return nil, out, nil
+}
+
+// compactEvents keeps the newest mcpMaxEvents entries of the event list at
+// m[key] (the wall returns them oldest first), records how many were dropped
+// under key+"_omitted", and clips each event's long text fields.
+func compactEvents(m map[string]any, key string) {
+	events, ok := m[key].([]any)
+	if !ok {
+		return
+	}
+	if n := len(events) - mcpMaxEvents; n > 0 {
+		events = events[n:]
+		m[key+"_omitted"] = n
+	}
+	for _, e := range events {
+		ev, ok := e.(map[string]any)
+		if !ok {
+			continue
+		}
+		for _, f := range []string{"detail", "message", "summary"} {
+			if s, ok := ev[f].(string); ok && len(s) > mcpMaxEventText {
+				ev[f] = strings.ToValidUTF8(s[:mcpMaxEventText], "") + "…"
+			}
+		}
+	}
+	m[key] = events
 }
 
 func (c *mcpControl) getRunArtifacts(ctx context.Context, _ *mcp.CallToolRequest, in mcpRunInput) (*mcp.CallToolResult, map[string]any, error) {
