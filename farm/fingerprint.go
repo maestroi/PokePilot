@@ -357,6 +357,10 @@ func ParseFailureDetailMarker(detail string) (key, fingerprint string, ok bool) 
 // by new runners while preserving ParseFailureDetailMarker as the exact replay
 // identity parser for compatibility.
 func ParseFailureDetailFamilyMarker(detail string) (key, fingerprint string, ok bool) {
+	detail = strings.TrimSpace(detail)
+	if idx := strings.Index(detail, failureDetailPrefix); idx >= 0 {
+		detail = detail[idx:]
+	}
 	if _, _, exactOK := ParseFailureDetailMarker(detail); !exactOK {
 		return "", "", false
 	}
