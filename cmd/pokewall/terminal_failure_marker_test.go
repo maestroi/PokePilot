@@ -45,8 +45,19 @@ func TestObjectiveFailureFingerprintRecoversEmbeddedTerminalMarker(t *testing.T)
 	if !structured {
 		t.Fatal("embedded canonical marker was treated as legacy prose")
 	}
-	if key != occurrence.Key || fingerprint != occurrence.Fingerprint {
-		t.Fatalf("fingerprint = %q %q, want %q %q", key, fingerprint, occurrence.Key, occurrence.Fingerprint)
+	wantKey, wantFingerprint, err := farm.FingerprintFailureFamily(occurrence.Identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if key != wantKey || fingerprint != wantFingerprint {
+		t.Fatalf("family fingerprint = %q %q, want %q %q", key, fingerprint, wantKey, wantFingerprint)
+	}
+	exactKey, exactFingerprint, _, err := objectiveFailureOccurrenceFingerprint(failure)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exactKey != occurrence.Key || exactFingerprint != occurrence.Fingerprint {
+		t.Fatalf("occurrence fingerprint = %q %q, want %q %q", exactKey, exactFingerprint, occurrence.Key, occurrence.Fingerprint)
 	}
 }
 
@@ -81,7 +92,11 @@ func TestTerminalRunFailureMarkerUsesCanonicalFingerprint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !structured || key != occurrence.Key || fingerprint != occurrence.Fingerprint {
-		t.Fatalf("synthetic fingerprint = %q %q structured=%v, want %q %q true", key, fingerprint, structured, occurrence.Key, occurrence.Fingerprint)
+	wantKey, wantFingerprint, err := farm.FingerprintFailureFamily(occurrence.Identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !structured || key != wantKey || fingerprint != wantFingerprint {
+		t.Fatalf("synthetic family fingerprint = %q %q structured=%v, want %q %q true", key, fingerprint, structured, wantKey, wantFingerprint)
 	}
 }
