@@ -60,10 +60,11 @@ func TestGymLossRequiresTrainingBeforeRechallenge(t *testing.T) {
 	}
 	known.Failed(gym, loss)
 
-	key := gymLossFailureKey("pewter gym")
+	key := combatLossFailureKey(gym)
 	if got := known.Failures[key]; got.Times != 1 {
-		t.Fatalf("scoped gym failure = %+v, want one failure under %q", got, key)
+		t.Fatalf("scoped combat failure = %+v, want one generic failure under %q", got, key)
 	}
+	assertNoLegacyCombatWriterModes(t, known)
 	if _, ok := offeredGym(pewter, known); ok {
 		t.Fatal("Pewter Gym offered immediately after losing to Brock with unchanged progression")
 	}
@@ -127,7 +128,7 @@ func TestGymRetryDueWithholdsFurtherTraining(t *testing.T) {
 	for _, o := range out {
 		switch {
 		case o.Kind == KindGoTo && o.Place == "pewter gym":
-			sawJourney = strings.Contains(o.Note, "gym retry")
+			sawJourney = strings.Contains(o.Note, "retry due")
 		case o.Kind == KindGym:
 			sawGym = strings.Contains(o.Note, "retry due")
 		}
