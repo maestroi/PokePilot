@@ -125,7 +125,9 @@ var ErrEngagementsExhausted = errors.New("skill: Travel: still interrupted by en
 
 func battleBlackoutError(r battleResolution) error {
 	if r.trainer {
-		return ErrTrainerBlackedOut
+		// Keep the historical sentinel through RequiredBattleError.Unwrap while
+		// making structured combat outcome the primary semantic contract.
+		return RequireTrainerBattleWin("", r.outcome)
 	}
 	return ErrBlackedOut
 }
