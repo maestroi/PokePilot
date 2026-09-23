@@ -164,6 +164,17 @@ func Gym(m *emu.Emu, romData []byte, policy MovePolicy) (state.BattleResult, err
 		return 0, fmt.Errorf("skill: Gym: face %s: %w", g.Leader, err)
 	}
 
+	// A wiped-out party cannot open the leader battle: the game runs
+	// HandleBlackOut and carries the player to the center instead. Without
+	// this check the A tap is swallowed by the blackout and the wait below
+	// times out into a terminal unknown_failure. Reuse the shared faint/
+	// respawn mechanism the travel paths already use and report a structured
+	// blackout so the objective re-plans.
+	if partyAllFainted(m) {
+		waitForFaintRespawn(m, m.Peek8(sym.CurMap), true)
+		return 0, ErrBlackedOut
+	}
+
 	m.Tap(emu.A, 3, 7)
 	mem := advanceUntil(m, gymBattleWaitBudget, func(mm *state.Mem) bool {
 		return state.DecodeBattle(mm) != nil
