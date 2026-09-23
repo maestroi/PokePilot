@@ -242,8 +242,8 @@ func finishHallOfFame(m *emu.Emu) error {
 // EliteFourProgression owns the no-exit League gauntlet from a prepared Indigo
 // Plateau lobby through Lorelei, Bruno, Agatha, Lance, the Champion, and the
 // Hall of Fame. Every phase is resume-safe: current map plus durable event/RAM
-// facts choose the next action, while battle losses preserve the typed
-// ErrTrainerBlackedOut recovery path so the planner can train and retry.
+// facts choose the next action, while battle losses carry structured required
+// battle evidence so the planner can recover, train, and retry.
 func EliteFourProgression(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if policy == nil {
 		return fmt.Errorf("skill: EliteFourProgression: nil policy")
