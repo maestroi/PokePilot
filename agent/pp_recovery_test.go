@@ -126,7 +126,7 @@ func TestPPRecoveryDueWithholdsTrainAndGym(t *testing.T) {
 		{Kind: KindGym, Place: "pewter gym"},
 		{Kind: KindTalk, X: 1, Y: 2},
 	}
-	got := filterTrainerLossBlocked(candidates, known)
+	got := filterCombatRecoveryBlocked(candidates, known)
 	for _, o := range got {
 		if o.Kind == KindTrain || o.Kind == KindGym {
 			t.Fatalf("combat objective survived PP-recovery gate: %+v (all=%+v)", o, got)
@@ -144,7 +144,7 @@ func TestFinitePPRecoveryAlsoWithholdsCombat(t *testing.T) {
 		{Kind: KindTrain, Level: 24},
 		{Kind: KindGym, Place: "pewter gym"},
 	}
-	got := filterTrainerLossBlocked(candidates, known)
+	got := filterCombatRecoveryBlocked(candidates, known)
 	if len(got) != 1 || got[0].Kind != KindUseItem {
 		t.Fatalf("finite PP recovery should be the only surviving candidate, got %+v", got)
 	}
