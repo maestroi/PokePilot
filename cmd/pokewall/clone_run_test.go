@@ -7,8 +7,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-
-	"github.com/maestroi/pokepilot/farm"
 )
 
 func TestCloneRunCopiesExecutionSettingsAndRunPolicy(t *testing.T) {
@@ -90,14 +88,8 @@ func TestCloneRunCopiesExecutionSettingsAndRunPolicy(t *testing.T) {
 		t.Fatalf("queue = %#v", queue)
 	}
 
-	if got := farm.PlayStyleForRun(result.RunID); got != "completionist" {
-		t.Fatalf("play style = %q", got)
-	}
-	if got := farm.RiskToleranceForRun(result.RunID); got != "cautious" {
-		t.Fatalf("risk tolerance = %q", got)
-	}
-	if got := farm.WildEncountersForRun(result.RunID); got != "fight" {
-		t.Fatalf("wild encounters = %q", got)
+	if clone.PlayStyle != "completionist" || clone.RiskTolerance != "cautious" || clone.WildEncounters != "fight" {
+		t.Fatalf("clone run policy = %q/%q/%q", clone.PlayStyle, clone.RiskTolerance, clone.WildEncounters)
 	}
 
 	control, err := w.spectatorControlSnapshot(context.Background())

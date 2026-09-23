@@ -5,10 +5,16 @@ import (
 	"testing"
 
 	"github.com/maestroi/pokepilot/agent"
+	"github.com/maestroi/pokepilot/farm"
 )
 
 func TestStatsPlannerInjectsExplicitPlayStyleIntoSystemContext(t *testing.T) {
-	p := newStatsPlannerWithRunPolicy("", "", agent.PlayStyleCompletionist, agent.RiskToleranceBalanced, agent.WildEncountersPlanner, "Beat the Elite Four and Champion.", nil, nil, nil)
+	p := newStatsPlannerWithRunPolicy(farm.RunPolicy{
+		PlayStyle:      agent.PlayStyleCompletionist,
+		RiskTolerance:  agent.RiskToleranceBalanced,
+		WildEncounters: agent.WildEncountersPlanner,
+		Goal:           "Beat the Elite Four and Champion.",
+	}, "", "", nil, nil, nil, nil)
 	if !strings.Contains(p.baseExtraSystem, "PLAY STYLE: COMPLETIONIST") {
 		t.Fatalf("base system context missing completionist policy: %q", p.baseExtraSystem)
 	}
@@ -20,7 +26,7 @@ func TestStatsPlannerInjectsExplicitPlayStyleIntoSystemContext(t *testing.T) {
 }
 
 func TestStatsPlannerLegacyEmptyPlayStyleKeepsSystemContextUnchanged(t *testing.T) {
-	p := newStatsPlannerWithRunPolicy("", "", "", "", "", "Beat the Elite Four and Champion.", nil, nil, nil)
+	p := newStatsPlannerWithRunPolicy(farm.RunPolicy{Goal: "Beat the Elite Four and Champion."}, "", "", nil, nil, nil, nil)
 	if p.baseExtraSystem != "" {
 		t.Fatalf("legacy empty play style changed base system prompt: %q", p.baseExtraSystem)
 	}

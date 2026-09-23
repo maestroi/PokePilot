@@ -44,13 +44,26 @@ const (
 
 // Tile is one run's live state as the wall sees it.
 type Tile struct {
-	RunID           string
-	Status          string
-	Game            string
-	Planner         string
-	Starter         string
-	Dest            string
-	Goal            string
+	RunID   string
+	Status  string
+	Game    string
+	Planner string
+	Starter string
+	Dest    string
+	Goal    string
+	// GoalProvided records whether the operator supplied a goal at all. It
+	// keeps an explicit empty Free play goal distinct from an unset goal, so a
+	// re-lease or clone does not silently replace Free play with a play-style
+	// default. Old state files without it decode as unset, which matches the
+	// historic behavior for runs whose goal was omitted.
+	GoalProvided bool
+	// PlayStyle, RiskTolerance, and WildEncounters are the run's gameplay
+	// policy. They are first-class Tile fields so every persisted catalog row
+	// and leased Spec carries its own policy instead of relying on
+	// process-global state keyed by run id.
+	PlayStyle       string
+	RiskTolerance   string
+	WildEncounters  string
 	LLMProfile      string
 	LLMDeployment   string
 	ExperimentID    string
@@ -158,6 +171,10 @@ type tileRow struct {
 	Starter            string               `json:"starter"`
 	Dest               string               `json:"dest"`
 	Goal               string               `json:"goal,omitempty"`
+	GoalProvided       bool                 `json:"goal_provided,omitempty"`
+	PlayStyle          string               `json:"play_style,omitempty"`
+	RiskTolerance      string               `json:"risk_tolerance,omitempty"`
+	WildEncounters     string               `json:"wild_encounters,omitempty"`
 	LLMProfile         string               `json:"llm_profile,omitempty"`
 	LLMDeployment      string               `json:"llm_deployment,omitempty"`
 	ExperimentID       string               `json:"experiment_id,omitempty"`
@@ -266,6 +283,10 @@ type persistedTile struct {
 	Starter            string               `json:"starter,omitempty"`
 	Dest               string               `json:"dest,omitempty"`
 	Goal               string               `json:"goal,omitempty"`
+	GoalProvided       bool                 `json:"goal_provided,omitempty"`
+	PlayStyle          string               `json:"play_style,omitempty"`
+	RiskTolerance      string               `json:"risk_tolerance,omitempty"`
+	WildEncounters     string               `json:"wild_encounters,omitempty"`
 	LLMProfile         string               `json:"llm_profile,omitempty"`
 	LLMDeployment      string               `json:"llm_deployment,omitempty"`
 	ExperimentID       string               `json:"experiment_id,omitempty"`
@@ -342,6 +363,10 @@ func (w *Wall) persistedStateLocked() persistedState {
 			Starter:            t.Starter,
 			Dest:               t.Dest,
 			Goal:               t.Goal,
+			GoalProvided:       t.GoalProvided,
+			PlayStyle:          t.PlayStyle,
+			RiskTolerance:      t.RiskTolerance,
+			WildEncounters:     t.WildEncounters,
 			LLMProfile:         t.LLMProfile,
 			LLMDeployment:      t.LLMDeployment,
 			ExperimentID:       t.ExperimentID,
@@ -458,6 +483,10 @@ func (w *Wall) loadState() {
 			Starter:            pt.Starter,
 			Dest:               pt.Dest,
 			Goal:               pt.Goal,
+			GoalProvided:       pt.GoalProvided,
+			PlayStyle:          pt.PlayStyle,
+			RiskTolerance:      pt.RiskTolerance,
+			WildEncounters:     pt.WildEncounters,
 			LLMProfile:         pt.LLMProfile,
 			LLMDeployment:      pt.LLMDeployment,
 			ExperimentID:       pt.ExperimentID,
@@ -650,7 +679,10 @@ func (w *Wall) applySpec(runID string, spec farm.Spec) {
 	t.Planner = spec.Planner
 	t.Starter = spec.Starter
 	t.Dest = spec.Dest
-	t.Goal = spec.Goal
+	t.Goal, t.GoalProvided = farm.HeldGoal(spec)
+	t.PlayStyle = spec.PlayStyle
+	t.RiskTolerance = spec.RiskTolerance
+	t.WildEncounters = spec.WildEncounters
 	t.LLMProfile = spec.LLMProfile
 	t.LLMDeployment = spec.LLMDeployment
 	t.ExperimentID = spec.ExperimentID
@@ -734,6 +766,7 @@ func (w *Wall) handleLease(res http.ResponseWriter, req *http.Request) {
 	}
 	t.Status = statusLeased
 	t.lastUpdate = time.Now()
+	w.inheritRunPolicyLocked(t)
 	appendRunActivityLocked(t, runActivityEvent{
 		Source: "system", Kind: "leased", At: t.lastUpdate.Unix(), Attempt: t.Attempts + 1,
 		Summary: fmt.Sprintf("Attempt %d leased", t.Attempts+1),
@@ -746,7 +779,9 @@ func (w *Wall) handleLease(res http.ResponseWriter, req *http.Request) {
 		Planner:         t.Planner,
 		Starter:         t.Starter,
 		Dest:            t.Dest,
-		Goal:            t.Goal,
+		PlayStyle:       t.PlayStyle,
+		RiskTolerance:   t.RiskTolerance,
+		WildEncounters:  t.WildEncounters,
 		LLMProfile:      t.LLMProfile,
 		LLMDeployment:   t.LLMDeployment,
 		ExperimentID:    t.ExperimentID,
@@ -759,6 +794,14 @@ func (w *Wall) handleLease(res http.ResponseWriter, req *http.Request) {
 		RecoveryProfile: t.RecoveryProfile,
 		Endless:         t.Endless,
 		RandomSeed:      t.RandomSeed,
+	}
+	// A tri-state goal: unset, provided-empty Free play, or provided. Deriving
+	// the held goal here keeps an unset goal from becoming an explicit empty
+	// one on the next lease.
+	if goal := t.Goal; goal != "" {
+		spec.Goal = farm.GoalFrom(goal)
+	} else if t.GoalProvided {
+		spec.Goal = farm.GoalFrom("")
 	}
 	w.mu.Unlock()
 	w.saveState()
@@ -1722,8 +1765,11 @@ func (w *Wall) enqueueNextLocked(prev *Tile) {
 		Game:            prev.Game,
 		Planner:         prev.Planner,
 		Starter:         prev.Starter,
+		Goal:            farm.GoalFrom(prev.Goal),
 		Dest:            prev.Dest,
-		Goal:            prev.Goal,
+		PlayStyle:       prev.PlayStyle,
+		RiskTolerance:   prev.RiskTolerance,
+		WildEncounters:  prev.WildEncounters,
 		LLMProfile:      prev.LLMProfile,
 		LLMDeployment:   prev.LLMDeployment,
 		ExperimentID:    prev.ExperimentID,
@@ -1737,6 +1783,8 @@ func (w *Wall) enqueueNextLocked(prev *Tile) {
 		Endless:         true,
 		RandomSeed:      prev.RandomSeed,
 	})
+	// The successor inherits the predecessor goal verbatim, including an
+	// already-resolved play-style default or an explicit Free play goal.
 	w.tiles[id].ResumeFromRunID = resumeFrom
 }
 

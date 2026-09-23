@@ -7,8 +7,7 @@ import (
 )
 
 func TestFarmRecordingMetadataIncludesPlayStyle(t *testing.T) {
-	spec := farm.Spec{RunID: "style-recording", Attempt: 1, LLMProfile: "auto"}
-	farm.RememberPlayStyle(spec.RunID, "team_builder")
+	spec := farm.Spec{RunID: "style-recording", Attempt: 1, LLMProfile: "auto", PlayStyle: "team_builder"}
 	got := farmRecordingMetadata(spec, "llm", "squirtle", "", "badges:1", 0, "test")
 	if got["play_style"] != "team_builder" {
 		t.Fatalf("play_style metadata = %q, want team_builder", got["play_style"])

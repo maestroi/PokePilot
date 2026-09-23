@@ -16,7 +16,7 @@ func TestPauseRunningRunResumesSameIDFromLatestCheckpoint(t *testing.T) {
 	client := farm.NewClient(srv.URL)
 	ctx := context.Background()
 
-	enqueueViaHTTP(t, srv.URL, farm.Spec{RunID: "pause-me", Planner: "llm", Goal: "beat the game"})
+	enqueueViaHTTP(t, srv.URL, farm.Spec{RunID: "pause-me", Planner: "llm", Goal: farm.GoalFrom("beat the game")})
 	first, err := client.Lease(ctx)
 	if err != nil || first == nil || first.Attempt != 1 {
 		t.Fatalf("lease 1 = %+v, %v", first, err)
@@ -79,7 +79,7 @@ func TestRepeatedIdenticalErrorsAutoPauseBeforeThirdAttempt(t *testing.T) {
 	client := farm.NewClient(srv.URL)
 	ctx := context.Background()
 
-	enqueueViaHTTP(t, srv.URL, farm.Spec{RunID: "looping", Planner: "llm", Goal: "beat the game"})
+	enqueueViaHTTP(t, srv.URL, farm.Spec{RunID: "looping", Planner: "llm", Goal: farm.GoalFrom("beat the game")})
 	const detail = "unknown fishing rod old rod at map 05"
 	expectedKey, expectedFingerprint := failureIdentity(normalizeDetail(detail))
 	for attempt := 1; attempt <= autoPauseRepeatThreshold; attempt++ {

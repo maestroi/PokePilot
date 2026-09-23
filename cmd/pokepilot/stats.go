@@ -61,31 +61,19 @@ type statsPlanner struct {
 	benchmarkDecisionCalls []benchmark.DecisionCall
 }
 
-// newStatsPlanner remains source-compatible with existing local/tests. Farm
-// construction consumes run policy from the lease farm.Client just decoded;
-// local construction consumes the corresponding CLI flags. Empty values keep
-// the historical compatibility defaults.
-func newStatsPlanner(profile, reasoningEffort, goal string, m *emu.Emu, push func(any), snap *heartbeatSnap) *statsPlanner {
-	playStyle := localPlayStyleName()
-	riskTolerance := localRiskToleranceName()
-	wildEncounters := localWildEncountersName()
-	if snap != nil {
-		playStyle = farm.CurrentPlayStyle()
-		riskTolerance = farm.CurrentRiskTolerance()
-		wildEncounters = farm.CurrentWildEncounters()
-	}
-	return newStatsPlannerWithRunPolicy(profile, reasoningEffort, playStyle, riskTolerance, wildEncounters, goal, m, push, snap)
-}
-
-// newStatsPlannerWithPlayStyle is kept for existing tests/callers that only
-// choose a play style. Empty risk/wild settings preserve the old behavior.
-func newStatsPlannerWithPlayStyle(profile, reasoningEffort, playStyle, goal string, m *emu.Emu, push func(any), snap *heartbeatSnap) *statsPlanner {
-	return newStatsPlannerWithRunPolicy(profile, reasoningEffort, playStyle, "", "", goal, m, push, snap)
-}
-
-func newStatsPlannerWithRunPolicy(profile, reasoningEffort, playStyle, riskTolerance, wildEncounters, goal string, m *emu.Emu, push func(any), snap *heartbeatSnap) *statsPlanner {
-	primaryCfg, fallbackCfg := agent.ResolveLLMEndpointsWithEffort(agent.NormalizeLLMProfile(profile), agent.NormalizeReasoningEffort(reasoningEffort))
-	if inference := farm.CurrentInference(); inference != nil && inference.Endpoint != "" && inference.APIModel != "" {
+// newStatsPlannerWithRunPolicy builds the planner for one run from the policy
+// that describes it. Every gameplay knob — goal, play style, risk tolerance,
+// and wild-encounter policy — plus the run's own inference identity is passed
+// by value, so a process handling two runs can never leak one run's policy
+// into the other. Empty values keep the historical compatibility defaults.
+func newStatsPlannerWithRunPolicy(policy farm.RunPolicy, llmProfile, reasoningEffort string, inference *farm.InferenceIdentity, m *emu.Emu, push func(any), snap *heartbeatSnap) *statsPlanner {
+	playStyle, riskTolerance, wildEncounters := policy.PlayStyle, policy.RiskTolerance, policy.WildEncounters
+	goal := policy.Goal
+	primaryCfg, fallbackCfg := agent.ResolveLLMEndpointsWithEffort(agent.NormalizeLLMProfile(llmProfile), agent.NormalizeReasoningEffort(reasoningEffort))
+	// The run's inference identity is its own copy. Adopting a model the live
+	// endpoint actually answered with records the divergence on that copy
+	// instead of mutating a process-global lease.
+	if inference != nil && inference.Endpoint != "" && inference.APIModel != "" {
 		// A first-class leased deployment is authoritative. Keep the endpoint
 		// tuning defaults (no-think, token budget, reasoning effort), but route
 		// the request to the exact endpoint/model identity the wall resolved.
@@ -102,11 +90,15 @@ func newStatsPlannerWithRunPolicy(profile, reasoningEffort, playStyle, riskToler
 	}
 	inner := agent.NewLLMPlannerFromConfig(primaryCfg)
 	inner.Goal = goal
-	inner.OnModelAdopted = farm.AdoptCurrentInferenceModel
+	inner.OnModelAdopted = func(model string) {
+		if inference != nil {
+			inference.AdoptModel(model)
+		}
+	}
 	var fallback *agent.LLMPlanner
 	if fallbackCfg != nil {
 		fallback = agent.NewLLMPlannerFromConfig(*fallbackCfg)
-		fallback.OnModelAdopted = farm.AdoptCurrentInferenceModel
+		fallback.OnModelAdopted = inner.OnModelAdopted
 	}
 
 	s := &statsPlanner{

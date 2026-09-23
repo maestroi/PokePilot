@@ -149,17 +149,17 @@ func TestFarmLLMAppliesSpecGoal(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(src)
-	if !strings.Contains(text, "newStatsPlanner(llmProfile, reasoningEffort, goal") {
-		t.Fatal("runFarmLLM does not pass the leased profile and goal into statsPlanner")
+	if !strings.Contains(text, "newStatsPlannerWithRunPolicy(policy, llmProfile, reasoningEffort, spec.Inference") {
+		t.Fatal("runFarmLLM does not pass the leased policy, profile, and inference into statsPlanner")
 	}
-	if !strings.Contains(text, "spec.Goal") {
-		t.Fatal("runFarm never passes spec.Goal into the llm run")
+	if !strings.Contains(text, "farm.RunPolicyFor(spec)") {
+		t.Fatal("runFarm never derives the llm run policy from spec")
 	}
 	if !strings.Contains(text, "reportingPlanner{inner: stats, snap: snap}") {
 		t.Fatal("runFarmLLM does not publish the latest plan onto the heartbeat snap")
 	}
-	if !strings.Contains(text, "newStatsPlanner(") {
-		t.Fatal("runFarmLLM does not tally the llm planner's choices for the watch page")
+	if !strings.Contains(text, "spec.Goal.String()") {
+		t.Fatal("runFarm never reads spec.Goal for the llm run")
 	}
 }
 

@@ -18,14 +18,14 @@ func TestEndlessEnqueuesSuccessor(t *testing.T) {
 	client := farm.NewClient(srv.URL)
 	enqueueViaHTTP(t, srv.URL, farm.Spec{
 		RunID: "loop-1", Planner: "llm", Starter: "squirtle",
-		Goal: "Earn the Boulder Badge.", Seed: 7, Endless: true, RandomSeed: true,
+		Goal: farm.GoalFrom("Earn the Boulder Badge."), Seed: 7, Endless: true, RandomSeed: true,
 	})
 
 	spec, err := client.Lease(ctx)
 	if err != nil || spec == nil {
 		t.Fatalf("lease: %v %v", spec, err)
 	}
-	if spec.Goal != "Earn the Boulder Badge." {
+	if spec.Goal.String() != "Earn the Boulder Badge." {
 		t.Fatalf("leased goal = %q", spec.Goal)
 	}
 	if err := client.Finish(ctx, farm.FinishReport{RunID: "loop-1", Attempt: spec.Attempt, Reason: "done"}); err != nil {

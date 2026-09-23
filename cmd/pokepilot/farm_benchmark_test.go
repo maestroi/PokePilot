@@ -41,7 +41,7 @@ func TestWriteFarmBenchmarkResult(t *testing.T) {
 		Planning:       agent.PlanningStats{StrategicCalls: 1},
 	}
 	spec := farm.Spec{
-		RunID: "ui-qualification-1", Game: "pokemon-red", Planner: "llm", Goal: "badges:1",
+		RunID: "ui-qualification-1", Game: "pokemon-red", Planner: "llm", Goal: farm.GoalFrom("badges:1"),
 		LLMProfile: "auto", Seed: 7, FPS: 0, ExperimentID: "qual-group",
 		ExperimentArm: "qualification-1-of-3", ExperimentCase: "brock",
 	}

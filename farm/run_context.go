@@ -29,20 +29,20 @@ type RunContext struct {
 	Seed            int64  `json:"seed"`
 }
 
-// RunContextForSpec snapshots policy extensions while the runner still owns
-// the leased Spec. That matters because PlayStyle/Risk/Wild are compatibility
-// extensions keyed by run ID rather than fields on the historical Spec struct.
+// RunContextForSpec snapshots the behavior knobs that shaped this run. They
+// are read straight off the Spec now that the Spec is the complete source of
+// truth for a run's configuration.
 func RunContextForSpec(spec Spec) RunContext {
 	return RunContext{
 		Planner:         spec.Planner,
 		Starter:         spec.Starter,
 		Dest:            spec.Dest,
-		Goal:            spec.Goal,
+		Goal:            spec.Goal.String(),
 		LLMProfile:      spec.LLMProfile,
 		ReasoningEffort: spec.ReasoningEffort,
-		PlayStyle:       PlayStyleForSpec(spec),
-		RiskTolerance:   RiskToleranceForSpec(spec),
-		WildEncounters:  WildEncountersForSpec(spec),
+		PlayStyle:       spec.PlayStyle,
+		RiskTolerance:   spec.RiskTolerance,
+		WildEncounters:  spec.WildEncounters,
 		Seed:            spec.Seed,
 	}
 }

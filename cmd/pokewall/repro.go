@@ -100,22 +100,26 @@ func (w *Wall) handleQueueRepro(res http.ResponseWriter, req *http.Request) {
 	}
 
 	spec := farm.Spec{
-		RunID:      newID,
-		Seed:       run.Seed,
-		Game:       run.Game,
-		Planner:    run.Planner,
-		Starter:    run.Starter,
-		Dest:       run.Dest,
-		Goal:       run.Goal,
-		LLMProfile: run.LLMProfile,
-		FPS:        run.FPS,
-		MaxRounds:  run.MaxRounds,
-		MaxFrames:  run.MaxFrames,
+		RunID:          newID,
+		Seed:           run.Seed,
+		Game:           run.Game,
+		Planner:        run.Planner,
+		Starter:        run.Starter,
+		Goal:           farm.GoalFrom(run.Goal),
+		Dest:           run.Dest,
+		PlayStyle:      run.PlayStyle,
+		RiskTolerance:  run.RiskTolerance,
+		WildEncounters: run.WildEncounters,
+		LLMProfile:     run.LLMProfile,
+		FPS:            run.FPS,
+		MaxRounds:      run.MaxRounds,
+		MaxFrames:      run.MaxFrames,
 		// A repro is deliberately one verification run, never a new endless
 		// chain and never a randomized successor.
 		Endless:    false,
 		RandomSeed: false,
 	}
+	// Reproduce the same goal state, including an explicit Free play goal.
 	w.mu.Lock()
 	if _, exists := w.tiles[newID]; exists {
 		w.mu.Unlock()

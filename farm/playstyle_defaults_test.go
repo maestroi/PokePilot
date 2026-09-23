@@ -26,49 +26,63 @@ func TestDefaultGoalForPlayStyle(t *testing.T) {
 }
 
 func TestApplyPlayStyleDefaultGoal(t *testing.T) {
-	completionist := Spec{RunID: "default-completionist", Planner: "llm"}
-	RememberPlayStyle(completionist.RunID, "completionist")
+	completionist := Spec{RunID: "default-completionist", Planner: "llm", PlayStyle: "completionist"}
 	ApplyPlayStyleDefaultGoal(&completionist)
-	if completionist.Goal != DefaultDexGoal {
-		t.Fatalf("completionist default goal = %q, want %q", completionist.Goal, DefaultDexGoal)
+	if completionist.Goal.String() != DefaultDexGoal {
+		t.Fatalf("completionist default goal = %q, want %q", completionist.Goal.String(), DefaultDexGoal)
 	}
 
-	explicit := Spec{RunID: "explicit-goal", Planner: "llm", Goal: "badges:3"}
-	RememberPlayStyle(explicit.RunID, "completionist")
+	explicit := Spec{RunID: "explicit-goal", Planner: "llm", PlayStyle: "completionist", Goal: GoalFrom("badges:3")}
 	ApplyPlayStyleDefaultGoal(&explicit)
-	if explicit.Goal != "badges:3" {
-		t.Fatalf("explicit goal overwritten: got %q", explicit.Goal)
+	if explicit.Goal.String() != "badges:3" {
+		t.Fatalf("explicit goal overwritten: got %q", explicit.Goal.String())
+	}
+
+	freePlay := Spec{RunID: "explicit-free-play", Planner: "llm", PlayStyle: "completionist", Goal: GoalFrom("")}
+	ApplyPlayStyleDefaultGoal(&freePlay)
+	if freePlay.Goal.String() != "" || !freePlay.Goal.Provided() {
+		t.Fatalf("explicit free-play goal was replaced: %q provided=%v", freePlay.Goal.String(), freePlay.Goal.Provided())
 	}
 
 	legacy := Spec{RunID: "legacy-no-style", Planner: "llm"}
 	ApplyPlayStyleDefaultGoal(&legacy)
-	if legacy.Goal != "" {
-		t.Fatalf("legacy spec acquired goal %q", legacy.Goal)
+	if legacy.Goal.Provided() {
+		t.Fatalf("legacy spec acquired goal %q", legacy.Goal.String())
 	}
 
-	scripted := Spec{RunID: "scripted-style", Planner: "scripted"}
-	RememberPlayStyle(scripted.RunID, "completionist")
+	scripted := Spec{RunID: "scripted-style", Planner: "scripted", PlayStyle: "completionist"}
 	ApplyPlayStyleDefaultGoal(&scripted)
-	if scripted.Goal != "" {
-		t.Fatalf("scripted spec acquired goal %q", scripted.Goal)
+	if scripted.Goal.Provided() {
+		t.Fatalf("scripted spec acquired goal %q", scripted.Goal.String())
 	}
 }
 
-func TestSpecDecodeAppliesPlayStyleDefaultGoal(t *testing.T) {
+// TestSpecDecodeKeepsWireFaithful pins the rule that decoding a Spec is a
+// faithful record of what the operator asked for: the play-style default goal
+// is applied by the runner when it starts a run, not by the decoder.
+func TestSpecDecodeKeepsWireFaithful(t *testing.T) {
 	var completionist Spec
 	if err := json.Unmarshal([]byte(`{"run_id":"decoded-completionist","planner":"llm","play_style":"completionist"}`), &completionist); err != nil {
 		t.Fatal(err)
 	}
-	if completionist.Goal != DefaultDexGoal {
-		t.Fatalf("decoded completionist goal = %q, want %q", completionist.Goal, DefaultDexGoal)
+	if completionist.PlayStyle != "completionist" {
+		t.Fatalf("decoded play style = %q, want completionist", completionist.PlayStyle)
+	}
+	if completionist.Goal.Provided() {
+		t.Fatalf("decode invented a goal %q", completionist.Goal.String())
+	}
+	ApplyPlayStyleDefaultGoal(&completionist)
+	if completionist.Goal.String() != DefaultDexGoal {
+		t.Fatalf("resolved completionist goal = %q, want %q", completionist.Goal.String(), DefaultDexGoal)
 	}
 
 	var explicit Spec
 	if err := json.Unmarshal([]byte(`{"run_id":"decoded-explicit","planner":"llm","play_style":"completionist","goal":"badges:4"}`), &explicit); err != nil {
 		t.Fatal(err)
 	}
-	if explicit.Goal != "badges:4" {
-		t.Fatalf("decoded explicit goal = %q, want badges:4", explicit.Goal)
+	ApplyPlayStyleDefaultGoal(&explicit)
+	if explicit.Goal.String() != "badges:4" {
+		t.Fatalf("decoded explicit goal = %q, want badges:4", explicit.Goal.String())
 	}
 }
 
@@ -77,8 +91,8 @@ func TestSpecWirePreservesExplicitFreePlay(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{"run_id":"decoded-free-play","planner":"llm","play_style":"completionist","goal":""}`), &first); err != nil {
 		t.Fatal(err)
 	}
-	if first.Goal != "" {
-		t.Fatalf("explicit free-play goal = %q, want empty", first.Goal)
+	if first.Goal.String() != "" || !first.Goal.Provided() {
+		t.Fatalf("explicit free-play goal = %q provided=%v, want provided empty", first.Goal.String(), first.Goal.Provided())
 	}
 
 	wire, err := json.Marshal(first)
@@ -93,7 +107,7 @@ func TestSpecWirePreservesExplicitFreePlay(t *testing.T) {
 	if err := json.Unmarshal(wire, &leased); err != nil {
 		t.Fatal(err)
 	}
-	if leased.Goal != "" {
-		t.Fatalf("leased free-play goal = %q, want empty", leased.Goal)
+	if leased.Goal.String() != "" || !leased.Goal.Provided() {
+		t.Fatalf("leased free-play goal = %q provided=%v, want provided empty", leased.Goal.String(), leased.Goal.Provided())
 	}
 }

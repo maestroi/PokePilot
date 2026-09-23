@@ -301,7 +301,7 @@ func (c *mcpControl) startRun(ctx context.Context, _ *mcp.CallToolRequest, in mc
 		Planner:         planner,
 		Starter:         starter,
 		Dest:            dest,
-		Goal:            goal,
+		Goal:            farm.GoalFrom(goal),
 		LLMProfile:      llmProfile,
 		ReasoningEffort: reasoningEffort,
 		FPS:             in.FPS,

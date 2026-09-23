@@ -17,7 +17,7 @@ func TestCheckpointReproQueuesFreshRunAndPinsSource(t *testing.T) {
 	w := NewWall(dumps)
 	const sourceID = "failed-elite-four"
 	sourceSpec := farm.Spec{
-		RunID: sourceID, Planner: "llm", Starter: "squirtle", Goal: "elite-four",
+		RunID: sourceID, Planner: "llm", Starter: "squirtle", Goal: farm.GoalFrom("elite-four"),
 		LLMProfile: "auto", Seed: 77, FPS: 0, MaxRounds: 400, MaxFrames: 900000,
 		Endless: true, RandomSeed: true,
 	}
@@ -74,7 +74,7 @@ func TestCheckpointReproQueuesFreshRunAndPinsSource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if lease == nil || lease.RunID != queued.RunID || lease.Goal != sourceSpec.Goal || lease.Seed != sourceSpec.Seed {
+	if lease == nil || lease.RunID != queued.RunID || lease.Goal.String() != sourceSpec.Goal.String() || lease.Seed != sourceSpec.Seed {
 		t.Fatalf("lease = %+v", lease)
 	}
 	if lease.Endless || lease.RandomSeed {

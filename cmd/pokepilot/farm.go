@@ -348,7 +348,7 @@ func runFarm(m *emu.Emu, client *farm.Client, library *romLibrary, watchPort int
 		lastIdleLog = time.Time{}
 		log.Printf(
 			"farm: %s: lease acquired attempt=%d game=%s planner=%s starter=%s goal=%q",
-			spec.RunID, spec.Attempt, spec.Game, spec.Planner, spec.Starter, spec.Goal,
+			spec.RunID, spec.Attempt, spec.Game, spec.Planner, spec.Starter, spec.Goal.String(),
 		)
 
 		planner, starter, dest, fps, maxRounds, maxFrames := applySpec(*spec)
@@ -358,6 +358,10 @@ func runFarm(m *emu.Emu, client *farm.Client, library *romLibrary, watchPort int
 			time.Sleep(farmErrorSleep)
 			continue
 		}
+		// Resolve a missing LLM goal from the leased play style here, where the
+		// run is about to start, rather than while decoding the wire. Decoding
+		// stays a faithful record of what the operator asked for.
+		farm.ApplyPlayStyleDefaultGoal(spec)
 
 		// The cartridge is rebuilt per lease: a two-game worker pool runs
 		// either game, and an empty game keeps the cartridge this worker
@@ -371,7 +375,7 @@ func runFarm(m *emu.Emu, client *farm.Client, library *romLibrary, watchPort int
 			continue
 		}
 
-		if runOne(m, client, *spec, planner, starter, dest, spec.Goal, fps, maxRounds, maxFrames, bootState, tracer, snap, &mem, addrs, checkpointDir) {
+		if runOne(m, client, *spec, planner, starter, dest, fps, maxRounds, maxFrames, bootState, tracer, snap, &mem, addrs, checkpointDir) {
 			log.Printf("farm: %s: emulator poisoned by stalled link exchange; recycling worker", spec.RunID)
 			return true
 		}
@@ -427,7 +431,7 @@ func validateSpec(planner, starter, dest string) error {
 // runOne runs one leased spec end-to-end and always finishes it. The
 // heartbeat starts before gameplay and is stopped and joined before the
 // dump, so no heartbeat arrives after Finish.
-func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, dest, goal string, fps, maxRounds, maxFrames int, bootState []byte, tracer *dialogueTracer, snap *heartbeatSnap, mem *state.Mem, addrs []string, checkpointDir string) bool {
+func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, dest string, fps, maxRounds, maxFrames int, bootState []byte, tracer *dialogueTracer, snap *heartbeatSnap, mem *state.Mem, addrs []string, checkpointDir string) bool {
 	restoreRunID := setFarmRunID(spec.RunID)
 	defer restoreRunID()
 
@@ -452,7 +456,7 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 	// Start after fresh restore + seed burn, or after durable resume restore,
 	// so the checked recording start state is the state this worker continues.
 	// Recording is diagnostic evidence only: failure to start must not affect gameplay.
-	recorder, err := m.StartSessionRecording(farmRecordingMetadata(spec, planner, starter, dest, goal, burn, client.Version))
+	recorder, err := m.StartSessionRecording(farmRecordingMetadata(spec, planner, starter, dest, spec.Goal.String(), burn, client.Version))
 	if err != nil {
 		log.Printf("farm: %s: start session recording: %v", spec.RunID, err)
 		recorder = nil
@@ -494,7 +498,7 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 	case "scripted":
 		reason, detail, progEarly, progFinal = runFarmScripted(m, starter, dest, seed)
 	case "llm":
-		reason, detail, progEarly, progFinal, emulatorPoisoned = runFarmLLM(m, spec, starter, goal, spec.LLMProfile, spec.ReasoningEffort, maxRounds, maxFrames, seed, cancel, snap, checkpointDir)
+		reason, detail, progEarly, progFinal, emulatorPoisoned = runFarmLLM(m, spec, farm.RunPolicyFor(spec), starter, spec.LLMProfile, spec.ReasoningEffort, maxRounds, maxFrames, seed, cancel, snap, checkpointDir)
 	}
 
 	if emulatorPoisoned {
@@ -693,8 +697,10 @@ func runFarmScripted(m *emu.Emu, starter, dest string, seed int64) (string, stri
 
 // runFarmLLM mirrors runLLM's diagnostics and objective list; the only
 // differences are that the budget comes from the spec and cancel is the
-// wall's cooperative stop.
-func runFarmLLM(m *emu.Emu, spec farm.Spec, starter, goal, llmProfile, reasoningEffort string, maxRounds, maxFrames int, seed int64, cancel <-chan struct{}, snap *heartbeatSnap, checkpointDir string) (string, string, *farm.Progress, *farm.Progress, bool) {
+// wall's cooperative stop. The run's gameplay policy and inference identity
+// arrive already extracted from the leased Spec, so this path never consults
+// process-global state.
+func runFarmLLM(m *emu.Emu, spec farm.Spec, policy farm.RunPolicy, starter, llmProfile, reasoningEffort string, maxRounds, maxFrames int, seed int64, cancel <-chan struct{}, snap *heartbeatSnap, checkpointDir string) (string, string, *farm.Progress, *farm.Progress, bool) {
 	resumeFrom := farmResumePath(checkpointDir)
 	romSum := sha256.Sum256(m.ROM())
 	romSHA256 := fmt.Sprintf("%x", romSum[:])
@@ -716,7 +722,7 @@ func runFarmLLM(m *emu.Emu, spec farm.Spec, starter, goal, llmProfile, reasoning
 	fmt.Println("planner: llm — the model picks from a menu rebuilt every round")
 
 	logw := &agentTraceLog{w: os.Stdout, note: m.TraceNote}
-	stats := newStatsPlanner(llmProfile, reasoningEffort, goal, m, m.TraceStats, snap)
+	stats := newStatsPlannerWithRunPolicy(policy, llmProfile, reasoningEffort, spec.Inference, m, m.TraceStats, snap)
 	stats.wirePlannerLogs(logw, snap)
 	benchmarkStarted := time.Now()
 	res := agent.Run(m, m.ROM(), reportingPlanner{inner: stats, snap: snap}, agent.Budget{

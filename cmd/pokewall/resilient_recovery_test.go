@@ -42,7 +42,7 @@ func TestResilientGoalSurvivesRepeatedErrorBudget(t *testing.T) {
 	ctx := context.Background()
 
 	queueRecoveryTestRun(t, srv.URL, farm.Spec{
-		RunID: "resilient-loop", Planner: "llm", Goal: "beat the game",
+		RunID: "resilient-loop", Planner: "llm", Goal: farm.GoalFrom("beat the game"),
 		RecoveryProfile: farm.RecoveryProfileResilient,
 	})
 

@@ -200,7 +200,7 @@ func TestMCPToolsDriveOnlyOperatorAPI(t *testing.T) {
 	if runID == "" || !strings.HasPrefix(runID, "mcp-") {
 		t.Fatalf("generated run id = %q", runID)
 	}
-	if spec.Planner != "llm" || spec.Starter != "charmander" || spec.Goal != "badges:1" || spec.MaxRounds != 40 {
+	if spec.Planner != "llm" || spec.Starter != "charmander" || spec.Goal.String() != "badges:1" || spec.MaxRounds != 40 {
 		t.Fatalf("queued spec = %+v", spec)
 	}
 	if spec.Endless || spec.RandomSeed {

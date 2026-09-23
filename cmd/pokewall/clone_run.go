@@ -47,8 +47,11 @@ func (w *Wall) handleCloneRun(res http.ResponseWriter, req *http.Request) {
 		Game:            source.Game,
 		Planner:         source.Planner,
 		Starter:         source.Starter,
+		Goal:            farm.GoalFrom(source.Goal),
 		Dest:            source.Dest,
-		Goal:            source.Goal,
+		PlayStyle:       source.PlayStyle,
+		RiskTolerance:   source.RiskTolerance,
+		WildEncounters:  source.WildEncounters,
 		LLMProfile:      source.LLMProfile,
 		LLMDeployment:   source.LLMDeployment,
 		ReasoningEffort: source.ReasoningEffort,
@@ -59,14 +62,14 @@ func (w *Wall) handleCloneRun(res http.ResponseWriter, req *http.Request) {
 		Endless:         source.Endless,
 		RandomSeed:      source.RandomSeed,
 	})
+	// applySpec settles the destination goal state from the source. Passing the
+	// source goal as provided keeps an explicit Free play goal (and any
+	// already-resolved play-style default) from being re-derived in the clone.
 	delete(w.cancel, cloneID)
 	w.mu.Unlock()
 
-	// These extension fields are keyed by run id outside Tile. Install them
-	// before the clone becomes leasable so a fast worker cannot observe a
-	// partially cloned policy. This also preserves an explicitly empty Free Play
-	// goal rather than applying a play-style default.
-	farm.CopyRunPolicy(sourceID, cloneID)
+	// The clone now owns every policy field on its own Tile, installed before
+	// it becomes leasable so a fast worker cannot observe a partial policy.
 
 	// Do the same for spectator visibility. The clone exists in RAM but is not
 	// in the lease queue yet, so a hidden source cannot briefly leak publicly.

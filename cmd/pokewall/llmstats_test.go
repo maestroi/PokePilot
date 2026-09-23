@@ -45,7 +45,7 @@ func TestDashboardCarriesLLMStats(t *testing.T) {
 	defer srv.Close()
 	ctx := context.Background()
 	client := farm.NewClient(srv.URL)
-	enqueueViaHTTP(t, srv.URL, farm.Spec{RunID: "llm1", Planner: "llm", Goal: "Earn the Boulder Badge."})
+	enqueueViaHTTP(t, srv.URL, farm.Spec{RunID: "llm1", Planner: "llm", Goal: farm.GoalFrom("Earn the Boulder Badge.")})
 
 	spec, err := client.Lease(ctx)
 	if err != nil || spec == nil {
