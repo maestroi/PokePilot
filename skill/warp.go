@@ -78,6 +78,14 @@ const maxWarpApproachAttempts = 4
 const maxWarpCandidates = 4
 
 func Traverse(m *emu.Emu, romData []byte, e world.Edge) error {
+	return TraverseAvoiding(m, romData, e, nil)
+}
+
+// TraverseAvoiding is Traverse with caller-supplied extra tiles treated as
+// unwalkable for every warp-approach planner. It is intended for scripted
+// blockers that the collision grid cannot represent, while keeping Traverse
+// itself map-agnostic.
+func TraverseAvoiding(m *emu.Emu, romData []byte, e world.Edge, extraBlocked map[[2]int]bool) error {
 	cur := m.Peek8(sym.CurMap)
 	if cur != e.From {
 		return fmt.Errorf("skill: Traverse: on map %02x, but edge starts on %02x", cur, e.From)
@@ -200,6 +208,7 @@ func Traverse(m *emu.Emu, romData []byte, e world.Edge) error {
 				// fact about where the player stands right now, never a property
 				// of the map or the warp, so it is never cached.
 				x, y := playerXY(m)
+				blocked = mergeBlockedTiles(blocked, extraBlocked)
 				rx, ry, steps, p, err := warpTarget(h, e, grid, int(x), int(y), blocked, excludeWarp, romData)
 				if err != nil {
 					unwalkable = fmt.Errorf("skill: Traverse: no reachable warp to %02x from (%d,%d) on map %02x (edge tile %d,%d): %v: %w",
@@ -220,7 +229,7 @@ func Traverse(m *emu.Emu, romData []byte, e world.Edge) error {
 				// chamber after #1327 removed post-failure nearest-tree cuts).
 				if !fieldApproachTried {
 					fieldApproachTried = true
-					if aperr := approachWarpWithFieldPath(m, romData, e); aperr == nil {
+					if aperr := approachWarpWithFieldPath(m, romData, e, extraBlocked); aperr == nil {
 						if g, gerr := liveMapGrid(m, romData, h); gerr == nil {
 							grid = g
 						}
@@ -505,6 +514,20 @@ func waitForPositionStable(m *emu.Emu, budget, stableFrames int) error {
 		budget, m.Peek8(sym.CurMap), x, y)
 }
 
+func mergeBlockedTiles(blocked, extra map[[2]int]bool) map[[2]int]bool {
+	if len(extra) == 0 {
+		return blocked
+	}
+	merged := make(map[[2]int]bool, len(blocked)+len(extra))
+	for p, blocked := range blocked {
+		merged[p] = blocked
+	}
+	for p, blocked := range extra {
+		merged[p] = blocked
+	}
+	return merged
+}
+
 // warpAvoidance extends blocked with every one of this map's warp tiles
 // except the tile the player is standing on. A path search that does not
 // know about warps can freely route across one on its way to some other
@@ -621,7 +644,7 @@ func edgeWarpCandidates(h rom.MapHeader, e world.Edge, romData []byte) []rom.War
 // (Celadon Gym's leader chamber) has no ordinary route to the door even when
 // the party can legally Cut out. This is destination-aware: it ranks approach
 // tiles by field-action cost and never cuts an arbitrary nearby tree.
-func approachWarpWithFieldPath(m *emu.Emu, romData []byte, e world.Edge) error {
+func approachWarpWithFieldPath(m *emu.Emu, romData []byte, e world.Edge, extraBlocked map[[2]int]bool) error {
 	if e.Kind != world.EdgeWarp {
 		return world.ErrNoPath
 	}
@@ -640,6 +663,7 @@ func approachWarpWithFieldPath(m *emu.Emu, romData []byte, e world.Edge) error {
 	sx, sy := playerXY(m)
 	blocked := spriteBlockers(m)
 	blocked = warpAvoidance(h, int(sx), int(sy), blocked)
+	blocked = mergeBlockedTiles(blocked, extraBlocked)
 
 	type rankedApproach struct {
 		dest    Destination
