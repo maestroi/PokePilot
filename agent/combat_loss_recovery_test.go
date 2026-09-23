@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"errors"
 	"testing"
 
 	gameruntime "github.com/maestroi/pokepilot/game"
@@ -20,11 +19,11 @@ func TestPromoteDefeatRespawnFailureMakesProgressionLossRecoverable(t *testing.T
 		Party: recoveredParty(37),
 	}
 	final := Observation{
-		Location: "cinnabar pokemon center",
+		Location: "cinnabar island",
 		X: 3, Y: 4,
 		Controllable: true,
 		Money: 1200,
-		RespawnPlace: "cinnabar pokemon center",
+		RespawnPlace: "cinnabar island",
 		Party: recoveredParty(37),
 	}
 	result := ObjectiveResult{
@@ -56,10 +55,10 @@ func TestPromoteDefeatRespawnFailureMakesProgressionLossRecoverable(t *testing.T
 func TestPromoteDefeatRespawnFailureDoesNotOverrideKnownFailure(t *testing.T) {
 	initial := Observation{Location: "cinnabar gym", Money: 2400, Party: recoveredParty(37)}
 	final := Observation{
-		Location: "cinnabar pokemon center",
+		Location: "cinnabar island",
 		Controllable: true,
 		Money: 1200,
-		RespawnPlace: "cinnabar pokemon center",
+		RespawnPlace: "cinnabar island",
 		Party: recoveredParty(37),
 	}
 	result := ObjectiveResult{
@@ -79,7 +78,7 @@ func TestPromoteDefeatRespawnFailureDoesNotOverrideKnownFailure(t *testing.T) {
 
 func TestDefeatRespawnRequiresRealRespawnEvidence(t *testing.T) {
 	initial := Observation{
-		Location: "cinnabar pokemon center",
+		Location: "cinnabar island",
 		X: 3, Y: 4,
 		Money: 1200,
 		Party: recoveredParty(37),
@@ -115,7 +114,7 @@ func TestCombatLossFilterFailsOpenForOnlyLegalRetry(t *testing.T) {
 	known.Failures[trainerLossFailureKey(obj)] = Failure{
 		Objective: obj.String(),
 		Times: 1,
-		Last: errors.New("lost battle").Error(),
+		Last: "lost battle",
 	}
 
 	got := filterTrainerLossBlocked([]Objective{obj}, known)
