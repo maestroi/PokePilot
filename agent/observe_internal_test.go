@@ -160,7 +160,6 @@ func TestObservedPersonsRespectStationaryBlockers(t *testing.T) {
 	}
 }
 
-
 func TestMapObjectReachabilityUsesLiveBlockReplacement(t *testing.T) {
 	path := os.Getenv("POKEMON_RED_ROM")
 	if path == "" {
