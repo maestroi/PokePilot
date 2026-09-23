@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/maestroi/pokepilot/farm"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -314,5 +315,27 @@ func TestMCPArtifactContentUsesReplayForDurabilizedArtifacts(t *testing.T) {
 	}
 	if string(decoded) != "durabilized-bytes" {
 		t.Fatalf("artifact content = %q, want %q", decoded, "durabilized-bytes")
+	}
+}
+
+func TestCompactEventsKeepsNewestClippedEvents(t *testing.T) {
+	var events []any
+	for i := 0; i < mcpMaxEvents+5; i++ {
+		events = append(events, map[string]any{"at": i, "detail": strings.Repeat("é", mcpMaxEventText)})
+	}
+	m := map[string]any{"activity": events}
+	compactEvents(m, "activity")
+
+	got := m["activity"].([]any)
+	if len(got) != mcpMaxEvents || m["activity_omitted"] != 5 {
+		t.Fatalf("kept %d omitted %v, want %d and 5", len(got), m["activity_omitted"], mcpMaxEvents)
+	}
+	first := got[0].(map[string]any)
+	if first["at"] != 5 {
+		t.Fatalf("first kept event at=%v, want the newest window starting at 5", first["at"])
+	}
+	detail := first["detail"].(string)
+	if len(detail) > mcpMaxEventText+len("…") || !utf8.ValidString(detail) {
+		t.Fatalf("detail not clipped to valid UTF-8: %d bytes", len(detail))
 	}
 }
