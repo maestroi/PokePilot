@@ -1,6 +1,7 @@
 package skill
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
@@ -135,6 +136,26 @@ func AcquireCinnabarSecretKey(m *emu.Emu, romData []byte, policy MovePolicy) err
 	return nil
 }
 
+func runMansionFleeRecovery(m *emu.Emu, policy MovePolicy, action func() error) error {
+	_, err := travel(
+		m,
+		policy,
+		mansionTravelBattles,
+		action,
+		func() DialogueRecoveryResult { return RecoverDialogue(m, dialogueRecoveryBudget) },
+		func() bool { return m.Peek8(sym.StatusFlags4)&blackoutBit != 0 },
+		fleeThenFight(m, policy, guaranteedWildFleeAttempts),
+	)
+	return err
+}
+
+func mansionInterruptionForTravel(err error) error {
+	if errors.Is(err, ErrBattleInterrupted) {
+		return ErrBattle
+	}
+	return err
+}
+
 func enterPokemonMansion(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if m.Peek8(sym.CurMap) != cinnabarIslandMap {
 		// Keep the story handoff local once Cinnabar is reached. A generic
@@ -151,7 +172,23 @@ func enterPokemonMansion(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if got := m.Peek8(sym.CurMap); got != cinnabarIslandMap {
 		return fmt.Errorf("skill: AcquireCinnabarSecretKey: Mansion entrance staging ended on map %#04x, want Cinnabar Island", got)
 	}
-	if err := Traverse(m, romData, cinnabarToMansionWarp); err != nil {
+	// #1634 deliberately replaced generic cross-map routing with the exact
+	// Cinnabar Mansion warp. Keep that deterministic story edge, but recover
+	// the same incidental dialogue/battle interruptions that TravelFlee used
+	// to own. Farm #1636/#1637 showed that a raw Traverse bubbles an
+	// ErrDialogueInterrupted straight to the objective budget.
+	if err := runMansionFleeRecovery(m, policy, func() error {
+		switch got := m.Peek8(sym.CurMap); got {
+		case pokemonMansion1FMap:
+			// A recovered interruption may let an already-started warp finish
+			// before the retry. Treat the positively observed landing as done.
+			return nil
+		case cinnabarIslandMap:
+			return Traverse(m, romData, cinnabarToMansionWarp)
+		default:
+			return fmt.Errorf("Mansion entrance retry on map %#04x, want Cinnabar Island", got)
+		}
+	}); err != nil {
 		return fmt.Errorf("skill: AcquireCinnabarSecretKey: enter Pokemon Mansion through Cinnabar door: %w", err)
 	}
 	if got := m.Peek8(sym.CurMap); got != pokemonMansion1FMap {
@@ -264,6 +301,35 @@ func ensureMansionWarpReachable(m *emu.Emu, romData []byte, edge world.Edge, sw 
 }
 
 func dropMansion3FTo1F(m *emu.Emu, romData []byte, policy MovePolicy) error {
+	// The final step onto a dungeon hole is outside TravelFlee: a wild
+	// encounter or trainer sightline can steal control after the adjacent-tile
+	// approach but before the map script processes the fall. The old loop just
+	// stepped 1200 frames and reported a bare "did not change map", which the
+	// agent normalized as unknown_failure (#1635, with later recurrences).
+	//
+	// Run the whole resumable drop attempt through Travel's interruption
+	// resolver. After a recovered battle/dialogue we recompute live reachability
+	// and approach the hole again; if recovery itself let the pending dungeon
+	// warp finish, observing Mansion 1F is already the positive postcondition.
+	if err := runMansionFleeRecovery(m, policy, func() error {
+		switch got := m.Peek8(sym.CurMap); got {
+		case pokemonMansion1FMap:
+			return nil
+		case pokemonMansion3FMap:
+			return dropMansion3FTo1FOnce(m, romData, policy)
+		default:
+			return fmt.Errorf("Mansion 3F drop retry on map %#04x, want 3F or 1F", got)
+		}
+	}); err != nil {
+		return err
+	}
+	if got := m.Peek8(sym.CurMap); got != pokemonMansion1FMap {
+		return fmt.Errorf("Mansion 3F drop recovery ended on map %#04x, want 1F", got)
+	}
+	return nil
+}
+
+func dropMansion3FTo1FOnce(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if m.Peek8(sym.CurMap) != pokemonMansion3FMap {
 		return fmt.Errorf("drop requested on map %#04x, want Mansion 3F", m.Peek8(sym.CurMap))
 	}
@@ -307,16 +373,20 @@ func dropMansion3FTo1F(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if !ok {
 		return fmt.Errorf("invalid step %s into Mansion drop hole", step)
 	}
+
 	m.Press(btn)
+	defer m.Release(btn)
 	crossed := false
 	for i := 0; i < mansionDropBudget; i++ {
 		if m.Peek8(sym.CurMap) != pokemonMansion3FMap {
 			crossed = true
 			break
 		}
+		if err := mansionInterruptionForTravel(movementInterruption(m)); err != nil {
+			return err
+		}
 		m.StepFrame()
 	}
-	m.Release(btn)
 	if !crossed {
 		return fmt.Errorf("Mansion drop at (%d,%d) did not change map", hx, hy)
 	}
