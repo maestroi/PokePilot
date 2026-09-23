@@ -197,6 +197,10 @@ func (w *Wall) reportObjectiveFailure(dump farm.FinishReport, f farm.ObjectiveFa
 	if err != nil {
 		return err
 	}
+	occurrenceKey, occurrenceFP, _, err := objectiveFailureOccurrenceFingerprint(f)
+	if err != nil {
+		return err
+	}
 	circuit := failureCircuitDecision{}
 	if cp := controlPlaneFor(w); cp != nil && circuitFailureEligible(f) {
 		scope, _ := w.circuitScopeForRun(dump.RunID)
@@ -205,7 +209,7 @@ func (w *Wall) reportObjectiveFailure(dump farm.FinishReport, f farm.ObjectiveFa
 			return fmt.Errorf("evaluate failure circuit: %w", err)
 		}
 	}
-	ext := objectiveFailureExternalID(dump.RunID, dump.Attempt, key)
+	ext := objectiveFailureExternalID(dump.RunID, dump.Attempt, occurrenceKey)
 
 	w.mu.Lock()
 	existing := w.outbox[ext]
@@ -285,6 +289,8 @@ func (w *Wall) reportObjectiveFailure(dump farm.FinishReport, f farm.ObjectiveFa
 		"runner_version":       dump.RunnerVersion,
 		"observed_revision":    observedRevision,
 		"fingerprint":          fp,
+		"family_fingerprint":   fp,
+		"occurrence_fingerprint": occurrenceFP,
 		"identity":             f.Identity,
 		"outcome":              f.Outcome,
 		"cause":                f.Cause,
