@@ -276,22 +276,12 @@ func TalkAt(m *emu.Emu, romData []byte, homeX, homeY uint8, policy MovePolicy) (
 		if liveX, liveY, ok := liveObjectPosition(m, objectID); ok {
 			tx, ty = liveX, liveY
 		}
-		px, py := playerXY(m)
-		faceX, faceY := tx, ty
-		if _, ok := directionTo(px, py, tx, ty); !ok {
-			// Not ordinarily adjacent — check whether we're at a counter
-			// approach instead (two tiles away, counter tile between) before
-			// treating this as the NPC having wandered off.
-			cg, err := liveMapGrid(m, romData, h)
-			cx, cy, counterOK := uint8(0), uint8(0), false
-			if err == nil {
-				cx, cy, counterOK = counterFacing(cg, px, py, tx, ty)
-			}
-			if !counterOK {
-				m.StepFrames(npcWaitFrames)
-				continue
-			}
-			faceX, faceY = cx, cy
+		faceX, faceY, facing := interactionFacingTile(m, romData, h, tx, ty)
+		if !facing {
+			// Neither adjacent nor in the counter approach: treat the NPC as
+			// having wandered off and re-approach it.
+			m.StepFrames(npcWaitFrames)
+			continue
 		}
 		if err := Face(m, faceX, faceY); err != nil {
 			m.StepFrames(npcWaitFrames)
@@ -465,6 +455,37 @@ func counterFacing(g *world.Grid, px, py, tx, ty uint8) (uint8, uint8, bool) {
 		return uint8(mx), uint8(my), true
 	}
 	return 0, 0, false
+}
+
+// interactionFacingTile reports the tile Face must turn the player toward in
+// order to interact with the map object at (tx,ty). It is the one shared rule
+// every "stand beside the object and interact" approach in this package needs,
+// so a caller cannot get it right by walking beside a counter NPC and then
+// wrong by facing the NPC's own tile:
+//
+//   - the object's own tile, when the player is already orthogonally adjacent;
+//   - otherwise the service-counter tile between the player and the object,
+//     when the player stands in the two-tile counter approach counterBeside
+//     picks. The Gen 1 talk range (IsSpriteOrSignInFrontOfPlayer,
+//     pokered home/overworld.asm:1118) counts the object as in front of the
+//     player in that position, so the counter tile is the correct — and
+//     genuinely adjacent — facing target. Facing the object's own tile from
+//     there is two tiles away and always fails.
+//
+// h is the current map header, used to build the live grid counterFacing
+// inspects. ok is false when the player is in neither position (a live NPC may
+// have walked away); the caller owns the re-approach decision because only it
+// knows whether the target can move.
+func interactionFacingTile(m *emu.Emu, romData []byte, h rom.MapHeader, tx, ty uint8) (uint8, uint8, bool) {
+	px, py := playerXY(m)
+	if _, ok := directionTo(px, py, tx, ty); ok {
+		return tx, ty, true
+	}
+	grid, err := liveMapGrid(m, romData, h)
+	if err != nil {
+		return 0, 0, false
+	}
+	return counterFacing(grid, px, py, tx, ty)
 }
 
 // talkApproachChoiceIndex classifies the tiny set of choices that are part of
