@@ -171,7 +171,7 @@ func Catalog() []Case {
 		},
 		{
 			ID:          "elite-four-champion",
-			Description: "Indigo Plateau checkpoint through Elite Four, Champion and Hall of Fame completion",
+			Description: "Indigo Plateau checkpoint through Elite Four, Champion and Hall of Fame with stage-by-stage resume verification",
 			Layer:       LayerMilestone,
 			Runner:      RunnerGoTest,
 			Package:     "./skill",
