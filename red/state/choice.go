@@ -57,11 +57,61 @@ type TwoOptionMenu struct {
 	Index int // wCurrentMenuItem: 0 or 1, which option the cursor is on
 }
 
-// menuCursorTile is the '▶' glyph PlaceMenuCursor writes at
-// (wTopMenuItemY, wTopMenuItemX). $ED per charmap.asm:177. It has no entry
-// in textChars, so ScreenText/DecodeTiles render it as a space; the cursor
-// check must read the raw tile id from wTileMap instead.
+// menuCursorTile is the filled '▶' glyph PlaceMenuCursor writes at the menu
+// cursor's location. $ED per charmap.asm:177. It has no entry in textChars, so
+// ScreenText/DecodeTiles render it as a space; the cursor check must read the
+// raw tile id from wTileMap instead.
 const menuCursorTile = 0xED
+
+// menuCursorSelectedTile is '▷' ($EC per charmap.asm:176), the UNFILLED cursor
+// PlaceUnfilledArrowMenuCursor writes over the same location. The START menu
+// calls it as soon as a button is pressed, before it branches on which button:
+//
+//	.buttonPressed
+//	    call PlaceUnfilledArrowMenuCursor
+//	    ld a, [wCurrentMenuItem] ...
+//
+// so a menu that is mid-selection — or a save state captured at that instant —
+// shows $EC where a waiting menu shows $ED. Both are the cursor glyph and both
+// mean a live menu; accepting only the filled one was how the START menu left
+// by UseEvolutionItem still read as "no menu".
+const menuCursorSelectedTile = 0xEC
+
+// menuCursorOffset returns the wTileMap offset the ROM currently holds for the
+// menu cursor, and whether that location is inside the 20x18 tilemap.
+//
+// Every cursor menu publishes its cursor through wMenuCursorLocation:
+// PlaceMenuCursor (pokered/home/window.asm) stores the tilemap address as it
+// draws, and HandleMenuInput calls it once per input-loop iteration, so the
+// value is live whenever a menu is waiting for input. Read it instead of
+// assuming the cursor sits on the menu's FIRST item: PlaceMenuCursor walks
+// down from (wTopMenuItemY, wTopMenuItemX) once per wCurrentMenuItem, and once
+// more per item when BIT_DOUBLE_SPACED_MENU is set. The START menu is
+// double-spaced with wTopMenuItemY=2, so ITEM selected (wCurrentMenuItem=2)
+// draws its cursor at (11,6) while (11,2) still holds the box border.
+func menuCursorOffset(m *Mem) (int, bool) {
+	cursor := uint16(m.U8(sym.MenuCursorLocation)) | uint16(m.U8(sym.MenuCursorLocation+1))<<8
+	if cursor < sym.TileMap {
+		return 0, false
+	}
+	offset := int(cursor - sym.TileMap)
+	if offset < 0 || offset >= sym.TileMapLen {
+		return 0, false
+	}
+	return offset, true
+}
+
+// menuCursorDrawn reports whether a cursor glyph — filled or unfilled — is
+// actually drawn at the location the ROM published. This is the positive,
+// screen-level evidence that separates a live menu from stale cursor bytes.
+func menuCursorDrawn(m *Mem) bool {
+	offset, ok := menuCursorOffset(m)
+	if !ok {
+		return false
+	}
+	tile := m.Slice(sym.TileMap, sym.TileMapLen)[offset]
+	return tile == menuCursorTile || tile == menuCursorSelectedTile
+}
 
 // DecodeTwoOptionMenu reports the live two-option prompt, or nil when none
 // is up. Three conditions, all positive, all from live state:
@@ -75,11 +125,13 @@ const menuCursorTile = 0xED
 //     guard is condition 3, which holds in both contexts.
 //  2. wMaxMenuItem == 1 — the highest valid menu index is 1, the shape
 //     DisplayTwoOptionMenu writes.
-//  3. wTileMap[wTopMenuItemY*20 + wTopMenuItemX] == $ED — the cursor glyph
-//     is actually drawn where the coordinates say it is. This is the
-//     condition that kills the stale-RAM false positive: stale
-//     coordinates point at a tile the game never drew a cursor on, so the
-//     check fails closed.
+//  3. A cursor glyph is actually
+//     drawn where the ROM recorded it. This is the condition that kills the
+//     stale-RAM false positive: stale coordinates point at a tile the game
+//     never drew a cursor on, so the check fails closed. It must read
+//     wMenuCursorLocation rather than the top-item coordinates, or a prompt
+//     whose cursor is on the second option (wCurrentMenuItem == 1) reads as
+//     "no prompt" and is then misclassified as ordinary dialogue.
 //
 // The tile is read raw from wTileMap as 20-wide rows, never via
 // ScreenText or DecodeTiles: textChars has no entry for $ED, so the cursor
@@ -91,12 +143,7 @@ func DecodeTwoOptionMenu(m *Mem) *TwoOptionMenu {
 	if m.U8(sym.MaxMenuItem) != 1 {
 		return nil
 	}
-	y := int(m.U8(sym.TopMenuItemY))
-	x := int(m.U8(sym.TopMenuItemX))
-	if y >= 18 || x >= 20 {
-		return nil
-	}
-	if m.Slice(sym.TileMap, sym.TileMapLen)[y*20+x] != menuCursorTile {
+	if !menuCursorDrawn(m) {
 		return nil
 	}
 	return &TwoOptionMenu{Index: int(m.U8(sym.CurrentMenuItem))}

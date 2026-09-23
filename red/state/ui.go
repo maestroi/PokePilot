@@ -32,23 +32,28 @@ func DecodeDialogue(m *Mem) *DialogueState {
 // Viridian Mart selected POKe BALL and left the run parked on "That will be
 // Y200. OK?", which nothing would answer, so every later objective failed.
 //
-// The test is the CURSOR GLYPH on the tilemap, at the coordinates the menu
-// says it drew itself — the same live evidence DecodeTwoOptionMenu uses,
-// generalised past its wMaxMenuItem == 1 check so it also catches the
-// buy/sell/quit menu and the priced item list. It is deliberately NOT
-// wTextBoxID: that is not a liveness bit and goes stale (every catch leaves
-// 0x14 behind — see TestRecoverDialogueIgnoresStaleTextBoxID), so reading
-// it here would call an ordinary NPC line a menu and refuse to page it.
-// The tilemap is the screen: either a cursor is drawn or it is not.
+// The test is the CURSOR GLYPH on the tilemap, at the location the ROM itself
+// recorded for it: wMenuCursorLocation is written by PlaceMenuCursor on every
+// iteration of HandleMenuInput, and nothing draws a filled '▶' anywhere else.
+// It is deliberately NOT wTextBoxID: that is not a liveness bit and goes stale
+// (every catch leaves 0x14 behind — see
+// TestRecoverDialogueIgnoresStaleTextBoxID), so reading it here would call an
+// ordinary NPC line a menu and refuse to page it.
+//
+// Read wMenuCursorLocation rather than TopMenuItemX/TopMenuItemY. Those are
+// only the FIRST item's coordinates; PlaceMenuCursor walks down one row per
+// item, and two rows per item when BIT_DOUBLE_SPACED_MENU is set. The START
+// menu is double-spaced with TopMenuItemY=2, so with ITEM selected
+// (CurrentMenuItem=2) its filled cursor is drawn at (11,6) while (11,2) still
+// holds the box border. Reading the top-item coordinates therefore reported
+// "no menu" for a perfectly live START menu, which left
+// UseEvolutionItem unable to see the leftover surface it had to dismiss and
+// deadlocked every stone use (run-jxh8lk19wv6on, triage:067dd95f2f04909a).
 func MenuUp(m *Mem) bool {
 	if m.U8(sym.FontLoaded) == 0 {
 		return false
 	}
-	y, x := int(m.U8(sym.TopMenuItemY)), int(m.U8(sym.TopMenuItemX))
-	if y >= 18 || x >= 20 {
-		return false
-	}
-	return m.Slice(sym.TileMap, sym.TileMapLen)[y*20+x] == menuCursorTile
+	return menuCursorDrawn(m)
 }
 
 // pendingFlyOrDungeonWarp is wStatusFlags6 BIT_FLY_WARP (3) | BIT_DUNGEON_WARP (4).

@@ -145,6 +145,18 @@ const (
 	TopMenuItemY    uint16 = 0xCC24
 	TopMenuItemX    uint16 = 0xCC25
 	CurrentMenuItem uint16 = 0xCC26
+	// MenuCursorLocation is wMenuCursorLocation (pokered.sym: 00:cc30): the
+	// absolute address of the menu cursor's current location within wTileMap,
+	// written by PlaceMenuCursor (pokered/home/window.asm) every iteration of
+	// HandleMenuInput. It is a little-endian pointer, so the cursor's tilemap
+	// offset is the 16-bit value minus TileMap.
+	//
+	// This is the only reliable way to find the cursor. PlaceMenuCursor walks
+	// down from (TopMenuItemY, TopMenuItemX) once per CurrentMenuItem and again
+	// once per item when hUILayoutFlags has BIT_DOUBLE_SPACED_MENU set, so the
+	// START menu's cursor sits at (11,2)+2*CurrentMenuItem*2 — four rows below
+	// TopMenuItemY for the ITEM entry, not on it.
+	MenuCursorLocation uint16 = 0xCC30
 	// PlayerMonNumber is wPlayerMonNumber: the party slot that is currently
 	// out in battle (InitBattleVariables zeroes it; SwitchPlayerMon and
 	// ChooseNextMon write it).

@@ -12,7 +12,8 @@ import (
 
 // twoOptionFixture builds a Mem with the given menu-shape bytes and, when
 // (y,x) is inside the 18x20 screen, the given tile at that tilemap
-// position.
+// position. It also records that position in wMenuCursorLocation, which is
+// where the ROM publishes the cursor the decoders actually read.
 func twoOptionFixture(fontLoaded, inBattle, max, cur, y, x, tile byte) *Mem {
 	m := &Mem{}
 	m[sym.FontLoaded] = fontLoaded
@@ -22,7 +23,11 @@ func twoOptionFixture(fontLoaded, inBattle, max, cur, y, x, tile byte) *Mem {
 	m[sym.TopMenuItemY] = y
 	m[sym.TopMenuItemX] = x
 	if int(y) < 18 && int(x) < 20 {
-		m[sym.TileMap+uint16(int(y)*20+int(x))] = tile
+		offset := uint16(int(y)*20 + int(x))
+		m[sym.TileMap+offset] = tile
+		cursor := sym.TileMap + offset
+		m[sym.MenuCursorLocation] = byte(cursor)
+		m[sym.MenuCursorLocation+1] = byte(cursor >> 8)
 	}
 	return m
 }
