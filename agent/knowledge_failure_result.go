@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"fmt"
 	"strings"
 )
 
@@ -13,19 +14,27 @@ func (k *Knowledge) FailedResult(result ObjectiveResult, nativeErr error) {
 	}
 	o := result.Objective
 	storage := objectiveStorageKey(o)
-	if (result.Battle != nil && result.Battle.Result == "lost") ||
+	f := k.Failures[storage]
+	combatLoss := (result.Battle != nil && result.Battle.Result == "lost") ||
 		failureCauseIs(result, failureCauseCombatDefeat) ||
-		failureCauseIs(result, "trainer_blacked_out") {
-		// All new combat recovery state is generic. trainer_blacked_out remains
-		// readable as an adapter compatibility cause until Travel projects the
-		// same defeat as portable BattleEvidence, but it must never create a
-		// fresh trainer_loss record.
+		failureCauseIs(result, "trainer_blacked_out")
+	if combatLoss {
+		// All new combat recovery state is generic. Carry the retry record
+		// forward before deleting it so repeated defeats escalate instead of
+		// starting over at "first loss" after every preparation cycle.
 		storage = combatLossFailureKey(o)
+		f = mergeCombatRetryFailure(k.Failures[storage], k.Failures[combatRetryReadyKey(o)])
 		delete(k.Failures, combatRetryReadyKey(o))
 	}
-	f := k.Failures[storage]
 	k.bumpFailureTimes(&f)
 	f.Objective, f.Last = o.String(), conciseObjectiveError(o, nativeErr)
+	if combatLoss {
+		stampCombatPreparation(&f, result.Final)
+		if f.ReadinessTarget > 0 {
+			f.Last += fmt.Sprintf("; combat preparation readiness %d -> %d before retry",
+				f.ReadinessBaseline, f.ReadinessTarget)
+		}
+	}
 	k.Failures[storage] = f
 }
 
@@ -70,9 +79,8 @@ func (k *Knowledge) notePartyCombatResult(before, after Observation, result Obje
 	if k == nil {
 		return
 	}
-	if partyCombatAdvanced(before, after) ||
+	progress := partyCombatAdvanced(before, after) ||
 		failureCauseIs(result, "train_progress_shortfall") ||
-		failureCauseIs(result, "training_inefficient_area") {
-		k.releaseCombatLossGates()
-	}
+		failureCauseIs(result, "training_inefficient_area")
+	k.releaseSatisfiedCombatLossGates(after, progress)
 }

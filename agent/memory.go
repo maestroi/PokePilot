@@ -49,12 +49,14 @@ type storedCompletion struct {
 }
 
 type storedFailure struct {
-	Key       ObjectiveKey `json:"key,omitempty"`
-	Mode      string       `json:"mode,omitempty"`
-	Objective string       `json:"objective"`
-	Times     int          `json:"times"`
-	Last      string       `json:"last"`
-	Build     string       `json:"build,omitempty"`
+	Key               ObjectiveKey `json:"key,omitempty"`
+	Mode              string       `json:"mode,omitempty"`
+	Objective         string       `json:"objective"`
+	Times             int          `json:"times"`
+	Last              string       `json:"last"`
+	Build             string       `json:"build,omitempty"`
+	ReadinessBaseline int          `json:"readiness_baseline,omitempty"`
+	ReadinessTarget   int          `json:"readiness_target,omitempty"`
 }
 
 // memoryFile is the v6 serialised form. Adjacency and native-map translation
@@ -154,7 +156,10 @@ func encodeMemoryFile(k *Knowledge, intent string, intentAge int, plans ...Plan)
 	sort.Strings(failureKeys)
 	for _, storage := range failureKeys {
 		failure := k.Failures[storage]
-		entry := storedFailure{Objective: failure.Objective, Times: failure.Times, Last: failure.Last, Build: failure.Build}
+		entry := storedFailure{
+			Objective: failure.Objective, Times: failure.Times, Last: failure.Last, Build: failure.Build,
+			ReadinessBaseline: failure.ReadinessBaseline, ReadinessTarget: failure.ReadinessTarget,
+		}
 		if key, mode, ok := parseFailureStorageKey(storage); ok {
 			entry.Key, entry.Mode = key, mode
 		}

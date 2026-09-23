@@ -63,7 +63,8 @@ func offerWithTMHMEvidence(m *emu.Emu, romData []byte, obs Observation, known *K
 		}
 	}
 	out = appendTMHMObjectives(romData, party, inventory, out)
-	offer.Candidates = prioritizeDexCleanupObjectives(obs, known, out)
+	out = prioritizeDexCleanupObjectives(obs, known, out)
+	offer.Candidates = annotateCombatPreparation(obs, known, out)
 	return offer
 }
 

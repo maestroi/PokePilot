@@ -91,10 +91,12 @@ func (k *Knowledge) nativeAdjacency() map[uint8][]uint8 {
 }
 
 type Failure struct {
-	Objective string
-	Times     int
-	Last      string
-	Build     string
+	Objective         string
+	Times             int
+	Last              string
+	Build             string
+	ReadinessBaseline int
+	ReadinessTarget   int
 }
 
 type Completion struct {
@@ -136,11 +138,16 @@ func (k *Knowledge) Failed(o Objective, err error) {
 		return
 	}
 	storage := objectiveStorageKey(o)
+	f := k.Failures[storage]
 	if generic, ok := combatLossFailureName(o, err); ok {
 		storage = generic
+		f = mergeCombatRetryFailure(k.Failures[storage], k.Failures[combatRetryReadyKey(o)])
+		// Direct/legacy callers do not carry an Observation, so preserve the
+		// historical progress-based release behavior while still carrying the
+		// retry count forward for escalation on the next structured loss.
+		f.ReadinessBaseline, f.ReadinessTarget = 0, 0
 		delete(k.Failures, combatRetryReadyKey(o))
 	}
-	f := k.Failures[storage]
 	k.bumpFailureTimes(&f)
 	f.Objective, f.Last = o.String(), conciseObjectiveError(o, err)
 	k.Failures[storage] = f
@@ -365,7 +372,10 @@ func (k *Knowledge) Done(o Objective) {
 	delete(k.Failures, combatRetryReadyKey(o))
 	clearLegacyCombatRecovery(k, o)
 	if o.Kind == KindTrain {
-		k.releaseCombatLossGates()
+		// Pre-readiness checkpoints/direct callers have no quantitative target.
+		// Preserve their historical "one completed training rung unlocks retry"
+		// behavior without weakening new structured preparation campaigns.
+		k.promoteCombatLossesToRetryWhere(func(f Failure) bool { return f.ReadinessTarget == 0 })
 	}
 }
 
@@ -409,7 +419,10 @@ func (k *Knowledge) restore(mem memoryFile) {
 		}
 	}
 	for _, f := range mem.Failures {
-		failure := Failure{Objective: f.Objective, Times: f.Times, Last: f.Last, Build: f.Build}
+		failure := Failure{
+			Objective: f.Objective, Times: f.Times, Last: f.Last, Build: f.Build,
+			ReadinessBaseline: f.ReadinessBaseline, ReadinessTarget: f.ReadinessTarget,
+		}
 		if f.Key != (ObjectiveKey{}) {
 			k.Failures[failureStorageKey(f.Key, f.Mode)] = failure
 		} else if f.Objective != "" {
