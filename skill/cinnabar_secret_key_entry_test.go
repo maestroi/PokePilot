@@ -30,7 +30,6 @@ func TestCinnabarSecretKeyUsesKnownMansionEntranceWarp(t *testing.T) {
 	}
 }
 
-
 func TestCinnabarGymGateSitsOnShortestMansionApproach(t *testing.T) {
 	path := os.Getenv("POKEMON_RED_ROM")
 	if path == "" {
