@@ -293,6 +293,14 @@ func main() {
 	mcpToken := strings.TrimSpace(os.Getenv("POKEPILOT_MCP_TOKEN"))
 	var httpHandler http.Handler
 	if *spectator {
+		if replayBase == "" {
+			// Not fatal: a spectator without a replay sidecar is a legitimate
+			// degraded mode. It is NOT a no-op though -- the replay catalog is
+			// what keeps finished runs in the public snapshot at all, so without
+			// -replay the public page shows only live runs and the archive looks
+			// empty rather than unconfigured.
+			log.Printf("pokeui: WARNING spectator mode without -replay: finished runs and their cached replays are omitted from the public archive; pass -replay http://replay:8080 and make sure this service shares an overlay network with the replay sidecar")
+		}
 		publicHandler := spectatorVisibilityHTTPHandler(wallBase, spectatorHandlerWithReplay(wallBase, replayBase))
 		httpHandler = withExternalHosts(publicCORS(spectatorSecurityHeaders(withVuePreview(publicHandler, "spectator"))))
 		log.Printf("pokeui proxying %s on http://%s (public spectator mode; read-only; replay=%t)", *wall, *httpAddr, replayBase != "")
