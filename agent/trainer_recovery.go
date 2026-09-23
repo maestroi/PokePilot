@@ -8,80 +8,220 @@ import (
 )
 
 // legacyTrainerLossFailurePrefix is retained only for v4/string-keyed
-// checkpoint migration. New state uses failureModeTrainerLoss + ObjectiveKey.
+// checkpoint migration. New state never writes trainer-specific combat modes.
 const legacyTrainerLossFailurePrefix = "trainer loss while attempting "
 
-func trainerLossObjective(o Objective) Objective {
+func combatRecoveryObjective(o Objective) Objective {
 	base := o
 	base.Note = ""
 	if base.Kind == KindGoTo || (base.Kind == KindHeal && base.Place != "") {
+		// Flee changes only wild-encounter policy. A mandatory trainer cannot
+		// be fled, so both journey variants share one combat recovery identity.
 		base.Flee = false
 	}
 	return base
 }
 
-// trainerLossFailureKey gives a trainer loss a stable logical objective
-// identity. Travel's fight/flee variants intentionally collapse to the same
-// key: fleeing changes only wild encounters, while a trainer cannot be fled.
+// trainerLossObjective is kept as a compatibility name for old tests/helpers.
+// New recovery code should use combatRecoveryObjective.
+func trainerLossObjective(o Objective) Objective { return combatRecoveryObjective(o) }
+
+// trainerLossFailureKey is read-only compatibility for persisted checkpoints.
+// New state writes combatLossFailureKey instead.
 func trainerLossFailureKey(o Objective) string {
-	return failureStorageKey(trainerLossObjective(o).Key(), failureModeTrainerLoss)
+	return failureStorageKey(combatRecoveryObjective(o).Key(), failureModeTrainerLoss)
 }
 
 func combatLossFailureKey(o Objective) string {
-	return failureStorageKey(trainerLossObjective(o).Key(), failureModeCombatLoss)
+	return failureStorageKey(combatRecoveryObjective(o).Key(), failureModeCombatLoss)
+}
+
+func combatRetryReadyKey(o Objective) string {
+	return failureStorageKey(combatRecoveryObjective(o).Key(), failureModeCombatRetry)
+}
+
+func legacyTrainerLossFailureKey(o Objective) string {
+	base := combatRecoveryObjective(o)
+	if base.Kind == KindGym && base.Place != "" {
+		return legacyTrainerLossFailurePrefix + "beat the gym leader at " + strings.ToUpper(string(base.Place))
+	}
+	return legacyTrainerLossFailurePrefix + base.String()
+}
+
+// combatLossFailureName recognizes only typed combat evidence. It deliberately
+// does not classify a plain ErrBlackedOut: wild losses and poison wipes are
+// logistics outcomes, not proof that the objective is blocked by combat.
+func combatLossFailureName(o Objective, err error) (string, bool) {
+	if err == nil {
+		return "", false
+	}
+	var required *skill.RequiredBattleError
+	if errors.As(err, &required) && errors.Is(err, skill.ErrBlackedOut) {
+		return combatLossFailureKey(o), true
+	}
+	if errors.Is(err, skill.ErrTrainerBlackedOut) {
+		return combatLossFailureKey(o), true
+	}
+	return "", false
+}
+
+// trainerLossFailureName is retained for compatibility with focused callers.
+// It now returns the generic combat-loss storage key and never a trainer_loss
+// writer key.
+func trainerLossFailureName(o Objective, err error) (string, bool) {
+	return combatLossFailureName(o, err)
 }
 
 func combatLossRecorded(k *Knowledge, o Objective) bool {
 	if k == nil {
 		return false
 	}
-	_, ok := k.Failures[combatLossFailureKey(o)]
-	return ok
-}
-
-func legacyTrainerLossFailureKey(o Objective) string {
-	base := trainerLossObjective(o)
+	base := combatRecoveryObjective(o)
+	if _, ok := k.Failures[combatLossFailureKey(base)]; ok {
+		return true
+	}
+	// Read-only migration support for structured pre-generic modes.
+	if _, ok := k.Failures[trainerLossFailureKey(base)]; ok {
+		return true
+	}
+	if _, ok := k.Failures[legacyTrainerLossFailureKey(base)]; ok {
+		return true
+	}
 	if base.Kind == KindGym && base.Place != "" {
-		return legacyTrainerLossFailurePrefix + "beat the gym leader at " + strings.ToUpper(base.Place)
+		if _, ok := k.Failures[gymLossFailureKey(string(base.Place))]; ok {
+			return true
+		}
+		if _, ok := k.Failures[legacyGymLossFailureKey(string(base.Place))]; ok {
+			return true
+		}
 	}
-	return legacyTrainerLossFailurePrefix + base.String()
-}
-
-func trainerLossFailureName(o Objective, err error) (string, bool) {
-	if err == nil || !errors.Is(err, skill.ErrTrainerBlackedOut) {
-		return "", false
-	}
-	return trainerLossFailureKey(o), true
+	return false
 }
 
 func trainerLossRecorded(k *Knowledge, o Objective) bool {
-	if k == nil {
-		return false
-	}
-	if combatLossRecorded(k, o) {
-		return true
-	}
-	if _, ok := k.Failures[trainerLossFailureKey(o)]; ok {
-		return true
-	}
-	_, ok := k.Failures[legacyTrainerLossFailureKey(o)]
-	return ok
+	return combatLossRecorded(k, o)
 }
 
-func (k *Knowledge) clearTrainerLossFailures() {
+func mergeCombatRetryFailure(a, b Failure) Failure {
+	if b.Times > a.Times || a.Objective == "" {
+		return b
+	}
+	return a
+}
+
+// promoteCombatLossesToRetry is the only live loss->retry state transition.
+// It converts generic combat losses, and any readable historical trainer/gym
+// modes, into generic combat_retry records keyed by ObjectiveKey.
+func (k *Knowledge) promoteCombatLossesToRetry() {
 	if k == nil {
 		return
 	}
-	for name := range k.Failures {
-		if _, mode, ok := parseFailureStorageKey(name); ok &&
-			(mode == failureModeTrainerLoss || mode == failureModeCombatLoss) {
-			delete(k.Failures, name)
+	retries := map[ObjectiveKey]Failure{}
+	for storage, f := range k.Failures {
+		if key, mode, ok := parseFailureStorageKey(storage); ok {
+			switch mode {
+			case failureModeCombatLoss, failureModeTrainerLoss, failureModeGymLoss:
+				key = combatRecoveryObjective(key.Objective()).Key()
+				retries[key] = mergeCombatRetryFailure(retries[key], f)
+				delete(k.Failures, storage)
+			case failureModeGymRetry:
+				// Legacy retry-ready state is migrated on sight.
+				key = combatRecoveryObjective(key.Objective()).Key()
+				retries[key] = mergeCombatRetryFailure(retries[key], f)
+				delete(k.Failures, storage)
+			}
 			continue
 		}
-		if strings.HasPrefix(name, legacyTrainerLossFailurePrefix) {
-			delete(k.Failures, name)
+		if strings.HasPrefix(storage, legacyGymLossFailurePrefix) {
+			place := strings.ToLower(strings.TrimPrefix(storage, legacyGymLossFailurePrefix))
+			if place != "" {
+				key := combatRecoveryObjective(Objective{Kind: KindGym, Place: PlaceID(place)}).Key()
+				retries[key] = mergeCombatRetryFailure(retries[key], f)
+			}
+			delete(k.Failures, storage)
+			continue
+		}
+		if strings.HasPrefix(storage, legacyTrainerLossFailurePrefix) {
+			// v4 trainer-loss strings did not persist a structural key. Their
+			// historical post-training behavior was simply to release the gate,
+			// so preserve that behavior rather than parse display prose.
+			delete(k.Failures, storage)
+			continue
+		}
+		// v4 checkpoints used the generic gym display sentence as the retry key
+		// and kept the place only in Last.
+		if storage == (Objective{Kind: KindGym}).String() {
+			const prefix = "party trained after losing at "
+			const suffix = "; retry is due"
+			if strings.HasPrefix(f.Last, prefix) && strings.HasSuffix(f.Last, suffix) {
+				place := strings.ToLower(strings.TrimSuffix(strings.TrimPrefix(f.Last, prefix), suffix))
+				if place != "" {
+					key := combatRecoveryObjective(Objective{Kind: KindGym, Place: PlaceID(place)}).Key()
+					retries[key] = mergeCombatRetryFailure(retries[key], f)
+					delete(k.Failures, storage)
+				}
+			}
 		}
 	}
+	for key, retry := range retries {
+		o := key.Objective()
+		retry.Objective = o.String()
+		retry.Last = "combat readiness improved after defeat; retry is due"
+		storage := combatRetryReadyKey(o)
+		retry = mergeCombatRetryFailure(k.Failures[storage], retry)
+		k.Failures[storage] = retry
+	}
+}
+
+// combatRetryKeys returns retry-ready objectives while honoring legacy
+// checkpoint modes. A fresh loss for the same normalized key always wins over
+// an older ready marker.
+func combatRetryKeys(k *Knowledge) map[ObjectiveKey]bool {
+	ready := map[ObjectiveKey]bool{}
+	lost := map[ObjectiveKey]bool{}
+	if k == nil {
+		return ready
+	}
+	for storage, f := range k.Failures {
+		if key, mode, ok := parseFailureStorageKey(storage); ok {
+			key = combatRecoveryObjective(key.Objective()).Key()
+			switch mode {
+			case failureModeCombatRetry, failureModeGymRetry:
+				ready[key] = true
+			case failureModeCombatLoss, failureModeTrainerLoss, failureModeGymLoss:
+				lost[key] = true
+			}
+			continue
+		}
+		if strings.HasPrefix(storage, legacyGymLossFailurePrefix) {
+			place := strings.ToLower(strings.TrimPrefix(storage, legacyGymLossFailurePrefix))
+			if place != "" {
+				lost[combatRecoveryObjective(Objective{Kind: KindGym, Place: PlaceID(place)}).Key()] = true
+			}
+			continue
+		}
+		if storage == (Objective{Kind: KindGym}).String() {
+			const prefix = "party trained after losing at "
+			const suffix = "; retry is due"
+			if strings.HasPrefix(f.Last, prefix) && strings.HasSuffix(f.Last, suffix) {
+				place := strings.ToLower(strings.TrimSuffix(strings.TrimPrefix(f.Last, prefix), suffix))
+				if place != "" {
+					ready[combatRecoveryObjective(Objective{Kind: KindGym, Place: PlaceID(place)}).Key()] = true
+				}
+			}
+		}
+	}
+	for key := range lost {
+		delete(ready, key)
+	}
+	return ready
+}
+
+// clearTrainerLossFailures is a compatibility name. Clearing a combat gate now
+// means promoting it to retry-ready state so the improved party is tested
+// before another training rung is offered.
+func (k *Knowledge) clearTrainerLossFailures() {
+	k.promoteCombatLossesToRetry()
 }
 
 // notePartyCombatChange is retained for direct legacy callers/tests; live Run
@@ -98,8 +238,7 @@ func (k *Knowledge) notePartyCombatChange(before, after Observation, execErr err
 }
 
 func (k *Knowledge) releaseCombatLossGates() {
-	k.clearGymLossFailures()
-	k.clearTrainerLossFailures()
+	k.promoteCombatLossesToRetry()
 }
 
 func partyCombatAdvanced(before, after Observation) bool {
@@ -142,16 +281,27 @@ func ppRecoveryDue(out []Objective) bool {
 	return false
 }
 
+func combatRetryMatchesObjective(ready map[ObjectiveKey]bool, o Objective) bool {
+	if ready[combatRecoveryObjective(o).Key()] {
+		return true
+	}
+	// A gym retry may require an ordinary journey back to the gym before the
+	// challenge itself is locally offerable.
+	if o.Kind == KindGoTo && o.Place != "" {
+		return ready[combatRecoveryObjective(Objective{Kind: KindGym, Place: o.Place}).Key()]
+	}
+	return false
+}
+
+// filterTrainerLossBlocked keeps its historical name for call-site stability,
+// but its policy is now fully generic combat recovery.
 func filterTrainerLossBlocked(out []Objective, known *Knowledge) []Objective {
-	retryPlaces := gymRetryPlaces(known)
-	retryDue := len(retryPlaces) > 0
+	retryKeys := combatRetryKeys(known)
+	retryDue := len(retryKeys) > 0
 	ppDue := ppRecoveryDue(out)
 	filtered := make([]Objective, 0, len(out))
 	for _, o := range out {
-		if trainerLossRecorded(known, o) {
-			continue
-		}
-		if o.Kind == KindGym && o.Place != "" && gymLossRecorded(known, o.Place) {
+		if combatLossRecorded(known, o) {
 			continue
 		}
 		if ppDue && (o.Kind == KindTrain || o.Kind == KindGym) {
@@ -160,14 +310,8 @@ func filterTrainerLossBlocked(out []Objective, known *Knowledge) []Objective {
 		if retryDue && o.Kind == KindTrain {
 			continue
 		}
-		if retryDue {
-			place := strings.ToLower(string(o.Place))
-			switch {
-			case o.Kind == KindGym && retryPlaces[place]:
-				o = appendObjectiveNote(o, "(retry due after successful training; test the stronger party now)")
-			case o.Kind == KindGoTo && retryPlaces[place]:
-				o = appendObjectiveNote(o, "(return for gym retry after successful training)")
-			}
+		if combatRetryMatchesObjective(retryKeys, o) {
+			o = appendObjectiveNote(o, "(retry due after combat-readiness progress; test the stronger party now)")
 		}
 		filtered = append(filtered, o)
 	}

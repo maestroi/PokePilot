@@ -136,10 +136,9 @@ func (k *Knowledge) Failed(o Objective, err error) {
 		return
 	}
 	storage := objectiveStorageKey(o)
-	if _, ok := gymLossFailureName(o, err); ok {
-		storage = gymLossFailureKey(o.Place)
-	} else if _, ok := trainerLossFailureName(o, err); ok {
-		storage = trainerLossFailureKey(o)
+	if generic, ok := combatLossFailureName(o, err); ok {
+		storage = generic
+		delete(k.Failures, combatRetryReadyKey(o))
 	}
 	f := k.Failures[storage]
 	k.bumpFailureTimes(&f)
@@ -362,17 +361,18 @@ func (k *Knowledge) Done(o Objective) {
 	k.Completed[storage]++
 	delete(k.Failures, storage)
 	delete(k.Failures, legacy)
+	delete(k.Failures, combatLossFailureKey(o))
+	delete(k.Failures, combatRetryReadyKey(o))
 	delete(k.Failures, trainerLossFailureKey(o))
 	delete(k.Failures, legacyTrainerLossFailureKey(o))
 	if o.Kind == KindGym && o.Place != "" {
-		delete(k.Failures, gymLossFailureKey(o.Place))
-		delete(k.Failures, legacyGymLossFailureKey(o.Place))
-		delete(k.Failures, gymRetryReadyKey(o.Place))
+		delete(k.Failures, gymLossFailureKey(string(o.Place)))
+		delete(k.Failures, legacyGymLossFailureKey(string(o.Place)))
+		delete(k.Failures, gymRetryReadyKey(string(o.Place)))
 		delete(k.Failures, (Objective{Kind: KindGym}).String())
 	}
 	if o.Kind == KindTrain {
-		k.clearGymLossFailures()
-		k.clearTrainerLossFailures()
+		k.releaseCombatLossGates()
 	}
 }
 

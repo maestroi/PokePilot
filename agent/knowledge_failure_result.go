@@ -13,12 +13,15 @@ func (k *Knowledge) FailedResult(result ObjectiveResult, nativeErr error) {
 	}
 	o := result.Objective
 	storage := objectiveStorageKey(o)
-	if result.Battle != nil && result.Battle.Result == "lost" {
+	if (result.Battle != nil && result.Battle.Result == "lost") ||
+		failureCauseIs(result, failureCauseCombatDefeat) ||
+		failureCauseIs(result, "trainer_blacked_out") {
+		// All new combat recovery state is generic. trainer_blacked_out remains
+		// readable as an adapter compatibility cause until Travel projects the
+		// same defeat as portable BattleEvidence, but it must never create a
+		// fresh trainer_loss record.
 		storage = combatLossFailureKey(o)
-	} else if failureCauseIs(result, "trainer_blacked_out") {
-		// Compatibility for legacy paths that have not yet adopted structured
-		// required-battle evidence.
-		storage = trainerLossFailureKey(o)
+		delete(k.Failures, combatRetryReadyKey(o))
 	}
 	f := k.Failures[storage]
 	k.bumpFailureTimes(&f)
