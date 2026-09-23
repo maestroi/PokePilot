@@ -1,7 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
-
-type TimelineRow = Record<string, unknown>
+import {
+  eventKind,
+  eventMatchesFilter,
+  timelineFilterCounts,
+  type TimelineFilter,
+  type TimelineRow
+} from './runTimelineFilters'
 
 const props = withDefaults(defineProps<{
   events: TimelineRow[]
@@ -19,6 +24,7 @@ const emit = defineEmits<{
 const MIN_ZOOM = 1
 const MAX_ZOOM = 32
 const zoom = ref(MIN_ZOOM)
+const activeFilter = ref<TimelineFilter>('all')
 const timelineScroll = ref<HTMLElement | null>(null)
 
 function number(value: unknown): number {
@@ -36,21 +42,6 @@ function eventFrame(event: TimelineRow): number {
 
 function eventRound(event: TimelineRow): number {
   return number(event.round)
-}
-
-type EventKind = 'decision' | 'checkpoint' | 'progress' | 'failure' | 'recovery' | 'skill' | 'system' | 'event'
-
-function eventKind(event: TimelineRow): EventKind {
-  const source = text(event.source).toLowerCase()
-  const value = `${text(event.kind)} ${text(event.type)} ${text(event.message)} ${text(event.detail)}`.toLowerCase()
-  if (value.includes('fail') || value.includes('lost') || value.includes('error')) return 'failure'
-  if (value.includes('checkpoint')) return 'checkpoint'
-  if (source === 'recovery' || value.includes('recover') || value.includes('rollback') || value.includes('resume')) return 'recovery'
-  if (source === 'milestone' || value.includes('progress') || value.includes('finish') || value.includes('badge')) return 'progress'
-  if (source === 'llm' || value.includes('decision') || value.includes('planning')) return 'decision'
-  if (source === 'skill') return 'skill'
-  if (source === 'system') return 'system'
-  return 'event'
 }
 
 function humanize(value: string): string {
@@ -134,6 +125,34 @@ type TimelineMark = {
   lastFrame: number
 }
 
+type FilterOption = {
+  value: TimelineFilter
+  label: string
+  count: number
+  title?: string
+}
+
+const filterCounts = computed(() => timelineFilterCounts(props.events))
+const filterOptions = computed<FilterOption[]>(() => {
+  const counts = filterCounts.value
+  const options: FilterOption[] = [
+    { value: 'all', label: 'All', count: counts.all },
+    { value: 'attention', label: 'Needs attention', count: counts.attention, title: 'Failures and recovery events' },
+    { value: 'recovery', label: 'Recovery', count: counts.recovery },
+    { value: 'failure', label: 'Failures', count: counts.failure },
+    { value: 'decision', label: 'LLM', count: counts.decision },
+    { value: 'skill', label: 'Skills', count: counts.skill },
+    { value: 'progress', label: 'Milestones', count: counts.progress },
+    { value: 'checkpoint', label: 'Checkpoints', count: counts.checkpoint },
+    { value: 'system', label: 'System', count: counts.system }
+  ]
+  return options.filter((option) => option.value === 'all' || option.count > 0)
+})
+
+const visibleEntries = computed(() => props.events
+  .map((event, index) => ({ event, index }))
+  .filter(({ event }) => eventMatchesFilter(event, activeFilter.value)))
+
 function eventPriority(event: TimelineRow): number {
   switch (eventKind(event)) {
     case 'failure': return 7
@@ -149,11 +168,15 @@ function eventPriority(event: TimelineRow): number {
 
 const layout = computed(() => {
   const maximum = Math.max(1, number(props.totalFrames), ...props.events.map(eventFrame))
-  const positions = props.events.map((event) => Math.max(0, Math.min(100, 100 * eventFrame(event) / maximum)))
-  const collisionDistance = 2.2 / zoom.value
-  const sorted = positions
-    .map((position, index) => ({ position, index }))
+  const positions = new Map<number, number>()
+  const sorted = visibleEntries.value
+    .map(({ event, index }) => {
+      const position = Math.max(0, Math.min(100, 100 * eventFrame(event) / maximum))
+      positions.set(index, position)
+      return { position, index }
+    })
     .sort((a, b) => a.position - b.position || a.index - b.index)
+  const collisionDistance = 2.2 / zoom.value
 
   const marks: TimelineMark[] = []
   let lastPosition = -Infinity
@@ -162,7 +185,7 @@ const layout = computed(() => {
     const previous = marks[marks.length - 1]
     if (previous && item.position - lastPosition < collisionDistance) {
       previous.eventIndices.push(item.index)
-      previous.position = previous.eventIndices.reduce((sum, index) => sum + positions[index], 0) / previous.eventIndices.length
+      previous.position = previous.eventIndices.reduce((sum, index) => sum + (positions.get(index) || 0), 0) / previous.eventIndices.length
       previous.firstFrame = Math.min(previous.firstFrame, eventFrame(props.events[item.index]))
       previous.lastFrame = Math.max(previous.lastFrame, eventFrame(props.events[item.index]))
       const currentRepresentative = props.events[previous.representativeIndex]
@@ -185,7 +208,7 @@ const layout = computed(() => {
     lastPosition = item.position
   }
 
-  return { positions, marks, totalFrames: maximum }
+  return { marks, totalFrames: maximum }
 })
 
 const ticks = computed(() => {
@@ -199,14 +222,25 @@ const ticks = computed(() => {
   })
 })
 
-const selected = computed(() => props.events[props.selectedIndex] || null)
+const selected = computed(() => {
+  const event = props.events[props.selectedIndex]
+  return event && eventMatchesFilter(event, activeFilter.value) ? event : null
+})
 const canZoomIn = computed(() => zoom.value < MAX_ZOOM)
 const canZoomOut = computed(() => zoom.value > MIN_ZOOM)
 
 function focusRatio(): number {
-  const event = selected.value || props.events[props.events.length - 1]
+  const event = selected.value || visibleEntries.value[visibleEntries.value.length - 1]?.event
   if (!event) return 0.5
   return Math.max(0, Math.min(1, eventFrame(event) / layout.value.totalFrames))
+}
+
+function setFilter(filter: TimelineFilter): void {
+  activeFilter.value = filter
+  const current = props.events[props.selectedIndex]
+  if (current && eventMatchesFilter(current, filter)) return
+  const first = visibleEntries.value[0]
+  if (first) emit('select', first.index)
 }
 
 function scrollToRatio(ratio: number): void {
@@ -266,7 +300,13 @@ function fitTimeline(): void {
 watch(() => props.selectedIndex, (index) => {
   if (index < 0 || zoom.value <= MIN_ZOOM) return
   const event = props.events[index]
-  if (event) scrollToRatio(eventFrame(event) / layout.value.totalFrames)
+  if (event && eventMatchesFilter(event, activeFilter.value)) scrollToRatio(eventFrame(event) / layout.value.totalFrames)
+})
+
+watch(filterCounts, (counts) => {
+  if (activeFilter.value !== 'all' && counts[activeFilter.value] === 0) {
+    activeFilter.value = 'all'
+  }
 })
 
 function sourceLabel(event: TimelineRow): string {
@@ -330,6 +370,32 @@ function when(event: TimelineRow): string {
       </div>
     </div>
 
+    <div v-if="events.length" class="mt-3 flex flex-wrap items-center gap-1.5" role="group" aria-label="Filter run events">
+      <span class="mr-1 text-[9px] font-semibold tracking-[0.08em] text-slate-600 uppercase">Focus</span>
+      <button
+        v-for="option in filterOptions"
+        :key="option.value"
+        type="button"
+        :title="option.title"
+        :aria-pressed="activeFilter === option.value"
+        :class="[
+          activeFilter === option.value
+            ? option.value === 'attention'
+              ? 'border-amber-300/40 bg-amber-300/10 text-amber-200'
+              : 'border-cyan-300/40 bg-cyan-300/10 text-cyan-100'
+            : 'border-white/8 bg-white/[0.025] text-slate-500 hover:bg-white/[0.05] hover:text-slate-300',
+          'inline-flex h-6 items-center gap-1.5 rounded-md border px-2 text-[9px] font-semibold transition'
+        ]"
+        @click="setFilter(option.value)"
+      >
+        <span>{{ option.label }}</span>
+        <span class="font-mono text-[8px] opacity-70">{{ option.count }}</span>
+      </button>
+      <span v-if="activeFilter !== 'all'" class="ml-auto text-[9px] text-slate-600">
+        {{ visibleEntries.length }} of {{ events.length }} events
+      </span>
+    </div>
+
     <div v-if="events.length" class="mt-3">
       <div
         ref="timelineScroll"
@@ -378,8 +444,9 @@ function when(event: TimelineRow): string {
 
     <div v-if="events.length" class="mt-3 grid gap-3 xl:grid-cols-[minmax(0,1.15fr)_minmax(16rem,0.85fr)]">
       <div class="max-h-56 overflow-y-auto rounded-md border border-white/8 bg-black/10">
+        <p v-if="visibleEntries.length === 0" class="px-3 py-8 text-center text-xs text-slate-600">No events match this focus.</p>
         <button
-          v-for="(event, index) in events"
+          v-for="{ event, index } in visibleEntries"
           :key="`story-${index}`"
           type="button"
           :aria-current="index === selectedIndex ? 'true' : undefined"
