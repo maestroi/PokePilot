@@ -158,7 +158,7 @@ The current catalog lives in `qualification/catalog.go`.
 | milestone | `cinnabar-blaine` | private checkpoint | runnable |
 | milestone | `viridian-giovanni` | private checkpoint | runnable |
 | milestone | `victory-road-indigo` | private checkpoint | runnable |
-| milestone | `elite-four-champion` | private checkpoint | runnable |
+| milestone | `elite-four-champion` | private checkpoint | runnable; save/reopen/load after every League stage |
 | full | `fresh-hall-of-fame` | fresh emulator boot | runnable; #39 closes only after a clean proof |
 
 Closed story slices stay in the daily milestone profile. A missing private checkpoint is a qualification failure, not a green skip.
@@ -202,6 +202,13 @@ $POKEPILOT_QUALIFICATION_CORPUS/
 A landed checkpoint case fails if its `start.state` is absent. It does not downgrade missing replay evidence to a skip.
 
 For direct checkpoint cases, `pokequal` copies the exact input state into the run evidence, records its SHA-256, loads it through `emu.LoadState`, runs the Red-owned progression skill, and verifies a positive semantic postcondition through `agent.Observation`. A nil skill error alone is never qualification success.
+
+The `elite-four-champion` Go-test case is intentionally stronger than a single
+in-process gauntlet. After League start, each Elite Four member, the Champion,
+and Hall of Fame completion, it serializes the emulator state, closes the
+emulator, opens a fresh instance, reloads the checkpoint, and re-asserts the
+stage's semantic fact before continuing. This makes checkpoint/resume a
+qualification property rather than an assumption.
 
 Current direct postconditions are:
 
