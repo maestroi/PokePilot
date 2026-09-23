@@ -231,15 +231,6 @@ func (redSemanticObservationAdapter) Observe(m *emu.Emu, romData []byte, profile
 	if center, centerErr := skill.PokemonCenterMap(romData, obs.Map); centerErr == nil {
 		obs.Catalog.CurrentCenter = center
 	}
-	for i := range obs.Catalog.Destinations {
-		dest, ok := skill.Place(string(obs.Catalog.Destinations[i].Place))
-		if !ok {
-			continue
-		}
-		if center, centerErr := skill.PokemonCenterMap(romData, dest.Map); centerErr == nil {
-			obs.Catalog.Destinations[i].Center = center
-		}
-	}
 	return obs, nil
 }
 
