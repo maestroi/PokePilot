@@ -122,8 +122,12 @@ func TestStructuredObjectiveFailureReportsFixedRegression(t *testing.T) {
 	w := NewWall(t.TempDir())
 	w.issues = newIssueClient(ao.URL, "p", "http://ui", time.Second)
 	failure, occurrence := structuredObjectiveFailureFixture(t, "build-new")
+	familyKey, familyFP, err := farm.FingerprintFailureFamily(occurrence.Identity)
+	if err != nil {
+		t.Fatal(err)
+	}
 	w.mu.Lock()
-	w.issueLinks[occurrence.Key] = IssueLink{
+	w.issueLinks[familyKey] = IssueLink{
 		IssueID:       "issue-1",
 		IssueNumber:   42,
 		IssueURL:      "http://ui/issues/issue-1",
@@ -162,6 +166,45 @@ func TestStructuredObjectiveFailureReportsFixedRegression(t *testing.T) {
 	}
 	if link.Status != "open" || link.LastDisposition != string(occurrenceRegression) || link.LastObservedRevision != "build-new" {
 		t.Fatalf("reopened link = %+v", link)
+	}
+}
+
+func TestStructuredObjectiveFailureAliasesLegacyExactIssueLink(t *testing.T) {
+	var calls atomic.Int32
+	ao := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		http.Error(w, "legacy active issue should be reused", http.StatusInternalServerError)
+	}))
+	t.Cleanup(ao.Close)
+
+	w := NewWall(t.TempDir())
+	w.issues = newIssueClient(ao.URL, "p", "http://ui", time.Second)
+	failure, occurrence := structuredObjectiveFailureFixture(t, "build-new")
+	familyKey, familyFP, err := farm.FingerprintFailureFamily(occurrence.Identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if familyKey == occurrence.Key {
+		t.Fatal("test requires distinct family and exact keys")
+	}
+	w.issueLinks[occurrence.Key] = IssueLink{
+		IssueID: "issue-old", IssueNumber: 41, Status: "open", Fingerprint: occurrence.Fingerprint,
+	}
+
+	dump := farm.FinishReport{RunID: "run-alias", Attempt: 1, Reason: "error", RunnerVersion: "build-new"}
+	if err := w.reportObjectiveFailure(dump, failure); err != nil {
+		t.Fatalf("reportObjectiveFailure: %v", err)
+	}
+	if calls.Load() != 0 {
+		t.Fatalf("orchestrator calls = %d, want legacy issue quarantine", calls.Load())
+	}
+	link := w.issueLinks[familyKey]
+	if link.IssueID != "issue-old" || link.Fingerprint != familyFP {
+		// The family alias inherits lifecycle metadata, while report/quarantine
+		// updates its canonical family fingerprint.
+		if link.IssueID != "issue-old" {
+			t.Fatalf("family alias = %+v, want legacy issue-old", link)
+		}
 	}
 }
 
