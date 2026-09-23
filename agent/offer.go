@@ -363,14 +363,7 @@ func (k *Knowledge) Done(o Objective) {
 	delete(k.Failures, legacy)
 	delete(k.Failures, combatLossFailureKey(o))
 	delete(k.Failures, combatRetryReadyKey(o))
-	delete(k.Failures, trainerLossFailureKey(o))
-	delete(k.Failures, legacyTrainerLossFailureKey(o))
-	if o.Kind == KindGym && o.Place != "" {
-		delete(k.Failures, gymLossFailureKey(string(o.Place)))
-		delete(k.Failures, legacyGymLossFailureKey(string(o.Place)))
-		delete(k.Failures, gymRetryReadyKey(string(o.Place)))
-		delete(k.Failures, (Objective{Kind: KindGym}).String())
-	}
+	clearLegacyCombatRecovery(k, o)
 	if o.Kind == KindTrain {
 		k.releaseCombatLossGates()
 	}

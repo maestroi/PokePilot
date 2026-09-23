@@ -100,9 +100,6 @@ func resolveObjectiveKey(offered []Objective, key ObjectiveKey) (Objective, bool
 func objectiveStorageKey(o Objective) string { return o.Key().ID() }
 
 const (
-	failureModeGymLoss         = "gym_loss"
-	failureModeGymRetry        = "gym_retry"
-	failureModeTrainerLoss     = "trainer_loss"
 	failureModeCombatLoss      = "combat_loss"
 	failureModeCombatRetry     = "combat_retry"
 	failureModeMachineUnusable = "machine_unusable"
@@ -119,7 +116,9 @@ func parseFailureStorageKey(id string) (ObjectiveKey, string, bool) {
 	if key, ok := parseObjectiveKeyID(id); ok {
 		return key, "", true
 	}
-	for _, mode := range []string{failureModeGymLoss, failureModeGymRetry, failureModeTrainerLoss, failureModeCombatLoss, failureModeCombatRetry, failureModeMachineUnusable} {
+	modes := []string{failureModeCombatLoss, failureModeCombatRetry, failureModeMachineUnusable}
+	modes = append(modes, legacyCombatFailureModes()...)
+	for _, mode := range modes {
 		prefix := mode + ":"
 		if strings.HasPrefix(id, prefix) {
 			key, ok := parseObjectiveKeyID(strings.TrimPrefix(id, prefix))

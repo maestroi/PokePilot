@@ -91,7 +91,7 @@ func TestStructuredProgressionCombatLossUsesGenericRecoveryGate(t *testing.T) {
 	if !combatLossRecorded(known, obj) {
 		t.Fatal("structured progression loss did not create generic combat gate")
 	}
-	offered := filterTrainerLossBlocked([]Objective{
+	offered := filterCombatRecoveryBlocked([]Objective{
 		{Kind: KindTrain, Level: 38},
 		obj,
 	}, known)
@@ -121,14 +121,14 @@ func TestStructuredGymCombatLossStillCreatesRetryDue(t *testing.T) {
 		},
 	}, errors.New("diagnostic"))
 
-	if !gymLossRecorded(known, "pewter gym") {
+	if !combatLossRecorded(known, gym) {
 		t.Fatal("generic structured gym loss did not enter gym recovery gate")
 	}
 
 	before := Observation{Party: []PartyMon{{Level: 10}}}
 	after := Observation{Party: []PartyMon{{Level: 11}}}
 	known.notePartyCombatResult(before, after, ObjectiveResult{})
-	if place, ok := gymRetryPending(known); !ok || place != "pewter gym" {
-		t.Fatalf("gym retry pending = %q,%v, want pewter gym", place, ok)
+	if !combatRetryKeys(known)[combatRecoveryObjective(gym).Key()] {
+		t.Fatalf("gym retry not pending in generic combat state: %+v", known.Failures)
 	}
 }
