@@ -1,6 +1,7 @@
 package skill
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/maestroi/pokepilot/red/state"
@@ -66,6 +67,19 @@ func TestMansionStoryRouteConstants(t *testing.T) {
 	}
 	if len(mansionDropHoles) != 2 || mansionDropHoles[0] != [2]uint8{16, 14} || mansionDropHoles[1] != [2]uint8{17, 14} {
 		t.Fatalf("1F Mansion drop holes = %v", mansionDropHoles)
+	}
+}
+
+
+func TestMansionInterruptionUsesTravelRecoveryKinds(t *testing.T) {
+	if got := mansionInterruptionForTravel(ErrBattleInterrupted); !errors.Is(got, ErrBattle) {
+		t.Fatalf("battle interruption = %v, want ErrBattle for Travel resolver", got)
+	}
+	if got := mansionInterruptionForTravel(ErrDialogueInterrupted); !errors.Is(got, ErrDialogueInterrupted) {
+		t.Fatalf("dialogue interruption = %v, want ErrDialogueInterrupted preserved", got)
+	}
+	if got := mansionInterruptionForTravel(nil); got != nil {
+		t.Fatalf("nil interruption = %v, want nil", got)
 	}
 }
 
