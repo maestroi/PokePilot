@@ -51,13 +51,22 @@ func MenuUp(m *Mem) bool {
 	return m.Slice(sym.TileMap, sym.TileMapLen)[y*20+x] == menuCursorTile
 }
 
+// pendingFlyOrDungeonWarp is wStatusFlags6 BIT_FLY_WARP (3) | BIT_DUNGEON_WARP (4).
+const pendingFlyOrDungeonWarp = 1<<3 | 1<<4
+
 // Controllable reports whether the game is accepting free overworld input.
 // The map-dimension check is essential: wCurMap, wXCoord and wYCoord are
 // written during new-game initialisation while the intro is still running,
 // so they are NOT evidence that the overworld has been reached. A loaded
 // map always has non-zero dimensions.
+//
+// A Fly or dungeon (hole) warp writes wCurMap before the new map's sprites
+// load, and EnterMap clears BIT_FLY_WARP/BIT_DUNGEON_WARP only after they do
+// (home/overworld.asm). Until then the old map's sprite table is still in RAM
+// (Victory Road 3F->2F hole, run-1biaubd9xooqm), so the warp is not landed.
 func Controllable(m *Mem) bool {
-	return m.U8(sym.CurMapWidth) != 0 &&
+	return m.U8(sym.StatusFlags6)&pendingFlyOrDungeonWarp == 0 &&
+		m.U8(sym.CurMapWidth) != 0 &&
 		m.U8(sym.CurMapHeight) != 0 &&
 		m.U8(sym.FontLoaded) == 0 &&
 		m.U8(sym.JoyIgnore) == 0 &&

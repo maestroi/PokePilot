@@ -67,4 +67,11 @@ func TestControllable(t *testing.T) {
 	if Controllable(&m) {
 		t.Errorf("Controllable = true, want false when WalkCounter is non-zero")
 	}
+	m[sym.WalkCounter] = 0
+
+	// A hole/Fly warp has written wCurMap but not yet loaded the new map.
+	m[sym.StatusFlags6] = 1 << 4
+	if Controllable(&m) {
+		t.Errorf("Controllable = true, want false while a dungeon warp is pending")
+	}
 }
