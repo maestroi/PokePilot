@@ -66,13 +66,18 @@ const voluntarySwitchCap = 4
 
 // Frame budgets for Battle. They are upper bounds, not measured timings: a
 // real turn (menu + move + resolution) is a few hundred frames and a whole
-// battle a few thousand. The total cap exists so a stuck battle fails
-// loudly instead of hanging the suite.
+// battle a few thousand. The stall cap exists so a stuck battle fails
+// loudly instead of hanging the suite. It is measured since the last HP or
+// species change, not since the battle began: a PP-exhausted STRUGGLE war
+// against a high-level trainer is slow but still resolving, and cutting it
+// off turns an ordinary blackout into a dirty objective boundary.
+// battleFrameCap is only an absolute backstop.
 const (
-	battleFrameCap  = 60000 // total frames for the whole battle
-	moveMenuBudget  = 500   // wait for the move/main menu transition
-	moveCloseBudget = 500   // wait for the move menu to close after a move
-	settleBudget    = 3000  // wait for controllable after the battle ends
+	battleStallCap  = 60000  // frames without any HP/species change
+	battleFrameCap  = 600000 // total frames for the whole battle
+	moveMenuBudget  = 500    // wait for the move/main menu transition
+	moveCloseBudget = 500    // wait for the move menu to close after a move
+	settleBudget    = 3000   // wait for controllable after the battle ends
 )
 
 // mainMenuMax is the wMaxMenuItem of the FIGHT/ITEM/PKMN/RUN menu. The move
@@ -141,6 +146,8 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (st
 	}
 
 	startFrame := m.FrameCount()
+	progressFrame := startFrame
+	var lastProgress battleProgress
 
 	// The move-learning episode is tracked across loop passes. lastForgetSlot
 	// is the slot just picked in the forget list; triedForgets records a move
@@ -170,8 +177,16 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (st
 		if int(m.FrameCount()-startFrame) > battleFrameCap {
 			return stuckError(m, fmt.Sprintf("exceeded %d-frame cap", battleFrameCap))
 		}
+		if int(m.FrameCount()-progressFrame) > battleStallCap {
+			return stuckError(m, fmt.Sprintf("no HP or species change for %d frames", battleStallCap))
+		}
 
 		state.Snapshot(m, &mem)
+		if bs := state.DecodeBattle(&mem); bs != nil {
+			if p := progressOf(bs); p != lastProgress {
+				lastProgress, progressFrame = p, m.FrameCount()
+			}
+		}
 		if pendingLearnMove != 0 && pendingLearnSlot >= 0 && pendingLearnPartySlot >= 0 {
 			party := state.DecodeParty(&mem)
 			if pendingLearnPartySlot < len(party.Mons) && party.Mons[pendingLearnPartySlot].Moves[pendingLearnSlot] == pendingLearnMove {
@@ -204,11 +219,14 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (st
 				fmt.Printf("zbat EXIT f=%d inBattle=%#02x rawResult=%#02x\n",
 					m.FrameCount(), m.Peek8(sym.IsInBattle), m.Peek8(sym.BattleResult))
 			}
+			// Read the result at the battle boundary: settling walks through
+			// a blackout respawn, which clears wBattleResult and would report
+			// the loss as a win.
+			result := state.DecodeBattleResult(&mem)
 			if err := settleAfterBattle(m, &mem); err != nil {
 				return 0, err
 			}
-			state.Snapshot(m, &mem)
-			return state.DecodeBattleResult(&mem), nil
+			return result, nil
 		}
 
 		switch {
@@ -698,6 +716,18 @@ func battleScreenHas(m *emu.Emu, marker string) bool {
 }
 
 const settleStableFrames = 20
+
+// battleProgress is the part of a battle that must keep changing while the
+// fight is still resolving. Menus and text never change it; a landed hit, a
+// heal, a faint or a switch does.
+type battleProgress struct {
+	activeHP, enemyHP           uint16
+	activeSpecies, enemySpecies uint8
+}
+
+func progressOf(bs *state.BattleState) battleProgress {
+	return battleProgress{bs.ActiveHP, bs.EnemyHP, bs.ActiveSpecies, bs.EnemySpecies}
+}
 
 func settleAfterBattle(m *emu.Emu, mem *state.Mem) error {
 	startFrame := m.FrameCount()
