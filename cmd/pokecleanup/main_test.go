@@ -29,6 +29,7 @@ func TestNormalizeFailureDetailMatchesWallContract(t *testing.T) {
 
 func TestMatchingRunsUsesExactTriagePattern(t *testing.T) {
 	pattern := normalizeFailureDetail("still on map 0x0c at (10,35)")
+	group := triageGroup{Key: "abc", Pattern: pattern, Count: 2}
 	runs := []cleanupRun{
 		{RunID: "new", Status: "done", Reason: "error", Detail: "still on map 0x21 at (4,22)", EndedAt: 20},
 		{RunID: "old", Status: "done", Reason: "lost", Detail: "still on map 0x0c at (10,35)", EndedAt: 10},
@@ -36,9 +37,36 @@ func TestMatchingRunsUsesExactTriagePattern(t *testing.T) {
 		{RunID: "success", Status: "done", Reason: "done", Detail: "still on map 0x0c at (10,35)", EndedAt: 30},
 		{RunID: "active", Status: "running", Reason: "error", Detail: "still on map 0x0c at (10,35)"},
 	}
-	got := matchingRuns(runs, pattern)
+	got := matchingRuns(runs, group)
 	if len(got) != 2 || got[0].RunID != "old" || got[1].RunID != "new" {
 		t.Fatalf("matching runs = %+v, want old,new", got)
+	}
+}
+
+// A composed objective-failure pattern is
+// normalizeDetail(objective + " | " + error)[:128] + " | map=xx", so it is
+// longer than any normalized run detail and can never equal one. The shared
+// failure-id marker is the identity that makes cleanup work again.
+func TestMatchingRunsUsesFailureMarkerIdentity(t *testing.T) {
+	const marker = "hfhmhabpkfeiljbjdkcciamajgiehelcallfhlonokpeapokbahfnafeegkcipgl"
+	group := triageGroup{
+		Key:   "hfhmhabpkfeiljbjd",
+		Count: 11,
+		Pattern: "recover from repeated objective failures | failure recovery budget was exhausted: failure-id:" +
+			marker[:28] + " | map=06",
+		Example: "recover from repeated objective failures: failure recovery budget was exhausted: failure-id:" +
+			marker + " progress blocked route_prerequisite_missing",
+	}
+	other := strings.Repeat("a", 64)
+	runs := []cleanupRun{
+		{RunID: "marker", Status: "done", Reason: "failed", Detail: "failure-id:" + marker + " progress blocked route_prerequisite_missing", EndedAt: 20},
+		{RunID: "other-marker", Status: "done", Reason: "failed", Detail: "failure-id:" + other + " progress blocked no_route", EndedAt: 10},
+		{RunID: "clean-finish", Status: "done", Reason: "done", Detail: "failure-id:" + marker + " progress blocked", EndedAt: 30},
+		{RunID: "protected", Status: "done", Reason: "failed", Detail: "failure-id:" + marker + " progress blocked", ResumeProtected: true, EndedAt: 40},
+	}
+	got := matchingRuns(runs, group)
+	if len(got) != 1 || got[0].RunID != "marker" {
+		t.Fatalf("matching runs = %+v, want [marker]", got)
 	}
 }
 
