@@ -201,7 +201,7 @@ func fightChampion(m *emu.Emu, policy MovePolicy) error {
 			if err != nil {
 				return fmt.Errorf("skill: EliteFourProgression: Champion battle: %w", err)
 			}
-			if err := RequireBattleWin("league:champion", outcome); err != nil {
+			if err := RequireTrainerBattleWin("league:champion", outcome); err != nil {
 				return fmt.Errorf("skill: EliteFourProgression: Champion battle: %w", err)
 			}
 		}
