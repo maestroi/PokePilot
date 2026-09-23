@@ -13,10 +13,11 @@ func (k *Knowledge) FailedResult(result ObjectiveResult, nativeErr error) {
 	}
 	o := result.Objective
 	storage := objectiveStorageKey(o)
-	if result.Battle != nil && !result.Battle.Won && o.Kind == KindGym && o.Place != "" {
-		storage = gymLossFailureKey(o.Place)
-	}
-	if failureCauseIs(result, "trainer_blacked_out") {
+	if result.Battle != nil && result.Battle.Result == "lost" {
+		storage = combatLossFailureKey(o)
+	} else if failureCauseIs(result, "trainer_blacked_out") {
+		// Compatibility for legacy paths that have not yet adopted structured
+		// required-battle evidence.
 		storage = trainerLossFailureKey(o)
 	}
 	f := k.Failures[storage]
