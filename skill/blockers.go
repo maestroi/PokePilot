@@ -37,12 +37,22 @@ func spriteBlockers(m *emu.Emu) map[[2]int]bool {
 // a MovementWalk object is not included, since its live position is exactly
 // what spriteBlockers reports when in range and this layer has no better
 // answer for it out of range.
-func stationaryObjectBlockers(h rom.MapHeader) map[[2]int]bool {
+//
+// tiles is the per-slot RAM position (state.DecodeObjectTiles). A stay trainer
+// that walked out to intercept the player stays where the fight left it until
+// the map reloads, so its RAM tile, not its header home, is the obstacle —
+// even off-screen. A slot without a RAM tile falls back to the header home.
+func stationaryObjectBlockers(h rom.MapHeader, tiles map[int][2]int) map[[2]int]bool {
 	blocked := map[[2]int]bool{}
-	for _, o := range h.Objects {
-		if o.Movement == rom.MovementStay {
-			blocked[[2]int{int(o.X), int(o.Y)}] = true
+	for i, o := range h.Objects {
+		if o.Movement != rom.MovementStay {
+			continue
 		}
+		if t, ok := tiles[i+1]; ok {
+			blocked[t] = true
+			continue
+		}
+		blocked[[2]int{int(o.X), int(o.Y)}] = true
 	}
 	return blocked
 }
@@ -119,9 +129,14 @@ func currentObservedStationaryObjectBlockers(m *emu.Emu, h rom.MapHeader) map[[2
 // all the way back through Pokemon Tower 5F's purified-zone clearing (whose
 // auto-heal box retriggers on every fresh entry), and repeat — tripping
 // Travel's same-box loop guard on a walk that was never actually stuck, just
-// oscillating between two routes neither snapshot alone ruled out.
+// oscillating between two routes neither snapshot alone ruled out. The same
+// oscillation happens when a stay trainer has left its home tile to intercept
+// the player (Viridian Gym, run-1biaubd9xooqm): off-screen it vanished from
+// spriteBlockers while its empty home tile was blocked instead.
 func liveBlockers(m *emu.Emu, h rom.MapHeader) map[[2]int]bool {
-	return mergeBlockers(spriteBlockers(m), stationaryObjectBlockers(h))
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	return mergeBlockers(spriteBlockers(m), stationaryObjectBlockers(h, state.DecodeObjectTiles(&mem)))
 }
 
 // mergeBlockers returns the union of live and fixed blockers as a new map

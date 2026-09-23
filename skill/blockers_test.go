@@ -89,3 +89,19 @@ func TestPresentStationaryObjectBlockersKeepsOffscreenStayObjects(t *testing.T) 
 		t.Fatal("walking object was treated as present stationary")
 	}
 }
+
+// A stay trainer that walked out to intercept the player blocks its RAM tile,
+// not its now-empty home, even while off-screen (run-1biaubd9xooqm).
+func TestStationaryObjectBlockersFollowMovedTrainer(t *testing.T) {
+	h := rom.MapHeader{Objects: []rom.Object{
+		{X: 10, Y: 1, Movement: rom.MovementStay},
+		{X: 16, Y: 9, Movement: rom.MovementStay},
+	}}
+	got := stationaryObjectBlockers(h, map[int][2]int{1: {10, 3}})
+	if !got[[2]int{10, 3}] || got[[2]int{10, 1}] {
+		t.Fatalf("moved trainer blockers = %v, want (10,3) not (10,1)", got)
+	}
+	if !got[[2]int{16, 9}] {
+		t.Fatalf("slot without RAM tile lost its home blocker: %v", got)
+	}
+}
