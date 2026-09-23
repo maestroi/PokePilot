@@ -3,6 +3,30 @@
 For the in-game agent loop (`-planner llm`, objectives, seeds) see `docs/AGENT.md`.
 This file is about working *on* this repository.
 
+## Always deliver work as a pull request
+
+When a human asks you to fix, change, or add something in this repository,
+the deliverable is a **pull request**, not a dirty tree and not a local
+commit. Do the whole loop:
+
+1. Branch from a freshly fetched `origin/main`.
+2. Do the work in an isolated worktree. Do not build on whatever happens to
+   be uncommitted in the primary checkout; those edits usually belong to
+   somebody else's task.
+3. Run the verification the change warrants (`gofmt`, `go vet ./...`, and
+   `POKEMON_RED_ROM= go test -short -count=1 ./...` are the floor; add `-race`
+   for anything touching shared state).
+4. Commit with a message explaining *why*, then push the branch and open a PR
+   that closes the issue it implements.
+5. Report the PR URL and the honest verification result, including any test
+   that fails for pre-existing or environmental reasons.
+
+A branch with no PR is unfinished work. If you cannot open one, say so
+plainly instead of stopping at a local commit.
+
+**Exception: a run started by agent-runner must not commit.** See "If you are
+run by agent-runner" at the end of this file; that section outranks this one.
+
 ## Mandatory architecture gate
 
 **Before changing gameplay/runtime architecture, read `docs/ARCHITECTURE.md`.**
@@ -186,6 +210,11 @@ Write verbose test output to a file and grep it rather than into context.
 records the diff, runs the declared verification, and commits it itself; a
 clean tree trips the no-changes gate and fails the run even when the
 verification passes. This has cost this project several runs.
+
+This is the one exception to "Always deliver work as a pull request" above:
+the runner owns the commit, and the PR is opened from its Git commit, not
+yours. Everything else in that section — branch/verify, explain *why*, report
+the honest result — still applies to what you leave behind.
 
 Reporting "this task is built on a wrong assumption" is a good outcome, and
 has been the right answer more than once. Stop and say so rather than
