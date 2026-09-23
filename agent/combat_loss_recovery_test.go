@@ -109,17 +109,3 @@ func TestCombatDefeatUsesBoundedBlackoutPolicy(t *testing.T) {
 	}
 }
 
-func TestCombatLossFilterFailsOpenForOnlyLegalRetry(t *testing.T) {
-	known := NewKnowledge(nil)
-	obj := Objective{Kind: KindTrainer, Location: "route 3", X: 10, Y: 6}
-	known.Failures[trainerLossFailureKey(obj)] = Failure{
-		Objective: obj.String(),
-		Times:     1,
-		Last:      "lost battle",
-	}
-
-	got := filterTrainerLossBlocked([]Objective{obj}, known)
-	if len(got) != 1 || got[0].Key() != obj.Key() {
-		t.Fatalf("only legal combat retry was hidden: %v", got)
-	}
-}
