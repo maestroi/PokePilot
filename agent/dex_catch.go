@@ -165,18 +165,7 @@ func dexCatchGrassSource(obs Observation, src DexSource, blocked map[PlaceID]boo
 	if !hasBalls(obs) || src.Kind != AcquireWildGrass || src.Requirement != "" || src.Place == "" {
 		return "", 0, false
 	}
-	place, distance, ok := dexCatchPlace(obs, src.Place, blocked, hops, adjacency)
-	if !ok {
-		return "", 0, false
-	}
-	if dest, exists := skill.Place(string(place)); exists && dest.Map == obs.Map && !obs.HasGrass {
-		// The semantic observation derives HasGrass from the current live
-		// collision component. Do not override that executable fact with a
-		// ROM-wide habitat record when a scripted door currently seals this
-		// pocket away from usable encounter cells.
-		return "", 0, false
-	}
-	return place, distance, true
+	return dexCatchPlace(obs, src.Place, blocked, hops, adjacency)
 }
 
 func dexCatchFishingSource(obs Observation, src DexSource, blocked map[PlaceID]bool, hops map[uint8]int, adjacency map[uint8][]uint8) (PlaceID, int, ItemID, bool) {
