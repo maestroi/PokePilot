@@ -35,9 +35,10 @@ type Observation struct {
 	PartyCount   int
 	Party        []PartyMon
 	Badges       []string
-	Money        uint32
-	RespawnPlace PlaceID
-	Events       []string
+	Money              uint32
+	RespawnPlace       PlaceID
+	RecoveryCheckpoint PlaceID
+	Events              []string
 	Story        ProgressState
 	BlackedOut   bool
 
