@@ -202,9 +202,9 @@ $POKEPILOT_QUALIFICATION_CORPUS/
     start.state
 ```
 
-A landed checkpoint case fails if its `start.state` is absent. It does not downgrade missing replay evidence to a skip.
+A landed checkpoint case fails if its `start.state` is absent. It does not downgrade missing replay evidence to a skip. `pokequal` preflights private checkpoints before starting either a direct skill case or a Go-test case, copies the exact input into that case's private evidence directory, and records its SHA-256. Explicit `-corpus` overrides are also pinned into the child-test environment, so local and self-hosted runs resolve the same corpus path deterministically.
 
-For direct checkpoint cases, `pokequal` copies the exact input state into the run evidence, records its SHA-256, loads it through `emu.LoadState`, runs the Red-owned progression skill, and verifies a positive semantic postcondition through `agent.Observation`. A nil skill error alone is never qualification success.
+For direct checkpoint cases, `pokequal` then loads the preserved state through `emu.LoadState`, runs the Red-owned progression skill, and verifies a positive semantic postcondition through `agent.Observation`. A nil skill error alone is never qualification success. Go-test checkpoint cases retain the same private `start.state` evidence and hash while the focused test owns the stronger multi-step assertions.
 
 The `elite-four-loss-recovery` case starts from an intentionally underpowered
 Indigo-lobby checkpoint that deterministically loses to Lorelei with the normal
