@@ -208,6 +208,7 @@ func (f *runFailurePolicy) recoverable(obj Objective, result ObjectiveResult, st
 	retreated := failureCauseIs(result, "train_retreat")
 	trainProgress := failureCauseIs(result, "train_progress_shortfall")
 	huntMiss := failureCauseIs(result, "catch_hunt_exhausted") || failureCauseIs(result, "fishing_hunt_exhausted")
+	routePrerequisite := failureCauseIs(result, "route_prerequisite_missing")
 
 	// These are successful bounded gameplay sessions whose requested terminal
 	// condition simply was not reached. A training shortfall explicitly means
@@ -223,6 +224,24 @@ func (f *runFailurePolicy) recoverable(obj Objective, result ObjectiveResult, st
 		f.lastFailKey = ""
 		f.retreatStreak, f.lastRetreatLevel = 0, 0
 		decision := runFailureDecision{Recovered: true, ProductiveSession: true}
+		if strategic {
+			decision.ReplanReason = "objective_failed"
+		}
+		return decision
+	}
+
+	// A typed route prerequisite is an expected planning boundary, not evidence
+	// that failure recovery itself is broken. record() has already quarantined
+	// the blocked objective (and its plain/flee sibling) and retained the missing
+	// capability for deterministic prerequisiteRecovery on the next round.
+	// Spending the fatal consecutive-failure/escalation budget here can stop a
+	// healthy run after a few distinct route gates before any of those recovery
+	// paths execute (#1555, #1557). Keep the ordinary replan signal, but leave
+	// the failure budget untouched. Genuine repeated navigation/controller
+	// failures still use the bounded policy below, and watchdog/round/frame
+	// budgets remain the outer guard if no prerequisite can be satisfied.
+	if routePrerequisite {
+		decision := runFailureDecision{Recovered: true}
 		if strategic {
 			decision.ReplanReason = "objective_failed"
 		}
