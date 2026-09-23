@@ -156,7 +156,7 @@ func (redSemanticObservationAdapter) Observe(m *emu.Emu, romData []byte, profile
 		})
 	}
 
-	if grass, err := skill.HasReachableGrass(romData, obs.Map, obs.X, obs.Y); err == nil {
+	if grass, err := skill.HasReachableGrassLive(m, romData); err == nil {
 		obs.HasGrass = grass
 	}
 	routes := routeAvailabilityFor(m, romData)
