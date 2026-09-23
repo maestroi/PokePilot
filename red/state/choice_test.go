@@ -128,3 +128,15 @@ func TestDecodeTwoOptionMenuOutOfRange(t *testing.T) {
 		})
 	}
 }
+
+// TestDecodeTwoOptionMenuAnsweredUseTossIsNotLive is the item menu's USE/TOSS
+// box after USE was chosen, measured while a TM's "Teach X?" text printed on
+// run-22ahrk9pflcilu3jxq9xt37x6: wMaxMenuItem=1, wMenuCursorLocation at
+// (14,11), and the UNFILLED '▷' ($EC) that .choseItem draws once
+// HandleMenuInput has returned. That choice is already made; decoding it as a
+// live prompt stopped TeachTMHM from paging to the real YES/NO.
+func TestDecodeTwoOptionMenuAnsweredUseTossIsNotLive(t *testing.T) {
+	if got := DecodeTwoOptionMenu(twoOptionFixture(1, 0, 1, 0, 11, 14, 0xEC)); got != nil {
+		t.Fatalf("answered USE/TOSS cursor decoded as live prompt: %+v", got)
+	}
+}
