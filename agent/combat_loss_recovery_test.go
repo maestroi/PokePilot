@@ -14,21 +14,22 @@ func TestPromoteDefeatRespawnFailureMakesProgressionLossRecoverable(t *testing.T
 	obj := Objective{Kind: KindProgress, Progress: "volcano_badge"}
 	initial := Observation{
 		Location: "cinnabar gym",
-		X: 3, Y: 4,
-		Money: 2400,
-		Party: recoveredParty(37),
+		X:        3, Y: 4,
+		Money:    2400,
+		Party:    recoveredParty(37),
 	}
 	final := Observation{
-		Location: "cinnabar island",
-		X: 3, Y: 4,
+		Location:     "cinnabar island",
+		X:            3,
+		Y:            4,
 		Controllable: true,
-		Money: 1200,
+		Money:        1200,
 		RespawnPlace: "cinnabar island",
-		Party: recoveredParty(37),
+		Party:        recoveredParty(37),
 	}
 	result := ObjectiveResult{
 		Objective: obj,
-		Outcome: OutcomeUnknownFailure,
+		Outcome:   OutcomeUnknownFailure,
 		Failure: &gameruntime.Failure{
 			Phase: gameruntime.FailurePhaseExecution,
 			Class: gameruntime.FailureClassUnknown,
@@ -55,17 +56,17 @@ func TestPromoteDefeatRespawnFailureMakesProgressionLossRecoverable(t *testing.T
 func TestPromoteDefeatRespawnFailureDoesNotOverrideKnownFailure(t *testing.T) {
 	initial := Observation{Location: "cinnabar gym", Money: 2400, Party: recoveredParty(37)}
 	final := Observation{
-		Location: "cinnabar island",
+		Location:     "cinnabar island",
 		Controllable: true,
-		Money: 1200,
+		Money:        1200,
 		RespawnPlace: "cinnabar island",
-		Party: recoveredParty(37),
+		Party:        recoveredParty(37),
 	}
 	result := ObjectiveResult{
 		Outcome: OutcomeBlocked,
 		Failure: &gameruntime.Failure{
-			Class: gameruntime.FailureClassBlocked,
-			Cause: "route_prerequisite_missing",
+			Class:       gameruntime.FailureClassBlocked,
+			Cause:       "route_prerequisite_missing",
 			Recoverable: true,
 		},
 	}
@@ -79,9 +80,9 @@ func TestPromoteDefeatRespawnFailureDoesNotOverrideKnownFailure(t *testing.T) {
 func TestDefeatRespawnRequiresRealRespawnEvidence(t *testing.T) {
 	initial := Observation{
 		Location: "cinnabar island",
-		X: 3, Y: 4,
-		Money: 1200,
-		Party: recoveredParty(37),
+		X:        3, Y: 4,
+		Money:    1200,
+		Party:    recoveredParty(37),
 	}
 	final := initial
 	final.Controllable = true
@@ -113,8 +114,8 @@ func TestCombatLossFilterFailsOpenForOnlyLegalRetry(t *testing.T) {
 	obj := Objective{Kind: KindTrainer, Location: "route 3", X: 10, Y: 6}
 	known.Failures[trainerLossFailureKey(obj)] = Failure{
 		Objective: obj.String(),
-		Times: 1,
-		Last: "lost battle",
+		Times:     1,
+		Last:      "lost battle",
 	}
 
 	got := filterTrainerLossBlocked([]Objective{obj}, known)
