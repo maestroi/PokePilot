@@ -2,7 +2,10 @@ package agent
 
 import gameruntime "github.com/maestroi/pokepilot/game"
 
-const failureCauseCombatDefeat = "combat_defeat"
+const (
+	failureCauseCombatDefeat = "combat_defeat"
+	failureCauseCombatNotWon = "combat_not_won"
+)
 
 // promoteDefeatRespawnFailure converts an otherwise unknown native execution
 // error into the portable combat-loss outcome when the settled observations

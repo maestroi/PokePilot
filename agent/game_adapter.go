@@ -123,6 +123,20 @@ func attachNormalizedFailure(a ObjectiveGameAdapter, result *ObjectiveResult, ph
 		return
 	}
 	failure := a.NormalizeFailure(phase, err, final)
+	if result.Battle != nil && !result.Battle.Won {
+		failure.Class = gameruntime.FailureClassBlocked
+		failure.Recoverable = true
+		failure.Context = nil
+		if result.Battle.Encounter != "" {
+			failure.Context = []string{result.Battle.Encounter}
+		}
+		if result.Battle.Result == "lost" {
+			failure.Cause = failureCauseCombatDefeat
+		} else {
+			failure.Cause = failureCauseCombatNotWon
+		}
+		result.Outcome = OutcomeBlocked
+	}
 	// Some adapter-owned actions can provide a stronger semantic outcome than
 	// the native error type alone (for example a resolved-but-lost gym battle).
 	// Keep that evidence when normalization has only an unknown fallback.

@@ -167,8 +167,15 @@ func (a *redObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error)
 // an unsafe finish boundary or unreadable final observation still overrides
 // this fallback in the transaction runtime.
 func normalizeRedOwnedExecutionResult(o Objective, result ObjectiveResult, err error) (ObjectiveResult, error) {
-	if err != nil && o.Kind == KindUseItem && result.Outcome == "" {
-		result.Outcome = OutcomeBlocked
+	if err != nil {
+		var required *skill.RequiredBattleError
+		if errors.As(err, &required) {
+			result.Battle = requiredBattleEvidenceFromRed(required.Outcome.Encounter, required.Outcome.Result)
+			result.Outcome = OutcomeBlocked
+		}
+		if o.Kind == KindUseItem && result.Outcome == "" {
+			result.Outcome = OutcomeBlocked
+		}
 	}
 	return result, err
 }

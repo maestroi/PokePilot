@@ -201,8 +201,8 @@ func fightChampion(m *emu.Emu, policy MovePolicy) error {
 			if err != nil {
 				return fmt.Errorf("skill: EliteFourProgression: Champion battle: %w", err)
 			}
-			if outcome != state.ResultWon {
-				return fmt.Errorf("skill: EliteFourProgression: %w against Champion", ErrTrainerBlackedOut)
+			if err := RequireBattleWin("league:champion", outcome); err != nil {
+				return fmt.Errorf("skill: EliteFourProgression: Champion battle: %w", err)
 			}
 		}
 		mem = advanceUntil(m, leagueBattleSettleBudget, func(mm *state.Mem) bool {

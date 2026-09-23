@@ -27,6 +27,18 @@ func trainerLossFailureKey(o Objective) string {
 	return failureStorageKey(trainerLossObjective(o).Key(), failureModeTrainerLoss)
 }
 
+func combatLossFailureKey(o Objective) string {
+	return failureStorageKey(trainerLossObjective(o).Key(), failureModeCombatLoss)
+}
+
+func combatLossRecorded(k *Knowledge, o Objective) bool {
+	if k == nil {
+		return false
+	}
+	_, ok := k.Failures[combatLossFailureKey(o)]
+	return ok
+}
+
 func legacyTrainerLossFailureKey(o Objective) string {
 	base := trainerLossObjective(o)
 	if base.Kind == KindGym && base.Place != "" {
@@ -46,6 +58,9 @@ func trainerLossRecorded(k *Knowledge, o Objective) bool {
 	if k == nil {
 		return false
 	}
+	if combatLossRecorded(k, o) {
+		return true
+	}
 	if _, ok := k.Failures[trainerLossFailureKey(o)]; ok {
 		return true
 	}
@@ -58,7 +73,8 @@ func (k *Knowledge) clearTrainerLossFailures() {
 		return
 	}
 	for name := range k.Failures {
-		if _, mode, ok := parseFailureStorageKey(name); ok && mode == failureModeTrainerLoss {
+		if _, mode, ok := parseFailureStorageKey(name); ok &&
+			(mode == failureModeTrainerLoss || mode == failureModeCombatLoss) {
 			delete(k.Failures, name)
 			continue
 		}

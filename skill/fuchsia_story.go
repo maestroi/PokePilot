@@ -115,10 +115,10 @@ func FuchsiaProgression(m *emu.Emu, romData []byte, policy MovePolicy) error {
 // grow the party and retry the slice, instead of a raw outcome that classifies
 // as an unknown, unrecoverable failure.
 func fuchsiaKogaOutcomeErr(outcome state.BattleResult) error {
-	if outcome == state.ResultLost {
-		return fmt.Errorf("skill: FuchsiaProgression: %w against Koga", ErrTrainerBlackedOut)
+	if err := RequireBattleWin("gym:koga", outcome); err != nil {
+		return fmt.Errorf("skill: FuchsiaProgression: %w", err)
 	}
-	return fmt.Errorf("skill: FuchsiaProgression: Koga battle ended with outcome %d", outcome)
+	return nil
 }
 
 func hasBagItem(mem *state.Mem, item uint8) bool {

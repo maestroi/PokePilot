@@ -58,8 +58,11 @@ type TrainingEvidence struct {
 // BattleEvidence avoids exposing a concrete game's battle enum through the
 // portable objective result while retaining positive win evidence.
 type BattleEvidence struct {
-	Result string `json:"result,omitempty"`
-	Won    bool   `json:"won,omitempty"`
+	// Encounter is an adapter-owned stable identity for the required fight.
+	// Generic recovery treats it as opaque semantic evidence.
+	Encounter string `json:"encounter,omitempty"`
+	Result    string `json:"result,omitempty"`
+	Won       bool   `json:"won,omitempty"`
 }
 
 type ObjectiveResult struct {

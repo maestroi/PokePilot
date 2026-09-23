@@ -261,8 +261,8 @@ func finishStoryBattle(m *emu.Emu, name string, policy MovePolicy) error {
 	if err != nil {
 		return fmt.Errorf("skill: RocketHideout: battle %s: %w", name, err)
 	}
-	if outcome != state.ResultWon {
-		return fmt.Errorf("skill: RocketHideout: %w after losing to %s", ErrBlackedOut, name)
+	if err := RequireBattleWin("rocket_hideout:"+name, outcome); err != nil {
+		return fmt.Errorf("skill: RocketHideout: %w", err)
 	}
 
 	mem := advanceUntil(m, storyBattleSettleBudget, func(mm *state.Mem) bool {

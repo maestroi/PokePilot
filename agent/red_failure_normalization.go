@@ -7,6 +7,7 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	gameruntime "github.com/maestroi/pokepilot/game"
+	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/skill"
 	"github.com/maestroi/pokepilot/world"
 )
@@ -76,6 +77,11 @@ func classifyObjectiveOutcome(_ Objective, err error, final Observation) Outcome
 
 	if errors.Is(err, skill.ErrFieldItemNoEffect) {
 		return OutcomePostconditionFailed
+	}
+
+	var requiredBattle *skill.RequiredBattleError
+	if errors.As(err, &requiredBattle) {
+		return OutcomeBlocked
 	}
 
 	if errors.Is(err, skill.ErrBlackedOut) ||
@@ -217,6 +223,17 @@ func failureCauseFor(err error) (FailureCauseID, []string) {
 	}
 	if errors.Is(err, skill.ErrFieldItemNoEffect) {
 		return "field_item_no_effect", nil
+	}
+	var requiredBattle *skill.RequiredBattleError
+	if errors.As(err, &requiredBattle) {
+		context := []string(nil)
+		if requiredBattle.Outcome.Encounter != "" {
+			context = []string{requiredBattle.Outcome.Encounter}
+		}
+		if requiredBattle.Outcome.Result == state.ResultLost {
+			return failureCauseCombatDefeat, context
+		}
+		return failureCauseCombatNotWon, context
 	}
 	if errors.Is(err, skill.ErrTrainerBlackedOut) {
 		return "trainer_blacked_out", nil

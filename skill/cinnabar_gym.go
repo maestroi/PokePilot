@@ -135,8 +135,8 @@ func CinnabarProgression(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if err != nil {
 		return fmt.Errorf("skill: CinnabarProgression: %w", err)
 	}
-	if outcome != state.ResultWon {
-		return fmt.Errorf("skill: CinnabarProgression: Blaine battle outcome %v, want won", outcome)
+	if err := RequireBattleWin("gym:blaine", outcome); err != nil {
+		return fmt.Errorf("skill: CinnabarProgression: %w", err)
 	}
 	state.Snapshot(m, &mem)
 	if !state.DecodeProgress(&mem).Has(state.BadgeVolcano) {
