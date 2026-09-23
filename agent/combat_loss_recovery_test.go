@@ -108,4 +108,3 @@ func TestCombatDefeatUsesBoundedBlackoutPolicy(t *testing.T) {
 		t.Fatalf("third combat defeat = %+v, want recovery ceiling", got)
 	}
 }
-
