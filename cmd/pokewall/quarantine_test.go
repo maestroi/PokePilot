@@ -200,11 +200,7 @@ func TestStructuredObjectiveFailureAliasesLegacyExactIssueLink(t *testing.T) {
 	}
 	link := w.issueLinks[familyKey]
 	if link.IssueID != "issue-old" || link.Fingerprint != familyFP {
-		// The family alias inherits lifecycle metadata, while report/quarantine
-		// updates its canonical family fingerprint.
-		if link.IssueID != "issue-old" {
-			t.Fatalf("family alias = %+v, want legacy issue-old", link)
-		}
+		t.Fatalf("family alias = %+v, want legacy issue-old with family fingerprint %s", link, familyFP)
 	}
 }
 
