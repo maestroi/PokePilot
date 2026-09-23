@@ -40,6 +40,12 @@ type spectatorDashboard struct {
 	Now     int64            `json:"now"`
 	Runs    []spectatorRun   `json:"runs"`
 	Summary spectatorSummary `json:"summary"`
+	// ReplayArchive reports whether the replay catalog is wired up. Without it
+	// publicSpectatorRuns drops every finished run before it can check for a
+	// cached video, so an empty archive and a disabled one look identical on
+	// the page. This field makes the difference observable from outside rather
+	// than something an operator has to infer from a missing -replay flag.
+	ReplayArchive bool `json:"replay_archive"`
 }
 
 type spectatorSummary struct {
@@ -269,9 +275,10 @@ func spectatorSnapshotWithReplay(wallBase string, catalog *spectatorReplayCatalo
 			all = append(all, run.spectatorRun)
 		}
 		snapshot := spectatorDashboard{
-			Now:     source.Now,
-			Summary: summarizeSpectatorRuns(all),
-			Runs:    publicSpectatorRuns(ctx, source.Runs, catalog),
+			Now:           source.Now,
+			Summary:       summarizeSpectatorRuns(all),
+			Runs:          publicSpectatorRuns(ctx, source.Runs, catalog),
+			ReplayArchive: catalog.enabled(),
 		}
 
 		res.Header().Set("Cache-Control", "no-store")
