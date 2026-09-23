@@ -31,8 +31,22 @@ func travelEvidenceFromRed(travel skill.TravelResult) *TravelEvidence {
 		Flees:             travel.Flees,
 		Dialogues:         travel.Dialogues,
 		BlackedOut:        travel.BlackedOut,
+		TrainerDefeat:     travel.TrainerDefeat,
 		Replans:           len(travel.Replans),
 		EmergencyEgresses: egresses,
+	}
+}
+
+func attachTravelResult(result *ObjectiveResult, travel skill.TravelResult) {
+	if result == nil {
+		return
+	}
+	attachTravelResult(&result, travel)
+	if travel.TrainerDefeat {
+		// Travel does not own a stable trainer identity. The objective key scopes
+		// durable recovery; the semantic fact needed here is simply that the
+		// journey ended by losing a mandatory trainer battle.
+		result.Battle = requiredBattleEvidenceFromRed("", state.ResultLost)
 	}
 }
 
@@ -82,7 +96,7 @@ func executeRedOwned(m *emu.Emu, romData []byte, o Objective, routePriority Rout
 		} else {
 			travel, err = skill.Travel(m, romData, dest, skill.StatAwareMove(romData), 40)
 		}
-		result.Travel = travelEvidenceFromRed(travel)
+		attachTravelResult(&result, travel)
 		if err != nil {
 			return result, fmt.Errorf("agent: %s: %w", o, err)
 		}
@@ -170,7 +184,7 @@ func executeRedOwned(m *emu.Emu, romData []byte, o Objective, routePriority Rout
 			} else {
 				travel, err = skill.Travel(m, romData, dest, skill.StatAwareMove(romData), 40)
 			}
-			result.Travel = travelEvidenceFromRed(travel)
+			attachTravelResult(&result, travel)
 			if err != nil {
 				return result, fmt.Errorf("agent: %s: %w", o, err)
 			}
@@ -247,7 +261,7 @@ func executeRedOwned(m *emu.Emu, romData []byte, o Objective, routePriority Rout
 				return result, fmt.Errorf("agent: %s: evolution supply purchase must request exactly one stone", o)
 			}
 			travel, err := skill.BuyEvolutionStone(m, romData, item, skill.StatAwareMove(romData))
-			result.Travel = travelEvidenceFromRed(travel)
+			attachTravelResult(&result, travel)
 			if err != nil {
 				return result, fmt.Errorf("agent: %s: %w", o, err)
 			}
