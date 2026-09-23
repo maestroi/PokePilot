@@ -108,6 +108,84 @@ func TestFailureFingerprintChangesForMaterialIdentity(t *testing.T) {
 	}
 }
 
+func TestFailureFamilyFingerprintIgnoresVolatileReplayState(t *testing.T) {
+	a := testFailureIdentity()
+	b := testFailureIdentity()
+	b.Initial.X++
+	b.Initial.Y++
+	b.Initial.Money += 500
+	b.Initial.Party[0].HP--
+	b.Initial.Party[0].Level++
+	b.Initial.Inventory[0].Quantity++
+	b.Final.X++
+	b.Final.Y++
+
+	ka, fa, err := FingerprintFailureFamily(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kb, fb, err := FingerprintFailureFamily(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ka != kb || fa != fb {
+		t.Fatalf("volatile replay state split failure family: %s/%s != %s/%s", ka, fa, kb, fb)
+	}
+	_, exactA, _ := FingerprintFailureIdentity(a)
+	_, exactB, _ := FingerprintFailureIdentity(b)
+	if exactA == exactB {
+		t.Fatal("exact occurrence fingerprint unexpectedly ignored replay state")
+	}
+}
+
+func TestFailureFamilyFingerprintCollapsesCrossMapSemanticCause(t *testing.T) {
+	a := testFailureIdentity()
+	a.Objective = FailureObjective{Kind: "progress", Progress: "fly_ready"}
+	a.Outcome = "blocked"
+	a.Cause = "field_roster_no_recovery"
+	a.CauseContext = nil
+	a.Initial.Location, a.Final.Location = "celadon city", "celadon city"
+
+	b := a
+	b.Initial.Location, b.Final.Location = "fuchsia city", "fuchsia city"
+
+	_, fa, err := FingerprintFailureFamily(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, fb, err := FingerprintFailureFamily(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fa != fb {
+		t.Fatalf("semantic field-roster family split by location: %s != %s", fa, fb)
+	}
+}
+
+func TestFailureFamilyFingerprintKeepsBroadLocalCausesSeparate(t *testing.T) {
+	a := testFailureIdentity()
+	a.Objective = FailureObjective{Kind: "progress", Progress: "secret_key_owned"}
+	a.Outcome = "blocked"
+	a.Cause = "dialogue_interrupted"
+	a.CauseContext = nil
+	a.Initial.Location, a.Final.Location = "cinnabar island", "cinnabar island"
+
+	b := a
+	b.Initial.Location, b.Final.Location = "pokemon mansion b1f", "pokemon mansion b1f"
+
+	_, fa, err := FingerprintFailureFamily(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, fb, err := FingerprintFailureFamily(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fa == fb {
+		t.Fatalf("location-sensitive dialogue failures collapsed to %s", fa)
+	}
+}
+
 func TestFailureDetailMarkerRoundTripSurvivesNumberNormalization(t *testing.T) {
 	id := testFailureIdentity()
 	id.Objective.Progress = "fuchsia_progress"
@@ -135,6 +213,14 @@ func TestFailureDetailMarkerRoundTripSurvivesNumberNormalization(t *testing.T) {
 	key, fp, ok := ParseFailureDetailMarker(marker)
 	if !ok || key != o.Key || fp != o.Fingerprint {
 		t.Fatalf("ParseFailureDetailMarker(%q) = %q %q %v, want %q %q true", marker, key, fp, ok, o.Key, o.Fingerprint)
+	}
+	familyKey, familyFP, err := FingerprintFailureFamily(o.Identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotFamilyKey, gotFamilyFP, ok := ParseFailureDetailFamilyMarker(marker)
+	if !ok || gotFamilyKey != familyKey || gotFamilyFP != familyFP {
+		t.Fatalf("ParseFailureDetailFamilyMarker(%q) = %q %q %v, want %q %q true", marker, gotFamilyKey, gotFamilyFP, ok, familyKey, familyFP)
 	}
 }
 
