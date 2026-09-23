@@ -170,6 +170,16 @@ func Catalog() []Case {
 			Available:   true,
 		},
 		{
+			ID:          "elite-four-loss-recovery",
+			Description: "intentional Lorelei defeat through Indigo blackout, restart and League recommit",
+			Layer:       LayerMilestone,
+			Runner:      RunnerGoTest,
+			Package:     "./skill",
+			Test:        "^TestEliteFourLossRecoveryQualification$",
+			Checkpoint:  "elite-four-loss-recovery/start.state",
+			Available:   true,
+		},
+		{
 			ID:          "elite-four-champion",
 			Description: "Indigo Plateau checkpoint through Elite Four, Champion and Hall of Fame with stage-by-stage resume verification",
 			Layer:       LayerMilestone,
