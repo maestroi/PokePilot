@@ -45,7 +45,7 @@ func SurgeProgression(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if err != nil {
 		return fmt.Errorf("skill: SurgeProgression: Lt. Surge: %w", err)
 	}
-	if err := RequireBattleWin("gym:lt_surge", outcome); err != nil {
+	if err := RequireTrainerBattleWin("gym:lt_surge", outcome); err != nil {
 		return fmt.Errorf("skill: SurgeProgression: %w", err)
 	}
 
