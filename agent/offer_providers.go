@@ -117,6 +117,13 @@ func OfferWithEvidence(obs Observation, known *Knowledge) ObjectiveOffer {
 	if known == nil {
 		known = NewKnowledge(nil)
 	}
+	if trainingUnviableHere(obs) {
+		// Old checkpoints did not persist a readiness target and historically
+		// escaped a dead-end weak grass patch by scheduling a retry. New combat
+		// losses carry a target and stay locked so the planner seeks a stronger
+		// training area instead of retrying the same underpowered fight.
+		known.promoteCombatLossesToRetryWhere(func(f Failure) bool { return f.ReadinessTarget == 0 })
+	}
 	ctx := newObjectiveOfferContext(obs, known)
 
 	// A catalog that offers starters while the party is empty owns the game's
