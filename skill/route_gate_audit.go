@@ -450,8 +450,8 @@ func (x *redRouteTransitionExecutor) clearRoute16Snorlax() (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("skill: Route 16 Snorlax battle: %w", err)
 	}
-	if outcome != state.ResultWon {
-		return false, fmt.Errorf("skill: Route 16 Snorlax battle ended with outcome %d", outcome)
+	if err := RequireBattleWin("static:route16_snorlax", outcome); err != nil {
+		return false, fmt.Errorf("skill: Route 16 Snorlax battle: %w", err)
 	}
 	if err := Cutscene(x.m, fuchsiaStoryBudget, func(mm *state.Mem) bool {
 		return state.HasEvent(mm, eventBeatRoute16Snorlax)
