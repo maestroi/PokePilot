@@ -197,7 +197,7 @@ func (redSemanticObservationAdapter) Observe(m *emu.Emu, romData []byte, profile
 
 	objects := MapObjects(romData, obs.Map)
 	hidden := state.HiddenObjectIDs(&mem)
-	objectGrid := mapObjectReachabilityGrid(romData, obs.Map)
+	objectGrid := mapObjectReachabilityGridLive(romData, obs.Map, &mem)
 	stationary := stationaryHomeTiles(romData, obs.Map)
 	obs.MapObjects = make([]MapObject, 0, len(objects))
 	for i, object := range objects {
@@ -227,6 +227,26 @@ func (redSemanticObservationAdapter) Observe(m *emu.Emu, romData []byte, profile
 
 func unroutablePlaces(m *emu.Emu, romData []byte) []string {
 	return routeAvailabilityFor(m, romData).Unroutable
+}
+
+func mapObjectReachabilityGridLive(romData []byte, mapID uint8, mem *state.Mem) *world.Grid {
+	h, err := rom.ParseMap(romData, mapID)
+	if err != nil {
+		return nil
+	}
+	if mem != nil && mem.U8(sym.CurMap) == mapID {
+		if g, err := skill.LiveMapGridFromMem(mem, romData, h); err == nil {
+			return g
+		}
+	}
+	// Observation stays fail-open to the stable ROM geometry when a snapshot
+	// is incomplete. A valid live snapshot, however, must own current object
+	// reachability so script-replaced doors cannot advertise impossible work.
+	g, err := world.Build(romData, h)
+	if err != nil {
+		return nil
+	}
+	return g
 }
 
 func mapObjectReachabilityGrid(romData []byte, mapID uint8) *world.Grid {
