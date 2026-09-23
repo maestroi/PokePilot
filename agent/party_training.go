@@ -97,7 +97,11 @@ func currentPartyTrainingEstimate(mem *state.Mem, romData []byte, mapID uint8, s
 		return TrainingEstimate{}, err
 	}
 	mon := party.Mons[slot]
-	return estimateTraining(romData, mon.Species, currentXP, mon.Level, slots, targetLevel, budget)
+	estimate, err := estimateTraining(romData, mon.Species, currentXP, mon.Level, slots, targetLevel, budget)
+	if err != nil {
+		return TrainingEstimate{}, err
+	}
+	return applyPartyTrainingMethod(party, slot, slots, estimate), nil
 }
 
 // resolveTrainingPartySlot makes a species-targeted objective resilient to a
