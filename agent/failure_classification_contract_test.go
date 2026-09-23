@@ -14,7 +14,7 @@ func TestGymLossClassificationDoesNotDependOnErrorProse(t *testing.T) {
 
 	proseOnly := NewKnowledge(nil)
 	proseOnly.Failed(gym, errors.New("lost to the gym leader (blacked out to the center)"))
-	if gymLossRecorded(proseOnly, "pewter gym") {
+	if combatLossRecorded(proseOnly, gym) {
 		t.Fatal("plain error prose was classified as a gym loss")
 	}
 	if got := proseOnly.Failures[objectiveStorageKey(gym)].Times; got != 1 {
@@ -23,7 +23,7 @@ func TestGymLossClassificationDoesNotDependOnErrorProse(t *testing.T) {
 
 	typed := NewKnowledge(nil)
 	typed.Failed(gym, fmt.Errorf("wording can change completely: %w", gymOutcomeErr(gym, state.ResultLost)))
-	if !gymLossRecorded(typed, "pewter gym") {
+	if !combatLossRecorded(typed, gym) {
 		t.Fatal("structured required gym loss was not classified as a gym loss")
 	}
 
@@ -32,7 +32,7 @@ func TestGymLossClassificationDoesNotDependOnErrorProse(t *testing.T) {
 		Objective: gym,
 		Battle:    &BattleEvidence{Result: "lost", Won: false},
 	}, errors.New("native diagnostic wording is intentionally unrelated"))
-	if !gymLossRecorded(structured, "pewter gym") {
+	if !combatLossRecorded(structured, gym) {
 		t.Fatal("structured BattleEvidence did not classify the gym loss")
 	}
 }
@@ -42,13 +42,13 @@ func TestTrainerLossClassificationRequiresTypedOrStructuredCause(t *testing.T) {
 
 	proseOnly := NewKnowledge(nil)
 	proseOnly.Failed(trainer, errors.New(skill.ErrTrainerBlackedOut.Error()))
-	if trainerLossRecorded(proseOnly, trainer) {
+	if combatLossRecorded(proseOnly, trainer) {
 		t.Fatal("plain trainer-blackout prose was classified as a trainer loss")
 	}
 
 	typed := NewKnowledge(nil)
 	typed.Failed(trainer, fmt.Errorf("renamed wrapper: %w", skill.ErrTrainerBlackedOut))
-	if !trainerLossRecorded(typed, trainer) {
+	if !combatLossRecorded(typed, trainer) {
 		t.Fatal("typed trainer blackout was not classified as a trainer loss")
 	}
 
@@ -57,7 +57,7 @@ func TestTrainerLossClassificationRequiresTypedOrStructuredCause(t *testing.T) {
 		Objective: trainer,
 		Cause:     FailureCauseID("trainer_blacked_out"),
 	}, errors.New("native diagnostic wording is intentionally unrelated"))
-	if !trainerLossRecorded(structured, trainer) {
+	if !combatLossRecorded(structured, trainer) {
 		t.Fatal("structured trainer_blacked_out cause did not classify the trainer loss")
 	}
 }
