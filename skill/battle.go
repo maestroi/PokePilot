@@ -115,7 +115,19 @@ const mainMenuMax = 1
 // 42MB of "getenv ZBAT" lines in one nine-minute run).
 var zbatDebug = os.Getenv("ZBAT") != ""
 
+// BattleOptions adds narrowly-scoped battle behavior for callers that need a
+// deliberate opening switch. Ordinary Battle uses the zero value and retains
+// the normal tactical policy.
+type BattleOptions struct {
+	OpeningTrainingSwitch bool
+	MinTrainingCarryLevel uint8
+}
+
 func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
+	return BattleWithOptions(m, policy, BattleOptions{})
+}
+
+func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (state.BattleResult, error) {
 	if policy == nil {
 		return 0, errors.New("skill: Battle: nil policy")
 	}
@@ -143,6 +155,7 @@ func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
 	forcedChoiceVisits := 0
 	itemUses := 0
 	voluntarySwitches := 0
+	openingTrainingSwitch := options.OpeningTrainingSwitch
 	// pendingTryLearn remembers that the "<NAME> is trying to learn <MOVE>"
 	// text was seen. That message is long enough to scroll off the 4-line
 	// battle text box before the YES/NO cursor is drawn (the cursor appears
@@ -250,6 +263,31 @@ func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
 			})
 
 		case mainMenuUp(m):
+			if openingTrainingSwitch {
+				bs := state.DecodeBattle(&mem)
+				if bs != nil {
+					decision := chooseTrainingCarrySwitch(m.ROM(), &mem, *bs, options.MinTrainingCarryLevel)
+					if decision.Switch {
+						if zbatDebug {
+							fmt.Printf("zbat resource=SWITCH action=training reason=%s active={%s} candidate={%s}\n",
+								decision.Reason, decision.Active.String(), decision.Candidate.String())
+						}
+						if err := SwitchActive(m, decision.Slot); err != nil {
+							return menuError(m, "switch-training carry", err)
+						}
+						openingTrainingSwitch = false
+						voluntarySwitches++
+						continue
+					}
+				}
+				// Train checks the same carry predicate before entering a wild
+				// encounter. If the live battle no longer has one (for example a
+				// status/HP transition landed between steps), fall through to the
+				// ordinary battle policy so Battle still resolves to a clean
+				// boundary rather than stranding the emulator mid-fight.
+				openingTrainingSwitch = false
+			}
+
 			if bs := state.DecodeBattle(&mem); bs != nil && len(bs.Usable()) == 0 {
 				if slot, ok := ppRecoverySlot(&mem); ok {
 					if zbatDebug {
