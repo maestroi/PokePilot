@@ -18,6 +18,18 @@ type giftPokemonSpec struct {
 	ConfirmChoice bool
 }
 
+// fieldCarrierGift is a one-time scripted gift that field-roster repair may
+// consume when no owned or wild Pokemon can carry a missing field move. Gift
+// skills register themselves, so the repair itself holds no species or story
+// facts; HM compatibility still comes from the ROM.
+type fieldCarrierGift struct {
+	Species uint8
+	Ready   func(facts state.StoryFacts) bool
+	Receive func(m *emu.Emu, romData []byte, policy MovePolicy) (CatchResult, error)
+}
+
+var fieldCarrierGifts []fieldCarrierGift
+
 func giftPokemonAlreadyOwned(mem *state.Mem, romData []byte, species uint8) bool {
 	wantDex := wantedDexNumbers(romData, []uint8{species})
 	have := dexSet(state.DecodePokedex(mem).Owned)

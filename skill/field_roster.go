@@ -493,10 +493,39 @@ func findWildFieldCandidate(m *emu.Emu, romData []byte, target FieldMove, requir
 	return best, found, nil
 }
 
+// findGiftFieldCandidate returns a registered gift whose story prerequisites
+// hold, which this save has not already claimed, and which can carry target
+// without stranding another required move.
+func findGiftFieldCandidate(mem *state.Mem, romData []byte, target FieldMove, required []FieldMove) (fieldCarrierGift, bool, error) {
+	facts := state.DecodeStoryFacts(mem, state.DecodeInventory(mem))
+	party := state.DecodeParty(mem)
+	for _, gift := range fieldCarrierGifts {
+		if !gift.Ready(facts) || giftPokemonAlreadyOwned(mem, romData, gift.Species) {
+			continue
+		}
+		incoming := state.Mon{Species: gift.Species}
+		canTarget, err := monCanPlaceFieldMove(romData, incoming, target)
+		if err != nil {
+			return fieldCarrierGift{}, false, err
+		}
+		if !canTarget {
+			continue
+		}
+		_, legal, err := chooseDepositSlotForIncoming(romData, party, incoming, required)
+		if err != nil {
+			return fieldCarrierGift{}, false, err
+		}
+		if legal {
+			return gift, true, nil
+		}
+	}
+	return fieldCarrierGift{}, false, nil
+}
+
 // RepairFieldCapabilities makes every required move usable by the current
 // party. It first teaches within the existing roster, then tries the active PC
-// box, and finally acquires a ROM-compatible wild species from a reachable
-// known grass map. Every roster mutation goes through the real PC/catch UI and
+// box, then acquires a ROM-compatible wild species from a reachable known
+// grass map, and finally claims a ready registered gift carrier. Every roster mutation goes through the real PC/catch UI and
 // every learned move is verified by EnsureFieldMove from party RAM.
 func RepairFieldCapabilities(m *emu.Emu, romData []byte, policy MovePolicy, required []FieldMove) error {
 	if policy == nil {
@@ -573,7 +602,36 @@ func RepairFieldCapabilities(m *emu.Emu, romData []byte, policy MovePolicy, requ
 			}
 		}
 		if !wildOK {
-			return fmt.Errorf("%w: %s has no compatible current-party member, active-box member, or reachable known grass species", ErrFieldRosterNoRecovery, target)
+			state.Snapshot(m, &mem)
+			gift, giftOK, err := findGiftFieldCandidate(&mem, romData, target, required)
+			if err != nil {
+				return fmt.Errorf("skill: RepairFieldCapabilities: find gift %s carrier: %w", target, err)
+			}
+			if !giftOK {
+				return fmt.Errorf("%w: %s has no compatible current-party member, active-box member, reachable known grass species, or ready gift", ErrFieldRosterNoRecovery, target)
+			}
+			party = state.DecodeParty(&mem)
+			// The gift lands in the box when the party is full, so make room first.
+			if party.Count >= gen1PartyCapacity {
+				depositSlot, _, err := chooseDepositSlotForIncoming(romData, party, state.Mon{Species: gift.Species}, required)
+				if err != nil {
+					return fmt.Errorf("skill: RepairFieldCapabilities: plan party room for gift species %#02x: %w", gift.Species, err)
+				}
+				if err := DepositPartyMon(m, romData, policy, depositSlot); err != nil {
+					return fmt.Errorf("skill: RepairFieldCapabilities: make room for gift species %#02x: %w", gift.Species, err)
+				}
+			}
+			result, err := gift.Receive(m, romData, policy)
+			if err != nil {
+				return fmt.Errorf("skill: RepairFieldCapabilities: receive gift species %#02x for %s: %w", gift.Species, target, err)
+			}
+			if result.Outcome != OutcomeCaught || result.Species != gift.Species {
+				return fmt.Errorf("%w: gift species %#02x for %s ended with outcome %d", ErrFieldRosterNoRecovery, gift.Species, target, result.Outcome)
+			}
+			if _, err := EnsureFieldMove(m, target); err != nil {
+				return fmt.Errorf("skill: RepairFieldCapabilities: teach %s after receiving gift species %#02x: %w", target, gift.Species, err)
+			}
+			continue
 		}
 
 		state.Snapshot(m, &mem)

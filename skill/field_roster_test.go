@@ -235,3 +235,33 @@ func TestChooseCompatibleBoxMonPrefersBroaderFieldCoverage(t *testing.T) {
 		t.Fatalf("box choice = index %d deposit %d ok=%v, want broader candidate index 1 with no deposit", idx, deposit, ok)
 	}
 }
+
+func TestFindGiftFieldCandidateNeedsReadyUnownedCompatibleGift(t *testing.T) {
+	romData := fakeCoreFieldROM(t)
+	surf, _ := FieldMoveSpecFor(FieldSurf)
+	const carrier = 0x20
+	allowTMHM(t, romData, carrier, 1, surf.HMItem)
+
+	ready := true
+	saved := fieldCarrierGifts
+	t.Cleanup(func() { fieldCarrierGifts = saved })
+	fieldCarrierGifts = []fieldCarrierGift{
+		{Species: 0x10, Ready: func(state.StoryFacts) bool { return true }}, // no HM bits
+		{Species: carrier, Ready: func(state.StoryFacts) bool { return ready }},
+	}
+
+	var mem state.Mem
+	mem[sym.PartyCount] = 1
+	mem[sym.PartySpecies] = 0x11
+	mem[sym.PartyMon1+sym.MonSpecies] = 0x11
+
+	gift, ok, err := findGiftFieldCandidate(&mem, romData, FieldSurf, []FieldMove{FieldSurf})
+	if err != nil || !ok || gift.Species != carrier {
+		t.Fatalf("gift = %#02x ok=%v err=%v, want Surf-compatible %#02x", gift.Species, ok, err, carrier)
+	}
+
+	ready = false
+	if _, ok, _ := findGiftFieldCandidate(&mem, romData, FieldSurf, []FieldMove{FieldSurf}); ok {
+		t.Fatal("gift offered before its story prerequisites hold")
+	}
+}
