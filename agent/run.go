@@ -157,7 +157,15 @@ runLoop:
 			err      error
 			retries  int
 		)
-		if recovery, capabilities, ok := engine.failures.prerequisiteRecovery(last, now); ok {
+		if prep, ok := combatPreparationObjective(last, now, known); ok {
+			obj = prep
+			engine.planning.request("combat_preparation")
+			if budget.Log != nil {
+				state := combatPreparationFor(known, last)
+				fmt.Fprintf(budget.Log, "round %d: deterministic combat preparation readiness=%d/%d losses=%d -> %s\n",
+					round, state.Current, state.Target, state.Losses, obj)
+			}
+		} else if recovery, capabilities, ok := engine.failures.prerequisiteRecovery(last, now); ok {
 			obj = recovery
 			engine.planning.request("prerequisite_recovery")
 			if budget.Log != nil {
