@@ -82,7 +82,11 @@ func (a *redObjectiveAdapter) Validate(o Objective, obs Observation) error {
 			if !ok {
 				return fmt.Errorf("agent: %s: unknown Red place %q", o, o.Place)
 			}
-			if !isCenter(state.MapName(d.Map)) {
+			center, centerErr := skill.PokemonCenterMap(a.romData, d.Map)
+			if centerErr != nil {
+				return fmt.Errorf("agent: %s: inspect Pokemon Center %q: %w", o, o.Place, centerErr)
+			}
+			if !center {
 				return fmt.Errorf("agent: %s: %q is not a Pokemon Center", o, o.Place)
 			}
 		}
