@@ -115,13 +115,84 @@ func TestCorpusCheckpointCannotEscapeRoot(t *testing.T) {
 	}
 }
 
+func TestPreparePrivateCheckpointEvidenceCopiesAndHashes(t *testing.T) {
+	root := t.TempDir()
+	corpus := filepath.Join(root, "corpus")
+	out := filepath.Join(root, "out")
+	caseDir := filepath.Join(out, "cases", "elite-four-loss-recovery")
+	checkpoint := filepath.Join(corpus, "elite-four-loss-recovery", "start.state")
+	if err := os.MkdirAll(filepath.Dir(checkpoint), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(caseDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	data := []byte("private-checkpoint-bytes")
+	if err := os.WriteFile(checkpoint, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	evidence, hash, err := preparePrivateCheckpointEvidence(
+		config{corpus: corpus, out: out},
+		qualification.Case{ID: "elite-four-loss-recovery", Checkpoint: "elite-four-loss-recovery/start.state"},
+		caseDir,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hash != sha256Hex(data) {
+		t.Fatalf("checkpoint hash = %q, want %q", hash, sha256Hex(data))
+	}
+	if len(evidence) != 1 || evidence[0] != filepath.Join("cases", "elite-four-loss-recovery", "start.state") {
+		t.Fatalf("evidence = %v", evidence)
+	}
+	copied, err := os.ReadFile(filepath.Join(caseDir, "start.state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(copied, data) {
+		t.Fatalf("copied checkpoint = %q, want %q", copied, data)
+	}
+}
+
+func TestPreparePrivateCheckpointEvidenceFailsBeforeChildRunWhenMissing(t *testing.T) {
+	root := t.TempDir()
+	caseDir := filepath.Join(root, "out", "cases", "missing")
+	if err := os.MkdirAll(caseDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err := preparePrivateCheckpointEvidence(
+		config{corpus: filepath.Join(root, "corpus"), out: filepath.Join(root, "out")},
+		qualification.Case{ID: "missing", Checkpoint: "missing/start.state"},
+		caseDir,
+	)
+	if err == nil || !strings.Contains(err.Error(), "missing/start.state") {
+		t.Fatalf("err = %v, want direct missing checkpoint diagnostic", err)
+	}
+}
+
+func TestPreparePrivateCheckpointEvidenceLeavesFixtureCasesAlone(t *testing.T) {
+	evidence, hash, err := preparePrivateCheckpointEvidence(
+		config{corpus: "/not/used", out: t.TempDir()},
+		qualification.Case{ID: "opening-brock", Checkpoint: "fixture:forest_north_gate"},
+		t.TempDir(),
+	)
+	if err != nil || hash != "" || len(evidence) != 0 {
+		t.Fatalf("fixture checkpoint = evidence:%v hash:%q err:%v", evidence, hash, err)
+	}
+}
+
 func TestQualificationEnvOverridesROMAndDisablesFarm(t *testing.T) {
 	t.Setenv("POKEMON_RED_ROM", "/wrong.gb")
+	t.Setenv("POKEPILOT_QUALIFICATION_CORPUS", "/wrong/corpus")
 	t.Setenv("POKEPILOT_ORCH_URL", "http://wall")
-	env := qualificationEnv(config{romPath: "/verified.gb"}, "/tmp/fixtures")
+	env := qualificationEnv(config{romPath: "/verified.gb", corpus: "/verified/corpus"}, "/tmp/fixtures")
 	got := envMap(env)
 	if got["POKEMON_RED_ROM"] != "/verified.gb" {
 		t.Fatalf("POKEMON_RED_ROM = %q", got["POKEMON_RED_ROM"])
+	}
+	if got["POKEPILOT_QUALIFICATION_CORPUS"] != "/verified/corpus" {
+		t.Fatalf("POKEPILOT_QUALIFICATION_CORPUS = %q", got["POKEPILOT_QUALIFICATION_CORPUS"])
 	}
 	if got["POKEPILOT_FIXTURE_DIR"] != "/tmp/fixtures" {
 		t.Fatalf("POKEPILOT_FIXTURE_DIR = %q", got["POKEPILOT_FIXTURE_DIR"])
