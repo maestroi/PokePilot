@@ -229,7 +229,6 @@ func TestBestReplacementPreservesMultiFieldMoveCarrierOnTie(t *testing.T) {
 	}
 }
 
-
 func TestChooseTrainingCarrySwitchIgnoresOrdinaryMaterialGainThreshold(t *testing.T) {
 	move := rom.Move{ID: 33, Power: 50, Type: typeNormal, Accuracy: 255, PP: 20}
 	romData := fakeROM(t, move)
