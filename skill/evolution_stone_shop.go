@@ -17,11 +17,11 @@ func init() {
 	// Shopping is an interaction-owned destination: reaching the fourth floor
 	// by itself is not a useful standalone objective, and Buy expects Red to be
 	// standing beside/facing the clerk when it opens the mart menu.
-	interactionPlaces["celadon mart 4f stones"] = Destination{
-		Map: celadonMart4FMap,
-		X:   celadonMart4FClerkX,
-		Y:   celadonMart4FClerkY + 1,
-	}
+	interactionPlaces["celadon mart 4f stones"] = InteractionDestination(
+		celadonMart4FMap,
+		celadonMart4FClerkX,
+		celadonMart4FClerkY,
+	)
 }
 
 // BuyEvolutionStone travels to Celadon Mart 4F, proves from the ROM-backed mart

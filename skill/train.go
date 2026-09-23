@@ -157,7 +157,7 @@ func Train(m *emu.Emu, romData []byte, targetLevel int, policy MovePolicy, maxBa
 	now := currentWorld(m)
 	res := TrainResult{StartLevel: int(state.DecodeParty(&mem).Mons[0].Level)}
 
-	grass, grid, err := grassCells(romData, now.Map)
+	grass, grid, err := liveEncounterCells(m, romData, now.Map)
 	if err != nil {
 		return res, err
 	}
@@ -539,6 +539,80 @@ func HasReachableGrass(romData []byte, mapID uint8, px, py uint8) (bool, error) 
 		return false, nil
 	}
 	return len(grassInPlayerComponent(grass, grid, int(px), int(py))) > 0, nil
+}
+
+// liveEncounterCells overlays the current map's post-script collision state
+// onto the ROM-derived encounter cells. Maps such as Pokemon Mansion replace
+// blocks when statue switches move doors; a static collision grid can therefore
+// advertise an encounter cell that the player cannot reach in the live state.
+// Off-map callers still use grassCells because there is no live geometry to
+// observe.
+func liveEncounterCells(m *emu.Emu, romData []byte, mapID uint8) ([]cell, *world.Grid, error) {
+	grass, staticGrid, err := grassCells(romData, mapID)
+	if err != nil || len(grass) == 0 || m == nil || m.Peek8(sym.CurMap) != mapID {
+		return grass, staticGrid, err
+	}
+	h, err := rom.ParseMap(romData, mapID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("skill: encounter grid: parse map %#04x: %w", mapID, err)
+	}
+	live, err := liveMapGrid(m, romData, h)
+	if err != nil {
+		return nil, nil, fmt.Errorf("skill: encounter grid: live map %#04x: %w", mapID, err)
+	}
+	allTiles := mapID >= trainFirstIndoorMap && h.Tileset != trainForestTileset
+	return encounterCellsForWalkability(grass, live.Width, live.Height, allTiles, live.Walkable), live, nil
+}
+
+// encounterCellsForWalkability applies live walkability without coupling the
+// encounter rules to a concrete Grid. Indoor non-FOREST maps roll encounters
+// on every walkable tile; outdoor/FOREST maps retain the ROM-derived encounter
+// cells and only discard cells that live topology has closed.
+func encounterCellsForWalkability(static []cell, width, height int, allTiles bool, walkable func(int, int) bool) []cell {
+	if walkable == nil {
+		return append([]cell(nil), static...)
+	}
+	if allTiles {
+		out := make([]cell, 0, width*height)
+		for y := 0; y < height; y++ {
+			for x := 0; x < width; x++ {
+				if walkable(x, y) {
+					out = append(out, cell{x: x, y: y})
+				}
+			}
+		}
+		return out
+	}
+	out := make([]cell, 0, len(static))
+	for _, c := range static {
+		if walkable(c.x, c.y) {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// HasReachableGrassLive is the current-map offer/execution predicate. Besides
+// using live scripted topology, it requires an actual two-cell grind pair,
+// matching the precondition shared by Train and Catch.
+func HasReachableGrassLive(m *emu.Emu, romData []byte) (bool, error) {
+	if m == nil {
+		return false, fmt.Errorf("skill: live encounter reachability: nil emulator")
+	}
+	now := currentWorld(m)
+	grass, grid, err := liveEncounterCells(m, romData, now.Map)
+	if err != nil {
+		return false, err
+	}
+	if len(grass) == 0 || grid == nil {
+		return false, nil
+	}
+	grass = grassInPlayerComponent(grass, grid, int(now.X), int(now.Y))
+	if len(grass) == 0 {
+		return false, nil
+	}
+	_, _, ok := grindPair(grass, grid, int(now.X), int(now.Y), spriteBlockers(m))
+	return ok, nil
 }
 
 // grassCells returns the walkable cells of mapID that stand on the

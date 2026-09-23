@@ -146,12 +146,16 @@ func Catch(m *emu.Emu, romData []byte, want []uint8, policy MovePolicy, maxBalls
 	// encounter rolled in a burst of legs — is part of the hunt, not a
 	// failure, and only the total leg budget should end it.
 	now := currentWorld(m)
-	grass, grid, err := grassCells(romData, now.Map)
+	grass, grid, err := liveEncounterCells(m, romData, now.Map)
 	if err != nil {
 		return res, err
 	}
 	if len(grass) == 0 {
-		return res, fmt.Errorf("skill: Catch: no walkable tall grass on map %#04x", now.Map)
+		return res, fmt.Errorf("skill: Catch: no walkable encounter cells on map %#04x", now.Map)
+	}
+	grass = grassInPlayerComponent(grass, grid, int(now.X), int(now.Y))
+	if len(grass) == 0 {
+		return res, fmt.Errorf("skill: Catch: no encounter cells reachable from (%d,%d) on map %#04x without leaving it", now.X, now.Y, now.Map)
 	}
 	a, b, ok := grindPair(grass, grid, int(now.X), int(now.Y), spriteBlockers(m))
 	if !ok {
