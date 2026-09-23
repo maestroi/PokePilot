@@ -46,7 +46,8 @@ func gymLossFailureName(o Objective, err error) (string, bool) {
 	var required *skill.RequiredBattleError
 	if !errors.As(err, &required) ||
 		required.Outcome.Result != state.ResultLost ||
-		!required.Outcome.Trainer {
+		!required.Outcome.Trainer ||
+		required.Outcome.Encounter != "gym:"+string(o.Place) {
 		return "", false
 	}
 	return gymLossFailureKey(o.Place), true
