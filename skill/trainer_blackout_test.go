@@ -30,3 +30,24 @@ func TestBattleBlackoutErrorDistinguishesTrainerFromWild(t *testing.T) {
 		t.Fatalf("wild loss = %v, must not classify as trainer blackout", wild)
 	}
 }
+
+
+func TestRecordTravelBattleDefeatPreservesSemanticKind(t *testing.T) {
+	trainerResult := TravelResult{}
+	trainerErr := recordTravelBattleDefeat(&trainerResult, battleResolution{outcome: state.ResultLost, trainer: true})
+	if !trainerResult.BlackedOut || !trainerResult.TrainerDefeat {
+		t.Fatalf("trainer result = %+v, want blackout with trainer defeat evidence", trainerResult)
+	}
+	if !errors.Is(trainerErr, ErrTrainerBlackedOut) {
+		t.Fatalf("trainer err = %v, want legacy trainer blackout compatibility", trainerErr)
+	}
+
+	wildResult := TravelResult{}
+	wildErr := recordTravelBattleDefeat(&wildResult, battleResolution{outcome: state.ResultLost})
+	if !wildResult.BlackedOut || wildResult.TrainerDefeat {
+		t.Fatalf("wild result = %+v, want ordinary blackout without trainer defeat evidence", wildResult)
+	}
+	if !errors.Is(wildErr, ErrBlackedOut) || errors.Is(wildErr, ErrTrainerBlackedOut) {
+		t.Fatalf("wild err = %v, want only broad blackout compatibility", wildErr)
+	}
+}
