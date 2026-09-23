@@ -295,6 +295,7 @@ func TestVisitedIndigoPlateauIsLegalFlyDestination(t *testing.T) {
 	mem[sym.ObtainedBadges] = 1 << 2 // Thunder Badge
 	mem[sym.PartyCount] = 1
 	mem[sym.PartyMon1+sym.MonMoves] = fieldFlyMove
+	setTownVisited(&mem, 0) // Fly's destination list is anchored at Pallet.
 	setTownVisited(&mem, indigoPlateauMap)
 
 	options := legalFastTravelOptions(&mem)
