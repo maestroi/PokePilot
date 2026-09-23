@@ -2,6 +2,7 @@ package agent
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/maestroi/pokepilot/skill"
@@ -76,10 +77,176 @@ func mergeCombatRetryFailure(a, b Failure) Failure {
 	return a
 }
 
-// promoteCombatLossesToRetry is the only live loss->retry state transition.
-// It converts generic combat losses, and any readable historical trainer/gym
-// modes, into generic combat_retry records keyed by ObjectiveKey.
-func (k *Knowledge) promoteCombatLossesToRetry() {
+// Combat preparation uses a portable party-readiness score rather than
+// boss-specific level tables. The strongest three party members contribute
+// with diminishing weight, so a solo run can satisfy the target by making its
+// one carry substantially stronger while a broader party can improve through
+// useful secondary members too.
+const maxCombatReadiness = 700 // 4*100 + 2*100 + 1*100
+
+type combatPreparationState struct {
+	Current int
+	Target  int
+	Losses  int
+	Active  bool
+}
+
+func partyCombatReadiness(obs Observation) int {
+	var top [3]int
+	for _, mon := range obs.Party {
+		level := int(mon.Level)
+		switch {
+		case level > top[0]:
+			top[2], top[1], top[0] = top[1], top[0], level
+		case level > top[1]:
+			top[2], top[1] = top[1], level
+		case level > top[2]:
+			top[2] = level
+		}
+	}
+	return top[0]*4 + top[1]*2 + top[2]
+}
+
+func combatPreparationLevelGain(losses, partyCount int) int {
+	if losses < 1 {
+		losses = 1
+	}
+	// A first full combat loss asks for roughly three lead levels of real
+	// improvement. Repeated losses escalate by two levels instead of retrying
+	// after another token +1/+2 grind. Thin parties get extra margin because
+	// they have no healthy fallback when the carry hits a bad matchup.
+	levels := 3 + (losses-1)*2
+	switch {
+	case partyCount <= 1:
+		levels += 2
+	case partyCount == 2:
+		levels++
+	}
+	if levels > 10 {
+		levels = 10
+	}
+	return levels
+}
+
+func stampCombatPreparation(f *Failure, obs Observation) {
+	if f == nil {
+		return
+	}
+	baseline := partyCombatReadiness(obs)
+	if baseline <= 0 {
+		f.ReadinessBaseline, f.ReadinessTarget = 0, 0
+		return
+	}
+	partyCount := len(obs.Party)
+	if partyCount == 0 {
+		partyCount = obs.PartyCount
+	}
+	target := baseline + combatPreparationLevelGain(f.Times, partyCount)*4
+	if target > maxCombatReadiness {
+		target = maxCombatReadiness
+	}
+	f.ReadinessBaseline, f.ReadinessTarget = baseline, target
+}
+
+func combatPreparationFor(k *Knowledge, obs Observation) combatPreparationState {
+	state := combatPreparationState{Current: partyCombatReadiness(obs)}
+	if k == nil {
+		return state
+	}
+	for storage, failure := range k.Failures {
+		_, mode, ok := parseFailureStorageKey(storage)
+		if !ok {
+			continue
+		}
+		switch mode {
+		case failureModeCombatLoss, legacyFailureModeTrainerLoss, legacyFailureModeGymLoss:
+			state.Active = true
+			if failure.Times > state.Losses {
+				state.Losses = failure.Times
+			}
+			if failure.ReadinessTarget > state.Target {
+				state.Target = failure.ReadinessTarget
+			}
+		}
+	}
+	return state
+}
+
+func combatPreparationNote(k *Knowledge, obs Observation) string {
+	state := combatPreparationFor(k, obs)
+	if !state.Active {
+		return ""
+	}
+	if state.Target > 0 {
+		return fmt.Sprintf("(combat preparation after %d loss(es): readiness %d/%d; retry remains locked until the target is reached)",
+			state.Losses, state.Current, state.Target)
+	}
+	return "(combat preparation after a loss: make material party progress before retrying)"
+}
+
+// annotateCombatPreparation makes the campaign visible to the chooser. When
+// local grinding is not viable it annotates journeys instead of unlocking the
+// failed fight, so the planner can deliberately seek a stronger encounter area.
+func annotateCombatPreparation(obs Observation, known *Knowledge, out []Objective) []Objective {
+	note := combatPreparationNote(known, obs)
+	if note == "" {
+		return out
+	}
+	hasTrain := false
+	for i := range out {
+		switch out[i].Kind {
+		case KindTrain, KindTrainer:
+			out[i] = appendObjectiveNote(out[i], note)
+			if out[i].Kind == KindTrain {
+				hasTrain = true
+			}
+		}
+	}
+	if hasTrain {
+		return out
+	}
+	for i := range out {
+		if out[i].Kind == KindGoTo {
+			out[i] = appendObjectiveNote(out[i], "(combat preparation active; no viable local training here, seek stronger encounters before retrying)")
+		}
+	}
+	return out
+}
+
+// combatPreparationObjective keeps an active recovery campaign deterministic
+// while useful local work exists: heal first when needed, otherwise keep
+// training. If the current area cannot train efficiently, return no forced
+// choice and let the planner pick a journey using the annotations above.
+func combatPreparationObjective(obs Observation, offered []Objective, known *Knowledge) (Objective, bool) {
+	state := combatPreparationFor(known, obs)
+	if !state.Active || (state.Target > 0 && state.Current >= state.Target) {
+		return Objective{}, false
+	}
+	if partyHurt(obs) || leadOutOfPP(obs) {
+		for _, o := range offered {
+			if o.Kind == KindHeal {
+				return o, true
+			}
+		}
+	}
+	for _, o := range offered {
+		if o.Kind == KindTrain && o.Species == "" && o.Slot == 0 {
+			return o, true
+		}
+	}
+	for _, o := range offered {
+		if o.Kind == KindTrain {
+			return o, true
+		}
+	}
+	return Objective{}, false
+}
+
+// promoteCombatLossesToRetryWhere is the only live loss->retry state
+// transition. Quantified recovery calls it with a readiness predicate; legacy
+// callers can still release their unquantified gates after one material party
+// change. Existing retry-ready checkpoint modes are always migrated.
+func (k *Knowledge) promoteCombatLossesToRetryWhere(ready func(Failure) bool) {
 	if k == nil {
 		return
 	}
@@ -88,6 +255,9 @@ func (k *Knowledge) promoteCombatLossesToRetry() {
 		if key, mode, ok := parseFailureStorageKey(storage); ok {
 			switch mode {
 			case failureModeCombatLoss, legacyFailureModeTrainerLoss, legacyFailureModeGymLoss:
+				if ready != nil && !ready(f) {
+					continue
+				}
 				key = combatRecoveryObjective(key.Objective()).Key()
 				retries[key] = mergeCombatRetryFailure(retries[key], f)
 				delete(k.Failures, storage)
@@ -100,6 +270,9 @@ func (k *Knowledge) promoteCombatLossesToRetry() {
 			continue
 		}
 		if strings.HasPrefix(storage, legacyGymLossFailurePrefix) {
+			if ready != nil && !ready(f) {
+				continue
+			}
 			place := strings.ToLower(strings.TrimPrefix(storage, legacyGymLossFailurePrefix))
 			if place != "" {
 				key := combatRecoveryObjective(Objective{Kind: KindGym, Place: PlaceID(place)}).Key()
@@ -109,10 +282,11 @@ func (k *Knowledge) promoteCombatLossesToRetry() {
 			continue
 		}
 		if strings.HasPrefix(storage, legacyTrainerLossFailurePrefix) {
-			// v4 trainer-loss strings did not persist a structural key. Their
-			// historical post-training behavior was simply to release the gate,
-			// so preserve that behavior rather than parse display prose.
-			delete(k.Failures, storage)
+			if ready == nil || ready(f) {
+				// v4 trainer-loss strings did not persist a structural key. Their
+				// historical post-training behavior was simply to release the gate.
+				delete(k.Failures, storage)
+			}
 			continue
 		}
 		// v4 checkpoints used the generic gym display sentence as the retry key
@@ -133,11 +307,15 @@ func (k *Knowledge) promoteCombatLossesToRetry() {
 	for key, retry := range retries {
 		o := key.Objective()
 		retry.Objective = o.String()
-		retry.Last = "combat readiness improved after defeat; retry is due"
+		retry.Last = "combat preparation target reached after defeat; retry is due"
 		storage := combatRetryReadyKey(o)
 		retry = mergeCombatRetryFailure(k.Failures[storage], retry)
 		k.Failures[storage] = retry
 	}
+}
+
+func (k *Knowledge) promoteCombatLossesToRetry() {
+	k.promoteCombatLossesToRetryWhere(func(Failure) bool { return true })
 }
 
 // combatRetryKeys returns retry-ready objectives while honoring legacy
@@ -185,16 +363,27 @@ func combatRetryKeys(k *Knowledge) map[ObjectiveKey]bool {
 }
 
 // notePartyCombatChange is retained for direct legacy callers/tests; live Run
-// uses notePartyCombatResult. Both release the same structured recovery gates.
+// uses notePartyCombatResult. Quantified combat losses stay blocked until their
+// readiness target is reached; old checkpoints without a target retain the
+// historical one-material-change behavior.
 func (k *Knowledge) notePartyCombatChange(before, after Observation, execErr error) {
 	if k == nil {
 		return
 	}
-	if partyCombatAdvanced(before, after) ||
+	progress := partyCombatAdvanced(before, after) ||
 		errors.Is(execErr, skill.ErrTrainProgress) ||
-		errors.Is(execErr, ErrTrainingInefficient) {
-		k.releaseCombatLossGates()
-	}
+		errors.Is(execErr, ErrTrainingInefficient)
+	k.releaseSatisfiedCombatLossGates(after, progress)
+}
+
+func (k *Knowledge) releaseSatisfiedCombatLossGates(after Observation, legacyProgress bool) {
+	readiness := partyCombatReadiness(after)
+	k.promoteCombatLossesToRetryWhere(func(f Failure) bool {
+		if f.ReadinessTarget > 0 {
+			return readiness >= f.ReadinessTarget
+		}
+		return legacyProgress
+	})
 }
 
 func (k *Knowledge) releaseCombatLossGates() {
