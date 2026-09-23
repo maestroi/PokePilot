@@ -41,7 +41,7 @@ func attachTravelResult(result *ObjectiveResult, travel skill.TravelResult) {
 	if result == nil {
 		return
 	}
-	attachTravelResult(&result, travel)
+	result.Travel = travelEvidenceFromRed(travel)
 	if travel.TrainerDefeat {
 		// Travel does not own a stable trainer identity. The objective key scopes
 		// durable recovery; the semantic fact needed here is simply that the
