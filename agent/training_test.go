@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/maestroi/pokepilot/red/rom"
+	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/skill"
 )
 
@@ -218,5 +219,70 @@ func TestTrainingInefficiencyClassifiesAsRecoverableBlockage(t *testing.T) {
 	}
 	if got := actionFor(OutcomeBlocked); got != actionReplan {
 		t.Fatalf("actionFor(blocked) = %v, want replan", got)
+	}
+}
+
+
+func TestApplyPartyTrainingMethodUsesSwitchTrainingForUnsafeTarget(t *testing.T) {
+	party := state.PartyState{Count: 2, Mons: []state.Mon{
+		{Species: 1, Level: 12, HP: 30, MaxHP: 30, PP: [4]uint8{20}},
+		{Species: 2, Level: 45, HP: 120, MaxHP: 120, PP: [4]uint8{20}},
+	}}
+	slots := repeatedWildSlots(2, 40)
+	estimate := TrainingEstimate{
+		CurrentLevel: 12, TargetLevel: 14, XPRemaining: 400,
+		XPPerEncounter: 200, EstimatedEncounters: 2,
+		SessionBudget: 20, Viability: TrainingViable, Method: TrainingDirect,
+	}
+
+	got := applyPartyTrainingMethod(party, 0, slots, estimate)
+	if got.Method != TrainingSwitch {
+		t.Fatalf("method = %q, want switch training", got.Method)
+	}
+	if got.CarryLevel != 45 || got.WildMaxLevel != 40 || got.MinCarryLevel != 38 {
+		t.Fatalf("switch metadata = %+v, want carry L45, wild max L40, minimum carry L38", got)
+	}
+	if got.XPPerEncounter != 100 || got.EstimatedEncounters != 4 || got.Viability != TrainingViable {
+		t.Fatalf("switch XP estimate = %+v, want 100 XP/encounter and 4 encounters", got)
+	}
+	if !strings.Contains(got.Diagnostic(), "switch training") || !strings.Contains(got.Diagnostic(), "shared XP") {
+		t.Fatalf("diagnostic = %q, want explicit switch/shared-XP evidence", got.Diagnostic())
+	}
+}
+
+func TestApplyPartyTrainingMethodRejectsUnsafeAreaWithoutCarry(t *testing.T) {
+	party := state.PartyState{Count: 2, Mons: []state.Mon{
+		{Species: 1, Level: 12, HP: 30, MaxHP: 30, PP: [4]uint8{20}},
+		{Species: 2, Level: 20, HP: 60, MaxHP: 60, PP: [4]uint8{20}},
+	}}
+	estimate := TrainingEstimate{
+		CurrentLevel: 12, TargetLevel: 14, XPRemaining: 400,
+		XPPerEncounter: 200, EstimatedEncounters: 2,
+		SessionBudget: 20, Viability: TrainingViable, Method: TrainingDirect,
+	}
+
+	got := applyPartyTrainingMethod(party, 0, repeatedWildSlots(2, 40), estimate)
+	if got.Viability != TrainingOutsideBudget || got.XPPerEncounter != 0 {
+		t.Fatalf("unsafe no-carry estimate = %+v, want outside-budget safety block", got)
+	}
+	if !strings.Contains(got.Diagnostic(), "no healthy carry") {
+		t.Fatalf("diagnostic = %q, want no-carry safety reason", got.Diagnostic())
+	}
+}
+
+func TestApplyPartyTrainingMethodKeepsDirectTrainingForManageableWilds(t *testing.T) {
+	party := state.PartyState{Count: 2, Mons: []state.Mon{
+		{Species: 1, Level: 20, HP: 60, MaxHP: 60, PP: [4]uint8{20}},
+		{Species: 2, Level: 45, HP: 120, MaxHP: 120, PP: [4]uint8{20}},
+	}}
+	estimate := TrainingEstimate{
+		CurrentLevel: 20, TargetLevel: 22, XPRemaining: 400,
+		XPPerEncounter: 200, EstimatedEncounters: 2,
+		SessionBudget: 20, Viability: TrainingViable, Method: TrainingDirect,
+	}
+
+	got := applyPartyTrainingMethod(party, 0, repeatedWildSlots(2, 23), estimate)
+	if got.Method != TrainingDirect || got.XPPerEncounter != 200 || got.EstimatedEncounters != 2 {
+		t.Fatalf("manageable-wild estimate = %+v, want unchanged direct training", got)
 	}
 }
