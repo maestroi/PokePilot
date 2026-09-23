@@ -342,6 +342,8 @@ func findExactWeightedRoute(
 
 	const maxWeightedRouteStates = 50000
 	expanded := 0
+	bestBoundaryNode := -1
+	bestBoundaryCost := 0
 
 	for open.Len() > 0 {
 		item := heap.Pop(open).(*weightedQueueItem)
@@ -375,11 +377,11 @@ func findExactWeightedRoute(
 			}, nil, true
 		}
 		if cur.boundary {
-			return RouteCostResult{
-				Steps: reconstructWeightedRoute(nodes, item.node),
-				Cost:  cur.cost,
-				Exact: true,
-			}, ErrRouteReplanRequired, true
+			if bestBoundaryNode < 0 || cur.cost < bestBoundaryCost {
+				bestBoundaryNode = item.node
+				bestBoundaryCost = cur.cost
+			}
+			continue
 		}
 
 	expand:
@@ -445,6 +447,13 @@ func findExactWeightedRoute(
 			seq++
 			heap.Push(open, &weightedQueueItem{node: len(nodes) - 1, cost: next.cost, seq: seq})
 		}
+	}
+	if bestBoundaryNode >= 0 {
+		return RouteCostResult{
+			Steps: reconstructWeightedRoute(nodes, bestBoundaryNode),
+			Cost:  bestBoundaryCost,
+			Exact: true,
+		}, ErrRouteReplanRequired, true
 	}
 	return RouteCostResult{}, nil, false
 }

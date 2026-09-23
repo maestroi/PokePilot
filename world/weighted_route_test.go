@@ -325,3 +325,81 @@ func TestWeightedRouteLeavesMapWhenSameMapComponentsDiffer(t *testing.T) {
 		t.Fatalf("same-component route = %+v, want an empty local walk", same)
 	}
 }
+
+func TestWeightedRoutePrefersDirectWarpOverSurfDetour(t *testing.T) {
+	// Regression: the weighted route must not return a "safe prefix" to a
+	// surf boundary when the destination is reachable via a direct warp
+	// that does not cross the boundary. (Cinnabar Island 0x08 -> 0xa5 vs
+	// 0x08 -> 0x1f surf detour, triage 136f6851a22e2007.)
+	direct := Edge{Kind: EdgeWarp, From: 1, To: 4, WarpX: 18, WarpY: 1}
+	surf := Edge{Kind: EdgeWarp, From: 1, To: 2, WarpX: 0, WarpY: 1}
+	back := Edge{Kind: EdgeWarp, From: 2, To: 1, WarpX: 19, WarpY: 1}
+
+	provider := weightedRouteTestProvider{width: 20, height: 4}
+	g := &Graph{
+		Edges: map[uint8][]Edge{
+			1: {direct, surf},
+			2: {back},
+			4: nil,
+		},
+		componentAware: true,
+		comps: map[uint8][][]int{
+			1: {{1, 1}},
+			2: {{1, 2}},
+			4: {{1, 4}},
+		},
+		exitComps: map[Edge][]int{
+			direct: {1},
+			surf:   {1},
+			back:   {2},
+		},
+		entryComps: map[Edge][]int{
+			direct: {4},
+			surf:   {2},
+			back:   {1},
+		},
+		warps: map[uint8][]worldmodel.Warp{
+			1: {
+				{X: 18, Y: 1, DestWarpID: 0, DestMap: 4},
+				{X: 0, Y: 1, DestWarpID: 0, DestMap: 2},
+			},
+			2: {
+				{X: 19, Y: 1, DestWarpID: 0, DestMap: 1},
+			},
+			4: {
+				{X: 19, Y: 1, DestWarpID: 0, DestMap: 1},
+			},
+		},
+		tiles: map[uint8]dim{
+			1: {w: 20, h: 4},
+			2: {w: 20, h: 4},
+			4: {w: 20, h: 4},
+		},
+		provider: provider,
+	}
+	prereqs := RoutePrerequisites{
+		Transitions: map[Edge]gameruntime.Transition{
+			surf: {
+				ID:         "fake:surf",
+				PortBypass: true,
+			},
+		},
+	}
+
+	// Surf detour (1->2) costs 0+4+10=14; direct warp (1->4) costs
+	// 18+4=22. Dijkstra pops the surf node first. The old code returned
+	// a "safe prefix" to Map 2; the fix continues exploring and finds
+	// the direct warp.
+	result, err := FindWeightedRoutePlanAtDestinationWithCapabilities(
+		g, 1, 4, 0, 1, -1, -1, nil, prereqs, DefaultRouteCostPolicy(),
+	)
+	if err != nil {
+		t.Fatalf("weighted route: %v", err)
+	}
+	if !result.Exact {
+		t.Fatalf("weighted result unexpectedly fell back: %+v", result)
+	}
+	if len(result.Steps) != 1 || result.Steps[0].Edge != direct {
+		t.Fatalf("weighted plan = %+v, want direct warp 1->4", result.Steps)
+	}
+}
