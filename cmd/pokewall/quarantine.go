@@ -145,10 +145,10 @@ func embeddedFailureMarker(text string) (key, fingerprint string, ok bool) {
 	return farm.ParseFailureDetailMarker(text[idx:])
 }
 
-// objectiveFailureFingerprint prefers the versioned structured identity carried
-// by v2 objective-failure telemetry. Historical v1/manual entries retain the
-// old normalized-prose fingerprint so existing issue history stays reachable.
-func objectiveFailureFingerprint(f farm.ObjectiveFailure) (key, fingerprint string, structured bool, err error) {
+// objectiveFailureOccurrenceFingerprint returns the exact replay/checkpoint
+// identity. It remains state-sensitive by design and is used for occurrence
+// ids and persisted diagnostics, not GitHub issue ownership.
+func objectiveFailureOccurrenceFingerprint(f farm.ObjectiveFailure) (key, fingerprint string, structured bool, err error) {
 	if f.Identity == nil {
 		if key, fingerprint, ok := embeddedFailureMarker(f.Error); ok {
 			return key, fingerprint, true, nil
@@ -167,6 +167,29 @@ func objectiveFailureFingerprint(f farm.ObjectiveFailure) (key, fingerprint stri
 	}
 	if f.Fingerprint != "" && f.Fingerprint != fingerprint {
 		return "", "", true, fmt.Errorf("objective failure fingerprint %q does not match structured identity %q", f.Fingerprint, fingerprint)
+	}
+	return key, fingerprint, true, nil
+}
+
+// objectiveFailureFingerprint returns the coarser defect-family identity used
+// by issue ownership, triage and the failure circuit. Exact occurrence
+// fingerprints are still validated and retained separately.
+func objectiveFailureFingerprint(f farm.ObjectiveFailure) (key, fingerprint string, structured bool, err error) {
+	occurrenceKey, occurrenceFingerprint, structured, err := objectiveFailureOccurrenceFingerprint(f)
+	if err != nil {
+		return "", "", structured, err
+	}
+	if f.Identity == nil {
+		if key, fingerprint, ok := farm.ParseFailureDetailFamilyMarker(f.Error); ok {
+			return key, fingerprint, true, nil
+		}
+		// Older runners did not embed a family id in terminal markers. Preserve
+		// their historical exact grouping until all runners have rolled forward.
+		return occurrenceKey, occurrenceFingerprint, structured, nil
+	}
+	key, fingerprint, err = farm.FingerprintFailureFamily(*f.Identity)
+	if err != nil {
+		return "", "", true, err
 	}
 	return key, fingerprint, true, nil
 }
