@@ -261,7 +261,7 @@ func finishStoryBattle(m *emu.Emu, name string, policy MovePolicy) error {
 	if err != nil {
 		return fmt.Errorf("skill: RocketHideout: battle %s: %w", name, err)
 	}
-	if err := RequireBattleWin("rocket_hideout:"+name, outcome); err != nil {
+	if err := RequireTrainerBattleWin("rocket_hideout:"+name, outcome); err != nil {
 		return fmt.Errorf("skill: RocketHideout: %w", err)
 	}
 
