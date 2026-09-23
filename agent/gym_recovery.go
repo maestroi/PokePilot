@@ -4,6 +4,9 @@ import (
 	"errors"
 	"sort"
 	"strings"
+
+	"github.com/maestroi/pokepilot/red/state"
+	"github.com/maestroi/pokepilot/skill"
 )
 
 // legacyGymLossFailurePrefix is retained only to read v4/string-keyed checkpoint
@@ -34,10 +37,16 @@ func legacyGymLossFailureKey(place string) string {
 
 // gymLossFailureName is a compatibility adapter for legacy direct callers of
 // Knowledge.Failed. Live Run records gym losses from ObjectiveResult.Battle via
-// FailedResult; this path recognizes only the typed sentinel emitted by
-// gymOutcomeErr and never infers semantics from error prose.
+// FailedResult; this path recognizes only structured required-trainer evidence
+// and never infers semantics from error prose.
 func gymLossFailureName(o Objective, err error) (string, bool) {
-	if o.Kind != KindGym || o.Place == "" || !errors.Is(err, errGymLeaderLost) {
+	if o.Kind != KindGym || o.Place == "" || err == nil {
+		return "", false
+	}
+	var required *skill.RequiredBattleError
+	if !errors.As(err, &required) ||
+		required.Outcome.Result != state.ResultLost ||
+		!required.Outcome.Trainer {
 		return "", false
 	}
 	return gymLossFailureKey(o.Place), true
