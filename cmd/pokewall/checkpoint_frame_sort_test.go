@@ -21,7 +21,7 @@ func TestLostWorkerRetryPrefersHigherFrameOverCarriedOverRoundNumber(t *testing.
 	defer srv.Close()
 	client := farm.NewClient(srv.URL)
 	ctx := context.Background()
-	enqueueViaHTTP(t, srv.URL, farm.Spec{RunID: "carry", Planner: "llm", Goal: "beat the game"})
+	enqueueViaHTTP(t, srv.URL, farm.Spec{RunID: "carry", Planner: "llm", Goal: farm.GoalFrom("beat the game")})
 
 	first, err := client.Lease(ctx)
 	if err != nil || first == nil || first.Attempt != 1 {

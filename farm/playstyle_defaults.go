@@ -23,13 +23,18 @@ func DefaultGoalForPlayStyle(style string) string {
 }
 
 // ApplyPlayStyleDefaultGoal resolves a missing LLM goal from the explicitly
-// selected play style. An explicit goal always wins. Scripted runs never gain
-// an LLM goal from a play style extension.
+// selected play style. An explicit goal always wins, including an explicit
+// empty Free play goal. Scripted runs never gain an LLM goal from a play
+// style. The default is applied where the run is created, not while decoding
+// the wire, so Spec stays a faithful record of what the operator asked for.
 func ApplyPlayStyleDefaultGoal(spec *Spec) {
-	if spec == nil || !strings.EqualFold(strings.TrimSpace(spec.Planner), "llm") || strings.TrimSpace(spec.Goal) != "" {
+	if spec == nil || !strings.EqualFold(strings.TrimSpace(spec.Planner), "llm") {
 		return
 	}
-	if goal := DefaultGoalForPlayStyle(PlayStyleForSpec(*spec)); goal != "" {
-		spec.Goal = goal
+	if spec.Goal.Provided() {
+		return
+	}
+	if goal := DefaultGoalForPlayStyle(spec.PlayStyle); goal != "" {
+		spec.Goal.SetGoal(goal)
 	}
 }

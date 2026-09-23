@@ -35,7 +35,7 @@ func TestOperatorInspectorShowsLiveActorsAndRecoveryAcrossRetry(t *testing.T) {
 
 	runID := "activity-resilient"
 	if resp := postJSON(t, srv.URL+"/v1/specs", farm.Spec{
-		RunID: runID, Planner: "llm", Goal: "Enter the Hall of Fame.",
+		RunID: runID, Planner: "llm", Goal: farm.GoalFrom("Enter the Hall of Fame."),
 		RecoveryProfile: farm.RecoveryProfileResilient,
 	}); resp.StatusCode != http.StatusOK {
 		t.Fatalf("queue: %d", resp.StatusCode)

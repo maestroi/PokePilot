@@ -42,9 +42,19 @@ type Spec struct {
 	Starter string `json:"starter"`
 	Dest    string `json:"dest"`
 	// Goal is the task statement for the llm planner: what to achieve,
-	// never how. Empty means no goal (the pre-Goal prompt).
-	Goal       string `json:"goal,omitempty"`
-	LLMProfile string `json:"llm_profile,omitempty"`
+	// never how. It is omitted entirely when no goal was provided, so a
+	// serialized Spec still distinguishes Free play (provided, empty) from
+	// an unset goal. See RunGoal.
+	Goal RunGoal `json:"goal,omitzero"`
+	// PlayStyle, RiskTolerance, and WildEncounters are the orthogonal
+	// gameplay policy knobs. They live on the Spec so one run's behavior is
+	// fully described by its own wire payload, and so two runs can coexist
+	// in one process without cross-talk. Empty intentionally means "use the
+	// historical compatibility default", not a specific profile.
+	PlayStyle      string `json:"play_style,omitempty"`
+	RiskTolerance  string `json:"risk_tolerance,omitempty"`
+	WildEncounters string `json:"wild_encounters,omitempty"`
+	LLMProfile     string `json:"llm_profile,omitempty"`
 	// LLMDeployment is the first-class deployment selection. LLMProfile is
 	// retained only as a compatibility adapter for older queued runs/runners.
 	LLMDeployment string             `json:"llm_deployment,omitempty"`
@@ -80,6 +90,27 @@ type Spec struct {
 	// each successor; otherwise the seed is copied.
 	Endless    bool `json:"endless,omitempty"`
 	RandomSeed bool `json:"random_seed,omitempty"`
+}
+
+// RunPolicy is the subset of a Spec that selects planner behavior: the goal
+// and the three orthogonal gameplay policy knobs. Run wiring passes it by
+// value so a consumer reads one run's behavior without reaching back into the
+// Spec or into any process-global lease state.
+type RunPolicy struct {
+	Goal           string `json:"goal,omitempty"`
+	PlayStyle      string `json:"play_style,omitempty"`
+	RiskTolerance  string `json:"risk_tolerance,omitempty"`
+	WildEncounters string `json:"wild_encounters,omitempty"`
+}
+
+// RunPolicyFor extracts the behavior policy from a run's Spec.
+func RunPolicyFor(spec Spec) RunPolicy {
+	return RunPolicy{
+		Goal:           spec.Goal.String(),
+		PlayStyle:      spec.PlayStyle,
+		RiskTolerance:  spec.RiskTolerance,
+		WildEncounters: spec.WildEncounters,
+	}
 }
 
 // MapSprite is one live map object on the runner's current map. These are

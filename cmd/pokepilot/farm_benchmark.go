@@ -42,13 +42,13 @@ func writeFarmBenchmarkResult(spec farm.Spec, res agent.Result, stats *statsPlan
 		}
 	}
 
-	mode := farm.PlayStyleForSpec(spec)
+	mode := spec.PlayStyle
 	if mode == "" {
 		mode = agent.PlayStyleSpeedrun
 	}
 	endCondition := strings.TrimSpace(spec.ExperimentCase)
 	if endCondition == "" {
-		endCondition = strings.TrimSpace(spec.Goal)
+		endCondition = spec.Goal.NormalizedGoal()
 	}
 
 	primary := stats.inner
@@ -100,13 +100,13 @@ func writeFarmBenchmarkResult(spec farm.Spec, res agent.Result, stats *statsPlan
 		EndCondition: endCondition,
 		Configuration: benchmark.Configuration{
 			Planner:         spec.Planner,
-			Goal:            spec.Goal,
+			Goal:            spec.Goal.String(),
 			Starter:         spec.Starter,
 			LLMProfile:      spec.LLMProfile,
 			ReasoningEffort: spec.ReasoningEffort,
 			PlayStyle:       mode,
-			RiskTolerance:   farm.RiskToleranceForSpec(spec),
-			WildEncounters:  farm.WildEncountersForSpec(spec),
+			RiskTolerance:   spec.RiskTolerance,
+			WildEncounters:  spec.WildEncounters,
 			DecisionBackend: stats.decision.Backend,
 			EmulatorSpeed:   fmt.Sprintf("farm fps=%d; canonical score=emulator frames", spec.FPS),
 			MaxFrames:       effectiveMaxFrames,

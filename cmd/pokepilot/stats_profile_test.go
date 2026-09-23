@@ -21,7 +21,7 @@ func TestNewStatsPlannerHonorsLLMProfile(t *testing.T) {
 	t.Setenv("POKEPILOT_LLM_4090_URL", "http://4090.example/v1")
 	t.Setenv("POKEPILOT_LLM_4090_MODEL", "4090-model")
 
-	s := newStatsPlanner("auto", "", "Earn the Boulder Badge.", nil, nil, nil)
+	s := newStatsPlannerWithRunPolicy(farm.RunPolicy{Goal: "Earn the Boulder Badge."}, "auto", "", nil, nil, nil, nil)
 	if s.inner.BaseURL != "http://7900.example/v1" || s.inner.Model != "7900-model" {
 		t.Fatalf("auto primary = %s %s, want 7900 endpoint", s.inner.BaseURL, s.inner.Model)
 	}
@@ -29,12 +29,12 @@ func TestNewStatsPlannerHonorsLLMProfile(t *testing.T) {
 		t.Fatalf("auto fallback = %+v, want lan endpoint", s.router.Fallback)
 	}
 
-	s = newStatsPlanner("default", "", "Earn the Boulder Badge.", nil, nil, nil)
+	s = newStatsPlannerWithRunPolicy(farm.RunPolicy{Goal: "Earn the Boulder Badge."}, "default", "", nil, nil, nil, nil)
 	if s.inner.BaseURL != "http://lan.example/v1" || s.router.Fallback != nil {
 		t.Fatalf("default = primary %s/%s fallback %v", s.inner.BaseURL, s.inner.Model, s.router.Fallback)
 	}
 
-	s = newStatsPlanner("gpu", "", "Earn the Boulder Badge.", nil, nil, nil)
+	s = newStatsPlannerWithRunPolicy(farm.RunPolicy{Goal: "Earn the Boulder Badge."}, "gpu", "", nil, nil, nil, nil)
 	if s.inner.BaseURL != "http://4090.example/v1" || s.inner.Model != "4090-model" || s.router.Fallback != nil {
 		t.Fatalf("gpu/4090 = primary %s/%s fallback %v", s.inner.BaseURL, s.inner.Model, s.router.Fallback)
 	}
@@ -67,7 +67,7 @@ func TestNewStatsPlannerUsesLeasedInferenceIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	s := newStatsPlanner("auto", "", "Earn the Boulder Badge.", nil, nil, nil)
+	s := newStatsPlannerWithRunPolicy(farm.RunPolicyFor(spec), spec.LLMProfile, spec.ReasoningEffort, spec.Inference, nil, nil, nil)
 	if s.inner.BaseURL != "http://dynamic-gpu.example/v1" || s.inner.Model != "qwen3.5-9b" {
 		t.Fatalf("leased primary = %s/%s", s.inner.BaseURL, s.inner.Model)
 	}

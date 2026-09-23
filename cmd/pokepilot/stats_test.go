@@ -14,7 +14,7 @@ import (
 // count as a call but never as a round.
 func TestStatsPlannerTally(t *testing.T) {
 	var pushed int
-	s := newStatsPlanner("", "", "", nil, func(any) { pushed++ }, nil)
+	s := newStatsPlannerWithRunPolicy(farm.RunPolicy{}, "", "", nil, nil, func(any) { pushed++ }, nil)
 
 	pallet := agent.Objective{Kind: agent.KindGoTo, Place: "pallet town"}
 	lab := agent.Objective{Kind: agent.KindGoTo, Place: "oak's lab"}
@@ -43,7 +43,7 @@ func TestStatsPlannerTally(t *testing.T) {
 }
 
 func TestStatsPlannerLatencyBreakdown(t *testing.T) {
-	s := newStatsPlanner("", "", "", nil, nil, nil)
+	s := newStatsPlannerWithRunPolicy(farm.RunPolicy{}, "", "", nil, nil, nil, nil)
 	obs := agent.Observation{Round: 7}
 	picked := agent.Objective{Kind: agent.KindGoTo, Place: "route 1"}
 
@@ -77,7 +77,7 @@ func TestStatsPlannerLatencyBreakdown(t *testing.T) {
 func TestStatsPlannerPushesToSnap(t *testing.T) {
 	snap := &heartbeatSnap{}
 	snap.store(farm.Heartbeat{RunID: "r1"})
-	s := newStatsPlanner("", "", "", nil, nil, snap)
+	s := newStatsPlannerWithRunPolicy(farm.RunPolicy{}, "", "", nil, nil, nil, snap)
 
 	pallet := agent.Objective{Kind: agent.KindGoTo, Place: "pallet town"}
 	obs := agent.Observation{Round: 2, RoundsLeft: 30}

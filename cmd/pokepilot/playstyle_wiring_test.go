@@ -9,7 +9,7 @@ import (
 )
 
 func TestStatsPlannerExplicitPlayStyleIsIndependentFromLLMProfile(t *testing.T) {
-	p := newStatsPlannerWithPlayStyle("auto", "", agent.PlayStyleTeamBuilder, "badges:1", nil, nil, nil)
+	p := newStatsPlannerWithRunPolicy(farm.RunPolicy{PlayStyle: agent.PlayStyleTeamBuilder, Goal: "badges:1"}, "auto", "", nil, nil, nil, nil)
 	if p.playStyle.Name != agent.PlayStyleTeamBuilder {
 		t.Fatalf("play style = %q, want %q", p.playStyle.Name, agent.PlayStyleTeamBuilder)
 	}
@@ -20,12 +20,15 @@ func TestStatsPlannerExplicitPlayStyleIsIndependentFromLLMProfile(t *testing.T) 
 	}
 }
 
+// TestFarmStatsPlannerConsumesLeasedRunPolicy pins that the planner's behavior
+// comes from the leased Spec's own policy fields, not from process-global
+// state. The Spec is the source passed to the planner.
 func TestFarmStatsPlannerConsumesLeasedRunPolicy(t *testing.T) {
 	var spec farm.Spec
 	if err := json.Unmarshal([]byte(`{"run_id":"style-farm","planner":"llm","play_style":"adventure","risk_tolerance":"cautious","wild_encounters":"fight"}`), &spec); err != nil {
 		t.Fatal(err)
 	}
-	p := newStatsPlanner("", "", "badges:1", nil, nil, &heartbeatSnap{})
+	p := newStatsPlannerWithRunPolicy(farm.RunPolicyFor(spec), spec.LLMProfile, spec.ReasoningEffort, spec.Inference, nil, nil, &heartbeatSnap{})
 	if p.playStyle.Name != agent.PlayStyleAdventure {
 		t.Fatalf("leased style = %q, want adventure", p.playStyle.Name)
 	}
@@ -37,16 +40,15 @@ func TestFarmStatsPlannerConsumesLeasedRunPolicy(t *testing.T) {
 	}
 }
 
-func TestLegacyFarmSpecResetsToCompatibilityPolicy(t *testing.T) {
-	var styled farm.Spec
-	if err := json.Unmarshal([]byte(`{"run_id":"style-before","planner":"llm","play_style":"completionist","risk_tolerance":"cautious","wild_encounters":"fight"}`), &styled); err != nil {
-		t.Fatal(err)
-	}
+// TestLegacyFarmSpecKeepsCompatibilityPolicy covers a leased spec that predates
+// the policy fields: empty values must fall back to the historical defaults
+// rather than inheriting another run's policy.
+func TestLegacyFarmSpecKeepsCompatibilityPolicy(t *testing.T) {
 	var legacy farm.Spec
 	if err := json.Unmarshal([]byte(`{"run_id":"style-legacy","planner":"llm"}`), &legacy); err != nil {
 		t.Fatal(err)
 	}
-	p := newStatsPlanner("", "", "badges:1", nil, nil, &heartbeatSnap{})
+	p := newStatsPlannerWithRunPolicy(farm.RunPolicyFor(legacy), legacy.LLMProfile, legacy.ReasoningEffort, legacy.Inference, nil, nil, &heartbeatSnap{})
 	if p.playStyle.Name != agent.PlayStyleSpeedrun {
 		t.Fatalf("legacy leased style = %q, want speedrun", p.playStyle.Name)
 	}
@@ -58,6 +60,8 @@ func TestLegacyFarmSpecResetsToCompatibilityPolicy(t *testing.T) {
 	}
 }
 
+// TestLocalRunPolicyFlagsFeedStatsPlanner covers the local (non-farm) CLI path:
+// the flags are resolved once into a RunPolicy and passed to the planner.
 func TestLocalRunPolicyFlagsFeedStatsPlanner(t *testing.T) {
 	oldStyle := *localPlayStyle
 	oldRisk := *localRiskTolerance
@@ -71,7 +75,9 @@ func TestLocalRunPolicyFlagsFeedStatsPlanner(t *testing.T) {
 		*localWildEncounters = oldWild
 	})
 
-	p := newStatsPlanner("", "", "badges:1", nil, nil, nil)
+	// localRunPolicy is what main.go hands the planner, so testing it here
+	// covers the CLI-to-planner path end to end.
+	p := newStatsPlannerWithRunPolicy(localRunPolicy("badges:1"), "", "", nil, nil, nil, nil)
 	if p.playStyle.Name != agent.PlayStyleCompletionist {
 		t.Fatalf("local style = %q, want completionist", p.playStyle.Name)
 	}
@@ -80,5 +86,30 @@ func TestLocalRunPolicyFlagsFeedStatsPlanner(t *testing.T) {
 	}
 	if p.wildEncounters != agent.WildEncountersFight {
 		t.Fatalf("local wild policy = %q, want fight", p.wildEncounters)
+	}
+	if p.inner.Goal != "badges:1" {
+		t.Fatalf("local goal = %q, want badges:1", p.inner.Goal)
+	}
+}
+
+// TestLocalRunPolicyKeepsResolvedGoal pins that the local policy carries the
+// goal resolveLocalGoal already resolved, including an explicit empty Free
+// play goal, and that the play style rides along untouched.
+func TestLocalRunPolicyKeepsResolvedGoal(t *testing.T) {
+	oldStyle := *localPlayStyle
+	*localPlayStyle = agent.PlayStyleCompletionist
+	t.Cleanup(func() { *localPlayStyle = oldStyle })
+
+	// resolveLocalGoal already substituted the play-style default upstream, so
+	// localRunPolicy must carry that value verbatim.
+	if policy := localRunPolicy(farm.DefaultDexGoal); policy.Goal != farm.DefaultDexGoal {
+		t.Fatalf("resolved local goal = %q, want %q", policy.Goal, farm.DefaultDexGoal)
+	}
+	if policy := localRunPolicy("badges:1"); policy.Goal != "badges:1" {
+		t.Fatalf("explicit local goal = %q, want badges:1", policy.Goal)
+	}
+	// An explicit empty -goal is Free play; the policy must not invent a goal.
+	if policy := localRunPolicy(""); policy.Goal != "" {
+		t.Fatalf("free play local goal = %q, want empty", policy.Goal)
 	}
 }

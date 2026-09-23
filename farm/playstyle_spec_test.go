@@ -3,15 +3,22 @@ package farm
 import (
 	"encoding/json"
 	"strings"
+	"sync"
 	"testing"
 )
 
-func TestSpecPlayStyleRoundTripsAsOptionalWireField(t *testing.T) {
-	runID := "playstyle-roundtrip"
-	RememberPlayStyle(runID, "adventure")
-	RememberRiskTolerance(runID, "balanced")
-	RememberWildEncounters(runID, "fight")
-	b, err := json.Marshal(Spec{RunID: runID, Planner: "llm", Goal: "badges:1"})
+// TestSpecCarriesRunPolicyAsOwnFields pins that the gameplay policy is part of
+// the Spec itself rather than a side channel keyed by run id.
+func TestSpecCarriesRunPolicyAsOwnFields(t *testing.T) {
+	spec := Spec{
+		RunID:          "playstyle-roundtrip",
+		Planner:        "llm",
+		Goal:           GoalFrom("badges:1"),
+		PlayStyle:      "adventure",
+		RiskTolerance:  "balanced",
+		WildEncounters: "fight",
+	}
+	b, err := json.Marshal(spec)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,34 +36,37 @@ func TestSpecPlayStyleRoundTripsAsOptionalWireField(t *testing.T) {
 	if err := json.Unmarshal(b, &got); err != nil {
 		t.Fatal(err)
 	}
-	if style := PlayStyleForSpec(got); style != "adventure" {
-		t.Fatalf("play style = %q, want adventure", style)
+	if got.PlayStyle != "adventure" {
+		t.Fatalf("play style = %q, want adventure", got.PlayStyle)
 	}
-	if risk := RiskToleranceForSpec(got); risk != "balanced" {
-		t.Fatalf("risk tolerance = %q, want balanced", risk)
+	if got.RiskTolerance != "balanced" {
+		t.Fatalf("risk tolerance = %q, want balanced", got.RiskTolerance)
 	}
-	if wild := WildEncountersForSpec(got); wild != "fight" {
-		t.Fatalf("wild encounters = %q, want fight", wild)
+	if got.WildEncounters != "fight" {
+		t.Fatalf("wild encounters = %q, want fight", got.WildEncounters)
 	}
-	if CurrentRiskTolerance() != "balanced" || CurrentWildEncounters() != "fight" {
-		t.Fatalf("current run policy = risk %q wild %q", CurrentRiskTolerance(), CurrentWildEncounters())
+	if got.Goal.String() != "badges:1" {
+		t.Fatalf("goal = %q, want badges:1", got.Goal.String())
 	}
 }
 
+// TestLegacySpecHasNoRunPolicyAndStaysCompatible covers a queued spec written
+// before the policy became first-class: it must decode to the documented empty
+// compatibility defaults and must not acquire policy keys it never carried.
 func TestLegacySpecHasNoRunPolicyAndStaysCompatible(t *testing.T) {
 	const raw = `{"run_id":"legacy-style","planner":"llm","goal":"badges:1"}`
 	var got Spec
 	if err := json.Unmarshal([]byte(raw), &got); err != nil {
 		t.Fatal(err)
 	}
-	if style := PlayStyleForSpec(got); style != "" {
-		t.Fatalf("legacy play style = %q, want empty compatibility default", style)
+	if got.PlayStyle != "" {
+		t.Fatalf("legacy play style = %q, want empty compatibility default", got.PlayStyle)
 	}
-	if risk := RiskToleranceForSpec(got); risk != "" {
-		t.Fatalf("legacy risk tolerance = %q, want empty compatibility default", risk)
+	if got.RiskTolerance != "" {
+		t.Fatalf("legacy risk tolerance = %q, want empty compatibility default", got.RiskTolerance)
 	}
-	if wild := WildEncountersForSpec(got); wild != "" {
-		t.Fatalf("legacy wild encounters = %q, want empty compatibility default", wild)
+	if got.WildEncounters != "" {
+		t.Fatalf("legacy wild encounters = %q, want empty compatibility default", got.WildEncounters)
 	}
 	b, err := json.Marshal(got)
 	if err != nil {
@@ -69,31 +79,136 @@ func TestLegacySpecHasNoRunPolicyAndStaysCompatible(t *testing.T) {
 	}
 }
 
-func TestCopyPlayStyleCarriesEndlessPolicy(t *testing.T) {
-	RememberPlayStyle("style-parent", "team_builder")
-	CopyPlayStyle("style-parent", "style-child")
-	if got := PlayStyleForRun("style-child"); got != "team_builder" {
-		t.Fatalf("copied style = %q, want team_builder", got)
+// TestLegacySpecOmitsUnsetGoalWhileFreePlayKeepsIt pins the three-state goal
+// contract on the wire: absent stays absent across a round trip, while an
+// explicit empty Free play goal survives.
+func TestLegacySpecOmitsUnsetGoalWhileFreePlayKeepsIt(t *testing.T) {
+	var unset Spec
+	if err := json.Unmarshal([]byte(`{"run_id":"no-goal","planner":"llm"}`), &unset); err != nil {
+		t.Fatal(err)
+	}
+	if unset.Goal.Provided() {
+		t.Fatalf("absent goal decoded as provided: %q", unset.Goal.String())
+	}
+	wire, err := json.Marshal(unset)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(wire), `"goal"`) {
+		t.Fatalf("unset goal must stay off the wire: %s", wire)
+	}
+
+	var freePlay Spec
+	if err := json.Unmarshal([]byte(`{"run_id":"free-play","planner":"llm","goal":""}`), &freePlay); err != nil {
+		t.Fatal(err)
+	}
+	if !freePlay.Goal.Provided() || freePlay.Goal.String() != "" {
+		t.Fatalf("free play goal = %q provided=%v, want provided empty", freePlay.Goal.String(), freePlay.Goal.Provided())
 	}
 }
 
-func TestCopyRunPolicyCarriesOrthogonalSettings(t *testing.T) {
-	RememberPlayStyle("policy-parent", "completionist")
-	RememberRiskTolerance("policy-parent", "cautious")
-	RememberWildEncounters("policy-parent", "fight")
-	CopyRunPolicy("policy-parent", "policy-child")
-	if got := PlayStyleForRun("policy-child"); got != "completionist" {
-		t.Fatalf("copied style = %q", got)
+// TestSpecsWithDifferentPolicyDoNotCrossTalk is the regression for the
+// process-global policy side channel: two Specs alive at once must each keep
+// their own behavior, in either construction order.
+func TestSpecsWithDifferentPolicyDoNotCrossTalk(t *testing.T) {
+	first := Spec{
+		RunID:          "isolated-a",
+		Planner:        "llm",
+		Goal:           GoalFrom("badges:1"),
+		PlayStyle:      "adventure",
+		RiskTolerance:  "balanced",
+		WildEncounters: "fight",
 	}
-	if got := RiskToleranceForRun("policy-child"); got != "cautious" {
-		t.Fatalf("copied risk = %q", got)
+	second := Spec{
+		RunID:          "isolated-b",
+		Planner:        "llm",
+		Goal:           GoalFrom("dex"),
+		PlayStyle:      "completionist",
+		RiskTolerance:  "cautious",
+		WildEncounters: "planner",
 	}
-	if got := WildEncountersForRun("policy-child"); got != "fight" {
-		t.Fatalf("copied wild policy = %q", got)
+
+	// Encode and decode both, interleaved, the way a wall with two in-flight
+	// runs and a runner leasing them in sequence would.
+	firstWire, err := json.Marshal(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondWire, err := json.Marshal(second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var firstBack, secondBack Spec
+	if err := json.Unmarshal(secondWire, &secondBack); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(firstWire, &firstBack); err != nil {
+		t.Fatal(err)
+	}
+
+	for name, tc := range map[string]struct {
+		got  Spec
+		want Spec
+	}{
+		"first":  {got: firstBack, want: first},
+		"second": {got: secondBack, want: second},
+	} {
+		if tc.got.PlayStyle != tc.want.PlayStyle {
+			t.Fatalf("%s play style = %q, want %q", name, tc.got.PlayStyle, tc.want.PlayStyle)
+		}
+		if tc.got.RiskTolerance != tc.want.RiskTolerance {
+			t.Fatalf("%s risk tolerance = %q, want %q", name, tc.got.RiskTolerance, tc.want.RiskTolerance)
+		}
+		if tc.got.WildEncounters != tc.want.WildEncounters {
+			t.Fatalf("%s wild encounters = %q, want %q", name, tc.got.WildEncounters, tc.want.WildEncounters)
+		}
+		if tc.got.Goal.String() != tc.want.Goal.String() {
+			t.Fatalf("%s goal = %q, want %q", name, tc.got.Goal.String(), tc.want.Goal.String())
+		}
 	}
 }
 
-func TestAdoptCurrentInferenceModelUpdatesLeasedIdentity(t *testing.T) {
+// TestSpecPolicyIsRaceFreeUnderConcurrentDecode exercises the same guarantee
+// under concurrency, so a reintroduced shared map would trip -race.
+func TestSpecPolicyIsRaceFreeUnderConcurrentDecode(t *testing.T) {
+	const runs, iterations = 8, 32
+	var wg sync.WaitGroup
+	for i := 0; i < runs; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			want := Spec{
+				RunID:          "concurrent-" + string(rune('a'+i)),
+				Planner:        "llm",
+				Goal:           GoalFrom("badges:1"),
+				PlayStyle:      "adventure",
+				RiskTolerance:  "balanced",
+				WildEncounters: "fight",
+			}
+			wire, err := json.Marshal(want)
+			if err != nil {
+				t.Errorf("marshal: %v", err)
+				return
+			}
+			for n := 0; n < iterations; n++ {
+				var got Spec
+				if err := json.Unmarshal(wire, &got); err != nil {
+					t.Errorf("unmarshal: %v", err)
+					return
+				}
+				if got.PlayStyle != want.PlayStyle || got.RiskTolerance != want.RiskTolerance || got.WildEncounters != want.WildEncounters {
+					t.Errorf("run %d policy = %q/%q/%q", i, got.PlayStyle, got.RiskTolerance, got.WildEncounters)
+					return
+				}
+			}
+		}(i)
+	}
+	wg.Wait()
+}
+
+// TestAdoptModelUpdatesOnlyThatIdentity pins the scoped replacement for the
+// old process-global adopted-inference lease.
+func TestAdoptModelUpdatesOnlyThatIdentity(t *testing.T) {
 	var spec Spec
 	if err := json.Unmarshal([]byte(`{
 		"run_id":"adopt-model",
@@ -110,16 +225,17 @@ func TestAdoptCurrentInferenceModelUpdatesLeasedIdentity(t *testing.T) {
 	}`), &spec); err != nil {
 		t.Fatal(err)
 	}
-	AdoptCurrentInferenceModel("qwen3.8-27b")
-	got := CurrentInference()
-	if got == nil || got.ModelID != "qwen3.8-27b" || got.APIModel != "qwen3.8-27b" {
-		t.Fatalf("adopted inference = %#v", got)
+	other := &InferenceIdentity{ModelID: "untouched", APIModel: "untouched"}
+
+	spec.Inference.AdoptModel("qwen3.8-27b")
+
+	if spec.Inference.ModelID != "qwen3.8-27b" || spec.Inference.APIModel != "qwen3.8-27b" {
+		t.Fatalf("adopted inference = %#v", spec.Inference)
 	}
-	if got.Revision != "" || got.Artifact != "" || got.Quantization != "" {
-		t.Fatalf("adopt retained stale artifact fields: %#v", got)
+	if spec.Inference.Revision != "" || spec.Inference.Artifact != "" || spec.Inference.Quantization != "" {
+		t.Fatalf("adopt retained stale artifact fields: %#v", spec.Inference)
 	}
-	var reset Spec
-	if err := json.Unmarshal([]byte(`{"run_id":"adopt-reset"}`), &reset); err != nil {
-		t.Fatal(err)
+	if other.ModelID != "untouched" || other.APIModel != "untouched" {
+		t.Fatalf("adoption leaked into another identity: %#v", other)
 	}
 }

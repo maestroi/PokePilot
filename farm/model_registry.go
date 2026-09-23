@@ -83,6 +83,22 @@ type InferenceIdentity struct {
 
 const postgresRegistryEnvPrefix = "postgres-env://"
 
+// AdoptModel records that the live endpoint answered with a different model
+// than the lease requested, dropping the stale artifact identity that
+// described the requested model. It mutates the caller's own identity copy,
+// so adoption stays scoped to one run instead of a process-global lease.
+func (i *InferenceIdentity) AdoptModel(model string) {
+	model = strings.TrimSpace(model)
+	if i == nil || model == "" {
+		return
+	}
+	i.ModelID = model
+	i.APIModel = model
+	i.Revision = ""
+	i.Artifact = ""
+	i.Quantization = ""
+}
+
 // LoadModelRegistry accepts the historical JSON file path, a Postgres DSN, or
 // the production-safe form postgres-env://ENV_NAME. The env indirection is
 // preferred in services whose startup errors log the source string, because it

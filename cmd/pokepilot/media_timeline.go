@@ -68,7 +68,7 @@ func drainMediaTimelineArtifact(spec farm.Spec, reason string, endFrame uint64, 
 	}
 	timeline := farm.MediaTimeline{
 		Version:          farm.MediaTimelineVersion,
-		Run:              farm.MediaRunSummary{RunID: spec.RunID, Status: reason, Goal: spec.Goal, Planner: spec.Planner},
+		Run:              farm.MediaRunSummary{RunID: spec.RunID, Status: reason, Goal: spec.Goal.String(), Planner: spec.Planner},
 		Attempt:          spec.Attempt,
 		SourceStartFrame: origin,
 		EndFrame:         relativeMediaFrame(endFrame, origin),
