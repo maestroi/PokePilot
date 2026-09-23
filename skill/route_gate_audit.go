@@ -15,6 +15,22 @@ const (
 	capCanPassRoute23BadgeChecks gameruntime.CapabilityID = "can_pass_route23_badge_checks"
 	capCanPassLanceExit          gameruntime.CapabilityID = "can_pass_lance_exit"
 
+	// The Elite Four gauntlet is entered from the Indigo lobby and only lets the
+	// player move NORTH through Lorelei, Bruno, Agatha, Lance, the Champion and
+	// the Hall of Fame. Every room's own entrance guard refuses the walk back
+	// out: standing on the south tiles displays the room's "Don't run away!"
+	// text and pushes the player one step back up (measured 2026-09-23, the
+	// run-jxh8lk19wv6on stall in LORELEIS_ROOM at (4,9)). Because that refusal is
+	// a map SCRIPT, the ROM's warp table and static collision grid still describe
+	// a two-way door, so without a semantic gate the router happily prices a
+	// retreat to the lobby that the cartridge will not perform.
+	//
+	// HallOfFameResetEventsAndSaveScript sets the durable completion bit before
+	// it resets the Indigo event range and saves, so a finished campaign keeps
+	// this capability. A blackout does not need it: the game warps the player to
+	// the Indigo Plateau exterior directly, never through this door.
+	capCanLeaveLeague gameruntime.CapabilityID = "can_leave_league"
+
 	// Red's Celadon City object table contains a historical/unused warp at
 	// (39,19) directly to the department store 5F. The decomp explicitly marks
 	// it "inaccessible": there is no door there in the playable map. Keep a
@@ -28,6 +44,12 @@ const (
 	capCanEnterRocketHideout gameruntime.CapabilityID = "can_enter_rocket_hideout"
 
 	bicycleItem uint8 = 0x06
+
+	// Every gauntlet room in pokered/data/maps/objects places its two south
+	// warps back toward the previous room on this row (LoreleisRoom, BrunosRoom
+	// and AgathasRoom all use y=11; LancesRoom's lone south warp is at (24,16)
+	// and needs no gate because nothing south of it is passable during the run).
+	leagueRoomSouthWarpY uint8 = 11
 
 	route16Map uint8 = 0x1B
 	// Snorlax's Route 16 home tile from the ROM object table (probe: sprite 67
@@ -71,6 +93,13 @@ func addAuditedRedRouteCapabilities(mem *state.Mem, caps gameruntime.CapabilityS
 	}
 	if state.HasEvent(mem, eventBeatLance) {
 		caps[capCanPassLanceExit] = true
+	}
+	// Only the durable Hall-of-Fame completion bit opens the gauntlet's own
+	// south doors. See capCanLeaveLeague. Read the bit directly: this runs on
+	// every planner snapshot, so it must not re-derive the whole story
+	// projection.
+	if state.MainStoryComplete(mem) {
+		caps[capCanLeaveLeague] = true
 	}
 	// A completed Snorlax encounter is durable proof that this save already
 	// acquired the Poké Flute. Resume/checkpoint reconstruction can lose the
@@ -139,6 +168,16 @@ func redAuditedRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, 
 		// the same fact to semantic routing so the portable graph does not stop
 		// at the south Route 23 component even with all progression complete.
 		return semanticTransition("red:route23_league_approach", edge, capCanSurf, capCanPassRoute23BadgeChecks), true
+
+	case edge.Kind == world.EdgeWarp && edge.To == indigoPlateauLobbyMap &&
+		(edge.From == loreleiRoomMap || edge.From == brunoRoomMap || edge.From == agathaRoomMap) &&
+		edge.WarpY == leagueRoomSouthWarpY:
+		// The south door of each gauntlet room, back toward the lobby. The room
+		// scripts physically refuse this walk while the challenge is running, so
+		// the static two-way warp is a lie the router must not price. Gate the
+		// SOURCE edge only: lobby -> Lorelei stays an ordinary entrance, and the
+		// forward north exits are untouched.
+		return bikeGate("red:league_room_exit", capCanLeaveLeague)
 
 	case edge.Kind == world.EdgeWarp && edge.From == lanceRoomMap && edge.To == championsRoomMap &&
 		edge.WarpX == lanceExitStand.X && edge.WarpY == 0:
@@ -394,6 +433,18 @@ func (x *redRouteTransitionExecutor) executeAuditedRouteTransition(edge world.Ed
 		// The semantic pivot only relaxes static component routing. Traverse's
 		// target-specific field approach owns the actual Cut, and after a reverse
 		// gym exit ordinary GoTo replans the city-side destination before cutting.
+		return world.TransitionExecutionResult{}, true, nil
+	case "red:league_room_exit":
+		var mem state.Mem
+		state.Snapshot(x.m, &mem)
+		if !redRouteCapabilities(x.romData, &mem).Has(capCanLeaveLeague) {
+			return world.TransitionExecutionResult{}, true, &gameruntime.TransitionBlockage{
+				Transition: transition,
+				Missing:    []gameruntime.CapabilityID{capCanLeaveLeague},
+			}
+		}
+		// The exit itself is an ordinary warp once the campaign is complete;
+		// there is nothing for this layer to execute.
 		return world.TransitionExecutionResult{}, true, nil
 	}
 	return world.TransitionExecutionResult{}, false, nil

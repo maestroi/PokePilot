@@ -221,7 +221,22 @@ func (recoveryObjectiveProvider) Provide(ctx *objectiveOfferContext) objectivePr
 		}
 		out = append(out, heal)
 	} else if partyHurt(obs) || ppExhausted {
-		if name, ok := preferredRecoveryCenter(obs, known, ctx.knownLocations, ctx.catalog); ok {
+		candidates := preferredRecoveryCenters(obs, known, ctx.knownLocations, ctx.catalog)
+		name, routable := firstRoutableRecoveryCenter(candidates, ctx.unroutable)
+		switch {
+		case len(candidates) == 0:
+			blocked = append(blocked, blockEvidence(ObjectiveFamilyRecovery, "no_known_center", nil, "", "pokemon_center"))
+		case !routable:
+			// A heal that names a Center is a journey too, and the live router
+			// already rejected every candidate. Offering one only walks the
+			// objective at a gate the game will not open: measured 2026-09-23 on
+			// run-jxh8lk19wv6on, locked in LORELEIS_ROOM, where each pick died in
+			// the room's own "Don't run away!" guard and surfaced as an
+			// unclassified failure eighty times over. Report the withheld
+			// destination instead so recovery can plan the state change that
+			// reopens the route.
+			blocked = append(blocked, blockEvidence(ObjectiveFamilyRecovery, "route_unroutable", nil, candidates[0], "live_route"))
+		default:
 			note := ""
 			if name == obs.RecoveryCheckpoint {
 				note = "(active Pokemon Center checkpoint; prefer returning to this known-safe hub)"
@@ -235,8 +250,6 @@ func (recoveryObjectiveProvider) Provide(ctx *objectiveOfferContext) objectivePr
 				}
 			}
 			out = append(out, Objective{Kind: KindHeal, Place: name, Note: note}, Objective{Kind: KindHeal, Place: name, Flee: true, Note: note})
-		} else {
-			blocked = append(blocked, blockEvidence(ObjectiveFamilyRecovery, "no_known_center", nil, "", "pokemon_center"))
 		}
 	}
 	for _, it := range obs.Bag {
