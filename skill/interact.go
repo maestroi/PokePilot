@@ -129,6 +129,11 @@ func Face(m *emu.Emu, tx, ty uint8) error {
 		state.Snapshot(m, &mem)
 		return state.DecodePlayer(&mem).Facing == want
 	}); err != nil {
+		// The step onto this tile can roll a wild encounter that starts after
+		// the walk returned; the turn tap then lands in the battle intro.
+		if m.Peek8(sym.IsInBattle) != 0 {
+			return fmt.Errorf("skill: Face: battle started before turning %s: %w", want, ErrBattle)
+		}
 		return fmt.Errorf("skill: Face: not facing %s within %d frames", want, faceTurnBudget)
 	}
 	return nil
