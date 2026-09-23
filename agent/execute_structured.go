@@ -37,6 +37,10 @@ func travelEvidenceFromRed(travel skill.TravelResult) *TravelEvidence {
 }
 
 func battleEvidenceFromRed(result state.BattleResult) *BattleEvidence {
+	return requiredBattleEvidenceFromRed("", result)
+}
+
+func requiredBattleEvidenceFromRed(encounter string, result state.BattleResult) *BattleEvidence {
 	name := "unknown"
 	switch result {
 	case state.ResultWon:
@@ -46,7 +50,7 @@ func battleEvidenceFromRed(result state.BattleResult) *BattleEvidence {
 	case state.ResultDraw:
 		name = "draw"
 	}
-	return &BattleEvidence{Result: name, Won: result == state.ResultWon}
+	return &BattleEvidence{Encounter: encounter, Result: name, Won: result == state.ResultWon}
 }
 
 // executeRedOwned is the Red adapter's action dispatcher. All semantic entity
@@ -181,7 +185,7 @@ func executeRedOwned(m *emu.Emu, romData []byte, o Objective, routePriority Rout
 		if err != nil {
 			return result, fmt.Errorf("agent: %s: %w", o, err)
 		}
-		result.Battle = battleEvidenceFromRed(gym)
+		result.Battle = requiredBattleEvidenceFromRed(string(o.Place), gym)
 		if gym == state.ResultWon {
 			return result, nil
 		}
