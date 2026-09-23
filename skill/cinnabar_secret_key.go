@@ -543,7 +543,9 @@ func setMansionSwitch(m *emu.Emu, romData []byte, sw mansionSwitchSpec, want boo
 		px, py := playerXY(m)
 		return fmt.Errorf("Mansion switch stand (%d,%d) stayed occupied; stopped at (%d,%d)", sw.StandX, sw.StandY, px, py)
 	}
-	if err := Face(m, sw.TargetX, sw.TargetY); err != nil {
+	// Flee an encounter rolled by the step onto the stand, then turn again;
+	// fleeing leaves the player on the stand.
+	if err := runMansionFleeRecovery(m, policy, func() error { return Face(m, sw.TargetX, sw.TargetY) }); err != nil {
 		return fmt.Errorf("face Mansion switch (%d,%d): %w", sw.TargetX, sw.TargetY, err)
 	}
 	return driveMansionSwitchInteraction(m, sw, want)
