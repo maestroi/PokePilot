@@ -36,6 +36,7 @@ type TravelResult struct {
 	Flees             int               // wild encounters fled (S8-7's fight/flee policy)
 	Dialogues         int               // text boxes recovered on the way
 	BlackedOut        bool              // the journey ended in a blackout (a lost battle, or the last mon fainted out of poison)
+	TrainerDefeat     bool              // that blackout was specifically a lost trainer battle
 	Replans           []Replan          // one entry per engagement, in order resolved
 	EmergencyEgresses []EmergencyEgress // pathing stalls escaped to safety, in occurrence order
 }
@@ -439,6 +440,7 @@ func travel(m *emu.Emu, policy MovePolicy, maxBattles int, goTo func() error, re
 				// caller's decision, made with the knowledge that the party
 				// lost. Trainer losses preserve that narrower cause too.
 				res.BlackedOut = true
+				res.TrainerDefeat = r.trainer
 				return res, battleBlackoutError(r)
 			}
 		case errors.Is(err, ErrDialogueInterrupted):
