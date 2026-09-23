@@ -22,6 +22,17 @@ func medReaches(mon PartyMon, wantStatus string) bool {
 	return mon.Status == wantStatus
 }
 
+func preferredRecoveryCenter(obs Observation, known *Knowledge, knownLocations map[LocationID]bool, catalog ObjectiveCatalog) (PlaceID, bool) {
+	if obs.RecoveryCheckpoint != "" {
+		if destination, ok := catalog.destination(obs.RecoveryCheckpoint); ok && destination.Center {
+			// The cartridge's active blackout checkpoint is stronger evidence than
+			// planner visitation: the player necessarily activated this nurse.
+			return obs.RecoveryCheckpoint, true
+		}
+	}
+	return nearestKnownCenter(obs, known, knownLocations, catalog)
+}
+
 func nearestKnownCenter(obs Observation, known *Knowledge, knownLocations map[LocationID]bool, catalog ObjectiveCatalog) (PlaceID, bool) {
 	current := observationLocation(obs, known)
 	dist := mapHops(known.Adjacency, current)
