@@ -303,7 +303,11 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (st
 				}
 			}
 
-			if voluntarySwitches < voluntarySwitchCap {
+			// A deliberate switch-training battle already chose the best carry
+			// for this exact opponent. Do not tactically rotate through additional
+			// party members afterward: every extra participant further splits the
+			// trainee's XP and defeats the estimator's two-participant contract.
+			if !options.OpeningTrainingSwitch && voluntarySwitches < voluntarySwitchCap {
 				if bs := state.DecodeBattle(&mem); bs != nil && len(bs.Usable()) > 0 {
 					decision := chooseTacticalSwitch(m.ROM(), &mem, *bs)
 					if decision.Switch {
