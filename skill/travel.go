@@ -106,10 +106,11 @@ func fleeThenFight(m *emu.Emu, policy MovePolicy, fleeAttempts int) resolveBattl
 // knowledge that the party lost — not a silent continue.
 var ErrBlackedOut = errors.New("skill: Travel: blacked out")
 
-// ErrTrainerBlackedOut is the narrower class for a blackout caused by losing
-// a mandatory trainer battle. It unwraps to ErrBlackedOut so every existing
-// recovery caller keeps working while the agent can distinguish the repeated
-// trainer wall from a wild loss or poison wipe.
+// ErrTrainerBlackedOut is the legacy compatibility class for a blackout caused
+// by losing a mandatory trainer battle. New Travel losses return a structured
+// RequiredBattleError that unwraps through this sentinel to ErrBlackedOut, so
+// direct callers keep errors.Is compatibility without making the sentinel the
+// semantic recovery contract.
 var ErrTrainerBlackedOut = fmt.Errorf("%w: lost trainer battle", ErrBlackedOut)
 
 // ErrEngagementsExhausted reports that Travel hit maxBattles without reaching
