@@ -82,7 +82,14 @@ func (a *redObjectiveAdapter) Validate(o Objective, obs Observation) error {
 			if !ok {
 				return fmt.Errorf("agent: %s: unknown Red place %q", o, o.Place)
 			}
-			if !isCenter(state.MapName(d.Map)) {
+			center, centerErr := skill.PokemonCenterMap(a.romData, d.Map)
+			if centerErr != nil {
+				// Keep validation usable with synthetic/minimal ROM fixtures. Real
+				// runs use the service role; the legacy map-name check is only the
+				// fail-open compatibility path when ROM role decoding is unavailable.
+				center = isCenter(state.MapName(d.Map))
+			}
+			if !center {
 				return fmt.Errorf("agent: %s: %q is not a Pokemon Center", o, o.Place)
 			}
 		}

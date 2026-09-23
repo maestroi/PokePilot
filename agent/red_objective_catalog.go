@@ -2,6 +2,7 @@ package agent
 
 import (
 	"sort"
+	"strings"
 
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/skill"
@@ -36,7 +37,7 @@ func redObjectiveCatalog(obs Observation) ObjectiveCatalog {
 			Place:    PlaceID(name),
 			Location: redLocationID(obs.GameID, destination.Map),
 			Kind:     destination.Kind,
-			Center:   isCenter(state.MapName(destination.Map)),
+			Center:   strings.HasSuffix(name, "pokemon center") || isCenter(state.MapName(destination.Map)),
 		}
 		switch destination.Kind {
 		case skill.DestinationArea:

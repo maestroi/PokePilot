@@ -221,10 +221,18 @@ func (recoveryObjectiveProvider) Provide(ctx *objectiveOfferContext) objectivePr
 		}
 		out = append(out, heal)
 	} else if partyHurt(obs) || ppExhausted {
-		if name, ok := nearestKnownCenter(obs, known, ctx.knownLocations, ctx.catalog); ok {
+		if name, ok := preferredRecoveryCenter(obs, known, ctx.knownLocations, ctx.catalog); ok {
 			note := ""
+			if name == obs.RecoveryCheckpoint {
+				note = "(active Pokemon Center checkpoint; prefer returning to this known-safe hub)"
+			}
 			if ppExhausted {
-				note = "(lead has no PP; Center restores PP without spending finite items)"
+				ppNote := "(lead has no PP; Center restores PP without spending finite items)"
+				if note == "" {
+					note = ppNote
+				} else {
+					note += " " + ppNote
+				}
 			}
 			out = append(out, Objective{Kind: KindHeal, Place: name, Note: note}, Objective{Kind: KindHeal, Place: name, Flee: true, Note: note})
 		} else {

@@ -30,16 +30,17 @@ type Observation struct {
 	X, Y     uint8
 	Facing   string
 
-	Controllable bool
-	InBattle     bool
-	PartyCount   int
-	Party        []PartyMon
-	Badges       []string
-	Money        uint32
-	RespawnPlace PlaceID
-	Events       []string
-	Story        ProgressState
-	BlackedOut   bool
+	Controllable       bool
+	InBattle           bool
+	PartyCount         int
+	Party              []PartyMon
+	Badges             []string
+	Money              uint32
+	RespawnPlace       PlaceID
+	RecoveryCheckpoint PlaceID
+	Events             []string
+	Story              ProgressState
+	BlackedOut         bool
 
 	LeadMoves         []Move
 	LeadPP            []uint8

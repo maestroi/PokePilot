@@ -86,6 +86,9 @@ func (redSemanticObservationAdapter) Observe(m *emu.Emu, romData []byte, profile
 		PokedexOwned:      []SpeciesID{},
 		PokedexSeen:       []SpeciesID{},
 	}
+	if checkpoint, ok, checkpointErr := skill.RecoveryCheckpointPlace(romData, mem.U8(sym.LastBlackoutMap)); checkpointErr == nil && ok {
+		obs.RecoveryCheckpoint = PlaceID(checkpoint)
+	}
 	obs.PokedexOwned, obs.PokedexSeen = ProjectPokedex(romData, gs.Pokedex)
 	for i, mon := range base.Party {
 		obs.Party[i] = PartyMon{
@@ -222,6 +225,12 @@ func (redSemanticObservationAdapter) Observe(m *emu.Emu, romData []byte, profile
 		obs.MapObjects = append(obs.MapObjects, object)
 	}
 	obs.Catalog = redObjectiveCatalog(obs)
+	// The ROM service role is authoritative for Center semantics. This matters
+	// for mixed-service maps such as Indigo Plateau Lobby, whose name does not
+	// contain POKECENTER but whose nurse establishes the blackout checkpoint.
+	if center, centerErr := skill.PokemonCenterMap(romData, obs.Map); centerErr == nil {
+		obs.Catalog.CurrentCenter = center
+	}
 	return obs, nil
 }
 
