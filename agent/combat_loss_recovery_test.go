@@ -15,8 +15,8 @@ func TestPromoteDefeatRespawnFailureMakesProgressionLossRecoverable(t *testing.T
 	initial := Observation{
 		Location: "cinnabar gym",
 		X:        3, Y: 4,
-		Money:    2400,
-		Party:    recoveredParty(37),
+		Money: 2400,
+		Party: recoveredParty(37),
 	}
 	final := Observation{
 		Location:     "cinnabar island",
@@ -81,8 +81,8 @@ func TestDefeatRespawnRequiresRealRespawnEvidence(t *testing.T) {
 	initial := Observation{
 		Location: "cinnabar island",
 		X:        3, Y: 4,
-		Money:    1200,
-		Party:    recoveredParty(37),
+		Money: 1200,
+		Party: recoveredParty(37),
 	}
 	final := initial
 	final.Controllable = true
