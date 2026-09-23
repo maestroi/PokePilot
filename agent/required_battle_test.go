@@ -12,7 +12,7 @@ import (
 )
 
 func TestRequiredBattleLossNormalizesAsGenericCombatDefeat(t *testing.T) {
-	err := fmt.Errorf("story wrapper: %w", skill.RequireBattleWin("gym:blaine", state.ResultLost))
+	err := fmt.Errorf("story wrapper: %w", skill.RequireTrainerBattleWin("gym:blaine", state.ResultLost))
 	failure := normalizeRedFailure(gameruntime.FailurePhaseExecution, err, Observation{Controllable: true})
 
 	if failure.Class != gameruntime.FailureClassBlocked || !failure.Recoverable {
@@ -27,7 +27,7 @@ func TestRequiredBattleLossNormalizesAsGenericCombatDefeat(t *testing.T) {
 }
 
 func TestRequiredBattleDrawStaysDistinctFromBlackout(t *testing.T) {
-	err := skill.RequireBattleWin("gym:blaine", state.ResultDraw)
+	err := skill.RequireTrainerBattleWin("gym:blaine", state.ResultDraw)
 	failure := normalizeRedFailure(gameruntime.FailurePhaseExecution, err, Observation{Controllable: true})
 
 	if failure.Cause != failureCauseCombatNotWon || !failure.Recoverable {
@@ -41,7 +41,7 @@ func TestRequiredBattleDrawStaysDistinctFromBlackout(t *testing.T) {
 
 func TestRedOwnedRequiredBattleProjectsPortableEvidence(t *testing.T) {
 	obj := Objective{Kind: KindProgress, Progress: "volcano_badge"}
-	native := fmt.Errorf("progression wrapper: %w", skill.RequireBattleWin("gym:blaine", state.ResultLost))
+	native := fmt.Errorf("progression wrapper: %w", skill.RequireTrainerBattleWin("gym:blaine", state.ResultLost))
 
 	result, err := normalizeRedOwnedExecutionResult(obj, ObjectiveResult{Objective: obj}, native)
 	if !errors.Is(err, skill.ErrTrainerBlackedOut) {
