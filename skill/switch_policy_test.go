@@ -228,3 +228,51 @@ func TestBestReplacementPreservesMultiFieldMoveCarrierOnTie(t *testing.T) {
 		t.Fatalf("replacement slot = %d (%+v), want equal fighter slot 2 to preserve multi-field carrier", slot, eval)
 	}
 }
+
+
+func TestChooseTrainingCarrySwitchIgnoresOrdinaryMaterialGainThreshold(t *testing.T) {
+	move := rom.Move{ID: 33, Power: 50, Type: typeNormal, Accuracy: 255, PP: 20}
+	romData := fakeROM(t, move)
+	target := healthySwitchMon(1, 12, typeNormal, typeNormal, move.ID)
+	carry := healthySwitchMon(2, 40, typeNormal, typeNormal, move.ID)
+	var mem state.Mem
+	putSwitchMon(&mem, 0, target)
+	putSwitchMon(&mem, 1, carry)
+	mem[sym.PlayerMonNumber] = 0
+	b := switchBattle(target, [2]uint8{typeNormal, typeNormal}, move.ID)
+
+	decision := chooseTrainingCarrySwitch(romData, &mem, b, 38)
+	if !decision.Switch || decision.Slot != 1 {
+		t.Fatalf("decision = %+v, want deliberate training switch to slot 1", decision)
+	}
+	if decision.Reason != "switch-training-carry" {
+		t.Fatalf("reason = %q, want switch-training-carry", decision.Reason)
+	}
+}
+
+func TestChooseTrainingCarrySwitchEnforcesLevelAndHealthFloor(t *testing.T) {
+	move := rom.Move{ID: 33, Power: 50, Type: typeNormal, Accuracy: 255, PP: 20}
+	romData := fakeROM(t, move)
+	target := healthySwitchMon(1, 12, typeNormal, typeNormal, move.ID)
+	tooLow := healthySwitchMon(2, 37, typeNormal, typeNormal, move.ID)
+	hurt := healthySwitchMon(3, 45, typeNormal, typeNormal, move.ID)
+	hurt.HP, hurt.MaxHP = 49, 100
+	var mem state.Mem
+	putSwitchMon(&mem, 0, target)
+	putSwitchMon(&mem, 1, tooLow)
+	putSwitchMon(&mem, 2, hurt)
+	mem[sym.PlayerMonNumber] = 0
+	b := switchBattle(target, [2]uint8{typeNormal, typeNormal}, move.ID)
+
+	decision := chooseTrainingCarrySwitch(romData, &mem, b, 38)
+	if decision.Switch || decision.Slot != -1 {
+		t.Fatalf("decision = %+v, want no eligible carry below L38/50%% HP floor", decision)
+	}
+
+	hurt.HP = 50
+	putSwitchMon(&mem, 2, hurt)
+	decision = chooseTrainingCarrySwitch(romData, &mem, b, 38)
+	if !decision.Switch || decision.Slot != 2 {
+		t.Fatalf("decision = %+v, want exactly-50%% healthy L45 carry", decision)
+	}
+}
