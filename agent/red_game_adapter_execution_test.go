@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestNormalizeRedOwnedExecutionResultUseItemFallback(t *testing.T) {
+func TestNormalizeRedOwnedExecutionResultMenuFallback(t *testing.T) {
 	controllerErr := errors.New("item-use menu did not appear")
 
 	tests := []struct {
@@ -24,6 +24,17 @@ func TestNormalizeRedOwnedExecutionResultUseItemFallback(t *testing.T) {
 			obj:    Objective{Kind: KindUseItem, Item: ItemID("potion"), Slot: 0},
 			result: ObjectiveResult{Outcome: OutcomePostconditionFailed},
 			want:   OutcomePostconditionFailed,
+		},
+		{
+			name: "unclassified buy becomes blocked",
+			obj:  Objective{Kind: KindBuy, Item: ItemID("water stone"), Qty: 1},
+			want: OutcomeBlocked,
+		},
+		{
+			name:   "specific buy outcome is preserved",
+			obj:    Objective{Kind: KindBuy, Item: ItemID("water stone"), Qty: 1},
+			result: ObjectiveResult{Outcome: OutcomeStabilizationFailed},
+			want:   OutcomeStabilizationFailed,
 		},
 		{
 			name: "other objective kinds are not reclassified",
