@@ -32,9 +32,10 @@ const twoOptionConsumedFrames = 120
 // pressed only once the cursor index is asserted to be index. Press counts
 // never establish success; the cursor index is the positive fact. The loop
 // moves toward the target and stops, so it never relies on wrap-around.
-// wMaxMenuItem is the item count, so valid indices are 0..Max-1; an
-// out-of-range index is rejected up front (chasing one would loop forever,
-// since the cursor wraps and never reads as stuck). Callers gate on
+// wMaxMenuItem is the last valid index (HandleMenuInput wraps the cursor to
+// it), so valid indices are 0..Max; an out-of-range index is rejected up
+// front (chasing one would loop forever, since the cursor wraps and never
+// reads as stuck). Callers gate on
 // FontLoaded; SelectMenuItem does not.
 func SelectMenuItem(m *emu.Emu, index int) error {
 	// The menu needs one settle window before it will accept input at all:
@@ -52,7 +53,7 @@ func SelectMenuItem(m *emu.Emu, index int) error {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
 	menu := state.DecodeMenu(&mem)
-	if index < 0 || index >= menu.Max {
+	if index < 0 || index > menu.Max {
 		return fmt.Errorf("skill: SelectMenuItem: index %d out of range for menu with max %d", index, menu.Max)
 	}
 
