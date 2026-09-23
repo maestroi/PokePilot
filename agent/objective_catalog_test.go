@@ -135,7 +135,7 @@ func TestRecoveryPrefersActivePokemonCenterCheckpoint(t *testing.T) {
 		PartyCount:         1,
 		Party:              []PartyMon{{Species: "testmon", Level: 20, HP: 8, MaxHP: 50}},
 		RecoveryCheckpoint: "checkpoint pokemon center",
-		Catalog:            ObjectiveCatalog{Destinations: []CatalogDestination{
+		Catalog: ObjectiveCatalog{Destinations: []CatalogDestination{
 			{Place: "near pokemon center", Location: "near-center", Center: true},
 			{Place: "checkpoint pokemon center", Location: "checkpoint-center", Center: true},
 		}},
