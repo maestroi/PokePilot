@@ -71,6 +71,43 @@ test('matchingRunsForGroups unions several resolved issues without duplicating r
   )
 })
 
+// A composed objective-failure pattern is
+// normalizeDetail(objective + " | " + error)[:128] + " | map=xx" — 137 chars,
+// longer than any normalizeFailureDetail(run.detail) — so the old exact
+// comparison selected nothing and "Delete selected" was a no-op on every
+// resolved group the wall produced from objective_failures.
+test('matchingRunsForGroups matches composed objective-failure groups by failure-id', () => {
+  const marker = 'hfhmhabpkfeiljbjdkcciamajgiehelcallfhlonokpeapokbahfnafeegkcipgl'
+  const groups: TriageGroup[] = [
+    {
+      key: 'hfhmhabpkfeiljbjd',
+      count: 11,
+      pattern: `recover from repeated objective failures | failure recovery budget was exhausted: failure-id:${marker.slice(0, 28)} | map=06`,
+      example: `recover from repeated objective failures: failure recovery budget was exhausted: failure-id:${marker} progress blocked route_prerequisite_missing`,
+      issue: { status: 'resolved', resolution: 'fixed' }
+    }
+  ]
+  const runs = [
+    run({ run_id: 'marker', reason: 'failed', detail: `failure-id:${marker} progress blocked route_prerequisite_missing`, ended_at: 20 }),
+    run({ run_id: 'other-marker', reason: 'failed', detail: `failure-id:${'a'.repeat(64)} progress blocked no_route`, ended_at: 10 }),
+    run({ run_id: 'clean-finish', reason: 'done', detail: `failure-id:${marker} progress blocked`, ended_at: 30 }),
+    run({ run_id: 'protected', reason: 'failed', detail: `failure-id:${marker} progress blocked`, resume_protected: true, ended_at: 40 })
+  ]
+
+  assert.deepEqual(
+    matchingRunsForGroups(runs, groups).map((item) => item.run_id),
+    ['marker']
+  )
+})
+
+test('bugGroupRuns still matches a legacy normalized pattern without a marker', () => {
+  const pattern = normalizeFailureDetail('still on map 0x0c at (10,35)')
+  const runs = [
+    run({ run_id: 'legacy', reason: 'failed', detail: 'still on map 0x21 at (4,22)', ended_at: 10 })
+  ]
+  assert.deepEqual(bugGroupRuns(runs, pattern).map((item) => item.run_id), ['legacy'])
+})
+
 test('groupPattern falls back to normalized detail when the wall omitted pattern', () => {
   assert.equal(
     groupPattern({ pattern: '', detail: 'still on map 0x0c at (10,35)', key: 'x', count: 1 }),

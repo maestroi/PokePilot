@@ -30,16 +30,65 @@
       .slice(0, FAILURE_PATTERN_CAP);
   }
 
-  function bugGroupRuns(runs, pattern) {
-    const wanted = String(pattern || "");
-    if (!wanted) return [];
+  // pokewall composes an objective-failure pattern as
+  // normalizeDetail(objective + " | " + error)[:128] + " | map=xx". That is
+  // longer than any normalizeFailureDetail(run.detail) can be, so an exact
+  // comparison can never match those groups. The canonical failure-id marker
+  // both sides carry is the identity cleanup matches on; groups without one
+  // keep the normalized-pattern fallback.
+  const FAILURE_MARKER = "failure-id:";
+  const FAILURE_MAP_SUFFIX_RE = /\s\|\smap=[0-9a-fA-F]{2}$/;
+  // Reasons that mark a run as having stopped on a failure. A cleanly
+  // finished run that still carries an old failure detail must never be
+  // deleted.
+  const FAILURE_REASONS = new Set(["error", "lost", "failed", "stuck"]);
+
+  function failureGroupIdentity(texts) {
+    const tokens = new Set();
+    const patterns = new Set();
+    for (const raw of texts) {
+      const text = String(raw || "").trim();
+      if (!text) continue;
+      patterns.add(text);
+      const base = text.replace(FAILURE_MAP_SUFFIX_RE, "").trim();
+      if (base) patterns.add(base);
+      for (const match of text.matchAll(/failure-id:([a-p]{12,64})/g)) tokens.add(match[1]);
+    }
+    return { tokens: [...tokens], patterns: [...patterns] };
+  }
+
+  function groupTexts(groupOrPattern) {
+    if (groupOrPattern && typeof groupOrPattern === "object") {
+      const examples = Array.isArray(groupOrPattern.examples) ? groupOrPattern.examples : [];
+      return [groupOrPattern.pattern, groupOrPattern.detail, groupOrPattern.example, ...examples];
+    }
+    return [groupOrPattern];
+  }
+
+  function isFailureFinishedRun(run) {
+    return Boolean(run
+      && run.status === "done"
+      && !run.resume_protected
+      && FAILURE_REASONS.has(String(run.reason || "").toLowerCase()));
+  }
+
+  function runMatchesFailureGroup(run, identity) {
+    const detail = String((run && run.detail) || "");
+    if (!detail) return false;
+    if (identity.tokens.some((token) => detail.includes(FAILURE_MARKER + token))) return true;
+    return identity.patterns.includes(normalizeFailureDetail(detail));
+  }
+
+  function selectGroupRuns(runs, identity) {
     return (Array.isArray(runs) ? runs : [])
-      .filter((run) => run
-        && run.status === "done"
-        && (run.reason === "error" || run.reason === "lost")
-        && run.detail
-        && normalizeFailureDetail(run.detail) === wanted)
+      .filter((run) => isFailureFinishedRun(run) && runMatchesFailureGroup(run, identity))
       .sort((a, b) => Number(a.ended_at || 0) - Number(b.ended_at || 0));
+  }
+
+  function bugGroupRuns(runs, groupOrPattern) {
+    const texts = groupTexts(groupOrPattern).map((value) => String(value || "").trim()).filter(Boolean);
+    if (!texts.length) return [];
+    return selectGroupRuns(runs, failureGroupIdentity(texts));
   }
 
   function eligibleRuns(runs, nowSeconds, ageSeconds) {
@@ -123,7 +172,7 @@
 
     function bugCandidates() {
       const group = selectedBug();
-      return group ? bugGroupRuns(snapshot && snapshot.runs, group.pattern) : [];
+      return group ? bugGroupRuns(snapshot && snapshot.runs, group) : [];
     }
 
     function groupLabel(group) {
@@ -289,7 +338,7 @@
         }
         selectedBugKey = requestedKey;
         bugSelect.value = requestedKey;
-        const runs = bugGroupRuns(snapshot && snapshot.runs, group.pattern);
+        const runs = bugGroupRuns(snapshot && snapshot.runs, group);
         if (!runs.length) {
           bugMessage = `No finished runs still match ${requestedKey}.`;
           return;

@@ -20,15 +20,35 @@ import (
 const (
 	failurePatternCap = 128
 	deleteConcurrency = 3
+	failureMarker     = "failure-id:"
 )
 
 var (
 	failureHexRE = regexp.MustCompile(`0x[0-9a-fA-F]+`)
 	failureNumRE = regexp.MustCompile(`\d+`)
+	// failureMarkerRE keeps the base32 identity a triage group embeds. A
+	// composed objective-failure pattern truncates it, so the shorter prefix
+	// is still an identity — 12 characters of a 64-character marker is far
+	// more than enough to be unique among live groups.
+	failureMarkerRE = regexp.MustCompile(`failure-id:([a-p]{12,64})`)
+	// failureMapSuffixRE strips the map discriminator pokewall appends after
+	// normalizing, which no normalized run detail can carry.
+	failureMapSuffixRE = regexp.MustCompile(`\s\|\smap=[0-9a-fA-F]{2}$`)
 )
+
+// failureReasons are the reasons that mean a run stopped on a failure. A
+// cleanly finished run that still carries an old failure detail is not
+// cleanup evidence and must never be deleted.
+var failureReasons = map[string]bool{
+	"error":  true,
+	"lost":   true,
+	"failed": true,
+	"stuck":  true,
+}
 
 type triageGroup struct {
 	Pattern string `json:"pattern"`
+	Detail  string `json:"detail"`
 	Key     string `json:"key"`
 	Count   int    `json:"count"`
 	Example string `json:"example"`
@@ -40,11 +60,12 @@ type triageGroup struct {
 }
 
 type cleanupRun struct {
-	RunID   string `json:"run_id"`
-	Status  string `json:"status"`
-	Reason  string `json:"reason"`
-	Detail  string `json:"detail"`
-	EndedAt int64  `json:"ended_at"`
+	RunID           string `json:"run_id"`
+	Status          string `json:"status"`
+	Reason          string `json:"reason"`
+	Detail          string `json:"detail"`
+	EndedAt         int64  `json:"ended_at"`
+	ResumeProtected bool   `json:"resume_protected"`
 }
 
 type cleanupDashboard struct {
@@ -72,16 +93,76 @@ func normalizeFailureDetail(detail string) string {
 	return s
 }
 
-func matchingRuns(runs []cleanupRun, pattern string) []cleanupRun {
-	if pattern == "" {
-		return nil
-	}
-	matched := make([]cleanupRun, 0)
-	for _, run := range runs {
-		if run.Status != "done" || (run.Reason != "error" && run.Reason != "lost") || run.Detail == "" {
+// groupIdentity is every identity a triage group advertises: the failure-id
+// markers it carries and the normalized patterns it may equal.
+type groupIdentity struct {
+	tokens   []string
+	patterns []string
+}
+
+func failureGroupIdentity(texts ...string) groupIdentity {
+	var identity groupIdentity
+	seenToken := map[string]bool{}
+	seenPattern := map[string]bool{}
+	for _, raw := range texts {
+		text := strings.TrimSpace(raw)
+		if text == "" {
 			continue
 		}
-		if normalizeFailureDetail(run.Detail) == pattern {
+		for _, pattern := range []string{text, strings.TrimSpace(failureMapSuffixRE.ReplaceAllString(text, ""))} {
+			if pattern == "" || seenPattern[pattern] {
+				continue
+			}
+			seenPattern[pattern] = true
+			identity.patterns = append(identity.patterns, pattern)
+		}
+		for _, match := range failureMarkerRE.FindAllStringSubmatch(text, -1) {
+			if seenToken[match[1]] {
+				continue
+			}
+			seenToken[match[1]] = true
+			identity.tokens = append(identity.tokens, match[1])
+		}
+	}
+	return identity
+}
+
+func runMatchesGroup(run cleanupRun, identity groupIdentity) bool {
+	detail := strings.TrimSpace(run.Detail)
+	if detail == "" {
+		return false
+	}
+	for _, token := range identity.tokens {
+		if strings.Contains(detail, failureMarker+token) {
+			return true
+		}
+	}
+	normalized := normalizeFailureDetail(detail)
+	for _, pattern := range identity.patterns {
+		if pattern == normalized {
+			return true
+		}
+	}
+	return false
+}
+
+// matchingRuns selects the finished runs of one triage group. The group's
+// pattern may be a composed objective-failure pattern
+// (normalizeDetail(objective + " | " + error)[:128] + " | map=xx") whose
+// length no normalized run detail can equal, so the shared failure-id marker
+// is the identity; groups without one fall back to normalized-pattern
+// equality. Runs a live resume lineage still needs are never candidates.
+func matchingRuns(runs []cleanupRun, group triageGroup) []cleanupRun {
+	identity := failureGroupIdentity(group.Pattern, group.Detail, group.Example)
+	matched := make([]cleanupRun, 0)
+	for _, run := range runs {
+		if run.Status != "done" || run.ResumeProtected {
+			continue
+		}
+		if !failureReasons[strings.ToLower(strings.TrimSpace(run.Reason))] {
+			continue
+		}
+		if runMatchesGroup(run, identity) {
 			matched = append(matched, run)
 		}
 	}
@@ -156,7 +237,7 @@ func planCleanup(ctx context.Context, client *http.Client, base, key string, iss
 	if err := getJSON(ctx, client, base+"/v1/dashboard?status=done", &dashboard); err != nil {
 		return triageGroup{}, nil, err
 	}
-	return group, matchingRuns(dashboard.Runs, group.Pattern), nil
+	return group, matchingRuns(dashboard.Runs, group), nil
 }
 
 func deleteOne(ctx context.Context, client *http.Client, base, runID string) error {
