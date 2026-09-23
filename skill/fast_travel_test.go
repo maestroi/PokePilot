@@ -287,3 +287,32 @@ func TestCyclingRoadExplicitInputSuppressesAutoDown(t *testing.T) {
 		t.Fatal("trainer battle did not suppress Route 17 downhill coast")
 	}
 }
+
+
+func TestVisitedIndigoPlateauIsLegalFlyDestination(t *testing.T) {
+	mem := controllableFastTravelMem()
+	mem[sym.CurMap] = 0x01
+	mem[sym.CurMapTileset] = overworldTileset
+	mem[sym.ObtainedBadges] = 1 << 2 // Thunder Badge
+	mem[sym.PartyCount] = 1
+	mem[sym.PartyMon1+sym.MonMoves] = fieldFlyMove
+	setTownVisited(&mem, indigoPlateauMap)
+
+	options := legalFastTravelOptions(&mem)
+	for _, option := range options {
+		if option.Kind == fastTravelFly && option.Landing.Map == indigoPlateauMap {
+			return
+		}
+	}
+	t.Fatalf("Fly options=%+v, want visited Indigo Plateau map %#02x", options, indigoPlateauMap)
+}
+
+func TestIndigoLobbyIsNamedPokemonCenterCheckpoint(t *testing.T) {
+	dest, ok := Place("indigo plateau pokemon center")
+	if !ok {
+		t.Fatal("Indigo Plateau Pokemon Center is not a semantic place")
+	}
+	if dest.Map != indigoPlateauLobbyMap || dest.Kind != DestinationMap {
+		t.Fatalf("Indigo Center destination=%+v, want lobby map %#02x with map-arrival semantics", dest, indigoPlateauLobbyMap)
+	}
+}
