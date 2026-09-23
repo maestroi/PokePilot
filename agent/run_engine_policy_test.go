@@ -126,7 +126,7 @@ func TestRunFailurePolicyStrategicFailureReplansOncePerStructuredState(t *testin
 		Outcome:   OutcomeBlocked,
 		Failure: &gameruntime.Failure{
 			Class:       gameruntime.FailureClassBlocked,
-			Cause:       "route_prerequisite_missing",
+			Cause:       "navigation_stalled",
 			Recoverable: true,
 		},
 		Final: Observation{Map: 1, X: 2, Y: 3},
@@ -139,6 +139,47 @@ func TestRunFailurePolicyStrategicFailureReplansOncePerStructuredState(t *testin
 	second := policy.recoverable(obj, result, true, 0)
 	if second.Stop != StopFailed {
 		t.Fatalf("same structured failure = %+v; want StopFailed", second)
+	}
+}
+
+func TestRunFailurePolicyRoutePrerequisiteDoesNotSpendFailureBudget(t *testing.T) {
+	policy := newRunFailurePolicy(2)
+	obj := Objective{Kind: KindGoTo, Place: "fuchsia city"}
+	result := ObjectiveResult{
+		Objective: obj,
+		Outcome:   OutcomeBlocked,
+		Failure: &gameruntime.Failure{
+			Class:       gameruntime.FailureClassBlocked,
+			Cause:       "route_prerequisite_missing",
+			Context:     []string{"can_clear_snorlax"},
+			Recoverable: true,
+		},
+		Final: Observation{Map: 0x06, X: 10, Y: 12},
+	}
+
+	// The same typed route gate may be rediscovered while the planner is
+	// switching objectives or while deterministic prerequisite recovery is
+	// becoming available. It must never exhaust the generic failure budget.
+	for i := 0; i < 5; i++ {
+		got := policy.recoverable(obj, result, true, 0)
+		if got.Stop != StopUnset || got.ReplanReason != "objective_failed" || !got.Recovered {
+			t.Fatalf("route prerequisite attempt %d = %+v; want recovered strategic replan", i+1, got)
+		}
+	}
+
+	// A real controller/navigation failure still starts and consumes the normal
+	// bounded failure policy; route-gate discovery did not poison that budget.
+	mechanical := result
+	mechanical.Failure = &gameruntime.Failure{
+		Class:       gameruntime.FailureClassBlocked,
+		Cause:       "navigation_stalled",
+		Recoverable: true,
+	}
+	if got := policy.recoverable(obj, mechanical, true, 0); got.Stop != StopUnset || !got.Recovered {
+		t.Fatalf("first mechanical failure after route gates = %+v; want recovered", got)
+	}
+	if got := policy.recoverable(obj, mechanical, true, 0); got.Stop != StopFailed {
+		t.Fatalf("repeated mechanical failure = %+v; want StopFailed", got)
 	}
 }
 
