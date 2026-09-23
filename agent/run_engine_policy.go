@@ -204,7 +204,7 @@ func (f *runFailurePolicy) recoverable(obj Objective, result ObjectiveResult, st
 	fingerprint := fingerprintRecoverableFailure(obj, result)
 	failureKey := fingerprint.Key
 	blackedOut := failureIsBlackout(result)
-	ordinaryBlackout := failureCauseIs(result, "blacked_out")
+	retryableBlackout := blackedOut
 	retreated := failureCauseIs(result, "train_retreat")
 	trainProgress := failureCauseIs(result, "train_progress_shortfall")
 	huntMiss := failureCauseIs(result, "catch_hunt_exhausted") || failureCauseIs(result, "fishing_hunt_exhausted")
@@ -250,18 +250,18 @@ func (f *runFailurePolicy) recoverable(obj Objective, result ObjectiveResult, st
 
 	if strategic {
 		f.consecutive++
-		// A plain Travel blackout can be caused by a wild encounter or
-		// overworld poison. Reaching the same respawn state again is therefore
-		// not proof that strategic recovery is broken: the next plan can choose
-		// the flee journey variant, train, heal PP, or simply get a different
-		// encounter sequence. Keep those blackouts under the consecutive-failure
-		// ceiling instead of permanently spending the one-shot fingerprint
-		// escalation. Trainer blackouts remain deterministic combat gates and
-		// retain the durable same-state stop behavior below.
-		if (!ordinaryBlackout && f.escalated[failureKey]) || f.consecutive > f.maxConsecutive {
+		// A blackout is a normal gameplay outcome, whether it came from a wild
+		// encounter, poison, a mandatory trainer, a gym, or a battle nested
+		// inside a progression transaction. Reaching the same respawn state
+		// again is not proof that recovery itself is broken: the next plan can
+		// retry after free Center healing, choose safer travel, train, repair PP,
+		// or improve the party. Keep every blackout under the ordinary bounded
+		// consecutive-failure ceiling instead of spending the permanent one-shot
+		// fingerprint escalation after one unlucky rematch.
+		if (!retryableBlackout && f.escalated[failureKey]) || f.consecutive > f.maxConsecutive {
 			return runFailureDecision{Stop: StopFailed}
 		}
-		if !ordinaryBlackout {
+		if !retryableBlackout {
 			f.escalated[failureKey] = true
 		}
 		f.lastFailKey = failureKey
