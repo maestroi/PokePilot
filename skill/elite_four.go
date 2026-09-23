@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
+	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 )
@@ -21,6 +22,11 @@ const (
 	leagueRoomSettleBudget   = 12000
 	leagueBattleSettleBudget = 12000
 	leagueEndingBudget       = 120000
+
+	// curMapLoadedScriptPending is BIT_CUR_MAP_LOADED_1 in
+	// wCurrentMapScriptFlags: set by EnterMap, cleared by each Elite Four room
+	// script on its first run after the load.
+	curMapLoadedScriptPending uint8 = 1 << 5
 )
 
 var (
@@ -55,7 +61,7 @@ func leagueMainStoryComplete(m *emu.Emu) bool {
 // state rather than a fixed input macro.
 func enterLeagueRoom(m *emu.Emu, romData []byte, policy MovePolicy, stand Destination, targetMap uint8, waitForBattle bool) error {
 	if got := m.Peek8(sym.CurMap); got == targetMap {
-		return settleLeagueRoomEntry(m, targetMap, waitForBattle)
+		return settleLeagueRoomEntry(m, romData, targetMap, waitForBattle)
 	} else if got != stand.Map {
 		return fmt.Errorf("skill: EliteFourProgression: north warp expected map %#02x, observed %#02x", stand.Map, got)
 	}
@@ -84,12 +90,28 @@ func enterLeagueRoom(m *emu.Emu, romData []byte, policy MovePolicy, stand Destin
 	if got := m.Peek8(sym.CurMap); got != targetMap {
 		return fmt.Errorf("skill: EliteFourProgression: north exit from map %#02x arrived on %#02x, want %#02x", stand.Map, got, targetMap)
 	}
-	return settleLeagueRoomEntry(m, targetMap, waitForBattle)
+	return settleLeagueRoomEntry(m, romData, targetMap, waitForBattle)
 }
 
-func settleLeagueRoomEntry(m *emu.Emu, targetMap uint8, waitForBattle bool) error {
+// settleLeagueRoomEntry waits for the destination room's entrance script, not
+// merely its map id. The warp writes wCurMap about 30 frames before
+// LoadMapHeader replaces the old room's coordinates and script pointer, and
+// even after the load Red is briefly controllable before the room script's
+// first run queues the autowalk (and, for Lorelei, sets the League-started
+// bit). Two positive facts close both windows: wCurMapScriptPtr matches the
+// target's ROM header, and every Elite Four room script has cleared the
+// BIT_CUR_MAP_LOADED_1 flag EnterMap set. The Champion room does not clear it,
+// so the battle-wait path relies on the battle/victory facts instead.
+func settleLeagueRoomEntry(m *emu.Emu, romData []byte, targetMap uint8, waitForBattle bool) error {
+	header, err := rom.ParseMap(romData, targetMap)
+	if err != nil {
+		return fmt.Errorf("skill: EliteFourProgression: parse room %#02x header: %w", targetMap, err)
+	}
+	loaded := func(mm *state.Mem) bool {
+		return mm.U8(sym.CurMap) == targetMap && mm.U16LE(sym.CurMapScriptPtr) == header.ScriptAddr
+	}
 	mem := advanceUntil(m, leagueRoomSettleBudget, func(mm *state.Mem) bool {
-		if mm.U8(sym.CurMap) != targetMap {
+		if !loaded(mm) {
 			return false
 		}
 		if leagueFacts(mm).MainStoryComplete {
@@ -98,10 +120,13 @@ func settleLeagueRoomEntry(m *emu.Emu, targetMap uint8, waitForBattle bool) erro
 		if waitForBattle {
 			return state.DecodeBattle(mm) != nil || leagueFacts(mm).LeagueChampionDefeated
 		}
-		return state.Controllable(mm)
+		return mm.U8(sym.CurrentMapScriptFlags)&curMapLoadedScriptPending == 0 && state.Controllable(mm)
 	})
 	if mem.U8(sym.CurMap) != targetMap {
 		return fmt.Errorf("skill: EliteFourProgression: room entry expected map %#02x, observed %#02x", targetMap, mem.U8(sym.CurMap))
+	}
+	if !loaded(&mem) {
+		return fmt.Errorf("skill: EliteFourProgression: map %#02x header did not load within %d frames", targetMap, leagueRoomSettleBudget)
 	}
 	if leagueFacts(&mem).MainStoryComplete {
 		return nil
@@ -111,6 +136,9 @@ func settleLeagueRoomEntry(m *emu.Emu, targetMap uint8, waitForBattle bool) erro
 			return fmt.Errorf("skill: EliteFourProgression: Champion battle did not start within %d frames", leagueRoomSettleBudget)
 		}
 		return nil
+	}
+	if mem.U8(sym.CurrentMapScriptFlags)&curMapLoadedScriptPending != 0 {
+		return fmt.Errorf("skill: EliteFourProgression: map %#02x entrance script did not run within %d frames", targetMap, leagueRoomSettleBudget)
 	}
 	if !state.Controllable(&mem) {
 		return fmt.Errorf("skill: EliteFourProgression: map %#02x did not settle controllable within %d frames", targetMap, leagueRoomSettleBudget)

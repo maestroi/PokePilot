@@ -32,7 +32,7 @@ func LeagueStartChallenge(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		}
 	}
 	if m.Peek8(sym.CurMap) == loreleiRoomMap && !currentLeagueFacts(m).LeagueChallengeStarted {
-		if err := settleLeagueRoomEntry(m, loreleiRoomMap, false); err != nil {
+		if err := settleLeagueRoomEntry(m, romData, loreleiRoomMap, false); err != nil {
 			return fmt.Errorf("skill: LeagueStartChallenge: settle Lorelei entry: %w", err)
 		}
 	}
