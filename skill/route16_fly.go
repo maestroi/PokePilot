@@ -130,7 +130,7 @@ func PrepareFlyFastTravel(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	// unlocked while adding Fly. At the normal Celadon point this is Cut+Fly;
 	// resumed/later saves may also need Surf or Strength retained.
 	state.Snapshot(m, &mem)
-	required := append(OwnedCoreProgressionFieldMoves(&mem), FieldFly)
+	required := append(OwnedCoreProgressionFieldMoves(romData, &mem), FieldFly)
 	err := RepairFieldCapabilities(m, romData, policy, required)
 	if errors.Is(err, ErrFieldRosterNoBalls) {
 		// A run with no compatible party/box member may need one nearby wild
