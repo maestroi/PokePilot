@@ -32,9 +32,10 @@ func spriteBlockers(m *emu.Emu) map[[2]int]bool {
 // object on h — NPC or ground item alike. Pickup's own doc comment already
 // establishes that an item ball is solid: it "walks to the tile adjacent to
 // an item ball, faces it and takes it," never walks onto one. A toggled-
-// hidden object (a defeated Giovanni, an already-collected ball) costs
-// nothing worse than a route that avoids a tile that turned out to be open;
-// a MovementWalk object is not included, since its live position is exactly
+// hidden object (a defeated Giovanni, an already-collected ball, a rival who
+// walked off and was hidden) is absent, so it blocks nothing: its RAM tile is
+// wherever it last stood, which can be a doorway (Oak's Lab rival at (4,10)
+// before the exit mat, run-22ahrk9pflcilu3jxq9xt37x6); a MovementWalk object is not included, since its live position is exactly
 // what spriteBlockers reports when in range and this layer has no better
 // answer for it out of range.
 //
@@ -42,10 +43,11 @@ func spriteBlockers(m *emu.Emu) map[[2]int]bool {
 // that walked out to intercept the player stays where the fight left it until
 // the map reloads, so its RAM tile, not its header home, is the obstacle —
 // even off-screen. A slot without a RAM tile falls back to the header home.
-func stationaryObjectBlockers(h rom.MapHeader, tiles map[int][2]int) map[[2]int]bool {
+// hidden is state.HiddenObjectIDs, keyed by the same 1-based object ID.
+func stationaryObjectBlockers(h rom.MapHeader, tiles map[int][2]int, hidden map[uint8]bool) map[[2]int]bool {
 	blocked := map[[2]int]bool{}
 	for i, o := range h.Objects {
-		if o.Movement != rom.MovementStay {
+		if o.Movement != rom.MovementStay || hidden[uint8(i+1)] {
 			continue
 		}
 		if t, ok := tiles[i+1]; ok {
@@ -136,7 +138,7 @@ func currentObservedStationaryObjectBlockers(m *emu.Emu, h rom.MapHeader) map[[2
 func liveBlockers(m *emu.Emu, h rom.MapHeader) map[[2]int]bool {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	return mergeBlockers(spriteBlockers(m), stationaryObjectBlockers(h, state.DecodeObjectTiles(&mem)))
+	return mergeBlockers(spriteBlockers(m), stationaryObjectBlockers(h, state.DecodeObjectTiles(&mem), state.HiddenObjectIDs(&mem)))
 }
 
 // mergeBlockers returns the union of live and fixed blockers as a new map

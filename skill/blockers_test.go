@@ -97,11 +97,28 @@ func TestStationaryObjectBlockersFollowMovedTrainer(t *testing.T) {
 		{X: 10, Y: 1, Movement: rom.MovementStay},
 		{X: 16, Y: 9, Movement: rom.MovementStay},
 	}}
-	got := stationaryObjectBlockers(h, map[int][2]int{1: {10, 3}})
+	got := stationaryObjectBlockers(h, map[int][2]int{1: {10, 3}}, nil)
 	if !got[[2]int{10, 3}] || got[[2]int{10, 1}] {
 		t.Fatalf("moved trainer blockers = %v, want (10,3) not (10,1)", got)
 	}
 	if !got[[2]int{16, 9}] {
 		t.Fatalf("slot without RAM tile lost its home blocker: %v", got)
+	}
+}
+
+// A toggled-hidden object is absent: neither its stale RAM tile nor its home
+// blocks. Oak's Lab's rival is hidden at (4,10) beside the exit mat after he
+// leaves (run-22ahrk9pflcilu3jxq9xt37x6).
+func TestStationaryObjectBlockersSkipHiddenObjects(t *testing.T) {
+	h := rom.MapHeader{Objects: []rom.Object{
+		{X: 4, Y: 3, Movement: rom.MovementStay},
+		{X: 5, Y: 2, Movement: rom.MovementStay},
+	}}
+	got := stationaryObjectBlockers(h, map[int][2]int{1: {4, 10}, 2: {5, 2}}, map[uint8]bool{1: true})
+	if got[[2]int{4, 10}] || got[[2]int{4, 3}] {
+		t.Fatalf("hidden object still blocks: %v", got)
+	}
+	if !got[[2]int{5, 2}] {
+		t.Fatalf("present object lost its blocker: %v", got)
 	}
 }
