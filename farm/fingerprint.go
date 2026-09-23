@@ -211,6 +211,7 @@ func failureFamilyUsesSite(cause string) bool {
 		"pc_box_full",
 		"pc_no_known_center",
 		"trainer_blacked_out",
+		"combat_defeat",
 		"catch_blackout",
 		"blacked_out",
 		"catch_hunt_exhausted",

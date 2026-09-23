@@ -63,16 +63,18 @@ func TestRunFailurePolicyOrdinaryTravelBlackoutStillHasConsecutiveCeiling(t *tes
 	}
 }
 
-func TestRunFailurePolicyTrainerBlackoutRetainsDurableSameStateGate(t *testing.T) {
-	policy := newRunFailurePolicy(3)
+func TestRunFailurePolicyTrainerBlackoutUsesBoundedRetryCeiling(t *testing.T) {
+	policy := newRunFailurePolicy(2)
 	obj := Objective{Kind: KindGoTo, Place: "pewter city", Flee: true}
 	result := strategicBlackoutResult(obj, "trainer_blacked_out")
 
-	first := policy.recoverable(obj, result, true, 0)
-	if first.Stop != StopUnset || first.ReplanReason != "blackout" || !first.Recovered {
-		t.Fatalf("first trainer blackout = %+v; want recovered strategic replan", first)
+	for i := 0; i < 2; i++ {
+		got := policy.recoverable(obj, result, true, 0)
+		if got.Stop != StopUnset || got.ReplanReason != "blackout" || !got.Recovered {
+			t.Fatalf("trainer blackout %d = %+v; want bounded recovered replan", i+1, got)
+		}
 	}
 	if got := policy.recoverable(obj, result, true, 0); got.Stop != StopFailed {
-		t.Fatalf("same-state trainer blackout = %+v; want durable StopFailed gate", got)
+		t.Fatalf("third consecutive trainer blackout = %+v; want StopFailed at recovery ceiling", got)
 	}
 }
