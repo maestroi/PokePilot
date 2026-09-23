@@ -35,10 +35,10 @@ type mansionSwitchSpec struct {
 }
 
 var (
-	mansion1FSwitch       = mansionSwitchSpec{Map: pokemonMansion1FMap, TargetX: 5, TargetY: 2, StandX: 5, StandY: 3}
-	mansion2FSwitch       = mansionSwitchSpec{Map: pokemonMansion2FMap, TargetX: 11, TargetY: 2, StandX: 11, StandY: 3}
-	mansion3FSwitch       = mansionSwitchSpec{Map: pokemonMansion3FMap, TargetX: 5, TargetY: 10, StandX: 5, StandY: 11}
-	mansionB1FSwitches    = []mansionSwitchSpec{
+	mansion1FSwitch    = mansionSwitchSpec{Map: pokemonMansion1FMap, TargetX: 5, TargetY: 2, StandX: 5, StandY: 3}
+	mansion2FSwitch    = mansionSwitchSpec{Map: pokemonMansion2FMap, TargetX: 11, TargetY: 2, StandX: 11, StandY: 3}
+	mansion3FSwitch    = mansionSwitchSpec{Map: pokemonMansion3FMap, TargetX: 5, TargetY: 10, StandX: 5, StandY: 11}
+	mansionB1FSwitches = []mansionSwitchSpec{
 		{Map: pokemonMansionB1FMap, TargetX: 3, TargetY: 20, StandX: 3, StandY: 21},
 		{Map: pokemonMansionB1FMap, TargetX: 25, TargetY: 18, StandX: 25, StandY: 19},
 	}
