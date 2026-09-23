@@ -244,7 +244,6 @@ CREATE INDEX IF NOT EXISTS objective_failures_family_idx
     ON objective_failures(family_key, updated_at DESC);
 `
 
-
 type controlPlane struct {
 	db                *sql.DB
 	experimentPersist sync.Mutex
