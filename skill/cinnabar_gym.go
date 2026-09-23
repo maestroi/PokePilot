@@ -1,11 +1,13 @@
 package skill
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
+	"github.com/maestroi/pokepilot/world"
 )
 
 const (
@@ -123,7 +125,7 @@ func CinnabarProgression(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		}
 	}
 	if m.Peek8(sym.CurMap) != cinnabarGymMap {
-		if _, err := TravelFlee(m, romData, Destination{Map: cinnabarIslandMap, X: 11, Y: 12}, policy, mansionTravelBattles); err != nil {
+		if err := returnToCinnabarIsland(m, romData, policy); err != nil {
 			return fmt.Errorf("skill: CinnabarProgression: return to Cinnabar Island: %w", err)
 		}
 		if err := EnterCinnabarGym(m, romData, policy); err != nil {
@@ -145,6 +147,9 @@ func CinnabarProgression(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	return nil
 }
 
+// mansionB1FExitX/Y is the B1F stairs tile up to 1F.
+const mansionB1FExitX, mansionB1FExitY uint8 = 23, 22
+
 // openMansionBasementExit handles the normal handoff from the Secret Key
 // objective, which ends beside the key on B1F. The global map graph knows the
 // staircase but not which statue state currently exposes its corridor, so try
@@ -153,8 +158,7 @@ func openMansionBasementExit(m *emu.Emu, romData []byte, policy MovePolicy) erro
 	if m.Peek8(sym.CurMap) != pokemonMansionB1FMap {
 		return nil
 	}
-	const exitX, exitY uint8 = 23, 22
-	if mansionTileReachable(m, romData, exitX, exitY) {
+	if mansionTileReachable(m, romData, mansionB1FExitX, mansionB1FExitY) {
 		return nil
 	}
 
@@ -164,7 +168,7 @@ func openMansionBasementExit(m *emu.Emu, romData []byte, policy MovePolicy) erro
 	}
 	attempted := map[attemptKey]bool{}
 	for step := 0; step < 6; step++ {
-		if mansionTileReachable(m, romData, exitX, exitY) {
+		if mansionTileReachable(m, romData, mansionB1FExitX, mansionB1FExitY) {
 			return nil
 		}
 		before := currentMansionSwitchOn(m)
@@ -185,10 +189,59 @@ func openMansionBasementExit(m *emu.Emu, romData []byte, policy MovePolicy) erro
 			break
 		}
 	}
-	if !mansionTileReachable(m, romData, exitX, exitY) {
-		return fmt.Errorf("Mansion B1F exit warp (%d,%d) is unreachable in every reachable switch state", exitX, exitY)
+	if !mansionTileReachable(m, romData, mansionB1FExitX, mansionB1FExitY) {
+		return fmt.Errorf("Mansion B1F exit warp (%d,%d) is unreachable in every reachable switch state", mansionB1FExitX, mansionB1FExitY)
 	}
 	return nil
+}
+
+// returnToCinnabarIsland leaves the Mansion. The B1F stairs land in a 1F
+// pocket that is sealed in one of the two shared switch states, and the 1F
+// statue sits outside that pocket; the key hunt usually leaves the switch in
+// the sealing state. Flip it from wherever a statue is reachable (1F, else
+// B1F without sealing the B1F stairs) and retry.
+func returnToCinnabarIsland(m *emu.Emu, romData []byte, policy MovePolicy) error {
+	island := Destination{Map: cinnabarIslandMap, X: 11, Y: 12}
+	_, err := TravelFlee(m, romData, island, policy, mansionTravelBattles)
+	if err == nil || m.Peek8(sym.CurMap) != pokemonMansion1FMap || !errors.Is(err, world.ErrNoRoute) {
+		return err
+	}
+	want := !currentMansionSwitchOn(m)
+	if mansionTileReachable(m, romData, mansion1FSwitch.StandX, mansion1FSwitch.StandY) {
+		if err := setMansionSwitch(m, romData, mansion1FSwitch, want, policy); err != nil {
+			return fmt.Errorf("flip Mansion 1F switch: %w", err)
+		}
+	} else {
+		if _, err := TravelFlee(m, romData, Destination{Map: pokemonMansionB1FMap, X: 23, Y: 21}, policy, mansionTravelBattles); err != nil {
+			return fmt.Errorf("Mansion 1F exit sealed; reach B1F switches: %w", err)
+		}
+		if err := setMansionSwitchKeepingBasementExit(m, romData, want, policy); err != nil {
+			return err
+		}
+	}
+	_, err = TravelFlee(m, romData, island, policy, mansionTravelBattles)
+	return err
+}
+
+// setMansionSwitchKeepingBasementExit sets the shared switch from a B1F statue
+// whose flip still leaves the 1F stairs reachable, undoing any flip that seals
+// them (the player stays on that statue's stand, so it can always flip back).
+func setMansionSwitchKeepingBasementExit(m *emu.Emu, romData []byte, want bool, policy MovePolicy) error {
+	for _, sw := range mansionB1FSwitches {
+		if !mansionTileReachable(m, romData, sw.StandX, sw.StandY) {
+			continue
+		}
+		if err := setMansionSwitch(m, romData, sw, want, policy); err != nil {
+			return fmt.Errorf("toggle B1F statue at (%d,%d): %w", sw.TargetX, sw.TargetY, err)
+		}
+		if mansionTileReachable(m, romData, mansionB1FExitX, mansionB1FExitY) {
+			return nil
+		}
+		if err := setMansionSwitch(m, romData, sw, !want, policy); err != nil {
+			return fmt.Errorf("undo B1F statue at (%d,%d): %w", sw.TargetX, sw.TargetY, err)
+		}
+	}
+	return fmt.Errorf("no reachable B1F statue sets Mansion switch=%v with the B1F stairs (%d,%d) still reachable", want, mansionB1FExitX, mansionB1FExitY)
 }
 
 func EnterCinnabarGym(m *emu.Emu, romData []byte, policy MovePolicy) error {
