@@ -141,6 +141,7 @@ func trainingEvidenceFromRed(train skill.TrainResult) *TrainingEvidence {
 		BlackedOut: train.BlackedOut,
 		Reached:    train.Reached,
 		Retreated:  train.Retreated,
+		Method:     string(train.Mode),
 	}
 }
 
@@ -180,7 +181,8 @@ func executeTrainingObjective(m *emu.Emu, romData []byte, o Objective, result Ob
 	if err != nil {
 		return result, err
 	}
-	if estimate, estimateErr := currentPartyTrainingEstimate(&mem, romData, m.Peek8(sym.CurMap), slot, int(o.Level), trainSessionBattleBudget); estimateErr == nil && estimate.Viability == TrainingOutsideBudget {
+	estimate, estimateErr := currentPartyTrainingEstimate(&mem, romData, m.Peek8(sym.CurMap), slot, int(o.Level), trainSessionBattleBudget)
+	if estimateErr == nil && estimate.Viability == TrainingOutsideBudget {
 		result.Outcome = OutcomeBlocked
 		return result, fmt.Errorf("agent: %s: %w", o, &TrainingInefficientError{Estimate: estimate})
 	}
@@ -192,7 +194,12 @@ func executeTrainingObjective(m *emu.Emu, romData []byte, o Objective, result Ob
 		}
 	}
 
-	train, trainErr := skill.Train(m, romData, int(o.Level), skill.StatAwareMove(romData), trainSessionBattleBudget)
+	trainOptions := skill.TrainOptions{Mode: skill.TrainDirect}
+	if estimateErr == nil && estimate.Method == TrainingSwitch {
+		trainOptions.Mode = skill.TrainSwitch
+		trainOptions.MinCarryLevel = estimate.MinCarryLevel
+	}
+	train, trainErr := skill.TrainWithOptions(m, romData, int(o.Level), skill.StatAwareMove(romData), trainSessionBattleBudget, trainOptions)
 	result.Train = trainingEvidenceFromRed(train)
 
 	// PromoteToLead is a symmetric swap: the original lead is still at the
