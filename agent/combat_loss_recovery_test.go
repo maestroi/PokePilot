@@ -93,18 +93,36 @@ func TestDefeatRespawnRequiresRealRespawnEvidence(t *testing.T) {
 	}
 }
 
-func TestCombatDefeatUsesBoundedBlackoutPolicy(t *testing.T) {
+func TestCombatDefeatDoesNotSpendMechanicalFailureBudget(t *testing.T) {
 	policy := newRunFailurePolicy(2)
 	obj := Objective{Kind: KindProgress, Progress: "volcano_badge"}
 	result := strategicBlackoutResult(obj, failureCauseCombatDefeat)
 
-	for i := 0; i < 2; i++ {
+	// A required-battle loss has its own combat-loss gate. Repeated observations
+	// of that semantic outcome must keep replanning instead of exhausting the
+	// generic controller/navigation failure budget.
+	for i := 0; i < 5; i++ {
 		got := policy.recoverable(obj, result, true, 0)
 		if got.Stop != StopUnset || got.ReplanReason != "blackout" || !got.Recovered {
-			t.Fatalf("combat defeat %d = %+v; want bounded blackout recovery", i+1, got)
+			t.Fatalf("combat defeat %d = %+v; want recovered blackout replan", i+1, got)
 		}
 	}
-	if got := policy.recoverable(obj, result, true, 0); got.Stop != StopFailed {
-		t.Fatalf("third combat defeat = %+v, want recovery ceiling", got)
+
+	// The defeat did not poison or consume the mechanical budget. A real
+	// repeated controller failure still gets the normal one-shot/ceiling policy.
+	mechanical := ObjectiveResult{
+		Objective: obj,
+		Outcome:   OutcomeBlocked,
+		Failure: &gameruntime.Failure{
+			Class:       gameruntime.FailureClassBlocked,
+			Cause:       "navigation_stalled",
+			Recoverable: true,
+		},
+	}
+	if got := policy.recoverable(obj, mechanical, true, 0); got.Stop != StopUnset || !got.Recovered {
+		t.Fatalf("first mechanical failure after combat defeats = %+v; want recovered", got)
+	}
+	if got := policy.recoverable(obj, mechanical, true, 0); got.Stop != StopFailed {
+		t.Fatalf("repeated mechanical failure = %+v; want StopFailed", got)
 	}
 }

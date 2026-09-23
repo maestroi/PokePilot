@@ -209,6 +209,7 @@ func (f *runFailurePolicy) recoverable(obj Objective, result ObjectiveResult, st
 	trainProgress := failureCauseIs(result, "train_progress_shortfall")
 	huntMiss := failureCauseIs(result, "catch_hunt_exhausted") || failureCauseIs(result, "fishing_hunt_exhausted")
 	routePrerequisite := failureCauseIs(result, "route_prerequisite_missing")
+	combatDefeat := failureCauseIs(result, failureCauseCombatDefeat)
 
 	// These are successful bounded gameplay sessions whose requested terminal
 	// condition simply was not reached. A training shortfall explicitly means
@@ -248,16 +249,32 @@ func (f *runFailurePolicy) recoverable(obj Objective, result ObjectiveResult, st
 		return decision
 	}
 
+	// A structured required-battle defeat is also an expected gameplay outcome,
+	// not a controller/recovery malfunction. Knowledge records a combat-loss
+	// gate for the exact objective, so an unchanged party cannot immediately
+	// rematch it; training, incidental level gain, or another material party
+	// change must release that gate first. Counting the defeat against the
+	// generic mechanical failure budget therefore kills the run before its
+	// dedicated combat recovery can do its job (#1695). Clear the mechanical
+	// streak and replan. The normal stagnation/round/frame watchdogs remain the
+	// outer guard if the run cannot find a way to improve combat readiness.
+	if combatDefeat {
+		f.consecutive = 0
+		f.lastFailKey = ""
+		f.retreatStreak, f.lastRetreatLevel = 0, 0
+		decision := runFailureDecision{Recovered: true}
+		if strategic {
+			decision.ReplanReason = "blackout"
+		}
+		return decision
+	}
+
 	if strategic {
 		f.consecutive++
-		// A blackout is a normal gameplay outcome, whether it came from a wild
-		// encounter, poison, a mandatory trainer, a gym, or a battle nested
-		// inside a progression transaction. Reaching the same respawn state
-		// again is not proof that recovery itself is broken: the next plan can
-		// retry after free Center healing, choose safer travel, train, repair PP,
-		// or improve the party. Keep every blackout under the ordinary bounded
-		// consecutive-failure ceiling instead of spending the permanent one-shot
-		// fingerprint escalation after one unlucky rematch.
+		// Ordinary logistics blackouts (wild encounters, poison, or unstructured
+		// travel losses) remain under the bounded consecutive-failure ceiling.
+		// Structured required-battle defeats returned above because their combat
+		// recovery gate already owns retry suppression and readiness progress.
 		if (!retryableBlackout && f.escalated[failureKey]) || f.consecutive > f.maxConsecutive {
 			return runFailureDecision{Stop: StopFailed}
 		}
