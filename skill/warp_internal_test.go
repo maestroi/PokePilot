@@ -244,3 +244,16 @@ func warpTestROM(t *testing.T) []byte {
 	}
 	return data
 }
+
+func TestMergeBlockedTilesAddsExtraWithoutMutatingBase(t *testing.T) {
+	base := map[[2]int]bool{{1, 2}: true}
+	extra := map[[2]int]bool{{3, 4}: true}
+	merged := mergeBlockedTiles(base, extra)
+
+	if !merged[[2]int{1, 2}] || !merged[[2]int{3, 4}] {
+		t.Fatalf("merged blockers = %v, want base and extra tiles", merged)
+	}
+	if base[[2]int{3, 4}] {
+		t.Fatalf("mergeBlockedTiles mutated base blockers: %v", base)
+	}
+}

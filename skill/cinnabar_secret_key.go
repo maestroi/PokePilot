@@ -23,6 +23,14 @@ const (
 	mansionSecretKeyX    uint8 = 5
 	mansionSecretKeyY    uint8 = 13
 
+	// cinnabarGymGateX/Y is the Cinnabar Gym door-approach tile. The
+	// collision grid considers it ordinary floor, but the map script shows
+	// "The door is locked." and pushes the player away until SECRET_KEY is
+	// owned. Keep this ROM-specific scripted blocker in the Red skill rather
+	// than teaching generic traversal about Cinnabar.
+	cinnabarGymGateX uint8 = 18
+	cinnabarGymGateY uint8 = 4
+
 	mansionTravelBattles       = 180
 	mansionSwitchDriveBudget   = 5000
 	mansionSwitchStandAttempts = 10
@@ -177,6 +185,12 @@ func enterPokemonMansion(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	// the same incidental dialogue/battle interruptions that TravelFlee used
 	// to own. Farm #1636/#1637 showed that a raw Traverse bubbles an
 	// ErrDialogueInterrupted straight to the objective budget.
+	//
+	// The Gym's scripted locked-door tile (18,4) also lies on the ordinary
+	// shortest path from the island staging point to the Mansion door. Its
+	// collision is walkable, so pathfinding must explicitly avoid it until
+	// SECRET_KEY is owned; otherwise the script interrupts every retry.
+	avoid := map[[2]int]bool{{int(cinnabarGymGateX), int(cinnabarGymGateY)}: true}
 	if err := runMansionFleeRecovery(m, policy, func() error {
 		switch got := m.Peek8(sym.CurMap); got {
 		case pokemonMansion1FMap:
@@ -184,7 +198,7 @@ func enterPokemonMansion(m *emu.Emu, romData []byte, policy MovePolicy) error {
 			// before the retry. Treat the positively observed landing as done.
 			return nil
 		case cinnabarIslandMap:
-			return Traverse(m, romData, cinnabarToMansionWarp)
+			return TraverseAvoiding(m, romData, cinnabarToMansionWarp, avoid)
 		default:
 			return fmt.Errorf("Mansion entrance retry on map %#04x, want Cinnabar Island", got)
 		}
