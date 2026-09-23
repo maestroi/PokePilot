@@ -49,11 +49,8 @@ func BoulderProgression(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if err != nil {
 		return fmt.Errorf("skill: BoulderProgression: Brock: %w", err)
 	}
-	if outcome == state.ResultLost {
-		return fmt.Errorf("skill: BoulderProgression: %w against Brock", ErrTrainerBlackedOut)
-	}
-	if outcome != state.ResultWon {
-		return fmt.Errorf("skill: BoulderProgression: Brock battle ended with outcome %d", outcome)
+	if err := RequireBattleWin("gym:brock", outcome); err != nil {
+		return fmt.Errorf("skill: BoulderProgression: %w", err)
 	}
 
 	state.Snapshot(m, &mem)
