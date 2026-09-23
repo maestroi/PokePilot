@@ -112,16 +112,45 @@ work unchanged.
 - the same S3 tuple as runners;
 - `${POKEMON_RED_ROM}` mounted read-only at `/rom/pokemon_red.gb`.
 
-The farm image now contains `pokereplay`, the GomeBoy `gomeboy-stream` helper,
-FFmpeg, and `intel-media-driver` (iHD). When `/dev/dri/renderD128` is present,
-`pokereplay` encodes through `h264_vaapi`; otherwise it stays on `libx264`.
-`POKEPILOT_REPLAY_ENCODER=off` forces software. The wall still has neither ROM
-nor S3 credentials.
+The farm image contains `pokereplay`, the GomeBoy `gomeboy-stream` helper,
+FFmpeg, and `intel-media-driver` (iHD). `gomeboy-stream` must be installed from
+the same GomeBoy release as the runner (see `deploy/gomeboy_pin_test.go`): a
+`.gbrun` carries a gob-encoded save state, so a mismatched renderer cannot
+restore the recording's start state at all. When `/dev/dri/renderD128` is
+present, `pokereplay` encodes through `h264_vaapi`; otherwise it stays on
+`libx264`. `POKEPILOT_REPLAY_ENCODER` selects the encoder: `off`/`libx264`
+forces software, `vaapi`/`on` forces VAAPI, and anything else (including unset
+and `auto`) probes for the render node. `POKEPILOT_VAAPI_DEVICE` overrides the
+probed path. The wall still has neither ROM nor S3 credentials.
 
 If S3 is not configured, the replay service stays healthy and reports replay as
 disabled. Dashboard, farm execution, PostgreSQL-backed finish inspection, inline
 artifact browsing, MCP run-debug reads, and the public spectator remain
 independent of replay.
+
+### The multi-node farm runs replay as a device-bound sidecar
+
+On the Swarm overlay the replay sidecar is **not** a stack service, because
+Swarm cannot give the iGPU to a service: `devices:` is accepted by the compose
+schema but dropped from the task (it starts with `HostConfig.Devices=null` and
+no `/dev/dri`), `docker service create` has no `--device` flag, and
+`privileged: true` is dropped the same way. Bind-mounting `/dev/dri` as a volume
+makes the device nodes visible but opening them fails with `EPERM`, because only
+`--device` widens the device cgroup.
+
+So `deploy/replay-sidecar.sh` is the single source of truth for a standalone
+container on the one worker that exposes a render node, and it joins the
+attachable `pokefarm_gpu` overlay as `replay` for `pokeui` and the spectator.
+That script ships inside the image; `deploy/replay-pull.sh` extracts and runs it
+from the exact pulled digest, and `pokefarm-replay-pull.timer` on that worker
+reconciles it every couple of minutes. The manager's `rollout-latest.sh` only
+rolls stack services — it has no SSH trust into the iGPU worker, so it must not
+try to roll the sidecar itself.
+
+The sidecar reads its credentials from a host-owned environment file (default
+`/opt/pokefarm/replay.env`) carrying the S3 tuple, `LIBVA_DRIVER_NAME`, and
+`POKEPILOT_REPLAY_ENCODER`. Secrets stay out of the image and out of the stack
+file.
 
 ## Current telemetry boundary
 
