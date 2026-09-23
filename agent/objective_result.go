@@ -41,6 +41,7 @@ type TravelEvidence struct {
 	Flees             int                       `json:"flees,omitempty"`
 	Dialogues         int                       `json:"dialogues,omitempty"`
 	BlackedOut        bool                      `json:"blacked_out,omitempty"`
+	TrainerDefeat     bool                      `json:"trainer_defeat,omitempty"`
 	Replans           int                       `json:"replans,omitempty"`
 	EmergencyEgresses []EmergencyEgressEvidence `json:"emergency_egresses,omitempty"`
 }

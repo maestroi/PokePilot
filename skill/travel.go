@@ -36,6 +36,7 @@ type TravelResult struct {
 	Flees             int               // wild encounters fled (S8-7's fight/flee policy)
 	Dialogues         int               // text boxes recovered on the way
 	BlackedOut        bool              // the journey ended in a blackout (a lost battle, or the last mon fainted out of poison)
+	TrainerDefeat     bool              // that blackout was specifically a lost trainer battle
 	Replans           []Replan          // one entry per engagement, in order resolved
 	EmergencyEgresses []EmergencyEgress // pathing stalls escaped to safety, in occurrence order
 }
@@ -105,10 +106,11 @@ func fleeThenFight(m *emu.Emu, policy MovePolicy, fleeAttempts int) resolveBattl
 // knowledge that the party lost — not a silent continue.
 var ErrBlackedOut = errors.New("skill: Travel: blacked out")
 
-// ErrTrainerBlackedOut is the narrower class for a blackout caused by losing
-// a mandatory trainer battle. It unwraps to ErrBlackedOut so every existing
-// recovery caller keeps working while the agent can distinguish the repeated
-// trainer wall from a wild loss or poison wipe.
+// ErrTrainerBlackedOut is the legacy compatibility class for a blackout caused
+// by losing a mandatory trainer battle. New Travel losses return a structured
+// RequiredBattleError that unwraps through this sentinel to ErrBlackedOut, so
+// direct callers keep errors.Is compatibility without making the sentinel the
+// semantic recovery contract.
 var ErrTrainerBlackedOut = fmt.Errorf("%w: lost trainer battle", ErrBlackedOut)
 
 // ErrEngagementsExhausted reports that Travel hit maxBattles without reaching
@@ -124,9 +126,19 @@ var ErrEngagementsExhausted = errors.New("skill: Travel: still interrupted by en
 
 func battleBlackoutError(r battleResolution) error {
 	if r.trainer {
-		return ErrTrainerBlackedOut
+		// Keep the historical sentinel through RequiredBattleError.Unwrap while
+		// making structured combat outcome the primary semantic contract.
+		return RequireTrainerBattleWin("", r.outcome)
 	}
 	return ErrBlackedOut
+}
+
+func recordTravelBattleDefeat(res *TravelResult, r battleResolution) error {
+	if res != nil {
+		res.BlackedOut = true
+		res.TrainerDefeat = r.trainer
+	}
+	return battleBlackoutError(r)
 }
 
 // blackoutBit is wStatusFlags4's BIT_BATTLE_OVER_OR_BLACKOUT
@@ -438,8 +450,7 @@ func travel(m *emu.Emu, policy MovePolicy, maxBattles int, goTo func() error, re
 				// respawn spot is still the right move, but it is the
 				// caller's decision, made with the knowledge that the party
 				// lost. Trainer losses preserve that narrower cause too.
-				res.BlackedOut = true
-				return res, battleBlackoutError(r)
+				return res, recordTravelBattleDefeat(&res, r)
 			}
 		case errors.Is(err, ErrDialogueInterrupted):
 			if res.Dialogues >= maxDialogueRecoveries {
