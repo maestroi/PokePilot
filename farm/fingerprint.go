@@ -84,10 +84,10 @@ type FailureState struct {
 	Progress     []FailureProgressFact  `json:"progress,omitempty"`
 }
 
-// FailureIdentity is the logical defect identity. Build/revision is
-// intentionally occurrence metadata rather than hash input: the same defect on
-// a newer build must retain the same fingerprint so a fixed issue can be
-// recognized as a regression instead of becoming unrelated work.
+// FailureIdentity is the exact semantic replay identity for one failure state.
+// Build/revision remains occurrence metadata rather than hash input so the same
+// replay state on a newer build retains its exact fingerprint. Logical issue
+// ownership uses the coarser FailureFamilyIdentity below.
 type FailureIdentity struct {
 	Version      int              `json:"version"`
 	Game         string           `json:"game"`
@@ -116,10 +116,10 @@ type FailureFamilyIdentity struct {
 	Site         string           `json:"site,omitempty"`
 }
 
-// FailureOccurrence is one sighting of a logical failure. Fingerprint/Key are
+// FailureOccurrence is one exact sighting of a failure. Fingerprint/Key are
 // redundant on purpose: persisted evidence is self-checking, while Build,
-// checkpoint and diagnostic text remain occurrence facts and never influence
-// deduplication.
+// checkpoint and diagnostic text remain occurrence facts. GitHub deduplication
+// uses FingerprintFailureFamily instead.
 type FailureOccurrence struct {
 	Key         string          `json:"key"`
 	Fingerprint string          `json:"fingerprint"`
