@@ -26,6 +26,24 @@ func TestRequiredBattleLossNormalizesAsGenericCombatDefeat(t *testing.T) {
 	}
 }
 
+func TestRequiredNonTrainerBattleLossNormalizesAsCombatDefeat(t *testing.T) {
+	err := skill.RequireBattleWin("static:route16_snorlax", state.ResultLost)
+	failure := normalizeRedFailure(gameruntime.FailurePhaseExecution, err, Observation{Controllable: true})
+
+	if failure.Class != gameruntime.FailureClassBlocked || !failure.Recoverable {
+		t.Fatalf("failure = %+v, want recoverable blocked", failure)
+	}
+	if failure.Cause != failureCauseCombatDefeat {
+		t.Fatalf("cause = %q, want %q", failure.Cause, failureCauseCombatDefeat)
+	}
+	if !reflect.DeepEqual(failure.Context, []string{"static:route16_snorlax"}) {
+		t.Fatalf("context = %v, want encounter identity", failure.Context)
+	}
+	if errors.Is(err, skill.ErrTrainerBlackedOut) {
+		t.Fatal("non-trainer required battle was mislabeled as a trainer blackout")
+	}
+}
+
 func TestRequiredBattleDrawStaysDistinctFromBlackout(t *testing.T) {
 	err := skill.RequireTrainerBattleWin("gym:blaine", state.ResultDraw)
 	failure := normalizeRedFailure(gameruntime.FailurePhaseExecution, err, Observation{Controllable: true})
