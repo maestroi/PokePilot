@@ -164,8 +164,8 @@ func clearRoute12Snorlax(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if err != nil {
 		return fmt.Errorf("skill: FuchsiaProgression: Snorlax battle: %w", err)
 	}
-	if outcome != state.ResultWon {
-		return fmt.Errorf("skill: FuchsiaProgression: Snorlax battle ended with outcome %d", outcome)
+	if err := RequireBattleWin("static:route12_snorlax", outcome); err != nil {
+		return fmt.Errorf("skill: FuchsiaProgression: Snorlax battle: %w", err)
 	}
 	if err := Cutscene(m, fuchsiaStoryBudget, func(mm *state.Mem) bool {
 		return state.HasEvent(mm, eventBeatRoute12Snorlax)
