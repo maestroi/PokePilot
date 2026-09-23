@@ -598,7 +598,7 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 				return fmt.Errorf("skill: GoTo: resolve %s destination on map %02x: %w", dest.KindName(), cur, resolveErr)
 			}
 			if satisfied {
-				return nil
+				return abortIfBattle(m)
 			}
 			routeDest = resolved
 		}
@@ -616,6 +616,9 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 				walkErr := walkWithinMap(m, romData, routeDest, nav.policy)
 				if errors.Is(walkErr, errLocalNavigationWorldChanged) {
 					continue
+				}
+				if walkErr == nil {
+					return abortIfBattle(m)
 				}
 				return walkErr
 			}
@@ -841,11 +844,14 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 				return fmt.Errorf("skill: GoTo: resolve final %s destination: %w", dest.KindName(), resolveErr)
 			}
 			if satisfied {
-				return nil
+				return abortIfBattle(m)
 			}
 			walkErr := walkWithinMap(m, romData, resolved, nav.policy)
 			if errors.Is(walkErr, errLocalNavigationWorldChanged) {
 				continue
+			}
+			if walkErr == nil {
+				return abortIfBattle(m)
 			}
 			return walkErr
 		}
