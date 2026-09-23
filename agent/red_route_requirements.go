@@ -11,6 +11,7 @@ const (
 	lavenderTownMap              uint8 = 0x04
 	celadonCityMap               uint8 = 0x06
 	fuchsiaCityMap               uint8 = 0x07
+	cinnabarIslandMap            uint8 = 0x08
 	saffronCityMap               uint8 = 0x0a
 	route2Map                    uint8 = 0x0d
 	route3Map                    uint8 = 0x0e
