@@ -47,6 +47,9 @@ func gymLossRecorded(k *Knowledge, place string) bool {
 	if k == nil || place == "" {
 		return false
 	}
+	if combatLossRecorded(k, Objective{Kind: KindGym, Place: PlaceID(strings.ToLower(place))}) {
+		return true
+	}
 	if _, ok := k.Failures[gymLossFailureKey(place)]; ok {
 		return true
 	}
@@ -71,7 +74,8 @@ func (k *Knowledge) clearGymLossFailures() {
 	}
 	retries := map[string]Failure{}
 	for storage, f := range k.Failures {
-		if key, mode, ok := parseFailureStorageKey(storage); ok && mode == failureModeGymLoss {
+		if key, mode, ok := parseFailureStorageKey(storage); ok &&
+			(mode == failureModeGymLoss || (mode == failureModeCombatLoss && key.Kind == KindGym)) {
 			place := strings.ToLower(string(key.Place))
 			if place != "" {
 				retries[place] = mergeGymRetryFailure(retries[place], f)
@@ -111,6 +115,10 @@ func gymRetryPlaces(k *Knowledge) map[string]bool {
 			switch mode {
 			case failureModeGymLoss:
 				if place != "" {
+					lost[place] = true
+				}
+			case failureModeCombatLoss:
+				if key.Kind == KindGym && place != "" {
 					lost[place] = true
 				}
 			case failureModeGymRetry:
