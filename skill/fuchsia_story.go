@@ -115,7 +115,7 @@ func FuchsiaProgression(m *emu.Emu, romData []byte, policy MovePolicy) error {
 // grow the party and retry the slice, instead of a raw outcome that classifies
 // as an unknown, unrecoverable failure.
 func fuchsiaKogaOutcomeErr(outcome state.BattleResult) error {
-	if err := RequireBattleWin("gym:koga", outcome); err != nil {
+	if err := RequireTrainerBattleWin("gym:koga", outcome); err != nil {
 		return fmt.Errorf("skill: FuchsiaProgression: %w", err)
 	}
 	return nil
@@ -164,8 +164,8 @@ func clearRoute12Snorlax(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if err != nil {
 		return fmt.Errorf("skill: FuchsiaProgression: Snorlax battle: %w", err)
 	}
-	if outcome != state.ResultWon {
-		return fmt.Errorf("skill: FuchsiaProgression: Snorlax battle ended with outcome %d", outcome)
+	if err := RequireBattleWin("static:route12_snorlax", outcome); err != nil {
+		return fmt.Errorf("skill: FuchsiaProgression: Snorlax battle: %w", err)
 	}
 	if err := Cutscene(m, fuchsiaStoryBudget, func(mm *state.Mem) bool {
 		return state.HasEvent(mm, eventBeatRoute12Snorlax)

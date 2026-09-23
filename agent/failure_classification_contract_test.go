@@ -22,9 +22,9 @@ func TestGymLossClassificationDoesNotDependOnErrorProse(t *testing.T) {
 	}
 
 	typed := NewKnowledge(nil)
-	typed.Failed(gym, fmt.Errorf("wording can change completely: %w", errGymLeaderLost))
+	typed.Failed(gym, fmt.Errorf("wording can change completely: %w", gymOutcomeErr(gym, state.ResultLost)))
 	if !gymLossRecorded(typed, "pewter gym") {
-		t.Fatal("typed gym-loss sentinel was not classified as a gym loss")
+		t.Fatal("structured required gym loss was not classified as a gym loss")
 	}
 
 	structured := NewKnowledge(nil)
@@ -62,13 +62,19 @@ func TestTrainerLossClassificationRequiresTypedOrStructuredCause(t *testing.T) {
 	}
 }
 
-func TestGymOutcomeErrorCarriesTypedLossSignal(t *testing.T) {
+func TestGymOutcomeErrorCarriesStructuredLossSignal(t *testing.T) {
 	gym := Objective{Kind: KindGym, Place: "pewter gym"}
 	err := gymOutcomeErr(gym, state.ResultLost)
 	if err == nil {
 		t.Fatal("lost gym battle returned nil")
 	}
-	if !errors.Is(err, errGymLeaderLost) {
-		t.Fatalf("gym loss error %v does not wrap typed sentinel", err)
+	var required *skill.RequiredBattleError
+	if !errors.As(err, &required) {
+		t.Fatalf("gym loss error %v does not carry RequiredBattleError", err)
+	}
+	if required.Outcome.Encounter != "gym:pewter gym" ||
+		required.Outcome.Result != state.ResultLost ||
+		!required.Outcome.Trainer {
+		t.Fatalf("gym battle outcome = %+v", required.Outcome)
 	}
 }

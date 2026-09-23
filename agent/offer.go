@@ -138,8 +138,7 @@ func (k *Knowledge) Failed(o Objective, err error) {
 	storage := objectiveStorageKey(o)
 	if _, ok := gymLossFailureName(o, err); ok {
 		storage = gymLossFailureKey(o.Place)
-	}
-	if _, ok := trainerLossFailureName(o, err); ok {
+	} else if _, ok := trainerLossFailureName(o, err); ok {
 		storage = trainerLossFailureKey(o)
 	}
 	f := k.Failures[storage]

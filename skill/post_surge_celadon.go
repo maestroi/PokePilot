@@ -190,7 +190,7 @@ func PostSurgeDefeatErika(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if err != nil {
 		return fmt.Errorf("skill: PostSurgeDefeatErika: Erika: %w", err)
 	}
-	if err := RequireBattleWin("gym:erika", outcome); err != nil {
+	if err := RequireTrainerBattleWin("gym:erika", outcome); err != nil {
 		return fmt.Errorf("skill: PostSurgeDefeatErika: %w", err)
 	}
 

@@ -135,7 +135,7 @@ func CinnabarProgression(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if err != nil {
 		return fmt.Errorf("skill: CinnabarProgression: %w", err)
 	}
-	if err := RequireBattleWin("gym:blaine", outcome); err != nil {
+	if err := RequireTrainerBattleWin("gym:blaine", outcome); err != nil {
 		return fmt.Errorf("skill: CinnabarProgression: %w", err)
 	}
 	state.Snapshot(m, &mem)

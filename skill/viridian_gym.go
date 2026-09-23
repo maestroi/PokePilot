@@ -118,7 +118,7 @@ func ViridianProgression(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if err != nil {
 		return fmt.Errorf("skill: ViridianProgression: %w", err)
 	}
-	if err := RequireBattleWin("gym:giovanni", outcome); err != nil {
+	if err := RequireTrainerBattleWin("gym:giovanni", outcome); err != nil {
 		return fmt.Errorf("skill: ViridianProgression: %w", err)
 	}
 	state.Snapshot(m, &mem)
