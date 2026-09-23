@@ -103,6 +103,11 @@ func executeObjectiveWithAdapter(a ObjectiveGameAdapter, o Objective) (Objective
 	}
 	if retErr != nil {
 		attachNormalizedFailure(a, &result, failurePhase, failureNative, tx.Final)
+		// A story/compound objective may own a battle without returning battle
+		// evidence directly. If an otherwise unknown failure visibly ended in a
+		// Pokemon Center respawn, recover that gameplay outcome here so every
+		// objective kind gets the same combat-loss policy.
+		promoteDefeatRespawnFailure(&result, tx.Initial, tx.Final)
 	}
 	result = finalizeObjectiveResult(o, result, tx.Final, retErr)
 	// CaptureFailure saves emulator state. A poisoned machine still holds the
