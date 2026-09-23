@@ -130,6 +130,14 @@ func battleBlackoutError(r battleResolution) error {
 	return ErrBlackedOut
 }
 
+func recordTravelBattleDefeat(res *TravelResult, r battleResolution) error {
+	if res != nil {
+		res.BlackedOut = true
+		res.TrainerDefeat = r.trainer
+	}
+	return battleBlackoutError(r)
+}
+
 // blackoutBit is wStatusFlags4's BIT_BATTLE_OVER_OR_BLACKOUT
 // (constants/ram_constants.asm:99). The game sets it when a battle ends
 // (home/overworld.asm:342) and when poison fainted the whole party out of
@@ -439,9 +447,7 @@ func travel(m *emu.Emu, policy MovePolicy, maxBattles int, goTo func() error, re
 				// respawn spot is still the right move, but it is the
 				// caller's decision, made with the knowledge that the party
 				// lost. Trainer losses preserve that narrower cause too.
-				res.BlackedOut = true
-				res.TrainerDefeat = r.trainer
-				return res, battleBlackoutError(r)
+				return res, recordTravelBattleDefeat(&res, r)
 			}
 		case errors.Is(err, ErrDialogueInterrupted):
 			if res.Dialogues >= maxDialogueRecoveries {
