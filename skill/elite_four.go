@@ -22,6 +22,7 @@ const (
 	leagueRoomSettleBudget   = 12000
 	leagueBattleSettleBudget = 12000
 	leagueEndingBudget       = 120000
+	leagueEndingPressEvery   = 60
 
 	// curMapLoadedScriptPending is BIT_CUR_MAP_LOADED_1 in
 	// wCurrentMapScriptFlags: set by EnterMap, cleared by each Elite Four room
@@ -235,9 +236,11 @@ func fightChampion(m *emu.Emu, policy MovePolicy) error {
 			}
 			outcome, err := Battle(m, policy)
 			if err != nil {
-				return fmt.Errorf("skill: EliteFourProgression: Champion battle: %w", err)
-			}
-			if err := RequireTrainerBattleWin("league:champion", outcome); err != nil {
+				// See fightChampionStage: the ending never returns control.
+				if won := currentLeagueFacts(m); !won.LeagueChampionDefeated && !won.MainStoryComplete {
+					return fmt.Errorf("skill: EliteFourProgression: Champion battle: %w", err)
+				}
+			} else if err := RequireTrainerBattleWin("league:champion", outcome); err != nil {
 				return fmt.Errorf("skill: EliteFourProgression: Champion battle: %w", err)
 			}
 		}
@@ -262,9 +265,19 @@ func finishHallOfFame(m *emu.Emu) error {
 	if leagueMainStoryComplete(m) {
 		return nil
 	}
-	mem := advanceUntil(m, leagueEndingBudget, func(mm *state.Mem) bool {
-		return leagueFacts(mm).MainStoryComplete
-	})
+	// HoFDisplayPlayerStats ends in PrintText's button wait without
+	// wFontLoaded set, so advanceUntil's text-box A never fires there. The
+	// ending offers no choices or name prompts, so a periodic A is safe.
+	var mem state.Mem
+	for spent := 0; spent < leagueEndingBudget; spent += leagueEndingPressEvery {
+		state.Snapshot(m, &mem)
+		if leagueFacts(&mem).MainStoryComplete {
+			break
+		}
+		m.Tap(emu.A, 3, 7)
+		m.StepFrames(leagueEndingPressEvery - 10)
+	}
+	state.Snapshot(m, &mem)
 	facts := leagueFacts(&mem)
 	if !facts.MainStoryComplete {
 		return fmt.Errorf("skill: EliteFourProgression: Hall of Fame did not commit main-story completion within %d frames; map=%#02x", leagueEndingBudget, mem.U8(sym.CurMap))

@@ -178,9 +178,13 @@ func fightChampionStage(m *emu.Emu, policy MovePolicy) error {
 		}
 		outcome, err := Battle(m, policy)
 		if err != nil {
-			return fmt.Errorf("Champion battle: %w", err)
-		}
-		if err := RequireTrainerBattleWin("league:champion", outcome); err != nil {
+			// A win hands control to Oak's scene and the Hall of Fame, not
+			// back to the player, so Battle's post-battle controllable
+			// settle times out. The committed victory is the positive proof.
+			if won := currentLeagueFacts(m); !won.LeagueChampionDefeated && !won.MainStoryComplete {
+				return fmt.Errorf("Champion battle: %w", err)
+			}
+		} else if err := RequireTrainerBattleWin("league:champion", outcome); err != nil {
 			return fmt.Errorf("Champion battle: %w", err)
 		}
 	}
