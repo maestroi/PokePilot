@@ -8,6 +8,25 @@ import (
 	"github.com/maestroi/pokepilot/red/sym"
 )
 
+func returnToLeagueCheckpoint(m *emu.Emu, romData []byte, policy MovePolicy) error {
+	switch m.Peek8(sym.CurMap) {
+	case indigoPlateauMap, indigoPlateauLobbyMap,
+		loreleiRoomMap, brunoRoomMap, agathaRoomMap, lanceRoomMap, championsRoomMap:
+		return nil
+	}
+	nurse, err := indigoLobbyNurseDestination(romData)
+	if err != nil {
+		return fmt.Errorf("resolve Indigo checkpoint: %w", err)
+	}
+	if _, err := TravelFlee(m, romData, nurse, policy, leagueTravelBattles); err != nil {
+		return fmt.Errorf("return to Indigo checkpoint: %w", err)
+	}
+	if got := m.Peek8(sym.CurMap); got != indigoPlateauLobbyMap {
+		return fmt.Errorf("return to Indigo checkpoint ended on map %#02x, want %#02x", got, indigoPlateauLobbyMap)
+	}
+	return nil
+}
+
 // LeagueStartChallenge owns only the prepared-lobby -> Lorelei-room boundary.
 // A blackout may place Red on the Indigo exterior; in that case this stage
 // returns to the lobby, heals if needed, and recommits to the League. The
@@ -19,6 +38,9 @@ func LeagueStartChallenge(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	facts := currentLeagueFacts(m)
 	if facts.MainStoryComplete || facts.LeagueChampionDefeated || facts.LeagueChallengeStarted {
 		return nil
+	}
+	if err := returnToLeagueCheckpoint(m, romData, policy); err != nil {
+		return fmt.Errorf("skill: LeagueStartChallenge: %w", err)
 	}
 
 	if m.Peek8(sym.CurMap) == indigoPlateauMap {
@@ -47,6 +69,9 @@ func LeagueStartChallenge(m *emu.Emu, romData []byte, policy MovePolicy) error {
 // transaction bounded while still making resumed checkpoints and blackout
 // retries recoverable from the nearest semantic boundary.
 func leagueReachRoom(m *emu.Emu, romData []byte, policy MovePolicy, targetMap uint8) error {
+	if err := returnToLeagueCheckpoint(m, romData, policy); err != nil {
+		return err
+	}
 	for hop := 0; hop < 8; hop++ {
 		if m.Peek8(sym.CurMap) == targetMap {
 			return nil
