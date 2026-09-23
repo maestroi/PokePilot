@@ -236,7 +236,10 @@ func failureCauseFor(err error) (FailureCauseID, []string) {
 		return failureCauseCombatNotWon, context
 	}
 	if errors.Is(err, skill.ErrTrainerBlackedOut) {
-		return "trainer_blacked_out", nil
+		// Direct/nested skill callers may still expose the compatibility
+		// sentinel without a TravelResult. Its semantic meaning is the same
+		// required combat defeat as portable BattleEvidence.
+		return failureCauseCombatDefeat, nil
 	}
 	if errors.Is(err, skill.ErrCatchBlackout) {
 		return "catch_blackout", nil
