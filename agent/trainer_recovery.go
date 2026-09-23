@@ -131,22 +131,17 @@ func filterTrainerLossBlocked(out []Objective, known *Knowledge) []Objective {
 	retryDue := len(retryPlaces) > 0
 	ppDue := ppRecoveryDue(out)
 	filtered := make([]Objective, 0, len(out))
-	combatBlocked, policyBlocked := 0, 0
 	for _, o := range out {
 		if trainerLossRecorded(known, o) {
-			combatBlocked++
 			continue
 		}
 		if o.Kind == KindGym && o.Place != "" && gymLossRecorded(known, o.Place) {
-			combatBlocked++
 			continue
 		}
 		if ppDue && (o.Kind == KindTrain || o.Kind == KindGym) {
-			policyBlocked++
 			continue
 		}
 		if retryDue && o.Kind == KindTrain {
-			policyBlocked++
 			continue
 		}
 		if retryDue {
@@ -159,13 +154,6 @@ func filterTrainerLossBlocked(out []Objective, known *Knowledge) []Objective {
 			}
 		}
 		filtered = append(filtered, o)
-	}
-	// Combat recovery should prefer a materially different action when one is
-	// available, but it must never make the game unsolvable by hiding the only
-	// legal objective. In that last-resort case retry and let the shared bounded
-	// blackout budget decide when the repeated loss is genuinely stuck.
-	if len(filtered) == 0 && combatBlocked > 0 && policyBlocked == 0 {
-		return out
 	}
 	return filtered
 }
