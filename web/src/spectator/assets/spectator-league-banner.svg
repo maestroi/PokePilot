@@ -1,0 +1,77 @@
+<svg width="1200" height="260" viewBox="0 0 1200 260" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="sky" x1="600" y1="0" x2="600" y2="260" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#17243B"/>
+      <stop offset="0.58" stop-color="#10192C"/>
+      <stop offset="1" stop-color="#09111D"/>
+    </linearGradient>
+    <radialGradient id="moon" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(865 69) rotate(90) scale(55)">
+      <stop stop-color="#F8FAFC"/>
+      <stop offset="0.7" stop-color="#CFFAFE"/>
+      <stop offset="1" stop-color="#67E8F9" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="mountainA" x1="0" y1="90" x2="0" y2="260" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#31415F"/>
+      <stop offset="1" stop-color="#111B2D"/>
+    </linearGradient>
+    <linearGradient id="mountainB" x1="0" y1="130" x2="0" y2="260" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#23344F"/>
+      <stop offset="1" stop-color="#0A1221"/>
+    </linearGradient>
+    <linearGradient id="road" x1="600" y1="151" x2="600" y2="260" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#67E8F9" stop-opacity=".66"/>
+      <stop offset="1" stop-color="#FB7185" stop-opacity=".05"/>
+    </linearGradient>
+    <linearGradient id="crystal" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#67E8F9"/>
+      <stop offset=".52" stop-color="#818CF8"/>
+      <stop offset="1" stop-color="#C084FC"/>
+    </linearGradient>
+    <filter id="soft" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur stdDeviation="12"/>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="260" rx="24" fill="url(#sky)"/>
+  <circle cx="865" cy="69" r="54" fill="url(#moon)" opacity=".82"/>
+  <circle cx="865" cy="69" r="25" fill="#E0F2FE" opacity=".68"/>
+
+  <g fill="#E2E8F0">
+    <circle cx="80" cy="42" r="1.5" opacity=".68"/>
+    <circle cx="165" cy="78" r="1.2" opacity=".52"/>
+    <circle cx="255" cy="35" r="1.6" opacity=".72"/>
+    <circle cx="360" cy="67" r="1.2" opacity=".56"/>
+    <circle cx="470" cy="29" r="1.5" opacity=".67"/>
+    <circle cx="608" cy="57" r="1.1" opacity=".6"/>
+    <circle cx="742" cy="31" r="1.5" opacity=".7"/>
+    <circle cx="1002" cy="48" r="1.2" opacity=".58"/>
+    <circle cx="1110" cy="82" r="1.5" opacity=".62"/>
+  </g>
+
+  <path d="M0 188L83 139L149 159L239 89L331 170L418 116L504 185L579 133L660 199V260H0V188Z" fill="url(#mountainA)"/>
+  <path d="M493 204L591 141L667 168L752 111L833 178L916 127L1007 193L1098 145L1200 195V260H493V204Z" fill="url(#mountainB)"/>
+
+  <path d="M476 260L573 165H627L724 260H476Z" fill="url(#road)" opacity=".92"/>
+  <path d="M538 260L590 171L610 171L662 260H538Z" fill="#E2E8F0" opacity=".05"/>
+
+  <path d="M592 169L592 146H608V169" stroke="#A5F3FC" stroke-opacity=".72" stroke-width="2"/>
+  <path d="M584 146H616L610 136H590L584 146Z" fill="#67E8F9" opacity=".52"/>
+
+  <g transform="translate(1020 143)">
+    <path d="M0 91L23 18L46 91H0Z" fill="url(#crystal)" opacity=".7"/>
+    <path d="M29 104L62 0L92 104H29Z" fill="url(#crystal)" opacity=".93"/>
+    <path d="M75 93L99 26L124 93H75Z" fill="url(#crystal)" opacity=".68"/>
+    <path d="M14 106L34 47L52 106H14Z" fill="#A5F3FC" opacity=".58"/>
+  </g>
+
+  <g transform="translate(96 164)" opacity=".7">
+    <path d="M0 56L24 10L47 56H0Z" fill="#FB7185" opacity=".5"/>
+    <path d="M34 63L61 0L87 63H34Z" fill="#FCA5A5" opacity=".42"/>
+    <path d="M74 58L96 18L117 58H74Z" fill="#FB7185" opacity=".36"/>
+  </g>
+
+  <ellipse cx="605" cy="239" rx="112" ry="20" fill="#67E8F9" opacity=".1" filter="url(#soft)"/>
+  <ellipse cx="1066" cy="234" rx="98" ry="17" fill="#C084FC" opacity=".11" filter="url(#soft)"/>
+
+  <path d="M0 222C156 206 290 214 420 229C544 244 676 245 795 226C925 205 1063 205 1200 222" stroke="#67E8F9" stroke-opacity=".1" stroke-width="2"/>
+</svg>
