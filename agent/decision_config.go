@@ -58,6 +58,13 @@ type DecisionSelection struct {
 	FailureRecovery    bool
 	Battles            bool
 	MinConfidence      float64
+	// Endpoint, Model and TokenEnv come from the run's registered decision
+	// deployment. When Endpoint is set they replace the runner's
+	// POKEPILOT_DECISION_URL/MODEL; the token is read from the variable
+	// TokenEnv names, as for the strategist, and never travels on the run.
+	Endpoint string
+	Model    string
+	TokenEnv string
 }
 
 func DecisionSettingsFromEnv() DecisionSettings {
@@ -121,8 +128,13 @@ func DecisionSettingsFor(sel DecisionSelection) (DecisionSettings, error) {
 	if engine == nil {
 		return settings, fmt.Errorf("%w: unknown backend %q", ErrDecisionDisabled, sel.Backend)
 	}
+	applyDecisionDeployment(engine, sel)
 	if jev, ok := engine.(*JevDecisionEngine); ok && jev.Token == "" {
-		return settings, fmt.Errorf("%w: backend %q needs TYPESAFE_API_KEY (or POKEPILOT_DECISION_TOKEN)", ErrDecisionCredentialsMissing, name)
+		source := "TYPESAFE_API_KEY (or POKEPILOT_DECISION_TOKEN)"
+		if sel.TokenEnv != "" {
+			source = sel.TokenEnv
+		}
+		return settings, fmt.Errorf("%w: backend %q needs %s", ErrDecisionCredentialsMissing, name, source)
 	}
 	settings.Engine = engine
 	settings.Backend = name
@@ -131,6 +143,36 @@ func DecisionSettingsFor(sel DecisionSelection) (DecisionSettings, error) {
 	settings.Battles = sel.Battles
 	settings.Shadow = shadow
 	return settings, nil
+}
+
+// applyDecisionDeployment points an env-built engine at the run's registered
+// deployment. Timeouts and token limits stay runner-local tuning.
+func applyDecisionDeployment(engine DecisionEngine, sel DecisionSelection) {
+	if strings.TrimSpace(sel.Endpoint) == "" {
+		return
+	}
+	token := ""
+	if sel.TokenEnv != "" {
+		token = strings.TrimSpace(os.Getenv(sel.TokenEnv))
+	}
+	switch e := engine.(type) {
+	case *JevDecisionEngine:
+		e.BaseURL = sel.Endpoint
+		if sel.Model != "" {
+			e.Model = sel.Model
+		}
+		if sel.TokenEnv != "" {
+			e.Token = token
+		}
+	case *OpenAIDecisionEngine:
+		e.BaseURL = sel.Endpoint
+		if sel.Model != "" {
+			e.Model = sel.Model
+		}
+		if sel.TokenEnv != "" {
+			e.Token = token
+		}
+	}
 }
 
 // newDecisionEngineFromEnv builds the named backend from runner environment

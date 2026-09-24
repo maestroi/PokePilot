@@ -56,6 +56,7 @@ function blankDeployment(): ModelDeploymentInput {
     compute: '',
     endpoint: '',
     api_model: '',
+    protocol: 'openai',
     enabled: true,
     discover: true,
     default_for: ['farm'],
@@ -102,6 +103,7 @@ function startEdit(deployment: ModelDeployment): void {
     compute: deployment.compute || '',
     endpoint: deployment.endpoint || '',
     api_model: deployment.api_model || '',
+    protocol: deployment.protocol || 'openai',
     enabled: deployment.enabled !== false,
     discover: Boolean(deployment.discover),
     default_for: [...(deployment.default_for || [])],
@@ -114,6 +116,23 @@ function startEdit(deployment: ModelDeployment): void {
     legacy_profile: deployment.legacy_profile || ''
   }
   editorOpen.value = true
+}
+
+// A choice API has no /models listing to discover and cannot be the farm
+// strategist, so switching to it fills the fields a Jev row needs. The key
+// itself is never entered here: token_env names the runner variable.
+function applyProtocolDefaults(): void {
+  const value = draft.value
+  if (value.protocol !== 'typesafe-choice') return
+  value.discover = false
+  value.default_for = []
+  value.legacy_profile = ''
+  value.endpoint ||= 'https://api.typesafe.ai/v1'
+  value.model_id ||= 'jev-latest'
+  value.api_model ||= 'jev-latest'
+  value.token_env ||= 'TYPESAFE_API_KEY'
+  value.compute ||= 'TypeSafe cloud'
+  value.engine = value.engine && value.engine !== 'llama.cpp' ? value.engine : 'typesafe'
 }
 
 function closeEditor(): void {
@@ -254,9 +273,16 @@ async function saveWorkers(id: string): Promise<void> {
             <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Compute</span>
             <input v-model="draft.compute" placeholder="RX 7900 XTX" :class="fieldClass" />
           </label>
+          <label class="block">
+            <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Protocol</span>
+            <select v-model="draft.protocol" :class="fieldClass" @change="applyProtocolDefaults">
+              <option value="openai">OpenAI-compatible (strategist or decisions)</option>
+              <option value="typesafe-choice">TypeSafe choice API (decisions only)</option>
+            </select>
+          </label>
           <label class="block sm:col-span-2">
-            <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">OpenAI-compatible endpoint</span>
-            <input v-model="draft.endpoint" placeholder="http://192.168.50.130:8002/v1" :class="fieldClass" />
+            <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">{{ draft.protocol === 'typesafe-choice' ? 'TypeSafe endpoint' : 'OpenAI-compatible endpoint' }}</span>
+            <input v-model="draft.endpoint" :placeholder="draft.protocol === 'typesafe-choice' ? 'https://api.typesafe.ai/v1' : 'http://192.168.50.130:8002/v1'" :class="fieldClass" />
           </label>
           <label class="block">
             <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Workers</span>

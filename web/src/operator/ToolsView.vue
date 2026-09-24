@@ -7,7 +7,7 @@ import { GOAL_OPTIONS } from '../shared/goals'
 import { defaultGoalForPlayStyle } from '../shared/playstyle'
 import Panel from '../shared/components/Panel.vue'
 import { usePollingResource } from '../shared/composables/usePollingResource'
-import { defaultFarmDeployment, deploymentOptionLabel, deploymentSelectable, preferredDeployment } from './llmDeployments'
+import { defaultFarmDeployment, deploymentOptionLabel, deploymentSelectable, preferredDeployment, servesStrategist } from './llmDeployments'
 
 type StarterMode =
   | 'default'
@@ -44,23 +44,38 @@ const form = reactive<RunSpec>({
   random_seed: false
 })
 
-// The fast typed-decision engine is chosen independently of the strategist.
-// Off sends no selection at all, so the run keeps the runner default.
-const decision = reactive<Required<DecisionEngineSpec>>({
-  backend: 'off',
-  mode: 'shadow',
+// The fast typed-decision engine is chosen independently of the strategist,
+// from the same model registry. decisionTarget is 'off', 'deployment:<id>',
+// or (only when no registry is configured) 'env:<backend>', which uses the
+// runner's own decision endpoint. Off sends no selection at all.
+const decisionTarget = ref('off')
+const decision = reactive({
+  mode: 'shadow' as 'shadow' | 'active',
   battles: true,
   objectives: false,
   failures: true,
   min_confidence: 0.65
 })
-const decisionEnabled = computed(() => decision.backend !== 'off' && decision.mode !== 'off')
+const decisionSelected = computed(() => decisionTarget.value !== 'off')
 const decisionShadow = computed(() => decision.mode === 'shadow')
 
 function decisionRequest(): DecisionEngineSpec | undefined {
-  if (!isLLM.value || !decisionEnabled.value) return undefined
+  if (!isLLM.value || !decisionSelected.value) return undefined
+  const [kind, id] = splitDecisionTarget(decisionTarget.value)
+  const target: Pick<DecisionEngineSpec, 'backend' | 'deployment'> = kind === 'deployment'
+    ? { backend: decisionBackendFor(deployments.value.find((d) => d.id === id)), deployment: id }
+    : { backend: id as DecisionEngineSpec['backend'] }
   // Battle decisions are observational only; active runs never send them.
-  return { ...decision, battles: decisionShadow.value && decision.battles }
+  return { ...target, ...decision, battles: decisionShadow.value && decision.battles }
+}
+
+function splitDecisionTarget(target: string): [string, string] {
+  const at = target.indexOf(':')
+  return at < 0 ? [target, ''] : [target.slice(0, at), target.slice(at + 1)]
+}
+
+function decisionBackendFor(deployment: ModelDeployment | undefined): DecisionEngineSpec['backend'] {
+  return deployment?.protocol === 'typesafe-choice' ? 'jev' : 'system-one'
 }
 
 const { data: modelsData } = usePollingResource(
@@ -68,10 +83,20 @@ const { data: modelsData } = usePollingResource(
   { intervalMs: 5000, isEmpty: (snapshot) => snapshot.deployments.length === 0 }
 )
 const deployments = computed<ModelDeployment[]>(() => modelsData.value?.deployments ?? [])
-const hasDeployments = computed(() => deployments.value.length > 0)
+const strategists = computed(() => deployments.value.filter(servesStrategist))
+const hasDeployments = computed(() => strategists.value.length > 0)
+// Any registered deployment can back the decision engine: a choice API like
+// Jev, or an OpenAI-compatible model used through typed choices.
+const decisionDeployments = computed(() => deployments.value.filter((d) => d.enabled !== false))
+const selectedDecisionDeployment = computed(() => {
+  const [kind, id] = splitDecisionTarget(decisionTarget.value)
+  return kind === 'deployment' ? deployments.value.find((d) => d.id === id) : undefined
+})
 const selectedDeployment = computed(() => deployments.value.find((deployment) => deployment.id === form.llm_deployment))
 
 watch(deployments, (next) => {
+  const [kind, id] = splitDecisionTarget(decisionTarget.value)
+  if (kind === 'deployment' && !next.some((d) => d.id === id && d.enabled !== false)) decisionTarget.value = 'off'
   if (!next.length) {
     form.llm_deployment = ''
     return
@@ -253,7 +278,7 @@ async function submit(): Promise<void> {
           <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Deployment</span>
           <select v-model="form.llm_deployment" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400">
             <option
-              v-for="deployment in deployments"
+              v-for="deployment in strategists"
               :key="deployment.id"
               :value="deployment.id"
               :disabled="!deploymentSelectable(deployment)"
@@ -290,25 +315,38 @@ async function submit(): Promise<void> {
 
         <label v-if="isLLM" class="block">
           <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Fast decision engine</span>
-          <select v-model="decision.backend" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400">
+          <select v-model="decisionTarget" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400">
             <option value="off">Off</option>
-            <option value="jev">TypeSafe Jev</option>
-            <option value="system-one">Local System-1 (typed)</option>
+            <option
+              v-for="deployment in decisionDeployments"
+              :key="`decision-${deployment.id}`"
+              :value="`deployment:${deployment.id}`"
+              :disabled="!deploymentSelectable(deployment)"
+            >
+              {{ deploymentOptionLabel(deployment) }}
+            </option>
+            <template v-if="!deployments.length">
+              <option value="env:jev">TypeSafe Jev (runner endpoint)</option>
+              <option value="env:system-one">Local System-1 (runner endpoint)</option>
+            </template>
           </select>
-          <span class="mt-1 block text-[11px] text-slate-600">Separate from the strategist. Jev uses the runner's TYPESAFE_API_KEY; the key is never stored on the run.</span>
+          <span class="mt-1 block text-[11px] text-slate-600">
+            {{ selectedDecisionDeployment
+              ? `${selectedDecisionDeployment.api_model} via ${selectedDecisionDeployment.endpoint}`
+              : 'Separate from the strategist. Pick any registered deployment; its key stays in the runner environment named by token_env.' }}
+          </span>
         </label>
 
-        <label v-if="isLLM && decision.backend !== 'off'" class="block">
+        <label v-if="isLLM && decisionSelected" class="block">
           <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Mode</span>
           <select v-model="decision.mode" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400">
-            <option value="off">Off</option>
             <option value="shadow">Shadow</option>
             <option value="active">Active</option>
           </select>
           <span class="mt-1 block text-[11px] text-slate-600">Shadow asks the engine and records its answer and agreement; the strategist and deterministic policy still decide. Active lets accepted answers steer objectives and recovery.</span>
         </label>
 
-        <fieldset v-if="isLLM && decisionEnabled" class="block">
+        <fieldset v-if="isLLM && decisionSelected" class="block">
           <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">{{ decisionShadow ? 'Decision engine observes' : 'Decision engine decides' }}</span>
           <label class="mt-2 flex items-center gap-2 text-sm" :class="decisionShadow ? 'text-slate-300' : 'text-slate-600'">
             <input v-model="decision.battles" type="checkbox" :disabled="!decisionShadow" class="rounded border-white/10 bg-white/6" />

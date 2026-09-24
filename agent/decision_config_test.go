@@ -2,6 +2,7 @@ package agent
 
 import (
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -129,5 +130,40 @@ func TestDecisionSettingsForRunMode(t *testing.T) {
 	}
 	if _, err := DecisionSettingsFor(DecisionSelection{Backend: "jev", Mode: "yolo"}); !errors.Is(err, ErrDecisionDisabled) {
 		t.Fatalf("unknown mode err = %v", err)
+	}
+}
+
+func TestDecisionSettingsForRegisteredDeployment(t *testing.T) {
+	t.Setenv("POKEPILOT_DECISION_BACKEND", "")
+	t.Setenv("POKEPILOT_DECISION_URL", "http://runner-default/v1")
+	t.Setenv("POKEPILOT_DECISION_MODEL", "runner-default")
+	t.Setenv("POKEPILOT_DECISION_TOKEN", "")
+	t.Setenv("TYPESAFE_API_KEY", "runner-key")
+	t.Setenv("JEV_PROD_KEY", "")
+
+	sel := DecisionSelection{Backend: "jev", Mode: "shadow", Endpoint: "https://api.typesafe.ai/v1", Model: "jev-2", TokenEnv: "JEV_PROD_KEY"}
+	// The deployment names its own key variable; the runner default key must
+	// not stand in for it.
+	if _, err := DecisionSettingsFor(sel); !errors.Is(err, ErrDecisionCredentialsMissing) || !strings.Contains(err.Error(), "JEV_PROD_KEY") {
+		t.Fatalf("missing deployment key err = %v", err)
+	}
+	t.Setenv("JEV_PROD_KEY", "prod-key")
+	settings, err := DecisionSettingsFor(sel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	jev := settings.Engine.(*JevDecisionEngine)
+	if jev.BaseURL != "https://api.typesafe.ai/v1" || jev.Model != "jev-2" || jev.Token != "prod-key" {
+		t.Fatalf("jev engine = %+v", jev)
+	}
+
+	// Without token_env the deployment keeps the runner's credential chain.
+	settings, err = DecisionSettingsFor(DecisionSelection{Backend: "system-one", Endpoint: "http://4090/v1", Model: "qwen3.5-4b"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	local := settings.Engine.(*OpenAIDecisionEngine)
+	if local.BaseURL != "http://4090/v1" || local.Model != "qwen3.5-4b" {
+		t.Fatalf("local engine = %+v", local)
 	}
 }

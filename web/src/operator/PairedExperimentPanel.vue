@@ -7,7 +7,7 @@ import { GOAL_OPTIONS } from '../shared/goals'
 import Panel from '../shared/components/Panel.vue'
 import ResourceState from '../shared/components/ResourceState.vue'
 import { usePollingResource } from '../shared/composables/usePollingResource'
-import { defaultExperimentArms, deploymentOptionLabel } from './llmDeployments'
+import { defaultExperimentArms, deploymentOptionLabel, strategistDeployments } from './llmDeployments'
 
 const fieldClass = 'mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400'
 
@@ -28,7 +28,8 @@ const {
   { intervalMs: 5000, isEmpty: (experiments) => experiments.length === 0 }
 )
 
-const deployments = computed<ModelDeployment[]>(() => modelsData.value?.deployments ?? [])
+// Experiments compare strategists; decision-only deployments cannot be an arm.
+const deployments = computed<ModelDeployment[]>(() => strategistDeployments(modelsData.value?.deployments ?? []))
 const latest = computed<ExperimentView | null>(() => experimentData.value?.[0] ?? created.value)
 
 const form = reactive({

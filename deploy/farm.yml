@@ -290,12 +290,14 @@ services:
       POKEPILOT_LLM_FALLBACK_MAX_TOKENS: ${POKEPILOT_LLM_FALLBACK_MAX_TOKENS:-}
       POKEPILOT_LLM_FALLBACK_TIMEOUT: ${POKEPILOT_LLM_FALLBACK_TIMEOUT:-}
 
-      # Fast typed-decision backend (docs/TYPED-DECISIONS.md). Every runner
-      # carries the credential, but none uses it unless a run selects
-      # decision_engine.backend=jev in PokeWall; runs without a selection keep
-      # POKEPILOT_DECISION_BACKEND (unset = off). The key never enters a run
-      # spec, catalog row or archive. A Jev run leased by a runner without the
-      # key fails at start with "credentials are not configured".
+      # Fast typed-decision backend (docs/TYPED-DECISIONS.md). Endpoint and
+      # model come from the run's registered decision deployment; runners only
+      # carry the key its token_env names (TYPESAFE_API_KEY for Jev), exactly
+      # like strategist tokens. None uses it unless a run selects that
+      # deployment. The DECISION_* values below are defaults for runs without
+      # a registered deployment only (unset backend = off). A Jev run leased by
+      # a runner without the key fails at start with "credentials are not
+      # configured".
       TYPESAFE_API_KEY: ${TYPESAFE_API_KEY:-}
       POKEPILOT_DECISION_BACKEND: ${POKEPILOT_DECISION_BACKEND:-}
       POKEPILOT_DECISION_MODEL: ${POKEPILOT_DECISION_MODEL:-}
