@@ -91,3 +91,53 @@ func TestRecoveryFallsBackToRoutableCenter(t *testing.T) {
 		t.Fatalf("unroutable checkpoint still offered for travel: %+v", got)
 	}
 }
+
+func TestRecoveryPrefersSuccessfulVisitedCheckpoint(t *testing.T) {
+	obs := Observation{
+		Location:   "field",
+		PartyCount: 1,
+		Party:      []PartyMon{{Species: "testmon", Level: 20, HP: 8, MaxHP: 50}},
+		Catalog: ObjectiveCatalog{Destinations: []CatalogDestination{
+			{Place: "near pokemon center", Location: "near-center", Center: true},
+			{Place: "used pokemon center", Location: "used-center", Center: true},
+		}},
+	}
+	known := NewKnowledge(KnowledgeTopology{Adjacency: map[LocationID][]LocationID{
+		"field":       {"near-center"},
+		"near-center": {"field", "used-center"},
+		"used-center": {"near-center"},
+	}})
+	known.SawLocation("near-center")
+	known.SawLocation("used-center")
+	known.rememberRecoveryCheckpoint("used pokemon center", "used-center", true)
+
+	got := OfferWithEvidence(obs, known).Candidates
+	if !hasCatalogObjective(got, Objective{Kind: KindHeal, Place: "used pokemon center"}) {
+		t.Fatalf("successful checkpoint was not preferred: %+v", got)
+	}
+	if hasCatalogObjective(got, Objective{Kind: KindHeal, Place: "near pokemon center"}) {
+		t.Fatalf("closer visited-only center beat successful checkpoint: %+v", got)
+	}
+}
+
+func TestNoteObservationLearnsCenterCheckpoint(t *testing.T) {
+	obs := Observation{
+		Location: "center-location",
+		Catalog: ObjectiveCatalog{Destinations: []CatalogDestination{
+			{Place: "test pokemon center", Location: "center-location", Center: true},
+		}},
+	}
+	known := NewKnowledge(nil)
+	noteObservation(known, obs)
+	got, ok := known.RecoveryCheckpoints["test pokemon center"]
+	if !ok || got.Location != "center-location" || got.Successful {
+		t.Fatalf("learned checkpoint = %+v, ok=%v", got, ok)
+	}
+
+	obs.RecoveryCheckpoint = "test pokemon center"
+	noteObservation(known, obs)
+	got = known.RecoveryCheckpoints["test pokemon center"]
+	if !got.Successful {
+		t.Fatalf("active cartridge checkpoint did not strengthen learned checkpoint: %+v", got)
+	}
+}
