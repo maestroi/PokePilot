@@ -146,17 +146,21 @@ func EvaluateGoal(g Goal, obs Observation) GoalStatus {
 		return GoalStatus{Summary: "no deterministic goal"}
 	case GoalEliteFour:
 		n := len(obs.Badges)
-		// A Hall of Fame bit is the authoritative ending fact, but #39's full
-		// campaign contract also requires the complete eight-badge journey. This
-		// prevents a synthetic/corrupt late-game state from qualifying as a
-		// fresh autonomous completion while keeping the predicate portable.
+		// Full-campaign progress deliberately includes the ending itself as a
+		// ninth step. Eight badges therefore means 8/9 rather than 100%; the
+		// final step is only credited once the portable Hall of Fame fact is set.
+		// This keeps UI progress truthful without making generic goal evaluation
+		// depend on Red-specific Elite Four map/event details.
 		if n >= 8 && obs.Story.Has(ProgressMainStoryComplete) {
-			return GoalStatus{Complete: true, Summary: "Hall of Fame reached after the eight-badge campaign, Elite Four and Champion", Current: 8, Target: 8}
+			return GoalStatus{Complete: true, Summary: "Hall of Fame reached after the eight-badge campaign, Elite Four and Champion", Current: 9, Target: 9}
 		}
 		if obs.Story.Has(ProgressMainStoryComplete) {
-			return GoalStatus{Summary: fmt.Sprintf("Hall of Fame reached but campaign badges are only %d/8", n), Current: n, Target: 8}
+			return GoalStatus{Summary: fmt.Sprintf("Hall of Fame reached but campaign badges are only %d/8", n), Current: n, Target: 9}
 		}
-		return GoalStatus{Summary: fmt.Sprintf("beat the Elite Four and Champion and reach the Hall of Fame; badges %d/8", n), Current: n, Target: 8}
+		if n >= 8 {
+			return GoalStatus{Summary: "8/8 badges earned; Elite Four, Champion and Hall of Fame remain", Current: 8, Target: 9}
+		}
+		return GoalStatus{Summary: fmt.Sprintf("beat the Elite Four and Champion and reach the Hall of Fame; badges %d/8", n), Current: n, Target: 9}
 	case GoalDex:
 		return evaluateDexGoal(obs)
 	case GoalBadges:
