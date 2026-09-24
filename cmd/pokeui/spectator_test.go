@@ -26,7 +26,7 @@ func TestSpectatorServesReadOnlySanitizedSurface(t *testing.T) {
 				"wall_version": "secret-wall-sha",
 				"workers": [{"addr":"10.0.0.9:8099","version":"secret-runner-sha"}],
 				"runs": [{
-					"run_id":"run-1","status":"running","planner":"llm","starter":"bulbasaur","dest":"brock","goal":"Get the Boulder Badge",
+					"run_id":"run-1","status":"running","planner":"llm","starter":"bulbasaur","dest":"brock","goal":"Get the Boulder Badge","purpose":"debug_coverage",
 					"seed":999,"queued_at":100,"frame":456,"map":12,"x":15,"y":9,"maps_visited":10,
 					"trace":"private trace","question":"private question\n1: Travel north\n2: Train party","decision":"","raw":"private raw exchange","stop_so_far":"No badge yet",
 					"stats":{"round":3,"rounds_left":7,"calls":4,"rounds":3,"rejected":1,"repeats":1,"last_seconds":2.5,"avg_seconds":2.0,"model":"private-model","backend":"fallback","prompt_tokens":5000},
@@ -108,7 +108,7 @@ func TestSpectatorServesReadOnlySanitizedSurface(t *testing.T) {
 			t.Errorf("public snapshot leaked %q: %s", secret, watchBody)
 		}
 	}
-	for _, want := range []string{"run-1", "bulbasaur", "Get the Boulder Badge", "BULBASAUR", "Boulder", "pokeball", "Pokédex", "bag_used", "dex_owned", `"maps_visited":10`, `"planner_waiting":true`, `"planner_options":2`} {
+	for _, want := range []string{"run-1", "bulbasaur", "Get the Boulder Badge", "debug_coverage", "BULBASAUR", "Boulder", "pokeball", "Pokédex", "bag_used", "dex_owned", `"maps_visited":10`, `"planner_waiting":true`, `"planner_options":2`} {
 		if !bytes.Contains(watchBody, []byte(want)) {
 			t.Errorf("public snapshot missing %q: %s", want, watchBody)
 		}
