@@ -122,6 +122,12 @@ func bestKnownTrainingPlace(obs Observation, known *Knowledge, placeNames []stri
 			// or weaker band cannot solve the measured problem.
 			continue
 		}
+		if int(area.MaxLevel)+8 < int(obs.Party[0].Level) {
+			// Safety alone is not usefulness: a L50 lead can safely stomp L15
+			// encounters forever. Reject bands that are materially below the
+			// trainee before spending travel time on them.
+			continue
+		}
 		method, carry, safe := trainingMethodForObservedParty(obs.Party, area.MaxLevel)
 		if !safe {
 			continue
