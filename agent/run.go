@@ -37,6 +37,10 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 	if err != nil {
 		return Result{Stop: StopError, Err: fmt.Errorf("agent: Run: detect game profile: %w", err)}
 	}
+	objectiveAdapterFactory, err := objectiveAdapterFactoryFor(profile.ID())
+	if err != nil {
+		return Result{Stop: StopError, Err: err}
+	}
 	graph, err := world.BuildGraph(romData)
 	if err != nil {
 		return Result{Stop: StopError, Err: fmt.Errorf("agent: Run: build map graph: %w", err)}
@@ -177,11 +181,15 @@ runLoop:
 					round, readiness.Action, readiness.CurrentReadiness, readiness.TargetReadiness,
 					readiness.Losses, readiness.Objective.Objective(), obj)
 			}
-		} else if recovery, prerequisites, ok := engine.failures.prerequisiteRecovery(last, now, newRedObjectiveAdapter(m, romData)); ok {
-			obj = recovery
-			engine.planning.request("prerequisite_recovery")
-			if budget.Log != nil {
-				fmt.Fprintf(budget.Log, "round %d: deterministic prerequisite recovery for %v -> %s\n", round, prerequisites, obj)
+		} else if recoveryAdapter, ok := objectiveAdapterFactory(m, romData, routePriorityForPlanner(p)).(ProgressionPrerequisiteRecoveryProvider); ok {
+			if recovery, prerequisites, found := engine.failures.prerequisiteRecovery(last, now, recoveryAdapter); found {
+				obj = recovery
+				engine.planning.request("prerequisite_recovery")
+				if budget.Log != nil {
+					fmt.Fprintf(budget.Log, "round %d: deterministic prerequisite recovery for %v -> %s\n", round, prerequisites, obj)
+				}
+			} else {
+				obj, fromPlan, err, retries = engine.planning.choose(budget.Log, round, p, last, now)
 			}
 		} else {
 			obj, fromPlan, err, retries = engine.planning.choose(budget.Log, round, p, last, now)
@@ -223,7 +231,8 @@ runLoop:
 			})
 		}
 		before := last
-		objectiveResult, execErr := executeObjectiveResultWithRoutePriority(m, romData, obj, routePriorityForPlanner(p))
+		objectiveAdapter := objectiveAdapterFactory(m, romData, routePriorityForPlanner(p))
+		objectiveResult, execErr := ExecuteWithAdapter(objectiveAdapter, obj)
 		settledTiming := ObjectiveTiming{Frame: m.FrameCount(), Round: round, WallElapsed: time.Since(runStarted)}
 		if budget.OnObjective != nil {
 			stage := "completed"

@@ -25,7 +25,14 @@ type ObjectiveGameAdapter interface {
 	CaptureFailure(Objective, error) error
 }
 
-// executeObjectiveWithAdapter is the agent-facing transaction boundary. The
+// ExecuteWithAdapter is the game-agnostic objective transaction entrypoint.
+// Callers bind the active game's adapter outside the generic runtime; no
+// emulator, ROM, native map ids, or game-owned skills are needed here.
+func ExecuteWithAdapter(a ObjectiveGameAdapter, o Objective) (ObjectiveResult, error) {
+	return executeObjectiveWithAdapter(a, o)
+}
+
+// executeObjectiveWithAdapter is the internal transaction boundary. The
 // portable game package owns lifecycle ordering; this layer attaches the game
 // adapter's normalized failure record while preserving the native error for
 // diagnostics and forensics.

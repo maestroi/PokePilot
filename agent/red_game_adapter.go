@@ -31,6 +31,17 @@ func newRedObjectiveAdapterWithRoutePriority(m *emu.Emu, romData []byte, priorit
 	return &redObjectiveAdapter{m: m, romData: romData, routePriority: priority}
 }
 
+func init() {
+	for _, id := range gen1Games {
+		gameID := id
+		registerObjectiveAdapterFactory(gameID, func(m *emu.Emu, romData []byte, priority RoutePriority) ObjectiveGameAdapter {
+			adapter := newRedObjectiveAdapterWithRoutePriority(m, romData, priority)
+			adapter.gameID = gameID
+			return adapter
+		})
+	}
+}
+
 func redTravelCostPolicy(priority RoutePriority) skill.TravelCostPolicy {
 	if priority == RoutePriorityFastest {
 		return skill.TravelCostFastest
@@ -211,6 +222,23 @@ func (a *redObjectiveAdapter) VerifyPostcondition(o Objective, initial, final Ob
 	if o.Kind == KindStarter && o.Species != "" {
 		return verifyRedStarterSpeciesPostcondition(o, final)
 	}
+	if o.Kind == KindGoTo {
+		dest, ok := skill.Place(o.Place)
+		if !ok {
+			return fmt.Errorf("%w: destination %q no longer resolves", ErrObjectivePostconditionFailed, o.Place)
+		}
+		if dest.Reached(final.Map, final.X, final.Y) {
+			return nil
+		}
+		var mem state.Mem
+		state.Snapshot(a.m, &mem)
+		if redOccupiedDestinationArrival(final, dest, state.DecodeSprites(&mem)) {
+			return nil
+		}
+		return fmt.Errorf(
+			"%w: %s ended on map %02x at (%d,%d), want %s destination on map %02x",
+			ErrObjectivePostconditionFailed, o, final.Map, final.X, final.Y, dest.KindName(), dest.Map)
+	}
 
 	_, err := verifyObjectivePostcondition(o, initial, final, result)
 	if err == nil && o.Kind == KindHeal {
@@ -221,16 +249,6 @@ func (a *redObjectiveAdapter) VerifyPostcondition(o Objective, initial, final Ob
 	if o.Kind == KindTrain && o.Intent != "dex-evolution" && errors.Is(err, ErrObjectivePostconditionFailed) &&
 		redTrainingReachedThroughEvolution(o, initial, final, result) {
 		return nil
-	}
-	if o.Kind == KindGoTo && errors.Is(err, ErrObjectivePostconditionFailed) {
-		dest, ok := skill.Place(o.Place)
-		if ok {
-			var mem state.Mem
-			state.Snapshot(a.m, &mem)
-			if redOccupiedDestinationArrival(final, dest, state.DecodeSprites(&mem)) {
-				return nil
-			}
-		}
 	}
 	return err
 }

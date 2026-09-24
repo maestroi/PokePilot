@@ -5,9 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/maestroi/pokepilot/emu"
 	gameruntime "github.com/maestroi/pokepilot/game"
-	"github.com/maestroi/pokepilot/skill"
 )
 
 type Outcome string
@@ -127,14 +125,6 @@ func actionFor(out Outcome) runAction {
 	}
 }
 
-func executeObjectiveResult(m *emu.Emu, romData []byte, o Objective) (ObjectiveResult, error) {
-	return executeObjective(m, romData, o)
-}
-
-func executeObjectiveResultWithRoutePriority(m *emu.Emu, romData []byte, o Objective, priority RoutePriority) (ObjectiveResult, error) {
-	return executeObjectiveWithAdapter(newRedObjectiveAdapterWithRoutePriority(m, romData, priority), o)
-}
-
 func finalizeObjectiveResult(o Objective, result ObjectiveResult, final Observation, err error) ObjectiveResult {
 	result.Objective = o
 	result.Final = final
@@ -213,16 +203,15 @@ func verifyObjectivePostcondition(o Objective, initial, final Observation, resul
 			ErrObjectivePostconditionFailed, o, o.FieldCapability)
 
 	case KindGoTo:
-		dest, ok := skill.Place(string(o.Place))
-		if !ok {
-			return OutcomePostconditionFailed, fmt.Errorf("%w: destination %q no longer resolves", ErrObjectivePostconditionFailed, o.Place)
+		// Generic execution can verify a semantic location without resolving
+		// native map ids or game-owned destination geometry. Concrete adapters
+		// may provide a stronger exact-tile verifier before falling back here.
+		if o.Place != "" && final.Location == o.Place {
+			return OutcomeCompleted, nil
 		}
-		if !dest.Reached(final.Map, final.X, final.Y) {
-			return OutcomePostconditionFailed, fmt.Errorf(
-				"%w: %s ended on map %02x at (%d,%d), want %s destination on map %02x",
-				ErrObjectivePostconditionFailed, o, final.Map, final.X, final.Y, dest.KindName(), dest.Map)
-		}
-		return OutcomeCompleted, nil
+		return OutcomePostconditionFailed, fmt.Errorf(
+			"%w: %s ended at semantic location %q, want %q",
+			ErrObjectivePostconditionFailed, o, final.Location, o.Place)
 
 	case KindTalk:
 		if result.InteractionPresses <= 0 {
