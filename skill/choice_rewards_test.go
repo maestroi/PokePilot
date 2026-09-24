@@ -23,35 +23,49 @@ func TestChoiceRewardsHaveInteractionOwnedDestinations(t *testing.T) {
 		if !ok {
 			t.Fatalf("reward place %q did not resolve", reward.Place)
 		}
-		if dest.Map != reward.Map || dest.X != reward.StandX || dest.Y != reward.StandY {
-			t.Fatalf("reward place %q = %+v, want map %#02x stand (%d,%d)", reward.Place, dest, reward.Map, reward.StandX, reward.StandY)
+		if dest.Map != reward.Map || dest.Kind != DestinationInteraction || dest.X != reward.X || dest.Y != reward.Y {
+			t.Fatalf("reward place %q = %+v, want interaction actor on map %#02x at (%d,%d)", reward.Place, dest, reward.Map, reward.X, reward.Y)
+		}
+		foundStand := false
+		for _, target := range destinationRouteTargets(dest) {
+			if target.X == int(reward.StandX) && target.Y == int(reward.StandY) {
+				foundStand = true
+				break
+			}
+		}
+		if !foundStand {
+			t.Fatalf("reward place %q interaction targets omit known stand (%d,%d)", reward.Place, reward.StandX, reward.StandY)
 		}
 	}
 }
 
-func TestOldRodRewardUsesWalkableGuruApproach(t *testing.T) {
-	dest, ok := Place("vermilion old rod house")
-	if !ok {
-		t.Fatal("vermilion old rod house did not resolve")
-	}
-	// The old (3,4) destination is a wall in the HOUSE tileset. The guru is
-	// fixed at (2,4); (2,5) is the directly-adjacent walkable approach tile.
-	want := (Destination{Map: 0xA3, X: 2, Y: 5})
-	if dest != want {
-		t.Fatalf("old rod destination = %+v, want %+v", dest, want)
-	}
-}
-
-func TestSuperRodRewardUsesWalkableGuruApproach(t *testing.T) {
-	dest, ok := Place("route 12 super rod house")
-	if !ok {
-		t.Fatal("route 12 super rod house did not resolve")
-	}
-	// Map 0xBD's generated collision grid has walls at (3,4) and (4,4).
-	// The guru is fixed at (2,4), so (2,5) is the adjacent open floor tile.
-	want := (Destination{Map: 0xBD, X: 2, Y: 5})
-	if dest != want {
-		t.Fatalf("super rod destination = %+v, want %+v", dest, want)
+func TestRodRewardsKeepKnownWalkableApproachesAsInteractionCandidates(t *testing.T) {
+	for _, name := range []string{"vermilion old rod house", "fuchsia good rod house", "route 12 super rod house"} {
+		var reward ChoiceReward
+		found := false
+		for _, candidate := range ChoiceRewards() {
+			if candidate.Place == name {
+				reward, found = candidate, true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("missing choice reward %q", name)
+		}
+		dest, ok := Place(name)
+		if !ok {
+			t.Fatalf("%s did not resolve", name)
+		}
+		seen := false
+		for _, target := range destinationRouteTargets(dest) {
+			if target.X == int(reward.StandX) && target.Y == int(reward.StandY) {
+				seen = true
+				break
+			}
+		}
+		if !seen {
+			t.Fatalf("%s interaction does not include known walkable approach (%d,%d)", name, reward.StandX, reward.StandY)
+		}
 	}
 }
 
