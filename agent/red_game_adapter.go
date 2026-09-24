@@ -168,14 +168,15 @@ func (a *redObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error)
 	return normalizeRedOwnedExecutionResult(o, result, err)
 }
 
-// normalizeRedOwnedExecutionResult gives validated, bounded menu actions a
+// normalizeRedOwnedExecutionResult gives validated, bounded owned actions a
 // portable fallback outcome when their native controller path returns an
-// untyped error. UseFieldItem/TeachTMHM and Buy can all fail after a menu-state
-// mismatch even though their owning controller has already returned the game
-// to a safe boundary. Marking that owned action blocked prevents a clean
-// controller miss from becoming terminal unknown_failure. Typed failures still
-// win in NormalizeFailure, and an unsafe finish boundary or unreadable final
-// observation still overrides this fallback in the transaction runtime.
+// untyped error. UseFieldItem/TeachTMHM, Buy, and Catch can all fail after
+// bounded work even though their owning controller has already returned the
+// game to a safe boundary. Marking that owned action blocked prevents a clean
+// controller/acquisition miss from becoming terminal unknown_failure. Typed
+// failures still win in NormalizeFailure, and an unsafe finish boundary or
+// unreadable final observation still overrides this fallback in the transaction
+// runtime.
 func normalizeRedOwnedExecutionResult(o Objective, result ObjectiveResult, err error) (ObjectiveResult, error) {
 	if err != nil {
 		var required *skill.RequiredBattleError
@@ -183,7 +184,7 @@ func normalizeRedOwnedExecutionResult(o Objective, result ObjectiveResult, err e
 			result.Battle = requiredBattleEvidenceFromRed(required.Outcome.Encounter, required.Outcome.Result)
 			result.Outcome = OutcomeBlocked
 		}
-		if (o.Kind == KindUseItem || o.Kind == KindBuy) && result.Outcome == "" {
+		if (o.Kind == KindUseItem || o.Kind == KindBuy || o.Kind == KindCatch) && result.Outcome == "" {
 			result.Outcome = OutcomeBlocked
 		}
 	}
