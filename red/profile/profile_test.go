@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/maestroi/pokepilot/game"
+	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 )
 
@@ -79,5 +80,32 @@ func TestSemanticSymbolsMatchRedLayout(t *testing.T) {
 		if !ok || got.Address != want {
 			t.Fatalf("symbol %q = %#v, want address %#04x", name, got, want)
 		}
+	}
+}
+
+func TestStartMenuEntryIndexTracksRedPokedexLayout(t *testing.T) {
+	p := New()
+	assertIndex := func(mem *fakeMemory, entry game.StartMenuEntry, want int) {
+		t.Helper()
+		got, ok := p.StartMenuEntryIndex(mem, entry)
+		if !ok {
+			t.Fatalf("entry %q unavailable", entry)
+		}
+		if got != want {
+			t.Fatalf("entry %q index = %d, want %d", entry, got, want)
+		}
+	}
+
+	var mem fakeMemory
+	assertIndex(&mem, game.StartMenuPokemon, 0)
+	assertIndex(&mem, game.StartMenuItems, 1)
+
+	event := uint16(state.EventGotPokedex)
+	mem[sym.EventFlags+event/8] |= 1 << (event % 8)
+	assertIndex(&mem, game.StartMenuPokemon, 1)
+	assertIndex(&mem, game.StartMenuItems, 2)
+
+	if _, ok := p.StartMenuEntryIndex(&mem, game.StartMenuEntry("pokegear")); ok {
+		t.Fatal("unknown START-menu entry unexpectedly resolved")
 	}
 }
