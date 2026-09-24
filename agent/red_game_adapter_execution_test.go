@@ -37,6 +37,17 @@ func TestNormalizeRedOwnedExecutionResultMenuFallback(t *testing.T) {
 			want:   OutcomeStabilizationFailed,
 		},
 		{
+			name: "unclassified catch becomes blocked",
+			obj:  Objective{Kind: KindCatch, Species: SpeciesID("caterpie"), Place: PlaceID("route 2")},
+			want: OutcomeBlocked,
+		},
+		{
+			name:   "specific catch outcome is preserved",
+			obj:    Objective{Kind: KindCatch, Species: SpeciesID("caterpie"), Place: PlaceID("route 2")},
+			result: ObjectiveResult{Outcome: OutcomeStabilizationFailed},
+			want:   OutcomeStabilizationFailed,
+		},
+		{
 			name: "other objective kinds are not reclassified",
 			obj:  Objective{Kind: KindGoTo, Place: PlaceID("route 1")},
 			want: "",
