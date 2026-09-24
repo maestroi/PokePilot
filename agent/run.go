@@ -141,6 +141,7 @@ runLoop:
 		last.Requirements = append(last.Requirements, providerBlockRequirements(offer.Blocked)...)
 		last.ChallengeReadiness = append([]ChallengeReadiness(nil), offer.Readiness...)
 		last.RecoveryCheckpoints = append([]RecoveryCheckpointAssessment(nil), offer.Recovery...)
+		last.TrainingAreaChoices = append([]TrainingAreaAssessment(nil), offer.TrainingAreas...)
 		now := engine.failures.filter(last, offer.Candidates)
 		if len(now) == 0 {
 			res.Stop = StopError

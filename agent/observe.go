@@ -52,6 +52,7 @@ type Observation struct {
 	Failures            []Failure
 	ChallengeReadiness  []ChallengeReadiness           `json:"challenge_readiness,omitempty"`
 	RecoveryCheckpoints []RecoveryCheckpointAssessment `json:"recovery_checkpoints,omitempty"`
+	TrainingAreaChoices []TrainingAreaAssessment       `json:"training_areas,omitempty"`
 
 	Round      int
 	RoundsLeft int

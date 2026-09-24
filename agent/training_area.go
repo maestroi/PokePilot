@@ -18,6 +18,26 @@ type TrainingAreaKnowledge struct {
 	MaxLevel uint8      `json:"max_level"`
 }
 
+// TrainingAreaAssessment is recomputed from current party/resources and the
+// active adapter's route/encounter data. Knowledge stores only visited habitats;
+// these dynamic costs are never persisted as world truth.
+type TrainingAreaAssessment struct {
+	Place            PlaceID          `json:"place"`
+	Location         LocationID       `json:"location"`
+	MinLevel         uint8            `json:"min_level,omitempty"`
+	MaxLevel         uint8            `json:"max_level,omitempty"`
+	Selected         bool             `json:"selected,omitempty"`
+	Routable         bool             `json:"routable"`
+	RecoveryKnown    bool             `json:"recovery_known,omitempty"`
+	TravelCost       int              `json:"travel_cost,omitempty"`
+	RecoveryCost     int              `json:"recovery_cost,omitempty"`
+	TotalCost        int              `json:"total_cost,omitempty"`
+	FastTravel       bool             `json:"fast_travel,omitempty"`
+	FastTravelMethod string           `json:"fast_travel_method,omitempty"`
+	Estimate         TrainingEstimate `json:"estimate"`
+	Reason           string           `json:"reason,omitempty"`
+}
+
 // rememberTrainingArea records a habitat only after the run has observed it.
 // The travel-facing Place is resolved through the active game's objective
 // catalog so later recovery can construct an ordinary GoTo objective rather
@@ -89,10 +109,15 @@ func trainingPlaceForLocation(catalog ObjectiveCatalog, location LocationID) Pla
 }
 
 type trainingAreaChoice struct {
-	Area   TrainingAreaKnowledge
-	Method TrainingMethod
-	Carry  uint8
-	Hops   int
+	Area         TrainingAreaKnowledge
+	Method       TrainingMethod
+	Carry        uint8
+	Hops         int
+	Estimate     *TrainingEstimate
+	TravelCost   int
+	RecoveryCost int
+	TotalCost    int
+	FastTravel   bool
 }
 
 // bestKnownTrainingPlace ranks only already-observed, currently offered travel
@@ -111,6 +136,25 @@ func bestKnownTrainingPlace(obs Observation, known *Knowledge, placeNames []stri
 	current := observationLocation(obs, known)
 	hops := mapHops(known.Adjacency, current)
 	_, currentMax, _ := wildLevelBand(obs.WildGrass)
+
+	if len(obs.TrainingAreaChoices) > 0 {
+		for _, assessment := range obs.TrainingAreaChoices {
+			if !assessment.Selected || !assessment.Routable || !allowed[assessment.Place] {
+				continue
+			}
+			area, ok := known.TrainingAreas[assessment.Location]
+			if !ok {
+				continue
+			}
+			estimate := assessment.Estimate
+			distance := hops[assessment.Location]
+			return trainingAreaChoice{
+				Area: area, Method: estimate.Method, Carry: estimate.CarryLevel, Hops: distance,
+				Estimate: &estimate, TravelCost: assessment.TravelCost, RecoveryCost: assessment.RecoveryCost,
+				TotalCost: assessment.TotalCost, FastTravel: assessment.FastTravel,
+			}, true
+		}
+	}
 
 	choices := make([]trainingAreaChoice, 0, len(known.TrainingAreas))
 	for _, area := range known.TrainingAreas {
@@ -201,6 +245,14 @@ func trainingAreaJourneyNote(choice trainingAreaChoice) string {
 	method := "direct training"
 	if choice.Method == TrainingSwitch {
 		method = fmt.Sprintf("switch training via L%d carry", choice.Carry)
+	}
+	if choice.Estimate != nil {
+		fast := ""
+		if choice.FastTravel {
+			fast = "; legal fast travel lowers route cost"
+		}
+		return fmt.Sprintf("(best known training area: %s; travel cost %d; recovery cost %d; total %d%s)",
+			choice.Estimate.Diagnostic(), choice.TravelCost, choice.RecoveryCost, choice.TotalCost, fast)
 	}
 	return fmt.Sprintf("(best known training area: observed wilds L%d-L%d; %s; %d map hop(s))",
 		choice.Area.MinLevel, choice.Area.MaxLevel, method, choice.Hops)
