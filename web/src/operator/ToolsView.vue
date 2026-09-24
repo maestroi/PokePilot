@@ -3,7 +3,7 @@ import { computed, reactive, ref, watch } from 'vue'
 import { ArrowRightIcon, PlayIcon } from '@heroicons/vue/20/solid'
 import { createRun, getModels } from '../shared/api/client'
 import type { ModelDeployment, RunSpec } from '../shared/api/types'
-import { GOAL_OPTIONS, nextGoalForPlayStyle } from '../shared/goals'
+import { GOAL_OPTIONS } from '../shared/goals'
 import { defaultGoalForPlayStyle } from '../shared/playstyle'
 import Panel from '../shared/components/Panel.vue'
 import { usePollingResource } from '../shared/composables/usePollingResource'
@@ -32,6 +32,7 @@ const form = reactive<RunSpec>({
   llm_profile: 'auto',
   llm_deployment: '',
   play_style: 'adventure',
+  purpose: 'normal',
   risk_tolerance: 'balanced',
   wild_encounters: 'planner',
   reasoning_effort: '',
@@ -64,20 +65,9 @@ const error = ref('')
 const createdRunID = ref('')
 const starterMode = ref<StarterMode>('default')
 const specificStarter = ref('')
-const goalExplicitlySelected = ref(false)
 const isLLM = computed(() => form.planner === 'llm')
 const isSpecificStarter = computed(() => starterMode.value === 'specific')
 
-watch(
-  () => form.play_style,
-  () => {
-    form.goal = nextGoalForPlayStyle(form.goal, form.play_style, goalExplicitlySelected.value)
-  }
-)
-
-function markGoalExplicitlySelected(): void {
-  goalExplicitlySelected.value = true
-}
 
 function starterRequest(): string {
   if (starterMode.value === 'specific') return specificStarter.value.trim()
@@ -113,6 +103,7 @@ async function submit(): Promise<void> {
       llm_profile: isLLM.value && !hasDeployments.value ? form.llm_profile : '',
       llm_deployment: isLLM.value && hasDeployments.value ? form.llm_deployment : undefined,
       play_style: isLLM.value ? form.play_style : '',
+      purpose: isLLM.value ? form.purpose : '',
       risk_tolerance: isLLM.value ? form.risk_tolerance : '',
       wild_encounters: isLLM.value ? form.wild_encounters : '',
       reasoning_effort: isLLM.value ? form.reasoning_effort : '',
@@ -194,10 +185,10 @@ async function submit(): Promise<void> {
 
         <label v-if="isLLM" class="block sm:col-span-2">
           <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Goal</span>
-          <select v-model="form.goal" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400" @change="markGoalExplicitlySelected">
+          <select v-model="form.goal" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400">
             <option v-for="goal in GOAL_OPTIONS" :key="goal || 'free'" :value="goal">{{ goal || 'Free play (no automatic stop)' }}</option>
           </select>
-          <span class="mt-1 block text-[11px] text-slate-600">Defaults from play style until you choose a goal here; an explicit goal stays selected.</span>
+          <span class="mt-1 block text-[11px] text-slate-600">What ends the run. Goal is independent from play style and run purpose.</span>
         </label>
 
         <label v-if="isLLM" class="block">
@@ -208,7 +199,16 @@ async function submit(): Promise<void> {
             <option value="completionist">Completionist · explore and collect</option>
             <option value="team_builder">Team Builder · catches and training</option>
           </select>
-          <span class="mt-1 block text-[11px] text-slate-600">What the player values; changing it updates the goal only until you explicitly pick one.</span>
+          <span class="mt-1 block text-[11px] text-slate-600">How the player values legal objectives; independent from the terminal goal.</span>
+        </label>
+
+        <label v-if="isLLM" class="block">
+          <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Run purpose</span>
+          <select v-model="form.purpose" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400">
+            <option value="normal">Normal · play the game</option>
+            <option value="debug_coverage">Debug Coverage · exercise new interactions</option>
+          </select>
+          <span class="mt-1 block text-[11px] text-slate-600">Debug Coverage deliberately explores untested reachable interactions to expose bugs, while keeping the selected goal and play style.</span>
         </label>
 
         <label v-if="isLLM" class="block">
