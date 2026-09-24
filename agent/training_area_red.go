@@ -16,6 +16,30 @@ const (
 	trainingAreaRecoveryCostDivisor = 2
 )
 
+// redSafariTrainingMap identifies the four outdoor Safari habitats. Their wild
+// encounters use the Safari Game capture rules and never run ordinary battles,
+// so they cannot be used as XP-training areas even though the ROM has grass
+// encounter tables for them.
+func redSafariTrainingMap(mapID uint8) bool {
+	return mapID >= safariZoneEastMap && mapID <= safariZoneCenterMap
+}
+
+// filterRedSafariTrainingObjectives keeps the generic training provider from
+// offering ordinary XP grinding during an active Safari session. The dedicated
+// Fuchsia/Safari verbs own the paid session, finite step budget and exit path.
+func filterRedSafariTrainingObjectives(obs Observation, out []Objective) []Objective {
+	if !redSafariTrainingMap(obs.Map) {
+		return out
+	}
+	kept := out[:0]
+	for _, objective := range out {
+		if objective.Kind != KindTrain {
+			kept = append(kept, objective)
+		}
+	}
+	return kept
+}
+
 func trainingAreaTargetLevel(obs Observation, known *Knowledge) int {
 	if len(obs.Party) == 0 {
 		return 0
@@ -208,6 +232,11 @@ func redTrainingAreaAssessments(m *emu.Emu, romData []byte, obs Observation, kno
 		destination, ok := skill.Place(area.Place)
 		if !ok {
 			assessment.Reason = "learned habitat has no adapter travel destination"
+			out = append(out, assessment)
+			continue
+		}
+		if redSafariTrainingMap(destination.Map) {
+			assessment.Reason = "Safari Game habitats use capture-only encounters and cannot award ordinary training XP"
 			out = append(out, assessment)
 			continue
 		}

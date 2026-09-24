@@ -194,6 +194,10 @@ func promoteToLeadStable(m *emu.Emu, slot int) error {
 func executeTrainingObjective(m *emu.Emu, romData []byte, o Objective, result ObjectiveResult) (ObjectiveResult, error) {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
+	if redSafariTrainingMap(m.Peek8(sym.CurMap)) {
+		result.Outcome = OutcomeBlocked
+		return result, fmt.Errorf("agent: %s: %w: Safari Game habitats use capture-only encounters and cannot award ordinary training XP", o, ErrTrainingInefficient)
+	}
 	slot, err := resolveTrainingPartySlot(&mem, o)
 	if err != nil {
 		return result, err

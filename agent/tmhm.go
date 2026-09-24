@@ -46,6 +46,7 @@ func offerWithTMHMEvidence(m *emu.Emu, romData []byte, obs Observation, known *K
 	}
 	out = insertPartyTrainingObjectives(obs, known, out, estimate)
 	out = dropUnviableTargetedTraining(out, estimate)
+	out = filterRedSafariTrainingObjectives(obs, out)
 	inventory := state.DecodeInventory(&mem)
 	// Bag-pressure recovery may preserve finite TMs in Player PC storage. Keep
 	// those machines visible to the objective provider even though they no
