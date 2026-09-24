@@ -23,8 +23,8 @@ const (
 // challenge. Zero values mean "unknown", never "no requirement". This keeps the
 // generic evaluator usable by future games without baking Red bosses into it.
 type ChallengeReadinessProfile struct {
-	MinimumReadiness  int      `json:"minimum_readiness,omitempty"`
-	MinimumUsableMons int      `json:"minimum_usable_mons,omitempty"`
+	MinimumReadiness   int      `json:"minimum_readiness,omitempty"`
+	MinimumUsableMons  int      `json:"minimum_usable_mons,omitempty"`
 	PreferredMoveTypes []string `json:"preferred_move_types,omitempty"`
 }
 
