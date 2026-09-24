@@ -31,6 +31,17 @@ func newRedObjectiveAdapterWithRoutePriority(m *emu.Emu, romData []byte, priorit
 	return &redObjectiveAdapter{m: m, romData: romData, routePriority: priority}
 }
 
+func init() {
+	for _, id := range gen1Games {
+		gameID := id
+		registerObjectiveAdapterFactory(gameID, func(m *emu.Emu, romData []byte, priority RoutePriority) ObjectiveGameAdapter {
+			adapter := newRedObjectiveAdapterWithRoutePriority(m, romData, priority)
+			adapter.gameID = gameID
+			return adapter
+		})
+	}
+}
+
 func redTravelCostPolicy(priority RoutePriority) skill.TravelCostPolicy {
 	if priority == RoutePriorityFastest {
 		return skill.TravelCostFastest
