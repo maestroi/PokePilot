@@ -11,10 +11,11 @@ import (
 // generic objective providers. Destinations and challenges carry semantic area
 // identity only; native map coordinates stay inside the concrete adapter.
 type ObjectiveCatalog struct {
-	Starters        []CatalogStarter
-	Destinations    []CatalogDestination
-	Challenges      []CatalogChallenge
-	LocalEncounters []CatalogEncounter
+	Starters          []CatalogStarter
+	Destinations      []CatalogDestination
+	Challenges        []CatalogChallenge
+	ChallengeProfiles []CatalogChallengeProfile
+	LocalEncounters   []CatalogEncounter
 	Shop            *CatalogShop
 	Interactables   []CatalogInteractable
 	CurrentCenter   bool
@@ -67,6 +68,11 @@ type CatalogChallenge struct {
 	Readiness ChallengeReadinessProfile
 }
 
+type CatalogChallengeProfile struct {
+	Objective  ObjectiveKey
+	Readiness  ChallengeReadinessProfile
+}
+
 type CatalogEncounter struct {
 	Species  SpeciesID
 	MinLevel uint8
@@ -101,7 +107,7 @@ type CatalogInteractable struct {
 
 func objectiveCatalogEmpty(c ObjectiveCatalog) bool {
 	return len(c.Starters) == 0 && len(c.Destinations) == 0 && len(c.Challenges) == 0 &&
-		len(c.LocalEncounters) == 0 && c.Shop == nil && len(c.Interactables) == 0 && !c.CurrentCenter
+		len(c.ChallengeProfiles) == 0 && len(c.LocalEncounters) == 0 && c.Shop == nil && len(c.Interactables) == 0 && !c.CurrentCenter
 }
 
 func objectiveCatalogForObservation(obs Observation) ObjectiveCatalog {
@@ -156,6 +162,7 @@ func normalizeObjectiveCatalog(c ObjectiveCatalog) ObjectiveCatalog {
 	c.Starters = append([]CatalogStarter(nil), c.Starters...)
 	c.Destinations = append([]CatalogDestination(nil), c.Destinations...)
 	c.Challenges = append([]CatalogChallenge(nil), c.Challenges...)
+	c.ChallengeProfiles = append([]CatalogChallengeProfile(nil), c.ChallengeProfiles...)
 	c.LocalEncounters = append([]CatalogEncounter(nil), c.LocalEncounters...)
 	c.Interactables = append([]CatalogInteractable(nil), c.Interactables...)
 	if c.Shop != nil {
@@ -176,6 +183,9 @@ func normalizeObjectiveCatalog(c ObjectiveCatalog) ObjectiveCatalog {
 		return c.Destinations[i].X < c.Destinations[j].X
 	})
 	sort.SliceStable(c.Challenges, func(i, j int) bool { return c.Challenges[i].Place < c.Challenges[j].Place })
+	sort.SliceStable(c.ChallengeProfiles, func(i, j int) bool {
+		return c.ChallengeProfiles[i].Objective.ID() < c.ChallengeProfiles[j].Objective.ID()
+	})
 	sort.SliceStable(c.LocalEncounters, func(i, j int) bool { return c.LocalEncounters[i].Species < c.LocalEncounters[j].Species })
 	if c.Shop != nil {
 		sort.SliceStable(c.Shop.Items, func(i, j int) bool { return c.Shop.Items[i].Item < c.Shop.Items[j].Item })
