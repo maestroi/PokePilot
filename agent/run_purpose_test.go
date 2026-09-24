@@ -7,8 +7,8 @@ import (
 
 func TestDebugCoveragePurposeAnnotatesNovelSurfaces(t *testing.T) {
 	obs := Observation{
-		PartyCount: 1,
-		Party:      []PartyMon{{Species: "squirtle", HP: 20, MaxHP: 20}},
+		PartyCount:   1,
+		Party:        []PartyMon{{Species: "squirtle", HP: 20, MaxHP: 20}},
 		PokedexOwned: []SpeciesID{"squirtle"},
 	}
 	cases := []struct {
