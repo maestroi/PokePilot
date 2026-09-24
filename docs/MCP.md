@@ -44,10 +44,17 @@ Treat that token as a compute-control credential: holders can start and cancel r
 | `pokepilot_get_triage` | Read the actionable grouped failures. Resolved issue groups are hidden by default; pass `include_resolved: true` to audit history. |
 | `pokepilot_investigate_failure` | Trigger the existing failure-investigation handoff |
 | `pokepilot_get_run_debug` | Read the compact finish/trace/progress/artifact-reference bundle for one run |
+| `pokepilot_get_run_recovery_audit` | Read one run's recovery-focused audit packet: full bounded recovery/failure activity (without the normal 40-event MCP compaction), attempt revisions when available, and related triage groups including resolved history |
 | `pokepilot_get_run_artifacts` | List one run's artifact names/media types/storage references, without bytes |
 | `pokepilot_get_run_artifact_content` | Fetch one small artifact's bytes as base64 (a `.state`/`.ram`/JSON checkpoint) for local reproduction, whether pokewall still holds it inline or has durabilized it to S3; artifacts too large for the MCP response cap (e.g. `run.gbrun`) still need the operator UI/replay service |
 
 MCP intentionally does **not** expose runner leases, heartbeats, finish/checkpoint uploads, worker registration, run deletion, endless runs, arbitrary HTTP, Docker, or Swarm controls.
+
+### Run recovery audits
+
+`pokepilot_get_run_recovery_audit(run_id)` is the run-centric companion to failure triage. It intentionally reads the wall's raw debug timeline before MCP's normal event compaction, then returns only recovery/failure-relevant activity plus the triage groups that reference that run. Resolved groups are included because they are required to distinguish stale pre-fix evidence from a real post-fix regression.
+
+This tool does not decide that a recovery is a bug and does not create work. Agents should collapse duplicate evidence by stable triage fingerprint first, use runner/fixed revisions to prove stale-vs-regression status, and keep expected gameplay (for example an ordinary battle loss) and infrastructure rollover separate from software-defect recovery. The repository workflow is documented in `.claude/skills/pokefarm-recovery-audit/SKILL.md`.
 
 ### Failure resolution and history
 
