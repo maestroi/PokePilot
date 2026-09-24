@@ -82,7 +82,11 @@ type Spec struct {
 	// this run: "low", "medium", or "high". Empty means the endpoint's
 	// configured default (POKEPILOT_LLM_REASONING_EFFORT, or "medium").
 	ReasoningEffort string `json:"reasoning_effort,omitempty"`
-	FPS             int    `json:"fps"`
+	// DecisionEngine optionally selects the fast typed-decision backend for
+	// this run, independently of the strategist deployment. Nil keeps the
+	// runner's environment default.
+	DecisionEngine *DecisionEngineSpec `json:"decision_engine,omitempty"`
+	FPS            int                 `json:"fps"`
 	// MaxRounds is an OPTIONAL emergency/experiment cap for an LLM run.
 	// Zero is the normal goal-driven mode: there is no hard round limit and
 	// the run ends on goal completion, a real failure, cancellation, or the

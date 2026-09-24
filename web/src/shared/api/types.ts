@@ -88,6 +88,15 @@ export interface DashboardStats {
   [key: string]: unknown
 }
 
+// Fast typed-decision backend a run selected. Endpoints and credentials stay
+// on the runner; only the choice travels with the run.
+export interface DecisionEngineSpec {
+  backend: 'off' | 'jev' | 'system-one'
+  objectives?: boolean
+  failures?: boolean
+  min_confidence?: number
+}
+
 export interface DashboardRun {
   run_id: string
   status: RunStatus
@@ -106,6 +115,7 @@ export interface DashboardRun {
   risk_tolerance?: string
   wild_encounters?: string
   reasoning_effort?: string
+  decision_engine?: DecisionEngineSpec
   seed?: number
   fps?: number
   max_rounds?: number
@@ -364,6 +374,7 @@ export interface RunSpec {
   risk_tolerance: string
   wild_encounters: string
   reasoning_effort: string
+  decision_engine?: DecisionEngineSpec
   fps: number
   max_rounds: number
   max_frames: number

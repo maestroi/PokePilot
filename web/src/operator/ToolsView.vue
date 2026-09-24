@@ -2,7 +2,7 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { ArrowRightIcon, PlayIcon } from '@heroicons/vue/20/solid'
 import { createRun, getModels } from '../shared/api/client'
-import type { ModelDeployment, RunSpec } from '../shared/api/types'
+import type { DecisionEngineSpec, ModelDeployment, RunSpec } from '../shared/api/types'
 import { GOAL_OPTIONS } from '../shared/goals'
 import { defaultGoalForPlayStyle } from '../shared/playstyle'
 import Panel from '../shared/components/Panel.vue'
@@ -43,6 +43,21 @@ const form = reactive<RunSpec>({
   endless: false,
   random_seed: false
 })
+
+// The fast typed-decision engine is chosen independently of the strategist.
+// Off sends no selection at all, so the run keeps the runner default.
+const decision = reactive<Required<DecisionEngineSpec>>({
+  backend: 'off',
+  objectives: false,
+  failures: true,
+  min_confidence: 0.65
+})
+const decisionEnabled = computed(() => decision.backend !== 'off')
+
+function decisionRequest(): DecisionEngineSpec | undefined {
+  if (!isLLM.value || !decisionEnabled.value) return undefined
+  return { ...decision }
+}
 
 const { data: modelsData } = usePollingResource(
   (signal) => getModels(signal),
@@ -106,6 +121,7 @@ async function submit(): Promise<void> {
       risk_tolerance: isLLM.value ? form.risk_tolerance : '',
       wild_encounters: isLLM.value ? form.wild_encounters : '',
       reasoning_effort: isLLM.value ? form.reasoning_effort : '',
+      decision_engine: decisionRequest(),
       recovery_profile: isLLM.value ? form.recovery_profile : 'strict'
     }
     const response = await createRun(spec)
@@ -267,6 +283,33 @@ async function submit(): Promise<void> {
             <option value="high">High</option>
           </select>
         </label>
+
+        <label v-if="isLLM" class="block">
+          <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Fast decision engine</span>
+          <select v-model="decision.backend" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400">
+            <option value="off">Off</option>
+            <option value="jev">TypeSafe Jev</option>
+            <option value="system-one">Local System-1 (typed)</option>
+          </select>
+          <span class="mt-1 block text-[11px] text-slate-600">Separate from the strategist. Jev uses the runner's TYPESAFE_API_KEY; the key is never stored on the run.</span>
+        </label>
+
+        <fieldset v-if="isLLM && decisionEnabled" class="block">
+          <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Decision engine decides</span>
+          <label class="mt-2 flex items-center gap-2 text-sm text-slate-300">
+            <input v-model="decision.objectives" type="checkbox" class="rounded border-white/10 bg-white/6" />
+            Objective selection
+          </label>
+          <label class="mt-1 flex items-center gap-2 text-sm text-slate-300">
+            <input v-model="decision.failures" type="checkbox" class="rounded border-white/10 bg-white/6" />
+            Failure recovery
+          </label>
+          <label class="mt-2 block">
+            <span class="text-[11px] text-slate-500">Min confidence</span>
+            <input v-model.number="decision.min_confidence" type="number" min="0" max="1" step="0.05" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400 font-mono" />
+          </label>
+          <span class="mt-1 block text-[11px] text-slate-600">Answers below the threshold fall back to the strategist and deterministic policy.</span>
+        </fieldset>
 
         <label class="block">
           <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Seed</span>

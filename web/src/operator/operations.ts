@@ -136,6 +136,17 @@ export function reasoningEffortLabel(run: DashboardRun): string {
   }
 }
 
+// decisionEngineLabel describes the run's fast typed-decision selection. A run
+// without one uses the runner default, which is off in the shipped stack.
+export function decisionEngineLabel(run: Pick<DashboardRun, 'decision_engine'>): string {
+  const engine = run.decision_engine
+  if (!engine || engine.backend === 'off') return 'Off'
+  const name = engine.backend === 'jev' ? 'TypeSafe Jev' : 'Local System-1'
+  const uses = [engine.objectives ? 'objectives' : '', engine.failures ? 'recovery' : ''].filter(Boolean)
+  const confidence = engine.min_confidence ? ` · ≥${engine.min_confidence.toFixed(2)}` : ''
+  return `${name} · ${uses.length ? uses.join(' + ') : 'no features'}${confidence}`
+}
+
 export function tileLabel(run: Pick<DashboardRun, 'map' | 'x' | 'y'>): string {
   const map = `0x${Number(run.map || 0).toString(16).padStart(2, '0')}`
   return `${map} (${Number(run.x || 0)},${Number(run.y || 0)})`

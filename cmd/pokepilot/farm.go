@@ -721,8 +721,16 @@ func runFarmLLM(m *emu.Emu, spec farm.Spec, policy farm.RunPolicy, starter, llmP
 	}
 	fmt.Println("planner: llm — the model picks from a menu rebuilt every round")
 
+	// The run's own typed-decision selection wins over the runner's env
+	// default. A selected backend this runner cannot serve fails the run
+	// before any emulation instead of silently running without it.
+	decision, err := agent.DecisionSettingsFor(decisionSelectionFor(spec.DecisionEngine))
+	if err != nil {
+		return "error", fmt.Sprintf("decision engine: %v", err), nil, nil, false
+	}
 	logw := &agentTraceLog{w: os.Stdout, note: m.TraceNote}
 	stats := newStatsPlannerWithRunPolicy(policy, llmProfile, reasoningEffort, spec.Inference, m, m.TraceStats, snap)
+	stats.decision = decision
 	stats.wirePlannerLogs(logw, snap)
 	benchmarkStarted := time.Now()
 	res := agent.Run(m, m.ROM(), reportingPlanner{inner: stats, snap: snap}, agent.Budget{
@@ -974,4 +982,24 @@ func farmStarterFor(name string) skill.Starter {
 		return starter
 	}
 	return skill.StarterSquirtle
+}
+
+// decisionSelectionFor maps the wire selection onto the agent's runner-local
+// resolution. A nil selection keeps the runner environment default.
+func decisionSelectionFor(spec *farm.DecisionEngineSpec) agent.DecisionSelection {
+	if spec == nil {
+		return agent.DecisionSelection{}
+	}
+	backend := farm.NormalizeDecisionBackend(spec.Backend)
+	if backend == "" {
+		// Unknown on this runner (a newer wall, say): keep the raw value so
+		// resolution fails loudly rather than falling back to the env default.
+		backend = spec.Backend
+	}
+	return agent.DecisionSelection{
+		Backend:            backend,
+		ObjectiveSelection: spec.Objectives,
+		FailureRecovery:    spec.Failures,
+		MinConfidence:      spec.MinConfidence,
+	}
 }

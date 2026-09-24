@@ -36,6 +36,29 @@ is required for ordinary builds or runs. `POKEPILOT_DECISION_TOKEN` overrides
 runtime engine state and are never written to benchmark settings, run specs, or
 typed-decision telemetry.
 
+### Per-run selection in PokeWall
+
+On the farm the backend is chosen per run, the same way the strategist
+deployment is: the PokeWall launch form has a **Fast decision engine** field
+(Off / TypeSafe Jev / Local System-1) with objective-selection and
+failure-recovery toggles and a minimum confidence. The choice travels on the
+run as `decision_engine`:
+
+```json
+{"decision_engine": {"backend": "jev", "objectives": true, "failures": true, "min_confidence": 0.65}}
+```
+
+Every runner uses the same image. `deploy/farm.yml` gives every runner
+`TYPESAFE_API_KEY` from the stack environment; nothing calls Jev unless the
+run selected it. The key never enters a run spec, catalog row, clone or
+archive. A run without `decision_engine` keeps the runner's
+`POKEPILOT_DECISION_BACKEND` default (unset = off), so older runs are
+unchanged; `"backend": "off"` disables typed decisions even when the runner
+default enables them. A Jev run leased by a runner without the key fails at
+start with `credentials are not configured` rather than silently running a
+different experiment. Clones and endless successors keep the selection, and
+the live view and archive show it.
+
 Feature switches:
 
 - `POKEPILOT_DECISION_FAILURES` defaults to on when a decision backend is
