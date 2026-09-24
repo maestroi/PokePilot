@@ -50,6 +50,10 @@ Treat that token as a compute-control credential: holders can start and cancel r
 
 MCP intentionally does **not** expose runner leases, heartbeats, finish/checkpoint uploads, worker registration, run deletion, endless runs, arbitrary HTTP, Docker, or Swarm controls.
 
+### Diagnosing one run
+
+To answer "what went wrong in run X", start from `pokepilot_get_run_debug(run_id)`: the last `finish.trace_tail` line is the full wrapped error chain, and `run.issue` shows whether the fingerprint is already tracked. The repository workflow (evidence order, tracing the chain into code, report shape) is documented in `.claude/skills/pokefarm-run-diagnose/SKILL.md`; it diagnoses only and hands fixes to `pokefarm-triage`.
+
 ### Run recovery audits
 
 `pokepilot_get_run_recovery_audit(run_id)` is the run-centric companion to failure triage. It intentionally reads the wall's raw debug timeline before MCP's normal event compaction, then returns only recovery/failure-relevant activity plus the triage groups that reference that run. Resolved groups are included because they are required to distinguish stale pre-fix evidence from a real post-fix regression.
