@@ -195,6 +195,10 @@ func newMCPHandler(wallBase, replayBase, token string) http.Handler {
 		Description: "Get the compact persisted debug bundle for one run: finish reason, trace tail, progress deltas, latest planner decision, timeline markers and artifact references. Large artifact bytes are never embedded.",
 	}, control.getRunDebug)
 	mcp.AddTool(server, &mcp.Tool{
+		Name:        "pokepilot_get_run_recovery_audit",
+		Description: "Get a recovery-focused audit packet for one run. Returns the wall's full bounded recovery/failure activity history without the normal 40-event MCP timeline truncation, annotates recovery events with attempt runner revisions when available, and includes related triage groups including resolved history for stale/duplicate/regression analysis.",
+	}, control.getRunRecoveryAudit)
+	mcp.AddTool(server, &mcp.Tool{
 		Name:        "pokepilot_get_run_artifacts",
 		Description: "List one run's artifacts and durable storage references without downloading artifact bytes. Use this to discover run.gbrun recordings and diagnostic evidence.",
 	}, control.getRunArtifacts)
@@ -398,6 +402,187 @@ func (c *mcpControl) getRunDebug(ctx context.Context, _ *mcp.CallToolRequest, in
 	}
 	compactEvents(out, "timeline")
 	return nil, out, nil
+}
+
+func (c *mcpControl) getRunRecoveryAudit(ctx context.Context, _ *mcp.CallToolRequest, in mcpRunInput) (*mcp.CallToolResult, map[string]any, error) {
+	id := strings.TrimSpace(in.RunID)
+	if id == "" {
+		return nil, nil, fmt.Errorf("run_id is required")
+	}
+
+	// Fetch the wall's raw debug bundle directly. Do not call getRunDebug here:
+	// that MCP tool intentionally keeps only the newest mcpMaxEvents timeline
+	// entries, while a recovery audit must be able to see an older recovery that
+	// is still present in pokewall's bounded activity history.
+	var debug map[string]any
+	if err := c.requestJSON(ctx, http.MethodGet, "/v1/runs/"+url.PathEscape(id)+"/debug", nil, &debug); err != nil {
+		return nil, nil, err
+	}
+	recoveries, kindCounts, recoveryAttempts := recoveryAuditEvents(debug)
+
+	// Triage is the durable failure/issue view. Include resolved groups here on
+	// purpose: a recovery audit needs them to decide that an old event is stale
+	// or duplicate rather than creating the same repair again.
+	var triage []map[string]any
+	if err := c.requestJSON(ctx, http.MethodGet, "/v1/triage", nil, &triage); err != nil {
+		return nil, nil, err
+	}
+	related := make([]map[string]any, 0)
+	for _, group := range triage {
+		if !triageGroupMentionsRun(group, id) {
+			continue
+		}
+		triageGroupActionable(group)
+		related = append(related, group)
+	}
+
+	out := map[string]any{
+		"run_id":                 id,
+		"recovery_events":        recoveries,
+		"recovery_event_count":   len(recoveries),
+		"recovery_attempt_count": recoveryAttempts,
+		"recovery_kinds":         kindCounts,
+		"related_triage":         related,
+		"related_triage_count":   len(related),
+	}
+	if timeline, ok := debug["timeline"].([]any); ok {
+		out["source_timeline_event_count"] = len(timeline)
+	}
+	if run, ok := debug["run"].(map[string]any); ok {
+		out["run"] = compactRecoveryAuditRecord(run, []string{
+			"run_id", "status", "planner", "starter", "goal", "play_style", "risk_tolerance",
+			"wild_encounters", "llm_profile", "reasoning_effort", "seed", "attempts",
+			"error_attempts", "loss_recoveries", "recovery_profile", "recovery_attempts",
+			"recovery_badges", "recovery_events", "recovery_maps", "reason", "detail",
+			"frame", "map", "x", "y", "queued_at", "ended_at", "resume_from_run_id",
+		})
+	}
+	if finish, ok := debug["finish"].(map[string]any); ok {
+		out["finish"] = compactRecoveryAuditRecord(finish, []string{
+			"attempt", "reason", "detail", "runner_version", "seed_burn", "progress_early", "progress_final",
+		})
+	}
+	if summary, ok := debug["summary"]; ok {
+		out["summary"] = summary
+	}
+	return nil, out, nil
+}
+
+func recoveryAuditEvents(debug map[string]any) ([]map[string]any, map[string]int, int) {
+	timeline, _ := debug["timeline"].([]any)
+	fallbackVersion := ""
+	if finish, ok := debug["finish"].(map[string]any); ok {
+		fallbackVersion, _ = finish["runner_version"].(string)
+	}
+
+	attemptVersions := map[int]string{}
+	currentVersion := ""
+	kindCounts := map[string]int{}
+	attempts := map[int]struct{}{}
+	out := make([]map[string]any, 0)
+	for _, raw := range timeline {
+		event, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		attempt := mcpJSONInt(event["attempt"])
+		source, _ := event["source"].(string)
+		kind, _ := event["kind"].(string)
+		source = strings.ToLower(strings.TrimSpace(source))
+		kind = strings.ToLower(strings.TrimSpace(kind))
+
+		if source == "system" && kind == "attempt_start" {
+			detail, _ := event["detail"].(string)
+			version := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(detail), "runner "))
+			if version != "" {
+				currentVersion = version
+				if attempt > 0 {
+					attemptVersions[attempt] = version
+				}
+			}
+		}
+
+		isRecovery := source == "recovery" || strings.Contains(kind, "recovery") || kind == "failure" || kind == "retry" || kind == "circuit"
+		if !isRecovery {
+			continue
+		}
+		copy := make(map[string]any, len(event)+1)
+		for key, value := range event {
+			copy[key] = value
+		}
+		version := attemptVersions[attempt]
+		if version == "" {
+			version = currentVersion
+		}
+		if version == "" {
+			version = fallbackVersion
+		}
+		if version != "" {
+			copy["runner_version"] = version
+		}
+		out = append(out, copy)
+		if kind == "" {
+			kind = "event"
+		}
+		kindCounts[kind]++
+		if attempt > 0 {
+			attempts[attempt] = struct{}{}
+		}
+	}
+	return out, kindCounts, len(attempts)
+}
+
+func compactRecoveryAuditRecord(in map[string]any, keys []string) map[string]any {
+	out := make(map[string]any, len(keys))
+	for _, key := range keys {
+		if value, ok := in[key]; ok {
+			out[key] = value
+		}
+	}
+	return out
+}
+
+func mcpJSONInt(value any) int {
+	switch v := value.(type) {
+	case float64:
+		return int(v)
+	case float32:
+		return int(v)
+	case int:
+		return v
+	case int64:
+		return int(v)
+	case json.Number:
+		n, _ := strconv.Atoi(v.String())
+		return n
+	default:
+		return 0
+	}
+}
+
+func triageGroupMentionsRun(group map[string]any, runID string) bool {
+	for _, key := range []string{"run_ids", "runs"} {
+		switch values := group[key].(type) {
+		case []any:
+			for _, value := range values {
+				if s, ok := value.(string); ok && s == runID {
+					return true
+				}
+			}
+		case []string:
+			for _, value := range values {
+				if value == runID {
+					return true
+				}
+			}
+		}
+	}
+	for _, key := range []string{"run_id", "latest_run_id"} {
+		if value, _ := group[key].(string); value == runID {
+			return true
+		}
+	}
+	return false
 }
 
 // compactEvents keeps the newest mcpMaxEvents entries of the event list at
