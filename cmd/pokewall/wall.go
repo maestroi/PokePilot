@@ -1779,6 +1779,7 @@ func (w *Wall) enqueueNextLocked(prev *Tile) {
 		Goal:            farm.GoalFrom(prev.Goal),
 		Dest:            prev.Dest,
 		PlayStyle:       prev.PlayStyle,
+		Purpose:         prev.Purpose,
 		RiskTolerance:   prev.RiskTolerance,
 		WildEncounters:  prev.WildEncounters,
 		LLMProfile:      prev.LLMProfile,
