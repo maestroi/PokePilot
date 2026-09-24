@@ -159,6 +159,12 @@ func writeAndUploadPeriodic(client *farm.Client, runID string, attempt int, dir 
 	if dir == "" || s.Name == "" {
 		return
 	}
+	// A periodic snapshot with no bytes is not a snapshot. Writing one would
+	// hand the uploader a state it can only publish as an unusable resume point.
+	if len(s.State) == 0 {
+		log.Printf("farm: %s: periodic sample %s carries no state bytes; skipping", runID, s.Name)
+		return
+	}
 	latest := latestObjectiveState(dir)
 	meta, _ := json.Marshal(periodicMeta{
 		Frame:                     s.Frame,
@@ -176,11 +182,11 @@ func writeAndUploadPeriodic(client *farm.Client, runID string, attempt int, dir 
 	base := strings.TrimSuffix(s.Name, ".state")
 	statePath := filepath.Join(dir, s.Name)
 	metaPath := filepath.Join(dir, base+".json")
-	if err := os.WriteFile(statePath, s.State, 0o644); err != nil {
+	if err := writeFileAtomic(statePath, s.State); err != nil {
 		log.Printf("farm: %s: write periodic state: %v", runID, err)
 		return
 	}
-	if err := os.WriteFile(metaPath, meta, 0o644); err != nil {
+	if err := writeFileAtomic(metaPath, meta); err != nil {
 		log.Printf("farm: %s: write periodic meta: %v", runID, err)
 		return
 	}
@@ -219,6 +225,15 @@ func uploadNewObjectivePairs(client *farm.Client, runID string, attempt int, dir
 		}
 		kn, ok := knowledge[st]
 		if !ok {
+			continue
+		}
+		// States are written through a rename, so a state file at its final
+		// path is always complete. A zero-byte one is a leftover from a build
+		// that truncated in place, and publishing it would replace the wall's
+		// usable checkpoint with one no run can load.
+		if info, statErr := os.Stat(filepath.Join(dir, st)); statErr != nil || info.Size() == 0 {
+			uploaded[st] = struct{}{}
+			log.Printf("farm: %s: checkpoint %s has no state bytes; refusing to publish it", runID, st)
 			continue
 		}
 		arts, err := artifactsForFiles([]string{kn, st}, dir)
@@ -304,11 +319,12 @@ func promoteBadgeCheckpointFiles(dir, stateName, knowledgeName string) (badge in
 	}
 	// Write the knowledge first and state last. A reader only considers a
 	// checkpoint once its .state exists, so a crash cannot expose a state
-	// whose paired knowledge was never fully copied.
-	if err := os.WriteFile(filepath.Join(dir, majorKnowledge), knowledgeData, 0o644); err != nil {
+	// whose paired knowledge was never fully copied — and both are renamed into
+	// place so a scan never reads a half-copied state.
+	if err := writeFileAtomic(filepath.Join(dir, majorKnowledge), knowledgeData); err != nil {
 		return 0, "", "", err
 	}
-	if err := os.WriteFile(filepath.Join(dir, majorState), stateData, 0o644); err != nil {
+	if err := writeFileAtomic(filepath.Join(dir, majorState), stateData); err != nil {
 		_ = os.Remove(filepath.Join(dir, majorKnowledge))
 		return 0, "", "", err
 	}

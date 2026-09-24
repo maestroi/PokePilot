@@ -124,7 +124,7 @@ func (w *Wall) storeControlPlaneCheckpoint(report farm.CheckpointReport) error {
 	if cp == nil {
 		return errors.New("PostgreSQL control plane is not configured")
 	}
-	if err := farm.ValidateFinishArtifacts(farm.FinishReport{Artifacts: report.Artifacts}); err != nil {
+	if err := farm.ValidateCheckpointReport(report); err != nil {
 		return fmt.Errorf("%w: %v", errCheckpointArtifactInvalid, err)
 	}
 
@@ -284,7 +284,7 @@ func (cp *controlPlane) materializeStoredArtifact(stored storedCheckpointArtifac
 		art := stored.meta
 		art.Store, art.Bucket, art.ObjectKey, art.Size = "", "", "", 0
 		art.Data = append([]byte(nil), stored.inline...)
-		if err := farm.ValidateFinishArtifacts(farm.FinishReport{Artifacts: []farm.Artifact{art}}); err != nil {
+		if err := farm.ValidateCheckpointState(art); err != nil {
 			return farm.Artifact{}, err
 		}
 		return art, nil
@@ -318,7 +318,11 @@ func (cp *controlPlane) materializeStoredArtifact(stored storedCheckpointArtifac
 		return farm.Artifact{}, closeErr
 	}
 	art := farm.Artifact{Name: stored.meta.Name, MediaType: stored.meta.MediaType, SHA256: stored.meta.SHA256, Data: data}
-	if err := farm.ValidateFinishArtifacts(farm.FinishReport{Artifacts: []farm.Artifact{art}}); err != nil {
+	// A stored state that is no longer a complete save (an older wall, or an
+	// object truncated by a mid-write upload) must not be offered as a resume
+	// checkpoint: the caller skips this candidate and tries an older pair, so
+	// the run keeps its progress instead of being restarted from a cartridge.
+	if err := farm.ValidateCheckpointState(art); err != nil {
 		return farm.Artifact{}, fmt.Errorf("checkpoint object %s: %w", stored.meta.ObjectKey, err)
 	}
 	return art, nil
@@ -399,9 +403,19 @@ func (cp *controlPlane) latestStoredPair(arts map[string]storedCheckpointArtifac
 	return farm.ResumeCheckpoint{}, errStoredCheckpointNotFound
 }
 
+// latestStoredLineageObjective returns the deepest usable ordinary checkpoint
+// in a run's lineage. The frame embedded in the checkpoint name is cumulative
+// emulator progress, so it is the only comparable ordering across attempts:
+// picking the newest attempt instead would let an attempt that booted fresh —
+// and therefore stored only early checkpoints before dying — outrank the deep
+// progress an earlier attempt actually reached. Attempts are still searched
+// newest-first so an equally deep candidate prefers the most recent one.
 func (w *Wall) latestStoredLineageObjective(startID string) (farm.ResumeCheckpoint, error) {
 	cp := controlPlaneFor(w)
 	seen := map[string]struct{}{}
+	var best farm.ResumeCheckpoint
+	bestFrame := uint64(0)
+	found := false
 	for id := startID; id != ""; {
 		if _, duplicate := seen[id]; duplicate {
 			break
@@ -417,7 +431,10 @@ func (w *Wall) latestStoredLineageObjective(startID string) (farm.ResumeCheckpoi
 		for attempt := through; attempt >= 1; attempt-- {
 			candidate, err := cp.latestStoredObjective(id, attempt)
 			if err == nil {
-				return candidate, nil
+				if frame := objectiveFrame(candidate.State.Name); !found || frame > bestFrame {
+					best, bestFrame, found = candidate, frame, true
+				}
+				continue
 			}
 			if !errors.Is(err, errStoredCheckpointNotFound) {
 				return farm.ResumeCheckpoint{}, err
@@ -425,7 +442,10 @@ func (w *Wall) latestStoredLineageObjective(startID string) (farm.ResumeCheckpoi
 		}
 		id = parent
 	}
-	return farm.ResumeCheckpoint{}, errStoredCheckpointNotFound
+	if !found {
+		return farm.ResumeCheckpoint{}, errStoredCheckpointNotFound
+	}
+	return best, nil
 }
 
 func (w *Wall) latestStoredLineageMajor(startID string) (farm.ResumeCheckpoint, error) {

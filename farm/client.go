@@ -142,9 +142,11 @@ func (c *Client) Finish(ctx context.Context, report FinishReport) error {
 }
 
 // Checkpoint uploads one in-flight checkpoint. It accepts plain artifact
-// bytes and never receives an emulator handle.
+// bytes and never receives an emulator handle. A checkpoint whose state payload
+// is empty is rejected before it leaves the runner: publishing one is how a
+// mid-write read becomes a durable resume point that restarts the run.
 func (c *Client) Checkpoint(ctx context.Context, report CheckpointReport) error {
-	if err := ValidateFinishArtifacts(FinishReport{Artifacts: report.Artifacts}); err != nil {
+	if err := ValidateCheckpointReport(report); err != nil {
 		return err
 	}
 	body, err := json.Marshal(report)

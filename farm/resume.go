@@ -58,5 +58,8 @@ func (c *Client) ResumeCheckpoint(ctx context.Context, runID string, attempt int
 	if err := ValidateFinishArtifacts(FinishReport{Artifacts: arts}); err != nil {
 		return nil, fmt.Errorf("farm: resume checkpoint: invalid artifact: %w", err)
 	}
+	if err := ValidateCheckpointState(cp.State); err != nil {
+		return nil, fmt.Errorf("farm: resume checkpoint: invalid artifact: %w", err)
+	}
 	return &cp, nil
 }
