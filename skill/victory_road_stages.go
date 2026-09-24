@@ -54,7 +54,7 @@ func victoryRoadClearBoundary(mem *state.Mem, facts state.StoryFacts) bool {
 // completion event is already projected as route_22_rival_resolved, so a
 // checkpoint after the battle resumes at the Route 23 stage without replay.
 func VictoryRoadResolveRival(m *emu.Emu, romData []byte, policy MovePolicy) error {
-	mem, facts, err := victoryRoadStageState(m, policy)
+	_, facts, err := victoryRoadStageState(m, policy)
 	if err != nil {
 		return err
 	}
@@ -106,7 +106,7 @@ func victoryRoadReachEntryFromCurrentState(m *emu.Emu, romData []byte, policy Mo
 // seven badge checks, ending at the Victory Road 1F entry. Its semantic
 // postcondition is the existing route_23_badge_checks fact (7/7).
 func VictoryRoadReachCave(m *emu.Emu, romData []byte, policy MovePolicy) error {
-	_, facts, err := victoryRoadStageState(m, policy)
+	mem, facts, err := victoryRoadStageState(m, policy)
 	if err != nil {
 		return err
 	}
