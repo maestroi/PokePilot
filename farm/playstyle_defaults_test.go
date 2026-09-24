@@ -13,7 +13,7 @@ func TestDefaultGoalForPlayStyle(t *testing.T) {
 	}{
 		{style: "speedrun", want: DefaultEliteFourGoal},
 		{style: "adventure", want: DefaultEliteFourGoal},
-		{style: "completionist", want: DefaultDexGoal},
+		{style: "completionist", want: DefaultEliteFourGoal},
 		{style: "team_builder", want: DefaultEliteFourGoal},
 		{style: "team-builder", want: DefaultEliteFourGoal},
 		{style: "", want: ""},
@@ -28,8 +28,8 @@ func TestDefaultGoalForPlayStyle(t *testing.T) {
 func TestApplyPlayStyleDefaultGoal(t *testing.T) {
 	completionist := Spec{RunID: "default-completionist", Planner: "llm", PlayStyle: "completionist"}
 	ApplyPlayStyleDefaultGoal(&completionist)
-	if completionist.Goal.String() != DefaultDexGoal {
-		t.Fatalf("completionist default goal = %q, want %q", completionist.Goal.String(), DefaultDexGoal)
+	if completionist.Goal.String() != DefaultEliteFourGoal {
+		t.Fatalf("completionist default goal = %q, want %q", completionist.Goal.String(), DefaultEliteFourGoal)
 	}
 
 	explicit := Spec{RunID: "explicit-goal", Planner: "llm", PlayStyle: "completionist", Goal: GoalFrom("badges:3")}
@@ -72,8 +72,8 @@ func TestSpecDecodeKeepsWireFaithful(t *testing.T) {
 		t.Fatalf("decode invented a goal %q", completionist.Goal.String())
 	}
 	ApplyPlayStyleDefaultGoal(&completionist)
-	if completionist.Goal.String() != DefaultDexGoal {
-		t.Fatalf("resolved completionist goal = %q, want %q", completionist.Goal.String(), DefaultDexGoal)
+	if completionist.Goal.String() != DefaultEliteFourGoal {
+		t.Fatalf("resolved completionist goal = %q, want %q", completionist.Goal.String(), DefaultEliteFourGoal)
 	}
 
 	var explicit Spec
