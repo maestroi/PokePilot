@@ -308,6 +308,22 @@ func TrainWithOptions(m *emu.Emu, romData []byte, targetLevel int, policy MovePo
 			res.Retreated = true
 			return res, nil
 		}
+		// A map script can switch random battles off for the cell the player
+		// stands on (wStatusFlags4 BIT_NO_BATTLES: Mt. Moon B2F's fossil
+		// area, Pokemon Tower 5F's purified zone), and NewBattle then skips
+		// the encounter roll. The ROM's grass rule cannot see that, so the
+		// flag read after arriving is the fact: MEASURED on
+		// run-1hk2olbnt05ae, a pair inside the fossil area walked 854 legs
+		// without a single roll. Drop the cell and re-pick.
+		if m.Peek8(sym.StatusFlags4)&noBattlesBit != 0 {
+			x, y := playerXY(m)
+			grass = withoutCell(grass, cell{int(x), int(y)})
+			if na, nb, ok := repickGrindPair(m, grass, grid, a, b); ok && legs+1 <= maxLegs {
+				a, b, next = na, nb, nb
+				legs++
+				continue
+			}
+		}
 		if legs+1 > maxLegs {
 			species := 0
 			if sp, serr := WildGrass(romData, now.Map); serr == nil {
@@ -953,6 +969,21 @@ func repickGrindPair(m *emu.Emu, grass []cell, grid *world.Grid, a, b cell) (cel
 		return a, b, false
 	}
 	return na, nb, true
+}
+
+// noBattlesBit is BIT_NO_BATTLES in wStatusFlags4
+// (pokered/constants/ram_constants.asm): NewBattle skips the wild roll while
+// it is set (home/overworld.asm).
+const noBattlesBit = 1 << 4
+
+func withoutCell(cells []cell, drop cell) []cell {
+	out := make([]cell, 0, len(cells))
+	for _, c := range cells {
+		if c != drop {
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
 // battleInFlight reports whether a battle is in progress in RAM: the same
