@@ -54,7 +54,7 @@ func victoryRoadClearBoundary(mem *state.Mem, facts state.StoryFacts) bool {
 // completion event is already projected as route_22_rival_resolved, so a
 // checkpoint after the battle resumes at the Route 23 stage without replay.
 func VictoryRoadResolveRival(m *emu.Emu, romData []byte, policy MovePolicy) error {
-	_, facts, err := victoryRoadStageState(m, policy)
+	mem, facts, err := victoryRoadStageState(m, policy)
 	if err != nil {
 		return err
 	}
@@ -116,6 +116,9 @@ func VictoryRoadReachCave(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if !facts.Route22RivalResolved {
 		return gameruntime.NewProgressionPrerequisiteMissing("route_22_rival_resolved")
 	}
+	if !FieldCapabilityFor(&mem, FieldSurf).Usable {
+		return gameruntime.NewFieldCapabilityPrerequisiteMissing("surf")
+	}
 	if err := victoryRoadReachEntryFromCurrentState(m, romData, policy); err != nil {
 		return fmt.Errorf("skill: VictoryRoadReachCave: %w", err)
 	}
@@ -141,6 +144,16 @@ func VictoryRoadClearCave(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	}
 	if !facts.Route23BadgeChecksComplete {
 		return gameruntime.NewProgressionPrerequisiteMissing("route_23_badge_checks")
+	}
+	missingField := make([]gameruntime.CapabilityID, 0, 2)
+	if !FieldCapabilityFor(&mem, FieldSurf).Usable {
+		missingField = append(missingField, "surf")
+	}
+	if !FieldCapabilityFor(&mem, FieldStrength).Usable {
+		missingField = append(missingField, "strength")
+	}
+	if len(missingField) != 0 {
+		return gameruntime.NewFieldCapabilityPrerequisiteMissing(missingField...)
 	}
 	if !inVictoryRoad(m.Peek8(sym.CurMap)) {
 		if err := victoryRoadReachEntryFromCurrentState(m, romData, policy); err != nil {
