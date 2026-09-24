@@ -84,7 +84,6 @@ func TestMediaTimelineRejectsRunMismatch(t *testing.T) {
 	}
 }
 
-
 func TestMediaTimelineAttemptUsesMatchingArtifactGeneration(t *testing.T) {
 	artifact, err := farm.NewMediaTimelineArtifact(farm.MediaTimeline{
 		Run:     farm.MediaRunSummary{RunID: "run-resume"},
