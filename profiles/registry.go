@@ -10,6 +10,7 @@ import (
 	blueprofile "github.com/maestroi/pokepilot/blue/profile"
 	"github.com/maestroi/pokepilot/game"
 	redprofile "github.com/maestroi/pokepilot/red/profile"
+	yellowprofile "github.com/maestroi/pokepilot/yellow/profile"
 )
 
 var (
@@ -23,6 +24,7 @@ func Builtin() (*game.Registry, error) {
 		builtin, builtinErr = game.NewRegistry(
 			redprofile.New(),
 			blueprofile.New(),
+			yellowprofile.New(),
 		)
 	})
 	return builtin, builtinErr
