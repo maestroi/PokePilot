@@ -39,10 +39,10 @@ const (
 // evidence needed to distinguish otherwise identical causes. The native typed
 // error remains outside this record for adapter-owned diagnostics/forensics.
 type Failure struct {
-	Phase       FailurePhase `json:"phase"`
-	Class       FailureClass `json:"class"`
-	Cause       string       `json:"cause"`
-	Recoverable bool         `json:"recoverable"`
+	Phase         FailurePhase   `json:"phase"`
+	Class         FailureClass   `json:"class"`
+	Cause         string         `json:"cause"`
+	Recoverable   bool           `json:"recoverable"`
 	Context       []string       `json:"context,omitempty"`
 	Prerequisites []Prerequisite `json:"prerequisites,omitempty"`
 }
