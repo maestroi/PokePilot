@@ -77,6 +77,10 @@ const maxWarpApproachAttempts = 4
 // Traverse will cycle through before giving up on the edge.
 const maxWarpCandidates = 4
 
+// maxConnectionCrossingCandidates bounds how many border tiles of one
+// connection band Traverse tries after a held push fails to cross.
+const maxConnectionCrossingCandidates = 4
+
 func Traverse(m *emu.Emu, romData []byte, e world.Edge) error {
 	return TraverseAvoiding(m, romData, e, nil)
 }
@@ -107,77 +111,103 @@ func TraverseAvoiding(m *emu.Emu, romData []byte, e world.Edge, extraBlocked map
 	}
 
 	if e.Kind == world.EdgeConnection {
-		push, err := walkToConnectionEdge(m, h, grid, e)
-		if err != nil && errors.Is(err, ErrLegUnwalkable) {
-			// Land-only collision may split the selected source band behind Cut,
-			// Surf, Strength, or a forced-movement tile. Ask the same local
-			// capability planner used by GoTo to reach this exact connection band,
-			// then retry ordinary edge traversal from the resulting live state.
-			if fieldErr := approachConnectionWithFieldPath(m, romData, e); fieldErr == nil {
-				if refreshed, refreshErr := liveMapGrid(m, romData, h); refreshErr == nil {
-					grid = refreshed
-				}
-				push, err = walkToConnectionEdge(m, h, grid, e)
+		// Border tiles whose held push never crossed are per-tile live
+		// evidence, so the next tile of the same band is tried before the
+		// edge is reported unwalkable.
+		deadCrossings := map[[2]int]bool{}
+		var lastDead error
+		banCrossing := func() {
+			x, y := playerXY(m)
+			deadCrossings[[2]int{int(x), int(y)}] = true
+			// A Surf mount on the failed tile changes which grid applies.
+			if refreshed, refreshErr := liveMapGrid(m, romData, h); refreshErr == nil {
+				grid = refreshed
 			}
 		}
-		if err != nil {
-			return err
-		}
-		btn, ok := buttonFor(push)
-		if !ok {
-			return fmt.Errorf("skill: Traverse: invalid push step %s on %02x->%02x", push, e.From, e.To)
-		}
-		if err := pushAcrossEdge(m, e, btn); err != nil {
-			// A connection edge that never crosses within crossBudget while
-			// simply held is a strong live signal that a water tile blocked
-			// the walk, not a wall: game input blocked by a wall reports
-			// itself as immediate lack of movement, not a stalled crossing.
-			// Ask the ROM itself whether Surf now clears it — it reads the
-			// live tile in front of the player, so it is authoritative about
-			// water even when the crossing is a shore that begins exactly on
-			// the OTHER map's side of the seam (Pallet Town's dry south
-			// border into Route 21's water), which neither map's own
-			// pre-crossing land/water grid can see. MEASURED on
-			// run-18lk6m6f27hl732ikt5b86rzvs round 3: AcquireCinnabarSecretKey
-			// held south at Pallet (3,17) for the full budget without ever
-			// entering Route 21.
-			if errors.Is(err, errDidNotCross) {
-				if m.Peek8(sym.WalkBikeSurfState) != fieldSurfingState {
-					if mountErr := mountSurfFacingPush(m, romData, push); mountErr == nil {
-						if err2 := pushAcrossEdge(m, e, btn); err2 == nil {
-							return finishArrival(m, e)
-						}
-					} else {
-						// The ROM itself declined to Surf here (validateFieldActionContext
-						// only rejects "already surfing", so a decline this far in means
-						// IsNextTileShoreOrWater said no): this exact border tile is not a
-						// crossing point at all, e.g. shoreline scenery rather than open
-						// water. That is per-tile evidence, not evidence about the edge
-						// itself — Route 21's near shore has open water a few columns over
-						// from Pallet's blocked (3,17). Ban this tile like ErrLegUnwalkable
-						// so GoTo's existing band search picks the next candidate column
-						// instead of failing the whole edge.
-						return fmt.Errorf("skill: Traverse: %s: %v: %w", edgeName(e), err, ErrLegUnwalkable)
+		for attempt := 0; attempt < maxConnectionCrossingCandidates; attempt++ {
+			push, err := walkToConnectionEdge(m, h, grid, e, deadCrossings)
+			if err != nil && errors.Is(err, ErrLegUnwalkable) {
+				// Land-only collision may split the selected source band behind Cut,
+				// Surf, Strength, or a forced-movement tile. Ask the same local
+				// capability planner used by GoTo to reach this exact connection band,
+				// then retry ordinary edge traversal from the resulting live state.
+				if fieldErr := approachConnectionWithFieldPath(m, romData, e); fieldErr == nil {
+					if refreshed, refreshErr := liveMapGrid(m, romData, h); refreshErr == nil {
+						grid = refreshed
 					}
+					push, err = walkToConnectionEdge(m, h, grid, e, deadCrossings)
 				}
-				// Already surfing and the held push still never crossed: the same
-				// per-tile evidence as the not-surfing/declined-Surf case above, just
-				// without a Surf decline to read it from. MEASURED on
-				// run-1biaubd9xooqm round 2 (Route 20 (99,3) -> Route 19 east): the
-				// connection's band is geometrically valid across the map's full
-				// height (offset +36 keeps every row in bounds on Route 19), and
-				// crossing at a different row of the SAME edge — (99,10) — fires
-				// immediately, landing on Route 19 at (10,46). Row 3 alone never
-				// budges the player's position across the full 180-frame hold: live
-				// proof this exact border tile is a dead spot, not that the whole
-				// edge is uncrossable. Ban it like ErrLegUnwalkable so GoTo's
-				// existing band search retries a different tile of this connection
-				// instead of terminating the journey on one bad row.
-				return fmt.Errorf("skill: Traverse: %s: %v: %w", edgeName(e), err, ErrLegUnwalkable)
 			}
-			return err
+			if err != nil {
+				return err
+			}
+			btn, ok := buttonFor(push)
+			if !ok {
+				return fmt.Errorf("skill: Traverse: invalid push step %s on %02x->%02x", push, e.From, e.To)
+			}
+			if err := pushAcrossEdge(m, e, btn); err != nil {
+				// A connection edge that never crosses within crossBudget while
+				// simply held is a strong live signal that a water tile blocked
+				// the walk, not a wall: game input blocked by a wall reports
+				// itself as immediate lack of movement, not a stalled crossing.
+				// Ask the ROM itself whether Surf now clears it — it reads the
+				// live tile in front of the player, so it is authoritative about
+				// water even when the crossing is a shore that begins exactly on
+				// the OTHER map's side of the seam (Pallet Town's dry south
+				// border into Route 21's water), which neither map's own
+				// pre-crossing land/water grid can see. MEASURED on
+				// run-18lk6m6f27hl732ikt5b86rzvs round 3: AcquireCinnabarSecretKey
+				// held south at Pallet (3,17) for the full budget without ever
+				// entering Route 21.
+				if errors.Is(err, errDidNotCross) {
+					if m.Peek8(sym.WalkBikeSurfState) != fieldSurfingState {
+						if mountErr := mountSurfFacingPush(m, romData, push); mountErr == nil {
+							if err2 := pushAcrossEdge(m, e, btn); err2 == nil {
+								return finishArrival(m, e)
+							}
+						} else {
+							// The ROM itself declined to Surf here (validateFieldActionContext
+							// only rejects "already surfing", so a decline this far in means
+							// IsNextTileShoreOrWater said no): this exact border tile is not a
+							// crossing point at all, e.g. shoreline scenery rather than open
+							// water. That is per-tile evidence, not evidence about the edge
+							// itself — Route 21's near shore has open water a few columns over
+							// from Pallet's blocked (3,17). Ban this tile like ErrLegUnwalkable
+							// so GoTo's existing band search picks the next candidate column
+							// instead of failing the whole edge.
+							lastDead = fmt.Errorf("skill: Traverse: %s: %v: %w", edgeName(e), err, ErrLegUnwalkable)
+							banCrossing()
+							continue
+						}
+					}
+					// Already surfing and the held push still never crossed: the same
+					// per-tile evidence as the not-surfing/declined-Surf case above, just
+					// without a Surf decline to read it from. MEASURED on
+					// run-1biaubd9xooqm round 2 (Route 20 (99,3) -> Route 19 east): the
+					// connection's band is geometrically valid across the map's full
+					// height (offset +36 keeps every row in bounds on Route 19), and
+					// crossing at a different row of the SAME edge — (99,10) — fires
+					// immediately, landing on Route 19 at (10,46). Row 3 alone never
+					// budges the player's position across the full 180-frame hold: live
+					// proof this exact border tile is a dead spot, not that the whole
+					// edge is uncrossable. Ban it like ErrLegUnwalkable so GoTo's
+					// existing band search retries a different tile of this connection
+					// instead of terminating the journey on one bad row.
+					//
+					// The ban lives here rather than in GoTo: GoTo keys its ban by where the
+					// leg STARTED, so a player already standing on the dead tile banned the
+					// whole connection from that tile and never tried the next row
+					// (run-2gaqkunigwgd3c31gy74b09do: surfing at Route 20 (99,3), band 2..16
+					// the only reachable one, every re-plan exhausted).
+					lastDead = fmt.Errorf("skill: Traverse: %s: %v: %w", edgeName(e), err, ErrLegUnwalkable)
+					banCrossing()
+					continue
+				}
+				return err
+			}
+			return finishArrival(m, e)
 		}
-		return finishArrival(m, e)
+		return lastDead
 	}
 	if e.Kind != world.EdgeWarp {
 		return fmt.Errorf("skill: Traverse: unknown edge kind %d on %02x->%02x", e.Kind, e.From, e.To)
@@ -337,7 +367,7 @@ func untriedOrthogonalApproach(g *world.Grid, wx, wy int, tried map[[2]int]bool)
 // every re-plan, not just the path to it: an NPC standing in a one-tile gap
 // can make the nearest edge tile unreachable while another one on the same
 // edge is fine.
-func walkToConnectionEdge(m *emu.Emu, h rom.MapHeader, grid *world.Grid, e world.Edge) (world.Step, error) {
+func walkToConnectionEdge(m *emu.Emu, h rom.MapHeader, grid *world.Grid, e world.Edge, excluded map[[2]int]bool) (world.Step, error) {
 	var unwalkable error
 	err := walkAroundAvoidingObjects(func() error { return movementInterruption(m) }, m, h,
 		func(blocked map[[2]int]bool) ([]world.Step, error) {
@@ -356,7 +386,7 @@ func walkToConnectionEdge(m *emu.Emu, h rom.MapHeader, grid *world.Grid, e world
 			// other warp tile from the path exactly like warpTarget already
 			// does for a warp approach.
 			blocked = warpAvoidance(h, int(x), int(y), blocked)
-			tx, ty, err := edgeTargetForConnection(grid, e, int(x), int(y), blocked)
+			tx, ty, err := edgeTargetForConnectionExcluding(grid, e, int(x), int(y), blocked, excluded)
 			if err != nil {
 				// Type it as ErrLegUnwalkable like the FindPath failure below:
 				// Route 2's ledge makes the north edge unreachable from the
