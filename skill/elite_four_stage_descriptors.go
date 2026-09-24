@@ -202,6 +202,9 @@ func runLeagueStageByID(m *emu.Emu, romData []byte, policy MovePolicy, id gameru
 }
 
 func runLeagueStage(m *emu.Emu, romData []byte, policy MovePolicy, stage leagueStageDescriptor) error {
+	if policy == nil {
+		return fmt.Errorf("skill: %s: nil policy", stage.Operation)
+	}
 	facts := currentLeagueFacts(m)
 	if facts.MainStoryComplete || stage.Done(facts) {
 		return nil
