@@ -77,9 +77,41 @@ const maxWarpApproachAttempts = 4
 // Traverse will cycle through before giving up on the edge.
 const maxWarpCandidates = 4
 
-// maxConnectionCrossingCandidates bounds how many border tiles of one
-// connection band Traverse tries after a held push fails to cross.
-const maxConnectionCrossingCandidates = 4
+// connectionCrossingCandidateBudget returns a finite upper bound for unique
+// border tiles Traverse can try on this connection. A failed held push is
+// tile-scoped evidence, so stopping after an arbitrary small constant can
+// reject a valid wide connection band before its live crossing is reached.
+func connectionCrossingCandidateBudget(g *world.Grid, e world.Edge) int {
+	if g == nil {
+		return 1
+	}
+	limit := 0
+	switch e.Dir {
+	case 0, 1:
+		limit = g.Width
+	case 2, 3:
+		limit = g.Height
+	default:
+		return 1
+	}
+	if limit < 1 {
+		return 1
+	}
+	start, end, scoped := world.ConnectionBand(e)
+	if !scoped {
+		return limit
+	}
+	if start < 0 {
+		start = 0
+	}
+	if end >= limit {
+		end = limit - 1
+	}
+	if end < start {
+		return 1
+	}
+	return end - start + 1
+}
 
 func Traverse(m *emu.Emu, romData []byte, e world.Edge) error {
 	return TraverseAvoiding(m, romData, e, nil)
@@ -124,7 +156,7 @@ func TraverseAvoiding(m *emu.Emu, romData []byte, e world.Edge, extraBlocked map
 				grid = refreshed
 			}
 		}
-		for attempt := 0; attempt < maxConnectionCrossingCandidates; attempt++ {
+		for attempt, budget := 0, connectionCrossingCandidateBudget(grid, e); attempt < budget; attempt++ {
 			push, err := walkToConnectionEdge(m, h, grid, e, deadCrossings)
 			if err != nil && errors.Is(err, ErrLegUnwalkable) {
 				// Land-only collision may split the selected source band behind Cut,
