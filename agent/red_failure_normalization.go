@@ -25,13 +25,27 @@ func normalizeRedFailure(phase gameruntime.FailurePhase, err error, final Observ
 		out = OutcomeControllerUncertain
 	}
 	cause, context := failureCauseFor(err)
-	return gameruntime.Failure{
+	failure := gameruntime.Failure{
 		Phase:       phase,
 		Class:       failureClassForOutcome(out),
 		Cause:       string(cause),
 		Recoverable: actionFor(out) == actionReplan,
 		Context:     context,
 	}
+	var prerequisite *gameruntime.PrerequisiteMissingError
+	if errors.As(err, &prerequisite) {
+		failure.Prerequisites = append([]gameruntime.Prerequisite(nil), prerequisite.Missing...)
+	} else if cause == "route_prerequisite_missing" {
+		// Route errors predate PrerequisiteMissingError. Project their typed
+		// capability context into the shared prerequisite field so generic
+		// recovery consumes one model for route and story blockers.
+		for _, raw := range context {
+			if raw != "" {
+				failure.Prerequisites = append(failure.Prerequisites, gameruntime.CapabilityPrerequisite(gameruntime.CapabilityID(raw)))
+			}
+		}
+	}
+	return failure
 }
 
 // classifyObjectiveOutcome remains as a Red-adapter helper because focused
@@ -120,7 +134,9 @@ func classifyObjectiveOutcome(_ Objective, err error, final Observation) Outcome
 
 	var blocked *skill.ErrBlocked
 	var gate *skill.ErrRouteGateClosed
-	knownBlockage := errors.Is(err, world.ErrNoPath) ||
+	var semanticPrerequisite *gameruntime.PrerequisiteMissingError
+	knownBlockage := errors.As(err, &semanticPrerequisite) ||
+		errors.Is(err, world.ErrNoPath) ||
 		errors.Is(err, world.ErrNoRoute) ||
 		errors.Is(err, skill.ErrLegUnwalkable) ||
 		errors.Is(err, skill.ErrNoDialogue) ||
@@ -168,6 +184,24 @@ func failureCauseFor(err error) (FailureCauseID, []string) {
 	// the capability it is waiting on was never actually the problem.
 	if errors.Is(err, skill.ErrReplanExhausted) {
 		return "route_replan_exhausted", nil
+	}
+	var semanticPrerequisite *gameruntime.PrerequisiteMissingError
+	if errors.As(err, &semanticPrerequisite) {
+		context := make([]string, 0, len(semanticPrerequisite.Missing))
+		hasProgress := false
+		for _, prerequisite := range semanticPrerequisite.Missing {
+			switch {
+			case prerequisite.Progress != "":
+				hasProgress = true
+				context = append(context, string(prerequisite.Progress))
+			case prerequisite.Capability != "":
+				context = append(context, string(prerequisite.Capability))
+			}
+		}
+		if hasProgress {
+			return "progression_prerequisite_missing", context
+		}
+		return "route_prerequisite_missing", context
 	}
 	var transitionExecution *world.TransitionExecutionError
 	if errors.As(err, &transitionExecution) {
