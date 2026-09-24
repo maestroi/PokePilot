@@ -891,8 +891,8 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 			// ErrLegUnwalkable's per-tile ban. ErrLegBouncesBack wraps
 			// ErrLegUnwalkable, so falling through would silently undo the
 			// map-scoped ban and reintroduce the gate thrash.
-			bounce, tile := legFailureBanScope(err)
-			if bounce {
+			edgeScoped, tile := legFailureBanScope(err)
+			if edgeScoped {
 				forced := newLegFromMap(e, cur)
 				if !deadEnds[forced] {
 					if _, _, ok := safeForcedBanWithDeadEnds(routeGraph, cur, dest, x, y, blockedHere, forced, deadEnds, prereqs); ok {
@@ -942,12 +942,15 @@ func emptyCrossMapRouteError(cur, x, y uint8, dest Destination) error {
 }
 
 // legFailureBanScope decides how GoTo records a Traverse failure.
-// Bounce-backs are map-scoped only; ordinary unwalkable legs are tile-scoped.
-// A bounce must never also count as a tile ban: ErrLegBouncesBack wraps
-// ErrLegUnwalkable, and degrading would rediscover the same forced descent
-// from another tile of the same map.
-func legFailureBanScope(err error) (bounce, tile bool) {
-	if errors.Is(err, ErrLegBouncesBack) {
+// Bounce-backs and fully exhausted connection bands are edge-scoped: their
+// evidence applies to the selected edge/band from this map, not merely the
+// final approach tile. Ordinary unwalkable legs remain tile-scoped.
+//
+// Both stronger sentinels unwrap to ErrLegUnwalkable, so they must be checked
+// first or they would degrade to a tile ban and be rediscovered on the next
+// replan from a different tile.
+func legFailureBanScope(err error) (edge, tile bool) {
+	if errors.Is(err, ErrLegBouncesBack) || errors.Is(err, ErrConnectionBandExhausted) {
 		return true, false
 	}
 	if errors.Is(err, ErrLegUnwalkable) {
