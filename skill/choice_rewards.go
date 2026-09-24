@@ -33,13 +33,15 @@ var choiceRewards = []ChoiceReward{
 }
 
 func init() {
-	// These destinations are interaction-owned. Place resolves them so a
-	// semantic reward objective can route there, but PlaceNames does not expose
-	// them as generic exploration targets that stop before consuming the reward.
+	// These destinations are interaction-owned. Route to the ACTOR rather than
+	// one hard-coded standing tile: multi-entrance interiors can land the player
+	// in different walkable components, and any reachable side of the actor is
+	// a valid staging point. DestinationInteraction lets routing choose among
+	// those sides while receiveChoiceReward still owns the actual YES choice.
+	// PlaceNames deliberately does not expose these as generic exploration
+	// targets that stop before consuming the reward.
 	for _, reward := range choiceRewards {
-		interactionPlaces[reward.Place] = Destination{
-			Map: reward.Map, X: reward.StandX, Y: reward.StandY,
-		}
+		interactionPlaces[reward.Place] = InteractionDestination(reward.Map, reward.X, reward.Y)
 	}
 }
 
