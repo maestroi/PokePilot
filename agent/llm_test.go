@@ -360,20 +360,19 @@ func TestLLMPlannerSchemaStaysArgumentFreePerKind(t *testing.T) {
 	}
 }
 
-// TestLLMPlannerSchemaReplyWithArgs: a schema-shaped reply carries the
-// choice AND the argument; the argument overrides the offered objective's
-// default and comes back on the returned objective.
-func TestLLMPlannerSchemaReplyWithArgs(t *testing.T) {
+// TestLLMPlannerSchemaReplyCannotOverrideOfferedArgs pins the planner's
+// strongest safety invariant: choice selects one complete semantic objective.
+// Legacy/fallback JSON may still carry old argument fields, but those fields
+// cannot mutate the already viability-checked menu entry.
+func TestLLMPlannerSchemaReplyCannotOverrideOfferedArgs(t *testing.T) {
 	srv := startModelServer(t, `{"choices":[{"message":{"content":"{\"choice\":3,\"level\":12}"}}]}`, nil)
-	offered := llmOffered()
 
-	got, err := llmPlanner(srv).Next(llmObs(), offered)
-	if err != nil {
-		t.Fatalf("Next: %v", err)
+	got, err := llmPlanner(srv).Next(llmObs(), llmOffered())
+	if err == nil {
+		t.Fatalf("Next = %s, want rejection for level override", got)
 	}
-	want := agent.Objective{Kind: agent.KindTrain, Level: 12}
-	if got != want {
-		t.Fatalf("Next = %s, want %s (level override applied)", got, want)
+	if !strings.Contains(err.Error(), "cannot change offered training target") {
+		t.Fatalf("Next error = %v, want offered-target rejection", err)
 	}
 }
 
@@ -542,7 +541,7 @@ func TestLLMPlannerFinishReason(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			content := "2"
 			if tc.wantIndex == 2 {
-				content = `{"choice":3,"level":12}`
+				content = `{"choice":3}`
 			}
 			body := fmt.Sprintf(`{"choices":[{"message":{"content":%q}`, content)
 			if tc.reason != "" {
@@ -565,7 +564,7 @@ func TestLLMPlannerFinishReason(t *testing.T) {
 				t.Fatalf("Next: %v", err)
 			}
 			if tc.wantIndex == 2 {
-				want := agent.Objective{Kind: agent.KindTrain, Level: 12}
+				want := llmOffered()[2]
 				if got != want {
 					t.Fatalf("Next = %s, want %s", got, want)
 				}
@@ -783,7 +782,7 @@ func TestLLMPlannerGoalInSystemPrompt(t *testing.T) {
 // how its reply is read.
 func TestLLMPlannerGoalDoesNotChangeParsing(t *testing.T) {
 	for _, goal := range []string{"", "Earn the Boulder Badge."} {
-		srv := startModelServer(t, `{"choices":[{"message":{"content":"{\"choice\":3,\"level\":12}"}}]}`, nil)
+		srv := startModelServer(t, `{"choices":[{"message":{"content":"{\"choice\":3}"}}]}`, nil)
 		p := llmPlanner(srv)
 		p.Goal = goal
 
@@ -791,7 +790,7 @@ func TestLLMPlannerGoalDoesNotChangeParsing(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Next (goal %q): %v", goal, err)
 		}
-		want := agent.Objective{Kind: agent.KindTrain, Level: 12}
+		want := llmOffered()[2]
 		if got != want {
 			t.Fatalf("Next (goal %q) = %s, want %s", goal, got, want)
 		}
