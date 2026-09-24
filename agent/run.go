@@ -168,6 +168,14 @@ runLoop:
 				fmt.Fprintf(budget.Log, "round %d: deterministic combat preparation readiness=%d/%d losses=%d -> %s\n",
 					round, state.Current, state.Target, state.Losses, obj)
 			}
+		} else if prep, readiness, ok := proactiveChallengePreparationObjective(last, now, offer.Readiness, known); ok {
+			obj = prep
+			engine.planning.request("challenge_preparation")
+			if budget.Log != nil {
+				fmt.Fprintf(budget.Log, "round %d: proactive challenge preparation action=%s readiness=%d/%d losses=%d challenge=%s -> %s\n",
+					round, readiness.Action, readiness.CurrentReadiness, readiness.TargetReadiness,
+					readiness.Losses, readiness.Objective.Objective(), obj)
+			}
 		} else if recovery, capabilities, ok := engine.failures.prerequisiteRecovery(last, now); ok {
 			obj = recovery
 			engine.planning.request("prerequisite_recovery")
