@@ -7,6 +7,7 @@ import (
 	blueprofile "github.com/maestroi/pokepilot/blue/profile"
 	"github.com/maestroi/pokepilot/game"
 	redprofile "github.com/maestroi/pokepilot/red/profile"
+	yellowprofile "github.com/maestroi/pokepilot/yellow/profile"
 )
 
 func TestBuiltinProfilesSatisfyContract(t *testing.T) {
@@ -15,8 +16,8 @@ func TestBuiltinProfilesSatisfyContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	profiles := registry.Profiles()
-	if len(profiles) != 2 {
-		t.Fatalf("built-in profile count = %d, want 2", len(profiles))
+	if len(profiles) != 3 {
+		t.Fatalf("built-in profile count = %d, want 3", len(profiles))
 	}
 	seen := map[game.GameID]bool{}
 	for _, p := range profiles {
@@ -25,21 +26,28 @@ func TestBuiltinProfilesSatisfyContract(t *testing.T) {
 		}
 		seen[p.ID()] = true
 	}
-	if !seen[redprofile.GameID] || !seen[blueprofile.GameID] {
-		t.Fatalf("built-in profile ids = %v, want both %s and %s", seen, redprofile.GameID, blueprofile.GameID)
+	for _, want := range []game.GameID{
+		redprofile.GameID,
+		blueprofile.GameID,
+		yellowprofile.GameID,
+	} {
+		if !seen[want] {
+			t.Fatalf("built-in profile ids = %v, missing %s", seen, want)
+		}
 	}
 }
 
-// TestEachGen1ImageResolvesToItsOwnProfile is the guard the registry exists
-// for: two Gen I images sharing one engine must still each resolve to exactly
-// one profile, because every other layer dispatches on that id.
-func TestEachGen1ImageResolvesToItsOwnProfile(t *testing.T) {
+// TestEachRegisteredImageResolvesToItsOwnProfile is the guard the registry
+// exists for: nearby Gen-I images must still each resolve to exactly one
+// profile because every other layer dispatches on that id.
+func TestEachRegisteredImageResolvesToItsOwnProfile(t *testing.T) {
 	for _, tc := range []struct {
 		env, fallback string
 		want          game.GameID
 	}{
 		{"POKEMON_RED_ROM", "roms/pokemon_red.gb", redprofile.GameID},
 		{"POKEMON_BLUE_ROM", "roms/pokemon_blue.gb", blueprofile.GameID},
+		{"POKEMON_YELLOW_ROM", "roms/pokemon_yellow.gb", yellowprofile.GameID},
 	} {
 		t.Run(string(tc.want), func(t *testing.T) {
 			path := os.Getenv(tc.env)
@@ -71,5 +79,17 @@ func TestDetectUnsupportedROMIncludesFingerprint(t *testing.T) {
 	}
 	if info.Title != "POKEMON RED" || info.SHA1 == "" || info.SHA256 == "" {
 		t.Fatalf("ROM identity = %#v", info)
+	}
+}
+
+func TestGen1ProfilesShareSemanticBootBoundary(t *testing.T) {
+	for _, p := range []game.GameProfile{
+		redprofile.New(),
+		blueprofile.New(),
+		yellowprofile.New(),
+	} {
+		if _, ok := p.(game.BootProfile); !ok {
+			t.Errorf("%s@%s does not implement game.BootProfile", p.ID(), p.Revision())
+		}
 	}
 }
