@@ -62,6 +62,7 @@ type Tile struct {
 	// and leased Spec carries its own policy instead of relying on
 	// process-global state keyed by run id.
 	PlayStyle       string
+	Purpose         string
 	RiskTolerance   string
 	WildEncounters  string
 	LLMProfile      string
@@ -173,6 +174,7 @@ type tileRow struct {
 	Goal               string               `json:"goal,omitempty"`
 	GoalProvided       bool                 `json:"goal_provided,omitempty"`
 	PlayStyle          string               `json:"play_style,omitempty"`
+	Purpose            string               `json:"purpose,omitempty"`
 	RiskTolerance      string               `json:"risk_tolerance,omitempty"`
 	WildEncounters     string               `json:"wild_encounters,omitempty"`
 	LLMProfile         string               `json:"llm_profile,omitempty"`
@@ -285,6 +287,7 @@ type persistedTile struct {
 	Goal               string               `json:"goal,omitempty"`
 	GoalProvided       bool                 `json:"goal_provided,omitempty"`
 	PlayStyle          string               `json:"play_style,omitempty"`
+	Purpose            string               `json:"purpose,omitempty"`
 	RiskTolerance      string               `json:"risk_tolerance,omitempty"`
 	WildEncounters     string               `json:"wild_encounters,omitempty"`
 	LLMProfile         string               `json:"llm_profile,omitempty"`
@@ -365,6 +368,7 @@ func (w *Wall) persistedStateLocked() persistedState {
 			Goal:               t.Goal,
 			GoalProvided:       t.GoalProvided,
 			PlayStyle:          t.PlayStyle,
+			Purpose:            t.Purpose,
 			RiskTolerance:      t.RiskTolerance,
 			WildEncounters:     t.WildEncounters,
 			LLMProfile:         t.LLMProfile,
@@ -681,6 +685,7 @@ func (w *Wall) applySpec(runID string, spec farm.Spec) {
 	t.Dest = spec.Dest
 	t.Goal, t.GoalProvided = farm.HeldGoal(spec)
 	t.PlayStyle = spec.PlayStyle
+	t.Purpose = spec.Purpose
 	t.RiskTolerance = spec.RiskTolerance
 	t.WildEncounters = spec.WildEncounters
 	t.LLMProfile = spec.LLMProfile
@@ -780,6 +785,7 @@ func (w *Wall) handleLease(res http.ResponseWriter, req *http.Request) {
 		Starter:         t.Starter,
 		Dest:            t.Dest,
 		PlayStyle:       t.PlayStyle,
+		Purpose:         t.Purpose,
 		RiskTolerance:   t.RiskTolerance,
 		WildEncounters:  t.WildEncounters,
 		LLMProfile:      t.LLMProfile,
