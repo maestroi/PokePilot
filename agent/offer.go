@@ -21,6 +21,7 @@ type Knowledge struct {
 	Talked       map[LocationID]map[[2]uint8]bool
 	Adjacency    map[LocationID][]LocationID
 	Requirements []Requirement
+	TrainingAreas map[LocationID]TrainingAreaKnowledge
 
 	// Build is this process's running binary identity (e.g. a git SHA), set
 	// by the caller. Empty means unknown, which leaves failure tallies
@@ -54,6 +55,7 @@ func NewKnowledge(topology any) *Knowledge {
 		Adjacency:       resolved.Adjacency,
 		Requirements:    []Requirement{},
 		Failures:        map[string]Failure{},
+		TrainingAreas:   map[LocationID]TrainingAreaKnowledge{},
 		nativeLocations: resolved.NativeLocations,
 	}
 }
@@ -436,6 +438,14 @@ func (k *Knowledge) restore(mem memoryFile) {
 		k.HeardRequirement(r.Text, r.Place, r.X, r.Y)
 		if len(k.Requirements) > 0 && k.Requirements[0].Text == r.Text {
 			k.Requirements[0].Times = r.Times
+		}
+	}
+	if k.TrainingAreas == nil {
+		k.TrainingAreas = map[LocationID]TrainingAreaKnowledge{}
+	}
+	for _, area := range mem.TrainingAreas {
+		if area.Location != "" && area.Place != "" && area.MaxLevel > 0 {
+			k.TrainingAreas[area.Location] = area
 		}
 	}
 }
