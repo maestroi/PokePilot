@@ -68,6 +68,14 @@ var ErrLegUnwalkable = errors.New("skill: leg is not walkable from here")
 // the whole map's edge (legFromMap) rather than just the one tile (legAt).
 var ErrLegBouncesBack = fmt.Errorf("skill: leg settles back on its own origin map: %w", ErrLegUnwalkable)
 
+// ErrConnectionBandExhausted reports stronger evidence than a single
+// ErrLegUnwalkable: Traverse tried every reachable candidate tile in one
+// component-scoped connection band and none crossed. That disproves this
+// specific band for the current journey, not merely the final approach tile.
+// It still unwraps to ErrLegUnwalkable for compatibility with generic
+// navigation-error classification.
+var ErrConnectionBandExhausted = fmt.Errorf("skill: connection band exhausted: %w", ErrLegUnwalkable)
+
 // maxWarpApproachAttempts bounds the retry-from-a-different-side loop below
 // to one try per orthogonal neighbour of the target warp tile.
 const maxWarpApproachAttempts = 4
@@ -239,7 +247,10 @@ func TraverseAvoiding(m *emu.Emu, romData []byte, e world.Edge, extraBlocked map
 			}
 			return finishArrival(m, e)
 		}
-		return lastDead
+		if lastDead != nil {
+			return fmt.Errorf("%w: %v", ErrConnectionBandExhausted, lastDead)
+		}
+		return ErrConnectionBandExhausted
 	}
 	if e.Kind != world.EdgeWarp {
 		return fmt.Errorf("skill: Traverse: unknown edge kind %d on %02x->%02x", e.Kind, e.From, e.To)
