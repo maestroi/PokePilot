@@ -238,14 +238,39 @@ func descendVictoryRoad3FHole(m *emu.Emu, romData []byte, policy MovePolicy) err
 	return fmt.Errorf("skill: Victory Road 3F hole did not land on 2F within %d frames", victoryRoadWarpBudget)
 }
 
+// victoryRoadLadderEdge is the ROM warp on floor from that leads to floor to.
+func victoryRoadLadderEdge(romData []byte, from, to uint8) (world.Edge, error) {
+	h, err := rom.ParseMap(romData, from)
+	if err != nil {
+		return world.Edge{}, fmt.Errorf("skill: Victory Road parse map %#02x: %w", from, err)
+	}
+	for _, w := range h.Warps {
+		if w.DestMap == to {
+			return world.Edge{Kind: world.EdgeWarp, From: from, To: to, WarpX: w.X, WarpY: w.Y}, nil
+		}
+	}
+	return world.Edge{}, fmt.Errorf("skill: Victory Road map %#02x has no warp to %#02x", from, to)
+}
+
 func clearVictoryRoad(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	for phase := 0; phase < 10; phase++ {
 		var mem state.Mem
 		state.Snapshot(m, &mem)
 		switch mem.U8(sym.CurMap) {
 		case victoryRoad1FMap:
-			if _, err := SolveVictoryRoadBoulderSection(m, romData, policy, VictoryRoad1FSwitch); err != nil {
-				return fmt.Errorf("skill: Victory Road 1F switch: %w", err)
+			// VictoryRoad2F_Script resets EVENT_VICTORY_ROAD_1_BOULDER_ON_SWITCH
+			// on every 2F entry, so after coming back down the ladder the player
+			// stands past the barrier with the switch unset and the reloaded
+			// boulders out of reach. The switch only matters while the ladder
+			// is unreachable.
+			ladder, err := victoryRoadLadderEdge(romData, victoryRoad1FMap, victoryRoad2FMap)
+			if err != nil {
+				return err
+			}
+			if !warpEdgeReachable(m, romData, ladder) {
+				if _, err := SolveVictoryRoadBoulderSection(m, romData, policy, VictoryRoad1FSwitch); err != nil {
+					return fmt.Errorf("skill: Victory Road 1F switch: %w", err)
+				}
 			}
 			if _, err := TravelFlee(m, romData, victoryRoad2FEntry, policy, victoryRoadTravelBattles); err != nil {
 				return fmt.Errorf("skill: Victory Road reach 2F: %w", err)

@@ -930,3 +930,22 @@ func mountSurfFacingPush(m *emu.Emu, romData []byte, push world.Step) error {
 	}
 	return nil
 }
+
+// warpEdgeReachable reports whether the player can walk onto edge's warp on
+// the live grid right now.
+func warpEdgeReachable(m *emu.Emu, romData []byte, edge world.Edge) bool {
+	if m.Peek8(sym.CurMap) != edge.From {
+		return false
+	}
+	h, err := rom.ParseMap(romData, edge.From)
+	if err != nil {
+		return false
+	}
+	grid, err := liveMapGrid(m, romData, h)
+	if err != nil {
+		return false
+	}
+	x, y := playerXY(m)
+	_, _, _, _, err = warpTarget(h, edge, grid, int(x), int(y), spriteBlockers(m), nil, romData)
+	return err == nil
+}

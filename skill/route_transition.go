@@ -359,7 +359,9 @@ func (x *redRouteTransitionExecutor) executeVictoryRoadStrength(edge world.Edge)
 	spec, _ := VictoryRoadBoulderSpec(section)
 	var before state.Mem
 	state.Snapshot(x.m, &before)
-	if boulderPuzzleEventComplete(&before, spec) {
+	// The switch only gates the warp; 2F entry resets the 1F switch event
+	// while leaving the player past the barrier on the way back down.
+	if boulderPuzzleEventComplete(&before, spec) || warpEdgeReachable(x.m, x.romData, edge) {
 		return world.TransitionExecutionResult{}, nil
 	}
 	if x.policy == nil {

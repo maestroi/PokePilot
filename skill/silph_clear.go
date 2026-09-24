@@ -150,7 +150,7 @@ func reachSilphRivalRoom(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if _, err := TravelFlee(m, romData, landing, policy, silphStoryTravelBattles); err != nil {
 		return fmt.Errorf("skill: ClearSilphCo: reach Silph Co 3F: %w", err)
 	}
-	reachable := func() bool { return silphWarpReachable(m, romData, silph3FTo7FEdge) }
+	reachable := func() bool { return warpEdgeReachable(m, romData, silph3FTo7FEdge) }
 	if !reachable() {
 		// The corridor door must open before the rival-room door is approachable
 		// from the stair landing. Its positive postcondition is reachability of
@@ -237,23 +237,6 @@ func unlockSilphDoor(m *emu.Emu, romData []byte, blockX, blockY int, policy Move
 		last = errors.New("no Card Key cell accepted the interaction")
 	}
 	return fmt.Errorf("door block (%d,%d) did not open a route: %w", blockX, blockY, last)
-}
-
-func silphWarpReachable(m *emu.Emu, romData []byte, edge world.Edge) bool {
-	if m.Peek8(sym.CurMap) != edge.From {
-		return false
-	}
-	h, err := rom.ParseMap(romData, edge.From)
-	if err != nil {
-		return false
-	}
-	grid, err := liveMapGrid(m, romData, h)
-	if err != nil {
-		return false
-	}
-	x, y := playerXY(m)
-	_, _, _, _, err = warpTarget(h, edge, grid, int(x), int(y), spriteBlockers(m), nil, romData)
-	return err == nil
 }
 
 func silphTileReachable(m *emu.Emu, romData []byte, mapID, tx, ty uint8) bool {
