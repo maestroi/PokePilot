@@ -183,7 +183,7 @@ type runFailurePolicy struct {
 	lastRetreatLevel     uint8
 	escalated            map[string]bool
 	quarantine           map[string]failureQuarantineEntry
-	pendingPrerequisites []CapabilityID
+	pendingPrerequisites []Prerequisite
 }
 
 func newRunFailurePolicy(maxConsecutive int) *runFailurePolicy {
@@ -209,6 +209,7 @@ func (f *runFailurePolicy) recoverable(obj Objective, result ObjectiveResult, st
 	trainProgress := failureCauseIs(result, "train_progress_shortfall")
 	huntMiss := failureCauseIs(result, "catch_hunt_exhausted") || failureCauseIs(result, "fishing_hunt_exhausted")
 	routePrerequisite := failureCauseIs(result, "route_prerequisite_missing")
+	progressionPrerequisite := failureCauseIs(result, "progression_prerequisite_missing")
 	trainingInefficient := failureCauseIs(result, "training_inefficient_area")
 	combatDefeat := failureCauseIs(result, failureCauseCombatDefeat)
 
@@ -242,7 +243,7 @@ func (f *runFailurePolicy) recoverable(obj Objective, result ObjectiveResult, st
 	// the failure budget untouched. Genuine repeated navigation/controller
 	// failures still use the bounded policy below, and watchdog/round/frame
 	// budgets remain the outer guard if no prerequisite can be satisfied.
-	if routePrerequisite || trainingInefficient {
+	if routePrerequisite || progressionPrerequisite || trainingInefficient {
 		// A local training-area rejection is the same class of planning
 		// boundary as a missing route prerequisite: the executor deliberately
 		// sent no gameplay input because this area cannot satisfy the requested
@@ -330,5 +331,16 @@ func (f *runFailurePolicy) success() {
 	f.consecutive = 0
 	f.lastFailKey = ""
 	f.retreatStreak, f.lastRetreatLevel = 0, 0
-	f.pendingPrerequisites = nil
+	// Route-capability recovery is tied to the failed journey and is cleared by
+	// any successful objective, matching historical behavior. Progression
+	// prerequisites survive the prerequisite objective itself so the next round
+	// can re-observe, prune the fact that just became true, and repair another
+	// missing story fact from the same structured failure.
+	kept := f.pendingPrerequisites[:0]
+	for _, prerequisite := range f.pendingPrerequisites {
+		if prerequisite.Progress != "" {
+			kept = append(kept, prerequisite)
+		}
+	}
+	f.pendingPrerequisites = kept
 }
