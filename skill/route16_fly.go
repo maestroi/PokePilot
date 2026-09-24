@@ -1,10 +1,10 @@
 package skill
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
+	gameruntime "github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/state"
 )
 
@@ -50,9 +50,9 @@ func init() {
 //
 // The transaction is checkpoint-safe. A save that already has HM02 skips the
 // Route 16 handoff, while a save that already has usable Fly returns
-// immediately. When the current roster cannot learn Fly, the shared field
-// roster repair may withdraw or catch a compatible Pokemon while preserving
-// every already-unlocked core traversal move.
+// immediately. Roster/PC/catch policy is deliberately outside this skill: when
+// Cut or Fly is not usable it reports a structured field-capability prerequisite
+// and lets the objective runtime perform generic repair before retrying.
 func PrepareFlyFastTravel(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if policy == nil {
 		return fmt.Errorf("skill: PrepareFlyFastTravel: nil move policy")
@@ -81,10 +81,10 @@ func PrepareFlyFastTravel(m *emu.Emu, romData []byte, policy MovePolicy) error {
 			return fmt.Errorf("%w: FLY requires Route 16 Snorlax to be clearable (Poke Flute) before the one-way trip to the Fly house", ErrFieldMovePrerequisite)
 		}
 		// The secret house is reached through Route 16's upper Cut passage.
-		// Repair Cut before committing to the detour so a resumed run whose
-		// carrier changed does not reach Celadon and then fail at the tree.
-		if err := RepairUtilityFieldCapability(m, romData, policy, FieldCut); err != nil {
-			return fmt.Errorf("skill: PrepareFlyFastTravel: prepare Cut for Route 16: %w", err)
+		// Declare the semantic requirement; generic prerequisite recovery owns
+		// teaching, PC withdrawal, or catch recovery.
+		if cut := FieldCapabilityFor(&mem, FieldCut); !cut.Usable {
+			return gameruntime.NewFieldCapabilityPrerequisiteMissing("cut")
 		}
 		if err := EnsureBagSpaceFor(m, fieldHM02Item); err != nil {
 			return fmt.Errorf("skill: PrepareFlyFastTravel: make room for HM02: %w", err)
@@ -126,46 +126,13 @@ func PrepareFlyFastTravel(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		}
 	}
 
-	// Preserve every mandatory traversal capability the save has already
-	// unlocked while adding Fly. At the normal Celadon point this is Cut+Fly;
-	// resumed/later saves may also need Surf or Strength retained.
-	state.Snapshot(m, &mem)
-	required := append(OwnedCoreProgressionFieldMoves(romData, &mem), FieldFly)
-	err := RepairFieldCapabilities(m, romData, policy, required)
-	if errors.Is(err, ErrFieldRosterNoBalls) {
-		// A run with no compatible party/box member may need one nearby wild
-		// carrier. Stock the minimum progression reserve and retry the same
-		// deterministic roster repair instead of abandoning Fly permanently.
-		if _, stockErr := EnsureProgressionPokeBalls(m, romData, policy); stockErr != nil {
-			return fmt.Errorf("skill: PrepareFlyFastTravel: stock Poke Balls for Fly carrier: %w", stockErr)
-		}
-		err = RepairFieldCapabilities(m, romData, policy, required)
-	}
-	if err != nil {
-		return fmt.Errorf("skill: PrepareFlyFastTravel: prepare Fly carrier: %w", err)
-	}
-
 	state.Snapshot(m, &mem)
 	fly = FieldCapabilityFor(&mem, FieldFly)
 	if !fly.Usable {
-		return fmt.Errorf("skill: PrepareFlyFastTravel: final Fly invariant failed: badge=%v HM=%v learned=%v slot=%d",
-			fly.BadgeOwned, fly.HMOwned, fly.Learned, fly.PartySlot)
-	}
-
-	// End on the same recovered Celadon checkpoint this transaction started
-	// from. RepairFieldCapabilities may have visited a PC or caught a wild Fly
-	// carrier, and the HM handoff itself ends indoors on Route 16. Travel now
-	// reconsiders Fly after leaving an interior, so this return leg also proves
-	// the newly prepared shortcut is usable immediately.
-	center, ok := Place("celadon pokemon center")
-	if !ok {
-		return fmt.Errorf("skill: PrepareFlyFastTravel: Celadon Pokemon Center destination is not registered")
-	}
-	if _, err := TravelFlee(m, romData, center, policy, flyPreparationEngagements); err != nil {
-		return fmt.Errorf("skill: PrepareFlyFastTravel: return to Celadon: %w", err)
-	}
-	if err := Heal(m); err != nil {
-		return fmt.Errorf("skill: PrepareFlyFastTravel: heal after Fly setup: %w", err)
+		// HM02 acquisition and roster preparation are separate transactions.
+		// Returning this typed prerequisite lets generic recovery preserve the
+		// other required traversal moves while it makes Fly usable.
+		return gameruntime.NewFieldCapabilityPrerequisiteMissing("fly")
 	}
 	return nil
 }
