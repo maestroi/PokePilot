@@ -11,7 +11,6 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/maestroi/pokepilot/farm"
@@ -414,17 +413,20 @@ func writeScaledPNG(filename string, src image.Image) error {
 	if err != nil {
 		return fmt.Errorf("create broadcast overlay: %w", err)
 	}
-	defer file.Close()
 	if err := png.Encode(file, dst); err != nil {
+		_ = file.Close()
 		return fmt.Errorf("encode broadcast overlay: %w", err)
 	}
-	return file.Close()
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("close broadcast overlay: %w", err)
+	}
+	return nil
 }
 
 func wrapBroadcastText(value string, width int) []string {
 	value = strings.Join(strings.Fields(value), " ")
 	if value == "" {
-		return []string{"—"}
+		return []string{"-"}
 	}
 	if width < 8 {
 		width = 8
@@ -454,7 +456,7 @@ func wrapBroadcastText(value string, width int) []string {
 		lines = append(lines, line)
 	}
 	if len(lines) == 3 && strings.Join(lines, " ") != value {
-		lines[2] = clipBroadcastText(lines[2], width-1) + "…"
+		lines[2] = clipBroadcastText(lines[2], width-1) + "..."
 	}
 	return lines
 }
@@ -465,9 +467,9 @@ func clipBroadcastText(value string, width int) string {
 		return value
 	}
 	if width == 1 {
-		return "…"
+		return "."
 	}
-	return strings.TrimSpace(value[:width-1]) + "…"
+	return strings.TrimSpace(value[:width-1]) + "..."
 }
 
 func shortBroadcastID(value string) string {
@@ -476,15 +478,4 @@ func shortBroadcastID(value string) string {
 		return value
 	}
 	return value[:18]
-}
-
-// stableEventOrder is useful when callers construct a timeline directly in
-// tests or migration tooling instead of decoding a normalized artifact.
-func stableEventOrder(events []farm.MediaEvent) {
-	sort.SliceStable(events, func(i, j int) bool {
-		if events[i].Frame != events[j].Frame {
-			return events[i].Frame < events[j].Frame
-		}
-		return events[i].ID < events[j].ID
-	})
 }
