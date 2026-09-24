@@ -1,6 +1,7 @@
 package skill
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
@@ -145,6 +146,38 @@ func settleLeagueRoomEntry(m *emu.Emu, romData []byte, targetMap uint8, waitForB
 		return fmt.Errorf("skill: EliteFourProgression: map %#02x did not settle controllable within %d frames", targetMap, leagueRoomSettleBudget)
 	}
 	return nil
+}
+
+const leagueBetweenBattleHPFloor = 80
+
+// prepareLeagueBetweenBattles spends only the fair share of finite recovery
+// resources assigned to the fights still ahead. Unlike the pre-League Center
+// heal, this runs inside the no-exit gauntlet, so it must use the bag: revive
+// useful party members, clear status, restore HP, and recover PP before walking
+// into the next room.
+//
+// ErrLeagueResourcesInsufficient is deliberately soft here. Once the player is
+// locked inside the League there is no shopping/Center recovery path; after
+// using every bounded action the current window permits, attempting the next
+// fight is better than stranding the run in a completed member's room. A loss
+// will follow the normal blackout -> preparation -> retry lifecycle.
+func leagueBetweenBattlePolicy(encountersRemaining, partyCount int) LeagueResourcePolicy {
+	policy := DefaultLeagueResourcePolicy(encountersRemaining, partyCount)
+	policy.MinimumHPPercent = leagueBetweenBattleHPFloor
+	return policy
+}
+
+func prepareLeagueBetweenBattles(m *emu.Emu, romData []byte, encountersRemaining int) error {
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	party := state.DecodeParty(&mem)
+	policy := leagueBetweenBattlePolicy(encountersRemaining, len(party.Mons))
+
+	_, err := PrepareLeagueResources(m, romData, policy)
+	if err == nil || errors.Is(err, ErrLeagueResourcesInsufficient) {
+		return nil
+	}
+	return fmt.Errorf("skill: EliteFourProgression: prepare between League battles: %w", err)
 }
 
 func fightLeagueMember(m *emu.Emu, romData []byte, policy MovePolicy, name string, homeX, homeY uint8, done leagueFact) error {
@@ -321,12 +354,18 @@ func EliteFourProgression(m *emu.Emu, romData []byte, policy MovePolicy) error {
 			if err := fightLeagueMember(m, romData, policy, "Lorelei", 5, 2, func(f state.StoryFacts) bool { return f.LeagueLoreleiDefeated }); err != nil {
 				return err
 			}
+			if err := prepareLeagueBetweenBattles(m, romData, 4); err != nil {
+				return err
+			}
 			if err := enterLeagueRoom(m, romData, policy, loreleiExitStand, brunoRoomMap, false); err != nil {
 				return err
 			}
 
 		case brunoRoomMap:
 			if err := fightLeagueMember(m, romData, policy, "Bruno", 5, 2, func(f state.StoryFacts) bool { return f.LeagueBrunoDefeated }); err != nil {
+				return err
+			}
+			if err := prepareLeagueBetweenBattles(m, romData, 3); err != nil {
 				return err
 			}
 			if err := enterLeagueRoom(m, romData, policy, brunoExitStand, agathaRoomMap, false); err != nil {
@@ -337,12 +376,18 @@ func EliteFourProgression(m *emu.Emu, romData []byte, policy MovePolicy) error {
 			if err := fightLeagueMember(m, romData, policy, "Agatha", 5, 2, func(f state.StoryFacts) bool { return f.LeagueAgathaDefeated }); err != nil {
 				return err
 			}
+			if err := prepareLeagueBetweenBattles(m, romData, 2); err != nil {
+				return err
+			}
 			if err := enterLeagueRoom(m, romData, policy, agathaExitStand, lanceRoomMap, false); err != nil {
 				return err
 			}
 
 		case lanceRoomMap:
 			if err := fightLeagueMember(m, romData, policy, "Lance", 6, 1, func(f state.StoryFacts) bool { return f.LeagueLanceDefeated }); err != nil {
+				return err
+			}
+			if err := prepareLeagueBetweenBattles(m, romData, 1); err != nil {
 				return err
 			}
 			if err := enterLeagueRoom(m, romData, policy, lanceExitStand, championsRoomMap, true); err != nil {
