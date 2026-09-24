@@ -139,6 +139,7 @@ runLoop:
 		last.Failures = known.FailureList()
 		offer := offerWithTMHMEvidence(m, romData, last, known)
 		last.Requirements = append(last.Requirements, providerBlockRequirements(offer.Blocked)...)
+		last.ChallengeReadiness = append([]ChallengeReadiness(nil), offer.Readiness...)
 		now := engine.failures.filter(last, offer.Candidates)
 		if len(now) == 0 {
 			res.Stop = StopError

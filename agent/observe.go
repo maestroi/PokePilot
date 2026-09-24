@@ -42,14 +42,15 @@ type Observation struct {
 	Story              ProgressState
 	BlackedOut         bool
 
-	LeadMoves         []Move
-	LeadPP            []uint8
-	RepelSteps        int
-	Bag               []Item
-	FieldCapabilities []FieldCapability
-	RecentDialogue    []string
-	History           []RoundRecord
-	Failures          []Failure
+	LeadMoves          []Move
+	LeadPP             []uint8
+	RepelSteps         int
+	Bag                []Item
+	FieldCapabilities  []FieldCapability
+	RecentDialogue     []string
+	History            []RoundRecord
+	Failures           []Failure
+	ChallengeReadiness []ChallengeReadiness `json:"challenge_readiness,omitempty"`
 
 	Round      int
 	RoundsLeft int

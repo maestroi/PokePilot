@@ -52,9 +52,10 @@ func (d CatalogDestination) reached(location LocationID, x, y uint8) bool {
 }
 
 type CatalogChallenge struct {
-	Place    PlaceID
-	Location LocationID
-	Complete bool
+	Place     PlaceID
+	Location  LocationID
+	Complete  bool
+	Readiness ChallengeReadinessProfile
 }
 
 type CatalogEncounter struct {
