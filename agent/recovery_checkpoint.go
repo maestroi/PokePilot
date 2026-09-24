@@ -4,7 +4,7 @@ import "sort"
 
 const (
 	recoveryMapHopCost       = 100
-	recoveryActiveCheckpoint = 50
+	recoveryActiveCheckpoint = 100
 )
 
 // RecoveryCheckpointAssessment is structured telemetry for one known healing
