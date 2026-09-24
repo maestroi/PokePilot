@@ -199,6 +199,7 @@ func (s *heartbeatSnap) storeStats(st farm.LLMStats) {
 			st.DecisionRecords[i].Probabilities = probabilities
 		}
 	}
+	st.DecisionSummary = st.DecisionSummary.Clone()
 	s.mu.Lock()
 	s.hb.Stats = &st
 	s.mu.Unlock()

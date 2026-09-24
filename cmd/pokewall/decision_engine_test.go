@@ -146,3 +146,19 @@ func TestDecisionEngineDeploymentResolvesFromRegistry(t *testing.T) {
 		t.Fatalf("off selection = %+v", off)
 	}
 }
+
+func TestCatalogKeepsDecisionSummaryButNotTheLiveFeed(t *testing.T) {
+	summary := &farm.DecisionSummary{}
+	summary.Observe(farm.TypedDecisionRecord{Kind: "objective_selection", Confidence: 0.9})
+	stats := &farm.LLMStats{
+		DecisionRecords: []farm.TypedDecisionRecord{{Kind: "objective_selection", Choice: "1"}},
+		DecisionSummary: summary,
+	}
+	row := sanitizeCatalogRow(tileRow{RunID: "r", Stats: stats})
+	if len(row.Stats.DecisionRecords) != 0 || row.Stats.DecisionSummary == nil || row.Stats.DecisionSummary.Kinds["objective_selection"].Calls != 1 {
+		t.Fatalf("catalog stats = %+v", row.Stats)
+	}
+	if len(stats.DecisionRecords) != 1 {
+		t.Fatal("sanitizing the catalog row cleared the live tile's feed")
+	}
+}

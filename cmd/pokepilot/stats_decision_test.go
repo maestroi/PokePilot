@@ -164,3 +164,35 @@ func TestStatsPlannerShadowFailureDecisionNeverStopsRun(t *testing.T) {
 		t.Fatalf("disagreements = %d", planner.stats.DecisionDisagreements)
 	}
 }
+
+func TestStatsPlannerDecisionFeedIsBoundedButSummaryCountsEverything(t *testing.T) {
+	probabilities := map[string]float64{
+		"retry": 0.02, "recover": 0.02, "replan": 0.02, "pause": 0.02, "impossible": 0.02, "unknown": 0.9,
+	}
+	planner := &statsPlanner{
+		decision: agent.DecisionSettings{
+			Engine:          statsDecisionEngine{resp: agent.DecisionResponse{Choice: "unknown", Probabilities: probabilities}},
+			FailureRecovery: true,
+			Shadow:          true,
+		},
+		counts: map[string]int{},
+	}
+	const calls = maxDecisionFeed + 40
+	for range calls {
+		_, _ = planner.DecideFailure(agent.ObjectiveResult{
+			Objective: agent.Objective{Kind: agent.KindGoTo, Place: "pewter city"},
+			Outcome:   agent.OutcomeBlocked,
+		})
+	}
+	if len(planner.stats.DecisionRecords) != maxDecisionFeed || planner.stats.DecisionRecordsDropped != calls-maxDecisionFeed {
+		t.Fatalf("feed = %d records, %d dropped", len(planner.stats.DecisionRecords), planner.stats.DecisionRecordsDropped)
+	}
+	rec := planner.stats.DecisionSummary.Kinds[agent.DecisionKindFailureRecovery]
+	if rec == nil || rec.Calls != calls || rec.Agreements != calls || rec.Shadow != calls {
+		t.Fatalf("summary = %+v", rec)
+	}
+	last := planner.stats.DecisionRecords[maxDecisionFeed-1]
+	if last.ChoiceLabel != "unknown" || !last.Shadow || last.Executed != "continue" {
+		t.Fatalf("feed record = %+v", last)
+	}
+}

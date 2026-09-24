@@ -145,6 +145,13 @@ func sanitizeCatalogRow(row tileRow) tileRow {
 	row.Sprites = nil
 	row.Trail = nil
 	row.ResumeProtected = false
+	if row.Stats != nil && len(row.Stats.DecisionRecords) > 0 {
+		// The typed-decision feed is live-only too; the run keeps its
+		// fixed-size DecisionSummary. Copy first: Stats is the tile's.
+		stats := *row.Stats
+		stats.DecisionRecords = nil
+		row.Stats = &stats
+	}
 	return row
 }
 

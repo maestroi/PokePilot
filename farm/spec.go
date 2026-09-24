@@ -323,23 +323,28 @@ type LLMStats struct {
 	// deliberately do not reuse Calls/Rejected/Model above: those describe the
 	// generative planner and must remain comparable when typed decisions are
 	// enabled only for one part of a run.
-	DecisionCalls            int                   `json:"decision_calls,omitempty"`
-	DecisionRejected         int                   `json:"decision_rejected,omitempty"`
-	DecisionFallbacks        int                   `json:"decision_fallbacks,omitempty"`
-	DecisionSeconds          float64               `json:"decision_seconds,omitempty"`
-	DecisionAvgSeconds       float64               `json:"decision_avg_seconds,omitempty"`
-	DecisionPromptTokens     int                   `json:"decision_prompt_tokens,omitempty"`
-	DecisionCompletionTokens int                   `json:"decision_completion_tokens,omitempty"`
-	DecisionInputBytes       int                   `json:"decision_input_bytes,omitempty"`
-	DecisionOutputBytes      int                   `json:"decision_output_bytes,omitempty"`
-	DecisionBackend          string                `json:"decision_backend,omitempty"`
-	DecisionModel            string                `json:"decision_model,omitempty"`
-	DecisionKind             string                `json:"decision_kind,omitempty"`
-	DecisionChoice           string                `json:"decision_choice,omitempty"`
-	DecisionConfidence       float64               `json:"decision_confidence,omitempty"`
-	DecisionProbabilities    map[string]float64    `json:"decision_probabilities,omitempty"`
-	DecisionRecords          []TypedDecisionRecord `json:"decision_records,omitempty"`
-	DecisionRecordsDropped   int                   `json:"decision_records_dropped,omitempty"`
+	DecisionCalls            int                `json:"decision_calls,omitempty"`
+	DecisionRejected         int                `json:"decision_rejected,omitempty"`
+	DecisionFallbacks        int                `json:"decision_fallbacks,omitempty"`
+	DecisionSeconds          float64            `json:"decision_seconds,omitempty"`
+	DecisionAvgSeconds       float64            `json:"decision_avg_seconds,omitempty"`
+	DecisionPromptTokens     int                `json:"decision_prompt_tokens,omitempty"`
+	DecisionCompletionTokens int                `json:"decision_completion_tokens,omitempty"`
+	DecisionInputBytes       int                `json:"decision_input_bytes,omitempty"`
+	DecisionOutputBytes      int                `json:"decision_output_bytes,omitempty"`
+	DecisionBackend          string             `json:"decision_backend,omitempty"`
+	DecisionModel            string             `json:"decision_model,omitempty"`
+	DecisionKind             string             `json:"decision_kind,omitempty"`
+	DecisionChoice           string             `json:"decision_choice,omitempty"`
+	DecisionConfidence       float64            `json:"decision_confidence,omitempty"`
+	DecisionProbabilities    map[string]float64 `json:"decision_probabilities,omitempty"`
+	// DecisionRecords is the live feed: only the most recent decisions, so
+	// heartbeats stay a constant size however long a run lasts. Older
+	// decisions survive only in DecisionSummary; DecisionRecordsDropped
+	// counts how many scrolled out of the feed.
+	DecisionRecords        []TypedDecisionRecord `json:"decision_records,omitempty"`
+	DecisionRecordsDropped int                   `json:"decision_records_dropped,omitempty"`
+	DecisionSummary        *DecisionSummary      `json:"decision_summary,omitempty"`
 	// DecisionMode is the resolved mode (active or shadow) once a backend is
 	// consulted. Agreements/Disagreements count shadow answers against what
 	// the existing policy executed.
