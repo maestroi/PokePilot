@@ -102,6 +102,7 @@ export interface DashboardRun {
   experiment_arm?: string
   experiment_case?: string
   play_style?: string
+  purpose?: string
   risk_tolerance?: string
   wild_encounters?: string
   reasoning_effort?: string
@@ -359,6 +360,7 @@ export interface RunSpec {
   llm_profile: string
   llm_deployment?: string
   play_style: string
+  purpose?: string
   risk_tolerance: string
   wild_encounters: string
   reasoning_effort: string
