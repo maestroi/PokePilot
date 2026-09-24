@@ -153,3 +153,25 @@ func TestRecoveryProviderUsesRankedCenter(t *testing.T) {
 		t.Fatalf("recovery telemetry = %+v, want selected fast center first", offer.Recovery)
 	}
 }
+
+func TestRecoveryRankingSkipsCombatLockedCenter(t *testing.T) {
+	current := LocationID("current")
+	near := LocationID("near")
+	far := LocationID("far")
+	known := recoveryTestKnowledge(map[LocationID][]LocationID{
+		current: {near, far},
+		near:    {current},
+		far:     {current},
+	}, current, near, far)
+	locked := Objective{Kind: KindHeal, Place: "near center", Flee: true}
+	known.Failures[combatLossFailureKey(locked)] = Failure{Objective: locked.String(), Times: 1, ReadinessTarget: 139}
+	obs := Observation{Location: PlaceID(current)}
+	catalog := ObjectiveCatalog{Destinations: []CatalogDestination{
+		{Place: "near center", Location: near, Center: true, TravelCostChecked: true, TravelCostKnown: true, TravelCost: 10},
+		{Place: "far center", Location: far, Center: true, TravelCostChecked: true, TravelCostKnown: true, TravelCost: 100},
+	}}
+	ranked := rankRecoveryCheckpoints(obs, known, map[LocationID]bool{current: true, near: true, far: true}, catalog, nil)
+	if len(ranked) != 2 || ranked[0].Place != "far center" || !ranked[0].Selected || ranked[1].Routable {
+		t.Fatalf("ranking = %+v, want the combat-locked nearer Center skipped so a heal stays offered", ranked)
+	}
+}
