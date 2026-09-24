@@ -76,3 +76,104 @@ func completionistCoverageSignal(obs Observation, o Objective, profile PlayStyle
 
 	return s
 }
+
+
+// Run purpose is orthogonal to play style and terminal goal. Empty/normal
+// preserves player-facing behavior; debug_coverage deliberately maximizes
+// novel reachable interaction coverage to expose bugs.
+const (
+	RunPurposeNormal        = "normal"
+	RunPurposeDebugCoverage = "debug_coverage"
+)
+
+func NormalizeRunPurpose(name string) string {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case RunPurposeDebugCoverage, "debug", "coverage", "debug-coverage":
+		return RunPurposeDebugCoverage
+	default:
+		return RunPurposeNormal
+	}
+}
+
+// debugCoverageSignal is intentionally stronger and broader than the
+// Completionist signal. Completionist behaves like a thorough player; debug
+// coverage is allowed to value otherwise low-payoff interactions because its
+// purpose is exercising the runtime and game surfaces.
+func debugCoverageSignal(obs Observation, o Objective) NaturalPlaySignal {
+	var s NaturalPlaySignal
+	add := func(tag string, bonus float64) {
+		if bonus <= 0 {
+			return
+		}
+		if partyHurt(obs) || leadOutOfPP(obs) {
+			bonus *= 0.25
+		}
+		s.Tags = appendNaturalTag(s.Tags, tag)
+		s.Bonus += bonus
+	}
+
+	switch o.Kind {
+	case KindGoTo:
+		if strings.Contains(strings.ToLower(o.Note), "unvisited adjacent map") {
+			add("debug-new-map", 1.45)
+		}
+	case KindTalk:
+		add("debug-new-npc", 1.30)
+	case KindTrainer:
+		add("debug-new-trainer", 1.20)
+	case KindPickup:
+		add("debug-new-item", 1.25)
+	case KindCatch:
+		if o.Species != "" && !pokedexOwnedSet(obs)[o.Species] {
+			add("debug-new-species", 1.35)
+		}
+	case KindTrain:
+		if o.Intent == "dex-evolution" {
+			add("debug-evolution", 1.25)
+		}
+	case KindUseItem:
+		item := strings.ToLower(string(o.Item))
+		if strings.HasPrefix(item, "tm") || strings.HasPrefix(item, "hm") {
+			add("debug-machine-use", 1.10)
+		} else {
+			// Ordinary item flows are worth exercising in debug runs even when
+			// they would be noise for a normal Completionist.
+			add("debug-item-use", 0.35)
+		}
+	case KindBuy:
+		add("debug-shop-flow", 0.45)
+	case KindHeal:
+		if partyHurt(obs) || leadOutOfPP(obs) {
+			add("debug-recovery-flow", 0.30)
+		}
+	}
+	return s
+}
+
+// AnnotateRunPurpose layers run-purpose priorities over the already legal
+// objective menu. It does not create objectives or bypass deterministic
+// legality. Debug coverage is therefore safe to combine with any play style or
+// terminal goal.
+func AnnotateRunPurpose(obs Observation, offered []Objective, purpose string) []Objective {
+	if NormalizeRunPurpose(purpose) != RunPurposeDebugCoverage {
+		return offered
+	}
+	out := append([]Objective(nil), offered...)
+	for i := range out {
+		signal := debugCoverageSignal(obs, out[i])
+		if signal.Bonus <= 0 {
+			continue
+		}
+		annotation := "[debug_coverage +" + fmtFloat(signal.Bonus) + ": " + strings.Join(signal.Tags, "+") + "]"
+		if out[i].Note == "" {
+			out[i].Note = annotation
+		} else {
+			out[i].Note += " " + annotation
+		}
+	}
+	return out
+}
+
+func fmtFloat(v float64) string {
+	return strconv.FormatFloat(v, 'f', 2, 64)
+}
