@@ -160,13 +160,13 @@ func TestCombatPreparationTravelsToBestKnownTrainingArea(t *testing.T) {
 	}
 
 	obs := Observation{
-		Location: PlaceID(current),
-		Party: []PartyMon{{Species: "pikachu", Level: 12, HP: 30, MaxHP: 30}},
+		Location:   PlaceID(current),
+		Party:      []PartyMon{{Species: "pikachu", Level: 12, HP: 30, MaxHP: 30}},
 		PartyCount: 1,
-		HasGrass: true,
-		WildGrass: []WildSpecies{{Name: "pidgey", MinLevel: 3, MaxLevel: 5}},
-		Training: &TrainingEstimate{Viability: TrainingOutsideBudget},
-		Catalog: trainingAreaTestCatalog(CatalogDestination{Place: "route 10", Location: training}),
+		HasGrass:   true,
+		WildGrass:  []WildSpecies{{Name: "pidgey", MinLevel: 3, MaxLevel: 5}},
+		Training:   &TrainingEstimate{Viability: TrainingOutsideBudget},
+		Catalog:    trainingAreaTestCatalog(CatalogDestination{Place: "route 10", Location: training}),
 	}
 	offered := []Objective{
 		{Kind: KindGoTo, Place: "route 10"},
