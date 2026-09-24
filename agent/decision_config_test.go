@@ -33,3 +33,28 @@ func TestDecisionSettingsKeepsBackendAndFeatureFlagsIndependent(t *testing.T) {
 		t.Fatalf("min confidence = %v, want 0.72", settings.MinConfidence)
 	}
 }
+
+
+func TestDecisionSettingsSelectsJevWithoutPersistingCredential(t *testing.T) {
+	t.Setenv("POKEPILOT_DECISION_BACKEND", "jev")
+	t.Setenv("POKEPILOT_DECISION_URL", "https://decision.example/v1")
+	t.Setenv("POKEPILOT_DECISION_MODEL", "jev-preview")
+	t.Setenv("POKEPILOT_DECISION_TOKEN", "")
+	t.Setenv("TYPESAFE_API_KEY", "secret-from-env")
+	t.Setenv("POKEPILOT_DECISION_TIMEOUT", "750ms")
+
+	settings := DecisionSettingsFromEnv()
+	engine, ok := settings.Engine.(*JevDecisionEngine)
+	if !ok {
+		t.Fatalf("engine = %T, want JevDecisionEngine", settings.Engine)
+	}
+	if settings.Backend != "jev" || engine.BaseURL != "https://decision.example/v1" || engine.Model != "jev-preview" {
+		t.Fatalf("settings = %#v engine = %#v", settings, engine)
+	}
+	if engine.Token != "secret-from-env" {
+		t.Fatalf("token source was not TYPESAFE_API_KEY")
+	}
+	if engine.Timeout.String() != "750ms" {
+		t.Fatalf("timeout = %s, want 750ms", engine.Timeout)
+	}
+}
