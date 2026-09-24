@@ -124,7 +124,7 @@ func TestRepeatedCombatLossesRaiseReadinessTarget(t *testing.T) {
 func TestObjectiveOfferCarriesStructuredChallengeReadiness(t *testing.T) {
 	obs := readinessTestObservation(20)
 	obs.Catalog = ObjectiveCatalog{Challenges: []CatalogChallenge{{
-		Place: "test gym",
+		Place:     "test gym",
 		Readiness: ChallengeReadinessProfile{MinimumReadiness: 100},
 	}}}
 
