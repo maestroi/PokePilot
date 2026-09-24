@@ -14,6 +14,7 @@ type spectatorPresentationPolicy struct {
 	FPS            int
 	LLMProfile     string
 	PlayStyle      string
+	Purpose        string
 	RiskTolerance  string
 	WildEncounters string
 }
@@ -63,6 +64,7 @@ func (run *spectatorSourceRun) UnmarshalJSON(data []byte) error {
 		FPS            int    `json:"fps"`
 		LLMProfile     string `json:"llm_profile,omitempty"`
 		PlayStyle      string `json:"play_style,omitempty"`
+		Purpose        string `json:"purpose,omitempty"`
 		RiskTolerance  string `json:"risk_tolerance,omitempty"`
 		WildEncounters string `json:"wild_encounters,omitempty"`
 	}
@@ -87,6 +89,7 @@ func (run *spectatorSourceRun) UnmarshalJSON(data []byte) error {
 		FPS:            presentation.FPS,
 		LLMProfile:     presentation.LLMProfile,
 		PlayStyle:      presentation.PlayStyle,
+		Purpose:        presentation.Purpose,
 		RiskTolerance:  presentation.RiskTolerance,
 		WildEncounters: presentation.WildEncounters,
 	})
