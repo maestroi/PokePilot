@@ -26,6 +26,12 @@ const healMenuBudget = 3000
 // as cutsceneBudget.
 const healRunBudget = 30000
 
+// A Center script can expose a transient controllable frame between its last
+// owned UI/script phases. One snapshot is therefore not a trustworthy
+// objective boundary: require the overworld to remain controllable for the
+// same settle window used by ordinary dialogue before Heal returns.
+const healBoundaryStableFrames = talkSettle
+
 // allPartyCenterRecovered reports the state a Center visit guarantees that
 // matters to the autonomous runner: every party member is at full HP, clear
 // of status, and every known move has non-zero current PP. HealParty restores
@@ -115,6 +121,38 @@ func openNurseMenu(m *emu.Emu) error {
 	return nil
 }
 
+// settleHealBoundary drains any late ordinary nurse text and requires a
+// sustained clean overworld boundary. It never answers a choice or operates a
+// menu: those are not reversible cleanup. This mirrors the shop controller's
+// "controllable, then still controllable one settle later" rule and prevents a
+// one-frame idle gap from becoming a transaction finish-boundary failure.
+func settleHealBoundary(m frameClock, budget int) error {
+	stable := 0
+	final, _ := advanceCore(m, budget, func(mem *state.Mem) bool {
+		if state.Controllable(mem) {
+			stable++
+			return stable >= healBoundaryStableFrames
+		}
+		stable = 0
+		return false
+	}, func(mem *state.Mem) bool {
+		return state.DecodeTwoOptionMenu(mem) != nil || state.MenuUp(mem)
+	})
+	if stable >= healBoundaryStableFrames && state.Controllable(&final) {
+		return nil
+	}
+	switch {
+	case state.DecodeTwoOptionMenu(&final) != nil:
+		return fmt.Errorf("skill: Heal: unexpected choice while settling completed heal")
+	case state.MenuUp(&final):
+		return fmt.Errorf("skill: Heal: unexpected menu while settling completed heal")
+	default:
+		return fmt.Errorf("skill: Heal: completed heal did not reach a stable controllable boundary within %d frames: map=%#04x at (%d,%d) wJoyIgnore=%#04x wFontLoaded=%#04x",
+			budget, final.U8(sym.CurMap), final.U8(sym.XCoord), final.U8(sym.YCoord),
+			final.U16BE(sym.JoyIgnore), final.U16BE(sym.FontLoaded))
+	}
+}
+
 // Heal restores the party at a Pokemon Center's nurse. It requires the
 // player to stand on the counter approach tile — the floor tile directly
 // adjacent to the counter the nurse stands behind; for the Viridian Center
@@ -193,10 +231,13 @@ func Heal(m *emu.Emu) error {
 	if err := Cutscene(m, healRunBudget, allPartyCenterRecovered); err != nil {
 		return fmt.Errorf("skill: Heal: %w", err)
 	}
+	if err := settleHealBoundary(m, healRunBudget); err != nil {
+		return err
+	}
 
-	// Cutscene's return already means the positive recovery predicate and
-	// Controllable both hold, but re-asserting them keeps Heal's contract
-	// explicit to its callers.
+	// The stable settle above means the positive recovery predicate and a
+	// sustained Controllable boundary both hold, but re-asserting them keeps
+	// Heal's contract explicit to its callers.
 	state.Snapshot(m, &mem)
 	if !allPartyCenterRecovered(&mem) {
 		return fmt.Errorf("skill: Heal: party not fully recovered after the heal: %+v (map=%#04x at (%d,%d) wJoyIgnore=%#04x)",
