@@ -76,15 +76,25 @@ func challengePreparationFor(k *Knowledge, obs Observation, challenge Objective)
 }
 
 func challengeProfileFor(obs Observation, challenge Objective) ChallengeReadinessProfile {
-	if challenge.Kind != KindGym || challenge.Place == "" {
-		return ChallengeReadinessProfile{}
-	}
-	for _, candidate := range objectiveCatalogForObservation(obs).Challenges {
-		if candidate.Place == challenge.Place {
+	catalog := objectiveCatalogForObservation(obs)
+	key := combatRecoveryObjective(challenge).Key()
+	for _, candidate := range catalog.ChallengeProfiles {
+		if candidate.Objective == key {
 			return candidate.Readiness
 		}
 	}
+	if challenge.Kind == KindGym && challenge.Place != "" {
+		for _, candidate := range catalog.Challenges {
+			if candidate.Place == challenge.Place {
+				return candidate.Readiness
+			}
+		}
+	}
 	return ChallengeReadinessProfile{}
+}
+
+func challengeProfileKnown(profile ChallengeReadinessProfile) bool {
+	return profile.MinimumReadiness > 0 || profile.MinimumUsableMons > 0 || len(profile.PreferredMoveTypes) > 0
 }
 
 func challengeUsableParty(obs Observation) int {
@@ -277,14 +287,14 @@ func EvaluateChallengeReadiness(obs Observation, known *Knowledge, challenge Obj
 	return result
 }
 
-func isReadinessChallenge(o Objective) bool {
-	return o.Kind == KindGym || o.Kind == KindTrainer
+func isReadinessChallenge(obs Observation, o Objective) bool {
+	return o.Kind == KindGym || o.Kind == KindTrainer || challengeProfileKnown(challengeProfileFor(obs, o))
 }
 
 func challengeReadinessForOffer(obs Observation, known *Knowledge, offer ObjectiveOffer) []ChallengeReadiness {
 	keys := map[string]Objective{}
 	for _, objective := range offer.Candidates {
-		if isReadinessChallenge(objective) {
+		if isReadinessChallenge(obs, objective) {
 			base := combatRecoveryObjective(objective)
 			keys[base.Key().ID()] = base
 		}
@@ -294,7 +304,7 @@ func challengeReadinessForOffer(obs Observation, known *Knowledge, offer Objecti
 			continue
 		}
 		objective := block.Objective.Objective()
-		if isReadinessChallenge(objective) {
+		if isReadinessChallenge(obs, objective) {
 			base := combatRecoveryObjective(objective)
 			keys[base.Key().ID()] = base
 		}
