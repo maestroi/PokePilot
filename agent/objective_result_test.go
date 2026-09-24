@@ -175,26 +175,18 @@ func TestClassifyObjectiveOutcomeDoesNotParseLegacyGameplayProse(t *testing.T) {
 	}
 }
 
-func TestObjectivePostconditionGoToExactDestination(t *testing.T) {
-	o := Objective{Kind: KindGoTo, Place: "viridian pokemon center"}
-	dest, ok := skill.Place(o.Place)
-	if !ok {
-		t.Fatal("Place(viridian pokemon center) did not resolve")
-	}
-	if dest.Kind != skill.DestinationExactTile {
-		t.Fatalf("exact-destination fixture kind=%v, want exact tile", dest.Kind)
-	}
-
-	good := Observation{Map: dest.Map, X: dest.X, Y: dest.Y, Controllable: true}
+func TestObjectivePostconditionGoToUsesSemanticLocation(t *testing.T) {
+	o := Objective{Kind: KindGoTo, Place: "room-b"}
+	good := Observation{Location: o.Place, X: 2, Y: 3, Controllable: true}
 	if out, err := objectivePostcondition(o, good); err != nil || out != OutcomeCompleted {
-		t.Fatalf("exact destination = %q, %v; want completed, nil", out, err)
+		t.Fatalf("semantic destination = %q, %v; want completed, nil", out, err)
 	}
 
-	wrongTile := good
-	wrongTile.X++
-	out, err := objectivePostcondition(o, wrongTile)
+	wrong := good
+	wrong.Location = "room-c"
+	out, err := objectivePostcondition(o, wrong)
 	if out != OutcomePostconditionFailed || !errors.Is(err, ErrObjectivePostconditionFailed) {
-		t.Fatalf("wrong tile = %q, %v; want postcondition_failed sentinel", out, err)
+		t.Fatalf("wrong semantic location = %q, %v; want postcondition_failed sentinel", out, err)
 	}
 
 	unreadable := good
