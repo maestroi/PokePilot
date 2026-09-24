@@ -6,15 +6,11 @@ import (
 	"github.com/maestroi/pokepilot/world"
 )
 
-// edgeTargetForConnection is edgeTarget constrained to the component-scoped
+// edgeTargetForConnectionExcluding is edgeTarget constrained to the component-scoped
 // source-border band selected by the route graph. This is the execution half
 // of world.ConnectionBand: without it the router could choose the good Route 4
 // landing component and Traverse would still walk to the nearest tile anywhere
 // on the aggregate border, recreating the exact dead-end #307 describes.
-func edgeTargetForConnection(g *world.Grid, e world.Edge, sx, sy int, blocked map[[2]int]bool) (int, int, error) {
-	return edgeTargetForConnectionExcluding(g, e, sx, sy, blocked, nil)
-}
-
 func edgeTargetForConnectionExcluding(g *world.Grid, e world.Edge, sx, sy int, blocked, excluded map[[2]int]bool) (int, int, error) {
 	start, end, scoped := world.ConnectionBand(e)
 	if !scoped {
