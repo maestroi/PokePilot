@@ -13,7 +13,7 @@ func TestPrerequisiteRecoverySynthesizesRecoveryOnlyProgressObjective(t *testing
 
 	obs := Observation{RouteBlockages: []RouteBlockage{{
 		Destination: "fuchsia city",
-		Missing:     []Prerequisite{{Capability: "can_ride_cycling_road"}},
+		Missing:     []CapabilityID{"can_ride_cycling_road"},
 		Prerequisites: []RoutePrerequisiteLink{{
 			Capability:   "can_ride_cycling_road",
 			Progress:     redProgressBicycleAcquired,
@@ -64,7 +64,7 @@ func TestPrerequisiteRecoverySynthesizesUnlockedFieldCapabilityRepair(t *testing
 		}},
 		RouteBlockages: []RouteBlockage{{
 			Destination: "cinnabar island",
-			Missing:     []Prerequisite{{Capability: "can_surf"}},
+			Missing:     []CapabilityID{"can_surf"},
 			Prerequisites: []RoutePrerequisiteLink{{
 				Capability:      "can_surf",
 				FieldCapability: "surf",
@@ -96,7 +96,7 @@ func TestPrerequisiteRecoveryDoesNotRepairLockedFieldCapability(t *testing.T) {
 			FieldCapabilities: []FieldCapability{field},
 			RouteBlockages: []RouteBlockage{{
 				Destination: "cinnabar island",
-				Missing:     []Prerequisite{{Capability: "can_surf"}},
+				Missing:     []CapabilityID{"can_surf"},
 				Prerequisites: []RoutePrerequisiteLink{{
 					Capability:      "can_surf",
 					FieldCapability: "surf",
