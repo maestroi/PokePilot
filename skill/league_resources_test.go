@@ -147,6 +147,32 @@ func TestPlanLeagueResourcesReportsInsufficientWithoutSpendingGuesswork(t *testi
 	}
 }
 
+
+func TestLeagueBetweenBattlePolicyHealsPartyAboveGenericFiftyPercentFloor(t *testing.T) {
+	romData := leagueTestROM(t, map[uint8]uint8{1: 20})
+	party := state.PartyState{Count: 1, Mons: []state.Mon{leagueMon(60, 100, 0, 1, 20)}}
+	inv := state.InventoryState{Items: []state.BagItem{{ID: itemPotion, Quantity: 1}}}
+	policy := leagueBetweenBattlePolicy(4, len(party.Mons))
+
+	if policy.MinimumHPPercent != leagueBetweenBattleHPFloor {
+		t.Fatalf("between-battle HP floor = %d, want %d", policy.MinimumHPPercent, leagueBetweenBattleHPFloor)
+	}
+	if policy.FreeCenterAvailable {
+		t.Fatal("between-battle League recovery must use finite bag resources, not a Center")
+	}
+
+	plan, err := PlanLeagueResources(romData, party, inv, policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Actions) != 1 || plan.Actions[0].Kind != LeagueHealHP || plan.Actions[0].Item != itemPotion {
+		t.Fatalf("actions = %+v, want one Potion heal before the next fight", plan.Actions)
+	}
+	if !plan.After.Viable || plan.After.BelowHPFloor != 0 {
+		t.Fatalf("projected state = %+v, want party restored to the League HP floor", plan.After)
+	}
+}
+
 func TestLeagueSequenceProgressNeverCompletesOnIntermediateWin(t *testing.T) {
 	p := LeagueSequenceProgress{}
 	for i := 0; i < LeagueBattleCount-1; i++ {
