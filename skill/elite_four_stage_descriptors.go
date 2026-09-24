@@ -62,11 +62,11 @@ func championLeagueStageFight(m *emu.Emu, _ []byte, policy MovePolicy, _ leagueS
 
 var leagueBattleStages = []leagueStageDescriptor{
 	{
-		Name:        "Lorelei",
-		Operation:   "LeagueDefeatLorelei",
-		ID:          leagueProgressLoreleiDefeated,
-		Predecessor: leagueProgressChallengeStarted,
-		RoomMap:     loreleiRoomMap,
+		Name:         "Lorelei",
+		Operation:    "LeagueDefeatLorelei",
+		ID:           leagueProgressLoreleiDefeated,
+		Predecessor:  leagueProgressChallengeStarted,
+		RoomMap:      loreleiRoomMap,
 		TrainerHomeX: 5,
 		TrainerHomeY: 2,
 		PredecessorDone: func(f state.StoryFacts) bool {
@@ -83,11 +83,11 @@ var leagueBattleStages = []leagueStageDescriptor{
 		},
 	},
 	{
-		Name:        "Bruno",
-		Operation:   "LeagueDefeatBruno",
-		ID:          leagueProgressBrunoDefeated,
-		Predecessor: leagueProgressLoreleiDefeated,
-		RoomMap:     brunoRoomMap,
+		Name:         "Bruno",
+		Operation:    "LeagueDefeatBruno",
+		ID:           leagueProgressBrunoDefeated,
+		Predecessor:  leagueProgressLoreleiDefeated,
+		RoomMap:      brunoRoomMap,
 		TrainerHomeX: 5,
 		TrainerHomeY: 2,
 		PredecessorDone: func(f state.StoryFacts) bool {
@@ -104,11 +104,11 @@ var leagueBattleStages = []leagueStageDescriptor{
 		},
 	},
 	{
-		Name:        "Agatha",
-		Operation:   "LeagueDefeatAgatha",
-		ID:          leagueProgressAgathaDefeated,
-		Predecessor: leagueProgressBrunoDefeated,
-		RoomMap:     agathaRoomMap,
+		Name:         "Agatha",
+		Operation:    "LeagueDefeatAgatha",
+		ID:           leagueProgressAgathaDefeated,
+		Predecessor:  leagueProgressBrunoDefeated,
+		RoomMap:      agathaRoomMap,
 		TrainerHomeX: 5,
 		TrainerHomeY: 2,
 		PredecessorDone: func(f state.StoryFacts) bool {
@@ -125,11 +125,11 @@ var leagueBattleStages = []leagueStageDescriptor{
 		},
 	},
 	{
-		Name:        "Lance",
-		Operation:   "LeagueDefeatLance",
-		ID:          leagueProgressLanceDefeated,
-		Predecessor: leagueProgressAgathaDefeated,
-		RoomMap:     lanceRoomMap,
+		Name:         "Lance",
+		Operation:    "LeagueDefeatLance",
+		ID:           leagueProgressLanceDefeated,
+		Predecessor:  leagueProgressAgathaDefeated,
+		RoomMap:      lanceRoomMap,
 		TrainerHomeX: 6,
 		TrainerHomeY: 1,
 		PredecessorDone: func(f state.StoryFacts) bool {
@@ -147,11 +147,11 @@ var leagueBattleStages = []leagueStageDescriptor{
 		},
 	},
 	{
-		Name:        "Champion",
-		Operation:   "LeagueDefeatChampion",
-		ID:          leagueProgressChampionDefeated,
-		Predecessor: leagueProgressLanceDefeated,
-		RoomMap:     championsRoomMap,
+		Name:         "Champion",
+		Operation:    "LeagueDefeatChampion",
+		ID:           leagueProgressChampionDefeated,
+		Predecessor:  leagueProgressLanceDefeated,
+		RoomMap:      championsRoomMap,
 		PredecessorDone: func(f state.StoryFacts) bool {
 			return f.LeagueLanceDefeated
 		},
