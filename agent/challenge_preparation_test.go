@@ -142,7 +142,7 @@ func TestOrdinaryUnprofiledTrainerDoesNotForceProactivePreparation(t *testing.T)
 }
 
 func TestRedGymCatalogCarriesDocumentedReadinessFloor(t *testing.T) {
-	obs := Observation{Map: 0x36, Story: ProgressState{}}
+	obs := Observation{Map: 0x36}
 	catalog := redObjectiveCatalog(obs)
 	if len(catalog.Challenges) != 1 {
 		t.Fatalf("challenges = %+v, want Pewter gym", catalog.Challenges)
@@ -155,7 +155,7 @@ func TestRedGymCatalogCarriesDocumentedReadinessFloor(t *testing.T) {
 		t.Fatal("fresh Boulder challenge unexpectedly complete")
 	}
 
-	obs.Story.Badges = 1 << uint8(state.BadgeBoulder)
+	obs.Badges = []string{state.BadgeBoulder.String()}
 	catalog = redObjectiveCatalog(obs)
 	if !catalog.Challenges[0].Complete {
 		t.Fatal("Boulder challenge should reflect owned badge")
