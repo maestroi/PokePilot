@@ -157,17 +157,30 @@ func TestGenericStartMenuRefusesBattle(t *testing.T) {
 }
 
 func TestGenericStartMenuSelectsSemanticEntryWithDifferentOrdering(t *testing.T) {
-	m := &fakeMenuMachine{}
-	m.mem[fakeMenuMax] = 8
+	tests := []struct {
+		name  string
+		entry game.StartMenuEntry
+		want  byte
+	}{
+		{name: "Pokemon", entry: game.StartMenuPokemon, want: 2},
+		{name: "Items", entry: game.StartMenuItems, want: 6},
+	}
 
-	if err := openStartMenuEntryWithDecoder(m, fakeGen2MenuDecoder{}, game.StartMenuItems); err != nil {
-		t.Fatalf("open fake Gen-II Items entry: %v", err)
-	}
-	if got := m.mem[fakeMenuCurrent]; got != 6 {
-		t.Fatalf("cursor = %d, want semantic Items index 6", got)
-	}
-	if got := m.mem[fakeSelected]; got != 7 {
-		t.Fatalf("selected marker = %d, want index-6 marker 7", got)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			m := &fakeMenuMachine{}
+			m.mem[fakeMenuMax] = 8
+
+			if err := openStartMenuEntryWithDecoder(m, fakeGen2MenuDecoder{}, tc.entry); err != nil {
+				t.Fatalf("open fake Gen-II %s entry: %v", tc.name, err)
+			}
+			if got := m.mem[fakeMenuCurrent]; got != tc.want {
+				t.Fatalf("cursor = %d, want semantic %s index %d", got, tc.name, tc.want)
+			}
+			if got := m.mem[fakeSelected]; got != tc.want+1 {
+				t.Fatalf("selected marker = %d, want index-%d marker %d", got, tc.want, tc.want+1)
+			}
+		})
 	}
 }
 

@@ -159,20 +159,9 @@ func EnsureBagFreeSlots(m *emu.Emu, minFree int) error {
 	}
 }
 
-func openOverworldBagList(m *emu.Emu, mem *state.Mem) error {
-	wantMax, itemIndex := startMenuShape(mem)
-	drawn := func(m *emu.Emu) bool {
-		return m.Peek8(sym.FontLoaded) != 0 && int(m.Peek8(sym.MaxMenuItem)) == wantMax
-	}
-	for attempt := 0; attempt < 5 && !drawn(m); attempt++ {
-		m.Tap(emu.Start, 3, 7)
-		_, _ = m.StepUntil(startMenuDrawBudget, drawn)
-	}
-	if !drawn(m) {
-		return fmt.Errorf("start menu did not draw")
-	}
-	if err := SelectMenuItem(m, itemIndex); err != nil {
-		return fmt.Errorf("select ITEM: %w", err)
+func openOverworldBagList(m *emu.Emu) error {
+	if err := openStartMenuEntry(m, startMenuItems); err != nil {
+		return fmt.Errorf("open ITEM: %w", err)
 	}
 	if _, err := m.StepUntil(bagMenuBudget, func(m *emu.Emu) bool {
 		return m.Peek8(sym.ListMenuID) == itemListMenuID
@@ -253,7 +242,7 @@ func tossBagStack(m *emu.Emu, idx int, item state.BagItem) error {
 		return fmt.Errorf("bag changed before toss: item %#02x expected entry %d x%d, now entry %d x%d",
 			item.ID, idx, item.Quantity, liveIdx, liveQty)
 	}
-	if err := openOverworldBagList(m, &mem); err != nil {
+	if err := openOverworldBagList(m); err != nil {
 		return err
 	}
 	if err := selectBagEntry(m, idx); err != nil {

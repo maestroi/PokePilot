@@ -150,19 +150,8 @@ func castRodOnce(m *emu.Emu, rod uint8) (bool, error) {
 		return false, fmt.Errorf("%w (rod %#02x)", ErrNotInBag, rod)
 	}
 
-	wantMax, itemIndex := startMenuShape(&mem)
-	drawn := func(m *emu.Emu) bool {
-		return m.Peek8(sym.FontLoaded) != 0 && int(m.Peek8(sym.MaxMenuItem)) == wantMax
-	}
-	for attempt := 0; attempt < 5 && !drawn(m); attempt++ {
-		m.Tap(emu.Start, 3, 7)
-		_, _ = m.StepUntil(startMenuDrawBudget, drawn)
-	}
-	if !drawn(m) {
-		return false, fmt.Errorf("start menu did not draw")
-	}
-	if err := SelectMenuItem(m, itemIndex); err != nil {
-		return false, fmt.Errorf("select ITEM: %w", err)
+	if err := openStartMenuEntry(m, startMenuItems); err != nil {
+		return false, fmt.Errorf("open ITEM: %w", err)
 	}
 	if _, err := m.StepUntil(bagMenuBudget, func(m *emu.Emu) bool {
 		return m.Peek8(sym.ListMenuID) == itemListMenuID
