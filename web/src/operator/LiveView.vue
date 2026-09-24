@@ -181,6 +181,7 @@ const settingsRows = computed(() => {
   if (isPlayStyleRun(run)) {
     rows.push(
       ['play style', playStyleLabel(run)],
+      ['purpose', run.purpose === 'debug_coverage' ? 'debug coverage' : 'normal'],
       ['speed', playSpeedLabel(run)],
       ['risk', policyLabel(run.risk_tolerance, 'balanced')],
       ['wild encounters', policyLabel(run.wild_encounters, 'planner')]
@@ -483,6 +484,7 @@ function warnPlay(stats: DashboardStats | undefined, key: string): boolean {
                 <span class="flex flex-wrap items-center gap-1">
                   <StatusBadge :tone="statusTone(run.status)">{{ railStatusLabel(run) }}</StatusBadge>
                   <StatusBadge v-if="isPlayStyleRun(run)" tone="info">{{ playStyleLabel(run) }}</StatusBadge>
+                  <StatusBadge v-if="run.planner === 'llm' && run.purpose === 'debug_coverage'" tone="warning">debug coverage</StatusBadge>
                   <StatusBadge v-if="run.planner === 'llm' && run.recovery_profile" :tone="run.recovery_profile === 'resilient' ? 'warning' : 'neutral'">{{ run.recovery_profile }}</StatusBadge>
                 </span>
                 <span class="mt-0.5 block truncate font-mono text-[10px] font-bold text-white" :title="run.run_id">{{ run.run_id }}</span>
