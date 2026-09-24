@@ -424,6 +424,7 @@ func progressOf(obs Observation, k *Knowledge, coverage *coverageTracker, round 
 func noteObservation(k *Knowledge, obs Observation) {
 	k.SawLocation(observationLocation(obs, k))
 	k.SawDialogue(obs.RecentDialogue, obs.MapName, obs.X, obs.Y)
+	rememberTrainingArea(k, obs)
 }
 
 func sameProgress(a, b Observation) bool {
