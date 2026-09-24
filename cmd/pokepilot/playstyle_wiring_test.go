@@ -32,6 +32,9 @@ func TestFarmStatsPlannerConsumesLeasedRunPolicy(t *testing.T) {
 	if p.playStyle.Name != agent.PlayStyleAdventure {
 		t.Fatalf("leased style = %q, want adventure", p.playStyle.Name)
 	}
+	if p.runPurpose != agent.RunPurposeNormal {
+		t.Fatalf("leased purpose = %q, want normal", p.runPurpose)
+	}
 	if p.riskTolerance != agent.RiskToleranceCautious {
 		t.Fatalf("leased risk = %q, want cautious", p.riskTolerance)
 	}
@@ -64,13 +67,16 @@ func TestLegacyFarmSpecKeepsCompatibilityPolicy(t *testing.T) {
 // the flags are resolved once into a RunPolicy and passed to the planner.
 func TestLocalRunPolicyFlagsFeedStatsPlanner(t *testing.T) {
 	oldStyle := *localPlayStyle
+	oldPurpose := *localRunPurpose
 	oldRisk := *localRiskTolerance
 	oldWild := *localWildEncounters
 	*localPlayStyle = agent.PlayStyleCompletionist
+	*localRunPurpose = agent.RunPurposeDebugCoverage
 	*localRiskTolerance = agent.RiskToleranceBalanced
 	*localWildEncounters = agent.WildEncountersFight
 	t.Cleanup(func() {
 		*localPlayStyle = oldStyle
+		*localRunPurpose = oldPurpose
 		*localRiskTolerance = oldRisk
 		*localWildEncounters = oldWild
 	})
@@ -80,6 +86,9 @@ func TestLocalRunPolicyFlagsFeedStatsPlanner(t *testing.T) {
 	p := newStatsPlannerWithRunPolicy(localRunPolicy("badges:1"), "", "", nil, nil, nil, nil)
 	if p.playStyle.Name != agent.PlayStyleCompletionist {
 		t.Fatalf("local style = %q, want completionist", p.playStyle.Name)
+	}
+	if p.runPurpose != agent.RunPurposeDebugCoverage {
+		t.Fatalf("local purpose = %q, want debug coverage", p.runPurpose)
 	}
 	if p.riskTolerance != agent.RiskToleranceBalanced {
 		t.Fatalf("local risk = %q, want balanced", p.riskTolerance)
