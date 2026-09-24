@@ -71,6 +71,19 @@ func classifyObjectiveOutcome(_ Objective, err error, final Observation) Outcome
 		return OutcomeControllerUncertain
 	}
 
+	// A semantic transition executor is part of navigation. Its typed wrapper
+	// used to fall through to unknown_failure even on a clean overworld
+	// boundary, making one failed Surf/gate/puzzle transition terminal (#1758).
+	// Preserve fail-closed behavior when the controller boundary is unsafe, but
+	// let a stable transition failure enter the normal bounded replan policy.
+	var transitionExecution *world.TransitionExecutionError
+	if errors.As(err, &transitionExecution) {
+		if stableObjectiveBoundary(final) {
+			return OutcomeBlocked
+		}
+		return OutcomeControllerUncertain
+	}
+
 	if errors.Is(err, skill.ErrBattle) || errors.Is(err, skill.ErrBattleInterrupted) {
 		return OutcomeOwnershipFailure
 	}
@@ -156,6 +169,27 @@ func failureCauseFor(err error) (FailureCauseID, []string) {
 	if errors.Is(err, skill.ErrReplanExhausted) {
 		return "route_replan_exhausted", nil
 	}
+	var transitionExecution *world.TransitionExecutionError
+	if errors.As(err, &transitionExecution) {
+		context := []string(nil)
+		if transitionExecution.Transition.ID != "" {
+			context = []string{transitionExecution.Transition.ID}
+		}
+		if errors.Is(transitionExecution, world.ErrTransitionExecutionStalled) {
+			return "navigation_stalled", context
+		}
+		var blockage *gameruntime.TransitionBlockage
+		if errors.As(transitionExecution, &blockage) {
+			missing := make([]string, 0, len(blockage.Missing))
+			for _, id := range blockage.Missing {
+				missing = append(missing, string(id))
+			}
+			sort.Strings(missing)
+			return "route_prerequisite_missing", missing
+		}
+		return "transition_execution_failed", context
+	}
+
 	var routeBlocked *world.RouteBlockedError
 	if errors.As(err, &routeBlocked) {
 		missing := routeBlocked.MissingCapabilities()
