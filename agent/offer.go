@@ -14,14 +14,14 @@ import (
 // map translation is retained only as a runtime compatibility table for old
 // checkpoints and transient emulator samples; it is never serialized.
 type Knowledge struct {
-	Visited       map[LocationID]bool
-	Places        map[string]bool
-	Completed     map[string]int
-	Failures      map[string]Failure
-	Talked        map[LocationID]map[[2]uint8]bool
-	Adjacency     map[LocationID][]LocationID
-	Requirements  []Requirement
-	TrainingAreas      map[LocationID]TrainingAreaKnowledge
+	Visited             map[LocationID]bool
+	Places              map[string]bool
+	Completed           map[string]int
+	Failures            map[string]Failure
+	Talked              map[LocationID]map[[2]uint8]bool
+	Adjacency           map[LocationID][]LocationID
+	Requirements        []Requirement
+	TrainingAreas       map[LocationID]TrainingAreaKnowledge
 	RecoveryCheckpoints map[PlaceID]RecoveryCheckpointKnowledge
 
 	// Build is this process's running binary identity (e.g. a git SHA), set
@@ -49,16 +49,16 @@ func NewKnowledge(topology any) *Knowledge {
 		panic(fmt.Sprintf("agent: unsupported knowledge topology %T", topology))
 	}
 	return &Knowledge{
-		Visited:         map[LocationID]bool{},
-		Places:          map[string]bool{},
-		Completed:       map[string]int{},
-		Talked:          map[LocationID]map[[2]uint8]bool{},
-		Adjacency:       resolved.Adjacency,
-		Requirements:    []Requirement{},
-		Failures:        map[string]Failure{},
-		TrainingAreas:      map[LocationID]TrainingAreaKnowledge{},
+		Visited:             map[LocationID]bool{},
+		Places:              map[string]bool{},
+		Completed:           map[string]int{},
+		Talked:              map[LocationID]map[[2]uint8]bool{},
+		Adjacency:           resolved.Adjacency,
+		Requirements:        []Requirement{},
+		Failures:            map[string]Failure{},
+		TrainingAreas:       map[LocationID]TrainingAreaKnowledge{},
 		RecoveryCheckpoints: map[PlaceID]RecoveryCheckpointKnowledge{},
-		nativeLocations: resolved.NativeLocations,
+		nativeLocations:     resolved.NativeLocations,
 	}
 }
 
