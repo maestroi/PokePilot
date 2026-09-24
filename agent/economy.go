@@ -209,9 +209,9 @@ func EconomyContext(o Observation) *EconomyDecisionContext {
 	case partyHurt(o) && heals == 0:
 		ctx.ResupplyNeeded = true
 		ctx.ResupplyReason = "party is hurt with no HP-healing stock; prefer free Center healing, otherwise buy a bounded emergency stock"
-	case hasBossFailure(o) && heals == 0:
+	case hasCombatLoss(o) && heals == 0:
 		ctx.ResupplyNeeded = true
-		ctx.ResupplyReason = "a boss objective failed with no HP-healing stock; recover at a free Center first, then consider bounded emergency stock"
+		ctx.ResupplyReason = "a combat challenge was lost with no HP-healing stock; recover at a free Center first, then consider bounded emergency stock"
 	}
 
 	ctx.Purchases = purchaseAdvice(o, ctx)
@@ -255,15 +255,10 @@ func emergencyHealStock(o Observation) int {
 	return total
 }
 
-func hasBossFailure(o Observation) bool {
-	for _, failure := range o.Failures {
-		name := strings.ToLower(failure.Objective)
-		if strings.Contains(name, "gym leader") || strings.Contains(name, "rocket hideout") ||
-			strings.Contains(name, "pokemon tower") || strings.Contains(name, "fuchsia") {
-			return true
-		}
-	}
-	return false
+// hasCombatLoss reports typed combat-loss evidence (a loss not yet cleared by
+// a win), whatever the challenge: gym, trainer, story boss or League stage.
+func hasCombatLoss(o Observation) bool {
+	return o.CombatLossRecorded
 }
 
 func purchaseAdvice(o Observation, ctx *EconomyDecisionContext) []PurchaseAdvice {
@@ -315,7 +310,7 @@ func purchaseAdvice(o Observation, ctx *EconomyDecisionContext) []PurchaseAdvice
 			if _, isHeal := hpHealingItems[name]; isHeal {
 				advice.CategoryStock, advice.TargetStock = heals, targetEmergencyHeals
 				need := maxInt(0, targetEmergencyHeals-heals)
-				needNow := partyHurt(o) || hasBossFailure(o)
+				needNow := partyHurt(o) || hasCombatLoss(o)
 				switch {
 				case !needNow:
 					advice.Reason = "no immediate recovery pressure; prefer free Center healing and preserve money"

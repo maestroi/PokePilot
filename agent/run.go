@@ -137,6 +137,7 @@ runLoop:
 		// blockers instead of turning them into stale durable knowledge.
 		last.Requirements = append([]Requirement(nil), known.Requirements...)
 		last.Failures = known.FailureList()
+		last.CombatLossRecorded = known.hasCombatLossEvidence()
 		offer := offerWithTMHMEvidence(m, romData, last, known)
 		last.Requirements = append(last.Requirements, providerBlockRequirements(offer.Blocked)...)
 		last.ChallengeReadiness = append([]ChallengeReadiness(nil), offer.Readiness...)
