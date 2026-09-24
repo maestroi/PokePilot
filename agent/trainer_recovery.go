@@ -451,6 +451,21 @@ func trainingUnviableHere(obs Observation) bool {
 	return obs.Training != nil && obs.Training.Viability == TrainingOutsideBudget
 }
 
+// combatPreparationTrainingExhausted reports that the current area cannot
+// train and every assessed learned habitat is unusable. No assessments means
+// no evidence either way, so it never counts as exhausted.
+func combatPreparationTrainingExhausted(obs Observation) bool {
+	if (obs.HasGrass && !trainingUnviableHere(obs)) || len(obs.TrainingAreaChoices) == 0 {
+		return false
+	}
+	for _, area := range obs.TrainingAreaChoices {
+		if area.Selected {
+			return false
+		}
+	}
+	return true
+}
+
 // ppRecoveryDue reports whether Offer already proved that attacking PP needs
 // recovery by constructing a recovery objective.
 func ppRecoveryDue(out []Objective) bool {

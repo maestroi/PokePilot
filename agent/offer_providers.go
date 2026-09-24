@@ -120,7 +120,13 @@ func OfferWithEvidence(obs Observation, known *Knowledge) ObjectiveOffer {
 	if known == nil {
 		known = NewKnowledge(nil)
 	}
-	if trainingUnviableHere(obs) {
+	switch {
+	case combatPreparationTrainingExhausted(obs):
+		// No local training and no learned habitat can advance readiness: the
+		// target is unreachable, so a locked fight would strand the planner
+		// wandering between towns. Retrying is the only remaining progress.
+		known.promoteCombatLossesToRetry()
+	case trainingUnviableHere(obs):
 		// Old checkpoints did not persist a readiness target and historically
 		// escaped a dead-end weak grass patch by scheduling a retry. New combat
 		// losses carry a target and stay locked so the planner seeks a stronger
