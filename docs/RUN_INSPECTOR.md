@@ -80,13 +80,11 @@ When `POKEPILOT_MCP_TOKEN` enables the existing private MCP server, three new
 read-only tools are available:
 
 - `pokepilot_get_run_debug(run_id)`
+- `pokepilot_get_run_recovery_audit(run_id)`
 - `pokepilot_get_run_artifacts(run_id)`
 - `pokepilot_get_run_artifact_content(run_id, name)`
 
-The first two deliberately return structured metadata rather than giant
-recording bytes: an autonomous debugging agent first inspects the compact
-bundle, identifies the relevant run/build/progress/failure evidence, and only
-requests deeper artifact work when needed.
+The run-debug and recovery-audit tools deliberately return structured metadata rather than giant recording bytes. `pokepilot_get_run_debug` remains compact and keeps only the newest timeline events for general debugging; `pokepilot_get_run_recovery_audit` bypasses that 40-event MCP compaction, filters the wall's full bounded activity history down to recovery/failure evidence, annotates attempt revisions when available, and attaches related triage groups including resolved history. This lets an agent audit a long successful campaign without re-investigating already-fixed recovery noise.
 
 `pokepilot_get_run_artifact_content` is that deeper step — the
 `.state`/`.ram`/knowledge/failure-repro JSON a triage agent needs to
