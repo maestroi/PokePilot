@@ -239,6 +239,9 @@ func combatPreparationObjective(obs Observation, offered []Objective, known *Kno
 			return o, true
 		}
 	}
+	if journey, _, ok := bestKnownTrainingJourney(obs, known, offered); ok {
+		return journey, true
+	}
 	return Objective{}, false
 }
 
