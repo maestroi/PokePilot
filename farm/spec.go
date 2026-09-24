@@ -52,8 +52,12 @@ type Spec struct {
 	// in one process without cross-talk. Empty intentionally means "use the
 	// historical compatibility default", not a specific profile.
 	PlayStyle      string `json:"play_style,omitempty"`
-	RiskTolerance  string `json:"risk_tolerance,omitempty"`
-	WildEncounters string `json:"wild_encounters,omitempty"`
+	// Purpose describes why the run exists, independently from how it plays
+	// and what terminal goal it holds. Empty is normal player-facing play;
+	// "debug_coverage" deliberately exercises novel reachable interactions.
+	Purpose         string `json:"purpose,omitempty"`
+	RiskTolerance   string `json:"risk_tolerance,omitempty"`
+	WildEncounters  string `json:"wild_encounters,omitempty"`
 	LLMProfile     string `json:"llm_profile,omitempty"`
 	// LLMDeployment is the first-class deployment selection. LLMProfile is
 	// retained only as a compatibility adapter for older queued runs/runners.
@@ -99,6 +103,7 @@ type Spec struct {
 type RunPolicy struct {
 	Goal           string `json:"goal,omitempty"`
 	PlayStyle      string `json:"play_style,omitempty"`
+	Purpose        string `json:"purpose,omitempty"`
 	RiskTolerance  string `json:"risk_tolerance,omitempty"`
 	WildEncounters string `json:"wild_encounters,omitempty"`
 }
@@ -108,6 +113,7 @@ func RunPolicyFor(spec Spec) RunPolicy {
 	return RunPolicy{
 		Goal:           spec.Goal.String(),
 		PlayStyle:      spec.PlayStyle,
+		Purpose:        spec.Purpose,
 		RiskTolerance:  spec.RiskTolerance,
 		WildEncounters: spec.WildEncounters,
 	}
