@@ -4,9 +4,12 @@ package farm
 // backend. It is intentionally independent of LLM strategic records so runs can
 // compare latency, confidence and serving cost across backend types.
 type TypedDecisionRecord struct {
-	Kind             string             `json:"kind,omitempty"`
-	Question         string             `json:"question,omitempty"`
-	Choice           string             `json:"choice,omitempty"`
+	Kind     string `json:"kind,omitempty"`
+	Question string `json:"question,omitempty"`
+	Choice   string `json:"choice,omitempty"`
+	// ChoiceLabel is the declared label of Choice, so a feed reads "go to
+	// pewter city" rather than an index into a menu nobody kept.
+	ChoiceLabel      string             `json:"choice_label,omitempty"`
 	Probabilities    map[string]float64 `json:"probabilities,omitempty"`
 	Confidence       float64            `json:"confidence,omitempty"`
 	DurationSeconds  float64            `json:"duration_seconds,omitempty"`

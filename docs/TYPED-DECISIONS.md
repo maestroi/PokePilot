@@ -186,11 +186,29 @@ TYPESAFE_API_KEY=... go run ./cmd/agent-eval -suite battle -backend jev -model j
 
 ## Telemetry
 
-Heartbeats persist typed-decision telemetry separately from the existing LLM
-counters: backend/model identity, latency, prompt/completion tokens when
-reported, request/response byte counts, selected choice, normalized
-probabilities/confidence, rejection/fallback counts, and a bounded per-call
-record list.
+Typed decisions are telemetry, not a dataset: a run keeps a fixed-size
+summary and streams individual calls without storing them.
+
+- **Per-run summary** (`decision_summary` on the run's stats, saved with the
+  run row). Per decision kind: calls, fallbacks, errors, shadow agreements and
+  disagreements, a 10-bucket confidence histogram with agreement per bucket
+  (does the engine's confidence mean anything?), a latency histogram with
+  p50/p95, tokens, and bounded tallies of the engine's and the executed
+  choices. It stays a few KB whether the run makes a hundred decisions or a
+  hundred thousand.
+- **Live feed** (`decision_records`). The last 32 calls ride each
+  heartbeat: engine choice (by label), confidence, what actually ran,
+  agreement and latency. Older calls scroll out
+  (`decision_records_dropped`) and the feed is stripped from the stored run
+  row, so heartbeats stay a constant size and nothing per-call is persisted.
+  `decision_exchanges` is no longer written.
+- The operator live view shows both (Fast decisions panel); the archive
+  shows the stored summary.
+
+Heartbeat-level counters (backend/model identity, cumulative latency and
+tokens, the latest choice and probabilities) remain for dashboards. A
+sampled training log with full inputs and outcomes is tracked separately in
+#1826.
 
 ## ROM-free comparison
 

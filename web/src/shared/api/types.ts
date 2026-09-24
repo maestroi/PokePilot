@@ -85,7 +85,53 @@ export interface DashboardStats {
   goal_complete?: boolean
   model?: string
   backend?: string
+  decision_records?: TypedDecisionRecord[]
+  decision_records_dropped?: number
+  decision_summary?: DecisionSummary
   [key: string]: unknown
+}
+
+// One typed-decision call in a run's live feed (only the most recent calls
+// travel; see DecisionSummary for the whole run).
+export interface TypedDecisionRecord {
+  kind?: string
+  choice?: string
+  choice_label?: string
+  probabilities?: Record<string, number>
+  confidence?: number
+  duration_seconds?: number
+  backend?: string
+  model?: string
+  fallback?: boolean
+  shadow?: boolean
+  executed?: string
+  agreed?: boolean
+  error?: string
+}
+
+// Fixed-size aggregate of every typed decision a run made, per kind.
+export interface DecisionKindSummary {
+  calls: number
+  fallbacks?: number
+  errors?: number
+  shadow?: number
+  agreements?: number
+  disagreements?: number
+  confidence: number[]
+  confidence_judged: number[]
+  confidence_agreed: number[]
+  latency: number[]
+  latency_seconds?: number
+  p50_seconds?: number
+  p95_seconds?: number
+  prompt_tokens?: number
+  completion_tokens?: number
+  engine_choices?: Record<string, number>
+  executed_choices?: Record<string, number>
+}
+
+export interface DecisionSummary {
+  kinds?: Record<string, DecisionKindSummary>
 }
 
 // Fast typed-decision backend a run selected. Endpoints and credentials stay

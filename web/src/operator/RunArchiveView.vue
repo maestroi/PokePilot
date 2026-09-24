@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import DecisionTelemetry from './DecisionTelemetry.vue'
+import { hasDecisionTelemetry } from './decisionTelemetry'
 import { computed, reactive, ref, watch } from 'vue'
 import { ArrowLeftIcon, ArrowPathIcon, ArrowRightIcon, ArrowTopRightOnSquareIcon, TrashIcon } from '@heroicons/vue/20/solid'
 import { deleteRun, getDashboard } from '../shared/api/client'
@@ -662,6 +664,9 @@ function experimentLabel(run: DashboardRun): string {
                         <div><dt class="text-slate-600">Milestones</dt><dd class="mt-1 text-slate-300">{{ run.player?.milestones?.join(' · ') || '—' }}</dd></div>
                         <div><dt class="text-slate-600">Failure / stop detail</dt><dd class="mt-1 whitespace-pre-wrap text-slate-300">{{ run.detail || '—' }}</dd></div>
                       </dl>
+                    </div>
+                    <div v-if="hasDecisionTelemetry(run.stats)" class="mt-4 overflow-hidden rounded-sm border border-white/10">
+                      <DecisionTelemetry :stats="run.stats" :show-feed="false" />
                     </div>
                   </td>
                 </tr>

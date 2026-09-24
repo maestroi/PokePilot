@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import DecisionTelemetry from './DecisionTelemetry.vue'
+import { hasDecisionTelemetry } from './decisionTelemetry'
 import { computed, ref, watch } from 'vue'
 import { ArrowPathIcon, EyeIcon, EyeSlashIcon, NoSymbolIcon, PauseIcon, PlayIcon, Square2StackIcon } from '@heroicons/vue/20/solid'
 import { cancelRun, cloneRun, forceEndWorker, getDashboard, getRun, pauseRun, resumeRun } from '../shared/api/client'
@@ -754,6 +756,9 @@ function warnPlay(stats: DashboardStats | undefined, key: string): boolean {
               </template>
               <p v-else class="text-[11px] text-[var(--poke-muted)]">Play telemetry appears for LLM runs.</p>
             </section>
+          </div>
+          <div v-if="hasDecisionTelemetry(selectedRun.stats)" class="border-t border-[var(--poke-border)]">
+            <DecisionTelemetry :stats="selectedRun.stats" />
           </div>
           <div v-if="selectedRun.trace" class="flex items-baseline gap-2.5 border-t border-[var(--poke-border)] bg-[var(--poke-panel)] px-2.5 py-1">
             <h3 class="shrink-0 text-[9px] tracking-[0.07em] text-[var(--poke-muted)] uppercase">Last event</h3>
