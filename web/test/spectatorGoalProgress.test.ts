@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { SpectatorRun } from '../src/shared/api/spectator.ts'
-import { goalProgress, goalProgressMeta } from '../src/spectator/model.ts'
+import { goalProgress, goalProgressMeta } from '../src/spectator/goalProgress.ts'
 
 function run(overrides: Partial<SpectatorRun> = {}): SpectatorRun {
   return {
